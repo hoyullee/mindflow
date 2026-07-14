@@ -1,0 +1,306 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="./vendor/react.production.min.js"></script>
+<script src="./vendor/react-dom.production.min.js"></script>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/static/pretendard.css" />
+<style>
+  * { box-sizing: border-box; }
+  html, body { margin: 0; padding: 0; height: 100%; }
+  a { color: #f0663f; text-decoration: none; }
+  a:hover { color: #d9542f; }
+  @keyframes mf-spin { to { transform: rotate(360deg); } }
+  @keyframes mf-fade { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: none; } }
+  @keyframes mf-ov-in { from { opacity: 0; } to { opacity: 1; } }
+  @keyframes mf-core { 0%,100% { transform: scale(1); } 50% { transform: scale(1.18); } }
+  @keyframes mf-branch { 0% { transform: scale(0); opacity: 0; } 45% { transform: scale(1); opacity: 1; } 80% { transform: scale(1); opacity: 1; } 100% { transform: scale(0); opacity: 0; } }
+  @keyframes mf-stem { 0% { transform: scaleX(0); opacity: 0; } 45% { transform: scaleX(1); opacity: 1; } 80% { transform: scaleX(1); opacity: 1; } 100% { transform: scaleX(0); opacity: 0; } }
+  .lg-input:focus { border-color: #f0663f !important; background: #fff !important; }
+  .btn:hover { filter: brightness(.97); }
+  .btn:active { transform: translateY(1px); }
+  .link-tab { cursor: pointer; }
+</style>
+</helmet>
+<div style="min-height:100vh;width:100%;display:flex;background:#fbf6f2;font-family:Pretendard,sans-serif;color:#33281f">
+
+  <sc-if value="{{ loaderVisible }}" hint-placeholder-val="{{ false }}">
+    <div style="position:fixed;inset:0;background:rgba(251,246,242,.92);backdrop-filter:blur(6px);z-index:200;display:flex;flex-direction:column;align-items:center;justify-content:center;animation:mf-ov-in .18s ease-out">
+      <div style="position:relative;width:150px;height:110px">
+        <div style="position:absolute;left:75px;top:55px;width:38px;height:38px;margin:-19px 0 0 -19px;border-radius:50%;background:#f0663f;box-shadow:0 6px 18px rgba(240,102,63,.4);animation:mf-core 1.6s ease-in-out infinite"></div>
+        <div style="position:absolute;left:75px;top:55px;width:44px;height:3px;border-radius:2px;background:#f2a488;transform-origin:left center;transform:rotate(-32deg);animation:mf-stem 1.6s ease-in-out infinite"></div>
+        <div style="position:absolute;left:75px;top:55px;width:44px;height:3px;border-radius:2px;background:#f2a488;transform-origin:left center;transform:rotate(28deg);animation:mf-stem 1.6s ease-in-out infinite;animation-delay:.15s"></div>
+        <div style="position:absolute;left:75px;top:55px;width:44px;height:3px;border-radius:2px;background:#f2a488;transform-origin:left center;transform:rotate(148deg);animation:mf-stem 1.6s ease-in-out infinite;animation-delay:.3s"></div>
+        <div style="position:absolute;left:75px;top:55px;width:44px;height:3px;border-radius:2px;background:#f2a488;transform-origin:left center;transform:rotate(212deg);animation:mf-stem 1.6s ease-in-out infinite;animation-delay:.45s"></div>
+        <div style="position:absolute;left:110px;top:31px;width:16px;height:16px;border-radius:50%;background:#fff;border:3px solid #f0663f;box-sizing:border-box;animation:mf-branch 1.6s ease-in-out infinite"></div>
+        <div style="position:absolute;left:109px;top:69px;width:16px;height:16px;border-radius:50%;background:#fff;border:3px solid #f0663f;box-sizing:border-box;animation:mf-branch 1.6s ease-in-out infinite;animation-delay:.15s"></div>
+        <div style="position:absolute;left:26px;top:26px;width:16px;height:16px;border-radius:50%;background:#fff;border:3px solid #f0663f;box-sizing:border-box;animation:mf-branch 1.6s ease-in-out infinite;animation-delay:.3s"></div>
+        <div style="position:absolute;left:28px;top:73px;width:16px;height:16px;border-radius:50%;background:#fff;border:3px solid #f0663f;box-sizing:border-box;animation:mf-branch 1.6s ease-in-out infinite;animation-delay:.45s"></div>
+      </div>
+      <div style="margin-top:22px;font-size:15px;font-weight:700;color:#33281f">{{ loaderMsg }}</div>
+      <div style="margin-top:6px;font-size:12.5px;color:#9c8b7e">잠시만 기다려 주세요</div>
+    </div>
+  </sc-if>
+
+
+  <!-- left brand panel -->
+  <div style="flex:1;display:flex;flex-direction:column;justify-content:space-between;padding:48px;background:linear-gradient(160deg,#f0663f,#e0491f);color:#fff;position:relative;overflow:hidden">
+    <div style="display:flex;align-items:center;gap:11px;z-index:2">
+      <div style="width:38px;height:38px;border-radius:11px;background:rgba(255,255,255,.18);display:flex;align-items:center;justify-content:center;font-weight:800;font-size:20px">M</div>
+      <div style="font-weight:800;font-size:19px;letter-spacing:-.01em">MindFlow</div>
+    </div>
+
+    <div style="z-index:2">
+      <div style="font-size:34px;font-weight:800;line-height:1.3;letter-spacing:-.02em;margin-bottom:16px">생각을 지도로,<br />아이디어를 흐름으로.</div>
+      <div style="font-size:15px;line-height:1.7;opacity:.9;max-width:380px">중심 주제에서 자유롭게 뻗어나가는 마인드맵으로 복잡한 생각을 한눈에 정리하세요.</div>
+    </div>
+
+    <div style="z-index:2;font-size:12.5px;opacity:.75">© 2026 MindFlow</div>
+
+    <!-- decorative mini nodes -->
+    <div style="position:absolute;right:-40px;top:90px;width:320px;height:320px;opacity:.16;z-index:1">
+      <div style="position:absolute;left:120px;top:140px;width:70px;height:34px;border-radius:10px;background:#fff"></div>
+      <div style="position:absolute;left:20px;top:60px;width:56px;height:28px;border-radius:9px;border:2px solid #fff"></div>
+      <div style="position:absolute;left:30px;top:220px;width:56px;height:28px;border-radius:9px;border:2px solid #fff"></div>
+      <div style="position:absolute;left:230px;top:70px;width:56px;height:28px;border-radius:9px;border:2px solid #fff"></div>
+      <div style="position:absolute;left:230px;top:220px;width:56px;height:28px;border-radius:9px;border:2px solid #fff"></div>
+    </div>
+  </div>
+
+  <!-- right form panel -->
+  <div style="width:520px;flex:0 0 auto;display:flex;align-items:center;justify-content:center;padding:40px">
+    <div style="width:100%;max-width:360px;animation:mf-fade .3s ease">
+      <div style="font-size:26px;font-weight:800;letter-spacing:-.02em;margin-bottom:6px">{{ heading }}</div>
+      <div style="font-size:14px;color:#9c8b7e;margin-bottom:30px">{{ subheading }}</div>
+
+      <div style="{{ formStepStyle }}">
+      <!-- Google -->
+      <button class="btn" onClick="{{ googleLogin }}" style="width:100%;height:50px;border:1px solid #ecdfd5;border-radius:12px;background:#fff;font-family:inherit;font-size:14.5px;font-weight:600;cursor:pointer;display:flex;align-items:center;justify-content:center;gap:10px;color:#33281f;transition:filter .12s,transform .06s">
+        <svg width="19" height="19" viewBox="0 0 48 48"><path fill="#EA4335" d="M24 9.5c3.54 0 6.71 1.22 9.21 3.6l6.85-6.85C35.9 2.38 30.47 0 24 0 14.62 0 6.51 5.38 2.56 13.22l7.98 6.19C12.43 13.72 17.74 9.5 24 9.5z"></path><path fill="#4285F4" d="M46.98 24.55c0-1.57-.15-3.09-.38-4.55H24v9.02h12.94c-.58 2.96-2.26 5.48-4.78 7.18l7.73 6c4.51-4.18 7.09-10.36 7.09-17.65z"></path><path fill="#FBBC05" d="M10.53 28.59c-.48-1.45-.76-2.99-.76-4.59s.27-3.14.76-4.59l-7.98-6.19C.92 16.46 0 20.12 0 24c0 3.88.92 7.54 2.56 10.78l7.97-6.19z"></path><path fill="#34A853" d="M24 48c6.48 0 11.93-2.13 15.89-5.81l-7.73-6c-2.15 1.45-4.92 2.3-8.16 2.3-6.26 0-11.57-4.22-13.47-9.91l-7.98 6.19C6.51 42.62 14.62 48 24 48z"></path></svg>
+        Google 계정으로 계속하기
+      </button>
+
+      <div style="display:flex;align-items:center;gap:12px;margin:22px 0">
+        <div style="flex:1;height:1px;background:#ecdfd5"></div>
+        <div style="font-size:12px;color:#b6a596">또는 이메일로</div>
+        <div style="flex:1;height:1px;background:#ecdfd5"></div>
+      </div>
+
+      <!-- email -->
+      <div style="font-size:12.5px;font-weight:600;margin-bottom:7px">이메일</div>
+      <input class="lg-input" type="email" value="{{ email }}" onInput="{{ onEmail }}" placeholder="you@example.com" style="width:100%;height:48px;border:1px solid #ecdfd5;border-radius:11px;background:#faf3ee;font-family:inherit;font-size:14px;padding:0 14px;outline:none;margin-bottom:16px;transition:border-color .12s,background .12s" />
+
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:7px">
+        <div style="font-size:12.5px;font-weight:600">비밀번호</div>
+        <div class="link-tab" onClick="{{ startForgot }}" style="font-size:12px;color:#9c8b7e">비밀번호 찾기</div>
+      </div>
+      <input class="lg-input" type="password" value="{{ password }}" onInput="{{ onPassword }}" onKeyDown="{{ onPwKey }}" placeholder="비밀번호 입력" style="width:100%;height:48px;border:1px solid #ecdfd5;border-radius:11px;background:#faf3ee;font-family:inherit;font-size:14px;padding:0 14px;outline:none;margin-bottom:16px;transition:border-color .12s,background .12s" />
+
+      <div style="{{ confirmWrapStyle }}">
+        <div style="font-size:12.5px;font-weight:600;margin-bottom:7px">비밀번호 확인</div>
+        <input class="lg-input" type="password" value="{{ password2 }}" onInput="{{ onPassword2 }}" onKeyDown="{{ onPwKey }}" placeholder="비밀번호 재입력" style="width:100%;height:48px;border:1px solid #ecdfd5;border-radius:11px;background:#faf3ee;font-family:inherit;font-size:14px;padding:0 14px;outline:none;margin-bottom:8px;transition:border-color .12s,background .12s" />
+      </div>
+
+      <div style="{{ noticeStyle }}">{{ noticeMsg }}</div>
+      <div style="{{ errStyle }}">{{ errMsg }}</div>
+
+      <button class="btn" onClick="{{ emailLogin }}" style="{{ submitStyle }}">
+        <span style="{{ spinnerStyle }}"></span>
+        <span>{{ submitLabel }}</span>
+      </button>
+
+      <div style="text-align:center;font-size:13px;color:#9c8b7e;margin-top:22px">
+        {{ switchPrompt }} <span class="link-tab" onClick="{{ toggleMode }}" style="color:#f0663f;font-weight:700">{{ switchAction }}</span>
+      </div>
+      </div>
+
+      <!-- verify step -->
+      <div style="{{ verifyStepStyle }}">
+        <div style="display:flex;align-items:center;justify-content:center;width:56px;height:56px;border-radius:16px;background:#fdeee7;font-size:26px;margin-bottom:20px">✉️</div>
+        <div style="font-size:13.5px;color:#33281f;line-height:1.65;margin-bottom:6px"><b style="font-weight:700">{{ email }}</b> 로 인증 코드를 보냈어요.</div>
+        <div style="font-size:12.5px;color:#9c8b7e;margin-bottom:20px">메일함에서 6자리 코드를 확인해 입력해 주세요.</div>
+
+        <div style="font-size:12px;color:#b6a596;background:#faf3ee;border:1px dashed #e4d2c5;border-radius:9px;padding:9px 12px;margin-bottom:18px">데모 코드: <b style="color:#d9542f;letter-spacing:2px">{{ demoCode }}</b></div>
+
+        <div style="font-size:12.5px;font-weight:600;margin-bottom:7px">인증 코드</div>
+        <input class="lg-input" inputmode="numeric" maxlength="6" value="{{ code }}" onInput="{{ onCode }}" onKeyDown="{{ onCodeKey }}" placeholder="6자리 숫자" style="width:100%;height:50px;border:1px solid #ecdfd5;border-radius:11px;background:#faf3ee;font-family:inherit;font-size:22px;font-weight:700;letter-spacing:8px;text-align:center;padding:0 14px;outline:none;margin-bottom:8px;transition:border-color .12s,background .12s" />
+
+        <div style="{{ errStyle }}">{{ errMsg }}</div>
+
+        <button class="btn" onClick="{{ verifyCode }}" style="{{ submitStyle }}">
+          <span style="{{ spinnerStyle }}"></span>
+          <span>{{ submitLabel }}</span>
+        </button>
+
+        <div style="display:flex;align-items:center;justify-content:space-between;margin-top:20px;font-size:13px;color:#9c8b7e">
+          <span class="link-tab" onClick="{{ backToForm }}" style="font-weight:600">← 뒤로</span>
+          <span>코드가 안 왔나요? <span class="link-tab" onClick="{{ resendCode }}" style="color:#f0663f;font-weight:700">다시 보내기</span></span>
+        </div>
+      </div>
+
+      <!-- forgot: email step -->
+      <div style="{{ forgotStepStyle }}">
+        <div style="display:flex;align-items:center;justify-content:center;width:56px;height:56px;border-radius:16px;background:#fdeee7;font-size:26px;margin-bottom:20px">🔑</div>
+        <div style="font-size:13.5px;color:#33281f;line-height:1.65;margin-bottom:20px">가입한 이메일 주소를 입력하면<br />비밀번호 재설정 코드를 보내드려요.</div>
+        <div style="font-size:12.5px;font-weight:600;margin-bottom:7px">이메일</div>
+        <input class="lg-input" type="email" value="{{ email }}" onInput="{{ onEmail }}" onKeyDown="{{ onForgotKey }}" placeholder="you@example.com" style="width:100%;height:48px;border:1px solid #ecdfd5;border-radius:11px;background:#faf3ee;font-family:inherit;font-size:14px;padding:0 14px;outline:none;margin-bottom:8px;transition:border-color .12s,background .12s" />
+        <div style="{{ errStyle }}">{{ errMsg }}</div>
+        <button class="btn" onClick="{{ sendReset }}" style="{{ submitStyle }}"><span>재설정 코드 보내기</span></button>
+        <div style="margin-top:20px;font-size:13px;color:#9c8b7e"><span class="link-tab" onClick="{{ backToForm }}" style="font-weight:600">← 로그인으로 돌아가기</span></div>
+      </div>
+
+      <!-- forgot: code + new password step -->
+      <div style="{{ forgotVerifyStepStyle }}">
+        <div style="display:flex;align-items:center;justify-content:center;width:56px;height:56px;border-radius:16px;background:#fdeee7;font-size:26px;margin-bottom:20px">✉️</div>
+        <div style="font-size:13.5px;color:#33281f;line-height:1.65;margin-bottom:6px"><b style="font-weight:700">{{ email }}</b> 로 재설정 코드를 보냈어요.</div>
+        <div style="font-size:12px;color:#b6a596;background:#faf3ee;border:1px dashed #e4d2c5;border-radius:9px;padding:9px 12px;margin:14px 0 18px">데모 코드: <b style="color:#d9542f;letter-spacing:2px">{{ demoCode }}</b></div>
+        <div style="font-size:12.5px;font-weight:600;margin-bottom:7px">인증 코드</div>
+        <input class="lg-input" inputmode="numeric" maxlength="6" value="{{ code }}" onInput="{{ onCode }}" placeholder="6자리 숫자" style="width:100%;height:50px;border:1px solid #ecdfd5;border-radius:11px;background:#faf3ee;font-family:inherit;font-size:22px;font-weight:700;letter-spacing:8px;text-align:center;padding:0 14px;outline:none;margin-bottom:16px;transition:border-color .12s,background .12s" />
+        <div style="font-size:12.5px;font-weight:600;margin-bottom:7px">새 비밀번호</div>
+        <input class="lg-input" type="password" value="{{ newPw }}" onInput="{{ onNewPw }}" placeholder="새 비밀번호 입력" style="width:100%;height:48px;border:1px solid #ecdfd5;border-radius:11px;background:#faf3ee;font-family:inherit;font-size:14px;padding:0 14px;outline:none;margin-bottom:16px;transition:border-color .12s,background .12s" />
+        <div style="font-size:12.5px;font-weight:600;margin-bottom:7px">새 비밀번호 확인</div>
+        <input class="lg-input" type="password" value="{{ newPw2 }}" onInput="{{ onNewPw2 }}" onKeyDown="{{ onResetKey }}" placeholder="새 비밀번호 재입력" style="width:100%;height:48px;border:1px solid #ecdfd5;border-radius:11px;background:#faf3ee;font-family:inherit;font-size:14px;padding:0 14px;outline:none;margin-bottom:8px;transition:border-color .12s,background .12s" />
+        <div style="{{ errStyle }}">{{ errMsg }}</div>
+        <button class="btn" onClick="{{ resetPw }}" style="{{ submitStyle }}"><span>비밀번호 재설정</span></button>
+        <div style="display:flex;align-items:center;justify-content:space-between;margin-top:20px;font-size:13px;color:#9c8b7e">
+          <span class="link-tab" onClick="{{ startForgot }}" style="font-weight:600">← 뒤로</span>
+          <span>코드가 안 왔나요? <span class="link-tab" onClick="{{ resendCode }}" style="color:#f0663f;font-weight:700">다시 보내기</span></span>
+        </div>
+      </div>
+    </div>
+  </div>
+
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props="{&quot;$preview&quot;:{&quot;width&quot;:&quot;100%&quot;,&quot;height&quot;:&quot;100%&quot;}}">
+class Component extends DCLogic {
+  constructor(props) {
+    super(props);
+    this.state = { mode: 'login', step: 'form', email: '', password: '', password2: '', code: '', busy: false, error: '', demoCode: '', newPw: '', newPw2: '', notice: '' };
+  }
+  onEmail(v) { this.setState({ email: v, error: '' }); }
+  onPassword(v) { this.setState({ password: v, error: '' }); }
+  onPassword2(v) { this.setState({ password2: v, error: '' }); }
+  onPwKey(e) { if (e.key === 'Enter') this.emailLogin(); }
+  onCode(v) { this.setState({ code: (v || '').replace(/\D/g, '').slice(0, 6), error: '' }); }
+  onCodeKey(e) { if (e.key === 'Enter') this.verifyCode(); }
+  toggleMode() { this.setState({ mode: this.state.mode === 'login' ? 'signup' : 'login', step: 'form', error: '', password2: '', code: '', busy: false }); }
+  genCode() { return Math.floor(100000 + Math.random() * 900000).toString(); }
+
+  validEmail(e) { return /^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(e); }
+
+  finish() {
+    const signup = this.state.mode === 'signup';
+    this.setState({ busy: true, error: '', loaderMsg: signup ? '계정을 만들고 있어요' : '로그인하고 있어요' });
+    clearTimeout(this._t);
+    this._t = setTimeout(() => { window.location.href = 'Home.dc.html'; }, 1100);
+  }
+  emailLogin() {
+    if (this.state.busy) return;
+    if (!this.validEmail(this.state.email)) { this.setState({ error: '올바른 이메일 주소를 입력해 주세요.' }); return; }
+    if ((this.state.password || '').length < 4) { this.setState({ error: '비밀번호는 4자 이상 입력해 주세요.' }); return; }
+    if (this.state.mode === 'signup') {
+      if (this.state.password !== this.state.password2) { this.setState({ error: '비밀번호가 일치하지 않습니다.' }); return; }
+      this.setState({ step: 'verify', error: '', code: '', demoCode: this.genCode() });
+      return;
+    }
+    this.finish();
+  }
+  verifyCode() {
+    if (this.state.busy) return;
+    if (this.state.code.length !== 6) { this.setState({ error: '6자리 인증 코드를 입력해 주세요.' }); return; }
+    if (this.state.code !== this.state.demoCode) { this.setState({ error: '인증 코드가 일치하지 않습니다.' }); return; }
+    this.finish();
+  }
+  resendCode() { this.setState({ demoCode: this.genCode(), code: '', error: '' }); }
+  backToForm() { this.setState({ step: 'form', error: '', code: '', busy: false }); }
+  startForgot() { this.setState({ step: 'forgot', error: '', code: '', notice: '', busy: false }); }
+  sendReset() {
+    if (!this.validEmail(this.state.email)) { this.setState({ error: '올바른 이메일 주소를 입력해 주세요.' }); return; }
+    this.setState({ step: 'forgotVerify', demoCode: this.genCode(), code: '', newPw: '', newPw2: '', error: '' });
+  }
+  resetPw() {
+    if (this.state.code.length !== 6) { this.setState({ error: '6자리 인증 코드를 입력해 주세요.' }); return; }
+    if (this.state.code !== this.state.demoCode) { this.setState({ error: '인증 코드가 일치하지 않습니다.' }); return; }
+    if ((this.state.newPw || '').length < 4) { this.setState({ error: '비밀번호는 4자 이상 입력해 주세요.' }); return; }
+    if (this.state.newPw !== this.state.newPw2) { this.setState({ error: '비밀번호가 일치하지 않습니다.' }); return; }
+    this.setState({ step: 'form', mode: 'login', password: '', code: '', error: '', notice: '비밀번호가 재설정되었어요. 새 비밀번호로 로그인해 주세요.' });
+  }
+  googleLogin() { if (!this.state.busy) this.finish(); }
+
+  renderVals() {
+    const login = this.state.mode === 'login';
+    const verify = this.state.step === 'verify';
+    const forgot = this.state.step === 'forgot';
+    const forgotVerify = this.state.step === 'forgotVerify';
+    const busy = this.state.busy;
+    return {
+      loaderVisible: !!busy,
+      loaderMsg: this.state.loaderMsg || '로그인하고 있어요',
+      heading: forgot || forgotVerify ? '비밀번호 찾기' : verify ? '이메일 인증' : (login ? 'MindFlow에 오신 것을 환영해요' : '계정 만들기'),
+      subheading: forgot ? '이메일로 재설정 코드를 보내드릴게요.' : forgotVerify ? '코드 확인 후 새 비밀번호를 설정해 주세요.' : verify ? '거의 다 왔어요! 인증만 마치면 시작할 수 있어요.' : (login ? '로그인하고 마인드맵을 이어서 그려보세요.' : '몇 초면 시작할 수 있어요.'),
+      formStepStyle: { display: (verify || forgot || forgotVerify) ? 'none' : 'block' },
+      verifyStepStyle: { display: verify ? 'block' : 'none' },
+      forgotStepStyle: { display: forgot ? 'block' : 'none' },
+      forgotVerifyStepStyle: { display: forgotVerify ? 'block' : 'none' },
+      startForgot: () => this.startForgot(),
+      sendReset: () => this.sendReset(),
+      resetPw: () => this.resetPw(),
+      onForgotKey: (e) => { if (e.key === 'Enter') this.sendReset(); },
+      onResetKey: (e) => { if (e.key === 'Enter') this.resetPw(); },
+      newPw: this.state.newPw,
+      newPw2: this.state.newPw2,
+      onNewPw: (e) => this.setState({ newPw: e.target.value, error: '' }),
+      onNewPw2: (e) => this.setState({ newPw2: e.target.value, error: '' }),
+      noticeMsg: this.state.notice,
+      noticeStyle: { display: this.state.notice ? 'block' : 'none', fontSize: 12.5, color: '#2f9e63', background: '#e9f4ee', border: '1px solid #cbe5d6', borderRadius: 9, padding: '9px 12px', marginBottom: 12, marginTop: 2 },
+      code: this.state.code,
+      demoCode: this.state.demoCode,
+      onCode: (e) => this.onCode(e.target.value),
+      onCodeKey: (e) => this.onCodeKey(e),
+      verifyCode: () => this.verifyCode(),
+      resendCode: () => this.resendCode(),
+      backToForm: () => this.backToForm(),
+      email: this.state.email,
+      password: this.state.password,
+      password2: this.state.password2,
+      onEmail: (e) => this.onEmail(e.target.value),
+      onPassword: (e) => this.onPassword(e.target.value),
+      onPassword2: (e) => this.onPassword2(e.target.value),
+      onPwKey: (e) => this.onPwKey(e),
+      confirmWrapStyle: { display: login ? 'none' : 'block' },
+      emailLogin: () => this.emailLogin(),
+      googleLogin: () => this.googleLogin(),
+      toggleMode: () => this.toggleMode(),
+      errMsg: this.state.error,
+      errStyle: {
+        display: this.state.error ? 'block' : 'none',
+        fontSize: 12.5, color: '#d64545', marginBottom: 12, marginTop: 2,
+      },
+      submitLabel: verify ? (busy ? '인증 중…' : '인증하고 시작하기') : (busy ? (login ? '로그인 중…' : '가입 중…') : (login ? '로그인' : '가입하기')),
+      submitStyle: {
+        width: '100%', height: 50, marginTop: 8, border: 'none', borderRadius: 12,
+        background: '#f0663f', color: '#fff', fontFamily: 'inherit', fontSize: 15, fontWeight: 700,
+        cursor: busy ? 'default' : 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 9,
+        opacity: busy ? 0.85 : 1, boxShadow: '0 8px 22px rgba(240,102,63,.32)',
+        transition: 'filter .12s, transform .06s',
+      },
+      spinnerStyle: {
+        display: busy ? 'inline-block' : 'none',
+        width: 16, height: 16, border: '2.5px solid rgba(255,255,255,.4)', borderTopColor: '#fff',
+        borderRadius: '50%', animation: 'mf-spin .7s linear infinite',
+      },
+      switchPrompt: login ? '아직 계정이 없으신가요?' : '이미 계정이 있으신가요?',
+      switchAction: login ? '가입하기' : '로그인',
+    };
+  }
+}
+</script>
+</body>
+</html>

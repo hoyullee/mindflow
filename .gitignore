@@ -1,0 +1,4 @@
+# Dev-only dependencies (React UMD is vendored under ./vendor and committed)
+node_modules/
+npm-debug.log*
+.DS_Store

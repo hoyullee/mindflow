@@ -1,0 +1,1633 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="./vendor/react.production.min.js"></script>
+<script src="./vendor/react-dom.production.min.js"></script>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/static/pretendard.css" />
+<style>
+  * { box-sizing: border-box; }
+  html, body { margin: 0; padding: 0; height: 100%; }
+  a { color: #f0663f; text-decoration: none; }
+  a:hover { color: #d9542f; }
+  ::-webkit-scrollbar { width: 10px; height: 10px; }
+  ::-webkit-scrollbar-thumb { background: #ecdfd5; border-radius: 6px; }
+  .lnb-scroll { scrollbar-width: thin; scrollbar-color: transparent transparent; }
+  .lnb-scroll:hover { scrollbar-color: #d9c8ba transparent; }
+  .lnb-scroll::-webkit-scrollbar { width: 4px; }
+  .lnb-scroll::-webkit-scrollbar-thumb { background: transparent; border-radius: 4px; }
+  .lnb-scroll:hover::-webkit-scrollbar-thumb { background: #d9c8ba; }
+  .lnb-scroll::-webkit-scrollbar-track { background: transparent; }
+  @keyframes mf-spin { to { transform: rotate(360deg); } }
+  @keyframes mf-fade { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: none; } }
+  @keyframes mf-ov-in { from { opacity: 0; } to { opacity: 1; } }
+  @keyframes mf-core { 0%,100% { transform: scale(1); } 50% { transform: scale(1.18); } }
+  @keyframes mf-branch { 0% { transform: scale(0); opacity: 0; } 45% { transform: scale(1); opacity: 1; } 80% { transform: scale(1); opacity: 1; } 100% { transform: scale(0); opacity: 0; } }
+  @keyframes mf-stem { 0% { transform: scaleX(0); opacity: 0; } 45% { transform: scaleX(1); opacity: 1; } 80% { transform: scaleX(1); opacity: 1; } 100% { transform: scaleX(0); opacity: 0; } }
+  @keyframes mf-dots { 0%, 20% { content: ""; } }
+  .nav-item:hover { background: #faf3ee !important; }
+  .tpl-card:hover { transform: translateY(-3px); box-shadow: 0 10px 24px rgba(0,0,0,.10) !important; }
+  .map-card:hover { border-color: #f0663f !important; box-shadow: 0 10px 24px rgba(0,0,0,.08) !important; }
+  .map-card:hover .fav-btn { opacity: 1 !important; }
+  .map-card:hover .menu-btn { opacity: 1 !important; }
+  .space-row:hover .space-dot { opacity: 1 !important; }
+  .space-dot:hover { background: #f0e6dd !important; }
+  .fav-btn:hover { transform: scale(1.12); }
+  .menu-btn:hover { background: #faf3ee !important; }
+  .menu-row:hover { background: #faf3ee !important; }
+  .btn:hover { filter: brightness(.97); }
+  .drive-file:hover { background: #faf3ee !important; }
+</style>
+</helmet>
+<div style="display:flex;height:100vh;width:100%;background:#fbf6f2;font-family:Pretendard,sans-serif;color:#33281f;overflow:hidden">
+
+  <sc-if value="{{ creatingMap }}" hint-placeholder-val="{{ false }}">
+    <div style="position:fixed;inset:0;background:rgba(251,246,242,.92);backdrop-filter:blur(6px);z-index:200;display:flex;flex-direction:column;align-items:center;justify-content:center;animation:mf-ov-in .18s ease-out">
+      <div style="position:relative;width:150px;height:110px">
+        <div style="position:absolute;left:75px;top:55px;width:38px;height:38px;margin:-19px 0 0 -19px;border-radius:50%;background:#f0663f;box-shadow:0 6px 18px rgba(240,102,63,.4);animation:mf-core 1.6s ease-in-out infinite"></div>
+        <div style="position:absolute;left:75px;top:55px;width:44px;height:3px;border-radius:2px;background:#f2a488;transform-origin:left center;transform:rotate(-32deg);animation:mf-stem 1.6s ease-in-out infinite"></div>
+        <div style="position:absolute;left:75px;top:55px;width:44px;height:3px;border-radius:2px;background:#f2a488;transform-origin:left center;transform:rotate(28deg);animation:mf-stem 1.6s ease-in-out infinite;animation-delay:.15s"></div>
+        <div style="position:absolute;left:75px;top:55px;width:44px;height:3px;border-radius:2px;background:#f2a488;transform-origin:left center;transform:rotate(148deg);animation:mf-stem 1.6s ease-in-out infinite;animation-delay:.3s"></div>
+        <div style="position:absolute;left:75px;top:55px;width:44px;height:3px;border-radius:2px;background:#f2a488;transform-origin:left center;transform:rotate(212deg);animation:mf-stem 1.6s ease-in-out infinite;animation-delay:.45s"></div>
+        <div style="position:absolute;left:110px;top:31px;width:16px;height:16px;border-radius:50%;background:#fff;border:3px solid #f0663f;box-sizing:border-box;animation:mf-branch 1.6s ease-in-out infinite"></div>
+        <div style="position:absolute;left:109px;top:69px;width:16px;height:16px;border-radius:50%;background:#fff;border:3px solid #f0663f;box-sizing:border-box;animation:mf-branch 1.6s ease-in-out infinite;animation-delay:.15s"></div>
+        <div style="position:absolute;left:26px;top:26px;width:16px;height:16px;border-radius:50%;background:#fff;border:3px solid #f0663f;box-sizing:border-box;animation:mf-branch 1.6s ease-in-out infinite;animation-delay:.3s"></div>
+        <div style="position:absolute;left:28px;top:73px;width:16px;height:16px;border-radius:50%;background:#fff;border:3px solid #f0663f;box-sizing:border-box;animation:mf-branch 1.6s ease-in-out infinite;animation-delay:.45s"></div>
+      </div>
+      <div style="margin-top:22px;font-size:15px;font-weight:700;color:#33281f">{{ loaderMsg }}</div>
+      <div style="margin-top:6px;font-size:12.5px;color:#9c8b7e">잠시만 기다려 주세요</div>
+    </div>
+  </sc-if>
+
+
+  <!-- ===== LNB ===== -->
+  <aside style="width:248px;flex:0 0 auto;background:#fff;border-right:1px solid #ecdfd5;display:flex;flex-direction:column;padding:14px 12px;overflow:hidden">
+    <div style="position:relative;margin-bottom:10px">
+      <div class="nav-item settings-btn" onClick="{{ toggleSettings }}" style="display:flex;align-items:center;gap:9px;padding:8px;border-radius:10px;cursor:pointer">
+        <div style="width:30px;height:30px;border-radius:9px;background:#f0663f;color:#fff;display:flex;align-items:center;justify-content:center;font-weight:800;font-size:16px">{{ userInitial }}</div>
+        <div style="font-weight:700;font-size:15px">{{ userName }}</div>
+        <div style="margin-left:auto;color:#9c8b7e;font-size:12px">▾</div>
+      </div>
+      <div class="settings-pop" style="{{ settingsPopupStyle }}" onClick="{{ stopProp }}">
+        <div style="display:flex;align-items:center;gap:12px;padding:16px 16px 14px;background:linear-gradient(135deg,#fdeee7,#faf3ee);border-radius:14px 14px 0 0">
+          <div style="width:44px;height:44px;border-radius:13px;background:#f0663f;color:#fff;display:flex;align-items:center;justify-content:center;font-weight:800;font-size:20px;box-shadow:0 4px 10px rgba(240,102,63,.25);flex-shrink:0">{{ userInitial }}</div>
+          <div style="min-width:0;flex:1">
+            <sc-if value="{{ nameEditing }}" hint-placeholder-val="{{ false }}">
+              <input value="{{ userName }}" onChange="{{ onNameInput }}" onBlur="{{ onNameEditDone }}" onMouseDown="{{ stopProp }}" onKeyDown="{{ onNameKey }}" ref="{{ setNameInputRef }}" placeholder="이름 입력" style="width:100%;height:30px;border:1px solid #f0663f;border-radius:8px;background:#fff;color:#33281f;font-family:inherit;font-size:14px;font-weight:700;padding:0 9px;outline:none;box-sizing:border-box" />
+            </sc-if>
+            <sc-if value="{{ nameNotEditing }}" hint-placeholder-val="{{ true }}">
+              <div style="display:flex;align-items:center;gap:6px">
+                <div style="font-weight:700;font-size:15px;color:#33281f;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">{{ userName }}</div>
+                <button class="btn" onClick="{{ startNameEdit }}" title="이름 변경" style="width:22px;height:22px;border:none;border-radius:6px;background:transparent;color:#b6a596;cursor:pointer;display:flex;align-items:center;justify-content:center;padding:0;flex-shrink:0"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20h9"></path><path d="M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4z"></path></svg></button>
+              </div>
+              <div style="font-size:12px;color:#9c8b7e;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">{{ userEmail }}</div>
+            </sc-if>
+          </div>
+        </div>
+        <div style="padding:6px">
+          <div class="menu-row" onClick="{{ logout }}" style="display:flex;align-items:center;gap:9px;padding:10px 12px;border-radius:9px;font-size:13px;font-weight:600;cursor:pointer;color:#d64545">
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"></path><polyline points="16 17 21 12 16 7"></polyline><line x1="21" y1="12" x2="9" y2="12"></line></svg> 로그아웃
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div style="font-size:11px;font-weight:700;letter-spacing:.04em;color:#9c8b7e;padding:14px 10px 8px">스페이스</div>
+
+    <div class="lnb-scroll" style="flex:0 1 auto;min-height:60px;overflow-y:auto;overflow-x:hidden;margin:0 -4px;padding:0 4px">
+    <sc-for list="{{ spaceList }}" as="sp" hint-placeholder-count="1">
+      <div class="space-row" style="position:relative">
+        <div class="nav-item" onClick="{{ sp.onClick }}" style="{{ sp.style }}">
+          <span style="{{ sp.iconStyle }}">{{ sp.icon }}</span>
+          <sc-if value="{{ sp.editing }}" hint-placeholder-val="{{ false }}">
+            <input value="{{ sp.editName }}" onInput="{{ sp.onRenameInput }}" onKeyDown="{{ sp.onRenameKey }}" onBlur="{{ sp.commitRename }}" onClick="{{ stopPrevent }}" onMouseDown="{{ stopProp }}" maxlength="10" style="flex:1;min-width:0;height:24px;border:1px solid #f0663f;border-radius:6px;background:#fff;color:#33281f;font-family:inherit;font-size:13px;padding:0 7px;outline:none" />
+          </sc-if>
+          <sc-if value="{{ sp.notEditing }}" hint-placeholder-val="{{ true }}">
+            <span style="flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">{{ sp.name }}</span>
+          </sc-if>
+          <span style="{{ sp.dotStyle }}" class="space-dot" onClick="{{ sp.onMenu }}"><svg width="15" height="15" viewBox="0 0 24 24" fill="currentColor"><circle cx="12" cy="5" r="1.7"></circle><circle cx="12" cy="12" r="1.7"></circle><circle cx="12" cy="19" r="1.7"></circle></svg></span>
+        </div>
+        <div onClick="{{ stopPrevent }}" style="{{ sp.menuStyle }}">
+          <div class="menu-row" onClick="{{ sp.onRename }}" style="display:flex;align-items:center;gap:9px;padding:9px 13px;font-size:13px;cursor:pointer;color:#33281f">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20h9"></path><path d="M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4z"></path></svg> 이름 변경
+          </div>
+          <div style="height:1px;background:#f0e6dd;margin:2px 0"></div>
+          <div class="menu-row" onClick="{{ sp.onDelete }}" style="{{ sp.deleteRowStyle }}">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"></polyline><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path></svg> 공간 삭제
+          </div>
+          <div style="{{ sp.deleteHintStyle }}">{{ sp.deleteHint }}</div>
+        </div>
+      </div>
+    </sc-for>
+    </div>
+    <div class="nav-item" onClick="{{ openNewSpace }}" style="display:flex;align-items:center;gap:10px;padding:9px 10px;border-radius:9px;cursor:pointer;font-size:13.5px;font-weight:500;color:#7c6d60;flex-shrink:0">
+      <span style="font-size:15px;color:#9c8b7e">＋</span> 새 공간
+    </div>
+
+    <!-- Google Drive (공간처럼 동작) -->
+    <div class="nav-item" onClick="{{ onDriveClick }}" style="{{ driveNavStyle }}">
+      <span style="{{ driveIconStyle }}"></span>
+      <span>Google Drive</span>
+      <span style="margin-left:auto;font-size:11px;color:#9c8b7e">{{ driveBadge }}</span>
+    </div>
+
+    <div style="height:1px;background:#f0e6dd;margin:12px 4px"></div>
+
+    <div class="nav-item" onClick="{{ toggleFavList }}" style="display:flex;align-items:center;gap:10px;padding:9px 10px;border-radius:9px;cursor:pointer;font-size:13.5px;font-weight:500;color:#7c6d60">
+      <span style="font-size:15px;color:#e0a53c">★</span> 즐겨찾기
+      <span style="margin-left:auto;font-size:11px;color:#c9b8a9">{{ favCount }}</span>
+    </div>
+    <div style="{{ favListWrapStyle }}">
+      <div style="overflow:hidden;min-height:0">
+        <sc-for list="{{ favItems }}" as="f" hint-placeholder-count="2">
+          <div class="drive-file" style="display:flex;align-items:center;gap:7px;padding:7px 10px 7px 30px;border-radius:8px;cursor:pointer;font-size:12.5px;color:#5c4f44">
+            <span style="font-size:12px;color:#e0a53c;flex-shrink:0">★</span>
+            <span style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap">{{ f.title }}</span>
+            <span style="{{ f.tagStyle }}">{{ f.tag }}</span>
+          </div>
+        </sc-for>
+        <div style="{{ favEmptyStyle }}">즐겨찾기한 항목이 없습니다</div>
+      </div>
+    </div>
+    <div class="nav-item" onClick="{{ toggleTrashList }}" style="display:flex;align-items:center;gap:10px;padding:9px 10px;border-radius:9px;cursor:pointer;font-size:13.5px;font-weight:500;color:#7c6d60">
+      <span style="font-size:15px">🗑</span> 휴지통
+      <span style="margin-left:auto;font-size:11px;color:#c9b8a9">{{ trashCount }}</span>
+    </div>
+    <div style="{{ trashListWrapStyle }}">
+      <div style="overflow:hidden;min-height:0">
+        <sc-for list="{{ trashItems }}" as="t" hint-placeholder-count="2">
+          <div class="drive-file" style="display:flex;align-items:center;gap:7px;padding:7px 10px 7px 30px;border-radius:8px;font-size:12.5px;color:#8a7a6d">
+            <span style="font-size:12px">{{ t.icon }}</span>
+            <span style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap">{{ t.title }}</span>
+            <span style="{{ t.badgeStyle }}">{{ t.badge }}</span>
+            <span onClick="{{ t.onRestore }}" class="restore-link" style="margin-left:auto;font-size:11px;color:#3f8fd0;cursor:pointer;flex-shrink:0">복원</span>
+          </div>
+        </sc-for>
+        <div style="{{ trashEmptyStyle }}">휴지통이 비어 있습니다</div>
+      </div>
+    </div>
+
+
+  </aside>
+
+  <sc-if value="{{ toastVisible }}" hint-placeholder-val="{{ false }}">
+    <div style="position:fixed;inset:0;background:rgba(30,20,14,.42);backdrop-filter:blur(2px);display:flex;align-items:center;justify-content:center;z-index:220;animation:mf-fade .18s ease-out">
+      <div style="width:340px;background:#fff;border-radius:16px;box-shadow:0 22px 60px rgba(0,0,0,.28);padding:26px 24px;text-align:center;box-sizing:border-box">
+        <div style="display:flex;align-items:center;justify-content:center;width:52px;height:52px;border-radius:15px;background:#e9f4ee;font-size:24px;margin:0 auto 14px;color:#2f9e63"><svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"></polyline></svg></div>
+        <div style="font-size:16px;font-weight:800;margin-bottom:8px">{{ toastTitle }}</div>
+        <div style="font-size:13px;color:#7c6d60;line-height:1.6;margin-bottom:20px">{{ toastMsg }}</div>
+        <button class="btn" onClick="{{ closeToast }}" style="width:100%;height:42px;border:none;border-radius:11px;background:#f0663f;color:#fff;font-family:inherit;font-size:14px;font-weight:700;cursor:pointer">확인</button>
+      </div>
+    </div>
+  </sc-if>
+
+  <!-- ===== MAIN ===== -->
+  <main style="flex:1 1 auto;overflow-y:auto;padding:26px 32px 40px">
+    <!-- 모두 toolbar -->
+    <div style="display:flex;align-items:center;margin-bottom:18px;gap:12px">
+      <button class="btn" onClick="{{ backToSpace }}" title="공간으로 돌아가기" style="{{ backBtnStyle }}"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M19 12H5"></path><path d="M12 19l-7-7 7-7"></path></svg></button>
+      <h2 style="font-size:22px;font-weight:800;margin:0;letter-spacing:-.02em">{{ spaceTitle }}</h2>
+      <div style="margin-left:auto;display:flex;align-items:center;gap:10px">
+        <div onClick="{{ disconnectDrive }}" class="drive-file" style="{{ driveDisconnectStyle }}">연결 해제</div>
+        <button class="btn" onClick="{{ openImport }}" style="{{ importBtnStyle }}"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="17 8 12 3 7 8"></polyline><line x1="12" y1="3" x2="12" y2="15"></line></svg> 가져오기</button>
+        <input type="file" accept=".json,.md,.markdown,.txt" ref="{{ setImportRef }}" onChange="{{ onImportFile }}" style="display:none" />
+        <button class="btn" onClick="{{ openNewFolder }}" style="{{ newFolderBtnStyle }}"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"></path><line x1="12" y1="11" x2="12" y2="17"></line><line x1="9" y1="14" x2="15" y2="14"></line></svg> 새 폴더</button>
+        <div style="display:flex;align-items:center;gap:8px;width:260px;height:38px;padding:0 12px;background:#fff;border:1px solid #ecdfd5;border-radius:10px;color:#9c8b7e">
+          <span style="font-size:13px;display:flex;align-items:center;color:#9c8b7e"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="7"></circle><line x1="21" y1="21" x2="16.5" y2="16.5"></line></svg></span>
+          <input placeholder="파일 검색" style="border:none;outline:none;background:transparent;font-family:inherit;font-size:13px;width:100%;color:#33281f" />
+        </div>
+            <a href="{{ newMapHref }}" onClick="{{ onNewMapClick }}" class="btn" style="height:38px;padding:0 16px;border-radius:10px;background:#33281f;color:#fff;font-family:inherit;font-size:13px;font-weight:600;cursor:pointer;display:flex;align-items:center;gap:6px">＋ 새로 만들기</a>
+      </div>
+    </div>
+
+    <div style="{{ recentSectionStyle }}">
+      <div style="font-size:12.5px;font-weight:700;color:#9c8b7e;margin-bottom:14px">최근 항목</div>
+      <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(300px,1fr));gap:20px;margin-bottom:26px">
+        <sc-for list="{{ recentCards }}" as="m" hint-placeholder-count="3">
+          <a href="{{ m.href }}" onClick="{{ m.onOpen }}" onDoubleClick="{{ m.onDblOpen }}" class="map-card" style="{{ m.cardStyle }}">
+            <div style="{{ m.badgeStyle }}">{{ m.badge }}</div>
+            <div class="map-thumb" style="{{ m.thumbStyle }}">{{ m.sketch }}</div>
+            <div style="padding:14px 16px">
+              <div style="font-size:14px;font-weight:600;margin-bottom:4px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">{{ m.title }}</div>
+              <div style="font-size:12px;color:#9c8b7e">최근 항목:{{ m.when }}</div>
+            </div>
+          </a>
+        </sc-for>
+      </div>
+      <div style="height:1px;background:#ecdfd5;margin:0 0 26px"></div>
+    </div>
+
+    <div style="{{ foldersSectionStyle }}">
+      <div style="font-size:12.5px;font-weight:700;color:#9c8b7e;margin-bottom:14px">폴더</div>
+      <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(300px,1fr));gap:20px;margin-bottom:26px">
+        <sc-for list="{{ folderCards }}" as="f" hint-placeholder-count="2">
+          <div class="map-card" onClick="{{ f.onOpen }}" onDragOver="{{ f.onDragOver }}" onDragLeave="{{ f.onDragLeave }}" onDrop="{{ f.onDrop }}" style="{{ f.cardStyle }}">
+            <div class="menu-btn" onClick="{{ f.onMenu }}" title="메뉴" style="{{ f.menuBtnStyle }}">☰</div>
+            <div onClick="{{ stopPrevent }}" style="{{ f.menuStyle }}">
+              <div class="menu-row" onClick="{{ f.onRename }}" style="display:flex;align-items:center;gap:9px;padding:9px 13px;font-size:13px;cursor:pointer;color:#33281f"><span style="display:flex;color:#7c6d60"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20h9"></path><path d="M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4z"></path></svg></span> 이름 변경</div>
+              <div style="height:1px;background:#f0e6dd;margin:2px 0"></div>
+              <div class="menu-row" onClick="{{ f.onDelete }}" style="{{ f.deleteRowStyle }}"><span style="display:flex"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"></polyline><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path></svg></span> 폴더 삭제</div>
+            </div>
+            <div style="width:52px;height:52px;border-radius:14px;background:#fdeee7;display:flex;align-items:center;justify-content:center;flex-shrink:0"><svg width="26" height="26" viewBox="0 0 24 24" fill="#f0663f" stroke="#f0663f" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z" fill-opacity=".18"></path></svg></div>
+            <div style="min-width:0">
+              <div style="font-size:14.5px;font-weight:700;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">{{ f.name }}</div>
+              <div style="font-size:12px;color:#9c8b7e;margin-top:3px">맵 {{ f.count }}개</div>
+            </div>
+          </div>
+        </sc-for>
+      </div>
+      <div style="height:1px;background:#ecdfd5;margin:0 0 26px"></div>
+    </div>
+
+    <div style="{{ mapsSectionStyle }}">
+      <div style="font-size:12.5px;font-weight:700;color:#9c8b7e;margin-bottom:14px">맵</div>
+      <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(300px,1fr));gap:20px">
+      <sc-for list="{{ allCards }}" as="m" hint-placeholder-count="3">
+        <a href="{{ m.href }}" onClick="{{ m.onOpen }}" onDoubleClick="{{ m.onDblOpen }}" draggable="{{ m.draggable }}" onDragStart="{{ m.onDragStart }}" onDragEnd="{{ m.onDragEnd }}" class="map-card" data-title="{{ m.title }}" style="{{ m.cardStyle }}">
+          <div class="fav-btn" onClick="{{ m.onFav }}" title="즐겨찾기" style="{{ m.favStyle }}">{{ m.favIcon }}</div>
+          <div class="menu-btn" onClick="{{ m.onMenu }}" title="메뉴" style="{{ m.menuBtnStyle }}">☰</div>
+          <div onClick="{{ stopPrevent }}" style="{{ m.menuStyle }}">
+            <div style="{{ m.normalRowsStyle }}">
+              <div class="menu-row" onClick="{{ m.onMenuFav }}" style="{{ m.favRowStyle }}">
+                <span style="color:#e0a53c">★</span> {{ m.favLabel }}
+              </div>
+              <div class="menu-row" onClick="{{ m.onExportMenu }}" style="{{ m.exportRowStyle }}">
+                <span style="display:flex;color:#7c6d60"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="7 10 12 15 17 10"></polyline><line x1="12" y1="15" x2="12" y2="3"></line></svg></span> 내보내기 <span style="margin-left:auto;color:#b6a596">›</span>
+              </div>
+              <div style="{{ m.moveRowStyle }}" class="menu-row" onClick="{{ m.onMoveMenu }}">
+                <span>📁</span> 폴더로 이동 <span style="margin-left:auto;color:#b6a596">›</span>
+              </div>
+              <div style="{{ m.unfolderRowStyle }}" class="menu-row" onClick="{{ m.onUnfolder }}">
+                <span style="display:flex;color:#7c6d60"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"></path><path d="M12 17v-6"></path><path d="M9 13.5 12 11l3 2.5"></path></svg></span> 폴더에서 꺼내기
+              </div>
+              <div style="{{ m.menuDividerStyle }}"></div>
+              <div class="menu-row" onClick="{{ m.onMenuDelete }}" style="display:flex;align-items:center;gap:9px;padding:9px 13px;font-size:13px;cursor:pointer;color:#d64545">
+                <span style="display:flex"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"></polyline><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path></svg></span> 삭제하기
+              </div>
+            </div>
+            <div style="{{ m.exportRowsStyle }}">
+              <div class="menu-row" onClick="{{ m.onExportBack }}" style="display:flex;align-items:center;gap:9px;padding:9px 13px;font-size:12.5px;cursor:pointer;color:#9c8b7e">‹ 뒤로</div>
+              <div style="height:1px;background:#f0e6dd;margin:2px 0"></div>
+              <div class="menu-row" onClick="{{ m.onMenuExportPNG }}" style="display:flex;align-items:center;gap:9px;padding:9px 13px;font-size:13px;cursor:pointer;color:#33281f">
+                <span style="display:flex;color:#7c6d60"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="2"></rect><circle cx="8.5" cy="8.5" r="1.5"></circle><polyline points="21 15 16 10 5 21"></polyline></svg></span> PNG 이미지
+              </div>
+              <div class="menu-row" onClick="{{ m.onMenuExportMD }}" style="display:flex;align-items:center;gap:9px;padding:9px 13px;font-size:13px;cursor:pointer;color:#33281f">
+                <span style="display:flex;color:#7c6d60"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="8" y1="6" x2="21" y2="6"></line><line x1="8" y1="12" x2="21" y2="12"></line><line x1="8" y1="18" x2="21" y2="18"></line><line x1="3" y1="6" x2="3.01" y2="6"></line><line x1="3" y1="12" x2="3.01" y2="12"></line><line x1="3" y1="18" x2="3.01" y2="18"></line></svg></span> 텍스트 개요 (.md)
+              </div>
+              <div class="menu-row" onClick="{{ m.onMenuExport }}" style="display:flex;align-items:center;gap:9px;padding:9px 13px;font-size:13px;cursor:pointer;color:#33281f">
+                <span style="display:flex;color:#7c6d60"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path><polyline points="14 2 14 8 20 8"></polyline></svg></span> MindFlow 파일 (.json)
+              </div>
+            </div>
+            <div style="{{ m.moveRowsStyle }}">
+              <div class="menu-row" onClick="{{ m.onMoveBack }}" style="display:flex;align-items:center;gap:9px;padding:9px 13px;font-size:12.5px;cursor:pointer;color:#9c8b7e">‹ 뒤로</div>
+              <div style="height:1px;background:#f0e6dd;margin:2px 0"></div>
+              <sc-for list="{{ m.moveTargets }}" as="ft" hint-placeholder-count="2">
+                <div class="menu-row" onClick="{{ ft.onClick }}" style="display:flex;align-items:center;gap:9px;padding:9px 13px;font-size:13px;cursor:pointer;color:#33281f;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">📁 {{ ft.name }}</div>
+              </sc-for>
+            </div>
+          </div>
+          <div style="{{ m.badgeStyle }}">{{ m.badge }}</div>
+          <div class="map-thumb" style="{{ m.thumbStyle }}">{{ m.sketch }}</div>
+          <div style="padding:14px 16px">
+            <div style="font-size:14px;font-weight:600;margin-bottom:4px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">{{ m.title }}</div>
+            <div style="font-size:12px;color:#9c8b7e">최근 항목:{{ m.when }}</div>
+          </div>
+        </a>
+      </sc-for>
+      </div>
+    </div>
+
+    <div style="{{ folderEmptyStyle }}">
+      <div style="width:88px;height:88px;border-radius:24px;background:#fdeee7;display:flex;align-items:center;justify-content:center;margin-bottom:20px"><svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="#f0663f" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"></path></svg></div>
+      <div style="font-size:18px;font-weight:700;margin-bottom:8px">이 폴더는 비어 있어요</div>
+      <div style="font-size:13.5px;color:#9c8b7e;line-height:1.6;text-align:center">맵 카드의 ☰ 메뉴에서 '폴더로 이동'을 선택해<br />이 폴더로 맵을 옮길 수 있어요.</div>
+    </div>
+
+    <div style="{{ emptyStateStyle }}">
+      <div style="width:88px;height:88px;border-radius:24px;background:#fdeee7;display:flex;align-items:center;justify-content:center;font-size:40px;margin-bottom:20px">🗺️</div>
+      <div style="font-size:18px;font-weight:700;margin-bottom:8px">아직 만든 맵이 없어요</div>
+      <div style="font-size:13.5px;color:#9c8b7e;line-height:1.6;margin-bottom:24px;text-align:center">첫 마인드맵을 만들어 생각을 정리해 보세요.<br />중심 주제에서 아이디어를 자유롭게 펼칠 수 있어요.</div>
+      <a href="{{ newMapHref }}" onClick="{{ onNewMapClick }}" class="btn" style="height:52px;padding:0 30px;border-radius:14px;background:#f0663f;color:#fff;font-family:inherit;font-size:16px;font-weight:700;cursor:pointer;display:flex;align-items:center;gap:9px;box-shadow:0 8px 22px rgba(240,102,63,.32)">＋ 새로 만들기</a>
+    </div>
+
+    <div style="{{ driveConnectStyle }}">
+      <div style="width:88px;height:88px;border-radius:24px;background:#eaf5ee;display:flex;align-items:center;justify-content:center;margin-bottom:22px">
+        <svg width="44" height="44" viewBox="0 0 87.3 78" xmlns="http://www.w3.org/2000/svg"><path d="m6.6 66.85 3.85 6.65c.8 1.4 1.95 2.5 3.3 3.3l13.75-23.8h-27.5c0 1.55.4 3.1 1.2 4.5z" fill="#0066da"/><path d="m43.65 25-13.75-23.8c-1.35.8-2.5 1.9-3.3 3.3l-25.4 44a9.06 9.06 0 0 0 -1.2 4.5h27.5z" fill="#00ac47"/><path d="m73.55 76.8c1.35-.8 2.5-1.9 3.3-3.3l1.6-2.75 7.65-13.25c.8-1.4 1.2-2.95 1.2-4.5h-27.502l5.852 11.5z" fill="#ea4335"/><path d="m43.65 25 13.75-23.8c-1.35-.8-2.9-1.2-4.5-1.2h-18.5c-1.6 0-3.15.45-4.5 1.2z" fill="#00832d"/><path d="m59.8 53h-32.3l-13.75 23.8c1.35.8 2.9 1.2 4.5 1.2h50.8c1.6 0 3.15-.45 4.5-1.2z" fill="#2684fc"/><path d="m73.4 26.5-12.7-22c-.8-1.4-1.95-2.5-3.3-3.3l-13.75 23.8 16.15 28h27.45c0-1.55-.4-3.1-1.2-4.5z" fill="#ffba00"/></svg>
+      </div>
+      <div style="font-size:18px;font-weight:700;margin-bottom:8px">Google Drive 연동이 필요해요</div>
+      <div style="font-size:13.5px;color:#9c8b7e;line-height:1.6;margin-bottom:24px;text-align:center">Google Drive를 연결하면 저장된 마인드맵과 문서를<br />이곳에서 바로 확인할 수 있어요.</div>
+      <button class="btn" onClick="{{ openDriveAuth }}" style="height:50px;padding:0 24px;border:1px solid #ecdfd5;border-radius:13px;background:#fff;color:#33281f;font-family:inherit;font-size:15px;font-weight:600;cursor:pointer;display:flex;align-items:center;gap:10px;box-shadow:0 4px 14px rgba(0,0,0,.06);white-space:nowrap">
+        <svg width="19" height="19" viewBox="0 0 48 48"><path fill="#EA4335" d="M24 9.5c3.54 0 6.71 1.22 9.21 3.6l6.85-6.85C35.9 2.38 30.47 0 24 0 14.62 0 6.51 5.38 2.56 13.22l7.98 6.19C12.43 13.72 17.74 9.5 24 9.5z"></path><path fill="#4285F4" d="M46.98 24.55c0-1.57-.15-3.09-.38-4.55H24v9.02h12.94c-.58 2.96-2.26 5.48-4.78 7.18l7.73 6c4.51-4.18 7.09-10.36 7.09-17.65z"></path><path fill="#FBBC05" d="M10.53 28.59c-.48-1.45-.76-2.99-.76-4.59s.27-3.14.76-4.59l-7.98-6.19C.92 16.46 0 20.12 0 24c0 3.88.92 7.54 2.56 10.78l7.97-6.19z"></path><path fill="#34A853" d="M24 48c6.48 0 11.93-2.13 15.89-5.81l-7.73-6c-2.15 1.45-4.92 2.3-8.16 2.3-6.26 0-11.57-4.22-13.47-9.91l-7.98 6.19C6.51 42.62 14.62 48 24 48z"></path></svg>
+        Google 계정으로 연결
+      </button>
+    </div>
+  </main>
+
+  <!-- ===== Google auth modal ===== -->
+  <div style="{{ authOverlayStyle }}" onClick="{{ closeAuth }}">
+    <div onClick="{{ stopProp }}" style="width:400px;background:#fff;border-radius:16px;box-shadow:0 24px 60px rgba(0,0,0,.28);overflow:hidden;animation:mf-fade .2s ease">
+      <div style="padding:22px 26px;border-bottom:1px solid #eee;display:flex;align-items:center;gap:10px">
+        <span style="font-size:20px;font-weight:800"><span style="color:#4285F4">G</span><span style="color:#EA4335">o</span><span style="color:#FBBC05">o</span><span style="color:#4285F4">g</span><span style="color:#34A853">l</span><span style="color:#EA4335">e</span></span>
+        <span style="font-size:14px;color:#5f6368">계정으로 로그인</span>
+      </div>
+
+      <sc-if value="{{ authChoosing }}" hint-placeholder-val="{{ true }}">
+        <div style="padding:20px 26px 24px">
+          <div style="font-size:18px;font-weight:600;color:#202124;margin-bottom:4px">계정 선택</div>
+          <div style="font-size:13px;color:#5f6368;margin-bottom:18px">MindFlow(으)로 계속하기</div>
+          <div onClick="{{ chooseAccount }}" class="drive-file" style="display:flex;align-items:center;gap:12px;padding:12px;border:1px solid #eee;border-radius:10px;cursor:pointer;margin-bottom:10px">
+            <div style="width:34px;height:34px;border-radius:50%;background:#f0663f;color:#fff;display:flex;align-items:center;justify-content:center;font-weight:700">M</div>
+            <div>
+              <div style="font-size:13.5px;font-weight:600;color:#202124">mine 사용자</div>
+              <div style="font-size:12px;color:#5f6368">mine@gmail.com</div>
+            </div>
+          </div>
+          <div class="drive-file" style="display:flex;align-items:center;gap:12px;padding:12px;border-radius:10px;cursor:pointer;color:#5f6368">
+            <div style="width:34px;height:34px;border-radius:50%;border:1px solid #ddd;display:flex;align-items:center;justify-content:center;font-size:16px">＋</div>
+            <div style="font-size:13.5px">다른 계정 사용</div>
+          </div>
+        </div>
+      </sc-if>
+
+      <sc-if value="{{ authConnecting }}" hint-placeholder-val="{{ false }}">
+        <div style="padding:44px 26px;display:flex;flex-direction:column;align-items:center;gap:16px">
+          <div style="width:36px;height:36px;border:3px solid #eee;border-top-color:#4285F4;border-radius:50%;animation:mf-spin .8s linear infinite"></div>
+          <div style="font-size:13.5px;color:#5f6368">Google Drive에 연결 중…</div>
+        </div>
+      </sc-if>
+    </div>
+  </div>
+
+  <!-- ===== delete confirm modal ===== -->
+  <div style="{{ confirmOverlayStyle }}">
+    <div onClick="{{ stopProp }}" style="width:360px;background:#fff;border-radius:16px;box-shadow:0 24px 60px rgba(0,0,0,.28);padding:26px;animation:mf-fade .2s ease">
+      <div style="width:52px;height:52px;border-radius:14px;background:#fdecec;display:flex;align-items:center;justify-content:center;font-size:26px;margin-bottom:16px">🗑</div>
+      <div style="font-size:17px;font-weight:700;margin-bottom:8px">{{ confirmDeleteHeading }}</div>
+      <div style="font-size:13px;color:#8a7365;line-height:1.6;margin-bottom:22px">{{ confirmDeleteBody }}</div>
+      <div style="display:flex;gap:10px">
+        <button class="btn" onClick="{{ cancelDelete }}" style="flex:1;height:42px;border:1px solid #ecdfd5;border-radius:11px;background:#fff;color:#33281f;font-family:inherit;font-size:14px;font-weight:600;cursor:pointer">취소</button>
+        <button class="btn" onClick="{{ confirmDeleteYes }}" style="flex:1;height:42px;border:none;border-radius:11px;background:#d64545;color:#fff;font-family:inherit;font-size:14px;font-weight:700;cursor:pointer">{{ confirmDeleteBtn }}</button>
+      </div>
+    </div>
+  </div>
+  <!-- ===== restore confirm modal ===== -->
+  <div style="{{ restoreOverlayStyle }}">
+    <div onClick="{{ stopProp }}" style="width:360px;background:#fff;border-radius:16px;box-shadow:0 24px 60px rgba(0,0,0,.28);padding:26px;animation:mf-fade .2s ease">
+      <div style="width:52px;height:52px;border-radius:14px;background:#e9f4ee;display:flex;align-items:center;justify-content:center;font-size:26px;margin-bottom:16px">♻️</div>
+      <div style="font-size:17px;font-weight:700;margin-bottom:8px">복원하시겠습니까?</div>
+      <div style="font-size:13px;color:#8a7365;line-height:1.6;margin-bottom:22px">'{{ confirmRestoreTitle }}' 맵을 휴지통에서 원래 위치로 복원합니다.</div>
+      <div style="display:flex;gap:10px">
+        <button class="btn" onClick="{{ cancelRestore }}" style="flex:1;height:42px;border:1px solid #ecdfd5;border-radius:11px;background:#fff;color:#33281f;font-family:inherit;font-size:14px;font-weight:600;cursor:pointer">취소</button>
+        <button class="btn" onClick="{{ confirmRestoreYes }}" style="flex:1;height:42px;border:none;border-radius:11px;background:#2f9e63;color:#fff;font-family:inherit;font-size:14px;font-weight:700;cursor:pointer">복원</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ===== new space modal ===== -->
+  <div style="{{ newSpaceOverlayStyle }}">
+    <div onClick="{{ stopProp }}" style="width:380px;background:#fff;border-radius:16px;box-shadow:0 24px 60px rgba(0,0,0,.28);padding:26px;animation:mf-fade .2s ease">
+      <div style="font-size:18px;font-weight:800;margin-bottom:6px">새 공간 만들기</div>
+      <div style="font-size:13px;color:#9c8b7e;line-height:1.6;margin-bottom:20px">주제별로 맵을 정리할 새로운 공간을 만들어요.</div>
+
+      <div style="font-size:12.5px;font-weight:600;margin-bottom:8px">공간 이름</div>
+      <input class="ns-input" value="{{ newSpaceName }}" onInput="{{ onNewSpaceName }}" onKeyDown="{{ onNewSpaceKey }}" onMouseDown="{{ stopProp }}" maxlength="10" placeholder="예: 팀 프로젝트 (최대 10자)" style="width:100%;height:44px;border:1px solid #ecdfd5;border-radius:11px;background:#faf3ee;color:#33281f;font-family:inherit;font-size:14px;padding:0 13px;outline:none;box-sizing:border-box;margin-bottom:16px" />
+
+      <div style="font-size:12.5px;font-weight:600;margin-bottom:8px">색상</div>
+      <div style="display:flex;gap:9px;margin-bottom:24px">
+        <sc-for list="{{ spaceColors }}" as="c" hint-placeholder-count="6">
+          <button onClick="{{ c.onClick }}" style="{{ c.style }}"></button>
+        </sc-for>
+      </div>
+
+      <div style="display:flex;gap:10px">
+        <button class="btn" onClick="{{ closeNewSpace }}" style="flex:1;height:44px;border:1px solid #ecdfd5;border-radius:11px;background:#fff;color:#33281f;font-family:inherit;font-size:14px;font-weight:600;cursor:pointer">취소</button>
+        <button class="btn" onClick="{{ createSpace }}" style="{{ createBtnStyle }}">만들기</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ===== folder create/rename modal ===== -->
+  <div style="{{ folderModalOverlayStyle }}">
+    <div onClick="{{ stopProp }}" style="width:380px;background:#fff;border-radius:16px;box-shadow:0 24px 60px rgba(0,0,0,.28);padding:26px;animation:mf-fade .2s ease">
+      <div style="font-size:18px;font-weight:800;margin-bottom:6px">{{ folderModalTitle }}</div>
+      <div style="font-size:13px;color:#9c8b7e;line-height:1.6;margin-bottom:20px">폴더로 공간 안의 맵을 정리해요.</div>
+      <div style="font-size:12.5px;font-weight:600;margin-bottom:8px">폴더 이름</div>
+      <input class="ns-input" value="{{ folderModalName }}" onInput="{{ onFolderModalName }}" onKeyDown="{{ onFolderModalKey }}" onMouseDown="{{ stopProp }}" maxlength="10" placeholder="예: 기획 (최대 10자)" style="width:100%;height:44px;border:1px solid #ecdfd5;border-radius:11px;background:#faf3ee;color:#33281f;font-family:inherit;font-size:14px;padding:0 13px;outline:none;box-sizing:border-box;margin-bottom:24px" />
+      <div style="display:flex;gap:10px">
+        <button class="btn" onClick="{{ closeFolderModal }}" style="flex:1;height:44px;border:1px solid #ecdfd5;border-radius:11px;background:#fff;color:#33281f;font-family:inherit;font-size:14px;font-weight:600;cursor:pointer">취소</button>
+        <button class="btn" onClick="{{ saveFolderModal }}" style="{{ folderSaveBtnStyle }}">{{ folderModalBtn }}</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ===== delete folder confirm modal ===== -->
+  <div style="{{ deleteFolderOverlayStyle }}">
+    <div onClick="{{ stopProp }}" style="width:360px;background:#fff;border-radius:16px;box-shadow:0 24px 60px rgba(0,0,0,.28);padding:26px;animation:mf-fade .2s ease">
+      <div style="width:52px;height:52px;border-radius:14px;background:#fdecec;display:flex;align-items:center;justify-content:center;margin-bottom:16px"><svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#d64545" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"></polyline><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path></svg></div>
+      <div style="font-size:17px;font-weight:700;margin-bottom:8px">폴더를 삭제하시겠습니까?</div>
+      <div style="font-size:13px;color:#8a7365;line-height:1.6;margin-bottom:22px">'{{ confirmDeleteFolderName }}' 폴더를 삭제합니다. 이 작업은 되돌릴 수 없어요.</div>
+      <div style="display:flex;gap:10px">
+        <button class="btn" onClick="{{ cancelDeleteFolder }}" style="flex:1;height:42px;border:1px solid #ecdfd5;border-radius:11px;background:#fff;color:#33281f;font-family:inherit;font-size:14px;font-weight:600;cursor:pointer">취소</button>
+        <button class="btn" onClick="{{ confirmDeleteFolderYes }}" style="flex:1;height:42px;border:none;border-radius:11px;background:#d64545;color:#fff;font-family:inherit;font-size:14px;font-weight:700;cursor:pointer">삭제</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ===== delete space confirm modal ===== -->
+  <div style="{{ deleteSpaceOverlayStyle }}">
+    <div onClick="{{ stopProp }}" style="width:360px;background:#fff;border-radius:16px;box-shadow:0 24px 60px rgba(0,0,0,.28);padding:26px;animation:mf-fade .2s ease">
+      <div style="width:52px;height:52px;border-radius:14px;background:#fdecec;display:flex;align-items:center;justify-content:center;margin-bottom:16px"><svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#d64545" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"></polyline><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path></svg></div>
+      <div style="font-size:17px;font-weight:700;margin-bottom:8px">공간을 삭제하시겠습니까?</div>
+      <div style="font-size:13px;color:#8a7365;line-height:1.6;margin-bottom:22px">'{{ confirmDeleteSpaceName }}' 공간을 삭제합니다. 이 작업은 되돌릴 수 없어요.</div>
+      <div style="display:flex;gap:10px">
+        <button class="btn" onClick="{{ cancelDeleteSpace }}" style="flex:1;height:42px;border:1px solid #ecdfd5;border-radius:11px;background:#fff;color:#33281f;font-family:inherit;font-size:14px;font-weight:600;cursor:pointer">취소</button>
+        <button class="btn" onClick="{{ confirmDeleteSpaceYes }}" style="flex:1;height:42px;border:none;border-radius:11px;background:#d64545;color:#fff;font-family:inherit;font-size:14px;font-weight:700;cursor:pointer">삭제</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ===== logout confirm modal ===== -->
+  <div style="{{ logoutOverlayStyle }}">
+    <div onClick="{{ stopProp }}" style="width:360px;background:#fff;border-radius:16px;box-shadow:0 24px 60px rgba(0,0,0,.28);padding:26px;animation:mf-fade .2s ease">
+      <div style="width:52px;height:52px;border-radius:14px;background:#fdecec;display:flex;align-items:center;justify-content:center;margin-bottom:16px"><svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#d64545" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"></path><polyline points="16 17 21 12 16 7"></polyline><line x1="21" y1="12" x2="9" y2="12"></line></svg></div>
+      <div style="font-size:17px;font-weight:700;margin-bottom:8px">로그아웃하시겠습니까?</div>
+      <div style="font-size:13px;color:#8a7365;line-height:1.6;margin-bottom:22px">로그아웃하면 로그인 페이지로 이동합니다.</div>
+      <div style="display:flex;gap:10px">
+        <button class="btn" onClick="{{ cancelLogout }}" style="flex:1;height:42px;border:1px solid #ecdfd5;border-radius:11px;background:#fff;color:#33281f;font-family:inherit;font-size:14px;font-weight:600;cursor:pointer">취소</button>
+        <button class="btn" onClick="{{ confirmLogoutYes }}" style="flex:1;height:42px;border:none;border-radius:11px;background:#d64545;color:#fff;font-family:inherit;font-size:14px;font-weight:700;cursor:pointer">로그아웃</button>
+      </div>
+    </div>
+  </div>
+
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props="{&quot;$preview&quot;:{&quot;width&quot;:&quot;100%&quot;,&quot;height&quot;:&quot;100%&quot;}}">
+class Component extends DCLogic {
+  constructor(props) {
+    super(props);
+    this.state = { drive: 'idle', auth: null, favs: {}, favOpen: false, openMenu: null, deleted: {}, confirmDelete: null, confirmRestore: null, trash: [], trashOpen: false, recent: [], recentOpen: false, userName: 'mine', settingsOpen: false, loggedOut: false, spaces: [{ id: 'general', name: '일반 공간', home: true, color: '#f0663f', maps: this.defaultMaps }], activeSpace: 'general', newSpaceOpen: false, newSpaceName: '', newSpaceColor: '#f0663f', spaceMenu: null, editingSpace: null, editingSpaceName: '', confirmDeleteSpace: null, curFolder: null, folderModal: null, mapFolders: {}, moveFor: null, confirmDeleteFolder: null };
+    this.SPACE_COLORS = ['#f0663f', '#e0a53c', '#3fae9e', '#3f8fd0', '#8a6bd1', '#d0568f'];
+    this.templates = [
+      { name: '마인드맵', tint: '#f0663f', glyph: '🗂' },
+      { name: '논리흐름도', tint: '#2f7fd6', glyph: '🔀' },
+      { name: '브레이스 맵', tint: '#e0a53c', glyph: '🗃' },
+      { name: '조직도', tint: '#3fae9e', glyph: '🏢' },
+      { name: '트리구조도', tint: '#8a6bd1', glyph: '🌳' },
+      { name: '타임라인', tint: '#2a4a5e', glyph: '📊' },
+      { name: '모두 보기', tint: '#9c8b7e', glyph: '›' },
+    ];
+    this.defaultMaps = [
+      { title: '2025.05.23 서포터클럽 해지 방어 동선', when: '방금', hue: '#f0663f' },
+      { title: '따라잡기', when: '1 년 전', hue: '#8a6bd1' },
+      { title: '무상 비즈머니 지급', when: '1 년 전', hue: '#3fae9e' },
+    ];
+    this.maps = this.defaultMaps;
+    this.driveFolders = [
+      { id: 'df1', name: '팀 프로젝트' },
+      { id: 'df2', name: '개인 문서' },
+    ];
+    this.driveFiles = [
+      { name: '제품 로드맵 2026.xmind', icon: '🧠', folder: null },
+      { name: '마케팅 전략.pdf', icon: '📄', folder: null },
+      { name: '팀 회의록.xmind', icon: '🧠', folder: 'df1' },
+      { name: '디자인 시스템.xmind', icon: '🧠', folder: 'df1' },
+      { name: '스프린트 계획.xlsx', icon: '📊', folder: 'df1' },
+      { name: '사용자 리서치.docx', icon: '📝', folder: 'df2' },
+      { name: '아이디어 스케치.xmind', icon: '🧠', folder: 'df2' },
+    ];
+    this.state.driveFolders = this.driveFolders;
+    const dmf = {}; this.driveFiles.forEach(f => { if (f.folder) dmf[f.name] = f.folder; });
+    this.state.driveMapFolders = dmf;
+  }
+
+  componentDidMount() {
+    this._docClick = (e) => {
+      if (this.state.openMenu && !(e.target.closest && e.target.closest('.menu-btn,.menu-row'))) this.setState({ openMenu: null, moveFor: null, exportFor: null });
+      if (this.state.selectedCard && !(e.target.closest && e.target.closest('.map-card'))) this.setState({ selectedCard: null });
+      if (this.state.settingsOpen && !(e.target.closest && e.target.closest('.settings-pop,.settings-btn'))) this.setState({ settingsOpen: false });
+      if (this.state.spaceMenu && !(e.target.closest && e.target.closest('.space-dot,.menu-row,.space-row'))) this.setState({ spaceMenu: null });
+    };
+    window.addEventListener('mousedown', this._docClick);
+    try { const r = JSON.parse(localStorage.getItem('mf_recent') || '[]'); if (Array.isArray(r) && r.length) this.setState({ recent: r }); } catch (e) {}
+    const home = (this.state.spaces || []).find(s => s.home);
+    if (!home || !Array.isArray(home.maps)) {
+      const rest = (this.state.spaces || []).filter(s => !s.home).map(s => ({ ...s, maps: Array.isArray(s.maps) ? s.maps : [] }));
+      this.setState({ spaces: [{ id: 'general', name: '일반 공간', home: true, color: '#f0663f', maps: this.defaultMaps }, ...rest], activeSpace: this.state.activeSpace || 'general' }, () => this.syncDocsToCards());
+    } else {
+      this.syncDocsToCards();
+    }
+  }
+  // register maps created in the editor (saved under new-… ids) as home cards, and keep card titles in sync with their docs
+  syncDocsToCards() {
+    let spaces = this.state.spaces; if (!spaces || !spaces.length) return;
+    const known = new Set();
+    spaces.forEach(s => (s.maps || []).forEach(m => { known.add(m.title); if (m.docId) known.add('id:' + m.docId); }));
+    const adds = [];
+    for (let i = 0; i < localStorage.length; i++) {
+      const k = localStorage.key(i);
+      if (!k || !k.startsWith('mindflow_doc_new-')) continue;
+      const docId = k.slice('mindflow_doc_'.length);
+      if (known.has('id:' + docId)) continue;
+      try {
+        const d = JSON.parse(localStorage.getItem(k));
+        const t = ((d && d.nodes && d.nodes.root && d.nodes.root.text) || '').trim();
+        if (!t || known.has(t)) continue;
+        adds.push({ title: t, when: '내 맵', hue: '#f0663f', docId });
+        known.add(t); known.add('id:' + docId);
+      } catch (e) {}
+    }
+    let changed = adds.length > 0;
+    spaces = spaces.map(s => ({ ...s, maps: (s.maps || []).map(m => {
+      if (!m.docId) return m;
+      try {
+        const d = JSON.parse(localStorage.getItem('mindflow_doc_' + m.docId));
+        const t = ((d && d.nodes && d.nodes.root && d.nodes.root.text) || '').trim();
+        if (t && t !== m.title) { changed = true; return { ...m, title: t }; }
+      } catch (e) {}
+      return m;
+    }) }));
+    if (adds.length) spaces = spaces.map((s, i) => i === 0 ? { ...s, maps: [...(s.maps || []), ...adds] } : s);
+    if (changed) this.setState({ spaces });
+  }
+  componentWillUnmount() { window.removeEventListener('mousedown', this._docClick); }
+  onDriveClick() { this.setState({ activeSpace: 'drive', curFolder: null, driveFolder: null }); }
+  openDriveAuth() { this.setState({ auth: 'choose' }); }
+  closeAuth() { if (this.state.auth !== 'connecting') this.setState({ auth: null }); }
+  chooseAccount() {
+    this.setState({ auth: 'connecting' });
+    clearTimeout(this._t);
+    this._t = setTimeout(() => this.setState({ drive: 'connected', auth: null }), 1400);
+  }
+  disconnectDrive() { this.setState({ drive: 'idle' }); }
+  toggleSettings() { this.setState({ settingsOpen: !this.state.settingsOpen, nameEditing: false }); }
+  onNameInput(v) { this.setState({ userName: (v || '').slice(0, 20) }); }
+  onNameBlur() { if (!this.state.userName.trim()) this.setState({ userName: 'mine' }); }
+  logout() { this.setState({ settingsOpen: false, confirmLogout: true }); }
+  cancelLogout() { this.setState({ confirmLogout: false }); }
+  confirmLogoutYes() {
+    this.setState({ confirmLogout: false, creatingMap: true, loaderMsg: '로그아웃하고 있어요' });
+    setTimeout(() => { window.location.href = 'Login.dc.html'; }, 900);
+  }
+  openNewSpace() { this.setState({ newSpaceOpen: true, newSpaceName: '', newSpaceColor: '#f0663f' }); }
+  closeNewSpace() { this.setState({ newSpaceOpen: false }); }
+  onNewSpaceName(v) { this.setState({ newSpaceName: (v || '').slice(0, 10) }); }
+  onNewSpaceKey(e) { if (e.key === 'Enter') this.createSpace(); }
+  pickSpaceColor(c) { this.setState({ newSpaceColor: c }); }
+  setActiveSpace(id) { this.setState({ activeSpace: id, curFolder: null, driveFolder: null }); }
+  toggleSpaceMenu(id) { this.setState({ spaceMenu: this.state.spaceMenu === id ? null : id }); }
+  startRenameSpace(id) { const sp = this.state.spaces.find(s => s.id === id); this.setState({ editingSpace: id, editingSpaceName: sp ? sp.name : '', spaceMenu: null }); }
+  onRenameSpaceInput(v) { this.setState({ editingSpaceName: (v || '').slice(0, 10) }); }
+  commitRenameSpace() {
+    const id = this.state.editingSpace; if (!id) return;
+    const name = (this.state.editingSpaceName || '').trim();
+    if (!name) { this.setState({ editingSpace: null }); return; }
+    const spaces = this.state.spaces.map(s => s.id === id ? { ...s, name } : s);
+    this.setState({ spaces, editingSpace: null });
+  }
+  askDeleteSpace(id) {
+    const sp = this.state.spaces.find(s => s.id === id);
+    if (!sp || (Array.isArray(sp.maps) && sp.maps.some(m => !this.state.deleted[m.title]))) return; // block if has non-trashed maps
+    if (this.state.spaces.length <= 1) return; // keep at least one space
+    this.setState({ confirmDeleteSpace: id, spaceMenu: null });
+  }
+  cancelDeleteSpace() { this.setState({ confirmDeleteSpace: null }); }
+  confirmDeleteSpaceYes() {
+    const id = this.state.confirmDeleteSpace; if (!id) return;
+    const spaces = this.state.spaces.filter(s => s.id !== id);
+    if (!spaces.length) return;
+    const active = this.state.activeSpace === id ? spaces[0].id : this.state.activeSpace;
+    this.setState({ spaces, confirmDeleteSpace: null, activeSpace: active });
+  }
+  createSpace() {
+    const name = (this.state.newSpaceName || '').trim();
+    if (!name) return;
+    const id = 's' + Date.now().toString(36);
+    const spaces = [...this.state.spaces, { id, name, color: this.state.newSpaceColor, maps: [] }];
+    this.setState({ spaces, newSpaceOpen: false, newSpaceName: '' });
+  }
+  sourceOf(title) { return this.driveFiles.some(f => f.name === title) ? 'drive' : 'local'; }
+  fileIconSvg(name) {
+    const h = React.createElement;
+    const ext = (name.split('.').pop() || '').toLowerCase();
+    const svg = (color, children) => h('svg', { width: 15, height: 15, viewBox: '0 0 24 24', fill: 'none', stroke: color, strokeWidth: 1.9, strokeLinecap: 'round', strokeLinejoin: 'round', style: { display: 'block', flexShrink: 0 } }, children);
+    if (ext === 'xmind') {
+      return svg('#f0663f', [
+        h('circle', { key: 'c', cx: 12, cy: 12, r: 3 }),
+        h('path', { key: 'l1', d: 'M12 9V5' }), h('circle', { key: 'n1', cx: 12, cy: 4, r: 1.6, fill: '#f0663f' }),
+        h('path', { key: 'l2', d: 'M14.6 13.5l3 2' }), h('circle', { key: 'n2', cx: 18.4, cy: 16, r: 1.6, fill: '#f0663f' }),
+        h('path', { key: 'l3', d: 'M9.4 13.5l-3 2' }), h('circle', { key: 'n3', cx: 5.6, cy: 16, r: 1.6, fill: '#f0663f' }),
+      ]);
+    }
+    if (ext === 'pdf') {
+      return svg('#d64545', [
+        h('path', { key: 'p', d: 'M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z' }),
+        h('polyline', { key: 'f', points: '14 2 14 8 20 8' }),
+        h('path', { key: 't', d: 'M8.5 13.5h1a1 1 0 0 1 0 2h-1zM8.5 17.5v-4M13 13.5v4M13 13.5h1a1.5 1.5 0 0 1 0 3h-1M16.5 13.5h1.5M16.5 13.5v4M16.5 15.5h1', strokeWidth: 1.3 }),
+      ]);
+    }
+    if (ext === 'docx' || ext === 'doc') {
+      return svg('#2f7fd6', [
+        h('path', { key: 'p', d: 'M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z' }),
+        h('polyline', { key: 'f', points: '14 2 14 8 20 8' }),
+        h('line', { key: 'l1', x1: 8, y1: 13, x2: 16, y2: 13 }),
+        h('line', { key: 'l2', x1: 8, y1: 16, x2: 14, y2: 16 }),
+      ]);
+    }
+    return svg('#9c8b7e', [
+      h('path', { key: 'p', d: 'M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z' }),
+      h('polyline', { key: 'f', points: '14 2 14 8 20 8' }),
+    ]);
+  }
+  toggleFav(title) { const favs = { ...this.state.favs, [title]: !this.state.favs[title] }; if (!favs[title]) delete favs[title]; this.setState({ favs }); }
+  toggleFavList() { this.setState({ favOpen: !this.state.favOpen }); }
+  toggleMenu(title) { this.setState({ openMenu: this.state.openMenu === title ? null : title, moveFor: null, exportFor: null }); }
+  askDelete(title) { this.setState({ confirmDelete: title, openMenu: null }); }
+  cancelDelete() { this.setState({ confirmDelete: null }); }
+  confirmDeleteYes() {
+    const title = this.state.confirmDelete; if (!title) return;
+    const deleted = { ...this.state.deleted, [title]: true };
+    const favs = { ...this.state.favs }; delete favs[title];
+    const src = this.sourceOf(title);
+    const trash = this.state.trash.some(t => t.title === title) ? this.state.trash : [...this.state.trash, { title, source: src }];
+    this.setState({ deleted, favs, trash, confirmDelete: null });
+  }
+  toggleTrashList() { this.setState({ trashOpen: !this.state.trashOpen }); }
+  toggleRecentList() { this.setState({ recentOpen: !this.state.recentOpen }); }
+  mapId(title) { let h = 0; const s = String(title || ''); for (let i = 0; i < s.length; i++) h = (h * 31 + s.charCodeAt(i)) >>> 0; return 'm' + h.toString(36); }
+
+  // ---- import / export ----
+  downloadFile(name, text, mime) {
+    const blob = new Blob([text], { type: mime || 'application/json;charset=utf-8' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a'); a.href = url; a.download = name;
+    document.body.appendChild(a); a.click(); a.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 2000);
+  }
+  exportMap(title, docId) {
+    this.setState({ openMenu: null, moveFor: null, exportFor: null });
+    const raw = (docId && localStorage.getItem('mindflow_doc_' + docId)) || this.docRawForTitle(title);
+    const safe = String(title).replace(/[\\/:*?"<>|]/g, '_');
+    if (raw) { this.downloadFile(safe + '.json', raw); return; }
+    // never opened → export a minimal single-root doc
+    this.downloadFile(safe + '.json', JSON.stringify({ v: 1, nodes: { root: { id: 'root', text: title, emoji: '🎯', parent: null, children: [], collapsed: false, color: null, x: 0, y: 0 } }, floats: [], lines: [], zones: [], layoutMode: 'radial', themeKey: 'coral' }, null, 2));
+  }
+  exportMapOutline(title, docId) {
+    this.setState({ openMenu: null, moveFor: null, exportFor: null });
+    const raw = (docId && localStorage.getItem('mindflow_doc_' + docId)) || this.docRawForTitle(title);
+    const safe = String(title).replace(/[\\/:*?"<>|]/g, '_');
+    let d = null; try { d = JSON.parse(raw); } catch (e) {}
+    const out = [];
+    if (d && d.nodes && d.nodes.root) {
+      const walk = (id, depth) => {
+        const n = d.nodes[id]; if (!n) return;
+        const label = ((n.emoji ? n.emoji + ' ' : '') + (n.text || '').replace(/\n/g, ' ')).trim();
+        if (depth === 0) out.push('# ' + label);
+        else out.push('  '.repeat(depth - 1) + '- ' + label);
+        if (n.note && n.note.trim()) out.push('  '.repeat(Math.max(0, depth - 1)) + '  > ' + n.note.trim().replace(/\n/g, ' '));
+        (n.children || []).forEach(cid => walk(cid, depth + 1));
+      };
+      walk('root', 0);
+      const frees = Object.keys(d.nodes).filter(k => d.nodes[k].free);
+      if (frees.length) { out.push('', '## 개별 주제'); frees.forEach(k => walk(k, 1)); }
+      const floats = d.floats || [];
+      if (floats.some(f => (f.text || '').trim())) {
+        out.push('', '## 메모');
+        floats.forEach(f => { if ((f.text || '').trim()) out.push('- ' + f.text.trim().replace(/\n/g, ' ')); });
+      }
+    } else {
+      out.push('# ' + title);
+    }
+    this.downloadFile(safe + '.md', out.join('\n'), 'text/markdown;charset=utf-8');
+  }
+  exportMapPNG(title) {
+    this.setState({ openMenu: null, moveFor: null, exportFor: null });
+    // the card thumbnail already holds the full-fidelity SVG — serialize and rasterize it
+    let svgEl = null;
+    document.querySelectorAll('.map-card').forEach(card => {
+      if (!svgEl && card.getAttribute('data-title') === title) svgEl = card.querySelector('.map-thumb svg');
+    });
+    if (!svgEl) { this.setState({ importError: '미리보기가 없어 이미지를 만들 수 없어요. 맵을 한 번 열어 저장한 뒤 다시 시도해 주세요.' }); return; }
+    const clone = svgEl.cloneNode(true);
+    const vb = (clone.getAttribute('viewBox') || '0 0 800 600').split(/\s+/).map(Number);
+    const W = Math.max(1, Math.ceil(vb[2])), H = Math.max(1, Math.ceil(vb[3]));
+    clone.setAttribute('width', W); clone.setAttribute('height', H);
+    clone.removeAttribute('style');
+    const bg = document.createElementNS('http://www.w3.org/2000/svg', 'rect');
+    bg.setAttribute('x', vb[0]); bg.setAttribute('y', vb[1]); bg.setAttribute('width', vb[2]); bg.setAttribute('height', vb[3]); bg.setAttribute('fill', '#f5ece5');
+    clone.insertBefore(bg, clone.firstChild);
+    // strip <text> and draw it via canvas so the exported PNG uses the page's Pretendard font
+    const texts = [];
+    Array.prototype.slice.call(clone.querySelectorAll('text')).forEach(t => {
+      texts.push({
+        x: +t.getAttribute('x'), y: +t.getAttribute('y'),
+        size: +t.getAttribute('font-size') || 13, weight: t.getAttribute('font-weight') || 400,
+        fill: t.getAttribute('fill') || '#000',
+        anchor: t.getAttribute('text-anchor') || 'start',
+        baseline: t.getAttribute('dominant-baseline') === 'central' ? 'middle' : 'alphabetic',
+        text: t.textContent,
+      });
+      t.parentNode.removeChild(t);
+    });
+    const str = new XMLSerializer().serializeToString(clone);
+    const scale = Math.min(2.5, 6000 / Math.max(W, H));
+    const img = new Image();
+    img.onload = () => {
+      const cv = document.createElement('canvas');
+      cv.width = Math.round(W * scale); cv.height = Math.round(H * scale);
+      const ctx = cv.getContext('2d');
+      ctx.drawImage(img, 0, 0, cv.width, cv.height);
+      texts.forEach(tx => {
+        ctx.font = tx.weight + ' ' + (tx.size * scale) + 'px Pretendard, sans-serif';
+        ctx.fillStyle = tx.fill;
+        ctx.textAlign = tx.anchor === 'middle' ? 'center' : 'left';
+        ctx.textBaseline = tx.baseline;
+        ctx.fillText(tx.text, (tx.x - vb[0]) * scale, (tx.y - vb[1]) * scale);
+      });
+      cv.toBlob(b => {
+        if (!b) return;
+        const url = URL.createObjectURL(b);
+        const a = document.createElement('a'); a.href = url; a.download = String(title).replace(/[\\/:*?"<>|]/g, '_') + '.png';
+        document.body.appendChild(a); a.click(); a.remove();
+        setTimeout(() => URL.revokeObjectURL(url), 2000);
+      }, 'image/png');
+    };
+    img.src = 'data:image/svg+xml;charset=utf-8,' + encodeURIComponent(str);
+  }
+  parseOutline(text, fallbackTitle) {
+    // markdown outline → nodes tree ("# title" root, "-" list items indented by 2 spaces per level)
+    const lines = String(text).split(/\r?\n/);
+    let uid = 0;
+    const mk = (t, parent) => ({ id: 'n' + (++uid), text: t, emoji: '', parent, children: [], collapsed: false, color: null });
+    const nodes = {};
+    let rootText = fallbackTitle || '가져온 맵';
+    const items = [];
+    for (const ln of lines) {
+      const h = ln.match(/^#\s+(.+)/); if (h && items.length === 0) { rootText = h[1].trim(); continue; }
+      const m = ln.match(/^(\s*)[-*+]\s+(.+)/); if (m) items.push({ depth: Math.floor(m[1].replace(/\t/g, '  ').length / 2) + 1, text: m[2].trim() });
+    }
+    const root = { id: 'root', text: rootText, emoji: '🎯', parent: null, children: [], collapsed: false, color: null, x: 0, y: 0 };
+    nodes.root = root;
+    const stack = [{ depth: 0, id: 'root' }];
+    for (const it of items) {
+      while (stack.length > 1 && stack[stack.length - 1].depth >= it.depth) stack.pop();
+      const parent = stack[stack.length - 1].id;
+      const n = mk(it.text, parent);
+      nodes[n.id] = n; nodes[parent].children.push(n.id);
+      stack.push({ depth: it.depth, id: n.id });
+    }
+    if (!root.children.length && !items.length) return null;
+    return { v: 1, nodes, floats: [], lines: [], zones: [], layoutMode: 'radial', themeKey: 'coral', needsLayout: true };
+  }
+  handleImport(file) {
+    const reader = new FileReader();
+    reader.onload = () => {
+      const text = String(reader.result || '');
+      let doc = null, title = file.name.replace(/\.(json|md|markdown|txt)$/i, '');
+      if (/\.json$/i.test(file.name)) {
+        try { const d = JSON.parse(text); if (d && d.nodes && d.nodes.root) { doc = d; title = (d.nodes.root.text || title).trim() || title; } } catch (e) {}
+        if (!doc) { this.setState({ toast: '', importError: '올바른 MindFlow JSON 파일이 아니에요' }); return; }
+        doc.needsLayout = false;
+      } else {
+        doc = this.parseOutline(text, title);
+        if (!doc) { this.setState({ importError: '가져올 수 있는 개요 항목을 찾지 못했어요' }); return; }
+        title = doc.nodes.root.text || title;
+      }
+      // avoid title collisions within the space
+      const sp = this.state.spaces.find(s => s.id === this.state.activeSpace) || this.state.spaces[0];
+      const existing = new Set((sp.maps || []).map(m => m.title));
+      let finalTitle = title, i = 2;
+      while (existing.has(finalTitle) || localStorage.getItem('mindflow_doc_' + this.mapId(finalTitle))) { finalTitle = title + ' (' + (i++) + ')'; if (i > 50) break; }
+      if (finalTitle !== title) { doc.nodes.root.text = finalTitle; }
+      try { localStorage.setItem('mindflow_doc_' + this.mapId(finalTitle), JSON.stringify(doc)); } catch (e) {}
+      const spaces = this.state.spaces.map(s => s.id === sp.id ? { ...s, maps: [...(s.maps || []), { title: finalTitle, when: '방금 가져옴', hue: '#f0663f' }] } : s);
+      this.setState({ spaces, activeSpace: sp.id, importDone: finalTitle });
+    };
+    reader.readAsText(file);
+  }
+  mapHref(title, docId) { return 'MindFlow.dc.html?map=' + (docId || this.mapId(title)) + '&title=' + encodeURIComponent(title || ''); }
+  newMapHref() { return 'MindFlow.dc.html?map=new-' + Date.now().toString(36) + Math.floor(Math.random() * 1000) + '&new=1'; }
+  openWithLoader(e, title) {
+    e.preventDefault();
+    const href = e.currentTarget.getAttribute('href');
+    this.recordRecent(title);
+    this.setState({ creatingMap: true, loaderMsg: '맵을 불러오고 있어요' });
+    setTimeout(() => { window.location.href = href; }, 900);
+  }
+  recordRecent(title) {
+    const recent = [title, ...this.state.recent.filter(t => t !== title)].slice(0, 3);
+    try { localStorage.setItem('mf_recent', JSON.stringify(recent)); } catch (e) {}
+    this.setState({ recent });
+  }
+  askRestore(title) { this.setState({ confirmRestore: title }); }
+  cancelRestore() { this.setState({ confirmRestore: null }); }
+  confirmRestoreYes() {
+    const title = this.state.confirmRestore; if (!title) return;
+    const deleted = { ...this.state.deleted }; delete deleted[title];
+    const trash = this.state.trash.filter(t => t.title !== title);
+    const entry = this.state.trash.find(t => t.title === title);
+    const isDriveFile = this.driveFiles.some(f => f.name === title);
+    let spaces = this.state.spaces, toast = '';
+    // if the map's original space is gone, reattach it to the first space
+    if (!isDriveFile && !spaces.some(s => Array.isArray(s.maps) && s.maps.some(m => m.title === title))) {
+      const first = spaces[0];
+      if (first) {
+        spaces = spaces.map((s, i) => i === 0 ? { ...s, maps: [...(s.maps || []), { title, when: '방금 복원됨', hue: '#f0663f' }] } : s);
+        toast = '원래 공간이 삭제되어 "' + first.name + '" 공간으로 복원했어요';
+      }
+    }
+    this.setState({ deleted, trash, spaces, confirmRestore: null, toast });
+  }
+  restoreCard(title) {
+    const deleted = { ...this.state.deleted }; delete deleted[title];
+    const trash = this.state.trash.filter(t => t.title !== title);
+    this.setState({ deleted, trash });
+  }
+  deleteCard(title) { const deleted = { ...this.state.deleted, [title]: true }; const favs = { ...this.state.favs }; delete favs[title]; this.setState({ deleted, favs, openMenu: null }); }
+
+  // ---- folders ----
+  activeFolders() { const sp = this.state.spaces.find(s => s.id === this.state.activeSpace); return (sp && Array.isArray(sp.folders)) ? sp.folders : []; }
+  mutateFolders(fn) {
+    const spaces = this.state.spaces.map(s => s.id === this.state.activeSpace ? { ...s, folders: fn(Array.isArray(s.folders) ? s.folders : []) } : s);
+    return spaces;
+  }
+  openNewFolder() { this.setState({ folderModal: { mode: 'new', id: null, name: '', drive: this.state.activeSpace === 'drive' } }); }
+  startRenameFolder(id) { const f = this.activeFolders().find(x => x.id === id); this.setState({ folderModal: { mode: 'rename', id, name: f ? f.name : '' }, openMenu: null }); }
+  closeFolderModal() { this.setState({ folderModal: null }); }
+  isDriveFolderId(id) { return !!(this.state.driveFolders || []).find(f => f.id === id); }
+  saveFolderModal() {
+    const fm = this.state.folderModal; if (!fm) return;
+    const name = (fm.name || '').trim().slice(0, 10); if (!name) return;
+    const isDrive = fm.drive || (fm.id && this.isDriveFolderId(fm.id));
+    if (fm.mode === 'new') {
+      if (isDrive) {
+        const id = 'df' + Date.now().toString(36);
+        this.setState({ driveFolders: [...this.state.driveFolders, { id, name }], folderModal: null });
+      } else {
+        const id = 'f' + Date.now().toString(36);
+        this.setState({ spaces: this.mutateFolders(fs => [...fs, { id, name }]), folderModal: null });
+      }
+    } else if (isDrive) {
+      this.setState({ driveFolders: this.state.driveFolders.map(f => f.id === fm.id ? { ...f, name } : f), folderModal: null });
+    } else {
+      this.setState({ spaces: this.mutateFolders(fs => fs.map(f => f.id === fm.id ? { ...f, name } : f)), folderModal: null });
+    }
+  }
+  startRenameDriveFolder(id) { const f = this.state.driveFolders.find(x => x.id === id); this.setState({ folderModal: { mode: 'rename', id, name: f ? f.name : '', drive: true }, openMenu: null }); }
+  askDeleteFolder(id) {
+    const isDrive = this.isDriveFolderId(id);
+    const cnt = isDrive ? this.driveFolderCount(id) : this.folderCount(id);
+    if (cnt > 0) return; // only empty folders
+    this.setState({ confirmDeleteFolder: id, openMenu: null });
+  }
+  cancelDeleteFolder() { this.setState({ confirmDeleteFolder: null }); }
+  confirmDeleteFolderYes() {
+    const id = this.state.confirmDeleteFolder; if (!id) return;
+    if (this.isDriveFolderId(id)) {
+      const driveMapFolders = { ...this.state.driveMapFolders };
+      for (const t in driveMapFolders) if (driveMapFolders[t] === id) delete driveMapFolders[t];
+      this.setState({ driveFolders: this.state.driveFolders.filter(f => f.id !== id), driveMapFolders, confirmDeleteFolder: null, driveFolder: this.state.driveFolder === id ? null : this.state.driveFolder });
+      return;
+    }
+    const mapFolders = { ...this.state.mapFolders };
+    for (const t in mapFolders) if (mapFolders[t] === id) delete mapFolders[t];
+    this.setState({ spaces: this.mutateFolders(fs => fs.filter(f => f.id !== id)), mapFolders, confirmDeleteFolder: null, curFolder: this.state.curFolder === id ? null : this.state.curFolder });
+  }
+  folderCount(id) {
+    const mf = this.state.mapFolders;
+    return Object.keys(mf).filter(t => mf[t] === id && !this.state.deleted[t]).length;
+  }
+  driveFolderCount(id) {
+    const mf = this.state.driveMapFolders;
+    return this.driveFiles.filter(f => mf[f.name] === id && !this.state.deleted[f.name]).length;
+  }
+  moveMapToFolder(title, folderId) {
+    if (this.state.activeSpace === 'drive') {
+      const driveMapFolders = { ...this.state.driveMapFolders };
+      if (folderId) driveMapFolders[title] = folderId; else delete driveMapFolders[title];
+      this.setState({ driveMapFolders, openMenu: null, moveFor: null });
+      return;
+    }
+    const mapFolders = { ...this.state.mapFolders };
+    if (folderId) mapFolders[title] = folderId; else delete mapFolders[title];
+    this.setState({ mapFolders, openMenu: null, moveFor: null });
+  }
+
+  renderVals() {
+    const connected = this.state.drive === 'connected';
+
+    const templates = this.templates.map(t => ({
+      name: t.name,
+      glyph: t.glyph,
+      thumbStyle: {
+        height: 112, borderRadius: 14, background: this.tintBg(t.tint),
+        border: '1px solid ' + this.hexA(t.tint, 0.25),
+        display: 'flex', alignItems: 'center', justifyContent: 'center',
+        fontSize: t.name === '모두 보기' ? 30 : 40, color: t.tint
+      },
+    }));
+
+    const isDriveSpace = this.state.activeSpace === 'drive';
+    const activeSpaceObj = this.state.spaces.find(s => s.id === this.state.activeSpace) || this.state.spaces[0];
+    const isHome = !isDriveSpace && !!(activeSpaceObj && activeSpaceObj.home);
+    const activeMaps = (!isDriveSpace && activeSpaceObj && Array.isArray(activeSpaceObj.maps)) ? activeSpaceObj.maps : [];
+    const maps = activeMaps.map(m => ({
+      title: m.title, when: m.when, href: this.mapHref(m.title, m.docId), docId: m.docId, sketch: this.realPreview(m.title, m.hue, m.docId) || this.miniPreview(m.hue, m.title), badge: '',
+      badgeStyle: { display: 'none' },
+      thumbStyle: {
+        height: 150, background: 'linear-gradient(135deg,#fdfbfa,' + this.hexA(m.hue, 0.06) + ')',
+        borderBottom: '1px solid #f0e6dd', display: 'flex', alignItems: 'center', justifyContent: 'center',
+        fontSize: 30, color: this.hexA(m.hue, 0.5)
+      },
+    }));
+
+    const driveHue = '#34A853';
+    const dFolders = this.state.driveFolders || [];
+    const driveFolder = this.state.driveFolder && dFolders.find(f => f.id === this.state.driveFolder) ? this.state.driveFolder : null;
+    const dmf = this.state.driveMapFolders || {};
+    const driveCards = this.driveFiles
+      .filter(f => (dmf[f.name] || null) === driveFolder)
+      .map(f => {
+        const openable = /\.xmind$/.test(f.name);
+        return {
+          title: f.name, when: openable ? 'Google Drive' : '이 형식은 열 수 없어요', href: this.mapHref(f.name),
+          sketch: openable ? (this.realPreview(f.name, driveHue) || this.miniPreview(driveHue, f.name)) : f.icon, badge: 'Drive', openable,
+          badgeStyle: {
+            position: 'absolute', top: 12, right: 46, zIndex: 2, display: 'flex', alignItems: 'center', gap: 4,
+            padding: '3px 8px', borderRadius: 999, background: openable ? this.hexA(driveHue, 0.12) : '#eeeae5', color: openable ? '#1e7a3a' : '#b6a596',
+            fontSize: 11, fontWeight: 700
+          },
+          thumbStyle: {
+            height: 150, background: openable ? 'linear-gradient(135deg,#fff,' + this.hexA(driveHue, 0.07) + ')' : '#f4f0eb',
+            borderBottom: '1px solid #f0e6dd', display: 'flex', alignItems: 'center', justifyContent: 'center',
+            fontSize: 34, color: openable ? this.hexA(driveHue, 0.6) : '#c9b8a9',
+            filter: openable ? 'none' : 'grayscale(1) opacity(.55)'
+          },
+        };
+      });
+
+    // folders
+    const folders = (!isDriveSpace && activeSpaceObj && Array.isArray(activeSpaceObj.folders)) ? activeSpaceObj.folders : [];
+    const curFolder = this.state.curFolder && folders.find(f => f.id === this.state.curFolder) ? this.state.curFolder : null;
+    const mapFolders = this.state.mapFolders || {};
+    const allCardsRaw = (isDriveSpace ? (connected ? driveCards : []) : maps)
+      .filter(c => !this.state.deleted[c.title])
+      .filter(c => isDriveSpace ? true : (curFolder ? mapFolders[c.title] === curFolder : !mapFolders[c.title] || !folders.find(f => f.id === mapFolders[c.title])));
+    const favs = this.state.favs || {};
+    const allCards = allCardsRaw.map(c => {
+      const on = !!favs[c.title];
+      const menuOpen = this.state.openMenu === c.title;
+      return Object.assign({}, c, {
+        favIcon: on ? '★' : '☆',
+        favStyle: {
+          position: 'absolute', top: 10, left: 10, zIndex: 3,
+          width: 28, height: 28, borderRadius: '50%', background: on ? '#fff' : 'rgba(255,255,255,.9)',
+          border: '1px solid ' + (on ? '#f0c24a' : '#ecdfd5'),
+          display: c.openable === false ? 'none' : 'flex', alignItems: 'center', justifyContent: 'center',
+          fontSize: 15, lineHeight: 1, color: on ? '#e0a53c' : '#b6a596', cursor: 'pointer',
+          boxShadow: '0 2px 6px rgba(0,0,0,.12)', opacity: on ? 1 : 0, transition: 'opacity .15s, transform .1s',
+        },
+        onFav: (e) => { e.preventDefault(); e.stopPropagation(); if (c.openable !== false) this.toggleFav(c.title); },
+        favLabel: on ? '즐겨찾기 해제' : '즐겨찾기',
+        menuBtnStyle: {
+          position: 'absolute', top: 10, right: 10, zIndex: 4,
+          width: 28, height: 28, borderRadius: 8, background: 'rgba(255,255,255,.92)',
+          border: '1px solid #ecdfd5', display: 'flex', alignItems: 'center', justifyContent: 'center',
+          fontSize: 13, lineHeight: 1, color: '#7c6d60', cursor: 'pointer',
+          boxShadow: '0 2px 6px rgba(0,0,0,.12)', opacity: menuOpen ? 1 : 0, transition: 'opacity .15s',
+        },
+        onMenu: (e) => { e.preventDefault(); e.stopPropagation(); this.toggleMenu(c.title); },
+        menuStyle: {
+          position: 'absolute', top: 44, right: 10, zIndex: 20, width: 150,
+          background: '#fff', border: '1px solid #ecdfd5', borderRadius: 10,
+          boxShadow: '0 10px 28px rgba(0,0,0,.16)', padding: '5px 0',
+          display: menuOpen ? 'block' : 'none',
+        },
+        favRowStyle: { display: c.openable === false ? 'none' : 'flex', alignItems: 'center', gap: 9, padding: '9px 13px', fontSize: 13, cursor: 'pointer', color: '#33281f' },
+        menuDividerStyle: (() => {
+          const hasFav = c.openable !== false;
+          const hasMove = isDriveSpace ? (!driveFolder && dFolders.length > 0) : (!curFolder && folders.length > 0);
+          const hasUnfolder = isDriveSpace ? !!driveFolder : !!curFolder;
+          return { display: (hasFav || hasMove || hasUnfolder) ? 'block' : 'none', height: 1, background: '#f0e6dd', margin: '2px 0' };
+        })(),
+        onMenuFav: (e) => { e.preventDefault(); e.stopPropagation(); if (c.openable !== false) this.toggleFav(c.title); this.setState({ openMenu: null, moveFor: null, exportFor: null }); },
+        onMenuExport: (e) => { e.preventDefault(); e.stopPropagation(); this.exportMap(c.title, c.docId); },
+        onMenuExportPNG: (e) => { e.preventDefault(); e.stopPropagation(); this.exportMapPNG(c.title); },
+        exportRowStyle: { display: c.openable === false ? 'none' : 'flex', alignItems: 'center', gap: 9, padding: '9px 13px', fontSize: 13, cursor: 'pointer', color: '#33281f' },
+        onMenuDelete: (e) => { e.preventDefault(); e.stopPropagation(); this.askDelete(c.title); },
+        onOpen: (e) => { e.preventDefault(); if (c.openable !== false) this.setState({ selectedCard: c.title }); },
+        onDblOpen: (e) => { if (e.target.closest && e.target.closest('.menu-btn,.menu-row,.fav-btn')) { e.preventDefault(); return; } if (c.openable === false) { e.preventDefault(); return; } this.openWithLoader(e, c.title); },
+        normalRowsStyle: { display: (this.state.moveFor === c.title || this.state.exportFor === c.title) ? 'none' : 'block' },
+        moveRowsStyle: { display: this.state.moveFor === c.title ? 'block' : 'none' },
+        exportRowsStyle: { display: this.state.exportFor === c.title ? 'block' : 'none' },
+        onExportMenu: (e) => { e.preventDefault(); e.stopPropagation(); this.setState({ exportFor: c.title }); },
+        onExportBack: (e) => { e.preventDefault(); e.stopPropagation(); this.setState({ exportFor: null }); },
+        onMenuExportMD: (e) => { e.preventDefault(); e.stopPropagation(); this.exportMapOutline(c.title, c.docId); },
+        moveRowStyle: { display: (isDriveSpace ? (!driveFolder && dFolders.length) : (!curFolder && folders.length)) ? 'flex' : 'none', alignItems: 'center', gap: 9, padding: '9px 13px', fontSize: 13, cursor: 'pointer', color: '#33281f' },
+        unfolderRowStyle: { display: (isDriveSpace ? driveFolder : curFolder) ? 'flex' : 'none', alignItems: 'center', gap: 9, padding: '9px 13px', fontSize: 13, cursor: 'pointer', color: '#33281f' },
+        onMoveMenu: (e) => { e.preventDefault(); e.stopPropagation(); this.setState({ moveFor: c.title }); },
+        onMoveBack: (e) => { e.preventDefault(); e.stopPropagation(); this.setState({ moveFor: null }); },
+        onUnfolder: (e) => { e.preventDefault(); e.stopPropagation(); this.moveMapToFolder(c.title, null); },
+        moveTargets: (isDriveSpace ? dFolders : folders).map(f => ({ name: f.name, onClick: (e) => { e.preventDefault(); e.stopPropagation(); this.moveMapToFolder(c.title, f.id); } })),
+        cardStyle: (() => { const selC = this.state.selectedCard === c.title; const grey = c.openable === false; return { border: selC ? '2px solid #f0663f' : '1px solid #ecdfd5', borderRadius: 14, background: grey ? '#fbf8f5' : '#fff', overflow: 'hidden', cursor: grey ? 'default' : 'pointer', transition: 'border-color .14s, box-shadow .14s, opacity .14s', display: 'block', position: 'relative', opacity: this.state.draggingMap === c.title ? 0.45 : 1, boxShadow: selC ? '0 0 0 3px rgba(240,102,63,.18)' : 'none', margin: selC ? '-1px' : 0, color: grey ? '#b6a596' : '#33281f' }; })(),
+        draggable: true,
+        onDragStart: (e) => {
+          e.dataTransfer.effectAllowed = 'move';
+          try { e.dataTransfer.setData('text/plain', c.title); } catch (err) {}
+          // custom crisp drag ghost (native one is too faint)
+          try {
+            const blank = document.createElement('img');
+            blank.src = 'data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7';
+            e.dataTransfer.setDragImage(blank, 0, 0);
+            const rect = e.currentTarget.getBoundingClientRect();
+            const scale = 1;
+            // keep the grab point: ghost sits under the pointer exactly where the card was grabbed
+            const offX = (e.clientX - rect.left) * scale, offY = (e.clientY - rect.top) * scale;
+            const ghost = e.currentTarget.cloneNode(true);
+            ghost.style.cssText = 'position:fixed;left:0;top:0;width:' + Math.round(rect.width * scale) + 'px;margin:0;opacity:.75;pointer-events:none;z-index:9999;border:1px solid #ecdfd5;border-radius:14px;background:#fff;overflow:hidden;box-shadow:0 18px 44px rgba(0,0,0,.28);transform:translate(' + (e.clientX - offX) + 'px,' + (e.clientY - offY) + 'px)';
+            document.body.appendChild(ghost);
+            this._dragGhostEl = ghost;
+            this._dragGhostMove = (ev) => { if (this._dragGhostEl) this._dragGhostEl.style.transform = 'translate(' + (ev.clientX - offX) + 'px,' + (ev.clientY - offY) + 'px)'; };
+            document.addEventListener('dragover', this._dragGhostMove);
+          } catch (err) {}
+          this.setState({ draggingMap: c.title, openMenu: null, moveFor: null });
+        },
+        onDragEnd: () => {
+          if (this._dragGhostEl) { this._dragGhostEl.remove(); this._dragGhostEl = null; }
+          if (this._dragGhostMove) { document.removeEventListener('dragover', this._dragGhostMove); this._dragGhostMove = null; }
+          this.setState({ draggingMap: null, dragOverFolder: null });
+        },
+      });
+    });
+
+    const driveFolderCards = (isDriveSpace && connected && !driveFolder) ? dFolders.map(f => {
+      const menuOpen = this.state.openMenu === 'folder:' + f.id;
+      const cnt = this.driveFolderCount(f.id);
+      const over = this.state.dragOverFolder === f.id;
+      return {
+        name: f.name, count: cnt,
+        onOpen: () => this.setState({ driveFolder: f.id, openMenu: null }),
+        onMenu: (e) => { e.preventDefault(); e.stopPropagation(); this.setState({ openMenu: menuOpen ? null : 'folder:' + f.id }); },
+        menuBtnStyle: {
+          position: 'absolute', top: 10, right: 10, zIndex: 4,
+          width: 28, height: 28, borderRadius: 8, background: 'rgba(255,255,255,.92)',
+          border: '1px solid #ecdfd5', display: 'flex', alignItems: 'center', justifyContent: 'center',
+          fontSize: 13, lineHeight: 1, color: '#7c6d60', cursor: 'pointer',
+          boxShadow: '0 2px 6px rgba(0,0,0,.12)', opacity: menuOpen ? 1 : 0, transition: 'opacity .15s',
+        },
+        menuStyle: {
+          position: 'absolute', top: 44, right: 10, zIndex: 20, width: 150,
+          background: '#fff', border: '1px solid #ecdfd5', borderRadius: 10,
+          boxShadow: '0 10px 28px rgba(0,0,0,.16)', padding: '5px 0',
+          display: menuOpen ? 'block' : 'none',
+        },
+        onRename: (e) => { e.preventDefault(); e.stopPropagation(); this.startRenameDriveFolder(f.id); },
+        onDelete: (e) => { e.preventDefault(); e.stopPropagation(); this.askDeleteFolder(f.id); },
+        deleteRowStyle: {
+          display: 'flex', alignItems: 'center', gap: 9, padding: '9px 13px', fontSize: 13,
+          cursor: cnt > 0 ? 'not-allowed' : 'pointer', color: cnt > 0 ? '#c9b8a9' : '#d64545',
+        },
+        cardStyle: { border: over ? '2px dashed #f0663f' : '1px solid #ecdfd5', borderRadius: 14, background: over ? '#fdeee7' : '#fff', cursor: 'pointer', transition: 'border-color .14s, box-shadow .14s, background .14s', position: 'relative', display: 'flex', alignItems: 'center', gap: 14, padding: over ? '17px 17px' : '18px 18px', boxShadow: over ? '0 6px 18px rgba(240,102,63,.18)' : 'none' },
+        onDragOver: (e) => { e.preventDefault(); e.dataTransfer.dropEffect = 'move'; if (this.state.dragOverFolder !== f.id) this.setState({ dragOverFolder: f.id }); },
+        onDragLeave: () => { if (this.state.dragOverFolder === f.id) this.setState({ dragOverFolder: null }); },
+        onDrop: (e) => { e.preventDefault(); const t = this.state.draggingMap || (e.dataTransfer ? e.dataTransfer.getData('text/plain') : ''); if (t) this.moveMapToFolder(t, f.id); this.setState({ draggingMap: null, dragOverFolder: null }); },
+      };
+    }) : [];
+    const folderCards = (isDriveSpace) ? driveFolderCards : (!curFolder) ? folders.map(f => {
+      const menuOpen = this.state.openMenu === 'folder:' + f.id;
+      const cnt = this.folderCount(f.id);
+      return {
+        name: f.name, count: cnt,
+        onOpen: () => this.setState({ curFolder: f.id, openMenu: null }),
+        onMenu: (e) => { e.preventDefault(); e.stopPropagation(); this.setState({ openMenu: menuOpen ? null : 'folder:' + f.id }); },
+        menuBtnStyle: {
+          position: 'absolute', top: 10, right: 10, zIndex: 4,
+          width: 28, height: 28, borderRadius: 8, background: 'rgba(255,255,255,.92)',
+          border: '1px solid #ecdfd5', display: 'flex', alignItems: 'center', justifyContent: 'center',
+          fontSize: 13, lineHeight: 1, color: '#7c6d60', cursor: 'pointer',
+          boxShadow: '0 2px 6px rgba(0,0,0,.12)', opacity: menuOpen ? 1 : 0, transition: 'opacity .15s',
+        },
+        menuStyle: {
+          position: 'absolute', top: 44, right: 10, zIndex: 20, width: 150,
+          background: '#fff', border: '1px solid #ecdfd5', borderRadius: 10,
+          boxShadow: '0 10px 28px rgba(0,0,0,.16)', padding: '5px 0',
+          display: menuOpen ? 'block' : 'none',
+        },
+        cardStyle: (() => { const over = this.state.dragOverFolder === f.id; return { border: over ? '2px dashed #f0663f' : '1px solid #ecdfd5', borderRadius: 14, background: over ? '#fdeee7' : '#fff', cursor: 'pointer', transition: 'border-color .14s, box-shadow .14s, background .14s', position: 'relative', display: 'flex', alignItems: 'center', gap: 14, padding: over ? '17px 17px' : '18px 18px', boxShadow: over ? '0 6px 18px rgba(240,102,63,.18)' : 'none' }; })(),
+        onDragOver: (e) => { e.preventDefault(); e.dataTransfer.dropEffect = 'move'; if (this.state.dragOverFolder !== f.id) this.setState({ dragOverFolder: f.id }); },
+        onDragLeave: () => { if (this.state.dragOverFolder === f.id) this.setState({ dragOverFolder: null }); },
+        onDrop: (e) => { e.preventDefault(); const t = this.state.draggingMap || (e.dataTransfer ? e.dataTransfer.getData('text/plain') : ''); if (t) this.moveMapToFolder(t, f.id); this.setState({ draggingMap: null, dragOverFolder: null }); },
+        onRename: (e) => { e.preventDefault(); e.stopPropagation(); this.startRenameFolder(f.id); },
+        onDelete: (e) => { e.preventDefault(); e.stopPropagation(); this.askDeleteFolder(f.id); },
+        deleteRowStyle: {
+          display: 'flex', alignItems: 'center', gap: 9, padding: '9px 13px', fontSize: 13,
+          cursor: cnt > 0 ? 'not-allowed' : 'pointer', color: cnt > 0 ? '#c9b8a9' : '#d64545',
+        },
+      };
+    }) : [];
+
+    const favItems = Object.keys(favs).filter(k => favs[k]).map(t => {
+      const isDrive = this.sourceOf(t) === 'drive';
+      return {
+        title: t,
+        tag: isDrive ? 'Drive' : '',
+        tagStyle: isDrive
+          ? { flexShrink: 0, marginLeft: 'auto', display: 'flex', alignItems: 'center', padding: '1px 6px', borderRadius: 999, fontSize: 9.5, fontWeight: 700, background: this.hexA('#34A853', 0.12), color: '#1e7a3a' }
+          : { display: 'none' },
+      };
+    });
+    const favOpen = !!this.state.favOpen;
+    const showDriveConnect = isDriveSpace && !connected;
+    const isEmpty = !showDriveConnect && allCards.length === 0;
+
+    const baseByTitle = {};
+    maps.concat(driveCards).forEach(c => { baseByTitle[c.title] = c; });
+    const recentCards = this.state.recent
+      .filter(t => baseByTitle[t] && !this.state.deleted[t])
+      .map(t => Object.assign({}, baseByTitle[t], {
+        onOpen: (e) => { e.preventDefault(); this.setState({ selectedCard: t }); },
+        onDblOpen: (e) => { if (e.target.closest && e.target.closest('.menu-btn,.menu-row,.fav-btn')) { e.preventDefault(); return; } this.openWithLoader(e, t); },
+        cardStyle: (() => { const selC = this.state.selectedCard === t; return { border: selC ? '2px solid #f0663f' : '1px solid #ecdfd5', borderRadius: 14, background: '#fff', overflow: 'hidden', cursor: 'pointer', transition: 'border-color .14s, box-shadow .14s', display: 'block', position: 'relative', boxShadow: selC ? '0 0 0 3px rgba(240,102,63,.18)' : 'none', margin: selC ? '-1px' : 0 }; })(),
+      }));
+    const recentSectionStyle = { display: (!isDriveSpace && !curFolder && recentCards.length) ? 'block' : 'none' };
+    const curFolderObj = curFolder ? folders.find(f => f.id === curFolder) : null;
+    const folderEmpty = !!curFolder && allCards.length === 0;
+
+    return {
+      templates, maps, allCards,
+      driveFiles: connected ? this.driveFiles.map(f => ({ name: f.name, icon: this.fileIconSvg(f.name) })) : [],
+      driveBadge: connected ? '연결됨' : '연결',
+      driveIconStyle: {
+        width: 15, height: 15, borderRadius: 3, display: 'inline-block',
+        background: connected ? '#34A853' : '#c9b8a9',
+      },
+      driveListWrapStyle: {
+        overflow: 'hidden', flexShrink: 0, maxHeight: connected ? (this.driveFiles.length * 34 + 34) + 'px' : '0px',
+        opacity: connected ? 1 : 0, transition: 'max-height .32s cubic-bezier(.4,0,.2,1), opacity .24s ease',
+      },
+      authChoosing: this.state.auth === 'choose',
+      authConnecting: this.state.auth === 'connecting',
+      authOverlayStyle: {
+        position: 'fixed', inset: 0, background: 'rgba(30,20,14,.42)', backdropFilter: 'blur(2px)',
+        display: this.state.auth ? 'flex' : 'none', alignItems: 'center', justifyContent: 'center', zIndex: 100,
+      },
+      onDriveClick: () => this.onDriveClick(),
+      openDriveAuth: () => this.openDriveAuth(),
+      driveNavStyle: {
+        display: 'flex', alignItems: 'center', gap: 10, padding: '9px 10px', borderRadius: 9,
+        cursor: 'pointer', fontSize: 13.5, fontWeight: isDriveSpace ? 600 : 500,
+        background: isDriveSpace ? '#fdeee7' : 'transparent', color: isDriveSpace ? '#d9542f' : '#7c6d60',
+      },
+      driveDisconnectStyle: {
+        display: (isDriveSpace && connected) ? 'flex' : 'none', alignItems: 'center',
+        padding: '0 12px', height: 38, borderRadius: 10, border: '1px solid #ecdfd5', background: '#fff',
+        fontSize: 12.5, color: '#9c8b7e', cursor: 'pointer', whiteSpace: 'nowrap',
+      },
+      driveConnectStyle: {
+        display: showDriveConnect ? 'flex' : 'none', flexDirection: 'column', alignItems: 'center', justifyContent: 'center',
+        minHeight: 'calc(100vh - 190px)', padding: '20px',
+      },
+      chooseAccount: () => this.chooseAccount(),
+      closeAuth: () => this.closeAuth(),
+      disconnectDrive: () => this.disconnectDrive(),
+      favItems,
+      favCount: favItems.length ? String(favItems.length) : '',
+      toggleFavList: () => this.toggleFavList(),
+      favListWrapStyle: {
+        overflow: 'hidden', flexShrink: 0,
+        maxHeight: favOpen ? (Math.max(1, favItems.length) * 34 + 12) + 'px' : '0px',
+        opacity: favOpen ? 1 : 0, transition: 'max-height .32s cubic-bezier(.4,0,.2,1), opacity .24s ease',
+      },
+      favEmptyStyle: { display: favItems.length ? 'none' : 'block', padding: '7px 10px 7px 30px', fontSize: '11.5px', color: '#c9b8a9' },
+      confirmTitle: this.state.confirmDelete || '',
+      confirmDeleteHeading: this.state.confirmDelete && this.sourceOf(this.state.confirmDelete) === 'drive' ? 'Google Drive에서 삭제할까요?' : '삭제하시겠습니까?',
+      confirmDeleteBody: this.state.confirmDelete
+        ? (this.sourceOf(this.state.confirmDelete) === 'drive'
+            ? "'" + this.state.confirmDelete + "' 파일을 삭제하면 연결된 Google Drive의 원본 파일도 함께 휴지통으로 이동됩니다."
+            : "'" + this.state.confirmDelete + "' 맵을 휴지통으로 이동합니다. 휴지통에서 다시 복원할 수 있어요.")
+        : '',
+      confirmDeleteBtn: this.state.confirmDelete && this.sourceOf(this.state.confirmDelete) === 'drive' ? 'Drive에서 삭제' : '삭제',
+      confirmOverlayStyle: {
+        position: 'fixed', inset: 0, background: 'rgba(30,20,14,.42)', backdropFilter: 'blur(2px)',
+        display: this.state.confirmDelete ? 'flex' : 'none', alignItems: 'center', justifyContent: 'center', zIndex: 120,
+      },
+      cancelDelete: () => this.cancelDelete(),
+      confirmDeleteYes: () => this.confirmDeleteYes(),
+      confirmRestoreTitle: this.state.confirmRestore || '',
+      restoreOverlayStyle: {
+        position: 'fixed', inset: 0, background: 'rgba(30,20,14,.42)', backdropFilter: 'blur(2px)',
+        display: this.state.confirmRestore ? 'flex' : 'none', alignItems: 'center', justifyContent: 'center', zIndex: 120,
+      },
+      cancelRestore: () => this.cancelRestore(),
+      toastVisible: !!(this.state.toast || this.state.importDone || this.state.importError),
+      toastTitle: this.state.importError ? '가져오기 실패' : this.state.importDone ? '가져오기 완료' : '복원 완료',
+      toastMsg: this.state.importError || (this.state.importDone ? '"' + this.state.importDone + '" 맵을 현재 공간에 추가했어요' : this.state.toast || ''),
+      closeToast: () => this.setState({ toast: '', importDone: null, importError: null }),
+      confirmRestoreYes: () => this.confirmRestoreYes(),
+      toggleTrashList: () => this.toggleTrashList(),
+      recentCards, recentSectionStyle,
+      newMapHref: this.newMapHref(),
+      creatingMap: !!this.state.creatingMap,
+      onNewMapClick: (e) => {
+        e.preventDefault();
+        const href = e.currentTarget.getAttribute('href');
+        this.setState({ creatingMap: true, loaderMsg: '새 마인드맵을 준비하고 있어요' });
+        setTimeout(() => { window.location.href = href; }, 900);
+      },
+      loaderMsg: this.state.loaderMsg || '새 마인드맵을 준비하고 있어요',
+      spaceTitle: isDriveSpace
+        ? ('Google Drive' + (driveFolder ? ' / ' + (this.driveFolders.find(f => f.id === driveFolder) || {}).name : ''))
+        : (curFolderObj ? (activeSpaceObj ? activeSpaceObj.name : '') + ' / ' + curFolderObj.name : (activeSpaceObj ? activeSpaceObj.name : '일반 공간')),
+      backBtnStyle: { display: (curFolder || driveFolder) ? 'flex' : 'none', alignItems: 'center', justifyContent: 'center', width: 34, height: 34, border: '1px solid #ecdfd5', borderRadius: 10, background: '#fff', color: '#7c6d60', cursor: 'pointer', padding: 0, flexShrink: 0 },
+      backToSpace: () => this.setState({ curFolder: null, driveFolder: null, openMenu: null }),
+      newFolderBtnStyle: { display: ((isDriveSpace && (!connected || driveFolder)) || curFolder) ? 'none' : 'flex', alignItems: 'center', gap: 6, height: 38, padding: '0 14px', border: '1px solid #ecdfd5', borderRadius: 10, background: '#fff', color: '#33281f', fontFamily: 'inherit', fontSize: 13, fontWeight: 600, cursor: 'pointer', whiteSpace: 'nowrap', flexShrink: 0 },
+      openNewFolder: () => this.openNewFolder(),
+      folderCards,
+      foldersSectionStyle: { display: folderCards.length ? 'block' : 'none' },
+      folderEmptyStyle: { display: folderEmpty ? 'flex' : 'none', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', minHeight: 'calc(100vh - 190px)', padding: '20px' },
+      folderModalTitle: this.state.folderModal && this.state.folderModal.mode === 'rename' ? '폴더 이름 변경' : '새 폴더 만들기',
+      folderModalBtn: this.state.folderModal && this.state.folderModal.mode === 'rename' ? '변경' : '만들기',
+      folderModalName: this.state.folderModal ? this.state.folderModal.name : '',
+      onFolderModalName: (e) => this.setState({ folderModal: { ...this.state.folderModal, name: e.target.value.slice(0, 10) } }),
+      onFolderModalKey: (e) => { if (e.key === 'Enter') this.saveFolderModal(); },
+      folderModalOverlayStyle: {
+        position: 'fixed', inset: 0, background: 'rgba(30,20,14,.42)', backdropFilter: 'blur(2px)',
+        display: this.state.folderModal ? 'flex' : 'none', alignItems: 'center', justifyContent: 'center', zIndex: 130,
+      },
+      folderSaveBtnStyle: (() => { const ok = this.state.folderModal && (this.state.folderModal.name || '').trim(); return { flex: 1, height: 44, border: 'none', borderRadius: 11, background: ok ? '#f0663f' : '#f2c4b3', color: '#fff', fontFamily: 'inherit', fontSize: 14, fontWeight: 700, cursor: ok ? 'pointer' : 'default' }; })(),
+      closeFolderModal: () => this.closeFolderModal(),
+      saveFolderModal: () => this.saveFolderModal(),
+      deleteFolderOverlayStyle: {
+        position: 'fixed', inset: 0, background: 'rgba(30,20,14,.42)', backdropFilter: 'blur(2px)',
+        display: this.state.confirmDeleteFolder ? 'flex' : 'none', alignItems: 'center', justifyContent: 'center', zIndex: 130,
+      },
+      confirmDeleteFolderName: (() => { const f = this.activeFolders().find(x => x.id === this.state.confirmDeleteFolder); return f ? f.name : ''; })(),
+      cancelDeleteFolder: () => this.cancelDeleteFolder(),
+      confirmDeleteFolderYes: () => this.confirmDeleteFolderYes(),
+      spaceList: this.state.spaces.map(s => {
+        const active = s.id === this.state.activeSpace;
+        const menuOpen = this.state.spaceMenu === s.id;
+        const editing = this.state.editingSpace === s.id;
+        const hasMaps = Array.isArray(s.maps) && s.maps.some(m => !this.state.deleted[m.title]);
+        const canManage = true;
+        const isLastSpace = this.state.spaces.length <= 1;
+        return {
+          name: s.name,
+          icon: s.home ? '⌂' : '',
+          iconStyle: s.home
+            ? { fontSize: 15, width: 15, textAlign: 'center', flexShrink: 0 }
+            : { width: 15, height: 15, borderRadius: 5, flexShrink: 0, background: s.color, display: 'inline-block' },
+          onClick: () => this.setActiveSpace(s.id),
+          style: {
+            display: 'flex', alignItems: 'center', gap: 10, padding: '9px 10px', borderRadius: 9,
+            cursor: 'pointer', fontSize: 13.5, fontWeight: active ? 600 : 500,
+            background: active ? '#fdeee7' : 'transparent', color: active ? '#d9542f' : '#7c6d60',
+          },
+          editing, notEditing: !editing,
+          editName: this.state.editingSpaceName,
+          onRenameInput: (e) => this.onRenameSpaceInput(e.target.value),
+          onRenameKey: (e) => { if (e.key === 'Enter') { e.preventDefault(); this.commitRenameSpace(); } else if (e.key === 'Escape') { this.setState({ editingSpace: null }); } },
+          commitRename: () => this.commitRenameSpace(),
+          dotStyle: {
+            display: canManage ? 'flex' : 'none', alignItems: 'center', justifyContent: 'center',
+            width: 22, height: 22, borderRadius: 6, marginLeft: 'auto', flexShrink: 0,
+            color: '#9c8b7e', cursor: 'pointer', opacity: menuOpen ? 1 : 0, transition: 'opacity .15s',
+          },
+          onMenu: (e) => {
+            e.preventDefault(); e.stopPropagation();
+            const r = e.currentTarget.getBoundingClientRect();
+            this._spaceMenuPos = { top: r.bottom + 6, left: Math.max(8, r.right - 168) };
+            this.toggleSpaceMenu(s.id);
+          },
+          menuStyle: {
+            position: 'fixed',
+            top: menuOpen && this._spaceMenuPos ? this._spaceMenuPos.top : -9999,
+            left: menuOpen && this._spaceMenuPos ? this._spaceMenuPos.left : -9999,
+            zIndex: 60, width: 168,
+            background: '#fff', border: '1px solid #ecdfd5', borderRadius: 10,
+            boxShadow: '0 10px 28px rgba(0,0,0,.16)', padding: '5px 0',
+            display: menuOpen ? 'block' : 'none',
+          },
+          onRename: (e) => { e.preventDefault(); e.stopPropagation(); this.startRenameSpace(s.id); },
+          onDelete: (e) => { e.preventDefault(); e.stopPropagation(); this.askDeleteSpace(s.id); },
+          deleteRowStyle: {
+            display: 'flex', alignItems: 'center', gap: 9, padding: '9px 13px', fontSize: 13,
+            cursor: (hasMaps || isLastSpace) ? 'not-allowed' : 'pointer', color: (hasMaps || isLastSpace) ? '#c9b8a9' : '#d64545',
+          },
+          deleteHintStyle: { display: (hasMaps || isLastSpace) ? 'block' : 'none', padding: '2px 13px 8px', fontSize: 11, color: '#c9b8a9', lineHeight: 1.4 },
+          deleteHint: hasMaps ? '맵이 없는 공간만 삭제할 수 있어요' : '마지막 공간은 삭제할 수 없어요',
+        };
+      }),
+      confirmDeleteSpaceName: (this.state.spaces.find(s => s.id === this.state.confirmDeleteSpace) || {}).name || '',
+      deleteSpaceOverlayStyle: {
+        position: 'fixed', inset: 0, background: 'rgba(30,20,14,.42)', backdropFilter: 'blur(2px)',
+        display: this.state.confirmDeleteSpace ? 'flex' : 'none', alignItems: 'center', justifyContent: 'center', zIndex: 140,
+      },
+      cancelDeleteSpace: () => this.cancelDeleteSpace(),
+      confirmDeleteSpaceYes: () => this.confirmDeleteSpaceYes(),
+      openImport: () => { if (this._importEl) { this._importEl.value = ''; this._importEl.click(); } },
+      setImportRef: (el) => { this._importEl = el; },
+      onImportFile: (e) => { const f = e.target.files && e.target.files[0]; if (f) this.handleImport(f); },
+      importBtnStyle: { display: (isDriveSpace || curFolder) ? 'none' : 'flex', alignItems: 'center', gap: 6, height: 38, padding: '0 14px', border: '1px solid #ecdfd5', borderRadius: 10, background: '#fff', color: '#33281f', fontFamily: 'inherit', fontSize: 13, fontWeight: 600, cursor: 'pointer', whiteSpace: 'nowrap', flexShrink: 0 },
+      openNewSpace: () => this.openNewSpace(),
+      closeNewSpace: () => this.closeNewSpace(),
+      onNewSpaceName: (e) => this.onNewSpaceName(e.target.value),
+      onNewSpaceKey: (e) => this.onNewSpaceKey(e),
+      createSpace: () => this.createSpace(),
+      newSpaceName: this.state.newSpaceName,
+      newSpaceOverlayStyle: {
+        position: 'fixed', inset: 0, background: 'rgba(30,20,14,.42)', backdropFilter: 'blur(2px)',
+        display: this.state.newSpaceOpen ? 'flex' : 'none', alignItems: 'center', justifyContent: 'center', zIndex: 130,
+      },
+      spaceColors: this.SPACE_COLORS.map(c => { const sel = this.state.newSpaceColor === c; return { onClick: () => this.pickSpaceColor(c), style: { width: 30, height: 30, borderRadius: '50%', background: c, border: sel ? '2px solid #33281f' : '2px solid #fff', boxShadow: sel ? '0 0 0 2px ' + c : '0 0 0 1px #ecdfd5', cursor: 'pointer', padding: 0 } }; }),
+      createBtnStyle: {
+        flex: 1, height: 44, border: 'none', borderRadius: 11,
+        background: this.state.newSpaceName.trim() ? '#f0663f' : '#e7d6ca',
+        color: '#fff', fontFamily: 'inherit', fontSize: 14, fontWeight: 700,
+        cursor: this.state.newSpaceName.trim() ? 'pointer' : 'default',
+      },
+      userName: this.state.userName,
+      userInitial: (this.state.userName || 'M').trim().charAt(0).toUpperCase() || 'M',
+      toggleSettings: () => this.toggleSettings(),
+      onNameInput: (e) => this.onNameInput(e.target.value),
+      onNameBlur: () => this.onNameBlur(),
+      logout: () => this.logout(),
+      cancelLogout: () => this.cancelLogout(),
+      confirmLogoutYes: () => this.confirmLogoutYes(),
+      logoutOverlayStyle: {
+        position: 'fixed', inset: 0, background: 'rgba(30,20,14,.42)', backdropFilter: 'blur(2px)',
+        display: this.state.confirmLogout ? 'flex' : 'none', alignItems: 'center', justifyContent: 'center', zIndex: 140,
+      },
+      settingsPopupStyle: {
+        position: 'absolute', top: 'calc(100% + 6px)', left: 0, width: 236,
+        background: '#fff', border: '1px solid #ecdfd5', borderRadius: 14,
+        boxShadow: '0 12px 32px rgba(0,0,0,.16)', padding: 0, zIndex: 40, overflow: 'hidden',
+        display: this.state.settingsOpen ? 'block' : 'none',
+      },
+      userEmail: 'mine@wantedlab.com',
+      nameEditing: !!this.state.nameEditing,
+      nameNotEditing: !this.state.nameEditing,
+      startNameEdit: (e) => { e.stopPropagation(); this.setState({ nameEditing: true }); },
+      onNameEditDone: () => { this.onNameBlur(); this.setState({ nameEditing: false }); },
+      onNameKey: (e) => { e.stopPropagation(); if (e.key === 'Enter' || e.key === 'Escape') { e.target.blur(); } },
+      setNameInputRef: (el) => { if (el && this.state.nameEditing && document.activeElement !== el) { el.focus(); el.select(); } },
+      loggedOutStyle: {
+        position: 'fixed', inset: 0, background: '#fbf6f2', display: this.state.loggedOut ? 'flex' : 'none',
+        alignItems: 'center', justifyContent: 'center', zIndex: 200,
+      },
+      toggleRecentList: () => this.toggleRecentList(),
+      recentCount: this.state.recent.length ? String(this.state.recent.length) : '',
+      recentItems: this.state.recent.map(t => ({ title: t, onOpen: () => this.recordRecent(t) })),
+      recentListWrapStyle: {
+        overflow: 'hidden', flexShrink: 0,
+        maxHeight: this.state.recentOpen ? (Math.max(1, this.state.recent.length) * 34 + 12) + 'px' : '0px',
+        opacity: this.state.recentOpen ? 1 : 0, transition: 'max-height .32s cubic-bezier(.4,0,.2,1), opacity .24s ease',
+      },
+      recentEmptyStyle: { display: this.state.recent.length ? 'none' : 'block', padding: '7px 10px 7px 30px', fontSize: '11.5px', color: '#c9b8a9' },
+      trashCount: this.state.trash.length ? String(this.state.trash.length) : '',
+      trashItems: this.state.trash.map(t => {
+        const isDrive = t.source === 'drive';
+        return {
+          title: t.title,
+          icon: isDrive ? '📁' : '🗺',
+          badge: isDrive ? 'Drive' : '내 공간',
+          badgeStyle: {
+            flexShrink: 0, padding: '1px 7px', borderRadius: 999, fontSize: 10, fontWeight: 700,
+            background: isDrive ? this.hexA('#34A853', 0.12) : '#f0e6dd',
+            color: isDrive ? '#1e7a3a' : '#9c8b7e',
+          },
+          onRestore: (e) => { e.stopPropagation(); this.askRestore(t.title); },
+        };
+      }),
+      trashListWrapStyle: {
+        overflow: 'hidden', flexShrink: 0,
+        maxHeight: this.state.trashOpen ? (Math.max(1, this.state.trash.length) * 34 + 12) + 'px' : '0px',
+        opacity: this.state.trashOpen ? 1 : 0, transition: 'max-height .32s cubic-bezier(.4,0,.2,1), opacity .24s ease',
+      },
+      trashEmptyStyle: { display: this.state.trash.length ? 'none' : 'block', padding: '7px 10px 7px 30px', fontSize: '11.5px', color: '#c9b8a9' },
+      stopProp: (e) => e.stopPropagation(),
+      stopPrevent: (e) => { e.preventDefault(); e.stopPropagation(); },
+      mapsSectionStyle: { display: (isEmpty || showDriveConnect || folderEmpty) ? 'none' : 'block' },
+      emptyStateStyle: {
+        display: (isEmpty && !curFolder) ? 'flex' : 'none', flexDirection: 'column', alignItems: 'center', justifyContent: 'center',
+        minHeight: 'calc(100vh - 190px)', padding: '20px',
+      },
+    };
+  }
+
+  tintBg(hex) { return this.hexA(hex, 0.07); }
+  hexA(hex, a) { let c = hex.replace('#',''); if (c.length === 3) c = c[0]+c[0]+c[1]+c[1]+c[2]+c[2]; return `rgba(${parseInt(c.substr(0,2),16)},${parseInt(c.substr(2,2),16)},${parseInt(c.substr(4,2),16)},${a})`; }
+
+  docRawForTitle(title) {
+    // maps created via "새로 만들기" save under their new-… URL id, not the title hash — match by root text too
+    try {
+      const direct = localStorage.getItem('mindflow_doc_' + this.mapId(title));
+      if (direct) return direct;
+      if (!this._docIndex || this._docIndexAt !== localStorage.length) {
+        this._docIndex = {}; this._docIndexAt = localStorage.length;
+        for (let i = 0; i < localStorage.length; i++) {
+          const k = localStorage.key(i);
+          if (!k || !k.startsWith('mindflow_doc')) continue;
+          try {
+            const d = JSON.parse(localStorage.getItem(k));
+            const t = d && d.nodes && d.nodes.root && (d.nodes.root.text || '').trim();
+            if (t && !this._docIndex[t]) this._docIndex[t] = k;
+          } catch (e) {}
+        }
+      }
+      const k = this._docIndex[(title || '').trim()];
+      return k ? localStorage.getItem(k) : null;
+    } catch (e) { return null; }
+  }
+  realPreview(title, hue, docId) {
+    // draw the actual saved map (nodes carry x/y from the editor layout); null → caller falls back to sketch
+    try {
+      const raw = (docId && localStorage.getItem('mindflow_doc_' + docId)) || this.docRawForTitle(title);
+      if (!raw) return null;
+      const d = JSON.parse(raw);
+      if (!d || !d.nodes) return null;
+      const h = React.createElement;
+      // match the editor's theme palette so branch colors are identical
+      const THEME_PAL = {
+        coral:  { accent: '#f0663f', palette: ['#f0663f','#f0913f','#e0b23c','#8fb257','#3fae9e','#3f8fd0','#8a6bd1','#d0568f','#d92626'] },
+        ocean:  { accent: '#2f7fd6', palette: ['#2f7fd6','#37a5c9','#3fb59a','#6bb85a','#e0a53c','#e07b4a','#8a6bd1','#d0568f','#d92626'] },
+        forest: { accent: '#2f9e63', palette: ['#2f9e63','#5aab45','#9aae3c','#c99a3c','#3fae9e','#3f8fd0','#8a6bd1','#d0568f','#d92626'] },
+        grape:  { accent: '#7d5bd0', palette: ['#7d5bd0','#a45bd0','#d05fb0','#d0568f','#e07b4a','#e0b23c','#3fae9e','#3f8fd0','#d92626'] },
+        dark:   { accent: '#f0663f', palette: ['#f0804f','#f0b04f','#e8cf5a','#9fce6a','#4fc9b6','#5fa8e8','#a98be8','#e87bb0','#ff4d4d'] },
+        mono:   { accent: '#2b2b2b', palette: ['#3a3a3a','#565656','#727272','#8e8e8e','#4a4a4a','#616161','#787878','#909090','#d92626'] },
+      };
+      const TH = THEME_PAL[d.themeKey] || THEME_PAL.coral;
+      hue = TH.accent;
+      const ids = Object.keys(d.nodes).filter(k => typeof d.nodes[k].x === 'number' && typeof d.nodes[k].y === 'number');
+      if (!ids.length) return null;
+      const palette = TH.palette;
+      // branch color: node.color, else inherited from its depth-1 ancestor slot
+      const root = ids.find(k => !d.nodes[k].parent && !d.nodes[k].free) || ids[0];
+      const colorOf = (id) => {
+        // mirror the editor: nearest explicit color up the chain, else depth-1 branch slot color
+        let cur = d.nodes[id]; const chain = [];
+        let guard = 0;
+        while (cur && cur.parent && guard++ < 60) { chain.push(cur); cur = d.nodes[cur.parent]; }
+        if (cur && cur !== d.nodes[root]) chain.push(cur);
+        for (const c of chain) if (c.color) return c.color;
+        const d1 = chain[chain.length - 1];
+        if (!d1) return palette[0];
+        const idx = ((d.nodes[root] && d.nodes[root].children) || []).indexOf(d1.id);
+        return palette[(idx < 0 ? 0 : idx) % palette.length];
+      };
+      const dim = (id) => {
+        const n = d.nodes[id];
+        const len = ((n.text || '') + (n.emoji || '')).length;
+        const w = n.cw || Math.min(220, Math.max(50, len * 13 + 26));
+        const hh = n.ch || (id === root ? 44 : 32);
+        return { w, h: hh };
+      };
+      const floats = Array.isArray(d.floats) ? d.floats : [];
+      const zones = Array.isArray(d.zones) ? d.zones : [];
+      const lines = Array.isArray(d.lines) ? d.lines : [];
+      const floatH = (f) => f.collapsed ? 30 : (f.h || 44);
+      // bbox over nodes + memos + zones + line endpoints
+      let x0 = 1e9, y0 = 1e9, x1 = -1e9, y1 = -1e9;
+      const grow = (ax0, ay0, ax1, ay1) => { x0 = Math.min(x0, ax0); y0 = Math.min(y0, ay0); x1 = Math.max(x1, ax1); y1 = Math.max(y1, ay1); };
+      ids.forEach(id => { const n = d.nodes[id], m = dim(id); grow(n.x - m.w / 2, n.y - m.h / 2, n.x + m.w / 2, n.y + m.h / 2); });
+      floats.forEach(f => grow(f.x, f.y, f.x + (f.w || 160), f.y + floatH(f)));
+      zones.forEach(z => grow(z.x, z.y - 14, z.x + z.w, z.y + z.h));
+      const nodeBox = (id) => { const n = d.nodes[id], m = dim(id); return { cx: n.x, cy: n.y, hw: m.w / 2, hh: m.h / 2 }; };
+      const floatBox = (f) => ({ cx: f.x + (f.w || 160) / 2, cy: f.y + floatH(f) / 2, hw: (f.w || 160) / 2, hh: floatH(f) / 2 });
+      const resolveEnd = (l, w) => {
+        const a = l['a' + w];
+        if (a) {
+          let box = null;
+          if (a.kind === 'node' && d.nodes[a.id] && ids.includes(a.id)) box = nodeBox(a.id);
+          if (a.kind === 'float') { const f = floats.find(x => x.id === a.id); if (f) box = floatBox(f); }
+          if (box) {
+            if (a.side === 'top') return { x: box.cx, y: box.cy - box.hh };
+            if (a.side === 'bottom') return { x: box.cx, y: box.cy + box.hh };
+            if (a.side === 'left') return { x: box.cx - box.hw, y: box.cy };
+            if (a.side === 'right') return { x: box.cx + box.hw, y: box.cy };
+            return { x: box.cx, y: box.cy };
+          }
+        }
+        return { x: l['x' + w], y: l['y' + w] };
+      };
+      lines.forEach(l => { const p1 = resolveEnd(l, 1), p2 = resolveEnd(l, 2); if (typeof p1.x === 'number' && typeof p2.x === 'number') { grow(Math.min(p1.x, p2.x), Math.min(p1.y, p2.y), Math.max(p1.x, p2.x), Math.max(p1.y, p2.y)); } });
+      const pad = 30; x0 -= pad; y0 -= pad; x1 += pad; y1 += pad;
+
+      const zoneEls = zones.map((z, i) => {
+        const zc = z.color || (hue || '#f0663f');
+        return h('g', { key: 'z' + i }, [
+          h('rect', { key: 'zr', x: z.x, y: z.y, width: z.w, height: z.h, rx: 16, fill: this.hexA(zc, 0.07), stroke: this.hexA(zc, 0.55), strokeWidth: 2, strokeDasharray: '7 5' }),
+          h('rect', { key: 'zl', x: z.x + 10, y: z.y - 13, width: Math.min(z.w - 20, (z.label || '영역').length * 13 + 24), height: 26, rx: 13, fill: zc }),
+          h('text', { key: 'zt', x: z.x + 10 + Math.min(z.w - 20, (z.label || '영역').length * 13 + 24) / 2, y: z.y, textAnchor: 'middle', dominantBaseline: 'central', fontSize: 12.5, fontWeight: 700, fill: '#fff', fontFamily: 'Pretendard, sans-serif' }, z.label || '영역'),
+        ]);
+      });
+
+      const edges = [], rects = [];
+      ids.forEach(id => {
+        const n = d.nodes[id];
+        if (n.parent && d.nodes[n.parent] && ids.includes(n.parent)) {
+          const p = d.nodes[n.parent];
+          const mx = (p.x + n.x) / 2;
+          edges.push(h('path', { key: 'e' + id, d: `M ${p.x} ${p.y} C ${mx} ${p.y} ${mx} ${n.y} ${n.x} ${n.y}`, stroke: colorOf(id), strokeWidth: 3, fill: 'none', opacity: 0.7 }));
+        }
+      });
+      const depthOf = (id) => { let dep = 0, cur = d.nodes[id], guard = 0; while (cur && cur.parent && guard++ < 50) { dep++; cur = d.nodes[cur.parent]; } return dep; };
+      ids.forEach(id => {
+        const n = d.nodes[id], m = dim(id), col = colorOf(id), isRoot = id === root;
+        const depth = depthOf(id);
+        const fillA = n.fillA == null ? 1 : n.fillA;
+        const strokeA = n.strokeA == null ? (depth >= 2 ? 0.5 : 1) : n.strokeA;
+        const dFill = n.fill || (isRoot ? (hue || '#f0663f') : '#fff');
+        const dStroke = n.stroke || (isRoot ? (hue || '#f0663f') : col);
+        const fill = this.hexA(dFill, fillA);
+        const stroke = this.hexA(dStroke, strokeA);
+        const sw = depth >= 2 ? 1.6 : 2.4;
+        const L = n.x - m.w / 2, T = n.y - m.h / 2, W = m.w, H = m.h;
+        const shape = n.shape || 'round';
+        if (shape === 'ellipse') rects.push(h('ellipse', { key: 'r' + id, cx: n.x, cy: n.y, rx: W / 2, ry: H / 2, fill, stroke, strokeWidth: sw }));
+        else if (shape === 'hexagon') { const c = Math.min(W * 0.18, H * 0.6); rects.push(h('polygon', { key: 'r' + id, points: `${L + c},${T} ${L + W - c},${T} ${L + W},${n.y} ${L + W - c},${T + H} ${L + c},${T + H} ${L},${n.y}`, fill, stroke, strokeWidth: sw, strokeLinejoin: 'round' })); }
+        else if (shape === 'diamond') rects.push(h('polygon', { key: 'r' + id, points: `${n.x},${T} ${L + W},${n.y} ${n.x},${T + H} ${L},${n.y}`, fill, stroke, strokeWidth: sw, strokeLinejoin: 'round' }));
+        else if (shape === 'parallelogram') { const c = W * 0.16; rects.push(h('polygon', { key: 'r' + id, points: `${L + c},${T} ${L + W},${T} ${L + W - c},${T + H} ${L},${T + H}`, fill, stroke, strokeWidth: sw, strokeLinejoin: 'round' })); }
+        else rects.push(h('rect', { key: 'r' + id, x: L, y: T, width: W, height: H, rx: shape === 'pill' ? H / 2 : (shape === 'rect' ? 3 : 9), fill, stroke, strokeWidth: sw }));
+        const label = (((n.emoji || '') + ' ' + (n.text || '')).trim()).split('\n')[0];
+        if (label) rects.push(h('text', {
+          key: 't' + id, x: n.x, y: n.y, textAnchor: 'middle', dominantBaseline: 'central',
+          fontSize: (isRoot ? 17 : 14) * (n.tsize === 's' ? 0.85 : n.tsize === 'l' ? 1.2 : 1), fontWeight: n.bold ? 800 : (isRoot ? 800 : 600),
+          fill: n.textColor || (isRoot && !n.fill ? '#fff' : '#33281f'),
+          fontFamily: 'Pretendard, sans-serif',
+        }, label.length > 14 ? label.slice(0, 13) + '…' : label));
+      });
+
+      const lineEls = [];
+      lines.forEach((l, i) => {
+        const P0 = resolveEnd(l, 1), P3 = resolveEnd(l, 2);
+        if (typeof P0.x !== 'number' || typeof P3.x !== 'number') return;
+        const c1 = l.c1 != null ? l.c1 : (l.curve || 0), c2 = l.c2 != null ? l.c2 : (l.curve || 0);
+        const len = Math.hypot(P3.x - P0.x, P3.y - P0.y) || 1;
+        const nx = -(P3.y - P0.y) / len, ny = (P3.x - P0.x) / len;
+        const C1 = { x: P0.x + (P3.x - P0.x) / 3 + nx * c1, y: P0.y + (P3.y - P0.y) / 3 + ny * c1 };
+        const C2 = { x: P0.x + 2 * (P3.x - P0.x) / 3 + nx * c2, y: P0.y + 2 * (P3.y - P0.y) / 3 + ny * c2 };
+        const lc = l.color || (hue || '#f0663f');
+        lineEls.push(h('path', { key: 'lp' + i, d: `M ${P0.x} ${P0.y} C ${C1.x} ${C1.y} ${C2.x} ${C2.y} ${P3.x} ${P3.y}`, stroke: lc, strokeWidth: 2.2, fill: 'none', strokeDasharray: l.dashed === false ? 'none' : '7 7' }));
+        const arrow = (P, C, key) => {
+          const ang = Math.atan2(P.y - C.y, P.x - C.x), s = 9;
+          lineEls.push(h('polygon', { key, points: `${P.x},${P.y} ${P.x - Math.cos(ang - 0.45) * s},${P.y - Math.sin(ang - 0.45) * s} ${P.x - Math.cos(ang + 0.45) * s},${P.y - Math.sin(ang + 0.45) * s}`, fill: lc }));
+        };
+        if (l.startArrow) arrow(P0, C1, 'la' + i);
+        if (l.endArrow) arrow(P3, C2, 'lb' + i);
+        if (l.label && l.label.trim()) {
+          const mid = { x: (P0.x + 3 * C1.x + 3 * C2.x + P3.x) / 8, y: (P0.y + 3 * C1.y + 3 * C2.y + P3.y) / 8 };
+          const lw = Math.min(160, l.label.length * 13 + 16);
+          lineEls.push(h('rect', { key: 'lr' + i, x: mid.x - lw / 2, y: mid.y - 11, width: lw, height: 22, rx: 6, fill: '#fff', stroke: this.hexA(lc, 0.5), strokeWidth: 1 }));
+          lineEls.push(h('text', { key: 'lt' + i, x: mid.x, y: mid.y, textAnchor: 'middle', dominantBaseline: 'central', fontSize: 11.5, fontWeight: 600, fill: l.ltextColor || '#33281f', fontFamily: 'Pretendard, sans-serif' }, l.label));
+        }
+      });
+
+      const floatEls = [];
+      floats.forEach((f, i) => {
+        const fw = f.w || 160, fh = floatH(f);
+        const bg = f.bg || '#fdf6c9';
+        const bd = f.bg ? this.hexA('#8a7365', 0.35) : '#e8d982';
+        floatEls.push(h('rect', { key: 'fr' + i, x: f.x, y: f.y, width: fw, height: fh, rx: 8, fill: bg, stroke: bd, strokeWidth: 1.4 }));
+        const line1 = ((f.text || '').split('\n')[0] || '').trim();
+        if (line1) floatEls.push(h('text', {
+          key: 'ft' + i, x: f.x + 10, y: f.y + 16, fontSize: 12 * (f.tsize === 's' ? 0.9 : f.tsize === 'l' ? 1.15 : 1), fontWeight: f.bold ? 800 : 500,
+          fill: f.textColor || '#5a4a3a', fontFamily: 'Pretendard, sans-serif',
+        }, line1.length > Math.floor(fw / 11) ? line1.slice(0, Math.floor(fw / 11) - 1) + '…' : line1));
+      });
+
+      return h('svg', { viewBox: `${x0} ${y0} ${x1 - x0} ${y1 - y0}`, width: '88%', height: '88%', preserveAspectRatio: 'xMidYMid meet', style: { display: 'block' } }, [...zoneEls, ...edges, ...rects, ...lineEls, ...floatEls]);
+    } catch (e) { return null; }
+  }
+
+  miniPreview(hue, seed) {
+    const h = React.createElement;
+    // deterministic per-card branch count/offsets from seed
+    let s = 0; const key = String(seed || hue); for (let i = 0; i < key.length; i++) s = (s * 31 + key.charCodeAt(i)) >>> 0;
+    const rnd = () => { s = (s * 1103515245 + 12345) & 0x7fffffff; return (s % 1000) / 1000; };
+    const palette = ['#f0663f', '#f0913f', '#3fae9e', '#3f8fd0', '#8a6bd1', '#d0568f', '#5aab45'];
+    const cx = 150, cy = 75;
+    const rowsR = [42, 75, 108], rowsL = [50, 100];
+    const branches = [];
+    rowsR.forEach((y, i) => branches.push({ x: 232, y: y + (rnd() * 10 - 5), side: 1, w: 44 + Math.round(rnd() * 20), c: palette[(i + Math.floor(rnd() * 3)) % palette.length] }));
+    rowsL.forEach((y, i) => branches.push({ x: 40, y: y + (rnd() * 10 - 5), side: -1, w: 40 + Math.round(rnd() * 18), c: palette[(i + 3 + Math.floor(rnd() * 3)) % palette.length] }));
+    const edges = branches.map((b, i) => {
+      const sx = cx + (b.side > 0 ? 34 : -34), ex = b.x + (b.side > 0 ? 0 : b.w), mx = (sx + ex) / 2;
+      return h('path', { key: 'e' + i, d: `M ${sx} ${cy} C ${mx} ${cy} ${mx} ${b.y + 8} ${ex} ${b.y + 8}`, stroke: b.c, strokeWidth: 2, fill: 'none', opacity: 0.75 });
+    });
+    const leaves = branches.map((b, i) => h('rect', { key: 'r' + i, x: b.x, y: b.y, width: b.w, height: 16, rx: 5, fill: '#fff', stroke: b.c, strokeWidth: 1.6 }));
+    const center = [
+      h('rect', { key: 'c', x: cx - 34, y: cy - 13, width: 68, height: 26, rx: 8, fill: hue }),
+      h('rect', { key: 'cl', x: cx - 22, y: cy - 4, width: 44, height: 3, rx: 1.5, fill: '#fff', opacity: 0.85 }),
+    ];
+    return h('svg', { viewBox: '0 0 300 150', width: '82%', height: '82%', style: { display: 'block' } }, [...edges, ...leaves, ...center]);
+  }
+}
+</script>
+</body>
+</html>
