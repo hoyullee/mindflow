@@ -11,6 +11,7 @@ export default tseslint.config(
       'vendor/**',
       'support.js',
       '*.dc.html',
+      'tools/**',
     ],
   },
   js.configs.recommended,

@@ -1,0 +1,145 @@
+{
+  "v": 1,
+  "nodes": {
+    "root": {
+      "id": "root",
+      "text": "제품 로드맵",
+      "emoji": "🎯",
+      "parent": null,
+      "children": [
+        "c1",
+        "c2",
+        "c3"
+      ],
+      "collapsed": false,
+      "color": null,
+      "x": 0,
+      "y": 0
+    },
+    "c1": {
+      "id": "c1",
+      "text": "리서치",
+      "emoji": "",
+      "parent": "root",
+      "children": [
+        "g1",
+        "g2"
+      ],
+      "collapsed": false,
+      "color": "#3f8fd0",
+      "x": 249.5,
+      "y": -70,
+      "side": "R"
+    },
+    "c2": {
+      "id": "c2",
+      "text": "디자인",
+      "emoji": "",
+      "parent": "root",
+      "children": [
+        "g3"
+      ],
+      "collapsed": false,
+      "color": null,
+      "x": 249.5,
+      "y": 30,
+      "side": "L"
+    },
+    "c3": {
+      "id": "c3",
+      "text": "개발",
+      "emoji": "",
+      "parent": "root",
+      "children": [],
+      "collapsed": false,
+      "color": null,
+      "x": 242,
+      "y": 102,
+      "side": "L"
+    },
+    "g1": {
+      "id": "g1",
+      "text": "사용자 인터뷰",
+      "emoji": "🗣️",
+      "parent": "c1",
+      "children": [],
+      "collapsed": false,
+      "color": null,
+      "x": 476.5,
+      "y": -102
+    },
+    "g2": {
+      "id": "g2",
+      "text": "경쟁 분석",
+      "emoji": "",
+      "parent": "c1",
+      "children": [],
+      "collapsed": false,
+      "color": null,
+      "x": 447,
+      "y": -38
+    },
+    "g3": {
+      "id": "g3",
+      "text": "와이어프레임",
+      "emoji": "",
+      "parent": "c2",
+      "children": [],
+      "collapsed": false,
+      "color": null,
+      "x": 459,
+      "y": 30,
+      "bold": true
+    },
+    "free1": {
+      "id": "free1",
+      "text": "메모용 도형",
+      "emoji": "",
+      "parent": null,
+      "children": [],
+      "collapsed": false,
+      "color": null,
+      "x": 260,
+      "y": -160,
+      "free": true,
+      "rich": null
+    }
+  },
+  "floats": [
+    {
+      "id": "flt1",
+      "x": -260,
+      "y": 160,
+      "w": 200,
+      "text": "주간 회고 메모"
+    }
+  ],
+  "lines": [
+    {
+      "id": "ln1",
+      "x1": -120,
+      "y1": 40,
+      "x2": 120,
+      "y2": 40,
+      "startArrow": false,
+      "endArrow": true,
+      "dashed": true,
+      "c1": 0,
+      "c2": 0,
+      "label": "흐름"
+    }
+  ],
+  "zones": [
+    {
+      "id": "zn1",
+      "x": -320,
+      "y": -220,
+      "w": 300,
+      "h": 180,
+      "label": "1분기",
+      "color": null
+    }
+  ],
+  "layoutMode": "right",
+  "themeKey": "coral"
+}
