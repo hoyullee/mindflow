@@ -57,9 +57,10 @@ server/           # 인증(OAuth/이메일) + DB(Postgres) + 문서 동기화 AP
 - ✅ **M3-Editor-c** 완성도: marquee 다중선택(일괄 스타일)·미니맵·아웃라인 편집·드래그 재부모화
 - ✅ **M4** 백엔드: `AuthProvider`/`DocStore` 포트 + Local/Supabase 어댑터 + 팩토리(env-게이트). Supabase 스키마·RLS(`server/supabase/`), 낙관적 잠금. **env 없으면 로컬/데모 폴백**(앱 안 깨짐). 라이브는 `server/supabase/docs/backend.md`대로 프로비저닝 필요
 - ✅ **M6** PWA + 모바일 반응형: `vite-plugin-pwa`(Workbox, 오프라인 앱셸), manifest·아이콘·Pretendard self-host. 768px 브레이크포인트 — Home 드로어, Editor 속성패널 바텀시트, 44px 터치타겟
-- ✅ **M5** 실시간 협업(Yjs/CRDT): 코어 `crdt/` Doc↔Y.Doc 바인딩(순수, 충돌 없는 수렴) + 웹 전송 포트(BroadcastChannel 로컬 다중탭 / Supabase Realtime / Noop) + `useYjsDocSync` 에디터 통합. env-게이트, 단일 사용자 무회귀. awareness(커서 공유)는 미룸
+- ✅ **M5** 실시간 협업(Yjs/CRDT): 코어 `crdt/` Doc↔Y.Doc 바인딩(순수, 충돌 없는 수렴) + 웹 전송 포트(BroadcastChannel 로컬 다중탭 / Supabase Realtime / Noop) + `useYjsDocSync` 에디터 통합. env-게이트, 단일 사용자 무회귀
 - ✅ **M7** Capacitor 앱셸(`apps/mobile`): android/·ios/ 스캐폴딩, `capacitor.config`(webDir=web dist), `build:mobile`(web build→cap sync), 네이티브 브리지(Share/Filesystem·StatusBar·Keyboard, 웹 폴백). **실기기 빌드·서명·스토어 제출은 로컬 Android Studio/Xcode 필요**(`apps/mobile/README.md`)
-- ⏭️ **다음 후보**: 협업 awareness(커서/선택 공유), 실기기 빌드·스토어 제출, Editor 잔여(컨텍스트메뉴·부분 리치텍스트·라인 앵커 마그넷), 아이콘/스플래시 네이티브 생성
+- ✅ **M5-awareness** 협업 커서/선택 공유(`y-protocols` Awareness, 웹 전용): `CollabProvider.getAwareness()` + BroadcastChannel/Supabase Realtime 릴레이(에코 방지 origin 필터, 기존 M5 채널 재사용·신규 스키마 불필요) + `usePresence` 훅(정체성=인증 이메일 또는 clientID, 색·이름 시드 결정적, 커서 50ms 스로틀). 에디터 UI: 팬/줌 변환 안의 원격 커서·이름표(`PresenceLayer`), 노드/플로트/라인/존 원격 선택 하이라이트(피어 색), 우상단 접속자 아바타(`PresenceBar`). 단일 사용자 무회귀(peers=[] → null). 실브라우저 2-탭 검증 완료
+- ⏭️ **다음 후보**: 실기기 빌드·스토어 제출, Editor 잔여(컨텍스트메뉴·부분 리치텍스트·라인 앵커 마그넷), 아이콘/스플래시 네이티브 생성
 
 > **로드맵 1·2단계 완료**: 웹 프로덕션화(코어 분리·React·인증/DB) + PWA/모바일 웹 + 실시간 다중편집 + 앱스토어 래핑(Capacitor). 라이브 백엔드/실기기 배포는 키·툴체인 설정 후 로컬에서.
 

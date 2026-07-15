@@ -4,6 +4,7 @@
 // unconditional: connect/disconnect are always safe to call.
 
 import type { YDoc } from '@mindflow/mindmap-core';
+import type { Awareness } from 'y-protocols/awareness';
 import type { CollabProvider } from './ports';
 
 export class NoopCollabProvider implements CollabProvider {
@@ -14,5 +15,8 @@ export class NoopCollabProvider implements CollabProvider {
   }
   disconnect(): void {
     /* nothing to release */
+  }
+  getAwareness(): Awareness | null {
+    return null; // no transport => no presence; `usePresence` treats this as "solo" (no peers, no-op)
   }
 }

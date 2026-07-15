@@ -3,6 +3,8 @@ import type { Zone } from '@mindflow/mindmap-core';
 import { hexA } from '../theme';
 import type { Theme } from '../theme';
 import type { EditorController } from '../useEditorState';
+import { peersSelecting } from '../presenceSelection';
+import { RemotePeerTag } from './RemotePeerTag';
 
 interface ZoneLayerProps {
   zones: Zone[];
@@ -23,6 +25,8 @@ export function ZoneLayer({ zones, theme: th, controller }: ZoneLayerProps) {
         const col = z.color || th.accent;
         const selected = controller.selection?.kind === 'zone' && controller.selection.id === z.id;
         const editing = controller.editingZoneId === z.id;
+        // presence: a remote peer's selection ring (see `NodeLayer`'s identical pattern).
+        const remotePeer = peersSelecting(controller.presence.peers, 'zones', z.id)[0];
         return (
           <div
             key={z.id}
@@ -36,6 +40,7 @@ export function ZoneLayer({ zones, theme: th, controller }: ZoneLayerProps) {
               border: `2px dashed ${hexA(col, selected ? 0.9 : 0.55)}`,
               borderRadius: 16,
               boxSizing: 'border-box',
+              boxShadow: remotePeer ? `0 0 0 3px ${hexA(remotePeer.user.color, 0.85)}` : 'none',
               zIndex: 8,
             }}
           >
@@ -75,6 +80,7 @@ export function ZoneLayer({ zones, theme: th, controller }: ZoneLayerProps) {
                 {z.label || '영역'}
               </div>
             )}
+            {remotePeer && !editing && <RemotePeerTag color={remotePeer.user.color} name={remotePeer.user.name} style={{ right: 10, top: -14 }} />}
             {selected && !editing && (
               <>
                 <div

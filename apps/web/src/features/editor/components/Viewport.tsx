@@ -6,6 +6,7 @@ import { FloatLayer } from './FloatLayer';
 import { LineLayer } from './LineLayer';
 import { ZoneLayer } from './ZoneLayer';
 import { MarqueeLayer } from './MarqueeLayer';
+import { PresenceLayer } from './PresenceLayer';
 
 interface ViewportProps {
   doc: Doc;
@@ -28,6 +29,8 @@ export function Viewport({ doc, controller }: ViewportProps) {
         className="mf-ed-vp"
         ref={controller.setViewportEl}
         onPointerDown={controller.onBackgroundPointerDown}
+        onPointerMove={(e) => controller.reportPointerPosition(e.clientX, e.clientY)}
+        onPointerLeave={controller.clearPointerPosition}
         onContextMenu={(e) => e.preventDefault()}
         style={{
           position: 'absolute',
@@ -47,6 +50,7 @@ export function Viewport({ doc, controller }: ViewportProps) {
             <LineLayer lines={doc.lines} theme={theme} controller={controller} />
             <FloatLayer floats={doc.floats} theme={theme} controller={controller} />
             <MarqueeLayer rect={controller.marquee} theme={theme} />
+            <PresenceLayer controller={controller} />
           </div>
         </div>
       </div>

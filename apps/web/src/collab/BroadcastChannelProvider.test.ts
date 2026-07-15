@@ -136,4 +136,87 @@ describe('BroadcastChannelProvider', () => {
     expect(ydocB.getMap('nodes').has('afterDisconnect')).toBe(false);
     providerA.disconnect();
   });
+
+  describe('awareness (presence) relay', () => {
+    it("relays a local awareness state (setLocalState) to a peer connected to the same docId", async () => {
+      const docId = `aware-${Math.random()}`;
+      const ydocA = docToYDoc(baseDoc());
+      const ydocB = new Y.Doc();
+      const providerA = new BroadcastChannelProvider();
+      const providerB = new BroadcastChannelProvider();
+      try {
+        providerA.connect(docId, ydocA);
+        providerB.connect(docId, ydocB);
+        const awarenessA = providerA.getAwareness();
+        const awarenessB = providerB.getAwareness();
+        expect(awarenessA).not.toBeNull();
+        expect(awarenessB).not.toBeNull();
+
+        awarenessA!.setLocalStateField('user', { name: 'Coral Otter', color: '#f0663f' });
+        awarenessA!.setLocalStateField('cursor', { x: 12, y: 34 });
+
+        await waitFor(() => awarenessB!.getStates().has(awarenessA!.clientID));
+        const stateOnB = awarenessB!.getStates().get(awarenessA!.clientID) as { user: { name: string }; cursor: { x: number; y: number } };
+        expect(stateOnB.user.name).toBe('Coral Otter');
+        expect(stateOnB.cursor).toEqual({ x: 12, y: 34 });
+      } finally {
+        providerA.disconnect();
+        providerB.disconnect();
+      }
+    });
+
+    it('broadcasts an already-connected peer\'s awareness state to a newly-connected one (via sync-request)', async () => {
+      const docId = `aware-sync-${Math.random()}`;
+      const ydocA = docToYDoc(baseDoc());
+      const providerA = new BroadcastChannelProvider();
+      providerA.connect(docId, ydocA);
+      const awarenessA = providerA.getAwareness()!;
+      awarenessA.setLocalStateField('user', { name: 'Early Fox', color: '#3f8fd0' });
+
+      const ydocB = new Y.Doc();
+      const providerB = new BroadcastChannelProvider();
+      try {
+        providerB.connect(docId, ydocB); // fires 'sync-request'; A replies with its awareness too
+        const awarenessB = providerB.getAwareness()!;
+
+        await waitFor(() => awarenessB.getStates().has(awarenessA.clientID));
+        expect((awarenessB.getStates().get(awarenessA.clientID) as { user: { name: string } }).user.name).toBe('Early Fox');
+      } finally {
+        providerA.disconnect();
+        providerB.disconnect();
+      }
+    });
+
+    it("disconnect() broadcasts this client's departure (local awareness state -> removed) to peers", async () => {
+      const docId = `aware-leave-${Math.random()}`;
+      const ydocA = docToYDoc(baseDoc());
+      const ydocB = new Y.Doc();
+      const providerA = new BroadcastChannelProvider();
+      const providerB = new BroadcastChannelProvider();
+      providerA.connect(docId, ydocA);
+      providerB.connect(docId, ydocB);
+      const awarenessA = providerA.getAwareness()!;
+      const awarenessB = providerB.getAwareness()!;
+      awarenessA.setLocalStateField('user', { name: 'Leaving Panda', color: '#8a6bd1' });
+
+      await waitFor(() => awarenessB.getStates().has(awarenessA.clientID));
+      expect(awarenessB.getStates().has(awarenessA.clientID)).toBe(true);
+
+      providerA.disconnect();
+
+      await waitFor(() => !awarenessB.getStates().has(awarenessA.clientID));
+      expect(awarenessB.getStates().has(awarenessA.clientID)).toBe(false);
+      providerB.disconnect();
+    });
+
+    it('getAwareness() returns null before connect() and after disconnect()', () => {
+      const provider = new BroadcastChannelProvider();
+      expect(provider.getAwareness()).toBeNull();
+      const ydoc = docToYDoc(baseDoc());
+      provider.connect(`aware-lifecycle-${Math.random()}`, ydoc);
+      expect(provider.getAwareness()).not.toBeNull();
+      provider.disconnect();
+      expect(provider.getAwareness()).toBeNull();
+    });
+  });
 });

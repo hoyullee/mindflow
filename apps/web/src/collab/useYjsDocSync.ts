@@ -31,9 +31,10 @@
 // someone else's change" experience without needing a CRDT-aware undo
 // manager for this first cut).
 
-import { useEffect, useRef } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import type { Doc, YDoc } from '@mindflow/mindmap-core';
 import { applyDocToYDoc, docToYDoc, yDocToDoc } from '@mindflow/mindmap-core';
+import type { Awareness } from 'y-protocols/awareness';
 import { createCollabProvider } from './factory';
 import type { CollabProvider } from './ports';
 
@@ -44,10 +45,18 @@ import type { CollabProvider } from './ports';
  * local-change -> Y.Doc -> "remote" update -> setDoc -> local-change loop. */
 const LOCAL_ORIGIN = Symbol('mindflow-local-doc-sync');
 
-export function useYjsDocSync(docId: string, doc: Doc, onRemoteDoc: (doc: Doc) => void): void {
+/**
+ * @returns the `y-protocols/awareness` `Awareness` instance bound to the
+ * CURRENTLY-connected session (created by the `CollabProvider`'s `connect()`
+ * below) — `null` while there is none (initial mount, or `docId` mid-reconnect).
+ * This is the seam `usePresence.ts` hooks into for presence (cursor/selection/
+ * identity); document sync itself doesn't use it at all.
+ */
+export function useYjsDocSync(docId: string, doc: Doc, onRemoteDoc: (doc: Doc) => void): Awareness | null {
   const providerRef = useRef<CollabProvider | null>(null);
   if (!providerRef.current) providerRef.current = createCollabProvider();
 
+  const [awareness, setAwareness] = useState<Awareness | null>(null);
   const ydocRef = useRef<YDoc | null>(null);
   const lastSyncedRef = useRef<Doc | null>(null);
   const onRemoteDocRef = useRef(onRemoteDoc);
@@ -77,11 +86,13 @@ export function useYjsDocSync(docId: string, doc: Doc, onRemoteDoc: (doc: Doc) =
     };
     ydoc.on('update', handleUpdate);
     providerRef.current!.connect(docId, ydoc);
+    setAwareness(providerRef.current!.getAwareness());
 
     return () => {
       ydoc.off('update', handleUpdate);
       providerRef.current!.disconnect();
       ydocRef.current = null;
+      setAwareness(null);
     };
   }, [docId]);
 
@@ -95,4 +106,6 @@ export function useYjsDocSync(docId: string, doc: Doc, onRemoteDoc: (doc: Doc) =
     applyDocToYDoc(ydoc, doc, lastSyncedRef.current, LOCAL_ORIGIN);
     lastSyncedRef.current = doc;
   }, [doc]);
+
+  return awareness;
 }
