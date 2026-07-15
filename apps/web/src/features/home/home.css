@@ -1,0 +1,165 @@
+/* Ported from Home.dc.html <helmet><style>. Kept global (not a CSS module) so the
+   keyframe names and hover-only classnames referenced from inline styles resolve. */
+
+a {
+  color: #f0663f;
+  text-decoration: none;
+}
+a:hover {
+  color: #d9542f;
+}
+::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+::-webkit-scrollbar-thumb {
+  background: #ecdfd5;
+  border-radius: 6px;
+}
+.lnb-scroll {
+  scrollbar-width: thin;
+  scrollbar-color: transparent transparent;
+}
+.lnb-scroll:hover {
+  scrollbar-color: #d9c8ba transparent;
+}
+.lnb-scroll::-webkit-scrollbar {
+  width: 4px;
+}
+.lnb-scroll::-webkit-scrollbar-thumb {
+  background: transparent;
+  border-radius: 4px;
+}
+.lnb-scroll:hover::-webkit-scrollbar-thumb {
+  background: #d9c8ba;
+}
+.lnb-scroll::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+@keyframes mf-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+@keyframes mf-fade {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+@keyframes mf-ov-in {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+@keyframes mf-core {
+  0%,
+  100% {
+    transform: scale(1);
+  }
+  50% {
+    transform: scale(1.18);
+  }
+}
+@keyframes mf-branch {
+  0% {
+    transform: scale(0);
+    opacity: 0;
+  }
+  45% {
+    transform: scale(1);
+    opacity: 1;
+  }
+  80% {
+    transform: scale(1);
+    opacity: 1;
+  }
+  100% {
+    transform: scale(0);
+    opacity: 0;
+  }
+}
+@keyframes mf-stem {
+  0% {
+    transform: scaleX(0);
+    opacity: 0;
+  }
+  45% {
+    transform: scaleX(1);
+    opacity: 1;
+  }
+  80% {
+    transform: scaleX(1);
+    opacity: 1;
+  }
+  100% {
+    transform: scaleX(0);
+    opacity: 0;
+  }
+}
+
+.mf-home .nav-item:hover {
+  background: #faf3ee !important;
+}
+.mf-home .tpl-card:hover {
+  transform: translateY(-3px);
+  box-shadow: 0 10px 24px rgba(0, 0, 0, 0.1) !important;
+}
+.mf-home .map-card:hover {
+  border-color: #f0663f !important;
+  box-shadow: 0 10px 24px rgba(0, 0, 0, 0.08) !important;
+}
+.mf-home .map-card:hover .fav-btn {
+  opacity: 1 !important;
+}
+.mf-home .map-card:hover .menu-btn {
+  opacity: 1 !important;
+}
+.mf-home .space-row:hover .space-dot {
+  opacity: 1 !important;
+}
+.mf-home .space-dot:hover {
+  background: #f0e6dd !important;
+}
+.mf-home .fav-btn:hover {
+  transform: scale(1.12);
+}
+.mf-home .menu-btn:hover {
+  background: #faf3ee !important;
+}
+.mf-home .menu-row:hover {
+  background: #faf3ee !important;
+}
+.mf-home .btn:hover {
+  filter: brightness(0.97);
+}
+.mf-home .drive-file:hover {
+  background: #faf3ee !important;
+}
+
+/* M6: map/folder grid column count. Desktop keeps the original
+   auto-fill(minmax(300px,1fr)) behavior (JS `GRID_STYLE` only sets `gap`);
+   below 768px there isn't room for a 300px minimum, so this steps down to a
+   2-column layout, then 1 column under 480px (a typical phone portrait width). */
+.mf-map-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+}
+@media (max-width: 767px) {
+  .mf-map-grid {
+    grid-template-columns: repeat(2, 1fr);
+  }
+}
+@media (max-width: 479px) {
+  .mf-map-grid {
+    grid-template-columns: 1fr;
+  }
+}
