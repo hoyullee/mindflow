@@ -2,3 +2,9 @@
 node_modules/
 npm-debug.log*
 .DS_Store
+
+# Monorepo build artifacts
+dist/
+.turbo/
+*.tsbuildinfo
+apps/web/dist/
