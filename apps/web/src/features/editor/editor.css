@@ -1,0 +1,34 @@
+/* Editor-scoped chrome (hover/active states, scrollbars) — the pixel styling
+   itself (colors/spacing/fonts) is applied inline per-node via CSSProperties
+   so it can react to the live theme; this stylesheet only covers what plain
+   inline styles can't express. Mirrors MindFlow.dc.html's <style> block
+   (lines 14-32), renamed to an `mf-ed-` prefix so it never collides with
+   Home.dc.html's `.mf-btn`/`.mf-panel` (both stylesheets stay mounted for
+   the life of the SPA since Vite CSS imports are global side effects). */
+
+.mf-ed-vp {
+  touch-action: none;
+}
+
+.mf-ed-btn {
+  transition:
+    background 0.12s,
+    transform 0.06s,
+    box-shadow 0.12s;
+}
+.mf-ed-btn:hover:not(:disabled) {
+  background: var(--mf-ed-hover, rgba(0, 0, 0, 0.04));
+}
+.mf-ed-btn:active:not(:disabled) {
+  transform: translateY(1px);
+}
+.mf-ed-btn:disabled {
+  cursor: not-allowed;
+}
+
+.mf-ed-topbar {
+  scrollbar-width: thin;
+}
+.mf-ed-topbar::-webkit-scrollbar {
+  height: 5px;
+}

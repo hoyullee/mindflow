@@ -1,11 +1,11 @@
 import { BrowserRouter, Navigate, Route, Routes } from 'react-router-dom';
 import { Login } from './features/auth/Login';
 import { Home } from './features/home/Home';
-import { EditorPlaceholder } from './features/editor/EditorPlaceholder';
+import { Editor } from './features/editor/Editor';
 
-// M3: Login.dc.html and Home.dc.html ported to React. MindFlow.dc.html (the
-// mindmap editor) follows in a later milestone — `/editor` is a placeholder
-// until then.
+// M3: Login.dc.html, Home.dc.html, and (as of Editor-a) MindFlow.dc.html's
+// rendering/pan-zoom/view-layout-theme slice are ported to React. Selection,
+// editing, and persistence land on `/editor` in Editor-b.
 export function App() {
   return (
     <BrowserRouter>
@@ -13,7 +13,7 @@ export function App() {
         <Route path="/" element={<Navigate to="/login" replace />} />
         <Route path="/login" element={<Login />} />
         <Route path="/home" element={<Home />} />
-        <Route path="/editor" element={<EditorPlaceholder />} />
+        <Route path="/editor" element={<Editor />} />
         <Route path="*" element={<Navigate to="/login" replace />} />
       </Routes>
     </BrowserRouter>
