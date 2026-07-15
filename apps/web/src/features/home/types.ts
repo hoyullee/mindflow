@@ -1,0 +1,186 @@
+/** Mirrors the data shapes threaded through Home.dc.html's `class Component extends DCLogic`. */
+
+export interface MapCardData {
+  title: string;
+  when: string;
+  hue: string;
+  /** Present for maps created in the editor (`mindflow_doc_<docId>`). Home.dc.html:541. */
+  docId?: string;
+}
+
+export interface FolderData {
+  id: string;
+  name: string;
+}
+
+export interface DriveFolderData {
+  id: string;
+  name: string;
+}
+
+export interface DriveFileData {
+  name: string;
+  icon: string;
+  folder: string | null;
+}
+
+export interface SpaceData {
+  id: string;
+  name: string;
+  home?: boolean;
+  color?: string;
+  maps: MapCardData[];
+  folders?: FolderData[];
+}
+
+export interface TrashEntry {
+  title: string;
+  source: 'local' | 'drive';
+}
+
+export type FolderModalMode = 'new' | 'rename';
+
+export interface FolderModalState {
+  mode: FolderModalMode;
+  id: string | null;
+  name: string;
+  drive?: boolean;
+}
+
+export type AuthPhase = null | 'choose' | 'connecting';
+export type DriveConnection = 'idle' | 'connected';
+
+/** Mirrors `this.state` in Home.dc.html's constructor + the fields it adds via `setState`. */
+export interface HomeState {
+  drive: DriveConnection;
+  auth: AuthPhase;
+  favs: Record<string, boolean>;
+  favOpen: boolean;
+  openMenu: string | null;
+  deleted: Record<string, boolean>;
+  confirmDelete: string | null;
+  confirmRestore: string | null;
+  trash: TrashEntry[];
+  trashOpen: boolean;
+  recent: string[];
+  recentOpen: boolean;
+  userName: string;
+  settingsOpen: boolean;
+  nameEditing: boolean;
+  confirmLogout: boolean;
+  creatingMap: boolean;
+  loaderMsg: string;
+
+  spaces: SpaceData[];
+  activeSpace: string;
+  newSpaceOpen: boolean;
+  newSpaceName: string;
+  newSpaceColor: string;
+  spaceMenu: string | null;
+  editingSpace: string | null;
+  editingSpaceName: string;
+  confirmDeleteSpace: string | null;
+
+  curFolder: string | null;
+  folderModal: FolderModalState | null;
+  mapFolders: Record<string, string>;
+  confirmDeleteFolder: string | null;
+
+  driveFolders: DriveFolderData[];
+  driveFolder: string | null;
+  driveMapFolders: Record<string, string>;
+
+  moveFor: string | null;
+  exportFor: string | null;
+  selectedCard: string | null;
+  draggingMap: string | null;
+  dragOverFolder: string | null;
+
+  importDone: string | null;
+  importError: string | null;
+  toast: string;
+
+  /** Not present in the dc original (the search box there is a static placeholder) — added
+   * per the M3 Home ticket so the search input actually filters the map grid. */
+  search: string;
+}
+
+export const SPACE_COLORS = ['#f0663f', '#e0a53c', '#3fae9e', '#3f8fd0', '#8a6bd1', '#d0568f'];
+
+export const DEFAULT_MAPS: MapCardData[] = [
+  { title: '2025.05.23 서포터클럽 해지 방어 동선', when: '방금', hue: '#f0663f' },
+  { title: '따라잡기', when: '1 년 전', hue: '#8a6bd1' },
+  { title: '무상 비즈머니 지급', when: '1 년 전', hue: '#3fae9e' },
+];
+
+export const DRIVE_FOLDERS: DriveFolderData[] = [
+  { id: 'df1', name: '팀 프로젝트' },
+  { id: 'df2', name: '개인 문서' },
+];
+
+export const DRIVE_FILES: DriveFileData[] = [
+  { name: '제품 로드맵 2026.xmind', icon: '🧠', folder: null },
+  { name: '마케팅 전략.pdf', icon: '📄', folder: null },
+  { name: '팀 회의록.xmind', icon: '🧠', folder: 'df1' },
+  { name: '디자인 시스템.xmind', icon: '🧠', folder: 'df1' },
+  { name: '스프린트 계획.xlsx', icon: '📊', folder: 'df1' },
+  { name: '사용자 리서치.docx', icon: '📝', folder: 'df2' },
+  { name: '아이디어 스케치.xmind', icon: '🧠', folder: 'df2' },
+];
+
+export function initialHomeState(): HomeState {
+  return {
+    drive: 'idle',
+    auth: null,
+    favs: {},
+    favOpen: false,
+    openMenu: null,
+    deleted: {},
+    confirmDelete: null,
+    confirmRestore: null,
+    trash: [],
+    trashOpen: false,
+    recent: [],
+    recentOpen: false,
+    userName: 'mine',
+    settingsOpen: false,
+    nameEditing: false,
+    confirmLogout: false,
+    creatingMap: false,
+    loaderMsg: '',
+
+    spaces: [{ id: 'general', name: '일반 공간', home: true, color: '#f0663f', maps: DEFAULT_MAPS }],
+    activeSpace: 'general',
+    newSpaceOpen: false,
+    newSpaceName: '',
+    newSpaceColor: '#f0663f',
+    spaceMenu: null,
+    editingSpace: null,
+    editingSpaceName: '',
+    confirmDeleteSpace: null,
+
+    curFolder: null,
+    folderModal: null,
+    mapFolders: {},
+    confirmDeleteFolder: null,
+
+    driveFolders: DRIVE_FOLDERS,
+    driveFolder: null,
+    driveMapFolders: DRIVE_FILES.reduce<Record<string, string>>((acc, f) => {
+      if (f.folder) acc[f.name] = f.folder;
+      return acc;
+    }, {}),
+
+    moveFor: null,
+    exportFor: null,
+    selectedCard: null,
+    draggingMap: null,
+    dragOverFolder: null,
+
+    importDone: null,
+    importError: null,
+    toast: '',
+
+    search: '',
+  };
+}
