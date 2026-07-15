@@ -1,0 +1,93 @@
+/* Ported from Login.dc.html <helmet><style>. Kept global (not a CSS module) so
+   the keyframe names and `.lg-input`/`.btn`/`.link-tab` class names referenced
+   from inline styles/className props below resolve correctly. */
+
+@keyframes mf-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+@keyframes mf-fade {
+  from {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+@keyframes mf-ov-in {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+@keyframes mf-core {
+  0%,
+  100% {
+    transform: scale(1);
+  }
+  50% {
+    transform: scale(1.18);
+  }
+}
+@keyframes mf-branch {
+  0% {
+    transform: scale(0);
+    opacity: 0;
+  }
+  45% {
+    transform: scale(1);
+    opacity: 1;
+  }
+  80% {
+    transform: scale(1);
+    opacity: 1;
+  }
+  100% {
+    transform: scale(0);
+    opacity: 0;
+  }
+}
+@keyframes mf-stem {
+  0% {
+    transform: scaleX(0);
+    opacity: 0;
+  }
+  45% {
+    transform: scaleX(1);
+    opacity: 1;
+  }
+  80% {
+    transform: scaleX(1);
+    opacity: 1;
+  }
+  100% {
+    transform: scaleX(0);
+    opacity: 0;
+  }
+}
+
+.mf-login a {
+  color: #f0663f;
+  text-decoration: none;
+}
+.mf-login a:hover {
+  color: #d9542f;
+}
+.mf-login .lg-input:focus {
+  border-color: #f0663f !important;
+  background: #fff !important;
+}
+.mf-login .btn:hover {
+  filter: brightness(0.97);
+}
+.mf-login .btn:active {
+  transform: translateY(1px);
+}
+.mf-login .link-tab {
+  cursor: pointer;
+}

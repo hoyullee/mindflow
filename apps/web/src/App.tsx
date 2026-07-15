@@ -1,26 +1,18 @@
-import { CORE_VERSION } from '@mindflow/mindmap-core';
+import { BrowserRouter, Navigate, Route, Routes } from 'react-router-dom';
+import { Login } from './features/auth/Login';
+import { HomePlaceholder } from './features/home/HomePlaceholder';
 
-// M0 scaffold: proves the web app builds and consumes mindmap-core.
-// The real editor (ported from MindFlow.dc.html) arrives in M3.
+// M3: Login.dc.html ported to React. Home.dc.html / the mindmap editor
+// follow in later milestones — `/home` is a placeholder until then.
 export function App() {
   return (
-    <main
-      style={{
-        minHeight: '100vh',
-        display: 'flex',
-        flexDirection: 'column',
-        alignItems: 'center',
-        justifyContent: 'center',
-        gap: 8,
-        fontFamily: 'system-ui, sans-serif',
-        background: '#fbf6f2',
-        color: '#33281f',
-      }}
-    >
-      <h1 style={{ margin: 0 }}>MindFlow</h1>
-      <p style={{ color: '#9c8b7e', margin: 0 }}>
-        web scaffold · mindmap-core v{CORE_VERSION}
-      </p>
-    </main>
+    <BrowserRouter>
+      <Routes>
+        <Route path="/" element={<Navigate to="/login" replace />} />
+        <Route path="/login" element={<Login />} />
+        <Route path="/home" element={<HomePlaceholder />} />
+        <Route path="*" element={<Navigate to="/login" replace />} />
+      </Routes>
+    </BrowserRouter>
   );
 }

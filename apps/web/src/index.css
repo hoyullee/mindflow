@@ -1,0 +1,10 @@
+/* Global reset, ported from the `<style>` block shared by the *.dc.html pages. */
+* {
+  box-sizing: border-box;
+}
+html,
+body {
+  margin: 0;
+  padding: 0;
+  height: 100%;
+}
