@@ -6,9 +6,14 @@
 // The core-purity ESLint rule (eslint.config.mjs) fails CI on any such import.
 //
 // M1a: data model, serialization (parseDoc/serializeDoc/cloneNodes),
-// Markdown outline export, and undo/redo history land here. Layout (`_layout`),
-// SVG geometry, and PNG export are out of scope for M1a (font-measurement
-// dependent) and land in a later milestone.
+// Markdown outline export, and undo/redo history land here.
+//
+// M1b: the layout engine (`_layout`) lands here too, as `layout(doc, mode,
+// sizeOf, opts?)` — node sizing (font measurement) is injected via `SizeOf`
+// rather than ported, since canvas text measurement is a rendering concern.
+//
+// SVG geometry and PNG export remain out of scope and land in a later
+// milestone.
 
 /** Semantic version of the core engine surface. */
 export const CORE_VERSION = '0.0.0';
@@ -26,3 +31,6 @@ export { toMarkdown } from './markdown';
 
 export type { HistoryStackOptions } from './history';
 export { HistoryStack } from './history';
+
+export type { NodeSize, SizeOf, LayoutOptions } from './layout';
+export { layout } from './layout';
