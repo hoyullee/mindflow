@@ -144,3 +144,22 @@ a:hover {
 .mf-home .drive-file:hover {
   background: #faf3ee !important;
 }
+
+/* M6: map/folder grid column count. Desktop keeps the original
+   auto-fill(minmax(300px,1fr)) behavior (JS `GRID_STYLE` only sets `gap`);
+   below 768px there isn't room for a 300px minimum, so this steps down to a
+   2-column layout, then 1 column under 480px (a typical phone portrait width). */
+.mf-map-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+}
+@media (max-width: 767px) {
+  .mf-map-grid {
+    grid-template-columns: repeat(2, 1fr);
+  }
+}
+@media (max-width: 479px) {
+  .mf-map-grid {
+    grid-template-columns: 1fr;
+  }
+}

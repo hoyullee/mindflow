@@ -7,6 +7,8 @@ interface LinePanelProps {
    * 선 종류/화살표/텍스트 스타일 bulk-apply to every target; 곡률 and 이름 편집 stay
    * single-reference-only (matching `singleLineSel`, MindFlow.dc.html:302, 342). */
   lineIds: string[];
+  /** M6: renders as a bottom sheet instead of a floating side panel. */
+  isMobile?: boolean;
 }
 
 /**
@@ -16,7 +18,7 @@ interface LinePanelProps {
  * MindFlow.dc.html:269) the header switches to a "다중 선택" count and the
  * 곡률/이름 편집 sections (single-only) are hidden.
  */
-export function LinePanel({ controller, lineIds }: LinePanelProps) {
+export function LinePanel({ controller, lineIds, isMobile = false }: LinePanelProps) {
   const th = controller.theme;
   const ids = lineIds.filter((id) => controller.doc.lines.some((x) => x.id === id));
   const refId = ids[0];
@@ -26,8 +28,8 @@ export function LinePanel({ controller, lineIds }: LinePanelProps) {
   const name = l.label && l.label.trim() ? l.label : l.dashed === false ? '실선' : '점선';
 
   return (
-    <div style={panelWrapStyle(th)}>
-      <div style={panelBodyStyle()}>
+    <div style={panelWrapStyle(th, isMobile)}>
+      <div style={panelBodyStyle(isMobile)}>
         {multi ? (
           <>
             <SectionLabel theme={th}>다중 선택</SectionLabel>

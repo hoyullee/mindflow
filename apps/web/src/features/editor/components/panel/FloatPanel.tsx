@@ -6,6 +6,8 @@ interface FloatPanelProps {
   /** One or more selected memo ids — port of `floatTargets()` (MindFlow.dc.html:2732).
    * Style setters bulk-apply to every target. */
   floatIds: string[];
+  /** M6: renders as a bottom sheet instead of a floating side panel. */
+  isMobile?: boolean;
 }
 
 /**
@@ -14,7 +16,7 @@ interface FloatPanelProps {
  * ids (`multiFloatSel`, MindFlow.dc.html:3009) the header switches to a
  * "다중 선택" count.
  */
-export function FloatPanel({ controller, floatIds }: FloatPanelProps) {
+export function FloatPanel({ controller, floatIds, isMobile = false }: FloatPanelProps) {
   const th = controller.theme;
   const ids = floatIds.filter((id) => controller.doc.floats.some((x) => x.id === id));
   const refId = ids[0];
@@ -24,8 +26,8 @@ export function FloatPanel({ controller, floatIds }: FloatPanelProps) {
   const name = f.text ? f.text.split('\n')[0]?.trim() || '빈 메모' : '빈 메모';
 
   return (
-    <div style={panelWrapStyle(th)}>
-      <div style={panelBodyStyle()}>
+    <div style={panelWrapStyle(th, isMobile)}>
+      <div style={panelBodyStyle(isMobile)}>
         {multi ? (
           <>
             <SectionLabel theme={th}>다중 선택</SectionLabel>

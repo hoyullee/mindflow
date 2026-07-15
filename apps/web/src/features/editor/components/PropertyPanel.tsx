@@ -3,6 +3,7 @@ import { NodePanel } from './panel/NodePanel';
 import { LinePanel } from './panel/LinePanel';
 import { FloatPanel } from './panel/FloatPanel';
 import { ZonePanel } from './panel/ZonePanel';
+import { useIsMobile } from '../../../hooks/useMediaQuery';
 
 interface PropertyPanelProps {
   controller: EditorController;
@@ -21,16 +22,17 @@ interface PropertyPanelProps {
  * 2984): a mixed marquee selection shows no property panel.
  */
 export function PropertyPanel({ controller }: PropertyPanelProps) {
+  const isMobile = useIsMobile();
   const sel = controller.selection;
-  if (sel?.kind === 'zone') return <ZonePanel controller={controller} zoneId={sel.id} />;
+  if (sel?.kind === 'zone') return <ZonePanel controller={controller} zoneId={sel.id} isMobile={isMobile} />;
 
   const m = controller.multiGroups;
   const nodesOnly = m.nodes.length > 0 && !m.lines.length && !m.floats.length;
   const linesOnly = m.lines.length > 0 && !m.nodes.length && !m.floats.length;
   const floatsOnly = m.floats.length > 0 && !m.nodes.length && !m.lines.length;
 
-  if (nodesOnly) return <NodePanel controller={controller} nodeIds={m.nodes} />;
-  if (linesOnly) return <LinePanel controller={controller} lineIds={m.lines} />;
-  if (floatsOnly) return <FloatPanel controller={controller} floatIds={m.floats} />;
+  if (nodesOnly) return <NodePanel controller={controller} nodeIds={m.nodes} isMobile={isMobile} />;
+  if (linesOnly) return <LinePanel controller={controller} lineIds={m.lines} isMobile={isMobile} />;
+  if (floatsOnly) return <FloatPanel controller={controller} floatIds={m.floats} isMobile={isMobile} />;
   return null;
 }

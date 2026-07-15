@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import type { EditorController } from '../useEditorState';
 import { StyleMenu } from './StyleMenu';
 import { ExportMenu } from './ExportMenu';
+import { useIsMobile } from '../../../hooks/useMediaQuery';
 
 interface ToolbarProps {
   controller: EditorController;
@@ -11,9 +12,14 @@ interface ToolbarProps {
  * Top bar — port of `.mf-topbar` (MindFlow.dc.html:36-96). Editor-b wires
  * undo/redo, the shape/memo/line/zone add buttons, and the export dropdown
  * (view switch and the 스타일 dropdown were already wired in Editor-a).
+ *
+ * M6: horizontal scroll for narrow screens was already in place
+ * (`.mf-ed-topbar`'s `overflowX: auto`, `editor.css`'s thin scrollbar); this
+ * adds >=44px touch targets on mobile for every icon button in this bar.
  */
 export function Toolbar({ controller }: ToolbarProps) {
   const { theme: th } = controller;
+  const isMobile = useIsMobile();
   const [styleMenuOpen, setStyleMenuOpen] = useState(false);
   const [exportMenuOpen, setExportMenuOpen] = useState(false);
   const styleWrapRef = useRef<HTMLDivElement | null>(null);
@@ -30,8 +36,8 @@ export function Toolbar({ controller }: ToolbarProps) {
   }, [styleMenuOpen, exportMenuOpen]);
 
   const addBtnStyle = {
-    width: 34,
-    height: 34,
+    width: isMobile ? 44 : 34,
+    height: isMobile ? 44 : 34,
     display: 'flex',
     alignItems: 'center',
     justifyContent: 'center',
@@ -46,8 +52,8 @@ export function Toolbar({ controller }: ToolbarProps) {
 
   const historyBtnStyle = (enabled: boolean) =>
     ({
-      width: 32,
-      height: 32,
+      width: isMobile ? 44 : 32,
+      height: isMobile ? 44 : 32,
       display: 'flex',
       alignItems: 'center',
       justifyContent: 'center',
@@ -103,7 +109,7 @@ export function Toolbar({ controller }: ToolbarProps) {
           className="mf-ed-btn"
           onClick={() => controller.setView('map')}
           aria-pressed={controller.view === 'map'}
-          style={viewBtnStyle(controller.view === 'map', th)}
+          style={viewBtnStyle(controller.view === 'map', th, isMobile)}
         >
           <MapIcon /> 맵
         </button>
@@ -112,7 +118,7 @@ export function Toolbar({ controller }: ToolbarProps) {
           className="mf-ed-btn"
           onClick={() => controller.setView('outline')}
           aria-pressed={controller.view === 'outline'}
-          style={viewBtnStyle(controller.view === 'outline', th)}
+          style={viewBtnStyle(controller.view === 'outline', th, isMobile)}
         >
           <OutlineIcon /> 아웃라인
         </button>
@@ -148,7 +154,7 @@ export function Toolbar({ controller }: ToolbarProps) {
             display: 'flex',
             alignItems: 'center',
             gap: 7,
-            height: 34,
+            height: isMobile ? 44 : 34,
             padding: '0 12px',
             border: `1px solid ${styleMenuOpen ? th.accent : th.border}`,
             borderRadius: 9,
@@ -197,12 +203,12 @@ function Divider({ theme: th }: { theme: EditorController['theme'] }) {
   return <div style={{ width: 1, height: 24, background: th.border }} />;
 }
 
-function viewBtnStyle(active: boolean, th: EditorController['theme']) {
+function viewBtnStyle(active: boolean, th: EditorController['theme'], isMobile = false) {
   return {
     display: 'flex',
     alignItems: 'center',
     gap: 5,
-    height: 28,
+    height: isMobile ? 44 : 28,
     padding: '0 10px',
     border: 'none',
     borderRadius: 8,

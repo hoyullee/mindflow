@@ -1,3 +1,18 @@
+/* M6 (PWA): self-hosted Pretendard (variable font, weights 45-920 in one
+   file) instead of the jsdelivr CDN link the dc prototype used. Self-hosting
+   means the font is precached by the service worker like the rest of the app
+   shell, so text renders correctly offline and in CDN-blocked environments —
+   the CDN `<link>` (cross-origin, uncacheable by our own SW) would otherwise
+   silently fall back to `system-ui` whenever the network is unavailable.
+   License: SIL Open Font License 1.1 — see public/fonts/pretendard/LICENSE.txt. */
+@font-face {
+  font-family: 'Pretendard';
+  src: url('/fonts/pretendard/PretendardVariable.woff2') format('woff2');
+  font-weight: 45 920;
+  font-style: normal;
+  font-display: swap;
+}
+
 /* Global reset, ported from the `<style>` block shared by the *.dc.html pages. */
 * {
   box-sizing: border-box;

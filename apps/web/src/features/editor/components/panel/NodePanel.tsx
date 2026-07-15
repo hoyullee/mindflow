@@ -21,6 +21,8 @@ interface NodePanelProps {
    * every target (see `useEditorState`'s `nodeTargetIds`), so this panel
    * doesn't need to loop itself. */
   nodeIds: string[];
+  /** M6: renders as a bottom sheet instead of a floating side panel. */
+  isMobile?: boolean;
 }
 
 /**
@@ -34,7 +36,7 @@ interface NodePanelProps {
  * 236) are hidden — everything else applies to every target at once, exactly
  * like the original's own `nodeTargets()`-driven setters.
  */
-export function NodePanel({ controller, nodeIds }: NodePanelProps) {
+export function NodePanel({ controller, nodeIds, isMobile = false }: NodePanelProps) {
   const th = controller.theme;
   const ids = nodeIds.filter((id) => controller.doc.nodes[id]);
   const refId = ids[0];
@@ -43,8 +45,8 @@ export function NodePanel({ controller, nodeIds }: NodePanelProps) {
   const multi = ids.length > 1;
 
   return (
-    <div style={panelWrapStyle(th)}>
-      <div style={panelBodyStyle()}>
+    <div style={panelWrapStyle(th, isMobile)}>
+      <div style={panelBodyStyle(isMobile)}>
         {multi ? (
           <>
             <SectionLabel theme={th}>다중 선택</SectionLabel>

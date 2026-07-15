@@ -7,10 +7,14 @@ import type { EditorController } from '../useEditorState';
 
 interface MinimapProps {
   controller: EditorController;
+  /** M6: a smaller box on mobile, where screen space is scarce. */
+  isMobile?: boolean;
 }
 
-const W = 178;
-const H = 116;
+const W_DESKTOP = 178;
+const H_DESKTOP = 116;
+const W_MOBILE = 120;
+const H_MOBILE = 78;
 const PAD = 8;
 
 /**
@@ -18,8 +22,10 @@ const PAD = 8;
  * (MindFlow.dc.html:1512-1545): the whole map scaled to fit a small `W`×`H` box, a dot per node
  * (root slightly larger), the current viewport traced as a rectangle, and click/drag-to-pan.
  */
-export function Minimap({ controller }: MinimapProps) {
+export function Minimap({ controller, isMobile = false }: MinimapProps) {
   const { geom, theme: th, pan, zoom, vw, vh } = controller;
+  const W = isMobile ? W_MOBILE : W_DESKTOP;
+  const H = isMobile ? H_MOBILE : H_DESKTOP;
   const svgRef = useRef<SVGSVGElement | null>(null);
   const draggingRef = useRef(false);
 

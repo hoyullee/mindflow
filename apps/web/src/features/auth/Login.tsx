@@ -7,6 +7,7 @@ import { ForgotStep } from './ForgotStep';
 import { ForgotVerifyStep } from './ForgotVerifyStep';
 import { useLoginController } from './useLoginController';
 import { deriveLoginView } from './viewModel';
+import { useIsMobile } from '../../hooks/useMediaQuery';
 
 /**
  * React port of Login.dc.html. State machine: `mode` ('login' | 'signup') ×
@@ -14,10 +15,16 @@ import { deriveLoginView } from './viewModel';
  * {@link useLoginController}. Layout/styling mirrors the original inline
  * styles; behavior (validation, demo verification codes, timers) is ported
  * 1:1 from the original `class Component extends DCLogic` controller.
+ *
+ * M6 (mobile web): below the 768px breakpoint the left brand panel is
+ * dropped entirely (it's decorative, and the form is the task) and the form
+ * column switches from a fixed 520px side panel to a full-width, single
+ * column layout with mobile-appropriate padding.
  */
 export function Login() {
   const controller = useLoginController();
   const view = deriveLoginView(controller.state);
+  const isMobile = useIsMobile();
 
   return (
     <div
@@ -33,9 +40,15 @@ export function Login() {
     >
       {controller.state.busy && <LoadingOverlay message={controller.state.loaderMsg || '로그인하고 있어요'} />}
 
-      <BrandPanel />
+      {!isMobile && <BrandPanel />}
 
-      <div style={{ width: 520, flex: '0 0 auto', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 40 }}>
+      <div
+        style={
+          isMobile
+            ? { flex: '1 1 auto', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '32px 20px' }
+            : { width: 520, flex: '0 0 auto', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 40 }
+        }
+      >
         <div style={{ width: '100%', maxWidth: 360, animation: 'mf-fade .3s ease' }}>
           <div style={{ fontSize: 26, fontWeight: 800, letterSpacing: '-.02em', marginBottom: 6 }}>{view.heading}</div>
           <div style={{ fontSize: 14, color: '#9c8b7e', marginBottom: 30 }}>{view.subheading}</div>

@@ -50,4 +50,16 @@ export default tseslint.config(
       'no-restricted-globals': 'off',
     },
   },
+  {
+    // M6: Node-side build scripts (e.g. apps/web/scripts/generate-icons.mjs)
+    // run under Node, not the browser/DOM — they need Node globals.
+    files: ['apps/*/scripts/**/*.mjs'],
+    languageOptions: {
+      globals: {
+        Buffer: 'readonly',
+        console: 'readonly',
+        process: 'readonly',
+      },
+    },
+  },
 );

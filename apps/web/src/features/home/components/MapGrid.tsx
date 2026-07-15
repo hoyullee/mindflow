@@ -8,7 +8,11 @@ interface Props {
   controller: HomeController;
 }
 
-const GRID_STYLE = { display: 'grid', gridTemplateColumns: 'repeat(auto-fill,minmax(300px,1fr))', gap: 20 } as const;
+// Grid columns are driven entirely by the `.mf-map-grid` media queries in
+// `home.css` (not inline) so the 768px mobile breakpoint (1 column) and a
+// 480-768px 2-column step can override the desktop `minmax(300px,1fr)`
+// auto-fill — inline styles would otherwise always win over a stylesheet rule.
+const GRID_STYLE = { gap: 20 } as const;
 
 /** Home.dc.html:209-329 — recent / folders / maps sections plus the three empty states. */
 export function MapGrid({ view, controller }: Props) {
@@ -17,7 +21,7 @@ export function MapGrid({ view, controller }: Props) {
       {view.recentSectionVisible && (
         <div>
           <div style={{ fontSize: 12.5, fontWeight: 700, color: '#9c8b7e', marginBottom: 14 }}>최근 항목</div>
-          <div style={{ ...GRID_STYLE, marginBottom: 26 }}>
+          <div className="mf-map-grid" style={{ ...GRID_STYLE, marginBottom: 26 }}>
             {view.recentCards.map((c) => (
               <MapCard key={c.title} card={c} controller={controller} draggableEnabled={false} />
             ))}
@@ -29,7 +33,7 @@ export function MapGrid({ view, controller }: Props) {
       {view.foldersSectionVisible && (
         <div>
           <div style={{ fontSize: 12.5, fontWeight: 700, color: '#9c8b7e', marginBottom: 14 }}>폴더</div>
-          <div style={{ ...GRID_STYLE, marginBottom: 26 }}>
+          <div className="mf-map-grid" style={{ ...GRID_STYLE, marginBottom: 26 }}>
             {view.folderCards.map((f) => (
               <FolderCard key={f.id} folder={f} controller={controller} />
             ))}
@@ -41,7 +45,7 @@ export function MapGrid({ view, controller }: Props) {
       {view.mapsSectionVisible && (
         <div>
           <div style={{ fontSize: 12.5, fontWeight: 700, color: '#9c8b7e', marginBottom: 14 }}>맵</div>
-          <div style={GRID_STYLE}>
+          <div className="mf-map-grid" style={GRID_STYLE}>
             {view.allCards.map((c) => (
               <MapCard key={c.title} card={c} controller={controller} draggableEnabled={!view.isDriveSpace} />
             ))}

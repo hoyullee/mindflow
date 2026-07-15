@@ -1,5 +1,6 @@
 import type { EditorController } from '../useEditorState';
 import { Minimap } from './Minimap';
+import { useIsMobile } from '../../../hooks/useMediaQuery';
 
 interface ZoomControlsProps {
   controller: EditorController;
@@ -10,12 +11,18 @@ interface ZoomControlsProps {
  * (`notOutlineMode`'s panel: `showMinimap` + the zoom cluster). `showMinimap`
  * was a design-time prop in the original; this port exposes it as an in-app
  * toggle button next to the zoom controls instead (no props/config screen here).
+ *
+ * M6: on mobile the minimap shrinks (see `Minimap`'s `isMobile`) and every
+ * button grows to a >=44px touch target (still visually compact via padding,
+ * not a full 44px box, for the divider-separated zoom-percent readout).
  */
 export function ZoomControls({ controller }: ZoomControlsProps) {
   const th = controller.theme;
+  const isMobile = useIsMobile();
+  const btnSize = isMobile ? 44 : 26;
   const btnStyle = {
-    width: 26,
-    height: 26,
+    width: btnSize,
+    height: btnSize,
     display: 'flex',
     alignItems: 'center',
     justifyContent: 'center',
@@ -46,7 +53,7 @@ export function ZoomControls({ controller }: ZoomControlsProps) {
     >
       {controller.showMinimap && (
         <div style={{ padding: '6px 6px 0' }}>
-          <Minimap controller={controller} />
+          <Minimap controller={controller} isMobile={isMobile} />
         </div>
       )}
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 2, padding: '4px 6px' }}>

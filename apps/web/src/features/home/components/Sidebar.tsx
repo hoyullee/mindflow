@@ -8,13 +8,63 @@ interface Props {
   state: HomeState;
   view: HomeViewModel;
   controller: HomeController;
+  /** M6: below 768px the LNB becomes an off-canvas drawer instead of a
+   * permanent column — `isOpen`/`onClose` are ignored (and the aside renders
+   * as the classic fixed column) when `isMobile` is false. */
+  isMobile?: boolean;
+  isOpen?: boolean;
+  onClose?: () => void;
 }
 
 /** Home.dc.html:70-177 `<aside>` — the LNB (spaces, Google Drive, favorites, trash). */
-export function Sidebar({ state, view, controller }: Props) {
+export function Sidebar({ state, view, controller, isMobile = false, isOpen = false, onClose }: Props) {
+  // Desktop: always-visible 248px column. Mobile: hamburger-triggered overlay
+  // drawer (translateX off/on-screen) with a tap-to-dismiss backdrop.
+  if (isMobile && !isOpen) return null;
+
+  const asideStyle = isMobile
+    ? ({
+        position: 'fixed',
+        left: 0,
+        top: 0,
+        bottom: 0,
+        width: 'min(80vw, 280px)',
+        zIndex: 41,
+        boxShadow: '0 0 32px rgba(0,0,0,.22)',
+      } as const)
+    : ({ width: 248, flex: '0 0 auto' } as const);
+
   return (
-    <aside style={{ width: 248, flex: '0 0 auto', background: '#fff', borderRight: '1px solid #ecdfd5', display: 'flex', flexDirection: 'column', padding: '14px 12px', overflow: 'hidden' }}>
-      <SettingsPopover state={state} controller={controller} userInitial={view.userInitial} />
+    <>
+      {isMobile && (
+        // Decorative tap-to-dismiss backdrop — intentionally not a `button`
+        // (unreachable via keyboard, `aria-hidden`); the actual accessible
+        // "close" action is the ✕ button inside the drawer below.
+        <div aria-hidden="true" onClick={onClose} style={{ position: 'fixed', inset: 0, background: 'rgba(33,24,17,.4)', zIndex: 40 }} />
+      )}
+      <aside
+        style={{
+          ...asideStyle,
+          background: '#fff',
+          borderRight: '1px solid #ecdfd5',
+          display: 'flex',
+          flexDirection: 'column',
+          padding: '14px 12px',
+          overflow: 'hidden',
+        }}
+      >
+        {isMobile && (
+          <button
+            type="button"
+            className="btn"
+            onClick={onClose}
+            aria-label="메뉴 닫기"
+            style={{ alignSelf: 'flex-end', width: 44, height: 44, display: 'flex', alignItems: 'center', justifyContent: 'center', border: 'none', background: 'transparent', color: '#7c6d60', fontSize: 20, cursor: 'pointer', marginBottom: 4 }}
+          >
+            ✕
+          </button>
+        )}
+        <SettingsPopover state={state} controller={controller} userInitial={view.userInitial} />
 
       <div style={{ fontSize: 11, fontWeight: 700, letterSpacing: '.04em', color: '#9c8b7e', padding: '14px 10px 8px' }}>스페이스</div>
 
@@ -32,7 +82,7 @@ export function Sidebar({ state, view, controller }: Props) {
         onKeyDown={(e) => {
           if (e.key === 'Enter' || e.key === ' ') controller.openNewSpace();
         }}
-        style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '9px 10px', borderRadius: 9, cursor: 'pointer', fontSize: 13.5, fontWeight: 500, color: '#7c6d60', flexShrink: 0 }}
+        style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '9px 10px', minHeight: isMobile ? 44 : undefined, borderRadius: 9, cursor: 'pointer', fontSize: 13.5, fontWeight: 500, color: '#7c6d60', flexShrink: 0 }}
       >
         <span style={{ fontSize: 15, color: '#9c8b7e' }}>＋</span> 새 공간
       </div>
@@ -50,6 +100,7 @@ export function Sidebar({ state, view, controller }: Props) {
           alignItems: 'center',
           gap: 10,
           padding: '9px 10px',
+          minHeight: isMobile ? 44 : undefined,
           borderRadius: 9,
           cursor: 'pointer',
           fontSize: 13.5,
@@ -73,7 +124,7 @@ export function Sidebar({ state, view, controller }: Props) {
         onKeyDown={(e) => {
           if (e.key === 'Enter' || e.key === ' ') controller.toggleFavList();
         }}
-        style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '9px 10px', borderRadius: 9, cursor: 'pointer', fontSize: 13.5, fontWeight: 500, color: '#7c6d60' }}
+        style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '9px 10px', minHeight: isMobile ? 44 : undefined, borderRadius: 9, cursor: 'pointer', fontSize: 13.5, fontWeight: 500, color: '#7c6d60' }}
       >
         <span style={{ fontSize: 15, color: '#e0a53c' }}>★</span> 즐겨찾기
         <span style={{ marginLeft: 'auto', fontSize: 11, color: '#c9b8a9' }}>{view.favCount}</span>
@@ -109,7 +160,7 @@ export function Sidebar({ state, view, controller }: Props) {
         onKeyDown={(e) => {
           if (e.key === 'Enter' || e.key === ' ') controller.toggleTrashList();
         }}
-        style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '9px 10px', borderRadius: 9, cursor: 'pointer', fontSize: 13.5, fontWeight: 500, color: '#7c6d60' }}
+        style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '9px 10px', minHeight: isMobile ? 44 : undefined, borderRadius: 9, cursor: 'pointer', fontSize: 13.5, fontWeight: 500, color: '#7c6d60' }}
       >
         <span style={{ fontSize: 15 }}>🗑</span> 휴지통
         <span style={{ marginLeft: 'auto', fontSize: 11, color: '#c9b8a9' }}>{view.trashCount}</span>
@@ -147,5 +198,6 @@ export function Sidebar({ state, view, controller }: Props) {
         </div>
       </div>
     </aside>
+    </>
   );
 }

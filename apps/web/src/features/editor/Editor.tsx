@@ -7,6 +7,7 @@ import { ZoomControls } from './components/ZoomControls';
 import { Viewport } from './components/Viewport';
 import { OutlineView } from './components/OutlineView';
 import { PropertyPanel } from './components/PropertyPanel';
+import { useIsMobile } from '../../hooks/useMediaQuery';
 
 /**
  * React port of `MindFlow.dc.html`'s editor — the mindmap canvas. This is the
@@ -22,6 +23,7 @@ import { PropertyPanel } from './components/PropertyPanel';
 export function Editor() {
   const controller = useEditorState();
   const { doc, theme: th } = controller;
+  const isMobile = useIsMobile();
 
   const rootStyle: CSSProperties = {
     height: '100vh',
@@ -55,24 +57,29 @@ export function Editor() {
             <DocChip controller={controller} />
             <PropertyPanel controller={controller} />
             <ZoomControls controller={controller} />
-            <div
-              style={{
-                position: 'absolute',
-                left: 16,
-                bottom: 16,
-                fontSize: 11.5,
-                color: th.subtext,
-                background: th.panel,
-                border: `1px solid ${th.border}`,
-                borderRadius: 9,
-                padding: '7px 11px',
-                zIndex: 15,
-                lineHeight: 1.7,
-              }}
-            >
-              <b style={{ color: th.text }}>좌드래그</b> 선택 · <b style={{ color: th.text }}>우클릭/휠클릭 드래그</b> 이동 ·{' '}
-              <b style={{ color: th.text }}>더블클릭</b> 편집 · <b style={{ color: th.text }}>스크롤/핀치</b> 줌
-            </div>
+            {/* M6: this desktop mouse-gesture legend (우클릭/휠클릭/스크롤/핀치) doesn't
+                apply to touch, and there's no room for it above a bottom-sheet
+                property panel on narrow screens, so it's desktop-only. */}
+            {!isMobile && (
+              <div
+                style={{
+                  position: 'absolute',
+                  left: 16,
+                  bottom: 16,
+                  fontSize: 11.5,
+                  color: th.subtext,
+                  background: th.panel,
+                  border: `1px solid ${th.border}`,
+                  borderRadius: 9,
+                  padding: '7px 11px',
+                  zIndex: 15,
+                  lineHeight: 1.7,
+                }}
+              >
+                <b style={{ color: th.text }}>좌드래그</b> 선택 · <b style={{ color: th.text }}>우클릭/휠클릭 드래그</b> 이동 ·{' '}
+                <b style={{ color: th.text }}>더블클릭</b> 편집 · <b style={{ color: th.text }}>스크롤/핀치</b> 줌
+              </div>
+            )}
           </>
         ) : (
           <div className="mf-ed-outline" style={{ position: 'absolute', inset: 0, zIndex: 15, background: th.appBg, overflowY: 'auto' }}>

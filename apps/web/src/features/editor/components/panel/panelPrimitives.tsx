@@ -23,7 +23,32 @@ export const SIZE_OPTIONS: { k: 's' | 'm' | 'l'; label: string }[] = [
   { k: 'l', label: '크게' },
 ];
 
-export function panelWrapStyle(th: Theme): CSSProperties {
+/**
+ * M6: on mobile there's no room for a floating 236px-wide side panel over the
+ * canvas, so the property panel becomes a bottom sheet instead — anchored to
+ * the viewport bottom, full width, capped at 55% of the viewport height (the
+ * canvas above stays reachable for pan/zoom/tap-to-deselect).
+ */
+export function panelWrapStyle(th: Theme, isMobile = false): CSSProperties {
+  if (isMobile) {
+    return {
+      position: 'fixed',
+      left: 0,
+      right: 0,
+      bottom: 0,
+      width: '100%',
+      maxHeight: '55vh',
+      border: `1px solid ${th.border}`,
+      borderBottom: 'none',
+      borderRadius: '16px 16px 0 0',
+      boxShadow: '0 -8px 30px rgba(0,0,0,.14)',
+      zIndex: 25,
+      overflow: 'hidden',
+      display: 'flex',
+      flexDirection: 'column',
+      background: th.panel,
+    };
+  }
   return {
     position: 'absolute',
     left: 16,
@@ -41,8 +66,12 @@ export function panelWrapStyle(th: Theme): CSSProperties {
   };
 }
 
-export function panelBodyStyle(): CSSProperties {
-  return { overflowY: 'auto', padding: 14, minHeight: 0 };
+export function panelBodyStyle(isMobile = false): CSSProperties {
+  return {
+    overflowY: 'auto',
+    padding: isMobile ? '14px 14px calc(14px + env(safe-area-inset-bottom, 0px))' : 14,
+    minHeight: 0,
+  };
 }
 
 export function SectionLabel({ theme, children }: { theme: Theme; children: ReactNode }) {

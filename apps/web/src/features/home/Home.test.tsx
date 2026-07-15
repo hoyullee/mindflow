@@ -3,6 +3,7 @@ import { cleanup, render, screen, waitFor, within } from '@testing-library/react
 import userEvent from '@testing-library/user-event';
 import { MemoryRouter, Route, Routes } from 'react-router-dom';
 import { Home } from './Home';
+import { mockMatchMedia } from '../../test/matchMedia';
 
 afterEach(() => {
   cleanup();
@@ -79,5 +80,29 @@ describe('Home', () => {
     await user.click(screen.getByRole('button', { name: '로그아웃' }));
 
     await waitFor(() => expect(screen.getByText('LOGIN_PAGE')).toBeTruthy(), { timeout: 2000 });
+  });
+
+  describe('mobile (M6)', () => {
+    it('hides the sidebar behind a hamburger drawer and opens/closes it, crash-free', async () => {
+      const restore = mockMatchMedia(true);
+      try {
+        const user = userEvent.setup();
+        const { container } = renderHome();
+
+        // Drawer starts closed: no <aside> in the document at all (not just hidden).
+        expect(container.querySelector('aside')).toBeNull();
+        expect(screen.getByPlaceholderText('파일 검색')).toBeTruthy();
+
+        await user.click(screen.getByRole('button', { name: '메뉴 열기' }));
+
+        const sidebar = within(container.querySelector('aside') as HTMLElement);
+        expect(sidebar.getByText('스페이스')).toBeTruthy();
+
+        await user.click(screen.getByRole('button', { name: '메뉴 닫기' }));
+        expect(container.querySelector('aside')).toBeNull();
+      } finally {
+        restore();
+      }
+    });
   });
 });
