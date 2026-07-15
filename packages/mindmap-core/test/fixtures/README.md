@@ -17,6 +17,7 @@ verified for behavior parity. They are the regression safety net referenced in
 | `golden/outline.md` | `exportOutline()` output | `toMarkdown(doc)` |
 | `golden/export.json` | `exportJSON()` output (verified `=== serializeDoc()`) | `serializeDoc(doc)` |
 | `golden/node-sizes.json` | per-node `metrics(node, depth) → {w,h}` read from the live controller (the exact sizes `_layout` used) | the `sizeOf` injected into `layout(doc, mode, sizeOf)` |
+| `golden/line-geometry.json` | `lineCPs(l)` control points + `cubicAt(G,.5)` midpoint for straight/curved/legacy cases, read from the live controller | `resolveLineGeometry` / `cubicAt` |
 
 ## Document / element schemas (as observed)
 

@@ -34,3 +34,6 @@ export { HistoryStack } from './history';
 
 export type { NodeSize, SizeOf, LayoutOptions } from './layout';
 export { layout } from './layout';
+
+export type { Point, LineGeometry, LineLike, Box, PortSide } from './geometry';
+export { resolveLineGeometry, cubicAt, portPoint } from './geometry';
