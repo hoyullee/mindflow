@@ -73,8 +73,11 @@ interface NodeBoxProps {
 function NodeBox({ id, node: n, g, nodes, mode, theme: th, rootX, controller }: NodeBoxProps) {
   const depth = g.depth;
   const col = colorOf(id, nodes, th);
-  const selected = controller.selection?.kind === 'node' && controller.selection.id === id;
+  // port of `MSEL.nodes.includes(v.id)` (MindFlow.dc.html:1138) — a marquee multi-selection
+  // rings EVERY targeted node, not just a single `selection`.
+  const selected = controller.multiGroups.nodes.includes(id);
   const editing = controller.editingNodeId === id;
+  const attach = controller.attachTarget?.id === id;
 
   const boxStyle: CSSProperties = {
     position: 'absolute',
@@ -131,6 +134,9 @@ function NodeBox({ id, node: n, g, nodes, mode, theme: th, rootX, controller }: 
   }
 
   if (selected) boxStyle.boxShadow = `0 0 0 2px ${th.panel}, 0 0 0 4px ${hexA(th.accent, 0.55)}, 0 6px 18px rgba(0,0,0,.12)`;
+  // drop-target highlight while another node is being dragged over this one — port of
+  // `Component#renderCanvas`'s `_attachHi` ring (MindFlow.dc.html:1158-1159).
+  if (attach) boxStyle.boxShadow = `0 0 0 3px ${th.accent}, 0 0 0 7px ${hexA(th.accent, 0.25)}, 0 6px 18px rgba(0,0,0,.16)`;
   if (editing) boxStyle.zIndex = 70;
 
   const shape = n.shape || 'round';
@@ -304,7 +310,9 @@ function NodeBox({ id, node: n, g, nodes, mode, theme: th, rootX, controller }: 
           </svg>
         </div>
       )}
-      {selected && !editing && (
+      {/* resize handle only for a true single selection (port of `this.state.selectedId`,
+          MindFlow.dc.html:1274 — not shown for a marquee multi-selection) */}
+      {controller.selection?.kind === 'node' && controller.selection.id === id && !editing && (
         <div
           title="크기 조절 (더블클릭: 원래 크기)"
           onPointerDown={(e) => controller.beginNodeResize(e, id)}

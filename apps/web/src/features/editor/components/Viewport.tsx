@@ -5,6 +5,7 @@ import { EdgeLayer } from './EdgeLayer';
 import { FloatLayer } from './FloatLayer';
 import { LineLayer } from './LineLayer';
 import { ZoneLayer } from './ZoneLayer';
+import { MarqueeLayer } from './MarqueeLayer';
 
 interface ViewportProps {
   doc: Doc;
@@ -45,6 +46,7 @@ export function Viewport({ doc, controller }: ViewportProps) {
             <NodeLayer nodes={doc.nodes} geom={geom} mode={layoutMode} theme={theme} controller={controller} />
             <LineLayer lines={doc.lines} theme={theme} controller={controller} />
             <FloatLayer floats={doc.floats} theme={theme} controller={controller} />
+            <MarqueeLayer rect={controller.marquee} theme={theme} />
           </div>
         </div>
       </div>

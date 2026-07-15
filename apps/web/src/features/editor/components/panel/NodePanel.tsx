@@ -15,7 +15,12 @@ import {
 
 interface NodePanelProps {
   controller: EditorController;
-  nodeId: string;
+  /** One or more selected node ids (a plain single-select is `[nodeId]`, a
+   * marquee multi-selection is every targeted node) — port of `nodeTargets()`
+   * (MindFlow.dc.html:1557). All style setters below already bulk-apply to
+   * every target (see `useEditorState`'s `nodeTargetIds`), so this panel
+   * doesn't need to loop itself. */
+  nodeIds: string[];
 }
 
 /**
@@ -24,16 +29,30 @@ interface NodePanelProps {
  * 선 색상+투명도 / 텍스트 스타일(B·크기·색) / 아이콘 / 메모 / 이름 편집.
  * Accordion collapse/expand (panelSec) is flattened to always-open sections
  * here — a deliberate simplification (documented in the Editor-b report).
+ * With 2+ ids (`multiNodeSel`, MindFlow.dc.html:2967) the header switches to
+ * a "다중 선택" count and 메모/이름 편집 (single-only, MindFlow.dc.html:141,
+ * 236) are hidden — everything else applies to every target at once, exactly
+ * like the original's own `nodeTargets()`-driven setters.
  */
-export function NodePanel({ controller, nodeId }: NodePanelProps) {
+export function NodePanel({ controller, nodeIds }: NodePanelProps) {
   const th = controller.theme;
-  const n = controller.doc.nodes[nodeId];
-  if (!n) return null;
+  const ids = nodeIds.filter((id) => controller.doc.nodes[id]);
+  const refId = ids[0];
+  const n = refId ? controller.doc.nodes[refId] : undefined;
+  if (!n || !refId) return null;
+  const multi = ids.length > 1;
 
   return (
     <div style={panelWrapStyle(th)}>
       <div style={panelBodyStyle()}>
-        <PanelTitle theme={th} kicker="선택한 주제" name={n.text} />
+        {multi ? (
+          <>
+            <SectionLabel theme={th}>다중 선택</SectionLabel>
+            <div style={{ fontSize: 14, fontWeight: 600, marginBottom: 14 }}>도형 {ids.length}개 선택됨</div>
+          </>
+        ) : (
+          <PanelTitle theme={th} kicker="선택한 주제" name={n.text} />
+        )}
 
         <SectionLabel theme={th}>모양</SectionLabel>
         <div style={{ display: 'flex', flexWrap: 'wrap', gap: 5, marginBottom: 16 }}>
@@ -111,35 +130,39 @@ export function NodePanel({ controller, nodeId }: NodePanelProps) {
           ))}
         </div>
 
-        <Divider theme={th} />
-        <div style={{ fontSize: 11, fontWeight: 700, letterSpacing: '.04em', textTransform: 'uppercase', color: th.subtext, margin: '12px 0 8px', display: 'flex', alignItems: 'center', gap: 5 }}>
-          메모 <span style={{ fontSize: 12 }}>📝</span>
-        </div>
-        <textarea
-          value={n.note || ''}
-          onChange={(e) => controller.setNote(e.target.value)}
-          onMouseDown={(e) => e.stopPropagation()}
-          onKeyDown={(e) => e.stopPropagation()}
-          placeholder="이 주제에 대한 메모를 남겨보세요…"
-          style={{
-            width: '100%',
-            minHeight: 78,
-            resize: 'vertical',
-            border: `1px solid ${th.border}`,
-            borderRadius: 9,
-            background: th.panel2,
-            color: th.text,
-            fontFamily: 'inherit',
-            fontSize: 12.5,
-            lineHeight: 1.55,
-            padding: '9px 10px',
-            outline: 'none',
-            boxSizing: 'border-box',
-            marginBottom: 16,
-          }}
-        />
+        {!multi && (
+          <>
+            <Divider theme={th} />
+            <div style={{ fontSize: 11, fontWeight: 700, letterSpacing: '.04em', textTransform: 'uppercase', color: th.subtext, margin: '12px 0 8px', display: 'flex', alignItems: 'center', gap: 5 }}>
+              메모 <span style={{ fontSize: 12 }}>📝</span>
+            </div>
+            <textarea
+              value={n.note || ''}
+              onChange={(e) => controller.setNote(e.target.value)}
+              onMouseDown={(e) => e.stopPropagation()}
+              onKeyDown={(e) => e.stopPropagation()}
+              placeholder="이 주제에 대한 메모를 남겨보세요…"
+              style={{
+                width: '100%',
+                minHeight: 78,
+                resize: 'vertical',
+                border: `1px solid ${th.border}`,
+                borderRadius: 9,
+                background: th.panel2,
+                color: th.text,
+                fontFamily: 'inherit',
+                fontSize: 12.5,
+                lineHeight: 1.55,
+                padding: '9px 10px',
+                outline: 'none',
+                boxSizing: 'border-box',
+                marginBottom: 16,
+              }}
+            />
 
-        <RenameButton theme={th} onClick={() => controller.startEditNode(nodeId)} />
+            <RenameButton theme={th} onClick={() => controller.startEditNode(refId)} />
+          </>
+        )}
       </div>
     </div>
   );

@@ -31,7 +31,12 @@ export function LineLayer({ lines, theme: th, controller }: LineLayerProps) {
     const g = resolveLineGeometry(l);
     const { x: X1, y: Y1 } = g.P0;
     const { x: X2, y: Y2 } = g.P3;
-    const selected = controller.selection?.kind === 'line' && controller.selection.id === l.id;
+    // port of `MSEL.lines.includes(l.id)` (MindFlow.dc.html:1315) — a marquee multi-selection
+    // rings/halos every target, but the drag HANDLES below only ever show for a true single
+    // selection (port of `this.state.selLine`, MindFlow.dc.html:1406 — never set while a
+    // marquee multi-selection is active).
+    const selected = controller.multiGroups.lines.includes(l.id);
+    const showHandles = controller.selection?.kind === 'line' && controller.selection.id === l.id;
     const editing = controller.editingLineId === l.id;
     const aStart = Math.atan2(Y1 - g.C1.y, X1 - g.C1.x);
     const aEnd = Math.atan2(Y2 - g.C2.y, X2 - g.C2.x);
@@ -76,7 +81,7 @@ export function LineLayer({ lines, theme: th, controller }: LineLayerProps) {
     if (l.startArrow) paths.push(<polygon key={`as${l.id}`} points={head(X1, Y1, aStart)} fill={l.color || col} style={{ pointerEvents: 'none' }} />);
     if (l.endArrow) paths.push(<polygon key={`ae${l.id}`} points={head(X2, Y2, aEnd)} fill={l.color || col} style={{ pointerEvents: 'none' }} />);
 
-    if (selected) {
+    if (showHandles) {
       const handle = (x: number, y: number, key: string, onDown: (e: ReactPointerEvent) => void, title: string): ReactNode => (
         <circle key={key} cx={x} cy={y} r={6} fill={th.panel} stroke={th.accent} strokeWidth={2} style={{ pointerEvents: 'all', cursor: 'pointer' }} onPointerDown={onDown}>
           <title>{title}</title>

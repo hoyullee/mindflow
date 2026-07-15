@@ -14,9 +14,10 @@ import { PropertyPanel } from './components/PropertyPanel';
  * connector/theme switching, all driven by `@mindflow/mindmap-core`
  * (`layout`/`resolveLineGeometry`/`cubicAt`/`portPoint`/the `Doc` model).
  * Editor-b adds selection, text editing, structural add/delete, drag-move/
- * resize, the property panel, autosave + manual save, undo/redo, and export
- * (all driven by `useEditorState`). Multi-select (marquee) and the minimap
- * remain out of scope (Editor-c).
+ * resize, the property panel, autosave + manual save, undo/redo, and export.
+ * Editor-c adds marquee multi-select + its bulk property panel, the minimap,
+ * an editable outline view, and drag-to-reparent (all still driven by
+ * `useEditorState`).
  */
 export function Editor() {
   const controller = useEditorState();
@@ -69,12 +70,13 @@ export function Editor() {
                 lineHeight: 1.7,
               }}
             >
-              <b style={{ color: th.text }}>배경 드래그</b> 이동 · <b style={{ color: th.text }}>스크롤/핀치</b> 줌
+              <b style={{ color: th.text }}>좌드래그</b> 선택 · <b style={{ color: th.text }}>우클릭/휠클릭 드래그</b> 이동 ·{' '}
+              <b style={{ color: th.text }}>더블클릭</b> 편집 · <b style={{ color: th.text }}>스크롤/핀치</b> 줌
             </div>
           </>
         ) : (
           <div className="mf-ed-outline" style={{ position: 'absolute', inset: 0, zIndex: 15, background: th.appBg, overflowY: 'auto' }}>
-            <OutlineView nodes={doc.nodes} theme={th} />
+            <OutlineView controller={controller} />
           </div>
         )}
       </div>

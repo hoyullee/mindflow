@@ -80,6 +80,33 @@ export function colorOf(id: string, nodes: NodeMap, theme: Theme): string {
   return palette[(idx < 0 ? 0 : idx) % palette.length] ?? theme.accent;
 }
 
+export interface OutlineRow {
+  id: string;
+  depth: number;
+}
+
+/**
+ * Port of `Component#outlineRows` (MindFlow.dc.html:1936-1943): a depth-first
+ * walk from the root respecting `collapsed`, then each free-standing shape (and
+ * its own subtree) at a flat depth of 1 — used by both the outline view's row
+ * order and its keyboard ArrowUp/ArrowDown navigation.
+ */
+export function outlineRows(nodes: NodeMap): OutlineRow[] {
+  const rows: OutlineRow[] = [];
+  const walk = (id: string, depth: number): void => {
+    const n = nodes[id];
+    if (!n) return;
+    rows.push({ id, depth });
+    if (!n.collapsed) n.children.forEach((c) => walk(c, depth + 1));
+  };
+  walk(ROOT_ID, 0);
+  for (const id in nodes) {
+    const n = nodes[id];
+    if (n?.free && !n.parent) walk(id, 1);
+  }
+  return rows;
+}
+
 /** Port of `Component#depthOf` (MindFlow.dc.html:887). */
 export function depthOf(nodes: NodeMap, id: string): number {
   let d = 0;

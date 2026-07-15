@@ -187,6 +187,196 @@ export function moveFreeNode(nodes: NodeMap, id: string, x: number, y: number): 
   return out;
 }
 
+// ---- bulk (multi-select) node ops — ports of `nodeTargets()`-driven setters
+// (setColor/setFill/.../setEmoji, MindFlow.dc.html:2545-2555, 2730-2731) so a
+// marquee multi-selection can apply one style change to every targeted node
+// in a single undo step, exactly like the original. ----
+
+/** Generic per-node bulk field setter — backs the multi-select property panel's
+ * shape/color/fill/stroke/alpha/textColor setters (single selection is just the `ids.length === 1` case). */
+export function setNodesField<K extends keyof Node>(nodes: NodeMap, ids: string[], key: K, value: Node[K]): NodeMap {
+  const valid = ids.filter((id) => nodes[id]);
+  if (!valid.length) return nodes;
+  const out = cloneNodes(nodes);
+  valid.forEach((id) => {
+    const on = out[id];
+    if (on) on[key] = value;
+  });
+  return out;
+}
+
+/** Port of `Component#toggleNodeBold` (MindFlow.dc.html:2730) — bulk-aware: flips every
+ * target relative to the FIRST target's current value (matches the original's `nodeTargets()[0]`). */
+export function toggleNodesBold(nodes: NodeMap, ids: string[]): NodeMap {
+  const valid = ids.filter((id) => nodes[id]);
+  const first = valid[0];
+  if (!first) return nodes;
+  const cur = !!nodes[first]?.bold;
+  const out = cloneNodes(nodes);
+  valid.forEach((id) => {
+    const on = out[id];
+    if (on) on.bold = !cur;
+  });
+  return out;
+}
+
+/** Port of `Component#setEmoji` (MindFlow.dc.html:2555) — per-id toggle (unlike bold, each
+ * node's emoji toggles independently against ITS OWN current value, not the first target's). */
+export function toggleNodesEmoji(nodes: NodeMap, ids: string[], emoji: string): NodeMap {
+  const valid = ids.filter((id) => nodes[id]);
+  if (!valid.length) return nodes;
+  const out = cloneNodes(nodes);
+  valid.forEach((id) => {
+    const on = out[id];
+    if (on) on.emoji = on.emoji === emoji ? '' : emoji;
+  });
+  return out;
+}
+
+// ---- bulk (multi-select) float / line ops — ports of `applyFloatText`/`applyLineText`
+// (MindFlow.dc.html:2733, 2738), which the original ALSO applies uniformly via
+// `floatTargets()`/`lineTargets()` regardless of single vs. multi selection. ----
+
+export function updateFloatItems(floats: Float[], ids: string[], patch: Partial<Float>): Float[] {
+  return floats.map((f) => (ids.includes(f.id) ? { ...f, ...patch } : f));
+}
+export function updateLineItems(lines: Line[], ids: string[], patch: Partial<Line>): Line[] {
+  return lines.map((l) => (ids.includes(l.id) ? { ...l, ...patch } : l));
+}
+
+// ---- multi-select bulk delete — port of `Component#deleteMulti` (MindFlow.dc.html:1595). ----
+
+/** Removes every targeted node's subtree (skipping the root, same guard as `deleteNodeSubtree`). */
+export function deleteNodesMulti(nodes: NodeMap, ids: string[]): NodeMap {
+  const out = cloneNodes(nodes);
+  ids.forEach((id) => {
+    if (id === ROOT_ID || !out[id]) return;
+    const par = out[id]?.parent ?? null;
+    const rm = [id, ...descendants(out, id)];
+    if (par && out[par]) out[par].children = out[par].children.filter((c) => c !== id);
+    rm.forEach((r) => {
+      delete out[r];
+    });
+  });
+  return out;
+}
+
+// ---- multi-select group translate — port of `Component#startGroupDrag`'s `onMove` 'group'
+// branch (MindFlow.dc.html:1706-1713). NOTE: only FREE root nodes carry a meaningful `x`/`y`
+// in this port's architecture (`layout()` recomputes every attached tree node's position from
+// scratch on every render — see `layout.ts`'s doc comment — so setting `x`/`y` on an attached
+// node here would be silently overwritten the moment the resulting doc change re-runs layout).
+// Group-drag therefore only translates free-standing nodes/floats/lines; attached tree nodes
+// caught in a marquee selection are still multi-selected/multi-deletable, just not multi-draggable
+// — a deliberate, documented deviation from the original (tracked in the Editor-c report). */
+export function translateNodesBy(nodes: NodeMap, orig: Record<string, { x: number; y: number }>, dx: number, dy: number): NodeMap {
+  const ids = Object.keys(orig).filter((id) => nodes[id]);
+  if (!ids.length) return nodes;
+  const out = cloneNodes(nodes);
+  ids.forEach((id) => {
+    const o = orig[id];
+    const on = out[id];
+    if (on && o) {
+      on.x = o.x + dx;
+      on.y = o.y + dy;
+    }
+  });
+  return out;
+}
+export function translateFloatsBy(floats: Float[], orig: Record<string, { x: number; y: number }>, dx: number, dy: number): Float[] {
+  return floats.map((f) => (orig[f.id] ? { ...f, x: orig[f.id]!.x + dx, y: orig[f.id]!.y + dy } : f));
+}
+export function translateLinesBy(lines: Line[], orig: Record<string, { x1: number; y1: number; x2: number; y2: number }>, dx: number, dy: number): Line[] {
+  return lines.map((l) => (orig[l.id] ? { ...l, x1: orig[l.id]!.x1 + dx, y1: orig[l.id]!.y1 + dy, x2: orig[l.id]!.x2 + dx, y2: orig[l.id]!.y2 + dy } : l));
+}
+
+// ---- drag-drop reparenting — port of `Component#attachFreeNode` (MindFlow.dc.html:2132),
+// used for BOTH the free→attach case and the attached→re-parent case (the original also
+// reuses one function for both: any non-root node dropped onto another node's drop-zone). ----
+
+export type AttachZone = 'child' | 'above' | 'below';
+
+/** Returns `null` on a no-op (missing ids, self-drop, or a would-be cycle — dropping a node onto
+ * its own descendant), matching the original's early-return guards. */
+export function reattachNode(nodes: NodeMap, id: string, targetId: string, zone: AttachZone): NodeMap | null {
+  const n = nodes[id];
+  const t = nodes[targetId];
+  if (!n || !t) return null;
+  if (id === targetId) return null;
+  if (descendants(nodes, id).includes(targetId)) return null;
+  const out = cloneNodes(nodes);
+  const on = out[id];
+  const ot = out[targetId];
+  if (!on || !ot) return null;
+  if (on.parent && out[on.parent]) out[on.parent]!.children = out[on.parent]!.children.filter((c) => c !== id);
+  delete on.free;
+  if (zone === 'child' || !ot.parent) {
+    on.parent = targetId;
+    ot.children.push(id);
+    if (ot.collapsed) ot.collapsed = false;
+    if (ot.side) on.side = ot.side;
+  } else {
+    const parId = ot.parent;
+    const par = parId ? out[parId] : undefined;
+    if (!par) return null;
+    on.parent = parId ?? null;
+    const idx = par.children.indexOf(targetId);
+    par.children.splice(zone === 'above' ? idx : idx + 1, 0, id);
+    if (ot.side) on.side = ot.side;
+  }
+  // NOTE: the original also nudges every OTHER free shape clear of the re-laid-out tree in the
+  // same update (MindFlow.dc.html:2155, `applyFreeNudge`) — out of scope here (already deferred
+  // in Editor-b's own free-shape-overlap notes); a reattach may leave free shapes overlapping.
+  return out;
+}
+
+// ---- outline indent / outdent — port of `Component#outlineIndent`/`#outlineOutdent`
+// (MindFlow.dc.html:1961, 1970). ----
+
+/** Makes `id` a child of its immediately-preceding sibling (Tab in the outline editor). */
+export function outlineIndentNode(nodes: NodeMap, id: string): NodeMap {
+  const n = nodes[id];
+  if (!n || !n.parent) return nodes;
+  const p = nodes[n.parent];
+  if (!p) return nodes;
+  const idx = p.children.indexOf(id);
+  if (idx <= 0) return nodes;
+  const prevId = p.children[idx - 1];
+  if (!prevId || !nodes[prevId]) return nodes;
+  const out = cloneNodes(nodes);
+  const op = out[n.parent];
+  const on = out[id];
+  const oprev = out[prevId];
+  if (!op || !on || !oprev) return nodes;
+  op.children.splice(idx, 1);
+  on.parent = prevId;
+  oprev.collapsed = false;
+  oprev.children.push(id);
+  delete on.side;
+  return out;
+}
+
+/** Promotes `id` to be a sibling of its parent, right after it (Shift+Tab in the outline editor). */
+export function outlineOutdentNode(nodes: NodeMap, id: string): NodeMap {
+  const n = nodes[id];
+  if (!n || !n.parent) return nodes;
+  const p = nodes[n.parent];
+  if (!p || !p.parent) return nodes; // a direct child of the root can't outdent
+  const gp = nodes[p.parent];
+  if (!gp) return nodes;
+  const out = cloneNodes(nodes);
+  const op = out[n.parent];
+  const on = out[id];
+  const ogp = out[p.parent];
+  if (!op || !on || !ogp) return nodes;
+  op.children = op.children.filter((c) => c !== id);
+  on.parent = ogp.id;
+  const pidx = ogp.children.indexOf(op.id);
+  ogp.children.splice(pidx + 1, 0, id);
+  if (ogp.id === ROOT_ID && (op.side === 'R' || op.side === 'L')) on.side = op.side;
+  return out;
+}
+
 // ---- floats ----
 
 export function addFloatItem(floats: Float[], id: string, x: number, y: number): Float[] {

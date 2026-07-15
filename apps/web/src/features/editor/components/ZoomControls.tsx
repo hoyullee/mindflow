@@ -1,12 +1,15 @@
 import type { EditorController } from '../useEditorState';
+import { Minimap } from './Minimap';
 
 interface ZoomControlsProps {
   controller: EditorController;
 }
 
 /**
- * Bottom-right zoom controls — port of the zoom cluster in
- * MindFlow.dc.html:413-427 (minus the minimap, which lands in Editor-b).
+ * Bottom-right zoom controls + minimap — port of MindFlow.dc.html:406-427
+ * (`notOutlineMode`'s panel: `showMinimap` + the zoom cluster). `showMinimap`
+ * was a design-time prop in the original; this port exposes it as an in-app
+ * toggle button next to the zoom controls instead (no props/config screen here).
  */
 export function ZoomControls({ controller }: ZoomControlsProps) {
   const th = controller.theme;
@@ -41,7 +44,23 @@ export function ZoomControls({ controller }: ZoomControlsProps) {
         flexDirection: 'column',
       }}
     >
+      {controller.showMinimap && (
+        <div style={{ padding: '6px 6px 0' }}>
+          <Minimap controller={controller} />
+        </div>
+      )}
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 2, padding: '4px 6px' }}>
+        <button
+          type="button"
+          className="mf-ed-btn"
+          onClick={controller.toggleMinimap}
+          title="미니맵 표시/숨기기"
+          aria-pressed={controller.showMinimap}
+          style={{ ...btnStyle, color: controller.showMinimap ? th.accent : th.text }}
+        >
+          <MinimapIcon />
+        </button>
+        <div style={{ width: 1, height: 16, background: th.border, margin: '0 3px' }} />
         <button type="button" className="mf-ed-btn" onClick={controller.zoomOut} title="축소" style={btnStyle}>
           −
         </button>
@@ -60,5 +79,16 @@ export function ZoomControls({ controller }: ZoomControlsProps) {
         </button>
       </div>
     </div>
+  );
+}
+
+function MinimapIcon() {
+  return (
+    <svg width={13} height={13} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round">
+      <rect x={3} y={4} width={18} height={16} rx={2} />
+      <circle cx={8} cy={9} r={1.2} fill="currentColor" stroke="none" />
+      <circle cx={15} cy={11} r={1.2} fill="currentColor" stroke="none" />
+      <circle cx={11} cy={16} r={1.2} fill="currentColor" stroke="none" />
+    </svg>
   );
 }

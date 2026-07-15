@@ -21,7 +21,8 @@ export function FloatLayer({ floats, theme: th, controller }: FloatLayerProps) {
   return (
     <>
       {floats.map((f) => {
-        const selected = controller.selection?.kind === 'float' && controller.selection.id === f.id;
+        // port of `MSEL.floats.includes(f.id)` — a marquee multi-selection rings every target.
+        const selected = controller.multiGroups.floats.includes(f.id);
         const editing = controller.editingFloatId === f.id;
         const collapsed = !!f.collapsed;
         const fFpx = f.tsize === 's' ? 11.5 : f.tsize === 'l' ? 15.5 : 13;
@@ -108,7 +109,9 @@ export function FloatLayer({ floats, theme: th, controller }: FloatLayerProps) {
                 {shown || '메모 입력…'}
               </div>
             )}
-            {selected && !editing && (
+            {/* resize handle only for a true single selection (port of `this.state.selFloat`,
+                MindFlow.dc.html:1486 — hidden during a marquee multi-selection) */}
+            {controller.selection?.kind === 'float' && controller.selection.id === f.id && !editing && (
               <div
                 title="크기 조절"
                 onPointerDown={(e) => controller.beginFloatResize(e, f.id)}
