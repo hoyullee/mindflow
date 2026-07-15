@@ -127,16 +127,16 @@ export function Toolbar({ controller }: ToolbarProps) {
       <Divider theme={th} />
 
       <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
-        <button type="button" className="mf-ed-btn" onClick={controller.addFreeNodeAt} title="도형 추가" style={addBtnStyle}>
+        <button type="button" className="mf-ed-btn" onClick={() => controller.addFreeNodeAt()} title="도형 추가" style={addBtnStyle}>
           <ShapeIcon />
         </button>
-        <button type="button" className="mf-ed-btn" onClick={controller.addFloatAt} title="메모 추가" style={addBtnStyle}>
+        <button type="button" className="mf-ed-btn" onClick={() => controller.addFloatAt()} title="메모 추가" style={addBtnStyle}>
           <MemoIcon />
         </button>
-        <button type="button" className="mf-ed-btn" onClick={controller.addLineAt} title="선 추가" style={addBtnStyle}>
+        <button type="button" className="mf-ed-btn" onClick={() => controller.addLineAt()} title="선 추가" style={addBtnStyle}>
           <LineIcon />
         </button>
-        <button type="button" className="mf-ed-btn" onClick={controller.addZoneAt} title="영역 추가" style={addBtnStyle}>
+        <button type="button" className="mf-ed-btn" onClick={() => controller.addZoneAt()} title="영역 추가" style={addBtnStyle}>
           <ZoneIcon />
         </button>
       </div>
