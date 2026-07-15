@@ -54,9 +54,11 @@ server/           # 인증(OAuth/이메일) + DB(Postgres) + 문서 동기화 AP
 - ✅ **M3-Login/Home** React 이식 (`apps/web`, react-router). localStorage 키는 원본과 호환
 - ✅ **M3-Editor-a** 렌더 기반: 코어(`layout`/`serialize`/`geometry`) 소비, 캔버스·노드·커넥터·테마 렌더. 원본과 렌더 parity 확인
 - ✅ **M3-Editor-b** 인터랙션: 선택·편집·추가/삭제·드래그·속성패널·저장(자동)·undo/redo(코어 `HistoryStack`)·내보내기(코어 `toMarkdown`)
-- ⏭️ **다음 후보**: M3-Editor-c(marquee 다중선택·미니맵·아웃라인 편집), M4/M5(실제 인증·DB·동기화 — 인프라 결정 필요), M6(PWA)
+- ✅ **M3-Editor-c** 완성도: marquee 다중선택(일괄 스타일)·미니맵·아웃라인 편집·드래그 재부모화
+- ⏭️ **다음 후보**: M4/M5(실제 인증·DB·동기화 — 인프라 결정 필요), M6(PWA), Editor 잔여(컨텍스트메뉴·부분 리치텍스트·라인 앵커 마그넷)
 
-> 웹 앱 흐름 완성: 로그인 → 홈 → 에디터(편집/저장/undo/내보내기). 저장은 아직 localStorage(데모), 실서버는 M4/M5.
+> **M3 완결**: 로그인 → 홈 → 에디터(렌더/편집/저장/undo/내보내기/다중선택/미니맵/아웃라인) 전부 React로 동작, `mindmap-core` 소비.
+> 저장은 아직 localStorage(데모), 실서버는 M4/M5.
 
 > `mindmap-core`는 순수 TS(DOM/React/canvas 금지, lint 강제). 노드 크기는 `sizeOf` 주입.
 
