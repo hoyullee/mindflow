@@ -50,7 +50,13 @@ server/           # 인증(OAuth/이메일) + DB(Postgres) + 문서 동기화 AP
 - ✅ **골든 안전망** (`packages/mindmap-core/test/fixtures/`) — dc 원본을 헤드리스로 캡처. serialize/outline/layout 좌표/node-sizes
 - ✅ **M1a** 코어: 모델·`serializeDoc`/`parseDoc`/`cloneNodes`·`toMarkdown`·`HistoryStack` (골든 parity, QA 감사 반영)
 - ✅ **M1b** 코어: `layout(doc, mode, sizeOf, opts?)` — `_layout` radial/right/down 이식, 좌표 parity. `_rootAnchor`→opts 승격
-- ⏭️ **다음 후보**: M1c(`resolveLineGeometry`/`toSVG`), M2(스키마 마이그레이션), M3(React 이식 — Login부터)
+- ✅ **M1c** 코어: `resolveLineGeometry`/`cubicAt`/`portPoint` (라인 큐빅 기하, 원본 `lineCPs` parity)
+- ✅ **M3-Login/Home** React 이식 (`apps/web`, react-router). localStorage 키는 원본과 호환
+- ✅ **M3-Editor-a** 렌더 기반: 코어(`layout`/`serialize`/`geometry`) 소비, 캔버스·노드·커넥터·테마 렌더. 원본과 렌더 parity 확인
+- ✅ **M3-Editor-b** 인터랙션: 선택·편집·추가/삭제·드래그·속성패널·저장(자동)·undo/redo(코어 `HistoryStack`)·내보내기(코어 `toMarkdown`)
+- ⏭️ **다음 후보**: M3-Editor-c(marquee 다중선택·미니맵·아웃라인 편집), M4/M5(실제 인증·DB·동기화 — 인프라 결정 필요), M6(PWA)
+
+> 웹 앱 흐름 완성: 로그인 → 홈 → 에디터(편집/저장/undo/내보내기). 저장은 아직 localStorage(데모), 실서버는 M4/M5.
 
 > `mindmap-core`는 순수 TS(DOM/React/canvas 금지, lint 강제). 노드 크기는 `sizeOf` 주입.
 
