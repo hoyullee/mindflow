@@ -1,0 +1,58 @@
+# MindFlow — 프로젝트 컨텍스트 (팀 공용)
+
+이 문서는 사람과 Claude 에이전트가 **공유하는 단일 컨텍스트**입니다. 새 세션·새 에이전트는
+작업 전 이 파일을 먼저 읽습니다.
+
+## 제품 개요
+MindFlow는 중심 주제에서 가지를 뻗어 생각을 정리하는 **마인드맵 웹 앱**입니다.
+목표: **웹 서비스 → 모바일 웹(PWA) → Android/iOS 앱** 순으로 확장.
+
+## 현재 코드베이스 (디자인 원본)
+`claude/mindflow-design-impl-iyxiol` 브랜치는 Claude Design에서 가져온 **디자인 프로토타입**입니다.
+프로덕션 기반이 아니라 **픽셀·인터랙션 레퍼런스**로 취급합니다.
+
+| 파일 | 역할 |
+| --- | --- |
+| `MindFlow.dc.html` | 마인드맵 편집기 (약 3,200줄) — 대상 |
+| `Home.dc.html` / `Login.dc.html` | 대시보드 · 로그인(데모) |
+| `support.js` | dc-runtime. **수정 금지** (Anthropic 생성물, 프로토타입 엔진) |
+| `vendor/` | React 18.3.1 UMD |
+| `index.html` | 진입점 |
+
+### dc 포맷 구조
+각 `*.dc.html` = `<x-dc>` 템플릿(HTML + `{{ }}`·`<sc-if>`·`<sc-for>`) + `<script type="text/x-dc">`
+안의 `class Component extends DCLogic` 컨트롤러. 런타임(`support.js`)이 템플릿을 React로 렌더링.
+빌드 단계 없음. 상태는 `localStorage`(`mindflow_doc_<id>`), 페이지 간 `window.location` 이동.
+
+### 마인드맵 엔진의 위치 (핵심 자산)
+`MindFlow.dc.html`의 컨트롤러 안에 렌더링과 뒤섞여 있음:
+- 데이터 모델(`nodes`, `floats`, `lines`, `zones`)
+- 레이아웃 알고리즘 `_layout(nodes, layoutMode)`
+- 직렬화 `serializeDoc()` / `loadDoc()` / `cloneNodes()`
+- undo/redo, export(PNG·Markdown·JSON)
+
+## 목표 아키텍처
+```
+packages/
+  mindmap-core/   # 순수 TS. DOM/React 없음. 모델·레이아웃·직렬화·undo·export
+  web/            # React + Vite + TS. core 사용, SVG/Canvas 렌더 (디자인 재현). PWA
+  mobile/         # (2단계) Capacitor 또는 React Native, core 재사용
+server/           # 인증(OAuth/이메일) + DB(Postgres) + 문서 동기화 API (+ 협업시 Yjs/CRDT)
+```
+
+## 로드맵 / 단계
+1. **웹 프로덕션화**: dc → React+TS+Vite 이식, `mindmap-core` 분리, 실제 인증·DB·동기화. PWA화.
+2. **앱 스토어**: 빠르게=Capacitor로 PWA 래핑 / 네이티브감=React Native(UI 재작성 + core 재사용).
+
+## 규칙 (에이전트·사람 공통)
+- `support.js`와 `*.dc.html`(디자인 원본)은 **변경하지 않는다.** 이식은 새 `packages/`에서 진행.
+- 새 코드는 **TypeScript** 우선. 코어는 프레임워크·DOM 의존 없이 순수 로직으로.
+- 비자명한 변경은 **테스트로 동작을 검증**한 뒤 커밋. 로컬은 정적 서버(`python3 -m http.server`)로 확인.
+- 브랜치 접두사 `claude/`. main 직접 푸시 금지, PR로.
+- 커밋/PR에 모델 식별자·비밀정보를 넣지 않는다.
+
+## 로컬 실행
+```bash
+python3 -m http.server 8000   # http://localhost:8000/
+```
+`file://` 직접 열기는 동작하지 않음(형제 파일 fetch 필요).
