@@ -37,3 +37,9 @@ export { layout } from './layout';
 
 export type { Point, LineGeometry, LineLike, Box, PortSide } from './geometry';
 export { resolveLineGeometry, cubicAt, portPoint } from './geometry';
+
+// M5: Doc <-> Y.Doc CRDT binding (see docs/architecture/0001-architecture.md
+// §2's `crdt/` seam). Pure — `yjs` has no DOM/network dependency itself, so
+// this stays framework-agnostic; transport lives in `apps/web/src/collab/`.
+export type { YDoc } from './crdt';
+export { docToYDoc, yDocToDoc, applyDocToYDoc, addNode, removeNode, setNodeField, encodeStateAsUpdate, applyUpdate } from './crdt';

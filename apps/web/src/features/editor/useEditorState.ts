@@ -4,6 +4,7 @@ import { useNavigate, useSearchParams } from 'react-router-dom';
 import type { Doc, Float, Line, LayoutMode, NodeMap, SizeOf, Zone } from '@mindflow/mindmap-core';
 import { HistoryStack, ROOT_ID, cubicAt, layout, resolveLineGeometry, serializeDoc, toMarkdown } from '@mindflow/mindmap-core';
 import { useDocStore } from '../../adapters/BackendContext';
+import { useYjsDocSync } from '../../collab/useYjsDocSync';
 import { CanvasTextMeasurer, computeMetrics } from './metrics';
 import { loadOrSeedDoc } from './storage';
 import { buildVisible, descendants, outlineRows } from './tree';
@@ -357,6 +358,17 @@ export function useEditorState(): EditorController {
       cancelled = true;
     };
   }, [docStore, docStoreId]);
+
+  // ---- M5: real-time collaboration ----
+  // Backs `doc` with a live Y.Doc (Supabase Realtime if configured, else
+  // BroadcastChannel for same-browser multi-tab, else a no-op — see
+  // `collab/factory.ts`). Local edits already flow through `setDoc`/`commitDoc`
+  // above as normal; `useYjsDocSync` observes the resulting `doc` value and
+  // mirrors it into the Y.Doc (and out to peers) as a diff, and merges
+  // incoming remote updates straight into `doc` via `setDoc` (bypassing
+  // `commitDoc`, so remote edits don't land on THIS tab's local undo stack —
+  // see `useYjsDocSync`'s doc comment for the full rationale).
+  useYjsDocSync(docStoreId, doc, setDoc);
 
   const measurer = useMemo(() => new CanvasTextMeasurer(), []);
   const sizeOf: SizeOf = useCallback(

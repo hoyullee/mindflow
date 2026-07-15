@@ -17,6 +17,9 @@
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "test": "vitest run"
   },
+  "dependencies": {
+    "yjs": "^13.6.18"
+  },
   "devDependencies": {
     "@types/node": "^22.10.5",
     "vitest": "^2.1.8"
