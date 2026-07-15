@@ -5,26 +5,24 @@
 // concerns arrive through injected ports (TextMeasurer, Clock, IdGen, DocStore).
 // The core-purity ESLint rule (eslint.config.mjs) fails CI on any such import.
 //
-// M0 scaffold: only a version marker + placeholder port types. The real model,
-// layout, serialization, history, and export logic land in M1 (core extraction).
+// M1a: data model, serialization (parseDoc/serializeDoc/cloneNodes),
+// Markdown outline export, and undo/redo history land here. Layout (`_layout`),
+// SVG geometry, and PNG export are out of scope for M1a (font-measurement
+// dependent) and land in a later milestone.
 
 /** Semantic version of the core engine surface. */
 export const CORE_VERSION = '0.0.0';
 
-/**
- * Measures rendered text — injected by the host (browser canvas, RN, etc.) so
- * the layout engine stays free of any rendering dependency.
- */
-export interface TextMeasurer {
-  measure(text: string, opts: { fontSize: number; bold: boolean }): { width: number; height: number };
-}
+export type { TextMeasurer, Clock, IdGen } from './ports';
 
-/** Monotonic clock port (injected so history coalescing stays deterministic in tests). */
-export interface Clock {
-  now(): number;
-}
+export type { LayoutMode, RichRun, Node, NodeMap, Float, Line, Zone, Doc } from './model';
+export { ROOT_ID, DEFAULT_LAYOUT_MODE, DEFAULT_THEME_KEY } from './model';
 
-/** Stable id generator port (injected so serialization is reproducible in tests). */
-export interface IdGen {
-  next(): string;
-}
+export type { SerializableState } from './serialize';
+export { serializeDoc, parseDoc, cloneNodes } from './serialize';
+
+export type { MarkdownSource } from './markdown';
+export { toMarkdown } from './markdown';
+
+export type { HistoryStackOptions } from './history';
+export { HistoryStack } from './history';
