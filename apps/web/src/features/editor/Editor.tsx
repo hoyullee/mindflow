@@ -6,15 +6,17 @@ import { DocChip } from './components/DocChip';
 import { ZoomControls } from './components/ZoomControls';
 import { Viewport } from './components/Viewport';
 import { OutlineView } from './components/OutlineView';
+import { PropertyPanel } from './components/PropertyPanel';
 
 /**
  * React port of `MindFlow.dc.html`'s editor — the mindmap canvas. This is the
  * M3-Editor-a slice: accurate document rendering, pan/zoom, and view/layout/
  * connector/theme switching, all driven by `@mindflow/mindmap-core`
  * (`layout`/`resolveLineGeometry`/`cubicAt`/`portPoint`/the `Doc` model).
- * Selection, drag, node add/edit, the property panel, save, export, and the
- * minimap are Editor-b (their toolbar/panel affordances render as an inert
- * skeleton here so the chrome matches the original).
+ * Editor-b adds selection, text editing, structural add/delete, drag-move/
+ * resize, the property panel, autosave + manual save, undo/redo, and export
+ * (all driven by `useEditorState`). Multi-select (marquee) and the minimap
+ * remain out of scope (Editor-c).
  */
 export function Editor() {
   const controller = useEditorState();
@@ -50,6 +52,7 @@ export function Editor() {
           <>
             <Viewport doc={doc} controller={controller} />
             <DocChip controller={controller} />
+            <PropertyPanel controller={controller} />
             <ZoomControls controller={controller} />
             <div
               style={{

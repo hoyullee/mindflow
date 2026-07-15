@@ -1,9 +1,11 @@
 import type { CSSProperties, ReactNode } from 'react';
+import { useEffect, useRef } from 'react';
 import type { LayoutMode, Node, NodeMap } from '@mindflow/mindmap-core';
 import { ROOT_ID } from '@mindflow/mindmap-core';
 import { colorOf, descendants } from '../tree';
 import { hexA } from '../theme';
 import type { Theme } from '../theme';
+import type { EditorController } from '../useEditorState';
 import type { GeomMap } from '../types';
 
 interface NodeLayerProps {
@@ -11,25 +13,48 @@ interface NodeLayerProps {
   geom: GeomMap;
   mode: LayoutMode;
   theme: Theme;
+  controller: EditorController;
 }
 
 /**
  * Node boxes — port of the node half of `Component#renderCanvas`
- * (MindFlow.dc.html:1136-1265), minus selection/drag/edit/resize (Editor-b).
- * Shape/color/fill/stroke/textColor/bold/tsize/emoji/rich are all reproduced;
- * the collapse-count badge and note badge render as static visuals only (no
- * click handlers yet).
+ * (MindFlow.dc.html:1136-1265): selection ring, drag-to-move/detach,
+ * double-click/F2 text editing, resize handle, and the collapse toggle are
+ * all wired (Editor-b). Rich partial-run styling (bold/color on a text
+ * *selection* within a node) and the drag-ghost→drop-target reattach gesture
+ * remain out of scope (Editor-c).
  */
-export function NodeLayer({ nodes, geom, mode, theme }: NodeLayerProps) {
+export function NodeLayer({ nodes, geom, mode, theme, controller }: NodeLayerProps) {
   const rootGeom = geom[ROOT_ID];
+  const ghost = controller.dragGhost;
+  const ghostGeom = ghost ? geom[ghost.id] : null;
   return (
     <>
       {Object.keys(geom).map((id) => {
         const n = nodes[id];
         const g = geom[id];
         if (!n || !g) return null;
-        return <NodeBox key={id} id={id} node={n} g={g} nodes={nodes} mode={mode} theme={theme} rootX={rootGeom?.x ?? 0} />;
+        return <NodeBox key={id} id={id} node={n} g={g} nodes={nodes} mode={mode} theme={theme} rootX={rootGeom?.x ?? 0} controller={controller} />;
       })}
+      {ghost && ghostGeom && (
+        <div
+          aria-hidden="true"
+          style={{
+            position: 'absolute',
+            left: ghost.x - ghostGeom.w / 2,
+            top: ghost.y - ghostGeom.h / 2,
+            width: ghostGeom.w,
+            height: ghostGeom.h,
+            borderRadius: 10,
+            border: `2px dashed ${theme.accent}`,
+            background: hexA(theme.accent, 0.1),
+            opacity: 0.85,
+            pointerEvents: 'none',
+            zIndex: 40,
+            boxSizing: 'border-box',
+          }}
+        />
+      )}
     </>
   );
 }
@@ -42,11 +67,14 @@ interface NodeBoxProps {
   mode: LayoutMode;
   theme: Theme;
   rootX: number;
+  controller: EditorController;
 }
 
-function NodeBox({ id, node: n, g, nodes, mode, theme: th, rootX }: NodeBoxProps) {
+function NodeBox({ id, node: n, g, nodes, mode, theme: th, rootX, controller }: NodeBoxProps) {
   const depth = g.depth;
   const col = colorOf(id, nodes, th);
+  const selected = controller.selection?.kind === 'node' && controller.selection.id === id;
+  const editing = controller.editingNodeId === id;
 
   const boxStyle: CSSProperties = {
     position: 'absolute',
@@ -59,7 +87,7 @@ function NodeBox({ id, node: n, g, nodes, mode, theme: th, rootX }: NodeBoxProps
     justifyContent: 'center',
     gap: n.emoji ? 7 : 0,
     borderRadius: depth === 0 ? 15 : depth === 1 ? 12 : 10,
-    cursor: 'default',
+    cursor: 'grab',
     userSelect: 'none',
     fontFamily: 'Pretendard, sans-serif',
     boxSizing: 'border-box',
@@ -98,9 +126,12 @@ function NodeBox({ id, node: n, g, nodes, mode, theme: th, rootX }: NodeBoxProps
     boxStyle.fontWeight = 500;
     boxStyle.fontSize = 14;
     boxStyle.padding = '0 13px';
-    boxStyle.border = `1.5px solid ${strokeCss}`;
+    boxStyle.border = '1.5px solid ' + strokeCss;
     boxStyle.boxShadow = '0 2px 6px rgba(0,0,0,.04)';
   }
+
+  if (selected) boxStyle.boxShadow = `0 0 0 2px ${th.panel}, 0 0 0 4px ${hexA(th.accent, 0.55)}, 0 6px 18px rgba(0,0,0,.12)`;
+  if (editing) boxStyle.zIndex = 70;
 
   const shape = n.shape || 'round';
   let shapeBg: ReactNode = null;
@@ -112,7 +143,7 @@ function NodeBox({ id, node: n, g, nodes, mode, theme: th, rootX }: NodeBoxProps
     boxStyle.border = 'none';
     boxStyle.borderRadius = 0;
     boxStyle.borderBottom = `3px solid ${hexA(userStroke || (depth === 0 ? th.accent : col), strokeA)}`;
-    boxStyle.boxShadow = 'none';
+    boxStyle.boxShadow = selected ? `0 3px 0 -1px ${hexA(th.accent, 0.9)}` : 'none';
     if (depth === 0) boxStyle.color = th.text;
   } else if (shape === 'hexagon' || shape === 'diamond' || shape === 'parallelogram') {
     boxStyle.background = 'transparent';
@@ -135,8 +166,17 @@ function NodeBox({ id, node: n, g, nodes, mode, theme: th, rootX }: NodeBoxProps
       <svg
         width={W}
         height={H}
-        style={{ position: 'absolute', inset: 0, overflow: 'visible', zIndex: 0, pointerEvents: 'none', filter: 'drop-shadow(0 2px 6px rgba(0,0,0,.18))' }}
+        style={{
+          position: 'absolute',
+          inset: 0,
+          overflow: 'visible',
+          zIndex: 0,
+          pointerEvents: 'none',
+          filter: selected ? 'drop-shadow(0 3px 8px rgba(0,0,0,.28))' : 'drop-shadow(0 2px 6px rgba(0,0,0,.18))',
+        }}
       >
+        {selected && <polygon points={pts} fill="none" stroke={hexA(th.accent, 0.55)} strokeWidth={bw2 + 6} strokeLinejoin="round" />}
+        {selected && <polygon points={pts} fill="none" stroke={th.panel} strokeWidth={bw2 + 2} strokeLinejoin="round" />}
         <polygon points={pts} fill={polyFill} stroke={strokeCss} strokeWidth={bw2} strokeLinejoin="miter" />
       </svg>
     );
@@ -148,11 +188,12 @@ function NodeBox({ id, node: n, g, nodes, mode, theme: th, rootX }: NodeBoxProps
 
   const align = (n.align || 'center') as CSSProperties['textAlign'];
   const clipShape = shape === 'hexagon' || shape === 'diamond' || shape === 'parallelogram' || shape === 'ellipse' || shape === 'pill';
+  const bodyWidth = clipShape ? Math.min(g.tw || g.w, g.w) : '100%';
 
-  const textInner = n.rich && n.rich.length ? (
-    <span
-      style={{ lineHeight: 1.35, flex: '1 1 auto', width: '100%', minWidth: 0, boxSizing: 'border-box', textAlign: align, whiteSpace: 'pre-wrap', wordBreak: 'break-word' }}
-    >
+  const textInner = editing ? (
+    <NodeEditBox n={n} boxStyle={boxStyle} align={align} onCommit={(text) => controller.commitNodeText(id, text)} onCancel={controller.cancelNodeEdit} />
+  ) : n.rich && n.rich.length ? (
+    <span style={{ lineHeight: 1.35, flex: '1 1 auto', width: '100%', minWidth: 0, boxSizing: 'border-box', textAlign: align, whiteSpace: 'pre-wrap', wordBreak: 'break-word' }}>
       {n.rich.map((r, ri) => (
         <span key={ri} style={{ fontWeight: r.b ? 800 : 'inherit', color: r.c || 'inherit' }}>
           {r.t}
@@ -160,12 +201,8 @@ function NodeBox({ id, node: n, g, nodes, mode, theme: th, rootX }: NodeBoxProps
       ))}
     </span>
   ) : (
-    <span style={{ lineHeight: 1.35, flex: '1 1 auto', width: '100%', minWidth: 0, boxSizing: 'border-box', textAlign: align, whiteSpace: 'pre-wrap', wordBreak: 'break-word' }}>
-      {n.text}
-    </span>
+    <span style={{ lineHeight: 1.35, flex: '1 1 auto', width: '100%', minWidth: 0, boxSizing: 'border-box', textAlign: align, whiteSpace: 'pre-wrap', wordBreak: 'break-word' }}>{n.text}</span>
   );
-
-  const bodyWidth = clipShape ? Math.min(g.tw || g.w, g.w) : '100%';
 
   const hasKids = n.children.length > 0;
   const outSign = mode === 'down' ? 0 : g.x >= rootX ? 1 : -1;
@@ -184,6 +221,7 @@ function NodeBox({ id, node: n, g, nodes, mode, theme: th, rootX }: NodeBoxProps
     fontWeight: 700,
     lineHeight: 1,
     zIndex: 3,
+    cursor: 'pointer',
   };
   if (mode === 'down') {
     toggleStyle.left = g.w / 2 - 10;
@@ -220,7 +258,16 @@ function NodeBox({ id, node: n, g, nodes, mode, theme: th, rootX }: NodeBoxProps
   else noteStyle.left = -7;
 
   return (
-    <div style={boxStyle} data-node-id={id} data-depth={depth}>
+    <div
+      style={boxStyle}
+      data-node-id={id}
+      data-depth={depth}
+      onPointerDown={(e) => controller.beginNodeDrag(e, id)}
+      onDoubleClick={(e) => {
+        e.stopPropagation();
+        controller.startEditNode(id);
+      }}
+    >
       {shapeBg}
       <div
         style={{
@@ -232,14 +279,20 @@ function NodeBox({ id, node: n, g, nodes, mode, theme: th, rootX }: NodeBoxProps
           width: bodyWidth,
           maxWidth: '100%',
           gap: n.emoji ? 7 : 0,
-          pointerEvents: 'none',
+          pointerEvents: editing ? 'auto' : 'none',
         }}
       >
-        {n.emoji && <span style={{ fontSize: depth === 0 ? 22 : 17, lineHeight: 1 }}>{n.emoji}</span>}
+        {n.emoji && !editing && <span style={{ fontSize: depth === 0 ? 22 : 17, lineHeight: 1 }}>{n.emoji}</span>}
         {textInner}
       </div>
       {hasKids && (
-        <div style={toggleStyle} aria-hidden="true">
+        <div
+          style={toggleStyle}
+          onPointerDown={(e) => {
+            e.stopPropagation();
+            controller.toggleCollapse(id);
+          }}
+        >
           {n.collapsed ? String(descendants(nodes, id).length) : '−'}
         </div>
       )}
@@ -251,6 +304,94 @@ function NodeBox({ id, node: n, g, nodes, mode, theme: th, rootX }: NodeBoxProps
           </svg>
         </div>
       )}
+      {selected && !editing && (
+        <div
+          title="크기 조절 (더블클릭: 원래 크기)"
+          onPointerDown={(e) => controller.beginNodeResize(e, id)}
+          onDoubleClick={(e) => {
+            e.stopPropagation();
+            controller.resetNodeSize(id);
+          }}
+          style={{
+            position: 'absolute',
+            right: -6,
+            bottom: -6,
+            width: 13,
+            height: 13,
+            borderRadius: 4,
+            background: th.panel,
+            border: `2px solid ${th.accent}`,
+            cursor: 'nwse-resize',
+            zIndex: 80,
+            boxSizing: 'border-box',
+            boxShadow: '0 1px 4px rgba(0,0,0,.2)',
+          }}
+        />
+      )}
     </div>
+  );
+}
+
+interface NodeEditBoxProps {
+  n: Node;
+  boxStyle: CSSProperties;
+  align: CSSProperties['textAlign'];
+  onCommit: (text: string) => void;
+  onCancel: () => void;
+}
+
+/** In-place node text editor — simplified `input`/`textarea` stand-in for the
+ * original's rich `contentEditable` div (MindFlow.dc.html:1200-1224). Partial
+ * bold/color runs within a single node's text selection (`applyPartial`) are
+ * out of scope here (Editor-c); the whole node's plain text is editable. */
+function NodeEditBox({ n, boxStyle, align, onCommit, onCancel }: NodeEditBoxProps) {
+  const ref = useRef<HTMLTextAreaElement | null>(null);
+  useEffect(() => {
+    const el = ref.current;
+    if (!el) return;
+    el.focus();
+    el.select();
+  }, []);
+  return (
+    <textarea
+      ref={ref}
+      className="mf-edit"
+      defaultValue={n.text}
+      rows={1}
+      onMouseDown={(e) => e.stopPropagation()}
+      onPointerDown={(e) => e.stopPropagation()}
+      onKeyDown={(e) => {
+        e.stopPropagation();
+        if (e.key === 'Enter' && !e.shiftKey) {
+          e.preventDefault();
+          onCommit(e.currentTarget.value);
+        } else if (e.key === 'Escape') {
+          e.preventDefault();
+          onCancel();
+        }
+      }}
+      onBlur={(e) => onCommit(e.currentTarget.value)}
+      style={{
+        border: 'none',
+        background: 'transparent',
+        color: 'inherit',
+        font: 'inherit',
+        fontWeight: boxStyle.fontWeight,
+        textAlign: align,
+        flex: '1 1 auto',
+        width: '100%',
+        minWidth: 0,
+        maxWidth: '100%',
+        boxSizing: 'border-box',
+        outline: 'none',
+        whiteSpace: 'pre-wrap',
+        wordBreak: 'break-word',
+        lineHeight: 1.35,
+        resize: 'none',
+        overflow: 'hidden',
+        padding: 0,
+        cursor: 'text',
+      }}
+    />
   );
 }

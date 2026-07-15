@@ -1,32 +1,35 @@
 import { useEffect, useRef, useState } from 'react';
 import type { EditorController } from '../useEditorState';
 import { StyleMenu } from './StyleMenu';
+import { ExportMenu } from './ExportMenu';
 
 interface ToolbarProps {
   controller: EditorController;
 }
 
 /**
- * Top bar — port of `.mf-topbar` (MindFlow.dc.html:36-96). View switch (맵 /
- * 아웃라인) and the 스타일 dropdown (layout/edge/theme) are wired; undo/redo,
- * shape/memo/line/zone add, and export are rendered as an inert skeleton —
- * they land in Editor-b along with selection/editing/save.
+ * Top bar — port of `.mf-topbar` (MindFlow.dc.html:36-96). Editor-b wires
+ * undo/redo, the shape/memo/line/zone add buttons, and the export dropdown
+ * (view switch and the 스타일 dropdown were already wired in Editor-a).
  */
 export function Toolbar({ controller }: ToolbarProps) {
   const { theme: th } = controller;
   const [styleMenuOpen, setStyleMenuOpen] = useState(false);
+  const [exportMenuOpen, setExportMenuOpen] = useState(false);
   const styleWrapRef = useRef<HTMLDivElement | null>(null);
+  const exportWrapRef = useRef<HTMLDivElement | null>(null);
 
   useEffect(() => {
-    if (!styleMenuOpen) return;
+    if (!styleMenuOpen && !exportMenuOpen) return;
     const onDown = (e: MouseEvent): void => {
-      if (styleWrapRef.current && !styleWrapRef.current.contains(e.target as Node)) setStyleMenuOpen(false);
+      if (styleMenuOpen && styleWrapRef.current && !styleWrapRef.current.contains(e.target as Node)) setStyleMenuOpen(false);
+      if (exportMenuOpen && exportWrapRef.current && !exportWrapRef.current.contains(e.target as Node)) setExportMenuOpen(false);
     };
     window.addEventListener('mousedown', onDown);
     return () => window.removeEventListener('mousedown', onDown);
-  }, [styleMenuOpen]);
+  }, [styleMenuOpen, exportMenuOpen]);
 
-  const inertAddBtnStyle = {
+  const addBtnStyle = {
     width: 34,
     height: 34,
     display: 'flex',
@@ -35,12 +38,27 @@ export function Toolbar({ controller }: ToolbarProps) {
     border: `1px solid ${th.border}`,
     borderRadius: 9,
     background: th.panel,
-    color: th.subtext,
-    cursor: 'not-allowed',
+    color: th.text,
+    cursor: 'pointer',
     fontFamily: 'inherit',
     padding: 0,
-    opacity: 0.55,
   } as const;
+
+  const historyBtnStyle = (enabled: boolean) =>
+    ({
+      width: 32,
+      height: 32,
+      display: 'flex',
+      alignItems: 'center',
+      justifyContent: 'center',
+      border: `1px solid ${th.border}`,
+      borderRadius: 9,
+      background: th.panel,
+      color: enabled ? th.text : `${th.subtext}73`,
+      cursor: enabled ? 'pointer' : 'default',
+      fontFamily: 'inherit',
+      padding: 0,
+    }) as const;
 
   return (
     <div
@@ -69,10 +87,10 @@ export function Toolbar({ controller }: ToolbarProps) {
       <Divider theme={th} />
 
       <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
-        <button type="button" className="mf-ed-btn" disabled title="실행 취소 (다음 단계)" aria-disabled="true" style={{ ...inertAddBtnStyle, width: 32, height: 32 }}>
+        <button type="button" className="mf-ed-btn" disabled={!controller.canUndo} onClick={controller.undo} title="실행 취소 (Ctrl+Z)" style={historyBtnStyle(controller.canUndo)}>
           <UndoIcon />
         </button>
-        <button type="button" className="mf-ed-btn" disabled title="다시 실행 (다음 단계)" aria-disabled="true" style={{ ...inertAddBtnStyle, width: 32, height: 32 }}>
+        <button type="button" className="mf-ed-btn" disabled={!controller.canRedo} onClick={controller.redo} title="다시 실행 (Ctrl+Shift+Z)" style={historyBtnStyle(controller.canRedo)}>
           <RedoIcon />
         </button>
       </div>
@@ -103,16 +121,16 @@ export function Toolbar({ controller }: ToolbarProps) {
       <Divider theme={th} />
 
       <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
-        <button type="button" className="mf-ed-btn" disabled title="도형 추가 (다음 단계)" aria-disabled="true" style={inertAddBtnStyle}>
+        <button type="button" className="mf-ed-btn" onClick={controller.addFreeNodeAt} title="도형 추가" style={addBtnStyle}>
           <ShapeIcon />
         </button>
-        <button type="button" className="mf-ed-btn" disabled title="메모 추가 (다음 단계)" aria-disabled="true" style={inertAddBtnStyle}>
+        <button type="button" className="mf-ed-btn" onClick={controller.addFloatAt} title="메모 추가" style={addBtnStyle}>
           <MemoIcon />
         </button>
-        <button type="button" className="mf-ed-btn" disabled title="선 추가 (다음 단계)" aria-disabled="true" style={inertAddBtnStyle}>
+        <button type="button" className="mf-ed-btn" onClick={controller.addLineAt} title="선 추가" style={addBtnStyle}>
           <LineIcon />
         </button>
-        <button type="button" className="mf-ed-btn" disabled title="영역 추가 (다음 단계)" aria-disabled="true" style={inertAddBtnStyle}>
+        <button type="button" className="mf-ed-btn" onClick={controller.addZoneAt} title="영역 추가" style={addBtnStyle}>
           <ZoneIcon />
         </button>
       </div>
@@ -158,9 +176,19 @@ export function Toolbar({ controller }: ToolbarProps) {
 
       <Divider theme={th} />
 
-      <button type="button" className="mf-ed-btn" disabled title="내보내기 (다음 단계)" aria-disabled="true" style={inertAddBtnStyle}>
-        <ExportIcon />
-      </button>
+      <div ref={exportWrapRef} style={{ position: 'relative' }}>
+        <button
+          type="button"
+          className="mf-ed-btn"
+          onClick={() => setExportMenuOpen((v) => !v)}
+          title="내보내기"
+          aria-expanded={exportMenuOpen}
+          style={{ ...addBtnStyle, border: `1px solid ${exportMenuOpen ? th.accent : th.border}`, background: exportMenuOpen ? th.panel2 : th.panel }}
+        >
+          <ExportIcon />
+        </button>
+        {exportMenuOpen && <ExportMenu controller={controller} onDone={() => setExportMenuOpen(false)} />}
+      </div>
     </div>
   );
 }

@@ -1,3 +1,4 @@
+import { useEffect, useRef } from 'react';
 import type { EditorController } from '../useEditorState';
 
 interface DocChipProps {
@@ -6,12 +7,15 @@ interface DocChipProps {
 
 /**
  * Top-left document chip — port of the home/title/save cluster
- * (MindFlow.dc.html:103-122). Home navigation works; title editing and the
- * save button are inert skeletons for this stage (Editor-b wires editing +
- * persistence + the dirty/saving/saved indicator).
+ * (MindFlow.dc.html:103-122): home navigation, title editing
+ * (`onTitleInput`/`commitTitle`), the save button (`saveNow`), and the
+ * dirty/saving/saved indicator (`state.saveState`) are all wired (Editor-b).
  */
 export function DocChip({ controller }: DocChipProps) {
   const th = controller.theme;
+  const dotColor = controller.saveState === 'saved' ? '#3fae6a' : controller.saveState === 'saving' ? '#e0b23c' : th.subtext;
+  const label = controller.saveState === 'saved' ? '저장됨' : controller.saveState === 'saving' ? '저장 중…' : '변경됨';
+
   return (
     <div
       style={{
@@ -58,23 +62,27 @@ export function DocChip({ controller }: DocChipProps) {
         </svg>
       </button>
       <div style={{ flex: '1 1 auto', minWidth: 0, display: 'flex', flexDirection: 'column', gap: 2 }}>
-        <div
-          title={controller.docTitle}
-          style={{ fontSize: 13.5, fontWeight: 700, color: th.text, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', lineHeight: 1.2 }}
-        >
-          {controller.docTitle}
-        </div>
+        {controller.editingTitle ? (
+          <TitleEdit controller={controller} />
+        ) : (
+          <div
+            title={controller.docTitle}
+            onDoubleClick={controller.startEditTitle}
+            style={{ fontSize: 13.5, fontWeight: 700, color: th.text, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', lineHeight: 1.2, cursor: 'text' }}
+          >
+            {controller.docTitle}
+          </div>
+        )}
         <div style={{ display: 'flex', alignItems: 'center', gap: 5, lineHeight: 1 }}>
-          <span style={{ width: 7, height: 7, borderRadius: '50%', flexShrink: 0, background: '#3fae6a' }} />
-          <span style={{ fontSize: 11, fontWeight: 600, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', color: th.subtext }}>저장됨</span>
+          <span style={{ width: 7, height: 7, borderRadius: '50%', flexShrink: 0, background: dotColor }} />
+          <span style={{ fontSize: 11, fontWeight: 600, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', color: th.subtext }}>{label}</span>
         </div>
       </div>
       <button
         type="button"
         className="mf-ed-btn"
-        disabled
-        aria-disabled="true"
-        title="저장 (다음 단계)"
+        onClick={controller.saveNow}
+        title="저장 (Ctrl+S)"
         style={{
           width: 36,
           height: 36,
@@ -86,10 +94,9 @@ export function DocChip({ controller }: DocChipProps) {
           borderRadius: 9,
           background: th.accent,
           color: th.accentInk,
-          cursor: 'not-allowed',
+          cursor: 'pointer',
           fontFamily: 'inherit',
           padding: 0,
-          opacity: 0.55,
         }}
       >
         <svg width={17} height={17} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round">
@@ -99,5 +106,49 @@ export function DocChip({ controller }: DocChipProps) {
         </svg>
       </button>
     </div>
+  );
+}
+
+function TitleEdit({ controller }: { controller: EditorController }) {
+  const ref = useRef<HTMLInputElement | null>(null);
+  useEffect(() => {
+    const el = ref.current;
+    if (!el) return;
+    el.focus();
+    el.select();
+  }, []);
+  return (
+    <input
+      ref={ref}
+      className="mf-edit"
+      defaultValue={controller.docTitle}
+      maxLength={40}
+      onMouseDown={(e) => e.stopPropagation()}
+      onKeyDown={(e) => {
+        e.stopPropagation();
+        if (e.key === 'Enter') {
+          e.preventDefault();
+          controller.commitTitle(e.currentTarget.value);
+        } else if (e.key === 'Escape') {
+          e.preventDefault();
+          controller.cancelTitleEdit();
+        }
+      }}
+      onBlur={(e) => controller.commitTitle(e.currentTarget.value)}
+      style={{
+        fontSize: 13.5,
+        fontWeight: 700,
+        color: controller.theme.text,
+        lineHeight: 1.2,
+        width: '100%',
+        border: 'none',
+        borderBottom: `1.5px solid ${controller.theme.accent}`,
+        background: 'transparent',
+        outline: 'none',
+        padding: '0 0 1px',
+        fontFamily: 'inherit',
+        boxSizing: 'border-box',
+      }}
+    />
   );
 }

@@ -1,0 +1,146 @@
+import type { EditorController } from '../../useEditorState';
+import {
+  AlphaSlider,
+  BoldSizeRow,
+  Divider,
+  EMOJIS,
+  PanelTitle,
+  RenameButton,
+  SectionLabel,
+  SHAPES,
+  SwatchRow,
+  panelBodyStyle,
+  panelWrapStyle,
+} from './panelPrimitives';
+
+interface NodePanelProps {
+  controller: EditorController;
+  nodeId: string;
+}
+
+/**
+ * Selected-node property panel — port of the `hasSelection` panel body
+ * (MindFlow.dc.html:136-245): 모양(shape) / 가지 색상 / 배경색+투명도 /
+ * 선 색상+투명도 / 텍스트 스타일(B·크기·색) / 아이콘 / 메모 / 이름 편집.
+ * Accordion collapse/expand (panelSec) is flattened to always-open sections
+ * here — a deliberate simplification (documented in the Editor-b report).
+ */
+export function NodePanel({ controller, nodeId }: NodePanelProps) {
+  const th = controller.theme;
+  const n = controller.doc.nodes[nodeId];
+  if (!n) return null;
+
+  return (
+    <div style={panelWrapStyle(th)}>
+      <div style={panelBodyStyle()}>
+        <PanelTitle theme={th} kicker="선택한 주제" name={n.text} />
+
+        <SectionLabel theme={th}>모양</SectionLabel>
+        <div style={{ display: 'flex', flexWrap: 'wrap', gap: 5, marginBottom: 16 }}>
+          {SHAPES.map((s) => {
+            const active = (n.shape || 'round') === s.k;
+            return (
+              <button
+                key={s.k}
+                type="button"
+                className="mf-ed-btn"
+                title={s.label}
+                onClick={() => controller.setShape(s.k)}
+                aria-pressed={active}
+                style={{
+                  width: 34,
+                  height: 30,
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  border: `1px solid ${active ? th.accent : th.border}`,
+                  borderRadius: 8,
+                  background: active ? `${th.accent}1a` : th.panel,
+                  cursor: 'pointer',
+                  color: active ? th.accent : th.subtext,
+                  padding: 0,
+                  fontFamily: 'inherit',
+                  fontSize: 10,
+                }}
+              >
+                {s.k[0]?.toUpperCase()}
+              </button>
+            );
+          })}
+        </div>
+
+        <SectionLabel theme={th}>가지 색상</SectionLabel>
+        <SwatchRow theme={th} palette={th.palette} current={n.color} onPick={(hex) => controller.setColor(hex)} />
+
+        <SectionLabel theme={th}>배경색</SectionLabel>
+        <SwatchRow theme={th} palette={[th.panel, th.text, ...th.palette]} current={n.fill} onPick={(hex) => controller.setFill(hex)} onReset={() => controller.setFill(null)} />
+        <AlphaSlider theme={th} value={n.fillA == null ? 1 : n.fillA} onChange={(a) => controller.setFillAlpha(a)} />
+
+        <SectionLabel theme={th}>선 색상</SectionLabel>
+        <SwatchRow theme={th} palette={[th.panel, th.text, ...th.palette]} current={n.stroke} onPick={(hex) => controller.setStroke(hex)} onReset={() => controller.setStroke(null)} />
+        <AlphaSlider theme={th} value={n.strokeA == null ? 1 : n.strokeA} onChange={(a) => controller.setStrokeAlpha(a)} />
+
+        <Divider theme={th} />
+        <SectionLabel theme={th}>텍스트 스타일</SectionLabel>
+        <BoldSizeRow theme={th} bold={!!n.bold} size={n.tsize} onToggleBold={controller.toggleNodeBold} onSetSize={controller.setNodeTsize} />
+        <SectionLabel theme={th}>글자 색상</SectionLabel>
+        <SwatchRow theme={th} palette={[th.panel, th.text, ...th.palette]} current={n.textColor} onPick={(hex) => controller.setTextColor(hex)} onReset={() => controller.setTextColor(null)} />
+
+        <Divider theme={th} />
+        <SectionLabel theme={th}>아이콘</SectionLabel>
+        <div style={{ display: 'flex', flexWrap: 'wrap', gap: 5, paddingBottom: 16 }}>
+          <button
+            type="button"
+            className="mf-ed-btn"
+            onClick={controller.clearEmoji}
+            style={{ width: 30, height: 30, border: `1px solid ${th.border}`, borderRadius: 8, background: th.panel, cursor: 'pointer', fontSize: 12, color: th.subtext, fontFamily: 'inherit' }}
+          >
+            ✕
+          </button>
+          {EMOJIS.map((e) => (
+            <button
+              key={e}
+              type="button"
+              className="mf-ed-btn"
+              onClick={() => controller.setEmoji(e)}
+              aria-pressed={n.emoji === e}
+              style={{ width: 30, height: 30, border: `1px solid ${th.border}`, borderRadius: 8, background: th.panel, cursor: 'pointer', fontSize: 16, lineHeight: 1, fontFamily: 'inherit' }}
+            >
+              {e}
+            </button>
+          ))}
+        </div>
+
+        <Divider theme={th} />
+        <div style={{ fontSize: 11, fontWeight: 700, letterSpacing: '.04em', textTransform: 'uppercase', color: th.subtext, margin: '12px 0 8px', display: 'flex', alignItems: 'center', gap: 5 }}>
+          메모 <span style={{ fontSize: 12 }}>📝</span>
+        </div>
+        <textarea
+          value={n.note || ''}
+          onChange={(e) => controller.setNote(e.target.value)}
+          onMouseDown={(e) => e.stopPropagation()}
+          onKeyDown={(e) => e.stopPropagation()}
+          placeholder="이 주제에 대한 메모를 남겨보세요…"
+          style={{
+            width: '100%',
+            minHeight: 78,
+            resize: 'vertical',
+            border: `1px solid ${th.border}`,
+            borderRadius: 9,
+            background: th.panel2,
+            color: th.text,
+            fontFamily: 'inherit',
+            fontSize: 12.5,
+            lineHeight: 1.55,
+            padding: '9px 10px',
+            outline: 'none',
+            boxSizing: 'border-box',
+            marginBottom: 16,
+          }}
+        />
+
+        <RenameButton theme={th} onClick={() => controller.startEditNode(nodeId)} />
+      </div>
+    </div>
+  );
+}

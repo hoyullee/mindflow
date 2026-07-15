@@ -40,11 +40,11 @@ export function Viewport({ doc, controller }: ViewportProps) {
       >
         <div style={{ position: 'absolute', inset: 0 }}>
           <div style={{ position: 'absolute', left: 0, top: 0, transform: `translate(${pan.x}px,${pan.y}px) scale(${zoom})`, transformOrigin: '0 0' }}>
-            <ZoneLayer zones={doc.zones} theme={theme} />
+            <ZoneLayer zones={doc.zones} theme={theme} controller={controller} />
             <EdgeLayer nodes={doc.nodes} geom={geom} mode={layoutMode} edgeStyle={edgeStyle} theme={theme} />
-            <NodeLayer nodes={doc.nodes} geom={geom} mode={layoutMode} theme={theme} />
-            <LineLayer lines={doc.lines} theme={theme} />
-            <FloatLayer floats={doc.floats} theme={theme} />
+            <NodeLayer nodes={doc.nodes} geom={geom} mode={layoutMode} theme={theme} controller={controller} />
+            <LineLayer lines={doc.lines} theme={theme} controller={controller} />
+            <FloatLayer floats={doc.floats} theme={theme} controller={controller} />
           </div>
         </div>
       </div>
