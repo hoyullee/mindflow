@@ -3,8 +3,9 @@ import type { PointerEvent as ReactPointerEvent } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import type { Doc, Float, Line, LayoutMode, NodeMap, SizeOf, Zone } from '@mindflow/mindmap-core';
 import { HistoryStack, ROOT_ID, cubicAt, layout, resolveLineGeometry, serializeDoc, toMarkdown } from '@mindflow/mindmap-core';
+import { useDocStore } from '../../adapters/BackendContext';
 import { CanvasTextMeasurer, computeMetrics } from './metrics';
-import { docStorageKey, loadOrSeedDoc, saveDoc } from './storage';
+import { loadOrSeedDoc } from './storage';
 import { buildVisible, descendants, outlineRows } from './tree';
 import type { EdgeStyle } from './tree';
 import { themeKeyOf, themeOf } from './theme';
@@ -265,6 +266,11 @@ export interface EditorController {
   redo: () => void;
   saveState: SaveState;
   saveNow: () => void;
+  /** Set when the last `DocStore.save()` lost an optimistic-lock race (another
+   * tab/device saved first) — a place for the UI (`DocChip`) to tell the user,
+   * per CLAUDE.md's M4 task brief ("충돌 시 사용자 고지 자리 마련"). */
+  saveConflict: { currentVersion: number } | null;
+  dismissSaveConflict: () => void;
   exportJSON: () => void;
   exportMarkdown: () => void;
   exportPNG: () => void;
@@ -287,10 +293,13 @@ function safeDocTitle(doc: Doc, fallbackTitle: string): string {
 export function useEditorState(): EditorController {
   const [params] = useSearchParams();
   const navigate = useNavigate();
+  const docStore = useDocStore();
   const mapId = params.get('map') || null;
+  const docStoreId = mapId || 'default';
   const titleParam = params.get('title') ? decodeURIComponent(params.get('title') || '') : '';
 
   const [doc, setDoc] = useState<Doc>(() => loadOrSeedDoc(mapId, titleParam));
+  const [saveConflict, setSaveConflict] = useState<{ currentVersion: number } | null>(null);
   const [edgeStyle, setEdgeStyleState] = useState<EdgeStyle>('curve');
   const [view, setView] = useState<ViewMode>('map');
   const [viewport, setViewport] = useState<ViewportState>(INITIAL_VIEWPORT);
@@ -312,6 +321,42 @@ export function useEditorState(): EditorController {
   const [, setHistoryTick] = useState(0);
 
   const idFactory = useRef(createIdFactory()).current;
+
+  // ---- DocStore version (optimistic lock) — `undefined` until the first
+  // `load()`/`save()` tells us what the backend currently has. Local mode's
+  // initial doc comes from the synchronous `loadOrSeedDoc` seed above (so the
+  // very first paint never blocks on a promise); this effect then confirms
+  // the version and — for a real backend — swaps in the actual remote doc
+  // once it arrives (a no-op re-render for Local, since content is identical).
+  //
+  // `mountDocSigRef` guards against a race with the user editing before this
+  // promise resolves: only ever overwrite `doc` here if it's STILL exactly
+  // the mount-time seed (nothing edited yet) — otherwise an in-flight load
+  // that resolves after an edit already landed would silently revert it. ----
+  const docVersionRef = useRef<number | undefined>(undefined);
+  const mountDocSigRef = useRef(docSignature(doc));
+  useEffect(() => {
+    let cancelled = false;
+    docStore
+      .load(docStoreId)
+      .then((res) => {
+        if (cancelled) return;
+        if (!res) {
+          docVersionRef.current = undefined;
+          return;
+        }
+        docVersionRef.current = res.version;
+        setDoc((prev) => (docSignature(prev) === mountDocSigRef.current && docSignature(res.doc) !== mountDocSigRef.current ? res.doc : prev));
+      })
+      .catch(() => {
+        /* load failed (offline, RLS, ...) — keep the locally-seeded doc and
+         * treat this as a brand-new/unknown version; the next save() will
+         * create it rather than lock against a version we never confirmed */
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [docStore, docStoreId]);
 
   const measurer = useMemo(() => new CanvasTextMeasurer(), []);
   const sizeOf: SizeOf = useCallback(
@@ -706,10 +751,33 @@ export function useEditorState(): EditorController {
   }, []);
 
   // ---- save (manual + debounced autosave) — port of `saveDoc`/`scheduleAutoSave`/`saveNow`
-  // (MindFlow.dc.html:537-543, 598-602) ----
+  // (MindFlow.dc.html:537-543, 598-602), M4: routed through `DocStore.save()` with
+  // `docVersionRef` as the optimistic-lock token instead of a raw `localStorage.setItem` ----
   const lastSavedSigRef = useRef(docSignature(doc));
   const autosaveTimerRef = useRef<number | undefined>(undefined);
   const savingTimerRef = useRef<number | undefined>(undefined);
+
+  /** Writes the current doc via `DocStore.save()`. On a version conflict (another
+   * tab/device saved first), adopts the server's version as the new base — so the
+   * NEXT save attempt targets the right row — and surfaces `saveConflict` so the UI
+   * has a place to tell the user (`DocChip`'s banner); this is intentionally NOT a
+   * full merge/reload flow (out of scope here, see CLAUDE.md's M4 task brief). */
+  const persistDoc = useCallback(async (): Promise<void> => {
+    const title = safeDocTitle(docRef.current, titleParam);
+    const result = await docStore.save(docStoreId, docRef.current, { prevVersion: docVersionRef.current, title });
+    if (result.ok) {
+      docVersionRef.current = result.version;
+      lastSavedSigRef.current = docSignature(docRef.current);
+      setSaveStateState('saved');
+      setSaveConflict(null);
+    } else if (result.reason === 'conflict') {
+      docVersionRef.current = result.currentVersion;
+      setSaveConflict({ currentVersion: result.currentVersion });
+      setSaveStateState('saved');
+    } else {
+      setSaveStateState('dirty'); // keep dirty so the next autosave/Ctrl+S tick retries
+    }
+  }, [docStore, docStoreId, titleParam]);
 
   useEffect(() => {
     const sig = docSignature(doc);
@@ -720,35 +788,35 @@ export function useEditorState(): EditorController {
       setSaveStateState('saving');
       window.clearTimeout(savingTimerRef.current);
       savingTimerRef.current = window.setTimeout(() => {
-        saveDoc(mapId, docRef.current);
-        lastSavedSigRef.current = docSignature(docRef.current);
-        setSaveStateState('saved');
+        void persistDoc();
       }, 250);
     }, 900);
     return () => window.clearTimeout(autosaveTimerRef.current);
-  }, [doc, mapId]);
+  }, [doc, persistDoc]);
 
   const saveNow = useCallback(() => {
     window.clearTimeout(autosaveTimerRef.current);
     window.clearTimeout(savingTimerRef.current);
     setSaveStateState('saving');
     savingTimerRef.current = window.setTimeout(() => {
-      saveDoc(mapId, docRef.current);
-      lastSavedSigRef.current = docSignature(docRef.current);
-      setSaveStateState('saved');
+      void persistDoc();
     }, 200);
-  }, [mapId]);
+  }, [persistDoc]);
+
+  const dismissSaveConflict = useCallback(() => setSaveConflict(null), []);
 
   const goHome = useCallback(() => {
     window.clearTimeout(autosaveTimerRef.current);
     window.clearTimeout(savingTimerRef.current);
-    try {
-      localStorage.setItem(docStorageKey(mapId), JSON.stringify(serializeDoc(docRef.current)));
-    } catch {
-      /* storage unavailable — non-fatal, matches original's try/catch */
-    }
+    // Fire-and-forget: for `LocalDocStore` the write is synchronous under the
+    // hood (plain `localStorage.setItem`), so it's already applied by the time
+    // this function returns even though `persistDoc` itself is `async`. For a
+    // real network backend this is best-effort — the debounced autosave above
+    // already keeps saves close to real-time, matching this app's existing
+    // "don't block navigation on save" behavior.
+    void persistDoc();
     navigate('/home');
-  }, [navigate, mapId]);
+  }, [navigate, persistDoc]);
 
   // ---- selection ----
   const selectNode = useCallback((id: string) => {
@@ -1711,6 +1779,8 @@ export function useEditorState(): EditorController {
     redo,
     saveState,
     saveNow,
+    saveConflict,
+    dismissSaveConflict,
     exportJSON,
     exportMarkdown,
     exportPNG,

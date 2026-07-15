@@ -1,0 +1,29 @@
+-- Optional local/dev seed data. NOT required to run the app — `apps/web`
+-- works fine against an empty `documents` table (a new user simply sees an
+-- empty map grid, same as the Local/demo backend does).
+--
+-- `auth.users` rows can't be created by plain SQL (Supabase manages password
+-- hashing, identities, etc. through the Auth service) — sign up a real test
+-- user first (via the app's `/login` "가입하기" flow, or
+-- `supabase.auth.admin.createUser()` from a trusted server context with the
+-- service_role key), THEN run this, substituting that user's `auth.uid()`.
+
+-- 1) Find your test user's id:
+--      select id, email from auth.users;
+
+-- 2) Substitute it below and run:
+-- insert into public.documents (owner, title, data, version)
+-- values (
+--   '00000000-0000-0000-0000-000000000000', -- <- replace with a real auth.users.id
+--   '샘플 마인드맵',
+--   '{
+--     "v": 1,
+--     "nodes": {
+--       "root": { "id": "root", "text": "샘플 마인드맵", "emoji": "🎯", "parent": null,
+--                 "children": [], "collapsed": false, "color": null, "x": 0, "y": 0 }
+--     },
+--     "floats": [], "lines": [], "zones": [],
+--     "layoutMode": "radial", "themeKey": "coral"
+--   }'::jsonb,
+--   1
+-- );

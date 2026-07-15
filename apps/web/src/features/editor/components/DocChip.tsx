@@ -77,6 +77,16 @@ export function DocChip({ controller }: DocChipProps) {
           <span style={{ width: 7, height: 7, borderRadius: '50%', flexShrink: 0, background: dotColor }} />
           <span style={{ fontSize: 11, fontWeight: 600, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', color: th.subtext }}>{label}</span>
         </div>
+        {controller.saveConflict && (
+          <div
+            role="alert"
+            title="다른 기기/탭에서 먼저 저장되어 최신 버전을 기준으로 이어서 저장해요."
+            onClick={controller.dismissSaveConflict}
+            style={{ fontSize: 10.5, fontWeight: 600, color: '#c0532e', cursor: 'pointer', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}
+          >
+            ⚠ 다른 곳에서 먼저 저장됨 (v{controller.saveConflict.currentVersion})
+          </div>
+        )}
       </div>
       <button
         type="button"

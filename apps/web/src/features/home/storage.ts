@@ -1,3 +1,4 @@
+import type { DocMeta } from '../../adapters/ports';
 import type { DriveFileData, MapCardData, SpaceData } from './types';
 
 /** Home.dc.html:517,824 — `mf_recent` holds the last 3 opened map titles. */
@@ -133,6 +134,52 @@ export function syncDocsToCards(spaces: SpaceData[]): { spaces: SpaceData[]; cha
       if (t && t !== m.title) {
         changed = true;
         return { ...m, title: t };
+      }
+      return m;
+    }),
+  }));
+  if (adds.length) {
+    next = next.map((s, i) => (i === 0 ? { ...s, maps: [...(s.maps || []), ...adds] } : s));
+  }
+  return { spaces: next, changed };
+}
+
+/**
+ * M4: the `DocStore`-backed replacement for `syncDocsToCards`'s localStorage
+ * scan — same algorithm (any persisted doc not yet represented by a card, by
+ * id OR by title, becomes a new card in the first space; a doc-backed card's
+ * title is refreshed from its current doc), but driven by `DocStore.list()`
+ * metadata instead of re-reading/parsing raw `mindflow_doc_*` localStorage
+ * entries directly. Trashed docs (`deletedAt` set) don't reappear as cards —
+ * Home's own trash list is a separate, editor-independent concept for now.
+ */
+export function mergeDocMetasIntoSpaces(spaces: SpaceData[], metas: DocMeta[]): { spaces: SpaceData[]; changed: boolean } {
+  if (!spaces.length) return { spaces, changed: false };
+  const known = new Set<string>();
+  spaces.forEach((s) => (s.maps || []).forEach((m) => {
+    known.add(m.title);
+    if (m.docId) known.add('id:' + m.docId);
+  }));
+
+  const metaByDocId = new Map(metas.map((m) => [m.id, m]));
+  const adds: MapCardData[] = [];
+  metas.forEach((meta) => {
+    if (meta.deletedAt || !meta.title) return;
+    if (known.has('id:' + meta.id) || known.has(meta.title)) return;
+    adds.push({ title: meta.title, when: '내 맵', hue: '#f0663f', docId: meta.id });
+    known.add(meta.title);
+    known.add('id:' + meta.id);
+  });
+
+  let changed = adds.length > 0;
+  let next = spaces.map((s) => ({
+    ...s,
+    maps: (s.maps || []).map((m) => {
+      if (!m.docId) return m;
+      const meta = metaByDocId.get(m.docId);
+      if (meta && meta.title && meta.title !== m.title) {
+        changed = true;
+        return { ...m, title: meta.title };
       }
       return m;
     }),

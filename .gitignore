@@ -8,3 +8,10 @@ dist/
 .turbo/
 *.tsbuildinfo
 apps/web/dist/
+
+# Secrets — never commit real Supabase URLs/keys or other env values.
+# `.env.example` (checked in) documents the required variable NAMES only.
+.env
+.env.*
+!.env.example
+!*/.env.example

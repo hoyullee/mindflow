@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import type { ChangeEvent, KeyboardEvent, MouseEvent } from 'react';
 import { useNavigate } from 'react-router-dom';
+import { useBackend } from '../../adapters/BackendContext';
 import {
   DRIVE_FILES,
   initialHomeState,
@@ -13,6 +14,7 @@ import {
   loadRecent,
   mapId,
   mapHref as buildMapHref,
+  mergeDocMetasIntoSpaces,
   newMapHref as buildNewMapHref,
   parseOutline,
   readDocRaw,
@@ -20,7 +22,6 @@ import {
   safeFileName,
   saveRecent,
   sourceOf,
-  syncDocsToCards,
 } from './storage';
 
 /**
@@ -31,6 +32,7 @@ import {
 export function useHomeController() {
   const [state, setState] = useState<HomeState>(() => initialHomeState());
   const navigate = useNavigate();
+  const { auth, docStore } = useBackend();
   const importInputRef = useRef<HTMLInputElement | null>(null);
   const loaderTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
   const spaceMenuAnchor = useRef<{ top: number; left: number } | null>(null);
@@ -56,16 +58,33 @@ export function useHomeController() {
     const recent = loadRecent();
     if (recent.length) patch({ recent });
 
-    setState((prev) => {
-      const { spaces, changed } = syncDocsToCards(prev.spaces);
-      return changed ? { ...prev, spaces } : prev;
-    });
+    // M4: pull the map list from `DocStore.list()` (was: a raw localStorage
+    // scan in `syncDocsToCards`) and fold in any doc not yet represented by a
+    // card — same "new card in the first space, or refresh its title" merge,
+    // now backend-agnostic (works the same whether `docStore` is `LocalDocStore`
+    // or `SupabaseDocStore`).
+    let cancelled = false;
+    docStore
+      .list()
+      .then((metas) => {
+        if (cancelled) return;
+        setState((prev) => {
+          const { spaces, changed } = mergeDocMetasIntoSpaces(prev.spaces, metas);
+          return changed ? { ...prev, spaces } : prev;
+        });
+      })
+      .catch(() => {
+        /* listing failed (offline, RLS misconfig, ...) — the demo/seeded map
+         * list still renders; non-fatal, matches this file's other storage
+         * try/catch conventions */
+      });
 
     return () => {
+      cancelled = true;
       window.removeEventListener('mousedown', onDocMouseDown);
       clearTimeout(loaderTimer.current);
     };
-  }, []);
+  }, [docStore]);
 
   // ---- drive (fake OAuth demo) ----
   const onDriveClick = () => patch({ activeSpace: 'drive', curFolder: null, driveFolder: null });
@@ -99,6 +118,9 @@ export function useHomeController() {
   const confirmLogoutYes = () => {
     patch({ confirmLogout: false, creatingMap: true, loaderMsg: '로그아웃하고 있어요' });
     clearTimeout(loaderTimer.current);
+    // `LocalAuth.signOut()` resolves instantly (demo, no network), so this
+    // still lands on /login after the same ~900ms loader beat as before.
+    void auth.signOut();
     loaderTimer.current = setTimeout(() => navigate('/login'), 900);
   };
 
