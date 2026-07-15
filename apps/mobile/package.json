@@ -1,0 +1,24 @@
+{
+  "name": "@mindflow/mobile",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Capacitor native shell wrapping @mindflow/web's PWA build for Android/iOS app-store distribution (M7).",
+  "scripts": {
+    "copy": "cap copy",
+    "sync": "cap sync",
+    "open:android": "cap open android",
+    "open:ios": "cap open ios",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "test": "echo '@mindflow/mobile: no unit tests (native shell config only, see README.md)' && exit 0"
+  },
+  "dependencies": {
+    "@capacitor/android": "^8.4.2",
+    "@capacitor/core": "^8.4.2",
+    "@capacitor/ios": "^8.4.2"
+  },
+  "devDependencies": {
+    "@capacitor/cli": "^8.4.2",
+    "@types/node": "^22.10.5"
+  }
+}

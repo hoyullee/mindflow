@@ -1,5 +1,6 @@
 import type { DocMeta } from '../../adapters/ports';
 import type { DriveFileData, MapCardData, SpaceData } from './types';
+import { downloadOrShare } from '../../platform/nativeBridge';
 
 /** Home.dc.html:517,824 — `mf_recent` holds the last 3 opened map titles. */
 export const RECENT_KEY = 'mf_recent';
@@ -190,16 +191,20 @@ export function mergeDocMetasIntoSpaces(spaces: SpaceData[], metas: DocMeta[]): 
   return { spaces: next, changed };
 }
 
+// M7: see features/editor/download.ts's `downloadFile` for the native-shell
+// rationale — same `downloadOrShare` gate, same unchanged web fallback.
 export function downloadFile(name: string, text: string, mime?: string): void {
-  const blob = new Blob([text], { type: mime || 'application/json;charset=utf-8' });
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement('a');
-  a.href = url;
-  a.download = name;
-  document.body.appendChild(a);
-  a.click();
-  a.remove();
-  setTimeout(() => URL.revokeObjectURL(url), 2000);
+  downloadOrShare(name, text, mime || 'application/json;charset=utf-8', () => {
+    const blob = new Blob([text], { type: mime || 'application/json;charset=utf-8' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = name;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 2000);
+  });
 }
 
 export function safeFileName(title: string): string {

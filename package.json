@@ -11,7 +11,8 @@
     "build": "turbo run build",
     "test": "turbo run test",
     "typecheck": "turbo run typecheck",
-    "lint": "eslint ."
+    "lint": "eslint .",
+    "build:mobile": "pnpm --filter @mindflow/web build && pnpm --filter @mindflow/mobile run sync"
   },
   "devDependencies": {
     "@eslint/js": "^9.18.0",
