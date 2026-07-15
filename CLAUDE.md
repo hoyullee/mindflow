@@ -44,6 +44,16 @@ server/           # 인증(OAuth/이메일) + DB(Postgres) + 문서 동기화 AP
 1. **웹 프로덕션화**: dc → React+TS+Vite 이식, `mindmap-core` 분리, 실제 인증·DB·동기화. PWA화.
 2. **앱 스토어**: 빠르게=Capacitor로 PWA 래핑 / 네이티브감=React Native(UI 재작성 + core 재사용).
 
+## 진행 현황 (ADR-0001 기준)
+- ✅ **ADR-0001** 아키텍처 결정 (`docs/architecture/0001-architecture.md`)
+- ✅ **M0** 모노레포 스캐폴딩 (pnpm+Turbo, strict TS, CI, 코어 순수성 lint)
+- ✅ **골든 안전망** (`packages/mindmap-core/test/fixtures/`) — dc 원본을 헤드리스로 캡처. serialize/outline/layout 좌표/node-sizes
+- ✅ **M1a** 코어: 모델·`serializeDoc`/`parseDoc`/`cloneNodes`·`toMarkdown`·`HistoryStack` (골든 parity, QA 감사 반영)
+- ✅ **M1b** 코어: `layout(doc, mode, sizeOf, opts?)` — `_layout` radial/right/down 이식, 좌표 parity. `_rootAnchor`→opts 승격
+- ⏭️ **다음 후보**: M1c(`resolveLineGeometry`/`toSVG`), M2(스키마 마이그레이션), M3(React 이식 — Login부터)
+
+> `mindmap-core`는 순수 TS(DOM/React/canvas 금지, lint 강제). 노드 크기는 `sizeOf` 주입.
+
 ## 규칙 (에이전트·사람 공통)
 - `support.js`와 `*.dc.html`(디자인 원본)은 **변경하지 않는다.** 이식은 새 `packages/`에서 진행.
 - 새 코드는 **TypeScript** 우선. 코어는 프레임워크·DOM 의존 없이 순수 로직으로.
