@@ -5,6 +5,8 @@ import { cubicAt, resolveLineGeometry } from '@mindflow/mindmap-core';
 import { hexA } from '../theme';
 import type { Theme } from '../theme';
 import type { EditorController } from '../useEditorState';
+import { peersSelecting } from '../presenceSelection';
+import { RemotePeerTag } from './RemotePeerTag';
 
 interface LineLayerProps {
   lines: Line[];
@@ -38,6 +40,8 @@ export function LineLayer({ lines, theme: th, controller }: LineLayerProps) {
     const selected = controller.multiGroups.lines.includes(l.id);
     const showHandles = controller.selection?.kind === 'line' && controller.selection.id === l.id;
     const editing = controller.editingLineId === l.id;
+    // presence: a remote peer's selection halo (see `NodeLayer`'s identical pattern).
+    const remotePeer = peersSelecting(controller.presence.peers, 'lines', l.id)[0];
     const aStart = Math.atan2(Y1 - g.C1.y, X1 - g.C1.x);
     const aEnd = Math.atan2(Y2 - g.C2.y, X2 - g.C2.x);
     const head = (x: number, y: number, a: number): string => {
@@ -66,6 +70,9 @@ export function LineLayer({ lines, theme: th, controller }: LineLayerProps) {
         }}
       />,
     );
+    if (remotePeer) {
+      paths.push(<path key={`remote${l.id}`} d={dv} fill="none" stroke={hexA(remotePeer.user.color, 0.55)} strokeWidth={7} strokeLinecap="round" style={{ pointerEvents: 'none' }} />);
+    }
     paths.push(
       <path
         key={`v${l.id}`}
@@ -124,6 +131,11 @@ export function LineLayer({ lines, theme: th, controller }: LineLayerProps) {
     }
 
     const mp = cubicAt(g, 0.5);
+    if (remotePeer && !editing) {
+      overlays.push(
+        <RemotePeerTag key={`remotetag${l.id}`} color={remotePeer.user.color} name={remotePeer.user.name} style={{ left: mp.x, top: mp.y - 20, transform: 'translate(-50%,-50%)' }} />,
+      );
+    }
     if (editing) {
       overlays.push(<LineLabelEdit key={`edit${l.id}`} l={l} x={mp.x} y={mp.y} theme={th} onCommit={(t) => controller.commitLineLabel(l.id, t)} onCancel={controller.cancelLineLabelEdit} />);
     } else if (l.label && l.label.trim()) {

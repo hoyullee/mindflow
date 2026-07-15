@@ -7,6 +7,8 @@ import { hexA } from '../theme';
 import type { Theme } from '../theme';
 import type { EditorController } from '../useEditorState';
 import type { GeomMap } from '../types';
+import { peersSelecting } from '../presenceSelection';
+import { RemotePeerTag } from './RemotePeerTag';
 
 interface NodeLayerProps {
   nodes: NodeMap;
@@ -78,6 +80,10 @@ function NodeBox({ id, node: n, g, nodes, mode, theme: th, rootX, controller }: 
   const selected = controller.multiGroups.nodes.includes(id);
   const editing = controller.editingNodeId === id;
   const attach = controller.attachTarget?.id === id;
+  // presence: a remote peer's selection ring, distinct from `th.accent` above
+  // (single-user/no-peers is a no-op — `peersSelecting` returns `[]`).
+  const remoteSelectors = peersSelecting(controller.presence.peers, 'nodes', id);
+  const remotePeer = remoteSelectors[0];
 
   const boxStyle: CSSProperties = {
     position: 'absolute',
@@ -183,9 +189,19 @@ function NodeBox({ id, node: n, g, nodes, mode, theme: th, rootX, controller }: 
       >
         {selected && <polygon points={pts} fill="none" stroke={hexA(th.accent, 0.55)} strokeWidth={bw2 + 6} strokeLinejoin="round" />}
         {selected && <polygon points={pts} fill="none" stroke={th.panel} strokeWidth={bw2 + 2} strokeLinejoin="round" />}
+        {remotePeer && <polygon points={pts} fill="none" stroke={hexA(remotePeer.user.color, 0.9)} strokeWidth={bw2 + 4} strokeLinejoin="round" />}
         <polygon points={pts} fill={polyFill} stroke={strokeCss} strokeWidth={bw2} strokeLinejoin="miter" />
       </svg>
     );
+  }
+
+  // presence: a remote peer's selection ring, layered onto whatever local
+  // selected/attach boxShadow (if any) is already set above — polygon shapes
+  // (hexagon/diamond/parallelogram) got their own ring drawn into `shapeBg`'s
+  // SVG instead (no CSS box to shadow), so they're excluded here.
+  if (remotePeer && shape !== 'hexagon' && shape !== 'diamond' && shape !== 'parallelogram') {
+    const rc = hexA(remotePeer.user.color, 0.9);
+    boxStyle.boxShadow = boxStyle.boxShadow && boxStyle.boxShadow !== 'none' ? `${boxStyle.boxShadow}, 0 0 0 3px ${rc}` : `0 0 0 3px ${rc}`;
   }
 
   if (n.textColor) boxStyle.color = n.textColor;
@@ -310,6 +326,7 @@ function NodeBox({ id, node: n, g, nodes, mode, theme: th, rootX, controller }: 
           </svg>
         </div>
       )}
+      {remotePeer && !editing && <RemotePeerTag color={remotePeer.user.color} name={remotePeer.user.name} style={{ left: 0, top: -22 }} />}
       {/* resize handle only for a true single selection (port of `this.state.selectedId`,
           MindFlow.dc.html:1274 — not shown for a marquee multi-selection) */}
       {controller.selection?.kind === 'node' && controller.selection.id === id && !editing && (

@@ -4,6 +4,8 @@ import type { Float } from '@mindflow/mindmap-core';
 import { hexA } from '../theme';
 import type { Theme } from '../theme';
 import type { EditorController } from '../useEditorState';
+import { peersSelecting } from '../presenceSelection';
+import { RemotePeerTag } from './RemotePeerTag';
 
 interface FloatLayerProps {
   floats: Float[];
@@ -26,6 +28,10 @@ export function FloatLayer({ floats, theme: th, controller }: FloatLayerProps) {
         const editing = controller.editingFloatId === f.id;
         const collapsed = !!f.collapsed;
         const fFpx = f.tsize === 's' ? 11.5 : f.tsize === 'l' ? 15.5 : 13;
+        // presence: a remote peer's selection ring (see `NodeLayer`'s identical pattern).
+        const remotePeer = peersSelecting(controller.presence.peers, 'floats', f.id)[0];
+        let boxShadow = selected ? `0 0 0 2px ${th.panel}, 0 0 0 4px ${hexA(th.accent, 0.55)}, 0 3px 10px rgba(0,0,0,.10)` : '0 3px 10px rgba(0,0,0,.10)';
+        if (remotePeer) boxShadow += `, 0 0 0 3px ${hexA(remotePeer.user.color, 0.9)}`;
         const boxStyle: CSSProperties = {
           position: 'absolute',
           left: f.x,
@@ -41,7 +47,7 @@ export function FloatLayer({ floats, theme: th, controller }: FloatLayerProps) {
           fontSize: fFpx,
           fontWeight: f.bold ? 700 : 400,
           lineHeight: 1.55,
-          boxShadow: selected ? `0 0 0 2px ${th.panel}, 0 0 0 4px ${hexA(th.accent, 0.55)}, 0 3px 10px rgba(0,0,0,.10)` : '0 3px 10px rgba(0,0,0,.10)',
+          boxShadow,
           whiteSpace: 'pre-wrap',
           wordBreak: 'break-word',
           boxSizing: 'border-box',
@@ -93,6 +99,7 @@ export function FloatLayer({ floats, theme: th, controller }: FloatLayerProps) {
             >
               {collapsed ? '＋' : '−'}
             </div>
+            {remotePeer && !editing && <RemotePeerTag color={remotePeer.user.color} name={remotePeer.user.name} style={{ left: 0, top: -22 }} />}
             {editing ? (
               <FloatEditBox f={f} onCommit={(text) => controller.commitFloatText(f.id, text)} onCancel={controller.cancelFloatEdit} />
             ) : (

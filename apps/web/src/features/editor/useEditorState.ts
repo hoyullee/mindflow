@@ -4,7 +4,10 @@ import { useNavigate, useSearchParams } from 'react-router-dom';
 import type { Doc, Float, Line, LayoutMode, NodeMap, SizeOf, Zone } from '@mindflow/mindmap-core';
 import { HistoryStack, ROOT_ID, cubicAt, layout, resolveLineGeometry, serializeDoc, toMarkdown } from '@mindflow/mindmap-core';
 import { useDocStore } from '../../adapters/BackendContext';
+import { useAuthUser } from '../../adapters/useAuthUser';
 import { useYjsDocSync } from '../../collab/useYjsDocSync';
+import { usePresence, type UsePresenceResult } from '../../collab/usePresence';
+import { EMPTY_PRESENCE_SELECTION, type PresenceSelection } from '../../collab/presence';
 import { CanvasTextMeasurer, computeMetrics } from './metrics';
 import { loadOrSeedDoc } from './storage';
 import { buildVisible, descendants, outlineRows } from './tree';
@@ -144,6 +147,19 @@ export interface EditorController {
   zoomOut: () => void;
   fitView: () => void;
   goHome: () => void;
+
+  // ---- presence (M5.5: multi-user awareness — cursor/selection/identity) ----
+  /** This tab's own identity + every OTHER connected peer's live cursor/
+   * selection (`peers` is `[]` when solo — single-user, no-op rendering). */
+  presence: UsePresenceResult;
+  /** Reports the pointer's CLIENT (screen) position for presence — converts to
+   * canvas coordinates internally (same space as `geom`) and throttles the
+   * broadcast; call from the viewport's `onPointerMove`. */
+  reportPointerPosition: (clientX: number, clientY: number) => void;
+  /** Call from the viewport's `onPointerLeave`/`onPointerCancel` — reports "no
+   * cursor" so peers don't see a stale last-known position after this tab's
+   * pointer leaves the canvas. */
+  clearPointerPosition: () => void;
 
   // ---- selection ----
   selection: Selection | null;
@@ -368,7 +384,36 @@ export function useEditorState(): EditorController {
   // incoming remote updates straight into `doc` via `setDoc` (bypassing
   // `commitDoc`, so remote edits don't land on THIS tab's local undo stack —
   // see `useYjsDocSync`'s doc comment for the full rationale).
-  useYjsDocSync(docStoreId, doc, setDoc);
+  const awareness = useYjsDocSync(docStoreId, doc, setDoc);
+
+  // ---- presence (multi-user awareness on top of M5's document sync): cursor
+  // position + selection + identity, broadcast via the SAME `Awareness`
+  // instance `useYjsDocSync` connected above (Supabase Realtime/BroadcastChannel/
+  // no-op — whichever `collab/factory.ts` picked). `authUser` resolves
+  // asynchronously (a real Supabase session) or stays `null` (local/demo mode,
+  // or before the session check resolves) — `usePresence` falls back to a
+  // random "adjective+animal" guest identity in that case (`collab/identity.ts`). ----
+  const authUser = useAuthUser();
+  const presence = usePresence(awareness, authUser?.email);
+
+  // Broadcasts the LOCAL selection (single `selection` OR marquee `multiSelection`,
+  // whichever is active — same precedence as `multiGroups` below, plus zones,
+  // which `MultiSelection` itself doesn't carry) to peers whenever it changes.
+  // Deliberately does NOT touch `doc`/undo — presence-only, per this feature's
+  // task brief.
+  useEffect(() => {
+    const next: PresenceSelection = multiSelection
+      ? { nodes: multiSelection.nodes, floats: multiSelection.floats, lines: multiSelection.lines, zones: [] }
+      : selection
+        ? {
+            nodes: selection.kind === 'node' ? [selection.id] : [],
+            floats: selection.kind === 'float' ? [selection.id] : [],
+            lines: selection.kind === 'line' ? [selection.id] : [],
+            zones: selection.kind === 'zone' ? [selection.id] : [],
+          }
+        : EMPTY_PRESENCE_SELECTION;
+    presence.setSelection(next);
+  }, [selection, multiSelection, presence]);
 
   const measurer = useMemo(() => new CanvasTextMeasurer(), []);
   const sizeOf: SizeOf = useCallback(
@@ -526,6 +571,21 @@ export function useEditorState(): EditorController {
     const cy = Number.isFinite(clientY) ? clientY : 0;
     return { x: (cx - r.left - vp.pan.x) / vp.zoom, y: (cy - r.top - vp.pan.y) / vp.zoom };
   }
+
+  // ---- presence: local pointer -> canvas coordinates -> throttled broadcast
+  // (`usePresence.setCursor` does the actual throttling) — reuses the SAME
+  // `toCanvasPoint` conversion as the marquee/drag machinery above, so a
+  // remote cursor renders in exactly the space `PresenceLayer` (inside the
+  // pan/zoom transform group) expects. ----
+  const reportPointerPosition = useCallback(
+    (clientX: number, clientY: number) => {
+      presence.setCursor(toCanvasPoint(clientX, clientY, viewportRef.current));
+    },
+    [presence.setCursor],
+  );
+  const clearPointerPosition = useCallback(() => {
+    presence.setCursor(null);
+  }, [presence.setCursor]);
 
   // ---- fit-to-view (initial load + whenever a layout switch requests it) ----
   const pendingFitRef = useRef(true);
@@ -1686,6 +1746,10 @@ export function useEditorState(): EditorController {
     zoomOut,
     fitView,
     goHome,
+
+    presence,
+    reportPointerPosition,
+    clearPointerPosition,
 
     selection,
     selectNode,

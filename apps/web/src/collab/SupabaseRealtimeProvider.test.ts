@@ -115,4 +115,72 @@ describe('SupabaseRealtimeProvider', () => {
 
     expect(removeChannel).toHaveBeenCalledWith(channel);
   });
+
+  describe('awareness (presence) relay', () => {
+    it('connect() also registers the awareness broadcast/sync-request handlers', () => {
+      const channel = { on: vi.fn().mockReturnThis(), subscribe: vi.fn().mockReturnThis(), send: vi.fn() };
+      const client = { channel: vi.fn(() => channel), removeChannel: vi.fn() } as unknown as import('@supabase/supabase-js').SupabaseClient;
+      const provider = new SupabaseRealtimeProvider(client);
+      const ydoc = docToYDoc(baseDoc());
+
+      provider.connect('doc-aware', ydoc);
+
+      expect(channel.on).toHaveBeenCalledWith('broadcast', { event: 'yaware' }, expect.any(Function));
+      expect(channel.on).toHaveBeenCalledWith('broadcast', { event: 'yaware-sync-request' }, expect.any(Function));
+      provider.disconnect();
+    });
+
+    it("relays a local awareness state to a second provider (mocked channel pair) and converges", () => {
+      const { channelA, channelB } = makeFakeChannelPair();
+      const clientA = { channel: vi.fn(() => channelA), removeChannel: vi.fn() } as unknown as import('@supabase/supabase-js').SupabaseClient;
+      const clientB = { channel: vi.fn(() => channelB), removeChannel: vi.fn() } as unknown as import('@supabase/supabase-js').SupabaseClient;
+
+      const providerA = new SupabaseRealtimeProvider(clientA);
+      const providerB = new SupabaseRealtimeProvider(clientB);
+      providerA.connect('doc-aware-xyz', docToYDoc(baseDoc()));
+      providerB.connect('doc-aware-xyz', new Y.Doc()); // fires sync-request/awareness-sync-request that A answers
+
+      const awarenessA = providerA.getAwareness()!;
+      const awarenessB = providerB.getAwareness()!;
+      awarenessA.setLocalStateField('user', { name: 'Grape Owl', color: '#8a6bd1' });
+
+      expect(awarenessB.getStates().has(awarenessA.clientID)).toBe(true);
+      expect((awarenessB.getStates().get(awarenessA.clientID) as { user: { name: string } }).user.name).toBe('Grape Owl');
+
+      providerA.disconnect();
+      providerB.disconnect();
+    });
+
+    it("disconnect() broadcasts this client's departure to a connected peer (mocked channel pair)", () => {
+      const { channelA, channelB } = makeFakeChannelPair();
+      const clientA = { channel: vi.fn(() => channelA), removeChannel: vi.fn() } as unknown as import('@supabase/supabase-js').SupabaseClient;
+      const clientB = { channel: vi.fn(() => channelB), removeChannel: vi.fn() } as unknown as import('@supabase/supabase-js').SupabaseClient;
+
+      const providerA = new SupabaseRealtimeProvider(clientA);
+      const providerB = new SupabaseRealtimeProvider(clientB);
+      providerA.connect('doc-aware-leave', docToYDoc(baseDoc()));
+      providerB.connect('doc-aware-leave', new Y.Doc());
+
+      const awarenessA = providerA.getAwareness()!;
+      const awarenessB = providerB.getAwareness()!;
+      awarenessA.setLocalStateField('user', { name: 'Ocean Whale', color: '#3f8fd0' });
+      expect(awarenessB.getStates().has(awarenessA.clientID)).toBe(true);
+
+      providerA.disconnect();
+
+      expect(awarenessB.getStates().has(awarenessA.clientID)).toBe(false);
+      providerB.disconnect();
+    });
+
+    it('getAwareness() returns null before connect() and after disconnect()', () => {
+      const channel = { on: vi.fn().mockReturnThis(), subscribe: vi.fn().mockReturnThis(), send: vi.fn() };
+      const client = { channel: vi.fn(() => channel), removeChannel: vi.fn() } as unknown as import('@supabase/supabase-js').SupabaseClient;
+      const provider = new SupabaseRealtimeProvider(client);
+      expect(provider.getAwareness()).toBeNull();
+      provider.connect('doc-aware-lifecycle', docToYDoc(baseDoc()));
+      expect(provider.getAwareness()).not.toBeNull();
+      provider.disconnect();
+      expect(provider.getAwareness()).toBeNull();
+    });
+  });
 });

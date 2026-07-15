@@ -7,6 +7,7 @@ import { ZoomControls } from './components/ZoomControls';
 import { Viewport } from './components/Viewport';
 import { OutlineView } from './components/OutlineView';
 import { PropertyPanel } from './components/PropertyPanel';
+import { PresenceBar } from './components/PresenceBar';
 import { useIsMobile } from '../../hooks/useMediaQuery';
 
 /**
@@ -55,6 +56,7 @@ export function Editor() {
           <>
             <Viewport doc={doc} controller={controller} />
             <DocChip controller={controller} />
+            <PresenceBar controller={controller} />
             <PropertyPanel controller={controller} />
             <ZoomControls controller={controller} />
             {/* M6: this desktop mouse-gesture legend (우클릭/휠클릭/스크롤/핀치) doesn't
