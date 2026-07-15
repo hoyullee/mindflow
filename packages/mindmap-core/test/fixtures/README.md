@@ -16,6 +16,7 @@ verified for behavior parity. They are the regression safety net referenced in
 | `golden/layout-down.json` | …after `setLayout('down')` | `layout(doc, 'down', sizeOf)` |
 | `golden/outline.md` | `exportOutline()` output | `toMarkdown(doc)` |
 | `golden/export.json` | `exportJSON()` output (verified `=== serializeDoc()`) | `serializeDoc(doc)` |
+| `golden/node-sizes.json` | per-node `metrics(node, depth) → {w,h}` read from the live controller (the exact sizes `_layout` used) | the `sizeOf` injected into `layout(doc, mode, sizeOf)` |
 
 ## Document / element schemas (as observed)
 
@@ -36,12 +37,13 @@ font. These goldens were captured in **headless Chromium with the Pretendard web
 font blocked** (system-font fallback), so the absolute pixel coordinates in
 `layout-*.json` are only reproducible against the **same node sizes**.
 
-For M1, verify layout parity by one of:
-1. **Inject the exact sizes** the browser used (recommended): capture per-node
-   `{w,h}` alongside coords and feed them to `layout(doc, mode, sizeOf)`; then
-   assert coordinate equality. (Extend the capture script to emit sizes.)
-2. **Structural/relative assertions**: same relative ordering, parent-before-child
-   offsets, no overlaps — font-independent.
+For M1b, verify layout parity by injecting the exact sizes the browser used:
+`golden/node-sizes.json` holds per-node `{depth,w,h}` (= `metrics(node, depth)`
+output). Feed it as `sizeOf` to `layout(doc, mode, sizeOf)` and assert
+coordinate equality against `layout-<mode>.json`. Verified consistent: e.g.
+radial `c1.x = rootW/2 + 110 + c1w/2 = 98.5 + 110 + 41 = 249.5`, matching the
+golden. (This sidesteps R1: the algorithm is tested with pinned sizes, and the
+real web app injects its own canvas-based measurer.)
 
 `serialize-roundtrip.json`, `outline.md`, and `export.json` are **font-independent**
 and can be asserted for exact equality.

@@ -110,6 +110,24 @@ async function grab(triggerLabel, outName) {
 await grab('텍스트 개요', 'outline.md');
 await grab('MindFlow 파일', 'export.json');
 
+// Per-node metrics(node, depth) -> {w,h}, read from the live controller via the
+// React fiber. These are the exact node sizes _layout used, so the core
+// layout(doc, mode, sizeOf) can be verified against layout-*.json (ADR R1).
+const sizes = await page.evaluate(() => {
+  const host = document.querySelector('[data-sc-name="MindFlow"]') || document.querySelector('.sc-host');
+  const key = host && Object.keys(host).find((k) => k.startsWith('__reactFiber'));
+  let f = key ? host[key] : null;
+  let logic = null;
+  while (f) { if (f.stateNode && f.stateNode.logic && typeof f.stateNode.logic.metrics === 'function') { logic = f.stateNode.logic; break; } f = f.return; }
+  if (!logic) return null;
+  const nodes = logic.state.nodes;
+  const depthOf = (id) => { let d = 0, n = nodes[id]; while (n && n.parent) { d++; n = nodes[n.parent]; } return d; };
+  const out = {};
+  for (const id of Object.keys(nodes)) { const depth = depthOf(id); const m = logic.metrics(nodes[id], depth); out[id] = { depth, w: m.w, h: m.h }; }
+  return out;
+});
+if (sizes) await writeFile(path.join(OUT, 'golden', 'node-sizes.json'), JSON.stringify(sizes, null, 2));
+
 await b.close();
 server.close();
 console.log('golden fixtures regenerated in', OUT);
