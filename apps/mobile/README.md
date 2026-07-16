@@ -107,6 +107,7 @@ the web app has zero regression if a plugin is ever removed.
 | Plugin | Used for | Web fallback |
 | --- | --- | --- |
 | `@capacitor/status-bar` | Status bar background (`#f0663f`, matches `theme-color`) + light icon style, set once at startup (`apps/web/src/platform/nativeShell.ts`). | No-op (the browser chrome color already comes from `<meta name="theme-color">` in `index.html`). |
+| `@capacitor/splash-screen` | Hides the native launch splash (generated MindFlow mark on white, see [App icon / splash screen](#app-icon--splash-screen)) once the web app has mounted (`apps/web/src/platform/nativeShell.ts`); config'd `launchAutoHide: false` in `capacitor.config.ts` so it doesn't race a fixed timer. | No-op (the PWA has no native splash surface to hide — the browser/OS handles its own launch chrome). |
 | `@capacitor/keyboard` | Resizes the WebView body (not the whole window) when the on-screen keyboard opens, so fixed topbars/toolbars don't get pushed off-screen while editing a node's text. | No-op (browsers already handle on-screen keyboards this way). |
 | `@capacitor/filesystem` + `@capacitor/share` | Export (PNG / `.json` / `.md`, from the editor's export menu and the home doc-card menu) writes the file to the app's cache dir and opens the native Share sheet, since there's no Downloads folder / anchor-tag download inside a native WebView. | The pre-existing `URL.createObjectURL` + `<a download>` browser download (unchanged — this *is* what still runs in every browser and in all 71 existing web unit tests, since `isNativePlatform()` is false there). |
 | `@capacitor/app` | Installed for future use (back-button handling, deep links, app-state resume) — not yet wired into any UI flow. | N/A. |
@@ -124,19 +125,53 @@ the (already-working) web code path.
 
 ## App icon / splash screen
 
-Reuse the M6-generated icons — do not hand-author new ones:
-- `apps/web/public/icons/pwa-512x512.png` / `maskable-512x512.png` /
-  `apple-touch-icon.png` (see `apps/web/scripts/generate-icons.mjs`).
-- Feed these into Android Studio's Image Asset Studio (right-click `res/` →
-  New → Image Asset) or Xcode's `Assets.xcassets/AppIcon.appiconset` (already
-  scaffolded by `cap add ios`; drop in the sizes Xcode's asset catalog
-  requests). Capacitor doesn't auto-generate native icon/splash assets from
-  the PWA manifest — this is a manual (one-time, or scripted with a tool
-  like `@capacitor/assets`) step you'd do once you have Android
-  Studio/Xcode.
-- Splash screen: optionally add `@capacitor/splash-screen` later; not
-  included in this pass since the PWA has no splash concept to port from,
-  and it's not required for a functional first store build.
+Generated (not hand-authored, not fed through Android Studio's Image Asset
+Studio / Xcode's asset catalog UI) by
+[`scripts/generate-native-assets.mjs`](scripts/generate-native-assets.mjs),
+a duplicate/adaptation of `apps/web/scripts/generate-icons.mjs`'s `markSvg`
+(coral `#f0663f` rounded square + white "M" polyline; source of truth for the
+mark itself is that web script — keep both in sync if the logo changes).
+Pure SVG → `sharp` raster, no external image asset, no network fetch,
+deterministic (re-running produces byte-identical output).
+
+```bash
+node apps/mobile/scripts/generate-native-assets.mjs
+# or: pnpm --filter @mindflow/mobile run generate:native-assets
+```
+
+What it writes, replacing Capacitor's placeholder assets:
+
+- **Android** (`android/app/src/main/res/`):
+  - `values/ic_launcher_background.xml` — adaptive-icon background color,
+    `#FFFFFF` → `#f0663f` (coral).
+  - `mipmap-{mdpi,hdpi,xhdpi,xxhdpi,xxxhdpi}/ic_launcher_foreground.png`
+    (108/162/216/324/432px) — white "M" only, transparent background, sized
+    to fit the adaptive-icon safe zone (the coral fill comes from the
+    background color above, not this layer).
+  - `mipmap-{...}/ic_launcher.png` (48/72/96/144/192px, pre-API26 legacy
+    icon) — full mark (coral rounded square + white M).
+  - `mipmap-{...}/ic_launcher_round.png` (same sizes) — full-bleed variant
+    (no baked-in corner radius; the OS applies its own circular mask).
+  - `drawable*/splash.png` (11 density/orientation variants) — white
+    background with the mark centered at ~32% of the shorter side; each
+    file's existing width/height is read and preserved (not hardcoded), so
+    it slots into whatever Capacitor's `SplashScreen` sizing expects.
+- **iOS** (`ios/App/App/Assets.xcassets/`):
+  - `AppIcon.appiconset/AppIcon-512@2x.png` (1024×1024) — full-bleed mark
+    (iOS applies its own rounded-rect mask). `Contents.json` already points
+    at this single file; unchanged.
+  - `Splash.imageset/splash-2732x2732{,-1,-2}.png` (2732×2732 ×3) — same
+    white-background-plus-centered-mark composition as Android.
+
+`@capacitor/splash-screen` (added to `apps/web/package.json`, matching the
+other `@capacitor/*` plugin versions) shows this native splash until the web
+app explicitly hides it — see [Native bridge plugins](#native-bridge-plugins)
+below and `capacitor.config.ts`'s `plugins.SplashScreen` (`launchAutoHide:
+false`, `backgroundColor: '#ffffff'` to match the generated splash exactly).
+
+Re-run the generator (and `pnpm build:mobile`) whenever the mark/brand
+colors change; the script is committed so output is reproducible, not the
+generation process itself.
 
 ## `cap add android` / `cap add ios` — result in this environment
 
@@ -177,7 +212,9 @@ What was **not** possible here, and needs your machine:
       commit the keystore or its passwords — keep them outside this repo,
       e.g. in your CI secret store or local `~/.gradle/gradle.properties`).
 - [ ] Build a release AAB: `./gradlew bundleRelease` (from `android/`).
-- [ ] Add real launcher icons via Image Asset Studio (see above).
+- [ ] Launcher icons/splash are already generated (see [App icon / splash
+      screen](#app-icon--splash-screen)) — re-run the generator first if the
+      mark/brand color has changed since the last release.
 - [ ] Create the app listing in Play Console (screenshots, privacy policy —
       required since the app can persist/export user-authored content;
       MindFlow's own privacy posture depends on which backend — Local vs
@@ -192,7 +229,9 @@ What was **not** possible here, and needs your machine:
 - [ ] Set your Team/Signing (Apple Developer Program membership required)
       under the App target's Signing & Capabilities.
 - [ ] Bump `CFBundleShortVersionString`/`CFBundleVersion` in `Info.plist`.
-- [ ] Add real app icons to `Assets.xcassets/AppIcon.appiconset`.
+- [ ] App icon/splash are already generated (see [App icon / splash
+      screen](#app-icon--splash-screen)) — re-run the generator first if the
+      mark/brand color has changed since the last release.
 - [ ] Archive (Product → Archive) and upload via Xcode Organizer or
       `xcodebuild`/`altool`/`xcrun notarytool` from the command line.
 - [ ] Create the App Store Connect listing (screenshots for each supported
@@ -211,8 +250,6 @@ What was **not** possible here, and needs your machine:
   `cap sync`, `capacitor.config.ts` validity, and `apps/mobile`'s
   `tsc --noEmit` were exercised, because this environment has no Android
   SDK/Xcode.
-- No app icon/splash generation for native (reuses M6's PWA icons as source
-  material only — see above).
 - `@capacitor/app`'s back-button/deep-link/resume hooks are installed but
   not yet wired into any screen.
 - Push notifications, biometric auth, and other deeper native features are
