@@ -369,8 +369,34 @@ export function useHomeController() {
     navigateAfterLoader(href, '맵을 불러오고 있어요');
   };
 
-  /** Home.dc.html `onNewMapClick` (inline in `renderVals()`). */
-  const onNewMapClick = (href: string) => navigateAfterLoader(href, '새 마인드맵을 준비하고 있어요');
+  /** Home.dc.html `onNewMapClick` (inline in `renderVals()`).
+   *
+   * Assigns the new map to the CURRENTLY-ACTIVE (non-drive) space so it's saved
+   * there — otherwise the on-return `mergeDocMetasIntoSpaces` would default the
+   * new doc into the home space. We register a card carrying the new doc's id
+   * (parsed from the href) into the active space NOW; that's persisted by the
+   * SpaceStore save effect, and when the doc comes back in `docStore.list()` the
+   * merge sees its id as already-placed and leaves it in this space. */
+  const onNewMapClick = (href: string) => {
+    try {
+      const params = new URLSearchParams(href.split('?')[1] || '');
+      const docId = params.get('map') || '';
+      const title = params.get('title') ? decodeURIComponent(params.get('title') as string) : '새 마인드맵';
+      if (docId) {
+        setState((prev) => {
+          // active space if it's a real space (not the Drive view); else home.
+          const targetId = prev.spaces.some((s) => s.id === prev.activeSpace) ? prev.activeSpace : (prev.spaces.find((s) => s.home)?.id ?? prev.spaces[0]?.id);
+          if (!targetId) return prev;
+          if (prev.spaces.some((s) => (s.maps || []).some((m) => m.docId === docId || m.title === title))) return prev;
+          const spaces = prev.spaces.map((s) => (s.id === targetId ? { ...s, maps: [...(s.maps || []), { title, when: '방금', hue: '#f0663f', docId }] } : s));
+          return { ...prev, spaces };
+        });
+      }
+    } catch {
+      /* href parse failed — fall through to a plain navigate */
+    }
+    navigateAfterLoader(href, '새 마인드맵을 준비하고 있어요');
+  };
 
   // ---- import / export ----
   const setImportRef = (el: HTMLInputElement | null) => {

@@ -77,7 +77,7 @@ export function MapGrid({ view, controller }: Props) {
       )}
 
       {view.folderEmpty && (
-        <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', minHeight: 'calc(100vh - 190px)', padding: 20 }}>
+        <div style={{ display: 'flex', flex: '1 1 auto', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', minHeight: 0, padding: 20 }}>
           <div style={{ width: 88, height: 88, borderRadius: 24, background: '#fdeee7', display: 'flex', alignItems: 'center', justifyContent: 'center', marginBottom: 20 }}>
             <svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="#f0663f" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round">
               <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z" />
@@ -92,7 +92,7 @@ export function MapGrid({ view, controller }: Props) {
       )}
 
       {view.isEmpty && (
-        <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', minHeight: 'calc(100vh - 190px)', padding: 20 }}>
+        <div style={{ display: 'flex', flex: '1 1 auto', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', minHeight: 0, padding: 20 }}>
           <div style={{ width: 88, height: 88, borderRadius: 24, background: '#fdeee7', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 40, marginBottom: 20 }}>🗺️</div>
           <div style={{ fontSize: 18, fontWeight: 700, marginBottom: 8 }}>아직 만든 맵이 없어요</div>
           <div style={{ fontSize: 13.5, color: '#9c8b7e', lineHeight: 1.6, marginBottom: 24, textAlign: 'center' }}>
@@ -114,7 +114,7 @@ export function MapGrid({ view, controller }: Props) {
       )}
 
       {view.showDriveConnect && (
-        <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', minHeight: 'calc(100vh - 190px)', padding: 20 }}>
+        <div style={{ display: 'flex', flex: '1 1 auto', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', minHeight: 0, padding: 20 }}>
           <div style={{ width: 88, height: 88, borderRadius: 24, background: '#eaf5ee', display: 'flex', alignItems: 'center', justifyContent: 'center', marginBottom: 22 }}>
             <svg width="44" height="44" viewBox="0 0 87.3 78" xmlns="http://www.w3.org/2000/svg">
               <path d="m6.6 66.85 3.85 6.65c.8 1.4 1.95 2.5 3.3 3.3l13.75-23.8h-27.5c0 1.55.4 3.1 1.2 4.5z" fill="#0066da" />
