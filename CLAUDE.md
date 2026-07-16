@@ -55,7 +55,7 @@ server/           # 인증(OAuth/이메일) + DB(Postgres) + 문서 동기화 AP
 - ✅ **M3-Editor-a** 렌더 기반: 코어(`layout`/`serialize`/`geometry`) 소비, 캔버스·노드·커넥터·테마 렌더. 원본과 렌더 parity 확인
 - ✅ **M3-Editor-b** 인터랙션: 선택·편집·추가/삭제·드래그·속성패널·저장(자동)·undo/redo(코어 `HistoryStack`)·내보내기(코어 `toMarkdown`)
 - ✅ **M3-Editor-c** 완성도: marquee 다중선택(일괄 스타일)·미니맵·아웃라인 편집·드래그 재부모화
-- ✅ **M4** 백엔드: `AuthProvider`/`DocStore` 포트 + Local/Supabase 어댑터 + 팩토리(env-게이트). Supabase 스키마·RLS(`server/supabase/`), 낙관적 잠금. **env 없으면 로컬/데모 폴백**(앱 안 깨짐). 라이브는 `server/supabase/docs/backend.md`대로 프로비저닝 필요
+- ✅ **M4** 백엔드: `AuthProvider`/`DocStore`/`SpaceStore` 포트 + Local/Supabase 어댑터 + 팩토리(env-게이트). Supabase 마이그레이션·RLS(`supabase/migrations/` + 루트 `supabase/config.toml`, GitHub 연동 자동배포), 문서 `server/supabase/docs/backend.md`, 낙관적 잠금. 스페이스/폴더는 사용자별 `workspaces` 테이블(다기기 동기화). **env 없으면 로컬/데모 폴백**(앱 안 깨짐)
 - ✅ **M6** PWA + 모바일 반응형: `vite-plugin-pwa`(Workbox, 오프라인 앱셸), manifest·아이콘·Pretendard self-host. 768px 브레이크포인트 — Home 드로어, Editor 속성패널 바텀시트, 44px 터치타겟
 - ✅ **M5** 실시간 협업(Yjs/CRDT): 코어 `crdt/` Doc↔Y.Doc 바인딩(순수, 충돌 없는 수렴) + 웹 전송 포트(BroadcastChannel 로컬 다중탭 / Supabase Realtime / Noop) + `useYjsDocSync` 에디터 통합. env-게이트, 단일 사용자 무회귀
 - ✅ **M7** Capacitor 앱셸(`apps/mobile`): android/·ios/ 스캐폴딩, `capacitor.config`(webDir=web dist), `build:mobile`(web build→cap sync), 네이티브 브리지(Share/Filesystem·StatusBar·Keyboard, 웹 폴백). **실기기 빌드·서명·스토어 제출은 로컬 Android Studio/Xcode 필요**(`apps/mobile/README.md`)

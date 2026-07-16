@@ -3,8 +3,8 @@
 -- one browser's localStorage.
 --
 -- Apply with the Supabase CLI (`supabase db push` / `supabase migration up`)
--- or `psql "$DATABASE_URL" -f server/supabase/migrations/0004_workspaces.sql`.
--- See ../docs/backend.md for the full provisioning checklist.
+-- or `psql "$DATABASE_URL" -f supabase/migrations/0004_workspaces.sql`.
+-- See server/supabase/docs/backend.md for the full provisioning checklist.
 --
 -- ── workspaces ───────────────────────────────────────────────────────────
 -- Exactly ONE row per user. `data` holds the whole workspace JSON that
@@ -28,13 +28,16 @@ create table if not exists public.workspaces (
 alter table public.workspaces enable row level security;
 
 -- RLS: a user can only see/write their own workspace row (no cross-user access,
--- no service-role bypass policy here — see ../docs/backend.md).
+-- no service-role bypass policy here — see server/supabase/docs/backend.md).
+drop policy if exists "workspaces_select_own" on public.workspaces;
 create policy "workspaces_select_own" on public.workspaces
   for select using (auth.uid() = owner);
 
+drop policy if exists "workspaces_insert_own" on public.workspaces;
 create policy "workspaces_insert_own" on public.workspaces
   for insert with check (auth.uid() = owner);
 
+drop policy if exists "workspaces_update_own" on public.workspaces;
 create policy "workspaces_update_own" on public.workspaces
   for update using (auth.uid() = owner) with check (auth.uid() = owner);
 
