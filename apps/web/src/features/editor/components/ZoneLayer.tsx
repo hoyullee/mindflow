@@ -30,6 +30,16 @@ export function ZoneLayer({ zones, theme: th, controller }: ZoneLayerProps) {
         return (
           <div
             key={z.id}
+            data-zone-id={z.id}
+            // Select/drag the zone by clicking ANYWHERE in its area — not just the
+            // label (matches the dc original's whole-box hit test,
+            // MindFlow.dc.html:2822). Objects inside the zone render as
+            // higher-z-index siblings, so clicking a node/memo/line still targets
+            // that object; only clicks on the zone's own (empty) area hit this.
+            // `beginZoneDrag` stops propagation, so this doesn't also start a
+            // background marquee; the label/handles/delete children stop their
+            // own pointerdowns, so they aren't double-handled.
+            onPointerDown={editing ? undefined : (e) => controller.beginZoneDrag(e, z.id)}
             style={{
               position: 'absolute',
               left: z.x,
@@ -41,6 +51,7 @@ export function ZoneLayer({ zones, theme: th, controller }: ZoneLayerProps) {
               borderRadius: 16,
               boxSizing: 'border-box',
               boxShadow: remotePeer ? `0 0 0 3px ${hexA(remotePeer.user.color, 0.85)}` : 'none',
+              cursor: editing ? 'default' : 'grab',
               zIndex: 8,
             }}
           >

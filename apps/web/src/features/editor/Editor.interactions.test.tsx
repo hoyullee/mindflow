@@ -130,6 +130,21 @@ describe('Editor interactions (M3-Editor-b)', () => {
     expect(screen.getByRole('button', { name: /도형 스타일/ }).getAttribute('aria-expanded')).toBe('false');
   });
 
+  it('clicking anywhere in a zone body (not just its label) selects the zone', () => {
+    localStorage.setItem('mindflow_doc_zsel', JSON.stringify(DOC));
+    const { container } = renderEditor('/editor?map=zsel&title=x');
+
+    expect(screen.queryByText('선택한 영역')).toBeNull();
+    // click the zone's body rectangle, away from its label pill
+    const zoneBody = container.querySelector('[data-zone-id="zn1"]') as HTMLElement;
+    expect(zoneBody).toBeTruthy();
+    fireEvent.pointerDown(zoneBody, { pointerId: 3, clientX: 400, clientY: 400, button: 0 });
+    fireEvent.pointerUp(window, { pointerId: 3, clientX: 400, clientY: 400 });
+
+    // the zone property panel is shown (zone got selected from a body click)
+    expect(screen.getByText('선택한 영역')).toBeTruthy();
+  });
+
   it('clicking the background clears the selection', () => {
     localStorage.setItem('mindflow_doc_t1b', JSON.stringify(DOC));
     const { container } = renderEditor('/editor?map=t1b&title=x');
