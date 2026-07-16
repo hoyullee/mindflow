@@ -57,6 +57,18 @@ export function useHomeController() {
     };
     window.addEventListener('mousedown', onDocMouseDown);
 
+    // Back/forward bfcache restore: the browser can restore this page with the
+    // full-screen loader (`creatingMap`) frozen as it was when we navigated
+    // away, so instead of the page you'd see the loading animation stuck on
+    // top. On a persisted `pageshow` (bfcache), cancel any pending navigate and
+    // clear the loader so the restored page shows immediately.
+    const onPageShow = (e: PageTransitionEvent) => {
+      if (!e.persisted) return;
+      clearTimeout(loaderTimer.current);
+      setState((prev) => (prev.creatingMap ? { ...prev, creatingMap: false, loaderMsg: '' } : prev));
+    };
+    window.addEventListener('pageshow', onPageShow);
+
     const recent = loadRecent();
     if (recent.length) patch({ recent });
 
@@ -92,6 +104,7 @@ export function useHomeController() {
     return () => {
       cancelled = true;
       window.removeEventListener('mousedown', onDocMouseDown);
+      window.removeEventListener('pageshow', onPageShow);
       clearTimeout(loaderTimer.current);
     };
   }, [docStore]);
@@ -131,7 +144,9 @@ export function useHomeController() {
     // `LocalAuth.signOut()` resolves instantly (demo, no network), so this
     // still lands on /login after the same ~900ms loader beat as before.
     void auth.signOut();
-    loaderTimer.current = setTimeout(() => navigate('/login'), 900);
+    // `replace` so a post-logout Forward can't return to the (now signed-out)
+    // home and replay its loader/animation.
+    loaderTimer.current = setTimeout(() => navigate('/login', { replace: true }), 900);
   };
 
   // ---- spaces ----

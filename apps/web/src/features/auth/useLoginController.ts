@@ -38,7 +38,20 @@ export function useLoginController() {
   const timerRef = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
 
   useEffect(() => {
-    return () => clearTimeout(timerRef.current);
+    // Back/forward bfcache restore: the browser can restore /login with the
+    // full-screen "로그인하고 있어요" loader (`busy`) frozen. On a persisted
+    // `pageshow`, cancel the pending navigate and clear the loader so the
+    // restored page shows instead of the stuck animation.
+    const onPageShow = (e: PageTransitionEvent) => {
+      if (!e.persisted) return;
+      clearTimeout(timerRef.current);
+      setState((prev) => (prev.busy ? { ...prev, busy: false } : prev));
+    };
+    window.addEventListener('pageshow', onPageShow);
+    return () => {
+      window.removeEventListener('pageshow', onPageShow);
+      clearTimeout(timerRef.current);
+    };
   }, []);
 
   const patch = (partial: Partial<LoginState>) => {
@@ -51,7 +64,9 @@ export function useLoginController() {
     patch({ busy: true, error: '', loaderMsg: signup ? '계정을 만들고 있어요' : '로그인하고 있어요' });
     clearTimeout(timerRef.current);
     timerRef.current = setTimeout(() => {
-      navigate('/home');
+      // `replace` so a post-login Back can't return to the login screen and
+      // replay its loader/animation.
+      navigate('/home', { replace: true });
     }, 1100);
   };
 
