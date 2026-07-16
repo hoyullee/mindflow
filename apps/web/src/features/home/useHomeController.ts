@@ -11,7 +11,9 @@ import {
 import {
   docKey,
   downloadFile,
+  ensureHomeSpace,
   loadRecent,
+  loadSpaces,
   mapId,
   mapHref as buildMapHref,
   mergeDocMetasIntoSpaces,
@@ -21,6 +23,7 @@ import {
   rootTextOf,
   safeFileName,
   saveRecent,
+  saveSpaces,
   seedFavAndTrashFromMetas,
   sourceOf,
   uniqueTitle,
@@ -72,6 +75,20 @@ export function useHomeController() {
     const recent = loadRecent();
     if (recent.length) patch({ recent });
 
+    // Restore user-created spaces (+ their maps/folders) and the map→folder map
+    // from localStorage BEFORE the DocStore merge below, so custom spaces survive
+    // a refresh (the dc prototype only kept them in state → they vanished). The
+    // merge then folds in any genuinely new docs (added to the home space) and
+    // skips docs already present in a restored space.
+    const persistedSpaces = loadSpaces();
+    if (persistedSpaces) {
+      setState((prev) => ({
+        ...prev,
+        spaces: ensureHomeSpace(persistedSpaces.spaces),
+        mapFolders: Object.keys(persistedSpaces.mapFolders).length ? persistedSpaces.mapFolders : prev.mapFolders,
+      }));
+    }
+
     // M4: pull the map list from `DocStore.list()` (was: a raw localStorage
     // scan in `syncDocsToCards`) and fold in any doc not yet represented by a
     // card — same "new card in the first space, or refresh its title" merge,
@@ -108,6 +125,15 @@ export function useHomeController() {
       clearTimeout(loaderTimer.current);
     };
   }, [docStore]);
+
+  // Persist spaces (+ map→folder) to localStorage whenever they change, so
+  // user-created spaces/folders survive a refresh. Gated on `loaded` so we only
+  // start saving AFTER the mount restore + DocStore merge have settled (else the
+  // transient initial state would overwrite the persisted data).
+  useEffect(() => {
+    if (!state.loaded) return;
+    saveSpaces(state.spaces, state.mapFolders);
+  }, [state.loaded, state.spaces, state.mapFolders]);
 
   // ---- drive (fake OAuth demo) ----
   const onDriveClick = () => patch({ activeSpace: 'drive', curFolder: null, driveFolder: null });

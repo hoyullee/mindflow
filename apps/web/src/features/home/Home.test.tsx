@@ -117,6 +117,23 @@ describe('Home', () => {
     expect(container.querySelector('a[data-title="무상 비즈머니 지급"]')).toBeNull();
   });
 
+  it('a user-created space persists across a reload (localStorage)', async () => {
+    const user = userEvent.setup();
+    const { unmount } = renderHomeWithDocStore([]);
+    await waitFor(() => expect(screen.getByRole('button', { name: /새 공간/ })).toBeTruthy());
+
+    // open "새 공간" → type a name → Enter (onNewSpaceKey → createSpace)
+    await user.click(screen.getByRole('button', { name: /새 공간/ }));
+    await user.type(screen.getByLabelText('공간 이름'), '내 스페이스{Enter}');
+    await waitFor(() => expect(screen.getByText('내 스페이스')).toBeTruthy());
+
+    // "reload": unmount and mount a fresh Home sharing the same localStorage
+    unmount();
+    cleanup();
+    renderHomeWithDocStore([]);
+    await waitFor(() => expect(screen.getByText('내 스페이스')).toBeTruthy());
+  });
+
   it('logs out (via the confirm dialog) and navigates to /login', async () => {
     const user = userEvent.setup();
     renderHome();
