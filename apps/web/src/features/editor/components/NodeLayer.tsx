@@ -328,6 +328,33 @@ function NodeBox({ id, node: n, g, nodes, mode, theme: th, rootX, controller }: 
           </svg>
         </div>
       )}
+      {/* Drop-target hint badge while another node is dragged over this one —
+          tells the user how it will attach (하위/위 형제/아래 형제). Port of the
+          `attach-badge` in `Component#renderCanvas` (MindFlow.dc.html:1246-1248). */}
+      {attach && controller.attachTarget && (
+        <div
+          aria-hidden="true"
+          style={{
+            position: 'absolute',
+            left: '50%',
+            top: -34,
+            transform: 'translateX(-50%)',
+            background: th.accent,
+            color: th.accentInk,
+            borderRadius: 7,
+            padding: '4px 10px',
+            fontSize: 11.5,
+            fontWeight: 700,
+            whiteSpace: 'nowrap',
+            boxShadow: '0 2px 8px rgba(0,0,0,.25)',
+            pointerEvents: 'none',
+            zIndex: 100,
+            fontFamily: 'Pretendard, sans-serif',
+          }}
+        >
+          {controller.attachTarget.zone === 'child' ? '하위로 연결' : controller.attachTarget.zone === 'above' ? '위 형제로 연결' : '아래 형제로 연결'}
+        </div>
+      )}
       {remotePeer && !editing && <RemotePeerTag color={remotePeer.user.color} name={remotePeer.user.name} style={{ left: 0, top: -22 }} />}
       {/* resize handle only for a true single selection (port of `this.state.selectedId`,
           MindFlow.dc.html:1274 — not shown for a marquee multi-selection) */}
