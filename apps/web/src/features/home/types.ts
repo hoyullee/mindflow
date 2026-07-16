@@ -36,6 +36,10 @@ export interface SpaceData {
 export interface TrashEntry {
   title: string;
   source: 'local' | 'drive';
+  /** Present for doc-backed maps (Home ticket: DocStore-wired trash) so restoring
+   * from the trash list can call `DocStore.restore(docId)` in addition to the
+   * local title-keyed state flip. */
+  docId?: string;
 }
 
 export type FolderModalMode = 'new' | 'rename';
@@ -59,7 +63,12 @@ export interface HomeState {
   openMenu: string | null;
   deleted: Record<string, boolean>;
   confirmDelete: string | null;
+  /** docId of the card behind `confirmDelete`, if it's a doc-backed map — carried
+   * alongside the title so `confirmDeleteYes` can call `DocStore.remove(docId)`. */
+  confirmDeleteDocId: string | null;
   confirmRestore: string | null;
+  /** docId counterpart of `confirmRestore` — see `confirmDeleteDocId`. */
+  confirmRestoreDocId: string | null;
   trash: TrashEntry[];
   trashOpen: boolean;
   recent: string[];
@@ -137,7 +146,9 @@ export function initialHomeState(): HomeState {
     openMenu: null,
     deleted: {},
     confirmDelete: null,
+    confirmDeleteDocId: null,
     confirmRestore: null,
+    confirmRestoreDocId: null,
     trash: [],
     trashOpen: false,
     recent: [],

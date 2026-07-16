@@ -21,6 +21,7 @@ import {
   rootTextOf,
   safeFileName,
   saveRecent,
+  seedFavAndTrashFromMetas,
   sourceOf,
 } from './storage';
 
@@ -69,8 +70,13 @@ export function useHomeController() {
       .then((metas) => {
         if (cancelled) return;
         setState((prev) => {
-          const { spaces, changed } = mergeDocMetasIntoSpaces(prev.spaces, metas);
-          return changed ? { ...prev, spaces } : prev;
+          const { spaces, changed: spacesChanged } = mergeDocMetasIntoSpaces(prev.spaces, metas);
+          // Seed favs/deleted/trash from the backend's persisted meta
+          // (isFavorite/deletedAt) so favorite/trash status survives a
+          // refresh instead of resetting — see `seedFavAndTrashFromMetas`.
+          const { favs, deleted, trash, changed: seedChanged } = seedFavAndTrashFromMetas(prev.favs, prev.deleted, prev.trash, metas);
+          if (!spacesChanged && !seedChanged) return prev;
+          return { ...prev, spaces, favs, deleted, trash };
         });
       })
       .catch(() => {
@@ -195,45 +201,69 @@ export function useHomeController() {
   };
 
   // ---- favorites / trash / recent ----
-  const toggleFav = (title: string) => {
+  // Each of these flips the title-keyed local state (unchanged UI/behavior)
+  // AND, when the card is doc-backed (`docId` present — a demo/Drive card has
+  // none), fires-and-forgets the matching `DocStore` call so the change
+  // survives a refresh. Failures are swallowed (non-fatal, matches this
+  // file's other storage try/catch conventions) — the optimistic local state
+  // already reflects the change either way.
+  const toggleFav = (title: string, docId?: string) => {
+    const nextFav = !state.favs[title];
     setState((prev) => {
       const favs = { ...prev.favs, [title]: !prev.favs[title] };
       if (!favs[title]) delete favs[title];
       return { ...prev, favs };
     });
+    if (docId) {
+      void docStore.setFavorite(docId, nextFav).catch(() => {
+        /* backend unreachable — local state already flipped, non-fatal */
+      });
+    }
   };
   const toggleFavList = () => patch({ favOpen: !state.favOpen });
   const toggleMenu = (title: string) => patch({ openMenu: state.openMenu === title ? null : title, moveFor: null, exportFor: null });
   const closeMenu = () => patch({ openMenu: null, moveFor: null, exportFor: null });
-  const askDelete = (title: string) => patch({ confirmDelete: title, openMenu: null });
-  const cancelDelete = () => patch({ confirmDelete: null });
+  const askDelete = (title: string, docId?: string) => patch({ confirmDelete: title, confirmDeleteDocId: docId ?? null, openMenu: null });
+  const cancelDelete = () => patch({ confirmDelete: null, confirmDeleteDocId: null });
   const confirmDeleteYes = () => {
     const title = state.confirmDelete;
     if (!title) return;
+    const docId = state.confirmDeleteDocId;
     setState((prev) => {
       const deleted = { ...prev.deleted, [title]: true };
       const favs = { ...prev.favs };
       delete favs[title];
       const src = sourceOf(title, DRIVE_FILES);
-      const trash = prev.trash.some((t) => t.title === title) ? prev.trash : [...prev.trash, { title, source: src }];
-      return { ...prev, deleted, favs, trash, confirmDelete: null };
+      const trash = prev.trash.some((t) => t.title === title) ? prev.trash : [...prev.trash, { title, source: src, docId: docId ?? undefined }];
+      return { ...prev, deleted, favs, trash, confirmDelete: null, confirmDeleteDocId: null };
     });
+    if (docId) {
+      void docStore.remove(docId).catch(() => {
+        /* backend unreachable — local state already moved it to trash, non-fatal */
+      });
+    }
   };
-  const deleteCard = (title: string) => {
+  const deleteCard = (title: string, docId?: string) => {
     setState((prev) => {
       const deleted = { ...prev.deleted, [title]: true };
       const favs = { ...prev.favs };
       delete favs[title];
       return { ...prev, deleted, favs, openMenu: null };
     });
+    if (docId) {
+      void docStore.remove(docId).catch(() => {
+        /* backend unreachable — local state already moved it to trash, non-fatal */
+      });
+    }
   };
   const toggleTrashList = () => patch({ trashOpen: !state.trashOpen });
   const toggleRecentList = () => patch({ recentOpen: !state.recentOpen });
-  const askRestore = (title: string) => patch({ confirmRestore: title });
-  const cancelRestore = () => patch({ confirmRestore: null });
+  const askRestore = (title: string, docId?: string) => patch({ confirmRestore: title, confirmRestoreDocId: docId ?? null });
+  const cancelRestore = () => patch({ confirmRestore: null, confirmRestoreDocId: null });
   const confirmRestoreYes = () => {
     const title = state.confirmRestore;
     if (!title) return;
+    const docId = state.confirmRestoreDocId;
     setState((prev) => {
       const deleted = { ...prev.deleted };
       delete deleted[title];
@@ -244,20 +274,30 @@ export function useHomeController() {
       if (!isDriveFile && !spaces.some((s) => Array.isArray(s.maps) && s.maps.some((m) => m.title === title))) {
         const first = spaces[0];
         if (first) {
-          spaces = spaces.map((s, i) => (i === 0 ? { ...s, maps: [...(s.maps || []), { title, when: '방금 복원됨', hue: '#f0663f' }] } : s));
+          spaces = spaces.map((s, i) => (i === 0 ? { ...s, maps: [...(s.maps || []), { title, when: '방금 복원됨', hue: '#f0663f', docId: docId ?? undefined }] } : s));
           toast = `원래 공간이 삭제되어 "${first.name}" 공간으로 복원했어요`;
         }
       }
-      return { ...prev, deleted, trash, spaces, confirmRestore: null, toast };
+      return { ...prev, deleted, trash, spaces, confirmRestore: null, confirmRestoreDocId: null, toast };
     });
+    if (docId) {
+      void docStore.restore(docId).catch(() => {
+        /* backend unreachable — local state already restored it, non-fatal */
+      });
+    }
   };
-  const restoreCard = (title: string) => {
+  const restoreCard = (title: string, docId?: string) => {
     setState((prev) => {
       const deleted = { ...prev.deleted };
       delete deleted[title];
       const trash = prev.trash.filter((t) => t.title !== title);
       return { ...prev, deleted, trash };
     });
+    if (docId) {
+      void docStore.restore(docId).catch(() => {
+        /* backend unreachable — local state already restored it, non-fatal */
+      });
+    }
   };
   const closeToast = () => patch({ toast: '', importDone: null, importError: null });
 

@@ -79,7 +79,7 @@ export function MapCard({ card, controller, draggableEnabled }: Props) {
         onClick={(e) => {
           e.preventDefault();
           e.stopPropagation();
-          if (card.openable !== false) controller.toggleFav(card.title);
+          if (card.openable !== false) controller.toggleFav(card.title, card.docId);
         }}
         title="즐겨찾기"
         aria-label={card.isFav ? '즐겨찾기 해제' : '즐겨찾기'}
@@ -152,7 +152,7 @@ export function MapCard({ card, controller, draggableEnabled }: Props) {
               onClick={(e) => {
                 e.preventDefault();
                 e.stopPropagation();
-                controller.toggleFav(card.title);
+                controller.toggleFav(card.title, card.docId);
                 controller.closeMenu();
               }}
               style={{ display: 'flex', alignItems: 'center', gap: 9, padding: '9px 13px', fontSize: 13, cursor: 'pointer', color: '#33281f' }}
@@ -219,7 +219,7 @@ export function MapCard({ card, controller, draggableEnabled }: Props) {
             onClick={(e) => {
               e.preventDefault();
               e.stopPropagation();
-              controller.askDelete(card.title);
+              controller.askDelete(card.title, card.docId);
             }}
             style={{ display: 'flex', alignItems: 'center', gap: 9, padding: '9px 13px', fontSize: 13, cursor: 'pointer', color: '#d64545' }}
           >

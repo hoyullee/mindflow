@@ -52,7 +52,7 @@ export interface HomeViewModel {
   recentCards: CardViewData[];
   favItems: { title: string; isDrive: boolean }[];
   favCount: string;
-  trashItems: { title: string; isDrive: boolean; badge: string }[];
+  trashItems: { title: string; isDrive: boolean; badge: string; docId?: string }[];
   trashCount: string;
   isEmpty: boolean;
   folderEmpty: boolean;
@@ -222,7 +222,7 @@ export function deriveHomeView(state: HomeState): HomeViewModel {
     recentCards,
     favItems,
     favCount: favItems.length ? String(favItems.length) : '',
-    trashItems: state.trash.map((t) => ({ title: t.title, isDrive: t.source === 'drive', badge: t.source === 'drive' ? 'Drive' : '내 공간' })),
+    trashItems: state.trash.map((t) => ({ title: t.title, isDrive: t.source === 'drive', badge: t.source === 'drive' ? 'Drive' : '내 공간', docId: t.docId })),
     trashCount: state.trash.length ? String(state.trash.length) : '',
     isEmpty,
     folderEmpty,

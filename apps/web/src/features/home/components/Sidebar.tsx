@@ -185,7 +185,7 @@ export function Sidebar({ state, view, controller, isMobile = false, isOpen = fa
                 tabIndex={0}
                 onClick={(e) => {
                   e.stopPropagation();
-                  controller.askRestore(t.title);
+                  controller.askRestore(t.title, t.docId);
                 }}
                 className="restore-link"
                 style={{ marginLeft: 'auto', fontSize: 11, color: '#3f8fd0', cursor: 'pointer', flexShrink: 0 }}
