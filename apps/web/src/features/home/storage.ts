@@ -1,5 +1,5 @@
 import type { DocMeta } from '../../adapters/ports';
-import type { DriveFileData, MapCardData, SpaceData } from './types';
+import type { DriveFileData, MapCardData, SpaceData, TrashEntry } from './types';
 import { downloadOrShare } from '../../platform/nativeBridge';
 
 /** Home.dc.html:517,824 — `mf_recent` holds the last 3 opened map titles. */
@@ -189,6 +189,46 @@ export function mergeDocMetasIntoSpaces(spaces: SpaceData[], metas: DocMeta[]): 
     next = next.map((s, i) => (i === 0 ? { ...s, maps: [...(s.maps || []), ...adds] } : s));
   }
   return { spaces: next, changed };
+}
+
+/**
+ * Home ticket ("favorites/trash don't survive reload"): seeds the title-keyed
+ * `favs`/`deleted`/`trash` UI state from `DocStore.list()`'s `DocMeta[]` —
+ * `meta.isFavorite` → favorites, `meta.deletedAt` → trash — so a doc-backed
+ * map's favorite/deleted status (persisted by the backend, LocalDocStore or
+ * SupabaseDocStore alike) is restored on mount instead of resetting to
+ * "regular space" every refresh. Additive only (never un-favorites/un-trashes
+ * something the current session already flipped locally): mirrors
+ * `mergeDocMetasIntoSpaces`'s merge style right above.
+ */
+export function seedFavAndTrashFromMetas(
+  favs: Record<string, boolean>,
+  deleted: Record<string, boolean>,
+  trash: TrashEntry[],
+  metas: DocMeta[],
+): { favs: Record<string, boolean>; deleted: Record<string, boolean>; trash: TrashEntry[]; changed: boolean } {
+  let changed = false;
+  const nextFavs = { ...favs };
+  const nextDeleted = { ...deleted };
+  const nextTrash = [...trash];
+  for (const meta of metas) {
+    if (!meta.title) continue;
+    if (meta.isFavorite && !nextFavs[meta.title]) {
+      nextFavs[meta.title] = true;
+      changed = true;
+    }
+    if (meta.deletedAt) {
+      if (!nextDeleted[meta.title]) {
+        nextDeleted[meta.title] = true;
+        changed = true;
+      }
+      if (!nextTrash.some((t) => t.title === meta.title)) {
+        nextTrash.push({ title: meta.title, source: 'local', docId: meta.id });
+        changed = true;
+      }
+    }
+  }
+  return { favs: nextFavs, deleted: nextDeleted, trash: nextTrash, changed };
 }
 
 // M7: see features/editor/download.ts's `downloadFile` for the native-shell
