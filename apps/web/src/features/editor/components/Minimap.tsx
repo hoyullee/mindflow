@@ -1,4 +1,4 @@
-import { useRef } from 'react';
+import { useRef, useState } from 'react';
 import type { PointerEvent as ReactPointerEvent } from 'react';
 import { ROOT_ID } from '@mindflow/mindmap-core';
 import { colorOf } from '../tree';
@@ -28,21 +28,29 @@ export function Minimap({ controller, isMobile = false }: MinimapProps) {
   const H = isMobile ? H_MOBILE : H_DESKTOP;
   const svgRef = useRef<SVGSVGElement | null>(null);
   const draggingRef = useRef(false);
+  // Bounds are recomputed every render from content ∪ viewport (below). While
+  // dragging the viewport rect, that live recompute would move the minimap's
+  // coordinate system under the pointer each frame (panning changes the
+  // viewport, which changes the union, which rescales everything) — a feedback
+  // loop that made drag-to-pan jump around erratically. Freezing the bounds for
+  // the whole drag keeps the mapping (and the rendered dots) rock-steady so the
+  // viewport rect tracks the pointer 1:1. Released on pointer up.
+  const [frozen, setFrozen] = useState<{ minX: number; minY: number; maxX: number; maxY: number } | null>(null);
 
   const ids = Object.keys(geom);
   if (!ids.length) return null;
 
-  let minX = Infinity;
-  let minY = Infinity;
-  let maxX = -Infinity;
-  let maxY = -Infinity;
+  let cMinX = Infinity;
+  let cMinY = Infinity;
+  let cMaxX = -Infinity;
+  let cMaxY = -Infinity;
   ids.forEach((id) => {
     const n = geom[id];
     if (!n) return;
-    minX = Math.min(minX, n.x - n.w / 2);
-    maxX = Math.max(maxX, n.x + n.w / 2);
-    minY = Math.min(minY, n.y - n.h / 2);
-    maxY = Math.max(maxY, n.y + n.h / 2);
+    cMinX = Math.min(cMinX, n.x - n.w / 2);
+    cMaxX = Math.max(cMaxX, n.x + n.w / 2);
+    cMinY = Math.min(cMinY, n.y - n.h / 2);
+    cMaxY = Math.max(cMaxY, n.y + n.h / 2);
   });
 
   // viewport rect, in canvas coordinates (port of MindFlow.dc.html:1525-1527)
@@ -56,11 +64,17 @@ export function Minimap({ controller, isMobile = false }: MinimapProps) {
   // viewport rectangle spilled way outside the minimap and read as "too wide").
   // Unioning in the viewport keeps that rectangle inside the box and proportional
   // to what you're actually seeing; when zoomed in it's a no-op (the viewport is
-  // already within the content bounds).
-  minX = Math.min(minX, vx0);
-  minY = Math.min(minY, vy0);
-  maxX = Math.max(maxX, vx1);
-  maxY = Math.max(maxY, vy1);
+  // already within the content bounds). During a drag we use the frozen snapshot
+  // instead (see `frozen`) so the mapping stays stable.
+  const liveMinX = Math.min(cMinX, vx0);
+  const liveMinY = Math.min(cMinY, vy0);
+  const liveMaxX = Math.max(cMaxX, vx1);
+  const liveMaxY = Math.max(cMaxY, vy1);
+
+  const minX = frozen ? frozen.minX : liveMinX;
+  const minY = frozen ? frozen.minY : liveMinY;
+  const maxX = frozen ? frozen.maxX : liveMaxX;
+  const maxY = frozen ? frozen.maxY : liveMaxY;
 
   const bw = Math.max(1, maxX - minX);
   const bh = Math.max(1, maxY - minY);
@@ -83,6 +97,10 @@ export function Minimap({ controller, isMobile = false }: MinimapProps) {
     e.stopPropagation();
     e.preventDefault();
     draggingRef.current = true;
+    // Freeze the current bounds so the whole drag maps against one stable
+    // coordinate system (see `frozen`). Snapshot the live union, not the frozen
+    // value, since we're just entering a drag.
+    setFrozen({ minX: liveMinX, minY: liveMinY, maxX: liveMaxX, maxY: liveMaxY });
     try {
       e.currentTarget.setPointerCapture(e.pointerId);
     } catch {
@@ -96,6 +114,7 @@ export function Minimap({ controller, isMobile = false }: MinimapProps) {
   };
   const onPointerUp = (): void => {
     draggingRef.current = false;
+    setFrozen(null);
   };
 
   return (

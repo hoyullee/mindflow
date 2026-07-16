@@ -140,6 +140,46 @@ describe('Editor minimap (M3-Editor-c)', () => {
     fireEvent.click(screen.getByTitle('미니맵 표시/숨기기'));
     expect(screen.getByTestId('minimap')).toBeTruthy();
   });
+
+  // Regression: dragging the minimap horizontally must pan horizontally only —
+  // no vertical drift. The bounds were recomputed from content ∪ viewport every
+  // frame, so panning shifted the minimap's own coordinate system under the
+  // pointer (a feedback loop) and a straight drag jumped around on both axes.
+  // The fix freezes the bounds for the duration of the drag.
+  it('a horizontal minimap drag pans horizontally with no vertical drift', () => {
+    localStorage.setItem('mindflow_doc_mm3', JSON.stringify(SIMPLE_DOC));
+    const { container } = renderEditor('/editor?map=mm3&title=x');
+    const layer = container.querySelector('.mf-ed-vp div[style*="translate"]') as HTMLElement;
+    const panY = (): number => {
+      const m = /translate\([^,]+,\s*([-\d.]+)px\)/.exec(layer.style.transform);
+      return m ? Number(m[1]) : NaN;
+    };
+    const panX = (): number => {
+      const m = /translate\(\s*([-\d.]+)px/.exec(layer.style.transform);
+      return m ? Number(m[1]) : NaN;
+    };
+
+    const mm = screen.getByTestId('minimap');
+    // start the drag, then move straight right in equal steps (clientY fixed)
+    firePointer(mm, 'pointerdown', { pointerId: 3, clientX: 30, clientY: 40, button: 0 });
+    firePointer(mm, 'pointermove', { pointerId: 3, clientX: 45, clientY: 40 });
+    const x1 = panX();
+    const y1 = panY();
+    firePointer(mm, 'pointermove', { pointerId: 3, clientX: 60, clientY: 40 });
+    const x2 = panX();
+    const y2 = panY();
+    firePointer(mm, 'pointermove', { pointerId: 3, clientX: 75, clientY: 40 });
+    const x3 = panX();
+    const y3 = panY();
+    firePointer(window, 'pointerup', { pointerId: 3, clientX: 75, clientY: 40 });
+
+    // vertical pan stays put across the horizontal drag (the freeze fix)…
+    expect(y2).toBeCloseTo(y1, 3);
+    expect(y3).toBeCloseTo(y1, 3);
+    // …and horizontal pan moves by a constant step (smooth, linear tracking)
+    expect(x2 - x1).toBeCloseTo(x3 - x2, 3);
+    expect(Math.abs(x2 - x1)).toBeGreaterThan(0);
+  });
 });
 
 describe('Editor outline editing (M3-Editor-c)', () => {
