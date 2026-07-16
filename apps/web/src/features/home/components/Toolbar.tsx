@@ -97,29 +97,36 @@ export function Toolbar({ state, view, controller, isMobile = false, onOpenNav }
             새 폴더
           </button>
         )}
-        <div style={{ display: 'flex', alignItems: 'center', gap: 8, width: isMobile ? '100%' : 260, flex: isMobile ? '1 1 100%' : undefined, height: isMobile ? 44 : 38, padding: '0 12px', background: '#fff', border: '1px solid #ecdfd5', borderRadius: 10, color: '#9c8b7e' }}>
-          <span style={{ fontSize: 13, display: 'flex', alignItems: 'center', color: '#9c8b7e' }}>
-            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-              <circle cx="11" cy="11" r="7" />
-              <line x1="21" y1="21" x2="16.5" y2="16.5" />
-            </svg>
-          </span>
-          <input
-            value={state.search}
-            onChange={(e) => controller.setSearch(e.target.value)}
-            placeholder="파일 검색"
-            aria-label="파일 검색"
-            style={{ border: 'none', outline: 'none', background: 'transparent', fontFamily: 'inherit', fontSize: 13, width: '100%', color: '#33281f' }}
-          />
+        {/* Search + "새로 만들기" share one row. On mobile the row spans the full
+            width (so it sits on its own line) with the search growing and the
+            button keeping its size beside it — previously the search was
+            `flex:1 1 100%`, which forced the button to wrap onto a lonely line
+            below it. */}
+        <div style={{ display: 'flex', alignItems: 'center', gap: 10, width: isMobile ? '100%' : undefined }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8, flex: isMobile ? '1 1 auto' : undefined, width: isMobile ? undefined : 260, minWidth: 0, height: isMobile ? 44 : 38, padding: '0 12px', background: '#fff', border: '1px solid #ecdfd5', borderRadius: 10, color: '#9c8b7e' }}>
+            <span style={{ fontSize: 13, display: 'flex', alignItems: 'center', color: '#9c8b7e' }}>
+              <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <circle cx="11" cy="11" r="7" />
+                <line x1="21" y1="21" x2="16.5" y2="16.5" />
+              </svg>
+            </span>
+            <input
+              value={state.search}
+              onChange={(e) => controller.setSearch(e.target.value)}
+              placeholder="파일 검색"
+              aria-label="파일 검색"
+              style={{ border: 'none', outline: 'none', background: 'transparent', fontFamily: 'inherit', fontSize: 13, width: '100%', minWidth: 0, color: '#33281f' }}
+            />
+          </div>
+          <a
+            href={newHref}
+            onClick={onNewMapClick}
+            className="btn"
+            style={{ height: isMobile ? 44 : 38, padding: '0 16px', borderRadius: 10, background: '#33281f', color: '#fff', fontFamily: 'inherit', fontSize: 13, fontWeight: 600, cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 6, whiteSpace: 'nowrap', flexShrink: 0 }}
+          >
+            ＋ 새로 만들기
+          </a>
         </div>
-        <a
-          href={newHref}
-          onClick={onNewMapClick}
-          className="btn"
-          style={{ height: isMobile ? 44 : 38, padding: '0 16px', borderRadius: 10, background: '#33281f', color: '#fff', fontFamily: 'inherit', fontSize: 13, fontWeight: 600, cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 6 }}
-        >
-          ＋ 새로 만들기
-        </a>
       </div>
     </div>
   );
