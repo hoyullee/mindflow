@@ -86,3 +86,15 @@ export interface ContextMenuState {
 export interface ContextSubState {
   top: number;
 }
+
+/** The floating partial-style toolbar's open/position state — port of
+ * `Component#state.textCtx` (MindFlow.dc.html:2782, 3088-3099). `sx/sy` are
+ * screen (viewport-relative) coordinates, same space as `ContextMenuState`'s
+ * `sx/sy`. The original opens this from a right-click INSIDE an active text
+ * selection; this port opens it directly off a drag-selection inside the
+ * node editor instead (a more natural gesture for mouse AND touch — see
+ * `TextToolbar.tsx`'s doc comment). */
+export interface TextCtxState {
+  sx: number;
+  sy: number;
+}
