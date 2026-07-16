@@ -31,8 +31,11 @@ export function PropertyPanel({ controller }: PropertyPanelProps) {
   const linesOnly = m.lines.length > 0 && !m.nodes.length && !m.floats.length;
   const floatsOnly = m.floats.length > 0 && !m.nodes.length && !m.lines.length;
 
-  if (nodesOnly) return <NodePanel controller={controller} nodeIds={m.nodes} isMobile={isMobile} />;
-  if (linesOnly) return <LinePanel controller={controller} lineIds={m.lines} isMobile={isMobile} />;
-  if (floatsOnly) return <FloatPanel controller={controller} floatIds={m.floats} isMobile={isMobile} />;
+  // The `key` remounts the panel when the selection set changes, resetting each
+  // panel's accordion (PanelSection) back to all-collapsed — matching the dc
+  // original's "reset panelSec on selection change" (MindFlow.dc.html:853-859).
+  if (nodesOnly) return <NodePanel key={`nodes:${m.nodes.join(',')}`} controller={controller} nodeIds={m.nodes} isMobile={isMobile} />;
+  if (linesOnly) return <LinePanel key={`lines:${m.lines.join(',')}`} controller={controller} lineIds={m.lines} isMobile={isMobile} />;
+  if (floatsOnly) return <FloatPanel key={`floats:${m.floats.join(',')}`} controller={controller} floatIds={m.floats} isMobile={isMobile} />;
   return null;
 }

@@ -1,4 +1,4 @@
-import type { CSSProperties, ReactNode } from 'react';
+import { useLayoutEffect, useRef, useState, type CSSProperties, type ReactNode } from 'react';
 import { hexA } from '../../theme';
 import type { Theme } from '../../theme';
 
@@ -76,6 +76,46 @@ export function panelBodyStyle(isMobile = false): CSSProperties {
 
 export function SectionLabel({ theme, children }: { theme: Theme; children: ReactNode }) {
   return <div style={{ fontSize: 11, fontWeight: 700, letterSpacing: '.04em', textTransform: 'uppercase', color: theme.subtext, marginBottom: 8 }}>{children}</div>;
+}
+
+/**
+ * Collapsible property-panel section — port of the dc original's `panelSec`
+ * accordion (MindFlow.dc.html:150-234 etc.): a clickable header row with a
+ * ▸/▾ chevron and a max-height-animated body. Callers drive `open` from a
+ * single "which section is open" state so only one is expanded at a time, and
+ * remount the panel (via a React `key`) on selection change to reset to all
+ * collapsed — matching the original's one-open accordion + reset behavior.
+ */
+export function PanelSection({ theme, title, open, onToggle, children }: { theme: Theme; title: string; open: boolean; onToggle: () => void; children: ReactNode }) {
+  const bodyRef = useRef<HTMLDivElement | null>(null);
+  const [maxH, setMaxH] = useState(0);
+  // Keep the expanded height in sync with the (always-rendered) body content so
+  // the open transition animates to the right height even as content changes.
+  useLayoutEffect(() => {
+    const el = bodyRef.current;
+    if (!el) return;
+    setMaxH((h) => (h === el.scrollHeight ? h : el.scrollHeight));
+  });
+  return (
+    <>
+      <div
+        className="mf-ed-btn"
+        role="button"
+        aria-expanded={open}
+        onClick={onToggle}
+        style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', cursor: 'pointer', margin: '0 -6px 8px', padding: '5px 6px', borderRadius: 8 }}
+      >
+        <span style={{ fontSize: 11, fontWeight: 700, letterSpacing: '.04em', textTransform: 'uppercase', color: theme.subtext }}>{title}</span>
+        <span style={{ fontSize: 15, color: theme.subtext }}>{open ? '▾' : '▸'}</span>
+      </div>
+      <div
+        ref={bodyRef}
+        style={{ overflow: 'hidden', opacity: open ? 1 : 0, maxHeight: open ? maxH : 0, transition: 'max-height .3s cubic-bezier(.4,0,.2,1), opacity .24s ease' }}
+      >
+        <div style={{ paddingTop: 2 }}>{children}</div>
+      </div>
+    </>
+  );
 }
 
 export function PanelTitle({ theme, kicker, name }: { theme: Theme; kicker: string; name: string }) {

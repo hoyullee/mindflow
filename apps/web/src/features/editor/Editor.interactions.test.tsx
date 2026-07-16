@@ -89,6 +89,47 @@ describe('Editor interactions (M3-Editor-b)', () => {
     expect(within(screen.getByText('선택한 주제').parentElement as HTMLElement).getByText('리서치')).toBeTruthy();
   });
 
+  it('property panel sections are a collapsed-by-default one-open accordion', async () => {
+    const user = userEvent.setup();
+    localStorage.setItem('mindflow_doc_t1acc', JSON.stringify(DOC));
+    const { container } = renderEditor('/editor?map=t1acc&title=x');
+    selectNodeBox(nodeBoxFor(container, '리서치'));
+
+    const shapeHdr = screen.getByRole('button', { name: /도형 스타일/ });
+    const textHdr = screen.getByRole('button', { name: /텍스트 스타일/ });
+    const iconHdr = screen.getByRole('button', { name: /아이콘/ });
+    // all collapsed initially
+    expect(shapeHdr.getAttribute('aria-expanded')).toBe('false');
+    expect(textHdr.getAttribute('aria-expanded')).toBe('false');
+    expect(iconHdr.getAttribute('aria-expanded')).toBe('false');
+
+    await user.click(shapeHdr);
+    expect(shapeHdr.getAttribute('aria-expanded')).toBe('true');
+
+    // opening another collapses the first (accordion — one open at a time)
+    await user.click(textHdr);
+    expect(textHdr.getAttribute('aria-expanded')).toBe('true');
+    expect(shapeHdr.getAttribute('aria-expanded')).toBe('false');
+
+    // clicking an open header collapses it
+    await user.click(textHdr);
+    expect(textHdr.getAttribute('aria-expanded')).toBe('false');
+  });
+
+  it('property panel accordion resets to collapsed when the selection changes', async () => {
+    const user = userEvent.setup();
+    localStorage.setItem('mindflow_doc_t1acc2', JSON.stringify(DOC));
+    const { container } = renderEditor('/editor?map=t1acc2&title=x');
+
+    selectNodeBox(nodeBoxFor(container, '리서치'));
+    await user.click(screen.getByRole('button', { name: /도형 스타일/ }));
+    expect(screen.getByRole('button', { name: /도형 스타일/ }).getAttribute('aria-expanded')).toBe('true');
+
+    // select a different node → panel remounts, sections back to collapsed
+    selectNodeBox(nodeBoxFor(container, '디자인'));
+    expect(screen.getByRole('button', { name: /도형 스타일/ }).getAttribute('aria-expanded')).toBe('false');
+  });
+
   it('clicking the background clears the selection', () => {
     localStorage.setItem('mindflow_doc_t1b', JSON.stringify(DOC));
     const { container } = renderEditor('/editor?map=t1b&title=x');
