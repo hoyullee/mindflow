@@ -87,6 +87,16 @@ export function DocChip({ controller }: DocChipProps) {
             ⚠ 다른 곳에서 먼저 저장됨 (v{controller.saveConflict.currentVersion})
           </div>
         )}
+        {controller.titleError && (
+          <div
+            role="alert"
+            title={controller.titleError}
+            onClick={controller.dismissTitleError}
+            style={{ fontSize: 10.5, fontWeight: 600, color: '#c0532e', cursor: 'pointer', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}
+          >
+            ⚠ {controller.titleError} (다른 이름을 사용해 주세요)
+          </div>
+        )}
       </div>
       <button
         type="button"

@@ -333,7 +333,29 @@ export function mapHref(title: string, docId?: string): string {
   return `/editor?map=${docId || mapId(title)}&title=${encodeURIComponent(title || '')}`;
 }
 
-/** Home.dc.html `newMapHref()`. */
-export function newMapHref(): string {
-  return `/editor?map=new-${Date.now().toString(36)}${Math.floor(Math.random() * 1000)}&new=1`;
+/**
+ * Appends "_1", "_2", … to `base` until the result doesn't collide with an
+ * existing title (exact, trimmed match) — so a new map never shares a filename
+ * with another map (which Home dedups by title, hiding the duplicate). Returns
+ * `base` unchanged when it's already free.
+ */
+export function uniqueTitle(base: string, taken: Iterable<string>): string {
+  const set = new Set<string>();
+  for (const t of taken) {
+    const norm = String(t || '').trim();
+    if (norm) set.add(norm);
+  }
+  const b = String(base || '').trim() || '새 마인드맵';
+  if (!set.has(b)) return b;
+  let i = 1;
+  while (set.has(`${b}_${i}`)) i += 1;
+  return `${b}_${i}`;
+}
+
+/** Home.dc.html `newMapHref()`. Optional `title` seeds the new map's name (and
+ * is auto-uniquified by the caller so it doesn't collide with an existing map). */
+export function newMapHref(title?: string): string {
+  const base = `/editor?map=new-${Date.now().toString(36)}${Math.floor(Math.random() * 1000)}&new=1`;
+  const t = (title || '').trim();
+  return t ? `${base}&title=${encodeURIComponent(t)}` : base;
 }

@@ -23,6 +23,7 @@ import {
   saveRecent,
   seedFavAndTrashFromMetas,
   sourceOf,
+  uniqueTitle,
 } from './storage';
 
 /**
@@ -311,7 +312,15 @@ export function useHomeController() {
 
   // ---- open / create maps ----
   const mapHref = (title: string, docId?: string) => buildMapHref(title, docId);
-  const newMapHref = () => buildNewMapHref();
+  /** A new map gets an auto-uniquified default title ("새 마인드맵", "새 마인드맵_1",
+   * …) so it never collides with an existing map's filename — Home dedups cards
+   * by title, so a colliding new map would otherwise be hidden/overwritten. */
+  const newMapHref = () => {
+    const taken: string[] = [];
+    state.spaces.forEach((s) => (s.maps || []).forEach((m) => taken.push(m.title)));
+    state.trash.forEach((t) => taken.push(t.title));
+    return buildNewMapHref(uniqueTitle('새 마인드맵', taken));
+  };
 
   const navigateAfterLoader = (href: string, msg: string) => {
     patch({ creatingMap: true, loaderMsg: msg });
