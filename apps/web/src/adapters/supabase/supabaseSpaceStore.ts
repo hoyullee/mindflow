@@ -1,5 +1,5 @@
 // Real spaces store — `SpaceStore` over the `workspaces` Postgres table
-// (`server/supabase/migrations/0004_workspaces.sql`): exactly one row per user
+// (`supabase/migrations/0004_workspaces.sql`): exactly one row per user
 // (`owner` PK, defaulted to `auth.uid()`), holding the whole workspace
 // structure in a `data` JSONB column. RLS restricts every row to
 // `owner = auth.uid()`, so this adapter never filters by owner itself — the

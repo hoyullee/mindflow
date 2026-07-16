@@ -1,5 +1,5 @@
 // Real doc store — `DocStore` implemented against the `documents` Postgres
-// table (`server/supabase/migrations/0001_init.sql`). RLS restricts every
+// table (`supabase/migrations/0001_init.sql`). RLS restricts every
 // query to `owner = auth.uid()`, so this adapter doesn't need to (and
 // shouldn't) filter by owner itself — a stray missing `WHERE owner = ...`
 // here is not a security hole, RLS is the actual enforcement boundary.

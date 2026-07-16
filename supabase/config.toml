@@ -1,0 +1,8 @@
+# Supabase project config for the GitHub integration and the Supabase CLI.
+#
+# `project_id` is the project ref (it appears in the project URL /
+# `https://<ref>.supabase.co` — public, NOT a secret). It links this repo's
+# `supabase/migrations/` to the Supabase project so that merging to the
+# production branch auto-applies any new migration files, and PRs get an
+# ephemeral preview database (Branching). See server/supabase/docs/backend.md.
+project_id = "qdzfonyqysbbchxotnrm"

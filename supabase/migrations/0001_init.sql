@@ -1,8 +1,8 @@
 -- MindFlow — M4 initial schema: profiles + documents, RLS-enforced ownership.
 --
 -- Apply with the Supabase CLI (`supabase db push` / `supabase migration up`)
--- or `psql "$DATABASE_URL" -f server/supabase/migrations/0001_init.sql`
--- against a fresh Supabase project. See ../docs/backend.md for the full
+-- or `psql "$DATABASE_URL" -f supabase/migrations/0001_init.sql`
+-- against a fresh Supabase project. See server/supabase/docs/backend.md for the full
 -- provisioning checklist (this file assumes `auth.users` already exists,
 -- i.e. Supabase Auth is enabled — true for every Supabase project by default).
 --
@@ -23,12 +23,15 @@ create table if not exists public.profiles (
 
 alter table public.profiles enable row level security;
 
+drop policy if exists "profiles_select_own" on public.profiles;
 create policy "profiles_select_own" on public.profiles
   for select using (auth.uid() = id);
 
+drop policy if exists "profiles_upsert_own" on public.profiles;
 create policy "profiles_upsert_own" on public.profiles
   for insert with check (auth.uid() = id);
 
+drop policy if exists "profiles_update_own" on public.profiles;
 create policy "profiles_update_own" on public.profiles
   for update using (auth.uid() = id) with check (auth.uid() = id);
 
@@ -92,16 +95,20 @@ alter table public.documents enable row level security;
 -- RLS: an owner can do anything to their own rows; nobody else can see or
 -- touch them (no admin/service-role bypass policy here on purpose — server-
 -- side tooling should use the service_role key, which bypasses RLS entirely
--- and must NEVER be shipped to the client — see ../docs/backend.md).
+-- and must NEVER be shipped to the client — see server/supabase/docs/backend.md).
+drop policy if exists "documents_select_own" on public.documents;
 create policy "documents_select_own" on public.documents
   for select using (auth.uid() = owner);
 
+drop policy if exists "documents_insert_own" on public.documents;
 create policy "documents_insert_own" on public.documents
   for insert with check (auth.uid() = owner);
 
+drop policy if exists "documents_update_own" on public.documents;
 create policy "documents_update_own" on public.documents
   for update using (auth.uid() = owner) with check (auth.uid() = owner);
 
+drop policy if exists "documents_delete_own" on public.documents;
 create policy "documents_delete_own" on public.documents
   for delete using (auth.uid() = owner);
 
