@@ -213,11 +213,12 @@ export function seedFavAndTrashFromMetas(
   const nextTrash = [...trash];
   for (const meta of metas) {
     if (!meta.title) continue;
-    if (meta.isFavorite && !nextFavs[meta.title]) {
-      nextFavs[meta.title] = true;
-      changed = true;
-    }
     if (meta.deletedAt) {
+      // Deleted takes precedence: a trashed map belongs only in the trash, not
+      // in favorites — mirrors the live-session delete handlers, which clear
+      // the favorite flag when a map is deleted. (The backend meta may still
+      // carry isFavorite=true because `remove()` only sets deletedAt; seeding
+      // it into favs here is what put the map in BOTH LNB lists after reload.)
       if (!nextDeleted[meta.title]) {
         nextDeleted[meta.title] = true;
         changed = true;
@@ -226,6 +227,11 @@ export function seedFavAndTrashFromMetas(
         nextTrash.push({ title: meta.title, source: 'local', docId: meta.id });
         changed = true;
       }
+      continue;
+    }
+    if (meta.isFavorite && !nextFavs[meta.title]) {
+      nextFavs[meta.title] = true;
+      changed = true;
     }
   }
   return { favs: nextFavs, deleted: nextDeleted, trash: nextTrash, changed };

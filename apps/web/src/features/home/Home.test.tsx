@@ -233,5 +233,30 @@ describe('Home', () => {
       const card = container.querySelector('a[data-title="따라잡기"]') as HTMLElement;
       expect(within(card).getByRole('button', { name: '즐겨찾기 해제' })).toBeTruthy();
     });
+
+    it('a favorited+deleted map on reload lands ONLY in trash, never in favorites (LNB)', async () => {
+      const { container } = renderHomeWithDocStore([
+        // A live favorite (sanity anchor — should stay in the favorites list).
+        { id: 'fav-live', title: '살아있는 즐겨찾기', version: 1, updatedAt: '2026-01-01T00:00:00.000Z', isFavorite: true, deletedAt: null },
+        // The bug case: favorited AND deleted. `remove()` only sets deletedAt,
+        // so the persisted meta still carries isFavorite=true. It must show up
+        // in trash only — not in both LNB lists.
+        { id: 'fav-del', title: '즐겨찾기했다삭제한맵', version: 2, updatedAt: '2026-01-01T00:00:00.000Z', isFavorite: true, deletedAt: '2026-01-02T00:00:00.000Z' },
+      ]);
+
+      await waitFor(() => expect(container.querySelector('aside')).toBeTruthy());
+      // Rows in the favorites/trash lists both use `.drive-file`; trash rows are
+      // the ones carrying a `.restore-link`.
+      const rows = () => Array.from(container.querySelectorAll('aside .drive-file'));
+      const favTitles = () => rows().filter((r) => !r.querySelector('.restore-link')).map((r) => (r.textContent || '').trim());
+      const trashTitles = () => rows().filter((r) => r.querySelector('.restore-link')).map((r) => (r.textContent || '').trim());
+
+      await waitFor(() => expect(favTitles().some((t) => t.includes('살아있는 즐겨찾기'))).toBe(true));
+
+      // The favorited+deleted map is in trash...
+      expect(trashTitles().some((t) => t.includes('즐겨찾기했다삭제한맵'))).toBe(true);
+      // ...and NOT in favorites (the reported regression).
+      expect(favTitles().some((t) => t.includes('즐겨찾기했다삭제한맵'))).toBe(false);
+    });
   });
 });

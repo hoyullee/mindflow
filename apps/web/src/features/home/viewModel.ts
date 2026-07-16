@@ -166,8 +166,10 @@ export function deriveHomeView(state: HomeState): HomeViewModel {
       : [];
   const folderCards = isDriveSpace ? driveFolderCardsRaw : localFolderCards;
 
+  // A trashed map must never appear in the favorites list — it lives only in
+  // the trash until restored (see `seedFavAndTrashFromMetas`).
   const favItems = Object.keys(favs)
-    .filter((k) => favs[k])
+    .filter((k) => favs[k] && !state.deleted[k])
     .map((t) => ({ title: t, isDrive: sourceIsDrive(t) }));
 
   const baseByTitle = new Map<string, { title: string; when: string; hue: string; docId?: string }>();
