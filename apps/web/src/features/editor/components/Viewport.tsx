@@ -7,6 +7,7 @@ import { LineLayer } from './LineLayer';
 import { ZoneLayer } from './ZoneLayer';
 import { MarqueeLayer } from './MarqueeLayer';
 import { PresenceLayer } from './PresenceLayer';
+import { ContextMenu } from './ContextMenu';
 
 interface ViewportProps {
   doc: Doc;
@@ -31,7 +32,7 @@ export function Viewport({ doc, controller }: ViewportProps) {
         onPointerDown={controller.onBackgroundPointerDown}
         onPointerMove={(e) => controller.reportPointerPosition(e.clientX, e.clientY)}
         onPointerLeave={controller.clearPointerPosition}
-        onContextMenu={(e) => e.preventDefault()}
+        onContextMenu={controller.onContextMenu}
         style={{
           position: 'absolute',
           inset: 0,
@@ -53,6 +54,11 @@ export function Viewport({ doc, controller }: ViewportProps) {
             <PresenceLayer controller={controller} />
           </div>
         </div>
+        {/* NOT inside the pan/zoom transform above — `ctxMenu.sx/sy` are already screen
+            (viewport-relative) coordinates (port of `Component#openCtxAt`'s `sx`/`sy`,
+            MindFlow.dc.html:2794-2795), so this sits in the SAME untransformed box `.mf-ed-vp`
+            itself occupies. */}
+        <ContextMenu controller={controller} />
       </div>
     </div>
   );

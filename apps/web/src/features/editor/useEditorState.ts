@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import type { PointerEvent as ReactPointerEvent } from 'react';
+import type { MouseEvent as ReactMouseEvent, PointerEvent as ReactPointerEvent } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import type { Doc, Float, Line, LayoutMode, NodeMap, SizeOf, Zone } from '@mindflow/mindmap-core';
 import { HistoryStack, ROOT_ID, cubicAt, layout, resolveLineGeometry, serializeDoc, toMarkdown } from '@mindflow/mindmap-core';
@@ -18,25 +18,40 @@ import { downloadFile } from './download';
 import { exportPng } from './png';
 import * as mutations from './mutations';
 import { createIdFactory } from './mutations';
-import type { AttachTarget, GeomMap, LineHandle, MarqueeRect, MultiSelection, NodeGeom, PanState, SaveState, Selection, SelectionKind, ViewMode } from './types';
+import type {
+  AttachTarget,
+  ContextMenuState,
+  ContextSubState,
+  GeomMap,
+  HitResult,
+  LineHandle,
+  MarqueeRect,
+  MultiSelection,
+  NodeGeom,
+  PanState,
+  SaveState,
+  Selection,
+  SelectionKind,
+  ViewMode,
+} from './types';
 
 // State/interaction controller for the mindmap editor route — the React
 // counterpart of `Component`'s state + drag/select/edit/save/undo methods
 // (MindFlow.dc.html). Editor-a covered load/layout/pan/zoom/view/theme;
 // Editor-b added selection, text editing, structural add/delete, drag-move/
 // resize, the property-panel setters, autosave + manual save, undo/redo (via
-// `@mindflow/mindmap-core`'s `HistoryStack`), and export. Editor-c (this
-// revision) adds marquee multi-select + its bulk property panel, the
-// minimap, editable outline view, and drag-to-reparent.
+// `@mindflow/mindmap-core`'s `HistoryStack`), and export. Editor-c added
+// marquee multi-select + its bulk property panel, the minimap, editable
+// outline view, and drag-to-reparent. This revision adds the right-click
+// context menu (`ctxMenu`/`ctxSub`, MindFlow.dc.html:2775-2837, 3087-3170).
 //
 // Still deliberately out of scope (documented per CLAUDE.md's task spec):
 // - partial rich-text run styling (`applyPartial`) — `NodeEditBox` stays a
-//   plain textarea (Editor-b's own note, `components/NodeLayer.tsx`).
+//   plain textarea (Editor-b's own note, `components/NodeLayer.tsx`); the
+//   context menu's right-click-inside-a-rich-text-selection branch
+//   (MindFlow.dc.html:2777-2785, `textCtx`) is therefore also out of scope.
 // - line endpoint anchor magnets (`a1`/`a2`) — needs a core `Line` model
 //   extension first (`components/LineLayer.tsx`'s own note).
-// - the right-click context menu (`ctxMenu`/`ctxSub`, MindFlow.dc.html:2794-
-//   2837, 3087-3170) — explicitly optional ("여유되면") in the Editor-c task
-//   spec; right-click still just pans (see `onBackgroundPointerDown` below).
 
 const MIN_ZOOM = 0.25;
 const MAX_ZOOM = 2.4;
@@ -113,7 +128,7 @@ type ObjDrag =
     };
 
 type BgDrag =
-  | { kind: 'pan'; pointerId: number; sx: number; sy: number; startPan: PanState }
+  | { kind: 'pan'; pointerId: number; sx: number; sy: number; startPan: PanState; moved: boolean }
   | { kind: 'marquee'; pointerId: number; startClientX: number; startClientY: number; x0: number; y0: number; moved: boolean };
 
 function totalSelected(m: MultiSelection): number {
@@ -220,10 +235,15 @@ export interface EditorController {
   addSibling: () => void;
   deleteSelection: () => void;
   toggleCollapse: (id: string) => void;
-  addFreeNodeAt: () => void;
-  addFloatAt: () => void;
-  addLineAt: () => void;
-  addZoneAt: () => void;
+  /** `at` (canvas coordinates) is only ever passed by the background context menu's
+   * "추가" items (`ContextMenu.tsx`) — port of `Component#addFreeNode`/`addFloat`/
+   * `addLine`/`addZone`'s `px != null` branch (MindFlow.dc.html:2122-2124, 2253-2256,
+   * 2296-2298, 2455-2459): an explicit spot skips the center-of-viewport + stagger
+   * placement entirely (stagger included), landing exactly where the right-click hit. */
+  addFreeNodeAt: (at?: { x: number; y: number }) => void;
+  addFloatAt: (at?: { x: number; y: number }) => void;
+  addLineAt: (at?: { x: number; y: number }) => void;
+  addZoneAt: (at?: { x: number; y: number }) => void;
 
   // ---- node property setters ----
   setShape: (shape: string) => void;
@@ -238,6 +258,9 @@ export interface EditorController {
   setEmoji: (e: string) => void;
   clearEmoji: () => void;
   setNote: (text: string) => void;
+  /** Port of `Component#setTextAlign` (MindFlow.dc.html:2773) — same bulk-aware pattern
+   * as `setShape`/`toggleNodeBold`: applies to every `nodeTargetIds()` target. */
+  setTextAlign: (v: 'left' | 'center' | 'right') => void;
 
   // ---- float property setters (bulk-aware: apply to `multiGroups.floats`,
   // port of `Component#applyFloatText`-backed setters, MindFlow.dc.html:2733-2737) ----
@@ -262,6 +285,21 @@ export interface EditorController {
   // ---- zone property setters ----
   setZoneColor: (id: string, hex: string | null) => void;
   deleteZone: (id: string) => void;
+
+  // ---- right-click context menu — port of `Component#state.ctxMenu`/`ctxSub`
+  // (MindFlow.dc.html:2775-2837, 3087-3170) ----
+  ctxMenu: ContextMenuState | null;
+  ctxSub: ContextSubState | null;
+  /** Wire to the viewport's `onContextMenu` — port of `Component#onCtxMenu`
+   * (MindFlow.dc.html:2775-2791). */
+  onContextMenu: (e: ReactMouseEvent<HTMLDivElement>) => void;
+  /** Port of `Component#closeCtxMenu` (MindFlow.dc.html:2837) — also used by
+   * `ContextMenu`'s own outside-click/Escape handling. */
+  closeCtxMenu: () => void;
+  /** Opens (or closes, if already open) the "텍스트 정렬 ▸" flyout, anchored to the
+   * clicked row's `offsetTop` — port of the `alignParent` item's `onClick`
+   * (MindFlow.dc.html:3120). */
+  toggleCtxSub: (top: number) => void;
 
   // ---- drag / resize starters ----
   beginNodeDrag: (e: ReactPointerEvent, id: string) => void;
@@ -336,6 +374,8 @@ export function useEditorState(): EditorController {
   const [editingTitle, setEditingTitle] = useState(false);
   const [saveState, setSaveStateState] = useState<SaveState>('saved');
   const [, setHistoryTick] = useState(0);
+  const [ctxMenu, setCtxMenu] = useState<ContextMenuState | null>(null);
+  const [ctxSub, setCtxSub] = useState<ContextSubState | null>(null);
 
   const idFactory = useRef(createIdFactory()).current;
 
@@ -572,6 +612,127 @@ export function useEditorState(): EditorController {
     return { x: (cx - r.left - vp.pan.x) / vp.zoom, y: (cy - r.top - vp.pan.y) / vp.zoom };
   }
 
+  // ---- right-click context menu — port of `Component#onCtxMenu`/`openCtxAt`/`hitTestAll`
+  // (MindFlow.dc.html:2775-2837). `pendingCtxRef`/`suppressCtxRef` replicate the original's
+  // `_pendingCtx`/`_suppressCtx` fields: on macOS the browser's `contextmenu` event fires
+  // at MOUSEDOWN (while a drag is still live), so opening has to be deferred to `pointerup`
+  // and only actually happens if the pointer never moved (a right-click-drag = pan, so a
+  // MOVED right-drag must not also pop the menu); elsewhere `contextmenu` fires at mouseup,
+  // by which point the drag already ended, so `_suppressCtx` instead marks "a pan drag JUST
+  // ended with movement" for a brief window so the menu doesn't reopen there either.
+  // `objDragMovedRef` is this port's stand-in for the original's per-drag `d.moved` field on
+  // `objDragRef`'s (node/float/zone/line/group) variants, which don't carry one of their own
+  // (see `startObjDrag` below, next to `objDragRef`'s declaration). ----
+  const pendingCtxRef = useRef<{ x: number; y: number } | null>(null);
+  const suppressCtxRef = useRef(0);
+  const objDragMovedRef = useRef(false);
+
+  /** Port of `Component#hitTestAll` (MindFlow.dc.html:2815-2836): what a canvas point lands
+   * on, checked in the SAME priority order as the original (float > zone > line > node) —
+   * this is a pure coordinate hit-test against the current doc/geometry, independent of
+   * which DOM element the browser's `contextmenu` event actually targeted (matches the
+   * original: a right-click doesn't even reach `onZoneDown`'s `e.button !== 0` guard, so
+   * this is the ONLY way the menu learns what was clicked). */
+  function hitTestAll(p: { x: number; y: number }): HitResult | null {
+    const d = docRef.current;
+    for (const f of d.floats) {
+      const h = f.h || 44;
+      if (p.x >= f.x && p.x <= f.x + f.w && p.y >= f.y && p.y <= f.y + h) return { kind: 'float', id: f.id };
+    }
+    for (const z of d.zones) {
+      if (p.x >= z.x && p.x <= z.x + z.w && p.y >= z.y - 16 && p.y <= z.y + z.h) return { kind: 'zone', id: z.id };
+    }
+    for (const l of d.lines) {
+      const geo = resolveLineGeometry(l);
+      for (let t = 0; t <= 1.0001; t += 0.04) {
+        const bp = cubicAt(geo, t);
+        if (Math.hypot(p.x - bp.x, p.y - bp.y) < 10) return { kind: 'line', id: l.id };
+      }
+    }
+    const g = geomRef.current;
+    for (const id in g) {
+      const gg = g[id];
+      if (!gg) continue;
+      const pad = 4;
+      if (p.x >= gg.x - gg.w / 2 - pad && p.x <= gg.x + gg.w / 2 + pad && p.y >= gg.y - gg.h / 2 - pad && p.y <= gg.y + gg.h / 2 + pad) return { kind: 'node', id };
+    }
+    return null;
+  }
+
+  /** Port of `Component#openCtxAt` (MindFlow.dc.html:2792-2813): hit-tests the right-clicked
+   * canvas point, selects whatever it landed on (mirroring a plain click's selection-setting
+   * side effect), and opens the matching menu `kind`. A right-click on an object that's already
+   * part of an active multi-selection keeps the WHOLE group selected and opens the `'multi'`
+   * menu instead (port of the `curM`/`inSel` check, MindFlow.dc.html:2797-2802). */
+  function openCtxAt(clientX: number, clientY: number): void {
+    const vp = viewportRef.current;
+    const p = toCanvasPoint(clientX, clientY, vp);
+    const el = viewportElRef.current;
+    const r = el ? el.getBoundingClientRect() : { left: 0, top: 0 };
+    const sx = clientX - r.left;
+    const sy = clientY - r.top;
+    const hit = hitTestAll(p);
+    const ms = multiSelectionRef.current;
+    if (ms && totalSelected(ms) > 1 && hit) {
+      const inSel = (hit.kind === 'node' && ms.nodes.includes(hit.id)) || (hit.kind === 'float' && ms.floats.includes(hit.id)) || (hit.kind === 'line' && ms.lines.includes(hit.id));
+      if (inSel) {
+        setCtxSub(null);
+        setCtxMenu({ kind: 'multi', sx, sy, cx: p.x, cy: p.y });
+        return;
+      }
+    }
+    if (hit && hit.kind === 'node') {
+      setSelectionState({ kind: 'node', id: hit.id });
+      setMultiSelectionState(null);
+      setEditingFloatId(null);
+      setCtxSub(null);
+      setCtxMenu({ kind: 'node', sx, sy, cx: p.x, cy: p.y });
+    } else if (hit && hit.kind === 'float') {
+      setSelectionState({ kind: 'float', id: hit.id });
+      setMultiSelectionState(null);
+      setCtxSub(null);
+      setCtxMenu({ kind: 'float', sx, sy, cx: p.x, cy: p.y });
+    } else if (hit && hit.kind === 'line') {
+      setSelectionState({ kind: 'line', id: hit.id });
+      setMultiSelectionState(null);
+      setCtxSub(null);
+      setCtxMenu({ kind: 'line', sx, sy, cx: p.x, cy: p.y });
+    } else if (hit && hit.kind === 'zone') {
+      setSelectionState({ kind: 'zone', id: hit.id });
+      setMultiSelectionState(null);
+      setEditingFloatId(null);
+      setCtxSub(null);
+      setCtxMenu({ kind: 'zone', sx, sy, cx: p.x, cy: p.y });
+    } else {
+      setCtxSub(null);
+      setCtxMenu({ kind: 'bg', sx, sy, cx: p.x, cy: p.y });
+    }
+  }
+
+  const closeCtxMenu = useCallback(() => {
+    setCtxMenu(null);
+    setCtxSub(null);
+  }, []);
+
+  const toggleCtxSub = useCallback((top: number) => {
+    setCtxSub((prev) => (prev ? null : { top }));
+  }, []);
+
+  /** Port of `Component#onCtxMenu` (MindFlow.dc.html:2775-2791), minus the rich-text-selection
+   * `textCtx` branch (out of scope — see this file's top-of-module doc comment). */
+  const onContextMenu = useCallback((e: ReactMouseEvent<HTMLDivElement>) => {
+    e.preventDefault();
+    if (suppressCtxRef.current && Date.now() - suppressCtxRef.current < 300) {
+      suppressCtxRef.current = 0;
+      return;
+    }
+    if (dragRef.current || objDragRef.current) {
+      pendingCtxRef.current = { x: e.clientX, y: e.clientY };
+      return;
+    }
+    openCtxAt(e.clientX, e.clientY);
+  }, []);
+
   // ---- presence: local pointer -> canvas coordinates -> throttled broadcast
   // (`usePresence.setCursor` does the actual throttling) — reuses the SAME
   // `toCanvasPoint` conversion as the marquee/drag machinery above, so a
@@ -676,7 +837,7 @@ export function useEditorState(): EditorController {
     }
     if (e.button === 1 || e.button === 2) {
       setViewport((prev) => {
-        dragRef.current = { kind: 'pan', pointerId: e.pointerId, sx: e.clientX, sy: e.clientY, startPan: prev.pan };
+        dragRef.current = { kind: 'pan', pointerId: e.pointerId, sx: e.clientX, sy: e.clientY, startPan: prev.pan, moved: false };
         return prev;
       });
       return;
@@ -708,6 +869,9 @@ export function useEditorState(): EditorController {
       if (d.kind === 'pan') {
         const dx = e.clientX - d.sx;
         const dy = e.clientY - d.sy;
+        // port of `Component#onMove`'s pan branch's `if (Math.abs(dx)+Math.abs(dy)>3) d.moved = true`
+        // (MindFlow.dc.html:1716) — gates whether a right-click-drag suppresses the context menu.
+        if (Math.abs(dx) + Math.abs(dy) > 3) d.moved = true;
         setViewport((prev) => ({ ...prev, pan: { x: d.startPan.x + dx, y: d.startPan.y + dy } }));
         return;
       }
@@ -723,6 +887,15 @@ export function useEditorState(): EditorController {
       const d = dragRef.current;
       if (!d || d.pointerId !== e.pointerId) return;
       dragRef.current = null;
+      // deferred right-click menu (macOS fires `contextmenu` at mousedown, while `dragRef`/
+      // `objDragRef` is still live): open now, but only if the pointer never moved — port of
+      // `Component#onUp`'s generic `_pendingCtx`/`_suppressCtx` handling (MindFlow.dc.html:1778-1780).
+      if (d.kind === 'pan' && d.moved) suppressCtxRef.current = Date.now();
+      if (pendingCtxRef.current) {
+        const pc = pendingCtxRef.current;
+        pendingCtxRef.current = null;
+        if (!d.moved) openCtxAt(pc.x, pc.y);
+      }
       if (d.kind === 'pan') {
         // plain background click (button 1/2, no movement) also deselects everything, matching
         // `Component#onUp`'s `d.type === 'pan' && !d.moved` branch (MindFlow.dc.html:1855)
@@ -1056,50 +1229,99 @@ export function useEditorState(): EditorController {
     [commitDoc],
   );
 
-  const addFreeNodeAt = useCallback(() => {
-    const vp = viewportRef.current;
-    const stagger = (Object.keys(docRef.current.nodes).length % 6) * 20;
-    const cx = (vp.vw / 2 - vp.pan.x) / vp.zoom + stagger;
-    const cy = (vp.vh / 2 - vp.pan.y) / vp.zoom - 130 + stagger;
-    const newId = idFactory('x');
-    commitDoc((d) => ({ ...d, nodes: mutations.addFreeShapeNode(d.nodes, newId, cx, cy) }));
-    setSelectionState({ kind: 'node', id: newId });
-    setMultiSelectionState(null);
-    setEditingNodeId(newId);
-  }, [commitDoc, idFactory]);
+  const addFreeNodeAt = useCallback(
+    (at?: { x: number; y: number }) => {
+      // an explicit `at` (the bg context menu's "도형 추가") lands EXACTLY there, no stagger —
+      // port of `Component#addFreeNode`'s `px != null` branch (MindFlow.dc.html:2122-2128).
+      let cx: number;
+      let cy: number;
+      if (at) {
+        cx = at.x;
+        cy = at.y;
+      } else {
+        const vp = viewportRef.current;
+        const stagger = (Object.keys(docRef.current.nodes).length % 6) * 20;
+        cx = (vp.vw / 2 - vp.pan.x) / vp.zoom + stagger;
+        cy = (vp.vh / 2 - vp.pan.y) / vp.zoom - 130 + stagger;
+      }
+      const newId = idFactory('x');
+      commitDoc((d) => ({ ...d, nodes: mutations.addFreeShapeNode(d.nodes, newId, cx, cy) }));
+      setSelectionState({ kind: 'node', id: newId });
+      setMultiSelectionState(null);
+      setEditingNodeId(newId);
+    },
+    [commitDoc, idFactory],
+  );
 
-  const addFloatAt = useCallback(() => {
-    const vp = viewportRef.current;
-    const stagger = (docRef.current.floats.length % 6) * 22;
-    const cx = (vp.vw / 2 - vp.pan.x) / vp.zoom - 90 + stagger;
-    const cy = (vp.vh / 2 - vp.pan.y) / vp.zoom + 150 + stagger;
-    const newId = idFactory('f');
-    commitDoc((d) => ({ ...d, floats: mutations.addFloatItem(d.floats, newId, cx, cy) }));
-    setSelectionState({ kind: 'float', id: newId });
-    setMultiSelectionState(null);
-    setEditingFloatId(newId);
-  }, [commitDoc, idFactory]);
+  const addFloatAt = useCallback(
+    (at?: { x: number; y: number }) => {
+      // port of `Component#addFloat`'s `px != null` branch (MindFlow.dc.html:2253-2258): an
+      // explicit spot is used as-is (no `-90/+150` viewport-center offset, no stagger).
+      let cx: number;
+      let cy: number;
+      if (at) {
+        cx = at.x;
+        cy = at.y;
+      } else {
+        const vp = viewportRef.current;
+        const stagger = (docRef.current.floats.length % 6) * 22;
+        cx = (vp.vw / 2 - vp.pan.x) / vp.zoom - 90 + stagger;
+        cy = (vp.vh / 2 - vp.pan.y) / vp.zoom + 150 + stagger;
+      }
+      const newId = idFactory('f');
+      commitDoc((d) => ({ ...d, floats: mutations.addFloatItem(d.floats, newId, cx, cy) }));
+      setSelectionState({ kind: 'float', id: newId });
+      setMultiSelectionState(null);
+      setEditingFloatId(newId);
+    },
+    [commitDoc, idFactory],
+  );
 
-  const addLineAt = useCallback(() => {
-    const vp = viewportRef.current;
-    const cx = (vp.vw / 2 - vp.pan.x) / vp.zoom;
-    const cy = (vp.vh / 2 - vp.pan.y) / vp.zoom;
-    const off = (docRef.current.lines.length % 5) * 22;
-    const newId = idFactory('l');
-    commitDoc((d) => ({ ...d, lines: mutations.addLineItem(d.lines, newId, cx - 90, cy + off, cx + 90, cy + off) }));
-    setSelectionState({ kind: 'line', id: newId });
-    setMultiSelectionState(null);
-  }, [commitDoc, idFactory]);
+  const addLineAt = useCallback(
+    (at?: { x: number; y: number }) => {
+      // port of `Component#addLine`'s `px != null` branch (MindFlow.dc.html:2455-2459): the
+      // `off` stagger is skipped entirely when an explicit spot is given.
+      let cx: number;
+      let cy: number;
+      let off = 0;
+      if (at) {
+        cx = at.x;
+        cy = at.y;
+      } else {
+        const vp = viewportRef.current;
+        cx = (vp.vw / 2 - vp.pan.x) / vp.zoom;
+        cy = (vp.vh / 2 - vp.pan.y) / vp.zoom;
+        off = (docRef.current.lines.length % 5) * 22;
+      }
+      const newId = idFactory('l');
+      commitDoc((d) => ({ ...d, lines: mutations.addLineItem(d.lines, newId, cx - 90, cy + off, cx + 90, cy + off) }));
+      setSelectionState({ kind: 'line', id: newId });
+      setMultiSelectionState(null);
+    },
+    [commitDoc, idFactory],
+  );
 
-  const addZoneAt = useCallback(() => {
-    const vp = viewportRef.current;
-    const cx = (vp.vw / 2 - vp.pan.x) / vp.zoom - 170;
-    const cy = (vp.vh / 2 - vp.pan.y) / vp.zoom - 110;
-    const newId = idFactory('z');
-    commitDoc((d) => ({ ...d, zones: mutations.addZoneItem(d.zones, newId, cx, cy) }));
-    setSelectionState({ kind: 'zone', id: newId });
-    setMultiSelectionState(null);
-  }, [commitDoc, idFactory]);
+  const addZoneAt = useCallback(
+    (at?: { x: number; y: number }) => {
+      // port of `Component#addZone`'s `px != null` branch (MindFlow.dc.html:2296-2298): an
+      // explicit spot is used as-is (no `-170/-110` viewport-center offset).
+      let cx: number;
+      let cy: number;
+      if (at) {
+        cx = at.x;
+        cy = at.y;
+      } else {
+        const vp = viewportRef.current;
+        cx = (vp.vw / 2 - vp.pan.x) / vp.zoom - 170;
+        cy = (vp.vh / 2 - vp.pan.y) / vp.zoom - 110;
+      }
+      const newId = idFactory('z');
+      commitDoc((d) => ({ ...d, zones: mutations.addZoneItem(d.zones, newId, cx, cy) }));
+      setSelectionState({ kind: 'zone', id: newId });
+      setMultiSelectionState(null);
+    },
+    [commitDoc, idFactory],
+  );
 
   // ---- node property setters — bulk-aware (port of `nodeTargets()`-driven setters,
   // MindFlow.dc.html:2545-2555, 2730-2731): with a single node selected, `nodeTargetIds()`
@@ -1127,6 +1349,12 @@ export function useEditorState(): EditorController {
       if (id) commitDoc((d) => ({ ...d, nodes: mutations.setNodeField(d.nodes, id, 'note', text) }));
     },
     [selection, commitDoc],
+  );
+  // port of `Component#setTextAlign` (MindFlow.dc.html:2773) — the context menu's "텍스트 정렬"
+  // flyout (`ContextMenu.tsx`) is its only caller; bulk-aware like `setShape` above.
+  const setTextAlign = useCallback(
+    (v: 'left' | 'center' | 'right') => commitDoc((d) => ({ ...d, nodes: mutations.setNodesField(d.nodes, nodeTargetIds(), 'align', v) })),
+    [nodeTargetIds, commitDoc],
   );
 
   // ---- float property setters — bulk-aware style setters (port of `Component#applyFloatText`-backed
@@ -1268,6 +1496,15 @@ export function useEditorState(): EditorController {
   // handles a marquee multi-selection's shared drag (Editor-c). ----
   const objDragRef = useRef<ObjDrag | null>(null);
 
+  /** Starts a new object drag — resets `objDragMovedRef` (this port's per-drag `d.moved`
+   * stand-in, since `ObjDrag`'s variants don't carry their own field) alongside setting
+   * `objDragRef.current`, so the context-menu machinery above always sees "not yet moved"
+   * for a drag that JUST started, even if a previous drag left it `true`. */
+  function startObjDrag(d: ObjDrag): void {
+    objDragMovedRef.current = false;
+    objDragRef.current = d;
+  }
+
   /** Drop-target scan under the drag ghost's canvas point — port of `Component#findAttachTarget`
    * (MindFlow.dc.html:1761-1773). `exclude` keeps a dragged node from being dropped onto itself
    * or one of its own descendants (would create a cycle). */
@@ -1291,6 +1528,9 @@ export function useEditorState(): EditorController {
     function onMove(e: PointerEvent): void {
       const d = objDragRef.current;
       if (!d) return;
+      // any actual pointermove while a drag is live counts as "moved" for the context-menu's
+      // deferred-open check (see `objDragMovedRef`'s declaration, above `dragRef`).
+      objDragMovedRef.current = true;
       const vp = viewportRef.current;
       const dx = (e.clientX - d.startClientX) / vp.zoom;
       const dy = (e.clientY - d.startClientY) / vp.zoom;
@@ -1363,6 +1603,16 @@ export function useEditorState(): EditorController {
       const d = objDragRef.current;
       if (!d) return;
       objDragRef.current = null;
+      // deferred right-click menu (macOS): see the identical block in the background
+      // drag's `onUp`, above — this covers a right-click that landed on a NODE/FLOAT/
+      // ZONE/LINE (their `begin*Drag` starters don't filter by button, matching the
+      // original's `onNodeDown`/`onFloatDown`/`onLineDown`, so a right-mousedown on one
+      // of them starts an `objDrag`, not a background pan).
+      if (pendingCtxRef.current) {
+        const pc = pendingCtxRef.current;
+        pendingCtxRef.current = null;
+        if (!objDragMovedRef.current) openCtxAt(pc.x, pc.y);
+      }
       if (d.kind === 'node-move') {
         const vp = viewportRef.current;
         const p = toCanvasPoint(e.clientX, e.clientY, vp);
@@ -1438,7 +1688,7 @@ export function useEditorState(): EditorController {
       const l = d.lines.find((x) => x.id === id);
       if (l) linesOrig[id] = { x1: l.x1, y1: l.y1, x2: l.x2, y2: l.y2 };
     });
-    objDragRef.current = { kind: 'group', pointerId: e.pointerId, startClientX: e.clientX, startClientY: e.clientY, nodesOrig, floatsOrig, linesOrig };
+    startObjDrag({ kind: 'group', pointerId: e.pointerId, startClientX: e.clientX, startClientY: e.clientY, nodesOrig, floatsOrig, linesOrig });
   }
 
   const beginNodeDrag = useCallback(
@@ -1455,11 +1705,11 @@ export function useEditorState(): EditorController {
       setSelectionState({ kind: 'node', id });
       setMultiSelectionState(null);
       if (id === ROOT_ID) {
-        objDragRef.current = { kind: 'root', pointerId: e.pointerId, startClientX: e.clientX, startClientY: e.clientY, startAnchor: rootAnchor };
+        startObjDrag({ kind: 'root', pointerId: e.pointerId, startClientX: e.clientX, startClientY: e.clientY, startAnchor: rootAnchor });
       } else {
         const g = geomRef.current[id];
         const excludeIds = new Set<string>([id, ...descendants(docRef.current.nodes, id)]);
-        objDragRef.current = {
+        startObjDrag({
           kind: 'node-move',
           id,
           pointerId: e.pointerId,
@@ -1469,7 +1719,7 @@ export function useEditorState(): EditorController {
           startGeomY: g?.y ?? n.y,
           wasFree: !!n.free,
           excludeIds,
-        };
+        });
       }
     },
     [rootAnchor],
@@ -1480,7 +1730,7 @@ export function useEditorState(): EditorController {
     e.preventDefault();
     const g = geomRef.current[id];
     if (!g) return;
-    objDragRef.current = { kind: 'node-resize', id, pointerId: e.pointerId, startClientX: e.clientX, startClientY: e.clientY, ow: g.w, oh: g.h };
+    startObjDrag({ kind: 'node-resize', id, pointerId: e.pointerId, startClientX: e.clientX, startClientY: e.clientY, ow: g.w, oh: g.h });
   }, []);
 
   const beginFloatDrag = useCallback((e: ReactPointerEvent, id: string) => {
@@ -1495,7 +1745,7 @@ export function useEditorState(): EditorController {
     if (!f) return;
     setSelectionState({ kind: 'float', id });
     setMultiSelectionState(null);
-    objDragRef.current = { kind: 'float', id, pointerId: e.pointerId, startClientX: e.clientX, startClientY: e.clientY, ox: f.x, oy: f.y };
+    startObjDrag({ kind: 'float', id, pointerId: e.pointerId, startClientX: e.clientX, startClientY: e.clientY, ox: f.x, oy: f.y });
   }, []);
 
   const beginFloatResize = useCallback((e: ReactPointerEvent, id: string) => {
@@ -1503,7 +1753,7 @@ export function useEditorState(): EditorController {
     e.preventDefault();
     const f = docRef.current.floats.find((x) => x.id === id);
     if (!f) return;
-    objDragRef.current = { kind: 'float-resize', id, pointerId: e.pointerId, startClientX: e.clientX, startClientY: e.clientY, ow: f.w, oh: f.h || 44 };
+    startObjDrag({ kind: 'float-resize', id, pointerId: e.pointerId, startClientX: e.clientX, startClientY: e.clientY, ow: f.w, oh: f.h || 44 });
   }, []);
 
   const beginZoneDrag = useCallback((e: ReactPointerEvent, id: string) => {
@@ -1513,7 +1763,7 @@ export function useEditorState(): EditorController {
     if (!z) return;
     setSelectionState({ kind: 'zone', id });
     setMultiSelectionState(null);
-    objDragRef.current = { kind: 'zone', id, pointerId: e.pointerId, startClientX: e.clientX, startClientY: e.clientY, ox: z.x, oy: z.y };
+    startObjDrag({ kind: 'zone', id, pointerId: e.pointerId, startClientX: e.clientX, startClientY: e.clientY, ox: z.x, oy: z.y });
   }, []);
 
   const beginZoneResize = useCallback((e: ReactPointerEvent, id: string) => {
@@ -1521,7 +1771,7 @@ export function useEditorState(): EditorController {
     e.preventDefault();
     const z = docRef.current.zones.find((x) => x.id === id);
     if (!z) return;
-    objDragRef.current = { kind: 'zone-resize', id, pointerId: e.pointerId, startClientX: e.clientX, startClientY: e.clientY, ow: z.w, oh: z.h };
+    startObjDrag({ kind: 'zone-resize', id, pointerId: e.pointerId, startClientX: e.clientX, startClientY: e.clientY, ow: z.w, oh: z.h });
   }, []);
 
   const beginLineDrag = useCallback((e: ReactPointerEvent, id: string) => {
@@ -1536,7 +1786,7 @@ export function useEditorState(): EditorController {
     if (!l) return;
     setSelectionState({ kind: 'line', id });
     setMultiSelectionState(null);
-    objDragRef.current = { kind: 'line-move', id, pointerId: e.pointerId, startClientX: e.clientX, startClientY: e.clientY, o: { x1: l.x1, y1: l.y1, x2: l.x2, y2: l.y2 } };
+    startObjDrag({ kind: 'line-move', id, pointerId: e.pointerId, startClientX: e.clientX, startClientY: e.clientY, o: { x1: l.x1, y1: l.y1, x2: l.x2, y2: l.y2 } });
   }, []);
 
   const beginLineEndDrag = useCallback((e: ReactPointerEvent, id: string, which: LineHandle) => {
@@ -1547,7 +1797,7 @@ export function useEditorState(): EditorController {
     setSelectionState({ kind: 'line', id });
     const ox = which === 1 ? l.x1 : l.x2;
     const oy = which === 1 ? l.y1 : l.y2;
-    objDragRef.current = { kind: 'line-end', id, which, pointerId: e.pointerId, startClientX: e.clientX, startClientY: e.clientY, ox, oy };
+    startObjDrag({ kind: 'line-end', id, which, pointerId: e.pointerId, startClientX: e.clientX, startClientY: e.clientY, ox, oy });
   }, []);
 
   const beginLineCurveDrag = useCallback((e: ReactPointerEvent, id: string, which: LineHandle) => {
@@ -1556,7 +1806,7 @@ export function useEditorState(): EditorController {
     const l = docRef.current.lines.find((x) => x.id === id);
     if (!l) return;
     const g = resolveLineGeometry(l);
-    objDragRef.current = {
+    startObjDrag({
       kind: 'line-curve',
       id,
       which,
@@ -1566,7 +1816,7 @@ export function useEditorState(): EditorController {
       oc: which === 2 ? g.c2 : g.c1,
       nx: g.nx,
       ny: g.ny,
-    };
+    });
   }, []);
 
   // ---- keyboard shortcuts — port of `Component#onKey` (MindFlow.dc.html:2838-2905):
@@ -1818,6 +2068,7 @@ export function useEditorState(): EditorController {
     setEmoji,
     clearEmoji,
     setNote,
+    setTextAlign,
 
     setFloatBg,
     toggleFloatBold,
@@ -1836,6 +2087,12 @@ export function useEditorState(): EditorController {
 
     setZoneColor,
     deleteZone,
+
+    ctxMenu,
+    ctxSub,
+    onContextMenu,
+    closeCtxMenu,
+    toggleCtxSub,
 
     beginNodeDrag,
     beginNodeResize,

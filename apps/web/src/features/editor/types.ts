@@ -53,3 +53,36 @@ export interface AttachTarget {
   id: string;
   zone: 'child' | 'above' | 'below';
 }
+
+/** What a right-click hit-tested — port of `Component#hitTestAll`'s return shape
+ * (MindFlow.dc.html:2815-2836). Priority mirrors the visual stacking: float > zone > line > node. */
+export interface HitResult {
+  kind: 'node' | 'float' | 'line' | 'zone';
+  id: string;
+}
+
+/** The right-click context menu's kind — port of `Component#state.ctxMenu.kind`
+ * (MindFlow.dc.html:2792-2813): which object (if any) the click landed on, resolved
+ * BEFORE the menu opens (`openCtxAt` also selects that object as a side effect,
+ * except for `'bg'`/`'multi'`, matching the original). */
+export type ContextMenuKind = 'node' | 'float' | 'line' | 'zone' | 'multi' | 'bg';
+
+/** Right-click context menu state — port of `Component#state.ctxMenu`
+ * (MindFlow.dc.html:2792-2813, 3101-3146). `sx/sy` are screen (viewport-relative)
+ * coordinates used to position the menu; `cx/cy` are canvas (untransformed)
+ * coordinates, used by the `'bg'` kind's "추가" items to place the new object at
+ * the exact spot that was right-clicked. */
+export interface ContextMenuState {
+  kind: ContextMenuKind;
+  sx: number;
+  sy: number;
+  cx: number;
+  cy: number;
+}
+
+/** The "텍스트 정렬 ▸" flyout submenu's own open/position state — port of
+ * `Component#state.ctxSub` (MindFlow.dc.html:3120, 3149-3155). `top` is the
+ * parent row's `offsetTop`, used to vertically anchor the flyout next to it. */
+export interface ContextSubState {
+  top: number;
+}
