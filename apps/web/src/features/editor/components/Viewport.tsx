@@ -8,6 +8,7 @@ import { ZoneLayer } from './ZoneLayer';
 import { MarqueeLayer } from './MarqueeLayer';
 import { PresenceLayer } from './PresenceLayer';
 import { ContextMenu } from './ContextMenu';
+import { TextToolbar } from './TextToolbar';
 
 interface ViewportProps {
   doc: Doc;
@@ -59,6 +60,9 @@ export function Viewport({ doc, controller }: ViewportProps) {
             MindFlow.dc.html:2794-2795), so this sits in the SAME untransformed box `.mf-ed-vp`
             itself occupies. */}
         <ContextMenu controller={controller} />
+        {/* Same untransformed screen-coordinate box as `ContextMenu` above — `textCtx.sx/sy`
+            are already viewport-relative (`NodeEditBox`'s `openTextCtx` call). */}
+        <TextToolbar controller={controller} />
       </div>
     </div>
   );

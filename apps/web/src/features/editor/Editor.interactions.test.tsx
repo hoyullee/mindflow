@@ -110,20 +110,26 @@ describe('Editor interactions (M3-Editor-b)', () => {
 
     await waitFor(() => expect(countNodeBoxes(container)).toBe(before + 1));
     // the new child starts in edit mode with the default placeholder text
-    expect(getViewport(container).querySelector('textarea.mf-edit')).toBeTruthy();
+    expect(getViewport(container).querySelector('.mf-richedit')).toBeTruthy();
   });
 
   it('committing a text edit updates the node in the doc', async () => {
     localStorage.setItem('mindflow_doc_t3', JSON.stringify(DOC));
-    const user = userEvent.setup();
     const { container } = renderEditor('/editor?map=t3&title=x');
 
     const box = nodeBoxFor(container, '디자인');
     fireEvent.doubleClick(box);
-    const textarea = getViewport(container).querySelector('textarea.mf-edit') as HTMLTextAreaElement;
-    expect(textarea).toBeTruthy();
-    await user.clear(textarea);
-    await user.type(textarea, '새로운 이름{Enter}');
+    // The node text box is a real `contentEditable` div now (port of MindFlow.dc.html:1200-1224,
+    // `NodeLayer.tsx`'s `NodeEditBox`) — jsdom's `Selection`/`Range` support is too limited for
+    // `userEvent.type()` to reliably simulate keystroke-by-keystroke replacement of a pre-selected
+    // contentEditable's content, so this drives the DOM directly (matching CLAUDE.md's guidance to
+    // keep DOM-heavy contentEditable tests to what's actually feasible in jsdom) and fires the same
+    // `Enter` keydown the browser would.
+    const editor = getViewport(container).querySelector('.mf-richedit') as HTMLDivElement;
+    expect(editor).toBeTruthy();
+    editor.textContent = '새로운 이름';
+    fireEvent.input(editor);
+    fireEvent.keyDown(editor, { key: 'Enter' });
 
     await waitFor(() => expect(within(getViewport(container)).getByText('새로운 이름')).toBeTruthy());
   });
@@ -189,9 +195,9 @@ describe('Editor interactions (M3-Editor-b)', () => {
     await waitFor(() => expect(countNodeBoxes(container)).toBe(before + 1));
 
     // leave text-edit mode (undo/redo is a no-op while a node editor has focus)
-    const textarea = getViewport(container).querySelector('textarea.mf-edit') as HTMLTextAreaElement;
-    fireEvent.keyDown(textarea, { key: 'Escape' });
-    await waitFor(() => expect(getViewport(container).querySelector('textarea.mf-edit')).toBeNull());
+    const editor = getViewport(container).querySelector('.mf-richedit') as HTMLDivElement;
+    fireEvent.keyDown(editor, { key: 'Escape' });
+    await waitFor(() => expect(getViewport(container).querySelector('.mf-richedit')).toBeNull());
 
     fireEvent.keyDown(window, { key: 'z', ctrlKey: true });
     await waitFor(() => expect(countNodeBoxes(container)).toBe(before));

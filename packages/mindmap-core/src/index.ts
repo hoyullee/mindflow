@@ -32,6 +32,9 @@ export { toMarkdown } from './markdown';
 export type { HistoryStackOptions } from './history';
 export { HistoryStack } from './history';
 
+export type { RichSource, RichChar } from './richtext';
+export { runsToChars, charsToRuns, applyPartialStyle, stripRichStyle } from './richtext';
+
 export type { NodeSize, SizeOf, LayoutOptions } from './layout';
 export { layout } from './layout';
 

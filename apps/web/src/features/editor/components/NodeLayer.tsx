@@ -9,6 +9,7 @@ import type { EditorController } from '../useEditorState';
 import type { GeomMap } from '../types';
 import { peersSelecting } from '../presenceSelection';
 import { RemotePeerTag } from './RemotePeerTag';
+import { runsToHtml } from '../richtextDom';
 
 interface NodeLayerProps {
   nodes: NodeMap;
@@ -23,8 +24,9 @@ interface NodeLayerProps {
  * (MindFlow.dc.html:1136-1265): selection ring, drag-to-move/detach,
  * double-click/F2 text editing, resize handle, and the collapse toggle are
  * all wired (Editor-b). Rich partial-run styling (bold/color on a text
- * *selection* within a node) and the drag-ghost→drop-target reattach gesture
- * remain out of scope (Editor-c).
+ * *selection* within a node, `NodeEditBox` + `TextToolbar.tsx`) is wired too;
+ * the drag-ghost→drop-target reattach gesture remains out of scope here (that
+ * one's Editor-c, unrelated to text editing).
  */
 export function NodeLayer({ nodes, geom, mode, theme, controller }: NodeLayerProps) {
   const rootGeom = geom[ROOT_ID];
@@ -213,7 +215,7 @@ function NodeBox({ id, node: n, g, nodes, mode, theme: th, rootX, controller }: 
   const bodyWidth = clipShape ? Math.min(g.tw || g.w, g.w) : '100%';
 
   const textInner = editing ? (
-    <NodeEditBox n={n} boxStyle={boxStyle} align={align} onCommit={(text) => controller.commitNodeText(id, text)} onCancel={controller.cancelNodeEdit} />
+    <NodeEditBox id={id} n={n} boxStyle={boxStyle} align={align} controller={controller} />
   ) : n.rich && n.rich.length ? (
     <span style={{ lineHeight: 1.35, flex: '1 1 auto', width: '100%', minWidth: 0, boxSizing: 'border-box', textAlign: align, whiteSpace: 'pre-wrap', wordBreak: 'break-word' }}>
       {n.rich.map((r, ri) => (
@@ -358,44 +360,92 @@ function NodeBox({ id, node: n, g, nodes, mode, theme: th, rootX, controller }: 
 }
 
 interface NodeEditBoxProps {
+  id: string;
   n: Node;
   boxStyle: CSSProperties;
   align: CSSProperties['textAlign'];
-  onCommit: (text: string) => void;
-  onCancel: () => void;
+  controller: EditorController;
 }
 
-/** In-place node text editor — simplified `input`/`textarea` stand-in for the
- * original's rich `contentEditable` div (MindFlow.dc.html:1200-1224). Partial
- * bold/color runs within a single node's text selection (`applyPartial`) are
- * out of scope here (Editor-c); the whole node's plain text is editable. */
-function NodeEditBox({ n, boxStyle, align, onCommit, onCancel }: NodeEditBoxProps) {
-  const ref = useRef<HTMLTextAreaElement | null>(null);
+/** In-place node text editor — a real `contentEditable` div, port of the original's rich
+ * text box (MindFlow.dc.html:1200-1224): seeds its innerHTML from the node's existing
+ * `rich` runs on mount (`runsToHtml`), focuses + selects all its content, and supports
+ * partial bold/color styling on a text *selection* within it (`TextToolbar.tsx`,
+ * `controller.applyPartial`) — a drag-selection inside this box opens that floating
+ * toolbar (`checkSelectionToolbar` below). Enter (non-IME, non-shift) commits via
+ * `commitNodeRichText`; Shift+Enter inserts a line break (the browser's own
+ * `contentEditable` default, left un-intercepted); Escape cancels. */
+function NodeEditBox({ id, n, boxStyle, align, controller }: NodeEditBoxProps) {
+  const ref = useRef<HTMLDivElement | null>(null);
+
   useEffect(() => {
     const el = ref.current;
     if (!el) return;
+    el.innerHTML = runsToHtml(n);
+    controller.setRichEditorEl(el);
     el.focus();
-    el.select();
+    const range = document.createRange();
+    range.selectNodeContents(el);
+    const sel = window.getSelection();
+    sel?.removeAllRanges();
+    sel?.addRange(range);
+    return () => controller.setRichEditorEl(null);
+    // Mount-once (empty deps): this box only ever exists for the DURATION of one edit
+    // session — `NodeBox` renders it exclusively while `editing` is true, so "on mount"
+    // and "on entering edit mode" are the same moment here, unlike the original's single
+    // persistent DOM node (reused across renders, hence its own `data-init`-keyed guard
+    // to avoid re-seeding the innerHTML mid-edit, MindFlow.dc.html:1204-1210).
   }, []);
+
+  /** Opens the floating partial-style toolbar near the current selection, if any —
+   * called after every mouseup/keyup so a drag-selection (mouse) or a shift+arrow
+   * selection (keyboard) both surface it. A collapsed selection (plain caret move) is a
+   * no-op here; the toolbar was already closed by `TextToolbar`'s own outside-mousedown
+   * listener when this mousedown/keydown started. */
+  function checkSelectionToolbar(): void {
+    const el = ref.current;
+    if (!el) return;
+    const ws = window.getSelection();
+    if (!ws || ws.isCollapsed || !ws.rangeCount) return;
+    if (!ws.anchorNode || !el.contains(ws.anchorNode)) return;
+    // `Range#getBoundingClientRect` is unimplemented in jsdom (real browsers all support
+    // it) — fall back to a zero rect rather than let a test environment crash here; the
+    // toolbar still opens (just anchored at the viewport's own top-left in that case).
+    const range = ws.getRangeAt(0);
+    const rect = typeof range.getBoundingClientRect === 'function' ? range.getBoundingClientRect() : { left: 0, top: 0, width: 0 };
+    const vpEl = el.closest('.mf-ed-vp');
+    const vpRect = vpEl && typeof vpEl.getBoundingClientRect === 'function' ? vpEl.getBoundingClientRect() : { left: 0, top: 0 };
+    controller.openTextCtx(rect.left + rect.width / 2 - vpRect.left, rect.top - vpRect.top);
+  }
+
   return (
-    <textarea
+    <div
       ref={ref}
-      className="mf-edit"
-      defaultValue={n.text}
-      rows={1}
+      className="mf-edit mf-richedit"
+      contentEditable
+      suppressContentEditableWarning
       onMouseDown={(e) => e.stopPropagation()}
       onPointerDown={(e) => e.stopPropagation()}
+      onMouseUp={(e) => {
+        e.stopPropagation();
+        checkSelectionToolbar();
+      }}
       onKeyDown={(e) => {
         e.stopPropagation();
-        if (e.key === 'Enter' && !e.shiftKey) {
+        const composing = e.nativeEvent.isComposing || e.keyCode === 229;
+        if (e.key === 'Enter' && !composing && !e.shiftKey) {
           e.preventDefault();
-          onCommit(e.currentTarget.value);
-        } else if (e.key === 'Escape') {
+          controller.commitNodeRichText(id, ref.current);
+        } else if (e.key === 'Escape' && !composing) {
           e.preventDefault();
-          onCancel();
+          controller.cancelNodeEdit();
         }
       }}
-      onBlur={(e) => onCommit(e.currentTarget.value)}
+      onKeyUp={(e) => {
+        e.stopPropagation();
+        checkSelectionToolbar();
+      }}
+      onBlur={() => controller.commitNodeRichText(id, ref.current)}
       style={{
         border: 'none',
         background: 'transparent',
@@ -412,10 +462,9 @@ function NodeEditBox({ n, boxStyle, align, onCommit, onCancel }: NodeEditBoxProp
         whiteSpace: 'pre-wrap',
         wordBreak: 'break-word',
         lineHeight: 1.35,
-        resize: 'none',
-        overflow: 'hidden',
-        padding: 0,
+        pointerEvents: 'auto',
         cursor: 'text',
+        padding: 0,
       }}
     />
   );

@@ -10,8 +10,8 @@
 // undo/redo. All of them build on `cloneNodes`/`descendants` from the core /
 // tree helpers rather than re-deriving that logic.
 
-import type { Float, Line, Node, NodeMap, Zone } from '@mindflow/mindmap-core';
-import { ROOT_ID, cloneNodes } from '@mindflow/mindmap-core';
+import type { Float, Line, Node, NodeMap, RichRun, Zone } from '@mindflow/mindmap-core';
+import { ROOT_ID, cloneNodes, stripRichStyle } from '@mindflow/mindmap-core';
 import { descendants } from './tree';
 
 // ---- id generation (port of `Component#newId`, MindFlow.dc.html:885 — a
@@ -115,13 +115,32 @@ export function detachNodeToFree(nodes: NodeMap, id: string, x: number, y: numbe
   return out;
 }
 
-/** Port of `Component#commitEdit` (MindFlow.dc.html:2049) — text-only, no layout call (caller relays out). */
+/** Port of `Component#commitEdit` (MindFlow.dc.html:2049) — text-only, no layout call (caller relays out).
+ * Still used by every editor OTHER than the node text box itself (outline row rename, float/line/zone
+ * text) — none of those carry partial rich-text runs. */
 export function commitNodeText(nodes: NodeMap, id: string, text: string): NodeMap {
   const n = nodes[id];
   if (!n) return nodes;
   const out = cloneNodes(nodes);
   const on = out[id];
   if (on) on.text = (text || '').trim() || '주제';
+  return out;
+}
+
+/** Port of `Component#commitRichEdit` (MindFlow.dc.html:2629-2643) — the node text box's own
+ * commit, carrying partial-style `rich` runs alongside `text` (`domToRuns`'s output, parsed from
+ * the live `contentEditable` DOM by the caller). A blank (whitespace-only) commit resets BOTH
+ * `text` and `rich` back to the plain placeholder, matching the original's `hasText` branch —
+ * unlike `commitNodeText` above, which only trims (never resets to a placeholder mid-string). */
+export function commitNodeRichText(nodes: NodeMap, id: string, text: string, rich: RichRun[] | null): NodeMap {
+  const n = nodes[id];
+  if (!n) return nodes;
+  const out = cloneNodes(nodes);
+  const on = out[id];
+  if (!on) return out;
+  const hasText = (text || '').trim().length > 0;
+  on.text = hasText ? text.replace(/\s+$/, '') : '주제';
+  on.rich = hasText ? rich : null;
   return out;
 }
 
@@ -206,7 +225,11 @@ export function setNodesField<K extends keyof Node>(nodes: NodeMap, ids: string[
 }
 
 /** Port of `Component#toggleNodeBold` (MindFlow.dc.html:2730) — bulk-aware: flips every
- * target relative to the FIRST target's current value (matches the original's `nodeTargets()[0]`). */
+ * target relative to the FIRST target's current value (matches the original's `nodeTargets()[0]`).
+ * Also strips any conflicting PARTIAL bold runs off each target (`stripRich(n, 'b')`,
+ * MindFlow.dc.html:2727, 2730) so a whole-node bold toggle can't leave a stray bold run that
+ * would otherwise still render bold even after the node-level bold is turned back off (or look
+ * indistinguishable from the whole-node bold once it's turned on). */
 export function toggleNodesBold(nodes: NodeMap, ids: string[]): NodeMap {
   const valid = ids.filter((id) => nodes[id]);
   const first = valid[0];
@@ -215,7 +238,10 @@ export function toggleNodesBold(nodes: NodeMap, ids: string[]): NodeMap {
   const out = cloneNodes(nodes);
   valid.forEach((id) => {
     const on = out[id];
-    if (on) on.bold = !cur;
+    if (on) {
+      on.bold = !cur;
+      on.rich = stripRichStyle(on.rich, 'b');
+    }
   });
   return out;
 }

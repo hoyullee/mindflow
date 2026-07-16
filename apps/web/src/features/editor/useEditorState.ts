@@ -2,7 +2,8 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { MouseEvent as ReactMouseEvent, PointerEvent as ReactPointerEvent } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import type { Box, Doc, Float, Line, LineAnchor, LayoutMode, NodeMap, SizeOf, SnapCandidate, Zone } from '@mindflow/mindmap-core';
-import { HistoryStack, ROOT_ID, cubicAt, findLineSnap, layout, resolveLineEndpoints, resolveLineGeometry, serializeDoc, toMarkdown } from '@mindflow/mindmap-core';
+import { HistoryStack, ROOT_ID, applyPartialStyle, cubicAt, findLineSnap, layout, resolveLineEndpoints, resolveLineGeometry, serializeDoc, toMarkdown } from '@mindflow/mindmap-core';
+import { domToRuns, linearize, runsToHtml, setLinearSelection } from './richtextDom';
 import { useDocStore } from '../../adapters/BackendContext';
 import { useAuthUser } from '../../adapters/useAuthUser';
 import { useYjsDocSync } from '../../collab/useYjsDocSync';
@@ -32,6 +33,7 @@ import type {
   SaveState,
   Selection,
   SelectionKind,
+  TextCtxState,
   ViewMode,
 } from './types';
 
@@ -42,14 +44,23 @@ import type {
 // resize, the property-panel setters, autosave + manual save, undo/redo (via
 // `@mindflow/mindmap-core`'s `HistoryStack`), and export. Editor-c added
 // marquee multi-select + its bulk property panel, the minimap, editable
-// outline view, and drag-to-reparent. This revision adds the right-click
+// outline view, and drag-to-reparent. A later revision added the right-click
 // context menu (`ctxMenu`/`ctxSub`, MindFlow.dc.html:2775-2837, 3087-3170).
 //
-// Still deliberately out of scope (documented per CLAUDE.md's task spec):
-// - partial rich-text run styling (`applyPartial`) — `NodeEditBox` stays a
-//   plain textarea (Editor-b's own note, `components/NodeLayer.tsx`); the
-//   context menu's right-click-inside-a-rich-text-selection branch
-//   (MindFlow.dc.html:2777-2785, `textCtx`) is therefore also out of scope.
+// This revision adds partial rich-text run styling: `NodeEditBox`
+// (`components/NodeLayer.tsx`) is now a real `contentEditable` box (port of
+// MindFlow.dc.html:1200-1224), its commit path is `commitNodeRichText`
+// (below, port of `commitRichEdit`, MindFlow.dc.html:2629-2643, backed by
+// `mutations.commitNodeRichText`), and the floating "B / color / 지우기"
+// toolbar (`textCtx` below + `components/TextToolbar.tsx`) applies a style to
+// the current DOM selection via `applyPartial` (below, port of
+// `Component#applyPartial`'s char-model, MindFlow.dc.html:2701-2725 —
+// `@mindflow/mindmap-core`'s `applyPartialStyle` does the actual char-run
+// math; `applyPartial` here is just the DOM/Selection plumbing around it via
+// `richtextDom.ts`'s `linearize`/`domToRuns`/`runsToHtml`/`setLinearSelection`).
+// Unlike the original (which opens the toolbar from a right-click INSIDE an
+// active selection), this port opens it directly off a drag-selection in the
+// editor — see `TextToolbar.tsx`'s doc comment for the rationale.
 //
 // Line endpoint anchor magnets (`a1`/`a2`, MindFlow.dc.html:1728-1734,
 // 2377-2454) are wired here: dragging a line endpoint near a node/float port
@@ -224,6 +235,34 @@ export interface EditorController {
   startEditNode: (id: string) => void;
   commitNodeText: (id: string, text: string) => void;
   cancelNodeEdit: () => void;
+  /** The node text box's own commit — port of `Component#commitRichEdit`
+   * (MindFlow.dc.html:2629-2643): reads the live `contentEditable` DOM (`el`,
+   * `NodeEditBox`'s own ref) via `domToRuns`, and writes BOTH `text` and the
+   * partial-style `rich` runs in one step (unlike `commitNodeText` above,
+   * which is plain-text-only and used by every OTHER text editor). */
+  commitNodeRichText: (id: string, el: HTMLElement | null) => void;
+  /** The floating partial-style toolbar's open state — port of
+   * `Component#state.textCtx` (MindFlow.dc.html:2782, 3088-3099). `null` when
+   * closed; only ever rendered while `editingNodeId` is also set. */
+  textCtx: TextCtxState | null;
+  /** Opens the toolbar at a screen (viewport-relative) point — called by
+   * `NodeEditBox` when a drag-selection inside it becomes non-collapsed. */
+  openTextCtx: (sx: number, sy: number) => void;
+  /** Port of the outside-click branch of the original's `_winDown` handler
+   * for `textCtx` (MindFlow.dc.html:820) — also used on Escape/commit/cancel. */
+  closeTextCtx: () => void;
+  /** Registers (or clears, on unmount) the currently-focused rich-text
+   * `contentEditable` element — this port's stand-in for the original's
+   * `this._richEl` instance field (MindFlow.dc.html:1209), since a hooks-based
+   * controller has no instance of its own to hang a ref off. `applyPartial`
+   * reads from this. */
+  setRichEditorEl: (el: HTMLDivElement | null) => void;
+  /** Applies a partial style to the CURRENT DOM Selection inside the registered
+   * rich editor — port of `Component#applyPartial` (MindFlow.dc.html:2701-2725).
+   * DOM-only (rewrites the `contentEditable`'s innerHTML + restores the
+   * selection); the actual doc/undo commit happens later, on blur/Enter, via
+   * `commitNodeRichText` reading the same live DOM. */
+  applyPartial: (kind: 'b' | 'c' | 'clear', val?: string | null) => void;
   startEditFloat: (id: string) => void;
   commitFloatText: (id: string, text: string) => void;
   cancelFloatEdit: () => void;
@@ -398,6 +437,14 @@ export function useEditorState(): EditorController {
   const [, setHistoryTick] = useState(0);
   const [ctxMenu, setCtxMenu] = useState<ContextMenuState | null>(null);
   const [ctxSub, setCtxSub] = useState<ContextSubState | null>(null);
+  const [textCtx, setTextCtx] = useState<TextCtxState | null>(null);
+  // This port's stand-in for `Component#_richEl` (MindFlow.dc.html:1209) — the
+  // currently-mounted rich-text `contentEditable` element, registered by
+  // `NodeEditBox` while it's the one rendered (`editingNodeId` is set to its id).
+  const richElRef = useRef<HTMLDivElement | null>(null);
+  const setRichEditorEl = useCallback((el: HTMLDivElement | null) => {
+    richElRef.current = el;
+  }, []);
 
   const idFactory = useRef(createIdFactory()).current;
 
@@ -675,6 +722,7 @@ export function useEditorState(): EditorController {
     setEditingLineId(null);
     setEditingZoneId(null);
     setEditingTitle(false);
+    setTextCtx(null);
     setHistoryTick((t) => t + 1);
   }
 
@@ -1204,6 +1252,7 @@ export function useEditorState(): EditorController {
     setSelectionState({ kind: 'node', id });
     setMultiSelectionState(null);
     setEditingNodeId(id);
+    setTextCtx(null);
   }, []);
   const commitNodeText = useCallback(
     (id: string, text: string) => {
@@ -1212,7 +1261,56 @@ export function useEditorState(): EditorController {
     },
     [commitDoc],
   );
-  const cancelNodeEdit = useCallback(() => setEditingNodeId(null), []);
+  /** Port of `Component#commitRichEdit` (MindFlow.dc.html:2629-2643) — reads the live
+   * `contentEditable` DOM (`el`) via `domToRuns` and commits BOTH `text` and `rich`
+   * in one `commitDoc` step. `el` is `null` when the box unmounted out from under the
+   * commit (matches the original's own `if (!el) { ...; return; }` guard). */
+  const commitNodeRichText = useCallback(
+    (id: string, el: HTMLElement | null) => {
+      if (!el) {
+        setEditingNodeId(null);
+        setTextCtx(null);
+        return;
+      }
+      const parsed = domToRuns(el);
+      commitDoc((d) => ({ ...d, nodes: mutations.commitNodeRichText(d.nodes, id, parsed.text, parsed.rich) }));
+      setEditingNodeId(null);
+      setTextCtx(null);
+    },
+    [commitDoc],
+  );
+  const cancelNodeEdit = useCallback(() => {
+    setEditingNodeId(null);
+    setTextCtx(null);
+  }, []);
+
+  // ---- floating partial-style toolbar ----
+  const openTextCtx = useCallback((sx: number, sy: number) => setTextCtx({ sx, sy }), []);
+  const closeTextCtx = useCallback(() => setTextCtx(null), []);
+  /** Port of `Component#applyPartial` (MindFlow.dc.html:2701-2725) — DOM-only (see the
+   * interface doc comment above): reads the registered rich editor's CURRENT Selection
+   * + DOM content (not `doc.nodes[id].rich`, which is stale mid-edit — the box's
+   * `contentEditable` innerHTML is only ever seeded once, on mount, same as the original's
+   * `data-init` guard), applies the style via `@mindflow/mindmap-core`'s `applyPartialStyle`,
+   * rewrites the innerHTML, and restores the selection so consecutive style clicks on the
+   * same span keep working. */
+  const applyPartial = useCallback((kind: 'b' | 'c' | 'clear', val?: string | null) => {
+    const ed = richElRef.current;
+    if (!ed) return;
+    const ws = window.getSelection();
+    if (!ws || !ws.rangeCount) return;
+    const rng = ws.getRangeAt(0);
+    const lin = linearize(ed, [
+      { container: rng.startContainer, offset: rng.startOffset },
+      { container: rng.endContainer, offset: rng.endOffset },
+    ]);
+    const a = lin.pos[0] ?? 0;
+    const b = lin.pos[1] ?? 0;
+    const parsed = domToRuns(ed);
+    const next = applyPartialStyle(parsed, a, b, kind, val ?? null);
+    ed.innerHTML = runsToHtml(next);
+    setLinearSelection(ed, Math.min(a, b), Math.max(a, b));
+  }, []);
 
   const startEditFloat = useCallback((id: string) => {
     setSelectionState({ kind: 'float', id });
@@ -2157,7 +2255,13 @@ export function useEditorState(): EditorController {
     editingTitle,
     startEditNode,
     commitNodeText,
+    commitNodeRichText,
     cancelNodeEdit,
+    textCtx,
+    openTextCtx,
+    closeTextCtx,
+    setRichEditorEl,
+    applyPartial,
     startEditFloat,
     commitFloatText,
     cancelFloatEdit,
