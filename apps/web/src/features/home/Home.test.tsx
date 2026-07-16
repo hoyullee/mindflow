@@ -75,20 +75,27 @@ describe('Home', () => {
     expect(sidebar.getByText('휴지통')).toBeTruthy();
     expect(sidebar.getByText('일반 공간')).toBeTruthy();
 
-    // toolbar / main
+    // toolbar / main. With no saved maps the grid shows its empty state, so
+    // "＋ 새로 만들기" appears both in the toolbar and the empty-state CTA.
     expect(screen.getByPlaceholderText('파일 검색')).toBeTruthy();
-    expect(screen.getByText('＋ 새로 만들기')).toBeTruthy();
+    expect(screen.getAllByText('＋ 새로 만들기').length).toBeGreaterThan(0);
+    expect(screen.getByText('아직 만든 맵이 없어요')).toBeTruthy();
+  });
 
-    // seeded default maps render as cards
-    expect(screen.getByText('따라잡기')).toBeTruthy();
-    expect(screen.getByText('무상 비즈머니 지급')).toBeTruthy();
+  it('renders saved documents from DocStore.list() as map cards', async () => {
+    const { container } = renderHomeWithDocStore([
+      { id: 'doc-a', title: '따라잡기', version: 1, updatedAt: '2026-01-01T00:00:00.000Z', isFavorite: false, deletedAt: null },
+      { id: 'doc-b', title: '무상 비즈머니 지급', version: 1, updatedAt: '2026-01-01T00:00:00.000Z', isFavorite: false, deletedAt: null },
+    ]);
+    await waitFor(() => expect(container.querySelector('a[data-title="따라잡기"]')).toBeTruthy());
+    expect(container.querySelector('a[data-title="무상 비즈머니 지급"]')).toBeTruthy();
   });
 
   it('shows the loading overlay then navigates to /editor after clicking "새로 만들기"', async () => {
     const user = userEvent.setup();
     renderHome();
 
-    await user.click(screen.getByText('＋ 새로 만들기'));
+    await user.click(screen.getAllByText('＋ 새로 만들기')[0]!);
 
     expect(screen.getByText('새 마인드맵을 준비하고 있어요')).toBeTruthy();
     await waitFor(() => expect(screen.getByText('EDITOR_PLACEHOLDER')).toBeTruthy(), { timeout: 2000 });
@@ -96,15 +103,17 @@ describe('Home', () => {
 
   it('filters the map grid as the search box is typed into', async () => {
     const user = userEvent.setup();
-    renderHome();
-
-    expect(screen.getByText('따라잡기')).toBeTruthy();
-    expect(screen.getByText('무상 비즈머니 지급')).toBeTruthy();
+    const { container } = renderHomeWithDocStore([
+      { id: 'doc-a', title: '따라잡기', version: 1, updatedAt: '2026-01-01T00:00:00.000Z', isFavorite: false, deletedAt: null },
+      { id: 'doc-b', title: '무상 비즈머니 지급', version: 1, updatedAt: '2026-01-01T00:00:00.000Z', isFavorite: false, deletedAt: null },
+    ]);
+    await waitFor(() => expect(container.querySelector('a[data-title="따라잡기"]')).toBeTruthy());
+    expect(container.querySelector('a[data-title="무상 비즈머니 지급"]')).toBeTruthy();
 
     await user.type(screen.getByPlaceholderText('파일 검색'), '따라잡기');
 
-    expect(screen.getByText('따라잡기')).toBeTruthy();
-    expect(screen.queryByText('무상 비즈머니 지급')).toBeNull();
+    expect(container.querySelector('a[data-title="따라잡기"]')).toBeTruthy();
+    expect(container.querySelector('a[data-title="무상 비즈머니 지급"]')).toBeNull();
   });
 
   it('logs out (via the confirm dialog) and navigates to /login', async () => {
@@ -193,15 +202,17 @@ describe('Home', () => {
 
     it('seeds trash from docStore.list() metas on mount (refresh scenario: deletedAt survives reload)', async () => {
       const { container } = renderHomeWithDocStore([
-        // A meta whose title matches a seeded default card, but with
-        // deletedAt already set — as if a previous session had deleted it and
-        // the page is now reloading. Before the fix, `deleted`/`trash` always
-        // started empty, so this card would reappear as a regular map.
+        // A live doc still present in the grid (sanity anchor).
+        { id: 'doc-live', title: '따라잡기', version: 1, updatedAt: '2026-01-01T00:00:00.000Z', isFavorite: false, deletedAt: null },
+        // A meta with deletedAt already set — as if a previous session had
+        // deleted it and the page is now reloading. Before the fix,
+        // `deleted`/`trash` always started empty, so this card would reappear
+        // as a regular map.
         { id: 'doc3', title: '무상 비즈머니 지급', version: 2, updatedAt: '2026-01-01T00:00:00.000Z', isFavorite: false, deletedAt: '2026-01-02T00:00:00.000Z' },
       ]);
 
-      // Sanity: an unrelated seeded default card still renders normally.
-      await waitFor(() => expect(screen.getByText('따라잡기')).toBeTruthy());
+      // Sanity: an unrelated live doc still renders normally.
+      await waitFor(() => expect(container.querySelector('a[data-title="따라잡기"]')).toBeTruthy());
 
       // Seeded as deleted => no card for it in the regular map grid...
       await waitFor(() => expect(container.querySelector('a[data-title="무상 비즈머니 지급"]')).toBeNull());
