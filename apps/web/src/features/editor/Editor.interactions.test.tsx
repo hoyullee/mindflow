@@ -239,4 +239,54 @@ describe('Editor interactions (M3-Editor-b)', () => {
 
     clickSpy.mockRestore();
   });
+
+  describe('duplicate filename guard (rename)', () => {
+    // The title chip's non-editing title element (`div[title=...]`), excluding
+    // the on-canvas root node box which also shows the title text.
+    const chip = (container: HTMLElement, title: string) =>
+      Array.from(container.querySelectorAll('div[title]')).find(
+        (el) => (el.getAttribute('title') || '') === title && !el.closest('[data-node-id]'),
+      ) as HTMLElement | undefined;
+
+    function seedExistingMap() {
+      localStorage.setItem('mindflow_doc_existing', JSON.stringify(DOC));
+      localStorage.setItem(
+        'mindflow_doc_meta_existing',
+        JSON.stringify({ version: 1, updatedAt: new Date(0).toISOString(), title: '기존 맵', isFavorite: false, deletedAt: null }),
+      );
+    }
+
+    it('rejects renaming this map to a name another map already uses', async () => {
+      const user = userEvent.setup();
+      seedExistingMap();
+      const { container } = renderEditor('/editor?map=new-abc123&title=' + encodeURIComponent('내 문서'));
+
+      await waitFor(() => expect(chip(container, '내 문서')).toBeTruthy());
+      await user.dblClick(chip(container, '내 문서')!);
+      const input = container.querySelector('input.mf-edit') as HTMLInputElement;
+      expect(input).toBeTruthy();
+      await user.clear(input);
+      await user.type(input, '기존 맵{Enter}');
+
+      // Rejected: a warning appears and the title stays "내 문서".
+      await waitFor(() => expect((screen.getByRole('alert').textContent || '')).toContain('이미'));
+      expect(chip(container, '내 문서')).toBeTruthy();
+      expect(chip(container, '기존 맵')).toBeFalsy();
+    });
+
+    it('allows renaming this map to a unique title', async () => {
+      const user = userEvent.setup();
+      seedExistingMap();
+      const { container } = renderEditor('/editor?map=new-def456&title=' + encodeURIComponent('내 문서'));
+
+      await waitFor(() => expect(chip(container, '내 문서')).toBeTruthy());
+      await user.dblClick(chip(container, '내 문서')!);
+      const input = container.querySelector('input.mf-edit') as HTMLInputElement;
+      await user.clear(input);
+      await user.type(input, '완전히 새로운 이름{Enter}');
+
+      await waitFor(() => expect(chip(container, '완전히 새로운 이름')).toBeTruthy());
+      expect(screen.queryByRole('alert')).toBeNull();
+    });
+  });
 });

@@ -258,5 +258,32 @@ describe('Home', () => {
       // ...and NOT in favorites (the reported regression).
       expect(favTitles().some((t) => t.includes('즐겨찾기했다삭제한맵'))).toBe(false);
     });
+
+    it('new-map link gets a _N-suffixed default title when "새 마인드맵" already exists', async () => {
+      const { container } = renderHomeWithDocStore([
+        { id: 'nm0', title: '새 마인드맵', version: 1, updatedAt: '2026-01-01T00:00:00.000Z', isFavorite: false, deletedAt: null },
+      ]);
+      // Wait for the existing map to be merged into the grid (so newMapHref sees it).
+      await waitFor(() => expect(container.querySelector('a[data-title="새 마인드맵"]')).toBeTruthy());
+
+      const newLink = Array.from(container.querySelectorAll('a')).find((a) => (a.textContent || '').includes('＋ 새로 만들기')) as HTMLAnchorElement;
+      expect(newLink).toBeTruthy();
+      const href = newLink.getAttribute('href') || '';
+      // The colliding default title is auto-uniquified so the new map won't be
+      // hidden by Home's title-based dedup.
+      expect(href).toContain(`title=${encodeURIComponent('새 마인드맵_1')}`);
+      expect(href).toContain('new=1');
+    });
+
+    it('new-map link keeps the plain default title when no "새 마인드맵" exists', async () => {
+      const { container } = renderHomeWithDocStore([
+        { id: 'other', title: '기획 회의', version: 1, updatedAt: '2026-01-01T00:00:00.000Z', isFavorite: false, deletedAt: null },
+      ]);
+      await waitFor(() => expect(container.querySelector('a[data-title="기획 회의"]')).toBeTruthy());
+      const newLink = Array.from(container.querySelectorAll('a')).find((a) => (a.textContent || '').includes('＋ 새로 만들기')) as HTMLAnchorElement;
+      const href = newLink.getAttribute('href') || '';
+      // No collision → the title param is either absent or the plain default.
+      expect(href).not.toContain('_1');
+    });
   });
 });
