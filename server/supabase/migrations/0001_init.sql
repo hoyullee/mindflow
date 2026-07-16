@@ -60,8 +60,13 @@ create trigger on_auth_user_created
 -- column list, kept here so `DocMeta` (apps/web/src/adapters/ports.ts) maps
 -- 1:1 onto a single table with no follow-up migration needed.
 
+-- `id` is TEXT, not uuid: the web client generates document ids itself
+-- (Home's `newMapHref()` → `new-<base36 ts><rand>`, and the localStorage
+-- `mindflow_doc_<id>` convention), so the column must accept arbitrary
+-- strings. The default still mints a uuid-shaped value for any row inserted
+-- without an explicit id. (`owner` stays uuid — it references auth.users.)
 create table if not exists public.documents (
-  id uuid primary key default gen_random_uuid(),
+  id text primary key default gen_random_uuid()::text,
   owner uuid not null references auth.users (id) on delete cascade,
   title text not null default '',
   data jsonb not null,
