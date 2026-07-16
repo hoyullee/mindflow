@@ -1,9 +1,9 @@
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
-import { cubicAt, portPoint, resolveLineGeometry } from './geometry';
-import type { LineLike } from './geometry';
-import type { Line } from './model';
+import { cubicAt, findLineSnap, portPoint, resolveLineEndpoints, resolveLineGeometry, borderPoint } from './geometry';
+import type { Box, LineLike, SnapCandidate } from './geometry';
+import type { Line, LineAnchor } from './model';
 
 const golden = JSON.parse(
   readFileSync(fileURLToPath(new URL('../test/fixtures/golden/line-geometry.json', import.meta.url)), 'utf8'),
@@ -63,3 +63,78 @@ const _line: Line = {
 };
 const _lineIsLineLike: LineLike = _line;
 void _lineIsLineLike;
+
+describe('geometry — borderPoint', () => {
+  const box: Box = { cx: 0, cy: 0, hw: 40, hh: 20 };
+  it('projects toward the target on the box border', () => {
+    expect(borderPoint(box, 200, 0)).toEqual({ x: 40, y: 0 });
+    expect(borderPoint(box, 0, 200)).toEqual({ x: 0, y: 20 });
+  });
+  it('defaults to the top point when the target coincides with the center', () => {
+    expect(borderPoint(box, 0, 0)).toEqual({ x: 0, y: -20 });
+  });
+});
+
+describe('geometry — findLineSnap (port of Component#findSnap)', () => {
+  const nodeBox: Box = { cx: 100, cy: 100, hw: 40, hh: 20 };
+  const floatBox: Box = { cx: 300, cy: 300, hw: 60, hh: 22 };
+  const candidates: SnapCandidate[] = [
+    { kind: 'node', id: 'n1', box: nodeBox },
+    { kind: 'float', id: 'f1', box: floatBox },
+  ];
+
+  it('snaps to the nearest port within the threshold (34px)', () => {
+    // just above the node's top port (100,80): within 34px
+    expect(findLineSnap(102, 60, candidates)).toEqual({ kind: 'node', id: 'n1', side: 'top' });
+  });
+  it('snaps to a float port', () => {
+    // right of the float's right port (360,300)
+    expect(findLineSnap(370, 302, candidates)).toEqual({ kind: 'float', id: 'f1', side: 'right' });
+  });
+  it('returns null when nothing is within the threshold', () => {
+    expect(findLineSnap(1000, 1000, candidates)).toBeNull();
+  });
+  it('respects a custom snap distance', () => {
+    expect(findLineSnap(102, 100, candidates, 5)).toBeNull(); // right port at (140,100) is 38px away > 5
+    expect(findLineSnap(139, 100, candidates, 5)).toEqual({ kind: 'node', id: 'n1', side: 'right' });
+  });
+});
+
+describe('geometry — resolveLineEndpoints (port of Component#resolveEnd/resolveLine)', () => {
+  const nodeBox: Box = { cx: 100, cy: 100, hw: 40, hh: 20 };
+  const floatBox: Box = { cx: 300, cy: 300, hw: 60, hh: 22 };
+  const boxOf = (a: LineAnchor): Box | null => (a.kind === 'node' ? (a.id === 'n1' ? nodeBox : null) : a.id === 'f1' ? floatBox : null);
+
+  it('uses raw x/y when there is no anchor', () => {
+    const out = resolveLineEndpoints({ x1: 1, y1: 2, x2: 3, y2: 4 }, boxOf);
+    expect(out).toEqual({ x1: 1, y1: 2, x2: 3, y2: 4 });
+  });
+  it('resolves an anchored endpoint with a side to the exact port point', () => {
+    const out = resolveLineEndpoints({ x1: 999, y1: 999, x2: 500, y2: 500, a1: { kind: 'node', id: 'n1', side: 'right' } }, boxOf);
+    expect(out.x1).toBe(140);
+    expect(out.y1).toBe(100);
+  });
+  it('falls back to a border point toward the other end for a legacy anchor without a side', () => {
+    const out = resolveLineEndpoints({ x1: 999, y1: 999, x2: 300, y2: 300, a1: { kind: 'node', id: 'n1' } }, boxOf);
+    // aimed at (300,300) from the node box's center (100,100) — bottom-right diagonal, clamped to the box edge
+    const expected = borderPoint(nodeBox, 300, 300);
+    expect(out.x1).toBeCloseTo(expected.x, 10);
+    expect(out.y1).toBeCloseTo(expected.y, 10);
+  });
+  it('falls back to raw x/y when the anchor target box is not found (e.g. deleted node)', () => {
+    const out = resolveLineEndpoints({ x1: 7, y1: 8, x2: 3, y2: 4, a1: { kind: 'node', id: 'missing', side: 'top' } }, boxOf);
+    expect(out.x1).toBe(7);
+    expect(out.y1).toBe(8);
+  });
+  it('an explicit null anchor behaves the same as no anchor (detached)', () => {
+    const out = resolveLineEndpoints({ x1: 5, y1: 6, x2: 7, y2: 8, a1: null, a2: null }, boxOf);
+    expect(out).toEqual({ x1: 5, y1: 6, x2: 7, y2: 8 });
+  });
+  it('both endpoints anchored resolve independently', () => {
+    const out = resolveLineEndpoints(
+      { x1: 0, y1: 0, x2: 0, y2: 0, a1: { kind: 'node', id: 'n1', side: 'left' }, a2: { kind: 'float', id: 'f1', side: 'top' } },
+      boxOf,
+    );
+    expect(out).toEqual({ x1: 60, y1: 100, x2: 300, y2: 278 });
+  });
+});

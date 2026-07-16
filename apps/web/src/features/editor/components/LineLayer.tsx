@@ -1,7 +1,8 @@
 import type { PointerEvent as ReactPointerEvent, ReactNode } from 'react';
 import { useEffect, useRef } from 'react';
 import type { Line } from '@mindflow/mindmap-core';
-import { cubicAt, resolveLineGeometry } from '@mindflow/mindmap-core';
+import { cubicAt, portPoint } from '@mindflow/mindmap-core';
+import type { PortSide } from '@mindflow/mindmap-core';
 import { hexA } from '../theme';
 import type { Theme } from '../theme';
 import type { EditorController } from '../useEditorState';
@@ -15,22 +16,28 @@ interface LineLayerProps {
 }
 
 const ARROW_SIZE = 13;
+const PORT_SIDES: PortSide[] = ['top', 'bottom', 'left', 'right'];
 
 /**
  * Free connector lines — port of `Component#renderLines`
  * (MindFlow.dc.html:1307-1386): click-to-select, drag-to-move, endpoint
  * handles, curvature handles, and double-click/F2 label editing are wired
- * (Editor-b). The anchored-endpoint magnet feature (`a1`/`a2`) isn't part of
- * the core `Line` model yet, so endpoints are always plain `x1,y1,x2,y2`.
+ * (Editor-b). Endpoint anchor magnets (`a1`/`a2`, MindFlow.dc.html:1360-1362,
+ * 1388-1402) are wired too: `controller.lineGeometry`/`resolveLine` resolve
+ * each line through its anchor (if any) to the live node/float port, so an
+ * anchored endpoint always renders where its target currently is; a small
+ * filled dot marks an anchored endpoint, and while a `line-end` drag is near a
+ * port, that box's 4 ports light up (the hovered one larger/accent-filled).
  */
 export function LineLayer({ lines, theme: th, controller }: LineLayerProps) {
-  if (!lines.length) return null;
+  const snapBox = controller.lineSnap ? controller.lineSnapBox : null;
+  if (!lines.length && !snapBox) return null;
   const col = th.accent;
   const paths: ReactNode[] = [];
   const overlays: ReactNode[] = [];
 
   lines.forEach((l) => {
-    const g = resolveLineGeometry(l);
+    const g = controller.lineGeometry(l);
     const { x: X1, y: Y1 } = g.P0;
     const { x: X2, y: Y2 } = g.P3;
     // port of `MSEL.lines.includes(l.id)` (MindFlow.dc.html:1315) — a marquee multi-selection
@@ -87,6 +94,9 @@ export function LineLayer({ lines, theme: th, controller }: LineLayerProps) {
     );
     if (l.startArrow) paths.push(<polygon key={`as${l.id}`} points={head(X1, Y1, aStart)} fill={l.color || col} style={{ pointerEvents: 'none' }} />);
     if (l.endArrow) paths.push(<polygon key={`ae${l.id}`} points={head(X2, Y2, aEnd)} fill={l.color || col} style={{ pointerEvents: 'none' }} />);
+    // anchored endpoint dots (magnet indicator) — port of MindFlow.dc.html:1360-1362
+    if (l.a1) paths.push(<circle key={`d1${l.id}`} cx={X1} cy={Y1} r={4} fill={l.color || col} style={{ pointerEvents: 'none' }} />);
+    if (l.a2) paths.push(<circle key={`d2${l.id}`} cx={X2} cy={Y2} r={4} fill={l.color || col} style={{ pointerEvents: 'none' }} />);
 
     if (showHandles) {
       const handle = (x: number, y: number, key: string, onDown: (e: ReactPointerEvent) => void, title: string): ReactNode => (
@@ -175,12 +185,43 @@ export function LineLayer({ lines, theme: th, controller }: LineLayerProps) {
     }
   });
 
+  // port indicators on the box currently being snapped to (during a `line-end` drag) —
+  // port of MindFlow.dc.html:1388-1402: 4 dots, the hovered side larger/accent-filled.
+  const portDots: ReactNode[] = [];
+  if (snapBox && controller.lineSnap) {
+    const activeSide = controller.lineSnap.side;
+    PORT_SIDES.forEach((side) => {
+      const p = portPoint(snapBox, side);
+      const on = activeSide === side;
+      portDots.push(
+        <div
+          key={`port${side}`}
+          style={{
+            position: 'absolute',
+            left: p.x - (on ? 7 : 5),
+            top: p.y - (on ? 7 : 5),
+            width: on ? 14 : 10,
+            height: on ? 14 : 10,
+            borderRadius: '50%',
+            background: on ? th.accent : th.panel,
+            border: `2px solid ${th.accent}`,
+            boxShadow: '0 1px 4px rgba(0,0,0,.25)',
+            zIndex: 14,
+            boxSizing: 'border-box',
+            pointerEvents: 'none',
+          }}
+        />,
+      );
+    });
+  }
+
   return (
     <>
       <svg width={10} height={10} overflow="visible" style={{ position: 'absolute', left: 0, top: 0, overflow: 'visible', pointerEvents: 'none', zIndex: 6 }}>
         {paths}
       </svg>
       {overlays}
+      {portDots}
     </>
   );
 }

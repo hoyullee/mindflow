@@ -13,8 +13,8 @@
 // unit tests), this is a no-op — matching `metrics.ts`'s `CanvasTextMeasurer`
 // fallback philosophy: never throw, just skip the unavailable capability.
 
-import type { Doc, Node } from '@mindflow/mindmap-core';
-import { ROOT_ID, cubicAt, resolveLineGeometry } from '@mindflow/mindmap-core';
+import type { Box, Doc, Line, LineAnchor, Node } from '@mindflow/mindmap-core';
+import { ROOT_ID, cubicAt, resolveLineEndpoints, resolveLineGeometry } from '@mindflow/mindmap-core';
 import { colorOf } from './tree';
 import { hexA } from './theme';
 import type { Theme } from './theme';
@@ -93,6 +93,26 @@ function get2dContext(canvas: HTMLCanvasElement): CanvasRenderingContext2D | nul
   }
 }
 
+/** Line-anchor box lookup (port of `Component#lineTargetBox`, MindFlow.dc.html:2377-2390),
+ * built from the same `doc`/`geom` snapshot the rest of `exportPng` draws from — so an
+ * anchored free line renders pinned to its node/float port in the exported PNG too, not
+ * its (possibly stale) raw x/y. */
+function boxOfAnchor(anchor: LineAnchor, doc: Doc, geom: GeomMap): Box | null {
+  if (anchor.kind === 'node') {
+    const g = geom[anchor.id];
+    return g ? { cx: g.x, cy: g.y, hw: g.w / 2, hh: g.h / 2 } : null;
+  }
+  const f = doc.floats.find((x) => x.id === anchor.id);
+  if (!f) return null;
+  const h = f.h || 44;
+  return { cx: f.x + f.w / 2, cy: f.y + h / 2, hw: f.w / 2, hh: h / 2 };
+}
+
+function lineGeom(l: Line, doc: Doc, geom: GeomMap) {
+  const ep = resolveLineEndpoints(l, (a) => boxOfAnchor(a, doc, geom));
+  return resolveLineGeometry({ ...l, ...ep });
+}
+
 export function exportPng(doc: Doc, geom: GeomMap, theme: Theme, filename: string): void {
   const ids = Object.keys(geom).filter((id) => doc.nodes[id]);
   if (!ids.length) return;
@@ -114,7 +134,7 @@ export function exportPng(doc: Doc, geom: GeomMap, theme: Theme, filename: strin
   doc.floats.forEach((f) => grow(f.x, f.y, f.x + (f.w || 160), f.y + (f.h || (f.collapsed ? 30 : 44))));
   doc.zones.forEach((z) => grow(z.x, z.y - 16, z.x + z.w, z.y + z.h));
   doc.lines.forEach((l) => {
-    const c = resolveLineGeometry(l);
+    const c = lineGeom(l, doc, geom);
     grow(Math.min(c.P0.x, c.P3.x) - 12, Math.min(c.P0.y, c.P3.y) - 12, Math.max(c.P0.x, c.P3.x) + 12, Math.max(c.P0.y, c.P3.y) + 12);
   });
   x0 -= PAD;
@@ -219,7 +239,7 @@ export function exportPng(doc: Doc, geom: GeomMap, theme: Theme, filename: strin
 
   // free lines
   doc.lines.forEach((l) => {
-    const c = resolveLineGeometry(l);
+    const c = lineGeom(l, doc, geom);
     const lc = l.color || theme.accent;
     ctx.strokeStyle = lc;
     ctx.lineWidth = 2.2;

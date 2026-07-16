@@ -1,8 +1,8 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { MouseEvent as ReactMouseEvent, PointerEvent as ReactPointerEvent } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
-import type { Doc, Float, Line, LayoutMode, NodeMap, SizeOf, Zone } from '@mindflow/mindmap-core';
-import { HistoryStack, ROOT_ID, cubicAt, layout, resolveLineGeometry, serializeDoc, toMarkdown } from '@mindflow/mindmap-core';
+import type { Box, Doc, Float, Line, LineAnchor, LayoutMode, NodeMap, SizeOf, SnapCandidate, Zone } from '@mindflow/mindmap-core';
+import { HistoryStack, ROOT_ID, cubicAt, findLineSnap, layout, resolveLineEndpoints, resolveLineGeometry, serializeDoc, toMarkdown } from '@mindflow/mindmap-core';
 import { useDocStore } from '../../adapters/BackendContext';
 import { useAuthUser } from '../../adapters/useAuthUser';
 import { useYjsDocSync } from '../../collab/useYjsDocSync';
@@ -50,8 +50,15 @@ import type {
 //   plain textarea (Editor-b's own note, `components/NodeLayer.tsx`); the
 //   context menu's right-click-inside-a-rich-text-selection branch
 //   (MindFlow.dc.html:2777-2785, `textCtx`) is therefore also out of scope.
-// - line endpoint anchor magnets (`a1`/`a2`) — needs a core `Line` model
-//   extension first (`components/LineLayer.tsx`'s own note).
+//
+// Line endpoint anchor magnets (`a1`/`a2`, MindFlow.dc.html:1728-1734,
+// 2377-2454) are wired here: dragging a line endpoint near a node/float port
+// snaps + anchors it (`findLineSnap`/`lineSnap` below); anchored endpoints are
+// resolved every render via `resolveLine`/`lineGeometryOf` (`boxOfAnchor` looks
+// up the live node/float box), so they automatically follow their target when
+// it moves. `boxOfAnchor`/`resolveLine`/`snapCandidates` are shared by every
+// line-geometry consumer (hit-testing, marquee, curve-drag, `LineLayer`,
+// PNG export) so anchored lines behave consistently everywhere.
 
 const MIN_ZOOM = 0.25;
 const MAX_ZOOM = 2.4;
@@ -281,6 +288,21 @@ export interface EditorController {
   setLineTsize: (v: 's' | 'm' | 'l') => void;
   setLineTextColor: (hex: string | null) => void;
   deleteLine: (id: string) => void;
+  /** Resolves a line's on-screen endpoints, following `a1`/`a2` anchors to their live
+   * node/float box — port of `Component#resolveLine` (MindFlow.dc.html:2414-2417). Use
+   * this (not the line's raw `x1/y1/x2/y2`) for rendering/hit-testing so anchored lines
+   * track their target as it moves. */
+  resolveLine: (l: Line) => { x1: number; y1: number; x2: number; y2: number };
+  /** The anchor-aware Bézier geometry (endpoints resolved + curvature applied) — what
+   * `LineLayer` actually draws. */
+  lineGeometry: (l: Line) => ReturnType<typeof resolveLineGeometry>;
+  /** The line-end drag's current snap target (port of `Component#_snapHi`,
+   * MindFlow.dc.html:1733) — null except mid-drag when a port is within range. Drives the
+   * 4 port-indicator dots on the hovered node/float (MindFlow.dc.html:1388-1402). */
+  lineSnap: LineAnchor | null;
+  /** The live box for `lineSnap`'s target (already resolved — `LineLayer` doesn't need
+   * its own node/float lookup to draw the port dots). */
+  lineSnapBox: Box | null;
 
   // ---- zone property setters ----
   setZoneColor: (id: string, hex: string | null) => void;
@@ -522,6 +544,93 @@ export function useEditorState(): EditorController {
     multiSelectionRef.current = multiSelection;
   }, [multiSelection]);
 
+  // ---- line endpoint anchor magnets (a1/a2) — port of the `_geom`/float-box lookups
+  // `Component#lineTargetBox`/`findSnap`/`resolveEnd` share (MindFlow.dc.html:2377-2454).
+  //
+  // Two box lookups, deliberately: `boxOfAnchor` (ref-based) is for EVENT HANDLERS
+  // (hit-testing/marquee/curve-drag-start/line-end-drag-start below) — those run between
+  // renders, once this render has already committed and its `geomRef.current`-syncing
+  // effect has flushed, so the ref is exactly as fresh as `geom` itself there. `boxOfAnchorLive`
+  // (this render's `geom`/`doc` closures, no ref) is for RENDER-TIME resolution — exposed on
+  // the controller as `resolveLine`/`lineGeometry` for `LineLayer` to call WHILE rendering.
+  // Using the ref there would be WRONG: `geomRef.current` only updates in a `useEffect` that
+  // runs AFTER commit, so reading it during THIS render (e.g. right after a node/float move
+  // just changed `geom`) would render one commit stale — an anchored line's magnet would lag
+  // a frame behind the node it's supposedly following. ----
+
+  /** Port of `Component#lineTargetBox` (MindFlow.dc.html:2377-2390) — event-handler version. */
+  function boxOfAnchor(anchor: LineAnchor): Box | null {
+    if (anchor.kind === 'node') {
+      const g = geomRef.current[anchor.id];
+      return g ? { cx: g.x, cy: g.y, hw: g.w / 2, hh: g.h / 2 } : null;
+    }
+    const f = docRef.current.floats.find((x) => x.id === anchor.id);
+    if (!f) return null;
+    const h = f.h || 44;
+    return { cx: f.x + f.w / 2, cy: f.y + h / 2, hw: f.w / 2, hh: h / 2 };
+  }
+
+  /** Resolves a line's on-screen endpoints, following any anchor's live target box —
+   * port of `Component#resolveLine` (MindFlow.dc.html:2414-2417) — event-handler version
+   * (used at drag START, where the box only needs to be as fresh as the last commit). */
+  function resolveLine(l: Line): { x1: number; y1: number; x2: number; y2: number } {
+    return resolveLineEndpoints(l, boxOfAnchor);
+  }
+
+  /** Same as `boxOfAnchor`, but reads THIS render's `geom`/`doc` directly (no ref) — for the
+   * render-time path (`lineGeometryLive`, exposed as `controller.lineGeometry`). */
+  function boxOfAnchorLive(anchor: LineAnchor): Box | null {
+    if (anchor.kind === 'node') {
+      const g = geom[anchor.id];
+      return g ? { cx: g.x, cy: g.y, hw: g.w / 2, hh: g.h / 2 } : null;
+    }
+    const f = doc.floats.find((x) => x.id === anchor.id);
+    if (!f) return null;
+    const h = f.h || 44;
+    return { cx: f.x + f.w / 2, cy: f.y + h / 2, hw: f.w / 2, hh: h / 2 };
+  }
+
+  /** Render-time counterpart of `resolveLine` — exposed as `controller.resolveLine`. */
+  function resolveLineLive(l: Line): { x1: number; y1: number; x2: number; y2: number } {
+    return resolveLineEndpoints(l, boxOfAnchorLive);
+  }
+
+  /** The anchor-aware Bézier geometry for a line — feeds `resolveLineLive`'s resolved
+   * endpoints into `resolveLineGeometry` alongside the line's curvature. Exposed as
+   * `controller.lineGeometry`, what `LineLayer` actually draws every render. */
+  function lineGeometryLive(l: Line) {
+    return resolveLineGeometry({ ...l, ...resolveLineLive(l) });
+  }
+
+  /** Event-handler counterpart of `lineGeometryLive` — used by hit-testing/marquee/
+   * curve-drag-start below, where reading through the ref is correct (see the block
+   * comment above). */
+  function lineGeometryOf(l: Line) {
+    return resolveLineGeometry({ ...l, ...resolveLine(l) });
+  }
+
+  /** Every node/float box offered up as a line-endpoint snap target — port of
+   * `Component#findSnap`'s candidate scan (MindFlow.dc.html:2451-2452). */
+  function snapCandidates(): SnapCandidate[] {
+    const out: SnapCandidate[] = [];
+    const g = geomRef.current;
+    for (const id in g) {
+      const gg = g[id];
+      if (gg) out.push({ kind: 'node', id, box: { cx: gg.x, cy: gg.y, hw: gg.w / 2, hh: gg.h / 2 } });
+    }
+    docRef.current.floats.forEach((f) => {
+      const h = f.h || 44;
+      out.push({ kind: 'float', id: f.id, box: { cx: f.x + f.w / 2, cy: f.y + h / 2, hw: f.w / 2, hh: h / 2 } });
+    });
+    return out;
+  }
+
+  /** The line-end drag's current snap target, for the port-indicator dots on the
+   * hovered box — port of `Component#_snapHi` (MindFlow.dc.html:1733, 1390-1402). Only
+   * ever non-null while a `line-end` drag is live. */
+  const [lineSnap, setLineSnap] = useState<LineAnchor | null>(null);
+  const lineSnapBox = lineSnap ? boxOfAnchorLive(lineSnap) : null;
+
   // ---- undo/redo history (@mindflow/mindmap-core HistoryStack) ----
   const historyRef = useRef<HistoryStack<Snapshot> | null>(null);
   if (historyRef.current === null) {
@@ -643,7 +752,7 @@ export function useEditorState(): EditorController {
       if (p.x >= z.x && p.x <= z.x + z.w && p.y >= z.y - 16 && p.y <= z.y + z.h) return { kind: 'zone', id: z.id };
     }
     for (const l of d.lines) {
-      const geo = resolveLineGeometry(l);
+      const geo = lineGeometryOf(l);
       for (let t = 0; t <= 1.0001; t += 0.04) {
         const bp = cubicAt(geo, t);
         if (Math.hypot(p.x - bp.x, p.y - bp.y) < 10) return { kind: 'line', id: l.id };
@@ -929,7 +1038,7 @@ export function useEditorState(): EditorController {
       docRef.current.lines.forEach((l) => {
         // sample the cubic bezier: select if ANY part of the line is inside the rect
         // (matches `Component#onUp`'s marquee branch, MindFlow.dc.html:1841-1851)
-        const geo = resolveLineGeometry(l);
+        const geo = lineGeometryOf(l);
         let hitLine = false;
         for (let t = 0; t <= 1.0001; t += 0.05) {
           const bp = cubicAt(geo, t);
@@ -1584,7 +1693,15 @@ export function useEditorState(): EditorController {
           );
           break;
         case 'line-end': {
-          const patch = d.which === 1 ? { x1: d.ox + dx, y1: d.oy + dy } : { x2: d.ox + dx, y2: d.oy + dy };
+          // port of `Component#onMove`'s `d.type === 'line-end'` branch (MindFlow.dc.html:1728-1735):
+          // track the raw cursor point, but also probe for a nearby port to snap/anchor to — the raw
+          // x/y are ALWAYS stored too (the anchor is what actually drives the rendered position; raw
+          // stays as the detached fallback/last-dropped-spot).
+          const rawX = d.ox + dx;
+          const rawY = d.oy + dy;
+          const snap = findLineSnap(rawX, rawY, snapCandidates());
+          setLineSnap(snap);
+          const patch = d.which === 1 ? { x1: rawX, y1: rawY, a1: snap } : { x2: rawX, y2: rawY, a2: snap };
           commitDoc((doc0) => ({ ...doc0, lines: mutations.updateLineItem(doc0.lines, d.id, patch) }), true);
           break;
         }
@@ -1613,6 +1730,9 @@ export function useEditorState(): EditorController {
         pendingCtxRef.current = null;
         if (!objDragMovedRef.current) openCtxAt(pc.x, pc.y);
       }
+      // clear the snap-target port indicators — port of `Component#onUp`'s
+      // `if (d && d.type === 'line-end') { this._snapHi = null; ... }` (MindFlow.dc.html:1824).
+      if (d.kind === 'line-end') setLineSnap(null);
       if (d.kind === 'node-move') {
         const vp = viewportRef.current;
         const p = toCanvasPoint(e.clientX, e.clientY, vp);
@@ -1795,8 +1915,12 @@ export function useEditorState(): EditorController {
     const l = docRef.current.lines.find((x) => x.id === id);
     if (!l) return;
     setSelectionState({ kind: 'line', id });
-    const ox = which === 1 ? l.x1 : l.x2;
-    const oy = which === 1 ? l.y1 : l.y2;
+    // start from the RESOLVED point (port of `Component#onLineEndDown`'s `this.resolveEnd(l, which)`,
+    // MindFlow.dc.html:2482) so a drag that begins on an already-anchored endpoint tracks the
+    // cursor from where it's actually rendered, not a possibly-stale raw x/y.
+    const ep = resolveLine(l);
+    const ox = which === 1 ? ep.x1 : ep.x2;
+    const oy = which === 1 ? ep.y1 : ep.y2;
     startObjDrag({ kind: 'line-end', id, which, pointerId: e.pointerId, startClientX: e.clientX, startClientY: e.clientY, ox, oy });
   }, []);
 
@@ -1805,7 +1929,7 @@ export function useEditorState(): EditorController {
     capturePointer(e);
     const l = docRef.current.lines.find((x) => x.id === id);
     if (!l) return;
-    const g = resolveLineGeometry(l);
+    const g = lineGeometryOf(l);
     startObjDrag({
       kind: 'line-curve',
       id,
@@ -2084,6 +2208,10 @@ export function useEditorState(): EditorController {
     setLineTsize,
     setLineTextColor,
     deleteLine,
+    resolveLine: resolveLineLive,
+    lineGeometry: lineGeometryLive,
+    lineSnap,
+    lineSnapBox,
 
     setZoneColor,
     deleteZone,
