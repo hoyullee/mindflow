@@ -30,6 +30,15 @@ const config: CapacitorConfig = {
     Keyboard: {
       resize: 'body',
     },
+    // launchAutoHide: false — the splash stays up until the web app explicitly
+    // calls SplashScreen.hide() (apps/web/src/platform/nativeShell.ts), so it
+    // covers app-shell boot instead of racing a fixed timer.
+    SplashScreen: {
+      launchAutoHide: false,
+      backgroundColor: '#ffffff',
+      showSpinner: false,
+      androidScaleType: 'CENTER_CROP',
+    },
   },
 };
 

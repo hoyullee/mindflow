@@ -35,4 +35,15 @@ export async function initNativeShell(): Promise<void> {
   } catch (err) {
     console.error('[mindflow] Keyboard init failed', err);
   }
+
+  try {
+    // `launchAutoHide: false` in capacitor.config.ts keeps the native splash
+    // (MindFlow mark on white, apps/mobile/scripts/generate-native-assets.mjs)
+    // up until we explicitly hide it here, once the web app has mounted —
+    // avoids a race between a fixed auto-hide timer and slower app boots.
+    const { SplashScreen } = await import('@capacitor/splash-screen');
+    await SplashScreen.hide();
+  } catch (err) {
+    console.error('[mindflow] SplashScreen hide failed', err);
+  }
 }

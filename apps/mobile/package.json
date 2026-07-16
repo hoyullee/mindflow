@@ -10,7 +10,8 @@
     "open:android": "cap open android",
     "open:ios": "cap open ios",
     "typecheck": "tsc -p tsconfig.json --noEmit",
-    "test": "echo '@mindflow/mobile: no unit tests (native shell config only, see README.md)' && exit 0"
+    "test": "echo '@mindflow/mobile: no unit tests (native shell config only, see README.md)' && exit 0",
+    "generate:native-assets": "node scripts/generate-native-assets.mjs"
   },
   "dependencies": {
     "@capacitor/android": "^8.4.2",
@@ -19,6 +20,7 @@
   },
   "devDependencies": {
     "@capacitor/cli": "^8.4.2",
-    "@types/node": "^22.10.5"
+    "@types/node": "^22.10.5",
+    "sharp": "^0.35.3"
   }
 }
