@@ -11,9 +11,11 @@
 import type { Backend } from './ports';
 import { LocalAuth } from './local/localAuth';
 import { LocalDocStore } from './local/localDocStore';
+import { LocalSpaceStore } from './local/localSpaceStore';
 import { getSupabaseClient } from './supabase/supabaseClient';
 import { SupabaseAuth } from './supabase/supabaseAuth';
 import { SupabaseDocStore } from './supabase/supabaseDocStore';
+import { SupabaseSpaceStore } from './supabase/supabaseSpaceStore';
 import { isSupabaseConfigured, readViteEnv, type BackendEnv } from './env';
 
 /**
@@ -24,7 +26,7 @@ export function createBackend(envOverride?: BackendEnv): Backend {
   const env = envOverride ?? readViteEnv();
   if (isSupabaseConfigured(env)) {
     const client = getSupabaseClient(env.VITE_SUPABASE_URL!, env.VITE_SUPABASE_ANON_KEY!);
-    return { auth: new SupabaseAuth(client), docStore: new SupabaseDocStore(client), mode: 'supabase' };
+    return { auth: new SupabaseAuth(client), docStore: new SupabaseDocStore(client), spaceStore: new SupabaseSpaceStore(client), mode: 'supabase' };
   }
-  return { auth: new LocalAuth(), docStore: new LocalDocStore(), mode: 'local' };
+  return { auth: new LocalAuth(), docStore: new LocalDocStore(), spaceStore: new LocalSpaceStore(), mode: 'local' };
 }

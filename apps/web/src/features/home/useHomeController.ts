@@ -9,11 +9,11 @@ import {
   type HomeState,
 } from './types';
 import {
+  coerceSpaces,
   docKey,
   downloadFile,
   ensureHomeSpace,
   loadRecent,
-  loadSpaces,
   mapId,
   mapHref as buildMapHref,
   mergeDocMetasIntoSpaces,
@@ -23,7 +23,6 @@ import {
   rootTextOf,
   safeFileName,
   saveRecent,
-  saveSpaces,
   seedFavAndTrashFromMetas,
   sourceOf,
   uniqueTitle,
@@ -37,7 +36,7 @@ import {
 export function useHomeController() {
   const [state, setState] = useState<HomeState>(() => initialHomeState());
   const navigate = useNavigate();
-  const { auth, docStore } = useBackend();
+  const { auth, docStore, spaceStore } = useBackend();
   const importInputRef = useRef<HTMLInputElement | null>(null);
   const loaderTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
   const spaceMenuAnchor = useRef<{ top: number; left: number } | null>(null);
@@ -75,48 +74,34 @@ export function useHomeController() {
     const recent = loadRecent();
     if (recent.length) patch({ recent });
 
-    // Restore user-created spaces (+ their maps/folders) and the map→folder map
-    // from localStorage BEFORE the DocStore merge below, so custom spaces survive
-    // a refresh (the dc prototype only kept them in state → they vanished). The
-    // merge then folds in any genuinely new docs (added to the home space) and
-    // skips docs already present in a restored space.
-    const persistedSpaces = loadSpaces();
-    if (persistedSpaces) {
-      setState((prev) => ({
-        ...prev,
-        spaces: ensureHomeSpace(persistedSpaces.spaces),
-        mapFolders: Object.keys(persistedSpaces.mapFolders).length ? persistedSpaces.mapFolders : prev.mapFolders,
-      }));
-    }
-
-    // M4: pull the map list from `DocStore.list()` (was: a raw localStorage
-    // scan in `syncDocsToCards`) and fold in any doc not yet represented by a
-    // card — same "new card in the first space, or refresh its title" merge,
-    // now backend-agnostic (works the same whether `docStore` is `LocalDocStore`
-    // or `SupabaseDocStore`).
+    // Load in parallel: the per-user workspace (spaces + folders, from the
+    // `SpaceStore` port — Supabase table in live mode, so it syncs across the
+    // user's devices; localStorage in demo mode) AND the doc list. Then apply
+    // both in ONE setState: restored spaces as the base, then fold in any
+    // genuinely new docs (added to the home space; docs already present in a
+    // restored space are skipped by title/id). Doing both together avoids a
+    // race where a late workspace load would clobber the doc-merged spaces.
     let cancelled = false;
-    docStore
-      .list()
-      .then((metas) => {
-        if (cancelled) return;
-        setState((prev) => {
-          const { spaces } = mergeDocMetasIntoSpaces(prev.spaces, metas);
-          // Seed favs/deleted/trash from the backend's persisted meta
-          // (isFavorite/deletedAt) so favorite/trash status survives a
-          // refresh instead of resetting — see `seedFavAndTrashFromMetas`.
-          const { favs, deleted, trash } = seedFavAndTrashFromMetas(prev.favs, prev.deleted, prev.trash, metas);
-          // Always flip `loaded` (even when nothing changed) so the grid drops
-          // its loading skeleton and renders the real (possibly empty) state.
-          return { ...prev, spaces, favs, deleted, trash, loaded: true };
-        });
-      })
-      .catch(() => {
-        /* listing failed (offline, RLS misconfig, ...) — the demo/seeded map
-         * list still renders; non-fatal, matches this file's other storage
-         * try/catch conventions */
-        if (cancelled) return;
-        setState((prev) => (prev.loaded ? prev : { ...prev, loaded: true }));
+    void Promise.allSettled([spaceStore.load(), docStore.list()]).then((res) => {
+      if (cancelled) return;
+      const ws = res[0].status === 'fulfilled' ? res[0].value : null;
+      const metas = res[1].status === 'fulfilled' ? res[1].value : [];
+      setState((prev) => {
+        let base = prev.spaces;
+        let mapFolders = prev.mapFolders;
+        if (ws && Array.isArray(ws.spaces)) {
+          base = ensureHomeSpace(coerceSpaces(ws.spaces));
+          if (ws.mapFolders && Object.keys(ws.mapFolders).length) mapFolders = ws.mapFolders;
+        }
+        const { spaces } = mergeDocMetasIntoSpaces(base, metas);
+        // Seed favs/deleted/trash from the backend's persisted meta
+        // (isFavorite/deletedAt) so favorite/trash status survives a refresh.
+        const { favs, deleted, trash } = seedFavAndTrashFromMetas(prev.favs, prev.deleted, prev.trash, metas);
+        // Always flip `loaded` so the grid drops its loading skeleton and
+        // renders the real (possibly empty) state.
+        return { ...prev, spaces, mapFolders, favs, deleted, trash, loaded: true };
       });
+    });
 
     return () => {
       cancelled = true;
@@ -124,16 +109,22 @@ export function useHomeController() {
       window.removeEventListener('pageshow', onPageShow);
       clearTimeout(loaderTimer.current);
     };
-  }, [docStore]);
+  }, [docStore, spaceStore]);
 
-  // Persist spaces (+ map→folder) to localStorage whenever they change, so
-  // user-created spaces/folders survive a refresh. Gated on `loaded` so we only
-  // start saving AFTER the mount restore + DocStore merge have settled (else the
-  // transient initial state would overwrite the persisted data).
+  // Persist spaces (+ map→folder) via the `SpaceStore` port whenever they
+  // change, so user-created spaces/folders survive a refresh AND (in Supabase
+  // mode) sync across every device the user logs into. Gated on `loaded` so we
+  // only start saving AFTER the mount restore + DocStore merge have settled
+  // (else the transient initial state would clobber the saved data). Saved
+  // immediately (not debounced) so a quick refresh right after a change can't
+  // race a pending timer — space/folder edits are deliberate and infrequent, so
+  // one write per change is fine.
   useEffect(() => {
     if (!state.loaded) return;
-    saveSpaces(state.spaces, state.mapFolders);
-  }, [state.loaded, state.spaces, state.mapFolders]);
+    void spaceStore.save({ spaces: state.spaces, mapFolders: state.mapFolders }).catch(() => {
+      /* save failed (offline, RLS, ...) — non-fatal; the next change retries */
+    });
+  }, [state.loaded, state.spaces, state.mapFolders, spaceStore]);
 
   // ---- drive (fake OAuth demo) ----
   const onDriveClick = () => patch({ activeSpace: 'drive', curFolder: null, driveFolder: null });

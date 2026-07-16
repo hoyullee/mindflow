@@ -33,3 +33,7 @@ export function useAuth() {
 export function useDocStore() {
   return useBackend().docStore;
 }
+
+export function useSpaceStore() {
+  return useBackend().spaceStore;
+}
