@@ -96,6 +96,44 @@ export function saveRecent(list: string[]): void {
   }
 }
 
+/** Persisted space structure. The dc prototype (and this port pre-fix) kept
+ * spaces in React state only, so a user-created space vanished on refresh.
+ * We now persist the spaces (id/name/color/home + their maps and folders) plus
+ * the map→folder map so custom spaces and their contents survive a reload. */
+export const SPACES_KEY = 'mf_spaces';
+
+export function saveSpaces(spaces: SpaceData[], mapFolders: Record<string, string>): void {
+  try {
+    localStorage.setItem(SPACES_KEY, JSON.stringify({ v: 1, spaces, mapFolders }));
+  } catch {
+    /* storage unavailable — non-fatal */
+  }
+}
+
+export function loadSpaces(): { spaces: SpaceData[]; mapFolders: Record<string, string> } | null {
+  try {
+    const raw = localStorage.getItem(SPACES_KEY);
+    if (!raw) return null;
+    const parsed = JSON.parse(raw) as { spaces?: unknown; mapFolders?: unknown };
+    if (!Array.isArray(parsed.spaces)) return null;
+    const spaces = (parsed.spaces as SpaceData[]).filter((s) => s && typeof s.id === 'string' && typeof s.name === 'string');
+    if (!spaces.length) return null;
+    const mapFolders = parsed.mapFolders && typeof parsed.mapFolders === 'object' ? (parsed.mapFolders as Record<string, string>) : {};
+    return { spaces, mapFolders };
+  } catch {
+    return null;
+  }
+}
+
+/** Guarantees exactly one "home" (일반 공간) exists as the first space, even if
+ * persisted data is missing/corrupt — the rest of Home assumes a home space. */
+export function ensureHomeSpace(spaces: SpaceData[]): SpaceData[] {
+  const home = spaces.filter((s) => s.home);
+  const rest = spaces.filter((s) => !s.home);
+  const first = home[0] || { id: 'general', name: '일반 공간', home: true as const, color: '#f0663f', maps: [] };
+  return [{ ...first, maps: Array.isArray(first.maps) ? first.maps : [] }, ...rest];
+}
+
 /** Home.dc.html `syncDocsToCards()` — pick up maps saved from the editor under
  * `mindflow_doc_new-…` ids that aren't registered as a card yet, and keep existing
  * card titles in sync with their doc's root text. */
