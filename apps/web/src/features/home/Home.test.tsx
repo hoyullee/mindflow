@@ -135,6 +135,28 @@ describe('Home', () => {
     await waitFor(() => expect(screen.getByText('내 스페이스')).toBeTruthy());
   });
 
+  it('creating a map while a custom space is active assigns it to that space (not the home space)', async () => {
+    const user = userEvent.setup();
+    renderHomeWithDocStore([]);
+    await waitFor(() => expect(screen.getByRole('button', { name: /새 공간/ })).toBeTruthy());
+
+    // create a custom space, then activate it (click its sidebar row)
+    await user.click(screen.getByRole('button', { name: /새 공간/ }));
+    await user.type(screen.getByLabelText('공간 이름'), '작업 공간{Enter}');
+    await waitFor(() => expect(screen.getByText('작업 공간')).toBeTruthy());
+    await user.click(screen.getByText('작업 공간'));
+
+    // create a new map from the toolbar CTA
+    await user.click(screen.getAllByText('＋ 새로 만들기')[0]!);
+
+    // the new map's card is registered under "작업 공간", not "일반 공간"
+    const ws = JSON.parse(localStorage.getItem('mf_spaces') || '{}') as { spaces: { name: string; maps?: unknown[] }[] };
+    const mine = ws.spaces.find((s) => s.name === '작업 공간');
+    const general = ws.spaces.find((s) => s.name === '일반 공간');
+    expect(mine?.maps?.length).toBe(1);
+    expect(general?.maps?.length ?? 0).toBe(0);
+  });
+
   it('logs out (via the confirm dialog) and navigates to /login', async () => {
     const user = userEvent.setup();
     renderHome();

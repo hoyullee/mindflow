@@ -44,7 +44,7 @@ export function Home() {
 
       <ToastModal state={state} controller={controller} />
 
-      <main style={{ flex: '1 1 auto', overflowY: 'auto', padding: isMobile ? '16px 14px 32px' : '26px 32px 40px', minWidth: 0 }}>
+      <main style={{ flex: '1 1 auto', display: 'flex', flexDirection: 'column', overflowY: 'auto', padding: isMobile ? '16px 14px 32px' : '26px 32px 40px', minWidth: 0 }}>
         <Toolbar state={state} view={view} controller={controller} isMobile={isMobile} onOpenNav={() => setNavOpen(true)} />
         <MapGrid view={view} controller={controller} />
       </main>
