@@ -4,6 +4,10 @@ import { useIsMobile } from '../../../hooks/useMediaQuery';
 
 interface ZoomControlsProps {
   controller: EditorController;
+  /** M6-mobile: true when a property panel is open. On mobile that panel is a
+   * bottom sheet (max 55dvh) that would otherwise cover this bottom-right
+   * cluster, so we lift the cluster just above the sheet. */
+  panelOpen?: boolean;
 }
 
 /**
@@ -16,10 +20,14 @@ interface ZoomControlsProps {
  * button grows to a >=44px touch target (still visually compact via padding,
  * not a full 44px box, for the divider-separated zoom-percent readout).
  */
-export function ZoomControls({ controller }: ZoomControlsProps) {
+export function ZoomControls({ controller, panelOpen = false }: ZoomControlsProps) {
   const th = controller.theme;
   const isMobile = useIsMobile();
   const btnSize = isMobile ? 44 : 26;
+  // On mobile, a bottom-sheet property panel (max 55dvh) occupies the lower
+  // screen; sit the cluster just above its max extent so it's never hidden.
+  // On desktop (or with no panel) it stays pinned 16px from the bottom.
+  const bottom = isMobile && panelOpen ? 'calc(55dvh + 12px)' : 16;
   const btnStyle = {
     width: btnSize,
     height: btnSize,
@@ -41,7 +49,7 @@ export function ZoomControls({ controller }: ZoomControlsProps) {
       style={{
         position: 'absolute',
         right: 16,
-        bottom: 16,
+        bottom,
         background: th.panel,
         border: `1px solid ${th.border}`,
         borderRadius: 12,

@@ -146,7 +146,7 @@ type ObjDrag =
     };
 
 type BgDrag =
-  | { kind: 'pan'; pointerId: number; sx: number; sy: number; startPan: PanState; moved: boolean }
+  | { kind: 'pan'; pointerId: number; sx: number; sy: number; startPan: PanState; moved: boolean; touch?: boolean }
   | { kind: 'marquee'; pointerId: number; startClientX: number; startClientY: number; x0: number; y0: number; moved: boolean };
 
 function totalSelected(m: MultiSelection): number {
@@ -1025,9 +1025,14 @@ export function useEditorState(): EditorController {
     } catch {
       /* not implemented in some environments (e.g. jsdom) — non-fatal */
     }
-    if (e.button === 1 || e.button === 2) {
+    // Middle/right-mouse OR a single-finger TOUCH drag pans. Touch has no
+    // right-click and panning to navigate matters far more than rubber-band
+    // selection on a phone, so a one-finger drag moves the canvas (two fingers
+    // pinch-zoom, handled above); mouse keeps left=marquee / right·middle=pan.
+    const isTouch = e.pointerType === 'touch';
+    if (e.button === 1 || e.button === 2 || isTouch) {
       setViewport((prev) => {
-        dragRef.current = { kind: 'pan', pointerId: e.pointerId, sx: e.clientX, sy: e.clientY, startPan: prev.pan, moved: false };
+        dragRef.current = { kind: 'pan', pointerId: e.pointerId, sx: e.clientX, sy: e.clientY, startPan: prev.pan, moved: false, touch: isTouch };
         return prev;
       });
       return;
@@ -1087,8 +1092,14 @@ export function useEditorState(): EditorController {
         if (!d.moved) openCtxAt(pc.x, pc.y);
       }
       if (d.kind === 'pan') {
-        // plain background click (button 1/2, no movement) also deselects everything, matching
-        // `Component#onUp`'s `d.type === 'pan' && !d.moved` branch (MindFlow.dc.html:1855)
+        // A no-move TOUCH tap on the background deselects (touch uses pan for
+        // one-finger drag, so this is the touch equivalent of the marquee
+        // branch's tap-to-deselect below). Mouse right/middle click keeps the
+        // original behavior (no deselect — it may be opening the context menu).
+        if (d.touch && !d.moved) {
+          setSelectionState(null);
+          setMultiSelectionState(null);
+        }
         return;
       }
       const mq = marqueeRectRef.current;

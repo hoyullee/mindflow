@@ -37,7 +37,7 @@ export function panelWrapStyle(th: Theme, isMobile = false): CSSProperties {
       right: 0,
       bottom: 0,
       width: '100%',
-      maxHeight: '55vh',
+      maxHeight: '55dvh',
       border: `1px solid ${th.border}`,
       borderBottom: 'none',
       borderRadius: '16px 16px 0 0',
@@ -224,6 +224,7 @@ export function SegButton({ label, active, theme, onClick }: { label: string; ac
         fontWeight: 700,
         cursor: 'pointer',
         fontFamily: 'inherit',
+        whiteSpace: 'nowrap',
       }}
     >
       {label}
