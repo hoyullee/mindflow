@@ -71,19 +71,22 @@ export function useHomeController() {
       .then((metas) => {
         if (cancelled) return;
         setState((prev) => {
-          const { spaces, changed: spacesChanged } = mergeDocMetasIntoSpaces(prev.spaces, metas);
+          const { spaces } = mergeDocMetasIntoSpaces(prev.spaces, metas);
           // Seed favs/deleted/trash from the backend's persisted meta
           // (isFavorite/deletedAt) so favorite/trash status survives a
           // refresh instead of resetting — see `seedFavAndTrashFromMetas`.
-          const { favs, deleted, trash, changed: seedChanged } = seedFavAndTrashFromMetas(prev.favs, prev.deleted, prev.trash, metas);
-          if (!spacesChanged && !seedChanged) return prev;
-          return { ...prev, spaces, favs, deleted, trash };
+          const { favs, deleted, trash } = seedFavAndTrashFromMetas(prev.favs, prev.deleted, prev.trash, metas);
+          // Always flip `loaded` (even when nothing changed) so the grid drops
+          // its loading skeleton and renders the real (possibly empty) state.
+          return { ...prev, spaces, favs, deleted, trash, loaded: true };
         });
       })
       .catch(() => {
         /* listing failed (offline, RLS misconfig, ...) — the demo/seeded map
          * list still renders; non-fatal, matches this file's other storage
          * try/catch conventions */
+        if (cancelled) return;
+        setState((prev) => (prev.loaded ? prev : { ...prev, loaded: true }));
       });
 
     return () => {

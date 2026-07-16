@@ -54,6 +54,7 @@ export interface HomeViewModel {
   favCount: string;
   trashItems: { title: string; isDrive: boolean; badge: string; docId?: string }[];
   trashCount: string;
+  loading: boolean;
   isEmpty: boolean;
   folderEmpty: boolean;
   showDriveConnect: boolean;
@@ -205,9 +206,13 @@ export function deriveHomeView(state: HomeState): HomeViewModel {
       };
     });
 
+  // While the first DocStore.list() is still in flight, show a skeleton instead
+  // of the "empty" states so real content doesn't flash-replace them. The drive
+  // space is fed by static data (no list() dependency), so it never "loads".
+  const loading = !state.loaded && !isDriveSpace;
   const showDriveConnect = isDriveSpace && !connected;
-  const isEmpty = !showDriveConnect && allCards.length === 0 && !curFolder;
-  const folderEmpty = !!curFolder && allCards.length === 0;
+  const isEmpty = !loading && !showDriveConnect && allCards.length === 0 && !curFolder;
+  const folderEmpty = !loading && !!curFolder && allCards.length === 0;
 
   return {
     connected,
@@ -226,15 +231,16 @@ export function deriveHomeView(state: HomeState): HomeViewModel {
     favCount: favItems.length ? String(favItems.length) : '',
     trashItems: state.trash.map((t) => ({ title: t.title, isDrive: t.source === 'drive', badge: t.source === 'drive' ? 'Drive' : '내 공간', docId: t.docId })),
     trashCount: state.trash.length ? String(state.trash.length) : '',
+    loading,
     isEmpty,
     folderEmpty,
     showDriveConnect,
     backVisible: !!(curFolder || driveFolder),
     newFolderVisible: !((isDriveSpace && (!connected || driveFolder)) || curFolder),
     importVisible: !(isDriveSpace || curFolder),
-    recentSectionVisible: !isDriveSpace && !curFolder && recentCards.length > 0,
-    foldersSectionVisible: folderCards.length > 0,
-    mapsSectionVisible: !(isEmpty || showDriveConnect || folderEmpty),
+    recentSectionVisible: !loading && !isDriveSpace && !curFolder && recentCards.length > 0,
+    foldersSectionVisible: !loading && folderCards.length > 0,
+    mapsSectionVisible: !loading && !(isEmpty || showDriveConnect || folderEmpty),
     userInitial: (state.userName || 'M').trim().charAt(0).toUpperCase() || 'M',
   };
 }

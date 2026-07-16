@@ -112,6 +112,13 @@ export interface HomeState {
   /** Not present in the dc original (the search box there is a static placeholder) — added
    * per the M3 Home ticket so the search input actually filters the map grid. */
   search: string;
+
+  /** False until the first `DocStore.list()` settles on mount. While false the
+   * map grid renders skeleton placeholders (and the sidebar hides its empty-list
+   * messages) instead of the "아직 만든 맵이 없어요" empty state — so a user with
+   * saved maps doesn't see that empty state flash before their content loads
+   * (the async list() is a network round-trip with a real backend). */
+  loaded: boolean;
 }
 
 export const SPACE_COLORS = ['#f0663f', '#e0a53c', '#3fae9e', '#3f8fd0', '#8a6bd1', '#d0568f'];
@@ -193,5 +200,6 @@ export function initialHomeState(): HomeState {
     toast: '',
 
     search: '',
+    loaded: false,
   };
 }

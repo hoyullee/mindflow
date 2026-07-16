@@ -14,8 +14,31 @@ interface Props {
 // auto-fill — inline styles would otherwise always win over a stylesheet rule.
 const GRID_STYLE = { gap: 20 } as const;
 
+/** A single placeholder card matching `MapCard`'s footprint (preview block +
+ * two title lines), shown while the map list loads. */
+function SkeletonCard() {
+  return (
+    <div style={{ border: '1px solid #efe6dd', borderRadius: 16, background: '#fff', overflow: 'hidden' }}>
+      <div className="mf-skel" style={{ height: 132, borderRadius: 0 }} />
+      <div style={{ padding: '13px 15px 16px' }}>
+        <div className="mf-skel" style={{ height: 13, width: '62%', borderRadius: 6, marginBottom: 9 }} />
+        <div className="mf-skel" style={{ height: 10, width: '34%', borderRadius: 6 }} />
+      </div>
+    </div>
+  );
+}
+
 /** Home.dc.html:209-329 — recent / folders / maps sections plus the three empty states. */
 export function MapGrid({ view, controller }: Props) {
+  if (view.loading) {
+    return (
+      <div className="mf-map-grid" style={GRID_STYLE} aria-busy="true" aria-label="맵을 불러오는 중">
+        {Array.from({ length: 6 }, (_, i) => (
+          <SkeletonCard key={i} />
+        ))}
+      </div>
+    );
+  }
   return (
     <>
       {view.recentSectionVisible && (
