@@ -116,11 +116,11 @@ export interface HomeState {
 
 export const SPACE_COLORS = ['#f0663f', '#e0a53c', '#3fae9e', '#3f8fd0', '#8a6bd1', '#d0568f'];
 
-export const DEFAULT_MAPS: MapCardData[] = [
-  { title: '2025.05.23 서포터클럽 해지 방어 동선', when: '방금', hue: '#f0663f' },
-  { title: '따라잡기', when: '1 년 전', hue: '#8a6bd1' },
-  { title: '무상 비즈머니 지급', when: '1 년 전', hue: '#3fae9e' },
-];
+// 회원가입 시 노출되던 데모 시드 맵 3종은 제거됨. 이 카드들은 docId가 없어
+// DocStore(즐겨찾기/삭제/복원)에 영속되지 않아 새로고침 시 항상 일반 공간으로
+// 되돌아가는 이슈가 있었음. 일반 공간은 이제 실제 저장된 문서(`DocStore.list()`)
+// 로만 채워진다.
+export const DEFAULT_MAPS: MapCardData[] = [];
 
 export const DRIVE_FOLDERS: DriveFolderData[] = [
   { id: 'df1', name: '팀 프로젝트' },
