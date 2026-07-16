@@ -240,6 +240,26 @@ describe('Editor interactions (M3-Editor-b)', () => {
     clickSpy.mockRestore();
   });
 
+  it('opens the 스타일 dropdown in a fixed body portal (escapes the top bar clip/stacking)', async () => {
+    const user = userEvent.setup();
+    localStorage.setItem('mindflow_doc_ts1', JSON.stringify(DOC));
+    renderEditor('/editor?map=ts1&title=x');
+
+    await user.click(screen.getByTitle(/맵 스타일/));
+
+    const menu = document.querySelector('.mf-ed-stylemenu') as HTMLElement;
+    expect(menu).toBeTruthy();
+    // Portaled out of the (overflow-clipping, low-stacked) top bar...
+    expect(menu.closest('.mf-ed-topbar')).toBeNull();
+    // ...into a fixed-position wrapper stacked above the canvas nodes (z 40/70/80).
+    const wrap = menu.parentElement as HTMLElement;
+    expect(wrap.style.position).toBe('fixed');
+    expect(Number(wrap.style.zIndex)).toBeGreaterThan(80);
+    // Controls still render/work.
+    expect(screen.getByText('레이아웃')).toBeTruthy();
+    expect(screen.getByText('테마')).toBeTruthy();
+  });
+
   describe('duplicate filename guard (rename)', () => {
     // The title chip's non-editing title element (`div[title=...]`), excluding
     // the on-canvas root node box which also shows the title text.
