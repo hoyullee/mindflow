@@ -44,6 +44,24 @@ export function Minimap({ controller, isMobile = false }: MinimapProps) {
     minY = Math.min(minY, n.y - n.h / 2);
     maxY = Math.max(maxY, n.y + n.h / 2);
   });
+
+  // viewport rect, in canvas coordinates (port of MindFlow.dc.html:1525-1527)
+  const vx0 = -pan.x / zoom;
+  const vy0 = -pan.y / zoom;
+  const vx1 = (vw - pan.x) / zoom;
+  const vy1 = (vh - pan.y) / zoom;
+
+  // Fit the minimap to content ∪ current viewport (the dc original fit only the
+  // content, so when you were zoomed out enough to see past the node cluster the
+  // viewport rectangle spilled way outside the minimap and read as "too wide").
+  // Unioning in the viewport keeps that rectangle inside the box and proportional
+  // to what you're actually seeing; when zoomed in it's a no-op (the viewport is
+  // already within the content bounds).
+  minX = Math.min(minX, vx0);
+  minY = Math.min(minY, vy0);
+  maxX = Math.max(maxX, vx1);
+  maxY = Math.max(maxY, vy1);
+
   const bw = Math.max(1, maxX - minX);
   const bh = Math.max(1, maxY - minY);
   const s = Math.min((W - PAD * 2) / bw, (H - PAD * 2) / bh);
@@ -79,12 +97,6 @@ export function Minimap({ controller, isMobile = false }: MinimapProps) {
   const onPointerUp = (): void => {
     draggingRef.current = false;
   };
-
-  // viewport rect, in canvas coordinates (port of MindFlow.dc.html:1525-1527)
-  const vx0 = -pan.x / zoom;
-  const vy0 = -pan.y / zoom;
-  const vx1 = (vw - pan.x) / zoom;
-  const vy1 = (vh - pan.y) / zoom;
 
   return (
     <svg
