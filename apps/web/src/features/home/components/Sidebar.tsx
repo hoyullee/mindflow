@@ -148,7 +148,7 @@ export function Sidebar({ state, view, controller, isMobile = false, isOpen = fa
               )}
             </div>
           ))}
-          {view.favItems.length === 0 && <div style={{ padding: '7px 10px 7px 30px', fontSize: 11.5, color: '#c9b8a9' }}>즐겨찾기한 항목이 없습니다</div>}
+          {!view.loading && view.favItems.length === 0 && <div style={{ padding: '7px 10px 7px 30px', fontSize: 11.5, color: '#c9b8a9' }}>즐겨찾기한 항목이 없습니다</div>}
         </div>
       </div>
 
@@ -194,7 +194,7 @@ export function Sidebar({ state, view, controller, isMobile = false, isOpen = fa
               </span>
             </div>
           ))}
-          {view.trashItems.length === 0 && <div style={{ padding: '7px 10px 7px 30px', fontSize: 11.5, color: '#c9b8a9' }}>휴지통이 비어 있습니다</div>}
+          {!view.loading && view.trashItems.length === 0 && <div style={{ padding: '7px 10px 7px 30px', fontSize: 11.5, color: '#c9b8a9' }}>휴지통이 비어 있습니다</div>}
         </div>
       </div>
     </aside>

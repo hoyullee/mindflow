@@ -64,7 +64,7 @@ function renderHomeWithDocStore(metas: DocMeta[] = []) {
 }
 
 describe('Home', () => {
-  it('renders the sidebar and the main map sections', () => {
+  it('renders the sidebar and the main map sections', async () => {
     const { container } = renderHome();
     const sidebar = within(container.querySelector('aside') as HTMLElement);
 
@@ -75,11 +75,12 @@ describe('Home', () => {
     expect(sidebar.getByText('휴지통')).toBeTruthy();
     expect(sidebar.getByText('일반 공간')).toBeTruthy();
 
-    // toolbar / main. With no saved maps the grid shows its empty state, so
+    // toolbar / main. With no saved maps the grid shows its empty state (after
+    // the initial DocStore.list() settles — until then it shows a skeleton), so
     // "＋ 새로 만들기" appears both in the toolbar and the empty-state CTA.
     expect(screen.getByPlaceholderText('파일 검색')).toBeTruthy();
     expect(screen.getAllByText('＋ 새로 만들기').length).toBeGreaterThan(0);
-    expect(screen.getByText('아직 만든 맵이 없어요')).toBeTruthy();
+    await waitFor(() => expect(screen.getByText('아직 만든 맵이 없어요')).toBeTruthy());
   });
 
   it('renders saved documents from DocStore.list() as map cards', async () => {
@@ -284,6 +285,29 @@ describe('Home', () => {
       const href = newLink.getAttribute('href') || '';
       // No collision → the title param is either absent or the plain default.
       expect(href).not.toContain('_1');
+    });
+
+    it('shows a loading skeleton (not the empty state) while DocStore.list() is pending', async () => {
+      // A docStore whose list() never resolves within the test — the grid must
+      // show its skeleton, not flash the "아직 만든 맵이 없어요" empty state.
+      class PendingDocStore extends MockDocStore {
+        override list(): Promise<DocMeta[]> {
+          return new Promise<DocMeta[]>(() => {}); // never resolves
+        }
+      }
+      const backend: Backend = { auth: new LocalAuth(), docStore: new PendingDocStore(), mode: 'local' };
+      const { container } = render(
+        <MemoryRouter initialEntries={['/home']}>
+          <BackendProvider backend={backend}>
+            <Routes>
+              <Route path="/home" element={<Home />} />
+            </Routes>
+          </BackendProvider>
+        </MemoryRouter>,
+      );
+      expect(container.querySelector('[aria-busy="true"]')).toBeTruthy();
+      expect(container.querySelectorAll('.mf-skel').length).toBeGreaterThan(0);
+      expect(screen.queryByText('아직 만든 맵이 없어요')).toBeNull();
     });
   });
 });
