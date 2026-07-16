@@ -288,5 +288,29 @@ describe('Editor interactions (M3-Editor-b)', () => {
       await waitFor(() => expect(chip(container, '완전히 새로운 이름')).toBeTruthy());
       expect(screen.queryByRole('alert')).toBeNull();
     });
+
+    it('rejects renaming the map by editing the ROOT node on the canvas', async () => {
+      seedExistingMap(); // another map titled "기존 맵"
+      // This map's root title is "제품 로드맵" (DOC). list() excludes self by id.
+      localStorage.setItem('mindflow_doc_mine', JSON.stringify(DOC));
+      const { container } = renderEditor('/editor?map=mine&title=x');
+
+      // Give the mount `docStore.list()` a tick to populate the taken-title set.
+      await waitFor(() => expect(within(getViewport(container)).getByText('제품 로드맵')).toBeTruthy());
+      await waitFor(() => expect(true).toBe(true));
+
+      const rootBox = nodeBoxFor(container, '제품 로드맵');
+      fireEvent.doubleClick(rootBox);
+      const editor = getViewport(container).querySelector('.mf-richedit') as HTMLDivElement;
+      expect(editor).toBeTruthy();
+      editor.textContent = '기존 맵';
+      fireEvent.input(editor);
+      fireEvent.keyDown(editor, { key: 'Enter' });
+
+      // Blocked: warning shown and the root/title stays "제품 로드맵".
+      await waitFor(() => expect(screen.getByRole('alert').textContent || '').toContain('이미'));
+      expect(within(getViewport(container)).getByText('제품 로드맵')).toBeTruthy();
+      expect(within(getViewport(container)).queryByText('기존 맵')).toBeNull();
+    });
   });
 });
