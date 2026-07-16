@@ -11,6 +11,8 @@
 // laid-out, persisted doc, so it is typed here as an optional passthrough
 // field even though M1a does not compute it.
 
+import type { PortSide } from './geometry';
+
 /** The three layout algorithms the original app supports (MindFlow.dc.html:496,522-523 default 'radial'). */
 export type LayoutMode = 'radial' | 'right' | 'down';
 
@@ -89,6 +91,21 @@ export interface Float {
   tsize?: 's' | 'l';
 }
 
+/**
+ * A free connector line's "magnetic" endpoint anchor — port of the shape
+ * `findSnap()`/`onLineEndDown` build and `resolveEnd()` consumes
+ * (MindFlow.dc.html:2403-2419, 2442-2454): which target (a tree/free node's
+ * `_geom` box, or a float's box) an endpoint is pinned to, and optionally
+ * which of its 4 ports (side). `side` is omitted for legacy anchors that
+ * predate the port system — `resolveEnd` falls back to a border-point toward
+ * the other end for those (MindFlow.dc.html:2408-2412).
+ */
+export interface LineAnchor {
+  kind: 'node' | 'float';
+  id: string;
+  side?: PortSide;
+}
+
 /** A connector line between arbitrary points/nodes (MindFlow.dc.html:2460). */
 export interface Line {
   id: string;
@@ -113,6 +130,17 @@ export interface Line {
   lbold?: boolean;
   /** Label font-size override: 's' small / 'l' large (MindFlow.dc.html:2740 setLineTsize). */
   lsize?: 's' | 'l';
+  /**
+   * Magnetic anchor for endpoint 1/2 — `x1/y1`/`x2/y2` remain the raw
+   * last-dropped coordinates (used when unanchored, or as a fallback when the
+   * anchor target vanishes); when set, the endpoint's actual on-screen
+   * position is resolved from the target box instead (`resolveEnd`,
+   * MindFlow.dc.html:2403-2412). `null` explicitly means "detached" (a drag
+   * that ended away from any port), distinct from `undefined` (never
+   * anchored) — both render as a plain raw-coordinate endpoint.
+   */
+  a1?: LineAnchor | null;
+  a2?: LineAnchor | null;
 }
 
 /** A background grouping rectangle (MindFlow.dc.html:2300). */

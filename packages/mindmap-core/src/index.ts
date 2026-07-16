@@ -20,7 +20,7 @@ export const CORE_VERSION = '0.0.0';
 
 export type { TextMeasurer, Clock, IdGen } from './ports';
 
-export type { LayoutMode, RichRun, Node, NodeMap, Float, Line, Zone, Doc } from './model';
+export type { LayoutMode, RichRun, Node, NodeMap, Float, Line, LineAnchor, Zone, Doc } from './model';
 export { ROOT_ID, DEFAULT_LAYOUT_MODE, DEFAULT_THEME_KEY } from './model';
 
 export type { SerializableState } from './serialize';
@@ -35,8 +35,8 @@ export { HistoryStack } from './history';
 export type { NodeSize, SizeOf, LayoutOptions } from './layout';
 export { layout } from './layout';
 
-export type { Point, LineGeometry, LineLike, Box, PortSide } from './geometry';
-export { resolveLineGeometry, cubicAt, portPoint } from './geometry';
+export type { Point, LineGeometry, LineLike, Box, PortSide, AnchoredLineLike, LineEndpoints, SnapCandidate } from './geometry';
+export { resolveLineGeometry, cubicAt, portPoint, borderPoint, resolveLineEndpoints, findLineSnap, LINE_SNAP_DISTANCE } from './geometry';
 
 // M5: Doc <-> Y.Doc CRDT binding (see docs/architecture/0001-architecture.md
 // §2's `crdt/` seam). Pure — `yjs` has no DOM/network dependency itself, so

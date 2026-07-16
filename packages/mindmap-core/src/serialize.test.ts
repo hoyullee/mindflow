@@ -63,6 +63,54 @@ describe('parseDoc', () => {
   });
 });
 
+describe('parseDoc/serializeDoc — line anchors (a1/a2)', () => {
+  it('round-trips a1/a2 through parseDoc → serializeDoc unchanged', () => {
+    const raw = {
+      nodes: { root: { id: 'root', text: 'x', emoji: '', parent: null, children: [], collapsed: false, color: null, x: 0, y: 0 } },
+      floats: [],
+      lines: [
+        {
+          id: 'l1',
+          x1: 0,
+          y1: 0,
+          x2: 100,
+          y2: 100,
+          startArrow: false,
+          endArrow: true,
+          dashed: false,
+          c1: 0,
+          c2: 0,
+          label: '',
+          a1: { kind: 'node', id: 'root', side: 'right' },
+          a2: null,
+        },
+      ],
+      zones: [],
+      layoutMode: 'radial',
+      themeKey: 'coral',
+    };
+    const doc = parseDoc(raw);
+    expect(doc).not.toBeNull();
+    expect(doc?.lines[0]?.a1).toEqual({ kind: 'node', id: 'root', side: 'right' });
+    expect(doc?.lines[0]?.a2).toBeNull();
+    const out = serializeDoc(doc!);
+    expect(out.lines[0]?.a1).toEqual({ kind: 'node', id: 'root', side: 'right' });
+    expect(out.lines[0]?.a2).toBeNull();
+  });
+
+  it('leaves lines without a1/a2 unchanged (no field introduced) — golden fixture stays parity-safe', () => {
+    const raw = {
+      nodes: { root: { id: 'root', text: 'x', emoji: '', parent: null, children: [], collapsed: false, color: null, x: 0, y: 0 } },
+      lines: [{ id: 'l1', x1: 0, y1: 0, x2: 1, y2: 1, startArrow: false, endArrow: true, dashed: false, c1: 0, c2: 0, label: '' }],
+    };
+    const doc = parseDoc(raw);
+    expect(doc?.lines[0]).not.toHaveProperty('a1');
+    expect(doc?.lines[0]).not.toHaveProperty('a2');
+    const out = serializeDoc(doc!);
+    expect(out.lines[0]).toEqual(raw.lines[0]);
+  });
+});
+
 describe('serializeDoc', () => {
   it('does not deep-clone — returns the same references it was given (MindFlow.dc.html:534-536)', () => {
     const nodes: NodeMap = { root: { id: 'root', text: 't', emoji: '', parent: null, children: [], collapsed: false, color: null, x: 0, y: 0 } };
