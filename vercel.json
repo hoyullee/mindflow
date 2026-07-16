@@ -1,6 +1,6 @@
 {
   "$schema": "https://openapi.vercel.sh/vercel.json",
-  "buildCommand": "pnpm --filter @mindflow/web build",
+  "buildCommand": "pnpm build",
   "installCommand": "pnpm install --frozen-lockfile",
   "outputDirectory": "apps/web/dist",
   "framework": null,
