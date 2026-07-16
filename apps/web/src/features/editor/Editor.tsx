@@ -26,8 +26,23 @@ export function Editor() {
   const { doc, theme: th } = controller;
   const isMobile = useIsMobile();
 
+  // Whether a property panel is currently shown (mirrors PropertyPanel's own
+  // selection dispatch). On mobile that panel is a bottom sheet, so the
+  // zoom/minimap cluster must lift above it — see ZoomControls' `panelOpen`.
+  const mg = controller.multiGroups;
+  const panelOpen =
+    controller.selection?.kind === 'zone' ||
+    (mg.nodes.length > 0 && !mg.lines.length && !mg.floats.length) ||
+    (mg.lines.length > 0 && !mg.nodes.length && !mg.floats.length) ||
+    (mg.floats.length > 0 && !mg.nodes.length && !mg.lines.length);
+
+  // M6-mobile: use `100dvh` (dynamic viewport height) rather than `100vh` — on
+  // mobile browsers `100vh` is the *large* viewport (ignores the address bar),
+  // so a bottom-anchored element (the zoom/minimap cluster) ends up below the
+  // fold, behind the browser chrome. `100dvh` tracks the visible viewport so
+  // bottom-right controls stay on screen. Equals `100vh` on desktop.
   const rootStyle: CSSProperties = {
-    height: '100vh',
+    height: '100dvh',
     width: '100%',
     display: 'flex',
     flexDirection: 'column',
@@ -58,7 +73,7 @@ export function Editor() {
             <DocChip controller={controller} />
             <PresenceBar controller={controller} />
             <PropertyPanel controller={controller} />
-            <ZoomControls controller={controller} />
+            <ZoomControls controller={controller} panelOpen={panelOpen} />
             {/* M6: this desktop mouse-gesture legend (우클릭/휠클릭/스크롤/핀치) doesn't
                 apply to touch, and there's no room for it above a bottom-sheet
                 property panel on narrow screens, so it's desktop-only. */}

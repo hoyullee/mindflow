@@ -104,7 +104,7 @@ export function Toolbar({ controller }: ToolbarProps) {
 
       <Divider theme={th} />
 
-      <div style={{ display: 'flex', alignItems: 'center', gap: 3, background: th.panel2, border: `1px solid ${th.border}`, borderRadius: 10, padding: 3 }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 3, background: th.panel2, border: `1px solid ${th.border}`, borderRadius: 10, padding: 3, flexShrink: 0 }}>
         <button
           type="button"
           className="mf-ed-btn"
@@ -127,7 +127,7 @@ export function Toolbar({ controller }: ToolbarProps) {
 
       <Divider theme={th} />
 
-      <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 4, flexShrink: 0 }}>
         <button type="button" className="mf-ed-btn" onClick={() => controller.addFreeNodeAt()} title="도형 추가" style={addBtnStyle}>
           <ShapeIcon />
         </button>
@@ -165,6 +165,8 @@ export function Toolbar({ controller }: ToolbarProps) {
             fontWeight: 600,
             cursor: 'pointer',
             fontFamily: 'inherit',
+            whiteSpace: 'nowrap',
+            flexShrink: 0,
           }}
         >
           <span
@@ -228,6 +230,10 @@ function viewBtnStyle(active: boolean, th: EditorController['theme'], isMobile =
     fontWeight: active ? 700 : 500,
     cursor: 'pointer',
     boxShadow: active ? '0 1px 4px rgba(0,0,0,.10)' : 'none',
+    // keep the label ("맵" / "아웃라인") on one line — the 44px-tall mobile
+    // touch target let the text wrap to two lines and spill out of the button.
+    whiteSpace: 'nowrap',
+    flexShrink: 0,
   } as const;
 }
 
