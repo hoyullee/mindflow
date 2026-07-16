@@ -33,11 +33,9 @@ export function StyleMenu({ controller }: StyleMenuProps) {
     <div
       className="mf-ed-stylemenu"
       style={{
-        position: 'absolute',
-        top: 'calc(100% + 8px)',
-        right: 0,
-        zIndex: 60,
-        width: 250,
+        // Positioning/stacking is handled by the `AnchoredMenu` portal wrapper.
+        width: '100%',
+        boxSizing: 'border-box',
         background: controller.theme.panel,
         border: `1px solid ${controller.theme.border}`,
         borderRadius: 12,

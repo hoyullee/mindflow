@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import type { EditorController } from '../useEditorState';
 import { StyleMenu } from './StyleMenu';
 import { ExportMenu } from './ExportMenu';
+import { AnchoredMenu } from './AnchoredMenu';
 import { useIsMobile } from '../../../hooks/useMediaQuery';
 
 interface ToolbarProps {
@@ -177,7 +178,11 @@ export function Toolbar({ controller }: ToolbarProps) {
           />
           스타일
         </button>
-        {styleMenuOpen && <StyleMenu controller={controller} />}
+        {styleMenuOpen && (
+          <AnchoredMenu anchorRef={styleWrapRef} width={250}>
+            <StyleMenu controller={controller} />
+          </AnchoredMenu>
+        )}
       </div>
 
       <Divider theme={th} />
@@ -193,7 +198,11 @@ export function Toolbar({ controller }: ToolbarProps) {
         >
           <ExportIcon />
         </button>
-        {exportMenuOpen && <ExportMenu controller={controller} onDone={() => setExportMenuOpen(false)} />}
+        {exportMenuOpen && (
+          <AnchoredMenu anchorRef={exportWrapRef} width={190}>
+            <ExportMenu controller={controller} onDone={() => setExportMenuOpen(false)} />
+          </AnchoredMenu>
+        )}
       </div>
     </div>
   );
