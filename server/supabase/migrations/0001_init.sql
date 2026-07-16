@@ -67,7 +67,12 @@ create trigger on_auth_user_created
 -- without an explicit id. (`owner` stays uuid — it references auth.users.)
 create table if not exists public.documents (
   id text primary key default gen_random_uuid()::text,
-  owner uuid not null references auth.users (id) on delete cascade,
+  -- `owner` defaults to auth.uid() so the client's INSERT (which doesn't send
+  -- an owner column) gets stamped with the caller's id automatically — that's
+  -- what the `documents_insert_own` RLS policy (`with check auth.uid() = owner`)
+  -- requires. The default runs in the authenticated request context, so it
+  -- resolves to the logged-in user (the standard Supabase owner-column pattern).
+  owner uuid not null default auth.uid() references auth.users (id) on delete cascade,
   title text not null default '',
   data jsonb not null,
   version integer not null default 1,
