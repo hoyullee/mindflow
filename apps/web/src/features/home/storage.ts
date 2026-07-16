@@ -96,33 +96,17 @@ export function saveRecent(list: string[]): void {
   }
 }
 
-/** Persisted space structure. The dc prototype (and this port pre-fix) kept
- * spaces in React state only, so a user-created space vanished on refresh.
- * We now persist the spaces (id/name/color/home + their maps and folders) plus
- * the map→folder map so custom spaces and their contents survive a reload. */
-export const SPACES_KEY = 'mf_spaces';
-
-export function saveSpaces(spaces: SpaceData[], mapFolders: Record<string, string>): void {
-  try {
-    localStorage.setItem(SPACES_KEY, JSON.stringify({ v: 1, spaces, mapFolders }));
-  } catch {
-    /* storage unavailable — non-fatal */
-  }
-}
-
-export function loadSpaces(): { spaces: SpaceData[]; mapFolders: Record<string, string> } | null {
-  try {
-    const raw = localStorage.getItem(SPACES_KEY);
-    if (!raw) return null;
-    const parsed = JSON.parse(raw) as { spaces?: unknown; mapFolders?: unknown };
-    if (!Array.isArray(parsed.spaces)) return null;
-    const spaces = (parsed.spaces as SpaceData[]).filter((s) => s && typeof s.id === 'string' && typeof s.name === 'string');
-    if (!spaces.length) return null;
-    const mapFolders = parsed.mapFolders && typeof parsed.mapFolders === 'object' ? (parsed.mapFolders as Record<string, string>) : {};
-    return { spaces, mapFolders };
-  } catch {
-    return null;
-  }
+/**
+ * Validates a loaded-from-backend `spaces` blob (opaque `unknown[]` at the
+ * `SpaceStore` boundary) into well-formed `SpaceData[]`, dropping anything
+ * without a string id/name. Persistence itself now lives behind the
+ * `SpaceStore` port (Local/Supabase adapters) so a user's spaces sync across
+ * devices — see `useHomeController`'s mount/save effects. */
+export function coerceSpaces(raw: unknown[]): SpaceData[] {
+  return raw.filter((s): s is SpaceData => {
+    const o = s as Partial<SpaceData> | null;
+    return !!o && typeof o.id === 'string' && typeof o.name === 'string';
+  });
 }
 
 /** Guarantees exactly one "home" (일반 공간) exists as the first space, even if

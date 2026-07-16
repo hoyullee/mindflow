@@ -6,6 +6,7 @@ import { Home } from './Home';
 import { mockMatchMedia } from '../../test/matchMedia';
 import { BackendProvider } from '../../adapters/BackendContext';
 import { LocalAuth } from '../../adapters/local/localAuth';
+import { LocalSpaceStore } from '../../adapters/local/localSpaceStore';
 import type { Backend, DocMeta, DocStore, LoadedDoc, SaveResult } from '../../adapters/ports';
 
 afterEach(() => {
@@ -48,7 +49,7 @@ class MockDocStore implements DocStore {
 
 function renderHomeWithDocStore(metas: DocMeta[] = []) {
   const docStore = new MockDocStore(metas);
-  const backend: Backend = { auth: new LocalAuth(), docStore, mode: 'local' };
+  const backend: Backend = { auth: new LocalAuth(), docStore, spaceStore: new LocalSpaceStore(), mode: 'local' };
   const utils = render(
     <MemoryRouter initialEntries={['/home']}>
       <BackendProvider backend={backend}>
@@ -312,7 +313,7 @@ describe('Home', () => {
           return new Promise<DocMeta[]>(() => {}); // never resolves
         }
       }
-      const backend: Backend = { auth: new LocalAuth(), docStore: new PendingDocStore(), mode: 'local' };
+      const backend: Backend = { auth: new LocalAuth(), docStore: new PendingDocStore(), spaceStore: new LocalSpaceStore(), mode: 'local' };
       const { container } = render(
         <MemoryRouter initialEntries={['/home']}>
           <BackendProvider backend={backend}>

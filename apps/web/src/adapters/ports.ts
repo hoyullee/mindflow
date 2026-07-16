@@ -104,11 +104,39 @@ export interface DocStore {
   setFavorite(id: string, favorite: boolean): Promise<void>;
 }
 
+// ── Spaces (per-user workspace structure) ────────────────────────────────
+
+/**
+ * The user's workspace structure: their spaces (id/name/color/home + each
+ * space's maps and folders) and the map→folder assignment. Stored as one
+ * opaque JSON blob per user so it syncs across every device they log in on
+ * (Supabase mode) — or per-browser (local/demo mode). The concrete shape of
+ * `spaces` is owned by `features/home` (`SpaceData[]`); this port treats it as
+ * JSON, so it's typed `unknown[]` here and validated on the feature side.
+ */
+export interface WorkspaceData {
+  spaces: unknown[];
+  mapFolders: Record<string, string>;
+}
+
+/**
+ * Loads/saves the current user's `WorkspaceData`. `load()` resolves `null` when
+ * the user has no saved workspace yet (first run). Implementations are
+ * per-user: Supabase keys by `auth.uid()` (RLS-enforced), local by a single
+ * `localStorage` key.
+ */
+export interface SpaceStore {
+  load(): Promise<WorkspaceData | null>;
+  save(data: WorkspaceData): Promise<void>;
+}
+
 // ── Backend bundle ───────────────────────────────────────────────────────
 
 export interface Backend {
   auth: AuthProvider;
   docStore: DocStore;
+  /** Per-user spaces/folders structure (cross-device in Supabase mode). */
+  spaceStore: SpaceStore;
   /** `'local'` = demo/localStorage fallback (no env configured); `'supabase'`
    * = real Postgres + Auth. Used to decide whether auth routes are gated. */
   mode: 'local' | 'supabase';

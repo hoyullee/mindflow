@@ -18,6 +18,10 @@ mocked) 어댑터로 검증되었습니다(라이브 호출 없음).
   Supabase, 하나라도 없으면 Local을 선택합니다. `apps/web/src/adapters/BackendContext.tsx`가
   이를 React Context로 앱 전체에 주입합니다(`App.tsx`의 `<BackendProvider>`).
 - `server/supabase/migrations/0001_init.sql` — `profiles`/`documents` 테이블 + RLS.
+- `server/supabase/migrations/0004_workspaces.sql` — `workspaces` 테이블(사용자당 1행,
+  스페이스/폴더 구조를 `data` JSONB로 저장) + RLS. 사용자별 저장이라 로그인하는 모든
+  기기에서 스페이스가 동일하게 보입니다(`SupabaseSpaceStore`). 미적용 시 스페이스는
+  기기별 localStorage(`LocalSpaceStore`)로만 유지됩니다.
 
 ## 1. 프로비저닝 체크리스트 (사람이 할 일)
 
@@ -37,8 +41,11 @@ mocked) 어댑터로 검증되었습니다(라이브 호출 없음).
    supabase link --project-ref <project-ref>
    supabase db push
 
-   # 또는 psql 직접 연결
+   # 또는 psql 직접 연결 (마이그레이션을 순서대로 모두 적용)
    psql "$DATABASE_URL" -f server/supabase/migrations/0001_init.sql
+   psql "$DATABASE_URL" -f server/supabase/migrations/0002_documents_id_text.sql
+   psql "$DATABASE_URL" -f server/supabase/migrations/0003_documents_owner_default.sql
+   psql "$DATABASE_URL" -f server/supabase/migrations/0004_workspaces.sql
    ```
    `server/supabase/seed/seed.sql`은 선택 사항(로컬 개발용 샘플 문서 1건 삽입 — 실제
    `auth.users` id로 치환 필요, 파일 내 주석 참고).
