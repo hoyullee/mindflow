@@ -140,6 +140,26 @@ describe('Editor minimap (M3-Editor-c)', () => {
     expect(mm.style.touchAction).toBe('none');
   });
 
+  // Regression: the viewport rectangle must be clamped to the minimap box — it
+  // used to spill outside (and balloon into a distorted band) when the visible
+  // area extended past the node cluster.
+  it('clamps the viewport rectangle within the minimap box', () => {
+    localStorage.setItem('mindflow_doc_mmc', JSON.stringify(SIMPLE_DOC));
+    renderEditor('/editor?map=mmc&title=x');
+    const box = screen.getByTestId('minimap') as unknown as SVGSVGElement;
+    const rect = screen.getByTestId('minimap-viewport') as unknown as SVGRectElement;
+    const W = Number(box.getAttribute('width'));
+    const H = Number(box.getAttribute('height'));
+    const x = Number(rect.getAttribute('x'));
+    const y = Number(rect.getAttribute('y'));
+    const w = Number(rect.getAttribute('width'));
+    const h = Number(rect.getAttribute('height'));
+    expect(x).toBeGreaterThanOrEqual(0);
+    expect(y).toBeGreaterThanOrEqual(0);
+    expect(x + w).toBeLessThanOrEqual(W + 0.01);
+    expect(y + h).toBeLessThanOrEqual(H + 0.01);
+  });
+
   it('the minimap toggle button hides and re-shows it', async () => {
     localStorage.setItem('mindflow_doc_mm2', JSON.stringify(SIMPLE_DOC));
     renderEditor('/editor?map=mm2&title=x');
@@ -190,6 +210,33 @@ describe('Editor minimap (M3-Editor-c)', () => {
     // …and horizontal pan moves by a constant step (smooth, linear tracking)
     expect(x2 - x1).toBeCloseTo(x3 - x2, 3);
     expect(Math.abs(x2 - x1)).toBeGreaterThan(0);
+  });
+});
+
+describe('Editor initial view', () => {
+  // The default view on entry must center the ROOT node in the viewport, so the
+  // top-level shape is front-and-center (not shoved to an edge by a one-sided
+  // layout's bounding-box centering).
+  it('centers the root node horizontally on load', () => {
+    localStorage.setItem('mindflow_doc_iv1', JSON.stringify(SIMPLE_DOC));
+    const { container } = renderEditor('/editor?map=iv1&title=x');
+
+    // root's laid-out canvas x (same layout the hook runs)
+    const measurer = new CanvasTextMeasurer();
+    const sizeOf = (node: Parameters<typeof computeMetrics>[0], depth: number) => {
+      const m = computeMetrics(node, depth, measurer);
+      return { w: m.w, h: m.h };
+    };
+    const laidOut = layout(SIMPLE_DOC as Doc, SIMPLE_DOC.layoutMode as Doc['layoutMode'], sizeOf, { rootAnchor: { x: 0, y: 0 } });
+    const rootX = laidOut[ROOT_ID]!.x;
+
+    const layer = container.querySelector('.mf-ed-vp div[style*="translate"]') as HTMLElement;
+    const t = /translate\(\s*([-\d.]+)px,\s*([-\d.]+)px\)\s*scale\(([-\d.]+)\)/.exec(layer.style.transform)!;
+    const panX = Number(t[1]);
+    const zoom = Number(t[3]);
+    const vw = 1200; // jsdom default (no ResizeObserver) — matches INITIAL_VIEWPORT
+    const rootScreenX = rootX * zoom + panX;
+    expect(rootScreenX).toBeCloseTo(vw / 2, 0);
   });
 });
 
@@ -266,12 +313,14 @@ describe('Editor drag-to-reparent (M3-Editor-c)', () => {
       minY = Math.min(minY, g.y - g.h / 2);
       maxY = Math.max(maxY, g.y + g.h / 2);
     }
-    const bw = Math.max(1, maxX - minX);
-    const bh = Math.max(1, maxY - minY);
-    let z = Math.min((vw - FIT_PADDING) / bw, (vh - FIT_PADDING) / bh, 1.25);
+    // Mirrors `useEditorState`'s `centerOnRoot`: center the ROOT node at a zoom
+    // that keeps the farthest content on either side visible, capped at 1.25×.
+    const cx = geom.root ? geom.root.x : (minX + maxX) / 2;
+    const cy = geom.root ? geom.root.y : (minY + maxY) / 2;
+    const halfW = Math.max(cx - minX, maxX - cx, 1);
+    const halfH = Math.max(cy - minY, maxY - cy, 1);
+    let z = Math.min((vw - FIT_PADDING) / (2 * halfW), (vh - FIT_PADDING) / (2 * halfH), 1.25);
     z = Math.max(MIN_ZOOM, z);
-    const cx = (minX + maxX) / 2;
-    const cy = (minY + maxY) / 2;
     const pan = { x: vw / 2 - cx * z, y: vh / 2 - cy * z };
     const zoom = z;
 

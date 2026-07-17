@@ -100,12 +100,15 @@ function computeViewport(doc: Doc): { pan: { x: number; y: number }; zoom: numbe
     minY = Math.min(minY, g.y - g.h / 2);
     maxY = Math.max(maxY, g.y + g.h / 2);
   }
-  const bw = Math.max(1, maxX - minX);
-  const bh = Math.max(1, maxY - minY);
-  let z = Math.min((vw - FIT_PADDING) / bw, (vh - FIT_PADDING) / bh, 1.25);
+  // Mirrors `useEditorState`'s `centerOnRoot`: center the ROOT node at a zoom
+  // that keeps the farthest content on either side visible (half the viewport
+  // covers the larger half-span from the root), capped at 1.25×.
+  const cx = geom.root ? geom.root.x : (minX + maxX) / 2;
+  const cy = geom.root ? geom.root.y : (minY + maxY) / 2;
+  const halfW = Math.max(cx - minX, maxX - cx, 1);
+  const halfH = Math.max(cy - minY, maxY - cy, 1);
+  let z = Math.min((vw - FIT_PADDING) / (2 * halfW), (vh - FIT_PADDING) / (2 * halfH), 1.25);
   z = Math.max(MIN_ZOOM, z);
-  const cx = (minX + maxX) / 2;
-  const cy = (minY + maxY) / 2;
   const pan = { x: vw / 2 - cx * z, y: vh / 2 - cy * z };
   return { pan, zoom: z, geom };
 }

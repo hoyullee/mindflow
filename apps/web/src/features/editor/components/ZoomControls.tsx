@@ -75,14 +75,20 @@ export function ZoomControls({ controller, panelOpen = false }: ZoomControlsProp
         >
           <MinimapIcon />
         </button>
-        <div style={{ width: 1, height: 16, background: th.border, margin: '0 3px' }} />
-        <button type="button" className="mf-ed-btn" onClick={controller.zoomOut} title="축소" style={btnStyle}>
-          −
-        </button>
-        <div style={{ minWidth: 42, textAlign: 'center', fontSize: 11.5, fontWeight: 600, color: th.subtext }}>{controller.zoomPct}%</div>
-        <button type="button" className="mf-ed-btn" onClick={controller.zoomIn} title="확대" style={btnStyle}>
-          ＋
-        </button>
+        {/* Mobile pinches to zoom, so the −/배율/＋ cluster is dropped there to
+            keep the minimap control compact (leaving just 미니맵 토글 · 화면 맞춤). */}
+        {!isMobile && (
+          <>
+            <div style={{ width: 1, height: 16, background: th.border, margin: '0 3px' }} />
+            <button type="button" className="mf-ed-btn" onClick={controller.zoomOut} title="축소" style={btnStyle}>
+              −
+            </button>
+            <div style={{ minWidth: 42, textAlign: 'center', fontSize: 11.5, fontWeight: 600, color: th.subtext }}>{controller.zoomPct}%</div>
+            <button type="button" className="mf-ed-btn" onClick={controller.zoomIn} title="확대" style={btnStyle}>
+              ＋
+            </button>
+          </>
+        )}
         <div style={{ width: 1, height: 16, background: th.border, margin: '0 3px' }} />
         <button type="button" className="mf-ed-btn" onClick={controller.fitView} title="화면 맞춤" style={btnStyle}>
           <svg width={13} height={13} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round">
