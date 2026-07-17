@@ -1,4 +1,4 @@
-import type { CSSProperties } from 'react';
+import { useEffect, type CSSProperties } from 'react';
 import './editor.css';
 import { useEditorState } from './useEditorState';
 import { Toolbar } from './components/Toolbar';
@@ -35,6 +35,16 @@ export function Editor() {
     (mg.nodes.length > 0 && !mg.lines.length && !mg.floats.length) ||
     (mg.lines.length > 0 && !mg.nodes.length && !mg.floats.length) ||
     (mg.floats.length > 0 && !mg.nodes.length && !mg.lines.length);
+
+  // M6-mobile: when a single object is selected the property panel is a bottom
+  // sheet (max 55dvh) covering the lower screen. Re-center that object into the
+  // area ABOVE the sheet so it isn't hidden behind it. Runs once per selection
+  // change (mobile only); the minimap cluster is hidden meanwhile (ZoomControls).
+  const sel = controller.selection;
+  useEffect(() => {
+    if (!isMobile || !sel) return;
+    controller.centerObjectAboveSheet(sel.kind, sel.id, Math.round(window.innerHeight * 0.55));
+  }, [isMobile, sel?.kind, sel?.id]);
 
   // M6-mobile: use `100dvh` (dynamic viewport height) rather than `100vh` — on
   // mobile browsers `100vh` is the *large* viewport (ignores the address bar),

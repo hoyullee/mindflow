@@ -1,7 +1,10 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { act, cleanup, fireEvent, render, screen, within } from '@testing-library/react';
 import { MemoryRouter, Route, Routes } from 'react-router-dom';
+import type { Doc } from '@mindflow/mindmap-core';
+import { layout } from '@mindflow/mindmap-core';
 import { Editor } from './Editor';
+import { CanvasTextMeasurer, computeMetrics } from './metrics';
 import { mockMatchMedia } from '../../test/matchMedia';
 
 // M6: the property panel (NodePanel/LinePanel/FloatPanel/ZonePanel, all via
@@ -269,21 +272,55 @@ describe('Editor (mobile, M6)', () => {
     }
   });
 
-  it('lifts the zoom/minimap cluster above the bottom-sheet panel when a selection is open', () => {
+  it('hides the zoom/minimap cluster while a selection panel is open (mobile)', () => {
     const restore = mockMatchMedia(true);
     try {
       localStorage.setItem('mindflow_doc_m5', JSON.stringify(DOC));
       const { container } = renderEditor('/editor?map=m5&title=x');
 
-      // no selection → cluster pinned to the bottom
+      // no selection → cluster is pinned bottom-right
       expect(getZoomCluster(container).style.bottom).toBe('16px');
 
       const vp = getViewport(container);
       const nodeBox = within(vp).getByText('리서치').closest('[data-node-id]') as HTMLElement;
       selectNodeBox(nodeBox);
 
-      // panel open → cluster lifts above the 55dvh sheet
-      expect(getZoomCluster(container).style.bottom).toContain('55dvh');
+      // panel open → the whole minimap/zoom cluster is gone
+      expect(within(container).queryByTitle('화면 맞춤')).toBeNull();
+    } finally {
+      restore();
+    }
+  });
+
+  it('centers a selected object into the area above the bottom sheet (mobile)', () => {
+    const restore = mockMatchMedia(true);
+    try {
+      localStorage.setItem('mindflow_doc_m10', JSON.stringify(DOC));
+      const { container } = renderEditor('/editor?map=m10&title=x');
+      const vp = getViewport(container);
+
+      // c1's laid-out canvas center (same layout the hook runs)
+      const measurer = new CanvasTextMeasurer();
+      const sizeOf = (node: Parameters<typeof computeMetrics>[0], depth: number) => {
+        const m = computeMetrics(node, depth, measurer);
+        return { w: m.w, h: m.h };
+      };
+      const laid = layout(DOC as unknown as Doc, DOC.layoutMode as Doc['layoutMode'], sizeOf, { rootAnchor: { x: 0, y: 0 } });
+      const c1Y = laid.c1!.y;
+
+      const nodeBox = within(vp).getByText('리서치').closest('[data-node-id]') as HTMLElement;
+      selectNodeBox(nodeBox); // selects c1 → the mobile centering effect runs
+
+      const layer = getTransformLayer(container);
+      const t = /translate\(\s*[-\d.]+px,\s*([-\d.]+)px\)\s*scale\(([-\d.]+)\)/.exec(layer.style.transform)!;
+      const panY = Number(t[1]);
+      const zoom = Number(t[2]);
+      const screenY = c1Y * zoom + panY;
+      const vh = 700; // INITIAL_VIEWPORT vh in jsdom (no ResizeObserver)
+      // the object sits in the upper region — clear of a bottom sheet that can
+      // cover up to ~55% of the viewport
+      expect(screenY).toBeGreaterThan(0);
+      expect(screenY).toBeLessThan(vh * 0.45);
     } finally {
       restore();
     }

@@ -218,6 +218,7 @@ export interface EditorController {
   showMinimap: boolean;
   toggleMinimap: () => void;
   panToCanvasPoint: (x: number, y: number) => void;
+  centerObjectAboveSheet: (kind: SelectionKind, id: string, reserveBottomPx: number) => void;
 
   // ---- drag-to-reparent drop target ----
   attachTarget: AttachTarget | null;
@@ -1833,6 +1834,41 @@ export function useEditorState(): EditorController {
     setViewport((prev) => ({ ...prev, pan: { x: prev.vw / 2 - cx * prev.zoom, y: prev.vh / 2 - cy * prev.zoom } }));
   }, []);
 
+  /** Canvas-space center of a single selected object (or null if it's gone). */
+  const objectCanvasCenter = useCallback((kind: SelectionKind, id: string): { x: number; y: number } | null => {
+    if (kind === 'node') {
+      const g = geomRef.current[id];
+      return g ? { x: g.x, y: g.y } : null;
+    }
+    if (kind === 'float') {
+      const f = docRef.current.floats.find((x) => x.id === id);
+      return f ? { x: f.x + f.w / 2, y: f.y + (f.h || 44) / 2 } : null;
+    }
+    if (kind === 'zone') {
+      const z = docRef.current.zones.find((x) => x.id === id);
+      return z ? { x: z.x + z.w / 2, y: z.y + z.h / 2 } : null;
+    }
+    const l = docRef.current.lines.find((x) => x.id === id);
+    return l ? cubicAt(lineGeometryOf(l), 0.5) : null; // line midpoint
+  }, []);
+
+  /** Center the selected object in the canvas area ABOVE a bottom-anchored
+   * property sheet (mobile). `reserveBottomPx` is how much of the viewport the
+   * sheet may cover; the object is centered in the remaining top region so it's
+   * never hidden behind the sheet. Zoom is unchanged. */
+  const centerObjectAboveSheet = useCallback(
+    (kind: SelectionKind, id: string, reserveBottomPx: number) => {
+      const c = objectCanvasCenter(kind, id);
+      if (!c) return;
+      setViewport((prev) => {
+        const reserve = Math.min(Math.max(0, reserveBottomPx), prev.vh * 0.85);
+        const targetY = Math.max(prev.vh * 0.14, (prev.vh - reserve) / 2);
+        return { ...prev, pan: { x: prev.vw / 2 - c.x * prev.zoom, y: targetY - c.y * prev.zoom } };
+      });
+    },
+    [objectCanvasCenter],
+  );
+
   // ---- outline view editing — ports of `Component#outlineAdd`/`#outlineIndent`/`#outlineOutdent`
   // (MindFlow.dc.html:1944-1980). Tab/Enter mirror `addChild`/`addSibling`'s tree mutation but land
   // the new node in `outlineEditId` (the outline's own edit-mode flag) rather than `editingNodeId`
@@ -2434,6 +2470,7 @@ export function useEditorState(): EditorController {
     showMinimap,
     toggleMinimap,
     panToCanvasPoint,
+    centerObjectAboveSheet,
 
     attachTarget,
 

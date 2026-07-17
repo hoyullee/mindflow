@@ -23,11 +23,12 @@ interface ZoomControlsProps {
 export function ZoomControls({ controller, panelOpen = false }: ZoomControlsProps) {
   const th = controller.theme;
   const isMobile = useIsMobile();
+  // On mobile, the bottom-sheet property panel owns the lower screen; hide the
+  // minimap/zoom cluster entirely while it's open (the selected object is
+  // re-centered into the area above the sheet — see Editor). On desktop, or
+  // with no panel, the cluster stays pinned bottom-right.
+  if (isMobile && panelOpen) return null;
   const btnSize = isMobile ? 44 : 26;
-  // On mobile, a bottom-sheet property panel (max 55dvh) occupies the lower
-  // screen; sit the cluster just above its max extent so it's never hidden.
-  // On desktop (or with no panel) it stays pinned 16px from the bottom.
-  const bottom = isMobile && panelOpen ? 'calc(55dvh + 12px)' : 16;
   const btnStyle = {
     width: btnSize,
     height: btnSize,
@@ -49,7 +50,7 @@ export function ZoomControls({ controller, panelOpen = false }: ZoomControlsProp
       style={{
         position: 'absolute',
         right: 16,
-        bottom,
+        bottom: 16,
         background: th.panel,
         border: `1px solid ${th.border}`,
         borderRadius: 12,
