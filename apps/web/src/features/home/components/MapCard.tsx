@@ -101,7 +101,10 @@ export function MapCard({ card, controller, draggableEnabled }: Props) {
           color: card.isFav ? '#e0a53c' : '#b6a596',
           cursor: 'pointer',
           boxShadow: '0 2px 6px rgba(0,0,0,.12)',
-          opacity: card.isFav ? 1 : 0,
+          // Revealed on hover (see home.css), but also whenever the card is
+          // favorited or selected — so on touch (no hover) selecting a card
+          // exposes its controls.
+          opacity: card.isFav || card.selected ? 1 : 0,
           transition: 'opacity .15s, transform .1s',
         }}
       >
@@ -137,7 +140,10 @@ export function MapCard({ card, controller, draggableEnabled }: Props) {
           color: '#7c6d60',
           cursor: 'pointer',
           boxShadow: '0 2px 6px rgba(0,0,0,.12)',
-          opacity: card.menuOpen ? 1 : 0,
+          // Revealed on hover (see home.css), but also when the menu is open or
+          // the card is selected, so on touch (no hover) a selected map exposes
+          // its ☰ menu button.
+          opacity: card.menuOpen || card.selected ? 1 : 0,
           transition: 'opacity .15s',
         }}
       >

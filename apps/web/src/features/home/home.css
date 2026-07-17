@@ -146,6 +146,15 @@ a:hover {
 .mf-home .map-card:hover .menu-btn {
   opacity: 1 !important;
 }
+/* Touch devices have no hover, so the hover-revealed card controls (☆ favorite,
+   ☰ menu on map & folder cards) would be permanently invisible. Always show
+   them there so the ☰ menu is reachable. */
+@media (hover: none) {
+  .mf-home .fav-btn,
+  .mf-home .menu-btn {
+    opacity: 1 !important;
+  }
+}
 .mf-home .space-row:hover .space-dot {
   opacity: 1 !important;
 }
