@@ -46,6 +46,13 @@ describe('parseDoc', () => {
     expect(doc?.zones).toEqual([]);
     expect(doc?.layoutMode).toBe('radial');
     expect(doc?.themeKey).toBe('coral');
+    expect(doc?.edgeStyle).toBe('curve');
+  });
+
+  it('keeps a provided edgeStyle and round-trips it (MindFlow.dc.html:549, 576)', () => {
+    const doc = parseDoc({ nodes: { root: { id: 'root', text: 'x', emoji: '', parent: null, children: [], collapsed: false, color: null, x: 0, y: 0 } }, edgeStyle: 'elbow' });
+    expect(doc?.edgeStyle).toBe('elbow');
+    expect(serializeDoc(doc!).edgeStyle).toBe('elbow');
   });
 
   it('keeps provided floats/lines/zones/layoutMode/themeKey as-is when present', () => {

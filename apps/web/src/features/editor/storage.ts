@@ -8,7 +8,7 @@
 // `apps/web/src/features/home/storage.ts` `newMapHref`/`mapHref`).
 
 import type { Doc } from '@mindflow/mindmap-core';
-import { DEFAULT_LAYOUT_MODE, DEFAULT_THEME_KEY, ROOT_ID, parseDoc } from '@mindflow/mindmap-core';
+import { DEFAULT_EDGE_STYLE, DEFAULT_LAYOUT_MODE, DEFAULT_THEME_KEY, ROOT_ID, parseDoc } from '@mindflow/mindmap-core';
 
 /** Port of `Component#docKey` (MindFlow.dc.html:533). */
 export function docStorageKey(mapId: string | null): string {
@@ -45,6 +45,7 @@ export function seedDoc(title: string): Doc {
     zones: [],
     layoutMode: DEFAULT_LAYOUT_MODE,
     themeKey: DEFAULT_THEME_KEY,
+    edgeStyle: DEFAULT_EDGE_STYLE,
   };
 }
 

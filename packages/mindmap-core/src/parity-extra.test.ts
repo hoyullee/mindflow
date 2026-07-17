@@ -24,6 +24,7 @@ describe('M1a parity — persisted style fields survive round-trip', () => {
     zones: [{ id: 'z1', x: 0, y: 0, w: 100, h: 100, label: 'Z', color: '#eee' }],
     layoutMode: 'radial',
     themeKey: 'coral',
+    edgeStyle: 'elbow',
   };
 
   it('parseDoc(serializeDoc(...)) preserves every style field through JSON', () => {
