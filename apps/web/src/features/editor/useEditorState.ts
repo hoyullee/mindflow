@@ -1047,6 +1047,13 @@ export function useEditorState(): EditorController {
   const marqueeRectRef = useRef<MarqueeRect | null>(null);
   const pinchRef = useRef<{ dist: number; zoom: number; cx: number; cy: number } | null>(null);
   const activePointers = useRef<Map<number, { x: number; y: number }>>(new Map());
+  // Touch-only: on a phone, a one-finger press on an object records the object
+  // here and lets the press bubble to the background pan handler instead of
+  // selecting/dragging the object immediately. A drag then pans the canvas; a
+  // no-move release (a tap) selects this object (see the pan branch of `onUp`).
+  // This is why zoom/pan gestures that happen to start on an object no longer
+  // grab it. Cleared at the end of every background gesture.
+  const pendingTapRef = useRef<Selection | null>(null);
 
   const onBackgroundPointerDown = useCallback((e: ReactPointerEvent<HTMLDivElement>) => {
     activePointers.current.set(e.pointerId, { x: e.clientX, y: e.clientY });
@@ -1062,6 +1069,7 @@ export function useEditorState(): EditorController {
       }
       dragRef.current = null;
       marqueeRectRef.current = null;
+      pendingTapRef.current = null; // a two-finger pinch is a zoom, not a tap-select
       setMarquee(null);
       return;
     }
@@ -1137,13 +1145,24 @@ export function useEditorState(): EditorController {
         if (!d.moved) openCtxAt(pc.x, pc.y);
       }
       if (d.kind === 'pan') {
-        // A no-move TOUCH tap on the background deselects (touch uses pan for
-        // one-finger drag, so this is the touch equivalent of the marquee
-        // branch's tap-to-deselect below). Mouse right/middle click keeps the
-        // original behavior (no deselect — it may be opening the context menu).
+        // A no-move TOUCH tap selects on release (touch uses pan for one-finger
+        // drag; a press that started on an object stashed it in `pendingTapRef`).
+        // Tap on an object → select it; tap on empty background → deselect. A
+        // press that MOVED was a pan gesture, so it selects nothing. Mouse
+        // right/middle click keeps the original behavior (no deselect — it may
+        // be opening the context menu).
+        const tap = pendingTapRef.current;
+        pendingTapRef.current = null;
         if (d.touch && !d.moved) {
-          setSelectionState(null);
-          setMultiSelectionState(null);
+          if (tap) {
+            setSelectionState(tap);
+            setMultiSelectionState(null);
+            setEditingNodeId(null);
+            setEditingFloatId(null);
+          } else {
+            setSelectionState(null);
+            setMultiSelectionState(null);
+          }
         }
         return;
       }
@@ -2033,6 +2052,13 @@ export function useEditorState(): EditorController {
 
   const beginNodeDrag = useCallback(
     (e: ReactPointerEvent, id: string) => {
+      // Touch: defer to a tap. Don't select/drag on press — record the target
+      // and let the press bubble to the background so a drag pans and a no-move
+      // release selects (see `pendingTapRef`). Mouse keeps press-to-select+drag.
+      if (e.pointerType === 'touch') {
+        pendingTapRef.current = { kind: 'node', id };
+        return;
+      }
       const ms = multiSelectionRef.current;
       if (ms && ms.nodes.includes(id) && totalSelected(ms) > 1) {
         beginGroupDrag(e, ms);
@@ -2074,6 +2100,10 @@ export function useEditorState(): EditorController {
   }, []);
 
   const beginFloatDrag = useCallback((e: ReactPointerEvent, id: string) => {
+    if (e.pointerType === 'touch') {
+      pendingTapRef.current = { kind: 'float', id };
+      return;
+    }
     const ms = multiSelectionRef.current;
     if (ms && ms.floats.includes(id) && totalSelected(ms) > 1) {
       beginGroupDrag(e, ms);
@@ -2097,6 +2127,10 @@ export function useEditorState(): EditorController {
   }, []);
 
   const beginZoneDrag = useCallback((e: ReactPointerEvent, id: string) => {
+    if (e.pointerType === 'touch') {
+      pendingTapRef.current = { kind: 'zone', id };
+      return;
+    }
     e.stopPropagation();
     capturePointer(e);
     const z = docRef.current.zones.find((x) => x.id === id);
@@ -2115,6 +2149,10 @@ export function useEditorState(): EditorController {
   }, []);
 
   const beginLineDrag = useCallback((e: ReactPointerEvent, id: string) => {
+    if (e.pointerType === 'touch') {
+      pendingTapRef.current = { kind: 'line', id };
+      return;
+    }
     const ms = multiSelectionRef.current;
     if (ms && ms.lines.includes(id) && totalSelected(ms) > 1) {
       beginGroupDrag(e, ms);
