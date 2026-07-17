@@ -422,6 +422,12 @@ export function useEditorState(): EditorController {
   const [edgeStyle, setEdgeStyleState] = useState<EdgeStyle>('curve');
   const [view, setView] = useState<ViewMode>('map');
   const [viewport, setViewport] = useState<ViewportState>(INITIAL_VIEWPORT);
+  // True once the ResizeObserver has reported the canvas's real on-screen size.
+  // The initial centering waits for this so it centers against the actual
+  // viewport, not the 1200×700 default (which on a phone put the root
+  // off-screen). If ResizeObserver is unavailable (jsdom), start `true` so the
+  // one-shot centering still runs with the default size, as before.
+  const [measured, setMeasured] = useState<boolean>(typeof ResizeObserver === 'undefined');
   const [rootAnchor, setRootAnchor] = useState<PanState>({ x: 0, y: 0 });
   const [dragGhost, setDragGhost] = useState<{ id: string; x: number; y: number } | null>(null);
 
@@ -783,6 +789,7 @@ export function useEditorState(): EditorController {
     const ro = new ResizeObserver(() => {
       const w = el.clientWidth;
       const h = el.clientHeight;
+      setMeasured(true);
       setViewport((prev) => (prev.vw === w && prev.vh === h ? prev : { ...prev, vw: w || prev.vw, vh: h || prev.vh }));
     });
     ro.observe(el);
@@ -966,13 +973,51 @@ export function useEditorState(): EditorController {
     });
   }, [geom]);
 
+  // Initial view (and re-view after a layout switch): center the ROOT node in
+  // the viewport at a zoom that fits the whole map. The dc original + `fitView`
+  // center the content's bounding-box midpoint, which for a one-sided layout
+  // (right/down) leaves the root off to one edge; the product wants the top
+  // shape front-and-center on entry, so we pan to the root specifically while
+  // still scaling to fit everything. Falls back to the bbox center if the root
+  // somehow isn't laid out.
+  const centerOnRoot = useCallback(() => {
+    setViewport((prev) => {
+      const ids = Object.keys(geom);
+      if (!ids.length) return prev;
+      let minX = Infinity;
+      let minY = Infinity;
+      let maxX = -Infinity;
+      let maxY = -Infinity;
+      ids.forEach((id) => {
+        const g = geom[id];
+        if (!g) return;
+        minX = Math.min(minX, g.x - g.w / 2);
+        maxX = Math.max(maxX, g.x + g.w / 2);
+        minY = Math.min(minY, g.y - g.h / 2);
+        maxY = Math.max(maxY, g.y + g.h / 2);
+      });
+      const rootG = geom[ROOT_ID];
+      const cx = rootG ? rootG.x : (minX + maxX) / 2;
+      const cy = rootG ? rootG.y : (minY + maxY) / 2;
+      // Zoom so the farthest content on either side of the root still fits when
+      // the root is centered (half the viewport must cover the larger half-span
+      // from the root), so nothing clips off an edge. Capped at 1.25×.
+      const halfW = Math.max(cx - minX, maxX - cx, 1);
+      const halfH = Math.max(cy - minY, maxY - cy, 1);
+      let z = Math.min((prev.vw - FIT_PADDING) / (2 * halfW), (prev.vh - FIT_PADDING) / (2 * halfH), 1.25);
+      z = Math.max(MIN_ZOOM, z);
+      return { ...prev, zoom: z, pan: { x: prev.vw / 2 - cx * z, y: prev.vh / 2 - cy * z } };
+    });
+  }, [geom]);
+
   useEffect(() => {
     if (!pendingFitRef.current) return;
+    if (!measured) return; // wait for the real canvas size before the first center
     if (!Object.keys(geom).length) return;
     if (viewport.vw <= 0 || viewport.vh <= 0) return;
     pendingFitRef.current = false;
-    fitView();
-  }, [geom, viewport.vw, viewport.vh]);
+    centerOnRoot();
+  }, [geom, viewport.vw, viewport.vh, measured, centerOnRoot]);
 
   const setLayoutMode = useCallback(
     (mode: LayoutMode) => {

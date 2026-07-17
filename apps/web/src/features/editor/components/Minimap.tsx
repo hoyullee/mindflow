@@ -59,17 +59,20 @@ export function Minimap({ controller, isMobile = false }: MinimapProps) {
   const vx1 = (vw - pan.x) / zoom;
   const vy1 = (vh - pan.y) / zoom;
 
-  // Fit the minimap to content ∪ current viewport (the dc original fit only the
-  // content, so when you were zoomed out enough to see past the node cluster the
-  // viewport rectangle spilled way outside the minimap and read as "too wide").
-  // Unioning in the viewport keeps that rectangle inside the box and proportional
-  // to what you're actually seeing; when zoomed in it's a no-op (the viewport is
-  // already within the content bounds). During a drag we use the frozen snapshot
-  // instead (see `frozen`) so the mapping stays stable.
-  const liveMinX = Math.min(cMinX, vx0);
-  const liveMinY = Math.min(cMinY, vy0);
-  const liveMaxX = Math.max(cMaxX, vx1);
-  const liveMaxY = Math.max(cMaxY, vy1);
+  // Fit the minimap to the CONTENT bounds only (the node cluster). An earlier
+  // version unioned in the live viewport to keep the viewport rectangle inside
+  // the box, but that (a) made the rect balloon to fill the whole minimap when
+  // zoomed out and skew into a tall/narrow band on a portrait phone (it read as
+  // "broken"), and (b) moved the minimap's own coordinate system every time you
+  // panned. Fitting content-only keeps the node dots stable and correctly
+  // proportioned; the viewport rectangle is instead CLAMPED to the box below so
+  // it can never spill out. Content bounds don't change while panning, so the
+  // drag mapping is stable on its own; `frozen` (snapshotted at pointer-down)
+  // additionally pins it against any mid-drag content change.
+  const liveMinX = cMinX;
+  const liveMinY = cMinY;
+  const liveMaxX = cMaxX;
+  const liveMaxY = cMaxY;
 
   const minX = frozen ? frozen.minX : liveMinX;
   const minY = frozen ? frozen.minY : liveMinY;
@@ -83,6 +86,14 @@ export function Minimap({ controller, isMobile = false }: MinimapProps) {
   const oy = PAD + (H - PAD * 2 - bh * s) / 2;
   const mx = (x: number): number => ox + (x - minX) * s;
   const my = (y: number): number => oy + (y - minY) * s;
+
+  // Viewport rectangle, clamped to the minimap box so it never spills outside
+  // (when zoomed out past the content it simply fills the box).
+  const clampBox = (v: number, hi: number): number => Math.max(0, Math.min(hi, v));
+  const rx0 = clampBox(mx(vx0), W);
+  const ry0 = clampBox(my(vy0), H);
+  const rx1 = clampBox(mx(vx1), W);
+  const ry1 = clampBox(my(vy1), H);
 
   const centerFromEvent = (clientX: number, clientY: number): void => {
     const svg = svgRef.current;
@@ -141,10 +152,10 @@ export function Minimap({ controller, isMobile = false }: MinimapProps) {
       })}
       <rect
         data-testid="minimap-viewport"
-        x={mx(vx0)}
-        y={my(vy0)}
-        width={(vx1 - vx0) * s}
-        height={(vy1 - vy0) * s}
+        x={rx0}
+        y={ry0}
+        width={Math.max(0, rx1 - rx0)}
+        height={Math.max(0, ry1 - ry0)}
         fill={hexA(th.accent, 0.12)}
         stroke={th.accent}
         strokeWidth={1.2}

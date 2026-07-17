@@ -99,6 +99,23 @@ describe('Editor (mobile, M6)', () => {
       expect(screen.getByTitle('화면 맞춤')).toBeTruthy();
       // the desktop-only mouse-gesture legend is dropped on mobile
       expect(screen.queryByText(/좌드래그/)).toBeNull();
+      // the −/배율/＋ zoom buttons are dropped on mobile (pinch to zoom instead),
+      // leaving just the minimap toggle + 화면 맞춤 so the cluster stays compact
+      expect(screen.queryByTitle('축소')).toBeNull();
+      expect(screen.queryByTitle('확대')).toBeNull();
+      expect(screen.queryByText(/%$/)).toBeNull();
+    } finally {
+      restore();
+    }
+  });
+
+  it('keeps the −/배율/＋ zoom buttons on desktop', () => {
+    const restore = mockMatchMedia(false);
+    try {
+      localStorage.setItem('mindflow_doc_m1d', JSON.stringify(DOC));
+      renderEditor('/editor?map=m1d&title=x');
+      expect(screen.getByTitle('축소')).toBeTruthy();
+      expect(screen.getByTitle('확대')).toBeTruthy();
     } finally {
       restore();
     }
