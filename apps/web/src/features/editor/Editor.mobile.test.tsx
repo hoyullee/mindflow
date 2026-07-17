@@ -1,4 +1,4 @@
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { act, cleanup, fireEvent, render, screen, within } from '@testing-library/react';
 import { MemoryRouter, Route, Routes } from 'react-router-dom';
 import { Editor } from './Editor';
@@ -185,6 +185,46 @@ describe('Editor (mobile, M6)', () => {
       expect(getTransformLayer(container).style.transform).not.toBe(before); // panned
       expect(screen.queryByText('선택한 주제')).toBeNull(); // node NOT selected
     } finally {
+      restore();
+    }
+  });
+
+  it('touch: a stationary long-press opens the context menu (right-click equivalent)', () => {
+    const restore = mockMatchMedia(true);
+    vi.useFakeTimers();
+    try {
+      localStorage.setItem('mindflow_doc_m8', JSON.stringify(DOC));
+      const { container } = renderEditor('/editor?map=m8&title=x');
+      const vp = getViewport(container);
+
+      // press on empty background and hold still
+      touchEvent(vp, 'pointerdown', { pointerId: 11, clientX: 12, clientY: 12 });
+      // before the hold elapses → no menu
+      act(() => vi.advanceTimersByTime(300));
+      expect(screen.queryByText('도형 추가')).toBeNull();
+      // after the full hold → the (background) context menu opens
+      act(() => vi.advanceTimersByTime(300));
+      expect(screen.getByText('도형 추가')).toBeTruthy();
+    } finally {
+      vi.useRealTimers();
+      restore();
+    }
+  });
+
+  it('touch: a press that moves before the hold elapses pans and opens no menu', () => {
+    const restore = mockMatchMedia(true);
+    vi.useFakeTimers();
+    try {
+      localStorage.setItem('mindflow_doc_m9', JSON.stringify(DOC));
+      const { container } = renderEditor('/editor?map=m9&title=x');
+      const vp = getViewport(container);
+
+      touchEvent(vp, 'pointerdown', { pointerId: 12, clientX: 12, clientY: 12 });
+      touchEvent(window, 'pointermove', { pointerId: 12, clientX: 90, clientY: 80 }); // moves > tol
+      act(() => vi.advanceTimersByTime(600));
+      expect(screen.queryByText('도형 추가')).toBeNull(); // long-press was cancelled
+    } finally {
+      vi.useRealTimers();
       restore();
     }
   });
