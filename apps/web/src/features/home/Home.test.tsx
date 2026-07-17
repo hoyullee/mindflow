@@ -208,6 +208,23 @@ describe('Home', () => {
       expect(docStore.setFavorite).toHaveBeenCalledWith('doc1', true);
     });
 
+    it('reveals the ☰ menu button when its card is selected (so it is reachable without hover, e.g. on touch)', async () => {
+      const user = userEvent.setup();
+      const { container } = renderHomeWithDocStore([
+        { id: 'doc-sel', title: '선택할 맵', version: 1, updatedAt: '2026-01-01T00:00:00.000Z', isFavorite: false, deletedAt: null },
+      ]);
+
+      await waitFor(() => expect(screen.getByText('선택할 맵')).toBeTruthy());
+      const card = container.querySelector('a[data-title="선택할 맵"]') as HTMLElement;
+      const menuBtn = within(card).getByRole('button', { name: '메뉴' }) as HTMLElement;
+
+      // hidden by default (only the hover CSS would show it — absent on touch)
+      expect(menuBtn.style.opacity).toBe('0');
+
+      await user.click(card); // a single click selects the card
+      expect(menuBtn.style.opacity).toBe('1'); // …which now exposes the ☰ menu
+    });
+
     it('deleting calls docStore.remove(docId), restoring calls docStore.restore(docId)', async () => {
       const user = userEvent.setup();
       const { container, docStore } = renderHomeWithDocStore([
