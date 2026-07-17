@@ -339,7 +339,7 @@ export function useHomeController() {
 
   const recordRecent = (title: string) => {
     setState((prev) => {
-      const recent = [title, ...prev.recent.filter((t) => t !== title)].slice(0, 3);
+      const recent = [title, ...prev.recent.filter((t) => t !== title)].slice(0, 4);
       saveRecent(recent);
       return { ...prev, recent };
     });

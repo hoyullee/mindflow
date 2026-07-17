@@ -246,6 +246,28 @@ describe('Home', () => {
       expect((mainCard.querySelector('.map-thumb') as HTMLElement).style.height).toBe('150px');
     });
 
+    it('shows up to 4 cards in the 최근 항목 (recent) section', async () => {
+      localStorage.setItem('mf_recent', JSON.stringify(['맵 A', '맵 B', '맵 C', '맵 D']));
+      const { container } = renderHomeWithDocStore(
+        ['맵 A', '맵 B', '맵 C', '맵 D'].map((title, i) => ({
+          id: `doc-${i}`,
+          title,
+          version: 1,
+          updatedAt: '2026-01-01T00:00:00.000Z',
+          isFavorite: false,
+          deletedAt: null,
+        })),
+      );
+
+      await waitFor(() => expect(screen.getByText('최근 항목')).toBeTruthy());
+      // recent cards are the compact variant (72px thumbnail); there should be 4
+      const recent = [...container.querySelectorAll('a[data-title]')].filter((c) => {
+        const th = c.querySelector('.map-thumb') as HTMLElement | null;
+        return th?.style.height === '72px';
+      });
+      expect(recent.length).toBe(4);
+    });
+
     it('deleting calls docStore.remove(docId), restoring calls docStore.restore(docId)', async () => {
       const user = userEvent.setup();
       const { container, docStore } = renderHomeWithDocStore([

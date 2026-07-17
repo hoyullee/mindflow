@@ -2,7 +2,7 @@ import type { DocMeta } from '../../adapters/ports';
 import type { DriveFileData, MapCardData, SpaceData, TrashEntry } from './types';
 import { downloadOrShare } from '../../platform/nativeBridge';
 
-/** Home.dc.html:517,824 — `mf_recent` holds the last 3 opened map titles. */
+/** Home.dc.html:517,824 — `mf_recent` holds the last 4 opened map titles. */
 export const RECENT_KEY = 'mf_recent';
 
 /** Home.dc.html:813 `mapHref` / MindFlow editor `mindflow_doc_<id>` storage convention. */
