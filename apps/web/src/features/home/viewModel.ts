@@ -181,6 +181,12 @@ export function deriveHomeView(state: HomeState): HomeViewModel {
     .filter((t) => matchesSearch(t, state.search))
     .map((t) => {
       const base = baseByTitle.get(t)!;
+      // The recent section only renders in a non-Drive space at the top level
+      // (see `recentSectionVisible`), so — like a top-level map card — it can
+      // favorite, export, and move-to-folder. These must read the SAME open/
+      // export/move state as `allCards`; hardcoding them false (as before) left
+      // the ☰ menu unable to open on a recent card.
+      const hasMove = folders.length > 0;
       return {
         title: t,
         when: base.when,
@@ -192,17 +198,17 @@ export function deriveHomeView(state: HomeState): HomeViewModel {
         openable: true,
         isFav: !!favs[t],
         isDrive: sourceIsDrive(t),
-        menuOpen: false,
+        menuOpen: state.openMenu === t,
         selected: state.selectedCard === t,
         dragging: false,
         dragOverTarget: false,
-        exportOpen: false,
-        moveOpen: false,
-        showFavRow: false,
-        showMoveRow: false,
+        exportOpen: state.exportFor === t,
+        moveOpen: state.moveFor === t,
+        showFavRow: true,
+        showMoveRow: hasMove,
         showUnfolderRow: false,
-        showDivider: false,
-        moveTargets: [],
+        showDivider: true,
+        moveTargets: folders.map((f) => ({ id: f.id, name: f.name })),
       };
     });
 
