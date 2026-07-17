@@ -225,9 +225,8 @@ describe('Home', () => {
       expect(menuBtn.style.opacity).toBe('1'); // …which now exposes the ☰ menu
     });
 
-    it('opens the ☰ menu on a card in the 최근 항목 (recent) section', async () => {
+    it('renders 최근 항목 (recent) cards as a compact variant with no ☰ menu button', async () => {
       localStorage.setItem('mf_recent', JSON.stringify(['최근 맵']));
-      const user = userEvent.setup();
       const { container } = renderHomeWithDocStore([
         { id: 'doc-rec', title: '최근 맵', version: 1, updatedAt: '2026-01-01T00:00:00.000Z', isFavorite: false, deletedAt: null },
       ]);
@@ -235,15 +234,16 @@ describe('Home', () => {
       await waitFor(() => expect(screen.getByText('최근 항목')).toBeTruthy());
       // the recent card is the first card with this title (recent section renders above 맵)
       const recentCard = container.querySelectorAll('a[data-title="최근 맵"]')[0] as HTMLElement;
-      // the menu wrapper is the child div holding the .menu-row items; it's
-      // display:none until the ☰ is clicked (was permanently none before the fix)
-      const wrapper = [...recentCard.children].find((el) => el.querySelector('.menu-row')) as HTMLElement;
-      expect(wrapper.style.display).toBe('none');
+      // no ☰ menu button on a recent card…
+      expect(within(recentCard).queryByRole('button', { name: '메뉴' })).toBeNull();
+      // …and it's the compact thumbnail (72px), not the full 150px one
+      const thumb = recentCard.querySelector('.map-thumb') as HTMLElement;
+      expect(thumb.style.height).toBe('72px');
 
-      await user.click(within(recentCard).getByRole('button', { name: '메뉴' }));
-      expect(wrapper.style.display).toBe('block');
-      // and it's the full menu (favorite row present), not an empty one
-      expect(within(recentCard).getByText('즐겨찾기')).toBeTruthy();
+      // the main-grid copy of the same map keeps its full card + ☰ menu
+      const mainCard = container.querySelectorAll('a[data-title="최근 맵"]')[1] as HTMLElement;
+      expect(within(mainCard).getByRole('button', { name: '메뉴' })).toBeTruthy();
+      expect((mainCard.querySelector('.map-thumb') as HTMLElement).style.height).toBe('150px');
     });
 
     it('deleting calls docStore.remove(docId), restoring calls docStore.restore(docId)', async () => {
