@@ -828,6 +828,9 @@ export function useEditorState(): EditorController {
   // (see `startObjDrag` below, next to `objDragRef`'s declaration). ----
   const pendingCtxRef = useRef<{ x: number; y: number } | null>(null);
   const suppressCtxRef = useRef(0);
+  // Timestamp (ms) until which the next compatibility `click` after a touch
+  // tap-select is swallowed — see the tap branch of `onUp` and the guard effect.
+  const suppressGhostClickRef = useRef(0);
   const objDragMovedRef = useRef(false);
 
   /** Port of `Component#hitTestAll` (MindFlow.dc.html:2815-2836): what a canvas point lands
@@ -1191,6 +1194,12 @@ export function useEditorState(): EditorController {
         const tap = pendingTapRef.current;
         pendingTapRef.current = null;
         if (d.touch && !d.moved) {
+          // Swallow the trailing compatibility mouse `click` the browser fires
+          // after a touch tap: it lands at the tap point, which the freshly-
+          // opened bottom-sheet property panel may now cover — otherwise it
+          // "ghost-clicks" a panel control (e.g. auto-expands the first
+          // section). See the capture-phase click guard below.
+          suppressGhostClickRef.current = Date.now() + 500;
           if (tap) {
             setSelectionState(tap);
             setMultiSelectionState(null);
@@ -1261,6 +1270,23 @@ export function useEditorState(): EditorController {
       window.removeEventListener('pointercancel', onUp);
       cancelLongPress();
     };
+  }, []);
+
+  // Ghost-click guard: after a touch tap-select (see `onUp`), the browser fires
+  // one compatibility `click` at the tap point ~immediately. The property panel
+  // that just opened (mobile bottom sheet) can sit under that point, so the
+  // click would activate a panel control unintentionally. Swallow that single
+  // click in the capture phase, once, within the short window.
+  useEffect(() => {
+    const onClickCapture = (e: MouseEvent): void => {
+      if (suppressGhostClickRef.current && Date.now() < suppressGhostClickRef.current) {
+        suppressGhostClickRef.current = 0;
+        e.stopPropagation();
+        e.preventDefault();
+      }
+    };
+    window.addEventListener('click', onClickCapture, true);
+    return () => window.removeEventListener('click', onClickCapture, true);
   }, []);
 
   // native (non-passive) wheel listener — mirrors `Component#onWheel`

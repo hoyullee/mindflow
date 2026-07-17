@@ -143,6 +143,10 @@ describe('Editor (mobile, M6)', () => {
       while (el && el.style.position !== 'fixed') el = el.parentElement;
       expect(el).not.toBeNull();
       expect(el?.style.bottom).toBe('0px');
+      // fixed (not max-) height, so expanding an accordion section scrolls
+      // inside the sheet instead of resizing it
+      expect(el?.style.height).toBe('55dvh');
+      expect(el?.style.maxHeight).toBe('');
     } finally {
       restore();
     }
