@@ -74,6 +74,11 @@ import type {
 const MIN_ZOOM = 0.25;
 const MAX_ZOOM = 2.4;
 const FIT_PADDING = 90;
+// Touch long-press → context menu (the touch equivalent of a right-click): a
+// stationary press held this long opens the menu; moving more than the
+// tolerance first cancels it (it's a pan).
+const LONG_PRESS_MS = 500;
+const LONG_PRESS_MOVE_TOL = 10;
 
 interface ViewportState {
   pan: PanState;
@@ -1054,6 +1059,15 @@ export function useEditorState(): EditorController {
   // This is why zoom/pan gestures that happen to start on an object no longer
   // grab it. Cleared at the end of every background gesture.
   const pendingTapRef = useRef<Selection | null>(null);
+  // Touch long-press timer (see LONG_PRESS_MS): a stationary one-finger hold
+  // opens the context menu like a desktop right-click.
+  const longPressRef = useRef<{ timer: ReturnType<typeof setTimeout>; x0: number; y0: number } | null>(null);
+  const cancelLongPress = (): void => {
+    if (longPressRef.current) {
+      clearTimeout(longPressRef.current.timer);
+      longPressRef.current = null;
+    }
+  };
 
   const onBackgroundPointerDown = useCallback((e: ReactPointerEvent<HTMLDivElement>) => {
     activePointers.current.set(e.pointerId, { x: e.clientX, y: e.clientY });
@@ -1070,6 +1084,7 @@ export function useEditorState(): EditorController {
       dragRef.current = null;
       marqueeRectRef.current = null;
       pendingTapRef.current = null; // a two-finger pinch is a zoom, not a tap-select
+      cancelLongPress(); // …nor a long-press
       setMarquee(null);
       return;
     }
@@ -1088,6 +1103,21 @@ export function useEditorState(): EditorController {
         dragRef.current = { kind: 'pan', pointerId: e.pointerId, sx: e.clientX, sy: e.clientY, startPan: prev.pan, moved: false, touch: isTouch };
         return prev;
       });
+      if (isTouch) {
+        // Arm the long-press: if the finger stays put for LONG_PRESS_MS, open
+        // the context menu at the press point (right-click equivalent) and drop
+        // the pending pan/tap so the finger-lift neither pans nor selects.
+        const px = e.clientX;
+        const py = e.clientY;
+        cancelLongPress();
+        const timer = setTimeout(() => {
+          longPressRef.current = null;
+          dragRef.current = null;
+          pendingTapRef.current = null;
+          openCtxAt(px, py);
+        }, LONG_PRESS_MS);
+        longPressRef.current = { timer, x0: px, y0: py };
+      }
       return;
     }
     const vp = viewportRef.current;
@@ -1101,6 +1131,11 @@ export function useEditorState(): EditorController {
     function onMove(e: PointerEvent): void {
       if (activePointers.current.has(e.pointerId)) {
         activePointers.current.set(e.pointerId, { x: e.clientX, y: e.clientY });
+      }
+      // moving past the tolerance turns the gesture into a pan → not a long-press
+      if (longPressRef.current) {
+        const lp = longPressRef.current;
+        if (Math.abs(e.clientX - lp.x0) + Math.abs(e.clientY - lp.y0) > LONG_PRESS_MOVE_TOL) cancelLongPress();
       }
       if (activePointers.current.size === 2 && pinchRef.current) {
         const pts = Array.from(activePointers.current.values());
@@ -1132,6 +1167,7 @@ export function useEditorState(): EditorController {
     function onUp(e: PointerEvent): void {
       activePointers.current.delete(e.pointerId);
       if (activePointers.current.size < 2) pinchRef.current = null;
+      cancelLongPress(); // a release before the hold elapsed is a tap, not a long-press
       const d = dragRef.current;
       if (!d || d.pointerId !== e.pointerId) return;
       dragRef.current = null;
@@ -1222,6 +1258,7 @@ export function useEditorState(): EditorController {
       window.removeEventListener('pointermove', onMove);
       window.removeEventListener('pointerup', onUp);
       window.removeEventListener('pointercancel', onUp);
+      cancelLongPress();
     };
   }, []);
 
