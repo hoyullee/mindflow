@@ -28,13 +28,12 @@ export function Minimap({ controller, isMobile = false }: MinimapProps) {
   const H = isMobile ? H_MOBILE : H_DESKTOP;
   const svgRef = useRef<SVGSVGElement | null>(null);
   const draggingRef = useRef(false);
-  // Bounds are recomputed every render from content ∪ viewport (below). While
-  // dragging the viewport rect, that live recompute would move the minimap's
-  // coordinate system under the pointer each frame (panning changes the
-  // viewport, which changes the union, which rescales everything) — a feedback
-  // loop that made drag-to-pan jump around erratically. Freezing the bounds for
-  // the whole drag keeps the mapping (and the rendered dots) rock-steady so the
-  // viewport rect tracks the pointer 1:1. Released on pointer up.
+  // The mapped bounds (below) depend on the viewport *size* but not its
+  // position, so panning doesn't move the minimap's coordinate system — except
+  // that a minimap drag also nudges zoom-independent state, and any future
+  // change to the bounds mid-drag would shift the mapping under the pointer.
+  // Freezing the bounds snapshot for the whole drag keeps the mapping (and the
+  // node dots) rock-steady so the viewport rect tracks the pointer 1:1.
   const [frozen, setFrozen] = useState<{ minX: number; minY: number; maxX: number; maxY: number } | null>(null);
 
   const ids = Object.keys(geom);
@@ -59,20 +58,29 @@ export function Minimap({ controller, isMobile = false }: MinimapProps) {
   const vx1 = (vw - pan.x) / zoom;
   const vy1 = (vh - pan.y) / zoom;
 
-  // Fit the minimap to the CONTENT bounds only (the node cluster). An earlier
-  // version unioned in the live viewport to keep the viewport rectangle inside
-  // the box, but that (a) made the rect balloon to fill the whole minimap when
-  // zoomed out and skew into a tall/narrow band on a portrait phone (it read as
-  // "broken"), and (b) moved the minimap's own coordinate system every time you
-  // panned. Fitting content-only keeps the node dots stable and correctly
-  // proportioned; the viewport rectangle is instead CLAMPED to the box below so
-  // it can never spill out. Content bounds don't change while panning, so the
-  // drag mapping is stable on its own; `frozen` (snapshotted at pointer-down)
-  // additionally pins it against any mid-drag content change.
-  const liveMinX = cMinX;
-  const liveMinY = cMinY;
-  const liveMaxX = cMaxX;
-  const liveMaxY = cMaxY;
+  // Choose the mapped region so the orange viewport rectangle reads as a small
+  // inner box, not a slab filling the whole minimap. It's centered on the
+  // CONTENT midpoint and sized to comfortably contain BOTH the node cluster and
+  // the current viewport, times `OVERVIEW` (so whichever is larger occupies
+  // only ~1/OVERVIEW of the minimap). Crucially it depends on the viewport
+  // *size* (vw/vh ÷ zoom) but NOT its position (pan): tall portrait phones show
+  // a much taller visible area than the short content, so a content-only margin
+  // couldn't shrink the rect vertically (it clamped to full height); folding in
+  // the viewport size fixes that. Using size-not-position keeps the mapping
+  // stable while panning (no feedback loop, no jitter) — it only rescales on a
+  // deliberate zoom. An earlier version unioned the live viewport *position*
+  // in, which both moved the coordinate system on every pan and skewed the rect
+  // into a broken-looking band; this avoids all of that, and the rect is still
+  // CLAMPED to the box below as a backstop.
+  const OVERVIEW = 1.9;
+  const cCx = (cMinX + cMaxX) / 2;
+  const cCy = (cMinY + cMaxY) / 2;
+  const halfW = Math.max((cMaxX - cMinX) / 2, vw / zoom / 2) * OVERVIEW + 20;
+  const halfH = Math.max((cMaxY - cMinY) / 2, vh / zoom / 2) * OVERVIEW + 20;
+  const liveMinX = cCx - halfW;
+  const liveMinY = cCy - halfH;
+  const liveMaxX = cCx + halfW;
+  const liveMaxY = cCy + halfH;
 
   const minX = frozen ? frozen.minX : liveMinX;
   const minY = frozen ? frozen.minY : liveMinY;
@@ -109,8 +117,8 @@ export function Minimap({ controller, isMobile = false }: MinimapProps) {
     e.preventDefault();
     draggingRef.current = true;
     // Freeze the current bounds so the whole drag maps against one stable
-    // coordinate system (see `frozen`). Snapshot the live union, not the frozen
-    // value, since we're just entering a drag.
+    // coordinate system (see `frozen`). Snapshot the live values, not the
+    // already-frozen ones, since we're just entering a drag.
     setFrozen({ minX: liveMinX, minY: liveMinY, maxX: liveMaxX, maxY: liveMaxY });
     try {
       e.currentTarget.setPointerCapture(e.pointerId);
