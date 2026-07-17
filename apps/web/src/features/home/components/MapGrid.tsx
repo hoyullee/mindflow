@@ -44,9 +44,9 @@ export function MapGrid({ view, controller }: Props) {
       {view.recentSectionVisible && (
         <div>
           <div style={{ fontSize: 12.5, fontWeight: 700, color: '#9c8b7e', marginBottom: 14 }}>최근 항목</div>
-          <div className="mf-map-grid" style={{ ...GRID_STYLE, marginBottom: 26 }}>
+          <div className="mf-recent-grid" style={{ marginBottom: 26 }}>
             {view.recentCards.map((c) => (
-              <MapCard key={c.title} card={c} controller={controller} draggableEnabled={false} />
+              <MapCard key={c.title} card={c} controller={controller} draggableEnabled={false} compact />
             ))}
           </div>
           <div style={{ height: 1, background: '#ecdfd5', margin: '0 0 26px' }} />

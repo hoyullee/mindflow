@@ -6,10 +6,14 @@ interface Props {
   card: CardViewData;
   controller: HomeController;
   draggableEnabled: boolean;
+  /** Recent-section variant: ~1/4 the footprint (half the thumbnail + tighter
+   * text) and no ☰ menu button, so a recent entry reads as a quick-access
+   * shortcut and is clearly distinct from a full card in the main list. */
+  compact?: boolean;
 }
 
 /** Home.dc.html:251-303 `<sc-for list="{{ allCards }}">` — a single map/Drive-file card. */
-export function MapCard({ card, controller, draggableEnabled }: Props) {
+export function MapCard({ card, controller, draggableEnabled, compact = false }: Props) {
   const stopPrevent = (e: MouseEvent) => {
     e.preventDefault();
     e.stopPropagation();
@@ -47,7 +51,7 @@ export function MapCard({ card, controller, draggableEnabled }: Props) {
   const grey = card.openable === false;
   const cardStyle: CSSProperties = {
     border: card.selected ? '2px solid #f0663f' : '1px solid #ecdfd5',
-    borderRadius: 14,
+    borderRadius: compact ? 10 : 14,
     background: grey ? '#fbf8f5' : '#fff',
     overflow: 'hidden',
     cursor: grey ? 'default' : 'pointer',
@@ -111,6 +115,7 @@ export function MapCard({ card, controller, draggableEnabled }: Props) {
         {card.isFav ? '★' : '☆'}
       </div>
 
+      {!compact && (
       <div
         className="menu-btn"
         role="button"
@@ -149,7 +154,9 @@ export function MapCard({ card, controller, draggableEnabled }: Props) {
       >
         ☰
       </div>
+      )}
 
+      {!compact && (
       <div onClick={stopPrevent} style={{ position: 'absolute', top: 44, right: 10, zIndex: 20, width: 150, background: '#fff', border: '1px solid #ecdfd5', borderRadius: 10, boxShadow: '0 10px 28px rgba(0,0,0,.16)', padding: '5px 0', display: card.menuOpen ? 'block' : 'none' }}>
         <div style={{ display: card.exportOpen || card.moveOpen ? 'none' : 'block' }}>
           {card.showFavRow && (
@@ -339,6 +346,7 @@ export function MapCard({ card, controller, draggableEnabled }: Props) {
           ))}
         </div>
       </div>
+      )}
 
       {card.badge && (
         <div
@@ -365,21 +373,21 @@ export function MapCard({ card, controller, draggableEnabled }: Props) {
       <div
         className="map-thumb"
         style={{
-          height: 150,
+          height: compact ? 72 : 150,
           background: grey ? '#f4f0eb' : `linear-gradient(135deg,#fdfbfa,${card.isDrive ? 'rgba(52,168,83,.07)' : 'rgba(0,0,0,.02)'})`,
           borderBottom: '1px solid #f0e6dd',
           display: 'flex',
           alignItems: 'center',
           justifyContent: 'center',
-          fontSize: 30,
+          fontSize: compact ? 22 : 30,
           filter: grey ? 'grayscale(1) opacity(.55)' : 'none',
         }}
       >
         {card.sketch}
       </div>
-      <div style={{ padding: '14px 16px' }}>
-        <div style={{ fontSize: 14, fontWeight: 600, marginBottom: 4, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{card.title}</div>
-        <div style={{ fontSize: 12, color: '#9c8b7e' }}>최근 항목:{card.when}</div>
+      <div style={{ padding: compact ? '8px 10px' : '14px 16px' }}>
+        <div style={{ fontSize: compact ? 12 : 14, fontWeight: 600, marginBottom: compact ? 0 : 4, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{card.title}</div>
+        {!compact && <div style={{ fontSize: 12, color: '#9c8b7e' }}>최근 항목:{card.when}</div>}
       </div>
     </a>
   );

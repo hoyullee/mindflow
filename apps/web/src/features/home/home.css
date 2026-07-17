@@ -195,3 +195,21 @@ a:hover {
     grid-template-columns: 1fr;
   }
 }
+
+/* Recent section: compact cards (~1/4 the footprint of a main card), so more
+   fit per row and they read as quick-access shortcuts, not full map cards. */
+.mf-recent-grid {
+  display: grid;
+  gap: 12px;
+  grid-template-columns: repeat(auto-fill, minmax(148px, 1fr));
+}
+@media (max-width: 767px) {
+  .mf-recent-grid {
+    grid-template-columns: repeat(3, 1fr);
+  }
+}
+@media (max-width: 479px) {
+  .mf-recent-grid {
+    grid-template-columns: repeat(2, 1fr);
+  }
+}
