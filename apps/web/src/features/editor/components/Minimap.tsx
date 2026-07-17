@@ -123,7 +123,12 @@ export function Minimap({ controller, isMobile = false }: MinimapProps) {
       width={W}
       height={H}
       data-testid="minimap"
-      style={{ display: 'block', borderRadius: 8, cursor: 'grab', background: th.canvasBg }}
+      // `touch-action: none` is essential for drag-to-pan on touch devices:
+      // without it the browser claims a one-finger drag on the SVG as a
+      // scroll/zoom gesture and fires `pointercancel` instead of delivering
+      // `pointermove`, so the drag dies the moment the finger moves (the main
+      // canvas `.mf-ed-vp` sets this in editor.css for the same reason).
+      style={{ display: 'block', borderRadius: 8, cursor: 'grab', background: th.canvasBg, touchAction: 'none' }}
       onPointerDown={onPointerDown}
       onPointerMove={onPointerMove}
       onPointerUp={onPointerUp}

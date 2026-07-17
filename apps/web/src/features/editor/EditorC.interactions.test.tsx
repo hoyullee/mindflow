@@ -129,6 +129,17 @@ describe('Editor minimap (M3-Editor-c)', () => {
     expect(screen.getByTestId('minimap-viewport')).toBeTruthy();
   });
 
+  // Regression: the minimap must set `touch-action: none`, or a touch device
+  // claims a drag on it as a scroll/zoom gesture and stops delivering
+  // pointermove after the first move — the drag dies and drag-to-pan is dead
+  // on mobile.
+  it('sets touch-action: none so touch drag-to-pan is not stolen by the browser', () => {
+    localStorage.setItem('mindflow_doc_mmt', JSON.stringify(SIMPLE_DOC));
+    renderEditor('/editor?map=mmt&title=x');
+    const mm = screen.getByTestId('minimap') as unknown as SVGSVGElement;
+    expect(mm.style.touchAction).toBe('none');
+  });
+
   it('the minimap toggle button hides and re-shows it', async () => {
     localStorage.setItem('mindflow_doc_mm2', JSON.stringify(SIMPLE_DOC));
     renderEditor('/editor?map=mm2&title=x');
