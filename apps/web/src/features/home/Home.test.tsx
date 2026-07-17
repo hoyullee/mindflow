@@ -225,6 +225,27 @@ describe('Home', () => {
       expect(menuBtn.style.opacity).toBe('1'); // …which now exposes the ☰ menu
     });
 
+    it('opens the ☰ menu on a card in the 최근 항목 (recent) section', async () => {
+      localStorage.setItem('mf_recent', JSON.stringify(['최근 맵']));
+      const user = userEvent.setup();
+      const { container } = renderHomeWithDocStore([
+        { id: 'doc-rec', title: '최근 맵', version: 1, updatedAt: '2026-01-01T00:00:00.000Z', isFavorite: false, deletedAt: null },
+      ]);
+
+      await waitFor(() => expect(screen.getByText('최근 항목')).toBeTruthy());
+      // the recent card is the first card with this title (recent section renders above 맵)
+      const recentCard = container.querySelectorAll('a[data-title="최근 맵"]')[0] as HTMLElement;
+      // the menu wrapper is the child div holding the .menu-row items; it's
+      // display:none until the ☰ is clicked (was permanently none before the fix)
+      const wrapper = [...recentCard.children].find((el) => el.querySelector('.menu-row')) as HTMLElement;
+      expect(wrapper.style.display).toBe('none');
+
+      await user.click(within(recentCard).getByRole('button', { name: '메뉴' }));
+      expect(wrapper.style.display).toBe('block');
+      // and it's the full menu (favorite row present), not an empty one
+      expect(within(recentCard).getByText('즐겨찾기')).toBeTruthy();
+    });
+
     it('deleting calls docStore.remove(docId), restoring calls docStore.restore(docId)', async () => {
       const user = userEvent.setup();
       const { container, docStore } = renderHomeWithDocStore([
