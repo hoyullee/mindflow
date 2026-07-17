@@ -138,5 +138,6 @@
     }
   ],
   "layoutMode": "radial",
-  "themeKey": "coral"
+  "themeKey": "coral",
+  "edgeStyle": "curve"
 }

@@ -224,6 +224,26 @@ describe('Editor interactions (M3-Editor-b)', () => {
     );
   });
 
+  it('persists a connector (edgeStyle) change from the Style menu to the saved doc', async () => {
+    const user = userEvent.setup();
+    localStorage.setItem('mindflow_doc_edge', JSON.stringify(DOC));
+    renderEditor('/editor?map=edge&title=x');
+
+    // open the Style menu and pick 꺾은선 (elbow) under 연결선
+    await user.click(screen.getByTitle(/맵 스타일/));
+    await user.click(screen.getByRole('button', { name: '꺾은선' }));
+    fireEvent.keyDown(window, { key: 's', ctrlKey: true });
+
+    await waitFor(
+      () => {
+        const raw = localStorage.getItem('mindflow_doc_edge');
+        expect(raw).toBeTruthy();
+        expect(parseDoc(JSON.parse(raw as string))?.edgeStyle).toBe('elbow');
+      },
+      { timeout: 2000 },
+    );
+  });
+
   it('autosaves after a debounce without pressing Ctrl+S', async () => {
     localStorage.setItem('mindflow_doc_t5b', JSON.stringify(DOC));
     const { container } = renderEditor('/editor?map=t5b&title=x');

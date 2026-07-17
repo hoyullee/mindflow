@@ -403,7 +403,7 @@ export interface EditorController {
 
 function docSignature(d: Doc): string {
   try {
-    return JSON.stringify([d.nodes, d.floats, d.lines, d.zones, d.layoutMode, d.themeKey]);
+    return JSON.stringify([d.nodes, d.floats, d.lines, d.zones, d.layoutMode, d.themeKey, d.edgeStyle]);
   } catch {
     return '';
   }
@@ -425,7 +425,9 @@ export function useEditorState(): EditorController {
 
   const [doc, setDoc] = useState<Doc>(() => loadOrSeedDoc(mapId, titleParam));
   const [saveConflict, setSaveConflict] = useState<{ currentVersion: number } | null>(null);
-  const [edgeStyle, setEdgeStyleState] = useState<EdgeStyle>('curve');
+  // connector style lives on the doc (persisted like layoutMode/themeKey); mirror
+  // it into local state for rendering, seeded from the loaded doc.
+  const [edgeStyle, setEdgeStyleState] = useState<EdgeStyle>(() => (doc.edgeStyle as EdgeStyle | undefined) ?? 'curve');
   const [view, setView] = useState<ViewMode>('map');
   const [viewport, setViewport] = useState<ViewportState>(INITIAL_VIEWPORT);
   // True once the ResizeObserver has reported the canvas's real on-screen size.
@@ -490,7 +492,11 @@ export function useEditorState(): EditorController {
           return;
         }
         docVersionRef.current = res.version;
-        setDoc((prev) => (docSignature(prev) === mountDocSigRef.current && docSignature(res.doc) !== mountDocSigRef.current ? res.doc : prev));
+        const adopt = docSignature(docRef.current) === mountDocSigRef.current && docSignature(res.doc) !== mountDocSigRef.current;
+        if (adopt) {
+          setDoc(res.doc);
+          setEdgeStyleState((res.doc.edgeStyle as EdgeStyle | undefined) ?? 'curve');
+        }
       })
       .catch(() => {
         /* load failed (offline, RLS, ...) — keep the locally-seeded doc and
@@ -757,7 +763,7 @@ export function useEditorState(): EditorController {
   }, []);
 
   function applySnapshot(snap: Snapshot): void {
-    setDoc((prev) => ({ ...prev, nodes: snap.nodes, floats: snap.floats, lines: snap.lines, zones: snap.zones, layoutMode: snap.layoutMode }));
+    setDoc((prev) => ({ ...prev, nodes: snap.nodes, floats: snap.floats, lines: snap.lines, zones: snap.zones, layoutMode: snap.layoutMode, edgeStyle: snap.edgeStyle }));
     setEdgeStyleState(snap.edgeStyle);
     setSelectionState(null);
     setMultiSelectionState(null);
@@ -1038,6 +1044,9 @@ export function useEditorState(): EditorController {
 
   const setEdgeStyle = useCallback((s: EdgeStyle) => {
     setEdgeStyleState(s);
+    // Persist on the doc too (it's a serialized field now) so autosave picks it
+    // up — `docSignature` includes `edgeStyle`, so this dirties the doc.
+    setDoc((prev) => (prev.edgeStyle === s ? prev : { ...prev, edgeStyle: s }));
     const d = docRef.current;
     historyRef.current!.record({ nodes: d.nodes, floats: d.floats, lines: d.lines, zones: d.zones, layoutMode: d.layoutMode, edgeStyle: s }, false);
     setHistoryTick((t) => t + 1);

@@ -1,8 +1,8 @@
 // Serialization core — ports of `serializeDoc()` / `loadDoc()` / `cloneNodes()`
 // from `MindFlow.dc.html`. Pure, no localStorage: callers own persistence.
 
-import type { Doc, Float, Line, LayoutMode, NodeMap, Zone } from './model';
-import { DEFAULT_LAYOUT_MODE, DEFAULT_THEME_KEY } from './model';
+import type { Doc, EdgeStyle, Float, Line, LayoutMode, NodeMap, Zone } from './model';
+import { DEFAULT_EDGE_STYLE, DEFAULT_LAYOUT_MODE, DEFAULT_THEME_KEY } from './model';
 
 /**
  * The subset of app state `serializeDoc()` reads from (MindFlow.dc.html:534-536).
@@ -16,6 +16,7 @@ export interface SerializableState {
   zones?: Zone[] | null;
   layoutMode: LayoutMode;
   themeKey: string;
+  edgeStyle?: EdgeStyle | null;
 }
 
 /**
@@ -34,6 +35,7 @@ export function serializeDoc(state: SerializableState): Doc {
     zones: state.zones ?? [],
     layoutMode: state.layoutMode,
     themeKey: state.themeKey,
+    edgeStyle: state.edgeStyle ?? DEFAULT_EDGE_STYLE,
   };
 }
 
@@ -65,8 +67,9 @@ export function parseDoc(raw: unknown): Doc | null {
   const zones = Array.isArray(d.zones) ? (d.zones as Zone[]) : [];
   const layoutMode = (d.layoutMode as LayoutMode | undefined) || DEFAULT_LAYOUT_MODE;
   const themeKey = (d.themeKey as string | undefined) || DEFAULT_THEME_KEY;
+  const edgeStyle = (d.edgeStyle as EdgeStyle | undefined) || DEFAULT_EDGE_STYLE;
 
-  return { v: 1, nodes, floats, lines, zones, layoutMode, themeKey };
+  return { v: 1, nodes, floats, lines, zones, layoutMode, themeKey, edgeStyle };
 }
 
 /**

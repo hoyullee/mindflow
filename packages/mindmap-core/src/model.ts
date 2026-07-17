@@ -16,6 +16,10 @@ import type { PortSide } from './geometry';
 /** The three layout algorithms the original app supports (MindFlow.dc.html:496,522-523 default 'radial'). */
 export type LayoutMode = 'radial' | 'right' | 'down';
 
+/** Connector (edge) rendering style — the Style menu's 연결선 option
+ * (MindFlow.dc.html:463, 1097). Persisted with the doc, like `layoutMode`. */
+export type EdgeStyle = 'curve' | 'elbow' | 'straight';
+
 /**
  * One styled text run inside a node's rich-text body.
  * Observed shape: `{ t: text, b?: bold, c?: color }` (MindFlow.dc.html:2612, 2646, 2727).
@@ -166,6 +170,9 @@ export interface Doc {
   zones: Zone[];
   layoutMode: LayoutMode;
   themeKey: string;
+  /** Connector style. Optional so hand-built `Doc` literals need not set it;
+   * `serializeDoc`/`parseDoc` always normalize it to a concrete value. */
+  edgeStyle?: EdgeStyle;
 }
 
 /**
@@ -177,6 +184,9 @@ export const ROOT_ID = 'root';
 
 /** Default layoutMode applied when a loaded doc omits it (MindFlow.dc.html:496, 522-523). */
 export const DEFAULT_LAYOUT_MODE: LayoutMode = 'radial';
+
+/** Default connector style when a loaded doc omits it (MindFlow.dc.html:497, 524). */
+export const DEFAULT_EDGE_STYLE: EdgeStyle = 'curve';
 
 /** Default themeKey applied when a loaded doc omits it (MindFlow.dc.html:495, 522). */
 export const DEFAULT_THEME_KEY = 'coral';
