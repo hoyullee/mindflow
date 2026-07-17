@@ -167,6 +167,49 @@ describe('Editor (mobile, M6)', () => {
     }
   });
 
+  it('touch: a press-drag starting on a node pans instead of selecting it', () => {
+    const restore = mockMatchMedia(true);
+    try {
+      localStorage.setItem('mindflow_doc_m6', JSON.stringify(DOC));
+      const { container } = renderEditor('/editor?map=m6&title=x');
+      const vp = getViewport(container);
+      const node = within(vp).getByText('리서치').closest('[data-node-id]') as HTMLElement;
+      const before = getTransformLayer(container).style.transform;
+
+      // one-finger touch press ON the node, then drag: should pan the canvas,
+      // NOT select/move the node (the press bubbles to the background pan)
+      touchEvent(node, 'pointerdown', { pointerId: 8, clientX: 140, clientY: 140 });
+      touchEvent(window, 'pointermove', { pointerId: 8, clientX: 230, clientY: 200 });
+      touchEvent(window, 'pointerup', { pointerId: 8, clientX: 230, clientY: 200 });
+
+      expect(getTransformLayer(container).style.transform).not.toBe(before); // panned
+      expect(screen.queryByText('선택한 주제')).toBeNull(); // node NOT selected
+    } finally {
+      restore();
+    }
+  });
+
+  it('touch: a no-move tap on a node selects it on release (not on press)', () => {
+    const restore = mockMatchMedia(true);
+    try {
+      localStorage.setItem('mindflow_doc_m7', JSON.stringify(DOC));
+      const { container } = renderEditor('/editor?map=m7&title=x');
+      const vp = getViewport(container);
+      const node = within(vp).getByText('리서치').closest('[data-node-id]') as HTMLElement;
+
+      // press alone must NOT select (that's the whole point — no grabbing on
+      // touch-down while the user is starting a pan/zoom)
+      touchEvent(node, 'pointerdown', { pointerId: 9, clientX: 150, clientY: 150 });
+      expect(screen.queryByText('선택한 주제')).toBeNull();
+
+      // releasing without moving (a tap) selects it
+      touchEvent(window, 'pointerup', { pointerId: 9, clientX: 150, clientY: 150 });
+      expect(screen.getByText('선택한 주제')).toBeTruthy();
+    } finally {
+      restore();
+    }
+  });
+
   it('deselects on a no-move background touch tap (touch equivalent of empty-click deselect)', () => {
     const restore = mockMatchMedia(true);
     try {
