@@ -4,13 +4,25 @@ import { hexA } from './storage';
 
 /** Home.dc.html `realPreview` — mirrors the editor's theme accent/branch palettes so a
  * card's thumbnail matches what the map actually looks like when opened. */
-const THEME_PAL: Record<string, { accent: string; palette: string[] }> = {
-  coral: { accent: '#f0663f', palette: ['#f0663f', '#f0913f', '#e0b23c', '#8fb257', '#3fae9e', '#3f8fd0', '#8a6bd1', '#d0568f', '#d92626'] },
-  ocean: { accent: '#2f7fd6', palette: ['#2f7fd6', '#37a5c9', '#3fb59a', '#6bb85a', '#e0a53c', '#e07b4a', '#8a6bd1', '#d0568f', '#d92626'] },
-  forest: { accent: '#2f9e63', palette: ['#2f9e63', '#5aab45', '#9aae3c', '#c99a3c', '#3fae9e', '#3f8fd0', '#8a6bd1', '#d0568f', '#d92626'] },
-  grape: { accent: '#7d5bd0', palette: ['#7d5bd0', '#a45bd0', '#d05fb0', '#d0568f', '#e07b4a', '#e0b23c', '#3fae9e', '#3f8fd0', '#d92626'] },
-  dark: { accent: '#f0663f', palette: ['#f0804f', '#f0b04f', '#e8cf5a', '#9fce6a', '#4fc9b6', '#5fa8e8', '#a98be8', '#e87bb0', '#ff4d4d'] },
-  mono: { accent: '#2b2b2b', palette: ['#3a3a3a', '#565656', '#727272', '#8e8e8e', '#4a4a4a', '#616161', '#787878', '#909090', '#d92626'] },
+// Full theme surfaces (accent/palette + panel/text/accentInk), mirrored from the
+// editor's `THEMES` (apps/web/src/features/editor/theme.ts). The default node fill,
+// body text, and root text follow the theme just like the editor — previously
+// they were hardcoded (#fff / #33281f), which rendered a dark-theme map's nodes as
+// white boxes with dark text instead of the theme's dark panel + light text.
+interface ThemePal {
+  accent: string;
+  palette: string[];
+  panel: string;
+  text: string;
+  accentInk: string;
+}
+const THEME_PAL: Record<string, ThemePal> = {
+  coral: { accent: '#f0663f', panel: '#ffffff', text: '#33281f', accentInk: '#ffffff', palette: ['#f0663f', '#f0913f', '#e0b23c', '#8fb257', '#3fae9e', '#3f8fd0', '#8a6bd1', '#d0568f', '#d92626'] },
+  ocean: { accent: '#2f7fd6', panel: '#ffffff', text: '#22303f', accentInk: '#ffffff', palette: ['#2f7fd6', '#37a5c9', '#3fb59a', '#6bb85a', '#e0a53c', '#e07b4a', '#8a6bd1', '#d0568f', '#d92626'] },
+  forest: { accent: '#2f9e63', panel: '#ffffff', text: '#24352b', accentInk: '#ffffff', palette: ['#2f9e63', '#5aab45', '#9aae3c', '#c99a3c', '#3fae9e', '#3f8fd0', '#8a6bd1', '#d0568f', '#d92626'] },
+  grape: { accent: '#7d5bd0', panel: '#ffffff', text: '#2f2740', accentInk: '#ffffff', palette: ['#7d5bd0', '#a45bd0', '#d05fb0', '#d0568f', '#e07b4a', '#e0b23c', '#3fae9e', '#3f8fd0', '#d92626'] },
+  dark: { accent: '#f0663f', panel: '#262019', text: '#f3ece4', accentInk: '#1b1712', palette: ['#f0804f', '#f0b04f', '#e8cf5a', '#9fce6a', '#4fc9b6', '#5fa8e8', '#a98be8', '#e87bb0', '#ff4d4d'] },
+  mono: { accent: '#2b2b2b', panel: '#ffffff', text: '#202020', accentInk: '#ffffff', palette: ['#3a3a3a', '#565656', '#727272', '#8e8e8e', '#4a4a4a', '#616161', '#787878', '#909090', '#d92626'] },
 };
 
 interface DocNode {
@@ -31,6 +43,8 @@ interface DocNode {
   textColor?: string;
   bold?: boolean;
   tsize?: 's' | 'm' | 'l';
+  /** Partial rich-text runs (bold/color spans); mirrors core `RichRun`. */
+  rich?: Array<{ t: string; b?: boolean; c?: string | null }> | null;
   children?: string[];
 }
 
@@ -272,7 +286,7 @@ export function realPreview(rawDoc: string | null, hueFallback: string): JSX.Ele
     const depth = depthOf(id);
     const fillA = n.fillA == null ? 1 : n.fillA;
     const strokeA = n.strokeA == null ? (depth >= 2 ? 0.5 : 1) : n.strokeA;
-    const dFill = n.fill || (isRoot ? hue || hueFallback : '#fff');
+    const dFill = n.fill || (isRoot ? hue || hueFallback : TH.panel);
     const dStroke = n.stroke || (isRoot ? hue || hueFallback : col);
     const fill = hexA(dFill, fillA);
     const stroke = hexA(dStroke, strokeA);
@@ -307,27 +321,52 @@ export function realPreview(rawDoc: string | null, hueFallback: string): JSX.Ele
       rects.push(
         <polygon key={`r${id}`} points={`${L + c},${T} ${L + W},${T} ${L + W - c},${T + H} ${L},${T + H}`} fill={fill} stroke={stroke} strokeWidth={sw} strokeLinejoin="round" />,
       );
+    } else if (shape === 'underline') {
+      // no box — just a bottom rule, matching the editor's underline shape
+      rects.push(<line key={`r${id}`} x1={L} y1={T + H} x2={L + W} y2={T + H} stroke={stroke} strokeWidth={3} strokeLinecap="round" />);
     } else {
       rects.push(<rect key={`r${id}`} x={L} y={T} width={W} height={H} rx={shape === 'pill' ? H / 2 : shape === 'rect' ? 3 : 9} fill={fill} stroke={stroke} strokeWidth={sw} />);
     }
-    const rawLabel = `${n.emoji || ''} ${n.text || ''}`.trim().split('\n')[0] ?? '';
-    if (rawLabel) {
-      const fontSize = (isRoot ? 17 : 14) * (n.tsize === 's' ? 0.85 : n.tsize === 'l' ? 1.2 : 1);
+    // Text colour follows the theme like the editor: root uses `accentInk`
+    // (the plain `text` colour for the box-less underline shape), body nodes
+    // use the theme `text` colour — both overridden by an explicit `textColor`.
+    const baseTextColor = n.textColor || (isRoot ? (shape === 'underline' ? TH.text : TH.accentInk) : TH.text);
+    const fontSize = (isRoot ? 17 : 14) * (n.tsize === 's' ? 0.85 : n.tsize === 'l' ? 1.2 : 1);
+    const fontWeight = n.bold ? 800 : isRoot ? 800 : 600;
+    const runs = Array.isArray(n.rich) && n.rich.length ? n.rich : null;
+    if (runs) {
+      // Partial rich runs (per-span bold/colour) — render as tspans, budgeting
+      // ~14 chars total (after the emoji prefix) to match the plain-text clamp.
+      const emojiPrefix = n.emoji ? `${n.emoji} ` : '';
+      let budget = 14 - emojiPrefix.length;
+      const tspans: JSX.Element[] = [];
+      for (let ri = 0; ri < runs.length && budget > 0; ri++) {
+        const r = runs[ri]!;
+        let t = (r.t || '').split('\n')[0] ?? '';
+        if (!t) continue;
+        if (t.length > budget) t = t.slice(0, Math.max(0, budget - 1)) + '…';
+        budget -= t.length;
+        tspans.push(
+          <tspan key={ri} fontWeight={r.b ? 800 : undefined} fill={r.c || undefined}>
+            {t}
+          </tspan>,
+        );
+      }
       rects.push(
-        <text
-          key={`t${id}`}
-          x={cx}
-          y={cy}
-          textAnchor="middle"
-          dominantBaseline="central"
-          fontSize={fontSize}
-          fontWeight={n.bold ? 800 : isRoot ? 800 : 600}
-          fill={n.textColor || (isRoot && !n.fill ? '#fff' : '#33281f')}
-          fontFamily="Pretendard, sans-serif"
-        >
-          {rawLabel.length > 14 ? rawLabel.slice(0, 13) + '…' : rawLabel}
+        <text key={`t${id}`} x={cx} y={cy} textAnchor="middle" dominantBaseline="central" fontSize={fontSize} fontWeight={fontWeight} fill={baseTextColor} fontFamily="Pretendard, sans-serif">
+          {emojiPrefix}
+          {tspans}
         </text>,
       );
+    } else {
+      const rawLabel = `${n.emoji || ''} ${n.text || ''}`.trim().split('\n')[0] ?? '';
+      if (rawLabel) {
+        rects.push(
+          <text key={`t${id}`} x={cx} y={cy} textAnchor="middle" dominantBaseline="central" fontSize={fontSize} fontWeight={fontWeight} fill={baseTextColor} fontFamily="Pretendard, sans-serif">
+            {rawLabel.length > 14 ? rawLabel.slice(0, 13) + '…' : rawLabel}
+          </text>,
+        );
+      }
     }
   });
 

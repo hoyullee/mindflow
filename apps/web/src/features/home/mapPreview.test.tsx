@@ -44,6 +44,62 @@ describe('realPreview', () => {
     expect(ys.size).toBeGreaterThan(1);
   });
 
+  it('uses theme-aware default text colors (dark theme: accentInk root, light body)', () => {
+    const dark = {
+      v: 1,
+      themeKey: 'dark',
+      layoutMode: 'right',
+      nodes: {
+        root: { id: 'root', text: '루트', emoji: '', parent: null, children: ['a'], collapsed: false, color: null, x: 0, y: 0 },
+        a: { id: 'a', text: '노드', emoji: '', parent: 'root', children: [], collapsed: false, color: null, x: 0, y: 0 },
+      },
+      floats: [],
+      lines: [],
+      zones: [],
+    };
+    const { container } = render(realPreview(JSON.stringify(dark), '#f0663f')!);
+    const byLabel = Object.fromEntries(Array.from(container.querySelectorAll('svg text')).map((t) => [t.textContent, t.getAttribute('fill')]));
+    // dark theme: root text = accentInk (#1b1712), body text = theme text (#f3ece4)
+    // — previously hardcoded to #fff / #33281f (wrong on a dark-theme map).
+    expect(byLabel['루트']).toBe('#1b1712');
+    expect(byLabel['노드']).toBe('#f3ece4');
+  });
+
+  it('renders partial rich-text runs (per-span bold/color)', () => {
+    const doc = {
+      v: 1,
+      themeKey: 'coral',
+      layoutMode: 'right',
+      nodes: {
+        root: { id: 'root', text: '중심', emoji: '', parent: null, children: ['b'], collapsed: false, color: null, x: 0, y: 0 },
+        b: {
+          id: 'b',
+          text: '리치텍스트',
+          emoji: '',
+          parent: 'root',
+          children: [],
+          collapsed: false,
+          color: null,
+          rich: [
+            { t: '리치', b: true, c: '#d0568f' },
+            { t: '텍스트' },
+          ],
+          x: 0,
+          y: 0,
+        },
+      },
+      floats: [],
+      lines: [],
+      zones: [],
+    };
+    const { container } = render(realPreview(JSON.stringify(doc), '#f0663f')!);
+    const tspans = Array.from(container.querySelectorAll('svg tspan')).map((s) => ({ t: s.textContent, fill: s.getAttribute('fill'), fw: s.getAttribute('font-weight') }));
+    expect(tspans).toEqual([
+      { t: '리치', fill: '#d0568f', fw: '800' },
+      { t: '텍스트', fill: null, fw: null },
+    ]);
+  });
+
   it('returns null for a doc with no nodes so the caller falls back to miniPreview', () => {
     expect(realPreview(JSON.stringify({ v: 1, nodes: {}, floats: [], lines: [], zones: [], layoutMode: 'radial', themeKey: 'coral' }), '#f0663f')).toBeNull();
     expect(realPreview(null, '#f0663f')).toBeNull();
