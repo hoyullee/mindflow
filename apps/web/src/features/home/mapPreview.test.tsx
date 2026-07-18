@@ -100,6 +100,39 @@ describe('realPreview', () => {
     ]);
   });
 
+  it('reflects the connector style (edgeStyle) in the drawn edge path', () => {
+    // Two children so at least one lands off the parent's y — an elbow only bends
+    // (drawing a rounded `Q` corner) when there's a vertical offset to turn through.
+    const mk = (edgeStyle: string) => ({
+      v: 1,
+      themeKey: 'coral',
+      layoutMode: 'right',
+      edgeStyle,
+      nodes: {
+        root: { id: 'root', text: '중심', emoji: '', parent: null, children: ['a', 'b'], collapsed: false, color: null, x: 0, y: 0 },
+        a: { id: 'a', text: '가지A', emoji: '', parent: 'root', children: [], collapsed: false, color: null, x: 0, y: 0 },
+        b: { id: 'b', text: '가지B', emoji: '', parent: 'root', children: [], collapsed: false, color: null, x: 0, y: 0 },
+      },
+      floats: [],
+      lines: [],
+      zones: [],
+    });
+    const edgeDs = (edgeStyle: string): string[] => {
+      const { container } = render(realPreview(JSON.stringify(mk(edgeStyle)), '#f0663f')!);
+      // parent→child connectors are the paths drawn with fill="none"
+      return Array.from(container.querySelectorAll('svg path'))
+        .filter((el) => el.getAttribute('fill') === 'none')
+        .map((el) => el.getAttribute('d') ?? '');
+    };
+    // straight = line segments (no C/Q); elbow = right-angle with a rounded (Q)
+    // corner; curve = cubic bezier (C). Previously every style drew a cubic curve.
+    const straight = edgeDs('straight');
+    expect(straight.length).toBeGreaterThan(0);
+    expect(straight.every((d) => d.includes(' L ') && !d.includes('C') && !d.includes('Q'))).toBe(true);
+    expect(edgeDs('elbow').some((d) => d.includes('Q'))).toBe(true);
+    expect(edgeDs('curve').every((d) => d.includes('C'))).toBe(true);
+  });
+
   it('returns null for a doc with no nodes so the caller falls back to miniPreview', () => {
     expect(realPreview(JSON.stringify({ v: 1, nodes: {}, floats: [], lines: [], zones: [], layoutMode: 'radial', themeKey: 'coral' }), '#f0663f')).toBeNull();
     expect(realPreview(null, '#f0663f')).toBeNull();
