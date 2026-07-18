@@ -96,6 +96,39 @@ export function saveRecent(list: string[]): void {
   }
 }
 
+/** The currently-viewed space/folder, persisted per TAB (sessionStorage) so
+ * opening a map in the editor and coming back to Home returns to the space you
+ * left from, instead of resetting to the default 일반 공간. Tab-scoped on purpose:
+ * it's transient view state, not a synced preference. */
+export const ACTIVE_VIEW_KEY = 'mf_active_view';
+
+export interface ActiveView {
+  activeSpace: string;
+  curFolder: string | null;
+}
+
+export function saveActiveView(view: ActiveView): void {
+  try {
+    sessionStorage.setItem(ACTIVE_VIEW_KEY, JSON.stringify(view));
+  } catch {
+    /* storage unavailable — non-fatal (Home just won't restore the space) */
+  }
+}
+
+export function loadActiveView(): ActiveView | null {
+  try {
+    const raw = sessionStorage.getItem(ACTIVE_VIEW_KEY);
+    if (!raw) return null;
+    const v = JSON.parse(raw) as Partial<ActiveView>;
+    if (v && typeof v.activeSpace === 'string') {
+      return { activeSpace: v.activeSpace, curFolder: typeof v.curFolder === 'string' ? v.curFolder : null };
+    }
+    return null;
+  } catch {
+    return null;
+  }
+}
+
 /**
  * Validates a loaded-from-backend `spaces` blob (opaque `unknown[]` at the
  * `SpaceStore` boundary) into well-formed `SpaceData[]`, dropping anything

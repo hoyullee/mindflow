@@ -15,6 +15,7 @@ afterEach(() => {
 
 beforeEach(() => {
   localStorage.clear();
+  sessionStorage.clear();
 });
 
 function renderHome() {
@@ -158,6 +159,35 @@ describe('Home', () => {
       const labels = Array.from(thumb.querySelectorAll('svg text')).map((t) => t.textContent);
       expect(labels).toEqual(expect.arrayContaining(['🎯 분기목표', '매출확대', '신규채용']));
     });
+  });
+
+  it('restores the space you were viewing when Home remounts (editor round-trip)', async () => {
+    const user = userEvent.setup();
+    localStorage.setItem(
+      'mf_spaces',
+      JSON.stringify({
+        spaces: [
+          { id: 'sa', name: '공간에이', color: '#3f8fd0', maps: [] },
+          { id: 'sb', name: '공간비이', color: '#8a6bd1', maps: [] },
+        ],
+        mapFolders: {},
+      }),
+    );
+
+    // First visit: active space defaults to the first space.
+    const first = renderHomeWithDocStore([]);
+    await waitFor(() => expect(first.container.querySelector('h2')?.textContent).toBe('공간에이'));
+
+    // Switch to the second space (as the user would before opening a map).
+    const aside = first.container.querySelector('aside') as HTMLElement;
+    await user.click(within(aside).getByText('공간비이'));
+    await waitFor(() => expect(first.container.querySelector('h2')?.textContent).toBe('공간비이'));
+
+    // Open a map → editor → back to Home: Home unmounts and remounts fresh. It
+    // should land back on the space we left from, not reset to the first space.
+    first.unmount();
+    const second = renderHomeWithDocStore([]);
+    await waitFor(() => expect(second.container.querySelector('h2')?.textContent).toBe('공간비이'));
   });
 
   it('a user-created space persists across a reload (localStorage)', async () => {
