@@ -109,13 +109,13 @@ export function coerceSpaces(raw: unknown[]): SpaceData[] {
   });
 }
 
-/** Guarantees exactly one "home" (일반 공간) exists as the first space, even if
- * persisted data is missing/corrupt — the rest of Home assumes a home space. */
+/** Seeds the default "일반 공간" ONLY when there are no spaces at all (a fresh
+ * account or missing/corrupt data). If the user has spaces but deleted the home
+ * one, that deletion is respected — we do NOT resurrect 일반 공간 on reload.
+ * (The rest of Home falls back to `spaces[0]` where a home space was assumed.) */
 export function ensureHomeSpace(spaces: SpaceData[]): SpaceData[] {
-  const home = spaces.filter((s) => s.home);
-  const rest = spaces.filter((s) => !s.home);
-  const first = home[0] || { id: 'general', name: '일반 공간', home: true as const, color: '#f0663f', maps: [] };
-  return [{ ...first, maps: Array.isArray(first.maps) ? first.maps : [] }, ...rest];
+  if (spaces.length) return spaces;
+  return [{ id: 'general', name: '일반 공간', home: true as const, color: '#f0663f', maps: [] }];
 }
 
 /** Home.dc.html `syncDocsToCards()` — pick up maps saved from the editor under

@@ -94,12 +94,18 @@ export function useHomeController() {
           if (ws.mapFolders && Object.keys(ws.mapFolders).length) mapFolders = ws.mapFolders;
         }
         const { spaces } = mergeDocMetasIntoSpaces(base, metas);
+        // If the previously-active space no longer exists (e.g. the user deleted
+        // 일반 공간), fall back to a real space so the sidebar/grid stay in sync.
+        const activeSpace =
+          prev.activeSpace === 'drive' || spaces.some((s) => s.id === prev.activeSpace)
+            ? prev.activeSpace
+            : (spaces.find((s) => s.home)?.id ?? spaces[0]?.id ?? prev.activeSpace);
         // Seed favs/deleted/trash from the backend's persisted meta
         // (isFavorite/deletedAt) so favorite/trash status survives a refresh.
         const { favs, deleted, trash } = seedFavAndTrashFromMetas(prev.favs, prev.deleted, prev.trash, metas);
         // Always flip `loaded` so the grid drops its loading skeleton and
         // renders the real (possibly empty) state.
-        return { ...prev, spaces, mapFolders, favs, deleted, trash, loaded: true };
+        return { ...prev, spaces, activeSpace, mapFolders, favs, deleted, trash, loaded: true };
       });
     });
 

@@ -135,6 +135,17 @@ describe('Home', () => {
     await waitFor(() => expect(screen.getByText('내 스페이스')).toBeTruthy());
   });
 
+  it('does not resurrect a deleted 일반 공간 on reload (respects a persisted spaces list with no home space)', async () => {
+    // simulate the state persisted after the user deleted the home space: only a
+    // custom space remains, none flagged `home`.
+    localStorage.setItem('mf_spaces', JSON.stringify({ spaces: [{ id: 'work', name: '작업 공간', color: '#3f8fd0', maps: [] }], mapFolders: {} }));
+    renderHomeWithDocStore([]);
+
+    // after the workspace load settles, the custom space shows and 일반 공간 is NOT re-created
+    await waitFor(() => expect(screen.getAllByText('작업 공간').length).toBeGreaterThan(0));
+    expect(screen.queryByText('일반 공간')).toBeNull();
+  });
+
   it('creating a map while a custom space is active assigns it to that space (not the home space)', async () => {
     const user = userEvent.setup();
     renderHomeWithDocStore([]);
