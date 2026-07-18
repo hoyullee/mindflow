@@ -107,7 +107,7 @@ export function SettingsPopover({ state, controller, userInitial }: Props) {
                 </button>
               </div>
             )}
-            {!state.nameEditing && <div style={{ fontSize: 12, color: '#9c8b7e', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>mine@wantedlab.com</div>}
+            {!state.nameEditing && state.userEmail && <div style={{ fontSize: 12, color: '#9c8b7e', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{state.userEmail}</div>}
           </div>
         </div>
         <div style={{ padding: 6 }}>

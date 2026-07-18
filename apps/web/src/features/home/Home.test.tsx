@@ -91,6 +91,20 @@ describe('Home', () => {
     await waitFor(() => expect(screen.getByText('아직 만든 맵이 없어요')).toBeTruthy());
   });
 
+  it('shows the signed-in email in the LNB profile and derives the name from it', async () => {
+    // LocalAuth reads its session from `mf_demo_session`; seed a real login email.
+    localStorage.setItem('mf_demo_session', JSON.stringify({ user: { id: 'u1', email: 'hoyul.lee@wantedlab.com' } }));
+    const { container } = renderHomeWithDocStore([]);
+    const aside = within(container.querySelector('aside') as HTMLElement);
+
+    // the real email is shown (popover content is always in the DOM), and the
+    // name defaults to its local part — not the hardcoded "mine" placeholder.
+    await waitFor(() => expect(aside.getByText('hoyul.lee@wantedlab.com')).toBeTruthy());
+    expect(aside.getAllByText('hoyul.lee').length).toBeGreaterThan(0);
+    expect(aside.queryByText('mine@wantedlab.com')).toBeNull();
+    expect(aside.queryByText('mine')).toBeNull();
+  });
+
   it('renders saved documents from DocStore.list() as map cards', async () => {
     const { container } = renderHomeWithDocStore([
       { id: 'doc-a', title: '따라잡기', version: 1, updatedAt: '2026-01-01T00:00:00.000Z', isFavorite: false, deletedAt: null },

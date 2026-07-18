@@ -74,6 +74,9 @@ export interface HomeState {
   recent: string[];
   recentOpen: boolean;
   userName: string;
+  /** The signed-in user's email (from `AuthProvider.getSession()`), shown in the
+   * LNB profile. Empty until the session resolves on mount. */
+  userEmail: string;
   settingsOpen: boolean;
   nameEditing: boolean;
   confirmLogout: boolean;
@@ -173,6 +176,7 @@ export function initialHomeState(): HomeState {
     recent: [],
     recentOpen: false,
     userName: 'mine',
+    userEmail: '',
     settingsOpen: false,
     nameEditing: false,
     confirmLogout: false,
