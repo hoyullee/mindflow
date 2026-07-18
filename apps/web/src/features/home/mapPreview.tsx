@@ -455,6 +455,14 @@ export function realPreview(rawDoc: string | null, hueFallback: string): JSX.Ele
   );
 }
 
+/** Shimmer placeholder shown in a card thumbnail WHILE the map's real body is
+ * still being prefetched (`DocStore.load()`), so the card doesn't first flash
+ * the generic `miniPreview` and then swap to the real nodes. Fills the fixed
+ * `.map-thumb` box. */
+export function previewSkeleton(): JSX.Element {
+  return <div className="mf-skel" aria-hidden="true" style={{ width: '100%', height: '100%' }} />;
+}
+
 /** Home.dc.html `miniPreview(hue, seed)` — deterministic decorative sketch for maps
  * that have never been opened/saved (no real node positions yet). */
 export function miniPreview(hue: string, seed: string): JSX.Element {

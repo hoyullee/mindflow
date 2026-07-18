@@ -126,6 +126,11 @@ export interface HomeState {
    * reads localStorage only, so without this a backend-stored map always fell
    * back to the generic `miniPreview` sketch (identical-looking for every map). */
   previewDocs: Record<string, string>;
+
+  /** docId → true once its body prefetch (`DocStore.load()`) has settled. Lets a
+   * card show a neutral skeleton WHILE its real preview is still loading instead
+   * of flashing the generic sketch first, then swapping to the real nodes. */
+  previewResolved: Record<string, boolean>;
 }
 
 export const SPACE_COLORS = ['#f0663f', '#e0a53c', '#3fae9e', '#3f8fd0', '#8a6bd1', '#d0568f'];
@@ -209,5 +214,6 @@ export function initialHomeState(): HomeState {
     search: '',
     loaded: false,
     previewDocs: {},
+    previewResolved: {},
   };
 }

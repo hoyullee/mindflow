@@ -1,5 +1,5 @@
 import { docRawForTitle, hexA, mapHref, mapId, readDocRaw } from './storage';
-import { miniPreview, realPreview } from './mapPreview';
+import { miniPreview, previewSkeleton, realPreview } from './mapPreview';
 import type { DriveFolderData, FolderData, HomeState, MapCardData } from './types';
 import { DRIVE_FILES } from './types';
 
@@ -71,11 +71,17 @@ function sourceIsDrive(title: string): boolean {
   return DRIVE_FILES.some((f) => f.name === title);
 }
 
-function cardSketch(title: string, hue: string, docId: string | undefined, previewDocs: Record<string, string>): JSX.Element {
+function cardSketch(title: string, hue: string, docId: string | undefined, previewDocs: Record<string, string>, previewResolved: Record<string, boolean>): JSX.Element {
   // Prefer the body prefetched from the DocStore (covers backend-stored maps),
-  // then any localStorage copy, then a title match — finally the generic sketch.
+  // then any localStorage copy, then a title match.
   const raw = (docId && (previewDocs[docId] || readDocRaw(docId))) || docRawForTitle(title);
-  return realPreview(raw, hue) || miniPreview(hue, title);
+  if (raw) return realPreview(raw, hue) || miniPreview(hue, title);
+  // No body available yet: if this card's backend body is still being fetched
+  // (docId not yet resolved), show a neutral skeleton instead of the generic
+  // sketch — this is what removes the "old preview flashes, then real nodes"
+  // flicker. Once resolved with no body, fall back to the generic sketch.
+  if (docId && !previewResolved[docId]) return previewSkeleton();
+  return miniPreview(hue, title);
 }
 
 function matchesSearch(title: string, search: string): boolean {
@@ -121,7 +127,7 @@ export function deriveHomeView(state: HomeState): HomeViewModel {
       hue: c.hue,
       docId: c.docId,
       href: mapHref(c.title, c.docId),
-      sketch: cardSketch(c.title, c.hue, c.docId, state.previewDocs),
+      sketch: cardSketch(c.title, c.hue, c.docId, state.previewDocs, state.previewResolved),
       badge: isDriveSpace ? 'Drive' : '',
       openable: c.openable,
       isFav: !!favs[c.title],
@@ -195,7 +201,7 @@ export function deriveHomeView(state: HomeState): HomeViewModel {
         hue: base.hue,
         docId: base.docId,
         href: mapHref(t, base.docId),
-        sketch: cardSketch(t, base.hue, base.docId, state.previewDocs),
+        sketch: cardSketch(t, base.hue, base.docId, state.previewDocs, state.previewResolved),
         badge: '',
         openable: true,
         isFav: !!favs[t],
