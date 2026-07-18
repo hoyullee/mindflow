@@ -152,6 +152,24 @@ export function useHomeController() {
     };
   }, [docStore, spaceStore]);
 
+  // Load the signed-in user's email for the LNB profile, and default the display
+  // name to the email's local part (e.g. hoyul.lee@… → "hoyul.lee") instead of
+  // the hardcoded "mine" / "mine@wantedlab.com" placeholder. `userName` is
+  // editable in-session; the seed only applies on mount.
+  useEffect(() => {
+    let cancelled = false;
+    void auth.getSession().then((session) => {
+      if (cancelled) return;
+      const email = session?.user?.email;
+      if (!email) return;
+      const local = email.split('@')[0] || email;
+      setState((prev) => ({ ...prev, userEmail: email, userName: local }));
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [auth]);
+
   // Remember the space/folder currently being viewed (tab-scoped) so that
   // opening a map in the editor and returning to Home restores it. Gated on
   // `loaded` so the transient initial 'general' can't overwrite a real value
