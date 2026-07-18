@@ -38,17 +38,22 @@ class MockDocStore implements DocStore {
   restore = vi.fn(async (): Promise<void> => undefined);
   rename = vi.fn(async (): Promise<void> => undefined);
   save = vi.fn(async (): Promise<SaveResult> => ({ ok: true, version: 1 }));
-  load = vi.fn(async (): Promise<LoadedDoc | null> => null);
+  // Bodies live behind `load()` only (like a real backend) — `list()` never
+  // carries them, and nothing is written to localStorage.
+  load = vi.fn(async (id: string): Promise<LoadedDoc | null> => this.bodies[id] ?? null);
 
-  constructor(private metas: DocMeta[] = []) {}
+  constructor(
+    private metas: DocMeta[] = [],
+    private bodies: Record<string, LoadedDoc> = {},
+  ) {}
 
   async list(): Promise<DocMeta[]> {
     return this.metas;
   }
 }
 
-function renderHomeWithDocStore(metas: DocMeta[] = []) {
-  const docStore = new MockDocStore(metas);
+function renderHomeWithDocStore(metas: DocMeta[] = [], bodies: Record<string, LoadedDoc> = {}) {
+  const docStore = new MockDocStore(metas, bodies);
   const backend: Backend = { auth: new LocalAuth(), docStore, spaceStore: new LocalSpaceStore(), mode: 'local' };
   const utils = render(
     <MemoryRouter initialEntries={['/home']}>
@@ -117,6 +122,42 @@ describe('Home', () => {
 
     expect(container.querySelector('a[data-title="따라잡기"]')).toBeTruthy();
     expect(container.querySelector('a[data-title="무상 비즈머니 지급"]')).toBeNull();
+  });
+
+  it('renders a real-map thumbnail for a backend-stored map (body via DocStore.load, not localStorage)', async () => {
+    // A map whose body lives ONLY behind DocStore.load() (a real backend like
+    // Supabase — nothing in localStorage). The preview must prefetch the body
+    // and draw the actual nodes, not fall back to the generic miniPreview.
+    const doc = {
+      v: 1,
+      nodes: {
+        root: { id: 'root', text: '분기목표', emoji: '🎯', parent: null, children: ['n1', 'n2'], collapsed: false, color: null, x: 0, y: 0 },
+        n1: { id: 'n1', text: '매출확대', emoji: '', parent: 'root', children: [], collapsed: false, color: '#3f8fd0', x: 0, y: 0 },
+        n2: { id: 'n2', text: '신규채용', emoji: '', parent: 'root', children: [], collapsed: false, color: null, x: 0, y: 0 },
+      },
+      floats: [],
+      lines: [],
+      zones: [],
+      layoutMode: 'radial',
+      themeKey: 'coral',
+    };
+    const { container } = renderHomeWithDocStore(
+      [{ id: 'doc-remote', title: '분기목표', version: 1, updatedAt: '2026-01-01T00:00:00.000Z', isFavorite: false, deletedAt: null }],
+      { 'doc-remote': { doc: doc as unknown as LoadedDoc['doc'], version: 1, title: '분기목표' } },
+    );
+
+    const card = await waitFor(() => {
+      const c = container.querySelector('a[data-title="분기목표"]');
+      if (!c) throw new Error('card not rendered yet');
+      return c as HTMLElement;
+    });
+    // Once the body is prefetched, the thumbnail is a realPreview SVG that
+    // includes the node labels (miniPreview draws no text at all).
+    await waitFor(() => {
+      const thumb = card.querySelector('.map-thumb') as HTMLElement;
+      const labels = Array.from(thumb.querySelectorAll('svg text')).map((t) => t.textContent);
+      expect(labels).toEqual(expect.arrayContaining(['🎯 분기목표', '매출확대', '신규채용']));
+    });
   });
 
   it('a user-created space persists across a reload (localStorage)', async () => {

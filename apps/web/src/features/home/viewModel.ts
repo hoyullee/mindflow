@@ -71,8 +71,10 @@ function sourceIsDrive(title: string): boolean {
   return DRIVE_FILES.some((f) => f.name === title);
 }
 
-function cardSketch(title: string, hue: string, docId: string | undefined): JSX.Element {
-  const raw = (docId && readDocRaw(docId)) || docRawForTitle(title);
+function cardSketch(title: string, hue: string, docId: string | undefined, previewDocs: Record<string, string>): JSX.Element {
+  // Prefer the body prefetched from the DocStore (covers backend-stored maps),
+  // then any localStorage copy, then a title match — finally the generic sketch.
+  const raw = (docId && (previewDocs[docId] || readDocRaw(docId))) || docRawForTitle(title);
   return realPreview(raw, hue) || miniPreview(hue, title);
 }
 
@@ -119,7 +121,7 @@ export function deriveHomeView(state: HomeState): HomeViewModel {
       hue: c.hue,
       docId: c.docId,
       href: mapHref(c.title, c.docId),
-      sketch: cardSketch(c.title, c.hue, c.docId),
+      sketch: cardSketch(c.title, c.hue, c.docId, state.previewDocs),
       badge: isDriveSpace ? 'Drive' : '',
       openable: c.openable,
       isFav: !!favs[c.title],
@@ -193,7 +195,7 @@ export function deriveHomeView(state: HomeState): HomeViewModel {
         hue: base.hue,
         docId: base.docId,
         href: mapHref(t, base.docId),
-        sketch: cardSketch(t, base.hue, base.docId),
+        sketch: cardSketch(t, base.hue, base.docId, state.previewDocs),
         badge: '',
         openable: true,
         isFav: !!favs[t],

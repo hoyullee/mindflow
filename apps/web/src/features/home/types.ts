@@ -119,6 +119,13 @@ export interface HomeState {
    * saved maps doesn't see that empty state flash before their content loads
    * (the async list() is a network round-trip with a real backend). */
   loaded: boolean;
+
+  /** docId → serialized doc JSON, prefetched via `DocStore.load()` so the map
+   * card thumbnails can render the REAL map (its nodes) even when the document
+   * body lives in a backend (Supabase) rather than localStorage — `realPreview`
+   * reads localStorage only, so without this a backend-stored map always fell
+   * back to the generic `miniPreview` sketch (identical-looking for every map). */
+  previewDocs: Record<string, string>;
 }
 
 export const SPACE_COLORS = ['#f0663f', '#e0a53c', '#3fae9e', '#3f8fd0', '#8a6bd1', '#d0568f'];
@@ -201,5 +208,6 @@ export function initialHomeState(): HomeState {
 
     search: '',
     loaded: false,
+    previewDocs: {},
   };
 }
