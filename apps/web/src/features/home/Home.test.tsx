@@ -74,7 +74,8 @@ describe('Home', () => {
     expect(sidebar.getByText('Google Drive')).toBeTruthy();
     expect(sidebar.getByText('즐겨찾기')).toBeTruthy();
     expect(sidebar.getByText('휴지통')).toBeTruthy();
-    expect(sidebar.getByText('일반 공간')).toBeTruthy();
+    // the space list is a skeleton until the workspace load settles, then 일반 공간 appears
+    await waitFor(() => expect(sidebar.getByText('일반 공간')).toBeTruthy());
 
     // toolbar / main. With no saved maps the grid shows its empty state (after
     // the initial DocStore.list() settles — until then it shows a skeleton), so
@@ -133,6 +134,21 @@ describe('Home', () => {
     cleanup();
     renderHomeWithDocStore([]);
     await waitFor(() => expect(screen.getByText('내 스페이스')).toBeTruthy());
+  });
+
+  it('shows a spaces skeleton in the LNB until the workspace loads (no seed-space flash)', async () => {
+    localStorage.setItem('mf_spaces', JSON.stringify({ spaces: [{ id: 'work', name: '작업 공간', color: '#3f8fd0', maps: [] }], mapFolders: {} }));
+    const { container } = renderHomeWithDocStore([]);
+    const aside = container.querySelector('aside') as HTMLElement;
+
+    // before the workspace load resolves: the sidebar shows a skeleton, not the
+    // seed 일반 공간 SpaceRow
+    expect(within(aside).getByLabelText('스페이스를 불러오는 중')).toBeTruthy();
+    expect(aside.querySelector('.space-row')).toBeNull();
+
+    // after load: real spaces render and the skeleton is gone
+    await waitFor(() => expect(within(aside).getByText('작업 공간')).toBeTruthy());
+    expect(within(aside).queryByLabelText('스페이스를 불러오는 중')).toBeNull();
   });
 
   it('does not resurrect a deleted 일반 공간 on reload (respects a persisted spaces list with no home space)', async () => {
