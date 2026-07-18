@@ -69,9 +69,21 @@ export function Sidebar({ state, view, controller, isMobile = false, isOpen = fa
       <div style={{ fontSize: 11, fontWeight: 700, letterSpacing: '.04em', color: '#9c8b7e', padding: '14px 10px 8px' }}>스페이스</div>
 
       <div className="lnb-scroll" style={{ flex: '0 1 auto', minHeight: 60, overflowY: 'auto', overflowX: 'hidden', margin: '0 -4px', padding: '0 4px' }}>
-        {state.spaces.map((sp) => (
-          <SpaceRow key={sp.id} space={sp} state={state} controller={controller} />
-        ))}
+        {/* Until the workspace loads (`state.loaded`), show skeleton rows instead
+            of the seed spaces — otherwise the default 일반 공간 flashes before the
+            user's real space list arrives (matches the map grid's skeleton). */}
+        {state.loaded ? (
+          state.spaces.map((sp) => <SpaceRow key={sp.id} space={sp} state={state} controller={controller} />)
+        ) : (
+          <div aria-busy="true" aria-label="스페이스를 불러오는 중">
+            {[62, 48, 70].map((w, i) => (
+              <div key={i} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '9px 10px' }}>
+                <span className="mf-skel" style={{ width: 15, height: 15, borderRadius: 5, flexShrink: 0 }} />
+                <span className="mf-skel" style={{ height: 11, width: `${w}%`, borderRadius: 6 }} />
+              </div>
+            ))}
+          </div>
+        )}
       </div>
 
       <div
