@@ -13,7 +13,9 @@ import {
   docKey,
   downloadFile,
   ensureHomeSpace,
+  loadActiveView,
   loadRecent,
+  saveActiveView,
   mapId,
   mapHref as buildMapHref,
   mergeDocMetasIntoSpaces,
@@ -84,6 +86,10 @@ export function useHomeController() {
     // genuinely new docs (added to the home space; docs already present in a
     // restored space are skipped by title/id). Doing both together avoids a
     // race where a late workspace load would clobber the doc-merged spaces.
+    // Restore the space/folder the user was last viewing in THIS tab (set before
+    // they opened a map in the editor), so returning to Home lands back on that
+    // space instead of the default 일반 공간.
+    const restore = loadActiveView();
     let cancelled = false;
     void Promise.allSettled([spaceStore.load(), docStore.list()]).then((res) => {
       if (cancelled) return;
@@ -97,18 +103,28 @@ export function useHomeController() {
           if (ws.mapFolders && Object.keys(ws.mapFolders).length) mapFolders = ws.mapFolders;
         }
         const { spaces } = mergeDocMetasIntoSpaces(base, metas);
-        // If the previously-active space no longer exists (e.g. the user deleted
-        // 일반 공간), fall back to a real space so the sidebar/grid stay in sync.
-        const activeSpace =
-          prev.activeSpace === 'drive' || spaces.some((s) => s.id === prev.activeSpace)
+        // Prefer the tab-restored space (if it still exists), else keep the
+        // previously-active one, else fall back to a real space (e.g. the user
+        // deleted 일반 공간) so the sidebar/grid stay in sync.
+        const existsInSpaces = (id: string | undefined): boolean => id === 'drive' || spaces.some((s) => s.id === id);
+        const activeSpace = existsInSpaces(restore?.activeSpace)
+          ? restore!.activeSpace
+          : existsInSpaces(prev.activeSpace)
             ? prev.activeSpace
             : (spaces.find((s) => s.home)?.id ?? spaces[0]?.id ?? prev.activeSpace);
+        // Restore the open folder only when it still belongs to the restored space.
+        let curFolder = prev.curFolder;
+        if (restore && restore.curFolder && activeSpace === restore.activeSpace) {
+          const sp = spaces.find((s) => s.id === activeSpace);
+          const folders = sp && Array.isArray(sp.folders) ? sp.folders : [];
+          curFolder = folders.some((f) => f.id === restore.curFolder) ? restore.curFolder : prev.curFolder;
+        }
         // Seed favs/deleted/trash from the backend's persisted meta
         // (isFavorite/deletedAt) so favorite/trash status survives a refresh.
         const { favs, deleted, trash } = seedFavAndTrashFromMetas(prev.favs, prev.deleted, prev.trash, metas);
         // Always flip `loaded` so the grid drops its loading skeleton and
         // renders the real (possibly empty) state.
-        return { ...prev, spaces, activeSpace, mapFolders, favs, deleted, trash, loaded: true };
+        return { ...prev, spaces, activeSpace, curFolder, mapFolders, favs, deleted, trash, loaded: true };
       });
     });
 
@@ -119,6 +135,16 @@ export function useHomeController() {
       clearTimeout(loaderTimer.current);
     };
   }, [docStore, spaceStore]);
+
+  // Remember the space/folder currently being viewed (tab-scoped) so that
+  // opening a map in the editor and returning to Home restores it. Gated on
+  // `loaded` so the transient initial 'general' can't overwrite a real value
+  // before the mount restore above has applied it. Drive is a pseudo-space with
+  // no local folder, so it persists with `curFolder: null`.
+  useEffect(() => {
+    if (!state.loaded) return;
+    saveActiveView({ activeSpace: state.activeSpace, curFolder: state.activeSpace === 'drive' ? null : state.curFolder });
+  }, [state.loaded, state.activeSpace, state.curFolder]);
 
   // Prefetch document BODIES for the map cards' thumbnails. `DocStore.list()`
   // above only returns metadata, and `realPreview` reads localStorage — so a
