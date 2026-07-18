@@ -1,3 +1,5 @@
+import { ROOT_ID, layout } from '@mindflow/mindmap-core';
+import type { Doc, LayoutMode, Node as CoreNode } from '@mindflow/mindmap-core';
 import { hexA } from './storage';
 
 /** Home.dc.html `realPreview` — mirrors the editor's theme accent/branch palettes so a
@@ -77,10 +79,46 @@ interface DocLine {
  * carry x/y from the editor layout). Returns null so the caller falls back to `miniPreview`. */
 interface PreviewDoc {
   themeKey?: string;
+  layoutMode?: string;
   nodes?: Record<string, DocNode>;
   floats?: DocFloat[];
   lines?: DocLine[];
   zones?: DocZone[];
+}
+
+/** Node sizing for the preview layout — mirrors `dim()` below (and the design's
+ * `realPreview`) so a re-laid-out thumbnail lines up with what the editor draws. */
+function previewSizeOf(node: CoreNode, depth: number): { w: number; h: number } {
+  const len = ((node.text || '') + (node.emoji || '')).length;
+  const w = node.cw || Math.min(220, Math.max(50, len * 13 + 26));
+  const h = node.ch || (depth === 0 ? 44 : 32);
+  return { w, h };
+}
+
+/** Saved docs persist layout-derived node x/y as `0`: the React editor keeps
+ * layout pure/derived (`mindmap-core`) and never writes positions back into the
+ * doc, unlike the dc original which mutated `node.x/y` in place. Without this the
+ * thumbnail would pile every node at the origin — the same blob for every map.
+ * Re-run the SAME core `layout` the editor uses (respecting the doc's layoutMode)
+ * so the preview matches the real arrangement. Mutates `d.nodes` x/y in place;
+ * free shapes and their subtrees keep their stored positions (layout anchors
+ * them there), so this is safe for docs that already carry real coordinates. */
+function applyLayoutPositions(d: PreviewDoc): void {
+  const nodes = d.nodes;
+  if (!nodes || !nodes[ROOT_ID]) return; // no canonical root → keep stored coords
+  const mode: LayoutMode = d.layoutMode === 'right' || d.layoutMode === 'down' ? d.layoutMode : 'radial';
+  try {
+    const laid = layout({ nodes } as unknown as Doc, mode, previewSizeOf);
+    for (const id of Object.keys(nodes)) {
+      const g = laid[id];
+      if (g) {
+        nodes[id]!.x = g.x;
+        nodes[id]!.y = g.y;
+      }
+    }
+  } catch {
+    /* malformed tree → keep stored coordinates */
+  }
 }
 
 export function realPreview(rawDoc: string | null, hueFallback: string): JSX.Element | null {
@@ -92,6 +130,7 @@ export function realPreview(rawDoc: string | null, hueFallback: string): JSX.Ele
     return null;
   }
   if (!d || !d.nodes) return null;
+  applyLayoutPositions(d);
 
   const TH = (d.themeKey && THEME_PAL[d.themeKey]) || THEME_PAL.coral!;
   const hue = TH.accent;
