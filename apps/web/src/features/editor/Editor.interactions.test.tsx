@@ -169,6 +169,48 @@ describe('Editor interactions (M3-Editor-b)', () => {
     expect(getViewport(container).querySelector('.mf-richedit')).toBeTruthy();
   });
 
+  it('arrow keys move the node selection to the horizontal neighbour', () => {
+    // A single-child chain (A → B → C) in `right` layout: the core places the nodes
+    // on a strictly increasing horizontal line (root 0 · b +168 · c +336, same y), so
+    // a child always sits to the RIGHT of its parent. (jsdom's canvas-less text
+    // measurement shifts the absolute coordinates, but the parent→child left/right
+    // adjacency the arrows walk is preserved, so Left/Right traversal is stable.)
+    const chain = {
+      v: 1,
+      nodes: {
+        root: { id: 'root', text: 'A', emoji: '', parent: null, children: ['b'], collapsed: false, color: null, x: 0, y: 0 },
+        b: { id: 'b', text: 'B', emoji: '', parent: 'root', children: ['c'], collapsed: false, color: null, x: 0, y: 0 },
+        c: { id: 'c', text: 'C', emoji: '', parent: 'b', children: [], collapsed: false, color: null, x: 0, y: 0 },
+      },
+      floats: [],
+      lines: [],
+      zones: [],
+      layoutMode: 'right',
+      themeKey: 'coral',
+    };
+    localStorage.setItem('mindflow_doc_nav', JSON.stringify(chain));
+    const { container } = renderEditor('/editor?map=nav&title=x');
+    const selectedName = () => (screen.getByText('선택한 주제').nextElementSibling as HTMLElement).textContent;
+
+    selectNodeBox(nodeBoxFor(container, 'B'));
+    expect(selectedName()).toBe('B');
+
+    fireEvent.keyDown(window, { key: 'ArrowRight' });
+    expect(selectedName()).toBe('C'); // B → child on the right
+
+    fireEvent.keyDown(window, { key: 'ArrowLeft' });
+    expect(selectedName()).toBe('B'); // C → back to its parent on the left
+  });
+
+  it('arrow keys with nothing selected land on the root node', () => {
+    localStorage.setItem('mindflow_doc_navroot', JSON.stringify(DOC));
+    renderEditor('/editor?map=navroot&title=x');
+
+    expect(screen.queryByText('선택한 주제')).toBeNull(); // nothing selected
+    fireEvent.keyDown(window, { key: 'ArrowRight' });
+    expect((screen.getByText('선택한 주제').nextElementSibling as HTMLElement).textContent).toBe('제품 로드맵');
+  });
+
   it('committing a text edit updates the node in the doc', async () => {
     localStorage.setItem('mindflow_doc_t3', JSON.stringify(DOC));
     const { container } = renderEditor('/editor?map=t3&title=x');

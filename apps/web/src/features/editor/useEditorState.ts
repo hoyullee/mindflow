@@ -1426,6 +1426,95 @@ export function useEditorState(): EditorController {
     setMultiSelectionState(null);
   }, []);
 
+  // ---- arrow-key node navigation — port of `Component#navigate`/`#selectAndReveal`
+  // (MindFlow.dc.html:2058-2094). `selectAndReveal` selects a node and pans it into
+  // view when it lands off-screen (80px margin); `navigateNodes` picks the nearest
+  // node in the pressed direction via the original's directional-cone scoring. ----
+  const selectAndReveal = useCallback(
+    (id: string) => {
+      selectNode(id);
+      const g = geomRef.current[id];
+      if (!g) return;
+      setViewport((prev) => {
+        const sx = g.x * prev.zoom + prev.pan.x;
+        const sy = g.y * prev.zoom + prev.pan.y;
+        const m = 80;
+        let nx = prev.pan.x;
+        let ny = prev.pan.y;
+        let need = false;
+        if (sx < m) {
+          nx = prev.pan.x + (m - sx);
+          need = true;
+        } else if (sx > prev.vw - m) {
+          nx = prev.pan.x - (sx - (prev.vw - m));
+          need = true;
+        }
+        if (sy < m) {
+          ny = prev.pan.y + (m - sy);
+          need = true;
+        } else if (sy > prev.vh - m) {
+          ny = prev.pan.y - (sy - (prev.vh - m));
+          need = true;
+        }
+        return need ? { ...prev, pan: { x: nx, y: ny } } : prev;
+      });
+    },
+    [selectNode],
+  );
+  const navigateNodes = useCallback(
+    (fromId: string | null, dir: 'up' | 'down' | 'left' | 'right') => {
+      const g = geomRef.current;
+      const ids = Object.keys(g);
+      if (!ids.length) return;
+      // no current node selection → land on root (matches the dc original)
+      if (!fromId || !g[fromId]) {
+        const target = g[ROOT_ID] ? ROOT_ID : ids[0];
+        if (target) selectAndReveal(target);
+        return;
+      }
+      const a = g[fromId];
+      let best: string | null = null;
+      let bestScore = Infinity;
+      ids.forEach((id) => {
+        if (id === fromId) return;
+        const b = g[id];
+        if (!b) return;
+        const dx = b.x - a.x;
+        const dy = b.y - a.y;
+        let along: number;
+        let perp: number;
+        let ok: boolean;
+        if (dir === 'left') {
+          ok = dx < -1;
+          along = -dx;
+          perp = Math.abs(dy);
+        } else if (dir === 'right') {
+          ok = dx > 1;
+          along = dx;
+          perp = Math.abs(dy);
+        } else if (dir === 'up') {
+          ok = dy < -1;
+          along = -dy;
+          perp = Math.abs(dx);
+        } else {
+          ok = dy > 1;
+          along = dy;
+          perp = Math.abs(dx);
+        }
+        if (!ok) return;
+        // keep movement within a directional cone so it feels like the arrow pressed
+        if (perp > along * 2 + 60) return;
+        const score = along + perp * 2.2;
+        if (score < bestScore) {
+          bestScore = score;
+          best = id;
+        }
+      });
+      if (best) selectAndReveal(best);
+    },
+    [selectAndReveal],
+  );
+
   const isKind = (kind: SelectionKind): string | null => (selection && selection.kind === kind ? selection.id : null);
 
   // ---- text editing ----
@@ -2393,6 +2482,18 @@ export function useEditorState(): EditorController {
           clearSelection();
         }
         return;
+      }
+      // arrow keys move the node selection to the nearest neighbour in that direction
+      // (port of the dc original's final `else if` arrow block). Only meaningful with a
+      // node — or nothing — selected; float/line/zone selections are handled by their own
+      // branches below and don't navigate.
+      if (e.key === 'ArrowUp' || e.key === 'ArrowDown' || e.key === 'ArrowLeft' || e.key === 'ArrowRight') {
+        if (!selection || selection.kind === 'node') {
+          e.preventDefault();
+          const dir = e.key === 'ArrowUp' ? 'up' : e.key === 'ArrowDown' ? 'down' : e.key === 'ArrowLeft' ? 'left' : 'right';
+          navigateNodes(selection?.kind === 'node' ? selection.id : null, dir);
+          return;
+        }
       }
       if (!selection) return;
       if (selection.kind === 'node') {
