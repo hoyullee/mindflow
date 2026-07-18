@@ -102,7 +102,23 @@ export function useHomeController() {
           base = ensureHomeSpace(coerceSpaces(ws.spaces));
           if (ws.mapFolders && Object.keys(ws.mapFolders).length) mapFolders = ws.mapFolders;
         }
-        const { spaces } = mergeDocMetasIntoSpaces(base, metas);
+        const { spaces, renamed } = mergeDocMetasIntoSpaces(base, metas);
+        // `mapFolders` is keyed by map title, so when the merge renames a card to
+        // its backend title (e.g. a map created/edited then reopened), migrate the
+        // folder assignment to the new title — otherwise the folder still counts
+        // the old (orphaned) key while the renamed card falls back to the top level.
+        if (renamed.length) {
+          const mf = { ...mapFolders };
+          let mfChanged = false;
+          renamed.forEach(({ from, to }) => {
+            if (from !== to && mf[from] !== undefined) {
+              mf[to] = mf[from]!;
+              delete mf[from];
+              mfChanged = true;
+            }
+          });
+          if (mfChanged) mapFolders = mf;
+        }
         // Prefer the tab-restored space (if it still exists), else keep the
         // previously-active one, else fall back to a real space (e.g. the user
         // deleted 일반 공간) so the sidebar/grid stay in sync.

@@ -188,6 +188,31 @@ describe('Home', () => {
     expect(screen.getAllByText('＋ 새로 만들기').length).toBe(2);
   });
 
+  it('keeps a folder-filed map in its folder when the merge renames it to its backend title', async () => {
+    const user = userEvent.setup();
+    // A map filed in a folder under its old title, whose backend doc has since
+    // been renamed (e.g. created in a folder, then its root text edited in the
+    // editor). On load the merge renames the card to the backend title — the
+    // folder assignment must follow, not orphan (folder counts it while the
+    // card drops to the space top level).
+    localStorage.setItem(
+      'mf_spaces',
+      JSON.stringify({
+        spaces: [{ id: 'sf', name: '폴더공간', color: '#3f8fd0', maps: [{ title: '옛이름', when: '내 맵', hue: '#f0663f', docId: 'd1' }], folders: [{ id: 'f1', name: '내폴더' }] }],
+        mapFolders: { 옛이름: 'f1' },
+      }),
+    );
+    const { container } = renderHomeWithDocStore([{ id: 'd1', title: '새이름', version: 1, updatedAt: '2026-01-01T00:00:00.000Z', isFavorite: false, deletedAt: null }]);
+
+    await waitFor(() => expect(screen.getByText('내폴더')).toBeTruthy());
+    // the renamed card must NOT appear at the space top level (it belongs to the folder)
+    expect(container.querySelector('a[data-title="새이름"]')).toBeNull();
+    expect(container.querySelector('a[data-title="옛이름"]')).toBeNull();
+    // entering the folder shows the renamed card
+    await user.click(screen.getByText('내폴더'));
+    await waitFor(() => expect(container.querySelector('a[data-title="새이름"]')).toBeTruthy());
+  });
+
   it('files a new map into the folder you are currently inside', async () => {
     const user = userEvent.setup();
     localStorage.setItem(

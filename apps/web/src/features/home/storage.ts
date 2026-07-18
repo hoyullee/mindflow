@@ -209,8 +209,8 @@ export function syncDocsToCards(spaces: SpaceData[]): { spaces: SpaceData[]; cha
  * entries directly. Trashed docs (`deletedAt` set) don't reappear as cards —
  * Home's own trash list is a separate, editor-independent concept for now.
  */
-export function mergeDocMetasIntoSpaces(spaces: SpaceData[], metas: DocMeta[]): { spaces: SpaceData[]; changed: boolean } {
-  if (!spaces.length) return { spaces, changed: false };
+export function mergeDocMetasIntoSpaces(spaces: SpaceData[], metas: DocMeta[]): { spaces: SpaceData[]; changed: boolean; renamed: Array<{ from: string; to: string }> } {
+  if (!spaces.length) return { spaces, changed: false, renamed: [] };
   const known = new Set<string>();
   spaces.forEach((s) => (s.maps || []).forEach((m) => {
     known.add(m.title);
@@ -228,6 +228,10 @@ export function mergeDocMetasIntoSpaces(spaces: SpaceData[], metas: DocMeta[]): 
   });
 
   let changed = adds.length > 0;
+  // Cards renamed to match their backend title. Title-keyed state (mapFolders)
+  // must be migrated by the caller, else a card's folder assignment is orphaned
+  // (folder count still sees the old key while the card renders at the top level).
+  const renamed: Array<{ from: string; to: string }> = [];
   let next = spaces.map((s) => ({
     ...s,
     maps: (s.maps || []).map((m) => {
@@ -235,6 +239,7 @@ export function mergeDocMetasIntoSpaces(spaces: SpaceData[], metas: DocMeta[]): 
       const meta = metaByDocId.get(m.docId);
       if (meta && meta.title && meta.title !== m.title) {
         changed = true;
+        renamed.push({ from: m.title, to: meta.title });
         return { ...m, title: meta.title };
       }
       return m;
@@ -243,7 +248,7 @@ export function mergeDocMetasIntoSpaces(spaces: SpaceData[], metas: DocMeta[]): 
   if (adds.length) {
     next = next.map((s, i) => (i === 0 ? { ...s, maps: [...(s.maps || []), ...adds] } : s));
   }
-  return { spaces: next, changed };
+  return { spaces: next, changed, renamed };
 }
 
 /**
