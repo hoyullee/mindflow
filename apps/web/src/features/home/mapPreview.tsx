@@ -1,5 +1,6 @@
 import { ROOT_ID, layout } from '@mindflow/mindmap-core';
-import type { Doc, LayoutMode, Node as CoreNode } from '@mindflow/mindmap-core';
+import type { Doc, EdgeStyle, LayoutMode, Node as CoreNode } from '@mindflow/mindmap-core';
+import { buildEdgePath, edgeStrokeWidth } from '../editor/edges';
 import { hexA } from './storage';
 
 /** Home.dc.html `realPreview` — mirrors the editor's theme accent/branch palettes so a
@@ -94,6 +95,7 @@ interface DocLine {
 interface PreviewDoc {
   themeKey?: string;
   layoutMode?: string;
+  edgeStyle?: string;
   nodes?: Record<string, DocNode>;
   floats?: DocFloat[];
   lines?: DocLine[];
@@ -254,18 +256,6 @@ export function realPreview(rawDoc: string | null, hueFallback: string): JSX.Ele
     );
   });
 
-  const edges: JSX.Element[] = [];
-  ids.forEach((id) => {
-    const n = nodes[id]!;
-    if (n.parent && nodes[n.parent] && ids.includes(n.parent)) {
-      const p = nodes[n.parent]!;
-      const mx = ((p.x ?? 0) + (n.x ?? 0)) / 2;
-      edges.push(
-        <path key={`e${id}`} d={`M ${p.x} ${p.y} C ${mx} ${p.y} ${mx} ${n.y} ${n.x} ${n.y}`} stroke={colorOf(id)} strokeWidth={3} fill="none" opacity={0.7} />,
-      );
-    }
-  });
-
   const depthOf = (id: string): number => {
     let dep = 0;
     let cur: DocNode | undefined = nodes[id];
@@ -276,6 +266,34 @@ export function realPreview(rawDoc: string | null, hueFallback: string): JSX.Ele
     }
     return dep;
   };
+
+  // Connector shape follows the doc's edgeStyle (곡선/꺾은선/직선) and layout
+  // mode, via the SAME `buildEdgePath` the editor's EdgeLayer uses — previously
+  // the preview always drew a cubic curve, ignoring edgeStyle. `buildEdgePath`
+  // only special-cases 'down'; radial/right share the sided branch.
+  const mode: LayoutMode = d.layoutMode === 'right' || d.layoutMode === 'down' ? d.layoutMode : 'radial';
+  const edgeStyle: EdgeStyle = d.edgeStyle === 'elbow' || d.edgeStyle === 'straight' ? d.edgeStyle : 'curve';
+  const edgeInX = (id: string): number => (nodes[id]?.shape === 'parallelogram' ? dim(id).w * 0.08 : 0);
+  const edges: JSX.Element[] = [];
+  ids.forEach((id) => {
+    const n = nodes[id]!;
+    if (n.parent && nodes[n.parent] && ids.includes(n.parent)) {
+      const p = nodes[n.parent]!;
+      const pm = dim(n.parent);
+      const cm = dim(id);
+      const pathD = buildEdgePath(
+        mode,
+        edgeStyle,
+        { x: p.x ?? 0, y: p.y ?? 0, w: pm.w, h: pm.h },
+        { x: n.x ?? 0, y: n.y ?? 0, w: cm.w, h: cm.h },
+        edgeInX(n.parent),
+        edgeInX(id),
+      );
+      edges.push(
+        <path key={`e${id}`} d={pathD} stroke={colorOf(id)} strokeWidth={edgeStrokeWidth(depthOf(id))} fill="none" strokeLinecap="round" strokeLinejoin="round" opacity={0.85} />,
+      );
+    }
+  });
 
   const rects: JSX.Element[] = [];
   ids.forEach((id) => {
