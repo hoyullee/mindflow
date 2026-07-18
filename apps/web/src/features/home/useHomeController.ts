@@ -40,6 +40,9 @@ export function useHomeController() {
   const importInputRef = useRef<HTMLInputElement | null>(null);
   const loaderTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
   const spaceMenuAnchor = useRef<{ top: number; left: number } | null>(null);
+  // docIds whose body we've already fetched (or are fetching) for card previews,
+  // so the prefetch effect never re-requests the same doc.
+  const previewFetchedRef = useRef<Set<string>>(new Set());
 
   const patch = (partial: Partial<HomeState>) => setState((prev) => ({ ...prev, ...partial }));
 
@@ -116,6 +119,47 @@ export function useHomeController() {
       clearTimeout(loaderTimer.current);
     };
   }, [docStore, spaceStore]);
+
+  // Prefetch document BODIES for the map cards' thumbnails. `DocStore.list()`
+  // above only returns metadata, and `realPreview` reads localStorage — so a
+  // map whose body lives in a backend (Supabase) had no real preview and fell
+  // back to the generic sketch. Load each map's doc once via the DocStore and
+  // cache its serialized form in `previewDocs`, then the view renders the real
+  // nodes. Runs whenever the space list gains maps; `previewFetchedRef` dedupes.
+  useEffect(() => {
+    if (!state.loaded) return;
+    const ids = Array.from(
+      new Set(
+        state.spaces
+          .flatMap((s) => (Array.isArray(s.maps) ? s.maps : []))
+          .map((m) => m.docId)
+          .filter((id): id is string => !!id),
+      ),
+    ).filter((id) => !previewFetchedRef.current.has(id));
+    if (!ids.length) return;
+    ids.forEach((id) => previewFetchedRef.current.add(id));
+    let cancelled = false;
+    void Promise.allSettled(ids.map((id) => docStore.load(id))).then((results) => {
+      if (cancelled) return;
+      const add: Record<string, string> = {};
+      results.forEach((r, i) => {
+        const id = ids[i]!;
+        if (r.status === 'fulfilled' && r.value) {
+          try {
+            // `LoadedDoc.doc` is already the canonical persisted shape (nodes/
+            // floats/lines/zones/layoutMode/themeKey) that `realPreview` parses.
+            add[id] = JSON.stringify(r.value.doc);
+          } catch {
+            /* non-serializable doc — skip; card keeps the generic sketch */
+          }
+        }
+      });
+      if (Object.keys(add).length) setState((prev) => ({ ...prev, previewDocs: { ...prev.previewDocs, ...add } }));
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [state.loaded, state.spaces, docStore]);
 
   // Persist spaces (+ map→folder) via the `SpaceStore` port whenever they
   // change, so user-created spaces/folders survive a refresh AND (in Supabase
