@@ -188,6 +188,30 @@ describe('Home', () => {
     expect(screen.getAllByText('＋ 새로 만들기').length).toBe(2);
   });
 
+  it('files a new map into the folder you are currently inside', async () => {
+    const user = userEvent.setup();
+    localStorage.setItem(
+      'mf_spaces',
+      JSON.stringify({
+        spaces: [{ id: 'sf', name: '폴더공간', color: '#3f8fd0', maps: [], folders: [{ id: 'f1', name: '내폴더' }] }],
+        mapFolders: {},
+      }),
+    );
+    const { container } = renderHomeWithDocStore([]);
+
+    // enter the folder
+    await waitFor(() => expect(screen.getByText('내폴더')).toBeTruthy());
+    await user.click(screen.getByText('내폴더'));
+    await waitFor(() => expect(screen.getByText('이 폴더는 비어 있어요')).toBeTruthy());
+
+    // create a new map from inside the folder (toolbar CTA)
+    await user.click(screen.getAllByText('＋ 새로 만들기')[0]!);
+
+    // the folder view only renders cards filed to THIS folder, so the new map
+    // appearing here proves it was filed into the folder (not the space top level).
+    await waitFor(() => expect(container.querySelector('a[data-title="새 마인드맵"]')).toBeTruthy());
+  });
+
   it('restores the space you were viewing when Home remounts (editor round-trip)', async () => {
     const user = userEvent.setup();
     localStorage.setItem(

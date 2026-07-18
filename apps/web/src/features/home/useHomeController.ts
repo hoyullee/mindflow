@@ -465,7 +465,19 @@ export function useHomeController() {
           if (!targetId) return prev;
           if (prev.spaces.some((s) => (s.maps || []).some((m) => m.docId === docId || m.title === title))) return prev;
           const spaces = prev.spaces.map((s) => (s.id === targetId ? { ...s, maps: [...(s.maps || []), { title, when: '방금', hue: '#f0663f', docId }] } : s));
-          return { ...prev, spaces };
+          // If the user is currently INSIDE a folder (of the target space), file
+          // the new map into that folder — otherwise it would land at the space's
+          // top level (outside the folder they're viewing). mapFolders is keyed by
+          // title, same as `moveMapToFolder`.
+          let mapFolders = prev.mapFolders;
+          if (prev.curFolder) {
+            const sp = prev.spaces.find((s) => s.id === targetId);
+            const folders = sp && Array.isArray(sp.folders) ? sp.folders : [];
+            if (folders.some((f) => f.id === prev.curFolder)) {
+              mapFolders = { ...prev.mapFolders, [title]: prev.curFolder };
+            }
+          }
+          return { ...prev, spaces, mapFolders };
         });
       }
     } catch {
