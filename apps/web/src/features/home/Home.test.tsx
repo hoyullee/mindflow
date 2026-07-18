@@ -161,6 +161,33 @@ describe('Home', () => {
     });
   });
 
+  it('hides the "아직 만든 맵이 없어요" prompt when the space has folders but no loose maps', async () => {
+    localStorage.setItem(
+      'mf_spaces',
+      JSON.stringify({
+        spaces: [{ id: 'sf', name: '폴더공간', color: '#3f8fd0', maps: [], folders: [{ id: 'f1', name: '내폴더' }] }],
+        mapFolders: {},
+      }),
+    );
+    renderHomeWithDocStore([]);
+
+    // the folder section renders …
+    await waitFor(() => expect(screen.getByText('내폴더')).toBeTruthy());
+    expect(screen.getByText('폴더')).toBeTruthy();
+    // … but NOT the empty-space prompt, and the empty-state "＋ 새로 만들기" CTA is
+    // gone (only the always-present toolbar button remains).
+    expect(screen.queryByText('아직 만든 맵이 없어요')).toBeNull();
+    expect(screen.getAllByText('＋ 새로 만들기').length).toBe(1);
+  });
+
+  it('still shows the "아직 만든 맵이 없어요" prompt for a space with neither maps nor folders', async () => {
+    localStorage.setItem('mf_spaces', JSON.stringify({ spaces: [{ id: 'se', name: '빈공간', color: '#3f8fd0', maps: [], folders: [] }], mapFolders: {} }));
+    renderHomeWithDocStore([]);
+    await waitFor(() => expect(screen.getByText('아직 만든 맵이 없어요')).toBeTruthy());
+    // both the toolbar button and the empty-state CTA are present
+    expect(screen.getAllByText('＋ 새로 만들기').length).toBe(2);
+  });
+
   it('restores the space you were viewing when Home remounts (editor round-trip)', async () => {
     const user = userEvent.setup();
     localStorage.setItem(

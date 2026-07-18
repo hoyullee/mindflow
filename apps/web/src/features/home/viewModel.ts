@@ -219,7 +219,10 @@ export function deriveHomeView(state: HomeState): HomeViewModel {
   // space is fed by static data (no list() dependency), so it never "loads".
   const loading = !state.loaded && !isDriveSpace;
   const showDriveConnect = isDriveSpace && !connected;
-  const isEmpty = !loading && !showDriveConnect && allCards.length === 0 && !curFolder;
+  // "아직 만든 맵이 없어요" + 새로 만들기 CTA is only for a genuinely empty space —
+  // one with neither top-level maps NOR folders. A space that has folders (but no
+  // loose maps) shows just its folder section, no empty-state prompt.
+  const isEmpty = !loading && !showDriveConnect && allCards.length === 0 && !curFolder && folderCards.length === 0;
   const folderEmpty = !loading && !!curFolder && allCards.length === 0;
 
   return {
@@ -248,7 +251,9 @@ export function deriveHomeView(state: HomeState): HomeViewModel {
     importVisible: !(isDriveSpace || curFolder),
     recentSectionVisible: !loading && !isDriveSpace && !curFolder && recentCards.length > 0,
     foldersSectionVisible: !loading && folderCards.length > 0,
-    mapsSectionVisible: !loading && !(isEmpty || showDriveConnect || folderEmpty),
+    // Only render the "맵" section when there are actually maps to show — a space
+    // with folders but no loose maps must not render an empty "맵" header.
+    mapsSectionVisible: !loading && !showDriveConnect && allCards.length > 0,
     userInitial: (state.userName || 'M').trim().charAt(0).toUpperCase() || 'M',
   };
 }
