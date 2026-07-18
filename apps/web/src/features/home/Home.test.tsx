@@ -142,13 +142,15 @@ describe('Home', () => {
     const aside = container.querySelector('aside') as HTMLElement;
 
     // before the workspace load resolves: the sidebar shows a skeleton, not the
-    // seed 일반 공간 SpaceRow
+    // seed 일반 공간 SpaceRow; the title is a skeleton too (no <h2> yet)
     expect(within(aside).getByLabelText('스페이스를 불러오는 중')).toBeTruthy();
     expect(aside.querySelector('.space-row')).toBeNull();
+    expect(container.querySelector('h2')).toBeNull();
 
-    // after load: real spaces render and the skeleton is gone
+    // after load: real spaces render, the skeletons are gone, and the title shows
     await waitFor(() => expect(within(aside).getByText('작업 공간')).toBeTruthy());
     expect(within(aside).queryByLabelText('스페이스를 불러오는 중')).toBeNull();
+    expect(container.querySelector('h2')?.textContent).toBe('작업 공간');
   });
 
   it('does not resurrect a deleted 일반 공간 on reload (respects a persisted spaces list with no home space)', async () => {

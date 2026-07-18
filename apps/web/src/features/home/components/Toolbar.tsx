@@ -55,7 +55,14 @@ export function Toolbar({ state, view, controller, isMobile = false, onOpenNav }
           </svg>
         </button>
       )}
-      <h2 style={{ fontSize: 22, fontWeight: 800, margin: 0, letterSpacing: '-.02em' }}>{view.spaceTitle}</h2>
+      {/* Skeleton the space title until the workspace loads, so the seed
+          일반 공간 name doesn't flash before the real space name arrives
+          (matches the LNB space-list skeleton). */}
+      {state.loaded ? (
+        <h2 style={{ fontSize: 22, fontWeight: 800, margin: 0, letterSpacing: '-.02em' }}>{view.spaceTitle}</h2>
+      ) : (
+        <div className="mf-skel" aria-label="스페이스를 불러오는 중" style={{ height: 24, width: 150, borderRadius: 7, margin: '3px 0' }} />
+      )}
       <div style={{ marginLeft: isMobile ? 0 : 'auto', width: isMobile ? '100%' : undefined, order: isMobile ? 3 : undefined, display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
         {view.isDriveSpace && view.connected && (
           <div
