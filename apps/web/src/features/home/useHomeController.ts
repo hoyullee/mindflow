@@ -184,8 +184,10 @@ export function useHomeController() {
     void Promise.allSettled(ids.map((id) => docStore.load(id))).then((results) => {
       if (cancelled) return;
       const add: Record<string, string> = {};
+      const resolved: Record<string, boolean> = {};
       results.forEach((r, i) => {
         const id = ids[i]!;
+        resolved[id] = true; // resolved (whether or not a body came back)
         if (r.status === 'fulfilled' && r.value) {
           try {
             // `LoadedDoc.doc` is already the canonical persisted shape (nodes/
@@ -196,7 +198,9 @@ export function useHomeController() {
           }
         }
       });
-      if (Object.keys(add).length) setState((prev) => ({ ...prev, previewDocs: { ...prev.previewDocs, ...add } }));
+      // Mark the batch resolved even when nothing loaded, so cards for those
+      // docs stop showing the loading skeleton and settle on their final preview.
+      setState((prev) => ({ ...prev, previewDocs: { ...prev.previewDocs, ...add }, previewResolved: { ...prev.previewResolved, ...resolved } }));
     });
     return () => {
       cancelled = true;

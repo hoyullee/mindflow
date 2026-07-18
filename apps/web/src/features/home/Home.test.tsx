@@ -161,6 +161,59 @@ describe('Home', () => {
     });
   });
 
+  it('shows a skeleton while a backend map body loads (no generic-sketch flash), then the real nodes', async () => {
+    // Gate DocStore.load() so we can observe the card WHILE its body is still
+    // loading: it must show a neutral skeleton, never the generic miniPreview
+    // SVG (which would flash and then be replaced by the real nodes).
+    let resolveLoad!: (v: LoadedDoc | null) => void;
+    const gate = new Promise<LoadedDoc | null>((r) => {
+      resolveLoad = r;
+    });
+    const doc = {
+      v: 1,
+      nodes: { root: { id: 'root', text: '실제루트', emoji: '', parent: null, children: [], collapsed: false, color: null, x: 0, y: 0 } },
+      floats: [],
+      lines: [],
+      zones: [],
+      layoutMode: 'radial',
+      themeKey: 'coral',
+    };
+    const docStore: DocStore = {
+      list: async () => [{ id: 'd1', title: '실제루트', version: 1, updatedAt: '2026-01-01T00:00:00.000Z', isFavorite: false, deletedAt: null }],
+      load: vi.fn(async () => gate),
+      setFavorite: vi.fn(async () => undefined),
+      remove: vi.fn(async () => undefined),
+      restore: vi.fn(async () => undefined),
+      rename: vi.fn(async () => undefined),
+      save: vi.fn(async (): Promise<SaveResult> => ({ ok: true, version: 1 })),
+    };
+    const backend: Backend = { auth: new LocalAuth(), docStore, spaceStore: new LocalSpaceStore(), mode: 'local' };
+    const { container } = render(
+      <MemoryRouter initialEntries={['/home']}>
+        <BackendProvider backend={backend}>
+          <Routes>
+            <Route path="/home" element={<Home />} />
+            <Route path="/editor" element={<div>EDITOR_PLACEHOLDER</div>} />
+          </Routes>
+        </BackendProvider>
+      </MemoryRouter>,
+    );
+
+    const thumb = await waitFor(() => {
+      const t = container.querySelector('a[data-title="실제루트"] .map-thumb');
+      if (!t) throw new Error('card not rendered yet');
+      return t as HTMLElement;
+    });
+    // still loading: a shimmer skeleton, NOT a preview SVG (no generic flash)
+    expect(thumb.querySelector('.mf-skel')).toBeTruthy();
+    expect(thumb.querySelector('svg')).toBeNull();
+
+    // body arrives → the real nodes render (and the skeleton is gone)
+    resolveLoad({ doc: doc as unknown as LoadedDoc['doc'], version: 1, title: '실제루트' });
+    await waitFor(() => expect(Array.from(thumb.querySelectorAll('svg text')).map((t) => t.textContent)).toContain('실제루트'));
+    expect(thumb.querySelector('.mf-skel')).toBeNull();
+  });
+
   it('hides the "아직 만든 맵이 없어요" prompt when the space has folders but no loose maps', async () => {
     localStorage.setItem(
       'mf_spaces',
