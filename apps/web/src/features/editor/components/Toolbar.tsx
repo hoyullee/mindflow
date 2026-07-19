@@ -170,15 +170,17 @@ export function Toolbar({ controller }: ToolbarProps) {
           }}
         >
           <span
+            aria-hidden="true"
             style={{
-              width: 13,
-              height: 13,
-              borderRadius: '50%',
-              background: 'conic-gradient(#f0663f,#e0b23c,#3fae9e,#3f8fd0,#8a6bd1,#f0663f)',
+              width: 15,
+              height: 15,
+              borderRadius: 5,
+              background: 'conic-gradient(from 210deg,#f0663f,#e0b23c,#3fae9e,#3f8fd0,#8a6bd1,#f0663f)',
+              boxShadow: `inset 0 0 0 1.5px ${th.panel}`,
               flexShrink: 0,
             }}
           />
-          스타일
+          맵 스타일
         </button>
         {styleMenuOpen && (
           <AnchoredMenu anchorRef={styleWrapRef} width={250}>
