@@ -11,6 +11,7 @@ import { FolderModal } from './components/modals/FolderModal';
 import { Modals } from './components/modals/Modals';
 import { AccountSettingsModal } from './components/modals/AccountSettingsModal';
 import { DeleteAccountModal } from './components/modals/DeleteAccountModal';
+import { ProfileNameModal } from './components/modals/ProfileNameModal';
 import { useHomeController } from './useHomeController';
 import { deriveHomeView } from './viewModel';
 import { useIsMobile } from '../../hooks/useMediaQuery';
@@ -53,6 +54,7 @@ export function Home() {
 
       <AuthModal state={state} controller={controller} />
       <AccountSettingsModal state={state} controller={controller} />
+      <ProfileNameModal state={state} controller={controller} />
       <DeleteAccountModal state={state} controller={controller} />
       <Modals state={state} controller={controller} />
       <NewSpaceModal state={state} controller={controller} />
