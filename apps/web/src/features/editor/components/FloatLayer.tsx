@@ -147,9 +147,18 @@ export function FloatLayer({ floats, theme: th, controller }: FloatLayerProps) {
 
 function FloatEditBox({ f, onCommit, onCancel }: { f: Float; onCommit: (text: string) => void; onCancel: () => void }) {
   const ref = useRef<HTMLTextAreaElement | null>(null);
+  // Grow the textarea to fit its content so the editor shows the SAME wrapped
+  // height as the committed memo (a plain textarea caps at its rows and scrolls,
+  // showing only ~2 lines — the reported mismatch).
+  const autoSize = (el: HTMLTextAreaElement | null): void => {
+    if (!el) return;
+    el.style.height = 'auto';
+    el.style.height = `${el.scrollHeight}px`;
+  };
   useEffect(() => {
     const el = ref.current;
     if (!el) return;
+    autoSize(el);
     el.focus();
     el.select();
   }, []);
@@ -157,9 +166,11 @@ function FloatEditBox({ f, onCommit, onCancel }: { f: Float; onCommit: (text: st
     <textarea
       ref={ref}
       className="mf-edit"
+      rows={1}
       defaultValue={f.text}
       onMouseDown={(e) => e.stopPropagation()}
       onPointerDown={(e) => e.stopPropagation()}
+      onInput={(e) => autoSize(e.currentTarget)}
       onKeyDown={(e) => {
         e.stopPropagation();
         if (e.key === 'Escape') {
@@ -177,8 +188,10 @@ function FloatEditBox({ f, onCommit, onCancel }: { f: Float; onCommit: (text: st
         background: 'transparent',
         color: 'inherit',
         font: 'inherit',
+        lineHeight: 'inherit',
         outline: 'none',
-        resize: 'vertical',
+        resize: 'none',
+        overflow: 'hidden',
         padding: 0,
         cursor: 'text',
       }}

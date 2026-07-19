@@ -2243,10 +2243,18 @@ export function useEditorState(): EditorController {
       if (d.kind === 'node-move') {
         const vp = viewportRef.current;
         const p = toCanvasPoint(e.clientX, e.clientY, vp);
-        const target = findAttachTarget(p, d.excludeIds);
         setDragGhost(null);
         setAttachTarget(null);
-        if (target) {
+        // How far the POINTER actually travelled (not how off-centre the grab was).
+        // A click — or sub-threshold jitter — that never dragged must only select
+        // (done on pointerdown), never move/detach/reattach. Without this, clicking a
+        // wide node's edge alone clears the `dist > 40` detach gate below (dist is
+        // measured from the node's CENTRE to the cursor), yanking it out of the tree.
+        const moveDist = Math.hypot(e.clientX - d.startClientX, e.clientY - d.startClientY) / (vp.zoom || 1);
+        const target = moveDist >= 4 ? findAttachTarget(p, d.excludeIds) : null;
+        if (moveDist < 4) {
+          // pure click — nothing to commit
+        } else if (target) {
           // dropped onto another node → reparent (port of `Component#onUp`'s
           // `if (a) { this.attachFreeNode(d.id, a.id, a.zone); return; }`, MindFlow.dc.html:1786)
           commitDoc((doc0) => {
