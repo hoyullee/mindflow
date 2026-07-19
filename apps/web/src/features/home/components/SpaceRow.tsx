@@ -12,7 +12,6 @@ interface Props {
 export function SpaceRow({ space, state, controller }: Props) {
   const active = space.id === state.activeSpace;
   const menuOpen = state.spaceMenu === space.id;
-  const editing = state.editingSpace === space.id;
   const hasMaps = Array.isArray(space.maps) && space.maps.some((m) => !state.deleted[m.title]);
   const isLastSpace = state.spaces.length <= 1;
   const anchor = controller.spaceMenuAnchor.current;
@@ -54,24 +53,7 @@ export function SpaceRow({ space, state, controller }: Props) {
         <span style={space.home ? { fontSize: 15, width: 15, textAlign: 'center', flexShrink: 0 } : { width: 15, height: 15, borderRadius: 5, flexShrink: 0, background: space.color, display: 'inline-block' }}>
           {space.home ? '⌂' : ''}
         </span>
-        {editing ? (
-          <input
-            value={state.editingSpaceName}
-            onInput={(e) => controller.onRenameSpaceInput((e.target as HTMLInputElement).value)}
-            onKeyDown={controller.onRenameSpaceKey}
-            onBlur={controller.commitRenameSpace}
-            onClick={(e) => {
-              e.preventDefault();
-              e.stopPropagation();
-            }}
-            onMouseDown={(e) => e.stopPropagation()}
-            maxLength={10}
-            aria-label="공간 이름"
-            style={{ flex: 1, minWidth: 0, height: 24, border: '1px solid #f0663f', borderRadius: 6, background: '#fff', color: '#33281f', fontFamily: 'inherit', fontSize: 13, padding: '0 7px', outline: 'none' }}
-          />
-        ) : (
-          <span style={{ flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{space.name}</span>
-        )}
+        <span style={{ flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{space.name}</span>
         <span
           className="space-dot"
           role="button"

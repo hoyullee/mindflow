@@ -346,12 +346,26 @@ export function useHomeController() {
   };
 
   // ---- spaces ----
-  const openNewSpace = () => patch({ newSpaceOpen: true, newSpaceName: '', newSpaceColor: '#f0663f' });
-  const closeNewSpace = () => patch({ newSpaceOpen: false });
+  // The "새 공간 만들기" modal doubles as the rename dialog: `editingSpace === null`
+  // is create mode, a space id is edit mode (pre-filled name + color). `submitSpace`
+  // branches on it, so both flows share one popup (name + accent color).
+  const openNewSpace = () => patch({ newSpaceOpen: true, editingSpace: null, newSpaceName: '', newSpaceColor: '#f0663f' });
+  const closeNewSpace = () => patch({ newSpaceOpen: false, editingSpace: null });
   const onNewSpaceName = (v: string) => patch({ newSpaceName: (v || '').slice(0, 10) });
-  const createSpace = () => {
+  const submitSpace = () => {
     const name = state.newSpaceName.trim();
     if (!name) return;
+    const editId = state.editingSpace;
+    if (editId) {
+      setState((prev) => ({
+        ...prev,
+        spaces: prev.spaces.map((s) => (s.id === editId ? { ...s, name, color: prev.newSpaceColor } : s)),
+        newSpaceOpen: false,
+        editingSpace: null,
+        newSpaceName: '',
+      }));
+      return;
+    }
     const id = 's' + Date.now().toString(36);
     setState((prev) => ({
       ...prev,
@@ -361,7 +375,7 @@ export function useHomeController() {
     }));
   };
   const onNewSpaceKey = (e: KeyboardEvent<HTMLInputElement>) => {
-    if (e.key === 'Enter') createSpace();
+    if (e.key === 'Enter') submitSpace();
   };
   const pickSpaceColor = (c: string) => patch({ newSpaceColor: c });
   const setActiveSpace = (id: string) => patch({ activeSpace: id, curFolder: null, driveFolder: null });
@@ -369,32 +383,12 @@ export function useHomeController() {
     if (anchor) spaceMenuAnchor.current = anchor;
     patch({ spaceMenu: state.spaceMenu === id ? null : id });
   };
+  /** Rename now opens the shared "새 공간 만들기" popup in EDIT mode (name + color),
+   * pre-filled from the space — instead of an inline sidebar input. */
   const startRenameSpace = (id: string) => {
     const sp = state.spaces.find((s) => s.id === id);
-    patch({ editingSpace: id, editingSpaceName: sp ? sp.name : '', spaceMenu: null });
-  };
-  const onRenameSpaceInput = (v: string) => patch({ editingSpaceName: (v || '').slice(0, 10) });
-  const commitRenameSpace = () => {
-    const id = state.editingSpace;
-    if (!id) return;
-    const name = state.editingSpaceName.trim();
-    if (!name) {
-      patch({ editingSpace: null });
-      return;
-    }
-    setState((prev) => ({
-      ...prev,
-      spaces: prev.spaces.map((s) => (s.id === id ? { ...s, name } : s)),
-      editingSpace: null,
-    }));
-  };
-  const onRenameSpaceKey = (e: KeyboardEvent<HTMLInputElement>) => {
-    if (e.key === 'Enter') {
-      e.preventDefault();
-      commitRenameSpace();
-    } else if (e.key === 'Escape') {
-      patch({ editingSpace: null });
-    }
+    if (!sp) return;
+    patch({ newSpaceOpen: true, editingSpace: id, newSpaceName: sp.name, newSpaceColor: sp.color || '#f0663f', spaceMenu: null });
   };
   const askDeleteSpace = (id: string) => {
     const sp = state.spaces.find((s) => s.id === id);
@@ -975,15 +969,12 @@ export function useHomeController() {
     closeNewSpace,
     onNewSpaceName,
     onNewSpaceKey,
-    createSpace,
+    submitSpace,
     pickSpaceColor,
     setActiveSpace,
     toggleSpaceMenu,
     setSpaceMenuAnchor,
     startRenameSpace,
-    onRenameSpaceInput,
-    onRenameSpaceKey,
-    commitRenameSpace,
     askDeleteSpace,
     cancelDeleteSpace,
     confirmDeleteSpaceYes,
