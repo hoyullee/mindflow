@@ -22,12 +22,14 @@ import {
   newMapHref as buildNewMapHref,
   parseOutline,
   readDocRaw,
+  readSavedProfileName,
   rootTextOf,
   safeFileName,
   saveRecent,
   seedFavAndTrashFromMetas,
   sourceOf,
   uniqueTitle,
+  writeSavedProfileName,
 } from './storage';
 
 /**
@@ -177,8 +179,10 @@ export function useHomeController() {
       if (cancelled) return;
       const email = session?.user?.email;
       if (!email) return;
-      const local = email.split('@')[0] || email;
-      setState((prev) => ({ ...prev, userEmail: email, userName: local }));
+      // A previously-saved custom name wins over the email-derived default, so a
+      // rename survives reload (see `submitProfileName`).
+      const name = readSavedProfileName(email) || email.split('@')[0] || email;
+      setState((prev) => ({ ...prev, userEmail: email, userName: name }));
     });
     return () => {
       cancelled = true;
@@ -281,8 +285,11 @@ export function useHomeController() {
   const openProfileNameEdit = () => patch({ profileNameOpen: true, profileNameDraft: state.userName, settingsOpen: false });
   const onProfileNameInput = (v: string) => patch({ profileNameDraft: (v || '').slice(0, 20) });
   const submitProfileName = () => {
-    const name = state.profileNameDraft.trim();
-    patch({ userName: name || 'mine', profileNameOpen: false });
+    const fallback = state.userEmail ? state.userEmail.split('@')[0] || 'mine' : 'mine';
+    const name = state.profileNameDraft.trim() || fallback;
+    // Persist per-account so the rename survives a page reload.
+    if (state.userEmail) writeSavedProfileName(state.userEmail, name);
+    patch({ userName: name, profileNameOpen: false });
   };
   const cancelProfileName = () => patch({ profileNameOpen: false });
   const onProfileNameKey = (e: KeyboardEvent<HTMLInputElement>) => {
