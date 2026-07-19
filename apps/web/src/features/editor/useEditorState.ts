@@ -234,6 +234,9 @@ export interface EditorController {
 
   // ---- text editing ----
   editingNodeId: string | null;
+  /** The node being resized (drag on its handle) — lifted to the top layer, like
+   * `editingNodeId`, so it covers neighbours it grows over mid-drag. */
+  resizingNodeId: string | null;
   editingFloatId: string | null;
   editingLineId: string | null;
   editingZoneId: string | null;
@@ -450,6 +453,10 @@ export function useEditorState(): EditorController {
   const [showMinimap, setShowMinimap] = useState(true);
   const [outlineEditId, setOutlineEditId] = useState<string | null>(null);
   const [editingNodeId, setEditingNodeId] = useState<string | null>(null);
+  // The node currently being resized (drag on its size handle). Like `editingNodeId`,
+  // it's lifted to the top layer so its box cleanly covers any neighbour it grows
+  // over mid-drag (the magnet only separates them on release).
+  const [resizingNodeId, setResizingNodeId] = useState<string | null>(null);
   // Live box size for the node currently being edited, re-measured on each
   // keystroke from the `contentEditable`'s content (`updateNodeEditSize`). While
   // editing, `geom` uses this instead of the node's stale committed size, so the
@@ -2220,14 +2227,17 @@ export function useEditorState(): EditorController {
       // clear the snap-target port indicators — port of `Component#onUp`'s
       // `if (d && d.type === 'line-end') { this._snapHi = null; ... }` (MindFlow.dc.html:1824).
       if (d.kind === 'line-end') setLineSnap(null);
-      if (d.kind === 'node-resize' && objDragMovedRef.current) {
-        // a free shape resized into a neighbour → magnet it clear once the final
-        // size is in geom. Resize commits during the drag, so `doc.nodes` doesn't
-        // change on release — bump `nudgeTick` to re-run the nudge effect.
-        const rn = docRef.current.nodes[d.id];
-        if (rn && !rn.parent && d.id !== ROOT_ID) {
-          pendingNudgeRef.current = d.id;
-          setNudgeTick((t) => t + 1);
+      if (d.kind === 'node-resize') {
+        setResizingNodeId(null); // drop it back to its normal layer
+        if (objDragMovedRef.current) {
+          // a free shape resized into a neighbour → magnet it clear once the final
+          // size is in geom. Resize commits during the drag, so `doc.nodes` doesn't
+          // change on release — bump `nudgeTick` to re-run the nudge effect.
+          const rn = docRef.current.nodes[d.id];
+          if (rn && !rn.parent && d.id !== ROOT_ID) {
+            pendingNudgeRef.current = d.id;
+            setNudgeTick((t) => t + 1);
+          }
         }
       }
       if (d.kind === 'node-move') {
@@ -2400,6 +2410,7 @@ export function useEditorState(): EditorController {
     e.preventDefault();
     const g = geomRef.current[id];
     if (!g) return;
+    setResizingNodeId(id);
     startObjDrag({ kind: 'node-resize', id, pointerId: e.pointerId, startClientX: e.clientX, startClientY: e.clientY, ow: g.w, oh: g.h });
   }, []);
 
@@ -2726,6 +2737,7 @@ export function useEditorState(): EditorController {
     outlineOutdent,
 
     editingNodeId,
+    resizingNodeId,
     editingFloatId,
     editingLineId,
     editingZoneId,
