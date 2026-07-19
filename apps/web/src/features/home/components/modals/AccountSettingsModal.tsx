@@ -8,7 +8,7 @@ interface Props {
 
 /** 설정 (account settings) modal — opened from the profile popover's "설정" row.
  * Shows the signed-in account and hosts the destructive "회원 탈퇴" entry, kept
- * in its own bottom "위험 구역" section so it never sits next to routine actions. */
+ * in its own bottom "계정 관리" section so it never sits next to routine actions. */
 export function AccountSettingsModal({ state, controller }: Props) {
   const visible = state.accountSettingsOpen;
   const initial = (state.userName || 'M').trim().charAt(0).toUpperCase() || 'M';
@@ -107,8 +107,8 @@ export function AccountSettingsModal({ state, controller }: Props) {
             </button>
           )}
 
-          {/* danger zone */}
-          <div style={{ fontSize: 12, fontWeight: 700, color: '#d64545', letterSpacing: '.02em', marginBottom: 10 }}>위험 구역</div>
+          {/* account management (account deletion lives here) */}
+          <div style={{ fontSize: 12, fontWeight: 700, color: '#b6a596', letterSpacing: '.02em', marginBottom: 10 }}>계정 관리</div>
           <div
             className="menu-row"
             role="button"
