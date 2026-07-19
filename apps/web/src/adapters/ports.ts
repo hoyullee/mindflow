@@ -61,6 +61,15 @@ export interface AuthProvider {
    * MindFlow storage.
    */
   deleteAccount(): Promise<{ error?: string }>;
+  /**
+   * The signed-in user's display name (`profiles.display_name` in Supabase),
+   * or `null` if unset. Lets a renamed profile survive a browser-cache clear
+   * and sync across devices. Local/demo mode returns `null` (there's no server;
+   * the app keeps a per-browser localStorage copy for that mode).
+   */
+  getProfileName(): Promise<string | null>;
+  /** Persist the signed-in user's display name. No-op (returns `{}`) in local mode. */
+  setProfileName(name: string): Promise<{ error?: string }>;
 }
 
 // ── Documents ──────────────────────────────────────────────────────────────

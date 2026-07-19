@@ -122,6 +122,16 @@ export class LocalAuth implements AuthProvider {
     return {};
   }
 
+  // No server in demo mode — the display name is persisted per-browser by the
+  // home feature's localStorage cache, so these are no-ops.
+  async getProfileName(): Promise<string | null> {
+    return null;
+  }
+
+  async setProfileName(): Promise<{ error?: string }> {
+    return {};
+  }
+
   private emit(session: AuthSession | null): void {
     this.listeners.forEach((l) => l(session));
   }

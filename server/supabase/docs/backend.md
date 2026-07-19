@@ -18,6 +18,10 @@ mocked) 어댑터로 검증되었습니다(라이브 호출 없음).
   Supabase, 하나라도 없으면 Local을 선택합니다. `apps/web/src/adapters/BackendContext.tsx`가
   이를 React Context로 앱 전체에 주입합니다(`App.tsx`의 `<BackendProvider>`).
 - `supabase/migrations/0001_init.sql` — `profiles`/`documents` 테이블 + RLS.
+  `profiles.display_name`은 LNB 프로필 표시 이름으로 쓰입니다(`SupabaseAuth.getProfileName`/
+  `setProfileName`이 본인 행을 조회/업서트, RLS로 소유자 스코프). 가입 시 트리거가
+  이메일 로컬파트로 초기화하고, 사용자가 "프로필명 변경"하면 여기에 저장돼 캐시 삭제·
+  다기기에서도 유지됩니다. env 미설정(로컬 모드)에선 브라우저 localStorage에만 캐시.
 - `supabase/migrations/0004_workspaces.sql` — `workspaces` 테이블(사용자당 1행,
   스페이스/폴더 구조를 `data` JSONB로 저장) + RLS. 사용자별 저장이라 로그인하는 모든
   기기에서 스페이스가 동일하게 보입니다(`SupabaseSpaceStore`). 미적용 시 스페이스는

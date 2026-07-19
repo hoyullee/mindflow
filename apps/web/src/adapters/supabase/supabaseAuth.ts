@@ -87,4 +87,25 @@ export class SupabaseAuth implements AuthProvider {
     await this.client.auth.signOut();
     return {};
   }
+
+  // Display name lives in `profiles.display_name` (auto-created per user by the
+  // handle_new_user trigger, RLS-scoped to the owner — supabase/migrations/0001).
+  async getProfileName(): Promise<string | null> {
+    const { data: u } = await this.client.auth.getUser();
+    const uid = u?.user?.id;
+    if (!uid) return null;
+    const { data, error } = await this.client.from('profiles').select('display_name').eq('id', uid).maybeSingle();
+    if (error) return null;
+    const v = (data as { display_name?: unknown } | null)?.display_name;
+    return typeof v === 'string' && v.trim() ? v : null;
+  }
+
+  async setProfileName(name: string): Promise<{ error?: string }> {
+    const { data: u } = await this.client.auth.getUser();
+    const uid = u?.user?.id;
+    if (!uid) return { error: 'not authenticated' };
+    // upsert so it works even if the profile row is somehow missing
+    const { error } = await this.client.from('profiles').upsert({ id: uid, display_name: name });
+    return error ? { error: error.message } : {};
+  }
 }

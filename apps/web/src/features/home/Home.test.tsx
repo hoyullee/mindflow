@@ -609,6 +609,41 @@ describe('Home', () => {
     expect(screen.queryByText('hoyul.lee')).toBeNull(); // did NOT revert to the email default
   });
 
+  it('loads the profile name from the backend (survives a cache clear) and saves renames to it', async () => {
+    const user = userEvent.setup();
+    localStorage.setItem('mf_demo_session', JSON.stringify({ user: { id: 'u1', email: 'hoyul.lee@wantedlab.com' } }));
+    // no localStorage cache (mf_profile_names absent) — as after clearing browser cache
+    const setProfileName = vi.fn(async (): Promise<{ error?: string }> => ({}));
+    class BackendAuth extends LocalAuth {
+      override getProfileName = async (): Promise<string | null> => '서버닉네임';
+      override setProfileName = setProfileName;
+    }
+    const backend: Backend = { auth: new BackendAuth(), docStore: new MockDocStore([]), spaceStore: new LocalSpaceStore(), mode: 'local' };
+    render(
+      <MemoryRouter initialEntries={['/home']}>
+        <BackendProvider backend={backend}>
+          <Routes>
+            <Route path="/home" element={<Home />} />
+            <Route path="/login" element={<div>LOGIN_PAGE</div>} />
+          </Routes>
+        </BackendProvider>
+      </MemoryRouter>,
+    );
+
+    // reconciled from the backend even with an empty local cache
+    await waitFor(() => expect(screen.getAllByText('서버닉네임').length).toBeGreaterThan(0));
+
+    // renaming writes through to the backend
+    await user.click(screen.getByRole('button', { name: '계정 메뉴' }));
+    await user.click(screen.getByRole('button', { name: '프로필명 변경' }));
+    const dialog = screen.getByRole('dialog', { name: '프로필명 변경' });
+    await user.clear(within(dialog).getByLabelText('프로필명'));
+    await user.type(within(dialog).getByLabelText('프로필명'), '새닉네임');
+    await user.click(within(dialog).getByRole('button', { name: '변경' }));
+
+    await waitFor(() => expect(setProfileName).toHaveBeenCalledWith('새닉네임'));
+  });
+
   it('opens 설정 → 회원 탈퇴 and gates the destructive button on typing "탈퇴"', async () => {
     const user = userEvent.setup();
     renderHomeWithDocStore([]);
