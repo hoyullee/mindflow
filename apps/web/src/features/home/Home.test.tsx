@@ -505,6 +505,26 @@ describe('Home', () => {
     await waitFor(() => expect(screen.getByText('LOGIN_PAGE')).toBeTruthy(), { timeout: 2000 });
   });
 
+  it('renames the profile from the 설정 modal (and the popover has no edit control)', async () => {
+    const user = userEvent.setup();
+    localStorage.setItem('mf_demo_session', JSON.stringify({ user: { id: 'u1', email: 'hoyul.lee@wantedlab.com' } }));
+    renderHomeWithDocStore([]);
+
+    // the profile popover shows the name read-only — no rename affordance here
+    await user.click(screen.getByRole('button', { name: '계정 메뉴' }));
+    expect(screen.queryByRole('button', { name: '이름 변경' })).toBeNull();
+
+    // renaming happens in the 설정 modal
+    await user.click(screen.getByRole('button', { name: '설정' }));
+    const dialog = screen.getByRole('dialog', { name: '설정' });
+    await user.click(within(dialog).getByRole('button', { name: '이름 변경' }));
+    const input = within(dialog).getByLabelText('이름 입력');
+    await user.clear(input);
+    await user.type(input, '홍길동{Enter}');
+
+    expect(within(dialog).getByText('홍길동')).toBeTruthy();
+  });
+
   it('opens 설정 → 회원 탈퇴 and gates the destructive button on typing "탈퇴"', async () => {
     const user = userEvent.setup();
     renderHomeWithDocStore([]);
