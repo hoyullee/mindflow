@@ -10,7 +10,7 @@
 // undo/redo. All of them build on `cloneNodes`/`descendants` from the core /
 // tree helpers rather than re-deriving that logic.
 
-import type { Float, Line, Node, NodeMap, OverlapSize, RichRun, Zone } from '@mindflow/mindmap-core';
+import type { Float, Line, Node, NodeMap, OverlapBox, RichRun, Zone } from '@mindflow/mindmap-core';
 import { ROOT_ID, cloneNodes, computeFreeNudge, stripRichStyle } from '@mindflow/mindmap-core';
 import { descendants } from './tree';
 
@@ -212,10 +212,12 @@ export function moveFreeNode(nodes: NodeMap, id: string, x: number, y: number): 
  * come from `sizeOf` (the editor's live `geom`); positions from the nodes. Returns
  * the same `nodes` reference untouched when nothing needs to move, so callers can
  * fold it into an existing commit without forcing a spurious history entry.
- * Port of `Component#applyFreeNudge` (MindFlow.dc.html:2241-2245).
+ * Port of `Component#applyFreeNudge` (MindFlow.dc.html:2241-2245). `boxOf`
+ * supplies each node's on-screen center + size (from `geom`) — positions must
+ * come from the rendered geometry, not `doc.nodes` (tree nodes' doc x/y is 0).
  */
-export function nudgeFreeNode(nodes: NodeMap, id: string, sizeOf: (nodeId: string) => OverlapSize | null): NodeMap {
-  const v = computeFreeNudge(id, nodes, sizeOf);
+export function nudgeFreeNode(nodes: NodeMap, id: string, boxOf: (nodeId: string) => OverlapBox | null): NodeMap {
+  const v = computeFreeNudge(id, nodes, boxOf);
   if (!v) return nodes;
   const out = cloneNodes(nodes);
   v.ids.forEach((nid) => {
@@ -234,13 +236,13 @@ export function nudgeFreeNode(nodes: NodeMap, id: string, sizeOf: (nodeId: strin
  * same `nodes` reference when everything's already clear, so callers can skip a
  * no-op state update. Port of `Component#resolveAllFreeOverlaps` (MindFlow.dc.html:2157).
  */
-export function nudgeAllFreeNodes(nodes: NodeMap, sizeOf: (nodeId: string) => OverlapSize | null): NodeMap {
+export function nudgeAllFreeNodes(nodes: NodeMap, boxOf: (nodeId: string) => OverlapBox | null): NodeMap {
   const freeRoots = (n: NodeMap) => Object.keys(n).filter((id) => id !== ROOT_ID && n[id] && !n[id]!.parent);
   let cur = nodes;
   for (let pass = 0; pass < 6; pass++) {
     let moved = false;
     for (const fid of freeRoots(cur)) {
-      const next = nudgeFreeNode(cur, fid, sizeOf);
+      const next = nudgeFreeNode(cur, fid, boxOf);
       if (next !== cur) {
         cur = next;
         moved = true;

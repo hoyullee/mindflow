@@ -2227,20 +2227,15 @@ export function useEditorState(): EditorController {
           });
         } else {
           const dist = Math.hypot(p.x - d.startGeomX, p.y - d.startGeomY);
-          const boxOf = (nodeId: string) => {
-            const gg = geomRef.current[nodeId];
-            return gg ? { w: gg.w, h: gg.h } : null;
-          };
           if (d.wasFree) {
-            // a free shape dropped clear of any target moves to the drop point, then
-            // magnets clear of any other shape it landed on — in ONE commit (no flicker),
-            // port of MindFlow.dc.html:1799-1809 (`applyFreeNudge`).
-            if (dist > 0.5)
-              commitDoc((doc0) => ({ ...doc0, nodes: mutations.nudgeFreeNode(mutations.moveFreeNode(doc0.nodes, d.id, p.x, p.y), d.id, boxOf) }));
+            // a free shape dropped clear of any target moves to the drop point;
+            // the auto-resolve effect then magnets it clear of any shape/node it
+            // landed on (post-render, with fresh geom positions — see that effect).
+            if (dist > 0.5) commitDoc((doc0) => ({ ...doc0, nodes: mutations.moveFreeNode(doc0.nodes, d.id, p.x, p.y) }));
           } else if (dist > 40) {
-            // dragged clear of the tree → detach to a free shape at the drop point, then
-            // nudge clear of any overlap (MindFlow.dc.html:1791-1797 + `detachNode`'s nudge).
-            commitDoc((doc0) => ({ ...doc0, nodes: mutations.nudgeFreeNode(mutations.detachNodeToFree(doc0.nodes, d.id, p.x, p.y), d.id, boxOf) }));
+            // dragged clear of the tree → detach to a free shape at the drop point
+            // (MindFlow.dc.html:1791-1797); overlap resolved by the auto-resolve effect.
+            commitDoc((doc0) => ({ ...doc0, nodes: mutations.detachNodeToFree(doc0.nodes, d.id, p.x, p.y) }));
           }
           // small move, no target: snap back — nothing to commit (matches MindFlow.dc.html:1799)
         }
@@ -2274,9 +2269,10 @@ export function useEditorState(): EditorController {
     if (editingNodeId || editingFloatId || editingZoneId || editingLineId) return;
     if (objDragRef.current || dragRef.current) return;
     if (autoResolvedNodesRef.current === doc.nodes) return;
+    // positions from geom (laid-out) — NOT doc.nodes, whose tree-node x/y is 0
     const boxOf = (id: string) => {
       const gg = geomRef.current[id];
-      return gg ? { w: gg.w, h: gg.h } : null;
+      return gg ? { x: gg.x, y: gg.y, w: gg.w, h: gg.h } : null;
     };
     const nudged = mutations.nudgeAllFreeNodes(doc.nodes, boxOf);
     autoResolvedNodesRef.current = nudged; // mark input (and, when changed, the result) as handled
