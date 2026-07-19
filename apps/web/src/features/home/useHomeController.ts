@@ -302,9 +302,12 @@ export function useHomeController() {
   };
 
   // ---- account settings / 회원 탈퇴 ----
-  const openAccountSettings = () => patch({ settingsOpen: false, accountSettingsOpen: true });
-  const closeAccountSettings = () => patch({ accountSettingsOpen: false });
-  const askDeleteAccount = () => patch({ accountSettingsOpen: false, confirmDeleteAccount: true, deleteAccountText: '', deleteAccountError: '' });
+  const openAccountSettings = () => patch({ settingsOpen: false, accountSettingsOpen: true, nameEditing: false });
+  const closeAccountSettings = () =>
+    // Finalize any in-progress rename (empty → "mine" fallback) so closing the
+    // modal never leaves a blank name, and always exit edit mode.
+    patch({ accountSettingsOpen: false, nameEditing: false, userName: state.userName.trim() ? state.userName : 'mine' });
+  const askDeleteAccount = () => patch({ accountSettingsOpen: false, nameEditing: false, confirmDeleteAccount: true, deleteAccountText: '', deleteAccountError: '' });
   const cancelDeleteAccount = () => patch({ confirmDeleteAccount: false, deleteAccountText: '', deleteAccountError: '' });
   const onDeleteAccountInput = (v: string) => patch({ deleteAccountText: v });
   /** The user must type this exact phrase to arm the destructive button — a
