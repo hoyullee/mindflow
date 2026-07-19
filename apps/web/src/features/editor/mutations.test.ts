@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { NodeMap } from '@mindflow/mindmap-core';
-import { nudgeFreeNode } from './mutations';
+import { nudgeAllFreeNodes, nudgeFreeNode } from './mutations';
 
 function node(id: string, x: number, y: number, extra: Partial<NodeMap[string]> = {}): NodeMap[string] {
   return { id, text: id, emoji: '', parent: null, children: [], collapsed: false, color: null, x, y, ...extra };
@@ -38,5 +38,34 @@ describe('nudgeFreeNode', () => {
     // b and c shift by the same (dx, dy) — their relative offset is preserved
     expect(out.c!.x - out.b!.x).toBe(nodes.c!.x - nodes.b!.x);
     expect(out.c!.y - out.b!.y).toBe(nodes.c!.y - nodes.b!.y);
+  });
+});
+
+describe('nudgeAllFreeNodes', () => {
+  it('returns the SAME reference when no shapes overlap', () => {
+    const nodes: NodeMap = { root: node('root', 0, 0), a: node('a', 0, 200, { free: true }), b: node('b', 400, 200, { free: true }) };
+    expect(nudgeAllFreeNodes(nodes, size)).toBe(nodes);
+  });
+
+  it('separates a pile of overlapping shapes (none overlap afterwards)', () => {
+    // three free shapes stacked nearly on top of each other (creation-stagger pile)
+    const nodes: NodeMap = {
+      root: node('root', 0, 0),
+      a: node('a', 200, 0, { free: true }),
+      b: node('b', 220, 15, { free: true }),
+      c: node('c', 240, 30, { free: true }),
+    };
+    const out = nudgeAllFreeNodes(nodes, size);
+    expect(out).not.toBe(nodes);
+    const ids = ['a', 'b', 'c'];
+    for (let i = 0; i < ids.length; i++) {
+      for (let j = i + 1; j < ids.length; j++) {
+        const p = out[ids[i]!]!;
+        const q = out[ids[j]!]!;
+        const ox = Math.min(p.x + 50, q.x + 50) - Math.max(p.x - 50, q.x - 50);
+        const oy = Math.min(p.y + 50, q.y + 50) - Math.max(p.y - 50, q.y - 50);
+        expect(ox <= 0.5 || oy <= 0.5).toBe(true);
+      }
+    }
   });
 });
