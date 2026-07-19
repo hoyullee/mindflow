@@ -103,6 +103,25 @@ export class LocalAuth implements AuthProvider {
     return {};
   }
 
+  // In demo mode "the account" is just this browser's MindFlow storage, so
+  // deleting it means wiping every namespaced key (docs, workspace, recents,
+  // active view, session) and emitting a signed-out change — mirroring what
+  // the Supabase RPC does server-side (delete the user → cascade all data).
+  async deleteAccount(): Promise<{ error?: string }> {
+    try {
+      const keys: string[] = [];
+      for (let i = 0; i < localStorage.length; i++) {
+        const k = localStorage.key(i);
+        if (k && (k.startsWith('mindflow_') || k.startsWith('mf_'))) keys.push(k);
+      }
+      keys.forEach((k) => localStorage.removeItem(k));
+    } catch {
+      /* storage unavailable (private mode, quota, ...) — non-fatal */
+    }
+    this.emit(null);
+    return {};
+  }
+
   private emit(session: AuthSession | null): void {
     this.listeners.forEach((l) => l(session));
   }
