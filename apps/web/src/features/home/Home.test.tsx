@@ -7,7 +7,7 @@ import { mockMatchMedia } from '../../test/matchMedia';
 import { BackendProvider } from '../../adapters/BackendContext';
 import { LocalAuth } from '../../adapters/local/localAuth';
 import { LocalSpaceStore } from '../../adapters/local/localSpaceStore';
-import type { Backend, DocMeta, DocStore, LoadedDoc, SaveResult } from '../../adapters/ports';
+import type { Backend, DocMeta, DocStore, LoadedDoc, SaveResult, SpaceStore, WorkspaceData } from '../../adapters/ports';
 
 afterEach(() => {
   cleanup();
@@ -331,6 +331,59 @@ describe('Home', () => {
     first.unmount();
     const second = renderHomeWithDocStore([]);
     await waitFor(() => expect(second.container.querySelector('h2')?.textContent).toBe('공간비이'));
+  });
+
+  it('never overwrites the workspace when the space load fails (re-login data loss)', async () => {
+    // A backend whose workspace load REJECTS (transient error / RLS / not-ready).
+    // The app falls back to the default seed, but it must NOT persist that seed —
+    // doing so would wipe the user's real spaces/folders (the reported bug).
+    const save = vi.fn(async (): Promise<void> => undefined);
+    const spaceStore: SpaceStore = {
+      load: vi.fn(async (): Promise<WorkspaceData | null> => {
+        throw new Error('transient load failure');
+      }),
+      save,
+    };
+    const backend: Backend = { auth: new LocalAuth(), docStore: new MockDocStore([]), spaceStore, mode: 'local' };
+    render(
+      <MemoryRouter initialEntries={['/home']}>
+        <BackendProvider backend={backend}>
+          <Routes>
+            <Route path="/home" element={<Home />} />
+            <Route path="/editor" element={<div>EDITOR_PLACEHOLDER</div>} />
+            <Route path="/login" element={<div>LOGIN_PAGE</div>} />
+          </Routes>
+        </BackendProvider>
+      </MemoryRouter>,
+    );
+    // the home settles on the default seed after the failed load…
+    await waitFor(() => expect(screen.getByText('아직 만든 맵이 없어요')).toBeTruthy());
+    // …but the workspace is NEVER written back — the failed load must not clobber it.
+    expect(save).not.toHaveBeenCalled();
+  });
+
+  it('does not re-save the workspace merely from loading it (hydration is a no-op)', async () => {
+    const save = vi.fn(async (): Promise<void> => undefined);
+    const spaceStore: SpaceStore = {
+      load: vi.fn(async (): Promise<WorkspaceData | null> => ({ spaces: [{ id: 'work', name: '작업 공간', color: '#3f8fd0', maps: [] }], mapFolders: {} })),
+      save,
+    };
+    const backend: Backend = { auth: new LocalAuth(), docStore: new MockDocStore([]), spaceStore, mode: 'local' };
+    const { container } = render(
+      <MemoryRouter initialEntries={['/home']}>
+        <BackendProvider backend={backend}>
+          <Routes>
+            <Route path="/home" element={<Home />} />
+            <Route path="/editor" element={<div>EDITOR_PLACEHOLDER</div>} />
+            <Route path="/login" element={<div>LOGIN_PAGE</div>} />
+          </Routes>
+        </BackendProvider>
+      </MemoryRouter>,
+    );
+    const aside = within(container.querySelector('aside') as HTMLElement);
+    await waitFor(() => expect(aside.getByText('작업 공간')).toBeTruthy());
+    // loading real data and rendering it must not trigger a write-back
+    expect(save).not.toHaveBeenCalled();
   });
 
   it('a user-created space persists across a reload (localStorage)', async () => {
