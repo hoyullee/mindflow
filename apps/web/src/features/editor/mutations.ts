@@ -228,6 +228,29 @@ export function nudgeFreeNode(nodes: NodeMap, id: string, sizeOf: (nodeId: strin
   return out;
 }
 
+/**
+ * Separate EVERY overlapping free shape, not just one — repeatedly nudging each
+ * free-shape root clear of the others until nothing moves (capped). Returns the
+ * same `nodes` reference when everything's already clear, so callers can skip a
+ * no-op state update. Port of `Component#resolveAllFreeOverlaps` (MindFlow.dc.html:2157).
+ */
+export function nudgeAllFreeNodes(nodes: NodeMap, sizeOf: (nodeId: string) => OverlapSize | null): NodeMap {
+  const freeRoots = (n: NodeMap) => Object.keys(n).filter((id) => id !== ROOT_ID && n[id] && !n[id]!.parent);
+  let cur = nodes;
+  for (let pass = 0; pass < 6; pass++) {
+    let moved = false;
+    for (const fid of freeRoots(cur)) {
+      const next = nudgeFreeNode(cur, fid, sizeOf);
+      if (next !== cur) {
+        cur = next;
+        moved = true;
+      }
+    }
+    if (!moved) break;
+  }
+  return cur;
+}
+
 // ---- bulk (multi-select) node ops — ports of `nodeTargets()`-driven setters
 // (setColor/setFill/.../setEmoji, MindFlow.dc.html:2545-2555, 2730-2731) so a
 // marquee multi-selection can apply one style change to every targeted node

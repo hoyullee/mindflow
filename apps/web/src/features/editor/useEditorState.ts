@@ -1605,21 +1605,9 @@ export function useEditorState(): EditorController {
       setEditingNodeId(null);
       setEditLiveSize(null);
       setTextCtx(null);
-      // If a free shape's box grew to fit the new text, magnet it clear of any
-      // neighbour it now overlaps. Deferred a frame so `geomRef` reflects the new
-      // size; folded into the same undo step (continuous). Port of MindFlow.dc.html:2637-2639.
-      requestAnimationFrame(() => {
-        const n = docRef.current.nodes[id];
-        if (!n || n.parent || id === ROOT_ID) return;
-        const boxOf = (nid: string) => {
-          const gg = geomRef.current[nid];
-          return gg ? { w: gg.w, h: gg.h } : null;
-        };
-        commitDoc((d) => {
-          const nudged = mutations.nudgeFreeNode(d.nodes, id, boxOf);
-          return nudged === d.nodes ? d : { ...d, nodes: nudged };
-        }, true);
-      });
+      // A free shape whose box just grew may now overlap a neighbour — the
+      // auto-resolve effect (keyed on `doc.nodes` + `editingNodeId` clearing)
+      // separates it on the next render, so no per-commit nudge is needed here.
     },
     [commitDoc, wouldDuplicateTitle],
   );
@@ -2272,6 +2260,28 @@ export function useEditorState(): EditorController {
       window.removeEventListener('pointercancel', onUp);
     };
   }, [commitDoc]);
+
+  // Keep free shapes from overlapping: whenever the doc settles (not mid-edit or
+  // mid-drag), separate every overlapping shape. Covers shapes that were SAVED
+  // overlapping (created before this magnet existed) — which the per-drop/-edit
+  // nudge never revisits — plus any residual overlap left by an edit. Applied via
+  // `setDoc` (a normalization, not an undoable action — matching the original's
+  // plain `setState` in `resolveOverlapFree`). Guarded to run at most once per
+  // distinct `nodes` object so it can never loop: it processes an input, and if it
+  // changes it, marks the RESULT processed too, so the follow-up render is a no-op.
+  const autoResolvedNodesRef = useRef<NodeMap | null>(null);
+  useEffect(() => {
+    if (editingNodeId || editingFloatId || editingZoneId || editingLineId) return;
+    if (objDragRef.current || dragRef.current) return;
+    if (autoResolvedNodesRef.current === doc.nodes) return;
+    const boxOf = (id: string) => {
+      const gg = geomRef.current[id];
+      return gg ? { w: gg.w, h: gg.h } : null;
+    };
+    const nudged = mutations.nudgeAllFreeNodes(doc.nodes, boxOf);
+    autoResolvedNodesRef.current = nudged; // mark input (and, when changed, the result) as handled
+    if (nudged !== doc.nodes) setDoc((prev) => (prev.nodes === doc.nodes ? { ...prev, nodes: nudged } : prev));
+  }, [doc.nodes, editingNodeId, editingFloatId, editingZoneId, editingLineId]);
 
   function capturePointer(e: ReactPointerEvent): void {
     try {
