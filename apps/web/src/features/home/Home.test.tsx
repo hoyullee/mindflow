@@ -574,6 +574,20 @@ describe('Home', () => {
     expect(screen.getAllByText('hoyul.lee').length).toBeGreaterThan(0);
   });
 
+  it('does not close the "프로필명 변경" popup when the dim backdrop is clicked', async () => {
+    const user = userEvent.setup();
+    localStorage.setItem('mf_demo_session', JSON.stringify({ user: { id: 'u1', email: 'hoyul.lee@wantedlab.com' } }));
+    renderHomeWithDocStore([]);
+
+    await user.click(screen.getByRole('button', { name: '계정 메뉴' }));
+    await user.click(screen.getByRole('button', { name: '프로필명 변경' }));
+    const dialog = screen.getByRole('dialog', { name: '프로필명 변경' });
+
+    // click the dim overlay (the dialog's backdrop parent) — must NOT dismiss
+    await user.click(dialog.parentElement as HTMLElement);
+    expect(screen.getByRole('dialog', { name: '프로필명 변경' })).toBeTruthy();
+  });
+
   it('opens 설정 → 회원 탈퇴 and gates the destructive button on typing "탈퇴"', async () => {
     const user = userEvent.setup();
     renderHomeWithDocStore([]);
