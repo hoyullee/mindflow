@@ -656,8 +656,11 @@ export function useEditorState(): EditorController {
     geomRef.current = geom;
   }, [geom]);
   // Id of the free shape to magnet clear of overlap once the current interaction
-  // settles (set on drop / text-commit / create; consumed by the nudge effect).
+  // settles (set on text-commit / resize / create; consumed by the nudge effect).
+  // `nudgeTick` re-triggers that effect for interactions (resize) that don't
+  // otherwise change `doc.nodes` on release.
   const pendingNudgeRef = useRef<string | null>(null);
+  const [nudgeTick, setNudgeTick] = useState(0);
   const multiSelectionRef = useRef(multiSelection);
   useEffect(() => {
     multiSelectionRef.current = multiSelection;
@@ -2217,6 +2220,16 @@ export function useEditorState(): EditorController {
       // clear the snap-target port indicators — port of `Component#onUp`'s
       // `if (d && d.type === 'line-end') { this._snapHi = null; ... }` (MindFlow.dc.html:1824).
       if (d.kind === 'line-end') setLineSnap(null);
+      if (d.kind === 'node-resize' && objDragMovedRef.current) {
+        // a free shape resized into a neighbour → magnet it clear once the final
+        // size is in geom. Resize commits during the drag, so `doc.nodes` doesn't
+        // change on release — bump `nudgeTick` to re-run the nudge effect.
+        const rn = docRef.current.nodes[d.id];
+        if (rn && !rn.parent && d.id !== ROOT_ID) {
+          pendingNudgeRef.current = d.id;
+          setNudgeTick((t) => t + 1);
+        }
+      }
       if (d.kind === 'node-move') {
         const vp = viewportRef.current;
         const p = toCanvasPoint(e.clientX, e.clientY, vp);
@@ -2232,19 +2245,35 @@ export function useEditorState(): EditorController {
           });
         } else {
           const dist = Math.hypot(p.x - d.startGeomX, p.y - d.startGeomY);
+          // Box lookup for the drop: the dragged shape's NEW position is already in
+          // the candidate `nodes` (moveFreeNode/detach set it), and every free shape
+          // carries its live position in the doc — so read positions from the doc for
+          // free shapes and from geom for tree nodes (whose doc x/y is 0). Sizes are
+          // position-independent, so geom is always fine for them. Doing this inline
+          // lets the drop + magnet land in ONE commit → the shape never renders at the
+          // overlapping spot first (no text flicker).
+          const boxOf = (nodes: NodeMap) => (id: string) => {
+            const gg = geomRef.current[id];
+            if (!gg) return null;
+            const nn = nodes[id];
+            const isFreeRoot = !!nn && !nn.parent && id !== ROOT_ID;
+            return { x: isFreeRoot ? nn.x : gg.x, y: isFreeRoot ? nn.y : gg.y, w: gg.w, h: gg.h };
+          };
           if (d.wasFree) {
-            // a free shape dropped clear of any target moves to the drop point;
-            // the pending-nudge effect then magnets THIS shape (only) clear of any
-            // shape/node it landed on (post-render, with fresh geom — see that effect).
-            if (dist > 0.5) {
-              pendingNudgeRef.current = d.id;
-              commitDoc((doc0) => ({ ...doc0, nodes: mutations.moveFreeNode(doc0.nodes, d.id, p.x, p.y) }));
-            }
+            // a free shape dropped clear of any target moves to the drop point, then
+            // magnets clear (only this shape) of anything it landed on — one commit.
+            if (dist > 0.5)
+              commitDoc((doc0) => {
+                const moved = mutations.moveFreeNode(doc0.nodes, d.id, p.x, p.y);
+                return { ...doc0, nodes: mutations.nudgeFreeNode(moved, d.id, boxOf(moved)) };
+              });
           } else if (dist > 40) {
             // dragged clear of the tree → detach to a free shape at the drop point
-            // (MindFlow.dc.html:1791-1797); overlap resolved by the pending-nudge effect.
-            pendingNudgeRef.current = d.id;
-            commitDoc((doc0) => ({ ...doc0, nodes: mutations.detachNodeToFree(doc0.nodes, d.id, p.x, p.y) }));
+            // (MindFlow.dc.html:1791-1797), then magnet it clear — one commit.
+            commitDoc((doc0) => {
+              const detached = mutations.detachNodeToFree(doc0.nodes, d.id, p.x, p.y);
+              return { ...doc0, nodes: mutations.nudgeFreeNode(detached, d.id, boxOf(detached)) };
+            });
           }
           // small move, no target: snap back — nothing to commit (matches MindFlow.dc.html:1799)
         }
@@ -2287,7 +2316,7 @@ export function useEditorState(): EditorController {
     };
     const nudged = mutations.nudgeFreeNode(doc.nodes, target, boxOf);
     if (nudged !== doc.nodes) setDoc((prev) => (prev.nodes === doc.nodes ? { ...prev, nodes: nudged } : prev));
-  }, [doc.nodes, editingNodeId, editingFloatId, editingZoneId, editingLineId]);
+  }, [doc.nodes, nudgeTick, editingNodeId, editingFloatId, editingZoneId, editingLineId]);
 
   function capturePointer(e: ReactPointerEvent): void {
     try {
