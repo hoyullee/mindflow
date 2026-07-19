@@ -69,9 +69,13 @@ export function ZoneLayer({ zones, theme: th, controller }: ZoneLayerProps) {
                   left: 10,
                   top: -14,
                   height: 27,
-                  display: 'flex',
-                  alignItems: 'center',
+                  // Vertical-centre via line-height, NOT `display:flex` — a flex
+                  // container turns the label into an anonymous flex item, which
+                  // `text-overflow: ellipsis` never applies to (the text just hard-
+                  // clips with no "…"). A plain block keeps the ellipsis working.
+                  lineHeight: '27px',
                   padding: '0 13px',
+                  boxSizing: 'border-box',
                   borderRadius: 999,
                   background: col,
                   color: z.color ? '#fff' : th.accentInk,
