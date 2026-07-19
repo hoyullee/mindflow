@@ -1,3 +1,4 @@
+import type { MouseEvent } from 'react';
 import type { HomeController } from '../useHomeController';
 import type { HomeState } from '../types';
 
@@ -69,13 +70,81 @@ export function SettingsPopover({ state, controller, userInitial }: Props) {
           >
             {userInitial}
           </div>
-          {/* Read-only here — renaming lives in the 설정 modal only. */}
           <div style={{ minWidth: 0, flex: 1 }}>
-            <div style={{ fontWeight: 700, fontSize: 15, color: '#33281f', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{state.userName}</div>
-            {state.userEmail && <div style={{ fontSize: 12, color: '#9c8b7e', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{state.userEmail}</div>}
+            {state.nameEditing ? (
+              <input
+                value={state.userName}
+                onChange={(e) => controller.onNameInput(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter') controller.onNameEditDone();
+                  if (e.key === 'Escape') (e.target as HTMLInputElement).blur();
+                }}
+                onBlur={controller.onNameEditDone}
+                onMouseDown={(e) => e.stopPropagation()}
+                ref={(el) => {
+                  if (el && document.activeElement !== el) {
+                    el.focus();
+                    el.select();
+                  }
+                }}
+                placeholder="프로필명 입력"
+                aria-label="프로필명 입력"
+                maxLength={20}
+                style={{ width: '100%', height: 32, border: '1px solid #f0663f', borderRadius: 8, background: '#fff', color: '#33281f', fontFamily: 'inherit', fontSize: 15, fontWeight: 700, padding: '0 9px', outline: 'none', boxSizing: 'border-box' }}
+              />
+            ) : (
+              <>
+                <div style={{ fontWeight: 700, fontSize: 15, color: '#33281f', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{state.userName}</div>
+                {state.userEmail && <div style={{ fontSize: 12, color: '#9c8b7e', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{state.userEmail}</div>}
+              </>
+            )}
           </div>
         </div>
         <div style={{ padding: 6 }}>
+          {/* profile-name rename — moved here from the 설정 modal */}
+          {state.nameEditing ? (
+            <div
+              className="menu-row"
+              role="button"
+              tabIndex={0}
+              // preventDefault so this mousedown doesn't blur the input first
+              onMouseDown={(e) => e.preventDefault()}
+              onClick={controller.onNameEditDone}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter' || e.key === ' ') {
+                  e.preventDefault();
+                  controller.onNameEditDone();
+                }
+              }}
+              style={{ display: 'flex', alignItems: 'center', gap: 9, padding: '10px 12px', borderRadius: 9, fontSize: 13, fontWeight: 600, cursor: 'pointer', color: '#2f9e63' }}
+            >
+              <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
+                <polyline points="20 6 9 17 4 12" />
+              </svg>{' '}
+              저장
+            </div>
+          ) : (
+            <div
+              className="menu-row"
+              role="button"
+              tabIndex={0}
+              aria-label="프로필명 변경"
+              onClick={controller.startNameEdit}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter' || e.key === ' ') {
+                  e.preventDefault();
+                  controller.startNameEdit(e as unknown as MouseEvent);
+                }
+              }}
+              style={{ display: 'flex', alignItems: 'center', gap: 9, padding: '10px 12px', borderRadius: 9, fontSize: 13, fontWeight: 600, cursor: 'pointer', color: '#33281f' }}
+            >
+              <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <path d="M12 20h9" />
+                <path d="M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4z" />
+              </svg>{' '}
+              프로필명 변경
+            </div>
+          )}
           <div
             className="menu-row"
             role="button"
