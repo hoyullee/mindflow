@@ -3,7 +3,7 @@ import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-li
 import userEvent from '@testing-library/user-event';
 import { MemoryRouter, Route, Routes } from 'react-router-dom';
 import { Editor } from './Editor';
-import { toMarkdown, parseDoc } from '@mindflow/mindmap-core';
+import { parseDoc } from '@mindflow/mindmap-core';
 
 // M3-Editor-b interaction tests: selection, text editing, structural add/
 // delete, property-panel setters, save (manual + autosave), undo/redo, and
@@ -324,7 +324,7 @@ describe('Editor interactions (M3-Editor-b)', () => {
     await waitFor(() => expect(countNodeBoxes(container)).toBe(before + 1));
   });
 
-  it('exports Markdown and JSON with the expected content', async () => {
+  it('exports JSON with the full node tree', async () => {
     localStorage.setItem('mindflow_doc_t7', JSON.stringify(DOC));
     const created: Blob[] = [];
     // jsdom doesn't define `URL.createObjectURL`/`revokeObjectURL` at all (not just
@@ -340,17 +340,10 @@ describe('Editor interactions (M3-Editor-b)', () => {
     renderEditor('/editor?map=t7&title=x');
 
     await user.click(screen.getByTitle('내보내기'));
-    await user.click(screen.getByText('텍스트 개요 (.md)'));
-    await user.click(screen.getByTitle('내보내기'));
-    await user.click(screen.getByText('MindFlow 파일 (.json)'));
+    await user.click(screen.getByText('JSON 파일 (.json)'));
 
-    expect(created.length).toBe(2);
-    const md = await readBlobText(created[0]!);
-    expect(md).toBe(toMarkdown(DOC as never));
-    expect(md).toContain('# 🎯 제품 로드맵');
-    expect(md).toContain('- 리서치');
-
-    const json = await readBlobText(created[1]!);
+    expect(created.length).toBe(1);
+    const json = await readBlobText(created[0]!);
     const parsed = JSON.parse(json);
     expect(parsed.nodes.root.text).toBe('제품 로드맵');
     expect(Object.keys(parsed.nodes).length).toBe(3);

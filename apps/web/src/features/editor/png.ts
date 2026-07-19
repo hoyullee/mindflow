@@ -5,23 +5,56 @@
 // can't access the page's `Pretendard` font). This port skips the
 // SVG-round-trip and draws everything directly with the Canvas 2D API — the
 // same visual pieces (canvas bg, zones, curved tree edges, node shapes, free
-// lines + arrows/labels, memos) but a plainer implementation (no multi-line
-// soft-wrap measurement, no shadow/gradient touches). Canvas is a rendering
-// concern, so this lives in the web layer, not `@mindflow/mindmap-core`.
+// lines + arrows/labels, memos) but a plainer implementation (soft-wraps node
+// labels to the box width like the canvas, but no shadow/gradient touches).
+// Canvas is a rendering concern, so this lives in the web layer, not
+// `@mindflow/mindmap-core`.
 //
 // In environments without a real `CanvasRenderingContext2D` (e.g. jsdom in
 // unit tests), this is a no-op — matching `metrics.ts`'s `CanvasTextMeasurer`
 // fallback philosophy: never throw, just skip the unavailable capability.
 
 import type { Box, Doc, Line, LineAnchor, Node } from '@mindflow/mindmap-core';
-import { ROOT_ID, cubicAt, resolveLineEndpoints, resolveLineGeometry } from '@mindflow/mindmap-core';
-import { colorOf } from './tree';
+import { ROOT_ID, cubicAt, layout, resolveLineEndpoints, resolveLineGeometry } from '@mindflow/mindmap-core';
+import { colorOf, buildVisible } from './tree';
 import { hexA } from './theme';
 import type { Theme } from './theme';
-import type { GeomMap } from './types';
+import { CanvasTextMeasurer, computeMetrics } from './metrics';
+import type { GeomMap, NodeGeom } from './types';
 import { downloadFile } from './download';
 
 const PAD = 46;
+
+/** Soft-wrap `text` to `maxW` px with the ctx's CURRENT font, mirroring the
+ * editor's `wrapMeasure` token model (whitespace-preserving, breaks between CJK
+ * chars) — so a long node label wraps in the PNG exactly as it does on canvas,
+ * instead of running off on one line. */
+function wrapLines(ctx: CanvasRenderingContext2D, text: string, maxW: number): string[] {
+  const out: string[] = [];
+  for (const hard of String(text).split('\n')) {
+    if (!hard) {
+      out.push('');
+      continue;
+    }
+    const tokens = hard.match(/[A-Za-z0-9]+|\s+|./gu) || [hard];
+    let line = '';
+    let lineW = 0;
+    for (const tk of tokens) {
+      const w = ctx.measureText(tk).width;
+      const isSpace = /^\s+$/.test(tk);
+      if (line && lineW + w > maxW && !isSpace) {
+        out.push(line);
+        line = isSpace ? '' : tk;
+        lineW = isSpace ? 0 : w;
+      } else {
+        line += tk;
+        lineW += w;
+      }
+    }
+    out.push(line);
+  }
+  return out.length ? out : [''];
+}
 
 /** `ctx.roundRect` isn't in every lib.dom.d.ts version this repo might build against — draw it by hand. */
 function roundRectPath(ctx: CanvasRenderingContext2D, x: number, y: number, w: number, h: number, r: number): void {
@@ -226,12 +259,15 @@ export function exportPng(doc: Doc, geom: GeomMap, theme: Theme, filename: strin
     const fpx = (isRoot ? 17 : depth === 1 ? 15 : 13.5) * (n.tsize === 's' ? 0.85 : n.tsize === 'l' ? 1.2 : 1);
     const tcol = n.textColor || (isRoot && !n.fill ? theme.accentInk : theme.text);
     const fw = n.bold ? 800 : isRoot ? 800 : depth === 1 ? 600 : 500;
+    ctx.font = `${fw} ${fpx}px Pretendard, sans-serif`;
     const label = ((n.emoji ? n.emoji + ' ' : '') + (n.text || '')).trim() || ' ';
-    const lines = label.split('\n');
+    // Wrap to the box's inner width so long labels break onto multiple lines
+    // (the box height already accounts for the wrap via computeMetrics).
+    const padX = isRoot ? 24 : depth === 1 ? 15 : 13;
+    const lines = wrapLines(ctx, label, Math.max(8, g.w - padX * 2 - 6));
     const lh = fpx * 1.35;
     const ty0 = g.y - ((lines.length - 1) * lh) / 2;
     ctx.fillStyle = tcol;
-    ctx.font = `${fw} ${fpx}px Pretendard, sans-serif`;
     ctx.textAlign = 'center';
     ctx.textBaseline = 'middle';
     lines.forEach((ln, i) => ctx.fillText(ln, g.x, ty0 + i * lh));
@@ -306,4 +342,28 @@ export function exportPng(doc: Doc, geom: GeomMap, theme: Theme, filename: strin
   canvas.toBlob((blob) => {
     if (blob) downloadFile(`${filename}.png`, blob);
   }, 'image/png');
+}
+
+/**
+ * Render a full-quality PNG straight from a `Doc` (no live editor state) — lays
+ * it out with the same `layout` + `computeMetrics` the editor uses, then draws
+ * via `exportPng`. Used by Home so a card download is the real map, not a
+ * rasterized thumbnail (which cropped text).
+ */
+export function exportDocPng(doc: Doc, theme: Theme, filename: string): void {
+  const measurer = new CanvasTextMeasurer();
+  const sizeOf = (node: Node, depth: number) => {
+    const m = computeMetrics(node, depth, measurer);
+    return { w: m.w, h: m.h };
+  };
+  const laid = layout(doc, doc.layoutMode, sizeOf, { rootAnchor: { x: 0, y: 0 } });
+  const geom: GeomMap = {};
+  buildVisible(laid).forEach(({ id, depth }) => {
+    const n = laid[id];
+    if (!n) return;
+    const m = computeMetrics(n, depth, measurer);
+    const g: NodeGeom = { ...m, x: n.x, y: n.y, depth };
+    geom[id] = g;
+  });
+  exportPng({ ...doc, nodes: laid }, geom, theme, filename);
 }

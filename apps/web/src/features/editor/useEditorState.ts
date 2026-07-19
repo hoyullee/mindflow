@@ -2,7 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { MouseEvent as ReactMouseEvent, PointerEvent as ReactPointerEvent } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import type { Box, Doc, Float, Line, LineAnchor, LayoutMode, Node, NodeMap, SizeOf, SnapCandidate, Zone } from '@mindflow/mindmap-core';
-import { HistoryStack, ROOT_ID, applyPartialStyle, cubicAt, findLineSnap, layout, resolveLineEndpoints, resolveLineGeometry, serializeDoc, toMarkdown } from '@mindflow/mindmap-core';
+import { HistoryStack, ROOT_ID, applyPartialStyle, cubicAt, findLineSnap, layout, resolveLineEndpoints, resolveLineGeometry, serializeDoc } from '@mindflow/mindmap-core';
 import { domToRuns, linearize, runsToHtml, setLinearSelection } from './richtextDom';
 import { useDocStore } from '../../adapters/BackendContext';
 import { useAuthUser } from '../../adapters/useAuthUser';
@@ -404,7 +404,6 @@ export interface EditorController {
   saveConflict: { currentVersion: number } | null;
   dismissSaveConflict: () => void;
   exportJSON: () => void;
-  exportMarkdown: () => void;
   exportPNG: () => void;
 }
 
@@ -2679,9 +2678,6 @@ export function useEditorState(): EditorController {
   const exportJSON = useCallback(() => {
     downloadFile(`${safeDocTitle(doc, titleParam)}.json`, JSON.stringify(serializeDoc(doc), null, 2), 'application/json');
   }, [doc, titleParam]);
-  const exportMarkdown = useCallback(() => {
-    downloadFile(`${safeDocTitle(doc, titleParam)}.md`, toMarkdown(doc), 'text/markdown;charset=utf-8');
-  }, [doc, titleParam]);
   const exportPNG = useCallback(() => {
     exportPng(doc, geom, theme, safeDocTitle(doc, titleParam));
   }, [doc, geom, theme, titleParam]);
@@ -2847,7 +2843,6 @@ export function useEditorState(): EditorController {
     saveConflict,
     dismissSaveConflict,
     exportJSON,
-    exportMarkdown,
     exportPNG,
   };
 }
