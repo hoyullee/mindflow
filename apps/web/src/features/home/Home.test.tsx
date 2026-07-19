@@ -442,6 +442,37 @@ describe('Home', () => {
     await waitFor(() => expect(screen.getByText('내 스페이스')).toBeTruthy());
   });
 
+  it('renames a space (name + color) via the shared new-space popup', async () => {
+    const user = userEvent.setup();
+    localStorage.setItem('mf_spaces', JSON.stringify({ spaces: [{ id: 'sx', name: '옛이름', color: '#3f8fd0', maps: [] }], mapFolders: {} }));
+    const { container } = renderHomeWithDocStore([]);
+    const aside = within(container.querySelector('aside') as HTMLElement);
+    await waitFor(() => expect(aside.getByText('옛이름')).toBeTruthy());
+
+    // ⋮ menu → 이름 변경 opens the SAME popup as "새 공간", but in edit mode
+    await user.click(aside.getByLabelText('공간 메뉴'));
+    await user.click(aside.getByText('이름 변경'));
+
+    expect(screen.getByText('공간 이름 변경')).toBeTruthy();
+    const input = screen.getByLabelText('공간 이름') as HTMLInputElement;
+    expect(input.value).toBe('옛이름'); // pre-filled
+
+    // change the name, pick a different tag color, then 변경
+    await user.clear(input);
+    await user.type(input, '새이름');
+    await user.click(screen.getByRole('button', { name: '색상 #d0568f' }));
+    await user.click(screen.getByRole('button', { name: '변경' }));
+
+    await waitFor(() => expect(aside.getByText('새이름')).toBeTruthy());
+    expect(aside.queryByText('옛이름')).toBeNull();
+    // both name AND color persisted to the workspace
+    await waitFor(() => {
+      const sp = JSON.parse(localStorage.getItem('mf_spaces') as string).spaces.find((s: { id: string }) => s.id === 'sx');
+      expect(sp.name).toBe('새이름');
+      expect(sp.color).toBe('#d0568f');
+    });
+  });
+
   it('shows a spaces skeleton in the LNB until the workspace loads (no seed-space flash)', async () => {
     localStorage.setItem('mf_spaces', JSON.stringify({ spaces: [{ id: 'work', name: '작업 공간', color: '#3f8fd0', maps: [] }], mapFolders: {} }));
     const { container } = renderHomeWithDocStore([]);

@@ -100,8 +100,9 @@ export interface HomeState {
   newSpaceName: string;
   newSpaceColor: string;
   spaceMenu: string | null;
+  /** When the shared new-space popup is open in RENAME mode, the id of the space
+   * being edited (name + color pre-filled); `null` = create mode. */
   editingSpace: string | null;
-  editingSpaceName: string;
   confirmDeleteSpace: string | null;
 
   curFolder: string | null;
@@ -211,7 +212,6 @@ export function initialHomeState(): HomeState {
     newSpaceColor: '#f0663f',
     spaceMenu: null,
     editingSpace: null,
-    editingSpaceName: '',
     confirmDeleteSpace: null,
 
     curFolder: null,
