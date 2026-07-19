@@ -175,14 +175,24 @@ export function useHomeController() {
   // editable in-session; the seed only applies on mount.
   useEffect(() => {
     let cancelled = false;
-    void auth.getSession().then((session) => {
+    void auth.getSession().then(async (session) => {
       if (cancelled) return;
       const email = session?.user?.email;
       if (!email) return;
-      // A previously-saved custom name wins over the email-derived default, so a
-      // rename survives reload (see `submitProfileName`).
-      const name = readSavedProfileName(email) || email.split('@')[0] || email;
-      setState((prev) => ({ ...prev, userEmail: email, userName: name }));
+      // Show the locally-cached name (or email default) immediately, no flash…
+      const name0 = readSavedProfileName(email) || email.split('@')[0] || email;
+      setState((prev) => ({ ...prev, userEmail: email, userName: name0 }));
+      // …then reconcile with the backend (Supabase `profiles.display_name`), which
+      // survives a browser-cache clear and syncs across devices. Local mode returns
+      // null here, so it just keeps the cached value.
+      try {
+        const remote = await auth.getProfileName();
+        if (cancelled || !remote || !remote.trim()) return;
+        writeSavedProfileName(email, remote); // refresh the local cache
+        setState((prev) => (prev.userEmail === email ? { ...prev, userName: remote } : prev));
+      } catch {
+        /* offline / transient — keep the cached name */
+      }
     });
     return () => {
       cancelled = true;
@@ -287,9 +297,11 @@ export function useHomeController() {
   const submitProfileName = () => {
     const fallback = state.userEmail ? state.userEmail.split('@')[0] || 'mine' : 'mine';
     const name = state.profileNameDraft.trim() || fallback;
-    // Persist per-account so the rename survives a page reload.
+    // Local cache (fast display) + backend (Supabase — survives cache clear, syncs
+    // across devices; a no-op in local mode).
     if (state.userEmail) writeSavedProfileName(state.userEmail, name);
     patch({ userName: name, profileNameOpen: false });
+    void auth.setProfileName(name);
   };
   const cancelProfileName = () => patch({ profileNameOpen: false });
   const onProfileNameKey = (e: KeyboardEvent<HTMLInputElement>) => {
