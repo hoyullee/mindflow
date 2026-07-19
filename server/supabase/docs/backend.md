@@ -22,6 +22,12 @@ mocked) 어댑터로 검증되었습니다(라이브 호출 없음).
   스페이스/폴더 구조를 `data` JSONB로 저장) + RLS. 사용자별 저장이라 로그인하는 모든
   기기에서 스페이스가 동일하게 보입니다(`SupabaseSpaceStore`). 미적용 시 스페이스는
   기기별 localStorage(`LocalSpaceStore`)로만 유지됩니다.
+- `supabase/migrations/0005_delete_account.sql` — 회원 탈퇴용 `delete_account()` RPC.
+  클라이언트 키로는 `auth.users`를 지울 수 없어, 로그인 사용자가 호출하는 SECURITY
+  DEFINER 함수로 노출합니다. 자기 자신(`auth.uid()`)의 `auth.users` 행을 삭제하며,
+  `on delete cascade` FK로 `profiles`/`documents`/`workspaces`가 함께 삭제됩니다
+  (`SupabaseAuth.deleteAccount()`가 호출). 미적용 시 로컬/데모 모드는 브라우저의
+  MindFlow 저장소를 비우는 것으로 폴백합니다.
 - 마이그레이션은 표준 위치 **`supabase/migrations/`**(+ 루트 `supabase/config.toml`)에
   둡니다 — Supabase의 GitHub 연동이 이 경로를 찾아, `main`(프로덕션 브랜치) 머지 시
   새 마이그레이션을 자동 적용하고 PR마다 프리뷰 DB 브랜치를 만듭니다(아래 §1a).
@@ -49,6 +55,7 @@ mocked) 어댑터로 검증되었습니다(라이브 호출 없음).
    psql "$DATABASE_URL" -f supabase/migrations/0002_documents_id_text.sql
    psql "$DATABASE_URL" -f supabase/migrations/0003_documents_owner_default.sql
    psql "$DATABASE_URL" -f supabase/migrations/0004_workspaces.sql
+   psql "$DATABASE_URL" -f supabase/migrations/0005_delete_account.sql
    ```
    `server/supabase/seed/seed.sql`은 선택 사항(로컬 개발용 샘플 문서 1건 삽입 — 실제
    `auth.users` id로 치환 필요, 파일 내 주석 참고).

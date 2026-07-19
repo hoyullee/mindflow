@@ -51,6 +51,16 @@ export interface AuthProvider {
   sendPasswordReset(email: string): Promise<{ error?: string }>;
   verifyOtp(email: string, token: string, type: 'signup' | 'recovery'): Promise<AuthResult>;
   updatePassword(newPassword: string): Promise<{ error?: string }>;
+  /**
+   * Permanently deletes the signed-in user's account and every row they own
+   * (documents, workspace, profile) and signs them out. Irreversible. Returns
+   * `{ error }` on failure so the caller can keep the user on the page. In
+   * Supabase mode this calls the `delete_account()` RPC (SECURITY DEFINER),
+   * which deletes the `auth.users` row — cascading to all owned tables via
+   * their `on delete cascade` FKs. In local/demo mode it wipes the browser's
+   * MindFlow storage.
+   */
+  deleteAccount(): Promise<{ error?: string }>;
 }
 
 // ── Documents ──────────────────────────────────────────────────────────────

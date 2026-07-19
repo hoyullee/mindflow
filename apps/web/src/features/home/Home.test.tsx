@@ -505,6 +505,49 @@ describe('Home', () => {
     await waitFor(() => expect(screen.getByText('LOGIN_PAGE')).toBeTruthy(), { timeout: 2000 });
   });
 
+  it('opens 설정 → 회원 탈퇴 and gates the destructive button on typing "탈퇴"', async () => {
+    const user = userEvent.setup();
+    renderHomeWithDocStore([]);
+
+    // profile popover → 설정 → account-settings modal → 회원 탈퇴 row
+    await user.click(screen.getByRole('button', { name: '계정 메뉴' }));
+    await user.click(screen.getByRole('button', { name: '설정' }));
+    const settingsDialog = screen.getByRole('dialog', { name: '설정' });
+    await user.click(within(settingsDialog).getByText('회원 탈퇴'));
+
+    // the confirm dialog's destructive button starts disabled…
+    const confirmDialog = screen.getByRole('dialog', { name: '회원 탈퇴' });
+    const delBtn = within(confirmDialog).getByRole('button', { name: '회원 탈퇴' }) as HTMLButtonElement;
+    expect(delBtn.disabled).toBe(true);
+
+    // …and arms only once the exact phrase is typed
+    await user.type(within(confirmDialog).getByLabelText('탈퇴 확인 입력'), '탈퇴');
+    expect(delBtn.disabled).toBe(false);
+  });
+
+  it('deletes the account: wipes MindFlow storage and lands on /login', async () => {
+    const user = userEvent.setup();
+    // seed a signed-in demo session + some MindFlow data to prove it's wiped
+    localStorage.setItem('mf_demo_session', JSON.stringify({ user: { id: 'u1', email: 'hoyul.lee@wantedlab.com' } }));
+    localStorage.setItem('mf_spaces', JSON.stringify({ spaces: [{ id: 'general', name: '일반 공간', home: true, maps: [] }], mapFolders: {} }));
+    localStorage.setItem('mindflow_doc_d1', JSON.stringify({ v: 1 }));
+    renderHomeWithDocStore([]);
+
+    await user.click(screen.getByRole('button', { name: '계정 메뉴' }));
+    await user.click(screen.getByRole('button', { name: '설정' }));
+    await user.click(within(screen.getByRole('dialog', { name: '설정' })).getByText('회원 탈퇴'));
+
+    const confirmDialog = screen.getByRole('dialog', { name: '회원 탈퇴' });
+    await user.type(within(confirmDialog).getByLabelText('탈퇴 확인 입력'), '탈퇴');
+    await user.click(within(confirmDialog).getByRole('button', { name: '회원 탈퇴' }));
+
+    await waitFor(() => expect(screen.getByText('LOGIN_PAGE')).toBeTruthy(), { timeout: 2000 });
+    // every MindFlow-namespaced key is gone
+    expect(localStorage.getItem('mf_demo_session')).toBeNull();
+    expect(localStorage.getItem('mf_spaces')).toBeNull();
+    expect(localStorage.getItem('mindflow_doc_d1')).toBeNull();
+  });
+
   describe('mobile (M6)', () => {
     it('hides the sidebar behind a hamburger drawer and opens/closes it, crash-free', async () => {
       const restore = mockMatchMedia(true);

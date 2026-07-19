@@ -80,6 +80,17 @@ export interface HomeState {
   settingsOpen: boolean;
   nameEditing: boolean;
   confirmLogout: boolean;
+  /** The 설정 (account settings) modal, opened from the profile popover. Hosts
+   * the 회원 탈퇴 entry. */
+  accountSettingsOpen: boolean;
+  /** The 회원 탈퇴 confirmation dialog (opened from the settings modal). */
+  confirmDeleteAccount: boolean;
+  /** What the user has typed into the 회원 탈퇴 confirmation box — the destructive
+   * action is gated on this matching the required phrase ("탈퇴"). */
+  deleteAccountText: string;
+  /** Error surfaced in the 회원 탈퇴 dialog when `deleteAccount()` fails, so the
+   * user stays on the page and can retry instead of being half-deleted. */
+  deleteAccountError: string;
   creatingMap: boolean;
   loaderMsg: string;
 
@@ -186,6 +197,10 @@ export function initialHomeState(): HomeState {
     settingsOpen: false,
     nameEditing: false,
     confirmLogout: false,
+    accountSettingsOpen: false,
+    confirmDeleteAccount: false,
+    deleteAccountText: '',
+    deleteAccountError: '',
     creatingMap: false,
     loaderMsg: '',
 

@@ -75,4 +75,16 @@ export class SupabaseAuth implements AuthProvider {
     const { error } = await this.client.auth.updateUser({ password: newPassword });
     return error ? { error: error.message } : {};
   }
+
+  // The anon/authenticated client can't touch `auth.users`, so account deletion
+  // goes through the `delete_account()` SECURITY DEFINER RPC (supabase/migrations/
+  // 0005_delete_account.sql): it deletes the caller's `auth.users` row, which
+  // cascades to documents/workspaces/profiles via their `on delete cascade` FKs.
+  // Then sign out to drop the now-orphaned local session/token.
+  async deleteAccount(): Promise<{ error?: string }> {
+    const { error } = await this.client.rpc('delete_account');
+    if (error) return { error: error.message };
+    await this.client.auth.signOut();
+    return {};
+  }
 }

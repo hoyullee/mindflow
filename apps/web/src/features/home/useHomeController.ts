@@ -301,6 +301,47 @@ export function useHomeController() {
     loaderTimer.current = setTimeout(() => navigate('/login', { replace: true }), 900);
   };
 
+  // ---- account settings / 회원 탈퇴 ----
+  const openAccountSettings = () => patch({ settingsOpen: false, accountSettingsOpen: true });
+  const closeAccountSettings = () => patch({ accountSettingsOpen: false });
+  const askDeleteAccount = () => patch({ accountSettingsOpen: false, confirmDeleteAccount: true, deleteAccountText: '', deleteAccountError: '' });
+  const cancelDeleteAccount = () => patch({ confirmDeleteAccount: false, deleteAccountText: '', deleteAccountError: '' });
+  const onDeleteAccountInput = (v: string) => patch({ deleteAccountText: v });
+  /** The user must type this exact phrase to arm the destructive button — a
+   * deliberate friction step for an irreversible action. */
+  const DELETE_ACCOUNT_PHRASE = '탈퇴';
+  const confirmDeleteAccountYes = () => {
+    // Double-guard: the button is disabled unless the phrase matches, but never
+    // trust the UI alone for a destructive, irreversible call.
+    if (state.deleteAccountText.trim() !== DELETE_ACCOUNT_PHRASE) return;
+    patch({ confirmDeleteAccount: false, creatingMap: true, loaderMsg: '회원 탈퇴를 처리하고 있어요' });
+    clearTimeout(loaderTimer.current);
+    void (async () => {
+      const res = await auth.deleteAccount();
+      if (res.error) {
+        // Re-open the dialog with an error and let the user retry — half-deleted
+        // is worse than not-deleted, so we surface the failure rather than
+        // navigating away.
+        patch({ creatingMap: false, confirmDeleteAccount: true, deleteAccountError: '탈퇴 처리 중 문제가 발생했어요. 잠시 후 다시 시도해 주세요.' });
+        return;
+      }
+      // Clear this browser's MindFlow caches too — in Supabase mode the server
+      // rows are gone (cascade) but localStorage may still hold doc/workspace
+      // copies; wiping them stops a stale workspace flashing on the next login.
+      try {
+        const keys: string[] = [];
+        for (let i = 0; i < localStorage.length; i++) {
+          const k = localStorage.key(i);
+          if (k && (k.startsWith('mindflow_') || k.startsWith('mf_'))) keys.push(k);
+        }
+        keys.forEach((k) => localStorage.removeItem(k));
+      } catch {
+        /* storage unavailable — non-fatal */
+      }
+      loaderTimer.current = setTimeout(() => navigate('/login', { replace: true }), 700);
+    })();
+  };
+
   // ---- spaces ----
   const openNewSpace = () => patch({ newSpaceOpen: true, newSpaceName: '', newSpaceColor: '#f0663f' });
   const closeNewSpace = () => patch({ newSpaceOpen: false });
@@ -921,6 +962,12 @@ export function useHomeController() {
     logout,
     cancelLogout,
     confirmLogoutYes,
+    openAccountSettings,
+    closeAccountSettings,
+    askDeleteAccount,
+    cancelDeleteAccount,
+    onDeleteAccountInput,
+    confirmDeleteAccountYes,
     openNewSpace,
     closeNewSpace,
     onNewSpaceName,
