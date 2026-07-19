@@ -158,7 +158,7 @@ export function MapCard({ card, controller, draggableEnabled, compact = false }:
 
       {!compact && (
       <div onClick={stopPrevent} style={{ position: 'absolute', top: 44, right: 10, zIndex: 20, width: 150, background: '#fff', border: '1px solid #ecdfd5', borderRadius: 10, boxShadow: '0 10px 28px rgba(0,0,0,.16)', padding: '5px 0', display: card.menuOpen ? 'block' : 'none' }}>
-        <div style={{ display: card.exportOpen || card.moveOpen ? 'none' : 'block' }}>
+        <div style={{ display: card.exportOpen || card.moveOpen || card.spaceMoveOpen ? 'none' : 'block' }}>
           {card.showFavRow && (
             <div
               className="menu-row"
@@ -204,6 +204,27 @@ export function MapCard({ card, controller, draggableEnabled, compact = false }:
               style={{ display: 'flex', alignItems: 'center', gap: 9, padding: '9px 13px', fontSize: 13, cursor: 'pointer', color: '#33281f' }}
             >
               <span>📁</span> 폴더로 이동 <span style={{ marginLeft: 'auto', color: '#b6a596' }}>›</span>
+            </div>
+          )}
+          {card.showSpaceMoveRow && (
+            <div
+              className="menu-row"
+              onClick={(e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                controller.setMoveSpaceFor(card.title);
+              }}
+              style={{ display: 'flex', alignItems: 'center', gap: 9, padding: '9px 13px', fontSize: 13, cursor: 'pointer', color: '#33281f' }}
+            >
+              <span style={{ display: 'flex', color: '#7c6d60' }}>
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                  <rect x="3" y="3" width="7" height="7" rx="1.5" />
+                  <rect x="14" y="3" width="7" height="7" rx="1.5" />
+                  <rect x="3" y="14" width="7" height="7" rx="1.5" />
+                  <path d="M17.5 14v7M14 17.5h7" />
+                </svg>
+              </span>{' '}
+              스페이스로 이동 <span style={{ marginLeft: 'auto', color: '#b6a596' }}>›</span>
             </div>
           )}
           {card.showUnfolderRow && (
@@ -342,6 +363,43 @@ export function MapCard({ card, controller, draggableEnabled, compact = false }:
               style={{ display: 'flex', alignItems: 'center', gap: 9, padding: '9px 13px', fontSize: 13, cursor: 'pointer', color: '#33281f', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}
             >
               📁 {ft.name}
+            </div>
+          ))}
+        </div>
+
+        <div style={{ display: card.spaceMoveOpen ? 'block' : 'none' }}>
+          <div
+            className="menu-row"
+            onClick={(e) => {
+              e.preventDefault();
+              e.stopPropagation();
+              controller.setMoveSpaceFor(null);
+            }}
+            style={{ display: 'flex', alignItems: 'center', gap: 9, padding: '9px 13px', fontSize: 12.5, cursor: 'pointer', color: '#9c8b7e' }}
+          >
+            ‹ 뒤로
+          </div>
+          <div style={{ height: 1, background: '#f0e6dd', margin: '2px 0' }} />
+          {card.spaceMoveTargets.map((sp) => (
+            <div
+              key={sp.id}
+              className="menu-row"
+              onClick={(e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                controller.moveMapToSpace(card.title, sp.id);
+              }}
+              style={{ display: 'flex', alignItems: 'center', gap: 9, padding: '9px 13px', fontSize: 13, cursor: 'pointer', color: '#33281f', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}
+            >
+              <span style={{ display: 'flex', color: '#7c6d60', flexShrink: 0 }}>
+                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                  <rect x="3" y="3" width="7" height="7" rx="1.5" />
+                  <rect x="14" y="3" width="7" height="7" rx="1.5" />
+                  <rect x="3" y="14" width="7" height="7" rx="1.5" />
+                  <rect x="14" y="14" width="7" height="7" rx="1.5" />
+                </svg>
+              </span>{' '}
+              {sp.name}
             </div>
           ))}
         </div>

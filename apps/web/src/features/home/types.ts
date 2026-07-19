@@ -103,6 +103,9 @@ export interface HomeState {
   driveMapFolders: Record<string, string>;
 
   moveFor: string | null;
+  /** Title of the card whose "스페이스로 이동" submenu is open (move a map to
+   * another space), mirroring `moveFor` for the folder submenu. */
+  moveSpaceFor: string | null;
   exportFor: string | null;
   selectedCard: string | null;
   draggingMap: string | null;
@@ -206,6 +209,7 @@ export function initialHomeState(): HomeState {
     }, {}),
 
     moveFor: null,
+    moveSpaceFor: null,
     exportFor: null,
     selectedCard: null,
     draggingMap: null,

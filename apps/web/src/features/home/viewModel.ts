@@ -20,11 +20,14 @@ export interface CardViewData {
   dragOverTarget: boolean;
   exportOpen: boolean;
   moveOpen: boolean;
+  spaceMoveOpen: boolean;
   showFavRow: boolean;
   showMoveRow: boolean;
+  showSpaceMoveRow: boolean;
   showUnfolderRow: boolean;
   showDivider: boolean;
   moveTargets: { id: string; name: string }[];
+  spaceMoveTargets: { id: string; name: string }[];
 }
 
 export interface FolderCardViewData {
@@ -117,6 +120,10 @@ export function deriveHomeView(state: HomeState): HomeViewModel {
     .filter((c) => matchesSearch(c.title, state.search));
 
   const favs = state.favs;
+  // Other real spaces a map can be moved to (excludes the current space and the
+  // Drive pseudo-space). Available whenever the user has more than one space.
+  const spaceMoveTargets = state.spaces.filter((s) => s.id !== state.activeSpace).map((s) => ({ id: s.id, name: s.name }));
+  const canMoveSpace = !isDriveSpace && spaceMoveTargets.length > 0;
   const allCards: CardViewData[] = allCardsFiltered.map((c) => {
     const hasFav = c.openable;
     const hasMove = isDriveSpace ? !driveFolder && state.driveFolders.length > 0 : !curFolder && folders.length > 0;
@@ -138,11 +145,14 @@ export function deriveHomeView(state: HomeState): HomeViewModel {
       dragOverTarget: false,
       exportOpen: state.exportFor === c.title,
       moveOpen: state.moveFor === c.title,
+      spaceMoveOpen: state.moveSpaceFor === c.title,
       showFavRow: hasFav,
       showMoveRow: hasMove,
+      showSpaceMoveRow: canMoveSpace,
       showUnfolderRow: hasUnfolder,
-      showDivider: hasFav || hasMove || hasUnfolder,
+      showDivider: hasFav || hasMove || canMoveSpace || hasUnfolder,
       moveTargets: (isDriveSpace ? state.driveFolders : folders).map((f) => ({ id: f.id, name: f.name })),
+      spaceMoveTargets,
     };
   });
 
@@ -212,11 +222,14 @@ export function deriveHomeView(state: HomeState): HomeViewModel {
         dragOverTarget: false,
         exportOpen: state.exportFor === t,
         moveOpen: state.moveFor === t,
+        spaceMoveOpen: state.moveSpaceFor === t,
         showFavRow: true,
         showMoveRow: hasMove,
+        showSpaceMoveRow: canMoveSpace,
         showUnfolderRow: false,
         showDivider: true,
         moveTargets: folders.map((f) => ({ id: f.id, name: f.name })),
+        spaceMoveTargets,
       };
     });
 

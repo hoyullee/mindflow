@@ -386,6 +386,40 @@ describe('Home', () => {
     expect(save).not.toHaveBeenCalled();
   });
 
+  it('moves a map to another space via the card ☰ menu', async () => {
+    const user = userEvent.setup();
+    localStorage.setItem(
+      'mf_spaces',
+      JSON.stringify({
+        spaces: [
+          { id: 'sa', name: '공간에이', color: '#3f8fd0', maps: [{ title: '내 맵', when: '방금', hue: '#f0663f', docId: 'd1' }], folders: [] },
+          { id: 'sb', name: '공간비이', color: '#8a6bd1', maps: [], folders: [] },
+        ],
+        mapFolders: {},
+      }),
+    );
+    const { container } = renderHomeWithDocStore([]);
+
+    const card = (await waitFor(() => {
+      const c = container.querySelector('a[data-title="내 맵"]');
+      if (!c) throw new Error('card not rendered');
+      return c;
+    })) as HTMLElement;
+
+    // open ☰ → 스페이스로 이동 → 공간비이 (scope name lookups to the card's menu,
+    // since the space name also appears in the sidebar)
+    await user.click(within(card).getByLabelText('메뉴'));
+    await user.click(within(card).getByText('스페이스로 이동'));
+    await user.click(within(card).getByText('공간비이'));
+
+    // the map leaves the current (공간에이) view…
+    await waitFor(() => expect(container.querySelector('a[data-title="내 맵"]')).toBeNull());
+    // …and shows up when we switch to 공간비이
+    const aside = within(container.querySelector('aside') as HTMLElement);
+    await user.click(aside.getByText('공간비이'));
+    await waitFor(() => expect(container.querySelector('a[data-title="내 맵"]')).toBeTruthy());
+  });
+
   it('a user-created space persists across a reload (localStorage)', async () => {
     const user = userEvent.setup();
     const { unmount } = renderHomeWithDocStore([]);
