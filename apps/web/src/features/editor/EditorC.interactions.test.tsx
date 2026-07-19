@@ -355,4 +355,80 @@ describe('Editor drag-to-reparent (M3-Editor-c)', () => {
       { timeout: 2000 },
     );
   });
+
+  it('clicking a node off-centre (no drag) never detaches it from the tree', async () => {
+    // A wide child so its right edge is >40px (the detach gate) from its centre.
+    const WIDE_DOC = {
+      v: 1,
+      nodes: {
+        root: { id: 'root', text: '루트', emoji: '', parent: null, children: ['c1'], collapsed: false, color: null, x: 0, y: 0 },
+        c1: { id: 'c1', text: '아주 아주 긴 자식 노드 이름 텍스트', emoji: '', parent: 'root', children: [], collapsed: false, color: null, x: 0, y: 0 },
+      },
+      floats: [],
+      lines: [],
+      zones: [],
+      layoutMode: 'right',
+      themeKey: 'coral',
+    };
+    localStorage.setItem('mindflow_doc_oc1', JSON.stringify(WIDE_DOC));
+    const { container } = renderEditor('/editor?map=oc1&title=x');
+
+    // Replicate the hook's mount geometry + fitView to land a client point on c1's RIGHT EDGE.
+    const measurer = new CanvasTextMeasurer();
+    const sizeOf = (node: Parameters<typeof computeMetrics>[0], depth: number) => {
+      const m = computeMetrics(node, depth, measurer);
+      return { w: m.w, h: m.h };
+    };
+    const laidOut = layout(WIDE_DOC as Doc, WIDE_DOC.layoutMode as Doc['layoutMode'], sizeOf, { rootAnchor: { x: 0, y: 0 } });
+    const depthOf: Record<string, number> = { root: 0, c1: 1 };
+    const geom: Record<string, { x: number; y: number; w: number; h: number }> = {};
+    for (const id of ['root', 'c1']) {
+      const n = laidOut[id]!;
+      const m = computeMetrics(n, depthOf[id]!, measurer);
+      geom[id] = { x: n.x, y: n.y, w: m.w, h: m.h };
+    }
+    const FIT_PADDING = 90;
+    const MIN_ZOOM = 0.25;
+    const vw = 1200;
+    const vh = 700;
+    let minX = Infinity;
+    let minY = Infinity;
+    let maxX = -Infinity;
+    let maxY = -Infinity;
+    for (const id of ['root', 'c1']) {
+      const g = geom[id]!;
+      minX = Math.min(minX, g.x - g.w / 2);
+      maxX = Math.max(maxX, g.x + g.w / 2);
+      minY = Math.min(minY, g.y - g.h / 2);
+      maxY = Math.max(maxY, g.y + g.h / 2);
+    }
+    const cx = geom.root!.x;
+    const cy = geom.root!.y;
+    const halfW = Math.max(cx - minX, maxX - cx, 1);
+    const halfH = Math.max(cy - minY, maxY - cy, 1);
+    let z = Math.min((vw - FIT_PADDING) / (2 * halfW), (vh - FIT_PADDING) / (2 * halfH), 1.25);
+    z = Math.max(MIN_ZOOM, z);
+    const pan = { x: vw / 2 - cx * z, y: vh / 2 - cy * z };
+
+    // sanity: the grabbed point really is >40 canvas px off-centre (would trip the old gate)
+    expect(geom.c1!.w / 2).toBeGreaterThan(40);
+    const edgeClientX = (geom.c1!.x + geom.c1!.w / 2 - 6) * z + pan.x;
+    const edgeClientY = geom.c1!.y * z + pan.y;
+
+    const nodeC1 = container.querySelector('[data-node-id="c1"]') as HTMLElement;
+    expect(nodeC1).toBeTruthy();
+
+    // press + release at the SAME point (a click, no pointermove)
+    firePointer(nodeC1, 'pointerdown', { pointerId: 5, clientX: edgeClientX, clientY: edgeClientY, button: 0 });
+    firePointer(window, 'pointerup', { pointerId: 5, clientX: edgeClientX, clientY: edgeClientY });
+
+    fireEvent.keyDown(window, { key: 's', ctrlKey: true });
+    // give the debounced save a beat, then assert c1 is STILL a child of root (not detached)
+    await new Promise((r) => setTimeout(r, 50));
+    const raw = localStorage.getItem('mindflow_doc_oc1');
+    const parsed = parseDoc(JSON.parse(raw as string));
+    expect(parsed!.nodes.c1?.parent).toBe('root');
+    expect(parsed!.nodes.c1?.free).toBeFalsy();
+    expect(parsed!.nodes[ROOT_ID]?.children).toEqual(['c1']);
+  });
 });

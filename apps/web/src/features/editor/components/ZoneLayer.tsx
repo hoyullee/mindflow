@@ -1,4 +1,4 @@
-import { useEffect, useRef } from 'react';
+import { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import type { Zone } from '@mindflow/mindmap-core';
 import { hexA } from '../theme';
 import type { Theme } from '../theme';
@@ -149,47 +149,66 @@ export function ZoneLayer({ zones, theme: th, controller }: ZoneLayerProps) {
 
 function ZoneLabelEdit({ z, theme, onCommit, onCancel }: { z: Zone; theme: Theme; onCommit: (text: string) => void; onCancel: () => void }) {
   const ref = useRef<HTMLInputElement | null>(null);
+  const sizerRef = useRef<HTMLSpanElement | null>(null);
+  const [val, setVal] = useState(z.label || '');
+  // Width tracks the text (variable, like a shape) instead of a fixed 150px, so the
+  // editor matches the committed pill. Capped at the zone's width (minus the same
+  // 20px inset the committed label uses) — past that the input scrolls, and the
+  // committed pill ellipsizes (whiteSpace/overflow/textOverflow, above).
+  const maxW = Math.max(56, z.w - 20);
+  const [width, setWidth] = useState(90);
+  useLayoutEffect(() => {
+    const s = sizerRef.current;
+    if (s) setWidth(Math.min(maxW, Math.max(48, s.offsetWidth + 28)));
+  }, [val, maxW]);
   useEffect(() => {
     const el = ref.current;
     if (!el) return;
     el.focus();
     el.select();
   }, []);
+  const font = { fontSize: 12.5, fontWeight: 700, fontFamily: 'Pretendard, sans-serif' } as const;
   return (
-    <input
-      ref={ref}
-      className="mf-edit"
-      defaultValue={z.label || ''}
-      maxLength={24}
-      onMouseDown={(e) => e.stopPropagation()}
-      onPointerDown={(e) => e.stopPropagation()}
-      onKeyDown={(e) => {
-        e.stopPropagation();
-        if (e.key === 'Enter' || e.key === 'Escape') {
-          e.preventDefault();
-          if (e.key === 'Enter') onCommit(e.currentTarget.value);
-          else onCancel();
-        }
-      }}
-      onBlur={(e) => onCommit(e.currentTarget.value)}
-      style={{
-        position: 'absolute',
-        left: 10,
-        top: -14,
-        height: 27,
-        padding: '0 11px',
-        borderRadius: 999,
-        border: `1.5px solid ${z.color || theme.accent}`,
-        background: theme.panel,
-        color: theme.text,
-        fontSize: 12.5,
-        fontWeight: 700,
-        fontFamily: 'Pretendard, sans-serif',
-        outline: 'none',
-        width: 150,
-        boxSizing: 'border-box',
-        zIndex: 3,
-      }}
-    />
+    <>
+      {/* hidden text-width probe (same font as the input) */}
+      <span ref={sizerRef} aria-hidden="true" style={{ position: 'absolute', visibility: 'hidden', whiteSpace: 'pre', left: -9999, top: -9999, ...font }}>
+        {val || '영역'}
+      </span>
+      <input
+        ref={ref}
+        className="mf-edit"
+        value={val}
+        maxLength={24}
+        onChange={(e) => setVal(e.target.value)}
+        onMouseDown={(e) => e.stopPropagation()}
+        onPointerDown={(e) => e.stopPropagation()}
+        onKeyDown={(e) => {
+          e.stopPropagation();
+          if (e.key === 'Enter' || e.key === 'Escape') {
+            e.preventDefault();
+            if (e.key === 'Enter') onCommit(e.currentTarget.value);
+            else onCancel();
+          }
+        }}
+        onBlur={(e) => onCommit(e.currentTarget.value)}
+        style={{
+          position: 'absolute',
+          left: 10,
+          top: -14,
+          height: 27,
+          padding: '0 11px',
+          borderRadius: 999,
+          border: `1.5px solid ${z.color || theme.accent}`,
+          background: theme.panel,
+          color: theme.text,
+          ...font,
+          outline: 'none',
+          width,
+          boxSizing: 'border-box',
+          textOverflow: 'ellipsis',
+          zIndex: 3,
+        }}
+      />
+    </>
   );
 }
