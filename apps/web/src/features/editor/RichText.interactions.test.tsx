@@ -301,4 +301,24 @@ describe('partial rich-text styling — plain commit', () => {
       expect(doc.nodes.c1?.rich).toBeNull();
     });
   });
+
+  // Regression: while editing, the node box must grow WITH the text (WYSIWYG)
+  // instead of the text overflowing a fixed box that only resizes on commit.
+  it('grows the node box to fit the text as it is typed (not only on commit)', () => {
+    localStorage.setItem('mindflow_doc_rt8', JSON.stringify(DOC));
+    const { container } = renderEditor('/editor?map=rt8&title=x');
+
+    const editor = startEditingNode(container, 'c1');
+    const boxBefore = getViewport(container).querySelector('[data-node-id="c1"]') as HTMLElement;
+    const wBefore = parseFloat(boxBefore.style.width);
+    const hBefore = parseFloat(boxBefore.style.height);
+
+    // type a much longer, multi-line-forcing text
+    editor.textContent = 'hello world this is a very long shape label '.repeat(4).trim();
+    fireEvent.input(editor);
+
+    const boxAfter = getViewport(container).querySelector('[data-node-id="c1"]') as HTMLElement;
+    expect(parseFloat(boxAfter.style.width)).toBeGreaterThan(wBefore);
+    expect(parseFloat(boxAfter.style.height)).toBeGreaterThan(hBefore);
+  });
 });

@@ -410,6 +410,9 @@ function NodeEditBox({ id, n, boxStyle, align, controller }: NodeEditBoxProps) {
     if (!el) return;
     el.innerHTML = runsToHtml(n);
     controller.setRichEditorEl(el);
+    // Seed the live box size from the initial content so an already-long node
+    // opens at its correct size (and subsequent typing keeps it in sync).
+    controller.updateNodeEditSize(id, el);
     el.focus();
     const range = document.createRange();
     range.selectNodeContents(el);
@@ -457,6 +460,7 @@ function NodeEditBox({ id, n, boxStyle, align, controller }: NodeEditBoxProps) {
         e.stopPropagation();
         checkSelectionToolbar();
       }}
+      onInput={() => controller.updateNodeEditSize(id, ref.current)}
       onKeyDown={(e) => {
         e.stopPropagation();
         const composing = e.nativeEvent.isComposing || e.keyCode === 229;
