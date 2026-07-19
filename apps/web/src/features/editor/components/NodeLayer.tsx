@@ -81,6 +81,11 @@ function NodeBox({ id, node: n, g, nodes, mode, theme: th, rootX, controller }: 
   // rings EVERY targeted node, not just a single `selection`.
   const selected = controller.multiGroups.nodes.includes(id);
   const editing = controller.editingNodeId === id;
+  const resizing = controller.resizingNodeId === id;
+  // While actively editing or resizing, this box grows but neighbours only get
+  // magneted away on release — so lift it to the top layer meanwhile, so it
+  // cleanly covers whatever it overlaps instead of the two texts mixing.
+  const raised = editing || resizing;
   const attach = controller.attachTarget?.id === id;
   // presence: a remote peer's selection ring, distinct from `th.accent` above
   // (single-user/no-peers is a no-op — `peersSelecting` returns `[]`).
@@ -145,7 +150,9 @@ function NodeBox({ id, node: n, g, nodes, mode, theme: th, rootX, controller }: 
   // drop-target highlight while another node is being dragged over this one — port of
   // `Component#renderCanvas`'s `_attachHi` ring (MindFlow.dc.html:1158-1159).
   if (attach) boxStyle.boxShadow = `0 0 0 3px ${th.accent}, 0 0 0 7px ${hexA(th.accent, 0.25)}, 0 6px 18px rgba(0,0,0,.16)`;
-  if (editing) boxStyle.zIndex = 70;
+  // Above every other node box (default z ~auto) and the drag ghost (z 40) so the
+  // active shape's opaque background hides any neighbour beneath it while it grows.
+  if (raised) boxStyle.zIndex = 200;
 
   const shape = n.shape || 'round';
   let shapeBg: ReactNode = null;
