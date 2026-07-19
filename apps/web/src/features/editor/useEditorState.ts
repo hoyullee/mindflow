@@ -655,6 +655,9 @@ export function useEditorState(): EditorController {
   useEffect(() => {
     geomRef.current = geom;
   }, [geom]);
+  // Id of the free shape to magnet clear of overlap once the current interaction
+  // settles (set on drop / text-commit / create; consumed by the nudge effect).
+  const pendingNudgeRef = useRef<string | null>(null);
   const multiSelectionRef = useRef(multiSelection);
   useEffect(() => {
     multiSelectionRef.current = multiSelection;
@@ -1605,9 +1608,9 @@ export function useEditorState(): EditorController {
       setEditingNodeId(null);
       setEditLiveSize(null);
       setTextCtx(null);
-      // A free shape whose box just grew may now overlap a neighbour — the
-      // auto-resolve effect (keyed on `doc.nodes` + `editingNodeId` clearing)
-      // separates it on the next render, so no per-commit nudge is needed here.
+      // A free shape whose box just grew may now overlap a neighbour — flag it for
+      // the nudge effect (fires once editing clears + geom reflects the new size).
+      pendingNudgeRef.current = id;
     },
     [commitDoc, wouldDuplicateTitle],
   );
@@ -1802,6 +1805,8 @@ export function useEditorState(): EditorController {
       setSelectionState({ kind: 'node', id: newId });
       setMultiSelectionState(null);
       setEditingNodeId(newId);
+      // separate it from any shape it was staggered on top of, once its edit ends
+      pendingNudgeRef.current = newId;
     },
     [commitDoc, idFactory],
   );
@@ -2229,12 +2234,16 @@ export function useEditorState(): EditorController {
           const dist = Math.hypot(p.x - d.startGeomX, p.y - d.startGeomY);
           if (d.wasFree) {
             // a free shape dropped clear of any target moves to the drop point;
-            // the auto-resolve effect then magnets it clear of any shape/node it
-            // landed on (post-render, with fresh geom positions — see that effect).
-            if (dist > 0.5) commitDoc((doc0) => ({ ...doc0, nodes: mutations.moveFreeNode(doc0.nodes, d.id, p.x, p.y) }));
+            // the pending-nudge effect then magnets THIS shape (only) clear of any
+            // shape/node it landed on (post-render, with fresh geom — see that effect).
+            if (dist > 0.5) {
+              pendingNudgeRef.current = d.id;
+              commitDoc((doc0) => ({ ...doc0, nodes: mutations.moveFreeNode(doc0.nodes, d.id, p.x, p.y) }));
+            }
           } else if (dist > 40) {
             // dragged clear of the tree → detach to a free shape at the drop point
-            // (MindFlow.dc.html:1791-1797); overlap resolved by the auto-resolve effect.
+            // (MindFlow.dc.html:1791-1797); overlap resolved by the pending-nudge effect.
+            pendingNudgeRef.current = d.id;
             commitDoc((doc0) => ({ ...doc0, nodes: mutations.detachNodeToFree(doc0.nodes, d.id, p.x, p.y) }));
           }
           // small move, no target: snap back — nothing to commit (matches MindFlow.dc.html:1799)
@@ -2256,26 +2265,27 @@ export function useEditorState(): EditorController {
     };
   }, [commitDoc]);
 
-  // Keep free shapes from overlapping: whenever the doc settles (not mid-edit or
-  // mid-drag), separate every overlapping shape. Covers shapes that were SAVED
-  // overlapping (created before this magnet existed) — which the per-drop/-edit
-  // nudge never revisits — plus any residual overlap left by an edit. Applied via
-  // `setDoc` (a normalization, not an undoable action — matching the original's
-  // plain `setState` in `resolveOverlapFree`). Guarded to run at most once per
-  // distinct `nodes` object so it can never loop: it processes an input, and if it
-  // changes it, marks the RESULT processed too, so the follow-up render is a no-op.
-  const autoResolvedNodesRef = useRef<NodeMap | null>(null);
+  // Magnet the JUST-moved shape clear of overlap. Only the shape whose id is
+  // parked in `pendingNudgeRef` (set on drop / text-commit / create) is nudged —
+  // never the ones it landed on — so a stationary shape stays put (only the shape
+  // the user acted on moves). Runs once the interaction settles (not mid-edit /
+  // mid-drag) so `geomRef` holds the shape's final laid-out size + position.
+  // Applied via `setDoc` (a normalization, not an undoable action — matching the
+  // original's plain `setState` in `resolveOverlapFree`).
   useEffect(() => {
+    const target = pendingNudgeRef.current;
+    if (!target) return;
     if (editingNodeId || editingFloatId || editingZoneId || editingLineId) return;
     if (objDragRef.current || dragRef.current) return;
-    if (autoResolvedNodesRef.current === doc.nodes) return;
+    pendingNudgeRef.current = null;
+    const n = doc.nodes[target];
+    if (!n || n.parent) return; // gone, or reattached into the tree — nothing to separate
     // positions from geom (laid-out) — NOT doc.nodes, whose tree-node x/y is 0
     const boxOf = (id: string) => {
       const gg = geomRef.current[id];
       return gg ? { x: gg.x, y: gg.y, w: gg.w, h: gg.h } : null;
     };
-    const nudged = mutations.nudgeAllFreeNodes(doc.nodes, boxOf);
-    autoResolvedNodesRef.current = nudged; // mark input (and, when changed, the result) as handled
+    const nudged = mutations.nudgeFreeNode(doc.nodes, target, boxOf);
     if (nudged !== doc.nodes) setDoc((prev) => (prev.nodes === doc.nodes ? { ...prev, nodes: nudged } : prev));
   }, [doc.nodes, editingNodeId, editingFloatId, editingZoneId, editingLineId]);
 

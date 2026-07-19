@@ -110,8 +110,6 @@ export function computeFreeNudge(
   if (!obstacles.length) return null;
 
   const M = opts.margin ?? 12;
-  let dx = 0;
-  let dy = 0;
 
   const collides = (ddx: number, ddy: number): boolean => {
     const a = { x0: box.x0 + ddx - M, y0: box.y0 + ddy - M, x1: box.x1 + ddx + M, y1: box.y1 + ddy + M };
@@ -123,28 +121,41 @@ export function computeFreeNudge(
     return false;
   };
 
-  for (let iter = 0; iter < 14; iter++) {
-    let pushed = false;
-    for (const o of obstacles) {
-      const a = { x0: box.x0 + dx - M, y0: box.y0 + dy - M, x1: box.x1 + dx + M, y1: box.y1 + dy + M };
-      const ox = Math.min(a.x1, o.x1) - Math.max(a.x0, o.x0);
-      const oy = Math.min(a.y1, o.y1) - Math.max(a.y0, o.y0);
-      if (ox > 0.5 && oy > 0.5) {
-        pushed = true;
-        // push along the axis of least overlap (smallest displacement out)
-        if (ox < oy) dx += (a.x0 + a.x1) / 2 < (o.x0 + o.x1) / 2 ? -ox : ox;
-        else dy += (a.y0 + a.y1) / 2 < (o.y0 + o.y1) / 2 ? -oy : oy;
+  if (!collides(0, 0)) return null;
+
+  let dx = 0;
+  let dy = 0;
+
+  // Primary: the smallest push straight out along one of the four axes. This is
+  // predictable (the shape slides directly off whatever it's on) and minimal —
+  // no diagonal fling. We probe each direction until the box is clear and keep the
+  // shortest escape. Step 6px is fine enough that the result hugs the true minimum.
+  const STEP = 6;
+  const MAX = 1400;
+  let best: { dx: number; dy: number; dist: number } | null = null;
+  for (const [ux, uy] of [
+    [1, 0],
+    [-1, 0],
+    [0, 1],
+    [0, -1],
+  ] as const) {
+    for (let d = STEP; d <= MAX; d += STEP) {
+      if (!collides(ux * d, uy * d)) {
+        if (!best || d < best.dist) best = { dx: ux * d, dy: uy * d, dist: d };
+        break;
       }
     }
-    if (!pushed) break;
   }
 
-  if (collides(dx, dy)) {
-    dx = 0;
-    dy = 0;
-    const step = 24;
+  if (best) {
+    dx = best.dx;
+    dy = best.dy;
+  } else {
+    // Fully boxed in on every axis — spiral out from the drop point to the nearest
+    // fully clear spot (diagonal escapes only reachable this way).
+    const step = 16;
     let found = false;
-    for (let ring = 1; ring <= 40 && !found; ring++) {
+    for (let ring = 1; ring <= 90 && !found; ring++) {
       const r = ring * step;
       const nCand = Math.max(8, ring * 4);
       for (let i = 0; i < nCand; i++) {
