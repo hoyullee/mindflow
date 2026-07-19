@@ -45,6 +45,14 @@ export function useHomeController() {
   // docIds whose body we've already fetched (or are fetching) for card previews,
   // so the prefetch effect never re-requests the same doc.
   const previewFetchedRef = useRef<Set<string>>(new Set());
+  // Workspace-persistence guards. `canPersistWorkspaceRef` is true ONLY after the
+  // mount `spaceStore.load()` actually FULFILLED — so a failed/absent load never
+  // lets us overwrite the user's saved spaces/folders with the default seed (the
+  // "재로그인하니 스페이스가 사라짐" bug). `savedWorkspaceSigRef` holds the signature of
+  // the last hydrated/persisted workspace, so the hydration itself is never
+  // re-saved and unchanged state is a no-op.
+  const canPersistWorkspaceRef = useRef(false);
+  const savedWorkspaceSigRef = useRef<string | null>(null);
 
   const patch = (partial: Partial<HomeState>) => setState((prev) => ({ ...prev, ...partial }));
 
@@ -93,6 +101,10 @@ export function useHomeController() {
     let cancelled = false;
     void Promise.allSettled([spaceStore.load(), docStore.list()]).then((res) => {
       if (cancelled) return;
+      // Only allow persisting the workspace once the load actually SUCCEEDED. If
+      // it rejected (network/RLS/transient), we must not save — otherwise the
+      // default-seed fallback below would clobber the user's stored spaces.
+      canPersistWorkspaceRef.current = res[0].status === 'fulfilled';
       const ws = res[0].status === 'fulfilled' ? res[0].value : null;
       const metas = res[1].status === 'fulfilled' ? res[1].value : [];
       setState((prev) => {
@@ -138,6 +150,9 @@ export function useHomeController() {
         // Seed favs/deleted/trash from the backend's persisted meta
         // (isFavorite/deletedAt) so favorite/trash status survives a refresh.
         const { favs, deleted, trash } = seedFavAndTrashFromMetas(prev.favs, prev.deleted, prev.trash, metas);
+        // Baseline the just-hydrated workspace so the save effect treats it as
+        // already-persisted (no re-save of what we just loaded/seeded).
+        savedWorkspaceSigRef.current = JSON.stringify({ spaces, mapFolders });
         // Always flip `loaded` so the grid drops its loading skeleton and
         // renders the real (possibly empty) state.
         return { ...prev, spaces, activeSpace, curFolder, mapFolders, favs, deleted, trash, loaded: true };
@@ -226,15 +241,21 @@ export function useHomeController() {
   }, [state.loaded, state.spaces, docStore]);
 
   // Persist spaces (+ map→folder) via the `SpaceStore` port whenever they
-  // change, so user-created spaces/folders survive a refresh AND (in Supabase
-  // mode) sync across every device the user logs into. Gated on `loaded` so we
-  // only start saving AFTER the mount restore + DocStore merge have settled
-  // (else the transient initial state would clobber the saved data). Saved
-  // immediately (not debounced) so a quick refresh right after a change can't
-  // race a pending timer — space/folder edits are deliberate and infrequent, so
-  // one write per change is fine.
+  // actually change, so user-created spaces/folders survive a refresh AND (in
+  // Supabase mode) sync across every device the user logs into. Two guards keep
+  // a failed load from destroying data:
+  //   1. `canPersistWorkspaceRef` — never write unless the mount load FULFILLED
+  //      (a rejected load left us on the default seed; saving it would wipe the
+  //      user's real workspace — the re-login data-loss bug).
+  //   2. signature check — the hydration is baselined, so we only write on a
+  //      genuine change and never re-save what we just loaded.
+  // Saved immediately (not debounced) so a quick refresh right after a change
+  // can't race a pending timer — space/folder edits are deliberate and infrequent.
   useEffect(() => {
-    if (!state.loaded) return;
+    if (!state.loaded || !canPersistWorkspaceRef.current) return;
+    const sig = JSON.stringify({ spaces: state.spaces, mapFolders: state.mapFolders });
+    if (sig === savedWorkspaceSigRef.current) return;
+    savedWorkspaceSigRef.current = sig;
     void spaceStore.save({ spaces: state.spaces, mapFolders: state.mapFolders }).catch(() => {
       /* save failed (offline, RLS, ...) — non-fatal; the next change retries */
     });
