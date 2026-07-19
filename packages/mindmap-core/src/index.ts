@@ -41,6 +41,9 @@ export { layout } from './layout';
 export type { Point, LineGeometry, LineLike, Box, PortSide, AnchoredLineLike, LineEndpoints, SnapCandidate } from './geometry';
 export { resolveLineGeometry, cubicAt, portPoint, borderPoint, resolveLineEndpoints, findLineSnap, LINE_SNAP_DISTANCE } from './geometry';
 
+export type { OverlapSize, FreeNudge, FreeNudgeOptions } from './overlap';
+export { computeFreeNudge } from './overlap';
+
 // M5: Doc <-> Y.Doc CRDT binding (see docs/architecture/0001-architecture.md
 // §2's `crdt/` seam). Pure — `yjs` has no DOM/network dependency itself, so
 // this stays framework-agnostic; transport lives in `apps/web/src/collab/`.

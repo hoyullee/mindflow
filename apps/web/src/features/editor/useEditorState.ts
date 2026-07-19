@@ -1605,6 +1605,21 @@ export function useEditorState(): EditorController {
       setEditingNodeId(null);
       setEditLiveSize(null);
       setTextCtx(null);
+      // If a free shape's box grew to fit the new text, magnet it clear of any
+      // neighbour it now overlaps. Deferred a frame so `geomRef` reflects the new
+      // size; folded into the same undo step (continuous). Port of MindFlow.dc.html:2637-2639.
+      requestAnimationFrame(() => {
+        const n = docRef.current.nodes[id];
+        if (!n || n.parent || id === ROOT_ID) return;
+        const boxOf = (nid: string) => {
+          const gg = geomRef.current[nid];
+          return gg ? { w: gg.w, h: gg.h } : null;
+        };
+        commitDoc((d) => {
+          const nudged = mutations.nudgeFreeNode(d.nodes, id, boxOf);
+          return nudged === d.nodes ? d : { ...d, nodes: nudged };
+        }, true);
+      });
     },
     [commitDoc, wouldDuplicateTitle],
   );
@@ -2224,13 +2239,20 @@ export function useEditorState(): EditorController {
           });
         } else {
           const dist = Math.hypot(p.x - d.startGeomX, p.y - d.startGeomY);
+          const boxOf = (nodeId: string) => {
+            const gg = geomRef.current[nodeId];
+            return gg ? { w: gg.w, h: gg.h } : null;
+          };
           if (d.wasFree) {
-            // a free shape dropped clear of any target moves to the drop point (MindFlow.dc.html:1801-1809,
-            // minus the free-shape-overlap auto-nudge, already deferred in Editor-b)
-            if (dist > 0.5) commitDoc((doc0) => ({ ...doc0, nodes: mutations.moveFreeNode(doc0.nodes, d.id, p.x, p.y) }));
+            // a free shape dropped clear of any target moves to the drop point, then
+            // magnets clear of any other shape it landed on — in ONE commit (no flicker),
+            // port of MindFlow.dc.html:1799-1809 (`applyFreeNudge`).
+            if (dist > 0.5)
+              commitDoc((doc0) => ({ ...doc0, nodes: mutations.nudgeFreeNode(mutations.moveFreeNode(doc0.nodes, d.id, p.x, p.y), d.id, boxOf) }));
           } else if (dist > 40) {
-            // dragged clear of the tree → detach to a free shape at the drop point (MindFlow.dc.html:1791-1797)
-            commitDoc((doc0) => ({ ...doc0, nodes: mutations.detachNodeToFree(doc0.nodes, d.id, p.x, p.y) }));
+            // dragged clear of the tree → detach to a free shape at the drop point, then
+            // nudge clear of any overlap (MindFlow.dc.html:1791-1797 + `detachNode`'s nudge).
+            commitDoc((doc0) => ({ ...doc0, nodes: mutations.nudgeFreeNode(mutations.detachNodeToFree(doc0.nodes, d.id, p.x, p.y), d.id, boxOf) }));
           }
           // small move, no target: snap back — nothing to commit (matches MindFlow.dc.html:1799)
         }
