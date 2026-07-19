@@ -10,8 +10,8 @@
 // undo/redo. All of them build on `cloneNodes`/`descendants` from the core /
 // tree helpers rather than re-deriving that logic.
 
-import type { Float, Line, Node, NodeMap, RichRun, Zone } from '@mindflow/mindmap-core';
-import { ROOT_ID, cloneNodes, stripRichStyle } from '@mindflow/mindmap-core';
+import type { Float, Line, Node, NodeMap, OverlapSize, RichRun, Zone } from '@mindflow/mindmap-core';
+import { ROOT_ID, cloneNodes, computeFreeNudge, stripRichStyle } from '@mindflow/mindmap-core';
 import { descendants } from './tree';
 
 // ---- id generation (port of `Component#newId`, MindFlow.dc.html:885 — a
@@ -203,6 +203,28 @@ export function moveFreeNode(nodes: NodeMap, id: string, x: number, y: number): 
     on.x = x;
     on.y = y;
   }
+  return out;
+}
+
+/**
+ * Magnet "don't overlap" nudge — shifts the free shape (subtree) rooted at `id`
+ * clear of every other node box, using the core's pure `computeFreeNudge`. Sizes
+ * come from `sizeOf` (the editor's live `geom`); positions from the nodes. Returns
+ * the same `nodes` reference untouched when nothing needs to move, so callers can
+ * fold it into an existing commit without forcing a spurious history entry.
+ * Port of `Component#applyFreeNudge` (MindFlow.dc.html:2241-2245).
+ */
+export function nudgeFreeNode(nodes: NodeMap, id: string, sizeOf: (nodeId: string) => OverlapSize | null): NodeMap {
+  const v = computeFreeNudge(id, nodes, sizeOf);
+  if (!v) return nodes;
+  const out = cloneNodes(nodes);
+  v.ids.forEach((nid) => {
+    const on = out[nid];
+    if (on) {
+      on.x += v.dx;
+      on.y += v.dy;
+    }
+  });
   return out;
 }
 
