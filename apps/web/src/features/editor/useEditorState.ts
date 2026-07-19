@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { MouseEvent as ReactMouseEvent, PointerEvent as ReactPointerEvent } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
-import type { Box, Doc, Float, Line, LineAnchor, LayoutMode, NodeMap, SizeOf, SnapCandidate, Zone } from '@mindflow/mindmap-core';
+import type { Box, Doc, Float, Line, LineAnchor, LayoutMode, Node, NodeMap, SizeOf, SnapCandidate, Zone } from '@mindflow/mindmap-core';
 import { HistoryStack, ROOT_ID, applyPartialStyle, cubicAt, findLineSnap, layout, resolveLineEndpoints, resolveLineGeometry, serializeDoc, toMarkdown } from '@mindflow/mindmap-core';
 import { domToRuns, linearize, runsToHtml, setLinearSelection } from './richtextDom';
 import { useDocStore } from '../../adapters/BackendContext';
@@ -247,6 +247,10 @@ export interface EditorController {
    * partial-style `rich` runs in one step (unlike `commitNodeText` above,
    * which is plain-text-only and used by every OTHER text editor). */
   commitNodeRichText: (id: string, el: HTMLElement | null) => void;
+  /** Re-measure the node being edited from its live `contentEditable` content so
+   * the box grows/shrinks with the text as it's typed (WYSIWYG). Called on every
+   * input in `NodeEditBox`. */
+  updateNodeEditSize: (id: string, el: HTMLElement | null) => void;
   /** The floating partial-style toolbar's open state — port of
    * `Component#state.textCtx` (MindFlow.dc.html:2782, 3088-3099). `null` when
    * closed; only ever rendered while `editingNodeId` is also set. */
@@ -446,6 +450,12 @@ export function useEditorState(): EditorController {
   const [showMinimap, setShowMinimap] = useState(true);
   const [outlineEditId, setOutlineEditId] = useState<string | null>(null);
   const [editingNodeId, setEditingNodeId] = useState<string | null>(null);
+  // Live box size for the node currently being edited, re-measured on each
+  // keystroke from the `contentEditable`'s content (`updateNodeEditSize`). While
+  // editing, `geom` uses this instead of the node's stale committed size, so the
+  // box grows/shrinks WITH the text (WYSIWYG) instead of the text overflowing a
+  // fixed box until commit re-lays-out. `null` = not measured yet (use committed).
+  const [editLiveSize, setEditLiveSize] = useState<{ w: number; h: number } | null>(null);
   const [editingFloatId, setEditingFloatId] = useState<string | null>(null);
   const [editingLineId, setEditingLineId] = useState<string | null>(null);
   const [editingZoneId, setEditingZoneId] = useState<string | null>(null);
@@ -595,10 +605,18 @@ export function useEditorState(): EditorController {
       if (!n) return;
       const m = computeMetrics(n, depth, measurer);
       const g: NodeGeom = { ...m, x: n.x, y: n.y, depth };
+      // While this node is being edited, size the box to the live text (kept
+      // centered on the same x/y) so it tracks the content instead of overflowing
+      // a stale committed box. `editLiveSize` is computeMetrics of the current
+      // editor content, so it matches exactly what commit will produce.
+      if (id === editingNodeId && editLiveSize) {
+        g.w = editLiveSize.w;
+        g.h = editLiveSize.h;
+      }
       out[id] = g;
     });
     return out;
-  }, [vis, laidOutNodes, measurer]);
+  }, [vis, laidOutNodes, measurer, editingNodeId, editLiveSize]);
 
   const theme = themeOf(doc.themeKey);
 
@@ -1523,8 +1541,26 @@ export function useEditorState(): EditorController {
     setSelectionState({ kind: 'node', id });
     setMultiSelectionState(null);
     setEditingNodeId(id);
+    setEditLiveSize(null);
     setTextCtx(null);
   }, []);
+  /** Re-measure the node being edited from its live `contentEditable` content and
+   * store the result so the box tracks the text as the user types (WYSIWYG). Runs
+   * on every input in `NodeEditBox`; uses the same `computeMetrics` the commit/layout
+   * path uses, so the editing box size matches the committed size exactly. */
+  const updateNodeEditSize = useCallback(
+    (id: string, el: HTMLElement | null) => {
+      if (!el) return;
+      const base = docRef.current.nodes[id];
+      if (!base) return;
+      const depth = geomRef.current[id]?.depth ?? (id === ROOT_ID ? 0 : 1);
+      const parsed = domToRuns(el);
+      const liveNode: Node = { ...base, text: parsed.text, rich: parsed.rich };
+      const m = computeMetrics(liveNode, depth, measurer);
+      setEditLiveSize((prev) => (prev && prev.w === m.w && prev.h === m.h ? prev : { w: m.w, h: m.h }));
+    },
+    [measurer],
+  );
   // The ROOT node's text IS the map's filename, so any edit that renames it —
   // the title chip OR the on-canvas root node — must not collide with another
   // map's name. Returns true when `next` would duplicate an existing title.
@@ -1553,6 +1589,7 @@ export function useEditorState(): EditorController {
     (id: string, el: HTMLElement | null) => {
       if (!el) {
         setEditingNodeId(null);
+        setEditLiveSize(null);
         setTextCtx(null);
         return;
       }
@@ -1560,17 +1597,20 @@ export function useEditorState(): EditorController {
       if (id === ROOT_ID && wouldDuplicateTitle(parsed.text)) {
         setTitleError(`이미 "${parsed.text.trim()}" 이름의 맵이 있어요`);
         setEditingNodeId(null);
+        setEditLiveSize(null);
         setTextCtx(null);
         return;
       }
       commitDoc((d) => ({ ...d, nodes: mutations.commitNodeRichText(d.nodes, id, parsed.text, parsed.rich) }));
       setEditingNodeId(null);
+      setEditLiveSize(null);
       setTextCtx(null);
     },
     [commitDoc, wouldDuplicateTitle],
   );
   const cancelNodeEdit = useCallback(() => {
     setEditingNodeId(null);
+    setEditLiveSize(null);
     setTextCtx(null);
   }, []);
 
@@ -2626,6 +2666,7 @@ export function useEditorState(): EditorController {
     startEditNode,
     commitNodeText,
     commitNodeRichText,
+    updateNodeEditSize,
     cancelNodeEdit,
     textCtx,
     openTextCtx,
