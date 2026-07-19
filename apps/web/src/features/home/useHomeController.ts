@@ -1,6 +1,9 @@
 import { useEffect, useRef, useState } from 'react';
 import type { ChangeEvent, KeyboardEvent } from 'react';
 import { useNavigate } from 'react-router-dom';
+import { parseDoc, serializeDoc } from '@mindflow/mindmap-core';
+import { exportDocPng } from '../editor/png';
+import { themeOf } from '../editor/theme';
 import { useBackend } from '../../adapters/BackendContext';
 import {
   DRIVE_FILES,
@@ -617,6 +620,11 @@ export function useHomeController() {
   };
   const docRawForExport = (title: string, docId?: string): string | null => {
     if (docId) {
+      // Prefer the prefetched full doc body: in backend (Supabase) mode the
+      // localStorage `mindflow_doc_*` cache is empty, but `previewDocs` holds
+      // the canonical doc (nodes/floats/lines/zones/…) loaded via the DocStore.
+      const pre = state.previewDocs[docId];
+      if (pre) return pre;
       const raw = readDocRaw(docId);
       if (raw) return raw;
     }
@@ -649,8 +657,17 @@ export function useHomeController() {
     const raw = docRawForExport(title, docId);
     const safe = safeFileName(title);
     if (raw) {
-      downloadFile(safe + '.json', raw);
-      return;
+      // Re-serialize through the core so the download is the canonical doc
+      // (nodes tree + floats/lines/zones), pretty-printed. Falls back to the
+      // raw string if it isn't parseable as a MindFlow doc.
+      try {
+        const doc = parseDoc(JSON.parse(raw));
+        downloadFile(safe + '.json', doc ? JSON.stringify(serializeDoc(doc), null, 2) : raw);
+        return;
+      } catch {
+        downloadFile(safe + '.json', raw);
+        return;
+      }
     }
     downloadFile(
       safe + '.json',
@@ -662,96 +679,21 @@ export function useHomeController() {
     );
   };
 
-  const exportMapOutline = (title: string, docId?: string) => {
+  /** Render the map's real doc to a full-resolution PNG (shared editor renderer). */
+  const exportMapPNG = (title: string, docId?: string) => {
     patch({ openMenu: null, moveFor: null, exportFor: null });
     const raw = docRawForExport(title, docId);
-    const safe = safeFileName(title);
-    let d: { nodes?: Record<string, { text?: string; emoji?: string; note?: string; children?: string[]; free?: boolean }>; floats?: { text?: string }[] } | null = null;
-    try {
-      d = raw ? JSON.parse(raw) : null;
-    } catch {
-      d = null;
-    }
-    const out: string[] = [];
-    if (d && d.nodes && d.nodes.root) {
-      const nodes = d.nodes;
-      const walk = (id: string, depth: number) => {
-        const n = nodes[id];
-        if (!n) return;
-        const label = `${n.emoji ? n.emoji + ' ' : ''}${(n.text || '').replace(/\n/g, ' ')}`.trim();
-        if (depth === 0) out.push('# ' + label);
-        else out.push('  '.repeat(depth - 1) + '- ' + label);
-        if (n.note && n.note.trim()) out.push('  '.repeat(Math.max(0, depth - 1)) + '  > ' + n.note.trim().replace(/\n/g, ' '));
-        (n.children || []).forEach((cid) => walk(cid, depth + 1));
-      };
-      walk('root', 0);
-      const frees = Object.keys(nodes).filter((k) => nodes[k]?.free);
-      if (frees.length) {
-        out.push('', '## 개별 주제');
-        frees.forEach((k) => walk(k, 1));
-      }
-      const floats = d.floats || [];
-      if (floats.some((f) => (f.text || '').trim())) {
-        out.push('', '## 메모');
-        floats.forEach((f) => {
-          if ((f.text || '').trim()) out.push('- ' + f.text!.trim().replace(/\n/g, ' '));
-        });
-      }
-    } else {
-      out.push('# ' + title);
-    }
-    downloadFile(safe + '.md', out.join('\n'), 'text/markdown;charset=utf-8');
-  };
-
-  /** Home.dc.html `exportMapPNG` — rasterizes the card's already-rendered thumbnail SVG. */
-  const exportMapPNG = (title: string) => {
-    patch({ openMenu: null, moveFor: null, exportFor: null });
-    let svgEl: SVGSVGElement | null = null;
-    document.querySelectorAll('.map-card').forEach((card) => {
-      if (!svgEl && card.getAttribute('data-title') === title) svgEl = card.querySelector('.map-thumb svg');
-    });
-    if (!svgEl) {
+    if (!raw) {
       patch({ importError: '미리보기가 없어 이미지를 만들 수 없어요. 맵을 한 번 열어 저장한 뒤 다시 시도해 주세요.' });
       return;
     }
-    const clone = (svgEl as SVGSVGElement).cloneNode(true) as SVGSVGElement;
-    const vb = (clone.getAttribute('viewBox') || '0 0 800 600').split(/\s+/).map(Number);
-    const [vbX = 0, vbY = 0, vbW = 800, vbH = 600] = vb;
-    const W = Math.max(1, Math.ceil(vbW));
-    const H = Math.max(1, Math.ceil(vbH));
-    clone.setAttribute('width', String(W));
-    clone.setAttribute('height', String(H));
-    clone.removeAttribute('style');
-    const bg = document.createElementNS('http://www.w3.org/2000/svg', 'rect');
-    bg.setAttribute('x', String(vbX));
-    bg.setAttribute('y', String(vbY));
-    bg.setAttribute('width', String(vbW));
-    bg.setAttribute('height', String(vbH));
-    bg.setAttribute('fill', '#f5ece5');
-    clone.insertBefore(bg, clone.firstChild);
-    const str = new XMLSerializer().serializeToString(clone);
-    const scale = Math.min(2.5, 6000 / Math.max(W, H));
-    const img = new Image();
-    img.onload = () => {
-      const cv = document.createElement('canvas');
-      cv.width = Math.round(W * scale);
-      cv.height = Math.round(H * scale);
-      const ctx = cv.getContext('2d');
-      if (!ctx) return;
-      ctx.drawImage(img, 0, 0, cv.width, cv.height);
-      cv.toBlob((b) => {
-        if (!b) return;
-        const url = URL.createObjectURL(b);
-        const a = document.createElement('a');
-        a.href = url;
-        a.download = safeFileName(title) + '.png';
-        document.body.appendChild(a);
-        a.click();
-        a.remove();
-        setTimeout(() => URL.revokeObjectURL(url), 2000);
-      }, 'image/png');
-    };
-    img.src = 'data:image/svg+xml;charset=utf-8,' + encodeURIComponent(str);
+    try {
+      const doc = parseDoc(JSON.parse(raw));
+      if (!doc) throw new Error('unparseable');
+      exportDocPng(doc, themeOf(doc.themeKey), safeFileName(title));
+    } catch {
+      patch({ importError: '이미지를 만들 수 없어요. 맵을 한 번 열어 저장한 뒤 다시 시도해 주세요.' });
+    }
   };
 
   const handleImport = (file: File) => {
@@ -1023,7 +965,6 @@ export function useHomeController() {
     openImport,
     onImportFile,
     exportMap,
-    exportMapOutline,
     exportMapPNG,
     activeFolders,
     openNewFolder,

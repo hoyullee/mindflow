@@ -288,7 +288,7 @@ export function MapCard({ card, controller, draggableEnabled, compact = false }:
             onClick={(e) => {
               e.preventDefault();
               e.stopPropagation();
-              controller.exportMapPNG(card.title);
+              controller.exportMapPNG(card.title, card.docId);
             }}
             style={{ display: 'flex', alignItems: 'center', gap: 9, padding: '9px 13px', fontSize: 13, cursor: 'pointer', color: '#33281f' }}
           >
@@ -306,27 +306,6 @@ export function MapCard({ card, controller, draggableEnabled, compact = false }:
             onClick={(e) => {
               e.preventDefault();
               e.stopPropagation();
-              controller.exportMapOutline(card.title, card.docId);
-            }}
-            style={{ display: 'flex', alignItems: 'center', gap: 9, padding: '9px 13px', fontSize: 13, cursor: 'pointer', color: '#33281f' }}
-          >
-            <span style={{ display: 'flex', color: '#7c6d60' }}>
-              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                <line x1="8" y1="6" x2="21" y2="6" />
-                <line x1="8" y1="12" x2="21" y2="12" />
-                <line x1="8" y1="18" x2="21" y2="18" />
-                <line x1="3" y1="6" x2="3.01" y2="6" />
-                <line x1="3" y1="12" x2="3.01" y2="12" />
-                <line x1="3" y1="18" x2="3.01" y2="18" />
-              </svg>
-            </span>{' '}
-            텍스트 개요 (.md)
-          </div>
-          <div
-            className="menu-row"
-            onClick={(e) => {
-              e.preventDefault();
-              e.stopPropagation();
               controller.exportMap(card.title, card.docId);
             }}
             style={{ display: 'flex', alignItems: 'center', gap: 9, padding: '9px 13px', fontSize: 13, cursor: 'pointer', color: '#33281f' }}
@@ -337,7 +316,7 @@ export function MapCard({ card, controller, draggableEnabled, compact = false }:
                 <polyline points="14 2 14 8 20 8" />
               </svg>
             </span>{' '}
-            MindFlow 파일 (.json)
+            JSON 파일 (.json)
           </div>
         </div>
 
