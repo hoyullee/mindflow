@@ -14,9 +14,11 @@
 // unit tests), this is a no-op — matching `metrics.ts`'s `CanvasTextMeasurer`
 // fallback philosophy: never throw, just skip the unavailable capability.
 
-import type { Box, Doc, Line, LineAnchor, Node } from '@mindflow/mindmap-core';
+import type { Box, Doc, Float, Line, LineAnchor, Node } from '@mindflow/mindmap-core';
 import { ROOT_ID, cubicAt, layout, resolveLineEndpoints, resolveLineGeometry } from '@mindflow/mindmap-core';
 import { colorOf, buildVisible } from './tree';
+import type { EdgeStyle } from './tree';
+import { buildEdgePath, edgeStrokeWidth } from './edges';
 import { hexA } from './theme';
 import type { Theme } from './theme';
 import { CanvasTextMeasurer, computeMetrics } from './metrics';
@@ -146,9 +148,45 @@ function lineGeom(l: Line, doc: Doc, geom: GeomMap) {
   return resolveLineGeometry({ ...l, ...ep });
 }
 
+interface FloatBox {
+  w: number;
+  h: number;
+  fpx: number;
+  lh: number;
+  lines: string[];
+  collapsed: boolean;
+}
+
+/** Memo card metrics mirroring `FloatLayer`'s CSS box: a `min-height` card that
+ * GROWS to fit its wrapped text (padding 9/11/9/32, `line-height:1.55`), so the
+ * PNG memo is the same size as the on-screen editor's — not clipped to `f.h`. */
+function floatBox(ctx: CanvasRenderingContext2D, f: Float): FloatBox {
+  const fpx = f.tsize === 's' ? 11.5 : f.tsize === 'l' ? 15.5 : 13;
+  const w = f.w || 160;
+  const lh = fpx * 1.55;
+  const collapsed = !!f.collapsed;
+  ctx.font = `${f.bold ? 700 : 400} ${fpx}px Pretendard, sans-serif`;
+  const innerW = Math.max(8, w - 32 - 11); // left 32 (fold toggle), right 11
+  const lines = collapsed ? [String(f.text || '').split('\n')[0] || ''] : wrapLines(ctx, f.text || '', innerW);
+  const textH = Math.max(18, lines.length * lh); // text block has a min-height of 18
+  const grown = 9 + textH + 9; // top + bottom padding
+  const h = collapsed ? Math.max(38, grown) : Math.max(f.h || 44, grown);
+  return { w, h, fpx, lh, lines, collapsed };
+}
+
 export function exportPng(doc: Doc, geom: GeomMap, theme: Theme, filename: string): void {
   const ids = Object.keys(geom).filter((id) => doc.nodes[id]);
   if (!ids.length) return;
+
+  const canvas = document.createElement('canvas');
+  const ctx = get2dContext(canvas);
+  if (!ctx || typeof canvas.toBlob !== 'function') return; // headless env (e.g. jsdom) — no-op, nothing to rasterize with
+
+  // Pre-measure memos up front so both the export bounds and the draw pass use
+  // the same grown-to-fit height (measuring needs the `ctx`, so this must run
+  // BEFORE the canvas is resized — that resets ctx state, not the stored numbers).
+  const fBoxes = new Map<string, FloatBox>();
+  doc.floats.forEach((f) => fBoxes.set(f.id, floatBox(ctx, f)));
 
   let x0 = Infinity;
   let y0 = Infinity;
@@ -164,7 +202,10 @@ export function exportPng(doc: Doc, geom: GeomMap, theme: Theme, filename: strin
     const g = geom[id];
     if (g) grow(g.x - g.w / 2, g.y - g.h / 2, g.x + g.w / 2, g.y + g.h / 2);
   });
-  doc.floats.forEach((f) => grow(f.x, f.y, f.x + (f.w || 160), f.y + (f.h || (f.collapsed ? 30 : 44))));
+  doc.floats.forEach((f) => {
+    const m = fBoxes.get(f.id)!;
+    grow(f.x, f.y, f.x + m.w, f.y + m.h);
+  });
   doc.zones.forEach((z) => grow(z.x, z.y - 16, z.x + z.w, z.y + z.h));
   doc.lines.forEach((l) => {
     const c = lineGeom(l, doc, geom);
@@ -177,10 +218,6 @@ export function exportPng(doc: Doc, geom: GeomMap, theme: Theme, filename: strin
   const W = Math.max(1, Math.ceil(x1 - x0));
   const H = Math.max(1, Math.ceil(y1 - y0));
 
-  const canvas = document.createElement('canvas');
-  const ctx = get2dContext(canvas);
-  if (!ctx || typeof canvas.toBlob !== 'function') return; // headless env (e.g. jsdom) — no-op, nothing to rasterize with
-
   const scale = Math.min(2, 6000 / Math.max(W, H));
   canvas.width = Math.round(W * scale);
   canvas.height = Math.round(H * scale);
@@ -190,50 +227,36 @@ export function exportPng(doc: Doc, geom: GeomMap, theme: Theme, filename: strin
   ctx.fillStyle = theme.canvasBg;
   ctx.fillRect(x0, y0, W, H);
 
-  // zones
-  doc.zones.forEach((z) => {
-    const zc = z.color || theme.accent;
-    ctx.fillStyle = hexA(zc, 0.07);
-    ctx.strokeStyle = hexA(zc, 0.55);
-    ctx.lineWidth = 2;
-    ctx.setLineDash([7, 5]);
-    ctx.beginPath();
-    roundRectPath(ctx, z.x, z.y, z.w, z.h, 16);
-    ctx.fill();
-    ctx.stroke();
-    ctx.setLineDash([]);
-    const label = z.label || '영역';
-    const lw = Math.min(z.w - 20, label.length * 13 + 26);
-    ctx.fillStyle = zc;
-    ctx.beginPath();
-    roundRectPath(ctx, z.x + 10, z.y - 13, lw, 26, 13);
-    ctx.fill();
-    ctx.fillStyle = '#fff';
-    ctx.font = '700 12.5px Pretendard, sans-serif';
-    ctx.textAlign = 'center';
-    ctx.textBaseline = 'middle';
-    ctx.fillText(label, z.x + 10 + lw / 2, z.y + 1);
-  });
+  // Layers in the editor's effective z-order (`Viewport` + per-layer z-index):
+  // tree edges → nodes → free lines → zones (z-8) → memos (z-10). Zones paint
+  // ABOVE nodes so a grouping box is never hidden behind the shapes it groups.
 
-  // tree edges — always a simple curve, matching `exportSVGString` (ignores the live edgeStyle)
+  // tree edges — honor the live layout mode + edge style (curve/elbow/straight),
+  // same geometry as `EdgeLayer`/`buildEdgePath`, so 조직도(down)/꺾은선/직선 match.
+  const mode = doc.layoutMode;
+  const edgeStyle = (doc.edgeStyle as EdgeStyle | undefined) || 'curve';
+  const edgeInX = (id: string): number => {
+    const n = doc.nodes[id];
+    const g = geom[id];
+    return n?.shape === 'parallelogram' && g ? g.w * 0.08 : 0;
+  };
   ids.forEach((id) => {
     const n = doc.nodes[id];
     const g = geom[id];
     if (!n || !g || !n.parent) return;
     const p = geom[n.parent];
     if (!p) return;
-    const sx = g.x >= p.x ? p.x + p.w / 2 : p.x - p.w / 2;
-    const ex = g.x >= p.x ? g.x - g.w / 2 : g.x + g.w / 2;
-    const mx = (sx + ex) / 2;
+    const d = buildEdgePath(mode, edgeStyle, p, g, edgeInX(n.parent), edgeInX(id));
     ctx.strokeStyle = colorOf(id, doc.nodes, theme);
-    ctx.lineWidth = 2.4;
+    ctx.lineWidth = edgeStrokeWidth(g.depth);
+    ctx.lineCap = 'round';
+    ctx.lineJoin = 'round';
     ctx.globalAlpha = 0.85;
-    ctx.beginPath();
-    ctx.moveTo(sx, p.y);
-    ctx.bezierCurveTo(mx, p.y, mx, g.y, ex, g.y);
-    ctx.stroke();
+    ctx.stroke(new Path2D(d));
     ctx.globalAlpha = 1;
   });
+  ctx.lineCap = 'butt';
+  ctx.lineJoin = 'miter';
 
   // nodes
   ids.forEach((id) => {
@@ -264,13 +287,18 @@ export function exportPng(doc: Doc, geom: GeomMap, theme: Theme, filename: strin
     // Wrap to the box's inner width so long labels break onto multiple lines
     // (the box height already accounts for the wrap via computeMetrics).
     const padX = isRoot ? 24 : depth === 1 ? 15 : 13;
-    const lines = wrapLines(ctx, label, Math.max(8, g.w - padX * 2 - 6));
+    const lines = wrapLines(ctx, label, Math.max(8, g.w - padX * 2 - 7));
     const lh = fpx * 1.35;
     const ty0 = g.y - ((lines.length - 1) * lh) / 2;
+    // Honor the node's text alignment (left/center/right) — the editor's
+    // `NodeBox` justifies the text block per `n.align`; the PNG used to always
+    // center it, so left/right-aligned shapes looked wrong.
+    const align = n.align === 'left' ? 'left' : n.align === 'right' ? 'right' : 'center';
+    const tx = align === 'left' ? x + padX : align === 'right' ? x + g.w - padX : g.x;
     ctx.fillStyle = tcol;
-    ctx.textAlign = 'center';
+    ctx.textAlign = align;
     ctx.textBaseline = 'middle';
-    lines.forEach((ln, i) => ctx.fillText(ln, g.x, ty0 + i * lh));
+    lines.forEach((ln, i) => ctx.fillText(ln, tx, ty0 + i * lh));
   });
 
   // free lines
@@ -316,27 +344,72 @@ export function exportPng(doc: Doc, geom: GeomMap, theme: Theme, filename: strin
     }
   });
 
-  // memos
-  doc.floats.forEach((f) => {
-    const fw = f.w || 160;
-    const fh = f.h || (f.collapsed ? 30 : 44);
-    ctx.fillStyle = f.bg || '#fdf6c9';
-    ctx.strokeStyle = f.bg ? hexA('#8a7365', 0.35) : '#e8d982';
-    ctx.lineWidth = 1.4;
+  // zones — drawn above nodes/lines (editor z-index 8). Label pill ellipsizes to
+  // fit its width, matching `ZoneLayer`'s `text-overflow: ellipsis`.
+  doc.zones.forEach((z) => {
+    const zc = z.color || theme.accent;
+    ctx.fillStyle = hexA(zc, 0.07);
+    ctx.strokeStyle = hexA(zc, 0.55);
+    ctx.lineWidth = 2;
+    ctx.setLineDash([7, 5]);
     ctx.beginPath();
-    roundRectPath(ctx, f.x, f.y, fw, fh, 8);
+    roundRectPath(ctx, z.x, z.y, z.w, z.h, 16);
     ctx.fill();
     ctx.stroke();
-    const fpx = 12 * (f.tsize === 's' ? 0.9 : f.tsize === 'l' ? 1.15 : 1);
-    const tl = f.collapsed ? [(f.text || '').split('\n')[0] || ''] : (f.text || '').split('\n');
-    ctx.fillStyle = f.textColor || '#5a4a3a';
-    ctx.font = `${f.bold ? 800 : 500} ${fpx}px Pretendard, sans-serif`;
-    ctx.textAlign = 'left';
-    ctx.textBaseline = 'alphabetic';
-    tl.forEach((ln, i) => {
-      const ly = f.y + 16 + i * fpx * 1.45;
-      if (ly < f.y + fh - 6) ctx.fillText(ln, f.x + 10, ly);
-    });
+    ctx.setLineDash([]);
+    ctx.font = '700 12.5px Pretendard, sans-serif';
+    const raw = z.label || '영역';
+    const maxPillW = Math.max(20, z.w - 20); // CSS: max-width calc(100% - 20px)
+    const innerMax = maxPillW - 26; // horizontal padding 13*2
+    let label = raw;
+    if (ctx.measureText(label).width > innerMax) {
+      while (label.length > 1 && ctx.measureText(label + '…').width > innerMax) label = label.slice(0, -1);
+      label += '…';
+    }
+    const lw = Math.min(maxPillW, ctx.measureText(label).width + 26);
+    ctx.fillStyle = zc;
+    ctx.beginPath();
+    roundRectPath(ctx, z.x + 10, z.y - 14, lw, 27, 13.5);
+    ctx.fill();
+    ctx.fillStyle = z.color ? '#fff' : theme.accentInk;
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.fillText(label, z.x + 10 + lw / 2, z.y - 0.5);
+  });
+
+  // memos — grown-to-fit cards (see `floatBox`), matching the editor's memo box.
+  doc.floats.forEach((f) => {
+    const m = fBoxes.get(f.id)!;
+    const dark = theme.appBg === '#191512';
+    ctx.fillStyle = f.bg || (dark ? '#3a2f22' : '#fff6cf');
+    ctx.strokeStyle = f.bg ? hexA('#000000', 0.14) : dark ? '#5a4a2f' : '#f0e3a0';
+    ctx.lineWidth = 1;
+    ctx.beginPath();
+    roundRectPath(ctx, f.x, f.y, m.w, m.h, 8);
+    ctx.fill();
+    ctx.stroke();
+    // fold toggle badge (accent circle at the card's top-left, like the editor)
+    ctx.fillStyle = theme.accent;
+    ctx.beginPath();
+    ctx.arc(f.x + 16, f.y + 16, 10, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.fillStyle = theme.accentInk;
+    ctx.font = '700 12px Pretendard, sans-serif';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.fillText(m.collapsed ? '＋' : '−', f.x + 16, f.y + 16.5);
+    // text
+    if (f.text) {
+      ctx.fillStyle = f.textColor || theme.text;
+      ctx.font = `${f.bold ? 700 : 400} ${m.fpx}px Pretendard, sans-serif`;
+      ctx.textAlign = 'left';
+      ctx.textBaseline = 'alphabetic';
+      const firstBaseline = f.y + 9 + m.fpx * 1.15;
+      m.lines.forEach((ln, i) => {
+        const ly = firstBaseline + i * m.lh;
+        if (ly < f.y + m.h - 4) ctx.fillText(ln, f.x + 32, ly);
+      });
+    }
   });
 
   canvas.toBlob((blob) => {
