@@ -588,6 +588,27 @@ describe('Home', () => {
     expect(screen.getByRole('dialog', { name: '프로필명 변경' })).toBeTruthy();
   });
 
+  it('persists the renamed profile across a reload', async () => {
+    const user = userEvent.setup();
+    localStorage.setItem('mf_demo_session', JSON.stringify({ user: { id: 'u1', email: 'hoyul.lee@wantedlab.com' } }));
+    const { unmount } = renderHomeWithDocStore([]);
+
+    await user.click(screen.getByRole('button', { name: '계정 메뉴' }));
+    await user.click(screen.getByRole('button', { name: '프로필명 변경' }));
+    const dialog = screen.getByRole('dialog', { name: '프로필명 변경' });
+    await user.clear(within(dialog).getByLabelText('프로필명'));
+    await user.type(within(dialog).getByLabelText('프로필명'), '홍길동');
+    await user.click(within(dialog).getByRole('button', { name: '변경' }));
+    await waitFor(() => expect(screen.getAllByText('홍길동').length).toBeGreaterThan(0));
+
+    // "reload": remount a fresh Home sharing the same localStorage + session
+    unmount();
+    cleanup();
+    renderHomeWithDocStore([]);
+    await waitFor(() => expect(screen.getAllByText('홍길동').length).toBeGreaterThan(0));
+    expect(screen.queryByText('hoyul.lee')).toBeNull(); // did NOT revert to the email default
+  });
+
   it('opens 설정 → 회원 탈퇴 and gates the destructive button on typing "탈퇴"', async () => {
     const user = userEvent.setup();
     renderHomeWithDocStore([]);

@@ -5,6 +5,34 @@ import { downloadOrShare } from '../../platform/nativeBridge';
 /** Home.dc.html:517,824 — `mf_recent` holds the last 4 opened map titles. */
 export const RECENT_KEY = 'mf_recent';
 
+/** Per-account LNB display-name overrides (`{ [email]: name }`), so a renamed
+ * profile survives a reload instead of reverting to the email-derived default.
+ * Keyed by email so switching accounts in one browser doesn't leak the name. */
+const PROFILE_NAMES_KEY = 'mf_profile_names';
+
+export function readSavedProfileName(email: string): string | null {
+  try {
+    const raw = localStorage.getItem(PROFILE_NAMES_KEY);
+    if (!raw) return null;
+    const map = JSON.parse(raw) as Record<string, unknown>;
+    const v = map?.[email];
+    return typeof v === 'string' && v.trim() ? v : null;
+  } catch {
+    return null;
+  }
+}
+
+export function writeSavedProfileName(email: string, name: string): void {
+  try {
+    const raw = localStorage.getItem(PROFILE_NAMES_KEY);
+    const map = raw ? (JSON.parse(raw) as Record<string, string>) : {};
+    map[email] = name;
+    localStorage.setItem(PROFILE_NAMES_KEY, JSON.stringify(map));
+  } catch {
+    /* storage unavailable (private mode, quota, …) — non-fatal */
+  }
+}
+
 /** Home.dc.html:813 `mapHref` / MindFlow editor `mindflow_doc_<id>` storage convention. */
 export function docKey(id: string): string {
   return `mindflow_doc_${id}`;
