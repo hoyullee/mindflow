@@ -63,7 +63,7 @@ export function useHomeController() {
       const closest = (sel: string) => !!(target && target.closest && target.closest(sel));
       setState((prev) => {
         let next = prev;
-        if (prev.openMenu && !closest('.menu-btn,.menu-row')) next = { ...next, openMenu: null, moveFor: null, exportFor: null };
+        if (prev.openMenu && !closest('.menu-btn,.menu-row')) next = { ...next, openMenu: null, moveFor: null, moveSpaceFor: null, exportFor: null };
         if (prev.selectedCard && !closest('.map-card')) next = { ...next, selectedCard: null };
         if (prev.settingsOpen && !closest('.settings-pop,.settings-btn')) next = { ...next, settingsOpen: false };
         if (prev.spaceMenu && !closest('.space-dot,.menu-row,.space-row')) next = { ...next, spaceMenu: null };
@@ -392,8 +392,8 @@ export function useHomeController() {
     }
   };
   const toggleFavList = () => patch({ favOpen: !state.favOpen });
-  const toggleMenu = (title: string) => patch({ openMenu: state.openMenu === title ? null : title, moveFor: null, exportFor: null });
-  const closeMenu = () => patch({ openMenu: null, moveFor: null, exportFor: null });
+  const toggleMenu = (title: string) => patch({ openMenu: state.openMenu === title ? null : title, moveFor: null, moveSpaceFor: null, exportFor: null });
+  const closeMenu = () => patch({ openMenu: null, moveFor: null, moveSpaceFor: null, exportFor: null });
   const askDelete = (title: string, docId?: string) => patch({ confirmDelete: title, confirmDeleteDocId: docId ?? null, openMenu: null });
   const cancelDelete = () => patch({ confirmDelete: null, confirmDeleteDocId: null });
   const confirmDeleteYes = () => {
@@ -859,12 +859,33 @@ export function useHomeController() {
       return { ...prev, mapFolders, openMenu: null, moveFor: null };
     });
   };
+  /** Move a map from its current (real, non-Drive) space to another space. The
+   * card moves to the target space's top level, and its per-space folder
+   * assignment is dropped (folders belong to a single space). */
+  const moveMapToSpace = (title: string, spaceId: string) => {
+    setState((prev) => {
+      const src = prev.spaces.find((s) => Array.isArray(s.maps) && s.maps.some((m) => m.title === title));
+      const target = prev.spaces.find((s) => s.id === spaceId);
+      // no-op if the map isn't in a real space, the target is gone, or it's already there
+      if (!src || !target || src.id === spaceId) return { ...prev, openMenu: null, moveFor: null, moveSpaceFor: null };
+      const card = (src.maps || []).find((m) => m.title === title);
+      if (!card) return { ...prev, openMenu: null, moveFor: null, moveSpaceFor: null };
+      const spaces = prev.spaces.map((s) => {
+        if (s.id === src.id) return { ...s, maps: (s.maps || []).filter((m) => m.title !== title) };
+        if (s.id === spaceId) return { ...s, maps: [...(s.maps || []), card] };
+        return s;
+      });
+      const mapFolders = { ...prev.mapFolders };
+      delete mapFolders[title];
+      return { ...prev, spaces, mapFolders, openMenu: null, moveFor: null, moveSpaceFor: null, toast: `'${title}'을(를) '${target.name}'(으)로 이동했어요` };
+    });
+  };
   const backToSpace = () => patch({ curFolder: null, driveFolder: null, openMenu: null });
   const openFolder = (id: string) => patch({ curFolder: id, openMenu: null });
   const openDriveFolder = (id: string) => patch({ driveFolder: id, openMenu: null });
 
   // ---- drag & drop ----
-  const setDraggingMap = (title: string | null) => patch({ draggingMap: title, openMenu: null, moveFor: null });
+  const setDraggingMap = (title: string | null) => patch({ draggingMap: title, openMenu: null, moveFor: null, moveSpaceFor: null });
   const clearDrag = () => patch({ draggingMap: null, dragOverFolder: null });
   const setDragOverFolder = (id: string | null) => {
     if (state.dragOverFolder !== id) patch({ dragOverFolder: id });
@@ -872,8 +893,10 @@ export function useHomeController() {
 
   // ---- selection / search ----
   const selectCard = (title: string | null) => patch({ selectedCard: title });
-  const setExportFor = (title: string | null) => patch({ exportFor: title });
-  const setMoveFor = (title: string | null) => patch({ moveFor: title });
+  // Opening one submenu closes the others (only one flyout panel at a time).
+  const setExportFor = (title: string | null) => patch({ exportFor: title, moveFor: null, moveSpaceFor: null });
+  const setMoveFor = (title: string | null) => patch({ moveFor: title, exportFor: null, moveSpaceFor: null });
+  const setMoveSpaceFor = (title: string | null) => patch({ moveSpaceFor: title, exportFor: null, moveFor: null });
   const setSearch = (v: string) => patch({ search: v });
 
   const setSpaceMenuAnchor = (anchor: { top: number; left: number }) => {
@@ -963,6 +986,8 @@ export function useHomeController() {
     selectCard,
     setExportFor,
     setMoveFor,
+    setMoveSpaceFor,
+    moveMapToSpace,
     setSearch,
   };
 }
