@@ -78,7 +78,10 @@ export interface HomeState {
    * LNB profile. Empty until the session resolves on mount. */
   userEmail: string;
   settingsOpen: boolean;
-  nameEditing: boolean;
+  /** The "프로필명 변경" popup (opened from the profile popover). */
+  profileNameOpen: boolean;
+  /** Draft name in that popup — committed to `userName` on 변경, discarded on 취소. */
+  profileNameDraft: string;
   confirmLogout: boolean;
   /** The 설정 (account settings) modal, opened from the profile popover. Hosts
    * the 회원 탈퇴 entry. */
@@ -196,7 +199,8 @@ export function initialHomeState(): HomeState {
     userName: 'mine',
     userEmail: '',
     settingsOpen: false,
-    nameEditing: false,
+    profileNameOpen: false,
+    profileNameDraft: '',
     confirmLogout: false,
     accountSettingsOpen: false,
     confirmDeleteAccount: false,

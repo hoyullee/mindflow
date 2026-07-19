@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import type { ChangeEvent, KeyboardEvent, MouseEvent } from 'react';
+import type { ChangeEvent, KeyboardEvent } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useBackend } from '../../adapters/BackendContext';
 import {
@@ -275,18 +275,23 @@ export function useHomeController() {
   const disconnectDrive = () => patch({ drive: 'idle' });
 
   // ---- account / settings ----
-  const toggleSettings = () => patch({ settingsOpen: !state.settingsOpen, nameEditing: false });
-  const onNameInput = (v: string) => patch({ userName: (v || '').slice(0, 20) });
-  const onNameBlur = () => {
-    if (!state.userName.trim()) patch({ userName: 'mine' });
+  const toggleSettings = () => patch({ settingsOpen: !state.settingsOpen });
+  // Profile-name rename — a popup (like "공간 이름 변경"), driven by a draft so
+  // 취소 discards and 변경 commits. Opening it closes the profile popover.
+  const openProfileNameEdit = () => patch({ profileNameOpen: true, profileNameDraft: state.userName, settingsOpen: false });
+  const onProfileNameInput = (v: string) => patch({ profileNameDraft: (v || '').slice(0, 20) });
+  const submitProfileName = () => {
+    const name = state.profileNameDraft.trim();
+    patch({ userName: name || 'mine', profileNameOpen: false });
   };
-  const startNameEdit = (e: MouseEvent) => {
-    e.stopPropagation();
-    patch({ nameEditing: true });
-  };
-  const onNameEditDone = () => {
-    onNameBlur();
-    patch({ nameEditing: false });
+  const cancelProfileName = () => patch({ profileNameOpen: false });
+  const onProfileNameKey = (e: KeyboardEvent<HTMLInputElement>) => {
+    if (e.key === 'Enter') {
+      e.preventDefault();
+      submitProfileName();
+    } else if (e.key === 'Escape') {
+      cancelProfileName();
+    }
   };
   const logout = () => patch({ settingsOpen: false, confirmLogout: true });
   const cancelLogout = () => patch({ confirmLogout: false });
@@ -302,12 +307,9 @@ export function useHomeController() {
   };
 
   // ---- account settings / 회원 탈퇴 ----
-  const openAccountSettings = () => patch({ settingsOpen: false, accountSettingsOpen: true, nameEditing: false });
-  const closeAccountSettings = () =>
-    // Finalize any in-progress rename (empty → "mine" fallback) so closing the
-    // modal never leaves a blank name, and always exit edit mode.
-    patch({ accountSettingsOpen: false, nameEditing: false, userName: state.userName.trim() ? state.userName : 'mine' });
-  const askDeleteAccount = () => patch({ accountSettingsOpen: false, nameEditing: false, confirmDeleteAccount: true, deleteAccountText: '', deleteAccountError: '' });
+  const openAccountSettings = () => patch({ settingsOpen: false, accountSettingsOpen: true });
+  const closeAccountSettings = () => patch({ accountSettingsOpen: false });
+  const askDeleteAccount = () => patch({ accountSettingsOpen: false, confirmDeleteAccount: true, deleteAccountText: '', deleteAccountError: '' });
   const cancelDeleteAccount = () => patch({ confirmDeleteAccount: false, deleteAccountText: '', deleteAccountError: '' });
   const onDeleteAccountInput = (v: string) => patch({ deleteAccountText: v });
   /** The user must type this exact phrase to arm the destructive button — a
@@ -952,10 +954,11 @@ export function useHomeController() {
     chooseAccount,
     disconnectDrive,
     toggleSettings,
-    onNameInput,
-    onNameBlur,
-    startNameEdit,
-    onNameEditDone,
+    openProfileNameEdit,
+    onProfileNameInput,
+    onProfileNameKey,
+    submitProfileName,
+    cancelProfileName,
     logout,
     cancelLogout,
     confirmLogoutYes,
