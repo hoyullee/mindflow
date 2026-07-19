@@ -114,6 +114,9 @@ export interface HomeState {
   importDone: string | null;
   importError: string | null;
   toast: string;
+  /** Title shown above `toast` (the `toast` string is the body). Lets each toast
+   * label itself — e.g. "이동 완료" vs "복원 완료" — instead of a hardcoded title. */
+  toastTitle: string;
 
   /** Not present in the dc original (the search box there is a static placeholder) — added
    * per the M3 Home ticket so the search input actually filters the map grid. */
@@ -218,6 +221,7 @@ export function initialHomeState(): HomeState {
     importDone: null,
     importError: null,
     toast: '',
+    toastTitle: '',
 
     search: '',
     loaded: false,

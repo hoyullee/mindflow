@@ -449,7 +449,7 @@ export function useHomeController() {
           toast = `원래 공간이 삭제되어 "${first.name}" 공간으로 복원했어요`;
         }
       }
-      return { ...prev, deleted, trash, spaces, confirmRestore: null, confirmRestoreDocId: null, toast };
+      return { ...prev, deleted, trash, spaces, confirmRestore: null, confirmRestoreDocId: null, toast, toastTitle: toast ? '복원 완료' : '' };
     });
     if (docId) {
       void docStore.restore(docId).catch(() => {
@@ -470,7 +470,7 @@ export function useHomeController() {
       });
     }
   };
-  const closeToast = () => patch({ toast: '', importDone: null, importError: null });
+  const closeToast = () => patch({ toast: '', toastTitle: '', importDone: null, importError: null });
 
   const recordRecent = (title: string) => {
     setState((prev) => {
@@ -877,7 +877,7 @@ export function useHomeController() {
       });
       const mapFolders = { ...prev.mapFolders };
       delete mapFolders[title];
-      return { ...prev, spaces, mapFolders, openMenu: null, moveFor: null, moveSpaceFor: null, toast: `'${title}'을(를) '${target.name}'(으)로 이동했어요` };
+      return { ...prev, spaces, mapFolders, openMenu: null, moveFor: null, moveSpaceFor: null, toast: `'${title}'을(를) '${target.name}' 공간으로 옮겼어요`, toastTitle: '이동 완료' };
     });
   };
   const backToSpace = () => patch({ curFolder: null, driveFolder: null, openMenu: null });
