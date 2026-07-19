@@ -6,14 +6,25 @@
 // shape (and its whole subtree) clear of every OTHER node box — a magnet-style
 // "don't overlap" nudge applied on drop / after its box grows.
 //
-// Pure geometry: box SIZES are injected via `boxOf` (a rendering concern — see
-// `SizeOf`/`layout`), positions come from `nodes[id].x/y` (box centers). Memos
-// (floats) aren't nodes, so they're never obstacles — matching the original,
-// where "shapes and memos may overlap freely; only shape-vs-shape auto-arranges".
+// Pure geometry: box POSITION *and* SIZE are injected via `boxOf`, a rendering
+// concern. The original mutates `nodes[id].x/y` in `_layout`, so it read
+// positions straight off the nodes; this port's `layout()` returns a SEPARATE
+// laid-out map (it never touches `doc.nodes`), so tree-node positions live only
+// in the rendered geometry — hence `boxOf` must supply them (a tree node's
+// `doc.nodes` x/y is 0, not its on-screen spot). `nodes` here is used only for
+// the subtree structure (which ids move together) and to enumerate obstacles.
+//
+// Memos (floats) aren't nodes, so they're never obstacles — matching the
+// original, where "shapes and memos may overlap freely; only shape-vs-shape
+// (and shape-vs-tree-node) auto-arranges".
 
 import type { NodeMap } from './model';
 
-export interface OverlapSize {
+export interface OverlapBox {
+  /** Box center x (on-screen / laid-out). */
+  x: number;
+  /** Box center y (on-screen / laid-out). */
+  y: number;
   w: number;
   h: number;
 }
@@ -66,7 +77,7 @@ function subtreeIds(rootId: string, nodes: NodeMap): string[] {
 export function computeFreeNudge(
   rootId: string,
   nodes: NodeMap,
-  boxOf: (id: string) => OverlapSize | null,
+  boxOf: (id: string) => OverlapBox | null,
   opts: FreeNudgeOptions = {},
 ): FreeNudge | null {
   if (!nodes[rootId]) return null;
@@ -74,10 +85,9 @@ export function computeFreeNudge(
   const idSet = new Set(ids);
 
   const rectOf = (id: string): Rect | null => {
-    const n = nodes[id];
     const b = boxOf(id);
-    if (!n || !b) return null;
-    return { x0: n.x - b.w / 2, y0: n.y - b.h / 2, x1: n.x + b.w / 2, y1: n.y + b.h / 2 };
+    if (!b) return null;
+    return { x0: b.x - b.w / 2, y0: b.y - b.h / 2, x1: b.x + b.w / 2, y1: b.y + b.h / 2 };
   };
 
   let bb: Rect | null = null;

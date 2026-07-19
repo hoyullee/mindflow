@@ -6,17 +6,21 @@ function node(id: string, x: number, y: number, extra: Partial<NodeMap[string]> 
   return { id, text: id, emoji: '', parent: null, children: [], collapsed: false, color: null, x, y, ...extra };
 }
 
-const size = () => ({ w: 100, h: 100 });
+// on-screen box lookup: reads each node's own x/y as its center (100×100 box)
+const boxes = (nodes: NodeMap) => (id: string) => {
+  const n = nodes[id];
+  return n ? { x: n.x, y: n.y, w: 100, h: 100 } : null;
+};
 
 describe('nudgeFreeNode', () => {
   it('returns the SAME reference when nothing overlaps (no spurious commit)', () => {
     const nodes: NodeMap = { a: node('a', 0, 0, { free: true }), b: node('b', 400, 0, { free: true }) };
-    expect(nudgeFreeNode(nodes, 'b', size)).toBe(nodes);
+    expect(nudgeFreeNode(nodes, 'b', boxes(nodes))).toBe(nodes);
   });
 
   it('shifts an overlapping free shape clear of its neighbour (immutably)', () => {
     const nodes: NodeMap = { a: node('a', 0, 0, { free: true }), b: node('b', 20, 10, { free: true }) };
-    const out = nudgeFreeNode(nodes, 'b', size);
+    const out = nudgeFreeNode(nodes, 'b', boxes(nodes));
     expect(out).not.toBe(nodes);
     // 'a' untouched, 'b' moved out of overlap
     expect(out.a!.x).toBe(0);
@@ -33,7 +37,7 @@ describe('nudgeFreeNode', () => {
       b: node('b', 15, 0, { free: true, children: ['c'] }),
       c: node('c', 15, 70, { parent: 'b' }),
     };
-    const out = nudgeFreeNode(nodes, 'b', size);
+    const out = nudgeFreeNode(nodes, 'b', boxes(nodes));
     expect(out).not.toBe(nodes);
     // b and c shift by the same (dx, dy) — their relative offset is preserved
     expect(out.c!.x - out.b!.x).toBe(nodes.c!.x - nodes.b!.x);
@@ -44,7 +48,7 @@ describe('nudgeFreeNode', () => {
 describe('nudgeAllFreeNodes', () => {
   it('returns the SAME reference when no shapes overlap', () => {
     const nodes: NodeMap = { root: node('root', 0, 0), a: node('a', 0, 200, { free: true }), b: node('b', 400, 200, { free: true }) };
-    expect(nudgeAllFreeNodes(nodes, size)).toBe(nodes);
+    expect(nudgeAllFreeNodes(nodes, boxes(nodes))).toBe(nodes);
   });
 
   it('separates a pile of overlapping shapes (none overlap afterwards)', () => {
@@ -55,7 +59,7 @@ describe('nudgeAllFreeNodes', () => {
       b: node('b', 220, 15, { free: true }),
       c: node('c', 240, 30, { free: true }),
     };
-    const out = nudgeAllFreeNodes(nodes, size);
+    const out = nudgeAllFreeNodes(nodes, boxes(nodes));
     expect(out).not.toBe(nodes);
     const ids = ['a', 'b', 'c'];
     for (let i = 0; i < ids.length; i++) {
