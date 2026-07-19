@@ -412,6 +412,11 @@ describe('Home', () => {
     await user.click(within(card).getByText('스페이스로 이동'));
     await user.click(within(card).getByText('공간비이'));
 
+    // the move toast labels itself "이동 완료" (not the old hardcoded "복원 완료")
+    await waitFor(() => expect(screen.getByText('이동 완료')).toBeTruthy());
+    expect(screen.getByText(/공간비이.*공간으로 옮겼어요/)).toBeTruthy();
+    await user.click(screen.getByRole('button', { name: '확인' })); // dismiss toast
+
     // the map leaves the current (공간에이) view…
     await waitFor(() => expect(container.querySelector('a[data-title="내 맵"]')).toBeNull());
     // …and shows up when we switch to 공간비이

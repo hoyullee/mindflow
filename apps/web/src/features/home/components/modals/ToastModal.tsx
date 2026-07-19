@@ -9,7 +9,7 @@ interface Props {
 /** Home.dc.html:179-188 — import success/failure and restore-with-space-reattach toast. */
 export function ToastModal({ state, controller }: Props) {
   const visible = !!(state.toast || state.importDone || state.importError);
-  const title = state.importError ? '가져오기 실패' : state.importDone ? '가져오기 완료' : '복원 완료';
+  const title = state.importError ? '가져오기 실패' : state.importDone ? '가져오기 완료' : state.toastTitle || '완료';
   const msg = state.importError || (state.importDone ? `"${state.importDone}" 맵을 현재 공간에 추가했어요` : state.toast || '');
 
   return (

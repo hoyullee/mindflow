@@ -53,11 +53,14 @@ export function MapCard({ card, controller, draggableEnabled, compact = false }:
     border: card.selected ? '2px solid #f0663f' : '1px solid #ecdfd5',
     borderRadius: compact ? 10 : 14,
     background: grey ? '#fbf8f5' : '#fff',
-    overflow: 'hidden',
+    // The card no longer clips (was `overflow: hidden`) — otherwise the open ☰
+    // menu is cut off inside the card. The thumbnail keeps its own top-corner
+    // clip below, and an open menu raises the card above its grid neighbours.
     cursor: grey ? 'default' : 'pointer',
     transition: 'border-color .14s, box-shadow .14s, opacity .14s',
     display: 'block',
     position: 'relative',
+    zIndex: card.menuOpen ? 30 : undefined,
     opacity: card.dragging ? 0.45 : 1,
     boxShadow: card.selected ? '0 0 0 3px rgba(240,102,63,.18)' : 'none',
     margin: card.selected ? -1 : 0,
@@ -439,6 +442,8 @@ export function MapCard({ card, controller, draggableEnabled, compact = false }:
           justifyContent: 'center',
           fontSize: compact ? 22 : 30,
           filter: grey ? 'grayscale(1) opacity(.55)' : 'none',
+          borderRadius: compact ? '10px 10px 0 0' : '14px 14px 0 0',
+          overflow: 'hidden',
         }}
       >
         {card.sketch}
