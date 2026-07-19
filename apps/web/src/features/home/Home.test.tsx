@@ -512,13 +512,13 @@ describe('Home', () => {
 
     // the profile popover shows the name read-only — no rename affordance here
     await user.click(screen.getByRole('button', { name: '계정 메뉴' }));
-    expect(screen.queryByRole('button', { name: '이름 변경' })).toBeNull();
+    expect(screen.queryByRole('button', { name: '프로필명 변경' })).toBeNull();
 
-    // renaming happens in the 설정 modal
+    // renaming happens in the 설정 modal, via a clearly-labeled button
     await user.click(screen.getByRole('button', { name: '설정' }));
     const dialog = screen.getByRole('dialog', { name: '설정' });
-    await user.click(within(dialog).getByRole('button', { name: '이름 변경' }));
-    const input = within(dialog).getByLabelText('이름 입력');
+    await user.click(within(dialog).getByRole('button', { name: '프로필명 변경' }));
+    const input = within(dialog).getByLabelText('프로필명 입력');
     await user.clear(input);
     await user.type(input, '홍길동{Enter}');
 

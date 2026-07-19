@@ -43,7 +43,7 @@ export function AccountSettingsModal({ state, controller }: Props) {
         <div style={{ padding: 20 }}>
           {/* account */}
           <div style={{ fontSize: 12, fontWeight: 700, color: '#b6a596', letterSpacing: '.02em', marginBottom: 10 }}>계정</div>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 12, padding: 14, borderRadius: 13, background: '#faf5f0', marginBottom: 22 }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 12, padding: 14, borderRadius: 13, background: '#faf5f0', marginBottom: 12 }}>
             <div style={{ width: 44, height: 44, borderRadius: 13, background: '#f0663f', color: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: 800, fontSize: 20, flexShrink: 0 }}>
               {initial}
             </div>
@@ -52,41 +52,60 @@ export function AccountSettingsModal({ state, controller }: Props) {
                 <input
                   value={state.userName}
                   onChange={(e) => controller.onNameInput(e.target.value)}
-                  onBlur={controller.onNameEditDone}
                   onKeyDown={(e) => {
-                    if (e.key === 'Enter' || e.key === 'Escape') (e.target as HTMLInputElement).blur();
+                    if (e.key === 'Enter') controller.onNameEditDone();
+                    if (e.key === 'Escape') (e.target as HTMLInputElement).blur();
                   }}
+                  onBlur={controller.onNameEditDone}
                   ref={(el) => {
                     if (el && document.activeElement !== el) {
                       el.focus();
                       el.select();
                     }
                   }}
-                  placeholder="이름 입력"
-                  aria-label="이름 입력"
+                  placeholder="프로필명 입력"
+                  aria-label="프로필명 입력"
                   maxLength={20}
-                  style={{ width: '100%', height: 32, border: '1px solid #f0663f', borderRadius: 8, background: '#fff', color: '#33281f', fontFamily: 'inherit', fontSize: 15, fontWeight: 700, padding: '0 10px', outline: 'none', boxSizing: 'border-box' }}
+                  style={{ width: '100%', height: 34, border: '1px solid #f0663f', borderRadius: 8, background: '#fff', color: '#33281f', fontFamily: 'inherit', fontSize: 15, fontWeight: 700, padding: '0 10px', outline: 'none', boxSizing: 'border-box' }}
                 />
               ) : (
-                <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                <>
                   <div style={{ fontWeight: 700, fontSize: 15, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{state.userName}</div>
-                  <button
-                    className="btn"
-                    onClick={controller.startNameEdit}
-                    title="이름 변경"
-                    aria-label="이름 변경"
-                    style={{ width: 24, height: 24, border: 'none', borderRadius: 6, background: 'transparent', color: '#b6a596', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 0, flexShrink: 0 }}
-                  >
-                    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                      <path d="M12 20h9" />
-                      <path d="M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4z" />
-                    </svg>
-                  </button>
-                </div>
+                  {state.userEmail && <div style={{ fontSize: 12, color: '#9c8b7e', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', marginTop: 2 }}>{state.userEmail}</div>}
+                </>
               )}
-              {!state.nameEditing && state.userEmail && <div style={{ fontSize: 12, color: '#9c8b7e', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', marginTop: 2 }}>{state.userEmail}</div>}
             </div>
           </div>
+
+          {/* labeled rename button — self-explanatory, not just a bare pencil */}
+          {state.nameEditing ? (
+            <button
+              className="btn"
+              // preventDefault so the mousedown doesn't blur the input first
+              // (which would fire onNameEditDone and unmount this button mid-click)
+              onMouseDown={(e) => e.preventDefault()}
+              onClick={controller.onNameEditDone}
+              style={{ width: '100%', height: 42, border: 'none', borderRadius: 11, background: '#f0663f', color: '#fff', fontFamily: 'inherit', fontSize: 14, fontWeight: 700, cursor: 'pointer', marginBottom: 22, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 7 }}
+            >
+              <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
+                <polyline points="20 6 9 17 4 12" />
+              </svg>
+              저장
+            </button>
+          ) : (
+            <button
+              className="btn"
+              onClick={controller.startNameEdit}
+              aria-label="프로필명 변경"
+              style={{ width: '100%', height: 42, border: '1px solid #ecdfd5', borderRadius: 11, background: '#fff', color: '#33281f', fontFamily: 'inherit', fontSize: 14, fontWeight: 600, cursor: 'pointer', marginBottom: 22, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 7 }}
+            >
+              <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <path d="M12 20h9" />
+                <path d="M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4z" />
+              </svg>
+              프로필명 변경
+            </button>
+          )}
 
           {/* danger zone */}
           <div style={{ fontSize: 12, fontWeight: 700, color: '#d64545', letterSpacing: '.02em', marginBottom: 10 }}>위험 구역</div>
