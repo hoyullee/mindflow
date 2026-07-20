@@ -179,16 +179,18 @@ a:hover {
 
 /* M6: map/folder grid column count. Desktop keeps the original
    auto-fill(minmax(300px,1fr)) behavior (JS `GRID_STYLE` only sets `gap`);
-   below 768px there isn't room for a 300px minimum, so this steps down to a
-   2-column layout — kept all the way down to phone widths so cards stay
-   card-shaped instead of stretching full-width (a single wide column). */
+   below 768px there isn't room for a 300px minimum, so cards go one-per-row
+   (full width). The thumbnail keeps a fixed aspect-ratio (see `.map-thumb`
+   below) so a full-width card holds the same proportions as a PC card instead
+   of looking stretched. One column means every card is the same size whether
+   the space has one map or many. */
 .mf-map-grid {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
 }
 @media (max-width: 767px) {
   .mf-map-grid {
-    grid-template-columns: repeat(2, 1fr);
+    grid-template-columns: 1fr;
   }
 }
 
@@ -203,5 +205,22 @@ a:hover {
 @media (max-width: 767px) {
   .mf-recent-grid {
     grid-template-columns: repeat(3, 1fr);
+  }
+}
+
+/* Card thumbnails keep the PC card's aspect-ratio (map ≈304:150, recent
+   ≈148:72) instead of a fixed pixel height, so a full-width mobile card holds
+   the same proportions as on desktop rather than a stretched, squat thumbnail —
+   and every card looks the same regardless of how many there are. Desktop keeps
+   its exact pixel heights (the inline `height` wins there, no `!important`); this
+   only reshapes the wider mobile cards. */
+@media (max-width: 767px) {
+  .mf-map-grid .map-thumb {
+    height: auto !important;
+    aspect-ratio: 304 / 150;
+  }
+  .mf-recent-grid .map-thumb {
+    height: auto !important;
+    aspect-ratio: 148 / 72;
   }
 }
