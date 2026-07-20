@@ -228,8 +228,9 @@ export function exportPng(doc: Doc, geom: GeomMap, theme: Theme, filename: strin
   ctx.fillRect(x0, y0, W, H);
 
   // Layers in the editor's effective z-order (`Viewport` + per-layer z-index):
-  // tree edges → nodes → free lines → zones (z-8) → memos (z-10). Zones paint
-  // ABOVE nodes so a grouping box is never hidden behind the shapes it groups.
+  // tree edges → nodes → zones (z-8) → memos (z-10) → free connector lines (z-25).
+  // Zones paint above nodes (a grouping box isn't hidden behind its shapes); free
+  // lines paint LAST so an arrow landing on a memo/node isn't hidden behind it.
 
   // tree edges — honor the live layout mode + edge style (curve/elbow/straight),
   // same geometry as `EdgeLayer`/`buildEdgePath`, so 조직도(down)/꺾은선/직선 match.
@@ -301,50 +302,7 @@ export function exportPng(doc: Doc, geom: GeomMap, theme: Theme, filename: strin
     lines.forEach((ln, i) => ctx.fillText(ln, tx, ty0 + i * lh));
   });
 
-  // free lines
-  doc.lines.forEach((l) => {
-    const c = lineGeom(l, doc, geom);
-    const lc = l.color || theme.accent;
-    ctx.strokeStyle = lc;
-    ctx.lineWidth = 2.2;
-    ctx.setLineDash(l.dashed === false ? [] : [7, 7]);
-    ctx.beginPath();
-    ctx.moveTo(c.P0.x, c.P0.y);
-    ctx.bezierCurveTo(c.C1.x, c.C1.y, c.C2.x, c.C2.y, c.P3.x, c.P3.y);
-    ctx.stroke();
-    ctx.setLineDash([]);
-    const arrow = (px: number, py: number, cx: number, cy: number): void => {
-      const ang = Math.atan2(py - cy, px - cx);
-      const s = 9;
-      ctx.fillStyle = lc;
-      ctx.beginPath();
-      ctx.moveTo(px, py);
-      ctx.lineTo(px - Math.cos(ang - 0.45) * s, py - Math.sin(ang - 0.45) * s);
-      ctx.lineTo(px - Math.cos(ang + 0.45) * s, py - Math.sin(ang + 0.45) * s);
-      ctx.closePath();
-      ctx.fill();
-    };
-    if (l.startArrow) arrow(c.P0.x, c.P0.y, c.C1.x, c.C1.y);
-    if (l.endArrow) arrow(c.P3.x, c.P3.y, c.C2.x, c.C2.y);
-    if (l.label && l.label.trim()) {
-      const mid = cubicAt(c, 0.5);
-      const lw = Math.min(170, l.label.length * 13 + 18);
-      ctx.fillStyle = theme.panel;
-      ctx.strokeStyle = hexA(lc, 0.5);
-      ctx.lineWidth = 1;
-      ctx.beginPath();
-      roundRectPath(ctx, mid.x - lw / 2, mid.y - 12, lw, 24, 6);
-      ctx.fill();
-      ctx.stroke();
-      ctx.fillStyle = l.ltextColor || theme.text;
-      ctx.font = '600 11.5px Pretendard, sans-serif';
-      ctx.textAlign = 'center';
-      ctx.textBaseline = 'middle';
-      ctx.fillText(l.label, mid.x, mid.y + 1);
-    }
-  });
-
-  // zones — drawn above nodes/lines (editor z-index 8). Label pill ellipsizes to
+  // zones — drawn above nodes (editor z-index 8). Label pill ellipsizes to
   // fit its width, matching `ZoneLayer`'s `text-overflow: ellipsis`.
   doc.zones.forEach((z) => {
     const zc = z.color || theme.accent;
@@ -409,6 +367,50 @@ export function exportPng(doc: Doc, geom: GeomMap, theme: Theme, filename: strin
         const ly = firstBaseline + i * m.lh;
         if (ly < f.y + m.h - 4) ctx.fillText(ln, f.x + 32, ly);
       });
+    }
+  });
+
+  // free connector lines — drawn LAST (editor z-index 25) so an arrow landing on
+  // a memo/node isn't hidden behind it.
+  doc.lines.forEach((l) => {
+    const c = lineGeom(l, doc, geom);
+    const lc = l.color || theme.accent;
+    ctx.strokeStyle = lc;
+    ctx.lineWidth = 2.2;
+    ctx.setLineDash(l.dashed === false ? [] : [7, 7]);
+    ctx.beginPath();
+    ctx.moveTo(c.P0.x, c.P0.y);
+    ctx.bezierCurveTo(c.C1.x, c.C1.y, c.C2.x, c.C2.y, c.P3.x, c.P3.y);
+    ctx.stroke();
+    ctx.setLineDash([]);
+    const arrow = (px: number, py: number, cx: number, cy: number): void => {
+      const ang = Math.atan2(py - cy, px - cx);
+      const s = 9;
+      ctx.fillStyle = lc;
+      ctx.beginPath();
+      ctx.moveTo(px, py);
+      ctx.lineTo(px - Math.cos(ang - 0.45) * s, py - Math.sin(ang - 0.45) * s);
+      ctx.lineTo(px - Math.cos(ang + 0.45) * s, py - Math.sin(ang + 0.45) * s);
+      ctx.closePath();
+      ctx.fill();
+    };
+    if (l.startArrow) arrow(c.P0.x, c.P0.y, c.C1.x, c.C1.y);
+    if (l.endArrow) arrow(c.P3.x, c.P3.y, c.C2.x, c.C2.y);
+    if (l.label && l.label.trim()) {
+      const mid = cubicAt(c, 0.5);
+      const lw = Math.min(170, l.label.length * 13 + 18);
+      ctx.fillStyle = theme.panel;
+      ctx.strokeStyle = hexA(lc, 0.5);
+      ctx.lineWidth = 1;
+      ctx.beginPath();
+      roundRectPath(ctx, mid.x - lw / 2, mid.y - 12, lw, 24, 6);
+      ctx.fill();
+      ctx.stroke();
+      ctx.fillStyle = l.ltextColor || theme.text;
+      ctx.font = '600 11.5px Pretendard, sans-serif';
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      ctx.fillText(l.label, mid.x, mid.y + 1);
     }
   });
 

@@ -21,8 +21,10 @@ interface ViewportProps {
  * The pan/zoom canvas — port of the `.mf-vp` viewport + `Component#renderCanvas`'s
  * outer transform group (MindFlow.dc.html:99-101, 1303-1304). Pan (background
  * drag) and zoom (wheel/pinch/buttons) live in `useEditorState`; this component
- * only applies the resulting CSS transform and stacks the render layers in the
- * original's z-order: zones → tree edges → nodes → free lines → floats.
+ * only applies the resulting CSS transform. Effective paint order (via per-layer
+ * z-index, bottom→top): tree edges → nodes → zones (z 8) → floats/memos (z 10/20)
+ * → free connector lines (z 25) — connectors sit on top so an arrow landing on a
+ * memo isn't hidden behind it.
  */
 export function Viewport({ doc, controller }: ViewportProps) {
   const { theme, geom, layoutMode, edgeStyle, pan, zoom } = controller;

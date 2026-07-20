@@ -175,7 +175,7 @@ export function LineLayer({ lines, theme: th, controller }: LineLayerProps) {
             fontFamily: 'Pretendard, sans-serif',
             whiteSpace: 'nowrap',
             boxShadow: '0 1px 4px rgba(0,0,0,.12)',
-            zIndex: 7,
+            zIndex: 26,
             cursor: 'pointer',
           }}
         >
@@ -206,7 +206,7 @@ export function LineLayer({ lines, theme: th, controller }: LineLayerProps) {
             background: on ? th.accent : th.panel,
             border: `2px solid ${th.accent}`,
             boxShadow: '0 1px 4px rgba(0,0,0,.25)',
-            zIndex: 14,
+            zIndex: 28,
             boxSizing: 'border-box',
             pointerEvents: 'none',
           }}
@@ -217,7 +217,10 @@ export function LineLayer({ lines, theme: th, controller }: LineLayerProps) {
 
   return (
     <>
-      <svg width={10} height={10} overflow="visible" style={{ position: 'absolute', left: 0, top: 0, overflow: 'visible', pointerEvents: 'none', zIndex: 6 }}>
+      {/* Connectors sit ABOVE nodes/zones/floats (float z is 10/20) so an arrow
+          landing on a memo isn't hidden behind it — but below the transient
+          drag ghost (z 40) / raised-edit node (z 200). */}
+      <svg width={10} height={10} overflow="visible" style={{ position: 'absolute', left: 0, top: 0, overflow: 'visible', pointerEvents: 'none', zIndex: 25 }}>
         {paths}
       </svg>
       {overlays}
@@ -267,7 +270,7 @@ function LineLabelEdit({ l, x, y, theme, onCommit, onCancel }: { l: Line; x: num
         outline: 'none',
         width: 90,
         boxSizing: 'border-box',
-        zIndex: 8,
+        zIndex: 27,
       }}
     />
   );
