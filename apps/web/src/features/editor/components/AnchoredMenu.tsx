@@ -6,6 +6,11 @@ interface AnchoredMenuProps {
   anchorRef: RefObject<HTMLElement | null>;
   /** Menu width in px — also used to right-align it under the anchor. */
   width: number;
+  /** Which edge of the menu aligns to the anchor: 'right' (default — menu's
+   * right edge under the anchor's right, for right-side triggers like 내보내기)
+   * or 'left' (menu's left edge under the anchor's left, for left-side menu-bar
+   * items like 편집/삽입). Both clamp into the viewport with an 8px margin. */
+  align?: 'left' | 'right';
   children: ReactNode;
 }
 
@@ -23,7 +28,7 @@ interface AnchoredMenuProps {
  * `body` with `position: fixed` escapes both — mirroring the dc original's
  * runtime-measured `position: fixed` popovers.
  */
-export function AnchoredMenu({ anchorRef, width, children }: AnchoredMenuProps) {
+export function AnchoredMenu({ anchorRef, width, align = 'right', children }: AnchoredMenuProps) {
   const [pos, setPos] = useState<{ top: number; left: number } | null>(null);
 
   useLayoutEffect(() => {
@@ -31,8 +36,9 @@ export function AnchoredMenu({ anchorRef, width, children }: AnchoredMenuProps) 
       const el = anchorRef.current;
       if (!el) return;
       const r = el.getBoundingClientRect();
-      // Right-align to the anchor, clamped into the viewport with an 8px margin.
-      const left = Math.max(8, Math.min(r.right - width, window.innerWidth - width - 8));
+      // Align the chosen edge to the anchor, clamped into the viewport (8px margin).
+      const raw = align === 'left' ? r.left : r.right - width;
+      const left = Math.max(8, Math.min(raw, window.innerWidth - width - 8));
       setPos({ top: r.bottom + 8, left });
     };
     compute();
@@ -43,7 +49,7 @@ export function AnchoredMenu({ anchorRef, width, children }: AnchoredMenuProps) 
       window.removeEventListener('resize', compute);
       window.removeEventListener('scroll', compute, true);
     };
-  }, [anchorRef, width]);
+  }, [anchorRef, width, align]);
 
   if (!pos) return null;
   return createPortal(

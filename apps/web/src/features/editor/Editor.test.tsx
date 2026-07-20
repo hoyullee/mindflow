@@ -76,7 +76,7 @@ describe('Editor', () => {
 
     expect(vp.getByText('제품 로드맵')).toBeTruthy();
 
-    await user.click(screen.getByTitle('맵 스타일 (레이아웃 · 연결선 · 테마)'));
+    await user.click(screen.getByRole('button', { name: '스타일' })); // open the 스타일 menu
     await user.click(screen.getByRole('button', { name: '조직도' }));
 
     // still renders the same document after the layout switch
@@ -102,6 +102,7 @@ describe('Editor', () => {
     const user = userEvent.setup();
     const { container } = renderEditor('/editor?map=golden&title=x');
 
+    await user.click(screen.getByRole('button', { name: /보기/ })); // open the 보기 menu
     await user.click(screen.getByRole('button', { name: /아웃라인/ }));
 
     const outline = container.querySelector('.mf-ed-outline') as HTMLElement;

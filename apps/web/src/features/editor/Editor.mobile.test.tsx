@@ -101,7 +101,8 @@ describe('Editor (mobile, M6)', () => {
       localStorage.setItem('mindflow_doc_m1', JSON.stringify(DOC));
       renderEditor('/editor?map=m1&title=x');
 
-      expect(screen.getByTitle('실행 취소 (Ctrl+Z)')).toBeTruthy();
+      // undo/redo now live inside the 편집 menu; the menu-bar trigger is present
+      expect(screen.getByRole('button', { name: '편집' })).toBeTruthy();
       expect(screen.getByTitle('화면 맞춤')).toBeTruthy();
       // the desktop-only mouse-gesture legend is dropped on mobile
       expect(screen.queryByText(/좌드래그/)).toBeNull();

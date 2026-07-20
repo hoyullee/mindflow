@@ -1,71 +1,50 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useRef, useState, type CSSProperties, type ReactNode, type RefObject } from 'react';
 import type { EditorController } from '../useEditorState';
 import { StyleMenu } from './StyleMenu';
 import { ExportMenu } from './ExportMenu';
 import { AnchoredMenu } from './AnchoredMenu';
+import { EditMenu, InsertMenu, ViewMenu } from './ToolbarMenus';
 import { useIsMobile } from '../../../hooks/useMediaQuery';
 
 interface ToolbarProps {
   controller: EditorController;
 }
 
+type MenuKey = 'edit' | 'insert' | 'view' | 'style' | 'export';
+
 /**
- * Top bar — port of `.mf-topbar` (MindFlow.dc.html:36-96). Editor-b wires
- * undo/redo, the shape/memo/line/zone add buttons, and the export dropdown
- * (view switch and the 스타일 dropdown were already wired in Editor-a).
- *
- * M6: horizontal scroll for narrow screens was already in place
- * (`.mf-ed-topbar`'s `overflowX: auto`, `editor.css`'s thin scrollbar); this
- * adds >=44px touch targets on mobile for every icon button in this bar.
+ * Top menu bar (GNB) — a port of `.mf-topbar` (MindFlow.dc.html:36-96)
+ * reorganized from a flat row of ~10 buttons into grouped dropdown menus:
+ * 편집(실행취소/다시실행) · 삽입(도형/메모/선/영역) · 보기(맵/아웃라인) · 스타일 ·
+ * 내보내기. Fewer top-level controls keeps the bar compact (no horizontal scroll
+ * on mobile). Only one menu opens at a time; an outside click or an item pick
+ * closes it. Keyboard shortcuts (Ctrl+Z, etc.) still work via the global handler
+ * in `useEditorState`, independent of these menus.
  */
 export function Toolbar({ controller }: ToolbarProps) {
   const { theme: th } = controller;
   const isMobile = useIsMobile();
-  const [styleMenuOpen, setStyleMenuOpen] = useState(false);
-  const [exportMenuOpen, setExportMenuOpen] = useState(false);
-  const styleWrapRef = useRef<HTMLDivElement | null>(null);
-  const exportWrapRef = useRef<HTMLDivElement | null>(null);
+  const [openMenu, setOpenMenu] = useState<MenuKey | null>(null);
+
+  const editRef = useRef<HTMLDivElement>(null);
+  const insertRef = useRef<HTMLDivElement>(null);
+  const viewRef = useRef<HTMLDivElement>(null);
+  const styleRef = useRef<HTMLDivElement>(null);
+  const exportRef = useRef<HTMLDivElement>(null);
+  const refs: Record<MenuKey, RefObject<HTMLDivElement>> = { edit: editRef, insert: insertRef, view: viewRef, style: styleRef, export: exportRef };
 
   useEffect(() => {
-    if (!styleMenuOpen && !exportMenuOpen) return;
+    if (!openMenu) return;
     const onDown = (e: MouseEvent): void => {
-      if (styleMenuOpen && styleWrapRef.current && !styleWrapRef.current.contains(e.target as Node)) setStyleMenuOpen(false);
-      if (exportMenuOpen && exportWrapRef.current && !exportWrapRef.current.contains(e.target as Node)) setExportMenuOpen(false);
+      const wrap = refs[openMenu].current;
+      if (wrap && !wrap.contains(e.target as Node)) setOpenMenu(null);
     };
     window.addEventListener('mousedown', onDown);
     return () => window.removeEventListener('mousedown', onDown);
-  }, [styleMenuOpen, exportMenuOpen]);
+  }, [openMenu]);
 
-  const addBtnStyle = {
-    width: isMobile ? 44 : 34,
-    height: isMobile ? 44 : 34,
-    display: 'flex',
-    alignItems: 'center',
-    justifyContent: 'center',
-    border: `1px solid ${th.border}`,
-    borderRadius: 9,
-    background: th.panel,
-    color: th.text,
-    cursor: 'pointer',
-    fontFamily: 'inherit',
-    padding: 0,
-  } as const;
-
-  const historyBtnStyle = (enabled: boolean) =>
-    ({
-      width: isMobile ? 44 : 32,
-      height: isMobile ? 44 : 32,
-      display: 'flex',
-      alignItems: 'center',
-      justifyContent: 'center',
-      border: `1px solid ${th.border}`,
-      borderRadius: 9,
-      background: th.panel,
-      color: enabled ? th.text : `${th.subtext}73`,
-      cursor: enabled ? 'pointer' : 'default',
-      fontFamily: 'inherit',
-      padding: 0,
-    }) as const;
+  const close = (): void => setOpenMenu(null);
+  const toggle = (k: MenuKey): void => setOpenMenu((cur) => (cur === k ? null : k));
 
   return (
     <div
@@ -75,8 +54,8 @@ export function Toolbar({ controller }: ToolbarProps) {
         flex: '0 0 auto',
         display: 'flex',
         alignItems: 'center',
-        gap: 10,
-        padding: '0 16px',
+        gap: 4,
+        padding: '0 12px',
         background: th.panel,
         borderBottom: `1px solid ${th.border}`,
         zIndex: 20,
@@ -84,236 +63,147 @@ export function Toolbar({ controller }: ToolbarProps) {
         overflowY: 'hidden',
       }}
     >
-      <div style={{ display: 'flex', alignItems: 'center', gap: 9, paddingRight: 6 }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 9, paddingRight: 8, flexShrink: 0 }}>
         <div style={{ width: 26, height: 26, borderRadius: 8, background: th.accent, display: 'flex', alignItems: 'center', justifyContent: 'center', color: th.accentInk, fontWeight: 800, fontSize: 15 }}>
           M
         </div>
-        <div style={{ fontWeight: 700, fontSize: 16, letterSpacing: '-.01em' }}>MindFlow</div>
+        {/* Wordmark hidden on mobile to leave room for the menu items */}
+        {!isMobile && <div style={{ fontWeight: 700, fontSize: 16, letterSpacing: '-.01em' }}>MindFlow</div>}
       </div>
 
       <Divider theme={th} />
 
-      <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
-        <button type="button" className="mf-ed-btn" disabled={!controller.canUndo} onClick={controller.undo} title="실행 취소 (Ctrl+Z)" style={historyBtnStyle(controller.canUndo)}>
-          <UndoIcon />
-        </button>
-        <button type="button" className="mf-ed-btn" disabled={!controller.canRedo} onClick={controller.redo} title="다시 실행 (Ctrl+Shift+Z)" style={historyBtnStyle(controller.canRedo)}>
-          <RedoIcon />
-        </button>
-      </div>
-
-      <Divider theme={th} />
-
-      <div style={{ display: 'flex', alignItems: 'center', gap: 3, background: th.panel2, border: `1px solid ${th.border}`, borderRadius: 10, padding: 3, flexShrink: 0 }}>
-        <button
-          type="button"
-          className="mf-ed-btn"
-          onClick={() => controller.setView('map')}
-          aria-pressed={controller.view === 'map'}
-          style={viewBtnStyle(controller.view === 'map', th, isMobile)}
-        >
-          <MapIcon /> 맵
-        </button>
-        <button
-          type="button"
-          className="mf-ed-btn"
-          onClick={() => controller.setView('outline')}
-          aria-pressed={controller.view === 'outline'}
-          style={viewBtnStyle(controller.view === 'outline', th, isMobile)}
-        >
-          <OutlineIcon /> 아웃라인
-        </button>
-      </div>
-
-      <Divider theme={th} />
-
-      <div style={{ display: 'flex', alignItems: 'center', gap: 4, flexShrink: 0 }}>
-        <button type="button" className="mf-ed-btn" onClick={() => controller.addFreeNodeAt()} title="도형 추가" style={addBtnStyle}>
-          <ShapeIcon />
-        </button>
-        <button type="button" className="mf-ed-btn" onClick={() => controller.addFloatAt()} title="메모 추가" style={addBtnStyle}>
-          <MemoIcon />
-        </button>
-        <button type="button" className="mf-ed-btn" onClick={() => controller.addLineAt()} title="선 추가" style={addBtnStyle}>
-          <LineIcon />
-        </button>
-        <button type="button" className="mf-ed-btn" onClick={() => controller.addZoneAt()} title="영역 추가" style={addBtnStyle}>
-          <ZoneIcon />
-        </button>
-      </div>
-
-      <div style={{ flex: '1 1 auto' }} />
-
-      <div ref={styleWrapRef} style={{ position: 'relative' }}>
-        <button
-          type="button"
-          className="mf-ed-btn"
-          onClick={() => setStyleMenuOpen((v) => !v)}
-          title="맵 스타일 (레이아웃 · 연결선 · 테마)"
-          aria-expanded={styleMenuOpen}
-          style={{
-            display: 'flex',
-            alignItems: 'center',
-            gap: 7,
-            height: isMobile ? 44 : 34,
-            padding: '0 12px',
-            border: `1px solid ${styleMenuOpen ? th.accent : th.border}`,
-            borderRadius: 9,
-            background: styleMenuOpen ? th.panel2 : th.panel,
-            color: th.text,
-            fontSize: 13,
-            fontWeight: 600,
-            cursor: 'pointer',
-            fontFamily: 'inherit',
-            whiteSpace: 'nowrap',
-            flexShrink: 0,
-          }}
-        >
+      <MenuBarButton label="편집" wrapRef={editRef} open={openMenu === 'edit'} onToggle={() => toggle('edit')} th={th} isMobile={isMobile} width={230} align="left">
+        <EditMenu controller={controller} onDone={close} isMobile={isMobile} />
+      </MenuBarButton>
+      <MenuBarButton label="삽입" wrapRef={insertRef} open={openMenu === 'insert'} onToggle={() => toggle('insert')} th={th} isMobile={isMobile} width={200} align="left">
+        <InsertMenu controller={controller} onDone={close} isMobile={isMobile} />
+      </MenuBarButton>
+      <MenuBarButton label="보기" wrapRef={viewRef} open={openMenu === 'view'} onToggle={() => toggle('view')} th={th} isMobile={isMobile} width={190} align="left">
+        <ViewMenu controller={controller} onDone={close} isMobile={isMobile} />
+      </MenuBarButton>
+      <MenuBarButton
+        label="스타일"
+        wrapRef={styleRef}
+        open={openMenu === 'style'}
+        onToggle={() => toggle('style')}
+        th={th}
+        isMobile={isMobile}
+        width={250}
+        align="left"
+        leading={
           <span
             aria-hidden="true"
             style={{
-              width: 15,
-              height: 15,
+              width: 14,
+              height: 14,
               borderRadius: 5,
               background: 'conic-gradient(from 210deg,#f0663f,#e0b23c,#3fae9e,#3f8fd0,#8a6bd1,#f0663f)',
               boxShadow: `inset 0 0 0 1.5px ${th.panel}`,
               flexShrink: 0,
             }}
           />
-          맵 스타일
-        </button>
-        {styleMenuOpen && (
-          <AnchoredMenu anchorRef={styleWrapRef} width={250}>
-            <StyleMenu controller={controller} />
-          </AnchoredMenu>
-        )}
-      </div>
+        }
+      >
+        <StyleMenu controller={controller} />
+      </MenuBarButton>
 
-      <Divider theme={th} />
+      <div style={{ flex: '1 1 auto' }} />
 
-      <div ref={exportWrapRef} style={{ position: 'relative' }}>
-        <button
-          type="button"
-          className="mf-ed-btn"
-          onClick={() => setExportMenuOpen((v) => !v)}
-          title="내보내기"
-          aria-expanded={exportMenuOpen}
-          style={{ ...addBtnStyle, border: `1px solid ${exportMenuOpen ? th.accent : th.border}`, background: exportMenuOpen ? th.panel2 : th.panel }}
-        >
-          <ExportIcon />
-        </button>
-        {exportMenuOpen && (
-          <AnchoredMenu anchorRef={exportWrapRef} width={190}>
-            <ExportMenu controller={controller} onDone={() => setExportMenuOpen(false)} />
-          </AnchoredMenu>
-        )}
-      </div>
+      <MenuBarButton label="내보내기" wrapRef={exportRef} open={openMenu === 'export'} onToggle={() => toggle('export')} th={th} isMobile={isMobile} width={200} align="right" leading={<ExportGlyph />}>
+        <ExportMenu controller={controller} onDone={close} />
+      </MenuBarButton>
     </div>
   );
 }
 
-function Divider({ theme: th }: { theme: EditorController['theme'] }) {
-  return <div style={{ width: 1, height: 24, background: th.border }} />;
-}
-
-function viewBtnStyle(active: boolean, th: EditorController['theme'], isMobile = false) {
-  return {
+/** One top-level menu-bar entry: a text trigger (optional leading glyph) + a
+ * ▾ caret, with its dropdown portaled via `AnchoredMenu` when open. */
+function MenuBarButton({
+  label,
+  leading,
+  wrapRef,
+  open,
+  onToggle,
+  th,
+  isMobile,
+  width,
+  align,
+  children,
+}: {
+  label: string;
+  leading?: ReactNode;
+  wrapRef: RefObject<HTMLDivElement>;
+  open: boolean;
+  onToggle: () => void;
+  th: EditorController['theme'];
+  isMobile: boolean;
+  width: number;
+  align: 'left' | 'right';
+  children: ReactNode;
+}) {
+  const triggerStyle: CSSProperties = {
     display: 'flex',
     alignItems: 'center',
-    gap: 5,
-    height: isMobile ? 44 : 28,
-    padding: '0 10px',
-    border: 'none',
-    borderRadius: 8,
-    background: active ? th.panel : 'transparent',
-    color: active ? th.text : th.subtext,
-    fontFamily: 'inherit',
-    fontSize: 12.5,
-    fontWeight: active ? 700 : 500,
+    gap: 6,
+    height: isMobile ? 44 : 34,
+    padding: '0 11px',
+    border: `1px solid ${open ? th.accent : 'transparent'}`,
+    borderRadius: 9,
+    background: open ? th.panel2 : 'transparent',
+    color: th.text,
+    fontSize: 13.5,
+    fontWeight: 600,
     cursor: 'pointer',
-    boxShadow: active ? '0 1px 4px rgba(0,0,0,.10)' : 'none',
-    // keep the label ("맵" / "아웃라인") on one line — the 44px-tall mobile
-    // touch target let the text wrap to two lines and spill out of the button.
+    fontFamily: 'inherit',
     whiteSpace: 'nowrap',
     flexShrink: 0,
-  } as const;
+  };
+  return (
+    <div ref={wrapRef} style={{ position: 'relative', flexShrink: 0 }}>
+      <button type="button" className="mf-ed-btn" onClick={onToggle} aria-expanded={open} aria-haspopup="menu" style={triggerStyle}>
+        {leading}
+        {label}
+        <Caret open={open} color={th.subtext} />
+      </button>
+      {open && (
+        <AnchoredMenu anchorRef={wrapRef} width={width} align={align}>
+          {children}
+        </AnchoredMenu>
+      )}
+    </div>
+  );
 }
 
-function UndoIcon() {
+function Caret({ open, color }: { open: boolean; color: string }) {
   return (
-    <svg width={16} height={16} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2.2} strokeLinecap="round" strokeLinejoin="round">
-      <path d="M9 14L4 9l5-5" />
-      <path d="M4 9h10.5a5.5 5.5 0 0 1 0 11H11" />
+    <svg
+      width={11}
+      height={11}
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke={color}
+      strokeWidth={2.6}
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      style={{ transform: open ? 'rotate(180deg)' : 'none', transition: 'transform .15s ease', flexShrink: 0 }}
+      aria-hidden="true"
+    >
+      <polyline points="6 9 12 15 18 9" />
     </svg>
   );
 }
-function RedoIcon() {
+
+function ExportGlyph() {
   return (
-    <svg width={16} height={16} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2.2} strokeLinecap="round" strokeLinejoin="round">
-      <path d="M15 14l5-5-5-5" />
-      <path d="M20 9H9.5a5.5 5.5 0 0 0 0 11H13" />
-    </svg>
-  );
-}
-function MapIcon() {
-  return (
-    <svg width={14} height={14} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round">
-      <circle cx={12} cy={12} r={3} />
-      <circle cx={4} cy={5} r={2} />
-      <circle cx={20} cy={5} r={2} />
-      <circle cx={4} cy={19} r={2} />
-      <circle cx={20} cy={19} r={2} />
-      <path d="M10 10 5.5 6.5M14 10l4.5-3.5M10 14l-4.5 3.5M14 14l4.5 3.5" />
-    </svg>
-  );
-}
-function OutlineIcon() {
-  return (
-    <svg width={14} height={14} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round">
-      <line x1={8} y1={6} x2={21} y2={6} />
-      <line x1={10} y1={12} x2={21} y2={12} />
-      <line x1={12} y1={18} x2={21} y2={18} />
-      <line x1={3} y1={6} x2={3.01} y2={6} />
-      <line x1={5} y1={12} x2={5.01} y2={12} />
-      <line x1={7} y1={18} x2={7.01} y2={18} />
-    </svg>
-  );
-}
-function ShapeIcon() {
-  return (
-    <svg width={15} height={15} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round">
-      <rect x={3} y={6} width={18} height={12} rx={3} />
-    </svg>
-  );
-}
-function MemoIcon() {
-  return (
-    <svg width={15} height={15} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round">
-      <path d="M4 4h16v11l-5 5H4z" />
-      <path d="M15 20v-5h5" />
-    </svg>
-  );
-}
-function LineIcon() {
-  return (
-    <svg width={15} height={15} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeDasharray="3.5 3.5">
-      <path d="M4 20C9 18 15 6 20 4" />
-    </svg>
-  );
-}
-function ZoneIcon() {
-  return (
-    <svg width={15} height={15} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" strokeDasharray="4 3">
-      <rect x={3} y={5} width={18} height={14} rx={3} />
-    </svg>
-  );
-}
-function ExportIcon() {
-  return (
-    <svg width={16} height={16} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2.2} strokeLinecap="round" strokeLinejoin="round">
+    <svg width={15} height={15} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2.2} strokeLinecap="round" strokeLinejoin="round">
       <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
       <polyline points="7 10 12 15 17 10" />
       <line x1={12} y1={15} x2={12} y2={3} />
     </svg>
   );
+}
+
+function Divider({ theme: th }: { theme: EditorController['theme'] }) {
+  return <div style={{ width: 1, height: 24, background: th.border, flexShrink: 0 }} />;
 }
