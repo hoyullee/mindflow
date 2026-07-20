@@ -358,4 +358,56 @@ describe('Editor (mobile, M6)', () => {
       restore();
     }
   });
+
+  it('shows a move grip on the selected object (mobile only)', () => {
+    const restore = mockMatchMedia(true);
+    try {
+      localStorage.setItem('mindflow_doc_m11', JSON.stringify(DOC));
+      const { container } = renderEditor('/editor?map=m11&title=x');
+      const vp = getViewport(container);
+      expect(screen.queryByLabelText('이동')).toBeNull(); // nothing selected → no grip
+
+      const nodeBox = within(vp).getByText('리서치').closest('[data-node-id]') as HTMLElement;
+      selectNodeBox(nodeBox);
+      expect(screen.getByLabelText('이동')).toBeTruthy(); // selected → move grip appears
+    } finally {
+      restore();
+    }
+  });
+
+  it('does NOT show the move grip on desktop', () => {
+    const restore = mockMatchMedia(false);
+    try {
+      localStorage.setItem('mindflow_doc_m11d', JSON.stringify(DOC));
+      const { container } = renderEditor('/editor?map=m11d&title=x');
+      const vp = getViewport(container);
+      const nodeBox = within(vp).getByText('리서치').closest('[data-node-id]') as HTMLElement;
+      selectNodeBox(nodeBox);
+      expect(screen.queryByLabelText('이동')).toBeNull();
+    } finally {
+      restore();
+    }
+  });
+
+  it('touch: dragging the ALREADY-selected node moves it instead of panning the canvas', () => {
+    const restore = mockMatchMedia(true);
+    try {
+      localStorage.setItem('mindflow_doc_m12', JSON.stringify(DOC));
+      const { container } = renderEditor('/editor?map=m12&title=x');
+      const vp = getViewport(container);
+      const node = within(vp).getByText('리서치').closest('[data-node-id]') as HTMLElement;
+
+      // select first (tap), then a touch press-drag ON it must move it — the
+      // canvas pan transform stays put (unlike an unselected node, which pans).
+      selectNodeBox(node);
+      const before = getTransformLayer(container).style.transform;
+      touchEvent(node, 'pointerdown', { pointerId: 20, clientX: 150, clientY: 150 });
+      touchEvent(window, 'pointermove', { pointerId: 20, clientX: 260, clientY: 240 });
+      touchEvent(window, 'pointerup', { pointerId: 20, clientX: 260, clientY: 240 });
+
+      expect(getTransformLayer(container).style.transform).toBe(before); // did NOT pan
+    } finally {
+      restore();
+    }
+  });
 });

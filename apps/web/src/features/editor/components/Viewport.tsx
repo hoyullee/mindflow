@@ -9,6 +9,8 @@ import { MarqueeLayer } from './MarqueeLayer';
 import { PresenceLayer } from './PresenceLayer';
 import { ContextMenu } from './ContextMenu';
 import { TextToolbar } from './TextToolbar';
+import { MoveHandle } from './MoveHandle';
+import { useIsMobile } from '../../../hooks/useMediaQuery';
 
 interface ViewportProps {
   doc: Doc;
@@ -24,6 +26,11 @@ interface ViewportProps {
  */
 export function Viewport({ doc, controller }: ViewportProps) {
   const { theme, geom, layoutMode, edgeStyle, pan, zoom } = controller;
+  const isMobile = useIsMobile();
+  // Show the move grip only for a true single selection that isn't being edited
+  // (an active text edit owns the object; a marquee multi-selection has no single box).
+  const showMoveHandle =
+    isMobile && !!controller.selection && !controller.editingNodeId && !controller.editingFloatId && !controller.editingLineId && !controller.editingZoneId;
 
   return (
     <div style={{ position: 'relative', flex: '1 1 auto', overflow: 'hidden' }}>
@@ -54,6 +61,8 @@ export function Viewport({ doc, controller }: ViewportProps) {
             <MarqueeLayer rect={controller.marquee} theme={theme} />
             <PresenceLayer controller={controller} />
           </div>
+          {/* Move grip (mobile) — screen-space so it stays a constant tap size at any zoom. */}
+          {showMoveHandle && <MoveHandle controller={controller} theme={theme} />}
         </div>
         {/* NOT inside the pan/zoom transform above — `ctxMenu.sx/sy` are already screen
             (viewport-relative) coordinates (port of `Component#openCtxAt`'s `sx`/`sy`,
