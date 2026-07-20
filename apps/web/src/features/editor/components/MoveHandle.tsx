@@ -7,7 +7,7 @@ interface MoveHandleProps {
   theme: Theme;
 }
 
-interface Box {
+export interface Box {
   x: number;
   y: number;
   w: number;
@@ -15,7 +15,7 @@ interface Box {
 }
 
 /** Canvas-space bounding box (center + size) of the current single selection. */
-function boxFor(controller: EditorController): Box | null {
+export function boxFor(controller: EditorController): Box | null {
   const s = controller.selection;
   if (!s) return null;
   if (s.kind === 'node') {

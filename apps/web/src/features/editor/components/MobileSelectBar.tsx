@@ -1,6 +1,7 @@
-import type { CSSProperties } from 'react';
+import { useLayoutEffect, useRef, useState, type CSSProperties } from 'react';
 import type { EditorController } from '../useEditorState';
 import type { Theme } from '../theme';
+import { boxFor } from './MoveHandle';
 
 interface MobileSelectBarProps {
   controller: EditorController;
@@ -8,14 +9,28 @@ interface MobileSelectBarProps {
 }
 
 /**
- * Mobile-only floating action bar for the current single selection. On mobile,
- * a tap now just SELECTS an object (it no longer auto-opens the property bottom
- * sheet, which covered the canvas and panned the map). This compact bar is the
- * explicit follow-up: 편집(inline text) · 속성(open the sheet) · 삭제. It sits
- * above the bottom controls and is hidden while the sheet itself is open.
+ * Mobile-only floating action bar for the current single selection: 편집(inline
+ * text) · 속성(open the sheet) · 삭제. On mobile a tap just SELECTS an object;
+ * this compact bar is the explicit follow-up (hidden while the property sheet is
+ * open). It's anchored just BELOW the selected object (following pan/zoom) rather
+ * than pinned to the bottom centre — where it used to cover the minimap. Clamped
+ * into the canvas, and flipped ABOVE the object when there's no room below.
+ *
+ * Positioned `absolute` inside the editor's canvas-area container (the same
+ * positioned box `.mf-ed-vp` fills), so `boxFor`/`pan`/`zoom`/`vw`/`vh` — all in
+ * that box's coordinate space (origin below the toolbar) — map straight to
+ * left/top. (`fixed` would offset it up by the toolbar height.)
  */
 export function MobileSelectBar({ controller, theme: th }: MobileSelectBarProps) {
   const sel = controller.selection;
+  const ref = useRef<HTMLDivElement>(null);
+  const [size, setSize] = useState<{ w: number; h: number }>({ w: 190, h: 54 });
+  // Measure the bar once (its content — 편집/속성/삭제 — is fixed, so the size is
+  // stable) to clamp/flip it accurately against the viewport.
+  useLayoutEffect(() => {
+    const el = ref.current;
+    if (el) setSize({ w: el.offsetWidth, h: el.offsetHeight });
+  }, []);
   if (!sel) return null;
 
   const startEdit = (): void => {
@@ -24,6 +39,40 @@ export function MobileSelectBar({ controller, theme: th }: MobileSelectBarProps)
     else if (sel.kind === 'line') controller.startEditLineLabel(sel.id);
     else if (sel.kind === 'zone') controller.startEditZoneLabel(sel.id);
   };
+
+  // Position (in the canvas box's coordinate space): below the object's bottom
+  // edge, centred on it.
+  const box = boxFor(controller);
+  const { pan, zoom, vw, vh } = controller;
+  const GAP = 12;
+  const M = 8; // canvas margin
+  // The zoom/minimap cluster is pinned to the bottom-right of this same box
+  // (ZoomControls: absolute, right:16, bottom:16). Reserve a conservative
+  // rectangle around it so the bar flips ABOVE the object rather than landing on
+  // the minimap — dodging that occlusion is the whole point of this move.
+  const CORNER_W = 150;
+  const CORNER_H = 160;
+  const cornerLeft = vw - CORNER_W;
+  const cornerTop = vh - CORNER_H;
+  let left: number;
+  let top: number;
+  if (box) {
+    const cx = box.x * zoom + pan.x; // object centre x
+    const bottomY = (box.y + box.h / 2) * zoom + pan.y;
+    const topY = (box.y - box.h / 2) * zoom + pan.y;
+    left = Math.min(Math.max(cx - size.w / 2, M), Math.max(M, vw - size.w - M));
+    const below = bottomY + GAP;
+    // "Below" fits only if it stays within the canvas AND clears the bottom-right
+    // minimap cluster (when the bar's horizontal span reaches into that corner).
+    const withinCanvas = below + size.h <= vh - M;
+    const hitsCorner = left + size.w > cornerLeft && below + size.h > cornerTop;
+    top = withinCanvas && !hitsCorner ? below : Math.max(M, topY - GAP - size.h);
+  } else {
+    // No measurable box (shouldn't happen for a live selection) — fall back to
+    // the old bottom-centre spot.
+    left = Math.max(M, vw / 2 - size.w / 2);
+    top = Math.max(M, vh - size.h - 16);
+  }
 
   const btn: CSSProperties = {
     display: 'flex',
@@ -46,13 +95,13 @@ export function MobileSelectBar({ controller, theme: th }: MobileSelectBarProps)
 
   return (
     <div
+      ref={ref}
       role="toolbar"
       aria-label="선택 동작"
       style={{
-        position: 'fixed',
-        left: '50%',
-        transform: 'translateX(-50%)',
-        bottom: 'calc(16px + env(safe-area-inset-bottom, 0px))',
+        position: 'absolute',
+        left,
+        top,
         display: 'flex',
         alignItems: 'center',
         gap: 4,
