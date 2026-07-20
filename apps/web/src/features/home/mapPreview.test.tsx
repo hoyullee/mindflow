@@ -93,7 +93,13 @@ describe('realPreview', () => {
       zones: [],
     };
     const { container } = render(realPreview(JSON.stringify(doc), '#f0663f')!);
-    const tspans = Array.from(container.querySelectorAll('svg tspan')).map((s) => ({ t: s.textContent, fill: s.getAttribute('fill'), fw: s.getAttribute('font-weight') }));
+    // Text now wraps into per-line wrapper <tspan>s that hold the styled segment
+    // <tspan>s. Scope to the rich node's <text> (the one carrying a colored span),
+    // then read its LEAF segment tspans (no child tspan).
+    const richText = Array.from(container.querySelectorAll('svg text')).find((t) => t.querySelector('tspan[fill]'))!;
+    const tspans = Array.from(richText.querySelectorAll('tspan'))
+      .filter((s) => !s.querySelector('tspan'))
+      .map((s) => ({ t: s.textContent, fill: s.getAttribute('fill'), fw: s.getAttribute('font-weight') }));
     expect(tspans).toEqual([
       { t: '리치', fill: '#d0568f', fw: '800' },
       { t: '텍스트', fill: null, fw: null },
@@ -155,6 +161,12 @@ describe('realPreview', () => {
     const widths = Array.from(container.querySelectorAll('svg rect')).map((r) => parseFloat(r.getAttribute('width') || '0'));
     const maxW = Math.max(...widths);
     expect(maxW).toBeGreaterThan(250); // old heuristic hard-capped every box at 220
+
+    // …and the long label WRAPS into multiple lines (per-line wrapper tspans),
+    // like the editor — not a single truncated line.
+    const texts = Array.from(container.querySelectorAll('svg text'));
+    const maxLines = Math.max(...texts.map((t) => t.querySelectorAll(':scope > tspan').length));
+    expect(maxLines).toBeGreaterThan(1);
   });
 
   it('returns null for a doc with no nodes so the caller falls back to miniPreview', () => {

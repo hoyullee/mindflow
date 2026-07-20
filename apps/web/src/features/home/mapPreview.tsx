@@ -2,12 +2,72 @@ import { ROOT_ID, layout } from '@mindflow/mindmap-core';
 import type { Doc, EdgeStyle, LayoutMode, Node as CoreNode } from '@mindflow/mindmap-core';
 import { buildEdgePath, edgeStrokeWidth } from '../editor/edges';
 import { CanvasTextMeasurer, computeMetrics } from '../editor/metrics';
+import type { TextMeasurer } from '../editor/metrics';
 import { hexA } from './storage';
 
 // Match the editor EXACTLY: size preview node boxes with the same canvas text
 // measurement (`computeMetrics` + `CanvasTextMeasurer`) the editor uses, instead
 // of a character-count guess. A shared measurer (caches its canvas 2d context).
 const previewMeasurer = new CanvasTextMeasurer();
+
+/** A styled text segment (plain text is one segment with no bold/color). */
+interface WrapSeg {
+  t: string;
+  b?: boolean;
+  c?: string | null;
+}
+
+/** Merge adjacent same-style tokens on a line back into segments (fewer tspans). */
+function mergeToks(line: { t: string; b?: boolean; c?: string | null }[]): WrapSeg[] {
+  const segs: WrapSeg[] = [];
+  line.forEach((tk) => {
+    const last = segs[segs.length - 1];
+    if (last && !!last.b === !!tk.b && (last.c ?? null) === (tk.c ?? null)) last.t += tk.t;
+    else segs.push({ t: tk.t, b: tk.b, c: tk.c });
+  });
+  return segs;
+}
+
+/**
+ * Soft-wrap a node's text into visual lines, the SAME way the editor's
+ * `computeMetrics`/`wrapMeasure` does (token model: words / whitespace / single
+ * chars, break at `maxW`), so the thumbnail's line breaks match the real map.
+ * Preserves per-run bold/color (rich text) so each wrapped line stays styled.
+ */
+function wrapRuns(runs: WrapSeg[], maxW: number, fpx: number, baseFw: number, measurer: TextMeasurer): WrapSeg[][] {
+  // Hard lines first (split on \n), each a list of styled segments.
+  const hard: WrapSeg[][] = [[]];
+  runs.forEach((r) => {
+    String(r.t ?? '')
+      .split('\n')
+      .forEach((p, i) => {
+        if (i > 0) hard.push([]);
+        if (p) hard[hard.length - 1]!.push({ t: p, b: r.b, c: r.c });
+      });
+  });
+  const out: WrapSeg[][] = [];
+  hard.forEach((segs) => {
+    const toks: { t: string; w: number; sp: boolean; b?: boolean; c?: string | null }[] = [];
+    segs.forEach((sg) => {
+      const f = `${sg.b ? 800 : baseFw} ${fpx}px Pretendard`;
+      (String(sg.t).match(/[A-Za-z0-9]+|\s+|./gu) || []).forEach((p) => toks.push({ t: p, w: measurer.measure(p, f), sp: /^\s+$/.test(p), b: sg.b, c: sg.c }));
+    });
+    let line: typeof toks = [];
+    let cur = 0;
+    toks.forEach((tk) => {
+      if (cur > 0 && cur + tk.w > maxW && !tk.sp) {
+        out.push(mergeToks(line));
+        line = [tk];
+        cur = tk.w;
+      } else {
+        line.push(tk);
+        cur += tk.w;
+      }
+    });
+    out.push(mergeToks(line));
+  });
+  return out.length ? out : [[]];
+}
 
 /** Home.dc.html `realPreview` — mirrors the editor's theme accent/branch palettes so a
  * card's thumbnail matches what the map actually looks like when opened. */
@@ -151,12 +211,11 @@ export function realPreview(rawDoc: string | null, hueFallback: string): JSX.Ele
   // Editor-identical node box sizing: `computeMetrics` (real canvas text
   // measurement). The layout pass records each node's box into `metricsById` so
   // the DRAWN box is exactly the box the layout positioned (see `dim`).
-  const metricsById: Record<string, { w: number; h: number }> = {};
+  const metricsById: Record<string, { w: number; h: number; fpx: number; fw: number; depth: number }> = {};
   const sizeOf = (node: CoreNode, depth: number): { w: number; h: number } => {
     const m = computeMetrics(node, depth, previewMeasurer);
-    const wh = { w: m.w, h: m.h };
-    if (node.id) metricsById[node.id] = wh;
-    return wh;
+    if (node.id) metricsById[node.id] = { w: m.w, h: m.h, fpx: m.fpx, fw: m.fw, depth };
+    return { w: m.w, h: m.h };
   };
   applyLayoutPositions(d, sizeOf);
 
@@ -186,13 +245,18 @@ export function realPreview(rawDoc: string | null, hueFallback: string): JSX.Ele
   };
 
   const dim = (id: string): { w: number; h: number } => {
-    // Prefer the box recorded during the layout pass (guaranteed identical to
-    // what positioned the node). Fall back to a fresh `computeMetrics` for any
-    // node the layout didn't visit — still the editor's measurer, not a guess.
     const rec = metricsById[id];
-    if (rec) return rec;
+    if (rec) return { w: rec.w, h: rec.h };
     const m = computeMetrics(nodes[id] as unknown as CoreNode, id === root ? 0 : 1, previewMeasurer);
     return { w: m.w, h: m.h };
+  };
+  /** Editor-identical text metrics for a node (fpx/fw/depth): recorded during
+   * the layout pass, or freshly measured for any node it didn't visit. */
+  const metaOf = (id: string, depth: number): { fpx: number; fw: number } => {
+    const rec = metricsById[id];
+    if (rec) return { fpx: rec.fpx, fw: rec.fw };
+    const m = computeMetrics(nodes[id] as unknown as CoreNode, depth, previewMeasurer);
+    return { fpx: m.fpx, fw: m.fw };
   };
 
   const floats = Array.isArray(d.floats) ? d.floats : [];
@@ -363,42 +427,36 @@ export function realPreview(rawDoc: string | null, hueFallback: string): JSX.Ele
     // (the plain `text` colour for the box-less underline shape), body nodes
     // use the theme `text` colour — both overridden by an explicit `textColor`.
     const baseTextColor = n.textColor || (isRoot ? (shape === 'underline' ? TH.text : TH.accentInk) : TH.text);
-    const fontSize = (isRoot ? 17 : 14) * (n.tsize === 's' ? 0.85 : n.tsize === 'l' ? 1.2 : 1);
     const fontWeight = n.bold ? 800 : isRoot ? 800 : 600;
-    const runs = Array.isArray(n.rich) && n.rich.length ? n.rich : null;
-    if (runs) {
-      // Partial rich runs (per-span bold/colour) — render as tspans, budgeting
-      // ~14 chars total (after the emoji prefix) to match the plain-text clamp.
+    // Render the text WRAPPED, at the editor's font size (`fpx`) and its exact
+    // line breaks (same measurer + token model + content width `MAXW` that
+    // `computeMetrics` sized the box with) — so the thumbnail's text flows like
+    // the real map instead of a single truncated line.
+    const { fpx, fw } = metaOf(id, depth);
+    const padX = depth === 0 ? 24 : depth === 1 ? 15 : 13;
+    const emW = n.emoji ? Math.ceil(previewMeasurer.measure(n.emoji, `${depth === 0 ? 22 : 17}px Pretendard`)) + 7 + 2 : 0;
+    const MAXW = Math.max(320, (n.cw || 0) - padX * 2 - emW - 7);
+    const runs: WrapSeg[] = Array.isArray(n.rich) && n.rich.length ? (n.rich as WrapSeg[]) : [{ t: n.text || '' }];
+    const wrapped = wrapRuns(runs, MAXW, fpx, fw, previewMeasurer);
+    const hasText = wrapped.some((ln) => ln.some((s) => s.t.trim()));
+    if (hasText || n.emoji) {
+      const lineH = Math.round(fpx * 1.4);
+      const startY = cy - ((wrapped.length - 1) * lineH) / 2;
       const emojiPrefix = n.emoji ? `${n.emoji} ` : '';
-      let budget = 14 - emojiPrefix.length;
-      const tspans: JSX.Element[] = [];
-      for (let ri = 0; ri < runs.length && budget > 0; ri++) {
-        const r = runs[ri]!;
-        let t = (r.t || '').split('\n')[0] ?? '';
-        if (!t) continue;
-        if (t.length > budget) t = t.slice(0, Math.max(0, budget - 1)) + '…';
-        budget -= t.length;
-        tspans.push(
-          <tspan key={ri} fontWeight={r.b ? 800 : undefined} fill={r.c || undefined}>
-            {t}
-          </tspan>,
-        );
-      }
       rects.push(
-        <text key={`t${id}`} x={cx} y={cy} textAnchor="middle" dominantBaseline="central" fontSize={fontSize} fontWeight={fontWeight} fill={baseTextColor} fontFamily="Pretendard, sans-serif">
-          {emojiPrefix}
-          {tspans}
+        <text key={`t${id}`} x={cx} y={startY} textAnchor="middle" dominantBaseline="central" fontSize={fpx} fontWeight={fontWeight} fill={baseTextColor} fontFamily="Pretendard, sans-serif">
+          {wrapped.map((segs, li) => (
+            <tspan key={li} x={cx} dy={li === 0 ? 0 : lineH}>
+              {li === 0 && emojiPrefix ? emojiPrefix : ''}
+              {segs.map((s, si) => (
+                <tspan key={si} fontWeight={s.b ? 800 : undefined} fill={s.c || undefined}>
+                  {s.t}
+                </tspan>
+              ))}
+            </tspan>
+          ))}
         </text>,
       );
-    } else {
-      const rawLabel = `${n.emoji || ''} ${n.text || ''}`.trim().split('\n')[0] ?? '';
-      if (rawLabel) {
-        rects.push(
-          <text key={`t${id}`} x={cx} y={cy} textAnchor="middle" dominantBaseline="central" fontSize={fontSize} fontWeight={fontWeight} fill={baseTextColor} fontFamily="Pretendard, sans-serif">
-            {rawLabel.length > 14 ? rawLabel.slice(0, 13) + '…' : rawLabel}
-          </text>,
-        );
-      }
     }
   });
 
