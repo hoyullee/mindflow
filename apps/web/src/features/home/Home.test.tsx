@@ -818,6 +818,42 @@ describe('Home', () => {
       expect(docStore.restore).toHaveBeenCalledWith('doc2');
     });
 
+    it('permanently deletes a workspace-only (docId-less) card — removed from the persisted workspace so it cannot reappear on reload', async () => {
+      const user = userEvent.setup();
+      // A space whose card has NO docId (the reported "새 마인드맵_1 (2)" case):
+      // deletion used to only set a session-only `deleted[title]`, so a refresh
+      // (which re-reads this workspace) brought the card straight back.
+      localStorage.setItem(
+        'mf_spaces',
+        JSON.stringify({
+          spaces: [{ id: 'snew', name: '신규 공간', color: '#3f8fd0', maps: [{ title: '새 마인드맵_1 (2)', when: '내 맵', hue: '#f0663f' }], folders: [] }],
+          mapFolders: {},
+        }),
+      );
+      const { container, unmount } = renderHomeWithDocStore([]); // no doc metas
+
+      await waitFor(() => expect(container.querySelector('a[data-title="새 마인드맵_1 (2)"]')).toBeTruthy());
+      const card = container.querySelector('a[data-title="새 마인드맵_1 (2)"]') as HTMLElement;
+      await user.click(within(card).getByRole('button', { name: '메뉴' }));
+      await user.click(within(card).getByText('삭제하기'));
+      await user.click(screen.getByRole('button', { name: '삭제' }));
+
+      // gone from the grid…
+      await waitFor(() => expect(container.querySelector('a[data-title="새 마인드맵_1 (2)"]')).toBeNull());
+      // …and REMOVED from the persisted workspace (the reload source of truth)
+      await waitFor(() => {
+        const ws = JSON.parse(localStorage.getItem('mf_spaces') || '{}') as { spaces?: { maps?: { title: string }[] }[] };
+        const titles = (ws.spaces || []).flatMap((s) => (s.maps || []).map((m) => m.title));
+        expect(titles).not.toContain('새 마인드맵_1 (2)');
+      });
+
+      // simulate a browser refresh: a fresh mount reads the persisted workspace
+      unmount();
+      const { container: c2 } = renderHomeWithDocStore([]);
+      await waitFor(() => expect(within(c2).getAllByText('신규 공간').length).toBeGreaterThan(0)); // loaded
+      expect(c2.querySelector('a[data-title="새 마인드맵_1 (2)"]')).toBeNull();
+    });
+
     it('seeds trash from docStore.list() metas on mount (refresh scenario: deletedAt survives reload)', async () => {
       const { container } = renderHomeWithDocStore([
         // A live doc still present in the grid (sanity anchor).
