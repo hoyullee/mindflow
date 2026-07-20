@@ -172,7 +172,53 @@ export function ViewMenu({ controller, onDone, isMobile }: { controller: EditorC
   );
 }
 
+/** Small uppercase section label inside a dropdown (used by `MoreMenu`). */
+function MenuSectionLabel({ theme: th, children }: { theme: Theme; children: ReactNode }) {
+  return <div style={{ fontSize: 10.5, fontWeight: 700, letterSpacing: '.04em', textTransform: 'uppercase', color: th.subtext, padding: '6px 10px 3px' }}>{children}</div>;
+}
+function MenuDivider({ theme: th }: { theme: Theme }) {
+  return <div style={{ height: 1, background: th.border, margin: '5px 6px' }} />;
+}
+
+/**
+ * Combined overflow menu for the mobile toolbar's ☰ button — folds the 보기 and
+ * 내보내기 menus into ONE dropdown (with section headers) so those two triggers
+ * don't need their own room on the narrow bar (which otherwise scrolled). Desktop
+ * keeps 보기/내보내기 as separate top-level triggers.
+ */
+export function MoreMenu({ controller, onDone, isMobile }: { controller: EditorController; onDone: () => void; isMobile?: boolean }) {
+  const th = controller.theme;
+  return (
+    <MenuShell theme={th}>
+      <MenuSectionLabel theme={th}>보기</MenuSectionLabel>
+      <MenuItem theme={th} isMobile={isMobile} icon={<MapIcon />} label="맵" active={controller.view === 'map'} onClick={() => { controller.setView('map'); onDone(); }} />
+      <MenuItem theme={th} isMobile={isMobile} icon={<OutlineIcon />} label="아웃라인" active={controller.view === 'outline'} onClick={() => { controller.setView('outline'); onDone(); }} />
+      <MenuDivider theme={th} />
+      <MenuSectionLabel theme={th}>내보내기</MenuSectionLabel>
+      <MenuItem theme={th} isMobile={isMobile} icon={<PngIcon />} label="PNG 이미지" onClick={() => { controller.exportPNG(); onDone(); }} />
+      <MenuItem theme={th} isMobile={isMobile} icon={<JsonIcon />} label="JSON 파일 (.json)" onClick={() => { controller.exportJSON(); onDone(); }} />
+    </MenuShell>
+  );
+}
+
 // ---- icons (shared by the menu bar triggers + rows) ----
+export function PngIcon() {
+  return (
+    <svg width={15} height={15} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round">
+      <rect x={3} y={3} width={18} height={18} rx={2} />
+      <circle cx={8.5} cy={8.5} r={1.5} />
+      <polyline points="21 15 16 10 5 21" />
+    </svg>
+  );
+}
+export function JsonIcon() {
+  return (
+    <svg width={15} height={15} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round">
+      <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
+      <polyline points="14 2 14 8 20 8" />
+    </svg>
+  );
+}
 export function UndoIcon() {
   return (
     <svg width={16} height={16} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2.2} strokeLinecap="round" strokeLinejoin="round">
