@@ -169,6 +169,28 @@ describe('realPreview', () => {
     expect(maxLines).toBeGreaterThan(1);
   });
 
+  it('shows a memo card fully — wraps all its text and grows the box (not one truncated line)', () => {
+    const memoDoc = {
+      v: 1,
+      themeKey: 'coral',
+      layoutMode: 'right',
+      nodes: { root: { id: 'root', text: '중심', emoji: '', parent: null, children: [], collapsed: false, color: null, x: 0, y: 0 } },
+      floats: [{ id: 'm1', x: 120, y: -40, w: 200, text: '이 메모는 여러 줄에 걸친 긴 텍스트입니다.\n두 번째 줄도 있고\n세 번째 줄까지 있어요', bold: false }],
+      lines: [],
+      zones: [],
+    };
+    const { container } = render(realPreview(JSON.stringify(memoDoc), '#f0663f')!);
+    // the memo's <text> holds one wrapper tspan PER line — more than one, and its
+    // full text (all three hard lines) is present.
+    const memoText = Array.from(container.querySelectorAll('svg text')).find((t) => /이 메모는/.test(t.textContent || ''))!;
+    expect(memoText).toBeTruthy();
+    expect(memoText.querySelectorAll(':scope > tspan').length).toBeGreaterThan(2);
+    expect(memoText.textContent).toContain('세 번째 줄까지');
+    // the memo rect grew past the default 44px to fit the wrapped text.
+    const memoRect = Array.from(container.querySelectorAll('svg rect')).find((r) => Math.abs(parseFloat(r.getAttribute('width') || '0') - 200) < 1)!;
+    expect(parseFloat(memoRect.getAttribute('height') || '0')).toBeGreaterThan(44);
+  });
+
   it('returns null for a doc with no nodes so the caller falls back to miniPreview', () => {
     expect(realPreview(JSON.stringify({ v: 1, nodes: {}, floats: [], lines: [], zones: [], layoutMode: 'radial', themeKey: 'coral' }), '#f0663f')).toBeNull();
     expect(realPreview(null, '#f0663f')).toBeNull();

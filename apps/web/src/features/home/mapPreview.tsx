@@ -1,7 +1,7 @@
 import { ROOT_ID, layout } from '@mindflow/mindmap-core';
-import type { Doc, EdgeStyle, LayoutMode, Node as CoreNode } from '@mindflow/mindmap-core';
+import type { Doc, EdgeStyle, Float, LayoutMode, Node as CoreNode } from '@mindflow/mindmap-core';
 import { buildEdgePath, edgeStrokeWidth } from '../editor/edges';
-import { CanvasTextMeasurer, computeMetrics } from '../editor/metrics';
+import { CanvasTextMeasurer, computeMetrics, measureFloatHeight } from '../editor/metrics';
 import type { TextMeasurer } from '../editor/metrics';
 import { hexA } from './storage';
 
@@ -262,7 +262,10 @@ export function realPreview(rawDoc: string | null, hueFallback: string): JSX.Ele
   const floats = Array.isArray(d.floats) ? d.floats : [];
   const zones = Array.isArray(d.zones) ? d.zones : [];
   const lines = Array.isArray(d.lines) ? d.lines : [];
-  const floatH = (f: DocFloat) => (f.collapsed ? 30 : f.h || 44);
+  // Memo cards GROW to fit their wrapped text (min-height box) — use the editor's
+  // measured height (`measureFloatHeight`) so the preview box, its line-anchor
+  // ports and the bounding box all match the real card instead of a fixed 44px.
+  const floatH = (f: DocFloat) => measureFloatHeight(f as unknown as Float, previewMeasurer);
 
   let x0 = 1e9;
   let y0 = 1e9;
@@ -504,13 +507,26 @@ export function realPreview(rawDoc: string | null, hueFallback: string): JSX.Ele
     const bg = f.bg || '#fdf6c9';
     const bd = f.bg ? hexA('#8a7365', 0.35) : '#e8d982';
     floatEls.push(<rect key={`fr${i}`} x={f.x} y={f.y} width={fw} height={fh} rx={8} fill={bg} stroke={bd} strokeWidth={1.4} />);
-    const line1 = ((f.text || '').split('\n')[0] || '').trim();
-    if (line1) {
-      const fontSize = 12 * (f.tsize === 's' ? 0.9 : f.tsize === 'l' ? 1.15 : 1);
-      const maxChars = Math.floor(fw / 11);
+    // Full text, WRAPPED like the editor's memo card: same font size, padding
+    // (top 9, left 32 for the fold toggle, right 11) and inner wrap width, so
+    // every line shows instead of one truncated line.
+    const ffpx = f.tsize === 's' ? 11.5 : f.tsize === 'l' ? 15.5 : 13;
+    const flh = ffpx * 1.55;
+    const bold = !!f.bold;
+    const innerW = Math.max(8, fw - 32 - 11);
+    const lines = f.collapsed
+      ? [((f.text || '').split('\n')[0] || '')]
+      : wrapRuns([{ t: f.text || '' }], innerW, ffpx, bold ? 700 : 400, previewMeasurer).map((segs) => segs.map((s) => s.t).join(''));
+    if (lines.some((ln) => ln.trim())) {
+      const textX = f.x + 32;
+      const firstY = f.y + 9 + flh / 2; // centre of the first line box (top pad 9)
       floatEls.push(
-        <text key={`ft${i}`} x={f.x + 10} y={f.y + 16} fontSize={fontSize} fontWeight={f.bold ? 800 : 500} fill={f.textColor || '#5a4a3a'} fontFamily="Pretendard, sans-serif">
-          {line1.length > maxChars ? line1.slice(0, maxChars - 1) + '…' : line1}
+        <text key={`ft${i}`} x={textX} y={firstY} dominantBaseline="central" fontSize={ffpx} fontWeight={bold ? 700 : 400} fill={f.textColor || '#5a4a3a'} fontFamily="Pretendard, sans-serif">
+          {lines.map((ln, li) => (
+            <tspan key={li} x={textX} dy={li === 0 ? 0 : flh}>
+              {ln}
+            </tspan>
+          ))}
         </text>,
       );
     }
