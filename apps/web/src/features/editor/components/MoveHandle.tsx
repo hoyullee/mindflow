@@ -25,7 +25,7 @@ function boxFor(controller: EditorController): Box | null {
   if (s.kind === 'float') {
     const f = controller.doc.floats.find((x) => x.id === s.id);
     if (!f) return null;
-    const h = f.h || 44;
+    const h = controller.floatHeights[f.id] ?? f.h ?? 44; // measured (grown) height
     return { x: f.x + f.w / 2, y: f.y + h / 2, w: f.w, h };
   }
   if (s.kind === 'zone') {

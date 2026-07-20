@@ -9,7 +9,7 @@ import { useAuthUser } from '../../adapters/useAuthUser';
 import { useYjsDocSync } from '../../collab/useYjsDocSync';
 import { usePresence, type UsePresenceResult } from '../../collab/usePresence';
 import { EMPTY_PRESENCE_SELECTION, type PresenceSelection } from '../../collab/presence';
-import { CanvasTextMeasurer, computeMetrics } from './metrics';
+import { CanvasTextMeasurer, computeMetrics, measureFloatHeight } from './metrics';
 import { loadOrSeedDoc } from './storage';
 import { buildVisible, descendants, outlineRows } from './tree';
 import type { EdgeStyle } from './tree';
@@ -171,6 +171,9 @@ export interface EditorController {
   vw: number;
   vh: number;
   geom: GeomMap;
+  /** Measured (grown-to-fit) memo heights by float id — the real rendered box
+   * height, since memos grow with their text past the stored `f.h`. */
+  floatHeights: Record<string, number>;
   mapId: string | null;
   docTitle: string;
 
@@ -645,6 +648,18 @@ export function useEditorState(): EditorController {
     return out;
   }, [vis, laidOutNodes, measurer, editingNodeId, editLiveSize]);
 
+  // Memo cards grow with their text (a `min-height` box), so their ACTUAL height
+  // usually exceeds the stored `f.h`. Measure it (port of the original's `_floatH`)
+  // so line-anchor snapping/ports, hit-testing and marquee use the real box, not a
+  // fixed 44px one.
+  const floatHeights = useMemo<Record<string, number>>(() => {
+    const out: Record<string, number> = {};
+    doc.floats.forEach((f) => {
+      out[f.id] = measureFloatHeight(f, measurer);
+    });
+    return out;
+  }, [doc.floats, measurer]);
+
   const theme = themeOf(doc.themeKey);
 
   // ---- multi-selection groups — port of `Component#msel()` (MindFlow.dc.html:1548-1556):
@@ -682,6 +697,16 @@ export function useEditorState(): EditorController {
   useEffect(() => {
     geomRef.current = geom;
   }, [geom]);
+  const floatHeightsRef = useRef(floatHeights);
+  useEffect(() => {
+    floatHeightsRef.current = floatHeights;
+  }, [floatHeights]);
+  // Measured memo height: `floatBoxH` for event handlers (reads the ref, as fresh
+  // as the last commit — same contract as `geomRef`); `floatBoxHLive` for the
+  // render-time anchor path (reads this render's memo directly). Both fall back to
+  // the stored `f.h` if a measurement isn't ready yet.
+  const floatBoxH = (f: Float): number => floatHeightsRef.current[f.id] ?? f.h ?? 44;
+  const floatBoxHLive = (f: Float): number => floatHeights[f.id] ?? f.h ?? 44;
   // Id of the free shape to magnet clear of overlap once the current interaction
   // settles (set on text-commit / resize / create; consumed by the nudge effect).
   // `nudgeTick` re-triggers that effect for interactions (resize) that don't
@@ -727,7 +752,7 @@ export function useEditorState(): EditorController {
     }
     const f = docRef.current.floats.find((x) => x.id === anchor.id);
     if (!f) return null;
-    const h = f.h || 44;
+    const h = floatBoxH(f);
     return { cx: f.x + f.w / 2, cy: f.y + h / 2, hw: f.w / 2, hh: h / 2 };
   }
 
@@ -747,7 +772,7 @@ export function useEditorState(): EditorController {
     }
     const f = doc.floats.find((x) => x.id === anchor.id);
     if (!f) return null;
-    const h = f.h || 44;
+    const h = floatBoxHLive(f);
     return { cx: f.x + f.w / 2, cy: f.y + h / 2, hw: f.w / 2, hh: h / 2 };
   }
 
@@ -780,7 +805,7 @@ export function useEditorState(): EditorController {
       if (gg) out.push({ kind: 'node', id, box: { cx: gg.x, cy: gg.y, hw: gg.w / 2, hh: gg.h / 2 } });
     }
     docRef.current.floats.forEach((f) => {
-      const h = f.h || 44;
+      const h = floatBoxH(f);
       out.push({ kind: 'float', id: f.id, box: { cx: f.x + f.w / 2, cy: f.y + h / 2, hw: f.w / 2, hh: h / 2 } });
     });
     return out;
@@ -911,7 +936,7 @@ export function useEditorState(): EditorController {
   function hitTestAll(p: { x: number; y: number }): HitResult | null {
     const d = docRef.current;
     for (const f of d.floats) {
-      const h = f.h || 44;
+      const h = floatBoxH(f);
       if (p.x >= f.x && p.x <= f.x + f.w && p.y >= f.y && p.y <= f.y + h) return { kind: 'float', id: f.id };
     }
     for (const z of d.zones) {
@@ -1305,7 +1330,7 @@ export function useEditorState(): EditorController {
       }
       const floats: string[] = [];
       docRef.current.floats.forEach((f) => {
-        const h = f.h || 44; // approximates the original's measured `_floatH` (no DOM ref here)
+        const h = floatBoxH(f); // measured memo height (port of `_floatH`)
         if (hit(f.x + f.w / 2, f.y + h / 2, f.w / 2, h / 2)) floats.push(f.id);
       });
       const lines: string[] = [];
@@ -2056,7 +2081,7 @@ export function useEditorState(): EditorController {
     }
     if (kind === 'float') {
       const f = docRef.current.floats.find((x) => x.id === id);
-      return f ? { x: f.x + f.w / 2, y: f.y + (f.h || 44) / 2 } : null;
+      return f ? { x: f.x + f.w / 2, y: f.y + floatBoxH(f) / 2 } : null;
     }
     if (kind === 'zone') {
       const z = docRef.current.zones.find((x) => x.id === id);
@@ -2524,7 +2549,7 @@ export function useEditorState(): EditorController {
     e.preventDefault();
     const f = docRef.current.floats.find((x) => x.id === id);
     if (!f) return;
-    startObjDrag({ kind: 'float-resize', id, pointerId: e.pointerId, startClientX: e.clientX, startClientY: e.clientY, ow: f.w, oh: f.h || 44 });
+    startObjDrag({ kind: 'float-resize', id, pointerId: e.pointerId, startClientX: e.clientX, startClientY: e.clientY, ow: f.w, oh: floatBoxH(f) });
   }, []);
 
   const beginZoneDrag = useCallback((e: ReactPointerEvent, id: string) => {
@@ -2793,6 +2818,7 @@ export function useEditorState(): EditorController {
     vw: viewport.vw,
     vh: viewport.vh,
     geom,
+    floatHeights,
     mapId,
     docTitle,
     setViewportEl,
