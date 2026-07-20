@@ -565,6 +565,22 @@ export function useEditorState(): EditorController {
             const sig = docSignature(res.doc);
             lastSavedSigRef.current = sig;
             mountDocSigRef.current = sig;
+            // DATA-LOSS GUARD: rebase the undo/redo history onto the just-loaded
+            // doc. The history baseline was seeded at mount from the empty
+            // PLACEHOLDER (backend mode paints a spinner, not the seed, until this
+            // load resolves), so without this reset the empty seed stays at the
+            // bottom of the undo stack — one Undo past the first edit would restore
+            // it and wipe the whole map. Port of dc's post-load history reset
+            // (MindFlow.dc.html:862, the `_loadingDoc` branch).
+            historyRef.current?.reset({
+              nodes: res.doc.nodes,
+              floats: res.doc.floats,
+              lines: res.doc.lines,
+              zones: res.doc.zones,
+              layoutMode: res.doc.layoutMode,
+              edgeStyle: (res.doc.edgeStyle as EdgeStyle | undefined) ?? 'curve',
+            });
+            setHistoryTick((t) => t + 1);
           }
           // Cache the backend truth locally: next open renders instantly (no
           // empty-seed flash/race) AND it's a recovery copy if a write goes wrong.
