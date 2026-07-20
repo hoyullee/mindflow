@@ -10,7 +10,7 @@ import { useYjsDocSync } from '../../collab/useYjsDocSync';
 import { usePresence, type UsePresenceResult } from '../../collab/usePresence';
 import { EMPTY_PRESENCE_SELECTION, type PresenceSelection } from '../../collab/presence';
 import { CanvasTextMeasurer, computeMetrics, measureFloatHeight } from './metrics';
-import { hasStoredDoc, loadOrSeedDoc } from './storage';
+import { hasStoredDoc, loadOrSeedDoc, saveDoc } from './storage';
 import { buildVisible, descendants, outlineRows } from './tree';
 import type { EdgeStyle } from './tree';
 import { themeKeyOf, themeOf } from './theme';
@@ -163,6 +163,12 @@ export interface EditorController {
   /** True until the initial backend load resolves when the mount seed was only a
    * placeholder — the canvas holds meanwhile so the empty default never flashes. */
   hydrating: boolean;
+  /** The initial doc load FAILED (network/RLS). The canvas shows an error+retry
+   * instead of the empty seed, and saving is blocked so nothing overwrites the
+   * (unknown-state) backend doc. */
+  loadError: boolean;
+  /** Retry a failed initial load (reloads the editor route). */
+  retryLoad: () => void;
   theme: Theme;
   themeKey: ThemeKey;
   layoutMode: LayoutMode;
@@ -531,37 +537,65 @@ export function useEditorState(): EditorController {
   // that resolves after an edit already landed would silently revert it. ----
   const docVersionRef = useRef<number | undefined>(undefined);
   const mountDocSigRef = useRef(docSignature(doc));
+  // DATA-LOSS GUARD: never write to the backend until the initial `load()` has
+  // RESOLVED. Until then we don't know the doc's real content/version, so the
+  // synchronous empty seed (localStorage has no body in backend mode) could
+  // otherwise be saved — with `prevVersion: undefined` that's a force-UPSERT
+  // that would OVERWRITE the user's real map with an empty one. Stays false on a
+  // load ERROR too (unknown backend state → refuse to persist, keep the map safe).
+  const canPersistDocRef = useRef(false);
+  const lastSavedSigRef = useRef(docSignature(doc));
+  const initialLoadRef = useRef<Promise<void>>(Promise.resolve());
+  const [loadError, setLoadError] = useState(false);
   useEffect(() => {
     let cancelled = false;
-    docStore
+    const p = docStore
       .load(docStoreId)
       .then((res) => {
         if (cancelled) return;
-        if (!res) {
-          docVersionRef.current = undefined;
-          return;
+        if (res) {
+          docVersionRef.current = res.version;
+          const adopt = docSignature(docRef.current) === mountDocSigRef.current && docSignature(res.doc) !== mountDocSigRef.current;
+          if (adopt) {
+            setDoc(res.doc);
+            setEdgeStyleState((res.doc.edgeStyle as EdgeStyle | undefined) ?? 'curve');
+            // Re-baseline so the just-loaded doc isn't immediately re-saved, and so
+            // a later in-flight edit doesn't get reverted by this same load.
+            const sig = docSignature(res.doc);
+            lastSavedSigRef.current = sig;
+            mountDocSigRef.current = sig;
+          }
+          // Cache the backend truth locally: next open renders instantly (no
+          // empty-seed flash/race) AND it's a recovery copy if a write goes wrong.
+          try {
+            saveDoc(mapId, res.doc);
+          } catch {
+            /* storage unavailable — non-fatal */
+          }
+        } else {
+          docVersionRef.current = undefined; // confirmed brand-new map (no row yet)
         }
-        docVersionRef.current = res.version;
-        const adopt = docSignature(docRef.current) === mountDocSigRef.current && docSignature(res.doc) !== mountDocSigRef.current;
-        if (adopt) {
-          setDoc(res.doc);
-          setEdgeStyleState((res.doc.edgeStyle as EdgeStyle | undefined) ?? 'curve');
-        }
+        // A RESOLVED load (doc OR null) means we know the backend state → saving
+        // is now safe.
+        canPersistDocRef.current = true;
+        setLoadError(false);
       })
       .catch(() => {
-        /* load failed (offline, RLS, ...) — keep the locally-seeded doc and
-         * treat this as a brand-new/unknown version; the next save() will
-         * create it rather than lock against a version we never confirmed */
+        if (cancelled) return;
+        // Load FAILED (offline/RLS/transient): we do NOT know the backend state,
+        // so we must NEVER persist — otherwise the empty seed could clobber the
+        // real doc. Surface an error instead of silently showing an empty map.
+        canPersistDocRef.current = false;
+        setLoadError(true);
       })
       .finally(() => {
-        // Reveal the canvas once the real doc is in (or the load settled with
-        // nothing to adopt — a brand-new map, where the seed IS the doc).
         if (!cancelled) setHydrating(false);
       });
+    initialLoadRef.current = p;
     return () => {
       cancelled = true;
     };
-  }, [docStore, docStoreId]);
+  }, [docStore, docStoreId, mapId]);
 
   // Titles of OTHER (non-deleted) maps — used to reject renaming this map to a
   // name that's already taken (see `commitTitle`). Best-effort: fetched once on
@@ -1439,7 +1473,6 @@ export function useEditorState(): EditorController {
   // ---- save (manual + debounced autosave) — port of `saveDoc`/`scheduleAutoSave`/`saveNow`
   // (MindFlow.dc.html:537-543, 598-602), M4: routed through `DocStore.save()` with
   // `docVersionRef` as the optimistic-lock token instead of a raw `localStorage.setItem` ----
-  const lastSavedSigRef = useRef(docSignature(doc));
   const autosaveTimerRef = useRef<number | undefined>(undefined);
   const savingTimerRef = useRef<number | undefined>(undefined);
 
@@ -1449,11 +1482,21 @@ export function useEditorState(): EditorController {
    * has a place to tell the user (`DocChip`'s banner); this is intentionally NOT a
    * full merge/reload flow (out of scope here, see CLAUDE.md's M4 task brief). */
   const persistDoc = useCallback(async (): Promise<void> => {
+    // DATA-LOSS GUARD: refuse to write until the initial load resolved (see
+    // `canPersistDocRef`). Prevents the empty mount seed from overwriting a real
+    // backend doc while its `load()` is still in flight or has failed.
+    if (!canPersistDocRef.current) return;
     const title = safeDocTitle(docRef.current, titleParam);
     const result = await docStore.save(docStoreId, docRef.current, { prevVersion: docVersionRef.current, title });
     if (result.ok) {
       docVersionRef.current = result.version;
       lastSavedSigRef.current = docSignature(docRef.current);
+      // Keep the local recovery copy in sync with every successful save.
+      try {
+        saveDoc(mapId, docRef.current);
+      } catch {
+        /* storage unavailable — non-fatal */
+      }
       setSaveStateState('saved');
       setSaveConflict(null);
     } else if (result.reason === 'conflict') {
@@ -1463,7 +1506,7 @@ export function useEditorState(): EditorController {
     } else {
       setSaveStateState('dirty'); // keep dirty so the next autosave/Ctrl+S tick retries
     }
-  }, [docStore, docStoreId, titleParam]);
+  }, [docStore, docStoreId, titleParam, mapId]);
 
   useEffect(() => {
     const sig = docSignature(doc);
@@ -1494,13 +1537,11 @@ export function useEditorState(): EditorController {
   const goHome = useCallback(() => {
     window.clearTimeout(autosaveTimerRef.current);
     window.clearTimeout(savingTimerRef.current);
-    // Fire-and-forget: for `LocalDocStore` the write is synchronous under the
-    // hood (plain `localStorage.setItem`), so it's already applied by the time
-    // this function returns even though `persistDoc` itself is `async`. For a
-    // real network backend this is best-effort — the debounced autosave above
-    // already keeps saves close to real-time, matching this app's existing
-    // "don't block navigation on save" behavior.
-    void persistDoc();
+    // Persist AFTER the initial load resolves — `persistDoc` no-ops until then
+    // (`canPersistDocRef`), so awaiting the load both prevents the empty seed
+    // from overwriting the backend AND doesn't drop a last-second edit made
+    // while the load was still in flight. Navigation isn't blocked on it.
+    void initialLoadRef.current.then(() => persistDoc());
     navigate('/home');
   }, [navigate, persistDoc]);
 
@@ -2823,6 +2864,10 @@ export function useEditorState(): EditorController {
   return {
     doc,
     hydrating,
+    loadError,
+    retryLoad: () => {
+      if (typeof window !== 'undefined') window.location.reload();
+    },
     theme,
     themeKey: themeKeyOf(doc.themeKey),
     layoutMode: doc.layoutMode,
