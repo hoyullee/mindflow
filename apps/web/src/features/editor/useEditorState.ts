@@ -4,13 +4,13 @@ import { useNavigate, useSearchParams } from 'react-router-dom';
 import type { Box, Doc, Float, Line, LineAnchor, LayoutMode, Node, NodeMap, SizeOf, SnapCandidate, Zone } from '@mindflow/mindmap-core';
 import { HistoryStack, ROOT_ID, applyPartialStyle, cubicAt, findLineSnap, layout, resolveLineEndpoints, resolveLineGeometry, serializeDoc } from '@mindflow/mindmap-core';
 import { domToRuns, linearize, runsToHtml, setLinearSelection } from './richtextDom';
-import { useDocStore } from '../../adapters/BackendContext';
+import { useBackend, useDocStore } from '../../adapters/BackendContext';
 import { useAuthUser } from '../../adapters/useAuthUser';
 import { useYjsDocSync } from '../../collab/useYjsDocSync';
 import { usePresence, type UsePresenceResult } from '../../collab/usePresence';
 import { EMPTY_PRESENCE_SELECTION, type PresenceSelection } from '../../collab/presence';
 import { CanvasTextMeasurer, computeMetrics, measureFloatHeight } from './metrics';
-import { loadOrSeedDoc } from './storage';
+import { hasStoredDoc, loadOrSeedDoc } from './storage';
 import { buildVisible, descendants, outlineRows } from './tree';
 import type { EdgeStyle } from './tree';
 import { themeKeyOf, themeOf } from './theme';
@@ -160,6 +160,9 @@ function totalSelected(m: MultiSelection): number {
 
 export interface EditorController {
   doc: Doc;
+  /** True until the initial backend load resolves when the mount seed was only a
+   * placeholder — the canvas holds meanwhile so the empty default never flashes. */
+  hydrating: boolean;
   theme: Theme;
   themeKey: ThemeKey;
   layoutMode: LayoutMode;
@@ -440,11 +443,18 @@ export function useEditorState(): EditorController {
   const [params] = useSearchParams();
   const navigate = useNavigate();
   const docStore = useDocStore();
+  const backendMode = useBackend().mode;
   const mapId = params.get('map') || null;
   const docStoreId = mapId || 'default';
   const titleParam = params.get('title') ? decodeURIComponent(params.get('title') || '') : '';
 
   const [doc, setDoc] = useState<Doc>(() => loadOrSeedDoc(mapId, titleParam));
+  // True while the mount-time doc is only a PLACEHOLDER seed (no local body) and a
+  // backend `docStore.load` is still in flight — the canvas holds until it
+  // resolves so the empty default never flashes before the real tree. Only gates
+  // in backend (supabase) mode: local mode's seed IS authoritative (the store
+  // reads the same localStorage), so it paints instantly with no spinner.
+  const [hydrating, setHydrating] = useState(() => backendMode === 'supabase' && !hasStoredDoc(mapId));
   const [saveConflict, setSaveConflict] = useState<{ currentVersion: number } | null>(null);
   // connector style lives on the doc (persisted like layoutMode/themeKey); mirror
   // it into local state for rendering, seeded from the loaded doc.
@@ -542,6 +552,11 @@ export function useEditorState(): EditorController {
         /* load failed (offline, RLS, ...) — keep the locally-seeded doc and
          * treat this as a brand-new/unknown version; the next save() will
          * create it rather than lock against a version we never confirmed */
+      })
+      .finally(() => {
+        // Reveal the canvas once the real doc is in (or the load settled with
+        // nothing to adopt — a brand-new map, where the seed IS the doc).
+        if (!cancelled) setHydrating(false);
       });
     return () => {
       cancelled = true;
@@ -2807,6 +2822,7 @@ export function useEditorState(): EditorController {
 
   return {
     doc,
+    hydrating,
     theme,
     themeKey: themeKeyOf(doc.themeKey),
     layoutMode: doc.layoutMode,

@@ -49,6 +49,14 @@ export function seedDoc(title: string): Doc {
   };
 }
 
+/** Whether a saved doc body exists in localStorage for `mapId`. When false, the
+ * editor's synchronous seed is a PLACEHOLDER (`seedDoc`) that a backend load may
+ * replace — the caller uses this to hold the canvas until that load resolves,
+ * so the placeholder never flashes before the real tree. */
+export function hasStoredDoc(mapId: string | null): boolean {
+  return !!readRaw(docStorageKey(mapId));
+}
+
 /** Loads the saved doc for `mapId`, or seeds a fresh one titled `title`. */
 export function loadOrSeedDoc(mapId: string | null, title: string): Doc {
   const raw = readRaw(docStorageKey(mapId));
