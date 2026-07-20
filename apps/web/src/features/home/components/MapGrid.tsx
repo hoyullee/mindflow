@@ -93,7 +93,18 @@ export function MapGrid({ view, controller }: Props) {
 
       {view.isEmpty && (
         <div style={{ display: 'flex', flex: '1 1 auto', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', minHeight: 0, padding: 20 }}>
-          <div style={{ width: 88, height: 88, borderRadius: 24, background: '#fdeee7', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 40, marginBottom: 20 }}>🗺️</div>
+          {/* Mindmap glyph (SVG) instead of the 🗺️ emoji — matches the line-icon
+              style of the sibling empty states (folder / Drive) so the empty
+              screen reads as one design instead of an out-of-place emoji. */}
+          <div style={{ width: 88, height: 88, borderRadius: 24, background: '#fdeee7', display: 'flex', alignItems: 'center', justifyContent: 'center', marginBottom: 20 }}>
+            <svg width="42" height="42" viewBox="0 0 24 24" fill="none" stroke="#f0663f" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+              <path d="M7.3 11.2C10 9.8 12.4 8.2 15.4 7" />
+              <path d="M7.3 12.8C10 14.2 12.4 15.8 15.4 17" />
+              <circle cx="5" cy="12" r="2.7" fill="#f0663f" stroke="none" />
+              <circle cx="17.6" cy="6.4" r="2.4" />
+              <circle cx="17.6" cy="17.6" r="2.4" />
+            </svg>
+          </div>
           <div style={{ fontSize: 18, fontWeight: 700, marginBottom: 8 }}>아직 만든 맵이 없어요</div>
           <div style={{ fontSize: 13.5, color: '#9c8b7e', lineHeight: 1.6, marginBottom: 24, textAlign: 'center' }}>
             첫 마인드맵을 만들어 생각을 정리해 보세요.
