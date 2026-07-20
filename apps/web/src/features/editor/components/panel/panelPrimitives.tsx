@@ -80,6 +80,72 @@ export function panelBodyStyle(isMobile = false): CSSProperties {
   };
 }
 
+/**
+ * Small line icons for the mobile drill-down tiles (`MobilePanelSheet`). Each is
+ * a 20×20 `currentColor` stroke glyph so it inherits the tile's accent color.
+ */
+function Svg({ children }: { children: ReactNode }) {
+  return (
+    <svg width={19} height={19} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round">
+      {children}
+    </svg>
+  );
+}
+export const TileIcon = {
+  shape: (
+    <Svg>
+      <rect x={3} y={3} width={8} height={8} rx={1.5} />
+      <circle cx={17} cy={7} r={4} />
+      <path d="M7 15l4 6H3z" />
+    </Svg>
+  ),
+  palette: (
+    <Svg>
+      <path d="M12 3a9 9 0 1 0 0 18c1 0 1.5-.8 1.5-1.6 0-.5-.2-.9-.5-1.2-.3-.3-.5-.7-.5-1.2 0-.9.7-1.5 1.6-1.5H16a5 5 0 0 0 5-5c0-3.9-4-7.3-9-7.3z" />
+      <circle cx={7.5} cy={10.5} r={1} fill="currentColor" />
+      <circle cx={12} cy={7.5} r={1} fill="currentColor" />
+      <circle cx={16.5} cy={10.5} r={1} fill="currentColor" />
+    </Svg>
+  ),
+  text: (
+    <Svg>
+      <path d="M5 6V5h14v1" />
+      <path d="M12 5v14" />
+      <path d="M9 19h6" />
+    </Svg>
+  ),
+  emoji: (
+    <Svg>
+      <polygon points="12 3 14.6 8.6 20.7 9.3 16.1 13.4 17.4 19.4 12 16.3 6.6 19.4 7.9 13.4 3.3 9.3 9.4 8.6" />
+    </Svg>
+  ),
+  note: (
+    <Svg>
+      <path d="M5 3h9l5 5v13H5z" />
+      <path d="M14 3v5h5" />
+      <path d="M8 13h8M8 17h5" />
+    </Svg>
+  ),
+  edit: (
+    <Svg>
+      <path d="M12 20h9" />
+      <path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z" />
+    </Svg>
+  ),
+  line: (
+    <Svg>
+      <line x1={4} y1={20} x2={20} y2={4} />
+      <circle cx={5} cy={19} r={1.6} fill="currentColor" />
+      <circle cx={19} cy={5} r={1.6} fill="currentColor" />
+    </Svg>
+  ),
+  curve: (
+    <Svg>
+      <path d="M4 20C4 9 20 15 20 4" />
+    </Svg>
+  ),
+} as const;
+
 export function SectionLabel({ theme, children }: { theme: Theme; children: ReactNode }) {
   return <div style={{ fontSize: 11, fontWeight: 700, letterSpacing: '.04em', textTransform: 'uppercase', color: theme.subtext, marginBottom: 8 }}>{children}</div>;
 }
