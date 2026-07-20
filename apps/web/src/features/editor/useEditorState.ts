@@ -207,6 +207,16 @@ export interface EditorController {
   selectZone: (id: string) => void;
   clearSelection: () => void;
 
+  // ---- mobile property sheet ----
+  // On mobile the property panel is a 55dvh bottom sheet. Selecting an object no
+  // longer auto-opens it (that covered the canvas and panned the map on every
+  // tap); the user opens it explicitly. `propsOpen` gates the sheet on mobile
+  // and resets whenever the selection changes. (Desktop ignores this — the side
+  // panel still shows on selection.)
+  propsOpen: boolean;
+  openProps: () => void;
+  closeProps: () => void;
+
   // ---- multi-selection (marquee) — port of `Component#state.msel` ----
   multiSelection: MultiSelection | null;
   /** Always non-empty-safe: falls back to the single `selection` when there's no active
@@ -389,6 +399,8 @@ export interface EditorController {
   beginLineDrag: (e: ReactPointerEvent, id: string) => void;
   beginLineEndDrag: (e: ReactPointerEvent, id: string, which: LineHandle) => void;
   beginLineCurveDrag: (e: ReactPointerEvent, id: string, which: LineHandle) => void;
+  /** Start moving the current selection from a deliberate move-handle grip (mobile). */
+  beginMoveSelected: (e: ReactPointerEvent) => void;
   dragGhost: { id: string; x: number; y: number } | null;
 
   // ---- undo/redo/save/export ----
@@ -447,6 +459,15 @@ export function useEditorState(): EditorController {
 
   const [selection, setSelectionState] = useState<Selection | null>(null);
   const [multiSelection, setMultiSelectionState] = useState<MultiSelection | null>(null);
+  // Mobile-only: whether the property bottom sheet is open (see the interface
+  // note). Reset to closed whenever the selection identity changes so a fresh
+  // tap never re-covers the canvas — the user re-opens it per object.
+  const [propsOpen, setPropsOpen] = useState(false);
+  useEffect(() => {
+    setPropsOpen(false);
+  }, [selection?.kind, selection?.id]);
+  const openProps = useCallback(() => setPropsOpen(true), []);
+  const closeProps = useCallback(() => setPropsOpen(false), []);
   const [marquee, setMarquee] = useState<MarqueeRect | null>(null);
   const [attachTarget, setAttachTarget] = useState<AttachTarget | null>(null);
   const [showMinimap, setShowMinimap] = useState(true);
@@ -671,6 +692,13 @@ export function useEditorState(): EditorController {
   useEffect(() => {
     multiSelectionRef.current = multiSelection;
   }, [multiSelection]);
+  // Synchronous mirror of the single selection — read by the touch drag/move-
+  // handle logic (mobile object move) which must decide on `pointerdown`, before
+  // a render flushes.
+  const selectionRef = useRef(selection);
+  useEffect(() => {
+    selectionRef.current = selection;
+  }, [selection]);
 
   // ---- line endpoint anchor magnets (a1/a2) — port of the `_geom`/float-box lookups
   // `Component#lineTargetBox`/`findSnap`/`resolveEnd` share (MindFlow.dc.html:2377-2454).
@@ -2371,12 +2399,22 @@ export function useEditorState(): EditorController {
     startObjDrag({ kind: 'group', pointerId: e.pointerId, startClientX: e.clientX, startClientY: e.clientY, nodesOrig, floatsOrig, linesOrig });
   }
 
+  // Touch object-move (option A): a press on the ALREADY-selected object starts a
+  // real move drag instead of deferring to a tap/pan — so on mobile you tap to
+  // select, then drag it to move it (matches Keynote/Figma "select then drag").
+  // Everything else on touch still defers (see each `pendingTapRef` guard).
+  const isSelectedSingle = (kind: Selection['kind'], id: string): boolean => {
+    const s = selectionRef.current;
+    return !!s && s.kind === kind && s.id === id;
+  };
+
   const beginNodeDrag = useCallback(
     (e: ReactPointerEvent, id: string) => {
       // Touch: defer to a tap. Don't select/drag on press — record the target
       // and let the press bubble to the background so a drag pans and a no-move
       // release selects (see `pendingTapRef`). Mouse keeps press-to-select+drag.
-      if (e.pointerType === 'touch') {
+      // Exception: an already-selected node → start a move drag (option A).
+      if (e.pointerType === 'touch' && !isSelectedSingle('node', id)) {
         pendingTapRef.current = { kind: 'node', id };
         return;
       }
@@ -2422,7 +2460,7 @@ export function useEditorState(): EditorController {
   }, []);
 
   const beginFloatDrag = useCallback((e: ReactPointerEvent, id: string) => {
-    if (e.pointerType === 'touch') {
+    if (e.pointerType === 'touch' && !isSelectedSingle('float', id)) {
       pendingTapRef.current = { kind: 'float', id };
       return;
     }
@@ -2449,7 +2487,7 @@ export function useEditorState(): EditorController {
   }, []);
 
   const beginZoneDrag = useCallback((e: ReactPointerEvent, id: string) => {
-    if (e.pointerType === 'touch') {
+    if (e.pointerType === 'touch' && !isSelectedSingle('zone', id)) {
       pendingTapRef.current = { kind: 'zone', id };
       return;
     }
@@ -2471,7 +2509,7 @@ export function useEditorState(): EditorController {
   }, []);
 
   const beginLineDrag = useCallback((e: ReactPointerEvent, id: string) => {
-    if (e.pointerType === 'touch') {
+    if (e.pointerType === 'touch' && !isSelectedSingle('line', id)) {
       pendingTapRef.current = { kind: 'line', id };
       return;
     }
@@ -2488,6 +2526,23 @@ export function useEditorState(): EditorController {
     setMultiSelectionState(null);
     startObjDrag({ kind: 'line-move', id, pointerId: e.pointerId, startClientX: e.clientX, startClientY: e.clientY, o: { x1: l.x1, y1: l.y1, x2: l.x2, y2: l.y2 } });
   }, []);
+
+  // Move-handle drag (option B): a deliberate grip on the current selection that
+  // starts its move drag on pointerdown. Dispatches to the same `begin*Drag` as a
+  // direct grab — the object is already selected, so those start the drag even on
+  // touch (see `isSelectedSingle`). Gives mobile a discoverable "grab here to
+  // move" affordance alongside dragging the object body directly.
+  const beginMoveSelected = useCallback(
+    (e: ReactPointerEvent) => {
+      const s = selectionRef.current;
+      if (!s) return;
+      if (s.kind === 'node') beginNodeDrag(e, s.id);
+      else if (s.kind === 'float') beginFloatDrag(e, s.id);
+      else if (s.kind === 'zone') beginZoneDrag(e, s.id);
+      else if (s.kind === 'line') beginLineDrag(e, s.id);
+    },
+    [beginNodeDrag, beginFloatDrag, beginZoneDrag, beginLineDrag],
+  );
 
   const beginLineEndDrag = useCallback((e: ReactPointerEvent, id: string, which: LineHandle) => {
     e.stopPropagation();
@@ -2721,6 +2776,10 @@ export function useEditorState(): EditorController {
     selectZone,
     clearSelection,
 
+    propsOpen,
+    openProps,
+    closeProps,
+
     multiSelection,
     multiGroups,
     marquee,
@@ -2832,6 +2891,7 @@ export function useEditorState(): EditorController {
     beginLineDrag,
     beginLineEndDrag,
     beginLineCurveDrag,
+    beginMoveSelected,
     dragGhost,
 
     canUndo: historyRef.current.canUndo(),

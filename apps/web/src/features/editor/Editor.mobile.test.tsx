@@ -1,10 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { act, cleanup, fireEvent, render, screen, within } from '@testing-library/react';
 import { MemoryRouter, Route, Routes } from 'react-router-dom';
-import type { Doc } from '@mindflow/mindmap-core';
-import { layout } from '@mindflow/mindmap-core';
 import { Editor } from './Editor';
-import { CanvasTextMeasurer, computeMetrics } from './metrics';
 import { mockMatchMedia } from '../../test/matchMedia';
 
 // M6: the property panel (NodePanel/LinePanel/FloatPanel/ZonePanel, all via
@@ -46,6 +43,12 @@ function getViewport(container: HTMLElement): HTMLElement {
 function selectNodeBox(el: HTMLElement): void {
   fireEvent.pointerDown(el, { pointerId: 1, clientX: 100, clientY: 100, button: 0 });
   fireEvent.pointerUp(window, { pointerId: 1, clientX: 100, clientY: 100 });
+}
+
+/** Mobile: open the property bottom sheet via the selection bar's 속성 button
+ * (selection alone no longer auto-opens it). */
+function openMobileProps(): void {
+  fireEvent.click(screen.getByText('속성'));
 }
 
 /**
@@ -124,7 +127,31 @@ describe('Editor (mobile, M6)', () => {
     }
   });
 
-  it('shows the property panel as a bottom sheet (fixed to the viewport bottom) on node selection', () => {
+  it('does NOT auto-open the property sheet on mobile selection (opens via the 속성 bar)', () => {
+    const restore = mockMatchMedia(true);
+    try {
+      localStorage.setItem('mindflow_doc_m2b', JSON.stringify(DOC));
+      const { container } = renderEditor('/editor?map=m2b&title=x');
+      const vp = within(getViewport(container));
+      const nodeBox = vp.getByText('리서치').closest('[data-node-id]') as HTMLElement;
+      selectNodeBox(nodeBox);
+
+      // selected, but the bottom sheet stays closed — only the selection bar shows
+      expect(screen.queryByText('선택한 주제')).toBeNull();
+      expect(screen.getByText('속성')).toBeTruthy();
+
+      // opening it via the bar reveals the panel; closing keeps the selection
+      openMobileProps();
+      expect(screen.getByText('선택한 주제')).toBeTruthy();
+      fireEvent.click(screen.getByLabelText('속성 닫기'));
+      expect(screen.queryByText('선택한 주제')).toBeNull();
+      expect(screen.getByText('속성')).toBeTruthy(); // still selected → bar back
+    } finally {
+      restore();
+    }
+  });
+
+  it('shows the property panel as a bottom sheet (fixed to the viewport bottom) once opened', () => {
     const restore = mockMatchMedia(true);
     try {
       localStorage.setItem('mindflow_doc_m2', JSON.stringify(DOC));
@@ -133,6 +160,7 @@ describe('Editor (mobile, M6)', () => {
       const vp = within(getViewport(container));
       const nodeBox = vp.getByText('리서치').closest('[data-node-id]') as HTMLElement;
       selectNodeBox(nodeBox);
+      openMobileProps();
 
       const heading = screen.getByText('선택한 주제');
       expect(heading).toBeTruthy();
@@ -247,11 +275,13 @@ describe('Editor (mobile, M6)', () => {
       // press alone must NOT select (that's the whole point — no grabbing on
       // touch-down while the user is starting a pan/zoom)
       touchEvent(node, 'pointerdown', { pointerId: 9, clientX: 150, clientY: 150 });
-      expect(screen.queryByText('선택한 주제')).toBeNull();
+      expect(screen.queryByText('속성')).toBeNull();
 
-      // releasing without moving (a tap) selects it
+      // releasing without moving (a tap) selects it → the mobile selection bar
+      // appears (the property sheet no longer auto-opens)
       touchEvent(window, 'pointerup', { pointerId: 9, clientX: 150, clientY: 150 });
-      expect(screen.getByText('선택한 주제')).toBeTruthy();
+      expect(screen.getByText('속성')).toBeTruthy();
+      expect(screen.queryByText('선택한 주제')).toBeNull();
     } finally {
       restore();
     }
@@ -265,12 +295,12 @@ describe('Editor (mobile, M6)', () => {
       const vp = getViewport(container);
       const nodeBox = within(vp).getByText('리서치').closest('[data-node-id]') as HTMLElement;
       selectNodeBox(nodeBox);
-      expect(screen.getByText('선택한 주제')).toBeTruthy();
+      expect(screen.getByText('속성')).toBeTruthy(); // selected → selection bar shows
 
       // a no-move touch tap on the empty background clears the selection
       touchEvent(vp, 'pointerdown', { pointerId: 6, clientX: 40, clientY: 300 });
       touchEvent(window, 'pointerup', { pointerId: 6, clientX: 40, clientY: 300 });
-      expect(screen.queryByText('선택한 주제')).toBeNull();
+      expect(screen.queryByText('속성')).toBeNull();
     } finally {
       restore();
     }
@@ -288,7 +318,10 @@ describe('Editor (mobile, M6)', () => {
       const vp = getViewport(container);
       const nodeBox = within(vp).getByText('리서치').closest('[data-node-id]') as HTMLElement;
       selectNodeBox(nodeBox);
+      // selection alone keeps the cluster (the sheet isn't open yet)
+      expect(within(container).queryByTitle('화면 맞춤')).toBeTruthy();
 
+      openMobileProps();
       // panel open → the whole minimap/zoom cluster is gone
       expect(within(container).queryByTitle('화면 맞춤')).toBeNull();
     } finally {
@@ -303,17 +336,13 @@ describe('Editor (mobile, M6)', () => {
       const { container } = renderEditor('/editor?map=m10&title=x');
       const vp = getViewport(container);
 
-      // c1's laid-out canvas center (same layout the hook runs)
-      const measurer = new CanvasTextMeasurer();
-      const sizeOf = (node: Parameters<typeof computeMetrics>[0], depth: number) => {
-        const m = computeMetrics(node, depth, measurer);
-        return { w: m.w, h: m.h };
-      };
-      const laid = layout(DOC as unknown as Doc, DOC.layoutMode as Doc['layoutMode'], sizeOf, { rootAnchor: { x: 0, y: 0 } });
-      const c1Y = laid.c1!.y;
-
       const nodeBox = within(vp).getByText('리서치').closest('[data-node-id]') as HTMLElement;
-      selectNodeBox(nodeBox); // selects c1 → the mobile centering effect runs
+      selectNodeBox(nodeBox); // selects c1
+      openMobileProps(); // opening the sheet runs the mobile centering effect
+
+      // c1's ACTUAL rendered canvas center (read from its box style, so this is
+      // consistent with the geom the centering used — not a re-derived layout).
+      const c1Y = parseFloat(nodeBox.style.top) + parseFloat(nodeBox.style.height) / 2;
 
       const layer = getTransformLayer(container);
       const t = /translate\(\s*[-\d.]+px,\s*([-\d.]+)px\)\s*scale\(([-\d.]+)\)/.exec(layer.style.transform)!;
@@ -325,6 +354,58 @@ describe('Editor (mobile, M6)', () => {
       // cover up to ~55% of the viewport
       expect(screenY).toBeGreaterThan(0);
       expect(screenY).toBeLessThan(vh * 0.45);
+    } finally {
+      restore();
+    }
+  });
+
+  it('shows a move grip on the selected object (mobile only)', () => {
+    const restore = mockMatchMedia(true);
+    try {
+      localStorage.setItem('mindflow_doc_m11', JSON.stringify(DOC));
+      const { container } = renderEditor('/editor?map=m11&title=x');
+      const vp = getViewport(container);
+      expect(screen.queryByLabelText('이동')).toBeNull(); // nothing selected → no grip
+
+      const nodeBox = within(vp).getByText('리서치').closest('[data-node-id]') as HTMLElement;
+      selectNodeBox(nodeBox);
+      expect(screen.getByLabelText('이동')).toBeTruthy(); // selected → move grip appears
+    } finally {
+      restore();
+    }
+  });
+
+  it('does NOT show the move grip on desktop', () => {
+    const restore = mockMatchMedia(false);
+    try {
+      localStorage.setItem('mindflow_doc_m11d', JSON.stringify(DOC));
+      const { container } = renderEditor('/editor?map=m11d&title=x');
+      const vp = getViewport(container);
+      const nodeBox = within(vp).getByText('리서치').closest('[data-node-id]') as HTMLElement;
+      selectNodeBox(nodeBox);
+      expect(screen.queryByLabelText('이동')).toBeNull();
+    } finally {
+      restore();
+    }
+  });
+
+  it('touch: dragging the ALREADY-selected node moves it instead of panning the canvas', () => {
+    const restore = mockMatchMedia(true);
+    try {
+      localStorage.setItem('mindflow_doc_m12', JSON.stringify(DOC));
+      const { container } = renderEditor('/editor?map=m12&title=x');
+      const vp = getViewport(container);
+      const node = within(vp).getByText('리서치').closest('[data-node-id]') as HTMLElement;
+
+      // select first (tap), then a touch press-drag ON it must move it — the
+      // canvas pan transform stays put (unlike an unselected node, which pans).
+      selectNodeBox(node);
+      const before = getTransformLayer(container).style.transform;
+      touchEvent(node, 'pointerdown', { pointerId: 20, clientX: 150, clientY: 150 });
+      touchEvent(window, 'pointermove', { pointerId: 20, clientX: 260, clientY: 240 });
+      touchEvent(window, 'pointerup', { pointerId: 20, clientX: 260, clientY: 240 });
+
+      expect(getTransformLayer(container).style.transform).toBe(before); // did NOT pan
     } finally {
       restore();
     }
