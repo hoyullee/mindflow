@@ -133,6 +133,30 @@ describe('realPreview', () => {
     expect(edgeDs('curve').every((d) => d.includes('C'))).toBe(true);
   });
 
+  it('sizes node boxes by measured text (editor-identical), not the old char-count cap', () => {
+    // The preview used to size boxes with `min(220, len*13+26)` — a guess that
+    // diverged from the editor (real `computeMetrics` canvas measurement) and
+    // capped long text at 220px, so a long-text node rendered narrower than in
+    // the editor. A clearly long label must now produce a box far wider than that
+    // old 220 cap (the editor wraps long text up to a ~320px content width).
+    const longDoc = {
+      v: 1,
+      themeKey: 'coral',
+      layoutMode: 'right',
+      nodes: {
+        root: { id: 'root', text: '중심', emoji: '', parent: null, children: ['w'], collapsed: false, color: null, x: 0, y: 0 },
+        w: { id: 'w', text: '이것은 아주 길고 긴 텍스트를 가진 노드입니다 정말로 매우 길어요', emoji: '', parent: 'root', children: [], collapsed: false, color: null, x: 0, y: 0 },
+      },
+      floats: [],
+      lines: [],
+      zones: [],
+    };
+    const { container } = render(realPreview(JSON.stringify(longDoc), '#f0663f')!);
+    const widths = Array.from(container.querySelectorAll('svg rect')).map((r) => parseFloat(r.getAttribute('width') || '0'));
+    const maxW = Math.max(...widths);
+    expect(maxW).toBeGreaterThan(250); // old heuristic hard-capped every box at 220
+  });
+
   it('returns null for a doc with no nodes so the caller falls back to miniPreview', () => {
     expect(realPreview(JSON.stringify({ v: 1, nodes: {}, floats: [], lines: [], zones: [], layoutMode: 'radial', themeKey: 'coral' }), '#f0663f')).toBeNull();
     expect(realPreview(null, '#f0663f')).toBeNull();
