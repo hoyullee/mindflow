@@ -13,6 +13,7 @@ import { CanvasTextMeasurer, computeMetrics, measureFloatHeight } from './metric
 import { hasStoredDoc, loadOrSeedDoc, saveDoc } from './storage';
 import { buildVisible, descendants, outlineRows } from './tree';
 import type { EdgeStyle } from './tree';
+import { nearestInDirection } from './navigation';
 import { themeKeyOf, themeOf } from './theme';
 import type { Theme, ThemeKey } from './theme';
 import { downloadFile } from './download';
@@ -1616,44 +1617,10 @@ export function useEditorState(): EditorController {
         if (target) selectAndReveal(target);
         return;
       }
-      const a = g[fromId];
-      let best: string | null = null;
-      let bestScore = Infinity;
-      ids.forEach((id) => {
-        if (id === fromId) return;
-        const b = g[id];
-        if (!b) return;
-        const dx = b.x - a.x;
-        const dy = b.y - a.y;
-        let along: number;
-        let perp: number;
-        let ok: boolean;
-        if (dir === 'left') {
-          ok = dx < -1;
-          along = -dx;
-          perp = Math.abs(dy);
-        } else if (dir === 'right') {
-          ok = dx > 1;
-          along = dx;
-          perp = Math.abs(dy);
-        } else if (dir === 'up') {
-          ok = dy < -1;
-          along = -dy;
-          perp = Math.abs(dx);
-        } else {
-          ok = dy > 1;
-          along = dy;
-          perp = Math.abs(dx);
-        }
-        if (!ok) return;
-        // keep movement within a directional cone so it feels like the arrow pressed
-        if (perp > along * 2 + 60) return;
-        const score = along + perp * 2.2;
-        if (score < bestScore) {
-          bestScore = score;
-          best = id;
-        }
-      });
+      // Pick the nearest node in the pressed direction, measured relative to the
+      // SELECTED node (see `nearestInDirection` for the tightened directional cone
+      // that keeps a diagonal sibling from stealing an axis-aligned move).
+      const best = nearestInDirection(g, fromId, dir);
       if (best) selectAndReveal(best);
     },
     [selectAndReveal],
