@@ -180,7 +180,8 @@ a:hover {
 /* M6: map/folder grid column count. Desktop keeps the original
    auto-fill(minmax(300px,1fr)) behavior (JS `GRID_STYLE` only sets `gap`);
    below 768px there isn't room for a 300px minimum, so this steps down to a
-   2-column layout, then 1 column under 480px (a typical phone portrait width). */
+   2-column layout — kept all the way down to phone widths so cards stay
+   card-shaped instead of stretching full-width (a single wide column). */
 .mf-map-grid {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
@@ -190,14 +191,10 @@ a:hover {
     grid-template-columns: repeat(2, 1fr);
   }
 }
-@media (max-width: 479px) {
-  .mf-map-grid {
-    grid-template-columns: 1fr;
-  }
-}
 
 /* Recent section: compact cards (~1/4 the footprint of a main card), so more
-   fit per row and they read as quick-access shortcuts, not full map cards. */
+   fit per row and they read as quick-access shortcuts, not full map cards.
+   3-up on phones too, so they stay compact rather than widening out. */
 .mf-recent-grid {
   display: grid;
   gap: 12px;
@@ -206,10 +203,5 @@ a:hover {
 @media (max-width: 767px) {
   .mf-recent-grid {
     grid-template-columns: repeat(3, 1fr);
-  }
-}
-@media (max-width: 479px) {
-  .mf-recent-grid {
-    grid-template-columns: repeat(2, 1fr);
   }
 }
