@@ -280,26 +280,47 @@ export function exportPng(doc: Doc, geom: GeomMap, theme: Theme, filename: strin
     ctx.lineWidth = depth >= 2 ? 1.5 : 2;
     ctx.stroke();
 
-    const fpx = (isRoot ? 17 : depth === 1 ? 15 : 13.5) * (n.tsize === 's' ? 0.85 : n.tsize === 'l' ? 1.2 : 1);
+    // Use the SAME font size/weight the editor sized the box with (`computeMetrics`
+    // → `g.fpx`/`g.fw`), not a separate hardcoded size. The old 17px root font (vs
+    // the editor's 20px) rendered text smaller, so more characters fit per line and
+    // a long label wrapped LATER than on canvas — the exported text looked
+    // misaligned. `g.fpx` already bakes in the node's size (tsize).
+    const fpx = g.fpx;
     const tcol = n.textColor || (isRoot && !n.fill ? theme.accentInk : theme.text);
-    const fw = n.bold ? 800 : isRoot ? 800 : depth === 1 ? 600 : 500;
-    ctx.font = `${fw} ${fpx}px Pretendard, sans-serif`;
-    const label = ((n.emoji ? n.emoji + ' ' : '') + (n.text || '')).trim() || ' ';
-    // Wrap to the box's inner width so long labels break onto multiple lines
-    // (the box height already accounts for the wrap via computeMetrics).
+    const fw = g.fw;
     const padX = isRoot ? 24 : depth === 1 ? 15 : 13;
-    const lines = wrapLines(ctx, label, Math.max(8, g.w - padX * 2 - 7));
+    const emojiPx = depth === 0 ? 22 : 17;
+    // The editor lays the emoji out as a SEPARATE flex item to the LEFT of the whole
+    // text block (a 7px gap after it), not inline in line 1. `emojiFlex` is the width
+    // it occupies; wrap the TEXT in the remaining content width (`g.w - 2·padX -
+    // emojiFlex`) — the SAME width the editor's CSS box wraps at — then draw the emoji
+    // beside the block. (Wrapping at the editor's content width, not the tighter
+    // `computeMetrics` estimate, keeps the line breaks identical.)
+    let emojiFlex = 0;
+    if (n.emoji) {
+      ctx.font = `${emojiPx}px Pretendard, sans-serif`;
+      emojiFlex = ctx.measureText(n.emoji).width + 7;
+    }
+    ctx.font = `${fw} ${fpx}px Pretendard, sans-serif`;
+    const lines = wrapLines(ctx, n.text || ' ', Math.max(8, g.w - padX * 2 - emojiFlex));
     const lh = fpx * 1.35;
     const ty0 = g.y - ((lines.length - 1) * lh) / 2;
     // Honor the node's text alignment (left/center/right) — the editor's
     // `NodeBox` justifies the text block per `n.align`; the PNG used to always
-    // center it, so left/right-aligned shapes looked wrong.
+    // center it, so left/right-aligned shapes looked wrong. The emoji sits to the
+    // left, so the text region (and a centered block) shifts right by `emojiFlex`.
     const align = n.align === 'left' ? 'left' : n.align === 'right' ? 'right' : 'center';
-    const tx = align === 'left' ? x + padX : align === 'right' ? x + g.w - padX : g.x;
+    const tx = align === 'left' ? x + padX + emojiFlex : align === 'right' ? x + g.w - padX : g.x + emojiFlex / 2;
     ctx.fillStyle = tcol;
     ctx.textAlign = align;
     ctx.textBaseline = 'middle';
     lines.forEach((ln, i) => ctx.fillText(ln, tx, ty0 + i * lh));
+    if (n.emoji) {
+      ctx.font = `${emojiPx}px Pretendard, sans-serif`;
+      ctx.textAlign = 'left';
+      ctx.textBaseline = 'middle';
+      ctx.fillText(n.emoji, x + padX, g.y);
+    }
   });
 
   // zones — drawn above nodes (editor z-index 8). Label pill ellipsizes to
