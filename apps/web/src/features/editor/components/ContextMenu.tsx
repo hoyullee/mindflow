@@ -182,7 +182,7 @@ function buildItems(controller: EditorController, ctxMenu: ContextMenuState, tog
     const items: (MenuItem | 'divider')[] = [
       {
         icon: '＋',
-        label: '하위 주제',
+        label: '자식 주제',
         onSelect: () => {
           close();
           controller.addChild();
