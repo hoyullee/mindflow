@@ -124,6 +124,25 @@ export function saveRecent(list: string[]): void {
   }
 }
 
+/**
+ * Folds the per-device localStorage recents (`primary`) together with the
+ * per-user synced recents from the backend (`secondary`), most-recent first,
+ * de-duplicated and capped. `primary` wins ordering so a map just opened on THIS
+ * device stays at the top, while the synced list fills in history opened on
+ * OTHER devices (so recents follow the user from e.g. a work PC to a home PC).
+ */
+export function mergeRecent(primary: string[], secondary: string[] | undefined, cap = 4): string[] {
+  const out: string[] = [];
+  const seen = new Set<string>();
+  for (const t of [...primary, ...(secondary || [])]) {
+    if (typeof t !== 'string' || !t || seen.has(t)) continue;
+    seen.add(t);
+    out.push(t);
+    if (out.length >= cap) break;
+  }
+  return out;
+}
+
 /** The currently-viewed space/folder, persisted per TAB (sessionStorage) so
  * opening a map in the editor and coming back to Home returns to the space you
  * left from, instead of resetting to the default 일반 공간. Tab-scoped on purpose:
