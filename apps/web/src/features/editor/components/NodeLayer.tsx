@@ -336,7 +336,7 @@ function NodeBox({ id, node: n, g, nodes, mode, theme: th, rootX, controller }: 
         </div>
       )}
       {/* Drop-target hint badge while another node is dragged over this one —
-          tells the user how it will attach (하위/위 형제/아래 형제). Port of the
+          tells the user how it will attach (자식/형제). Port of the
           `attach-badge` in `Component#renderCanvas` (MindFlow.dc.html:1246-1248). */}
       {attach && controller.attachTarget && (
         <div
@@ -359,7 +359,7 @@ function NodeBox({ id, node: n, g, nodes, mode, theme: th, rootX, controller }: 
             fontFamily: 'Pretendard, sans-serif',
           }}
         >
-          {controller.attachTarget.zone === 'child' ? '하위로 연결' : controller.attachTarget.zone === 'above' ? '위 형제로 연결' : '아래 형제로 연결'}
+          {controller.attachTarget.zone === 'child' ? '자식으로 연결' : '형제로 연결'}
         </div>
       )}
       {remotePeer && !editing && <RemotePeerTag color={remotePeer.user.color} name={remotePeer.user.name} style={{ left: 0, top: -22 }} />}

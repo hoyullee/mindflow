@@ -146,7 +146,7 @@ afterEach(() => {
 });
 
 describe('Context menu — node', () => {
-  it('shows 하위 주제/형제 주제/텍스트 정렬/삭제 for a non-root node', async () => {
+  it('shows 자식 주제/형제 주제/텍스트 정렬/삭제 for a non-root node', async () => {
     localStorage.setItem('mindflow_doc_cm1', JSON.stringify(DOC));
     const { container } = renderEditor('/editor?map=cm1&title=x');
     const vp = getViewport(container);
@@ -156,7 +156,7 @@ describe('Context menu — node', () => {
 
     rightClickAt(vp, clientX, clientY);
 
-    await waitFor(() => expect(screen.getByText('하위 주제')).toBeTruthy());
+    await waitFor(() => expect(screen.getByText('자식 주제')).toBeTruthy());
     expect(screen.getByText('형제 주제')).toBeTruthy();
     expect(screen.getByText('텍스트 정렬')).toBeTruthy();
     expect(screen.getByText('삭제')).toBeTruthy();
@@ -172,7 +172,7 @@ describe('Context menu — node', () => {
 
     rightClickAt(vp, clientX, clientY);
 
-    await waitFor(() => expect(screen.getByText('하위 주제')).toBeTruthy());
+    await waitFor(() => expect(screen.getByText('자식 주제')).toBeTruthy());
     expect(screen.getByText('텍스트 정렬')).toBeTruthy();
     expect(screen.queryByText('형제 주제')).toBeNull();
     expect(screen.queryByText('삭제')).toBeNull();
@@ -222,7 +222,7 @@ describe('Context menu — float / line / zone', () => {
     rightClickAt(vp, clientX, clientY);
 
     await waitFor(() => expect(screen.getByText('삭제')).toBeTruthy());
-    expect(screen.queryByText('하위 주제')).toBeNull();
+    expect(screen.queryByText('자식 주제')).toBeNull();
     fireEvent.mouseDown(screen.getByText('삭제'));
 
     await waitFor(() => expect(screen.queryByText('주간 메모')).toBeNull());

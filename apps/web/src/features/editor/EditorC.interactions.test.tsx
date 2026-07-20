@@ -335,10 +335,10 @@ describe('Editor drag-to-reparent (M3-Editor-c)', () => {
     firePointer(window, 'pointermove', { pointerId: 7, clientX: targetClientX, clientY: targetClientY });
     // While hovering c2's center, the target shows the attach-zone hint badge
     // (dropping here makes c1 a CHILD of c2).
-    expect(screen.getByText('하위로 연결')).toBeTruthy();
+    expect(screen.getByText('자식으로 연결')).toBeTruthy();
     firePointer(window, 'pointerup', { pointerId: 7, clientX: targetClientX, clientY: targetClientY });
     // …and the badge is gone once the drag ends.
-    expect(screen.queryByText('하위로 연결')).toBeNull();
+    expect(screen.queryByText('자식으로 연결')).toBeNull();
 
     fireEvent.keyDown(window, { key: 's', ctrlKey: true }); // force a save so we can inspect the result
 
