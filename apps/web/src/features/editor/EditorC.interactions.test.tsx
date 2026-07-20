@@ -246,6 +246,7 @@ describe('Editor outline editing (M3-Editor-c)', () => {
     const { container } = renderEditor('/editor?map=oc1&title=x');
     const before = countNodeBoxes(container);
 
+    fireEvent.click(screen.getByRole('button', { name: /보기/ })); // open the 보기 menu
     fireEvent.click(screen.getByRole('button', { name: /아웃라인/ }));
     const outline = container.querySelector('.mf-ed-outline') as HTMLElement;
     expect(outline).toBeTruthy();
@@ -256,6 +257,7 @@ describe('Editor outline editing (M3-Editor-c)', () => {
     // the new node starts in outline edit mode (an <input>, not a <div>, holding it)
     await waitFor(() => expect(within(outline).getByDisplayValue('새 주제')).toBeTruthy());
 
+    fireEvent.click(screen.getByRole('button', { name: /보기/ })); // reopen the 보기 menu
     fireEvent.click(screen.getByRole('button', { name: '맵' }));
     await waitFor(() => expect(countNodeBoxes(container)).toBe(before + 1));
   });
@@ -263,6 +265,7 @@ describe('Editor outline editing (M3-Editor-c)', () => {
   it('F2 on a selected outline row starts renaming it, and Escape commits (not cancels)', async () => {
     localStorage.setItem('mindflow_doc_oc2', JSON.stringify(SIMPLE_DOC));
     const { container } = renderEditor('/editor?map=oc2&title=x');
+    fireEvent.click(screen.getByRole('button', { name: /보기/ })); // open the 보기 menu
     fireEvent.click(screen.getByRole('button', { name: /아웃라인/ }));
     const outline = container.querySelector('.mf-ed-outline') as HTMLElement;
 

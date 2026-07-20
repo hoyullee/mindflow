@@ -272,7 +272,7 @@ describe('Editor interactions (M3-Editor-b)', () => {
     renderEditor('/editor?map=edge&title=x');
 
     // open the Style menu and pick 꺾은선 (elbow) under 연결선
-    await user.click(screen.getByTitle(/맵 스타일/));
+    await user.click(screen.getByRole('button', { name: '스타일' })); // open the 스타일 menu
     await user.click(screen.getByRole('button', { name: '꺾은선' }));
     fireEvent.keyDown(window, { key: 's', ctrlKey: true });
 
@@ -339,7 +339,7 @@ describe('Editor interactions (M3-Editor-b)', () => {
     const user = userEvent.setup();
     renderEditor('/editor?map=t7&title=x');
 
-    await user.click(screen.getByTitle('내보내기'));
+    await user.click(screen.getByRole('button', { name: /내보내기/ })); // open the 내보내기 menu
     await user.click(screen.getByText('JSON 파일 (.json)'));
 
     expect(created.length).toBe(1);
@@ -356,7 +356,7 @@ describe('Editor interactions (M3-Editor-b)', () => {
     localStorage.setItem('mindflow_doc_ts1', JSON.stringify(DOC));
     renderEditor('/editor?map=ts1&title=x');
 
-    await user.click(screen.getByTitle(/맵 스타일/));
+    await user.click(screen.getByRole('button', { name: '스타일' })); // open the 스타일 menu
 
     const menu = document.querySelector('.mf-ed-stylemenu') as HTMLElement;
     expect(menu).toBeTruthy();
