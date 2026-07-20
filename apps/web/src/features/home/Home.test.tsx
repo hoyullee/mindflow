@@ -963,4 +963,65 @@ describe('Home', () => {
       expect(screen.queryByText('아직 만든 맵이 없어요')).toBeNull();
     });
   });
+
+  describe('cross-device first-login workspace race', () => {
+    // Reproduces the reported bug: logging in on a new PC showed ONLY the default
+    // 일반 공간; other spaces appeared only after a manual browser refresh. Cause:
+    // the mount hydrate ran before Supabase applied the session token, so the
+    // first RLS-scoped read came back empty. Fix: re-hydrate once auth confirms a
+    // session (onAuthChange), which is the automatic equivalent of that refresh.
+
+    /** SpaceStore whose FIRST `load()` returns null (the racing pre-session read)
+     * and every later call returns the real workspace (post-session read). */
+    class RacySpaceStore implements SpaceStore {
+      calls = 0;
+      constructor(private full: WorkspaceData) {}
+      async load(): Promise<WorkspaceData | null> {
+        this.calls += 1;
+        return this.calls === 1 ? null : this.full;
+      }
+      async save(): Promise<void> {
+        /* no-op */
+      }
+    }
+
+    /** Auth that emits a confirmed session shortly after subscription — mirrors
+     * Supabase firing INITIAL_SESSION/SIGNED_IN once the client has initialized. */
+    class RacyAuth extends LocalAuth {
+      override onAuthChange(listener: (s: { user: { id: string; email: string | null } } | null) => void): () => void {
+        const un = super.onAuthChange(listener);
+        setTimeout(() => listener({ user: { id: 'u1', email: 'a@b.com' } }), 0);
+        return un;
+      }
+    }
+
+    it('re-hydrates when auth confirms a session, so all spaces show without a manual refresh', async () => {
+      const full: WorkspaceData = {
+        spaces: [
+          { id: 'general', name: '일반 공간', home: true, color: '#f0663f', maps: [] },
+          { id: 's2', name: '업무 공간', color: '#3f8fd0', maps: [] },
+        ],
+        mapFolders: {},
+      };
+      const spaceStore = new RacySpaceStore(full);
+      const backend: Backend = { auth: new RacyAuth(), docStore: new MockDocStore([]), spaceStore, mode: 'supabase' };
+      const { container } = render(
+        <MemoryRouter initialEntries={['/home']}>
+          <BackendProvider backend={backend}>
+            <Routes>
+              <Route path="/home" element={<Home />} />
+            </Routes>
+          </BackendProvider>
+        </MemoryRouter>,
+      );
+      const sidebar = () => within(container.querySelector('aside') as HTMLElement);
+
+      // The racing first read saw no custom spaces — only the default 일반 공간.
+      await waitFor(() => expect(sidebar().getByText('일반 공간')).toBeTruthy());
+
+      // …then the auth-confirmed resync pulls the real workspace automatically.
+      await waitFor(() => expect(sidebar().getByText('업무 공간')).toBeTruthy());
+      expect(spaceStore.calls).toBeGreaterThanOrEqual(2);
+    });
+  });
 });

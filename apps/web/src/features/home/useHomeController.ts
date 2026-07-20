@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import type { ChangeEvent, KeyboardEvent } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { parseDoc, serializeDoc } from '@mindflow/mindmap-core';
@@ -58,8 +58,90 @@ export function useHomeController() {
   // re-saved and unchanged state is a no-op.
   const canPersistWorkspaceRef = useRef(false);
   const savedWorkspaceSigRef = useRef<string | null>(null);
+  // Cross-device first-login race guards. On a fresh login (esp. the OAuth
+  // redirect on a new PC) the Home mount can fire the workspace/doc reads BEFORE
+  // Supabase has applied the auth session token, so the RLS-scoped queries come
+  // back empty and only the default 일반 공간 shows (a manual refresh then works,
+  // because the persisted session is applied at client init). We therefore
+  // re-hydrate ONCE when auth first confirms a session — the automatic version
+  // of that refresh — but only while the user hasn't touched the workspace yet
+  // (`workspaceMutatedRef`) and only if the mount load didn't already succeed
+  // (`workspaceLoadedRef`), so the resync can never clobber real edits.
+  const mountedRef = useRef(true);
+  const workspaceLoadedRef = useRef(false);
+  const workspaceResyncedRef = useRef(false);
+  const workspaceMutatedRef = useRef(false);
 
   const patch = (partial: Partial<HomeState>) => setState((prev) => ({ ...prev, ...partial }));
+
+  // Fetch the per-user workspace (spaces + folders) and the doc list, then apply
+  // both in ONE setState. Extracted so both the mount and the auth-confirmed
+  // resync (see below) share identical hydration logic.
+  const hydrateFromBackend = useCallback(async () => {
+    // Restore the space/folder the user was last viewing in THIS tab (set before
+    // they opened a map in the editor), so returning to Home lands back on that
+    // space instead of the default 일반 공간.
+    const restore = loadActiveView();
+    const res = await Promise.allSettled([spaceStore.load(), docStore.list()]);
+    if (!mountedRef.current) return;
+    // Only allow persisting the workspace once the load actually SUCCEEDED. If
+    // it rejected (network/RLS/transient), we must not save — otherwise the
+    // default-seed fallback below would clobber the user's stored spaces.
+    canPersistWorkspaceRef.current = res[0].status === 'fulfilled';
+    const ws = res[0].status === 'fulfilled' ? res[0].value : null;
+    const metas = res[1].status === 'fulfilled' ? res[1].value : [];
+    if (ws && Array.isArray(ws.spaces)) workspaceLoadedRef.current = true;
+    setState((prev) => {
+      let base = prev.spaces;
+      let mapFolders = prev.mapFolders;
+      if (ws && Array.isArray(ws.spaces)) {
+        base = ensureHomeSpace(coerceSpaces(ws.spaces));
+        if (ws.mapFolders && Object.keys(ws.mapFolders).length) mapFolders = ws.mapFolders;
+      }
+      const { spaces, renamed } = mergeDocMetasIntoSpaces(base, metas);
+      // `mapFolders` is keyed by map title, so when the merge renames a card to
+      // its backend title (e.g. a map created/edited then reopened), migrate the
+      // folder assignment to the new title — otherwise the folder still counts
+      // the old (orphaned) key while the renamed card falls back to the top level.
+      if (renamed.length) {
+        const mf = { ...mapFolders };
+        let mfChanged = false;
+        renamed.forEach(({ from, to }) => {
+          if (from !== to && mf[from] !== undefined) {
+            mf[to] = mf[from]!;
+            delete mf[from];
+            mfChanged = true;
+          }
+        });
+        if (mfChanged) mapFolders = mf;
+      }
+      // Prefer the tab-restored space (if it still exists), else keep the
+      // previously-active one, else fall back to a real space (e.g. the user
+      // deleted 일반 공간) so the sidebar/grid stay in sync.
+      const existsInSpaces = (id: string | undefined): boolean => id === 'drive' || spaces.some((s) => s.id === id);
+      const activeSpace = existsInSpaces(restore?.activeSpace)
+        ? restore!.activeSpace
+        : existsInSpaces(prev.activeSpace)
+          ? prev.activeSpace
+          : (spaces.find((s) => s.home)?.id ?? spaces[0]?.id ?? prev.activeSpace);
+      // Restore the open folder only when it still belongs to the restored space.
+      let curFolder = prev.curFolder;
+      if (restore && restore.curFolder && activeSpace === restore.activeSpace) {
+        const sp = spaces.find((s) => s.id === activeSpace);
+        const folders = sp && Array.isArray(sp.folders) ? sp.folders : [];
+        curFolder = folders.some((f) => f.id === restore.curFolder) ? restore.curFolder : prev.curFolder;
+      }
+      // Seed favs/deleted/trash from the backend's persisted meta
+      // (isFavorite/deletedAt) so favorite/trash status survives a refresh.
+      const { favs, deleted, trash } = seedFavAndTrashFromMetas(prev.favs, prev.deleted, prev.trash, metas);
+      // Baseline the just-hydrated workspace so the save effect treats it as
+      // already-persisted (no re-save of what we just loaded/seeded).
+      savedWorkspaceSigRef.current = JSON.stringify({ spaces, mapFolders });
+      // Always flip `loaded` so the grid drops its loading skeleton and
+      // renders the real (possibly empty) state.
+      return { ...prev, spaces, activeSpace, curFolder, mapFolders, favs, deleted, trash, loaded: true };
+    });
+  }, [docStore, spaceStore]);
 
   // ---- mount: restore recent list, pick up docs saved from the editor ----
   useEffect(() => {
@@ -92,85 +174,41 @@ export function useHomeController() {
     const recent = loadRecent();
     if (recent.length) patch({ recent });
 
-    // Load in parallel: the per-user workspace (spaces + folders, from the
-    // `SpaceStore` port — Supabase table in live mode, so it syncs across the
-    // user's devices; localStorage in demo mode) AND the doc list. Then apply
-    // both in ONE setState: restored spaces as the base, then fold in any
-    // genuinely new docs (added to the home space; docs already present in a
-    // restored space are skipped by title/id). Doing both together avoids a
-    // race where a late workspace load would clobber the doc-merged spaces.
-    // Restore the space/folder the user was last viewing in THIS tab (set before
-    // they opened a map in the editor), so returning to Home lands back on that
-    // space instead of the default 일반 공간.
-    const restore = loadActiveView();
-    let cancelled = false;
-    void Promise.allSettled([spaceStore.load(), docStore.list()]).then((res) => {
-      if (cancelled) return;
-      // Only allow persisting the workspace once the load actually SUCCEEDED. If
-      // it rejected (network/RLS/transient), we must not save — otherwise the
-      // default-seed fallback below would clobber the user's stored spaces.
-      canPersistWorkspaceRef.current = res[0].status === 'fulfilled';
-      const ws = res[0].status === 'fulfilled' ? res[0].value : null;
-      const metas = res[1].status === 'fulfilled' ? res[1].value : [];
-      setState((prev) => {
-        let base = prev.spaces;
-        let mapFolders = prev.mapFolders;
-        if (ws && Array.isArray(ws.spaces)) {
-          base = ensureHomeSpace(coerceSpaces(ws.spaces));
-          if (ws.mapFolders && Object.keys(ws.mapFolders).length) mapFolders = ws.mapFolders;
-        }
-        const { spaces, renamed } = mergeDocMetasIntoSpaces(base, metas);
-        // `mapFolders` is keyed by map title, so when the merge renames a card to
-        // its backend title (e.g. a map created/edited then reopened), migrate the
-        // folder assignment to the new title — otherwise the folder still counts
-        // the old (orphaned) key while the renamed card falls back to the top level.
-        if (renamed.length) {
-          const mf = { ...mapFolders };
-          let mfChanged = false;
-          renamed.forEach(({ from, to }) => {
-            if (from !== to && mf[from] !== undefined) {
-              mf[to] = mf[from]!;
-              delete mf[from];
-              mfChanged = true;
-            }
-          });
-          if (mfChanged) mapFolders = mf;
-        }
-        // Prefer the tab-restored space (if it still exists), else keep the
-        // previously-active one, else fall back to a real space (e.g. the user
-        // deleted 일반 공간) so the sidebar/grid stay in sync.
-        const existsInSpaces = (id: string | undefined): boolean => id === 'drive' || spaces.some((s) => s.id === id);
-        const activeSpace = existsInSpaces(restore?.activeSpace)
-          ? restore!.activeSpace
-          : existsInSpaces(prev.activeSpace)
-            ? prev.activeSpace
-            : (spaces.find((s) => s.home)?.id ?? spaces[0]?.id ?? prev.activeSpace);
-        // Restore the open folder only when it still belongs to the restored space.
-        let curFolder = prev.curFolder;
-        if (restore && restore.curFolder && activeSpace === restore.activeSpace) {
-          const sp = spaces.find((s) => s.id === activeSpace);
-          const folders = sp && Array.isArray(sp.folders) ? sp.folders : [];
-          curFolder = folders.some((f) => f.id === restore.curFolder) ? restore.curFolder : prev.curFolder;
-        }
-        // Seed favs/deleted/trash from the backend's persisted meta
-        // (isFavorite/deletedAt) so favorite/trash status survives a refresh.
-        const { favs, deleted, trash } = seedFavAndTrashFromMetas(prev.favs, prev.deleted, prev.trash, metas);
-        // Baseline the just-hydrated workspace so the save effect treats it as
-        // already-persisted (no re-save of what we just loaded/seeded).
-        savedWorkspaceSigRef.current = JSON.stringify({ spaces, mapFolders });
-        // Always flip `loaded` so the grid drops its loading skeleton and
-        // renders the real (possibly empty) state.
-        return { ...prev, spaces, activeSpace, curFolder, mapFolders, favs, deleted, trash, loaded: true };
-      });
-    });
+    // Kick off the initial workspace + doc hydration (see `hydrateFromBackend`).
+    void hydrateFromBackend();
 
     return () => {
-      cancelled = true;
       window.removeEventListener('mousedown', onDocMouseDown);
       window.removeEventListener('pageshow', onPageShow);
       clearTimeout(loaderTimer.current);
     };
-  }, [docStore, spaceStore]);
+  }, [hydrateFromBackend]);
+
+  // Track mounted state so a late hydrate/resync never `setState`s after unmount.
+  useEffect(() => {
+    mountedRef.current = true;
+    return () => {
+      mountedRef.current = false;
+    };
+  }, []);
+
+  // Cross-device first-login fix: re-hydrate ONCE when auth first confirms a
+  // session. On a fresh login the mount hydrate above can run before Supabase has
+  // applied the session token, so its RLS-scoped reads return empty and only the
+  // default 일반 공간 shows until a manual refresh. `onAuthChange` fires an
+  // INITIAL_SESSION/SIGNED_IN event after the client has fully initialized (token
+  // applied), so re-fetching then reliably pulls the real workspace — automatic,
+  // no refresh needed. Guarded so it can't clobber: skip if the user already
+  // edited the workspace (`workspaceMutatedRef`) or the mount load already
+  // succeeded (`workspaceLoadedRef`), and run at most once (`workspaceResyncedRef`).
+  useEffect(() => {
+    const unsubscribe = auth.onAuthChange((session) => {
+      if (!session || workspaceResyncedRef.current || workspaceMutatedRef.current || workspaceLoadedRef.current) return;
+      workspaceResyncedRef.current = true;
+      void hydrateFromBackend();
+    });
+    return unsubscribe;
+  }, [auth, hydrateFromBackend]);
 
   // Load the signed-in user's email for the LNB profile, and default the display
   // name to the email's local part (e.g. hoyul.lee@… → "hoyul.lee") instead of
@@ -273,6 +311,9 @@ export function useHomeController() {
     const sig = JSON.stringify({ spaces: state.spaces, mapFolders: state.mapFolders });
     if (sig === savedWorkspaceSigRef.current) return;
     savedWorkspaceSigRef.current = sig;
+    // A genuine user change is being persisted — from here on the auth-confirmed
+    // resync must NOT re-hydrate (it would clobber this edit with backend state).
+    workspaceMutatedRef.current = true;
     void spaceStore.save({ spaces: state.spaces, mapFolders: state.mapFolders }).catch(() => {
       /* save failed (offline, RLS, ...) — non-fatal; the next change retries */
     });
