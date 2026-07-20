@@ -52,17 +52,25 @@ export function Viewport({ doc, controller }: ViewportProps) {
         }}
       >
         <div style={{ position: 'absolute', inset: 0 }}>
-          <div style={{ position: 'absolute', left: 0, top: 0, transform: `translate(${pan.x}px,${pan.y}px) scale(${zoom})`, transformOrigin: '0 0' }}>
-            <ZoneLayer zones={doc.zones} theme={theme} controller={controller} />
-            <EdgeLayer nodes={doc.nodes} geom={geom} mode={layoutMode} edgeStyle={edgeStyle} theme={theme} />
-            <NodeLayer nodes={doc.nodes} geom={geom} mode={layoutMode} theme={theme} controller={controller} />
-            <LineLayer lines={doc.lines} theme={theme} controller={controller} />
-            <FloatLayer floats={doc.floats} theme={theme} controller={controller} />
-            <MarqueeLayer rect={controller.marquee} theme={theme} />
-            <PresenceLayer controller={controller} />
-          </div>
-          {/* Move grip (mobile) — screen-space so it stays a constant tap size at any zoom. */}
-          {showMoveHandle && <MoveHandle controller={controller} theme={theme} />}
+          {/* Hold the canvas (background only) until the real doc has loaded, so
+              the placeholder seed never flashes before the actual tree. */}
+          {controller.hydrating ? (
+            <LoadingCanvas theme={theme} />
+          ) : (
+            <>
+              <div style={{ position: 'absolute', left: 0, top: 0, transform: `translate(${pan.x}px,${pan.y}px) scale(${zoom})`, transformOrigin: '0 0' }}>
+                <ZoneLayer zones={doc.zones} theme={theme} controller={controller} />
+                <EdgeLayer nodes={doc.nodes} geom={geom} mode={layoutMode} edgeStyle={edgeStyle} theme={theme} />
+                <NodeLayer nodes={doc.nodes} geom={geom} mode={layoutMode} theme={theme} controller={controller} />
+                <LineLayer lines={doc.lines} theme={theme} controller={controller} />
+                <FloatLayer floats={doc.floats} theme={theme} controller={controller} />
+                <MarqueeLayer rect={controller.marquee} theme={theme} />
+                <PresenceLayer controller={controller} />
+              </div>
+              {/* Move grip (mobile) — screen-space so it stays a constant tap size at any zoom. */}
+              {showMoveHandle && <MoveHandle controller={controller} theme={theme} />}
+            </>
+          )}
         </div>
         {/* NOT inside the pan/zoom transform above — `ctxMenu.sx/sy` are already screen
             (viewport-relative) coordinates (port of `Component#openCtxAt`'s `sx`/`sy`,
@@ -73,6 +81,22 @@ export function Viewport({ doc, controller }: ViewportProps) {
             are already viewport-relative (`NodeEditBox`'s `openTextCtx` call). */}
         <TextToolbar controller={controller} />
       </div>
+    </div>
+  );
+}
+
+/** Shown over the canvas background while the real doc loads (see `hydrating`) —
+ * a subtle centered spinner instead of the placeholder tree. Uses SVG
+ * `animateTransform` so it needs no CSS keyframes. */
+function LoadingCanvas({ theme }: { theme: import('../theme').Theme }) {
+  return (
+    <div style={{ position: 'absolute', inset: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', pointerEvents: 'none' }}>
+      <svg width={30} height={30} viewBox="0 0 50 50" aria-label="불러오는 중" role="img">
+        <circle cx={25} cy={25} r={20} fill="none" stroke={theme.border} strokeWidth={5} />
+        <circle cx={25} cy={25} r={20} fill="none" stroke={theme.accent} strokeWidth={5} strokeLinecap="round" strokeDasharray="31 126">
+          <animateTransform attributeName="transform" type="rotate" from="0 25 25" to="360 25 25" dur="0.8s" repeatCount="indefinite" />
+        </circle>
+      </svg>
     </div>
   );
 }
