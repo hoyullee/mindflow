@@ -356,6 +356,80 @@ describe('Editor drag-to-reparent (M3-Editor-c)', () => {
     );
   });
 
+  it('reparenting nudges an overlapping free shape clear of the re-laid-out tree', async () => {
+    // Tree geometry is independent of free shapes, so lay out the tree first to
+    // find c2's box, then drop a free shape 'f' right on top of it (small text so
+    // it stays inside c2's box → doesn't change the fit-view bounds).
+    const measurer = new CanvasTextMeasurer();
+    const sizeOf = (node: Parameters<typeof computeMetrics>[0], depth: number) => {
+      const m = computeMetrics(node, depth, measurer);
+      return { w: m.w, h: m.h };
+    };
+    const laidOut = layout(SIMPLE_DOC as Doc, SIMPLE_DOC.layoutMode as Doc['layoutMode'], sizeOf, { rootAnchor: { x: 0, y: 0 } });
+    const depthOf: Record<string, number> = { root: 0, c1: 1, c2: 1 };
+    const geom: Record<string, { x: number; y: number; w: number; h: number }> = {};
+    for (const id of ['root', 'c1', 'c2']) {
+      const n = laidOut[id]!;
+      const m = computeMetrics(n, depthOf[id]!, measurer);
+      geom[id] = { x: n.x, y: n.y, w: m.w, h: m.h };
+    }
+    const c2 = geom.c2!;
+
+    const doc = {
+      ...SIMPLE_DOC,
+      nodes: {
+        ...structuredClone(SIMPLE_DOC.nodes),
+        f: { id: 'f', text: 'F', emoji: '', parent: null, children: [], collapsed: false, color: null, free: true, x: c2.x, y: c2.y },
+      },
+    };
+    localStorage.setItem('mindflow_doc_rpn', JSON.stringify(doc));
+    const { container } = renderEditor('/editor?map=rpn&title=x');
+
+    // fit-view (same constants/formula as useEditorState) → client point on c2
+    const FIT_PADDING = 90;
+    const MIN_ZOOM = 0.25;
+    const vw = 1200;
+    const vh = 700;
+    let minX = Infinity;
+    let minY = Infinity;
+    let maxX = -Infinity;
+    let maxY = -Infinity;
+    for (const id of ['root', 'c1', 'c2']) {
+      const g = geom[id]!;
+      minX = Math.min(minX, g.x - g.w / 2);
+      maxX = Math.max(maxX, g.x + g.w / 2);
+      minY = Math.min(minY, g.y - g.h / 2);
+      maxY = Math.max(maxY, g.y + g.h / 2);
+    }
+    const cx = geom.root!.x;
+    const cy = geom.root!.y;
+    const halfW = Math.max(cx - minX, maxX - cx, 1);
+    const halfH = Math.max(cy - minY, maxY - cy, 1);
+    const zoom = Math.max(MIN_ZOOM, Math.min((vw - FIT_PADDING) / (2 * halfW), (vh - FIT_PADDING) / (2 * halfH), 1.25));
+    const pan = { x: vw / 2 - cx * zoom, y: vh / 2 - cy * zoom };
+    const tx = c2.x * zoom + pan.x;
+    const ty = c2.y * zoom + pan.y;
+
+    const nodeA = container.querySelector('[data-node-id="c1"]') as HTMLElement;
+    firePointer(nodeA, 'pointerdown', { pointerId: 7, clientX: 0, clientY: 0, button: 0 });
+    firePointer(window, 'pointermove', { pointerId: 7, clientX: tx, clientY: ty });
+    expect(screen.getByText('자식으로 연결')).toBeTruthy(); // confirms the drop lands on c2
+    firePointer(window, 'pointerup', { pointerId: 7, clientX: tx, clientY: ty });
+
+    fireEvent.keyDown(window, { key: 's', ctrlKey: true });
+    await waitFor(
+      () => {
+        const parsed = parseDoc(JSON.parse(localStorage.getItem('mindflow_doc_rpn') as string));
+        expect(parsed!.nodes.c1?.parent).toBe('c2'); // reparent happened
+        expect(parsed!.nodes.f?.parent ?? null).toBeNull(); // f stays a free shape
+        // …and f was pushed off c2's centre so it no longer overlaps the tree
+        const f = parsed!.nodes.f!;
+        expect(f.x !== c2.x || f.y !== c2.y).toBe(true);
+      },
+      { timeout: 2000 },
+    );
+  });
+
   it('clicking a node off-centre (no drag) never detaches it from the tree', async () => {
     // A wide child so its right edge is >40px (the detach gate) from its centre.
     const WIDE_DOC = {
