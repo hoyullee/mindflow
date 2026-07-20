@@ -3,14 +3,14 @@ import type { EditorController } from '../useEditorState';
 import { StyleMenu } from './StyleMenu';
 import { ExportMenu } from './ExportMenu';
 import { AnchoredMenu } from './AnchoredMenu';
-import { EditMenu, InsertMenu, ViewMenu } from './ToolbarMenus';
+import { EditMenu, InsertMenu, ViewMenu, MoreMenu } from './ToolbarMenus';
 import { useIsMobile } from '../../../hooks/useMediaQuery';
 
 interface ToolbarProps {
   controller: EditorController;
 }
 
-type MenuKey = 'edit' | 'insert' | 'view' | 'style' | 'export';
+type MenuKey = 'edit' | 'insert' | 'view' | 'style' | 'export' | 'more';
 
 /**
  * Top menu bar (GNB) — a port of `.mf-topbar` (MindFlow.dc.html:36-96)
@@ -31,7 +31,8 @@ export function Toolbar({ controller }: ToolbarProps) {
   const viewRef = useRef<HTMLDivElement>(null);
   const styleRef = useRef<HTMLDivElement>(null);
   const exportRef = useRef<HTMLDivElement>(null);
-  const refs: Record<MenuKey, RefObject<HTMLDivElement>> = { edit: editRef, insert: insertRef, view: viewRef, style: styleRef, export: exportRef };
+  const moreRef = useRef<HTMLDivElement>(null);
+  const refs: Record<MenuKey, RefObject<HTMLDivElement>> = { edit: editRef, insert: insertRef, view: viewRef, style: styleRef, export: exportRef, more: moreRef };
 
   useEffect(() => {
     if (!openMenu) return;
@@ -79,9 +80,13 @@ export function Toolbar({ controller }: ToolbarProps) {
       <MenuBarButton label="삽입" wrapRef={insertRef} open={openMenu === 'insert'} onToggle={() => toggle('insert')} th={th} isMobile={isMobile} width={200} align="left">
         <InsertMenu controller={controller} onDone={close} isMobile={isMobile} />
       </MenuBarButton>
-      <MenuBarButton label="보기" wrapRef={viewRef} open={openMenu === 'view'} onToggle={() => toggle('view')} th={th} isMobile={isMobile} width={190} align="left">
-        <ViewMenu controller={controller} onDone={close} isMobile={isMobile} />
-      </MenuBarButton>
+      {/* 보기 is a top-level trigger on desktop; on mobile it folds into the ☰ menu
+          on the right (with 내보내기) so the narrow bar doesn't scroll. */}
+      {!isMobile && (
+        <MenuBarButton label="보기" wrapRef={viewRef} open={openMenu === 'view'} onToggle={() => toggle('view')} th={th} isMobile={isMobile} width={190} align="left">
+          <ViewMenu controller={controller} onDone={close} isMobile={isMobile} />
+        </MenuBarButton>
+      )}
       <MenuBarButton
         label="스타일"
         wrapRef={styleRef}
@@ -110,9 +115,17 @@ export function Toolbar({ controller }: ToolbarProps) {
 
       <div style={{ flex: '1 1 auto' }} />
 
-      <MenuBarButton label="내보내기" wrapRef={exportRef} open={openMenu === 'export'} onToggle={() => toggle('export')} th={th} isMobile={isMobile} width={200} align="right" leading={<ExportGlyph />}>
-        <ExportMenu controller={controller} onDone={close} />
-      </MenuBarButton>
+      {isMobile ? (
+        /* Mobile: one ☰ button on the right holds 보기 + 내보내기 (see `MoreMenu`),
+           so the bar fits without a horizontal scroll. */
+        <MenuBarButton label="" ariaLabel="더보기" wrapRef={moreRef} open={openMenu === 'more'} onToggle={() => toggle('more')} th={th} isMobile={isMobile} width={210} align="right" leading={<HamburgerIcon />} noCaret>
+          <MoreMenu controller={controller} onDone={close} isMobile={isMobile} />
+        </MenuBarButton>
+      ) : (
+        <MenuBarButton label="내보내기" wrapRef={exportRef} open={openMenu === 'export'} onToggle={() => toggle('export')} th={th} isMobile={isMobile} width={200} align="right" leading={<ExportGlyph />}>
+          <ExportMenu controller={controller} onDone={close} />
+        </MenuBarButton>
+      )}
     </div>
   );
 }
@@ -121,6 +134,7 @@ export function Toolbar({ controller }: ToolbarProps) {
  * ▾ caret, with its dropdown portaled via `AnchoredMenu` when open. */
 function MenuBarButton({
   label,
+  ariaLabel,
   leading,
   wrapRef,
   open,
@@ -129,9 +143,11 @@ function MenuBarButton({
   isMobile,
   width,
   align,
+  noCaret,
   children,
 }: {
   label: string;
+  ariaLabel?: string;
   leading?: ReactNode;
   wrapRef: RefObject<HTMLDivElement>;
   open: boolean;
@@ -140,6 +156,7 @@ function MenuBarButton({
   isMobile: boolean;
   width: number;
   align: 'left' | 'right';
+  noCaret?: boolean;
   children: ReactNode;
 }) {
   const triggerStyle: CSSProperties = {
@@ -147,7 +164,7 @@ function MenuBarButton({
     alignItems: 'center',
     gap: 6,
     height: isMobile ? 44 : 34,
-    padding: '0 11px',
+    padding: label ? '0 11px' : '0 9px',
     border: `1px solid ${open ? th.accent : 'transparent'}`,
     borderRadius: 9,
     background: open ? th.panel2 : 'transparent',
@@ -161,10 +178,10 @@ function MenuBarButton({
   };
   return (
     <div ref={wrapRef} style={{ position: 'relative', flexShrink: 0 }}>
-      <button type="button" className="mf-ed-btn" onClick={onToggle} aria-expanded={open} aria-haspopup="menu" style={triggerStyle}>
+      <button type="button" className="mf-ed-btn" onClick={onToggle} aria-expanded={open} aria-haspopup="menu" aria-label={ariaLabel} style={triggerStyle}>
         {leading}
         {label}
-        <Caret open={open} color={th.subtext} />
+        {!noCaret && <Caret open={open} color={th.subtext} />}
       </button>
       {open && (
         <AnchoredMenu anchorRef={wrapRef} width={width} align={align}>
@@ -172,6 +189,16 @@ function MenuBarButton({
         </AnchoredMenu>
       )}
     </div>
+  );
+}
+
+function HamburgerIcon() {
+  return (
+    <svg width={20} height={20} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2.2} strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+      <line x1={3} y1={6} x2={21} y2={6} />
+      <line x1={3} y1={12} x2={21} y2={12} />
+      <line x1={3} y1={18} x2={21} y2={18} />
+    </svg>
   );
 }
 
