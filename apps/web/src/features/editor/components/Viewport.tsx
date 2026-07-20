@@ -55,8 +55,12 @@ export function Viewport({ doc, controller }: ViewportProps) {
       >
         <div style={{ position: 'absolute', inset: 0 }}>
           {/* Hold the canvas (background only) until the real doc has loaded, so
-              the placeholder seed never flashes before the actual tree. */}
-          {controller.hydrating ? (
+              the placeholder seed never flashes before the actual tree. On a load
+              FAILURE, show an error+retry instead of the empty seed — the doc
+              didn't load, so editing/saving it would risk clobbering the backend. */}
+          {controller.loadError ? (
+            <LoadErrorCanvas theme={theme} onRetry={controller.retryLoad} />
+          ) : controller.hydrating ? (
             <LoadingCanvas theme={theme} />
           ) : (
             <>
@@ -99,6 +103,27 @@ function LoadingCanvas({ theme }: { theme: import('../theme').Theme }) {
           <animateTransform attributeName="transform" type="rotate" from="0 25 25" to="360 25 25" dur="0.8s" repeatCount="indefinite" />
         </circle>
       </svg>
+    </div>
+  );
+}
+
+/** Shown when the initial doc load FAILED — an error message + retry, instead of
+ * the empty seed. Editing/saving stays blocked (see `canPersistDocRef`) so a
+ * failed load can never let the empty canvas overwrite the real backend doc. */
+function LoadErrorCanvas({ theme, onRetry }: { theme: import('../theme').Theme; onRetry: () => void }) {
+  return (
+    <div style={{ position: 'absolute', inset: 0, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 14, padding: 24, textAlign: 'center' }}>
+      <div style={{ fontSize: 15, fontWeight: 700, color: theme.text }}>맵을 불러오지 못했어요</div>
+      <div style={{ fontSize: 13, color: theme.subtext, maxWidth: 320, lineHeight: 1.6 }}>
+        네트워크 문제로 저장된 내용을 불러오지 못했습니다. 데이터 보호를 위해 편집·저장을 잠시 멈췄어요. 다시 시도해 주세요.
+      </div>
+      <button
+        type="button"
+        onClick={onRetry}
+        style={{ marginTop: 4, padding: '9px 18px', borderRadius: 10, border: 'none', background: theme.accent, color: theme.accentInk, fontFamily: 'inherit', fontSize: 13, fontWeight: 700, cursor: 'pointer' }}
+      >
+        다시 시도
+      </button>
     </div>
   );
 }
