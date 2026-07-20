@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { cleanup, render, screen, waitFor, within } from '@testing-library/react';
+import { act, cleanup, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { MemoryRouter, Route, Routes } from 'react-router-dom';
 import { Home } from './Home';
@@ -1022,6 +1022,89 @@ describe('Home', () => {
       // …then the auth-confirmed resync pulls the real workspace automatically.
       await waitFor(() => expect(sidebar().getByText('업무 공간')).toBeTruthy());
       expect(spaceStore.calls).toBeGreaterThanOrEqual(2);
+    });
+
+    it('card preview resolves even when spaces re-hydrate mid-prefetch (no stuck loading skeleton)', async () => {
+      // Repro of the reported "미리보기가 계속 로딩" on a new PC: the preview
+      // prefetch's `docStore.load` batch was in flight when a SECOND spaces
+      // setState (the late mount hydrate landing after the auth resync, same
+      // content/new identity) re-ran the effect — whose cleanup cancelled the
+      // batch before it set `previewResolved`, so the card was stranded on the
+      // skeleton until a full remount (opening the map and coming back).
+      function defer<T = void>() {
+        let resolve!: (v: T) => void;
+        const promise = new Promise<T>((r) => {
+          resolve = r;
+        });
+        return { promise, resolve };
+      }
+      const docId = 'doc-race-1';
+      const full: WorkspaceData = { spaces: [{ id: 'general', name: '일반 공간', home: true, color: '#f0663f', maps: [{ title: '내 맵', docId }] }], mapFolders: {} };
+      const body: LoadedDoc = {
+        doc: { v: 1, nodes: { root: { id: 'root', text: '루트', emoji: '', parent: null, children: [], collapsed: false, color: null, x: 0, y: 0 } }, floats: [], lines: [], zones: [], layoutMode: 'radial', themeKey: 'coral' } as unknown as LoadedDoc['doc'],
+        version: 1,
+        title: '내 맵',
+      };
+
+      // Mount workspace load is gated so it lands AFTER the resync; both return `full`.
+      const mountGate = defer<WorkspaceData>();
+      const spaceStore: SpaceStore = {
+        calls: 0,
+        async load() {
+          this.calls += 1;
+          return this.calls === 1 ? mountGate.promise : full;
+        },
+        async save() {},
+      } as SpaceStore & { calls: number };
+
+      // Doc body load is gated so the prefetch is still in flight when the late
+      // mount hydrate re-runs the prefetch effect.
+      const loadGate = defer<void>();
+      const docStore: DocStore = {
+        list: async () => [{ id: docId, title: '내 맵' } as DocMeta],
+        load: async (id: string) => {
+          await loadGate.promise;
+          return id === docId ? body : null;
+        },
+        save: vi.fn(async () => ({ ok: true, version: 1 })),
+        setFavorite: vi.fn(async () => undefined),
+        remove: vi.fn(async () => undefined),
+        restore: vi.fn(async () => undefined),
+        rename: vi.fn(async () => undefined),
+      } as unknown as DocStore;
+
+      const backend: Backend = { auth: new RacyAuth(), docStore, spaceStore, mode: 'supabase' };
+      render(
+        <MemoryRouter initialEntries={['/home']}>
+          <BackendProvider backend={backend}>
+            <Routes>
+              <Route path="/home" element={<Home />} />
+            </Routes>
+          </BackendProvider>
+        </MemoryRouter>,
+      );
+
+      // Resync (call 2) returns immediately → the card shows, preview still loading (body gated).
+      await waitFor(() => expect(screen.getByText('내 맵')).toBeTruthy());
+      const thumb = () => (screen.getByText('내 맵').closest('.map-card') as HTMLElement).querySelector('.map-thumb') as HTMLElement;
+      expect(thumb().querySelector('.mf-skel')).toBeTruthy(); // loading skeleton
+
+      // The late mount workspace load lands → a second spaces setState re-runs the
+      // prefetch effect (this is what used to cancel the in-flight batch).
+      await act(async () => {
+        mountGate.resolve(full);
+        await Promise.resolve();
+      });
+      // Release the doc body → the (previously cancelled) prefetch must still apply.
+      await act(async () => {
+        loadGate.resolve();
+        await Promise.resolve();
+      });
+
+      await waitFor(() => {
+        expect(thumb().querySelector('svg')).toBeTruthy(); // real preview rendered
+        expect(thumb().querySelector('.mf-skel')).toBeNull(); // skeleton cleared
+      });
     });
   });
 });

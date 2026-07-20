@@ -268,9 +268,17 @@ export function useHomeController() {
     ).filter((id) => !previewFetchedRef.current.has(id));
     if (!ids.length) return;
     ids.forEach((id) => previewFetchedRef.current.add(id));
-    let cancelled = false;
+    // NOTE: intentionally NOT cancelled on effect re-run. This effect re-runs
+    // whenever `state.spaces` changes identity — which happens on a new device
+    // when the mount hydrate and the auth-confirmed resync BOTH setState the
+    // spaces (often with identical content). A per-run `cancelled` flag would
+    // then abort the in-flight `docStore.load` batch before it set
+    // `previewResolved`, stranding those cards on the loading skeleton forever
+    // (only a full remount — e.g. opening a map and coming back — cleared it).
+    // The batch is deduped by `previewFetchedRef`, so letting it finish is safe;
+    // we only skip the state update if the component actually unmounted.
     void Promise.allSettled(ids.map((id) => docStore.load(id))).then((results) => {
-      if (cancelled) return;
+      if (!mountedRef.current) return;
       const add: Record<string, string> = {};
       const resolved: Record<string, boolean> = {};
       results.forEach((r, i) => {
@@ -290,9 +298,6 @@ export function useHomeController() {
       // docs stop showing the loading skeleton and settle on their final preview.
       setState((prev) => ({ ...prev, previewDocs: { ...prev.previewDocs, ...add }, previewResolved: { ...prev.previewResolved, ...resolved } }));
     });
-    return () => {
-      cancelled = true;
-    };
   }, [state.loaded, state.spaces, docStore]);
 
   // Persist spaces (+ map→folder) via the `SpaceStore` port whenever they
