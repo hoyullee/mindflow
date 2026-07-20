@@ -5,7 +5,7 @@
 // Canvas text measurement is a rendering concern (per the core's own doc
 // comments on `SizeOf`), so it lives here rather than in `mindmap-core`.
 
-import type { Node, RichRun } from '@mindflow/mindmap-core';
+import type { Float, Node, RichRun } from '@mindflow/mindmap-core';
 
 /** Injected text-measurement port — real canvas in the browser, a deterministic
  * character-count approximation in environments without `measureText` (jsdom). */
@@ -187,4 +187,53 @@ export function computeMetrics(node: Node, depth: number, measurer: TextMeasurer
   if (node.cw) w = Math.max(w, node.cw);
   if (node.ch) h = Math.max(h, node.ch);
   return { font, w, h, shape, fpx, fw, tw: textW + 9 };
+}
+
+/** Number of wrapped lines `text` occupies at `maxW` px in `font`, using the same
+ * whitespace-preserving, CJK-per-char token model as the node/PNG wrappers (so a
+ * memo's measured height matches how its text actually flows on screen). */
+function countWrappedLines(text: string, maxW: number, font: string, measurer: TextMeasurer): number {
+  let total = 0;
+  for (const hard of String(text).split('\n')) {
+    if (!hard) {
+      total += 1;
+      continue;
+    }
+    const tokens = hard.match(/[A-Za-z0-9]+|\s+|./gu) || [hard];
+    let hasContent = false;
+    let lineW = 0;
+    let lines = 1;
+    for (const tk of tokens) {
+      const w = measurer.measure(tk, font);
+      const isSpace = /^\s+$/.test(tk);
+      if (hasContent && lineW + w > maxW && !isSpace) {
+        lines++;
+        lineW = w;
+        hasContent = true;
+      } else {
+        lineW += w;
+        hasContent = hasContent || !isSpace || tk.length > 0;
+      }
+    }
+    total += lines;
+  }
+  return Math.max(1, total);
+}
+
+/**
+ * Rendered height of a memo card — the same growing `min-height` box `FloatLayer`
+ * draws (padding 9/32/9/11, `line-height: 1.55`, text wrapped to the inner
+ * width), so line-anchor snapping/ports and hit-testing use the memo's ACTUAL
+ * size instead of a fixed `f.h`. Port of the original's measured `_floatH`
+ * (MindFlow.dc.html) — pure, via the injected `measurer` (canvas or fallback).
+ */
+export function measureFloatHeight(f: Float, measurer: TextMeasurer): number {
+  const fpx = f.tsize === 's' ? 11.5 : f.tsize === 'l' ? 15.5 : 13;
+  const lh = fpx * 1.55;
+  const grownOf = (lineCount: number): number => 9 + Math.max(18, lineCount * lh) + 9;
+  if (f.collapsed) return Math.max(38, grownOf(1));
+  const font = `${f.bold ? 700 : 400} ${fpx}px Pretendard`;
+  const innerW = Math.max(8, (f.w || 160) - 32 - 11); // left pad 32 (fold toggle), right pad 11
+  const lines = f.text ? countWrappedLines(f.text, innerW, font, measurer) : 1;
+  return Math.max(f.h || 44, grownOf(lines));
 }
