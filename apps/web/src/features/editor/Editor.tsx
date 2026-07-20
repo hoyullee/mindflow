@@ -90,10 +90,39 @@ export function Editor() {
             {/* Mobile: a tap selects (no auto-sheet); this bar offers 편집/속성/삭제.
                 Hidden once the sheet is open (it has its own close control below). */}
             {isMobile && controller.selection && !controller.propsOpen && <MobileSelectBar controller={controller} theme={th} />}
-            {/* The mobile property sheet (drill-down) owns its own close ✕ + ‹뒤로
-                in its header (`MobilePanelSheet`), so there's no external close
-                handle here anymore. Closing dismisses the sheet WITHOUT
+            {/* Close handle for the mobile property sheet — dismisses it WITHOUT
                 deselecting, so the object stays selected (e.g. to then move it). */}
+            {isMobile && controller.propsOpen && (
+              <button
+                type="button"
+                aria-label="속성 닫기"
+                onClick={controller.closeProps}
+                style={{
+                  position: 'fixed',
+                  left: '50%',
+                  transform: 'translateX(-50%)',
+                  bottom: 'calc(55dvh - 30px)',
+                  width: 84,
+                  height: 30,
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  gap: 5,
+                  border: `1px solid ${th.border}`,
+                  borderBottom: 'none',
+                  borderRadius: '12px 12px 0 0',
+                  background: th.panel,
+                  color: th.subtext,
+                  fontFamily: 'inherit',
+                  fontSize: 12,
+                  fontWeight: 600,
+                  cursor: 'pointer',
+                  zIndex: 26,
+                }}
+              >
+                <span style={{ fontSize: 14 }}>⌄</span> 닫기
+              </button>
+            )}
             <ZoomControls controller={controller} panelOpen={panelOpen} />
             {/* M6: this desktop mouse-gesture legend (우클릭/휠클릭/스크롤/핀치) doesn't
                 apply to touch, and there's no room for it above a bottom-sheet
