@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import './home.css';
 import { LoadingOverlay } from '../auth/LoadingOverlay';
 import { Sidebar } from './components/Sidebar';
@@ -28,8 +28,12 @@ import { useIsMobile } from '../../hooks/useMediaQuery';
  */
 export function Home() {
   const controller = useHomeController();
-  const view = deriveHomeView(controller.state);
   const { state } = controller;
+  // Derive the view (card metadata + `realPreview` sketches) only when the ported
+  // state actually changes — not on every Home re-render (e.g. the mobile drawer
+  // toggle below). `realPreview` is memoized too (see mapPreview), so unchanged
+  // cards return the same element reference and React skips their SVG subtrees.
+  const view = useMemo(() => deriveHomeView(state), [state]);
   const isMobile = useIsMobile();
   const [navOpen, setNavOpen] = useState(false);
 

@@ -199,8 +199,35 @@ function applyLayoutPositions(d: PreviewDoc, sizeOf: (node: CoreNode, depth: num
   }
 }
 
+// Memoize the (relatively expensive) preview build. `realPreview` runs for every
+// card on EVERY Home render — search typing, opening a menu, etc. — but its output
+// depends only on the doc body + hue. Cache by that key and return the SAME element
+// reference on a hit, so React skips reconciling the whole SVG subtree and the
+// layout/measure work happens once per unique doc. Bounded (LRU) so it can't grow
+// without limit as maps/edits accumulate.
+const previewCache = new Map<string, JSX.Element | null>();
+const PREVIEW_CACHE_MAX = 400;
+
 export function realPreview(rawDoc: string | null, hueFallback: string): JSX.Element | null {
   if (!rawDoc) return null;
+  const key = `${hueFallback} ${rawDoc}`;
+  const hit = previewCache.get(key);
+  if (hit !== undefined) {
+    // touch → most-recently-used (Map preserves insertion order)
+    previewCache.delete(key);
+    previewCache.set(key, hit);
+    return hit;
+  }
+  const el = buildPreview(rawDoc, hueFallback);
+  previewCache.set(key, el);
+  if (previewCache.size > PREVIEW_CACHE_MAX) {
+    const oldest = previewCache.keys().next().value;
+    if (oldest !== undefined) previewCache.delete(oldest);
+  }
+  return el;
+}
+
+function buildPreview(rawDoc: string, hueFallback: string): JSX.Element | null {
   let d: PreviewDoc;
   try {
     d = JSON.parse(rawDoc) as PreviewDoc;

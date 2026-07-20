@@ -255,17 +255,20 @@ export function useHomeController() {
   // map whose body lives in a backend (Supabase) had no real preview and fell
   // back to the generic sketch. Load each map's doc once via the DocStore and
   // cache its serialized form in `previewDocs`, then the view renders the real
-  // nodes. Runs whenever the space list gains maps; `previewFetchedRef` dedupes.
+  // nodes. `previewFetchedRef` dedupes across runs.
+  //
+  // Scope: only the CURRENTLY-ACTIVE space's maps — those are the only cards that
+  // render a real preview (the grid shows the active space; recent cards are a
+  // subset of it; folder cards are folder thumbnails; favorites/trash are text
+  // lists). This avoids firing one request per map across the WHOLE workspace on
+  // home load (a fan-out that scaled badly with many maps). Switching spaces
+  // re-runs this and prefetches that space on demand (`state.activeSpace` dep).
   useEffect(() => {
     if (!state.loaded) return;
-    const ids = Array.from(
-      new Set(
-        state.spaces
-          .flatMap((s) => (Array.isArray(s.maps) ? s.maps : []))
-          .map((m) => m.docId)
-          .filter((id): id is string => !!id),
-      ),
-    ).filter((id) => !previewFetchedRef.current.has(id));
+    const active = state.spaces.find((s) => s.id === state.activeSpace);
+    const ids = Array.from(new Set((Array.isArray(active?.maps) ? active!.maps : []).map((m) => m.docId).filter((id): id is string => !!id))).filter(
+      (id) => !previewFetchedRef.current.has(id),
+    );
     if (!ids.length) return;
     ids.forEach((id) => previewFetchedRef.current.add(id));
     // NOTE: intentionally NOT cancelled on effect re-run. This effect re-runs
@@ -298,7 +301,7 @@ export function useHomeController() {
       // docs stop showing the loading skeleton and settle on their final preview.
       setState((prev) => ({ ...prev, previewDocs: { ...prev.previewDocs, ...add }, previewResolved: { ...prev.previewResolved, ...resolved } }));
     });
-  }, [state.loaded, state.spaces, docStore]);
+  }, [state.loaded, state.spaces, state.activeSpace, docStore]);
 
   // Persist spaces (+ map→folder) via the `SpaceStore` port whenever they
   // actually change, so user-created spaces/folders survive a refresh AND (in
