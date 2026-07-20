@@ -2392,6 +2392,17 @@ export function useEditorState(): EditorController {
               const detached = mutations.detachNodeToFree(doc0.nodes, d.id, p.x, p.y);
               return { ...doc0, nodes: mutations.nudgeFreeNode(detached, d.id, boxOf(detached)) };
             });
+            // Detaching removes the node from its parent → the tree RE-LAYS OUT, and
+            // the just-detached shape's subtree only gets its real laid-out footprint
+            // once `layout()` runs (a node with children can't be nudged correctly by
+            // the immediate pass above: its children still carry stale tree geometry,
+            // so their bounding box is wrong). Re-run the full free-shape nudge once
+            // the new geom settles — the same post-reflow pass reattach uses — so the
+            // detached shape (and any bystander free shapes the reflow disturbed) end
+            // up clear of every node. Port of dc's `detachNode` → `applyFreeNudge`
+            // (MindFlow.dc.html:2164-2171), which nudges AFTER the layout, not before.
+            pendingReflowNudgeRef.current = true;
+            setNudgeTick((t) => t + 1);
           }
           // small move, no target: snap back — nothing to commit (matches MindFlow.dc.html:1799)
         }
