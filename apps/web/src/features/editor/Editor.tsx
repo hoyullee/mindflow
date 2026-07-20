@@ -8,6 +8,7 @@ import { Viewport } from './components/Viewport';
 import { OutlineView } from './components/OutlineView';
 import { PropertyPanel } from './components/PropertyPanel';
 import { PresenceBar } from './components/PresenceBar';
+import { MobileSelectBar } from './components/MobileSelectBar';
 import { useIsMobile } from '../../hooks/useMediaQuery';
 
 /**
@@ -30,21 +31,24 @@ export function Editor() {
   // selection dispatch). On mobile that panel is a bottom sheet, so the
   // zoom/minimap cluster must lift above it — see ZoomControls' `panelOpen`.
   const mg = controller.multiGroups;
-  const panelOpen =
+  const hasPanelSelection =
     controller.selection?.kind === 'zone' ||
     (mg.nodes.length > 0 && !mg.lines.length && !mg.floats.length) ||
     (mg.lines.length > 0 && !mg.nodes.length && !mg.floats.length) ||
     (mg.floats.length > 0 && !mg.nodes.length && !mg.lines.length);
+  // On mobile the panel is a bottom sheet that only shows once explicitly opened
+  // (`propsOpen`); on desktop it shows whenever there's a selection.
+  const panelOpen = hasPanelSelection && (!isMobile || controller.propsOpen);
 
-  // M6-mobile: when a single object is selected the property panel is a bottom
-  // sheet (max 55dvh) covering the lower screen. Re-center that object into the
-  // area ABOVE the sheet so it isn't hidden behind it. Runs once per selection
-  // change (mobile only); the minimap cluster is hidden meanwhile (ZoomControls).
+  // M6-mobile: the property sheet (55dvh) covers the lower screen, so re-center
+  // the selected object into the area ABOVE it. This runs only when the sheet is
+  // actually OPEN — selecting alone no longer pans the map (the reported "화면이
+  //올라가는" jump). The minimap cluster is hidden meanwhile (ZoomControls).
   const sel = controller.selection;
   useEffect(() => {
-    if (!isMobile || !sel) return;
+    if (!isMobile || !sel || !controller.propsOpen) return;
     controller.centerObjectAboveSheet(sel.kind, sel.id, Math.round(window.innerHeight * 0.55));
-  }, [isMobile, sel?.kind, sel?.id]);
+  }, [isMobile, sel?.kind, sel?.id, controller.propsOpen]);
 
   // M6-mobile: use `100dvh` (dynamic viewport height) rather than `100vh` — on
   // mobile browsers `100vh` is the *large* viewport (ignores the address bar),
@@ -83,6 +87,42 @@ export function Editor() {
             <DocChip controller={controller} />
             <PresenceBar controller={controller} />
             <PropertyPanel controller={controller} />
+            {/* Mobile: a tap selects (no auto-sheet); this bar offers 편집/속성/삭제.
+                Hidden once the sheet is open (it has its own close control below). */}
+            {isMobile && controller.selection && !controller.propsOpen && <MobileSelectBar controller={controller} theme={th} />}
+            {/* Close handle for the mobile property sheet — dismisses it WITHOUT
+                deselecting, so the object stays selected (e.g. to then move it). */}
+            {isMobile && controller.propsOpen && (
+              <button
+                type="button"
+                aria-label="속성 닫기"
+                onClick={controller.closeProps}
+                style={{
+                  position: 'fixed',
+                  left: '50%',
+                  transform: 'translateX(-50%)',
+                  bottom: 'calc(55dvh - 30px)',
+                  width: 84,
+                  height: 30,
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  gap: 5,
+                  border: `1px solid ${th.border}`,
+                  borderBottom: 'none',
+                  borderRadius: '12px 12px 0 0',
+                  background: th.panel,
+                  color: th.subtext,
+                  fontFamily: 'inherit',
+                  fontSize: 12,
+                  fontWeight: 600,
+                  cursor: 'pointer',
+                  zIndex: 26,
+                }}
+              >
+                <span style={{ fontSize: 14 }}>⌄</span> 닫기
+              </button>
+            )}
             <ZoomControls controller={controller} panelOpen={panelOpen} />
             {/* M6: this desktop mouse-gesture legend (우클릭/휠클릭/스크롤/핀치) doesn't
                 apply to touch, and there's no room for it above a bottom-sheet

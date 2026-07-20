@@ -207,6 +207,16 @@ export interface EditorController {
   selectZone: (id: string) => void;
   clearSelection: () => void;
 
+  // ---- mobile property sheet ----
+  // On mobile the property panel is a 55dvh bottom sheet. Selecting an object no
+  // longer auto-opens it (that covered the canvas and panned the map on every
+  // tap); the user opens it explicitly. `propsOpen` gates the sheet on mobile
+  // and resets whenever the selection changes. (Desktop ignores this — the side
+  // panel still shows on selection.)
+  propsOpen: boolean;
+  openProps: () => void;
+  closeProps: () => void;
+
   // ---- multi-selection (marquee) — port of `Component#state.msel` ----
   multiSelection: MultiSelection | null;
   /** Always non-empty-safe: falls back to the single `selection` when there's no active
@@ -447,6 +457,15 @@ export function useEditorState(): EditorController {
 
   const [selection, setSelectionState] = useState<Selection | null>(null);
   const [multiSelection, setMultiSelectionState] = useState<MultiSelection | null>(null);
+  // Mobile-only: whether the property bottom sheet is open (see the interface
+  // note). Reset to closed whenever the selection identity changes so a fresh
+  // tap never re-covers the canvas — the user re-opens it per object.
+  const [propsOpen, setPropsOpen] = useState(false);
+  useEffect(() => {
+    setPropsOpen(false);
+  }, [selection?.kind, selection?.id]);
+  const openProps = useCallback(() => setPropsOpen(true), []);
+  const closeProps = useCallback(() => setPropsOpen(false), []);
   const [marquee, setMarquee] = useState<MarqueeRect | null>(null);
   const [attachTarget, setAttachTarget] = useState<AttachTarget | null>(null);
   const [showMinimap, setShowMinimap] = useState(true);
@@ -2720,6 +2739,10 @@ export function useEditorState(): EditorController {
     selectLine,
     selectZone,
     clearSelection,
+
+    propsOpen,
+    openProps,
+    closeProps,
 
     multiSelection,
     multiGroups,

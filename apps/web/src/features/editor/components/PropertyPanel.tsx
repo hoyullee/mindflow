@@ -23,6 +23,10 @@ interface PropertyPanelProps {
  */
 export function PropertyPanel({ controller }: PropertyPanelProps) {
   const isMobile = useIsMobile();
+  // On mobile the panel is a bottom sheet that used to pop open on every
+  // selection (covering the canvas + panning the map). Now it only shows when
+  // the user explicitly opens it via the mobile selection bar (`propsOpen`).
+  if (isMobile && !controller.propsOpen) return null;
   const sel = controller.selection;
   if (sel?.kind === 'zone') return <ZonePanel controller={controller} zoneId={sel.id} isMobile={isMobile} />;
 
