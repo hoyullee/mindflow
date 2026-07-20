@@ -51,7 +51,12 @@ export function Home() {
 
       <ToastModal state={state} controller={controller} />
 
-      <main style={{ flex: '1 1 auto', display: 'flex', flexDirection: 'column', overflowY: 'auto', padding: isMobile ? '16px 14px 32px' : '26px 32px 40px', minWidth: 0 }}>
+      {/* `scrollbarGutter: 'stable'` reserves the vertical scrollbar's width
+          whether or not it's showing, so crossing from "few maps" (no scroll) to
+          "many maps" (scroll appears) doesn't shrink the content box and shift the
+          whole grid/toolbar left on devices with classic (space-taking) scrollbars.
+          It's a no-op with overlay scrollbars (mobile), where there's no shift anyway. */}
+      <main style={{ flex: '1 1 auto', display: 'flex', flexDirection: 'column', overflowY: 'auto', scrollbarGutter: 'stable', padding: isMobile ? '16px 14px 32px' : '26px 32px 40px', minWidth: 0 }}>
         <Toolbar state={state} view={view} controller={controller} isMobile={isMobile} onOpenNav={() => setNavOpen(true)} />
         <MapGrid view={view} controller={controller} />
       </main>
