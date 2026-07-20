@@ -151,7 +151,7 @@ describe('Editor (mobile, M6)', () => {
     }
   });
 
-  it('shows the property panel as a bottom sheet (fixed to the viewport bottom) once opened', () => {
+  it('shows the property panel as a drill-down bottom sheet (content-fit height) once opened', () => {
     const restore = mockMatchMedia(true);
     try {
       localStorage.setItem('mindflow_doc_m2', JSON.stringify(DOC));
@@ -165,16 +165,47 @@ describe('Editor (mobile, M6)', () => {
       const heading = screen.getByText('선택한 주제');
       expect(heading).toBeTruthy();
 
-      // walk up to the panel wrapper (the `panelWrapStyle` div) and check it
-      // switched to the mobile bottom-sheet positioning.
+      // walk up to the sheet wrapper (`MobilePanelSheet`) and check the
+      // bottom-sheet positioning + content-driven (not fixed) height.
       let el: HTMLElement | null = heading;
       while (el && el.style.position !== 'fixed') el = el.parentElement;
       expect(el).not.toBeNull();
       expect(el?.style.bottom).toBe('0px');
-      // fixed (not max-) height, so expanding an accordion section scrolls
-      // inside the sheet instead of resizing it
-      expect(el?.style.height).toBe('55dvh');
-      expect(el?.style.maxHeight).toBe('');
+      // height follows content (capped), so a short group gets a short sheet —
+      // no long scrolling list.
+      expect(el?.style.height).toBe('auto');
+      expect(el?.style.maxHeight).toBe('85dvh');
+    } finally {
+      restore();
+    }
+  });
+
+  it('drills down into a group and back without scrolling a stacked list', () => {
+    const restore = mockMatchMedia(true);
+    try {
+      localStorage.setItem('mindflow_doc_m2b', JSON.stringify(DOC));
+      const { container } = renderEditor('/editor?map=m2b&title=x');
+      const vp = within(getViewport(container));
+      selectNodeBox(vp.getByText('리서치').closest('[data-node-id]') as HTMLElement);
+      openMobileProps();
+
+      // Root screen: group tiles are shown; the individual controls are NOT
+      // stacked here (that's what avoids the long scroll).
+      expect(screen.getByText('모양')).toBeTruthy();
+      expect(screen.getByText('색상')).toBeTruthy();
+      expect(screen.getByText('아이콘')).toBeTruthy();
+      expect(screen.queryByText('배경색')).toBeNull(); // 색상 controls hidden until drilled in
+
+      // Tap the 색상 tile → only that group's controls show.
+      fireEvent.click(screen.getByText('색상'));
+      expect(screen.getByText('배경색')).toBeTruthy();
+      expect(screen.getByText('선 색상')).toBeTruthy();
+      expect(screen.queryByText('아이콘')).toBeNull(); // other tiles gone in detail view
+
+      // ‹ 뒤로 returns to the tile grid.
+      fireEvent.click(screen.getByText('뒤로'));
+      expect(screen.getByText('아이콘')).toBeTruthy();
+      expect(screen.queryByText('배경색')).toBeNull();
     } finally {
       restore();
     }
