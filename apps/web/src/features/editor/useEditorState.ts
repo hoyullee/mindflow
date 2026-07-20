@@ -687,6 +687,11 @@ export function useEditorState(): EditorController {
   // `nudgeTick` re-triggers that effect for interactions (resize) that don't
   // otherwise change `doc.nodes` on release.
   const pendingNudgeRef = useRef<string | null>(null);
+  // Set when a tree STRUCTURAL change (e.g. a drag-reparent) re-lays out the
+  // tree: every free shape must then be pushed clear of the new tree, since the
+  // tree layout ignores free shapes (port of `applyFreeNudge`-over-all-frees,
+  // MindFlow.dc.html:2155). Consumed by the reflow-nudge effect once geom settles.
+  const pendingReflowNudgeRef = useRef(false);
   const [nudgeTick, setNudgeTick] = useState(0);
   const multiSelectionRef = useRef(multiSelection);
   useEffect(() => {
@@ -2288,6 +2293,10 @@ export function useEditorState(): EditorController {
             const next = mutations.reattachNode(doc0.nodes, d.id, target.id, target.zone);
             return next ? { ...doc0, nodes: next } : doc0;
           });
+          // the tree re-lays out around the new child/sibling → push every free
+          // shape clear of it once the new geom settles (the layout ignores frees).
+          pendingReflowNudgeRef.current = true;
+          setNudgeTick((t) => t + 1);
         } else {
           const dist = Math.hypot(p.x - d.startGeomX, p.y - d.startGeomY);
           // Box lookup for the drop: the dragged shape's NEW position is already in
@@ -2361,6 +2370,38 @@ export function useEditorState(): EditorController {
     };
     const nudged = mutations.nudgeFreeNode(doc.nodes, target, boxOf);
     if (nudged !== doc.nodes) setDoc((prev) => (prev.nodes === doc.nodes ? { ...prev, nodes: nudged } : prev));
+  }, [doc.nodes, nudgeTick, editingNodeId, editingFloatId, editingZoneId, editingLineId]);
+
+  // After a reparent (drag-attach) re-lays out the tree, push EVERY free shape
+  // clear of the new tree (and of each other) — the tree layout doesn't know
+  // about free shapes, so a reflow can land a tree node on top of one. Port of
+  // `applyFreeNudge` over all free roots (MindFlow.dc.html:2155). Runs once geom
+  // settles (like the single-shape nudge above) so `geomRef` holds the NEW tree
+  // positions; applied as a normalization (plain `setDoc`, not undoable).
+  useEffect(() => {
+    if (!pendingReflowNudgeRef.current) return;
+    if (editingNodeId || editingFloatId || editingZoneId || editingLineId) return;
+    if (objDragRef.current || dragRef.current) return;
+    pendingReflowNudgeRef.current = false;
+    const freeRoots = Object.keys(doc.nodes).filter((id) => id !== ROOT_ID && !doc.nodes[id]?.parent);
+    if (!freeRoots.length) return;
+    let nodes = doc.nodes;
+    for (const fid of freeRoots) {
+      // Positions: free shapes carry live x/y in the (evolving) candidate `nodes`
+      // — read them there so each free clears the ones already nudged this pass;
+      // tree nodes' doc x/y is 0, so take their positions from geom. Sizes are
+      // position-independent → geom is always fine.
+      const cand = nodes;
+      const boxOf = (id: string) => {
+        const gg = geomRef.current[id];
+        if (!gg) return null;
+        const nn = cand[id];
+        const isFreeRoot = !!nn && !nn.parent && id !== ROOT_ID;
+        return { x: isFreeRoot ? nn.x : gg.x, y: isFreeRoot ? nn.y : gg.y, w: gg.w, h: gg.h };
+      };
+      nodes = mutations.nudgeFreeNode(nodes, fid, boxOf);
+    }
+    if (nodes !== doc.nodes) setDoc((prev) => (prev.nodes === doc.nodes ? { ...prev, nodes } : prev));
   }, [doc.nodes, nudgeTick, editingNodeId, editingFloatId, editingZoneId, editingLineId]);
 
   function capturePointer(e: ReactPointerEvent): void {
