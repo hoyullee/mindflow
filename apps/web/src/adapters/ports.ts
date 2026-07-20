@@ -136,6 +136,11 @@ export interface DocStore {
 export interface WorkspaceData {
   spaces: unknown[];
   mapFolders: Record<string, string>;
+  /** Titles of recently-opened maps, most-recent first. Synced per-user (like
+   * `spaces`/`mapFolders`) so the "recent items" list follows the user across
+   * devices. Optional for backward-compat with workspaces saved before it
+   * existed — treat a missing value as "no synced recents yet". */
+  recent?: string[];
 }
 
 /**

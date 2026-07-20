@@ -22,6 +22,7 @@ import {
   mapId,
   mapHref as buildMapHref,
   mergeDocMetasIntoSpaces,
+  mergeRecent,
   newMapHref as buildNewMapHref,
   parseOutline,
   readDocRaw,
@@ -134,12 +135,17 @@ export function useHomeController() {
       // Seed favs/deleted/trash from the backend's persisted meta
       // (isFavorite/deletedAt) so favorite/trash status survives a refresh.
       const { favs, deleted, trash } = seedFavAndTrashFromMetas(prev.favs, prev.deleted, prev.trash, metas);
+      // Fold the per-user synced recents (from the backend workspace) into this
+      // device's local recents so "recent items" follow the user across devices
+      // (e.g. work PC → home PC). `prev.recent` (this device's localStorage, loaded
+      // on mount) keeps its ordering priority; the synced list fills in history.
+      const recent = mergeRecent(prev.recent, ws?.recent);
       // Baseline the just-hydrated workspace so the save effect treats it as
       // already-persisted (no re-save of what we just loaded/seeded).
-      savedWorkspaceSigRef.current = JSON.stringify({ spaces, mapFolders });
+      savedWorkspaceSigRef.current = JSON.stringify({ spaces, mapFolders, recent });
       // Always flip `loaded` so the grid drops its loading skeleton and
       // renders the real (possibly empty) state.
-      return { ...prev, spaces, activeSpace, curFolder, mapFolders, favs, deleted, trash, loaded: true };
+      return { ...prev, spaces, activeSpace, curFolder, mapFolders, favs, deleted, trash, recent, loaded: true };
     });
   }, [docStore, spaceStore]);
 
@@ -316,16 +322,18 @@ export function useHomeController() {
   // can't race a pending timer — space/folder edits are deliberate and infrequent.
   useEffect(() => {
     if (!state.loaded || !canPersistWorkspaceRef.current) return;
-    const sig = JSON.stringify({ spaces: state.spaces, mapFolders: state.mapFolders });
+    const sig = JSON.stringify({ spaces: state.spaces, mapFolders: state.mapFolders, recent: state.recent });
     if (sig === savedWorkspaceSigRef.current) return;
     savedWorkspaceSigRef.current = sig;
     // A genuine user change is being persisted — from here on the auth-confirmed
     // resync must NOT re-hydrate (it would clobber this edit with backend state).
     workspaceMutatedRef.current = true;
-    void spaceStore.save({ spaces: state.spaces, mapFolders: state.mapFolders }).catch(() => {
+    // `recent` rides along in the same per-user blob (opening a map bumps it), so
+    // the recent-items list syncs across devices just like spaces/folders do.
+    void spaceStore.save({ spaces: state.spaces, mapFolders: state.mapFolders, recent: state.recent }).catch(() => {
       /* save failed (offline, RLS, ...) — non-fatal; the next change retries */
     });
-  }, [state.loaded, state.spaces, state.mapFolders, spaceStore]);
+  }, [state.loaded, state.spaces, state.mapFolders, state.recent, spaceStore]);
 
   // ---- drive (fake OAuth demo) ----
   const onDriveClick = () => patch({ activeSpace: 'drive', curFolder: null, driveFolder: null });
