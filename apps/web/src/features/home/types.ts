@@ -40,6 +40,11 @@ export interface TrashEntry {
    * from the trash list can call `DocStore.restore(docId)` in addition to the
    * local title-keyed state flip. */
   docId?: string;
+  /** Origin space id + folder captured at delete time — a deleted card is now
+   * REMOVED from `spaces.maps` (so it can't linger/reappear), so restore uses
+   * these to put it back where it was (falls back to the home space). */
+  spaceId?: string;
+  folder?: string;
 }
 
 export type FolderModalMode = 'new' | 'rename';

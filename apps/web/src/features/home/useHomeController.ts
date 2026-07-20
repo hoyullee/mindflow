@@ -463,16 +463,40 @@ export function useHomeController() {
     if (!title) return;
     const docId = state.confirmDeleteDocId;
     setState((prev) => {
+      // Match the exact card: by docId when the card is doc-backed (avoids
+      // touching a same-titled sibling like "새 마인드맵_1" vs "…_1 (2)"), else
+      // a title-only card.
+      const matches = (m: { title: string; docId?: string }) => (docId ? m.docId === docId : m.title === title && !m.docId);
+      // Remember where it lived so restore can put it back.
+      let spaceId: string | undefined;
+      prev.spaces.forEach((s) => {
+        if (Array.isArray(s.maps) && s.maps.some(matches)) spaceId = s.id;
+      });
+      const folder = prev.mapFolders[title];
+      // REMOVE the card from the workspace (the synced source of truth) — not just
+      // hide it — so it can't linger in `spaces.maps` and reappear after a refresh
+      // (the previous title-keyed `deleted` flag was session-only for docId-less
+      // cards, and the doc's `deletedAt` seed didn't cover them).
+      const spaces = prev.spaces.map((s) => {
+        if (!Array.isArray(s.maps)) return s;
+        const maps = s.maps.filter((m) => !matches(m));
+        return maps.length === s.maps.length ? s : { ...s, maps };
+      });
+      const mapFolders = { ...prev.mapFolders };
+      delete mapFolders[title];
       const deleted = { ...prev.deleted, [title]: true };
       const favs = { ...prev.favs };
       delete favs[title];
       const src = sourceOf(title, DRIVE_FILES);
-      const trash = prev.trash.some((t) => t.title === title) ? prev.trash : [...prev.trash, { title, source: src, docId: docId ?? undefined }];
-      return { ...prev, deleted, favs, trash, confirmDelete: null, confirmDeleteDocId: null };
+      const trash = prev.trash.some((t) => t.title === title) ? prev.trash : [...prev.trash, { title, source: src, docId: docId ?? undefined, spaceId, folder }];
+      return { ...prev, spaces, mapFolders, deleted, favs, trash, confirmDelete: null, confirmDeleteDocId: null };
     });
     if (docId) {
       void docStore.remove(docId).catch(() => {
-        /* backend unreachable — local state already moved it to trash, non-fatal */
+        // Backend delete failed (offline/RLS): the card is already gone locally,
+        // but it isn't soft-deleted on the server — warn so the user can retry
+        // rather than have it silently resurrect on another device/refresh.
+        patch({ importError: '삭제가 서버에 반영되지 않았어요. 네트워크 확인 후 다시 시도해 주세요.' });
       });
     }
   };
@@ -497,21 +521,32 @@ export function useHomeController() {
     const title = state.confirmRestore;
     if (!title) return;
     const docId = state.confirmRestoreDocId;
+    const entry = state.trash.find((t) => (docId ? t.docId === docId : t.title === title));
     setState((prev) => {
       const deleted = { ...prev.deleted };
       delete deleted[title];
       const trash = prev.trash.filter((t) => t.title !== title);
       const isDriveFile = DRIVE_FILES.some((f) => f.name === title);
       let spaces = prev.spaces;
+      let mapFolders = prev.mapFolders;
       let toast = '';
-      if (!isDriveFile && !spaces.some((s) => Array.isArray(s.maps) && s.maps.some((m) => m.title === title))) {
-        const first = spaces[0];
-        if (first) {
-          spaces = spaces.map((s, i) => (i === 0 ? { ...s, maps: [...(s.maps || []), { title, when: '방금 복원됨', hue: '#f0663f', docId: docId ?? undefined }] } : s));
-          toast = `원래 공간이 삭제되어 "${first.name}" 공간으로 복원했어요`;
+      const present = (m: { title: string; docId?: string }) => (docId ? m.docId === docId : m.title === title);
+      if (!isDriveFile && !spaces.some((s) => Array.isArray(s.maps) && s.maps.some(present))) {
+        // Prefer the origin space captured at delete time; fall back to the home
+        // space (then the first) if it's gone.
+        const origin = entry?.spaceId && spaces.some((s) => s.id === entry.spaceId) ? entry.spaceId : undefined;
+        const targetId = origin ?? spaces.find((s) => s.home)?.id ?? spaces[0]?.id;
+        const target = spaces.find((s) => s.id === targetId);
+        if (target) {
+          spaces = spaces.map((s) => (s.id === targetId ? { ...s, maps: [...(s.maps || []), { title, when: '방금 복원됨', hue: '#f0663f', docId: docId ?? undefined }] } : s));
+          // restore the folder assignment too, if that folder still exists
+          if (entry?.folder && Array.isArray(target.folders) && target.folders.some((f) => f.id === entry.folder)) {
+            mapFolders = { ...mapFolders, [title]: entry.folder };
+          }
+          if (!origin) toast = `원래 공간이 삭제되어 "${target.name}" 공간으로 복원했어요`;
         }
       }
-      return { ...prev, deleted, trash, spaces, confirmRestore: null, confirmRestoreDocId: null, toast, toastTitle: toast ? '복원 완료' : '' };
+      return { ...prev, deleted, trash, spaces, mapFolders, confirmRestore: null, confirmRestoreDocId: null, toast, toastTitle: toast ? '복원 완료' : '' };
     });
     if (docId) {
       void docStore.restore(docId).catch(() => {
