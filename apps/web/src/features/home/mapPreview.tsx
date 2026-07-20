@@ -1,7 +1,13 @@
 import { ROOT_ID, layout } from '@mindflow/mindmap-core';
 import type { Doc, EdgeStyle, LayoutMode, Node as CoreNode } from '@mindflow/mindmap-core';
 import { buildEdgePath, edgeStrokeWidth } from '../editor/edges';
+import { CanvasTextMeasurer, computeMetrics } from '../editor/metrics';
 import { hexA } from './storage';
+
+// Match the editor EXACTLY: size preview node boxes with the same canvas text
+// measurement (`computeMetrics` + `CanvasTextMeasurer`) the editor uses, instead
+// of a character-count guess. A shared measurer (caches its canvas 2d context).
+const previewMeasurer = new CanvasTextMeasurer();
 
 /** Home.dc.html `realPreview` — mirrors the editor's theme accent/branch palettes so a
  * card's thumbnail matches what the map actually looks like when opened. */
@@ -102,15 +108,6 @@ interface PreviewDoc {
   zones?: DocZone[];
 }
 
-/** Node sizing for the preview layout — mirrors `dim()` below (and the design's
- * `realPreview`) so a re-laid-out thumbnail lines up with what the editor draws. */
-function previewSizeOf(node: CoreNode, depth: number): { w: number; h: number } {
-  const len = ((node.text || '') + (node.emoji || '')).length;
-  const w = node.cw || Math.min(220, Math.max(50, len * 13 + 26));
-  const h = node.ch || (depth === 0 ? 44 : 32);
-  return { w, h };
-}
-
 /** Saved docs persist layout-derived node x/y as `0`: the React editor keeps
  * layout pure/derived (`mindmap-core`) and never writes positions back into the
  * doc, unlike the dc original which mutated `node.x/y` in place. Without this the
@@ -118,13 +115,18 @@ function previewSizeOf(node: CoreNode, depth: number): { w: number; h: number } 
  * Re-run the SAME core `layout` the editor uses (respecting the doc's layoutMode)
  * so the preview matches the real arrangement. Mutates `d.nodes` x/y in place;
  * free shapes and their subtrees keep their stored positions (layout anchors
- * them there), so this is safe for docs that already carry real coordinates. */
-function applyLayoutPositions(d: PreviewDoc): void {
+ * them there), so this is safe for docs that already carry real coordinates.
+ *
+ * `sizeOf` is the editor-identical `computeMetrics` measurer (see caller). It's
+ * also invoked here for EVERY laid-out node, so `sizeOf` doubles as the recorder
+ * that populates the caller's box-size map — guaranteeing the drawn box matches
+ * the box the layout positioned. */
+function applyLayoutPositions(d: PreviewDoc, sizeOf: (node: CoreNode, depth: number) => { w: number; h: number }): void {
   const nodes = d.nodes;
   if (!nodes || !nodes[ROOT_ID]) return; // no canonical root → keep stored coords
   const mode: LayoutMode = d.layoutMode === 'right' || d.layoutMode === 'down' ? d.layoutMode : 'radial';
   try {
-    const laid = layout({ nodes } as unknown as Doc, mode, previewSizeOf);
+    const laid = layout({ nodes } as unknown as Doc, mode, sizeOf);
     for (const id of Object.keys(nodes)) {
       const g = laid[id];
       if (g) {
@@ -146,7 +148,17 @@ export function realPreview(rawDoc: string | null, hueFallback: string): JSX.Ele
     return null;
   }
   if (!d || !d.nodes) return null;
-  applyLayoutPositions(d);
+  // Editor-identical node box sizing: `computeMetrics` (real canvas text
+  // measurement). The layout pass records each node's box into `metricsById` so
+  // the DRAWN box is exactly the box the layout positioned (see `dim`).
+  const metricsById: Record<string, { w: number; h: number }> = {};
+  const sizeOf = (node: CoreNode, depth: number): { w: number; h: number } => {
+    const m = computeMetrics(node, depth, previewMeasurer);
+    const wh = { w: m.w, h: m.h };
+    if (node.id) metricsById[node.id] = wh;
+    return wh;
+  };
+  applyLayoutPositions(d, sizeOf);
 
   const TH = (d.themeKey && THEME_PAL[d.themeKey]) || THEME_PAL.coral!;
   const hue = TH.accent;
@@ -174,11 +186,13 @@ export function realPreview(rawDoc: string | null, hueFallback: string): JSX.Ele
   };
 
   const dim = (id: string): { w: number; h: number } => {
-    const n = nodes[id]!;
-    const len = ((n.text || '') + (n.emoji || '')).length;
-    const w = n.cw || Math.min(220, Math.max(50, len * 13 + 26));
-    const h = n.ch || (id === root ? 44 : 32);
-    return { w, h };
+    // Prefer the box recorded during the layout pass (guaranteed identical to
+    // what positioned the node). Fall back to a fresh `computeMetrics` for any
+    // node the layout didn't visit — still the editor's measurer, not a guess.
+    const rec = metricsById[id];
+    if (rec) return rec;
+    const m = computeMetrics(nodes[id] as unknown as CoreNode, id === root ? 0 : 1, previewMeasurer);
+    return { w: m.w, h: m.h };
   };
 
   const floats = Array.isArray(d.floats) ? d.floats : [];
