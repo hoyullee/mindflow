@@ -28,7 +28,7 @@ export function AuthModal({ state, controller }: Props) {
             <div style={{ fontSize: 18, fontWeight: 600, color: '#202124', marginBottom: 4 }}>계정 선택</div>
             <div style={{ fontSize: 13, color: '#5f6368', marginBottom: 18 }}>Geurio로 계속하기</div>
             <div onClick={controller.chooseAccount} role="button" tabIndex={0} className="drive-file" style={{ display: 'flex', alignItems: 'center', gap: 12, padding: 12, border: '1px solid #eee', borderRadius: 10, cursor: 'pointer', marginBottom: 10 }}>
-              <div style={{ width: 34, height: 34, borderRadius: '50%', background: '#f0663f', color: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: 700 }}>M</div>
+              <div style={{ width: 34, height: 34, borderRadius: '50%', background: '#f0663f', color: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: 700 }}>G</div>
               <div>
                 <div style={{ fontSize: 13.5, fontWeight: 600, color: '#202124' }}>mine 사용자</div>
                 <div style={{ fontSize: 12, color: '#5f6368' }}>mine@gmail.com</div>
