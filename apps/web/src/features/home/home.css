@@ -190,7 +190,9 @@ a:hover {
 }
 @media (max-width: 767px) {
   .mf-map-grid {
-    grid-template-columns: 1fr;
+    /* `minmax(0, …)` (not bare `1fr` = `minmax(auto,1fr)`) so a long, non-wrapping
+       card title can't push the track past 100% and cause horizontal overflow. */
+    grid-template-columns: minmax(0, 1fr);
   }
 }
 
@@ -204,7 +206,11 @@ a:hover {
 }
 @media (max-width: 767px) {
   .mf-recent-grid {
-    grid-template-columns: repeat(3, 1fr);
+    /* `minmax(0, 1fr)`, NOT `repeat(3, 1fr)`: a bare `1fr` is `minmax(auto, 1fr)`,
+       whose `auto` floor lets a track grow to fit non-shrinkable content (a long
+       `nowrap` card title), making the three columns unequal (e.g. 75/211/42px).
+       `minmax(0, …)` forces strictly equal thirds; the title clips via ellipsis. */
+    grid-template-columns: repeat(3, minmax(0, 1fr));
   }
 }
 
