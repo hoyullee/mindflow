@@ -10,6 +10,7 @@ import {
   RenameButton,
   SectionLabel,
   SHAPES,
+  ShapeGlyph,
   SwatchRow,
   panelBodyStyle,
   panelWrapStyle,
@@ -86,10 +87,9 @@ export function NodePanel({ controller, nodeIds, isMobile = false }: NodePanelPr
                     color: active ? th.accent : th.subtext,
                     padding: 0,
                     fontFamily: 'inherit',
-                    fontSize: 10,
                   }}
                 >
-                  {s.k[0]?.toUpperCase()}
+                  <ShapeGlyph kind={s.k} />
                 </button>
               );
             })}

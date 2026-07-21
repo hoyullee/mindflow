@@ -17,6 +17,50 @@ export const SHAPES: { k: string; label: string }[] = [
   { k: 'parallelogram', label: '평행사변형' },
 ];
 
+/**
+ * Small preview of a node shape, drawn as an SVG outline so the shape picker
+ * shows what each option looks like instead of a cryptic first-letter ("R", "P",
+ * …). Uses `currentColor`, so it inherits the button's active/inactive color.
+ */
+export function ShapeGlyph({ kind }: { kind: string }) {
+  const common = {
+    width: 22,
+    height: 15,
+    viewBox: '0 0 24 16',
+    fill: 'none',
+    stroke: 'currentColor',
+    strokeWidth: 1.6,
+    strokeLinejoin: 'round' as const,
+    strokeLinecap: 'round' as const,
+    'aria-hidden': true,
+    style: { display: 'block' as const },
+  };
+  switch (kind) {
+    case 'rect':
+      return <svg {...common}><rect x={3.5} y={3} width={17} height={10} rx={0.5} /></svg>;
+    case 'pill':
+      return <svg {...common}><rect x={3} y={3} width={18} height={10} rx={5} /></svg>;
+    case 'ellipse':
+      return <svg {...common}><ellipse cx={12} cy={8} rx={9} ry={5} /></svg>;
+    case 'underline':
+      return (
+        <svg {...common}>
+          <line x1={6} y1={5.5} x2={18} y2={5.5} />
+          <line x1={4} y1={12} x2={20} y2={12} strokeWidth={2} />
+        </svg>
+      );
+    case 'hexagon':
+      return <svg {...common}><polygon points="7 3 17 3 21 8 17 13 7 13 3 8" /></svg>;
+    case 'diamond':
+      return <svg {...common}><polygon points="12 2 21 8 12 14 3 8" /></svg>;
+    case 'parallelogram':
+      return <svg {...common}><polygon points="7 3 21 3 17 13 3 13" /></svg>;
+    case 'round':
+    default:
+      return <svg {...common}><rect x={3} y={3} width={18} height={10} rx={3} /></svg>;
+  }
+}
+
 export const SIZE_OPTIONS: { k: 's' | 'm' | 'l'; label: string }[] = [
   { k: 's', label: '작게' },
   { k: 'm', label: '보통' },
