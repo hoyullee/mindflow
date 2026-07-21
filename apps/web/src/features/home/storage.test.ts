@@ -1,5 +1,35 @@
-import { describe, expect, it } from 'vitest';
-import { mergeRecent } from './storage';
+import { beforeEach, describe, expect, it } from 'vitest';
+import { RECENT_CAP, loadRecent, mergeRecent, pushRecentTitle } from './storage';
+
+describe('pushRecentTitle', () => {
+  beforeEach(() => localStorage.clear());
+
+  it('prepends the opened map to the persisted recent list (most-recent first)', () => {
+    pushRecentTitle('맵 A');
+    pushRecentTitle('맵 B');
+    expect(loadRecent()).toEqual(['맵 B', '맵 A']);
+  });
+
+  it('de-duplicates: re-opening a map moves it to the front, no duplicate', () => {
+    pushRecentTitle('맵 A');
+    pushRecentTitle('맵 B');
+    pushRecentTitle('맵 A');
+    expect(loadRecent()).toEqual(['맵 A', '맵 B']);
+  });
+
+  it(`caps the stored history at ${RECENT_CAP}`, () => {
+    for (let i = 0; i < RECENT_CAP + 5; i++) pushRecentTitle('맵 ' + i);
+    const list = loadRecent();
+    expect(list.length).toBe(RECENT_CAP);
+    expect(list[0]).toBe('맵 ' + (RECENT_CAP + 4)); // newest first
+  });
+
+  it('ignores blank titles', () => {
+    pushRecentTitle('맵 A');
+    pushRecentTitle('   ');
+    expect(loadRecent()).toEqual(['맵 A']);
+  });
+});
 
 describe('mergeRecent', () => {
   it('keeps this-device recents first, then fills in synced history', () => {
