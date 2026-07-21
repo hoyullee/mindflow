@@ -1,5 +1,6 @@
+import { useLayoutEffect, useRef, useState } from 'react';
 import type { HomeController } from '../useHomeController';
-import type { HomeViewModel } from '../viewModel';
+import type { CardViewData, HomeViewModel } from '../viewModel';
 import { FolderCard } from './FolderCard';
 import { MapCard } from './MapCard';
 
@@ -28,6 +29,56 @@ function SkeletonCard() {
   );
 }
 
+// Recent row sizing: a compact card is ~this wide (incl. the grid gap), so the
+// number that fit is `floor(width / RECENT_CARD_STEP)`. Clamped to [2, 6] so a
+// phone still shows a couple and a wide monitor doesn't sprawl into a dozen tiny
+// cards.
+const RECENT_CARD_STEP = 116; // ≈104px card + 12px gap
+const RECENT_MIN_COLS = 2;
+const RECENT_MAX_COLS = 6;
+
+/**
+ * "최근 항목" — a single row of recent-map shortcuts whose COUNT adapts to the
+ * available width (more on a wide screen, fewer on a phone) instead of a fixed
+ * number. The column count is measured from the container (via ResizeObserver),
+ * and we render exactly that many cards, so it's always one clean row.
+ */
+function RecentRow({ cards, controller }: { cards: CardViewData[]; controller: HomeController }) {
+  const ref = useRef<HTMLDivElement>(null);
+  const [cols, setCols] = useState(3);
+  useLayoutEffect(() => {
+    const el = ref.current;
+    if (!el) return;
+    const measure = (): void => {
+      const w = el.clientWidth;
+      if (!w) return;
+      const fit = Math.floor((w + 12) / RECENT_CARD_STEP);
+      setCols(Math.max(RECENT_MIN_COLS, Math.min(RECENT_MAX_COLS, fit)));
+    };
+    measure();
+    // ResizeObserver is absent in some test/SSR environments (jsdom) — fall back
+    // to a one-time measure + window resize there.
+    if (typeof ResizeObserver !== 'undefined') {
+      const ro = new ResizeObserver(measure);
+      ro.observe(el);
+      return () => ro.disconnect();
+    }
+    window.addEventListener('resize', measure);
+    return () => window.removeEventListener('resize', measure);
+  }, []);
+  return (
+    <div
+      ref={ref}
+      className="mf-recent-grid"
+      style={{ marginBottom: 26, gridTemplateColumns: `repeat(${cols}, minmax(0, 1fr))` }}
+    >
+      {cards.slice(0, cols).map((c) => (
+        <MapCard key={c.title} card={c} controller={controller} draggableEnabled={false} compact />
+      ))}
+    </div>
+  );
+}
+
 /** Home.dc.html:209-329 — recent / folders / maps sections plus the three empty states. */
 export function MapGrid({ view, controller }: Props) {
   if (view.loading) {
@@ -44,11 +95,7 @@ export function MapGrid({ view, controller }: Props) {
       {view.recentSectionVisible && (
         <div>
           <div style={{ fontSize: 12.5, fontWeight: 700, color: '#9c8b7e', marginBottom: 14 }}>최근 항목</div>
-          <div className="mf-recent-grid" style={{ marginBottom: 26 }}>
-            {view.recentCards.map((c) => (
-              <MapCard key={c.title} card={c} controller={controller} draggableEnabled={false} compact />
-            ))}
-          </div>
+          <RecentRow cards={view.recentCards} controller={controller} />
           <div style={{ height: 1, background: '#ecdfd5', margin: '0 0 26px' }} />
         </div>
       )}

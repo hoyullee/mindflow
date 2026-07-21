@@ -131,7 +131,7 @@ export function saveRecent(list: string[]): void {
  * device stays at the top, while the synced list fills in history opened on
  * OTHER devices (so recents follow the user from e.g. a work PC to a home PC).
  */
-export function mergeRecent(primary: string[], secondary: string[] | undefined, cap = 4): string[] {
+export function mergeRecent(primary: string[], secondary: string[] | undefined, cap = 12): string[] {
   const out: string[] = [];
   const seen = new Set<string>();
   for (const t of [...primary, ...(secondary || [])]) {
