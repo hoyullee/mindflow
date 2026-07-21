@@ -429,10 +429,21 @@ export function MapCard({ card, controller, draggableEnabled, compact = false }:
       </div>
       <div style={{ padding: compact ? '8px 10px' : '14px 16px' }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 6, minWidth: 0, marginBottom: compact ? 0 : 4 }}>
-          {/* Cross-space "최근 항목" strip: a small dot in the owning space's color. */}
-          {card.spaceColor && (
-            <span aria-hidden="true" style={{ width: 8, height: 8, borderRadius: 3, background: card.spaceColor, flexShrink: 0 }} />
-          )}
+          {/* Cross-space "최근 항목" strip: a small dot in the owning space's color.
+              Color alone is inaccessible information, so the dot carries the space
+              name for screen readers (+ a hover tooltip), and a faint inset ring
+              keeps low-luminance palette colors (amber/teal ≲3:1 on white) visible. */}
+          {card.spaceColor &&
+            (card.spaceName ? (
+              <span
+                role="img"
+                aria-label={`${card.spaceName} 스페이스`}
+                title={card.spaceName}
+                style={{ width: 8, height: 8, borderRadius: 3, background: card.spaceColor, flexShrink: 0, boxShadow: 'inset 0 0 0 1px rgba(0,0,0,.18)' }}
+              />
+            ) : (
+              <span aria-hidden="true" style={{ width: 8, height: 8, borderRadius: 3, background: card.spaceColor, flexShrink: 0, boxShadow: 'inset 0 0 0 1px rgba(0,0,0,.18)' }} />
+            ))}
           <div style={{ fontSize: compact ? 12 : 14, fontWeight: 600, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', minWidth: 0 }}>{card.title}</div>
         </div>
         {!compact && <div style={{ fontSize: 12, color: '#9c8b7e' }}>최근 항목:{card.when}</div>}

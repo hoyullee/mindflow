@@ -57,12 +57,14 @@ describe('deriveHomeView — recent (cross-space)', () => {
     expect(view.recentCards.find((c) => c.title === '작업맵')!.href).toContain('map=w1');
   });
 
-  it("tags each recent card with its owning space's color", () => {
+  it("tags each recent card with its owning space's color AND name (a11y: the dot alone is color-only info)", () => {
     const state = twoSpaceState();
     state.recent = ['작업맵', '일반맵'];
     const cards = deriveHomeView(state).recentCards;
     expect(cards.find((c) => c.title === '작업맵')!.spaceColor).toBe('#3f8fd0'); // 작업
     expect(cards.find((c) => c.title === '일반맵')!.spaceColor).toBe('#f0663f'); // 일반 공간
+    expect(cards.find((c) => c.title === '작업맵')!.spaceName).toBe('작업');
+    expect(cards.find((c) => c.title === '일반맵')!.spaceName).toBe('일반 공간');
   });
 
   it('hides the recent strip while searching (it lives above the search results)', () => {

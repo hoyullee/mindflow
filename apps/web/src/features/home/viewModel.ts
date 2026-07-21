@@ -31,6 +31,10 @@ export interface CardViewData {
   /** Owning space's color — set only for the cross-space "최근 항목" strip, where a
    * small dot on each card shows which space the map lives in. */
   spaceColor?: string;
+  /** Owning space's name, paired with `spaceColor` — the dot alone is
+   * color-only information (invisible to screen readers, low-contrast for some
+   * palette colors), so the card exposes the name as its accessible label. */
+  spaceName?: string;
 }
 
 export interface FolderCardViewData {
@@ -205,12 +209,12 @@ export function deriveHomeView(state: HomeState): HomeViewModel {
   // "최근 항목" is a GLOBAL, cross-space list shown at the top of Home, so resolve
   // each recent map's card data from EVERY space (not just the active one), plus
   // Drive files. First occurrence wins (a title should be unique across spaces).
-  const recentByTitle = new Map<string, { title: string; when: string; hue: string; docId?: string; spaceColor: string }>();
+  const recentByTitle = new Map<string, { title: string; when: string; hue: string; docId?: string; spaceColor: string; spaceName: string }>();
   state.spaces.forEach((s) => (Array.isArray(s.maps) ? s.maps : []).forEach((m) => {
-    if (!recentByTitle.has(m.title)) recentByTitle.set(m.title, { ...m, spaceColor: s.color || '#f0663f' });
+    if (!recentByTitle.has(m.title)) recentByTitle.set(m.title, { ...m, spaceColor: s.color || '#f0663f', spaceName: s.name });
   }));
   driveCardsRaw.forEach((f) => {
-    if (!recentByTitle.has(f.name)) recentByTitle.set(f.name, { title: f.name, when: 'Google Drive', hue: '#34A853', spaceColor: '#34A853' });
+    if (!recentByTitle.has(f.name)) recentByTitle.set(f.name, { title: f.name, when: 'Google Drive', hue: '#34A853', spaceColor: '#34A853', spaceName: 'Google Drive' });
   });
   // Recent cards render as the compact variant (no ☰ menu), so the move/export/
   // favorite menu rows don't apply — they'd also be ambiguous for a cross-space
@@ -245,6 +249,7 @@ export function deriveHomeView(state: HomeState): HomeViewModel {
         moveTargets: [],
         spaceMoveTargets: [],
         spaceColor: base.spaceColor,
+        spaceName: base.spaceName,
       };
     });
 
