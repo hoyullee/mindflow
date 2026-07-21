@@ -628,7 +628,10 @@ export function useHomeController() {
 
   const recordRecent = (title: string) => {
     setState((prev) => {
-      const recent = [title, ...prev.recent.filter((t) => t !== title)].slice(0, 4);
+      // Keep more history than any one row shows (the recent row displays only
+      // as many as fit the screen — see MapGrid's `RecentRow`), so wider screens
+      // have enough recents to fill out.
+      const recent = [title, ...prev.recent.filter((t) => t !== title)].slice(0, 12);
       saveRecent(recent);
       return { ...prev, recent };
     });

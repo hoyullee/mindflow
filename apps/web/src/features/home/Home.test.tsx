@@ -763,10 +763,11 @@ describe('Home', () => {
       expect((mainCard.querySelector('.map-thumb') as HTMLElement).style.height).toBe('150px');
     });
 
-    it('shows up to 4 cards in the 최근 항목 (recent) section', async () => {
-      localStorage.setItem('mf_recent', JSON.stringify(['맵 A', '맵 B', '맵 C', '맵 D']));
+    it('renders the 최근 항목 (recent) section as a single bounded row (count adapts to width)', async () => {
+      const titles = ['맵 A', '맵 B', '맵 C', '맵 D', '맵 E', '맵 F'];
+      localStorage.setItem('mf_recent', JSON.stringify(titles));
       const { container } = renderHomeWithDocStore(
-        ['맵 A', '맵 B', '맵 C', '맵 D'].map((title, i) => ({
+        titles.map((title, i) => ({
           id: `doc-${i}`,
           title,
           version: 1,
@@ -777,12 +778,17 @@ describe('Home', () => {
       );
 
       await waitFor(() => expect(screen.getByText('최근 항목')).toBeTruthy());
-      // recent cards are the compact variant (72px thumbnail); there should be 4
+      // recent cards are the compact variant (72px thumbnail)
       const recent = [...container.querySelectorAll('a[data-title]')].filter((c) => {
         const th = c.querySelector('.map-thumb') as HTMLElement | null;
         return th?.style.height === '72px';
       });
-      expect(recent.length).toBe(4);
+      // The row shows only as many cards as fit the width (measured at runtime).
+      // jsdom has no layout engine, so RecentRow falls back to its default column
+      // count — the point of the assertion is that a long recent history collapses
+      // to a single bounded row, not a giant multi-row grid of every entry.
+      expect(recent.length).toBe(3);
+      expect(recent.length).toBeLessThan(titles.length);
     });
 
     it('deleting calls docStore.remove(docId), restoring calls docStore.restore(docId)', async () => {

@@ -196,22 +196,16 @@ a:hover {
   }
 }
 
-/* Recent section: compact cards (~1/4 the footprint of a main card), so more
-   fit per row and they read as quick-access shortcuts, not full map cards.
-   3-up on phones too, so they stay compact rather than widening out. */
+/* Recent section: compact quick-access cards in a single row whose column count
+   adapts to the width — the exact count is measured and set inline by MapGrid's
+   `RecentRow` (which also renders only that many cards). The rule below is just a
+   pre-measurement fallback; the inline `grid-template-columns` wins once mounted.
+   (`minmax(0, …)`, not a bare `1fr`, so a long non-wrapping title can't stretch
+   one column and make them unequal.) */
 .mf-recent-grid {
   display: grid;
   gap: 12px;
-  grid-template-columns: repeat(auto-fill, minmax(148px, 1fr));
-}
-@media (max-width: 767px) {
-  .mf-recent-grid {
-    /* `minmax(0, 1fr)`, NOT `repeat(3, 1fr)`: a bare `1fr` is `minmax(auto, 1fr)`,
-       whose `auto` floor lets a track grow to fit non-shrinkable content (a long
-       `nowrap` card title), making the three columns unequal (e.g. 75/211/42px).
-       `minmax(0, …)` forces strictly equal thirds; the title clips via ellipsis. */
-    grid-template-columns: repeat(3, minmax(0, 1fr));
-  }
+  grid-template-columns: repeat(auto-fill, minmax(104px, 1fr));
 }
 
 /* Card thumbnails keep the PC card's aspect-ratio (map ≈304:150, recent
