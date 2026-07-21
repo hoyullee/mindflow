@@ -19,8 +19,9 @@ const MOBILE_SWIPE_MAX = 20;
 
 /**
  * Global "최근 항목" tray — recently opened maps across EVERY space, shown at the
- * very top of Home. `surface-raised` container that shrinks to its content
- * (`width: fit-content`) so a short history never sits in a full-width box.
+ * very top of Home. `surface-sunken` container ("well") that shrinks to its
+ * content (`width: fit-content`) so a short history never sits in a full-width
+ * box.
  *
  * How many cards are EXPOSED adapts to the viewport (history retention is much
  * larger — RECENT_CAP):

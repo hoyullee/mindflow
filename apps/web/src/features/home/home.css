@@ -204,7 +204,10 @@ a:hover {
 .mf-recent-tray {
   width: fit-content;
   max-width: 100%;
-  background: #faf3ee; /* surface-raised */
+  /* surface-sunken, NOT surface-raised(#faf3ee): raised is nearly identical to
+     the page bg (#fbf6f2) so the tray wasn't perceivable as a container. The
+     deeper sunken tone reads as a "well" and makes the white cards pop. */
+  background: #f0e6dd;
   border-radius: 14px; /* radius-lg */
   padding: 16px; /* space-4 */
   margin-bottom: 24px; /* space-6 */
