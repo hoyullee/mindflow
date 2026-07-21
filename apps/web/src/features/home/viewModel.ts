@@ -199,20 +199,23 @@ export function deriveHomeView(state: HomeState): HomeViewModel {
     .filter((k) => favs[k] && !state.deleted[k])
     .map((t) => ({ title: t, isDrive: sourceIsDrive(t), href: mapHref(t, favDocIdByTitle.get(t)) }));
 
-  const baseByTitle = new Map<string, { title: string; when: string; hue: string; docId?: string }>();
-  activeMaps.forEach((m) => baseByTitle.set(m.title, m));
-  driveCardsRaw.forEach((f) => baseByTitle.set(f.name, { title: f.name, when: 'Google Drive', hue: '#34A853' }));
+  // "최근 항목" is a GLOBAL, cross-space list shown at the top of Home, so resolve
+  // each recent map's card data from EVERY space (not just the active one), plus
+  // Drive files. First occurrence wins (a title should be unique across spaces).
+  const recentByTitle = new Map<string, { title: string; when: string; hue: string; docId?: string }>();
+  state.spaces.forEach((s) => (Array.isArray(s.maps) ? s.maps : []).forEach((m) => {
+    if (!recentByTitle.has(m.title)) recentByTitle.set(m.title, m);
+  }));
+  driveCardsRaw.forEach((f) => {
+    if (!recentByTitle.has(f.name)) recentByTitle.set(f.name, { title: f.name, when: 'Google Drive', hue: '#34A853' });
+  });
+  // Recent cards render as the compact variant (no ☰ menu), so the move/export/
+  // favorite menu rows don't apply — they'd also be ambiguous for a cross-space
+  // list. Keep them off; the card is a click-to-open shortcut.
   const recentCards: CardViewData[] = state.recent
-    .filter((t) => baseByTitle.has(t) && !state.deleted[t])
-    .filter((t) => matchesSearch(t, state.search))
+    .filter((t) => recentByTitle.has(t) && !state.deleted[t])
     .map((t) => {
-      const base = baseByTitle.get(t)!;
-      // The recent section only renders in a non-Drive space at the top level
-      // (see `recentSectionVisible`), so — like a top-level map card — it can
-      // favorite, export, and move-to-folder. These must read the SAME open/
-      // export/move state as `allCards`; hardcoding them false (as before) left
-      // the ☰ menu unable to open on a recent card.
-      const hasMove = folders.length > 0;
+      const base = recentByTitle.get(t)!;
       return {
         title: t,
         when: base.when,
@@ -224,20 +227,20 @@ export function deriveHomeView(state: HomeState): HomeViewModel {
         openable: true,
         isFav: !!favs[t],
         isDrive: sourceIsDrive(t),
-        menuOpen: state.openMenu === t,
+        menuOpen: false,
         selected: state.selectedCard === t,
         dragging: false,
         dragOverTarget: false,
-        exportOpen: state.exportFor === t,
-        moveOpen: state.moveFor === t,
-        spaceMoveOpen: state.moveSpaceFor === t,
-        showFavRow: true,
-        showMoveRow: hasMove,
-        showSpaceMoveRow: canMoveSpace,
+        exportOpen: false,
+        moveOpen: false,
+        spaceMoveOpen: false,
+        showFavRow: false,
+        showMoveRow: false,
+        showSpaceMoveRow: false,
         showUnfolderRow: false,
-        showDivider: true,
-        moveTargets: folders.map((f) => ({ id: f.id, name: f.name })),
-        spaceMoveTargets,
+        showDivider: false,
+        moveTargets: [],
+        spaceMoveTargets: [],
       };
     });
 
@@ -276,7 +279,9 @@ export function deriveHomeView(state: HomeState): HomeViewModel {
     backVisible: !!(curFolder || driveFolder),
     newFolderVisible: !((isDriveSpace && (!connected || driveFolder)) || curFolder),
     importVisible: !(isDriveSpace || curFolder),
-    recentSectionVisible: !loading && !isDriveSpace && !curFolder && recentCards.length > 0,
+    // Global cross-space strip at the top of Home: show at any top-level space
+    // view (not inside a folder, not searching, not on the Drive-connect prompt).
+    recentSectionVisible: !loading && !curFolder && !driveFolder && !state.search && !showDriveConnect && recentCards.length > 0,
     foldersSectionVisible: !loading && folderCards.length > 0,
     // Only render the "맵" section when there are actually maps to show — a space
     // with folders but no loose maps must not render an empty "맵" header.

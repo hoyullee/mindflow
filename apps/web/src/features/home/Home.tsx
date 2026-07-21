@@ -4,6 +4,7 @@ import { LoadingOverlay } from '../auth/LoadingOverlay';
 import { Sidebar } from './components/Sidebar';
 import { Toolbar } from './components/Toolbar';
 import { MapGrid } from './components/MapGrid';
+import { RecentStrip } from './components/RecentStrip';
 import { AuthModal } from './components/modals/AuthModal';
 import { ToastModal } from './components/modals/ToastModal';
 import { NewSpaceModal } from './components/modals/NewSpaceModal';
@@ -57,6 +58,9 @@ export function Home() {
           whole grid/toolbar left on devices with classic (space-taking) scrollbars.
           It's a no-op with overlay scrollbars (mobile), where there's no shift anyway. */}
       <main style={{ flex: '1 1 auto', display: 'flex', flexDirection: 'column', overflowY: 'auto', scrollbarGutter: 'stable', padding: isMobile ? '16px 14px 32px' : '26px 32px 40px', minWidth: 0 }}>
+        {/* Cross-space "최근 항목" strip sits ABOVE the space toolbar so it reads as a
+            global "recently opened" bar, not part of the current space's maps. */}
+        {view.recentSectionVisible && <RecentStrip cards={view.recentCards} controller={controller} />}
         <Toolbar state={state} view={view} controller={controller} isMobile={isMobile} onOpenNav={() => setNavOpen(true)} />
         <MapGrid view={view} controller={controller} />
       </main>
