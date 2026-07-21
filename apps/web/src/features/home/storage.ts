@@ -124,9 +124,17 @@ export function saveRecent(list: string[]): void {
   }
 }
 
-/** How many recent titles to retain. Well above what any one row shows, so wide
- * screens have enough history and switching devices doesn't lose recents. */
-export const RECENT_CAP = 12;
+/** How many recent titles to RETAIN (localStorage + the cross-device synced
+ * workspace blob). Effectively unlimited for display purposes — the tray never
+ * shows more than fits one row (~27 cards even on 4K, see RECENT_RENDER_MAX) —
+ * this is only a safety bound so the synced blob can't grow without end. */
+export const RECENT_CAP = 100;
+
+/** How many recent CARDS the view materializes (sketch build + thumbnail
+ * prefetch). Must cover the widest realistic single row (4K ≈ 27 cards) and the
+ * mobile swipe depth — beyond that, entries exist in history (RECENT_CAP) but
+ * aren't rendered, keeping sketch work and doc-body fan-out bounded. */
+export const RECENT_RENDER_MAX = 32;
 
 /**
  * Prepend `title` to the persisted recent list (dedup, cap), returning the new

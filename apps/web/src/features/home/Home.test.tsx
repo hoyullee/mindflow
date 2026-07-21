@@ -783,14 +783,16 @@ describe('Home', () => {
         const th = c.querySelector('.map-thumb') as HTMLElement | null;
         return th?.style.height === '72px';
       });
-      // Every recent entry renders (the data layer caps the history at RECENT_CAP);
-      // overflow scrolls horizontally instead of being cut to a measured column count.
-      expect(recent.length).toBe(titles.length);
+      // Desktop exposes only as many cards as FIT the measured width — jsdom has
+      // no layout (clientWidth 0), so the strip keeps its pre-measurement default
+      // (3). The point: a long history collapses to one width-fitted row, it does
+      // not all mount.
+      expect(recent.length).toBe(3);
+      expect(recent.length).toBeLessThan(titles.length);
 
       // Defensive (design-system §8.1): each card sits in a FIXED-width,
       // NON-STRETCHING slot — `flex: 0 0 auto`, never `flex: 1` (the flex analogue
-      // of `1fr`, which is what previously made cards balloon "wide"). And the
-      // scroller overflows horizontally rather than growing/stretching the slots.
+      // of `1fr`, which is what previously made cards balloon "wide").
       const scroll = container.querySelector('.mf-recent-scroll') as HTMLElement;
       expect(scroll.style.overflowX).toBe('auto');
       recent.forEach((card) => {
@@ -798,6 +800,34 @@ describe('Home', () => {
         expect(slot.style.width).toBe('128px');
         expect(slot.style.flex).toContain('0 0 auto');
       });
+    });
+
+    it('mobile: the recent tray swipes through the history instead of cutting to the fit count', async () => {
+      // Width-fit on a phone would strand everything past the ~2 cards that fit —
+      // mobile keeps the swipeable overflow row (bounded by MOBILE_SWIPE_MAX).
+      const restore = mockMatchMedia(true);
+      try {
+        const titles = ['맵 A', '맵 B', '맵 C', '맵 D', '맵 E', '맵 F'];
+        localStorage.setItem('mf_recent', JSON.stringify(titles));
+        const { container } = renderHomeWithDocStore(
+          titles.map((title, i) => ({
+            id: `doc-${i}`,
+            title,
+            version: 1,
+            updatedAt: '2026-01-01T00:00:00.000Z',
+            isFavorite: false,
+            deletedAt: null,
+          })),
+        );
+        await waitFor(() => expect(screen.getByText('최근 항목')).toBeTruthy());
+        const recent = [...container.querySelectorAll('a[data-title]')].filter((c) => {
+          const th = c.querySelector('.map-thumb') as HTMLElement | null;
+          return th?.style.height === '72px';
+        });
+        expect(recent.length).toBe(titles.length); // all reachable by swiping
+      } finally {
+        restore();
+      }
     });
 
     it('prefetches thumbnail bodies for recent maps living in OTHER spaces (they render in the tray)', async () => {
