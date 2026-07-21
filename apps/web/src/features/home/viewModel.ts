@@ -288,9 +288,12 @@ export function deriveHomeView(state: HomeState): HomeViewModel {
     backVisible: !!(curFolder || driveFolder),
     newFolderVisible: !((isDriveSpace && (!connected || driveFolder)) || curFolder),
     importVisible: !(isDriveSpace || curFolder),
-    // Global cross-space strip at the top of Home: show at any top-level space
-    // view (not inside a folder, not searching, not on the Drive-connect prompt).
-    recentSectionVisible: !loading && !curFolder && !driveFolder && !state.search && !showDriveConnect && recentCards.length > 0,
+    // Global cross-space tray at the top of Home. It's GLOBAL — independent of
+    // which space OR folder is being browsed — so it stays visible inside
+    // folders too (hiding it there made "이어하기" vanish mid-navigation). Hidden
+    // only while searching (it sits above the results and isn't filtered by the
+    // query) and on the Drive-connect prompt (a full-screen empty state).
+    recentSectionVisible: !loading && !state.search && !showDriveConnect && recentCards.length > 0,
     foldersSectionVisible: !loading && folderCards.length > 0,
     // Only render the "맵" section when there are actually maps to show — a space
     // with folders but no loose maps must not render an empty "맵" header.
