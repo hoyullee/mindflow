@@ -46,13 +46,23 @@ describe('mergeRecent', () => {
     expect(mergeRecent(['맵 2', '맵 1'], ['맵 1', '맵 3'])).toEqual(['맵 2', '맵 1', '맵 3']);
   });
 
-  it('caps the merged list (default 12)', () => {
+  it(`keeps both devices' full history under the retention cap (${RECENT_CAP})`, () => {
+    // Retention is deliberately generous (display exposes far fewer — the tray
+    // decides from the viewport) so cross-device history isn't truncated.
     const primary = Array.from({ length: 8 }, (_, i) => `p${i}`);
     const secondary = Array.from({ length: 8 }, (_, i) => `s${i}`);
     const merged = mergeRecent(primary, secondary);
-    expect(merged.length).toBe(12);
+    expect(merged.length).toBe(16); // nothing dropped below the cap
     expect(merged.slice(0, 8)).toEqual(primary); // primary (this device) keeps priority
     expect(merged[8]).toBe('s0');
+  });
+
+  it(`caps the merged list at RECENT_CAP (${RECENT_CAP}) when history exceeds it`, () => {
+    const primary = Array.from({ length: RECENT_CAP }, (_, i) => `p${i}`);
+    const secondary = ['overflow'];
+    const merged = mergeRecent(primary, secondary);
+    expect(merged.length).toBe(RECENT_CAP);
+    expect(merged).not.toContain('overflow');
   });
 
   it('honours an explicit cap argument', () => {

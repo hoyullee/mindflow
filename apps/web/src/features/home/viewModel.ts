@@ -1,4 +1,4 @@
-import { docRawForTitle, hexA, mapHref, mapId, readDocRaw } from './storage';
+import { RECENT_RENDER_MAX, docRawForTitle, hexA, mapHref, mapId, readDocRaw } from './storage';
 import { miniPreview, previewSkeleton, realPreview } from './mapPreview';
 import type { DriveFolderData, FolderData, HomeState, MapCardData } from './types';
 import { DRIVE_FILES } from './types';
@@ -221,6 +221,10 @@ export function deriveHomeView(state: HomeState): HomeViewModel {
   // list. Keep them off; the card is a click-to-open shortcut.
   const recentCards: CardViewData[] = state.recent
     .filter((t) => recentByTitle.has(t) && !state.deleted[t])
+    // History retention (RECENT_CAP=100) deliberately exceeds what any screen
+    // shows; only materialize as many CARDS (sketch build is per-card work) as
+    // the widest row / mobile swipe depth could ever display.
+    .slice(0, RECENT_RENDER_MAX)
     .map((t) => {
       const base = recentByTitle.get(t)!;
       return {

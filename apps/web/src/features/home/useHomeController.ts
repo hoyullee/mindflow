@@ -26,6 +26,8 @@ import {
   newMapHref as buildNewMapHref,
   parseOutline,
   readDocRaw,
+  RECENT_CAP,
+  RECENT_RENDER_MAX,
   readSavedProfileName,
   rootTextOf,
   safeFileName,
@@ -268,17 +270,18 @@ export function useHomeController() {
   // preview (folder cards are folder thumbnails; favorites/trash are text
   // lists). Recent cards resolve from EVERY space (viewModel `recentByTitle`),
   // so scoping to the active space alone stranded other-space recents on the
-  // loading skeleton forever (`previewResolved[docId]` never flipped). The
-  // recent list is capped at RECENT_CAP=12, so this adds at most a dozen loads —
-  // it does NOT reintroduce the whole-workspace fan-out this scope avoids.
-  // Switching spaces re-runs this and prefetches that space on demand
+  // loading skeleton forever (`previewResolved[docId]` never flipped). Recents
+  // considered here are bounded to RECENT_RENDER_MAX (the most the tray can
+  // ever render — retention RECENT_CAP is larger), so this adds a bounded batch
+  // of loads and does NOT reintroduce the whole-workspace fan-out this scope
+  // avoids. Switching spaces re-runs this and prefetches that space on demand
   // (`state.activeSpace` dep).
   useEffect(() => {
     if (!state.loaded) return;
     const active = state.spaces.find((s) => s.id === state.activeSpace);
     const wanted = new Set((Array.isArray(active?.maps) ? active!.maps : []).map((m) => m.docId).filter((id): id is string => !!id));
     if (state.recent.length) {
-      const recentSet = new Set(state.recent);
+      const recentSet = new Set(state.recent.slice(0, RECENT_RENDER_MAX));
       state.spaces.forEach((s) => (Array.isArray(s.maps) ? s.maps : []).forEach((m) => {
         if (m.docId && recentSet.has(m.title)) wanted.add(m.docId);
       }));
@@ -637,10 +640,9 @@ export function useHomeController() {
 
   const recordRecent = (title: string) => {
     setState((prev) => {
-      // Keep more history than any one row shows (the recent row displays only
-      // as many as fit the screen — see MapGrid's `RecentRow`), so wider screens
-      // have enough recents to fill out.
-      const recent = [title, ...prev.recent.filter((t) => t !== title)].slice(0, 12);
+      // Retention (RECENT_CAP) deliberately exceeds anything one row shows —
+      // the tray decides how many to EXPOSE from the viewport width.
+      const recent = [title, ...prev.recent.filter((t) => t !== title)].slice(0, RECENT_CAP);
       saveRecent(recent);
       return { ...prev, recent };
     });
