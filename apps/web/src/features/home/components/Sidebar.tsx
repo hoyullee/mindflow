@@ -152,7 +152,21 @@ export function Sidebar({ state, view, controller, isMobile = false, isOpen = fa
       >
         <div style={{ overflow: 'hidden', minHeight: 0 }}>
           {view.favItems.map((f) => (
-            <div key={f.title} className="drive-file" style={{ display: 'flex', alignItems: 'center', gap: 7, padding: '7px 10px 7px 30px', borderRadius: 8, cursor: 'pointer', fontSize: 12.5, color: '#5c4f44' }}>
+            <div
+              key={f.title}
+              className="drive-file"
+              role="button"
+              tabIndex={0}
+              onClick={() => controller.openWithLoader(f.href, f.title)}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter' || e.key === ' ') {
+                  e.preventDefault();
+                  controller.openWithLoader(f.href, f.title);
+                }
+              }}
+              title={`'${f.title}' 열기`}
+              style={{ display: 'flex', alignItems: 'center', gap: 7, padding: '7px 10px 7px 30px', borderRadius: 8, cursor: 'pointer', fontSize: 12.5, color: '#5c4f44' }}
+            >
               <StarGlyph size={12} />
               <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{f.title}</span>
               {f.isDrive && (

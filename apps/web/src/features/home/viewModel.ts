@@ -53,7 +53,7 @@ export interface HomeViewModel {
   allCards: CardViewData[];
   folderCards: FolderCardViewData[];
   recentCards: CardViewData[];
-  favItems: { title: string; isDrive: boolean }[];
+  favItems: { title: string; isDrive: boolean; href: string }[];
   favCount: string;
   trashItems: { title: string; isDrive: boolean; badge: string; docId?: string }[];
   trashCount: string;
@@ -187,9 +187,17 @@ export function deriveHomeView(state: HomeState): HomeViewModel {
 
   // A trashed map must never appear in the favorites list — it lives only in
   // the trash until restored (see `seedFavAndTrashFromMetas`).
+  // A favorited map can live in ANY space, so resolve its real docId from every
+  // space's maps (not just the active one) — the editor href needs the actual
+  // doc id, since the title-hash fallback (`mapId`) points at a different slot
+  // than an editor-created `new-…` doc.
+  const favDocIdByTitle = new Map<string, string>();
+  state.spaces.forEach((s) => (Array.isArray(s.maps) ? s.maps : []).forEach((m) => {
+    if (m.docId && !favDocIdByTitle.has(m.title)) favDocIdByTitle.set(m.title, m.docId);
+  }));
   const favItems = Object.keys(favs)
     .filter((k) => favs[k] && !state.deleted[k])
-    .map((t) => ({ title: t, isDrive: sourceIsDrive(t) }));
+    .map((t) => ({ title: t, isDrive: sourceIsDrive(t), href: mapHref(t, favDocIdByTitle.get(t)) }));
 
   const baseByTitle = new Map<string, { title: string; when: string; hue: string; docId?: string }>();
   activeMaps.forEach((m) => baseByTitle.set(m.title, m));
