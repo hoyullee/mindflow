@@ -8,11 +8,11 @@ import { MapCard } from './MapCard';
 // "wide" when only a couple fit. A fixed track also can't be widened by a long
 // title (it clips via ellipsis). The only thing that varies with the viewport is
 // HOW MANY fit (the count), never the per-card size.
-const RECENT_CARD_W = 132; // fixed px card width
+const RECENT_CARD_W = 104; // fixed px card width (fits ~3 on a phone, more on desktop)
 const RECENT_GAP = 12;
 const RECENT_STEP = RECENT_CARD_W + RECENT_GAP;
 const RECENT_MIN_COLS = 2;
-const RECENT_MAX_COLS = 6;
+const RECENT_MAX_COLS = 8;
 
 /**
  * Global "최근 항목" strip — recently opened maps across EVERY space, shown at the

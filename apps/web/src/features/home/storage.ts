@@ -124,6 +124,25 @@ export function saveRecent(list: string[]): void {
   }
 }
 
+/** How many recent titles to retain. Well above what any one row shows, so wide
+ * screens have enough history and switching devices doesn't lose recents. */
+export const RECENT_CAP = 12;
+
+/**
+ * Prepend `title` to the persisted recent list (dedup, cap), returning the new
+ * list. The editor calls this the moment a doc loads, so "최근 항목" reflects maps
+ * you actually opened — regardless of HOW (Home double-click, a direct link, a
+ * mobile tap, a freshly created map) — not just Home double-clicks. Title-keyed
+ * to match Home's card titles; Home syncs it to the backend on its next visit.
+ */
+export function pushRecentTitle(title: string, cap = RECENT_CAP): string[] {
+  const t = String(title || '').trim();
+  if (!t) return loadRecent();
+  const next = [t, ...loadRecent().filter((x) => x !== t)].slice(0, cap);
+  saveRecent(next);
+  return next;
+}
+
 /**
  * Folds the per-device localStorage recents (`primary`) together with the
  * per-user synced recents from the backend (`secondary`), most-recent first,
@@ -131,7 +150,7 @@ export function saveRecent(list: string[]): void {
  * device stays at the top, while the synced list fills in history opened on
  * OTHER devices (so recents follow the user from e.g. a work PC to a home PC).
  */
-export function mergeRecent(primary: string[], secondary: string[] | undefined, cap = 12): string[] {
+export function mergeRecent(primary: string[], secondary: string[] | undefined, cap = RECENT_CAP): string[] {
   const out: string[] = [];
   const seen = new Set<string>();
   for (const t of [...primary, ...(secondary || [])]) {

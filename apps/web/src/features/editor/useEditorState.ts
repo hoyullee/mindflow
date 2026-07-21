@@ -11,6 +11,7 @@ import { usePresence, type UsePresenceResult } from '../../collab/usePresence';
 import { EMPTY_PRESENCE_SELECTION, type PresenceSelection } from '../../collab/presence';
 import { CanvasTextMeasurer, computeMetrics, measureFloatHeight } from './metrics';
 import { hasStoredDoc, loadOrSeedDoc, saveDoc } from './storage';
+import { pushRecentTitle } from '../home/storage';
 import { buildVisible, descendants, outlineRows } from './tree';
 import type { EdgeStyle } from './tree';
 import { nearestInDirection } from './navigation';
@@ -756,6 +757,17 @@ export function useEditorState(): EditorController {
   useEffect(() => {
     docRef.current = doc;
   }, [doc]);
+
+  // Record the opened map as "recently opened" the moment the editor loads it —
+  // regardless of HOW it was opened (Home double-click, a direct link, a mobile
+  // tap, a freshly created map). Recording used to happen ONLY on a Home card
+  // double-click, so opens via any other path (common on mobile) never landed in
+  // "최근 항목". Title-keyed (raw root text, matching Home's card titles), persisted
+  // to localStorage; Home folds it into the per-user synced list on its next visit.
+  useEffect(() => {
+    const title = (docRef.current.nodes[ROOT_ID]?.text || titleParam || '').trim();
+    if (title) pushRecentTitle(title);
+  }, [mapId, titleParam]);
   const edgeStyleRef = useRef(edgeStyle);
   useEffect(() => {
     edgeStyleRef.current = edgeStyle;

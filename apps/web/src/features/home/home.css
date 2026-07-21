@@ -208,7 +208,7 @@ a:hover {
   /* Fixed-width tracks (NOT `1fr`) so recent cards never stretch — the inline
      `grid-template-columns` from `RecentStrip` refines the count, but even this
      pre-measurement fallback keeps cards a constant width. */
-  grid-template-columns: repeat(auto-fill, 132px);
+  grid-template-columns: repeat(auto-fill, 104px);
 }
 
 /* Card thumbnails keep the PC card's aspect-ratio (map ≈304:150, recent
