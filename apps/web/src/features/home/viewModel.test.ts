@@ -74,6 +74,30 @@ describe('deriveHomeView — recent (cross-space)', () => {
     expect(deriveHomeView(state).recentSectionVisible).toBe(false);
   });
 
+  it('keeps the recent tray visible INSIDE a folder (it is global, not a folder view)', () => {
+    const state = twoSpaceState();
+    state.recent = ['작업맵'];
+    state.spaces[0]!.folders = [{ id: 'f1', name: '자료' }];
+    state.curFolder = 'f1';
+    const view = deriveHomeView(state);
+    expect(view.backVisible).toBe(true); // sanity: we ARE inside the folder view
+    expect(view.recentSectionVisible).toBe(true);
+    // …and the cross-space entries still resolve while browsing the folder
+    expect(view.recentCards.map((c) => c.title)).toEqual(['작업맵']);
+  });
+
+  it('keeps the recent tray visible inside a Drive folder too', () => {
+    const state = twoSpaceState();
+    state.recent = ['작업맵'];
+    state.activeSpace = 'drive';
+    state.drive = 'connected';
+    state.driveFolders = [{ id: 'df1', name: '드라이브 자료' }];
+    state.driveFolder = 'df1';
+    const view = deriveHomeView(state);
+    expect(view.backVisible).toBe(true);
+    expect(view.recentSectionVisible).toBe(true);
+  });
+
   it('drops trashed maps from the recent strip', () => {
     const state = twoSpaceState();
     state.recent = ['작업맵', '일반맵'];
