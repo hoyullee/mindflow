@@ -21,7 +21,7 @@ describe('Login', () => {
   it('renders the welcome heading and login submit button on initial render', () => {
     renderLogin();
 
-    expect(screen.getByText('MindFlow에 오신 것을 환영해요')).toBeTruthy();
+    expect(screen.getByText('Geurio에 오신 것을 환영해요')).toBeTruthy();
     expect(screen.getByRole('button', { name: '로그인' })).toBeTruthy();
   });
 
@@ -64,7 +64,7 @@ describe('Login', () => {
 
   it('renders the desktop brand panel by default (matchMedia unavailable in jsdom → desktop)', () => {
     renderLogin();
-    expect(screen.getByText('© 2026 MindFlow')).toBeTruthy();
+    expect(screen.getByText('© 2026 Geurio')).toBeTruthy();
   });
 
   describe('mobile (M6)', () => {
@@ -72,8 +72,8 @@ describe('Login', () => {
       const restore = mockMatchMedia(true);
       try {
         renderLogin();
-        expect(screen.queryByText('© 2026 MindFlow')).toBeNull();
-        expect(screen.getByText('MindFlow에 오신 것을 환영해요')).toBeTruthy();
+        expect(screen.queryByText('© 2026 Geurio')).toBeNull();
+        expect(screen.getByText('Geurio에 오신 것을 환영해요')).toBeTruthy();
         expect(screen.getByRole('button', { name: '로그인' })).toBeTruthy();
       } finally {
         restore();

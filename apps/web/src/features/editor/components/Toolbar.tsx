@@ -66,10 +66,10 @@ export function Toolbar({ controller }: ToolbarProps) {
     >
       <div style={{ display: 'flex', alignItems: 'center', gap: 9, paddingRight: 8, flexShrink: 0 }}>
         <div style={{ width: 26, height: 26, borderRadius: 8, background: th.accent, display: 'flex', alignItems: 'center', justifyContent: 'center', color: th.accentInk, fontWeight: 800, fontSize: 15 }}>
-          M
+          G
         </div>
         {/* Wordmark hidden on mobile to leave room for the menu items */}
-        {!isMobile && <div style={{ fontWeight: 700, fontSize: 16, letterSpacing: '-.01em' }}>MindFlow</div>}
+        {!isMobile && <div style={{ fontWeight: 700, fontSize: 16, letterSpacing: '-.01em' }}>Geurio</div>}
       </div>
 
       <Divider theme={th} />

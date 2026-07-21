@@ -34,32 +34,30 @@ const SPLASH_BG = '#ffffff';
 
 /**
  * Duplicate of apps/web/scripts/generate-icons.mjs's `markSvg` — source of
- * truth: apps/web/scripts/generate-icons.mjs. Draws the MindFlow mark (a
- * coral rounded square with a bold white "M" polyline) as pure SVG.
+ * truth: apps/web/scripts/generate-icons.mjs. Draws the Geurio mark (a coral
+ * rounded square with a bold white "G": a ring open on the right + a crossbar).
  *
  * @param {number} size full square viewBox size
  * @param {object} opts
  * @param {number} [opts.cornerRadiusRatio] rounded-square corner radius as a fraction of `size` (0 = full-bleed square, for OS-masked icons: Android round/legacy full-bleed variants, iOS AppIcon)
- * @param {number} [opts.contentRatio] the "M" glyph's bounding box as a fraction of `size` (smaller = more safe-zone padding, e.g. Android adaptive-icon foreground)
- * @param {boolean} [opts.transparentBg] omit the coral background rect entirely (just the white "M" polyline) — used for the Android adaptive-icon foreground layer, whose coral fill instead comes from `@color/ic_launcher_background`
+ * @param {number} [opts.contentRatio] the "G" glyph's bounding box as a fraction of `size` (smaller = more safe-zone padding, e.g. Android adaptive-icon foreground)
+ * @param {boolean} [opts.transparentBg] omit the coral background rect entirely (just the white "G") — used for the Android adaptive-icon foreground layer, whose coral fill instead comes from `@color/ic_launcher_background`
  */
-function markSvg(size, { cornerRadiusRatio = 0.22, contentRatio = 0.56, transparentBg = false } = {}) {
+function markSvg(size, { cornerRadiusRatio = 0.22, contentRatio = 0.58, transparentBg = false } = {}) {
   const r = size * cornerRadiusRatio;
-  const s = size * contentRatio; // "M" bounding box side
+  const s = size * contentRatio; // "G" bounding box side
   const cx = size / 2;
   const cy = size / 2;
-  const stroke = s * 0.22;
-  const halfS = s / 2;
-  const valleyY = cy - halfS + s * 0.62;
-  const points = [
-    [cx - halfS, cy + halfS],
-    [cx - halfS, cy - halfS],
-    [cx, valleyY],
-    [cx + halfS, cy - halfS],
-    [cx + halfS, cy + halfS],
-  ]
-    .map(([x, y]) => `${x.toFixed(2)},${y.toFixed(2)}`)
-    .join(' ');
+  const R = s / 2;
+  const stroke = s * 0.2;
+  const at = (deg) => {
+    const a = deg * (Math.PI / 180);
+    return [cx + R * Math.cos(a), cy + R * Math.sin(a)];
+  };
+  const [ux, uy] = at(-40); // upper opening (top-right)
+  const [lx, ly] = at(40); // lower opening (bottom-right)
+  const barX = cx - R * 0.02; // crossbar reaches just past centre
+  const d = `M ${ux.toFixed(2)} ${uy.toFixed(2)} A ${R.toFixed(2)} ${R.toFixed(2)} 0 1 0 ${lx.toFixed(2)} ${ly.toFixed(2)} L ${barX.toFixed(2)} ${ly.toFixed(2)}`;
 
   const bgRect = transparentBg
     ? ''
@@ -67,7 +65,7 @@ function markSvg(size, { cornerRadiusRatio = 0.22, contentRatio = 0.56, transpar
 
   return `<svg xmlns="http://www.w3.org/2000/svg" width="${size}" height="${size}" viewBox="0 0 ${size} ${size}">
   ${bgRect}
-  <polyline points="${points}" fill="none" stroke="#ffffff" stroke-width="${stroke.toFixed(2)}" stroke-linecap="round" stroke-linejoin="round"/>
+  <path d="${d}" fill="none" stroke="#ffffff" stroke-width="${stroke.toFixed(2)}" stroke-linecap="round" stroke-linejoin="round"/>
 </svg>`;
 }
 

@@ -12,7 +12,7 @@ import type { CapacitorConfig } from '@capacitor/cli';
 // stale or missing. See the root `build:mobile` script and README.md.
 const config: CapacitorConfig = {
   appId: 'com.mindflow.app',
-  appName: 'MindFlow',
+  appName: 'Geurio',
   webDir: '../web/dist',
   // Static bundle wrapping, not a remote/dev server URL.
   server: {

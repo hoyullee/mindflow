@@ -28,9 +28,9 @@ export function BrandPanel() {
             fontSize: 20,
           }}
         >
-          M
+          G
         </div>
-        <div style={{ fontWeight: 800, fontSize: 19, letterSpacing: '-.01em' }}>MindFlow</div>
+        <div style={{ fontWeight: 800, fontSize: 19, letterSpacing: '-.01em' }}>Geurio</div>
       </div>
 
       <div style={{ zIndex: 2 }}>
@@ -44,7 +44,7 @@ export function BrandPanel() {
         </div>
       </div>
 
-      <div style={{ zIndex: 2, fontSize: 12.5, opacity: 0.75 }}>© 2026 MindFlow</div>
+      <div style={{ zIndex: 2, fontSize: 12.5, opacity: 0.75 }}>© 2026 Geurio</div>
 
       {/* decorative mini nodes */}
       <div style={{ position: 'absolute', right: -40, top: 90, width: 320, height: 320, opacity: 0.16, zIndex: 1 }}>

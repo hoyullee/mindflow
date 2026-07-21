@@ -33,7 +33,7 @@ export function deriveLoginView(state: LoginState): LoginViewModel {
         : verify
           ? '이메일 인증'
           : login
-            ? 'MindFlow에 오신 것을 환영해요'
+            ? 'Geurio에 오신 것을 환영해요'
             : '계정 만들기',
     subheading: forgot
       ? '이메일로 재설정 코드를 보내드릴게요.'

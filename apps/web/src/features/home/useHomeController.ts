@@ -806,7 +806,7 @@ export function useHomeController() {
           /* not valid JSON */
         }
         if (!doc) {
-          patch({ toast: '', importError: '올바른 MindFlow JSON 파일이 아니에요' });
+          patch({ toast: '', importError: '올바른 Geurio JSON 파일이 아니에요' });
           return;
         }
         doc.needsLayout = false;
