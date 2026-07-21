@@ -17,27 +17,39 @@ const TRAY_PAD_X = 32; // desktop tray padding (16px × 2) — mobile doesn't us
 // ≤ RECENT_RENDER_MAX (storage.ts), which caps what the view materializes.
 const MOBILE_SWIPE_MAX = 20;
 
+/** Small clock glyph in front of the "최근 항목" header (SVG per design-system
+ * §10 — no emoji), colored via `currentColor` so it follows the header accent. */
+function ClockGlyph() {
+  return (
+    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.6" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+      <circle cx="12" cy="12" r="9" />
+      <polyline points="12 7 12 12.5 15.5 14.5" />
+    </svg>
+  );
+}
+
 /**
  * Global "최근 항목" tray — recently opened maps across EVERY space, shown at the
- * very top of Home. `surface-sunken` container ("well") that shrinks to its
- * content (`width: fit-content`) so a short history never sits in a full-width
- * box.
+ * very top of Home. The `surface-sunken` background is a full-width "shelf":
+ * it spans the available width (sized by the viewport alone) and the
+ * fixed-width cards sit INSIDE it — the zone stays a stable landmark whether
+ * the history holds 2 cards or 20.
  *
  * How many cards are EXPOSED adapts to the viewport (history retention is much
  * larger — RECENT_CAP):
- * - Desktop: exactly as many as fit one row (available width is measured via
- *   ResizeObserver on the full-width wrapper — the tray itself is fit-content,
- *   so measuring it would be circular). No horizontal scroll, no cut-off card.
+ * - Desktop: exactly as many as fit one row (the tray's own width is measured
+ *   via ResizeObserver — it's full-width, so it's a stable measuring box).
+ *   No horizontal scroll, no cut-off card.
  * - Mobile (<768px): fixed-width cards overflow into a swipeable row (snap
  *   points, peeking card as the affordance) up to MOBILE_SWIPE_MAX — width-fit
  *   would strand everything past the ~2 that fit a phone.
  */
 export function RecentStrip({ cards, controller }: { cards: CardViewData[]; controller: HomeController }) {
   const isMobile = useIsMobile();
-  const outerRef = useRef<HTMLDivElement>(null);
+  const trayRef = useRef<HTMLDivElement>(null);
   const [fit, setFit] = useState(3);
   useLayoutEffect(() => {
-    const el = outerRef.current;
+    const el = trayRef.current;
     if (!el) return;
     const measure = (): void => {
       const w = el.clientWidth - TRAY_PAD_X;
@@ -58,21 +70,24 @@ export function RecentStrip({ cards, controller }: { cards: CardViewData[]; cont
 
   const shown = isMobile ? Math.min(cards.length, MOBILE_SWIPE_MAX) : Math.min(cards.length, fit);
   return (
-    // Full-width measuring wrapper (block) around the fit-content tray.
-    <div ref={outerRef}>
-      <div className="mf-recent-tray">
-        {/* Eyebrow label — same scale as the "맵"/"폴더" section labels below, so it
-            doesn't compete with the actual page title (the space name) for hierarchy. */}
-        <div style={{ fontSize: 12.5, fontWeight: 700, color: '#9c8b7e', marginBottom: 8 }}>최근 항목</div>
-        <div className="mf-recent-scroll" style={{ display: 'flex', gap: RECENT_GAP, overflowX: 'auto', scrollSnapType: 'x proximity' }}>
-          {cards.slice(0, shown).map((c) => (
-            // Fixed-width, non-shrinking slot (`flex: 0 0 auto`) — the flex analogue
-            // of the old fixed grid track. Never `flex: 1` (would stretch like `1fr`).
-            <div key={c.title} style={{ width: RECENT_CARD_W, flex: '0 0 auto', scrollSnapAlign: 'start' }}>
-              <MapCard card={c} controller={controller} draggableEnabled={false} compact />
-            </div>
-          ))}
-        </div>
+    <div ref={trayRef} className="mf-recent-tray">
+      {/* Header: brand-accented clock glyph + strong text so the zone label is
+          perceivable at a glance, while staying small enough (13px) not to
+          compete with the page title (the space name, 22px). */}
+      <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 10 }}>
+        <span style={{ color: '#f0663f', display: 'inline-flex' }} aria-hidden="true">
+          <ClockGlyph />
+        </span>
+        <span style={{ fontSize: 13, fontWeight: 700, letterSpacing: '-.01em', color: '#33281f' }}>최근 항목</span>
+      </div>
+      <div className="mf-recent-scroll" style={{ display: 'flex', gap: RECENT_GAP, overflowX: 'auto', scrollSnapType: 'x proximity' }}>
+        {cards.slice(0, shown).map((c) => (
+          // Fixed-width, non-shrinking slot (`flex: 0 0 auto`) — the flex analogue
+          // of the old fixed grid track. Never `flex: 1` (would stretch like `1fr`).
+          <div key={c.title} style={{ width: RECENT_CARD_W, flex: '0 0 auto', scrollSnapAlign: 'start' }}>
+            <MapCard card={c} controller={controller} draggableEnabled={false} compact />
+          </div>
+        ))}
       </div>
     </div>
   );

@@ -196,18 +196,16 @@ a:hover {
   }
 }
 
-/* Recent tray (design-system §8.1): a `surface-raised` container that shrinks
-   to its content — `width: fit-content` is what keeps a 2-3 card history from
-   sitting inside a full-width box (+ full-width divider) with a huge dead zone.
-   Cards inside are fixed-width flex slots (see RecentStrip.tsx); overflow
-   scrolls horizontally. */
+/* Recent tray (design-system §8.1): a full-width sunken "shelf" — the
+   background always spans the available width (it delineates the recent ZONE,
+   sized by the viewport alone), and the fixed-width cards sit inside it. The
+   card COUNT adapts to the width; the container does not adapt to the cards. */
 .mf-recent-tray {
-  width: fit-content;
-  max-width: 100%;
-  /* surface-sunken, NOT surface-raised(#faf3ee): raised is nearly identical to
-     the page bg (#fbf6f2) so the tray wasn't perceivable as a container. The
-     deeper sunken tone reads as a "well" and makes the white cards pop. */
-  background: #f0e6dd;
+  /* surface-sunken (light), NOT surface-raised(#faf3ee): raised is nearly
+     identical to the page bg (#fbf6f2) so the tray wasn't perceivable as a
+     container. The sunken tone reads as a "well" and makes white cards pop;
+     the lighter step keeps the zone airy now that it spans the full width. */
+  background: #f5ece5;
   border-radius: 14px; /* radius-lg */
   padding: 16px; /* space-4 */
   margin-bottom: 24px; /* space-6 */
