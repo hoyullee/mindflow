@@ -50,9 +50,9 @@ export function SpaceRow({ space, state, controller }: Props) {
           color: active ? '#d9542f' : '#7c6d60',
         }}
       >
-        <span style={space.home ? { fontSize: 15, width: 15, textAlign: 'center', flexShrink: 0 } : { width: 15, height: 15, borderRadius: 5, flexShrink: 0, background: space.color, display: 'inline-block' }}>
-          {space.home ? '⌂' : ''}
-        </span>
+        {/* Every space (including the home "일반 공간") shows the same colored dot;
+            the home space's default color is the coral accent (#f0663f). */}
+        <span style={{ width: 15, height: 15, borderRadius: 5, flexShrink: 0, background: space.color || '#f0663f', display: 'inline-block' }} />
         <span style={{ flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{space.name}</span>
         <span
           className="space-dot"
