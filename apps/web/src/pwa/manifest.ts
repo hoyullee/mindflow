@@ -17,8 +17,8 @@ import type { ManifestOptions } from 'vite-plugin-pwa';
  *   (192/512 + a 512 maskable variant with Android-safe-zone padding).
  */
 export const pwaManifest: Partial<ManifestOptions> = {
-  name: 'MindFlow',
-  short_name: 'MindFlow',
+  name: 'Geurio',
+  short_name: 'Geurio',
   description: '중심 주제에서 가지를 뻗어 생각을 정리하는 마인드맵 앱',
   lang: 'ko',
   theme_color: '#f0663f',

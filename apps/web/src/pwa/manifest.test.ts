@@ -9,8 +9,8 @@ import { pwaManifest } from './manifest';
 // "did someone accidentally drop a required field" guard.
 describe('pwaManifest', () => {
   it('has the required identity fields', () => {
-    expect(pwaManifest.name).toBe('MindFlow');
-    expect(pwaManifest.short_name).toBe('MindFlow');
+    expect(pwaManifest.name).toBe('Geurio');
+    expect(pwaManifest.short_name).toBe('Geurio');
     expect(pwaManifest.description).toBeTruthy();
     expect(pwaManifest.lang).toBe('ko');
   });
