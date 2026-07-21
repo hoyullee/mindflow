@@ -8,7 +8,7 @@ import { MapCard } from './MapCard';
 // "wide" when only a couple fit. A fixed track also can't be widened by a long
 // title (it clips via ellipsis). The only thing that varies with the viewport is
 // HOW MANY fit (the count), never the per-card size.
-const RECENT_CARD_W = 104; // fixed px card width (fits ~3 on a phone, more on desktop)
+const RECENT_CARD_W = 128; // fixed px card width (comfortable tap size; count adapts to width)
 const RECENT_GAP = 12;
 const RECENT_STEP = RECENT_CARD_W + RECENT_GAP;
 const RECENT_MIN_COLS = 2;
@@ -48,7 +48,7 @@ export function RecentStrip({ cards, controller }: { cards: CardViewData[]; cont
   const shown = Math.min(cols, cards.length);
   return (
     <div style={{ marginBottom: 22 }}>
-      <div style={{ fontSize: 12.5, fontWeight: 700, color: '#9c8b7e', marginBottom: 14 }}>최근 항목</div>
+      <div style={{ fontSize: 18, fontWeight: 800, letterSpacing: '-.01em', color: '#33281f', marginBottom: 14 }}>최근 항목</div>
       {/* Fixed-width columns (`${RECENT_CARD_W}px`, not `1fr`) → cards stay the same
           size no matter how many there are or how wide the screen is; only the
           count changes. `overflow: hidden` is a backstop against sub-min widths. */}
