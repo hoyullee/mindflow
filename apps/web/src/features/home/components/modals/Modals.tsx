@@ -10,6 +10,15 @@ const TRASH_ICON = (
   </svg>
 );
 
+// Restore (counter-clockwise circular arrow) — the SVG counterpart to the ♻️
+// emoji, in the same green as the restore confirm button/tint.
+const RESTORE_ICON = (
+  <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#2f9e63" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round">
+    <polyline points="3 4 3 10 9 10" />
+    <path d="M5.4 15a8 8 0 1 0 1.9-8.3L3 10" />
+  </svg>
+);
+
 interface Props {
   state: HomeState;
   controller: HomeController;
@@ -28,7 +37,7 @@ export function Modals({ state, controller }: Props) {
         visible={!!state.confirmDelete}
         zIndex={120}
         iconBg="#fdecec"
-        icon="🗑"
+        icon={TRASH_ICON}
         heading={deleteIsDrive ? 'Google Drive에서 삭제할까요?' : '삭제하시겠습니까?'}
         body={
           state.confirmDelete
@@ -48,7 +57,7 @@ export function Modals({ state, controller }: Props) {
         visible={!!state.confirmRestore}
         zIndex={120}
         iconBg="#e9f4ee"
-        icon="♻️"
+        icon={RESTORE_ICON}
         heading="복원하시겠습니까?"
         body={`'${state.confirmRestore || ''}' 맵을 휴지통에서 원래 위치로 복원합니다.`}
         cancelLabel="취소"
