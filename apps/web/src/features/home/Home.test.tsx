@@ -784,11 +784,17 @@ describe('Home', () => {
         return th?.style.height === '72px';
       });
       // The row shows only as many cards as fit the width (measured at runtime).
-      // jsdom has no layout engine, so RecentRow falls back to its default column
+      // jsdom has no layout engine, so RecentStrip falls back to its default column
       // count — the point of the assertion is that a long recent history collapses
       // to a single bounded row, not a giant multi-row grid of every entry.
       expect(recent.length).toBe(3);
       expect(recent.length).toBeLessThan(titles.length);
+
+      // Defensive: recent cards must be FIXED-width tracks, never `1fr` — `1fr`
+      // stretches cards to fill the row, which is what made them balloon "wide".
+      const grid = container.querySelector('.mf-recent-grid') as HTMLElement;
+      expect(grid.style.gridTemplateColumns).toContain('px');
+      expect(grid.style.gridTemplateColumns).not.toContain('fr');
     });
 
     it('deleting calls docStore.remove(docId), restoring calls docStore.restore(docId)', async () => {

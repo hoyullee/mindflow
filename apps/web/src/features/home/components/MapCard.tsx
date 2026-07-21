@@ -428,7 +428,13 @@ export function MapCard({ card, controller, draggableEnabled, compact = false }:
         {card.sketch}
       </div>
       <div style={{ padding: compact ? '8px 10px' : '14px 16px' }}>
-        <div style={{ fontSize: compact ? 12 : 14, fontWeight: 600, marginBottom: compact ? 0 : 4, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{card.title}</div>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 6, minWidth: 0, marginBottom: compact ? 0 : 4 }}>
+          {/* Cross-space "최근 항목" strip: a small dot in the owning space's color. */}
+          {card.spaceColor && (
+            <span aria-hidden="true" style={{ width: 8, height: 8, borderRadius: 3, background: card.spaceColor, flexShrink: 0 }} />
+          )}
+          <div style={{ fontSize: compact ? 12 : 14, fontWeight: 600, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', minWidth: 0 }}>{card.title}</div>
+        </div>
         {!compact && <div style={{ fontSize: 12, color: '#9c8b7e' }}>최근 항목:{card.when}</div>}
       </div>
     </a>
