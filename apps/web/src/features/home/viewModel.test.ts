@@ -31,3 +31,43 @@ describe('deriveHomeView — favorites', () => {
     expect(view.favItems).toHaveLength(0);
   });
 });
+
+describe('deriveHomeView — recent (cross-space)', () => {
+  function twoSpaceState() {
+    const state = initialHomeState();
+    state.loaded = true;
+    state.activeSpace = 'general';
+    state.spaces = [
+      { id: 'general', name: '일반 공간', home: true, color: '#f0663f', maps: [{ title: '일반맵', when: '내 맵', hue: '#f0663f', docId: 'g1' }] },
+      { id: 'work', name: '작업', color: '#3f8fd0', maps: [{ title: '작업맵', when: '내 맵', hue: '#3f8fd0', docId: 'w1' }] },
+    ];
+    return state;
+  }
+
+  it('includes recent maps from EVERY space, not just the active one', () => {
+    const state = twoSpaceState();
+    // both recents open, one from each space; active space is 일반 공간
+    state.recent = ['작업맵', '일반맵'];
+
+    const view = deriveHomeView(state);
+    const titles = view.recentCards.map((c) => c.title);
+    expect(titles).toEqual(['작업맵', '일반맵']); // preserves recency order, spans spaces
+    expect(view.recentSectionVisible).toBe(true);
+    // the non-active-space recent still resolves its real docId for the href
+    expect(view.recentCards.find((c) => c.title === '작업맵')!.href).toContain('map=w1');
+  });
+
+  it('hides the recent strip while searching (it lives above the search results)', () => {
+    const state = twoSpaceState();
+    state.recent = ['작업맵'];
+    state.search = '작업';
+    expect(deriveHomeView(state).recentSectionVisible).toBe(false);
+  });
+
+  it('drops trashed maps from the recent strip', () => {
+    const state = twoSpaceState();
+    state.recent = ['작업맵', '일반맵'];
+    state.deleted = { '작업맵': true };
+    expect(deriveHomeView(state).recentCards.map((c) => c.title)).toEqual(['일반맵']);
+  });
+});
