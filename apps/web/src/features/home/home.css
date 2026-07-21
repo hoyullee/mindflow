@@ -196,34 +196,58 @@ a:hover {
   }
 }
 
-/* Recent section: compact quick-access cards in a single row whose column count
-   adapts to the width — the exact count is measured and set inline by MapGrid's
-   `RecentRow` (which also renders only that many cards). The rule below is just a
-   pre-measurement fallback; the inline `grid-template-columns` wins once mounted.
-   (`minmax(0, …)`, not a bare `1fr`, so a long non-wrapping title can't stretch
-   one column and make them unequal.) */
-.mf-recent-grid {
-  display: grid;
-  gap: 12px;
-  /* Fixed-width tracks (NOT `1fr`) so recent cards never stretch — the inline
-     `grid-template-columns` from `RecentStrip` refines the count, but even this
-     pre-measurement fallback keeps cards a constant width. */
-  grid-template-columns: repeat(auto-fill, 128px);
+/* Recent tray (design-system §8.1): a `surface-raised` container that shrinks
+   to its content — `width: fit-content` is what keeps a 2-3 card history from
+   sitting inside a full-width box (+ full-width divider) with a huge dead zone.
+   Cards inside are fixed-width flex slots (see RecentStrip.tsx); overflow
+   scrolls horizontally. */
+.mf-recent-tray {
+  width: fit-content;
+  max-width: 100%;
+  background: #faf3ee; /* surface-raised */
+  border-radius: 14px; /* radius-lg */
+  padding: 16px; /* space-4 */
+  margin-bottom: 24px; /* space-6 */
+}
+@media (max-width: 767px) {
+  .mf-recent-tray {
+    padding: 12px; /* space-3 */
+    margin-bottom: 16px;
+  }
+}
+/* Thin, hover-revealed horizontal scrollbar (same treatment as .lnb-scroll) so
+   the tray doesn't grow a chunky 10px global scrollbar under the cards. */
+.mf-recent-scroll {
+  scrollbar-width: thin;
+  scrollbar-color: transparent transparent;
+}
+.mf-recent-scroll:hover {
+  scrollbar-color: #d9c8ba transparent;
+}
+.mf-recent-scroll::-webkit-scrollbar {
+  height: 5px;
+}
+.mf-recent-scroll::-webkit-scrollbar-thumb {
+  background: transparent;
+  border-radius: 4px;
+}
+.mf-recent-scroll:hover::-webkit-scrollbar-thumb {
+  background: #d9c8ba;
+}
+.mf-recent-scroll::-webkit-scrollbar-track {
+  background: transparent;
 }
 
-/* Card thumbnails keep the PC card's aspect-ratio (map ≈304:150, recent
-   ≈148:72) instead of a fixed pixel height, so a full-width mobile card holds
-   the same proportions as on desktop rather than a stretched, squat thumbnail —
-   and every card looks the same regardless of how many there are. Desktop keeps
-   its exact pixel heights (the inline `height` wins there, no `!important`); this
-   only reshapes the wider mobile cards. */
+/* Map-card thumbnails keep the PC card's aspect-ratio (≈304:150) instead of a
+   fixed pixel height, so a full-width mobile card holds the same proportions as
+   on desktop rather than a stretched, squat thumbnail — and every card looks
+   the same regardless of how many there are. Desktop keeps its exact pixel
+   heights (the inline `height` wins there, no `!important`); this only reshapes
+   the wider mobile cards. (Recent-tray cards are fixed 128px wide on EVERY
+   viewport — design-system §8.1 — so they never need a ratio override.) */
 @media (max-width: 767px) {
   .mf-map-grid .map-thumb {
     height: auto !important;
     aspect-ratio: 304 / 150;
-  }
-  .mf-recent-grid .map-thumb {
-    height: auto !important;
-    aspect-ratio: 148 / 72;
   }
 }

@@ -763,7 +763,7 @@ describe('Home', () => {
       expect((mainCard.querySelector('.map-thumb') as HTMLElement).style.height).toBe('150px');
     });
 
-    it('renders the 최근 항목 (recent) section as a single bounded row (count adapts to width)', async () => {
+    it('renders the 최근 항목 (recent) section as a fixed-card horizontal tray (design-system §8.1)', async () => {
       const titles = ['맵 A', '맵 B', '맵 C', '맵 D', '맵 E', '맵 F'];
       localStorage.setItem('mf_recent', JSON.stringify(titles));
       const { container } = renderHomeWithDocStore(
@@ -783,18 +783,48 @@ describe('Home', () => {
         const th = c.querySelector('.map-thumb') as HTMLElement | null;
         return th?.style.height === '72px';
       });
-      // The row shows only as many cards as fit the width (measured at runtime).
-      // jsdom has no layout engine, so RecentStrip falls back to its default column
-      // count — the point of the assertion is that a long recent history collapses
-      // to a single bounded row, not a giant multi-row grid of every entry.
-      expect(recent.length).toBe(3);
-      expect(recent.length).toBeLessThan(titles.length);
+      // Every recent entry renders (the data layer caps the history at RECENT_CAP);
+      // overflow scrolls horizontally instead of being cut to a measured column count.
+      expect(recent.length).toBe(titles.length);
 
-      // Defensive: recent cards must be FIXED-width tracks, never `1fr` — `1fr`
-      // stretches cards to fill the row, which is what made them balloon "wide".
-      const grid = container.querySelector('.mf-recent-grid') as HTMLElement;
-      expect(grid.style.gridTemplateColumns).toContain('px');
-      expect(grid.style.gridTemplateColumns).not.toContain('fr');
+      // Defensive (design-system §8.1): each card sits in a FIXED-width,
+      // NON-STRETCHING slot — `flex: 0 0 auto`, never `flex: 1` (the flex analogue
+      // of `1fr`, which is what previously made cards balloon "wide"). And the
+      // scroller overflows horizontally rather than growing/stretching the slots.
+      const scroll = container.querySelector('.mf-recent-scroll') as HTMLElement;
+      expect(scroll.style.overflowX).toBe('auto');
+      recent.forEach((card) => {
+        const slot = card.parentElement as HTMLElement;
+        expect(slot.style.width).toBe('128px');
+        expect(slot.style.flex).toContain('0 0 auto');
+      });
+    });
+
+    it('prefetches thumbnail bodies for recent maps living in OTHER spaces (they render in the tray)', async () => {
+      // Regression: the preview prefetch was scoped to the ACTIVE space's maps
+      // only, but the recent tray is cross-space — a recent map from another
+      // space never resolved and sat on the loading skeleton forever.
+      localStorage.setItem('mf_recent', JSON.stringify(['작업맵']));
+      localStorage.setItem(
+        'mf_spaces',
+        JSON.stringify({
+          v: 1,
+          spaces: [
+            { id: 'general', name: '일반 공간', home: true, color: '#f0663f', maps: [{ title: '일반맵', when: '내 맵', hue: '#f0663f', docId: 'doc-g' }] },
+            { id: 'work', name: '작업', color: '#3f8fd0', maps: [{ title: '작업맵', when: '내 맵', hue: '#3f8fd0', docId: 'doc-w' }] },
+          ],
+          mapFolders: {},
+          recent: ['작업맵'],
+        }),
+      );
+      const { docStore } = renderHomeWithDocStore([
+        { id: 'doc-g', title: '일반맵', version: 1, updatedAt: '2026-01-01T00:00:00.000Z', isFavorite: false, deletedAt: null },
+        { id: 'doc-w', title: '작업맵', version: 1, updatedAt: '2026-01-01T00:00:00.000Z', isFavorite: false, deletedAt: null },
+      ]);
+
+      // active space is 일반 공간, yet the 작업-space recent's body must be fetched too
+      await waitFor(() => expect(docStore.load).toHaveBeenCalledWith('doc-w'));
+      expect(docStore.load).toHaveBeenCalledWith('doc-g'); // active space still prefetches
     });
 
     it('deleting calls docStore.remove(docId), restoring calls docStore.restore(docId)', async () => {
