@@ -35,12 +35,12 @@ export function BrandPanel() {
 
       <div style={{ zIndex: 2 }}>
         <div style={{ fontSize: 34, fontWeight: 800, lineHeight: 1.3, letterSpacing: '-.02em', marginBottom: 16 }}>
-          생각을 지도로,
+          흩어진 생각 조각을,
           <br />
-          아이디어를 흐름으로.
+          하나의 그림으로.
         </div>
         <div style={{ fontSize: 15, lineHeight: 1.7, opacity: 0.9, maxWidth: 380 }}>
-          중심 주제에서 자유롭게 뻗어나가는 마인드맵으로 복잡한 생각을 한눈에 정리하세요.
+          떠오르는 아이디어를 자유롭게 그리고 이어, 복잡한 생각을 한눈에 정리하세요.
         </div>
       </div>
 
