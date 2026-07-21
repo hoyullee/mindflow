@@ -502,7 +502,7 @@ export function useEditorState(): EditorController {
   // editing, `geom` uses this instead of the node's stale committed size, so the
   // box grows/shrinks WITH the text (WYSIWYG) instead of the text overflowing a
   // fixed box until commit re-lays-out. `null` = not measured yet (use committed).
-  const [editLiveSize, setEditLiveSize] = useState<{ w: number; h: number } | null>(null);
+  const [editLiveSize, setEditLiveSize] = useState<{ w: number; h: number; tw: number } | null>(null);
   const [editingFloatId, setEditingFloatId] = useState<string | null>(null);
   const [editingLineId, setEditingLineId] = useState<string | null>(null);
   const [editingZoneId, setEditingZoneId] = useState<string | null>(null);
@@ -705,9 +705,14 @@ export function useEditorState(): EditorController {
       // centered on the same x/y) so it tracks the content instead of overflowing
       // a stale committed box. `editLiveSize` is computeMetrics of the current
       // editor content, so it matches exactly what commit will produce.
+      // `tw` (the text-body width) must track too: clip shapes (pill/ellipse/
+      // hexagon/diamond/parallelogram) size the editable region to `tw`, not the
+      // inflated box `w`, so without this the box grows while the text area stays
+      // fixed and the text wraps mid-edit (fine on commit, wrong while typing).
       if (id === editingNodeId && editLiveSize) {
         g.w = editLiveSize.w;
         g.h = editLiveSize.h;
+        g.tw = editLiveSize.tw;
       }
       out[id] = g;
     });
@@ -1666,7 +1671,7 @@ export function useEditorState(): EditorController {
       const parsed = domToRuns(el);
       const liveNode: Node = { ...base, text: parsed.text, rich: parsed.rich };
       const m = computeMetrics(liveNode, depth, measurer);
-      setEditLiveSize((prev) => (prev && prev.w === m.w && prev.h === m.h ? prev : { w: m.w, h: m.h }));
+      setEditLiveSize((prev) => (prev && prev.w === m.w && prev.h === m.h && prev.tw === m.tw ? prev : { w: m.w, h: m.h, tw: m.tw }));
     },
     [measurer],
   );
