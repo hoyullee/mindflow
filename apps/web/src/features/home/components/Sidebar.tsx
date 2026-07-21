@@ -138,7 +138,7 @@ export function Sidebar({ state, view, controller, isMobile = false, isOpen = fa
         }}
         style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '9px 10px', minHeight: isMobile ? 44 : undefined, borderRadius: 9, cursor: 'pointer', fontSize: 13.5, fontWeight: 500, color: '#7c6d60' }}
       >
-        <span style={{ fontSize: 15, color: '#e0a53c' }}>★</span> 즐겨찾기
+        <StarGlyph size={15} /> 즐겨찾기
         <span style={{ marginLeft: 'auto', fontSize: 11, color: '#c9b8a9' }}>{view.favCount}</span>
       </div>
       <div
@@ -153,7 +153,7 @@ export function Sidebar({ state, view, controller, isMobile = false, isOpen = fa
         <div style={{ overflow: 'hidden', minHeight: 0 }}>
           {view.favItems.map((f) => (
             <div key={f.title} className="drive-file" style={{ display: 'flex', alignItems: 'center', gap: 7, padding: '7px 10px 7px 30px', borderRadius: 8, cursor: 'pointer', fontSize: 12.5, color: '#5c4f44' }}>
-              <span style={{ fontSize: 12, color: '#e0a53c', flexShrink: 0 }}>★</span>
+              <StarGlyph size={12} />
               <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{f.title}</span>
               {f.isDrive && (
                 <span style={{ flexShrink: 0, marginLeft: 'auto', display: 'flex', alignItems: 'center', padding: '1px 6px', borderRadius: 999, fontSize: 9.5, fontWeight: 700, background: 'rgba(52,168,83,.12)', color: '#1e7a3a' }}>Drive</span>
@@ -174,7 +174,7 @@ export function Sidebar({ state, view, controller, isMobile = false, isOpen = fa
         }}
         style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '9px 10px', minHeight: isMobile ? 44 : undefined, borderRadius: 9, cursor: 'pointer', fontSize: 13.5, fontWeight: 500, color: '#7c6d60' }}
       >
-        <span style={{ fontSize: 15 }}>🗑</span> 휴지통
+        <TrashGlyph size={15} /> 휴지통
         <span style={{ marginLeft: 'auto', fontSize: 11, color: '#c9b8a9' }}>{view.trashCount}</span>
       </div>
       <div
@@ -211,5 +211,29 @@ export function Sidebar({ state, view, controller, isMobile = false, isOpen = fa
       </div>
     </aside>
     </>
+  );
+}
+
+/** Favorites star — a crisp filled-gold SVG in place of the ★ glyph, so it
+ * renders identically across platforms and sits with the other SVG nav icons
+ * instead of a font-dependent emoji. */
+function StarGlyph({ size = 15 }: { size?: number }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="#e0a53c" stroke="#e0a53c" strokeWidth={1.4} strokeLinejoin="round" aria-hidden="true" style={{ flexShrink: 0 }}>
+      <polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26" />
+    </svg>
+  );
+}
+
+/** Trash-can — a line-style SVG (matching the editor's delete icon and the
+ * muted nav tone) replacing the 🗑 emoji. */
+function TrashGlyph({ size = 15 }: { size?: number }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="#9c8b7e" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" aria-hidden="true" style={{ flexShrink: 0 }}>
+      <polyline points="3 6 5 6 21 6" />
+      <path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2" />
+      <line x1="10" y1="11" x2="10" y2="17" />
+      <line x1="14" y1="11" x2="14" y2="17" />
+    </svg>
   );
 }
