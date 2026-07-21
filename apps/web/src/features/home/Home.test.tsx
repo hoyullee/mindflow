@@ -830,6 +830,34 @@ describe('Home', () => {
       }
     });
 
+    it('migrates recent entries when a map was renamed, instead of silently dropping them', async () => {
+      // Recents are title-keyed (like mapFolders): editing a map's root text in
+      // the editor renames it, and before the migration the old-title entry
+      // matched nothing — every rename permanently killed that recent card, so
+      // the tray showed fewer cards than the screen fits.
+      localStorage.setItem('mf_recent', JSON.stringify(['옛 이름']));
+      localStorage.setItem(
+        'mf_spaces',
+        JSON.stringify({
+          v: 1,
+          spaces: [{ id: 'general', name: '일반 공간', home: true, color: '#f0663f', maps: [{ title: '옛 이름', when: '내 맵', hue: '#f0663f', docId: 'doc-r' }] }],
+          mapFolders: {},
+          recent: ['옛 이름'],
+        }),
+      );
+      // The backend meta carries the map's post-rename title.
+      const { container } = renderHomeWithDocStore([
+        { id: 'doc-r', title: '새 이름', version: 2, updatedAt: '2026-01-02T00:00:00.000Z', isFavorite: false, deletedAt: null },
+      ]);
+
+      await waitFor(() => expect(screen.getByText('최근 항목')).toBeTruthy());
+      const tray = container.querySelector('.mf-recent-tray') as HTMLElement;
+      expect(tray.querySelector('a[data-title="새 이름"]')).toBeTruthy(); // follows the rename
+      expect(tray.querySelector('a[data-title="옛 이름"]')).toBeNull();
+      // …and this device's persisted list is kept in step
+      expect(JSON.parse(localStorage.getItem('mf_recent')!)).toEqual(['새 이름']);
+    });
+
     it('prefetches thumbnail bodies for recent maps living in OTHER spaces (they render in the tray)', async () => {
       // Regression: the preview prefetch was scoped to the ACTIVE space's maps
       // only, but the recent tray is cross-space — a recent map from another

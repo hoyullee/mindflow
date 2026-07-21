@@ -141,7 +141,27 @@ export function useHomeController() {
       // device's local recents so "recent items" follow the user across devices
       // (e.g. work PC → home PC). `prev.recent` (this device's localStorage, loaded
       // on mount) keeps its ordering priority; the synced list fills in history.
-      const recent = mergeRecent(prev.recent, ws?.recent);
+      let recent = mergeRecent(prev.recent, ws?.recent);
+      // `recent` is title-keyed like `mapFolders`, so renamed maps (root text
+      // edited in the editor) must migrate here too — otherwise every rename
+      // permanently killed the map's recent entry (the old title matched
+      // nothing), and the tray showed fewer cards than the screen fits.
+      if (renamed.length) {
+        const renameTo = new Map(renamed.filter((r) => r.from !== r.to).map((r) => [r.from, r.to]));
+        if (renameTo.size) {
+          const seen = new Set<string>();
+          const migrated: string[] = [];
+          for (const t of recent) {
+            const nt = renameTo.get(t) ?? t;
+            if (!seen.has(nt)) {
+              seen.add(nt);
+              migrated.push(nt);
+            }
+          }
+          recent = migrated;
+          saveRecent(recent); // keep this device's localStorage in step
+        }
+      }
       // Baseline the just-hydrated workspace so the save effect treats it as
       // already-persisted (no re-save of what we just loaded/seeded).
       savedWorkspaceSigRef.current = JSON.stringify({ spaces, mapFolders, recent });
