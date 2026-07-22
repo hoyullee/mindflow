@@ -687,6 +687,44 @@ describe('Home', () => {
     expect(localStorage.getItem('mindflow_doc_d1')).toBeNull();
   });
 
+  it('a live map is NOT hidden by a trashed map sharing its title (trash/space names do not interfere)', async () => {
+    // Repro of the reported bug: "새 마인드맵_1" sits in the trash; a NEW map
+    // with the same title is created and saved — the title-keyed deleted flag
+    // used to hide the new (live) map from the grid entirely.
+    const { container } = renderHomeWithDocStore([
+      { id: 'doc-old', title: '새 마인드맵_1', version: 1, updatedAt: '2026-01-01T00:00:00.000Z', isFavorite: false, deletedAt: '2026-01-02T00:00:00.000Z' },
+      { id: 'doc-new', title: '새 마인드맵_1', version: 1, updatedAt: '2026-01-03T00:00:00.000Z', isFavorite: false, deletedAt: null },
+    ]);
+
+    // the LIVE doc renders as a grid card…
+    await waitFor(() => expect(container.querySelector('.mf-map-grid a[data-title="새 마인드맵_1"]')).toBeTruthy());
+    // …while the trashed one is ONLY in the trash list (one grid card, not two)
+    expect(container.querySelectorAll('.mf-map-grid a[data-title="새 마인드맵_1"]').length).toBe(1);
+    const aside = within(container.querySelector('aside') as HTMLElement);
+    expect(aside.getByText('새 마인드맵_1')).toBeTruthy(); // trash row
+  });
+
+  it('restoring into a space that already has the title renames the restored map to "제목_복원1"', async () => {
+    const user = userEvent.setup();
+    const { container, docStore } = renderHomeWithDocStore([
+      { id: 'doc-old', title: '새 마인드맵_1', version: 1, updatedAt: '2026-01-01T00:00:00.000Z', isFavorite: false, deletedAt: '2026-01-02T00:00:00.000Z' },
+      { id: 'doc-new', title: '새 마인드맵_1', version: 1, updatedAt: '2026-01-03T00:00:00.000Z', isFavorite: false, deletedAt: null },
+    ]);
+    await waitFor(() => expect(container.querySelector('.mf-map-grid a[data-title="새 마인드맵_1"]')).toBeTruthy());
+
+    // restore the trashed doc from the LNB trash list
+    await user.click(container.querySelector('.restore-link') as HTMLElement);
+    const confirmBtn = screen.getAllByRole('button', { name: '복원' }).find((el) => el.tagName === 'BUTTON');
+    await user.click(confirmBtn!);
+
+    // both maps coexist: the live original + the renamed restored copy
+    await waitFor(() => expect(container.querySelector('.mf-map-grid a[data-title="새 마인드맵_1_복원1"]')).toBeTruthy());
+    expect(container.querySelectorAll('.mf-map-grid a[data-title="새 마인드맵_1"]').length).toBe(1);
+    // the rename is persisted (meta title now matches what the grid shows)
+    expect(docStore.restore).toHaveBeenCalledWith('doc-old');
+    await waitFor(() => expect(docStore.rename).toHaveBeenCalledWith('doc-old', '새 마인드맵_1_복원1'));
+  });
+
   it('unfavorites from the LNB favorites list via the leading star button', async () => {
     const user = userEvent.setup();
     const { container, docStore } = renderHomeWithDocStore([

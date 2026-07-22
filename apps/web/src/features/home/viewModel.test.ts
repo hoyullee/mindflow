@@ -25,10 +25,26 @@ describe('deriveHomeView — favorites', () => {
     const state = initialHomeState();
     state.spaces = [{ id: 'general', name: '일반 공간', home: true, color: '#f0663f', maps: [{ title: '삭제된 맵', when: '내 맵', hue: '#f0663f', docId: 'm9' }] }];
     state.favs = { '삭제된 맵': true };
+    // The real delete flow flags the title AND pushes a trash entry — hiding is
+    // decided by the trashed DOC ID (titles don't interfere across trash/space).
     state.deleted = { '삭제된 맵': true };
+    state.trash = [{ title: '삭제된 맵', source: 'local', docId: 'm9' }];
 
     const view = deriveHomeView(state);
     expect(view.favItems).toHaveLength(0);
+  });
+
+  it("does NOT hide a live favorite because a trashed doc shares its title", () => {
+    const state = initialHomeState();
+    // live '맵 A' (docId a2) + a DIFFERENT trashed doc that had the same title
+    state.spaces = [{ id: 'general', name: '일반 공간', home: true, color: '#f0663f', maps: [{ title: '맵 A', when: '내 맵', hue: '#f0663f', docId: 'a2' }] }];
+    state.favs = { '맵 A': true };
+    state.deleted = { '맵 A': true }; // stale title flag left by the trashed sibling
+    state.trash = [{ title: '맵 A', source: 'local', docId: 'a1' }];
+
+    const view = deriveHomeView(state);
+    expect(view.favItems).toHaveLength(1); // the live map keeps its favorite row
+    expect(view.allCards.some((c) => c.title === '맵 A' && c.docId === 'a2')).toBe(true); // and its grid card
   });
 });
 
@@ -101,7 +117,9 @@ describe('deriveHomeView — recent (cross-space)', () => {
   it('drops trashed maps from the recent strip', () => {
     const state = twoSpaceState();
     state.recent = ['작업맵', '일반맵'];
+    // real delete flow: title flag + trash entry (hiding keys off the docId)
     state.deleted = { '작업맵': true };
+    state.trash = [{ title: '작업맵', source: 'local', docId: 'w1' }];
     expect(deriveHomeView(state).recentCards.map((c) => c.title)).toEqual(['일반맵']);
   });
 });

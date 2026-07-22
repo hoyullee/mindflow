@@ -115,6 +115,22 @@ export function deriveHomeView(state: HomeState): HomeViewModel {
   const curFolder = state.curFolder && folders.find((f) => f.id === state.curFolder) ? folders.find((f) => f.id === state.curFolder)! : null;
   const mapFolders = state.mapFolders;
 
+  // Trash policy: names do NOT interfere between the trash and the spaces — a
+  // trashed map and a live map may share a title. So "is this hidden?" is
+  // decided by the card's own docId (is THAT doc in the trash?), never by its
+  // title alone; the title-keyed `deleted` flag remains only as the fallback
+  // for docId-less entries (Drive demo files), which can't collide with docs.
+  const trashedIds = new Set(state.trash.map((t) => t.docId).filter((id): id is string => !!id));
+  const isTrashedCard = (title: string, docId?: string): boolean => (docId ? trashedIds.has(docId) : !!state.deleted[title]);
+
+  // Live title → docId across EVERY space (first occurrence wins). Used to make
+  // the title-keyed lists (favorites, folder counts) docId-aware, and to build
+  // editor hrefs for favorites.
+  const liveDocIdByTitle = new Map<string, string>();
+  state.spaces.forEach((s) => (Array.isArray(s.maps) ? s.maps : []).forEach((m) => {
+    if (m.docId && !liveDocIdByTitle.has(m.title)) liveDocIdByTitle.set(m.title, m.docId);
+  }));
+
   const baseCards: { title: string; when: string; hue: string; docId?: string; openable: boolean }[] = isDriveSpace
     ? connected
       ? driveCardsRaw.map((f) => ({ title: f.name, when: /\.xmind$/.test(f.name) ? 'Google Drive' : '이 형식은 열 수 없어요', hue: '#34A853', openable: /\.xmind$/.test(f.name) }))
@@ -122,7 +138,7 @@ export function deriveHomeView(state: HomeState): HomeViewModel {
     : activeMaps.map((m) => ({ title: m.title, when: m.when, hue: m.hue, docId: m.docId, openable: true }));
 
   const allCardsFiltered = baseCards
-    .filter((c) => !state.deleted[c.title])
+    .filter((c) => !isTrashedCard(c.title, c.docId))
     .filter((c) => (isDriveSpace ? true : curFolder ? mapFolders[c.title] === curFolder.id : !mapFolders[c.title] || !folders.find((f) => f.id === mapFolders[c.title])))
     .filter((c) => matchesSearch(c.title, state.search));
 
@@ -178,7 +194,7 @@ export function deriveHomeView(state: HomeState): HomeViewModel {
   const localFolderCards: FolderCardViewData[] =
     !isDriveSpace && !curFolder
       ? folders.map((f) => {
-          const cnt = Object.keys(mapFolders).filter((t) => mapFolders[t] === f.id && !state.deleted[t]).length;
+          const cnt = Object.keys(mapFolders).filter((t) => mapFolders[t] === f.id && !isTrashedCard(t, liveDocIdByTitle.get(t))).length;
           return {
             id: f.id,
             name: f.name,
@@ -198,15 +214,11 @@ export function deriveHomeView(state: HomeState): HomeViewModel {
   // space's maps (not just the active one) — the editor href needs the actual
   // doc id, since the title-hash fallback (`mapId`) points at a different slot
   // than an editor-created `new-…` doc.
-  const favDocIdByTitle = new Map<string, string>();
-  state.spaces.forEach((s) => (Array.isArray(s.maps) ? s.maps : []).forEach((m) => {
-    if (m.docId && !favDocIdByTitle.has(m.title)) favDocIdByTitle.set(m.title, m.docId);
-  }));
   const favItems = Object.keys(favs)
-    .filter((k) => favs[k] && !state.deleted[k])
+    .filter((k) => favs[k] && !isTrashedCard(k, liveDocIdByTitle.get(k)))
     // `docId` rides along so the LNB's unfavorite star can persist the flip via
     // `DocStore.setFavorite` (drive files have none — local-only favorites).
-    .map((t) => ({ title: t, isDrive: sourceIsDrive(t), href: mapHref(t, favDocIdByTitle.get(t)), docId: favDocIdByTitle.get(t) }));
+    .map((t) => ({ title: t, isDrive: sourceIsDrive(t), href: mapHref(t, liveDocIdByTitle.get(t)), docId: liveDocIdByTitle.get(t) }));
 
   // "최근 항목" is a GLOBAL, cross-space list shown at the top of Home, so resolve
   // each recent map's card data from EVERY space (not just the active one), plus
@@ -222,7 +234,7 @@ export function deriveHomeView(state: HomeState): HomeViewModel {
   // favorite menu rows don't apply — they'd also be ambiguous for a cross-space
   // list. Keep them off; the card is a click-to-open shortcut.
   const recentCards: CardViewData[] = state.recent
-    .filter((t) => recentByTitle.has(t) && !state.deleted[t])
+    .filter((t) => recentByTitle.has(t) && !isTrashedCard(t, recentByTitle.get(t)!.docId))
     // History retention (RECENT_CAP=100) deliberately exceeds what any screen
     // shows; only materialize as many CARDS (sketch build is per-card work) as
     // the widest row / mobile swipe depth could ever display.

@@ -262,7 +262,9 @@ export function Sidebar({ state, view, controller, isMobile = false, isOpen = fa
       >
         <div style={{ overflow: 'hidden', minHeight: 0 }}>
           {view.trashItems.map((t) => (
-            <div key={t.title} className="drive-file" style={{ display: 'flex', alignItems: 'center', gap: 7, padding: '7px 10px 7px 30px', borderRadius: 8, fontSize: 12.5, color: '#8a7a6d' }}>
+            // Keyed by docId when present — the trash may hold two entries with
+            // the same TITLE (different docs), which a title key would collapse.
+            <div key={t.docId || t.title} className="drive-file" style={{ display: 'flex', alignItems: 'center', gap: 7, padding: '7px 10px 7px 30px', borderRadius: 8, fontSize: 12.5, color: '#8a7a6d' }}>
               <span style={{ fontSize: 12 }}>{t.isDrive ? '📁' : '🗺'}</span>
               <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{t.title}</span>
               <span style={{ flexShrink: 0, padding: '1px 7px', borderRadius: 999, fontSize: 10, fontWeight: 700, background: t.isDrive ? 'rgba(52,168,83,.12)' : '#f0e6dd', color: t.isDrive ? '#1e7a3a' : '#9c8b7e' }}>{t.badge}</span>
