@@ -3,6 +3,8 @@ import { BrowserRouter, Navigate, Route, Routes } from 'react-router-dom';
 import { Login } from './features/auth/Login';
 import { Home } from './features/home/Home';
 import { Editor } from './features/editor/Editor';
+import { PrivacyPolicy } from './features/legal/PrivacyPolicy';
+import { Terms } from './features/legal/Terms';
 import { BackendProvider, useBackend } from './adapters/BackendContext';
 
 // M3: Login.dc.html, Home.dc.html, and MindFlow.dc.html are ported to React.
@@ -41,6 +43,10 @@ export function App() {
         <Routes>
           <Route path="/" element={<Navigate to="/login" replace />} />
           <Route path="/login" element={<Login />} />
+          {/* Public legal docs — must stay OUTSIDE RequireAuth (Google's brand
+              verification reviewers and pre-signup users open them logged out). */}
+          <Route path="/privacy" element={<PrivacyPolicy />} />
+          <Route path="/terms" element={<Terms />} />
           <Route
             path="/home"
             element={

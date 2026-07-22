@@ -51,6 +51,15 @@ export interface AuthProvider {
   signInWithPassword(email: string, password: string): Promise<AuthResult>;
   signUp(email: string, password: string): Promise<AuthResult>;
   signInWithOAuth(provider: 'google'): Promise<{ error?: string }>;
+  /**
+   * Sign in with an OAuth ID token obtained CLIENT-SIDE (Google Identity
+   * Services button) instead of the redirect flow above. The whole exchange
+   * happens on our own origin, so Google's consent screen shows geurio.com —
+   * not the supabase.co callback domain the redirect flow surfaces. `nonce` is
+   * the RAW nonce whose SHA-256 hash was embedded in the token (replay
+   * protection); omit it when the token was requested without one.
+   */
+  signInWithIdToken(provider: 'google', token: string, nonce?: string): Promise<AuthResult>;
   signOut(): Promise<void>;
   /** Returns an unsubscribe function. */
   onAuthChange(listener: AuthChangeListener): () => void;

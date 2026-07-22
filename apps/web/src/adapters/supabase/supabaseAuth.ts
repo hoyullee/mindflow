@@ -65,6 +65,19 @@ export class SupabaseAuth implements AuthProvider {
     return error ? { error: error.message } : {};
   }
 
+  // GIS (Google Identity Services) path: the browser already holds a Google
+  // ID token (JWT) from the official Sign-in-with-Google button, so this is a
+  // direct token exchange — no redirect through the supabase.co callback (the
+  // whole reason this path exists; see `signInWithOAuth` vs the login form's
+  // `GoogleSignInButton`). Supabase validates the token's audience against the
+  // Google client ID configured on the provider, and — when `nonce` is given —
+  // checks that its SHA-256 matches the token's `nonce` claim.
+  async signInWithIdToken(provider: 'google', token: string, nonce?: string): Promise<AuthResult> {
+    const { data, error } = await this.client.auth.signInWithIdToken({ provider, token, ...(nonce ? { nonce } : {}) });
+    if (error) return { session: null, error: error.message };
+    return { session: mapSession(data.session) };
+  }
+
   async signOut(): Promise<void> {
     await this.client.auth.signOut();
   }
