@@ -209,9 +209,25 @@ export function Sidebar({ state, view, controller, isMobile = false, isOpen = fa
                 }
               }}
               title={`'${f.title}' 열기`}
-              style={{ display: 'flex', alignItems: 'center', gap: 7, padding: '7px 10px 7px 30px', borderRadius: 8, cursor: 'pointer', fontSize: 12.5, color: '#5c4f44' }}
+              style={{ display: 'flex', alignItems: 'center', gap: 4, padding: '4px 10px 4px 24px', borderRadius: 8, cursor: 'pointer', fontSize: 12.5, color: '#5c4f44' }}
             >
-              <StarGlyph size={12} />
+              {/* Leading star = UNFAVORITE button (the row itself opens the map).
+                  stopPropagation on click AND keydown — both would otherwise
+                  bubble to the row's open handlers. */}
+              <button
+                type="button"
+                className="btn mf-fav-unstar"
+                aria-label={`'${f.title}' 즐겨찾기 해제`}
+                title="즐겨찾기 해제"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  controller.toggleFav(f.title, f.docId);
+                }}
+                onKeyDown={(e) => e.stopPropagation()}
+                style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', width: 26, height: 26, padding: 0, border: 'none', borderRadius: 7, background: 'transparent', cursor: 'pointer', flexShrink: 0 }}
+              >
+                <StarGlyph size={12} />
+              </button>
               <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{f.title}</span>
               {f.isDrive && (
                 <span style={{ flexShrink: 0, marginLeft: 'auto', display: 'flex', alignItems: 'center', padding: '1px 6px', borderRadius: 999, fontSize: 9.5, fontWeight: 700, background: 'rgba(52,168,83,.12)', color: '#1e7a3a' }}>Drive</span>

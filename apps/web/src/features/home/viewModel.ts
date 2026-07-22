@@ -60,7 +60,7 @@ export interface HomeViewModel {
   allCards: CardViewData[];
   folderCards: FolderCardViewData[];
   recentCards: CardViewData[];
-  favItems: { title: string; isDrive: boolean; href: string }[];
+  favItems: { title: string; isDrive: boolean; href: string; docId?: string }[];
   favCount: string;
   trashItems: { title: string; isDrive: boolean; badge: string; docId?: string }[];
   trashCount: string;
@@ -204,7 +204,9 @@ export function deriveHomeView(state: HomeState): HomeViewModel {
   }));
   const favItems = Object.keys(favs)
     .filter((k) => favs[k] && !state.deleted[k])
-    .map((t) => ({ title: t, isDrive: sourceIsDrive(t), href: mapHref(t, favDocIdByTitle.get(t)) }));
+    // `docId` rides along so the LNB's unfavorite star can persist the flip via
+    // `DocStore.setFavorite` (drive files have none — local-only favorites).
+    .map((t) => ({ title: t, isDrive: sourceIsDrive(t), href: mapHref(t, favDocIdByTitle.get(t)), docId: favDocIdByTitle.get(t) }));
 
   // "최근 항목" is a GLOBAL, cross-space list shown at the top of Home, so resolve
   // each recent map's card data from EVERY space (not just the active one), plus
