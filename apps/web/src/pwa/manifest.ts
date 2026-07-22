@@ -25,7 +25,10 @@ export const pwaManifest: Partial<ManifestOptions> = {
   background_color: '#fbf6f2',
   display: 'standalone',
   orientation: 'any',
-  start_url: '/',
+  // `/home` (not `/`): the root is now the public marketing landing page —
+  // an INSTALLED app should launch into the user's documents (RequireAuth
+  // still bounces anonymous users to /login).
+  start_url: '/home',
   scope: '/',
   icons: [
     { src: '/icons/pwa-192x192.png', sizes: '192x192', type: 'image/png' },

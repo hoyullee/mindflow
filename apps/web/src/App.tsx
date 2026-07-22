@@ -5,6 +5,7 @@ import { Home } from './features/home/Home';
 import { Editor } from './features/editor/Editor';
 import { PrivacyPolicy } from './features/legal/PrivacyPolicy';
 import { Terms } from './features/legal/Terms';
+import { Landing } from './features/landing/Landing';
 import { BackendProvider, useBackend } from './adapters/BackendContext';
 
 // M3: Login.dc.html, Home.dc.html, and MindFlow.dc.html are ported to React.
@@ -41,7 +42,10 @@ export function App() {
     <BackendProvider>
       <BrowserRouter>
         <Routes>
-          <Route path="/" element={<Navigate to="/login" replace />} />
+          {/* Public landing — Google brand verification requires the homepage
+              to describe the app and show its name (a bare redirect to /login
+              was rejected for exactly that). */}
+          <Route path="/" element={<Landing />} />
           <Route path="/login" element={<Login />} />
           {/* Public legal docs — must stay OUTSIDE RequireAuth (Google's brand
               verification reviewers and pre-signup users open them logged out). */}
