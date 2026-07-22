@@ -23,7 +23,9 @@ describe('pwaManifest', () => {
   it('is installable as a standalone app in any orientation', () => {
     expect(pwaManifest.display).toBe('standalone');
     expect(pwaManifest.orientation).toBe('any');
-    expect(pwaManifest.start_url).toBe('/');
+    // '/home', not '/': the root is the public marketing landing — an
+    // installed app must launch straight into the user's documents.
+    expect(pwaManifest.start_url).toBe('/home');
     expect(pwaManifest.scope).toBe('/');
   });
 
