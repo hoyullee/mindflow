@@ -1,4 +1,4 @@
-import { RECENT_RENDER_MAX, docRawForTitle, hexA, mapHref, mapId, readDocRaw } from './storage';
+import { RECENT_RENDER_MAX, docRawForTitle, folderKeyOf, hexA, mapHref, mapId, readDocRaw } from './storage';
 import { miniPreview, previewSkeleton, realPreview } from './mapPreview';
 import type { DriveFolderData, FolderData, HomeState, MapCardData } from './types';
 import { DRIVE_FILES } from './types';
@@ -139,7 +139,13 @@ export function deriveHomeView(state: HomeState): HomeViewModel {
 
   const allCardsFiltered = baseCards
     .filter((c) => !isTrashedCard(c.title, c.docId))
-    .filter((c) => (isDriveSpace ? true : curFolder ? mapFolders[c.title] === curFolder.id : !mapFolders[c.title] || !folders.find((f) => f.id === mapFolders[c.title])))
+    .filter((c) => {
+      if (isDriveSpace) return true;
+      // Folder assignments are docId-keyed (title fallback for docId-less
+      // cards) so same-titled maps can't capture each other's assignment.
+      const assigned = mapFolders[folderKeyOf(c.title, c.docId)];
+      return curFolder ? assigned === curFolder.id : !assigned || !folders.find((f) => f.id === assigned);
+    })
     .filter((c) => matchesSearch(c.title, state.search));
 
   const favs = state.favs;
@@ -194,7 +200,10 @@ export function deriveHomeView(state: HomeState): HomeViewModel {
   const localFolderCards: FolderCardViewData[] =
     !isDriveSpace && !curFolder
       ? folders.map((f) => {
-          const cnt = Object.keys(mapFolders).filter((t) => mapFolders[t] === f.id && !isTrashedCard(t, liveDocIdByTitle.get(t))).length;
+          // Count from the space's ACTUAL maps (assignments are docId-keyed, so
+          // key iteration can't be matched back to titles) — trashed maps are
+          // already out of `spaces`, so no deleted-check is needed.
+          const cnt = activeMaps.filter((m) => mapFolders[folderKeyOf(m.title, m.docId)] === f.id).length;
           return {
             id: f.id,
             name: f.name,

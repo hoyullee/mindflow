@@ -124,6 +124,47 @@ export function saveRecent(list: string[]): void {
   }
 }
 
+/**
+ * Folder-assignment key for `mapFolders`: the map's DOC ID when it has one,
+ * its title otherwise (workspace-only cards, Drive demo files). Title keys are
+ * what let a trashed map's folder assignment "capture" a new live map that
+ * happened to reuse the title — docId keys can't collide across docs, and a
+ * rename no longer orphans the assignment.
+ */
+export function folderKeyOf(title: string, docId?: string): string {
+  return docId ?? title;
+}
+
+/**
+ * One-time key migration for stored workspaces: `mapFolders` was historically
+ * keyed by TITLE; move each entry whose title matches a doc-backed map onto
+ * that map's docId key. Title keys with no matching doc-backed map (docId-less
+ * cards) are kept as-is — `folderKeyOf` still resolves them by title.
+ */
+export function migrateMapFolderKeys(
+  spaces: SpaceData[],
+  mapFolders: Record<string, string>,
+): { mapFolders: Record<string, string>; changed: boolean } {
+  const docIdByTitle = new Map<string, string>();
+  spaces.forEach((s) => (Array.isArray(s.maps) ? s.maps : []).forEach((m) => {
+    if (m.docId && !docIdByTitle.has(m.title)) docIdByTitle.set(m.title, m.docId);
+  }));
+  let changed = false;
+  const out: Record<string, string> = {};
+  for (const key of Object.keys(mapFolders)) {
+    const docId = docIdByTitle.get(key);
+    // Move title → docId only when the docId key isn't already taken (an
+    // existing docId entry is newer truth — don't clobber it).
+    if (docId && docId !== key && mapFolders[docId] === undefined) {
+      out[docId] = mapFolders[key]!;
+      changed = true;
+    } else {
+      out[key] = mapFolders[key]!;
+    }
+  }
+  return { mapFolders: changed ? out : mapFolders, changed };
+}
+
 /** How many recent titles to RETAIN (localStorage + the cross-device synced
  * workspace blob). Effectively unlimited for display purposes — the tray never
  * shows more than fits one row (~27 cards even on 4K, see RECENT_RENDER_MAX) —

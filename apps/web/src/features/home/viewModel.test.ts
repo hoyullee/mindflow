@@ -114,6 +114,28 @@ describe('deriveHomeView — recent (cross-space)', () => {
     expect(view.recentSectionVisible).toBe(true);
   });
 
+  it("a folder assignment binds ONE doc — a same-titled map in another space isn't captured", () => {
+    // Interference repro (policy follow-up #1): both spaces hold a map titled
+    // '중복 맵'. Assigning 일반 공간's copy (d1) to folder f1 must not pull 작업's
+    // copy (d2) out of its top level — title-keyed mapFolders used to do that.
+    const state = twoSpaceState();
+    state.spaces[0]!.folders = [{ id: 'f1', name: '자료' }];
+    state.spaces[0]!.maps = [{ title: '중복 맵', when: '내 맵', hue: '#f0663f', docId: 'd1' }];
+    state.spaces[1]!.maps = [{ title: '중복 맵', when: '내 맵', hue: '#3f8fd0', docId: 'd2' }];
+    state.mapFolders = { d1: 'f1' }; // docId-keyed assignment for 일반 공간's copy
+
+    // 일반 공간 (active): its copy lives in the folder, not at the top level
+    state.activeSpace = 'general';
+    let view = deriveHomeView(state);
+    expect(view.allCards.some((c) => c.title === '중복 맵')).toBe(false);
+    expect(view.folderCards.find((f) => f.id === 'f1')!.count).toBe(1);
+
+    // 작업 space: its same-titled copy stays at the TOP LEVEL, uncaptured
+    state.activeSpace = 'work';
+    view = deriveHomeView(state);
+    expect(view.allCards.some((c) => c.title === '중복 맵' && c.docId === 'd2')).toBe(true);
+  });
+
   it('drops trashed maps from the recent strip', () => {
     const state = twoSpaceState();
     state.recent = ['작업맵', '일반맵'];

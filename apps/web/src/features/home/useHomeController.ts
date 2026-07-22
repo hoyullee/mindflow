@@ -16,6 +16,8 @@ import {
   docKey,
   downloadFile,
   ensureHomeSpace,
+  folderKeyOf,
+  migrateMapFolderKeys,
   loadActiveView,
   loadRecent,
   saveActiveView,
@@ -118,6 +120,12 @@ export function useHomeController() {
         });
         if (mfChanged) mapFolders = mf;
       }
+      // One-time migration: historical workspaces keyed `mapFolders` by TITLE;
+      // move doc-backed entries onto docId keys (after the rename migration
+      // above, so old-title keys have already been carried to current titles).
+      const mfBeforeMigration = mapFolders;
+      const mfMigration = migrateMapFolderKeys(spaces, mapFolders);
+      mapFolders = mfMigration.mapFolders;
       // Prefer the tab-restored space (if it still exists), else keep the
       // previously-active one, else fall back to a real space (e.g. the user
       // deleted 일반 공간) so the sidebar/grid stay in sync.
@@ -163,8 +171,11 @@ export function useHomeController() {
         }
       }
       // Baseline the just-hydrated workspace so the save effect treats it as
-      // already-persisted (no re-save of what we just loaded/seeded).
-      savedWorkspaceSigRef.current = JSON.stringify({ spaces, mapFolders, recent });
+      // already-persisted (no re-save of what we just loaded/seeded). When the
+      // folder-key migration rewrote keys, baseline the PRE-migration shape
+      // instead, so the save effect sees a change and persists the docId-keyed
+      // blob once — otherwise it would stay legacy and re-migrate every load.
+      savedWorkspaceSigRef.current = JSON.stringify({ spaces, mapFolders: mfMigration.changed ? mfBeforeMigration : mapFolders, recent });
       // Always flip `loaded` so the grid drops its loading skeleton and
       // renders the real (possibly empty) state.
       return { ...prev, spaces, activeSpace, curFolder, mapFolders, favs, deleted, trash, recent, loaded: true };
@@ -561,7 +572,7 @@ export function useHomeController() {
       prev.spaces.forEach((s) => {
         if (Array.isArray(s.maps) && s.maps.some(matches)) spaceId = s.id;
       });
-      const folder = prev.mapFolders[title];
+      const folder = prev.mapFolders[folderKeyOf(title, docId ?? undefined)];
       // REMOVE the card from the workspace (the synced source of truth) — not just
       // hide it — so it can't linger in `spaces.maps` and reappear after a refresh
       // (the previous title-keyed `deleted` flag was session-only for docId-less
@@ -572,7 +583,7 @@ export function useHomeController() {
         return maps.length === s.maps.length ? s : { ...s, maps };
       });
       const mapFolders = { ...prev.mapFolders };
-      delete mapFolders[title];
+      delete mapFolders[folderKeyOf(title, docId ?? undefined)];
       const deleted = { ...prev.deleted, [title]: true };
       const favs = { ...prev.favs };
       delete favs[title];
@@ -685,7 +696,7 @@ export function useHomeController() {
         spaces = spaces.map((s) => (s.id === targetId ? { ...s, maps: [...(s.maps || []), { title: restoredTitle, when: '방금 복원됨', hue: '#f0663f', docId: docId ?? undefined }] } : s));
         // restore the folder assignment too, if that folder still exists
         if (entry?.folder && Array.isArray(target.folders) && target.folders.some((f) => f.id === entry.folder)) {
-          mapFolders = { ...mapFolders, [restoredTitle]: entry.folder };
+          mapFolders = { ...mapFolders, [folderKeyOf(restoredTitle, docId ?? undefined)]: entry.folder };
         }
       }
       return { ...prev, deleted, trash, spaces, mapFolders, confirmRestore: null, confirmRestoreDocId: null, toast, toastTitle: toast ? '복원 완료' : '' };
@@ -850,14 +861,14 @@ export function useHomeController() {
           const spaces = prev.spaces.map((s) => (s.id === targetId ? { ...s, maps: [...(s.maps || []), { title, when: '방금', hue: '#f0663f', docId }] } : s));
           // If the user is currently INSIDE a folder (of the target space), file
           // the new map into that folder — otherwise it would land at the space's
-          // top level (outside the folder they're viewing). mapFolders is keyed by
-          // title, same as `moveMapToFolder`.
+          // top level (outside the folder they're viewing). Keyed by docId
+          // (`folderKeyOf`), same as `moveMapToFolder`.
           let mapFolders = prev.mapFolders;
           if (prev.curFolder) {
             const sp = prev.spaces.find((s) => s.id === targetId);
             const folders = sp && Array.isArray(sp.folders) ? sp.folders : [];
             if (folders.some((f) => f.id === prev.curFolder)) {
-              mapFolders = { ...prev.mapFolders, [title]: prev.curFolder };
+              mapFolders = { ...prev.mapFolders, [folderKeyOf(title, docId)]: prev.curFolder };
             }
           }
           return { ...prev, spaces, mapFolders };
@@ -1062,8 +1073,14 @@ export function useHomeController() {
     patch({ folderModal: { mode: 'rename', id, name: f ? f.name : '', drive: true } as FolderModalState, openMenu: null });
   };
   const folderCount = (id: string) => {
-    const mf = state.mapFolders;
-    return Object.keys(mf).filter((t) => mf[t] === id && !state.deleted[t]).length;
+    // Count from the ACTUAL maps (assignments are docId-keyed via folderKeyOf,
+    // so key iteration can't be resolved back to titles). Trashed maps are
+    // removed from `spaces`, so no deleted-check is needed.
+    let n = 0;
+    state.spaces.forEach((s) => (Array.isArray(s.maps) ? s.maps : []).forEach((m) => {
+      if (state.mapFolders[folderKeyOf(m.title, m.docId)] === id) n++;
+    }));
+    return n;
   };
   const driveFolderCount = (id: string) => {
     const mf = state.driveMapFolders;
@@ -1116,9 +1133,17 @@ export function useHomeController() {
       return;
     }
     setState((prev) => {
+      // Resolve the card's docId (drag-and-drop only carries the title): the
+      // active space first — that's where the interaction happens — then any
+      // space, so the assignment lands on the docId key `folderKeyOf` reads.
+      const active = prev.spaces.find((s) => s.id === prev.activeSpace);
+      const card =
+        (Array.isArray(active?.maps) ? active!.maps : []).find((m) => m.title === title) ??
+        prev.spaces.flatMap((s) => (Array.isArray(s.maps) ? s.maps : [])).find((m) => m.title === title);
+      const key = folderKeyOf(title, card?.docId);
       const mapFolders = { ...prev.mapFolders };
-      if (folderId) mapFolders[title] = folderId;
-      else delete mapFolders[title];
+      if (folderId) mapFolders[key] = folderId;
+      else delete mapFolders[key];
       return { ...prev, mapFolders, openMenu: null, moveFor: null };
     });
   };
@@ -1139,7 +1164,7 @@ export function useHomeController() {
         return s;
       });
       const mapFolders = { ...prev.mapFolders };
-      delete mapFolders[title];
+      delete mapFolders[folderKeyOf(title, card.docId)];
       return { ...prev, spaces, mapFolders, openMenu: null, moveFor: null, moveSpaceFor: null, toast: `'${title}'을(를) '${target.name}' 공간으로 옮겼어요`, toastTitle: '이동 완료' };
     });
   };
