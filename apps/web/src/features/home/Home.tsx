@@ -16,6 +16,7 @@ import { ProfileNameModal } from './components/modals/ProfileNameModal';
 import { useHomeController } from './useHomeController';
 import { deriveHomeView } from './viewModel';
 import { useIsMobile } from '../../hooks/useMediaQuery';
+import { useDrawerSwipe } from '../../hooks/useDrawerSwipe';
 
 /**
  * React port of Home.dc.html — the map dashboard. State/behavior lives in
@@ -43,6 +44,15 @@ export function Home() {
   useEffect(() => {
     if (!isMobile) setNavOpen(false);
   }, [isMobile]);
+
+  // One-thumb drawer gestures: left-edge swipe-right opens, swipe-left (while
+  // open) closes — the hamburger stays as the visible affordance.
+  useDrawerSwipe(
+    isMobile,
+    navOpen,
+    () => setNavOpen(true),
+    () => setNavOpen(false),
+  );
 
   return (
     <div className="mf-home" style={{ display: 'flex', height: '100vh', width: '100%', background: '#fbf6f2', fontFamily: 'Pretendard, system-ui, sans-serif', color: '#33281f', overflow: 'hidden' }}>

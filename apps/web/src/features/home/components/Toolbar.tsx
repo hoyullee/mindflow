@@ -68,15 +68,19 @@ export function Toolbar({ state, view, controller, isMobile = false, onOpenNav }
   return (
     <div style={{ display: 'flex', alignItems: 'center', marginBottom: 18, gap: 12, flexWrap: 'wrap' }}>
       {isMobile && (
+        // Ghost app-bar button (no border/box) so "≡ + 스페이스명" reads as ONE
+        // header unit instead of a floating control pushing the title aside.
+        // The negative margin lines the glyph up with the content's left edge
+        // while the hit area stays a full 44px (§7).
         <button
           type="button"
           className="btn"
           onClick={onOpenNav}
           title="메뉴 열기"
           aria-label="메뉴 열기"
-          style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', width: 44, height: 44, border: '1px solid #ecdfd5', borderRadius: 10, background: '#fff', color: '#7c6d60', cursor: 'pointer', padding: 0, flexShrink: 0 }}
+          style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', width: 44, height: 44, marginLeft: -12, marginRight: -6, border: 'none', borderRadius: 10, background: 'transparent', color: '#33281f', cursor: 'pointer', padding: 0, flexShrink: 0 }}
         >
-          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
             <line x1="4" y1="7" x2="20" y2="7" />
             <line x1="4" y1="12" x2="20" y2="12" />
             <line x1="4" y1="17" x2="20" y2="17" />
