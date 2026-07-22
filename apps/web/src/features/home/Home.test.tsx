@@ -727,6 +727,20 @@ describe('Home', () => {
     expect(docStore.rename).not.toHaveBeenCalled();
   });
 
+  it('new maps are always "새 마인드맵" — no "_{n}" suffix even when the name is taken', async () => {
+    // Duplicate names are fully allowed, so the auto-uniquifier is gone: with a
+    // "새 마인드맵" (and even a trashed one) already present, the create CTA still
+    // points at plain "새 마인드맵".
+    const { container } = renderHomeWithDocStore([
+      { id: 'doc-n1', title: '새 마인드맵', version: 1, updatedAt: '2026-01-01T00:00:00.000Z', isFavorite: false, deletedAt: null },
+      { id: 'doc-n2', title: '새 마인드맵', version: 1, updatedAt: '2026-01-01T00:00:00.000Z', isFavorite: false, deletedAt: '2026-01-02T00:00:00.000Z' },
+    ]);
+    await waitFor(() => expect(container.querySelector('.mf-map-grid a[data-title="새 마인드맵"]')).toBeTruthy());
+    const newLink = Array.from(container.querySelectorAll('a')).find((a) => (a.textContent || '').includes('＋ 새로 만들기')) as HTMLAnchorElement;
+    const title = decodeURIComponent(new URLSearchParams(newLink.getAttribute('href')!.split('?')[1]!).get('title')!);
+    expect(title).toBe('새 마인드맵'); // not 새 마인드맵_1
+  });
+
   it('same-titled cards in one space keep independent selection and ☰ menus (key-scoped UI state)', async () => {
     const user = userEvent.setup();
     const { container } = renderHomeWithDocStore([
@@ -1290,21 +1304,6 @@ describe('Home', () => {
       expect(favTitles().some((t) => t.includes('즐겨찾기했다삭제한맵'))).toBe(false);
     });
 
-    it('new-map link gets a _N-suffixed default title when "새 마인드맵" already exists', async () => {
-      const { container } = renderHomeWithDocStore([
-        { id: 'nm0', title: '새 마인드맵', version: 1, updatedAt: '2026-01-01T00:00:00.000Z', isFavorite: false, deletedAt: null },
-      ]);
-      // Wait for the existing map to be merged into the grid (so newMapHref sees it).
-      await waitFor(() => expect(container.querySelector('a[data-title="새 마인드맵"]')).toBeTruthy());
-
-      const newLink = Array.from(container.querySelectorAll('a')).find((a) => (a.textContent || '').includes('＋ 새로 만들기')) as HTMLAnchorElement;
-      expect(newLink).toBeTruthy();
-      const href = newLink.getAttribute('href') || '';
-      // The colliding default title is auto-uniquified so the new map won't be
-      // hidden by Home's title-based dedup.
-      expect(href).toContain(`title=${encodeURIComponent('새 마인드맵_1')}`);
-      expect(href).toContain('new=1');
-    });
 
     it('new-map link keeps the plain default title when no "새 마인드맵" exists', async () => {
       const { container } = renderHomeWithDocStore([
