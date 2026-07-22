@@ -1,6 +1,7 @@
 import type { CSSProperties, DragEvent, MouseEvent } from 'react';
 import type { HomeController } from '../useHomeController';
 import type { CardViewData } from '../viewModel';
+import { useIsMobile } from '../../../hooks/useMediaQuery';
 
 interface Props {
   card: CardViewData;
@@ -14,6 +15,7 @@ interface Props {
 
 /** Home.dc.html:251-303 `<sc-for list="{{ allCards }}">` — a single map/Drive-file card. */
 export function MapCard({ card, controller, draggableEnabled, compact = false }: Props) {
+  const isMobile = useIsMobile();
   const stopPrevent = (e: MouseEvent) => {
     e.preventDefault();
     e.stopPropagation();
@@ -21,7 +23,19 @@ export function MapCard({ card, controller, draggableEnabled, compact = false }:
 
   const onOpen = (e: MouseEvent<HTMLAnchorElement>) => {
     e.preventDefault();
-    if (card.openable !== false) controller.selectCard(card.title);
+    if (card.openable === false) return;
+    const target = e.target as HTMLElement;
+    if (target.closest && target.closest('.menu-btn,.menu-row,.fav-btn')) return;
+    // Touch devices: a single tap OPENS the map. Real mobile browsers don't
+    // reliably emit `dblclick` from a double tap (iOS Safari in particular), so
+    // the desktop select-then-double-click idiom left cards un-openable there.
+    // Selection has no job on mobile anyway — the ☆/☰ controls are always
+    // visible (`@media (hover:none)`), and folder cards already open on one tap.
+    if (isMobile) {
+      controller.openWithLoader(card.href, card.title);
+      return;
+    }
+    controller.selectCard(card.title);
   };
   const onDblOpen = (e: MouseEvent<HTMLAnchorElement>) => {
     const target = e.target as HTMLElement;
