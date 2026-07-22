@@ -697,6 +697,80 @@ export function useHomeController() {
       if (restoredTitle !== title) persistRestoredRename(docId, restoredTitle);
     }
   };
+  // ---- permanent delete (휴지통 영구 삭제) ----
+  const askPurge = (title: string, docId?: string) => patch({ confirmPurge: title, confirmPurgeDocId: docId ?? null });
+  const cancelPurge = () => patch({ confirmPurge: null, confirmPurgeDocId: null });
+  const confirmPurgeYes = () => {
+    const title = state.confirmPurge;
+    if (!title) return;
+    const docId = state.confirmPurgeDocId;
+    setState((prev) => {
+      // Remove exactly ONE entry (same-title siblings may coexist in the trash).
+      let removedOne = false;
+      const trash = prev.trash.filter((t) => {
+        if (removedOne) return true;
+        const match = docId ? t.docId === docId : t.title === title;
+        if (match) removedOne = true;
+        return !match;
+      });
+      const deleted = { ...prev.deleted };
+      // Drive demo files keep their title flag (that's what hides the static
+      // card); doc-backed entries clear it unless a same-title sibling remains.
+      const isDriveFile = DRIVE_FILES.some((f) => f.name === title);
+      if (!isDriveFile && !trash.some((t) => t.title === title)) delete deleted[title];
+      // The doc is gone for good — drop its recent entry unless a live map
+      // still carries this title.
+      let recent = prev.recent;
+      const titleLives = prev.spaces.some((s) => (s.maps || []).some((m) => m.title === title));
+      if (!titleLives && recent.includes(title)) {
+        recent = recent.filter((t) => t !== title);
+        saveRecent(recent);
+      }
+      return { ...prev, trash, deleted, recent, confirmPurge: null, confirmPurgeDocId: null };
+    });
+    if (docId) {
+      void docStore.purge(docId).catch(() => {
+        // Backend purge failed (offline/RLS): the row will reappear via list()
+        // on the next load — surface it so the user can retry.
+        patch({ importError: '영구 삭제가 서버에 반영되지 않았어요. 네트워크 확인 후 다시 시도해 주세요.' });
+      });
+    }
+  };
+  const askEmptyTrash = () => patch({ confirmEmptyTrash: true });
+  const cancelEmptyTrash = () => patch({ confirmEmptyTrash: false });
+  const confirmEmptyTrashYes = () => {
+    const entries = state.trash;
+    if (!entries.length) {
+      patch({ confirmEmptyTrash: false });
+      return;
+    }
+    setState((prev) => {
+      const deleted = { ...prev.deleted };
+      let recent = prev.recent;
+      let recentChanged = false;
+      prev.trash.forEach((t) => {
+        const isDriveFile = DRIVE_FILES.some((f) => f.name === t.title);
+        if (!isDriveFile) delete deleted[t.title];
+        const titleLives = prev.spaces.some((s) => (s.maps || []).some((m) => m.title === t.title));
+        if (!titleLives && recent.includes(t.title)) {
+          recent = recent.filter((x) => x !== t.title);
+          recentChanged = true;
+        }
+      });
+      if (recentChanged) saveRecent(recent);
+      return { ...prev, trash: [], deleted, recent, confirmEmptyTrash: false };
+    });
+    const ids = entries.map((t) => t.docId).filter((id): id is string => !!id);
+    if (ids.length) {
+      void Promise.allSettled(ids.map((id) => docStore.purge(id))).then((results) => {
+        if (!mountedRef.current) return;
+        if (results.some((r) => r.status === 'rejected')) {
+          patch({ importError: '일부 항목의 영구 삭제가 서버에 반영되지 않았어요. 네트워크 확인 후 다시 시도해 주세요.' });
+        }
+      });
+    }
+  };
+
   const restoreCard = (title: string, docId?: string) => {
     setState((prev) => {
       // Same one-entry removal + conditional flag clear as confirmRestoreYes —
@@ -1144,6 +1218,12 @@ export function useHomeController() {
     cancelRestore,
     confirmRestoreYes,
     restoreCard,
+    askPurge,
+    cancelPurge,
+    confirmPurgeYes,
+    askEmptyTrash,
+    cancelEmptyTrash,
+    confirmEmptyTrashYes,
     closeToast,
     recordRecent,
     mapHref,

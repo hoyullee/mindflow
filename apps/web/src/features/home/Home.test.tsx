@@ -37,6 +37,7 @@ class MockDocStore implements DocStore {
   setFavorite = vi.fn(async (): Promise<void> => undefined);
   remove = vi.fn(async (): Promise<void> => undefined);
   restore = vi.fn(async (): Promise<void> => undefined);
+  purge = vi.fn(async (): Promise<void> => undefined);
   rename = vi.fn(async (): Promise<void> => undefined);
   save = vi.fn(async (): Promise<SaveResult> => ({ ok: true, version: 1 }));
   // Bodies live behind `load()` only (like a real backend) — `list()` never
@@ -198,6 +199,7 @@ describe('Home', () => {
       setFavorite: vi.fn(async () => undefined),
       remove: vi.fn(async () => undefined),
       restore: vi.fn(async () => undefined),
+      purge: vi.fn(async () => undefined),
       rename: vi.fn(async () => undefined),
       save: vi.fn(async (): Promise<SaveResult> => ({ ok: true, version: 1 })),
     };
@@ -723,6 +725,47 @@ describe('Home', () => {
     // the rename is persisted (meta title now matches what the grid shows)
     expect(docStore.restore).toHaveBeenCalledWith('doc-old');
     await waitFor(() => expect(docStore.rename).toHaveBeenCalledWith('doc-old', '새 마인드맵_1_복원1'));
+  });
+
+  it('permanently deletes a single trash entry via 영구 삭제 (confirm-gated, backend purge)', async () => {
+    const user = userEvent.setup();
+    localStorage.setItem('mf_recent', JSON.stringify(['영구삭제 맵']));
+    const { container, docStore } = renderHomeWithDocStore([
+      { id: 'doc-p', title: '영구삭제 맵', version: 1, updatedAt: '2026-01-01T00:00:00.000Z', isFavorite: false, deletedAt: '2026-01-02T00:00:00.000Z' },
+    ]);
+    const aside = within(container.querySelector('aside') as HTMLElement);
+    await waitFor(() => expect(aside.getByText('영구삭제 맵')).toBeTruthy());
+
+    await user.click(aside.getByRole('button', { name: "'영구삭제 맵' 영구 삭제" }));
+    // destructive action is confirm-gated; the dialog's real <button> confirms
+    const confirmBtn = screen.getAllByRole('button', { name: '영구 삭제' }).find((el) => el.tagName === 'BUTTON');
+    expect(confirmBtn).toBeTruthy();
+    await user.click(confirmBtn!);
+
+    await waitFor(() => expect(aside.queryByText('영구삭제 맵')).toBeNull()); // trash row gone
+    expect(docStore.purge).toHaveBeenCalledWith('doc-p'); // hard-deleted on the backend
+    expect(docStore.remove).not.toHaveBeenCalled(); // not another soft delete
+    // its recent entry is dropped too (the doc no longer exists anywhere)
+    expect(JSON.parse(localStorage.getItem('mf_recent')!)).toEqual([]);
+  });
+
+  it('empties the whole trash via the header 비우기 action', async () => {
+    const user = userEvent.setup();
+    const { container, docStore } = renderHomeWithDocStore([
+      { id: 'doc-t1', title: '휴지통 맵 1', version: 1, updatedAt: '2026-01-01T00:00:00.000Z', isFavorite: false, deletedAt: '2026-01-02T00:00:00.000Z' },
+      { id: 'doc-t2', title: '휴지통 맵 2', version: 1, updatedAt: '2026-01-01T00:00:00.000Z', isFavorite: false, deletedAt: '2026-01-02T00:00:00.000Z' },
+    ]);
+    const aside = within(container.querySelector('aside') as HTMLElement);
+    await waitFor(() => expect(aside.getByText('휴지통 맵 1')).toBeTruthy());
+
+    await user.click(aside.getByText('비우기'));
+    await user.click(screen.getByRole('button', { name: '모두 삭제' }));
+
+    await waitFor(() => expect(aside.queryByText('휴지통 맵 1')).toBeNull());
+    expect(aside.queryByText('휴지통 맵 2')).toBeNull();
+    expect(docStore.purge).toHaveBeenCalledWith('doc-t1');
+    expect(docStore.purge).toHaveBeenCalledWith('doc-t2');
+    expect(aside.getByText('휴지통이 비어 있습니다')).toBeTruthy();
   });
 
   it('unfavorites from the LNB favorites list via the leading star button', async () => {

@@ -250,6 +250,28 @@ export function Sidebar({ state, view, controller, isMobile = false, isOpen = fa
       >
         <TrashGlyph size={15} /> 휴지통
         <span style={{ marginLeft: 'auto', fontSize: 11, color: '#c9b8a9' }}>{view.trashCount}</span>
+        {view.trashItems.length > 0 && (
+          <span
+            role="button"
+            tabIndex={0}
+            className="mf-trash-empty"
+            onClick={(e) => {
+              // The header row toggles the list — the 비우기 action must not.
+              e.stopPropagation();
+              controller.askEmptyTrash();
+            }}
+            onKeyDown={(e) => {
+              e.stopPropagation();
+              if (e.key === 'Enter' || e.key === ' ') {
+                e.preventDefault();
+                controller.askEmptyTrash();
+              }
+            }}
+            style={{ fontSize: 11, color: '#d64545', cursor: 'pointer', flexShrink: 0 }}
+          >
+            비우기
+          </span>
+        )}
       </div>
       <div
         style={{
@@ -279,6 +301,19 @@ export function Sidebar({ state, view, controller, isMobile = false, isOpen = fa
                 style={{ marginLeft: 'auto', fontSize: 11, color: '#3f8fd0', cursor: 'pointer', flexShrink: 0 }}
               >
                 복원
+              </span>
+              <span
+                role="button"
+                tabIndex={0}
+                aria-label={`'${t.title}' 영구 삭제`}
+                onClick={(e) => {
+                  e.stopPropagation();
+                  controller.askPurge(t.title, t.docId);
+                }}
+                className="purge-link"
+                style={{ fontSize: 11, color: '#d64545', cursor: 'pointer', flexShrink: 0 }}
+              >
+                영구 삭제
               </span>
             </div>
           ))}
