@@ -312,9 +312,6 @@ export interface EditorController {
   startEditTitle: () => void;
   commitTitle: (text: string) => void;
   cancelTitleEdit: () => void;
-  /** Non-null when the last title edit was rejected as a duplicate filename. */
-  titleError: string | null;
-  dismissTitleError: () => void;
 
   // ---- structural ----
   addChild: () => void;
@@ -508,9 +505,6 @@ export function useEditorState(): EditorController {
   const [editingLineId, setEditingLineId] = useState<string | null>(null);
   const [editingZoneId, setEditingZoneId] = useState<string | null>(null);
   const [editingTitle, setEditingTitle] = useState(false);
-  // Set when a title edit was rejected because another map already has that
-  // name (duplicate filenames aren't allowed) — surfaced by `DocChip`.
-  const [titleError, setTitleError] = useState<string | null>(null);
   const [saveState, setSaveStateState] = useState<SaveState>('saved');
   const [, setHistoryTick] = useState(0);
   const [ctxMenu, setCtxMenu] = useState<ContextMenuState | null>(null);
@@ -614,33 +608,6 @@ export function useEditorState(): EditorController {
       cancelled = true;
     };
   }, [docStore, docStoreId, mapId]);
-
-  // Titles of OTHER (non-deleted) maps — used to reject renaming this map to a
-  // name that's already taken (see `commitTitle`). Best-effort: fetched once on
-  // mount; a rename slips through only if another map with the same title was
-  // created elsewhere in the moment between this list() and the rename.
-  const otherTitlesRef = useRef<Set<string>>(new Set<string>());
-  useEffect(() => {
-    let cancelled = false;
-    docStore
-      .list()
-      .then((metas) => {
-        if (cancelled) return;
-        const set = new Set<string>();
-        for (const m of metas) {
-          if (m.id === docStoreId || m.deletedAt) continue;
-          const t = (m.title || '').trim();
-          if (t) set.add(t);
-        }
-        otherTitlesRef.current = set;
-      })
-      .catch(() => {
-        /* listing failed (offline, RLS, ...) — non-fatal; skip the guard */
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, [docStore, docStoreId]);
 
   // ---- M5: real-time collaboration ----
   // Backs `doc` with a live Y.Doc (Supabase Realtime if configured, else
@@ -1664,7 +1631,6 @@ export function useEditorState(): EditorController {
 
   // ---- text editing ----
   const startEditNode = useCallback((id: string) => {
-    setTitleError(null);
     setSelectionState({ kind: 'node', id });
     setMultiSelectionState(null);
     setEditingNodeId(id);
@@ -1688,25 +1654,12 @@ export function useEditorState(): EditorController {
     },
     [measurer],
   );
-  // The ROOT node's text IS the map's filename, so any edit that renames it —
-  // the title chip OR the on-canvas root node — must not collide with another
-  // map's name. Returns true when `next` would duplicate an existing title.
-  const wouldDuplicateTitle = useCallback((next: string): boolean => {
-    const t = String(next || '').trim();
-    const cur = (docRef.current.nodes[ROOT_ID]?.text || '').trim();
-    return !!t && t !== cur && otherTitlesRef.current.has(t);
-  }, []);
   const commitNodeText = useCallback(
     (id: string, text: string) => {
-      if (id === ROOT_ID && wouldDuplicateTitle(text)) {
-        setTitleError(`이미 "${String(text).trim()}" 이름의 맵이 있어요`);
-        setEditingNodeId(null);
-        return;
-      }
       commitDoc((d) => ({ ...d, nodes: mutations.commitNodeText(d.nodes, id, text) }));
       setEditingNodeId(null);
     },
-    [commitDoc, wouldDuplicateTitle],
+    [commitDoc],
   );
   /** Port of `Component#commitRichEdit` (MindFlow.dc.html:2629-2643) — reads the live
    * `contentEditable` DOM (`el`) via `domToRuns` and commits BOTH `text` and `rich`
@@ -1721,13 +1674,6 @@ export function useEditorState(): EditorController {
         return;
       }
       const parsed = domToRuns(el);
-      if (id === ROOT_ID && wouldDuplicateTitle(parsed.text)) {
-        setTitleError(`이미 "${parsed.text.trim()}" 이름의 맵이 있어요`);
-        setEditingNodeId(null);
-        setEditLiveSize(null);
-        setTextCtx(null);
-        return;
-      }
       commitDoc((d) => ({ ...d, nodes: mutations.commitNodeRichText(d.nodes, id, parsed.text, parsed.rich) }));
       setEditingNodeId(null);
       setEditLiveSize(null);
@@ -1736,7 +1682,7 @@ export function useEditorState(): EditorController {
       // the nudge effect (fires once editing clears + geom reflects the new size).
       pendingNudgeRef.current = id;
     },
-    [commitDoc, wouldDuplicateTitle],
+    [commitDoc],
   );
   const cancelNodeEdit = useCallback(() => {
     setEditingNodeId(null);
@@ -1814,28 +1760,19 @@ export function useEditorState(): EditorController {
   );
   const cancelZoneLabelEdit = useCallback(() => setEditingZoneId(null), []);
 
-  const startEditTitle = useCallback(() => {
-    setTitleError(null);
-    setEditingTitle(true);
-  }, []);
+  const startEditTitle = useCallback(() => setEditingTitle(true), []);
+  // Duplicate names are fully allowed (XMind-style) — identity is the doc id,
+  // so a rename never needs to check other maps' titles. (An unchanged/empty
+  // edit falls through to `commitRootTitle`, which restores the fallback when
+  // text is blank.)
   const commitTitle = useCallback(
     (text: string) => {
-      // Renaming to another map's existing filename isn't allowed — keep the
-      // current title and tell the user. (An unchanged/empty edit falls through
-      // to `commitRootTitle`, which restores the fallback when text is blank.)
-      if (wouldDuplicateTitle(text)) {
-        setTitleError(`이미 "${String(text).trim()}" 이름의 맵이 있어요`);
-        setEditingTitle(false);
-        return;
-      }
-      setTitleError(null);
       commitDoc((d) => ({ ...d, nodes: mutations.commitRootTitle(d.nodes, text, titleParam) }));
       setEditingTitle(false);
     },
-    [commitDoc, titleParam, wouldDuplicateTitle],
+    [commitDoc, titleParam],
   );
   const cancelTitleEdit = useCallback(() => setEditingTitle(false), []);
-  const dismissTitleError = useCallback(() => setTitleError(null), []);
 
   // ---- structural ----
   const addChild = useCallback(() => {
@@ -2967,8 +2904,6 @@ export function useEditorState(): EditorController {
     startEditTitle,
     commitTitle,
     cancelTitleEdit,
-    titleError,
-    dismissTitleError,
 
     addChild,
     addSibling,

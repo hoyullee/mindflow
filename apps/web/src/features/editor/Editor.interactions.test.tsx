@@ -371,7 +371,7 @@ describe('Editor interactions (M3-Editor-b)', () => {
     expect(screen.getByText('테마')).toBeTruthy();
   });
 
-  describe('duplicate filename guard (rename)', () => {
+  describe('duplicate map names are allowed (XMind-style)', () => {
     // The title chip's non-editing title element (`div[title=...]`), excluding
     // the on-canvas root node box which also shows the title text.
     const chip = (container: HTMLElement, title: string) =>
@@ -387,7 +387,9 @@ describe('Editor interactions (M3-Editor-b)', () => {
       );
     }
 
-    it('rejects renaming this map to a name another map already uses', async () => {
+    it('renames this map to a name another map already uses — no rejection, no warning', async () => {
+      // Identity is the doc id; titles are display labels, so taking another
+      // map's name commits like any other rename (the old guard rejected it).
       const user = userEvent.setup();
       seedExistingMap();
       const { container } = renderEditor('/editor?map=new-abc123&title=' + encodeURIComponent('내 문서'));
@@ -399,10 +401,8 @@ describe('Editor interactions (M3-Editor-b)', () => {
       await user.clear(input);
       await user.type(input, '기존 맵{Enter}');
 
-      // Rejected: a warning appears and the title stays "내 문서".
-      await waitFor(() => expect((screen.getByRole('alert').textContent || '')).toContain('이미'));
-      expect(chip(container, '내 문서')).toBeTruthy();
-      expect(chip(container, '기존 맵')).toBeFalsy();
+      await waitFor(() => expect(chip(container, '기존 맵')).toBeTruthy());
+      expect(screen.queryByRole('alert')).toBeNull();
     });
 
     it('allows renaming this map to a unique title', async () => {
@@ -420,15 +420,13 @@ describe('Editor interactions (M3-Editor-b)', () => {
       expect(screen.queryByRole('alert')).toBeNull();
     });
 
-    it('rejects renaming the map by editing the ROOT node on the canvas', async () => {
+    it('renames the map to a taken name by editing the ROOT node on the canvas', async () => {
       seedExistingMap(); // another map titled "기존 맵"
-      // This map's root title is "제품 로드맵" (DOC). list() excludes self by id.
+      // This map's root title is "제품 로드맵" (DOC).
       localStorage.setItem('mindflow_doc_mine', JSON.stringify(DOC));
       const { container } = renderEditor('/editor?map=mine&title=x');
 
-      // Give the mount `docStore.list()` a tick to populate the taken-title set.
       await waitFor(() => expect(within(getViewport(container)).getByText('제품 로드맵')).toBeTruthy());
-      await waitFor(() => expect(true).toBe(true));
 
       const rootBox = nodeBoxFor(container, '제품 로드맵');
       fireEvent.doubleClick(rootBox);
@@ -438,10 +436,9 @@ describe('Editor interactions (M3-Editor-b)', () => {
       fireEvent.input(editor);
       fireEvent.keyDown(editor, { key: 'Enter' });
 
-      // Blocked: warning shown and the root/title stays "제품 로드맵".
-      await waitFor(() => expect(screen.getByRole('alert').textContent || '').toContain('이미'));
-      expect(within(getViewport(container)).getByText('제품 로드맵')).toBeTruthy();
-      expect(within(getViewport(container)).queryByText('기존 맵')).toBeNull();
+      // Committed: the root now carries the duplicate name, no warning.
+      await waitFor(() => expect(within(getViewport(container)).getByText('기존 맵')).toBeTruthy());
+      expect(screen.queryByRole('alert')).toBeNull();
     });
   });
 });
