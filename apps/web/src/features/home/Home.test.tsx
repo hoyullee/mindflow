@@ -768,7 +768,35 @@ describe('Home', () => {
         expect(sidebar.getByText('스페이스')).toBeTruthy();
 
         await user.click(screen.getByRole('button', { name: '메뉴 닫기' }));
-        expect(container.querySelector('aside')).toBeNull();
+        // The drawer plays its exit slide before unmounting (Sidebar keeps the
+        // aside mounted for DRAWER_EXIT_MS), so closing is observed via waitFor.
+        expect(container.querySelector('aside')).toBeTruthy(); // still mounted, sliding out…
+        await waitFor(() => expect(container.querySelector('aside')).toBeNull()); // …then gone
+      } finally {
+        restore();
+      }
+    });
+
+    it('animates the drawer: mounts off-screen, slides in, and slides out before unmounting', async () => {
+      const restore = mockMatchMedia(true);
+      try {
+        const user = userEvent.setup();
+        const { container } = renderHome();
+
+        await user.click(screen.getByRole('button', { name: '메뉴 열기' }));
+        const aside = container.querySelector('aside') as HTMLElement;
+        expect(aside.className).toContain('mf-drawer'); // transition class attached
+        // Mounts at the off-screen position; the next frames flip it on-screen
+        // (double rAF), which is what makes the enter transition actually play.
+        expect(aside.style.transform).toBe('translateX(-105%)');
+        await waitFor(() => expect(aside.style.transform).toBe('translateX(0)'));
+
+        await user.click(screen.getByRole('button', { name: '메뉴 닫기' }));
+        // Exit phase: still mounted but translated back off-screen (sliding)…
+        expect(container.querySelector('aside')).toBeTruthy();
+        expect((container.querySelector('aside') as HTMLElement).style.transform).toBe('translateX(-105%)');
+        // …and only unmounts after the slide finishes.
+        await waitFor(() => expect(container.querySelector('aside')).toBeNull());
       } finally {
         restore();
       }
