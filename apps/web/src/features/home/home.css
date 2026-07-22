@@ -182,6 +182,36 @@ a:hover {
   background: #f0e6dd !important;
 }
 
+/* LNB trash rows: the per-row restore(↺)/purge(✕) icon buttons stay hidden
+   until the row is hovered or keyboard-focused, so titles get the full column
+   width at rest. Touch devices have no hover — keep them always visible there
+   (same convention as the card ☆/☰ controls). */
+.mf-home .mf-trash-row .mf-trash-act {
+  opacity: 0;
+  transition: opacity 0.12s, background 0.12s;
+}
+.mf-home .mf-trash-row:hover .mf-trash-act,
+.mf-home .mf-trash-row:focus-within .mf-trash-act {
+  opacity: 1;
+}
+@media (hover: none) {
+  .mf-home .mf-trash-row .mf-trash-act {
+    opacity: 1;
+  }
+}
+.mf-home .mf-trash-act:hover {
+  background: #f0e6dd !important;
+}
+/* Trash header's 비우기: muted at rest (it sits inside quiet navigation), only
+   turning danger-red when the pointer commits to it. */
+.mf-home .mf-trash-empty {
+  color: #b6a596;
+  transition: color 0.12s;
+}
+.mf-home .mf-trash-empty:hover {
+  color: #d64545;
+}
+
 /* M6: mobile nav drawer slide — the aside translates in from the left and the
    backdrop cross-fades (states driven inline by Sidebar's mounted/entered
    phases). Kept as classes so reduced-motion can turn the movement off. */

@@ -267,7 +267,7 @@ export function Sidebar({ state, view, controller, isMobile = false, isOpen = fa
                 controller.askEmptyTrash();
               }
             }}
-            style={{ fontSize: 11, color: '#d64545', cursor: 'pointer', flexShrink: 0 }}
+            style={{ fontSize: 11, cursor: 'pointer', flexShrink: 0 }}
           >
             비우기
           </span>
@@ -286,35 +286,50 @@ export function Sidebar({ state, view, controller, isMobile = false, isOpen = fa
           {view.trashItems.map((t) => (
             // Keyed by docId when present — the trash may hold two entries with
             // the same TITLE (different docs), which a title key would collapse.
-            <div key={t.docId || t.title} className="drive-file" style={{ display: 'flex', alignItems: 'center', gap: 7, padding: '7px 10px 7px 30px', borderRadius: 8, fontSize: 12.5, color: '#8a7a6d' }}>
-              <span style={{ fontSize: 12 }}>{t.isDrive ? '📁' : '🗺'}</span>
-              <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{t.title}</span>
-              <span style={{ flexShrink: 0, padding: '1px 7px', borderRadius: 999, fontSize: 10, fontWeight: 700, background: t.isDrive ? 'rgba(52,168,83,.12)' : '#f0e6dd', color: t.isDrive ? '#1e7a3a' : '#9c8b7e' }}>{t.badge}</span>
-              <span
-                role="button"
-                tabIndex={0}
+            // Row anatomy: [type glyph] [title — takes ALL free width, ellipsis]
+            // [restore ↺] [purge ✕]. The actions are icon-only 26px buttons
+            // (labels live on aria-label/title, same treatment as the favorites
+            // unstar star) — the old "복원"/"영구 삭제" text links ate most of the
+            // 248px column and left titles nearly invisible. They reveal on row
+            // hover/focus (always visible on touch — see home.css .mf-trash-act).
+            <div key={t.docId || t.title} className="drive-file mf-trash-row" style={{ display: 'flex', alignItems: 'center', gap: 4, padding: '4px 8px 4px 28px', borderRadius: 8, fontSize: 12.5, color: '#8a7a6d' }}>
+              {t.isDrive ? <FolderMiniGlyph /> : <MapMiniGlyph />}
+              <span style={{ flex: '1 1 auto', minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', margin: '0 2px 0 3px' }}>{t.title}</span>
+              {t.isDrive && (
+                <span style={{ flexShrink: 0, padding: '1px 7px', borderRadius: 999, fontSize: 10, fontWeight: 700, background: 'rgba(52,168,83,.12)', color: '#1e7a3a' }}>{t.badge}</span>
+              )}
+              <button
+                type="button"
+                aria-label={`'${t.title}' 복원`}
+                title="복원"
                 onClick={(e) => {
                   e.stopPropagation();
                   controller.askRestore(t.title, t.docId);
                 }}
-                className="restore-link"
-                style={{ marginLeft: 'auto', fontSize: 11, color: '#3f8fd0', cursor: 'pointer', flexShrink: 0 }}
+                className="btn restore-link mf-trash-act"
+                style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', width: 26, height: 26, padding: 0, border: 'none', borderRadius: 7, background: 'transparent', color: '#2f9e63', cursor: 'pointer', flexShrink: 0 }}
               >
-                복원
-              </span>
-              <span
-                role="button"
-                tabIndex={0}
+                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                  <polyline points="3 4 3 10 9 10" />
+                  <path d="M5.4 15a8 8 0 1 0 1.9-8.3L3 10" />
+                </svg>
+              </button>
+              <button
+                type="button"
                 aria-label={`'${t.title}' 영구 삭제`}
+                title="영구 삭제"
                 onClick={(e) => {
                   e.stopPropagation();
                   controller.askPurge(t.title, t.docId);
                 }}
-                className="purge-link"
-                style={{ fontSize: 11, color: '#d64545', cursor: 'pointer', flexShrink: 0 }}
+                className="btn purge-link mf-trash-act"
+                style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', width: 26, height: 26, padding: 0, border: 'none', borderRadius: 7, background: 'transparent', color: '#d64545', cursor: 'pointer', flexShrink: 0 }}
               >
-                영구 삭제
-              </span>
+                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" aria-hidden="true">
+                  <line x1="6" y1="6" x2="18" y2="18" />
+                  <line x1="18" y1="6" x2="6" y2="18" />
+                </svg>
+              </button>
             </div>
           ))}
           {!view.loading && view.trashItems.length === 0 && <div style={{ padding: '7px 10px 7px 30px', fontSize: 11.5, color: '#c9b8a9' }}>휴지통이 비어 있습니다</div>}
@@ -332,6 +347,29 @@ function StarGlyph({ size = 15 }: { size?: number }) {
   return (
     <svg width={size} height={size} viewBox="0 0 24 24" fill="#e0a53c" stroke="#e0a53c" strokeWidth={1.4} strokeLinejoin="round" aria-hidden="true" style={{ flexShrink: 0 }}>
       <polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26" />
+    </svg>
+  );
+}
+
+/** Tiny map glyph for trash rows (SVG per design-system §10 — replaces the 🗺
+ * emoji, whose rendering varied by platform): a mini node diagram. */
+function MapMiniGlyph() {
+  return (
+    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#b6a596" strokeWidth={2.2} strokeLinecap="round" strokeLinejoin="round" aria-hidden="true" style={{ flexShrink: 0 }}>
+      <circle cx="6" cy="12" r="3" />
+      <line x1="9" y1="12" x2="15" y2="7" />
+      <line x1="9" y1="12" x2="15" y2="17" />
+      <circle cx="18" cy="7" r="2.4" />
+      <circle cx="18" cy="17" r="2.4" />
+    </svg>
+  );
+}
+
+/** Tiny folder glyph for Drive trash rows (replaces the 📁 emoji). */
+function FolderMiniGlyph() {
+  return (
+    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#b6a596" strokeWidth={2.2} strokeLinecap="round" strokeLinejoin="round" aria-hidden="true" style={{ flexShrink: 0 }}>
+      <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z" />
     </svg>
   );
 }
