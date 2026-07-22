@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { act, cleanup, render, screen, waitFor, within } from '@testing-library/react';
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { MemoryRouter, Route, Routes } from 'react-router-dom';
 import { Home } from './Home';
@@ -713,6 +713,40 @@ describe('Home', () => {
         expect(row.contains(importBtn)).toBe(true);
         expect(row.contains(folderBtn)).toBe(true);
         expect(row.contains(newBtn)).toBe(true);
+      } finally {
+        restore();
+      }
+    });
+
+    it('opens the drawer on a left-edge swipe right, and closes it on a swipe left', async () => {
+      const restore = mockMatchMedia(true);
+      try {
+        const { container } = renderHome();
+        expect(container.querySelector('aside')).toBeNull();
+
+        // A swipe that does NOT start at the left edge must not open the drawer…
+        fireEvent.touchStart(document, { touches: [{ clientX: 120, clientY: 300 }] });
+        fireEvent.touchMove(document, { touches: [{ clientX: 260, clientY: 300 }] });
+        fireEvent.touchEnd(document);
+        expect(container.querySelector('aside')).toBeNull();
+
+        // …and neither must a vertical (scroll) gesture that begins at the edge.
+        fireEvent.touchStart(document, { touches: [{ clientX: 8, clientY: 200 }] });
+        fireEvent.touchMove(document, { touches: [{ clientX: 16, clientY: 320 }] });
+        fireEvent.touchEnd(document);
+        expect(container.querySelector('aside')).toBeNull();
+
+        // Left-edge swipe right → drawer opens.
+        fireEvent.touchStart(document, { touches: [{ clientX: 8, clientY: 300 }] });
+        fireEvent.touchMove(document, { touches: [{ clientX: 90, clientY: 306 }] });
+        fireEvent.touchEnd(document);
+        await waitFor(() => expect(container.querySelector('aside')).toBeTruthy());
+
+        // Swipe left anywhere while open → drawer closes.
+        fireEvent.touchStart(document, { touches: [{ clientX: 220, clientY: 300 }] });
+        fireEvent.touchMove(document, { touches: [{ clientX: 120, clientY: 296 }] });
+        fireEvent.touchEnd(document);
+        await waitFor(() => expect(container.querySelector('aside')).toBeNull());
       } finally {
         restore();
       }
