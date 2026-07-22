@@ -4,6 +4,10 @@ import type { DriveFolderData, FolderData, HomeState, MapCardData } from './type
 import { DRIVE_FILES } from './types';
 
 export interface CardViewData {
+  /** Card identity (`cardKeyOf` — docId, title fallback). Duplicate TITLES are
+   * fully allowed (XMind-style), so every per-card UI state (selection, open
+   * menu, drag source, export/move flyouts) keys off THIS, never the title. */
+  key: string;
   title: string;
   when: string;
   hue: string;
@@ -149,7 +153,9 @@ export function deriveHomeView(state: HomeState): HomeViewModel {
     const hasFav = c.openable;
     const hasMove = isDriveSpace ? !driveFolder && state.driveFolders.length > 0 : !curFolder && folders.length > 0;
     const hasUnfolder = isDriveSpace ? !!driveFolder : !!curFolder;
+    const key = cardKeyOf(c.title, c.docId);
     return {
+      key,
       title: c.title,
       when: c.when,
       hue: c.hue,
@@ -158,15 +164,18 @@ export function deriveHomeView(state: HomeState): HomeViewModel {
       sketch: cardSketch(c.title, c.hue, c.docId, state.previewDocs, state.previewResolved),
       badge: isDriveSpace ? 'Drive' : '',
       openable: c.openable,
-      isFav: !!favs[cardKeyOf(c.title, c.docId)],
+      isFav: !!favs[key],
       isDrive: isDriveSpace,
-      menuOpen: state.openMenu === c.title,
-      selected: state.selectedCard === c.title,
-      dragging: state.draggingMap === c.title,
+      // Per-card UI state keys off the card KEY, not the title — duplicate
+      // titles are allowed, and selecting/opening one must not light up its
+      // same-named sibling.
+      menuOpen: state.openMenu === key,
+      selected: state.selectedCard === key,
+      dragging: state.draggingMap === key,
       dragOverTarget: false,
-      exportOpen: state.exportFor === c.title,
-      moveOpen: state.moveFor === c.title,
-      spaceMoveOpen: state.moveSpaceFor === c.title,
+      exportOpen: state.exportFor === key,
+      moveOpen: state.moveFor === key,
+      spaceMoveOpen: state.moveSpaceFor === key,
       showFavRow: hasFav,
       showMoveRow: hasMove,
       showSpaceMoveRow: canMoveSpace,
@@ -268,7 +277,9 @@ export function deriveHomeView(state: HomeState): HomeViewModel {
     // the widest row / mobile swipe depth could ever display.
     .slice(0, RECENT_RENDER_MAX)
     .map((base) => {
+      const key = cardKeyOf(base.title, base.docId);
       return {
+        key,
         title: base.title,
         when: base.when,
         hue: base.hue,
@@ -277,10 +288,10 @@ export function deriveHomeView(state: HomeState): HomeViewModel {
         sketch: cardSketch(base.title, base.hue, base.docId, state.previewDocs, state.previewResolved),
         badge: '',
         openable: true,
-        isFav: !!favs[cardKeyOf(base.title, base.docId)],
+        isFav: !!favs[key],
         isDrive: sourceIsDrive(base.title),
         menuOpen: false,
-        selected: state.selectedCard === base.title,
+        selected: state.selectedCard === key,
         dragging: false,
         dragOverTarget: false,
         exportOpen: false,
