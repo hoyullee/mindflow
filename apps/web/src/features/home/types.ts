@@ -88,6 +88,9 @@ export interface HomeState {
   /** The signed-in user's email (from `AuthProvider.getSession()`), shown in the
    * LNB profile. Empty until the session resolves on mount. */
   userEmail: string;
+  /** Avatar image URL from the identity provider (Google photo), or null for
+   * email/demo accounts — the profile UI falls back to the initial circle. */
+  userAvatar: string | null;
   settingsOpen: boolean;
   /** The "프로필명 변경" popup (opened from the profile popover). */
   profileNameOpen: boolean;
@@ -212,6 +215,7 @@ export function initialHomeState(): HomeState {
     recentOpen: false,
     userName: 'mine',
     userEmail: '',
+    userAvatar: null,
     settingsOpen: false,
     profileNameOpen: false,
     profileNameDraft: '',

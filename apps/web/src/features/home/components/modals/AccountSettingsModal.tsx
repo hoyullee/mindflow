@@ -1,4 +1,5 @@
 import type { HomeController } from '../../useHomeController';
+import { ProfileAvatar } from '../ProfileAvatar';
 import type { HomeState } from '../../types';
 
 interface Props {
@@ -46,9 +47,7 @@ export function AccountSettingsModal({ state, controller }: Props) {
           {/* Read-only account summary — profile-name editing lives in the profile
               popover's "프로필명 변경" button, not here. */}
           <div style={{ display: 'flex', alignItems: 'center', gap: 12, padding: 14, borderRadius: 13, background: '#faf5f0', marginBottom: 22 }}>
-            <div style={{ width: 44, height: 44, borderRadius: 13, background: '#f0663f', color: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: 800, fontSize: 20, flexShrink: 0 }}>
-              {initial}
-            </div>
+            <ProfileAvatar initial={initial} avatarUrl={state.userAvatar} size={44} radius={13} fontSize={20} />
             <div style={{ minWidth: 0, flex: 1 }}>
               <div style={{ fontWeight: 700, fontSize: 15, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{state.userName}</div>
               {state.userEmail && <div style={{ fontSize: 12, color: '#9c8b7e', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', marginTop: 2 }}>{state.userEmail}</div>}
