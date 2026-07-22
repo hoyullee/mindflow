@@ -1,5 +1,6 @@
 import type { ChangeEvent } from 'react';
 import { GoogleIcon } from './GoogleIcon';
+import { GoogleSignInButton } from './GoogleSignInButton';
 import type { LoginController } from './useLoginController';
 import type { LoginViewModel } from './viewModel';
 import {
@@ -22,31 +23,40 @@ export function FormStep({ controller, view }: FormStepProps) {
 
   return (
     <div>
-      <button
-        type="button"
-        className="btn"
-        onClick={controller.googleLogin}
-        style={{
-          width: '100%',
-          height: 50,
-          border: '1px solid #ecdfd5',
-          borderRadius: 12,
-          background: '#fff',
-          fontFamily: 'inherit',
-          fontSize: 14.5,
-          fontWeight: 600,
-          cursor: 'pointer',
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'center',
-          gap: 10,
-          color: '#33281f',
-          transition: 'filter .12s, transform .06s',
-        }}
-      >
-        <GoogleIcon />
-        Google 계정으로 계속하기
-      </button>
+      {/* GIS-rendered official button in Supabase mode (keeps the OAuth
+          exchange on our origin → no supabase.co on the consent screen); the
+          original redirect-flow button stays as the loading/blocked/demo
+          fallback. */}
+      <GoogleSignInButton
+        onCredential={controller.googleTokenLogin}
+        fallback={
+          <button
+            type="button"
+            className="btn"
+            onClick={controller.googleLogin}
+            style={{
+              width: '100%',
+              height: 50,
+              border: '1px solid #ecdfd5',
+              borderRadius: 12,
+              background: '#fff',
+              fontFamily: 'inherit',
+              fontSize: 14.5,
+              fontWeight: 600,
+              cursor: 'pointer',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              gap: 10,
+              color: '#33281f',
+              transition: 'filter .12s, transform .06s',
+            }}
+          >
+            <GoogleIcon />
+            Google 계정으로 계속하기
+          </button>
+        }
+      />
 
       <div style={{ display: 'flex', alignItems: 'center', gap: 12, margin: '22px 0' }}>
         <div style={{ flex: 1, height: 1, background: '#ecdfd5' }} />

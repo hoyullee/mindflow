@@ -79,6 +79,12 @@ async function main() {
   const apple180 = markSvg(180, { cornerRadiusRatio: 0, contentRatio: 0.5 });
   await writePng(apple180, 180, path.join(outDir, 'icons', 'apple-touch-icon.png'));
 
+  // Google OAuth 브랜드 인증용 앱 로고: the consent-screen "App logo" upload
+  // requires exactly 120×120. Served from /brand/ so it's downloadable from
+  // the deployed site when filling in the console form.
+  await mkdir(path.join(outDir, 'brand'), { recursive: true });
+  await writePng(markSvg(120), 120, path.join(outDir, 'brand', 'geurio-logo-120.png'));
+
   // Favicon: a small PNG (works everywhere, unlike .ico, without extra deps)
   // plus a scalable SVG for browsers that support `<link rel="icon" ... svg>`.
   const favSvg = markSvg(64);

@@ -40,6 +40,48 @@ describe('SupabaseAuth session mapping (OAuth identity metadata)', () => {
   });
 });
 
+describe('SupabaseAuth signInWithIdToken (GIS token exchange)', () => {
+  function clientCapturingIdToken(result: { session?: Record<string, unknown> | null; errorMsg?: string }) {
+    const captured: { args?: Record<string, unknown> } = {};
+    const client = {
+      auth: {
+        signInWithIdToken: async (args: Record<string, unknown>) => {
+          captured.args = args;
+          if (result.errorMsg) return { data: { session: null }, error: { message: result.errorMsg } };
+          return { data: { session: result.session ?? null }, error: null };
+        },
+      },
+    } as unknown as SupabaseClient;
+    return { client, captured };
+  }
+
+  it('passes provider/token/nonce through and maps the returned session (incl. Google metadata)', async () => {
+    const { client, captured } = clientCapturingIdToken({
+      session: { user: { id: 'u9', email: 'g@x.y', user_metadata: { full_name: '이호율', picture: 'https://p/a.jpg' } } },
+    });
+    const res = await new SupabaseAuth(client).signInWithIdToken('google', 'jwt-token', 'raw-nonce');
+    expect(captured.args).toEqual({ provider: 'google', token: 'jwt-token', nonce: 'raw-nonce' });
+    expect(res.error).toBeUndefined();
+    expect(res.session?.user.email).toBe('g@x.y');
+    expect(res.session?.user.name).toBe('이호율');
+    expect(res.session?.user.avatarUrl).toBe('https://p/a.jpg');
+  });
+
+  it('omits the nonce key entirely when none was minted (WebCrypto unavailable path)', async () => {
+    const { client, captured } = clientCapturingIdToken({ session: { user: { id: 'u1', email: 'a@b.c', user_metadata: {} } } });
+    await new SupabaseAuth(client).signInWithIdToken('google', 'jwt-token');
+    expect(captured.args).toEqual({ provider: 'google', token: 'jwt-token' });
+    expect('nonce' in captured.args!).toBe(false);
+  });
+
+  it('surfaces the Supabase error message with a null session', async () => {
+    const { client } = clientCapturingIdToken({ errorMsg: 'Invalid ID token' });
+    const res = await new SupabaseAuth(client).signInWithIdToken('google', 'bad-token', 'n');
+    expect(res.session).toBeNull();
+    expect(res.error).toBe('Invalid ID token');
+  });
+});
+
 describe('SupabaseAuth signInWithOAuth', () => {
   it('always requests the Google account chooser (prompt=select_account)', async () => {
     // Without this param Google silently reuses the signed-in browser account

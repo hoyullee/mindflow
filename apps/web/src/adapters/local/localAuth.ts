@@ -78,6 +78,16 @@ export class LocalAuth implements AuthProvider {
     return {};
   }
 
+  // Demo twin of the GIS token exchange — same fake Google session as
+  // `signInWithOAuth`. Unreachable from the UI (the GIS button only renders in
+  // Supabase mode) but required for port completeness.
+  async signInWithIdToken(): Promise<AuthResult> {
+    const session = makeSession('demo-google@mindflow.local');
+    writeSession(session);
+    this.emit(session);
+    return { session };
+  }
+
   async signOut(): Promise<void> {
     writeSession(null);
     this.emit(null);

@@ -218,6 +218,21 @@ export function useLoginController() {
     });
   };
 
+  /** GIS path (Supabase mode only): the Google popup already produced an ID
+   * token on our origin — exchange it for a session. Unlike `googleLogin`
+   * there's no redirect: success/failure both land right here. */
+  const googleTokenLogin = (token: string, nonce?: string) => {
+    if (state.busy) return;
+    patch({ busy: true, error: '', loaderMsg: '로그인하고 있어요' });
+    void auth.signInWithIdToken('google', token, nonce).then((res) => {
+      if (res.error) {
+        patch({ busy: false, error: res.error });
+        return;
+      }
+      finishWithLoader(false);
+    });
+  };
+
   const toggleMode = () => {
     patch({
       mode: state.mode === 'login' ? 'signup' : 'login',
@@ -263,6 +278,7 @@ export function useLoginController() {
     sendReset,
     resetPw,
     googleLogin,
+    googleTokenLogin,
   };
 }
 
