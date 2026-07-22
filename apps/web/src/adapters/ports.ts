@@ -119,6 +119,10 @@ export interface DocStore {
   /** Soft-delete (moves to trash; `list()` still returns it with `deletedAt` set). */
   remove(id: string): Promise<void>;
   restore(id: string): Promise<void>;
+  /** HARD delete — the doc body and meta are gone for good (`list()` no longer
+   * returns it). Irreversible; only reachable from the trash UI behind a
+   * confirm dialog. Must be idempotent (purging an unknown id is a no-op). */
+  purge(id: string): Promise<void>;
   rename(id: string, title: string): Promise<void>;
   setFavorite(id: string, favorite: boolean): Promise<void>;
 }

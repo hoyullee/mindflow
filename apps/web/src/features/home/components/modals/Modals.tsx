@@ -68,6 +68,34 @@ export function Modals({ state, controller }: Props) {
       />
 
       <ConfirmModal
+        visible={!!state.confirmPurge}
+        zIndex={125}
+        iconBg="#fdecec"
+        icon={TRASH_ICON}
+        heading="영구 삭제하시겠습니까?"
+        body={`'${state.confirmPurge || ''}' 맵이 완전히 삭제됩니다. 이 작업은 되돌릴 수 없어요.`}
+        cancelLabel="취소"
+        confirmLabel="영구 삭제"
+        confirmColor="#d64545"
+        onCancel={controller.cancelPurge}
+        onConfirm={controller.confirmPurgeYes}
+      />
+
+      <ConfirmModal
+        visible={state.confirmEmptyTrash}
+        zIndex={125}
+        iconBg="#fdecec"
+        icon={TRASH_ICON}
+        heading="휴지통을 비우시겠습니까?"
+        body={`휴지통의 ${state.trash.length}개 항목이 모두 완전히 삭제됩니다. 이 작업은 되돌릴 수 없어요.`}
+        cancelLabel="취소"
+        confirmLabel="모두 삭제"
+        confirmColor="#d64545"
+        onCancel={controller.cancelEmptyTrash}
+        onConfirm={controller.confirmEmptyTrashYes}
+      />
+
+      <ConfirmModal
         visible={!!state.confirmDeleteFolder}
         zIndex={130}
         iconBg="#fdecec"

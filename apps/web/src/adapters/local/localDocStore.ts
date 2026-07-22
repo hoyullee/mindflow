@@ -170,6 +170,15 @@ export class LocalDocStore implements DocStore {
     writeMeta(id, { ...meta, deletedAt: null });
   }
 
+  async purge(id: string): Promise<void> {
+    try {
+      localStorage.removeItem(docKey(id));
+      localStorage.removeItem(metaKey(id));
+    } catch {
+      /* storage unavailable — nothing to purge */
+    }
+  }
+
   async rename(id: string, title: string): Promise<void> {
     const meta = readMeta(id) ?? { version: 1, updatedAt: new Date().toISOString(), title: '', isFavorite: false, deletedAt: null };
     writeMeta(id, { ...meta, title });

@@ -74,6 +74,12 @@ export interface HomeState {
   confirmRestore: string | null;
   /** docId counterpart of `confirmRestore` — see `confirmDeleteDocId`. */
   confirmRestoreDocId: string | null;
+  /** Title of the trash entry pending PERMANENT deletion (confirm dialog). */
+  confirmPurge: string | null;
+  /** docId counterpart of `confirmPurge` — see `confirmDeleteDocId`. */
+  confirmPurgeDocId: string | null;
+  /** "휴지통 비우기" (purge everything) confirm dialog visibility. */
+  confirmEmptyTrash: boolean;
   trash: TrashEntry[];
   trashOpen: boolean;
   recent: string[];
@@ -197,6 +203,9 @@ export function initialHomeState(): HomeState {
     confirmDeleteDocId: null,
     confirmRestore: null,
     confirmRestoreDocId: null,
+    confirmPurge: null,
+    confirmPurgeDocId: null,
+    confirmEmptyTrash: false,
     trash: [],
     trashOpen: false,
     recent: [],

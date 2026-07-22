@@ -95,6 +95,12 @@ export class SupabaseDocStore implements DocStore {
     await this.client.from(TABLE).update({ deleted_at: null }).eq('id', id);
   }
 
+  async purge(id: string): Promise<void> {
+    // Hard row delete — covered by the existing `documents_delete_own` RLS
+    // policy (0001_init.sql), so no new migration is needed.
+    await this.client.from(TABLE).delete().eq('id', id);
+  }
+
   async rename(id: string, title: string): Promise<void> {
     await this.client.from(TABLE).update({ title }).eq('id', id);
   }
