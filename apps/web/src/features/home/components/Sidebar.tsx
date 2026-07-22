@@ -1,8 +1,14 @@
+import { useEffect, useState } from 'react';
 import type { HomeController } from '../useHomeController';
 import type { HomeState } from '../types';
 import type { HomeViewModel } from '../viewModel';
 import { SettingsPopover } from './SettingsPopover';
 import { SpaceRow } from './SpaceRow';
+
+/** How long the drawer's exit slide runs before the aside unmounts. Slightly
+ * longer than the CSS transition (260ms, home.css `.mf-drawer`) so the last
+ * frames aren't clipped. */
+const DRAWER_EXIT_MS = 280;
 
 interface Props {
   state: HomeState;
@@ -19,8 +25,36 @@ interface Props {
 /** Home.dc.html:70-177 `<aside>` — the LNB (spaces, Google Drive, favorites, trash). */
 export function Sidebar({ state, view, controller, isMobile = false, isOpen = false, onClose }: Props) {
   // Desktop: always-visible 248px column. Mobile: hamburger-triggered overlay
-  // drawer (translateX off/on-screen) with a tap-to-dismiss backdrop.
-  if (isMobile && !isOpen) return null;
+  // drawer with a tap-to-dismiss backdrop, animated in two phases:
+  //   `mounted` — the aside exists in the DOM (kept alive through the exit
+  //   slide so closing animates instead of vanishing);
+  //   `entered` — the on-screen state driving the CSS transition (transform/
+  //   opacity). Opening mounts off-screen first, then flips `entered` on the
+  //   next frame so the enter slide actually plays.
+  const [mounted, setMounted] = useState(isOpen);
+  const [entered, setEntered] = useState(isOpen);
+  useEffect(() => {
+    if (!isMobile) return;
+    if (isOpen) {
+      setMounted(true);
+      // Double rAF: the first frame paints the off-screen position, the second
+      // starts the transition — a single rAF can coalesce into one style flush
+      // (no animation).
+      let raf2 = 0;
+      const raf1 = requestAnimationFrame(() => {
+        raf2 = requestAnimationFrame(() => setEntered(true));
+      });
+      return () => {
+        cancelAnimationFrame(raf1);
+        cancelAnimationFrame(raf2);
+      };
+    }
+    setEntered(false);
+    const t = setTimeout(() => setMounted(false), DRAWER_EXIT_MS);
+    return () => clearTimeout(t);
+  }, [isMobile, isOpen]);
+
+  if (isMobile && !mounted) return null;
 
   const asideStyle = isMobile
     ? ({
@@ -31,6 +65,7 @@ export function Sidebar({ state, view, controller, isMobile = false, isOpen = fa
         width: 'min(80vw, 280px)',
         zIndex: 41,
         boxShadow: '0 0 32px rgba(0,0,0,.22)',
+        transform: entered ? 'translateX(0)' : 'translateX(-105%)',
       } as const)
     : ({ width: 248, flex: '0 0 auto' } as const);
 
@@ -39,10 +74,18 @@ export function Sidebar({ state, view, controller, isMobile = false, isOpen = fa
       {isMobile && (
         // Decorative tap-to-dismiss backdrop — intentionally not a `button`
         // (unreachable via keyboard, `aria-hidden`); the actual accessible
-        // "close" action is the ✕ button inside the drawer below.
-        <div aria-hidden="true" onClick={onClose} style={{ position: 'fixed', inset: 0, background: 'rgba(33,24,17,.4)', zIndex: 40 }} />
+        // "close" action is the ✕ button inside the drawer below. Fades with
+        // the drawer; pointer events off while exiting so a stray tap can't
+        // hit a dying backdrop.
+        <div
+          aria-hidden="true"
+          onClick={onClose}
+          className="mf-drawer-backdrop"
+          style={{ position: 'fixed', inset: 0, background: 'rgba(33,24,17,.4)', zIndex: 40, opacity: entered ? 1 : 0, pointerEvents: entered ? 'auto' : 'none' }}
+        />
       )}
       <aside
+        className={isMobile ? 'mf-drawer' : undefined}
         style={{
           ...asideStyle,
           background: '#fff',

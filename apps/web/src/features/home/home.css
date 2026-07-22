@@ -177,6 +177,23 @@ a:hover {
   background: #faf3ee !important;
 }
 
+/* M6: mobile nav drawer slide — the aside translates in from the left and the
+   backdrop cross-fades (states driven inline by Sidebar's mounted/entered
+   phases). Kept as classes so reduced-motion can turn the movement off. */
+.mf-drawer {
+  transition: transform 0.26s cubic-bezier(0.22, 0.61, 0.36, 1);
+  will-change: transform;
+}
+.mf-drawer-backdrop {
+  transition: opacity 0.26s ease;
+}
+@media (prefers-reduced-motion: reduce) {
+  .mf-drawer,
+  .mf-drawer-backdrop {
+    transition: none;
+  }
+}
+
 /* M6: map/folder grid column count. Desktop keeps the original
    auto-fill(minmax(300px,1fr)) behavior (JS `GRID_STYLE` only sets `gap`);
    below 768px there isn't room for a 300px minimum, so cards go one-per-row
