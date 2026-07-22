@@ -11,7 +11,7 @@ import { usePresence, type UsePresenceResult } from '../../collab/usePresence';
 import { EMPTY_PRESENCE_SELECTION, type PresenceSelection } from '../../collab/presence';
 import { CanvasTextMeasurer, computeMetrics, measureFloatHeight } from './metrics';
 import { hasStoredDoc, loadOrSeedDoc, saveDoc } from './storage';
-import { pushRecentTitle } from '../home/storage';
+import { pushRecentEntry } from '../home/storage';
 import { buildVisible, descendants, outlineRows } from './tree';
 import type { EdgeStyle } from './tree';
 import { nearestInDirection } from './navigation';
@@ -759,15 +759,16 @@ export function useEditorState(): EditorController {
   }, [doc]);
 
   // Record the opened map as "recently opened" the moment the editor loads it —
-  // regardless of HOW it was opened (Home double-click, a direct link, a mobile
-  // tap, a freshly created map). Recording used to happen ONLY on a Home card
-  // double-click, so opens via any other path (common on mobile) never landed in
-  // "최근 항목". Title-keyed (raw root text, matching Home's card titles), persisted
-  // to localStorage; Home folds it into the per-user synced list on its next visit.
+  // regardless of HOW it was opened (Home click, a direct link, a mobile tap, a
+  // freshly created map). Recording used to happen ONLY on a Home card
+  // double-click, so opens via any other path (common on mobile) never landed
+  // in "최근 항목". Keyed by the DOC ID (this editor session's storage id — the
+  // Home card's docId for doc-backed maps, `mapId(title)` for docId-less ones,
+  // both of which Home's recent resolution matches), so same-titled maps in
+  // different spaces each get their own entry and a rename can't orphan it.
   useEffect(() => {
-    const title = (docRef.current.nodes[ROOT_ID]?.text || titleParam || '').trim();
-    if (title) pushRecentTitle(title);
-  }, [mapId, titleParam]);
+    if (mapId) pushRecentEntry(mapId);
+  }, [mapId]);
   const edgeStyleRef = useRef(edgeStyle);
   useEffect(() => {
     edgeStyleRef.current = edgeStyle;

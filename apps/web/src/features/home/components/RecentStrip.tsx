@@ -84,7 +84,7 @@ export function RecentStrip({ cards, controller }: { cards: CardViewData[]; cont
         {cards.slice(0, shown).map((c) => (
           // Fixed-width, non-shrinking slot (`flex: 0 0 auto`) — the flex analogue
           // of the old fixed grid track. Never `flex: 1` (would stretch like `1fr`).
-          <div key={c.title} style={{ width: RECENT_CARD_W, flex: '0 0 auto', scrollSnapAlign: 'start' }}>
+          <div key={c.docId || c.title} style={{ width: RECENT_CARD_W, flex: '0 0 auto', scrollSnapAlign: 'start' }}>
             <MapCard card={c} controller={controller} draggableEnabled={false} compact />
           </div>
         ))}

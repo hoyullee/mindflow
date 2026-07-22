@@ -201,11 +201,11 @@ export function Sidebar({ state, view, controller, isMobile = false, isOpen = fa
               className="drive-file"
               role="button"
               tabIndex={0}
-              onClick={() => controller.openWithLoader(f.href, f.title)}
+              onClick={() => controller.openWithLoader(f.href, f.title, f.docId)}
               onKeyDown={(e) => {
                 if (e.key === 'Enter' || e.key === ' ') {
                   e.preventDefault();
-                  controller.openWithLoader(f.href, f.title);
+                  controller.openWithLoader(f.href, f.title, f.docId);
                 }
               }}
               title={`'${f.title}' 열기`}

@@ -10,7 +10,7 @@ describe('deriveHomeView — favorites', () => {
       { id: 'general', name: '일반 공간', home: true, color: '#f0663f', maps: [] },
       { id: 'work', name: '작업', color: '#3f8fd0', maps: [{ title: '중요한 맵', when: '내 맵', hue: '#3f8fd0', docId: 'new-xyz' }] },
     ];
-    state.favs = { '중요한 맵': true };
+    state.favs = { 'new-xyz': true }; // favorites are keyed by cardKeyOf (docId)
 
     const view = deriveHomeView(state);
     expect(view.favItems).toHaveLength(1);
@@ -24,7 +24,7 @@ describe('deriveHomeView — favorites', () => {
   it('excludes a trashed map from favorites (no dangling favorite row/href)', () => {
     const state = initialHomeState();
     state.spaces = [{ id: 'general', name: '일반 공간', home: true, color: '#f0663f', maps: [{ title: '삭제된 맵', when: '내 맵', hue: '#f0663f', docId: 'm9' }] }];
-    state.favs = { '삭제된 맵': true };
+    state.favs = { m9: true }; // docId-keyed favorite of the trashed doc
     // The real delete flow flags the title AND pushes a trash entry — hiding is
     // decided by the trashed DOC ID (titles don't interfere across trash/space).
     state.deleted = { '삭제된 맵': true };
@@ -38,7 +38,7 @@ describe('deriveHomeView — favorites', () => {
     const state = initialHomeState();
     // live '맵 A' (docId a2) + a DIFFERENT trashed doc that had the same title
     state.spaces = [{ id: 'general', name: '일반 공간', home: true, color: '#f0663f', maps: [{ title: '맵 A', when: '내 맵', hue: '#f0663f', docId: 'a2' }] }];
-    state.favs = { '맵 A': true };
+    state.favs = { a2: true }; // the LIVE map's docId-keyed star
     state.deleted = { '맵 A': true }; // stale title flag left by the trashed sibling
     state.trash = [{ title: '맵 A', source: 'local', docId: 'a1' }];
 
@@ -134,6 +134,52 @@ describe('deriveHomeView — recent (cross-space)', () => {
     state.activeSpace = 'work';
     view = deriveHomeView(state);
     expect(view.allCards.some((c) => c.title === '중복 맵' && c.docId === 'd2')).toBe(true);
+  });
+
+  it('same-titled maps in different spaces keep INDEPENDENT recent entries (docId keys)', () => {
+    // Policy follow-up #2: the recent list pins docs by ID, so opening both
+    // '중복 맵's puts BOTH in the tray — each with its own space dot — instead
+    // of the first-titled match swallowing the other.
+    const state = twoSpaceState();
+    state.spaces[0]!.maps = [{ title: '중복 맵', when: '내 맵', hue: '#f0663f', docId: 'd1' }];
+    state.spaces[1]!.maps = [{ title: '중복 맵', when: '내 맵', hue: '#3f8fd0', docId: 'd2' }];
+    state.recent = ['d2', 'd1'];
+
+    const cards = deriveHomeView(state).recentCards;
+    expect(cards).toHaveLength(2);
+    expect(cards[0]!.docId).toBe('d2');
+    expect(cards[0]!.spaceName).toBe('작업');
+    expect(cards[1]!.docId).toBe('d1');
+    expect(cards[1]!.spaceName).toBe('일반 공간');
+    // hrefs open the EXACT doc, not the first title match
+    expect(cards[0]!.href).toContain('map=d2');
+    expect(cards[1]!.href).toContain('map=d1');
+  });
+
+  it('same-titled maps keep INDEPENDENT favorite stars (docId keys)', () => {
+    const state = twoSpaceState();
+    state.spaces[0]!.maps = [{ title: '중복 맵', when: '내 맵', hue: '#f0663f', docId: 'd1' }];
+    state.spaces[1]!.maps = [{ title: '중복 맵', when: '내 맵', hue: '#3f8fd0', docId: 'd2' }];
+    state.favs = { d2: true }; // only 작업's copy is starred
+
+    const view = deriveHomeView(state);
+    expect(view.favItems).toHaveLength(1);
+    expect(view.favItems[0]!.docId).toBe('d2');
+    expect(view.favItems[0]!.href).toContain('map=d2');
+    // the grid card of the UNstarred copy stays unstarred
+    state.activeSpace = 'general';
+    expect(deriveHomeView(state).allCards.find((c) => c.docId === 'd1')!.isFav).toBe(false);
+    state.activeSpace = 'work';
+    expect(deriveHomeView(state).allCards.find((c) => c.docId === 'd2')!.isFav).toBe(true);
+  });
+
+  it('collapses a legacy title entry and its docId entry into one recent card', () => {
+    const state = twoSpaceState();
+    // '작업맵' (docId w1): a docId entry from the new editor + a legacy title
+    // entry recorded by an older session — one card, not two.
+    state.recent = ['w1', '작업맵'];
+    const cards = deriveHomeView(state).recentCards;
+    expect(cards.filter((c) => c.title === '작업맵')).toHaveLength(1);
   });
 
   it('drops trashed maps from the recent strip', () => {

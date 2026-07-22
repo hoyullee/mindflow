@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it } from 'vitest';
-import { RECENT_CAP, folderKeyOf, loadRecent, mergeRecent, migrateMapFolderKeys, pushRecentTitle } from './storage';
+import { RECENT_CAP, cardKeyOf, loadRecent, mergeRecent, migrateMapFolderKeys, migrateRecentKeys, pushRecentEntry } from './storage';
 
 describe('mapFolders docId keying', () => {
   const spaces = [
@@ -15,9 +15,9 @@ describe('mapFolders docId keying', () => {
     },
   ];
 
-  it('folderKeyOf prefers the docId, falls back to the title', () => {
-    expect(folderKeyOf('문서 맵', 'd1')).toBe('d1');
-    expect(folderKeyOf('워크스페이스 전용', undefined)).toBe('워크스페이스 전용');
+  it('cardKeyOf prefers the docId, falls back to the title', () => {
+    expect(cardKeyOf('문서 맵', 'd1')).toBe('d1');
+    expect(cardKeyOf('워크스페이스 전용', undefined)).toBe('워크스페이스 전용');
   });
 
   it('migrates legacy title keys onto docId keys, keeping docId-less entries by title', () => {
@@ -40,32 +40,65 @@ describe('mapFolders docId keying', () => {
   });
 });
 
-describe('pushRecentTitle', () => {
+describe('migrateRecentKeys', () => {
+  const spaces = [
+    {
+      id: 'general',
+      name: '일반 공간',
+      home: true,
+      color: '#f0663f',
+      maps: [
+        { title: '문서 맵', when: '내 맵', hue: '#f0663f', docId: 'd1' },
+        { title: '워크스페이스 전용', when: '내 맵', hue: '#f0663f' }, // docId-less
+      ],
+    },
+  ];
+
+  it('moves legacy title entries onto docId keys, keeping order', () => {
+    const { recent, changed } = migrateRecentKeys(spaces, ['문서 맵', '워크스페이스 전용']);
+    expect(changed).toBe(true);
+    expect(recent).toEqual(['d1', '워크스페이스 전용']);
+  });
+
+  it('collapses a docId entry and its legacy title alias into the most recent occurrence', () => {
+    const { recent } = migrateRecentKeys(spaces, ['d1', '문서 맵', '기타']);
+    expect(recent).toEqual(['d1', '기타']);
+  });
+
+  it('is a no-op (same reference) when entries are already keys', () => {
+    const input = ['d1', '워크스페이스 전용'];
+    const { recent, changed } = migrateRecentKeys(spaces, input);
+    expect(changed).toBe(false);
+    expect(recent).toBe(input);
+  });
+});
+
+describe('pushRecentEntry', () => {
   beforeEach(() => localStorage.clear());
 
   it('prepends the opened map to the persisted recent list (most-recent first)', () => {
-    pushRecentTitle('맵 A');
-    pushRecentTitle('맵 B');
+    pushRecentEntry('맵 A');
+    pushRecentEntry('맵 B');
     expect(loadRecent()).toEqual(['맵 B', '맵 A']);
   });
 
   it('de-duplicates: re-opening a map moves it to the front, no duplicate', () => {
-    pushRecentTitle('맵 A');
-    pushRecentTitle('맵 B');
-    pushRecentTitle('맵 A');
+    pushRecentEntry('맵 A');
+    pushRecentEntry('맵 B');
+    pushRecentEntry('맵 A');
     expect(loadRecent()).toEqual(['맵 A', '맵 B']);
   });
 
   it(`caps the stored history at ${RECENT_CAP}`, () => {
-    for (let i = 0; i < RECENT_CAP + 5; i++) pushRecentTitle('맵 ' + i);
+    for (let i = 0; i < RECENT_CAP + 5; i++) pushRecentEntry('맵 ' + i);
     const list = loadRecent();
     expect(list.length).toBe(RECENT_CAP);
     expect(list[0]).toBe('맵 ' + (RECENT_CAP + 4)); // newest first
   });
 
   it('ignores blank titles', () => {
-    pushRecentTitle('맵 A');
-    pushRecentTitle('   ');
+    pushRecentEntry('맵 A');
+    pushRecentEntry('   ');
     expect(loadRecent()).toEqual(['맵 A']);
   });
 });
