@@ -60,6 +60,7 @@ mocked) 어댑터로 검증되었습니다(라이브 호출 없음).
    psql "$DATABASE_URL" -f supabase/migrations/0003_documents_owner_default.sql
    psql "$DATABASE_URL" -f supabase/migrations/0004_workspaces.sql
    psql "$DATABASE_URL" -f supabase/migrations/0005_delete_account.sql
+   psql "$DATABASE_URL" -f supabase/migrations/0006_profile_name_from_oauth.sql
    ```
    `server/supabase/seed/seed.sql`은 선택 사항(로컬 개발용 샘플 문서 1건 삽입 — 실제
    `auth.users` id로 치환 필요, 파일 내 주석 참고).
@@ -98,6 +99,89 @@ supabase migration repair --status applied 0001 0002 0003 0004
 5. **확인** — 앱을 열어 `/login`에서 실제 이메일로 가입 → (프로젝트 설정에 따라) 이메일
    확인 링크 클릭 → 로그인 → `/home`에서 맵을 만들고 새로고침해도 유지되는지 확인.
    Supabase 콘솔의 `Table Editor → documents`에서 실제 행이 생기는지 확인하세요.
+
+## 1b. Google OAuth 로그인 — 상세 설정 절차 (검증 완료)
+
+> 2026-07 실제 설정으로 검증된 절차. 코드는 이미 구현되어 있어(포트
+> `signInWithOAuth('google')` → `SupabaseAuth` → 로그인 화면의 "Google 계정으로
+> 계속하기" 버튼) **아래 콘솔 설정만 하면 동작**합니다.
+
+### ① Google Cloud Console (console.cloud.google.com)
+
+1. **새 프로젝트** 생성 (예: `Geurio`) — 이후 모든 설정 전에 상단 드롭다운에서
+   이 프로젝트가 선택돼 있는지 확인 (다른 프로젝트에 설정하는 게 최다 실수).
+2. **API 및 서비스 → OAuth 동의 화면** (최근 UI에선 "Google Auth Platform"):
+   - 앱 이름 `Geurio`, 지원/연락처 이메일, 대상(Audience)은 **외부(External)**
+   - 범위(Scopes)는 기본값 그대로 (email/profile은 추가 설정 불필요)
+   - **테스트 사용자**에 로그인 테스트할 구글 계정 추가 — 테스트 모드에선
+     등록된 계정만 로그인 가능 (미등록 계정은 "액세스 차단됨")
+3. **사용자 인증 정보 → OAuth 클라이언트 ID** 생성:
+   - 유형: **웹 애플리케이션** (Capacitor 앱도 Supabase 경유라 이거 하나면 됨)
+   - 승인된 자바스크립트 원본: 비워도 됨
+   - **승인된 리디렉션 URI** (가장 중요 — 반드시 복사-붙여넣기):
+     Supabase 대시보드 `Authentication → Sign In / Providers → Google` 화면에
+     표시되는 **Callback URL** 그대로:
+     `https://<project-ref>.supabase.co/auth/v1/callback`
+     (한 글자만 달라도 `redirect_uri_mismatch` — 끝 슬래시 금지, https 확인)
+4. 발급된 **Client ID**(`...apps.googleusercontent.com`)와 **Client Secret**
+   (`GOCSPX-...`) 복사. Secret은 Supabase 대시보드에만 붙여넣고 코드/커밋 금지.
+
+### ② Supabase 대시보드
+
+1. `Authentication → Sign In / Providers → Google` 활성화 → Client ID/Secret
+   붙여넣기 → Save
+2. `Authentication → URL Configuration`:
+   - **Site URL** = 배포 도메인
+   - **Redirect URLs**에 `https://<배포도메인>/home` 과 로컬 개발용
+     `http://localhost:5173/home` 추가 — 코드의 `redirectTo`가 `{origin}/home`
+     이라 허용 목록에 있어야 통과
+
+### ③ 동작 방식 (코드 쪽, 참고)
+
+- **가입/로그인 구분 없음** — 최초 OAuth 로그인 시 Supabase가 계정을 자동 생성.
+- **`prompt=select_account`** 를 항상 전달(`supabaseAuth.ts`) — 없으면 최초
+  동의 후 구글이 계정 선택 없이 즉시 로그인해 계정 전환이 불가능해짐.
+- **실명/아바타**: 세션 `user_metadata`(full_name/avatar_url)가 프로필 UI에
+  반영됨. `profiles.display_name` 기본값도 구글 실명을 따르도록 마이그레이션
+  0006이 트리거를 갱신 + 기존 OAuth 사용자를 백필(직접 개명한 프로필은 보존).
+- **일반 사용자 오픈 시**: 동의 화면을 테스트 모드에서 **게시(Publish)** 로 전환
+  (email/profile 기본 범위만 쓰므로 별도 심사 없음).
+
+## 1c. 로컬 개발 PC에서 실 백엔드 연결 (Windows 포함)
+
+1. **Node LTS + pnpm**: `node -v`(20/22 권장) 확인 후 `corepack enable`
+   (또는 `npm i -g pnpm@10`). 리포의 `packageManager: pnpm@10.33.0`이 버전을
+   고정하므로 corepack이 첫 실행 때 정확한 버전을 받음(`Y`로 승인).
+   - Windows에서 `pnpm.ps1 ... 스크립트를 실행할 수 없으므로` 에러 →
+     `Set-ExecutionPolicy -Scope CurrentUser RemoteSigned` 한 번 실행.
+   - `corepack enable`이 EPERM → 관리자 PowerShell에서 한 번 실행.
+2. **env 파일**: `apps/web/.env.example`을 복사해 **`apps/web/.env.local`**
+   생성(리포 루트 아님!) 후 값 채우기 — 둘 다 있어야 Supabase 모드:
+   ```
+   VITE_SUPABASE_URL=https://<project-ref>.supabase.co
+   VITE_SUPABASE_ANON_KEY=<publishable key>
+   ```
+   - 키는 `Project Settings → API Keys`의 **Publishable key**
+     (`sb_publishable_...`) — 신형 키 이름이며 레거시 `anon` 키와 동등.
+     변수명은 역사적 이유로 `ANON_KEY` 그대로. **`sb_secret_...`은 절대 금지.**
+   - 메모장이 `.env.local.txt`로 저장하는 함정 주의. 값에 따옴표/공백 금지.
+3. **코어 선빌드** (fresh clone 1회):
+   `pnpm --filter @mindflow/mindmap-core build`
+   — `apps/web`은 코어의 `dist/`를 참조하므로, 없으면
+   `Failed to resolve entry for package "@mindflow/mindmap-core"` 에러.
+4. `pnpm install` → `pnpm -C apps/web dev` → `http://localhost:5173`.
+   env 파일을 고쳤다면 dev 서버 재시작 필수(시작 시 1회만 읽음).
+
+### 트러블슈팅
+
+| 증상 | 원인/해결 |
+| --- | --- |
+| 구글 버튼 클릭 시 구글 화면 없이 즉시 로그인 | env 미적용 = 데모 모드. 프로필 이메일이 `demo-google@mindflow.local`이면 확정. §1c-2/4 점검 |
+| `redirect_uri_mismatch` | ①-3 리디렉션 URI가 Supabase Callback URL과 불일치 |
+| `액세스 차단됨: 확인되지 않은 앱` | 테스트 사용자 미등록(①-2) 또는 게시 필요 |
+| env가 안 읽힘 | 파일 위치(`apps/web/`)·이름(`.txt` 없음)·재시작 여부, 콘솔에서 `import.meta.env.VITE_SUPABASE_URL` 확인 |
+| `Failed to resolve entry ... mindmap-core` | 코어 미빌드 — §1c-3 |
+
 
 ## 2. 로컬 폴백 (기본 동작)
 
