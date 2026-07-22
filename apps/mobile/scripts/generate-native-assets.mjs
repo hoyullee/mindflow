@@ -11,7 +11,7 @@
 // apps/web/scripts/generate-icons.mjs (source of truth: that file — keep the
 // two in sync if the in-app logo ever changes) with one addition: a
 // `transparentBg` option, needed for Android's adaptive-icon *foreground*
-// layer, which must be just the white "M" on a transparent background (the
+// layer, which must be just the white spiral on a transparent background (the
 // coral fill is a separate `<background>` color layer, see
 // `ic_launcher_background.xml`).
 //
@@ -35,37 +35,31 @@ const SPLASH_BG = '#ffffff';
 /**
  * Duplicate of apps/web/scripts/generate-icons.mjs's `markSvg` — source of
  * truth: apps/web/scripts/generate-icons.mjs. Draws the Geurio mark (a coral
- * rounded square with a bold white "G": a ring open on the right + a crossbar).
+ * rounded square with a white monoline spiral converging on a centre dot).
  *
  * @param {number} size full square viewBox size
  * @param {object} opts
  * @param {number} [opts.cornerRadiusRatio] rounded-square corner radius as a fraction of `size` (0 = full-bleed square, for OS-masked icons: Android round/legacy full-bleed variants, iOS AppIcon)
- * @param {number} [opts.contentRatio] the "G" glyph's bounding box as a fraction of `size` (smaller = more safe-zone padding, e.g. Android adaptive-icon foreground)
- * @param {boolean} [opts.transparentBg] omit the coral background rect entirely (just the white "G") — used for the Android adaptive-icon foreground layer, whose coral fill instead comes from `@color/ic_launcher_background`
+ * @param {number} [opts.contentRatio] the spiral glyph's bounding box as a fraction of `size` (smaller = more safe-zone padding, e.g. Android adaptive-icon foreground)
+ * @param {boolean} [opts.transparentBg] omit the coral background rect entirely (just the white spiral) — used for the Android adaptive-icon foreground layer, whose coral fill instead comes from `@color/ic_launcher_background`
  */
-function markSvg(size, { cornerRadiusRatio = 0.22, contentRatio = 0.58, transparentBg = false } = {}) {
-  const r = size * cornerRadiusRatio;
-  const s = size * contentRatio; // "G" bounding box side
-  const cx = size / 2;
-  const cy = size / 2;
-  const R = s / 2;
-  const stroke = s * 0.2;
-  const at = (deg) => {
-    const a = deg * (Math.PI / 180);
-    return [cx + R * Math.cos(a), cy + R * Math.sin(a)];
-  };
-  const [ux, uy] = at(-40); // upper opening (top-right)
-  const [lx, ly] = at(40); // lower opening (bottom-right)
-  const barX = cx - R * 0.02; // crossbar reaches just past centre
-  const d = `M ${ux.toFixed(2)} ${uy.toFixed(2)} A ${R.toFixed(2)} ${R.toFixed(2)} 0 1 0 ${lx.toFixed(2)} ${ly.toFixed(2)} L ${barX.toFixed(2)} ${ly.toFixed(2)}`;
+function markSvg(size, { cornerRadiusRatio = 0.22, contentRatio = 0.63, transparentBg = false } = {}) {
+  // Spiral glyph in a fixed 0..100 space (see the source-of-truth script for
+  // the geometry rationale); natural extent incl. stroke ≈ 63 units.
+  const GLYPH_PATH = 'M 50 22 A 28 28 0 1 0 78 50 A 20 20 0 0 0 58 32 A 13 13 0 0 0 45 45';
+  const r = 100 * cornerRadiusRatio;
+  const k = (contentRatio / 0.63).toFixed(4);
 
   const bgRect = transparentBg
     ? ''
-    : `<rect x="0" y="0" width="${size}" height="${size}" rx="${r}" ry="${r}" fill="${CORAL}"/>`;
+    : `<rect x="0" y="0" width="100" height="100" rx="${r}" ry="${r}" fill="${CORAL}"/>`;
 
-  return `<svg xmlns="http://www.w3.org/2000/svg" width="${size}" height="${size}" viewBox="0 0 ${size} ${size}">
+  return `<svg xmlns="http://www.w3.org/2000/svg" width="${size}" height="${size}" viewBox="0 0 100 100">
   ${bgRect}
-  <path d="${d}" fill="none" stroke="#ffffff" stroke-width="${stroke.toFixed(2)}" stroke-linecap="round" stroke-linejoin="round"/>
+  <g transform="translate(50 50) scale(${k}) translate(-50 -50)">
+    <path d="${GLYPH_PATH}" fill="none" stroke="#ffffff" stroke-width="7" stroke-linecap="round" stroke-linejoin="round"/>
+    <circle cx="47" cy="52" r="6" fill="#ffffff"/>
+  </g>
 </svg>`;
 }
 
@@ -125,7 +119,7 @@ async function generateAndroidIcons() {
   for (const { dir, legacy, foreground } of ANDROID_DENSITIES) {
     const densityDir = path.join(androidRes, dir);
 
-    // Legacy (pre-API26) launcher icon: full mark (coral rounded square + white M).
+    // Legacy (pre-API26) launcher icon: full mark (coral rounded square + white spiral).
     const legacyIcon = await markPngBuffer(legacy);
     await writePng(legacyIcon, path.join(densityDir, 'ic_launcher.png'));
 
@@ -135,7 +129,7 @@ async function generateAndroidIcons() {
     const roundIcon = await markPngBuffer(legacy, { cornerRadiusRatio: 0, contentRatio: 0.5 });
     await writePng(roundIcon, path.join(densityDir, 'ic_launcher_round.png'));
 
-    // Adaptive-icon foreground: white "M" only, transparent background (the
+    // Adaptive-icon foreground: white spiral only, transparent background (the
     // coral fill comes from the sibling <background> color layer), shrunk to
     // fit the ~66dp/108dp safe zone so it isn't clipped by the OS mask shape.
     const fgIcon = await markPngBuffer(foreground, { contentRatio: 0.4, transparentBg: true });

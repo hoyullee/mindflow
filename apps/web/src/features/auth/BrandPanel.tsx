@@ -1,3 +1,5 @@
+import { BrandMark } from '../../components/BrandMark';
+
 /** Left gradient brand panel — static content, no dynamic bindings in the original. */
 export function BrandPanel() {
   return (
@@ -28,7 +30,7 @@ export function BrandPanel() {
             fontSize: 20,
           }}
         >
-          G
+          <BrandMark size={22} />
         </div>
         <div style={{ fontWeight: 800, fontSize: 19, letterSpacing: '-.01em' }}>Geurio</div>
       </div>
