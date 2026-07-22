@@ -637,37 +637,15 @@ export function useHomeController() {
   const toggleRecentList = () => patch({ recentOpen: !state.recentOpen });
   const askRestore = (title: string, docId?: string) => patch({ confirmRestore: title, confirmRestoreDocId: docId ?? null });
   const cancelRestore = () => patch({ confirmRestore: null, confirmRestoreDocId: null });
-  /** Persists a restore-collision rename ("X" → "X_복원1") to the backend: the
-   * meta title via `rename()`, AND the doc body's root-node text — the visible
-   * map title IS the root text, so leaving it stale would show the old name in
-   * the editor and the next autosave would revert the meta title too. */
-  const persistRestoredRename = (docId: string, newTitle: string) => {
-    void (async () => {
-      try {
-        await docStore.rename(docId, newTitle);
-        const loaded = await docStore.load(docId);
-        const root = loaded?.doc?.nodes?.root;
-        if (loaded && root) {
-          const doc = { ...loaded.doc, nodes: { ...loaded.doc.nodes, root: { ...root, text: newTitle } } };
-          await docStore.save(docId, doc, { prevVersion: loaded.version, title: newTitle });
-        }
-      } catch {
-        /* backend unreachable — the local card is renamed; the merge re-syncs later */
-      }
-    })();
-  };
-
   const confirmRestoreYes = () => {
     const title = state.confirmRestore;
     if (!title) return;
     const docId = state.confirmRestoreDocId;
     const entry = state.trash.find((t) => (docId ? t.docId === docId : t.title === title));
-    // Restore policy #2: if the DESTINATION space already has a live map with
-    // this title, the restored map comes back as "제목_복원1" (first free number
-    // across spaces+trash, so repeated restore cycles keep incrementing). The
-    // decision is computed HERE — before setState — because the updater runs
-    // asynchronously, and the backend persistence below must use the same
-    // title the UI commits.
+    // Duplicate titles are fully allowed (XMind-style), so a restore keeps the
+    // map's original name even when the destination space already has one —
+    // identity is the docId, and every consumer (folders/favorites/recents/
+    // selection) keys off it.
     const isDriveFile = DRIVE_FILES.some((f) => f.name === title);
     const present = (m: { title: string; docId?: string }) => (docId ? m.docId === docId : m.title === title);
     const needsPlacement = !isDriveFile && !state.spaces.some((s) => Array.isArray(s.maps) && s.maps.some(present));
@@ -676,23 +654,7 @@ export function useHomeController() {
     const origin = entry?.spaceId && state.spaces.some((s) => s.id === entry.spaceId) ? entry.spaceId : undefined;
     const targetId = origin ?? state.spaces.find((s) => s.home)?.id ?? state.spaces[0]?.id;
     const target = state.spaces.find((s) => s.id === targetId);
-    let restoredTitle = title;
-    let toast = '';
-    if (needsPlacement && target) {
-      if ((target.maps || []).some((m) => m.title === title)) {
-        const taken = new Set<string>();
-        state.spaces.forEach((s) => (s.maps || []).forEach((m) => taken.add(m.title)));
-        state.trash.forEach((t) => {
-          if (t !== entry) taken.add(t.title);
-        });
-        let n = 1;
-        while (taken.has(`${title}_복원${n}`)) n++;
-        restoredTitle = `${title}_복원${n}`;
-        toast = `같은 이름의 맵이 있어 "${restoredTitle}"(으)로 복원했어요`;
-      } else if (!origin) {
-        toast = `원래 공간이 삭제되어 "${target.name}" 공간으로 복원했어요`;
-      }
-    }
+    const toast = needsPlacement && target && !origin ? `원래 공간이 삭제되어 "${target.name}" 공간으로 복원했어요` : '';
     setState((prev) => {
       // Remove exactly ONE trash entry (the restored doc) — with same-title
       // entries allowed in the trash, a title-wide filter would eat siblings.
@@ -710,10 +672,10 @@ export function useHomeController() {
       let spaces = prev.spaces;
       let mapFolders = prev.mapFolders;
       if (needsPlacement && target) {
-        spaces = spaces.map((s) => (s.id === targetId ? { ...s, maps: [...(s.maps || []), { title: restoredTitle, when: '방금 복원됨', hue: '#f0663f', docId: docId ?? undefined }] } : s));
+        spaces = spaces.map((s) => (s.id === targetId ? { ...s, maps: [...(s.maps || []), { title, when: '방금 복원됨', hue: '#f0663f', docId: docId ?? undefined }] } : s));
         // restore the folder assignment too, if that folder still exists
         if (entry?.folder && Array.isArray(target.folders) && target.folders.some((f) => f.id === entry.folder)) {
-          mapFolders = { ...mapFolders, [cardKeyOf(restoredTitle, docId ?? undefined)]: entry.folder };
+          mapFolders = { ...mapFolders, [cardKeyOf(title, docId ?? undefined)]: entry.folder };
         }
       }
       return { ...prev, deleted, trash, spaces, mapFolders, confirmRestore: null, confirmRestoreDocId: null, toast, toastTitle: toast ? '복원 완료' : '' };
@@ -722,7 +684,6 @@ export function useHomeController() {
       void docStore.restore(docId).catch(() => {
         /* backend unreachable — local state already restored it, non-fatal */
       });
-      if (restoredTitle !== title) persistRestoredRename(docId, restoredTitle);
     }
   };
   // ---- permanent delete (휴지통 영구 삭제) ----
@@ -884,7 +845,8 @@ export function useHomeController() {
           // active space if it's a real space (not the Drive view); else home.
           const targetId = prev.spaces.some((s) => s.id === prev.activeSpace) ? prev.activeSpace : (prev.spaces.find((s) => s.home)?.id ?? prev.spaces[0]?.id);
           if (!targetId) return prev;
-          if (prev.spaces.some((s) => (s.maps || []).some((m) => m.docId === docId || m.title === title))) return prev;
+          // Dedupe by docId only — duplicate TITLES are allowed (XMind-style).
+          if (prev.spaces.some((s) => (s.maps || []).some((m) => m.docId === docId))) return prev;
           const spaces = prev.spaces.map((s) => (s.id === targetId ? { ...s, maps: [...(s.maps || []), { title, when: '방금', hue: '#f0663f', docId }] } : s));
           // If the user is currently INSIDE a folder (of the target space), file
           // the new map into that folder — otherwise it would land at the space's
@@ -1149,25 +1111,21 @@ export function useHomeController() {
       };
     });
   };
-  const moveMapToFolder = (title: string, folderId: string | null) => {
+  const moveMapToFolder = (key: string, folderId: string | null) => {
     if (state.activeSpace === 'drive') {
       setState((prev) => {
+        // Drive demo files have no docId, so their key IS the title.
         const driveMapFolders = { ...prev.driveMapFolders };
-        if (folderId) driveMapFolders[title] = folderId;
-        else delete driveMapFolders[title];
+        if (folderId) driveMapFolders[key] = folderId;
+        else delete driveMapFolders[key];
         return { ...prev, driveMapFolders, openMenu: null, moveFor: null };
       });
       return;
     }
     setState((prev) => {
-      // Resolve the card's docId (drag-and-drop only carries the title): the
-      // active space first — that's where the interaction happens — then any
-      // space, so the assignment lands on the docId key `cardKeyOf` reads.
-      const active = prev.spaces.find((s) => s.id === prev.activeSpace);
-      const card =
-        (Array.isArray(active?.maps) ? active!.maps : []).find((m) => m.title === title) ??
-        prev.spaces.flatMap((s) => (Array.isArray(s.maps) ? s.maps : [])).find((m) => m.title === title);
-      const key = cardKeyOf(title, card?.docId);
+      // `key` (cardKeyOf — carried by the card and the drag payload) IS the
+      // mapFolders key, so the assignment binds exactly one doc even among
+      // duplicate titles.
       const mapFolders = { ...prev.mapFolders };
       if (folderId) mapFolders[key] = folderId;
       else delete mapFolders[key];
@@ -1177,22 +1135,24 @@ export function useHomeController() {
   /** Move a map from its current (real, non-Drive) space to another space. The
    * card moves to the target space's top level, and its per-space folder
    * assignment is dropped (folders belong to a single space). */
-  const moveMapToSpace = (title: string, spaceId: string) => {
+  const moveMapToSpace = (key: string, spaceId: string) => {
     setState((prev) => {
-      const src = prev.spaces.find((s) => Array.isArray(s.maps) && s.maps.some((m) => m.title === title));
+      // Resolve by card KEY so exactly ONE doc moves even among duplicate titles.
+      const byKey = (m: { title: string; docId?: string }) => cardKeyOf(m.title, m.docId) === key;
+      const src = prev.spaces.find((s) => Array.isArray(s.maps) && s.maps.some(byKey));
       const target = prev.spaces.find((s) => s.id === spaceId);
       // no-op if the map isn't in a real space, the target is gone, or it's already there
       if (!src || !target || src.id === spaceId) return { ...prev, openMenu: null, moveFor: null, moveSpaceFor: null };
-      const card = (src.maps || []).find((m) => m.title === title);
+      const card = (src.maps || []).find(byKey);
       if (!card) return { ...prev, openMenu: null, moveFor: null, moveSpaceFor: null };
       const spaces = prev.spaces.map((s) => {
-        if (s.id === src.id) return { ...s, maps: (s.maps || []).filter((m) => m.title !== title) };
+        if (s.id === src.id) return { ...s, maps: (s.maps || []).filter((m) => !byKey(m)) };
         if (s.id === spaceId) return { ...s, maps: [...(s.maps || []), card] };
         return s;
       });
       const mapFolders = { ...prev.mapFolders };
-      delete mapFolders[cardKeyOf(title, card.docId)];
-      return { ...prev, spaces, mapFolders, openMenu: null, moveFor: null, moveSpaceFor: null, toast: `'${title}'을(를) '${target.name}' 공간으로 옮겼어요`, toastTitle: '이동 완료' };
+      delete mapFolders[key];
+      return { ...prev, spaces, mapFolders, openMenu: null, moveFor: null, moveSpaceFor: null, toast: `'${card.title}'을(를) '${target.name}' 공간으로 옮겼어요`, toastTitle: '이동 완료' };
     });
   };
   const backToSpace = () => patch({ curFolder: null, driveFolder: null, openMenu: null });

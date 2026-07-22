@@ -358,19 +358,22 @@ export function syncDocsToCards(spaces: SpaceData[]): { spaces: SpaceData[]; cha
  */
 export function mergeDocMetasIntoSpaces(spaces: SpaceData[], metas: DocMeta[]): { spaces: SpaceData[]; changed: boolean; renamed: Array<{ from: string; to: string }> } {
   if (!spaces.length) return { spaces, changed: false, renamed: [] };
+  // Dedupe by docId; titles only block a meta when the matching card is
+  // DOCID-LESS (that title match is what binds a legacy workspace-only card to
+  // its backend doc). Duplicate titles across distinct docs are fully allowed
+  // (XMind-style) — two same-titled metas each get their own card.
   const known = new Set<string>();
   spaces.forEach((s) => (s.maps || []).forEach((m) => {
-    known.add(m.title);
     if (m.docId) known.add('id:' + m.docId);
+    else known.add('t:' + m.title);
   }));
 
   const metaByDocId = new Map(metas.map((m) => [m.id, m]));
   const adds: MapCardData[] = [];
   metas.forEach((meta) => {
     if (meta.deletedAt || !meta.title) return;
-    if (known.has('id:' + meta.id) || known.has(meta.title)) return;
+    if (known.has('id:' + meta.id) || known.has('t:' + meta.title)) return;
     adds.push({ title: meta.title, when: '내 맵', hue: '#f0663f', docId: meta.id });
-    known.add(meta.title);
     known.add('id:' + meta.id);
   });
 

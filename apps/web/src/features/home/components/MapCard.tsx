@@ -35,7 +35,7 @@ export function MapCard({ card, controller, draggableEnabled, compact = false }:
       controller.openWithLoader(card.href, card.title, card.docId);
       return;
     }
-    controller.selectCard(card.title);
+    controller.selectCard(card.key);
   };
   const onDblOpen = (e: MouseEvent<HTMLAnchorElement>) => {
     const target = e.target as HTMLElement;
@@ -54,11 +54,11 @@ export function MapCard({ card, controller, draggableEnabled, compact = false }:
   const onDragStart = (e: DragEvent<HTMLAnchorElement>) => {
     e.dataTransfer.effectAllowed = 'move';
     try {
-      e.dataTransfer.setData('text/plain', card.title);
+      e.dataTransfer.setData('text/plain', card.key);
     } catch {
       /* some browsers restrict dataTransfer outside real drag */
     }
-    controller.setDraggingMap(card.title);
+    controller.setDraggingMap(card.key);
   };
   const onDragEnd = () => controller.clearDrag();
 
@@ -140,7 +140,7 @@ export function MapCard({ card, controller, draggableEnabled, compact = false }:
         onClick={(e) => {
           e.preventDefault();
           e.stopPropagation();
-          controller.toggleMenu(card.title);
+          controller.toggleMenu(card.key);
         }}
         title="메뉴"
         aria-label="메뉴"
@@ -196,7 +196,7 @@ export function MapCard({ card, controller, draggableEnabled, compact = false }:
               onClick={(e) => {
                 e.preventDefault();
                 e.stopPropagation();
-                controller.setExportFor(card.title);
+                controller.setExportFor(card.key);
               }}
               style={{ display: 'flex', alignItems: 'center', gap: 9, padding: '9px 13px', fontSize: 13, cursor: 'pointer', color: '#33281f' }}
             >
@@ -216,7 +216,7 @@ export function MapCard({ card, controller, draggableEnabled, compact = false }:
               onClick={(e) => {
                 e.preventDefault();
                 e.stopPropagation();
-                controller.setMoveFor(card.title);
+                controller.setMoveFor(card.key);
               }}
               style={{ display: 'flex', alignItems: 'center', gap: 9, padding: '9px 13px', fontSize: 13, cursor: 'pointer', color: '#33281f' }}
             >
@@ -229,7 +229,7 @@ export function MapCard({ card, controller, draggableEnabled, compact = false }:
               onClick={(e) => {
                 e.preventDefault();
                 e.stopPropagation();
-                controller.setMoveSpaceFor(card.title);
+                controller.setMoveSpaceFor(card.key);
               }}
               style={{ display: 'flex', alignItems: 'center', gap: 9, padding: '9px 13px', fontSize: 13, cursor: 'pointer', color: '#33281f' }}
             >
@@ -250,7 +250,7 @@ export function MapCard({ card, controller, draggableEnabled, compact = false }:
               onClick={(e) => {
                 e.preventDefault();
                 e.stopPropagation();
-                controller.moveMapToFolder(card.title, null);
+                controller.moveMapToFolder(card.key, null);
               }}
               style={{ display: 'flex', alignItems: 'center', gap: 9, padding: '9px 13px', fontSize: 13, cursor: 'pointer', color: '#33281f' }}
             >
@@ -354,7 +354,7 @@ export function MapCard({ card, controller, draggableEnabled, compact = false }:
               onClick={(e) => {
                 e.preventDefault();
                 e.stopPropagation();
-                controller.moveMapToFolder(card.title, ft.id);
+                controller.moveMapToFolder(card.key, ft.id);
               }}
               style={{ display: 'flex', alignItems: 'center', gap: 9, padding: '9px 13px', fontSize: 13, cursor: 'pointer', color: '#33281f', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}
             >
@@ -383,7 +383,7 @@ export function MapCard({ card, controller, draggableEnabled, compact = false }:
               onClick={(e) => {
                 e.preventDefault();
                 e.stopPropagation();
-                controller.moveMapToSpace(card.title, sp.id);
+                controller.moveMapToSpace(card.key, sp.id);
               }}
               style={{ display: 'flex', alignItems: 'center', gap: 9, padding: '9px 13px', fontSize: 13, cursor: 'pointer', color: '#33281f', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}
             >

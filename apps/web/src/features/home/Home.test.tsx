@@ -706,7 +706,9 @@ describe('Home', () => {
     expect(aside.getByText('새 마인드맵_1')).toBeTruthy(); // trash row
   });
 
-  it('restoring into a space that already has the title renames the restored map to "제목_복원1"', async () => {
+  it('restoring into a space that already has the title keeps the name (duplicates fully allowed)', async () => {
+    // XMind-style policy: no "_복원N" rename — identity is the docId, so two
+    // same-titled cards simply coexist, each with its own menu/selection state.
     const user = userEvent.setup();
     const { container, docStore } = renderHomeWithDocStore([
       { id: 'doc-old', title: '새 마인드맵_1', version: 1, updatedAt: '2026-01-01T00:00:00.000Z', isFavorite: false, deletedAt: '2026-01-02T00:00:00.000Z' },
@@ -719,12 +721,32 @@ describe('Home', () => {
     const confirmBtn = screen.getAllByRole('button', { name: '복원' }).find((el) => el.tagName === 'BUTTON');
     await user.click(confirmBtn!);
 
-    // both maps coexist: the live original + the renamed restored copy
-    await waitFor(() => expect(container.querySelector('.mf-map-grid a[data-title="새 마인드맵_1_복원1"]')).toBeTruthy());
-    expect(container.querySelectorAll('.mf-map-grid a[data-title="새 마인드맵_1"]').length).toBe(1);
-    // the rename is persisted (meta title now matches what the grid shows)
+    // both maps coexist under the SAME title, no rename anywhere
+    await waitFor(() => expect(container.querySelectorAll('.mf-map-grid a[data-title="새 마인드맵_1"]').length).toBe(2));
     expect(docStore.restore).toHaveBeenCalledWith('doc-old');
-    await waitFor(() => expect(docStore.rename).toHaveBeenCalledWith('doc-old', '새 마인드맵_1_복원1'));
+    expect(docStore.rename).not.toHaveBeenCalled();
+  });
+
+  it('same-titled cards in one space keep independent selection and ☰ menus (key-scoped UI state)', async () => {
+    const user = userEvent.setup();
+    const { container } = renderHomeWithDocStore([
+      { id: 'dup-a', title: '중복 맵', version: 1, updatedAt: '2026-01-01T00:00:00.000Z', isFavorite: false, deletedAt: null },
+      { id: 'dup-b', title: '중복 맵', version: 1, updatedAt: '2026-01-02T00:00:00.000Z', isFavorite: false, deletedAt: null },
+    ]);
+    await waitFor(() => expect(container.querySelectorAll('.mf-map-grid a[data-title="중복 맵"]').length).toBe(2));
+    const [cardA, cardB] = [...container.querySelectorAll('.mf-map-grid a[data-title="중복 맵"]')] as HTMLElement[];
+
+    // selecting A must not select B (title-keyed state used to light up both)
+    await user.click(cardA!);
+    expect(cardA!.style.border).toContain('rgb(240, 102, 63)');
+    expect(cardB!.style.border).not.toContain('rgb(240, 102, 63)');
+
+    // opening A's ☰ menu must not open B's (the popover is the 150px-wide
+    // container whose display flips with card.menuOpen)
+    await user.click(within(cardA!).getByRole('button', { name: '메뉴' }));
+    const popoverOf = (el: HTMLElement) => el.querySelector('div[style*="width: 150px"]') as HTMLElement;
+    expect(popoverOf(cardA!).style.display).toBe('block');
+    expect(popoverOf(cardB!).style.display).toBe('none');
   });
 
   it('keeps a legacy title-keyed folder assignment working (migrated to the docId key on load)', async () => {
