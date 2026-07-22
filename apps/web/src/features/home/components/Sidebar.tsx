@@ -239,7 +239,7 @@ export function Sidebar({ state, view, controller, isMobile = false, isOpen = fa
       </div>
 
       <div
-        className="nav-item"
+        className="nav-item mf-trash-head"
         role="button"
         tabIndex={0}
         onClick={controller.toggleTrashList}
@@ -249,7 +249,10 @@ export function Sidebar({ state, view, controller, isMobile = false, isOpen = fa
         style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '9px 10px', minHeight: isMobile ? 44 : undefined, borderRadius: 9, cursor: 'pointer', fontSize: 13.5, fontWeight: 500, color: '#7c6d60' }}
       >
         <TrashGlyph size={15} /> 휴지통
-        <span style={{ marginLeft: 'auto', fontSize: 11, color: '#c9b8a9' }}>{view.trashCount}</span>
+        {/* 비우기 sits BEFORE the count so the count stays at the far right —
+            exactly where the favorites count sits — keeping the two numbers
+            vertically aligned. It reveals on header hover/focus (always visible
+            on touch), so at rest the header shows just the aligned count. */}
         {view.trashItems.length > 0 && (
           <span
             role="button"
@@ -267,11 +270,12 @@ export function Sidebar({ state, view, controller, isMobile = false, isOpen = fa
                 controller.askEmptyTrash();
               }
             }}
-            style={{ fontSize: 11, cursor: 'pointer', flexShrink: 0 }}
+            style={{ marginLeft: 'auto', fontSize: 11, cursor: 'pointer', flexShrink: 0 }}
           >
             비우기
           </span>
         )}
+        <span style={{ marginLeft: view.trashItems.length > 0 ? 0 : 'auto', fontSize: 11, color: '#c9b8a9' }}>{view.trashCount}</span>
       </div>
       <div
         style={{

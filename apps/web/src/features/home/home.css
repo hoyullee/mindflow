@@ -202,11 +202,23 @@ a:hover {
 .mf-home .mf-trash-act:hover {
   background: #f0e6dd !important;
 }
-/* Trash header's 비우기: muted at rest (it sits inside quiet navigation), only
-   turning danger-red when the pointer commits to it. */
+/* Trash header's 비우기: hidden at rest so the trash COUNT sits flush right,
+   exactly aligned with the favorites count above it; hovering/focusing the
+   header reveals the action (always visible on touch). Muted color at rest,
+   danger-red only when the pointer commits to it. */
 .mf-home .mf-trash-empty {
   color: #b6a596;
-  transition: color 0.12s;
+  opacity: 0;
+  transition: color 0.12s, opacity 0.12s;
+}
+.mf-home .mf-trash-head:hover .mf-trash-empty,
+.mf-home .mf-trash-head:focus-within .mf-trash-empty {
+  opacity: 1;
+}
+@media (hover: none) {
+  .mf-home .mf-trash-empty {
+    opacity: 1;
+  }
 }
 .mf-home .mf-trash-empty:hover {
   color: #d64545;
