@@ -693,6 +693,22 @@ describe('Home', () => {
     expect(delBtn.disabled).toBe(false);
   });
 
+  it('설정 modal links to the legal docs (the logged-in entry point)', async () => {
+    const user = userEvent.setup();
+    renderHomeWithDocStore([]);
+
+    await user.click(screen.getByRole('button', { name: '계정 메뉴' }));
+    await user.click(screen.getByRole('button', { name: '설정' }));
+    const settingsDialog = screen.getByRole('dialog', { name: '설정' });
+
+    const privacy = within(settingsDialog).getByRole('link', { name: '개인정보처리방침' });
+    const terms = within(settingsDialog).getByRole('link', { name: '이용약관' });
+    expect(privacy.getAttribute('href')).toBe('/privacy');
+    expect(terms.getAttribute('href')).toBe('/terms');
+    // new tab so the modal/home state isn't torn down mid-session
+    expect(privacy.getAttribute('target')).toBe('_blank');
+  });
+
   it('deletes the account: wipes MindFlow storage and lands on /login', async () => {
     const user = userEvent.setup();
     // seed a signed-in demo session + some MindFlow data to prove it's wiped

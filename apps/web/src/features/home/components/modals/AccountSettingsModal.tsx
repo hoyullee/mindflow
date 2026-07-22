@@ -81,6 +81,17 @@ export function AccountSettingsModal({ state, controller }: Props) {
             </div>
             <div style={{ marginLeft: 'auto', color: '#d8a9a0', fontSize: 16, flexShrink: 0 }}>›</div>
           </div>
+
+          {/* legal docs — the only logged-in entry point (the other lives on the
+              login page footer). New tab so the modal/home state isn't lost. */}
+          <div style={{ marginTop: 18, paddingTop: 14, borderTop: '1px solid #f2e9e1', display: 'flex', justifyContent: 'center', gap: 14, fontSize: 12 }}>
+            <a href="/privacy" target="_blank" rel="noreferrer" style={{ color: '#b6a596' }}>
+              개인정보처리방침
+            </a>
+            <a href="/terms" target="_blank" rel="noreferrer" style={{ color: '#b6a596' }}>
+              이용약관
+            </a>
+          </div>
         </div>
       </div>
     </div>
