@@ -54,6 +54,18 @@ export function Sidebar({ state, view, controller, isMobile = false, isOpen = fa
     return () => clearTimeout(t);
   }, [isMobile, isOpen]);
 
+  // The drawer has no ✕ button (backdrop tap / left-swipe dismiss it), but
+  // both are pointer-only gestures — Escape keeps a keyboard-reachable way to
+  // close, since the backdrop is deliberately aria-hidden/decorative.
+  useEffect(() => {
+    if (!isMobile || !isOpen) return;
+    const onKey = (e: KeyboardEvent): void => {
+      if (e.key === 'Escape') onClose?.();
+    };
+    document.addEventListener('keydown', onKey);
+    return () => document.removeEventListener('keydown', onKey);
+  }, [isMobile, isOpen, onClose]);
+
   if (isMobile && !mounted) return null;
 
   const asideStyle = isMobile
@@ -73,10 +85,10 @@ export function Sidebar({ state, view, controller, isMobile = false, isOpen = fa
     <>
       {isMobile && (
         // Decorative tap-to-dismiss backdrop — intentionally not a `button`
-        // (unreachable via keyboard, `aria-hidden`); the actual accessible
-        // "close" action is the ✕ button inside the drawer below. Fades with
-        // the drawer; pointer events off while exiting so a stray tap can't
-        // hit a dying backdrop.
+        // (unreachable via keyboard, `aria-hidden`); the keyboard-accessible
+        // "close" action is the Escape handler above. Fades with the drawer;
+        // pointer events off while exiting so a stray tap can't hit a dying
+        // backdrop.
         <div
           aria-hidden="true"
           onClick={onClose}
@@ -96,17 +108,6 @@ export function Sidebar({ state, view, controller, isMobile = false, isOpen = fa
           overflow: 'hidden',
         }}
       >
-        {isMobile && (
-          <button
-            type="button"
-            className="btn"
-            onClick={onClose}
-            aria-label="메뉴 닫기"
-            style={{ alignSelf: 'flex-end', width: 44, height: 44, display: 'flex', alignItems: 'center', justifyContent: 'center', border: 'none', background: 'transparent', color: '#7c6d60', fontSize: 20, cursor: 'pointer', marginBottom: 4 }}
-          >
-            ✕
-          </button>
-        )}
         <SettingsPopover state={state} controller={controller} userInitial={view.userInitial} />
 
       <div style={{ fontSize: 11, fontWeight: 700, letterSpacing: '.04em', color: '#9c8b7e', padding: '14px 10px 8px' }}>스페이스</div>
