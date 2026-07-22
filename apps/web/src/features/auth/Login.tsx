@@ -1,5 +1,4 @@
 import './login.css';
-import { Link } from 'react-router-dom';
 import { BrandPanel } from './BrandPanel';
 import { LoadingOverlay } from './LoadingOverlay';
 import { FormStep } from './FormStep';
@@ -60,14 +59,15 @@ export function Login() {
           {view.forgotVerifyVisible && <ForgotVerifyStep controller={controller} />}
 
           {/* Legal links — visible pre-login (Google brand verification checks
-              that the privacy policy is reachable from the app's entry page). */}
+              that the privacy policy is reachable from the app's entry page).
+              New tab so typed-in credentials / the current step aren't lost. */}
           <div style={{ marginTop: 28, textAlign: 'center', fontSize: 12, color: '#b6a596', display: 'flex', justifyContent: 'center', gap: 14 }}>
-            <Link to="/privacy" style={{ color: '#b6a596' }}>
+            <a href="/privacy" target="_blank" rel="noreferrer" style={{ color: '#b6a596' }}>
               개인정보처리방침
-            </Link>
-            <Link to="/terms" style={{ color: '#b6a596' }}>
+            </a>
+            <a href="/terms" target="_blank" rel="noreferrer" style={{ color: '#b6a596' }}>
               이용약관
-            </Link>
+            </a>
           </div>
         </div>
       </div>

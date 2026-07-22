@@ -62,6 +62,17 @@ describe('Login', () => {
     expect(screen.getByPlaceholderText('6자리 숫자')).toBeTruthy();
   });
 
+  it('links the legal docs from the form footer, opening in a new tab', () => {
+    renderLogin();
+    const privacy = screen.getByRole('link', { name: '개인정보처리방침' });
+    const terms = screen.getByRole('link', { name: '이용약관' });
+    expect(privacy.getAttribute('href')).toBe('/privacy');
+    expect(terms.getAttribute('href')).toBe('/terms');
+    // same-tab navigation would discard whatever the user already typed
+    expect(privacy.getAttribute('target')).toBe('_blank');
+    expect(terms.getAttribute('target')).toBe('_blank');
+  });
+
   it('renders the desktop brand panel by default (matchMedia unavailable in jsdom → desktop)', () => {
     renderLogin();
     expect(screen.getByText('© 2026 Geurio')).toBeTruthy();
