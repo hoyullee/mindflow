@@ -688,6 +688,36 @@ describe('Home', () => {
   });
 
   describe('mobile (M6)', () => {
+    it('collapses the toolbar actions into icon-only buttons on one row (no stray action line)', async () => {
+      // On mobile the labeled 가져오기/새 폴더 pair used to wrap onto a lonely line
+      // of its own; they now render as 44px icon-only buttons inside the search
+      // row, and the primary CTA becomes an icon-only "+" — labels live on
+      // aria-label/title so they stay accessible.
+      const restore = mockMatchMedia(true);
+      try {
+        renderHome();
+        await waitFor(() => expect(screen.getByRole('button', { name: '가져오기' })).toBeTruthy());
+        const importBtn = screen.getByRole('button', { name: '가져오기' });
+        const folderBtn = screen.getByRole('button', { name: '새 폴더' });
+        const newBtn = screen.getByRole('link', { name: '새로 만들기' });
+        // icon-only: the visible label text is gone…
+        expect(importBtn.textContent).toBe('');
+        expect(folderBtn.textContent).toBe('');
+        expect(newBtn.textContent).toBe(''); // toolbar CTA is icon-only (the empty-state CTA keeps its label)
+        // …and every action keeps the 44px touch target (§7)
+        expect(importBtn.style.width).toBe('44px');
+        expect(folderBtn.style.width).toBe('44px');
+        expect(newBtn.style.width).toBe('44px');
+        // all three live in the SAME row container as the search field
+        const row = screen.getByPlaceholderText('파일 검색').closest('div')!.parentElement!;
+        expect(row.contains(importBtn)).toBe(true);
+        expect(row.contains(folderBtn)).toBe(true);
+        expect(row.contains(newBtn)).toBe(true);
+      } finally {
+        restore();
+      }
+    });
+
     it('hides the sidebar behind a hamburger drawer and opens/closes it, crash-free', async () => {
       const restore = mockMatchMedia(true);
       try {
