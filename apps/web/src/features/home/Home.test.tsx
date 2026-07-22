@@ -766,12 +766,21 @@ describe('Home', () => {
 
         const sidebar = within(container.querySelector('aside') as HTMLElement);
         expect(sidebar.getByText('스페이스')).toBeTruthy();
+        // No ✕ button — the drawer closes via backdrop tap, left swipe, or Esc.
+        expect(screen.queryByRole('button', { name: '메뉴 닫기' })).toBeNull();
 
-        await user.click(screen.getByRole('button', { name: '메뉴 닫기' }));
-        // The drawer plays its exit slide before unmounting (Sidebar keeps the
-        // aside mounted for DRAWER_EXIT_MS), so closing is observed via waitFor.
+        // Backdrop tap closes. The drawer plays its exit slide before unmounting
+        // (Sidebar keeps the aside mounted for DRAWER_EXIT_MS), so closing is
+        // observed via waitFor.
+        fireEvent.click(container.parentElement!.querySelector('.mf-drawer-backdrop')!);
         expect(container.querySelector('aside')).toBeTruthy(); // still mounted, sliding out…
         await waitFor(() => expect(container.querySelector('aside')).toBeNull()); // …then gone
+
+        // Escape closes too — the keyboard-accessible path now that ✕ is gone.
+        await user.click(screen.getByRole('button', { name: '메뉴 열기' }));
+        expect(container.querySelector('aside')).toBeTruthy();
+        await user.keyboard('{Escape}');
+        await waitFor(() => expect(container.querySelector('aside')).toBeNull());
       } finally {
         restore();
       }
@@ -791,7 +800,7 @@ describe('Home', () => {
         expect(aside.style.transform).toBe('translateX(-105%)');
         await waitFor(() => expect(aside.style.transform).toBe('translateX(0)'));
 
-        await user.click(screen.getByRole('button', { name: '메뉴 닫기' }));
+        await user.keyboard('{Escape}');
         // Exit phase: still mounted but translated back off-screen (sliding)…
         expect(container.querySelector('aside')).toBeTruthy();
         expect((container.querySelector('aside') as HTMLElement).style.transform).toBe('translateX(-105%)');
