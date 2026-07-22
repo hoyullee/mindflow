@@ -1,4 +1,4 @@
-import { RECENT_RENDER_MAX, docRawForTitle, folderKeyOf, hexA, mapHref, mapId, readDocRaw } from './storage';
+import { RECENT_RENDER_MAX, docRawForTitle, cardKeyOf, hexA, mapHref, mapId, readDocRaw } from './storage';
 import { miniPreview, previewSkeleton, realPreview } from './mapPreview';
 import type { DriveFolderData, FolderData, HomeState, MapCardData } from './types';
 import { DRIVE_FILES } from './types';
@@ -123,14 +123,6 @@ export function deriveHomeView(state: HomeState): HomeViewModel {
   const trashedIds = new Set(state.trash.map((t) => t.docId).filter((id): id is string => !!id));
   const isTrashedCard = (title: string, docId?: string): boolean => (docId ? trashedIds.has(docId) : !!state.deleted[title]);
 
-  // Live title → docId across EVERY space (first occurrence wins). Used to make
-  // the title-keyed lists (favorites, folder counts) docId-aware, and to build
-  // editor hrefs for favorites.
-  const liveDocIdByTitle = new Map<string, string>();
-  state.spaces.forEach((s) => (Array.isArray(s.maps) ? s.maps : []).forEach((m) => {
-    if (m.docId && !liveDocIdByTitle.has(m.title)) liveDocIdByTitle.set(m.title, m.docId);
-  }));
-
   const baseCards: { title: string; when: string; hue: string; docId?: string; openable: boolean }[] = isDriveSpace
     ? connected
       ? driveCardsRaw.map((f) => ({ title: f.name, when: /\.xmind$/.test(f.name) ? 'Google Drive' : '이 형식은 열 수 없어요', hue: '#34A853', openable: /\.xmind$/.test(f.name) }))
@@ -143,7 +135,7 @@ export function deriveHomeView(state: HomeState): HomeViewModel {
       if (isDriveSpace) return true;
       // Folder assignments are docId-keyed (title fallback for docId-less
       // cards) so same-titled maps can't capture each other's assignment.
-      const assigned = mapFolders[folderKeyOf(c.title, c.docId)];
+      const assigned = mapFolders[cardKeyOf(c.title, c.docId)];
       return curFolder ? assigned === curFolder.id : !assigned || !folders.find((f) => f.id === assigned);
     })
     .filter((c) => matchesSearch(c.title, state.search));
@@ -166,7 +158,7 @@ export function deriveHomeView(state: HomeState): HomeViewModel {
       sketch: cardSketch(c.title, c.hue, c.docId, state.previewDocs, state.previewResolved),
       badge: isDriveSpace ? 'Drive' : '',
       openable: c.openable,
-      isFav: !!favs[c.title],
+      isFav: !!favs[cardKeyOf(c.title, c.docId)],
       isDrive: isDriveSpace,
       menuOpen: state.openMenu === c.title,
       selected: state.selectedCard === c.title,
@@ -203,7 +195,7 @@ export function deriveHomeView(state: HomeState): HomeViewModel {
           // Count from the space's ACTUAL maps (assignments are docId-keyed, so
           // key iteration can't be matched back to titles) — trashed maps are
           // already out of `spaces`, so no deleted-check is needed.
-          const cnt = activeMaps.filter((m) => mapFolders[folderKeyOf(m.title, m.docId)] === f.id).length;
+          const cnt = activeMaps.filter((m) => mapFolders[cardKeyOf(m.title, m.docId)] === f.id).length;
           return {
             id: f.id,
             name: f.name,
@@ -217,52 +209,78 @@ export function deriveHomeView(state: HomeState): HomeViewModel {
       : [];
   const folderCards = isDriveSpace ? driveFolderCardsRaw : localFolderCards;
 
-  // A trashed map must never appear in the favorites list — it lives only in
-  // the trash until restored (see `seedFavAndTrashFromMetas`).
-  // A favorited map can live in ANY space, so resolve its real docId from every
-  // space's maps (not just the active one) — the editor href needs the actual
-  // doc id, since the title-hash fallback (`mapId`) points at a different slot
-  // than an editor-created `new-…` doc.
-  const favItems = Object.keys(favs)
-    .filter((k) => favs[k] && !isTrashedCard(k, liveDocIdByTitle.get(k)))
-    // `docId` rides along so the LNB's unfavorite star can persist the flip via
-    // `DocStore.setFavorite` (drive files have none — local-only favorites).
-    .map((t) => ({ title: t, isDrive: sourceIsDrive(t), href: mapHref(t, liveDocIdByTitle.get(t)), docId: liveDocIdByTitle.get(t) }));
-
-  // "최근 항목" is a GLOBAL, cross-space list shown at the top of Home, so resolve
-  // each recent map's card data from EVERY space (not just the active one), plus
-  // Drive files. First occurrence wins (a title should be unique across spaces).
-  const recentByTitle = new Map<string, { title: string; when: string; hue: string; docId?: string; spaceColor: string; spaceName: string }>();
+  // Favorites are keyed by `cardKeyOf` (docId, title fallback), so the list is
+  // built by resolving each LIVE map against the flags — a docId key can't be
+  // matched back to a title by key iteration. A trashed map never appears (it
+  // lives only in the trash until restored), and a same-titled map in another
+  // space keeps its own independent star.
+  const favItems: { title: string; isDrive: boolean; href: string; docId?: string }[] = [];
+  const favConsumed = new Set<string>();
   state.spaces.forEach((s) => (Array.isArray(s.maps) ? s.maps : []).forEach((m) => {
-    if (!recentByTitle.has(m.title)) recentByTitle.set(m.title, { ...m, spaceColor: s.color || '#f0663f', spaceName: s.name });
+    const k = cardKeyOf(m.title, m.docId);
+    if (favs[k] && !favConsumed.has(k) && !isTrashedCard(m.title, m.docId)) {
+      favConsumed.add(k);
+      favItems.push({ title: m.title, isDrive: false, href: mapHref(m.title, m.docId), docId: m.docId });
+    }
+  }));
+  // Title-keyed leftovers: Drive demo files (never in `spaces`). Anything else
+  // unmatched is a stale flag for a doc that no longer exists — skip it.
+  Object.keys(favs).forEach((k) => {
+    if (!favs[k] || favConsumed.has(k) || !sourceIsDrive(k)) return;
+    if (state.deleted[k]) return;
+    favItems.push({ title: k, isDrive: true, href: mapHref(k, undefined), docId: undefined });
+  });
+
+  // "최근 항목" is a GLOBAL, cross-space list shown at the top of Home. Entries
+  // are card keys (docId; title or `mapId(title)` for docId-less/legacy
+  // entries) — resolve every alias of every live map, so a docId entry pins the
+  // EXACT doc (same-titled maps in different spaces each keep their own entry)
+  // while legacy title entries still land on their first-titled match.
+  const recentResolve = new Map<string, { title: string; when: string; hue: string; docId?: string; spaceColor: string; spaceName: string }>();
+  state.spaces.forEach((s) => (Array.isArray(s.maps) ? s.maps : []).forEach((m) => {
+    const info = { ...m, spaceColor: s.color || '#f0663f', spaceName: s.name };
+    const aliases = m.docId ? [m.docId, m.title] : [m.title, mapId(m.title)];
+    aliases.forEach((k) => {
+      if (!recentResolve.has(k)) recentResolve.set(k, info);
+    });
   }));
   driveCardsRaw.forEach((f) => {
-    if (!recentByTitle.has(f.name)) recentByTitle.set(f.name, { title: f.name, when: 'Google Drive', hue: '#34A853', spaceColor: '#34A853', spaceName: 'Google Drive' });
+    if (!recentResolve.has(f.name)) recentResolve.set(f.name, { title: f.name, when: 'Google Drive', hue: '#34A853', spaceColor: '#34A853', spaceName: 'Google Drive' });
   });
   // Recent cards render as the compact variant (no ☰ menu), so the move/export/
   // favorite menu rows don't apply — they'd also be ambiguous for a cross-space
   // list. Keep them off; the card is a click-to-open shortcut.
+  const seenRecentDocs = new Set<string>();
   const recentCards: CardViewData[] = state.recent
-    .filter((t) => recentByTitle.has(t) && !isTrashedCard(t, recentByTitle.get(t)!.docId))
+    .map((e) => recentResolve.get(e))
+    .filter((b): b is NonNullable<typeof b> => !!b)
+    .filter((b) => !isTrashedCard(b.title, b.docId))
+    // Collapse aliases of the same doc (a docId entry + a legacy title entry
+    // recorded before the key migration) into the most recent occurrence.
+    .filter((b) => {
+      const k = cardKeyOf(b.title, b.docId);
+      if (seenRecentDocs.has(k)) return false;
+      seenRecentDocs.add(k);
+      return true;
+    })
     // History retention (RECENT_CAP=100) deliberately exceeds what any screen
     // shows; only materialize as many CARDS (sketch build is per-card work) as
     // the widest row / mobile swipe depth could ever display.
     .slice(0, RECENT_RENDER_MAX)
-    .map((t) => {
-      const base = recentByTitle.get(t)!;
+    .map((base) => {
       return {
-        title: t,
+        title: base.title,
         when: base.when,
         hue: base.hue,
         docId: base.docId,
-        href: mapHref(t, base.docId),
-        sketch: cardSketch(t, base.hue, base.docId, state.previewDocs, state.previewResolved),
+        href: mapHref(base.title, base.docId),
+        sketch: cardSketch(base.title, base.hue, base.docId, state.previewDocs, state.previewResolved),
         badge: '',
         openable: true,
-        isFav: !!favs[t],
-        isDrive: sourceIsDrive(t),
+        isFav: !!favs[cardKeyOf(base.title, base.docId)],
+        isDrive: sourceIsDrive(base.title),
         menuOpen: false,
-        selected: state.selectedCard === t,
+        selected: state.selectedCard === base.title,
         dragging: false,
         dragOverTarget: false,
         exportOpen: false,

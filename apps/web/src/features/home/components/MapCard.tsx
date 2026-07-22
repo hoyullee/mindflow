@@ -32,7 +32,7 @@ export function MapCard({ card, controller, draggableEnabled, compact = false }:
     // Selection has no job on mobile anyway — the ☆/☰ controls are always
     // visible (`@media (hover:none)`), and folder cards already open on one tap.
     if (isMobile) {
-      controller.openWithLoader(card.href, card.title);
+      controller.openWithLoader(card.href, card.title, card.docId);
       return;
     }
     controller.selectCard(card.title);
@@ -48,7 +48,7 @@ export function MapCard({ card, controller, draggableEnabled, compact = false }:
       return;
     }
     e.preventDefault();
-    controller.openWithLoader(card.href, card.title);
+    controller.openWithLoader(card.href, card.title, card.docId);
   };
 
   const onDragStart = (e: DragEvent<HTMLAnchorElement>) => {

@@ -1085,11 +1085,11 @@ describe('Home', () => {
       }
     });
 
-    it('migrates recent entries when a map was renamed, instead of silently dropping them', async () => {
-      // Recents are title-keyed (like mapFolders): editing a map's root text in
-      // the editor renames it, and before the migration the old-title entry
-      // matched nothing — every rename permanently killed that recent card, so
-      // the tray showed fewer cards than the screen fits.
+    it('migrates legacy title recents through a rename onto the docId key', async () => {
+      // LEGACY recents were title-keyed: editing a map's root text renamed it
+      // and the old-title entry matched nothing — every rename permanently
+      // killed that recent card. The entry now rides the rename migration and
+      // then lands on the docId key, where future renames can't touch it.
       localStorage.setItem('mf_recent', JSON.stringify(['옛 이름']));
       localStorage.setItem(
         'mf_spaces',
@@ -1109,8 +1109,8 @@ describe('Home', () => {
       const tray = container.querySelector('.mf-recent-tray') as HTMLElement;
       expect(tray.querySelector('a[data-title="새 이름"]')).toBeTruthy(); // follows the rename
       expect(tray.querySelector('a[data-title="옛 이름"]')).toBeNull();
-      // …and this device's persisted list is kept in step
-      expect(JSON.parse(localStorage.getItem('mf_recent')!)).toEqual(['새 이름']);
+      // …and this device's persisted list is kept in step, now docId-keyed
+      expect(JSON.parse(localStorage.getItem('mf_recent')!)).toEqual(['doc-r']);
     });
 
     it('prefetches thumbnail bodies for recent maps living in OTHER spaces (they render in the tray)', async () => {

@@ -125,13 +125,13 @@ export function saveRecent(list: string[]): void {
 }
 
 /**
- * Folder-assignment key for `mapFolders`: the map's DOC ID when it has one,
- * its title otherwise (workspace-only cards, Drive demo files). Title keys are
- * what let a trashed map's folder assignment "capture" a new live map that
- * happened to reuse the title — docId keys can't collide across docs, and a
- * rename no longer orphans the assignment.
+ * Card identity key for the title-keyed legacy states (`mapFolders`, `favs`,
+ * `recent`): the map's DOC ID when it has one, its title otherwise
+ * (workspace-only cards, Drive demo files). Title keys are what let same-named
+ * maps capture each other's folder assignment/favorite/recent entry — docId
+ * keys can't collide across docs, and a rename no longer orphans the state.
  */
-export function folderKeyOf(title: string, docId?: string): string {
+export function cardKeyOf(title: string, docId?: string): string {
   return docId ?? title;
 }
 
@@ -139,7 +139,7 @@ export function folderKeyOf(title: string, docId?: string): string {
  * One-time key migration for stored workspaces: `mapFolders` was historically
  * keyed by TITLE; move each entry whose title matches a doc-backed map onto
  * that map's docId key. Title keys with no matching doc-backed map (docId-less
- * cards) are kept as-is — `folderKeyOf` still resolves them by title.
+ * cards) are kept as-is — `cardKeyOf` still resolves them by title.
  */
 export function migrateMapFolderKeys(
   spaces: SpaceData[],
@@ -178,18 +178,50 @@ export const RECENT_CAP = 100;
 export const RECENT_RENDER_MAX = 32;
 
 /**
- * Prepend `title` to the persisted recent list (dedup, cap), returning the new
- * list. The editor calls this the moment a doc loads, so "최근 항목" reflects maps
- * you actually opened — regardless of HOW (Home double-click, a direct link, a
- * mobile tap, a freshly created map) — not just Home double-clicks. Title-keyed
- * to match Home's card titles; Home syncs it to the backend on its next visit.
+ * Prepend a card key (`cardKeyOf` — the doc id, or a title for docId-less
+ * entries) to the persisted recent list (dedup, cap), returning the new list.
+ * The editor calls this with its doc id the moment a doc loads, so "최근 항목"
+ * reflects maps you actually opened — regardless of HOW (Home click, a direct
+ * link, a mobile tap, a freshly created map). docId entries pin the EXACT doc,
+ * so same-titled maps in different spaces each get their own recent entry and
+ * a rename can't orphan one. Home syncs the list to the backend on its next
+ * visit (and migrates legacy title entries — see `migrateRecentKeys`).
  */
-export function pushRecentTitle(title: string, cap = RECENT_CAP): string[] {
-  const t = String(title || '').trim();
+export function pushRecentEntry(entry: string, cap = RECENT_CAP): string[] {
+  const t = String(entry || '').trim();
   if (!t) return loadRecent();
   const next = [t, ...loadRecent().filter((x) => x !== t)].slice(0, cap);
   saveRecent(next);
   return next;
+}
+
+/**
+ * One-time key migration for recent lists: historical entries were TITLES;
+ * move each entry that matches a live doc-backed map onto that map's docId
+ * (first occurrence wins — the one unavoidable legacy ambiguity), and collapse
+ * aliases of the same doc (a docId entry + its title entry) into one. Entries
+ * matching nothing (trashed docs' titles, docId entries, docId-less cards'
+ * titles) pass through unchanged.
+ */
+export function migrateRecentKeys(spaces: SpaceData[], recent: string[]): { recent: string[]; changed: boolean } {
+  const docIdByTitle = new Map<string, string>();
+  spaces.forEach((s) => (Array.isArray(s.maps) ? s.maps : []).forEach((m) => {
+    if (m.docId && !docIdByTitle.has(m.title)) docIdByTitle.set(m.title, m.docId);
+  }));
+  let changed = false;
+  const seen = new Set<string>();
+  const out: string[] = [];
+  for (const entry of recent) {
+    const key = docIdByTitle.get(entry) ?? entry;
+    if (key !== entry) changed = true;
+    if (seen.has(key)) {
+      changed = true; // an alias collapsed away
+      continue;
+    }
+    seen.add(key);
+    out.push(key);
+  }
+  return { recent: changed ? out : recent, changed };
 }
 
 /**
@@ -407,8 +439,12 @@ export function seedFavAndTrashFromMetas(
       }
       continue;
     }
-    if (meta.isFavorite && !nextFavs[meta.title]) {
-      nextFavs[meta.title] = true;
+    // Favorites are keyed by `cardKeyOf` — the doc ID for doc-backed maps — so
+    // same-titled maps in different spaces keep independent stars and a rename
+    // can't orphan the flag. (Drive demo files keep title keys via toggleFav's
+    // fallback; they never appear in metas.)
+    if (meta.isFavorite && !nextFavs[meta.id]) {
+      nextFavs[meta.id] = true;
       changed = true;
     }
   }

@@ -16,8 +16,9 @@ import {
   docKey,
   downloadFile,
   ensureHomeSpace,
-  folderKeyOf,
+  cardKeyOf,
   migrateMapFolderKeys,
+  migrateRecentKeys,
   loadActiveView,
   loadRecent,
   saveActiveView,
@@ -150,10 +151,11 @@ export function useHomeController() {
       // (e.g. work PC → home PC). `prev.recent` (this device's localStorage, loaded
       // on mount) keeps its ordering priority; the synced list fills in history.
       let recent = mergeRecent(prev.recent, ws?.recent);
-      // `recent` is title-keyed like `mapFolders`, so renamed maps (root text
-      // edited in the editor) must migrate here too — otherwise every rename
-      // permanently killed the map's recent entry (the old title matched
-      // nothing), and the tray showed fewer cards than the screen fits.
+      // LEGACY recent entries were title-keyed, so renamed maps (root text
+      // edited in the editor) must migrate before the key migration below —
+      // otherwise a rename permanently killed the map's recent entry (the old
+      // title matched nothing). New entries are docId-keyed and immune.
+      let recentRenamed = false;
       if (renamed.length) {
         const renameTo = new Map(renamed.filter((r) => r.from !== r.to).map((r) => [r.from, r.to]));
         if (renameTo.size) {
@@ -161,21 +163,33 @@ export function useHomeController() {
           const migrated: string[] = [];
           for (const t of recent) {
             const nt = renameTo.get(t) ?? t;
+            if (nt !== t) recentRenamed = true;
             if (!seen.has(nt)) {
               seen.add(nt);
               migrated.push(nt);
             }
           }
           recent = migrated;
-          saveRecent(recent); // keep this device's localStorage in step
         }
       }
+      // One-time key migration: legacy title entries move onto docId keys and
+      // aliases of the same doc collapse (an editor push from an old app
+      // version + this device's docId entry).
+      const recentBeforeMigration = recent;
+      const recentMigration = migrateRecentKeys(spaces, recent);
+      recent = recentMigration.recent;
+      if (recentRenamed || recentMigration.changed) saveRecent(recent); // keep this device's localStorage in step
       // Baseline the just-hydrated workspace so the save effect treats it as
-      // already-persisted (no re-save of what we just loaded/seeded). When the
-      // folder-key migration rewrote keys, baseline the PRE-migration shape
-      // instead, so the save effect sees a change and persists the docId-keyed
-      // blob once — otherwise it would stay legacy and re-migrate every load.
-      savedWorkspaceSigRef.current = JSON.stringify({ spaces, mapFolders: mfMigration.changed ? mfBeforeMigration : mapFolders, recent });
+      // already-persisted (no re-save of what we just loaded/seeded). When a
+      // key migration rewrote `mapFolders` or `recent`, baseline the
+      // PRE-migration shape instead, so the save effect sees a change and
+      // persists the docId-keyed blob once — otherwise it would stay legacy
+      // and re-migrate every load.
+      savedWorkspaceSigRef.current = JSON.stringify({
+        spaces,
+        mapFolders: mfMigration.changed ? mfBeforeMigration : mapFolders,
+        recent: recentMigration.changed ? recentBeforeMigration : recent,
+      });
       // Always flip `loaded` so the grid drops its loading skeleton and
       // renders the real (possibly empty) state.
       return { ...prev, spaces, activeSpace, curFolder, mapFolders, favs, deleted, trash, recent, loaded: true };
@@ -312,9 +326,11 @@ export function useHomeController() {
     const active = state.spaces.find((s) => s.id === state.activeSpace);
     const wanted = new Set((Array.isArray(active?.maps) ? active!.maps : []).map((m) => m.docId).filter((id): id is string => !!id));
     if (state.recent.length) {
+      // Entries are card keys — a doc matches by its docId (the canonical key)
+      // or its title (legacy entries recorded before the key migration).
       const recentSet = new Set(state.recent.slice(0, RECENT_RENDER_MAX));
       state.spaces.forEach((s) => (Array.isArray(s.maps) ? s.maps : []).forEach((m) => {
-        if (m.docId && recentSet.has(m.title)) wanted.add(m.docId);
+        if (m.docId && (recentSet.has(m.docId) || recentSet.has(m.title))) wanted.add(m.docId);
       }));
     }
     const ids = Array.from(wanted).filter((id) => !previewFetchedRef.current.has(id));
@@ -541,10 +557,11 @@ export function useHomeController() {
   // file's other storage try/catch conventions) — the optimistic local state
   // already reflects the change either way.
   const toggleFav = (title: string, docId?: string) => {
-    const nextFav = !state.favs[title];
+    const key = cardKeyOf(title, docId);
+    const nextFav = !state.favs[key];
     setState((prev) => {
-      const favs = { ...prev.favs, [title]: !prev.favs[title] };
-      if (!favs[title]) delete favs[title];
+      const favs = { ...prev.favs, [key]: !prev.favs[key] };
+      if (!favs[key]) delete favs[key];
       return { ...prev, favs };
     });
     if (docId) {
@@ -572,7 +589,7 @@ export function useHomeController() {
       prev.spaces.forEach((s) => {
         if (Array.isArray(s.maps) && s.maps.some(matches)) spaceId = s.id;
       });
-      const folder = prev.mapFolders[folderKeyOf(title, docId ?? undefined)];
+      const folder = prev.mapFolders[cardKeyOf(title, docId ?? undefined)];
       // REMOVE the card from the workspace (the synced source of truth) — not just
       // hide it — so it can't linger in `spaces.maps` and reappear after a refresh
       // (the previous title-keyed `deleted` flag was session-only for docId-less
@@ -583,10 +600,10 @@ export function useHomeController() {
         return maps.length === s.maps.length ? s : { ...s, maps };
       });
       const mapFolders = { ...prev.mapFolders };
-      delete mapFolders[folderKeyOf(title, docId ?? undefined)];
+      delete mapFolders[cardKeyOf(title, docId ?? undefined)];
       const deleted = { ...prev.deleted, [title]: true };
       const favs = { ...prev.favs };
-      delete favs[title];
+      delete favs[cardKeyOf(title, docId ?? undefined)];
       const src = sourceOf(title, DRIVE_FILES);
       // Dedupe by docId when we have one — trash policy allows two entries with
       // the same TITLE (they're different docs), just never the same doc twice.
@@ -607,7 +624,7 @@ export function useHomeController() {
     setState((prev) => {
       const deleted = { ...prev.deleted, [title]: true };
       const favs = { ...prev.favs };
-      delete favs[title];
+      delete favs[cardKeyOf(title, docId)];
       return { ...prev, deleted, favs, openMenu: null };
     });
     if (docId) {
@@ -696,7 +713,7 @@ export function useHomeController() {
         spaces = spaces.map((s) => (s.id === targetId ? { ...s, maps: [...(s.maps || []), { title: restoredTitle, when: '방금 복원됨', hue: '#f0663f', docId: docId ?? undefined }] } : s));
         // restore the folder assignment too, if that folder still exists
         if (entry?.folder && Array.isArray(target.folders) && target.folders.some((f) => f.id === entry.folder)) {
-          mapFolders = { ...mapFolders, [folderKeyOf(restoredTitle, docId ?? undefined)]: entry.folder };
+          mapFolders = { ...mapFolders, [cardKeyOf(restoredTitle, docId ?? undefined)]: entry.folder };
         }
       }
       return { ...prev, deleted, trash, spaces, mapFolders, confirmRestore: null, confirmRestoreDocId: null, toast, toastTitle: toast ? '복원 완료' : '' };
@@ -729,15 +746,19 @@ export function useHomeController() {
       // card); doc-backed entries clear it unless a same-title sibling remains.
       const isDriveFile = DRIVE_FILES.some((f) => f.name === title);
       if (!isDriveFile && !trash.some((t) => t.title === title)) delete deleted[title];
-      // The doc is gone for good — drop its recent entry unless a live map
-      // still carries this title.
+      // The doc is gone for good — drop its recent entry (docId key always;
+      // title/hash aliases only when no live map still carries the title) and
+      // any stale favorite flag.
       let recent = prev.recent;
       const titleLives = prev.spaces.some((s) => (s.maps || []).some((m) => m.title === title));
-      if (!titleLives && recent.includes(title)) {
-        recent = recent.filter((t) => t !== title);
+      const dead = (e: string) => (docId ? e === docId : false) || (!titleLives && (e === title || e === mapId(title)));
+      if (recent.some(dead)) {
+        recent = recent.filter((e) => !dead(e));
         saveRecent(recent);
       }
-      return { ...prev, trash, deleted, recent, confirmPurge: null, confirmPurgeDocId: null };
+      const favs = { ...prev.favs };
+      delete favs[cardKeyOf(title, docId ?? undefined)];
+      return { ...prev, trash, deleted, recent, favs, confirmPurge: null, confirmPurgeDocId: null };
     });
     if (docId) {
       void docStore.purge(docId).catch(() => {
@@ -757,19 +778,22 @@ export function useHomeController() {
     }
     setState((prev) => {
       const deleted = { ...prev.deleted };
+      const favs = { ...prev.favs };
       let recent = prev.recent;
       let recentChanged = false;
       prev.trash.forEach((t) => {
         const isDriveFile = DRIVE_FILES.some((f) => f.name === t.title);
         if (!isDriveFile) delete deleted[t.title];
+        delete favs[cardKeyOf(t.title, t.docId)];
         const titleLives = prev.spaces.some((s) => (s.maps || []).some((m) => m.title === t.title));
-        if (!titleLives && recent.includes(t.title)) {
-          recent = recent.filter((x) => x !== t.title);
+        const dead = (e: string) => (t.docId ? e === t.docId : false) || (!titleLives && (e === t.title || e === mapId(t.title)));
+        if (recent.some(dead)) {
+          recent = recent.filter((e) => !dead(e));
           recentChanged = true;
         }
       });
       if (recentChanged) saveRecent(recent);
-      return { ...prev, trash: [], deleted, recent, confirmEmptyTrash: false };
+      return { ...prev, trash: [], deleted, favs, recent, confirmEmptyTrash: false };
     });
     const ids = entries.map((t) => t.docId).filter((id): id is string => !!id);
     if (ids.length) {
@@ -805,11 +829,14 @@ export function useHomeController() {
   };
   const closeToast = () => patch({ toast: '', toastTitle: '', importDone: null, importError: null });
 
-  const recordRecent = (title: string) => {
+  const recordRecent = (title: string, docId?: string) => {
+    // Entries are card keys (docId, title fallback) — same identity the recent
+    // tray resolves, so same-titled maps track independently.
+    const key = cardKeyOf(title, docId);
     setState((prev) => {
       // Retention (RECENT_CAP) deliberately exceeds anything one row shows —
       // the tray decides how many to EXPOSE from the viewport width.
-      const recent = [title, ...prev.recent.filter((t) => t !== title)].slice(0, RECENT_CAP);
+      const recent = [key, ...prev.recent.filter((t) => t !== key)].slice(0, RECENT_CAP);
       saveRecent(recent);
       return { ...prev, recent };
     });
@@ -834,8 +861,8 @@ export function useHomeController() {
   };
 
   /** Home.dc.html `openWithLoader(e, title)` — records recent, shows the loader, then navigates. */
-  const openWithLoader = (href: string, title: string) => {
-    recordRecent(title);
+  const openWithLoader = (href: string, title: string, docId?: string) => {
+    recordRecent(title, docId);
     navigateAfterLoader(href, '맵을 불러오고 있어요');
   };
 
@@ -862,13 +889,13 @@ export function useHomeController() {
           // If the user is currently INSIDE a folder (of the target space), file
           // the new map into that folder — otherwise it would land at the space's
           // top level (outside the folder they're viewing). Keyed by docId
-          // (`folderKeyOf`), same as `moveMapToFolder`.
+          // (`cardKeyOf`), same as `moveMapToFolder`.
           let mapFolders = prev.mapFolders;
           if (prev.curFolder) {
             const sp = prev.spaces.find((s) => s.id === targetId);
             const folders = sp && Array.isArray(sp.folders) ? sp.folders : [];
             if (folders.some((f) => f.id === prev.curFolder)) {
-              mapFolders = { ...prev.mapFolders, [folderKeyOf(title, docId)]: prev.curFolder };
+              mapFolders = { ...prev.mapFolders, [cardKeyOf(title, docId)]: prev.curFolder };
             }
           }
           return { ...prev, spaces, mapFolders };
@@ -1073,12 +1100,12 @@ export function useHomeController() {
     patch({ folderModal: { mode: 'rename', id, name: f ? f.name : '', drive: true } as FolderModalState, openMenu: null });
   };
   const folderCount = (id: string) => {
-    // Count from the ACTUAL maps (assignments are docId-keyed via folderKeyOf,
+    // Count from the ACTUAL maps (assignments are docId-keyed via cardKeyOf,
     // so key iteration can't be resolved back to titles). Trashed maps are
     // removed from `spaces`, so no deleted-check is needed.
     let n = 0;
     state.spaces.forEach((s) => (Array.isArray(s.maps) ? s.maps : []).forEach((m) => {
-      if (state.mapFolders[folderKeyOf(m.title, m.docId)] === id) n++;
+      if (state.mapFolders[cardKeyOf(m.title, m.docId)] === id) n++;
     }));
     return n;
   };
@@ -1135,12 +1162,12 @@ export function useHomeController() {
     setState((prev) => {
       // Resolve the card's docId (drag-and-drop only carries the title): the
       // active space first — that's where the interaction happens — then any
-      // space, so the assignment lands on the docId key `folderKeyOf` reads.
+      // space, so the assignment lands on the docId key `cardKeyOf` reads.
       const active = prev.spaces.find((s) => s.id === prev.activeSpace);
       const card =
         (Array.isArray(active?.maps) ? active!.maps : []).find((m) => m.title === title) ??
         prev.spaces.flatMap((s) => (Array.isArray(s.maps) ? s.maps : [])).find((m) => m.title === title);
-      const key = folderKeyOf(title, card?.docId);
+      const key = cardKeyOf(title, card?.docId);
       const mapFolders = { ...prev.mapFolders };
       if (folderId) mapFolders[key] = folderId;
       else delete mapFolders[key];
@@ -1164,7 +1191,7 @@ export function useHomeController() {
         return s;
       });
       const mapFolders = { ...prev.mapFolders };
-      delete mapFolders[folderKeyOf(title, card.docId)];
+      delete mapFolders[cardKeyOf(title, card.docId)];
       return { ...prev, spaces, mapFolders, openMenu: null, moveFor: null, moveSpaceFor: null, toast: `'${title}'을(를) '${target.name}' 공간으로 옮겼어요`, toastTitle: '이동 완료' };
     });
   };
