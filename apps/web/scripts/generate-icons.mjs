@@ -3,11 +3,13 @@
 // with `node scripts/generate-icons.mjs` whenever the mark changes; outputs are
 // committed under `public/` (see CLAUDE.md — self-hosted, no CDN at runtime).
 //
-// The mark mirrors the in-app logo (Login/Home/Editor topbar): a coral rounded
-// square (`#f0663f`) with a bold white "G" (Geurio). The "G" is drawn from
-// geometric SVG primitives (an arc + a straight bar, no text glyph) so the
-// render is 100% deterministic — it doesn't depend on which system fonts happen
-// to be installed on the machine running this script (dev laptop vs CI).
+// The mark mirrors the in-app logo (Login/Editor topbar, legal pages — see
+// apps/web/src/components/BrandMark.tsx): a coral rounded square (`#f0663f`)
+// with a white monoline spiral converging on a dot — "생각이 중심으로 모인다"
+// (and an abstract nod to the "G" of Geurio/그리오). Drawn from geometric SVG
+// primitives (three arcs + a dot, no text glyph) so the render is 100%
+// deterministic — it doesn't depend on which system fonts happen to be
+// installed on the machine running this script (dev laptop vs CI).
 import { mkdir, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -19,38 +21,32 @@ const outDir = path.join(__dirname, '..', 'public');
 const CORAL = '#f0663f';
 
 /**
- * @param {number} size full square viewBox size
+ * The spiral glyph, in a fixed 0..100 coordinate space: three shrinking arcs
+ * winding counter-clockwise from the top into the centre, ending on a filled
+ * dot. Natural extent (incl. the stroke) is ~63 units, so `contentRatio`
+ * scales relative to that. Shared verbatim with the in-app
+ * `BrandMark` component and the mobile native-assets script — keep in sync.
+ */
+const GLYPH_PATH = 'M 50 22 A 28 28 0 1 0 78 50 A 20 20 0 0 0 58 32 A 13 13 0 0 0 45 45';
+const GLYPH_DOT = { cx: 47, cy: 52, r: 6 };
+const GLYPH_STROKE = 7;
+const GLYPH_NATURAL_RATIO = 0.63;
+
+/**
+ * @param {number} size full square output size
  * @param {object} opts
  * @param {number} [opts.cornerRadiusRatio] rounded-square corner radius as a fraction of `size` (0 = full-bleed square, for maskable/apple icons where the OS applies its own mask)
- * @param {number} [opts.contentRatio] the "G" glyph's bounding box as a fraction of `size` (smaller = more safe-zone padding, for maskable icons)
+ * @param {number} [opts.contentRatio] the spiral glyph's bounding box as a fraction of `size` (smaller = more safe-zone padding, for maskable icons)
  */
-function markSvg(size, { cornerRadiusRatio = 0.22, contentRatio = 0.58 } = {}) {
-  const r = size * cornerRadiusRatio;
-  const s = size * contentRatio; // "G" bounding box side
-  const cx = size / 2;
-  const cy = size / 2;
-  const R = s / 2; // glyph radius
-  const stroke = s * 0.2;
-  // A monoline "G": a near-full ring left open on the right, plus a horizontal
-  // bar cutting in from the lower opening to the centre (the crossbar that makes
-  // a "G" read as a G and not a "C"). Angles measured with y pointing down, 0° =
-  // +x (right); the opening is the ±40° wedge straddling the +x axis.
-  const at = (deg) => {
-    const a = deg * (Math.PI / 180);
-    return [cx + R * Math.cos(a), cy + R * Math.sin(a)];
-  };
-  const [ux, uy] = at(-40); // upper opening (top-right)
-  const [lx, ly] = at(40); // lower opening (bottom-right)
-  const barY = ly; // crossbar sits at the lower opening's height
-  const barX = cx - R * 0.02; // reaches just past centre
-  // Ring: from the upper opening, sweep the LONG way (large-arc, counter-
-  // clockwise) around through top/left/bottom to the lower opening; then the
-  // crossbar runs left to the centre.
-  const d = `M ${ux.toFixed(2)} ${uy.toFixed(2)} A ${R.toFixed(2)} ${R.toFixed(2)} 0 1 0 ${lx.toFixed(2)} ${ly.toFixed(2)} L ${barX.toFixed(2)} ${barY.toFixed(2)}`;
-
-  return `<svg xmlns="http://www.w3.org/2000/svg" width="${size}" height="${size}" viewBox="0 0 ${size} ${size}">
-  <rect x="0" y="0" width="${size}" height="${size}" rx="${r}" ry="${r}" fill="${CORAL}"/>
-  <path d="${d}" fill="none" stroke="#ffffff" stroke-width="${stroke.toFixed(2)}" stroke-linecap="round" stroke-linejoin="round"/>
+function markSvg(size, { cornerRadiusRatio = 0.22, contentRatio = 0.63 } = {}) {
+  const r = 100 * cornerRadiusRatio;
+  const k = (contentRatio / GLYPH_NATURAL_RATIO).toFixed(4);
+  return `<svg xmlns="http://www.w3.org/2000/svg" width="${size}" height="${size}" viewBox="0 0 100 100">
+  <rect x="0" y="0" width="100" height="100" rx="${r}" ry="${r}" fill="${CORAL}"/>
+  <g transform="translate(50 50) scale(${k}) translate(-50 -50)">
+    <path d="${GLYPH_PATH}" fill="none" stroke="#ffffff" stroke-width="${GLYPH_STROKE}" stroke-linecap="round" stroke-linejoin="round"/>
+    <circle cx="${GLYPH_DOT.cx}" cy="${GLYPH_DOT.cy}" r="${GLYPH_DOT.r}" fill="#ffffff"/>
+  </g>
 </svg>`;
 }
 
@@ -69,7 +65,7 @@ async function main() {
   await writePng(icon512, 512, path.join(outDir, 'icons', 'pwa-512x512.png'));
 
   // Maskable icon: full-bleed background (the OS applies its own corner/circle
-  // mask, so `cornerRadiusRatio: 0` avoids "double rounding") with the "M"
+  // mask, so `cornerRadiusRatio: 0` avoids "double rounding") with the spiral
   // shrunk to fit Android's ~80%-diameter safe zone.
   const maskable512 = markSvg(512, { cornerRadiusRatio: 0, contentRatio: 0.42 });
   await writePng(maskable512, 512, path.join(outDir, 'icons', 'maskable-512x512.png'));

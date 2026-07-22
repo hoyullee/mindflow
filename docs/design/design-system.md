@@ -18,8 +18,12 @@
 Geurio의 톤은 **따뜻한 코럴(coral) + 웜 그레이(warm gray)** 입니다. 차갑지 않고
 친근하며, 종이·손그림 마인드맵의 감성을 지향합니다.
 
-- **브랜드 마크**: 코럴 둥근사각 + 흰 "G" (arc + crossbar). 아이콘 생성기
-  `apps/web/scripts/generate-icons.mjs`, `apps/mobile/scripts/generate-native-assets.mjs`.
+- **브랜드 마크**: 코럴 둥근사각 + 흰 모노라인 **소용돌이**(바깥에서 중심 점으로
+  감기는 세 개의 호 — "생각이 중심으로 모인다", 그리오/G의 추상). 문자 글리프 아님.
+  앱 내 컴포넌트 `src/components/BrandMark.tsx`(글리프만, 배경은 호출부 소유),
+  아이콘 생성기 `apps/web/scripts/generate-icons.mjs`(지오메트리 원본),
+  `apps/mobile/scripts/generate-native-assets.mjs`(동기화 사본). 세 곳의 path를
+  항상 함께 갱신한다.
 - **기본 테마**: 에디터의 `coral` 테마(`src/features/editor/theme.ts`)가 앱 전체 크롬의
   기준 팔레트입니다. 아래 색 토큰은 대부분 coral 테마에서 파생됩니다.
 

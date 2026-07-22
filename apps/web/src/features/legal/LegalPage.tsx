@@ -1,5 +1,6 @@
 import type { CSSProperties, ReactNode } from 'react';
 import { Link } from 'react-router-dom';
+import { BrandMark } from '../../components/BrandMark';
 
 /**
  * Shared shell for the public legal documents (`/privacy`, `/terms`). These
@@ -35,7 +36,7 @@ export function LegalPage({ title, updated, children }: { title: string; updated
               fontSize: 18,
             }}
           >
-            G
+            <BrandMark size={20} />
           </span>
           <span style={{ fontWeight: 800, fontSize: 18, letterSpacing: '-.01em' }}>Geurio</span>
         </Link>
