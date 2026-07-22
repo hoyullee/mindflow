@@ -577,7 +577,10 @@ export function useHomeController() {
       const favs = { ...prev.favs };
       delete favs[title];
       const src = sourceOf(title, DRIVE_FILES);
-      const trash = prev.trash.some((t) => t.title === title) ? prev.trash : [...prev.trash, { title, source: src, docId: docId ?? undefined, spaceId, folder }];
+      // Dedupe by docId when we have one — trash policy allows two entries with
+      // the same TITLE (they're different docs), just never the same doc twice.
+      const already = prev.trash.some((t) => (docId ? t.docId === docId : t.title === title));
+      const trash = already ? prev.trash : [...prev.trash, { title, source: src, docId: docId ?? undefined, spaceId, folder }];
       return { ...prev, spaces, mapFolders, deleted, favs, trash, confirmDelete: null, confirmDeleteDocId: null };
     });
     if (docId) {
@@ -606,33 +609,83 @@ export function useHomeController() {
   const toggleRecentList = () => patch({ recentOpen: !state.recentOpen });
   const askRestore = (title: string, docId?: string) => patch({ confirmRestore: title, confirmRestoreDocId: docId ?? null });
   const cancelRestore = () => patch({ confirmRestore: null, confirmRestoreDocId: null });
+  /** Persists a restore-collision rename ("X" → "X_복원1") to the backend: the
+   * meta title via `rename()`, AND the doc body's root-node text — the visible
+   * map title IS the root text, so leaving it stale would show the old name in
+   * the editor and the next autosave would revert the meta title too. */
+  const persistRestoredRename = (docId: string, newTitle: string) => {
+    void (async () => {
+      try {
+        await docStore.rename(docId, newTitle);
+        const loaded = await docStore.load(docId);
+        const root = loaded?.doc?.nodes?.root;
+        if (loaded && root) {
+          const doc = { ...loaded.doc, nodes: { ...loaded.doc.nodes, root: { ...root, text: newTitle } } };
+          await docStore.save(docId, doc, { prevVersion: loaded.version, title: newTitle });
+        }
+      } catch {
+        /* backend unreachable — the local card is renamed; the merge re-syncs later */
+      }
+    })();
+  };
+
   const confirmRestoreYes = () => {
     const title = state.confirmRestore;
     if (!title) return;
     const docId = state.confirmRestoreDocId;
     const entry = state.trash.find((t) => (docId ? t.docId === docId : t.title === title));
+    // Restore policy #2: if the DESTINATION space already has a live map with
+    // this title, the restored map comes back as "제목_복원1" (first free number
+    // across spaces+trash, so repeated restore cycles keep incrementing). The
+    // decision is computed HERE — before setState — because the updater runs
+    // asynchronously, and the backend persistence below must use the same
+    // title the UI commits.
+    const isDriveFile = DRIVE_FILES.some((f) => f.name === title);
+    const present = (m: { title: string; docId?: string }) => (docId ? m.docId === docId : m.title === title);
+    const needsPlacement = !isDriveFile && !state.spaces.some((s) => Array.isArray(s.maps) && s.maps.some(present));
+    // Prefer the origin space captured at delete time; fall back to the home
+    // space (then the first) if it's gone.
+    const origin = entry?.spaceId && state.spaces.some((s) => s.id === entry.spaceId) ? entry.spaceId : undefined;
+    const targetId = origin ?? state.spaces.find((s) => s.home)?.id ?? state.spaces[0]?.id;
+    const target = state.spaces.find((s) => s.id === targetId);
+    let restoredTitle = title;
+    let toast = '';
+    if (needsPlacement && target) {
+      if ((target.maps || []).some((m) => m.title === title)) {
+        const taken = new Set<string>();
+        state.spaces.forEach((s) => (s.maps || []).forEach((m) => taken.add(m.title)));
+        state.trash.forEach((t) => {
+          if (t !== entry) taken.add(t.title);
+        });
+        let n = 1;
+        while (taken.has(`${title}_복원${n}`)) n++;
+        restoredTitle = `${title}_복원${n}`;
+        toast = `같은 이름의 맵이 있어 "${restoredTitle}"(으)로 복원했어요`;
+      } else if (!origin) {
+        toast = `원래 공간이 삭제되어 "${target.name}" 공간으로 복원했어요`;
+      }
+    }
     setState((prev) => {
+      // Remove exactly ONE trash entry (the restored doc) — with same-title
+      // entries allowed in the trash, a title-wide filter would eat siblings.
+      let removedOne = false;
+      const trash = prev.trash.filter((t) => {
+        if (removedOne) return true;
+        const match = docId ? t.docId === docId : t.title === title;
+        if (match) removedOne = true;
+        return !match;
+      });
+      // The title-keyed fallback flag clears only when no OTHER trash entry
+      // still holds this title (drive files / docId-less legacy entries).
       const deleted = { ...prev.deleted };
-      delete deleted[title];
-      const trash = prev.trash.filter((t) => t.title !== title);
-      const isDriveFile = DRIVE_FILES.some((f) => f.name === title);
+      if (!trash.some((t) => t.title === title)) delete deleted[title];
       let spaces = prev.spaces;
       let mapFolders = prev.mapFolders;
-      let toast = '';
-      const present = (m: { title: string; docId?: string }) => (docId ? m.docId === docId : m.title === title);
-      if (!isDriveFile && !spaces.some((s) => Array.isArray(s.maps) && s.maps.some(present))) {
-        // Prefer the origin space captured at delete time; fall back to the home
-        // space (then the first) if it's gone.
-        const origin = entry?.spaceId && spaces.some((s) => s.id === entry.spaceId) ? entry.spaceId : undefined;
-        const targetId = origin ?? spaces.find((s) => s.home)?.id ?? spaces[0]?.id;
-        const target = spaces.find((s) => s.id === targetId);
-        if (target) {
-          spaces = spaces.map((s) => (s.id === targetId ? { ...s, maps: [...(s.maps || []), { title, when: '방금 복원됨', hue: '#f0663f', docId: docId ?? undefined }] } : s));
-          // restore the folder assignment too, if that folder still exists
-          if (entry?.folder && Array.isArray(target.folders) && target.folders.some((f) => f.id === entry.folder)) {
-            mapFolders = { ...mapFolders, [title]: entry.folder };
-          }
-          if (!origin) toast = `원래 공간이 삭제되어 "${target.name}" 공간으로 복원했어요`;
+      if (needsPlacement && target) {
+        spaces = spaces.map((s) => (s.id === targetId ? { ...s, maps: [...(s.maps || []), { title: restoredTitle, when: '방금 복원됨', hue: '#f0663f', docId: docId ?? undefined }] } : s));
+        // restore the folder assignment too, if that folder still exists
+        if (entry?.folder && Array.isArray(target.folders) && target.folders.some((f) => f.id === entry.folder)) {
+          mapFolders = { ...mapFolders, [restoredTitle]: entry.folder };
         }
       }
       return { ...prev, deleted, trash, spaces, mapFolders, confirmRestore: null, confirmRestoreDocId: null, toast, toastTitle: toast ? '복원 완료' : '' };
@@ -641,13 +694,22 @@ export function useHomeController() {
       void docStore.restore(docId).catch(() => {
         /* backend unreachable — local state already restored it, non-fatal */
       });
+      if (restoredTitle !== title) persistRestoredRename(docId, restoredTitle);
     }
   };
   const restoreCard = (title: string, docId?: string) => {
     setState((prev) => {
+      // Same one-entry removal + conditional flag clear as confirmRestoreYes —
+      // same-title siblings may remain in the trash.
+      let removedOne = false;
+      const trash = prev.trash.filter((t) => {
+        if (removedOne) return true;
+        const match = docId ? t.docId === docId : t.title === title;
+        if (match) removedOne = true;
+        return !match;
+      });
       const deleted = { ...prev.deleted };
-      delete deleted[title];
-      const trash = prev.trash.filter((t) => t.title !== title);
+      if (!trash.some((t) => t.title === title)) delete deleted[title];
       return { ...prev, deleted, trash };
     });
     if (docId) {

@@ -357,7 +357,10 @@ export function seedFavAndTrashFromMetas(
         nextDeleted[meta.title] = true;
         changed = true;
       }
-      if (!nextTrash.some((t) => t.title === meta.title)) {
+      // Dedupe by docId, NOT title: trash policy allows two trashed maps (or a
+      // trashed + live map) to share a title, so a same-titled entry for a
+      // DIFFERENT doc must still get its own row.
+      if (!nextTrash.some((t) => (t.docId ? t.docId === meta.id : t.title === meta.title))) {
         nextTrash.push({ title: meta.title, source: 'local', docId: meta.id });
         changed = true;
       }
