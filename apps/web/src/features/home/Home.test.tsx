@@ -752,6 +752,29 @@ describe('Home', () => {
       }
     });
 
+    it('opens a map with a SINGLE tap (real mobile browsers do not reliably emit dblclick)', async () => {
+      const restore = mockMatchMedia(true);
+      try {
+        const user = userEvent.setup();
+        const { container } = renderHomeWithDocStore([
+          { id: 'doc-m', title: '모바일 맵', version: 1, updatedAt: '2026-01-01T00:00:00.000Z', isFavorite: false, deletedAt: null },
+        ]);
+        await waitFor(() => expect(container.querySelector('a[data-title="모바일 맵"]')).toBeTruthy());
+
+        // …but a tap on the always-visible ☰ menu must NOT navigate.
+        const card = container.querySelector('a[data-title="모바일 맵"]') as HTMLElement;
+        await user.click(within(card).getByRole('button', { name: '메뉴' }));
+        expect(screen.queryByText('EDITOR_PLACEHOLDER')).toBeNull();
+
+        // A single tap on the card body navigates to the editor (after the
+        // 900ms loader delay), instead of merely selecting the card.
+        await user.click(card);
+        await waitFor(() => expect(screen.getByText('EDITOR_PLACEHOLDER')).toBeTruthy(), { timeout: 3000 });
+      } finally {
+        restore();
+      }
+    });
+
     it('hides the sidebar behind a hamburger drawer and opens/closes it, crash-free', async () => {
       const restore = mockMatchMedia(true);
       try {
