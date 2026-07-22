@@ -1,3 +1,5 @@
+import { readFileSync } from 'node:fs';
+import path from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
 import { cleanup, render, screen, waitFor } from '@testing-library/react';
 import { MemoryRouter } from 'react-router-dom';
@@ -49,5 +51,21 @@ describe('Landing', () => {
     window.history.pushState({}, '', '/');
     render(<App />);
     expect(screen.getByRole('link', { name: '무료로 시작하기' })).toBeTruthy();
+  });
+});
+
+describe('static landing.html (the crawler-visible twin)', () => {
+  // Google의 브랜드 인증 크롤러는 JS를 실행하지 않는다 — 프로덕션 "/"는
+  // vercel.json 리라이트로 이 정적 파일이 서빙된다. React Landing과 같은
+  // 심사 3요소(앱 이름·목적 설명·법적 문서 링크)가 RAW HTML에 있어야 한다.
+  it('contains the app name, purpose, and legal links as plain HTML', () => {
+    const html = readFileSync(path.resolve(__dirname, '../../../public/landing.html'), 'utf8');
+    expect(html).toContain('Geurio');
+    expect(html).toContain('마인드맵 서비스');
+    expect(html).toContain('href="/privacy"');
+    expect(html).toContain('href="/terms"');
+    expect(html).toContain('href="/login"');
+    // JS 의존이 없어야 크롤러에 보인다
+    expect(html).not.toContain('<script');
   });
 });

@@ -15,6 +15,12 @@ import { BrandMark } from '../../components/BrandMark';
  *
  * 로그인 여부에 따라 CTA가 /login ↔ /home 으로 바뀐다(세션 확인은 표시용일
  * 뿐 가드가 아니다 — /home은 여전히 RequireAuth가 지킨다).
+ *
+ * ⚠️ 정적 쌍둥이: 프로덕션(Vercel)에서 "/"의 최초 로드는 `public/landing.html`
+ * (vercel.json 리라이트)이 서빙한다 — Google의 인증 크롤러가 JS를 실행하지
+ * 않아 SPA 루트를 "빈 페이지"로 판정했기 때문. 이 컴포넌트는 dev 서버와
+ * 클라이언트 사이드 내비게이션("/"로의 Link 이동)용이다. 내용을 고치면
+ * landing.html도 반드시 함께 고칠 것.
  */
 export function Landing() {
   const { auth } = useBackend();
