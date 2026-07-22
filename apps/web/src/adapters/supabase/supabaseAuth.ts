@@ -52,7 +52,14 @@ export class SupabaseAuth implements AuthProvider {
 
   async signInWithOAuth(provider: 'google'): Promise<{ error?: string }> {
     const redirectTo = typeof window !== 'undefined' ? `${window.location.origin}/home` : undefined;
-    const { error } = await this.client.auth.signInWithOAuth({ provider, options: { redirectTo } });
+    const { error } = await this.client.auth.signInWithOAuth({
+      provider,
+      // `prompt=select_account`: without it Google silently reuses the single
+      // signed-in browser account once consent was granted ONCE — clicking the
+      // button then logs straight in with no way to pick a different account.
+      // With it Google always shows the account chooser.
+      options: { redirectTo, queryParams: { prompt: 'select_account' } },
+    });
     // On success the browser is redirected to Google — this only returns
     // (with an error) when the redirect itself couldn't be initiated.
     return error ? { error: error.message } : {};

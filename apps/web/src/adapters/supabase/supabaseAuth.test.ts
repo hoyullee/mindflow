@@ -40,3 +40,25 @@ describe('SupabaseAuth session mapping (OAuth identity metadata)', () => {
   });
 });
 
+describe('SupabaseAuth signInWithOAuth', () => {
+  it('always requests the Google account chooser (prompt=select_account)', async () => {
+    // Without this param Google silently reuses the signed-in browser account
+    // after the first consent — the button then can't switch accounts at all.
+    let captured: Record<string, unknown> | null = null;
+    const client = {
+      auth: {
+        signInWithOAuth: async (args: Record<string, unknown>) => {
+          captured = args;
+          return { error: null };
+        },
+      },
+    } as unknown as SupabaseClient;
+    const auth = new SupabaseAuth(client);
+    const res = await auth.signInWithOAuth('google');
+    expect(res.error).toBeUndefined();
+    expect(captured!.provider).toBe('google');
+    const options = captured!.options as { queryParams?: Record<string, string> };
+    expect(options.queryParams).toEqual({ prompt: 'select_account' });
+  });
+});
+
