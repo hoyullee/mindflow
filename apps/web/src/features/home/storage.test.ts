@@ -1,5 +1,44 @@
 import { beforeEach, describe, expect, it } from 'vitest';
-import { RECENT_CAP, loadRecent, mergeRecent, pushRecentTitle } from './storage';
+import { RECENT_CAP, folderKeyOf, loadRecent, mergeRecent, migrateMapFolderKeys, pushRecentTitle } from './storage';
+
+describe('mapFolders docId keying', () => {
+  const spaces = [
+    {
+      id: 'general',
+      name: '일반 공간',
+      home: true,
+      color: '#f0663f',
+      maps: [
+        { title: '문서 맵', when: '내 맵', hue: '#f0663f', docId: 'd1' },
+        { title: '워크스페이스 전용', when: '내 맵', hue: '#f0663f' }, // docId-less
+      ],
+    },
+  ];
+
+  it('folderKeyOf prefers the docId, falls back to the title', () => {
+    expect(folderKeyOf('문서 맵', 'd1')).toBe('d1');
+    expect(folderKeyOf('워크스페이스 전용', undefined)).toBe('워크스페이스 전용');
+  });
+
+  it('migrates legacy title keys onto docId keys, keeping docId-less entries by title', () => {
+    const { mapFolders, changed } = migrateMapFolderKeys(spaces, { '문서 맵': 'f1', '워크스페이스 전용': 'f2' });
+    expect(changed).toBe(true);
+    expect(mapFolders).toEqual({ d1: 'f1', '워크스페이스 전용': 'f2' });
+  });
+
+  it('never clobbers an existing docId entry (newer truth wins over a stale title key)', () => {
+    const { mapFolders } = migrateMapFolderKeys(spaces, { d1: 'f-new', '문서 맵': 'f-old' });
+    expect(mapFolders['d1']).toBe('f-new');
+    expect(mapFolders['문서 맵']).toBe('f-old'); // stale title key kept inert, not moved
+  });
+
+  it('is a no-op (same reference) when nothing needs migrating', () => {
+    const input = { d1: 'f1' };
+    const { mapFolders, changed } = migrateMapFolderKeys(spaces, input);
+    expect(changed).toBe(false);
+    expect(mapFolders).toBe(input);
+  });
+});
 
 describe('pushRecentTitle', () => {
   beforeEach(() => localStorage.clear());

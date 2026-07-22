@@ -727,6 +727,38 @@ describe('Home', () => {
     await waitFor(() => expect(docStore.rename).toHaveBeenCalledWith('doc-old', '새 마인드맵_1_복원1'));
   });
 
+  it('keeps a legacy title-keyed folder assignment working (migrated to the docId key on load)', async () => {
+    const user = userEvent.setup();
+    localStorage.setItem(
+      'mf_spaces',
+      JSON.stringify({
+        v: 1,
+        spaces: [
+          {
+            id: 'general',
+            name: '일반 공간',
+            home: true,
+            color: '#f0663f',
+            folders: [{ id: 'f1', name: '자료' }],
+            maps: [{ title: '폴더 속 맵', when: '내 맵', hue: '#f0663f', docId: 'doc-in' }],
+          },
+        ],
+        mapFolders: { '폴더 속 맵': 'f1' }, // legacy TITLE key
+        recent: [],
+      }),
+    );
+    const { container } = renderHomeWithDocStore([
+      { id: 'doc-in', title: '폴더 속 맵', version: 1, updatedAt: '2026-01-01T00:00:00.000Z', isFavorite: false, deletedAt: null },
+    ]);
+
+    // top level shows the folder (count 1), not the map
+    await waitFor(() => expect(screen.getByText('자료')).toBeTruthy());
+    expect(container.querySelector('.mf-map-grid a[data-title="폴더 속 맵"]')).toBeNull();
+    // entering the folder shows the map — the migrated docId key resolves
+    await user.click(screen.getByText('자료'));
+    await waitFor(() => expect(container.querySelector('.mf-map-grid a[data-title="폴더 속 맵"]')).toBeTruthy());
+  });
+
   it('permanently deletes a single trash entry via 영구 삭제 (confirm-gated, backend purge)', async () => {
     const user = userEvent.setup();
     localStorage.setItem('mf_recent', JSON.stringify(['영구삭제 맵']));
