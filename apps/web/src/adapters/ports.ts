@@ -17,6 +17,12 @@ import type { Doc } from '@mindflow/mindmap-core';
 export interface AuthUser {
   id: string;
   email: string | null;
+  /** Display name from the identity provider (Google `full_name`/`name` in
+   * user_metadata). A better DEFAULT than the email local part — the user's
+   * explicit rename (profiles.display_name) still wins over it. */
+  name?: string | null;
+  /** Avatar image URL from the identity provider (Google `avatar_url`/`picture`). */
+  avatarUrl?: string | null;
 }
 
 export interface AuthSession {

@@ -1,5 +1,6 @@
 import type { HomeController } from '../useHomeController';
 import type { HomeState } from '../types';
+import { ProfileAvatar } from './ProfileAvatar';
 
 interface Props {
   state: HomeState;
@@ -25,9 +26,7 @@ export function SettingsPopover({ state, controller, userInitial }: Props) {
         }}
         style={{ display: 'flex', alignItems: 'center', gap: 9, padding: 8, borderRadius: 10, cursor: 'pointer' }}
       >
-        <div style={{ width: 30, height: 30, borderRadius: 9, background: '#f0663f', color: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: 800, fontSize: 16 }}>
-          {userInitial}
-        </div>
+        <ProfileAvatar initial={userInitial} avatarUrl={state.userAvatar} size={30} radius={9} fontSize={16} />
         <div style={{ fontWeight: 700, fontSize: 15 }}>{state.userName}</div>
         <div style={{ marginLeft: 'auto', color: '#9c8b7e', fontSize: 12 }}>▾</div>
       </div>
@@ -51,24 +50,7 @@ export function SettingsPopover({ state, controller, userInitial }: Props) {
         }}
       >
         <div style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '16px 16px 14px', background: 'linear-gradient(135deg,#fdeee7,#faf3ee)', borderRadius: '14px 14px 0 0' }}>
-          <div
-            style={{
-              width: 44,
-              height: 44,
-              borderRadius: 13,
-              background: '#f0663f',
-              color: '#fff',
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              fontWeight: 800,
-              fontSize: 20,
-              boxShadow: '0 4px 10px rgba(240,102,63,.25)',
-              flexShrink: 0,
-            }}
-          >
-            {userInitial}
-          </div>
+          <ProfileAvatar initial={userInitial} avatarUrl={state.userAvatar} size={44} radius={13} fontSize={20} boxShadow="0 4px 10px rgba(240,102,63,.25)" />
           <div style={{ minWidth: 0, flex: 1 }}>
             <div style={{ fontWeight: 700, fontSize: 15, color: '#33281f', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{state.userName}</div>
             {state.userEmail && <div style={{ fontSize: 12, color: '#9c8b7e', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{state.userEmail}</div>}

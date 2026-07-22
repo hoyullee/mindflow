@@ -9,7 +9,17 @@ import type { AuthChangeListener, AuthProvider, AuthResult, AuthSession } from '
 
 function mapUser(user: User | null | undefined): AuthSession['user'] | null {
   if (!user) return null;
-  return { id: user.id, email: user.email ?? null };
+  // OAuth identity metadata: Google fills user_metadata with full_name/name
+  // and avatar_url/picture — surface them so the profile UI can show the
+  // person's real name and photo instead of the email-derived fallback.
+  const meta = (user.user_metadata ?? {}) as Record<string, unknown>;
+  const str = (v: unknown): string | null => (typeof v === 'string' && v.trim() ? v : null);
+  return {
+    id: user.id,
+    email: user.email ?? null,
+    name: str(meta.full_name) ?? str(meta.name),
+    avatarUrl: str(meta.avatar_url) ?? str(meta.picture),
+  };
 }
 
 function mapSession(session: Session | null | undefined): AuthSession | null {

@@ -106,6 +106,33 @@ describe('Home', () => {
     expect(aside.queryByText('mine')).toBeNull();
   });
 
+  it("shows the Google account's real name and photo in the LNB profile", async () => {
+    // A Google-OAuth session carries name/avatarUrl (mapped from user_metadata);
+    // the profile should prefer that name over the email local part, and layer
+    // the photo over the initial circle (which stays as the broken-image fallback).
+    class GoogleAuth extends LocalAuth {
+      override async getSession() {
+        return { user: { id: 'g1', email: 'hoyul.lee@gmail.com', name: '이호율', avatarUrl: 'https://lh3.googleusercontent.com/a/photo=s96-c' } };
+      }
+    }
+    const backend: Backend = { auth: new GoogleAuth(), docStore: new MockDocStore(), spaceStore: new LocalSpaceStore(), mode: 'local' };
+    const { container } = render(
+      <MemoryRouter initialEntries={['/home']}>
+        <BackendProvider backend={backend}>
+          <Routes>
+            <Route path="/home" element={<Home />} />
+          </Routes>
+        </BackendProvider>
+      </MemoryRouter>,
+    );
+    const aside = within(container.querySelector('aside') as HTMLElement);
+
+    await waitFor(() => expect(aside.getAllByText('이호율').length).toBeGreaterThan(0)); // Google name, not "hoyul.lee"
+    const img = container.querySelector('aside img[src="https://lh3.googleusercontent.com/a/photo=s96-c"]') as HTMLImageElement;
+    expect(img).toBeTruthy();
+    expect(img.getAttribute('referrerpolicy')).toBe('no-referrer'); // googleusercontent rejects cross-site referrers
+  });
+
   it('renders saved documents from DocStore.list() as map cards', async () => {
     const { container } = renderHomeWithDocStore([
       { id: 'doc-a', title: '따라잡기', version: 1, updatedAt: '2026-01-01T00:00:00.000Z', isFavorite: false, deletedAt: null },

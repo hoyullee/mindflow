@@ -272,9 +272,12 @@ export function useHomeController() {
       if (cancelled) return;
       const email = session?.user?.email;
       if (!email) return;
-      // Show the locally-cached name (or email default) immediately, no flash…
-      const name0 = readSavedProfileName(email) || email.split('@')[0] || email;
-      setState((prev) => ({ ...prev, userEmail: email, userName: name0 }));
+      // Show the locally-cached name immediately, no flash. Default order:
+      // explicit rename (local cache) → provider name (Google full_name) →
+      // email local part. The provider avatar rides along (null for email/demo
+      // accounts — the UI falls back to the initial circle).
+      const name0 = readSavedProfileName(email) || session?.user?.name || email.split('@')[0] || email;
+      setState((prev) => ({ ...prev, userEmail: email, userName: name0, userAvatar: session?.user?.avatarUrl || null }));
       // …then reconcile with the backend (Supabase `profiles.display_name`), which
       // survives a browser-cache clear and syncs across devices. Local mode returns
       // null here, so it just keeps the cached value.
