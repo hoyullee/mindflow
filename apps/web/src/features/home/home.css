@@ -176,6 +176,11 @@ a:hover {
 .mf-home .drive-file:hover {
   background: #faf3ee !important;
 }
+/* LNB favorites: the leading star doubles as the unfavorite button — a subtle
+   ring on hover separates "I'm about to unstar" from the row's open action. */
+.mf-home .mf-fav-unstar:hover {
+  background: #f0e6dd !important;
+}
 
 /* M6: mobile nav drawer slide — the aside translates in from the left and the
    backdrop cross-fades (states driven inline by Sidebar's mounted/entered

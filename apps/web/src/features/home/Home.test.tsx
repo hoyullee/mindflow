@@ -687,6 +687,24 @@ describe('Home', () => {
     expect(localStorage.getItem('mindflow_doc_d1')).toBeNull();
   });
 
+  it('unfavorites from the LNB favorites list via the leading star button', async () => {
+    const user = userEvent.setup();
+    const { container, docStore } = renderHomeWithDocStore([
+      { id: 'doc-f', title: '즐겨찾는 맵', version: 1, updatedAt: '2026-01-01T00:00:00.000Z', isFavorite: true, deletedAt: null },
+    ]);
+    const aside = within(container.querySelector('aside') as HTMLElement);
+    await waitFor(() => expect(aside.getByText('즐겨찾는 맵')).toBeTruthy());
+
+    // The star strips the favorite (row disappears, backend persisted)…
+    await user.click(aside.getByRole('button', { name: "'즐겨찾는 맵' 즐겨찾기 해제" }));
+    await waitFor(() => expect(aside.queryByText('즐겨찾는 맵')).toBeNull());
+    expect(docStore.setFavorite).toHaveBeenCalledWith('doc-f', false);
+    // …without opening the map (the row's click handler must not fire).
+    expect(screen.queryByText('EDITOR_PLACEHOLDER')).toBeNull();
+    // The map itself is untouched — still in the grid.
+    expect(container.querySelector('.mf-map-grid a[data-title="즐겨찾는 맵"]')).toBeTruthy();
+  });
+
   describe('mobile (M6)', () => {
     it('collapses the toolbar actions into icon-only buttons on one row (no stray action line)', async () => {
       // On mobile the labeled 가져오기/새 폴더 pair used to wrap onto a lonely line
