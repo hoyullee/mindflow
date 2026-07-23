@@ -10,7 +10,7 @@ import { useYjsDocSync } from '../../collab/useYjsDocSync';
 import { usePresence, type UsePresenceResult } from '../../collab/usePresence';
 import { EMPTY_PRESENCE_SELECTION, type PresenceSelection } from '../../collab/presence';
 import { CanvasTextMeasurer, computeMetrics, measureFloatHeight } from './metrics';
-import { attachImageFile, defaultFloatSize, firstImageFile } from './imageAttach';
+import { attachImageFile, defaultFloatSize, firstImageFile, fitWithin } from './imageAttach';
 import { hasStoredDoc, loadOrSeedDoc, saveDoc } from './storage';
 import { pushRecentEntry } from '../home/storage';
 import { buildVisible, descendants, outlineRows } from './tree';
@@ -332,6 +332,10 @@ export interface EditorController {
   promptAddImage: (at?: { x: number; y: number }) => void;
   /** 이미지 파일(붙여넣기/드롭/선택)을 리사이즈해 캔버스에 이미지 플로트로 추가. */
   addImageFloatFromFile: (file: File | Blob, at?: { x: number; y: number }) => Promise<void>;
+  /** 파일 선택 다이얼로그로 노드 썸네일 이미지를 첨부/교체 (노드 우클릭 메뉴). */
+  promptNodeImage: (id: string) => void;
+  /** 노드 썸네일 이미지 제거. */
+  clearNodeImage: (id: string) => void;
 
   // ---- node property setters ----
   setShape: (shape: string) => void;
@@ -1942,6 +1946,38 @@ export function useEditorState(): EditorController {
     [addImageFloatFromFile],
   );
 
+  /** 노드 썸네일: 표시 크기는 긴 변 180px로 비율 고정 (metrics가 박스를 키움). */
+  const attachNodeImageFromFile = useCallback(
+    async (id: string, file: File | Blob) => {
+      const attached = await attachImageFile(file);
+      if (!attached) return;
+      const disp = fitWithin(attached.natW, attached.natH, 180);
+      commitDoc((d) => ({ ...d, nodes: mutations.setNodeImage(d.nodes, id, attached.src, disp.w, disp.h) }));
+    },
+    [commitDoc],
+  );
+
+  const promptNodeImage = useCallback(
+    (id: string) => {
+      const input = document.createElement('input');
+      input.type = 'file';
+      input.accept = 'image/*';
+      input.onchange = () => {
+        const f = input.files?.[0];
+        if (f) void attachNodeImageFromFile(id, f);
+      };
+      input.click();
+    },
+    [attachNodeImageFromFile],
+  );
+
+  const clearNodeImage = useCallback(
+    (id: string) => {
+      commitDoc((d) => ({ ...d, nodes: mutations.clearNodeImage(d.nodes, id) }));
+    },
+    [commitDoc],
+  );
+
   // 클립보드 이미지 붙여넣기 → 뷰포트 중앙에 이미지 플로트. 텍스트 입력 중
   // (노드/메모 편집, 검색창 등)의 붙여넣기는 그대로 통과시킨다.
   useEffect(() => {
@@ -3007,6 +3043,8 @@ export function useEditorState(): EditorController {
     addZoneAt,
     promptAddImage,
     addImageFloatFromFile,
+    promptNodeImage,
+    clearNodeImage,
 
     setShape,
     setColor,

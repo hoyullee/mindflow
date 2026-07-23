@@ -200,6 +200,25 @@ function buildItems(controller: EditorController, ctxMenu: ContextMenuState, tog
       });
     }
     items.push('divider');
+    const hasImg = !!controller.doc.nodes[nodeId]?.img;
+    items.push({
+      icon: '🖼',
+      label: hasImg ? '이미지 변경' : '이미지 추가',
+      onSelect: () => {
+        close();
+        controller.promptNodeImage(nodeId);
+      },
+    });
+    if (hasImg) {
+      items.push({
+        icon: '✕',
+        label: '이미지 제거',
+        onSelect: () => {
+          close();
+          controller.clearNodeImage(nodeId);
+        },
+      });
+    }
     items.push({
       icon: '≡',
       label: '텍스트 정렬',

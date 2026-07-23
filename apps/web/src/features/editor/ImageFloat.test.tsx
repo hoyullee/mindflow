@@ -3,7 +3,7 @@ import { cleanup, render, screen, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { MemoryRouter, Route, Routes } from 'react-router-dom';
 import { Editor } from './Editor';
-import { addImageFloatItem } from './mutations';
+import { addImageFloatItem, clearNodeImage, setNodeImage } from './mutations';
 import { defaultFloatSize, fitWithin, firstImageFile, DEFAULT_IMAGE_FLOAT_WIDTH, MAX_IMAGE_DIM } from './imageAttach';
 
 const IMG_SRC = 'data:image/jpeg;base64,QUJDREVG';
@@ -81,6 +81,40 @@ describe('image attach — pure helpers', () => {
     const out = addImageFloatItem([], 'f9', 5, 6, IMG_SRC, 260, 195);
     expect(out).toEqual([{ id: 'f9', x: 5, y: 6, w: 260, h: 195, text: '', img: IMG_SRC }]);
   });
+
+  it('setNodeImage/clearNodeImage keep img/imgW/imgH as an all-or-nothing trio', () => {
+    const base = { root: { id: 'root', text: 'x', emoji: '', parent: null, children: [], collapsed: false, color: null, x: 0, y: 0 } };
+    const withImg = setNodeImage(base, 'root', IMG_SRC, 180, 135);
+    expect(withImg.root).toMatchObject({ img: IMG_SRC, imgW: 180, imgH: 135 });
+    const cleared = clearNodeImage(withImg, 'root');
+    // 키 자체가 사라져야 직렬화/CRDT에서 필드가 제거된다 (undefined 잔존 금지)
+    expect('img' in cleared.root!).toBe(false);
+    expect('imgW' in cleared.root!).toBe(false);
+    expect('imgH' in cleared.root!).toBe(false);
+  });
+});
+
+describe('node image in the editor', () => {
+  const DOC_NODE_IMG = {
+    ...DOC_WITH_IMAGE,
+    nodes: {
+      root: { id: 'root', text: '루트', emoji: '', parent: null, children: ['c1'], collapsed: false, color: null, x: 0, y: 0 },
+      c1: { id: 'c1', text: '사진 노드', emoji: '', parent: 'root', children: [], collapsed: false, color: null, x: 0, y: 0, img: IMG_SRC, imgW: 180, imgH: 135 },
+    },
+    floats: [],
+  };
+
+  it('renders the thumbnail inside the node box, above the text', () => {
+    localStorage.setItem('mindflow_doc_nodeimg', JSON.stringify(DOC_NODE_IMG));
+    const { container } = renderEditor('/editor?map=nodeimg&title=t');
+    const vp = getViewport(container);
+    const nodeBox = vp.querySelector('[data-node-id="c1"]') as HTMLElement;
+    expect(nodeBox).toBeTruthy();
+    const img = nodeBox.querySelector('img') as HTMLImageElement;
+    expect(img?.getAttribute('src')).toBe(IMG_SRC);
+    expect(within(nodeBox).getByText('사진 노드')).toBeTruthy();
+  });
+
 });
 
 describe('image float in the editor', () => {

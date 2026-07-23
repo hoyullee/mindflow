@@ -184,6 +184,12 @@ export function computeMetrics(node: Node, depth: number, measurer: TextMeasurer
     w = Math.max(w * 1.22 + 8, textW * 1.42 + padX * 2);
     h = Math.max(h + 8, textH * 1.42 + 10);
   }
+  // 노드 이미지: 텍스트 위 썸네일 — 폭은 이미지+패딩을 수용하고 높이가 늘어난다
+  // (imgW/imgH는 첨부 시 비율 유지로 고정 계산된 표시 크기, Node.img 참고).
+  if (node.img && node.imgW && node.imgH) {
+    w = Math.max(w, node.imgW + padX * 2);
+    h += node.imgH + 8;
+  }
   if (node.cw) w = Math.max(w, node.cw);
   if (node.ch) h = Math.max(h, node.ch);
   return { font, w, h, shape, fpx, fw, tw: textW + 9 };

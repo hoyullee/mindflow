@@ -68,7 +68,8 @@ server/           # 인증(OAuth/이메일) + DB(Postgres) + 문서 동기화 AP
 - ✅ **GIS 직접 연동 + 법적 문서** 구글 동의 화면의 `<ref>.supabase.co` 표시 제거: 로그인 페이지가 GIS 공식 버튼을 우리 origin에서 렌더 → ID 토큰을 신설 포트 `AuthProvider.signInWithIdToken`으로 교환(`GoogleSignInButton.tsx`/`googleIdentity.ts`, nonce=원본↔SHA-256 쌍). `VITE_GOOGLE_CLIENT_ID` 미설정·데모 모드·스크립트 차단 시 기존 리다이렉트 버튼 폴백(실브라우저로 차단 환경 degradation 검증). 공개 라우트 `/privacy`·`/terms`(RequireAuth 밖, 로그인 푸터 링크) + 브랜드 인증용 120×120 로고(`/brand/geurio-logo-120.png`). 콘솔 절차는 `backend.md` §1d
 - ✅ **브랜드 마크 리디자인** 문자 "G" → 흰 모노라인 **소용돌이**(중심 점으로 감기는 세 호, 사용자 선정안). 지오메트리 3곳 동기화: `src/components/BrandMark.tsx`(앱 내: 로그인 BrandPanel·에디터 툴바·법적 문서 헤더) + `generate-icons.mjs`(원본) + 모바일 `generate-native-assets.mjs`. PWA·파비콘·브랜드 120·Android adaptive/legacy/스플래시·iOS 아이콘/스플래시 전부 재생성
 - ✅ **이미지 첨부 ①(캔버스 이미지 플로트)** `Float.img`(데이터 URL, post-dc 순수 추가 — 직렬화/CRDT 제네릭 통과, 골든 무회귀). 저장 전략=문서 인라인: `imageAttach.ts`가 첨부 시 다운스케일(긴변 1024, PNG는 투명 보존·그 외 JPEG q.85, 초과 시 재압축). 진입 3종: 삽입 메뉴·배경 우클릭 "이미지 추가"(파일 선택), 클립보드 붙여넣기(텍스트 입력 중 제외), 캔버스 드롭(드롭 지점). 렌더=FloatLayer 이미지 분기(접기토글/편집 없음), 리사이즈 비율 고정, 속성패널 이미지 전용, PNG 내보내기 async 프리디코드 후 drawImage. 실브라우저 전 시나리오(삽입·드래그·리사이즈·영속·리로드·드롭·삭제·내보내기) 검증
-- ⏭️ **다음 후보**: 이미지 첨부 ②(노드 이미지) / 실기기 빌드·서명·스토어 제출 (로컬 툴체인 필요)
+- ✅ **이미지 첨부 ②(노드 이미지)** `Node.img/imgW/imgH`(항상 세트, post-dc 순수 추가) — 표시 크기는 첨부 시 긴변 180px 비율 고정. `computeMetrics`가 `imgW+패딩`/`imgH+8`만큼 박스를 키워 **레이아웃 자동 반영**(sizeOf 주입 경로 그대로). 렌더=NodeLayer 세로 스택(썸네일 위·이모지/텍스트 아래), 진입=노드 우클릭 "이미지 추가/변경/제거"(`setNodeImage`/`clearNodeImage` — clear는 키 삭제로 CRDT 필드 제거), PNG 내보내기 노드 프리디코드+동일 스택 재현. 실브라우저 검증(추가→박스확장→영속→제거→복원→내보내기 픽셀 일치)
+- ⏭️ **다음 후보**: 실기기 빌드·서명·스토어 제출 (로컬 툴체인 필요 — 원격 코드 작업 소진)
 
 > **로드맵 1·2단계 완료**: 웹 프로덕션화(코어 분리·React·인증/DB) + PWA/모바일 웹 + 실시간 다중편집 + 앱스토어 래핑(Capacitor). 라이브 백엔드/실기기 배포는 키·툴체인 설정 후 로컬에서.
 

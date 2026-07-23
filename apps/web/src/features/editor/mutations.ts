@@ -168,6 +168,23 @@ export function setNodeField<K extends keyof Node>(nodes: NodeMap, id: string, k
 }
 
 /** Port of `Component#onNodeResizeDown`/`onMove` 'node-resize' (MindFlow.dc.html:1613, 1670-1677). */
+/** 노드 이미지 설정 — img/imgW/imgH는 항상 세트로 (Node.img 참고). */
+export function setNodeImage(nodes: NodeMap, id: string, img: string, imgW: number, imgH: number): NodeMap {
+  const n = nodes[id];
+  if (!n) return nodes;
+  return { ...nodes, [id]: { ...n, img, imgW, imgH } };
+}
+/** 노드 이미지 제거 — 키 자체를 지워 직렬화/CRDT에서 필드가 사라지게 한다. */
+export function clearNodeImage(nodes: NodeMap, id: string): NodeMap {
+  const n = nodes[id];
+  if (!n || !n.img) return nodes;
+  const rest = { ...n };
+  delete rest.img;
+  delete rest.imgW;
+  delete rest.imgH;
+  return { ...nodes, [id]: rest };
+}
+
 export function resizeNode(nodes: NodeMap, id: string, cw: number, ch: number): NodeMap {
   const n = nodes[id];
   if (!n) return nodes;

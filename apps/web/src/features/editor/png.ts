@@ -203,14 +203,21 @@ export async function exportPng(doc: Doc, geom: GeomMap, theme: Theme, filename:
   // 이미지 플로트 프리디코드 — canvas 2D `drawImage`는 디코드 완료된
   // 엘리먼트가 필요하므로 그리기 전에 전부 로드해 둔다(데이터 URL이라 즉시).
   const fImages = new Map<string, HTMLImageElement>();
-  await Promise.all(
-    doc.floats
+  const nImages = new Map<string, HTMLImageElement>();
+  await Promise.all([
+    ...doc.floats
       .filter((f) => f.img)
       .map(async (f) => {
         const el = await loadImageEl(f.img!);
         if (el) fImages.set(f.id, el);
       }),
-  );
+    ...ids
+      .filter((id) => doc.nodes[id]?.img)
+      .map(async (id) => {
+        const el = await loadImageEl(doc.nodes[id]!.img!);
+        if (el) nImages.set(id, el);
+      }),
+  ]);
 
   let x0 = Infinity;
   let y0 = Infinity;
@@ -328,7 +335,23 @@ export async function exportPng(doc: Doc, geom: GeomMap, theme: Theme, filename:
     ctx.font = `${fw} ${fpx}px Pretendard, sans-serif`;
     const lines = wrapLines(ctx, n.text || ' ', Math.max(8, g.w - padX * 2 - emojiFlex));
     const lh = fpx * 1.35;
-    const ty0 = g.y - ((lines.length - 1) * lh) / 2;
+    // 노드 썸네일: 에디터의 세로 스택(이미지 → 8px 갭 → 내용)과 동일하게,
+    // 텍스트/이모지는 (imgH+8)/2 만큼 내려가고 이미지는 텍스트 블록 위 중앙.
+    const hasImg = !!(n.img && n.imgW && n.imgH);
+    const textBlockH = lines.length * lh;
+    const imgShift = hasImg ? (n.imgH! + 8) / 2 : 0;
+    if (hasImg) {
+      const el = nImages.get(id);
+      const ix = g.x - n.imgW! / 2;
+      const iy = g.y - (textBlockH + 8) / 2 - n.imgH! / 2;
+      ctx.save();
+      ctx.beginPath();
+      roundRectPath(ctx, ix, iy, n.imgW!, n.imgH!, 8);
+      ctx.clip();
+      if (el) ctx.drawImage(el, ix, iy, n.imgW!, n.imgH!);
+      ctx.restore();
+    }
+    const ty0 = g.y + imgShift - ((lines.length - 1) * lh) / 2;
     // Honor the node's text alignment (left/center/right) — the editor's
     // `NodeBox` justifies the text block per `n.align`; the PNG used to always
     // center it, so left/right-aligned shapes looked wrong. The emoji sits to the
@@ -343,7 +366,7 @@ export async function exportPng(doc: Doc, geom: GeomMap, theme: Theme, filename:
       ctx.font = `${emojiPx}px Pretendard, sans-serif`;
       ctx.textAlign = 'left';
       ctx.textBaseline = 'middle';
-      ctx.fillText(n.emoji, x + padX, g.y);
+      ctx.fillText(n.emoji, x + padX, g.y + imgShift);
     }
   });
 

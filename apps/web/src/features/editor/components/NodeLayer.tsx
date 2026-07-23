@@ -217,6 +217,11 @@ function NodeBox({ id, node: n, g, nodes, mode, theme: th, rootX, controller }: 
   if (g.fpx) boxStyle.fontSize = g.fpx;
   if (g.fw) boxStyle.fontWeight = g.fw;
 
+  // 노드 이미지: 썸네일(위) + 내용(아래)의 세로 스택 — metrics.computeMetrics가
+  // imgH+8만큼 박스를 미리 키워 두므로 여기선 배치만 바꾼다.
+  const hasImg = !!(n.img && n.imgW && n.imgH);
+  if (hasImg) boxStyle.flexDirection = 'column';
+
   const align = (n.align || 'center') as CSSProperties['textAlign'];
   const clipShape = shape === 'hexagon' || shape === 'diamond' || shape === 'parallelogram' || shape === 'ellipse' || shape === 'pill';
   const bodyWidth = clipShape ? Math.min(g.tw || g.w, g.w) : '100%';
@@ -300,6 +305,14 @@ function NodeBox({ id, node: n, g, nodes, mode, theme: th, rootX, controller }: 
       }}
     >
       {shapeBg}
+      {hasImg && (
+        <img
+          src={n.img}
+          alt=""
+          draggable={false}
+          style={{ position: 'relative', zIndex: 1, width: n.imgW, height: n.imgH, objectFit: 'cover', borderRadius: 8, marginBottom: 8, pointerEvents: 'none', userSelect: 'none' }}
+        />
+      )}
       <div
         style={{
           position: 'relative',
