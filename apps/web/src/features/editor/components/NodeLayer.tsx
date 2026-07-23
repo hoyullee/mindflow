@@ -9,6 +9,7 @@ import type { EditorController } from '../useEditorState';
 import type { GeomMap } from '../types';
 import { peersSelecting } from '../presenceSelection';
 import { RemotePeerTag } from './RemotePeerTag';
+import { ResizeHandle } from './ResizeHandle';
 import { runsToHtml } from '../richtextDom';
 
 interface NodeLayerProps {
@@ -379,26 +380,17 @@ function NodeBox({ id, node: n, g, nodes, mode, theme: th, rootX, controller }: 
       {/* resize handle only for a true single selection (port of `this.state.selectedId`,
           MindFlow.dc.html:1274 — not shown for a marquee multi-selection) */}
       {controller.selection?.kind === 'node' && controller.selection.id === id && !editing && (
-        <div
+        <ResizeHandle
           title="크기 조절 (더블클릭: 원래 크기)"
+          accent={th.accent}
+          panel={th.panel}
+          right={-6}
+          bottom={-6}
+          zIndex={80}
           onPointerDown={(e) => controller.beginNodeResize(e, id)}
           onDoubleClick={(e) => {
             e.stopPropagation();
             controller.resetNodeSize(id);
-          }}
-          style={{
-            position: 'absolute',
-            right: -6,
-            bottom: -6,
-            width: 13,
-            height: 13,
-            borderRadius: 4,
-            background: th.panel,
-            border: `2px solid ${th.accent}`,
-            cursor: 'nwse-resize',
-            zIndex: 80,
-            boxSizing: 'border-box',
-            boxShadow: '0 1px 4px rgba(0,0,0,.2)',
           }}
         />
       )}
