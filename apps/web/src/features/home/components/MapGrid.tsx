@@ -59,8 +59,11 @@ export function MapGrid({ view, controller }: Props) {
         <div>
           <div style={{ fontSize: 12.5, fontWeight: 700, color: '#9c8b7e', marginBottom: 14 }}>맵</div>
           <div className="mf-map-grid" style={GRID_STYLE}>
+            {/* Key by card identity (docId; title fallback) — duplicate TITLES are
+                fully allowed, and a duplicate React key makes reconciliation reuse
+                one card's subtree for the other (wrong preview/menu state). */}
             {view.allCards.map((c) => (
-              <MapCard key={c.title} card={c} controller={controller} draggableEnabled={!view.isDriveSpace} />
+              <MapCard key={c.key} card={c} controller={controller} draggableEnabled={!view.isDriveSpace} />
             ))}
           </div>
         </div>

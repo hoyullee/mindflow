@@ -276,6 +276,64 @@ describe('Home', () => {
     expect(thumb.querySelector('.mf-skel')).toBeNull();
   });
 
+  it("never borrows another doc's body for a docId-backed card with no saved body (새로 만들기 → 뒤로가기 repro)", async () => {
+    // Repro: map A was modified but its root text is still the default
+    // "새 마인드맵"; the user then hits 새로 만들기 and leaves the editor with
+    // BROWSER BACK (goHome's explicit save never runs, and the untouched seed
+    // never autosaves — the fresh `new-…` doc has NO body anywhere). The new
+    // card must fall back to the generic sketch, NOT title-scan localStorage
+    // and pick up A's body (which rendered A's preview on the new card).
+    const docA = {
+      v: 1,
+      nodes: {
+        root: { id: 'root', text: '새 마인드맵', emoji: '', parent: null, children: ['n1'], collapsed: false, color: null, x: 0, y: 0 },
+        n1: { id: 'n1', text: 'A전용노드', emoji: '', parent: 'root', children: [], collapsed: false, color: null, x: 0, y: 0 },
+      },
+      floats: [],
+      lines: [],
+      zones: [],
+      layoutMode: 'radial',
+      themeKey: 'coral',
+    };
+    localStorage.setItem('mindflow_doc_doc-a', JSON.stringify(docA));
+    localStorage.setItem(
+      'mf_spaces',
+      JSON.stringify({
+        spaces: [
+          {
+            id: 's1',
+            name: '일반 공간',
+            home: true,
+            color: '#f0663f',
+            maps: [
+              { title: '새 마인드맵', when: '방금', hue: '#f0663f', docId: 'doc-a' },
+              { title: '새 마인드맵', when: '방금', hue: '#f0663f', docId: 'new-zz1' },
+            ],
+            folders: [],
+          },
+        ],
+        mapFolders: {},
+      }),
+    );
+    const { container } = renderHomeWithDocStore([{ id: 'doc-a', title: '새 마인드맵', version: 1, updatedAt: '2026-01-01T00:00:00.000Z', isFavorite: false, deletedAt: null }]);
+
+    const thumbOf = (docId: string) => container.querySelector(`.mf-map-grid a[href*="map=${docId}"] .map-thumb`) as HTMLElement | null;
+    // Sanity: A's own card renders A's body.
+    await waitFor(() => {
+      const labels = Array.from(thumbOf('doc-a')?.querySelectorAll('svg text') ?? []).map((t) => t.textContent);
+      expect(labels).toContain('A전용노드');
+    });
+    // The new card's fetch resolves to null → generic sketch, no skeleton…
+    await waitFor(() => {
+      const thumb = thumbOf('new-zz1');
+      expect(thumb).toBeTruthy();
+      expect(thumb!.querySelector('.mf-skel')).toBeNull();
+      expect(thumb!.querySelector('svg')).toBeTruthy();
+    });
+    // …and crucially NONE of A's node labels (miniPreview draws no text at all).
+    expect(Array.from(thumbOf('new-zz1')!.querySelectorAll('svg text'))).toHaveLength(0);
+  });
+
   it('hides the "아직 만든 맵이 없어요" prompt when the space has folders but no loose maps', async () => {
     localStorage.setItem(
       'mf_spaces',
