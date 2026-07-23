@@ -20,7 +20,9 @@ interface LinePanelProps {
  * 곡률/이름 편집 sections (single-only) are hidden.
  */
 export function LinePanel({ controller, lineIds, isMobile = false }: LinePanelProps) {
-  const th = controller.theme;
+  const th = controller.uiTheme;
+  // 색 스와치 "값"은 캔버스에 칠할 색이므로 문서 테마 팔레트를 쓴다
+  const ct = controller.theme;
   const ids = lineIds.filter((id) => controller.doc.lines.some((x) => x.id === id));
   const refId = ids[0];
   const l = refId ? controller.doc.lines.find((x) => x.id === refId) : undefined;
@@ -102,7 +104,7 @@ export function LinePanel({ controller, lineIds, isMobile = false }: LinePanelPr
           <SectionLabel theme={th}>글자 색상</SectionLabel>
           <SwatchRow
             theme={th}
-            palette={[th.panel, th.text, ...th.palette]}
+            palette={[ct.panel, ct.text, ...ct.palette]}
             current={l.ltextColor}
             onPick={(hex) => controller.setLineTextColor(hex)}
             onReset={() => controller.setLineTextColor(null)}

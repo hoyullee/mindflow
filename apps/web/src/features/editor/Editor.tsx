@@ -24,7 +24,10 @@ import { useIsMobile } from '../../hooks/useMediaQuery';
  */
 export function Editor() {
   const controller = useEditorState();
-  const { doc, theme: th } = controller;
+  const { doc } = controller;
+  // 시스템 크롬(루트 배경·제스처 범례·모바일 닫기 핸들 등)은 고정 uiTheme —
+  // 문서 테마는 편집 영역(Viewport/아웃라인/미니맵 내용)만 칠한다.
+  const th = controller.uiTheme;
   const isMobile = useIsMobile();
 
   // Whether a property panel is currently shown (mirrors PropertyPanel's own
@@ -149,7 +152,7 @@ export function Editor() {
             )}
           </>
         ) : (
-          <div className="mf-ed-outline" style={{ position: 'absolute', inset: 0, zIndex: 15, background: th.appBg, overflowY: 'auto' }}>
+          <div className="mf-ed-outline" style={{ position: 'absolute', inset: 0, zIndex: 15, background: controller.theme.appBg, overflowY: 'auto' }}>
             <OutlineView controller={controller} />
           </div>
         )}

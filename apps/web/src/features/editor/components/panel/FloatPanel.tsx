@@ -18,7 +18,9 @@ interface FloatPanelProps {
  * "다중 선택" count.
  */
 export function FloatPanel({ controller, floatIds, isMobile = false }: FloatPanelProps) {
-  const th = controller.theme;
+  const th = controller.uiTheme;
+  // 색 스와치 "값"은 캔버스에 칠할 색이므로 문서 테마 팔레트를 쓴다
+  const ct = controller.theme;
   const ids = floatIds.filter((id) => controller.doc.floats.some((x) => x.id === id));
   const refId = ids[0];
   const f = refId ? controller.doc.floats.find((x) => x.id === refId) : undefined;
@@ -59,7 +61,7 @@ export function FloatPanel({ controller, floatIds, isMobile = false }: FloatPane
         )}
 
         <PanelSection theme={th} title="메모 스타일" open={openSec === 'fbg'} onToggle={() => toggle('fbg')}>
-          <SwatchRow theme={th} palette={[th.panel, th.text, ...th.palette]} current={f.bg} onPick={(hex) => controller.setFloatBg(hex)} onReset={() => controller.setFloatBg(null)} />
+          <SwatchRow theme={th} palette={[ct.panel, ct.text, ...ct.palette]} current={f.bg} onPick={(hex) => controller.setFloatBg(hex)} onReset={() => controller.setFloatBg(null)} />
         </PanelSection>
 
         <Divider theme={th} />
@@ -68,7 +70,7 @@ export function FloatPanel({ controller, floatIds, isMobile = false }: FloatPane
           <SectionLabel theme={th}>글자 색상</SectionLabel>
           <SwatchRow
             theme={th}
-            palette={[th.panel, th.text, ...th.palette]}
+            palette={[ct.panel, ct.text, ...ct.palette]}
             current={f.textColor}
             onPick={(hex) => controller.setFloatTextColor(hex)}
             onReset={() => controller.setFloatTextColor(null)}

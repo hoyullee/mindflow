@@ -371,6 +371,29 @@ describe('Editor interactions (M3-Editor-b)', () => {
     expect(screen.getByText('테마')).toBeTruthy();
   });
 
+  it('theme switch recolors ONLY the editing canvas — the GNB/chrome keeps the fixed UI theme', async () => {
+    // 문서 테마는 편집 영역(캔버스 배경·노드 색)만 칠하고, 시스템 크롬(GNB·
+    // 독칩·패널)은 항상 고정 uiTheme(코랄)로 남아야 한다.
+    const user = userEvent.setup();
+    localStorage.setItem('mindflow_doc_th1', JSON.stringify(DOC));
+    const { container } = renderEditor('/editor?map=th1&title=x');
+
+    const topbar = container.querySelector('.mf-ed-topbar') as HTMLElement;
+    const vp = container.querySelector('.mf-ed-vp') as HTMLElement;
+    const chromeBgBefore = topbar.style.background;
+    expect(vp.style.backgroundColor).toBe('rgb(245, 236, 229)'); // coral canvasBg #f5ece5
+
+    await user.click(screen.getByRole('button', { name: '스타일' }));
+    await user.click(screen.getByRole('button', { name: '다크' }));
+
+    // canvas follows the doc theme…
+    await waitFor(() => expect(vp.style.backgroundColor).toBe('rgb(32, 27, 22)')); // dark canvasBg #201b16
+    // …but the GNB (and the style menu itself) hasn't budged
+    expect(topbar.style.background).toBe(chromeBgBefore);
+    const menu = document.querySelector('.mf-ed-stylemenu') as HTMLElement;
+    expect(menu.style.background).toBe('rgb(255, 255, 255)'); // fixed uiTheme panel
+  });
+
   describe('duplicate map names are allowed (XMind-style)', () => {
     // The title chip's non-editing title element (`div[title=...]`), excluding
     // the on-canvas root node box which also shows the title text.

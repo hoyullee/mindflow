@@ -23,7 +23,7 @@ type MenuKey = 'edit' | 'insert' | 'view' | 'style' | 'export' | 'more';
  * in `useEditorState`, independent of these menus.
  */
 export function Toolbar({ controller }: ToolbarProps) {
-  const { theme: th } = controller;
+  const th = controller.uiTheme; // GNB는 시스템 크롬 — 문서 테마와 무관하게 고정
   const isMobile = useIsMobile();
   const [openMenu, setOpenMenu] = useState<MenuKey | null>(null);
 

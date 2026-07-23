@@ -7,7 +7,7 @@ interface ExportMenuProps {
 
 /** Export dropdown — port of the `.mf-export` popover body (MindFlow.dc.html:125-133): PNG / JSON. */
 export function ExportMenu({ controller, onDone }: ExportMenuProps) {
-  const th = controller.theme;
+  const th = controller.uiTheme;
   const itemStyle = {
     display: 'flex',
     alignItems: 'center',

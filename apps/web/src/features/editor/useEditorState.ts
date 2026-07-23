@@ -16,7 +16,7 @@ import { pushRecentEntry } from '../home/storage';
 import { buildVisible, descendants, outlineRows } from './tree';
 import type { EdgeStyle } from './tree';
 import { nearestInDirection } from './navigation';
-import { themeKeyOf, themeOf } from './theme';
+import { UI_THEME, themeKeyOf, themeOf } from './theme';
 import type { Theme, ThemeKey } from './theme';
 import { downloadFile } from './download';
 import { exportPng } from './png';
@@ -172,7 +172,12 @@ export interface EditorController {
   loadError: boolean;
   /** Retry a failed initial load (reloads the editor route). */
   retryLoad: () => void;
+  /** 문서 테마(`doc.themeKey`) — 편집 영역(캔버스·노드/커넥터·미니맵 내용·
+   * 내보내기·색 스와치 값)에만 쓴다. 시스템 크롬은 `uiTheme`. */
   theme: Theme;
+  /** 시스템 크롬(GNB·메뉴·독칩·속성패널 틀 등)의 고정 테마 — 문서 테마를
+   * 바꿔도 변하지 않는다. */
+  uiTheme: Theme;
   themeKey: ThemeKey;
   layoutMode: LayoutMode;
   edgeStyle: EdgeStyle;
@@ -2984,6 +2989,7 @@ export function useEditorState(): EditorController {
       if (typeof window !== 'undefined') window.location.reload();
     },
     theme,
+    uiTheme: UI_THEME,
     themeKey: themeKeyOf(doc.themeKey),
     layoutMode: doc.layoutMode,
     edgeStyle,

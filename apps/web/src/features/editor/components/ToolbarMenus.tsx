@@ -84,7 +84,7 @@ export function MenuItem({
 }
 
 export function EditMenu({ controller, onDone, isMobile }: { controller: EditorController; onDone: () => void; isMobile?: boolean }) {
-  const th = controller.theme;
+  const th = controller.uiTheme;
   return (
     <MenuShell theme={th}>
       <MenuItem
@@ -116,7 +116,7 @@ export function EditMenu({ controller, onDone, isMobile }: { controller: EditorC
 }
 
 export function InsertMenu({ controller, onDone, isMobile }: { controller: EditorController; onDone: () => void; isMobile?: boolean }) {
-  const th = controller.theme;
+  const th = controller.uiTheme;
   const items: { icon: ReactNode; label: string; run: () => void }[] = [
     { icon: <ShapeIcon />, label: '도형 추가', run: () => controller.addFreeNodeAt() },
     { icon: <MemoIcon />, label: '메모 추가', run: () => controller.addFloatAt() },
@@ -144,7 +144,7 @@ export function InsertMenu({ controller, onDone, isMobile }: { controller: Edito
 }
 
 export function ViewMenu({ controller, onDone, isMobile }: { controller: EditorController; onDone: () => void; isMobile?: boolean }) {
-  const th = controller.theme;
+  const th = controller.uiTheme;
   return (
     <MenuShell theme={th}>
       <MenuItem
@@ -188,7 +188,7 @@ function MenuDivider({ theme: th }: { theme: Theme }) {
  * keeps 보기/내보내기 as separate top-level triggers.
  */
 export function MoreMenu({ controller, onDone, isMobile }: { controller: EditorController; onDone: () => void; isMobile?: boolean }) {
-  const th = controller.theme;
+  const th = controller.uiTheme;
   return (
     <MenuShell theme={th}>
       <MenuSectionLabel theme={th}>보기</MenuSectionLabel>

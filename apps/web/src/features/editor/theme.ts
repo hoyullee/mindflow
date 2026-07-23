@@ -109,6 +109,11 @@ export const THEMES: Record<ThemeKey, Theme> = {
 
 export const THEME_KEYS = Object.keys(THEMES) as ThemeKey[];
 
+/** 시스템 크롬(GNB·메뉴·독칩·속성패널 틀·줌/미니맵 프레임 등)의 고정 테마.
+ * 문서 테마(`doc.themeKey`)는 편집 영역 — 캔버스 배경·노드/커넥터 색·미니맵
+ * 내용·내보내기 — 에만 적용되고, 크롬은 항상 이 팔레트로 그린다. */
+export const UI_THEME: Theme = THEMES.coral;
+
 /** Port of `Component#theme()` (MindFlow.dc.html:880) — falls back to coral for unknown keys. */
 export function themeOf(key: string | undefined | null): Theme {
   return (key && THEMES[key as ThemeKey]) || THEMES.coral;

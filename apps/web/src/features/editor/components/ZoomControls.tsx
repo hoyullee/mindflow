@@ -21,7 +21,7 @@ interface ZoomControlsProps {
  * not a full 44px box, for the divider-separated zoom-percent readout).
  */
 export function ZoomControls({ controller, panelOpen = false }: ZoomControlsProps) {
-  const th = controller.theme;
+  const th = controller.uiTheme;
   const isMobile = useIsMobile();
   // On mobile, the bottom-sheet property panel owns the lower screen; hide the
   // minimap/zoom cluster entirely while it's open (the selected object is
