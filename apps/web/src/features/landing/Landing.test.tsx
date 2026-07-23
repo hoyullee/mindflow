@@ -77,6 +77,10 @@ describe('static landing.html (the crawler-visible twin)', () => {
     const html = readFileSync(path.join(publicDir, 'landing.html'), 'utf8');
     expect(html).toContain('<link rel="canonical" href="https://geurio.com/"');
     expect(html).toContain('property="og:title"');
+    // 한글 브랜드 신호 — "그리오" 검색이 이 사이트와 연결되려면 제목과
+    // 구조화 데이터(alternateName)에 한글 표기가 있어야 한다
+    expect(html).toContain('<title>그리오 Geurio — 마인드맵 서비스</title>');
+    expect(html).toContain('"alternateName"');
     // og:image는 절대 URL이어야 카톡/슬랙 미리보기가 뜬다
     expect(html).toContain('content="https://geurio.com/og/og-image.png"');
     expect(html).toContain('name="twitter:card"');
