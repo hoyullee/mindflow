@@ -934,7 +934,7 @@ export function useHomeController() {
     downloadFile(
       safe + '.json',
       JSON.stringify(
-        { v: 1, nodes: { root: { id: 'root', text: title, emoji: '🎯', parent: null, children: [], collapsed: false, color: null, x: 0, y: 0 } }, floats: [], lines: [], zones: [], layoutMode: 'radial', themeKey: 'coral' },
+        { v: 1, nodes: { root: { id: 'root', text: title, emoji: '', parent: null, children: [], collapsed: false, color: null, x: 0, y: 0 } }, floats: [], lines: [], zones: [], layoutMode: 'radial', themeKey: 'coral' },
         null,
         2,
       ),

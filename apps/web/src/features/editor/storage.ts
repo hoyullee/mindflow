@@ -31,7 +31,7 @@ export function seedDoc(title: string): Doc {
       [ROOT_ID]: {
         id: ROOT_ID,
         text: title || '새 마인드맵',
-        emoji: '🎯',
+        emoji: '',
         parent: null,
         children: [],
         collapsed: false,

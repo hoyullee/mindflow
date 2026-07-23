@@ -513,7 +513,7 @@ export function parseOutline(text: string, fallbackTitle: string): StoredDoc | n
     const m = ln.match(/^(\s*)[-*+]\s+(.+)/);
     if (m) items.push({ depth: Math.floor((m[1] ?? '').replace(/\t/g, '  ').length / 2) + 1, text: (m[2] ?? '').trim() });
   }
-  const root: OutlineNode = { id: 'root', text: rootText, emoji: '🎯', parent: null, children: [], collapsed: false, color: null, x: 0, y: 0 };
+  const root: OutlineNode = { id: 'root', text: rootText, emoji: '', parent: null, children: [], collapsed: false, color: null, x: 0, y: 0 };
   nodes.root = root;
   const stack: { depth: number; id: string }[] = [{ depth: 0, id: 'root' }];
   for (const it of items) {
