@@ -1,0 +1,10 @@
+# Geurio — https://geurio.com
+# 공개 페이지(랜딩·로그인·법적 문서)만 색인. 앱 내부 라우트는 인증 뒤의
+# SPA라 크롤러에게 의미 있는 내용이 없다.
+User-agent: *
+Disallow: /home
+Disallow: /editor
+Disallow: /app.html
+Disallow: /landing.html
+
+Sitemap: https://geurio.com/sitemap.xml
