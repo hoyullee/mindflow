@@ -5,6 +5,9 @@ import { hexA } from '../theme';
 import type { Theme } from '../theme';
 import type { EditorController } from '../useEditorState';
 import type { ContextMenuState } from '../types';
+// 이미지/영역 아이콘은 상단 툴바 '삽입' 메뉴와 같은 SVG를 공유 — 두 진입점이
+// 같은 동작이므로 같은 그림이어야 한다.
+import { ImageIcon, ZoneIcon } from './ToolbarMenus';
 
 interface ContextMenuProps {
   controller: EditorController;
@@ -202,7 +205,7 @@ function buildItems(controller: EditorController, ctxMenu: ContextMenuState, tog
     items.push('divider');
     const hasImg = !!controller.doc.nodes[nodeId]?.img;
     items.push({
-      icon: '🖼',
+      icon: <ImageIcon />,
       label: hasImg ? '이미지 변경' : '이미지 추가',
       onSelect: () => {
         close();
@@ -337,7 +340,7 @@ function buildItems(controller: EditorController, ctxMenu: ContextMenuState, tog
       },
     },
     {
-      icon: '🖼',
+      icon: <ImageIcon />,
       label: '이미지 추가',
       onSelect: () => {
         close();
@@ -353,7 +356,7 @@ function buildItems(controller: EditorController, ctxMenu: ContextMenuState, tog
       },
     },
     {
-      icon: '▣',
+      icon: <ZoneIcon />,
       label: '영역 추가',
       onSelect: () => {
         close();
