@@ -113,6 +113,10 @@ interface DocNode {
   /** Partial rich-text runs (bold/color spans); mirrors core `RichRun`. */
   rich?: Array<{ t: string; b?: boolean; c?: string | null }> | null;
   children?: string[];
+  /** 노드 썸네일 이미지 (core `Node.img/imgW/imgH` — 항상 세트). */
+  img?: string;
+  imgW?: number;
+  imgH?: number;
 }
 
 interface DocFloat {
@@ -127,6 +131,8 @@ interface DocFloat {
   textColor?: string;
   bold?: boolean;
   tsize?: 's' | 'm' | 'l';
+  /** 이미지 플로트 (core `Float.img`) — 메모 카드 대신 이미지로 그린다. */
+  img?: string;
 }
 
 interface DocZone {
@@ -469,9 +475,20 @@ function buildPreview(rawDoc: string, hueFallback: string): JSX.Element | null {
     const runs: WrapSeg[] = Array.isArray(n.rich) && n.rich.length ? (n.rich as WrapSeg[]) : [{ t: n.text || '' }];
     const wrapped = wrapRuns(runs, MAXW, fpx, fw, previewMeasurer);
     const hasText = wrapped.some((ln) => ln.some((s) => s.t.trim()));
+    // 노드 썸네일: 에디터와 동일한 세로 스택 — 이미지(위) + 텍스트(아래).
+    // computeMetrics가 이미 imgH+8만큼 박스를 키워 두므로 배치만 맞춘다.
+    const hasNodeImg = !!(n.img && n.imgW && n.imgH);
+    const lineHN = Math.round(fpx * 1.4);
+    const textBlockH = wrapped.length * lineHN;
+    const imgShift = hasNodeImg ? (n.imgH! + 8) / 2 : 0;
+    if (hasNodeImg) {
+      rects.push(
+        <image key={`img${id}`} href={n.img} x={cx - n.imgW! / 2} y={cy - (textBlockH + 8) / 2 - n.imgH! / 2} width={n.imgW} height={n.imgH} preserveAspectRatio="xMidYMid slice" />,
+      );
+    }
     if (hasText || n.emoji) {
-      const lineH = Math.round(fpx * 1.4);
-      const startY = cy - ((wrapped.length - 1) * lineH) / 2;
+      const lineH = lineHN;
+      const startY = cy + imgShift - ((wrapped.length - 1) * lineH) / 2;
       const emojiPrefix = n.emoji ? `${n.emoji} ` : '';
       rects.push(
         <text key={`t${id}`} x={cx} y={startY} textAnchor="middle" dominantBaseline="central" fontSize={fpx} fontWeight={fontWeight} fill={baseTextColor} fontFamily="Pretendard, sans-serif">
@@ -531,6 +548,12 @@ function buildPreview(rawDoc: string, hueFallback: string): JSX.Element | null {
   floats.forEach((f, i) => {
     const fw = f.w || 160;
     const fh = floatH(f);
+    // 이미지 플로트: 메모 카드가 아니라 이미지 자체 (에디터 FloatLayer와 동일).
+    if (f.img) {
+      floatEls.push(<image key={`fi${i}`} href={f.img} x={f.x} y={f.y} width={fw} height={fh} preserveAspectRatio="xMidYMid slice" />);
+      floatEls.push(<rect key={`fr${i}`} x={f.x} y={f.y} width={fw} height={fh} rx={8} fill="none" stroke={hexA('#000000', 0.14)} strokeWidth={1.4} />);
+      return;
+    }
     const bg = f.bg || '#fdf6c9';
     const bd = f.bg ? hexA('#8a7365', 0.35) : '#e8d982';
     floatEls.push(<rect key={`fr${i}`} x={f.x} y={f.y} width={fw} height={fh} rx={8} fill={bg} stroke={bd} strokeWidth={1.4} />);
