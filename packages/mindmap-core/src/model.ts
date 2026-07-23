@@ -93,6 +93,15 @@ export interface Float {
   textColor?: string;
   /** Font-size override: 's' small / 'l' large (MindFlow.dc.html:2735 setFloatTsize). */
   tsize?: 's' | 'l';
+  /**
+   * Image float (post-dc extension, not in the original prototype): a data
+   * URL. When set the float renders as an image card (w×h box, aspect kept
+   * by the editor) instead of a memo — text/collapse/bold styling fields are
+   * ignored by renderers. Stored inline in the doc (client-side resized at
+   * attach time) so save/sync/offline/export all work unchanged; absent on
+   * every pre-existing doc, so serialization stays a pure passthrough.
+   */
+  img?: string;
 }
 
 /**

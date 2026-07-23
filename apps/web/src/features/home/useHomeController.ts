@@ -949,7 +949,7 @@ export function useHomeController() {
     try {
       const doc = parseDoc(JSON.parse(raw));
       if (!doc) throw new Error('unparseable');
-      exportDocPng(doc, themeOf(doc.themeKey), safeFileName(title));
+      void exportDocPng(doc, themeOf(doc.themeKey), safeFileName(title));
     } catch {
       patch({ importError: '이미지를 만들 수 없어요. 맵을 한 번 열어 저장한 뒤 다시 시도해 주세요.' });
     }

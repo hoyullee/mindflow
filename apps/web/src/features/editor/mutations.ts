@@ -432,6 +432,10 @@ export function outlineOutdentNode(nodes: NodeMap, id: string): NodeMap {
 export function addFloatItem(floats: Float[], id: string, x: number, y: number): Float[] {
   return [...floats, { id, x, y, w: 180, text: '' }];
 }
+/** 이미지 플로트(post-dc 확장): 데이터 URL과 표시 크기(비율 반영)를 함께 기록. */
+export function addImageFloatItem(floats: Float[], id: string, x: number, y: number, img: string, w: number, h: number): Float[] {
+  return [...floats, { id, x, y, w, h, text: '', img }];
+}
 export function updateFloatItem(floats: Float[], id: string, patch: Partial<Float>): Float[] {
   return floats.map((f) => (f.id === id ? { ...f, ...patch } : f));
 }

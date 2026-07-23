@@ -228,6 +228,9 @@ function countWrappedLines(text: string, maxW: number, font: string, measurer: T
  * (MindFlow.dc.html) — pure, via the injected `measurer` (canvas or fallback).
  */
 export function measureFloatHeight(f: Float, measurer: TextMeasurer): number {
+  // 이미지 플로트: 높이는 텍스트 측정이 아니라 첨부/리사이즈 때 기록된
+  // 명시적 h(비율 유지)가 곧 박스 높이다.
+  if (f.img) return Math.max(24, Math.round(f.h ?? (f.w || 160) * 0.75));
   const fpx = f.tsize === 's' ? 11.5 : f.tsize === 'l' ? 15.5 : 13;
   const lh = fpx * 1.55;
   const grownOf = (lineCount: number): number => 9 + Math.max(18, lineCount * lh) + 9;

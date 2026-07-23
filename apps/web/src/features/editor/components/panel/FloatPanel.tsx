@@ -25,8 +25,26 @@ export function FloatPanel({ controller, floatIds, isMobile = false }: FloatPane
   const [openSec, setOpenSec] = useState<string | null>(null);
   if (!f || !refId) return null;
   const multi = ids.length > 1;
-  const name = f.text ? f.text.split('\n')[0]?.trim() || '빈 메모' : '빈 메모';
+  const isImage = !multi && !!f.img;
+  const name = isImage ? '이미지' : f.text ? f.text.split('\n')[0]?.trim() || '빈 메모' : '빈 메모';
   const toggle = (k: string) => setOpenSec((cur) => (cur === k ? null : k));
+
+  // 이미지 플로트: 메모용 배경/텍스트 스타일이 적용되지 않으므로 컨트롤 없이
+  // 정보만 — 크기 조절은 캔버스의 코너 핸들(비율 고정), 삭제는 Del/우클릭.
+  if (isImage) {
+    return (
+      <div style={panelWrapStyle(th, isMobile)}>
+        <div style={panelBodyStyle(isMobile)}>
+          <PanelTitle theme={th} kicker="선택한 이미지" name="이미지" />
+          <div style={{ fontSize: 12, lineHeight: 1.7, opacity: 0.65 }}>
+            모서리 핸들로 크기를 조절할 수 있어요 (비율 유지).
+            <br />
+            삭제는 Delete 키 또는 우클릭 메뉴에서.
+          </div>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div style={panelWrapStyle(th, isMobile)}>

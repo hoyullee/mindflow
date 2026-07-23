@@ -318,6 +318,14 @@ function buildItems(controller: EditorController, ctxMenu: ContextMenuState, tog
       },
     },
     {
+      icon: '🖼',
+      label: '이미지 추가',
+      onSelect: () => {
+        close();
+        controller.promptAddImage(at);
+      },
+    },
+    {
       icon: <LineIcon />,
       label: '선 추가',
       onSelect: () => {
