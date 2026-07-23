@@ -163,6 +163,8 @@ interface FloatBox {
 function floatBox(ctx: CanvasRenderingContext2D, f: Float): FloatBox {
   const fpx = f.tsize === 's' ? 11.5 : f.tsize === 'l' ? 15.5 : 13;
   const w = f.w || 160;
+  // 이미지 플로트: 박스 = 명시적 w×h (에디터 FloatLayer/metrics와 동일 규칙)
+  if (f.img) return { w, h: Math.max(24, Math.round(f.h ?? w * 0.75)), fpx, lh: 0, lines: [], collapsed: false };
   const lh = fpx * 1.55;
   const collapsed = !!f.collapsed;
   ctx.font = `${f.bold ? 700 : 400} ${fpx}px Pretendard, sans-serif`;
@@ -174,7 +176,17 @@ function floatBox(ctx: CanvasRenderingContext2D, f: Float): FloatBox {
   return { w, h, fpx, lh, lines, collapsed };
 }
 
-export function exportPng(doc: Doc, geom: GeomMap, theme: Theme, filename: string): void {
+/** 데이터 URL을 디코드된 이미지 엘리먼트로 (실패 시 null — 해당 플로트는 자리 박스만 그림). */
+function loadImageEl(src: string): Promise<HTMLImageElement | null> {
+  return new Promise((resolve) => {
+    const img = new Image();
+    img.onload = () => resolve(img);
+    img.onerror = () => resolve(null);
+    img.src = src;
+  });
+}
+
+export async function exportPng(doc: Doc, geom: GeomMap, theme: Theme, filename: string): Promise<void> {
   const ids = Object.keys(geom).filter((id) => doc.nodes[id]);
   if (!ids.length) return;
 
@@ -187,6 +199,18 @@ export function exportPng(doc: Doc, geom: GeomMap, theme: Theme, filename: strin
   // BEFORE the canvas is resized — that resets ctx state, not the stored numbers).
   const fBoxes = new Map<string, FloatBox>();
   doc.floats.forEach((f) => fBoxes.set(f.id, floatBox(ctx, f)));
+
+  // 이미지 플로트 프리디코드 — canvas 2D `drawImage`는 디코드 완료된
+  // 엘리먼트가 필요하므로 그리기 전에 전부 로드해 둔다(데이터 URL이라 즉시).
+  const fImages = new Map<string, HTMLImageElement>();
+  await Promise.all(
+    doc.floats
+      .filter((f) => f.img)
+      .map(async (f) => {
+        const el = await loadImageEl(f.img!);
+        if (el) fImages.set(f.id, el);
+      }),
+  );
 
   let x0 = Infinity;
   let y0 = Infinity;
@@ -359,6 +383,27 @@ export function exportPng(doc: Doc, geom: GeomMap, theme: Theme, filename: strin
   // memos — grown-to-fit cards (see `floatBox`), matching the editor's memo box.
   doc.floats.forEach((f) => {
     const m = fBoxes.get(f.id)!;
+    if (f.img) {
+      // 이미지 플로트: 라운드 클립 안에 이미지를 채운다 (비율은 w/h에 이미 반영).
+      const el = fImages.get(f.id);
+      ctx.save();
+      ctx.beginPath();
+      roundRectPath(ctx, f.x, f.y, m.w, m.h, 8);
+      ctx.clip();
+      if (el) {
+        ctx.drawImage(el, f.x, f.y, m.w, m.h);
+      } else {
+        ctx.fillStyle = theme.panel;
+        ctx.fillRect(f.x, f.y, m.w, m.h);
+      }
+      ctx.restore();
+      ctx.strokeStyle = hexA('#000000', 0.14);
+      ctx.lineWidth = 1;
+      ctx.beginPath();
+      roundRectPath(ctx, f.x, f.y, m.w, m.h, 8);
+      ctx.stroke();
+      return;
+    }
     const dark = theme.appBg === '#191512';
     ctx.fillStyle = f.bg || (dark ? '#3a2f22' : '#fff6cf');
     ctx.strokeStyle = f.bg ? hexA('#000000', 0.14) : dark ? '#5a4a2f' : '#f0e3a0';
@@ -446,7 +491,7 @@ export function exportPng(doc: Doc, geom: GeomMap, theme: Theme, filename: strin
  * via `exportPng`. Used by Home so a card download is the real map, not a
  * rasterized thumbnail (which cropped text).
  */
-export function exportDocPng(doc: Doc, theme: Theme, filename: string): void {
+export async function exportDocPng(doc: Doc, theme: Theme, filename: string): Promise<void> {
   const measurer = new CanvasTextMeasurer();
   const sizeOf = (node: Node, depth: number) => {
     const m = computeMetrics(node, depth, measurer);
@@ -461,5 +506,5 @@ export function exportDocPng(doc: Doc, theme: Theme, filename: string): void {
     const g: NodeGeom = { ...m, x: n.x, y: n.y, depth };
     geom[id] = g;
   });
-  exportPng({ ...doc, nodes: laid }, geom, theme, filename);
+  await exportPng({ ...doc, nodes: laid }, geom, theme, filename);
 }

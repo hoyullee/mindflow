@@ -10,6 +10,7 @@ import { useYjsDocSync } from '../../collab/useYjsDocSync';
 import { usePresence, type UsePresenceResult } from '../../collab/usePresence';
 import { EMPTY_PRESENCE_SELECTION, type PresenceSelection } from '../../collab/presence';
 import { CanvasTextMeasurer, computeMetrics, measureFloatHeight } from './metrics';
+import { attachImageFile, defaultFloatSize, firstImageFile } from './imageAttach';
 import { hasStoredDoc, loadOrSeedDoc, saveDoc } from './storage';
 import { pushRecentEntry } from '../home/storage';
 import { buildVisible, descendants, outlineRows } from './tree';
@@ -327,6 +328,10 @@ export interface EditorController {
   addFloatAt: (at?: { x: number; y: number }) => void;
   addLineAt: (at?: { x: number; y: number }) => void;
   addZoneAt: (at?: { x: number; y: number }) => void;
+  /** 파일 선택 다이얼로그를 띄워 이미지 플로트를 추가 (삽입 메뉴/배경 컨텍스트 메뉴). */
+  promptAddImage: (at?: { x: number; y: number }) => void;
+  /** 이미지 파일(붙여넣기/드롭/선택)을 리사이즈해 캔버스에 이미지 플로트로 추가. */
+  addImageFloatFromFile: (file: File | Blob, at?: { x: number; y: number }) => Promise<void>;
 
   // ---- node property setters ----
   setShape: (shape: string) => void;
@@ -1721,6 +1726,8 @@ export function useEditorState(): EditorController {
   const startEditFloat = useCallback((id: string) => {
     setSelectionState({ kind: 'float', id });
     setMultiSelectionState(null);
+    // 이미지 플로트에는 편집할 텍스트가 없다 — 더블클릭/F2는 선택까지만.
+    if (docRef.current.floats.find((f) => f.id === id)?.img) return;
     setEditingFloatId(id);
   }, []);
   const commitFloatText = useCallback(
@@ -1895,6 +1902,84 @@ export function useEditorState(): EditorController {
     },
     [commitDoc, idFactory],
   );
+
+  /** 이미지 파일 → (리사이즈/재인코딩) → 이미지 플로트 커밋. `at`은 캔버스 좌표의
+   * 원하는 중심점(드롭 위치/컨텍스트 메뉴 클릭점); 없으면 뷰포트 중앙. */
+  const addImageFloatFromFile = useCallback(
+    async (file: File | Blob, at?: { x: number; y: number }) => {
+      const attached = await attachImageFile(file);
+      if (!attached) return; // 이미지가 아니거나 디코드 실패 — 조용히 무시
+      const { w, h } = defaultFloatSize(attached.natW, attached.natH);
+      let cx: number;
+      let cy: number;
+      if (at) {
+        cx = at.x - w / 2;
+        cy = at.y - h / 2;
+      } else {
+        const vp = viewportRef.current;
+        cx = (vp.vw / 2 - vp.pan.x) / vp.zoom - w / 2;
+        cy = (vp.vh / 2 - vp.pan.y) / vp.zoom - h / 2;
+      }
+      const newId = idFactory('f');
+      commitDoc((d) => ({ ...d, floats: mutations.addImageFloatItem(d.floats, newId, Math.round(cx), Math.round(cy), attached.src, w, h) }));
+      setSelectionState({ kind: 'float', id: newId });
+      setMultiSelectionState(null);
+    },
+    [commitDoc, idFactory],
+  );
+
+  const promptAddImage = useCallback(
+    (at?: { x: number; y: number }) => {
+      const input = document.createElement('input');
+      input.type = 'file';
+      input.accept = 'image/*';
+      input.onchange = () => {
+        const f = input.files?.[0];
+        if (f) void addImageFloatFromFile(f, at);
+      };
+      input.click();
+    },
+    [addImageFloatFromFile],
+  );
+
+  // 클립보드 이미지 붙여넣기 → 뷰포트 중앙에 이미지 플로트. 텍스트 입력 중
+  // (노드/메모 편집, 검색창 등)의 붙여넣기는 그대로 통과시킨다.
+  useEffect(() => {
+    const isTextEntry = (t: EventTarget | null): boolean => {
+      const el = t as HTMLElement | null;
+      return !!el?.closest?.('input, textarea, [contenteditable="true"], [contenteditable=""]');
+    };
+    const onPaste = (e: ClipboardEvent) => {
+      if (isTextEntry(e.target)) return;
+      const file = firstImageFile(e.clipboardData);
+      if (!file) return;
+      e.preventDefault();
+      void addImageFloatFromFile(file);
+    };
+    document.addEventListener('paste', onPaste);
+    return () => document.removeEventListener('paste', onPaste);
+  }, [addImageFloatFromFile]);
+
+  // 파일 드래그앤드롭 → 드롭한 캔버스 지점에 이미지 플로트.
+  useEffect(() => {
+    const el = viewportElRef.current;
+    if (!el) return;
+    const onDragOver = (e: DragEvent) => {
+      if (e.dataTransfer && Array.from(e.dataTransfer.types).includes('Files')) e.preventDefault();
+    };
+    const onDrop = (e: DragEvent) => {
+      const file = firstImageFile(e.dataTransfer);
+      if (!file) return;
+      e.preventDefault();
+      void addImageFloatFromFile(file, toCanvasPoint(e.clientX, e.clientY, viewportRef.current));
+    };
+    el.addEventListener('dragover', onDragOver);
+    el.addEventListener('drop', onDrop);
+    return () => {
+      el.removeEventListener('dragover', onDragOver);
+      el.removeEventListener('drop', onDrop);
+    };
+  }, [addImageFloatFromFile, viewportElRef.current]);
 
   const addLineAt = useCallback(
     (at?: { x: number; y: number }) => {
@@ -2216,12 +2301,19 @@ export function useEditorState(): EditorController {
         case 'float':
           commitDoc((doc0) => ({ ...doc0, floats: mutations.updateFloatItem(doc0.floats, d.id, { x: d.ox + dx, y: d.oy + dy }) }), true);
           break;
-        case 'float-resize':
-          commitDoc(
-            (doc0) => ({ ...doc0, floats: mutations.updateFloatItem(doc0.floats, d.id, { w: Math.max(120, Math.round(d.ow + dx)), h: Math.max(44, Math.round(d.oh + dy)) }) }),
-            true,
-          );
+        case 'float-resize': {
+          // 이미지 플로트는 비율 고정: 가로 드래그만 반영하고 높이는 원래
+          // 종횡비(oh/ow)를 따라간다. 메모는 기존처럼 자유 리사이즈.
+          const isImage = !!docRef.current.floats.find((f) => f.id === d.id)?.img;
+          const patch = isImage
+            ? (() => {
+                const w = Math.max(60, Math.round(d.ow + dx));
+                return { w, h: Math.max(24, Math.round((w * d.oh) / Math.max(1, d.ow))) };
+              })()
+            : { w: Math.max(120, Math.round(d.ow + dx)), h: Math.max(44, Math.round(d.oh + dy)) };
+          commitDoc((doc0) => ({ ...doc0, floats: mutations.updateFloatItem(doc0.floats, d.id, patch) }), true);
           break;
+        }
         case 'zone':
           commitDoc((doc0) => ({ ...doc0, zones: mutations.updateZoneItem(doc0.zones, d.id, { x: d.ox + dx, y: d.oy + dy }) }), true);
           break;
@@ -2805,7 +2897,7 @@ export function useEditorState(): EditorController {
     downloadFile(`${safeDocTitle(doc, titleParam)}.json`, JSON.stringify(serializeDoc(doc), null, 2), 'application/json');
   }, [doc, titleParam]);
   const exportPNG = useCallback(() => {
-    exportPng(doc, geom, theme, safeDocTitle(doc, titleParam));
+    void exportPng(doc, geom, theme, safeDocTitle(doc, titleParam));
   }, [doc, geom, theme, titleParam]);
 
   const docTitle = laidOutNodes[ROOT_ID]?.text || titleParam || '새 마인드맵';
@@ -2913,6 +3005,8 @@ export function useEditorState(): EditorController {
     addFloatAt,
     addLineAt,
     addZoneAt,
+    promptAddImage,
+    addImageFloatFromFile,
 
     setShape,
     setColor,

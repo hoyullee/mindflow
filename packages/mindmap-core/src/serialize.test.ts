@@ -49,6 +49,15 @@ describe('parseDoc', () => {
     expect(doc?.edgeStyle).toBe('curve');
   });
 
+  it('round-trips an image float (post-dc `Float.img` extension) untouched', () => {
+    const doc = parseDoc({
+      nodes: { root: { id: 'root', text: 'x', emoji: '', parent: null, children: [], collapsed: false, color: null, x: 0, y: 0 } },
+      floats: [{ id: 'f1', x: 10, y: 20, w: 260, h: 180, text: '', img: 'data:image/jpeg;base64,QUJD' }],
+    });
+    expect(doc?.floats[0]?.img).toBe('data:image/jpeg;base64,QUJD');
+    expect(serializeDoc(doc!).floats[0]).toEqual({ id: 'f1', x: 10, y: 20, w: 260, h: 180, text: '', img: 'data:image/jpeg;base64,QUJD' });
+  });
+
   it('keeps a provided edgeStyle and round-trips it (MindFlow.dc.html:549, 576)', () => {
     const doc = parseDoc({ nodes: { root: { id: 'root', text: 'x', emoji: '', parent: null, children: [], collapsed: false, color: null, x: 0, y: 0 } }, edgeStyle: 'elbow' });
     expect(doc?.edgeStyle).toBe('elbow');

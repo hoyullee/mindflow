@@ -59,6 +59,16 @@ export function FloatLayer({ floats, theme: th, controller }: FloatLayerProps) {
           boxStyle.minHeight = 38;
           boxStyle.whiteSpace = 'nowrap';
         }
+        // 이미지 플로트: 메모 카드가 아니라 이미지 자체가 박스를 채운다 —
+        // 패딩/메모 배경/접기 토글/텍스트 편집 전부 미적용 (Float.img 참고).
+        const isImage = !!f.img;
+        if (isImage) {
+          boxStyle.padding = 0;
+          boxStyle.background = th.panel;
+          boxStyle.minHeight = undefined;
+          boxStyle.height = f.h || Math.round(f.w * 0.75);
+          boxStyle.overflow = 'hidden';
+        }
         const shown = collapsed ? String(f.text || '').split('\n')[0] : f.text;
         return (
           <div
@@ -70,6 +80,7 @@ export function FloatLayer({ floats, theme: th, controller }: FloatLayerProps) {
               controller.startEditFloat(f.id);
             }}
           >
+            {!isImage && (
             <div
               title={collapsed ? '펼치기' : '접기'}
               onPointerDown={(e) => {
@@ -99,8 +110,16 @@ export function FloatLayer({ floats, theme: th, controller }: FloatLayerProps) {
             >
               {collapsed ? '＋' : '−'}
             </div>
+            )}
             {remotePeer && !editing && <RemotePeerTag color={remotePeer.user.color} name={remotePeer.user.name} style={{ left: 0, top: -22 }} />}
-            {editing ? (
+            {isImage ? (
+              <img
+                src={f.img}
+                alt=""
+                draggable={false}
+                style={{ display: 'block', width: '100%', height: '100%', objectFit: 'cover', pointerEvents: 'none', userSelect: 'none' }}
+              />
+            ) : editing ? (
               <FloatEditBox f={f} onCommit={(text) => controller.commitFloatText(f.id, text)} onCancel={controller.cancelFloatEdit} />
             ) : (
               <div

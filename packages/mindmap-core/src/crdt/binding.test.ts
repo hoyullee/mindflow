@@ -35,6 +35,13 @@ describe('docToYDoc / yDocToDoc round-trip', () => {
     expect(back).toEqual(doc);
   });
 
+  it('round-trips an image float (Float.img data URL — collab sync of attached images)', () => {
+    const doc = baseDoc();
+    doc.floats = [{ id: 'f1', x: 10, y: 20, w: 260, h: 195, text: '', img: 'data:image/jpeg;base64,QUJDREVG' }];
+    const back = yDocToDoc(docToYDoc(doc));
+    expect(back.floats).toEqual(doc.floats);
+  });
+
   it('round-trips an empty-ish doc (no floats/lines/zones)', () => {
     const doc: Doc = { v: 1, nodes: { [ROOT_ID]: { id: ROOT_ID, text: 'Root', emoji: '', parent: null, children: [], collapsed: false, color: null, x: 0, y: 0 } }, floats: [], lines: [], zones: [], layoutMode: 'right', themeKey: 'mono' };
     const ydoc = docToYDoc(doc);
