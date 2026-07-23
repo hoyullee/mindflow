@@ -402,7 +402,11 @@ export function MapCard({ card, controller, draggableEnabled, compact = false }:
       >
         {card.sketch}
       </div>
-      <div style={{ padding: compact ? '8px 10px' : '14px 16px' }}>
+      {/* 하단 정보 영역: [제목+변경일] 좌측 열 + ☰ 메뉴 버튼(영역 전체의
+          세로 중앙) — 버튼을 제목 행 안에 두면 변경일 줄 때문에 시각적으로
+          위로 치우쳐 보인다. */}
+      <div style={{ padding: compact ? '8px 10px' : '12px 16px', display: 'flex', alignItems: 'center', gap: 8 }}>
+        <div style={{ minWidth: 0, flex: 1 }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 6, minWidth: 0, marginBottom: compact ? 0 : 4 }}>
           {/* Cross-space "최근 항목" strip: a small dot in the owning space's color.
               Color alone is inaccessible information, so the dot carries the space
@@ -420,49 +424,49 @@ export function MapCard({ card, controller, draggableEnabled, compact = false }:
               <span aria-hidden="true" style={{ width: 8, height: 8, borderRadius: 3, background: card.spaceColor, flexShrink: 0, boxShadow: 'inset 0 0 0 1px rgba(0,0,0,.18)' }} />
             ))}
           <div style={{ fontSize: compact ? 12 : 14, fontWeight: 600, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', minWidth: 0 }}>{card.title}</div>
-          {!compact && (
-            <div
-              className="menu-btn"
-              role="button"
-              tabIndex={-1}
-              onClick={(e) => {
-                e.preventDefault();
-                e.stopPropagation();
-                controller.toggleMenu(card.key);
-              }}
-              title="메뉴"
-              aria-label="메뉴"
-              style={{
-                marginLeft: 'auto',
-                flexShrink: 0,
-                width: 26,
-                height: 26,
-                borderRadius: 8,
-                background: 'transparent',
-                border: '1px solid transparent',
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'center',
-                fontSize: 13,
-                lineHeight: 1,
-                color: '#7c6d60',
-                cursor: 'pointer',
-                // Revealed on hover (see home.css), but also when the menu is open
-                // or the card is selected, so on touch (no hover) a selected map
-                // exposes its ☰ menu button.
-                opacity: card.menuOpen || card.selected ? 1 : 0,
-                transition: 'opacity .15s',
-              }}
-            >
-              ☰
-            </div>
-          )}
         </div>
         {/* 마지막 수정 시각 — 상대(7일 이내)/절대 혼합 표기, 전체 일시는 툴팁.
             시각 정보가 없는 카드(Drive 데모 등)는 줄 자체를 생략한다. */}
         {!compact && formatLastEdited(card.updatedAt) && (
           <div title={formatFullDateTime(card.updatedAt)} style={{ fontSize: 12, color: '#9c8b7e' }}>
-            최근 변경 · {formatLastEdited(card.updatedAt)}
+            변경일 · {formatLastEdited(card.updatedAt)}
+          </div>
+        )}
+        </div>
+        {!compact && (
+          <div
+            className="menu-btn"
+            role="button"
+            tabIndex={-1}
+            onClick={(e) => {
+              e.preventDefault();
+              e.stopPropagation();
+              controller.toggleMenu(card.key);
+            }}
+            title="메뉴"
+            aria-label="메뉴"
+            style={{
+              flexShrink: 0,
+              width: 32,
+              height: 32,
+              borderRadius: 9,
+              background: 'transparent',
+              border: '1px solid transparent',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              fontSize: 15,
+              lineHeight: 1,
+              color: '#7c6d60',
+              cursor: 'pointer',
+              // Revealed on hover (see home.css), but also when the menu is open
+              // or the card is selected, so on touch (no hover) a selected map
+              // exposes its ☰ menu button.
+              opacity: card.menuOpen || card.selected ? 1 : 0,
+              transition: 'opacity .15s',
+            }}
+          >
+            ☰
           </div>
         )}
       </div>
