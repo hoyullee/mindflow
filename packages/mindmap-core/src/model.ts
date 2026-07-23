@@ -67,6 +67,15 @@ export interface Node {
   /** User-resized width/height override, cleared via `delete` when unset (MindFlow.dc.html:1620, 1674-1675). */
   cw?: number;
   ch?: number;
+  /**
+   * 노드 이미지(post-dc 확장): 텍스트 위에 표시되는 썸네일의 데이터 URL과
+   * 표시 크기(px, 첨부 시 비율 유지로 계산). `sizeOf` 구현(웹 metrics)이
+   * `imgW`/`imgH`만큼 박스를 키우므로 레이아웃은 자동 반영된다. 셋은 항상
+   * 함께 설정/해제된다. 직렬화·CRDT는 passthrough(순수 추가).
+   */
+  img?: string;
+  imgW?: number;
+  imgH?: number;
   /** Which side of the root a node landed on; written by `_layout`, out of scope for M1a. */
   side?: 'L' | 'R';
 }

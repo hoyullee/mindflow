@@ -162,6 +162,29 @@ describe('Context menu — node', () => {
     expect(screen.getByText('삭제')).toBeTruthy();
   });
 
+  it('이미지 추가 ↔ (이미지 변경 + 이미지 제거) toggles with the node image, and 제거 drops the thumbnail', async () => {
+    const IMG = 'data:image/jpeg;base64,QUJD';
+    const docWithImg = { ...DOC, nodes: { ...DOC.nodes, c1: { ...DOC.nodes.c1, img: IMG, imgW: 180, imgH: 135 } } };
+    localStorage.setItem('mindflow_doc_cmimg', JSON.stringify(docWithImg));
+    const { container } = renderEditor('/editor?map=cmimg&title=x');
+    const vp = getViewport(container);
+    const { pan, zoom, geom } = computeViewport(docWithImg as Doc);
+    const c1 = geom.c1!;
+    const { clientX, clientY } = toClient(pan, zoom, c1.x, c1.y);
+
+    rightClickAt(vp, clientX, clientY);
+    await waitFor(() => expect(screen.getByText('이미지 변경')).toBeTruthy());
+    expect(vp.querySelector('[data-node-id="c1"] img')).toBeTruthy();
+
+    clickMenuItem(screen.getByText('이미지 제거'));
+    await waitFor(() => expect(vp.querySelector('[data-node-id="c1"] img')).toBeNull());
+
+    // 제거 후 다시 열면 '이미지 추가'만 (제거 항목 없음)
+    rightClickAt(vp, clientX, clientY);
+    await waitFor(() => expect(screen.getByText('이미지 추가')).toBeTruthy());
+    expect(screen.queryByText('이미지 제거')).toBeNull();
+  });
+
   it('omits 형제 주제/삭제 for the root node', async () => {
     localStorage.setItem('mindflow_doc_cm2', JSON.stringify(DOC));
     const { container } = renderEditor('/editor?map=cm2&title=x');
