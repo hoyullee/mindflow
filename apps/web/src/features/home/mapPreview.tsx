@@ -244,10 +244,10 @@ function buildPreview(rawDoc: string, hueFallback: string): JSX.Element | null {
   // Editor-identical node box sizing: `computeMetrics` (real canvas text
   // measurement). The layout pass records each node's box into `metricsById` so
   // the DRAWN box is exactly the box the layout positioned (see `dim`).
-  const metricsById: Record<string, { w: number; h: number; fpx: number; fw: number; depth: number }> = {};
+  const metricsById: Record<string, { w: number; h: number; fpx: number; fw: number; wrapW: number; depth: number }> = {};
   const sizeOf = (node: CoreNode, depth: number): { w: number; h: number } => {
     const m = computeMetrics(node, depth, previewMeasurer);
-    if (node.id) metricsById[node.id] = { w: m.w, h: m.h, fpx: m.fpx, fw: m.fw, depth };
+    if (node.id) metricsById[node.id] = { w: m.w, h: m.h, fpx: m.fpx, fw: m.fw, wrapW: m.wrapW, depth };
     return { w: m.w, h: m.h };
   };
   applyLayoutPositions(d, sizeOf);
@@ -285,11 +285,11 @@ function buildPreview(rawDoc: string, hueFallback: string): JSX.Element | null {
   };
   /** Editor-identical text metrics for a node (fpx/fw/depth): recorded during
    * the layout pass, or freshly measured for any node it didn't visit. */
-  const metaOf = (id: string, depth: number): { fpx: number; fw: number } => {
+  const metaOf = (id: string, depth: number): { fpx: number; fw: number; wrapW: number } => {
     const rec = metricsById[id];
-    if (rec) return { fpx: rec.fpx, fw: rec.fw };
+    if (rec) return { fpx: rec.fpx, fw: rec.fw, wrapW: rec.wrapW };
     const m = computeMetrics(nodes[id] as unknown as CoreNode, depth, previewMeasurer);
-    return { fpx: m.fpx, fw: m.fw };
+    return { fpx: m.fpx, fw: m.fw, wrapW: m.wrapW };
   };
 
   const floats = Array.isArray(d.floats) ? d.floats : [];
@@ -468,10 +468,10 @@ function buildPreview(rawDoc: string, hueFallback: string): JSX.Element | null {
     // line breaks (same measurer + token model + content width `MAXW` that
     // `computeMetrics` sized the box with) — so the thumbnail's text flows like
     // the real map instead of a single truncated line.
-    const { fpx, fw } = metaOf(id, depth);
-    const padX = depth === 0 ? 24 : depth === 1 ? 15 : 13;
-    const emW = n.emoji ? Math.ceil(previewMeasurer.measure(n.emoji, `${depth === 0 ? 22 : 17}px Pretendard`)) + 7 + 2 : 0;
-    const MAXW = Math.max(320, (n.cw || 0) - padX * 2 - emW - 7);
+    const { fpx, fw, wrapW } = metaOf(id, depth);
+    // 줄바꿈 폭은 metrics가 실제 사용한 값(wrapW)을 그대로 — cw 과팽창 되돌림
+    // (computeMetrics 참고)까지 포함해 에디터와 동일한 줄바꿈을 보장한다.
+    const MAXW = wrapW;
     const runs: WrapSeg[] = Array.isArray(n.rich) && n.rich.length ? (n.rich as WrapSeg[]) : [{ t: n.text || '' }];
     const wrapped = wrapRuns(runs, MAXW, fpx, fw, previewMeasurer);
     const hasText = wrapped.some((ln) => ln.some((s) => s.t.trim()));
