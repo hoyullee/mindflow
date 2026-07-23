@@ -151,7 +151,7 @@ export function Landing() {
         {/* footer — legal docs must be reachable from the homepage (Google
             brand-verification requirement) */}
         <footer style={{ borderTop: '1px solid #ecdfd5', padding: '22px 0 34px', display: 'flex', alignItems: 'center', gap: 16, flexWrap: 'wrap', fontSize: 13, color: '#9c8b7e' }}>
-          <span>© 2026 Geurio</span>
+          <span>© 2026 Geurio(그리오)</span>
           <Link to="/privacy" style={{ color: '#9c8b7e' }}>
             개인정보처리방침
           </Link>
