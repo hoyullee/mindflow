@@ -191,7 +191,10 @@ export function useHomeController() {
       });
       // Always flip `loaded` so the grid drops its loading skeleton and
       // renders the real (possibly empty) state.
-      return { ...prev, spaces, activeSpace, curFolder, mapFolders, favs, deleted, trash, recent, loaded: true };
+      // 카드의 "마지막 수정" 표기 원천 — 휴지통 문서 메타까지 포함해 통째로
+      // 갱신한다 (복원 직후에도 카드에 시각이 바로 뜨도록). timeFormat.ts 참고.
+      const docTimes = Object.fromEntries(metas.map((m) => [m.id, m.updatedAt]));
+      return { ...prev, spaces, activeSpace, curFolder, mapFolders, favs, deleted, trash, recent, docTimes, loaded: true };
     });
   }, [docStore, spaceStore]);
 

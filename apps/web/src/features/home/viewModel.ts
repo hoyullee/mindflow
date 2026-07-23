@@ -10,6 +10,9 @@ export interface CardViewData {
   key: string;
   title: string;
   when: string;
+  /** 마지막 수정 시각(ISO, `state.docTimes[docId]`) — 카드 하단 표기의 원천.
+   * docId 없는 카드(Drive 데모)는 undefined → 표기 생략. */
+  updatedAt?: string;
   hue: string;
   docId?: string;
   href: string;
@@ -158,6 +161,7 @@ export function deriveHomeView(state: HomeState): HomeViewModel {
       key,
       title: c.title,
       when: c.when,
+      updatedAt: c.docId ? state.docTimes[c.docId] : undefined,
       hue: c.hue,
       docId: c.docId,
       href: mapHref(c.title, c.docId),
@@ -282,6 +286,7 @@ export function deriveHomeView(state: HomeState): HomeViewModel {
         key,
         title: base.title,
         when: base.when,
+        updatedAt: base.docId ? state.docTimes[base.docId] : undefined,
         hue: base.hue,
         docId: base.docId,
         href: mapHref(base.title, base.docId),

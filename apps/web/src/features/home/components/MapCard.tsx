@@ -1,4 +1,5 @@
 import type { CSSProperties, DragEvent, MouseEvent } from 'react';
+import { formatFullDateTime, formatLastEdited } from '../timeFormat';
 import type { HomeController } from '../useHomeController';
 import type { CardViewData } from '../viewModel';
 import { useIsMobile } from '../../../hooks/useMediaQuery';
@@ -460,7 +461,13 @@ export function MapCard({ card, controller, draggableEnabled, compact = false }:
             ))}
           <div style={{ fontSize: compact ? 12 : 14, fontWeight: 600, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', minWidth: 0 }}>{card.title}</div>
         </div>
-        {!compact && <div style={{ fontSize: 12, color: '#9c8b7e' }}>최근 항목:{card.when}</div>}
+        {/* 마지막 수정 시각 — 상대(7일 이내)/절대 혼합 표기, 전체 일시는 툴팁.
+            시각 정보가 없는 카드(Drive 데모 등)는 줄 자체를 생략한다. */}
+        {!compact && formatLastEdited(card.updatedAt) && (
+          <div title={formatFullDateTime(card.updatedAt)} style={{ fontSize: 12, color: '#9c8b7e' }}>
+            {formatLastEdited(card.updatedAt)}
+          </div>
+        )}
       </div>
     </a>
   );
