@@ -81,6 +81,38 @@ async function main() {
   await mkdir(path.join(outDir, 'brand'), { recursive: true });
   await writePng(markSvg(120), 120, path.join(outDir, 'brand', 'geurio-logo-120.png'));
 
+  // OG(Open Graph) 공유 카드 1200×630 — 링크를 카톡/슬랙/트위터에 붙였을 때
+  // 뜨는 미리보기. 폰트 글리프를 쓰지 않는 이 스크립트의 원칙대로 텍스트 없이
+  // 브랜드 마크 + BrandPanel풍 장식 노드로만 구성한다(제목/설명 텍스트는
+  // og:title/og:description 메타가 담당).
+  const OG_W = 1200;
+  const OG_H = 630;
+  const k = (0.63 / GLYPH_NATURAL_RATIO).toFixed(4); // 자연 크기 그대로
+  const ogSvg = `<svg xmlns="http://www.w3.org/2000/svg" width="${OG_W}" height="${OG_H}" viewBox="0 0 ${OG_W} ${OG_H}">
+  <rect width="${OG_W}" height="${OG_H}" fill="${CORAL}"/>
+  <g fill="none" stroke="#ffffff" stroke-width="4" opacity="0.16">
+    <rect x="120" y="120" width="150" height="74" rx="22"/>
+    <rect x="90" y="430" width="150" height="74" rx="22"/>
+    <rect x="960" y="150" width="150" height="74" rx="22"/>
+    <rect x="930" y="440" width="150" height="74" rx="22"/>
+  </g>
+  <g opacity="0.16" stroke="#ffffff" stroke-width="4" fill="none">
+    <path d="M 460 315 C 340 315 320 190 270 160"/>
+    <path d="M 460 315 C 340 315 300 440 240 465"/>
+    <path d="M 740 315 C 860 315 900 220 960 190"/>
+    <path d="M 740 315 C 860 315 890 450 930 475"/>
+  </g>
+  <g transform="translate(430 145) scale(3.4)">
+    <g transform="translate(50 50) scale(${k}) translate(-50 -50)">
+      <path d="${GLYPH_PATH}" fill="none" stroke="#ffffff" stroke-width="${GLYPH_STROKE}" stroke-linecap="round" stroke-linejoin="round"/>
+      <circle cx="${GLYPH_DOT.cx}" cy="${GLYPH_DOT.cy}" r="${GLYPH_DOT.r}" fill="#ffffff"/>
+    </g>
+  </g>
+</svg>`;
+  await mkdir(path.join(outDir, 'og'), { recursive: true });
+  await sharp(Buffer.from(ogSvg)).resize(OG_W, OG_H).png().toFile(path.join(outDir, 'og', 'og-image.png'));
+  console.log('wrote', path.relative(process.cwd(), path.join(outDir, 'og', 'og-image.png')));
+
   // Favicon: a small PNG (works everywhere, unlike .ico, without extra deps)
   // plus a scalable SVG for browsers that support `<link rel="icon" ... svg>`.
   const favSvg = markSvg(64);

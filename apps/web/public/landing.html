@@ -7,6 +7,38 @@
     <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
     <link rel="icon" type="image/png" sizes="32x32" href="/favicon-32x32.png" />
     <title>Geurio — 마인드맵 서비스</title>
+
+    <!-- SEO: /와 /landing.html이 같은 파일이므로 canonical로 하나로 모은다 -->
+    <link rel="canonical" href="https://geurio.com/" />
+    <!-- 공유 카드 (Open Graph / Twitter) — og:image는 절대 URL이어야 한다 -->
+    <meta property="og:type" content="website" />
+    <meta property="og:site_name" content="Geurio" />
+    <meta property="og:locale" content="ko_KR" />
+    <meta property="og:title" content="Geurio — 마인드맵 서비스" />
+    <meta property="og:description" content="중심 주제에서 가지를 뻗어 아이디어를 정리하는 마인드맵. 그리고, 잇고, 함께 완성하세요." />
+    <meta property="og:url" content="https://geurio.com/" />
+    <meta property="og:image" content="https://geurio.com/og/og-image.png" />
+    <meta property="og:image:width" content="1200" />
+    <meta property="og:image:height" content="630" />
+    <meta name="twitter:card" content="summary_large_image" />
+    <meta name="twitter:title" content="Geurio — 마인드맵 서비스" />
+    <meta name="twitter:description" content="중심 주제에서 가지를 뻗어 아이디어를 정리하는 마인드맵. 그리고, 잇고, 함께 완성하세요." />
+    <meta name="twitter:image" content="https://geurio.com/og/og-image.png" />
+    <!-- 검색 결과 리치 카드용 구조화 데이터. 실행되는 JS가 아니라 데이터
+         블록이라 "no-JS 렌더" 원칙과 충돌하지 않는다(테스트도 ld+json만 허용). -->
+    <script type="application/ld+json">
+      {
+        "@context": "https://schema.org",
+        "@type": "WebApplication",
+        "name": "Geurio",
+        "url": "https://geurio.com/",
+        "description": "중심 주제에서 가지를 뻗어 아이디어를 정리하는 마인드맵 서비스",
+        "applicationCategory": "ProductivityApplication",
+        "operatingSystem": "Web",
+        "inLanguage": "ko",
+        "offers": { "@type": "Offer", "price": "0", "priceCurrency": "KRW" }
+      }
+    </script>
     <!--
       정적 랜딩 — vercel.json이 "/"를 이 파일로 리라이트한다.
 

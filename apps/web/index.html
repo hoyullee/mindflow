@@ -4,8 +4,23 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
     <meta name="theme-color" content="#f0663f" />
-    <meta name="description" content="중심 주제에서 가지를 뻗어 생각을 정리하는 마인드맵 앱" />
+    <meta name="description" content="중심 주제에서 가지를 뻗어 생각을 정리하는 마인드맵 서비스" />
     <title>Geurio</title>
+    <!-- SEO: 이 셸은 /login·/privacy 등 SPA 라우트로 서빙된다(app.html —
+         vite.config.ts landingRootSwap 참고). 링크 공유 시 미리보기 카드용
+         OG/트위터 태그 — 페이지별 og:url은 두지 않는다(라우트가 여럿이라). -->
+    <meta property="og:type" content="website" />
+    <meta property="og:site_name" content="Geurio" />
+    <meta property="og:locale" content="ko_KR" />
+    <meta property="og:title" content="Geurio — 마인드맵 서비스" />
+    <meta property="og:description" content="중심 주제에서 가지를 뻗어 아이디어를 정리하는 마인드맵. 그리고, 잇고, 함께 완성하세요." />
+    <meta property="og:image" content="https://geurio.com/og/og-image.png" />
+    <meta property="og:image:width" content="1200" />
+    <meta property="og:image:height" content="630" />
+    <meta name="twitter:card" content="summary_large_image" />
+    <meta name="twitter:title" content="Geurio — 마인드맵 서비스" />
+    <meta name="twitter:description" content="중심 주제에서 가지를 뻗어 아이디어를 정리하는 마인드맵. 그리고, 잇고, 함께 완성하세요." />
+    <meta name="twitter:image" content="https://geurio.com/og/og-image.png" />
     <!-- M6: Pretendard is now self-hosted (see src/index.css's @font-face) so it's
          precached by the service worker and works offline / behind a CDN block —
          no external stylesheet link here anymore. -->
