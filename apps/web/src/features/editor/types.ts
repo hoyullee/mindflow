@@ -25,7 +25,10 @@ export interface Selection {
 }
 
 /** Doc-chip save indicator — port of `Component#state.saveState` (MindFlow.dc.html:502). */
-export type SaveState = 'saved' | 'dirty' | 'saving';
+/** `unsaved` = 아직 어디에도 저장된 적 없는 문서(새 맵 진입 직후, 초기 로드
+ * 확정 전) — '저장됨'이 거짓말이 되지 않도록 별도 상태로 구분한다. 신규 확정
+ * 시 시드가 즉시 1회 저장되므로 보통 순식간에 `saving → saved`로 넘어간다. */
+export type SaveState = 'saved' | 'dirty' | 'saving' | 'unsaved';
 
 /** Which endpoint/curvature handle a line drag targets — 1 = start, 2 = end. */
 export type LineHandle = 1 | 2;
