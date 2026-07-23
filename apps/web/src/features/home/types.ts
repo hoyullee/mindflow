@@ -61,6 +61,9 @@ export type DriveConnection = 'idle' | 'connected';
 
 /** Mirrors `this.state` in Home.dc.html's constructor + the fields it adds via `setState`. */
 export interface HomeState {
+  /** docId → 마지막 수정 시각(ISO). `DocStore.list()`의 메타에서 채워지며,
+   * 맵 카드 하단의 "N시간 전"류 표기의 원천이다 (timeFormat.ts). */
+  docTimes: Record<string, string>;
   drive: DriveConnection;
   auth: AuthPhase;
   favs: Record<string, boolean>;
@@ -196,6 +199,7 @@ export const DRIVE_FILES: DriveFileData[] = [
 
 export function initialHomeState(): HomeState {
   return {
+    docTimes: {},
     drive: 'idle',
     auth: null,
     favs: {},

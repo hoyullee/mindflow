@@ -143,6 +143,24 @@ describe('Home', () => {
     expect(container.querySelector('a[data-title="무상 비즈머니 지급"]')).toBeTruthy();
   });
 
+  it('map cards show the LAST-EDITED time (updatedAt), not the legacy "최근 항목:내 맵" line', async () => {
+    const twoHoursAgo = new Date(Date.now() - 2 * 3600_000).toISOString();
+    const { container } = renderHomeWithDocStore([
+      { id: 'doc-a', title: '시간표기', version: 1, updatedAt: twoHoursAgo, isFavorite: false, deletedAt: null },
+    ]);
+    const card = await waitFor(() => {
+      const el = container.querySelector('a[data-title="시간표기"]');
+      expect(el).toBeTruthy();
+      return el as HTMLElement;
+    });
+    await waitFor(() => expect(within(card).getByText('2시간 전')).toBeTruthy());
+    // 옛 문구는 사라져야 한다
+    expect(within(card).queryByText(/최근 항목:/)).toBeNull();
+    expect(within(card).queryByText('내 맵')).toBeNull();
+    // 정확한 일시는 툴팁으로
+    expect(within(card).getByText('2시간 전').getAttribute('title')).toMatch(/^\d{4}\. \d{1,2}\. \d{1,2}\. \d{2}:\d{2}$/);
+  });
+
   it('shows the loading overlay then navigates to /editor after clicking "새로 만들기"', async () => {
     const user = userEvent.setup();
     renderHome();
