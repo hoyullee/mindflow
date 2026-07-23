@@ -74,7 +74,7 @@ export function PrivacyPolicy() {
 
       <LegalSection heading="6. 문의처">
         <p>
-          개인정보 관련 문의: <a href="mailto:ssasya2@gmail.com" style={{ color: '#f0663f', fontWeight: 600 }}>ssasya2@gmail.com</a>
+          개인정보 관련 문의: <a href="mailto:info@geurio.com" style={{ color: '#f0663f', fontWeight: 600 }}>info@geurio.com</a>
         </p>
       </LegalSection>
 

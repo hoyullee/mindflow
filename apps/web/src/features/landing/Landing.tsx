@@ -158,8 +158,8 @@ export function Landing() {
           <Link to="/terms" style={{ color: '#9c8b7e' }}>
             이용약관
           </Link>
-          <a href="mailto:ssasya2@gmail.com" style={{ color: '#9c8b7e', marginLeft: 'auto' }}>
-            문의: ssasya2@gmail.com
+          <a href="mailto:info@geurio.com" style={{ color: '#9c8b7e', marginLeft: 'auto' }}>
+            문의: info@geurio.com
           </a>
         </footer>
       </div>
