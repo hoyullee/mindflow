@@ -10,6 +10,14 @@ import { SpaceRow } from './SpaceRow';
  * frames aren't clipped. */
 const DRAWER_EXIT_MS = 280;
 
+/**
+ * Google Drive 연동 LNB 항목 임시 숨김 (2026-07 사용자 요청). 연동 자체가
+ * 아직 데모 수준(가짜 OAuth 모달)이라 실사용자에게 노출하지 않는다 —
+ * 컨트롤러/뷰모델/모달 코드는 전부 남겨뒀으므로, 진짜 Drive 연동을 붙일 때
+ * 이 플래그만 true로 되돌리면 된다.
+ */
+const SHOW_DRIVE_LNB = false;
+
 interface Props {
   state: HomeState;
   view: HomeViewModel;
@@ -143,32 +151,34 @@ export function Sidebar({ state, view, controller, isMobile = false, isOpen = fa
         <span style={{ fontSize: 15, color: '#9c8b7e' }}>＋</span> 새 공간
       </div>
 
-      <div
-        className="nav-item"
-        role="button"
-        tabIndex={0}
-        onClick={controller.onDriveClick}
-        onKeyDown={(e) => {
-          if (e.key === 'Enter' || e.key === ' ') controller.onDriveClick();
-        }}
-        style={{
-          display: 'flex',
-          alignItems: 'center',
-          gap: 10,
-          padding: '9px 10px',
-          minHeight: isMobile ? 44 : undefined,
-          borderRadius: 9,
-          cursor: 'pointer',
-          fontSize: 13.5,
-          fontWeight: view.isDriveSpace ? 600 : 500,
-          background: view.isDriveSpace ? '#fdeee7' : 'transparent',
-          color: view.isDriveSpace ? '#d9542f' : '#7c6d60',
-        }}
-      >
-        <span style={{ width: 15, height: 15, borderRadius: 3, display: 'inline-block', background: view.connected ? '#34A853' : '#c9b8a9' }} />
-        <span>Google Drive</span>
-        <span style={{ marginLeft: 'auto', fontSize: 11, color: '#9c8b7e' }}>{view.connected ? '연결됨' : '연결'}</span>
-      </div>
+      {SHOW_DRIVE_LNB && (
+        <div
+          className="nav-item"
+          role="button"
+          tabIndex={0}
+          onClick={controller.onDriveClick}
+          onKeyDown={(e) => {
+            if (e.key === 'Enter' || e.key === ' ') controller.onDriveClick();
+          }}
+          style={{
+            display: 'flex',
+            alignItems: 'center',
+            gap: 10,
+            padding: '9px 10px',
+            minHeight: isMobile ? 44 : undefined,
+            borderRadius: 9,
+            cursor: 'pointer',
+            fontSize: 13.5,
+            fontWeight: view.isDriveSpace ? 600 : 500,
+            background: view.isDriveSpace ? '#fdeee7' : 'transparent',
+            color: view.isDriveSpace ? '#d9542f' : '#7c6d60',
+          }}
+        >
+          <span style={{ width: 15, height: 15, borderRadius: 3, display: 'inline-block', background: view.connected ? '#34A853' : '#c9b8a9' }} />
+          <span>Google Drive</span>
+          <span style={{ marginLeft: 'auto', fontSize: 11, color: '#9c8b7e' }}>{view.connected ? '연결됨' : '연결'}</span>
+        </div>
+      )}
 
       <div style={{ height: 1, background: '#f0e6dd', margin: '12px 4px' }} />
 

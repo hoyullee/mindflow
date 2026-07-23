@@ -78,7 +78,8 @@ describe('Home', () => {
 
     // sidebar
     expect(sidebar.getByText('스페이스')).toBeTruthy();
-    expect(sidebar.getByText('Google Drive')).toBeTruthy();
+    // Google Drive 연동은 실연동 전까지 임시 숨김 (Sidebar.tsx SHOW_DRIVE_LNB)
+    expect(sidebar.queryByText('Google Drive')).toBeNull();
     expect(sidebar.getByText('즐겨찾기')).toBeTruthy();
     expect(sidebar.getByText('휴지통')).toBeTruthy();
     // the space list is a skeleton until the workspace load settles, then 일반 공간 appears
