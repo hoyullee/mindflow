@@ -133,49 +133,9 @@ export function MapCard({ card, controller, draggableEnabled, compact = false }:
         {card.isFav ? '★' : '☆'}
       </div>
 
-      {!compact && (
-      <div
-        className="menu-btn"
-        role="button"
-        tabIndex={-1}
-        onClick={(e) => {
-          e.preventDefault();
-          e.stopPropagation();
-          controller.toggleMenu(card.key);
-        }}
-        title="메뉴"
-        aria-label="메뉴"
-        style={{
-          position: 'absolute',
-          top: 10,
-          right: 10,
-          zIndex: 4,
-          width: 28,
-          height: 28,
-          borderRadius: 8,
-          background: 'rgba(255,255,255,.92)',
-          border: '1px solid #ecdfd5',
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'center',
-          fontSize: 13,
-          lineHeight: 1,
-          color: '#7c6d60',
-          cursor: 'pointer',
-          boxShadow: '0 2px 6px rgba(0,0,0,.12)',
-          // Revealed on hover (see home.css), but also when the menu is open or
-          // the card is selected, so on touch (no hover) a selected map exposes
-          // its ☰ menu button.
-          opacity: card.menuOpen || card.selected ? 1 : 0,
-          transition: 'opacity .15s',
-        }}
-      >
-        ☰
-      </div>
-      )}
 
       {!compact && (
-      <div onClick={stopPrevent} style={{ position: 'absolute', top: 44, right: 10, zIndex: 20, width: 150, background: '#fff', border: '1px solid #ecdfd5', borderRadius: 10, boxShadow: '0 10px 28px rgba(0,0,0,.16)', padding: '5px 0', display: card.menuOpen ? 'block' : 'none' }}>
+      <div onClick={stopPrevent} style={{ position: 'absolute', bottom: 44, right: 10, zIndex: 20, width: 150, background: '#fff', border: '1px solid #ecdfd5', borderRadius: 10, boxShadow: '0 10px 28px rgba(0,0,0,.16)', padding: '5px 0', display: card.menuOpen ? 'block' : 'none' }}>
         <div style={{ display: card.exportOpen || card.moveOpen || card.spaceMoveOpen ? 'none' : 'block' }}>
           {card.showFavRow && (
             <div
@@ -460,12 +420,49 @@ export function MapCard({ card, controller, draggableEnabled, compact = false }:
               <span aria-hidden="true" style={{ width: 8, height: 8, borderRadius: 3, background: card.spaceColor, flexShrink: 0, boxShadow: 'inset 0 0 0 1px rgba(0,0,0,.18)' }} />
             ))}
           <div style={{ fontSize: compact ? 12 : 14, fontWeight: 600, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', minWidth: 0 }}>{card.title}</div>
+          {!compact && (
+            <div
+              className="menu-btn"
+              role="button"
+              tabIndex={-1}
+              onClick={(e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                controller.toggleMenu(card.key);
+              }}
+              title="메뉴"
+              aria-label="메뉴"
+              style={{
+                marginLeft: 'auto',
+                flexShrink: 0,
+                width: 26,
+                height: 26,
+                borderRadius: 8,
+                background: 'transparent',
+                border: '1px solid transparent',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                fontSize: 13,
+                lineHeight: 1,
+                color: '#7c6d60',
+                cursor: 'pointer',
+                // Revealed on hover (see home.css), but also when the menu is open
+                // or the card is selected, so on touch (no hover) a selected map
+                // exposes its ☰ menu button.
+                opacity: card.menuOpen || card.selected ? 1 : 0,
+                transition: 'opacity .15s',
+              }}
+            >
+              ☰
+            </div>
+          )}
         </div>
         {/* 마지막 수정 시각 — 상대(7일 이내)/절대 혼합 표기, 전체 일시는 툴팁.
             시각 정보가 없는 카드(Drive 데모 등)는 줄 자체를 생략한다. */}
         {!compact && formatLastEdited(card.updatedAt) && (
           <div title={formatFullDateTime(card.updatedAt)} style={{ fontSize: 12, color: '#9c8b7e' }}>
-            {formatLastEdited(card.updatedAt)}
+            최근 변경 · {formatLastEdited(card.updatedAt)}
           </div>
         )}
       </div>
