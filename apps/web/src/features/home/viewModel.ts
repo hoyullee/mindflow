@@ -89,9 +89,15 @@ function sourceIsDrive(title: string): boolean {
 }
 
 function cardSketch(title: string, hue: string, docId: string | undefined, previewDocs: Record<string, string>, previewResolved: Record<string, boolean>): JSX.Element {
-  // Prefer the body prefetched from the DocStore (covers backend-stored maps),
-  // then any localStorage copy, then a title match.
-  const raw = (docId && (previewDocs[docId] || readDocRaw(docId))) || docRawForTitle(title);
+  // A docId-backed card's body is keyed by that id alone: the prefetched
+  // DocStore body (covers backend-stored maps), then the localStorage copy.
+  // NEVER fall through to a title match — a brand-new, never-saved map (the
+  // seed doc isn't persisted until the first edit or an explicit save on
+  // leaving) is also titled "새 마인드맵", and the root-text scan would capture
+  // some OTHER map's body (repro: modified map A → 새로 만들기 → browser back →
+  // the new card showed A's preview). The title scan remains only for legacy
+  // docId-less cards, whose body was stored under a `new-…` id.
+  const raw = docId ? previewDocs[docId] || readDocRaw(docId) : docRawForTitle(title);
   if (raw) return realPreview(raw, hue) || miniPreview(hue, title);
   // No body available yet: if this card's backend body is still being fetched
   // (docId not yet resolved), show a neutral skeleton instead of the generic
