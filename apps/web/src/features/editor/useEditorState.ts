@@ -2315,7 +2315,11 @@ export function useEditorState(): EditorController {
           break;
         case 'node-move': {
           const p = toCanvasPoint(e.clientX, e.clientY, vp);
-          setDragGhost({ id: d.id, x: p.x, y: p.y });
+          // 그랩 오프셋 보존: 고스트는 '시작 중심 + 포인터 이동량'을 따른다.
+          // 커서에 중심을 스냅하면 가장자리를 잡은 도형이 잡는 순간 확 튀고,
+          // 1px만 움직여도 의도보다 크게 이동해 버린다. 부착 대상 탐지는
+          // 원본처럼 커서 지점 기준을 유지한다(가리키는 곳에 붙는 게 자연스러움).
+          setDragGhost({ id: d.id, x: d.startGeomX + dx, y: d.startGeomY + dy });
           setAttachTarget(findAttachTarget(p, d.excludeIds));
           break;
         }
@@ -2431,6 +2435,10 @@ export function useEditorState(): EditorController {
         // measured from the node's CENTRE to the cursor), yanking it out of the tree.
         const moveDist = Math.hypot(e.clientX - d.startClientX, e.clientY - d.startClientY) / (vp.zoom || 1);
         const target = moveDist >= 4 ? findAttachTarget(p, d.excludeIds) : null;
+        // 드롭 좌표도 고스트와 동일하게 그랩 오프셋 보존 — 놓는 순간 중심이
+        // 커서로 점프하지 않고, 드래그 중 보이던 자리에 그대로 내려앉는다.
+        const dropX = d.startGeomX + (e.clientX - d.startClientX) / (vp.zoom || 1);
+        const dropY = d.startGeomY + (e.clientY - d.startClientY) / (vp.zoom || 1);
         if (moveDist < 4) {
           // pure click — nothing to commit
         } else if (target) {
@@ -2445,7 +2453,7 @@ export function useEditorState(): EditorController {
           pendingReflowNudgeRef.current = true;
           setNudgeTick((t) => t + 1);
         } else {
-          const dist = Math.hypot(p.x - d.startGeomX, p.y - d.startGeomY);
+          const dist = Math.hypot(dropX - d.startGeomX, dropY - d.startGeomY); // = 포인터 이동량 (그랩 오프셋 무관)
           // Box lookup for the drop: the dragged shape's NEW position is already in
           // the candidate `nodes` (moveFreeNode/detach set it), and every free shape
           // carries its live position in the doc — so read positions from the doc for
@@ -2465,14 +2473,14 @@ export function useEditorState(): EditorController {
             // magnets clear (only this shape) of anything it landed on — one commit.
             if (dist > 0.5)
               commitDoc((doc0) => {
-                const moved = mutations.moveFreeNode(doc0.nodes, d.id, p.x, p.y);
+                const moved = mutations.moveFreeNode(doc0.nodes, d.id, dropX, dropY);
                 return { ...doc0, nodes: mutations.nudgeFreeNode(moved, d.id, boxOf(moved)) };
               });
           } else if (dist > 40) {
             // dragged clear of the tree → detach to a free shape at the drop point
             // (MindFlow.dc.html:1791-1797), then magnet it clear — one commit.
             commitDoc((doc0) => {
-              const detached = mutations.detachNodeToFree(doc0.nodes, d.id, p.x, p.y);
+              const detached = mutations.detachNodeToFree(doc0.nodes, d.id, dropX, dropY);
               return { ...doc0, nodes: mutations.nudgeFreeNode(detached, d.id, boxOf(detached)) };
             });
             // Detaching removes the node from its parent → the tree RE-LAYS OUT, and

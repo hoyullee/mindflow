@@ -279,6 +279,85 @@ describe('Editor outline editing (M3-Editor-c)', () => {
   });
 });
 
+describe('free-shape drag keeps the grab offset (regression: 중심이 커서로 스냅)', () => {
+  it('moves a free shape by exactly the pointer delta, even when grabbed off-centre', async () => {
+    // 자유 도형 하나 — 레이아웃이 저장 좌표를 그대로 앵커한다.
+    const FREE_DOC = {
+      v: 1,
+      nodes: {
+        root: { id: 'root', text: '루트', emoji: '', parent: null, children: [], collapsed: false, color: null, x: 0, y: 0 },
+        f1: { id: 'f1', text: '자유도형', emoji: '', parent: null, children: [], collapsed: false, color: null, x: 320, y: 40, free: true },
+      },
+      floats: [],
+      lines: [],
+      zones: [],
+      layoutMode: 'right',
+      themeKey: 'coral',
+    };
+    localStorage.setItem('mindflow_doc_grab1', JSON.stringify(FREE_DOC));
+    const { container } = renderEditor('/editor?map=grab1&title=x');
+
+    // 훅과 동일한 지오메트리/핏 재현 (reparent 테스트와 같은 방식)
+    const measurer = new CanvasTextMeasurer();
+    const sizeOf = (node: Parameters<typeof computeMetrics>[0], depth: number) => {
+      const m = computeMetrics(node, depth, measurer);
+      return { w: m.w, h: m.h };
+    };
+    const laidOut = layout(FREE_DOC as Doc, 'right', sizeOf, { rootAnchor: { x: 0, y: 0 } });
+    const geom: Record<string, { x: number; y: number; w: number; h: number }> = {};
+    for (const id of ['root', 'f1']) {
+      const n = laidOut[id]!;
+      const m = computeMetrics(n, 0, measurer);
+      geom[id] = { x: n.x, y: n.y, w: m.w, h: m.h };
+    }
+    const FIT_PADDING = 90;
+    const vw = 1200;
+    const vh = 700;
+    let minX = Infinity;
+    let minY = Infinity;
+    let maxX = -Infinity;
+    let maxY = -Infinity;
+    for (const id of ['root', 'f1']) {
+      const g = geom[id]!;
+      minX = Math.min(minX, g.x - g.w / 2);
+      maxX = Math.max(maxX, g.x + g.w / 2);
+      minY = Math.min(minY, g.y - g.h / 2);
+      maxY = Math.max(maxY, g.y + g.h / 2);
+    }
+    const cx = geom.root!.x;
+    const cy = geom.root!.y;
+    const halfW = Math.max(cx - minX, maxX - cx, 1);
+    const halfH = Math.max(cy - minY, maxY - cy, 1);
+    const zoom = Math.max(0.25, Math.min((vw - FIT_PADDING) / (2 * halfW), (vh - FIT_PADDING) / (2 * halfH), 1.25));
+    const pan = { x: vw / 2 - cx * zoom, y: vh / 2 - cy * zoom };
+
+    const f1 = geom.f1!;
+    // 중심이 아니라 오른쪽-아래로 치우친 지점을 잡는다 (그랩 오프셋 존재)
+    const grabX = (f1.x + f1.w * 0.4) * zoom + pan.x;
+    const grabY = (f1.y + f1.h * 0.3) * zoom + pan.y;
+    const CANVAS_DX = 60;
+    const CANVAS_DY = 20;
+
+    const el = container.querySelector('[data-node-id="f1"]') as HTMLElement;
+    expect(el).toBeTruthy();
+    firePointer(el, 'pointerdown', { pointerId: 9, clientX: grabX, clientY: grabY, button: 0 });
+    firePointer(window, 'pointermove', { pointerId: 9, clientX: grabX + CANVAS_DX * zoom, clientY: grabY + CANVAS_DY * zoom });
+    firePointer(window, 'pointerup', { pointerId: 9, clientX: grabX + CANVAS_DX * zoom, clientY: grabY + CANVAS_DY * zoom });
+
+    fireEvent.keyDown(window, { key: 's', ctrlKey: true });
+    await waitFor(
+      () => {
+        const parsed = parseDoc(JSON.parse(localStorage.getItem('mindflow_doc_grab1') as string));
+        // 포인터 이동량만큼만 이동해야 한다 — 중심 스냅 버그였다면
+        // 그랩 오프셋(w*0.4, h*0.3)이 추가로 더해져 크게 어긋난다.
+        expect(parsed!.nodes.f1!.x).toBeCloseTo(320 + CANVAS_DX, 0);
+        expect(parsed!.nodes.f1!.y).toBeCloseTo(40 + CANVAS_DY, 0);
+      },
+      { timeout: 2000 },
+    );
+  });
+});
+
 describe('Editor drag-to-reparent (M3-Editor-c)', () => {
   it('dropping a node onto another node reparents it (and re-runs layout)', async () => {
     localStorage.setItem('mindflow_doc_rp1', JSON.stringify(SIMPLE_DOC));
