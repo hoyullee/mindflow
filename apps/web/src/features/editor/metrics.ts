@@ -76,6 +76,9 @@ export interface NodeMetrics {
   fw: number;
   /** Text-block width + 9 (border/rounding allowance) — used to clip shaped bodies. */
   tw: number;
+  /** 이 결과를 만들 때 실제 사용한 줄바꿈 허용 폭 — 렌더러/미리보기가 동일한
+   * 폭으로 감싸야 줄바꿈이 일치한다 (아래 과팽창 되돌림 참고). */
+  wrapW: number;
 }
 
 interface RichLineSeg {
@@ -148,51 +151,71 @@ export function computeMetrics(node: Node, depth: number, measurer: TextMeasurer
   const fpx = node.tsize === 's' ? basePx - 3 : node.tsize === 'l' ? basePx + 5 : basePx;
   const fw = node.bold ? 800 : depth === 0 ? 700 : depth === 1 ? 600 : 500;
   const font = `${fw} ${fpx}px Pretendard`;
-  let h = (depth === 0 ? 52 : depth === 1 ? 42 : 34) + (fpx - basePx) * 1.6;
   const padX = depth === 0 ? 24 : depth === 1 ? 15 : 13;
   const emW = node.emoji ? Math.ceil(measurer.measure(node.emoji, `${depth === 0 ? 22 : 17}px Pretendard`)) + 7 + 2 : 0;
-  const MAXW = Math.max(320, (node.cw || 0) - padX * 2 - emW - 7);
-  const wm = wrapMeasure(node, fpx, fw, MAXW, measurer);
-  const lineCount = wm.count;
-  const maxLine = wm.maxW;
-  let w = Math.ceil(maxLine) + padX * 2 + emW + 7;
-  const minW = depth === 0 ? 130 : 58;
-  w = Math.max(minW, w);
-  if (lineCount > 1) {
-    const lineH = Math.round(fpx * 1.4);
-    h += (lineCount - 1) * lineH;
-  }
   const shape = node.shape || 'round';
-  const lineH2 = Math.round(fpx * 1.4);
-  const textW = Math.ceil(maxLine) + emW;
-  const textH = lineCount * lineH2;
-  if (shape === 'diamond') {
-    const H = Math.max(h * 1.7, textH * 2.4);
-    const room = Math.max(0.18, 0.94 - textH / H);
-    w = Math.max(w * 1.45 + 20, textW / room + padX * 2);
-    h = H;
-  } else if (shape === 'hexagon') {
-    w = Math.max(w + h * 0.9, textW / 0.7 + padX * 2);
-  } else if (shape === 'parallelogram') {
-    w = Math.max(w + 28, textW / 0.66 + padX * 2);
-  } else if (shape === 'pill') {
-    const r0 = ((depth === 0 ? 52 : depth === 1 ? 42 : 34) + (fpx - basePx) * 1.6 + (lineCount - 1) * lineH2) / 2;
-    const yoff = Math.min(r0, textH / 2);
-    const inset = r0 - Math.sqrt(Math.max(0, r0 * r0 - yoff * yoff));
-    w = Math.max(w, textW + 2 * inset + padX * 2);
-  } else if (shape === 'ellipse') {
-    w = Math.max(w * 1.22 + 8, textW * 1.42 + padX * 2);
-    h = Math.max(h + 8, textH * 1.42 + 10);
+
+  /** 주어진 줄바꿈 허용 폭으로 자연 크기(도형 팽창·이미지 포함, cw/ch 클램프 제외)를 계산. */
+  const build = (wrapW: number): { w: number; h: number; textW: number } => {
+    let h = (depth === 0 ? 52 : depth === 1 ? 42 : 34) + (fpx - basePx) * 1.6;
+    const wm = wrapMeasure(node, fpx, fw, wrapW, measurer);
+    const lineCount = wm.count;
+    const maxLine = wm.maxW;
+    let w = Math.ceil(maxLine) + padX * 2 + emW + 7;
+    const minW = depth === 0 ? 130 : 58;
+    w = Math.max(minW, w);
+    if (lineCount > 1) {
+      const lineH = Math.round(fpx * 1.4);
+      h += (lineCount - 1) * lineH;
+    }
+    const lineH2 = Math.round(fpx * 1.4);
+    const textW = Math.ceil(maxLine) + emW;
+    const textH = lineCount * lineH2;
+    if (shape === 'diamond') {
+      const H = Math.max(h * 1.7, textH * 2.4);
+      const room = Math.max(0.18, 0.94 - textH / H);
+      w = Math.max(w * 1.45 + 20, textW / room + padX * 2);
+      h = H;
+    } else if (shape === 'hexagon') {
+      w = Math.max(w + h * 0.9, textW / 0.7 + padX * 2);
+    } else if (shape === 'parallelogram') {
+      w = Math.max(w + 28, textW / 0.66 + padX * 2);
+    } else if (shape === 'pill') {
+      const r0 = ((depth === 0 ? 52 : depth === 1 ? 42 : 34) + (fpx - basePx) * 1.6 + (lineCount - 1) * lineH2) / 2;
+      const yoff = Math.min(r0, textH / 2);
+      const inset = r0 - Math.sqrt(Math.max(0, r0 * r0 - yoff * yoff));
+      w = Math.max(w, textW + 2 * inset + padX * 2);
+    } else if (shape === 'ellipse') {
+      w = Math.max(w * 1.22 + 8, textW * 1.42 + padX * 2);
+      h = Math.max(h + 8, textH * 1.42 + 10);
+    }
+    // 노드 이미지: 텍스트 위 썸네일 — 폭은 이미지+패딩을 수용하고 높이가 늘어난다
+    // (imgW/imgH는 첨부 시 비율 유지로 고정 계산된 표시 크기, Node.img 참고).
+    if (node.img && node.imgW && node.imgH) {
+      w = Math.max(w, node.imgW + padX * 2);
+      h += node.imgH + 8;
+    }
+    return { w, h, textW };
+  };
+
+  const BASE_WRAP = 320;
+  const cwWrap = Math.max(BASE_WRAP, (node.cw || 0) - padX * 2 - emW - 7);
+  let wrapW = cwWrap;
+  let m = build(cwWrap);
+  // 과팽창 되돌림: 사용자가 폭(cw)을 지정하면 줄바꿈 허용 폭도 cw 기준으로
+  // 넓어지는데, 텍스트 폭에 배율을 곱하는 도형(타원·육각형·마름모·평행사변형)
+  // 은 "긴 줄로 다시 풀린 텍스트 × 배율"이 cw 자체를 넘어버린다 — 리사이즈
+  // 핸들을 1px만 끌어도 폭이 폭발하던 버그. 넓힌 랩의 자연 폭이 cw를 넘으면
+  // 기본 랩(320)으로 계산해, 최종 폭이 max(자연폭, cw)로 단조 증가하게 한다.
+  // (cw가 충분히 커져 풀린 텍스트가 들어맞는 순간부터는 자연히 반영된다.)
+  if (node.cw && cwWrap > BASE_WRAP && m.w > node.cw) {
+    wrapW = BASE_WRAP;
+    m = build(BASE_WRAP);
   }
-  // 노드 이미지: 텍스트 위 썸네일 — 폭은 이미지+패딩을 수용하고 높이가 늘어난다
-  // (imgW/imgH는 첨부 시 비율 유지로 고정 계산된 표시 크기, Node.img 참고).
-  if (node.img && node.imgW && node.imgH) {
-    w = Math.max(w, node.imgW + padX * 2);
-    h += node.imgH + 8;
-  }
+  let { w, h } = m;
   if (node.cw) w = Math.max(w, node.cw);
   if (node.ch) h = Math.max(h, node.ch);
-  return { font, w, h, shape, fpx, fw, tw: textW + 9 };
+  return { font, w, h, shape, fpx, fw, tw: m.textW + 9, wrapW };
 }
 
 /** Number of wrapped lines `text` occupies at `maxW` px in `font`, using the same
