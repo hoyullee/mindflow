@@ -153,12 +153,12 @@ describe('Home', () => {
       expect(el).toBeTruthy();
       return el as HTMLElement;
     });
-    await waitFor(() => expect(within(card).getByText('2시간 전')).toBeTruthy());
+    await waitFor(() => expect(within(card).getByText('최근 변경 · 2시간 전')).toBeTruthy());
     // 옛 문구는 사라져야 한다
     expect(within(card).queryByText(/최근 항목:/)).toBeNull();
     expect(within(card).queryByText('내 맵')).toBeNull();
     // 정확한 일시는 툴팁으로
-    expect(within(card).getByText('2시간 전').getAttribute('title')).toMatch(/^\d{4}\. \d{1,2}\. \d{1,2}\. \d{2}:\d{2}$/);
+    expect(within(card).getByText('최근 변경 · 2시간 전').getAttribute('title')).toMatch(/^\d{4}\. \d{1,2}\. \d{1,2}\. \d{2}:\d{2}$/);
   });
 
   it('shows the loading overlay then navigates to /editor after clicking "새로 만들기"', async () => {
