@@ -14,7 +14,7 @@ interface DocChipProps {
 export function DocChip({ controller }: DocChipProps) {
   const th = controller.theme;
   const dotColor = controller.saveState === 'saved' ? '#3fae6a' : controller.saveState === 'saving' ? '#e0b23c' : th.subtext;
-  const label = controller.saveState === 'saved' ? '저장됨' : controller.saveState === 'saving' ? '저장 중…' : '변경됨';
+  const label = controller.saveState === 'saved' ? '저장됨' : controller.saveState === 'saving' ? '저장 중…' : controller.saveState === 'unsaved' ? '저장 전' : '변경됨';
 
   return (
     <div

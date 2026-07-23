@@ -514,7 +514,11 @@ export function useEditorState(): EditorController {
   const [editingLineId, setEditingLineId] = useState<string | null>(null);
   const [editingZoneId, setEditingZoneId] = useState<string | null>(null);
   const [editingTitle, setEditingTitle] = useState(false);
-  const [saveState, setSaveStateState] = useState<SaveState>('saved');
+  // A doc with no local body yet has never been saved anywhere we know of —
+  // start the chip at '저장 전', not a false '저장됨'. The initial load flips it:
+  // an existing backend doc → 'saved', a confirmed brand-new map → the seed is
+  // persisted immediately ('saving' → 'saved', now truthfully).
+  const [saveState, setSaveStateState] = useState<SaveState>(() => (hasStoredDoc(mapId) ? 'saved' : 'unsaved'));
   const [, setHistoryTick] = useState(0);
   const [ctxMenu, setCtxMenu] = useState<ContextMenuState | null>(null);
   const [ctxSub, setCtxSub] = useState<ContextSubState | null>(null);
@@ -551,6 +555,11 @@ export function useEditorState(): EditorController {
   const canPersistDocRef = useRef(false);
   const lastSavedSigRef = useRef(docSignature(doc));
   const initialLoadRef = useRef<Promise<void>>(Promise.resolve());
+  // The load effect below needs `persistDoc` (declared later, with the other save
+  // handlers) to kick the brand-new-map seed save — bridged via a render-synced
+  // ref so the effect's dep list stays [docStore, docStoreId, mapId] (a changing
+  // callback identity must not re-run the initial load).
+  const persistDocRef = useRef<() => Promise<void>>(async () => undefined);
   const [loadError, setLoadError] = useState(false);
   useEffect(() => {
     let cancelled = false;
@@ -558,6 +567,10 @@ export function useEditorState(): EditorController {
       .load(docStoreId)
       .then((res) => {
         if (cancelled) return;
+        // Whether the user has edited since mount — decided BEFORE the adopt
+        // branch rewrites `mountDocSigRef`. While pristine, the save chip may be
+        // corrected from here; after an edit the autosave flow owns it.
+        const pristine = docSignature(docRef.current) === mountDocSigRef.current;
         if (res) {
           docVersionRef.current = res.version;
           const adopt = docSignature(docRef.current) === mountDocSigRef.current && docSignature(res.doc) !== mountDocSigRef.current;
@@ -593,6 +606,10 @@ export function useEditorState(): EditorController {
           } catch {
             /* storage unavailable — non-fatal */
           }
+          // The doc now mirrors the stored truth — clear a mount-time '저장 전'
+          // (backend doc opened on a fresh device). Skipped after a mid-load
+          // edit: the autosave flow already owns the chip then.
+          if (pristine) setSaveStateState('saved');
         } else {
           docVersionRef.current = undefined; // confirmed brand-new map (no row yet)
         }
@@ -600,6 +617,16 @@ export function useEditorState(): EditorController {
         // is now safe.
         canPersistDocRef.current = true;
         setLoadError(false);
+        if (!res) {
+          // Confirmed brand-new: persist the seed RIGHT AWAY (creation = the doc
+          // exists, like the card already added to Home at 새로 만들기). This keeps
+          // the chip truthful ('저장 전' → '저장 중…' → real '저장됨') and gives the
+          // doc a body no matter how the user leaves (browser back / tab close
+          // included), so the Home card previews the actual root node. Safe by
+          // construction: no row exists, so nothing can be overwritten.
+          setSaveStateState('saving');
+          void persistDocRef.current();
+        }
       })
       .catch(() => {
         if (cancelled) return;
@@ -1518,6 +1545,9 @@ export function useEditorState(): EditorController {
       setSaveStateState('dirty'); // keep dirty so the next autosave/Ctrl+S tick retries
     }
   }, [docStore, docStoreId, titleParam, mapId]);
+  // Render-synced bridge for the initial-load effect's brand-new seed save
+  // (declared up there, before this callback exists).
+  persistDocRef.current = persistDoc;
 
   useEffect(() => {
     const sig = docSignature(doc);

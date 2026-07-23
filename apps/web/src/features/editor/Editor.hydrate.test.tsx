@@ -93,6 +93,40 @@ describe('Editor initial hydration', () => {
     expect(within(vp).getByText('제목')).toBeTruthy();
   });
 
+  // ---- 저장 상태 칩 + 신규 문서 시드 저장 ----
+
+  it("brand-new map: chip is honest (저장 전 → 저장됨) and the seed is persisted once the load confirms there's no row", async () => {
+    localStorage.clear();
+    let resolveLoad!: (v: LoadedDoc | null) => void;
+    const gate = new Promise<LoadedDoc | null>((r) => {
+      resolveLoad = r;
+    });
+    const { backend, save } = makeBackend(vi.fn(async () => gate), 'local');
+    renderEditor(backend, '/editor?map=new-t1&new=1&title=새 마인드맵');
+
+    // Load unresolved: this doc has never been saved anywhere → the chip must
+    // NOT claim '저장됨', and the data-loss guard still forbids any write.
+    expect(screen.getByText('저장 전')).toBeTruthy();
+    expect(screen.queryByText('저장됨')).toBeNull();
+    expect(save).not.toHaveBeenCalled();
+
+    // Backend confirms brand-new (null) → the seed is persisted immediately, so
+    // '저장됨' is now the truth (and browser-back from an untouched new map
+    // leaves a real body behind for the Home card preview).
+    await act(async () => {
+      resolveLoad(null);
+      await gate;
+    });
+    await waitFor(() => expect(screen.getByText('저장됨')).toBeTruthy());
+    expect(save).toHaveBeenCalledTimes(1);
+    const call = save.mock.calls[0] as unknown as [string, { nodes: Record<string, { text: string }> }];
+    expect(call[0]).toBe('new-t1');
+    expect(call[1].nodes.root?.text).toBe('새 마인드맵');
+    // …and the local recovery copy exists too (what Home's preview reads in local mode)
+    const cached = JSON.parse(localStorage.getItem('mindflow_doc_new-t1') || 'null') as { nodes?: Record<string, { text?: string }> } | null;
+    expect(cached?.nodes?.root?.text).toBe('새 마인드맵');
+  });
+
   // ---- DATA-LOSS GUARDS ----
 
   it('never saves before the initial load resolves (the empty seed must not overwrite the real doc)', async () => {
@@ -104,8 +138,10 @@ describe('Editor initial hydration', () => {
     const { backend, save } = makeBackend(vi.fn(async () => gate), 'supabase');
     renderEditor(backend, '/editor?map=dl1&title=제목');
 
-    // load still in flight → no write may have happened
+    // load still in flight → no write may have happened; the chip doesn't claim
+    // '저장됨' either (no local body, backend state unknown → '저장 전')
     expect(save).not.toHaveBeenCalled();
+    expect(screen.getByText('저장 전')).toBeTruthy();
 
     // real doc arrives → adopted, cached to localStorage, and NOT re-saved
     await act(async () => {
@@ -117,6 +153,8 @@ describe('Editor initial hydration', () => {
       expect(cached?.nodes?.root?.text).toBe('실제 루트'); // real doc cached (recovery copy + no future empty-seed race)
     });
     expect(save).not.toHaveBeenCalled(); // adopting the loaded doc must not trigger a (redundant/empty) save
+    // the doc now mirrors the stored truth → the chip flips to a truthful '저장됨'
+    await waitFor(() => expect(screen.getByText('저장됨')).toBeTruthy());
   });
 
   it('after an async load adopts the real doc, Undo rebases onto it and never reverts to the empty seed', async () => {
