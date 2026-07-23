@@ -191,6 +191,45 @@ describe('realPreview', () => {
     expect(parseFloat(memoRect.getAttribute('height') || '0')).toBeGreaterThan(44);
   });
 
+  it('draws an image float as an <image>, not a memo card (regression: 이미지가 노란 메모로 보임)', () => {
+    const IMG = 'data:image/png;base64,QUJD';
+    const withImgFloat = { ...doc, floats: [{ id: 'f1', x: 100, y: 100, w: 260, h: 195, text: '', img: IMG }] };
+    const { container } = render(realPreview(JSON.stringify(withImgFloat), '#f0663f')!);
+
+    const image = container.querySelector('svg image') as SVGImageElement;
+    expect(image).toBeTruthy();
+    expect(image.getAttribute('href')).toBe(IMG);
+    expect(image.getAttribute('width')).toBe('260');
+    expect(image.getAttribute('height')).toBe('195');
+    // 메모 카드의 노란 배경 rect가 그려지면 안 된다
+    const memoRect = Array.from(container.querySelectorAll('svg rect')).find((r) => r.getAttribute('fill') === '#fdf6c9');
+    expect(memoRect).toBeUndefined();
+  });
+
+  it('draws a node thumbnail above the text and grows the node box (regression: 도형만 노출)', () => {
+    const IMG = 'data:image/png;base64,REVG';
+    const withNodeImg = {
+      ...doc,
+      nodes: {
+        ...doc.nodes,
+        a: { ...doc.nodes.a, img: IMG, imgW: 180, imgH: 135 },
+      },
+    };
+    const { container } = render(realPreview(JSON.stringify(withNodeImg), '#f0663f')!);
+
+    const image = container.querySelector('svg image') as SVGImageElement;
+    expect(image).toBeTruthy();
+    expect(image.getAttribute('href')).toBe(IMG);
+    // 노드 박스가 이미지를 수용해 커졌는지: a 노드의 rect 높이 > 이미지 높이
+    const rects = Array.from(container.querySelectorAll('svg rect')) as SVGRectElement[];
+    const tall = rects.filter((r) => Number(r.getAttribute('height') || 0) >= 135);
+    expect(tall.length).toBeGreaterThan(0);
+    // 텍스트는 이미지 아래로 밀림: 텍스트 y > 이미지 y
+    const label = (Array.from(container.querySelectorAll('svg text')) as SVGTextElement[]).find((t) => t.textContent?.includes('가지A'));
+    expect(label).toBeTruthy();
+    expect(Number(label!.getAttribute('y'))).toBeGreaterThan(Number(image.getAttribute('y')));
+  });
+
   it('returns null for a doc with no nodes so the caller falls back to miniPreview', () => {
     expect(realPreview(JSON.stringify({ v: 1, nodes: {}, floats: [], lines: [], zones: [], layoutMode: 'radial', themeKey: 'coral' }), '#f0663f')).toBeNull();
     expect(realPreview(null, '#f0663f')).toBeNull();
