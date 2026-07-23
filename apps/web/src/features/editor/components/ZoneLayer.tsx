@@ -1,4 +1,5 @@
 import { useEffect, useLayoutEffect, useRef, useState } from 'react';
+import { ResizeHandle } from './ResizeHandle';
 import type { Zone } from '@mindflow/mindmap-core';
 import { hexA } from '../theme';
 import type { Theme } from '../theme';
@@ -124,24 +125,7 @@ export function ZoneLayer({ zones, theme: th, controller }: ZoneLayerProps) {
                 >
                   ×
                 </div>
-                <div
-                  title="크기 조절"
-                  onPointerDown={(e) => controller.beginZoneResize(e, z.id)}
-                  style={{
-                    position: 'absolute',
-                    right: -13,
-                    bottom: -13,
-                    width: 13,
-                    height: 13,
-                    borderRadius: 4,
-                    background: th.panel,
-                    border: `2px solid ${th.accent}`,
-                    cursor: 'nwse-resize',
-                    boxShadow: '0 1px 4px rgba(0,0,0,.2)',
-                    zIndex: 6,
-                    boxSizing: 'border-box',
-                  }}
-                />
+                <ResizeHandle title="크기 조절" accent={th.accent} panel={th.panel} right={-13} bottom={-13} zIndex={6} onPointerDown={(e) => controller.beginZoneResize(e, z.id)} />
               </>
             )}
           </div>

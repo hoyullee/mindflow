@@ -6,6 +6,7 @@ import type { Theme } from '../theme';
 import type { EditorController } from '../useEditorState';
 import { peersSelecting } from '../presenceSelection';
 import { RemotePeerTag } from './RemotePeerTag';
+import { ResizeHandle } from './ResizeHandle';
 
 interface FloatLayerProps {
   floats: Float[];
@@ -138,24 +139,7 @@ export function FloatLayer({ floats, theme: th, controller }: FloatLayerProps) {
             {/* resize handle only for a true single selection (port of `this.state.selFloat`,
                 MindFlow.dc.html:1486 — hidden during a marquee multi-selection) */}
             {controller.selection?.kind === 'float' && controller.selection.id === f.id && !editing && (
-              <div
-                title="크기 조절"
-                onPointerDown={(e) => controller.beginFloatResize(e, f.id)}
-                style={{
-                  position: 'absolute',
-                  right: -6,
-                  bottom: -6,
-                  width: 13,
-                  height: 13,
-                  borderRadius: 4,
-                  background: th.panel,
-                  border: `2px solid ${th.accent}`,
-                  cursor: 'nwse-resize',
-                  zIndex: 6,
-                  boxSizing: 'border-box',
-                  boxShadow: '0 1px 4px rgba(0,0,0,.2)',
-                }}
-              />
+              <ResizeHandle title="크기 조절" accent={th.accent} panel={th.panel} right={-6} bottom={-6} zIndex={6} onPointerDown={(e) => controller.beginFloatResize(e, f.id)} />
             )}
           </div>
         );
