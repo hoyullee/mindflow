@@ -40,7 +40,9 @@ interface NodePanelProps {
  * like the original's own `nodeTargets()`-driven setters.
  */
 export function NodePanel({ controller, nodeIds, isMobile = false }: NodePanelProps) {
-  const th = controller.theme;
+  const th = controller.uiTheme;
+  // 색 스와치 "값"은 캔버스에 칠할 색이므로 문서 테마 팔레트를 쓴다
+  const ct = controller.theme;
   const ids = nodeIds.filter((id) => controller.doc.nodes[id]);
   const refId = ids[0];
   const n = refId ? controller.doc.nodes[refId] : undefined;
@@ -96,14 +98,14 @@ export function NodePanel({ controller, nodeIds, isMobile = false }: NodePanelPr
           </div>
 
           <SectionLabel theme={th}>가지 색상</SectionLabel>
-          <SwatchRow theme={th} palette={th.palette} current={n.color} onPick={(hex) => controller.setColor(hex)} />
+          <SwatchRow theme={th} palette={ct.palette} current={n.color} onPick={(hex) => controller.setColor(hex)} />
 
           <SectionLabel theme={th}>배경색</SectionLabel>
-          <SwatchRow theme={th} palette={[th.panel, th.text, ...th.palette]} current={n.fill} onPick={(hex) => controller.setFill(hex)} onReset={() => controller.setFill(null)} />
+          <SwatchRow theme={th} palette={[ct.panel, ct.text, ...ct.palette]} current={n.fill} onPick={(hex) => controller.setFill(hex)} onReset={() => controller.setFill(null)} />
           <AlphaSlider theme={th} value={n.fillA == null ? 1 : n.fillA} onChange={(a) => controller.setFillAlpha(a)} />
 
           <SectionLabel theme={th}>선 색상</SectionLabel>
-          <SwatchRow theme={th} palette={[th.panel, th.text, ...th.palette]} current={n.stroke} onPick={(hex) => controller.setStroke(hex)} onReset={() => controller.setStroke(null)} />
+          <SwatchRow theme={th} palette={[ct.panel, ct.text, ...ct.palette]} current={n.stroke} onPick={(hex) => controller.setStroke(hex)} onReset={() => controller.setStroke(null)} />
           <AlphaSlider theme={th} value={n.strokeA == null ? 1 : n.strokeA} onChange={(a) => controller.setStrokeAlpha(a)} />
         </PanelSection>
 
@@ -111,7 +113,7 @@ export function NodePanel({ controller, nodeIds, isMobile = false }: NodePanelPr
         <PanelSection theme={th} title="텍스트 스타일" open={openSec === 'text'} onToggle={() => toggle('text')}>
           <BoldSizeRow theme={th} bold={!!n.bold} size={n.tsize} onToggleBold={controller.toggleNodeBold} onSetSize={controller.setNodeTsize} />
           <SectionLabel theme={th}>글자 색상</SectionLabel>
-          <SwatchRow theme={th} palette={[th.panel, th.text, ...th.palette]} current={n.textColor} onPick={(hex) => controller.setTextColor(hex)} onReset={() => controller.setTextColor(null)} />
+          <SwatchRow theme={th} palette={[ct.panel, ct.text, ...ct.palette]} current={n.textColor} onPick={(hex) => controller.setTextColor(hex)} onReset={() => controller.setTextColor(null)} />
         </PanelSection>
 
         <Divider theme={th} />

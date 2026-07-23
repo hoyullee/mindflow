@@ -20,8 +20,8 @@ export function StyleMenu({ controller }: StyleMenuProps) {
     padding: '0 10px',
     border: 'none',
     borderRadius: 7,
-    background: active ? controller.theme.panel : 'transparent',
-    color: active ? controller.theme.accent : controller.theme.subtext,
+    background: active ? controller.uiTheme.panel : 'transparent',
+    color: active ? controller.uiTheme.accent : controller.uiTheme.subtext,
     fontSize: 12.5,
     fontWeight: 600,
     cursor: 'pointer',
@@ -36,15 +36,15 @@ export function StyleMenu({ controller }: StyleMenuProps) {
         // Positioning/stacking is handled by the `AnchoredMenu` portal wrapper.
         width: '100%',
         boxSizing: 'border-box',
-        background: controller.theme.panel,
-        border: `1px solid ${controller.theme.border}`,
+        background: controller.uiTheme.panel,
+        border: `1px solid ${controller.uiTheme.border}`,
         borderRadius: 12,
         boxShadow: '0 12px 32px rgba(0,0,0,.16)',
         padding: 14,
       }}
     >
-      <div style={{ fontSize: 11, fontWeight: 700, letterSpacing: '.04em', textTransform: 'uppercase', color: controller.theme.subtext, marginBottom: 8 }}>레이아웃</div>
-      <div style={{ display: 'flex', alignItems: 'center', gap: 0, padding: 3, background: controller.theme.panel2, border: `1px solid ${controller.theme.border}`, borderRadius: 10, marginBottom: 14 }}>
+      <div style={{ fontSize: 11, fontWeight: 700, letterSpacing: '.04em', textTransform: 'uppercase', color: controller.uiTheme.subtext, marginBottom: 8 }}>레이아웃</div>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 0, padding: 3, background: controller.uiTheme.panel2, border: `1px solid ${controller.uiTheme.border}`, borderRadius: 10, marginBottom: 14 }}>
         {LAYOUT_MODES.map((m) => (
           <button key={m.k} type="button" className="mf-ed-btn" onClick={() => controller.setLayoutMode(m.k)} style={segStyle(controller.layoutMode === m.k)} aria-pressed={controller.layoutMode === m.k}>
             {m.label}
@@ -52,8 +52,8 @@ export function StyleMenu({ controller }: StyleMenuProps) {
         ))}
       </div>
 
-      <div style={{ fontSize: 11, fontWeight: 700, letterSpacing: '.04em', textTransform: 'uppercase', color: controller.theme.subtext, marginBottom: 8 }}>연결선</div>
-      <div style={{ display: 'flex', alignItems: 'center', gap: 0, padding: 3, background: controller.theme.panel2, border: `1px solid ${controller.theme.border}`, borderRadius: 10, marginBottom: 14 }}>
+      <div style={{ fontSize: 11, fontWeight: 700, letterSpacing: '.04em', textTransform: 'uppercase', color: controller.uiTheme.subtext, marginBottom: 8 }}>연결선</div>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 0, padding: 3, background: controller.uiTheme.panel2, border: `1px solid ${controller.uiTheme.border}`, borderRadius: 10, marginBottom: 14 }}>
         {EDGE_MODES.map((m) => (
           <button key={m.k} type="button" className="mf-ed-btn" onClick={() => controller.setEdgeStyle(m.k)} style={segStyle(controller.edgeStyle === m.k)} aria-pressed={controller.edgeStyle === m.k}>
             {m.label}
@@ -61,7 +61,7 @@ export function StyleMenu({ controller }: StyleMenuProps) {
         ))}
       </div>
 
-      <div style={{ fontSize: 11, fontWeight: 700, letterSpacing: '.04em', textTransform: 'uppercase', color: controller.theme.subtext, marginBottom: 8 }}>테마</div>
+      <div style={{ fontSize: 11, fontWeight: 700, letterSpacing: '.04em', textTransform: 'uppercase', color: controller.uiTheme.subtext, marginBottom: 8 }}>테마</div>
       <div style={{ display: 'flex', alignItems: 'center', gap: 7 }}>
         {THEME_KEYS.map((k) => {
           const t = THEMES[k];
@@ -79,8 +79,8 @@ export function StyleMenu({ controller }: StyleMenuProps) {
                 height: 22,
                 borderRadius: '50%',
                 background: t.accent,
-                border: active ? `2px solid ${controller.theme.text}` : `2px solid ${controller.theme.panel}`,
-                boxShadow: active ? `0 0 0 2px ${controller.theme.accent}` : '0 1px 3px rgba(0,0,0,.15)',
+                border: active ? `2px solid ${controller.uiTheme.text}` : `2px solid ${controller.uiTheme.panel}`,
+                boxShadow: active ? `0 0 0 2px ${controller.uiTheme.accent}` : '0 1px 3px rgba(0,0,0,.15)',
                 cursor: 'pointer',
                 padding: 0,
               }}

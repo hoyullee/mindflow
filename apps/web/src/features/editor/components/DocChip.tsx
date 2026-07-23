@@ -12,7 +12,7 @@ interface DocChipProps {
  * dirty/saving/saved indicator (`state.saveState`) are all wired (Editor-b).
  */
 export function DocChip({ controller }: DocChipProps) {
-  const th = controller.theme;
+  const th = controller.uiTheme;
   const dotColor = controller.saveState === 'saved' ? '#3fae6a' : controller.saveState === 'saving' ? '#e0b23c' : th.subtext;
   const label = controller.saveState === 'saved' ? '저장됨' : controller.saveState === 'saving' ? '저장 중…' : controller.saveState === 'unsaved' ? '저장 전' : '변경됨';
 
@@ -148,11 +148,11 @@ function TitleEdit({ controller }: { controller: EditorController }) {
       style={{
         fontSize: 13.5,
         fontWeight: 700,
-        color: controller.theme.text,
+        color: controller.uiTheme.text,
         lineHeight: 1.2,
         width: '100%',
         border: 'none',
-        borderBottom: `1.5px solid ${controller.theme.accent}`,
+        borderBottom: `1.5px solid ${controller.uiTheme.accent}`,
         background: 'transparent',
         outline: 'none',
         padding: '0 0 1px',

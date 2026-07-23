@@ -30,7 +30,7 @@ interface MenuItem {
  * outside click, Escape, or after any item runs.
  */
 export function ContextMenu({ controller }: ContextMenuProps) {
-  const { ctxMenu, ctxSub, theme: th } = controller;
+  const { ctxMenu, ctxSub, uiTheme: th } = controller;
   const rootRef = useRef<HTMLDivElement | null>(null);
 
   // Outside click / Escape close it — port of the original's window `mousedown` capture
@@ -373,7 +373,7 @@ interface AlignFlyoutProps {
  * anchored to the parent row's `top`, flipping to the LEFT of the main menu when it's too
  * close to the right edge of the viewport to fit the flyout on the right. */
 function AlignFlyout({ controller, ctxMenu, top }: AlignFlyoutProps) {
-  const th = controller.theme;
+  const th = controller.uiTheme;
   const vw = controller.vw || 600;
   const menuLeft = Math.min(ctxMenu.sx, vw - 160);
   const flip = menuLeft + 150 + 140 > vw;

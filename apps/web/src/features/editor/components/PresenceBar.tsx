@@ -12,7 +12,7 @@ interface PresenceBarProps {
  * looks exactly like it did before this feature.
  */
 export function PresenceBar({ controller }: PresenceBarProps) {
-  const th = controller.theme;
+  const th = controller.uiTheme;
   const { peers } = controller.presence;
   if (!peers.length) return null;
   return (

@@ -10,7 +10,9 @@ interface ZonePanelProps {
 
 /** Selected-zone property panel — port of the `zoneSelected` panel body (MindFlow.dc.html:247-262). */
 export function ZonePanel({ controller, zoneId, isMobile = false }: ZonePanelProps) {
-  const th = controller.theme;
+  const th = controller.uiTheme;
+  // 색 스와치 "값"은 캔버스에 칠할 색이므로 문서 테마 팔레트를 쓴다
+  const ct = controller.theme;
   const z = controller.doc.zones.find((x) => x.id === zoneId);
   if (!z) return null;
 
@@ -19,7 +21,7 @@ export function ZonePanel({ controller, zoneId, isMobile = false }: ZonePanelPro
       <div style={panelBodyStyle(isMobile)}>
         <PanelTitle theme={th} kicker="선택한 영역" name={z.label || '영역'} />
         <SectionLabel theme={th}>영역 색상</SectionLabel>
-        <SwatchRow theme={th} palette={th.palette} current={z.color} onPick={(hex) => controller.setZoneColor(zoneId, hex)} onReset={() => controller.setZoneColor(zoneId, null)} />
+        <SwatchRow theme={th} palette={ct.palette} current={z.color} onPick={(hex) => controller.setZoneColor(zoneId, hex)} onReset={() => controller.setZoneColor(zoneId, null)} />
         <RenameButton theme={th} onClick={() => controller.startEditZoneLabel(zoneId)} />
       </div>
     </div>
