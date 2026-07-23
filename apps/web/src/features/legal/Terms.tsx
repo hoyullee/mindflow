@@ -57,7 +57,7 @@ export function Terms() {
 
       <LegalSection heading="7. 문의">
         <p>
-          약관 관련 문의: <a href="mailto:ssasya2@gmail.com" style={{ color: '#f0663f', fontWeight: 600 }}>ssasya2@gmail.com</a>
+          약관 관련 문의: <a href="mailto:info@geurio.com" style={{ color: '#f0663f', fontWeight: 600 }}>info@geurio.com</a>
         </p>
       </LegalSection>
     </LegalPage>

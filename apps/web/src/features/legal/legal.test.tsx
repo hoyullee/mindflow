@@ -19,7 +19,7 @@ describe('legal pages', () => {
     expect(screen.getByRole('heading', { name: '개인정보처리방침' })).toBeTruthy();
     expect(screen.getByText('1. 수집하는 개인정보')).toBeTruthy();
     expect(screen.getByText('4. 보유 기간 및 파기')).toBeTruthy();
-    expect(screen.getAllByText('ssasya2@gmail.com').length).toBeGreaterThan(0);
+    expect(screen.getAllByText('info@geurio.com').length).toBeGreaterThan(0);
   });
 
   it('terms renders with the content-ownership clause', () => {
