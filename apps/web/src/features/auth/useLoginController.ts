@@ -13,6 +13,13 @@ function genCode(): string {
   return Math.floor(100000 + Math.random() * 900000).toString();
 }
 
+// Supabase 이메일 OTP는 프로젝트 설정에 따라 6~10자리다(기본 6, 대시보드에서
+// 변경 가능). 입력을 특정 길이로 고정하면 8자리 코드를 다 못 넣어 인증이 막힌다
+// (제보 케이스). 6~10자리 숫자를 받고 최종 검증은 서버(`verifyOtp`)에 맡긴다.
+// 로컬/데모 모드는 genCode()가 6자리를 만들고 정확히 대조한다.
+const OTP_MIN = 6;
+const OTP_MAX = 10;
+
 /** Login.dc.html `validEmail(e)`. */
 function validEmail(email: string): boolean {
   return /^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email);
@@ -75,7 +82,7 @@ export function useLoginController() {
   const onPassword2 = (v: string) => patch({ password2: v, error: '' });
   const onNewPw = (v: string) => patch({ newPw: v, error: '' });
   const onNewPw2 = (v: string) => patch({ newPw2: v, error: '' });
-  const onCode = (v: string) => patch({ code: (v ?? '').replace(/\D/g, '').slice(0, 6), error: '' });
+  const onCode = (v: string) => patch({ code: (v ?? '').replace(/\D/g, '').slice(0, OTP_MAX), error: '' });
 
   const emailLogin = () => {
     if (state.busy) return;
@@ -130,8 +137,8 @@ export function useLoginController() {
 
   const verifyCode = () => {
     if (state.busy) return;
-    if (state.code.length !== 6) {
-      patch({ error: '6자리 인증 코드를 입력해 주세요.' });
+    if (state.code.length < OTP_MIN) {
+      patch({ error: '인증 코드를 정확히 입력해 주세요.' });
       return;
     }
     if (mode === 'local') {
@@ -190,8 +197,8 @@ export function useLoginController() {
 
   const resetPw = () => {
     if (state.busy) return;
-    if (state.code.length !== 6) {
-      patch({ error: '6자리 인증 코드를 입력해 주세요.' });
+    if (state.code.length < OTP_MIN) {
+      patch({ error: '인증 코드를 정확히 입력해 주세요.' });
       return;
     }
     if ((state.newPw || '').length < 4) {
