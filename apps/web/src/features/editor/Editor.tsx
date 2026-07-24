@@ -65,7 +65,7 @@ export function Editor() {
     flexDirection: 'column',
     background: th.appBg,
     color: th.text,
-    fontFamily: 'Pretendard, system-ui, sans-serif',
+    fontFamily: "Pretendard, 'Pretendard-fallback', system-ui, sans-serif",
     overflow: 'hidden',
     ...({
       '--app-bg': th.appBg,

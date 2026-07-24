@@ -55,7 +55,7 @@ export function Home() {
   );
 
   return (
-    <div className="mf-home" style={{ display: 'flex', height: '100vh', width: '100%', background: '#fbf6f2', fontFamily: 'Pretendard, system-ui, sans-serif', color: '#33281f', overflow: 'hidden' }}>
+    <div className="mf-home" style={{ display: 'flex', height: '100vh', width: '100%', background: '#fbf6f2', fontFamily: "Pretendard, 'Pretendard-fallback', system-ui, sans-serif", color: '#33281f', overflow: 'hidden' }}>
       {state.creatingMap && <LoadingOverlay message={state.loaderMsg || '새 마인드맵을 준비하고 있어요'} />}
 
       <Sidebar state={state} view={view} controller={controller} isMobile={isMobile} isOpen={navOpen} onClose={() => setNavOpen(false)} />

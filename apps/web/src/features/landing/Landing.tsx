@@ -197,7 +197,7 @@ export function Landing() {
   const ctaHref = authed ? '/home' : '/login';
 
   return (
-    <div style={{ minHeight: '100vh', background: '#fbf6f2', color: '#33281f', fontFamily: 'Pretendard, system-ui, sans-serif' }}>
+    <div style={{ minHeight: '100vh', background: '#fbf6f2', color: '#33281f', fontFamily: "Pretendard, 'Pretendard-fallback', system-ui, sans-serif" }}>
       <div style={{ maxWidth: 1040, margin: '0 auto', padding: '0 24px' }}>
         {/* header */}
         <header style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '22px 0' }}>

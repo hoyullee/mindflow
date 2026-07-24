@@ -16,7 +16,7 @@ export function LegalPage({ title, updated, children }: { title: string; updated
         minHeight: '100vh',
         background: '#fbf6f2',
         color: '#33281f',
-        fontFamily: 'Pretendard, system-ui, sans-serif',
+        fontFamily: "Pretendard, 'Pretendard-fallback', system-ui, sans-serif",
       }}
     >
       <div style={{ maxWidth: 760, margin: '0 auto', padding: '28px 20px 72px' }}>
