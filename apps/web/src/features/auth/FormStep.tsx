@@ -76,9 +76,12 @@ export function FormStep({ controller, view }: FormStepProps) {
 
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 7 }}>
         <div style={fieldLabelStyle}>비밀번호</div>
-        <div className="link-tab" onClick={controller.startForgot} style={{ fontSize: 12, color: '#9c8b7e' }}>
-          비밀번호 찾기
-        </div>
+        {/* "비밀번호 찾기"는 로그인 모드에서만 — 가입 모드(confirmVisible)엔 의미 없다. */}
+        {!view.confirmVisible && (
+          <div className="link-tab" onClick={controller.startForgot} style={{ fontSize: 12, color: '#9c8b7e' }}>
+            비밀번호 찾기
+          </div>
+        )}
       </div>
       <input
         className="lg-input"

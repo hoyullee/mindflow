@@ -58,7 +58,9 @@ export function VerifyStep({ controller, view }: VerifyStepProps) {
       <input
         className="lg-input"
         inputMode="numeric"
-        // Supabase 이메일 OTP는 6~10자리 — 특정 길이로 고정하지 않는다.
+        // OTP 필드임을 브라우저에 명시 — 엉뚱한 값(예: "23")이 자동완성돼 코드칸에
+        // 미리 채워지던 문제 방지. Supabase 이메일 OTP는 6~10자리라 길이도 고정 안 함.
+        autoComplete="one-time-code"
         maxLength={10}
         value={state.code}
         onChange={(e: ChangeEvent<HTMLInputElement>) => controller.onCode(e.target.value)}
