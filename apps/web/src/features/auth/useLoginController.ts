@@ -152,7 +152,21 @@ export function useLoginController() {
     });
   };
 
-  const resendCode = () => patch({ demoCode: genCode(), code: '', error: '' });
+  const resendCode = () => {
+    // Signup verify is the real Supabase path — actually re-send the OTP email
+    // so "다시 보내기" isn't a dead button. Recovery (forgotVerify) stays a
+    // client-side simulation (see `resetPw`), so there — and in local/demo mode —
+    // we just regenerate the on-screen demo code, as before.
+    if (mode === 'supabase' && state.step === 'verify') {
+      if (state.busy) return;
+      patch({ busy: true, error: '', notice: '' });
+      void auth.resendSignup(state.email).then((res) => {
+        patch({ busy: false, code: '', error: res.error || '', notice: res.error ? '' : '인증 코드를 다시 보냈어요. 메일함을 확인해 주세요.' });
+      });
+      return;
+    }
+    patch({ demoCode: genCode(), code: '', error: '', notice: '' });
+  };
   const backToForm = () => patch({ step: 'form', error: '', code: '', busy: false });
   const startForgot = () => patch({ step: 'forgot', error: '', code: '', notice: '', busy: false });
 

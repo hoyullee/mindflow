@@ -50,6 +50,15 @@ export class SupabaseAuth implements AuthProvider {
     return { session, needsVerification: !session };
   }
 
+  async resendSignup(email: string): Promise<{ error?: string }> {
+    // Re-sends the "Confirm signup" email. For the app's 6-digit OTP verify
+    // step to work, that template must include `{{ .Token }}` (see
+    // server/supabase/docs/backend.md §1e) — otherwise the mail only carries a
+    // magic link and the code field has nothing to match.
+    const { error } = await this.client.auth.resend({ type: 'signup', email });
+    return error ? { error: error.message } : {};
+  }
+
   async signInWithOAuth(provider: 'google'): Promise<{ error?: string }> {
     const redirectTo = typeof window !== 'undefined' ? `${window.location.origin}/home` : undefined;
     const { error } = await this.client.auth.signInWithOAuth({

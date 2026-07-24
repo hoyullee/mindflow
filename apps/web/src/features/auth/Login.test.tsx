@@ -1,9 +1,33 @@
-import { afterEach, describe, expect, it } from 'vitest';
-import { cleanup, render, screen } from '@testing-library/react';
+import { afterEach, describe, expect, it, vi } from 'vitest';
+import { cleanup, render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { MemoryRouter } from 'react-router-dom';
 import { Login } from './Login';
 import { mockMatchMedia } from '../../test/matchMedia';
+import { BackendProvider } from '../../adapters/BackendContext';
+import { LocalAuth } from '../../adapters/local/localAuth';
+import { LocalSpaceStore } from '../../adapters/local/localSpaceStore';
+import type { AuthResult, Backend, DocStore } from '../../adapters/ports';
+
+const stubDocStore = {
+  list: async () => [],
+  load: async () => null,
+  save: async () => ({ ok: true, version: 1 }),
+  setFavorite: async () => undefined,
+  remove: async () => undefined,
+  restore: async () => undefined,
+  purge: async () => undefined,
+  rename: async () => undefined,
+} as unknown as DocStore;
+
+/** A Supabase-mode auth whose signUp requires email confirmation (like the real
+ * default project). resendSignup keeps LocalAuth's no-op body; the test spies on
+ * it to assert the controller actually calls it with the signup email. */
+class VerifyAuth extends LocalAuth {
+  override async signUp(): Promise<AuthResult> {
+    return { session: null, needsVerification: true };
+  }
+}
 
 afterEach(() => {
   cleanup();
@@ -60,6 +84,35 @@ describe('Login', () => {
     expect(screen.getByText('이메일 인증')).toBeTruthy();
     expect(screen.getByText(/데모 코드:/)).toBeTruthy();
     expect(screen.getByPlaceholderText('6자리 숫자')).toBeTruthy();
+  });
+
+  it('supabase mode: the verify step hides the demo code and "다시 보내기" actually re-sends the OTP email', async () => {
+    const user = userEvent.setup();
+    const auth = new VerifyAuth();
+    const resendSpy = vi.spyOn(auth, 'resendSignup');
+    const backend: Backend = { auth, docStore: stubDocStore, spaceStore: new LocalSpaceStore(), mode: 'supabase' };
+    render(
+      <MemoryRouter>
+        <BackendProvider backend={backend}>
+          <Login />
+        </BackendProvider>
+      </MemoryRouter>,
+    );
+
+    await user.click(screen.getByText('가입하기'));
+    await user.type(screen.getByPlaceholderText('you@example.com'), 'real@example.com');
+    await user.type(screen.getByPlaceholderText('비밀번호 입력'), 'password123');
+    await user.type(screen.getByPlaceholderText('비밀번호 재입력'), 'password123');
+    await user.click(screen.getByRole('button', { name: '가입하기' }));
+
+    // reached the verify step, but with NO demo-code hint (real email has the 6-digit code)
+    expect(await screen.findByPlaceholderText('6자리 숫자')).toBeTruthy();
+    expect(screen.queryByText(/데모 코드:/)).toBeNull();
+
+    // "다시 보내기" hits the real resend API (with the signup email) and confirms with a notice
+    await user.click(screen.getByText('다시 보내기'));
+    await waitFor(() => expect(resendSpy).toHaveBeenCalledWith('real@example.com'));
+    expect(screen.getByText(/다시 보냈어요/)).toBeTruthy();
   });
 
   it('links the legal docs from the form footer, opening in a new tab', () => {

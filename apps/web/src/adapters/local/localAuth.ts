@@ -71,6 +71,11 @@ export class LocalAuth implements AuthProvider {
     return { session };
   }
 
+  async resendSignup(): Promise<{ error?: string }> {
+    // No server in demo mode — the controller regenerates its demo code instead.
+    return {};
+  }
+
   async signInWithOAuth(): Promise<{ error?: string }> {
     const session = makeSession('demo-google@mindflow.local');
     writeSession(session);
