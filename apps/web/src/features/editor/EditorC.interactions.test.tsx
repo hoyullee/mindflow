@@ -160,6 +160,26 @@ describe('Editor minimap (M3-Editor-c)', () => {
     expect(y + h).toBeLessThanOrEqual(H + 0.01);
   });
 
+  // Regression: 주황 뷰포트 사각형은 줌 배율에 따라 커지고 작아져야 한다.
+  // 예전엔 매핑 영역이 (뷰포트 크기 ÷ 현재 줌)을 접어 넣어 축척이 줌에
+  // 비례했고, 사각형 크기에서 줌이 정확히 소거되어 항상 같은 크기로 보였다.
+  it('the viewport rectangle shrinks when zooming IN and grows back when zooming OUT', () => {
+    localStorage.setItem('mindflow_doc_mmz', JSON.stringify(SIMPLE_DOC));
+    renderEditor('/editor?map=mmz&title=x');
+    const rectW = () => Number((screen.getByTestId('minimap-viewport') as unknown as SVGRectElement).getAttribute('width'));
+    const w0 = rectW();
+    expect(w0).toBeGreaterThan(0);
+
+    fireEvent.click(screen.getByTitle('확대')); // zoom ×1.2
+    const wIn = rectW();
+    expect(wIn).toBeLessThan(w0 - 0.5);
+    // 배율에 반비례 (매핑 자체는 줌과 무관하게 고정이므로 정확히 1/1.2)
+    expect(wIn).toBeCloseTo(w0 / 1.2, 1);
+
+    fireEvent.click(screen.getByTitle('축소')); // back to the original zoom
+    expect(rectW()).toBeCloseTo(w0, 1);
+  });
+
   it('the minimap toggle button hides and re-shows it', async () => {
     localStorage.setItem('mindflow_doc_mm2', JSON.stringify(SIMPLE_DOC));
     renderEditor('/editor?map=mm2&title=x');
