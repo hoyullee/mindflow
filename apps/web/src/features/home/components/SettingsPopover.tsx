@@ -10,6 +10,20 @@ interface Props {
 
 /** Home.dc.html:71-99 — account avatar/name button + its dropdown (rename, logout). */
 export function SettingsPopover({ state, controller, userInitial }: Props) {
+  // 세션이 아직 안 풀렸으면 프로필 블록은 스켈레톤 — 'mine'/'M' 플레이스홀더가
+  // 실제 이름/아바타로 바뀌며 깜빡이던 것을 막는다(맵 그리드·스페이스 목록의
+  // 스켈레톤과 같은 패턴). 같은 크기(아바타 30 + 이름 줄, padding 8)로 그려
+  // 레이아웃 이동도 없다.
+  if (!state.profileLoaded) {
+    return (
+      <div style={{ position: 'relative', marginBottom: 10 }} aria-busy="true" aria-label="프로필을 불러오는 중">
+        <div style={{ display: 'flex', alignItems: 'center', gap: 9, padding: 8 }}>
+          <span className="mf-skel" style={{ width: 30, height: 30, borderRadius: 9, flexShrink: 0 }} />
+          <span className="mf-skel" style={{ height: 13, width: 88, borderRadius: 6 }} />
+        </div>
+      </div>
+    );
+  }
   return (
     <div style={{ position: 'relative', marginBottom: 10 }}>
       <div

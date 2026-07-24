@@ -88,6 +88,10 @@ export interface HomeState {
   recent: string[];
   recentOpen: boolean;
   userName: string;
+  /** 세션 조회(getSession)가 끝나 프로필(이름/아바타)을 보여줄 수 있는 상태.
+   * false인 동안 LNB 프로필 블록은 스켈레톤 — 'mine' 플레이스홀더가 실제
+   * 이름으로 바뀌며 깜빡이던 것을 막는다. */
+  profileLoaded: boolean;
   /** The signed-in user's email (from `AuthProvider.getSession()`), shown in the
    * LNB profile. Empty until the session resolves on mount. */
   userEmail: string;
@@ -218,6 +222,7 @@ export function initialHomeState(): HomeState {
     recent: [],
     recentOpen: false,
     userName: 'mine',
+    profileLoaded: false,
     userEmail: '',
     userAvatar: null,
     settingsOpen: false,

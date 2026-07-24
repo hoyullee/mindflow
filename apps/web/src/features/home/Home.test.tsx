@@ -334,6 +334,88 @@ describe('Home', () => {
     expect(Array.from(thumbOf('new-zz1')!.querySelectorAll('svg text'))).toHaveLength(0);
   });
 
+  it('LNB 프로필: 세션이 풀리기 전엔 스켈레톤 — mine 플레이스홀더가 절대 노출되지 않는다', async () => {
+    let resolveSession!: (v: { user: { id: string; email: string } } | null) => void;
+    const gate = new Promise<{ user: { id: string; email: string } } | null>((r) => {
+      resolveSession = r;
+    });
+    class GatedAuth extends LocalAuth {
+      override getSession() {
+        return gate as ReturnType<LocalAuth['getSession']>;
+      }
+    }
+    const backend: Backend = { auth: new GatedAuth(), docStore: new MockDocStore(), spaceStore: new LocalSpaceStore(), mode: 'local' };
+    const { container } = render(
+      <MemoryRouter initialEntries={['/home']}>
+        <BackendProvider backend={backend}>
+          <Routes>
+            <Route path="/home" element={<Home />} />
+          </Routes>
+        </BackendProvider>
+      </MemoryRouter>,
+    );
+    const aside = within(container.querySelector('aside') as HTMLElement);
+    // 세션 대기 중: 프로필은 스켈레톤이고 'mine'/'M' 플레이스홀더는 렌더되지 않는다
+    expect(aside.getByLabelText('프로필을 불러오는 중')).toBeTruthy();
+    expect(aside.queryByText('mine')).toBeNull();
+    expect(aside.queryByRole('button', { name: '계정 메뉴' })).toBeNull();
+
+    await act(async () => {
+      resolveSession({ user: { id: 'u1', email: 'hoyul.lee@wantedlab.com' } });
+      await gate;
+    });
+    // 세션 도착: 실제 이름으로 바로 그려진다 (플레이스홀더 → 실명 깜빡임 없음)
+    await waitFor(() => expect(aside.getAllByText('hoyul.lee').length).toBeGreaterThan(0));
+    expect(aside.queryByLabelText('프로필을 불러오는 중')).toBeNull();
+  });
+
+  it('로딩 중 최근 항목 자리에 같은 크기의 스켈레톤을 깔아 툴바가 위아래로 튀지 않는다', async () => {
+    // 저장된 최근 기록이 있으면, 워크스페이스/문서 목록이 로드되는 동안에도
+    // "최근 항목" 트레이 footprint가 미리 잡혀 있어야 한다 — 로드 완료 시
+    // 트레이가 끼어들며 아래 툴바(파일 검색·새로 만들기)가 밀리던 점프 방지.
+    localStorage.setItem('mf_recent', JSON.stringify(['doc-r1']));
+    localStorage.setItem(
+      'mf_spaces',
+      JSON.stringify({ spaces: [{ id: 's1', name: '일반 공간', color: '#f0663f', maps: [{ title: '최근맵', when: '방금', hue: '#f0663f', docId: 'doc-r1' }], folders: [] }], mapFolders: {} }),
+    );
+    let resolveList!: (v: DocMeta[]) => void;
+    const gate = new Promise<DocMeta[]>((r) => {
+      resolveList = r;
+    });
+    const docStore: DocStore = {
+      list: () => gate,
+      load: vi.fn(async () => null),
+      setFavorite: vi.fn(async () => undefined),
+      remove: vi.fn(async () => undefined),
+      restore: vi.fn(async () => undefined),
+      purge: vi.fn(async () => undefined),
+      rename: vi.fn(async () => undefined),
+      save: vi.fn(async (): Promise<SaveResult> => ({ ok: true, version: 1 })),
+    };
+    const backend: Backend = { auth: new LocalAuth(), docStore, spaceStore: new LocalSpaceStore(), mode: 'local' };
+    render(
+      <MemoryRouter initialEntries={['/home']}>
+        <BackendProvider backend={backend}>
+          <Routes>
+            <Route path="/home" element={<Home />} />
+          </Routes>
+        </BackendProvider>
+      </MemoryRouter>,
+    );
+
+    // 로딩 중: 스켈레톤 트레이가 자리를 확보하고 있고, 툴바도 이미 그 아래에 있다
+    await waitFor(() => expect(screen.getByLabelText('최근 항목을 불러오는 중')).toBeTruthy());
+    expect(screen.getByPlaceholderText('파일 검색')).toBeTruthy();
+
+    await act(async () => {
+      resolveList([{ id: 'doc-r1', title: '최근맵', version: 1, updatedAt: '2026-01-01T00:00:00.000Z', isFavorite: false, deletedAt: null }]);
+      await gate;
+    });
+    // 로드 후: 실제 트레이로 교체 (스켈레톤 제거 + '최근 항목' 헤더 노출)
+    await waitFor(() => expect(screen.queryByLabelText('최근 항목을 불러오는 중')).toBeNull());
+    expect(screen.getByText('최근 항목')).toBeTruthy();
+  });
+
   it('hides the "아직 만든 맵이 없어요" prompt when the space has folders but no loose maps', async () => {
     localStorage.setItem(
       'mf_spaces',
@@ -633,7 +715,7 @@ describe('Home', () => {
     const user = userEvent.setup();
     renderHome();
 
-    await user.click(screen.getByRole('button', { name: '계정 메뉴' }));
+    await user.click(await screen.findByRole('button', { name: '계정 메뉴' })); // 프로필 스켈레톤 해제(getSession) 대기
     await user.click(screen.getByRole('button', { name: /로그아웃/ }));
     expect(screen.getByText('로그아웃하시겠습니까?')).toBeTruthy();
 
@@ -648,7 +730,7 @@ describe('Home', () => {
     renderHomeWithDocStore([]);
 
     // profile popover → 프로필명 변경 opens a popup (like 공간 이름 변경)
-    await user.click(screen.getByRole('button', { name: '계정 메뉴' }));
+    await user.click(await screen.findByRole('button', { name: '계정 메뉴' })); // 프로필 스켈레톤 해제(getSession) 대기
     await user.click(screen.getByRole('button', { name: '프로필명 변경' }));
 
     const dialog = screen.getByRole('dialog', { name: '프로필명 변경' });
@@ -668,7 +750,7 @@ describe('Home', () => {
     localStorage.setItem('mf_demo_session', JSON.stringify({ user: { id: 'u1', email: 'hoyul.lee@wantedlab.com' } }));
     renderHomeWithDocStore([]);
 
-    await user.click(screen.getByRole('button', { name: '계정 메뉴' }));
+    await user.click(await screen.findByRole('button', { name: '계정 메뉴' })); // 프로필 스켈레톤 해제(getSession) 대기
     await user.click(screen.getByRole('button', { name: '프로필명 변경' }));
     const dialog = screen.getByRole('dialog', { name: '프로필명 변경' });
     await user.clear(within(dialog).getByLabelText('프로필명'));
@@ -685,7 +767,7 @@ describe('Home', () => {
     localStorage.setItem('mf_demo_session', JSON.stringify({ user: { id: 'u1', email: 'hoyul.lee@wantedlab.com' } }));
     renderHomeWithDocStore([]);
 
-    await user.click(screen.getByRole('button', { name: '계정 메뉴' }));
+    await user.click(await screen.findByRole('button', { name: '계정 메뉴' })); // 프로필 스켈레톤 해제(getSession) 대기
     await user.click(screen.getByRole('button', { name: '프로필명 변경' }));
     const dialog = screen.getByRole('dialog', { name: '프로필명 변경' });
 
@@ -699,7 +781,7 @@ describe('Home', () => {
     localStorage.setItem('mf_demo_session', JSON.stringify({ user: { id: 'u1', email: 'hoyul.lee@wantedlab.com' } }));
     const { unmount } = renderHomeWithDocStore([]);
 
-    await user.click(screen.getByRole('button', { name: '계정 메뉴' }));
+    await user.click(await screen.findByRole('button', { name: '계정 메뉴' })); // 프로필 스켈레톤 해제(getSession) 대기
     await user.click(screen.getByRole('button', { name: '프로필명 변경' }));
     const dialog = screen.getByRole('dialog', { name: '프로필명 변경' });
     await user.clear(within(dialog).getByLabelText('프로필명'));
@@ -740,7 +822,7 @@ describe('Home', () => {
     await waitFor(() => expect(screen.getAllByText('서버닉네임').length).toBeGreaterThan(0));
 
     // renaming writes through to the backend
-    await user.click(screen.getByRole('button', { name: '계정 메뉴' }));
+    await user.click(await screen.findByRole('button', { name: '계정 메뉴' })); // 프로필 스켈레톤 해제(getSession) 대기
     await user.click(screen.getByRole('button', { name: '프로필명 변경' }));
     const dialog = screen.getByRole('dialog', { name: '프로필명 변경' });
     await user.clear(within(dialog).getByLabelText('프로필명'));
@@ -755,7 +837,7 @@ describe('Home', () => {
     renderHomeWithDocStore([]);
 
     // profile popover → 설정 → account-settings modal → 회원 탈퇴 row
-    await user.click(screen.getByRole('button', { name: '계정 메뉴' }));
+    await user.click(await screen.findByRole('button', { name: '계정 메뉴' })); // 프로필 스켈레톤 해제(getSession) 대기
     await user.click(screen.getByRole('button', { name: '설정' }));
     const settingsDialog = screen.getByRole('dialog', { name: '설정' });
     await user.click(within(settingsDialog).getByText('회원 탈퇴'));
@@ -774,7 +856,7 @@ describe('Home', () => {
     const user = userEvent.setup();
     renderHomeWithDocStore([]);
 
-    await user.click(screen.getByRole('button', { name: '계정 메뉴' }));
+    await user.click(await screen.findByRole('button', { name: '계정 메뉴' })); // 프로필 스켈레톤 해제(getSession) 대기
     await user.click(screen.getByRole('button', { name: '설정' }));
     const settingsDialog = screen.getByRole('dialog', { name: '설정' });
 
@@ -794,7 +876,7 @@ describe('Home', () => {
     localStorage.setItem('mindflow_doc_d1', JSON.stringify({ v: 1 }));
     renderHomeWithDocStore([]);
 
-    await user.click(screen.getByRole('button', { name: '계정 메뉴' }));
+    await user.click(await screen.findByRole('button', { name: '계정 메뉴' })); // 프로필 스켈레톤 해제(getSession) 대기
     await user.click(screen.getByRole('button', { name: '설정' }));
     await user.click(within(screen.getByRole('dialog', { name: '설정' })).getByText('회원 탈퇴'));
 

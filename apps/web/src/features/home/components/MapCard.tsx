@@ -423,7 +423,10 @@ export function MapCard({ card, controller, draggableEnabled, compact = false }:
             ) : (
               <span aria-hidden="true" style={{ width: 8, height: 8, borderRadius: 3, background: card.spaceColor, flexShrink: 0, boxShadow: 'inset 0 0 0 1px rgba(0,0,0,.18)' }} />
             ))}
-          <div style={{ fontSize: compact ? 12 : 14, fontWeight: 600, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', minWidth: 0 }}>{card.title}</div>
+          {/* compact(최근 항목 트레이): lineHeight를 px로 고정 — 'normal'은 폰트
+              메트릭을 따라가서 웹폰트 스왑 순간 카드/트레이 높이가 몇 px 출렁이고
+              아래 툴바까지 밀렸다(새로고침 깜빡임). */}
+          <div style={{ fontSize: compact ? 12 : 14, lineHeight: compact ? '15px' : undefined, fontWeight: 600, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', minWidth: 0 }}>{card.title}</div>
         </div>
         {/* 마지막 수정 시각 — 상대(7일 이내)/절대 혼합 표기, 전체 일시는 툴팁.
             시각 정보가 없는 카드(Drive 데모 등)는 줄 자체를 생략한다. */}

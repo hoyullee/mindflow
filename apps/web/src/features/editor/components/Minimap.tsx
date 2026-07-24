@@ -36,6 +36,13 @@ export function Minimap({ controller, isMobile = false }: MinimapProps) {
   // node dots) rock-steady so the viewport rect tracks the pointer 1:1.
   const [frozen, setFrozen] = useState<{ minX: number; minY: number; maxX: number; maxY: number } | null>(null);
 
+  // 캔버스 준비(첫 센터링·폰트 측정) 전에는 내용 없이 캔버스색 박스만 —
+  // 준비 전 지오메트리로 점/뷰포트 사각형을 그렸다가 정착 후 튀는 깜빡임을
+  // 캔버스 커튼과 같은 타이밍에 함께 숨긴다. 프레임(ZoomControls)은 그대로.
+  if (!controller.canvasReady) {
+    return <div aria-hidden="true" data-minimap-holding style={{ width: W, height: H, borderRadius: 8, background: th.canvasBg }} />;
+  }
+
   const ids = Object.keys(geom);
   if (!ids.length) return null;
 
