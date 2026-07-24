@@ -29,6 +29,22 @@ class VerifyAuth extends LocalAuth {
   }
 }
 
+/** A Supabase-mode auth with the recovery path spied: verifyOtp('recovery')
+ * yields a session for any code except '000000' (which fails, like a bad/expired
+ * token). `vi.spyOn().mockImplementation` sidesteps LocalAuth's param-less base
+ * signatures while still recording the real (email, code, type) / (newPw) args. */
+function makeRecoveryAuth() {
+  const auth = new LocalAuth();
+  const verifySpy = vi.spyOn(auth, 'verifyOtp').mockImplementation(async (...args: unknown[]): Promise<AuthResult> => {
+    const [email, token] = args as [string, string, string];
+    if (token === '000000') return { session: null, error: '인증 코드가 올바르지 않아요.' };
+    return { session: { user: { id: 'r1', email } } };
+  });
+  const updateSpy = vi.spyOn(auth, 'updatePassword').mockResolvedValue({});
+  const resetSpy = vi.spyOn(auth, 'sendPasswordReset');
+  return { auth, verifySpy, updateSpy, resetSpy };
+}
+
 afterEach(() => {
   cleanup();
 });
@@ -113,6 +129,65 @@ describe('Login', () => {
     await user.click(screen.getByText('다시 보내기'));
     await waitFor(() => expect(resendSpy).toHaveBeenCalledWith('real@example.com'));
     expect(screen.getByText(/다시 보냈어요/)).toBeTruthy();
+  });
+
+  it('supabase mode: password reset runs the REAL recovery flow (verifyOtp recovery → updatePassword) and hides the demo code', async () => {
+    const user = userEvent.setup();
+    const { auth, verifySpy, updateSpy, resetSpy } = makeRecoveryAuth();
+    const backend: Backend = { auth, docStore: stubDocStore, spaceStore: new LocalSpaceStore(), mode: 'supabase' };
+    render(
+      <MemoryRouter>
+        <BackendProvider backend={backend}>
+          <Login />
+        </BackendProvider>
+      </MemoryRouter>,
+    );
+
+    // form → 비밀번호 찾기 → enter email → 재설정 코드 보내기
+    await user.click(screen.getByText('비밀번호 찾기'));
+    await user.type(screen.getByPlaceholderText('you@example.com'), 'reset@example.com');
+    await user.click(screen.getByRole('button', { name: '재설정 코드 보내기' }));
+    await waitFor(() => expect(resetSpy).toHaveBeenCalledWith('reset@example.com'));
+
+    // reset-verify step: NO demo code in production mode
+    expect(await screen.findByPlaceholderText('6자리 숫자')).toBeTruthy();
+    expect(screen.queryByText(/데모 코드:/)).toBeNull();
+
+    // enter the emailed 6-digit code + a new password → real recovery
+    await user.type(screen.getByPlaceholderText('6자리 숫자'), '123456');
+    await user.type(screen.getByPlaceholderText('새 비밀번호 입력'), 'newpass123');
+    await user.type(screen.getByPlaceholderText('새 비밀번호 재입력'), 'newpass123');
+    await user.click(screen.getByRole('button', { name: '비밀번호 재설정' }));
+
+    // verifyOtp('recovery') was called with the code, then updatePassword with the new pw
+    await waitFor(() => expect(verifySpy).toHaveBeenCalledWith('reset@example.com', '123456', 'recovery'));
+    await waitFor(() => expect(updateSpy).toHaveBeenCalledWith('newpass123'));
+  });
+
+  it('supabase mode: a wrong reset code surfaces an error and never updates the password', async () => {
+    const user = userEvent.setup();
+    const { auth, updateSpy } = makeRecoveryAuth();
+    const backend: Backend = { auth, docStore: stubDocStore, spaceStore: new LocalSpaceStore(), mode: 'supabase' };
+    render(
+      <MemoryRouter>
+        <BackendProvider backend={backend}>
+          <Login />
+        </BackendProvider>
+      </MemoryRouter>,
+    );
+
+    await user.click(screen.getByText('비밀번호 찾기'));
+    await user.type(screen.getByPlaceholderText('you@example.com'), 'reset@example.com');
+    await user.click(screen.getByRole('button', { name: '재설정 코드 보내기' }));
+    await screen.findByPlaceholderText('6자리 숫자');
+
+    await user.type(screen.getByPlaceholderText('6자리 숫자'), '000000'); // rejected by RecoveryAuth
+    await user.type(screen.getByPlaceholderText('새 비밀번호 입력'), 'newpass123');
+    await user.type(screen.getByPlaceholderText('새 비밀번호 재입력'), 'newpass123');
+    await user.click(screen.getByRole('button', { name: '비밀번호 재설정' }));
+
+    await waitFor(() => expect(screen.getByText(/인증 코드가 올바르지 않아요/)).toBeTruthy());
+    expect(updateSpy).not.toHaveBeenCalled(); // password never changed on a bad code
   });
 
   it('links the legal docs from the form footer, opening in a new tab', () => {
