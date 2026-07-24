@@ -1,4 +1,5 @@
 import { useLayoutEffect, useRef, useState, type CSSProperties } from 'react';
+import { ROOT_ID } from '@mindflow/mindmap-core';
 import type { EditorController } from '../useEditorState';
 import type { Theme } from '../theme';
 import { boxFor } from './MoveHandle';
@@ -23,14 +24,18 @@ interface MobileSelectBarProps {
  */
 export function MobileSelectBar({ controller, theme: th }: MobileSelectBarProps) {
   const sel = controller.selection;
+  // 노드 선택에는 하위/형제 추가 버튼이 붙는다 — 모바일에는 Tab/Enter도
+  // 우클릭 컨텍스트 메뉴도 없어서, 이 바가 노드를 늘릴 유일한 진입점이다.
+  const isNode = sel?.kind === 'node';
+  const isRoot = isNode && sel?.id === ROOT_ID; // 루트는 형제가 없다(컨텍스트 메뉴와 동일)
   const ref = useRef<HTMLDivElement>(null);
   const [size, setSize] = useState<{ w: number; h: number }>({ w: 190, h: 54 });
-  // Measure the bar once (its content — 편집/속성/삭제 — is fixed, so the size is
-  // stable) to clamp/flip it accurately against the viewport.
+  // Re-measure whenever the button composition changes (node selections carry
+  // extra 하위/형제 buttons) so clamp/flip stays accurate.
   useLayoutEffect(() => {
     const el = ref.current;
     if (el) setSize({ w: el.offsetWidth, h: el.offsetHeight });
-  }, []);
+  }, [isNode, isRoot]);
   if (!sel) return null;
 
   const startEdit = (): void => {
@@ -113,6 +118,29 @@ export function MobileSelectBar({ controller, theme: th }: MobileSelectBarProps)
         zIndex: 22,
       }}
     >
+      {isNode && (
+        <button type="button" className="mf-ed-btn" style={btn} onClick={controller.addChild}>
+          {/* 자식으로 가지를 뻗는 모양: 아래로 꺾이는 커넥터 + 새 노드(＋) */}
+          <svg width={18} height={18} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round">
+            <path d="M6 4v9a4 4 0 0 0 4 4h3" />
+            <path d="M17 14v6" />
+            <path d="M14 17h6" />
+          </svg>
+          하위
+        </button>
+      )}
+      {isNode && !isRoot && (
+        <button type="button" className="mf-ed-btn" style={btn} onClick={controller.addSibling}>
+          {/* 같은 들여쓰기의 새 줄(＋): 형제 주제 */}
+          <svg width={18} height={18} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round">
+            <path d="M5 6h9" />
+            <path d="M5 12h9" />
+            <path d="M9.5 15v6" />
+            <path d="M6.5 18h6" />
+          </svg>
+          형제
+        </button>
+      )}
       <button type="button" className="mf-ed-btn" style={btn} onClick={startEdit}>
         <svg width={18} height={18} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round">
           <path d="M12 20h9" />

@@ -152,6 +152,50 @@ describe('Editor (mobile, M6)', () => {
     }
   });
 
+  it('selection bar offers 하위/형제 for a node — touch has no Tab/Enter, so this grows the tree', () => {
+    const restore = mockMatchMedia(true);
+    try {
+      localStorage.setItem('mindflow_doc_mab1', JSON.stringify(DOC));
+      const { container } = renderEditor('/editor?map=mab1&title=x');
+      const vp = getViewport(container);
+      const boxes = () => vp.querySelectorAll('[data-node-id]').length;
+      const before = boxes();
+
+      const c1 = within(vp).getByText('리서치').closest('[data-node-id]') as HTMLElement;
+      selectNodeBox(c1);
+      const bar = screen.getByRole('toolbar', { name: '선택 동작' });
+      expect(within(bar).getByText('하위')).toBeTruthy();
+      expect(within(bar).getByText('형제')).toBeTruthy();
+
+      // 하위 → a child is added under 리서치 and opens for inline editing
+      fireEvent.click(within(bar).getByText('하위'));
+      expect(boxes()).toBe(before + 1);
+      expect(vp.querySelector('.mf-richedit')).toBeTruthy();
+    } finally {
+      restore();
+    }
+  });
+
+  it('selection bar hides 형제 for the root (like the context menu), keeps 하위', () => {
+    const restore = mockMatchMedia(true);
+    try {
+      localStorage.setItem('mindflow_doc_mab2', JSON.stringify(DOC));
+      const { container } = renderEditor('/editor?map=mab2&title=x');
+      const vp = getViewport(container);
+      const rootBox = vp.querySelector('[data-node-id="root"]') as HTMLElement;
+      selectNodeBox(rootBox);
+      const bar = screen.getByRole('toolbar', { name: '선택 동작' });
+      expect(within(bar).getByText('하위')).toBeTruthy();
+      expect(within(bar).queryByText('형제')).toBeNull();
+      // float 선택에는 노드 전용 버튼이 없어야 하지만 여기선 노드 케이스만 —
+      // 편집/속성/삭제 기본 3종은 그대로 남아 있다.
+      expect(within(bar).getByText('편집')).toBeTruthy();
+      expect(within(bar).getByText('삭제')).toBeTruthy();
+    } finally {
+      restore();
+    }
+  });
+
   it('shows the property panel as a bottom sheet (fixed to the viewport bottom) once opened', () => {
     const restore = mockMatchMedia(true);
     try {
