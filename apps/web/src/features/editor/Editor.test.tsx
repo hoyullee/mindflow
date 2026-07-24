@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
-import { cleanup, render, screen, within } from '@testing-library/react';
+import { cleanup, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { MemoryRouter, Route, Routes } from 'react-router-dom';
 import { Editor } from './Editor';
@@ -50,6 +50,17 @@ afterEach(() => {
 });
 
 describe('Editor', () => {
+  it('mounts behind a canvas curtain, then removes it once the first centering settles (no refresh flash)', async () => {
+    localStorage.setItem('mindflow_doc_curtain1', JSON.stringify(GOLDEN_DOC));
+    const { container } = renderEditor('/editor?map=curtain1&title=x');
+    // 마운트 직후: 커튼이 캔버스를 덮고 있고(fade-out 유예 240ms 동안 잔류),
+    // 콘텐츠는 그 아래에서 이미 렌더돼 있다 — 공개 순간 완성 화면이 드러난다.
+    expect(container.querySelector('[data-canvas-curtain]')).toBeTruthy();
+    expect(container.querySelectorAll('[data-node-id]').length).toBeGreaterThan(0);
+    // 준비 완료 후: 커튼은 스스로 언마운트되어 흔적을 남기지 않는다.
+    await waitFor(() => expect(container.querySelector('[data-canvas-curtain]')).toBeNull());
+  });
+
   it('renders every node text from a saved doc (mindflow_doc_golden)', () => {
     localStorage.setItem('mindflow_doc_golden', JSON.stringify(GOLDEN_DOC));
 

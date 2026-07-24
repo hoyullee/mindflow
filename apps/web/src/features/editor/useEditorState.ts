@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import type { MouseEvent as ReactMouseEvent, PointerEvent as ReactPointerEvent } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import type { Box, Doc, Float, Line, LineAnchor, LayoutMode, Node, NodeMap, SizeOf, SnapCandidate, Zone } from '@mindflow/mindmap-core';
@@ -166,6 +166,10 @@ export interface EditorController {
   /** True until the initial backend load resolves when the mount seed was only a
    * placeholder — the canvas holds meanwhile so the empty default never flashes. */
   hydrating: boolean;
+  /** 첫 센터링 + 폰트 측정 + 하이드레이션이 모두 끝나 캔버스를 보여도 되는
+   * 상태. false인 동안 Viewport가 커튼(배경+스피너)으로 캔버스를 가려
+   * 새로고침 시 좌상단 플래시→중앙 점프 깜빡임을 막는다. */
+  canvasReady: boolean;
   /** The initial doc load FAILED (network/RLS). The canvas shows an error+retry
    * instead of the empty seed, and saving is blocked so nothing overwrites the
    * (unknown-state) backend doc. */
@@ -691,12 +695,17 @@ export function useEditorState(): EditorController {
   }, [selection, multiSelection, presence]);
 
   const measurer = useMemo(() => new CanvasTextMeasurer(), []);
+  // 웹폰트(Pretendard) 로드가 끝나면 1 올라간다 — 폰트 로드 전에는 fallback
+  // 글꼴 폭으로 노드 박스가 측정되므로, 로드 완료 시점에 sizeOf의 정체성을
+  // 갈아 레이아웃 전체를 실제 글꼴 기준으로 재측정한다(새로고침 직후 박스가
+  // 미세하게 어긋나던 원인).
+  const [fontTick, setFontTick] = useState(0);
   const sizeOf: SizeOf = useCallback(
     (node, depth) => {
       const m = computeMetrics(node, depth, measurer);
       return { w: m.w, h: m.h };
     },
-    [measurer],
+    [measurer, fontTick],
   );
 
   const laidOutNodes = useMemo(() => layout(doc, doc.layoutMode, sizeOf, { rootAnchor }), [doc, sizeOf, rootAnchor]);
@@ -1205,14 +1214,56 @@ export function useEditorState(): EditorController {
     });
   }, [geom]);
 
-  useEffect(() => {
+  // 첫 센터링(fit)이 적용됐는지 — 커튼(CanvasCurtain) 해제 조건의 절반.
+  // 레이아웃 이펙트인 이유: 센터링 pan/zoom이 "페인트 전에" 반영돼야
+  // 좌상단(pan 0,0)에 그려졌다 중앙으로 점프하는 프레임이 없다.
+  const [initialFitDone, setInitialFitDone] = useState(false);
+  const initialFitDoneRef = useRef(false);
+  useLayoutEffect(() => {
     if (!pendingFitRef.current) return;
     if (!measured) return; // wait for the real canvas size before the first center
     if (!Object.keys(geom).length) return;
     if (viewport.vw <= 0 || viewport.vh <= 0) return;
     pendingFitRef.current = false;
     centerOnRoot();
+    initialFitDoneRef.current = true;
+    setInitialFitDone(true);
   }, [geom, viewport.vw, viewport.vh, measured, centerOnRoot]);
+
+  // 웹폰트 로드 정착 여부 — 커튼 해제 조건의 나머지 절반. 폰트가 로드되면
+  // fontTick으로 전체 재측정하고, 아직 커튼이 내려가 있으면(공개 전) 재센터링
+  // 까지 걸어 "정확한 글꼴 + 정중앙" 상태로 첫 공개가 되게 한다. 폰트가 오래
+  // 걸려도 캔버스를 무한정 가리지 않도록 1초 상한.
+  const [fontsSettled, setFontsSettled] = useState(false);
+  useEffect(() => {
+    let alive = true;
+    const settle = (): void => {
+      if (alive) setFontsSettled(true);
+    };
+    const fonts = (document as Document & { fonts?: { ready?: Promise<unknown> } }).fonts;
+    if (!fonts?.ready || typeof fonts.ready.then !== 'function') {
+      settle(); // jsdom 등 FontFaceSet 미지원 환경
+      return;
+    }
+    const cap = window.setTimeout(settle, 1000);
+    void fonts.ready.then(() => {
+      if (!alive) return;
+      window.clearTimeout(cap);
+      setFontTick((t) => t + 1);
+      if (!initialFitDoneRef.current) pendingFitRef.current = true;
+      settle();
+    });
+    return () => {
+      alive = false;
+      window.clearTimeout(cap);
+    };
+  }, []);
+
+  // 캔버스 공개 준비 완료: 첫 fit이 페인트 전에 반영됐고, 폰트 측정이 정착했고,
+  // 백엔드 하이드레이션도 끝난 상태. 이전에는 이 준비 과정이 그대로 보여서
+  // 새로고침 때 좌상단 플래시→점프 깜빡임이 생겼다 — 이제 CanvasCurtain이
+  // 준비될 때까지 캔버스를 가린다.
+  const canvasReady = initialFitDone && fontsSettled && !hydrating;
 
   const setLayoutMode = useCallback(
     (mode: LayoutMode) => {
@@ -2984,6 +3035,7 @@ export function useEditorState(): EditorController {
   return {
     doc,
     hydrating,
+    canvasReady,
     loadError,
     retryLoad: () => {
       if (typeof window !== 'undefined') window.location.reload();
