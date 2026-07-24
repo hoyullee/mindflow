@@ -20,6 +20,53 @@ function genCode(): string {
 const OTP_MIN = 6;
 const OTP_MAX = 10;
 
+/**
+ * Supabase Auth의 영문 에러 메시지를 사용자용 한글로 매핑한다. Supabase는 항상
+ * 영문 메시지를 주는데(예: "Invalid login credentials", 비밀번호 정책 나열, 레이트
+ * 리밋 안내), 그대로 노출하면 영문·과도한 길이가 그대로 보인다. 인식 못 한 영문은
+ * 원문 노출 대신 일반 안내로 폴백한다. 이미 한글인 메시지(클라이언트 자체 메시지)는
+ * 그대로 통과시킨다.
+ */
+function localizeAuthError(raw: string | undefined | null): string {
+  const msg = (raw || '').trim();
+  if (!msg) return '요청을 처리하지 못했어요. 잠시 후 다시 시도해 주세요.';
+  if (/[가-힣]/.test(msg)) return msg; // 이미 한글 → 그대로
+  const low = msg.toLowerCase();
+
+  // 로그인/가입
+  if (low.includes('invalid login credentials')) return '이메일 또는 비밀번호가 올바르지 않아요.';
+  if (low.includes('email not confirmed')) return '이메일 인증이 아직 완료되지 않았어요. 메일함에서 인증을 완료해 주세요.';
+  if (low.includes('already registered') || low.includes('already been registered') || low.includes('user already exists')) return '이미 가입된 이메일이에요. 로그인해 주세요.';
+
+  // 레이트 리밋: "For security purposes, you can only request this after N seconds."
+  const after = msg.match(/after (\d+)\s*seconds?/i);
+  if (after) return `요청이 너무 잦아요. 약 ${after[1]}초 후에 다시 시도해 주세요.`;
+  if (low.includes('rate limit') || low.includes('too many requests') || low.includes('for security purposes')) return '요청이 너무 잦아요. 잠시 후 다시 시도해 주세요.';
+
+  // 비밀번호 정책: "Password should be at least N characters. Password should contain at least one character of each: <목록>"
+  if (low.includes('password should') || (low.includes('password') && low.includes('at least'))) {
+    const minLen = msg.match(/at least (\d+) characters?/i);
+    const cls: string[] = [];
+    if (msg.includes('abcdefghijklmnopqrstuvwxyz')) cls.push('소문자');
+    if (msg.includes('ABCDEFGHIJKLMNOPQRSTUVWXYZ')) cls.push('대문자');
+    if (msg.includes('0123456789')) cls.push('숫자');
+    if (msg.includes('!@#$')) cls.push('특수문자');
+    const parts: string[] = [];
+    if (minLen) parts.push(`${minLen[1]}자 이상`);
+    if (cls.length) parts.push(`${cls.join('·')}를 각각 하나 이상 포함`);
+    return parts.length ? `비밀번호는 ${parts.join(', ')}이어야 해요.` : '비밀번호가 보안 조건을 충족하지 않아요.';
+  }
+
+  // OTP/토큰 검증 실패·만료
+  if (low.includes('otp') || low.includes('expired') || (low.includes('invalid') && (low.includes('code') || low.includes('token')))) {
+    return '인증 코드가 올바르지 않거나 만료되었어요. 다시 시도해 주세요.';
+  }
+  if (low.includes('unable to validate email') || low.includes('invalid email')) return '올바른 이메일 주소를 입력해 주세요.';
+
+  // 그 외: 영문 노출 방지용 일반 안내
+  return '요청을 처리하지 못했어요. 잠시 후 다시 시도해 주세요.';
+}
+
 /** Login.dc.html `validEmail(e)`. */
 function validEmail(email: string): boolean {
   return /^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email);
@@ -110,7 +157,7 @@ export function useLoginController() {
       patch({ busy: true, error: '' });
       void auth.signUp(state.email, state.password).then((res) => {
         if (res.error) {
-          patch({ busy: false, error: res.error });
+          patch({ busy: false, error: localizeAuthError(res.error) });
           return;
         }
         if (res.needsVerification) {
@@ -128,7 +175,7 @@ export function useLoginController() {
     patch({ busy: true, error: '' });
     void auth.signInWithPassword(state.email, state.password).then((res) => {
       if (res.error) {
-        patch({ busy: false, error: res.error });
+        patch({ busy: false, error: localizeAuthError(res.error) });
         return;
       }
       finishWithLoader(false);
@@ -152,7 +199,7 @@ export function useLoginController() {
     patch({ busy: true, error: '' });
     void auth.verifyOtp(state.email, state.code, 'signup').then((res) => {
       if (res.error) {
-        patch({ busy: false, error: res.error });
+        patch({ busy: false, error: localizeAuthError(res.error) });
         return;
       }
       finishWithLoader(true);
@@ -169,7 +216,7 @@ export function useLoginController() {
       patch({ busy: true, error: '', notice: '' });
       const send = state.step === 'forgotVerify' ? auth.sendPasswordReset(state.email) : auth.resendSignup(state.email);
       void send.then((res) => {
-        patch({ busy: false, code: '', error: res.error || '', notice: res.error ? '' : '인증 코드를 다시 보냈어요. 메일함을 확인해 주세요.' });
+        patch({ busy: false, code: '', error: res.error ? localizeAuthError(res.error) : '', notice: res.error ? '' : '인증 코드를 다시 보냈어요. 메일함을 확인해 주세요.' });
       });
       return;
     }
@@ -179,20 +226,28 @@ export function useLoginController() {
   const startForgot = () => patch({ step: 'forgot', error: '', code: '', notice: '', busy: false });
 
   const sendReset = () => {
+    if (state.busy) return;
     if (!validEmail(state.email)) {
       patch({ error: '올바른 이메일 주소를 입력해 주세요.' });
       return;
     }
-    if (mode === 'supabase') {
-      // Fire the real reset email in the background; the step transition below
-      // still advances regardless of the network result so this never blocks the
-      // flow (matches the rest of this file's non-fatal try/catch conventions).
-      void auth.sendPasswordReset(state.email);
+    if (mode === 'local') {
+      // No server — jump to the sim step with an on-screen demo code.
+      patch({ step: 'forgotVerify', demoCode: genCode(), code: '', newPw: '', newPw2: '', error: '', notice: '' });
+      return;
     }
-    // demoCode only for local/demo (the on-screen hint the sim compares against).
-    // In Supabase mode it stays '' so ForgotVerifyStep hides the demo box and the
-    // user enters the 6-digit code from the real email instead.
-    patch({ step: 'forgotVerify', demoCode: mode === 'supabase' ? '' : genCode(), code: '', newPw: '', newPw2: '', error: '', notice: '' });
+    // Supabase: actually send the reset email and ONLY advance on success. On a
+    // failure (rate limit / SMTP) surface a localized error and stay on this step
+    // instead of dropping the user onto a code screen where nothing will arrive.
+    patch({ busy: true, error: '', notice: '' });
+    void auth.sendPasswordReset(state.email).then((res) => {
+      if (res.error) {
+        patch({ busy: false, error: localizeAuthError(res.error) });
+        return;
+      }
+      // demoCode '' so ForgotVerifyStep hides the demo box (real email has the code).
+      patch({ busy: false, step: 'forgotVerify', demoCode: '', code: '', newPw: '', newPw2: '', error: '', notice: '이메일로 인증 코드를 보냈어요. 메일함을 확인해 주세요.' });
+    });
   };
 
   const resetPw = () => {
@@ -217,12 +272,12 @@ export function useLoginController() {
       patch({ busy: true, error: '', notice: '' });
       void auth.verifyOtp(state.email, state.code, 'recovery').then((res) => {
         if (res.error || !res.session) {
-          patch({ busy: false, error: res.error || '인증 코드가 올바르지 않거나 만료되었어요. 다시 시도해 주세요.' });
+          patch({ busy: false, error: res.error ? localizeAuthError(res.error) : '인증 코드가 올바르지 않거나 만료되었어요. 다시 시도해 주세요.' });
           return;
         }
         void auth.updatePassword(state.newPw).then((up) => {
           if (up.error) {
-            patch({ busy: false, error: up.error });
+            patch({ busy: false, error: localizeAuthError(up.error) });
             return;
           }
           finishWithLoader(false);

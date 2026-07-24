@@ -38,7 +38,11 @@ export function Login() {
         color: '#33281f',
       }}
     >
-      {controller.state.busy && <LoadingOverlay message={controller.state.loaderMsg || '로그인하고 있어요'} />}
+      {/* 전체화면 로더는 "완료 후 홈으로 이동"(finishWithLoader)일 때만 — 즉
+          `loaderMsg`가 설정된 경우에만 띄운다. 폼 내 비동기 처리(가입 요청·로그인
+          확인·인증 등)의 `busy`는 버튼 인라인 스피너로만 표시(가입 중에 엉뚱한
+          "로그인하고 있어요" 오버레이가 뜨던 문제 해결). */}
+      {controller.state.busy && controller.state.loaderMsg && <LoadingOverlay message={controller.state.loaderMsg} />}
 
       {!isMobile && <BrandPanel />}
 
