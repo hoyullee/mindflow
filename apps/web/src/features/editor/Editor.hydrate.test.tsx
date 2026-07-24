@@ -70,6 +70,9 @@ describe('Editor initial hydration', () => {
     expect(vp.querySelector('[data-node-id]')).toBeNull();
     expect(within(vp).queryByText('새 마인드맵')).toBeNull();
     expect(within(vp).queryByText('제목')).toBeNull();
+    // 미니맵도 준비 전에는 내용 없는 홀딩 박스 — 시드 지오메트리로 점을
+    // 그렸다가 실문서 도착 후 튀는 깜빡임 방지.
+    expect(container.querySelector('[data-minimap-holding]')).toBeTruthy();
 
     // body arrives → the real tree renders, spinner gone
     await act(async () => {
@@ -80,6 +83,8 @@ describe('Editor initial hydration', () => {
       expect(screen.queryByLabelText('불러오는 중')).toBeNull();
       expect(within(vp).getByText('실제 루트')).toBeTruthy();
       expect(within(vp).getByText('실제 자식')).toBeTruthy();
+      // 준비 완료 → 미니맵 홀딩 박스가 실제 미니맵으로 교체된다
+      expect(container.querySelector('[data-minimap-holding]')).toBeNull();
     });
   });
 

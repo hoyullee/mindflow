@@ -4,7 +4,7 @@ import { LoadingOverlay } from '../auth/LoadingOverlay';
 import { Sidebar } from './components/Sidebar';
 import { Toolbar } from './components/Toolbar';
 import { MapGrid } from './components/MapGrid';
-import { RecentStrip } from './components/RecentStrip';
+import { RecentStrip, RecentStripSkeleton } from './components/RecentStrip';
 import { AuthModal } from './components/modals/AuthModal';
 import { ToastModal } from './components/modals/ToastModal';
 import { NewSpaceModal } from './components/modals/NewSpaceModal';
@@ -69,7 +69,10 @@ export function Home() {
           It's a no-op with overlay scrollbars (mobile), where there's no shift anyway. */}
       <main style={{ flex: '1 1 auto', display: 'flex', flexDirection: 'column', overflowY: 'auto', scrollbarGutter: 'stable', padding: isMobile ? '16px 14px 32px' : '26px 32px 40px', minWidth: 0 }}>
         {/* Cross-space "최근 항목" strip sits ABOVE the space toolbar so it reads as a
-            global "recently opened" bar, not part of the current space's maps. */}
+            global "recently opened" bar, not part of the current space's maps.
+            로딩 중엔(저장된 최근 기록이 있을 때) 같은 footprint의 스켈레톤을 미리
+            깔아, 로드 완료 시 트레이가 끼어들며 툴바가 아래로 튀는 점프를 막는다. */}
+        {view.loading && state.recent.length > 0 && <RecentStripSkeleton count={state.recent.length} />}
         {view.recentSectionVisible && <RecentStrip cards={view.recentCards} controller={controller} />}
         <Toolbar state={state} view={view} controller={controller} isMobile={isMobile} onOpenNav={() => setNavOpen(true)} />
         <MapGrid view={view} controller={controller} />

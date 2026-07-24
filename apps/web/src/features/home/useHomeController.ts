@@ -46,7 +46,10 @@ import {
  * stands in for `this.setState`. `renderVals()`'s derived fields live in `viewModel.ts`.
  */
 export function useHomeController() {
-  const [state, setState] = useState<HomeState>(() => initialHomeState());
+  // 최근 기록은 동기(localStorage)로 초기 상태에 바로 싣는다 — 마운트 이펙트로
+  // 늦게 넣으면 첫 페인트 프레임에 최근 항목 스켈레톤조차 없어 툴바가 한 번
+  // 출렁인다(새로고침 깜빡임).
+  const [state, setState] = useState<HomeState>(() => ({ ...initialHomeState(), recent: loadRecent() }));
   const navigate = useNavigate();
   const { auth, docStore, spaceStore } = useBackend();
   const importInputRef = useRef<HTMLInputElement | null>(null);
@@ -226,8 +229,7 @@ export function useHomeController() {
     };
     window.addEventListener('pageshow', onPageShow);
 
-    const recent = loadRecent();
-    if (recent.length) patch({ recent });
+    // (recent은 useState 초기화에서 동기로 실렸다 — 여기서 다시 patch하지 않는다)
 
     // Kick off the initial workspace + doc hydration (see `hydrateFromBackend`).
     void hydrateFromBackend();
@@ -274,13 +276,17 @@ export function useHomeController() {
     void auth.getSession().then(async (session) => {
       if (cancelled) return;
       const email = session?.user?.email;
-      if (!email) return;
+      if (!email) {
+        // 세션 없음(로그인 페이지로 리다이렉트될 케이스) — 스켈레톤만 풀어준다.
+        setState((prev) => ({ ...prev, profileLoaded: true }));
+        return;
+      }
       // Show the locally-cached name immediately, no flash. Default order:
       // explicit rename (local cache) → provider name (Google full_name) →
       // email local part. The provider avatar rides along (null for email/demo
       // accounts — the UI falls back to the initial circle).
       const name0 = readSavedProfileName(email) || session?.user?.name || email.split('@')[0] || email;
-      setState((prev) => ({ ...prev, userEmail: email, userName: name0, userAvatar: session?.user?.avatarUrl || null }));
+      setState((prev) => ({ ...prev, userEmail: email, userName: name0, userAvatar: session?.user?.avatarUrl || null, profileLoaded: true }));
       // …then reconcile with the backend (Supabase `profiles.display_name`), which
       // survives a browser-cache clear and syncs across devices. Local mode returns
       // null here, so it just keeps the cached value.
@@ -292,6 +298,9 @@ export function useHomeController() {
       } catch {
         /* offline / transient — keep the cached name */
       }
+    }).catch(() => {
+      // 세션 조회 실패 — 플레이스홀더라도 보여주도록 스켈레톤을 풀어준다.
+      if (!cancelled) setState((prev) => ({ ...prev, profileLoaded: true }));
     });
     return () => {
       cancelled = true;

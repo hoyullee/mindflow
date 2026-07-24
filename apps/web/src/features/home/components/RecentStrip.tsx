@@ -28,6 +28,34 @@ function ClockGlyph() {
   );
 }
 
+/** 로딩 중 "최근 항목" 자리 확보용 스켈레톤 — 저장된 최근 기록이 있으면 실제
+ * 트레이와 같은 컨테이너(.mf-recent-tray)·헤더 높이·카드 footprint(128×105)로
+ * 미리 깔아 둔다. 없으면 로드 후 트레이가 갑자기 끼어들며 아래 툴바(파일 검색·
+ * 새로 만들기…)가 위아래로 튀던 레이아웃 점프가 이것으로 사라진다. */
+export function RecentStripSkeleton({ count }: { count: number }) {
+  const n = Math.max(1, Math.min(count, 6));
+  return (
+    <div className="mf-recent-tray" aria-busy="true" aria-label="최근 항목을 불러오는 중">
+      {/* 실제 헤더와 동일한 고정 높이(16px + marginBottom 10) */}
+      <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 10, height: 16 }}>
+        <span className="mf-skel" style={{ width: 14, height: 14, borderRadius: 4 }} />
+        <span className="mf-skel" style={{ width: 56, height: 13, borderRadius: 6 }} />
+      </div>
+      <div style={{ display: 'flex', gap: RECENT_GAP, overflow: 'hidden' }}>
+        {Array.from({ length: n }, (_, i) => (
+          <div key={i} style={{ width: RECENT_CARD_W, flex: '0 0 auto', border: '1px solid #efe6dd', borderRadius: 10, background: '#fff', overflow: 'hidden' }}>
+            {/* compact MapCard와 동일: 썸네일 72 + 패딩 8 + 제목줄 15(lineHeight 고정) */}
+            <div className="mf-skel" style={{ height: 72, borderRadius: 0 }} />
+            <div style={{ padding: '8px 10px', display: 'flex', alignItems: 'center', height: 15, boxSizing: 'content-box' }}>
+              <div className="mf-skel" style={{ height: 11, width: '70%', borderRadius: 6 }} />
+            </div>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
 /**
  * Global "최근 항목" tray — recently opened maps across EVERY space, shown at the
  * very top of Home. The `surface-sunken` background is a full-width "shelf":
@@ -74,11 +102,13 @@ export function RecentStrip({ cards, controller }: { cards: CardViewData[]; cont
       {/* Header: brand-accented clock glyph + strong text so the zone label is
           perceivable at a glance, while staying small enough (13px) not to
           compete with the page title (the space name, 22px). */}
-      <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 10 }}>
+      {/* height/lineHeight를 px로 고정 — 폰트 스왑에 따른 행 높이 변화(→ 아래
+          툴바 밀림)를 막고, 로딩 스켈레톤과 footprint를 정확히 일치시킨다. */}
+      <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 10, height: 16 }}>
         <span style={{ color: '#f0663f', display: 'inline-flex' }} aria-hidden="true">
           <ClockGlyph />
         </span>
-        <span style={{ fontSize: 13, fontWeight: 700, letterSpacing: '-.01em', color: '#33281f' }}>최근 항목</span>
+        <span style={{ fontSize: 13, lineHeight: '16px', fontWeight: 700, letterSpacing: '-.01em', color: '#33281f' }}>최근 항목</span>
       </div>
       <div className="mf-recent-scroll" style={{ display: 'flex', gap: RECENT_GAP, overflowX: 'auto', scrollSnapType: 'x proximity' }}>
         {cards.slice(0, shown).map((c) => (
