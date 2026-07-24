@@ -32,6 +32,14 @@ mocked) 어댑터로 검증되었습니다(라이브 호출 없음).
   `on delete cascade` FK로 `profiles`/`documents`/`workspaces`가 함께 삭제됩니다
   (`SupabaseAuth.deleteAccount()`가 호출). 미적용 시 로컬/데모 모드는 브라우저의
   MindFlow 저장소를 비우는 것으로 폴백합니다.
+- `supabase/migrations/0007_security_advisor.sql` — Security Advisor 경고 정리.
+  `set_updated_at`에 `search_path` 고정, 트리거 전용 함수(`handle_new_user`/
+  `set_updated_at`)의 직접 EXECUTE 권한 회수(트리거는 권한과 무관하게 발화하므로
+  회원가입 자동 프로필 생성은 무영향). 남는 경고 2건은 SQL 대상이 아닙니다: ①
+  `delete_account`의 "인증 사용자 실행 가능"은 회원 탈퇴 기능상 의도된 것(`auth.uid()`
+  가드로 본인만) ② "Leaked Password Protection Disabled"는 대시보드 Auth 설정 토글
+  (Authentication → Sign In / Providers → *Leaked password protection*, HaveIBeenPwned
+  대조)로 켭니다.
 - 마이그레이션은 표준 위치 **`supabase/migrations/`**(+ 루트 `supabase/config.toml`)에
   둡니다 — Supabase의 GitHub 연동이 이 경로를 찾아, `main`(프로덕션 브랜치) 머지 시
   새 마이그레이션을 자동 적용하고 PR마다 프리뷰 DB 브랜치를 만듭니다(아래 §1a).
@@ -61,6 +69,7 @@ mocked) 어댑터로 검증되었습니다(라이브 호출 없음).
    psql "$DATABASE_URL" -f supabase/migrations/0004_workspaces.sql
    psql "$DATABASE_URL" -f supabase/migrations/0005_delete_account.sql
    psql "$DATABASE_URL" -f supabase/migrations/0006_profile_name_from_oauth.sql
+   psql "$DATABASE_URL" -f supabase/migrations/0007_security_advisor.sql
    ```
    `server/supabase/seed/seed.sql`은 선택 사항(로컬 개발용 샘플 문서 1건 삽입 — 실제
    `auth.users` id로 치환 필요, 파일 내 주석 참고).
