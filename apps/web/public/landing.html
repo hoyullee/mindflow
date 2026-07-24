@@ -78,12 +78,49 @@
         display: inline-block; background: #f0663f; color: #fff; text-decoration: none; font-weight: 700;
         font-size: 16px; padding: 14px 28px; border-radius: 13px; box-shadow: 0 8px 22px rgba(240, 102, 63, 0.32);
       }
+      .hero .trust { font-size: 13px; color: #9c8b7e; margin-top: 14px; }
       .illust { max-width: 620px; margin: 52px auto 0; }
       .illust svg { width: 100%; height: auto; display: block; }
-      .features { padding: 28px 0 56px; display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 16px; }
+
+      .section-head { text-align: center; max-width: 620px; margin: 0 auto 30px; }
+      .eyebrow { display: inline-block; font-size: 12.5px; font-weight: 800; letter-spacing: 0.06em; text-transform: uppercase; color: #f0663f; margin-bottom: 12px; }
+      .section-head h2 { font-size: clamp(22px, 3.6vw, 30px); font-weight: 800; letter-spacing: -0.02em; line-height: 1.3; margin-bottom: 10px; }
+      .section-head p { font-size: 15px; color: #8a7365; line-height: 1.7; }
+      section.block { padding: 46px 0; }
+      section.block.tint { border-top: 1px solid #f2e9e1; border-bottom: 1px solid #f2e9e1; }
+
+      .uc-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(230px, 1fr)); gap: 14px; }
+      .uc { background: #fff; border: 1px solid #f2e9e1; border-radius: 14px; padding: 18px; display: flex; gap: 13px; align-items: flex-start; }
+      .uc .ico { width: 36px; height: 36px; border-radius: 10px; background: #fdeee7; color: #f0663f; display: inline-flex; align-items: center; justify-content: center; flex-shrink: 0; }
+      .uc h3 { font-size: 14.5px; font-weight: 800; margin-bottom: 4px; }
+      .uc p { font-size: 13px; color: #8a7365; line-height: 1.6; }
+
+      .steps { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 20px; }
+      .step { text-align: center; padding: 4px 8px; }
+      .step .num { width: 46px; height: 46px; border-radius: 50%; background: #f0663f; color: #fff; font-weight: 800; font-size: 19px; display: inline-flex; align-items: center; justify-content: center; margin-bottom: 15px; box-shadow: 0 6px 16px rgba(240, 102, 63, 0.28); }
+      .step h3 { font-size: 16px; font-weight: 800; margin-bottom: 6px; }
+      .step p { font-size: 13.5px; color: #8a7365; line-height: 1.65; }
+
+      .features { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 16px; }
       .card { background: #fff; border: 1px solid #f2e9e1; border-radius: 16px; padding: 22px 20px; }
+      .card .ico { width: 38px; height: 38px; border-radius: 11px; background: #fdeee7; color: #f0663f; display: inline-flex; align-items: center; justify-content: center; margin-bottom: 14px; }
       .card h2 { font-weight: 800; font-size: 16px; margin-bottom: 8px; }
       .card p { font-size: 14px; color: #8a7365; line-height: 1.7; }
+
+      .chips { display: flex; flex-wrap: wrap; gap: 10px; justify-content: center; }
+      .chip { background: #fff; border: 1px solid #f2e9e1; border-radius: 999px; padding: 9px 16px; font-size: 13.5px; font-weight: 600; color: #5c4a3d; }
+
+      .faq { max-width: 720px; margin: 0 auto; }
+      .faq details { background: #fff; border: 1px solid #f2e9e1; border-radius: 14px; padding: 2px 20px; margin-bottom: 10px; }
+      .faq summary { list-style: none; cursor: pointer; font-weight: 700; font-size: 15px; padding: 15px 0; display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+      .faq summary::-webkit-details-marker { display: none; }
+      .faq summary::after { content: '+'; color: #f0663f; font-size: 22px; font-weight: 700; line-height: 1; flex-shrink: 0; }
+      .faq details[open] summary::after { content: '\2212'; }
+      .faq details p { font-size: 14px; color: #8a7365; line-height: 1.7; padding: 0 0 16px; }
+
+      .closing { background: linear-gradient(135deg, #fdeee7, #fff); border: 1px solid #f2e9e1; border-radius: 22px; padding: 46px 28px; text-align: center; }
+      .closing h2 { font-size: clamp(22px, 3.6vw, 30px); font-weight: 800; letter-spacing: -0.02em; margin-bottom: 12px; }
+      .closing p { font-size: 15px; color: #8a7365; line-height: 1.7; max-width: 480px; margin: 0 auto 26px; }
       footer {
         border-top: 1px solid #ecdfd5; padding: 22px 0 34px; display: flex; align-items: center;
         gap: 16px; flex-wrap: wrap; font-size: 13px; color: #9c8b7e;
@@ -112,6 +149,7 @@
           떠오르는 생각을 자유롭게 그리고 이어, 복잡한 생각을 한눈에 정리하세요.
         </p>
         <a class="cta" href="/login">무료로 시작하기</a>
+        <div class="trust">설치 없이 웹에서 바로 · 무료로 시작</div>
 
         <div class="illust" aria-hidden="true">
           <svg viewBox="0 0 620 220">
@@ -137,18 +175,148 @@
         </div>
       </section>
 
-      <section class="features">
-        <div class="card">
-          <h2>자유로운 마인드맵</h2>
-          <p>노드·도형·메모·연결선·영역으로 생각을 자유롭게 배치하고, 색과 스타일로 구조를 드러내세요.</p>
+      <section class="block">
+        <div class="section-head">
+          <span class="eyebrow">이럴 때 좋아요</span>
+          <h2>생각을 정리해야 하는 모든 순간에</h2>
+          <p>떠오르는 아이디어부터 복잡한 계획까지, 그리오 하나로 펼치고 이어보세요.</p>
         </div>
-        <div class="card">
-          <h2>어디서나 이어서</h2>
-          <p>웹과 모바일(PWA) 어디서든 열립니다. 자동 저장과 기기 간 동기화로 흐름이 끊기지 않아요.</p>
+        <div class="uc-grid">
+          <div class="uc">
+            <span class="ico" aria-hidden="true">
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 18h6" /><path d="M10 22h4" /><path d="M12 2a7 7 0 0 0-4 12.7c.6.5 1 1.3 1 2.1V17h6v-.2c0-.8.4-1.6 1-2.1A7 7 0 0 0 12 2z" /></svg>
+            </span>
+            <div><h3>브레인스토밍</h3><p>회의에서든 혼자서든, 떠오르는 생각을 막힘없이 빠르게 펼쳐요.</p></div>
+          </div>
+          <div class="uc">
+            <span class="ico" aria-hidden="true">
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 5a2 2 0 0 1 2-2h13v16H6a2 2 0 0 0-2 2z" /><path d="M4 19a2 2 0 0 0 2 2h13" /></svg>
+            </span>
+            <div><h3>학습 노트</h3><p>강의와 책의 핵심을 구조로 묶어 오래 기억에 남게 정리해요.</p></div>
+          </div>
+          <div class="uc">
+            <span class="ico" aria-hidden="true">
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 21V4" /><path d="M5 4h11l-2 4 2 4H5" /></svg>
+            </span>
+            <div><h3>프로젝트 기획</h3><p>목표에서 할 일로 가지를 뻗어 큰 그림과 세부 계획을 함께 세워요.</p></div>
+          </div>
+          <div class="uc">
+            <span class="ico" aria-hidden="true">
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12a8 8 0 0 1-11.5 7.2L4 20l1-4.5A8 8 0 1 1 21 12z" /></svg>
+            </span>
+            <div><h3>회의록</h3><p>논의의 흐름을 실시간으로 정리하고 참석자와 바로 공유해요.</p></div>
+          </div>
+          <div class="uc">
+            <span class="ico" aria-hidden="true">
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8z" /><path d="M14 3v5h5" /></svg>
+            </span>
+            <div><h3>글쓰기 개요</h3><p>글의 뼈대를 먼저 짜고 살을 붙여, 논리의 흐름을 놓치지 않아요.</p></div>
+          </div>
+          <div class="uc">
+            <span class="ico" aria-hidden="true">
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 3v12" /><circle cx="6" cy="18" r="3" /><circle cx="18" cy="6" r="3" /><path d="M18 9v3a6 6 0 0 1-6 6h-3" /></svg>
+            </span>
+            <div><h3>의사결정</h3><p>선택지와 근거를 한눈에 늘어놓고 비교해 더 나은 결정을 내려요.</p></div>
+          </div>
         </div>
-        <div class="card">
-          <h2>함께, 그리고 내보내기</h2>
-          <p>실시간 공동 편집으로 함께 그리고, 완성한 맵은 PNG·Markdown·JSON으로 내보내세요.</p>
+      </section>
+
+      <section class="block tint">
+        <div class="section-head">
+          <span class="eyebrow">이렇게 시작해요</span>
+          <h2>3단계면 충분해요</h2>
+          <p>복잡한 사용법은 없어요. 중심 주제 하나에서 시작하면 됩니다.</p>
+        </div>
+        <div class="steps">
+          <div class="step">
+            <span class="num" aria-hidden="true">1</span>
+            <h3>중심 주제를 적어요</h3>
+            <p>정리하고 싶은 하나의 주제를 화면 가운데에 놓는 것으로 시작해요.</p>
+          </div>
+          <div class="step">
+            <span class="num" aria-hidden="true">2</span>
+            <h3>가지를 뻗어 이어요</h3>
+            <p>떠오르는 생각을 자식·형제 노드로 이어 붙이며 자연스럽게 구조를 만들어요.</p>
+          </div>
+          <div class="step">
+            <span class="num" aria-hidden="true">3</span>
+            <h3>저장하고 공유해요</h3>
+            <p>자동으로 저장되고, 완성한 맵은 이미지나 파일로 내보내 함께 나눠요.</p>
+          </div>
+        </div>
+      </section>
+
+      <section class="block">
+        <div class="section-head">
+          <span class="eyebrow">핵심 기능</span>
+          <h2>생각의 속도를 따라오는 도구</h2>
+        </div>
+        <div class="features">
+          <div class="card">
+            <span class="ico" aria-hidden="true">
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="5" cy="12" r="2.6" /><circle cx="18" cy="6" r="2.6" /><circle cx="18" cy="18" r="2.6" /><path d="M7.4 11 15.6 6.8" /><path d="M7.4 13l8.2 4.2" /></svg>
+            </span>
+            <h2>자유로운 마인드맵</h2>
+            <p>노드·도형·메모·연결선·영역으로 생각을 자유롭게 배치하고, 색과 스타일로 구조를 드러내세요.</p>
+          </div>
+          <div class="card">
+            <span class="ico" aria-hidden="true">
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="3" width="20" height="14" rx="2" /><path d="M8 21h8" /><path d="M12 17v4" /></svg>
+            </span>
+            <h2>어디서나 이어서</h2>
+            <p>웹과 모바일(PWA) 어디서든 열립니다. 자동 저장과 기기 간 동기화로 흐름이 끊기지 않아요.</p>
+          </div>
+          <div class="card">
+            <span class="ico" aria-hidden="true">
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2" /><circle cx="9" cy="7" r="4" /><path d="M22 21v-2a4 4 0 0 0-3-3.9" /><path d="M16 3.1a4 4 0 0 1 0 7.8" /></svg>
+            </span>
+            <h2>함께, 그리고 내보내기</h2>
+            <p>실시간 공동 편집으로 함께 그리고, 완성한 맵은 PNG·Markdown·JSON으로 내보내세요.</p>
+          </div>
+        </div>
+        <div class="chips" style="margin-top: 22px">
+          <span class="chip">6가지 테마</span>
+          <span class="chip">굵게·색상 서식</span>
+          <span class="chip">이미지 첨부</span>
+          <span class="chip">미니맵</span>
+          <span class="chip">아웃라인 보기</span>
+          <span class="chip">방사형·조직도 레이아웃</span>
+          <span class="chip">실시간 협업 커서</span>
+          <span class="chip">자동 저장</span>
+          <span class="chip">오프라인 지원</span>
+        </div>
+      </section>
+
+      <section class="block tint">
+        <div class="section-head">
+          <span class="eyebrow">자주 묻는 질문</span>
+          <h2>궁금한 점이 있으신가요?</h2>
+        </div>
+        <div class="faq">
+          <details>
+            <summary>정말 무료인가요?</summary>
+            <p>네. 별도의 설치나 결제 없이 지금 바로 시작할 수 있어요.</p>
+          </details>
+          <details>
+            <summary>설치해야 하나요?</summary>
+            <p>아니요. 웹 브라우저만 있으면 됩니다. 모바일에서는 홈 화면에 추가하면 앱처럼 전체 화면으로 사용할 수 있어요.</p>
+          </details>
+          <details>
+            <summary>만든 맵은 안전하게 보관되나요?</summary>
+            <p>편집하는 동안 자동으로 저장되고, 로그인하면 여러 기기에서 같은 맵을 이어서 볼 수 있어요.</p>
+          </details>
+          <details>
+            <summary>다른 곳으로 내보낼 수 있나요?</summary>
+            <p>완성한 맵을 PNG 이미지, Markdown, JSON 파일로 내보낼 수 있어 다른 문서나 도구로 바로 옮길 수 있어요.</p>
+          </details>
+        </div>
+      </section>
+
+      <section class="block">
+        <div class="closing">
+          <h2>생각이 떠오른 지금이 시작하기 좋은 때예요</h2>
+          <p>첫 마인드맵을 만들고, 흩어진 생각을 하나의 그림으로 이어 보세요.</p>
+          <a class="cta" href="/login">무료로 시작하기</a>
         </div>
       </section>
 

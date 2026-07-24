@@ -32,7 +32,10 @@ describe('Landing', () => {
         <Landing />
       </MemoryRouter>,
     );
-    expect(screen.getByRole('link', { name: '무료로 시작하기' }).getAttribute('href')).toBe('/login');
+    // 히어로 + 마무리 배너 두 곳의 CTA — 둘 다 같은 곳을 가리켜야 한다
+    const ctas = screen.getAllByRole('link', { name: '무료로 시작하기' });
+    expect(ctas.length).toBeGreaterThanOrEqual(2);
+    for (const cta of ctas) expect(cta.getAttribute('href')).toBe('/login');
     expect(screen.getByRole('link', { name: '로그인' }).getAttribute('href')).toBe('/login');
   });
 
@@ -44,13 +47,26 @@ describe('Landing', () => {
       </MemoryRouter>,
     );
     await waitFor(() => expect(screen.getByRole('link', { name: '내 문서로' })).toBeTruthy());
-    expect(screen.getByRole('link', { name: '무료로 시작하기' }).getAttribute('href')).toBe('/home');
+    for (const cta of screen.getAllByRole('link', { name: '무료로 시작하기' })) expect(cta.getAttribute('href')).toBe('/home');
   });
 
   it('serves the landing (not a redirect to /login) at the root route', () => {
     window.history.pushState({}, '', '/');
     render(<App />);
-    expect(screen.getByRole('link', { name: '무료로 시작하기' })).toBeTruthy();
+    expect(screen.getAllByRole('link', { name: '무료로 시작하기' }).length).toBeGreaterThan(0);
+  });
+
+  it('carries the expanded content: use cases, steps, FAQ, and the feature chips', () => {
+    render(
+      <MemoryRouter>
+        <Landing />
+      </MemoryRouter>,
+    );
+    // 새로 추가한 섹션들이 렌더된다(landing.html 쌍둥이와 동기화 확인은 아래 정적 테스트에서)
+    expect(screen.getByText('브레인스토밍')).toBeTruthy();
+    expect(screen.getByText('3단계면 충분해요')).toBeTruthy();
+    expect(screen.getByText('정말 무료인가요?')).toBeTruthy();
+    expect(screen.getByText('이미지 첨부')).toBeTruthy();
   });
 });
 
@@ -71,6 +87,16 @@ describe('static landing.html (the crawler-visible twin)', () => {
     // JSON-LD(type="application/ld+json")는 렌더와 무관한 데이터 블록이라 허용.
     const scripts = html.match(/<script[^>]*/g) ?? [];
     for (const tag of scripts) expect(tag).toContain('application/ld+json');
+  });
+
+  it('mirrors the expanded content of the React twin (use cases, steps, FAQ, chips)', () => {
+    const html = readFileSync(path.join(publicDir, 'landing.html'), 'utf8');
+    // 사용 사례 · 3단계 · FAQ · 기능 칩 — Landing.tsx와 동기화되어야 크롤러도 본다
+    for (const s of ['브레인스토밍', '학습 노트', '의사결정', '3단계면 충분해요', '정말 무료인가요?', '이미지 첨부', '자주 묻는 질문']) {
+      expect(html).toContain(s);
+    }
+    // FAQ는 JS 없는 <details>로 — 크롤러 가시성 유지
+    expect(html).toContain('<details>');
   });
 
   it('carries the share/SEO contract: canonical + OG card + JSON-LD', () => {
