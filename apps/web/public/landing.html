@@ -89,7 +89,9 @@
       section.block { padding: 46px 0; }
       section.block.tint { border-top: 1px solid #f2e9e1; border-bottom: 1px solid #f2e9e1; }
 
-      .uc-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(230px, 1fr)); gap: 14px; }
+      /* 사용 사례 6종 — 데스크톱 3열(3+3), 태블릿 2열, 모바일 1열.
+         컨테이너가 최대 992px라 auto-fit·minmax(280px)면 최대 3열로 고정된다. */
+      .uc-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 14px; }
       .uc { background: #fff; border: 1px solid #f2e9e1; border-radius: 14px; padding: 18px; display: flex; gap: 13px; align-items: flex-start; }
       .uc .ico { width: 36px; height: 36px; border-radius: 10px; background: #fdeee7; color: #f0663f; display: inline-flex; align-items: center; justify-content: center; flex-shrink: 0; }
       .uc h3 { font-size: 14.5px; font-weight: 800; margin-bottom: 4px; }
