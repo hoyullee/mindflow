@@ -30,9 +30,9 @@ export function ForgotVerifyStep({ controller }: ForgotVerifyStepProps) {
       <div style={{ fontSize: 13.5, color: '#33281f', lineHeight: 1.65, marginBottom: 6 }}>
         <b style={{ fontWeight: 700 }}>{state.email}</b> 로 재설정 코드를 보냈어요.
       </div>
-      <div style={{ fontSize: 12.5, color: '#9c8b7e', margin: '0 0 18px' }}>메일함에서 6자리 코드를 확인해 입력해 주세요.</div>
+      <div style={{ fontSize: 12.5, color: '#9c8b7e', margin: '0 0 18px' }}>메일함에서 인증 코드를 확인해 입력해 주세요.</div>
       {/* 데모 코드 힌트는 로컬/데모 모드에서만 — 실제 Supabase 복구에선 비어 있어
-          이 박스가 노출되지 않는다(메일의 6자리 코드를 입력). */}
+          이 박스가 노출되지 않는다(메일의 인증 코드를 입력). */}
       {state.demoCode && (
         <div
           style={{
@@ -52,10 +52,11 @@ export function ForgotVerifyStep({ controller }: ForgotVerifyStepProps) {
       <input
         className="lg-input"
         inputMode="numeric"
-        maxLength={6}
+        // Supabase 이메일 OTP는 6~10자리 — 특정 길이로 고정하지 않는다.
+        maxLength={10}
         value={state.code}
         onChange={(e: ChangeEvent<HTMLInputElement>) => controller.onCode(e.target.value)}
-        placeholder="6자리 숫자"
+        placeholder="인증 코드 입력"
         style={codeInputStyle(16)}
       />
       <div style={fieldLabelStyle}>새 비밀번호</div>

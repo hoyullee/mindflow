@@ -99,7 +99,7 @@ describe('Login', () => {
 
     expect(screen.getByText('이메일 인증')).toBeTruthy();
     expect(screen.getByText(/데모 코드:/)).toBeTruthy();
-    expect(screen.getByPlaceholderText('6자리 숫자')).toBeTruthy();
+    expect(screen.getByPlaceholderText('인증 코드 입력')).toBeTruthy();
   });
 
   it('supabase mode: the verify step hides the demo code and "다시 보내기" actually re-sends the OTP email', async () => {
@@ -122,13 +122,42 @@ describe('Login', () => {
     await user.click(screen.getByRole('button', { name: '가입하기' }));
 
     // reached the verify step, but with NO demo-code hint (real email has the 6-digit code)
-    expect(await screen.findByPlaceholderText('6자리 숫자')).toBeTruthy();
+    expect(await screen.findByPlaceholderText('인증 코드 입력')).toBeTruthy();
     expect(screen.queryByText(/데모 코드:/)).toBeNull();
 
     // "다시 보내기" hits the real resend API (with the signup email) and confirms with a notice
     await user.click(screen.getByText('다시 보내기'));
     await waitFor(() => expect(resendSpy).toHaveBeenCalledWith('real@example.com'));
     expect(screen.getByText(/다시 보냈어요/)).toBeTruthy();
+  });
+
+  it('supabase mode: accepts an 8-digit OTP (input not capped at 6) and verifies with the full code', async () => {
+    // Repro: Supabase can be configured to send an 8-digit email OTP, but the
+    // input used to slice() to 6 so the code could never be entered in full.
+    const user = userEvent.setup();
+    const auth = new VerifyAuth();
+    const verifySpy = vi.spyOn(auth, 'verifyOtp'); // LocalAuth base yields a session for any input
+    const backend: Backend = { auth, docStore: stubDocStore, spaceStore: new LocalSpaceStore(), mode: 'supabase' };
+    render(
+      <MemoryRouter>
+        <BackendProvider backend={backend}>
+          <Login />
+        </BackendProvider>
+      </MemoryRouter>,
+    );
+
+    await user.click(screen.getByText('가입하기'));
+    await user.type(screen.getByPlaceholderText('you@example.com'), 'eight@example.com');
+    await user.type(screen.getByPlaceholderText('비밀번호 입력'), 'password123');
+    await user.type(screen.getByPlaceholderText('비밀번호 재입력'), 'password123');
+    await user.click(screen.getByRole('button', { name: '가입하기' }));
+
+    const codeInput = (await screen.findByPlaceholderText('인증 코드 입력')) as HTMLInputElement;
+    await user.type(codeInput, '12345678'); // 8 digits
+    expect(codeInput.value).toBe('12345678'); // not truncated to 6
+
+    await user.click(screen.getByRole('button', { name: '인증하고 시작하기' }));
+    await waitFor(() => expect(verifySpy).toHaveBeenCalledWith('eight@example.com', '12345678', 'signup'));
   });
 
   it('supabase mode: password reset runs the REAL recovery flow (verifyOtp recovery → updatePassword) and hides the demo code', async () => {
@@ -150,11 +179,11 @@ describe('Login', () => {
     await waitFor(() => expect(resetSpy).toHaveBeenCalledWith('reset@example.com'));
 
     // reset-verify step: NO demo code in production mode
-    expect(await screen.findByPlaceholderText('6자리 숫자')).toBeTruthy();
+    expect(await screen.findByPlaceholderText('인증 코드 입력')).toBeTruthy();
     expect(screen.queryByText(/데모 코드:/)).toBeNull();
 
     // enter the emailed 6-digit code + a new password → real recovery
-    await user.type(screen.getByPlaceholderText('6자리 숫자'), '123456');
+    await user.type(screen.getByPlaceholderText('인증 코드 입력'), '123456');
     await user.type(screen.getByPlaceholderText('새 비밀번호 입력'), 'newpass123');
     await user.type(screen.getByPlaceholderText('새 비밀번호 재입력'), 'newpass123');
     await user.click(screen.getByRole('button', { name: '비밀번호 재설정' }));
@@ -179,9 +208,9 @@ describe('Login', () => {
     await user.click(screen.getByText('비밀번호 찾기'));
     await user.type(screen.getByPlaceholderText('you@example.com'), 'reset@example.com');
     await user.click(screen.getByRole('button', { name: '재설정 코드 보내기' }));
-    await screen.findByPlaceholderText('6자리 숫자');
+    await screen.findByPlaceholderText('인증 코드 입력');
 
-    await user.type(screen.getByPlaceholderText('6자리 숫자'), '000000'); // rejected by RecoveryAuth
+    await user.type(screen.getByPlaceholderText('인증 코드 입력'), '000000'); // rejected by RecoveryAuth
     await user.type(screen.getByPlaceholderText('새 비밀번호 입력'), 'newpass123');
     await user.type(screen.getByPlaceholderText('새 비밀번호 재입력'), 'newpass123');
     await user.click(screen.getByRole('button', { name: '비밀번호 재설정' }));

@@ -33,7 +33,7 @@ export function VerifyStep({ controller, view }: VerifyStepProps) {
         <b style={{ fontWeight: 700 }}>{state.email}</b> 로 인증 코드를 보냈어요.
       </div>
       <div style={{ fontSize: 12.5, color: '#9c8b7e', marginBottom: 20 }}>
-        메일함에서 6자리 코드를 확인해 입력해 주세요.
+        메일함에서 인증 코드를 확인해 입력해 주세요.
       </div>
 
       {/* 데모 코드 힌트는 로컬/데모 모드에서만 — 실제 Supabase 인증에선
@@ -58,11 +58,12 @@ export function VerifyStep({ controller, view }: VerifyStepProps) {
       <input
         className="lg-input"
         inputMode="numeric"
-        maxLength={6}
+        // Supabase 이메일 OTP는 6~10자리 — 특정 길이로 고정하지 않는다.
+        maxLength={10}
         value={state.code}
         onChange={(e: ChangeEvent<HTMLInputElement>) => controller.onCode(e.target.value)}
         onKeyDown={controller.onCodeKey}
-        placeholder="6자리 숫자"
+        placeholder="인증 코드 입력"
         style={codeInputStyle(8)}
       />
 
