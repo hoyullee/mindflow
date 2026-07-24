@@ -67,23 +67,23 @@ export function Minimap({ controller, isMobile = false }: MinimapProps) {
 
   // Choose the mapped region so the orange viewport rectangle reads as a small
   // inner box, not a slab filling the whole minimap. It's centered on the
-  // CONTENT midpoint and sized to comfortably contain BOTH the node cluster and
-  // the current viewport, times `OVERVIEW` (so whichever is larger occupies
-  // only ~1/OVERVIEW of the minimap). Crucially it depends on the viewport
-  // *size* (vw/vh ÷ zoom) but NOT its position (pan): tall portrait phones show
-  // a much taller visible area than the short content, so a content-only margin
-  // couldn't shrink the rect vertically (it clamped to full height); folding in
-  // the viewport size fixes that. Using size-not-position keeps the mapping
-  // stable while panning (no feedback loop, no jitter) — it only rescales on a
-  // deliberate zoom. An earlier version unioned the live viewport *position*
-  // in, which both moved the coordinate system on every pan and skewed the rect
-  // into a broken-looking band; this avoids all of that, and the rect is still
-  // CLAMPED to the box below as a backstop.
+  // CONTENT midpoint and sized to comfortably contain both the node cluster and
+  // a REFERENCE viewport, times `OVERVIEW` (so whichever is larger occupies
+  // only ~1/OVERVIEW of the minimap). The reference viewport is the screen size
+  // at zoom 1 (vw/vh, NOT ÷ the live zoom): tall portrait phones show a much
+  // taller visible area than the short content, so a content-only margin
+  // couldn't shrink the rect vertically — folding the screen size in fixes
+  // that. Crucially the mapping depends on neither pan NOR zoom, so it never
+  // shifts while panning and never rescales while zooming — which is what lets
+  // the orange rect itself grow/shrink with 1/zoom. (An earlier version divided
+  // by the live zoom here; that made the mapping scale cancel the rect's own
+  // 1/zoom exactly, so the rect looked FROZEN at every zoom level.) The rect is
+  // still CLAMPED to the box below as a backstop when zoomed far out.
   const OVERVIEW = 1.9;
   const cCx = (cMinX + cMaxX) / 2;
   const cCy = (cMinY + cMaxY) / 2;
-  const halfW = Math.max((cMaxX - cMinX) / 2, vw / zoom / 2) * OVERVIEW + 20;
-  const halfH = Math.max((cMaxY - cMinY) / 2, vh / zoom / 2) * OVERVIEW + 20;
+  const halfW = Math.max((cMaxX - cMinX) / 2, vw / 2) * OVERVIEW + 20;
+  const halfH = Math.max((cMaxY - cMinY) / 2, vh / 2) * OVERVIEW + 20;
   const liveMinX = cCx - halfW;
   const liveMinY = cCy - halfH;
   const liveMaxX = cCx + halfW;
