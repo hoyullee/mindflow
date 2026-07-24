@@ -282,25 +282,40 @@ GIS 적용 후 동의 화면은 우리 origin(geurio.com)을 표시한다. 도�
 > Resend API 키는 **비밀값** — Supabase 대시보드에만 입력하고 저장소·커밋·클라이언트에
 > 절대 넣지 않는다(`service_role`/Client Secret과 동일 취급).
 
-### ② 이메일 템플릿에 6자리 코드 넣기 (앱의 OTP 입력과 일치)
+### ② 이메일 템플릿을 코드(OTP) 방식으로 교체 (앱의 입력과 일치)
 
 앱은 매직링크가 아니라 **6자리 코드(OTP)** 를 입력받으므로, **두 템플릿 모두** `{{ .Token }}`을
-넣어야 한다. 대시보드 → **Authentication → Emails**:
+써야 한다. 대시보드 → **Authentication → Emails**.
 
-**"Confirm signup"**(회원가입 인증):
+> ⚠️ **기본 템플릿에 "추가"하지 말고 본문 전체를 교체**할 것. Supabase 기본 템플릿은
+> 영문 안내 + 매직링크(`{{ .ConfirmationURL }}`)라, 코드 줄만 덧붙이면 영문 문구·링크가
+> 남아 지저분하고 흐름도 뒤섞인다(우리는 코드 입력 방식). `{{ .ConfirmationURL }}`은
+> 넣지 않는다. 쓰는 변수는 `{{ .Token }}` 하나면 충분. 코드 기본 만료는 1시간.
+>
+> 템플릿 HTML = 메일 본문 그 자체(Supabase가 주변 문구를 덧붙이지 않음).
+
+**"Confirm signup"** — Subject: `Geurio 가입 인증 코드`
 ```html
-<h2>Geurio 가입을 확인해 주세요</h2>
-<p>아래 6자리 인증 코드를 입력하면 가입이 완료됩니다.</p>
-<p style="font-size:22px;font-weight:700;letter-spacing:3px">{{ .Token }}</p>
-<p>본인이 요청하지 않았다면 이 메일을 무시하세요.</p>
+<div style="font-family:'Apple SD Gothic Neo','Malgun Gothic',system-ui,sans-serif;max-width:480px;margin:0 auto;padding:32px 24px;color:#33281f">
+  <h1 style="font-size:20px;font-weight:800;margin:0 0 8px">Geurio 가입을 확인해 주세요</h1>
+  <p style="font-size:14px;color:#8a7365;line-height:1.7;margin:0 0 24px">아래 6자리 인증 코드를 가입 화면에 입력하면 가입이 완료됩니다.</p>
+  <div style="font-size:32px;font-weight:800;letter-spacing:8px;color:#f0663f;text-align:center;background:#fdeee7;border-radius:12px;padding:18px 0;margin:0 0 24px">{{ .Token }}</div>
+  <p style="font-size:12.5px;color:#9c8b7e;line-height:1.7;margin:0">이 코드는 1시간 후 만료됩니다. 본인이 요청하지 않았다면 이 메일을 무시하세요.</p>
+  <hr style="border:none;border-top:1px solid #ecdfd5;margin:28px 0 16px" />
+  <p style="font-size:12px;color:#b6a596;margin:0">© Geurio (그리오)</p>
+</div>
 ```
 
-**"Reset Password"**(비밀번호 찾기 인증):
+**"Reset Password"** — Subject: `Geurio 비밀번호 재설정 코드`
 ```html
-<h2>비밀번호 재설정 코드</h2>
-<p>아래 6자리 코드를 입력하고 새 비밀번호를 설정하세요.</p>
-<p style="font-size:22px;font-weight:700;letter-spacing:3px">{{ .Token }}</p>
-<p>본인이 요청하지 않았다면 이 메일을 무시하세요.</p>
+<div style="font-family:'Apple SD Gothic Neo','Malgun Gothic',system-ui,sans-serif;max-width:480px;margin:0 auto;padding:32px 24px;color:#33281f">
+  <h1 style="font-size:20px;font-weight:800;margin:0 0 8px">비밀번호 재설정 코드</h1>
+  <p style="font-size:14px;color:#8a7365;line-height:1.7;margin:0 0 24px">아래 6자리 코드를 비밀번호 찾기 화면에 입력하고 새 비밀번호를 설정하세요.</p>
+  <div style="font-size:32px;font-weight:800;letter-spacing:8px;color:#f0663f;text-align:center;background:#fdeee7;border-radius:12px;padding:18px 0;margin:0 0 24px">{{ .Token }}</div>
+  <p style="font-size:12.5px;color:#9c8b7e;line-height:1.7;margin:0">이 코드는 1시간 후 만료됩니다. 본인이 요청하지 않았다면 비밀번호는 그대로 유지되니 안심하세요.</p>
+  <hr style="border:none;border-top:1px solid #ecdfd5;margin:28px 0 16px" />
+  <p style="font-size:12px;color:#b6a596;margin:0">© Geurio (그리오)</p>
+</div>
 ```
 
 ### ③ 앱 코드 쪽 (이미 구현됨 — 참고)
