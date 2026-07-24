@@ -1,7 +1,7 @@
 import type { ChangeEvent } from 'react';
 import type { LoginController } from './useLoginController';
 import type { LoginViewModel } from './viewModel';
-import { codeInputStyle, errorMsgStyle, fieldLabelStyle, spinnerStyle, submitButtonStyle } from './styles';
+import { codeInputStyle, errorMsgStyle, fieldLabelStyle, noticeMsgStyle, spinnerStyle, submitButtonStyle } from './styles';
 
 interface VerifyStepProps {
   controller: LoginController;
@@ -36,19 +36,23 @@ export function VerifyStep({ controller, view }: VerifyStepProps) {
         메일함에서 6자리 코드를 확인해 입력해 주세요.
       </div>
 
-      <div
-        style={{
-          fontSize: 12,
-          color: '#b6a596',
-          background: '#faf3ee',
-          border: '1px dashed #e4d2c5',
-          borderRadius: 9,
-          padding: '9px 12px',
-          marginBottom: 18,
-        }}
-      >
-        데모 코드: <b style={{ color: '#d9542f', letterSpacing: 2 }}>{state.demoCode}</b>
-      </div>
+      {/* 데모 코드 힌트는 로컬/데모 모드에서만 — 실제 Supabase 인증에선
+          `demoCode`가 비어 있어 이 박스가 노출되지 않는다(메일의 6자리 코드 사용). */}
+      {state.demoCode && (
+        <div
+          style={{
+            fontSize: 12,
+            color: '#b6a596',
+            background: '#faf3ee',
+            border: '1px dashed #e4d2c5',
+            borderRadius: 9,
+            padding: '9px 12px',
+            marginBottom: 18,
+          }}
+        >
+          데모 코드: <b style={{ color: '#d9542f', letterSpacing: 2 }}>{state.demoCode}</b>
+        </div>
+      )}
 
       <div style={fieldLabelStyle}>인증 코드</div>
       <input
@@ -62,6 +66,7 @@ export function VerifyStep({ controller, view }: VerifyStepProps) {
         style={codeInputStyle(8)}
       />
 
+      {state.notice && <div style={noticeMsgStyle}>{state.notice}</div>}
       {state.error && <div style={errorMsgStyle}>{state.error}</div>}
 
       <button type="button" className="btn" onClick={controller.verifyCode} style={submitButtonStyle(state.busy)}>

@@ -50,6 +50,13 @@ export interface AuthProvider {
   getSession(): Promise<AuthSession | null>;
   signInWithPassword(email: string, password: string): Promise<AuthResult>;
   signUp(email: string, password: string): Promise<AuthResult>;
+  /**
+   * Re-send the signup confirmation email (OTP) for an account that was created
+   * but not yet verified — backs the verify step's "다시 보내기" link. Supabase:
+   * `auth.resend({ type: 'signup' })`. Local/demo: no-op `{}` (the controller
+   * regenerates its client-side demo code instead of hitting a server).
+   */
+  resendSignup(email: string): Promise<{ error?: string }>;
   signInWithOAuth(provider: 'google'): Promise<{ error?: string }>;
   /**
    * Sign in with an OAuth ID token obtained CLIENT-SIDE (Google Identity
