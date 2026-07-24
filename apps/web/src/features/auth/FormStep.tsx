@@ -1,6 +1,5 @@
 import type { ChangeEvent } from 'react';
 import { GoogleIcon } from './GoogleIcon';
-import { GoogleSignInButton } from './GoogleSignInButton';
 import type { LoginController } from './useLoginController';
 import type { LoginViewModel } from './viewModel';
 import {
@@ -23,40 +22,36 @@ export function FormStep({ controller, view }: FormStepProps) {
 
   return (
     <div>
-      {/* GIS-rendered official button in Supabase mode (keeps the OAuth
-          exchange on our origin → no supabase.co on the consent screen); the
-          original redirect-flow button stays as the loading/blocked/demo
-          fallback. */}
-      <GoogleSignInButton
-        onCredential={controller.googleTokenLogin}
-        fallback={
-          <button
-            type="button"
-            className="btn"
-            onClick={controller.googleLogin}
-            style={{
-              width: '100%',
-              height: 50,
-              border: '1px solid #ecdfd5',
-              borderRadius: 12,
-              background: '#fff',
-              fontFamily: 'inherit',
-              fontSize: 14.5,
-              fontWeight: 600,
-              cursor: 'pointer',
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              gap: 10,
-              color: '#33281f',
-              transition: 'filter .12s, transform .06s',
-            }}
-          >
-            <GoogleIcon />
-            Google 계정으로 계속하기
-          </button>
-        }
-      />
+      {/* 일반 커스텀 Google 버튼(리다이렉트 방식). GIS 공식 버튼은 세션이 있으면
+          계정명을 개인화("OO으로 계속")하고 로딩 시 깜빡여서, 사용자 선택에 따라
+          고정 문구 버튼으로 둔다. 브랜드 인증 완료로 동의화면은 'Geurio'로 표시된다.
+          (GIS 인프라 GoogleSignInButton/googleIdentity/googleTokenLogin는 되돌리기
+          쉽도록 그대로 남겨둠.) */}
+      <button
+        type="button"
+        className="btn"
+        onClick={controller.googleLogin}
+        style={{
+          width: '100%',
+          height: 50,
+          border: '1px solid #ecdfd5',
+          borderRadius: 12,
+          background: '#fff',
+          fontFamily: 'inherit',
+          fontSize: 14.5,
+          fontWeight: 600,
+          cursor: 'pointer',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          gap: 10,
+          color: '#33281f',
+          transition: 'filter .12s, transform .06s',
+        }}
+      >
+        <GoogleIcon />
+        Google 계정으로 로그인
+      </button>
 
       <div style={{ display: 'flex', alignItems: 'center', gap: 12, margin: '22px 0' }}>
         <div style={{ flex: 1, height: 1, background: '#ecdfd5' }} />

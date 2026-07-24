@@ -354,6 +354,16 @@ describe('Login', () => {
     expect(resetSpy).toHaveBeenCalledWith('reset@example.com');
   });
 
+  it('shows a plain "Google 계정으로 로그인" button (no GIS personalization) on both login and signup', async () => {
+    const user = userEvent.setup();
+    renderLogin();
+    // login mode
+    expect(screen.getByRole('button', { name: /Google 계정으로 로그인/ })).toBeTruthy();
+    // signup mode too
+    await user.click(screen.getByText('가입하기'));
+    expect(screen.getByRole('button', { name: /Google 계정으로 로그인/ })).toBeTruthy();
+  });
+
   it('links the legal docs from the form footer, opening in a new tab', () => {
     renderLogin();
     const privacy = screen.getByRole('link', { name: '개인정보처리방침' });
