@@ -24,6 +24,11 @@
     <!-- M6: Pretendard is now self-hosted (see src/index.css's @font-face) so it's
          precached by the service worker and works offline / behind a CDN block —
          no external stylesheet link here anymore. -->
+    <!-- 폰트를 최우선으로 미리 받아 첫 페인트 시 시스템폰트→Pretendard 교체로
+         텍스트 정렬이 틀어졌다 돌아오는 깜빡임(레이아웃 시프트)을 없앤다.
+         (@font-face는 optional이라, 이 프리로드로 제때 도착하면 처음부터 Pretendard.)
+         폰트는 CORS(anonymous)로 받으므로 same-origin이라도 crossorigin 필수. -->
+    <link rel="preload" href="/fonts/pretendard/PretendardVariable.woff2" as="font" type="font/woff2" crossorigin />
     <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
     <link rel="icon" type="image/png" sizes="32x32" href="/favicon-32x32.png" />
     <link rel="icon" type="image/png" sizes="16x16" href="/favicon-16x16.png" />
