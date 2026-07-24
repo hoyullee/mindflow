@@ -270,7 +270,9 @@ export function Landing() {
         {/* use cases */}
         <section style={{ padding: '46px 0' }}>
           <SectionHead eyebrow="이럴 때 좋아요" title="생각을 정리해야 하는 모든 순간에" desc="떠오르는 아이디어부터 복잡한 계획까지, 그리오 하나로 펼치고 이어보세요." />
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(230px, 1fr))', gap: 14 }}>
+          {/* 사용 사례 6종 — 데스크톱 3열(3+3), 태블릿 2열, 모바일 1열.
+              컨테이너 최대 992px라 minmax(280px) auto-fit이면 최대 3열로 고정된다. */}
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: 14 }}>
             {USE_CASES.map((u) => (
               <div key={u.title} style={{ background: '#fff', border: `1px solid ${CARD_BORDER}`, borderRadius: 14, padding: 18, display: 'flex', gap: 13, alignItems: 'flex-start' }}>
                 <span aria-hidden="true" style={iconBadge(36)}>
