@@ -1,6 +1,6 @@
 import type { ChangeEvent } from 'react';
 import type { LoginController } from './useLoginController';
-import { codeInputStyle, errorMsgStyle, fieldLabelStyle, submitButtonStyle, textInputStyle } from './styles';
+import { codeInputStyle, errorMsgStyle, fieldLabelStyle, noticeMsgStyle, spinnerStyle, submitButtonStyle, textInputStyle } from './styles';
 
 interface ForgotVerifyStepProps {
   controller: LoginController;
@@ -30,19 +30,24 @@ export function ForgotVerifyStep({ controller }: ForgotVerifyStepProps) {
       <div style={{ fontSize: 13.5, color: '#33281f', lineHeight: 1.65, marginBottom: 6 }}>
         <b style={{ fontWeight: 700 }}>{state.email}</b> 로 재설정 코드를 보냈어요.
       </div>
-      <div
-        style={{
-          fontSize: 12,
-          color: '#b6a596',
-          background: '#faf3ee',
-          border: '1px dashed #e4d2c5',
-          borderRadius: 9,
-          padding: '9px 12px',
-          margin: '14px 0 18px',
-        }}
-      >
-        데모 코드: <b style={{ color: '#d9542f', letterSpacing: 2 }}>{state.demoCode}</b>
-      </div>
+      <div style={{ fontSize: 12.5, color: '#9c8b7e', margin: '0 0 18px' }}>메일함에서 6자리 코드를 확인해 입력해 주세요.</div>
+      {/* 데모 코드 힌트는 로컬/데모 모드에서만 — 실제 Supabase 복구에선 비어 있어
+          이 박스가 노출되지 않는다(메일의 6자리 코드를 입력). */}
+      {state.demoCode && (
+        <div
+          style={{
+            fontSize: 12,
+            color: '#b6a596',
+            background: '#faf3ee',
+            border: '1px dashed #e4d2c5',
+            borderRadius: 9,
+            padding: '9px 12px',
+            margin: '0 0 18px',
+          }}
+        >
+          데모 코드: <b style={{ color: '#d9542f', letterSpacing: 2 }}>{state.demoCode}</b>
+        </div>
+      )}
       <div style={fieldLabelStyle}>인증 코드</div>
       <input
         className="lg-input"
@@ -72,8 +77,10 @@ export function ForgotVerifyStep({ controller }: ForgotVerifyStepProps) {
         placeholder="새 비밀번호 재입력"
         style={textInputStyle(8)}
       />
+      {state.notice && <div style={noticeMsgStyle}>{state.notice}</div>}
       {state.error && <div style={errorMsgStyle}>{state.error}</div>}
       <button type="button" className="btn" onClick={controller.resetPw} style={submitButtonStyle(state.busy)}>
+        <span style={spinnerStyle(state.busy)} />
         <span>비밀번호 재설정</span>
       </button>
       <div

@@ -153,14 +153,15 @@ export function useLoginController() {
   };
 
   const resendCode = () => {
-    // Signup verify is the real Supabase path — actually re-send the OTP email
-    // so "다시 보내기" isn't a dead button. Recovery (forgotVerify) stays a
-    // client-side simulation (see `resetPw`), so there — and in local/demo mode —
-    // we just regenerate the on-screen demo code, as before.
-    if (mode === 'supabase' && state.step === 'verify') {
+    // Both verify steps re-send for real in Supabase mode so "다시 보내기" isn't a
+    // dead button: signup → `auth.resend({type:'signup'})`, recovery →
+    // `sendPasswordReset` (re-issues the reset OTP). Local/demo mode has no server,
+    // so it just regenerates the on-screen demo code, as before.
+    if (mode === 'supabase' && (state.step === 'verify' || state.step === 'forgotVerify')) {
       if (state.busy) return;
       patch({ busy: true, error: '', notice: '' });
-      void auth.resendSignup(state.email).then((res) => {
+      const send = state.step === 'forgotVerify' ? auth.sendPasswordReset(state.email) : auth.resendSignup(state.email);
+      void send.then((res) => {
         patch({ busy: false, code: '', error: res.error || '', notice: res.error ? '' : '인증 코드를 다시 보냈어요. 메일함을 확인해 주세요.' });
       });
       return;
@@ -177,27 +178,20 @@ export function useLoginController() {
     }
     if (mode === 'supabase') {
       // Fire the real reset email in the background; the step transition below
-      // still shows the same demo-code UI regardless of the network result so
-      // this never blocks the flow (matches the rest of this file's non-fatal
-      // storage/timer try/catch conventions).
+      // still advances regardless of the network result so this never blocks the
+      // flow (matches the rest of this file's non-fatal try/catch conventions).
       void auth.sendPasswordReset(state.email);
     }
-    patch({ step: 'forgotVerify', demoCode: genCode(), code: '', newPw: '', newPw2: '', error: '' });
+    // demoCode only for local/demo (the on-screen hint the sim compares against).
+    // In Supabase mode it stays '' so ForgotVerifyStep hides the demo box and the
+    // user enters the 6-digit code from the real email instead.
+    patch({ step: 'forgotVerify', demoCode: mode === 'supabase' ? '' : genCode(), code: '', newPw: '', newPw2: '', error: '', notice: '' });
   };
 
-  /** Password reset stays a client-side simulation even in Supabase mode: a
-   * real recovery flow needs the OTP `verifyOtp('recovery')` call to first
-   * establish a recovery session before `auth.updatePassword` is callable,
-   * which in turn needs the token Supabase actually emailed (not the demo
-   * code generated here) — out of scope for this env-gated port (no live
-   * Supabase project to verify the real flow against; see `docs/backend.md`). */
   const resetPw = () => {
+    if (state.busy) return;
     if (state.code.length !== 6) {
       patch({ error: '6자리 인증 코드를 입력해 주세요.' });
-      return;
-    }
-    if (state.code !== state.demoCode) {
-      patch({ error: '인증 코드가 일치하지 않습니다.' });
       return;
     }
     if ((state.newPw || '').length < 4) {
@@ -206,6 +200,32 @@ export function useLoginController() {
     }
     if (state.newPw !== state.newPw2) {
       patch({ error: '비밀번호가 일치하지 않습니다.' });
+      return;
+    }
+    if (mode === 'supabase') {
+      // Real recovery: the emailed 6-digit token establishes a recovery session
+      // (`verifyOtp('recovery')`), which is what makes `updatePassword` callable.
+      // On success the user is already signed in via that session, so land them
+      // straight in the app (no second login) — mirrors a normal sign-in.
+      patch({ busy: true, error: '', notice: '' });
+      void auth.verifyOtp(state.email, state.code, 'recovery').then((res) => {
+        if (res.error || !res.session) {
+          patch({ busy: false, error: res.error || '인증 코드가 올바르지 않거나 만료되었어요. 다시 시도해 주세요.' });
+          return;
+        }
+        void auth.updatePassword(state.newPw).then((up) => {
+          if (up.error) {
+            patch({ busy: false, error: up.error });
+            return;
+          }
+          finishWithLoader(false);
+        });
+      });
+      return;
+    }
+    // local/demo simulation: compare against the on-screen demo code.
+    if (state.code !== state.demoCode) {
+      patch({ error: '인증 코드가 일치하지 않습니다.' });
       return;
     }
     patch({
