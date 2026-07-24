@@ -83,9 +83,14 @@ export function VerifyStep({ controller, view }: VerifyStepProps) {
         </span>
         <span>
           코드가 안 왔나요?{' '}
-          <span className="link-tab" onClick={controller.resendCode} style={{ color: '#f0663f', fontWeight: 700 }}>
-            다시 보내기
-          </span>
+          {state.cooldown > 0 ? (
+            // 재전송 쿨다운 카운트다운 — 남은 시간을 항상 노출하고 재전송은 잠금.
+            <span style={{ color: '#b6a596', fontWeight: 600 }}>{state.cooldown}초 후 다시 보내기</span>
+          ) : (
+            <span className="link-tab" onClick={controller.resendCode} style={{ color: '#f0663f', fontWeight: 700 }}>
+              다시 보내기
+            </span>
+          )}
         </span>
       </div>
     </div>

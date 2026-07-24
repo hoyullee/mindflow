@@ -19,6 +19,15 @@ function genCode(): string {
 // 로컬/데모 모드는 genCode()가 6자리를 만들고 정확히 대조한다.
 const OTP_MIN = 6;
 const OTP_MAX = 10;
+// 인증 코드 재전송 쿨다운(초). Supabase 기본 이메일 OTP 레이트리밋이 ~60초라
+// 그에 맞춘다 — 이보다 빨리 재전송하면 어차피 서버가 거부한다.
+const RESEND_COOLDOWN = 60;
+
+/** Supabase 레이트리밋 메시지("...after N seconds")에서 남은 초를 뽑는다. */
+function parseRetrySeconds(msg: string | undefined | null): number | null {
+  const m = (msg || '').match(/after (\d+)\s*seconds?/i);
+  return m && m[1] ? parseInt(m[1], 10) : null;
+}
 
 /**
  * Supabase Auth의 영문 에러 메시지를 사용자용 한글로 매핑한다. Supabase는 항상
@@ -108,6 +117,18 @@ export function useLoginController() {
     };
   }, []);
 
+  // 재전송 쿨다운 카운트다운: cooldown>0인 동안 1초마다 1씩 줄인다. 의존성을
+  // "cooldown>0" 불리언으로 둬서 매초 재구독 없이 인터벌 하나만 유지하고,
+  // 0에 닿으면 정리(불리언이 false로 바뀌며 cleanup).
+  const counting = state.cooldown > 0;
+  useEffect(() => {
+    if (!counting) return;
+    const id = setInterval(() => {
+      setState((prev) => (prev.cooldown > 0 ? { ...prev, cooldown: prev.cooldown - 1 } : prev));
+    }, 1000);
+    return () => clearInterval(id);
+  }, [counting]);
+
   const patch = (partial: Partial<LoginState>) => {
     setState((prev) => ({ ...prev, ...partial }));
   };
@@ -147,7 +168,7 @@ export function useLoginController() {
         return;
       }
       if (mode === 'local') {
-        patch({ step: 'verify', error: '', code: '', demoCode: genCode() });
+        patch({ step: 'verify', error: '', code: '', demoCode: genCode(), cooldown: RESEND_COOLDOWN });
         return;
       }
       // Supabase: create the account for real. Default project config
@@ -161,7 +182,7 @@ export function useLoginController() {
           return;
         }
         if (res.needsVerification) {
-          patch({ busy: false, step: 'verify', error: '', code: '', demoCode: '' });
+          patch({ busy: false, step: 'verify', error: '', code: '', demoCode: '', cooldown: RESEND_COOLDOWN });
           return;
         }
         finishWithLoader(true);
@@ -207,20 +228,25 @@ export function useLoginController() {
   };
 
   const resendCode = () => {
+    if (state.busy || state.cooldown > 0) return; // 쿨다운 중엔 잠금(버튼도 비활성)
     // Both verify steps re-send for real in Supabase mode so "다시 보내기" isn't a
     // dead button: signup → `auth.resend({type:'signup'})`, recovery →
     // `sendPasswordReset` (re-issues the reset OTP). Local/demo mode has no server,
     // so it just regenerates the on-screen demo code, as before.
     if (mode === 'supabase' && (state.step === 'verify' || state.step === 'forgotVerify')) {
-      if (state.busy) return;
       patch({ busy: true, error: '', notice: '' });
       const send = state.step === 'forgotVerify' ? auth.sendPasswordReset(state.email) : auth.resendSignup(state.email);
       void send.then((res) => {
-        patch({ busy: false, code: '', error: res.error ? localizeAuthError(res.error) : '', notice: res.error ? '' : '인증 코드를 다시 보냈어요. 메일함을 확인해 주세요.' });
+        if (res.error) {
+          // 레이트리밋이면 서버가 알려준 남은 초로 카운트다운을 맞춘다.
+          patch({ busy: false, code: '', error: localizeAuthError(res.error), cooldown: parseRetrySeconds(res.error) ?? RESEND_COOLDOWN });
+          return;
+        }
+        patch({ busy: false, code: '', error: '', notice: '인증 코드를 다시 보냈어요. 메일함을 확인해 주세요.', cooldown: RESEND_COOLDOWN });
       });
       return;
     }
-    patch({ demoCode: genCode(), code: '', error: '', notice: '' });
+    patch({ demoCode: genCode(), code: '', error: '', notice: '', cooldown: RESEND_COOLDOWN });
   };
   const backToForm = () => patch({ step: 'form', error: '', code: '', busy: false });
   const startForgot = () => patch({ step: 'forgot', error: '', code: '', notice: '', busy: false });
@@ -233,7 +259,7 @@ export function useLoginController() {
     }
     if (mode === 'local') {
       // No server — jump to the sim step with an on-screen demo code.
-      patch({ step: 'forgotVerify', demoCode: genCode(), code: '', newPw: '', newPw2: '', error: '', notice: '' });
+      patch({ step: 'forgotVerify', demoCode: genCode(), code: '', newPw: '', newPw2: '', error: '', notice: '', cooldown: RESEND_COOLDOWN });
       return;
     }
     // Supabase: actually send the reset email and ONLY advance on success. On a
@@ -242,11 +268,12 @@ export function useLoginController() {
     patch({ busy: true, error: '', notice: '' });
     void auth.sendPasswordReset(state.email).then((res) => {
       if (res.error) {
-        patch({ busy: false, error: localizeAuthError(res.error) });
+        patch({ busy: false, error: localizeAuthError(res.error), cooldown: parseRetrySeconds(res.error) ?? state.cooldown });
         return;
       }
       // demoCode '' so ForgotVerifyStep hides the demo box (real email has the code).
-      patch({ busy: false, step: 'forgotVerify', demoCode: '', code: '', newPw: '', newPw2: '', error: '', notice: '이메일로 인증 코드를 보냈어요. 메일함을 확인해 주세요.' });
+      // Start the resend countdown so the code step opens with the timer running.
+      patch({ busy: false, step: 'forgotVerify', demoCode: '', code: '', newPw: '', newPw2: '', error: '', notice: '이메일로 인증 코드를 보냈어요. 메일함을 확인해 주세요.', cooldown: RESEND_COOLDOWN });
     });
   };
 

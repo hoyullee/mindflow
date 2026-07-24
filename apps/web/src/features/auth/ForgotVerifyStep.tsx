@@ -100,9 +100,13 @@ export function ForgotVerifyStep({ controller }: ForgotVerifyStepProps) {
         </span>
         <span>
           코드가 안 왔나요?{' '}
-          <span className="link-tab" onClick={controller.resendCode} style={{ color: '#f0663f', fontWeight: 700 }}>
-            다시 보내기
-          </span>
+          {state.cooldown > 0 ? (
+            <span style={{ color: '#b6a596', fontWeight: 600 }}>{state.cooldown}초 후 다시 보내기</span>
+          ) : (
+            <span className="link-tab" onClick={controller.resendCode} style={{ color: '#f0663f', fontWeight: 700 }}>
+              다시 보내기
+            </span>
+          )}
         </span>
       </div>
     </div>

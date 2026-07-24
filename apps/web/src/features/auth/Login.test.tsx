@@ -113,18 +113,10 @@ describe('Login', () => {
     expect(screen.getByPlaceholderText('인증 코드 입력')).toBeTruthy();
   });
 
-  it('supabase mode: the verify step hides the demo code and "다시 보내기" actually re-sends the OTP email', async () => {
+  it('supabase mode: the verify step hides the demo code and opens with the resend countdown locked', async () => {
     const user = userEvent.setup();
     const auth = new VerifyAuth();
-    const resendSpy = vi.spyOn(auth, 'resendSignup');
-    const backend: Backend = { auth, docStore: stubDocStore, spaceStore: new LocalSpaceStore(), mode: 'supabase' };
-    render(
-      <MemoryRouter>
-        <BackendProvider backend={backend}>
-          <Login />
-        </BackendProvider>
-      </MemoryRouter>,
-    );
+    renderSupa(auth);
 
     await user.click(screen.getByText('가입하기'));
     await user.type(screen.getByPlaceholderText('you@example.com'), 'real@example.com');
@@ -132,14 +124,47 @@ describe('Login', () => {
     await user.type(screen.getByPlaceholderText('비밀번호 재입력'), 'password123');
     await user.click(screen.getByRole('button', { name: '가입하기' }));
 
-    // reached the verify step, but with NO demo-code hint (real email has the 6-digit code)
+    // reached the verify step, but with NO demo-code hint (real email has the code)
     expect(await screen.findByPlaceholderText('인증 코드 입력')).toBeTruthy();
     expect(screen.queryByText(/데모 코드:/)).toBeNull();
+    // the resend countdown is showing and "다시 보내기" is locked (not yet a link)
+    expect(screen.getByText(/초 후 다시 보내기/)).toBeTruthy();
+    expect(screen.queryByText('다시 보내기')).toBeNull();
+  });
 
-    // "다시 보내기" hits the real resend API (with the signup email) and confirms with a notice
-    await user.click(screen.getByText('다시 보내기'));
-    await waitFor(() => expect(resendSpy).toHaveBeenCalledWith('real@example.com'));
-    expect(screen.getByText(/다시 보냈어요/)).toBeTruthy();
+  it('shows a live resend countdown that re-enables 다시 보내기, then re-sends (rate limit → localized)', async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    try {
+      const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime });
+      const auth = new VerifyAuth();
+      const resendSpy = vi.spyOn(auth, 'resendSignup').mockResolvedValue({ error: 'For security purposes, you can only request this after 21 seconds.' });
+      renderSupa(auth);
+
+      await user.click(screen.getByText('가입하기'));
+      await user.type(screen.getByPlaceholderText('you@example.com'), 'cd@example.com');
+      await user.type(screen.getByPlaceholderText('비밀번호 입력'), 'password123');
+      await user.type(screen.getByPlaceholderText('비밀번호 재입력'), 'password123');
+      await user.click(screen.getByRole('button', { name: '가입하기' }));
+
+      // countdown visible + resend locked
+      expect(await screen.findByText(/초 후 다시 보내기/)).toBeTruthy();
+      expect(screen.queryByText('다시 보내기')).toBeNull();
+
+      // let the 60s cooldown elapse → "다시 보내기" becomes an active link
+      await act(async () => {
+        vi.advanceTimersByTime(60_000);
+      });
+      await waitFor(() => expect(screen.getByText('다시 보내기')).toBeTruthy());
+
+      // clicking re-sends for real; a rate-limit reply is localized + syncs the countdown to 21s
+      await user.click(screen.getByText('다시 보내기'));
+      await waitFor(() => expect(resendSpy).toHaveBeenCalledWith('cd@example.com'));
+      await waitFor(() => expect(screen.getByText(/약 21초 후에 다시 시도해 주세요/)).toBeTruthy());
+      expect(screen.getByText(/21초 후 다시 보내기/)).toBeTruthy();
+      expect(screen.queryByText(/For security purposes/)).toBeNull();
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it('supabase mode: accepts an 8-digit OTP (input not capped at 6) and verifies with the full code', async () => {
@@ -262,24 +287,6 @@ describe('Login', () => {
 
     await waitFor(() => expect(screen.getByText(/비밀번호는 8자 이상.*소문자·대문자·숫자·특수문자/)).toBeTruthy());
     expect(screen.queryByText(/Password should/)).toBeNull();
-  });
-
-  it('localizes the resend rate-limit message to Korean with the seconds', async () => {
-    const user = userEvent.setup();
-    const auth = new VerifyAuth();
-    vi.spyOn(auth, 'resendSignup').mockResolvedValue({ error: 'For security purposes, you can only request this after 21 seconds.' });
-    renderSupa(auth);
-
-    await user.click(screen.getByText('가입하기'));
-    await user.type(screen.getByPlaceholderText('you@example.com'), 'rl@example.com');
-    await user.type(screen.getByPlaceholderText('비밀번호 입력'), 'password123');
-    await user.type(screen.getByPlaceholderText('비밀번호 재입력'), 'password123');
-    await user.click(screen.getByRole('button', { name: '가입하기' }));
-    await screen.findByPlaceholderText('인증 코드 입력');
-
-    await user.click(screen.getByText('다시 보내기'));
-    await waitFor(() => expect(screen.getByText(/약 21초 후에 다시 시도해 주세요/)).toBeTruthy());
-    expect(screen.queryByText(/For security purposes/)).toBeNull();
   });
 
   it('signup shows NO full-screen loader (no 로그인하고 있어요) while creating the account — just advances to verify', async () => {
