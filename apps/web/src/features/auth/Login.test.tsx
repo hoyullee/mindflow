@@ -256,6 +256,55 @@ describe('Login', () => {
     expect(updateSpy).not.toHaveBeenCalled(); // password never changed on a bad code
   });
 
+  it('reset flow: 뒤로 → 재설정 코드 보내기 재실행 시 재전송 카운트다운이 60으로 초기화되지 않고 이어진다(재전송 없음)', async () => {
+    // 제보 재현: 비밀번호 찾기에서 코드 전송(쿨다운 시작) → "← 뒤로" → 다시
+    // "재설정 코드 보내기"를 누르면 남은 시간이 60초로 리셋되던 버그.
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    try {
+      const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime });
+      const { auth, resetSpy } = makeRecoveryAuth();
+      const backend: Backend = { auth, docStore: stubDocStore, spaceStore: new LocalSpaceStore(), mode: 'supabase' };
+      render(
+        <MemoryRouter>
+          <BackendProvider backend={backend}>
+            <Login />
+          </BackendProvider>
+        </MemoryRouter>,
+      );
+
+      const readCountdown = () => {
+        const m = screen.getByText(/초 후 다시 보내기/).textContent?.match(/(\d+)초/);
+        return m && m[1] ? parseInt(m[1], 10) : NaN;
+      };
+
+      // 1) 코드 전송 → 쿨다운(60) 시작, forgotVerify 진입
+      await user.click(screen.getByText('비밀번호 찾기'));
+      await user.type(screen.getByPlaceholderText('you@example.com'), 'reset@example.com');
+      await user.click(screen.getByRole('button', { name: '재설정 코드 보내기' }));
+      await waitFor(() => expect(resetSpy).toHaveBeenCalledTimes(1));
+      expect(await screen.findByText(/초 후 다시 보내기/)).toBeTruthy();
+
+      // 2) ~10초 경과 → 60 미만으로 내려감
+      await act(async () => {
+        vi.advanceTimersByTime(10_000);
+      });
+      await waitFor(() => expect(readCountdown()).toBeLessThan(60));
+
+      // 3) "← 뒤로"로 이메일 단계 복귀
+      await user.click(screen.getByText('← 뒤로'));
+      expect(await screen.findByRole('button', { name: '재설정 코드 보내기' })).toBeTruthy();
+
+      // 4) 재실행 — 서버 재전송 없이 남은 카운트다운 유지(60으로 초기화 X)
+      await user.click(screen.getByRole('button', { name: '재설정 코드 보내기' }));
+      expect(await screen.findByPlaceholderText('인증 코드 입력')).toBeTruthy();
+      expect(resetSpy).toHaveBeenCalledTimes(1); // 두 번째 전송 없음
+      expect(screen.queryByText(/60초 후 다시 보내기/)).toBeNull(); // 초기화되지 않음
+      expect(readCountdown()).toBeLessThan(60); // 계속 진행 중
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   it('localizes a wrong-password login error to Korean (no English leak)', async () => {
     const user = userEvent.setup();
     const auth = new LocalAuth();

@@ -257,6 +257,14 @@ export function useLoginController() {
       patch({ error: '올바른 이메일 주소를 입력해 주세요.' });
       return;
     }
+    // 재전송 쿨다운이 이미 진행 중이면(직전에 코드를 보낸 뒤 "← 뒤로"로 돌아와
+    // 다시 "재설정 코드 보내기"를 누른 경우) 서버에 재요청하지 않고 남은 시간을
+    // 그대로 유지한 채 코드 입력 단계로 되돌아간다. 재요청은 어차피 레이트리밋에
+    // 걸리고, 무엇보다 타이머가 60초로 초기화되던 문제(제보)를 막는다.
+    if (state.cooldown > 0) {
+      patch({ step: 'forgotVerify', error: '', notice: '' });
+      return;
+    }
     if (mode === 'local') {
       // No server — jump to the sim step with an on-screen demo code.
       patch({ step: 'forgotVerify', demoCode: genCode(), code: '', newPw: '', newPw2: '', error: '', notice: '', cooldown: RESEND_COOLDOWN });
@@ -364,6 +372,10 @@ export function useLoginController() {
       password2: '',
       code: '',
       busy: false,
+      // 로그인↔가입 전환은 깨끗한 문맥 전환 — 진행 중이던 인증 재전송 카운트다운은
+      // 초기화해, 이후 다른 흐름(예: 비밀번호 찾기)의 첫 전송에 잔여 쿨다운이
+      // 새어들어가지 않게 한다.
+      cooldown: 0,
     });
   };
 
