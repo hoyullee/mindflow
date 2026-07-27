@@ -189,7 +189,14 @@ export function MobileSelectBar({ controller, theme: th }: MobileSelectBarProps)
         style={btn}
         aria-label="객체 메뉴"
         aria-haspopup="menu"
-        onClick={() => controller.openCtxMenuForSelection(left, top + size.h + 6)}
+        onClick={(e) => {
+          // ⋯ 버튼의 중심 x(바 기준 좌표계로 환산)와 바의 위/아래 변을 넘긴다 —
+          // 메뉴가 바에 붙고 이 버튼을 가리키는 꼬리를 그릴 수 있도록.
+          const bar = ref.current;
+          const btnEl = e.currentTarget;
+          const bx = bar ? btnEl.getBoundingClientRect().left - bar.getBoundingClientRect().left : 0;
+          controller.openCtxMenuForSelection({ x: left + bx + btnEl.offsetWidth / 2, top, bottom: top + size.h });
+        }}
       >
         <svg width={18} height={18} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2.4} strokeLinecap="round">
           <circle cx="5" cy="12" r="1" />

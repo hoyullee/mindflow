@@ -196,7 +196,7 @@ describe('Editor (mobile, M6)', () => {
     }
   });
 
-  it('선택 바의 "메뉴"가 우클릭 메뉴 전체를 열고, 열려 있는 동안 바는 숨는다', () => {
+  it('선택 바의 "메뉴"는 바에 붙은 팝오버로 열린다(바 유지 + 꼬리) — 바와 겹치는 항목은 뺀다', () => {
     // 모바일엔 우클릭이 없고, 이미 선택된 객체를 길게 누르면 이동 드래그로
     // 가로채인다 → 이 버튼이 전체 메뉴로 가는 확실한 경로다.
     const restore = mockMatchMedia(true);
@@ -210,15 +210,41 @@ describe('Editor (mobile, M6)', () => {
       const bar = screen.getByRole('toolbar', { name: '선택 동작' });
       fireEvent.click(within(bar).getByRole('button', { name: '객체 메뉴' }));
 
-      // 바는 사라지고 컨텍스트 메뉴가 그 자리를 대신한다(두 겹 방지)
-      expect(screen.queryByRole('toolbar', { name: '선택 동작' })).toBeNull();
+      // 바에서 파생된 것으로 보이도록 바는 그대로 남는다
+      expect(screen.getByRole('toolbar', { name: '선택 동작' })).toBeTruthy();
       const menu = container.querySelector('.mf-ctx') as HTMLElement;
       expect(menu).toBeTruthy();
-      // 우클릭 메뉴의 노드 항목이 그대로 — 복사/잘라내기 포함
-      expect(within(menu).getByText('자식 주제')).toBeTruthy();
+      // 바에 이미 있는 하위/형제/삭제는 메뉴에서 빠진다(중복 제거)
+      expect(within(menu).queryByText('자식 주제')).toBeNull();
+      expect(within(menu).queryByText('형제 주제')).toBeNull();
+      expect(within(menu).queryByText('삭제')).toBeNull();
+      // 바에 없는 것들은 그대로 — 복사/잘라내기/이미지/정렬
       expect(within(menu).getByText('복사')).toBeTruthy();
       expect(within(menu).getByText('잘라내기')).toBeTruthy();
       expect(within(menu).getByText('텍스트 정렬')).toBeTruthy();
+    } finally {
+      restore();
+    }
+  });
+
+  // 데스크톱 우클릭 메뉴가 자식/형제/삭제를 그대로 유지하는지는
+  // ContextMenu.interactions.test.tsx가 이미 덮는다(그 테스트들이 계속 통과하는
+  // 것 자체가 데스크톱 무회귀의 증거라, 여기서 중복 검증하지 않는다).
+
+  it('모바일 메뉴는 삭제 제거 후에도 선행 구분선으로 시작하지 않는다(빈 그룹 방지)', () => {
+    const restore = mockMatchMedia(true);
+    try {
+      localStorage.setItem('mindflow_doc_mab6', JSON.stringify(DOC));
+      const { container } = renderEditor('/editor?map=mab6&title=x');
+      const vp = getViewport(container);
+      selectNodeBox(within(vp).getByText('리서치').closest('[data-node-id]') as HTMLElement);
+      fireEvent.click(within(screen.getByRole('toolbar', { name: '선택 동작' })).getByRole('button', { name: '객체 메뉴' }));
+
+      const menu = container.querySelector('.mf-ctx') as HTMLElement;
+      // 첫 자식은 꼬리(span), 그다음은 반드시 버튼이어야 한다(구분선이 아니라)
+      const kids = Array.from(menu.children);
+      const firstRow = kids.find((el) => el.tagName === 'BUTTON' || (el.tagName === 'DIV' && !el.getAttribute('aria-hidden')));
+      expect(firstRow?.tagName).toBe('BUTTON');
     } finally {
       restore();
     }
