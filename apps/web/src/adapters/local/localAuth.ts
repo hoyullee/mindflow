@@ -107,6 +107,12 @@ export class LocalAuth implements AuthProvider {
     return {};
   }
 
+  // No user directory in demo mode — return `null` ("unknown") so the reset
+  // flow proceeds exactly as before (the simulated code step still opens).
+  async isEmailRegistered(): Promise<boolean | null> {
+    return null;
+  }
+
   async verifyOtp(email: string): Promise<AuthResult> {
     const session = makeSession(email);
     writeSession(session);
