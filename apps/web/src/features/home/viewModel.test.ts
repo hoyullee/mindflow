@@ -83,6 +83,55 @@ describe('deriveHomeView — recent (cross-space)', () => {
     expect(cards.find((c) => c.title === '일반맵')!.spaceName).toBe('일반 공간');
   });
 
+  it('경로 표기: 폴더에 없는 맵은 스페이스명만, 툴팁은 제목까지 포함한 전체 경로', () => {
+    const state = twoSpaceState();
+    state.recent = ['작업맵'];
+    const card = deriveHomeView(state).recentCards[0]!;
+    expect(card.pathLabel).toBe('작업');
+    expect(card.pathFull).toBe('작업 › 작업맵');
+  });
+
+  it('경로 표기: 폴더에 든 맵은 "스페이스 · 폴더", 툴팁은 "스페이스 › 폴더 › 제목"', () => {
+    const state = twoSpaceState();
+    state.recent = ['일반맵'];
+    state.spaces[0]!.folders = [{ id: 'f1', name: '기획' }];
+    state.mapFolders = { g1: 'f1' }; // docId-keyed assignment
+    const card = deriveHomeView(state).recentCards[0]!;
+    expect(card.pathLabel).toBe('일반 공간 · 기획');
+    expect(card.pathFull).toBe('일반 공간 › 기획 › 일반맵');
+  });
+
+  it('경로 표기: 폴더 id는 소유 스페이스에서만 찾는다(다른 스페이스의 동일 id에 오염 X)', () => {
+    // 폴더 id는 스페이스별 스코프 — 작업맵(w1)이 f1에 배정돼 있어도 그 이름은
+    // 작업 스페이스의 folders에서 찾아야 한다. 일반 공간에만 f1이 있으면 미해결.
+    const state = twoSpaceState();
+    state.recent = ['작업맵'];
+    state.spaces[0]!.folders = [{ id: 'f1', name: '일반쪽 폴더' }]; // 일반 공간에만 존재
+    state.mapFolders = { w1: 'f1' }; // 작업맵 배정
+    const card = deriveHomeView(state).recentCards[0]!;
+    expect(card.pathLabel).toBe('작업'); // 남의 스페이스 폴더명이 새어들지 않는다
+    expect(card.pathFull).toBe('작업 › 작업맵');
+  });
+
+  it('경로 표기: 삭제된 폴더에 배정된 맵은 스페이스명만 남는다(빈 값/undefined 누수 없음)', () => {
+    const state = twoSpaceState();
+    state.recent = ['일반맵'];
+    state.spaces[0]!.folders = []; // 폴더가 지워짐
+    state.mapFolders = { g1: 'f-gone' }; // 배정만 남은 상태
+    const card = deriveHomeView(state).recentCards[0]!;
+    expect(card.pathLabel).toBe('일반 공간');
+    expect(card.pathFull).toBe('일반 공간 › 일반맵');
+  });
+
+  it('경로 표기: 스페이스명이 비면 라벨·툴팁 모두 빈 문자열(카드는 줄 높이만 유지)', () => {
+    const state = twoSpaceState();
+    state.spaces[1]!.name = '   '; // 공백뿐인 이름
+    state.recent = ['작업맵'];
+    const card = deriveHomeView(state).recentCards[0]!;
+    expect(card.pathLabel).toBe('');
+    expect(card.pathFull).toBe(''); // 툴팁을 달지 않는다
+  });
+
   it('hides the recent strip while searching (it lives above the search results)', () => {
     const state = twoSpaceState();
     state.recent = ['작업맵'];

@@ -42,6 +42,16 @@ export interface CardViewData {
    * color-only information (invisible to screen readers, low-contrast for some
    * palette colors), so the card exposes the name as its accessible label. */
   spaceName?: string;
+  /** 최근 항목 전용 — 카드가 실제로 놓인 위치("스페이스 · 폴더", 폴더가 없으면
+   * 스페이스만). 최근 트레이는 스페이스를 가로지르는 목록이라 제목만으로는 어느
+   * 위치의 맵인지 알 수 없어서 표시한다. 카드 폭이 128px로 좁아 화면에서는
+   * 말줄임될 수 있고, 잘리지 않은 전체 경로는 `pathFull`(툴팁)이 담는다.
+   * 위치를 알 수 없으면 빈 문자열 — 카드는 줄 높이만 유지하고 아무것도 그리지
+   * 않는다(행 안에서 카드 높이가 어긋나지 않도록). */
+  pathLabel?: string;
+  /** 말줄임 없는 전체 경로("스페이스 › 폴더 › 제목") — 툴팁용. `pathLabel`이
+   * 비면 이것도 비어 툴팁을 달지 않는다. */
+  pathFull?: string;
 }
 
 export interface FolderCardViewData {
@@ -105,6 +115,20 @@ function cardSketch(title: string, hue: string, docId: string | undefined, previ
   // flicker. Once resolved with no body, fall back to the generic sketch.
   if (docId && !previewResolved[docId]) return previewSkeleton();
   return miniPreview(hue, title);
+}
+
+/**
+ * 최근 항목 카드의 위치 표기를 만든다.
+ * - `label`: 카드에 보이는 짧은 형태("스페이스 · 폴더", 폴더 없으면 스페이스만)
+ * - `full`: 툴팁용 전체 경로("스페이스 › 폴더 › 제목")
+ *
+ * 스페이스명이 비어 있는 등 위치를 구성할 수 없으면 둘 다 빈 문자열 — 호출부는
+ * 줄 높이만 유지하고 아무것도 그리지 않는다(툴팁도 달지 않는다).
+ */
+function buildCardPath(spaceName: string | undefined, folderName: string | undefined, title: string): { label: string; full: string } {
+  const parts = [spaceName, folderName].filter((p): p is string => !!p && !!p.trim()).map((p) => p.trim());
+  if (!parts.length) return { label: '', full: '' };
+  return { label: parts.join(' · '), full: [...parts, title].join(' › ') };
 }
 
 function matchesSearch(title: string, search: string): boolean {
@@ -255,9 +279,15 @@ export function deriveHomeView(state: HomeState): HomeViewModel {
   // entries) — resolve every alias of every live map, so a docId entry pins the
   // EXACT doc (same-titled maps in different spaces each keep their own entry)
   // while legacy title entries still land on their first-titled match.
-  const recentResolve = new Map<string, { title: string; when: string; hue: string; docId?: string; spaceColor: string; spaceName: string }>();
+  const recentResolve = new Map<string, { title: string; when: string; hue: string; docId?: string; spaceColor: string; spaceName: string; folderName?: string }>();
   state.spaces.forEach((s) => (Array.isArray(s.maps) ? s.maps : []).forEach((m) => {
-    const info = { ...m, spaceColor: s.color || '#f0663f', spaceName: s.name };
+    // 폴더 배정(`mapFolders`)은 카드키로 저장되고 폴더 id는 스페이스별로 스코프되므로,
+    // 이름은 반드시 이 맵을 소유한 스페이스의 `folders`에서만 찾는다(다른 스페이스에
+    // 같은 id가 있어도 오염되지 않도록). 배정이 없거나 폴더가 지워졌으면 undefined →
+    // 경로는 스페이스명만으로 구성된다.
+    const fid = state.mapFolders[cardKeyOf(m.title, m.docId)];
+    const folderName = fid ? (Array.isArray(s.folders) ? s.folders : []).find((f) => f.id === fid)?.name : undefined;
+    const info = { ...m, spaceColor: s.color || '#f0663f', spaceName: s.name, folderName };
     const aliases = m.docId ? [m.docId, m.title] : [m.title, mapId(m.title)];
     aliases.forEach((k) => {
       if (!recentResolve.has(k)) recentResolve.set(k, info);
@@ -288,6 +318,7 @@ export function deriveHomeView(state: HomeState): HomeViewModel {
     .slice(0, RECENT_RENDER_MAX)
     .map((base) => {
       const key = cardKeyOf(base.title, base.docId);
+      const path = buildCardPath(base.spaceName, base.folderName, base.title);
       return {
         key,
         title: base.title,
@@ -317,6 +348,8 @@ export function deriveHomeView(state: HomeState): HomeViewModel {
         spaceMoveTargets: [],
         spaceColor: base.spaceColor,
         spaceName: base.spaceName,
+        pathLabel: path.label,
+        pathFull: path.full,
       };
     });
 
