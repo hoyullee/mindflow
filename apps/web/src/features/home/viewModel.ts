@@ -42,10 +42,11 @@ export interface CardViewData {
    * color-only information (invisible to screen readers, low-contrast for some
    * palette colors), so the card exposes the name as its accessible label. */
   spaceName?: string;
-  /** 최근 항목 전용 — 카드가 실제로 놓인 위치("스페이스 · 폴더", 폴더가 없으면
-   * 스페이스만). 최근 트레이는 스페이스를 가로지르는 목록이라 제목만으로는 어느
-   * 위치의 맵인지 알 수 없어서 표시한다. 카드 폭이 128px로 좁아 화면에서는
-   * 말줄임될 수 있고, 잘리지 않은 전체 경로는 `pathFull`(툴팁)이 담는다.
+  /** 최근 항목 전용 — 카드에 보이는 위치 라벨. 최근 트레이는 스페이스를 가로지르는
+   * 목록이라 제목만으로는 어느 위치의 맵인지 알 수 없어서 표시한다.
+   * **가장 구체적인 한 조각만** 담는다: 폴더가 있으면 폴더명, 없으면 스페이스명
+   * (스페이스는 앞의 색 점이 나타낸다 — `buildCardPath` 참고). 생략된 스페이스명을
+   * 포함한 전체 경로는 `pathFull`에 있다.
    * 위치를 알 수 없으면 빈 문자열 — 카드는 줄 높이만 유지하고 아무것도 그리지
    * 않는다(행 안에서 카드 높이가 어긋나지 않도록). */
   pathLabel?: string;
@@ -119,8 +120,12 @@ function cardSketch(title: string, hue: string, docId: string | undefined, previ
 
 /**
  * 최근 항목 카드의 위치 표기를 만든다.
- * - `label`: 카드에 보이는 짧은 형태("스페이스 · 폴더", 폴더 없으면 스페이스만)
- * - `full`: 툴팁용 전체 경로("스페이스 › 폴더 › 제목")
+ * - `label`: 카드에 보이는 짧은 형태 — **가장 구체적인 한 조각만**. 폴더가 있으면
+ *   폴더명, 없으면 스페이스명. 스페이스는 라벨 앞의 색 점이 이미 나타내므로,
+ *   128px밖에 안 되는 카드 폭을 더 변별력 있는 폴더명에 양보한다("스페이스 · 폴더"를
+ *   그대로 쓰면 둘 다 길 때 폴더명이 먼저 잘려 나갔다).
+ * - `full`: 툴팁·스크린리더용 전체 경로("스페이스 › 폴더 › 제목") — 라벨에서 생략된
+ *   스페이스명은 여기에 항상 남는다.
  *
  * 스페이스명이 비어 있는 등 위치를 구성할 수 없으면 둘 다 빈 문자열 — 호출부는
  * 줄 높이만 유지하고 아무것도 그리지 않는다(툴팁도 달지 않는다).
@@ -128,7 +133,7 @@ function cardSketch(title: string, hue: string, docId: string | undefined, previ
 function buildCardPath(spaceName: string | undefined, folderName: string | undefined, title: string): { label: string; full: string } {
   const parts = [spaceName, folderName].filter((p): p is string => !!p && !!p.trim()).map((p) => p.trim());
   if (!parts.length) return { label: '', full: '' };
-  return { label: parts.join(' · '), full: [...parts, title].join(' › ') };
+  return { label: parts[parts.length - 1] ?? '', full: [...parts, title].join(' › ') };
 }
 
 function matchesSearch(title: string, search: string): boolean {

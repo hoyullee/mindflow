@@ -91,14 +91,26 @@ describe('deriveHomeView — recent (cross-space)', () => {
     expect(card.pathFull).toBe('작업 › 작업맵');
   });
 
-  it('경로 표기: 폴더에 든 맵은 "스페이스 · 폴더", 툴팁은 "스페이스 › 폴더 › 제목"', () => {
+  it('경로 표기: 폴더에 든 맵의 라벨은 폴더명만(스페이스는 색 점이 대신) — 툴팁엔 스페이스까지', () => {
+    // 좁은 카드 폭을 변별력 있는 폴더명에 양보한다. 라벨에서 빠진 스페이스명은
+    // pathFull(툴팁·스크린리더)에 항상 남아 정보가 사라지지 않는다.
     const state = twoSpaceState();
     state.recent = ['일반맵'];
     state.spaces[0]!.folders = [{ id: 'f1', name: '기획' }];
     state.mapFolders = { g1: 'f1' }; // docId-keyed assignment
     const card = deriveHomeView(state).recentCards[0]!;
-    expect(card.pathLabel).toBe('일반 공간 · 기획');
+    expect(card.pathLabel).toBe('기획');
     expect(card.pathFull).toBe('일반 공간 › 기획 › 일반맵');
+  });
+
+  it('경로 표기: 라벨이 폴더명이어도 스페이스 색 점은 그대로 유지된다', () => {
+    const state = twoSpaceState();
+    state.recent = ['일반맵'];
+    state.spaces[0]!.folders = [{ id: 'f1', name: '기획' }];
+    state.mapFolders = { g1: 'f1' };
+    const card = deriveHomeView(state).recentCards[0]!;
+    expect(card.spaceColor).toBe('#f0663f'); // 스페이스는 색으로 계속 구분된다
+    expect(card.spaceName).toBe('일반 공간');
   });
 
   it('경로 표기: 폴더 id는 소유 스페이스에서만 찾는다(다른 스페이스의 동일 id에 오염 X)', () => {
