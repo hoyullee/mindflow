@@ -54,6 +54,8 @@ export function useHomeController() {
   const { auth, docStore, spaceStore } = useBackend();
   const importInputRef = useRef<HTMLInputElement | null>(null);
   const loaderTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
+  // 새 맵 카드 등록을 로더 페인트 뒤로 미룰 때의 폴백 타이머(rAF 없는 환경).
+  const cardRegisterTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
   const spaceMenuAnchor = useRef<{ top: number; left: number } | null>(null);
   // docIds whose body we've already fetched (or are fetching) for card previews,
   // so the prefetch effect never re-requests the same doc.
@@ -238,6 +240,7 @@ export function useHomeController() {
       window.removeEventListener('mousedown', onDocMouseDown);
       window.removeEventListener('pageshow', onPageShow);
       clearTimeout(loaderTimer.current);
+      clearTimeout(cardRegisterTimer.current);
     };
   }, [hydrateFromBackend]);
 
@@ -845,11 +848,17 @@ export function useHomeController() {
    * SpaceStore save effect, and when the doc comes back in `docStore.list()` the
    * merge sees its id as already-placed and leaves it in this space. */
   const onNewMapClick = (href: string) => {
-    try {
-      const params = new URLSearchParams(href.split('?')[1] || '');
-      const docId = params.get('map') || '';
-      const title = params.get('title') ? decodeURIComponent(params.get('title') as string) : '새 마인드맵';
-      if (docId) {
+    // 로더를 "먼저" 띄우고(같은 프레임에 카드가 함께 들어가면 로더가 완전히
+    // 덮기 전에 새 카드가 배경에 번쩍인다 — 제보), 카드 등록은 로더가 실제로
+    // 페인트된 다음 프레임에 수행한다. 로더는 `instant`라 첫 프레임부터 불투명.
+    navigateAfterLoader(href, '새 마인드맵을 준비하고 있어요');
+
+    const registerCard = () => {
+      try {
+        const params = new URLSearchParams(href.split('?')[1] || '');
+        const docId = params.get('map') || '';
+        const title = params.get('title') ? decodeURIComponent(params.get('title') as string) : '새 마인드맵';
+        if (!docId) return;
         setState((prev) => {
           // active space if it's a real space (not the Drive view); else home.
           const targetId = prev.spaces.some((s) => s.id === prev.activeSpace) ? prev.activeSpace : (prev.spaces.find((s) => s.home)?.id ?? prev.spaces[0]?.id);
@@ -871,11 +880,21 @@ export function useHomeController() {
           }
           return { ...prev, spaces, mapFolders };
         });
+      } catch {
+        /* href parse failed — the plain navigate above still takes the user there */
       }
-    } catch {
-      /* href parse failed — fall through to a plain navigate */
+    };
+
+    // 더블 rAF: 첫 rAF는 로더가 포함된 렌더의 커밋 직후, 두 번째는 그 프레임이
+    // 화면에 그려진 뒤 실행된다 → 카드 추가는 항상 불투명한 로더 뒤에서 일어난다.
+    // 저장(spaceStore.save)은 즉시(디바운스 없음) 걸리고 이동은 900ms 뒤라
+    // 두 프레임 지연은 영속성에 영향이 없다. 테스트/비-브라우저 환경 폴백 포함.
+    clearTimeout(cardRegisterTimer.current);
+    if (typeof requestAnimationFrame === 'function') {
+      requestAnimationFrame(() => requestAnimationFrame(registerCard));
+    } else {
+      cardRegisterTimer.current = setTimeout(registerCard, 0);
     }
-    navigateAfterLoader(href, '새 마인드맵을 준비하고 있어요');
   };
 
   // ---- import / export ----

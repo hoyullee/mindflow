@@ -1,12 +1,19 @@
 interface LoadingOverlayProps {
   message: string;
+  /**
+   * Skip the 180ms fade-in and cover the screen from the very first painted
+   * frame. Use when the action ALSO mutates what's behind the overlay (Home's
+   * "새로 만들기" inserts the new card): during a fade the still-transparent
+   * overlay would let that insertion flash into view.
+   */
+  instant?: boolean;
 }
 
 /**
  * Ports the `<sc-if value="{{ loaderVisible }}">` block from Login.dc.html —
  * the mindmap "core + branches" loading animation.
  */
-export function LoadingOverlay({ message }: LoadingOverlayProps) {
+export function LoadingOverlay({ message, instant = false }: LoadingOverlayProps) {
   return (
     <div
       role="status"
@@ -21,7 +28,7 @@ export function LoadingOverlay({ message }: LoadingOverlayProps) {
         flexDirection: 'column',
         alignItems: 'center',
         justifyContent: 'center',
-        animation: 'mf-ov-in .18s ease-out',
+        ...(instant ? null : { animation: 'mf-ov-in .18s ease-out' }),
       }}
     >
       <div style={{ position: 'relative', width: 150, height: 110 }}>
