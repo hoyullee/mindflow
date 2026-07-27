@@ -416,6 +416,41 @@ describe('Home', () => {
     expect(screen.getByText('최근 항목')).toBeTruthy();
   });
 
+  it('최근 항목 카드에 위치("스페이스 · 폴더")가 보이고, 전체 경로가 툴팁으로 붙는다', async () => {
+    localStorage.setItem('mf_recent', JSON.stringify(['doc-p1']));
+    localStorage.setItem(
+      'mf_spaces',
+      JSON.stringify({
+        spaces: [{ id: 's1', name: '일반 공간', color: '#f0663f', maps: [{ title: '기획맵', when: '방금', hue: '#f0663f', docId: 'doc-p1' }], folders: [{ id: 'f1', name: '기획' }] }],
+        mapFolders: { 'doc-p1': 'f1' },
+      }),
+    );
+    const docStore: DocStore = {
+      list: async () => [{ id: 'doc-p1', title: '기획맵', version: 1, updatedAt: '2026-01-01T00:00:00.000Z', isFavorite: false, deletedAt: null }],
+      load: vi.fn(async () => null),
+      setFavorite: vi.fn(async () => undefined),
+      remove: vi.fn(async () => undefined),
+      restore: vi.fn(async () => undefined),
+      purge: vi.fn(async () => undefined),
+      rename: vi.fn(async () => undefined),
+      save: vi.fn(async (): Promise<SaveResult> => ({ ok: true, version: 1 })),
+    };
+    const backend: Backend = { auth: new LocalAuth(), docStore, spaceStore: new LocalSpaceStore(), mode: 'local' };
+    render(
+      <MemoryRouter initialEntries={['/home']}>
+        <BackendProvider backend={backend}>
+          <Routes>
+            <Route path="/home" element={<Home />} />
+          </Routes>
+        </BackendProvider>
+      </MemoryRouter>,
+    );
+
+    // 위치 줄이 카드에 실제로 그려지고(A), 잘림 대비 전체 경로가 툴팁으로 붙는다(C)
+    const path = await screen.findByText('일반 공간 · 기획');
+    expect(path.parentElement?.getAttribute('title')).toBe('일반 공간 › 기획 › 기획맵');
+  });
+
   it('hides the "아직 만든 맵이 없어요" prompt when the space has folders but no loose maps', async () => {
     localStorage.setItem(
       'mf_spaces',

@@ -29,7 +29,7 @@ function ClockGlyph() {
 }
 
 /** 로딩 중 "최근 항목" 자리 확보용 스켈레톤 — 저장된 최근 기록이 있으면 실제
- * 트레이와 같은 컨테이너(.mf-recent-tray)·헤더 높이·카드 footprint(128×105)로
+ * 트레이와 같은 컨테이너(.mf-recent-tray)·헤더 높이·카드 footprint(128×121)로
  * 미리 깔아 둔다. 없으면 로드 후 트레이가 갑자기 끼어들며 아래 툴바(파일 검색·
  * 새로 만들기…)가 위아래로 튀던 레이아웃 점프가 이것으로 사라진다. */
 export function RecentStripSkeleton({ count }: { count: number }) {
@@ -44,10 +44,18 @@ export function RecentStripSkeleton({ count }: { count: number }) {
       <div style={{ display: 'flex', gap: RECENT_GAP, overflow: 'hidden' }}>
         {Array.from({ length: n }, (_, i) => (
           <div key={i} style={{ width: RECENT_CARD_W, flex: '0 0 auto', border: '1px solid #efe6dd', borderRadius: 10, background: '#fff', overflow: 'hidden' }}>
-            {/* compact MapCard와 동일: 썸네일 72 + 패딩 8 + 제목줄 15(lineHeight 고정) */}
+            {/* compact MapCard와 footprint 정확히 일치:
+                썸네일 72 + 패딩 8·8 + 제목줄 15 + (marginTop 2 + 위치줄 14).
+                위치줄이 생기며 카드가 16px 높아졌으므로 스켈레톤도 같이 키운다 —
+                어긋나면 로드 완료 순간 트레이 높이가 변하며 아래 툴바가 튄다. */}
             <div className="mf-skel" style={{ height: 72, borderRadius: 0 }} />
-            <div style={{ padding: '8px 10px', display: 'flex', alignItems: 'center', height: 15, boxSizing: 'content-box' }}>
-              <div className="mf-skel" style={{ height: 11, width: '70%', borderRadius: 6 }} />
+            <div style={{ padding: '8px 10px' }}>
+              <div style={{ height: 15, display: 'flex', alignItems: 'center' }}>
+                <div className="mf-skel" style={{ height: 11, width: '70%', borderRadius: 6 }} />
+              </div>
+              <div style={{ height: 14, marginTop: 2, display: 'flex', alignItems: 'center' }}>
+                <div className="mf-skel" style={{ height: 9, width: '45%', borderRadius: 5 }} />
+              </div>
             </div>
           </div>
         ))}

@@ -409,10 +409,11 @@ export function MapCard({ card, controller, draggableEnabled, compact = false }:
         <div style={{ minWidth: 0, flex: 1 }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 6, minWidth: 0, marginBottom: compact ? 0 : 4 }}>
           {/* Cross-space "최근 항목" strip: a small dot in the owning space's color.
-              Color alone is inaccessible information, so the dot carries the space
-              name for screen readers (+ a hover tooltip), and a faint inset ring
-              keeps low-luminance palette colors (amber/teal ≲3:1 on white) visible. */}
-          {card.spaceColor &&
+              compact(최근 항목)에서는 이 점을 제목 줄이 아니라 아래 경로 줄로 옮겼다 —
+              색과 스페이스명이 붙어 있어야 의미가 통하고, 128px 카드에서 제목이 쓸 수
+              있는 폭도 그만큼 넓어진다. (그리드 카드에는 `spaceColor`가 설정되지 않아
+              실제로는 렌더되지 않지만, 향후 설정될 경우를 위해 분기는 남겨 둔다.) */}
+          {!compact && card.spaceColor &&
             (card.spaceName ? (
               <span
                 role="img"
@@ -428,6 +429,25 @@ export function MapCard({ card, controller, draggableEnabled, compact = false }:
               아래 툴바까지 밀렸다(새로고침 깜빡임). */}
           <div style={{ fontSize: compact ? 12 : 14, lineHeight: compact ? '15px' : undefined, fontWeight: 600, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', minWidth: 0 }}>{card.title}</div>
         </div>
+        {/* 최근 항목 전용 위치 줄 — "● 스페이스 · 폴더". 최근 트레이는 스페이스를
+            가로지르는 목록이라 제목만으로는 어느 위치의 맵인지 알 수 없다.
+            · 높이(14) + marginTop(2)를 px로 고정: 폰트 스왑에 카드/트레이 높이가
+              출렁이지 않게 하고, RecentStripSkeleton과 footprint를 정확히 맞춘다.
+            · 위치를 알 수 없으면(빈 pathLabel) 줄 높이만 유지하고 아무것도 그리지
+              않는다 — 한 행에 섞여도 카드 아랫변이 어긋나지 않는다.
+            · 폭이 좁아 말줄임되므로, 잘리지 않은 전체 경로는 title 툴팁으로 준다
+              (본문 텍스트는 DOM에 그대로 있어 스크린리더는 전부 읽는다). */}
+        {compact && (
+          <div
+            {...(card.pathFull ? { title: card.pathFull } : {})}
+            style={{ display: 'flex', alignItems: 'center', gap: 5, marginTop: 2, height: 14, minWidth: 0 }}
+          >
+            {card.pathLabel && card.spaceColor && (
+              <span aria-hidden="true" style={{ width: 7, height: 7, borderRadius: 2.5, background: card.spaceColor, flexShrink: 0, boxShadow: 'inset 0 0 0 1px rgba(0,0,0,.18)' }} />
+            )}
+            <span style={{ fontSize: 11, lineHeight: '14px', color: '#9c8b7e', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', minWidth: 0 }}>{card.pathLabel}</span>
+          </div>
+        )}
         {/* 마지막 수정 시각 — 상대(7일 이내)/절대 혼합 표기, 전체 일시는 툴팁.
             시각 정보가 없는 카드(Drive 데모 등)는 줄 자체를 생략한다. */}
         {!compact && formatLastEdited(card.updatedAt) && (
