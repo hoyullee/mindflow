@@ -170,6 +170,36 @@ function LineIcon() {
   );
 }
 
+/** 복사/잘라내기/붙여넣기 아이콘 — 다른 메뉴 아이콘과 같은 14px 라인 스타일. */
+function CopyIcon() {
+  return (
+    <svg width={14} height={14} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round">
+      <rect x="9" y="9" width="12" height="12" rx="2" />
+      <path d="M5 15H4a1 1 0 0 1-1-1V4a1 1 0 0 1 1-1h10a1 1 0 0 1 1 1v1" />
+    </svg>
+  );
+}
+
+function CutIcon() {
+  return (
+    <svg width={14} height={14} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round">
+      <circle cx="6" cy="18" r="3" />
+      <circle cx="18" cy="18" r="3" />
+      <path d="M8.1 15.9 19 3" />
+      <path d="M15.9 15.9 5 3" />
+    </svg>
+  );
+}
+
+function PasteIcon() {
+  return (
+    <svg width={14} height={14} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round">
+      <path d="M9 3h6v3H9z" />
+      <path d="M15 4.5h2.5A1.5 1.5 0 0 1 19 6v13.5A1.5 1.5 0 0 1 17.5 21h-11A1.5 1.5 0 0 1 5 19.5V6a1.5 1.5 0 0 1 1.5-1.5H9" />
+    </svg>
+  );
+}
+
 /**
  * Builds the item list for `ctxMenu.kind` — port of `Component#ctxMenuItems`
  * (MindFlow.dc.html:3105-3146). `'divider'` stands in for the original's blank
@@ -177,6 +207,47 @@ function LineIcon() {
  */
 function buildItems(controller: EditorController, ctxMenu: ContextMenuState, toggleAlignSub: (top: number) => void, alignSubOpen: boolean): (MenuItem | 'divider')[] {
   const close = () => controller.closeCtxMenu();
+
+  // 복사/잘라내기/붙여넣기 — 모바일에는 키보드가 없어서 이 메뉴(길게 누르기)가
+  // 유일한 진입점이다. 데스크톱에서는 Ctrl/Cmd+C·X·V와 같은 동작.
+  const copyItems = (opts: { cut: boolean }): (MenuItem | 'divider')[] => {
+    const out: (MenuItem | 'divider')[] = [
+      {
+        icon: <CopyIcon />,
+        label: '복사',
+        onSelect: () => {
+          close();
+          controller.copySelection();
+        },
+      },
+    ];
+    if (opts.cut) {
+      out.push({
+        icon: <CutIcon />,
+        label: '잘라내기',
+        onSelect: () => {
+          close();
+          controller.cutSelection();
+        },
+      });
+    }
+    return out;
+  };
+
+  /** 붙여넣기 행 — 클립보드가 비어 있으면 아예 노출하지 않는다. */
+  const pasteItem = (at?: { x: number; y: number }): MenuItem[] =>
+    controller.canPaste
+      ? [
+          {
+            icon: <PasteIcon />,
+            label: controller.clipboardSize > 1 ? `붙여넣기 (${controller.clipboardSize}개)` : '붙여넣기',
+            onSelect: () => {
+              close();
+              controller.pasteClipboardAt(at);
+            },
+          },
+        ]
+      : [];
 
   if (ctxMenu.kind === 'node') {
     const nodeId = controller.selection?.kind === 'node' ? controller.selection.id : null;
@@ -231,6 +302,13 @@ function buildItems(controller: EditorController, ctxMenu: ContextMenuState, tog
       // `alignParent`'s `onClick` (MindFlow.dc.html:3120).
       onSelect: (e) => toggleAlignSub(e.currentTarget.offsetTop),
     });
+    // 루트는 복사/잘라내기 대상이 아니다(삭제와 같은 규칙 — 맵 전체 복제는 의미가 없다).
+    // 붙여넣기는 루트에도 허용 — 루트의 자식으로 붙는다.
+    const nodeClip = [...(isRoot ? [] : copyItems({ cut: true })), ...pasteItem()];
+    if (nodeClip.length) {
+      items.push('divider');
+      items.push(...nodeClip);
+    }
     if (!isRoot) {
       items.push('divider');
       items.push({
@@ -259,6 +337,7 @@ function buildItems(controller: EditorController, ctxMenu: ContextMenuState, tog
         },
       },
       'divider',
+      ...copyItems({ cut: true }),
       {
         icon: '🗑',
         label: '삭제',
@@ -275,6 +354,7 @@ function buildItems(controller: EditorController, ctxMenu: ContextMenuState, tog
     const floatId = controller.selection?.kind === 'float' ? controller.selection.id : null;
     if (!floatId) return [];
     return [
+      ...copyItems({ cut: true }),
       {
         icon: '🗑',
         label: '삭제',
@@ -291,6 +371,7 @@ function buildItems(controller: EditorController, ctxMenu: ContextMenuState, tog
     const lineId = controller.selection?.kind === 'line' ? controller.selection.id : null;
     if (!lineId) return [];
     return [
+      ...copyItems({ cut: true }),
       {
         icon: '🗑',
         label: '삭제',
@@ -307,6 +388,7 @@ function buildItems(controller: EditorController, ctxMenu: ContextMenuState, tog
     const ms = controller.multiSelection;
     const count = ms ? ms.nodes.length + ms.lines.length + ms.floats.length : 0;
     return [
+      ...copyItems({ cut: true }),
       {
         icon: '🗑',
         label: `삭제 (${count}개)`,
@@ -363,6 +445,9 @@ function buildItems(controller: EditorController, ctxMenu: ContextMenuState, tog
         controller.addZoneAt(at);
       },
     },
+    // 빈 캔버스에 붙여넣기 — 클릭(길게 누른) 지점을 기준으로 배치된다.
+    ...(controller.canPaste ? (['divider'] as const) : []),
+    ...pasteItem(at),
   ];
 }
 

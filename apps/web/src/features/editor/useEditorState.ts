@@ -22,6 +22,7 @@ import { downloadFile } from './download';
 import { exportPng } from './png';
 import * as mutations from './mutations';
 import { createIdFactory } from './mutations';
+import { clipboardCount, collectClipboard, pasteClipboard, type ClipboardPayload, type PasteTarget } from './clipboard';
 import type {
   AttachTarget,
   ContextMenuState,
@@ -327,6 +328,16 @@ export interface EditorController {
   addChild: () => void;
   addSibling: () => void;
   deleteSelection: () => void;
+  /** 현재 선택(단일/다중)을 클립보드에 담는다. 담을 게 없으면(루트만 선택 등)
+   * `false`를 돌려주고 기존 클립보드는 그대로 둔다. */
+  copySelection: () => boolean;
+  /** 복사 후 원본을 즉시 삭제(캔버스 편집기 관례 — 붙여넣기 시점이 아니라 지금). */
+  cutSelection: () => void;
+  /** 클립보드 내용을 새 객체로 붙여넣는다. `at`(캔버스 좌표)이 있으면 그 지점에,
+   * 없으면 선택된 노드의 자식으로, 그것도 아니면 뷰포트 중앙에. */
+  pasteClipboardAt: (at?: { x: number; y: number }) => void;
+  canPaste: boolean;
+  clipboardSize: number;
   toggleCollapse: (id: string) => void;
   /** `at` (canvas coordinates) is only ever passed by the background context menu's
    * "추가" items (`ContextMenu.tsx`) — port of `Component#addFreeNode`/`addFloat`/
@@ -1936,6 +1947,57 @@ export function useEditorState(): EditorController {
     }
   }, [selection, multiSelection, commitDoc]);
 
+  // ---- 복사 / 잘라내기 / 붙여넣기 ----
+  // 클립보드 내용은 세션 메모리(ref)에 — 자세한 근거는 `clipboard.ts` 상단 참고.
+  // 담긴 개수만 state로 따로 들고 있다: 메뉴의 '붙여넣기' 노출 여부는 렌더에
+  // 반영돼야 하는데, ref 값 변화는 리렌더를 일으키지 않기 때문이다.
+  const clipboardRef = useRef<ClipboardPayload | null>(null);
+  const [clipboardSize, setClipboardSize] = useState(0);
+
+  const copySelection = useCallback(() => {
+    const clip = collectClipboard(docRef.current, selectionRef.current, multiSelectionRef.current);
+    if (!clip) return false; // 복사할 게 없으면(루트만 선택 등) 기존 클립보드를 지우지 않는다
+    clipboardRef.current = clip;
+    setClipboardSize(clipboardCount(clip));
+    return true;
+  }, []);
+
+  /** 잘라내기 = 복사 + 즉시 원본 삭제(캔버스 편집기 관례 — 붙여넣기 시점이 아니라 지금). */
+  const cutSelection = useCallback(() => {
+    if (!copySelection()) return;
+    deleteSelection();
+  }, [copySelection, deleteSelection]);
+
+  const pasteClipboardAt = useCallback(
+    (at?: { x: number; y: number }) => {
+      const clip = clipboardRef.current;
+      if (!clip) return;
+      // 대상: 명시된 좌표 > 선택된 노드(자식으로) > 뷰포트 중앙
+      let target: PasteTarget;
+      if (at) {
+        target = { kind: 'point', ...at };
+      } else if (selectionRef.current?.kind === 'node') {
+        target = { kind: 'node', id: selectionRef.current.id };
+      } else {
+        const vp = viewportRef.current;
+        target = { kind: 'point', x: (vp.vw / 2 - vp.pan.x) / vp.zoom, y: (vp.vh / 2 - vp.pan.y) / vp.zoom };
+      }
+      let res: ReturnType<typeof pasteClipboard> = null;
+      commitDoc((d) => {
+        res = pasteClipboard(d, clip, target, idFactory);
+        return res ? res.doc : d;
+      });
+      // commitDoc의 updater는 동기 실행이라 여기서 결과를 바로 쓸 수 있다.
+      const out = res as ReturnType<typeof pasteClipboard>;
+      if (!out) return;
+      setSelectionState(out.selection);
+      setMultiSelectionState(out.multi);
+      setEditingNodeId(null);
+      setEditingFloatId(null);
+    },
+    [commitDoc, idFactory],
+  );
+
   const toggleCollapse = useCallback(
     (id: string) => {
       commitDoc((d) => ({ ...d, nodes: mutations.toggleCollapseNode(d.nodes, id) }));
@@ -2944,6 +3006,28 @@ export function useEditorState(): EditorController {
         redo();
         return;
       }
+      // 복사/잘라내기/붙여넣기 — macOS는 Cmd(metaKey), 그 외는 Ctrl.
+      // `inEditable` 가드를 이미 지난 지점이라 텍스트 편집 중의 네이티브 복사/붙여넣기는
+      // 그대로 살아 있다. 한글 IME가 켜져 있으면 e.key가 자모로 올 수 있어 물리 키
+      // (e.code)도 함께 본다.
+      if (e.metaKey || e.ctrlKey) {
+        const k = e.key.toLowerCase();
+        if (k === 'c' || e.code === 'KeyC') {
+          e.preventDefault();
+          copySelection();
+          return;
+        }
+        if (k === 'x' || e.code === 'KeyX') {
+          e.preventDefault();
+          cutSelection();
+          return;
+        }
+        if (k === 'v' || e.code === 'KeyV') {
+          e.preventDefault();
+          pasteClipboardAt();
+          return;
+        }
+      }
       // multi-select (marquee) — port of the `this.state.msel && this.mselTotal() > 1` early-return
       // branch (MindFlow.dc.html:2878-2882), checked BEFORE the single-`selection` branches below.
       if (multiSelection && totalSelected(multiSelection) > 1) {
@@ -3132,6 +3216,13 @@ export function useEditorState(): EditorController {
     addChild,
     addSibling,
     deleteSelection,
+    copySelection,
+    cutSelection,
+    pasteClipboardAt,
+    /** 붙여넣을 내용이 있는지 — 메뉴에 '붙여넣기'를 노출할지 판단용. */
+    canPaste: clipboardSize > 0,
+    /** 클립보드에 담긴 객체 수 — 메뉴 라벨("붙여넣기 (N개)")용. */
+    clipboardSize,
     toggleCollapse,
     addFreeNodeAt,
     addFloatAt,
