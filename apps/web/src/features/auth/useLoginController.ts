@@ -30,6 +30,15 @@ function parseRetrySeconds(msg: string | undefined | null): number | null {
 }
 
 /**
+ * Supabase가 미인증(이메일 확인 전) 계정 로그인 시 주는 "Email not confirmed".
+ * 이 앱에선 이메일 인증까지 마쳐야 "회원"이므로, 이 상태는 로그인 실패가 아니라
+ * "가입 미완료"로 취급해 인증 단계로 되돌린다(아래 emailLogin 참고).
+ */
+function isEmailNotConfirmed(msg: string | undefined | null): boolean {
+  return /email not confirmed/i.test(msg || '');
+}
+
+/**
  * Supabase Auth의 영문 에러 메시지를 사용자용 한글로 매핑한다. Supabase는 항상
  * 영문 메시지를 주는데(예: "Invalid login credentials", 비밀번호 정책 나열, 레이트
  * 리밋 안내), 그대로 노출하면 영문·과도한 길이가 그대로 보인다. 인식 못 한 영문은
@@ -196,6 +205,27 @@ export function useLoginController() {
     patch({ busy: true, error: '' });
     void auth.signInWithPassword(state.email, state.password).then((res) => {
       if (res.error) {
+        // 이메일 인증을 마치지 않은 계정 = 아직 회원이 아님. "이메일 인증이 아직…"
+        // 같은 막다른 안내 대신, 인증 코드를 다시 보내고 인증 단계로 이동시켜
+        // 가입을 마칠 수 있게 한다(동일 계정 재가입과 같은 흐름). 비밀번호가
+        // 틀리면 'Invalid login credentials'라 이 분기에 들어오지 않으므로,
+        // 여기 도달했다는 건 자격 증명은 맞고 이메일만 미인증이라는 뜻이다.
+        if (isEmailNotConfirmed(res.error)) {
+          void auth.resendSignup(state.email).then((r) => {
+            const cd = r.error ? (parseRetrySeconds(r.error) ?? RESEND_COOLDOWN) : RESEND_COOLDOWN;
+            patch({
+              busy: false,
+              mode: 'signup',
+              step: 'verify',
+              code: '',
+              demoCode: '',
+              error: '',
+              notice: '아직 가입이 완료되지 않았어요. 이메일로 보낸 인증 코드를 입력해 가입을 마쳐 주세요.',
+              cooldown: cd,
+            });
+          });
+          return;
+        }
         patch({ busy: false, error: localizeAuthError(res.error) });
         return;
       }
