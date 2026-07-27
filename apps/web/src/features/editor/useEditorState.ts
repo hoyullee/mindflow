@@ -423,6 +423,9 @@ export interface EditorController {
   /** Port of `Component#closeCtxMenu` (MindFlow.dc.html:2837) — also used by
    * `ContextMenu`'s own outside-click/Escape handling. */
   closeCtxMenu: () => void;
+  /** 현재 선택의 컨텍스트 메뉴를 지정 좌표(`.mf-ed-vp` 기준)에 연다 — 모바일
+   * 선택 바의 "더보기(⋯)"용. 우클릭/길게 누르기 없이도 전체 메뉴에 닿게 한다. */
+  openCtxMenuForSelection: (sx: number, sy: number) => void;
   /** Opens (or closes, if already open) the "텍스트 정렬 ▸" flyout, anchored to the
    * clicked row's `offsetTop` — port of the `alignParent` item's `onClick`
    * (MindFlow.dc.html:3120). */
@@ -1120,6 +1123,27 @@ export function useEditorState(): EditorController {
       setCtxMenu({ kind: 'bg', sx, sy, cx: p.x, cy: p.y });
     }
   }
+
+  /**
+   * 현재 선택에 해당하는 컨텍스트 메뉴를 지정한 화면 좌표에 연다 — 모바일
+   * `MobileSelectBar`의 "더보기(⋯)"가 쓰는 진입점. 우클릭이 없는 터치에서도
+   * 길게 누르기를 몰라도 전체 메뉴에 닿을 수 있게 한다. 히트 테스트 없이 이미
+   * 잡혀 있는 선택을 그대로 쓴다는 점만 `openCtxAt`과 다르다.
+   * `sx`/`sy`는 `.mf-ed-vp` 박스 기준(= 바가 쓰는 좌표계와 동일).
+   */
+  const openCtxMenuForSelection = useCallback((sx: number, sy: number) => {
+    const vp = viewportRef.current;
+    const cx = (sx - vp.pan.x) / vp.zoom;
+    const cy = (sy - vp.pan.y) / vp.zoom;
+    const ms = multiSelectionRef.current;
+    const s = selectionRef.current;
+    setCtxSub(null);
+    if (ms && totalSelected(ms) > 1) {
+      setCtxMenu({ kind: 'multi', sx, sy, cx, cy });
+      return;
+    }
+    setCtxMenu({ kind: s ? s.kind : 'bg', sx, sy, cx, cy });
+  }, []);
 
   const closeCtxMenu = useCallback(() => {
     setCtxMenu(null);
@@ -3273,6 +3297,7 @@ export function useEditorState(): EditorController {
     ctxSub,
     onContextMenu,
     closeCtxMenu,
+    openCtxMenuForSelection,
     toggleCtxSub,
 
     beginNodeDrag,

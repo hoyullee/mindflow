@@ -196,6 +196,50 @@ describe('Editor (mobile, M6)', () => {
     }
   });
 
+  it('선택 바의 "메뉴"가 우클릭 메뉴 전체를 열고, 열려 있는 동안 바는 숨는다', () => {
+    // 모바일엔 우클릭이 없고, 이미 선택된 객체를 길게 누르면 이동 드래그로
+    // 가로채인다 → 이 버튼이 전체 메뉴로 가는 확실한 경로다.
+    const restore = mockMatchMedia(true);
+    try {
+      localStorage.setItem('mindflow_doc_mab3', JSON.stringify(DOC));
+      const { container } = renderEditor('/editor?map=mab3&title=x');
+      const vp = getViewport(container);
+
+      const c1 = within(vp).getByText('리서치').closest('[data-node-id]') as HTMLElement;
+      selectNodeBox(c1);
+      const bar = screen.getByRole('toolbar', { name: '선택 동작' });
+      fireEvent.click(within(bar).getByRole('button', { name: '객체 메뉴' }));
+
+      // 바는 사라지고 컨텍스트 메뉴가 그 자리를 대신한다(두 겹 방지)
+      expect(screen.queryByRole('toolbar', { name: '선택 동작' })).toBeNull();
+      const menu = container.querySelector('.mf-ctx') as HTMLElement;
+      expect(menu).toBeTruthy();
+      // 우클릭 메뉴의 노드 항목이 그대로 — 복사/잘라내기 포함
+      expect(within(menu).getByText('자식 주제')).toBeTruthy();
+      expect(within(menu).getByText('복사')).toBeTruthy();
+      expect(within(menu).getByText('잘라내기')).toBeTruthy();
+      expect(within(menu).getByText('텍스트 정렬')).toBeTruthy();
+    } finally {
+      restore();
+    }
+  });
+
+  it('선택 바의 "메뉴"는 상단 툴바의 "더보기"와 이름이 겹치지 않는다(한 화면 두 버튼)', () => {
+    const restore = mockMatchMedia(true);
+    try {
+      localStorage.setItem('mindflow_doc_mab4', JSON.stringify(DOC));
+      const { container } = renderEditor('/editor?map=mab4&title=x');
+      const vp = getViewport(container);
+      selectNodeBox(within(vp).getByText('리서치').closest('[data-node-id]') as HTMLElement);
+
+      // 각각 정확히 하나씩 — 접근성 이름이 충돌하면 스크린리더/자동화가 구분 못 한다
+      expect(screen.getAllByRole('button', { name: '더보기' })).toHaveLength(1); // 상단 툴바
+      expect(screen.getAllByRole('button', { name: '객체 메뉴' })).toHaveLength(1); // 선택 바
+    } finally {
+      restore();
+    }
+  });
+
   it('shows the property panel as a bottom sheet (fixed to the viewport bottom) once opened', () => {
     const restore = mockMatchMedia(true);
     try {
