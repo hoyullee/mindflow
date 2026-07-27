@@ -703,12 +703,36 @@ describe('Home', () => {
     // create a new map from the toolbar CTA
     await user.click(screen.getAllByText('＋ 새로 만들기')[0]!);
 
-    // the new map's card is registered under "작업 공간", not "일반 공간"
-    const ws = JSON.parse(localStorage.getItem('mf_spaces') || '{}') as { spaces: { name: string; maps?: unknown[] }[] };
-    const mine = ws.spaces.find((s) => s.name === '작업 공간');
-    const general = ws.spaces.find((s) => s.name === '일반 공간');
-    expect(mine?.maps?.length).toBe(1);
-    expect(general?.maps?.length ?? 0).toBe(0);
+    // the new map's card is registered under "작업 공간", not "일반 공간".
+    // 카드 등록은 로더가 페인트된 뒤(더블 rAF)로 미뤄지므로 waitFor로 기다린다
+    // — 로더 페이드 중 새 카드가 배경에 번쩍이던 문제를 막기 위한 의도적 지연.
+    const readSpaces = () => {
+      const ws = JSON.parse(localStorage.getItem('mf_spaces') || '{}') as { spaces?: { name: string; maps?: unknown[] }[] };
+      return ws.spaces ?? [];
+    };
+    await waitFor(() => expect(readSpaces().find((s) => s.name === '작업 공간')?.maps?.length).toBe(1));
+    expect(readSpaces().find((s) => s.name === '일반 공간')?.maps?.length ?? 0).toBe(0);
+  });
+
+  it('새로 만들기: 로더가 먼저 화면을 덮은 다음에 새 카드가 추가된다(배경 깜빡임 방지)', async () => {
+    // 제보: 로더 애니메이션이 뜨기 전에 새 파일이 배경에 생성되는 게 번쩍였다.
+    // 로더는 클릭 즉시(같은 커밋) 뜨고, 카드 등록은 그 뒤 프레임으로 미뤄진다.
+    const user = userEvent.setup();
+    renderHomeWithDocStore([]);
+    await waitFor(() => expect(screen.getAllByText('＋ 새로 만들기')[0]).toBeTruthy());
+
+    const cardCount = () => screen.queryAllByText('새 마인드맵').length;
+    const before = cardCount();
+
+    await user.click(screen.getAllByText('＋ 새로 만들기')[0]!);
+
+    // 클릭 직후: 로더는 이미 떠 있고, 새 카드는 아직 추가되지 않았다
+    expect(screen.getByText('새 마인드맵을 준비하고 있어요')).toBeTruthy();
+    expect(cardCount()).toBe(before);
+
+    // 이후 프레임에서 카드가 등록된다 (로더 뒤에서)
+    await waitFor(() => expect(cardCount()).toBeGreaterThan(before));
+    expect(screen.getByText('새 마인드맵을 준비하고 있어요')).toBeTruthy();
   });
 
   it('logs out (via the confirm dialog) and navigates to /login', async () => {

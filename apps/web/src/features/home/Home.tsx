@@ -56,7 +56,10 @@ export function Home() {
 
   return (
     <div className="mf-home" style={{ display: 'flex', height: '100vh', width: '100%', background: '#fbf6f2', fontFamily: "Pretendard, 'Pretendard-fallback', system-ui, sans-serif", color: '#33281f', overflow: 'hidden' }}>
-      {state.creatingMap && <LoadingOverlay message={state.loaderMsg || '새 마인드맵을 준비하고 있어요'} />}
+      {/* `instant`: Home의 로더는 뒤 배경을 함께 바꾸는 동작(새로 만들기=카드 추가,
+          로그아웃/탈퇴=목록 정리)에 쓰이므로, 페이드인 중 반투명 구간으로 그 변화가
+          비쳐 깜빡이지 않도록 첫 프레임부터 화면을 덮는다. */}
+      {state.creatingMap && <LoadingOverlay message={state.loaderMsg || '새 마인드맵을 준비하고 있어요'} instant />}
 
       <Sidebar state={state} view={view} controller={controller} isMobile={isMobile} isOpen={navOpen} onClose={() => setNavOpen(false)} />
 
