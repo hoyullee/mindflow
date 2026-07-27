@@ -81,6 +81,11 @@ export interface ContextMenuState {
   sy: number;
   cx: number;
   cy: number;
+  /** 모바일 선택 바의 '메뉴(⋯)'에서 열렸을 때만 채워진다 — 바에서 뻗어 나온
+   * 팝오버처럼 보이도록 바의 위/아래 변과 ⋯ 버튼의 중심 x를 넘겨받아, 메뉴를
+   * 바에 붙여 놓고 그쪽을 가리키는 꼬리(caret)를 그린다. 우클릭/길게 누르기로
+   * 열렸을 때는 없음(클릭 지점에 그대로 뜬다). 좌표계는 `.mf-ed-vp` 기준. */
+  anchor?: { x: number; top: number; bottom: number };
 }
 
 /** The "텍스트 정렬 ▸" flyout submenu's own open/position state — port of

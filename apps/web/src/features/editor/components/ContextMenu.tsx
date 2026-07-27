@@ -5,6 +5,7 @@ import { hexA } from '../theme';
 import type { Theme } from '../theme';
 import type { EditorController } from '../useEditorState';
 import type { ContextMenuState } from '../types';
+import { useIsMobile } from '../../../hooks/useMediaQuery';
 // 이미지/영역 아이콘은 상단 툴바 '삽입' 메뉴와 같은 SVG를 공유 — 두 진입점이
 // 같은 동작이므로 같은 그림이어야 한다.
 import { ImageIcon, ZoneIcon } from './ToolbarMenus';
@@ -35,6 +36,8 @@ interface MenuItem {
 export function ContextMenu({ controller }: ContextMenuProps) {
   const { ctxMenu, ctxSub, uiTheme: th } = controller;
   const rootRef = useRef<HTMLDivElement | null>(null);
+  // 모바일: 손가락에 맞는 행 높이 + 선택 바와 겹치는 항목(하위/형제/삭제) 제외.
+  const isMobile = useIsMobile();
 
   // Outside click / Escape close it — port of the original's window `mousedown` capture
   // listener + `.mf-ctx` `closest()` check (MindFlow.dc.html:818-819, 824). Escape-closes
@@ -61,23 +64,47 @@ export function ContextMenu({ controller }: ContextMenuProps) {
 
   const vw = controller.vw || 600;
   const vh = controller.vh || 400;
+  const anchor = ctxMenu.anchor;
 
-  // port of `ctxMenuStyle` (MindFlow.dc.html:3101-3104): clamped to the viewport so the
-  // menu never overflows past the right/bottom edge (pushes it left/up as it nears one).
+  // 모바일 선택 바의 '메뉴(⋯)'에서 열린 경우: 클릭 지점에 뜨는 우클릭 메뉴가 아니라
+  // **바에서 뻗어 나온 팝오버**로 그린다 — 바와 같은 패널/테두리/라운드(16)에
+  // 손가락에 맞는 행 높이, 그리고 ⋯ 버튼을 가리키는 꼬리(caret)를 붙인다.
+  const MW = isMobile ? 190 : 150;
+  let left: number;
+  let top: number;
+  let flipped = false;
+  if (anchor) {
+    const M = 8;
+    // 메뉴 높이는 행 수로 추정(행 44 + 구분선 11 + 패딩 12) — 아래 공간이 부족하면
+    // 바 위로 뒤집는다. 렌더 후 재측정 없이도 화면 밖으로 나가지 않게 하는 보수적 추정.
+    const rows = buildItems(controller, ctxMenu, () => {}, false, isMobile);
+    const estH = rows.reduce((h, it) => h + (it === 'divider' ? 11 : 44), 12);
+    left = Math.min(Math.max(anchor.x - MW / 2, M), Math.max(M, vw - MW - M));
+    const below = anchor.bottom + 10;
+    flipped = below + estH > vh - M && anchor.top - 10 - estH > M;
+    top = flipped ? anchor.top - 10 - estH : below;
+  } else {
+    // port of `ctxMenuStyle` (MindFlow.dc.html:3101-3104): clamped to the viewport so the
+    // menu never overflows past the right/bottom edge (pushes it left/up as it nears one).
+    left = Math.min(ctxMenu.sx, vw - 160);
+    top = Math.min(ctxMenu.sy, vh - 150);
+  }
+
   const menuStyle: CSSProperties = {
     position: 'absolute',
-    left: Math.min(ctxMenu.sx, vw - 160),
-    top: Math.min(ctxMenu.sy, vh - 150),
-    width: 150,
+    left,
+    top,
+    width: MW,
     background: th.panel,
     border: `1px solid ${th.border}`,
-    borderRadius: 11,
-    boxShadow: '0 10px 30px rgba(0,0,0,.18)',
-    padding: 5,
+    borderRadius: anchor ? 16 : 11,
+    boxShadow: anchor ? '0 8px 26px rgba(0,0,0,.18)' : '0 10px 30px rgba(0,0,0,.18)',
+    padding: anchor ? 6 : 5,
     zIndex: 60,
+    ...(anchor ? { animation: 'mf-ctx-pop .13s ease-out' } : {}),
   };
 
-  const items = buildItems(controller, ctxMenu, (top) => controller.toggleCtxSub(top), !!ctxSub);
+  const items = buildItems(controller, ctxMenu, (top2) => controller.toggleCtxSub(top2), !!ctxSub, isMobile);
 
   return (
     <div
@@ -93,9 +120,29 @@ export function ContextMenu({ controller }: ContextMenuProps) {
       // nothing. Stopping `pointerdown` here keeps menu interaction from ever touching the canvas.
       onPointerDown={(e) => e.stopPropagation()}
     >
+      {/* 꼬리(caret) — 바의 ⋯ 버튼을 가리켜 "이 바에서 나온 메뉴"로 읽히게 한다.
+          패널과 같은 배경 + 두 변만 테두리를 준 사각형을 45° 돌려, 메뉴 테두리에
+          자연스럽게 이어 붙인다(아래로 뒤집혔으면 반대쪽 변). */}
+      {anchor && (
+        <span
+          aria-hidden="true"
+          style={{
+            position: 'absolute',
+            left: Math.min(Math.max(anchor.x - left - 5, 14), MW - 24),
+            [flipped ? 'bottom' : 'top']: -6,
+            width: 10,
+            height: 10,
+            background: th.panel,
+            borderLeft: `1px solid ${th.border}`,
+            borderTop: `1px solid ${th.border}`,
+            transform: flipped ? 'rotate(225deg)' : 'rotate(45deg)',
+            borderRadius: 2,
+          }}
+        />
+      )}
       {items.map((it, i) =>
         it === 'divider' ? (
-          <div key={i} style={{ height: 1, background: th.border, margin: '5px 4px' }} />
+          <div key={i} style={{ height: 1, background: th.border, margin: anchor ? '5px 8px' : '5px 4px' }} />
         ) : (
           <button
             key={i}
@@ -106,7 +153,7 @@ export function ContextMenu({ controller }: ContextMenuProps) {
               e.stopPropagation();
               it.onSelect(e);
             }}
-            style={itemStyle(th, it.danger, it.active)}
+            style={itemStyle(th, it.danger, it.active, isMobile)}
           >
             <span style={iconStyle(th, it.danger, it.active)}>{it.icon}</span>
             <span style={{ flex: '1 1 auto', textAlign: 'left' }}>{it.label}</span>
@@ -119,16 +166,18 @@ export function ContextMenu({ controller }: ContextMenuProps) {
   );
 }
 
-function itemStyle(th: Theme, danger?: boolean, active?: boolean): CSSProperties {
+/** `touch`: 모바일 선택 바에서 열린 팝오버 — 행을 44px 터치 타겟으로 키운다. */
+function itemStyle(th: Theme, danger?: boolean, active?: boolean, touch?: boolean): CSSProperties {
   return {
     display: 'flex',
     alignItems: 'center',
-    gap: 9,
+    gap: touch ? 11 : 9,
     width: '100%',
-    padding: '8px 11px',
+    padding: touch ? '0 12px' : '8px 11px',
+    ...(touch ? { height: 44 } : {}),
     border: 'none',
-    borderRadius: 7,
-    fontSize: 13,
+    borderRadius: touch ? 11 : 7,
+    fontSize: touch ? 14 : 13,
     fontWeight: 600,
     cursor: 'pointer',
     color: danger ? '#d64545' : active ? th.accent : th.text,
@@ -205,7 +254,7 @@ function PasteIcon() {
  * (MindFlow.dc.html:3105-3146). `'divider'` stands in for the original's blank
  * separator row.
  */
-function buildItems(controller: EditorController, ctxMenu: ContextMenuState, toggleAlignSub: (top: number) => void, alignSubOpen: boolean): (MenuItem | 'divider')[] {
+function buildItems(controller: EditorController, ctxMenu: ContextMenuState, toggleAlignSub: (top: number) => void, alignSubOpen: boolean, touch = false): (MenuItem | 'divider')[] {
   const close = () => controller.closeCtxMenu();
 
   // 복사/잘라내기/붙여넣기 — 모바일에는 키보드가 없어서 이 메뉴(길게 누르기)가
@@ -253,27 +302,31 @@ function buildItems(controller: EditorController, ctxMenu: ContextMenuState, tog
     const nodeId = controller.selection?.kind === 'node' ? controller.selection.id : null;
     if (!nodeId) return [];
     const isRoot = nodeId === ROOT_ID;
-    const items: (MenuItem | 'divider')[] = [
-      {
+    const items: (MenuItem | 'divider')[] = [];
+    // 모바일에선 자식/형제 추가와 삭제를 넣지 않는다 — 선택 바(MobileSelectBar)에
+    // 하위·형제·삭제 버튼이 이미 있어 같은 동작이 두 번 나온다. 데스크톱은 바가
+    // 없으므로 그대로 유지.
+    if (!touch) {
+      items.push({
         icon: '＋',
         label: '자식 주제',
         onSelect: () => {
           close();
           controller.addChild();
         },
-      },
-    ];
-    if (!isRoot) {
-      items.push({
-        icon: '＋',
-        label: '형제 주제',
-        onSelect: () => {
-          close();
-          controller.addSibling();
-        },
       });
+      if (!isRoot) {
+        items.push({
+          icon: '＋',
+          label: '형제 주제',
+          onSelect: () => {
+            close();
+            controller.addSibling();
+          },
+        });
+      }
+      items.push('divider');
     }
-    items.push('divider');
     const hasImg = !!controller.doc.nodes[nodeId]?.img;
     items.push({
       icon: <ImageIcon />,
@@ -306,10 +359,10 @@ function buildItems(controller: EditorController, ctxMenu: ContextMenuState, tog
     // 붙여넣기는 루트에도 허용 — 루트의 자식으로 붙는다.
     const nodeClip = [...(isRoot ? [] : copyItems({ cut: true })), ...pasteItem()];
     if (nodeClip.length) {
-      items.push('divider');
+      if (items.length) items.push('divider'); // 앞이 비었으면 선행 구분선을 만들지 않는다
       items.push(...nodeClip);
     }
-    if (!isRoot) {
+    if (!isRoot && !touch) {
       items.push('divider');
       items.push({
         icon: '🗑',
@@ -338,15 +391,20 @@ function buildItems(controller: EditorController, ctxMenu: ContextMenuState, tog
       },
       'divider',
       ...copyItems({ cut: true }),
-      {
-        icon: '🗑',
-        label: '삭제',
-        danger: true,
-        onSelect: () => {
-          close();
-          controller.deleteZone(zoneId);
-        },
-      },
+      // 모바일은 선택 바에 삭제가 있어 중복 제외(데스크톱은 바가 없으므로 유지).
+      ...(touch
+        ? []
+        : ([
+            {
+              icon: '🗑',
+              label: '삭제',
+              danger: true,
+              onSelect: () => {
+                close();
+                controller.deleteZone(zoneId);
+              },
+            },
+          ] as MenuItem[])),
     ];
   }
 
@@ -355,15 +413,19 @@ function buildItems(controller: EditorController, ctxMenu: ContextMenuState, tog
     if (!floatId) return [];
     return [
       ...copyItems({ cut: true }),
-      {
-        icon: '🗑',
-        label: '삭제',
-        danger: true,
-        onSelect: () => {
-          close();
-          controller.deleteFloat(floatId);
-        },
-      },
+      ...(touch
+        ? []
+        : ([
+            {
+              icon: '🗑',
+              label: '삭제',
+              danger: true,
+              onSelect: () => {
+                close();
+                controller.deleteFloat(floatId);
+              },
+            },
+          ] as MenuItem[])),
     ];
   }
 
@@ -372,15 +434,19 @@ function buildItems(controller: EditorController, ctxMenu: ContextMenuState, tog
     if (!lineId) return [];
     return [
       ...copyItems({ cut: true }),
-      {
-        icon: '🗑',
-        label: '삭제',
-        danger: true,
-        onSelect: () => {
-          close();
-          controller.deleteLine(lineId);
-        },
-      },
+      ...(touch
+        ? []
+        : ([
+            {
+              icon: '🗑',
+              label: '삭제',
+              danger: true,
+              onSelect: () => {
+                close();
+                controller.deleteLine(lineId);
+              },
+            },
+          ] as MenuItem[])),
     ];
   }
 

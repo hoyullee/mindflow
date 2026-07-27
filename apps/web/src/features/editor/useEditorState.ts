@@ -423,9 +423,10 @@ export interface EditorController {
   /** Port of `Component#closeCtxMenu` (MindFlow.dc.html:2837) — also used by
    * `ContextMenu`'s own outside-click/Escape handling. */
   closeCtxMenu: () => void;
-  /** 현재 선택의 컨텍스트 메뉴를 지정 좌표(`.mf-ed-vp` 기준)에 연다 — 모바일
-   * 선택 바의 "더보기(⋯)"용. 우클릭/길게 누르기 없이도 전체 메뉴에 닿게 한다. */
-  openCtxMenuForSelection: (sx: number, sy: number) => void;
+  /** 현재 선택의 컨텍스트 메뉴를 모바일 선택 바에 붙여서 연다 — 바의 '메뉴(⋯)'용.
+   * `anchor`(바의 위/아래 변 + ⋯ 버튼 중심 x, `.mf-ed-vp` 기준)로 메뉴를 바에
+   * 붙이고 꼬리를 그린다. 우클릭/길게 누르기 없이도 전체 메뉴에 닿게 한다. */
+  openCtxMenuForSelection: (anchor: { x: number; top: number; bottom: number }) => void;
   /** Opens (or closes, if already open) the "텍스트 정렬 ▸" flyout, anchored to the
    * clicked row's `offsetTop` — port of the `alignParent` item's `onClick`
    * (MindFlow.dc.html:3120). */
@@ -1131,18 +1132,20 @@ export function useEditorState(): EditorController {
    * 잡혀 있는 선택을 그대로 쓴다는 점만 `openCtxAt`과 다르다.
    * `sx`/`sy`는 `.mf-ed-vp` 박스 기준(= 바가 쓰는 좌표계와 동일).
    */
-  const openCtxMenuForSelection = useCallback((sx: number, sy: number) => {
+  const openCtxMenuForSelection = useCallback((anchor: { x: number; top: number; bottom: number }) => {
     const vp = viewportRef.current;
+    const sx = anchor.x;
+    const sy = anchor.bottom;
     const cx = (sx - vp.pan.x) / vp.zoom;
     const cy = (sy - vp.pan.y) / vp.zoom;
     const ms = multiSelectionRef.current;
     const s = selectionRef.current;
     setCtxSub(null);
     if (ms && totalSelected(ms) > 1) {
-      setCtxMenu({ kind: 'multi', sx, sy, cx, cy });
+      setCtxMenu({ kind: 'multi', sx, sy, cx, cy, anchor });
       return;
     }
-    setCtxMenu({ kind: s ? s.kind : 'bg', sx, sy, cx, cy });
+    setCtxMenu({ kind: s ? s.kind : 'bg', sx, sy, cx, cy, anchor });
   }, []);
 
   const closeCtxMenu = useCallback(() => {

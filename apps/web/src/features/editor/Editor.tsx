@@ -91,10 +91,14 @@ export function Editor() {
             <PresenceBar controller={controller} />
             <PropertyPanel controller={controller} />
             {/* Mobile: a tap selects (no auto-sheet); this bar offers 편집/속성/삭제와
-                전체 메뉴로 가는 더보기(⋯). Hidden once the sheet is open (it has its
-                own close control below), and while the ⋯ menu it opened is showing —
-                두 겹이 겹쳐 보이지 않도록. */}
-            {isMobile && controller.selection && !controller.propsOpen && !controller.ctxMenu && <MobileSelectBar controller={controller} theme={th} />}
+                전체 메뉴로 가는 메뉴(⋯). Hidden once the sheet is open (it has its own
+                close control below).
+                ⋯ 메뉴가 열려 있을 때는 바를 **그대로 둔다** — 메뉴가 바에 꼬리로
+                붙어 "바에서 파생된" 것으로 읽혀야 하므로. 반면 길게 누르기로 연
+                메뉴(anchor 없음)는 손가락 위치에 뜨므로 바를 숨겨 겹침을 피한다. */}
+            {isMobile && controller.selection && !controller.propsOpen && (!controller.ctxMenu || !!controller.ctxMenu.anchor) && (
+              <MobileSelectBar controller={controller} theme={th} />
+            )}
             {/* Close handle for the mobile property sheet — dismisses it WITHOUT
                 deselecting, so the object stays selected (e.g. to then move it). */}
             {isMobile && controller.propsOpen && (
