@@ -7,6 +7,7 @@ import { PrivacyPolicy } from './features/legal/PrivacyPolicy';
 import { Terms } from './features/legal/Terms';
 import { Landing } from './features/landing/Landing';
 import { BackendProvider, useBackend } from './adapters/BackendContext';
+import { UpdatePrompt } from './pwa/UpdatePrompt';
 
 // M3: Login.dc.html, Home.dc.html, and MindFlow.dc.html are ported to React.
 // M4: `/home` and `/editor` are gated behind `RequireAuth` — but ONLY when a
@@ -40,6 +41,9 @@ function RequireAuth({ children }: { children: ReactNode }) {
 export function App() {
   return (
     <BackendProvider>
+      {/* 새 배포가 대기 중일 때 뜨는 "새 버전이 준비됐어요" 토스트 — 라우터 밖에
+          두어 어느 화면에서든 같은 자리에 뜬다. */}
+      <UpdatePrompt />
       <BrowserRouter>
         <Routes>
           {/* Public landing — Google brand verification requires the homepage
