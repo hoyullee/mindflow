@@ -34,7 +34,7 @@ export function Login() {
         width: '100%',
         display: 'flex',
         background: '#fbf6f2',
-        fontFamily: 'Pretendard, system-ui, sans-serif',
+        fontFamily: "Pretendard, 'Pretendard-fallback', system-ui, sans-serif",
         color: '#33281f',
       }}
     >

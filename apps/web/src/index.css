@@ -10,12 +10,26 @@
   src: url('/fonts/pretendard/PretendardVariable.woff2') format('woff2');
   font-weight: 45 920;
   font-style: normal;
-  /* `swap`이면 시스템폰트로 먼저 그렸다 Pretendard로 교체되며 글자 폭이 달라져
-     텍스트 정렬이 틀어졌다 돌아오는 깜빡임(레이아웃 시프트)이 생긴다. `optional`은
-     짧은 블록 기간 안에 폰트가 준비됐을 때만 쓰고, 아니면 폴백으로 그대로 두어
-     "교체 리플로우"를 아예 없앤다. 폰트는 <link rel=preload>로 최우선 로드 + SW
-     프리캐시라, 캐시된(재방문) 경우엔 항상 처음부터 Pretendard로 렌더된다. */
-  font-display: optional;
+  /* swap: 폰트 로드 전엔 폴백('Pretendard-fallback' 아래)으로 그리고 로드되면
+     Pretendard로 교체. 폴백의 line-box를 Pretendard와 똑같이 맞춰뒀으므로 교체
+     순간 세로 정렬·줄높이가 움직이지 않는다(깜빡임 제거). preload로 최우선 로드. */
+  font-display: swap;
+}
+
+/* 폴백 폰트 메트릭 매칭(Next.js next/font가 자동으로 하는 기법):
+   Pretendard 로드 전 쓰이는 시스템 폰트의 줄상자(line box)를 Pretendard의 실측값
+   (unitsPerEm 2048, ascent 1950, descent 494, lineGap 0)으로 강제 오버라이드해,
+   폴백↔Pretendard 교체 시 세로 위치·줄높이가 튀지 않게 한다. Pretendard는 애플
+   시스템 한글 폰트(Apple SD Gothic Neo)에 맞춰 설계돼 가로 폭도 근접 → size-adjust
+   없이도 정렬 이동이 최소화된다. 한글 우선으로 local 나열(그 폰트의 라틴도 사용). */
+@font-face {
+  font-family: 'Pretendard-fallback';
+  src:
+    local('Apple SD Gothic Neo'), local('AppleSDGothicNeo-Regular'), local('Malgun Gothic'),
+    local('맑은 고딕'), local('Noto Sans KR'), local('Noto Sans CJK KR');
+  ascent-override: 95.21%;
+  descent-override: 24.12%;
+  line-gap-override: 0%;
 }
 
 /* Global reset, ported from the `<style>` block shared by the *.dc.html pages. */
