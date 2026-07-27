@@ -145,7 +145,7 @@ export function useLoginController() {
     }, 1100);
   };
 
-  const onEmail = (v: string) => patch({ email: v, error: '' });
+  const onEmail = (v: string) => patch({ email: v, error: '', emailUnregistered: false });
   const onPassword = (v: string) => patch({ password: v, error: '' });
   const onPassword2 = (v: string) => patch({ password2: v, error: '' });
   const onNewPw = (v: string) => patch({ newPw: v, error: '' });
@@ -274,7 +274,17 @@ export function useLoginController() {
     // failure (rate limit / SMTP) surface a localized error and stay on this step
     // instead of dropping the user onto a code screen where nothing will arrive.
     patch({ busy: true, error: '', notice: '' });
-    void auth.sendPasswordReset(state.email).then((res) => {
+    void (async () => {
+      // `resetPasswordForEmail`은 이메일 열거 방지로 가입 여부와 무관하게 성공을
+      // 돌려준다 → 가입 안 된 주소에도 "보냈어요"가 뜨고 메일은 안 온다(제보).
+      // 전송 전에 가입 여부를 확인해, 미가입이면 코드 단계로 넘어가지 않고 안내
+      // 툴팁을 띄운다. 확인 불가(null: RPC 미배포/네트워크)면 기존대로 전송한다.
+      const registered = await auth.isEmailRegistered(state.email);
+      if (registered === false) {
+        patch({ busy: false, emailUnregistered: true, error: '가입되지 않은 이메일이에요. 이메일 주소를 확인하거나 먼저 회원가입을 진행해 주세요.' });
+        return;
+      }
+      const res = await auth.sendPasswordReset(state.email);
       if (res.error) {
         patch({ busy: false, error: localizeAuthError(res.error), cooldown: parseRetrySeconds(res.error) ?? state.cooldown });
         return;
@@ -282,7 +292,7 @@ export function useLoginController() {
       // demoCode '' so ForgotVerifyStep hides the demo box (real email has the code).
       // Start the resend countdown so the code step opens with the timer running.
       patch({ busy: false, step: 'forgotVerify', demoCode: '', code: '', newPw: '', newPw2: '', error: '', notice: '이메일로 인증 코드를 보냈어요. 메일함을 확인해 주세요.', cooldown: RESEND_COOLDOWN });
-    });
+    })();
   };
 
   const resetPw = () => {

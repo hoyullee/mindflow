@@ -82,6 +82,41 @@ describe('SupabaseAuth signInWithIdToken (GIS token exchange)', () => {
   });
 });
 
+describe('SupabaseAuth isEmailRegistered (email_is_registered RPC)', () => {
+  function clientWithRpc(result: { data?: unknown; errorMsg?: string }) {
+    const captured: { fn?: string; args?: Record<string, unknown> } = {};
+    const client = {
+      rpc: async (fn: string, args: Record<string, unknown>) => {
+        captured.fn = fn;
+        captured.args = args;
+        if (result.errorMsg) return { data: null, error: { message: result.errorMsg } };
+        return { data: result.data, error: null };
+      },
+    } as unknown as SupabaseClient;
+    return { client, captured };
+  }
+
+  it('calls the RPC with p_email and returns its boolean result', async () => {
+    const yes = clientWithRpc({ data: true });
+    expect(await new SupabaseAuth(yes.client).isEmailRegistered('a@b.c')).toBe(true);
+    expect(yes.captured.fn).toBe('email_is_registered');
+    expect(yes.captured.args).toEqual({ p_email: 'a@b.c' });
+
+    const no = clientWithRpc({ data: false });
+    expect(await new SupabaseAuth(no.client).isEmailRegistered('nope@x.y')).toBe(false);
+  });
+
+  it('returns null (unknown → caller proceeds) when the RPC errors or is missing', async () => {
+    const { client } = clientWithRpc({ errorMsg: 'function email_is_registered does not exist' });
+    expect(await new SupabaseAuth(client).isEmailRegistered('a@b.c')).toBeNull();
+  });
+
+  it('returns null when the RPC yields a non-boolean payload', async () => {
+    const { client } = clientWithRpc({ data: null });
+    expect(await new SupabaseAuth(client).isEmailRegistered('a@b.c')).toBeNull();
+  });
+});
+
 describe('SupabaseAuth signInWithOAuth', () => {
   it('always requests the Google account chooser (prompt=select_account)', async () => {
     // Without this param Google silently reuses the signed-in browser account

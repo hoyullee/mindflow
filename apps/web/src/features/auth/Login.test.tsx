@@ -305,6 +305,34 @@ describe('Login', () => {
     }
   });
 
+  it('reset flow: 미가입 이메일이면 코드를 보내지 않고 "가입되지 않은 이메일" 안내를 띄운다(이메일 수정 시 해제)', async () => {
+    const user = userEvent.setup();
+    const auth = new LocalAuth();
+    vi.spyOn(auth, 'isEmailRegistered').mockResolvedValue(false); // 미가입
+    const resetSpy = vi.spyOn(auth, 'sendPasswordReset');
+    const backend: Backend = { auth, docStore: stubDocStore, spaceStore: new LocalSpaceStore(), mode: 'supabase' };
+    render(
+      <MemoryRouter>
+        <BackendProvider backend={backend}>
+          <Login />
+        </BackendProvider>
+      </MemoryRouter>,
+    );
+
+    await user.click(screen.getByText('비밀번호 찾기'));
+    await user.type(screen.getByPlaceholderText('you@example.com'), 'ghost@example.com');
+    await user.click(screen.getByRole('button', { name: '재설정 코드 보내기' }));
+
+    // 안내 노출 + 실제 전송 없음 + 코드 단계로 넘어가지 않음
+    await waitFor(() => expect(screen.getByText(/가입되지 않은 이메일/)).toBeTruthy());
+    expect(resetSpy).not.toHaveBeenCalled();
+    expect(screen.queryByPlaceholderText('인증 코드 입력')).toBeNull();
+
+    // 이메일을 수정하면 안내가 사라진다
+    await user.type(screen.getByPlaceholderText('you@example.com'), 'x');
+    await waitFor(() => expect(screen.queryByText(/가입되지 않은 이메일/)).toBeNull());
+  });
+
   it('localizes a wrong-password login error to Korean (no English leak)', async () => {
     const user = userEvent.setup();
     const auth = new LocalAuth();

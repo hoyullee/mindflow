@@ -71,6 +71,16 @@ export interface AuthProvider {
   /** Returns an unsubscribe function. */
   onAuthChange(listener: AuthChangeListener): () => void;
   sendPasswordReset(email: string): Promise<{ error?: string }>;
+  /**
+   * Whether an account exists for `email`. Backs the password-reset form's
+   * "가입되지 않은 이메일" warning: `resetPasswordForEmail` always reports success
+   * (anti-enumeration), so without this the UI claims a code was sent to
+   * addresses that will never receive one. Supabase: the `email_is_registered`
+   * SECURITY DEFINER RPC (0008). Returns `null` when the check can't be made
+   * (RPC missing/errored, or local/demo mode) — the caller then proceeds with
+   * the send rather than blocking on an unknown answer.
+   */
+  isEmailRegistered(email: string): Promise<boolean | null>;
   verifyOtp(email: string, token: string, type: 'signup' | 'recovery'): Promise<AuthResult>;
   updatePassword(newPassword: string): Promise<{ error?: string }>;
   /**

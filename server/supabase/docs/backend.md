@@ -40,6 +40,15 @@ mocked) 어댑터로 검증되었습니다(라이브 호출 없음).
   가드로 본인만) ② "Leaked Password Protection Disabled"는 대시보드 Auth 설정 토글
   (Authentication → Sign In / Providers → *Leaked password protection*, HaveIBeenPwned
   대조)로 켭니다.
+- `supabase/migrations/0008_email_is_registered.sql` — 비밀번호 찾기용
+  `email_is_registered(text)` RPC. `resetPasswordForEmail`은 이메일 열거 방지로 가입
+  여부와 무관하게 성공을 돌려줘, 미가입 주소에도 "코드 보냈어요"가 뜨고 메일은 오지
+  않았습니다(제보). 이를 막으려 전송 전 가입 여부를 조회하는 SECURITY DEFINER 함수로,
+  `auth.users` 존재 여부만 불리언으로 반환합니다(anon/authenticated 실행 허용 — 로그인
+  전 흐름이라 anon 필요, `SupabaseAuth.isEmailRegistered()`가 호출). **트레이드오프**:
+  이메일 열거를 의도적으로 허용합니다(가입 여부 노출) — 미가입 안내 UX를 위한 결정이며
+  다른 정보는 반환하지 않습니다. 미적용 시 RPC 오류→`null`(불명)로 폴백해 기존처럼 전송을
+  진행합니다.
 - 마이그레이션은 표준 위치 **`supabase/migrations/`**(+ 루트 `supabase/config.toml`)에
   둡니다 — Supabase의 GitHub 연동이 이 경로를 찾아, `main`(프로덕션 브랜치) 머지 시
   새 마이그레이션을 자동 적용하고 PR마다 프리뷰 DB 브랜치를 만듭니다(아래 §1a).
@@ -70,6 +79,7 @@ mocked) 어댑터로 검증되었습니다(라이브 호출 없음).
    psql "$DATABASE_URL" -f supabase/migrations/0005_delete_account.sql
    psql "$DATABASE_URL" -f supabase/migrations/0006_profile_name_from_oauth.sql
    psql "$DATABASE_URL" -f supabase/migrations/0007_security_advisor.sql
+   psql "$DATABASE_URL" -f supabase/migrations/0008_email_is_registered.sql
    ```
    `server/supabase/seed/seed.sql`은 선택 사항(로컬 개발용 샘플 문서 1건 삽입 — 실제
    `auth.users` id로 치환 필요, 파일 내 주석 참고).

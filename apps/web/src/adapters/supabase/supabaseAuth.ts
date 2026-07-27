@@ -104,6 +104,17 @@ export class SupabaseAuth implements AuthProvider {
     return error ? { error: error.message } : {};
   }
 
+  // Existence check for the "가입되지 않은 이메일" reset-form warning. The
+  // anon/authenticated key can't read `auth.users`, so this goes through the
+  // `email_is_registered` SECURITY DEFINER RPC (0008). On ANY failure (RPC not
+  // yet migrated, network) return null = "unknown" so the caller falls back to
+  // sending — never block a legitimate reset on a failed lookup.
+  async isEmailRegistered(email: string): Promise<boolean | null> {
+    const { data, error } = await this.client.rpc('email_is_registered', { p_email: email });
+    if (error) return null;
+    return typeof data === 'boolean' ? data : null;
+  }
+
   async verifyOtp(email: string, token: string, type: 'signup' | 'recovery'): Promise<AuthResult> {
     const { data, error } = await this.client.auth.verifyOtp({ email, token, type });
     if (error) return { session: null, error: error.message };
