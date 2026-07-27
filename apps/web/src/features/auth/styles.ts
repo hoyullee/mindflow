@@ -61,9 +61,11 @@ export function codeInputStyle(marginBottom: number): CSSProperties {
     borderRadius: 11,
     background: '#faf3ee',
     fontFamily: 'inherit',
-    fontSize: 22,
-    fontWeight: 700,
-    letterSpacing: 8,
+    // 코드 입력 placeholder("인증 코드 입력")가 일반 본문 텍스트처럼 보이도록
+    // 크게·굵게 두지 않는다(과거 22px/700/자간8 → 14px/400/자간2).
+    fontSize: 14,
+    fontWeight: 400,
+    letterSpacing: 2,
     textAlign: 'center',
     padding: '0 14px',
     outline: 'none',

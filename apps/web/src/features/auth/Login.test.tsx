@@ -82,7 +82,8 @@ describe('Login', () => {
 
     await user.click(screen.getByText('가입하기'));
 
-    expect(screen.getByText('계정 만들기')).toBeTruthy();
+    // 가입 모드에선 제목도 '가입하기'(제출 버튼과 동일 문구) — 제목 div + 버튼 둘 다 존재.
+    expect(screen.getAllByText('가입하기').length).toBeGreaterThanOrEqual(2);
     expect(screen.getByPlaceholderText('비밀번호 재입력')).toBeTruthy();
     expect(screen.getByRole('button', { name: '가입하기' })).toBeTruthy();
   });
