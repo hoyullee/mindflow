@@ -347,6 +347,26 @@ describe('Login', () => {
     expect(screen.queryByText(/Invalid login credentials/)).toBeNull();
   });
 
+  it('로그인: 이메일 미인증 계정(가입 미완료)은 막다른 안내 대신 인증 단계로 보내 가입을 마치게 한다', async () => {
+    // 제보: 회원가입 인증 단계를 취소한 계정으로 로그인하면 "이메일 인증이 아직…"만
+    // 떠 진행이 막혔다. 미인증 = 아직 회원 아님 → 인증 코드 재발송 후 verify 단계로.
+    const user = userEvent.setup();
+    const auth = new LocalAuth();
+    vi.spyOn(auth, 'signInWithPassword').mockResolvedValue({ session: null, error: 'Email not confirmed' });
+    const resendSpy = vi.spyOn(auth, 'resendSignup').mockResolvedValue({});
+    renderSupa(auth);
+
+    await user.type(screen.getByPlaceholderText('you@example.com'), 'pending@example.com');
+    await user.type(screen.getByPlaceholderText('비밀번호 입력'), 'password123');
+    await user.click(screen.getByRole('button', { name: '로그인' }));
+
+    // verify 단계로 이동 + 인증 코드 재발송 + 안내 노출, 막다른 문구는 안 뜬다
+    expect(await screen.findByPlaceholderText('인증 코드 입력')).toBeTruthy();
+    await waitFor(() => expect(resendSpy).toHaveBeenCalledWith('pending@example.com'));
+    expect(screen.getByText(/아직 가입이 완료되지 않았어요/)).toBeTruthy();
+    expect(screen.queryByText(/이메일 인증이 아직 완료되지 않았어요/)).toBeNull();
+  });
+
   it('localizes the Supabase password-policy error to a concise Korean message', async () => {
     const user = userEvent.setup();
     const auth = new LocalAuth();
