@@ -90,9 +90,11 @@ export function Editor() {
             <DocChip controller={controller} />
             <PresenceBar controller={controller} />
             <PropertyPanel controller={controller} />
-            {/* Mobile: a tap selects (no auto-sheet); this bar offers 편집/속성/삭제.
-                Hidden once the sheet is open (it has its own close control below). */}
-            {isMobile && controller.selection && !controller.propsOpen && <MobileSelectBar controller={controller} theme={th} />}
+            {/* Mobile: a tap selects (no auto-sheet); this bar offers 편집/속성/삭제와
+                전체 메뉴로 가는 더보기(⋯). Hidden once the sheet is open (it has its
+                own close control below), and while the ⋯ menu it opened is showing —
+                두 겹이 겹쳐 보이지 않도록. */}
+            {isMobile && controller.selection && !controller.propsOpen && !controller.ctxMenu && <MobileSelectBar controller={controller} theme={th} />}
             {/* Close handle for the mobile property sheet — dismisses it WITHOUT
                 deselecting, so the object stays selected (e.g. to then move it). */}
             {isMobile && controller.propsOpen && (

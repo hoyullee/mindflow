@@ -30,13 +30,31 @@ export function MobileSelectBar({ controller, theme: th }: MobileSelectBarProps)
   const isRoot = isNode && sel?.id === ROOT_ID; // 루트는 형제가 없다(컨텍스트 메뉴와 동일)
   const ref = useRef<HTMLDivElement>(null);
   const [size, setSize] = useState<{ w: number; h: number }>({ w: 190, h: 54 });
-  // Re-measure whenever the button composition changes (node selections carry
-  // extra 하위/형제 buttons) so clamp/flip stays accurate.
+
+  // Position (in the canvas box's coordinate space): below the object's bottom
+  // edge, centred on it.
+  const box = boxFor(controller);
+  const { pan, zoom, vw, vh } = controller;
+  const GAP = 12;
+  const M = 8; // canvas margin
+
+  // 버튼 폭은 가용 폭에 맞춰 줄인다 — 고정 56px로 두면 버튼이 여섯 개가 되는
+  // 노드 선택 시 폭이 368px이라 360px 기기(갤럭시 S·아이폰 mini 등 흔한 폭)에서
+  // 바가 화면 밖으로 삐져나갔다. 터치 타겟 최소치(44px)는 바닥으로 지킨다.
+  const BTN_GAP = 4;
+  const BAR_PAD = 5;
+  const btnCount = 4 + (isNode ? 1 : 0) + (isNode && !isRoot ? 1 : 0); // 편집·속성·삭제·메뉴 + 하위/형제
+  const availW = Math.max(0, vw - 2 * M - 2 * BAR_PAD - (btnCount - 1) * BTN_GAP);
+  const btnMin = Math.max(44, Math.min(56, Math.floor(availW / btnCount)));
+
+  // Re-measure whenever the button composition OR their width changes, so the
+  // clamp/flip below works off the real rendered size.
   useLayoutEffect(() => {
     const el = ref.current;
     if (el) setSize({ w: el.offsetWidth, h: el.offsetHeight });
-  }, [isNode, isRoot]);
-  if (!sel) return null;
+  }, [isNode, isRoot, btnMin]);
+
+  if (!sel) return null; // 훅은 전부 위에서 호출한 뒤에 빠져나간다(hooks 규칙)
 
   const startEdit = (): void => {
     if (sel.kind === 'node') controller.startEditNode(sel.id);
@@ -45,12 +63,6 @@ export function MobileSelectBar({ controller, theme: th }: MobileSelectBarProps)
     else if (sel.kind === 'zone') controller.startEditZoneLabel(sel.id);
   };
 
-  // Position (in the canvas box's coordinate space): below the object's bottom
-  // edge, centred on it.
-  const box = boxFor(controller);
-  const { pan, zoom, vw, vh } = controller;
-  const GAP = 12;
-  const M = 8; // canvas margin
   // The zoom/minimap cluster is pinned to the bottom-right of this same box
   // (ZoomControls: absolute, right:16, bottom:16). Reserve a conservative
   // rectangle around it so the bar flips ABOVE the object rather than landing on
@@ -85,7 +97,7 @@ export function MobileSelectBar({ controller, theme: th }: MobileSelectBarProps)
     alignItems: 'center',
     justifyContent: 'center',
     gap: 3,
-    minWidth: 56,
+    minWidth: btnMin,
     height: 44,
     padding: '0 10px',
     border: 'none',
@@ -109,8 +121,8 @@ export function MobileSelectBar({ controller, theme: th }: MobileSelectBarProps)
         top,
         display: 'flex',
         alignItems: 'center',
-        gap: 4,
-        padding: 5,
+        gap: BTN_GAP,
+        padding: BAR_PAD,
         background: th.panel,
         border: `1px solid ${th.border}`,
         borderRadius: 16,
@@ -161,6 +173,30 @@ export function MobileSelectBar({ controller, theme: th }: MobileSelectBarProps)
           <path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2" />
         </svg>
         삭제
+      </button>
+      {/* 메뉴 — 우클릭 메뉴 전체(복사/잘라내기/붙여넣기·이미지·텍스트 정렬 …)를
+          그대로 연다. 모바일엔 우클릭이 없고 길게 누르기는 이미 선택된 객체에선
+          이동 드래그로 가로채이므로, 이 버튼이 전체 메뉴로 가는 확실한 길이다.
+          바에 항목을 더 눕히지 않는 이유: 390px 화면에서 이미 폭이 거의 찼다
+          (노드 선택 시 308px) — 그래서 '넓히기'가 아니라 '펼치기'로 푼다.
+          메뉴는 바 바로 아래에 띄우고(뷰포트를 벗어나면 ContextMenu가 clamp),
+          열려 있는 동안 바는 숨겨 두 겹으로 겹치지 않게 한다(Editor.tsx).
+          라벨이 '더보기'가 아닌 이유: 상단 툴바의 앱 메뉴(햄버거)가 이미 그 이름을
+          쓰고 있어, 한 화면에 같은 이름의 버튼이 둘 생기지 않도록 구분한다. */}
+      <button
+        type="button"
+        className="mf-ed-btn"
+        style={btn}
+        aria-label="객체 메뉴"
+        aria-haspopup="menu"
+        onClick={() => controller.openCtxMenuForSelection(left, top + size.h + 6)}
+      >
+        <svg width={18} height={18} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2.4} strokeLinecap="round">
+          <circle cx="5" cy="12" r="1" />
+          <circle cx="12" cy="12" r="1" />
+          <circle cx="19" cy="12" r="1" />
+        </svg>
+        메뉴
       </button>
     </div>
   );
