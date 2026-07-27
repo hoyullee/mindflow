@@ -60,7 +60,14 @@ export default defineConfig({
     react(),
     landingRootSwap(),
     VitePWA({
-      registerType: 'autoUpdate',
+      // 'prompt': 새 SW를 **대기 상태**로 둔다 — 에디터가 열린 채 페이지가 저절로
+      // 리로드되면 편집이 끊기므로, 적용 시점은 `UpdatePrompt`의 토스트로 사용자가
+      // 고르게 한다(autoUpdate였을 땐 배포가 조용히 반영돼 "라이브가 그대로"로
+      // 보이거나 예고 없이 리로드됐다).
+      registerType: 'prompt',
+      // 등록은 React 쪽(`virtual:pwa-register/react`, src/pwa/UpdatePrompt.tsx)에서
+      // 하므로 플러그인의 자동 주입 스크립트는 끈다(이중 등록 방지).
+      injectRegister: false,
       includeAssets: ['favicon.svg', 'favicon-32x32.png', 'favicon-16x16.png', 'icons/apple-touch-icon.png'],
       manifest: pwaManifest,
       workbox: {
