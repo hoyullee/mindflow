@@ -416,7 +416,7 @@ describe('Home', () => {
     expect(screen.getByText('최근 항목')).toBeTruthy();
   });
 
-  it('최근 항목 카드에 위치("스페이스 · 폴더")가 보이고, 전체 경로가 툴팁으로 붙는다', async () => {
+  it('최근 항목 카드에 위치(폴더명)가 보이고, 스페이스까지 포함한 전체 경로가 툴팁·aria로 붙는다', async () => {
     localStorage.setItem('mf_recent', JSON.stringify(['doc-p1']));
     localStorage.setItem(
       'mf_spaces',
@@ -446,9 +446,14 @@ describe('Home', () => {
       </MemoryRouter>,
     );
 
-    // 위치 줄이 카드에 실제로 그려지고(A), 잘림 대비 전체 경로가 툴팁으로 붙는다(C)
-    const path = await screen.findByText('일반 공간 · 기획');
-    expect(path.parentElement?.getAttribute('title')).toBe('일반 공간 › 기획 › 기획맵');
+    // 스크린리더에는 스페이스명까지 포함한 전체 경로가 노출된다(라벨에선 생략되므로)
+    const row = await screen.findByLabelText('위치: 일반 공간 › 기획 › 기획맵');
+    // 보이는 라벨은 폴더명만 — 좁은 폭을 변별력 있는 쪽에 양보한다
+    expect(row.textContent).toBe('기획');
+    // 잘림 대비 전체 경로는 마우스 툴팁으로도 준다
+    expect(row.getAttribute('title')).toBe('일반 공간 › 기획 › 기획맵');
+    // 스페이스 색 점은 유지된다(스페이스는 색으로 계속 구분)
+    expect(row.querySelector('span[aria-hidden="true"]')).toBeTruthy();
   });
 
   it('hides the "아직 만든 맵이 없어요" prompt when the space has folders but no loose maps', async () => {

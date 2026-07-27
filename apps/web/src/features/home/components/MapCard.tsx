@@ -429,17 +429,22 @@ export function MapCard({ card, controller, draggableEnabled, compact = false }:
               아래 툴바까지 밀렸다(새로고침 깜빡임). */}
           <div style={{ fontSize: compact ? 12 : 14, lineHeight: compact ? '15px' : undefined, fontWeight: 600, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', minWidth: 0 }}>{card.title}</div>
         </div>
-        {/* 최근 항목 전용 위치 줄 — "● 스페이스 · 폴더". 최근 트레이는 스페이스를
-            가로지르는 목록이라 제목만으로는 어느 위치의 맵인지 알 수 없다.
+        {/* 최근 항목 전용 위치 줄 — "● 폴더"(폴더가 없으면 "● 스페이스"). 최근
+            트레이는 스페이스를 가로지르는 목록이라 제목만으로는 어느 위치의 맵인지
+            알 수 없다.
+            · 라벨은 가장 구체적인 한 조각만(`buildCardPath`) — 스페이스는 앞의 색
+              점이 나타낸다. 좁은 폭을 변별력 있는 폴더명에 양보해 말줄임을 줄인다.
             · 높이(14) + marginTop(2)를 px로 고정: 폰트 스왑에 카드/트레이 높이가
               출렁이지 않게 하고, RecentStripSkeleton과 footprint를 정확히 맞춘다.
             · 위치를 알 수 없으면(빈 pathLabel) 줄 높이만 유지하고 아무것도 그리지
               않는다 — 한 행에 섞여도 카드 아랫변이 어긋나지 않는다.
-            · 폭이 좁아 말줄임되므로, 잘리지 않은 전체 경로는 title 툴팁으로 준다
-              (본문 텍스트는 DOM에 그대로 있어 스크린리더는 전부 읽는다). */}
+            · a11y: 라벨에서 스페이스명이 빠지고 색 점은 시각 정보뿐이라, 줄 전체를
+              `role="img"` + 전체 경로 `aria-label`로 묶어 스크린리더가 스페이스까지
+              읽게 한다(코드베이스의 색 점과 같은 패턴). 마우스에는 같은 값을 title
+              툴팁으로 준다 — 말줄임된 경우의 전체 경로 확인용. */}
         {compact && (
           <div
-            {...(card.pathFull ? { title: card.pathFull } : {})}
+            {...(card.pathFull ? { title: card.pathFull, role: 'img', 'aria-label': `위치: ${card.pathFull}` } : {})}
             style={{ display: 'flex', alignItems: 'center', gap: 5, marginTop: 2, height: 14, minWidth: 0 }}
           >
             {card.pathLabel && card.spaceColor && (
