@@ -34,7 +34,7 @@ export function deriveLoginView(state: LoginState): LoginViewModel {
           ? '이메일 인증'
           : login
             ? 'Geurio에 오신 것을 환영해요'
-            : '계정 만들기',
+            : '가입하기',
     subheading: forgot
       ? '이메일로 재설정 코드를 보내드릴게요.'
       : forgotVerify

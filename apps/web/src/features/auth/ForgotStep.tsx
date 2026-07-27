@@ -1,6 +1,7 @@
 import type { ChangeEvent } from 'react';
 import type { LoginController } from './useLoginController';
 import { errorMsgStyle, fieldLabelStyle, submitButtonStyle, textInputStyle } from './styles';
+import { KeyIcon } from './AuthIcons';
 
 interface ForgotStepProps {
   controller: LoginController;
@@ -21,11 +22,10 @@ export function ForgotStep({ controller }: ForgotStepProps) {
           height: 56,
           borderRadius: 16,
           background: '#fdeee7',
-          fontSize: 26,
           marginBottom: 20,
         }}
       >
-        🔑
+        <KeyIcon />
       </div>
       <div style={{ fontSize: 13.5, color: '#33281f', lineHeight: 1.65, marginBottom: 20 }}>
         가입한 이메일 주소를 입력하면

@@ -2,6 +2,7 @@ import type { ChangeEvent } from 'react';
 import type { LoginController } from './useLoginController';
 import type { LoginViewModel } from './viewModel';
 import { codeInputStyle, errorMsgStyle, fieldLabelStyle, noticeMsgStyle, spinnerStyle, submitButtonStyle } from './styles';
+import { MailIcon } from './AuthIcons';
 
 interface VerifyStepProps {
   controller: LoginController;
@@ -23,11 +24,10 @@ export function VerifyStep({ controller, view }: VerifyStepProps) {
           height: 56,
           borderRadius: 16,
           background: '#fdeee7',
-          fontSize: 26,
           marginBottom: 20,
         }}
       >
-        ✉️
+        <MailIcon />
       </div>
       <div style={{ fontSize: 13.5, color: '#33281f', lineHeight: 1.65, marginBottom: 6 }}>
         <b style={{ fontWeight: 700 }}>{state.email}</b> 로 인증 코드를 보냈어요.

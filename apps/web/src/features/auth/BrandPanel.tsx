@@ -16,7 +16,11 @@ export function BrandPanel() {
         overflow: 'hidden',
       }}
     >
-      <div style={{ display: 'flex', alignItems: 'center', gap: 11, zIndex: 2 }}>
+      {/* 랜딩(진입점)으로 이동 — 로고/브랜드명 클릭 시 geurio.com 홈으로. */}
+      <a
+        href="https://geurio.com/"
+        style={{ display: 'flex', alignItems: 'center', gap: 11, zIndex: 2, textDecoration: 'none', color: 'inherit' }}
+      >
         <div
           style={{
             width: 38,
@@ -33,7 +37,7 @@ export function BrandPanel() {
           <BrandMark size={22} />
         </div>
         <div style={{ fontWeight: 800, fontSize: 19, letterSpacing: '-.01em' }}>Geurio</div>
-      </div>
+      </a>
 
       <div style={{ zIndex: 2 }}>
         <div style={{ fontSize: 34, fontWeight: 800, lineHeight: 1.3, letterSpacing: '-.02em', marginBottom: 16 }}>
