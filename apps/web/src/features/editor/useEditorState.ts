@@ -752,24 +752,10 @@ export function useEditorState(): EditorController {
         g.h = editLiveSize.h;
         g.tw = editLiveSize.tw;
       }
-      // 크기 조절 중에는 **끄는 대로** 보여 준다(cw/ch 그대로, 자연 크기 하한 무시).
-      //
-      // 평소 크기는 `max(자연 크기, cw/ch)`인데, 자연 높이는 줄 수로 정해지는
-      // **계단 함수**다. 그래서 모서리 핸들로 좌우를 조절할 때 손이 위로 조금만
-      // 흔들려 ch가 자연 높이 아래로 내려가면, 높이가 손을 따르지 않고 자연 높이에
-      // 붙잡혀 있다가 폭이 넓어져 텍스트가 한 줄 줄어드는 순간 한 줄 높이(약 20px)씩
-      // 뚝뚝 떨어졌다 — 제보된 "위아래로 튐"(214 → 194 → 174).
-      // 끄는 동안 높이가 오직 dy만 따르게 하면 이 계단이 사라진다. 하한은 손을 뗄 때
-      // 다시 적용된다(아래 onUp의 정착 처리).
-      if (id === resizingNodeId && n.cw && n.ch) {
-        g.w = n.cw;
-        g.h = n.ch;
-        g.tw = Math.min(g.tw, n.cw); // 클립 도형의 텍스트 영역이 박스를 넘지 않도록
-      }
       out[id] = g;
     });
     return out;
-  }, [vis, laidOutNodes, measurer, editingNodeId, editLiveSize, resizingNodeId]);
+  }, [vis, laidOutNodes, measurer, editingNodeId, editLiveSize]);
 
   // Memo cards grow with their text (a `min-height` box), so their ACTUAL height
   // usually exceeds the stored `f.h`. Measure it (port of the original's `_floatH`)
@@ -2549,17 +2535,31 @@ export function useEditorState(): EditorController {
           );
           break;
         }
-        case 'node-resize':
+        case 'node-resize': {
           // 축이 고정된 변 핸들은 반대 축의 시작값을 그대로 다시 커밋한다 — 손이
           // 세로로 흔들려도 높이가 따라 움직이지 않는다(가로 핸들의 존재 이유).
-          commitDoc(
-            (doc0) => ({
-              ...doc0,
-              nodes: mutations.resizeNode(doc0.nodes, d.id, d.axis === 'y' ? d.ow : d.ow + dx, d.axis === 'x' ? d.oh : d.oh + dy),
-            }),
-            true,
-          );
+          const wantW = Math.max(40, d.axis === 'y' ? d.ow : d.ow + dx);
+          const wantH = d.axis === 'x' ? d.oh : d.oh + dy;
+          commitDoc((doc0) => {
+            const n0 = doc0.nodes[d.id];
+            if (!n0) return doc0;
+            // 텍스트가 요구하는 최소 높이로 바닥을 깐다 — 이게 없으면 끄는 동안
+            // 글자가 박스를 삐져나온다.
+            //
+            // 바닥을 재는 폭은 `min(현재 폭, 시작 폭)`이다. 폭을 **넓히는** 동안
+            // 시작 폭으로 고정하는 이유: 넓히면 줄 수가 줄어 최소 높이가 한 줄씩
+            // 낮아지는데, 그 계단을 그대로 따르면 높이가 뚝뚝 떨어진다(제보된
+            // "위아래로 튐" — 214 → 194 → 174). 넓힌 박스에는 줄어든 텍스트가
+            // 어차피 들어가므로 바닥을 낮추지 않아도 안전하다.
+            // 반대로 **좁힐** 때는 현재 폭으로 재야 늘어난 줄 수를 담는다.
+            // ch를 뺀 사본으로 재야 "높이 지정 없이 텍스트가 요구하는 높이"가 나온다.
+            const probe: Node = { ...n0, cw: Math.min(wantW, d.ow) };
+            delete probe.ch;
+            const floor = computeMetrics(probe, geomRef.current[d.id]?.depth ?? 0, measurer);
+            return { ...doc0, nodes: mutations.resizeNode(doc0.nodes, d.id, wantW, Math.max(wantH, floor.h)) };
+          }, true);
           break;
+        }
         case 'float':
           commitDoc((doc0) => ({ ...doc0, floats: mutations.updateFloatItem(doc0.floats, d.id, { x: d.ox + dx, y: d.oy + dy }) }), true);
           break;
@@ -2634,19 +2634,6 @@ export function useEditorState(): EditorController {
       if (d.kind === 'line-end') setLineSnap(null);
       if (d.kind === 'node-resize') {
         setResizingNodeId(null); // drop it back to its normal layer
-        // 정착: 끄는 동안엔 하한(자연 크기) 없이 보여 줬으므로, 손을 뗄 때 실제로
-        // 그려질 크기를 cw/ch에 그대로 적어 둔다. 이렇게 해야 저장된 값과 화면이
-        // 어긋나지 않는다(텍스트가 요구하는 것보다 작게 끈 경우 여기서 한 번 커진다).
-        {
-          const rn = docRef.current.nodes[d.id];
-          const depth = geomRef.current[d.id]?.depth ?? 0;
-          if (rn) {
-            const settled = computeMetrics(rn, depth, measurer);
-            if (rn.cw !== settled.w || rn.ch !== settled.h) {
-              commitDoc((doc0) => ({ ...doc0, nodes: mutations.resizeNode(doc0.nodes, d.id, settled.w, settled.h) }), true);
-            }
-          }
-        }
         if (objDragMovedRef.current) {
           // a free shape resized into a neighbour → magnet it clear once the final
           // size is in geom. Resize commits during the drag, so `doc.nodes` doesn't
