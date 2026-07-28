@@ -2,6 +2,7 @@ import type { CSSProperties } from 'react';
 import { useEffect, useRef } from 'react';
 import type { Float } from '@mindflow/mindmap-core';
 import { hexA } from '../theme';
+import { isPanButton } from '../pointerButtons';
 import type { Theme } from '../theme';
 import type { EditorController } from '../useEditorState';
 import { peersSelecting } from '../presenceSelection';
@@ -74,6 +75,7 @@ export function FloatLayer({ floats, theme: th, controller }: FloatLayerProps) {
         return (
           <div
             key={f.id}
+            data-float-id={f.id}
             style={boxStyle}
             onPointerDown={(e) => controller.beginFloatDrag(e, f.id)}
             onDoubleClick={(e) => {
@@ -85,6 +87,7 @@ export function FloatLayer({ floats, theme: th, controller }: FloatLayerProps) {
             <div
               title={collapsed ? '펼치기' : '접기'}
               onPointerDown={(e) => {
+                if (isPanButton(e)) return; // 우클릭·휠클릭 = 화면 이동
                 e.stopPropagation();
                 controller.toggleFloatCollapse(f.id);
               }}

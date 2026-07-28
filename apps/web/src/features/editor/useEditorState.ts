@@ -14,6 +14,7 @@ import { attachImageFile, defaultFloatSize, firstImageFile, fitWithin } from './
 import { hasStoredDoc, loadOrSeedDoc, saveDoc } from './storage';
 import { pushRecentEntry } from '../home/storage';
 import type { ResizeAxis } from './components/ResizeHandle';
+import { isPanButton } from './pointerButtons';
 import { buildVisible, descendants, outlineRows } from './tree';
 import type { EdgeStyle } from './tree';
 import { nearestInDirection } from './navigation';
@@ -2849,6 +2850,7 @@ export function useEditorState(): EditorController {
 
   const beginNodeDrag = useCallback(
     (e: ReactPointerEvent, id: string) => {
+      if (isPanButton(e)) return; // 우클릭·휠클릭 = 화면 이동 (배경으로 흘려보낸다)
       // Touch: defer to a tap. Don't select/drag on press — record the target
       // and let the press bubble to the background so a drag pans and a no-move
       // release selects (see `pendingTapRef`). Mouse keeps press-to-select+drag.
@@ -2890,6 +2892,7 @@ export function useEditorState(): EditorController {
   );
 
   const beginNodeResize = useCallback((e: ReactPointerEvent, id: string, axis: ResizeAxis = 'both') => {
+    if (isPanButton(e)) return; // 우클릭·휠클릭 = 화면 이동 (배경으로 흘려보낸다)
     e.stopPropagation();
     e.preventDefault();
     const g = geomRef.current[id];
@@ -2901,6 +2904,7 @@ export function useEditorState(): EditorController {
   }, []);
 
   const beginFloatDrag = useCallback((e: ReactPointerEvent, id: string) => {
+    if (isPanButton(e)) return; // 우클릭·휠클릭 = 화면 이동 (배경으로 흘려보낸다)
     if (e.pointerType === 'touch' && !isSelectedSingle('float', id)) {
       pendingTapRef.current = { kind: 'float', id };
       return;
@@ -2920,6 +2924,7 @@ export function useEditorState(): EditorController {
   }, []);
 
   const beginFloatResize = useCallback((e: ReactPointerEvent, id: string) => {
+    if (isPanButton(e)) return; // 우클릭·휠클릭 = 화면 이동 (배경으로 흘려보낸다)
     e.stopPropagation();
     e.preventDefault();
     const f = docRef.current.floats.find((x) => x.id === id);
@@ -2928,6 +2933,7 @@ export function useEditorState(): EditorController {
   }, []);
 
   const beginZoneDrag = useCallback((e: ReactPointerEvent, id: string) => {
+    if (isPanButton(e)) return; // 우클릭·휠클릭 = 화면 이동 (배경으로 흘려보낸다)
     if (e.pointerType === 'touch' && !isSelectedSingle('zone', id)) {
       pendingTapRef.current = { kind: 'zone', id };
       return;
@@ -2942,6 +2948,7 @@ export function useEditorState(): EditorController {
   }, []);
 
   const beginZoneResize = useCallback((e: ReactPointerEvent, id: string) => {
+    if (isPanButton(e)) return; // 우클릭·휠클릭 = 화면 이동 (배경으로 흘려보낸다)
     e.stopPropagation();
     e.preventDefault();
     const z = docRef.current.zones.find((x) => x.id === id);
@@ -2950,6 +2957,7 @@ export function useEditorState(): EditorController {
   }, []);
 
   const beginLineDrag = useCallback((e: ReactPointerEvent, id: string) => {
+    if (isPanButton(e)) return; // 우클릭·휠클릭 = 화면 이동 (배경으로 흘려보낸다)
     if (e.pointerType === 'touch' && !isSelectedSingle('line', id)) {
       pendingTapRef.current = { kind: 'line', id };
       return;
@@ -2975,6 +2983,7 @@ export function useEditorState(): EditorController {
   // move" affordance alongside dragging the object body directly.
   const beginMoveSelected = useCallback(
     (e: ReactPointerEvent) => {
+      if (isPanButton(e)) return; // 우클릭·휠클릭 = 화면 이동 (배경으로 흘려보낸다)
       const s = selectionRef.current;
       if (!s) return;
       if (s.kind === 'node') beginNodeDrag(e, s.id);
@@ -2986,6 +2995,7 @@ export function useEditorState(): EditorController {
   );
 
   const beginLineEndDrag = useCallback((e: ReactPointerEvent, id: string, which: LineHandle) => {
+    if (isPanButton(e)) return; // 우클릭·휠클릭 = 화면 이동 (배경으로 흘려보낸다)
     e.stopPropagation();
     capturePointer(e);
     const l = docRef.current.lines.find((x) => x.id === id);
@@ -3001,6 +3011,7 @@ export function useEditorState(): EditorController {
   }, []);
 
   const beginLineCurveDrag = useCallback((e: ReactPointerEvent, id: string, which: LineHandle) => {
+    if (isPanButton(e)) return; // 우클릭·휠클릭 = 화면 이동 (배경으로 흘려보낸다)
     e.stopPropagation();
     capturePointer(e);
     const l = docRef.current.lines.find((x) => x.id === id);

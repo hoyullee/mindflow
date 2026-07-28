@@ -817,3 +817,91 @@ describe('크기 조절 중에는 잡지 않은 위쪽 변이 움직이지 않�
     expect(heights.size).toBeGreaterThan(1);
   });
 });
+
+// 제보: 우클릭 드래그로 화면을 옮기려는데, 커서 아래에 객체가 있으면 화면이 아니라
+// **그 객체가 끌려다녔다.** 배경 핸들러는 원래부터 우클릭·휠클릭을 팬으로 처리하는데,
+// 객체의 pointerdown 핸들러들이 버튼을 보지 않고 먼저 stopPropagation으로 가로챘다.
+// (우클릭을 누르고 떼기만 한 경우의 컨텍스트 메뉴는 `ContextMenu.interactions.test.tsx`가
+//  이미 덮는다 — 그 테스트들이 계속 통과하는 것이 이 변경의 무회귀 근거다.)
+describe('우클릭 드래그는 객체 위에서도 화면 이동이다', () => {
+  const PAN_DOC = {
+    v: 1,
+    nodes: {
+      root: { id: 'root', text: '루트', emoji: '', parent: null, children: ['c1'], collapsed: false, color: null, x: 0, y: 0 },
+      c1: { id: 'c1', text: '노드A', emoji: '', parent: 'root', children: [], collapsed: false, color: null, x: 0, y: 0 },
+    },
+    floats: [{ id: 'flt1', x: -260, y: 160, w: 200, text: '메모' }],
+    lines: [],
+    zones: [{ id: 'zn1', x: -320, y: -220, w: 300, h: 180, label: '1분기', color: null }],
+    layoutMode: 'right',
+    themeKey: 'coral',
+  };
+
+  const RIGHT = 2;
+  const MIDDLE = 1;
+
+  async function setup(mapId: string) {
+    localStorage.setItem(`mindflow_doc_${mapId}`, JSON.stringify(PAN_DOC));
+    const { container } = renderEditor(`/editor?map=${mapId}&title=x`);
+    await waitFor(() => expect(getViewport(container).querySelector('[data-node-id="c1"]')).toBeTruthy());
+    return container;
+  }
+  /** 팬 = 캔버스 레이어의 translate 변환. */
+  const panOf = (c: HTMLElement): string => {
+    const el = [...getViewport(c).querySelectorAll<HTMLElement>('div')].find((d) => d.style.transform.includes('translate'));
+    if (!el) throw new Error('pan layer not found');
+    return el.style.transform;
+  };
+  /** 객체의 캔버스 내 위치 — 팬은 부모 변환만 바꾸므로 이 값은 그대로여야 한다. */
+  const posOf = (c: HTMLElement, sel: string): string => {
+    const el = getViewport(c).querySelector<HTMLElement>(sel);
+    if (!el) throw new Error(`${sel} not found`);
+    return `${el.style.left}/${el.style.top}`;
+  };
+  const drag = (el: Element, button: number, dx: number, dy: number, pointerId: number) => {
+    firePointer(el, 'pointerdown', { pointerId, clientX: 400, clientY: 300, button });
+    firePointer(window, 'pointermove', { pointerId, clientX: 400 + dx, clientY: 300 + dy, button });
+    firePointer(window, 'pointerup', { pointerId, clientX: 400 + dx, clientY: 300 + dy, button });
+  };
+
+  const TARGETS = [
+    { name: '노드', sel: '[data-node-id="c1"]' },
+    { name: '메모', sel: '[data-float-id="flt1"]' },
+    { name: '영역', sel: '[data-zone-id="zn1"]' },
+  ];
+
+  for (const { name, sel } of TARGETS) {
+    it(`${name} 위에서 우클릭 드래그하면 객체가 아니라 화면이 움직인다`, async () => {
+      const container = await setup(`pan-${name}`);
+      const pan0 = panOf(container);
+      const pos0 = posOf(container, sel);
+
+      drag(getViewport(container).querySelector(sel)!, RIGHT, 120, 80, 31);
+
+      expect(panOf(container)).not.toBe(pan0); // 화면이 움직였다
+      expect(posOf(container, sel)).toBe(pos0); // 객체는 제자리
+    });
+  }
+
+  it('휠(가운데) 버튼도 같다', async () => {
+    const container = await setup('pan-middle');
+    const pan0 = panOf(container);
+    const pos0 = posOf(container, '[data-node-id="c1"]');
+
+    drag(getViewport(container).querySelector('[data-node-id="c1"]')!, MIDDLE, -90, 60, 32);
+
+    expect(panOf(container)).not.toBe(pan0);
+    expect(posOf(container, '[data-node-id="c1"]')).toBe(pos0);
+  });
+
+  it('왼쪽 버튼 드래그는 종전대로 객체를 움직인다 (무회귀)', async () => {
+    const container = await setup('pan-left');
+    const pan0 = panOf(container);
+    const pos0 = posOf(container, '[data-float-id="flt1"]');
+
+    drag(getViewport(container).querySelector('[data-float-id="flt1"]')!, 0, 100, 60, 33);
+
+    expect(posOf(container, '[data-float-id="flt1"]')).not.toBe(pos0); // 객체가 움직였다
+    expect(panOf(container)).toBe(pan0); // 화면은 그대로
+  });
+});
