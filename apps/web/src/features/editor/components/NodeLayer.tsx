@@ -9,7 +9,6 @@ import type { Theme } from '../theme';
 import type { EditorController } from '../useEditorState';
 import type { GeomMap } from '../types';
 import { peersSelecting } from '../presenceSelection';
-import { useIsMobile } from '../../../hooks/useMediaQuery';
 import { RemotePeerTag } from './RemotePeerTag';
 import { ResizeHandle } from './ResizeHandle';
 import { runsToHtml } from '../richtextDom';
@@ -78,7 +77,6 @@ interface NodeBoxProps {
 }
 
 function NodeBox({ id, node: n, g, nodes, mode, theme: th, rootX, controller }: NodeBoxProps) {
-  const isMobile = useIsMobile();
   const depth = g.depth;
   const col = colorOf(id, nodes, th);
   // port of `MSEL.nodes.includes(v.id)` (MindFlow.dc.html:1138) — a marquee multi-selection
@@ -384,57 +382,23 @@ function NodeBox({ id, node: n, g, nodes, mode, theme: th, rootX, controller }: 
       {/* resize handle only for a true single selection (port of `this.state.selectedId`,
           MindFlow.dc.html:1274 — not shown for a marquee multi-selection) */}
       {controller.selection?.kind === 'node' && controller.selection.id === id && !editing && (
-        <>
-          {/* 변 핸들(폭만 / 높이만) — 모서리만 있던 시절엔 폭을 넓히려 해도 손의
-              세로 흔들림이 그대로 높이로 들어갔다("가로로 조절했는데 세로가
-              제멋대로 바뀐다"). 모바일에서는 노드가 작으면 28px 히트 영역 셋이
-              서로 겹쳐 오조작이 나므로 모서리 하나만 남긴다. */}
-          {!isMobile && (
-            <>
-              <ResizeHandle
-                title="폭 조절 (더블클릭: 원래 크기)"
-                axis="x"
-                accent={th.accent}
-                panel={th.panel}
-                right={-6}
-                bottom={-6}
-                zIndex={80}
-                onPointerDown={(e) => controller.beginNodeResize(e, id, 'x')}
-                onDoubleClick={(e) => {
-                  e.stopPropagation();
-                  controller.resetNodeSize(id);
-                }}
-              />
-              <ResizeHandle
-                title="높이 조절 (더블클릭: 원래 크기)"
-                axis="y"
-                accent={th.accent}
-                panel={th.panel}
-                right={-6}
-                bottom={-6}
-                zIndex={80}
-                onPointerDown={(e) => controller.beginNodeResize(e, id, 'y')}
-                onDoubleClick={(e) => {
-                  e.stopPropagation();
-                  controller.resetNodeSize(id);
-                }}
-              />
-            </>
-          )}
-          <ResizeHandle
-            title="크기 조절 (더블클릭: 원래 크기)"
-            accent={th.accent}
-            panel={th.panel}
-            right={-6}
-            bottom={-6}
-            zIndex={81}
-            onPointerDown={(e) => controller.beginNodeResize(e, id)}
-            onDoubleClick={(e) => {
-              e.stopPropagation();
-              controller.resetNodeSize(id);
-            }}
-          />
-        </>
+        // 우하단 모서리 하나. 한때 오른쪽·아래 변에 축 고정 핸들도 뒀는데, 그건
+        // "가로로 끌었는데 세로가 튄다"를 우회하려던 장치였다. 원인(텍스트 최소
+        // 높이 계단 + 분수 cw의 과팽창 되돌림)을 모서리 쪽에서 고친 뒤로는 남길
+        // 이유가 없어져 걷어냈다 — 핸들 셋이 겹쳐 빗맞히기 쉬운 쪽이 더 문제였다.
+        <ResizeHandle
+          title="크기 조절 (더블클릭: 원래 크기)"
+          accent={th.accent}
+          panel={th.panel}
+          right={-6}
+          bottom={-6}
+          zIndex={81}
+          onPointerDown={(e) => controller.beginNodeResize(e, id)}
+          onDoubleClick={(e) => {
+            e.stopPropagation();
+            controller.resetNodeSize(id);
+          }}
+        />
       )}
     </div>
   );
