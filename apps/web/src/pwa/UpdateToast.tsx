@@ -1,11 +1,13 @@
 /**
  * "새 버전이 준비됐어요" 토스트 — 서비스워커가 새 앱 셸을 받아 대기 중일 때 뜬다.
  *
- * 이 파일은 **표현만** 담당한다(서비스워커 의존 없음) — SW 연결은 `UpdatePrompt`가
- * 하고, 여기는 순수 props라 테스트에서 그대로 렌더할 수 있다.
+ * 이 파일은 **표현만** 담당한다(서비스워커 의존 없음) — SW 연결과 적용 시점 판단은
+ * `UpdatePrompt`/`updateGate`가 하고, 여기는 순수 props라 테스트에서 그대로 렌더할
+ * 수 있다.
  *
- * 자동 새로고침을 하지 않는 이유: 에디터가 열려 있는 동안 페이지가 저절로 다시
- * 로드되면 편집 흐름이 끊긴다. 적용 시점을 사용자가 고르게 한다.
+ * 이 토스트가 뜨는 상황 자체가 좁다: 잃을 게 없는 화면은 조용히 자동 적용되고
+ * (`updateGate` 참고), 입력·편집 중이라 리로드가 실제로 방해가 되는 순간에만
+ * 사용자에게 시점을 맡긴다.
  */
 interface UpdateToastProps {
   visible: boolean;
@@ -13,9 +15,11 @@ interface UpdateToastProps {
   onRefresh: () => void;
   /** 이번 세션에서는 숨긴다(다음 방문에 다시 안내). */
   onDismiss: () => void;
+  /** 적용 직전 저장이 실패해 리로드를 멈춘 상태 — 그냥 넘어가면 편집분이 사라진다. */
+  saveBlocked?: boolean;
 }
 
-export function UpdateToast({ visible, onRefresh, onDismiss }: UpdateToastProps) {
+export function UpdateToast({ visible, onRefresh, onDismiss, saveBlocked = false }: UpdateToastProps) {
   if (!visible) return null;
 
   return (
@@ -47,7 +51,9 @@ export function UpdateToast({ visible, onRefresh, onDismiss }: UpdateToastProps)
         animation: 'mf-toast-in .18s ease-out',
       }}
     >
-      <span style={{ whiteSpace: 'nowrap' }}>새 버전이 준비됐어요</span>
+      <span style={{ whiteSpace: 'nowrap' }}>
+        {saveBlocked ? '변경사항을 저장하지 못했어요' : '새 버전이 준비됐어요'}
+      </span>
       <button
         type="button"
         onClick={onRefresh}
@@ -65,7 +71,7 @@ export function UpdateToast({ visible, onRefresh, onDismiss }: UpdateToastProps)
           cursor: 'pointer',
         }}
       >
-        새로고침
+        {saveBlocked ? '다시 시도' : '새로고침'}
       </button>
       <button
         type="button"

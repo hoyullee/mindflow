@@ -454,6 +454,9 @@ export interface EditorController {
   redo: () => void;
   saveState: SaveState;
   saveNow: () => void;
+  /** 리로드 직전 정리 — 대기 중인 자동저장을 flush 하고 "리로드해도 안전한가"를
+   * 돌려준다. 새 버전 적용(`pwa/updateGate`)이 이걸 보고 진행/중단을 정한다. */
+  flushSave: () => Promise<boolean>;
   /** Set when the last `DocStore.save()` lost an optimistic-lock race (another
    * tab/device saved first) — a place for the UI (`DocChip`) to tell the user,
    * per CLAUDE.md's M4 task brief ("충돌 시 사용자 고지 자리 마련"). */
@@ -1665,6 +1668,26 @@ export function useEditorState(): EditorController {
     savingTimerRef.current = window.setTimeout(() => {
       void persistDoc();
     }, 200);
+  }, [persistDoc]);
+
+  /**
+   * **곧 페이지가 리로드될 때**(새 버전 적용 — `pwa/updateGate`) 호출하는 정리 훅.
+   * 대기 중인 자동저장을 즉시 flush 하고 "리로드해도 안전한가"를 돌려준다.
+   *
+   * `false`면 호출자가 리로드를 멈춘다. 저장이 실패했거나(오프라인·충돌) 초기
+   * 로드가 아직/영영 끝나지 않아 `persistDoc`이 no-op인 상태라면 — 지금 리로드하는
+   * 순간 편집분이 백엔드에도 로컬 복구본에도 남지 않기 때문이다(로컬 복구본은
+   * 저장 성공 시에만 갱신된다, `persistDoc` 참고).
+   */
+  const flushSave = useCallback(async (): Promise<boolean> => {
+    window.clearTimeout(autosaveTimerRef.current);
+    window.clearTimeout(savingTimerRef.current);
+    // 이미 저장된 내용 그대로면 쓰기 없이 통과 — 리로드마다 불필요한 백엔드 쓰기를 만들지 않는다.
+    if (docSignature(docRef.current) === lastSavedSigRef.current) return true;
+    // goHome과 같은 이유로 초기 로드를 먼저 기다린다(그 전에는 persistDoc이 no-op).
+    await initialLoadRef.current;
+    await persistDoc();
+    return canPersistDocRef.current && docSignature(docRef.current) === lastSavedSigRef.current;
   }, [persistDoc]);
 
   const dismissSaveConflict = useCallback(() => setSaveConflict(null), []);
@@ -3322,6 +3345,7 @@ export function useEditorState(): EditorController {
     redo,
     saveState,
     saveNow,
+    flushSave,
     saveConflict,
     dismissSaveConflict,
     exportJSON,

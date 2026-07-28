@@ -1,0 +1,200 @@
+import { useEffect, useRef, useSyncExternalStore } from 'react';
+
+/**
+ * 새 배포(대기 중인 서비스워커)를 **언제 적용할지** 화면이 스스로 신고하는 레지스트리.
+ *
+ * 배경: 예전엔 업데이트가 잡히면 어느 화면이든 무조건 "새 버전이 준비됐어요"
+ * 토스트를 띄웠다(App 루트에 하나). 그런데 토스트의 존재 이유는 **"에디터가 열린 채
+ * 리로드되면 편집이 끊긴다"** 하나뿐이라, 랜딩·약관처럼 잃을 게 없는 화면까지
+ * 사용자에게 물어보고 있었다. 그래서 화면이 자기 위험도를 신고하고, 안전하면
+ * 조용히 갈아끼운다.
+ *
+ * 라우트 경로로 판단하지 않는 이유: 같은 화면도 상태에 따라 위험도가 다르다
+ * (로그인 = 빈 폼이면 안전 / 인증 코드 입력 중이면 위험). 그래서 경로가 아니라
+ * **컴포넌트가 자기 상태로** 신고한다 — 라우터 의존도 없어진다.
+ */
+
+/** 지금 이 화면에서 리로드가 얼마나 위험한지. */
+export type UpdateRisk =
+  /** 잃을 게 없다 — 보고 있는 중이라도 즉시 적용. (랜딩·약관·빈 로그인 폼) */
+  | 'safe'
+  /** 눈에 띄지 않을 때만 — 탭이 백그라운드로 가면 적용, 보고 있으면 토스트. (홈·유휴 에디터) */
+  | 'defer'
+  /** 절대 자동 적용하지 않는다 — 토스트로만. (입력/편집 중) */
+  | 'block';
+
+/**
+ * 적용 직전에 실행되는 정리 훅. **리로드해도 안전한가**를 돌려준다 —
+ * `false`면 적용을 멈춘다(예: 저장에 실패해 리로드하면 편집분이 사라지는 경우).
+ * `void`/`true`는 진행해도 좋다는 뜻.
+ */
+export type UpdatePrepare = () => Promise<boolean | void> | boolean | void;
+
+interface Entry {
+  risk: UpdateRisk;
+  /** ref로 들고 있어야 호출부가 `useCallback`으로 감싸지 않아도 최신 클로저를 쓴다. */
+  prepareRef: { current: UpdatePrepare | undefined };
+}
+
+const entries = new Set<Entry>();
+const listeners = new Set<() => void>();
+
+function notify(): void {
+  for (const listener of listeners) listener();
+}
+
+const SEVERITY: Record<UpdateRisk, number> = { safe: 0, defer: 1, block: 2 };
+
+/**
+ * 아무도 신고하지 않았을 때의 값. 보수적으로 `defer` — 신고를 깜빡한 새 화면이
+ * 사용자가 보고 있는 도중 제멋대로 리로드되는 일은 없어야 한다.
+ */
+export const DEFAULT_RISK: UpdateRisk = 'defer';
+
+/** 등록된 것 중 **가장 위험한** 값. 라우트 전환 중 두 화면이 겹쳐 등록된 순간에도 안전. */
+export function currentRisk(): UpdateRisk {
+  let worst: UpdateRisk | null = null;
+  for (const entry of entries) {
+    if (!worst || SEVERITY[entry.risk] > SEVERITY[worst]) worst = entry.risk;
+  }
+  return worst ?? DEFAULT_RISK;
+}
+
+/**
+ * 등록된 모든 정리 훅을 실행하고 "전부 리로드해도 안전한가"를 돌려준다.
+ * 하나라도 `false`를 돌려주거나 던지면 `false` — 판단이 안 서면 멈추는 쪽.
+ */
+export async function runPrepare(): Promise<boolean> {
+  let ok = true;
+  // 순회 중 등록이 바뀔 수 있으니 스냅샷으로 돈다.
+  for (const entry of [...entries]) {
+    try {
+      if ((await entry.prepareRef.current?.()) === false) ok = false;
+    } catch {
+      ok = false; // 정리 중 예외 = 저장 여부 불명 → 리로드하지 않는다
+    }
+  }
+  return ok;
+}
+
+/**
+ * 지금 이 탭을 **묻지 않고** 리로드해도 되는지. 자동 적용 판단의 유일한 정의 —
+ * 내 화면을 판단할 때도, 다른 탭의 질문에 답할 때도 같은 함수를 쓴다.
+ */
+export function canAutoApply(risk: UpdateRisk, hidden: boolean): boolean {
+  if (risk === 'block') return false;
+  if (risk === 'defer') return hidden; // 보고 있지 않을 때만 몰래 갈아끼운다
+  return true;
+}
+
+// ---- 탭 간 조율 ----------------------------------------------------------
+//
+// 한 탭이 적용하면 `skipWaiting` → 새 SW가 기존 클라이언트를 넘겨받고, 업데이트를
+// 대기 중이던 **모든 탭**이 `controlling` 이벤트로 리로드된다(vite-plugin-pwa의
+// register.js). 즉 랜딩 탭이 조용히 자동 적용하면 옆 탭에서 편집 중이던 사람까지
+// 리로드된다. 사용자가 직접 누른 경우는 본인 선택이니 그대로 두고, **자동** 적용만
+// 다른 탭에 먼저 물어본다.
+
+const CHANNEL_NAME = 'mf-update-gate';
+/** 응답을 기다리는 시간. 같은 브라우저 안의 메시지라 왕복은 밀리초 단위다. */
+const POLL_TIMEOUT_MS = 250;
+
+function openChannel(): BroadcastChannel | null {
+  // 미지원 브라우저(구형 Safari)·테스트 환경 → 조율 없이 단일 탭으로 간주.
+  if (typeof BroadcastChannel === 'undefined') return null;
+  try {
+    return new BroadcastChannel(CHANNEL_NAME);
+  } catch {
+    return null;
+  }
+}
+
+/** 다른 탭의 "지금 적용해도 되나?" 질문에 답하기 시작한다. 정리 함수를 돌려준다. */
+export function startPeerResponder(): () => void {
+  const channel = openChannel();
+  if (!channel) return () => {};
+  channel.onmessage = (event: MessageEvent) => {
+    const data = event.data as { t?: string; id?: string } | null;
+    if (data?.t !== 'poll' || !data.id) return;
+    // 괜찮으면 침묵한다 — 바쁜 탭만 손을 든다(응답이 없으면 곧 진행).
+    if (canAutoApply(currentRisk(), document.visibilityState === 'hidden')) return;
+    channel.postMessage({ t: 'busy', id: data.id });
+  };
+  return () => channel.close();
+}
+
+/**
+ * 다른 탭 중 하나라도 "지금은 곤란하다"고 답하는지. 자동 적용 직전에만 부른다.
+ * BroadcastChannel은 보낸 객체 자신에게는 배달되지 않으므로 내 답을 내가 받는 일은 없다.
+ */
+export function anyPeerBusy(timeoutMs = POLL_TIMEOUT_MS): Promise<boolean> {
+  const channel = openChannel();
+  if (!channel) return Promise.resolve(false);
+  const id = `${Date.now()}-${Math.random().toString(36).slice(2)}`;
+  return new Promise((resolve) => {
+    let settled = false;
+    const finish = (busy: boolean) => {
+      if (settled) return;
+      settled = true;
+      window.clearTimeout(timer);
+      channel.close();
+      resolve(busy);
+    };
+    channel.onmessage = (event: MessageEvent) => {
+      const data = event.data as { t?: string; id?: string } | null;
+      if (data?.t === 'busy' && data.id === id) finish(true);
+    };
+    const timer = window.setTimeout(() => finish(false), timeoutMs);
+    channel.postMessage({ t: 'poll', id });
+  });
+}
+
+function subscribe(listener: () => void): () => void {
+  listeners.add(listener);
+  return () => {
+    listeners.delete(listener);
+  };
+}
+
+/**
+ * 이 컴포넌트가 떠 있는 동안의 리로드 위험도를 신고한다.
+ *
+ * @param risk 지금 상태 기준 위험도 — 상태가 바뀌면 그대로 다시 넘기면 된다.
+ * @param prepare 적용 직전 정리(미저장 변경 flush 등). `false` 반환 시 적용 취소.
+ */
+export function useUpdateGuard(risk: UpdateRisk, prepare?: UpdatePrepare): void {
+  const prepareRef = useRef<UpdatePrepare | undefined>(prepare);
+  prepareRef.current = prepare;
+
+  const entryRef = useRef<Entry | undefined>(undefined);
+  if (!entryRef.current) entryRef.current = { risk, prepareRef };
+
+  useEffect(() => {
+    const entry = entryRef.current!;
+    entries.add(entry);
+    notify();
+    return () => {
+      entries.delete(entry);
+      notify();
+    };
+  }, []);
+
+  useEffect(() => {
+    const entry = entryRef.current!;
+    if (entry.risk === risk) return;
+    entry.risk = risk;
+    notify();
+  }, [risk]);
+}
+
+/** 게이트를 읽는 쪽(`UpdatePrompt`)용. 위험도가 바뀌면 리렌더된다. */
+export function useUpdateGate(): { risk: UpdateRisk; prepare: () => Promise<boolean> } {
+  const risk = useSyncExternalStore(subscribe, currentRisk, () => DEFAULT_RISK);
+  return { risk, prepare: runPrepare };
+}
+
+/** 테스트 전용 — 모듈 전역 레지스트리를 비운다. */
+export function __resetUpdateGate(): void {
+  entries.clear();
+  notify();
+}

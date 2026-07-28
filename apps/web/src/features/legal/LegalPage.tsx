@@ -1,6 +1,7 @@
 import type { CSSProperties, ReactNode } from 'react';
 import { Link } from 'react-router-dom';
 import { BrandMark } from '../../components/BrandMark';
+import { useUpdateGuard } from '../../pwa/updateGate';
 
 /**
  * Shared shell for the public legal documents (`/privacy`, `/terms`). These
@@ -10,6 +11,9 @@ import { BrandMark } from '../../components/BrandMark';
  * background, ink text, coral brand accents (docs/design/design-system.md).
  */
 export function LegalPage({ title, updated, children }: { title: string; updated: string; children: ReactNode }) {
+  // 읽기 전용 문서 — 잃을 상태가 없으니 새 배포는 물어보지 말고 바로 적용.
+  useUpdateGuard('safe');
+
   return (
     <div
       style={{
