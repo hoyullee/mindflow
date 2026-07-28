@@ -156,6 +156,37 @@ function subscribe(listener: () => void): () => void {
   };
 }
 
+// ---- 화면 진입 시 새 버전 확인 -------------------------------------------
+//
+// 서비스워커 확인은 **최초 페이지 로드**와 1시간 주기뿐이었다. 로그인 → 홈 → 에디터는
+// 모두 클라이언트 사이드 이동이라, 그 사이에 배포가 나가도 최대 1시간 동안 눈치채지
+// 못했다(제보: 홈·에디터 진입 때 새 버전이 있으면 알려 달라).
+//
+// 그래서 화면이 위험도를 신고할 때(= 그 화면에 들어올 때) 확인도 같이 요청한다.
+// 발견 후 **적용 시점은 기존 정책이 그대로** 정한다 — 홈은 조용히 적용, 에디터는 토스트.
+
+/** 실제 확인은 서비스워커 등록을 쥔 `UpdatePrompt`가 넣어 준다. */
+let checker: (() => void) | null = null;
+let lastCheckAt = 0;
+/** 화면을 빠르게 오갈 때(그리고 StrictMode의 이중 마운트) 확인이 연달아 나가지 않게. */
+const CHECK_THROTTLE_MS = 30 * 1000;
+
+export function setUpdateChecker(fn: (() => void) | null): void {
+  checker = fn;
+}
+
+/** 화면 진입 시 호출 — 스로틀 안이면 조용히 무시한다(`now`는 테스트에서 주입). */
+export function requestUpdateCheck(now = Date.now()): boolean {
+  if (!checker || now - lastCheckAt < CHECK_THROTTLE_MS) return false;
+  lastCheckAt = now;
+  try {
+    checker();
+  } catch {
+    /* 확인 실패(오프라인 등)는 조용히 넘긴다 — 다음 진입이나 주기에 다시 시도한다 */
+  }
+  return true;
+}
+
 /**
  * 이 컴포넌트가 떠 있는 동안의 리로드 위험도를 신고한다.
  *
@@ -170,6 +201,8 @@ export function useUpdateGuard(risk: UpdateRisk, prepare?: UpdatePrepare): void 
   if (!entryRef.current) entryRef.current = { risk, prepareRef };
 
   useEffect(() => {
+    // 이 화면에 들어왔다 = 새 버전을 확인할 좋은 타이밍(위 `requestUpdateCheck` 참고).
+    requestUpdateCheck();
     const entry = entryRef.current!;
     entries.add(entry);
     notify();
@@ -196,5 +229,7 @@ export function useUpdateGate(): { risk: UpdateRisk; prepare: () => Promise<bool
 /** 테스트 전용 — 모듈 전역 레지스트리를 비운다. */
 export function __resetUpdateGate(): void {
   entries.clear();
+  checker = null;
+  lastCheckAt = 0;
   notify();
 }
