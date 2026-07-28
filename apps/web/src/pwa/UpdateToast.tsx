@@ -17,10 +17,16 @@ interface UpdateToastProps {
   onDismiss: () => void;
   /** 적용 직전 저장이 실패해 리로드를 멈춘 상태 — 그냥 넘어가면 편집분이 사라진다. */
   saveBlocked?: boolean;
+  /** 적용 진행 중 — 저장(네트워크)이 끼어 있어 몇 초 걸릴 수 있다. */
+  applying?: boolean;
 }
 
-export function UpdateToast({ visible, onRefresh, onDismiss, saveBlocked = false }: UpdateToastProps) {
+export function UpdateToast({ visible, onRefresh, onDismiss, saveBlocked = false, applying = false }: UpdateToastProps) {
   if (!visible) return null;
+
+  // 진행 중임을 반드시 보여 준다 — 눌러도 화면이 그대로면 사용자는 버튼이
+  // 고장 났다고 읽고 계속 누른다(제보된 "새로고침이 안 눌린다"의 절반은 이것).
+  const label = applying ? '적용 중…' : saveBlocked ? '다시 시도' : '새로고침';
 
   return (
     <div
@@ -57,6 +63,8 @@ export function UpdateToast({ visible, onRefresh, onDismiss, saveBlocked = false
       <button
         type="button"
         onClick={onRefresh}
+        disabled={applying}
+        aria-busy={applying}
         style={{
           flexShrink: 0,
           height: 34,
@@ -68,10 +76,11 @@ export function UpdateToast({ visible, onRefresh, onDismiss, saveBlocked = false
           fontFamily: 'inherit',
           fontSize: 13,
           fontWeight: 700,
-          cursor: 'pointer',
+          cursor: applying ? 'default' : 'pointer',
+          opacity: applying ? 0.72 : 1,
         }}
       >
-        {saveBlocked ? '다시 시도' : '새로고침'}
+        {label}
       </button>
       <button
         type="button"

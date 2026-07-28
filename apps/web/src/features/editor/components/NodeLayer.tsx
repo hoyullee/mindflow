@@ -8,6 +8,7 @@ import type { Theme } from '../theme';
 import type { EditorController } from '../useEditorState';
 import type { GeomMap } from '../types';
 import { peersSelecting } from '../presenceSelection';
+import { useIsMobile } from '../../../hooks/useMediaQuery';
 import { RemotePeerTag } from './RemotePeerTag';
 import { ResizeHandle } from './ResizeHandle';
 import { runsToHtml } from '../richtextDom';
@@ -76,6 +77,7 @@ interface NodeBoxProps {
 }
 
 function NodeBox({ id, node: n, g, nodes, mode, theme: th, rootX, controller }: NodeBoxProps) {
+  const isMobile = useIsMobile();
   const depth = g.depth;
   const col = colorOf(id, nodes, th);
   // port of `MSEL.nodes.includes(v.id)` (MindFlow.dc.html:1138) — a marquee multi-selection
@@ -380,19 +382,57 @@ function NodeBox({ id, node: n, g, nodes, mode, theme: th, rootX, controller }: 
       {/* resize handle only for a true single selection (port of `this.state.selectedId`,
           MindFlow.dc.html:1274 — not shown for a marquee multi-selection) */}
       {controller.selection?.kind === 'node' && controller.selection.id === id && !editing && (
-        <ResizeHandle
-          title="크기 조절 (더블클릭: 원래 크기)"
-          accent={th.accent}
-          panel={th.panel}
-          right={-6}
-          bottom={-6}
-          zIndex={80}
-          onPointerDown={(e) => controller.beginNodeResize(e, id)}
-          onDoubleClick={(e) => {
-            e.stopPropagation();
-            controller.resetNodeSize(id);
-          }}
-        />
+        <>
+          {/* 변 핸들(폭만 / 높이만) — 모서리만 있던 시절엔 폭을 넓히려 해도 손의
+              세로 흔들림이 그대로 높이로 들어갔다("가로로 조절했는데 세로가
+              제멋대로 바뀐다"). 모바일에서는 노드가 작으면 28px 히트 영역 셋이
+              서로 겹쳐 오조작이 나므로 모서리 하나만 남긴다. */}
+          {!isMobile && (
+            <>
+              <ResizeHandle
+                title="폭 조절 (더블클릭: 원래 크기)"
+                axis="x"
+                accent={th.accent}
+                panel={th.panel}
+                right={-6}
+                bottom={-6}
+                zIndex={80}
+                onPointerDown={(e) => controller.beginNodeResize(e, id, 'x')}
+                onDoubleClick={(e) => {
+                  e.stopPropagation();
+                  controller.resetNodeSize(id);
+                }}
+              />
+              <ResizeHandle
+                title="높이 조절 (더블클릭: 원래 크기)"
+                axis="y"
+                accent={th.accent}
+                panel={th.panel}
+                right={-6}
+                bottom={-6}
+                zIndex={80}
+                onPointerDown={(e) => controller.beginNodeResize(e, id, 'y')}
+                onDoubleClick={(e) => {
+                  e.stopPropagation();
+                  controller.resetNodeSize(id);
+                }}
+              />
+            </>
+          )}
+          <ResizeHandle
+            title="크기 조절 (더블클릭: 원래 크기)"
+            accent={th.accent}
+            panel={th.panel}
+            right={-6}
+            bottom={-6}
+            zIndex={81}
+            onPointerDown={(e) => controller.beginNodeResize(e, id)}
+            onDoubleClick={(e) => {
+              e.stopPropagation();
+              controller.resetNodeSize(id);
+            }}
+          />
+        </>
       )}
     </div>
   );

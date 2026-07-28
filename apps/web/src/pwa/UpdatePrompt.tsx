@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { useRegisterSW } from 'virtual:pwa-register/react';
 import { UpdateToast } from './UpdateToast';
 import { anyPeerBusy, canAutoApply, startPeerResponder, useUpdateGate } from './updateGate';
+import { applyUpdate } from './applyUpdate';
 
 /**
  * 서비스워커 업데이트를 감시해 **적용 시점을 고르는** 연결층.
@@ -67,29 +68,36 @@ export function UpdatePrompt() {
   // 다른 탭의 "지금 적용해도 되나?" 질문에 답한다(모든 탭에 이 컴포넌트가 하나씩 있다).
   useEffect(() => startPeerResponder(), []);
 
-  // 리로드까지 가는 경로라 언마운트 정리 없이 ref 하나로 중복 실행만 막는다
-  // (자동 적용 이펙트와 토스트 버튼이 동시에 들어올 수 있다).
+  /** 적용이 진행 중 — 버튼에 그대로 비춘다(누른 게 먹었는지 보이지 않으면 고장으로 읽힌다). */
+  const [applying, setApplying] = useState(false);
+
+  // 자동 적용 이펙트와 토스트 버튼이 동시에 들어올 수 있어 중복 실행만 막는다.
+  // ⚠️ 반드시 `finally`에서 풀어야 한다 — 예전엔 한 번 걸리면 안 풀리는 빗장이라,
+  // 저장이 매달리거나 리로드가 오지 않으면 그 뒤 클릭이 전부 무시됐다(제보된
+  // "새로고침이 안 눌린다"). 정지 지점 자체는 `applyUpdate`가 시간 제한으로 막는다.
   const applyingRef = useRef(false);
   const apply = useCallback(
     async (auto: boolean) => {
       if (applyingRef.current) return;
       applyingRef.current = true;
-      // 적용은 이 탭만의 일이 아니다 — skipWaiting이 다른 탭까지 리로드시킨다.
-      // 그래서 **자동** 적용은 편집 중인 탭이 없는지 먼저 확인한다(사용자가 직접
-      // 누른 경우는 본인 선택이므로 묻지 않는다).
-      if (auto && (await anyPeerBusy())) {
+      setApplying(true);
+      try {
+        // 적용은 이 탭만의 일이 아니다 — skipWaiting이 다른 탭까지 리로드시킨다.
+        // 그래서 **자동** 적용은 편집 중인 탭이 없는지 먼저 확인한다(사용자가 직접
+        // 누른 경우는 본인 선택이므로 묻지 않는다).
+        if (auto && (await anyPeerBusy())) return; // 아래 재시도 타이머가 다시 노린다
+
+        setSaveBlocked(false);
+        const outcome = await applyUpdate({
+          prepare,
+          skipWaiting: () => void updateServiceWorker(true),
+          reload: () => window.location.reload(),
+        });
+        if (outcome === 'save-failed') setSaveBlocked(true); // 토스트로 내려가 알린다
+      } finally {
         applyingRef.current = false;
-        return; // 토스트도 띄우지 않는다 — 아래 재시도 타이머가 다시 노린다
+        setApplying(false);
       }
-      setSaveBlocked(false);
-      const safeToReload = await prepare();
-      if (!safeToReload) {
-        applyingRef.current = false;
-        setSaveBlocked(true); // 토스트로 내려가 사용자에게 알린다
-        return;
-      }
-      // true = 대기 중인 SW에 skipWaiting을 보내고 페이지를 다시 로드한다.
-      void updateServiceWorker(true);
     },
     [prepare, updateServiceWorker],
   );
@@ -109,6 +117,7 @@ export function UpdatePrompt() {
       // 자동으로 적용될 상황이면 굳이 묻지 않는다 — 곧 조용히 갈아끼워진다.
       visible={needRefresh && !dismissed && !canAutoLocally}
       saveBlocked={saveBlocked}
+      applying={applying}
       onRefresh={() => void apply(false)}
       onDismiss={() => {
         setDismissed(true);
