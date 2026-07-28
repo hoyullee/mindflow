@@ -408,6 +408,24 @@ describe('서식 툴바 색은 문서 테마를 따라가지 않는다', () => {
     expect(lightChrome.bg).toBeTruthy(); // 실제로 값을 읽었다(빈 비교가 아니다)
   });
 
+  it('스와치 색 목록도 테마와 무관하게 같다', () => {
+    const swatchesOf = (container: HTMLElement) =>
+      Array.from(toolbarOf(container).querySelectorAll('button[title^="#"]')).map((b) => b.getAttribute('title'));
+
+    localStorage.setItem('mindflow_doc_swL', JSON.stringify(DOC));
+    const light = renderEditor('/editor?map=swL&title=x');
+    selectAndOpenToolbar(startEditingNode(light.container, 'c1'), 6, 11);
+    const lightSwatches = swatchesOf(light.container);
+    cleanup();
+
+    localStorage.setItem('mindflow_doc_swD', JSON.stringify(DARK_DOC));
+    const dark = renderEditor('/editor?map=swD&title=x');
+    selectAndOpenToolbar(startEditingNode(dark.container, 'c1'), 6, 11);
+
+    expect(swatchesOf(dark.container)).toEqual(lightSwatches);
+    expect(lightSwatches.length).toBeGreaterThan(3); // 실제로 목록을 읽었다
+  });
+
   it('다크 테마여도 팝업이 어두워지지 않는다 (기본 밝은 패널 유지)', () => {
     localStorage.setItem('mindflow_doc_thD2', JSON.stringify(DARK_DOC));
     const { container } = renderEditor('/editor?map=thD2&title=x');
