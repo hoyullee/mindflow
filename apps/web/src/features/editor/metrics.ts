@@ -214,7 +214,17 @@ export function computeMetrics(node: Node, depth: number, measurer: TextMeasurer
   // 핸들을 1px만 끌어도 폭이 폭발하던 버그. 넓힌 랩의 자연 폭이 cw를 넘으면
   // 기본 랩(320)으로 계산해, 최종 폭이 max(자연폭, cw)로 단조 증가하게 한다.
   // (cw가 충분히 커져 풀린 텍스트가 들어맞는 순간부터는 자연히 반영된다.)
-  if (node.cw && cwWrap > BASE_WRAP && m.w > node.cw) {
+  // ⚠️ 초과분이 **반올림 오차 수준**이면 되돌리지 않는다(`ROUNDING_SLACK`).
+  // 줄 폭은 `Math.ceil`로 올림되는데 `cw`는 소수일 수 있다 — 리사이즈 드래그의
+  // 이동량이 `/zoom`으로 나뉘어 들어오므로 줌이 1이 아니면 항상 소수다. 그러면
+  // `ceil(줄 폭) + 여백`이 cw를 **1px 미만** 넘고, 그 미세한 초과가 이 되돌림을
+  // 발동시켜 줄바꿈 폭이 320으로 붕괴한다 → 줄 수가 폭증해 높이가 수십 px 뛴다.
+  // 다음 1px에서 조건이 꺼지면 되돌아오므로, 폭을 조금씩 줄이는 동안 높이가
+  // 오르내리며 요동쳤다(제보: 1px 줄였는데 도형이 세로로 확 커짐 — 그때 텍스트
+  // 줄 수는 그대로여서 박스 안에 빈 여백만 생겼다).
+  // 배율 도형의 **진짜** 과팽창은 폭의 수십 %(수백 px) 단위라 이 여유로 놓치지 않는다.
+  const ROUNDING_SLACK = 2;
+  if (node.cw && cwWrap > BASE_WRAP && m.w > node.cw + ROUNDING_SLACK) {
     wrapW = BASE_WRAP;
     m = build(BASE_WRAP);
   }
