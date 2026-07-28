@@ -520,6 +520,12 @@ function NodeEditBox({ id, n, boxStyle, align, controller }: NodeEditBoxProps) {
         e.stopPropagation();
         checkSelectionToolbar();
       }}
+      // 편집 중의 더블클릭(단어 선택)은 여기서 멈춘다. 안 그러면 노드 박스의
+      // `onDoubleClick`까지 올라가 `startEditNode`가 다시 불리고, 그 안의
+      // `setTextCtx(null)`이 **방금 뜬 서식 툴바를 바로 닫아** 버렸다(제보:
+      // 더블클릭으로 선택하면 팝업이 안 뜬다). 순서가 mouseup(툴바 열림) →
+      // dblclick(닫힘)이라 열렸다 사라지는 것처럼 보이지도 않았다.
+      onDoubleClick={(e) => e.stopPropagation()}
       onInput={() => controller.updateNodeEditSize(id, ref.current)}
       onKeyDown={(e) => {
         e.stopPropagation();
