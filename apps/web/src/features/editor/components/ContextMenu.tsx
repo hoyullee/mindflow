@@ -250,6 +250,23 @@ function PasteIcon() {
 }
 
 /**
+ * 삭제 아이콘 — 이전에는 이모지 `🗑`였다. 이모지는 OS·브라우저마다 모양과 색이
+ * 제각각이라(안드로이드/윈도우에서 컬러 그림으로 뜬다) 나머지 14px 라인
+ * 아이콘들과 따로 놀았고, `iconStyle`의 위험(빨강) 색도 먹지 않았다.
+ * `currentColor`를 쓰므로 이제 danger 색을 그대로 따라간다.
+ */
+function TrashIcon() {
+  return (
+    <svg width={14} height={14} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round">
+      <path d="M4 7h16" />
+      <path d="M10 4h4a1 1 0 0 1 1 1v2H9V5a1 1 0 0 1 1-1z" />
+      <path d="M6 7l1 12.5A1.5 1.5 0 0 0 8.5 21h7a1.5 1.5 0 0 0 1.5-1.5L18 7" />
+      <path d="M10.5 11v6M13.5 11v6" />
+    </svg>
+  );
+}
+
+/**
  * Builds the item list for `ctxMenu.kind` — port of `Component#ctxMenuItems`
  * (MindFlow.dc.html:3105-3146). `'divider'` stands in for the original's blank
  * separator row.
@@ -365,7 +382,7 @@ function buildItems(controller: EditorController, ctxMenu: ContextMenuState, tog
     if (!isRoot && !touch) {
       items.push('divider');
       items.push({
-        icon: '🗑',
+        icon: <TrashIcon />,
         label: '삭제',
         danger: true,
         onSelect: () => {
@@ -396,7 +413,7 @@ function buildItems(controller: EditorController, ctxMenu: ContextMenuState, tog
         ? []
         : ([
             {
-              icon: '🗑',
+              icon: <TrashIcon />,
               label: '삭제',
               danger: true,
               onSelect: () => {
@@ -417,7 +434,7 @@ function buildItems(controller: EditorController, ctxMenu: ContextMenuState, tog
         ? []
         : ([
             {
-              icon: '🗑',
+              icon: <TrashIcon />,
               label: '삭제',
               danger: true,
               onSelect: () => {
@@ -438,7 +455,7 @@ function buildItems(controller: EditorController, ctxMenu: ContextMenuState, tog
         ? []
         : ([
             {
-              icon: '🗑',
+              icon: <TrashIcon />,
               label: '삭제',
               danger: true,
               onSelect: () => {
@@ -456,7 +473,7 @@ function buildItems(controller: EditorController, ctxMenu: ContextMenuState, tog
     return [
       ...copyItems({ cut: true }),
       {
-        icon: '🗑',
+        icon: <TrashIcon />,
         label: `삭제 (${count}개)`,
         danger: true,
         onSelect: () => {
