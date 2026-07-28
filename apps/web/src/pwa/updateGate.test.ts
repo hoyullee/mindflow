@@ -3,6 +3,8 @@ import { act, cleanup, render } from '@testing-library/react';
 import { createElement } from 'react';
 import {
   DEFAULT_RISK,
+  requestUpdateCheck,
+  setUpdateChecker,
   anyPeerBusy,
   canAutoApply,
   currentRisk,
@@ -141,5 +143,49 @@ describe('updateGate 탭 간 조율', () => {
 
   it('응답할 탭이 아예 없으면(단일 탭) 기다리다 진행한다', async () => {
     expect(await anyPeerBusy(150)).toBe(false);
+  });
+});
+
+// 제보: 로그인해서 홈·에디터에 들어갔을 때 새 버전이 있으면 알려 달라.
+// 확인이 **최초 페이지 로드와 1시간 주기뿐**이라, 로그인 → 홈 → 에디터처럼 클라이언트
+// 사이드로 이동하는 경로에서는 그 사이 배포를 최대 1시간 놓쳤다. 화면에 들어올 때
+// (=위험도를 신고할 때) 확인도 같이 요청한다.
+describe('화면 진입 시 새 버전 확인', () => {
+  it('화면이 뜨면 확인을 요청한다', () => {
+    const check = vi.fn();
+    setUpdateChecker(check);
+    render(createElement(Screen, { risk: 'defer' }));
+    expect(check).toHaveBeenCalledTimes(1);
+  });
+
+  it('연달아 오갈 때는 스로틀로 한 번만 나간다', () => {
+    const check = vi.fn();
+    setUpdateChecker(check);
+    // 같은 순간에 여러 화면이 뜨고 지는 상황(라우트 전환·StrictMode 이중 마운트)
+    render(createElement(Screen, { risk: 'safe' }));
+    render(createElement(Screen, { risk: 'defer' }));
+    render(createElement(Screen, { risk: 'block' }));
+    expect(check).toHaveBeenCalledTimes(1);
+  });
+
+  it('스로틀 시간이 지나면 다시 확인한다', () => {
+    const check = vi.fn();
+    setUpdateChecker(check);
+    const t0 = 1_000_000;
+    expect(requestUpdateCheck(t0)).toBe(true);
+    expect(requestUpdateCheck(t0 + 29_000)).toBe(false); // 아직 스로틀 안
+    expect(requestUpdateCheck(t0 + 31_000)).toBe(true);
+    expect(check).toHaveBeenCalledTimes(2);
+  });
+
+  it('서비스워커가 없는 환경(확인기 미등록)에서도 터지지 않는다', () => {
+    expect(() => render(createElement(Screen, { risk: 'safe' }))).not.toThrow();
+  });
+
+  it('확인이 던져도 화면 마운트를 막지 않는다 (오프라인 등)', () => {
+    setUpdateChecker(() => {
+      throw new Error('offline');
+    });
+    expect(() => render(createElement(Screen, { risk: 'defer' }))).not.toThrow();
   });
 });

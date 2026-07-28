@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { useRegisterSW } from 'virtual:pwa-register/react';
 import { UpdateToast } from './UpdateToast';
-import { anyPeerBusy, canAutoApply, startPeerResponder, useUpdateGate } from './updateGate';
+import { anyPeerBusy, canAutoApply, setUpdateChecker, startPeerResponder, useUpdateGate } from './updateGate';
 import { applyUpdate } from './applyUpdate';
 
 /**
@@ -52,6 +52,9 @@ export function UpdatePrompt() {
   } = useRegisterSW({
     onRegisteredSW(_swUrl, registration) {
       if (!registration) return;
+      // 화면 진입(`useUpdateGuard`)마다 확인할 수 있게 등록 — 클라이언트 사이드 이동은
+      // 페이지 로드가 아니라서 브라우저가 스스로 확인해 주지 않는다(`updateGate` 참고).
+      setUpdateChecker(() => void registration.update());
       // 장시간 열어 둔 편집 세션(브라우저가 스스로 확인하지 않을 수 있음) 대비.
       setInterval(() => {
         void registration.update();
