@@ -41,6 +41,14 @@ describe('UpdateToast (새 버전 안내)', () => {
     expect(onRefresh).not.toHaveBeenCalled();
   });
 
+  it('적용 직전 저장이 실패하면 이유를 알리고 재시도를 권한다', () => {
+    render(<UpdateToast visible saveBlocked onRefresh={vi.fn()} onDismiss={vi.fn()} />);
+    expect(screen.getByText('변경사항을 저장하지 못했어요')).toBeTruthy();
+    expect(screen.getByRole('button', { name: '다시 시도' })).toBeTruthy();
+    // 평소 문구가 남아 사용자를 헷갈리게 하지 않는다
+    expect(screen.queryByText('새 버전이 준비됐어요')).toBeNull();
+  });
+
   it('편집 중 포커스를 훔치지 않도록 polite status로 알린다', () => {
     render(<UpdateToast visible onRefresh={vi.fn()} onDismiss={vi.fn()} />);
     const el = screen.getByRole('status');

@@ -41,8 +41,10 @@ function RequireAuth({ children }: { children: ReactNode }) {
 export function App() {
   return (
     <BackendProvider>
-      {/* 새 배포가 대기 중일 때 뜨는 "새 버전이 준비됐어요" 토스트 — 라우터 밖에
-          두어 어느 화면에서든 같은 자리에 뜬다. */}
+      {/* 새 배포 적용을 담당. 라우터 밖에 두어도 되는 이유: 화면별 정책을 경로로
+          판단하지 않고 각 화면이 `useUpdateGuard`로 자기 위험도를 신고한다
+          (같은 화면도 상태에 따라 다르다 — 빈 로그인 폼 vs 인증 코드 입력 중).
+          안전한 화면은 조용히 갈아끼우고, 위험할 때만 토스트가 뜬다. */}
       <UpdatePrompt />
       <BrowserRouter>
         <Routes>

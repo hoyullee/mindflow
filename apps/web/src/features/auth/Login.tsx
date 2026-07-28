@@ -7,7 +7,9 @@ import { ForgotStep } from './ForgotStep';
 import { ForgotVerifyStep } from './ForgotVerifyStep';
 import { useLoginController } from './useLoginController';
 import { deriveLoginView } from './viewModel';
+import { loginUpdateRisk } from './updateRisk';
 import { useIsMobile } from '../../hooks/useMediaQuery';
+import { useUpdateGuard } from '../../pwa/updateGate';
 
 /**
  * React port of Login.dc.html. State machine: `mode` ('login' | 'signup') ×
@@ -25,6 +27,9 @@ export function Login() {
   const controller = useLoginController();
   const view = deriveLoginView(controller.state);
   const isMobile = useIsMobile();
+  // 새 배포 자동 적용 게이트: 빈 폼이면 조용히 갈아끼워도 되지만, 입력을 시작했거나
+  // 인증 코드 단계면 리로드가 그 상태를 통째로 날린다 — updateRisk.ts 참고.
+  useUpdateGuard(loginUpdateRisk(controller.state));
 
   return (
     <div

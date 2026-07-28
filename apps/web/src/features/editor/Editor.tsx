@@ -10,6 +10,7 @@ import { PropertyPanel } from './components/PropertyPanel';
 import { PresenceBar } from './components/PresenceBar';
 import { MobileSelectBar } from './components/MobileSelectBar';
 import { useIsMobile } from '../../hooks/useMediaQuery';
+import { useUpdateGuard } from '../../pwa/updateGate';
 
 /**
  * React port of `MindFlow.dc.html`'s editor — the mindmap canvas. This is the
@@ -29,6 +30,21 @@ export function Editor() {
   // 문서 테마는 편집 영역(Viewport/아웃라인/미니맵 내용)만 칠한다.
   const th = controller.uiTheme;
   const isMobile = useIsMobile();
+
+  // 새 배포 자동 적용 게이트. 에디터는 리로드로 잃는 게 많다(실행취소 기록·클립보드·
+  // 선택·팬/줌) → 보고 있는 동안은 절대 자동 적용하지 않고(`defer`는 탭이 백그라운드일
+  // 때만 적용), 텍스트를 입력하는 중이면 아예 막는다 — contentEditable의 미확정 글자는
+  // 아직 문서에 없어서 저장으로도 지켜지지 않기 때문. 어느 경로든 적용 전에
+  // `flushSave()`가 돌아 미저장 변경을 먼저 저장하고, 저장에 실패하면 리로드를 멈춘다.
+  const isTypingInEditor = !!(
+    controller.editingNodeId ||
+    controller.editingFloatId ||
+    controller.editingLineId ||
+    controller.editingZoneId ||
+    controller.editingTitle ||
+    controller.outlineEditId
+  );
+  useUpdateGuard(isTypingInEditor ? 'block' : 'defer', controller.flushSave);
 
   // Whether a property panel is currently shown (mirrors PropertyPanel's own
   // selection dispatch). On mobile that panel is a bottom sheet, so the

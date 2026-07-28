@@ -2,6 +2,7 @@ import { useEffect, useState, type CSSProperties, type ReactNode } from 'react';
 import { Link } from 'react-router-dom';
 import { useBackend } from '../../adapters/BackendContext';
 import { BrandMark } from '../../components/BrandMark';
+import { useUpdateGuard } from '../../pwa/updateGate';
 
 /**
  * 공개 랜딩 페이지 — 루트(`/`). 존재 이유가 둘이다:
@@ -183,6 +184,8 @@ function SectionHead({ eyebrow: e, title, desc }: { eyebrow: string; title: stri
 export function Landing() {
   const { auth } = useBackend();
   const [authed, setAuthed] = useState(false);
+  // 소개 페이지에는 사용자가 만들어 둔 상태가 없다 — 새 배포는 물어보지 말고 바로 적용.
+  useUpdateGuard('safe');
 
   useEffect(() => {
     let cancelled = false;

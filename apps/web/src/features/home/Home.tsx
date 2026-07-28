@@ -15,8 +15,10 @@ import { DeleteAccountModal } from './components/modals/DeleteAccountModal';
 import { ProfileNameModal } from './components/modals/ProfileNameModal';
 import { useHomeController } from './useHomeController';
 import { deriveHomeView } from './viewModel';
+import { homeUpdateRisk } from './updateRisk';
 import { useIsMobile } from '../../hooks/useMediaQuery';
 import { useDrawerSwipe } from '../../hooks/useDrawerSwipe';
+import { useUpdateGuard } from '../../pwa/updateGate';
 
 /**
  * React port of Home.dc.html — the map dashboard. State/behavior lives in
@@ -38,6 +40,9 @@ export function Home() {
   const view = useMemo(() => deriveHomeView(state), [state]);
   const isMobile = useIsMobile();
   const [navOpen, setNavOpen] = useState(false);
+  // 새 배포 자동 적용 게이트: 목록은 리로드해도 그대로 다시 그려지니 기본은 조용히
+  // 적용하고, 입력 중인 팝업·확인 다이얼로그·검색어가 있을 때만 물어본다.
+  useUpdateGuard(homeUpdateRisk(state));
 
   // Closing the drawer when the layout crosses back to desktop keeps it from
   // lingering "open" (and blocking the backdrop) after a resize/rotation.
