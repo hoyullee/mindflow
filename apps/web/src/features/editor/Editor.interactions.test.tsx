@@ -465,3 +465,46 @@ describe('Editor interactions (M3-Editor-b)', () => {
     });
   });
 });
+
+// 제보: 스타일의 테마를 바꾸면 속성 패널이 제안하는 색까지 따라 변한다 — 기본 색으로
+// 고정해 달라. (서식 팝업은 #215·#216에서 먼저 고정했고, 같은 규칙을 패널에도 적용.)
+// 패널의 크롬은 원래부터 고정 `uiTheme`이었고 **스와치 팔레트만** 문서 테마를 따랐다.
+describe('속성 패널의 색 스와치는 문서 테마를 따라가지 않는다', () => {
+  const themedDoc = (themeKey: string) => ({ ...DOC, themeKey });
+  /** 패널에 그려진 스와치 원의 배경색 목록. */
+  const swatchColorsOf = (): string[] => {
+    const panel = screen.getByText('선택한 주제').closest('div')?.parentElement as HTMLElement;
+    return Array.from(panel.querySelectorAll<HTMLButtonElement>('button'))
+      .map((b) => b.style.background)
+      .filter((bg) => bg.startsWith('rgb') || bg.startsWith('#'));
+  };
+
+  async function openShapeSection(container: HTMLElement) {
+    const user = userEvent.setup();
+    selectNodeBox(nodeBoxFor(container, '리서치'));
+    await user.click(screen.getByRole('button', { name: /도형 스타일/ }));
+    return swatchColorsOf();
+  }
+
+  it('밝은 테마와 다크 테마에서 스와치 색 목록이 같다', async () => {
+    localStorage.setItem('mindflow_doc_pnL', JSON.stringify(themedDoc('coral')));
+    const light = renderEditor('/editor?map=pnL&title=x');
+    const lightColors = await openShapeSection(light.container);
+    expect(lightColors.length).toBeGreaterThan(3); // 실제로 목록을 읽었다
+    cleanup();
+
+    localStorage.setItem('mindflow_doc_pnD', JSON.stringify(themedDoc('dark')));
+    const dark = renderEditor('/editor?map=pnD&title=x');
+    const darkColors = await openShapeSection(dark.container);
+
+    expect(darkColors).toEqual(lightColors);
+  });
+
+  it('모노 테마에서도 회색 팔레트로 바뀌지 않는다', async () => {
+    localStorage.setItem('mindflow_doc_pnM', JSON.stringify(themedDoc('mono')));
+    const { container } = renderEditor('/editor?map=pnM&title=x');
+    const colors = await openShapeSection(container);
+    // 기본(coral) 팔레트의 첫 색 #f0663f = rgb(240, 102, 63)
+    expect(colors.some((c) => c.replace(/\s/g, '') === 'rgb(240,102,63)')).toBe(true);
+  });
+});

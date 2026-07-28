@@ -19,8 +19,11 @@ interface FloatPanelProps {
  */
 export function FloatPanel({ controller, floatIds, isMobile = false }: FloatPanelProps) {
   const th = controller.uiTheme;
-  // 색 스와치 "값"은 캔버스에 칠할 색이므로 문서 테마 팔레트를 쓴다
-  const ct = controller.theme;
+  // 스와치 팔레트도 **고정** `uiTheme`을 쓴다(`th`) — 문서 테마를 바꿔도 패널이 제안하는
+  // 색은 변하지 않는다. 예전엔 문서 테마(`controller.theme`)의 팔레트를 썼는데, 테마를
+  // 바꾸는 순간 방금 적용한 색이 목록에서 사라져 되돌리기 어려웠다. 서식 팝업
+  // (`TextToolbar`)과도 같은 규칙이라 두 진입점이 늘 같은 색을 제안한다.
+  // (트레이드오프: 파랑·초록·보라 테마의 테마-맞춤 색은 여기서 고를 수 없다.)
   const ids = floatIds.filter((id) => controller.doc.floats.some((x) => x.id === id));
   const refId = ids[0];
   const f = refId ? controller.doc.floats.find((x) => x.id === refId) : undefined;
@@ -61,7 +64,7 @@ export function FloatPanel({ controller, floatIds, isMobile = false }: FloatPane
         )}
 
         <PanelSection theme={th} title="메모 스타일" open={openSec === 'fbg'} onToggle={() => toggle('fbg')}>
-          <SwatchRow theme={th} palette={[ct.panel, ct.text, ...ct.palette]} current={f.bg} onPick={(hex) => controller.setFloatBg(hex)} onReset={() => controller.setFloatBg(null)} />
+          <SwatchRow theme={th} palette={[th.panel, th.text, ...th.palette]} current={f.bg} onPick={(hex) => controller.setFloatBg(hex)} onReset={() => controller.setFloatBg(null)} />
         </PanelSection>
 
         <Divider theme={th} />
@@ -70,7 +73,7 @@ export function FloatPanel({ controller, floatIds, isMobile = false }: FloatPane
           <SectionLabel theme={th}>글자 색상</SectionLabel>
           <SwatchRow
             theme={th}
-            palette={[ct.panel, ct.text, ...ct.palette]}
+            palette={[th.panel, th.text, ...th.palette]}
             current={f.textColor}
             onPick={(hex) => controller.setFloatTextColor(hex)}
             onReset={() => controller.setFloatTextColor(null)}
