@@ -768,53 +768,77 @@ describe('모서리 핸들: 좌우로 끌 때 (계단 없음 + 글자 안 넘침
   });
 });
 
-// 제보(좁힐 때 위아래로 튐)의 실측 원인: 노드는 x/y가 **중심**이라 높이가 늘어나면
-// 위아래로 똑같이 벌어진다. 우하단 모서리를 잡고 왼쪽으로 끄는데 반대편(위쪽 변)이
-// 30px 밀려 올라가고 아래쪽도 31px 내려가, 좌우로만 끌었는데 도형이 세로로 요동쳤다.
-// 끄는 동안 위쪽 변을 붙잡아 **아래로만** 자라게 한다.
-describe('크기 조절 중에는 잡지 않은 위쪽 변이 움직이지 않는다', () => {
-  const LONG_DOC = {
+// 제보: 크기 조절 중과 완료 시 위치가 달라지고, 객체 종류마다 움직임이 조금씩 다르다.
+//
+// 실측(우하단 모서리를 끌었을 때 좌상단 이동): 메모·영역은 x/y가 좌상단이라 (0,0)으로
+// 완벽히 고정되는데, 노드는 x/y가 **중심**이라 좌우·위아래로 똑같이 벌어졌다. 게다가
+// 예전엔 렌더 시점에만 위쪽 변을 붙잡아 놓아서 **놓는 순간 48px 튀었다.**
+//
+// 이제 위치를 우리가 소유하는 객체(자유 도형·메모·영역)는 좌상단을 고정한다. 트리에
+// 붙은 노드는 layout이 위치를 정하므로 손댈 수 없지만, 렌더 시점 눈속임을 없애
+// **끄는 중과 놓은 뒤가 같아졌다**(튐 없음).
+describe('크기 조절 기준점 통일 (좌상단 고정)', () => {
+  const ANCHOR_DOC = {
     v: 1,
     nodes: {
       root: { id: 'root', text: '루트', emoji: '', parent: null, children: ['c1'], collapsed: false, color: null, x: 0, y: 0 },
-      // 이미 넓혀 둔 상태 — 여기서 좁히면 줄이 늘어 높이가 커진다(제보 조건).
-      c1: {
-        id: 'c1',
-        text: '원티드에서 첫 이력서 작성 시 적립\n[원티드 홈 > 이력서] 에서 [새 이력서 작성] 버튼을 클릭하여 이력서를 작성\n원티드 이력서 양식을 사용하여 이력서를 작성한 경우에만 포인트 적립 대상\n외부 양식을 이용한 이력서는 포인트 적립 대상에 해당하지 않음',
-        emoji: '', parent: 'root', children: [], collapsed: false, color: null, x: 0, y: 0, shape: 'round', cw: 1000, ch: 100,
-      },
+      c1: { id: 'c1', text: '연결 노드', emoji: '', parent: 'root', children: [], collapsed: false, color: null, x: 0, y: 0 },
+      fx: { id: 'fx', text: '자유 도형', emoji: '', parent: null, children: [], collapsed: false, color: null, x: -520, y: 320, free: true },
     },
-    floats: [],
+    floats: [{ id: 'flt1', x: 160, y: 340, w: 200, text: '메모' }],
     lines: [],
-    zones: [],
+    zones: [{ id: 'zn1', x: -520, y: -320, w: 300, h: 180, label: '영역', color: null }],
     layoutMode: 'right',
     themeKey: 'coral',
   };
 
-  it('왼쪽으로 좁혀 높이가 커지는 동안에도 위쪽 변은 제자리다', async () => {
-    localStorage.setItem('mindflow_doc_anchor', JSON.stringify(LONG_DOC));
-    const { container } = renderEditor('/editor?map=anchor&title=x');
-    const box = () => getViewport(container).querySelector('[data-node-id="c1"]') as HTMLElement;
-    await waitFor(() => expect(box()).toBeTruthy());
-    firePointer(box(), 'pointerdown', { pointerId: 1, clientX: 100, clientY: 100 });
-    firePointer(window, 'pointerup', { pointerId: 1, clientX: 100, clientY: 100 });
-    const handle = getViewport(container).querySelector('[title^="크기 조절"]') as HTMLElement;
+  async function setup(mapId: string) {
+    localStorage.setItem(`mindflow_doc_${mapId}`, JSON.stringify(ANCHOR_DOC));
+    const { container } = renderEditor(`/editor?map=${mapId}&title=x`);
+    await waitFor(() => expect(getViewport(container).querySelector('[data-node-id="c1"]')).toBeTruthy());
+    return container;
+  }
+  const tlOf = (c: HTMLElement, sel: string) => {
+    const el = getViewport(c).querySelector<HTMLElement>(sel);
+    if (!el) throw new Error(`${sel} not found`);
+    return { l: parseFloat(el.style.left), t: parseFloat(el.style.top) };
+  };
+  /** 우하단 모서리 핸들을 잡고 (dx,dy)만큼 끈다. 놓기 전/후 좌상단을 돌려준다. */
+  const resize = (c: HTMLElement, sel: string, dx: number, dy: number) => {
+    const el = getViewport(c).querySelector(sel)!;
+    firePointer(el, 'pointerdown', { pointerId: 11, clientX: 50, clientY: 50, button: 0 });
+    firePointer(window, 'pointerup', { pointerId: 11, clientX: 50, clientY: 50, button: 0 });
+    const handle = el.querySelector<HTMLElement>('[title^="크기 조절"]');
+    if (!handle) throw new Error(`${sel}: resize handle not found`);
+    firePointer(handle, 'pointerdown', { pointerId: 12, clientX: 0, clientY: 0, button: 0 });
+    firePointer(window, 'pointermove', { pointerId: 12, clientX: dx / 2, clientY: dy / 2 });
+    firePointer(window, 'pointermove', { pointerId: 12, clientX: dx, clientY: dy });
+    const during = tlOf(c, sel);
+    firePointer(window, 'pointerup', { pointerId: 12, clientX: dx, clientY: dy });
+    return { during, after: tlOf(c, sel) };
+  };
 
-    firePointer(handle, 'pointerdown', { pointerId: 7, clientX: 0, clientY: 0 });
-    const startTop = parseFloat(box().style.top);
-    const tops = new Set<number>();
-    const heights = new Set<number>();
-    for (let dx = -40; dx >= -700; dx -= 40) {
-      firePointer(window, 'pointermove', { pointerId: 7, clientX: dx, clientY: 0 }); // 순수 왼쪽
-      tops.add(Math.round(parseFloat(box().style.top)));
-      heights.add(Math.round(parseFloat(box().style.height)));
-    }
-    firePointer(window, 'pointerup', { pointerId: 7, clientX: -700, clientY: 0 });
+  // 위치를 우리가 소유하는 객체들 — 좌상단이 끄는 중에도, 놓은 뒤에도 그대로.
+  for (const { name, sel } of [
+    { name: '자유 도형', sel: '[data-node-id="fx"]' },
+    { name: '메모', sel: '[data-float-id="flt1"]' },
+    { name: '영역', sel: '[data-zone-id="zn1"]' },
+  ]) {
+    it(`${name}: 좌상단이 끄는 중에도 놓은 뒤에도 고정된다`, async () => {
+      const container = await setup(`anch-${name}`);
+      const before = tlOf(container, sel);
+      const { during, after } = resize(container, sel, 140, 90);
 
-    // 위쪽 변은 시작 위치 그대로 하나뿐
-    expect([...tops]).toEqual([Math.round(startTop)]);
-    // 그리고 이 시나리오가 실제로 높이를 키우는 조건임을 확인(테스트가 헛돌지 않게)
-    expect(heights.size).toBeGreaterThan(1);
+      expect(during).toEqual(before);
+      expect(after).toEqual(before);
+    });
+  }
+
+  it('연결 노드: 위치는 layout이 정하지만 끄는 중과 놓은 뒤가 같다 (튐 없음)', async () => {
+    const container = await setup('anch-attached');
+    const { during, after } = resize(container, '[data-node-id="c1"]', 140, 90);
+    // 예전에는 여기서 48px 튀었다.
+    expect(after).toEqual(during);
   });
 });
 
@@ -903,5 +927,68 @@ describe('우클릭 드래그는 객체 위에서도 화면 이동이다', () =>
 
     expect(posOf(container, '[data-float-id="flt1"]')).not.toBe(pos0); // 객체가 움직였다
     expect(panOf(container)).toBe(pan0); // 화면은 그대로
+  });
+});
+
+// 제보: 최상위 부모(루트)는 이동 불가여야 한다. 예전엔 루트를 끌면 `rootAnchor`가 움직여
+// **맵 전체가 끌려다녔다** — 트리의 기준점이라 실수로 밀리면 되돌리기 어렵다.
+describe('루트(최상위 부모)는 이동할 수 없다', () => {
+  const ROOT_DOC = {
+    v: 1,
+    nodes: {
+      root: { id: 'root', text: '루트', emoji: '', parent: null, children: ['c1'], collapsed: false, color: null, x: 0, y: 0 },
+      c1: { id: 'c1', text: '자식', emoji: '', parent: 'root', children: [], collapsed: false, color: null, x: 0, y: 0 },
+      fx: { id: 'fx', text: '자유', emoji: '', parent: null, children: [], collapsed: false, color: null, x: -520, y: 320, free: true },
+    },
+    floats: [],
+    lines: [],
+    zones: [],
+    layoutMode: 'right',
+    themeKey: 'coral',
+  };
+
+  async function setup(mapId: string) {
+    localStorage.setItem(`mindflow_doc_${mapId}`, JSON.stringify(ROOT_DOC));
+    const { container } = renderEditor(`/editor?map=${mapId}&title=x`);
+    await waitFor(() => expect(getViewport(container).querySelector('[data-node-id="root"]')).toBeTruthy());
+    return container;
+  }
+  const posOf = (c: HTMLElement, sel: string) => {
+    const el = getViewport(c).querySelector<HTMLElement>(sel)!;
+    return `${el.style.left}/${el.style.top}`;
+  };
+  const dragBy = (el: Element, dx: number, dy: number, pointerId: number) => {
+    firePointer(el, 'pointerdown', { pointerId, clientX: 200, clientY: 200, button: 0 });
+    firePointer(window, 'pointermove', { pointerId, clientX: 200 + dx, clientY: 200 + dy });
+    firePointer(window, 'pointerup', { pointerId, clientX: 200 + dx, clientY: 200 + dy });
+  };
+
+  it('루트를 끌어도 루트도, 맵 전체도 움직이지 않는다', async () => {
+    const container = await setup('rootlock');
+    const before = { root: posOf(container, '[data-node-id="root"]'), child: posOf(container, '[data-node-id="c1"]'), free: posOf(container, '[data-node-id="fx"]') };
+
+    dragBy(getViewport(container).querySelector('[data-node-id="root"]')!, 180, 120, 21);
+
+    expect(posOf(container, '[data-node-id="root"]')).toBe(before.root);
+    expect(posOf(container, '[data-node-id="c1"]')).toBe(before.child); // 자식(=맵 전체)도 그대로
+    expect(posOf(container, '[data-node-id="fx"]')).toBe(before.free);
+  });
+
+  it('루트를 클릭하면 선택은 된다 (이동만 막는다)', async () => {
+    const container = await setup('rootsel');
+    firePointer(getViewport(container).querySelector('[data-node-id="root"]')!, 'pointerdown', { pointerId: 22, clientX: 200, clientY: 200, button: 0 });
+    firePointer(window, 'pointerup', { pointerId: 22, clientX: 200, clientY: 200 });
+
+    // 선택되면 크기 조절 핸들이 붙는다(선택의 관찰 가능한 신호)
+    await waitFor(() => expect(getViewport(container).querySelector('[data-node-id="root"] [title^="크기 조절"]')).toBeTruthy());
+  });
+
+  it('루트가 아닌 자유 도형은 여전히 움직인다 (무회귀)', async () => {
+    const container = await setup('rootfree');
+    const before = posOf(container, '[data-node-id="fx"]');
+
+    dragBy(getViewport(container).querySelector('[data-node-id="fx"]')!, 150, 90, 23);
+
+    await waitFor(() => expect(posOf(container, '[data-node-id="fx"]')).not.toBe(before));
   });
 });

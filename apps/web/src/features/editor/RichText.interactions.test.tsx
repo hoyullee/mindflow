@@ -322,3 +322,63 @@ describe('partial rich-text styling — plain commit', () => {
     expect(parseFloat(boxAfter.style.height)).toBeGreaterThan(hBefore);
   });
 });
+
+// 제보: 텍스트 서식 툴바의 **노출 조건이 꼬였다**. 원인은 `checkSelectionToolbar`가
+// 선택이 없어졌을 때 툴바를 닫지 않고 그냥 return한 것 — 마우스로 캐럿을 옮기는 경우는
+// `TextToolbar`의 window mousedown 리스너가 닫아 주지만 **키보드에는 그 경로가 없어서**,
+// 화살표로 선택을 풀거나 선택 위에 그대로 타이핑하면 아무것도 선택되지 않은 채 툴바가
+// 계속 떠 있었다.
+describe('텍스트 서식 툴바 노출 조건', () => {
+  const toolbar = (container: HTMLElement) => within(getViewport(container)).queryByTitle('선택 영역 굵게');
+
+  it('선택이 있으면 뜬다', () => {
+    localStorage.setItem('mindflow_doc_tb1', JSON.stringify(DOC));
+    const { container } = renderEditor('/editor?map=tb1&title=x');
+    const editor = startEditingNode(container, 'c1');
+
+    expect(toolbar(container)).toBeNull();
+    selectAndOpenToolbar(editor, 6, 11);
+    expect(toolbar(container)).toBeTruthy();
+  });
+
+  it('키보드로 선택을 풀면 닫힌다 (화살표)', () => {
+    localStorage.setItem('mindflow_doc_tb2', JSON.stringify(DOC));
+    const { container } = renderEditor('/editor?map=tb2&title=x');
+    const editor = startEditingNode(container, 'c1');
+
+    selectAndOpenToolbar(editor, 6, 11);
+    expect(toolbar(container)).toBeTruthy();
+
+    // 화살표로 캐럿만 옮긴 상태 = 선택 없음
+    setLinearSelection(editor, 11, 11);
+    fireEvent.keyUp(editor, { key: 'ArrowRight' });
+    expect(toolbar(container)).toBeNull();
+  });
+
+  it('선택 위에 타이핑하면 닫힌다', () => {
+    localStorage.setItem('mindflow_doc_tb3', JSON.stringify(DOC));
+    const { container } = renderEditor('/editor?map=tb3&title=x');
+    const editor = startEditingNode(container, 'c1');
+
+    selectAndOpenToolbar(editor, 6, 11);
+    expect(toolbar(container)).toBeTruthy();
+
+    // 입력이 선택을 대체하면 캐럿만 남는다
+    setLinearSelection(editor, 7, 7);
+    fireEvent.keyUp(editor, { key: 'a' });
+    expect(toolbar(container)).toBeNull();
+  });
+
+  it('마우스로 캐럿만 옮겨도 닫힌다', () => {
+    localStorage.setItem('mindflow_doc_tb4', JSON.stringify(DOC));
+    const { container } = renderEditor('/editor?map=tb4&title=x');
+    const editor = startEditingNode(container, 'c1');
+
+    selectAndOpenToolbar(editor, 6, 11);
+    expect(toolbar(container)).toBeTruthy();
+
+    setLinearSelection(editor, 3, 3);
+    fireEvent.mouseUp(editor);
+    expect(toolbar(container)).toBeNull();
+  });
+});
