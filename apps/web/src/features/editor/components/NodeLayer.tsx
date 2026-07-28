@@ -3,6 +3,7 @@ import { useEffect, useRef } from 'react';
 import type { LayoutMode, Node, NodeMap } from '@mindflow/mindmap-core';
 import { ROOT_ID } from '@mindflow/mindmap-core';
 import { colorOf, descendants } from '../tree';
+import { isPanButton } from '../pointerButtons';
 import { hexA } from '../theme';
 import type { Theme } from '../theme';
 import type { EditorController } from '../useEditorState';
@@ -336,6 +337,7 @@ function NodeBox({ id, node: n, g, nodes, mode, theme: th, rootX, controller }: 
         <div
           style={toggleStyle}
           onPointerDown={(e) => {
+            if (isPanButton(e)) return; // 우클릭·휠클릭 = 화면 이동
             e.stopPropagation();
             controller.toggleCollapse(id);
           }}

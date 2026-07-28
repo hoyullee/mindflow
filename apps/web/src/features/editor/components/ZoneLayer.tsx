@@ -2,6 +2,7 @@ import { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { ResizeHandle } from './ResizeHandle';
 import type { Zone } from '@mindflow/mindmap-core';
 import { hexA } from '../theme';
+import { isPanButton } from '../pointerButtons';
 import type { Theme } from '../theme';
 import type { EditorController } from '../useEditorState';
 import { peersSelecting } from '../presenceSelection';
@@ -102,6 +103,7 @@ export function ZoneLayer({ zones, theme: th, controller }: ZoneLayerProps) {
                 <div
                   title="삭제"
                   onPointerDown={(e) => {
+                    if (isPanButton(e)) return; // 우클릭·휠클릭 = 화면 이동 (오른쪽 버튼으로 삭제되지 않게)
                     e.stopPropagation();
                     controller.deleteZone(z.id);
                   }}

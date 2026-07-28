@@ -4,6 +4,7 @@ import type { Line } from '@mindflow/mindmap-core';
 import { cubicAt, portPoint } from '@mindflow/mindmap-core';
 import type { PortSide } from '@mindflow/mindmap-core';
 import { hexA } from '../theme';
+import { isPanButton } from '../pointerButtons';
 import type { Theme } from '../theme';
 import type { EditorController } from '../useEditorState';
 import { peersSelecting } from '../presenceSelection';
@@ -153,6 +154,7 @@ export function LineLayer({ lines, theme: th, controller }: LineLayerProps) {
         <div
           key={`lbl${l.id}`}
           onPointerDown={(e) => {
+            if (isPanButton(e)) return; // 우클릭·휠클릭 = 화면 이동
             e.stopPropagation();
             controller.selectLine(l.id);
           }}
