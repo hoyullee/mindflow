@@ -10,7 +10,11 @@ interface Props {
 export function ToastModal({ state, controller }: Props) {
   const visible = !!(state.toast || state.importDone || state.importError);
   const title = state.importError ? '가져오기 실패' : state.importDone ? '가져오기 완료' : state.toastTitle || '완료';
-  const msg = state.importError || (state.importDone ? `"${state.importDone}" 맵을 현재 공간에 추가했어요` : state.toast || '');
+  // 폴더 안에서 가져오면 그 폴더에 들어가므로(`useHomeController`의 import 커밋)
+  // 목적지를 그대로 말해 준다 — "현재 공간에"라고만 하면 폴더에 들어간 걸 두고
+  // 최상위를 찾게 만든다.
+  const importedInto = state.importDoneFolder ? `'${state.importDoneFolder}' 폴더에` : '현재 공간에';
+  const msg = state.importError || (state.importDone ? `"${state.importDone}" 맵을 ${importedInto} 추가했어요` : state.toast || '');
 
   return (
     <div style={{ position: 'fixed', inset: 0, background: 'rgba(30,20,14,.42)', backdropFilter: 'blur(2px)', display: visible ? 'flex' : 'none', alignItems: 'center', justifyContent: 'center', zIndex: 220, animation: 'mf-fade .18s ease-out' }}>

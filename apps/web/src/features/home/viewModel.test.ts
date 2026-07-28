@@ -252,3 +252,84 @@ describe('deriveHomeView — recent (cross-space)', () => {
     expect(deriveHomeView(state).recentCards.map((c) => c.title)).toEqual(['일반맵']);
   });
 });
+
+// 제보 ①: 모바일 홈에서 폴더 안에 들어가면 파일을 가져올 방법이 없다. 폴더 안에서는
+// 툴바의 `가져오기`가 사라져서, 폴더에 파일을 넣으려면 최상위로 나가 가져온 뒤
+// 다시 그 폴더로 옮겨야 했다.
+describe('deriveHomeView — 폴더 안에서의 가져오기/새 폴더', () => {
+  function folderState() {
+    const state = initialHomeState();
+    state.loaded = true;
+    state.activeSpace = 'general';
+    state.spaces = [{ id: 'general', name: '일반 공간', home: true, color: '#f0663f', maps: [], folders: [{ id: 'f1', name: '자료' }] }];
+    return state;
+  }
+
+  it('폴더 안에서도 가져오기가 보인다', () => {
+    const state = folderState();
+    state.curFolder = 'f1';
+    const view = deriveHomeView(state);
+    expect(view.backVisible).toBe(true); // sanity: 폴더 안이다
+    expect(view.importVisible).toBe(true);
+  });
+
+  it('최상위에서도 물론 보인다', () => {
+    expect(deriveHomeView(folderState()).importVisible).toBe(true);
+  });
+
+  it('Drive 공간에서는 여전히 숨긴다(가져오기 대상이 로컬 스페이스뿐)', () => {
+    const state = folderState();
+    state.activeSpace = 'drive';
+    state.drive = 'connected';
+    expect(deriveHomeView(state).importVisible).toBe(false);
+  });
+
+  it('새 폴더는 폴더 안에서 계속 숨긴다 — 폴더 모델이 한 단계라 하위 폴더를 만들 수 없다', () => {
+    const state = folderState();
+    state.curFolder = 'f1';
+    expect(deriveHomeView(state).newFolderVisible).toBe(false);
+    // 최상위에서는 보인다
+    state.curFolder = null;
+    expect(deriveHomeView(state).newFolderVisible).toBe(true);
+  });
+});
+
+// 제보 ②: 이름이 긴 폴더에 들어가면 제목의 경로("스페이스 / 폴더")가 줄바꿈된다.
+// 상위 경로는 `…`로 접고 현재 폴더명만 보여 준다(전체 경로는 spaceTitle에 남는다).
+describe('deriveHomeView — 제목 경로 조각', () => {
+  function state1() {
+    const state = initialHomeState();
+    state.loaded = true;
+    state.activeSpace = 'general';
+    state.spaces = [{ id: 'general', name: '일반 공간', home: true, color: '#f0663f', maps: [], folders: [{ id: 'f1', name: '아주 긴 이름의 폴더입니다' }] }];
+    return state;
+  }
+
+  it('최상위: 상위 경로가 없고 조각은 스페이스명', () => {
+    const view = deriveHomeView(state1());
+    expect(view.titleParent).toBeNull();
+    expect(view.titleLeaf).toBe('일반 공간');
+    expect(view.spaceTitle).toBe('일반 공간');
+  });
+
+  it('폴더 안: 상위=스페이스명, 조각=폴더명, 전체 경로는 그대로 유지', () => {
+    const state = state1();
+    state.curFolder = 'f1';
+    const view = deriveHomeView(state);
+    expect(view.titleParent).toBe('일반 공간');
+    expect(view.titleLeaf).toBe('아주 긴 이름의 폴더입니다');
+    expect(view.spaceTitle).toBe('일반 공간 / 아주 긴 이름의 폴더입니다');
+  });
+
+  it('Drive 폴더도 같은 규칙', () => {
+    const state = state1();
+    state.activeSpace = 'drive';
+    state.drive = 'connected';
+    state.driveFolders = [{ id: 'df1', name: '드라이브 자료' }];
+    state.driveFolder = 'df1';
+    const view = deriveHomeView(state);
+    expect(view.titleParent).toBe('Google Drive');
+    expect(view.titleLeaf).toBe('드라이브 자료');
+    expect(view.spaceTitle).toBe('Google Drive / 드라이브 자료');
+  });
+});

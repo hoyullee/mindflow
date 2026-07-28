@@ -56,6 +56,41 @@ const MOBILE_ICON_BTN = {
   flexShrink: 0,
 } as const;
 
+/**
+ * 제목 줄. 폴더 안일 때 상위 경로(스페이스명)는 `…`로 접고 현재 폴더명만 보여 준다 —
+ * "스페이스 / 폴더"를 그대로 쓰면 이름이 길 때 **두 줄로 접혀** 헤더 높이가 들썩였다
+ * (제보). 폴더명 자체가 길어도 한 줄을 유지하고 말줄임한다. 접히거나 잘린 부분은
+ * `title`(툴팁)과 `aria-label`(스크린리더)에 전체 경로로 남는다.
+ *
+ * 모바일에만 적용하지 않는 이유: 조건이 화면 폭이 아니라 "폴더 안인가"라서,
+ * 데스크톱에서도 이름이 충분히 길면 똑같이 접혔다.
+ */
+function BreadcrumbTitle({ parent, leaf, full }: { parent: string | null; leaf: string; full: string }) {
+  return (
+    <h2
+      // 툴팁은 폴더 안이 아니어도 붙인다 — 이제 최상위의 긴 스페이스명도 잘리므로
+      // 전체를 확인할 방법이 필요하다.
+      title={full}
+      // `aria-label`은 폴더 안에서만. `…`는 정보를 실제로 지우지만, 잘린 텍스트는
+      // CSS 말줄임이라 접근성 트리에는 전체가 그대로 남아 있어서 덧붙일 게 없다.
+      aria-label={parent ? full : undefined}
+      // `flex: 0 1 auto` — 늘어나지는 않으므로 데스크톱 레이아웃은 그대로고, 자리가
+      // 모자랄 때만 줄어들어 말줄임으로 넘어간다. `minWidth: 0`이 없으면 flex 항목의
+      // 기본 최소 크기가 콘텐츠라서 절대 줄어들지 않는다(= 말줄임이 안 걸린다).
+      style={{ fontSize: 22, fontWeight: 800, margin: 0, letterSpacing: '-.02em', display: 'flex', alignItems: 'baseline', gap: 6, flex: '0 1 auto', minWidth: 0, whiteSpace: 'nowrap' }}
+    >
+      {parent && (
+        // 접힌 상위 경로. 클릭 대상으로 만들지 않는다 — 왼쪽 화살표 버튼이 이미
+        // "공간으로 돌아가기"를 담당하므로 같은 동작의 버튼이 둘이 되지 않게.
+        <span aria-hidden="true" style={{ color: '#9c8b7e', fontWeight: 700, flexShrink: 0 }}>
+          … /
+        </span>
+      )}
+      <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', minWidth: 0 }}>{leaf}</span>
+    </h2>
+  );
+}
+
 /** Home.dc.html:191-207 — the "모두" toolbar above the map grid. */
 export function Toolbar({ state, view, controller, isMobile = false, onOpenNav }: Props) {
   const newHref = controller.newMapHref();
@@ -67,48 +102,54 @@ export function Toolbar({ state, view, controller, isMobile = false, onOpenNav }
 
   return (
     <div style={{ display: 'flex', alignItems: 'center', marginBottom: 18, gap: 12, flexWrap: 'wrap' }}>
-      {isMobile && (
-        // Ghost app-bar button (no border/box) so "≡ + 스페이스명" reads as ONE
-        // header unit instead of a floating control pushing the title aside.
-        // The negative margin lines the glyph up with the content's left edge
-        // while the hit area stays a full 44px (§7).
-        <button
-          type="button"
-          className="btn"
-          onClick={onOpenNav}
-          title="메뉴 열기"
-          aria-label="메뉴 열기"
-          style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', width: 44, height: 44, marginLeft: -12, marginRight: -6, border: 'none', borderRadius: 10, background: 'transparent', color: '#33281f', cursor: 'pointer', padding: 0, flexShrink: 0 }}
-        >
-          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
-            <line x1="4" y1="7" x2="20" y2="7" />
-            <line x1="4" y1="12" x2="20" y2="12" />
-            <line x1="4" y1="17" x2="20" y2="17" />
-          </svg>
-        </button>
-      )}
-      {view.backVisible && (
-        <button
-          className="btn"
-          onClick={controller.backToSpace}
-          title="공간으로 돌아가기"
-          aria-label="공간으로 돌아가기"
-          style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', width: isMobile ? 44 : 34, height: isMobile ? 44 : 34, border: '1px solid #ecdfd5', borderRadius: 10, background: '#fff', color: '#7c6d60', cursor: 'pointer', padding: 0, flexShrink: 0 }}
-        >
-          <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
-            <path d="M19 12H5" />
-            <path d="M12 19l-7-7 7-7" />
-          </svg>
-        </button>
-      )}
-      {/* Skeleton the space title until the workspace loads, so the seed
-          일반 공간 name doesn't flash before the real space name arrives
-          (matches the LNB space-list skeleton). */}
-      {state.loaded ? (
-        <h2 style={{ fontSize: 22, fontWeight: 800, margin: 0, letterSpacing: '-.02em' }}>{view.spaceTitle}</h2>
-      ) : (
-        <div className="mf-skel" aria-label="스페이스를 불러오는 중" style={{ height: 24, width: 150, borderRadius: 7, margin: '3px 0' }} />
-      )}
+      {/* ≡ · ← · 제목은 한 덩어리다. 따로 두면 제목이 길 때 flex-wrap이 제목 항목을
+          통째로 다음 줄로 내려서(줄어들기 전에 줄바꿈이 먼저 일어난다) 모바일 헤더가
+          "버튼 줄 / 제목 줄 / 검색 줄" 세 줄로 늘어졌다. 묶어 두면 이 덩어리가 한 줄을
+          지키고 그 안에서 제목만 말줄임된다. */}
+      <div style={{ display: 'flex', alignItems: 'center', gap: 12, flex: '1 1 auto', minWidth: 0 }}>
+        {isMobile && (
+          // Ghost app-bar button (no border/box) so "≡ + 스페이스명" reads as ONE
+          // header unit instead of a floating control pushing the title aside.
+          // The negative margin lines the glyph up with the content's left edge
+          // while the hit area stays a full 44px (§7).
+          <button
+            type="button"
+            className="btn"
+            onClick={onOpenNav}
+            title="메뉴 열기"
+            aria-label="메뉴 열기"
+            style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', width: 44, height: 44, marginLeft: -12, marginRight: -6, border: 'none', borderRadius: 10, background: 'transparent', color: '#33281f', cursor: 'pointer', padding: 0, flexShrink: 0 }}
+          >
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
+              <line x1="4" y1="7" x2="20" y2="7" />
+              <line x1="4" y1="12" x2="20" y2="12" />
+              <line x1="4" y1="17" x2="20" y2="17" />
+            </svg>
+          </button>
+        )}
+        {view.backVisible && (
+          <button
+            className="btn"
+            onClick={controller.backToSpace}
+            title="공간으로 돌아가기"
+            aria-label="공간으로 돌아가기"
+            style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', width: isMobile ? 44 : 34, height: isMobile ? 44 : 34, border: '1px solid #ecdfd5', borderRadius: 10, background: '#fff', color: '#7c6d60', cursor: 'pointer', padding: 0, flexShrink: 0 }}
+          >
+            <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
+              <path d="M19 12H5" />
+              <path d="M12 19l-7-7 7-7" />
+            </svg>
+          </button>
+        )}
+        {/* Skeleton the space title until the workspace loads, so the seed
+            일반 공간 name doesn't flash before the real space name arrives
+            (matches the LNB space-list skeleton). */}
+        {state.loaded ? (
+          <BreadcrumbTitle parent={view.titleParent} leaf={view.titleLeaf} full={view.spaceTitle} />
+        ) : (
+          <div className="mf-skel" aria-label="스페이스를 불러오는 중" style={{ height: 24, width: 150, borderRadius: 7, margin: '3px 0' }} />
+        )}
+      </div>
       <div style={{ marginLeft: isMobile ? 0 : 'auto', width: isMobile ? '100%' : undefined, order: isMobile ? 3 : undefined, display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
         {view.isDriveSpace && view.connected && (
           <div

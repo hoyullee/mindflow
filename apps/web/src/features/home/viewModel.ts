@@ -71,6 +71,13 @@ export interface HomeViewModel {
   activeSpaceName: string;
   isHome: boolean;
   spaceTitle: string;
+  /** 제목 줄의 상위 경로(스페이스명) — 폴더 안일 때만 채워진다. 헤더는 이 값을
+   * 그대로 쓰지 않고 `…`로 접는다(`Toolbar`): 긴 이름이 들어오면 "스페이스 / 폴더"
+   * 전체가 두 줄로 접혀 헤더 높이가 들썩였다. 전체 경로는 `spaceTitle`에 남아
+   * 툴팁/스크린리더로 제공된다. */
+  titleParent: string | null;
+  /** 제목 줄에서 실제로 보여 줄 조각 — 폴더 안이면 폴더명, 아니면 스페이스명. */
+  titleLeaf: string;
   curFolder: FolderData | null;
   driveFolder: DriveFolderData | null;
   folders: FolderData[];
@@ -369,12 +376,20 @@ export function deriveHomeView(state: HomeState): HomeViewModel {
   const isEmpty = !loading && !showDriveConnect && allCards.length === 0 && !curFolder && folderCards.length === 0;
   const folderEmpty = !loading && !!curFolder && allCards.length === 0;
 
+  // 제목 줄 = [상위(스페이스), 현재(폴더)] 중 폴더 안일 때만 두 조각.
+  const rootName = isDriveSpace ? 'Google Drive' : activeSpaceObj ? activeSpaceObj.name : '일반 공간';
+  const openFolderName = isDriveSpace ? driveFolder?.name : curFolder?.name;
+  const titleParent = openFolderName ? rootName : null;
+  const titleLeaf = openFolderName || rootName;
+
   return {
     connected,
     isDriveSpace,
     activeSpaceName: activeSpaceObj ? activeSpaceObj.name : '일반 공간',
     isHome,
-    spaceTitle: isDriveSpace ? 'Google Drive' + (driveFolder ? ' / ' + driveFolder.name : '') : curFolder ? `${activeSpaceObj ? activeSpaceObj.name : ''} / ${curFolder.name}` : activeSpaceObj ? activeSpaceObj.name : '일반 공간',
+    spaceTitle: titleParent ? `${titleParent} / ${titleLeaf}` : titleLeaf,
+    titleParent,
+    titleLeaf,
     curFolder,
     driveFolder,
     folders,
@@ -392,7 +407,12 @@ export function deriveHomeView(state: HomeState): HomeViewModel {
     showDriveConnect,
     backVisible: !!(curFolder || driveFolder),
     newFolderVisible: !((isDriveSpace && (!connected || driveFolder)) || curFolder),
-    importVisible: !(isDriveSpace || curFolder),
+    // 폴더 안에서도 가져올 수 있다 — 가져온 맵은 그 폴더에 들어간다
+    // (`useHomeController`의 import 커밋). 예전엔 폴더 안에서 버튼이 사라져,
+    // 폴더에 파일을 넣으려면 최상위로 나가서 가져온 뒤 다시 옮겨야 했다.
+    // `새 폴더`는 계속 최상위 전용이다 — 폴더 모델이 한 단계(스페이스 → 폴더 → 맵)라
+    // 폴더 안에서 만든 폴더는 최상위에 생겨 방금 만든 게 사라진 것처럼 보인다.
+    importVisible: !isDriveSpace,
     // Global cross-space tray at the top of Home. It's GLOBAL — independent of
     // which space OR folder is being browsed — so it stays visible inside
     // folders too (hiding it there made "이어하기" vanish mid-navigation). Hidden
