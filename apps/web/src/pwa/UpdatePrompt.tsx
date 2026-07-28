@@ -1,7 +1,9 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { useRegisterSW } from 'virtual:pwa-register/react';
 import { UpdateToast } from './UpdateToast';
-import { anyPeerBusy, canAutoApply, setUpdateChecker, startPeerResponder, useUpdateGate } from './updateGate';
+import { anyPeerBusy, canAutoApply, notifyPeersApplied, setUpdateChecker, startPeerResponder, useUpdateGate } from './updateGate';
+import { consumeUpdateApplied, markUpdateApplied } from './updateApplied';
+import { UpdateAppliedNotice } from './UpdateAppliedNotice';
 import { applyUpdate } from './applyUpdate';
 
 /**
@@ -73,6 +75,11 @@ export function UpdatePrompt() {
 
   /** 적용이 진행 중 — 버튼에 그대로 비춘다(누른 게 먹었는지 보이지 않으면 고장으로 읽힌다). */
   const [applying, setApplying] = useState(false);
+  /** 직전 로드가 "새 버전 적용"이었는지 — 표식은 마운트 때 한 번만 소비한다. */
+  const [justUpdated, setJustUpdated] = useState(false);
+  useEffect(() => {
+    if (consumeUpdateApplied()) setJustUpdated(true);
+  }, []);
 
   // 자동 적용 이펙트와 토스트 버튼이 동시에 들어올 수 있어 중복 실행만 막는다.
   // ⚠️ 반드시 `finally`에서 풀어야 한다 — 예전엔 한 번 걸리면 안 풀리는 빗장이라,
@@ -93,7 +100,14 @@ export function UpdatePrompt() {
         setSaveBlocked(false);
         const outcome = await applyUpdate({
           prepare,
-          skipWaiting: () => void updateServiceWorker(true),
+          skipWaiting: () => {
+            // 적용은 곧 리로드 — "적용됐어요"는 이 순간 띄울 수 없으므로 표식만 남기고
+            // 새로 뜬 페이지가 알린다(`updateApplied`). 다른 탭도 함께 리로드되므로
+            // 같이 알려 준다.
+            markUpdateApplied();
+            notifyPeersApplied();
+            void updateServiceWorker(true);
+          },
           reload: () => window.location.reload(),
         });
         if (outcome === 'save-failed') setSaveBlocked(true); // 토스트로 내려가 알린다
@@ -116,16 +130,19 @@ export function UpdatePrompt() {
   }, [needRefresh, dismissed, canAutoLocally, apply]);
 
   return (
-    <UpdateToast
+    <>
+      <UpdateAppliedNotice visible={justUpdated} onDone={() => setJustUpdated(false)} />
+      <UpdateToast
       // 자동으로 적용될 상황이면 굳이 묻지 않는다 — 곧 조용히 갈아끼워진다.
       visible={needRefresh && !dismissed && !canAutoLocally}
       saveBlocked={saveBlocked}
       applying={applying}
       onRefresh={() => void apply(false)}
-      onDismiss={() => {
-        setDismissed(true);
-        setNeedRefresh(false);
-      }}
-    />
+        onDismiss={() => {
+          setDismissed(true);
+          setNeedRefresh(false);
+        }}
+      />
+    </>
   );
 }
