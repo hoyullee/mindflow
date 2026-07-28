@@ -687,13 +687,16 @@ describe('크기 조절 축 고정 (변 핸들)', () => {
   });
 });
 
-// 재발 제보: 변 핸들은 괜찮은데 **모서리 핸들**로 좌우를 조절하면 여전히 위아래로 튄다.
-// 원인은 평소 크기가 `max(자연 크기, cw/ch)`이고 자연 높이는 줄 수로 정해지는
-// **계단 함수**라는 것 — 손이 위로 조금만 흔들려 ch가 자연 높이 아래로 내려가면
-// 높이가 손을 따르지 않고 자연 높이에 붙잡혀 있다가, 폭이 넓어져 텍스트가 한 줄
-// 줄어드는 순간 한 줄 높이만큼 뚝 떨어졌다(214 → 194 → 174).
-// 이제 끄는 동안에는 끄는 대로 보여 주므로 높이는 오직 dy만 따른다.
-describe('모서리 핸들: 좌우로 끌 때 높이가 계단으로 튀지 않는다', () => {
+// 모서리 핸들 회귀 2건 (연달아 제보됨).
+//  ① 좌우로 끌면 높이가 한 줄 높이(약 20px)씩 계단으로 떨어졌다. 평소 크기가
+//     `max(자연 크기, ch)`이고 자연 높이는 줄 수로 정해지는 계단 함수인데, 손이
+//     위로 조금만 흔들려 ch가 그 아래로 내려가면 높이가 손이 아니라 줄 수를 따랐다.
+//  ② 이를 "끄는 대로 보여 주기"로 고쳤더니, 이번엔 텍스트가 요구하는 크기보다
+//     작게 줄일 수 있게 되어 **글자가 박스를 삐져나왔다**.
+// 둘을 동시에 만족시키는 규칙: 텍스트 최소 높이로 바닥을 깔되, 그 바닥을 재는
+// 폭을 `min(현재 폭, 시작 폭)`으로 둔다 — 넓힐 때 바닥이 낮아지지 않아 계단이
+// 없고, 좁힐 때는 바닥이 따라 올라와 글자가 넘치지 않는다.
+describe('모서리 핸들: 좌우로 끌 때 (계단 없음 + 글자 안 넘침)', () => {
   const LONG = [
     '원티드에서 첫 이력서 작성 시 적립',
     '[원티드 홈 > 이력서] 에서 [새 이력서 작성] 버튼을 클릭하여 이력서를 작성',
@@ -715,29 +718,52 @@ describe('모서리 핸들: 좌우로 끌 때 높이가 계단으로 튀지 않�
   };
 
   const boxFor = (c: HTMLElement): HTMLElement => getViewport(c).querySelector('[data-node-id="c1"]') as HTMLElement;
-  const hOf = (c: HTMLElement): number => parseFloat(boxFor(c).style.height);
+  const sizeOf = (c: HTMLElement) => ({ w: parseFloat(boxFor(c).style.width), h: parseFloat(boxFor(c).style.height) });
+  /** 그 폭에서 텍스트가 실제로 요구하는 최소 높이 (박스가 이보다 작으면 글자가 넘친다). */
+  const textFloor = (w: number): number => {
+    const n = { ...LONG_DOC.nodes.c1, cw: w } as Parameters<typeof computeMetrics>[0];
+    return computeMetrics(n, 2, new CanvasTextMeasurer()).h;
+  };
 
-  it('세로로 살짝 올린 채 좌우로 끌어도 높이는 그 dy만 반영한다', async () => {
-    localStorage.setItem('mindflow_doc_corner', JSON.stringify(LONG_DOC));
-    const { container } = renderEditor('/editor?map=corner&title=x');
+  async function grab(mapId: string) {
+    localStorage.setItem(`mindflow_doc_${mapId}`, JSON.stringify(LONG_DOC));
+    const { container } = renderEditor(`/editor?map=${mapId}&title=x`);
     await waitFor(() => expect(boxFor(container)).toBeTruthy());
     firePointer(boxFor(container), 'pointerdown', { pointerId: 1, clientX: 100, clientY: 100 });
     firePointer(window, 'pointerup', { pointerId: 1, clientX: 100, clientY: 100 });
     const handle = getViewport(container).querySelector('[title^="크기 조절"]') as HTMLElement;
     expect(handle).toBeTruthy();
-
-    const start = hOf(container);
-    const DY = -10; // 손이 위로 10px — 예전엔 이것만으로 계단 낙하가 시작됐다
     firePointer(handle, 'pointerdown', { pointerId: 7, clientX: 0, clientY: 0 });
+    return container;
+  }
+
+  it('① 넓힐 때: 세로로 살짝 올린 채 끌어도 높이가 계단으로 떨어지지 않는다', async () => {
+    const container = await grab('corner-wide');
+    const start = sizeOf(container).h;
 
     const seen = new Set<number>();
     for (let dx = 20; dx <= 700; dx += 20) {
-      firePointer(window, 'pointermove', { pointerId: 7, clientX: dx, clientY: DY });
-      seen.add(Math.round(hOf(container)));
+      firePointer(window, 'pointermove', { pointerId: 7, clientX: dx, clientY: -10 }); // 손이 위로 10px
+      seen.add(Math.round(sizeOf(container).h));
     }
-    firePointer(window, 'pointerup', { pointerId: 7, clientX: 700, clientY: DY });
+    firePointer(window, 'pointerup', { pointerId: 7, clientX: 700, clientY: -10 });
 
-    // 폭을 700px 넓히는 내내 높이는 딱 하나 — 손이 움직인 만큼(dy)만 반영된 값.
-    expect([...seen]).toEqual([Math.round(start + DY)]);
+    // 폭을 700px 넓히는 내내 높이는 하나뿐 — 시작 높이 그대로.
+    // (텍스트가 그보다 낮은 높이를 허용하지 않으므로 -10은 반영되지 않는다.)
+    expect([...seen]).toEqual([Math.round(start)]);
+  });
+
+  it('② 좁힐 때: 박스가 텍스트가 요구하는 높이 아래로 내려가지 않는다', async () => {
+    const container = await grab('corner-narrow');
+
+    let violations = 0;
+    for (let dx = -20; dx >= -260; dx -= 20) {
+      firePointer(window, 'pointermove', { pointerId: 7, clientX: dx, clientY: -40 }); // 위로도 끈다
+      const { w, h } = sizeOf(container);
+      if (h < textFloor(w) - 0.5) violations++;
+    }
+    firePointer(window, 'pointerup', { pointerId: 7, clientX: -260, clientY: -40 });
+
+    expect(violations).toBe(0);
   });
 });
