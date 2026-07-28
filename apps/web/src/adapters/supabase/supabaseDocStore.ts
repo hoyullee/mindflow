@@ -59,14 +59,22 @@ export class SupabaseDocStore implements DocStore {
     const nowIso = new Date().toISOString();
 
     if (opts.prevVersion === undefined) {
+      const row = { id, title: opts.title ?? '', data: payload, version: 1, updated_at: nowIso };
+      if (opts.createOnly) {
+        // INSERT만 — 이미 있으면 PK 충돌로 실패한다(`SaveOptions.createOnly` 참고).
+        // 덮어쓰기가 아니라 `conflict`로 돌려주므로 호출부가 다른 id로 재시도할 수 있다.
+        const { data, error } = await this.client.from(TABLE).insert(row).select('version').single();
+        if (!error) return { ok: true, version: (data as { version: number } | null)?.version ?? 1 };
+        // 23505 = unique_violation. 코드가 없는 구현/프록시도 있으니 메시지도 함께 본다.
+        const dup = error.code === '23505' || /duplicate key|already exists/i.test(error.message || '');
+        if (!dup) return { ok: false, reason: 'error', message: error.message };
+        const { data: cur } = await this.client.from(TABLE).select('version').eq('id', id).maybeSingle();
+        return { ok: false, reason: 'conflict', currentVersion: (cur as { version: number } | null)?.version ?? 1 };
+      }
       // No known prior version: create-or-force-overwrite at version 1. Used
       // for a brand-new map's first save; callers that DO want locking on an
       // existing doc must pass the version `load()` returned.
-      const { data, error } = await this.client
-        .from(TABLE)
-        .upsert({ id, title: opts.title ?? '', data: payload, version: 1, updated_at: nowIso }, { onConflict: 'id' })
-        .select('version')
-        .single();
+      const { data, error } = await this.client.from(TABLE).upsert(row, { onConflict: 'id' }).select('version').single();
       if (error) return { ok: false, reason: 'error', message: error.message };
       return { ok: true, version: (data as { version: number } | null)?.version ?? 1 };
     }

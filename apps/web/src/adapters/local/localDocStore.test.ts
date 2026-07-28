@@ -92,6 +92,26 @@ describe('LocalDocStore', () => {
     expect(loaded!.doc.nodes[ROOT_ID]!.text).toBe('원본 제목'); // doc body unchanged
   });
 
+  // ③ 첫 저장에서 남의 문서를 덮지 않기 위한 플래그 — `SaveOptions.createOnly`.
+  it('createOnly: 그 id에 이미 본문이 있으면 덮지 않고 conflict를 돌려준다', async () => {
+    const store = new LocalDocStore();
+    await store.save('dup', makeDoc('먼저 저장된 맵'));
+
+    const res = await store.save('dup', makeDoc('나중에 온 맵'), { createOnly: true });
+    expect(res).toEqual({ ok: false, reason: 'conflict', currentVersion: 1 });
+
+    // 본문은 그대로 — 덮이지 않았다
+    const loaded = await store.load('dup');
+    expect(loaded?.doc.nodes[ROOT_ID]?.text).toBe('먼저 저장된 맵');
+  });
+
+  it('createOnly: 없는 id면 평소처럼 만든다', async () => {
+    const store = new LocalDocStore();
+    const res = await store.save('fresh', makeDoc('새 맵'), { createOnly: true, title: '새 맵' });
+    expect(res).toEqual({ ok: true, version: 1 });
+    expect((await store.list()).map((m) => m.id)).toEqual(['fresh']);
+  });
+
   it('load() returns null for an id that was never saved', async () => {
     const store = new LocalDocStore();
     expect(await store.load('nope')).toBeNull();

@@ -45,6 +45,9 @@ class FakeQuery implements PromiseLike<{ data: unknown; error: unknown }> {
   upsert(...args: unknown[]) {
     return this.record('upsert', args);
   }
+  insert(...args: unknown[]) {
+    return this.record('insert', args);
+  }
   single() {
     this.record('single', []);
     return Promise.resolve(this.result);
@@ -150,6 +153,43 @@ describe('SupabaseDocStore', () => {
     expect(upsertPayload).toMatchObject({ id: 'new-doc', title: 'Fresh', version: 1 });
     expect(upsertOpts).toEqual({ onConflict: 'id' });
     expect(result).toEqual({ ok: true, version: 1 });
+  });
+
+  // ③ 첫 저장에서 남의 문서를 덮지 않기 위한 플래그 — `SaveOptions.createOnly`.
+  it('save({createOnly}) INSERT만 한다 (upsert가 아니다)', async () => {
+    const { client, query } = fakeClient({ data: { version: 1 }, error: null });
+    const store = new SupabaseDocStore(client);
+
+    const result = await store.save('new-doc', makeDoc('Fresh'), { title: 'Fresh', createOnly: true });
+
+    expect(query.calls[0]?.method).toBe('insert');
+    expect(query.calls.some((c) => c.method === 'upsert')).toBe(false);
+    const [payload] = query.calls[0]!.args as [Record<string, unknown>];
+    expect(payload).toMatchObject({ id: 'new-doc', title: 'Fresh', version: 1 });
+    expect(result).toEqual({ ok: true, version: 1 });
+  });
+
+  it('save({createOnly}) 중복 키면 덮지 않고 conflict를 돌려준다', async () => {
+    let call = 0;
+    const insertQuery = new FakeQuery({ data: null, error: { code: '23505', message: 'duplicate key value violates unique constraint' } });
+    const from = vi.fn(() => {
+      call += 1;
+      // 두 번째 `.from()`은 "현재 버전이 몇인가" 조회
+      if (call === 2) return new FakeQuery({ data: { version: 7 }, error: null });
+      return insertQuery;
+    });
+    const client = { from } as unknown as import('@supabase/supabase-js').SupabaseClient;
+    const store = new SupabaseDocStore(client);
+
+    const result = await store.save('taken', makeDoc('Mine'), { createOnly: true });
+
+    expect(result).toEqual({ ok: false, reason: 'conflict', currentVersion: 7 });
+  });
+
+  it('save({createOnly}) 중복이 아닌 오류는 error로 돌려준다 (조용히 성공하지 않는다)', async () => {
+    const { client } = fakeClient({ data: null, error: { code: '42501', message: 'permission denied' } });
+    const store = new SupabaseDocStore(client);
+    expect(await store.save('x', makeDoc('X'), { createOnly: true })).toEqual({ ok: false, reason: 'error', message: 'permission denied' });
   });
 
   it('remove()/restore() update deleted_at, rename() updates title, setFavorite() updates is_favorite', async () => {

@@ -144,6 +144,12 @@ export class LocalDocStore implements DocStore {
     if (opts.prevVersion !== undefined && opts.prevVersion !== currentVersion) {
       return { ok: false, reason: 'conflict', currentVersion };
     }
+    // "만들기만" 요청인데 그 id에 이미 본문이 있으면 덮어쓰지 않는다
+    // (`SaveOptions.createOnly`). 로컬 모드에도 같은 계약을 지켜야 호출부가
+    // 모드에 따라 다르게 동작하지 않는다.
+    if (opts.prevVersion === undefined && opts.createOnly && currentVersion > 0) {
+      return { ok: false, reason: 'conflict', currentVersion };
+    }
     const nextVersion = currentVersion + 1;
     const payload = JSON.stringify(serializeDoc(doc));
     if (!writeRaw(docKey(id), payload)) {

@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import type { ChangeEvent, KeyboardEvent } from 'react';
 import { useNavigate } from 'react-router-dom';
+import type { Doc } from '@mindflow/mindmap-core';
 import { parseDoc, serializeDoc } from '@mindflow/mindmap-core';
 import { exportDocPng } from '../editor/png';
 import { themeOf } from '../editor/theme';
@@ -26,8 +27,11 @@ import {
   mapHref as buildMapHref,
   mergeDocMetasIntoSpaces,
   mergeRecent,
+  newDocId,
   newMapHref as buildNewMapHref,
   parseOutline,
+  planImportBinding,
+  applyImportBinding,
   readDocRaw,
   RECENT_CAP,
   RECENT_RENDER_MAX,
@@ -51,7 +55,7 @@ export function useHomeController() {
   // 출렁인다(새로고침 깜빡임).
   const [state, setState] = useState<HomeState>(() => ({ ...initialHomeState(), recent: loadRecent() }));
   const navigate = useNavigate();
-  const { auth, docStore, spaceStore } = useBackend();
+  const { auth, docStore, spaceStore, mode: backendMode } = useBackend();
   const importInputRef = useRef<HTMLInputElement | null>(null);
   const loaderTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
   // 새 맵 카드 등록을 로더 페인트 뒤로 미룰 때의 폴백 타이머(rAF 없는 환경).
@@ -101,14 +105,24 @@ export function useHomeController() {
     const ws = res[0].status === 'fulfilled' ? res[0].value : null;
     const metas = res[1].status === 'fulfilled' ? res[1].value : [];
     if (ws && Array.isArray(ws.spaces)) workspaceLoadedRef.current = true;
+    const wsBase = ws && Array.isArray(ws.spaces) ? ensureHomeSpace(coerceSpaces(ws.spaces)) : null;
+    // ② 예전에 가져온(docId 없는) 카드를 자기 문서에 묶는다 — 조건과 근거는
+    // `planImportBinding`에. 업로드는 부수효과라 setState 밖(아래)에서 하고, 여기서는
+    // 계획만 세운다. 저장된 워크스페이스를 못 읽었으면 건너뛴다(기준이 없으면 판단도
+    // 못 한다 — 다음 진입에서 다시 본다).
+    // 로컬/데모 모드에서는 그 id의 문서가 곧 이 카드의 본문이므로 그대로 묶는다
+    // (`planImportBinding`의 `adoptExisting` 참고).
+    const binding = wsBase ? planImportBinding(wsBase, metas, backendMode === 'local') : [];
     setState((prev) => {
-      let base = prev.spaces;
+      let base = wsBase ?? prev.spaces;
       let mapFolders = prev.mapFolders;
-      if (ws && Array.isArray(ws.spaces)) {
-        base = ensureHomeSpace(coerceSpaces(ws.spaces));
-        if (ws.mapFolders && Object.keys(ws.mapFolders).length) mapFolders = ws.mapFolders;
-      }
-      const { spaces, renamed } = mergeDocMetasIntoSpaces(base, metas);
+      if (wsBase && ws?.mapFolders && Object.keys(ws.mapFolders).length) mapFolders = ws.mapFolders;
+      const { spaces: merged, renamed } = mergeDocMetasIntoSpaces(base, metas);
+      // 키 마이그레이션보다 **먼저** docId를 붙여야, 제목으로 저장돼 있던 폴더 배정·
+      // 최근 항목이 그 docId로 함께 옮겨 간다(아래 `migrateMapFolderKeys`/
+      // `migrateRecentKeys`가 처리한다 — 여기서 따로 손댈 필요가 없다).
+      base = applyImportBinding(merged, binding);
+      const spaces = base;
       // `mapFolders` is keyed by map title, so when the merge renames a card to
       // its backend title (e.g. a map created/edited then reopened), migrate the
       // folder assignment to the new title — otherwise the folder still counts
@@ -189,8 +203,12 @@ export function useHomeController() {
       // PRE-migration shape instead, so the save effect sees a change and
       // persists the docId-keyed blob once — otherwise it would stay legacy
       // and re-migrate every load.
+      // (같은 이유로, ②의 docId 묶기가 있었다면 **묶기 전** 카드를 기준선으로 둔다 —
+      // 안 그러면 저장 효과가 "바뀐 게 없다"고 보고 지나쳐 docId가 영속되지 않는다.
+      // 그러면 업로드가 성공한 다음 진입에서는 백엔드에 행이 있어 묶기 조건이 깨지고,
+      // 카드는 영원히 docId 없는 상태로 남는다.)
       savedWorkspaceSigRef.current = JSON.stringify({
-        spaces,
+        spaces: binding.length ? merged : spaces,
         mapFolders: mfMigration.changed ? mfBeforeMigration : mapFolders,
         recent: recentMigration.changed ? recentBeforeMigration : recent,
       });
@@ -201,7 +219,24 @@ export function useHomeController() {
       const docTimes = Object.fromEntries(metas.map((m) => [m.id, m.updatedAt]));
       return { ...prev, spaces, activeSpace, curFolder, mapFolders, favs, deleted, trash, recent, docTimes, loaded: true };
     });
-  }, [docStore, spaceStore]);
+    // ② 묶은 카드의 본문을 올린다. `createOnly`라 이미 있으면 아무것도 하지 않는다
+    // (다른 기기가 올린 문서를 덮지 않는다). 실패는 조용히 넘긴다 — 다음 진입에서
+    // 조건이 그대로라 다시 시도한다.
+    for (const b of binding) {
+      const raw = readDocRaw(b.docId);
+      if (!raw) continue;
+      let parsed: Doc | null = null;
+      try {
+        parsed = parseDoc(JSON.parse(raw));
+      } catch {
+        parsed = null;
+      }
+      if (!parsed) continue;
+      void docStore.save(b.docId, parsed, { title: b.title, createOnly: true }).catch(() => {
+        /* 오프라인/전송 실패 — 다음 진입에서 재시도 */
+      });
+    }
+  }, [docStore, spaceStore, backendMode]);
 
   // ---- mount: restore recent list, pick up docs saved from the editor ----
   useEffect(() => {
@@ -989,6 +1024,7 @@ export function useHomeController() {
   const handleImport = (file: File) => {
     const reader = new FileReader();
     reader.onload = () => {
+      void (async () => {
       const text = String(reader.result || '');
       type ImportedDoc = { nodes: Record<string, { text?: string; [k: string]: unknown }>; needsLayout?: boolean; [k: string]: unknown };
       let doc: ImportedDoc | null = null;
@@ -1027,31 +1063,68 @@ export function useHomeController() {
         if (i > 50) break;
       }
       if (finalTitle !== title && doc.nodes.root) doc.nodes.root.text = finalTitle;
+
+      // 가져온 맵도 **다른 맵과 똑같이 백엔드에 올린다.** 예전엔 localStorage에만
+      // 썼다. 카드(워크스페이스 블롭)는 동기화되니 다른 기기에도 보이는데 본문이
+      // 없어서, 거기서 열면 에디터가 "새 문서"로 판단해 **빈 seed를 저장**하고,
+      // 이후 원래 기기에서 열면 그 빈 문서를 내려받아 로컬 본문까지 덮어썼다
+      // (= 가져온 내용이 사라지는 경로).
+      //
+      // id는 `mapId(제목)`이 아니라 새로 만들기와 같은 **랜덤 id**다. 제목 해시를 쓰면
+      // 두 기기에서 같은 제목을 가져올 때 같은 행을 두고 다투게 된다(뒤에 저장한 쪽이
+      // 앞의 내용을 지운다). 랜덤 id면 그 상황 자체가 생기지 않는다.
+      const parsedDoc = parseDoc(doc);
+      if (!parsedDoc) {
+        patch({ toast: '', importError: '올바른 Geurio JSON 파일이 아니에요' });
+        return;
+      }
+      // `createOnly`로 "없을 때만 만들기". 랜덤 id라 충돌은 사실상 없지만, 그 가정이
+      // 깨져도 남의 문서를 덮지 않고 새 id로 다시 시도한다(내용 손실 0).
+      let docId = '';
+      let lastError = '';
+      for (let attempt = 0; attempt < 3; attempt++) {
+        const candidate = newDocId();
+        const res = await docStore.save(candidate, parsedDoc, { title: finalTitle, createOnly: true });
+        if (res.ok) {
+          docId = candidate;
+          break;
+        }
+        if (res.reason === 'error') lastError = res.message;
+        // conflict면 다음 후보 id로 재시도한다.
+      }
+      if (!docId) {
+        // 저장이 확인되지 않았으면 카드를 만들지 않는다 — 본문 없는 카드를 남기면
+        // 다른 기기에서 그걸 열었을 때 위에 적은 손실 경로가 열린다.
+        patch({ toast: '', importError: lastError ? `가져오기를 저장하지 못했어요. ${lastError}` : '가져오기를 저장하지 못했어요. 연결을 확인하고 다시 시도해 주세요.' });
+        return;
+      }
+      // 로컬 캐시(복구본 + 다음 열기 즉시 렌더). 백엔드 저장이 확인된 뒤에만 쓴다.
       try {
-        localStorage.setItem(docKey(mapId(finalTitle)), JSON.stringify(doc));
+        localStorage.setItem(docKey(docId), JSON.stringify(serializeDoc(parsedDoc)));
       } catch {
         /* storage unavailable */
       }
       setState((prev) => {
         const target = prev.spaces.find((s) => s.id === prev.activeSpace) || prev.spaces[0];
         if (!target) return prev;
-        const spaces = prev.spaces.map((s) => (s.id === target.id ? { ...s, maps: [...(s.maps || []), { title: finalTitle, when: '방금 가져옴', hue: '#f0663f' }] } : s));
+        const spaces = prev.spaces.map((s) => (s.id === target.id ? { ...s, maps: [...(s.maps || []), { title: finalTitle, when: '방금 가져옴', hue: '#f0663f', docId }] } : s));
         // 폴더 안에서 가져왔으면 그 폴더에 넣는다 — 안 그러면 스페이스 최상위로
         // 떨어져서, 보고 있는 폴더에는 **아무것도 나타나지 않는다**(가져오기가
         // 실패한 것처럼 보임). `registerCard`의 "새로 만들기"와 같은 규칙이다.
-        // 가져온 카드는 docId가 없으므로 키는 제목(`cardKeyOf`)이 된다.
+        // 배정 키는 docId다(`cardKeyOf`) — 제목 키는 제목이 겹치면 서로 가로챈다.
         let mapFolders = prev.mapFolders;
         let importDoneFolder: string | null = null;
         if (prev.curFolder) {
           const folders = Array.isArray(target.folders) ? target.folders : [];
           const open = folders.find((f) => f.id === prev.curFolder);
           if (open) {
-            mapFolders = { ...prev.mapFolders, [cardKeyOf(finalTitle, undefined)]: open.id };
+            mapFolders = { ...prev.mapFolders, [cardKeyOf(finalTitle, docId)]: open.id };
             importDoneFolder = open.name;
           }
         }
         return { ...prev, spaces, mapFolders, activeSpace: target.id, importDone: finalTitle, importDoneFolder };
       });
+      })();
     };
     reader.readAsText(file);
   };
