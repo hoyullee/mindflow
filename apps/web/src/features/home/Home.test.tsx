@@ -1185,7 +1185,7 @@ describe('Home', () => {
       }
     });
 
-    it('opens a map with a SINGLE tap (real mobile browsers do not reliably emit dblclick)', async () => {
+    it('맵 카드는 데스크톱과 같이 한 번=선택 / 두 번(더블탭)=열기 — 한 번에 열리면 ☰ 메뉴를 쓸 수 없다', async () => {
       const restore = mockMatchMedia(true);
       try {
         const user = userEvent.setup();
@@ -1194,14 +1194,49 @@ describe('Home', () => {
         ]);
         await waitFor(() => expect(container.querySelector('a[data-title="모바일 맵"]')).toBeTruthy());
 
-        // …but a tap on the always-visible ☰ menu must NOT navigate.
+        // ☰ 메뉴 탭은 여전히 이동하지 않는다.
         const card = container.querySelector('a[data-title="모바일 맵"]') as HTMLElement;
         await user.click(within(card).getByRole('button', { name: '메뉴' }));
         expect(screen.queryByText('EDITOR_PLACEHOLDER')).toBeNull();
 
-        // A single tap on the card body navigates to the editor (after the
-        // 900ms loader delay), instead of merely selecting the card.
+        // 첫 탭: 선택만 — 에디터로 넘어가지 않아야 ☰에 손댈 수 있다.
         await user.click(card);
+        await new Promise((r) => setTimeout(r, 1200)); // 로더 지연(900ms)을 넘겨도
+        expect(screen.queryByText('EDITOR_PLACEHOLDER')).toBeNull();
+
+        // 두 번째 탭이 임계값 안에 들어오면 연다.
+        await user.click(card);
+        await user.click(card);
+        await waitFor(() => expect(screen.getByText('EDITOR_PLACEHOLDER')).toBeTruthy(), { timeout: 3000 });
+      } finally {
+        restore();
+      }
+    });
+
+    it('최근 항목 카드도 같은 규칙 — 한 번 탭으로는 열리지 않는다', async () => {
+      const restore = mockMatchMedia(true);
+      try {
+        localStorage.setItem('mf_recent', JSON.stringify(['doc-r']));
+        localStorage.setItem(
+          'mf_spaces',
+          JSON.stringify({ spaces: [{ id: 's1', name: '일반 공간', color: '#f0663f', maps: [{ title: '최근 맵', when: '방금', hue: '#f0663f', docId: 'doc-r' }], folders: [] }], mapFolders: {} }),
+        );
+        const user = userEvent.setup();
+        const { container } = renderHomeWithDocStore([
+          { id: 'doc-r', title: '최근 맵', version: 1, updatedAt: '2026-01-01T00:00:00.000Z', isFavorite: false, deletedAt: null },
+        ]);
+        const tray = await waitFor(() => {
+          const el = container.querySelector('.mf-recent-scroll a');
+          if (!el) throw new Error('recent card not rendered');
+          return el as HTMLElement;
+        });
+
+        await user.click(tray);
+        await new Promise((r) => setTimeout(r, 1200));
+        expect(screen.queryByText('EDITOR_PLACEHOLDER')).toBeNull();
+
+        await user.click(tray);
+        await user.click(tray);
         await waitFor(() => expect(screen.getByText('EDITOR_PLACEHOLDER')).toBeTruthy(), { timeout: 3000 });
       } finally {
         restore();
