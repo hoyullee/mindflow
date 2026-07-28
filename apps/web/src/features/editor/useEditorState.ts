@@ -13,6 +13,7 @@ import { CanvasTextMeasurer, computeMetrics, measureFloatHeight } from './metric
 import { attachImageFile, defaultFloatSize, firstImageFile, fitWithin } from './imageAttach';
 import { hasStoredDoc, loadOrSeedDoc, saveDoc } from './storage';
 import { pushRecentEntry } from '../home/storage';
+import type { ResizeAxis } from './components/ResizeHandle';
 import { buildVisible, descendants, outlineRows } from './tree';
 import type { EdgeStyle } from './tree';
 import { nearestInDirection } from './navigation';
@@ -133,7 +134,7 @@ type ObjDrag =
       wasFree: boolean;
       excludeIds: Set<string>;
     }
-  | { kind: 'node-resize'; id: string; pointerId: number; startClientX: number; startClientY: number; ow: number; oh: number }
+  | { kind: 'node-resize'; id: string; pointerId: number; startClientX: number; startClientY: number; ow: number; oh: number; axis: ResizeAxis }
   | { kind: 'float'; id: string; pointerId: number; startClientX: number; startClientY: number; ox: number; oy: number }
   | { kind: 'float-resize'; id: string; pointerId: number; startClientX: number; startClientY: number; ow: number; oh: number }
   | { kind: 'zone'; id: string; pointerId: number; startClientX: number; startClientY: number; ox: number; oy: number }
@@ -434,7 +435,8 @@ export interface EditorController {
 
   // ---- drag / resize starters ----
   beginNodeDrag: (e: ReactPointerEvent, id: string) => void;
-  beginNodeResize: (e: ReactPointerEvent, id: string) => void;
+  /** `axis`로 한 방향만 바꾼다 — 'x'=폭만, 'y'=높이만, 'both'=모서리(기본). */
+  beginNodeResize: (e: ReactPointerEvent, id: string, axis?: ResizeAxis) => void;
   resetNodeSize: (id: string) => void;
   beginFloatDrag: (e: ReactPointerEvent, id: string) => void;
   beginFloatResize: (e: ReactPointerEvent, id: string) => void;
@@ -2534,7 +2536,15 @@ export function useEditorState(): EditorController {
           break;
         }
         case 'node-resize':
-          commitDoc((doc0) => ({ ...doc0, nodes: mutations.resizeNode(doc0.nodes, d.id, d.ow + dx, d.oh + dy) }), true);
+          // 축이 고정된 변 핸들은 반대 축의 시작값을 그대로 다시 커밋한다 — 손이
+          // 세로로 흔들려도 높이가 따라 움직이지 않는다(가로 핸들의 존재 이유).
+          commitDoc(
+            (doc0) => ({
+              ...doc0,
+              nodes: mutations.resizeNode(doc0.nodes, d.id, d.axis === 'y' ? d.ow : d.ow + dx, d.axis === 'x' ? d.oh : d.oh + dy),
+            }),
+            true,
+          );
           break;
         case 'float':
           commitDoc((doc0) => ({ ...doc0, floats: mutations.updateFloatItem(doc0.floats, d.id, { x: d.ox + dx, y: d.oy + dy }) }), true);
@@ -2855,13 +2865,13 @@ export function useEditorState(): EditorController {
     [rootAnchor],
   );
 
-  const beginNodeResize = useCallback((e: ReactPointerEvent, id: string) => {
+  const beginNodeResize = useCallback((e: ReactPointerEvent, id: string, axis: ResizeAxis = 'both') => {
     e.stopPropagation();
     e.preventDefault();
     const g = geomRef.current[id];
     if (!g) return;
     setResizingNodeId(id);
-    startObjDrag({ kind: 'node-resize', id, pointerId: e.pointerId, startClientX: e.clientX, startClientY: e.clientY, ow: g.w, oh: g.h });
+    startObjDrag({ kind: 'node-resize', id, pointerId: e.pointerId, startClientX: e.clientX, startClientY: e.clientY, ow: g.w, oh: g.h, axis });
   }, []);
 
   const beginFloatDrag = useCallback((e: ReactPointerEvent, id: string) => {

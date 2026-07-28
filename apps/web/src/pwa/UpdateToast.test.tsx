@@ -49,6 +49,26 @@ describe('UpdateToast (새 버전 안내)', () => {
     expect(screen.queryByText('새 버전이 준비됐어요')).toBeNull();
   });
 
+  // 제보: 눌러도 화면이 그대로라 버튼이 고장 난 줄 알았다. 적용에는 저장(네트워크)이
+  // 끼어 있어 몇 초 걸릴 수 있으므로, 진행 중임이 반드시 보여야 한다.
+  it('적용 중에는 진행 상태를 보여주고 중복 클릭을 막는다', async () => {
+    const onRefresh = vi.fn();
+    const user = userEvent.setup();
+    render(<UpdateToast visible applying onRefresh={onRefresh} onDismiss={vi.fn()} />);
+
+    const btn = screen.getByRole('button', { name: '적용 중…' });
+    expect(btn.getAttribute('aria-busy')).toBe('true');
+    expect((btn as HTMLButtonElement).disabled).toBe(true);
+    await user.click(btn);
+    expect(onRefresh).not.toHaveBeenCalled();
+  });
+
+  it('평소에는 누를 수 있다 (적용 중 표시가 기본값이 아니다)', () => {
+    render(<UpdateToast visible onRefresh={vi.fn()} onDismiss={vi.fn()} />);
+    const btn = screen.getByRole('button', { name: '새로고침' }) as HTMLButtonElement;
+    expect(btn.disabled).toBe(false);
+  });
+
   it('편집 중 포커스를 훔치지 않도록 polite status로 알린다', () => {
     render(<UpdateToast visible onRefresh={vi.fn()} onDismiss={vi.fn()} />);
     const el = screen.getByRole('status');

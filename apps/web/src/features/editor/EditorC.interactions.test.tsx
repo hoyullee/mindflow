@@ -608,3 +608,81 @@ describe('Editor drag-to-reparent (M3-Editor-c)', () => {
     expect(parsed!.nodes[ROOT_ID]?.children).toEqual(['c1']);
   });
 });
+
+// 제보: 도형 크기를 좌우로 조절하면 위아래 크기가 제멋대로 바뀐다.
+// 원인은 크기 조절 손잡이가 **우하단 모서리 하나뿐**이라, 폭만 넓히려 해도 손의
+// 세로 흔들림(dy)이 그대로 높이에 들어간 것 — 축을 고정할 방법 자체가 없었다.
+// 폭만/높이만 바꾸는 변(邊) 핸들을 추가했다.
+describe('크기 조절 축 고정 (변 핸들)', () => {
+  const RESIZE_DOC = {
+    v: 1,
+    nodes: {
+      root: { id: 'root', text: '루트', emoji: '', parent: null, children: ['c1'], collapsed: false, color: null, x: 0, y: 0 },
+      c1: { id: 'c1', text: '리서치', emoji: '', parent: 'root', children: [], collapsed: false, color: null, x: 0, y: 0 },
+    },
+    floats: [],
+    lines: [],
+    zones: [],
+    layoutMode: 'right',
+    themeKey: 'coral',
+  };
+
+  const boxFor = (container: HTMLElement): HTMLElement => {
+    const el = getViewport(container).querySelector('[data-node-id="c1"]');
+    if (!el) throw new Error('node box not found');
+    return el as HTMLElement;
+  };
+  const handleFor = (container: HTMLElement, title: string): HTMLElement => {
+    const el = getViewport(container).querySelector(`[title^="${title}"]`);
+    if (!el) throw new Error(`handle "${title}" not found`);
+    return el as HTMLElement;
+  };
+  const sizeOf = (container: HTMLElement) => {
+    const b = boxFor(container);
+    return { w: parseFloat(b.style.width), h: parseFloat(b.style.height) };
+  };
+  /** 두 축 모두 크게 흔드는 현실적인 드래그. */
+  const dragBy = (handle: HTMLElement, dx: number, dy: number): void => {
+    firePointer(handle, 'pointerdown', { pointerId: 7, clientX: 0, clientY: 0 });
+    firePointer(window, 'pointermove', { pointerId: 7, clientX: dx / 2, clientY: dy / 2 });
+    firePointer(window, 'pointermove', { pointerId: 7, clientX: dx, clientY: dy });
+    firePointer(window, 'pointerup', { pointerId: 7, clientX: dx, clientY: dy });
+  };
+
+  async function setup(mapId: string) {
+    localStorage.setItem(`mindflow_doc_${mapId}`, JSON.stringify(RESIZE_DOC));
+    const { container } = renderEditor(`/editor?map=${mapId}&title=x`);
+    await waitFor(() => expect(getViewport(container).querySelector('[data-node-id="c1"]')).toBeTruthy());
+    firePointer(boxFor(container), 'pointerdown', { pointerId: 1, clientX: 100, clientY: 100 });
+    firePointer(window, 'pointerup', { pointerId: 1, clientX: 100, clientY: 100 });
+    await waitFor(() => expect(getViewport(container).querySelector('[title^="폭 조절"]')).toBeTruthy());
+    return container;
+  }
+
+  it('폭 핸들: 손이 세로로 흔들려도 높이는 그대로다', async () => {
+    const container = await setup('rsx');
+    const before = sizeOf(container);
+    dragBy(handleFor(container, '폭 조절'), 160, 90); // 세로로 90px 흔들었다
+    const after = sizeOf(container);
+    expect(after.h).toBe(before.h);
+    expect(after.w).toBeGreaterThan(before.w);
+  });
+
+  it('높이 핸들: 손이 가로로 흔들려도 폭은 그대로다', async () => {
+    const container = await setup('rsy');
+    const before = sizeOf(container);
+    dragBy(handleFor(container, '높이 조절'), 140, 120);
+    const after = sizeOf(container);
+    expect(after.w).toBe(before.w);
+    expect(after.h).toBeGreaterThan(before.h);
+  });
+
+  it('모서리 핸들은 종전대로 둘 다 바꾼다', async () => {
+    const container = await setup('rsb');
+    const before = sizeOf(container);
+    dragBy(handleFor(container, '크기 조절'), 150, 110);
+    const after = sizeOf(container);
+    expect(after.w).toBeGreaterThan(before.w);
+    expect(after.h).toBeGreaterThan(before.h);
+  });
+});
