@@ -162,6 +162,26 @@ describe('Context menu — node', () => {
     expect(screen.getByText('삭제')).toBeTruthy();
   });
 
+  // 삭제 아이콘은 이모지(🗑)가 아니라 SVG여야 한다 — 이모지는 OS·브라우저마다
+  // 모양/색이 달라 나머지 라인 아이콘과 따로 놀고, 위험(빨강) 색도 먹지 않는다.
+  it('삭제 항목의 아이콘이 이모지가 아닌 SVG다 (위험 색을 따라간다)', async () => {
+    localStorage.setItem('mindflow_doc_cmicon', JSON.stringify(DOC));
+    const { container } = renderEditor('/editor?map=cmicon&title=x');
+    const vp = getViewport(container);
+    const { pan, zoom, geom } = computeViewport(DOC as Doc);
+    const c1 = geom.c1!;
+    const { clientX, clientY } = toClient(pan, zoom, c1.x, c1.y);
+
+    rightClickAt(vp, clientX, clientY);
+    await waitFor(() => expect(screen.getByText('삭제')).toBeTruthy());
+
+    const row = screen.getByText('삭제').closest('button')!;
+    expect(row.querySelector('svg')).toBeTruthy();
+    expect(row.textContent).not.toContain('🗑');
+    // `currentColor`를 써야 iconStyle의 danger 색이 아이콘까지 적용된다.
+    expect(row.querySelector('svg')?.getAttribute('stroke')).toBe('currentColor');
+  });
+
   it('이미지 추가 ↔ (이미지 변경 + 이미지 제거) toggles with the node image, and 제거 drops the thumbnail', async () => {
     const IMG = 'data:image/jpeg;base64,QUJD';
     const docWithImg = { ...DOC, nodes: { ...DOC.nodes, c1: { ...DOC.nodes.c1, img: IMG, imgW: 180, imgH: 135 } } };

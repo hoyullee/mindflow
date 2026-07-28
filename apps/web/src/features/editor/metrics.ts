@@ -128,7 +128,13 @@ function wrapMeasure(
     tokens.forEach((tk) => {
       if (cur > 0 && cur + tk.w > maxW && !tk.sp) {
         lines++;
-        widest = Math.max(widest, cur);
+        // 후행 공백은 줄 폭에 넣지 않는다(`Math.min`) — 공백 토큰은 위 조건의
+        // `!tk.sp`로 넘치더라도 그대로 더해지므로 `cur`가 maxW를 몇 px 넘을 수
+        // 있고, 그 값이 그대로 줄 폭으로 기록되면 자연 폭이 cw를 아슬아슬하게
+        // 넘어 아래 과팽창 되돌림이 **엉뚱하게** 발동한다(폭을 드래그하는 동안
+        // 랩 폭이 cw↔320을 오가며 줄 수가 바뀌어 높이가 튀던 버그). 마지막 줄
+        // 기록(아래)에는 원래부터 있던 클램프인데 이 중간 기록에만 빠져 있었다.
+        widest = Math.max(widest, Math.min(cur, maxW));
         cur = tk.w;
       } else {
         cur += tk.w;
