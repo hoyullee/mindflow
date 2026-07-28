@@ -490,8 +490,14 @@ function NodeEditBox({ id, n, boxStyle, align, controller }: NodeEditBoxProps) {
     const el = ref.current;
     if (!el) return;
     const ws = window.getSelection();
-    if (!ws || ws.isCollapsed || !ws.rangeCount) return;
-    if (!ws.anchorNode || !el.contains(ws.anchorNode)) return;
+    // 선택이 사라졌으면 **닫는다** — 예전엔 그냥 return해서 툴바가 남았다(제보: 노출
+    // 조건이 꼬였다). 마우스로 캐럿을 옮기는 경우는 `TextToolbar`의 window mousedown
+    // 리스너가 닫아 주지만, **키보드에는 그 경로가 없다** — 화살표로 선택을 풀거나
+    // 선택 위에 그대로 타이핑하면 아무것도 선택되지 않은 채 툴바가 계속 떠 있었다.
+    if (!ws || ws.isCollapsed || !ws.rangeCount || !ws.anchorNode || !el.contains(ws.anchorNode)) {
+      controller.closeTextCtx();
+      return;
+    }
     // `Range#getBoundingClientRect` is unimplemented in jsdom (real browsers all support
     // it) — fall back to a zero rect rather than let a test environment crash here; the
     // toolbar still opens (just anchored at the viewport's own top-left in that case).

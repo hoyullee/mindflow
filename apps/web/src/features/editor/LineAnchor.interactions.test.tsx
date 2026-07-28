@@ -160,39 +160,54 @@ describe('line endpoint anchor magnet (M3-Editor: line anchors)', () => {
     expect(Number(dots[0]!.getAttribute('cy'))).toBeCloseTo(portY, 1);
   });
 
+  // 루트는 이동 불가이므로(트리 기준점) **자유 도형**을 끌어 검증한다 — 앵커가 노드를
+  // 따라가는지가 이 테스트의 요지이고, 무엇을 끄는지는 부수적이다.
   it('an anchored endpoint follows the node when it moves', () => {
-    localStorage.setItem('mindflow_doc_la2', JSON.stringify(DOC));
+    const FREE_DOC = {
+      ...DOC,
+      nodes: {
+        root: { id: 'root', text: '루트', emoji: '', parent: null, children: [], collapsed: false, color: null, x: 0, y: 0 },
+        fx: { id: 'fx', text: '자유', emoji: '', parent: null, children: [], collapsed: false, color: null, x: -600, y: -260, free: true },
+      },
+    };
+    localStorage.setItem('mindflow_doc_la2', JSON.stringify(FREE_DOC));
     const { container } = renderEditor('/editor?map=la2&title=x');
 
-    const { pan, zoom, geom } = computeViewport(DOC as Doc);
-    const root = geom.root!;
-    const portX = root.x + root.w / 2;
-    const portY = root.y;
+    const { pan, zoom, geom } = computeViewport(FREE_DOC as Doc);
+    const fx = geom.fx!;
+    const portX = fx.x + fx.w / 2;
+    const portY = fx.y;
 
     selectLine(container, 'ln1');
     const handle = Array.from(getViewport(container).querySelectorAll('circle')).find((c) => c.querySelector('title')?.textContent === '끝점') as SVGCircleElement;
-    const start = toClient(pan, zoom, -260, -260);
+    const start = toClient(pan, zoom, -300, -260);
     const target = toClient(pan, zoom, portX, portY);
     firePointer(handle, 'pointerdown', { pointerId: 5, clientX: start.clientX, clientY: start.clientY, button: 0 });
     firePointer(window, 'pointermove', { pointerId: 5, clientX: target.clientX, clientY: target.clientY });
     firePointer(window, 'pointerup', { pointerId: 5, clientX: target.clientX, clientY: target.clientY });
     expect(magnetDots(container)).toHaveLength(1);
+    // 앵커가 붙은 직후의 위치를 기준으로 **이동량**을 본다 — 포트의 절대 좌표는
+    // 자유 루트의 depth 계산 등 이 테스트와 무관한 요인에 흔들린다.
+    const before = { cx: Number(magnetDots(container)[0]!.getAttribute('cx')), cy: Number(magnetDots(container)[0]!.getAttribute('cy')) };
 
-    // now drag the ROOT node itself by a canvas-space delta (50, 30) — port of the 'root' drag
-    // kind (MindFlow.dc.html:1816-1819): dx/dy are delta-based (not absolute), so an arbitrary
-    // start client point works as long as the target is offset by delta*zoom from it.
-    const nodeEl = container.querySelector('[data-node-id="root"]') as HTMLElement;
+    // 자유 도형을 끈다. **얼마나** 움직였는지는 DOM에서 직접 읽는다 — 이 테스트의
+    // 요지는 "앵커가 노드와 **같은 만큼** 움직이는가"이고, 그러면 줌/기하 모델링에
+    // 의존하지 않는다.
+    const nodeEl = container.querySelector('[data-node-id="fx"]') as HTMLElement;
     expect(nodeEl).toBeTruthy();
-    const dxCanvas = 50;
-    const dyCanvas = 30;
+    const nodeBefore = { l: parseFloat(nodeEl.style.left), t: parseFloat(nodeEl.style.top) };
     firePointer(nodeEl, 'pointerdown', { pointerId: 9, clientX: 100, clientY: 100, button: 0 });
-    firePointer(window, 'pointermove', { pointerId: 9, clientX: 100 + dxCanvas * zoom, clientY: 100 + dyCanvas * zoom });
-    firePointer(window, 'pointerup', { pointerId: 9, clientX: 100 + dxCanvas * zoom, clientY: 100 + dyCanvas * zoom });
+    firePointer(window, 'pointermove', { pointerId: 9, clientX: 160, clientY: 140 });
+    firePointer(window, 'pointerup', { pointerId: 9, clientX: 160, clientY: 140 });
+
+    const nodeAfter = container.querySelector('[data-node-id="fx"]') as HTMLElement;
+    const moved = { dx: parseFloat(nodeAfter.style.left) - nodeBefore.l, dy: parseFloat(nodeAfter.style.top) - nodeBefore.t };
+    expect(Math.abs(moved.dx) + Math.abs(moved.dy)).toBeGreaterThan(10); // 실제로 움직였다
 
     const dots = magnetDots(container);
     expect(dots).toHaveLength(1);
-    expect(Number(dots[0]!.getAttribute('cx'))).toBeCloseTo(portX + dxCanvas, 0);
-    expect(Number(dots[0]!.getAttribute('cy'))).toBeCloseTo(portY + dyCanvas, 0);
+    expect(Number(dots[0]!.getAttribute('cx')) - before.cx).toBeCloseTo(moved.dx, 0);
+    expect(Number(dots[0]!.getAttribute('cy')) - before.cy).toBeCloseTo(moved.dy, 0);
   });
 
   it('dropping an endpoint far from any port leaves it unanchored (no magnet dot)', () => {
