@@ -767,3 +767,53 @@ describe('모서리 핸들: 좌우로 끌 때 (계단 없음 + 글자 안 넘침
     expect(violations).toBe(0);
   });
 });
+
+// 제보(좁힐 때 위아래로 튐)의 실측 원인: 노드는 x/y가 **중심**이라 높이가 늘어나면
+// 위아래로 똑같이 벌어진다. 우하단 모서리를 잡고 왼쪽으로 끄는데 반대편(위쪽 변)이
+// 30px 밀려 올라가고 아래쪽도 31px 내려가, 좌우로만 끌었는데 도형이 세로로 요동쳤다.
+// 끄는 동안 위쪽 변을 붙잡아 **아래로만** 자라게 한다.
+describe('크기 조절 중에는 잡지 않은 위쪽 변이 움직이지 않는다', () => {
+  const LONG_DOC = {
+    v: 1,
+    nodes: {
+      root: { id: 'root', text: '루트', emoji: '', parent: null, children: ['c1'], collapsed: false, color: null, x: 0, y: 0 },
+      // 이미 넓혀 둔 상태 — 여기서 좁히면 줄이 늘어 높이가 커진다(제보 조건).
+      c1: {
+        id: 'c1',
+        text: '원티드에서 첫 이력서 작성 시 적립\n[원티드 홈 > 이력서] 에서 [새 이력서 작성] 버튼을 클릭하여 이력서를 작성\n원티드 이력서 양식을 사용하여 이력서를 작성한 경우에만 포인트 적립 대상\n외부 양식을 이용한 이력서는 포인트 적립 대상에 해당하지 않음',
+        emoji: '', parent: 'root', children: [], collapsed: false, color: null, x: 0, y: 0, shape: 'round', cw: 1000, ch: 100,
+      },
+    },
+    floats: [],
+    lines: [],
+    zones: [],
+    layoutMode: 'right',
+    themeKey: 'coral',
+  };
+
+  it('왼쪽으로 좁혀 높이가 커지는 동안에도 위쪽 변은 제자리다', async () => {
+    localStorage.setItem('mindflow_doc_anchor', JSON.stringify(LONG_DOC));
+    const { container } = renderEditor('/editor?map=anchor&title=x');
+    const box = () => getViewport(container).querySelector('[data-node-id="c1"]') as HTMLElement;
+    await waitFor(() => expect(box()).toBeTruthy());
+    firePointer(box(), 'pointerdown', { pointerId: 1, clientX: 100, clientY: 100 });
+    firePointer(window, 'pointerup', { pointerId: 1, clientX: 100, clientY: 100 });
+    const handle = getViewport(container).querySelector('[title^="크기 조절"]') as HTMLElement;
+
+    firePointer(handle, 'pointerdown', { pointerId: 7, clientX: 0, clientY: 0 });
+    const startTop = parseFloat(box().style.top);
+    const tops = new Set<number>();
+    const heights = new Set<number>();
+    for (let dx = -40; dx >= -700; dx -= 40) {
+      firePointer(window, 'pointermove', { pointerId: 7, clientX: dx, clientY: 0 }); // 순수 왼쪽
+      tops.add(Math.round(parseFloat(box().style.top)));
+      heights.add(Math.round(parseFloat(box().style.height)));
+    }
+    firePointer(window, 'pointerup', { pointerId: 7, clientX: -700, clientY: 0 });
+
+    // 위쪽 변은 시작 위치 그대로 하나뿐
+    expect([...tops]).toEqual([Math.round(startTop)]);
+    // 그리고 이 시나리오가 실제로 높이를 키우는 조건임을 확인(테스트가 헛돌지 않게)
+    expect(heights.size).toBeGreaterThan(1);
+  });
+});
