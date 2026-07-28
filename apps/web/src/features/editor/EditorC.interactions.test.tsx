@@ -609,11 +609,11 @@ describe('Editor drag-to-reparent (M3-Editor-c)', () => {
   });
 });
 
-// 제보: 도형 크기를 좌우로 조절하면 위아래 크기가 제멋대로 바뀐다.
-// 원인은 크기 조절 손잡이가 **우하단 모서리 하나뿐**이라, 폭만 넓히려 해도 손의
-// 세로 흔들림(dy)이 그대로 높이에 들어간 것 — 축을 고정할 방법 자체가 없었다.
-// 폭만/높이만 바꾸는 변(邊) 핸들을 추가했다.
-describe('크기 조절 축 고정 (변 핸들)', () => {
+// 크기 조절 핸들은 **우하단 모서리 하나뿐**이다.
+// 한때 오른쪽·아래 변에 축 고정 막대 핸들을 뒀다("가로로 끌었는데 세로가 튄다"를
+// 우회하려던 장치). 실제 원인을 모서리 드래그 쪽에서 고친 뒤(아래 두 describe가
+// 그 회귀를 지킨다) 걷어냈다 — 28px 히트 영역 셋이 겹쳐 빗맞히는 쪽이 더 문제였다.
+describe('크기 조절 핸들', () => {
   const RESIZE_DOC = {
     v: 1,
     nodes: {
@@ -655,29 +655,20 @@ describe('크기 조절 축 고정 (변 핸들)', () => {
     await waitFor(() => expect(getViewport(container).querySelector('[data-node-id="c1"]')).toBeTruthy());
     firePointer(boxFor(container), 'pointerdown', { pointerId: 1, clientX: 100, clientY: 100 });
     firePointer(window, 'pointerup', { pointerId: 1, clientX: 100, clientY: 100 });
-    await waitFor(() => expect(getViewport(container).querySelector('[title^="폭 조절"]')).toBeTruthy());
+    await waitFor(() => expect(getViewport(container).querySelector('[title^="크기 조절"]')).toBeTruthy());
     return container;
   }
 
-  it('폭 핸들: 손이 세로로 흔들려도 높이는 그대로다', async () => {
-    const container = await setup('rsx');
-    const before = sizeOf(container);
-    dragBy(handleFor(container, '폭 조절'), 160, 90); // 세로로 90px 흔들었다
-    const after = sizeOf(container);
-    expect(after.h).toBe(before.h);
-    expect(after.w).toBeGreaterThan(before.w);
+  it('선택한 노드에는 핸들이 우하단 하나만 붙는다', async () => {
+    const container = await setup('rs1');
+    const vp = getViewport(container);
+    expect(vp.querySelectorAll('[title^="크기 조절"]').length).toBe(1);
+    // 걷어낸 변 핸들이 되살아나지 않게 — 겹치는 히트 영역이 오조작의 원인이었다.
+    expect(vp.querySelector('[title^="폭 조절"]')).toBeNull();
+    expect(vp.querySelector('[title^="높이 조절"]')).toBeNull();
   });
 
-  it('높이 핸들: 손이 가로로 흔들려도 폭은 그대로다', async () => {
-    const container = await setup('rsy');
-    const before = sizeOf(container);
-    dragBy(handleFor(container, '높이 조절'), 140, 120);
-    const after = sizeOf(container);
-    expect(after.w).toBe(before.w);
-    expect(after.h).toBeGreaterThan(before.h);
-  });
-
-  it('모서리 핸들은 종전대로 둘 다 바꾼다', async () => {
+  it('모서리 핸들은 폭과 높이를 함께 바꾼다', async () => {
     const container = await setup('rsb');
     const before = sizeOf(container);
     dragBy(handleFor(container, '크기 조절'), 150, 110);

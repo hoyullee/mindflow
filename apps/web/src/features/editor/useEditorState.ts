@@ -13,7 +13,6 @@ import { CanvasTextMeasurer, computeMetrics, measureFloatHeight } from './metric
 import { attachImageFile, defaultFloatSize, firstImageFile, fitWithin } from './imageAttach';
 import { hasStoredDoc, loadOrSeedDoc, saveDoc } from './storage';
 import { pushRecentEntry } from '../home/storage';
-import type { ResizeAxis } from './components/ResizeHandle';
 import { isPanButton } from './pointerButtons';
 import { buildVisible, descendants, outlineRows } from './tree';
 import type { EdgeStyle } from './tree';
@@ -135,7 +134,7 @@ type ObjDrag =
       wasFree: boolean;
       excludeIds: Set<string>;
     }
-  | { kind: 'node-resize'; id: string; pointerId: number; startClientX: number; startClientY: number; ow: number; oh: number; axis: ResizeAxis;
+  | { kind: 'node-resize'; id: string; pointerId: number; startClientX: number; startClientY: number; ow: number; oh: number;
       /** 드래그 시작 시점의 좌상단(문서 좌표) — 자유 도형은 이 점을 고정한다(아래 참고). */
       tlX: number; tlY: number; anchorable: boolean }
   | { kind: 'float'; id: string; pointerId: number; startClientX: number; startClientY: number; ox: number; oy: number }
@@ -438,8 +437,7 @@ export interface EditorController {
 
   // ---- drag / resize starters ----
   beginNodeDrag: (e: ReactPointerEvent, id: string) => void;
-  /** `axis`로 한 방향만 바꾼다 — 'x'=폭만, 'y'=높이만, 'both'=모서리(기본). */
-  beginNodeResize: (e: ReactPointerEvent, id: string, axis?: ResizeAxis) => void;
+  beginNodeResize: (e: ReactPointerEvent, id: string) => void;
   resetNodeSize: (id: string) => void;
   beginFloatDrag: (e: ReactPointerEvent, id: string) => void;
   beginFloatResize: (e: ReactPointerEvent, id: string) => void;
@@ -2540,10 +2538,8 @@ export function useEditorState(): EditorController {
           break;
         }
         case 'node-resize': {
-          // 축이 고정된 변 핸들은 반대 축의 시작값을 그대로 다시 커밋한다 — 손이
-          // 세로로 흔들려도 높이가 따라 움직이지 않는다(가로 핸들의 존재 이유).
-          const wantW = Math.max(40, d.axis === 'y' ? d.ow : d.ow + dx);
-          const wantH = d.axis === 'x' ? d.oh : d.oh + dy;
+          const wantW = Math.max(40, d.ow + dx);
+          const wantH = d.oh + dy;
           commitDoc((doc0) => {
             const n0 = doc0.nodes[d.id];
             if (!n0) return doc0;
@@ -2899,7 +2895,7 @@ export function useEditorState(): EditorController {
     [rootAnchor],
   );
 
-  const beginNodeResize = useCallback((e: ReactPointerEvent, id: string, axis: ResizeAxis = 'both') => {
+  const beginNodeResize = useCallback((e: ReactPointerEvent, id: string) => {
     if (isPanButton(e)) return; // 우클릭·휠클릭 = 화면 이동 (배경으로 흘려보낸다)
     e.stopPropagation();
     e.preventDefault();
@@ -2912,7 +2908,7 @@ export function useEditorState(): EditorController {
     const anchorable = !!rn && !!rn.free && !rn.parent;
     startObjDrag({
       kind: 'node-resize', id, pointerId: e.pointerId, startClientX: e.clientX, startClientY: e.clientY,
-      ow: g.w, oh: g.h, axis, tlX: g.x - g.w / 2, tlY: g.y - g.h / 2, anchorable,
+      ow: g.w, oh: g.h, tlX: g.x - g.w / 2, tlY: g.y - g.h / 2, anchorable,
     });
   }, []);
 
