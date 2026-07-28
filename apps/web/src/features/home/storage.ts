@@ -136,6 +136,28 @@ export function cardKeyOf(title: string, docId?: string): string {
 }
 
 /**
+ * 제목 키를 **현재 소유하고 있는** 제목들 — docId 없는 카드의 제목.
+ *
+ * `cardKeyOf(title, undefined) === title`이므로, docId 없는 카드의 상태(폴더 배정·
+ * 최근 항목)는 지금도 제목 키로 해석된다. 아래 두 마이그레이션이 그 키를 "같은 제목의
+ * doc 카드"에게 넘겨 버리면 **살아 있는 카드의 상태를 빼앗는 것**이다.
+ *
+ * 실제로 그렇게 터졌다: 폴더 안에서 파일을 가져오면(가져온 카드는 docId가 없다)
+ * `mapFolders['가져온 제목'] = 폴더id`가 되는데, 다른 스페이스에 같은 제목의 doc 카드가
+ * 하나라도 있으면 다음 홈 진입의 마이그레이션이 그 키를 그 카드의 docId로 옮겨 버렸다.
+ * 가져온 맵은 배정을 잃고 스페이스 최상위로 떨어졌다 — "처음엔 폴더에 있었는데 나중에
+ * 스페이스로 옮겨져 있다"는 제보 그대로. (제목이 같은 카드가 같은 스페이스에 있으면
+ * 가져오기가 "제목 (2)"로 바꾸므로, 다른 스페이스에 있을 때만 부딪힌다.)
+ */
+function titlesOwnedByKeylessCards(spaces: SpaceData[]): Set<string> {
+  const owned = new Set<string>();
+  spaces.forEach((s) => (Array.isArray(s.maps) ? s.maps : []).forEach((m) => {
+    if (!m.docId) owned.add(m.title);
+  }));
+  return owned;
+}
+
+/**
  * One-time key migration for stored workspaces: `mapFolders` was historically
  * keyed by TITLE; move each entry whose title matches a doc-backed map onto
  * that map's docId key. Title keys with no matching doc-backed map (docId-less
@@ -149,13 +171,16 @@ export function migrateMapFolderKeys(
   spaces.forEach((s) => (Array.isArray(s.maps) ? s.maps : []).forEach((m) => {
     if (m.docId && !docIdByTitle.has(m.title)) docIdByTitle.set(m.title, m.docId);
   }));
+  const owned = titlesOwnedByKeylessCards(spaces);
   let changed = false;
   const out: Record<string, string> = {};
   for (const key of Object.keys(mapFolders)) {
     const docId = docIdByTitle.get(key);
     // Move title → docId only when the docId key isn't already taken (an
-    // existing docId entry is newer truth — don't clobber it).
-    if (docId && docId !== key && mapFolders[docId] === undefined) {
+    // existing docId entry is newer truth — don't clobber it) AND no docId-less
+    // card still resolves by this title (that card owns the key — see
+    // `titlesOwnedByKeylessCards`).
+    if (docId && docId !== key && mapFolders[docId] === undefined && !owned.has(key)) {
       out[docId] = mapFolders[key]!;
       changed = true;
     } else {
@@ -208,11 +233,14 @@ export function migrateRecentKeys(spaces: SpaceData[], recent: string[]): { rece
   spaces.forEach((s) => (Array.isArray(s.maps) ? s.maps : []).forEach((m) => {
     if (m.docId && !docIdByTitle.has(m.title)) docIdByTitle.set(m.title, m.docId);
   }));
+  // 같은 함정(`titlesOwnedByKeylessCards` 참고): docId 없는 카드가 제목으로 해석되는
+  // 항목이면 그 항목은 그 카드의 것이다. 옮기면 최근 항목이 **다른 맵**을 가리킨다.
+  const owned = titlesOwnedByKeylessCards(spaces);
   let changed = false;
   const seen = new Set<string>();
   const out: string[] = [];
   for (const entry of recent) {
-    const key = docIdByTitle.get(entry) ?? entry;
+    const key = owned.has(entry) ? entry : (docIdByTitle.get(entry) ?? entry);
     if (key !== entry) changed = true;
     if (seen.has(key)) {
       changed = true; // an alias collapsed away

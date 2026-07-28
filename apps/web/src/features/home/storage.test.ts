@@ -38,6 +38,33 @@ describe('mapFolders docId keying', () => {
     expect(changed).toBe(false);
     expect(mapFolders).toBe(input);
   });
+
+  // 제보 재현: 폴더 안에서 파일을 가져오면 그 카드는 docId가 없어 배정이 **제목 키**로
+  // 저장된다. 그런데 다른 스페이스에 같은 제목의 doc 카드가 있으면 이 마이그레이션이
+  // 제목 키를 그 카드의 docId로 옮겨 버려, 가져온 맵이 폴더에서 사라지고 스페이스
+  // 최상위로 떨어졌다("처음엔 폴더에 있었는데 나중에 스페이스로 옮겨져 있다").
+  it('같은 제목의 doc 카드가 있어도 docId 없는 카드의 제목 키는 빼앗지 않는다', () => {
+    const twoSpaces = [
+      {
+        id: 'sa',
+        name: '내 공간',
+        home: true,
+        color: '#f0663f',
+        maps: [{ title: '가져온 맵', when: '방금 가져옴', hue: '#f0663f' }], // 가져온 카드 = docId 없음
+        folders: [{ id: 'f1', name: '내폴더' }],
+      },
+      {
+        id: 'sb',
+        name: '다른 공간',
+        color: '#3f8fd0',
+        maps: [{ title: '가져온 맵', when: '내 맵', hue: '#f0663f', docId: 'other-doc' }], // 같은 제목, 다른 맵
+      },
+    ];
+    const { mapFolders, changed } = migrateMapFolderKeys(twoSpaces, { '가져온 맵': 'f1' });
+    expect(changed).toBe(false);
+    expect(mapFolders).toEqual({ '가져온 맵': 'f1' }); // 배정은 가져온 카드에 그대로 남는다
+    expect(mapFolders['other-doc']).toBeUndefined(); // 남의 맵으로 넘어가지 않는다
+  });
 });
 
 describe('migrateRecentKeys', () => {
@@ -70,6 +97,18 @@ describe('migrateRecentKeys', () => {
     const { recent, changed } = migrateRecentKeys(spaces, input);
     expect(changed).toBe(false);
     expect(recent).toBe(input);
+  });
+
+  // `migrateMapFolderKeys`와 같은 함정: 제목으로 해석되는 카드가 살아 있으면 그
+  // 항목은 그 카드의 것이다. 옮기면 최근 항목이 **다른 맵**을 가리킨다.
+  it('docId 없는 카드가 소유한 제목 항목은 다른 맵의 docId로 옮기지 않는다', () => {
+    const twoSpaces = [
+      { id: 'sa', name: '내 공간', home: true, color: '#f0663f', maps: [{ title: '가져온 맵', when: '방금 가져옴', hue: '#f0663f' }] },
+      { id: 'sb', name: '다른 공간', color: '#3f8fd0', maps: [{ title: '가져온 맵', when: '내 맵', hue: '#f0663f', docId: 'other-doc' }] },
+    ];
+    const { recent, changed } = migrateRecentKeys(twoSpaces, ['가져온 맵']);
+    expect(changed).toBe(false);
+    expect(recent).toEqual(['가져온 맵']);
   });
 });
 
