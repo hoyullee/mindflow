@@ -1,4 +1,5 @@
 import { useEffect, useRef, useSyncExternalStore } from 'react';
+import { markUpdateApplied } from './updateApplied';
 
 /**
  * 새 배포(대기 중인 서비스워커)를 **언제 적용할지** 화면이 스스로 신고하는 레지스트리.
@@ -115,12 +116,34 @@ export function startPeerResponder(): () => void {
   if (!channel) return () => {};
   channel.onmessage = (event: MessageEvent) => {
     const data = event.data as { t?: string; id?: string } | null;
+    // 다른 탭이 적용했다 = 이 탭도 곧 강제로 리로드된다(skipWaiting → controlling).
+    // 그 리로드 뒤에도 "적용됐어요"를 볼 수 있게 표식을 남긴다 — 이 탭은 적용을
+    // 요청한 적이 없으니 오히려 더 알려 줘야 한다.
+    if (data?.t === 'applied') {
+      markUpdateApplied();
+      return;
+    }
     if (data?.t !== 'poll' || !data.id) return;
     // 괜찮으면 침묵한다 — 바쁜 탭만 손을 든다(응답이 없으면 곧 진행).
     if (canAutoApply(currentRisk(), document.visibilityState === 'hidden')) return;
     channel.postMessage({ t: 'busy', id: data.id });
   };
   return () => channel.close();
+}
+
+/** 적용한다고 다른 탭에 알린다 — 그 탭들도 곧 리로드되므로 표식을 남겨야 한다. */
+export function notifyPeersApplied(): void {
+  const channel = openChannel();
+  if (!channel) return;
+  try {
+    channel.postMessage({ t: 'applied' });
+  } catch {
+    return; // 채널이 이미 닫힘 등 — 알림만 못 뜨고 적용은 정상
+  }
+  // 바로 닫지 않는다 — 구현에 따라 큐에 남은 메시지가 유실될 수 있고, 이 메시지는
+  // 곧 강제 리로드될 다른 탭이 "왜 리로드됐는지" 알 수 있는 유일한 근거다.
+  // (이 탭도 곧 사라지므로 지연 close는 사실상 정리 목적이다.)
+  window.setTimeout(() => channel.close(), 1000);
 }
 
 /**

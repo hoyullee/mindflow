@@ -1,3 +1,5 @@
+import { toastShellStyle } from './toastShell';
+
 /**
  * "새 버전이 준비됐어요" 토스트 — 서비스워커가 새 앱 셸을 받아 대기 중일 때 뜬다.
  *
@@ -34,27 +36,11 @@ export function UpdateToast({ visible, onRefresh, onDismiss, saveBlocked = false
       role="status"
       aria-live="polite"
       style={{
-        position: 'fixed',
-        // 화면 하단 중앙. 에디터의 우하단 미니맵/줌 클러스터와 좌하단 제스처
-        // 범례를 피해 가운데에 두고, `dvh`가 아니라 bottom 고정으로 모바일
-        // 주소창 변화에도 안전하게 붙인다.
-        left: '50%',
-        transform: 'translateX(-50%)',
-        bottom: 'max(16px, env(safe-area-inset-bottom))',
-        zIndex: 300, // LoadingOverlay(200)·모달(220)보다 위 — 어디서든 보이도록
-        display: 'flex',
-        alignItems: 'center',
+        ...toastShellStyle,
         gap: 10,
-        maxWidth: 'calc(100vw - 24px)',
         padding: '10px 10px 10px 16px',
-        background: '#33281f',
-        color: '#fff',
-        borderRadius: 14,
-        boxShadow: '0 10px 30px rgba(0,0,0,.28)',
-        fontFamily: "Pretendard, 'Pretendard-fallback', system-ui, sans-serif",
         fontSize: 13.5,
         fontWeight: 600,
-        animation: 'mf-toast-in .18s ease-out',
       }}
     >
       <span style={{ whiteSpace: 'nowrap' }}>
