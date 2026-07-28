@@ -532,6 +532,159 @@ describe('Home', () => {
     await waitFor(() => expect(container.querySelector('a[data-title="새 마인드맵"]')).toBeTruthy());
   });
 
+  // 제보: 모바일 홈에서 폴더 안에 들어가면 파일을 가져올 방법이 없다. 폴더 안에서는
+  // `가져오기` 버튼 자체가 사라져서, 폴더에 파일을 넣으려면 최상위로 나가 가져온 뒤
+  // 다시 옮겨야 했다. 이제 폴더 안에서도 가져올 수 있고, 가져온 맵은 **그 폴더에**
+  // 들어간다(새 맵 만들기와 같은 규칙 — 위 테스트).
+  describe('폴더 안에서 가져오기', () => {
+    const IMPORT_JSON = JSON.stringify({
+      v: 1,
+      nodes: { root: { id: 'root', text: '가져온 맵', emoji: '', parent: null, children: [], collapsed: false, color: null, x: 0, y: 0 } },
+      floats: [],
+      lines: [],
+      zones: [],
+      layoutMode: 'right',
+      themeKey: 'coral',
+    });
+
+    function seedFolderSpace() {
+      localStorage.setItem(
+        'mf_spaces',
+        JSON.stringify({
+          spaces: [{ id: 'sf', name: '폴더공간', color: '#3f8fd0', maps: [], folders: [{ id: 'f1', name: '내폴더' }] }],
+          mapFolders: {},
+        }),
+      );
+    }
+
+    /** 숨겨진 file input에 파일을 흘려 넣는다 — 실제 클릭은 OS 파일 선택창을 열므로
+     *  테스트에서는 그 다음 단계(onChange)부터 재현한다. */
+    async function upload(container: HTMLElement, user: ReturnType<typeof userEvent.setup>) {
+      const input = container.querySelector('input[type="file"]') as HTMLInputElement;
+      expect(input).toBeTruthy();
+      await user.upload(input, new File([IMPORT_JSON], '가져온 맵.json', { type: 'application/json' }));
+    }
+
+    it('폴더 안에서도 가져오기 버튼이 보인다 (모바일)', async () => {
+      const restore = mockMatchMedia(true);
+      try {
+        const user = userEvent.setup();
+        seedFolderSpace();
+        renderHomeWithDocStore([]);
+        await waitFor(() => expect(screen.getByText('내폴더')).toBeTruthy());
+        await user.click(screen.getByText('내폴더'));
+        await waitFor(() => expect(screen.getByText('이 폴더는 비어 있어요')).toBeTruthy());
+
+        expect(screen.getByRole('button', { name: '가져오기' })).toBeTruthy();
+        // 하위 폴더는 만들 수 없으므로(폴더 모델이 한 단계) 새 폴더는 계속 숨긴다.
+        expect(screen.queryByRole('button', { name: '새 폴더' })).toBeNull();
+      } finally {
+        restore();
+      }
+    });
+
+    it('가져온 맵이 지금 보고 있는 폴더에 들어간다', async () => {
+      const user = userEvent.setup();
+      seedFolderSpace();
+      const { container } = renderHomeWithDocStore([]);
+      await waitFor(() => expect(screen.getByText('내폴더')).toBeTruthy());
+      await user.click(screen.getByText('내폴더'));
+      await waitFor(() => expect(screen.getByText('이 폴더는 비어 있어요')).toBeTruthy());
+
+      await upload(container, user);
+
+      // 완료 토스트가 목적지를 폴더로 말한다("현재 공간에"가 아니라)
+      await waitFor(() => expect(screen.getByText(/'내폴더' 폴더에 추가했어요/)).toBeTruthy());
+      await user.click(screen.getByRole('button', { name: '확인' }));
+
+      // 폴더 뷰는 이 폴더에 배정된 카드만 그리므로, 여기 보이면 폴더에 들어간 것이다.
+      await waitFor(() => expect(container.querySelector('a[data-title="가져온 맵"]')).toBeTruthy());
+    });
+
+    it('최상위에서 가져오면 종전대로 스페이스 최상위에 들어간다', async () => {
+      const user = userEvent.setup();
+      seedFolderSpace();
+      const { container } = renderHomeWithDocStore([]);
+      await waitFor(() => expect(screen.getByText('내폴더')).toBeTruthy());
+
+      await upload(container, user);
+
+      await waitFor(() => expect(screen.getByText(/현재 공간에 추가했어요/)).toBeTruthy());
+      await user.click(screen.getByRole('button', { name: '확인' }));
+      await waitFor(() => expect(container.querySelector('a[data-title="가져온 맵"]')).toBeTruthy());
+
+      // 폴더 안으로 들어가면 없다 — 최상위에 남았다는 뜻.
+      await user.click(screen.getByText('내폴더'));
+      await waitFor(() => expect(screen.getByText('이 폴더는 비어 있어요')).toBeTruthy());
+      expect(container.querySelector('a[data-title="가져온 맵"]')).toBeNull();
+    });
+  });
+
+  // 제보: 이름이 긴 폴더에 들어가면 제목의 경로가 줄바꿈된다.
+  describe('제목 경로 표기', () => {
+    const LONG = '아주 긴 이름의 폴더입니다';
+
+    async function enterLongFolder() {
+      const user = userEvent.setup();
+      localStorage.setItem(
+        'mf_spaces',
+        JSON.stringify({
+          spaces: [{ id: 'sf', name: '폴더공간', color: '#3f8fd0', maps: [], folders: [{ id: 'f1', name: LONG }] }],
+          mapFolders: {},
+        }),
+      );
+      const utils = renderHomeWithDocStore([]);
+      await waitFor(() => expect(screen.getByText(LONG)).toBeTruthy());
+      await user.click(screen.getByText(LONG));
+      await waitFor(() => expect(screen.getByText('이 폴더는 비어 있어요')).toBeTruthy());
+      return utils;
+    }
+
+    it('폴더 안에서는 상위 경로를 … 로 접고 폴더명만 보여 준다', async () => {
+      const { container } = await enterLongFolder();
+      const h2 = container.querySelector('h2') as HTMLElement;
+      // 스페이스명은 제목에서 사라지고 …로 접힌다
+      expect(h2.textContent).not.toContain('폴더공간');
+      expect(h2.textContent).toContain('…');
+      expect(h2.textContent).toContain(LONG);
+    });
+
+    it('접힌 전체 경로는 툴팁·스크린리더에 남는다', async () => {
+      const { container } = await enterLongFolder();
+      const h2 = container.querySelector('h2') as HTMLElement;
+      expect(h2.getAttribute('title')).toBe(`폴더공간 / ${LONG}`);
+      expect(h2.getAttribute('aria-label')).toBe(`폴더공간 / ${LONG}`);
+    });
+
+    it('한 줄을 유지한다 — 넘치면 줄바꿈이 아니라 말줄임', async () => {
+      const { container } = await enterLongFolder();
+      const h2 = container.querySelector('h2') as HTMLElement;
+      expect(h2.style.whiteSpace).toBe('nowrap');
+      // 자리가 모자랄 때 줄어들 수 있어야 말줄임이 걸린다(minWidth 0 + shrink 허용).
+      expect(h2.style.minWidth).toBe('0');
+      expect(h2.style.flex).toContain('1');
+      const leaf = h2.querySelector('span:last-child') as HTMLElement;
+      expect(leaf.textContent).toBe(LONG);
+      expect(leaf.style.textOverflow).toBe('ellipsis');
+      expect(leaf.style.overflow).toBe('hidden');
+    });
+
+    it('최상위에서는 접지 않는다 — 스페이스명 그대로, 접근성 라벨도 덧붙이지 않는다', async () => {
+      localStorage.setItem(
+        'mf_spaces',
+        JSON.stringify({ spaces: [{ id: 'sf', name: '폴더공간', color: '#3f8fd0', maps: [], folders: [] }], mapFolders: {} }),
+      );
+      const { container } = renderHomeWithDocStore([]);
+      await waitFor(() => expect(container.querySelector('h2')?.textContent).toBe('폴더공간'));
+      const h2 = container.querySelector('h2') as HTMLElement;
+      expect(h2.textContent).not.toContain('…');
+      // 잘림은 CSS 말줄임이라 접근성 트리엔 전체 이름이 남는다 → aria-label 불필요.
+      expect(h2.getAttribute('aria-label')).toBeNull();
+      // 툴팁은 여기서도 붙는다(최상위의 긴 스페이스명도 잘리므로).
+      expect(h2.getAttribute('title')).toBe('폴더공간');
+    });
+  });
+
   it('restores the space you were viewing when Home remounts (editor round-trip)', async () => {
     const user = userEvent.setup();
     localStorage.setItem(

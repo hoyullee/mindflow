@@ -805,7 +805,7 @@ export function useHomeController() {
       });
     }
   };
-  const closeToast = () => patch({ toast: '', toastTitle: '', importDone: null, importError: null });
+  const closeToast = () => patch({ toast: '', toastTitle: '', importDone: null, importDoneFolder: null, importError: null });
 
   const recordRecent = (title: string, docId?: string) => {
     // Entries are card keys (docId, title fallback) — same identity the recent
@@ -1036,7 +1036,21 @@ export function useHomeController() {
         const target = prev.spaces.find((s) => s.id === prev.activeSpace) || prev.spaces[0];
         if (!target) return prev;
         const spaces = prev.spaces.map((s) => (s.id === target.id ? { ...s, maps: [...(s.maps || []), { title: finalTitle, when: '방금 가져옴', hue: '#f0663f' }] } : s));
-        return { ...prev, spaces, activeSpace: target.id, importDone: finalTitle };
+        // 폴더 안에서 가져왔으면 그 폴더에 넣는다 — 안 그러면 스페이스 최상위로
+        // 떨어져서, 보고 있는 폴더에는 **아무것도 나타나지 않는다**(가져오기가
+        // 실패한 것처럼 보임). `registerCard`의 "새로 만들기"와 같은 규칙이다.
+        // 가져온 카드는 docId가 없으므로 키는 제목(`cardKeyOf`)이 된다.
+        let mapFolders = prev.mapFolders;
+        let importDoneFolder: string | null = null;
+        if (prev.curFolder) {
+          const folders = Array.isArray(target.folders) ? target.folders : [];
+          const open = folders.find((f) => f.id === prev.curFolder);
+          if (open) {
+            mapFolders = { ...prev.mapFolders, [cardKeyOf(finalTitle, undefined)]: open.id };
+            importDoneFolder = open.name;
+          }
+        }
+        return { ...prev, spaces, mapFolders, activeSpace: target.id, importDone: finalTitle, importDoneFolder };
       });
     };
     reader.readAsText(file);

@@ -148,6 +148,9 @@ export interface HomeState {
   dragOverFolder: string | null;
 
   importDone: string | null;
+  /** 가져온 맵이 폴더 안에 들어갔다면 그 폴더 이름 — 완료 토스트가 "현재 공간에
+   * 추가했어요" 대신 어느 폴더인지 말할 수 있게. 최상위로 들어갔으면 null. */
+  importDoneFolder: string | null;
   importError: string | null;
   toast: string;
   /** Title shown above `toast` (the `toast` string is the body). Lets each toast
@@ -265,6 +268,7 @@ export function initialHomeState(): HomeState {
     dragOverFolder: null,
 
     importDone: null,
+    importDoneFolder: null,
     importError: null,
     toast: '',
     toastTitle: '',
