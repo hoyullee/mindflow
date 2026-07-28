@@ -732,6 +732,12 @@ export function useEditorState(): EditorController {
 
   const vis = useMemo(() => buildVisible(laidOutNodes), [laidOutNodes]);
 
+  /** 크기 조절 중 고정할 위쪽 변의 y — 노드는 x/y가 **중심**이라 높이가 커지면 위아래로
+   * 똑같이 벌어진다. 우하단 모서리를 잡고 끄는데 반대편(위쪽)까지 밀려 올라가면
+   * 도형이 튀어 보이므로(제보: 좁힐 때 위아래로 튐 — 실측 위 30px·아래 31px),
+   * 끄는 동안에는 위쪽 변을 붙잡아 아래로만 자라게 한다. */
+  const resizeAnchorRef = useRef<{ id: string; top: number } | null>(null);
+
   const geom = useMemo<GeomMap>(() => {
     const out: GeomMap = {};
     vis.forEach(({ id, depth }) => {
@@ -752,10 +758,13 @@ export function useEditorState(): EditorController {
         g.h = editLiveSize.h;
         g.tw = editLiveSize.tw;
       }
+      // 크기 조절 중인 노드는 위쪽 변을 붙잡아 둔다 — 높이가 늘어나도 아래로만 자란다.
+      const anchor = resizeAnchorRef.current;
+      if (anchor && anchor.id === id) g.y = anchor.top + g.h / 2;
       out[id] = g;
     });
     return out;
-  }, [vis, laidOutNodes, measurer, editingNodeId, editLiveSize]);
+  }, [vis, laidOutNodes, measurer, editingNodeId, editLiveSize, resizingNodeId]);
 
   // Memo cards grow with their text (a `min-height` box), so their ACTUAL height
   // usually exceeds the stored `f.h`. Measure it (port of the original's `_floatH`)
@@ -2634,6 +2643,7 @@ export function useEditorState(): EditorController {
       if (d.kind === 'line-end') setLineSnap(null);
       if (d.kind === 'node-resize') {
         setResizingNodeId(null); // drop it back to its normal layer
+        resizeAnchorRef.current = null;
         if (objDragMovedRef.current) {
           // a free shape resized into a neighbour → magnet it clear once the final
           // size is in geom. Resize commits during the drag, so `doc.nodes` doesn't
@@ -2885,6 +2895,8 @@ export function useEditorState(): EditorController {
     const g = geomRef.current[id];
     if (!g) return;
     setResizingNodeId(id);
+    // 우하단 모서리를 잡고 끄는 것이므로 **위쪽 변**을 고정한다(아래 geom 참고).
+    resizeAnchorRef.current = { id, top: g.y - g.h / 2 };
     startObjDrag({ kind: 'node-resize', id, pointerId: e.pointerId, startClientX: e.clientX, startClientY: e.clientY, ow: g.w, oh: g.h, axis });
   }, []);
 
