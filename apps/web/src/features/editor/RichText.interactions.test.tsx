@@ -382,3 +382,74 @@ describe('텍스트 서식 툴바 노출 조건', () => {
     expect(toolbar(container)).toBeNull();
   });
 });
+
+// 제보 1: 스타일의 테마를 바꾸면 서식 팝업의 색까지 따라 변한다 — 기본 색으로 고정해 달라.
+// 이 코드베이스의 관례대로 고쳤다: 메뉴·패널 같은 **시스템 크롬은 고정 `uiTheme`**,
+// 문서 테마는 편집 영역과 **색 스와치 값**에만 쓴다(`useEditorState`의 `uiTheme` 주석,
+// `panel/NodePanel.tsx` 참고).
+describe('서식 툴바 색은 문서 테마를 따라가지 않는다', () => {
+  const DARK_DOC = { ...DOC, themeKey: 'dark' };
+  const toolbarOf = (container: HTMLElement) =>
+    within(getViewport(container)).getByTitle('선택 영역 굵게').closest('div') as HTMLElement;
+
+  it('밝은 테마와 다크 테마에서 팝업 크롬이 동일하다', () => {
+    localStorage.setItem('mindflow_doc_thL', JSON.stringify(DOC));
+    const light = renderEditor('/editor?map=thL&title=x');
+    selectAndOpenToolbar(startEditingNode(light.container, 'c1'), 6, 11);
+    const lightChrome = { bg: toolbarOf(light.container).style.background, border: toolbarOf(light.container).style.border };
+    cleanup();
+
+    localStorage.setItem('mindflow_doc_thD', JSON.stringify(DARK_DOC));
+    const dark = renderEditor('/editor?map=thD&title=x');
+    selectAndOpenToolbar(startEditingNode(dark.container, 'c1'), 6, 11);
+    const darkChrome = { bg: toolbarOf(dark.container).style.background, border: toolbarOf(dark.container).style.border };
+
+    expect(darkChrome).toEqual(lightChrome);
+    expect(lightChrome.bg).toBeTruthy(); // 실제로 값을 읽었다(빈 비교가 아니다)
+  });
+
+  it('다크 테마여도 팝업이 어두워지지 않는다 (기본 밝은 패널 유지)', () => {
+    localStorage.setItem('mindflow_doc_thD2', JSON.stringify(DARK_DOC));
+    const { container } = renderEditor('/editor?map=thD2&title=x');
+    selectAndOpenToolbar(startEditingNode(container, 'c1'), 6, 11);
+    // 다크 테마의 panel은 '#262019' — 그 색이 팝업에 쓰이면 안 된다.
+    expect(toolbarOf(container).style.background).not.toContain('38, 32, 25');
+  });
+});
+
+// 제보 2: 편집 중 **더블클릭**으로 단어를 선택하면 팝업이 뜨지 않는다.
+// 원인: 편집 박스의 `dblclick`이 노드 박스로 올라가 `startEditNode`를 다시 호출하고,
+// 그 안의 `setTextCtx(null)`이 방금 뜬 툴바를 즉시 닫았다(mouseup에서 열림 → dblclick에서 닫힘).
+describe('더블클릭으로 단어를 선택해도 서식 툴바가 뜬다', () => {
+  const toolbar = (container: HTMLElement) => within(getViewport(container)).queryByTitle('선택 영역 굵게');
+
+  it('더블클릭(단어 선택) 후에도 툴바가 남아 있다', () => {
+    localStorage.setItem('mindflow_doc_dbl', JSON.stringify(DOC));
+    const { container } = renderEditor('/editor?map=dbl&title=x');
+    const editor = startEditingNode(container, 'c1');
+
+    // 브라우저의 더블클릭 = 단어가 선택된 뒤 mouseup, 그리고 dblclick이 따라온다.
+    setLinearSelection(editor, 6, 11); // "world" (브라우저가 고른 단어에 해당)
+    fireEvent.mouseUp(editor);
+    expect(toolbar(container)).toBeTruthy(); // mouseup 시점엔 예전에도 떴다
+
+    fireEvent.doubleClick(editor); // ← 예전엔 여기서 닫혀 버렸다
+    expect(toolbar(container)).toBeTruthy();
+    // 선택도 살아 있어야 서식을 적용할 수 있다
+    expect(window.getSelection()?.toString()).toBe('world');
+  });
+
+  it('더블클릭으로 선택한 뒤 굵게가 실제로 적용된다', () => {
+    localStorage.setItem('mindflow_doc_dbl2', JSON.stringify(DOC));
+    const { container } = renderEditor('/editor?map=dbl2&title=x');
+    const editor = startEditingNode(container, 'c1');
+
+    setLinearSelection(editor, 6, 11);
+    fireEvent.mouseUp(editor);
+    fireEvent.doubleClick(editor);
+
+    clickToolbarButton(within(getViewport(container)).getByTitle('선택 영역 굵게'));
+    expect(editor.innerHTML).toContain('font-weight:800');
+    expect(editor.textContent).toBe('hello world');
+  });
+});

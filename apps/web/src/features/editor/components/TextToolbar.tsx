@@ -23,7 +23,12 @@ interface TextToolbarProps {
  * selection 분기 (또는 selection change)").
  */
 export function TextToolbar({ controller }: TextToolbarProps) {
-  const { textCtx, editingNodeId, theme: th, vw } = controller;
+  // 크롬(패널·테두리·글자)은 **고정** `uiTheme` — 문서 테마를 바꿔도 팝업 모양은
+  // 그대로다. 이 코드베이스의 관례이기도 하다: 메뉴·패널 같은 시스템 크롬은
+  // `uiTheme`, 문서 테마는 편집 영역과 **색 스와치 값**에만(`uiTheme` 선언 주석과
+  // `panel/NodePanel.tsx` 참고). 예전엔 여기서 문서 테마를 크롬에 그대로 써서
+  // 다크/모노 테마로 바꾸면 팝업까지 색이 따라 변했다(제보).
+  const { textCtx, editingNodeId, uiTheme: th, theme: docTheme, vw } = controller;
 
   // Outside click closes it — port of the original's `_winDown` `.mf-tctx` branch
   // (MindFlow.dc.html:820): ANY mousedown that doesn't land inside `.mf-tctx` closes
@@ -60,8 +65,10 @@ export function TextToolbar({ controller }: TextToolbarProps) {
     zIndex: 45,
   };
 
+  // 스와치는 **적용할 색 값**이라 문서 테마를 따른다 — 속성 패널(`NodePanel`)의
+  // 텍스트 색 스와치와 같은 규칙이라 두 진입점이 같은 색을 제안한다.
   // port of `tctxSwatches`: `[th.text].concat(th.palette)` (MindFlow.dc.html:3097-3100).
-  const swatches = [th.text, ...th.palette];
+  const swatches = [docTheme.text, ...docTheme.palette];
 
   return (
     <div
