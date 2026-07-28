@@ -686,3 +686,58 @@ describe('크기 조절 축 고정 (변 핸들)', () => {
     expect(after.h).toBeGreaterThan(before.h);
   });
 });
+
+// 재발 제보: 변 핸들은 괜찮은데 **모서리 핸들**로 좌우를 조절하면 여전히 위아래로 튄다.
+// 원인은 평소 크기가 `max(자연 크기, cw/ch)`이고 자연 높이는 줄 수로 정해지는
+// **계단 함수**라는 것 — 손이 위로 조금만 흔들려 ch가 자연 높이 아래로 내려가면
+// 높이가 손을 따르지 않고 자연 높이에 붙잡혀 있다가, 폭이 넓어져 텍스트가 한 줄
+// 줄어드는 순간 한 줄 높이만큼 뚝 떨어졌다(214 → 194 → 174).
+// 이제 끄는 동안에는 끄는 대로 보여 주므로 높이는 오직 dy만 따른다.
+describe('모서리 핸들: 좌우로 끌 때 높이가 계단으로 튀지 않는다', () => {
+  const LONG = [
+    '원티드에서 첫 이력서 작성 시 적립',
+    '[원티드 홈 > 이력서] 에서 [새 이력서 작성] 버튼을 클릭하여 이력서를 작성',
+    '원티드 이력서 양식을 사용하여 이력서를 작성한 경우에만 포인트 적립 대상',
+    '외부 양식을 이용한 이력서는 포인트 적립 대상에 해당하지 않음',
+    '이력서는 400자 이상 작성 후 [작성 완료] 버튼을 눌러 이력서가 생성되어야 포인트를 적립 가능',
+  ].join('\n');
+  const LONG_DOC = {
+    v: 1,
+    nodes: {
+      root: { id: 'root', text: '루트', emoji: '', parent: null, children: ['c1'], collapsed: false, color: null, x: 0, y: 0 },
+      c1: { id: 'c1', text: LONG, emoji: '', parent: 'root', children: [], collapsed: false, color: null, x: 0, y: 0, shape: 'round' },
+    },
+    floats: [],
+    lines: [],
+    zones: [],
+    layoutMode: 'right',
+    themeKey: 'coral',
+  };
+
+  const boxFor = (c: HTMLElement): HTMLElement => getViewport(c).querySelector('[data-node-id="c1"]') as HTMLElement;
+  const hOf = (c: HTMLElement): number => parseFloat(boxFor(c).style.height);
+
+  it('세로로 살짝 올린 채 좌우로 끌어도 높이는 그 dy만 반영한다', async () => {
+    localStorage.setItem('mindflow_doc_corner', JSON.stringify(LONG_DOC));
+    const { container } = renderEditor('/editor?map=corner&title=x');
+    await waitFor(() => expect(boxFor(container)).toBeTruthy());
+    firePointer(boxFor(container), 'pointerdown', { pointerId: 1, clientX: 100, clientY: 100 });
+    firePointer(window, 'pointerup', { pointerId: 1, clientX: 100, clientY: 100 });
+    const handle = getViewport(container).querySelector('[title^="크기 조절"]') as HTMLElement;
+    expect(handle).toBeTruthy();
+
+    const start = hOf(container);
+    const DY = -10; // 손이 위로 10px — 예전엔 이것만으로 계단 낙하가 시작됐다
+    firePointer(handle, 'pointerdown', { pointerId: 7, clientX: 0, clientY: 0 });
+
+    const seen = new Set<number>();
+    for (let dx = 20; dx <= 700; dx += 20) {
+      firePointer(window, 'pointermove', { pointerId: 7, clientX: dx, clientY: DY });
+      seen.add(Math.round(hOf(container)));
+    }
+    firePointer(window, 'pointerup', { pointerId: 7, clientX: 700, clientY: DY });
+
+    // 폭을 700px 넓히는 내내 높이는 딱 하나 — 손이 움직인 만큼(dy)만 반영된 값.
+    expect([...seen]).toEqual([Math.round(start + DY)]);
+  });
+});
