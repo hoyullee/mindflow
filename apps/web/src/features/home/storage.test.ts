@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it } from 'vitest';
-import { RECENT_CAP, cardKeyOf, loadRecent, mergeRecent, migrateMapFolderKeys, migrateRecentKeys, pushRecentEntry } from './storage';
+import { RECENT_CAP, applyImportBinding, cardKeyOf, docKey, loadRecent, mapId, mergeRecent, migrateMapFolderKeys, migrateRecentKeys, planImportBinding, pushRecentEntry } from './storage';
 
 describe('mapFolders docId keying', () => {
   const spaces = [
@@ -183,5 +183,64 @@ describe('mergeRecent', () => {
   it('tolerates a missing synced list and non-string junk', () => {
     expect(mergeRecent(['맵 1'], undefined)).toEqual(['맵 1']);
     expect(mergeRecent(['맵 1', '', '맵 1'], ['맵 2'])).toEqual(['맵 1', '맵 2']);
+  });
+});
+
+// ② 예전에 가져온(docId 없는) 카드를 자기 문서에 묶는 계획.
+describe('planImportBinding / applyImportBinding', () => {
+  const legacyCard = { title: '가져온 맵', when: '방금 가져옴', hue: '#f0663f' };
+  const spaceWith = (maps: typeof legacyCard[]) => [{ id: 'sa', name: '내 공간', home: true, color: '#f0663f', maps }];
+  const bodyKey = docKey(mapId('가져온 맵'));
+  const BODY = JSON.stringify({ v: 1, nodes: { root: { id: 'root', text: '가져온 맵', emoji: '', parent: null, children: [], collapsed: false, color: null, x: 0, y: 0 } }, floats: [], lines: [], zones: [] });
+
+  beforeEach(() => localStorage.clear());
+
+  it('로컬 본문이 있고 백엔드에 없으면 그 id로 묶는다', () => {
+    localStorage.setItem(bodyKey, BODY);
+    const plan = planImportBinding(spaceWith([legacyCard]), []);
+    expect(plan).toEqual([{ title: '가져온 맵', docId: mapId('가져온 맵') }]);
+    const bound = applyImportBinding(spaceWith([legacyCard]), plan);
+    expect(bound[0]!.maps[0]!.docId).toBe(mapId('가져온 맵'));
+  });
+
+  it('이 기기에 본문이 없으면 건드리지 않는다 (다른 기기 소유)', () => {
+    expect(planImportBinding(spaceWith([legacyCard]), [])).toEqual([]);
+  });
+
+  it('백엔드에 이미 그 문서가 있으면 건드리지 않는다 (덮어쓰면 그쪽 내용이 사라진다)', () => {
+    localStorage.setItem(bodyKey, BODY);
+    const metas = [{ id: mapId('가져온 맵'), title: '가져온 맵', version: 3, updatedAt: '2026-01-01T00:00:00.000Z', isFavorite: false, deletedAt: null }];
+    expect(planImportBinding(spaceWith([legacyCard]), metas)).toEqual([]);
+  });
+
+  it('이미 docId가 있는 카드는 대상이 아니다', () => {
+    localStorage.setItem(bodyKey, BODY);
+    const withId = [{ ...legacyCard, docId: 'already' }];
+    expect(planImportBinding(spaceWith(withId), [])).toEqual([]);
+  });
+
+  it('제목이 같은 카드가 둘이면 한 쪽만 묶는다 (같은 id를 둘에 붙이지 않는다)', () => {
+    localStorage.setItem(bodyKey, BODY);
+    const plan = planImportBinding(spaceWith([legacyCard, { ...legacyCard }]), []);
+    expect(plan).toHaveLength(1);
+    const bound = applyImportBinding(spaceWith([legacyCard, { ...legacyCard }]), plan);
+    expect(bound[0]!.maps.filter((m) => m.docId).length).toBe(1);
+  });
+
+  it('adoptExisting(로컬/데모 모드): 목록에 이미 있어도 묶는다 — 그 문서가 곧 이 카드의 본문', () => {
+    localStorage.setItem(bodyKey, BODY);
+    const metas = [{ id: mapId('가져온 맵'), title: '가져온 맵', version: 1, updatedAt: '2026-01-01T00:00:00.000Z', isFavorite: false, deletedAt: null }];
+    expect(planImportBinding(spaceWith([legacyCard]), metas, true)).toEqual([{ title: '가져온 맵', docId: mapId('가져온 맵') }]);
+  });
+
+  it('adoptExisting이어도 다른 카드가 그 id를 쓰고 있으면 비켜난다', () => {
+    localStorage.setItem(bodyKey, BODY);
+    const maps = [{ ...legacyCard, docId: mapId('가져온 맵'), title: '다른 제목' }, legacyCard];
+    expect(planImportBinding(spaceWith(maps), [], true)).toEqual([]);
+  });
+
+  it('계획이 비면 같은 배열을 그대로 돌려준다', () => {
+    const input = spaceWith([legacyCard]);
+    expect(applyImportBinding(input, [])).toBe(input);
   });
 });

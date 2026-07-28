@@ -190,6 +190,80 @@ export function migrateMapFolderKeys(
   return { mapFolders: changed ? out : mapFolders, changed };
 }
 
+/**
+ * ② 예전에 가져온 맵을 자기 문서에 **묶어 준다**(docId 부여).
+ *
+ * 배경: 가져오기가 백엔드에 올리지 않던 시절의 카드는 docId가 없다. 그래서
+ *  - 본문이 이 기기의 localStorage에만 있어 다른 기기에서 열면 빈 맵이 되고,
+ *  - 폴더 배정·즐겨찾기·최근 항목이 **제목**으로 키잉돼 제목이 겹치면 서로 가로챈다(#220).
+ *
+ * 어떤 카드를 묶는가 — 세 조건을 모두 만족할 때만:
+ *  1. 카드에 docId가 없다.
+ *  2. 이 기기에 본문이 있다(`mindflow_doc_<mapId(제목)>`). 없으면 올릴 게 없다
+ *     — 그 맵은 다른 기기 소유이므로 건드리지 않는다.
+ *  3. 백엔드에 그 id의 문서가 아직 없다(`metas`에 없다). 이미 있으면 **손대지 않는다**
+ *     — 다른 기기가 올린 것일 수 있고, 덮어쓰면 그쪽 내용을 지운다.
+ *
+ * 그래서 각 맵은 "본문을 실제로 가진 기기" 하나만 올리고, 사본이 둘로 늘지 않는다.
+ * id는 이미 로컬 캐시가 놓여 있는 `mapId(제목)`을 그대로 쓴다 — 새 id를 발급하면
+ * 옛 키가 고아로 남아 로컬 모드에서 카드가 하나 더 생긴다.
+ *
+ * 순수 함수다: 어떤 카드를 어떤 id로 묶을지만 계산하고, 실제 업로드는 호출부가 한다.
+ * (호출부는 업로드 성공 여부와 무관하게 묶어도 안전하다 — 실패하면 다음 진입에서
+ * 조건 3이 여전히 참이라 다시 시도한다.)
+ */
+export function planImportBinding(
+  spaces: SpaceData[],
+  metas: DocMeta[],
+  /**
+   * 그 id의 문서가 이미 **있어도** 묶는다(업로드는 `createOnly`가 알아서 건너뛴다).
+   *
+   * 로컬/데모 모드에서만 켠다. 그 모드의 저장소는 localStorage 자신이라, 그 id의
+   * 문서가 있다 = **바로 이 카드의 본문**이다(다른 기기라는 개념이 없다). 그래서
+   * 조건 3이 항상 깨져 로컬 모드에서는 묶기가 통째로 무효였다.
+   *
+   * 백엔드 모드에서는 절대 켜지 않는다 — 거기서 같은 id의 행은 *다른 기기가 올린
+   * 같은 제목의 다른 맵*일 수 있고, 거기에 카드를 묶으면 남의 내용을 우리 맵으로
+   * 보여 주게 된다(그 다음 열기에서 우리 로컬 본문까지 덮인다).
+   */
+  adoptExisting = false,
+): Array<{ title: string; docId: string }> {
+  const backendIds = new Set(metas.map((m) => m.id));
+  const out: Array<{ title: string; docId: string }> = [];
+  const taken = new Set<string>();
+  spaces.forEach((s) => (Array.isArray(s.maps) ? s.maps : []).forEach((m) => {
+    if (m.docId) taken.add(m.docId);
+  }));
+  spaces.forEach((s) => (Array.isArray(s.maps) ? s.maps : []).forEach((m) => {
+    if (m.docId) return;
+    const id = mapId(m.title);
+    // 다른 카드가 이미 그 id를 쓰고 있으면 비켜난다(같은 제목의 카드가 둘일 때).
+    if (taken.has(id)) return;
+    if (backendIds.has(id) && !adoptExisting) return;
+    if (!readDocRaw(id)) return;
+    taken.add(id);
+    out.push({ title: m.title, docId: id });
+  }));
+  return out;
+}
+
+/** `planImportBinding`의 결과를 카드에 반영한다(순수). 제목이 같은 카드가 여러 개면
+ * docId 없는 **첫** 카드에만 붙인다 — 계획도 제목당 하나만 만든다. */
+export function applyImportBinding(spaces: SpaceData[], plan: Array<{ title: string; docId: string }>): SpaceData[] {
+  if (!plan.length) return spaces;
+  const byTitle = new Map(plan.map((p) => [p.title, p.docId]));
+  return spaces.map((s) => ({
+    ...s,
+    maps: (Array.isArray(s.maps) ? s.maps : []).map((m) => {
+      if (m.docId) return m;
+      const id = byTitle.get(m.title);
+      if (!id) return m;
+      byTitle.delete(m.title);
+      return { ...m, docId: id };
+    }),
+  }));
+}
+
 /** How many recent titles to RETAIN (localStorage + the cross-device synced
  * workspace blob). Effectively unlimited for display purposes — the tray never
  * shows more than fits one row (~27 cards even on 4K, see RECENT_RENDER_MAX) —
@@ -580,8 +654,17 @@ export function mapHref(title: string, docId?: string): string {
 
 /** Home.dc.html `newMapHref()`. Optional `title` seeds the new map's name —
  * duplicate names are allowed (identity is the fresh `new-…` doc id). */
+/**
+ * 새 문서 id. 내용·제목과 무관한 **유일 id**라, 같은 제목의 맵이 여러 기기에서
+ * 만들어져도 서로 다른 문서가 된다. (예전에 가져오기가 쓰던 `mapId(제목)`은 제목이
+ * 같으면 같은 id여서, 두 기기가 같은 행에 써 뒤에 저장한 쪽이 앞의 내용을 지웠다.)
+ */
+export function newDocId(): string {
+  return `new-${Date.now().toString(36)}${Math.floor(Math.random() * 1000)}`;
+}
+
 export function newMapHref(title?: string): string {
-  const base = `/editor?map=new-${Date.now().toString(36)}${Math.floor(Math.random() * 1000)}&new=1`;
+  const base = `/editor?map=${newDocId()}&new=1`;
   const t = (title || '').trim();
   return t ? `${base}&title=${encodeURIComponent(t)}` : base;
 }

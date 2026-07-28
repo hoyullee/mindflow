@@ -7,6 +7,7 @@ import { mockMatchMedia } from '../../test/matchMedia';
 import { BackendProvider } from '../../adapters/BackendContext';
 import { LocalAuth } from '../../adapters/local/localAuth';
 import { LocalSpaceStore } from '../../adapters/local/localSpaceStore';
+import { mapId } from './storage';
 import type { Backend, DocMeta, DocStore, LoadedDoc, SaveResult, SpaceStore, WorkspaceData } from '../../adapters/ports';
 
 afterEach(() => {
@@ -54,9 +55,11 @@ class MockDocStore implements DocStore {
   }
 }
 
-function renderHomeWithDocStore(metas: DocMeta[] = [], bodies: Record<string, LoadedDoc> = {}) {
+/** `mode`는 기본 'local'(기존 테스트 그대로). 백엔드 모드에서만 갈리는 동작
+ *  (예: ②의 "이미 있는 문서엔 손대지 않는다")을 볼 때 'supabase'를 넘긴다. */
+function renderHomeWithDocStore(metas: DocMeta[] = [], bodies: Record<string, LoadedDoc> = {}, mode: Backend['mode'] = 'local') {
   const docStore = new MockDocStore(metas, bodies);
-  const backend: Backend = { auth: new LocalAuth(), docStore, spaceStore: new LocalSpaceStore(), mode: 'local' };
+  const backend: Backend = { auth: new LocalAuth(), docStore, spaceStore: new LocalSpaceStore(), mode };
   const utils = render(
     <MemoryRouter initialEntries={['/home']}>
       <BackendProvider backend={backend}>
@@ -640,6 +643,129 @@ describe('Home', () => {
       await user.click(screen.getByRole('button', { name: '공간으로 돌아가기' }));
       await waitFor(() => expect(second.container.querySelector('h2')?.textContent).toBe('내 공간'));
       expect(second.container.querySelector('.mf-map-grid a[data-title="가져온 맵"]')).toBeNull();
+    });
+
+    // ① 가져온 맵도 다른 맵과 똑같이 백엔드에 올라가야 한다(다기기 동기화). 예전엔
+    // localStorage에만 써서, 다른 기기에서 그 카드를 열면 에디터가 "새 문서"로 보고
+    // 빈 seed를 저장했고 → 원래 기기에서 다시 열면 그 빈 문서가 로컬 본문을 덮었다.
+    it('가져오기가 DocStore에 저장하고, 카드는 그 docId를 갖는다', async () => {
+      const user = userEvent.setup();
+      seedFolderSpace();
+      const { container, docStore } = renderHomeWithDocStore([]);
+      await waitFor(() => expect(screen.getByText('내폴더')).toBeTruthy());
+
+      await upload(container, user);
+      await waitFor(() => expect(screen.getByText(/추가했어요/)).toBeTruthy());
+      await user.click(screen.getByRole('button', { name: '확인' }));
+      await waitFor(() => expect(container.querySelector('.mf-map-grid a[data-title="가져온 맵"]')).toBeTruthy());
+
+      // 백엔드에 본문이 올라갔고, "없을 때만 만들기"로 남의 문서를 덮지 않는다.
+      expect(docStore.save).toHaveBeenCalledTimes(1);
+      const [savedId, savedDoc, savedOpts] = docStore.save.mock.calls[0] as unknown as [string, { nodes: Record<string, { text?: string }> }, { title?: string; createOnly?: boolean }];
+      expect(savedOpts).toMatchObject({ title: '가져온 맵', createOnly: true });
+      expect(savedDoc.nodes.root?.text).toBe('가져온 맵');
+      // id는 제목 해시(`mapId`)가 아니라 랜덤이어야 한다 — 제목 해시는 두 기기가
+      // 같은 제목을 가져올 때 같은 행을 두고 다투게 만든다.
+      expect(savedId).not.toBe(mapId('가져온 맵'));
+      expect(savedId.startsWith('new-')).toBe(true);
+
+      // 카드가 그 docId를 들고 있어야 이후 열기·삭제·즐겨찾기가 그 문서를 가리킨다.
+      const saved = JSON.parse(localStorage.getItem('mf_spaces') as string) as { spaces: { maps: { title: string; docId?: string }[] }[] };
+      expect(saved.spaces[0]!.maps.find((m) => m.title === '가져온 맵')?.docId).toBe(savedId);
+    });
+
+    // ② 예전에 가져온 카드(docId 없음 + 본문은 이 기기 localStorage에만)를 홈 진입 때
+    // 자기 문서에 묶어 백엔드로 올린다 — 그래야 다른 기기에서도 본문이 보인다.
+    describe('예전에 가져온 맵 묶기(②)', () => {
+      const LEGACY_TITLE = '옛날에 가져온 맵';
+      const legacyId = mapId(LEGACY_TITLE);
+      const legacyBody = JSON.stringify({
+        v: 1,
+        nodes: { root: { id: 'root', text: LEGACY_TITLE, emoji: '', parent: null, children: [], collapsed: false, color: null, x: 0, y: 0 } },
+        floats: [],
+        lines: [],
+        zones: [],
+        layoutMode: 'right',
+        themeKey: 'coral',
+      });
+
+      /** docId 없는 카드 + 폴더 배정(제목 키) + 이 기기에만 있는 본문. */
+      function seedLegacy() {
+        localStorage.setItem(
+          'mf_spaces',
+          JSON.stringify({
+            spaces: [{ id: 'sa', name: '내 공간', color: '#3f8fd0', home: true, maps: [{ title: LEGACY_TITLE, when: '방금 가져옴', hue: '#f0663f' }], folders: [{ id: 'f1', name: '내폴더' }] }],
+            mapFolders: { [LEGACY_TITLE]: 'f1' },
+          }),
+        );
+        localStorage.setItem(`mindflow_doc_${legacyId}`, legacyBody);
+      }
+
+      it('본문을 올리고 카드에 docId를 붙이며, 폴더 배정도 그 키로 옮긴다', async () => {
+        seedLegacy();
+        const { docStore } = renderHomeWithDocStore([], {}, 'supabase');
+        await waitFor(() => expect(screen.getByText('내폴더')).toBeTruthy());
+
+        // 업로드는 "없을 때만 만들기"로 — 다른 기기가 올린 문서를 덮지 않는다.
+        await waitFor(() => expect(docStore.save).toHaveBeenCalled());
+        const [id, , opts] = docStore.save.mock.calls[0] as unknown as [string, unknown, { title?: string; createOnly?: boolean }];
+        expect(id).toBe(legacyId);
+        expect(opts).toMatchObject({ title: LEGACY_TITLE, createOnly: true });
+
+        // 카드에 docId가 붙고, 제목으로 저장돼 있던 폴더 배정이 그 키로 옮겨져 영속된다.
+        await waitFor(() => {
+          const saved = JSON.parse(localStorage.getItem('mf_spaces') as string) as { spaces: { maps: { title: string; docId?: string }[] }[]; mapFolders: Record<string, string> };
+          expect(saved.spaces[0]!.maps[0]!.docId).toBe(legacyId);
+          expect(saved.mapFolders).toEqual({ [legacyId]: 'f1' });
+        });
+      });
+
+      it('백엔드에 이미 그 문서가 있으면 손대지 않는다 (다른 기기가 올린 것)', async () => {
+        seedLegacy();
+        const existing: DocMeta = { id: legacyId, title: LEGACY_TITLE, version: 5, updatedAt: '2026-01-01T00:00:00.000Z', isFavorite: false, deletedAt: null };
+        const { docStore } = renderHomeWithDocStore([existing], {}, 'supabase');
+        await waitFor(() => expect(screen.getByText('내폴더')).toBeTruthy());
+        await new Promise((r) => setTimeout(r, 50));
+
+        expect(docStore.save).not.toHaveBeenCalled();
+      });
+
+      it('로컬/데모 모드에서는 목록에 이미 떠 있어도 묶는다 (그 문서가 곧 이 카드의 본문)', async () => {
+        seedLegacy();
+        // 로컬 모드의 DocStore는 localStorage 자신이라, 예전 본문이 이미 목록에 뜬다.
+        const existing: DocMeta = { id: legacyId, title: LEGACY_TITLE, version: 1, updatedAt: '2026-01-01T00:00:00.000Z', isFavorite: false, deletedAt: null };
+        renderHomeWithDocStore([existing], {}, 'local');
+        await waitFor(() => expect(screen.getByText('내폴더')).toBeTruthy());
+        await waitFor(() => {
+          const saved = JSON.parse(localStorage.getItem('mf_spaces') as string) as { spaces: { maps: { docId?: string }[] }[]; mapFolders: Record<string, string> };
+          expect(saved.spaces[0]!.maps[0]!.docId).toBe(legacyId);
+          expect(saved.mapFolders).toEqual({ [legacyId]: 'f1' });
+        });
+      });
+
+      it('이 기기에 본문이 없으면 올리지 않는다 (그 맵은 다른 기기 소유)', async () => {
+        seedLegacy();
+        localStorage.removeItem(`mindflow_doc_${legacyId}`);
+        const { docStore } = renderHomeWithDocStore([], {}, 'supabase');
+        await waitFor(() => expect(screen.getByText('내폴더')).toBeTruthy());
+        await new Promise((r) => setTimeout(r, 50));
+
+        expect(docStore.save).not.toHaveBeenCalled();
+      });
+    });
+
+    it('저장이 실패하면 카드를 만들지 않고 에러를 보여 준다', async () => {
+      const user = userEvent.setup();
+      seedFolderSpace();
+      const { container, docStore } = renderHomeWithDocStore([]);
+      await waitFor(() => expect(screen.getByText('내폴더')).toBeTruthy());
+      docStore.save.mockResolvedValue({ ok: false, reason: 'error', message: '연결이 끊겼어요' });
+
+      await upload(container, user);
+
+      await waitFor(() => expect(screen.getByText(/저장하지 못했어요/)).toBeTruthy());
+      // 본문 없는 카드를 남기면 다른 기기에서 그걸 열었을 때 빈 문서가 올라간다.
+      expect(container.querySelector('.mf-map-grid a[data-title="가져온 맵"]')).toBeNull();
     });
 
     it('최상위에서 가져오면 종전대로 스페이스 최상위에 들어간다', async () => {
