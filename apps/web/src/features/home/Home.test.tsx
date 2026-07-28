@@ -601,6 +601,47 @@ describe('Home', () => {
       await waitFor(() => expect(container.querySelector('a[data-title="가져온 맵"]')).toBeTruthy());
     });
 
+    // 제보(배포 후): 가져온 직후엔 폴더에 있었는데 **나중에 스페이스로 옮겨져 있다.**
+    // 가져온 카드는 docId가 없어 배정이 제목 키로 저장되는데, 다른 스페이스에 같은
+    // 제목의 doc 카드가 있으면 다음 홈 진입의 키 마이그레이션이 그 제목 키를 남의
+    // docId로 옮겨 버렸다(`migrateMapFolderKeys`). 홈을 다시 열어 재현한다.
+    it('다른 스페이스에 같은 제목의 맵이 있어도 홈을 다시 열면 폴더에 그대로 있다', async () => {
+      const user = userEvent.setup();
+      localStorage.setItem(
+        'mf_spaces',
+        JSON.stringify({
+          spaces: [
+            { id: 'sa', name: '내 공간', color: '#3f8fd0', home: true, maps: [], folders: [{ id: 'f1', name: '내폴더' }] },
+            // 같은 제목의 **다른** 맵(doc 카드) — 예전엔 이 카드가 제목 키를 가로챘다.
+            { id: 'sb', name: '다른 공간', color: '#8a6bd1', maps: [{ title: '가져온 맵', when: '내 맵', hue: '#f0663f', docId: 'other-doc' }], folders: [] },
+          ],
+          mapFolders: {},
+        }),
+      );
+      const other: DocMeta = { id: 'other-doc', title: '가져온 맵', version: 1, updatedAt: '2026-01-01T00:00:00.000Z', isFavorite: false, deletedAt: null };
+      const first = renderHomeWithDocStore([other]);
+
+      await waitFor(() => expect(screen.getByText('내폴더')).toBeTruthy());
+      await user.click(screen.getByText('내폴더'));
+      await waitFor(() => expect(screen.getByText('이 폴더는 비어 있어요')).toBeTruthy());
+      await upload(first.container, user);
+      await waitFor(() => expect(screen.getByText(/'내폴더' 폴더에 추가했어요/)).toBeTruthy());
+      await user.click(screen.getByRole('button', { name: '확인' }));
+      await waitFor(() => expect(first.container.querySelector('.mf-map-grid a[data-title="가져온 맵"]')).toBeTruthy());
+
+      // 홈을 다시 연다(리로드/에디터 왕복) → 키 마이그레이션이 다시 돈다.
+      first.unmount();
+      const second = renderHomeWithDocStore([other]);
+      // 보고 있던 폴더가 복원되고, 가져온 맵은 여전히 그 폴더 안에 있어야 한다.
+      await waitFor(() => expect(second.container.querySelector('h2')?.textContent).toContain('내폴더'));
+      await waitFor(() => expect(second.container.querySelector('.mf-map-grid a[data-title="가져온 맵"]')).toBeTruthy());
+
+      // 그리고 스페이스 최상위에는 없어야 한다(배정이 살아 있다는 뜻).
+      await user.click(screen.getByRole('button', { name: '공간으로 돌아가기' }));
+      await waitFor(() => expect(second.container.querySelector('h2')?.textContent).toBe('내 공간'));
+      expect(second.container.querySelector('.mf-map-grid a[data-title="가져온 맵"]')).toBeNull();
+    });
+
     it('최상위에서 가져오면 종전대로 스페이스 최상위에 들어간다', async () => {
       const user = userEvent.setup();
       seedFolderSpace();
