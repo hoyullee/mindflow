@@ -114,12 +114,12 @@ describe('SupabaseShareStore', () => {
     expect(query.calls).toHaveLength(0);
   });
 
-  it('참가자: 0010 RPC의 행을 포트 모양으로 바꾼다', async () => {
+  it('참가자: 0011 RPC의 행을 포트 모양으로 바꾼다', async () => {
     const rpc = vi.fn(async () => ({
       data: [
-        { kind: 'owner', email: 'me@example.com', display_name: '호율', joined: true },
-        { kind: 'invitee', email: 'friend@example.com', display_name: '  ', joined: true }, // 공백 이름은 null 취급
-        { kind: 'invitee', email: 'ghost@example.com', display_name: null, joined: false },
+        { kind: 'owner', email: 'me@example.com', display_name: '호율', joined: true, role: 'edit' },
+        { kind: 'invitee', email: 'friend@example.com', display_name: '  ', joined: true, role: 'view' }, // 공백 이름은 null 취급
+        { kind: 'invitee', email: 'ghost@example.com', display_name: null, joined: false, role: null }, // role 없으면 edit
       ],
       error: null,
     }));
@@ -129,9 +129,9 @@ describe('SupabaseShareStore', () => {
 
     expect(rpc).toHaveBeenCalledWith('share_participants', { doc_id: 'd1' });
     expect(people).toEqual([
-      { kind: 'owner', email: 'me@example.com', displayName: '호율', joined: true },
-      { kind: 'invitee', email: 'friend@example.com', displayName: null, joined: true },
-      { kind: 'invitee', email: 'ghost@example.com', displayName: null, joined: false },
+      { kind: 'owner', email: 'me@example.com', displayName: '호율', joined: true, role: 'edit' },
+      { kind: 'invitee', email: 'friend@example.com', displayName: null, joined: true, role: 'view' },
+      { kind: 'invitee', email: 'ghost@example.com', displayName: null, joined: false, role: 'edit' },
     ]);
   });
 

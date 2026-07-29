@@ -55,24 +55,29 @@ export function ShareModal({ controller }: ShareModalProps) {
   const th = controller.uiTheme;
   const { shareOpen, closeShare, docId, shareStore, backendMode } = controller;
   const [shares, setShares] = useState<DocumentShare[]>([]);
-  // 참가자 정보(소유자·프로필명·가입 여부) — 없어도(null) 공유는 동작한다.
-  // 이메일만 보여주는 기존 렌더로 폴백할 뿐이다(0010 RPC 미적용/일시 오류).
+  // 참가자 정보(소유자·프로필명·가입 여부·권한) — 없어도(null) 공유는 동작한다.
+  // 이메일만 보여주는 기존 렌더로 폴백할 뿐이다(0011 RPC 미적용/일시 오류).
   const [participants, setParticipants] = useState<ShareParticipant[] | null>(null);
   const [email, setEmail] = useState('');
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(true);
+  // 어느 문서의 목록을 이미 들고 있는가 — 팝업을 다시 열 때 "불러오는 중…"으로
+  // 비웠다가 다시 채우면 화면이 깜빡인다(제보). 같은 문서면 들고 있던 목록을 그대로
+  // 보여주고 뒤에서 조용히 갱신한다(stale-while-revalidate).
+  const loadedForRef = useRef<string | null>(null);
   const inputRef = useRef<HTMLInputElement>(null);
   const authUser = useAuthUser();
 
   const refresh = useCallback(async () => {
     if (!docId) return;
-    setLoading(true);
+    if (loadedForRef.current !== docId) setLoading(true);
     try {
       const [list, people] = await Promise.all([shareStore.list(docId), shareStore.listParticipants(docId)]);
       setShares(list);
       setParticipants(people);
       setError('');
+      loadedForRef.current = docId;
     } catch {
       setError('공유 목록을 불러오지 못했어요.');
     } finally {
@@ -101,6 +106,16 @@ export function ShareModal({ controller }: ShareModalProps) {
   const owner = participants?.find((p) => p.kind === 'owner') ?? null;
   const inviteeInfo = new Map((participants ?? []).filter((p) => p.kind === 'invitee').map((p) => [p.email, p]));
   const myEmail = (authUser?.email ?? '').trim().toLowerCase();
+  /** 초대·취소 UI를 소유자에게만. 참가자 정보를 못 얻는 환경(폴백)에서는 판단할 수
+   * 없으므로 보여 준다 — 진짜 권한은 어차피 서버 RLS가 판단한다(0009: insert는
+   * 소유자만). 이 플래그는 어포던스 정리일 뿐이다. */
+  const isOwner = owner ? owner.email === myEmail : true;
+  /** 행 목록. 참가자 정보가 있으면 그것이 정본이다 — 초대받은 사람은 테이블
+   * select(RLS)로는 자기 행만 보이지만, 참가자 명단(0011)은 전원에게 전체를 준다
+   * ("소유자가 초대한 다른 사람이 안 보인다" 제보). */
+  const rows: { email: string; role: 'edit' | 'view' }[] = participants
+    ? participants.filter((p) => p.kind === 'invitee').map((p) => ({ email: p.email, role: p.role }))
+    : shares.map((s) => ({ email: s.email, role: s.role }));
 
   const invite = async (): Promise<void> => {
     const target = email.trim();
@@ -129,6 +144,19 @@ export function ShareModal({ controller }: ShareModalProps) {
       return;
     }
     await refresh();
+  };
+
+  /** 공유 나가기(비소유자가 자기 행을 지움) — 성공하면 이 맵에 더 접근할 수 없으므로
+   * 열려 있는 에디터에 남겨 두지 않고 홈으로 보낸다. */
+  const leave = async (target: string): Promise<void> => {
+    setBusy(true);
+    const res = await shareStore.remove(docId, target);
+    setBusy(false);
+    if (res.error) {
+      setError(res.error);
+      return;
+    }
+    controller.goHome();
   };
 
   return (
@@ -165,6 +193,12 @@ export function ShareModal({ controller }: ShareModalProps) {
           </div>
         )}
 
+        {!isOwner && (
+          <div style={{ fontSize: 12, color: th.subtext, background: th.canvasBg, border: `1px solid ${th.border}`, borderRadius: 9, padding: '8px 10px', marginBottom: 10, lineHeight: 1.5 }}>
+            초대와 초대 취소는 맵의 소유자만 할 수 있어요.
+          </div>
+        )}
+        {isOwner && (
         <div style={{ display: 'flex', gap: 8, marginBottom: 10 }}>
           <input
             ref={inputRef}
@@ -189,6 +223,7 @@ export function ShareModal({ controller }: ShareModalProps) {
             초대
           </button>
         </div>
+        )}
 
         {error && (
           <div role="alert" style={{ fontSize: 12.5, color: '#d2503c', marginBottom: 10, lineHeight: 1.5 }}>
@@ -207,16 +242,17 @@ export function ShareModal({ controller }: ShareModalProps) {
         <div style={{ fontSize: 11.5, fontWeight: 700, color: th.subtext, margin: '4px 0 6px' }}>초대된 사람</div>
         {loading ? (
           <div style={{ fontSize: 12.5, color: th.subtext, padding: '10px 0' }}>불러오는 중…</div>
-        ) : shares.length === 0 ? (
+        ) : rows.length === 0 ? (
           <div style={{ fontSize: 12.5, color: th.subtext, padding: '10px 0' }}>아직 아무도 초대하지 않았어요.</div>
         ) : (
           <ul style={{ listStyle: 'none', margin: 0, padding: 0, maxHeight: 200, overflowY: 'auto' }}>
-            {shares.map((s) => {
+            {rows.map((s) => {
               const info = inviteeInfo.get(s.email);
               const name = info?.displayName ?? null;
               // 참가자 정보를 얻었고(joined 판단 가능) 아직 가입 전인 이메일 — 초대는
               // 걸려 있고, 그 이메일로 가입하는 순간 권한과 프로필명이 함께 생긴다.
               const pending = !!info && !info.joined;
+              const isMe = s.email === myEmail;
               return (
               <li key={s.email} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '8px 0', borderTop: `1px solid ${th.border}` }}>
                 <PersonDot email={s.email} name={name} dimmed={pending} />
@@ -230,15 +266,30 @@ export function ShareModal({ controller }: ShareModalProps) {
                   </span>
                 )}
                 <span style={{ fontSize: 11.5, color: th.subtext, flexShrink: 0 }}>{s.role === 'view' ? '보기' : '편집 가능'}</span>
-                <button
-                  type="button"
-                  onClick={() => void revoke(s.email)}
-                  disabled={busy}
-                  aria-label={`${s.email} 초대 취소`}
-                  style={{ flexShrink: 0, height: 28, padding: '0 10px', border: `1px solid ${th.border}`, borderRadius: 8, background: 'transparent', color: th.subtext, fontFamily: 'inherit', fontSize: 12, cursor: busy ? 'default' : 'pointer' }}
-                >
-                  취소
-                </button>
+                {/* 취소는 소유자만. 예외 하나: 나 자신은 공유에서 나갈 수 있다(서버
+                    delete 정책도 정확히 이 둘만 허용한다 — 0009). */}
+                {isOwner ? (
+                  <button
+                    type="button"
+                    onClick={() => void revoke(s.email)}
+                    disabled={busy}
+                    aria-label={`${s.email} 초대 취소`}
+                    style={{ flexShrink: 0, height: 28, padding: '0 10px', border: `1px solid ${th.border}`, borderRadius: 8, background: 'transparent', color: th.subtext, fontFamily: 'inherit', fontSize: 12, cursor: busy ? 'default' : 'pointer' }}
+                  >
+                    취소
+                  </button>
+                ) : isMe ? (
+                  <button
+                    type="button"
+                    onClick={() => void leave(s.email)}
+                    disabled={busy}
+                    aria-label="공유 나가기"
+                    title="이 맵의 공유에서 나갑니다. 다시 보려면 소유자가 다시 초대해야 해요."
+                    style={{ flexShrink: 0, height: 28, padding: '0 10px', border: `1px solid ${th.border}`, borderRadius: 8, background: 'transparent', color: '#c0532e', fontFamily: 'inherit', fontSize: 12, cursor: busy ? 'default' : 'pointer' }}
+                  >
+                    나가기
+                  </button>
+                ) : null}
               </li>
               );
             })}

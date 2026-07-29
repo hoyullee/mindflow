@@ -71,9 +71,9 @@ describe('LocalShareStore', () => {
     const people = await store.listParticipants('d1');
 
     expect(people).toEqual([
-      { kind: 'owner', email: 'me@example.com', displayName: '나야나', joined: true },
-      { kind: 'invitee', email: 'known@example.com', displayName: '아는 사람', joined: true },
-      { kind: 'invitee', email: 'stranger@example.com', displayName: null, joined: false },
+      { kind: 'owner', email: 'me@example.com', displayName: '나야나', joined: true, role: 'edit' },
+      { kind: 'invitee', email: 'known@example.com', displayName: '아는 사람', joined: true, role: 'edit' },
+      { kind: 'invitee', email: 'stranger@example.com', displayName: null, joined: false, role: 'edit' },
     ]);
   });
 });

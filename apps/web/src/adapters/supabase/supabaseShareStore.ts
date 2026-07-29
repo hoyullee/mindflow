@@ -52,18 +52,19 @@ export class SupabaseShareStore implements ShareStore {
   }
 
   async listParticipants(documentId: string): Promise<ShareParticipant[] | null> {
-    // 0010의 SECURITY DEFINER RPC — 클라이언트가 못 읽는 auth.users/profiles 조인을
-    // 서버가 대신 한다(노출 범위는 0009의 공개 정책 그대로). RPC가 아직 적용되지
-    // 않은 서버(마이그레이션 전 배포)나 일시 오류에서는 null — 공유 팝업은 이메일만
-    // 보여주는 기존 렌더로 폴백하고, 공유 자체는 계속 동작한다.
+    // 0011의 SECURITY DEFINER RPC — 클라이언트가 못 읽는 auth.users/profiles 조인을
+    // 서버가 대신 한다. 문서에 접근할 수 있는 사람 전원이 같은 명단을 본다. RPC가
+    // 아직 적용되지 않은 서버(마이그레이션 전 배포)나 일시 오류에서는 null — 공유
+    // 팝업은 이메일만 보여주는 기존 렌더로 폴백하고, 공유 자체는 계속 동작한다.
     try {
       const { data, error } = await this.client.rpc('share_participants', { doc_id: documentId });
       if (error) return null;
-      return ((data ?? []) as { kind: string; email: string; display_name: string | null; joined: boolean }[]).map((r) => ({
+      return ((data ?? []) as { kind: string; email: string; display_name: string | null; joined: boolean; role?: string | null }[]).map((r) => ({
         kind: r.kind === 'owner' ? 'owner' : 'invitee',
         email: r.email,
         displayName: r.display_name && r.display_name.trim() ? r.display_name : null,
         joined: !!r.joined,
+        role: toRole(r.role ?? 'edit'),
       }));
     } catch {
       return null;

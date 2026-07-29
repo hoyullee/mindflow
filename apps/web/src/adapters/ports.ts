@@ -189,9 +189,10 @@ export interface SharedWithMe {
 
 /**
  * 공유 팝업에 보여줄 참가자 한 명 — 소유자 또는 초대받은 사람. 클라이언트는
- * `auth.users`를 못 읽으므로 이메일 ↔ 프로필명 연결은 서버 RPC(0010
- * `share_participants`)가 해 준다. 노출 범위는 0009의 공개 정책 그대로:
- * 초대 목록 전체는 소유자만, 초대받은 사람은 소유자 + 자기 행만 본다.
+ * `auth.users`를 못 읽으므로 이메일 ↔ 프로필명 연결은 서버 RPC(0011
+ * `share_participants`)가 해 준다. 문서에 접근할 수 있는 사람(소유자 + 초대받은
+ * 사람) 전원이 같은 명단을 본다 — 함께 편집하는 사이에 참가자를 숨기지 않는다
+ * (실사용 제보로 0010의 "소유자만 전체"에서 넓힘). 초대·취소 권한은 별개다(RLS).
  */
 export interface ShareParticipant {
   kind: 'owner' | 'invitee';
@@ -200,6 +201,8 @@ export interface ShareParticipant {
   displayName: string | null;
   /** 이 이메일로 가입된 계정이 있는가. 초대만 되고 가입 전이면 false("가입 대기"). */
   joined: boolean;
+  /** 권한. 소유자 행은 항상 'edit'. */
+  role: ShareRole;
 }
 
 /**
