@@ -2,7 +2,7 @@ import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } fr
 import type { MouseEvent as ReactMouseEvent, PointerEvent as ReactPointerEvent } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import type { Box, Doc, Float, Line, LineAnchor, LayoutMode, Node, NodeMap, SizeOf, SnapCandidate, Zone } from '@mindflow/mindmap-core';
-import { HistoryStack, ROOT_ID, applyPartialStyle, cubicAt, findLineSnap, layout, resolveLineEndpoints, resolveLineGeometry, serializeDoc } from '@mindflow/mindmap-core';
+import { HistoryStack, ROOT_ID, applyPartialStyle, cubicAt, findLineSnap, layout, resolveLineEndpoints, resolveLineGeometry, serializeDoc, toMarkdown } from '@mindflow/mindmap-core';
 import { domToRuns, linearize, runsToHtml, setLinearSelection } from './richtextDom';
 import { useBackend, useDocStore } from '../../adapters/BackendContext';
 import { useAuthUser } from '../../adapters/useAuthUser';
@@ -471,6 +471,8 @@ export interface EditorController {
   dismissSaveConflict: () => void;
   exportJSON: () => void;
   exportPNG: () => void;
+  /** 마크다운 개요(.md)로 내보낸다 — 코어 `toMarkdown`. */
+  exportMarkdown: () => void;
 }
 
 function docSignature(d: Doc): string {
@@ -3249,6 +3251,12 @@ export function useEditorState(): EditorController {
   const exportPNG = useCallback(() => {
     void exportPng(doc, geom, theme, safeDocTitle(doc, titleParam));
   }, [doc, geom, theme, titleParam]);
+  /** 마크다운 개요로 내보낸다(코어 `toMarkdown`). 무손실 백업은 JSON이고, 이건 다른
+   * 도구로 옮기거나 사람이 읽는 용도다 — 가져오기가 이 형식을 되읽는다(노트·자유
+   * 도형·메모까지, `parseOutline` 참고). */
+  const exportMarkdown = useCallback(() => {
+    downloadFile(`${safeDocTitle(doc, titleParam)}.md`, toMarkdown(doc), 'text/markdown');
+  }, [doc, titleParam]);
 
   const docTitle = laidOutNodes[ROOT_ID]?.text || titleParam || '새 마인드맵';
 
@@ -3437,5 +3445,6 @@ export function useEditorState(): EditorController {
     dismissSaveConflict,
     exportJSON,
     exportPNG,
+    exportMarkdown,
   };
 }

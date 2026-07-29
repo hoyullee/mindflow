@@ -1440,6 +1440,81 @@ describe('Home', () => {
     expect(container.querySelector('.mf-map-grid a[data-title="즐겨찾는 맵"]')).toBeTruthy();
   });
 
+  // 마크다운: 카드 ☰ → 내보내기 → Markdown 개요(.md). 그 파일을 그대로 다시
+  // 가져오면 트리·노트·메모가 복원되는지도 한 번에 확인한다(왕복).
+  describe('Markdown 내보내기/가져오기', () => {
+    const MD_DOC = {
+      v: 1,
+      nodes: {
+        root: { id: 'root', text: '개요 맵', emoji: '', parent: null, children: ['c1'], collapsed: false, color: null, x: 0, y: 0, note: '루트 노트' },
+        c1: { id: 'c1', text: '가지', emoji: '', parent: 'root', children: [], collapsed: false, color: null, x: 0, y: 0 },
+      },
+      floats: [{ id: 'm1', x: 0, y: 0, w: 180, text: '메모 하나' }],
+      lines: [],
+      zones: [],
+      layoutMode: 'right',
+      themeKey: 'coral',
+    };
+
+    it('카드 메뉴에서 .md 로 내려받는다', async () => {
+      const user = userEvent.setup();
+      localStorage.setItem('mindflow_doc_doc-md', JSON.stringify(MD_DOC));
+      const created: Blob[] = [];
+      URL.createObjectURL = vi.fn((b: Blob | MediaSource) => {
+        created.push(b as Blob);
+        return 'blob:mock';
+      }) as typeof URL.createObjectURL;
+      URL.revokeObjectURL = vi.fn() as typeof URL.revokeObjectURL;
+      const names: string[] = [];
+      const clickSpy = vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(function (this: HTMLAnchorElement) {
+        names.push(this.download);
+      });
+
+      const { container } = renderHomeWithDocStore([{ id: 'doc-md', title: '개요 맵', version: 1, updatedAt: '2026-01-01T00:00:00.000Z', isFavorite: false, deletedAt: null }]);
+      await waitFor(() => expect(container.querySelector('a[data-title="개요 맵"]')).toBeTruthy());
+
+      const card = container.querySelector('a[data-title="개요 맵"]') as HTMLElement;
+      await user.click(within(card).getByRole('button', { name: '메뉴' }));
+      await user.click(within(card).getByText(/내보내기/));
+      await user.click(within(card).getByText('Markdown 개요 (.md)'));
+
+      expect(names[0]).toBe('개요 맵.md');
+      const md = await new Promise<string>((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onload = () => resolve(String(reader.result));
+        reader.onerror = () => reject(reader.error);
+        reader.readAsText(created[0]!);
+      });
+      expect(md).toMatch(/^# 개요 맵$/m);
+      expect(md).toMatch(/^\s*> 루트 노트$/m);
+      expect(md).toMatch(/^## 메모$/m);
+      clickSpy.mockRestore();
+    });
+
+    it('내보낸 .md 를 다시 가져오면 트리·노트·메모가 복원된다', async () => {
+      const user = userEvent.setup();
+      // 위 테스트가 만드는 것과 같은 내용의 개요
+      const md = ['# 개요 맵', '  > 루트 노트', '- 가지', '', '## 메모', '- 메모 하나'].join('\n');
+      const { container } = renderHomeWithDocStore([]);
+      await waitFor(() => expect(screen.getByRole('link', { name: /새로 만들기/ })).toBeTruthy());
+
+      const input = container.querySelector('input[type="file"]') as HTMLInputElement;
+      await user.upload(input, new File([md], '개요 맵.md', { type: 'text/markdown' }));
+      await waitFor(() => expect(screen.getByText(/추가했어요/)).toBeTruthy());
+      await user.click(screen.getByRole('button', { name: '확인' }));
+      await waitFor(() => expect(container.querySelector('a[data-title="개요 맵"]')).toBeTruthy());
+
+      // 저장된 본문에 노트와 메모가 들어 있어야 한다(예전엔 둘 다 잃었다).
+      const keys = Object.keys(localStorage).filter((k) => k.startsWith('mindflow_doc_') && !k.includes('_meta_'));
+      const raw = localStorage.getItem(keys[0] as string) as string;
+      const doc = JSON.parse(raw) as { nodes: Record<string, { text: string; note?: string }>; floats: { text: string }[] };
+      expect(doc.nodes.root?.text).toBe('개요 맵');
+      expect(doc.nodes.root?.note).toBe('루트 노트');
+      expect(Object.values(doc.nodes).map((n) => n.text)).toContain('가지');
+      expect(doc.floats.map((f) => f.text)).toEqual(['메모 하나']);
+    });
+  });
+
   describe('mobile (M6)', () => {
     it('collapses the toolbar actions into icon-only buttons on one row (no stray action line)', async () => {
       // On mobile the labeled 가져오기/새 폴더 pair used to wrap onto a lonely line

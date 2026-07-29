@@ -351,6 +351,37 @@ describe('Editor interactions (M3-Editor-b)', () => {
     clickSpy.mockRestore();
   });
 
+  it('마크다운 개요(.md)로 내보낸다 — 트리·노트·메모가 개요 형식으로', async () => {
+    localStorage.setItem('mindflow_doc_t7md', JSON.stringify(DOC));
+    const created: Blob[] = [];
+    URL.createObjectURL = vi.fn((b: Blob | MediaSource) => {
+      created.push(b as Blob);
+      return 'blob:mock';
+    }) as typeof URL.createObjectURL;
+    URL.revokeObjectURL = vi.fn() as typeof URL.revokeObjectURL;
+    const names: string[] = [];
+    const clickSpy = vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(function (this: HTMLAnchorElement) {
+      names.push(this.download);
+    });
+
+    const user = userEvent.setup();
+    renderEditor('/editor?map=t7md&title=x');
+
+    await user.click(screen.getByRole('button', { name: /내보내기/ }));
+    await user.click(screen.getByText('Markdown 개요 (.md)'));
+
+    expect(created.length).toBe(1);
+    expect(names[0]?.endsWith('.md')).toBe(true);
+    const md = await readBlobText(created[0]!);
+    // 루트는 H1(이모지 포함), 자식은 불릿, 메모는 `## 메모` 섹션 — 코어 `toMarkdown`의 형식
+    expect(md.startsWith('# 🎯 제품 로드맵')).toBe(true);
+    expect(md).toMatch(/^- 리서치$/m);
+    expect(md).toMatch(/^## 메모$/m);
+    expect(md).toMatch(/^- 주간 회고 메모$/m);
+
+    clickSpy.mockRestore();
+  });
+
   it('opens the 스타일 dropdown in a fixed body portal (escapes the top bar clip/stacking)', async () => {
     const user = userEvent.setup();
     localStorage.setItem('mindflow_doc_ts1', JSON.stringify(DOC));
