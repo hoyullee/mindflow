@@ -51,7 +51,13 @@
       내용은 src/features/landing/Landing.tsx(클라이언트 내비게이션용 쌍둥이)와
       동기화할 것. 폰트: Pretendard는 시스템 스택 폴백(무거워서 로드하지 않음), 강조 라벨용
       JetBrains Mono만 같은 출처(/fonts)에서 로드한다 — 외부 요청은 없다.
+
+      히어로 데모: 원문 HTML에는 완성 상태의 SVG 한 장(크롤러·무JS 방문자용
+      폴백). 아래 landing-demo.js(defer, 같은 출처)가 실행되면 그 자리를
+      React 쪽과 동일한 인터랙티브 데모로 교체한다 — 계약은 "모든 내용이 JS
+      없이 원문 HTML에 보인다"이지 "스크립트 0개"가 아니다(테스트 참고).
     -->
+    <script src="/landing-demo.js" defer></script>
     <style>
       /* 새 랜딩(2026-07, "Geurio 랜딩 리뉴얼.dc.html" 디자인 원본의 정적 이식).
          React 쌍둥이(src/features/landing/Landing.tsx)와 내용·수치를 동기화할 것. */
@@ -93,6 +99,8 @@
       .demo-dots { display: flex; gap: 6px; }
       .demo-dots span { width: 9px; height: 9px; border-radius: 99px; background: #E4DED2; display: block; }
       .demo-url { font-size: 11px; color: #A29B90; letter-spacing: .02em; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+      .demo-reset { height: 29px; padding: 0 13px; border-radius: 99px; border: 1px solid #E3DED3; background: #fff; font-size: 11.5px; font-weight: 600; color: #6E675F; cursor: pointer; white-space: nowrap; font-family: inherit; }
+      .demo-reset:hover { background: #F3EFE7; }
       .demo-canvas { position: relative; width: 100%; height: clamp(330px, 42vw, 440px); overflow: hidden; background-image: radial-gradient(#E7CBB8 1.1px, transparent 1.1px); background-size: 18px 18px; }
       .demo-hint { position: absolute; left: 50%; bottom: 12px; transform: translateX(-50%); font-size: 12.5px; color: #B08C77; white-space: nowrap; }
       section.band { padding: 0 clamp(18px, 4vw, 56px) clamp(56px, 7vw, 80px); }

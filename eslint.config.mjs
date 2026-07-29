@@ -68,4 +68,18 @@ export default tseslint.config(
       },
     },
   },
+  {
+    // 번들을 거치지 않는 브라우저 스크립트(public/ — 예: landing-demo.js,
+    // 정적 랜딩의 프로그레시브 인핸서)는 브라우저 전역이 필요하다.
+    files: ['apps/*/public/**/*.js'],
+    languageOptions: {
+      globals: {
+        document: 'readonly',
+        window: 'readonly',
+        setInterval: 'readonly',
+        clearInterval: 'readonly',
+        ResizeObserver: 'readonly',
+      },
+    },
+  },
 );
