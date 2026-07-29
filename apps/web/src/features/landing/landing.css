@@ -90,6 +90,13 @@
   font-weight: 700;
   white-space: nowrap;
 }
+/* 모바일: 헤더가 두 줄로 감기며 로그인·CTA가 다닥다닥 붙는다 — 상단 CTA는
+   숨긴다(히어로·하단 CTA가 이미 있음). 브레이크포인트는 앱 공통 768px. */
+@media (max-width: 768px) {
+  .lp-root nav.lp .pill-cta {
+    display: none;
+  }
+}
 
 .lp-root .hero {
   padding: clamp(44px, 7vw, 78px) clamp(18px, 4vw, 56px) 0;
