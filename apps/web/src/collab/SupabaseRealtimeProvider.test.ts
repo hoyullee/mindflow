@@ -6,7 +6,7 @@
 
 import { describe, expect, it, vi } from 'vitest';
 import * as Y from 'yjs';
-import { docToYDoc, yDocToDoc, type Doc } from '@mindflow/mindmap-core';
+import { ROOT_ID, addNode, docToYDoc, removeNode, yDocToDoc, type Doc } from '@mindflow/mindmap-core';
 import { SupabaseRealtimeProvider } from './SupabaseRealtimeProvider';
 import type { CollabStatus } from './ports';
 
@@ -45,8 +45,12 @@ function makeFakeChannelPair() {
   const handlersB: Record<string, ((arg: { payload: unknown }) => void)[]> = {};
   const sentA: { event: string; payload: unknown }[] = [];
   const sentB: { event: string; payload: unknown }[] = [];
+  // 회선 차단 스위치 — Realtime은 끊긴 동안의 브로드캐스트를 재전송하지 않으므로,
+  // "상대가 못 받은 메시지"를 이걸로 재현한다(발신은 성공한 것처럼 보인다 — 실제
+  // REST 폴백 발신과 같은 모양).
+  const wire = { aToB: true, bToA: true };
 
-  function makeSide(handlers: typeof handlersA, sent: typeof sentA, otherHandlers: typeof handlersB) {
+  function makeSide(handlers: typeof handlersA, sent: typeof sentA, otherHandlers: typeof handlersB, deliver: () => boolean) {
     const channel = {
       on: vi.fn((_type: string, filter: { event: string }, cb: (arg: { payload: unknown }) => void) => {
         (handlers[filter.event] ??= []).push(cb);
@@ -58,6 +62,7 @@ function makeFakeChannelPair() {
       }),
       send: vi.fn(async (msg: { event: string; payload: unknown }) => {
         sent.push({ event: msg.event, payload: msg.payload });
+        if (!deliver()) return 'ok';
         // deliver to the OTHER side only (mirrors a real broadcast: you don't receive your own send back)
         for (const h of otherHandlers[msg.event] ?? []) h({ payload: msg.payload });
         return 'ok';
@@ -66,9 +71,9 @@ function makeFakeChannelPair() {
     return channel;
   }
 
-  const channelA = makeSide(handlersA, sentA, handlersB);
-  const channelB = makeSide(handlersB, sentB, handlersA);
-  return { channelA, channelB, sentA, sentB };
+  const channelA = makeSide(handlersA, sentA, handlersB, () => wire.aToB);
+  const channelB = makeSide(handlersB, sentB, handlersA, () => wire.bToA);
+  return { channelA, channelB, sentA, sentB, wire };
 }
 
 describe('SupabaseRealtimeProvider', () => {
@@ -210,6 +215,100 @@ describe('SupabaseRealtimeProvider', () => {
   // 배포 후 제보: 공유는 됐는데 **편집·접속자·커서가 한꺼번에** 오지 않았다. 채널
   // 하나가 죽으면 셋이 같이 죽고, 아무도 구독 상태를 보지 않아 "혼자 있는 것"과
   // 구분되지 않았다. 그래서 (1) 죽지 않게 폴백하고 (2) 상태를 반드시 올려 보낸다.
+  // 제보(3차): 커서는 서로 보이는데 **편집만** 안 보인다. Realtime은 끊긴 동안의
+  // 브로드캐스트를 재전송하지 않아, Yjs 업데이트 하나를 놓치면 이후 업데이트 전부가
+  // "의존 연산 없음"으로 보류된다(커서는 절대 상태라 다음 움직임에 저절로 복구 —
+  // 그래서 증상이 갈라진다). 주기 상태 벡터(SV) 교환이 그 구멍을 메운다.
+  describe('메시지 유실 자가 치유 (주기 상태 벡터 동기화)', () => {
+    function connectPair() {
+      const pair = makeFakeChannelPair();
+      const clientA = { channel: vi.fn(() => pair.channelA), removeChannel: vi.fn(), realtime: realtimeMock() } as unknown as import('@supabase/supabase-js').SupabaseClient;
+      const clientB = { channel: vi.fn(() => pair.channelB), removeChannel: vi.fn(), realtime: realtimeMock() } as unknown as import('@supabase/supabase-js').SupabaseClient;
+      const doc = baseDoc();
+      // 삭제 치유 테스트가 지울 대상 — 이 파일의 baseDoc은 루트 하나뿐이다
+      doc.nodes.a = { id: 'a', text: 'Child A', emoji: '', parent: 'root', children: [], collapsed: false, color: null, x: 100, y: 0 };
+      doc.nodes.root = { ...doc.nodes.root!, children: ['a'] };
+      const ydocA = docToYDoc(doc);
+      const ydocB = docToYDoc(doc); // 실제 상황: 두 기기가 같은 문서를 각자 심는다
+      const providerA = new SupabaseRealtimeProvider(clientA);
+      const providerB = new SupabaseRealtimeProvider(clientB);
+      providerA.connect('doc-heal', ydocA);
+      providerB.connect('doc-heal', ydocB);
+      return { pair, ydocA, ydocB, providerA, providerB };
+    }
+
+    it('유실로 보류된 편집을 다음 주기 SV 교환이 메운다 (커서만 살고 편집이 죽던 그 증상)', async () => {
+      vi.useFakeTimers();
+      try {
+        const { pair, ydocA, ydocB, providerA, providerB } = connectPair();
+        await flush();
+        expect(yDocToDoc(ydocB)).toEqual(yDocToDoc(ydocA)); // 합류 수렴(diff 교환)
+
+        // A→B 회선이 잠깐 죽은 사이 A가 편집 — B는 이 업데이트를 영영 못 받는다
+        pair.wire.aToB = false;
+        addNode(ydocA, 'lost', { id: 'lost', text: '유실된 편집', emoji: '', parent: ROOT_ID, children: [], collapsed: false, color: null, x: 1, y: 1 });
+        pair.wire.aToB = true;
+        // 회선 복구 후의 편집은 도착하지만, 앞 연산이 없어 B에서 **보류**된다
+        addNode(ydocA, 'after', { id: 'after', text: '이후 편집', emoji: '', parent: ROOT_ID, children: [], collapsed: false, color: null, x: 2, y: 2 });
+        await flush();
+        expect(yDocToDoc(ydocB).nodes.lost).toBeUndefined();
+        expect(yDocToDoc(ydocB).nodes.after).toBeUndefined(); // 보류 — 예전엔 여기서 영원히 멈췄다
+
+        // 한 주기 뒤: B의 SV 방송 → A가 빠진 연산의 diff를 돌려준다
+        vi.advanceTimersByTime(15_000);
+        await flush();
+        expect(yDocToDoc(ydocB).nodes.lost?.text).toBe('유실된 편집');
+        expect(yDocToDoc(ydocB).nodes.after?.text).toBe('이후 편집');
+        expect(yDocToDoc(ydocB)).toEqual(yDocToDoc(ydocA));
+
+        providerA.disconnect();
+        providerB.disconnect();
+      } finally {
+        vi.useRealTimers();
+      }
+    });
+
+    it('삭제만 놓친 경우도 메운다 (삭제는 상태 벡터에 잡히지 않는다 — delete set 경로)', async () => {
+      vi.useFakeTimers();
+      try {
+        const { pair, ydocA, ydocB, providerA, providerB } = connectPair();
+        await flush();
+
+        pair.wire.aToB = false;
+        removeNode(ydocA, 'a'); // 삭제는 새 struct를 만들지 않는다
+        pair.wire.aToB = true;
+        await flush();
+        expect(yDocToDoc(ydocB).nodes.a).toBeDefined(); // 아직 못 받았다
+
+        vi.advanceTimersByTime(15_000);
+        await flush();
+        expect(yDocToDoc(ydocB).nodes.a).toBeUndefined(); // diff의 delete set으로 복구
+        expect(yDocToDoc(ydocB)).toEqual(yDocToDoc(ydocA));
+
+        providerA.disconnect();
+        providerB.disconnect();
+      } finally {
+        vi.useRealTimers();
+      }
+    });
+
+    it('join 밖에서는 send하지 않는다 — REST 폴백 스팸과 반쪽 발신의 원인이었다', async () => {
+      // subscribe 콜백을 아예 부르지 않는 채널 = 소켓이 끊겨 join하지 못한 상태
+      const channel = { on: vi.fn().mockReturnThis(), subscribe: vi.fn().mockReturnThis(), send: vi.fn(async () => 'ok') };
+      const client = { channel: vi.fn(() => channel), removeChannel: vi.fn(), realtime: realtimeMock() } as unknown as import('@supabase/supabase-js').SupabaseClient;
+      const provider = new SupabaseRealtimeProvider(client);
+      const ydoc = docToYDoc(baseDoc());
+      provider.connect('doc-nojoin', ydoc);
+      await flush();
+
+      addNode(ydoc, 'n1', { id: 'n1', text: 'x', emoji: '', parent: ROOT_ID, children: [], collapsed: false, color: null, x: 0, y: 0 });
+      await flush();
+
+      expect(channel.send).not.toHaveBeenCalled();
+      provider.disconnect();
+    });
+  });
+
   describe('인증된 채널이 거부될 때', () => {
     /** subscribe 콜백을 즉시 호출하지 않고 붙잡아 두는 채널 — 테스트가 원하는
      * 시점에 상태를 흘려 보낼 수 있다. fire는 flush까지 겸한다(구독이 setAuth
