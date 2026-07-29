@@ -316,6 +316,28 @@ export function MapCard({ card, controller, draggableEnabled, compact = false }:
             </span>{' '}
             JSON 파일 (.json)
           </div>
+          <div
+            className="menu-row"
+            onClick={(e) => {
+              e.preventDefault();
+              e.stopPropagation();
+              controller.exportMapMarkdown(card.title, card.docId);
+            }}
+            style={{ display: 'flex', alignItems: 'center', gap: 9, padding: '9px 13px', fontSize: 13, cursor: 'pointer', color: '#33281f' }}
+          >
+            <span style={{ display: 'flex', color: '#7c6d60' }}>
+              {/* 개요(불릿) 아이콘 — 목록 형태임을 보여 준다 */}
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <line x1="9" y1="6" x2="20" y2="6" />
+                <line x1="11" y1="12" x2="20" y2="12" />
+                <line x1="13" y1="18" x2="20" y2="18" />
+                <circle cx="5" cy="6" r="1.4" fill="currentColor" stroke="none" />
+                <circle cx="7" cy="12" r="1.4" fill="currentColor" stroke="none" />
+                <circle cx="9" cy="18" r="1.4" fill="currentColor" stroke="none" />
+              </svg>
+            </span>{' '}
+            Markdown 개요 (.md)
+          </div>
         </div>
 
         <div style={{ display: card.moveOpen ? 'block' : 'none' }}>

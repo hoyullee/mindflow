@@ -2,7 +2,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import type { ChangeEvent, KeyboardEvent } from 'react';
 import { useNavigate } from 'react-router-dom';
 import type { Doc } from '@mindflow/mindmap-core';
-import { parseDoc, serializeDoc } from '@mindflow/mindmap-core';
+import { parseDoc, serializeDoc, toMarkdown } from '@mindflow/mindmap-core';
 import { exportDocPng } from '../editor/png';
 import { themeOf } from '../editor/theme';
 import { useBackend } from '../../adapters/BackendContext';
@@ -1004,6 +1004,33 @@ export function useHomeController() {
     );
   };
 
+  /**
+   * 마크다운 개요(.md)로 내보낸다 — 코어 `toMarkdown`. 무손실 백업은 JSON이고 이건
+   * 다른 도구로 옮기거나 사람이 읽는 용도다(가져오기가 이 형식을 되읽는다 —
+   * 노트·자유 도형·메모까지, `parseOutline` 참고).
+   *
+   * 본문이 없으면 PNG와 같은 이유로 만들 수 없다(제목만으로는 개요가 없다) — 같은
+   * 문구로 안내한다.
+   */
+  const exportMapMarkdown = (title: string, docId?: string) => {
+    patch({ openMenu: null, moveFor: null, exportFor: null });
+    const raw = docRawForExport(title, docId);
+    const safe = safeFileName(title);
+    let doc: Doc | null = null;
+    if (raw) {
+      try {
+        doc = parseDoc(JSON.parse(raw));
+      } catch {
+        doc = null;
+      }
+    }
+    if (!doc) {
+      patch({ importError: '내용이 없어 개요를 만들 수 없어요. 맵을 한 번 열어 저장한 뒤 다시 시도해 주세요.' });
+      return;
+    }
+    downloadFile(safe + '.md', toMarkdown(doc), 'text/markdown');
+  };
+
   /** Render the map's real doc to a full-resolution PNG (shared editor renderer). */
   const exportMapPNG = (title: string, docId?: string) => {
     patch({ openMenu: null, moveFor: null, exportFor: null });
@@ -1360,6 +1387,7 @@ export function useHomeController() {
     openImport,
     onImportFile,
     exportMap,
+    exportMapMarkdown,
     exportMapPNG,
     activeFolders,
     openNewFolder,
