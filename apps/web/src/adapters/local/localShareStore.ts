@@ -85,11 +85,11 @@ export class LocalShareStore implements ShareStore {
     }
     const out: ShareParticipant[] = [];
     if (ownerEmail) {
-      out.push({ kind: 'owner', email: ownerEmail, displayName: readSavedProfileName(ownerEmail), joined: true });
+      out.push({ kind: 'owner', email: ownerEmail, displayName: readSavedProfileName(ownerEmail), joined: true, role: 'edit' });
     }
     for (const s of readAll().filter((s) => s.documentId === documentId)) {
       const name = readSavedProfileName(s.email);
-      out.push({ kind: 'invitee', email: s.email, displayName: name, joined: !!name });
+      out.push({ kind: 'invitee', email: s.email, displayName: name, joined: !!name, role: s.role });
     }
     return out;
   }

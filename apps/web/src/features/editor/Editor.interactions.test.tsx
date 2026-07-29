@@ -420,6 +420,7 @@ describe('Editor interactions (M3-Editor-b)', () => {
           <BackendProvider backend={backend}>
             <Routes>
               <Route path="/editor" element={<Editor />} />
+              <Route path="/home" element={<div>HOME_PAGE</div>} />
             </Routes>
           </BackendProvider>
         </MemoryRouter>,
@@ -495,10 +496,12 @@ describe('Editor interactions (M3-Editor-b)', () => {
       await shareStore.add('share6', 'friend@example.com');
       await shareStore.add('share6', 'newbie@example.com');
       shareStore.listParticipants = vi.fn(async () => [
-        { kind: 'owner' as const, email: 'me@example.com', displayName: '호율', joined: true },
-        { kind: 'invitee' as const, email: 'friend@example.com', displayName: '디자인 리드', joined: true },
-        { kind: 'invitee' as const, email: 'newbie@example.com', displayName: null, joined: false },
+        { kind: 'owner' as const, email: 'me@example.com', displayName: '호율', joined: true, role: 'edit' as const },
+        { kind: 'invitee' as const, email: 'friend@example.com', displayName: '디자인 리드', joined: true, role: 'edit' as const },
+        { kind: 'invitee' as const, email: 'newbie@example.com', displayName: null, joined: false, role: 'edit' as const },
       ]);
+      // 소유자 본인으로 로그인한 상태(LocalAuth는 mf_demo_session을 읽는다)
+      localStorage.setItem('mf_demo_session', JSON.stringify({ user: { id: 'u-me', email: 'me@example.com' } }));
       renderWithShare(shareStore, 'supabase', 'share6');
 
       await user.click(screen.getByRole('button', { name: '공유' }));
@@ -514,6 +517,56 @@ describe('Editor interactions (M3-Editor-b)', () => {
       // 미가입 초대는 이메일 그대로 + 가입 대기 배지
       expect(within(dialog).getByText('newbie@example.com')).toBeTruthy();
       expect(within(dialog).getByText('가입 대기')).toBeTruthy();
+    });
+
+    it('소유자가 아니면 초대 입력이 없고, 남의 행에 취소도 없다 — 내 행은 나가기 (서버 정책과 같은 모양)', async () => {
+      localStorage.setItem('mindflow_doc_share8', JSON.stringify(DOC));
+      const user = userEvent.setup();
+      const { shareStore } = shareBackend();
+      await shareStore.add('share8', 'me-too@example.com');
+      shareStore.listParticipants = vi.fn(async () => [
+        { kind: 'owner' as const, email: 'boss@example.com', displayName: '소유자님', joined: true, role: 'edit' as const },
+        { kind: 'invitee' as const, email: 'me-too@example.com', displayName: '나야', joined: true, role: 'edit' as const },
+        { kind: 'invitee' as const, email: 'other@example.com', displayName: '남이야', joined: true, role: 'edit' as const },
+      ]);
+      // 나는 초대받은 사람(비소유자)
+      localStorage.setItem('mf_demo_session', JSON.stringify({ user: { id: 'u-guest', email: 'me-too@example.com' } }));
+      renderWithShare(shareStore, 'supabase', 'share8');
+
+      await user.click(screen.getByRole('button', { name: '공유' }));
+      const dialog = await screen.findByRole('dialog', { name: '공유' });
+
+      // 제보 ①: 초대받은 사람도 전체 명단을 본다 (참가자 명단이 정본)
+      await waitFor(() => expect(within(dialog).getByText('남이야')).toBeTruthy());
+      expect(within(dialog).getByText('나야')).toBeTruthy();
+      // 제보 ②: 비소유자에게는 초대 어포던스가 없다
+      await waitFor(() => expect(within(dialog).queryByLabelText('초대할 이메일')).toBeNull());
+      expect(within(dialog).queryByRole('button', { name: '초대' })).toBeNull();
+      expect(within(dialog).getByText(/소유자만 할 수 있어요/)).toBeTruthy();
+      // 남의 행에는 버튼이 없고, 내 행에는 '나가기'만 있다
+      expect(within(dialog).queryByRole('button', { name: 'other@example.com 초대 취소' })).toBeNull();
+      expect(within(dialog).queryByRole('button', { name: 'me-too@example.com 초대 취소' })).toBeNull();
+      expect(within(dialog).getByRole('button', { name: '공유 나가기' })).toBeTruthy();
+    });
+
+    it('나가기를 누르면 자기 행을 지우고 홈으로 나간다', async () => {
+      localStorage.setItem('mindflow_doc_share9', JSON.stringify(DOC));
+      const user = userEvent.setup();
+      const { shareStore } = shareBackend();
+      await shareStore.add('share9', 'me-too@example.com');
+      shareStore.listParticipants = vi.fn(async () => [
+        { kind: 'owner' as const, email: 'boss@example.com', displayName: '소유자님', joined: true, role: 'edit' as const },
+        { kind: 'invitee' as const, email: 'me-too@example.com', displayName: '나야', joined: true, role: 'edit' as const },
+      ]);
+      localStorage.setItem('mf_demo_session', JSON.stringify({ user: { id: 'u-guest', email: 'me-too@example.com' } }));
+      renderWithShare(shareStore, 'supabase', 'share9');
+
+      await user.click(screen.getByRole('button', { name: '공유' }));
+      await screen.findByRole('dialog', { name: '공유' });
+      await user.click(await screen.findByRole('button', { name: '공유 나가기' }));
+
+      await waitFor(() => expect(shareStore.remove).toHaveBeenCalledWith('share9', 'me-too@example.com'));
+      await waitFor(() => expect(screen.getByText('HOME_PAGE')).toBeTruthy()); // 접근이 사라진 맵에 남겨 두지 않는다
     });
 
     it('참가자 정보를 못 얻으면(null) 이메일만 보여주는 기존 렌더로 폴백한다', async () => {
