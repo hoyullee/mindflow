@@ -26,13 +26,34 @@ export interface CollabPeer {
   id: string;
 }
 
+/**
+ * 전송이 실제로 붙었는지 — 조용히 죽지 않게 하려고 둔다.
+ *
+ * 배포 후 제보로 배운 것: 공유는 됐는데 **편집·접속자·커서가 한꺼번에** 안 왔다.
+ * 원인은 채널 하나였다(구독 실패). 그런데 구독 상태를 아무도 보지 않아 화면에는
+ * "혼자 있는 것과 똑같이" 보였고, 무엇이 고장났는지 알 방법이 없었다. 이제 상태를
+ * 위로 올려 보내 UI가 알려 줄 수 있게 한다.
+ */
+export type CollabStatus =
+  /** 붙었다(권한이 걸린 private 채널). */
+  | 'connected'
+  /** 붙었지만 **인증되지 않은 공개 채널**이다 — private 구독이 거부돼 폴백했다.
+   * 서버의 Realtime Authorization 정책이 적용되지 않은 상태(0009의 realtime 블록이
+   * 권한 부족으로 건너뛰어졌을 때). 협업은 되지만 docId를 아는 사람이 끼어들 수 있다. */
+  | 'connected-insecure'
+  /** 전송이 없다(로컬 단독) 또는 붙지 못했다. */
+  | 'offline';
+
+/** 상태 변화를 알려 주는 콜백. `connect()`에 넘긴다. */
+export type CollabStatusListener = (status: CollabStatus) => void;
+
 export interface CollabProvider {
   /**
    * Starts syncing `ydoc` under `docId` (the channel/room key). Safe to call
    * again with a different `docId`/`ydoc` — implementations disconnect the
    * previous session first.
    */
-  connect(docId: string, ydoc: YDoc): void;
+  connect(docId: string, ydoc: YDoc, onStatus?: CollabStatusListener): void;
   /** Stops syncing and releases the underlying transport (channel/socket).
    * Broadcasts this client's departure (local awareness state -> null) to any
    * connected peers before tearing down (see each provider's own `disconnect()`

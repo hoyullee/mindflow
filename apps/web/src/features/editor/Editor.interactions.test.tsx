@@ -408,10 +408,12 @@ describe('Editor interactions (M3-Editor-b)', () => {
       return { shareStore, shares };
     }
 
-    function renderWithShare(shareStore: unknown, mode: Backend['mode'] = 'supabase') {
+    // `docId`는 테스트가 실제로 씨딩한 키와 맞춰야 한다 — 본문이 없는 맵은 이제
+    // 에디터가 아니라 전용 안내 화면(`MapUnavailable`)이 뜨므로 툴바조차 없다.
+    function renderWithShare(shareStore: unknown, mode: Backend['mode'] = 'supabase', docId = 'share1') {
       const backend = { auth: new LocalAuth(), docStore: new LocalDocStore(), spaceStore: new LocalSpaceStore(), shareStore, mode } as unknown as Backend;
       return render(
-        <MemoryRouter initialEntries={['/editor?map=share1&title=x']}>
+        <MemoryRouter initialEntries={[`/editor?map=${docId}&title=x`]}>
           <BackendProvider backend={backend}>
             <Routes>
               <Route path="/editor" element={<Editor />} />
@@ -444,7 +446,7 @@ describe('Editor interactions (M3-Editor-b)', () => {
       localStorage.setItem('mindflow_doc_share2', JSON.stringify(DOC));
       const user = userEvent.setup();
       const { shareStore } = shareBackend();
-      renderWithShare(shareStore);
+      renderWithShare(shareStore, 'supabase', 'share2');
 
       await user.click(screen.getByRole('button', { name: '공유' }));
       await user.type(screen.getByLabelText('초대할 이메일'), '이건이메일이아님');
@@ -458,14 +460,14 @@ describe('Editor interactions (M3-Editor-b)', () => {
       localStorage.setItem('mindflow_doc_share3', JSON.stringify(DOC));
       const user = userEvent.setup();
       const { shareStore } = shareBackend();
-      await shareStore.add('share1', 'gone@example.com');
-      renderWithShare(shareStore);
+      await shareStore.add('share3', 'gone@example.com');
+      renderWithShare(shareStore, 'supabase', 'share3');
 
       await user.click(screen.getByRole('button', { name: '공유' }));
       await waitFor(() => expect(screen.getByText('gone@example.com')).toBeTruthy());
 
       await user.click(screen.getByRole('button', { name: 'gone@example.com 초대 취소' }));
-      await waitFor(() => expect(shareStore.remove).toHaveBeenCalledWith('share1', 'gone@example.com'));
+      await waitFor(() => expect(shareStore.remove).toHaveBeenCalledWith('share3', 'gone@example.com'));
       await waitFor(() => expect(screen.queryByText('gone@example.com')).toBeNull());
     });
 
@@ -474,7 +476,7 @@ describe('Editor interactions (M3-Editor-b)', () => {
       const user = userEvent.setup();
       const { shareStore } = shareBackend();
       shareStore.add = vi.fn(async () => ({ error: 'new row violates row-level security policy' }));
-      renderWithShare(shareStore);
+      renderWithShare(shareStore, 'supabase', 'share4');
 
       await user.click(screen.getByRole('button', { name: '공유' }));
       await user.type(screen.getByLabelText('초대할 이메일'), 'x@example.com');
@@ -487,7 +489,7 @@ describe('Editor interactions (M3-Editor-b)', () => {
       localStorage.setItem('mindflow_doc_share5', JSON.stringify(DOC));
       const user = userEvent.setup();
       const { shareStore } = shareBackend();
-      renderWithShare(shareStore, 'local');
+      renderWithShare(shareStore, 'local', 'share5');
 
       await user.click(screen.getByRole('button', { name: '공유' }));
       expect(await screen.findByText(/실제로 공유되지는 않습니다/)).toBeTruthy();
@@ -558,7 +560,7 @@ describe('Editor interactions (M3-Editor-b)', () => {
       // map's name commits like any other rename (the old guard rejected it).
       const user = userEvent.setup();
       seedExistingMap();
-      const { container } = renderEditor('/editor?map=new-abc123&title=' + encodeURIComponent('내 문서'));
+      const { container } = renderEditor('/editor?map=new-abc123&new=1&title=' + encodeURIComponent('내 문서'));
 
       await waitFor(() => expect(chip(container, '내 문서')).toBeTruthy());
       await user.dblClick(chip(container, '내 문서')!);
@@ -574,7 +576,7 @@ describe('Editor interactions (M3-Editor-b)', () => {
     it('allows renaming this map to a unique title', async () => {
       const user = userEvent.setup();
       seedExistingMap();
-      const { container } = renderEditor('/editor?map=new-def456&title=' + encodeURIComponent('내 문서'));
+      const { container } = renderEditor('/editor?map=new-def456&new=1&title=' + encodeURIComponent('내 문서'));
 
       await waitFor(() => expect(chip(container, '내 문서')).toBeTruthy());
       await user.dblClick(chip(container, '내 문서')!);

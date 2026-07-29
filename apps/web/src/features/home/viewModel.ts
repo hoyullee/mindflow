@@ -85,10 +85,19 @@ export interface HomeViewModel {
   allCards: CardViewData[];
   folderCards: FolderCardViewData[];
   recentCards: CardViewData[];
-  /** 남이 나에게 공유한 맵들(0009). 내 스페이스·폴더에 속하지 않으므로 별도 섹션으로
-   * 그린다 — 카드에 ☰ 메뉴·드래그는 없다(내 문서가 아니라 옮기거나 지울 수 없다). */
-  sharedCards: CardViewData[];
-  sharedSectionVisible: boolean;
+  /**
+   * 남이 나에게 공유한 맵들(0009). **LNB 항목**으로 그린다 — 즐겨찾기·휴지통과 같은
+   * 접이식 목록이다.
+   *
+   * 처음엔 본문 상단에 최근 항목과 같은 카드 트레이로 놓았는데, 스페이스 목록보다
+   * 위에서 화면을 크게 차지한다는 제보를 받았다("상단을 너무 많이 잡아먹고 있어").
+   * 공유받은 맵은 내 스페이스·폴더에 속하지 않는 **다른 출처**이므로, 목록 안의 한
+   * 구획이 아니라 사이드바의 출처 하나로 두는 게 정보 구조에도 맞는다.
+   */
+  sharedItems: { docId: string; title: string; href: string; role: 'edit' | 'view' }[];
+  /** LNB에 "공유받은 맵" 구획을 그릴지 — 공유받은 게 하나도 없으면 아예 없다(혼자
+   * 쓰는 사람에게 빈 항목을 보여주지 않는다). */
+  sharedVisible: boolean;
   favItems: { title: string; isDrive: boolean; href: string; docId?: string }[];
   favCount: string;
   trashItems: { title: string; isDrive: boolean; badge: string; docId?: string }[];
@@ -388,38 +397,9 @@ export function deriveHomeView(state: HomeState): HomeViewModel {
 
   // 공유받은 맵 — `state.sharedMaps`(DocStore.list의 남의 문서)로만 만든다. 내
   // 워크스페이스에는 없는 문서라 스페이스/폴더 필터를 타지 않는다.
-  const sharedCards: CardViewData[] = state.sharedMaps
+  const sharedItems = state.sharedMaps
     .filter((m) => !isTrashedCard(m.title, m.docId))
-    .map((m) => ({
-      key: m.docId,
-      title: m.title,
-      when: '공유받은 맵',
-      updatedAt: m.updatedAt,
-      hue: '#3f8fd0',
-      docId: m.docId,
-      href: mapHref(m.title, m.docId),
-      sketch: cardSketch(m.title, '#3f8fd0', m.docId, state.previewDocs, state.previewResolved),
-      badge: '',
-      openable: true,
-      isFav: false,
-      isDrive: false,
-      menuOpen: false,
-      selected: state.selectedCard === m.docId,
-      dragging: false,
-      dragOverTarget: false,
-      exportOpen: false,
-      moveOpen: false,
-      spaceMoveOpen: false,
-      showFavRow: false,
-      showMoveRow: false,
-      showSpaceMoveRow: false,
-      showUnfolderRow: false,
-      showDivider: false,
-      moveTargets: [],
-      spaceMoveTargets: [],
-      pathLabel: m.role === 'view' ? '보기 전용' : '함께 편집',
-      pathFull: m.role === 'view' ? '공유받은 맵 · 보기 전용' : '공유받은 맵 · 함께 편집',
-    }));
+    .map((m) => ({ docId: m.docId, title: m.title, href: mapHref(m.title, m.docId), role: m.role }));
 
   return {
     connected,
@@ -436,10 +416,10 @@ export function deriveHomeView(state: HomeState): HomeViewModel {
     allCards,
     folderCards,
     recentCards,
-    sharedCards,
-    // 폴더 안이나 검색 중에는 감춘다 — 그 화면은 "지금 보고 있는 목록"에 집중해야 하고,
-    // 공유받은 맵은 스페이스/폴더에 속하지 않아 그 목록의 일부가 아니다.
-    sharedSectionVisible: !loading && !state.search && !curFolder && !driveFolder && !showDriveConnect && sharedCards.length > 0,
+    sharedItems,
+    // LNB 항목이므로 폴더/검색 화면에서도 그대로 있다 — 사이드바는 "지금 보고 있는
+    // 목록"이 아니라 어디로든 가는 길이다.
+    sharedVisible: !loading && sharedItems.length > 0,
     favItems,
     favCount: favItems.length ? String(favItems.length) : '',
     trashItems: state.trash.map((t) => ({ title: t.title, isDrive: t.source === 'drive', badge: t.source === 'drive' ? 'Drive' : '내 공간', docId: t.docId })),

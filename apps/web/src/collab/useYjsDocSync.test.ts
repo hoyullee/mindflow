@@ -104,4 +104,36 @@ describe('useYjsDocSync', () => {
 
     await waitFor(() => received.some((d) => d.nodes.freshChild?.text === 'fresh'));
   });
+
+  // 공유받은 맵을 처음 여는 기기는 본문이 없어서 마운트 시 **빈 자리표시자**를 들고
+  // 있다. 그 상태로 붙으면 상대의 진짜 문서와 CRDT 병합돼 자리표시자 값이 일부 필드에서
+  // 이길 수 있다 — 그래서 호출부는 초기 로드가 끝날 때까지 빈 docId를 넘긴다.
+  it('docId가 비어 있으면 아예 붙지 않는다 (로드 전 자리표시자를 상대 문서와 병합하지 않는다)', async () => {
+    const docId = `hook-gate-${Math.random()}`;
+    const received: Doc[] = [];
+    const placeholder = baseDoc();
+    const { rerender, result } = renderHook(({ id, doc }: { id: string; doc: Doc }) => useYjsDocSync(id, doc, (d) => received.push(d)), {
+      initialProps: { id: '', doc: placeholder },
+    });
+
+    const remoteYdoc = new Y.Doc();
+    const remoteProvider = new BroadcastChannelProvider();
+    remoteProvider.connect(docId, remoteYdoc);
+    cleanups.push(() => remoteProvider.disconnect());
+
+    await new Promise((r) => setTimeout(r, 80));
+    expect(remoteYdoc.getMap('nodes').has('root')).toBe(false); // 자리표시자가 나가지 않았다
+    expect(result.current.awareness).toBeNull();
+
+    // 로드가 끝나 실제 docId가 들어오면 그때 붙는다 — 이후 합류한 피어는 이 훅에서
+    // 현재 상태를 받아 간다(sync-request 응답).
+    rerender({ id: docId, doc: placeholder });
+    expect(result.current.awareness).not.toBeNull();
+
+    const laterYdoc = new Y.Doc();
+    const laterProvider = new BroadcastChannelProvider();
+    laterProvider.connect(docId, laterYdoc);
+    cleanups.push(() => laterProvider.disconnect());
+    await waitFor(() => laterYdoc.getMap('nodes').has('root'));
+  });
 });

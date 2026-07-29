@@ -24,7 +24,7 @@
 import * as Y from 'yjs';
 import { Awareness, applyAwarenessUpdate, encodeAwarenessUpdate } from 'y-protocols/awareness';
 import type { YDoc } from '@mindflow/mindmap-core';
-import type { CollabProvider } from './ports';
+import type { CollabProvider, CollabStatusListener } from './ports';
 
 type Message = { kind: 'sync-request' } | { kind: 'update'; update: Uint8Array } | { kind: 'awareness'; update: Uint8Array };
 
@@ -72,18 +72,27 @@ export class BroadcastChannelProvider implements CollabProvider {
     }
   };
 
-  connect(docId: string, ydoc: YDoc): void {
+  connect(docId: string, ydoc: YDoc, onStatus?: CollabStatusListener): void {
     this.disconnect();
     this.ydoc = ydoc;
     this.awareness = new Awareness(ydoc);
     this.channel = new BroadcastChannel(`mindflow-collab:${docId}`);
     this.channel.onmessage = this.handleMessage;
+    // 같은 브라우저 안에서만 도는 전송이라 인증이라는 개념이 없다 — 붙었으면 붙은 것.
+    onStatus?.('connected');
     ydoc.on('update', this.handleLocalUpdate);
     this.awareness.on('update', this.handleLocalAwarenessUpdate);
     // Ask any already-open tabs for the current doc's full CRDT state (+ their
     // current presence) so this (newly-opened) tab catches up even if it
     // missed earlier updates.
     this.channel.postMessage({ kind: 'sync-request' } satisfies Message);
+    // …그리고 **내 상태도 곧바로 보낸다.** 요청만 하면 반쪽 동기화가 된다: 각 탭은
+    // 자기 로컬 문서로 Y.Doc을 따로 심으므로 두 탭의 연산 이력이 서로 다르다. 상대가
+    // 내 심기 연산을 갖고 있지 않으면, 이후 내가 만든 편집 업데이트는 상대에서 **의존
+    // 연산이 없어 보류**되고(반영 안 됨), 부분만 적용된 노드가 생겨 상대 캔버스가
+    // 터지기까지 했다(실브라우저 재현 — `readNodesMap`의 doc comment). 양방향으로 전체
+    // 상태를 한 번 교환해 두면 이후 증분 업데이트가 언제나 적용 가능해진다.
+    this.channel.postMessage({ kind: 'update', update: Y.encodeStateAsUpdate(ydoc) } satisfies Message);
   }
 
   getAwareness(): Awareness | null {

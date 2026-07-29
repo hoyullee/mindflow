@@ -629,6 +629,7 @@ export function useHomeController() {
     }
   };
   const toggleFavList = () => patch({ favOpen: !state.favOpen });
+  const toggleSharedList = () => patch({ sharedOpen: !state.sharedOpen });
   const toggleMenu = (title: string) => patch({ openMenu: state.openMenu === title ? null : title, moveFor: null, moveSpaceFor: null, exportFor: null });
   const closeMenu = () => patch({ openMenu: null, moveFor: null, moveSpaceFor: null, exportFor: null });
   const askDelete = (title: string, docId?: string) => patch({ confirmDelete: title, confirmDeleteDocId: docId ?? null, openMenu: null });
@@ -1366,6 +1367,7 @@ export function useHomeController() {
     confirmDeleteSpaceYes,
     toggleFav,
     toggleFavList,
+    toggleSharedList,
     toggleMenu,
     closeMenu,
     askDelete,

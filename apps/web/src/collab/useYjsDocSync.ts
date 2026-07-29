@@ -36,7 +36,7 @@ import type { Doc, YDoc } from '@mindflow/mindmap-core';
 import { applyDocToYDoc, docToYDoc, yDocToDoc } from '@mindflow/mindmap-core';
 import type { Awareness } from 'y-protocols/awareness';
 import { createCollabProvider } from './factory';
-import type { CollabProvider } from './ports';
+import type { CollabProvider, CollabStatus } from './ports';
 
 /** Transaction-origin sentinel for updates this hook itself applies to the
  * Y.Doc as a result of a LOCAL doc-state change (as opposed to updates a
@@ -52,11 +52,14 @@ const LOCAL_ORIGIN = Symbol('mindflow-local-doc-sync');
  * This is the seam `usePresence.ts` hooks into for presence (cursor/selection/
  * identity); document sync itself doesn't use it at all.
  */
-export function useYjsDocSync(docId: string, doc: Doc, onRemoteDoc: (doc: Doc) => void): Awareness | null {
+export function useYjsDocSync(docId: string, doc: Doc, onRemoteDoc: (doc: Doc) => void): { awareness: Awareness | null; status: CollabStatus } {
   const providerRef = useRef<CollabProvider | null>(null);
   if (!providerRef.current) providerRef.current = createCollabProvider();
 
   const [awareness, setAwareness] = useState<Awareness | null>(null);
+  // 전송이 실제로 붙었는지. 예전엔 아무도 보지 않아, 채널이 죽어도 화면은 "혼자 있는
+  // 것"과 똑같아서 무엇이 고장났는지 알 수 없었다(제보로 배운 것 — `CollabStatus` 참고).
+  const [status, setStatus] = useState<CollabStatus>('offline');
   const ydocRef = useRef<YDoc | null>(null);
   const lastSyncedRef = useRef<Doc | null>(null);
   const onRemoteDocRef = useRef(onRemoteDoc);
@@ -74,6 +77,12 @@ export function useYjsDocSync(docId: string, doc: Doc, onRemoteDoc: (doc: Doc) =
   // for no reason; pushing incremental local edits into the already-live
   // Y.Doc is the separate effect below.
   useEffect(() => {
+    // 빈 docId = "아직 붙지 마라". 호출부(`useEditorState`)가 초기 로드가 끝나기
+    // 전까지 이걸 넘긴다 — 본문이 이 기기에 없는 사용자(공유받은 맵을 처음 여는
+    // 경우가 바로 이것이다)는 마운트 시 **빈 자리표시자 문서**를 들고 있어서, 그
+    // 상태로 Y.Doc을 만들어 붙이면 상대의 진짜 문서와 CRDT 병합돼 자리표시자 값이
+    // 일부 필드에서 이길 수 있다.
+    if (!docId) return;
     const ydoc = docToYDoc(docAtConnectRef.current);
     ydocRef.current = ydoc;
     lastSyncedRef.current = docAtConnectRef.current;
@@ -85,7 +94,7 @@ export function useYjsDocSync(docId: string, doc: Doc, onRemoteDoc: (doc: Doc) =
       onRemoteDocRef.current(merged);
     };
     ydoc.on('update', handleUpdate);
-    providerRef.current!.connect(docId, ydoc);
+    providerRef.current!.connect(docId, ydoc, setStatus);
     setAwareness(providerRef.current!.getAwareness());
 
     return () => {
@@ -93,6 +102,7 @@ export function useYjsDocSync(docId: string, doc: Doc, onRemoteDoc: (doc: Doc) =
       providerRef.current!.disconnect();
       ydocRef.current = null;
       setAwareness(null);
+      setStatus('offline');
     };
   }, [docId]);
 
@@ -107,5 +117,5 @@ export function useYjsDocSync(docId: string, doc: Doc, onRemoteDoc: (doc: Doc) =
     lastSyncedRef.current = doc;
   }, [doc]);
 
-  return awareness;
+  return { awareness, status };
 }

@@ -9,6 +9,7 @@ import { Viewport } from './components/Viewport';
 import { OutlineView } from './components/OutlineView';
 import { PropertyPanel } from './components/PropertyPanel';
 import { PresenceBar } from './components/PresenceBar';
+import { MapUnavailable } from './components/MapUnavailable';
 import { MobileSelectBar } from './components/MobileSelectBar';
 import { useIsMobile } from '../../hooks/useMediaQuery';
 import { useUpdateGuard } from '../../pwa/updateGate';
@@ -95,6 +96,11 @@ export function Editor() {
       '--accent': th.accent,
     } as CSSProperties),
   };
+
+  // 열 수 없는 맵(권한이 없거나 본문이 다른 기기에만 있다) — 편집 도구를 아예 띄우지
+  // 않는다. 예전엔 캔버스에만 안내를 얹어 툴바·메뉴·내보내기가 남아 있었다(제보:
+  // "메뉴가 노출되어 우회가 되는 것 같다"). 볼 수 없는 문서에 도구를 보여줄 이유가 없다.
+  if (controller.bodyMissing) return <MapUnavailable onRetry={controller.retryLoad} />;
 
   return (
     <div style={rootStyle}>

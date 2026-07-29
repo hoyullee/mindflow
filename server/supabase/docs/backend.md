@@ -447,6 +447,23 @@ M5/M5-awareness가 Yjs 동기화와 커서 공유를 붙였지만, **`documents`
   확인: `select relrowsecurity from pg_class where oid = 'realtime.messages'::regclass;`
   → `t`, 그리고 `select policyname from pg_policies where schemaname='realtime';`에
   `collab_channel_read`/`collab_channel_write`가 보이면 적용된 것입니다.
+
+  **정책이 없으면 어떻게 되는지(그리고 왜 조용히 죽지 않는지)** — private 채널은 서버
+  정책이 없으면 **구독 자체가 거부**되고, 그러면 문서 동기화·접속자·커서가 **한꺼번에**
+  죽습니다(전부 같은 채널을 씁니다). 실제로 배포 후 그렇게 터졌고, 아무도 구독 상태를
+  보지 않아 화면상 "혼자 있는 것"과 구분되지 않았습니다. 그래서 클라이언트
+  (`collab/SupabaseRealtimeProvider.ts`)는 이제:
+  1. private으로 붙고, 구독 전 `realtime.setAuth()`로 소켓에 사용자 JWT를 실어 줍니다.
+  2. 구독이 거부되면 **공개 채널로 한 번만 폴백**합니다 — 협업이 통째로 죽는 것보다
+     낫지만, 상태를 `connected-insecure`로 올려 보내 에디터 우상단에 경고 아이콘이 뜨고
+     콘솔에 조치 방법(이 문단)을 남깁니다.
+  3. 구독은 되지만 **발신만 거부**되는 조합(읽기 정책만 적용된 경우)도 잡습니다 —
+     `broadcast: { ack: true }`로 서버 확인을 받아, 첫 sync-request가 ack되지 않으면
+     같은 폴백을 탑니다. "붙은 척하고 조용히 죽는" 상태를 남기지 않기 위한 장치입니다.
+  4. 공개 채널로도 못 붙으면 `offline` — 우상단에 "실시간 연결 끊김"이 뜹니다.
+
+  즉 정책을 적용하지 않아도 공동 편집은 동작하지만(공개 채널), 그동안은 docId를 아는
+  사람이 끼어들 수 있습니다. 경고가 보이면 위 `do` 블록을 실행하세요.
 - **권한 UI는 `edit`만** 노출합니다. `view`는 컬럼·정책에 준비돼 있지만, 뷰어를 제대로
   만들려면 CRDT로 자기 편집이 상대에게 전파되는 것부터 막아야 해서 별도 작업입니다.
 - 어댑터: `adapters/supabase/supabaseShareStore.ts`(실제), `adapters/local/localShareStore.ts`
