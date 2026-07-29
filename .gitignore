@@ -8,6 +8,8 @@ dist/
 .turbo/
 *.tsbuildinfo
 apps/web/dist/
+# vite-plugin-pwa devOptions가 dev 서버 실행 시 생성하는 SW 산출물
+apps/web/dev-dist/
 
 # Secrets — never commit real Supabase URLs/keys or other env values.
 # `.env.example` (checked in) documents the required variable NAMES only.

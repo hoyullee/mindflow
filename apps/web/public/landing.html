@@ -49,285 +49,271 @@
       순수 HTML로 담아 크롤러(와 JS를 끈 방문자)에게도 보이게 한다.
 
       내용은 src/features/landing/Landing.tsx(클라이언트 내비게이션용 쌍둥이)와
-      동기화할 것. 폰트는 시스템 스택 폴백만 쓴다(외부 요청 없이 자립).
+      동기화할 것. 폰트: Pretendard는 시스템 스택 폴백(무거워서 로드하지 않음), 강조 라벨용
+      JetBrains Mono만 같은 출처(/fonts)에서 로드한다 — 외부 요청은 없다.
     -->
     <style>
+      /* 새 랜딩(2026-07, "Geurio 랜딩 리뉴얼.dc.html" 디자인 원본의 정적 이식).
+         React 쌍둥이(src/features/landing/Landing.tsx)와 내용·수치를 동기화할 것. */
       * { margin: 0; padding: 0; box-sizing: border-box; }
-      body {
-        background: #fbf6f2;
-        color: #33281f;
-        font-family: Pretendard, 'Apple SD Gothic Neo', 'Malgun Gothic', system-ui, sans-serif;
-        line-height: 1.6;
-      }
-      .wrap { max-width: 1040px; margin: 0 auto; padding: 0 24px; }
-      header { display: flex; align-items: center; gap: 10px; padding: 22px 0; }
-      .mark {
-        width: 34px; height: 34px; border-radius: 10px; background: #f0663f;
-        display: inline-flex; align-items: center; justify-content: center; flex-shrink: 0;
-      }
-      .wordmark { font-weight: 800; font-size: 19px; letter-spacing: -0.01em; }
-      .login-btn {
-        margin-left: auto; text-decoration: none; color: #33281f; font-weight: 700; font-size: 14px;
-        padding: 9px 16px; border-radius: 10px; border: 1px solid #ecdfd5; background: #fff;
-      }
-      .hero { text-align: center; padding: 56px 0 40px; }
-      h1 { font-size: clamp(30px, 5.4vw, 46px); font-weight: 800; letter-spacing: -0.03em; line-height: 1.25; margin-bottom: 18px; }
-      .hero p { font-size: clamp(14.5px, 2vw, 17px); color: #8a7365; line-height: 1.75; max-width: 560px; margin: 0 auto 30px; }
-      .hero p strong { color: #33281f; }
-      .cta {
-        display: inline-block; background: #f0663f; color: #fff; text-decoration: none; font-weight: 700;
-        font-size: 16px; padding: 14px 28px; border-radius: 13px; box-shadow: 0 8px 22px rgba(240, 102, 63, 0.32);
-      }
-      .hero .trust { font-size: 13px; color: #9c8b7e; margin-top: 14px; }
-      .illust { max-width: 620px; margin: 52px auto 0; }
-      .illust svg { width: 100%; height: auto; display: block; }
-
-      .section-head { text-align: center; max-width: 620px; margin: 0 auto 30px; }
-      .eyebrow { display: inline-block; font-size: 12.5px; font-weight: 800; letter-spacing: 0.06em; text-transform: uppercase; color: #f0663f; margin-bottom: 12px; }
-      .section-head h2 { font-size: clamp(22px, 3.6vw, 30px); font-weight: 800; letter-spacing: -0.02em; line-height: 1.3; margin-bottom: 10px; }
-      .section-head p { font-size: 15px; color: #8a7365; line-height: 1.7; }
-      section.block { padding: 46px 0; }
-      section.block.tint { border-top: 1px solid #f2e9e1; border-bottom: 1px solid #f2e9e1; }
-
-      /* 사용 사례 6종 — 데스크톱 3열(3+3), 태블릿 2열, 모바일 1열.
-         컨테이너가 최대 992px라 auto-fit·minmax(280px)면 최대 3열로 고정된다. */
-      .uc-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 14px; }
-      .uc { background: #fff; border: 1px solid #f2e9e1; border-radius: 14px; padding: 18px; display: flex; gap: 13px; align-items: flex-start; }
-      .uc .ico { width: 36px; height: 36px; border-radius: 10px; background: #fdeee7; color: #f0663f; display: inline-flex; align-items: center; justify-content: center; flex-shrink: 0; }
-      .uc h3 { font-size: 14.5px; font-weight: 800; margin-bottom: 4px; }
-      .uc p { font-size: 13px; color: #8a7365; line-height: 1.6; }
-
-      .steps { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 20px; }
-      .step { text-align: center; padding: 4px 8px; }
-      .step .num { width: 46px; height: 46px; border-radius: 50%; background: #f0663f; color: #fff; font-weight: 800; font-size: 19px; display: inline-flex; align-items: center; justify-content: center; margin-bottom: 15px; box-shadow: 0 6px 16px rgba(240, 102, 63, 0.28); }
-      .step h3 { font-size: 16px; font-weight: 800; margin-bottom: 6px; }
-      .step p { font-size: 13.5px; color: #8a7365; line-height: 1.65; }
-
-      .features { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 16px; }
-      .card { background: #fff; border: 1px solid #f2e9e1; border-radius: 16px; padding: 22px 20px; }
-      .card .ico { width: 38px; height: 38px; border-radius: 11px; background: #fdeee7; color: #f0663f; display: inline-flex; align-items: center; justify-content: center; margin-bottom: 14px; }
-      .card h2 { font-weight: 800; font-size: 16px; margin-bottom: 8px; }
-      .card p { font-size: 14px; color: #8a7365; line-height: 1.7; }
-
-      .chips { display: flex; flex-wrap: wrap; gap: 10px; justify-content: center; }
-      .chip { background: #fff; border: 1px solid #f2e9e1; border-radius: 999px; padding: 9px 16px; font-size: 13.5px; font-weight: 600; color: #5c4a3d; }
-
-      .faq { max-width: 720px; margin: 0 auto; }
-      .faq details { background: #fff; border: 1px solid #f2e9e1; border-radius: 14px; padding: 2px 20px; margin-bottom: 10px; }
-      .faq summary { list-style: none; cursor: pointer; font-weight: 700; font-size: 15px; padding: 15px 0; display: flex; align-items: center; justify-content: space-between; gap: 12px; }
-      .faq summary::-webkit-details-marker { display: none; }
-      .faq summary::after { content: '+'; color: #f0663f; font-size: 22px; font-weight: 700; line-height: 1; flex-shrink: 0; }
-      .faq details[open] summary::after { content: '\2212'; }
-      .faq details p { font-size: 14px; color: #8a7365; line-height: 1.7; padding: 0 0 16px; }
-
-      .closing { background: linear-gradient(135deg, #fdeee7, #fff); border: 1px solid #f2e9e1; border-radius: 22px; padding: 46px 28px; text-align: center; }
-      .closing h2 { font-size: clamp(22px, 3.6vw, 30px); font-weight: 800; letter-spacing: -0.02em; margin-bottom: 12px; }
-      .closing p { font-size: 15px; color: #8a7365; line-height: 1.7; max-width: 480px; margin: 0 auto 26px; }
-      footer {
-        border-top: 1px solid #ecdfd5; padding: 22px 0 34px; display: flex; align-items: center;
-        gap: 16px; flex-wrap: wrap; font-size: 13px; color: #9c8b7e;
-      }
-      footer a { color: #9c8b7e; }
-      footer .contact { margin-left: auto; }
+      @font-face { font-family: 'JetBrains Mono'; font-style: normal; font-weight: 400 500; font-display: swap; src: url('/fonts/jetbrains-mono/jetbrains-mono-latin.woff2') format('woff2'); unicode-range: U+0000-00FF, U+2000-206F; }
+      body { background: #FDFAF7; color: #2E2A26; font-family: Pretendard, 'Apple SD Gothic Neo', 'Malgun Gothic', system-ui, sans-serif; -webkit-font-smoothing: antialiased; line-height: 1.6; }
+      a { color: inherit; text-decoration: none; }
+      a:hover { opacity: .72; }
+      .mono { font-family: 'JetBrains Mono', ui-monospace, SFMono-Regular, Menlo, monospace; }
+      .container { max-width: 1080px; margin: 0 auto; }
+      header.lp { position: sticky; top: 0; z-index: 20; display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 10px 16px; padding: 12px clamp(18px, 4vw, 56px); background: rgba(253,250,247,.88); backdrop-filter: blur(12px); border-bottom: 1px solid #F2E7DF; }
+      .brand { display: flex; align-items: center; gap: 9px; }
+      .brand img { width: 26px; height: 26px; border-radius: 8px; display: block; }
+      .brand b { font-size: 17px; font-weight: 800; letter-spacing: -.01em; }
+      nav.lp { display: flex; flex-wrap: wrap; align-items: center; gap: 10px clamp(14px, 2.4vw, 28px); font-size: 14px; color: #6E675F; }
+      .pill-cta { display: inline-flex; align-items: center; height: 38px; padding: 0 17px; border-radius: 999px; background: #EE6B45; color: #fff; font-weight: 700; white-space: nowrap; }
+      .hero { padding: clamp(44px, 7vw, 78px) clamp(18px, 4vw, 56px) 0; text-align: center; display: flex; flex-direction: column; align-items: center; gap: 22px; }
+      .hero-badge { display: inline-flex; align-items: center; gap: 8px; height: 31px; padding: 0 15px; border-radius: 999px; border: 1px solid #E3DED3; background: #fff; font-size: 12.5px; color: #6E675F; font-weight: 500; }
+      h1 { font-size: clamp(34px, 6.4vw, 66px); line-height: 1.08; font-weight: 800; letter-spacing: -.035em; text-wrap: balance; max-width: 740px; }
+      .hero-sub { max-width: 560px; font-size: clamp(15.5px, 1.6vw, 18.5px); line-height: 1.62; color: #6E675F; text-wrap: pretty; }
+      .hero-ctas { display: flex; gap: 11px; align-items: center; flex-wrap: wrap; justify-content: center; margin-top: 4px; }
+      .cta { display: inline-flex; align-items: center; height: 54px; padding: 0 30px; border-radius: 999px; background: #EE6B45; color: #fff; font-size: 16.5px; font-weight: 700; box-shadow: 0 14px 28px -12px rgba(238,107,69,.7); transition: transform .18s ease; }
+      .cta:hover { transform: translateY(-2px); opacity: 1; }
+      .cta-ghost { display: inline-flex; align-items: center; height: 54px; padding: 0 24px; border-radius: 999px; border: 1px solid #DFD9CE; background: #fff; font-size: 16px; font-weight: 600; color: #4A443D; }
+      .hero-note { font-size: 13px; color: #948E84; }
+      .demo-wrap { padding: clamp(26px, 4vw, 40px) clamp(18px, 4vw, 56px) clamp(46px, 6vw, 68px); }
+      .demo { max-width: 1080px; margin: 0 auto; border-radius: 22px; border: 1px solid #E7E3DB; background: #FBF0E8; overflow: hidden; box-shadow: 0 26px 60px -34px rgba(46,42,38,.28); }
+      .demo-bar { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 12px 16px; border-bottom: 1px solid #F3E4DA; background: #FFFDFB; }
+      .demo-dots { display: flex; gap: 6px; }
+      .demo-dots span { width: 9px; height: 9px; border-radius: 99px; background: #E4DED2; display: block; }
+      .demo-url { font-size: 11px; color: #A29B90; letter-spacing: .02em; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+      .demo-canvas { position: relative; width: 100%; height: clamp(330px, 42vw, 440px); overflow: hidden; background-image: radial-gradient(#E7CBB8 1.1px, transparent 1.1px); background-size: 18px 18px; }
+      .demo-hint { position: absolute; left: 50%; bottom: 12px; transform: translateX(-50%); font-size: 12.5px; color: #B08C77; white-space: nowrap; }
+      section.band { padding: 0 clamp(18px, 4vw, 56px) clamp(56px, 7vw, 80px); }
+      .sec-head { display: flex; flex-direction: column; gap: 9px; margin-bottom: 30px; }
+      .eyebrow { font-size: 12px; color: #E0602F; letter-spacing: .08em; }
+      h2 { font-size: clamp(26px, 3.6vw, 38px); font-weight: 800; letter-spacing: -.028em; text-wrap: balance; }
+      .sec-head p { font-size: 16px; color: #6E675F; text-wrap: pretty; }
+      .case-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(262px, 1fr)); gap: 14px; }
+      .case { padding: 22px 22px 24px; border-radius: 18px; background: #fff; border: 1px solid #F2E7DF; display: flex; flex-direction: column; gap: 9px; transition: transform .18s ease, box-shadow .18s ease; }
+      .case:hover { transform: translateY(-4px); box-shadow: 0 18px 34px -22px rgba(46,42,38,.4); }
+      .case-no { width: 34px; height: 34px; border-radius: 11px; background: #FDEDE6; display: inline-flex; align-items: center; justify-content: center; font-size: 13px; font-weight: 700; color: #E0602F; font-family: 'JetBrains Mono', ui-monospace, monospace; }
+      .case h3 { margin-top: 2px; font-size: 18px; font-weight: 700; }
+      .case p { font-size: 14.5px; line-height: 1.6; color: #6E675F; text-wrap: pretty; }
+      .how { padding: clamp(56px, 7vw, 74px) clamp(18px, 4vw, 56px); background: #FBF3EE; border-top: 1px solid #F3E4DA; border-bottom: 1px solid #F3E4DA; }
+      .step-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(272px, 1fr)); gap: 16px; }
+      .step { padding: 26px; border-radius: 18px; background: #fff; border: 1px solid #F0E3D9; display: flex; flex-direction: column; gap: 12px; }
+      .step-no { font-size: 40px; font-weight: 800; letter-spacing: -.04em; color: #F3C3AF; line-height: 1; }
+      .step h3 { font-size: 19px; font-weight: 700; }
+      .step p { font-size: 14.5px; line-height: 1.6; color: #6E675F; text-wrap: pretty; }
+      .features { padding: clamp(56px, 7vw, 80px) clamp(18px, 4vw, 56px); }
+      .feature { display: grid; grid-template-columns: repeat(auto-fit, minmax(290px, 1fr)); gap: 24px; align-items: center; padding: clamp(20px, 2.4vw, 28px); border-radius: 20px; border: 1px solid #F2E7DF; background: #fff; }
+      .feature + .feature { margin-top: 16px; }
+      .feature h3 { font-size: clamp(21px, 2.4vw, 25px); font-weight: 800; letter-spacing: -.02em; }
+      .feature .body { display: flex; flex-direction: column; gap: 11px; }
+      .feature .body > p { font-size: 15.5px; line-height: 1.65; color: #6E675F; max-width: 430px; text-wrap: pretty; }
+      .chips { display: flex; flex-wrap: wrap; gap: 7px; margin-top: 5px; }
+      .chip { display: inline-flex; align-items: center; height: 30px; padding: 0 12px; border-radius: 999px; background: #FDF2EC; border: 1px solid #F7DFD3; font-size: 12.5px; color: #8A5B45; font-weight: 500; }
+      .shot { border-radius: 14px; border: 1px solid #F1E2D8; background: #FBF0E8; overflow: hidden; position: relative; background-image: radial-gradient(#E7CBB8 1.1px, transparent 1.1px); background-size: 16px 16px; }
+      .faq-band { padding: 0 clamp(18px, 4vw, 56px) clamp(56px, 7vw, 80px); }
+      .faq-grid { max-width: 1080px; margin: 0 auto; display: grid; grid-template-columns: repeat(auto-fit, minmax(290px, 1fr)); gap: clamp(24px, 3vw, 40px); align-items: start; }
+      .faq-list { display: flex; flex-direction: column; gap: 10px; }
+      details { border-radius: 16px; border: 1px solid #F2E7DF; background: #fff; overflow: hidden; }
+      summary { list-style: none; display: flex; align-items: center; justify-content: space-between; gap: 16px; padding: 18px 20px; font-size: 16px; font-weight: 600; color: #2E2A26; cursor: pointer; }
+      summary::-webkit-details-marker { display: none; }
+      .faq-icon { display: inline-flex; align-items: center; justify-content: center; width: 22px; height: 22px; flex-shrink: 0; font-size: 18px; font-weight: 400; opacity: .5; transition: transform .25s ease; }
+      details[open] .faq-icon { transform: rotate(45deg); }
+      details > p { padding: 0 20px 18px; font-size: 14.5px; line-height: 1.65; color: #6E675F; text-wrap: pretty; }
+      .cta-band { padding: 0 clamp(18px, 4vw, 56px) clamp(28px, 4vw, 40px); }
+      .cta-card { max-width: 1080px; margin: 0 auto; padding: clamp(44px, 6vw, 62px) clamp(22px, 4vw, 40px); border-radius: 24px; background: linear-gradient(160deg, #F0764B, #E15A2E); color: #fff; text-align: center; display: flex; flex-direction: column; align-items: center; gap: 18px; }
+      .cta-card h2 { max-width: 620px; letter-spacing: -.032em; font-size: clamp(27px, 4vw, 40px); }
+      .cta-card p { font-size: 16px; color: rgba(255,255,255,.85); max-width: 460px; text-wrap: pretty; }
+      .cta-invert { display: inline-flex; align-items: center; height: 54px; padding: 0 32px; border-radius: 999px; background: #fff; color: #DE5A2E; font-size: 16.5px; font-weight: 700; margin-top: 4px; transition: transform .18s ease; }
+      .cta-invert:hover { transform: translateY(-2px); opacity: 1; }
+      footer.lp { margin-top: 12px; padding: 24px clamp(18px, 4vw, 56px) 38px; border-top: 1px solid #F2E7DF; display: flex; justify-content: space-between; align-items: center; gap: 18px; flex-wrap: wrap; font-size: 13px; color: #948E84; }
+      footer.lp .links { display: flex; gap: 20px; flex-wrap: wrap; }
     </style>
   </head>
   <body>
-    <div class="wrap">
-      <header>
-        <span class="mark" aria-hidden="true">
-          <svg width="20" height="20" viewBox="0 0 100 100">
-            <path d="M 50 22 A 28 28 0 1 0 78 50 A 20 20 0 0 0 58 32 A 13 13 0 0 0 45 45" fill="none" stroke="#fff" stroke-width="8" stroke-linecap="round" stroke-linejoin="round" />
-            <circle cx="47" cy="52" r="6.5" fill="#fff" />
-          </svg>
-        </span>
-        <span class="wordmark">Geurio</span>
-        <a class="login-btn" href="/login">로그인</a>
-      </header>
+    <header class="lp">
+      <a class="brand" href="#top">
+        <img src="/brand/geurio-logo-120.png" alt="Geurio" width="26" height="26" />
+        <b>Geurio</b>
+      </a>
+      <nav class="lp">
+        <a href="#usecases">사용 사례</a>
+        <a href="#features">기능</a>
+        <a href="#faq">자주 묻는 질문</a>
+        <a href="/login">로그인</a>
+        <a class="pill-cta" href="/login">무료로 시작하기</a>
+      </nav>
+    </header>
 
-      <section class="hero">
-        <h1>흩어진 생각 조각을,<br />하나의 그림으로.</h1>
-        <p>
-          Geurio(그리오)는 중심 주제에서 가지를 뻗어 아이디어를 정리하는 <strong>마인드맵 서비스</strong>입니다.
-          떠오르는 생각을 자유롭게 그리고 이어, 복잡한 생각을 한눈에 정리하세요.
-        </p>
-        <a class="cta" href="/login">무료로 시작하기</a>
-        <div class="trust">설치 없이 웹에서 바로 · 무료로 시작</div>
+    <section id="top" class="hero">
+      <span class="hero-badge">설치 없이 웹에서 바로 · 지금은 전부 무료</span>
+      <h1>흩어진 생각을,<br />하나의 그림으로.</h1>
+      <p class="hero-sub">중심 주제 하나에서 가지를 뻗으면 복잡한 생각이 한눈에 정리돼요. 그리오는 떠올리는 속도를 그대로 따라오는 마인드맵 서비스예요.</p>
+      <div class="hero-ctas">
+        <a class="cta" href="/login">무료로 시작하기 →</a>
+        <a class="cta-ghost" href="#demo">데모 둘러보기</a>
+      </div>
+      <p class="hero-note">가입 30초 · 카드 등록 없이 · 만든 맵은 언제든 내보내기</p>
+    </section>
 
-        <div class="illust" aria-hidden="true">
-          <svg viewBox="0 0 620 220">
-            <g stroke="#e8c9b8" stroke-width="2.5" fill="none">
-              <path d="M 310 110 C 250 110 230 60 178 56" />
-              <path d="M 310 110 C 250 110 230 160 178 164" />
-              <path d="M 310 110 C 370 110 390 52 444 48" />
-              <path d="M 310 110 C 370 110 390 168 444 172" />
-            </g>
-            <g font-family="inherit" font-size="14" font-weight="700">
-              <rect x="252" y="88" width="116" height="44" rx="13" fill="#f0663f" />
-              <text x="310" y="115" text-anchor="middle" fill="#fff">중심 주제</text>
-              <rect x="70" y="36" width="108" height="40" rx="11" fill="#fff" stroke="#ecdfd5" stroke-width="2" />
-              <text x="124" y="61" text-anchor="middle" fill="#33281f">아이디어</text>
-              <rect x="70" y="144" width="108" height="40" rx="11" fill="#fff" stroke="#ecdfd5" stroke-width="2" />
-              <text x="124" y="169" text-anchor="middle" fill="#33281f">할 일 정리</text>
-              <rect x="444" y="28" width="108" height="40" rx="11" fill="#fff" stroke="#ecdfd5" stroke-width="2" />
-              <text x="498" y="53" text-anchor="middle" fill="#33281f">학습 노트</text>
-              <rect x="444" y="152" width="108" height="40" rx="11" fill="#fff" stroke="#ecdfd5" stroke-width="2" />
-              <text x="498" y="177" text-anchor="middle" fill="#33281f">프로젝트</text>
-            </g>
-          </svg>
+    <section id="demo" class="demo-wrap">
+      <div class="demo">
+        <div class="demo-bar">
+          <div class="demo-dots"><span></span><span></span><span></span></div>
+          <span class="demo-url mono">geurio.com — 신제품 런치 플랜</span>
+          <span style="width: 54px"></span>
         </div>
-      </section>
+        <div class="demo-canvas">
+          <svg viewBox="0 0 640 420" role="img" aria-label="그리오 마인드맵 예시 — 신제품 런치 플랜" preserveAspectRatio="xMidYMid meet" style="position:absolute;inset:0;width:100%;height:100%;font-family:inherit"><defs><linearGradient id="lpRoot" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#F2764C"/><stop offset="1" stop-color="#E85E33"/></linearGradient></defs><path d="M258 210 C 198 210, 232 66, 162 66" fill="none" stroke="#EF8F30" stroke-width="3" stroke-linecap="round"/><path d="M258 210 C 198 210, 232 210, 162 210" fill="none" stroke="#7CA84A" stroke-width="3" stroke-linecap="round"/><path d="M258 210 C 198 210, 232 354, 162 354" fill="none" stroke="#E0447E" stroke-width="3" stroke-linecap="round"/><path d="M382 210 C 442 210, 408 66, 478 66" fill="none" stroke="#EE6146" stroke-width="3" stroke-linecap="round"/><path d="M382 210 C 442 210, 408 210, 478 210" fill="none" stroke="#E3B93C" stroke-width="3" stroke-linecap="round"/><path d="M382 210 C 442 210, 408 354, 478 354" fill="none" stroke="#2FAF9A" stroke-width="3" stroke-linecap="round"/><g><rect x="110.0" y="48" width="104" height="36" rx="10" fill="#FFFDFB" stroke="#EF8F30" stroke-width="1.5"/><text x="162" y="66" text-anchor="middle" dominant-baseline="central" font-size="14" font-weight="600" fill="#3A352F">메시지</text></g><g><circle cx="110" cy="66" r="9.5" fill="#FFFDFB" stroke="#EF8F30" stroke-width="1.5"/><text x="110" y="66.5" text-anchor="middle" dominant-baseline="central" font-size="12" font-weight="700" fill="#EF8F30">+</text></g><g><rect x="110.0" y="192" width="104" height="36" rx="10" fill="#FFFDFB" stroke="#7CA84A" stroke-width="1.5"/><text x="162" y="210" text-anchor="middle" dominant-baseline="central" font-size="14" font-weight="600" fill="#3A352F">채널</text></g><g><circle cx="110" cy="210" r="9.5" fill="#FFFDFB" stroke="#7CA84A" stroke-width="1.5"/><text x="110" y="210.5" text-anchor="middle" dominant-baseline="central" font-size="12" font-weight="700" fill="#7CA84A">+</text></g><g><rect x="110.0" y="336" width="104" height="36" rx="10" fill="#FFFDFB" stroke="#E0447E" stroke-width="1.5"/><text x="162" y="354" text-anchor="middle" dominant-baseline="central" font-size="14" font-weight="600" fill="#3A352F">리스크</text></g><g><circle cx="110" cy="354" r="9.5" fill="#FFFDFB" stroke="#E0447E" stroke-width="1.5"/><text x="110" y="354.5" text-anchor="middle" dominant-baseline="central" font-size="12" font-weight="700" fill="#E0447E">+</text></g><g><rect x="426.0" y="48" width="104" height="36" rx="10" fill="#FFFDFB" stroke="#EE6146" stroke-width="1.5"/><text x="478" y="66" text-anchor="middle" dominant-baseline="central" font-size="14" font-weight="600" fill="#3A352F">일정</text></g><g><circle cx="530" cy="66" r="9.5" fill="#FFFDFB" stroke="#EE6146" stroke-width="1.5"/><text x="530" y="66.5" text-anchor="middle" dominant-baseline="central" font-size="12" font-weight="700" fill="#EE6146">+</text></g><g><rect x="420.0" y="192" width="116" height="36" rx="10" fill="#FFFDFB" stroke="#E3B93C" stroke-width="1.5"/><text x="478" y="210" text-anchor="middle" dominant-baseline="central" font-size="14" font-weight="600" fill="#3A352F">채널별 예산</text></g><g><circle cx="530" cy="210" r="9.5" fill="#FFFDFB" stroke="#E3B93C" stroke-width="1.5"/><text x="530" y="210.5" text-anchor="middle" dominant-baseline="central" font-size="12" font-weight="700" fill="#E3B93C">+</text></g><g><rect x="424.0" y="336" width="108" height="36" rx="10" fill="#FFFDFB" stroke="#2FAF9A" stroke-width="1.5"/><text x="478" y="354" text-anchor="middle" dominant-baseline="central" font-size="14" font-weight="600" fill="#3A352F">성과 지표</text></g><g><circle cx="530" cy="354" r="9.5" fill="#FFFDFB" stroke="#2FAF9A" stroke-width="1.5"/><text x="530" y="354.5" text-anchor="middle" dominant-baseline="central" font-size="12" font-weight="700" fill="#2FAF9A">+</text></g><g><rect x="225" y="186" width="190" height="48" rx="14" fill="url(#lpRoot)" stroke="#E85E33"/><text x="320" y="210" text-anchor="middle" dominant-baseline="central" font-size="17" font-weight="700" fill="#fff">신제품 런치 플랜</text></g></svg>
+          <div class="demo-hint">중심 주제에서 가지를 뻗어 나가요</div>
+        </div>
+      </div>
+    </section>
 
-      <section class="block">
-        <div class="section-head">
-          <span class="eyebrow">이럴 때 좋아요</span>
+    <section id="usecases" class="band">
+      <div class="container">
+        <div class="sec-head">
+          <span class="eyebrow mono">USE CASES</span>
           <h2>생각을 정리해야 하는 모든 순간에</h2>
           <p>떠오르는 아이디어부터 복잡한 계획까지, 그리오 하나로 펼치고 이어보세요.</p>
         </div>
-        <div class="uc-grid">
-          <div class="uc">
-            <span class="ico" aria-hidden="true">
-              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 18h6" /><path d="M10 22h4" /><path d="M12 2a7 7 0 0 0-4 12.7c.6.5 1 1.3 1 2.1V17h6v-.2c0-.8.4-1.6 1-2.1A7 7 0 0 0 12 2z" /></svg>
-            </span>
-            <div><h3>브레인스토밍</h3><p>회의에서든 혼자서든, 떠오르는 생각을 막힘없이 빠르게 펼쳐요.</p></div>
-          </div>
-          <div class="uc">
-            <span class="ico" aria-hidden="true">
-              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 5a2 2 0 0 1 2-2h13v16H6a2 2 0 0 0-2 2z" /><path d="M4 19a2 2 0 0 0 2 2h13" /></svg>
-            </span>
-            <div><h3>학습 노트</h3><p>강의와 책의 핵심을 구조로 묶어 오래 기억에 남게 정리해요.</p></div>
-          </div>
-          <div class="uc">
-            <span class="ico" aria-hidden="true">
-              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 21V4" /><path d="M5 4h11l-2 4 2 4H5" /></svg>
-            </span>
-            <div><h3>프로젝트 기획</h3><p>목표에서 할 일로 가지를 뻗어 큰 그림과 세부 계획을 함께 세워요.</p></div>
-          </div>
-          <div class="uc">
-            <span class="ico" aria-hidden="true">
-              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12a8 8 0 0 1-11.5 7.2L4 20l1-4.5A8 8 0 1 1 21 12z" /></svg>
-            </span>
-            <div><h3>회의록</h3><p>논의의 흐름을 실시간으로 정리하고 참석자와 바로 공유해요.</p></div>
-          </div>
-          <div class="uc">
-            <span class="ico" aria-hidden="true">
-              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8z" /><path d="M14 3v5h5" /></svg>
-            </span>
-            <div><h3>글쓰기 개요</h3><p>글의 뼈대를 먼저 짜고 살을 붙여, 논리의 흐름을 놓치지 않아요.</p></div>
-          </div>
-          <div class="uc">
-            <span class="ico" aria-hidden="true">
-              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 3v12" /><circle cx="6" cy="18" r="3" /><circle cx="18" cy="6" r="3" /><path d="M18 9v3a6 6 0 0 1-6 6h-3" /></svg>
-            </span>
-            <div><h3>의사결정</h3><p>선택지와 근거를 한눈에 늘어놓고 비교해 더 나은 결정을 내려요.</p></div>
-          </div>
-        </div>
-      </section>
+        <div class="case-grid"><div class="case"><span class="case-no">01</span><h3>브레인스토밍</h3><p>회의에서든 혼자서든, 떠오르는 생각을 막힘없이 빠르게 펼쳐요.</p></div><div class="case"><span class="case-no">02</span><h3>학습 노트</h3><p>강의와 책의 핵심을 구조로 묶어 오래 기억에 남게 정리해요.</p></div><div class="case"><span class="case-no">03</span><h3>프로젝트 기획</h3><p>목표에서 할 일로 가지를 뻗어 큰 그림과 세부 계획을 함께 세워요.</p></div><div class="case"><span class="case-no">04</span><h3>회의록</h3><p>논의의 흐름을 실시간으로 정리하고 참석자와 바로 공유해요.</p></div><div class="case"><span class="case-no">05</span><h3>글쓰기 개요</h3><p>글의 뼈대를 먼저 짜고 살을 붙여, 논리의 흐름을 놓치지 않아요.</p></div><div class="case"><span class="case-no">06</span><h3>의사결정</h3><p>선택지와 근거를 한눈에 늘어놓고 비교해 더 나은 결정을 내려요.</p></div></div>
+      </div>
+    </section>
 
-      <section class="block tint">
-        <div class="section-head">
-          <span class="eyebrow">이렇게 시작해요</span>
+    <section class="how">
+      <div class="container">
+        <div class="sec-head" style="margin-bottom: 32px">
+          <span class="eyebrow mono">HOW IT WORKS</span>
           <h2>3단계면 충분해요</h2>
           <p>복잡한 사용법은 없어요. 중심 주제 하나에서 시작하면 됩니다.</p>
         </div>
-        <div class="steps">
-          <div class="step">
-            <span class="num" aria-hidden="true">1</span>
-            <h3>중심 주제를 적어요</h3>
-            <p>정리하고 싶은 하나의 주제를 화면 가운데에 놓는 것으로 시작해요.</p>
-          </div>
-          <div class="step">
-            <span class="num" aria-hidden="true">2</span>
-            <h3>가지를 뻗어 이어요</h3>
-            <p>떠오르는 생각을 자식·형제 노드로 이어 붙이며 자연스럽게 구조를 만들어요.</p>
-          </div>
-          <div class="step">
-            <span class="num" aria-hidden="true">3</span>
-            <h3>저장하고 공유해요</h3>
-            <p>자동으로 저장되고, 완성한 맵은 이미지나 파일로 내보내 함께 나눠요.</p>
-          </div>
-        </div>
-      </section>
+        <div class="step-grid"><div class="step"><span class="step-no">1</span><h3>중심 주제를 적어요</h3><p>정리하고 싶은 하나의 주제를 화면 가운데에 놓는 것으로 시작해요.</p></div><div class="step"><span class="step-no">2</span><h3>가지를 뻗어 이어요</h3><p>떠오르는 생각을 자식·형제 노드로 이어 붙이며 자연스럽게 구조를 만들어요.</p></div><div class="step"><span class="step-no">3</span><h3>저장하고 공유해요</h3><p>자동으로 저장되고, 완성한 맵은 이미지나 파일로 내보내 함께 나눠요.</p></div></div>
+      </div>
+    </section>
 
-      <section class="block">
-        <div class="section-head">
-          <span class="eyebrow">핵심 기능</span>
+    <section id="features" class="features">
+      <div class="container">
+        <div class="sec-head">
+          <span class="eyebrow mono">FEATURES</span>
           <h2>생각의 속도를 따라오는 도구</h2>
         </div>
-        <div class="features">
-          <div class="card">
-            <span class="ico" aria-hidden="true">
-              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="5" cy="12" r="2.6" /><circle cx="18" cy="6" r="2.6" /><circle cx="18" cy="18" r="2.6" /><path d="M7.4 11 15.6 6.8" /><path d="M7.4 13l8.2 4.2" /></svg>
-            </span>
-            <h2>자유로운 마인드맵</h2>
-            <p>노드·도형·메모·연결선·영역으로 생각을 자유롭게 배치하고, 색과 스타일로 구조를 드러내세요.</p>
-          </div>
-          <div class="card">
-            <span class="ico" aria-hidden="true">
-              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="3" width="20" height="14" rx="2" /><path d="M8 21h8" /><path d="M12 17v4" /></svg>
-            </span>
-            <h2>어디서나 이어서</h2>
-            <p>웹과 모바일(PWA) 어디서든 열립니다. 자동 저장과 기기 간 동기화로 흐름이 끊기지 않아요.</p>
-          </div>
-          <div class="card">
-            <span class="ico" aria-hidden="true">
-              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2" /><circle cx="9" cy="7" r="4" /><path d="M22 21v-2a4 4 0 0 0-3-3.9" /><path d="M16 3.1a4 4 0 0 1 0 7.8" /></svg>
-            </span>
-            <h2>함께, 그리고 내보내기</h2>
-            <p>실시간 공동 편집으로 함께 그리고, 완성한 맵은 PNG·Markdown·JSON으로 내보내세요.</p>
-          </div>
-        </div>
-        <div class="chips" style="margin-top: 22px">
-          <span class="chip">6가지 테마</span>
-          <span class="chip">굵게·색상 서식</span>
-          <span class="chip">이미지 첨부</span>
-          <span class="chip">미니맵</span>
-          <span class="chip">아웃라인 보기</span>
-          <span class="chip">방사형·조직도 레이아웃</span>
-          <span class="chip">실시간 협업 커서</span>
-          <span class="chip">자동 저장</span>
-          <span class="chip">오프라인 지원</span>
-        </div>
-      </section>
 
-      <section class="block tint">
-        <div class="section-head">
-          <span class="eyebrow">자주 묻는 질문</span>
-          <h2>궁금한 점이 있으신가요?</h2>
+        <div class="feature">
+          <div class="body">
+            <h3>자유로운 마인드맵</h3>
+            <p>노드·도형·메모·연결선·영역으로 생각을 원하는 자리에 놓고, 색과 스타일로 구조를 드러내세요.</p>
+            <div class="chips"><span class="chip">6가지 테마</span><span class="chip">방사형·조직도 레이아웃</span><span class="chip">이미지 첨부</span></div>
+          </div>
+          <div class="shot" style="height: clamp(200px, 23vw, 236px)">
+            <svg viewBox="0 0 420 220" preserveAspectRatio="xMidYMid meet" style="position:absolute;inset:0;width:100%;height:100%" aria-hidden="true">
+              <path d="M180 110 C 220 110, 250 62, 300 62" fill="none" stroke="#EF8F30" stroke-width="2.6" stroke-linecap="round"/>
+              <path d="M180 110 C 220 110, 250 160, 300 160" fill="none" stroke="#2FAF9A" stroke-width="2.6" stroke-linecap="round"/>
+              <rect x="96" y="88" width="120" height="44" rx="11" fill="#EE6B45"/>
+              <text x="156" y="110" text-anchor="middle" dominant-baseline="central" font-size="14" font-weight="700" fill="#fff">새 마인드맵</text>
+              <rect x="300" y="44" width="86" height="36" rx="9" fill="#FFFDFB" stroke="#EF8F30" stroke-width="1.5"/>
+              <text x="343" y="62" text-anchor="middle" dominant-baseline="central" font-size="12.5" fill="#3A352F">아이디어</text>
+              <rect x="300" y="142" width="86" height="36" rx="9" fill="#FFFDFB" stroke="#2FAF9A" stroke-width="1.5"/>
+              <text x="343" y="160" text-anchor="middle" dominant-baseline="central" font-size="12.5" fill="#3A352F">할 일</text>
+              <rect x="14" y="14" width="118" height="52" rx="10" fill="#FFFDFB" stroke="#F3E4DA"/>
+              <text x="26" y="32" font-size="10" fill="#A89C92">선택한 주제</text>
+              <text x="26" y="50" font-size="11.5" font-weight="700" fill="#2E2A26">새 마인드맵</text>
+            </svg>
+          </div>
         </div>
-        <div class="faq">
-          <details>
-            <summary>정말 무료인가요?</summary>
-            <p>네. 별도의 설치나 결제 없이 지금 바로 시작할 수 있어요.</p>
-          </details>
-          <details>
-            <summary>설치해야 하나요?</summary>
-            <p>아니요. 웹 브라우저만 있으면 됩니다. 모바일에서는 홈 화면에 추가하면 앱처럼 전체 화면으로 사용할 수 있어요.</p>
-          </details>
-          <details>
-            <summary>만든 맵은 안전하게 보관되나요?</summary>
-            <p>편집하는 동안 자동으로 저장되고, 로그인하면 여러 기기에서 같은 맵을 이어서 볼 수 있어요.</p>
-          </details>
-          <details>
-            <summary>다른 곳으로 내보낼 수 있나요?</summary>
-            <p>완성한 맵을 PNG 이미지, Markdown, JSON 파일로 내보낼 수 있어 다른 문서나 도구로 바로 옮길 수 있어요.</p>
-          </details>
-        </div>
-      </section>
 
-      <section class="block">
-        <div class="closing">
-          <h2>생각이 떠오른 지금이 시작하기 좋은 때예요</h2>
-          <p>첫 마인드맵을 만들고, 흩어진 생각을 하나의 그림으로 이어 보세요.</p>
-          <a class="cta" href="/login">무료로 시작하기</a>
+        <div class="feature">
+          <div class="body">
+            <h3>어디서나 이어서</h3>
+            <p>웹과 모바일(PWA) 어디서든 열립니다. 자동 저장과 기기 간 동기화로 생각의 흐름이 끊기지 않아요.</p>
+            <div class="chips"><span class="chip">자동 저장</span><span class="chip">오프라인 지원</span><span class="chip">미니맵</span></div>
+          </div>
+          <div class="shot" style="height: clamp(190px, 22vw, 224px); background-image: none; background: #FBF0E8; display: flex; align-items: flex-end; justify-content: center; gap: 18px; padding: 0 16px">
+            <svg viewBox="0 0 220 150" preserveAspectRatio="xMidYMax meet" style="width: min(46%, 220px); height: 82%" aria-hidden="true">
+              <rect x="1" y="1" width="218" height="160" rx="12" fill="#FFFDFB" stroke="#F1E2D8"/>
+              <line x1="1" y1="26" x2="219" y2="26" stroke="#F3E4DA"/>
+              <circle cx="16" cy="13" r="3" fill="#EFE0D6"/><circle cx="28" cy="13" r="3" fill="#EFE0D6"/>
+              <rect x="76" y="58" width="64" height="28" rx="8" fill="#EE6B45"/>
+              <text x="108" y="72" text-anchor="middle" dominant-baseline="central" font-size="11" font-weight="700" fill="#fff">주제</text>
+              <rect x="18" y="108" width="58" height="24" rx="7" fill="#FFFDFB" stroke="#EF8F30" stroke-width="1.4"/>
+              <text x="47" y="120" text-anchor="middle" dominant-baseline="central" font-size="10" fill="#3A352F">가지 1</text>
+              <rect x="146" y="34" width="58" height="24" rx="7" fill="#FFFDFB" stroke="#2FAF9A" stroke-width="1.4"/>
+              <text x="175" y="46" text-anchor="middle" dominant-baseline="central" font-size="10" fill="#3A352F">가지 2</text>
+            </svg>
+            <svg viewBox="0 0 106 160" preserveAspectRatio="xMidYMax meet" style="width: min(26%, 106px); height: 94%" aria-hidden="true">
+              <rect x="1" y="1" width="104" height="170" rx="15" fill="#FFFDFB" stroke="#E7D2C4" stroke-width="1.5"/>
+              <rect x="40" y="8" width="26" height="4" rx="2" fill="#EFE0D6"/>
+              <rect x="26" y="56" width="54" height="22" rx="7" fill="#EE6B45"/>
+              <text x="53" y="67" text-anchor="middle" dominant-baseline="central" font-size="9.5" font-weight="700" fill="#fff">주제</text>
+              <rect x="12" y="104" width="48" height="19" rx="6" fill="#FFFDFB" stroke="#EF8F30" stroke-width="1.2"/>
+              <text x="36" y="113.5" text-anchor="middle" dominant-baseline="central" font-size="9" fill="#3A352F">가지 1</text>
+              <line x1="14" y1="146" x2="34" y2="146" stroke="#EFE0D6" stroke-width="3" stroke-linecap="round"/>
+              <line x1="44" y1="146" x2="64" y2="146" stroke="#EE6B45" stroke-width="3" stroke-linecap="round"/>
+              <line x1="74" y1="146" x2="94" y2="146" stroke="#EFE0D6" stroke-width="3" stroke-linecap="round"/>
+            </svg>
+          </div>
         </div>
-      </section>
 
-      <footer>
-        <span>© 2026 Geurio(그리오)</span>
+        <div class="feature">
+          <div class="body">
+            <h3>함께, 그리고 내보내기</h3>
+            <p>실시간 공동 편집으로 같이 그리고, 완성한 맵은 PNG·Markdown·JSON으로 바로 내보내세요.</p>
+            <div class="chips"><span class="chip">실시간 협업 커서</span><span class="chip">PNG · MD · JSON</span><span class="chip">아웃라인 보기</span></div>
+          </div>
+          <div class="shot" style="height: clamp(200px, 23vw, 236px)">
+            <svg viewBox="0 0 420 220" preserveAspectRatio="xMidYMid meet" style="position:absolute;inset:0;width:100%;height:100%" aria-hidden="true">
+              <rect x="0" y="0" width="420" height="30" fill="#FFFDFB"/><line x1="0" y1="30" x2="420" y2="30" stroke="#F3E4DA"/>
+              <rect x="10" y="6" width="86" height="18" rx="9" fill="#E6F4EF"/>
+              <circle cx="21" cy="15" r="7" fill="#2FAF9A"/><text x="21" y="15.5" text-anchor="middle" dominant-baseline="central" font-size="7.5" font-weight="700" fill="#fff">S</text>
+              <text x="34" y="15.5" dominant-baseline="central" font-size="8.5" font-weight="600" fill="#2E5E52">1명 접속 중</text>
+              <rect x="330" y="6" width="80" height="19" rx="7" fill="none" stroke="#EE6B45" stroke-width="1.2"/>
+              <text x="370" y="16" text-anchor="middle" dominant-baseline="central" font-size="9" font-weight="700" fill="#DE5A2E">내보내기 ⌃</text>
+              <rect x="252" y="40" width="158" height="88" rx="9" fill="#FFFDFB"/>
+              <text x="270" y="60" font-size="10.5" fill="#2E2A26">🖼 PNG 이미지</text>
+              <text x="270" y="86" font-size="10.5" fill="#2E2A26">📄 JSON 파일 (.json)</text>
+              <text x="270" y="112" font-size="10.5" fill="#2E2A26">📝 Markdown 개요 (.md)</text>
+              <rect x="56" y="102" width="86" height="34" rx="9" fill="#EE6B45"/>
+              <text x="99" y="119" text-anchor="middle" dominant-baseline="central" font-size="12" font-weight="700" fill="#fff">회의록</text>
+              <rect x="26" y="164" width="84" height="28" rx="7" fill="#FFFDFB" stroke="#7CA84A" stroke-width="1.5"/>
+              <text x="68" y="178" text-anchor="middle" dominant-baseline="central" font-size="10.5" fill="#3A352F">결정 사항</text>
+              <path d="M172 92 l 8 3 -5 6 z" fill="#2FAF9A"/>
+              <rect x="184" y="88" width="34" height="16" rx="5" fill="#2FAF9A"/>
+              <text x="201" y="96.5" text-anchor="middle" dominant-baseline="central" font-size="9" font-weight="600" fill="#fff">지연</text>
+              <rect x="10" y="196" width="104" height="18" rx="6" fill="#FFFDFB"/>
+              <circle cx="21" cy="205" r="2.6" fill="#7CA84A"/>
+              <text x="29" y="205.5" dominant-baseline="central" font-size="8" fill="#8A8078">저장됨 · 방금 전</text>
+            </svg>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section id="faq" class="faq-band">
+      <div class="faq-grid">
+        <div class="sec-head" style="margin-bottom: 0">
+          <span class="eyebrow mono">FAQ</span>
+          <h2>궁금한 점이<br />있으신가요?</h2>
+          <p style="font-size: 14.5px; margin-top: 6px">자주 묻는 질문을 모았어요. 더 궁금하시면 <a href="mailto:info@geurio.com" style="text-decoration: underline">info@geurio.com</a>으로 알려주세요.</p>
+        </div>
+        <div class="faq-list"><details open><summary>정말 무료인가요?<span class="faq-icon" aria-hidden="true">+</span></summary><p>네. 별도의 설치나 결제 없이 지금 바로 시작할 수 있어요.</p></details><details><summary>설치해야 하나요?<span class="faq-icon" aria-hidden="true">+</span></summary><p>아니요. 웹 브라우저만 있으면 됩니다. 모바일에서는 홈 화면에 추가하면 앱처럼 전체 화면으로 쓸 수 있어요.</p></details><details><summary>만든 맵은 안전하게 보관되나요?<span class="faq-icon" aria-hidden="true">+</span></summary><p>편집하는 동안 자동으로 저장되고, 로그인하면 여러 기기에서 같은 맵을 이어서 볼 수 있어요.</p></details><details><summary>다른 곳으로 내보낼 수 있나요?<span class="faq-icon" aria-hidden="true">+</span></summary><p>완성한 맵을 PNG 이미지, Markdown, JSON으로 내보내 다른 문서나 도구로 바로 옮길 수 있어요.</p></details></div>
+      </div>
+    </section>
+
+    <section class="cta-band">
+      <div class="cta-card">
+        <h2>생각이 떠오른 지금이,<br />시작하기 좋은 때예요</h2>
+        <p>첫 마인드맵을 만들고 흩어진 생각을 하나로 이어 보세요. 3분이면 충분해요.</p>
+        <a class="cta-invert" href="/login">무료로 시작하기 →</a>
+      </div>
+    </section>
+
+    <footer class="lp">
+      <span>© 2026 Geurio(그리오) — 마인드맵 서비스</span>
+      <div class="links">
         <a href="/privacy">개인정보처리방침</a>
         <a href="/terms">이용약관</a>
-        <a class="contact" href="mailto:info@geurio.com">문의: info@geurio.com</a>
-      </footer>
-    </div>
+        <a href="mailto:info@geurio.com">info@geurio.com</a>
+      </div>
+    </footer>
   </body>
 </html>
