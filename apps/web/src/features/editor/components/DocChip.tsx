@@ -82,11 +82,18 @@ export function DocChip({ controller }: DocChipProps) {
         {controller.saveConflict && (
           <div
             role="alert"
-            title="다른 기기/탭에서 먼저 저장되어 최신 버전을 기준으로 이어서 저장해요."
+            title="다른 기기/탭에서 먼저 저장되어 최신 버전을 기준으로 이어서 저장해요. (클릭해서 닫기)"
             onClick={controller.dismissSaveConflict}
-            style={{ fontSize: 10.5, fontWeight: 600, color: '#c0532e', cursor: 'pointer', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}
+            className="mf-marquee"
+            style={{ fontSize: 10.5, fontWeight: 600, color: '#c0532e', cursor: 'pointer' }}
           >
-            ⚠ 다른 곳에서 먼저 저장됨 (v{controller.saveConflict.currentVersion})
+            {/* 전광판: 좁은 칩 폭에서 말줄임으로 잘리던 안내(제보)를 흐르는 한 줄로.
+                같은 문장을 두 번 이어 붙이고 절반만큼 이동시켜 이음매 없이 돈다
+                (editor.css .mf-marquee). 두 번째 복제는 시각 전용(aria-hidden). */}
+            <span className="mf-marquee-run">
+              <span>⚠ 다른 기기/탭에서 먼저 저장됨 (v{controller.saveConflict.currentVersion}) — 최신 버전을 기준으로 이어서 저장해요</span>
+              <span aria-hidden="true">⚠ 다른 기기/탭에서 먼저 저장됨 (v{controller.saveConflict.currentVersion}) — 최신 버전을 기준으로 이어서 저장해요</span>
+            </span>
           </div>
         )}
       </div>

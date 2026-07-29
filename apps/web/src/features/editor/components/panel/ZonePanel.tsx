@@ -20,7 +20,7 @@ export function ZonePanel({ controller, zoneId, isMobile = false }: ZonePanelPro
   if (!z) return null;
 
   return (
-    <div style={panelWrapStyle(th, isMobile)}>
+    <div style={panelWrapStyle(th, isMobile, !!controller.saveConflict)}>
       <div style={panelBodyStyle(isMobile)}>
         <PanelTitle theme={th} kicker="선택한 영역" name={z.label || '영역'} />
         <SectionLabel theme={th}>영역 색상</SectionLabel>

@@ -38,7 +38,7 @@ export function FloatPanel({ controller, floatIds, isMobile = false }: FloatPane
   // 정보만 — 크기 조절은 캔버스의 코너 핸들(비율 고정), 삭제는 Del/우클릭.
   if (isImage) {
     return (
-      <div style={panelWrapStyle(th, isMobile)}>
+      <div style={panelWrapStyle(th, isMobile, !!controller.saveConflict)}>
         <div style={panelBodyStyle(isMobile)}>
           <PanelTitle theme={th} kicker="선택한 이미지" name="이미지" />
           <div style={{ fontSize: 12, lineHeight: 1.7, opacity: 0.65 }}>
@@ -52,7 +52,7 @@ export function FloatPanel({ controller, floatIds, isMobile = false }: FloatPane
   }
 
   return (
-    <div style={panelWrapStyle(th, isMobile)}>
+    <div style={panelWrapStyle(th, isMobile, !!controller.saveConflict)}>
       <div style={panelBodyStyle(isMobile)}>
         {multi ? (
           <>

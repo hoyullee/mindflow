@@ -33,6 +33,46 @@
   height: 5px;
 }
 
+/* 전광판(마퀴) — 좁은 칩 안에 들어가야 하는 한 줄 안내용(독칩의 저장 충돌 문구).
+   .mf-marquee-run 안에 같은 내용을 두 번 이어 붙이고(gap과 같은 padding-right 포함)
+   절반(-50%)만큼 이동시키면 이음매 없이 무한히 돈다. 호버하면 멈춰서 읽을 수 있다.
+   움직임 최소화 설정(prefers-reduced-motion)에서는 돌리지 않고 말줄임으로 폴백 —
+   그때는 title 툴팁이 전체 문장을 보여 준다. */
+.mf-marquee {
+  overflow: hidden;
+  white-space: nowrap;
+}
+.mf-marquee-run {
+  display: inline-flex;
+  gap: 32px;
+  padding-right: 32px;
+  animation: mf-marquee 9s linear infinite;
+  will-change: transform;
+}
+.mf-marquee:hover .mf-marquee-run {
+  animation-play-state: paused;
+}
+@keyframes mf-marquee {
+  from {
+    transform: translateX(0);
+  }
+  to {
+    transform: translateX(-50%);
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .mf-marquee {
+    text-overflow: ellipsis;
+  }
+  .mf-marquee-run {
+    animation: none;
+    display: inline;
+  }
+  .mf-marquee-run > [aria-hidden='true'] {
+    display: none;
+  }
+}
+
 /* 모바일 선택 바의 '메뉴(⋯)'에서 열리는 팝오버 — 바에서 살짝 솟아오르듯 등장해
    "이 바에서 파생된 메뉴"로 읽히게 한다. transform-origin은 위쪽(꼬리 쪽). */
 @keyframes mf-ctx-pop {

@@ -75,7 +75,12 @@ export const SIZE_OPTIONS: { k: 's' | 'm' | 'l'; label: string }[] = [
  * max-) height keeps the sheet from resizing as accordion sections expand or
  * collapse — sections just scroll within it, so the box never jumps.
  */
-export function panelWrapStyle(th: Theme, isMobile = false): CSSProperties {
+/**
+ * @param lowered 독칩(DocChip)이 평소보다 높아진 상태 — 저장 충돌 안내 줄이 붙으면
+ * 칩 바닥이 기본 패널 top(80)을 넘어 그림자가 패널을 침범한다(제보). 그동안만
+ * 패널을 그만큼 내려 두 상자 사이 간격(10px)을 유지한다.
+ */
+export function panelWrapStyle(th: Theme, isMobile = false, lowered = false): CSSProperties {
   if (isMobile) {
     return {
       position: 'fixed',
@@ -95,12 +100,13 @@ export function panelWrapStyle(th: Theme, isMobile = false): CSSProperties {
       background: th.panel,
     };
   }
+  const top = lowered ? 98 : 80;
   return {
     position: 'absolute',
     left: 16,
-    top: 80,
+    top,
     width: 236,
-    maxHeight: 'calc(100% - 158px)',
+    maxHeight: `calc(100% - ${top + 78}px)`,
     border: `1px solid ${th.border}`,
     borderRadius: 14,
     boxShadow: '0 8px 30px rgba(0,0,0,.10)',
