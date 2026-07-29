@@ -34,7 +34,7 @@
 // structural change directly as its own transaction.
 
 import * as Y from 'yjs';
-import type { Doc, Float, Line, LayoutMode, Node, NodeMap, Zone } from '../model';
+import type { Doc, EdgeStyle, Float, Line, LayoutMode, Node, NodeMap, Zone } from '../model';
 import { DEFAULT_LAYOUT_MODE, DEFAULT_THEME_KEY } from '../model';
 
 type PlainRecord = Record<string, unknown>;
@@ -203,7 +203,9 @@ export function yDocToDoc(ydoc: Y.Doc): Doc {
   const meta = ydoc.getMap<unknown>('meta');
   const layoutMode = (meta.get('layoutMode') as LayoutMode | undefined) ?? DEFAULT_LAYOUT_MODE;
   const themeKey = (meta.get('themeKey') as string | undefined) ?? DEFAULT_THEME_KEY;
-  return { v: 1, nodes, floats, lines, zones, layoutMode, themeKey };
+  // `edgeStyle`은 옵션 필드 — 없으면 키 자체를 만들지 않는다(라운드트립 동일성 유지).
+  const edgeStyle = meta.get('edgeStyle') as EdgeStyle | undefined;
+  return { v: 1, nodes, floats, lines, zones, layoutMode, themeKey, ...(edgeStyle !== undefined ? { edgeStyle } : {}) };
 }
 
 /**
@@ -228,6 +230,12 @@ export function applyDocToYDoc(ydoc: Y.Doc, nextDoc: Doc, prevDoc?: Doc | null, 
     const meta = ydoc.getMap<unknown>('meta');
     if (!prevDoc || prevDoc.layoutMode !== nextDoc.layoutMode) meta.set('layoutMode', nextDoc.layoutMode);
     if (!prevDoc || prevDoc.themeKey !== nextDoc.themeKey) meta.set('themeKey', nextDoc.themeKey);
+    // 연결선 스타일 — 문서의 다른 meta와 똑같이 흐른다. 예전엔 여기서 빠져 있어서
+    // 한 사람이 곡선→직선으로 바꿔도 상대에게 **아예 전달되지 않았다**(제보).
+    if (prevDoc?.edgeStyle !== nextDoc.edgeStyle) {
+      if (nextDoc.edgeStyle === undefined) meta.delete('edgeStyle');
+      else meta.set('edgeStyle', nextDoc.edgeStyle);
+    }
   }, origin);
 }
 

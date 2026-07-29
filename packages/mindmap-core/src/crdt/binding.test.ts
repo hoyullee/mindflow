@@ -205,3 +205,27 @@ describe('부분 병합 상태를 읽어도 그릴 수 있는 문서가 나온�
     expect(yDocToDoc(ydocA)).toEqual(yDocToDoc(ydocB));
   });
 });
+
+// 연결선 스타일 — meta의 다른 필드처럼 흘러야 한다. 빠져 있던 동안 한 사람이
+// 곡선→직선으로 바꿔도 상대에게 아예 전달되지 않았다(제보).
+describe('edgeStyle 동기화', () => {
+  it('docToYDoc/yDocToDoc 라운드트립을 보존한다 (없으면 키 자체가 없다)', () => {
+    const withStyle: Doc = { ...baseDoc(), edgeStyle: 'straight' };
+    expect(yDocToDoc(docToYDoc(withStyle))).toEqual(withStyle);
+    // 옵션 필드 — 안 준 문서는 라운드트립 후에도 키가 생기지 않는다
+    expect('edgeStyle' in yDocToDoc(docToYDoc(baseDoc()))).toBe(false);
+  });
+
+  it('한 피어의 스타일 변경이 diff로 상대에게 전달된다', () => {
+    const doc = baseDoc();
+    const ydocA = docToYDoc(doc);
+    const ydocB = docToYDoc(doc);
+    syncBothWays(ydocA, ydocB);
+
+    applyDocToYDoc(ydocA, { ...doc, edgeStyle: 'elbow' }, doc);
+    syncBothWays(ydocA, ydocB);
+
+    expect(yDocToDoc(ydocB).edgeStyle).toBe('elbow');
+    expect(yDocToDoc(ydocA)).toEqual(yDocToDoc(ydocB));
+  });
+});

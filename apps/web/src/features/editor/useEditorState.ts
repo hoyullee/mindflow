@@ -8,6 +8,7 @@ import type { ShareStore } from '../../adapters/ports';
 import type { CollabStatus } from '../../collab/ports';
 import { useBackend, useDocStore, useShareStore } from '../../adapters/BackendContext';
 import { useAuthUser } from '../../adapters/useAuthUser';
+import { useProfileName } from '../../adapters/useProfileName';
 import { useYjsDocSync } from '../../collab/useYjsDocSync';
 import { usePresence, type UsePresenceResult } from '../../collab/usePresence';
 import { EMPTY_PRESENCE_SELECTION, type PresenceSelection } from '../../collab/presence';
@@ -740,7 +741,14 @@ export function useEditorState(): EditorController {
   // 붙으면 상대의 진짜 문서와 병합돼 자리표시자가 일부 필드에서 이길 수 있다. 열 수
   // 없는 맵(`bodyMissing`/`loadError`)에서도 붙지 않는다 — 편집 자체를 멈춘 상태다.
   const collabDocId = hydrating || bodyMissing || loadError ? '' : docStoreId;
-  const { awareness, status: collabStatus } = useYjsDocSync(collabDocId, doc, setDoc);
+  // 원격 문서가 도착하면 `edgeStyle` 로컬 미러도 함께 갱신한다 — 렌더(EdgeLayer)와
+  // 스타일 드롭다운은 이 상태를 읽으므로, `setDoc`만 하면 상대가 바꾼 연결선 스타일이
+  // 문서에는 있는데 화면에는 반영되지 않는다(제보: "연결선 스타일이 상대에게 안 보임").
+  const onRemoteDoc = useCallback((d: Doc) => {
+    setDoc(d);
+    setEdgeStyleState((d.edgeStyle as EdgeStyle | undefined) ?? 'curve');
+  }, []);
+  const { awareness, status: collabStatus } = useYjsDocSync(collabDocId, doc, onRemoteDoc);
 
   // ---- presence (multi-user awareness on top of M5's document sync): cursor
   // position + selection + identity, broadcast via the SAME `Awareness`
@@ -748,9 +756,11 @@ export function useEditorState(): EditorController {
   // no-op — whichever `collab/factory.ts` picked). `authUser` resolves
   // asynchronously (a real Supabase session) or stays `null` (local/demo mode,
   // or before the session check resolves) — `usePresence` falls back to a
-  // random "adjective+animal" guest identity in that case (`collab/identity.ts`). ----
+  // random "adjective+animal" guest identity in that case (`collab/identity.ts`).
+  // 커서 이름표는 이메일이 아니라 **프로필명**(홈에서 바꾼 이름)을 쓴다. ----
   const authUser = useAuthUser();
-  const presence = usePresence(awareness, authUser?.email);
+  const profileName = useProfileName(authUser?.email ?? null, authUser?.name ?? null);
+  const presence = usePresence(awareness, authUser?.email, profileName);
 
   // Broadcasts the LOCAL selection (single `selection` OR marquee `multiSelection`,
   // whichever is active — same precedence as `multiGroups` below, plus zones,
