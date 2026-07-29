@@ -36,7 +36,7 @@ export function LinePanel({ controller, lineIds, isMobile = false }: LinePanelPr
   const toggle = (k: string) => setOpenSec((cur) => (cur === k ? null : k));
 
   return (
-    <div style={panelWrapStyle(th, isMobile)}>
+    <div style={panelWrapStyle(th, isMobile, !!controller.saveConflict)}>
       <div style={panelBodyStyle(isMobile)}>
         {multi ? (
           <>

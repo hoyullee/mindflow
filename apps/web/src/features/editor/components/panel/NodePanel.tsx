@@ -55,7 +55,7 @@ export function NodePanel({ controller, nodeIds, isMobile = false }: NodePanelPr
   const toggle = (k: string) => setOpenSec((cur) => (cur === k ? null : k));
 
   return (
-    <div style={panelWrapStyle(th, isMobile)}>
+    <div style={panelWrapStyle(th, isMobile, !!controller.saveConflict)}>
       <div style={panelBodyStyle(isMobile)}>
         {multi ? (
           <>
