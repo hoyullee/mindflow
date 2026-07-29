@@ -37,3 +37,7 @@ export function useDocStore() {
 export function useSpaceStore() {
   return useBackend().spaceStore;
 }
+
+export function useShareStore() {
+  return useBackend().shareStore;
+}

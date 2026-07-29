@@ -1,0 +1,66 @@
+// 문서 공유 — `document_shares` 테이블 위의 `ShareStore`
+// (`supabase/migrations/0009_document_shares.sql`).
+//
+// 접근 제어는 전부 **RLS**가 한다: 소유자만 초대를 만들고 전체 목록을 보며,
+// 초대받은 사람은 자기 행만 읽고 자기 자신만 뺄 수 있다(공유 나가기). 그래서 이
+// 어댑터는 필터를 직접 걸지 않는다 — 쿼리가 닿을 수 있는 행 자체가 이미 제한된다.
+//
+// 초대 대상은 사용자 id가 아니라 **이메일**이다: 클라이언트는 `auth.users`를 읽을 수
+// 없어 이메일 → uuid 변환을 할 수 없고, 이 방식이면 아직 가입하지 않은 사람도
+// 초대할 수 있다(그 이메일로 가입하는 순간 권한이 생긴다). 0009 주석 참고.
+
+import type { SupabaseClient } from '@supabase/supabase-js';
+import type { DocumentShare, ShareRole, ShareStore, SharedWithMe } from '../ports';
+
+const TABLE = 'document_shares';
+
+interface ShareRow {
+  document_id: string;
+  invitee_email: string;
+  role: string;
+  created_at: string;
+}
+
+function toRole(raw: string): ShareRole {
+  return raw === 'view' ? 'view' : 'edit';
+}
+
+export class SupabaseShareStore implements ShareStore {
+  constructor(private readonly client: SupabaseClient) {}
+
+  async list(documentId: string): Promise<DocumentShare[]> {
+    const { data, error } = await this.client.from(TABLE).select('document_id,invitee_email,role,created_at').eq('document_id', documentId).order('created_at', { ascending: true });
+    if (error) throw new Error(error.message);
+    return ((data ?? []) as ShareRow[]).map((r) => ({ documentId: r.document_id, email: r.invitee_email, role: toRole(r.role), createdAt: r.created_at }));
+  }
+
+  async add(documentId: string, email: string, role: ShareRole = 'edit'): Promise<{ error?: string }> {
+    const normalized = email.trim().toLowerCase();
+    if (!normalized) return { error: '이메일을 입력해 주세요.' };
+    // `invited_by`는 컬럼 기본값(auth.uid())이 채운다 — 정책이 `auth.uid() = invited_by`를
+    // 요구하므로 클라이언트가 보내지 않는 편이 안전하다(0001의 documents.owner와 같은 패턴).
+    // 이미 있는 초대면 권한만 갱신한다(PK = document_id + invitee_email).
+    const { error } = await this.client.from(TABLE).upsert({ document_id: documentId, invitee_email: normalized, role }, { onConflict: 'document_id,invitee_email' });
+    if (error) return { error: error.message };
+    return {};
+  }
+
+  async remove(documentId: string, email: string): Promise<{ error?: string }> {
+    const { error } = await this.client.from(TABLE).delete().eq('document_id', documentId).eq('invitee_email', email.trim().toLowerCase());
+    if (error) return { error: error.message };
+    return {};
+  }
+
+  async listSharedWithMe(): Promise<SharedWithMe[]> {
+    // RLS가 "내 이메일로 온 초대"만 보이게 하므로 필터가 필요 없다. 다만 소유자로서
+    // 내가 만든 초대도 보이므로(정책이 OR), 내 문서에 걸린 초대는 걸러낸다 —
+    // 이건 "남이 나에게 공유한 것" 목록이다. `documents.owner`를 클라이언트에서 알 수
+    // 없으니 조인 대신 내 이메일과의 일치로 판단한다.
+    const { data: userData } = await this.client.auth.getUser();
+    const myEmail = (userData?.user?.email ?? '').trim().toLowerCase();
+    if (!myEmail) return [];
+    const { data, error } = await this.client.from(TABLE).select('document_id,role').eq('invitee_email', myEmail);
+    if (error) throw new Error(error.message);
+    return ((data ?? []) as { document_id: string; role: string }[]).map((r) => ({ documentId: r.document_id, role: toRole(r.role) }));
+  }
+}

@@ -416,3 +416,38 @@ false가 되어 verify 단계를 건너뜀). 단 이메일 소유 확인은 안 
   디렉터리는 스켈레톤 상태) — Y.Doc ↔ `DocV1` 매핑 함수가 필요해지면 그 시점에 코어에
   순수 함수로 추가하고, 실제 Y.Doc 인스턴스/네트워크는 여전히 `apps/web`이 소유합니다
   (코어 순수성 원칙 유지).
+
+## 6. 문서 공유 (0009) — 사람 사이의 실시간 공동 편집
+
+M5/M5-awareness가 Yjs 동기화와 커서 공유를 붙였지만, **`documents`가 소유자 전용이라
+다른 사람과는 공동 편집이 불가능했습니다** — 상대가 문서를 아예 읽을 수 없으니 협업할
+대상이 없었죠. `0009_document_shares.sql`이 그 구멍을 메웁니다.
+
+- **`document_shares`** — `(document_id, invitee_email)` PK, `role`(`edit`/`view`),
+  `invited_by`. 초대 대상이 uuid가 아니라 **이메일**인 이유: 클라이언트는 `auth.users`를
+  읽을 수 없어 이메일 → uuid 변환을 할 수 없고, 이메일로 두면 **아직 가입하지 않은
+  사람도 초대**할 수 있습니다(그 이메일로 가입하는 순간 권한이 생김). 트리거가 항상
+  `lower(trim())`으로 정규화합니다.
+- **`documents` 정책 확장** — SELECT는 `소유자 OR 공유(view 이상)`, UPDATE는
+  `소유자 OR 공유(edit)`. INSERT/DELETE는 소유자 전용 그대로.
+- **순환 방지** — `documents` 정책이 `document_shares`를 참조하고 그 반대도 필요하므로,
+  판정을 `owns_document()` / `shared_with_me()` **SECURITY DEFINER** 함수로 빼서 정책
+  재귀를 끊었습니다.
+- **Realtime 채널 인증(중요)** — 문서 내용은 `mindflow-collab:<docId>` 브로드캐스트
+  채널을 흐르는데 **여기에 아무 인증이 없었습니다**. anon 키는 클라이언트 번들에 공개돼
+  있으므로 docId를 아는 사람은 누구나 붙어 편집 내용을 받아 보거나 주입할 수 있었습니다
+  (특히 예전 방식 id는 `m<제목해시>` — 제목만 알면 계산됩니다). 0009가 `realtime.messages`에
+  RLS를 걸어 채널 참가(SELECT)와 발신(INSERT)을 문서 권한과 묶고, 클라이언트는
+  `channel(name, { config: { private: true } })`로 붙습니다.
+
+  ⚠️ **`realtime` 스키마는 우리 소유가 아닙니다.** 마이그레이션 실행 역할에 권한이 없으면
+  이 블록만 실패하는데, 그때 배포 전체가 막히지 않도록 예외를 잡아 NOTICE만 남깁니다.
+  **그 경우 채널은 예전처럼 열린 상태로 남습니다** — 배포 로그에 그 NOTICE가 보이면
+  대시보드 SQL Editor에서 0009의 마지막 `do $$ … $$;` 블록을 그대로 한 번 실행해 주세요.
+  확인: `select relrowsecurity from pg_class where oid = 'realtime.messages'::regclass;`
+  → `t`, 그리고 `select policyname from pg_policies where schemaname='realtime';`에
+  `collab_channel_read`/`collab_channel_write`가 보이면 적용된 것입니다.
+- **권한 UI는 `edit`만** 노출합니다. `view`는 컬럼·정책에 준비돼 있지만, 뷰어를 제대로
+  만들려면 CRDT로 자기 편집이 상대에게 전파되는 것부터 막아야 해서 별도 작업입니다.
+- 어댑터: `adapters/supabase/supabaseShareStore.ts`(실제), `adapters/local/localShareStore.ts`
+  (데모 — 목록 계약만 동일하게 유지하고 실제 접근은 열어 주지 않습니다).

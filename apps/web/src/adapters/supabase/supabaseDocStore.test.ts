@@ -64,24 +64,49 @@ class FakeQuery implements PromiseLike<{ data: unknown; error: unknown }> {
   }
 }
 
-function fakeClient(result: { data: unknown; error: unknown }) {
+/** `list()`가 `DocMeta.ownedByMe`를 채우려고 세션의 uid를 읽으므로 auth도 흉내 낸다. */
+function fakeClient(result: { data: unknown; error: unknown }, myUserId = 'me') {
   const query = new FakeQuery(result);
   const from = vi.fn(() => query);
-  return { client: { from } as unknown as import('@supabase/supabase-js').SupabaseClient, query, from };
+  const auth = { getUser: vi.fn(async () => ({ data: { user: { id: myUserId } }, error: null })) };
+  return { client: { from, auth } as unknown as import('@supabase/supabase-js').SupabaseClient, query, from };
 }
 
 describe('SupabaseDocStore', () => {
   it('list() selects from `documents` ordered by updated_at desc and maps rows to DocMeta', async () => {
-    const rows = [{ id: 'd1', title: 'A', version: 3, updated_at: '2026-01-01T00:00:00Z', is_favorite: true, deleted_at: null }];
+    const rows = [{ id: 'd1', title: 'A', version: 3, updated_at: '2026-01-01T00:00:00Z', is_favorite: true, deleted_at: null, owner: 'me' }];
     const { client, query, from } = fakeClient({ data: rows, error: null });
     const store = new SupabaseDocStore(client);
 
     const metas = await store.list();
 
     expect(from).toHaveBeenCalledWith('documents');
-    expect(query.calls[0]).toEqual({ method: 'select', args: ['id,title,version,updated_at,is_favorite,deleted_at'] });
+    expect(query.calls[0]).toEqual({ method: 'select', args: ['id,title,version,updated_at,is_favorite,deleted_at,owner'] });
     expect(query.calls[1]).toEqual({ method: 'order', args: ['updated_at', { ascending: false }] });
-    expect(metas).toEqual([{ id: 'd1', title: 'A', version: 3, updatedAt: '2026-01-01T00:00:00Z', isFavorite: true, deletedAt: null }]);
+    expect(metas).toEqual([{ id: 'd1', title: 'A', version: 3, updatedAt: '2026-01-01T00:00:00Z', isFavorite: true, deletedAt: null, ownedByMe: true }]);
+  });
+
+  // 공유(0009) 이후 `list()`는 남이 나에게 공유한 문서까지 돌려준다 — 홈이 그것을
+  // 자기 스페이스 카드로 삼지 않도록 소유 여부를 실어 줘야 한다.
+  it('list() marks documents owned by someone else as not mine', async () => {
+    const rows = [
+      { id: 'mine', title: 'A', version: 1, updated_at: '2026-01-02T00:00:00Z', is_favorite: false, deleted_at: null, owner: 'me' },
+      { id: 'theirs', title: 'B', version: 1, updated_at: '2026-01-01T00:00:00Z', is_favorite: false, deleted_at: null, owner: 'someone-else' },
+    ];
+    const { client } = fakeClient({ data: rows, error: null }, 'me');
+    const metas = await new SupabaseDocStore(client).list();
+    expect(metas.map((m) => [m.id, m.ownedByMe])).toEqual([
+      ['mine', true],
+      ['theirs', false],
+    ]);
+  });
+
+  it('list() treats rows as mine when the session id is unknown (pre-sharing behavior)', async () => {
+    const rows = [{ id: 'd1', title: 'A', version: 1, updated_at: '2026-01-01T00:00:00Z', is_favorite: false, deleted_at: null, owner: 'whoever' }];
+    const query = new FakeQuery({ data: rows, error: null });
+    const client = { from: vi.fn(() => query), auth: { getUser: vi.fn(async () => ({ data: { user: null }, error: null })) } } as unknown as import('@supabase/supabase-js').SupabaseClient;
+    const metas = await new SupabaseDocStore(client).list();
+    expect(metas[0]?.ownedByMe).toBe(true);
   });
 
   it('list() throws when the query errors', async () => {
