@@ -107,10 +107,19 @@ describe('static landing.html (the crawler-visible twin)', () => {
     expect(html).toContain('href="/privacy"');
     expect(html).toContain('href="/terms"');
     expect(html).toContain('href="/login"');
-    // JS 의존이 없어야 크롤러에 보인다 — 실행되는 스크립트 금지. 단
-    // JSON-LD(type="application/ld+json")는 렌더와 무관한 데이터 블록이라 허용.
+    // 계약은 "모든 내용이 JS 없이 원문 HTML에 보인다"다(크롤러는 JS를 실행하지
+    // 않으므로). 허용되는 스크립트는 둘뿐: JSON-LD 데이터 블록과, 폴백 SVG를
+    // 인터랙티브 데모로 교체하는 프로그레시브 인핸서(landing-demo.js — 같은
+    // 출처, defer, 없어도 페이지는 온전). 그 외 스크립트가 생기면 실패시켜
+    // "SPA처럼 JS에 기대는 랜딩"으로의 회귀를 막는다.
     const scripts = html.match(/<script[^>]*/g) ?? [];
-    for (const tag of scripts) expect(tag).toContain('application/ld+json');
+    for (const tag of scripts) {
+      expect(tag.includes('application/ld+json') || (tag.includes('src="/landing-demo.js"') && tag.includes('defer'))).toBe(true);
+    }
+    // 인핸서가 걷어낼 폴백 SVG가 원문에 실존해야 무JS에서도 데모가 보인다
+    expect(html).toContain('마인드맵 예시');
+    // 인핸서 파일 자체도 존재하고 같은 예시 문서를 그린다(쌍둥이 동기화 가드)
+    expect(readFileSync(path.join(publicDir, 'landing-demo.js'), 'utf8')).toContain('신제품 런치 플랜');
   });
 
   it('mirrors the expanded content of the React twin (use cases, steps, FAQ, chips)', () => {
