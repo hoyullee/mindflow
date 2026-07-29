@@ -1,8 +1,13 @@
 // Real doc store — `DocStore` implemented against the `documents` Postgres
-// table (`supabase/migrations/0001_init.sql`). RLS restricts every
-// query to `owner = auth.uid()`, so this adapter doesn't need to (and
-// shouldn't) filter by owner itself — a stray missing `WHERE owner = ...`
-// here is not a security hole, RLS is the actual enforcement boundary.
+// table (`supabase/migrations/0001_init.sql`). RLS restricts every query to
+// rows I may touch — 내 문서 **또는 나에게 공유된 문서**(0009) — so this adapter
+// doesn't need to (and shouldn't) filter by owner itself: a stray missing
+// `WHERE owner = ...` here is not a security hole, RLS is the actual
+// enforcement boundary.
+//
+// 공유가 생긴 뒤로 `list()`는 남이 나에게 공유한 문서까지 돌려준다. 그래서 각 행의
+// `owner`를 함께 읽어 `DocMeta.ownedByMe`를 채운다 — 홈이 남의 문서를 자기 스페이스
+// 카드로 삼지 않기 위한 구분이다(워크스페이스 블롭은 per-user).
 //
 // Doc bodies are stored as-is in the `data` JSONB column, exactly as
 // `serializeDoc` produces them — `load()` runs them back through `parseDoc`
@@ -23,17 +28,21 @@ interface DocumentRow {
   updated_at: string;
   is_favorite: boolean | null;
   deleted_at: string | null;
+  owner?: string | null;
 }
 
 export class SupabaseDocStore implements DocStore {
   constructor(private readonly client: SupabaseClient) {}
 
   async list(): Promise<DocMeta[]> {
-    const { data, error } = await this.client
-      .from(TABLE)
-      .select('id,title,version,updated_at,is_favorite,deleted_at')
-      .order('updated_at', { ascending: false });
+    // 내 uid는 세션에서 온다(supabase-js가 캐시한다). 못 알아내면 모두 내 것으로
+    // 본다 — 공유 이전과 같은 동작이라 최악이라도 예전 상태로 퇴화할 뿐이다.
+    const [{ data, error }, { data: userData }] = await Promise.all([
+      this.client.from(TABLE).select('id,title,version,updated_at,is_favorite,deleted_at,owner').order('updated_at', { ascending: false }),
+      this.client.auth.getUser(),
+    ]);
     if (error) throw new Error(error.message);
+    const myId = userData?.user?.id ?? null;
     return ((data ?? []) as DocumentRow[]).map((row) => ({
       id: row.id,
       title: row.title ?? '(제목 없음)',
@@ -41,6 +50,7 @@ export class SupabaseDocStore implements DocStore {
       updatedAt: row.updated_at,
       isFavorite: Boolean(row.is_favorite),
       deletedAt: row.deleted_at,
+      ownedByMe: !myId || !row.owner ? true : row.owner === myId,
     }));
   }
 

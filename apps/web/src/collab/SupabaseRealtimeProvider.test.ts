@@ -68,7 +68,9 @@ describe('SupabaseRealtimeProvider', () => {
 
     provider.connect('doc-123', ydoc);
 
-    expect(client.channel).toHaveBeenCalledWith('mindflow-collab:doc-123');
+    // `private: true`가 빠지면 채널이 누구에게나 열린다(anon 키는 번들에 공개) —
+    // Realtime Authorization 정책(0009)을 타기 위한 필수 인자다.
+    expect(client.channel).toHaveBeenCalledWith('mindflow-collab:doc-123', { config: { private: true } });
     expect(channel.on).toHaveBeenCalledWith('broadcast', { event: 'yupdate' }, expect.any(Function));
     expect(channel.on).toHaveBeenCalledWith('broadcast', { event: 'ysync-request' }, expect.any(Function));
     expect(channel.subscribe).toHaveBeenCalled();

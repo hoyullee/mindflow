@@ -4,7 +4,8 @@ import { useNavigate, useSearchParams } from 'react-router-dom';
 import type { Box, Doc, Float, Line, LineAnchor, LayoutMode, Node, NodeMap, SizeOf, SnapCandidate, Zone } from '@mindflow/mindmap-core';
 import { HistoryStack, ROOT_ID, applyPartialStyle, cubicAt, findLineSnap, layout, resolveLineEndpoints, resolveLineGeometry, serializeDoc, toMarkdown } from '@mindflow/mindmap-core';
 import { domToRuns, linearize, runsToHtml, setLinearSelection } from './richtextDom';
-import { useBackend, useDocStore } from '../../adapters/BackendContext';
+import type { ShareStore } from '../../adapters/ports';
+import { useBackend, useDocStore, useShareStore } from '../../adapters/BackendContext';
 import { useAuthUser } from '../../adapters/useAuthUser';
 import { useYjsDocSync } from '../../collab/useYjsDocSync';
 import { usePresence, type UsePresenceResult } from '../../collab/usePresence';
@@ -473,6 +474,18 @@ export interface EditorController {
   exportPNG: () => void;
   /** 마크다운 개요(.md)로 내보낸다 — 코어 `toMarkdown`. */
   exportMarkdown: () => void;
+
+  // ---- 공유 ----
+  /** 공유 모달이 열려 있는가. */
+  shareOpen: boolean;
+  openShare: () => void;
+  closeShare: () => void;
+  /** 이 문서의 id — 공유 모달이 초대를 걸 대상. */
+  docId: string;
+  /** 초대 목록 창구(실제 접근 제어는 DB의 RLS). */
+  shareStore: ShareStore;
+  /** `'local'`(데모)인지 — 공유 모달이 "실제로는 공유되지 않는다"를 알려 줄 때 쓴다. */
+  backendMode: 'local' | 'supabase';
 }
 
 function docSignature(d: Doc): string {
@@ -493,6 +506,7 @@ export function useEditorState(): EditorController {
   const [params] = useSearchParams();
   const navigate = useNavigate();
   const docStore = useDocStore();
+  const shareStore = useShareStore();
   const backendMode = useBackend().mode;
   const mapId = params.get('map') || null;
   const docStoreId = mapId || 'default';
@@ -610,6 +624,7 @@ export function useEditorState(): EditorController {
    * 멈추고 안내한다(위 `!res` 분기 참고).
    */
   const [bodyMissing, setBodyMissing] = useState(false);
+  const [shareOpen, setShareOpen] = useState(false);
   useEffect(() => {
     let cancelled = false;
     const p = docStore
@@ -3446,5 +3461,11 @@ export function useEditorState(): EditorController {
     exportJSON,
     exportPNG,
     exportMarkdown,
+    shareOpen,
+    openShare: () => setShareOpen(true),
+    closeShare: () => setShareOpen(false),
+    docId: docStoreId,
+    shareStore,
+    backendMode,
   };
 }

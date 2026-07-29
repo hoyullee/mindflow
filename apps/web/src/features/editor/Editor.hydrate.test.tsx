@@ -4,6 +4,7 @@ import { MemoryRouter, Route, Routes } from 'react-router-dom';
 import { BackendProvider } from '../../adapters/BackendContext';
 import { LocalAuth } from '../../adapters/local/localAuth';
 import { LocalSpaceStore } from '../../adapters/local/localSpaceStore';
+import { LocalShareStore } from '../../adapters/local/localShareStore';
 import type { Backend, DocStore, LoadedDoc } from '../../adapters/ports';
 import { Editor } from './Editor';
 
@@ -38,7 +39,7 @@ function makeBackend(load: DocStore['load'], mode: Backend['mode']) {
     rename: async () => undefined,
     save,
   } as unknown as DocStore;
-  return { backend: { auth: new LocalAuth(), docStore, spaceStore: new LocalSpaceStore(), mode } as Backend, save };
+  return { backend: { auth: new LocalAuth(), docStore, spaceStore: new LocalSpaceStore(), shareStore: new LocalShareStore(), mode } as Backend, save };
 }
 
 function renderEditor(backend: Backend, entry: string) {

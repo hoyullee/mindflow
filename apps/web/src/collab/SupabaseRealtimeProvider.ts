@@ -57,7 +57,11 @@ export class SupabaseRealtimeProvider implements CollabProvider {
     this.disconnect();
     this.ydoc = ydoc;
     this.awareness = new Awareness(ydoc);
-    const channel = this.client.channel(`mindflow-collab:${docId}`);
+    // `private: true` — Realtime Authorization을 타게 한다. 이게 없으면 채널은
+    // 누구에게나 열려 있고(anon 키는 번들에 공개돼 있다), docId를 아는 사람이 문서
+    // 내용을 받아 보거나 주입할 수 있다. 정책은 문서 권한을 그대로 따른다
+    // (`supabase/migrations/0009_document_shares.sql`의 realtime.messages 블록).
+    const channel = this.client.channel(`mindflow-collab:${docId}`, { config: { private: true } });
     channel
       .on('broadcast', { event: BROADCAST_EVENT }, ({ payload }: { payload: UpdatePayload }) => {
         if (!this.ydoc) return;

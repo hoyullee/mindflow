@@ -7,6 +7,7 @@ import { mockMatchMedia } from '../../test/matchMedia';
 import { BackendProvider } from '../../adapters/BackendContext';
 import { LocalAuth } from '../../adapters/local/localAuth';
 import { LocalSpaceStore } from '../../adapters/local/localSpaceStore';
+import { LocalShareStore } from '../../adapters/local/localShareStore';
 import { mapId } from './storage';
 import type { Backend, DocMeta, DocStore, LoadedDoc, SaveResult, SpaceStore, WorkspaceData } from '../../adapters/ports';
 
@@ -59,7 +60,7 @@ class MockDocStore implements DocStore {
  *  (예: ②의 "이미 있는 문서엔 손대지 않는다")을 볼 때 'supabase'를 넘긴다. */
 function renderHomeWithDocStore(metas: DocMeta[] = [], bodies: Record<string, LoadedDoc> = {}, mode: Backend['mode'] = 'local') {
   const docStore = new MockDocStore(metas, bodies);
-  const backend: Backend = { auth: new LocalAuth(), docStore, spaceStore: new LocalSpaceStore(), mode };
+  const backend: Backend = { auth: new LocalAuth(), docStore, spaceStore: new LocalSpaceStore(), shareStore: new LocalShareStore(), mode };
   const utils = render(
     <MemoryRouter initialEntries={['/home']}>
       <BackendProvider backend={backend}>
@@ -119,7 +120,7 @@ describe('Home', () => {
         return { user: { id: 'g1', email: 'hoyul.lee@gmail.com', name: '이호율', avatarUrl: 'https://lh3.googleusercontent.com/a/photo=s96-c' } };
       }
     }
-    const backend: Backend = { auth: new GoogleAuth(), docStore: new MockDocStore(), spaceStore: new LocalSpaceStore(), mode: 'local' };
+    const backend: Backend = { auth: new GoogleAuth(), docStore: new MockDocStore(), spaceStore: new LocalSpaceStore(), shareStore: new LocalShareStore(), mode: 'local' };
     const { container } = render(
       <MemoryRouter initialEntries={['/home']}>
         <BackendProvider backend={backend}>
@@ -252,7 +253,7 @@ describe('Home', () => {
       rename: vi.fn(async () => undefined),
       save: vi.fn(async (): Promise<SaveResult> => ({ ok: true, version: 1 })),
     };
-    const backend: Backend = { auth: new LocalAuth(), docStore, spaceStore: new LocalSpaceStore(), mode: 'local' };
+    const backend: Backend = { auth: new LocalAuth(), docStore, spaceStore: new LocalSpaceStore(), shareStore: new LocalShareStore(), mode: 'local' };
     const { container } = render(
       <MemoryRouter initialEntries={['/home']}>
         <BackendProvider backend={backend}>
@@ -347,7 +348,7 @@ describe('Home', () => {
         return gate as ReturnType<LocalAuth['getSession']>;
       }
     }
-    const backend: Backend = { auth: new GatedAuth(), docStore: new MockDocStore(), spaceStore: new LocalSpaceStore(), mode: 'local' };
+    const backend: Backend = { auth: new GatedAuth(), docStore: new MockDocStore(), spaceStore: new LocalSpaceStore(), shareStore: new LocalShareStore(), mode: 'local' };
     const { container } = render(
       <MemoryRouter initialEntries={['/home']}>
         <BackendProvider backend={backend}>
@@ -395,7 +396,7 @@ describe('Home', () => {
       rename: vi.fn(async () => undefined),
       save: vi.fn(async (): Promise<SaveResult> => ({ ok: true, version: 1 })),
     };
-    const backend: Backend = { auth: new LocalAuth(), docStore, spaceStore: new LocalSpaceStore(), mode: 'local' };
+    const backend: Backend = { auth: new LocalAuth(), docStore, spaceStore: new LocalSpaceStore(), shareStore: new LocalShareStore(), mode: 'local' };
     render(
       <MemoryRouter initialEntries={['/home']}>
         <BackendProvider backend={backend}>
@@ -438,7 +439,7 @@ describe('Home', () => {
       rename: vi.fn(async () => undefined),
       save: vi.fn(async (): Promise<SaveResult> => ({ ok: true, version: 1 })),
     };
-    const backend: Backend = { auth: new LocalAuth(), docStore, spaceStore: new LocalSpaceStore(), mode: 'local' };
+    const backend: Backend = { auth: new LocalAuth(), docStore, spaceStore: new LocalSpaceStore(), shareStore: new LocalShareStore(), mode: 'local' };
     render(
       <MemoryRouter initialEntries={['/home']}>
         <BackendProvider backend={backend}>
@@ -892,7 +893,7 @@ describe('Home', () => {
       }),
       save,
     };
-    const backend: Backend = { auth: new LocalAuth(), docStore: new MockDocStore([]), spaceStore, mode: 'local' };
+    const backend: Backend = { auth: new LocalAuth(), docStore: new MockDocStore([]), spaceStore, shareStore: new LocalShareStore(), mode: 'local' };
     render(
       <MemoryRouter initialEntries={['/home']}>
         <BackendProvider backend={backend}>
@@ -916,7 +917,7 @@ describe('Home', () => {
       load: vi.fn(async (): Promise<WorkspaceData | null> => ({ spaces: [{ id: 'work', name: '작업 공간', color: '#3f8fd0', maps: [] }], mapFolders: {} })),
       save,
     };
-    const backend: Backend = { auth: new LocalAuth(), docStore: new MockDocStore([]), spaceStore, mode: 'local' };
+    const backend: Backend = { auth: new LocalAuth(), docStore: new MockDocStore([]), spaceStore, shareStore: new LocalShareStore(), mode: 'local' };
     const { container } = render(
       <MemoryRouter initialEntries={['/home']}>
         <BackendProvider backend={backend}>
@@ -1190,7 +1191,7 @@ describe('Home', () => {
       override getProfileName = async (): Promise<string | null> => '서버닉네임';
       override setProfileName = setProfileName;
     }
-    const backend: Backend = { auth: new BackendAuth(), docStore: new MockDocStore([]), spaceStore: new LocalSpaceStore(), mode: 'local' };
+    const backend: Backend = { auth: new BackendAuth(), docStore: new MockDocStore([]), spaceStore: new LocalSpaceStore(), shareStore: new LocalShareStore(), mode: 'local' };
     render(
       <MemoryRouter initialEntries={['/home']}>
         <BackendProvider backend={backend}>
@@ -1512,6 +1513,68 @@ describe('Home', () => {
       expect(doc.nodes.root?.note).toBe('루트 노트');
       expect(Object.values(doc.nodes).map((n) => n.text)).toContain('가지');
       expect(doc.floats.map((f) => f.text)).toEqual(['메모 하나']);
+    });
+  });
+
+  // 공유(0009): `DocStore.list()`가 남이 나에게 공유한 문서까지 돌려준다. 워크스페이스
+  // (스페이스·폴더·즐겨찾기·휴지통)는 per-user 블롭이라, 남의 문서를 여기 섞으면 내
+  // 스페이스에 카드로 박히고 그대로 저장돼 버린다.
+  describe('공유받은 문서는 내 워크스페이스를 오염시키지 않는다', () => {
+    const mine: DocMeta = { id: 'mine', title: '내 맵', version: 1, updatedAt: '2026-01-02T00:00:00.000Z', isFavorite: false, deletedAt: null, ownedByMe: true };
+    const theirs: DocMeta = { id: 'theirs', title: '공유받은 맵', version: 1, updatedAt: '2026-01-01T00:00:00.000Z', isFavorite: true, deletedAt: null, ownedByMe: false, sharedRole: 'edit' };
+
+    it('남의 문서는 내 스페이스 카드가 되지 않고, 저장되는 블롭에도 들어가지 않는다', async () => {
+      localStorage.setItem('mf_spaces', JSON.stringify({ spaces: [{ id: 'sa', name: '내 공간', color: '#f0663f', home: true, maps: [], folders: [] }], mapFolders: {} }));
+      const { container } = renderHomeWithDocStore([mine, theirs]);
+
+      // 내 문서는 카드가 된다
+      await waitFor(() => expect(container.querySelector('.mf-map-grid a[data-title="내 맵"]')).toBeTruthy());
+      // 남이 공유한 문서는 그리드에 없다
+      expect(container.querySelector('.mf-map-grid a[data-title="공유받은 맵"]')).toBeNull();
+
+      // 저장된 워크스페이스에도 없어야 한다(있으면 내 것으로 굳어 버린다).
+      // (내 문서 카드는 매 로드에 메타에서 다시 파생되므로 블롭에 없을 수 있다 —
+      //  여기서 중요한 건 **남의 문서가 들어가지 않는다**는 것이다.)
+      const saved = JSON.parse(localStorage.getItem('mf_spaces') as string) as { spaces: { maps: { title: string }[] }[] };
+      expect(saved.spaces[0]!.maps.map((m) => m.title)).not.toContain('공유받은 맵');
+    });
+
+    it('공유받은 맵은 별도 섹션에 뜨고, 열면 그 문서로 간다', async () => {
+      localStorage.setItem('mf_spaces', JSON.stringify({ spaces: [{ id: 'sa', name: '내 공간', color: '#f0663f', home: true, maps: [], folders: [] }], mapFolders: {} }));
+      const { container } = renderHomeWithDocStore([mine, theirs]);
+
+      const strip = await waitFor(() => {
+        const el = container.querySelector('[aria-label="공유받은 맵"]');
+        expect(el).toBeTruthy();
+        return el as HTMLElement;
+      });
+      // 그 섹션 안에만 있고, 스페이스 그리드에는 없다
+      expect(within(strip).getByText('공유받은 맵', { selector: 'a *' }) || true).toBeTruthy();
+      expect(strip.querySelector('a[data-title="공유받은 맵"]')).toBeTruthy();
+      expect(container.querySelector('.mf-map-grid a[data-title="공유받은 맵"]')).toBeNull();
+
+      // 카드는 그 문서 id로 링크된다(공유받은 문서를 그대로 연다)
+      const link = strip.querySelector('a[data-title="공유받은 맵"]') as HTMLAnchorElement;
+      expect(link.getAttribute('href')).toContain('map=theirs');
+      // 내 문서가 아니므로 ☰ 메뉴는 없다(옮기거나 지울 수 없다)
+      expect(within(strip).queryByRole('button', { name: '메뉴' })).toBeNull();
+    });
+
+    it('공유받은 맵이 없으면 섹션 자체가 없다', async () => {
+      localStorage.setItem('mf_spaces', JSON.stringify({ spaces: [{ id: 'sa', name: '내 공간', color: '#f0663f', home: true, maps: [], folders: [] }], mapFolders: {} }));
+      const { container } = renderHomeWithDocStore([mine]);
+      await waitFor(() => expect(container.querySelector('.mf-map-grid a[data-title="내 맵"]')).toBeTruthy());
+      expect(container.querySelector('[aria-label="공유받은 맵"]')).toBeNull();
+    });
+
+    it('남의 문서의 즐겨찾기·휴지통 상태가 내 것으로 새지 않는다', async () => {
+      localStorage.setItem('mf_spaces', JSON.stringify({ spaces: [{ id: 'sa', name: '내 공간', color: '#f0663f', home: true, maps: [], folders: [] }], mapFolders: {} }));
+      // `theirs`는 isFavorite: true — 소유자가 별을 달아 둔 상태다. 내 LNB에는 안 보여야 한다.
+      const { container } = renderHomeWithDocStore([mine, { ...theirs, deletedAt: '2026-01-03T00:00:00.000Z' }]);
+      await waitFor(() => expect(container.querySelector('.mf-map-grid a[data-title="내 맵"]')).toBeTruthy());
+
+      const aside = within(container.querySelector('aside') as HTMLElement);
+      expect(aside.queryByText('공유받은 맵')).toBeNull(); // 즐겨찾기·휴지통 어디에도 없다
     });
   });
 
@@ -2020,7 +2083,7 @@ describe('Home', () => {
           return new Promise<DocMeta[]>(() => {}); // never resolves
         }
       }
-      const backend: Backend = { auth: new LocalAuth(), docStore: new PendingDocStore(), spaceStore: new LocalSpaceStore(), mode: 'local' };
+      const backend: Backend = { auth: new LocalAuth(), docStore: new PendingDocStore(), spaceStore: new LocalSpaceStore(), shareStore: new LocalShareStore(), mode: 'local' };
       const { container } = render(
         <MemoryRouter initialEntries={['/home']}>
           <BackendProvider backend={backend}>
@@ -2076,7 +2139,7 @@ describe('Home', () => {
         mapFolders: {},
       };
       const spaceStore = new RacySpaceStore(full);
-      const backend: Backend = { auth: new RacyAuth(), docStore: new MockDocStore([]), spaceStore, mode: 'supabase' };
+      const backend: Backend = { auth: new RacyAuth(), docStore: new MockDocStore([]), spaceStore, shareStore: new LocalShareStore(), mode: 'supabase' };
       const { container } = render(
         <MemoryRouter initialEntries={['/home']}>
           <BackendProvider backend={backend}>
@@ -2145,7 +2208,7 @@ describe('Home', () => {
         rename: vi.fn(async () => undefined),
       } as unknown as DocStore;
 
-      const backend: Backend = { auth: new RacyAuth(), docStore, spaceStore, mode: 'supabase' };
+      const backend: Backend = { auth: new RacyAuth(), docStore, spaceStore, shareStore: new LocalShareStore(), mode: 'supabase' };
       render(
         <MemoryRouter initialEntries={['/home']}>
           <BackendProvider backend={backend}>

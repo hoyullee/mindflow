@@ -115,6 +115,15 @@ export interface DocMeta {
   isFavorite: boolean;
   /** Soft-delete timestamp (trash). `null` = not deleted. */
   deletedAt: string | null;
+  /**
+   * 이 문서가 **내 것**인가. 공유가 생기면서 `list()`가 남이 나에게 공유한 문서까지
+   * 돌려주므로, 홈이 그것을 자기 스페이스의 카드로 삼지 않도록(워크스페이스 블롭은
+   * per-user다) 구분이 필요하다. 없으면 `true`로 본다 — 공유 이전에 만들어진
+   * 호출부·테스트가 그대로 동작하게.
+   */
+  ownedByMe?: boolean;
+  /** 공유받은 문서일 때의 내 권한. 내 문서면 undefined. */
+  sharedRole?: ShareRole;
 }
 
 export interface LoadedDoc {
@@ -151,6 +160,46 @@ export interface SaveOptions {
    * `prevVersion`과 함께 주면 의미가 없으므로 무시된다(그쪽이 이미 잠금이다).
    */
   createOnly?: boolean;
+}
+
+// ── Sharing (사람 사이의 공동 편집) ──────────────────────────────────────
+
+/**
+ * 공유 권한. `view`는 스키마·정책에만 있고 UI는 아직 `edit`만 제공한다 — 뷰어를
+ * 제대로 만들려면 CRDT로 자기 편집이 상대에게 전파되는 것부터 막아야 한다
+ * (`supabase/migrations/0009_document_shares.sql` 참고).
+ */
+export type ShareRole = 'edit' | 'view';
+
+/** 한 문서에 걸린 초대 하나. */
+export interface DocumentShare {
+  documentId: string;
+  /** 초대받은 사람의 이메일(소문자). 사용자 id가 아닌 이유는 0009 마이그레이션 참고 —
+   * 클라이언트는 `auth.users`를 읽을 수 없고, 미가입자도 초대할 수 있어야 한다. */
+  email: string;
+  role: ShareRole;
+  createdAt: string;
+}
+
+/** 내가 공유받은 문서 하나(홈의 "공유받은 맵" 섹션이 읽는다). */
+export interface SharedWithMe {
+  documentId: string;
+  role: ShareRole;
+}
+
+/**
+ * 문서 공유 관리. 실제 접근 제어는 **DB의 RLS**가 한다(0009) — 이 포트는 초대
+ * 목록을 읽고 쓰는 창구일 뿐이고, 여기서 무엇을 허용하든 서버가 다시 판단한다.
+ */
+export interface ShareStore {
+  /** 그 문서에 걸린 초대 목록. 소유자만 전체를 볼 수 있다(RLS). */
+  list(documentId: string): Promise<DocumentShare[]>;
+  /** 초대(이미 있으면 권한만 갱신). 이메일은 어떻게 넘겨도 소문자로 정규화된다. */
+  add(documentId: string, email: string, role?: ShareRole): Promise<{ error?: string }>;
+  /** 초대 취소. 소유자는 누구든, 초대받은 사람은 자기 자신만(= 공유 나가기). */
+  remove(documentId: string, email: string): Promise<{ error?: string }>;
+  /** 나에게 공유된 문서들. */
+  listSharedWithMe(): Promise<SharedWithMe[]>;
 }
 
 /**
@@ -211,6 +260,8 @@ export interface Backend {
   docStore: DocStore;
   /** Per-user spaces/folders structure (cross-device in Supabase mode). */
   spaceStore: SpaceStore;
+  /** 문서 공유(초대 목록). 로컬/데모 모드에서도 같은 계약으로 동작한다. */
+  shareStore: ShareStore;
   /** `'local'` = demo/localStorage fallback (no env configured); `'supabase'`
    * = real Postgres + Auth. Used to decide whether auth routes are gated. */
   mode: 'local' | 'supabase';

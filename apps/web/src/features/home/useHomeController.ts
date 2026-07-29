@@ -103,7 +103,13 @@ export function useHomeController() {
     // default-seed fallback below would clobber the user's stored spaces.
     canPersistWorkspaceRef.current = res[0].status === 'fulfilled';
     const ws = res[0].status === 'fulfilled' ? res[0].value : null;
-    const metas = res[1].status === 'fulfilled' ? res[1].value : [];
+    const allMetas = res[1].status === 'fulfilled' ? res[1].value : [];
+    // 공유(0009) 이후 `list()`는 **남이 나에게 공유한 문서까지** 돌려준다. 워크스페이스
+    // (스페이스·폴더·즐겨찾기·휴지통)는 per-user 블롭이므로 남의 문서를 여기 섞으면
+    // 내 스페이스에 카드로 박히고 그대로 저장된다. 그래서 아래 모든 워크스페이스
+    // 계산에는 **내 문서만** 넘긴다. 공유받은 문서는 별도 목록으로 다룬다(sharedMetas).
+    const metas = allMetas.filter((m) => m.ownedByMe !== false);
+    const sharedMetas = allMetas.filter((m) => m.ownedByMe === false && !m.deletedAt);
     if (ws && Array.isArray(ws.spaces)) workspaceLoadedRef.current = true;
     const wsBase = ws && Array.isArray(ws.spaces) ? ensureHomeSpace(coerceSpaces(ws.spaces)) : null;
     // ② 예전에 가져온(docId 없는) 카드를 자기 문서에 묶는다 — 조건과 근거는
@@ -216,8 +222,8 @@ export function useHomeController() {
       // renders the real (possibly empty) state.
       // 카드의 "마지막 수정" 표기 원천 — 휴지통 문서 메타까지 포함해 통째로
       // 갱신한다 (복원 직후에도 카드에 시각이 바로 뜨도록). timeFormat.ts 참고.
-      const docTimes = Object.fromEntries(metas.map((m) => [m.id, m.updatedAt]));
-      return { ...prev, spaces, activeSpace, curFolder, mapFolders, favs, deleted, trash, recent, docTimes, loaded: true };
+      const docTimes = Object.fromEntries(allMetas.map((m) => [m.id, m.updatedAt]));
+      return { ...prev, spaces, activeSpace, curFolder, mapFolders, favs, deleted, trash, recent, docTimes, sharedMaps: sharedMetas.map((m) => ({ docId: m.id, title: m.title, updatedAt: m.updatedAt, role: m.sharedRole ?? 'edit' })), loaded: true };
     });
     // ② 묶은 카드의 본문을 올린다. `createOnly`라 이미 있으면 아무것도 하지 않는다
     // (다른 기기가 올린 문서를 덮지 않는다). 실패는 조용히 넘긴다 — 다음 진입에서
