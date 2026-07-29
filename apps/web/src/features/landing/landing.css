@@ -1,0 +1,553 @@
+/* 새 랜딩(2026-07, "Geurio 랜딩 리뉴얼.dc.html" 디자인 원본) — React 쌍둥이용.
+   public/landing.html(크롤러가 보는 정적 쌍둥이)의 <style>과 내용·수치를 동기화할 것.
+   전부 .lp-root 아래로 스코프해 앱의 다른 화면 스타일과 충돌하지 않는다. */
+
+/* 강조 라벨(eyebrow·번호·데모 URL)용 모노스페이스 — 같은 출처(/fonts)에서만 로드. */
+@font-face {
+  font-family: 'JetBrains Mono';
+  font-style: normal;
+  font-weight: 400 500;
+  font-display: swap;
+  src: url('/fonts/jetbrains-mono/jetbrains-mono-latin.woff2') format('woff2');
+  unicode-range: U+0000-00FF, U+2000-206F;
+}
+
+.lp-root {
+  min-height: 100vh;
+  background: #fdfaf7;
+  color: #2e2a26;
+  font-family: Pretendard, 'Pretendard-fallback', system-ui, sans-serif;
+  -webkit-font-smoothing: antialiased;
+  line-height: 1.6;
+}
+.lp-root h1,
+.lp-root h2,
+.lp-root h3,
+.lp-root p {
+  margin: 0;
+}
+.lp-root a {
+  color: inherit;
+  text-decoration: none;
+}
+.lp-root a:hover {
+  opacity: 0.72;
+}
+.lp-root .mono {
+  font-family: 'JetBrains Mono', ui-monospace, SFMono-Regular, Menlo, monospace;
+}
+.lp-root .container {
+  max-width: 1080px;
+  margin: 0 auto;
+}
+
+.lp-root header.lp {
+  position: sticky;
+  top: 0;
+  z-index: 20;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px 16px;
+  padding: 12px clamp(18px, 4vw, 56px);
+  background: rgba(253, 250, 247, 0.88);
+  backdrop-filter: blur(12px);
+  border-bottom: 1px solid #f2e7df;
+}
+.lp-root .brand {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+}
+.lp-root .brand img {
+  width: 26px;
+  height: 26px;
+  border-radius: 8px;
+  display: block;
+}
+.lp-root .brand b {
+  font-size: 17px;
+  font-weight: 800;
+  letter-spacing: -0.01em;
+}
+.lp-root nav.lp {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px clamp(14px, 2.4vw, 28px);
+  font-size: 14px;
+  color: #6e675f;
+}
+.lp-root .pill-cta {
+  display: inline-flex;
+  align-items: center;
+  height: 38px;
+  padding: 0 17px;
+  border-radius: 999px;
+  background: #ee6b45;
+  color: #fff;
+  font-weight: 700;
+  white-space: nowrap;
+}
+
+.lp-root .hero {
+  padding: clamp(44px, 7vw, 78px) clamp(18px, 4vw, 56px) 0;
+  text-align: center;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 22px;
+}
+.lp-root .hero-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  height: 31px;
+  padding: 0 15px;
+  border-radius: 999px;
+  border: 1px solid #e3ded3;
+  background: #fff;
+  font-size: 12.5px;
+  color: #6e675f;
+  font-weight: 500;
+}
+.lp-root h1 {
+  font-size: clamp(34px, 6.4vw, 66px);
+  line-height: 1.08;
+  font-weight: 800;
+  letter-spacing: -0.035em;
+  text-wrap: balance;
+  max-width: 740px;
+}
+.lp-root .hero-sub {
+  max-width: 560px;
+  font-size: clamp(15.5px, 1.6vw, 18.5px);
+  line-height: 1.62;
+  color: #6e675f;
+  text-wrap: pretty;
+}
+.lp-root .hero-ctas {
+  display: flex;
+  gap: 11px;
+  align-items: center;
+  flex-wrap: wrap;
+  justify-content: center;
+  margin-top: 4px;
+}
+.lp-root .cta {
+  display: inline-flex;
+  align-items: center;
+  height: 54px;
+  padding: 0 30px;
+  border-radius: 999px;
+  background: #ee6b45;
+  color: #fff;
+  font-size: 16.5px;
+  font-weight: 700;
+  box-shadow: 0 14px 28px -12px rgba(238, 107, 69, 0.7);
+  transition: transform 0.18s ease;
+}
+.lp-root .cta:hover {
+  transform: translateY(-2px);
+  opacity: 1;
+}
+.lp-root .cta-ghost {
+  display: inline-flex;
+  align-items: center;
+  height: 54px;
+  padding: 0 24px;
+  border-radius: 999px;
+  border: 1px solid #dfd9ce;
+  background: #fff;
+  font-size: 16px;
+  font-weight: 600;
+  color: #4a443d;
+}
+.lp-root .hero-note {
+  font-size: 13px;
+  color: #948e84;
+}
+
+.lp-root .demo-wrap {
+  padding: clamp(26px, 4vw, 40px) clamp(18px, 4vw, 56px) clamp(46px, 6vw, 68px);
+}
+.lp-root .demo {
+  max-width: 1080px;
+  margin: 0 auto;
+  border-radius: 22px;
+  border: 1px solid #e7e3db;
+  background: #fbf0e8;
+  overflow: hidden;
+  box-shadow: 0 26px 60px -34px rgba(46, 42, 38, 0.28);
+}
+.lp-root .demo-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 12px 16px;
+  border-bottom: 1px solid #f3e4da;
+  background: #fffdfb;
+}
+.lp-root .demo-dots {
+  display: flex;
+  gap: 6px;
+}
+.lp-root .demo-dots span {
+  width: 9px;
+  height: 9px;
+  border-radius: 99px;
+  background: #e4ded2;
+  display: block;
+}
+.lp-root .demo-url {
+  font-size: 11px;
+  color: #a29b90;
+  letter-spacing: 0.02em;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+.lp-root .demo-reset {
+  height: 29px;
+  padding: 0 13px;
+  border-radius: 99px;
+  border: 1px solid #e3ded3;
+  background: #fff;
+  font-size: 11.5px;
+  font-weight: 600;
+  color: #6e675f;
+  cursor: pointer;
+  white-space: nowrap;
+  font-family: inherit;
+}
+.lp-root .demo-reset:hover {
+  background: #f3efe7;
+}
+.lp-root .demo-canvas {
+  position: relative;
+  width: 100%;
+  height: clamp(330px, 42vw, 440px);
+  overflow: hidden;
+  background-image: radial-gradient(#e7cbb8 1.1px, transparent 1.1px);
+  background-size: 18px 18px;
+}
+.lp-root .demo-hint {
+  position: absolute;
+  left: 50%;
+  bottom: 12px;
+  transform: translateX(-50%);
+  font-size: 12.5px;
+  color: #b08c77;
+  white-space: nowrap;
+}
+
+.lp-root section.band {
+  padding: 0 clamp(18px, 4vw, 56px) clamp(56px, 7vw, 80px);
+}
+.lp-root .sec-head {
+  display: flex;
+  flex-direction: column;
+  gap: 9px;
+  margin-bottom: 30px;
+}
+.lp-root .eyebrow {
+  font-size: 12px;
+  color: #e0602f;
+  letter-spacing: 0.08em;
+}
+.lp-root h2 {
+  font-size: clamp(26px, 3.6vw, 38px);
+  font-weight: 800;
+  letter-spacing: -0.028em;
+  text-wrap: balance;
+}
+.lp-root .sec-head p {
+  font-size: 16px;
+  color: #6e675f;
+  text-wrap: pretty;
+}
+
+.lp-root .case-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(262px, 1fr));
+  gap: 14px;
+}
+.lp-root .case {
+  padding: 22px 22px 24px;
+  border-radius: 18px;
+  background: #fff;
+  border: 1px solid #f2e7df;
+  display: flex;
+  flex-direction: column;
+  gap: 9px;
+  transition:
+    transform 0.18s ease,
+    box-shadow 0.18s ease;
+}
+.lp-root .case:hover {
+  transform: translateY(-4px);
+  box-shadow: 0 18px 34px -22px rgba(46, 42, 38, 0.4);
+}
+.lp-root .case-no {
+  width: 34px;
+  height: 34px;
+  border-radius: 11px;
+  background: #fdede6;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 13px;
+  font-weight: 700;
+  color: #e0602f;
+  font-family: 'JetBrains Mono', ui-monospace, monospace;
+}
+.lp-root .case h3 {
+  margin-top: 2px;
+  font-size: 18px;
+  font-weight: 700;
+}
+.lp-root .case p {
+  font-size: 14.5px;
+  line-height: 1.6;
+  color: #6e675f;
+  text-wrap: pretty;
+}
+
+.lp-root .how {
+  padding: clamp(56px, 7vw, 74px) clamp(18px, 4vw, 56px);
+  background: #fbf3ee;
+  border-top: 1px solid #f3e4da;
+  border-bottom: 1px solid #f3e4da;
+}
+.lp-root .step-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(272px, 1fr));
+  gap: 16px;
+}
+.lp-root .step {
+  padding: 26px;
+  border-radius: 18px;
+  background: #fff;
+  border: 1px solid #f0e3d9;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+.lp-root .step-no {
+  font-size: 40px;
+  font-weight: 800;
+  letter-spacing: -0.04em;
+  color: #f3c3af;
+  line-height: 1;
+}
+.lp-root .step h3 {
+  font-size: 19px;
+  font-weight: 700;
+}
+.lp-root .step p {
+  font-size: 14.5px;
+  line-height: 1.6;
+  color: #6e675f;
+  text-wrap: pretty;
+}
+
+.lp-root .features {
+  padding: clamp(56px, 7vw, 80px) clamp(18px, 4vw, 56px);
+}
+.lp-root .feature {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(290px, 1fr));
+  gap: 24px;
+  align-items: center;
+  padding: clamp(20px, 2.4vw, 28px);
+  border-radius: 20px;
+  border: 1px solid #f2e7df;
+  background: #fff;
+}
+.lp-root .feature + .feature {
+  margin-top: 16px;
+}
+.lp-root .feature h3 {
+  font-size: clamp(21px, 2.4vw, 25px);
+  font-weight: 800;
+  letter-spacing: -0.02em;
+}
+.lp-root .feature .body {
+  display: flex;
+  flex-direction: column;
+  gap: 11px;
+}
+.lp-root .feature .body > p {
+  font-size: 15.5px;
+  line-height: 1.65;
+  color: #6e675f;
+  max-width: 430px;
+  text-wrap: pretty;
+}
+.lp-root .chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 7px;
+  margin-top: 5px;
+}
+.lp-root .chip {
+  display: inline-flex;
+  align-items: center;
+  height: 30px;
+  padding: 0 12px;
+  border-radius: 999px;
+  background: #fdf2ec;
+  border: 1px solid #f7dfd3;
+  font-size: 12.5px;
+  color: #8a5b45;
+  font-weight: 500;
+}
+.lp-root .shot {
+  border-radius: 14px;
+  border: 1px solid #f1e2d8;
+  background: #fbf0e8;
+  overflow: hidden;
+  position: relative;
+  background-image: radial-gradient(#e7cbb8 1.1px, transparent 1.1px);
+  background-size: 16px 16px;
+}
+
+.lp-root .faq-band {
+  padding: 0 clamp(18px, 4vw, 56px) clamp(56px, 7vw, 80px);
+}
+.lp-root .faq-grid {
+  max-width: 1080px;
+  margin: 0 auto;
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(290px, 1fr));
+  gap: clamp(24px, 3vw, 40px);
+  align-items: start;
+}
+.lp-root .faq-list {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+/* 정적 쌍둥이는 <details>지만 React 쪽은 디자인 원본(dc)대로 버튼 아코디언 —
+   grid-template-rows 트랜지션으로 열림/닫힘을 애니메이션한다. */
+.lp-root .faq-item {
+  border-radius: 16px;
+  border: 1px solid #f2e7df;
+  background: #fff;
+  overflow: hidden;
+}
+.lp-root .faq-q {
+  width: 100%;
+  border: 0;
+  background: none;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 18px 20px;
+  font-size: 16px;
+  font-weight: 600;
+  color: #2e2a26;
+  cursor: pointer;
+  text-align: left;
+  font-family: inherit;
+}
+.lp-root .faq-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  flex-shrink: 0;
+  font-size: 18px;
+  font-weight: 400;
+  opacity: 0.5;
+  transition: transform 0.25s ease;
+}
+.lp-root .faq-item[data-open='1'] .faq-icon {
+  transform: rotate(45deg);
+}
+.lp-root .faq-body {
+  display: grid;
+  grid-template-rows: 0fr;
+  transition: grid-template-rows 0.28s ease;
+  overflow: hidden;
+}
+.lp-root .faq-item[data-open='1'] .faq-body {
+  grid-template-rows: 1fr;
+}
+.lp-root .faq-body > div {
+  min-height: 0;
+}
+.lp-root .faq-body p {
+  padding: 0 20px 18px;
+  font-size: 14.5px;
+  line-height: 1.65;
+  color: #6e675f;
+  text-wrap: pretty;
+}
+
+.lp-root .cta-band {
+  padding: 0 clamp(18px, 4vw, 56px) clamp(28px, 4vw, 40px);
+}
+.lp-root .cta-card {
+  max-width: 1080px;
+  margin: 0 auto;
+  padding: clamp(44px, 6vw, 62px) clamp(22px, 4vw, 40px);
+  border-radius: 24px;
+  background: linear-gradient(160deg, #f0764b, #e15a2e);
+  color: #fff;
+  text-align: center;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 18px;
+}
+.lp-root .cta-card h2 {
+  max-width: 620px;
+  letter-spacing: -0.032em;
+  font-size: clamp(27px, 4vw, 40px);
+}
+.lp-root .cta-card p {
+  font-size: 16px;
+  color: rgba(255, 255, 255, 0.85);
+  max-width: 460px;
+  text-wrap: pretty;
+}
+.lp-root .cta-invert {
+  display: inline-flex;
+  align-items: center;
+  height: 54px;
+  padding: 0 32px;
+  border-radius: 999px;
+  background: #fff;
+  color: #de5a2e;
+  font-size: 16.5px;
+  font-weight: 700;
+  margin-top: 4px;
+  transition: transform 0.18s ease;
+}
+.lp-root .cta-invert:hover {
+  transform: translateY(-2px);
+  opacity: 1;
+}
+
+.lp-root footer.lp {
+  margin-top: 12px;
+  padding: 24px clamp(18px, 4vw, 56px) 38px;
+  border-top: 1px solid #f2e7df;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 18px;
+  flex-wrap: wrap;
+  font-size: 13px;
+  color: #948e84;
+}
+.lp-root footer.lp .links {
+  display: flex;
+  gap: 20px;
+  flex-wrap: wrap;
+}

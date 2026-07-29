@@ -1,7 +1,7 @@
 import { readFileSync } from 'node:fs';
 import path from 'node:path';
-import { afterEach, describe, expect, it } from 'vitest';
-import { cleanup, render, screen, waitFor } from '@testing-library/react';
+import { afterEach, describe, expect, it, vi } from 'vitest';
+import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { MemoryRouter } from 'react-router-dom';
 import { App } from '../../App';
 import { Landing } from './Landing';
@@ -9,6 +9,7 @@ import { Landing } from './Landing';
 afterEach(() => {
   cleanup();
   localStorage.clear();
+  vi.useRealTimers();
 });
 
 describe('Landing', () => {
@@ -67,6 +68,29 @@ describe('Landing', () => {
     expect(screen.getByText('3단계면 충분해요')).toBeTruthy();
     expect(screen.getByText('정말 무료인가요?')).toBeTruthy();
     expect(screen.getByText('이미지 첨부')).toBeTruthy();
+    // 히어로 데모(리뉴얼 디자인의 핵심 비주얼) — 정적 쌍둥이와 같은 예시 문서
+    expect(screen.getByText('신제품 런치 플랜')).toBeTruthy();
+  });
+
+  it('plays the demo reveal and toggles branch children on click', () => {
+    // rev 1→7, 480ms 간격 — 가짜 타이머로 끝까지 감고 가지 토글을 확인한다
+    vi.useFakeTimers();
+    render(
+      <MemoryRouter>
+        <Landing />
+      </MemoryRouter>,
+    );
+    act(() => {
+      vi.advanceTimersByTime(480 * 7);
+    });
+    // 가지("메시지")는 보이고, 자식("핵심 한 줄")은 아직 접혀 있다
+    expect(screen.getByText('메시지').getAttribute('aria-hidden')).toBe('false');
+    expect(screen.getByText('핵심 한 줄').getAttribute('aria-hidden')).toBe('true');
+    fireEvent.click(screen.getByText('메시지'));
+    expect(screen.getByText('핵심 한 줄').getAttribute('aria-hidden')).toBe('false');
+    // "처음부터"는 등장 애니메이션을 되감는다(가지가 다시 숨음)
+    fireEvent.click(screen.getByText('처음부터'));
+    expect(screen.getByText('메시지').getAttribute('aria-hidden')).toBe('true');
   });
 });
 
@@ -92,7 +116,7 @@ describe('static landing.html (the crawler-visible twin)', () => {
   it('mirrors the expanded content of the React twin (use cases, steps, FAQ, chips)', () => {
     const html = readFileSync(path.join(publicDir, 'landing.html'), 'utf8');
     // 사용 사례 · 3단계 · FAQ · 기능 칩 — Landing.tsx와 동기화되어야 크롤러도 본다
-    for (const s of ['브레인스토밍', '학습 노트', '의사결정', '3단계면 충분해요', '정말 무료인가요?', '이미지 첨부', '자주 묻는 질문']) {
+    for (const s of ['브레인스토밍', '학습 노트', '의사결정', '3단계면 충분해요', '정말 무료인가요?', '이미지 첨부', '자주 묻는 질문', '신제품 런치 플랜']) {
       expect(html).toContain(s);
     }
     // FAQ는 JS 없는 <details>로 — 크롤러 가시성 유지
