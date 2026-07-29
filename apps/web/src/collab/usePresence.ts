@@ -28,7 +28,8 @@ import { EMPTY_PRESENCE_SELECTION, type PresenceCursor, type PresenceSelection, 
  *
  * 100ms(초당 10회)인 이유: 커서가 협업 트래픽의 지배 항목이라(하루 테스트로 무료
  * 한도의 4%를 태웠다) 50ms에서 절반으로 줄였다. 원격 커서는 "저 사람이 어디 보고
- * 있나"용이라 10회/초면 충분히 자연스럽다 — 실기기 확인 후 어색하면 되돌릴 것. */
+ * 있나"용이라 10회/초면 충분하다 — 두 계정 실기기 테스트에서 "커서 움직임 자연스러움"
+ * 확인 후 확정(2026-07-29). */
 const CURSOR_THROTTLE_MS = 100;
 
 export interface UsePresenceResult {
