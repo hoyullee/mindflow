@@ -1521,7 +1521,7 @@ describe('Home', () => {
   // 스페이스에 카드로 박히고 그대로 저장돼 버린다.
   describe('공유받은 문서는 내 워크스페이스를 오염시키지 않는다', () => {
     const mine: DocMeta = { id: 'mine', title: '내 맵', version: 1, updatedAt: '2026-01-02T00:00:00.000Z', isFavorite: false, deletedAt: null, ownedByMe: true };
-    // 제목을 섹션 이름("공유받은 맵")과 다르게 둔다 — LNB 헤더와 행 제목을 구분해
+    // 제목을 섹션 이름("공유받음")과 겹치지 않게 둔다 — LNB 헤더와 행 제목을 구분해
     // 단정해야 하기 때문.
     const theirs: DocMeta = { id: 'theirs', title: '남의 맵', version: 1, updatedAt: '2026-01-01T00:00:00.000Z', isFavorite: true, deletedAt: null, ownedByMe: false, sharedRole: 'edit' };
 
@@ -1543,18 +1543,18 @@ describe('Home', () => {
 
     // 제보: 처음엔 본문 상단에 최근 항목과 같은 카드 트레이로 놓았는데 "상단을 너무
     // 많이 잡아먹고" 있었다 → LNB의 접이식 항목(즐겨찾기·휴지통과 같은 꼴)으로 옮겼다.
-    it('공유받은 맵은 LNB 항목으로 뜨고, 본문 상단을 차지하지 않는다', async () => {
+    it('공유받은 문서는 LNB "공유받음" 항목으로 뜨고, 본문 상단을 차지하지 않는다', async () => {
       localStorage.setItem('mf_spaces', JSON.stringify({ spaces: [{ id: 'sa', name: '내 공간', color: '#f0663f', home: true, maps: [], folders: [] }], mapFolders: {} }));
       const { container } = renderHomeWithDocStore([mine, theirs]);
 
       const aside = within(container.querySelector('aside') as HTMLElement);
-      await waitFor(() => expect(aside.getByText('공유받은 맵')).toBeTruthy()); // 섹션 헤더
+      await waitFor(() => expect(aside.getByText('공유받음')).toBeTruthy()); // 섹션 헤더(범용 명칭 — 사용자 결정)
       const row = await waitFor(() => aside.getByTitle("'남의 맵' 열기 (함께 편집)"));
       expect(row.textContent).toContain('남의 맵');
 
       // 본문(main)에는 아무 것도 추가되지 않는다 — 그리드에도, 상단 트레이에도 없다.
       const main = container.querySelector('main') as HTMLElement;
-      expect(within(main).queryByText('공유받은 맵')).toBeNull();
+      expect(within(main).queryByText('공유받음')).toBeNull();
       expect(container.querySelector('.mf-map-grid a[data-title="남의 맵"]')).toBeNull();
     });
 
@@ -1581,12 +1581,13 @@ describe('Home', () => {
       expect(row.textContent).toContain('보기');
     });
 
-    it('공유받은 맵이 없으면 LNB 항목 자체가 없다', async () => {
+    it('공유받은 게 없어도 "공유받음" 항목은 항상 있고, 빈 안내를 보여 준다 (고정 노출 — 사용자 결정)', async () => {
       localStorage.setItem('mf_spaces', JSON.stringify({ spaces: [{ id: 'sa', name: '내 공간', color: '#f0663f', home: true, maps: [], folders: [] }], mapFolders: {} }));
       const { container } = renderHomeWithDocStore([mine]);
       await waitFor(() => expect(container.querySelector('.mf-map-grid a[data-title="내 맵"]')).toBeTruthy());
       const aside = within(container.querySelector('aside') as HTMLElement);
-      expect(aside.queryByText('공유받은 맵')).toBeNull();
+      expect(aside.getByText('공유받음')).toBeTruthy();
+      expect(aside.getByText('공유받은 항목이 없습니다')).toBeTruthy();
     });
 
     it('남의 문서의 즐겨찾기·휴지통 상태가 내 것으로 새지 않는다', async () => {
@@ -1596,8 +1597,8 @@ describe('Home', () => {
       await waitFor(() => expect(container.querySelector('.mf-map-grid a[data-title="내 맵"]')).toBeTruthy());
 
       const aside = within(container.querySelector('aside') as HTMLElement);
-      expect(aside.queryByText('남의 맵')).toBeNull(); // 즐겨찾기·휴지통·공유받은 맵 어디에도 없다
-      expect(aside.queryByText('공유받은 맵')).toBeNull(); // 휴지통에 들어간 공유 문서는 섹션도 만들지 않는다
+      expect(aside.queryByText('남의 맵')).toBeNull(); // 즐겨찾기·휴지통·공유받음 어디에도 없다
+      expect(aside.getByText('공유받은 항목이 없습니다')).toBeTruthy(); // 휴지통에 들어간 공유 문서는 행을 만들지 않는다
     });
   });
 

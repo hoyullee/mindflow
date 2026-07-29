@@ -95,8 +95,10 @@ export interface HomeViewModel {
    * 구획이 아니라 사이드바의 출처 하나로 두는 게 정보 구조에도 맞는다.
    */
   sharedItems: { docId: string; title: string; href: string; role: 'edit' | 'view' }[];
-  /** LNB에 "공유받은 맵" 구획을 그릴지 — 공유받은 게 하나도 없으면 아예 없다(혼자
-   * 쓰는 사람에게 빈 항목을 보여주지 않는다). */
+  /** LNB에 "공유받음" 구획을 그릴지. 처음엔 공유받은 게 없으면 숨겼는데, 항상
+   * 보이는 고정 항목으로 바꿨다(사용자 결정) — 기능이 있다는 것 자체가 보여야
+   * 공유를 써 볼 수 있다. 비어 있으면 즐겨찾기처럼 빈 안내를 편다. 로딩 중에만
+   * 감춘다(스켈레톤과 겹치지 않게). */
   sharedVisible: boolean;
   favItems: { title: string; isDrive: boolean; href: string; docId?: string }[];
   favCount: string;
@@ -419,7 +421,7 @@ export function deriveHomeView(state: HomeState): HomeViewModel {
     sharedItems,
     // LNB 항목이므로 폴더/검색 화면에서도 그대로 있다 — 사이드바는 "지금 보고 있는
     // 목록"이 아니라 어디로든 가는 길이다.
-    sharedVisible: !loading && sharedItems.length > 0,
+    sharedVisible: !loading,
     favItems,
     favCount: favItems.length ? String(favItems.length) : '',
     trashItems: state.trash.map((t) => ({ title: t.title, isDrive: t.source === 'drive', badge: t.source === 'drive' ? 'Drive' : '내 공간', docId: t.docId })),

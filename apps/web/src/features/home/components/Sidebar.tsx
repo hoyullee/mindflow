@@ -180,9 +180,11 @@ export function Sidebar({ state, view, controller, isMobile = false, isOpen = fa
         </div>
       )}
 
-      {/* 공유받은 맵 — 스페이스와 같은 "출처" 층에 둔다(즐겨찾기·휴지통은 내 문서를
-          다르게 보는 관점이고, 이건 아예 다른 사람의 문서다). 공유받은 게 없으면
-          구획 자체가 없다 — 혼자 쓰는 사람에게 빈 항목을 보여주지 않는다. */}
+      {/* 공유받음 — 스페이스와 같은 "출처" 층에 둔다(즐겨찾기·휴지통은 내 문서를
+          다르게 보는 관점이고, 이건 아예 다른 사람의 문서다). 항상 보이는 고정
+          항목(사용자 결정) — 비어 있으면 즐겨찾기처럼 빈 안내를 편다. 이름을
+          "공유받은 맵"이 아니라 "공유받음"으로 두는 이유: 앞으로 맵이 아닌 파일을
+          공유받아도 어색하지 않게(범용 명칭, 사용자 결정). */}
       {view.sharedVisible && (
         <>
           <div
@@ -211,8 +213,8 @@ export function Sidebar({ state, view, controller, isMobile = false, isOpen = fa
               flexShrink: 0,
             }}
           >
-            <SharedGlyph size={15} /> 공유받은 맵
-            <span style={{ marginLeft: 'auto', fontSize: 11, color: '#c9b8a9' }}>{view.sharedItems.length}</span>
+            <SharedGlyph size={15} /> 공유받음
+            <span style={{ marginLeft: 'auto', fontSize: 11, color: '#c9b8a9' }}>{view.sharedItems.length ? String(view.sharedItems.length) : ''}</span>
           </div>
           <div
             style={{
@@ -220,7 +222,7 @@ export function Sidebar({ state, view, controller, isMobile = false, isOpen = fa
               flexShrink: 0,
               // 행 높이 × 개수 + 여유. 모바일은 터치 타겟 44px(M6)이라 행이 더 높다 —
               // 같은 수를 쓰면 마지막 행이 잘린다.
-              maxHeight: state.sharedOpen ? `${view.sharedItems.length * (isMobile ? 46 : 34) + 12}px` : '0px',
+              maxHeight: state.sharedOpen ? `${Math.max(1, view.sharedItems.length) * (isMobile ? 46 : 34) + 12}px` : '0px',
               opacity: state.sharedOpen ? 1 : 0,
               transition: 'max-height .32s cubic-bezier(.4,0,.2,1), opacity .24s ease',
             }}
@@ -260,6 +262,9 @@ export function Sidebar({ state, view, controller, isMobile = false, isOpen = fa
                   )}
                 </div>
               ))}
+              {!view.loading && view.sharedItems.length === 0 && (
+                <div style={{ padding: '7px 10px 7px 30px', fontSize: 11.5, color: '#c9b8a9' }}>공유받은 항목이 없습니다</div>
+              )}
             </div>
           </div>
         </>
