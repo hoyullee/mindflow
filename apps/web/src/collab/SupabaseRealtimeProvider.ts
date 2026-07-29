@@ -34,6 +34,10 @@ export class SupabaseRealtimeProvider implements CollabProvider {
   private channel: RealtimeChannel | null = null;
   private ydoc: YDoc | null = null;
   private awareness: Awareness | null = null;
+  /** 세대 카운터 — `subscribeChannel`이 async가 되면서(아래 setAuth await) 끊긴 뒤에
+   * 도착하는 continuation이 죽은 세션의 채널을 만들 수 있다. connect/disconnect마다
+   * 올리고, await 뒤에는 자기 세대가 아직 현재인지 확인한다. */
+  private session = 0;
 
   constructor(private readonly client: SupabaseClient) {}
 
@@ -70,26 +74,30 @@ export class SupabaseRealtimeProvider implements CollabProvider {
    */
   connect(docId: string, ydoc: YDoc, onStatus?: CollabStatusListener): void {
     this.disconnect();
+    const gen = this.session; // disconnect()가 방금 올렸다
     this.ydoc = ydoc;
     this.awareness = new Awareness(ydoc);
     ydoc.on('update', this.handleLocalUpdate);
     this.awareness.on('update', this.handleLocalAwarenessUpdate);
-    this.subscribeChannel(docId, true, onStatus);
+    void this.subscribeChannel(gen, docId, { wantPrivate: true, retried: false }, onStatus);
   }
 
-  private subscribeChannel(docId: string, wantPrivate: boolean, onStatus?: CollabStatusListener): void {
+  private async subscribeChannel(gen: number, docId: string, opts: { wantPrivate: boolean; retried: boolean }, onStatus?: CollabStatusListener): Promise<void> {
+    const { wantPrivate, retried } = opts;
     // private 채널은 소켓이 사용자 JWT를 들고 있어야 인증을 통과한다. supabase-js가
-    // 세션 변화 때 realtime.setAuth를 호출하지만, 그보다 먼저 구독하면 anon으로
-    // 붙어 거부된다 — 여기서 한 번 더 확실히 맞춰 준다(이미 맞으면 무해).
+    // 세션 변화 때 realtime.setAuth를 호출하지만, 그보다 먼저 구독하면 anon으로 붙어
+    // 거부된다. **반드시 await** — 예전엔 기다리지 않고 구독해서 토큰이 늦게 실리는
+    // 레이스가 있었고, 그러면 한 탭만 폴백해 한쪽은 private·한쪽은 public에 앉았다.
+    // 같은 이름이어도 private/public 채널은 서로 메시지가 오가지 않으므로 그 순간
+    // 협업이 조용히 죽는다(제보: "한 명만 경고 아이콘이 없고, 그때 동시 편집이 안 됨").
     if (wantPrivate) {
       try {
-        void this.client.realtime.setAuth().catch(() => {
-          /* 토큰을 못 얻어도 아래 구독이 실패로 흘러 폴백된다 */
-        });
+        await this.client.realtime.setAuth();
       } catch {
-        /* 이 API가 없는 클라이언트 — 같은 이유로 폴백에 맡긴다 */
+        /* 토큰을 못 얻어도 아래 구독이 실패로 흘러 재시도/폴백된다 */
       }
     }
+    if (gen !== this.session) return; // 기다리는 사이 disconnect/재연결됐다
     // `broadcast.ack`: 서버가 브로드캐스트 수신을 확인해 주게 한다 — 이게 없으면
     // `send()`는 소켓에 밀어 넣고 무조건 'ok'로 즉시 resolve한다(realtime-js
     // `RealtimeChannel#send`). 구독이 됐다고 **보낼 수 있다는 뜻은 아니어서**
@@ -114,14 +122,25 @@ export class SupabaseRealtimeProvider implements CollabProvider {
         if (!known.length) return;
         void channel.send({ type: 'broadcast', event: AWARENESS_EVENT, payload: { update: bytesToBase64(encodeAwarenessUpdate(this.awareness, known)) } satisfies UpdatePayload });
       })
-      .subscribe((status) => {
+      .subscribe((status, err) => {
+        if (gen !== this.session) return; // 죽은 세션의 콜백
         if (status === 'SUBSCRIBED') {
-          void this.announce(channel, docId, wantPrivate, onStatus);
+          void this.announce(gen, channel, docId, wantPrivate, onStatus);
           return;
         }
         if (status !== 'CHANNEL_ERROR' && status !== 'TIMED_OUT') return; // CLOSED = 우리가 끊은 것
+        // 원인이 화면 밖으로 사라지지 않게 — 다음 제보 때 "왜"까지 알 수 있도록 남긴다.
+        console.warn(`[collab] 실시간 채널 구독 실패 (${wantPrivate ? 'private' : 'public'}, ${status})`, err ?? '');
+        if (this.channel) void this.client.removeChannel(this.channel);
+        this.channel = null;
         if (wantPrivate) {
-          this.fallbackToPublic(docId, onStatus);
+          if (!retried) {
+            // 일시 오류(토큰 갱신 직후, 순간 네트워크)로 한 탭만 강등되면 피어들이 서로
+            // 다른 채널에 갈라진다 — 강등 전에 private을 한 번 더 시도한다.
+            void this.subscribeChannel(gen, docId, { wantPrivate: true, retried: true }, onStatus);
+            return;
+          }
+          this.fallbackToPublic(gen, docId, onStatus);
           return;
         }
         onStatus?.('offline'); // 공개 채널로도 못 붙었다 — 네트워크/프로젝트 문제
@@ -135,14 +154,24 @@ export class SupabaseRealtimeProvider implements CollabProvider {
    * 쓰기는 거부되는 조합이 실제로 가능해서(정책이 select/insert 둘로 나뉘어 있다),
    * 구독 성공만 보고 '연결됨'이라고 하면 또 조용히 죽는다.
    */
-  private async announce(channel: RealtimeChannel, docId: string, wantPrivate: boolean, onStatus?: CollabStatusListener): Promise<void> {
-    const ack = await channel.send({ type: 'broadcast', event: SYNC_REQUEST_EVENT, payload: {} });
-    if (this.channel !== channel) return; // 그 사이 문서를 옮겼거나 끊었다
-    if (ack !== 'ok' && wantPrivate) {
-      this.fallbackToPublic(docId, onStatus);
+  private async announce(gen: number, channel: RealtimeChannel, docId: string, wantPrivate: boolean, onStatus?: CollabStatusListener): Promise<void> {
+    // 확인용 send는 짧게 기다린다 — 기본 타임아웃(10초)을 그대로 두면, ack가 조금만
+    // 늦어도 "쓰기 거부"로 오판해 강등했고 그 10초가 사용자가 체감한 연결 지연이었다.
+    const ack = await channel.send({ type: 'broadcast', event: SYNC_REQUEST_EVENT, payload: {} }, { timeout: 4000 });
+    if (gen !== this.session || this.channel !== channel) return; // 그 사이 문서를 옮겼거나 끊었다
+    // 강등 사유는 **명시적 'error'만** — RLS가 발신을 거부하면 서버가 오류로 응답한다.
+    // 'timed out'은 ack가 늦거나 서버가 ack를 지원하지 않는 경우일 수 있어서, 그걸로
+    // 강등하면 정책이 멀쩡한 서버에서도 전원이 공개 채널로 떨어진다(제보: 정책 적용
+    // 후에도 경고 아이콘이 그대로).
+    if (ack === 'error' && wantPrivate) {
+      console.warn('[collab] private 채널 구독은 됐지만 발신이 거부됐습니다 (collab_channel_write 정책 확인 — backend.md §6).');
+      if (this.channel) void this.client.removeChannel(this.channel);
+      this.channel = null;
+      this.fallbackToPublic(gen, docId, onStatus);
       return;
     }
-    onStatus?.(ack !== 'ok' ? 'offline' : wantPrivate ? 'connected' : 'connected-insecure');
+    if (ack === 'timed out') console.warn('[collab] 브로드캐스트 ack가 오지 않았습니다 — 연결은 유지합니다.');
+    onStatus?.(ack === 'error' ? 'offline' : wantPrivate ? 'connected' : 'connected-insecure');
     // 요청만 하면 반쪽 동기화다 — 내 전체 상태도 함께 보낸다. 각 기기는 자기 로컬
     // 문서로 Y.Doc을 따로 심으므로 연산 이력이 서로 다르고, 상대가 내 심기 연산을 갖고
     // 있지 않으면 이후 내 편집 업데이트는 상대에서 **보류**돼 반영되지 않는다(부분 적용된
@@ -159,16 +188,16 @@ export class SupabaseRealtimeProvider implements CollabProvider {
    * Realtime Authorization 정책이 없는 것이다(0009의 realtime 블록은 `realtime`
    * 스키마 권한이 없으면 배포를 막지 않도록 건너뛰어진다).
    */
-  private fallbackToPublic(docId: string, onStatus?: CollabStatusListener): void {
+  private fallbackToPublic(gen: number, docId: string, onStatus?: CollabStatusListener): void {
     console.warn(
       '[collab] 인증된(private) 실시간 채널이 거부돼 공개 채널로 전환합니다. ' +
-        'Supabase 대시보드 SQL Editor에서 supabase/migrations/0009_document_shares.sql의 ' +
-        '마지막 do 블록(realtime.messages 정책)을 적용하면 인증된 채널로 붙습니다. ' +
-        '자세한 확인 방법: server/supabase/docs/backend.md §6',
+        'Supabase 대시보드 SQL Editor에서 realtime.messages에 collab_channel_read/' +
+        'collab_channel_write 정책을 만들면 인증된 채널로 붙습니다(create policy 두 개만 — ' +
+        '절차: server/supabase/docs/backend.md §6).',
     );
     if (this.channel) void this.client.removeChannel(this.channel);
     this.channel = null;
-    this.subscribeChannel(docId, false, onStatus);
+    void this.subscribeChannel(gen, docId, { wantPrivate: false, retried: true }, onStatus);
   }
 
   getAwareness(): Awareness | null {
@@ -176,6 +205,7 @@ export class SupabaseRealtimeProvider implements CollabProvider {
   }
 
   disconnect(): void {
+    this.session++; // 진행 중인 async 구독 continuation 무효화
     this.ydoc?.off('update', this.handleLocalUpdate);
     // Broadcasts this client's departure (local state -> null, origin 'local') to any
     // subscribed peers before the channel itself is removed — see

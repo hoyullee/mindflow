@@ -4,6 +4,11 @@ import './index.css';
 import { App } from './App';
 import { initNativeShell } from './platform/nativeShell';
 
+// 어느 빌드가 떠 있는지 — PWA가 업데이트를 미루는 동안 이전 번들로 테스트하는 일이
+// 실제로 있었다(협업 버그 제보 중 절반이 그랬다). vite.config.ts의 `define` 참고.
+declare const __BUILD_AT__: string;
+console.info(`[geurio] build ${typeof __BUILD_AT__ === 'string' ? __BUILD_AT__ : 'dev'}`);
+
 const el = document.getElementById('root');
 if (!el) throw new Error('#root not found');
 

@@ -16,12 +16,10 @@ function realtimeMock() {
   return { setAuth: vi.fn(async () => undefined) };
 }
 
-/** 구독 직후 provider가 sync-request를 보내고 그 ack를 기다리므로(쓰기 권한 확인),
- * 단정 전에 마이크로태스크를 한 번 비워 준다. */
+/** 구독이 `setAuth()` await 뒤로 미뤄졌고(레이스 수정), 그 뒤 ack 확인까지 있으므로
+ * 단정 전에 마이크로태스크를 넉넉히 비워 준다. */
 async function flush(): Promise<void> {
-  await Promise.resolve();
-  await Promise.resolve();
-  await Promise.resolve();
+  for (let i = 0; i < 12; i++) await Promise.resolve();
 }
 
 function baseDoc(): Doc {
@@ -74,7 +72,7 @@ function makeFakeChannelPair() {
 }
 
 describe('SupabaseRealtimeProvider', () => {
-  it('connect() subscribes a channel named after the docId and registers broadcast handlers', () => {
+  it('connect() subscribes a channel named after the docId and registers broadcast handlers', async () => {
     const channel = { on: vi.fn().mockReturnThis(), subscribe: vi.fn().mockReturnThis(), send: vi.fn() };
     const from = vi.fn();
     const client = { channel: vi.fn(() => channel), removeChannel: vi.fn(), from, realtime: realtimeMock() } as unknown as import('@supabase/supabase-js').SupabaseClient;
@@ -82,6 +80,7 @@ describe('SupabaseRealtimeProvider', () => {
     const ydoc = docToYDoc(baseDoc());
 
     provider.connect('doc-123', ydoc);
+    await flush();
 
     // `private: true`가 빠지면 채널이 누구에게나 열린다(anon 키는 번들에 공개) —
     // Realtime Authorization 정책(0009)을 타기 위한 필수 인자다.
@@ -123,13 +122,14 @@ describe('SupabaseRealtimeProvider', () => {
     providerB.disconnect();
   });
 
-  it('disconnect() calls removeChannel and stops applying further local updates to the transport', () => {
+  it('disconnect() calls removeChannel and stops applying further local updates to the transport', async () => {
     const channel = { on: vi.fn().mockReturnThis(), subscribe: vi.fn().mockReturnThis(), send: vi.fn() };
     const removeChannel = vi.fn();
     const client = { channel: vi.fn(() => channel), removeChannel, realtime: realtimeMock() } as unknown as import('@supabase/supabase-js').SupabaseClient;
     const provider = new SupabaseRealtimeProvider(client);
     const ydoc = docToYDoc(baseDoc());
     provider.connect('doc-1', ydoc);
+    await flush();
 
     provider.disconnect();
 
@@ -137,13 +137,14 @@ describe('SupabaseRealtimeProvider', () => {
   });
 
   describe('awareness (presence) relay', () => {
-    it('connect() also registers the awareness broadcast/sync-request handlers', () => {
+    it('connect() also registers the awareness broadcast/sync-request handlers', async () => {
       const channel = { on: vi.fn().mockReturnThis(), subscribe: vi.fn().mockReturnThis(), send: vi.fn() };
       const client = { channel: vi.fn(() => channel), removeChannel: vi.fn(), realtime: realtimeMock() } as unknown as import('@supabase/supabase-js').SupabaseClient;
       const provider = new SupabaseRealtimeProvider(client);
       const ydoc = docToYDoc(baseDoc());
 
       provider.connect('doc-aware', ydoc);
+      await flush();
 
       expect(channel.on).toHaveBeenCalledWith('broadcast', { event: 'yaware' }, expect.any(Function));
       expect(channel.on).toHaveBeenCalledWith('broadcast', { event: 'yaware-sync-request' }, expect.any(Function));
@@ -211,8 +212,9 @@ describe('SupabaseRealtimeProvider', () => {
   // 구분되지 않았다. 그래서 (1) 죽지 않게 폴백하고 (2) 상태를 반드시 올려 보낸다.
   describe('인증된 채널이 거부될 때', () => {
     /** subscribe 콜백을 즉시 호출하지 않고 붙잡아 두는 채널 — 테스트가 원하는
-     * 시점에 상태를 흘려 보낼 수 있다. */
-    function makeManualChannel(sendResult: 'ok' | 'error' = 'ok') {
+     * 시점에 상태를 흘려 보낼 수 있다. fire는 flush까지 겸한다(구독이 setAuth
+     * await 뒤로 미뤄져 있어서, 흘려 보낸 상태의 후속 처리도 비동기다). */
+    function makeManualChannel(sendResult: 'ok' | 'error' | 'timed out' = 'ok') {
       let cb: ((status: string) => void) | undefined;
       const channel = {
         on: vi.fn(() => channel),
@@ -221,12 +223,15 @@ describe('SupabaseRealtimeProvider', () => {
           return channel;
         }),
         send: vi.fn(async () => sendResult),
-        fire: (status: string) => cb?.(status),
+        fire: async (status: string) => {
+          cb?.(status);
+          await flush();
+        },
       };
       return channel;
     }
 
-    function setup(channels: ReturnType<typeof makeManualChannel>[]) {
+    async function setup(channels: ReturnType<typeof makeManualChannel>[]) {
       let i = 0;
       const configs: unknown[] = [];
       const client = {
@@ -240,39 +245,43 @@ describe('SupabaseRealtimeProvider', () => {
       const statuses: CollabStatus[] = [];
       const provider = new SupabaseRealtimeProvider(client);
       provider.connect('doc-fb', docToYDoc(baseDoc()), (s) => statuses.push(s));
+      await flush(); // 첫(private) 구독이 setAuth await 뒤에 만들어진다
       return { client, provider, statuses, configs };
     }
 
-    it('구독이 거부되면 공개 채널로 폴백하고 그 사실을 상태로 알린다 (협업이 통째로 죽지 않는다)', async () => {
+    it('구독이 거부되면 private 재시도 → 공개 채널 폴백, 그 사실을 상태로 알린다', async () => {
       const warn = vi.spyOn(console, 'warn').mockImplementation(() => undefined);
-      const privateCh = makeManualChannel();
+      const priv1 = makeManualChannel();
+      const priv2 = makeManualChannel();
       const publicCh = makeManualChannel();
-      const { client, provider, statuses, configs } = setup([privateCh, publicCh]);
+      const { client, provider, statuses, configs } = await setup([priv1, priv2, publicCh]);
 
-      privateCh.fire('CHANNEL_ERROR');
-      expect(configs[1]).toEqual({ config: { private: false, broadcast: { ack: true } } });
-      publicCh.fire('SUBSCRIBED');
-      await flush();
+      await priv1.fire('CHANNEL_ERROR');
+      // 일시 오류로 한 탭만 강등돼 피어들이 다른 채널에 갈라지지 않도록, 강등 전에
+      // private을 한 번 더 시도한다.
+      expect(configs[1]).toEqual({ config: { private: true, broadcast: { ack: true } } });
+      await priv2.fire('CHANNEL_ERROR');
+      expect(configs[2]).toEqual({ config: { private: false, broadcast: { ack: true } } });
+      await publicCh.fire('SUBSCRIBED');
 
       expect(statuses).toEqual(['connected-insecure']);
       expect(warn).toHaveBeenCalled(); // 조치 방법을 콘솔에 남긴다
       // 폴백한 채널로 실제 동기화 요청까지 나갔다 = 협업이 살아 있다
-      expect(publicCh.send).toHaveBeenCalledWith(expect.objectContaining({ event: 'ysync-request' }));
-      expect(client.removeChannel).toHaveBeenCalledWith(privateCh);
+      expect(publicCh.send).toHaveBeenCalledWith(expect.objectContaining({ event: 'ysync-request' }), expect.anything());
+      expect(client.removeChannel).toHaveBeenCalledWith(priv1);
+      expect(client.removeChannel).toHaveBeenCalledWith(priv2);
       provider.disconnect();
       warn.mockRestore();
     });
 
-    it('구독은 되지만 브로드캐스트가 거부되면(읽기만 허용) 그것도 잡아 폴백한다', async () => {
+    it('구독은 되지만 브로드캐스트가 명시적으로 거부되면(읽기만 허용) 그것도 잡아 폴백한다', async () => {
       const warn = vi.spyOn(console, 'warn').mockImplementation(() => undefined);
       const privateCh = makeManualChannel('error'); // 구독은 OK, send는 정책에 막힘
       const publicCh = makeManualChannel('ok');
-      const { provider, statuses } = setup([privateCh, publicCh]);
+      const { provider, statuses } = await setup([privateCh, publicCh]);
 
-      privateCh.fire('SUBSCRIBED');
-      await flush();
-      publicCh.fire('SUBSCRIBED');
-      await flush();
+      await privateCh.fire('SUBSCRIBED');
+      await publicCh.fire('SUBSCRIBED');
 
       // private 채널에서 'connected'라고 보고한 적이 없어야 한다 — 보냈다면 그게
       // 바로 "붙은 척하고 조용히 죽은" 그 상태다.
@@ -281,15 +290,29 @@ describe('SupabaseRealtimeProvider', () => {
       warn.mockRestore();
     });
 
+    it("ack가 시간 초과면 강등하지 않는다 — ack 미지원/지연 서버에서 전원이 공개 채널로 떨어졌던 회귀", async () => {
+      const warn = vi.spyOn(console, 'warn').mockImplementation(() => undefined);
+      const privateCh = makeManualChannel('timed out');
+      const { client, provider, statuses } = await setup([privateCh]);
+
+      await privateCh.fire('SUBSCRIBED');
+
+      expect(statuses).toEqual(['connected']); // 정책 거부(error)가 아니면 private 유지
+      expect(client.channel).toHaveBeenCalledTimes(1);
+      provider.disconnect();
+      warn.mockRestore();
+    });
+
     it('공개 채널로도 못 붙으면 offline로 보고한다 (UI가 알린다)', async () => {
       const warn = vi.spyOn(console, 'warn').mockImplementation(() => undefined);
-      const privateCh = makeManualChannel();
+      const priv1 = makeManualChannel();
+      const priv2 = makeManualChannel();
       const publicCh = makeManualChannel();
-      const { provider, statuses } = setup([privateCh, publicCh]);
+      const { provider, statuses } = await setup([priv1, priv2, publicCh]);
 
-      privateCh.fire('TIMED_OUT');
-      publicCh.fire('CHANNEL_ERROR');
-      await flush();
+      await priv1.fire('TIMED_OUT');
+      await priv2.fire('TIMED_OUT');
+      await publicCh.fire('CHANNEL_ERROR');
 
       expect(statuses).toEqual(['offline']);
       provider.disconnect();
@@ -298,14 +321,35 @@ describe('SupabaseRealtimeProvider', () => {
 
     it('정책이 제대로 있으면 폴백하지 않고 connected로 보고한다', async () => {
       const privateCh = makeManualChannel('ok');
-      const { client, provider, statuses } = setup([privateCh]);
+      const { client, provider, statuses } = await setup([privateCh]);
 
-      privateCh.fire('SUBSCRIBED');
-      await flush();
+      // 구독 전에 소켓에 사용자 JWT를 확실히 실었다(await) — 이 레이스가 한 탭만
+      // 강등시켜 피어들을 서로 다른 채널로 갈라놓던 원인이었다.
+      expect((client as unknown as { realtime: { setAuth: ReturnType<typeof vi.fn> } }).realtime.setAuth).toHaveBeenCalled();
+      await privateCh.fire('SUBSCRIBED');
 
       expect(statuses).toEqual(['connected']);
       expect(client.channel).toHaveBeenCalledTimes(1); // 공개 채널을 만들지 않았다
       provider.disconnect();
+    });
+
+    it('구독을 기다리는 사이 disconnect되면 죽은 세션의 채널을 만들지 않는다', async () => {
+      const privateCh = makeManualChannel();
+      let i = 0;
+      const client = {
+        channel: vi.fn(() => {
+          i++;
+          return privateCh;
+        }),
+        removeChannel: vi.fn(),
+        realtime: realtimeMock(),
+      } as unknown as import('@supabase/supabase-js').SupabaseClient;
+      const provider = new SupabaseRealtimeProvider(client);
+      provider.connect('doc-gone', docToYDoc(baseDoc()));
+      provider.disconnect(); // setAuth await가 끝나기 전에 끊는다
+      await flush();
+
+      expect(i).toBe(0); // continuation이 세대 검사에 걸려 채널을 만들지 않았다
     });
   });
 });
