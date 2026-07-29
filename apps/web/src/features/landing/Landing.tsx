@@ -336,7 +336,9 @@ export function Landing() {
           <a href="#usecases">사용 사례</a>
           <a href="#features">기능</a>
           <a href="#faq">자주 묻는 질문</a>
-          <Link to={ctaHref}>{authed ? '내 문서로' : '로그인'}</Link>
+          <Link className="login-chip" to={ctaHref}>
+            {authed ? '내 문서로' : '로그인'}
+          </Link>
           <Link className="pill-cta" to={ctaHref}>
             무료로 시작하기
           </Link>
