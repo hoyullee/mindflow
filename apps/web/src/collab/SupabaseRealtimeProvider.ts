@@ -25,9 +25,20 @@ const BROADCAST_EVENT = 'yupdate';
 const SYNC_REQUEST_EVENT = 'ysync-request';
 const AWARENESS_EVENT = 'yaware';
 const AWARENESS_SYNC_REQUEST_EVENT = 'yaware-sync-request';
+/** 상태 벡터 알림 — "내 문서는 여기까지 안다". 받은 쪽은 자기 문서와의 diff를
+ * 계산해 `yupdate`로 돌려준다(빠진 연산만, 전체 문서가 아니라). */
+const SV_EVENT = 'ysv';
+/** 주기 치유 간격. Realtime은 끊긴 동안의 브로드캐스트를 재전송하지 않으므로,
+ * 유실은 "언제든" 생길 수 있는 것으로 두고 주기적으로 메운다. */
+const SYNC_INTERVAL_MS = 15_000;
 
 interface UpdatePayload {
   update: string; // base64
+}
+
+interface SyncPayload {
+  /** 요청자의 상태 벡터(base64). 없으면(구버전 클라이언트) 전체 상태로 응답. */
+  sv?: string;
 }
 
 export class SupabaseRealtimeProvider implements CollabProvider {
@@ -38,11 +49,20 @@ export class SupabaseRealtimeProvider implements CollabProvider {
    * 도착하는 continuation이 죽은 세션의 채널을 만들 수 있다. connect/disconnect마다
    * 올리고, await 뒤에는 자기 세대가 아직 현재인지 확인한다. */
   private session = 0;
+  /**
+   * 채널이 실제로 join된 상태인가. join 밖에서 `send()`하면 realtime-js가 REST로
+   * 우회 전송하는데(콘솔의 "falling back to REST API" 스팸), 그 창에서 **수신**은
+   * 전혀 안 되고 있으므로 어차피 반쪽이다 — 보내지 않고, 재합류/주기 동기화가
+   * 밀린 연산을 diff로 나른다.
+   */
+  private joined = false;
+  private syncTimer: ReturnType<typeof setInterval> | undefined;
 
   constructor(private readonly client: SupabaseClient) {}
 
   private readonly handleLocalUpdate = (update: Uint8Array, origin: unknown): void => {
     if (origin === this) return; // don't re-broadcast an update WE just applied from the network
+    if (!this.joined) return; // join 밖 — 재합류 시 diff 동기화가 나른다(위 doc comment)
     void this.channel?.send({ type: 'broadcast', event: BROADCAST_EVENT, payload: { update: bytesToBase64(update) } satisfies UpdatePayload });
   };
 
@@ -52,6 +72,7 @@ export class SupabaseRealtimeProvider implements CollabProvider {
    * change this client made itself. */
   private readonly handleLocalAwarenessUpdate = ({ added, updated, removed }: { added: number[]; updated: number[]; removed: number[] }, origin: unknown): void => {
     if (origin !== 'local' || !this.awareness) return;
+    if (!this.joined) return; // awareness는 절대 상태라 재합류 때 한 번 다시 알리면 된다
     const changed = added.concat(updated, removed);
     if (!changed.length) return;
     void this.channel?.send({ type: 'broadcast', event: AWARENESS_EVENT, payload: { update: bytesToBase64(encodeAwarenessUpdate(this.awareness, changed)) } satisfies UpdatePayload });
@@ -79,6 +100,12 @@ export class SupabaseRealtimeProvider implements CollabProvider {
     this.awareness = new Awareness(ydoc);
     ydoc.on('update', this.handleLocalUpdate);
     this.awareness.on('update', this.handleLocalAwarenessUpdate);
+    // 주기 치유: 내 상태 벡터를 알리면, 내가 놓친 연산을 가진 피어가 그 diff를
+    // 돌려준다(SV_EVENT 핸들러). 유실이 "언제" 났는지 몰라도 한 주기 안에 메워진다.
+    this.syncTimer = setInterval(() => {
+      if (!this.joined || !this.channel || !this.ydoc) return;
+      void this.channel.send({ type: 'broadcast', event: SV_EVENT, payload: { sv: bytesToBase64(Y.encodeStateVector(this.ydoc)) } satisfies SyncPayload });
+    }, SYNC_INTERVAL_MS);
     void this.subscribeChannel(gen, docId, { wantPrivate: true, retried: false }, onStatus);
   }
 
@@ -102,15 +129,29 @@ export class SupabaseRealtimeProvider implements CollabProvider {
     // `send()`는 소켓에 밀어 넣고 무조건 'ok'로 즉시 resolve한다(realtime-js
     // `RealtimeChannel#send`). 구독이 됐다고 **보낼 수 있다는 뜻은 아니어서**
     // (private 채널의 읽기·쓰기 정책은 서로 다른 정책이다) 확인이 필요하다.
+    this.joined = false; // 새 채널 — SUBSCRIBED가 다시 켠다
     const channel = this.client.channel(`mindflow-collab:${docId}`, { config: { private: wantPrivate, broadcast: { ack: true } } });
     channel
       .on('broadcast', { event: BROADCAST_EVENT }, ({ payload }: { payload: UpdatePayload }) => {
         if (!this.ydoc) return;
         Y.applyUpdate(this.ydoc, base64ToBytes(payload.update), this);
       })
-      .on('broadcast', { event: SYNC_REQUEST_EVENT }, () => {
+      .on('broadcast', { event: SYNC_REQUEST_EVENT }, ({ payload }: { payload: SyncPayload }) => {
         if (!this.ydoc) return;
-        void channel.send({ type: 'broadcast', event: BROADCAST_EVENT, payload: { update: bytesToBase64(Y.encodeStateAsUpdate(this.ydoc)) } satisfies UpdatePayload });
+        // 요청자의 상태 벡터가 있으면 **빠진 연산만**(diff) 보낸다 — 전체 상태를
+        // 반복 전송하면 이미지 인라인 문서에서 페이로드가 커진다. 벡터가 없으면
+        // (구버전) 전체 상태.
+        const theirSv = payload?.sv ? base64ToBytes(payload.sv) : undefined;
+        void channel.send({ type: 'broadcast', event: BROADCAST_EVENT, payload: { update: bytesToBase64(Y.encodeStateAsUpdate(this.ydoc, theirSv)) } satisfies UpdatePayload });
+        // 반대 방향도 닫는다: 내 상태 벡터를 알려 주면, 요청자가 **자기만 가진 연산**을
+        // diff로 보내온다(SV_EVENT 핸들러). 합류 한 번으로 양방향이 수렴한다.
+        void channel.send({ type: 'broadcast', event: SV_EVENT, payload: { sv: bytesToBase64(Y.encodeStateVector(this.ydoc)) } satisfies SyncPayload });
+      })
+      .on('broadcast', { event: SV_EVENT }, ({ payload }: { payload: SyncPayload }) => {
+        if (!this.ydoc || !payload?.sv) return;
+        // 항상 응답한다(diff가 "비어 보여도" delete set은 실린다 — 삭제는 상태 벡터에
+        // 잡히지 않아서, 삭제만 놓친 피어는 이 경로로만 복구된다). 적용은 멱등이다.
+        void channel.send({ type: 'broadcast', event: BROADCAST_EVENT, payload: { update: bytesToBase64(Y.encodeStateAsUpdate(this.ydoc, base64ToBytes(payload.sv))) } satisfies UpdatePayload });
       })
       .on('broadcast', { event: AWARENESS_EVENT }, ({ payload }: { payload: UpdatePayload }) => {
         if (!this.awareness) return;
@@ -125,9 +166,13 @@ export class SupabaseRealtimeProvider implements CollabProvider {
       .subscribe((status, err) => {
         if (gen !== this.session) return; // 죽은 세션의 콜백
         if (status === 'SUBSCRIBED') {
+          // 재합류 포함 — 끊긴 동안 양쪽에 쌓인 연산은 announce의 sync-request(내 SV)와
+          // 그 응답의 SV 교환이 diff로 나른다.
+          this.joined = true;
           void this.announce(gen, channel, docId, wantPrivate, onStatus);
           return;
         }
+        this.joined = false;
         if (status !== 'CHANNEL_ERROR' && status !== 'TIMED_OUT') return; // CLOSED = 우리가 끊은 것
         // 원인이 화면 밖으로 사라지지 않게 — 다음 제보 때 "왜"까지 알 수 있도록 남긴다.
         console.warn(`[collab] 실시간 채널 구독 실패 (${wantPrivate ? 'private' : 'public'}, ${status})`, err ?? '');
@@ -157,7 +202,10 @@ export class SupabaseRealtimeProvider implements CollabProvider {
   private async announce(gen: number, channel: RealtimeChannel, docId: string, wantPrivate: boolean, onStatus?: CollabStatusListener): Promise<void> {
     // 확인용 send는 짧게 기다린다 — 기본 타임아웃(10초)을 그대로 두면, ack가 조금만
     // 늦어도 "쓰기 거부"로 오판해 강등했고 그 10초가 사용자가 체감한 연결 지연이었다.
-    const ack = await channel.send({ type: 'broadcast', event: SYNC_REQUEST_EVENT, payload: {} }, { timeout: 4000 });
+    // 내 상태 벡터를 실어 보낸다: 응답은 내가 빠뜨린 연산의 diff이고, 상대는 자기 SV를
+    // 되돌려 줘 내가 가진(상대가 놓친) 연산도 diff로 건너간다 — 재합류 치유의 핵심.
+    const mySv: SyncPayload = this.ydoc ? { sv: bytesToBase64(Y.encodeStateVector(this.ydoc)) } : {};
+    const ack = await channel.send({ type: 'broadcast', event: SYNC_REQUEST_EVENT, payload: mySv }, { timeout: 4000 });
     if (gen !== this.session || this.channel !== channel) return; // 그 사이 문서를 옮겼거나 끊었다
     // 강등 사유는 **명시적 'error'만** — RLS가 발신을 거부하면 서버가 오류로 응답한다.
     // 'timed out'은 ack가 늦거나 서버가 ack를 지원하지 않는 경우일 수 있어서, 그걸로
@@ -172,13 +220,19 @@ export class SupabaseRealtimeProvider implements CollabProvider {
     }
     if (ack === 'timed out') console.warn('[collab] 브로드캐스트 ack가 오지 않았습니다 — 연결은 유지합니다.');
     onStatus?.(ack === 'error' ? 'offline' : wantPrivate ? 'connected' : 'connected-insecure');
-    // 요청만 하면 반쪽 동기화다 — 내 전체 상태도 함께 보낸다. 각 기기는 자기 로컬
+    // 요청만 하면 반쪽 동기화다 — 내 연산도 상대에게 가야 한다. 각 기기는 자기 로컬
     // 문서로 Y.Doc을 따로 심으므로 연산 이력이 서로 다르고, 상대가 내 심기 연산을 갖고
     // 있지 않으면 이후 내 편집 업데이트는 상대에서 **보류**돼 반영되지 않는다(부분 적용된
-    // 노드로 상대 캔버스가 터지는 것까지 실브라우저로 재현했다 —
-    // `mindmap-core`의 `readNodesMap` doc comment 참고).
-    if (this.ydoc) void channel.send({ type: 'broadcast', event: BROADCAST_EVENT, payload: { update: bytesToBase64(Y.encodeStateAsUpdate(this.ydoc)) } satisfies UpdatePayload });
+    // 노드로 상대 캔버스가 터지는 것까지 실브라우저로 재현했다 — `mindmap-core`의
+    // `readNodesMap` doc comment 참고). 전체 상태 대신 SV를 알린다: 상대가 자기에게
+    // 없는 부분의 diff를 받아 가는 건 SV_EVENT 핸들러가 한다(구버전 상대라면 위
+    // sync-request 응답에서 이미 전체 상태를 보냈다).
+    if (this.ydoc) void channel.send({ type: 'broadcast', event: SV_EVENT, payload: { sv: bytesToBase64(Y.encodeStateVector(this.ydoc)) } satisfies SyncPayload });
     void channel.send({ type: 'broadcast', event: AWARENESS_SYNC_REQUEST_EVENT, payload: {} });
+    // 재합류라면 상대 화면에서 내 커서가 stale/사라짐 상태일 수 있다 — 내 상태를 다시 알린다.
+    if (this.awareness) {
+      void channel.send({ type: 'broadcast', event: AWARENESS_EVENT, payload: { update: bytesToBase64(encodeAwarenessUpdate(this.awareness, [this.awareness.clientID])) } satisfies UpdatePayload });
+    }
   }
 
   /**
@@ -206,11 +260,17 @@ export class SupabaseRealtimeProvider implements CollabProvider {
 
   disconnect(): void {
     this.session++; // 진행 중인 async 구독 continuation 무효화
+    if (this.syncTimer !== undefined) {
+      clearInterval(this.syncTimer);
+      this.syncTimer = undefined;
+    }
     this.ydoc?.off('update', this.handleLocalUpdate);
     // Broadcasts this client's departure (local state -> null, origin 'local') to any
     // subscribed peers before the channel itself is removed — see
-    // `BroadcastChannelProvider.disconnect()`'s identical reasoning.
+    // `BroadcastChannelProvider.disconnect()`'s identical reasoning. `joined`를
+    // 끄기 **전에** 해야 이 마지막 방송이 send 게이트에 막히지 않는다.
     this.awareness?.destroy();
+    this.joined = false;
     if (this.channel) void this.client.removeChannel(this.channel);
     this.channel = null;
     this.ydoc = null;
