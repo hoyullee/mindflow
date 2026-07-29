@@ -104,6 +104,12 @@ export class SupabaseRealtimeProvider implements CollabProvider {
     // 돌려준다(SV_EVENT 핸들러). 유실이 "언제" 났는지 몰라도 한 주기 안에 메워진다.
     this.syncTimer = setInterval(() => {
       if (!this.joined || !this.channel || !this.ydoc) return;
+      // 혼자면 보내지 않는다 — 치유할 상대가 없는데 15초마다 빈 채널에 쏘면 앱의
+      // 가장 흔한 상태(단독 편집)가 Realtime 사용량만 태운다(탭당 ~5,700건/일).
+      // 피어 판단은 awareness(자기 자신 포함이므로 >1). 서로 안 보이는 드문 순간엔
+      // 잠시 멈출 수 있지만, 상대의 awareness가 도착하는 즉시 재개된다 — awareness는
+      // 절대 상태라 스스로 복구되고, 상대 쪽 타이머도 같은 판단으로 돌고 있다.
+      if (!this.awareness || this.awareness.getStates().size <= 1) return;
       void this.channel.send({ type: 'broadcast', event: SV_EVENT, payload: { sv: bytesToBase64(Y.encodeStateVector(this.ydoc)) } satisfies SyncPayload });
     }, SYNC_INTERVAL_MS);
     void this.subscribeChannel(gen, docId, { wantPrivate: true, retried: false }, onStatus);
