@@ -404,6 +404,9 @@ describe('Editor interactions (M3-Editor-b)', () => {
           return {};
         }),
         listSharedWithMe: vi.fn(async () => []),
+        // 기본값 null = 참가자 정보 없음(0010 RPC 미적용 서버) — 팝업은 이메일만
+        // 보여주는 폴백 렌더를 탄다. 참가자 UI는 아래 별도 테스트에서 값을 준다.
+        listParticipants: vi.fn(async (): Promise<import('../../adapters/ports').ShareParticipant[] | null> => null),
       };
       return { shareStore, shares };
     }
@@ -483,6 +486,48 @@ describe('Editor interactions (M3-Editor-b)', () => {
       await user.click(screen.getByRole('button', { name: '초대' }));
 
       expect((await screen.findByRole('alert')).textContent).toMatch(/row-level security/);
+    });
+
+    it('소유자와 초대받은 사람의 프로필명·가입 대기 상태를 보여 준다 (참가자 정보가 있을 때)', async () => {
+      localStorage.setItem('mindflow_doc_share6', JSON.stringify(DOC));
+      const user = userEvent.setup();
+      const { shareStore } = shareBackend();
+      await shareStore.add('share6', 'friend@example.com');
+      await shareStore.add('share6', 'newbie@example.com');
+      shareStore.listParticipants = vi.fn(async () => [
+        { kind: 'owner' as const, email: 'me@example.com', displayName: '호율', joined: true },
+        { kind: 'invitee' as const, email: 'friend@example.com', displayName: '디자인 리드', joined: true },
+        { kind: 'invitee' as const, email: 'newbie@example.com', displayName: null, joined: false },
+      ]);
+      renderWithShare(shareStore, 'supabase', 'share6');
+
+      await user.click(screen.getByRole('button', { name: '공유' }));
+      const dialog = await screen.findByRole('dialog', { name: '공유' });
+
+      // 소유자 구획 — 누가 초대했는지(제보 ①)
+      const ownerBox = within(dialog).getByLabelText('소유자');
+      expect(ownerBox.textContent).toContain('호율');
+      expect(ownerBox.textContent).toContain('me@example.com');
+      // 가입된 초대는 프로필명 + 이메일(제보 ②)
+      await waitFor(() => expect(within(dialog).getByText('디자인 리드')).toBeTruthy());
+      expect(within(dialog).getByText('friend@example.com')).toBeTruthy();
+      // 미가입 초대는 이메일 그대로 + 가입 대기 배지
+      expect(within(dialog).getByText('newbie@example.com')).toBeTruthy();
+      expect(within(dialog).getByText('가입 대기')).toBeTruthy();
+    });
+
+    it('참가자 정보를 못 얻으면(null) 이메일만 보여주는 기존 렌더로 폴백한다', async () => {
+      localStorage.setItem('mindflow_doc_share7', JSON.stringify(DOC));
+      const user = userEvent.setup();
+      const { shareStore } = shareBackend();
+      await shareStore.add('share7', 'plain@example.com');
+      renderWithShare(shareStore, 'supabase', 'share7');
+
+      await user.click(screen.getByRole('button', { name: '공유' }));
+      const dialog = await screen.findByRole('dialog', { name: '공유' });
+      await waitFor(() => expect(within(dialog).getByText('plain@example.com')).toBeTruthy());
+      expect(within(dialog).queryByLabelText('소유자')).toBeNull(); // 모르는 정보는 그리지 않는다
+      expect(within(dialog).queryByText('가입 대기')).toBeNull();
     });
 
     it('데모 모드에서는 실제로 공유되지 않는다고 밝힌다', async () => {
