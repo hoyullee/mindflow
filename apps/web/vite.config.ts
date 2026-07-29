@@ -56,6 +56,10 @@ function landingRootSwap(): Plugin {
 // offline without any external network request (CDN-blocked environments
 // included).
 export default defineConfig({
+  // 지금 떠 있는 페이지가 어느 빌드인지 콘솔에서 바로 알 수 있게(main.tsx의
+  // console.info). PWA는 에디터가 열려 있는 동안 업데이트를 미루므로, "고쳤다는데
+  // 그대로예요" 제보의 절반은 이전 번들이었다 — 확인 수단을 박아 둔다.
+  define: { __BUILD_AT__: JSON.stringify(new Date().toISOString()) },
   plugins: [
     react(),
     landingRootSwap(),
