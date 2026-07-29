@@ -13,8 +13,25 @@ interface DocChipProps {
  */
 export function DocChip({ controller }: DocChipProps) {
   const th = controller.uiTheme;
-  const dotColor = controller.saveState === 'saved' ? '#3fae6a' : controller.saveState === 'saving' ? '#e0b23c' : th.subtext;
-  const label = controller.saveState === 'saved' ? '저장됨' : controller.saveState === 'saving' ? '저장 중…' : controller.saveState === 'unsaved' ? '저장 전' : '변경됨';
+  // 본문이 다른 기기에만 있는 맵은 **일부러** 저장하지 않는다(덮어쓰기 방지 —
+  // `useEditorState`의 `bodyMissing`). 그때 '저장 전'은 "곧 저장될 것"처럼 읽혀
+  // 거짓말이 되므로 잠긴 상태임을 그대로 말한다.
+  const dotColor = controller.bodyMissing
+    ? th.subtext
+    : controller.saveState === 'saved'
+      ? '#3fae6a'
+      : controller.saveState === 'saving'
+        ? '#e0b23c'
+        : th.subtext;
+  const label = controller.bodyMissing
+    ? '편집 잠금'
+    : controller.saveState === 'saved'
+      ? '저장됨'
+      : controller.saveState === 'saving'
+        ? '저장 중…'
+        : controller.saveState === 'unsaved'
+          ? '저장 전'
+          : '변경됨';
 
   return (
     <div
