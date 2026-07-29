@@ -220,7 +220,7 @@ describe('SupabaseRealtimeProvider', () => {
   // "의존 연산 없음"으로 보류된다(커서는 절대 상태라 다음 움직임에 저절로 복구 —
   // 그래서 증상이 갈라진다). 주기 상태 벡터(SV) 교환이 그 구멍을 메운다.
   describe('메시지 유실 자가 치유 (주기 상태 벡터 동기화)', () => {
-    function connectPair() {
+    async function connectPair() {
       const pair = makeFakeChannelPair();
       const clientA = { channel: vi.fn(() => pair.channelA), removeChannel: vi.fn(), realtime: realtimeMock() } as unknown as import('@supabase/supabase-js').SupabaseClient;
       const clientB = { channel: vi.fn(() => pair.channelB), removeChannel: vi.fn(), realtime: realtimeMock() } as unknown as import('@supabase/supabase-js').SupabaseClient;
@@ -234,14 +234,20 @@ describe('SupabaseRealtimeProvider', () => {
       const providerB = new SupabaseRealtimeProvider(clientB);
       providerA.connect('doc-heal', ydocA);
       providerB.connect('doc-heal', ydocB);
+      await flush();
+      // 실제 클라이언트처럼 정체성을 심는다(에디터에선 usePresence가 한다). 이게 있어야
+      // 서로가 awareness에 잡히고, "혼자면 치유 신호를 멈추는" 게이트가 열린다 —
+      // y-protocols의 생성자 기본 상태({})는 clock 0이라 상대에게 적용되지 않는다.
+      providerA.getAwareness()!.setLocalStateField('user', { name: 'A', color: '#111111' });
+      providerB.getAwareness()!.setLocalStateField('user', { name: 'B', color: '#222222' });
+      await flush();
       return { pair, ydocA, ydocB, providerA, providerB };
     }
 
     it('유실로 보류된 편집을 다음 주기 SV 교환이 메운다 (커서만 살고 편집이 죽던 그 증상)', async () => {
       vi.useFakeTimers();
       try {
-        const { pair, ydocA, ydocB, providerA, providerB } = connectPair();
-        await flush();
+        const { pair, ydocA, ydocB, providerA, providerB } = await connectPair();
         expect(yDocToDoc(ydocB)).toEqual(yDocToDoc(ydocA)); // 합류 수렴(diff 교환)
 
         // A→B 회선이 잠깐 죽은 사이 A가 편집 — B는 이 업데이트를 영영 못 받는다
@@ -271,8 +277,7 @@ describe('SupabaseRealtimeProvider', () => {
     it('삭제만 놓친 경우도 메운다 (삭제는 상태 벡터에 잡히지 않는다 — delete set 경로)', async () => {
       vi.useFakeTimers();
       try {
-        const { pair, ydocA, ydocB, providerA, providerB } = connectPair();
-        await flush();
+        const { pair, ydocA, ydocB, providerA, providerB } = await connectPair();
 
         pair.wire.aToB = false;
         removeNode(ydocA, 'a'); // 삭제는 새 struct를 만들지 않는다
@@ -287,6 +292,40 @@ describe('SupabaseRealtimeProvider', () => {
 
         providerA.disconnect();
         providerB.disconnect();
+      } finally {
+        vi.useRealTimers();
+      }
+    });
+
+    it('혼자 열어 둔 탭은 주기 치유 신호를 보내지 않는다 (앱의 가장 흔한 상태 — 유휴 낭비 0)', async () => {
+      vi.useFakeTimers();
+      try {
+        const channel = {
+          on: vi.fn().mockReturnThis(),
+          subscribe: vi.fn((cb?: (s: string) => void) => {
+            cb?.('SUBSCRIBED');
+            return channel;
+          }),
+          send: vi.fn(async (...args: unknown[]) => {
+            void args;
+            return 'ok';
+          }),
+        };
+        const client = { channel: vi.fn(() => channel), removeChannel: vi.fn(), realtime: realtimeMock() } as unknown as import('@supabase/supabase-js').SupabaseClient;
+        const provider = new SupabaseRealtimeProvider(client);
+        provider.connect('doc-solo', docToYDoc(baseDoc()));
+        await flush();
+        // usePresence처럼 자기 정체성은 심었지만 피어는 없다 = 혼자 편집 중
+        provider.getAwareness()!.setLocalStateField('user', { name: '나', color: '#333333' });
+        await flush();
+        channel.send.mockClear();
+
+        vi.advanceTimersByTime(60_000); // 네 주기
+        await flush();
+
+        const svSends = channel.send.mock.calls.filter((call) => (call[0] as unknown as { event: string }).event === 'ysv');
+        expect(svSends).toHaveLength(0);
+        provider.disconnect();
       } finally {
         vi.useRealTimers();
       }

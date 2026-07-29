@@ -141,7 +141,7 @@ describe('usePresence', () => {
     expect((awareness.getStates().get(awareness.clientID) as { cursor: unknown }).cursor).toEqual({ x: 1, y: 1 });
 
     act(() => {
-      vi.advanceTimersByTime(60);
+      vi.advanceTimersByTime(110); // 스로틀 창(100ms — 트래픽 절약으로 50→100) 직후
     });
     expect((awareness.getStates().get(awareness.clientID) as { cursor: unknown }).cursor).toEqual({ x: 3, y: 3 });
   });
