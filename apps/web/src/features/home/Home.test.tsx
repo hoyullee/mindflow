@@ -1539,6 +1539,34 @@ describe('Home', () => {
       expect(saved.spaces[0]!.maps.map((m) => m.title)).not.toContain('공유받은 맵');
     });
 
+    it('공유받은 맵은 별도 섹션에 뜨고, 열면 그 문서로 간다', async () => {
+      localStorage.setItem('mf_spaces', JSON.stringify({ spaces: [{ id: 'sa', name: '내 공간', color: '#f0663f', home: true, maps: [], folders: [] }], mapFolders: {} }));
+      const { container } = renderHomeWithDocStore([mine, theirs]);
+
+      const strip = await waitFor(() => {
+        const el = container.querySelector('[aria-label="공유받은 맵"]');
+        expect(el).toBeTruthy();
+        return el as HTMLElement;
+      });
+      // 그 섹션 안에만 있고, 스페이스 그리드에는 없다
+      expect(within(strip).getByText('공유받은 맵', { selector: 'a *' }) || true).toBeTruthy();
+      expect(strip.querySelector('a[data-title="공유받은 맵"]')).toBeTruthy();
+      expect(container.querySelector('.mf-map-grid a[data-title="공유받은 맵"]')).toBeNull();
+
+      // 카드는 그 문서 id로 링크된다(공유받은 문서를 그대로 연다)
+      const link = strip.querySelector('a[data-title="공유받은 맵"]') as HTMLAnchorElement;
+      expect(link.getAttribute('href')).toContain('map=theirs');
+      // 내 문서가 아니므로 ☰ 메뉴는 없다(옮기거나 지울 수 없다)
+      expect(within(strip).queryByRole('button', { name: '메뉴' })).toBeNull();
+    });
+
+    it('공유받은 맵이 없으면 섹션 자체가 없다', async () => {
+      localStorage.setItem('mf_spaces', JSON.stringify({ spaces: [{ id: 'sa', name: '내 공간', color: '#f0663f', home: true, maps: [], folders: [] }], mapFolders: {} }));
+      const { container } = renderHomeWithDocStore([mine]);
+      await waitFor(() => expect(container.querySelector('.mf-map-grid a[data-title="내 맵"]')).toBeTruthy());
+      expect(container.querySelector('[aria-label="공유받은 맵"]')).toBeNull();
+    });
+
     it('남의 문서의 즐겨찾기·휴지통 상태가 내 것으로 새지 않는다', async () => {
       localStorage.setItem('mf_spaces', JSON.stringify({ spaces: [{ id: 'sa', name: '내 공간', color: '#f0663f', home: true, maps: [], folders: [] }], mapFolders: {} }));
       // `theirs`는 isFavorite: true — 소유자가 별을 달아 둔 상태다. 내 LNB에는 안 보여야 한다.

@@ -2,6 +2,7 @@ import { useEffect, type CSSProperties } from 'react';
 import './editor.css';
 import { useEditorState } from './useEditorState';
 import { Toolbar } from './components/Toolbar';
+import { ShareModal } from './components/ShareModal';
 import { DocChip } from './components/DocChip';
 import { ZoomControls } from './components/ZoomControls';
 import { Viewport } from './components/Viewport';
@@ -98,6 +99,8 @@ export function Editor() {
   return (
     <div style={rootStyle}>
       <Toolbar controller={controller} />
+      {/* 공유 모달 — 아웃라인 보기에서도 열 수 있어야 하므로 view 분기 밖에 둔다. */}
+      <ShareModal controller={controller} />
 
       <div style={{ position: 'relative', flex: '1 1 auto', overflow: 'hidden', display: 'flex' }}>
         {controller.view === 'map' ? (

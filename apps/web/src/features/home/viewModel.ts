@@ -85,6 +85,10 @@ export interface HomeViewModel {
   allCards: CardViewData[];
   folderCards: FolderCardViewData[];
   recentCards: CardViewData[];
+  /** 남이 나에게 공유한 맵들(0009). 내 스페이스·폴더에 속하지 않으므로 별도 섹션으로
+   * 그린다 — 카드에 ☰ 메뉴·드래그는 없다(내 문서가 아니라 옮기거나 지울 수 없다). */
+  sharedCards: CardViewData[];
+  sharedSectionVisible: boolean;
   favItems: { title: string; isDrive: boolean; href: string; docId?: string }[];
   favCount: string;
   trashItems: { title: string; isDrive: boolean; badge: string; docId?: string }[];
@@ -382,6 +386,41 @@ export function deriveHomeView(state: HomeState): HomeViewModel {
   const titleParent = openFolderName ? rootName : null;
   const titleLeaf = openFolderName || rootName;
 
+  // 공유받은 맵 — `state.sharedMaps`(DocStore.list의 남의 문서)로만 만든다. 내
+  // 워크스페이스에는 없는 문서라 스페이스/폴더 필터를 타지 않는다.
+  const sharedCards: CardViewData[] = state.sharedMaps
+    .filter((m) => !isTrashedCard(m.title, m.docId))
+    .map((m) => ({
+      key: m.docId,
+      title: m.title,
+      when: '공유받은 맵',
+      updatedAt: m.updatedAt,
+      hue: '#3f8fd0',
+      docId: m.docId,
+      href: mapHref(m.title, m.docId),
+      sketch: cardSketch(m.title, '#3f8fd0', m.docId, state.previewDocs, state.previewResolved),
+      badge: '',
+      openable: true,
+      isFav: false,
+      isDrive: false,
+      menuOpen: false,
+      selected: state.selectedCard === m.docId,
+      dragging: false,
+      dragOverTarget: false,
+      exportOpen: false,
+      moveOpen: false,
+      spaceMoveOpen: false,
+      showFavRow: false,
+      showMoveRow: false,
+      showSpaceMoveRow: false,
+      showUnfolderRow: false,
+      showDivider: false,
+      moveTargets: [],
+      spaceMoveTargets: [],
+      pathLabel: m.role === 'view' ? '보기 전용' : '함께 편집',
+      pathFull: m.role === 'view' ? '공유받은 맵 · 보기 전용' : '공유받은 맵 · 함께 편집',
+    }));
+
   return {
     connected,
     isDriveSpace,
@@ -397,6 +436,10 @@ export function deriveHomeView(state: HomeState): HomeViewModel {
     allCards,
     folderCards,
     recentCards,
+    sharedCards,
+    // 폴더 안이나 검색 중에는 감춘다 — 그 화면은 "지금 보고 있는 목록"에 집중해야 하고,
+    // 공유받은 맵은 스페이스/폴더에 속하지 않아 그 목록의 일부가 아니다.
+    sharedSectionVisible: !loading && !state.search && !curFolder && !driveFolder && !showDriveConnect && sharedCards.length > 0,
     favItems,
     favCount: favItems.length ? String(favItems.length) : '',
     trashItems: state.trash.map((t) => ({ title: t.title, isDrive: t.source === 'drive', badge: t.source === 'drive' ? 'Drive' : '내 공간', docId: t.docId })),

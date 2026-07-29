@@ -48,8 +48,12 @@ describe('usePresence', () => {
 
     expect(resultA.current.localUser.name).toMatch(/\S+ \S+/); // "adjective animal"
     expect(resultA.current.localUser.authed).toBeUndefined();
-    // two different (unrelated) clients get two different guest identities.
-    expect(resultA.current.localUser.name).not.toBe(resultB.current.localUser.name);
+    // 두 클라이언트는 서로 다른 씨앗(clientID)에서 정체성을 만든다. 이름이 **우연히**
+    // 같을 수는 있으므로(12×12=144개 조합 — 실제로 이 저장소에서 두 번 겪었다) 이름
+    // 자체를 비교하지 않는다. 확인할 성질은 "씨앗이 다르면 다른 정체성을 계산한다"이고,
+    // 그건 아래 `identity.ts`의 순수 함수 테스트가 결정적으로 검증한다.
+    expect(resultB.current.localUser.name).toMatch(/\S+ \S+/);
+    expect(awarenessA.clientID).not.toBe(awarenessB.clientID);
   });
 
   it("exposes a remote peer's state (self excluded) and updates live as the peer's awareness changes", () => {

@@ -4,6 +4,11 @@ import userEvent from '@testing-library/user-event';
 import { MemoryRouter, Route, Routes } from 'react-router-dom';
 import { Editor } from './Editor';
 import { parseDoc } from '@mindflow/mindmap-core';
+import { BackendProvider } from '../../adapters/BackendContext';
+import { LocalAuth } from '../../adapters/local/localAuth';
+import { LocalDocStore } from '../../adapters/local/localDocStore';
+import { LocalSpaceStore } from '../../adapters/local/localSpaceStore';
+import type { Backend } from '../../adapters/ports';
 
 // M3-Editor-b interaction tests: selection, text editing, structural add/
 // delete, property-panel setters, save (manual + autosave), undo/redo, and
@@ -380,6 +385,113 @@ describe('Editor interactions (M3-Editor-b)', () => {
     expect(md).toMatch(/^- 주간 회고 메모$/m);
 
     clickSpy.mockRestore();
+  });
+
+  // 공유 — 이메일 초대. 실제 접근 제어는 DB의 RLS이고(0009), 여기서는 UI가 포트를
+  // 제대로 부르는지와 목록/취소가 도는지를 본다.
+  describe('공유', () => {
+    function shareBackend() {
+      const shares: { documentId: string; email: string; role: 'edit' | 'view'; createdAt: string }[] = [];
+      const shareStore = {
+        list: vi.fn(async (id: string) => shares.filter((s) => s.documentId === id)),
+        add: vi.fn(async (id: string, email: string, role: 'edit' | 'view' = 'edit') => {
+          shares.push({ documentId: id, email: email.trim().toLowerCase(), role, createdAt: '2026-01-01T00:00:00.000Z' });
+          return {};
+        }),
+        remove: vi.fn(async (id: string, email: string) => {
+          const at = shares.findIndex((s) => s.documentId === id && s.email === email);
+          if (at >= 0) shares.splice(at, 1);
+          return {};
+        }),
+        listSharedWithMe: vi.fn(async () => []),
+      };
+      return { shareStore, shares };
+    }
+
+    function renderWithShare(shareStore: unknown, mode: Backend['mode'] = 'supabase') {
+      const backend = { auth: new LocalAuth(), docStore: new LocalDocStore(), spaceStore: new LocalSpaceStore(), shareStore, mode } as unknown as Backend;
+      return render(
+        <MemoryRouter initialEntries={['/editor?map=share1&title=x']}>
+          <BackendProvider backend={backend}>
+            <Routes>
+              <Route path="/editor" element={<Editor />} />
+            </Routes>
+          </BackendProvider>
+        </MemoryRouter>,
+      );
+    }
+
+    it('툴바의 공유 버튼이 모달을 열고, 이메일로 초대하면 목록에 뜬다', async () => {
+      localStorage.setItem('mindflow_doc_share1', JSON.stringify(DOC));
+      const user = userEvent.setup();
+      const { shareStore } = shareBackend();
+      renderWithShare(shareStore);
+
+      await user.click(screen.getByRole('button', { name: '공유' }));
+      expect(await screen.findByRole('dialog', { name: '공유' })).toBeTruthy();
+      await waitFor(() => expect(screen.getByText('아직 아무도 초대하지 않았어요.')).toBeTruthy());
+
+      await user.type(screen.getByLabelText('초대할 이메일'), 'friend@example.com');
+      await user.click(screen.getByRole('button', { name: '초대' }));
+
+      // 포트를 이 문서 id로 부른다 — 권한은 edit(지금 UI가 제공하는 유일한 권한)
+      await waitFor(() => expect(shareStore.add).toHaveBeenCalledWith('share1', 'friend@example.com', 'edit'));
+      await waitFor(() => expect(screen.getByText('friend@example.com')).toBeTruthy());
+      expect(screen.getByText('편집 가능')).toBeTruthy();
+    });
+
+    it('이메일 형식이 아니면 서버를 부르지 않고 알려 준다', async () => {
+      localStorage.setItem('mindflow_doc_share2', JSON.stringify(DOC));
+      const user = userEvent.setup();
+      const { shareStore } = shareBackend();
+      renderWithShare(shareStore);
+
+      await user.click(screen.getByRole('button', { name: '공유' }));
+      await user.type(screen.getByLabelText('초대할 이메일'), '이건이메일이아님');
+      await user.click(screen.getByRole('button', { name: '초대' }));
+
+      expect(await screen.findByRole('alert')).toBeTruthy();
+      expect(shareStore.add).not.toHaveBeenCalled();
+    });
+
+    it('초대를 취소하면 목록에서 사라진다', async () => {
+      localStorage.setItem('mindflow_doc_share3', JSON.stringify(DOC));
+      const user = userEvent.setup();
+      const { shareStore } = shareBackend();
+      await shareStore.add('share1', 'gone@example.com');
+      renderWithShare(shareStore);
+
+      await user.click(screen.getByRole('button', { name: '공유' }));
+      await waitFor(() => expect(screen.getByText('gone@example.com')).toBeTruthy());
+
+      await user.click(screen.getByRole('button', { name: 'gone@example.com 초대 취소' }));
+      await waitFor(() => expect(shareStore.remove).toHaveBeenCalledWith('share1', 'gone@example.com'));
+      await waitFor(() => expect(screen.queryByText('gone@example.com')).toBeNull());
+    });
+
+    it('서버가 거부하면 그 메시지를 그대로 보여 준다 (조용히 성공하지 않는다)', async () => {
+      localStorage.setItem('mindflow_doc_share4', JSON.stringify(DOC));
+      const user = userEvent.setup();
+      const { shareStore } = shareBackend();
+      shareStore.add = vi.fn(async () => ({ error: 'new row violates row-level security policy' }));
+      renderWithShare(shareStore);
+
+      await user.click(screen.getByRole('button', { name: '공유' }));
+      await user.type(screen.getByLabelText('초대할 이메일'), 'x@example.com');
+      await user.click(screen.getByRole('button', { name: '초대' }));
+
+      expect((await screen.findByRole('alert')).textContent).toMatch(/row-level security/);
+    });
+
+    it('데모 모드에서는 실제로 공유되지 않는다고 밝힌다', async () => {
+      localStorage.setItem('mindflow_doc_share5', JSON.stringify(DOC));
+      const user = userEvent.setup();
+      const { shareStore } = shareBackend();
+      renderWithShare(shareStore, 'local');
+
+      await user.click(screen.getByRole('button', { name: '공유' }));
+      expect(await screen.findByText(/실제로 공유되지는 않습니다/)).toBeTruthy();
+    });
   });
 
   it('opens the 스타일 dropdown in a fixed body portal (escapes the top bar clip/stacking)', async () => {
