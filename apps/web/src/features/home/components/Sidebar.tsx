@@ -180,6 +180,91 @@ export function Sidebar({ state, view, controller, isMobile = false, isOpen = fa
         </div>
       )}
 
+      {/* 공유받은 맵 — 스페이스와 같은 "출처" 층에 둔다(즐겨찾기·휴지통은 내 문서를
+          다르게 보는 관점이고, 이건 아예 다른 사람의 문서다). 공유받은 게 없으면
+          구획 자체가 없다 — 혼자 쓰는 사람에게 빈 항목을 보여주지 않는다. */}
+      {view.sharedVisible && (
+        <>
+          <div
+            className="nav-item"
+            role="button"
+            tabIndex={0}
+            aria-expanded={state.sharedOpen}
+            onClick={controller.toggleSharedList}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter' || e.key === ' ') {
+                e.preventDefault();
+                controller.toggleSharedList();
+              }
+            }}
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              gap: 10,
+              padding: '9px 10px',
+              minHeight: isMobile ? 44 : undefined,
+              borderRadius: 9,
+              cursor: 'pointer',
+              fontSize: 13.5,
+              fontWeight: 500,
+              color: '#7c6d60',
+              flexShrink: 0,
+            }}
+          >
+            <SharedGlyph size={15} /> 공유받은 맵
+            <span style={{ marginLeft: 'auto', fontSize: 11, color: '#c9b8a9' }}>{view.sharedItems.length}</span>
+          </div>
+          <div
+            style={{
+              overflow: 'hidden',
+              flexShrink: 0,
+              // 행 높이 × 개수 + 여유. 모바일은 터치 타겟 44px(M6)이라 행이 더 높다 —
+              // 같은 수를 쓰면 마지막 행이 잘린다.
+              maxHeight: state.sharedOpen ? `${view.sharedItems.length * (isMobile ? 46 : 34) + 12}px` : '0px',
+              opacity: state.sharedOpen ? 1 : 0,
+              transition: 'max-height .32s cubic-bezier(.4,0,.2,1), opacity .24s ease',
+            }}
+          >
+            <div style={{ overflow: 'hidden', minHeight: 0 }}>
+              {view.sharedItems.map((m) => (
+                <div
+                  key={m.docId}
+                  className="drive-file"
+                  role="button"
+                  tabIndex={0}
+                  onClick={() => controller.openWithLoader(m.href, m.title, m.docId)}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter' || e.key === ' ') {
+                      e.preventDefault();
+                      controller.openWithLoader(m.href, m.title, m.docId);
+                    }
+                  }}
+                  title={m.role === 'view' ? `'${m.title}' 열기 (보기 전용)` : `'${m.title}' 열기 (함께 편집)`}
+                  style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: 7,
+                    padding: '6px 10px 6px 26px',
+                    minHeight: isMobile ? 44 : undefined,
+                    borderRadius: 8,
+                    cursor: 'pointer',
+                    fontSize: 12.5,
+                    color: '#5c4f44',
+                  }}
+                >
+                  <MapMiniGlyph />
+                  <span style={{ flex: '1 1 auto', minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{m.title}</span>
+                  {/* 편집 권한은 기본값이라 표시하지 않는다 — 예외인 '보기'만 알린다. */}
+                  {m.role === 'view' && (
+                    <span style={{ flexShrink: 0, padding: '1px 6px', borderRadius: 999, fontSize: 9.5, fontWeight: 700, background: 'rgba(63,143,208,.12)', color: '#2f6f9e' }}>보기</span>
+                  )}
+                </div>
+              ))}
+            </div>
+          </div>
+        </>
+      )}
+
       <div style={{ height: 1, background: '#f0e6dd', margin: '12px 4px' }} />
 
       <div
@@ -361,6 +446,19 @@ function StarGlyph({ size = 15 }: { size?: number }) {
   return (
     <svg width={size} height={size} viewBox="0 0 24 24" fill="#e0a53c" stroke="#e0a53c" strokeWidth={1.4} strokeLinejoin="round" aria-hidden="true" style={{ flexShrink: 0 }}>
       <polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26" />
+    </svg>
+  );
+}
+
+/** "공유받은 맵" 아이콘 — 사람 + 나가는 화살표(공유). 스페이스/즐겨찾기와 같은
+ * 라인 스타일 SVG이고, 색만 파랑 계열로 두어 "내 것이 아닌 출처"임을 알린다. */
+function SharedGlyph({ size = 15 }: { size?: number }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="#3f8fd0" strokeWidth={2.1} strokeLinecap="round" strokeLinejoin="round" aria-hidden="true" style={{ flexShrink: 0 }}>
+      <path d="M15 21v-1.6a3.4 3.4 0 0 0-3.4-3.4H6.4A3.4 3.4 0 0 0 3 19.4V21" />
+      <circle cx="9" cy="7.5" r="3.5" />
+      <path d="M17.5 11.5 21 8l-3.5-3.5" />
+      <path d="M21 8h-6" />
     </svg>
   );
 }

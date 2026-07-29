@@ -5,13 +5,14 @@
 
 import type { YDoc } from '@mindflow/mindmap-core';
 import type { Awareness } from 'y-protocols/awareness';
-import type { CollabProvider } from './ports';
+import type { CollabProvider, CollabStatusListener } from './ports';
 
 export class NoopCollabProvider implements CollabProvider {
-  connect(docId: string, ydoc: YDoc): void {
+  connect(docId: string, ydoc: YDoc, onStatus?: CollabStatusListener): void {
     void docId;
     void ydoc;
     /* no transport: single-user, matches pre-M5 behavior */
+    onStatus?.('offline');
   }
   disconnect(): void {
     /* nothing to release */

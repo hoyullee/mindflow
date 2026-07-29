@@ -68,6 +68,9 @@ export interface HomeState {
   auth: AuthPhase;
   favs: Record<string, boolean>;
   favOpen: boolean;
+  /** LNB "공유받은 맵" 목록의 펼침 상태. 처음엔 펼쳐 둔다 — 섹션 자체가 공유받은
+   * 문서가 있을 때만 생기므로, 새로 공유받은 맵이 한 번의 클릭 없이 눈에 띈다. */
+  sharedOpen: boolean;
   openMenu: string | null;
   deleted: Record<string, boolean>;
   confirmDelete: string | null;
@@ -216,6 +219,7 @@ export function initialHomeState(): HomeState {
     auth: null,
     favs: {},
     favOpen: false,
+    sharedOpen: true,
     openMenu: null,
     deleted: {},
     confirmDelete: null,

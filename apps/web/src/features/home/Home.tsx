@@ -5,7 +5,6 @@ import { Sidebar } from './components/Sidebar';
 import { Toolbar } from './components/Toolbar';
 import { MapGrid } from './components/MapGrid';
 import { RecentStrip, RecentStripSkeleton } from './components/RecentStrip';
-import { SharedStrip } from './components/SharedStrip';
 import { AuthModal } from './components/modals/AuthModal';
 import { ToastModal } from './components/modals/ToastModal';
 import { NewSpaceModal } from './components/modals/NewSpaceModal';
@@ -83,9 +82,6 @@ export function Home() {
             깔아, 로드 완료 시 트레이가 끼어들며 툴바가 아래로 튀는 점프를 막는다. */}
         {view.loading && state.recent.length > 0 && <RecentStripSkeleton count={state.recent.length} />}
         {view.recentSectionVisible && <RecentStrip cards={view.recentCards} controller={controller} />}
-        {/* 남이 나에게 공유한 맵 — 내 스페이스/폴더에 속하지 않으므로 최근 항목처럼
-            스페이스 툴바 위에 따로 놓는다. */}
-        {view.sharedSectionVisible && <SharedStrip cards={view.sharedCards} controller={controller} />}
         <Toolbar state={state} view={view} controller={controller} isMobile={isMobile} onOpenNav={() => setNavOpen(true)} />
         <MapGrid view={view} controller={controller} />
       </main>

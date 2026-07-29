@@ -5,6 +5,7 @@ import type { Box, Doc, Float, Line, LineAnchor, LayoutMode, Node, NodeMap, Size
 import { HistoryStack, ROOT_ID, applyPartialStyle, cubicAt, findLineSnap, layout, resolveLineEndpoints, resolveLineGeometry, serializeDoc, toMarkdown } from '@mindflow/mindmap-core';
 import { domToRuns, linearize, runsToHtml, setLinearSelection } from './richtextDom';
 import type { ShareStore } from '../../adapters/ports';
+import type { CollabStatus } from '../../collab/ports';
 import { useBackend, useDocStore, useShareStore } from '../../adapters/BackendContext';
 import { useAuthUser } from '../../adapters/useAuthUser';
 import { useYjsDocSync } from '../../collab/useYjsDocSync';
@@ -486,6 +487,9 @@ export interface EditorController {
   shareStore: ShareStore;
   /** `'local'`(데모)인지 — 공유 모달이 "실제로는 공유되지 않는다"를 알려 줄 때 쓴다. */
   backendMode: 'local' | 'supabase';
+  /** 실시간 협업 전송이 실제로 붙었는지(`collab/ports.ts`의 `CollabStatus`).
+   * 조용히 죽지 않도록 UI가 이걸 보고 알려 준다. */
+  collabStatus: CollabStatus;
 }
 
 function docSignature(d: Doc): string {
@@ -731,7 +735,12 @@ export function useEditorState(): EditorController {
   // incoming remote updates straight into `doc` via `setDoc` (bypassing
   // `commitDoc`, so remote edits don't land on THIS tab's local undo stack —
   // see `useYjsDocSync`'s doc comment for the full rationale).
-  const awareness = useYjsDocSync(docStoreId, doc, setDoc);
+  // 초기 로드가 끝나기 전에는 붙지 않는다(빈 문자열 = 대기) — 공유받은 맵을 처음 여는
+  // 기기는 이 기기에 본문이 없어 마운트 시 **빈 자리표시자**를 들고 있고, 그 상태로
+  // 붙으면 상대의 진짜 문서와 병합돼 자리표시자가 일부 필드에서 이길 수 있다. 열 수
+  // 없는 맵(`bodyMissing`/`loadError`)에서도 붙지 않는다 — 편집 자체를 멈춘 상태다.
+  const collabDocId = hydrating || bodyMissing || loadError ? '' : docStoreId;
+  const { awareness, status: collabStatus } = useYjsDocSync(collabDocId, doc, setDoc);
 
   // ---- presence (multi-user awareness on top of M5's document sync): cursor
   // position + selection + identity, broadcast via the SAME `Awareness`
@@ -3467,5 +3476,6 @@ export function useEditorState(): EditorController {
     docId: docStoreId,
     shareStore,
     backendMode,
+    collabStatus,
   };
 }

@@ -90,12 +90,45 @@ function syncNodesMap(ydoc: Y.Doc, prevNodes: NodeMap | undefined, nextNodes: No
   }
 }
 
+/**
+ * Fills in a node read out of the CRDT so it is always a **structurally valid**
+ * `Node`, whatever the wire delivered.
+ *
+ * 왜 필요한가: Yjs는 의존 연산이 아직 도착하지 않은 업데이트를 **보류**한다. 그 사이
+ * `nodes` 맵에는 "타입은 생겼지만 필드는 비어 있는" 항목이 잠깐 존재할 수 있다. 예전엔
+ * 그 상태를 그대로 `Doc`으로 내보내 `children`이 `undefined`인 노드가 만들어졌고,
+ * 레이아웃이 `for (const c of n.children)`에서 터져 **캔버스 전체가 빈 화면**이 됐다
+ * (실브라우저 재현: `r.children is not iterable`). CRDT에서 읽은 문서는 언제나 그릴 수
+ * 있는 문서여야 한다 — 여기서 기본값으로 메운다.
+ */
+function normalizeNode(key: string, raw: PlainRecord): Node {
+  const children = Array.isArray(raw.children) ? (raw.children as unknown[]).filter((c): c is string => typeof c === 'string') : [];
+  return {
+    ...(raw as unknown as Node),
+    id: typeof raw.id === 'string' && raw.id ? raw.id : key,
+    text: typeof raw.text === 'string' ? raw.text : '',
+    emoji: typeof raw.emoji === 'string' ? raw.emoji : '',
+    parent: typeof raw.parent === 'string' ? raw.parent : null,
+    children,
+    collapsed: raw.collapsed === true,
+    color: typeof raw.color === 'string' ? raw.color : null,
+    x: typeof raw.x === 'number' ? raw.x : 0,
+    y: typeof raw.y === 'number' ? raw.y : 0,
+  };
+}
+
 function readNodesMap(ydoc: Y.Doc): NodeMap {
   const map = ydoc.getMap<YEntityMap>('nodes');
   const out: NodeMap = {};
   map.forEach((nm, id) => {
-    out[id] = yMapToObject<Node>(nm);
+    out[id] = normalizeNode(id, yMapToObject<PlainRecord>(nm));
   });
+  // 존재하지 않는 자식 id는 떨어낸다 — 부모의 `children`은 도착했지만 자식 노드
+  // 연산이 아직 보류 중일 때(위 doc comment) 레이아웃이 없는 노드를 따라가지 않도록.
+  for (const id of Object.keys(out)) {
+    const n = out[id]!;
+    if (n.children.some((c) => !out[c])) n.children = n.children.filter((c) => !!out[c]);
+  }
   return out;
 }
 
@@ -135,6 +168,10 @@ function readEntityList<T extends WithId>(ydoc: Y.Doc, mapName: string, orderNam
   for (const id of ids) {
     const em = map.get(id);
     if (!em) continue; // order array out of sync with map (shouldn't happen via our own writers) — skip defensively
+    // 같은 id가 순서 배열에 두 번 들어갈 수 있다: 두 피어가 각자 같은 문서를 자기
+    // Y.Doc에 심으면 두 삽입이 **모두** 남는다(Y.Array는 삽입을 병합하지 않는다).
+    // 그때 메모/영역이 화면에서 두 개로 보였다 — id로 한 번만 낸다.
+    if (seen.has(id)) continue;
     seen.add(id);
     out.push(yMapToObject<T>(em));
   }
