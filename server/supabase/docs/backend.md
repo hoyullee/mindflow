@@ -442,11 +442,21 @@ M5/M5-awareness가 Yjs 동기화와 커서 공유를 붙였지만, **`documents`
 
   ⚠️ **`realtime` 스키마는 우리 소유가 아닙니다.** 마이그레이션 실행 역할에 권한이 없으면
   이 블록만 실패하는데, 그때 배포 전체가 막히지 않도록 예외를 잡아 NOTICE만 남깁니다.
-  **그 경우 채널은 예전처럼 열린 상태로 남습니다** — 배포 로그에 그 NOTICE가 보이면
-  대시보드 SQL Editor에서 0009의 마지막 `do $$ … $$;` 블록을 그대로 한 번 실행해 주세요.
-  확인: `select relrowsecurity from pg_class where oid = 'realtime.messages'::regclass;`
-  → `t`, 그리고 `select policyname from pg_policies where schemaname='realtime';`에
-  `collab_channel_read`/`collab_channel_write`가 보이면 적용된 것입니다.
+  **그 경우 채널은 예전처럼 열린 상태로 남습니다.**
+
+  **수동 적용 절차 (실 프로젝트에서 검증됨, 2026-07)** — SQL Editor는 `postgres`로 돌고
+  `realtime.messages`의 소유자는 `supabase_realtime_admin`이라, 0009의 `do` 블록을
+  SQL Editor에 그대로 붙여 넣으면 **예외 가드가 오류를 삼켜 "Success"처럼 보이지만
+  아무것도 적용되지 않습니다.** 실제로 필요한 건 이것뿐입니다:
+  1. `alter table … enable row level security`는 **실행하지 않는다** — 소유자가 아니라
+     `must be owner of table messages`(42501)로 실패하고, 최신 프로젝트는 애초에 RLS가
+     이미 켜져 있다(`select relrowsecurity from pg_class where
+     oid = 'realtime.messages'::regclass;` → `t`).
+  2. 0009 마지막 블록에서 **`create policy` 두 개(+ 앞의 `drop policy if exists`)만**
+     꺼내 SQL Editor에서 실행한다 — 정책 생성은 `postgres`로도 통과한다.
+  3. 확인: `select policyname from pg_policies where schemaname='realtime';`에
+  `collab_channel_read`/`collab_channel_write`가 보이면 적용된 것입니다. 두 계정의
+  탭을 새로고침해 우상단 경고 아이콘이 사라졌는지도 확인하세요.
 
   **정책이 없으면 어떻게 되는지(그리고 왜 조용히 죽지 않는지)** — private 채널은 서버
   정책이 없으면 **구독 자체가 거부**되고, 그러면 문서 동기화·접속자·커서가 **한꺼번에**
