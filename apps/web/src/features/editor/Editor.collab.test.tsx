@@ -9,7 +9,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { MemoryRouter, Route, Routes } from 'react-router-dom';
 import * as Y from 'yjs';
-import { ROOT_ID, addNode, docToYDoc, setNodeField, yDocToDoc, type Doc } from '@mindflow/mindmap-core';
+import { ROOT_ID, addNode, applyDocToYDoc, docToYDoc, setNodeField, yDocToDoc, type Doc } from '@mindflow/mindmap-core';
 import { Editor } from './Editor';
 import { BroadcastChannelProvider } from '../../collab/BroadcastChannelProvider';
 
@@ -141,6 +141,35 @@ describe('Editor collaboration (M5)', () => {
     await waitFor(() => expect(remoteYdoc.getArray('floatsOrder').length).toBe(2)); // 순서 배열엔 둘
     expect(yDocToDoc(remoteYdoc).floats.length).toBe(1); // 읽으면 하나
     expect(within(getViewport(container)).getAllByText('메모 하나').length).toBe(1);
+
+    remoteProvider.disconnect();
+  });
+
+  // 제보: 동시 편집 중 한 사람이 연결선 스타일(곡선↔직선)을 바꿔도 상대에게 반영되지
+  // 않았다. 원인 두 곳: CRDT meta가 edgeStyle을 아예 나르지 않았고, 원격 문서가 와도
+  // 에디터의 edgeStyle 로컬 미러가 갱신되지 않았다. 둘 다 이 테스트가 가드한다.
+  it("상대가 바꾼 연결선 스타일이 이쪽 렌더(EdgeLayer)에 반영된다", async () => {
+    const docId = `collab-edge-${Math.random()}`;
+    localStorage.setItem(`mindflow_doc_${docId}`, JSON.stringify(DOC));
+    const { container } = renderEditor(`/editor?map=${docId}&title=x`);
+    await waitFor(() => expect(within(getViewport(container)).getByText('리서치')).toBeTruthy());
+
+    // 캔버스 안의 커넥터만 — 툴바의 브랜드 마크도 svg path라 컨테이너 전체로 찾으면 걸린다
+    const edgeD = () => getViewport(container).querySelector('svg path[stroke]')?.getAttribute('d') ?? '';
+    await waitFor(() => expect(edgeD()).not.toBe(''));
+    expect(edgeD()).toContain('C'); // 기본 곡선 — 큐빅 세그먼트
+
+    const remoteDoc = { ...DOC } as unknown as Doc;
+    const remoteYdoc = docToYDoc(remoteDoc);
+    const remoteProvider = new BroadcastChannelProvider();
+    remoteProvider.connect(docId, remoteYdoc);
+    await waitFor(() => expect(remoteYdoc.getMap('nodes').has(ROOT_ID)).toBe(true));
+
+    // 상대가 스타일 드롭다운에서 '직선'을 고른 것과 같은 diff
+    applyDocToYDoc(remoteYdoc, { ...remoteDoc, edgeStyle: 'straight' }, remoteDoc);
+
+    await waitFor(() => expect(edgeD()).not.toContain('C')); // 직선 = L 세그먼트만
+    expect(edgeD()).toMatch(/^M .+ L .+$/);
 
     remoteProvider.disconnect();
   });

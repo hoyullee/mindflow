@@ -40,6 +40,23 @@ describe('usePresence', () => {
     expect(local.user.name).toBe('hoyul.lee@wantedlab.com');
   });
 
+  it('프로필명이 있으면 커서 이름표는 이메일 대신 그것을 쓴다 — 색은 이메일 시드 그대로', () => {
+    const awareness = new Awareness(new Y.Doc());
+    const { result, rerender } = renderHook(({ name }: { name: string | null }) => usePresence(awareness, 'hoyul.lee@wantedlab.com', name), {
+      initialProps: { name: null as string | null },
+    });
+    const emailColor = result.current.localUser.color;
+
+    // 프로필명은 비동기로 늦게 온다(로컬 캐시/백엔드) — 도착하면 이름만 바뀐다.
+    rerender({ name: '호율' });
+
+    expect(result.current.localUser.name).toBe('호율');
+    expect(result.current.localUser.authed).toBe(true);
+    expect(result.current.localUser.color).toBe(emailColor); // 이름을 바꿔도 내 색은 그대로
+    const local = awareness.getStates().get(awareness.clientID) as { user: { name: string } };
+    expect(local.user.name).toBe('호율'); // 피어에게 나가는 awareness에도 반영
+  });
+
   it('falls back to a random "adjective+animal" guest identity when no authed email is given', () => {
     const awarenessA = new Awareness(new Y.Doc());
     const awarenessB = new Awareness(new Y.Doc());
