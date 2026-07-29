@@ -60,4 +60,20 @@ describe('LocalShareStore', () => {
     localStorage.setItem('mf_doc_shares', '{ 이건 JSON이 아니다');
     expect(await new LocalShareStore().list('d1')).toEqual([]);
   });
+
+  it('참가자: 소유자는 데모 세션의 나, 초대는 프로필명 캐시가 있으면 이름·가입으로 본다', async () => {
+    localStorage.setItem('mf_demo_session', JSON.stringify({ user: { id: 'u1', email: 'me@example.com' } }));
+    localStorage.setItem('mf_profile_names', JSON.stringify({ 'me@example.com': '나야나', 'known@example.com': '아는 사람' }));
+    const store = new LocalShareStore();
+    await store.add('d1', 'known@example.com');
+    await store.add('d1', 'stranger@example.com');
+
+    const people = await store.listParticipants('d1');
+
+    expect(people).toEqual([
+      { kind: 'owner', email: 'me@example.com', displayName: '나야나', joined: true },
+      { kind: 'invitee', email: 'known@example.com', displayName: '아는 사람', joined: true },
+      { kind: 'invitee', email: 'stranger@example.com', displayName: null, joined: false },
+    ]);
+  });
 });

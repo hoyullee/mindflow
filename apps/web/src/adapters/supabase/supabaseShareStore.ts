@@ -10,7 +10,7 @@
 // 초대할 수 있다(그 이메일로 가입하는 순간 권한이 생긴다). 0009 주석 참고.
 
 import type { SupabaseClient } from '@supabase/supabase-js';
-import type { DocumentShare, ShareRole, ShareStore, SharedWithMe } from '../ports';
+import type { DocumentShare, ShareParticipant, ShareRole, ShareStore, SharedWithMe } from '../ports';
 
 const TABLE = 'document_shares';
 
@@ -49,6 +49,25 @@ export class SupabaseShareStore implements ShareStore {
     const { error } = await this.client.from(TABLE).delete().eq('document_id', documentId).eq('invitee_email', email.trim().toLowerCase());
     if (error) return { error: error.message };
     return {};
+  }
+
+  async listParticipants(documentId: string): Promise<ShareParticipant[] | null> {
+    // 0010의 SECURITY DEFINER RPC — 클라이언트가 못 읽는 auth.users/profiles 조인을
+    // 서버가 대신 한다(노출 범위는 0009의 공개 정책 그대로). RPC가 아직 적용되지
+    // 않은 서버(마이그레이션 전 배포)나 일시 오류에서는 null — 공유 팝업은 이메일만
+    // 보여주는 기존 렌더로 폴백하고, 공유 자체는 계속 동작한다.
+    try {
+      const { data, error } = await this.client.rpc('share_participants', { doc_id: documentId });
+      if (error) return null;
+      return ((data ?? []) as { kind: string; email: string; display_name: string | null; joined: boolean }[]).map((r) => ({
+        kind: r.kind === 'owner' ? 'owner' : 'invitee',
+        email: r.email,
+        displayName: r.display_name && r.display_name.trim() ? r.display_name : null,
+        joined: !!r.joined,
+      }));
+    } catch {
+      return null;
+    }
   }
 
   async listSharedWithMe(): Promise<SharedWithMe[]> {

@@ -188,6 +188,21 @@ export interface SharedWithMe {
 }
 
 /**
+ * 공유 팝업에 보여줄 참가자 한 명 — 소유자 또는 초대받은 사람. 클라이언트는
+ * `auth.users`를 못 읽으므로 이메일 ↔ 프로필명 연결은 서버 RPC(0010
+ * `share_participants`)가 해 준다. 노출 범위는 0009의 공개 정책 그대로:
+ * 초대 목록 전체는 소유자만, 초대받은 사람은 소유자 + 자기 행만 본다.
+ */
+export interface ShareParticipant {
+  kind: 'owner' | 'invitee';
+  email: string;
+  /** 프로필명(가입 시 자동 시드 — 0006). 알 수 없으면 null → UI가 이메일로 폴백. */
+  displayName: string | null;
+  /** 이 이메일로 가입된 계정이 있는가. 초대만 되고 가입 전이면 false("가입 대기"). */
+  joined: boolean;
+}
+
+/**
  * 문서 공유 관리. 실제 접근 제어는 **DB의 RLS**가 한다(0009) — 이 포트는 초대
  * 목록을 읽고 쓰는 창구일 뿐이고, 여기서 무엇을 허용하든 서버가 다시 판단한다.
  */
@@ -200,6 +215,13 @@ export interface ShareStore {
   remove(documentId: string, email: string): Promise<{ error?: string }>;
   /** 나에게 공유된 문서들. */
   listSharedWithMe(): Promise<SharedWithMe[]>;
+  /**
+   * 공유 팝업용 참가자 정보(소유자 + 초대받은 사람의 프로필명/가입 여부).
+   * `null` = 정보를 얻을 수 없음(RPC 미적용 서버, 일시 오류) — UI는 이메일만
+   * 보여주는 기존 렌더로 폴백한다. 실패해도 공유 자체는 동작해야 하므로 throw하지
+   * 않는다.
+   */
+  listParticipants(documentId: string): Promise<ShareParticipant[] | null>;
 }
 
 /**

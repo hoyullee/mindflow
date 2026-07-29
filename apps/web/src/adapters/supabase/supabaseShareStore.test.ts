@@ -113,4 +113,33 @@ describe('SupabaseShareStore', () => {
     expect(await new SupabaseShareStore(client).listSharedWithMe()).toEqual([]);
     expect(query.calls).toHaveLength(0);
   });
+
+  it('참가자: 0010 RPC의 행을 포트 모양으로 바꾼다', async () => {
+    const rpc = vi.fn(async () => ({
+      data: [
+        { kind: 'owner', email: 'me@example.com', display_name: '호율', joined: true },
+        { kind: 'invitee', email: 'friend@example.com', display_name: '  ', joined: true }, // 공백 이름은 null 취급
+        { kind: 'invitee', email: 'ghost@example.com', display_name: null, joined: false },
+      ],
+      error: null,
+    }));
+    const client = { rpc } as unknown as import('@supabase/supabase-js').SupabaseClient;
+
+    const people = await new SupabaseShareStore(client).listParticipants('d1');
+
+    expect(rpc).toHaveBeenCalledWith('share_participants', { doc_id: 'd1' });
+    expect(people).toEqual([
+      { kind: 'owner', email: 'me@example.com', displayName: '호율', joined: true },
+      { kind: 'invitee', email: 'friend@example.com', displayName: null, joined: true },
+      { kind: 'invitee', email: 'ghost@example.com', displayName: null, joined: false },
+    ]);
+  });
+
+  it('참가자: RPC가 없거나(마이그레이션 전) 실패하면 null — 공유 자체는 계속 동작해야 한다', async () => {
+    const errClient = { rpc: vi.fn(async () => ({ data: null, error: { message: 'function share_participants does not exist' } })) } as unknown as import('@supabase/supabase-js').SupabaseClient;
+    expect(await new SupabaseShareStore(errClient).listParticipants('d1')).toBeNull();
+
+    const throwClient = { rpc: vi.fn(async () => { throw new Error('network'); }) } as unknown as import('@supabase/supabase-js').SupabaseClient;
+    expect(await new SupabaseShareStore(throwClient).listParticipants('d1')).toBeNull();
+  });
 });
