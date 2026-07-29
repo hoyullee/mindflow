@@ -162,6 +162,58 @@ describe('Editor initial hydration', () => {
     await waitFor(() => expect(screen.getByText('저장됨')).toBeTruthy());
   });
 
+  // 제보 후속: 신규 기기에서 **기존 카드**를 열면, 백엔드에 행이 없다는 이유로
+  // 에디터가 "새 맵"으로 보고 빈 seed를 저장했다. 그러면 그 빈 문서가 정본이 되고,
+  // 본문을 가진 기기가 다음에 열 때 그것을 내려받아 로컬 본문까지 덮었다.
+  // 새로 만들기 링크만 `new=1`을 붙이므로(`newMapHref`) 그것으로 구분한다.
+  describe('본문이 다른 기기에만 있는 맵 (new=1 없음 + 행 없음 + 로컬 본문 없음)', () => {
+    it('빈 문서를 저장하지 않고 안내를 띄운다', async () => {
+      localStorage.clear();
+      const { backend, save } = makeBackend(vi.fn(async () => null), 'supabase');
+      renderEditor(backend, '/editor?map=m-legacy&title=옛날 맵'); // 홈의 기존 카드 링크(new=1 없음)
+
+      await waitFor(() => expect(screen.getByText('이 기기에서 내용을 찾을 수 없어요')).toBeTruthy());
+      // 어떤 쓰기도 없어야 한다 — 이게 손실을 막는 핵심이다.
+      expect(save).not.toHaveBeenCalled();
+      expect(localStorage.getItem('mindflow_doc_m-legacy')).toBeNull();
+      // 칩은 '저장 전'(곧 저장될 것처럼 읽힌다)이 아니라 잠긴 상태를 말한다.
+      expect(screen.getByText('편집 잠금')).toBeTruthy();
+      expect(screen.queryByText('저장 전')).toBeNull();
+    });
+
+    it('편집을 시도해도 저장하지 않는다', async () => {
+      localStorage.clear();
+      const { backend, save } = makeBackend(vi.fn(async () => null), 'supabase');
+      renderEditor(backend, '/editor?map=m-legacy2&title=옛날 맵');
+      await waitFor(() => expect(screen.getByText('이 기기에서 내용을 찾을 수 없어요')).toBeTruthy());
+
+      fireEvent.keyDown(window, { key: 's', ctrlKey: true });
+      await new Promise((r) => setTimeout(r, 60));
+      expect(save).not.toHaveBeenCalled();
+    });
+
+    it('로컬 본문이 있으면(원래 기기) 종전대로 올린다 — 안내를 띄우지 않는다', async () => {
+      localStorage.clear();
+      localStorage.setItem('mindflow_doc_m-mine', JSON.stringify(REAL_DOC));
+      const { backend, save } = makeBackend(vi.fn(async () => null), 'supabase');
+      renderEditor(backend, '/editor?map=m-mine&title=실제 루트');
+
+      await waitFor(() => expect(save).toHaveBeenCalledTimes(1));
+      expect(screen.queryByText('이 기기에서 내용을 찾을 수 없어요')).toBeNull();
+      const call = save.mock.calls[0] as unknown as [string, { nodes: Record<string, { text: string }> }];
+      expect(call[1].nodes.root?.text).toBe('실제 루트'); // 빈 seed가 아니라 그 본문
+    });
+
+    it('새로 만들기(new=1)는 종전대로 seed를 저장한다', async () => {
+      localStorage.clear();
+      const { backend, save } = makeBackend(vi.fn(async () => null), 'supabase');
+      renderEditor(backend, '/editor?map=new-fresh&new=1&title=새 마인드맵');
+
+      await waitFor(() => expect(save).toHaveBeenCalledTimes(1));
+      expect(screen.queryByText('이 기기에서 내용을 찾을 수 없어요')).toBeNull();
+    });
+  });
+
   it('after an async load adopts the real doc, Undo rebases onto it and never reverts to the empty seed', async () => {
     localStorage.clear();
     let resolveLoad!: (v: LoadedDoc | null) => void;

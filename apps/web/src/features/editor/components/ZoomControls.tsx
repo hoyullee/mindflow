@@ -60,7 +60,9 @@ export function ZoomControls({ controller, panelOpen = false }: ZoomControlsProp
         flexDirection: 'column',
       }}
     >
-      {controller.showMinimap && (
+      {/* 본문을 못 찾은 맵(`bodyMissing`)에서는 미니맵을 그리지 않는다 — 그릴 대상이
+          빈 자리표시 seed라, 실제 내용이 있는 것처럼 보인다. */}
+      {controller.showMinimap && !controller.bodyMissing && (
         <div style={{ padding: '6px 6px 0' }}>
           <Minimap controller={controller} isMobile={isMobile} />
         </div>

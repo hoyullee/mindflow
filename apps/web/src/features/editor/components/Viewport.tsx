@@ -61,6 +61,8 @@ export function Viewport({ doc, controller }: ViewportProps) {
               didn't load, so editing/saving it would risk clobbering the backend. */}
           {controller.loadError ? (
             <LoadErrorCanvas theme={theme} onRetry={controller.retryLoad} />
+          ) : controller.bodyMissing ? (
+            <BodyMissingCanvas theme={theme} onRetry={controller.retryLoad} />
           ) : controller.hydrating ? (
             <LoadingCanvas theme={theme} />
           ) : (
@@ -83,7 +85,7 @@ export function Viewport({ doc, controller }: ViewportProps) {
             같은 배경(도트 포함)으로 가렸다가 짧게 페이드아웃. 새로고침 시
             좌상단에 그려졌다 중앙으로 점프하는 깜빡임을 여기서 흡수한다.
             로드 에러 화면은 가리면 안 되므로 제외. */}
-        {!controller.loadError && <CanvasCurtain theme={theme} ready={controller.canvasReady} />}
+        {!controller.loadError && !controller.bodyMissing && <CanvasCurtain theme={theme} ready={controller.canvasReady} />}
         {/* NOT inside the pan/zoom transform above — `ctxMenu.sx/sy` are already screen
             (viewport-relative) coordinates (port of `Component#openCtxAt`'s `sx`/`sy`,
             MindFlow.dc.html:2794-2795), so this sits in the SAME untransformed box `.mf-ed-vp`
@@ -158,6 +160,29 @@ function LoadingCanvas({ theme }: { theme: import('../theme').Theme }) {
 /** Shown when the initial doc load FAILED — an error message + retry, instead of
  * the empty seed. Editing/saving stays blocked (see `canPersistDocRef`) so a
  * failed load can never let the empty canvas overwrite the real backend doc. */
+/**
+ * 본문이 이 기기에도, 백엔드에도 없을 때. 빈 문서를 저장해 버리면 본문을 가진 다른
+ * 기기가 다음에 열 때 그 빈 문서를 내려받아 **로컬 본문까지 덮는다.** 그래서 쓰지 않고
+ * 이 안내를 띄운다(`useEditorState`의 `bodyMissing`).
+ */
+function BodyMissingCanvas({ theme, onRetry }: { theme: import('../theme').Theme; onRetry: () => void }) {
+  return (
+    <div style={{ position: 'absolute', inset: 0, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 14, padding: 24, textAlign: 'center' }}>
+      <div style={{ fontSize: 15, fontWeight: 700, color: theme.text }}>이 기기에서 내용을 찾을 수 없어요</div>
+      <div style={{ fontSize: 13, color: theme.subtext, maxWidth: 340, lineHeight: 1.6 }}>
+        이 맵은 아직 다른 기기에만 저장돼 있어요. 그 기기에서 Geurio 홈을 한 번 열면 자동으로 올라갑니다. 내용을 잃지 않도록 여기서는 편집을 멈췄어요.
+      </div>
+      <button
+        type="button"
+        onClick={onRetry}
+        style={{ marginTop: 4, padding: '9px 18px', borderRadius: 10, border: 'none', background: theme.accent, color: theme.accentInk, fontFamily: 'inherit', fontSize: 13, fontWeight: 700, cursor: 'pointer' }}
+      >
+        다시 확인
+      </button>
+    </div>
+  );
+}
+
 function LoadErrorCanvas({ theme, onRetry }: { theme: import('../theme').Theme; onRetry: () => void }) {
   return (
     <div style={{ position: 'absolute', inset: 0, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 14, padding: 24, textAlign: 'center' }}>

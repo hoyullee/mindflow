@@ -178,6 +178,10 @@ export interface EditorController {
    * instead of the empty seed, and saving is blocked so nothing overwrites the
    * (unknown-state) backend doc. */
   loadError: boolean;
+  /** 본문이 이 기기에도, 백엔드에도 없다(그러나 새로 만든 맵도 아니다) — 본문을 가진
+   * 다른 기기가 아직 올리지 않은 맵이다. 빈 문서로 덮어쓰지 않도록 편집·저장을 멈추고
+   * 안내 화면을 띄운다. */
+  bodyMissing: boolean;
   /** Retry a failed initial load (reloads the editor route). */
   retryLoad: () => void;
   /** 문서 테마(`doc.themeKey`) — 편집 영역(캔버스·노드/커넥터·미니맵 내용·
@@ -492,7 +496,14 @@ export function useEditorState(): EditorController {
   const docStoreId = mapId || 'default';
   const titleParam = params.get('title') ? decodeURIComponent(params.get('title') || '') : '';
 
+  /** 새로 만들기로 들어왔는가 — `newMapHref`만 `new=1`을 붙인다(홈의 기존 카드 링크
+   * `mapHref`에는 없다). "행이 없다"를 새 맵과 **본문이 다른 기기에 있는 기존 맵**으로
+   * 가르는 유일한 근거다(아래 `bodyMissing` 참고). */
+  const isNewMapParam = params.get('new') === '1';
   const [doc, setDoc] = useState<Doc>(() => loadOrSeedDoc(mapId, titleParam));
+  /** 마운트 시점에 이 기기에 본문이 있었는가. 로드가 끝난 뒤 판단해야 하므로 그때의
+   * 값을 고정해 둔다(로드 중 캐시가 채워질 수 있다). */
+  const hadLocalBodyRef = useRef(hasStoredDoc(mapId));
   // True while the mount-time doc is only a PLACEHOLDER seed (no local body) and a
   // backend `docStore.load` is still in flight — the canvas holds until it
   // resolves so the empty default never flashes before the real tree. Only gates
@@ -591,6 +602,12 @@ export function useEditorState(): EditorController {
   // callback identity must not re-run the initial load).
   const persistDocRef = useRef<() => Promise<void>>(async () => undefined);
   const [loadError, setLoadError] = useState(false);
+  /**
+   * 본문이 **어디에도 없다**: 백엔드에 행이 없고, 이 기기 로컬에도 없고, 새로 만든
+   * 맵도 아니다 → 본문은 다른 기기에 있다. 빈 문서로 덮어쓰지 않도록 편집·저장을
+   * 멈추고 안내한다(위 `!res` 분기 참고).
+   */
+  const [bodyMissing, setBodyMissing] = useState(false);
   useEffect(() => {
     let cancelled = false;
     const p = docStore
@@ -648,6 +665,19 @@ export function useEditorState(): EditorController {
         canPersistDocRef.current = true;
         setLoadError(false);
         if (!res) {
+          // 행이 없다 ≠ 항상 새 맵이다. 홈의 **기존 카드**를 열었는데 행이 없고 이
+          // 기기에 로컬 본문도 없다면, 그 본문은 **다른 기기에 있다**(백엔드에 올라가기
+          // 전에 만들어진 맵). 여기서 빈 seed를 저장하면 그 빈 문서가 정본이 되고,
+          // 본문을 가진 기기가 다음에 열 때 그것을 내려받아 **로컬 본문까지 덮는다.**
+          // 그래서 이 경우엔 아무것도 쓰지 않고 안내만 한다.
+          //
+          // 구분 근거: 새로 만들기 링크만 `new=1`을 붙인다(`newMapHref`). 홈에서 기존
+          // 카드를 여는 링크(`mapHref`)에는 없다.
+          if (!isNewMapParam && !hadLocalBodyRef.current) {
+            canPersistDocRef.current = false; // 편집·자동저장도 멈춘다(덮어쓰기 방지)
+            setBodyMissing(true);
+            return;
+          }
           // Confirmed brand-new: persist the seed RIGHT AWAY (creation = the doc
           // exists, like the card already added to Home at 새로 만들기). This keeps
           // the chip truthful ('저장 전' → '저장 중…' → real '저장됨') and gives the
@@ -3227,6 +3257,7 @@ export function useEditorState(): EditorController {
     hydrating,
     canvasReady,
     loadError,
+    bodyMissing,
     retryLoad: () => {
       if (typeof window !== 'undefined') window.location.reload();
     },
