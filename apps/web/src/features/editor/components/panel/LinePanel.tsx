@@ -48,18 +48,21 @@ export function LinePanel({ controller, lineIds, isMobile = false }: LinePanelPr
         )}
 
         <PanelSection theme={th} title="선 스타일" open={openSec === 'lstyle'} onToggle={() => toggle('lstyle')}>
-          <div style={{ fontSize: 12.5, fontWeight: 600, marginBottom: 7 }}>선 종류</div>
-          <div style={{ display: 'flex', gap: 6, marginBottom: 16 }}>
+          {/* 라벨은 다른 패널과 같은 `SectionLabel`(11px 대문자 톤), 두 버튼은 2열
+              그리드로 행 폭을 채워 아래 위 행의 열이 정렬되게 — 제보(배치가 중구난방)
+              의 "라벨 스타일·버튼 폭 제각각" 부분 정리. */}
+          <SectionLabel theme={th}>선 종류</SectionLabel>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: 6, marginBottom: 16 }}>
             <SegButton label="점선" active={!!l.dashed} theme={th} onClick={() => controller.setLineDashed(true)} />
             <SegButton label="실선" active={!l.dashed} theme={th} onClick={() => controller.setLineDashed(false)} />
           </div>
-          <div style={{ fontSize: 12.5, fontWeight: 600, marginBottom: 7 }}>시작점 화살표</div>
-          <div style={{ display: 'flex', gap: 6, marginBottom: 14 }}>
+          <SectionLabel theme={th}>시작점 화살표</SectionLabel>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: 6, marginBottom: 16 }}>
             <SegButton label="화살표" active={l.startArrow} theme={th} onClick={() => controller.setLineArrow(1, true)} />
             <SegButton label="없음" active={!l.startArrow} theme={th} onClick={() => controller.setLineArrow(1, false)} />
           </div>
-          <div style={{ fontSize: 12.5, fontWeight: 600, marginBottom: 7 }}>끝점 화살표</div>
-          <div style={{ display: 'flex', gap: 6, marginBottom: 16 }}>
+          <SectionLabel theme={th}>끝점 화살표</SectionLabel>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: 6, marginBottom: 16 }}>
             <SegButton label="화살표" active={l.endArrow} theme={th} onClick={() => controller.setLineArrow(2, true)} />
             <SegButton label="없음" active={!l.endArrow} theme={th} onClick={() => controller.setLineArrow(2, false)} />
           </div>
@@ -69,10 +72,12 @@ export function LinePanel({ controller, lineIds, isMobile = false }: LinePanelPr
           <>
             <Divider theme={th} />
             <PanelSection theme={th} title="곡률" open={openSec === 'lcurve'} onToggle={() => toggle('lcurve')}>
-              <div style={{ fontSize: 12.5, fontWeight: 600, marginBottom: 2, display: 'flex', justifyContent: 'space-between' }}>
-                <span>곡률 ①</span>
-                <span style={{ color: th.subtext, fontWeight: 500 }}>{Math.round(l.c1 != null ? l.c1 : l.curve || 0)}</span>
-              </div>
+              <SectionLabel theme={th}>
+                <span style={{ display: 'flex', justifyContent: 'space-between', width: '100%' }}>
+                  <span>곡률 ①</span>
+                  <span style={{ fontWeight: 500 }}>{Math.round(l.c1 != null ? l.c1 : l.curve || 0)}</span>
+                </span>
+              </SectionLabel>
               <input
                 type="range"
                 min={-500}
@@ -83,10 +88,12 @@ export function LinePanel({ controller, lineIds, isMobile = false }: LinePanelPr
                 onMouseDown={(e) => e.stopPropagation()}
                 style={{ width: '100%', margin: '0 0 10px', accentColor: th.accent }}
               />
-              <div style={{ fontSize: 12.5, fontWeight: 600, marginBottom: 2, display: 'flex', justifyContent: 'space-between' }}>
-                <span>곡률 ②</span>
-                <span style={{ color: th.subtext, fontWeight: 500 }}>{Math.round(l.c2 != null ? l.c2 : l.curve || 0)}</span>
-              </div>
+              <SectionLabel theme={th}>
+                <span style={{ display: 'flex', justifyContent: 'space-between', width: '100%' }}>
+                  <span>곡률 ②</span>
+                  <span style={{ fontWeight: 500 }}>{Math.round(l.c2 != null ? l.c2 : l.curve || 0)}</span>
+                </span>
+              </SectionLabel>
               <input
                 type="range"
                 min={-500}

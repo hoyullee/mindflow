@@ -187,57 +187,75 @@ export function Divider({ theme }: { theme: Theme }) {
   return <div style={{ height: 0, borderTop: `1px solid ${theme.border}`, margin: '0 0 7px' }} />;
 }
 
-export function ColorSwatch({ hex, active, theme, onClick, title }: { hex: string; active: boolean; theme: Theme; onClick: () => void; title?: string }) {
+export function ColorSwatch({ hex, active, theme, onClick, title, size = 22 }: { hex: string; active: boolean; theme: Theme; onClick: () => void; title?: string; size?: number }) {
   return (
     <button
       type="button"
       title={title}
       onClick={onClick}
       style={{
-        width: 24,
-        height: 24,
+        width: size,
+        height: size,
         borderRadius: '50%',
         background: hex,
         border: active ? `2px solid ${theme.text}` : `2px solid ${theme.panel}`,
         boxShadow: active ? `0 0 0 2px ${hex}` : `0 0 0 1px ${theme.border}`,
         cursor: 'pointer',
         padding: 0,
+        flexShrink: 0,
       }}
     />
   );
 }
 
-export function ResetChip({ active, theme, onClick, children = '자동' }: { active: boolean; theme: Theme; onClick: () => void; children?: ReactNode }) {
+/** "자동(테마 기본)" 리셋 — 색상 스와치와 **같은 원형/크기**로 그린다(대각선 =
+ * '색 없음' 관례). 예전엔 알약형 '자동' 칩이라 원형 스와치 행에 홀로 섞여
+ * 줄 정렬이 들쭉날쭉해 보이는 원인 중 하나였다(제보: 배치가 중구난방). */
+export function ResetChip({ active, theme, onClick, size = 22 }: { active: boolean; theme: Theme; onClick: () => void; size?: number }) {
   return (
     <button
       type="button"
       className="mf-ed-btn"
-      title="기본"
+      title="자동 (테마 기본)"
+      aria-label="자동 (테마 기본)"
       onClick={onClick}
       style={{
-        height: 24,
-        padding: '0 8px',
-        borderRadius: 12,
-        border: `1px solid ${active ? theme.accent : theme.border}`,
-        background: active ? hexA(theme.accent, 0.12) : theme.panel,
-        color: active ? theme.accent : theme.subtext,
-        fontSize: 10.5,
-        fontWeight: 700,
+        width: size,
+        height: size,
+        borderRadius: '50%',
+        background: theme.panel,
+        border: active ? `2px solid ${theme.text}` : `2px solid ${theme.panel}`,
+        boxShadow: active ? `0 0 0 2px ${theme.subtext}` : `0 0 0 1px ${theme.border}`,
         cursor: 'pointer',
-        fontFamily: 'inherit',
+        padding: 0,
+        flexShrink: 0,
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'center',
       }}
     >
-      {children}
+      <svg width={size - 8} height={size - 8} viewBox="0 0 14 14" aria-hidden style={{ display: 'block' }}>
+        <line x1={2.5} y1={11.5} x2={11.5} y2={2.5} stroke="#d64545" strokeWidth={1.8} strokeLinecap="round" />
+      </svg>
     </button>
   );
 }
 
+/**
+ * 색상 선택 행 — flex-wrap 대신 **정방 그리드**로 그린다. 예전엔 스와치가
+ * 6+6+1처럼 들쭉날쭉 감겨 "정렬이 이상하다"는 제보의 주 원인이었다.
+ * 열 수는 개수에 맞춰 직사각형이 되게: ≤9개는 한 줄, 그 외 7열(이 앱의
+ * 팔레트 조합 — 리셋+13색 = 14 = 7×2 — 가 정확히 떨어진다).
+ */
 export function SwatchRow({ theme, palette, current, onPick, onReset }: { theme: Theme; palette: string[]; current: string | null | undefined; onPick: (hex: string) => void; onReset?: () => void }) {
+  const total = palette.length + (onReset ? 1 : 0);
+  const cols = total <= 9 ? total : 7;
+  const size = cols > 8 ? 20 : 22;
   return (
-    <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, marginBottom: onReset ? 9 : 16 }}>
-      {onReset && <ResetChip active={!current} theme={theme} onClick={onReset} />}
+    <div style={{ display: 'grid', gridTemplateColumns: `repeat(${cols}, 1fr)`, rowGap: 9, justifyItems: 'center', marginBottom: onReset ? 10 : 16 }}>
+      {onReset && <ResetChip active={!current} theme={theme} onClick={onReset} size={size} />}
       {palette.map((hex) => (
-        <ColorSwatch key={hex} hex={hex} active={current === hex} theme={theme} onClick={() => onPick(hex)} />
+        <ColorSwatch key={hex} hex={hex} active={current === hex} theme={theme} onClick={() => onPick(hex)} size={size} />
       ))}
     </div>
   );
@@ -313,15 +331,27 @@ export function BoldSizeRow({
   onToggleItalic?: () => void;
   onToggleStrike?: () => void;
 }) {
+  const sizeButtons = SIZE_OPTIONS.map((o) => <SegButton key={o.k} label={o.label} active={(size || 'm') === o.k} theme={theme} onClick={() => onSetSize(o.k)} />);
+  // I·S가 있으면(노드 패널) 한 행에 다 안 들어가 '크게'가 홀로 다음 줄로 감겼다
+  // (제보: 배치가 중구난방). 3열 그리드 두 행 — [B|I|S] / [작게|보통|크게] — 으로
+  // 나눠 열이 수직으로 정렬되게 한다. I·S가 없는 패널(메모·선)은 기존 한 행 그대로.
+  if (onToggleItalic || onToggleStrike) {
+    return (
+      <div style={{ display: 'grid', gap: 6, marginBottom: 14 }}>
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 6 }}>
+          <SegButton label="B" title="굵게" active={bold} theme={theme} onClick={onToggleBold} />
+          {onToggleItalic && <SegButton label={<span style={{ fontStyle: 'italic', fontFamily: 'Georgia, serif' }}>I</span>} title="기울임" active={!!italic} theme={theme} onClick={onToggleItalic} />}
+          {onToggleStrike && <SegButton label={<span style={{ textDecoration: 'line-through' }}>S</span>} title="취소선" active={!!strike} theme={theme} onClick={onToggleStrike} />}
+        </div>
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 6 }}>{sizeButtons}</div>
+      </div>
+    );
+  }
   return (
-    <div style={{ display: 'flex', gap: 6, marginBottom: 14, alignItems: 'center', flexWrap: 'wrap' }}>
+    <div style={{ display: 'flex', gap: 6, marginBottom: 14, alignItems: 'center' }}>
       <SegButton label="B" title="굵게" active={bold} theme={theme} onClick={onToggleBold} />
-      {onToggleItalic && <SegButton label={<span style={{ fontStyle: 'italic', fontFamily: 'Georgia, serif' }}>I</span>} title="기울임" active={!!italic} theme={theme} onClick={onToggleItalic} />}
-      {onToggleStrike && <SegButton label={<span style={{ textDecoration: 'line-through' }}>S</span>} title="취소선" active={!!strike} theme={theme} onClick={onToggleStrike} />}
       <div style={{ width: 1, height: 20, background: theme.border }} />
-      {SIZE_OPTIONS.map((o) => (
-        <SegButton key={o.k} label={o.label} active={(size || 'm') === o.k} theme={theme} onClick={() => onSetSize(o.k)} />
-      ))}
+      {sizeButtons}
     </div>
   );
 }

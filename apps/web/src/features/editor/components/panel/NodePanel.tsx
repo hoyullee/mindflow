@@ -69,7 +69,9 @@ export function NodePanel({ controller, nodeIds, isMobile = false }: NodePanelPr
 
         <PanelSection theme={th} title="도형 스타일" open={openSec === 'shape'} onToggle={() => toggle('shape')}>
           <SectionLabel theme={th}>모양</SectionLabel>
-          <div style={{ display: 'flex', flexWrap: 'wrap', gap: 5, marginBottom: 16 }}>
+          {/* 8종을 4열 그리드(2행)로 — flex-wrap 시절엔 6+2로 감겨 줄이 들쭉날쭉했다
+              (제보: 배치가 중구난방). 버튼은 셀 폭을 채워 열이 수직으로 정렬된다. */}
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 6, marginBottom: 16 }}>
             {SHAPES.map((s) => {
               const active = (n.shape || 'round') === s.k;
               return (
@@ -81,7 +83,7 @@ export function NodePanel({ controller, nodeIds, isMobile = false }: NodePanelPr
                   onClick={() => controller.setShape(s.k)}
                   aria-pressed={active}
                   style={{
-                    width: 34,
+                    width: '100%',
                     height: 30,
                     display: 'flex',
                     alignItems: 'center',
@@ -135,12 +137,16 @@ export function NodePanel({ controller, nodeIds, isMobile = false }: NodePanelPr
 
         <Divider theme={th} />
         <PanelSection theme={th} title="아이콘" open={openSec === 'icon'} onToggle={() => toggle('icon')}>
-          <div style={{ display: 'flex', flexWrap: 'wrap', gap: 5, paddingBottom: 16 }}>
+          {/* ✕ + 이모지 20종 = 21개 — 7열 그리드로 정확히 3행. flex-wrap 시절의
+              어중간한 마지막 줄(6+6+6+3)을 없앤다. */}
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(7, 1fr)', gap: 5, paddingBottom: 16 }}>
             <button
               type="button"
               className="mf-ed-btn"
+              title="아이콘 없음"
               onClick={controller.clearEmoji}
-              style={{ width: 30, height: 30, border: `1px solid ${th.border}`, borderRadius: 8, background: th.panel, cursor: 'pointer', fontSize: 12, color: th.subtext, fontFamily: 'inherit' }}
+              aria-pressed={!n.emoji}
+              style={{ width: '100%', height: 28, border: `1px solid ${!n.emoji ? th.accent : th.border}`, borderRadius: 8, background: !n.emoji ? `${th.accent}1a` : th.panel, cursor: 'pointer', fontSize: 12, color: !n.emoji ? th.accent : th.subtext, fontFamily: 'inherit', padding: 0 }}
             >
               ✕
             </button>
@@ -151,7 +157,7 @@ export function NodePanel({ controller, nodeIds, isMobile = false }: NodePanelPr
                 className="mf-ed-btn"
                 onClick={() => controller.setEmoji(e)}
                 aria-pressed={n.emoji === e}
-                style={{ width: 30, height: 30, border: `1px solid ${th.border}`, borderRadius: 8, background: th.panel, cursor: 'pointer', fontSize: 16, lineHeight: 1, fontFamily: 'inherit' }}
+                style={{ width: '100%', height: 28, border: `1px solid ${n.emoji === e ? th.accent : th.border}`, borderRadius: 8, background: n.emoji === e ? `${th.accent}1a` : th.panel, cursor: 'pointer', fontSize: 15, lineHeight: 1, fontFamily: 'inherit', padding: 0 }}
               >
                 {e}
               </button>
