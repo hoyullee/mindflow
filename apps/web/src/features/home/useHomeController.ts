@@ -1198,7 +1198,13 @@ export function useHomeController() {
         setState((prev) => ({ ...prev, driveFolders: [...prev.driveFolders, { id, name }], folderModal: null }));
       } else {
         const id = 'f' + Date.now().toString(36);
-        setState((prev) => ({ ...prev, spaces: mutateFolders(prev.spaces, (fs) => [...fs, { id, name }]), folderModal: null }));
+        setState((prev) => {
+          // 폴더 안에서 만들면 현재 폴더가 부모(중첩 폴더). 최상위면 parent 없음.
+          const sp = prev.spaces.find((s) => s.id === prev.activeSpace);
+          const fs = sp && Array.isArray(sp.folders) ? sp.folders : [];
+          const parent = prev.curFolder && fs.some((f) => f.id === prev.curFolder) ? prev.curFolder : undefined;
+          return { ...prev, spaces: mutateFolders(prev.spaces, (list) => [...list, parent ? { id, name, parent } : { id, name }]), folderModal: null };
+        });
       }
     } else if (isDrive) {
       setState((prev) => ({ ...prev, driveFolders: prev.driveFolders.map((f) => (f.id === fm.id ? { ...f, name } : f)), folderModal: null }));
@@ -1228,6 +1234,8 @@ export function useHomeController() {
     const isDrive = isDriveFolderId(id);
     const cnt = isDrive ? driveFolderCount(id) : folderCount(id);
     if (cnt > 0) return;
+    // 하위 폴더가 있으면 삭제 불가 — 지우면 그 아래가 통째로 고아가 된다.
+    if (!isDrive && activeFolders().some((f) => (f.parent ?? null) === id)) return;
     patch({ confirmDeleteFolder: id, openMenu: null });
   };
   const cancelDeleteFolder = () => patch({ confirmDeleteFolder: null });
@@ -1304,7 +1312,15 @@ export function useHomeController() {
       return { ...prev, spaces, mapFolders, openMenu: null, moveFor: null, moveSpaceFor: null, toast: `'${card.title}'을(를) '${target.name}' 공간으로 옮겼어요`, toastTitle: '이동 완료' };
     });
   };
-  const backToSpace = () => patch({ curFolder: null, driveFolder: null, openMenu: null });
+  // 뒤로가기 = 한 계층 위로: 하위 폴더 안이면 상위 폴더로, 최상위 폴더면 스페이스로.
+  const backToSpace = () =>
+    setState((prev) => {
+      const sp = prev.spaces.find((s) => s.id === prev.activeSpace);
+      const fs = sp && Array.isArray(sp.folders) ? sp.folders : [];
+      const cur = prev.curFolder ? fs.find((f) => f.id === prev.curFolder) : null;
+      const parent = cur?.parent && fs.some((f) => f.id === cur.parent) ? cur.parent : null;
+      return { ...prev, curFolder: parent, driveFolder: null, openMenu: null };
+    });
   const openFolder = (id: string) => patch({ curFolder: id, openMenu: null });
   const openDriveFolder = (id: string) => patch({ driveFolder: id, openMenu: null });
 

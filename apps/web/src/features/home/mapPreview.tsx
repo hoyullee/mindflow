@@ -110,6 +110,8 @@ interface DocNode {
   textColor?: string;
   bold?: boolean;
   tsize?: 's' | 'm' | 'l';
+  /** 텍스트 정렬 (에디터 `n.align` — 없으면 center). */
+  align?: string;
   /** Partial rich-text runs (bold/color spans); mirrors core `RichRun`. */
   rich?: Array<{ t: string; b?: boolean; c?: string | null }> | null;
   children?: string[];
@@ -244,10 +246,10 @@ function buildPreview(rawDoc: string, hueFallback: string): JSX.Element | null {
   // Editor-identical node box sizing: `computeMetrics` (real canvas text
   // measurement). The layout pass records each node's box into `metricsById` so
   // the DRAWN box is exactly the box the layout positioned (see `dim`).
-  const metricsById: Record<string, { w: number; h: number; fpx: number; fw: number; wrapW: number; depth: number }> = {};
+  const metricsById: Record<string, { w: number; h: number; fpx: number; fw: number; wrapW: number; tw: number; depth: number }> = {};
   const sizeOf = (node: CoreNode, depth: number): { w: number; h: number } => {
     const m = computeMetrics(node, depth, previewMeasurer);
-    if (node.id) metricsById[node.id] = { w: m.w, h: m.h, fpx: m.fpx, fw: m.fw, wrapW: m.wrapW, depth };
+    if (node.id) metricsById[node.id] = { w: m.w, h: m.h, fpx: m.fpx, fw: m.fw, wrapW: m.wrapW, tw: m.tw, depth };
     return { w: m.w, h: m.h };
   };
   applyLayoutPositions(d, sizeOf);
@@ -285,11 +287,11 @@ function buildPreview(rawDoc: string, hueFallback: string): JSX.Element | null {
   };
   /** Editor-identical text metrics for a node (fpx/fw/depth): recorded during
    * the layout pass, or freshly measured for any node it didn't visit. */
-  const metaOf = (id: string, depth: number): { fpx: number; fw: number; wrapW: number } => {
+  const metaOf = (id: string, depth: number): { fpx: number; fw: number; wrapW: number; tw: number } => {
     const rec = metricsById[id];
-    if (rec) return { fpx: rec.fpx, fw: rec.fw, wrapW: rec.wrapW };
+    if (rec) return { fpx: rec.fpx, fw: rec.fw, wrapW: rec.wrapW, tw: rec.tw };
     const m = computeMetrics(nodes[id] as unknown as CoreNode, depth, previewMeasurer);
-    return { fpx: m.fpx, fw: m.fw, wrapW: m.wrapW };
+    return { fpx: m.fpx, fw: m.fw, wrapW: m.wrapW, tw: m.tw };
   };
 
   const floats = Array.isArray(d.floats) ? d.floats : [];
@@ -468,7 +470,7 @@ function buildPreview(rawDoc: string, hueFallback: string): JSX.Element | null {
     // line breaks (same measurer + token model + content width `MAXW` that
     // `computeMetrics` sized the box with) — so the thumbnail's text flows like
     // the real map instead of a single truncated line.
-    const { fpx, fw, wrapW } = metaOf(id, depth);
+    const { fpx, fw, wrapW, tw } = metaOf(id, depth);
     // 줄바꿈 폭은 metrics가 실제 사용한 값(wrapW)을 그대로 — cw 과팽창 되돌림
     // (computeMetrics 참고)까지 포함해 에디터와 동일한 줄바꿈을 보장한다.
     const MAXW = wrapW;
@@ -486,15 +488,37 @@ function buildPreview(rawDoc: string, hueFallback: string): JSX.Element | null {
         <image key={`img${id}`} href={n.img} x={cx - n.imgW! / 2} y={cy - (textBlockH + 8) / 2 - n.imgH! / 2} width={n.imgW} height={n.imgH} preserveAspectRatio="xMidYMid slice" />,
       );
     }
-    if (hasText || n.emoji) {
+    // 에디터(NodeLayer)의 가로 배치 재현: 패딩 안쪽(도형은 tw 폭의 중앙 스트립)에
+    // [이모지(고정폭, 좌측 고정)][gap 7][텍스트 블록(남은 폭, n.align 정렬)].
+    // 예전엔 이모지를 fpx 크기로 1행 앞에 붙이고 항상 중앙 정렬만 했다 — 정렬
+    // 미반영·이모지 크기 상이·접두 폭만큼 1행이 도형을 벗어나는 세 문제의 원인.
+    const padX = depth === 0 ? 24 : depth === 1 ? 15 : 13;
+    const boxPadX = shape === 'parallelogram' ? 22 : padX;
+    const clipShape = shape === 'hexagon' || shape === 'diamond' || shape === 'parallelogram' || shape === 'ellipse' || shape === 'pill';
+    const contentW = Math.max(0, W - boxPadX * 2);
+    const stripW = clipShape ? Math.min(tw, contentW) : contentW;
+    const stripL = cx - stripW / 2;
+    const emojiPx = depth === 0 ? 22 : 17;
+    const emojiW = n.emoji ? previewMeasurer.measure(n.emoji, `${emojiPx}px Pretendard`) : 0;
+    const textL = stripL + (n.emoji ? emojiW + 7 : 0);
+    const textR = stripL + stripW;
+    const align = n.align === 'left' || n.align === 'right' ? n.align : 'center';
+    const anchor = align === 'left' ? 'start' : align === 'right' ? 'end' : 'middle';
+    const tx = align === 'left' ? textL : align === 'right' ? textR : (textL + textR) / 2;
+    if (n.emoji) {
+      rects.push(
+        <text key={`em${id}`} x={stripL} y={cy + imgShift} textAnchor="start" dominantBaseline="central" fontSize={emojiPx} fontFamily="Pretendard, sans-serif">
+          {n.emoji}
+        </text>,
+      );
+    }
+    if (hasText) {
       const lineH = lineHN;
       const startY = cy + imgShift - ((wrapped.length - 1) * lineH) / 2;
-      const emojiPrefix = n.emoji ? `${n.emoji} ` : '';
       rects.push(
-        <text key={`t${id}`} x={cx} y={startY} textAnchor="middle" dominantBaseline="central" fontSize={fpx} fontWeight={fontWeight} fill={baseTextColor} fontFamily="Pretendard, sans-serif">
+        <text key={`t${id}`} x={tx} y={startY} textAnchor={anchor} dominantBaseline="central" fontSize={fpx} fontWeight={fontWeight} fill={baseTextColor} fontFamily="Pretendard, sans-serif">
           {wrapped.map((segs, li) => (
-            <tspan key={li} x={cx} dy={li === 0 ? 0 : lineH}>
-              {li === 0 && emojiPrefix ? emojiPrefix : ''}
+            <tspan key={li} x={tx} dy={li === 0 ? 0 : lineH}>
               {segs.map((s, si) => (
                 <tspan key={si} fontWeight={s.b ? 800 : undefined} fill={s.c || undefined}>
                   {s.t}

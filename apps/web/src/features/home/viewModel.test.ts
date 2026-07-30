@@ -284,13 +284,106 @@ describe('deriveHomeView — 폴더 안에서의 가져오기/새 폴더', () =>
     expect(deriveHomeView(state).importVisible).toBe(false);
   });
 
-  it('새 폴더는 폴더 안에서 계속 숨긴다 — 폴더 모델이 한 단계라 하위 폴더를 만들 수 없다', () => {
+  it('새 폴더는 폴더 안에서도 보인다(중첩 폴더) — 현재 폴더가 부모가 된다', () => {
     const state = folderState();
     state.curFolder = 'f1';
-    expect(deriveHomeView(state).newFolderVisible).toBe(false);
-    // 최상위에서는 보인다
+    expect(deriveHomeView(state).newFolderVisible).toBe(true);
+    // 최상위에서도 물론 보인다
     state.curFolder = null;
     expect(deriveHomeView(state).newFolderVisible).toBe(true);
+  });
+});
+
+// 신규 기능: 폴더 안에 폴더(중첩 폴더). parent 없는 기존 데이터는 전부 최상위(무회귀).
+describe('deriveHomeView — 중첩 폴더', () => {
+  function nestedState() {
+    const state = initialHomeState();
+    state.loaded = true;
+    state.activeSpace = 'general';
+    state.spaces = [
+      {
+        id: 'general',
+        name: '일반 공간',
+        home: true,
+        color: '#f0663f',
+        maps: [
+          { title: '깊은 맵', when: '내 맵', hue: '#f0663f', docId: 'd-deep' },
+          { title: '상위 맵', when: '내 맵', hue: '#f0663f', docId: 'd-top' },
+          { title: '루트 맵', when: '내 맵', hue: '#f0663f', docId: 'd-root' },
+        ],
+        folders: [
+          { id: 'f1', name: '자료' },
+          { id: 'f2', name: '하위', parent: 'f1' },
+          { id: 'f3', name: '다른최상위' },
+        ],
+      },
+    ];
+    state.mapFolders = { 'd-deep': 'f2', 'd-top': 'f1' };
+    return state;
+  }
+
+  it('최상위에는 parent 없는 폴더만 보인다', () => {
+    const view = deriveHomeView(nestedState());
+    expect(view.folderCards.map((f) => f.id).sort()).toEqual(['f1', 'f3']);
+    // 최상위 맵만 카드로 (폴더 배정된 맵은 안 보임)
+    expect(view.allCards.map((c) => c.title)).toEqual(['루트 맵']);
+  });
+
+  it('폴더 안에서는 하위 폴더 + 그 폴더의 맵이 보인다', () => {
+    const state = nestedState();
+    state.curFolder = 'f1';
+    const view = deriveHomeView(state);
+    expect(view.folderCards.map((f) => f.id)).toEqual(['f2']);
+    expect(view.allCards.map((c) => c.title)).toEqual(['상위 맵']);
+    expect(view.folderEmpty).toBe(false);
+  });
+
+  it('하위 폴더 안에서는 그 폴더의 맵만 보인다', () => {
+    const state = nestedState();
+    state.curFolder = 'f2';
+    const view = deriveHomeView(state);
+    expect(view.folderCards).toEqual([]);
+    expect(view.allCards.map((c) => c.title)).toEqual(['깊은 맵']);
+  });
+
+  it('폴더 타일의 맵 개수는 하위 폴더까지 재귀 집계된다', () => {
+    const view = deriveHomeView(nestedState());
+    expect(view.folderCards.find((f) => f.id === 'f1')!.count).toBe(2); // 상위 맵 + 깊은 맵
+  });
+
+  it('하위 폴더가 있는 폴더는 비어 보여도 삭제 불가(canDelete=false)', () => {
+    const state = nestedState();
+    state.mapFolders = { 'd-deep': 'f2' }; // f1 직접 소속 맵 없음
+    const view = deriveHomeView(state);
+    expect(view.folderCards.find((f) => f.id === 'f1')!.canDelete).toBe(false);
+    expect(view.folderCards.find((f) => f.id === 'f3')!.canDelete).toBe(true);
+  });
+
+  it('브레드크럼: 하위 폴더 안에서는 상위 경로가 "스페이스 / 상위폴더"로 깊어진다', () => {
+    const state = nestedState();
+    state.curFolder = 'f2';
+    const view = deriveHomeView(state);
+    expect(view.titleParent).toBe('일반 공간 / 자료');
+    expect(view.titleLeaf).toBe('하위');
+    expect(view.spaceTitle).toBe('일반 공간 / 자료 / 하위');
+  });
+
+  it('이동 대상 폴더는 경로 이름으로, 현재 폴더는 제외된다', () => {
+    const state = nestedState();
+    state.curFolder = 'f1';
+    const view = deriveHomeView(state);
+    const targets = view.allCards[0]!.moveTargets;
+    expect(targets.map((t) => t.name).sort()).toEqual(['다른최상위', '자료 / 하위']);
+    expect(targets.some((t) => t.id === 'f1')).toBe(false);
+  });
+
+  it('빈 하위 폴더만 있는 폴더 뷰: 빈 안내 대신 폴더 구획이 그려진다', () => {
+    const state = nestedState();
+    state.mapFolders = { 'd-deep': 'f2' };
+    state.curFolder = 'f1';
+    const view = deriveHomeView(state);
+    expect(view.folderEmpty).toBe(false);
+    expect(view.foldersSectionVisible).toBe(true);
   });
 });
 

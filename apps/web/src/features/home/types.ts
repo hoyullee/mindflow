@@ -11,6 +11,10 @@ export interface MapCardData {
 export interface FolderData {
   id: string;
   name: string;
+  /** 상위 폴더 id — 없으면(기존 데이터 포함) 스페이스 최상위. 폴더 안에서
+   * "새 폴더"로 만들면 현재 폴더가 부모가 된다(중첩 폴더). 폴더 자체를 다른
+   * 폴더로 옮기는 조작은 없으므로 순환은 생기지 않는다. */
+  parent?: string | null;
 }
 
 export interface DriveFolderData {
