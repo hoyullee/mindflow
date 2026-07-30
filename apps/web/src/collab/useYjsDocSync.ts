@@ -59,7 +59,10 @@ export function useYjsDocSync(docId: string, doc: Doc, onRemoteDoc: (doc: Doc) =
   const [awareness, setAwareness] = useState<Awareness | null>(null);
   // 전송이 실제로 붙었는지. 예전엔 아무도 보지 않아, 채널이 죽어도 화면은 "혼자 있는
   // 것"과 똑같아서 무엇이 고장났는지 알 수 없었다(제보로 배운 것 — `CollabStatus` 참고).
-  const [status, setStatus] = useState<CollabStatus>('offline');
+  // 초기값은 'connecting' — 'offline'으로 시작하면 정상 접속 과정(수 초)이
+  // "연결 끊김" 거짓 경보로 보인다. 'offline'은 provider가 실제 실패를 보고할
+  // 때만 된다.
+  const [status, setStatus] = useState<CollabStatus>('connecting');
   const ydocRef = useRef<YDoc | null>(null);
   const lastSyncedRef = useRef<Doc | null>(null);
   const onRemoteDocRef = useRef(onRemoteDoc);
@@ -102,7 +105,7 @@ export function useYjsDocSync(docId: string, doc: Doc, onRemoteDoc: (doc: Doc) =
       providerRef.current!.disconnect();
       ydocRef.current = null;
       setAwareness(null);
-      setStatus('offline');
+      setStatus('connecting'); // 다음 문서로 재접속하는 동안도 고장 표시는 아니다
     };
   }, [docId]);
 

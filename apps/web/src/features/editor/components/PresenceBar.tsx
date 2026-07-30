@@ -15,6 +15,9 @@ interface PresenceBarProps {
  * 화면이 "혼자 있는 것"과 똑같아서, 공유 맵을 함께 열어도 상대가 안 보이는 이유를
  * 알 수 없었다(제보로 배운 것 — `collab/ports.ts`의 `CollabStatus` 참고). 붙을
  * 대상이 아예 없는 데모/로컬 모드에서는 띄우지 않는다 — 그건 고장이 아니다.
+ * 접속 과정('connecting', 수 초)도 고장이 아니므로 띄우지 않는다 — 진입할 때마다
+ * "연결 끊김"이 잠깐 떠 보이던 거짓 경보의 원인이었다(제보). 문구도 목적(상대
+ * 편집이 안 들어옴 → 새로고침)이 드러나게 "동기화 끊김 · 새로고침"으로.
  */
 export function PresenceBar({ controller }: PresenceBarProps) {
   const th = controller.uiTheme;
@@ -77,7 +80,7 @@ export function PresenceBar({ controller }: PresenceBarProps) {
           ))}
         </div>
       )}
-      <span style={{ fontSize: 11.5, fontWeight: 600, color: down ? '#c2603f' : th.subtext, whiteSpace: 'nowrap' }}>{down ? '실시간 연결 끊김' : `${peers.length}명 접속 중`}</span>
+      <span style={{ fontSize: 11.5, fontWeight: 600, color: down ? '#c2603f' : th.subtext, whiteSpace: 'nowrap' }}>{down ? '동기화 끊김 · 새로고침' : `${peers.length}명 접속 중`}</span>
       {/* 인증되지 않은 공개 채널로 폴백한 상태(서버에 Realtime Authorization 정책이
           없다). 협업은 되므로 막지 않고, 사실만 조용히 표시한다 — 조치 방법은
           콘솔 경고와 backend.md §6에 있다. */}

@@ -35,6 +35,10 @@ export interface CollabPeer {
  * 위로 올려 보내 UI가 알려 줄 수 있게 한다.
  */
 export type CollabStatus =
+  /** 아직 붙는 중(인증→구독→확인, 최대 수 초). **고장이 아니다** — UI는 이
+   * 동안 아무것도 띄우지 않는다. 예전엔 초기값이 'offline'이라 공유 맵에
+   * 들어올 때마다 "연결 끊김" 거짓 경보가 몇 초 떠 있었다(제보). */
+  | 'connecting'
   /** 붙었다(권한이 걸린 private 채널). */
   | 'connected'
   /** 붙었지만 **인증되지 않은 공개 채널**이다 — private 구독이 거부돼 폴백했다.
