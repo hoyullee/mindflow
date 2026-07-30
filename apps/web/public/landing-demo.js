@@ -1,4 +1,5 @@
-/* 랜딩 히어로 데모 인핸서 — 정적 landing.html에서만 defer로 로드된다.
+/* 랜딩 히어로 데모 인핸서 — 정적 landing.html의 head에서 블로킹 로드된다
+ * (defer 없음 — 이유는 아래 [1]).
  *
  * 원칙(프로그레시브 인핸스먼트): 이 파일이 실행되지 않아도(크롤러·JS 꺼짐)
  * 랜딩은 완성 상태의 폴백 SVG 한 장으로 온전히 보인다. 실행되면 그 자리를
@@ -8,9 +9,22 @@
  * 외부 요청 없음(순수 DOM 조작만). */
 (() => {
   'use strict';
+
+  // [1] head 실행 시점(=body 파싱 전)에 폴백 SVG를 가리는 스타일을 심는다 —
+  // 첫 페인트에 완성 맵이 그려졌다가 걷히는 깜빡임 방지. JS가 없으면 이
+  // 스타일 자체가 없으므로 폴백이 그대로 보인다(별도 noscript 불필요).
+  // 직계 자식 svg만 — 아래에서 만드는 인터랙티브 svg는 래퍼 div 안이라 무관.
+  const veil = document.createElement('style');
+  veil.textContent = '.demo-canvas > svg { visibility: hidden }';
+  document.head.appendChild(veil);
+
+  const init = () => {
   const canvas = document.querySelector('#demo .demo-canvas');
   const bar = document.querySelector('#demo .demo-bar');
-  if (!canvas || !bar) return;
+  if (!canvas || !bar) {
+    veil.remove(); // 마크업이 예상과 다르면 손대지 않고 폴백 복원
+    return;
+  }
 
   const RX = 320;
   const RY = 210;
@@ -183,4 +197,16 @@
 
   render();
   play();
+  };
+
+  const boot = () => {
+    try {
+      init();
+    } catch (e) {
+      veil.remove(); // 어떤 이유로든 실패하면 폴백 SVG를 되살린다
+      throw e;
+    }
+  };
+  if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', boot);
+  else boot();
 })();
