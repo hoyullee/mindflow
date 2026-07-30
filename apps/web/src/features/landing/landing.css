@@ -363,6 +363,9 @@
 
 .lp-root .how {
   padding: clamp(56px, 7vw, 74px) clamp(18px, 4vw, 56px);
+  /* 원래 .features의 padding-top이던 여백 — 앵커(#features)가 제목 바로
+     위에서 멈추도록 여백 소유를 위 섹션으로 옮겼다(시각 동일). */
+  margin-bottom: clamp(56px, 7vw, 80px);
   background: #fbf3ee;
   border-top: 1px solid #f3e4da;
   border-bottom: 1px solid #f3e4da;
@@ -400,7 +403,7 @@
 }
 
 .lp-root .features {
-  padding: clamp(56px, 7vw, 80px) clamp(18px, 4vw, 56px);
+  padding: 0 clamp(18px, 4vw, 56px) clamp(56px, 7vw, 80px);
 }
 .lp-root .feature {
   display: grid;

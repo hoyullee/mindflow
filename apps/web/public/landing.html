@@ -123,13 +123,15 @@
       .case-no { width: 34px; height: 34px; border-radius: 11px; background: #FDEDE6; display: inline-flex; align-items: center; justify-content: center; font-size: 13px; font-weight: 700; color: #E0602F; font-family: 'JetBrains Mono', ui-monospace, monospace; }
       .case h3 { margin-top: 2px; font-size: 18px; font-weight: 700; }
       .case p { font-size: 14.5px; line-height: 1.6; color: #6E675F; text-wrap: pretty; }
-      .how { padding: clamp(56px, 7vw, 74px) clamp(18px, 4vw, 56px); background: #FBF3EE; border-top: 1px solid #F3E4DA; border-bottom: 1px solid #F3E4DA; }
+      /* margin-bottom: 원래 .features의 padding-top이던 여백 — 앵커(#features)가
+         제목 바로 위에서 멈추도록 여백 소유를 위 섹션으로 옮겼다(시각 동일). */
+      .how { padding: clamp(56px, 7vw, 74px) clamp(18px, 4vw, 56px); margin-bottom: clamp(56px, 7vw, 80px); background: #FBF3EE; border-top: 1px solid #F3E4DA; border-bottom: 1px solid #F3E4DA; }
       .step-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(272px, 1fr)); gap: 16px; }
       .step { padding: 26px; border-radius: 18px; background: #fff; border: 1px solid #F0E3D9; display: flex; flex-direction: column; gap: 12px; }
       .step-no { font-size: 40px; font-weight: 800; letter-spacing: -.04em; color: #F3C3AF; line-height: 1; }
       .step h3 { font-size: 19px; font-weight: 700; }
       .step p { font-size: 14.5px; line-height: 1.6; color: #6E675F; text-wrap: pretty; }
-      .features { padding: clamp(56px, 7vw, 80px) clamp(18px, 4vw, 56px); }
+      .features { padding: 0 clamp(18px, 4vw, 56px) clamp(56px, 7vw, 80px); }
       .feature { display: grid; grid-template-columns: repeat(auto-fit, minmax(290px, 1fr)); gap: 24px; align-items: center; padding: clamp(20px, 2.4vw, 28px); border-radius: 20px; border: 1px solid #F2E7DF; background: #fff; }
       .feature + .feature { margin-top: 16px; }
       .feature h3 { font-size: clamp(21px, 2.4vw, 25px); font-weight: 800; letter-spacing: -.02em; }
