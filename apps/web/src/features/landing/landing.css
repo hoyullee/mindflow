@@ -36,6 +36,24 @@
 .lp-root .mono {
   font-family: 'JetBrains Mono', ui-monospace, SFMono-Regular, Menlo, monospace;
 }
+/* 앵커 이동 시 sticky 헤더가 섹션 제목을 덮지 않게 — 헤더 높이(데스크톱
+   한 줄 ~63px)+숨 쉴 여백만큼 내려서 멈춘다. 모바일은 두 줄 헤더(~92px). */
+.lp-root #top,
+.lp-root #demo,
+.lp-root #usecases,
+.lp-root #features,
+.lp-root #faq {
+  scroll-margin-top: 78px;
+}
+@media (max-width: 768px) {
+  .lp-root #top,
+  .lp-root #demo,
+  .lp-root #usecases,
+  .lp-root #features,
+  .lp-root #faq {
+    scroll-margin-top: 108px;
+  }
+}
 .lp-root .container {
   max-width: 1080px;
   margin: 0 auto;
