@@ -414,6 +414,99 @@ describe('텍스트 서식 툴바 노출 조건 — 편집 중 상시 노출', (
   });
 });
 
+// 제보: 루트(fontWeight 700)·1단계(600) 노드에서 편집 중 Ctrl/Cmd+B를 누르면 굵어지지
+// 않고 오히려 얇아 보이다가, 커밋하면 되돌아간다. 원인: NodeEditBox가 단축키를 가로채지
+// 않아 브라우저 기본 bold 토글(execCommand)이 발동 — 박스가 이미 굵게 렌더되는 노드에선
+// "이미 굵다"로 판단해 `font-weight: normal`(400) 스팬을 심고(=얇아짐), 커밋 시
+// `domToRuns`가 400을 b:false(무서식)로 읽어 조용히 복원됐다. 수정: Ctrl/Cmd+B·I를
+// `preventDefault` 후 툴바와 같은 `applyPartial` 경로(800 고정)로 라우팅.
+describe('키보드 단축키 Ctrl/Cmd+B·I — 브라우저 기본 토글 대신 applyPartial', () => {
+  it('선택 없이 Ctrl+B → 전체 텍스트가 800으로 굵어진다 (기본 동작은 preventDefault)', async () => {
+    localStorage.setItem('mindflow_doc_kb1', JSON.stringify(DOC));
+    const { container } = renderEditor('/editor?map=kb1&title=x');
+    const editor = startEditingNode(container, 'c1');
+
+    setLinearSelection(editor, 4, 4); // 캐럿만 — 선택 없음
+    // fireEvent는 핸들러가 preventDefault를 불렀으면 false를 돌려준다 — 이게 곧
+    // "브라우저 기본 bold(얇아지는 토글)가 막혔다"는 검증이다(jsdom엔 execCommand가
+    // 없어 기본 동작 자체는 재현 불가).
+    expect(fireEvent.keyDown(editor, { key: 'b', ctrlKey: true })).toBe(false);
+    expect(editor.innerHTML).toContain('font-weight:800');
+    expect(editor.textContent).toBe('hello world');
+
+    commitAndSave(editor);
+    await waitFor(() => {
+      const saved = readSavedDoc('kb1');
+      expect(saved.nodes.c1?.rich).toEqual([{ t: 'hello world', b: true, c: null }]);
+    });
+  });
+
+  it('macOS Cmd+B(metaKey)도 동일하게 동작한다', () => {
+    localStorage.setItem('mindflow_doc_kb2', JSON.stringify(DOC));
+    const { container } = renderEditor('/editor?map=kb2&title=x');
+    const editor = startEditingNode(container, 'c1');
+
+    setLinearSelection(editor, 2, 2);
+    expect(fireEvent.keyDown(editor, { key: 'b', metaKey: true })).toBe(false);
+    expect(editor.innerHTML).toContain('font-weight:800');
+  });
+
+  it('제보 시나리오 그대로: 루트(depth 0, 박스 자체가 굵은) 노드에서 Ctrl+B가 굵힌다', () => {
+    localStorage.setItem('mindflow_doc_kb3', JSON.stringify(DOC));
+    const { container } = renderEditor('/editor?map=kb3&title=x');
+    const editor = startEditingNode(container, 'root');
+
+    expect(fireEvent.keyDown(editor, { key: 'b', ctrlKey: true })).toBe(false);
+    expect(editor.innerHTML).toContain('font-weight:800');
+    expect(editor.textContent).toBe('루트');
+  });
+
+  it('드래그 선택이 있으면 그 부분에만 적용된다', () => {
+    localStorage.setItem('mindflow_doc_kb4', JSON.stringify(DOC));
+    const { container } = renderEditor('/editor?map=kb4&title=x');
+    const editor = startEditingNode(container, 'c1');
+
+    setLinearSelection(editor, 6, 11); // "world"
+    expect(fireEvent.keyDown(editor, { key: 'b', ctrlKey: true })).toBe(false);
+    expect(editor.innerHTML).toContain('font-weight:800');
+    expect(editor.innerHTML).toMatch(/hello /); // 앞부분은 평문 유지
+    // 선택이 유지되므로 한 번 더 누르면 토글 해제(applyPartialStyle의 규칙)
+    expect(fireEvent.keyDown(editor, { key: 'b', ctrlKey: true })).toBe(false);
+    expect(editor.innerHTML).not.toContain('font-weight:800');
+  });
+
+  it('Ctrl+I는 기울임을 적용한다', () => {
+    localStorage.setItem('mindflow_doc_kb5', JSON.stringify(DOC));
+    const { container } = renderEditor('/editor?map=kb5&title=x');
+    const editor = startEditingNode(container, 'c1');
+
+    setLinearSelection(editor, 6, 11);
+    expect(fireEvent.keyDown(editor, { key: 'i', ctrlKey: true })).toBe(false);
+    expect(editor.innerHTML).toContain('font-style:italic');
+  });
+
+  it('Ctrl+U(밑줄 — 미지원 서식)는 막기만 하고 아무것도 심지 않는다', () => {
+    localStorage.setItem('mindflow_doc_kb6', JSON.stringify(DOC));
+    const { container } = renderEditor('/editor?map=kb6&title=x');
+    const editor = startEditingNode(container, 'c1');
+
+    const before = editor.innerHTML;
+    // 막지 않으면 편집 중엔 밑줄이 보이다가 커밋 때 소리 없이 사라진다(domToRuns가 무시).
+    expect(fireEvent.keyDown(editor, { key: 'u', ctrlKey: true })).toBe(false);
+    expect(editor.innerHTML).toBe(before);
+  });
+
+  it('일반 타이핑(수식키 없는 b)은 그대로 통과한다', () => {
+    localStorage.setItem('mindflow_doc_kb7', JSON.stringify(DOC));
+    const { container } = renderEditor('/editor?map=kb7&title=x');
+    const editor = startEditingNode(container, 'c1');
+
+    const before = editor.innerHTML;
+    expect(fireEvent.keyDown(editor, { key: 'b' })).toBe(true); // preventDefault 안 함
+    expect(editor.innerHTML).toBe(before); // applyPartial이 불리지 않았다
+  });
+});
+
 // 제보 1: 스타일의 테마를 바꾸면 서식 팝업의 색까지 따라 변한다 — 기본 색으로 고정해 달라.
 // 이 코드베이스의 관례대로 고쳤다: 메뉴·패널 같은 **시스템 크롬은 고정 `uiTheme`**,
 // 문서 테마는 편집 영역과 **색 스와치 값**에만 쓴다(`useEditorState`의 `uiTheme` 주석,
