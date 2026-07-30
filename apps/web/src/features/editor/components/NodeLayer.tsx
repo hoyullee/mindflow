@@ -1,7 +1,7 @@
 import type { CSSProperties, ReactNode } from 'react';
 import { useEffect, useRef } from 'react';
 import type { LayoutMode, Node, NodeMap } from '@mindflow/mindmap-core';
-import { ROOT_ID } from '@mindflow/mindmap-core';
+import { ROOT_ID, charsToRuns, continueListMarker, parseListPrefix, runsToChars } from '@mindflow/mindmap-core';
 import { colorOf, descendants } from '../tree';
 import { isPanButton } from '../pointerButtons';
 import { hexA } from '../theme';
@@ -11,7 +11,8 @@ import type { GeomMap } from '../types';
 import { peersSelecting } from '../presenceSelection';
 import { RemotePeerTag } from './RemotePeerTag';
 import { ResizeHandle } from './ResizeHandle';
-import { runsToHtml } from '../richtextDom';
+import { domToRuns, linearize, runsToHtml, setLinearSelection } from '../richtextDom';
+import { ListTextBlock, listLinesOf } from '../listLines';
 
 interface NodeLayerProps {
   nodes: NodeMap;
@@ -228,8 +229,11 @@ function NodeBox({ id, node: n, g, nodes, mode, theme: th, rootX, controller }: 
   const clipShape = shape === 'hexagon' || shape === 'diamond' || shape === 'parallelogram' || shape === 'ellipse' || shape === 'pill';
   const bodyWidth = clipShape ? Math.min(g.tw || g.w, g.w) : '100%';
 
+  const listLines = editing ? null : listLinesOf(n);
   const textInner = editing ? (
     <NodeEditBox id={id} n={n} boxStyle={boxStyle} align={align} controller={controller} />
+  ) : listLines ? (
+    <ListTextBlock lines={listLines} align={align} />
   ) : n.rich && n.rich.length ? (
     <span style={{ lineHeight: 1.35, flex: '1 1 auto', width: '100%', minWidth: 0, boxSizing: 'border-box', textAlign: align, whiteSpace: 'pre-wrap', wordBreak: 'break-word' }}>
       {n.rich.map((r, ri) => (
@@ -404,6 +408,57 @@ function NodeBox({ id, node: n, g, nodes, mode, theme: th, rootX, controller }: 
   );
 }
 
+/**
+ * 리스트 자동 이어쓰기(`NodeEditBox`의 Shift+Enter) — 캐럿이 있는 줄이 리스트
+ * 줄이면 브라우저 기본 줄바꿈을 막고 char-model로 직접 처리한다:
+ * `\n` + 다음 마커(글머리=같은 마커, 번호=+1)를 삽입하거나, 마커만 남은 빈
+ * 줄이면 마커를 지워 리스트를 끝낸다. `applyPartial`과 같은 재료(linearize/
+ * domToRuns/runsToHtml/setLinearSelection)로 innerHTML을 재구성해 rich 스타일을
+ * 보존한다(execCommand는 jsdom에 없고 deprecated — 처음부터 쓰지 않는다).
+ *
+ * @returns 처리했으면 true(호출부는 return), 리스트 줄이 아니면 false(기본 줄바꿈).
+ */
+function maybeContinueList(e: { preventDefault: () => void }, el: HTMLDivElement | null, onChanged: () => void): boolean {
+  if (!el) return false;
+  const ws = window.getSelection();
+  if (!ws || !ws.rangeCount) return false;
+  const rng = ws.getRangeAt(0);
+  const lin = linearize(el, [
+    { container: rng.startContainer, offset: rng.startOffset },
+    { container: rng.endContainer, offset: rng.endOffset },
+  ]);
+  const a = Math.min(lin.pos[0] ?? 0, lin.pos[1] ?? 0);
+  const b = Math.max(lin.pos[0] ?? 0, lin.pos[1] ?? 0);
+  const parsed = domToRuns(el);
+  const text = parsed.text;
+  const lineStart = text.lastIndexOf('\n', a - 1) + 1;
+  const lineEndIdx = text.indexOf('\n', a);
+  const line = text.slice(lineStart, lineEndIdx === -1 ? text.length : lineEndIdx);
+  const cont = continueListMarker(line);
+  if (!cont) return false;
+  e.preventDefault();
+  const chars = runsToChars(parsed);
+  let caret: number;
+  if ('end' in cont) {
+    // 빈 마커 줄 → 마커 제거(리스트 종료). 줄바꿈은 넣지 않는다.
+    const p = parseListPrefix(line);
+    const rawLen = p ? p.raw.length : 0;
+    chars.splice(lineStart, rawLen);
+    caret = lineStart;
+  } else {
+    chars.splice(a, b - a);
+    const insert = `\n${cont.next}`;
+    chars.splice(a, 0, ...Array.from(insert).map((ch) => ({ ch, b: false, c: null })));
+    caret = a + insert.length;
+  }
+  const runs = charsToRuns(chars).filter((r) => r.t);
+  const styled = runs.some((r) => r.b || r.c || r.i || r.s);
+  el.innerHTML = runsToHtml({ text: chars.map((c) => c.ch).join(''), rich: styled ? runs : null });
+  setLinearSelection(el, caret, caret);
+  onChanged();
+  return true;
+}
+
 interface NodeEditBoxProps {
   id: string;
   n: Node;
@@ -504,6 +559,11 @@ function NodeEditBox({ id, n, boxStyle, align, controller }: NodeEditBoxProps) {
         if (e.key === 'Enter' && !composing && !e.shiftKey) {
           e.preventDefault();
           controller.commitNodeRichText(id, ref.current);
+        } else if (e.key === 'Enter' && !composing && e.shiftKey) {
+          // 리스트 자동 이어쓰기: 리스트 줄에서 Shift+Enter(줄바꿈)를 치면 다음
+          // 줄에 마커를 이어 넣고, 마커만 남은 빈 줄이면 마커를 지워 리스트를
+          // 끝낸다(표준 에디터 관례). 리스트 줄이 아니면 브라우저 기본 줄바꿈.
+          if (maybeContinueList(e, ref.current, () => controller.updateNodeEditSize(id, ref.current))) return;
         } else if (e.key === 'Escape' && !composing) {
           e.preventDefault();
           controller.cancelNodeEdit();

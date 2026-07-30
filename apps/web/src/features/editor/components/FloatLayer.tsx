@@ -1,6 +1,8 @@
 import type { CSSProperties } from 'react';
 import { useEffect, useRef } from 'react';
 import type { Float } from '@mindflow/mindmap-core';
+import { continueListMarker, listDisplayLine } from '@mindflow/mindmap-core';
+import { ListTextBlock, plainContentLines } from '../listLines';
 import { hexA } from '../theme';
 import { isPanButton } from '../pointerButtons';
 import type { Theme } from '../theme';
@@ -71,7 +73,11 @@ export function FloatLayer({ floats, theme: th, controller }: FloatLayerProps) {
           boxStyle.height = f.h || Math.round(f.w * 0.75);
           boxStyle.overflow = 'hidden';
         }
-        const shown = collapsed ? String(f.text || '').split('\n')[0] : f.text;
+        // 접힌 메모의 한 줄 표시도 리스트 글리프(`- `→`• `)를 치환해 펼친 모습과 일치.
+        const shown = collapsed ? listDisplayLine(String(f.text || '').split('\n')[0] || '') : f.text;
+        // 리스트 마커가 있는 펼친 메모만 줄 단위 렌더(행잉 인덴트) — 없으면 기존 경로.
+        const floatLines = !collapsed && !editing && f.text ? plainContentLines(f.text) : null;
+        const hasList = !!floatLines && floatLines.some((l) => l.list);
         return (
           <div
             key={f.id}
@@ -125,6 +131,10 @@ export function FloatLayer({ floats, theme: th, controller }: FloatLayerProps) {
               />
             ) : editing ? (
               <FloatEditBox f={f} onCommit={(text) => controller.commitFloatText(f.id, text)} onCancel={controller.cancelFloatEdit} />
+            ) : hasList && floatLines ? (
+              <div style={{ pointerEvents: 'none', minHeight: 18 }}>
+                <ListTextBlock lines={floatLines} align="left" lineHeight={1.55} />
+              </div>
             ) : (
               <div
                 style={{
@@ -182,6 +192,34 @@ function FloatEditBox({ f, onCommit, onCancel }: { f: Float; onCommit: (text: st
         if (e.key === 'Escape') {
           e.preventDefault();
           onCancel();
+          return;
+        }
+        // 리스트 자동 이어쓰기 — 리스트 줄에서 Enter를 치면 다음 줄에 마커를
+        // 이어 넣고, 마커만 남은 빈 줄이면 마커를 지워 리스트를 끝낸다.
+        // (textarea라 char-model이 필요 없다 — 값/캐럿을 직접 조작.)
+        const composing = e.nativeEvent.isComposing || e.keyCode === 229;
+        if (e.key === 'Enter' && !composing) {
+          const el = e.currentTarget;
+          const caret = el.selectionStart ?? el.value.length;
+          const selEnd = el.selectionEnd ?? caret;
+          const lineStart = el.value.lastIndexOf('\n', caret - 1) + 1;
+          const lineEndIdx = el.value.indexOf('\n', caret);
+          const line = el.value.slice(lineStart, lineEndIdx === -1 ? el.value.length : lineEndIdx);
+          const cont = continueListMarker(line);
+          if (cont) {
+            e.preventDefault();
+            if ('end' in cont) {
+              // 마커만 남은 빈 줄 → 그 줄을 비운다(리스트 종료)
+              const lineEnd = lineEndIdx === -1 ? el.value.length : lineEndIdx;
+              el.value = el.value.slice(0, lineStart) + el.value.slice(lineEnd);
+              el.selectionStart = el.selectionEnd = lineStart;
+            } else {
+              const insert = `\n${cont.next}`;
+              el.value = el.value.slice(0, caret) + insert + el.value.slice(selEnd);
+              el.selectionStart = el.selectionEnd = caret + insert.length;
+            }
+            autoSize(el);
+          }
         }
       }}
       onBlur={(e) => onCommit(e.currentTarget.value)}

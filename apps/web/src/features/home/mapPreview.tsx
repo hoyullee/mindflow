@@ -1,4 +1,4 @@
-import { ROOT_ID, layout } from '@mindflow/mindmap-core';
+import { ROOT_ID, layout, listDisplayLine, parseListPrefix } from '@mindflow/mindmap-core';
 import type { Doc, EdgeStyle, Float, LayoutMode, Node as CoreNode } from '@mindflow/mindmap-core';
 import { buildEdgePath, edgeStrokeWidth } from '../editor/edges';
 import { CanvasTextMeasurer, computeMetrics, measureFloatHeight } from '../editor/metrics';
@@ -55,13 +55,42 @@ function mergeToks(line: WrapSeg[]): WrapSeg[] {
   return segs;
 }
 
+/** 감싼 시각 줄 하나 — 리스트 줄은 첫 줄에 마커 세그가 포함되고, 감긴(연속) 줄은
+ * 마커 폭만큼 `indent`를 갖는다(에디터의 행잉 인덴트와 동일 모델). */
+interface WrapLine {
+  segs: WrapSeg[];
+  indent: number;
+  list: boolean;
+}
+
+/** 리스트 마커 글자 수만큼 세그 앞부분을 뗀다(런 경계에 걸쳐도 안전). */
+function stripLeadSegs(segs: WrapSeg[], nChars: number): WrapSeg[] {
+  let left = nChars;
+  const out: WrapSeg[] = [];
+  segs.forEach((sg) => {
+    if (left <= 0) {
+      out.push(sg);
+      return;
+    }
+    if (sg.t.length <= left) {
+      left -= sg.t.length;
+      return;
+    }
+    out.push({ ...sg, t: sg.t.slice(left) });
+    left = 0;
+  });
+  return out;
+}
+
 /**
  * Soft-wrap a node's text into visual lines, the SAME way the editor's
  * `computeMetrics`/`wrapMeasure` does (token model: words / whitespace / single
  * chars, break at `maxW`), so the thumbnail's line breaks match the real map.
  * Preserves per-run bold/color (rich text) so each wrapped line stays styled.
+ * 리스트 줄(`parseListPrefix`)은 마커 폭을 뗀 좁은 폭으로 내용을 감싸고
+ * (`metrics.wrapMeasure`와 동일), 첫 줄엔 표시 마커(`• `)를 붙인다.
  */
-function wrapRuns(runs: WrapSeg[], maxW: number, fpx: number, baseFw: number, measurer: TextMeasurer): WrapSeg[][] {
+function wrapRuns(runs: WrapSeg[], maxW: number, fpx: number, baseFw: number, measurer: TextMeasurer): WrapLine[] {
   // Hard lines first (split on \n), each a list of styled segments.
   const hard: WrapSeg[][] = [[]];
   runs.forEach((r) => {
@@ -72,8 +101,20 @@ function wrapRuns(runs: WrapSeg[], maxW: number, fpx: number, baseFw: number, me
         if (p) hard[hard.length - 1]!.push({ t: p, b: r.b, c: r.c, i: r.i, s: r.s });
       });
   });
-  const out: WrapSeg[][] = [];
-  hard.forEach((segs) => {
+  const out: WrapLine[] = [];
+  hard.forEach((rawSegs) => {
+    const lineText = rawSegs.map((s) => s.t).join('');
+    const lp = parseListPrefix(lineText);
+    const markerW = lp ? measurer.measure(lp.display, `${baseFw} ${fpx}px Pretendard`) : 0;
+    const segs = lp ? stripLeadSegs(rawSegs, lp.raw.length) : rawSegs;
+    const lineMaxW = lp ? Math.max(24, maxW - markerW) : maxW;
+    let first = true;
+    const pushLine = (line: WrapSeg[]): void => {
+      const merged = mergeToks(line);
+      if (lp) out.push(first ? { segs: [{ t: lp.display }, ...merged], indent: 0, list: true } : { segs: merged, indent: markerW, list: true });
+      else out.push({ segs: merged, indent: 0, list: false });
+      first = false;
+    };
     const toks: (WrapSeg & { w: number; sp: boolean })[] = [];
     segs.forEach((sg) => {
       const f = `${sg.i ? 'italic ' : ''}${sg.b ? 800 : baseFw} ${fpx}px Pretendard`;
@@ -82,8 +123,8 @@ function wrapRuns(runs: WrapSeg[], maxW: number, fpx: number, baseFw: number, me
     let line: typeof toks = [];
     let cur = 0;
     toks.forEach((tk) => {
-      if (cur > 0 && cur + tk.w > maxW && !tk.sp) {
-        out.push(mergeToks(line));
+      if (cur > 0 && cur + tk.w > lineMaxW && !tk.sp) {
+        pushLine(line);
         line = [tk];
         cur = tk.w;
       } else {
@@ -91,9 +132,9 @@ function wrapRuns(runs: WrapSeg[], maxW: number, fpx: number, baseFw: number, me
         cur += tk.w;
       }
     });
-    out.push(mergeToks(line));
+    pushLine(line);
   });
-  return out.length ? out : [[]];
+  return out.length ? out : [{ segs: [], indent: 0, list: false }];
 }
 
 /** Home.dc.html `realPreview` — mirrors the editor's theme accent/branch palettes so a
@@ -512,7 +553,7 @@ function buildPreview(rawDoc: string, hueFallback: string): JSX.Element | null {
     const fontWeight = n.bold ? 800 : fw;
     const runs: WrapSeg[] = Array.isArray(n.rich) && n.rich.length ? (n.rich as WrapSeg[]) : [{ t: n.text || '' }];
     const wrapped = wrapRuns(runs, MAXW, fpx, fw, previewMeasurer);
-    const hasText = wrapped.some((ln) => ln.some((s) => s.t.trim()));
+    const hasText = wrapped.some((ln) => ln.segs.some((s) => s.t.trim()));
     // 노드 썸네일: 에디터와 동일한 세로 스택 — 이미지(위) + 텍스트(아래).
     // computeMetrics가 이미 imgH+8만큼 박스를 키워 두므로 배치만 맞춘다.
     const hasNodeImg = !!(n.img && n.imgW && n.imgH);
@@ -555,9 +596,11 @@ function buildPreview(rawDoc: string, hueFallback: string): JSX.Element | null {
       const startY = cy + imgShift - ((wrapped.length - 1) * lineH) / 2;
       rects.push(
         <text key={`t${id}`} x={tx} y={startY} textAnchor={anchor} dominantBaseline="central" fontSize={fpx} fontWeight={fontWeight} fill={baseTextColor} fontFamily="Pretendard, sans-serif">
-          {wrapped.map((segs, li) => (
-            <tspan key={li} x={tx} dy={li === 0 ? 0 : lineH}>
-              {segs.map((s, si) => (
+          {wrapped.map((ln, li) => (
+            // 리스트 줄은 정렬과 무관하게 좌측 시작 + 행잉 인덴트(에디터 NodeLayer의
+            // [마커|내용] flex 행과 동일) — 첫 줄 segs에는 표시 마커(• )가 포함돼 있다.
+            <tspan key={li} x={ln.list ? textL + ln.indent : tx} textAnchor={ln.list ? 'start' : undefined} dy={li === 0 ? 0 : lineH}>
+              {ln.segs.map((s, si) => (
                 <tspan key={si} fontWeight={s.b ? 800 : undefined} fill={s.c || undefined} fontStyle={s.i ? 'italic' : undefined} textDecoration={s.s ? 'line-through' : undefined}>
                   {s.t}
                 </tspan>
@@ -631,17 +674,18 @@ function buildPreview(rawDoc: string, hueFallback: string): JSX.Element | null {
     const flh = ffpx * 1.55;
     const bold = !!f.bold;
     const innerW = Math.max(8, fw - 32 - 11);
-    const lines = f.collapsed
-      ? [((f.text || '').split('\n')[0] || '')]
-      : wrapRuns([{ t: f.text || '' }], innerW, ffpx, bold ? 700 : 400, previewMeasurer).map((segs) => segs.map((s) => s.t).join(''));
-    if (lines.some((ln) => ln.trim())) {
+    // 접힌 메모의 한 줄도 리스트 글리프(`- `→`• `)를 치환(에디터 FloatLayer와 동일).
+    const lines: WrapLine[] = f.collapsed
+      ? [{ segs: [{ t: listDisplayLine((f.text || '').split('\n')[0] || '') }], indent: 0, list: false }]
+      : wrapRuns([{ t: f.text || '' }], innerW, ffpx, bold ? 700 : 400, previewMeasurer);
+    if (lines.some((ln) => ln.segs.some((s) => s.t.trim()))) {
       const textX = f.x + 32;
       const firstY = f.y + 9 + flh / 2; // centre of the first line box (top pad 9)
       floatEls.push(
         <text key={`ft${i}`} x={textX} y={firstY} dominantBaseline="central" fontSize={ffpx} fontWeight={bold ? 700 : 400} fill={f.textColor || '#5a4a3a'} fontFamily="Pretendard, sans-serif">
           {lines.map((ln, li) => (
-            <tspan key={li} x={textX} dy={li === 0 ? 0 : flh}>
-              {ln}
+            <tspan key={li} x={textX + ln.indent} dy={li === 0 ? 0 : flh}>
+              {ln.segs.map((s) => s.t).join('')}
             </tspan>
           ))}
         </text>,

@@ -15,7 +15,7 @@
 // fallback philosophy: never throw, just skip the unavailable capability.
 
 import type { Box, Doc, Float, Line, LineAnchor, Node } from '@mindflow/mindmap-core';
-import { ROOT_ID, cubicAt, layout, resolveLineEndpoints, resolveLineGeometry } from '@mindflow/mindmap-core';
+import { ROOT_ID, cubicAt, layout, listDisplayLine, parseListPrefix, resolveLineEndpoints, resolveLineGeometry } from '@mindflow/mindmap-core';
 import { colorOf, buildVisible } from './tree';
 import type { EdgeStyle } from './tree';
 import { buildEdgePath, edgeStrokeWidth } from './edges';
@@ -27,15 +27,35 @@ import { downloadFile } from './download';
 
 const PAD = 46;
 
+/** 감싼 시각 줄 — 리스트 줄은 첫 줄 `t`에 표시 마커(`• `)가 포함되고, 연속 줄은
+ * 마커 폭만큼 `indent`를 갖는다(에디터 행잉 인덴트와 동일 모델). 리스트 줄은
+ * 정렬과 무관하게 좌측에서 그린다(`list` 플래그). */
+interface PngLine {
+  t: string;
+  indent: number;
+  list: boolean;
+}
+
 /** Soft-wrap `text` to `maxW` px with the ctx's CURRENT font, mirroring the
  * editor's `wrapMeasure` token model (whitespace-preserving, breaks between CJK
  * chars) — so a long node label wraps in the PNG exactly as it does on canvas,
- * instead of running off on one line. */
-function wrapLines(ctx: CanvasRenderingContext2D, text: string, maxW: number): string[] {
-  const out: string[] = [];
-  for (const hard of String(text).split('\n')) {
+ * instead of running off on one line. 리스트 줄(`parseListPrefix`)은 마커 폭을
+ * 뗀 좁은 폭으로 내용을 감싼다(`metrics.wrapMeasure`와 동일 규칙). */
+function wrapLines(ctx: CanvasRenderingContext2D, text: string, maxW: number): PngLine[] {
+  const out: PngLine[] = [];
+  for (const rawHard of String(text).split('\n')) {
+    const lp = parseListPrefix(rawHard);
+    const markerW = lp ? ctx.measureText(lp.display).width : 0;
+    const hard = lp ? rawHard.slice(lp.raw.length) : rawHard;
+    const lineMaxW = lp ? Math.max(24, maxW - markerW) : maxW;
+    let first = true;
+    const push = (line: string): void => {
+      if (lp) out.push(first ? { t: lp.display + line, indent: 0, list: true } : { t: line, indent: markerW, list: true });
+      else out.push({ t: line, indent: 0, list: false });
+      first = false;
+    };
     if (!hard) {
-      out.push('');
+      push('');
       continue;
     }
     const tokens = hard.match(/[A-Za-z0-9]+|\s+|./gu) || [hard];
@@ -44,8 +64,8 @@ function wrapLines(ctx: CanvasRenderingContext2D, text: string, maxW: number): s
     for (const tk of tokens) {
       const w = ctx.measureText(tk).width;
       const isSpace = /^\s+$/.test(tk);
-      if (line && lineW + w > maxW && !isSpace) {
-        out.push(line);
+      if (line && lineW + w > lineMaxW && !isSpace) {
+        push(line);
         line = isSpace ? '' : tk;
         lineW = isSpace ? 0 : w;
       } else {
@@ -53,9 +73,9 @@ function wrapLines(ctx: CanvasRenderingContext2D, text: string, maxW: number): s
         lineW += w;
       }
     }
-    out.push(line);
+    push(line);
   }
-  return out.length ? out : [''];
+  return out.length ? out : [{ t: '', indent: 0, list: false }];
 }
 
 /** `ctx.roundRect` isn't in every lib.dom.d.ts version this repo might build against — draw it by hand. */
@@ -153,7 +173,7 @@ interface FloatBox {
   h: number;
   fpx: number;
   lh: number;
-  lines: string[];
+  lines: PngLine[];
   collapsed: boolean;
 }
 
@@ -169,7 +189,9 @@ function floatBox(ctx: CanvasRenderingContext2D, f: Float): FloatBox {
   const collapsed = !!f.collapsed;
   ctx.font = `${f.bold ? 700 : 400} ${fpx}px Pretendard, sans-serif`;
   const innerW = Math.max(8, w - 32 - 11); // left 32 (fold toggle), right 11
-  const lines = collapsed ? [String(f.text || '').split('\n')[0] || ''] : wrapLines(ctx, f.text || '', innerW);
+  const lines: PngLine[] = collapsed
+    ? [{ t: listDisplayLine(String(f.text || '').split('\n')[0] || ''), indent: 0, list: false }]
+    : wrapLines(ctx, f.text || '', innerW);
   const textH = Math.max(18, lines.length * lh); // text block has a min-height of 18
   const grown = 9 + textH + 9; // top + bottom padding
   const h = collapsed ? Math.max(38, grown) : Math.max(f.h || 44, grown);
@@ -358,10 +380,14 @@ export async function exportPng(doc: Doc, geom: GeomMap, theme: Theme, filename:
     // left, so the text region (and a centered block) shifts right by `emojiFlex`.
     const align = n.align === 'left' ? 'left' : n.align === 'right' ? 'right' : 'center';
     const tx = align === 'left' ? x + padX + emojiFlex : align === 'right' ? x + g.w - padX : g.x + emojiFlex / 2;
+    // 리스트 줄은 정렬과 무관하게 좌측 시작 + 행잉 인덴트(에디터/썸네일과 동일).
+    const listX = x + padX + emojiFlex;
     ctx.fillStyle = tcol;
-    ctx.textAlign = align;
     ctx.textBaseline = 'middle';
-    lines.forEach((ln, i) => ctx.fillText(ln, tx, ty0 + i * lh));
+    lines.forEach((ln, i) => {
+      ctx.textAlign = ln.list ? 'left' : align;
+      ctx.fillText(ln.t, ln.list ? listX + ln.indent : tx, ty0 + i * lh);
+    });
     if (n.emoji) {
       ctx.font = `${emojiPx}px Pretendard, sans-serif`;
       ctx.textAlign = 'left';
@@ -454,7 +480,7 @@ export async function exportPng(doc: Doc, geom: GeomMap, theme: Theme, filename:
       const firstBaseline = f.y + 9 + m.fpx * 1.15;
       m.lines.forEach((ln, i) => {
         const ly = firstBaseline + i * m.lh;
-        if (ly < f.y + m.h - 4) ctx.fillText(ln, f.x + 32, ly);
+        if (ly < f.y + m.h - 4) ctx.fillText(ln.t, f.x + 32 + ln.indent, ly);
       });
     }
   });
