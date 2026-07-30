@@ -235,4 +235,34 @@ describe('realPreview', () => {
     expect(realPreview(null, '#f0663f')).toBeNull();
     expect(realPreview('not json', '#f0663f')).toBeNull();
   });
+
+  // 실기기 제보(도형 밖으로 텍스트가 벗어남)의 원인: 자식 없는 자유 도형은
+  // 레이아웃이 sizeOf를 호출하지 않아 metricsById에 없고, 폴백 측정이 박스는
+  // depth 1(15px 기준), 텍스트는 depth 0(20px)으로 갈라져 텍스트가 박스를
+  // 계통적으로 벗어났다. 에디터(buildVisible)는 자유 도형을 depth 1로 그린다 —
+  // 미리보기도 동일해야 한다.
+  it('childless free shape: 텍스트를 에디터와 같은 depth 1 크기(15px)로 그린다', () => {
+    const withFree = {
+      ...doc,
+      nodes: {
+        ...doc.nodes,
+        fr: { id: 'fr', text: '자유 도형 노트', emoji: '', parent: null, free: true, children: [], collapsed: false, color: null, x: 500, y: -100 },
+      },
+    };
+    const { container } = render(realPreview(JSON.stringify(withFree), '#f0663f')!);
+    const label = (Array.from(container.querySelectorAll('svg text')) as SVGTextElement[]).find((t) => t.textContent?.includes('자유 도형 노트'));
+    expect(label).toBeTruthy();
+    expect(label!.getAttribute('font-size')).toBe('15'); // depth 0(20px)이면 회귀
+  });
+
+  // 텍스트 굵기도 측정에 쓴 fw 그대로(루트 700, depth1 600, depth2+ 500) —
+  // 더 굵게 그리면 렌더 폭이 측정 폭을 넘어 미세하게 상자를 벗어난다.
+  it('텍스트 굵기가 에디터 메트릭 fw와 일치한다(루트 700 / 본문 600)', () => {
+    const { container } = render(realPreview(JSON.stringify(doc), '#f0663f')!);
+    const texts = Array.from(container.querySelectorAll('svg text')) as SVGTextElement[];
+    const rootT = texts.find((t) => t.textContent === '루트')!;
+    const bodyT = texts.find((t) => t.textContent === '가지A')!;
+    expect(rootT.getAttribute('font-weight')).toBe('700');
+    expect(bodyT.getAttribute('font-weight')).toBe('600');
+  });
 });
