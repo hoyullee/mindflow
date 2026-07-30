@@ -45,6 +45,11 @@ class MockDocStore implements DocStore {
   // Bodies live behind `load()` only (like a real backend) — `list()` never
   // carries them, and nothing is written to localStorage.
   load = vi.fn(async (id: string): Promise<LoadedDoc | null> => this.bodies[id] ?? null);
+  // 썸네일 전용 본문 — 실백엔드처럼 load와 같은 원천에서 직렬화만 해 준다.
+  loadPreview = vi.fn(async (id: string): Promise<string | null> => {
+    const b = this.bodies[id];
+    return b ? JSON.stringify(b.doc) : null;
+  });
 
   constructor(
     private metas: DocMeta[] = [],
@@ -228,11 +233,11 @@ describe('Home', () => {
   });
 
   it('shows a skeleton while a backend map body loads (no generic-sketch flash), then the real nodes', async () => {
-    // Gate DocStore.load() so we can observe the card WHILE its body is still
-    // loading: it must show a neutral skeleton, never the generic miniPreview
-    // SVG (which would flash and then be replaced by the real nodes).
-    let resolveLoad!: (v: LoadedDoc | null) => void;
-    const gate = new Promise<LoadedDoc | null>((r) => {
+    // Gate the thumbnail body fetch (`loadPreview`) so we can observe the card
+    // WHILE its body is still loading: it must show a neutral skeleton, never
+    // the generic miniPreview SVG (which would flash and then be replaced).
+    let resolveLoad!: (v: string | null) => void;
+    const gate = new Promise<string | null>((r) => {
       resolveLoad = r;
     });
     const doc = {
@@ -246,7 +251,8 @@ describe('Home', () => {
     };
     const docStore: DocStore = {
       list: async () => [{ id: 'd1', title: '실제루트', version: 1, updatedAt: '2026-01-01T00:00:00.000Z', isFavorite: false, deletedAt: null }],
-      load: vi.fn(async () => gate),
+      load: vi.fn(async () => null),
+      loadPreview: vi.fn(async () => gate),
       setFavorite: vi.fn(async () => undefined),
       remove: vi.fn(async () => undefined),
       restore: vi.fn(async () => undefined),
@@ -276,7 +282,7 @@ describe('Home', () => {
     expect(thumb.querySelector('svg')).toBeNull();
 
     // body arrives → the real nodes render (and the skeleton is gone)
-    resolveLoad({ doc: doc as unknown as LoadedDoc['doc'], version: 1, title: '실제루트' });
+    resolveLoad(JSON.stringify(doc));
     await waitFor(() => expect(Array.from(thumb.querySelectorAll('svg text')).map((t) => t.textContent)).toContain('실제루트'));
     expect(thumb.querySelector('.mf-skel')).toBeNull();
   });
@@ -390,6 +396,7 @@ describe('Home', () => {
     const docStore: DocStore = {
       list: () => gate,
       load: vi.fn(async () => null),
+      loadPreview: vi.fn(async () => null),
       setFavorite: vi.fn(async () => undefined),
       remove: vi.fn(async () => undefined),
       restore: vi.fn(async () => undefined),
@@ -433,6 +440,7 @@ describe('Home', () => {
     const docStore: DocStore = {
       list: async () => [{ id: 'doc-p1', title: '기획맵', version: 1, updatedAt: '2026-01-01T00:00:00.000Z', isFavorite: false, deletedAt: null }],
       load: vi.fn(async () => null),
+      loadPreview: vi.fn(async () => null),
       setFavorite: vi.fn(async () => undefined),
       remove: vi.fn(async () => undefined),
       restore: vi.fn(async () => undefined),
@@ -1994,8 +2002,10 @@ describe('Home', () => {
       ]);
 
       // active space is 일반 공간, yet the 작업-space recent's body must be fetched too
-      await waitFor(() => expect(docStore.load).toHaveBeenCalledWith('doc-w'));
-      expect(docStore.load).toHaveBeenCalledWith('doc-g'); // active space still prefetches
+      // (썸네일 본문은 loadPreview 경로 — load 전문이 아니라)
+      const fetched = () => docStore.loadPreview.mock.calls.map((c) => c[0]);
+      await waitFor(() => expect(fetched()).toContain('doc-w'));
+      expect(fetched()).toContain('doc-g'); // active space still prefetches
     });
 
     it('deleting calls docStore.remove(docId), restoring calls docStore.restore(docId)', async () => {
@@ -2263,6 +2273,10 @@ describe('Home', () => {
         load: async (id: string) => {
           await loadGate.promise;
           return id === docId ? body : null;
+        },
+        loadPreview: async (id: string) => {
+          await loadGate.promise;
+          return id === docId ? JSON.stringify(body.doc) : null;
         },
         save: vi.fn(async () => ({ ok: true, version: 1 })),
         setFavorite: vi.fn(async () => undefined),

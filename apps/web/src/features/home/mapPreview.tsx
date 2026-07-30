@@ -10,6 +10,31 @@ import { hexA } from './storage';
 // of a character-count guess. A shared measurer (caches its canvas 2d context).
 const previewMeasurer = new CanvasTextMeasurer();
 
+/** 그릴 수 있는 이미지 소스인가. Supabase 썸네일 본문(preview_doc RPC, 0012)은
+ * egress 절감을 위해 이미지 **데이터**를 자리표시 문자열('stripped')로 바꿔
+ * 보낸다 — 크기 필드는 유지되므로 박스는 그대로 두고 이미지 자리만 회색
+ * 자리표시자로 그린다. */
+function drawableImg(src: string | undefined): string | null {
+  return src && /^(data:|https?:|blob:)/.test(src) ? src : null;
+}
+
+/** 스트립된 이미지 자리표시자 — 연회색 면 + 작은 산 모양 글리프. */
+function imgPlaceholder(key: string, x: number, y: number, w: number, h: number, rx: number): JSX.Element {
+  const gs = Math.min(w, h) * 0.34;
+  const gx = x + w / 2 - gs / 2;
+  const gy = y + h / 2 - gs / 2;
+  return (
+    <g key={key}>
+      <rect x={x} y={y} width={w} height={h} rx={rx} fill={hexA('#8a7365', 0.12)} stroke={hexA('#8a7365', 0.25)} strokeWidth={1.2} />
+      <path
+        d={`M ${gx} ${gy + gs * 0.85} L ${gx + gs * 0.35} ${gy + gs * 0.4} L ${gx + gs * 0.55} ${gy + gs * 0.62} L ${gx + gs * 0.72} ${gy + gs * 0.45} L ${gx + gs} ${gy + gs * 0.85} Z`}
+        fill={hexA('#8a7365', 0.35)}
+      />
+      <circle cx={gx + gs * 0.78} cy={gy + gs * 0.2} r={gs * 0.1} fill={hexA('#8a7365', 0.35)} />
+    </g>
+  );
+}
+
 /** A styled text segment (plain text is one segment with no bold/color). */
 interface WrapSeg {
   t: string;
@@ -493,9 +518,11 @@ function buildPreview(rawDoc: string, hueFallback: string): JSX.Element | null {
     const textBlockH = wrapped.length * lineHN;
     const imgShift = hasNodeImg ? (n.imgH! + 8) / 2 : 0;
     if (hasNodeImg) {
-      rects.push(
-        <image key={`img${id}`} href={n.img} x={cx - n.imgW! / 2} y={cy - (textBlockH + 8) / 2 - n.imgH! / 2} width={n.imgW} height={n.imgH} preserveAspectRatio="xMidYMid slice" />,
-      );
+      const src = drawableImg(n.img);
+      const ix = cx - n.imgW! / 2;
+      const iy = cy - (textBlockH + 8) / 2 - n.imgH! / 2;
+      if (src) rects.push(<image key={`img${id}`} href={src} x={ix} y={iy} width={n.imgW} height={n.imgH} preserveAspectRatio="xMidYMid slice" />);
+      else rects.push(imgPlaceholder(`img${id}`, ix, iy, n.imgW!, n.imgH!, 8));
     }
     // 에디터(NodeLayer)의 가로 배치 재현: 패딩 안쪽(도형은 tw 폭의 중앙 스트립)에
     // [이모지(고정폭, 좌측 고정)][gap 7][텍스트 블록(남은 폭, n.align 정렬)].
@@ -583,8 +610,13 @@ function buildPreview(rawDoc: string, hueFallback: string): JSX.Element | null {
     const fh = floatH(f);
     // 이미지 플로트: 메모 카드가 아니라 이미지 자체 (에디터 FloatLayer와 동일).
     if (f.img) {
-      floatEls.push(<image key={`fi${i}`} href={f.img} x={f.x} y={f.y} width={fw} height={fh} preserveAspectRatio="xMidYMid slice" />);
-      floatEls.push(<rect key={`fr${i}`} x={f.x} y={f.y} width={fw} height={fh} rx={8} fill="none" stroke={hexA('#000000', 0.14)} strokeWidth={1.4} />);
+      const src = drawableImg(f.img);
+      if (src) {
+        floatEls.push(<image key={`fi${i}`} href={src} x={f.x} y={f.y} width={fw} height={fh} preserveAspectRatio="xMidYMid slice" />);
+        floatEls.push(<rect key={`fr${i}`} x={f.x} y={f.y} width={fw} height={fh} rx={8} fill="none" stroke={hexA('#000000', 0.14)} strokeWidth={1.4} />);
+      } else {
+        floatEls.push(imgPlaceholder(`fi${i}`, f.x, f.y, fw, fh, 8));
+      }
       return;
     }
     const bg = f.bg || '#fdf6c9';

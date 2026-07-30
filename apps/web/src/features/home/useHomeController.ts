@@ -64,6 +64,8 @@ export function useHomeController() {
   // docIds whose body we've already fetched (or are fetching) for card previews,
   // so the prefetch effect never re-requests the same doc.
   const previewFetchedRef = useRef<Set<string>>(new Set());
+  /** docId → 마지막 list()가 준 (version, updatedAt) — 썸네일 캐시 판별 키. */
+  const docMetaRef = useRef<Map<string, { version: number; updatedAt: string }>>(new Map());
   // Workspace-persistence guards. `canPersistWorkspaceRef` is true ONLY after the
   // mount `spaceStore.load()` actually FULFILLED — so a failed/absent load never
   // lets us overwrite the user's saved spaces/folders with the default seed (the
@@ -110,6 +112,9 @@ export function useHomeController() {
     // 계산에는 **내 문서만** 넘긴다. 공유받은 문서는 별도 목록으로 다룬다(sharedMetas).
     const metas = allMetas.filter((m) => m.ownedByMe !== false);
     const sharedMetas = allMetas.filter((m) => m.ownedByMe === false && !m.deletedAt);
+    // 썸네일 캐시 키(버전 판별)용 — loadPreview에 (version, updatedAt)을 넘겨
+    // 같은 판이면 재다운로드를 건너뛴다(previewBodyCache 참고).
+    docMetaRef.current = new Map(allMetas.map((m) => [m.id, { version: m.version, updatedAt: m.updatedAt }]));
     if (ws && Array.isArray(ws.spaces)) workspaceLoadedRef.current = true;
     const wsBase = ws && Array.isArray(ws.spaces) ? ensureHomeSpace(coerceSpaces(ws.spaces)) : null;
     // ② 예전에 가져온(docId 없는) 카드를 자기 문서에 묶는다 — 조건과 근거는
@@ -403,22 +408,17 @@ export function useHomeController() {
     // (only a full remount — e.g. opening a map and coming back — cleared it).
     // The batch is deduped by `previewFetchedRef`, so letting it finish is safe;
     // we only skip the state update if the component actually unmounted.
-    void Promise.allSettled(ids.map((id) => docStore.load(id))).then((results) => {
+    // `loadPreview` = 썸네일 전용 본문: Supabase는 이미지 데이터를 뗀 RPC +
+    // (version, updatedAt) 키 로컬 캐시(같은 판이면 네트워크 생략 — egress
+    // 절감), 로컬 모드는 localStorage 그대로. 자세한 계약은 ports.ts.
+    void Promise.allSettled(ids.map((id) => docStore.loadPreview(id, docMetaRef.current.get(id)))).then((results) => {
       if (!mountedRef.current) return;
       const add: Record<string, string> = {};
       const resolved: Record<string, boolean> = {};
       results.forEach((r, i) => {
         const id = ids[i]!;
         resolved[id] = true; // resolved (whether or not a body came back)
-        if (r.status === 'fulfilled' && r.value) {
-          try {
-            // `LoadedDoc.doc` is already the canonical persisted shape (nodes/
-            // floats/lines/zones/layoutMode/themeKey) that `realPreview` parses.
-            add[id] = JSON.stringify(r.value.doc);
-          } catch {
-            /* non-serializable doc — skip; card keeps the generic sketch */
-          }
-        }
+        if (r.status === 'fulfilled' && r.value) add[id] = r.value;
       });
       // Mark the batch resolved even when nothing loaded, so cards for those
       // docs stop showing the loading skeleton and settle on their final preview.

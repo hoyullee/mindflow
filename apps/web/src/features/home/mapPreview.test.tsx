@@ -236,6 +236,29 @@ describe('realPreview', () => {
     expect(realPreview('not json', '#f0663f')).toBeNull();
   });
 
+  // Supabase 썸네일 본문(preview_doc RPC)은 이미지 데이터를 'stripped'로 바꿔
+  // 보낸다 — <image>에 넣으면 깨진 이미지가 되므로 회색 자리표시자를 같은
+  // 크기로 그리고, 박스 확장(computeMetrics의 imgH+8)은 그대로 유지돼야 한다.
+  it('스트립된 이미지(자리표시 문자열)는 <image> 대신 같은 크기의 자리표시자를 그린다', () => {
+    const stripped = {
+      ...doc,
+      nodes: {
+        ...doc.nodes,
+        a: { ...doc.nodes.a, img: 'stripped', imgW: 180, imgH: 135 },
+      },
+      floats: [{ id: 'f1', x: 300, y: 300, w: 260, h: 180, text: '', img: 'stripped' }],
+    };
+    const { container } = render(realPreview(JSON.stringify(stripped), '#f0663f')!);
+    // 이미지 요소는 없어야 한다(노드·플로트 모두)
+    expect(container.querySelector('svg image')).toBeNull();
+    // 노드 박스는 여전히 이미지 높이를 수용해 커져 있다
+    const rects = Array.from(container.querySelectorAll('svg rect')) as SVGRectElement[];
+    expect(rects.some((r) => Number(r.getAttribute('height') || 0) >= 135)).toBe(true);
+    // 자리표시자(연회색 rect 180×135 / 260×180)가 그려졌다
+    expect(rects.some((r) => r.getAttribute('width') === '180' && r.getAttribute('height') === '135')).toBe(true);
+    expect(rects.some((r) => r.getAttribute('width') === '260' && r.getAttribute('height') === '180')).toBe(true);
+  });
+
   // 실기기 제보(도형 밖으로 텍스트가 벗어남)의 원인: 자식 없는 자유 도형은
   // 레이아웃이 sizeOf를 호출하지 않아 metricsById에 없고, 폴백 측정이 박스는
   // depth 1(15px 기준), 텍스트는 depth 0(20px)으로 갈라져 텍스트가 박스를
