@@ -157,7 +157,7 @@ describe('partial rich-text styling — toolbar', () => {
 
     const editor = startEditingNode(container, 'c1');
     selectAndOpenToolbar(editor, 6, 11); // "world"
-    const boldBtn = within(getViewport(container)).getByTitle('선택 영역 굵게');
+    const boldBtn = within(getViewport(container)).getByTitle(/선택 영역 굵게/);
 
     clickToolbarButton(boldBtn);
 
@@ -213,7 +213,7 @@ describe('partial rich-text styling — toolbar', () => {
     selectAndOpenToolbar(editor, 6, 11); // "world"
     const vp = within(getViewport(container));
 
-    clickToolbarButton(vp.getByTitle('선택 영역 굵게'));
+    clickToolbarButton(vp.getByTitle(/선택 영역 굵게/));
     expect(window.getSelection()?.toString()).toBe('world'); // survived the first click
 
     // no re-selection call here — if the first click's pointerdown had leaked to the
@@ -236,7 +236,7 @@ describe('partial rich-text styling — toolbar', () => {
 
     const editor = startEditingNode(container, 'c1');
     selectAndOpenToolbar(editor, 0, 11); // the whole text
-    clickToolbarButton(within(getViewport(container)).getByTitle('부분 스타일 지우기'));
+    clickToolbarButton(within(getViewport(container)).getByTitle(/부분 스타일 지우기/));
 
     expect(editor.innerHTML).not.toContain('font-weight');
     expect(editor.innerHTML).not.toContain('color:');
@@ -255,7 +255,7 @@ describe('partial rich-text styling — toolbar', () => {
 
     const editor = startEditingNode(container, 'c1');
     selectAndOpenToolbar(editor, 6, 11); // "world" — already bold in RICH_DOC
-    clickToolbarButton(within(getViewport(container)).getByTitle('선택 영역 굵게'));
+    clickToolbarButton(within(getViewport(container)).getByTitle(/선택 영역 굵게/));
 
     commitAndSave(editor);
     await waitFor(() => {
@@ -329,7 +329,7 @@ describe('partial rich-text styling — plain commit', () => {
 // 화살표로 선택을 풀거나 선택 위에 그대로 타이핑하면 아무것도 선택되지 않은 채 툴바가
 // 계속 떠 있었다.
 describe('텍스트 서식 툴바 노출 조건', () => {
-  const toolbar = (container: HTMLElement) => within(getViewport(container)).queryByTitle('선택 영역 굵게');
+  const toolbar = (container: HTMLElement) => within(getViewport(container)).queryByTitle(/선택 영역 굵게/);
 
   it('선택이 있으면 뜬다', () => {
     localStorage.setItem('mindflow_doc_tb1', JSON.stringify(DOC));
@@ -390,7 +390,7 @@ describe('텍스트 서식 툴바 노출 조건', () => {
 describe('서식 툴바 색은 문서 테마를 따라가지 않는다', () => {
   const DARK_DOC = { ...DOC, themeKey: 'dark' };
   const toolbarOf = (container: HTMLElement) =>
-    within(getViewport(container)).getByTitle('선택 영역 굵게').closest('div') as HTMLElement;
+    within(getViewport(container)).getByTitle(/선택 영역 굵게/).closest('div') as HTMLElement;
 
   it('밝은 테마와 다크 테마에서 팝업 크롬이 동일하다', () => {
     localStorage.setItem('mindflow_doc_thL', JSON.stringify(DOC));
@@ -439,7 +439,7 @@ describe('서식 툴바 색은 문서 테마를 따라가지 않는다', () => {
 // 원인: 편집 박스의 `dblclick`이 노드 박스로 올라가 `startEditNode`를 다시 호출하고,
 // 그 안의 `setTextCtx(null)`이 방금 뜬 툴바를 즉시 닫았다(mouseup에서 열림 → dblclick에서 닫힘).
 describe('더블클릭으로 단어를 선택해도 서식 툴바가 뜬다', () => {
-  const toolbar = (container: HTMLElement) => within(getViewport(container)).queryByTitle('선택 영역 굵게');
+  const toolbar = (container: HTMLElement) => within(getViewport(container)).queryByTitle(/선택 영역 굵게/);
 
   it('더블클릭(단어 선택) 후에도 툴바가 남아 있다', () => {
     localStorage.setItem('mindflow_doc_dbl', JSON.stringify(DOC));
@@ -466,8 +466,78 @@ describe('더블클릭으로 단어를 선택해도 서식 툴바가 뜬다', ()
     fireEvent.mouseUp(editor);
     fireEvent.doubleClick(editor);
 
-    clickToolbarButton(within(getViewport(container)).getByTitle('선택 영역 굵게'));
+    clickToolbarButton(within(getViewport(container)).getByTitle(/선택 영역 굵게/));
     expect(editor.innerHTML).toContain('font-weight:800');
     expect(editor.textContent).toBe('hello world');
+  });
+});
+
+// ── 마크다운 서식 확장(post-dc): 기울임(I)·취소선(S) 버튼 + 커밋 시 단축 문법 ──
+describe('마크다운 서식 확장 — I/S 버튼과 단축 문법', () => {
+  it('I 버튼이 부분 기울임 런을 만들고 저장까지 살아남는다', async () => {
+    localStorage.setItem('mindflow_doc_rtmd1', JSON.stringify(DOC));
+    const { container } = renderEditor('/editor?map=rtmd1&title=x');
+    const editor = startEditingNode(container, 'c1');
+    selectAndOpenToolbar(editor, 6, 11); // "world"
+    clickToolbarButton(within(getViewport(container)).getByTitle(/선택 영역 기울임/));
+    expect(editor.innerHTML).toContain('font-style:italic');
+    commitAndSave(editor);
+    await waitFor(() => {
+      const doc = readSavedDoc('rtmd1');
+      expect(doc.nodes.c1?.rich).toEqual([
+        { t: 'hello ', b: false, c: null },
+        { t: 'world', b: false, c: null, i: true },
+      ]);
+    });
+  });
+
+  it('S 버튼이 부분 취소선 런을 만든다', async () => {
+    localStorage.setItem('mindflow_doc_rtmd2', JSON.stringify(DOC));
+    const { container } = renderEditor('/editor?map=rtmd2&title=x');
+    const editor = startEditingNode(container, 'c1');
+    selectAndOpenToolbar(editor, 0, 5); // "hello"
+    clickToolbarButton(within(getViewport(container)).getByTitle(/선택 영역 취소선/));
+    expect(editor.innerHTML).toContain('text-decoration:line-through');
+    commitAndSave(editor);
+    await waitFor(() => {
+      const doc = readSavedDoc('rtmd2');
+      expect(doc.nodes.c1?.rich).toEqual([
+        { t: 'hello', b: false, c: null, s: true },
+        { t: ' world', b: false, c: null },
+      ]);
+    });
+  });
+
+  it('커밋 시 **굵게**·*기울임*·~~취소선~~ 마커가 서식으로 변환된다', async () => {
+    localStorage.setItem('mindflow_doc_rtmd3', JSON.stringify(DOC));
+    const { container } = renderEditor('/editor?map=rtmd3&title=x');
+    const editor = startEditingNode(container, 'c1');
+    editor.innerHTML = '이건 **굵게** 그리고 *기울임* 또 ~~취소~~';
+    commitAndSave(editor);
+    await waitFor(() => {
+      const doc = readSavedDoc('rtmd3');
+      expect(doc.nodes.c1?.text).toBe('이건 굵게 그리고 기울임 또 취소');
+      expect(doc.nodes.c1?.rich).toEqual([
+        { t: '이건 ', b: false, c: null },
+        { t: '굵게', b: true, c: null },
+        { t: ' 그리고 ', b: false, c: null },
+        { t: '기울임', b: false, c: null, i: true },
+        { t: ' 또 ', b: false, c: null },
+        { t: '취소', b: false, c: null, s: true },
+      ]);
+    });
+  });
+
+  it('마크다운이 없는 평문 커밋은 그대로 (rich=null, 마커 오탐 없음)', async () => {
+    localStorage.setItem('mindflow_doc_rtmd4', JSON.stringify(DOC));
+    const { container } = renderEditor('/editor?map=rtmd4&title=x');
+    const editor = startEditingNode(container, 'c1');
+    editor.innerHTML = '수식 2*3=6 이야기';
+    commitAndSave(editor);
+    await waitFor(() => {
+      const doc = readSavedDoc('rtmd4');
+      expect(doc.nodes.c1?.text).toBe('수식 2*3=6 이야기');
+      expect(doc.nodes.c1?.rich ?? null).toBeNull();
+    });
   });
 });

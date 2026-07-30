@@ -86,8 +86,14 @@ export function TextToolbar({ controller }: TextToolbarProps) {
       // `pointerdown` at the root keeps every toolbar interaction off the canvas.
       onPointerDown={(e) => e.stopPropagation()}
     >
-      <button type="button" title="선택 영역 굵게" onMouseDown={(e) => applyAndGuard(e, controller, 'b')} style={boldButtonStyle(th)}>
+      <button type="button" title="선택 영역 굵게 (**굵게**)" onMouseDown={(e) => applyAndGuard(e, controller, 'b')} style={boldButtonStyle(th)}>
         B
+      </button>
+      <button type="button" title="선택 영역 기울임 (*기울임*)" onMouseDown={(e) => applyAndGuard(e, controller, 'i')} style={{ ...boldButtonStyle(th), fontStyle: 'italic', fontWeight: 600, fontFamily: 'Georgia, serif' }}>
+        I
+      </button>
+      <button type="button" title="선택 영역 취소선 (~~취소선~~)" onMouseDown={(e) => applyAndGuard(e, controller, 's')} style={{ ...boldButtonStyle(th), fontWeight: 600, textDecoration: 'line-through' }}>
+        S
       </button>
       <div style={dividerStyle(th)} />
       {swatches.map((hex) => (
@@ -109,7 +115,7 @@ export function TextToolbar({ controller }: TextToolbarProps) {
  * through `execCommand` (the only call path that actually sets `_tctxHold`). `stopPropagation`
  * is redundant with the root's own `onPointerDown` stop above but kept for defense in depth
  * (matches `ContextMenu.tsx`'s per-button belt-and-suspenders convention). */
-function applyAndGuard(e: ReactMouseEvent<HTMLButtonElement>, controller: EditorController, kind: 'b' | 'c' | 'clear', val?: string | null): void {
+function applyAndGuard(e: ReactMouseEvent<HTMLButtonElement>, controller: EditorController, kind: 'b' | 'i' | 's' | 'c' | 'clear', val?: string | null): void {
   e.preventDefault();
   e.stopPropagation();
   controller.applyPartial(kind, val ?? null);

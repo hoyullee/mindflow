@@ -2,7 +2,7 @@ import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } fr
 import type { MouseEvent as ReactMouseEvent, PointerEvent as ReactPointerEvent } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import type { Box, Doc, Float, Line, LineAnchor, LayoutMode, Node, NodeMap, SizeOf, SnapCandidate, Zone } from '@mindflow/mindmap-core';
-import { HistoryStack, ROOT_ID, applyPartialStyle, cubicAt, findLineSnap, layout, resolveLineEndpoints, resolveLineGeometry, serializeDoc, toMarkdown } from '@mindflow/mindmap-core';
+import { HistoryStack, ROOT_ID, applyMarkdownShortcuts, applyPartialStyle, cubicAt, findLineSnap, layout, resolveLineEndpoints, resolveLineGeometry, serializeDoc, toMarkdown } from '@mindflow/mindmap-core';
 import { domToRuns, linearize, runsToHtml, setLinearSelection } from './richtextDom';
 import type { ShareStore } from '../../adapters/ports';
 import type { CollabStatus } from '../../collab/ports';
@@ -320,7 +320,7 @@ export interface EditorController {
    * DOM-only (rewrites the `contentEditable`'s innerHTML + restores the
    * selection); the actual doc/undo commit happens later, on blur/Enter, via
    * `commitNodeRichText` reading the same live DOM. */
-  applyPartial: (kind: 'b' | 'c' | 'clear', val?: string | null) => void;
+  applyPartial: (kind: 'b' | 'i' | 's' | 'c' | 'clear', val?: string | null) => void;
   startEditFloat: (id: string) => void;
   commitFloatText: (id: string, text: string) => void;
   cancelFloatEdit: () => void;
@@ -1900,7 +1900,11 @@ export function useEditorState(): EditorController {
         return;
       }
       const parsed = domToRuns(el);
-      commitDoc((d) => ({ ...d, nodes: mutations.commitNodeRichText(d.nodes, id, parsed.text, parsed.rich) }));
+      // 마크다운 단축 문법(**굵게**, *기울임*, ~~취소선~~)을 커밋 시 서식으로 변환.
+      // 편집 중에는 마커가 그대로 보이고(예측 가능), 확정하는 순간 정리된다.
+      const md = applyMarkdownShortcuts(parsed);
+      const finalText = md ?? parsed;
+      commitDoc((d) => ({ ...d, nodes: mutations.commitNodeRichText(d.nodes, id, finalText.text, finalText.rich) }));
       setEditingNodeId(null);
       setEditLiveSize(null);
       setTextCtx(null);
@@ -1926,7 +1930,7 @@ export function useEditorState(): EditorController {
    * `data-init` guard), applies the style via `@mindflow/mindmap-core`'s `applyPartialStyle`,
    * rewrites the innerHTML, and restores the selection so consecutive style clicks on the
    * same span keep working. */
-  const applyPartial = useCallback((kind: 'b' | 'c' | 'clear', val?: string | null) => {
+  const applyPartial = useCallback((kind: 'b' | 'i' | 's' | 'c' | 'clear', val?: string | null) => {
     const ed = richElRef.current;
     if (!ed) return;
     const ws = window.getSelection();

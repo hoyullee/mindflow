@@ -85,6 +85,8 @@ interface RichLineSeg {
   t: string;
   b?: boolean;
   c?: string | null;
+  /** 기울임 — 측정 폭이 달라지므로 폰트 문자열에 반영한다(취소선은 폭 불변이라 불필요). */
+  i?: boolean;
 }
 
 /** Port of `Component#richLines` (MindFlow.dc.html:2644). */
@@ -97,7 +99,7 @@ function richLines(node: Pick<Node, 'rich'>): RichLineSeg[][] {
         if (i > 0) lines.push([]);
         if (p) {
           const last = lines[lines.length - 1];
-          last?.push({ b: r.b, c: r.c, t: p });
+          last?.push({ b: r.b, c: r.c, i: r.i, t: p });
         }
       });
   });
@@ -119,7 +121,7 @@ function wrapMeasure(
   hardLines.forEach((segs) => {
     const tokens: { w: number; sp: boolean }[] = [];
     segs.forEach((sg) => {
-      const f = `${sg.b ? 800 : fw} ${fpx}px Pretendard`;
+      const f = `${sg.i ? 'italic ' : ''}${sg.b ? 800 : fw} ${fpx}px Pretendard`;
       const parts = String(sg.t).match(/[A-Za-z0-9]+|\s+|./g) || [];
       parts.forEach((p) => tokens.push({ w: measurer.measure(p, f), sp: /^\s+$/.test(p) }));
     });

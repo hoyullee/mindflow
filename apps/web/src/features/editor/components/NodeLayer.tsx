@@ -233,7 +233,7 @@ function NodeBox({ id, node: n, g, nodes, mode, theme: th, rootX, controller }: 
   ) : n.rich && n.rich.length ? (
     <span style={{ lineHeight: 1.35, flex: '1 1 auto', width: '100%', minWidth: 0, boxSizing: 'border-box', textAlign: align, whiteSpace: 'pre-wrap', wordBreak: 'break-word' }}>
       {n.rich.map((r, ri) => (
-        <span key={ri} style={{ fontWeight: r.b ? 800 : 'inherit', color: r.c || 'inherit' }}>
+        <span key={ri} style={{ fontWeight: r.b ? 800 : 'inherit', color: r.c || 'inherit', fontStyle: r.i ? 'italic' : undefined, textDecoration: r.s ? 'line-through' : undefined }}>
           {r.t}
         </span>
       ))}
