@@ -235,6 +235,25 @@ export interface ShareStore {
 export interface DocStore {
   list(): Promise<DocMeta[]>;
   load(id: string): Promise<LoadedDoc | null>;
+  /**
+   * 홈 썸네일 전용 본문 — `realPreview`가 그대로 파싱할 직렬화 JSON 문자열
+   * (`null` = 본문 없음). `load()`와 분리한 이유는 비용이다: 이미지 첨부가
+   * 본문 jsonb 안에 data URL로 인라인이라, 썸네일이 전문을 받으면 카드마다
+   * 수백 KB~수 MB가 실려 온다(무료 egress 잠식).
+   *
+   * - Supabase: `preview_doc` RPC(0012)로 **이미지 데이터만 자리표시 문자열로
+   *   바꾼** 본문을 받고(크기 필드는 유지 — 박스 계산 불변), `(id, version,
+   *   updatedAt)` 키의 localStorage 캐시로 같은 판을 재방문할 때 네트워크를
+   *   건너뛴다. RPC 미적용 서버는 `load()` 전문으로 폴백.
+   * - Local: localStorage 본문 그대로(네트워크 비용이 없어 캐시·스트립 불필요).
+   *
+   * 동시 편집 안전성: `version`은 저장마다 낙관적 잠금으로만 증가하므로
+   * (id, version)→본문은 원칙적으로 유일하고, 유일성이 깨질 수 있는 단 하나의
+   * 경로(prevVersion 없는 강제 저장 — version 1로 재설정)는 서버가 항상 새로
+   * 찍는 `updatedAt`이 캐시 키에 함께 들어가 무효화한다. 협업 중 아직 저장되지
+   * 않은 CRDT 변경은 지금까지도 썸네일에 없었다(마지막 저장본) — 무회귀.
+   */
+  loadPreview(id: string, meta?: { version: number; updatedAt: string }): Promise<string | null>;
   save(id: string, doc: Doc, opts?: SaveOptions): Promise<SaveResult>;
   /** Soft-delete (moves to trash; `list()` still returns it with `deletedAt` set). */
   remove(id: string): Promise<void>;

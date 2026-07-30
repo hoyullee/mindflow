@@ -3,7 +3,7 @@
 // M4 task brief). These tests assert the query shape (table, filters,
 // payload) the adapter constructs, not real Postgres behavior.
 
-import { describe, expect, it, vi } from 'vitest';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { ROOT_ID, type Doc } from '@mindflow/mindmap-core';
 import { SupabaseDocStore } from './supabaseDocStore';
 
@@ -233,5 +233,72 @@ describe('SupabaseDocStore', () => {
 
     await store.setFavorite('d1', true);
     expect(query.calls.at(-2)).toEqual({ method: 'update', args: [{ is_favorite: true }] });
+  });
+});
+
+// 썸네일 전용 본문(0012 `preview_doc` RPC + (version, updatedAt) 키 로컬 캐시).
+// 동시 편집 검토의 핵심: version은 낙관적 잠금이라 판이 다르면 반드시 키가
+// 어긋나고(재다운로드), 유일성이 깨질 수 있는 단 하나의 경로(강제 저장의
+// version 1 재설정)는 서버가 항상 새로 찍는 updatedAt이 잡는다.
+describe('SupabaseDocStore.loadPreview', () => {
+  const META = { version: 3, updatedAt: '2026-01-05T00:00:00Z' };
+
+  function rpcClient(rpcResult: { data: unknown; error: unknown }, loadRow: { data: unknown; error: unknown } = { data: null, error: null }) {
+    const query = new FakeQuery(loadRow);
+    const from = vi.fn(() => query);
+    const rpc = vi.fn(async () => rpcResult);
+    const auth = { getUser: vi.fn(async () => ({ data: { user: { id: 'me' } }, error: null })) };
+    return { client: { from, auth, rpc } as unknown as import('@supabase/supabase-js').SupabaseClient, rpc, from };
+  }
+
+  beforeEach(() => localStorage.clear());
+
+  it('RPC 본문을 받아 캐시하고, 같은 판(version+updatedAt)이면 네트워크를 다시 타지 않는다', async () => {
+    const stripped = { ...makeDoc('미리보기'), nodes: { root: { ...makeDoc('미리보기').nodes.root!, img: 'stripped', imgW: 180, imgH: 120 } } };
+    const { client, rpc } = rpcClient({ data: stripped, error: null });
+    const store = new SupabaseDocStore(client);
+
+    const first = await store.loadPreview('d1', META);
+    expect(rpc).toHaveBeenCalledWith('preview_doc', { doc_id: 'd1' });
+    expect(first).toContain('미리보기');
+    // 스트립 자리표시자('stripped')와 크기 필드가 본문에 살아 있어야 미리보기가
+    // 회색 자리표시자를 같은 크기로 그린다 (parseDoc이 img를 버리면 회귀).
+    expect(first).toContain('"img":"stripped"');
+    expect(first).toContain('"imgW":180');
+
+    const second = await store.loadPreview('d1', META);
+    expect(rpc).toHaveBeenCalledTimes(1); // 캐시 적중 — 네트워크 없음
+    expect(second).toBe(first);
+  });
+
+  it('판이 바뀌면(남이 저장 → version 증가) 캐시를 버리고 다시 받는다', async () => {
+    const { client, rpc } = rpcClient({ data: makeDoc('v3판'), error: null });
+    const store = new SupabaseDocStore(client);
+    await store.loadPreview('d1', META);
+    await store.loadPreview('d1', { version: 4, updatedAt: '2026-01-06T00:00:00Z' });
+    expect(rpc).toHaveBeenCalledTimes(2);
+  });
+
+  it('version이 같아도 updatedAt이 다르면 다시 받는다 — 강제 저장(version 1 재설정) 가드', async () => {
+    const { client, rpc } = rpcClient({ data: makeDoc('본문'), error: null });
+    const store = new SupabaseDocStore(client);
+    await store.loadPreview('d1', { version: 1, updatedAt: '2026-01-01T00:00:00Z' });
+    await store.loadPreview('d1', { version: 1, updatedAt: '2026-01-02T00:00:00Z' });
+    expect(rpc).toHaveBeenCalledTimes(2);
+  });
+
+  it('RPC 미적용/실패 시 전문 load()로 폴백한다', async () => {
+    const row = { id: 'd1', title: 'P', version: 3, data: makeDoc('폴백본문') };
+    const { client, rpc, from } = rpcClient({ data: null, error: { message: 'function public.preview_doc does not exist' } }, { data: row, error: null });
+    const store = new SupabaseDocStore(client);
+    const body = await store.loadPreview('d1', META);
+    expect(rpc).toHaveBeenCalledTimes(1);
+    expect(from).toHaveBeenCalledWith('documents'); // load() 폴백이 실제 쿼리를 탔다
+    expect(body).toContain('폴백본문');
+  });
+
+  it('본문이 어디에도 없으면 null (카드가 스켈레톤에서 일반 스케치로 정착)', async () => {
+    const { client } = rpcClient({ data: null, error: { message: 'x' } }, { data: null, error: null });
+    expect(await new SupabaseDocStore(client).loadPreview('없는문서', META)).toBeNull();
   });
 });

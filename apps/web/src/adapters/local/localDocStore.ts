@@ -138,6 +138,13 @@ export class LocalDocStore implements DocStore {
     return { doc, version: meta?.version ?? 1, title: meta?.title || rootTitleOf(doc) };
   }
 
+  async loadPreview(id: string): Promise<string | null> {
+    // 로컬 모드는 본문이 이 브라우저의 localStorage 그 자체 — 네트워크 비용이
+    // 없으므로 스트립/캐시 없이 저장된 JSON을 그대로 돌려준다(이미지 포함,
+    // 썸네일도 실제 이미지를 그린다).
+    return readRaw(docKey(id));
+  }
+
   async save(id: string, doc: Doc, opts: SaveOptions = {}): Promise<SaveResult> {
     const existing = readMeta(id);
     const currentVersion = existing?.version ?? (readRaw(docKey(id)) ? 1 : 0);

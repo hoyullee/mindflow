@@ -495,3 +495,22 @@ M5/M5-awareness가 Yjs 동기화와 커서 공유를 붙였지만, **`documents`
   만들려면 CRDT로 자기 편집이 상대에게 전파되는 것부터 막아야 해서 별도 작업입니다.
 - 어댑터: `adapters/supabase/supabaseShareStore.ts`(실제), `adapters/local/localShareStore.ts`
   (데모 — 목록 계약만 동일하게 유지하고 실제 접근은 열어 주지 않습니다).
+
+## 7. 홈 썸네일 본문 (0012 `preview_doc`) — egress 절감
+
+- **왜**: 이미지 첨부는 문서 `data` jsonb 안에 base64 data URL로 인라인이라, 홈
+  썸네일이 문서 전문을 받으면 카드마다 수백 KB~수 MB가 실려 옵니다(무료 5GB/월
+  egress 잠식). `preview_doc(doc_id)` RPC는 `nodes.*.img` / `floats[].img` 값만
+  `'stripped'`로 바꾼 본문을 돌려줍니다 — 크기 필드는 유지돼 박스 계산이 변하지
+  않고, 클라이언트는 이미지 자리에 회색 자리표시자를 그립니다.
+- **보안**: security **invoker**(기본) — `documents`의 SELECT RLS(내 문서 또는
+  공유받은 문서, 0009)가 그대로 적용됩니다. `authenticated`에게만 execute.
+- **캐시**: 클라이언트는 `(id, version, updatedAt)` 키의 localStorage 캐시
+  (`apps/web/src/adapters/previewBodyCache.ts`)로 같은 판을 재방문할 때 네트워크를
+  건너뜁니다. `version`은 낙관적 잠금 카운터라 저장마다 증가 → 동시 편집에서 남이
+  저장해도 다음 홈 진입의 `list()`가 새 판을 알려 재다운로드됩니다. 유일성이 깨질
+  수 있는 단 하나의 경로(prevVersion 없는 강제 저장 — version 1 재설정)는 서버
+  트리거가 항상 새로 찍는 `updated_at`이 캐시 키에 함께 있어 잡습니다.
+- **배포**: GitHub 연동 자동 마이그레이션으로 적용됩니다(수동 절차 불필요).
+  RPC가 아직 없는 서버에서는 클라이언트가 전문 `load()`로 폴백하므로 순서에
+  안전합니다(콘솔에 `[geurio] preview_doc RPC 실패` 경고만 남음).

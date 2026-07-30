@@ -17,6 +17,7 @@ import type { SupabaseClient } from '@supabase/supabase-js';
 import type { Doc } from '@mindflow/mindmap-core';
 import { parseDoc, serializeDoc } from '@mindflow/mindmap-core';
 import type { DocMeta, DocStore, LoadedDoc, SaveOptions, SaveResult } from '../ports';
+import { readPreviewBody, writePreviewBody } from '../previewBodyCache';
 
 const TABLE = 'documents';
 
@@ -62,6 +63,38 @@ export class SupabaseDocStore implements DocStore {
     const doc: Doc | null = parseDoc(row.data);
     if (!doc) return null;
     return { doc, version: row.version, title: row.title ?? '' };
+  }
+
+  async loadPreview(id: string, meta?: { version: number; updatedAt: string }): Promise<string | null> {
+    // ① 같은 판(version + updatedAt)을 이미 받아 뒀으면 네트워크 생략.
+    //    version은 낙관적 잠금이라 판이 다르면 반드시 키가 어긋난다 — 동시
+    //    편집으로 남이 저장했어도 다음 list()가 새 version을 주므로 재다운로드.
+    if (meta) {
+      const hit = readPreviewBody(id, meta.version, meta.updatedAt);
+      if (hit !== null) return hit;
+    }
+    // ② 이미지 데이터를 뗀 본문 RPC(0012). RLS invoker — 내 문서/공유받은
+    //    문서만 보인다(documents SELECT 정책 그대로).
+    let body: string | null = null;
+    try {
+      const { data, error } = await this.client.rpc('preview_doc', { doc_id: id });
+      if (!error && data != null) {
+        const doc = parseDoc(data);
+        if (doc) body = JSON.stringify(serializeDoc(doc));
+      } else if (error) {
+        // RPC 미적용 서버(마이그레이션 전) 등 — 전문 로드로 폴백한다.
+        console.warn('[geurio] preview_doc RPC 실패 — 전문 로드로 폴백:', error.message);
+      }
+    } catch {
+      /* 네트워크 오류 등 — 아래 폴백 */
+    }
+    if (body === null) {
+      const full = await this.load(id).catch(() => null);
+      if (!full) return null;
+      body = JSON.stringify(serializeDoc(full.doc));
+    }
+    if (meta) writePreviewBody(id, meta.version, meta.updatedAt, body);
+    return body;
   }
 
   async save(id: string, doc: Doc, opts: SaveOptions = {}): Promise<SaveResult> {
