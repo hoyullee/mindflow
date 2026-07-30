@@ -6,6 +6,7 @@
 // comments on `SizeOf`), so it lives here rather than in `mindmap-core`.
 
 import type { Float, Node, RichRun } from '@mindflow/mindmap-core';
+import { parseListPrefix } from '@mindflow/mindmap-core';
 
 /** Injected text-measurement port — real canvas in the browser, a deterministic
  * character-count approximation in environments without `measureText` (jsdom). */
@@ -106,7 +107,32 @@ function richLines(node: Pick<Node, 'rich'>): RichLineSeg[][] {
   return lines;
 }
 
-/** Port of `Component#wrapMeasure` (MindFlow.dc.html:893-915). */
+/** 리스트 마커(`parseListPrefix`)를 떼어낸 앞쪽 `nChars` 글자를 세그먼트 배열에서
+ * 제거한다 — 마커가 rich 런 경계에 걸쳐 있어도 안전하게. */
+function stripLeadChars(segs: RichLineSeg[], nChars: number): RichLineSeg[] {
+  let left = nChars;
+  const out: RichLineSeg[] = [];
+  segs.forEach((sg) => {
+    if (left <= 0) {
+      out.push(sg);
+      return;
+    }
+    const t = String(sg.t);
+    if (t.length <= left) {
+      left -= t.length;
+      return;
+    }
+    out.push({ ...sg, t: t.slice(left) });
+    left = 0;
+  });
+  return out;
+}
+
+/** Port of `Component#wrapMeasure` (MindFlow.dc.html:893-915).
+ *
+ * 리스트 줄(`parseListPrefix`)은 마커를 행잉 인덴트 열로 떼어내 잰다: 마커 폭
+ * (`display`, 기본 폰트)만큼 내용의 줄바꿈 허용 폭이 줄고, 각 시각 줄의 폭에는
+ * 마커 폭이 더해진다 — `NodeLayer`의 [마커|내용] flex 렌더와 같은 모델. */
 function wrapMeasure(
   node: Pick<Node, 'rich' | 'text'>,
   fpx: number,
@@ -118,7 +144,13 @@ function wrapMeasure(
     node.rich && node.rich.length ? richLines(node) : String(node.text || '주제').split('\n').map((l) => [{ t: l, b: false }]);
   let count = 0;
   let widest = 0;
-  hardLines.forEach((segs) => {
+  hardLines.forEach((rawSegs) => {
+    const lineText = rawSegs.map((s) => String(s.t)).join('');
+    const lp = parseListPrefix(lineText);
+    // 마커는 렌더에서 rich 스타일 없이(기본 폰트) 그리므로 측정도 기본 폰트로.
+    const markerW = lp ? measurer.measure(lp.display, `${fw} ${fpx}px Pretendard`) : 0;
+    const segs = lp ? stripLeadChars(rawSegs, lp.raw.length) : rawSegs;
+    const contentMaxW = Math.max(24, maxW - markerW);
     const tokens: { w: number; sp: boolean }[] = [];
     segs.forEach((sg) => {
       const f = `${sg.i ? 'italic ' : ''}${sg.b ? 800 : fw} ${fpx}px Pretendard`;
@@ -128,7 +160,7 @@ function wrapMeasure(
     let cur = 0;
     let lines = 1;
     tokens.forEach((tk) => {
-      if (cur > 0 && cur + tk.w > maxW && !tk.sp) {
+      if (cur > 0 && cur + tk.w > contentMaxW && !tk.sp) {
         lines++;
         // 후행 공백은 줄 폭에 넣지 않는다(`Math.min`) — 공백 토큰은 위 조건의
         // `!tk.sp`로 넘치더라도 그대로 더해지므로 `cur`가 maxW를 몇 px 넘을 수
@@ -136,13 +168,13 @@ function wrapMeasure(
         // 넘어 아래 과팽창 되돌림이 **엉뚱하게** 발동한다(폭을 드래그하는 동안
         // 랩 폭이 cw↔320을 오가며 줄 수가 바뀌어 높이가 튀던 버그). 마지막 줄
         // 기록(아래)에는 원래부터 있던 클램프인데 이 중간 기록에만 빠져 있었다.
-        widest = Math.max(widest, Math.min(cur, maxW));
+        widest = Math.max(widest, Math.min(markerW + cur, maxW));
         cur = tk.w;
       } else {
         cur += tk.w;
       }
     });
-    widest = Math.max(widest, Math.min(cur, maxW));
+    widest = Math.max(widest, Math.min(markerW + cur, maxW));
     count += lines;
   });
   if (!widest) widest = measurer.measure(' ', `${fw} ${fpx}px Pretendard`);
@@ -241,7 +273,13 @@ export function computeMetrics(node: Node, depth: number, measurer: TextMeasurer
  * memo's measured height matches how its text actually flows on screen). */
 function countWrappedLines(text: string, maxW: number, font: string, measurer: TextMeasurer): number {
   let total = 0;
-  for (const hard of String(text).split('\n')) {
+  for (const rawHard of String(text).split('\n')) {
+    // 리스트 줄: 마커를 행잉 인덴트 열로 떼어내고 내용만 좁아진 폭으로 잰다
+    // (`FloatLayer`의 [마커|내용] flex 렌더와 동일 모델 — wrapMeasure 참고).
+    const lp = parseListPrefix(rawHard);
+    const markerW = lp ? measurer.measure(lp.display, font) : 0;
+    const hard = lp ? rawHard.slice(lp.raw.length) : rawHard;
+    const lineMaxW = Math.max(8, maxW - markerW);
     if (!hard) {
       total += 1;
       continue;
@@ -253,7 +291,7 @@ function countWrappedLines(text: string, maxW: number, font: string, measurer: T
     for (const tk of tokens) {
       const w = measurer.measure(tk, font);
       const isSpace = /^\s+$/.test(tk);
-      if (hasContent && lineW + w > maxW && !isSpace) {
+      if (hasContent && lineW + w > lineMaxW && !isSpace) {
         lines++;
         lineW = w;
         hasContent = true;

@@ -35,6 +35,9 @@ export { HistoryStack } from './history';
 export type { RichSource, RichChar } from './richtext';
 export { runsToChars, charsToRuns, applyPartialStyle, stripRichStyle, applyMarkdownShortcuts } from './richtext';
 
+export type { ListPrefix } from './list';
+export { parseListPrefix, listDisplayLine, continueListMarker } from './list';
+
 export type { NodeSize, SizeOf, LayoutOptions } from './layout';
 export { layout } from './layout';
 
