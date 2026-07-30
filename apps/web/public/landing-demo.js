@@ -58,6 +58,10 @@
     'transition:opacity .45s ease, transform .45s cubic-bezier(.2,.9,.3,1.3);' +
     'white-space:nowrap;font-family:inherit;letter-spacing:-.01em;cursor:default;';
 
+  // ⚠️ 생성 직후 apply()로 초기 상태(숨김)까지 박아 넣는다 — opacity 기본값
+  // 1로 두면, 아래 measure()의 clientWidth 읽기가 강제한 스타일 계산이
+  // "전부 보임"을 트랜지션 기준점으로 잡아 첫 프레임에 전체 맵이 유령처럼
+  // 나타났다 사라진다(1→0 페이드가 재생됨 — 실기기 리로드 깜빡임의 원인).
   const mkNode = (x, y, css, visible, onClick) => {
     const b = document.createElement('button');
     b.type = 'button';
@@ -67,7 +71,7 @@
       b.addEventListener('click', onClick);
     }
     box.appendChild(b);
-    items.push({
+    const item = {
       apply() {
         const v = visible();
         b.style.opacity = v ? '1' : '0';
@@ -76,7 +80,9 @@
         b.tabIndex = v && onClick ? 0 : -1;
         b.setAttribute('aria-hidden', String(!v));
       },
-    });
+    };
+    items.push(item);
+    item.apply();
     return b;
   };
 
@@ -86,11 +92,13 @@
     p.setAttribute('fill', 'none');
     p.style.cssText = 'stroke:' + color + ';stroke-width:' + width + ';stroke-linecap:round;transition:opacity .5s ease';
     svg.appendChild(p);
-    items.push({
+    const item = {
       apply() {
         p.style.opacity = visible() ? String(maxOpacity) : '0';
       },
-    });
+    };
+    items.push(item);
+    item.apply();
   };
 
   const render = () => items.forEach((it) => it.apply());
@@ -130,11 +138,13 @@
       vis,
       toggle,
     );
-    items.push({
+    const tLabel = {
       apply() {
         t.textContent = open() ? '−' : '+';
       },
-    });
+    };
+    items.push(tLabel);
+    tLabel.apply();
 
     const sx = RX + b.side * 62;
     mkLine('M' + sx + ' ' + RY + ' C ' + (sx + b.side * 60) + ' ' + RY + ', ' + (bx - b.side * 70) + ' ' + by + ', ' + bx + ' ' + by, b.color, 3, 1, vis);
