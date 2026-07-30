@@ -110,16 +110,23 @@ describe('static landing.html (the crawler-visible twin)', () => {
     // 계약은 "모든 내용이 JS 없이 원문 HTML에 보인다"다(크롤러는 JS를 실행하지
     // 않으므로). 허용되는 스크립트는 둘뿐: JSON-LD 데이터 블록과, 폴백 SVG를
     // 인터랙티브 데모로 교체하는 프로그레시브 인핸서(landing-demo.js — 같은
-    // 출처, defer, 없어도 페이지는 온전). 그 외 스크립트가 생기면 실패시켜
+    // 출처, 없어도 페이지는 온전). 그 외 스크립트가 생기면 실패시켜
     // "SPA처럼 JS에 기대는 랜딩"으로의 회귀를 막는다.
     const scripts = html.match(/<script[^>]*/g) ?? [];
     for (const tag of scripts) {
-      expect(tag.includes('application/ld+json') || (tag.includes('src="/landing-demo.js"') && tag.includes('defer'))).toBe(true);
+      expect(tag.includes('application/ld+json') || tag.includes('src="/landing-demo.js"')).toBe(true);
     }
-    // 인핸서가 걷어낼 폴백 SVG가 원문에 실존해야 무JS에서도 데모가 보인다
+    // 인핸서가 걷어낼 폴백 SVG가 원문에 실존해야 무JS에서도 데모가 보인다.
+    // 원문 스타일시트가 폴백을 숨기면 안 된다 — 깜빡임 방지용 가림막은
+    // 인핸서가 실행 시점에 주입한다(JS 없으면 가림막도 없어 폴백이 보인다).
     expect(html).toContain('마인드맵 예시');
-    // 인핸서 파일 자체도 존재하고 같은 예시 문서를 그린다(쌍둥이 동기화 가드)
-    expect(readFileSync(path.join(publicDir, 'landing-demo.js'), 'utf8')).toContain('신제품 런치 플랜');
+    expect(html).not.toMatch(/\.demo-canvas\s*>\s*svg\s*\{\s*visibility:\s*hidden/);
+    // 인핸서 파일: 같은 예시 문서를 그리고(쌍둥이 동기화), 첫 페인트 전
+    // 가림막 주입 + 실패 시 폴백 복원을 갖춘다(새로고침 깜빡임 회귀 가드)
+    const demoJs = readFileSync(path.join(publicDir, 'landing-demo.js'), 'utf8');
+    expect(demoJs).toContain('신제품 런치 플랜');
+    expect(demoJs).toContain('visibility: hidden');
+    expect(demoJs).toContain('veil.remove()');
   });
 
   it('mirrors the expanded content of the React twin (use cases, steps, FAQ, chips)', () => {
