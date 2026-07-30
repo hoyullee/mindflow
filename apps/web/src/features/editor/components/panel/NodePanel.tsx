@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import type { EditorController } from '../../useEditorState';
+import { nodeFullyRich } from '../../mutations';
 import {
   AlphaSlider,
   BoldSizeRow,
@@ -114,7 +115,20 @@ export function NodePanel({ controller, nodeIds, isMobile = false }: NodePanelPr
 
         <Divider theme={th} />
         <PanelSection theme={th} title="텍스트 스타일" open={openSec === 'text'} onToggle={() => toggle('text')}>
-          <BoldSizeRow theme={th} bold={!!n.bold} size={n.tsize} onToggleBold={controller.toggleNodeBold} onSetSize={controller.setNodeTsize} />
+          <BoldSizeRow
+            theme={th}
+            bold={!!n.bold}
+            size={n.tsize}
+            onToggleBold={controller.toggleNodeBold}
+            onSetSize={controller.setNodeTsize}
+            // I·S 활성 표시는 굵게와 같은 규칙으로 REF(첫 대상) 노드 기준 — 다중 선택의
+            // 토글 방향 판정(`toggleNodesRichStyle`의 first)과 일치해 버튼 상태와 실제
+            // 동작이 어긋나지 않는다.
+            italic={nodeFullyRich(n, 'i')}
+            strike={nodeFullyRich(n, 's')}
+            onToggleItalic={() => controller.toggleNodeRichStyle('i')}
+            onToggleStrike={() => controller.toggleNodeRichStyle('s')}
+          />
           <SectionLabel theme={th}>글자 색상</SectionLabel>
           <SwatchRow theme={th} palette={[th.panel, th.text, ...th.palette]} current={n.textColor} onPick={(hex) => controller.setTextColor(hex)} onReset={() => controller.setTextColor(null)} />
         </PanelSection>

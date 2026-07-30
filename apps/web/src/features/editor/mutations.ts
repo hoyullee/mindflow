@@ -11,7 +11,7 @@
 // tree helpers rather than re-deriving that logic.
 
 import type { Float, Line, Node, NodeMap, OverlapBox, RichRun, Zone } from '@mindflow/mindmap-core';
-import { ROOT_ID, cloneNodes, computeFreeNudge, stripRichStyle } from '@mindflow/mindmap-core';
+import { ROOT_ID, charsToRuns, cloneNodes, computeFreeNudge, runsToChars, stripRichStyle } from '@mindflow/mindmap-core';
 import { descendants } from './tree';
 
 // ---- id generation (port of `Component#newId`, MindFlow.dc.html:885 — a
@@ -283,6 +283,40 @@ export function toggleNodesBold(nodes: NodeMap, ids: string[]): NodeMap {
       on.bold = !cur;
       on.rich = stripRichStyle(on.rich, 'b');
     }
+  });
+  return out;
+}
+
+/** 노드 텍스트 전체가 해당 rich 스타일로 덮여 있는가 — 패널 버튼의 활성 표시와
+ * `toggleNodesRichStyle`의 토글 기준(첫 대상)이 같이 쓴다. 빈 텍스트는 false(켤 게 없다). */
+export function nodeFullyRich(n: Node | undefined, key: 'i' | 's'): boolean {
+  if (!n || !n.text) return false;
+  const chars = runsToChars({ text: n.text, rich: n.rich });
+  return chars.length > 0 && chars.every((c) => !!c[key]);
+}
+
+/** 전체 텍스트 기울임/취소선 토글 — 굵게(`toggleNodesBold`)의 whole-node 짝이지만, 굵게와
+ * 달리 노드에 전용 필드가 없어(post-dc 확장 최소화) **rich 런을 전체 범위에 적용**하는
+ * 방식으로 구현한다: 직렬화/CRDT/골든이 이미 통과하는 기존 `rich` 경로를 그대로 타므로
+ * 모델 변경이 없고, 렌더(NodeLayer tspan)·측정(wrapMeasure)·미리보기도 이미 지원한다.
+ * 다중 선택 규칙은 굵게와 동일: FIRST 대상의 현재 상태 기준으로 전원 켜거나 전원 끈다
+ * (혼합 선택이 제각각 뒤집히지 않게). 부분 색상 등 다른 스타일은 보존된다. */
+export function toggleNodesRichStyle(nodes: NodeMap, ids: string[], key: 'i' | 's'): NodeMap {
+  const valid = ids.filter((id) => nodes[id]);
+  const first = valid[0];
+  if (!first) return nodes;
+  const on = !nodeFullyRich(nodes[first], key);
+  const out = cloneNodes(nodes);
+  valid.forEach((id) => {
+    const n = out[id];
+    if (!n) return;
+    const chars = runsToChars({ text: n.text, rich: n.rich });
+    chars.forEach((c) => {
+      if (key === 'i') c.i = on;
+      else c.s = on;
+    });
+    const runs = charsToRuns(chars).filter((r) => r.t);
+    n.rich = runs.some((r) => r.b || r.c || r.i || r.s) ? runs : null;
   });
   return out;
 }

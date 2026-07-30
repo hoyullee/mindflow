@@ -262,12 +262,14 @@ export function AlphaSlider({ theme, value, onChange }: { theme: Theme; value: n
   );
 }
 
-export function SegButton({ label, active, theme, onClick }: { label: string; active: boolean; theme: Theme; onClick: () => void }) {
+export function SegButton({ label, active, theme, onClick, title }: { label: ReactNode; active: boolean; theme: Theme; onClick: () => void; title?: string }) {
   return (
     <button
       type="button"
       className="mf-ed-btn"
       onClick={onClick}
+      title={title}
+      aria-pressed={active}
       style={{
         height: 26,
         minWidth: 30,
@@ -294,16 +296,28 @@ export function BoldSizeRow({
   size,
   onToggleBold,
   onSetSize,
+  italic,
+  strike,
+  onToggleItalic,
+  onToggleStrike,
 }: {
   theme: Theme;
   bold: boolean;
   size: 's' | 'l' | undefined;
   onToggleBold: () => void;
   onSetSize: (v: 's' | 'm' | 'l') => void;
+  /** I·S 토글(전체 텍스트 기울임/취소선) — 핸들러를 준 패널에서만 버튼이 뜬다.
+   * 노드 패널이 유일한 소비자(플로트는 rich 모델이 없어 아직 미지원). */
+  italic?: boolean;
+  strike?: boolean;
+  onToggleItalic?: () => void;
+  onToggleStrike?: () => void;
 }) {
   return (
-    <div style={{ display: 'flex', gap: 6, marginBottom: 14, alignItems: 'center' }}>
-      <SegButton label="B" active={bold} theme={theme} onClick={onToggleBold} />
+    <div style={{ display: 'flex', gap: 6, marginBottom: 14, alignItems: 'center', flexWrap: 'wrap' }}>
+      <SegButton label="B" title="굵게" active={bold} theme={theme} onClick={onToggleBold} />
+      {onToggleItalic && <SegButton label={<span style={{ fontStyle: 'italic', fontFamily: 'Georgia, serif' }}>I</span>} title="기울임" active={!!italic} theme={theme} onClick={onToggleItalic} />}
+      {onToggleStrike && <SegButton label={<span style={{ textDecoration: 'line-through' }}>S</span>} title="취소선" active={!!strike} theme={theme} onClick={onToggleStrike} />}
       <div style={{ width: 1, height: 20, background: theme.border }} />
       {SIZE_OPTIONS.map((o) => (
         <SegButton key={o.k} label={o.label} active={(size || 'm') === o.k} theme={theme} onClick={() => onSetSize(o.k)} />
