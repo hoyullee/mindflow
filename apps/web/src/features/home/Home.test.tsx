@@ -218,11 +218,12 @@ describe('Home', () => {
       return c as HTMLElement;
     });
     // Once the body is prefetched, the thumbnail is a realPreview SVG that
-    // includes the node labels (miniPreview draws no text at all).
+    // includes the node labels (miniPreview draws no text at all). 이모지는
+    // 에디터처럼 텍스트와 분리된 요소다(크기 22/17px, 좌측 고정 — mapPreview 참고).
     await waitFor(() => {
       const thumb = card.querySelector('.map-thumb') as HTMLElement;
       const labels = Array.from(thumb.querySelectorAll('svg text')).map((t) => t.textContent);
-      expect(labels).toEqual(expect.arrayContaining(['🎯 분기목표', '매출확대', '신규채용']));
+      expect(labels).toEqual(expect.arrayContaining(['🎯', '분기목표', '매출확대', '신규채용']));
     });
   });
 
@@ -536,6 +537,44 @@ describe('Home', () => {
     await waitFor(() => expect(container.querySelector('a[data-title="새 마인드맵"]')).toBeTruthy());
   });
 
+  // 신규 기능: 폴더 안에 폴더(중첩 폴더). 폴더 안에서 새 폴더를 만들면 현재
+  // 폴더가 부모가 되고, 뒤로가기는 한 계층씩 올라간다.
+  it('폴더 안에서 새 폴더를 만들면 그 폴더의 하위 폴더가 되고, 뒤로가기는 한 계층씩 올라간다', async () => {
+    const user = userEvent.setup();
+    localStorage.setItem(
+      'mf_spaces',
+      JSON.stringify({
+        spaces: [{ id: 'sf', name: '폴더공간', color: '#3f8fd0', maps: [], folders: [{ id: 'f1', name: '내폴더' }] }],
+        mapFolders: {},
+      }),
+    );
+    renderHomeWithDocStore([]);
+
+    await waitFor(() => expect(screen.getByText('내폴더')).toBeTruthy());
+    await user.click(screen.getByText('내폴더'));
+    await waitFor(() => expect(screen.getByText('이 폴더는 비어 있어요')).toBeTruthy());
+
+    // 폴더 안에서 새 폴더 생성 → 하위 폴더 카드가 이 화면에 나타난다
+    await user.click(screen.getByRole('button', { name: '새 폴더' }));
+    await user.type(screen.getByPlaceholderText('예: 기획 (최대 10자)'), '하위자료');
+    await user.click(screen.getByRole('button', { name: '만들기' }));
+    await waitFor(() => expect(screen.getByText('하위자료')).toBeTruthy());
+
+    // 하위 폴더로 진입 → 브레드크럼 전체 경로가 깊어진다
+    await user.click(screen.getByText('하위자료'));
+    await waitFor(() => expect(screen.getByTitle('폴더공간 / 내폴더 / 하위자료')).toBeTruthy());
+
+    // 뒤로가기 1회 = 상위 폴더('내폴더')로 — 하위 폴더 카드가 다시 보인다
+    await user.click(screen.getByRole('button', { name: '공간으로 돌아가기' }));
+    await waitFor(() => expect(screen.getByText('하위자료')).toBeTruthy());
+    expect(screen.getByTitle('폴더공간 / 내폴더')).toBeTruthy();
+
+    // 뒤로가기 2회 = 스페이스 최상위 — 최상위 폴더 카드('내폴더')가 보인다
+    await user.click(screen.getByRole('button', { name: '공간으로 돌아가기' }));
+    await waitFor(() => expect(screen.getByText('내폴더')).toBeTruthy());
+    expect(screen.queryByText('하위자료')).toBeNull();
+  });
+
   // 제보: 모바일 홈에서 폴더 안에 들어가면 파일을 가져올 방법이 없다. 폴더 안에서는
   // `가져오기` 버튼 자체가 사라져서, 폴더에 파일을 넣으려면 최상위로 나가 가져온 뒤
   // 다시 옮겨야 했다. 이제 폴더 안에서도 가져올 수 있고, 가져온 맵은 **그 폴더에**
@@ -580,8 +619,8 @@ describe('Home', () => {
         await waitFor(() => expect(screen.getByText('이 폴더는 비어 있어요')).toBeTruthy());
 
         expect(screen.getByRole('button', { name: '가져오기' })).toBeTruthy();
-        // 하위 폴더는 만들 수 없으므로(폴더 모델이 한 단계) 새 폴더는 계속 숨긴다.
-        expect(screen.queryByRole('button', { name: '새 폴더' })).toBeNull();
+        // 중첩 폴더: 폴더 안에서도 새 폴더를 만들 수 있다(현재 폴더가 부모가 된다).
+        expect(screen.getByRole('button', { name: '새 폴더' })).toBeTruthy();
       } finally {
         restore();
       }

@@ -179,6 +179,39 @@ export function deriveHomeView(state: HomeState): HomeViewModel {
   const curFolder = state.curFolder && folders.find((f) => f.id === state.curFolder) ? folders.find((f) => f.id === state.curFolder)! : null;
   const mapFolders = state.mapFolders;
 
+  // ---- 중첩 폴더 헬퍼 ----
+  /** 상위 폴더 체인(가까운 것부터). parent가 지워진 폴더를 만나면 거기서 끊는다. */
+  const folderAncestors = (f: FolderData): FolderData[] => {
+    const out: FolderData[] = [];
+    let cur: FolderData | undefined = f;
+    let guard = 0;
+    while (cur?.parent && guard++ < 30) {
+      cur = folders.find((x) => x.id === cur!.parent);
+      if (!cur) break;
+      out.push(cur);
+    }
+    return out;
+  };
+  /** 이동 메뉴 등에 보여줄 경로 이름("상위 / 하위"). 최상위 폴더면 이름 그대로. */
+  const folderPathName = (f: FolderData): string => [...folderAncestors(f).reverse().map((a) => a.name), f.name].join(' / ');
+  /** 해당 폴더와 그 아래 모든 하위 폴더의 id — 재귀 맵 개수 집계용. */
+  const folderTreeIds = (id: string): Set<string> => {
+    const ids = new Set<string>([id]);
+    let grew = true;
+    let guard = 0;
+    while (grew && guard++ < 30) {
+      grew = false;
+      folders.forEach((f) => {
+        if (f.parent && ids.has(f.parent) && !ids.has(f.id)) {
+          ids.add(f.id);
+          grew = true;
+        }
+      });
+    }
+    return ids;
+  };
+  const hasSubfolders = (id: string): boolean => folders.some((f) => (f.parent ?? null) === id);
+
   // Trash policy: names do NOT interfere between the trash and the spaces — a
   // trashed map and a live map may share a title. So "is this hidden?" is
   // decided by the card's own docId (is THAT doc in the trash?), never by its
@@ -209,9 +242,13 @@ export function deriveHomeView(state: HomeState): HomeViewModel {
   // Drive pseudo-space). Available whenever the user has more than one space.
   const spaceMoveTargets = state.spaces.filter((s) => s.id !== state.activeSpace).map((s) => ({ id: s.id, name: s.name }));
   const canMoveSpace = !isDriveSpace && spaceMoveTargets.length > 0;
+  // 폴더로 이동 대상: 지금 보고 있는 폴더(이미 그 안에 있음)만 뺀 전체 폴더 —
+  // 중첩 폴더가 생기면서 폴더 안에서도 다른(하위 포함) 폴더로 옮길 수 있다.
+  // 이름은 경로("상위 / 하위")로 보여 같은 이름의 폴더를 구별한다.
+  const localMoveTargets = folders.filter((f) => !curFolder || f.id !== curFolder.id).map((f) => ({ id: f.id, name: folderPathName(f) }));
   const allCards: CardViewData[] = allCardsFiltered.map((c) => {
     const hasFav = c.openable;
-    const hasMove = isDriveSpace ? !driveFolder && state.driveFolders.length > 0 : !curFolder && folders.length > 0;
+    const hasMove = isDriveSpace ? !driveFolder && state.driveFolders.length > 0 : localMoveTargets.length > 0;
     const hasUnfolder = isDriveSpace ? !!driveFolder : !!curFolder;
     const key = cardKeyOf(c.title, c.docId);
     return {
@@ -242,7 +279,7 @@ export function deriveHomeView(state: HomeState): HomeViewModel {
       showSpaceMoveRow: canMoveSpace,
       showUnfolderRow: hasUnfolder,
       showDivider: hasFav || hasMove || canMoveSpace || hasUnfolder,
-      moveTargets: (isDriveSpace ? state.driveFolders : folders).map((f) => ({ id: f.id, name: f.name })),
+      moveTargets: isDriveSpace ? state.driveFolders.map((f) => ({ id: f.id, name: f.name })) : localMoveTargets,
       spaceMoveTargets,
     };
   });
@@ -259,24 +296,36 @@ export function deriveHomeView(state: HomeState): HomeViewModel {
           isDrive: true,
         }))
       : [];
-  const localFolderCards: FolderCardViewData[] =
-    !isDriveSpace && !curFolder
-      ? folders.map((f) => {
+  // 중첩 폴더: 지금 보고 있는 계층의 폴더만 — 최상위에선 parent 없는 폴더,
+  // 폴더 안에선 그 폴더를 parent로 갖는 하위 폴더. (기존 데이터는 parent가
+  // 없으므로 전부 최상위 — 무회귀.)
+  const localFolderCards: FolderCardViewData[] = !isDriveSpace
+    ? folders
+        .filter((f) => (f.parent ?? null) === (curFolder ? curFolder.id : null))
+        .map((f) => {
           // Count from the space's ACTUAL maps (assignments are docId-keyed, so
           // key iteration can't be matched back to titles) — trashed maps are
-          // already out of `spaces`, so no deleted-check is needed.
-          const cnt = activeMaps.filter((m) => mapFolders[cardKeyOf(m.title, m.docId)] === f.id).length;
+          // already out of `spaces`, so no deleted-check is needed. 하위 폴더에
+          // 든 맵까지 재귀 집계한다(폴더 타일의 "맵 N개"가 실제 담긴 양을 말하도록).
+          const treeIds = folderTreeIds(f.id);
+          const cnt = activeMaps.filter((m) => {
+            const a = mapFolders[cardKeyOf(m.title, m.docId)];
+            return !!a && treeIds.has(a);
+          }).length;
+          const directCnt = activeMaps.filter((m) => mapFolders[cardKeyOf(m.title, m.docId)] === f.id).length;
           return {
             id: f.id,
             name: f.name,
             count: cnt,
             menuOpen: state.openMenu === 'folder:' + f.id,
             dragOver: state.dragOverFolder === f.id,
-            canDelete: cnt === 0,
+            // 삭제는 "직접 담긴 맵 0 + 하위 폴더 0"일 때만 — 하위 폴더가 있으면
+            // 지웠을 때 그 안의 것들이 고아가 되므로 막는다.
+            canDelete: directCnt === 0 && !hasSubfolders(f.id),
             isDrive: false,
           };
         })
-      : [];
+    : [];
   const folderCards = isDriveSpace ? driveFolderCardsRaw : localFolderCards;
 
   // Favorites are keyed by `cardKeyOf` (docId, title fallback), so the list is
@@ -389,12 +438,16 @@ export function deriveHomeView(state: HomeState): HomeViewModel {
   // one with neither top-level maps NOR folders. A space that has folders (but no
   // loose maps) shows just its folder section, no empty-state prompt.
   const isEmpty = !loading && !showDriveConnect && allCards.length === 0 && !curFolder && folderCards.length === 0;
-  const folderEmpty = !loading && !!curFolder && allCards.length === 0;
+  // "이 폴더는 비어 있어요"는 맵도 하위 폴더도 없을 때만 — 하위 폴더가 있으면
+  // 폴더 구획이 그려지므로 빈 안내가 그 위에 겹치면 안 된다.
+  const folderEmpty = !loading && !!curFolder && allCards.length === 0 && folderCards.length === 0;
 
-  // 제목 줄 = [상위(스페이스), 현재(폴더)] 중 폴더 안일 때만 두 조각.
+  // 제목 줄 = [상위 경로, 현재 폴더] — 중첩 폴더면 상위 경로가
+  // "스페이스 / 상위폴더 / …"로 깊어진다(헤더는 …로 접고 전체는 툴팁에).
   const rootName = isDriveSpace ? 'Google Drive' : activeSpaceObj ? activeSpaceObj.name : '일반 공간';
   const openFolderName = isDriveSpace ? driveFolder?.name : curFolder?.name;
-  const titleParent = openFolderName ? rootName : null;
+  const parentChain = curFolder ? folderAncestors(curFolder).reverse().map((f) => f.name) : [];
+  const titleParent = openFolderName ? [rootName, ...parentChain].join(' / ') : null;
   const titleLeaf = openFolderName || rootName;
 
   // 공유받은 맵 — `state.sharedMaps`(DocStore.list의 남의 문서)로만 만든다. 내
@@ -431,12 +484,12 @@ export function deriveHomeView(state: HomeState): HomeViewModel {
     folderEmpty,
     showDriveConnect,
     backVisible: !!(curFolder || driveFolder),
-    newFolderVisible: !((isDriveSpace && (!connected || driveFolder)) || curFolder),
+    // `새 폴더`는 폴더 안에서도 쓸 수 있다(중첩 폴더) — 현재 폴더가 부모가 된다
+    // (`useHomeController.saveFolderModal`). Drive 데모 폴더만 한 단계 유지.
+    newFolderVisible: !(isDriveSpace && (!connected || driveFolder)),
     // 폴더 안에서도 가져올 수 있다 — 가져온 맵은 그 폴더에 들어간다
     // (`useHomeController`의 import 커밋). 예전엔 폴더 안에서 버튼이 사라져,
     // 폴더에 파일을 넣으려면 최상위로 나가서 가져온 뒤 다시 옮겨야 했다.
-    // `새 폴더`는 계속 최상위 전용이다 — 폴더 모델이 한 단계(스페이스 → 폴더 → 맵)라
-    // 폴더 안에서 만든 폴더는 최상위에 생겨 방금 만든 게 사라진 것처럼 보인다.
     importVisible: !isDriveSpace,
     // Global cross-space tray at the top of Home. It's GLOBAL — independent of
     // which space OR folder is being browsed — so it stays visible inside
