@@ -279,10 +279,28 @@ function buildPreview(rawDoc: string, hueFallback: string): JSX.Element | null {
     return palette[(idx < 0 ? 0 : idx) % palette.length]!;
   };
 
+  /** 에디터(buildVisible)와 동일한 깊이: 루트 트리는 부모 사슬 길이, **자유
+   * 도형 서브트리는 +1**(에디터는 free 루트를 depth 1부터 그린다). 이걸 어기면
+   * 자식 없는 free 도형(레이아웃이 sizeOf를 안 불러 metricsById에 없음)의
+   * 폴백 측정이 박스(depth 1)와 텍스트(depth 0)로 갈라져 20px 텍스트가 15px
+   * 기준 박스를 계통적으로 벗어났다(실기기 제보 — 라인으로 이어 둔 노트
+   * 도형들의 텍스트가 전부 상자 밖으로 삐져나옴). */
+  const depthOf = (id: string): number => {
+    let dep = 0;
+    let cur: DocNode | undefined = nodes[id];
+    let guard = 0;
+    while (cur && cur.parent && guard++ < 50) {
+      dep++;
+      cur = nodes[cur.parent];
+    }
+    if (cur && cur.free) dep += 1;
+    return dep;
+  };
+
   const dim = (id: string): { w: number; h: number } => {
     const rec = metricsById[id];
     if (rec) return { w: rec.w, h: rec.h };
-    const m = computeMetrics(nodes[id] as unknown as CoreNode, id === root ? 0 : 1, previewMeasurer);
+    const m = computeMetrics(nodes[id] as unknown as CoreNode, depthOf(id), previewMeasurer);
     return { w: m.w, h: m.h };
   };
   /** Editor-identical text metrics for a node (fpx/fw/depth): recorded during
@@ -372,17 +390,6 @@ function buildPreview(rawDoc: string, hueFallback: string): JSX.Element | null {
     );
   });
 
-  const depthOf = (id: string): number => {
-    let dep = 0;
-    let cur: DocNode | undefined = nodes[id];
-    let guard = 0;
-    while (cur && cur.parent && guard++ < 50) {
-      dep++;
-      cur = nodes[cur.parent];
-    }
-    return dep;
-  };
-
   // Connector shape follows the doc's edgeStyle (곡선/꺾은선/직선) and layout
   // mode, via the SAME `buildEdgePath` the editor's EdgeLayer uses — previously
   // the preview always drew a cubic curve, ignoring edgeStyle. `buildEdgePath`
@@ -465,7 +472,6 @@ function buildPreview(rawDoc: string, hueFallback: string): JSX.Element | null {
     // (the plain `text` colour for the box-less underline shape), body nodes
     // use the theme `text` colour — both overridden by an explicit `textColor`.
     const baseTextColor = n.textColor || (isRoot ? (shape === 'underline' ? TH.text : TH.accentInk) : TH.text);
-    const fontWeight = n.bold ? 800 : isRoot ? 800 : 600;
     // Render the text WRAPPED, at the editor's font size (`fpx`) and its exact
     // line breaks (same measurer + token model + content width `MAXW` that
     // `computeMetrics` sized the box with) — so the thumbnail's text flows like
@@ -474,6 +480,9 @@ function buildPreview(rawDoc: string, hueFallback: string): JSX.Element | null {
     // 줄바꿈 폭은 metrics가 실제 사용한 값(wrapW)을 그대로 — cw 과팽창 되돌림
     // (computeMetrics 참고)까지 포함해 에디터와 동일한 줄바꿈을 보장한다.
     const MAXW = wrapW;
+    // 굵기도 측정에 쓴 fw 그대로 — 에디터(g.fw)와 동일. 예전엔 600/800으로
+    // 더 굵게 그려(측정은 500/700) 렌더 폭이 측정 폭을 몇 % 넘었다.
+    const fontWeight = n.bold ? 800 : fw;
     const runs: WrapSeg[] = Array.isArray(n.rich) && n.rich.length ? (n.rich as WrapSeg[]) : [{ t: n.text || '' }];
     const wrapped = wrapRuns(runs, MAXW, fpx, fw, previewMeasurer);
     const hasText = wrapped.some((ln) => ln.some((s) => s.t.trim()));
