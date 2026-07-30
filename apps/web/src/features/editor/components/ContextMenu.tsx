@@ -52,11 +52,17 @@ export function ContextMenu({ controller }: ContextMenuProps) {
     function onKey(e: KeyboardEvent): void {
       if (e.key === 'Escape') controller.closeCtxMenu();
     }
-    window.addEventListener('mousedown', onDown);
-    window.addEventListener('keydown', onKey);
+    // ⚠️ 캡처 단계로 듣는다. 버블 리스너였을 때: 노드 텍스트 편집 박스는
+    // mousedown을 stopPropagation한다(배경 마퀴 누수 차단 — NodeEditBox 참고).
+    // React는 루트 컨테이너에서 위임 처리하므로 그 stopPropagation이 window까지의
+    // 네이티브 버블도 끊고, 편집 중 우클릭으로 메뉴를 연 뒤 편집 박스 안에서
+    // 텍스트를 선택하면 이 리스너가 아예 안 불려 메뉴가 계속 떠 있었다(제보).
+    // 캡처는 어떤 stopPropagation보다 먼저 내려오면서 실행된다.
+    window.addEventListener('mousedown', onDown, true);
+    window.addEventListener('keydown', onKey, true);
     return () => {
-      window.removeEventListener('mousedown', onDown);
-      window.removeEventListener('keydown', onKey);
+      window.removeEventListener('mousedown', onDown, true);
+      window.removeEventListener('keydown', onKey, true);
     };
   }, [ctxMenu, controller]);
 

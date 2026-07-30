@@ -369,6 +369,21 @@ describe('텍스트 서식 툴바 노출 조건 — 편집 중 상시 노출', (
     expect(toolbar(container)).toBeNull();
   });
 
+  it('열린 우클릭 메뉴는 편집 박스 안에서 선택을 시작(mousedown)해도 닫힌다', () => {
+    // 제보: 편집 중 우클릭으로 메뉴를 연 뒤 편집 중인 텍스트를 선택해도 메뉴가
+    // 남아 있었다 — 편집 박스의 mousedown stopPropagation이 메뉴의 버블 단계
+    // 바깥클릭 리스너까지 끊었기 때문. 캡처 단계 리스너로 고쳤다(ContextMenu).
+    localStorage.setItem('mindflow_doc_tb6', JSON.stringify(DOC));
+    const { container } = renderEditor('/editor?map=tb6&title=x');
+    const editor = startEditingNode(container, 'c1');
+
+    fireEvent.contextMenu(getViewport(container), { clientX: 40, clientY: 40 });
+    expect(within(getViewport(container)).queryByText('도형 추가')).toBeTruthy(); // bg 메뉴가 떴다
+
+    fireEvent.mouseDown(editor); // 편집 박스 안에서 텍스트 선택 시작
+    expect(within(getViewport(container)).queryByText('도형 추가')).toBeNull();
+  });
+
   it('선택 없이 B를 누르면 전체 텍스트가 굵어진다', () => {
     localStorage.setItem('mindflow_doc_tb5', JSON.stringify(DOC));
     const { container } = renderEditor('/editor?map=tb5&title=x');
