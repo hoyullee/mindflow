@@ -419,7 +419,9 @@ interface NodeEditBoxProps {
  * `controller.applyPartial`) — the floating toolbar stays visible for the WHOLE edit
  * session (opened in the mount effect below). Enter (non-IME, non-shift) commits via
  * `commitNodeRichText`; Shift+Enter inserts a line break (the browser's own
- * `contentEditable` default, left un-intercepted); Escape cancels. */
+ * `contentEditable` default, left un-intercepted); Escape cancels. Ctrl/Cmd+B·I are
+ * intercepted and routed to `applyPartial` (see `onKeyDown` below — the browser's own
+ * bold toggle turns the WRONG way inside already-bold node boxes). */
 function NodeEditBox({ id, n, boxStyle, align, controller }: NodeEditBoxProps) {
   const ref = useRef<HTMLDivElement | null>(null);
 
@@ -478,6 +480,27 @@ function NodeEditBox({ id, n, boxStyle, align, controller }: NodeEditBoxProps) {
       onKeyDown={(e) => {
         e.stopPropagation();
         const composing = e.nativeEvent.isComposing || e.keyCode === 229;
+        // Ctrl/Cmd+B·I는 브라우저 기본(execCommand bold/italic) 대신 우리
+        // `applyPartial`로 라우팅한다. 기본 동작에 맡기면 루트(700)·1단계(600)
+        // 노드처럼 박스 자체가 굵은 곳에서 브라우저가 "이미 굵다"고 판단해
+        // 토글을 **끄는** 쪽으로 동작 — `font-weight: normal`(400) 스팬을 심어
+        // 기본보다 얇아 보이고, 커밋 시 `domToRuns`가 400을 b:false(무서식)로
+        // 읽어 되돌아가는 "눌러도 얇아졌다 복원되는" 버그가 됐다(제보).
+        // `applyPartial`은 툴바 버튼과 동일 경로(800 고정, 선택 없으면 전체 적용).
+        if ((e.ctrlKey || e.metaKey) && !e.altKey && !composing) {
+          const k = e.key.toLowerCase();
+          if (k === 'b' || k === 'i') {
+            e.preventDefault();
+            controller.applyPartial(k);
+            return;
+          }
+          if (k === 'u') {
+            // 밑줄은 서식 모델에 없다 — 기본 동작을 그냥 두면 편집 중엔 밑줄이
+            // 보이다가 커밋 때 소리 없이 사라진다(domToRuns가 무시). 차라리 무시.
+            e.preventDefault();
+            return;
+          }
+        }
         if (e.key === 'Enter' && !composing && !e.shiftKey) {
           e.preventDefault();
           controller.commitNodeRichText(id, ref.current);
