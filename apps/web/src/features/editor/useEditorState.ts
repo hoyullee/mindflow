@@ -1228,6 +1228,23 @@ export function useEditorState(): EditorController {
   const closeCtxMenu = useCallback(() => {
     setCtxMenu(null);
     setCtxSub(null);
+    // 편집 세션이 계속이면 서식 툴바를 되살린다 — 툴바는 편집 중 상시 노출이
+    // 계약인데(NodeEditBox 마운트에서 열림), 우클릭 메뉴가 열리며 내려간 뒤
+    // (openCtxAt의 setTextCtx(null)) 메뉴만 닫히면 편집은 그대로인데 툴바가
+    // 돌아오지 않았다(제보). richElRef는 편집 박스가 마운트된 동안만 채워지므로
+    // "편집 중"의 근거로 쓴다. 앵커 계산은 NodeEditBox 마운트와 동일.
+    const ed = richElRef.current;
+    if (ed && ed.isConnected) {
+      const box = ed.closest('[data-node-id]') as HTMLElement | null;
+      const vpEl = ed.closest('.mf-ed-vp');
+      if (box && vpEl && typeof box.getBoundingClientRect === 'function' && typeof vpEl.getBoundingClientRect === 'function') {
+        const br = box.getBoundingClientRect();
+        const vr = vpEl.getBoundingClientRect();
+        setTextCtx({ sx: br.left + br.width / 2 - vr.left, sy: br.top - vr.top });
+      } else {
+        setTextCtx({ sx: 0, sy: 60 }); // rect를 못 읽는 환경(jsdom) — 위치만 폴백
+      }
+    }
   }, []);
 
   const toggleCtxSub = useCallback((top: number) => {

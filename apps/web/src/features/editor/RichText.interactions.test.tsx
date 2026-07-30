@@ -382,6 +382,21 @@ describe('텍스트 서식 툴바 노출 조건 — 편집 중 상시 노출', (
 
     fireEvent.mouseDown(editor); // 편집 박스 안에서 텍스트 선택 시작
     expect(within(getViewport(container)).queryByText('도형 추가')).toBeNull();
+    // 후속 제보: 메뉴가 닫히면(편집은 계속) 상시 노출 계약대로 툴바가 되살아나야 한다
+    expect(toolbar(container)).toBeTruthy();
+  });
+
+  it('우클릭 메뉴를 Escape로 닫아도(편집 유지) 툴바가 되살아난다', () => {
+    localStorage.setItem('mindflow_doc_tb7', JSON.stringify(DOC));
+    const { container } = renderEditor('/editor?map=tb7&title=x');
+    startEditingNode(container, 'c1');
+
+    fireEvent.contextMenu(getViewport(container), { clientX: 40, clientY: 40 });
+    expect(toolbar(container)).toBeNull(); // 메뉴가 뜨며 툴바는 내려갔다
+
+    fireEvent.keyDown(window, { key: 'Escape' });
+    expect(within(getViewport(container)).queryByText('도형 추가')).toBeNull(); // 메뉴 닫힘
+    expect(toolbar(container)).toBeTruthy(); // 편집은 계속 → 툴바 복귀
   });
 
   it('선택 없이 B를 누르면 전체 텍스트가 굵어진다', () => {
