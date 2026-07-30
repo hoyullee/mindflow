@@ -416,8 +416,8 @@ interface NodeEditBoxProps {
  * text box (MindFlow.dc.html:1200-1224): seeds its innerHTML from the node's existing
  * `rich` runs on mount (`runsToHtml`), focuses + selects all its content, and supports
  * partial bold/color styling on a text *selection* within it (`TextToolbar.tsx`,
- * `controller.applyPartial`) — a drag-selection inside this box opens that floating
- * toolbar (`checkSelectionToolbar` below). Enter (non-IME, non-shift) commits via
+ * `controller.applyPartial`) — the floating toolbar stays visible for the WHOLE edit
+ * session (opened in the mount effect below). Enter (non-IME, non-shift) commits via
  * `commitNodeRichText`; Shift+Enter inserts a line break (the browser's own
  * `contentEditable` default, left un-intercepted); Escape cancels. */
 function NodeEditBox({ id, n, boxStyle, align, controller }: NodeEditBoxProps) {
@@ -437,6 +437,20 @@ function NodeEditBox({ id, n, boxStyle, align, controller }: NodeEditBoxProps) {
     const sel = window.getSelection();
     sel?.removeAllRanges();
     sel?.addRange(range);
+    // 서식 툴바는 편집 세션 동안 **상시 노출**(사용자 결정) — 예전엔 드래그
+    // 선택이 있을 때만 떠서, 선택을 풀면 사라져 "서식 기능이 없는 것처럼"
+    // 보였다. 노드 박스 위에 고정으로 열고, 닫히는 경우는 편집 종료(커밋/취소가
+    // textCtx를 지움)와 다른 메뉴 열림(openCtxAt)뿐이다. 선택 없이 버튼을
+    // 누르면 전체 텍스트에 적용된다(applyPartial 참고).
+    const box = el.closest('[data-node-id]') as HTMLElement | null;
+    const vpEl = el.closest('.mf-ed-vp');
+    if (box && vpEl && typeof box.getBoundingClientRect === 'function' && typeof vpEl.getBoundingClientRect === 'function') {
+      const br = box.getBoundingClientRect();
+      const vr = vpEl.getBoundingClientRect();
+      controller.openTextCtx(br.left + br.width / 2 - vr.left, br.top - vr.top);
+    } else {
+      controller.openTextCtx(0, 60); // rect를 못 읽는 환경(jsdom) — 위치만 폴백
+    }
     return () => controller.setRichEditorEl(null);
     // Mount-once (empty deps): this box only ever exists for the DURATION of one edit
     // session — `NodeBox` renders it exclusively while `editing` is true, so "on mount"
@@ -444,33 +458,6 @@ function NodeEditBox({ id, n, boxStyle, align, controller }: NodeEditBoxProps) {
     // persistent DOM node (reused across renders, hence its own `data-init`-keyed guard
     // to avoid re-seeding the innerHTML mid-edit, MindFlow.dc.html:1204-1210).
   }, []);
-
-  /** Opens the floating partial-style toolbar near the current selection, if any —
-   * called after every mouseup/keyup so a drag-selection (mouse) or a shift+arrow
-   * selection (keyboard) both surface it. A collapsed selection (plain caret move) is a
-   * no-op here; the toolbar was already closed by `TextToolbar`'s own outside-mousedown
-   * listener when this mousedown/keydown started. */
-  function checkSelectionToolbar(): void {
-    const el = ref.current;
-    if (!el) return;
-    const ws = window.getSelection();
-    // 선택이 사라졌으면 **닫는다** — 예전엔 그냥 return해서 툴바가 남았다(제보: 노출
-    // 조건이 꼬였다). 마우스로 캐럿을 옮기는 경우는 `TextToolbar`의 window mousedown
-    // 리스너가 닫아 주지만, **키보드에는 그 경로가 없다** — 화살표로 선택을 풀거나
-    // 선택 위에 그대로 타이핑하면 아무것도 선택되지 않은 채 툴바가 계속 떠 있었다.
-    if (!ws || ws.isCollapsed || !ws.rangeCount || !ws.anchorNode || !el.contains(ws.anchorNode)) {
-      controller.closeTextCtx();
-      return;
-    }
-    // `Range#getBoundingClientRect` is unimplemented in jsdom (real browsers all support
-    // it) — fall back to a zero rect rather than let a test environment crash here; the
-    // toolbar still opens (just anchored at the viewport's own top-left in that case).
-    const range = ws.getRangeAt(0);
-    const rect = typeof range.getBoundingClientRect === 'function' ? range.getBoundingClientRect() : { left: 0, top: 0, width: 0 };
-    const vpEl = el.closest('.mf-ed-vp');
-    const vpRect = vpEl && typeof vpEl.getBoundingClientRect === 'function' ? vpEl.getBoundingClientRect() : { left: 0, top: 0 };
-    controller.openTextCtx(rect.left + rect.width / 2 - vpRect.left, rect.top - vpRect.top);
-  }
 
   return (
     <div
@@ -480,10 +467,7 @@ function NodeEditBox({ id, n, boxStyle, align, controller }: NodeEditBoxProps) {
       suppressContentEditableWarning
       onMouseDown={(e) => e.stopPropagation()}
       onPointerDown={(e) => e.stopPropagation()}
-      onMouseUp={(e) => {
-        e.stopPropagation();
-        checkSelectionToolbar();
-      }}
+      onMouseUp={(e) => e.stopPropagation()}
       // 편집 중의 더블클릭(단어 선택)은 여기서 멈춘다. 안 그러면 노드 박스의
       // `onDoubleClick`까지 올라가 `startEditNode`가 다시 불리고, 그 안의
       // `setTextCtx(null)`이 **방금 뜬 서식 툴바를 바로 닫아** 버렸다(제보:
@@ -502,10 +486,7 @@ function NodeEditBox({ id, n, boxStyle, align, controller }: NodeEditBoxProps) {
           controller.cancelNodeEdit();
         }
       }}
-      onKeyUp={(e) => {
-        e.stopPropagation();
-        checkSelectionToolbar();
-      }}
+      onKeyUp={(e) => e.stopPropagation()}
       onBlur={() => controller.commitNodeRichText(id, ref.current)}
       style={{
         border: 'none',

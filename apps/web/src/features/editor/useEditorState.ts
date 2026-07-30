@@ -1154,6 +1154,9 @@ export function useEditorState(): EditorController {
    * part of an active multi-selection keeps the WHOLE group selected and opens the `'multi'`
    * menu instead (port of the `curM`/`inSel` check, MindFlow.dc.html:2797-2802). */
   function openCtxAt(clientX: number, clientY: number): void {
+    // 다른 메뉴가 올라오면 서식 툴바는 내린다 — 편집 세션 동안 상시 노출로
+    // 바뀐 뒤(아래 openTextCtx 주석), 두 팝업이 겹치지 않게 하는 유일한 규칙.
+    setTextCtx(null);
     const vp = viewportRef.current;
     const p = toCanvasPoint(clientX, clientY, vp);
     const el = viewportElRef.current;
@@ -1206,6 +1209,7 @@ export function useEditorState(): EditorController {
    * `sx`/`sy`는 `.mf-ed-vp` 박스 기준(= 바가 쓰는 좌표계와 동일).
    */
   const openCtxMenuForSelection = useCallback((anchor: { x: number; top: number; bottom: number }) => {
+    setTextCtx(null); // 우클릭 메뉴와 동일 — 다른 메뉴가 뜨면 서식 툴바는 내린다
     const vp = viewportRef.current;
     const sx = anchor.x;
     const sy = anchor.bottom;
@@ -1940,9 +1944,16 @@ export function useEditorState(): EditorController {
       { container: rng.startContainer, offset: rng.startOffset },
       { container: rng.endContainer, offset: rng.endOffset },
     ]);
-    const a = lin.pos[0] ?? 0;
-    const b = lin.pos[1] ?? 0;
+    let a = lin.pos[0] ?? 0;
+    let b = lin.pos[1] ?? 0;
     const parsed = domToRuns(ed);
+    // 선택이 없으면(캐럿만) 전체 텍스트에 적용 — 툴바가 편집 세션 동안 상시
+    // 노출되므로, 선택 없이 누른 버튼이 아무 일도 안 하면 죽은 것처럼 보인다.
+    if (a === b) {
+      a = 0;
+      b = parsed.text.length;
+      if (!b) return;
+    }
     const next = applyPartialStyle(parsed, a, b, kind, val ?? null);
     ed.innerHTML = runsToHtml(next);
     setLinearSelection(ed, Math.min(a, b), Math.max(a, b));

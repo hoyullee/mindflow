@@ -323,63 +323,64 @@ describe('partial rich-text styling — plain commit', () => {
   });
 });
 
-// 제보: 텍스트 서식 툴바의 **노출 조건이 꼬였다**. 원인은 `checkSelectionToolbar`가
-// 선택이 없어졌을 때 툴바를 닫지 않고 그냥 return한 것 — 마우스로 캐럿을 옮기는 경우는
-// `TextToolbar`의 window mousedown 리스너가 닫아 주지만 **키보드에는 그 경로가 없어서**,
-// 화살표로 선택을 풀거나 선택 위에 그대로 타이핑하면 아무것도 선택되지 않은 채 툴바가
-// 계속 떠 있었다.
-describe('텍스트 서식 툴바 노출 조건', () => {
+// 노출 규칙 개정(사용자 결정): 선택이 있을 때만 떴다 사라지는 방식은 "선택을
+// 풀면 서식 기능이 없는 것처럼" 보였다. 이제 **편집 세션 동안 상시 노출** —
+// 편집을 시작하면 뜨고, 닫히는 건 편집 종료(커밋/취소)와 다른 메뉴(우클릭)가
+// 열릴 때뿐이다. 선택 없이 버튼을 누르면 전체 텍스트에 적용된다.
+describe('텍스트 서식 툴바 노출 조건 — 편집 중 상시 노출', () => {
   const toolbar = (container: HTMLElement) => within(getViewport(container)).queryByTitle(/선택 영역 굵게/);
 
-  it('선택이 있으면 뜬다', () => {
+  it('편집을 시작하면 선택이 없어도 바로 뜬다', () => {
     localStorage.setItem('mindflow_doc_tb1', JSON.stringify(DOC));
     const { container } = renderEditor('/editor?map=tb1&title=x');
-    const editor = startEditingNode(container, 'c1');
-
-    expect(toolbar(container)).toBeNull();
-    selectAndOpenToolbar(editor, 6, 11);
+    startEditingNode(container, 'c1');
     expect(toolbar(container)).toBeTruthy();
   });
 
-  it('키보드로 선택을 풀면 닫힌다 (화살표)', () => {
+  it('캐럿만 옮기거나 타이핑해도 계속 떠 있다', () => {
     localStorage.setItem('mindflow_doc_tb2', JSON.stringify(DOC));
     const { container } = renderEditor('/editor?map=tb2&title=x');
     const editor = startEditingNode(container, 'c1');
 
-    selectAndOpenToolbar(editor, 6, 11);
+    setLinearSelection(editor, 11, 11); // 캐럿만 (선택 없음)
+    fireEvent.keyUp(editor, { key: 'ArrowRight' });
     expect(toolbar(container)).toBeTruthy();
 
-    // 화살표로 캐럿만 옮긴 상태 = 선택 없음
-    setLinearSelection(editor, 11, 11);
-    fireEvent.keyUp(editor, { key: 'ArrowRight' });
-    expect(toolbar(container)).toBeNull();
+    fireEvent.mouseDown(editor); // 편집 박스 안 클릭도 닫지 않는다
+    fireEvent.mouseUp(editor);
+    expect(toolbar(container)).toBeTruthy();
   });
 
-  it('선택 위에 타이핑하면 닫힌다', () => {
+  it('편집을 마치면(커밋) 닫힌다', async () => {
     localStorage.setItem('mindflow_doc_tb3', JSON.stringify(DOC));
     const { container } = renderEditor('/editor?map=tb3&title=x');
     const editor = startEditingNode(container, 'c1');
+    fireEvent.keyDown(editor, { key: 'Enter' });
+    await waitFor(() => expect(toolbar(container)).toBeNull());
+  });
 
-    selectAndOpenToolbar(editor, 6, 11);
+  it('우클릭(컨텍스트) 메뉴가 열리면 닫힌다 — 팝업 두 개가 겹치지 않게', () => {
+    localStorage.setItem('mindflow_doc_tb4', JSON.stringify(DOC));
+    const { container } = renderEditor('/editor?map=tb4&title=x');
+    startEditingNode(container, 'c1');
     expect(toolbar(container)).toBeTruthy();
 
-    // 입력이 선택을 대체하면 캐럿만 남는다
-    setLinearSelection(editor, 7, 7);
-    fireEvent.keyUp(editor, { key: 'a' });
+    fireEvent.contextMenu(getViewport(container), { clientX: 40, clientY: 40 });
     expect(toolbar(container)).toBeNull();
   });
 
-  it('마우스로 캐럿만 옮겨도 닫힌다', () => {
-    localStorage.setItem('mindflow_doc_tb4', JSON.stringify(DOC));
-    const { container } = renderEditor('/editor?map=tb4&title=x');
+  it('선택 없이 B를 누르면 전체 텍스트가 굵어진다', () => {
+    localStorage.setItem('mindflow_doc_tb5', JSON.stringify(DOC));
+    const { container } = renderEditor('/editor?map=tb5&title=x');
     const editor = startEditingNode(container, 'c1');
 
-    selectAndOpenToolbar(editor, 6, 11);
-    expect(toolbar(container)).toBeTruthy();
-
-    setLinearSelection(editor, 3, 3);
-    fireEvent.mouseUp(editor);
-    expect(toolbar(container)).toBeNull();
+    setLinearSelection(editor, 4, 4); // 캐럿만
+    clickToolbarButton(within(getViewport(container)).getByTitle(/선택 영역 굵게/));
+    expect(editor.innerHTML).toContain('font-weight:800');
+    expect(editor.textContent).toBe('hello world');
+    // 적용 뒤 전체가 선택돼 있어 한 번 더 누르면 토글 해제된다
+    clickToolbarButton(within(getViewport(container)).getByTitle(/선택 영역 굵게/));
+    expect(editor.innerHTML).not.toContain('font-weight:800');
   });
 });
 
