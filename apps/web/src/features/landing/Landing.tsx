@@ -27,25 +27,25 @@ import './landing.css';
  */
 
 const CASES: { no: string; title: string; body: string }[] = [
-  { no: '01', title: '브레인스토밍', body: '회의에서든 혼자서든, 떠오르는 생각을 막힘없이 빠르게 펼쳐요.' },
-  { no: '02', title: '학습 노트', body: '강의와 책의 핵심을 구조로 묶어 오래 기억에 남게 정리해요.' },
-  { no: '03', title: '프로젝트 기획', body: '목표에서 할 일로 가지를 뻗어 큰 그림과 세부 계획을 함께 세워요.' },
-  { no: '04', title: '회의록', body: '논의의 흐름을 실시간으로 정리하고 참석자와 바로 공유해요.' },
-  { no: '05', title: '글쓰기 개요', body: '글의 뼈대를 먼저 짜고 살을 붙여, 논리의 흐름을 놓치지 않아요.' },
-  { no: '06', title: '의사결정', body: '선택지와 근거를 한눈에 늘어놓고 비교해 더 나은 결정을 내려요.' },
+  { no: '01', title: '브레인스토밍', body: '회의 중이든 혼자 고민할 때든, 떠오르는 생각을 놓치지 않고 바로바로 펼쳐 보세요.' },
+  { no: '02', title: '학습 노트', body: '강의나 책에서 얻은 내용을 구조로 엮어 두면 훨씬 오래 기억에 남아요.' },
+  { no: '03', title: '프로젝트 기획', body: '목표에서 시작해 할 일까지 가지를 뻗다 보면 큰 그림과 세부 계획이 한 번에 잡혀요.' },
+  { no: '04', title: '회의록', body: '오가는 이야기를 그 자리에서 정리하고, 회의가 끝나면 바로 공유하세요.' },
+  { no: '05', title: '글쓰기 개요', body: '뼈대를 먼저 세우고 살을 붙여 나가면 글의 흐름이 흔들리지 않아요.' },
+  { no: '06', title: '의사결정', body: '선택지와 근거를 한눈에 펼쳐 놓고 차분히 비교해 보세요. 결정이 한결 쉬워져요.' },
 ];
 
 const STEPS: { no: string; title: string; body: string }[] = [
-  { no: '1', title: '중심 주제를 적어요', body: '정리하고 싶은 하나의 주제를 화면 가운데에 놓는 것으로 시작해요.' },
-  { no: '2', title: '가지를 뻗어 이어요', body: '떠오르는 생각을 자식·형제 노드로 이어 붙이며 자연스럽게 구조를 만들어요.' },
-  { no: '3', title: '저장하고 공유해요', body: '자동으로 저장되고, 완성한 맵은 이미지나 파일로 내보내 함께 나눠요.' },
+  { no: '1', title: '중심 주제를 적어요', body: '정리하고 싶은 주제를 화면 한가운데에 적어 보세요. 그게 시작이에요.' },
+  { no: '2', title: '가지를 뻗어 이어요', body: '떠오르는 생각을 하나씩 가지로 이어 붙이다 보면 자연스럽게 구조가 잡혀요.' },
+  { no: '3', title: '저장하고 공유해요', body: '그리는 동안 자동으로 저장돼요. 완성한 맵은 이미지나 파일로 내보내 함께 볼 수 있어요.' },
 ];
 
 const FAQS: { q: string; a: string }[] = [
-  { q: '정말 무료인가요?', a: '네. 별도의 설치나 결제 없이 지금 바로 시작할 수 있어요.' },
-  { q: '설치해야 하나요?', a: '아니요. 웹 브라우저만 있으면 됩니다. 모바일에서는 홈 화면에 추가하면 앱처럼 전체 화면으로 쓸 수 있어요.' },
-  { q: '만든 맵은 안전하게 보관되나요?', a: '편집하는 동안 자동으로 저장되고, 로그인하면 여러 기기에서 같은 맵을 이어서 볼 수 있어요.' },
-  { q: '다른 곳으로 내보낼 수 있나요?', a: '완성한 맵을 PNG 이미지, Markdown, JSON으로 내보내 다른 문서나 도구로 바로 옮길 수 있어요.' },
+  { q: '정말 무료인가요?', a: '네, 지금은 모든 기능을 무료로 쓸 수 있어요. 결제 정보를 등록할 필요도 없어요.' },
+  { q: '설치해야 하나요?', a: '아니요, 웹 브라우저만 있으면 바로 쓸 수 있어요. 휴대폰에서는 홈 화면에 추가해 두면 앱처럼 쓸 수 있고요.' },
+  { q: '만든 맵은 안전하게 보관되나요?', a: '그리는 동안 자동으로 저장되니 잃어버릴 걱정은 하지 않으셔도 돼요. 로그인하면 어떤 기기에서든 이어서 볼 수 있어요.' },
+  { q: '다른 곳으로 내보낼 수 있나요?', a: '네, PNG 이미지나 Markdown, JSON 파일로 내보낼 수 있어요. 보고서나 다른 도구에 바로 옮겨 쓰기 좋아요.' },
 ];
 
 /* ─── 히어로 데모: 스스로 자라나는 미니 마인드맵 (dc 원본 buildMap 이식) ─── */
@@ -352,7 +352,7 @@ export function Landing() {
           <br />
           하나의 그림으로.
         </h1>
-        <p className="hero-sub">중심 주제 하나에서 가지를 뻗으면 복잡한 생각이 한눈에 정리돼요. 그리오는 떠올리는 속도를 그대로 따라오는 마인드맵 서비스예요.</p>
+        <p className="hero-sub">머릿속에 흩어져 있던 생각도 가지를 뻗다 보면 어느새 한눈에 들어와요. 그리오는 생각나는 대로 빠르게 그릴 수 있는 마인드맵 서비스예요.</p>
         <div className="hero-ctas">
           <Link className="cta" to={ctaHref}>
             무료로 시작하기 <span aria-hidden="true">→</span>
@@ -361,7 +361,7 @@ export function Landing() {
             데모 둘러보기
           </a>
         </div>
-        <p className="hero-note">가입 30초 · 카드 등록 없이 · 만든 맵은 언제든 내보내기</p>
+        <p className="hero-note">가입은 30초면 충분 · 카드 등록 없음 · 만든 맵은 언제든 내보내기</p>
       </section>
 
       <section id="demo" className="demo-wrap">
@@ -373,7 +373,7 @@ export function Landing() {
           <div className="sec-head">
             <span className="eyebrow mono">USE CASES</span>
             <h2>생각을 정리해야 하는 모든 순간에</h2>
-            <p>떠오르는 아이디어부터 복잡한 계획까지, 그리오 하나로 펼치고 이어보세요.</p>
+            <p>번뜩이는 아이디어부터 복잡한 계획까지, 그리오 하나면 충분해요.</p>
           </div>
           <div className="case-grid">
             {CASES.map((c) => (
@@ -392,7 +392,7 @@ export function Landing() {
           <div className="sec-head" style={{ marginBottom: 32 }}>
             <span className="eyebrow mono">HOW IT WORKS</span>
             <h2>3단계면 충분해요</h2>
-            <p>복잡한 사용법은 없어요. 중심 주제 하나에서 시작하면 됩니다.</p>
+            <p>어려운 사용법은 없어요. 중심 주제 하나만 적으면 바로 시작이에요.</p>
           </div>
           <div className="step-grid">
             {STEPS.map((s) => (
@@ -410,13 +410,13 @@ export function Landing() {
         <div className="container">
           <div className="sec-head">
             <span className="eyebrow mono">FEATURES</span>
-            <h2>생각의 속도를 따라오는 도구</h2>
+            <h2>생각의 속도를 놓치지 않는 도구</h2>
           </div>
 
           <div className="feature">
             <div className="body">
               <h3>자유로운 마인드맵</h3>
-              <p>노드·도형·메모·연결선·영역으로 생각을 원하는 자리에 놓고, 색과 스타일로 구조를 드러내세요.</p>
+              <p>노드, 도형, 메모, 연결선, 영역까지 — 생각을 원하는 자리에 자유롭게 놓고, 색과 스타일로 나만의 지도를 완성해 보세요.</p>
               <div className="chips">
                 <span className="chip">6가지 테마</span>
                 <span className="chip">방사형·조직도 레이아웃</span>
@@ -453,7 +453,7 @@ export function Landing() {
           <div className="feature">
             <div className="body">
               <h3>어디서나 이어서</h3>
-              <p>웹과 모바일(PWA) 어디서든 열립니다. 자동 저장과 기기 간 동기화로 생각의 흐름이 끊기지 않아요.</p>
+              <p>컴퓨터로 그리던 맵을 이동 중에는 휴대폰으로 이어서 그려 보세요. 자동 저장과 기기 간 동기화 덕분에 흐름이 끊기지 않아요.</p>
               <div className="chips">
                 <span className="chip">자동 저장</span>
                 <span className="chip">오프라인 지원</span>
@@ -503,7 +503,7 @@ export function Landing() {
           <div className="feature">
             <div className="body">
               <h3>함께, 그리고 내보내기</h3>
-              <p>실시간 공동 편집으로 같이 그리고, 완성한 맵은 PNG·Markdown·JSON으로 바로 내보내세요.</p>
+              <p>친구나 동료를 초대해 한 맵을 같이 그릴 수 있어요. 완성한 맵은 PNG, Markdown, JSON으로 내보내 어디서든 활용하세요.</p>
               <div className="chips">
                 <span className="chip">공동 편집</span>
                 <span className="chip">PNG · MD · JSON</span>
