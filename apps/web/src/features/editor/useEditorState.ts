@@ -376,6 +376,9 @@ export interface EditorController {
   setStrokeAlpha: (a: number) => void;
   setTextColor: (hex: string | null) => void;
   toggleNodeBold: () => void;
+  /** 전체 텍스트 기울임/취소선 토글(속성 패널 I·S 버튼) — 굵게와 같은 bulk 규칙(첫
+   * 대상 기준), 구현은 rich 런 전체 적용(`mutations.toggleNodesRichStyle` 참고). */
+  toggleNodeRichStyle: (key: 'i' | 's') => void;
   setNodeTsize: (v: 's' | 'm' | 'l') => void;
   setEmoji: (e: string) => void;
   clearEmoji: () => void;
@@ -2375,6 +2378,7 @@ export function useEditorState(): EditorController {
   const setStrokeAlpha = useCallback((a: number) => commitDoc((d) => ({ ...d, nodes: mutations.setNodesField(d.nodes, nodeTargetIds(), 'strokeA', a) }), true), [nodeTargetIds, commitDoc]);
   const setTextColor = useCallback((hex: string | null) => commitDoc((d) => ({ ...d, nodes: mutations.setNodesField(d.nodes, nodeTargetIds(), 'textColor', hex) })), [nodeTargetIds, commitDoc]);
   const toggleNodeBold = useCallback(() => commitDoc((d) => ({ ...d, nodes: mutations.toggleNodesBold(d.nodes, nodeTargetIds()) })), [nodeTargetIds, commitDoc]);
+  const toggleNodeRichStyle = useCallback((key: 'i' | 's') => commitDoc((d) => ({ ...d, nodes: mutations.toggleNodesRichStyle(d.nodes, nodeTargetIds(), key) })), [nodeTargetIds, commitDoc]);
   const setNodeTsize = useCallback(
     (v: 's' | 'm' | 'l') => commitDoc((d) => ({ ...d, nodes: mutations.setNodesField(d.nodes, nodeTargetIds(), 'tsize', v === 'm' ? undefined : v) })),
     [nodeTargetIds, commitDoc],
@@ -3452,6 +3456,7 @@ export function useEditorState(): EditorController {
     setStrokeAlpha,
     setTextColor,
     toggleNodeBold,
+    toggleNodeRichStyle,
     setNodeTsize,
     setEmoji,
     clearEmoji,

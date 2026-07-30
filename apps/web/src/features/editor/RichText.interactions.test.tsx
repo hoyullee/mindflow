@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
-import { cleanup, fireEvent, render, waitFor, within } from '@testing-library/react';
+import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { MemoryRouter, Route, Routes } from 'react-router-dom';
 import { parseDoc } from '@mindflow/mindmap-core';
 import { Editor } from './Editor';
@@ -663,5 +663,104 @@ describe('마크다운 서식 확장 — I/S 버튼과 단축 문법', () => {
       expect(doc.nodes.c1?.text).toBe('수식 2*3=6 이야기');
       expect(doc.nodes.c1?.rich ?? null).toBeNull();
     });
+  });
+});
+
+// 사용자 요청: 굵게·기울임·취소선을 편집 중이 아니라 **도형을 선택했을 때**도 적용할 수
+// 있게 속성 패널에 추가. I·S는 노드에 전용 필드가 없어(굵게의 `bold`와 달리) rich 런을
+// 전체 텍스트에 적용하는 방식(`mutations.toggleNodesRichStyle`) — 직렬화/렌더/측정이
+// 이미 지원하는 경로라 모델 변경이 없다.
+describe('속성 패널 텍스트 스타일 — I(기울임)·S(취소선) 토글', () => {
+  function selectNodeBox(el: HTMLElement): void {
+    fireEvent.pointerDown(el, { pointerId: 9, clientX: 100, clientY: 100, button: 0 });
+    fireEvent.pointerUp(window, { pointerId: 9, clientX: 100, clientY: 100 });
+  }
+
+  /** 노드를 선택하고 '텍스트 스타일' 구획을 열어 패널을 준비한다. */
+  function openTextStyleSection(container: HTMLElement, id: string): void {
+    const box = getViewport(container).querySelector(`[data-node-id="${id}"]`) as HTMLElement;
+    expect(box).toBeTruthy();
+    selectNodeBox(box);
+    fireEvent.click(screen.getByRole('button', { name: /텍스트 스타일/ }));
+  }
+
+  it('I 버튼이 전체 텍스트를 기울임으로 토글하고, 렌더·저장·활성 표시가 따라온다', async () => {
+    localStorage.setItem('mindflow_doc_pn1', JSON.stringify(DOC));
+    const { container } = renderEditor('/editor?map=pn1&title=x');
+    openTextStyleSection(container, 'c1');
+
+    const italicBtn = screen.getByTitle('기울임');
+    expect(italicBtn.getAttribute('aria-pressed')).toBe('false');
+    fireEvent.click(italicBtn);
+
+    // 캔버스 렌더: rich 스팬이 fontStyle italic으로 그려진다
+    const box = getViewport(container).querySelector('[data-node-id="c1"]') as HTMLElement;
+    const span = box.querySelector('span[style*="italic"]');
+    expect(span?.textContent).toBe('hello world');
+    // 버튼 활성 표시
+    expect(screen.getByTitle('기울임').getAttribute('aria-pressed')).toBe('true');
+
+    fireEvent.keyDown(window, { key: 's', ctrlKey: true });
+    await waitFor(() => {
+      const saved = readSavedDoc('pn1');
+      expect(saved.nodes.c1?.rich).toEqual([{ t: 'hello world', b: false, c: null, i: true }]);
+    });
+
+    // 다시 누르면 해제 → rich=null로 복귀
+    fireEvent.click(screen.getByTitle('기울임'));
+    expect(screen.getByTitle('기울임').getAttribute('aria-pressed')).toBe('false');
+    fireEvent.keyDown(window, { key: 's', ctrlKey: true });
+    await waitFor(() => {
+      expect(readSavedDoc('pn1').nodes.c1?.rich ?? null).toBeNull();
+    });
+  });
+
+  it('S 버튼이 전체 텍스트 취소선을 토글한다', () => {
+    localStorage.setItem('mindflow_doc_pn2', JSON.stringify(DOC));
+    const { container } = renderEditor('/editor?map=pn2&title=x');
+    openTextStyleSection(container, 'c1');
+
+    fireEvent.click(screen.getByTitle('취소선'));
+    const box = getViewport(container).querySelector('[data-node-id="c1"]') as HTMLElement;
+    expect(box.querySelector('span[style*="line-through"]')?.textContent).toBe('hello world');
+    expect(screen.getByTitle('취소선').getAttribute('aria-pressed')).toBe('true');
+  });
+
+  it('부분 색상 런이 있는 노드도 색을 보존한 채 전체 기울임이 적용된다', () => {
+    localStorage.setItem('mindflow_doc_pn3', JSON.stringify(RICH_DOC));
+    const { container } = renderEditor('/editor?map=pn3&title=x');
+    openTextStyleSection(container, 'c1');
+
+    fireEvent.click(screen.getByTitle('기울임'));
+    const box = getViewport(container).querySelector('[data-node-id="c1"]') as HTMLElement;
+    const italicSpans = box.querySelectorAll('span[style*="italic"]');
+    expect(Array.from(italicSpans).map((s) => s.textContent).join('')).toBe('hello world');
+    // 기존 부분 색상("world")은 그대로
+    const colored = box.querySelector('span[style*="rgb(240, 102, 63)"], span[style*="#f0663f"]');
+    expect(colored?.textContent).toBe('world');
+  });
+
+  it('마퀴 다중 선택에도 일괄 적용된다 (첫 대상 기준 규칙)', () => {
+    localStorage.setItem('mindflow_doc_pn4', JSON.stringify(DOC));
+    const { container } = renderEditor('/editor?map=pn4&title=x');
+    // 모든 노드를 덮는 배경 마퀴 드래그 — EditorC.interactions.test.tsx의 마퀴 헬퍼와
+    // 동일한 패턴(jsdom엔 PointerEvent가 없어 MouseEvent를 pointer 이벤트 이름으로
+    // 디스패치, 초대형 클라이언트 좌표로 pan/zoom과 무관하게 전 노드 포함).
+    const vp = getViewport(container);
+    const pev = (type: string, x: number, y: number) => {
+      const e = new MouseEvent(type, { bubbles: true, cancelable: true, clientX: x, clientY: y, button: 0 });
+      Object.defineProperty(e, 'pointerId', { value: 11, configurable: true });
+      return e;
+    };
+    fireEvent(vp, pev('pointerdown', -100000, -100000));
+    fireEvent(window, pev('pointermove', 100000, 100000));
+    fireEvent(window, pev('pointerup', 100000, 100000));
+    expect(screen.getByText(/도형 \d+개 선택됨/)).toBeTruthy();
+
+    fireEvent.click(screen.getByRole('button', { name: /텍스트 스타일/ }));
+    fireEvent.click(screen.getByTitle('취소선'));
+
+    const struck = getViewport(container).querySelectorAll('[data-node-id] span[style*="line-through"]');
+    expect(struck.length).toBeGreaterThanOrEqual(2); // 루트+자식 모두
   });
 });
