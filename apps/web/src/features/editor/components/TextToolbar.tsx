@@ -35,16 +35,15 @@ export function TextToolbar({ controller }: TextToolbarProps) {
   //  그 색들은 속성 패널의 텍스트 색 스와치에 그대로 남아 있다.)
   const { textCtx, editingNodeId, uiTheme: th, vw } = controller;
 
-  // Outside click closes it — port of the original's `_winDown` `.mf-tctx` branch
-  // (MindFlow.dc.html:820): ANY mousedown that doesn't land inside `.mf-tctx` closes
-  // the toolbar (a plain click to reposition the caret closes it; a NEW drag-selection
-  // reopens it via `openTextCtx` once it completes, same as `ContextMenu.tsx`'s own
-  // outside-click effect).
+  // 편집 세션 동안 상시 노출(사용자 결정 — NodeEditBox 마운트에서 열림). 그래서
+  // 편집 박스 안 클릭(캐럿 이동·드래그 선택)은 닫지 않는다 — 닫히는 경우는
+  // ① 편집 종료(커밋/취소가 textCtx를 지움) ② 다른 메뉴 열림(openCtxAt)
+  // ③ 그 외 바깥 mousedown(어차피 blur 커밋으로 편집도 끝난다 — 방어적 유지).
   useEffect(() => {
     if (!textCtx) return;
     function onDown(e: MouseEvent): void {
       const target = e.target as HTMLElement | null;
-      if (target && target.closest && target.closest('.mf-tctx')) return;
+      if (target && target.closest && (target.closest('.mf-tctx') || target.closest('.mf-richedit'))) return;
       controller.closeTextCtx();
     }
     window.addEventListener('mousedown', onDown);
