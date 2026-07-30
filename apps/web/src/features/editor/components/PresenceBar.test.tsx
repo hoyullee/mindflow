@@ -40,9 +40,14 @@ describe('PresenceBar', () => {
     expect(screen.getByTitle('차분한 수달')).toBeTruthy();
   });
 
-  it('전송이 끊기면 혼자여도 알린다 — 조용히 죽지 않는다', () => {
+  it('전송이 끊기면 혼자여도 알린다 — 조용히 죽지 않는다 (문구는 목적: 새로고침 유도)', () => {
     render(<PresenceBar controller={stub({ collabStatus: 'offline' })} />);
-    expect(screen.getByText('실시간 연결 끊김')).toBeTruthy();
+    expect(screen.getByText('동기화 끊김 · 새로고침')).toBeTruthy();
+  });
+
+  it('접속 중(connecting)에는 아무것도 띄우지 않는다 — 진입할 때마다 뜨던 거짓 경보의 원인', () => {
+    const { container } = render(<PresenceBar controller={stub({ collabStatus: 'connecting' })} />);
+    expect(container.firstChild).toBeNull();
   });
 
   it('붙을 대상이 없는 데모/로컬 모드에서는 끊김을 띄우지 않는다 (그건 고장이 아니다)', () => {
