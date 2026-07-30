@@ -505,7 +505,7 @@ export function Landing() {
               <h3>함께, 그리고 내보내기</h3>
               <p>실시간 공동 편집으로 같이 그리고, 완성한 맵은 PNG·Markdown·JSON으로 바로 내보내세요.</p>
               <div className="chips">
-                <span className="chip">실시간 협업 커서</span>
+                <span className="chip">공동 편집</span>
                 <span className="chip">PNG · MD · JSON</span>
                 <span className="chip">아웃라인 보기</span>
               </div>
