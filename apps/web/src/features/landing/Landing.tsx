@@ -570,7 +570,9 @@ export function Landing() {
               있으신가요?
             </h2>
             <p style={{ fontSize: 14.5, marginTop: 6 }}>
-              자주 묻는 질문을 모았어요. 더 궁금하시면{' '}
+              자주 묻는 질문을 모았어요.
+              <br />
+              더 궁금하시면{' '}
               <a href="mailto:info@geurio.com" style={{ textDecoration: 'underline' }}>
                 info@geurio.com
               </a>
@@ -588,7 +590,11 @@ export function Landing() {
             <br />
             시작하기 좋은 때예요
           </h2>
-          <p>첫 마인드맵을 만들고 흩어진 생각을 하나로 이어 보세요. 3분이면 충분해요.</p>
+          <p>
+            첫 마인드맵을 만들고 흩어진 생각을 하나로 이어 보세요.
+            <br />
+            3분이면 충분해요.
+          </p>
           <Link className="cta-invert" to={ctaHref}>
             무료로 시작하기 <span aria-hidden="true">→</span>
           </Link>
