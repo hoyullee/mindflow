@@ -140,3 +140,35 @@ describe('linearize', () => {
     expect(pos).toEqual([2]);
   });
 });
+
+// ── 마크다운 서식 확장(post-dc): 기울임(i)·취소선(s) 라운드트립 ─────────────
+describe('runsToHtml / domToRuns — 기울임·취소선', () => {
+  it('runsToHtml이 i/s 런을 스타일 span으로 렌더한다', () => {
+    const html = runsToHtml({ text: 'ab', rich: [{ t: 'a', b: false, c: null, i: true }, { t: 'b', b: false, c: null, s: true }] });
+    expect(html).toBe('<span style="font-style:italic;">a</span><span style="text-decoration:line-through;">b</span>');
+  });
+
+  it('domToRuns가 EM/I·S/DEL 태그와 인라인 스타일을 i/s로 읽는다', () => {
+    const div = document.createElement('div');
+    div.innerHTML = '평문 <em>기울임</em> <s>취소</s> <span style="font-style:italic">스타일</span>';
+    const out = domToRuns(div);
+    expect(out.rich).toEqual([
+      { t: '평문 ', b: false, c: null },
+      { t: '기울임', b: false, c: null, i: true },
+      { t: ' ', b: false, c: null },
+      { t: '취소', b: false, c: null, s: true },
+      { t: ' ', b: false, c: null },
+      { t: '스타일', b: false, c: null, i: true },
+    ]);
+  });
+
+  it('runsToHtml → domToRuns 라운드트립이 i/s를 보존한다', () => {
+    const rich = [
+      { t: '굵고기울임', b: true, c: null, i: true },
+      { t: ' 취소색', b: false, c: '#d92626', s: true },
+    ];
+    const div = document.createElement('div');
+    div.innerHTML = runsToHtml({ text: '굵고기울임 취소색', rich });
+    expect(domToRuns(div).rich).toEqual(rich);
+  });
+});

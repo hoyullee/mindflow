@@ -6,9 +6,9 @@ describe('runsToChars / charsToRuns', () => {
   it('explodes a plain (no rich) source into one unstyled char per character', () => {
     const chars = runsToChars({ text: 'abc' });
     expect(chars).toEqual([
-      { ch: 'a', b: false, c: null },
-      { ch: 'b', b: false, c: null },
-      { ch: 'c', b: false, c: null },
+      { ch: 'a', b: false, c: null, i: false, s: false },
+      { ch: 'b', b: false, c: null, i: false, s: false },
+      { ch: 'c', b: false, c: null, i: false, s: false },
     ]);
   });
 
@@ -19,16 +19,16 @@ describe('runsToChars / charsToRuns', () => {
     ];
     const chars = runsToChars({ text: 'abcd', rich });
     expect(chars).toEqual([
-      { ch: 'a', b: true, c: null },
-      { ch: 'b', b: true, c: null },
-      { ch: 'c', b: false, c: '#ff0000' },
-      { ch: 'd', b: false, c: '#ff0000' },
+      { ch: 'a', b: true, c: null, i: false, s: false },
+      { ch: 'b', b: true, c: null, i: false, s: false },
+      { ch: 'c', b: false, c: '#ff0000', i: false, s: false },
+      { ch: 'd', b: false, c: '#ff0000', i: false, s: false },
     ]);
   });
 
   it('an empty `rich` array is treated as absent (falls back to plain text)', () => {
     const chars = runsToChars({ text: 'x', rich: [] });
-    expect(chars).toEqual([{ ch: 'x', b: false, c: null }]);
+    expect(chars).toEqual([{ ch: 'x', b: false, c: null, i: false, s: false }]);
   });
 
   it('re-merges adjacent same-style characters back into runs', () => {
@@ -155,5 +155,95 @@ describe('stripRichStyle', () => {
   it('is a no-op on a null/undefined rich', () => {
     expect(stripRichStyle(null, 'b')).toBeNull();
     expect(stripRichStyle(undefined, 'c')).toBeNull();
+  });
+});
+
+// ── 마크다운 서식 확장(post-dc): 기울임(i)·취소선(s) + 단축 문법 ────────────
+
+import { applyMarkdownShortcuts } from './richtext';
+
+describe('applyPartialStyle — 기울임/취소선 토글', () => {
+  it('기울임을 켜고(혼합→전체), 전부 기울임이면 끈다 (굵게와 같은 규칙)', () => {
+    const on = applyPartialStyle({ text: 'abcd' }, 0, 2, 'i');
+    expect(on.rich).toEqual([
+      { t: 'ab', b: false, c: null, i: true },
+      { t: 'cd', b: false, c: null },
+    ]);
+    const off = applyPartialStyle({ text: on.text, rich: on.rich }, 0, 2, 'i');
+    expect(off.rich).toBeNull(); // 전부 해제 → plain
+  });
+
+  it('취소선은 굵게·색과 독립적으로 겹친다', () => {
+    const bold = applyPartialStyle({ text: 'abcd' }, 0, 4, 'b');
+    const both = applyPartialStyle({ text: bold.text, rich: bold.rich }, 1, 3, 's');
+    expect(both.rich).toEqual([
+      { t: 'a', b: true, c: null },
+      { t: 'bc', b: true, c: null, s: true },
+      { t: 'd', b: true, c: null },
+    ]);
+  });
+
+  it("'clear'는 기울임·취소선까지 벗긴다", () => {
+    const styled = applyPartialStyle(applyPartialStyle({ text: 'ab' }, 0, 2, 'i'), 0, 2, 's');
+    const cleared = applyPartialStyle({ text: styled.text, rich: styled.rich }, 0, 2, 'clear');
+    expect(cleared.rich).toBeNull();
+  });
+
+  it('stripRichStyle이 i/s 키도 벗긴다', () => {
+    const rich: RichRun[] = [{ t: 'ab', b: false, c: null, i: true }];
+    expect(stripRichStyle(rich, 'i')).toBeNull();
+    const both: RichRun[] = [{ t: 'ab', b: true, c: null, s: true }];
+    expect(stripRichStyle(both, 's')).toEqual([{ t: 'ab', b: true, c: null }]);
+  });
+});
+
+describe('applyMarkdownShortcuts', () => {
+  it('**굵게** / *기울임* / ~~취소선~~ 마커를 제거하고 서식으로 바꾼다', () => {
+    const out = applyMarkdownShortcuts({ text: '이건 **굵게** 그리고 *기울임* 또 ~~취소~~' });
+    expect(out).not.toBeNull();
+    expect(out!.text).toBe('이건 굵게 그리고 기울임 또 취소');
+    expect(out!.rich).toEqual([
+      { t: '이건 ', b: false, c: null },
+      { t: '굵게', b: true, c: null },
+      { t: ' 그리고 ', b: false, c: null },
+      { t: '기울임', b: false, c: null, i: true },
+      { t: ' 또 ', b: false, c: null },
+      { t: '취소', b: false, c: null, s: true },
+    ]);
+  });
+
+  it('__굵게__ / _기울임_ 변형도 지원한다', () => {
+    const out = applyMarkdownShortcuts({ text: '__강조__ _살짝_' });
+    expect(out!.text).toBe('강조 살짝');
+    expect(out!.rich).toEqual([
+      { t: '강조', b: true, c: null },
+      { t: ' ', b: false, c: null },
+      { t: '살짝', b: false, c: null, i: true },
+    ]);
+  });
+
+  it('단어 내부 밑줄(snake_case)은 건드리지 않는다 — 뒤의 유효한 매치는 여전히 잡는다', () => {
+    const out = applyMarkdownShortcuts({ text: 'my_var_name 그리고 _진짜_' });
+    expect(out!.text).toBe('my_var_name 그리고 진짜');
+    expect(out!.rich).toEqual([
+      { t: 'my_var_name 그리고 ', b: false, c: null },
+      { t: '진짜', b: false, c: null, i: true },
+    ]);
+  });
+
+  it('짝이 없는 마커·마크다운 없음 → null (원본 그대로 커밋)', () => {
+    expect(applyMarkdownShortcuts({ text: '2*3=6 그리고 a**b' })).toBeNull();
+    expect(applyMarkdownShortcuts({ text: '평범한 텍스트' })).toBeNull();
+  });
+
+  it('기존 부분 색상 위에 겹쳐도 색이 보존된다', () => {
+    const colored = applyPartialStyle({ text: '**빨강** 텍스트' }, 2, 4, 'c', '#d92626');
+    const out = applyMarkdownShortcuts({ text: colored.text, rich: colored.rich });
+    expect(out!.text).toBe('빨강 텍스트');
+    expect(out!.rich).toEqual([{ t: '빨강', b: true, c: '#d92626' }, { t: ' 텍스트', b: false, c: null }]);
+  });
+
+  it('마커가 줄을 걸치면 발동하지 않는다', () => {
+    expect(applyMarkdownShortcuts({ text: '*줄\n걸침*' })).toBeNull();
   });
 });

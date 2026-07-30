@@ -40,15 +40,17 @@ interface WrapSeg {
   t: string;
   b?: boolean;
   c?: string | null;
+  i?: boolean;
+  s?: boolean;
 }
 
 /** Merge adjacent same-style tokens on a line back into segments (fewer tspans). */
-function mergeToks(line: { t: string; b?: boolean; c?: string | null }[]): WrapSeg[] {
+function mergeToks(line: WrapSeg[]): WrapSeg[] {
   const segs: WrapSeg[] = [];
   line.forEach((tk) => {
     const last = segs[segs.length - 1];
-    if (last && !!last.b === !!tk.b && (last.c ?? null) === (tk.c ?? null)) last.t += tk.t;
-    else segs.push({ t: tk.t, b: tk.b, c: tk.c });
+    if (last && !!last.b === !!tk.b && (last.c ?? null) === (tk.c ?? null) && !!last.i === !!tk.i && !!last.s === !!tk.s) last.t += tk.t;
+    else segs.push({ t: tk.t, b: tk.b, c: tk.c, i: tk.i, s: tk.s });
   });
   return segs;
 }
@@ -67,15 +69,15 @@ function wrapRuns(runs: WrapSeg[], maxW: number, fpx: number, baseFw: number, me
       .split('\n')
       .forEach((p, i) => {
         if (i > 0) hard.push([]);
-        if (p) hard[hard.length - 1]!.push({ t: p, b: r.b, c: r.c });
+        if (p) hard[hard.length - 1]!.push({ t: p, b: r.b, c: r.c, i: r.i, s: r.s });
       });
   });
   const out: WrapSeg[][] = [];
   hard.forEach((segs) => {
-    const toks: { t: string; w: number; sp: boolean; b?: boolean; c?: string | null }[] = [];
+    const toks: (WrapSeg & { w: number; sp: boolean })[] = [];
     segs.forEach((sg) => {
-      const f = `${sg.b ? 800 : baseFw} ${fpx}px Pretendard`;
-      (String(sg.t).match(/[A-Za-z0-9]+|\s+|./gu) || []).forEach((p) => toks.push({ t: p, w: measurer.measure(p, f), sp: /^\s+$/.test(p), b: sg.b, c: sg.c }));
+      const f = `${sg.i ? 'italic ' : ''}${sg.b ? 800 : baseFw} ${fpx}px Pretendard`;
+      (String(sg.t).match(/[A-Za-z0-9]+|\s+|./gu) || []).forEach((p) => toks.push({ t: p, w: measurer.measure(p, f), sp: /^\s+$/.test(p), b: sg.b, c: sg.c, i: sg.i, s: sg.s }));
     });
     let line: typeof toks = [];
     let cur = 0;
@@ -556,7 +558,7 @@ function buildPreview(rawDoc: string, hueFallback: string): JSX.Element | null {
           {wrapped.map((segs, li) => (
             <tspan key={li} x={tx} dy={li === 0 ? 0 : lineH}>
               {segs.map((s, si) => (
-                <tspan key={si} fontWeight={s.b ? 800 : undefined} fill={s.c || undefined}>
+                <tspan key={si} fontWeight={s.b ? 800 : undefined} fill={s.c || undefined} fontStyle={s.i ? 'italic' : undefined} textDecoration={s.s ? 'line-through' : undefined}>
                   {s.t}
                 </tspan>
               ))}

@@ -23,11 +23,19 @@ export type EdgeStyle = 'curve' | 'elbow' | 'straight';
 /**
  * One styled text run inside a node's rich-text body.
  * Observed shape: `{ t: text, b?: bold, c?: color }` (MindFlow.dc.html:2612, 2646, 2727).
+ *
+ * `i`(기울임)·`s`(취소선)는 post-dc 순수 추가(마크다운 서식 지원) — 원본에는
+ * 없던 키라서 **true일 때만** 직렬화에 실린다(runs 재구성 시 생략 — charsToRuns
+ * 참고). 옛 문서/골든과의 무회귀, CRDT(제네릭 필드 통과) 모두 그대로다.
  */
 export interface RichRun {
   t: string;
   b?: boolean;
   c?: string | null;
+  /** 기울임 (`*x*`/`_x_`). */
+  i?: boolean;
+  /** 취소선 (`~~x~~`). */
+  s?: boolean;
 }
 
 /**

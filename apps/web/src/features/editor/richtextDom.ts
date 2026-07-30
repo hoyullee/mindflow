@@ -49,6 +49,8 @@ export function runsToHtml(n: RichTextValue): string {
       let st = '';
       if (r.b) st += 'font-weight:800;';
       if (r.c) st += 'color:' + r.c + ';';
+      if (r.i) st += 'font-style:italic;';
+      if (r.s) st += 'text-decoration:line-through;';
       return st ? `<span style="${st}">${conv(r.t)}</span>` : conv(r.t);
     })
     .join('');
@@ -65,41 +67,61 @@ export function runsToHtml(n: RichTextValue): string {
  * extra blank line into the parsed text. */
 export function domToRuns(el: HTMLElement, keepTrailing = false): { text: string; rich: RichRun[] | null } {
   const runs: RichRun[] = [];
-  const push = (t: string, b: boolean, c: string | null): void => {
+  interface St {
+    b: boolean;
+    c: string | null;
+    i: boolean;
+    s: boolean;
+  }
+  const push = (t: string, st: St): void => {
     if (!t) return;
     const last = runs[runs.length - 1];
-    if (last && !!last.b === !!b && (last.c || null) === (c || null)) last.t += t;
-    else runs.push({ t, b: !!b, c: c || null });
+    if (last && !!last.b === st.b && (last.c || null) === (st.c || null) && !!last.i === st.i && !!last.s === st.s) last.t += t;
+    else {
+      const r: RichRun = { t, b: st.b, c: st.c || null };
+      if (st.i) r.i = true;
+      if (st.s) r.s = true;
+      runs.push(r);
+    }
   };
-  const walk = (node: ChildNode, b: boolean, c: string | null): void => {
+  const walk = (node: ChildNode, st: St): void => {
     if (node.nodeType === 3) {
-      push(node.nodeValue || '', b, c);
+      push(node.nodeValue || '', st);
       return;
     }
     if (node.nodeType !== 1) return;
     const el2 = node as HTMLElement;
     const tag = el2.nodeName;
     if (tag === 'BR') {
-      push('\n', b, c);
+      push('\n', st);
       return;
     }
-    let nb = b;
-    let nc = c;
-    if (tag === 'B' || tag === 'STRONG') nb = true;
-    if (tag === 'FONT' && el2.getAttribute('color')) nc = el2.getAttribute('color');
+    const next: St = { ...st };
+    if (tag === 'B' || tag === 'STRONG') next.b = true;
+    if (tag === 'I' || tag === 'EM') next.i = true;
+    if (tag === 'S' || tag === 'STRIKE' || tag === 'DEL') next.s = true;
+    if (tag === 'FONT' && el2.getAttribute('color')) next.c = el2.getAttribute('color');
     if (el2.style) {
       const fw = el2.style.fontWeight;
       if (fw) {
         const w = parseInt(fw, 10);
-        nb = fw === 'bold' || (!!w && w >= 600) ? true : fw === 'normal' || (!!w && w < 600) ? false : nb;
+        next.b = fw === 'bold' || (!!w && w >= 600) ? true : fw === 'normal' || (!!w && w < 600) ? false : next.b;
       }
-      if (el2.style.color) nc = rgbToHex(el2.style.color) || nc;
+      if (el2.style.color) next.c = rgbToHex(el2.style.color) || next.c;
+      const fs = el2.style.fontStyle;
+      if (fs === 'italic' || fs === 'oblique') next.i = true;
+      else if (fs === 'normal') next.i = false;
+      // textDecoration은 shorthand라 브라우저마다 'line-through'/'line-through solid …'로
+      // 읽힌다 — 포함 여부로 본다. 'none'은 해제.
+      const td = el2.style.textDecoration || el2.style.textDecorationLine || '';
+      if (/line-through/.test(td)) next.s = true;
+      else if (td === 'none') next.s = false;
     }
     const isBlock = tag === 'DIV' || tag === 'P';
-    if (isBlock && runs.length && runs[runs.length - 1]!.t.slice(-1) !== '\n') push('\n', b, c);
-    el2.childNodes.forEach((child) => walk(child, nb, nc));
+    if (isBlock && runs.length && runs[runs.length - 1]!.t.slice(-1) !== '\n') push('\n', st);
+    el2.childNodes.forEach((child) => walk(child, next));
   };
-  el.childNodes.forEach((child) => walk(child, false, null));
+  el.childNodes.forEach((child) => walk(child, { b: false, c: null, i: false, s: false }));
   if (!keepTrailing) {
     while (runs.length && /^\n+$/.test(runs[runs.length - 1]!.t)) runs.pop();
     if (runs.length) runs[runs.length - 1]!.t = runs[runs.length - 1]!.t.replace(/\n+$/, '');
@@ -111,7 +133,7 @@ export function domToRuns(el: HTMLElement, keepTrailing = false): { text: string
     }
   }
   const text = runs.map((r) => r.t).join('');
-  const styled = runs.some((r) => r.b || r.c);
+  const styled = runs.some((r) => r.b || r.c || r.i || r.s);
   return { text, rich: styled ? runs.filter((r) => r.t) : null };
 }
 
