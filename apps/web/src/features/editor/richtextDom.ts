@@ -132,6 +132,13 @@ export function domToRuns(el: HTMLElement, keepTrailing = false): { text: string
       if (!last.t) runs.pop();
     }
   }
+  // 리스트 들여쓰기는 화면에서 EN SPACE(U+2002)로 그려진다(코어 `list.ts` —
+  // 일반 공백은 단계가 안 보일 만큼 좁다). 저장본은 **일반 공백**으로 되돌린다:
+  // 마크다운 중첩·외부 복사·diff에서 보이지 않는 문자가 남지 않게. 1:1 치환이라
+  // 길이가 그대로여서 선택 오프셋 계약도 흔들리지 않는다.
+  runs.forEach((r) => {
+    r.t = r.t.replace(/\u2002/g, ' ');
+  });
   const text = runs.map((r) => r.t).join('');
   const styled = runs.some((r) => r.b || r.c || r.i || r.s);
   return { text, rich: styled ? runs.filter((r) => r.t) : null };
