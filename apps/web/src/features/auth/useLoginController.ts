@@ -38,6 +38,20 @@ function isEmailNotConfirmed(msg: string | undefined | null): boolean {
   return /email not confirmed/i.test(msg || '');
 }
 
+/** Supabase가 "이미 가입된 이메일"에 주는 메시지(어댑터가 `identities: []`를
+ * 감지해 만든 것 포함) — 가입 차단 안내로 갈아 끼우기 위한 판정. */
+function isAlreadyRegistered(msg: string | undefined | null): boolean {
+  const low = (msg || '').toLowerCase();
+  return low.includes('already registered') || low.includes('already been registered') || low.includes('user already exists');
+}
+
+/** 로그인 수단 이름 — 안내 문구용. 현재 소셜 로그인은 Google 하나뿐이지만
+ * 나중에 늘어도 문구가 깨지지 않게 표를 둔다. */
+function providerLabel(provider: string): string {
+  const table: Record<string, string> = { google: 'Google', apple: 'Apple', kakao: '카카오', github: 'GitHub' };
+  return table[provider] ?? provider;
+}
+
 /**
  * Supabase Auth의 영문 에러 메시지를 사용자용 한글로 매핑한다. Supabase는 항상
  * 영문 메시지를 주는데(예: "Invalid login credentials", 비밀번호 정책 나열, 레이트
@@ -154,7 +168,7 @@ export function useLoginController() {
     }, 1100);
   };
 
-  const onEmail = (v: string) => patch({ email: v, error: '', emailUnregistered: false });
+  const onEmail = (v: string) => patch({ email: v, error: '', emailUnregistered: false, signupBlocked: null });
   const onPassword = (v: string) => patch({ password: v, error: '' });
   const onPassword2 = (v: string) => patch({ password2: v, error: '' });
   const onNewPw = (v: string) => patch({ newPw: v, error: '' });
@@ -184,9 +198,33 @@ export function useLoginController() {
       // requires email confirmation, so `data.session` comes back null —
       // land on the same "verify" step UI, but `verifyCode()` below now
       // calls `auth.verifyOtp` instead of comparing against a client-side code.
-      patch({ busy: true, error: '' });
-      void auth.signUp(state.email, state.password).then((res) => {
+      patch({ busy: true, error: '', signupBlocked: null });
+      void (async () => {
+        // 이미 가입된 이메일이면 여기서 막는다. `signUp`은 이메일 열거 방지로
+        // 이미 가입된 주소에도 성공을 돌려주므로(메일은 안 감), 그대로 두면
+        // 인증 코드 화면에서 오지 않는 코드를 기다리게 된다(제보: Google로
+        // 가입한 계정). 확인 불가(null: RPC 미배포·네트워크)면 기존대로 진행
+        // 하되, 어댑터의 `identities: []` 가드가 한 번 더 걸러 준다.
+        const providers = await auth.emailSignInProviders(state.email);
+        if (providers && providers.length) {
+          const social = providers.find((p) => p !== 'email');
+          patch({
+            busy: false,
+            signupBlocked: social ? 'google' : 'email',
+            error: social
+              ? `이미 ${providerLabel(social)} 계정으로 가입한 이메일이에요. 아래 '${providerLabel(social)}로 계속하기'로 로그인해 주세요.`
+              : '이미 가입된 이메일이에요. 로그인 탭에서 비밀번호로 로그인해 주세요.',
+          });
+          return;
+        }
+        const res = await auth.signUp(state.email, state.password);
         if (res.error) {
+          // 어댑터가 걸러 낸 "이미 가입됨"도 같은 안내로 — 공급자를 모를 땐
+          // (RPC 미배포) 로그인 탭으로 유도한다.
+          if (isAlreadyRegistered(res.error)) {
+            patch({ busy: false, signupBlocked: 'email', error: '이미 가입된 이메일이에요. 로그인 탭에서 로그인하거나, SNS로 가입했다면 아래 소셜 로그인을 이용해 주세요.' });
+            return;
+          }
           patch({ busy: false, error: localizeAuthError(res.error) });
           return;
         }
@@ -195,7 +233,7 @@ export function useLoginController() {
           return;
         }
         finishWithLoader(true);
-      });
+      })();
       return;
     }
     if (mode === 'local') {

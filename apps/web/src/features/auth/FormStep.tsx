@@ -4,6 +4,7 @@ import type { LoginController } from './useLoginController';
 import type { LoginViewModel } from './viewModel';
 import {
   errorMsgStyle,
+  signupBlockedCalloutStyle,
   fieldLabelStyle,
   noticeMsgStyle,
   spinnerStyle,
@@ -104,7 +105,29 @@ export function FormStep({ controller, view }: FormStepProps) {
       )}
 
       {state.notice && <div style={noticeMsgStyle}>{state.notice}</div>}
-      {state.error && <div style={errorMsgStyle}>{state.error}</div>}
+      {/* 이미 가입된 이메일로 가입을 시도한 경우 — 단순 에러 줄 대신 눈에 띄는
+          콜아웃으로 안내한다. SNS(Google)로 가입한 계정이라면 위 소셜 버튼을
+          쓰라고, 이메일 계정이면 로그인 탭으로 가라고 알려 준다(제보: 인증
+          코드 화면까지 갔는데 코드가 오지 않던 흐름을 여기서 끊는다). */}
+      {state.signupBlocked ? (
+        <div role="alert" style={signupBlockedCalloutStyle}>
+          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#d9542f" strokeWidth={2} style={{ flexShrink: 0, marginTop: 1 }} aria-hidden="true">
+            <circle cx="12" cy="12" r="9" />
+            <path d="M12 11.5v5" strokeLinecap="round" />
+            <circle cx="12" cy="7.6" r="0.6" fill="#d9542f" />
+          </svg>
+          <div>
+            <div>{state.error}</div>
+            {state.signupBlocked === 'email' && (
+              <span className="link-tab" onClick={controller.toggleMode} style={{ display: 'inline-block', marginTop: 6, color: '#b4462a', fontWeight: 700 }}>
+                로그인하러 가기 →
+              </span>
+            )}
+          </div>
+        </div>
+      ) : (
+        state.error && <div style={errorMsgStyle}>{state.error}</div>
+      )}
 
       <button type="button" className="btn" onClick={controller.emailLogin} style={submitButtonStyle(state.busy)}>
         <span style={spinnerStyle(state.busy)} />

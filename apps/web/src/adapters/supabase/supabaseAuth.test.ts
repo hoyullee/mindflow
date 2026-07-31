@@ -139,3 +139,67 @@ describe('SupabaseAuth signInWithOAuth', () => {
   });
 });
 
+
+// 제보: Google로 가입한 이메일로 이메일 회원가입을 시도하면 인증번호 화면까지
+// 넘어가는데 코드가 오지 않는다. Supabase `signUp`이 이메일 열거 방지로 이미
+// 가입된 주소에도 성공을 돌려주기 때문(메일은 발송 안 됨) — 유일한 단서가
+// `identities`가 빈 배열인 가짜 user다.
+describe('SupabaseAuth signUp — 이미 가입된 이메일 감지', () => {
+  function clientWithSignUp(result: { data: Record<string, unknown>; error: { message: string } | null }): SupabaseClient {
+    return { auth: { signUp: async () => result } } as unknown as SupabaseClient;
+  }
+
+  it('identities가 빈 배열이면 성공이 아니라 "이미 가입됨" 오류로 돌려준다', async () => {
+    const auth = new SupabaseAuth(clientWithSignUp({ data: { user: { id: 'fake', email: 'a@b.c', identities: [] }, session: null }, error: null }));
+    const res = await auth.signUp('a@b.c', 'pw1234');
+    expect(res.session).toBeNull();
+    expect(res.needsVerification).toBeFalsy(); // 인증 화면으로 보내지 않는다
+    expect(res.error).toMatch(/already registered/i);
+  });
+
+  it('진짜 신규 가입(identities 있음)은 인증 대기로 통과', async () => {
+    const auth = new SupabaseAuth(clientWithSignUp({ data: { user: { id: 'u9', email: 'new@b.c', identities: [{ provider: 'email' }] }, session: null }, error: null }));
+    const res = await auth.signUp('new@b.c', 'pw1234');
+    expect(res.error).toBeUndefined();
+    expect(res.needsVerification).toBe(true);
+  });
+
+  it('identities 필드가 아예 없는 응답은 기존대로 통과 (구버전 SDK 방어)', async () => {
+    const auth = new SupabaseAuth(clientWithSignUp({ data: { user: { id: 'u9', email: 'new@b.c' }, session: null }, error: null }));
+    const res = await auth.signUp('new@b.c', 'pw1234');
+    expect(res.error).toBeUndefined();
+    expect(res.needsVerification).toBe(true);
+  });
+});
+
+describe('SupabaseAuth emailSignInProviders (email_signin_providers RPC)', () => {
+  function clientWithRpc(impl: (fn: string, args: Record<string, unknown>) => Promise<{ data: unknown; error: unknown }>): SupabaseClient {
+    return { rpc: impl } as unknown as SupabaseClient;
+  }
+
+  it('RPC가 돌려준 공급자 목록을 그대로 전달한다', async () => {
+    const auth = new SupabaseAuth(
+      clientWithRpc(async (fn, args) => {
+        expect(fn).toBe('email_signin_providers');
+        expect(args).toEqual({ p_email: 'g@example.com' });
+        return { data: ['google'], error: null };
+      }),
+    );
+    expect(await auth.emailSignInProviders('g@example.com')).toEqual(['google']);
+  });
+
+  it('미가입은 빈 배열', async () => {
+    const auth = new SupabaseAuth(clientWithRpc(async () => ({ data: [], error: null })));
+    expect(await auth.emailSignInProviders('none@example.com')).toEqual([]);
+  });
+
+  it('RPC 미배포/실패는 null — 호출부가 기존 흐름으로 진행하게 한다', async () => {
+    const auth = new SupabaseAuth(clientWithRpc(async () => ({ data: null, error: { message: 'function does not exist' } })));
+    expect(await auth.emailSignInProviders('x@example.com')).toBeNull();
+  });
+
+  it('문자열이 아닌 값은 걸러 낸다', async () => {
+    const auth = new SupabaseAuth(clientWithRpc(async () => ({ data: ['email', 42, null, 'google'], error: null })));
+    expect(await auth.emailSignInProviders('x@example.com')).toEqual(['email', 'google']);
+  });
+});

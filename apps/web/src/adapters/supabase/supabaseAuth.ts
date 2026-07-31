@@ -44,6 +44,14 @@ export class SupabaseAuth implements AuthProvider {
   async signUp(email: string, password: string): Promise<AuthResult> {
     const { data, error } = await this.client.auth.signUp({ email, password });
     if (error) return { session: null, error: error.message };
+    // 이미 가입된 이메일: Supabase는 이메일 열거 방지로 **성공처럼** 응답하지만
+    // 메일은 보내지 않는다. 유일한 단서가 `identities`가 빈 배열인 가짜 user다
+    // (제보: Google로 가입한 주소로 이메일 가입 → 인증 코드 화면까지 갔는데
+    // 코드가 영영 안 옴). 여기서 걸러 내면 RPC(`emailSignInProviders`)가 아직
+    // 배포되지 않은 프로젝트에서도 막다른 화면으로 보내지 않는다.
+    if (data.user && Array.isArray(data.user.identities) && data.user.identities.length === 0) {
+      return { session: null, error: 'User already registered' };
+    }
     const session = mapSession(data.session);
     // Supabase's default flow requires email confirmation: `data.session` is
     // null (and `data.user` non-null) until the user clicks the emailed link.
@@ -113,6 +121,12 @@ export class SupabaseAuth implements AuthProvider {
     const { data, error } = await this.client.rpc('email_is_registered', { p_email: email });
     if (error) return null;
     return typeof data === 'boolean' ? data : null;
+  }
+
+  async emailSignInProviders(email: string): Promise<string[] | null> {
+    const { data, error } = await this.client.rpc('email_signin_providers', { p_email: email });
+    if (error) return null; // RPC 미배포/네트워크 — 호출부는 기존 흐름으로 진행
+    return Array.isArray(data) ? data.filter((x): x is string => typeof x === 'string') : null;
   }
 
   async verifyOtp(email: string, token: string, type: 'signup' | 'recovery'): Promise<AuthResult> {

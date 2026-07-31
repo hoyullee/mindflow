@@ -493,3 +493,98 @@ describe('Login', () => {
     });
   });
 });
+
+// 제보: Google로 가입된 계정의 이메일로 이메일 회원가입을 시도하면 가입이
+// 진행되어 인증번호 발송 화면까지 넘어가는데, 인증번호는 오지 않는다.
+// (Supabase `signUp`이 이메일 열거 방지로 이미 가입된 주소에도 성공을 돌려주고
+//  메일은 보내지 않기 때문.) 가입 전에 로그인 수단을 확인해 막는다.
+describe('이미 가입된 이메일로 회원가입 시도 — 차단 + 안내', () => {
+  async function gotoSignup(user: ReturnType<typeof userEvent.setup>) {
+    await user.click(screen.getByText('가입하기'));
+  }
+
+  it('Google로 가입된 이메일이면 SNS 계정이라고 알려주고 가입을 막는다', async () => {
+    const user = userEvent.setup();
+    const auth = new LocalAuth();
+    vi.spyOn(auth, 'emailSignInProviders').mockResolvedValue(['google']);
+    const signUpSpy = vi.spyOn(auth, 'signUp');
+    renderSupa(auth);
+
+    await gotoSignup(user);
+    await user.type(screen.getByPlaceholderText('you@example.com'), 'g@example.com');
+    await user.type(screen.getByPlaceholderText('비밀번호 입력'), 'pw1234');
+    await user.type(screen.getByPlaceholderText('비밀번호 재입력'), 'pw1234');
+    await user.click(screen.getByRole('button', { name: /가입하기/ }));
+
+    await waitFor(() => expect(screen.getByText(/Google 계정으로 가입한 이메일/)).toBeTruthy());
+    expect(signUpSpy).not.toHaveBeenCalled(); // 실제 가입 시도 없음
+    expect(screen.queryByPlaceholderText('인증 코드 입력')).toBeNull(); // 인증 화면으로 넘어가지 않음
+  });
+
+  it('이미 이메일로 가입된 주소면 로그인으로 유도한다', async () => {
+    const user = userEvent.setup();
+    const auth = new LocalAuth();
+    vi.spyOn(auth, 'emailSignInProviders').mockResolvedValue(['email']);
+    const signUpSpy = vi.spyOn(auth, 'signUp');
+    renderSupa(auth);
+
+    await gotoSignup(user);
+    await user.type(screen.getByPlaceholderText('you@example.com'), 'dup@example.com');
+    await user.type(screen.getByPlaceholderText('비밀번호 입력'), 'pw1234');
+    await user.type(screen.getByPlaceholderText('비밀번호 재입력'), 'pw1234');
+    await user.click(screen.getByRole('button', { name: /가입하기/ }));
+
+    await waitFor(() => expect(screen.getByText(/이미 가입된 이메일/)).toBeTruthy());
+    expect(signUpSpy).not.toHaveBeenCalled();
+    expect(screen.getByText(/로그인하러 가기/)).toBeTruthy();
+  });
+
+  it('이메일을 고치면 안내가 사라진다', async () => {
+    const user = userEvent.setup();
+    const auth = new LocalAuth();
+    vi.spyOn(auth, 'emailSignInProviders').mockResolvedValue(['google']);
+    renderSupa(auth);
+
+    await gotoSignup(user);
+    await user.type(screen.getByPlaceholderText('you@example.com'), 'g@example.com');
+    await user.type(screen.getByPlaceholderText('비밀번호 입력'), 'pw1234');
+    await user.type(screen.getByPlaceholderText('비밀번호 재입력'), 'pw1234');
+    await user.click(screen.getByRole('button', { name: /가입하기/ }));
+    await waitFor(() => expect(screen.getByText(/Google 계정으로 가입한 이메일/)).toBeTruthy());
+
+    await user.type(screen.getByPlaceholderText('you@example.com'), 'x');
+    expect(screen.queryByText(/Google 계정으로 가입한 이메일/)).toBeNull();
+  });
+
+  it('미가입 이메일은 평소대로 가입이 진행된다 (무회귀)', async () => {
+    const user = userEvent.setup();
+    const auth = new VerifyAuth();
+    vi.spyOn(auth, 'emailSignInProviders').mockResolvedValue([]); // 미가입
+    renderSupa(auth);
+
+    await gotoSignup(user);
+    await user.type(screen.getByPlaceholderText('you@example.com'), 'new@example.com');
+    await user.type(screen.getByPlaceholderText('비밀번호 입력'), 'pw1234');
+    await user.type(screen.getByPlaceholderText('비밀번호 재입력'), 'pw1234');
+    await user.click(screen.getByRole('button', { name: /가입하기/ }));
+
+    expect(await screen.findByPlaceholderText('인증 코드 입력')).toBeTruthy();
+  });
+
+  it('공급자 확인이 불가해도(RPC 미배포) 어댑터의 "이미 가입됨" 오류를 안내로 바꿔 막는다', async () => {
+    const user = userEvent.setup();
+    const auth = new LocalAuth();
+    vi.spyOn(auth, 'emailSignInProviders').mockResolvedValue(null); // 확인 불가
+    vi.spyOn(auth, 'signUp').mockResolvedValue({ session: null, error: 'User already registered' });
+    renderSupa(auth);
+
+    await gotoSignup(user);
+    await user.type(screen.getByPlaceholderText('you@example.com'), 'dup@example.com');
+    await user.type(screen.getByPlaceholderText('비밀번호 입력'), 'pw1234');
+    await user.type(screen.getByPlaceholderText('비밀번호 재입력'), 'pw1234');
+    await user.click(screen.getByRole('button', { name: /가입하기/ }));
+
+    await waitFor(() => expect(screen.getByText(/이미 가입된 이메일/)).toBeTruthy());
+    expect(screen.queryByPlaceholderText('인증 코드 입력')).toBeNull();
+  });
+});
