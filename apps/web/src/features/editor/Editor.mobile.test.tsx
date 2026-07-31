@@ -72,7 +72,7 @@ function touchEvent(target: EventTarget, type: string, init: { pointerId: number
 /** The pan/zoom transform layer inside `.mf-ed-vp` (see Viewport.tsx). */
 function getTransformLayer(container: HTMLElement): HTMLElement {
   const vp = getViewport(container);
-  const el = vp.querySelector('div[style*="translate"]');
+  const el = vp.querySelector('[data-pan-layer]');
   if (!el) throw new Error('transform layer not found');
   return el as HTMLElement;
 }

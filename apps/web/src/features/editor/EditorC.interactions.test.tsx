@@ -200,7 +200,7 @@ describe('Editor minimap (M3-Editor-c)', () => {
   it('a horizontal minimap drag pans horizontally with no vertical drift', () => {
     localStorage.setItem('mindflow_doc_mm3', JSON.stringify(SIMPLE_DOC));
     const { container } = renderEditor('/editor?map=mm3&title=x');
-    const layer = container.querySelector('.mf-ed-vp div[style*="translate"]') as HTMLElement;
+    const layer = container.querySelector('.mf-ed-vp [data-pan-layer]') as HTMLElement;
     const panY = (): number => {
       const m = /translate\([^,]+,\s*([-\d.]+)px\)/.exec(layer.style.transform);
       return m ? Number(m[1]) : NaN;
@@ -250,7 +250,7 @@ describe('Editor initial view', () => {
     const laidOut = layout(SIMPLE_DOC as Doc, SIMPLE_DOC.layoutMode as Doc['layoutMode'], sizeOf, { rootAnchor: { x: 0, y: 0 } });
     const rootX = laidOut[ROOT_ID]!.x;
 
-    const layer = container.querySelector('.mf-ed-vp div[style*="translate"]') as HTMLElement;
+    const layer = container.querySelector('.mf-ed-vp [data-pan-layer]') as HTMLElement;
     const t = /translate\(\s*([-\d.]+)px,\s*([-\d.]+)px\)\s*scale\(([-\d.]+)\)/.exec(layer.style.transform)!;
     const panX = Number(t[1]);
     const zoom = Number(t[3]);
@@ -863,7 +863,7 @@ describe('우클릭 드래그는 객체 위에서도 화면 이동이다', () =>
   }
   /** 팬 = 캔버스 레이어의 translate 변환. */
   const panOf = (c: HTMLElement): string => {
-    const el = [...getViewport(c).querySelectorAll<HTMLElement>('div')].find((d) => d.style.transform.includes('translate'));
+    const el = getViewport(c).querySelector<HTMLElement>('[data-pan-layer]');
     if (!el) throw new Error('pan layer not found');
     return el.style.transform;
   };
