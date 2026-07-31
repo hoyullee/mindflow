@@ -114,12 +114,26 @@ export class SupabaseDocStore implements DocStore {
         const { data: cur } = await this.client.from(TABLE).select('version').eq('id', id).maybeSingle();
         return { ok: false, reason: 'conflict', currentVersion: (cur as { version: number } | null)?.version ?? 1 };
       }
-      // No known prior version: create-or-force-overwrite at version 1. Used
-      // for a brand-new map's first save; callers that DO want locking on an
-      // existing doc must pass the version `load()` returned.
-      const { data, error } = await this.client.from(TABLE).upsert(row, { onConflict: 'id' }).select('version').single();
-      if (error) return { ok: false, reason: 'error', message: error.message };
-      return { ok: true, version: (data as { version: number } | null)?.version ?? 1 };
+      // 버전을 모르는 첫 저장 — **INSERT**로 한다(예전엔 upsert였다).
+      //
+      // upsert(`ON CONFLICT DO UPDATE`)였을 때의 문제: 그 id의 행이 이미 있고 그게
+      // **다른 계정 문서**라면 남의 행을 UPDATE하려 든다. RLS가 막아 주긴 하지만
+      // (42501 `row-level security policy (USING expression)` — 자동저장이 재시도해
+      // 로그를 가득 채웠다, 제보) 애초에 요청 자체가 틀렸다. 정책이 허용했다면
+      // **남의 문서를 조용히 덮어썼을** 요청이다.
+      //
+      // INSERT면 id가 이미 있을 때 23505로 안전하게 실패한다. 이어서 그 행을 읽어
+      // 보고 — 읽히면 내 문서(다른 탭이 방금 만든 것)이니 `conflict`로 버전을 알려
+      // 재시도하게 하고, 안 읽히면 남의 문서이니 `idTaken`으로 알려 호출부가 새
+      // id로 옮겨 저장하게 한다.
+      const { data, error } = await this.client.from(TABLE).insert(row).select('version').single();
+      if (!error) return { ok: true, version: (data as { version: number } | null)?.version ?? 1 };
+      const taken = error.code === '23505' || /duplicate key|already exists/i.test(error.message || '');
+      if (!taken) return { ok: false, reason: 'error', message: error.message };
+      const { data: cur } = await this.client.from(TABLE).select('version').eq('id', id).maybeSingle();
+      const mine = (cur as { version: number } | null)?.version;
+      if (typeof mine === 'number') return { ok: false, reason: 'conflict', currentVersion: mine };
+      return { ok: false, reason: 'idTaken' };
     }
 
     const nextVersion = opts.prevVersion + 1;

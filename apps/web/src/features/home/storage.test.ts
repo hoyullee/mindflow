@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it } from 'vitest';
-import { RECENT_CAP, applyImportBinding, cardKeyOf, docKey, loadRecent, mapId, mergeRecent, migrateMapFolderKeys, migrateRecentKeys, planImportBinding, pushRecentEntry } from './storage';
+import { RECENT_CAP, applyImportBinding, cardKeyOf, docKey, loadRecent, mapId, mergeRecent, migrateMapFolderKeys, migrateRecentKeys, planImportBinding, pushRecentEntry, rebindMovedDoc } from './storage';
 
 describe('mapFolders docId keying', () => {
   const spaces = [
@@ -242,5 +242,57 @@ describe('planImportBinding / applyImportBinding', () => {
   it('계획이 비면 같은 배열을 그대로 돌려준다', () => {
     const input = spaceWith([legacyCard]);
     expect(applyImportBinding(input, [])).toBe(input);
+  });
+});
+
+// 문서가 새 id로 옮겨 갔을 때(원래 id가 다른 계정의 문서였을 때 — `DocStore.save`의
+// `idTaken`) 홈 워크스페이스가 따라가야 한다. 안 따라가면 카드가 옛 id를 계속
+// 가리켜 다음에 열 때 같은 충돌이 되풀이된다.
+describe('rebindMovedDoc', () => {
+  const base = (maps: { title: string; docId?: string }[]) => ({
+    spaces: [{ id: 'g', name: '일반', maps: maps.map((m) => ({ ...m, when: '', hue: '#f0663f' })) }] as never[],
+    mapFolders: {} as Record<string, string>,
+    recent: [] as string[],
+  });
+
+  it('docId가 일치하는 카드를 새 id로 옮긴다', () => {
+    const data = base([{ title: '계획', docId: 'old1' }]);
+    const out = rebindMovedDoc(data, 'old1', 'new9');
+    expect((out.spaces[0] as { maps: { docId?: string }[] }).maps[0]!.docId).toBe('new9');
+  });
+
+  it('docId 없는 레거시 카드는 제목 해시로 매칭해 새 id를 붙인다', () => {
+    const title = '내 마인드맵';
+    const data = base([{ title }]);
+    const out = rebindMovedDoc(data, mapId(title), 'new9');
+    expect((out.spaces[0] as { maps: { docId?: string }[] }).maps[0]!.docId).toBe('new9');
+  });
+
+  it('폴더 배정과 최근 항목 키도 함께 옮긴다 (레거시는 제목 키였다)', () => {
+    const title = '내 마인드맵';
+    const old = mapId(title);
+    const data = { ...base([{ title }]), mapFolders: { [title]: 'f1' }, recent: ['다른 맵', title] };
+    const out = rebindMovedDoc(data, old, 'new9');
+    expect(out.mapFolders).toEqual({ new9: 'f1' });
+    expect(out.recent).toEqual(['다른 맵', 'new9']);
+  });
+
+  it('docId 카드의 폴더/최근 키도 옮긴다', () => {
+    const data = { ...base([{ title: '계획', docId: 'old1' }]), mapFolders: { old1: 'f2' }, recent: ['old1'] };
+    const out = rebindMovedDoc(data, 'old1', 'new9');
+    expect(out.mapFolders).toEqual({ new9: 'f2' });
+    expect(out.recent).toEqual(['new9']);
+  });
+
+  it('대상이 없으면 입력을 그대로(같은 참조로) 돌려준다 — 불필요한 저장 방지', () => {
+    const data = base([{ title: '무관', docId: 'other' }]);
+    expect(rebindMovedDoc(data, 'old1', 'new9')).toBe(data);
+    expect(rebindMovedDoc(data, '', 'new9')).toBe(data);
+    expect(rebindMovedDoc(data, 'same', 'same')).toBe(data);
+  });
+
+  it('최근 항목에 새 id가 이미 있으면 중복을 만들지 않는다', () => {
+    const data = { ...base([{ title: '계획', docId: 'old1' }]), recent: ['new9', 'old1'] };
+    expect(rebindMovedDoc(data, 'old1', 'new9').recent).toEqual(['new9']);
   });
 });

@@ -167,17 +167,48 @@ describe('SupabaseDocStore', () => {
     expect(result).toEqual({ ok: false, reason: 'conflict', currentVersion: 9 });
   });
 
-  it('save() without prevVersion upserts at version 1 (first save of a new doc)', async () => {
+  // 버전을 모르는 첫 저장은 **INSERT**다. 예전엔 upsert(`ON CONFLICT DO UPDATE`)였는데,
+  // 그 id가 다른 계정의 문서면 남의 행을 UPDATE하려 들어 Supabase 로그에 42501
+  // (`row-level security policy (USING expression)`)이 자동저장마다 쌓였다(제보).
+  // 정책이 허용했다면 남의 문서를 조용히 덮어썼을 요청이라 애초에 틀렸다.
+  it('save() without prevVersion INSERTs at version 1 (upsert가 아니다 — 남의 행을 건드리지 않는다)', async () => {
     const { client, query } = fakeClient({ data: { version: 1 }, error: null });
     const store = new SupabaseDocStore(client);
 
     const result = await store.save('new-doc', makeDoc('Fresh'), { title: 'Fresh' });
 
-    expect(query.calls[0]?.method).toBe('upsert');
-    const [upsertPayload, upsertOpts] = query.calls[0]!.args as [Record<string, unknown>, Record<string, unknown>];
-    expect(upsertPayload).toMatchObject({ id: 'new-doc', title: 'Fresh', version: 1 });
-    expect(upsertOpts).toEqual({ onConflict: 'id' });
+    expect(query.calls[0]?.method).toBe('insert');
+    expect(query.calls.some((c) => c.method === 'upsert')).toBe(false);
+    const [payload] = query.calls[0]!.args as [Record<string, unknown>];
+    expect(payload).toMatchObject({ id: 'new-doc', title: 'Fresh', version: 1 });
     expect(result).toEqual({ ok: true, version: 1 });
+  });
+
+  it('첫 저장의 id가 이미 있고 **읽을 수도 없으면** idTaken (다른 계정의 문서)', async () => {
+    // INSERT는 23505로 실패하고, 이어지는 조회는 RLS에 가려 빈 결과가 온다.
+    const results = [
+      { data: null, error: { code: '23505', message: 'duplicate key value violates unique constraint' } },
+      { data: null, error: null },
+    ];
+    let i = 0;
+    const from = vi.fn(() => new FakeQuery(results[Math.min(i++, results.length - 1)]!));
+    const client = { from } as unknown as import('@supabase/supabase-js').SupabaseClient;
+    const store = new SupabaseDocStore(client);
+
+    expect(await store.save('m-taken', makeDoc('Mine'), { title: 'Mine' })).toEqual({ ok: false, reason: 'idTaken' });
+  });
+
+  it('첫 저장의 id가 이미 있지만 **내 문서면** conflict (버전을 알려 재시도하게)', async () => {
+    const results = [
+      { data: null, error: { code: '23505', message: 'duplicate key value violates unique constraint' } },
+      { data: { version: 4 }, error: null },
+    ];
+    let i = 0;
+    const from = vi.fn(() => new FakeQuery(results[Math.min(i++, results.length - 1)]!));
+    const client = { from } as unknown as import('@supabase/supabase-js').SupabaseClient;
+    const store = new SupabaseDocStore(client);
+
+    expect(await store.save('mine', makeDoc('Mine'), { title: 'Mine' })).toEqual({ ok: false, reason: 'conflict', currentVersion: 4 });
   });
 
   // ③ 첫 저장에서 남의 문서를 덮지 않기 위한 플래그 — `SaveOptions.createOnly`.

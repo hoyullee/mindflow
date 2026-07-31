@@ -247,6 +247,69 @@ export function planImportBinding(
   return out;
 }
 
+/**
+ * 문서가 **새 id로 옮겨 갔을 때** 홈의 워크스페이스를 따라가게 한다(순수).
+ *
+ * 언제 쓰나: 에디터가 저장하려던 id가 이미 **다른 계정의 문서**여서(RLS가 가려
+ * `load()`는 빈 결과였다) 새 id로 옮겨 저장한 경우 — `DocStore.save`의 `idTaken`
+ * 참고. 카드가 옛 id를 그대로 가리키면 다음에 열 때 같은 충돌이 되풀이된다.
+ *
+ * 무엇을 옮기나 — 카드 정체성(`cardKeyOf`)에 매달린 상태 전부:
+ *  - `spaces[].maps[].docId`: 옛 id → 새 id
+ *  - `mapFolders`: 폴더 배정 키
+ *  - `recent`: 최근 항목 키
+ *
+ * 매칭 규칙: `docId === oldId`인 카드, 그리고 **docId가 없는 레거시 카드 중
+ * `mapId(제목) === oldId`인 것**(제목 해시로 열려 충돌을 일으킨 장본인이다).
+ * 바뀐 게 없으면 입력을 **그대로**(같은 참조로) 돌려준다 — 호출부가 불필요한
+ * 저장을 건너뛸 수 있게.
+ */
+export function rebindMovedDoc(
+  data: { spaces: SpaceData[]; mapFolders: Record<string, string>; recent?: string[] },
+  oldId: string,
+  newId: string,
+): { spaces: SpaceData[]; mapFolders: Record<string, string>; recent?: string[] } {
+  if (!oldId || !newId || oldId === newId) return data;
+  const oldKeys = new Set<string>([oldId]);
+  let touched = false;
+  const spaces = data.spaces.map((sp) => {
+    const maps = Array.isArray(sp.maps) ? sp.maps : [];
+    let hit = false;
+    const next = maps.map((m) => {
+      const matches = m.docId ? m.docId === oldId : mapId(m.title) === oldId;
+      if (!matches) return m;
+      hit = true;
+      // docId가 없던 카드는 제목이 카드 키였다 — 그 키의 상태도 함께 옮긴다.
+      if (!m.docId) oldKeys.add(m.title);
+      return { ...m, docId: newId };
+    });
+    if (!hit) return sp;
+    touched = true;
+    return { ...sp, maps: next };
+  });
+  const mapFolders = { ...data.mapFolders };
+  let foldersTouched = false;
+  oldKeys.forEach((k) => {
+    if (k in mapFolders) {
+      const folder = mapFolders[k]!;
+      delete mapFolders[k];
+      mapFolders[newId] = folder;
+      foldersTouched = true;
+    }
+  });
+  const recentIn = Array.isArray(data.recent) ? data.recent : undefined;
+  let recent = recentIn;
+  if (recentIn && recentIn.some((r) => oldKeys.has(r))) {
+    const seen = new Set<string>();
+    recent = recentIn
+      .map((r) => (oldKeys.has(r) ? newId : r))
+      .filter((r) => (seen.has(r) ? false : (seen.add(r), true)));
+    touched = true;
+  }
+  if (!touched && !foldersTouched) return data;
+  return { ...data, spaces, mapFolders, ...(recent !== undefined ? { recent } : {}) };
+}
+
 /** `planImportBinding`의 결과를 카드에 반영한다(순수). 제목이 같은 카드가 여러 개면
  * docId 없는 **첫** 카드에만 붙인다 — 계획도 제목당 하나만 만든다. */
 export function applyImportBinding(spaces: SpaceData[], plan: Array<{ title: string; docId: string }>): SpaceData[] {

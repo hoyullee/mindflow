@@ -281,3 +281,76 @@ describe('Editor initial hydration', () => {
     expect(save).not.toHaveBeenCalled();
   });
 });
+
+// 제보(Supabase 로그): `42501 ... row-level security policy (USING expression)`이
+// 자동저장마다 반복됐다. 원인은 "행이 없다"와 "행은 있는데 RLS가 가려 안 보인다"가
+// 똑같이 빈 결과라는 것 — 에디터가 남의 문서를 신규로 오해하고 그 id에 강제로 썼다.
+// 이제 어댑터가 `idTaken`으로 알려 주고, 에디터는 **새 id로 옮겨 저장**한다.
+describe('다른 계정이 쓰던 id로 저장하려 할 때 — 새 id로 옮겨 저장', () => {
+  /** 첫 저장은 `idTaken`, 새 id로의 저장은 성공하는 스토어. */
+  function makeTakenBackend() {
+    const saved: { id: string; version: number }[] = [];
+    const save = vi.fn(async (id: string) => {
+      if (id === 'm-legacy') return { ok: false as const, reason: 'idTaken' as const };
+      saved.push({ id, version: 1 });
+      return { ok: true as const, version: 1 };
+    });
+    const docStore = {
+      list: async () => [],
+      load: async () => null, // RLS에 가려 빈 결과 — 신규처럼 보인다
+      setFavorite: async () => undefined,
+      remove: async () => undefined,
+      restore: async () => undefined,
+      rename: async () => undefined,
+      save,
+    } as unknown as DocStore;
+    const spaceStore = new LocalSpaceStore();
+    return { backend: { auth: new LocalAuth(), docStore, spaceStore, shareStore: new LocalShareStore(), mode: 'supabase' } as Backend, save, saved, spaceStore };
+  }
+
+  it('옛 id 저장이 막히면 새 id로 옮겨 저장하고, 그 뒤 저장은 새 id로 나간다', async () => {
+    localStorage.clear();
+    // 로컬 본문이 있어야 "본문이 다른 기기에 있다" 가드를 지나 저장까지 간다(제보 상황).
+    localStorage.setItem('mindflow_doc_m-legacy', JSON.stringify(REAL_DOC));
+    const { backend, save, saved } = makeTakenBackend();
+    renderEditor(backend, '/editor?map=m-legacy&title=%EA%B3%84%ED%9A%8D');
+
+    await waitFor(() => expect(saved.length).toBe(1));
+    const newId = saved[0]!.id;
+    expect(newId).not.toBe('m-legacy');
+    expect(newId.startsWith('new-')).toBe(true);
+    // 옛 id로는 딱 한 번만 시도했다 — 반복해서 남의 행을 두드리지 않는다.
+    expect(save.mock.calls.filter((c) => c[0] === 'm-legacy').length).toBe(1);
+    // 새 id에 본문이 로컬 캐시로도 남는다(복구본).
+    await waitFor(() => expect(localStorage.getItem(`mindflow_doc_${newId}`)).toBeTruthy());
+  });
+
+  it('옮겨 갔음을 배너로 알린다', async () => {
+    localStorage.clear();
+    localStorage.setItem('mindflow_doc_m-legacy', JSON.stringify(REAL_DOC));
+    const { backend } = makeTakenBackend();
+    renderEditor(backend, '/editor?map=m-legacy&title=x');
+
+    // 전광판(mf-marquee)은 같은 문장을 두 번 그린다 — findAll로 받는다.
+    expect((await screen.findAllByText(/새 문서로 옮겨 저장했어요/)).length).toBeGreaterThan(0);
+  });
+
+  it('홈 카드(레거시: docId 없음)가 새 id를 가리키도록 재바인딩된다', async () => {
+    localStorage.clear();
+    localStorage.setItem('mindflow_doc_m-legacy', JSON.stringify(REAL_DOC));
+    const { backend, saved, spaceStore } = makeTakenBackend();
+    // 제목 해시가 'm-legacy'인 카드를 흉내낼 수 없으므로 docId로 매칭되는 카드를 둔다.
+    await spaceStore.save({ spaces: [{ id: 'g', name: '일반', maps: [{ title: '계획', when: '', hue: '#f0663f', docId: 'm-legacy' }] }], mapFolders: { 'm-legacy': 'f1' }, recent: ['m-legacy'] });
+    renderEditor(backend, '/editor?map=m-legacy&title=x');
+
+    await waitFor(() => expect(saved.length).toBe(1));
+    const newId = saved[0]!.id;
+    await waitFor(async () => {
+      const ws = await spaceStore.load();
+      const maps = (ws?.spaces?.[0] as { maps: { docId?: string }[] } | undefined)?.maps ?? [];
+      expect(maps[0]?.docId).toBe(newId);
+      expect(ws?.mapFolders).toEqual({ [newId]: 'f1' });
+      expect(ws?.recent).toEqual([newId]);
+    });
+  });
+});
