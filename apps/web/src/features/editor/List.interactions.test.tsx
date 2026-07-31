@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
-import { cleanup, fireEvent, render, waitFor } from '@testing-library/react';
+import { cleanup, fireEvent, render, waitFor, within } from '@testing-library/react';
 import { MemoryRouter, Route, Routes } from 'react-router-dom';
 import { parseDoc } from '@mindflow/mindmap-core';
 import { Editor } from './Editor';
@@ -65,6 +65,24 @@ function readSavedDoc(mapId: string) {
   const parsed = parseDoc(JSON.parse(raw));
   if (!parsed) throw new Error('unparseable doc');
   return parsed;
+}
+
+/** jsdom엔 PointerEvent가 없다 — MouseEvent를 pointer 이벤트 이름으로 디스패치.
+ * (RichText.interactions.test.tsx의 같은 헬퍼 주석 참고) */
+function firePointer(target: Element, type: 'pointerdown' | 'pointerup'): void {
+  const event = new MouseEvent(type, { bubbles: true, cancelable: true, button: 0 });
+  Object.defineProperty(event, 'pointerId', { value: 1, configurable: true });
+  fireEvent(target, event);
+}
+
+/** 툴바 버튼의 **전체 클릭 시퀀스** — pointerdown이 배경으로 새면 마퀴 드래그가
+ * 떠 선택이 날아가므로(기존 함정) mousedown만 쏘면 그 누수를 못 잡는다. */
+function clickToolbarButton(el: Element): void {
+  firePointer(el, 'pointerdown');
+  fireEvent.mouseDown(el);
+  fireEvent.mouseUp(el);
+  firePointer(el, 'pointerup');
+  fireEvent.click(el);
 }
 
 beforeEach(() => {
@@ -291,47 +309,224 @@ describe('편집 중 즉시 리스트 렌더', () => {
 });
 
 // 제보 ②: 리스트가 적용된 텍스트는 정렬 설정과 무관하게 늘 좌측에 붙었다.
-// 수리: 항목([마커|내용]) 블록 전체를 사용자 정렬대로 놓는다(justifyContent).
+// 수리: 연속한 리스트 줄 **묶음**을 `width: fit-content` 상자로 묶어 그 상자만
+// 정렬한다(auto margin). 항목을 하나씩 따로 정렬하면 마커 열이 흩어지고, 특히
+// 들여쓴 항목이 상위보다 왼쪽에 놓여 계층이 거꾸로 읽힌다.
 describe('리스트 정렬 — 사용자 설정(좌/중앙/우) 반영', () => {
   const listNode = (align?: string) => ({
     c1: { id: 'c1', text: '- 하나\n- 둘', emoji: '', parent: 'root', children: [], collapsed: false, color: null, x: 0, y: 0, ...(align ? { align } : {}) },
   });
-  const rowJustify = (container: HTMLElement, id = 'c1') =>
+  /** 리스트 묶음 상자(정렬을 담당하는 `fit-content` 블록)의 margin. */
+  const groupMargin = (container: HTMLElement, id = 'c1') =>
     Array.from(nodeBox(container, id).querySelectorAll('span'))
-      .filter((s) => s.style.display === 'flex')
-      .map((s) => s.style.justifyContent);
+      .filter((s) => s.style.width === 'fit-content')
+      .map((s) => s.style.margin);
 
-  it('기본(가운데) 정렬이면 리스트 블록도 가운데', () => {
+  it('기본(가운데) 정렬이면 리스트 묶음이 가운데', () => {
     localStorage.setItem('mindflow_doc_la1', JSON.stringify(docWith(listNode())));
     const { container } = renderEditor('/editor?map=la1&title=x');
-    expect(rowJustify(container)).toEqual(['center', 'center']);
+    expect(groupMargin(container)).toEqual(['0px auto']);
   });
 
   it('좌측 정렬', () => {
     localStorage.setItem('mindflow_doc_la2', JSON.stringify(docWith(listNode('left'))));
     const { container } = renderEditor('/editor?map=la2&title=x');
-    expect(rowJustify(container)).toEqual(['flex-start', 'flex-start']);
+    expect(groupMargin(container)).toEqual(['0px']);
   });
 
   it('우측 정렬', () => {
     localStorage.setItem('mindflow_doc_la3', JSON.stringify(docWith(listNode('right'))));
     const { container } = renderEditor('/editor?map=la3&title=x');
-    expect(rowJustify(container)).toEqual(['flex-end', 'flex-end']);
+    expect(groupMargin(container)).toEqual(['0px 0px 0px auto']);
   });
 
-  it('편집 박스의 리스트 행도 같은 정렬을 따른다', () => {
+  it('편집 박스의 리스트 묶음도 같은 정렬을 따른다', () => {
     localStorage.setItem('mindflow_doc_la4', JSON.stringify(docWith(listNode('right'))));
     const { container } = renderEditor('/editor?map=la4&title=x');
     const editor = startEditingNode(container, 'c1');
-    const rows = Array.from(editor.querySelectorAll('div')).filter((d) => d.style.display === 'flex');
-    expect(rows.map((r) => r.style.justifyContent)).toEqual(['flex-end', 'flex-end']);
+    const groups = Array.from(editor.querySelectorAll('div')).filter((d) => d.style.width === 'fit-content');
+    expect(groups.map((g) => g.style.margin)).toEqual(['0px 0px 0px auto']);
+    // 묶음 안 행은 두 줄 모두 좌측 기준(마커 열이 선다)
+    expect(groups[0]!.querySelectorAll('div[style*="flex"]').length).toBe(2);
   });
 
-  it('내용 스팬은 flex 0 1 auto — 짧은 항목이 행을 꽉 채우지 않아야 정렬이 산다', () => {
+  it('두 항목이 한 묶음으로 묶여 마커 열이 유지된다', () => {
     localStorage.setItem('mindflow_doc_la5', JSON.stringify(docWith(listNode('center'))));
     const { container } = renderEditor('/editor?map=la5&title=x');
-    const row = Array.from(nodeBox(container, 'c1').querySelectorAll('span')).find((s) => s.style.display === 'flex')!;
-    const content = row.children[1] as HTMLElement;
-    expect(content.style.flex).toBe('0 1 auto');
+    const groups = Array.from(nodeBox(container, 'c1').querySelectorAll('span')).filter((s) => s.style.width === 'fit-content');
+    expect(groups).toHaveLength(1); // 두 항목이 따로 정렬되지 않는다
+    expect(groups[0]!.children.length).toBe(2); // 항목 두 행이 같은 상자 안
+  });
+
+  it('평문 줄이 끼면 리스트 묶음이 끊긴다', () => {
+    localStorage.setItem(
+      'mindflow_doc_la6',
+      JSON.stringify(docWith({ c1: { id: 'c1', text: '- 하나\n평문\n- 둘', emoji: '', parent: 'root', children: [], collapsed: false, color: null, x: 0, y: 0 } })),
+    );
+    const { container } = renderEditor('/editor?map=la6&title=x');
+    expect(groupMargin(container)).toEqual(['0px auto', '0px auto']); // 묶음 두 개
+  });
+});
+
+// 요청: 리스트 들여쓰기·내어쓰기(Tab / Shift+Tab)와 툴바 버튼 4종
+// (글머리·번호·들여쓰기·내어쓰기). 규칙은 코어 `applyListOp` 단일 소스이고,
+// 들여쓰기는 마커 앞 공백 2칸(마크다운 중첩 목록과 같은 표현)으로 저장된다.
+describe('리스트 들여쓰기·내어쓰기 — Tab / Shift+Tab', () => {
+  it('Tab이 캐럿 줄을 한 단계 들여쓴다', () => {
+    localStorage.setItem('mindflow_doc_ti1', JSON.stringify(docWith({ c1: { id: 'c1', text: '- 하나\n- 둘', emoji: '', parent: 'root', children: [], collapsed: false, color: null, x: 0, y: 0 } })));
+    const { container } = renderEditor('/editor?map=ti1&title=x');
+    const editor = startEditingNode(container, 'c1');
+    setLinearSelection(editor, 8, 8); // 둘째 줄
+    expect(fireEvent.keyDown(editor, { key: 'Tab' })).toBe(false); // 기본 동작(포커스 이동) 차단
+    expect(domToRuns(editor).text).toBe('• 하나\n  • 둘');
+    // 들여쓴 줄도 [마커|내용] 행 — 마커 스팬에 들여쓰기 공백이 함께 들어간다
+    const markers = Array.from(editor.querySelectorAll('span')).map((s) => s.textContent);
+    expect(markers).toContain('  • ');
+  });
+
+  it('Shift+Tab이 내어쓰고, 최상위에서는 더 나가지 않는다', () => {
+    localStorage.setItem('mindflow_doc_ti2', JSON.stringify(docWith({ c1: { id: 'c1', text: '  - 하나', emoji: '', parent: 'root', children: [], collapsed: false, color: null, x: 0, y: 0 } })));
+    const { container } = renderEditor('/editor?map=ti2&title=x');
+    const editor = startEditingNode(container, 'c1');
+    setLinearSelection(editor, 6, 6);
+    fireEvent.keyDown(editor, { key: 'Tab', shiftKey: true });
+    expect(domToRuns(editor).text).toBe('• 하나');
+    fireEvent.keyDown(editor, { key: 'Tab', shiftKey: true }); // 이미 최상위 — 변화 없음
+    expect(domToRuns(editor).text).toBe('• 하나');
+  });
+
+  it('선택이 걸친 여러 줄을 한 번에 들여쓴다', () => {
+    localStorage.setItem('mindflow_doc_ti3', JSON.stringify(docWith({ c1: { id: 'c1', text: '- 하나\n- 둘\n- 셋', emoji: '', parent: 'root', children: [], collapsed: false, color: null, x: 0, y: 0 } })));
+    const { container } = renderEditor('/editor?map=ti3&title=x');
+    const editor = startEditingNode(container, 'c1');
+    setLinearSelection(editor, 0, 14);
+    fireEvent.keyDown(editor, { key: 'Tab' });
+    expect(domToRuns(editor).text).toBe('  • 하나\n  • 둘\n  • 셋');
+  });
+
+  it('들여쓴 뒤에도 부분 서식(굵게)이 보존된다', () => {
+    localStorage.setItem(
+      'mindflow_doc_ti4',
+      JSON.stringify(
+        docWith({
+          c1: {
+            id: 'c1', text: '- 강조 항목', emoji: '', parent: 'root', children: [], collapsed: false, color: null, x: 0, y: 0,
+            rich: [{ t: '- ', b: false, c: null }, { t: '강조', b: true, c: null }, { t: ' 항목', b: false, c: null }],
+          },
+        }),
+      ),
+    );
+    const { container } = renderEditor('/editor?map=ti4&title=x');
+    const editor = startEditingNode(container, 'c1');
+    setLinearSelection(editor, 4, 4);
+    fireEvent.keyDown(editor, { key: 'Tab' });
+    expect(domToRuns(editor).text).toBe('  • 강조 항목');
+    expect(domToRuns(editor).rich).toEqual([
+      { t: '  • ', b: false, c: null },
+      { t: '강조', b: true, c: null },
+      { t: ' 항목', b: false, c: null },
+    ]);
+  });
+
+  it('들여쓰기는 커밋 후 텍스트(공백 2칸)로 저장되고 렌더에도 남는다', async () => {
+    localStorage.setItem('mindflow_doc_ti5', JSON.stringify(docWith({ c1: { id: 'c1', text: '- 하나', emoji: '', parent: 'root', children: [], collapsed: false, color: null, x: 0, y: 0 } })));
+    const { container } = renderEditor('/editor?map=ti5&title=x');
+    const editor = startEditingNode(container, 'c1');
+    setLinearSelection(editor, 4, 4);
+    fireEvent.keyDown(editor, { key: 'Tab' });
+    fireEvent.keyDown(editor, { key: 'Enter' });
+    fireEvent.keyDown(window, { key: 's', ctrlKey: true });
+    await waitFor(() => {
+      expect(readSavedDoc('ti5').nodes.c1?.text).toBe('  • 하나');
+    });
+    expect(Array.from(nodeBox(container, 'c1').querySelectorAll('span')).map((s) => s.textContent)).toContain('  • ');
+  });
+
+  it('리스트가 아닌 줄에서는 Tab이 아무것도 바꾸지 않는다 (포커스만 지킨다)', () => {
+    localStorage.setItem('mindflow_doc_ti6', JSON.stringify(docWith({ c1: { id: 'c1', text: '평문', emoji: '', parent: 'root', children: [], collapsed: false, color: null, x: 0, y: 0 } })));
+    const { container } = renderEditor('/editor?map=ti6&title=x');
+    const editor = startEditingNode(container, 'c1');
+    setLinearSelection(editor, 2, 2);
+    expect(fireEvent.keyDown(editor, { key: 'Tab' })).toBe(false); // 기본 동작은 막되
+    expect(domToRuns(editor).text).toBe('평문'); // 내용은 그대로
+  });
+
+  it('들여쓴 항목의 Shift+Enter는 같은 단계로 이어지고, 빈 마커는 한 단계 내어쓴다', () => {
+    localStorage.setItem('mindflow_doc_ti7', JSON.stringify(docWith({ c1: { id: 'c1', text: '  - 하나', emoji: '', parent: 'root', children: [], collapsed: false, color: null, x: 0, y: 0 } })));
+    const { container } = renderEditor('/editor?map=ti7&title=x');
+    const editor = startEditingNode(container, 'c1');
+    setLinearSelection(editor, 6, 6);
+    fireEvent.keyDown(editor, { key: 'Enter', shiftKey: true });
+    expect(domToRuns(editor, true).text).toBe('  • 하나\n  • ');
+    fireEvent.keyDown(editor, { key: 'Enter', shiftKey: true }); // 빈 마커 → 한 단계 내어쓰기
+    expect(domToRuns(editor, true).text).toBe('  • 하나\n• ');
+  });
+});
+
+describe('서식 툴바 — 리스트 버튼 4종', () => {
+  const btn = (container: HTMLElement, title: RegExp) => within(getViewport(container)).getByTitle(title);
+
+  it('글머리 기호 버튼이 평문을 목록으로 만들고 다시 누르면 해제된다', () => {
+    localStorage.setItem('mindflow_doc_tb1', JSON.stringify(docWith({ c1: { id: 'c1', text: '하나\n둘', emoji: '', parent: 'root', children: [], collapsed: false, color: null, x: 0, y: 0 } })));
+    const { container } = renderEditor('/editor?map=tb1&title=x');
+    const editor = startEditingNode(container, 'c1');
+    setLinearSelection(editor, 0, 5);
+    clickToolbarButton(btn(container, /글머리 기호/));
+    expect(domToRuns(editor).text).toBe('• 하나\n• 둘');
+    clickToolbarButton(btn(container, /글머리 기호/));
+    expect(domToRuns(editor).text).toBe('하나\n둘');
+  });
+
+  it('번호 매기기 버튼이 순번을 자동으로 채운다', () => {
+    localStorage.setItem('mindflow_doc_tb2', JSON.stringify(docWith({ c1: { id: 'c1', text: '하나\n둘\n셋', emoji: '', parent: 'root', children: [], collapsed: false, color: null, x: 0, y: 0 } })));
+    const { container } = renderEditor('/editor?map=tb2&title=x');
+    const editor = startEditingNode(container, 'c1');
+    setLinearSelection(editor, 0, 8);
+    clickToolbarButton(btn(container, /번호 매기기/));
+    expect(domToRuns(editor).text).toBe('1. 하나\n2. 둘\n3. 셋');
+  });
+
+  it('글머리 목록에 번호 매기기를 누르면 번호 목록으로 바뀐다', () => {
+    localStorage.setItem('mindflow_doc_tb3', JSON.stringify(docWith({ c1: { id: 'c1', text: '- 하나\n- 둘', emoji: '', parent: 'root', children: [], collapsed: false, color: null, x: 0, y: 0 } })));
+    const { container } = renderEditor('/editor?map=tb3&title=x');
+    const editor = startEditingNode(container, 'c1');
+    setLinearSelection(editor, 0, 9);
+    clickToolbarButton(btn(container, /번호 매기기/));
+    expect(domToRuns(editor).text).toBe('1. 하나\n2. 둘');
+  });
+
+  it('들여쓰기·내어쓰기 버튼이 Tab과 같은 결과를 낸다', () => {
+    localStorage.setItem('mindflow_doc_tb4', JSON.stringify(docWith({ c1: { id: 'c1', text: '- 하나', emoji: '', parent: 'root', children: [], collapsed: false, color: null, x: 0, y: 0 } })));
+    const { container } = renderEditor('/editor?map=tb4&title=x');
+    const editor = startEditingNode(container, 'c1');
+    setLinearSelection(editor, 4, 4);
+    clickToolbarButton(btn(container, /들여쓰기/));
+    expect(domToRuns(editor).text).toBe('  • 하나');
+    clickToolbarButton(btn(container, /내어쓰기/));
+    expect(domToRuns(editor).text).toBe('• 하나');
+  });
+
+  it('선택 없이(캐럿만) 눌러도 그 줄에 적용된다', () => {
+    localStorage.setItem('mindflow_doc_tb5', JSON.stringify(docWith({ c1: { id: 'c1', text: '하나', emoji: '', parent: 'root', children: [], collapsed: false, color: null, x: 0, y: 0 } })));
+    const { container } = renderEditor('/editor?map=tb5&title=x');
+    const editor = startEditingNode(container, 'c1');
+    setLinearSelection(editor, 2, 2);
+    clickToolbarButton(btn(container, /글머리 기호/));
+    expect(domToRuns(editor).text).toBe('• 하나');
+  });
+});
+
+describe('메모(플로트) 들여쓰기 — Tab / Shift+Tab', () => {
+  it('Tab이 메모의 리스트 줄을 들여쓴다', () => {
+    localStorage.setItem('mindflow_doc_mt1', JSON.stringify(docWith({}, [{ id: 'f1', text: '- 하나\n- 둘', x: 100, y: 100, w: 160 }])));
+    const { container } = renderEditor('/editor?map=mt1&title=x');
+    const card = container.querySelector('[data-float-id="f1"]') as HTMLElement;
+    fireEvent.doubleClick(card);
+    const ta = card.querySelector('textarea') as HTMLTextAreaElement;
+    ta.setSelectionRange(ta.value.length, ta.value.length);
+    expect(fireEvent.keyDown(ta, { key: 'Tab' })).toBe(false);
+    expect(ta.value).toBe('- 하나\n  - 둘');
+    fireEvent.keyDown(ta, { key: 'Tab', shiftKey: true });
+    expect(ta.value).toBe('- 하나\n- 둘');
   });
 });

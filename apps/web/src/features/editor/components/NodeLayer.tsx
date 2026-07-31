@@ -11,8 +11,8 @@ import type { GeomMap } from '../types';
 import { peersSelecting } from '../presenceSelection';
 import { RemotePeerTag } from './RemotePeerTag';
 import { ResizeHandle } from './ResizeHandle';
-import { domToRuns, linearize, setLinearSelection } from '../richtextDom';
-import { ListTextBlock, listEditHtml, listLinesOf, listSignature } from '../listLines';
+import { domToRuns, linearize } from '../richtextDom';
+import { ListTextBlock, listLinesOf, listSigOf, listSignature, renderListEdit } from '../listLines';
 
 interface NodeLayerProps {
   nodes: NodeMap;
@@ -440,11 +440,12 @@ function maybeContinueList(e: { preventDefault: () => void }, el: HTMLDivElement
   const chars = runsToChars(parsed);
   let caret: number;
   if ('end' in cont) {
-    // 빈 마커 줄 → 마커 제거(리스트 종료). 줄바꿈은 넣지 않는다.
+    // 마커만 남은 빈 줄 → 접두를 `replaceWith`로 교체(들여쓴 줄은 한 단계
+    // 내어쓰기, 최상위는 제거로 리스트 종료). 줄바꿈은 넣지 않는다.
     const p = parseListPrefix(line);
     const rawLen = p ? p.raw.length : 0;
-    chars.splice(lineStart, rawLen);
-    caret = lineStart;
+    chars.splice(lineStart, rawLen, ...Array.from(cont.replaceWith).map((ch) => ({ ch, b: false, c: null })));
+    caret = lineStart + cont.replaceWith.length;
   } else {
     chars.splice(a, b - a);
     const insert = `\n${cont.next}`;
@@ -477,16 +478,12 @@ interface NodeEditBoxProps {
  * bold toggle turns the WRONG way inside already-bold node boxes). */
 function NodeEditBox({ id, n, boxStyle, align, controller }: NodeEditBoxProps) {
   const ref = useRef<HTMLDivElement | null>(null);
-  // 현재 DOM이 그리고 있는 줄별 마커 구성(`listSignature`). 입력마다 비교해
-  // **마커가 생기거나 사라진 순간에만** innerHTML을 다시 짓는다 — 글자만 칠
-  // 때는 손대지 않아 캐럿·IME가 안전하다.
-  const sigRef = useRef('');
 
-  /** 편집 값을 리스트 구조까지 반영해 다시 그리고 캐럿을 복원한다. */
+  /** 편집 값을 리스트 구조까지 반영해 다시 그리고 캐럿을 복원한다. 줄 구성
+   * 서명은 엘리먼트에 새겨진다(`renderListEdit`) — 컨트롤러(툴바·단축키)가 다시
+   * 그린 경우에도 다음 입력의 재구성 판정이 어긋나지 않는다. */
   const render = (el: HTMLDivElement, v: { text: string; rich: RichRun[] | null }, caret: number): void => {
-    el.innerHTML = listEditHtml(v, align);
-    sigRef.current = listSignature(v);
-    setLinearSelection(el, caret, caret);
+    renderListEdit(el, v, align, caret, caret);
     controller.updateNodeEditSize(id, el);
   };
 
@@ -494,8 +491,7 @@ function NodeEditBox({ id, n, boxStyle, align, controller }: NodeEditBoxProps) {
    * 재구성 — 제보: 편집 중에는 `- 항목` 원문이 보이고 확정해야 리스트가 됐다. */
   const syncListStructure = (el: HTMLDivElement): void => {
     const v = domToRuns(el, true);
-    const sig = listSignature(v);
-    if (sig === sigRef.current) return;
+    if (listSignature(v) === listSigOf(el)) return;
     const ws = window.getSelection();
     let caret = v.text.length;
     if (ws && ws.rangeCount) {
@@ -510,8 +506,7 @@ function NodeEditBox({ id, n, boxStyle, align, controller }: NodeEditBoxProps) {
     if (!el) return;
     // 시작부터 리스트 모양으로 — 편집 진입 순간 글머리가 원문(`- `)으로 되돌아
     // 보이지 않게(마커 글자 수가 같아 캐럿/선택 오프셋은 그대로다).
-    el.innerHTML = listEditHtml(n, align);
-    sigRef.current = listSignature(n);
+    renderListEdit(el, n, align, 0, 0);
     controller.setRichEditorEl(el);
     // Seed the live box size from the initial content so an already-long node
     // opens at its correct size (and subsequent typing keeps it in sync).
@@ -594,6 +589,15 @@ function NodeEditBox({ id, n, boxStyle, align, controller }: NodeEditBoxProps) {
             e.preventDefault();
             return;
           }
+        }
+        // Tab = 들여쓰기 / Shift+Tab = 내어쓰기 (리스트 줄에만 반응). 리스트가
+        // 아니어도 기본 동작은 막는다 — Tab으로 포커스가 나가면 blur 커밋이
+        // 걸려 편집이 갑자기 끝나 버린다.
+        if (e.key === 'Tab' && !composing) {
+          e.preventDefault();
+          controller.applyListOp({ type: 'indent', dir: e.shiftKey ? -1 : 1 });
+          controller.updateNodeEditSize(id, ref.current);
+          return;
         }
         if (e.key === 'Enter' && !composing && !e.shiftKey) {
           e.preventDefault();

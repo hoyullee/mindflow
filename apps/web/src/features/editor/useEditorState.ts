@@ -1,10 +1,10 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import type { MouseEvent as ReactMouseEvent, PointerEvent as ReactPointerEvent } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
-import type { Box, Doc, Float, Line, LineAnchor, LayoutMode, Node, NodeMap, SizeOf, SnapCandidate, Zone } from '@mindflow/mindmap-core';
-import { HistoryStack, ROOT_ID, applyMarkdownShortcuts, applyPartialStyle, cubicAt, findLineSnap, layout, resolveLineEndpoints, resolveLineGeometry, serializeDoc, toMarkdown } from '@mindflow/mindmap-core';
-import { domToRuns, linearize, setLinearSelection } from './richtextDom';
-import { listEditHtml } from './listLines';
+import type { Box, Doc, Float, Line, LineAnchor, LayoutMode, ListOp, Node, NodeMap, SizeOf, SnapCandidate, Zone } from '@mindflow/mindmap-core';
+import { HistoryStack, ROOT_ID, applyListOp as applyListOpToText, applyMarkdownShortcuts, applyPartialStyle, charsToRuns, cubicAt, findLineSnap, layout, resolveLineEndpoints, resolveLineGeometry, runsToChars, serializeDoc, shiftOffset, toMarkdown } from '@mindflow/mindmap-core';
+import { domToRuns, linearize } from './richtextDom';
+import { renderListEdit } from './listLines';
 import type { ShareStore } from '../../adapters/ports';
 import type { CollabStatus } from '../../collab/ports';
 import { useBackend, useDocStore, useShareStore } from '../../adapters/BackendContext';
@@ -322,6 +322,9 @@ export interface EditorController {
    * selection); the actual doc/undo commit happens later, on blur/Enter, via
    * `commitNodeRichText` reading the same live DOM. */
   applyPartial: (kind: 'b' | 'i' | 's' | 'c' | 'clear', val?: string | null) => void;
+  /** 줄 단위 리스트 연산 — 글머리/번호 토글, 들여쓰기(Tab)/내어쓰기(Shift+Tab).
+   * 편집 중인 노드 텍스트에만 적용된다(`richElRef`가 가리키는 박스). */
+  applyListOp: (op: ListOp) => void;
   startEditFloat: (id: string) => void;
   commitFloatText: (id: string, text: string) => void;
   cancelFloatEdit: () => void;
@@ -1955,6 +1958,13 @@ export function useEditorState(): EditorController {
    * `data-init` guard), applies the style via `@mindflow/mindmap-core`'s `applyPartialStyle`,
    * rewrites the innerHTML, and restores the selection so consecutive style clicks on the
    * same span keep working. */
+  /** 편집 중인 노드의 텍스트 정렬 — 리스트 행을 그 정렬대로 놓기 위해 필요하다.
+   * 편집 박스는 노드 박스(`data-node-id`) 안에 있으므로 DOM에서 되짚는다. */
+  const editedNodeAlign = useCallback((ed: HTMLElement): 'left' | 'center' | 'right' | undefined => {
+    const id = (ed.closest('[data-node-id]') as HTMLElement | null)?.dataset.nodeId;
+    return (id ? docRef.current.nodes[id]?.align : undefined) as 'left' | 'center' | 'right' | undefined;
+  }, []);
+
   const applyPartial = useCallback((kind: 'b' | 'i' | 's' | 'c' | 'clear', val?: string | null) => {
     const ed = richElRef.current;
     if (!ed) return;
@@ -1977,11 +1987,41 @@ export function useEditorState(): EditorController {
     }
     const next = applyPartialStyle(parsed, a, b, kind, val ?? null);
     // 리스트 줄이 있으면 편집 중 구조([마커|내용] 행)를 유지한 채 다시 그린다 —
-    // `runsToHtml`만 쓰면 서식 한 번 적용에 리스트 모양이 풀려 버린다.
-    const editedId = (ed.closest('[data-node-id]') as HTMLElement | null)?.dataset.nodeId;
-    const nodeAlign = (editedId ? docRef.current.nodes[editedId]?.align : undefined) as 'left' | 'center' | 'right' | undefined;
-    ed.innerHTML = listEditHtml(next, nodeAlign);
-    setLinearSelection(ed, Math.min(a, b), Math.max(a, b));
+    // 평범한 `runsToHtml`만 쓰면 서식 한 번 적용에 리스트 모양이 풀려 버린다.
+    renderListEdit(ed, next, editedNodeAlign(ed), Math.min(a, b), Math.max(a, b));
+  }, []);
+
+  /**
+   * 줄 단위 리스트 연산(글머리·번호 토글, 들여쓰기·내어쓰기) — 툴바 버튼과
+   * Tab/Shift+Tab이 함께 쓴다. 규칙은 코어 `applyListOp`가 단일 소스이고, 여기선
+   * 그 편집 목록을 **char-model에 그대로 splice** 해 부분 서식(rich 런)을 보존한
+   * 뒤 리스트 구조로 다시 그린다(`applyPartial`과 같은 재료).
+   */
+  const applyListOp = useCallback((op: ListOp) => {
+    const ed = richElRef.current;
+    if (!ed) return;
+    const ws = window.getSelection();
+    if (!ws || !ws.rangeCount) return;
+    const rng = ws.getRangeAt(0);
+    const lin = linearize(ed, [
+      { container: rng.startContainer, offset: rng.startOffset },
+      { container: rng.endContainer, offset: rng.endOffset },
+    ]);
+    const a = Math.min(lin.pos[0] ?? 0, lin.pos[1] ?? 0);
+    const b = Math.max(lin.pos[0] ?? 0, lin.pos[1] ?? 0);
+    const parsed = domToRuns(ed, true);
+    const edits = applyListOpToText(parsed.text, a, b, op);
+    if (!edits.length) return;
+    const chars = runsToChars(parsed);
+    // 뒤에서부터 적용해야 앞 편집의 인덱스가 밀리지 않는다. 삽입 글자는 무서식
+    // (마커·들여쓰기는 늘 평문 — 커밋 후 렌더도 마커를 평문으로 그린다).
+    [...edits]
+      .sort((x, y) => y.at - x.at)
+      .forEach((e) => chars.splice(e.at, e.remove, ...Array.from(e.insert).map((ch) => ({ ch, b: false, c: null }))));
+    const runs = charsToRuns(chars).filter((r) => r.t);
+    const styled = runs.some((r) => r.b || r.c || r.i || r.s);
+    const next = { text: chars.map((c) => c.ch).join(''), rich: styled ? runs : null };
+    renderListEdit(ed, next, editedNodeAlign(ed), shiftOffset(a, edits), shiftOffset(b, edits));
   }, []);
 
   const startEditFloat = useCallback((id: string) => {
@@ -3420,6 +3460,7 @@ export function useEditorState(): EditorController {
     closeTextCtx,
     setRichEditorEl,
     applyPartial,
+    applyListOp,
     startEditFloat,
     commitFloatText,
     cancelFloatEdit,
