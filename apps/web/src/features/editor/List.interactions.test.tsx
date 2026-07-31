@@ -14,6 +14,10 @@ import { domToRuns, setLinearSelection } from './richtextDom';
 // 글리프 `• `로 정규화되어 텍스트에 들어간다(입력 규칙: `- `를 치면 곧바로 `• `).
 // 글자 수가 같아 캐럿·오프셋이 그대로이고 `• ` 자체가 유효한 마커라 왕복이 안전하다.
 
+/** 표시용 들여쓰기 문자 — 렌더/측정은 EN SPACE(0.5em)로 그린다(일반 공백은 너무
+ * 좁다는 제보). 저장본은 `domToRuns`가 일반 공백으로 되돌린다. */
+const EN = '\u2002';
+
 function docWith(nodes: Record<string, object>, floats: object[] = []) {
   return {
     v: 1,
@@ -381,7 +385,7 @@ describe('리스트 들여쓰기·내어쓰기 — Tab / Shift+Tab', () => {
     expect(domToRuns(editor).text).toBe('• 하나\n  ◦ 둘');
     // 들여쓴 줄도 [마커|내용] 행 — 마커 스팬에 들여쓰기 공백이 함께 들어간다
     const markers = Array.from(editor.querySelectorAll('span')).map((s) => s.textContent);
-    expect(markers).toContain('  ◦ '); // 1단계 글리프
+    expect(markers).toContain(`${EN}${EN}◦ `); // 1단계 글리프 + 표시용 들여쓰기
   });
 
   it('Shift+Tab이 내어쓰고, 최상위에서는 더 나가지 않는다', () => {
@@ -439,7 +443,7 @@ describe('리스트 들여쓰기·내어쓰기 — Tab / Shift+Tab', () => {
     await waitFor(() => {
       expect(readSavedDoc('ti5').nodes.c1?.text).toBe('  ◦ 하나');
     });
-    expect(Array.from(nodeBox(container, 'c1').querySelectorAll('span')).map((s) => s.textContent)).toContain('  ◦ ');
+    expect(Array.from(nodeBox(container, 'c1').querySelectorAll('span')).map((s) => s.textContent)).toContain(`${EN}${EN}◦ `);
   });
 
   it('리스트가 아닌 줄에서는 Tab이 아무것도 바꾸지 않는다 (포커스만 지킨다)', () => {
@@ -557,8 +561,8 @@ describe('단계별 마커 — 들여쓰기/내어쓰기로 기호가 바뀐다'
     (doc.nodes.root as { children: string[] }).children = ['c1', 'c2'];
     localStorage.setItem('mindflow_doc_lv1', JSON.stringify(doc));
     const { container } = renderEditor('/editor?map=lv1&title=x');
-    expect(markersOf(nodeBox(container, 'c1'))).toEqual(expect.arrayContaining(['• ', '  ◦ ', '    ▪ ', '      • ']));
-    expect(markersOf(nodeBox(container, 'c2'))).toEqual(expect.arrayContaining(['1. ', '  a. ', '    i. ', '      1. ']));
+    expect(markersOf(nodeBox(container, 'c1'))).toEqual(expect.arrayContaining(['• ', `${EN.repeat(2)}◦ `, `${EN.repeat(4)}▪ `, `${EN.repeat(6)}• `]));
+    expect(markersOf(nodeBox(container, 'c2'))).toEqual(expect.arrayContaining(['1. ', `${EN.repeat(2)}a. `, `${EN.repeat(4)}i. `, `${EN.repeat(6)}1. `]));
   });
 
   it('Tab을 반복하면 글머리 글리프가 • → ◦ → ▪ → • 로 순환한다', () => {

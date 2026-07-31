@@ -72,9 +72,13 @@ describe('continueListMarker', () => {
   });
 });
 
+// 표시용 들여쓰기는 EN SPACE(0.5em) — 일반 공백은 단계가 안 보일 만큼 좁다(제보).
+// `raw`(저장)는 일반 공백 그대로이고 `display`에서만 1:1로 갈아 끼운다.
+const EN = '\u2002';
+
 describe('들여쓰기 — parseListPrefix.indent / pad', () => {
   it('마커 앞 공백 2칸이 한 단계', () => {
-    expect(parseListPrefix('  - 항목')).toMatchObject({ indent: 1, pad: '  ', raw: '  - ', display: '  ◦ ' });
+    expect(parseListPrefix('  - 항목')).toMatchObject({ indent: 1, pad: '  ', raw: '  - ', display: `${EN}${EN}◦ ` });
     expect(parseListPrefix('    1. 항목')).toMatchObject({ indent: 2, pad: '    ', raw: '    1. ' });
   });
 
@@ -85,13 +89,13 @@ describe('들여쓰기 — parseListPrefix.indent / pad', () => {
   it('들여쓴 줄도 raw와 display의 길이가 같다 (오프셋 보존 계약 유지)', () => {
     const p = parseListPrefix('    - 항목')!;
     expect(p.display.length).toBe(p.raw.length);
-    expect(p.display).toBe('    ▪ '); // 2단계 = 채운 사각형
+    expect(p.display).toBe(`${EN.repeat(4)}▪ `); // 2단계 = 채운 사각형, 들여쓰기는 EN SPACE
   });
 });
 
 describe('continueListMarker — 들여쓰기 유지·단계별 종료', () => {
   it('들여쓴 항목은 같은 단계로 이어진다', () => {
-    expect(continueListMarker('  - 항목')).toEqual({ next: '  ◦ ' }); // 1단계 글리프
+    expect(continueListMarker('  - 항목')).toEqual({ next: `${EN}${EN}◦ ` }); // 1단계 글리프
     expect(continueListMarker('    iii. 항목')).toEqual({ next: '    iv. ' }); // 2단계 = 로마
   });
 
@@ -265,6 +269,30 @@ describe('단계별 마커 — 3단계 주기(네 번째는 첫 번째로)', () 
       const p = parseListPrefix(line)!;
       expect(p.display.length).toBe(p.raw.length);
     }
+  });
+});
+
+describe('표시용 들여쓰기 폭 (EN SPACE)', () => {
+  it('display의 들여쓰기만 EN SPACE로 바뀌고 raw는 일반 공백 그대로다', () => {
+    const p = parseListPrefix('    1. 항목')!;
+    expect(p.raw).toBe('    1. '); // 저장본은 그대로 — 이미 저장된 문서의 단계가 흔들리지 않는다
+    expect(p.display).toBe(`${EN.repeat(4)}1. `); // 번호 표기는 저장된 그대로(치환은 들여쓰기만)
+    expect(p.display.length).toBe(p.raw.length); // 1:1 치환 = 오프셋 계약 유지
+  });
+
+  it('표시된 그대로 커밋해도(EN SPACE가 저장돼도) 단계가 유지된다 — 왕복 안정', () => {
+    const once = parseListPrefix('    - 항목')!;
+    const committed = once.display + '항목';
+    const again = parseListPrefix(committed)!;
+    expect(again.indent).toBe(once.indent);
+    expect(again.display).toBe(once.display);
+  });
+
+  it('EN SPACE로 들여쓴 줄도 들여쓰기/내어쓰기가 된다', () => {
+    const t = `${EN}${EN}◦ 하나`;
+    const edits = applyListOp(t, t.length, t.length, { type: 'indent', dir: 1 });
+    const out = edits.reduce((acc, e) => acc.slice(0, e.at) + e.insert + acc.slice(e.at + e.remove), t);
+    expect(parseListPrefix(out)!.indent).toBe(2);
   });
 });
 

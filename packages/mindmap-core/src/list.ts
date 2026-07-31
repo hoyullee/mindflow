@@ -121,16 +121,34 @@ export interface ListPrefix {
   pad: string;
 }
 
+/** 표시용 들여쓰기 문자 — EN SPACE(0.5em). 일반 공백은 좁아서 단계가 거의
+ * 드러나지 않았다(제보: "들여쓰기 간격이 너무 좁다"). `display`에서만 공백 하나를
+ * 이 문자 **하나로** 갈아 끼우므로 `raw`와 글자 수가 같아 rich 런 오프셋 계약이
+ * 그대로고, 소비처(에디터 렌더·박스 측정·홈 썸네일·PNG)는 전부 `display`를 재기
+ * 때문에 폭이 자동으로 함께 넓어진다. 저장 단위(`LIST_INDENT_UNIT`)는 일반 공백
+ * 2칸 그대로여서 이미 저장된 문서의 단계도 흔들리지 않는다. */
+const DISPLAY_INDENT = '\u2002';
+
+/** 들여쓰기로 인정하는 공백류 — 저장본의 일반 공백/탭과, 편집 화면을 그대로
+ * 커밋했을 때 들어오는 표시용 EN SPACE. */
+const PAD_CHARS = ' \t\u2002';
+const PAD_RE = new RegExp(`^[${PAD_CHARS}]*`);
+
 // 글머리: (들여쓰기) -, *, 그리고 단계 글리프(•, ◦, ▪) 뒤 공백 하나.
 // 번호: (들여쓰기) 숫자 1~3자리 **또는 소문자 표기**(a…, i…) + '.'/')' + 공백.
-const UL_RE = /^([ \t]*)([-*•◦▪]) /;
-const OL_RE = /^([ \t]*)(\d{1,3}|[a-z]{1,7})([.)]) /;
+const UL_RE = new RegExp(`^([${PAD_CHARS}]*)([-*•◦▪]) `);
+const OL_RE = new RegExp(`^([${PAD_CHARS}]*)(\\d{1,3}|[a-z]{1,7})([.)]) `);
 
 /** 들여쓰기 공백 → 단계. 탭 하나는 한 단계로 센다. */
 function indentLevelOf(pad: string): number {
   let cols = 0;
   for (const ch of pad) cols += ch === '\t' ? LIST_INDENT_UNIT.length : 1;
   return Math.min(MAX_LIST_INDENT, Math.floor(cols / LIST_INDENT_UNIT.length));
+}
+
+/** 표시용 들여쓰기 — 공백 하나를 EN SPACE 하나로(길이 보존, 탭은 그대로 둔다). */
+function displayPad(pad: string): string {
+  return pad.replace(/ /g, DISPLAY_INDENT);
 }
 
 /** 그 단계에서 번호 표기로 인정할 토큰인가.
@@ -162,14 +180,14 @@ export function parseListPrefix(line: string): ListPrefix | null {
   if (ul) {
     const pad = ul[1] ?? '';
     const indent = indentLevelOf(pad);
-    return { kind: 'ul', raw: ul[0], display: `${pad}${bulletGlyphFor(indent)} `, indent, pad };
+    return { kind: 'ul', raw: ul[0], display: `${displayPad(pad)}${bulletGlyphFor(indent)} `, indent, pad };
   }
   const ol = OL_RE.exec(line);
   if (ol) {
     const pad = ol[1] ?? '';
     const indent = indentLevelOf(pad);
     if (isOrdinalToken(ol[2] ?? '', indent)) {
-      return { kind: 'ol', raw: ol[0], display: ol[0], indent, pad };
+      return { kind: 'ol', raw: ol[0], display: displayPad(pad) + ol[0].slice(pad.length), indent, pad };
     }
   }
   return null;
@@ -315,7 +333,7 @@ export function applyListOp(text: string, s0: number, s1: number, op: ListOp): T
     const targets = lines.filter((ln) => ln.target);
     const allSame = targets.length > 0 && targets.every((ln) => ln.prefix?.kind === op.kind);
     targets.forEach((ln) => {
-      const pad = ln.prefix ? ln.prefix.pad : (/^[ \t]*/.exec(ln.text)?.[0] ?? '');
+      const pad = ln.prefix ? ln.prefix.pad : (PAD_RE.exec(ln.text)?.[0] ?? '');
       if (allSame) {
         ln.next = pad; // 마커만 벗기고 들여쓰기는 남긴다
         return;
@@ -331,7 +349,7 @@ export function applyListOp(text: string, s0: number, s1: number, op: ListOp): T
   lines.forEach((ln) => {
     const oldPrefix = ln.prefix ? ln.prefix.raw : '';
     // 마커가 없던 줄에 접두를 넣을 땐 원래 있던 들여쓰기 공백까지 대체한다.
-    const removeLen = ln.prefix ? oldPrefix.length : (/^[ \t]*/.exec(ln.text)?.[0].length ?? 0);
+    const removeLen = ln.prefix ? oldPrefix.length : (PAD_RE.exec(ln.text)?.[0].length ?? 0);
     const removed = ln.text.slice(0, removeLen);
     if (removed === ln.next) return;
     edits.push({ at: ln.start, remove: removeLen, insert: ln.next });
