@@ -28,6 +28,14 @@ const DOC = {
   themeKey: 'coral',
 };
 
+// jsdom엔 PointerEvent가 없다 — MouseEvent를 pointer* 이름으로 던지고 `pointerId`만
+// 붙여 준다(EditorC.interactions.test.tsx와 같은 방식).
+function firePointer(target: Element | Window, type: 'pointerdown' | 'pointermove' | 'pointerup', init: { pointerId?: number; clientX?: number; clientY?: number; button?: number } = {}): void {
+  const event = new MouseEvent(type, { bubbles: true, cancelable: true, clientX: init.clientX ?? 0, clientY: init.clientY ?? 0, button: init.button ?? 0 });
+  Object.defineProperty(event, 'pointerId', { value: init.pointerId ?? 1, configurable: true });
+  fireEvent(target, event);
+}
+
 function renderEditor(initialEntry: string) {
   return render(
     <MemoryRouter initialEntries={[initialEntry]}>
@@ -662,8 +670,26 @@ describe('Editor interactions (M3-Editor-b)', () => {
     // 배경 레이어는 스스로 합성되고(translateZ) 클릭을 가로채지 않는다.
     expect(bg.style.transform).toBe('translateZ(0)');
     expect(bg.style.pointerEvents).toBe('none');
-    // 팬 레이어는 합성기 전용 힌트를 갖는다.
-    expect(pan.style.willChange).toBe('transform');
+  });
+
+  // 제보: 에디터에 들어가면 텍스트·객체가 전부 흐릿하고, 객체를 편집하면 그
+  // 객체만 선명해진다. 원인은 팬 레이어의 `will-change: transform` — 브라우저가
+  // 승격된 레이어의 래스터 배율을 첫 프레임(scale 1)에 고정하는데, 에디터는 한
+  // 프레임 뒤 중앙 정렬 배율(1.25)로 바뀌므로 화면 전체가 늘어난 텍스처가 된다.
+  // 배경 재래스터는 위 배경 레이어 분리만으로 이미 해결되므로 힌트는 필요 없다.
+  it('팬 레이어에 will-change를 걸지 않는다 (진입 시 흐릿함 방지)', () => {
+    localStorage.setItem('mindflow_doc_bg2', JSON.stringify(DOC));
+    const { container } = renderEditor('/editor?map=bg2&title=x');
+    const vp = container.querySelector('.mf-ed-vp') as HTMLElement;
+    const pan = () => container.querySelector('[data-pan-layer]') as HTMLElement;
+
+    expect(pan().style.willChange).toBe('');
+    // 팬 드래그 중에도 켜지 않는다 — 배율이 바뀌는 순간(줌·핀치)마다 흐려질 여지를 남기지 않는다.
+    firePointer(vp, 'pointerdown', { pointerId: 4, clientX: 300, clientY: 300, button: 2 });
+    firePointer(window, 'pointermove', { pointerId: 4, clientX: 380, clientY: 340 });
+    expect(pan().style.willChange).toBe('');
+    firePointer(window, 'pointerup', { pointerId: 4, clientX: 380, clientY: 340, button: 2 });
+    expect(pan().style.willChange).toBe('');
   });
 
   // 요청: GNB 로고를 눌러도 홈으로(독칩 홈 버튼과 같은 기능).
