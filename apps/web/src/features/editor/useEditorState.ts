@@ -3,7 +3,8 @@ import type { MouseEvent as ReactMouseEvent, PointerEvent as ReactPointerEvent }
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import type { Box, Doc, Float, Line, LineAnchor, LayoutMode, Node, NodeMap, SizeOf, SnapCandidate, Zone } from '@mindflow/mindmap-core';
 import { HistoryStack, ROOT_ID, applyMarkdownShortcuts, applyPartialStyle, cubicAt, findLineSnap, layout, resolveLineEndpoints, resolveLineGeometry, serializeDoc, toMarkdown } from '@mindflow/mindmap-core';
-import { domToRuns, linearize, runsToHtml, setLinearSelection } from './richtextDom';
+import { domToRuns, linearize, setLinearSelection } from './richtextDom';
+import { listEditHtml } from './listLines';
 import type { ShareStore } from '../../adapters/ports';
 import type { CollabStatus } from '../../collab/ports';
 import { useBackend, useDocStore, useShareStore } from '../../adapters/BackendContext';
@@ -1975,7 +1976,11 @@ export function useEditorState(): EditorController {
       if (!b) return;
     }
     const next = applyPartialStyle(parsed, a, b, kind, val ?? null);
-    ed.innerHTML = runsToHtml(next);
+    // 리스트 줄이 있으면 편집 중 구조([마커|내용] 행)를 유지한 채 다시 그린다 —
+    // `runsToHtml`만 쓰면 서식 한 번 적용에 리스트 모양이 풀려 버린다.
+    const editedId = (ed.closest('[data-node-id]') as HTMLElement | null)?.dataset.nodeId;
+    const nodeAlign = (editedId ? docRef.current.nodes[editedId]?.align : undefined) as 'left' | 'center' | 'right' | undefined;
+    ed.innerHTML = listEditHtml(next, nodeAlign);
     setLinearSelection(ed, Math.min(a, b), Math.max(a, b));
   }, []);
 

@@ -28,12 +28,21 @@ import { downloadFile } from './download';
 const PAD = 46;
 
 /** 감싼 시각 줄 — 리스트 줄은 첫 줄 `t`에 표시 마커(`• `)가 포함되고, 연속 줄은
- * 마커 폭만큼 `indent`를 갖는다(에디터 행잉 인덴트와 동일 모델). 리스트 줄은
- * 정렬과 무관하게 좌측에서 그린다(`list` 플래그). */
+ * 마커 폭만큼 `indent`를 갖는다(에디터 행잉 인덴트와 동일 모델). `itemW`는 그
+ * 항목([마커|내용]) 블록의 폭 — 사용자 정렬대로 블록을 옮기는 데 쓴다. */
 interface PngLine {
   t: string;
   indent: number;
   list: boolean;
+  itemW: number;
+}
+
+/** 리스트 항목 블록의 왼쪽 x — 에디터 `ListTextBlock`의 `justifyContent`,
+ * 썸네일 `mapPreview`의 같은 이름 헬퍼와 동일 규칙. */
+function listBlockLeft(itemW: number, align: 'left' | 'center' | 'right', left: number, right: number): number {
+  if (align === 'right') return right - itemW;
+  if (align === 'center') return (left + right) / 2 - itemW / 2;
+  return left;
 }
 
 /** Soft-wrap `text` to `maxW` px with the ctx's CURRENT font, mirroring the
@@ -48,34 +57,36 @@ function wrapLines(ctx: CanvasRenderingContext2D, text: string, maxW: number): P
     const markerW = lp ? ctx.measureText(lp.display).width : 0;
     const hard = lp ? rawHard.slice(lp.raw.length) : rawHard;
     const lineMaxW = lp ? Math.max(24, maxW - markerW) : maxW;
-    let first = true;
-    const push = (line: string): void => {
-      if (lp) out.push(first ? { t: lp.display + line, indent: 0, list: true } : { t: line, indent: markerW, list: true });
-      else out.push({ t: line, indent: 0, list: false });
-      first = false;
-    };
+    const visual: { t: string; w: number }[] = [];
     if (!hard) {
-      push('');
-      continue;
-    }
-    const tokens = hard.match(/[A-Za-z0-9]+|\s+|./gu) || [hard];
-    let line = '';
-    let lineW = 0;
-    for (const tk of tokens) {
-      const w = ctx.measureText(tk).width;
-      const isSpace = /^\s+$/.test(tk);
-      if (line && lineW + w > lineMaxW && !isSpace) {
-        push(line);
-        line = isSpace ? '' : tk;
-        lineW = isSpace ? 0 : w;
-      } else {
-        line += tk;
-        lineW += w;
+      visual.push({ t: '', w: 0 });
+    } else {
+      const tokens = hard.match(/[A-Za-z0-9]+|\s+|./gu) || [hard];
+      let line = '';
+      let lineW = 0;
+      for (const tk of tokens) {
+        const w = ctx.measureText(tk).width;
+        const isSpace = /^\s+$/.test(tk);
+        if (line && lineW + w > lineMaxW && !isSpace) {
+          visual.push({ t: line, w: lineW });
+          line = isSpace ? '' : tk;
+          lineW = isSpace ? 0 : w;
+        } else {
+          line += tk;
+          lineW += w;
+        }
       }
+      visual.push({ t: line, w: lineW });
     }
-    push(line);
+    // 항목 블록 폭 = 마커 + 내용 열(감기면 가용 폭 전부) — mapPreview와 같은 모델.
+    const contentColW = visual.length > 1 ? lineMaxW : (visual[0]?.w ?? 0);
+    const itemW = markerW + contentColW;
+    visual.forEach((v, vi) => {
+      if (lp) out.push(vi === 0 ? { t: lp.display + v.t, indent: 0, list: true, itemW } : { t: v.t, indent: markerW, list: true, itemW });
+      else out.push({ t: v.t, indent: 0, list: false, itemW: v.w });
+    });
   }
-  return out.length ? out : [{ t: '', indent: 0, list: false }];
+  return out.length ? out : [{ t: '', indent: 0, list: false, itemW: 0 }];
 }
 
 /** `ctx.roundRect` isn't in every lib.dom.d.ts version this repo might build against — draw it by hand. */
@@ -190,7 +201,7 @@ function floatBox(ctx: CanvasRenderingContext2D, f: Float): FloatBox {
   ctx.font = `${f.bold ? 700 : 400} ${fpx}px Pretendard, sans-serif`;
   const innerW = Math.max(8, w - 32 - 11); // left 32 (fold toggle), right 11
   const lines: PngLine[] = collapsed
-    ? [{ t: listDisplayLine(String(f.text || '').split('\n')[0] || ''), indent: 0, list: false }]
+    ? [{ t: listDisplayLine(String(f.text || '').split('\n')[0] || ''), indent: 0, list: false, itemW: 0 }]
     : wrapLines(ctx, f.text || '', innerW);
   const textH = Math.max(18, lines.length * lh); // text block has a min-height of 18
   const grown = 9 + textH + 9; // top + bottom padding
@@ -380,13 +391,14 @@ export async function exportPng(doc: Doc, geom: GeomMap, theme: Theme, filename:
     // left, so the text region (and a centered block) shifts right by `emojiFlex`.
     const align = n.align === 'left' ? 'left' : n.align === 'right' ? 'right' : 'center';
     const tx = align === 'left' ? x + padX + emojiFlex : align === 'right' ? x + g.w - padX : g.x + emojiFlex / 2;
-    // 리스트 줄은 정렬과 무관하게 좌측 시작 + 행잉 인덴트(에디터/썸네일과 동일).
-    const listX = x + padX + emojiFlex;
+    // 리스트 줄: 항목 블록을 사용자 정렬대로 놓고 그 안에서 행잉 인덴트(에디터·썸네일과 동일).
+    const listL = x + padX + emojiFlex;
+    const listR = x + g.w - padX;
     ctx.fillStyle = tcol;
     ctx.textBaseline = 'middle';
     lines.forEach((ln, i) => {
       ctx.textAlign = ln.list ? 'left' : align;
-      ctx.fillText(ln.t, ln.list ? listX + ln.indent : tx, ty0 + i * lh);
+      ctx.fillText(ln.t, ln.list ? listBlockLeft(ln.itemW, align, listL, listR) + ln.indent : tx, ty0 + i * lh);
     });
     if (n.emoji) {
       ctx.font = `${emojiPx}px Pretendard, sans-serif`;
