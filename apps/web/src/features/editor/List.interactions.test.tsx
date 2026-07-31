@@ -8,7 +8,11 @@ import { domToRuns, setLinearSelection } from './richtextDom';
 // 글머리 기호·번호 매기기(줄 단위 리스트) — 텍스트 마커가 곧 데이터인 설계
 // (코어 `list.ts` 참고): 렌더는 `- `→`• ` 글리프 치환 + [마커|내용] 행잉 인덴트
 // (`listLines.tsx`의 `ListTextBlock`), 편집은 Shift+Enter(노드)/Enter(메모)
-// 자동 이어쓰기. 저장 텍스트에는 입력한 마커가 그대로 남는다(마크다운 호환).
+// 자동 이어쓰기.
+//
+// **편집 중에도 같은 모습**으로 그린다(`listEditHtml`) — 이때 글머리 마커는 표시
+// 글리프 `• `로 정규화되어 텍스트에 들어간다(입력 규칙: `- `를 치면 곧바로 `• `).
+// 글자 수가 같아 캐럿·오프셋이 그대로이고 `• ` 자체가 유효한 마커라 왕복이 안전하다.
 
 function docWith(nodes: Record<string, object>, floats: object[] = []) {
   return {
@@ -132,8 +136,9 @@ describe('리스트 자동 이어쓰기 — 노드 편집(Shift+Enter)', () => {
     const editor = startEditingNode(container, 'c1');
     setLinearSelection(editor, 4, 4); // '- 하나' 끝
     fireEvent.keyDown(editor, { key: 'Enter', shiftKey: true });
-    // runsToHtml은 \n을 <br>로 그리므로 textContent가 아니라 domToRuns로 읽는다
-    expect(domToRuns(editor).text).toBe('- 하나\n- ');
+    // DOM은 줄마다 <div>라 textContent가 아니라 domToRuns로 읽는다.
+    // 편집 중 글머리는 `• `로 정규화된다(입력 규칙 — 위 파일 주석 참고).
+    expect(domToRuns(editor).text).toBe('• 하나\n• ');
   });
 
   it('번호 줄에서 Shift+Enter → 번호가 +1 된다', () => {
@@ -151,10 +156,9 @@ describe('리스트 자동 이어쓰기 — 노드 편집(Shift+Enter)', () => {
     const editor = startEditingNode(container, 'c1');
     setLinearSelection(editor, 7, 7); // 둘째 줄 '- ' 끝
     fireEvent.keyDown(editor, { key: 'Enter', shiftKey: true });
-    // 마커는 지워지고 빈 마지막 줄(<br>)은 캐럿용으로 남는다 — domToRuns의
-    // 후행 개행 트림(커밋 관례) 때문에 text가 아니라 innerHTML로 확인.
-    expect(editor.innerHTML).toBe('- 하나<br>');
-    expect(domToRuns(editor).text).toBe('- 하나');
+    // 둘째 줄의 마커가 사라져 리스트 행이 하나만 남는다(빈 줄은 캐럿용).
+    expect(editor.querySelectorAll('div[style*="flex"]').length).toBe(1);
+    expect(domToRuns(editor).text).toBe('• 하나');
   });
 
   it('리스트가 아닌 줄의 Shift+Enter는 개입하지 않는다 (preventDefault 없음)', () => {
@@ -166,7 +170,7 @@ describe('리스트 자동 이어쓰기 — 노드 편집(Shift+Enter)', () => {
     expect(fireEvent.keyDown(editor, { key: 'Enter', shiftKey: true })).toBe(true);
   });
 
-  it('이어쓴 리스트는 커밋 후 텍스트에 마커 그대로 저장된다 (마크다운 호환)', async () => {
+  it('이어쓴 리스트는 커밋 후에도 마커가 텍스트에 남는다 (재파싱 왕복)', async () => {
     localStorage.setItem('mindflow_doc_lc5', JSON.stringify(docWith({ c1: { id: 'c1', text: '- 하나', emoji: '', parent: 'root', children: [], collapsed: false, color: null, x: 0, y: 0 } })));
     const { container } = renderEditor('/editor?map=lc5&title=x');
     const editor = startEditingNode(container, 'c1');
@@ -177,7 +181,7 @@ describe('리스트 자동 이어쓰기 — 노드 편집(Shift+Enter)', () => {
     fireEvent.keyDown(window, { key: 's', ctrlKey: true });
     await waitFor(() => {
       const saved = readSavedDoc('lc5');
-      expect(saved.nodes.c1?.text).toBe('- 하나\n-'); // 빈 마커 줄의 후행 공백은 커밋 트림
+      expect(saved.nodes.c1?.text).toBe('• 하나\n•'); // 빈 마커 줄의 후행 공백은 커밋 트림
     });
   });
 });
@@ -233,5 +237,101 @@ describe('리스트 — 메모(플로트)', () => {
     const ta = card.querySelector('textarea') as HTMLTextAreaElement;
     ta.setSelectionRange(ta.value.length, ta.value.length);
     expect(fireEvent.keyDown(ta, { key: 'Enter' })).toBe(true);
+  });
+});
+
+// 제보 ①: 편집하는 동안에는 `- 항목` 원문이 보이고, 확정해야 리스트로 바뀐다.
+// 수리: 편집 박스도 커밋 후와 같은 [마커|내용] 구조로 그린다(`listEditHtml`) —
+// 마커는 실제 텍스트라 캐럿/오프셋이 그대로다.
+describe('편집 중 즉시 리스트 렌더', () => {
+  it('편집을 시작하면 곧바로 • 글리프와 마커/내용 행으로 보인다', () => {
+    localStorage.setItem('mindflow_doc_le1', JSON.stringify(docWith({ c1: { id: 'c1', text: '- 하나\n- 둘', emoji: '', parent: 'root', children: [], collapsed: false, color: null, x: 0, y: 0 } })));
+    const { container } = renderEditor('/editor?map=le1&title=x');
+    const editor = startEditingNode(container, 'c1');
+    expect(editor.querySelectorAll('div[style*="flex"]').length).toBe(2);
+    expect(Array.from(editor.querySelectorAll('span')).filter((s) => s.textContent === '• ').length).toBe(2);
+    expect(editor.textContent).not.toContain('- 하나');
+  });
+
+  it('편집 중 마커를 새로 입력하면 그 자리에서 리스트로 바뀐다', () => {
+    localStorage.setItem('mindflow_doc_le2', JSON.stringify(docWith({ c1: { id: 'c1', text: '항목', emoji: '', parent: 'root', children: [], collapsed: false, color: null, x: 0, y: 0 } })));
+    const { container } = renderEditor('/editor?map=le2&title=x');
+    const editor = startEditingNode(container, 'c1');
+    // 리스트가 아닌 동안엔 평문 렌더(기존 경로)
+    expect(editor.querySelectorAll('div[style*="flex"]').length).toBe(0);
+    // 사용자가 줄 앞에 '- '를 친 상태를 흉내: DOM을 그렇게 만들고 input 발생
+    editor.innerHTML = '- 항목';
+    fireEvent.input(editor);
+    expect(editor.querySelectorAll('div[style*="flex"]').length).toBe(1);
+    expect(editor.querySelector('span')?.textContent).toBe('• ');
+    expect(domToRuns(editor).text).toBe('• 항목');
+  });
+
+  it('마커를 지우면 다시 평문 렌더로 돌아온다', () => {
+    localStorage.setItem('mindflow_doc_le3', JSON.stringify(docWith({ c1: { id: 'c1', text: '- 항목', emoji: '', parent: 'root', children: [], collapsed: false, color: null, x: 0, y: 0 } })));
+    const { container } = renderEditor('/editor?map=le3&title=x');
+    const editor = startEditingNode(container, 'c1');
+    expect(editor.querySelectorAll('div[style*="flex"]').length).toBe(1);
+    editor.innerHTML = '항목'; // 마커 삭제를 흉내
+    fireEvent.input(editor);
+    expect(editor.querySelectorAll('div[style*="flex"]').length).toBe(0);
+    expect(domToRuns(editor).text).toBe('항목');
+  });
+
+  it('IME 조합 중에는 DOM을 재구성하지 않는다 (조합 보호)', () => {
+    localStorage.setItem('mindflow_doc_le4', JSON.stringify(docWith({ c1: { id: 'c1', text: '항목', emoji: '', parent: 'root', children: [], collapsed: false, color: null, x: 0, y: 0 } })));
+    const { container } = renderEditor('/editor?map=le4&title=x');
+    const editor = startEditingNode(container, 'c1');
+    editor.innerHTML = '- 항목';
+    fireEvent.input(editor, { isComposing: true });
+    expect(editor.querySelectorAll('div[style*="flex"]').length).toBe(0); // 아직 그대로
+    fireEvent.compositionEnd(editor); // 조합이 끝나면 그때 반영
+    expect(editor.querySelectorAll('div[style*="flex"]').length).toBe(1);
+  });
+});
+
+// 제보 ②: 리스트가 적용된 텍스트는 정렬 설정과 무관하게 늘 좌측에 붙었다.
+// 수리: 항목([마커|내용]) 블록 전체를 사용자 정렬대로 놓는다(justifyContent).
+describe('리스트 정렬 — 사용자 설정(좌/중앙/우) 반영', () => {
+  const listNode = (align?: string) => ({
+    c1: { id: 'c1', text: '- 하나\n- 둘', emoji: '', parent: 'root', children: [], collapsed: false, color: null, x: 0, y: 0, ...(align ? { align } : {}) },
+  });
+  const rowJustify = (container: HTMLElement, id = 'c1') =>
+    Array.from(nodeBox(container, id).querySelectorAll('span'))
+      .filter((s) => s.style.display === 'flex')
+      .map((s) => s.style.justifyContent);
+
+  it('기본(가운데) 정렬이면 리스트 블록도 가운데', () => {
+    localStorage.setItem('mindflow_doc_la1', JSON.stringify(docWith(listNode())));
+    const { container } = renderEditor('/editor?map=la1&title=x');
+    expect(rowJustify(container)).toEqual(['center', 'center']);
+  });
+
+  it('좌측 정렬', () => {
+    localStorage.setItem('mindflow_doc_la2', JSON.stringify(docWith(listNode('left'))));
+    const { container } = renderEditor('/editor?map=la2&title=x');
+    expect(rowJustify(container)).toEqual(['flex-start', 'flex-start']);
+  });
+
+  it('우측 정렬', () => {
+    localStorage.setItem('mindflow_doc_la3', JSON.stringify(docWith(listNode('right'))));
+    const { container } = renderEditor('/editor?map=la3&title=x');
+    expect(rowJustify(container)).toEqual(['flex-end', 'flex-end']);
+  });
+
+  it('편집 박스의 리스트 행도 같은 정렬을 따른다', () => {
+    localStorage.setItem('mindflow_doc_la4', JSON.stringify(docWith(listNode('right'))));
+    const { container } = renderEditor('/editor?map=la4&title=x');
+    const editor = startEditingNode(container, 'c1');
+    const rows = Array.from(editor.querySelectorAll('div')).filter((d) => d.style.display === 'flex');
+    expect(rows.map((r) => r.style.justifyContent)).toEqual(['flex-end', 'flex-end']);
+  });
+
+  it('내용 스팬은 flex 0 1 auto — 짧은 항목이 행을 꽉 채우지 않아야 정렬이 산다', () => {
+    localStorage.setItem('mindflow_doc_la5', JSON.stringify(docWith(listNode('center'))));
+    const { container } = renderEditor('/editor?map=la5&title=x');
+    const row = Array.from(nodeBox(container, 'c1').querySelectorAll('span')).find((s) => s.style.display === 'flex')!;
+    const content = row.children[1] as HTMLElement;
+    expect(content.style.flex).toBe('0 1 auto');
   });
 });

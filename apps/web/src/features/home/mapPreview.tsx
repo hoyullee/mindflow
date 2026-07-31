@@ -56,11 +56,22 @@ function mergeToks(line: WrapSeg[]): WrapSeg[] {
 }
 
 /** 감싼 시각 줄 하나 — 리스트 줄은 첫 줄에 마커 세그가 포함되고, 감긴(연속) 줄은
- * 마커 폭만큼 `indent`를 갖는다(에디터의 행잉 인덴트와 동일 모델). */
+ * 마커 폭만큼 `indent`를 갖는다(에디터의 행잉 인덴트와 동일 모델).
+ * `itemW`는 그 항목([마커|내용]) 블록의 폭 — 사용자 정렬(가운데/오른쪽)에서
+ * 블록을 통째로 옮길 때 쓴다(`ListTextBlock`의 `justifyContent`와 같은 결과). */
 interface WrapLine {
   segs: WrapSeg[];
   indent: number;
   list: boolean;
+  itemW: number;
+}
+
+/** 리스트 항목 블록의 왼쪽 x — 사용자 정렬(좌/중앙/우)대로 블록을 통째로 놓는다.
+ * 에디터 `ListTextBlock`의 `justifyContent`, PNG의 같은 이름 헬퍼와 동일 규칙. */
+function listBlockLeft(itemW: number, align: 'left' | 'center' | 'right', left: number, right: number): number {
+  if (align === 'right') return right - itemW;
+  if (align === 'center') return (left + right) / 2 - itemW / 2;
+  return left;
 }
 
 /** 리스트 마커 글자 수만큼 세그 앞부분을 뗀다(런 경계에 걸쳐도 안전). */
@@ -108,12 +119,9 @@ function wrapRuns(runs: WrapSeg[], maxW: number, fpx: number, baseFw: number, me
     const markerW = lp ? measurer.measure(lp.display, `${baseFw} ${fpx}px Pretendard`) : 0;
     const segs = lp ? stripLeadSegs(rawSegs, lp.raw.length) : rawSegs;
     const lineMaxW = lp ? Math.max(24, maxW - markerW) : maxW;
-    let first = true;
-    const pushLine = (line: WrapSeg[]): void => {
-      const merged = mergeToks(line);
-      if (lp) out.push(first ? { segs: [{ t: lp.display }, ...merged], indent: 0, list: true } : { segs: merged, indent: markerW, list: true });
-      else out.push({ segs: merged, indent: 0, list: false });
-      first = false;
+    const visual: { segs: WrapSeg[]; w: number }[] = [];
+    const pushLine = (line: (WrapSeg & { w: number })[], w: number): void => {
+      visual.push({ segs: mergeToks(line), w });
     };
     const toks: (WrapSeg & { w: number; sp: boolean })[] = [];
     segs.forEach((sg) => {
@@ -124,7 +132,7 @@ function wrapRuns(runs: WrapSeg[], maxW: number, fpx: number, baseFw: number, me
     let cur = 0;
     toks.forEach((tk) => {
       if (cur > 0 && cur + tk.w > lineMaxW && !tk.sp) {
-        pushLine(line);
+        pushLine(line, cur);
         line = [tk];
         cur = tk.w;
       } else {
@@ -132,9 +140,17 @@ function wrapRuns(runs: WrapSeg[], maxW: number, fpx: number, baseFw: number, me
         cur += tk.w;
       }
     });
-    pushLine(line);
+    pushLine(line, cur);
+    // 항목 블록 폭 = 마커 + 내용 열. 내용이 감기면 열은 가용 폭을 다 쓴다
+    // (CSS `flex: 0 1 auto`의 fit-content = min(max-content, 가용폭)와 동일).
+    const contentColW = visual.length > 1 ? lineMaxW : (visual[0]?.w ?? 0);
+    const itemW = markerW + contentColW;
+    visual.forEach((v, vi) => {
+      if (lp) out.push(vi === 0 ? { segs: [{ t: lp.display }, ...v.segs], indent: 0, list: true, itemW } : { segs: v.segs, indent: markerW, list: true, itemW });
+      else out.push({ segs: v.segs, indent: 0, list: false, itemW: v.w });
+    });
   });
-  return out.length ? out : [{ segs: [], indent: 0, list: false }];
+  return out.length ? out : [{ segs: [], indent: 0, list: false, itemW: 0 }];
 }
 
 /** Home.dc.html `realPreview` — mirrors the editor's theme accent/branch palettes so a
@@ -597,9 +613,15 @@ function buildPreview(rawDoc: string, hueFallback: string): JSX.Element | null {
       rects.push(
         <text key={`t${id}`} x={tx} y={startY} textAnchor={anchor} dominantBaseline="central" fontSize={fpx} fontWeight={fontWeight} fill={baseTextColor} fontFamily="Pretendard, sans-serif">
           {wrapped.map((ln, li) => (
-            // 리스트 줄은 정렬과 무관하게 좌측 시작 + 행잉 인덴트(에디터 NodeLayer의
-            // [마커|내용] flex 행과 동일) — 첫 줄 segs에는 표시 마커(• )가 포함돼 있다.
-            <tspan key={li} x={ln.list ? textL + ln.indent : tx} textAnchor={ln.list ? 'start' : undefined} dy={li === 0 ? 0 : lineH}>
+            // 리스트 줄: 항목 블록을 사용자 정렬대로 놓고(에디터 `ListTextBlock`의
+            // `justifyContent`와 같은 결과) 그 안에서 행잉 인덴트로 그린다.
+            // 첫 줄 segs에는 표시 마커(• )가 포함돼 있다.
+            <tspan
+              key={li}
+              x={ln.list ? listBlockLeft(ln.itemW, align, textL, textR) + ln.indent : tx}
+              textAnchor={ln.list ? 'start' : undefined}
+              dy={li === 0 ? 0 : lineH}
+            >
               {ln.segs.map((s, si) => (
                 <tspan key={si} fontWeight={s.b ? 800 : undefined} fill={s.c || undefined} fontStyle={s.i ? 'italic' : undefined} textDecoration={s.s ? 'line-through' : undefined}>
                   {s.t}
@@ -676,7 +698,7 @@ function buildPreview(rawDoc: string, hueFallback: string): JSX.Element | null {
     const innerW = Math.max(8, fw - 32 - 11);
     // 접힌 메모의 한 줄도 리스트 글리프(`- `→`• `)를 치환(에디터 FloatLayer와 동일).
     const lines: WrapLine[] = f.collapsed
-      ? [{ segs: [{ t: listDisplayLine((f.text || '').split('\n')[0] || '') }], indent: 0, list: false }]
+      ? [{ segs: [{ t: listDisplayLine((f.text || '').split('\n')[0] || '') }], indent: 0, list: false, itemW: 0 }]
       : wrapRuns([{ t: f.text || '' }], innerW, ffpx, bold ? 700 : 400, previewMeasurer);
     if (lines.some((ln) => ln.segs.some((s) => s.t.trim()))) {
       const textX = f.x + 32;

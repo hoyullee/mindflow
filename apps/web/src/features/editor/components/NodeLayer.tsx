@@ -1,6 +1,6 @@
 import type { CSSProperties, ReactNode } from 'react';
 import { useEffect, useRef } from 'react';
-import type { LayoutMode, Node, NodeMap } from '@mindflow/mindmap-core';
+import type { LayoutMode, Node, NodeMap, RichRun } from '@mindflow/mindmap-core';
 import { ROOT_ID, charsToRuns, continueListMarker, parseListPrefix, runsToChars } from '@mindflow/mindmap-core';
 import { colorOf, descendants } from '../tree';
 import { isPanButton } from '../pointerButtons';
@@ -11,8 +11,8 @@ import type { GeomMap } from '../types';
 import { peersSelecting } from '../presenceSelection';
 import { RemotePeerTag } from './RemotePeerTag';
 import { ResizeHandle } from './ResizeHandle';
-import { domToRuns, linearize, runsToHtml, setLinearSelection } from '../richtextDom';
-import { ListTextBlock, listLinesOf } from '../listLines';
+import { domToRuns, linearize, setLinearSelection } from '../richtextDom';
+import { ListTextBlock, listEditHtml, listLinesOf, listSignature } from '../listLines';
 
 interface NodeLayerProps {
   nodes: NodeMap;
@@ -418,7 +418,7 @@ function NodeBox({ id, node: n, g, nodes, mode, theme: th, rootX, controller }: 
  *
  * @returns 처리했으면 true(호출부는 return), 리스트 줄이 아니면 false(기본 줄바꿈).
  */
-function maybeContinueList(e: { preventDefault: () => void }, el: HTMLDivElement | null, onChanged: () => void): boolean {
+function maybeContinueList(e: { preventDefault: () => void }, el: HTMLDivElement | null, render: (v: { text: string; rich: RichRun[] | null }, caret: number) => void): boolean {
   if (!el) return false;
   const ws = window.getSelection();
   if (!ws || !ws.rangeCount) return false;
@@ -453,9 +453,7 @@ function maybeContinueList(e: { preventDefault: () => void }, el: HTMLDivElement
   }
   const runs = charsToRuns(chars).filter((r) => r.t);
   const styled = runs.some((r) => r.b || r.c || r.i || r.s);
-  el.innerHTML = runsToHtml({ text: chars.map((c) => c.ch).join(''), rich: styled ? runs : null });
-  setLinearSelection(el, caret, caret);
-  onChanged();
+  render({ text: chars.map((c) => c.ch).join(''), rich: styled ? runs : null }, caret);
   return true;
 }
 
@@ -479,11 +477,41 @@ interface NodeEditBoxProps {
  * bold toggle turns the WRONG way inside already-bold node boxes). */
 function NodeEditBox({ id, n, boxStyle, align, controller }: NodeEditBoxProps) {
   const ref = useRef<HTMLDivElement | null>(null);
+  // 현재 DOM이 그리고 있는 줄별 마커 구성(`listSignature`). 입력마다 비교해
+  // **마커가 생기거나 사라진 순간에만** innerHTML을 다시 짓는다 — 글자만 칠
+  // 때는 손대지 않아 캐럿·IME가 안전하다.
+  const sigRef = useRef('');
+
+  /** 편집 값을 리스트 구조까지 반영해 다시 그리고 캐럿을 복원한다. */
+  const render = (el: HTMLDivElement, v: { text: string; rich: RichRun[] | null }, caret: number): void => {
+    el.innerHTML = listEditHtml(v, align);
+    sigRef.current = listSignature(v);
+    setLinearSelection(el, caret, caret);
+    controller.updateNodeEditSize(id, el);
+  };
+
+  /** 입력 후 줄 구조가 바뀌었으면(마커 생성/삭제) 편집 DOM을 리스트 모양으로
+   * 재구성 — 제보: 편집 중에는 `- 항목` 원문이 보이고 확정해야 리스트가 됐다. */
+  const syncListStructure = (el: HTMLDivElement): void => {
+    const v = domToRuns(el, true);
+    const sig = listSignature(v);
+    if (sig === sigRef.current) return;
+    const ws = window.getSelection();
+    let caret = v.text.length;
+    if (ws && ws.rangeCount) {
+      const r = ws.getRangeAt(0);
+      caret = linearize(el, [{ container: r.startContainer, offset: r.startOffset }]).pos[0] ?? caret;
+    }
+    render(el, v, caret);
+  };
 
   useEffect(() => {
     const el = ref.current;
     if (!el) return;
-    el.innerHTML = runsToHtml(n);
+    // 시작부터 리스트 모양으로 — 편집 진입 순간 글머리가 원문(`- `)으로 되돌아
+    // 보이지 않게(마커 글자 수가 같아 캐럿/선택 오프셋은 그대로다).
+    el.innerHTML = listEditHtml(n, align);
+    sigRef.current = listSignature(n);
     controller.setRichEditorEl(el);
     // Seed the live box size from the initial content so an already-long node
     // opens at its correct size (and subsequent typing keeps it in sync).
@@ -531,7 +559,18 @@ function NodeEditBox({ id, n, boxStyle, align, controller }: NodeEditBoxProps) {
       // 더블클릭으로 선택하면 팝업이 안 뜬다). 순서가 mouseup(툴바 열림) →
       // dblclick(닫힘)이라 열렸다 사라지는 것처럼 보이지도 않았다.
       onDoubleClick={(e) => e.stopPropagation()}
-      onInput={() => controller.updateNodeEditSize(id, ref.current)}
+      onInput={(e) => {
+        const el = ref.current;
+        if (!el) return;
+        // IME 조합 중에는 DOM을 재구성하지 않는다(조합이 깨진다) — 조합이 끝난
+        // 뒤 compositionend에서 다시 확인한다.
+        if (!(e.nativeEvent as InputEvent).isComposing) syncListStructure(el);
+        controller.updateNodeEditSize(id, el);
+      }}
+      onCompositionEnd={() => {
+        const el = ref.current;
+        if (el) syncListStructure(el);
+      }}
       onKeyDown={(e) => {
         e.stopPropagation();
         const composing = e.nativeEvent.isComposing || e.keyCode === 229;
@@ -563,7 +602,8 @@ function NodeEditBox({ id, n, boxStyle, align, controller }: NodeEditBoxProps) {
           // 리스트 자동 이어쓰기: 리스트 줄에서 Shift+Enter(줄바꿈)를 치면 다음
           // 줄에 마커를 이어 넣고, 마커만 남은 빈 줄이면 마커를 지워 리스트를
           // 끝낸다(표준 에디터 관례). 리스트 줄이 아니면 브라우저 기본 줄바꿈.
-          if (maybeContinueList(e, ref.current, () => controller.updateNodeEditSize(id, ref.current))) return;
+          const el = ref.current;
+          if (el && maybeContinueList(e, el, (v, caret) => render(el, v, caret))) return;
         } else if (e.key === 'Escape' && !composing) {
           e.preventDefault();
           controller.cancelNodeEdit();
