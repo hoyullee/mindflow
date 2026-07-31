@@ -588,3 +588,52 @@ describe('이미 가입된 이메일로 회원가입 시도 — 차단 + 안내'
     expect(screen.queryByPlaceholderText('인증 코드 입력')).toBeNull();
   });
 });
+
+// 제보: 가입 차단 안내가 뜬 화면에서 'Google 계정으로 로그인'을 누르면 문구만
+// 공백이 되고 빈 콜아웃(아이콘만)이 남는다. 콜아웃 본문이 `error`인데 그 흐름이
+// 에러만 비우고 `signupBlocked` 플래그는 남겼기 때문.
+describe('가입 차단 안내는 문구 없이 남지 않는다', () => {
+  async function blockSignup(user: ReturnType<typeof userEvent.setup>, auth: LocalAuth) {
+    vi.spyOn(auth, 'emailSignInProviders').mockResolvedValue(['google']);
+    renderSupa(auth);
+    await user.click(screen.getByText('가입하기'));
+    await user.type(screen.getByPlaceholderText('you@example.com'), 'g@example.com');
+    await user.type(screen.getByPlaceholderText('비밀번호 입력'), 'pw1234');
+    await user.type(screen.getByPlaceholderText('비밀번호 재입력'), 'pw1234');
+    await user.click(screen.getByRole('button', { name: /가입하기/ }));
+    await waitFor(() => expect(screen.getByText(/Google 계정으로 가입한 이메일/)).toBeTruthy());
+  }
+
+  /** 화면에 떠 있는 안내 콜아웃(있으면) — 빈 상자가 남았는지 확인용. */
+  const calloutOf = () => document.querySelector('[role="alert"]');
+
+  it("'Google 계정으로 로그인'을 누르면 콜아웃이 통째로 사라진다 (빈 상자 없음)", async () => {
+    const user = userEvent.setup();
+    const auth = new LocalAuth();
+    vi.spyOn(auth, 'signInWithOAuth').mockResolvedValue({});
+    await blockSignup(user, auth);
+    expect(calloutOf()).toBeTruthy();
+
+    await user.click(screen.getByText(/Google 계정으로 로그인/));
+
+    await waitFor(() => expect(calloutOf()).toBeNull());
+  });
+
+  it('로그인 탭으로 전환해도 빈 콜아웃이 남지 않는다', async () => {
+    const user = userEvent.setup();
+    const auth = new LocalAuth();
+    await blockSignup(user, auth);
+
+    await user.click(screen.getByText('로그인')); // 하단 전환 링크
+    expect(calloutOf()).toBeNull();
+  });
+
+  it('비밀번호를 고쳐도 빈 콜아웃이 남지 않는다', async () => {
+    const user = userEvent.setup();
+    const auth = new LocalAuth();
+    await blockSignup(user, auth);
+
+    await user.type(screen.getByPlaceholderText('비밀번호 입력'), 'x');
+    expect(calloutOf()).toBeNull();
+  });
+});

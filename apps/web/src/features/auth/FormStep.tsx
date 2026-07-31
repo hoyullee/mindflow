@@ -109,7 +109,7 @@ export function FormStep({ controller, view }: FormStepProps) {
           콜아웃으로 안내한다. SNS(Google)로 가입한 계정이라면 위 소셜 버튼을
           쓰라고, 이메일 계정이면 로그인 탭으로 가라고 알려 준다(제보: 인증
           코드 화면까지 갔는데 코드가 오지 않던 흐름을 여기서 끊는다). */}
-      {state.signupBlocked ? (
+      {state.signupBlocked && state.error ? (
         <div role="alert" style={signupBlockedCalloutStyle}>
           <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#d9542f" strokeWidth={2} style={{ flexShrink: 0, marginTop: 1 }} aria-hidden="true">
             <circle cx="12" cy="12" r="9" />

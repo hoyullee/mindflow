@@ -153,7 +153,16 @@ export function useLoginController() {
   }, [counting]);
 
   const patch = (partial: Partial<LoginState>) => {
-    setState((prev) => ({ ...prev, ...partial }));
+    setState((prev) => {
+      const next = { ...prev, ...partial };
+      // `signupBlocked` 콜아웃의 **본문은 `error`** 다. 그래서 에러를 비우는 흐름
+      // (Google 로그인 시작·모드 전환·다른 단계로 이동 등)이 플래그를 함께 지우지
+      // 않으면 아이콘만 있는 **빈 콜아웃**이 남는다(제보: 안내가 뜬 화면에서
+      // 'Google 계정으로 로그인'을 누르면 문구가 공백이 됨). 두 값이 따로 놀 수
+      // 없게 여기서 한 번에 묶는다 — 호출부마다 챙기지 않아도 불변식이 유지된다.
+      if (!next.error) next.signupBlocked = null;
+      return next;
+    });
   };
 
   /** Shows the full-screen loader (Login.dc.html `finish()`'s UI half) then
