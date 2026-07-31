@@ -514,7 +514,7 @@ describe('키보드 단축키 Ctrl/Cmd+B·I — 브라우저 기본 토글 대�
 describe('서식 툴바 색은 문서 테마를 따라가지 않는다', () => {
   const DARK_DOC = { ...DOC, themeKey: 'dark' };
   const toolbarOf = (container: HTMLElement) =>
-    within(getViewport(container)).getByTitle(/선택 영역 굵게/).closest('div') as HTMLElement;
+    within(getViewport(container)).getByTitle(/선택 영역 굵게/).closest('.mf-tctx') as HTMLElement;
 
   it('밝은 테마와 다크 테마에서 팝업 크롬이 동일하다', () => {
     localStorage.setItem('mindflow_doc_thL', JSON.stringify(DOC));
