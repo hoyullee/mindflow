@@ -1,7 +1,7 @@
 import type { CSSProperties } from 'react';
 import { useEffect, useRef } from 'react';
 import type { Float } from '@mindflow/mindmap-core';
-import { continueListMarker, listDisplayLine } from '@mindflow/mindmap-core';
+import { applyListOp, continueListMarker, listDisplayLine, shiftOffset } from '@mindflow/mindmap-core';
 import { ListTextBlock, plainContentLines } from '../listLines';
 import { hexA } from '../theme';
 import { isPanButton } from '../pointerButtons';
@@ -194,6 +194,27 @@ function FloatEditBox({ f, onCommit, onCancel }: { f: Float; onCommit: (text: st
           onCancel();
           return;
         }
+        // Tab = 들여쓰기 / Shift+Tab = 내어쓰기 (노드 편집과 같은 코어 규칙).
+        // 리스트가 아니어도 기본 동작은 막는다 — 포커스가 나가면 blur 커밋으로
+        // 편집이 끝나 버린다.
+        if (e.key === 'Tab' && !(e.nativeEvent.isComposing || e.keyCode === 229)) {
+          e.preventDefault();
+          const el = e.currentTarget;
+          const a = el.selectionStart ?? 0;
+          const b = el.selectionEnd ?? a;
+          const edits = applyListOp(el.value, a, b, { type: 'indent', dir: e.shiftKey ? -1 : 1 });
+          if (edits.length) {
+            let next = el.value;
+            [...edits].sort((x, y) => y.at - x.at).forEach((ed) => {
+              next = next.slice(0, ed.at) + ed.insert + next.slice(ed.at + ed.remove);
+            });
+            el.value = next;
+            el.selectionStart = shiftOffset(a, edits);
+            el.selectionEnd = shiftOffset(b, edits);
+            autoSize(el);
+          }
+          return;
+        }
         // 리스트 자동 이어쓰기 — 리스트 줄에서 Enter를 치면 다음 줄에 마커를
         // 이어 넣고, 마커만 남은 빈 줄이면 마커를 지워 리스트를 끝낸다.
         // (textarea라 char-model이 필요 없다 — 값/캐럿을 직접 조작.)
@@ -209,10 +230,11 @@ function FloatEditBox({ f, onCommit, onCancel }: { f: Float; onCommit: (text: st
           if (cont) {
             e.preventDefault();
             if ('end' in cont) {
-              // 마커만 남은 빈 줄 → 그 줄을 비운다(리스트 종료)
+              // 마커만 남은 빈 줄 → 접두를 `replaceWith`로(들여쓴 줄은 한 단계
+              // 내어쓰기, 최상위는 제거로 리스트 종료)
               const lineEnd = lineEndIdx === -1 ? el.value.length : lineEndIdx;
-              el.value = el.value.slice(0, lineStart) + el.value.slice(lineEnd);
-              el.selectionStart = el.selectionEnd = lineStart;
+              el.value = el.value.slice(0, lineStart) + cont.replaceWith + el.value.slice(lineEnd);
+              el.selectionStart = el.selectionEnd = lineStart + cont.replaceWith.length;
             } else {
               const insert = `\n${cont.next}`;
               el.value = el.value.slice(0, caret) + insert + el.value.slice(selEnd);

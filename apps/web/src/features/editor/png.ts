@@ -86,6 +86,23 @@ function wrapLines(ctx: CanvasRenderingContext2D, text: string, maxW: number): P
       else out.push({ t: v.t, indent: 0, list: false, itemW: v.w });
     });
   }
+  // 연속한 리스트 줄 묶음은 같은 폭으로 — 에디터의 `fit-content` 묶음 상자와
+  // 같은 기준이라야 정렬해도 마커 열이 유지된다(`listGroupMargin` 참고).
+  let i = 0;
+  while (i < out.length) {
+    if (!out[i]!.list) {
+      i++;
+      continue;
+    }
+    let j = i;
+    let max = 0;
+    while (j < out.length && out[j]!.list) {
+      max = Math.max(max, out[j]!.itemW);
+      j++;
+    }
+    for (let k = i; k < j; k++) out[k]!.itemW = max;
+    i = j;
+  }
   return out.length ? out : [{ t: '', indent: 0, list: false, itemW: 0 }];
 }
 

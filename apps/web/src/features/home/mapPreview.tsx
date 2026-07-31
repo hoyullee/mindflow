@@ -150,7 +150,29 @@ function wrapRuns(runs: WrapSeg[], maxW: number, fpx: number, baseFw: number, me
       else out.push({ segs: v.segs, indent: 0, list: false, itemW: v.w });
     });
   });
+  groupItemW(out);
   return out.length ? out : [{ segs: [], indent: 0, list: false, itemW: 0 }];
+}
+
+/** 연속한 리스트 줄 묶음의 `itemW`를 **묶음 최대치**로 통일한다 — 에디터의
+ * `width: fit-content` 묶음 상자와 같은 폭이 되어, 정렬해도 마커가 한 열에 서고
+ * 들여쓰기가 오른쪽으로 쌓인다(`listGroupMargin` 주석 참고). */
+function groupItemW(lines: { list: boolean; itemW: number }[]): void {
+  let i = 0;
+  while (i < lines.length) {
+    if (!lines[i]!.list) {
+      i++;
+      continue;
+    }
+    let j = i;
+    let max = 0;
+    while (j < lines.length && lines[j]!.list) {
+      max = Math.max(max, lines[j]!.itemW);
+      j++;
+    }
+    for (let k = i; k < j; k++) lines[k]!.itemW = max;
+    i = j;
+  }
 }
 
 /** Home.dc.html `realPreview` — mirrors the editor's theme accent/branch palettes so a

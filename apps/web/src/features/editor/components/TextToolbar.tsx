@@ -1,6 +1,10 @@
 import type { CSSProperties, MouseEvent as ReactMouseEvent } from 'react';
 import { useEffect } from 'react';
+import type { ListOp } from '@mindflow/mindmap-core';
 import type { EditorController } from '../useEditorState';
+
+/** 팝업 최대 폭 — 이 폭에서 [B I S | 리스트 4종]과 [색상 10 | 지우기]가 두 줄로 나뉜다. */
+const TOOLBAR_W = 320;
 
 interface TextToolbarProps {
   controller: EditorController;
@@ -54,12 +58,17 @@ export function TextToolbar({ controller }: TextToolbarProps) {
 
   // port of `textCtxStyle` (MindFlow.dc.html:3089-3092) — clamped so the toolbar never
   // overflows past the right edge of the viewport, and never sits above its top edge.
+  // 리스트 버튼 4종이 늘면서 한 줄에 다 들어가지 않는다 → `maxWidth` + 줄바꿈으로
+  // 2행(서식·리스트 / 색상)이 되게 하고, 위치 clamp도 그 폭 기준으로 잡는다.
   const style: CSSProperties = {
     position: 'absolute',
-    left: Math.max(8, Math.min(textCtx.sx, (vw || 600) - 330)),
-    top: Math.max(8, textCtx.sy - 52),
+    left: Math.max(8, Math.min(textCtx.sx, (vw || 600) - TOOLBAR_W - 8)),
+    top: Math.max(8, textCtx.sy - 92),
     display: 'flex',
     alignItems: 'center',
+    flexWrap: 'wrap',
+    maxWidth: TOOLBAR_W,
+    rowGap: 7,
     gap: 6,
     background: th.panel,
     border: `1px solid ${th.border}`,
@@ -95,6 +104,21 @@ export function TextToolbar({ controller }: TextToolbarProps) {
         S
       </button>
       <div style={dividerStyle(th)} />
+      {/* 줄 단위 리스트 — 글머리/번호 토글과 들여쓰기/내어쓰기. 규칙은 코어
+          `applyListOp`가 단일 소스이고 Tab/Shift+Tab과 같은 경로를 쓴다. */}
+      <button type="button" title="글머리 기호" onMouseDown={(e) => listAndGuard(e, controller, { type: 'toggle', kind: 'ul' })} style={boldButtonStyle(th)}>
+        •
+      </button>
+      <button type="button" title="번호 매기기" onMouseDown={(e) => listAndGuard(e, controller, { type: 'toggle', kind: 'ol' })} style={{ ...boldButtonStyle(th), fontSize: 11 }}>
+        1.
+      </button>
+      <button type="button" title="내어쓰기 (Shift+Tab)" onMouseDown={(e) => listAndGuard(e, controller, { type: 'indent', dir: -1 })} style={boldButtonStyle(th)}>
+        <IndentGlyph dir={-1} />
+      </button>
+      <button type="button" title="들여쓰기 (Tab)" onMouseDown={(e) => listAndGuard(e, controller, { type: 'indent', dir: 1 })} style={boldButtonStyle(th)}>
+        <IndentGlyph dir={1} />
+      </button>
+      <div style={dividerStyle(th)} />
       {swatches.map((hex) => (
         <button key={hex} type="button" title={hex} onMouseDown={(e) => applyAndGuard(e, controller, 'c', hex)} style={swatchButtonStyle(hex, th)} />
       ))}
@@ -118,6 +142,26 @@ function applyAndGuard(e: ReactMouseEvent<HTMLButtonElement>, controller: Editor
   e.preventDefault();
   e.stopPropagation();
   controller.applyPartial(kind, val ?? null);
+}
+
+/** 리스트 버튼도 서식 버튼과 같은 가드(`applyAndGuard` 참고) — `preventDefault`로
+ * 편집 박스의 포커스/선택을 지켜야 연산이 그 선택에 적용된다. */
+function listAndGuard(e: ReactMouseEvent<HTMLButtonElement>, controller: EditorController, op: ListOp): void {
+  e.preventDefault();
+  e.stopPropagation();
+  controller.applyListOp(op);
+}
+
+/** 들여쓰기/내어쓰기 글리프 — 세 줄과 방향 화살표(텍스트 아이콘보다 뜻이 분명하다). */
+function IndentGlyph({ dir }: { dir: 1 | -1 }) {
+  return (
+    <svg width={14} height={12} viewBox="0 0 14 12" fill="none" stroke="currentColor" strokeWidth={1.6} strokeLinecap="round" aria-hidden style={{ display: 'block', margin: '0 auto' }}>
+      <line x1={dir === 1 ? 6 : 1} y1={1} x2={13} y2={1} />
+      <line x1={dir === 1 ? 6 : 1} y1={6} x2={13} y2={6} />
+      <line x1={dir === 1 ? 6 : 1} y1={11} x2={13} y2={11} />
+      {dir === 1 ? <polyline points="1,3 3.5,6 1,9" /> : <polyline points="3.5,3 1,6 3.5,9" />}
+    </svg>
+  );
 }
 
 function dividerStyle(th: EditorController['theme']): CSSProperties {
