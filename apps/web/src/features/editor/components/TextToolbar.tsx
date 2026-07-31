@@ -3,7 +3,8 @@ import { useEffect } from 'react';
 import type { ListOp } from '@mindflow/mindmap-core';
 import type { EditorController } from '../useEditorState';
 
-/** 팝업 최대 폭 — 이 폭에서 [B I S | 리스트 4종]과 [색상 10 | 지우기]가 두 줄로 나뉜다. */
+/** 팝업 최대 폭 — 두 줄 중 넓은 쪽(색상 10 + 지우기)이 이 안에 들어간다.
+ * 화면 오른쪽 끝 clamp도 이 값을 쓴다. */
 const TOOLBAR_W = 320;
 
 interface TextToolbarProps {
@@ -58,18 +59,20 @@ export function TextToolbar({ controller }: TextToolbarProps) {
 
   // port of `textCtxStyle` (MindFlow.dc.html:3089-3092) — clamped so the toolbar never
   // overflows past the right edge of the viewport, and never sits above its top edge.
-  // 리스트 버튼 4종이 늘면서 한 줄에 다 들어가지 않는다 → `maxWidth` + 줄바꿈으로
-  // 2행(서식·리스트 / 색상)이 되게 하고, 위치 clamp도 그 폭 기준으로 잡는다.
+  //
+  // 행은 **명시적인 두 줄**이다(서식·리스트 / 색상·지우기). 예전엔 한 줄 flex에
+  // `flexWrap`만 걸어 폭이 넘치면 알아서 접히게 뒀는데, 접히는 지점이 색상 스와치
+  // 중간이라 앞 두 개가 리스트 버튼 뒤에 매달렸다(제보). 줄을 직접 나누면 어떤
+  // 테마·폭에서도 색상 줄이 항상 새 줄에서 시작한다.
   const style: CSSProperties = {
     position: 'absolute',
     left: Math.max(8, Math.min(textCtx.sx, (vw || 600) - TOOLBAR_W - 8)),
     top: Math.max(8, textCtx.sy - 92),
     display: 'flex',
-    alignItems: 'center',
-    flexWrap: 'wrap',
+    flexDirection: 'column',
+    alignItems: 'flex-start',
+    gap: 7,
     maxWidth: TOOLBAR_W,
-    rowGap: 7,
-    gap: 6,
     background: th.panel,
     border: `1px solid ${th.border}`,
     borderRadius: 11,
@@ -77,6 +80,7 @@ export function TextToolbar({ controller }: TextToolbarProps) {
     padding: '7px 9px',
     zIndex: 45,
   };
+  const rowStyle: CSSProperties = { display: 'flex', alignItems: 'center', gap: 6 };
 
   // port of `tctxSwatches`: `[th.text].concat(th.palette)` (MindFlow.dc.html:3097-3100).
   // `th`는 고정 `uiTheme`이므로 이 목록도 문서 테마와 무관하다(위 주석 참고).
@@ -94,38 +98,44 @@ export function TextToolbar({ controller }: TextToolbarProps) {
       // `pointerdown` at the root keeps every toolbar interaction off the canvas.
       onPointerDown={(e) => e.stopPropagation()}
     >
-      <button type="button" title="선택 영역 굵게 (**굵게**)" onMouseDown={(e) => applyAndGuard(e, controller, 'b')} style={boldButtonStyle(th)}>
-        B
-      </button>
-      <button type="button" title="선택 영역 기울임 (*기울임*)" onMouseDown={(e) => applyAndGuard(e, controller, 'i')} style={{ ...boldButtonStyle(th), fontStyle: 'italic', fontWeight: 600, fontFamily: 'Georgia, serif' }}>
-        I
-      </button>
-      <button type="button" title="선택 영역 취소선 (~~취소선~~)" onMouseDown={(e) => applyAndGuard(e, controller, 's')} style={{ ...boldButtonStyle(th), fontWeight: 600, textDecoration: 'line-through' }}>
-        S
-      </button>
-      <div style={dividerStyle(th)} />
-      {/* 줄 단위 리스트 — 글머리/번호 토글과 들여쓰기/내어쓰기. 규칙은 코어
-          `applyListOp`가 단일 소스이고 Tab/Shift+Tab과 같은 경로를 쓴다. */}
-      <button type="button" title="글머리 기호" onMouseDown={(e) => listAndGuard(e, controller, { type: 'toggle', kind: 'ul' })} style={boldButtonStyle(th)}>
-        •
-      </button>
-      <button type="button" title="번호 매기기" onMouseDown={(e) => listAndGuard(e, controller, { type: 'toggle', kind: 'ol' })} style={{ ...boldButtonStyle(th), fontSize: 11 }}>
-        1.
-      </button>
-      <button type="button" title="내어쓰기 (Shift+Tab)" onMouseDown={(e) => listAndGuard(e, controller, { type: 'indent', dir: -1 })} style={boldButtonStyle(th)}>
-        <IndentGlyph dir={-1} />
-      </button>
-      <button type="button" title="들여쓰기 (Tab)" onMouseDown={(e) => listAndGuard(e, controller, { type: 'indent', dir: 1 })} style={boldButtonStyle(th)}>
-        <IndentGlyph dir={1} />
-      </button>
-      <div style={dividerStyle(th)} />
-      {swatches.map((hex) => (
-        <button key={hex} type="button" title={hex} onMouseDown={(e) => applyAndGuard(e, controller, 'c', hex)} style={swatchButtonStyle(hex, th)} />
-      ))}
-      <div style={dividerStyle(th)} />
-      <button type="button" title="부분 스타일 지우기" onMouseDown={(e) => applyAndGuard(e, controller, 'clear')} style={clearButtonStyle(th)}>
-        지우기
-      </button>
+      {/* 1행 — 글자 서식과 줄 단위 리스트 */}
+      <div style={rowStyle}>
+        <button type="button" title="선택 영역 굵게 (**굵게**)" onMouseDown={(e) => applyAndGuard(e, controller, 'b')} style={boldButtonStyle(th)}>
+          B
+        </button>
+        <button type="button" title="선택 영역 기울임 (*기울임*)" onMouseDown={(e) => applyAndGuard(e, controller, 'i')} style={{ ...boldButtonStyle(th), fontStyle: 'italic', fontWeight: 600, fontFamily: 'Georgia, serif' }}>
+          I
+        </button>
+        <button type="button" title="선택 영역 취소선 (~~취소선~~)" onMouseDown={(e) => applyAndGuard(e, controller, 's')} style={{ ...boldButtonStyle(th), fontWeight: 600, textDecoration: 'line-through' }}>
+          S
+        </button>
+        <div style={dividerStyle(th)} />
+        {/* 줄 단위 리스트 — 번호/글머리 토글과 들여쓰기/내어쓰기. 규칙은 코어
+            `applyListOp`가 단일 소스이고 Tab/Shift+Tab과 같은 경로를 쓴다.
+            번호가 글머리보다 앞이다(사용자 선정 순서). */}
+        <button type="button" title="번호 매기기" onMouseDown={(e) => listAndGuard(e, controller, { type: 'toggle', kind: 'ol' })} style={{ ...boldButtonStyle(th), fontSize: 11 }}>
+          1.
+        </button>
+        <button type="button" title="글머리 기호" onMouseDown={(e) => listAndGuard(e, controller, { type: 'toggle', kind: 'ul' })} style={boldButtonStyle(th)}>
+          •
+        </button>
+        <button type="button" title="내어쓰기 (Shift+Tab)" onMouseDown={(e) => listAndGuard(e, controller, { type: 'indent', dir: -1 })} style={boldButtonStyle(th)}>
+          <IndentGlyph dir={-1} />
+        </button>
+        <button type="button" title="들여쓰기 (Tab)" onMouseDown={(e) => listAndGuard(e, controller, { type: 'indent', dir: 1 })} style={boldButtonStyle(th)}>
+          <IndentGlyph dir={1} />
+        </button>
+      </div>
+      {/* 2행 — 텍스트 색상과 서식 지우기 */}
+      <div style={rowStyle} data-toolbar-colors>
+        {swatches.map((hex) => (
+          <button key={hex} type="button" title={hex} onMouseDown={(e) => applyAndGuard(e, controller, 'c', hex)} style={swatchButtonStyle(hex, th)} />
+        ))}
+        <div style={dividerStyle(th)} />
+        <button type="button" title="부분 스타일 지우기" onMouseDown={(e) => applyAndGuard(e, controller, 'clear')} style={clearButtonStyle(th)}>
+          지우기
+        </button>
+      </div>
     </div>
   );
 }

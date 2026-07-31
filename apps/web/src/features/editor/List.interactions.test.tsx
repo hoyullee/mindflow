@@ -506,6 +506,34 @@ describe('서식 툴바 — 리스트 버튼 4종', () => {
     expect(domToRuns(editor).text).toBe('• 하나');
   });
 
+  // 요청: ① 번호 매기기가 글머리 기호보다 앞 ② 텍스트 색상은 항상 새 줄에서 시작
+  // (예전엔 한 줄 flex + flexWrap이라 접히는 지점이 스와치 중간이었고, 앞 두 색이
+  //  들여쓰기 버튼 뒤에 매달렸다).
+  it('버튼 순서: 번호 매기기가 글머리 기호보다 앞이다', () => {
+    localStorage.setItem('mindflow_doc_tbo', JSON.stringify(docWith({ c1: { id: 'c1', text: '하나', emoji: '', parent: 'root', children: [], collapsed: false, color: null, x: 0, y: 0 } })));
+    const { container } = renderEditor('/editor?map=tbo&title=x');
+    startEditingNode(container, 'c1');
+    const ol = btn(container, /번호 매기기/);
+    const ul = btn(container, /글머리 기호/);
+    // DOCUMENT_POSITION_FOLLOWING = 번호 버튼 뒤에 글머리 버튼이 온다
+    expect(ol.compareDocumentPosition(ul) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+  });
+
+  it('색상 스와치는 서식·리스트 버튼과 다른 줄에 있다', () => {
+    localStorage.setItem('mindflow_doc_tbr', JSON.stringify(docWith({ c1: { id: 'c1', text: '하나', emoji: '', parent: 'root', children: [], collapsed: false, color: null, x: 0, y: 0 } })));
+    const { container } = renderEditor('/editor?map=tbr&title=x');
+    startEditingNode(container, 'c1');
+    const toolbar = btn(container, /선택 영역 굵게/).closest('.mf-tctx') as HTMLElement;
+    const colorRow = toolbar.querySelector('[data-toolbar-colors]') as HTMLElement;
+    expect(colorRow).toBeTruthy();
+    // 색상 줄은 서식/리스트 버튼을 하나도 품지 않는다 — 즉 줄이 실제로 갈렸다.
+    expect(colorRow.contains(btn(container, /선택 영역 굵게/))).toBe(false);
+    expect(colorRow.contains(btn(container, /들여쓰기/))).toBe(false);
+    expect(colorRow.querySelectorAll('button[title^="#"]').length).toBeGreaterThan(3);
+    // 툴바가 세로 두 줄 구조여야 스와치가 리스트 버튼 뒤로 흘러가지 않는다.
+    expect(toolbar.style.flexDirection).toBe('column');
+  });
+
   it('선택 없이(캐럿만) 눌러도 그 줄에 적용된다', () => {
     localStorage.setItem('mindflow_doc_tb5', JSON.stringify(docWith({ c1: { id: 'c1', text: '하나', emoji: '', parent: 'root', children: [], collapsed: false, color: null, x: 0, y: 0 } })));
     const { container } = renderEditor('/editor?map=tb5&title=x');
