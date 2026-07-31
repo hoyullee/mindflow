@@ -81,6 +81,18 @@ export interface AuthProvider {
    * the send rather than blocking on an unknown answer.
    */
   isEmailRegistered(email: string): Promise<boolean | null>;
+  /**
+   * 그 이메일이 **어떤 방법으로** 가입돼 있는지 — `['google']`, `['email']`,
+   * 둘 다 연결됐다면 `['email','google']`, 미가입이면 `[]`. 확인 불가(로컬
+   * 모드·RPC 미배포·네트워크 실패)면 `null`.
+   *
+   * 왜 필요한가: Supabase `signUp`은 이메일 열거 방지로 **이미 가입된 주소에도
+   * 성공을 돌려준다** — 메일은 발송되지 않는데 UI는 인증 코드 화면으로 넘어가
+   * 사용자가 영영 코드를 기다리게 된다(제보: Google로 가입한 계정으로 이메일
+   * 가입 시도). 가입 전에 이 목록을 확인해 "이미 Google로 가입된 계정"임을
+   * 알려 주고 막는다. Supabase는 `email_signin_providers` RPC(0013).
+   */
+  emailSignInProviders(email: string): Promise<string[] | null>;
   verifyOtp(email: string, token: string, type: 'signup' | 'recovery'): Promise<AuthResult>;
   updatePassword(newPassword: string): Promise<{ error?: string }>;
   /**

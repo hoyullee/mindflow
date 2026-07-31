@@ -49,6 +49,17 @@ mocked) 어댑터로 검증되었습니다(라이브 호출 없음).
   이메일 열거를 의도적으로 허용합니다(가입 여부 노출) — 미가입 안내 UX를 위한 결정이며
   다른 정보는 반환하지 않습니다. 미적용 시 RPC 오류→`null`(불명)로 폴백해 기존처럼 전송을
   진행합니다.
+- `supabase/migrations/0013_email_signin_providers.sql` — 회원가입용
+  `email_signin_providers(text)` RPC. **제보**: Google로 가입한 이메일로 이메일
+  회원가입을 시도하면 가입이 진행되는 듯 인증번호 화면까지 넘어가는데 코드는 오지
+  않았습니다. `auth.signUp`이 이메일 열거 방지로 이미 가입된 주소에도 성공을 돌려주기
+  때문입니다(메일 미발송, 유일한 단서는 `identities`가 빈 배열인 가짜 user). 이 함수는
+  가입 시도 **전에** 그 이메일의 로그인 수단(`{google}`/`{email}`/`{}`)을 조회해,
+  이미 가입된 계정이면 어떻게 가입했는지까지 안내하고 막는 데 씁니다
+  (`SupabaseAuth.emailSignInProviders()`가 호출, anon 실행 허용). 트레이드오프는 0008과
+  동일(이메일 열거 허용 — 공급자 이름 외 정보는 반환하지 않음). 미적용 시 RPC 오류→`null`
+  (불명)로 폴백하지만, 어댑터가 `identities: []`를 감지해 "이미 가입된 이메일"로 막으므로
+  인증 코드 화면으로 넘어가지는 않습니다.
 - 마이그레이션은 표준 위치 **`supabase/migrations/`**(+ 루트 `supabase/config.toml`)에
   둡니다 — Supabase의 GitHub 연동이 이 경로를 찾아, `main`(프로덕션 브랜치) 머지 시
   새 마이그레이션을 자동 적용하고 PR마다 프리뷰 DB 브랜치를 만듭니다(아래 §1a).
@@ -80,6 +91,7 @@ mocked) 어댑터로 검증되었습니다(라이브 호출 없음).
    psql "$DATABASE_URL" -f supabase/migrations/0006_profile_name_from_oauth.sql
    psql "$DATABASE_URL" -f supabase/migrations/0007_security_advisor.sql
    psql "$DATABASE_URL" -f supabase/migrations/0008_email_is_registered.sql
+   psql "$DATABASE_URL" -f supabase/migrations/0013_email_signin_providers.sql
    ```
    `server/supabase/seed/seed.sql`은 선택 사항(로컬 개발용 샘플 문서 1건 삽입 — 실제
    `auth.users` id로 치환 필요, 파일 내 주석 참고).

@@ -92,6 +92,24 @@ export const noticeMsgStyle: CSSProperties = {
   marginTop: 2,
 };
 
+/** 이미 가입된 이메일로 가입을 시도했을 때의 안내 콜아웃 — 비밀번호 찾기의
+ * 미가입 툴팁(`ForgotStep`)과 같은 톤(주황 계열)으로, 단순 에러 줄보다 눈에
+ * 띄게 해 사용자가 다음 행동(소셜 로그인 / 로그인 탭)을 바로 찾게 한다. */
+export const signupBlockedCalloutStyle: CSSProperties = {
+  display: 'flex',
+  gap: 8,
+  alignItems: 'flex-start',
+  background: '#fff3ec',
+  border: '1px solid #f0c4ad',
+  borderRadius: 10,
+  padding: '10px 12px',
+  fontSize: 12.5,
+  lineHeight: 1.55,
+  color: '#b4462a',
+  marginBottom: 12,
+  marginTop: 2,
+};
+
 export const fieldLabelStyle: CSSProperties = {
   fontSize: 12.5,
   fontWeight: 600,

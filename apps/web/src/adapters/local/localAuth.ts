@@ -113,6 +113,11 @@ export class LocalAuth implements AuthProvider {
     return null;
   }
 
+  /** 로컬/데모 모드엔 계정 저장소가 없다 — 확인 불가(`null`). */
+  async emailSignInProviders(): Promise<string[] | null> {
+    return null;
+  }
+
   async verifyOtp(email: string): Promise<AuthResult> {
     const session = makeSession(email);
     writeSession(session);
