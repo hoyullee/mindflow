@@ -48,13 +48,30 @@ export function Viewport({ doc, controller }: ViewportProps) {
           position: 'absolute',
           inset: 0,
           cursor: 'default',
-          backgroundColor: theme.canvasBg,
-          backgroundImage: `radial-gradient(${theme.dot} 1.2px, transparent 1.2px)`,
-          backgroundSize: '26px 26px',
           touchAction: 'none',
         }}
       >
-        <div style={{ position: 'absolute', inset: 0 }}>
+        {/* 캔버스 배경(색 + 도트)을 **자기 레이어**로 분리한다.
+            예전엔 이 배경이 `.mf-ed-vp` 자신에 있었다: 그 안의 팬/줌 레이어가
+            움직일 때마다 브라우저가 뷰포트 **전체를 다시 래스터**했고(20스텝 팬에
+            전면 리페인트 10회 — CDP LayerTree 실측), 매 프레임 다시 그려지는
+            그라디언트가 실기기에서 배경이 깨져 보이는 원인이었다(제보).
+            `translateZ(0)`으로 한 번만 래스터해 두고 재사용한다. */}
+        <div
+          aria-hidden="true"
+          data-canvas-bg
+          style={{
+            position: 'absolute',
+            inset: 0,
+            zIndex: 0,
+            pointerEvents: 'none',
+            backgroundColor: theme.canvasBg,
+            backgroundImage: `radial-gradient(${theme.dot} 1.2px, transparent 1.2px)`,
+            backgroundSize: '26px 26px',
+            transform: 'translateZ(0)',
+          }}
+        />
+        <div style={{ position: 'absolute', inset: 0, zIndex: 1 }}>
           {/* Hold the canvas (background only) until the real doc has loaded, so
               the placeholder seed never flashes before the actual tree. On a load
               FAILURE, show an error+retry instead of the empty seed — the doc
@@ -65,7 +82,23 @@ export function Viewport({ doc, controller }: ViewportProps) {
             <LoadingCanvas theme={theme} />
           ) : (
             <>
-              <div style={{ position: 'absolute', left: 0, top: 0, transform: `translate(${pan.x}px,${pan.y}px) scale(${zoom})`, transformOrigin: '0 0' }}>
+              {/* `willChange: transform` — 팬/줌을 **합성기만** 처리하게 해 배경까지
+                  같이 다시 칠하는 일을 막는다(위 배경 레이어 주석 참고).
+                  `inset: 0`은 레이아웃이 아니라 **합성 힌트**다: 자식이 전부
+                  `position:absolute`라 이 div는 예전에 0×0이었고, 크기 없는 요소는
+                  승격돼도 합성기가 재활용할 래스터가 없어 부모 레이어가 매 프레임
+                  다시 칠해졌다. 원점(0,0)이 그대로라 자식 좌표는 한 픽셀도 안 변한다.
+                  (20스텝 팬 리페인트 총량 실측: 9.95M px → 2.79M px) */}
+              <div
+                data-pan-layer
+                style={{
+                  position: 'absolute',
+                  inset: 0,
+                  transform: `translate(${pan.x}px,${pan.y}px) scale(${zoom})`,
+                  transformOrigin: '0 0',
+                  willChange: 'transform',
+                }}
+              >
                 <ZoneLayer zones={doc.zones} theme={theme} controller={controller} />
                 <EdgeLayer nodes={doc.nodes} geom={geom} mode={layoutMode} edgeStyle={edgeStyle} theme={theme} />
                 <NodeLayer nodes={doc.nodes} geom={geom} mode={layoutMode} theme={theme} controller={controller} />

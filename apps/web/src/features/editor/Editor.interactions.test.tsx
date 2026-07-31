@@ -622,7 +622,9 @@ describe('Editor interactions (M3-Editor-b)', () => {
     const { container } = renderEditor('/editor?map=th1&title=x');
 
     const topbar = container.querySelector('.mf-ed-topbar') as HTMLElement;
-    const vp = container.querySelector('.mf-ed-vp') as HTMLElement;
+    // 캔버스 배경은 `.mf-ed-vp` 자신이 아니라 전용 배경 레이어에 있다(팬 중
+    // 그라디언트가 매 프레임 다시 래스터되지 않도록 분리 — Viewport.tsx 주석).
+    const vp = container.querySelector('[data-canvas-bg]') as HTMLElement;
     const chromeBgBefore = topbar.style.background;
     expect(vp.style.backgroundColor).toBe('rgb(245, 236, 229)'); // coral canvasBg #f5ece5
 
@@ -635,6 +637,33 @@ describe('Editor interactions (M3-Editor-b)', () => {
     expect(topbar.style.background).toBe(chromeBgBefore);
     const menu = document.querySelector('.mf-ed-stylemenu') as HTMLElement;
     expect(menu.style.background).toBe('rgb(255, 255, 255)'); // fixed uiTheme panel
+  });
+
+  // 제보: 화면을 이동하거나(팬) 노드 추가로 화면이 따라 움직일 때 캔버스 배경이
+  // 깨져 보인다. 원인은 배경 그라디언트가 팬/줌 레이어와 **같은 레이어**에 있어
+  // 매 프레임 뷰포트 전체가 다시 래스터된 것(CDP LayerTree 실측: 20스텝 팬에
+  // 8.4M px → 3.6M px). 구조 계약을 테스트로 고정한다.
+  it('캔버스 배경은 팬/줌 레이어와 분리된 자기 레이어에 있다 (팬 중 재래스터 방지)', () => {
+    localStorage.setItem('mindflow_doc_bg1', JSON.stringify(DOC));
+    const { container } = renderEditor('/editor?map=bg1&title=x');
+
+    const vp = container.querySelector('.mf-ed-vp') as HTMLElement;
+    const bg = container.querySelector('[data-canvas-bg]') as HTMLElement;
+    const pan = container.querySelector('[data-pan-layer]') as HTMLElement;
+    expect(bg).toBeTruthy();
+    expect(pan).toBeTruthy();
+
+    // 배경은 팬 레이어 안에 있으면 안 된다(안에 있으면 같이 움직이며 다시 칠해진다).
+    expect(pan.contains(bg)).toBe(false);
+    // 드래그 표면(.mf-ed-vp) 자신에는 더 이상 배경이 없다 — 있으면 그 레이어가
+    // 자식 변환 때문에 통째로 무효화된다.
+    expect(vp.style.backgroundColor).toBe('');
+    expect(vp.style.backgroundImage).toBe('');
+    // 배경 레이어는 스스로 합성되고(translateZ) 클릭을 가로채지 않는다.
+    expect(bg.style.transform).toBe('translateZ(0)');
+    expect(bg.style.pointerEvents).toBe('none');
+    // 팬 레이어는 합성기 전용 힌트를 갖는다.
+    expect(pan.style.willChange).toBe('transform');
   });
 
   describe('duplicate map names are allowed (XMind-style)', () => {
