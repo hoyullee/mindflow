@@ -73,7 +73,7 @@ export function FloatLayer({ floats, theme: th, controller }: FloatLayerProps) {
           boxStyle.height = f.h || Math.round(f.w * 0.75);
           boxStyle.overflow = 'hidden';
         }
-        // 접힌 메모의 한 줄 표시도 리스트 글리프(`- `→`• `)를 치환해 펼친 모습과 일치.
+        // 접힌 메모의 한 줄 표시도 리스트 글리프(`- `→단계 글리프)를 치환해 펼친 모습과 일치.
         const shown = collapsed ? listDisplayLine(String(f.text || '').split('\n')[0] || '') : f.text;
         // 리스트 마커가 있는 펼친 메모만 줄 단위 렌더(행잉 인덴트) — 없으면 기존 경로.
         const floatLines = !collapsed && !editing && f.text ? plainContentLines(f.text) : null;

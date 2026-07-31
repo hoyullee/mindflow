@@ -378,10 +378,10 @@ describe('리스트 들여쓰기·내어쓰기 — Tab / Shift+Tab', () => {
     const editor = startEditingNode(container, 'c1');
     setLinearSelection(editor, 8, 8); // 둘째 줄
     expect(fireEvent.keyDown(editor, { key: 'Tab' })).toBe(false); // 기본 동작(포커스 이동) 차단
-    expect(domToRuns(editor).text).toBe('• 하나\n  • 둘');
+    expect(domToRuns(editor).text).toBe('• 하나\n  ◦ 둘');
     // 들여쓴 줄도 [마커|내용] 행 — 마커 스팬에 들여쓰기 공백이 함께 들어간다
     const markers = Array.from(editor.querySelectorAll('span')).map((s) => s.textContent);
-    expect(markers).toContain('  • ');
+    expect(markers).toContain('  ◦ '); // 1단계 글리프
   });
 
   it('Shift+Tab이 내어쓰고, 최상위에서는 더 나가지 않는다', () => {
@@ -401,7 +401,7 @@ describe('리스트 들여쓰기·내어쓰기 — Tab / Shift+Tab', () => {
     const editor = startEditingNode(container, 'c1');
     setLinearSelection(editor, 0, 14);
     fireEvent.keyDown(editor, { key: 'Tab' });
-    expect(domToRuns(editor).text).toBe('  • 하나\n  • 둘\n  • 셋');
+    expect(domToRuns(editor).text).toBe('  ◦ 하나\n  ◦ 둘\n  ◦ 셋');
   });
 
   it('들여쓴 뒤에도 부분 서식(굵게)이 보존된다', () => {
@@ -420,9 +420,9 @@ describe('리스트 들여쓰기·내어쓰기 — Tab / Shift+Tab', () => {
     const editor = startEditingNode(container, 'c1');
     setLinearSelection(editor, 4, 4);
     fireEvent.keyDown(editor, { key: 'Tab' });
-    expect(domToRuns(editor).text).toBe('  • 강조 항목');
+    expect(domToRuns(editor).text).toBe('  ◦ 강조 항목');
     expect(domToRuns(editor).rich).toEqual([
-      { t: '  • ', b: false, c: null },
+      { t: '  ◦ ', b: false, c: null },
       { t: '강조', b: true, c: null },
       { t: ' 항목', b: false, c: null },
     ]);
@@ -437,9 +437,9 @@ describe('리스트 들여쓰기·내어쓰기 — Tab / Shift+Tab', () => {
     fireEvent.keyDown(editor, { key: 'Enter' });
     fireEvent.keyDown(window, { key: 's', ctrlKey: true });
     await waitFor(() => {
-      expect(readSavedDoc('ti5').nodes.c1?.text).toBe('  • 하나');
+      expect(readSavedDoc('ti5').nodes.c1?.text).toBe('  ◦ 하나');
     });
-    expect(Array.from(nodeBox(container, 'c1').querySelectorAll('span')).map((s) => s.textContent)).toContain('  • ');
+    expect(Array.from(nodeBox(container, 'c1').querySelectorAll('span')).map((s) => s.textContent)).toContain('  ◦ ');
   });
 
   it('리스트가 아닌 줄에서는 Tab이 아무것도 바꾸지 않는다 (포커스만 지킨다)', () => {
@@ -457,9 +457,9 @@ describe('리스트 들여쓰기·내어쓰기 — Tab / Shift+Tab', () => {
     const editor = startEditingNode(container, 'c1');
     setLinearSelection(editor, 6, 6);
     fireEvent.keyDown(editor, { key: 'Enter', shiftKey: true });
-    expect(domToRuns(editor, true).text).toBe('  • 하나\n  • ');
-    fireEvent.keyDown(editor, { key: 'Enter', shiftKey: true }); // 빈 마커 → 한 단계 내어쓰기
-    expect(domToRuns(editor, true).text).toBe('  • 하나\n• ');
+    expect(domToRuns(editor, true).text).toBe('  ◦ 하나\n  ◦ ');
+    fireEvent.keyDown(editor, { key: 'Enter', shiftKey: true }); // 빈 마커 → 한 단계 내어쓰기(글리프도 상위 단계로)
+    expect(domToRuns(editor, true).text).toBe('  ◦ 하나\n• ');
   });
 });
 
@@ -501,7 +501,7 @@ describe('서식 툴바 — 리스트 버튼 4종', () => {
     const editor = startEditingNode(container, 'c1');
     setLinearSelection(editor, 4, 4);
     clickToolbarButton(btn(container, /들여쓰기/));
-    expect(domToRuns(editor).text).toBe('  • 하나');
+    expect(domToRuns(editor).text).toBe('  ◦ 하나');
     clickToolbarButton(btn(container, /내어쓰기/));
     expect(domToRuns(editor).text).toBe('• 하나');
   });
@@ -544,6 +544,59 @@ describe('서식 툴바 — 리스트 버튼 4종', () => {
   });
 });
 
+// 요청: 단계마다 마커가 바뀌고 네 번째 단계는 첫 번째로 돌아간다.
+// 글머리 • → ◦ → ▪ → •, 번호 1. → a. → i. → 1.
+describe('단계별 마커 — 들여쓰기/내어쓰기로 기호가 바뀐다', () => {
+  const markersOf = (el: HTMLElement) => Array.from(el.querySelectorAll('span')).map((s) => s.textContent);
+
+  it('중첩된 글머리·번호가 단계 표기로 렌더된다', () => {
+    const doc = docWith({
+      c1: { id: 'c1', text: '- 하나\n  - 둘\n    - 셋\n      - 넷', emoji: '', parent: 'root', children: [], collapsed: false, color: null, x: 0, y: 0 },
+      c2: { id: 'c2', text: '1. 하나\n  a. 둘\n    i. 셋\n      1. 넷', emoji: '', parent: 'root', children: [], collapsed: false, color: null, x: 0, y: 0 },
+    });
+    (doc.nodes.root as { children: string[] }).children = ['c1', 'c2'];
+    localStorage.setItem('mindflow_doc_lv1', JSON.stringify(doc));
+    const { container } = renderEditor('/editor?map=lv1&title=x');
+    expect(markersOf(nodeBox(container, 'c1'))).toEqual(expect.arrayContaining(['• ', '  ◦ ', '    ▪ ', '      • ']));
+    expect(markersOf(nodeBox(container, 'c2'))).toEqual(expect.arrayContaining(['1. ', '  a. ', '    i. ', '      1. ']));
+  });
+
+  it('Tab을 반복하면 글머리 글리프가 • → ◦ → ▪ → • 로 순환한다', () => {
+    localStorage.setItem('mindflow_doc_lv2', JSON.stringify(docWith({ c1: { id: 'c1', text: '- 하나', emoji: '', parent: 'root', children: [], collapsed: false, color: null, x: 0, y: 0 } })));
+    const { container } = renderEditor('/editor?map=lv2&title=x');
+    const editor = startEditingNode(container, 'c1');
+    setLinearSelection(editor, 4, 4);
+    const seen: string[] = [];
+    for (let i = 0; i < 3; i++) {
+      fireEvent.keyDown(editor, { key: 'Tab' });
+      seen.push(domToRuns(editor).text.trimStart()[0] as string);
+    }
+    expect(seen).toEqual(['◦', '▪', '•']);
+  });
+
+  it('번호 목록을 들여쓰면 a., 한 번 더 들여쓰면 i. 가 되고 하위 목록은 1부터 센다', () => {
+    localStorage.setItem('mindflow_doc_lv3', JSON.stringify(docWith({ c1: { id: 'c1', text: '1. 하나\n2. 둘\n3. 셋', emoji: '', parent: 'root', children: [], collapsed: false, color: null, x: 0, y: 0 } })));
+    const { container } = renderEditor('/editor?map=lv3&title=x');
+    const editor = startEditingNode(container, 'c1');
+    setLinearSelection(editor, 8, 16); // 둘째·셋째 줄
+    fireEvent.keyDown(editor, { key: 'Tab' });
+    expect(domToRuns(editor).text).toBe('1. 하나\n  a. 둘\n  b. 셋');
+    fireEvent.keyDown(editor, { key: 'Tab' });
+    expect(domToRuns(editor).text).toBe('1. 하나\n    i. 둘\n    ii. 셋');
+    fireEvent.keyDown(editor, { key: 'Tab', shiftKey: true });
+    expect(domToRuns(editor).text).toBe('1. 하나\n  a. 둘\n  b. 셋');
+  });
+
+  it('들여쓴 자리에서 Shift+Enter는 그 단계 표기로 이어진다', () => {
+    localStorage.setItem('mindflow_doc_lv4', JSON.stringify(docWith({ c1: { id: 'c1', text: '  a. 하나', emoji: '', parent: 'root', children: [], collapsed: false, color: null, x: 0, y: 0 } })));
+    const { container } = renderEditor('/editor?map=lv4&title=x');
+    const editor = startEditingNode(container, 'c1');
+    setLinearSelection(editor, 7, 7);
+    fireEvent.keyDown(editor, { key: 'Enter', shiftKey: true });
+    expect(domToRuns(editor, true).text).toBe('  a. 하나\n  b. ');
+  });
+});
+
 describe('메모(플로트) 들여쓰기 — Tab / Shift+Tab', () => {
   it('Tab이 메모의 리스트 줄을 들여쓴다', () => {
     localStorage.setItem('mindflow_doc_mt1', JSON.stringify(docWith({}, [{ id: 'f1', text: '- 하나\n- 둘', x: 100, y: 100, w: 160 }])));
@@ -553,8 +606,8 @@ describe('메모(플로트) 들여쓰기 — Tab / Shift+Tab', () => {
     const ta = card.querySelector('textarea') as HTMLTextAreaElement;
     ta.setSelectionRange(ta.value.length, ta.value.length);
     expect(fireEvent.keyDown(ta, { key: 'Tab' })).toBe(false);
-    expect(ta.value).toBe('- 하나\n  - 둘');
+    expect(ta.value).toBe('- 하나\n  ◦ 둘');
     fireEvent.keyDown(ta, { key: 'Tab', shiftKey: true });
-    expect(ta.value).toBe('- 하나\n- 둘');
+    expect(ta.value).toBe('- 하나\n• 둘'); // 내어쓰면 0단계 글리프로
   });
 });
