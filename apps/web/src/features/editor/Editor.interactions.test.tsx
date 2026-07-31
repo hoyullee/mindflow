@@ -666,6 +666,39 @@ describe('Editor interactions (M3-Editor-b)', () => {
     expect(pan.style.willChange).toBe('transform');
   });
 
+  // 요청: GNB 로고를 눌러도 홈으로(독칩 홈 버튼과 같은 기능).
+  describe('GNB 브랜드 로고 = 홈으로', () => {
+    it('로고를 누르면 홈으로 나간다', async () => {
+      const user = userEvent.setup();
+      localStorage.setItem('mindflow_doc_lg1', JSON.stringify(DOC));
+      renderEditor('/editor?map=lg1&title=x');
+
+      await user.click(screen.getByRole('button', { name: 'Geurio 홈으로' }));
+      await waitFor(() => expect(screen.getByText('HOME_PAGE')).toBeTruthy());
+    });
+
+    it('독칩 홈 버튼과 같은 핸들러를 쓴다 (저장 후 이동)', async () => {
+      const user = userEvent.setup();
+      localStorage.setItem('mindflow_doc_lg2', JSON.stringify(DOC));
+      const { container } = renderEditor('/editor?map=lg2&title=x');
+
+      // 편집해서 미저장 상태로 만든 뒤 로고로 나가면, 독칩 홈 버튼과 마찬가지로
+      // 나가기 직전에 저장이 남아 있어야 한다(`goHome`이 persist 후 navigate).
+      selectNodeBox(nodeBoxFor(container, '리서치'));
+      fireEvent.keyDown(window, { key: 'Tab' }); // 하위 도형 추가 → 문서 변경
+      await user.click(screen.getByRole('button', { name: 'Geurio 홈으로' }));
+
+      await waitFor(() => expect(screen.getByText('HOME_PAGE')).toBeTruthy());
+      await waitFor(
+        () => {
+          const parsed = parseDoc(JSON.parse(localStorage.getItem('mindflow_doc_lg2') as string));
+          expect(Object.keys(parsed!.nodes).length).toBe(4); // root + c1 + c2 + 새 하위
+        },
+        { timeout: 2000 },
+      );
+    });
+  });
+
   describe('duplicate map names are allowed (XMind-style)', () => {
     // The title chip's non-editing title element (`div[title=...]`), excluding
     // the on-canvas root node box which also shows the title text.

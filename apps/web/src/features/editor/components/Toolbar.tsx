@@ -65,13 +65,37 @@ export function Toolbar({ controller }: ToolbarProps) {
         overflowY: 'hidden',
       }}
     >
-      <div style={{ display: 'flex', alignItems: 'center', gap: 9, paddingRight: 8, flexShrink: 0 }}>
+      {/* 브랜드 로고 = 홈으로(사용자 요청). 독칩의 홈 버튼과 **같은 `goHome`**을
+          쓴다 — 저장을 먼저 태우고 이동하는 동작이 갈라지지 않게. */}
+      <button
+        type="button"
+        className="mf-ed-btn"
+        onClick={controller.goHome}
+        title="홈으로"
+        // 독칩에도 "홈으로" 버튼이 있어 이름이 겹친다 — 스크린리더에서 구분되게
+        // 브랜드를 붙인다(툴팁은 짧게 유지).
+        aria-label="Geurio 홈으로"
+        style={{
+          display: 'flex',
+          alignItems: 'center',
+          gap: 9,
+          padding: '3px 8px 3px 4px',
+          marginLeft: -4,
+          flexShrink: 0,
+          border: 'none',
+          borderRadius: 10,
+          background: 'none',
+          color: 'inherit',
+          font: 'inherit',
+          cursor: 'pointer',
+        }}
+      >
         <div style={{ width: 26, height: 26, borderRadius: 8, background: th.accent, display: 'flex', alignItems: 'center', justifyContent: 'center', color: th.accentInk, fontWeight: 800, fontSize: 15 }}>
           <BrandMark size={16} color={th.accentInk} />
         </div>
         {/* Wordmark hidden on mobile to leave room for the menu items */}
         {!isMobile && <div style={{ fontWeight: 700, fontSize: 16, letterSpacing: '-.01em' }}>Geurio</div>}
-      </div>
+      </button>
 
       <Divider theme={th} />
 
