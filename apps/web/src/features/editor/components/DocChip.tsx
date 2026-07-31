@@ -79,6 +79,20 @@ export function DocChip({ controller }: DocChipProps) {
           <span style={{ width: 7, height: 7, borderRadius: '50%', flexShrink: 0, background: dotColor }} />
           <span style={{ fontSize: 11, fontWeight: 600, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', color: th.subtext }}>{label}</span>
         </div>
+        {controller.movedNotice && (
+          <div
+            role="alert"
+            title="원래 id가 다른 계정의 문서라 새 문서로 옮겨 저장했어요. (클릭해서 닫기)"
+            onClick={controller.dismissMovedNotice}
+            className="mf-marquee"
+            style={{ fontSize: 10.5, fontWeight: 600, color: '#c0532e', cursor: 'pointer' }}
+          >
+            <span className="mf-marquee-run">
+              <span>⚠ 같은 주소를 쓰는 다른 계정의 맵이 있어 이 맵을 새 문서로 옮겨 저장했어요</span>
+              <span aria-hidden="true">⚠ 같은 주소를 쓰는 다른 계정의 맵이 있어 이 맵을 새 문서로 옮겨 저장했어요</span>
+            </span>
+          </div>
+        )}
         {controller.saveConflict && (
           <div
             role="alert"

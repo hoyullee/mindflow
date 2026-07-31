@@ -150,6 +150,16 @@ export type SaveResult =
    * (another tab/device) saved first. Caller decides how to reconcile
    * (reload, prompt, force-overwrite with a fresh `save()` call). */
   | { ok: false; reason: 'conflict'; currentVersion: number }
+  /**
+   * 그 id의 행이 **이미 있는데 내가 읽을 수도 없다** = 다른 계정의 문서다.
+   *
+   * 왜 별도 결과인가: RLS는 "행이 없다"와 "행이 있지만 안 보인다"를 똑같이
+   * 빈 결과로 만든다. 그래서 `load()`가 `null`이면 호출부는 신규 문서로 오해하고
+   * 강제로 써 버렸고, 그 쓰기가 남의 행에 부딪혀 Supabase 로그에 42501
+   * (`row-level security policy (USING expression)`)이 반복해서 쌓였다(제보).
+   * 이 결과를 받은 호출부는 그 id를 포기하고 **새 id로 옮겨 저장**해야 한다.
+   */
+  | { ok: false; reason: 'idTaken' }
   | { ok: false; reason: 'error'; message: string };
 
 export interface SaveOptions {

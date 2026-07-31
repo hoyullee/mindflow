@@ -7,7 +7,7 @@ import { domToRuns, linearize } from './richtextDom';
 import { renderListEdit } from './listLines';
 import type { ShareStore } from '../../adapters/ports';
 import type { CollabStatus } from '../../collab/ports';
-import { useBackend, useDocStore, useShareStore } from '../../adapters/BackendContext';
+import { useBackend, useDocStore, useShareStore, useSpaceStore } from '../../adapters/BackendContext';
 import { useAuthUser } from '../../adapters/useAuthUser';
 import { useProfileName } from '../../adapters/useProfileName';
 import { useYjsDocSync } from '../../collab/useYjsDocSync';
@@ -16,7 +16,8 @@ import { EMPTY_PRESENCE_SELECTION, type PresenceSelection } from '../../collab/p
 import { CanvasTextMeasurer, computeMetrics, measureFloatHeight } from './metrics';
 import { attachImageFile, defaultFloatSize, firstImageFile, fitWithin } from './imageAttach';
 import { hasStoredDoc, loadOrSeedDoc, saveDoc } from './storage';
-import { pushRecentEntry } from '../home/storage';
+import { newDocId, pushRecentEntry, rebindMovedDoc } from '../home/storage';
+import type { SpaceData } from '../home/types';
 import { isPanButton } from './pointerButtons';
 import { buildVisible, descendants, outlineRows } from './tree';
 import type { EdgeStyle } from './tree';
@@ -478,6 +479,10 @@ export interface EditorController {
    * tab/device saved first) — a place for the UI (`DocChip`) to tell the user,
    * per CLAUDE.md's M4 task brief ("충돌 시 사용자 고지 자리 마련"). */
   saveConflict: { currentVersion: number } | null;
+  /** 이 맵이 **새 id로 옮겨졌다**(원래 id가 다른 계정의 문서였다). 배너로 한 번
+   * 알리고 사용자가 닫으면 사라진다 — `moveToFreshId` 참고. */
+  movedNotice: boolean;
+  dismissMovedNotice: () => void;
   dismissSaveConflict: () => void;
   exportJSON: () => void;
   exportPNG: () => void;
@@ -519,8 +524,16 @@ export function useEditorState(): EditorController {
   const navigate = useNavigate();
   const docStore = useDocStore();
   const shareStore = useShareStore();
+  const spaceStore = useSpaceStore();
   const backendMode = useBackend().mode;
-  const mapId = params.get('map') || null;
+  const urlMapId = params.get('map') || null;
+  /** 저장하려던 id가 **다른 계정의 문서**여서 새 id로 옮겨 간 경우의 새 id
+   * (`DocStore.save`의 `idTaken` → `moveToFreshId` 참고). 이후의 저장·로컬 캐시·
+   * 협업 채널은 전부 이 id를 쓴다. */
+  const [movedId, setMovedId] = useState<string | null>(null);
+  /** 새 id로 옮겨졌음을 한 번 알리는 배너 플래그(사용자가 닫을 때까지 유지). */
+  const [movedNotice, setMovedNotice] = useState(false);
+  const mapId = movedId ?? urlMapId;
   const docStoreId = mapId || 'default';
   const titleParam = params.get('title') ? decodeURIComponent(params.get('title') || '') : '';
 
@@ -1714,6 +1727,62 @@ export function useEditorState(): EditorController {
    * NEXT save attempt targets the right row — and surfaces `saveConflict` so the UI
    * has a place to tell the user (`DocChip`'s banner); this is intentionally NOT a
    * full merge/reload flow (out of scope here, see CLAUDE.md's M4 task brief). */
+  /**
+   * 문서를 **새 id로 옮겨 저장**한다 — 원래 id가 다른 계정의 문서일 때의 복구 경로
+   * (`DocStore.save`의 `idTaken`).
+   *
+   * 어쩌다 남의 id를 쓰게 되나: 옛 방식 카드는 `docId` 없이 `map=m<제목해시>`로 열린다
+   * (`mapHref`의 폴백). 그래서 **다른 계정이 같은 제목**을 쓰면 id가 똑같아진다. 공유가
+   * 해제됐는데 이 브라우저에 본문 캐시가 남은 경우도 같은 자리에 온다.
+   *
+   * 하는 일: 새 랜덤 id로 INSERT → 성공하면 이후 저장·로컬 캐시·협업 채널을 그 id로
+   * 돌리고(`movedId`), 주소창도 바꿔(`?map=`) 새로고침해도 이어지게 하며, 홈 카드가
+   * 옛 id를 계속 가리켜 같은 충돌을 되풀이하지 않도록 워크스페이스를 재바인딩한다
+   * (`rebindMovedDoc`). 사용자 내용은 그대로 살아남는다.
+   */
+  const moveToFreshId = useCallback(
+    async (title: string): Promise<void> => {
+      const from = docStoreId;
+      const to = newDocId();
+      const res = await docStore.save(to, docRef.current, { title });
+      if (!res.ok) {
+        // 새 id마저 실패(네트워크 등) — dirty로 두고 다음 틱에 다시 시도한다.
+        setSaveStateState('dirty');
+        return;
+      }
+      docVersionRef.current = res.version;
+      lastSavedSigRef.current = docSignature(docRef.current);
+      setMovedId(to);
+      try {
+        saveDoc(to, docRef.current);
+      } catch {
+        /* storage unavailable — non-fatal */
+      }
+      // 주소창 교체(히스토리에 남기지 않는다 — 뒤로 가기가 죽은 id로 돌아가면 안 된다).
+      const next = new URLSearchParams(window.location.search);
+      next.set('map', to);
+      next.delete('new');
+      navigate({ pathname: '/editor', search: `?${next.toString()}` }, { replace: true });
+      // 홈 카드 재바인딩 — 실패해도 저장 자체는 이미 성공했으므로 조용히 넘어간다.
+      try {
+        const ws = await spaceStore.load();
+        if (ws) {
+          const rebound = rebindMovedDoc({ spaces: ws.spaces as SpaceData[], mapFolders: ws.mapFolders, recent: ws.recent }, from, to);
+          if (rebound !== ws) await spaceStore.save({ ...ws, ...rebound });
+        }
+      } catch {
+        /* 워크스페이스 갱신 실패 — 다음 홈 방문에서 카드가 옛 id를 가리킬 뿐 */
+      }
+      setSaveConflict(null);
+      setSaveStateState('saved');
+      setMovedNotice(true);
+    },
+    [docStore, docStoreId, navigate, spaceStore],
+  );
+  /** `persistDoc`이 자신보다 먼저 선언돼야 해서 두는 렌더 동기 브리지. */
+  const moveToFreshIdRef = useRef(moveToFreshId);
+  moveToFreshIdRef.current = moveToFreshId;
+
   const persistDoc = useCallback(async (): Promise<void> => {
     // DATA-LOSS GUARD: refuse to write until the initial load resolved (see
     // `canPersistDocRef`). Prevents the empty mount seed from overwriting a real
@@ -1736,6 +1805,11 @@ export function useEditorState(): EditorController {
       docVersionRef.current = result.currentVersion;
       setSaveConflict({ currentVersion: result.currentVersion });
       setSaveStateState('saved');
+    } else if (result.reason === 'idTaken') {
+      // 그 id는 **다른 계정의 문서**다(RLS가 가려서 `load()`는 빈 결과였다).
+      // 계속 그 id로 쓰면 남의 행을 건드리는 요청이 자동저장마다 반복된다 —
+      // 새 id로 옮겨 우리 내용을 살린다(아래 `moveToFreshId`).
+      await moveToFreshIdRef.current(title);
     } else {
       setSaveStateState('dirty'); // keep dirty so the next autosave/Ctrl+S tick retries
     }
@@ -1789,6 +1863,7 @@ export function useEditorState(): EditorController {
   }, [persistDoc]);
 
   const dismissSaveConflict = useCallback(() => setSaveConflict(null), []);
+  const dismissMovedNotice = useCallback(() => setMovedNotice(false), []);
 
   const goHome = useCallback(() => {
     window.clearTimeout(autosaveTimerRef.current);
@@ -3559,6 +3634,8 @@ export function useEditorState(): EditorController {
     saveNow,
     flushSave,
     saveConflict,
+    movedNotice,
+    dismissMovedNotice,
     dismissSaveConflict,
     exportJSON,
     exportPNG,
