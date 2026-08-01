@@ -4,6 +4,7 @@ import {
   bulletGlyphFor,
   continueListMarker,
   formatOrdinal,
+  listBackspaceOp,
   listDisplayLine,
   ordinalStyleFor,
   parseListPrefix,
@@ -293,6 +294,36 @@ describe('표시용 들여쓰기 폭 (EN SPACE)', () => {
     const edits = applyListOp(t, t.length, t.length, { type: 'indent', dir: 1 });
     const out = edits.reduce((acc, e) => acc.slice(0, e.at) + e.insert + acc.slice(e.at + e.remove), t);
     expect(parseListPrefix(out)!.indent).toBe(2);
+  });
+});
+
+// 제보: 번호 매기기 → 줄바꿈(2. 생성) → Backspace를 누르면 `2. `가 `2.`가 되면서
+// 그 줄이 리스트에서 빠지고 평문 정렬을 따라 옆으로 튀어 "Tab이 걸린 것처럼" 보인다.
+// 마커는 한 덩어리로 다룬다 — 들여쓴 줄은 내어쓰기, 최상위 줄은 마커 제거.
+describe('listBackspaceOp — 마커 안에서의 Backspace', () => {
+  it('최상위 마커 뒤에서는 마커를 없앤다', () => {
+    const t = '1. 하나\n2. ';
+    expect(listBackspaceOp(t, t.length)).toEqual({ type: 'toggle', kind: 'ol' });
+    expect(listBackspaceOp('• 하나', 2)).toEqual({ type: 'toggle', kind: 'ul' });
+  });
+
+  it('들여쓴 마커 뒤에서는 한 단계 내어쓴다', () => {
+    const t = '1. 하나\n  a. ';
+    expect(listBackspaceOp(t, t.length)).toEqual({ type: 'indent', dir: -1 });
+  });
+
+  it('마커 중간(들여쓰기 공백 안 포함)에서도 같게 동작한다', () => {
+    const t = '  a. 하나';
+    expect(listBackspaceOp(t, 1)).toEqual({ type: 'indent', dir: -1 }); // 들여쓰기 공백 안
+    expect(listBackspaceOp(t, 3)).toEqual({ type: 'indent', dir: -1 }); // 숫자/기호 뒤
+  });
+
+  it('줄 맨 앞과 마커 밖에서는 기본 삭제(null)', () => {
+    const t = '1. 하나\n2. 둘';
+    expect(listBackspaceOp(t, 0)).toBeNull(); // 문서 맨 앞
+    expect(listBackspaceOp(t, 6)).toBeNull(); // 둘째 줄 맨 앞(마커 앞) = 앞 줄과 합치기
+    expect(listBackspaceOp(t, t.length)).toBeNull(); // 내용 안
+    expect(listBackspaceOp('평문', 2)).toBeNull();
   });
 });
 
