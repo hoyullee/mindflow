@@ -611,10 +611,11 @@ function NodeEditBox({ id, n, boxStyle, align, controller }: NodeEditBoxProps) {
         // 들여쓴 줄은 한 단계 내어쓰고, 최상위 줄은 마커를 없앤다(표준 관례).
         if (e.key === 'Backspace' && !composing) {
           const el = ref.current;
-          const op = el ? listBackspaceOpAt(el) : null;
-          if (op) {
+          const act = el ? listBackspaceOpAt(el) : null;
+          if (act) {
             e.preventDefault();
-            controller.applyListOp(op);
+            if (act.kind === 'op') controller.applyListOp(act.op);
+            else controller.applyListEdits(act.edits);
             controller.updateNodeEditSize(id, ref.current);
             return;
           }

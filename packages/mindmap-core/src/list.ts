@@ -344,7 +344,11 @@ export function applyListOp(text: string, s0: number, s1: number, op: ListOp): T
   }
 
   renumber(lines);
+  return prefixEdits(lines);
+}
 
+/** 줄별 `next` 접두와 원래 접두의 차이를 편집 목록으로. */
+function prefixEdits(lines: LineInfo[]): TextEdit[] {
   const edits: TextEdit[] = [];
   lines.forEach((ln) => {
     const oldPrefix = ln.prefix ? ln.prefix.raw : '';
@@ -357,22 +361,52 @@ export function applyListOp(text: string, s0: number, s1: number, op: ListOp): T
   return edits;
 }
 
+/** 텍스트 전체의 번호를 다시 매기는 편집 목록(다른 건 건드리지 않는다). */
+function renumberEdits(text: string): TextEdit[] {
+  const lines: LineInfo[] = splitLines(text).map((l) => {
+    const prefix = parseListPrefix(l.text);
+    return { start: l.start, text: l.text, prefix, next: prefix ? prefix.raw : '', target: false };
+  });
+  renumber(lines);
+  return prefixEdits(lines);
+}
+
+/** 마커 안 Backspace의 결과 — 마커만 바꾸는 연산이거나, 빈 항목을 통째로 지우는 편집. */
+export type ListBackspace = { kind: 'op'; op: ListOp } | { kind: 'edit'; edits: TextEdit[] };
+
 /** 캐럿이 리스트 **마커 안**(들여쓰기 공백 포함, 마커 바로 뒤까지)에 있을 때
  * Backspace가 해야 할 일 — 아니면 `null`(브라우저 기본 삭제).
  *
  * 마커는 텍스트지만 **한 덩어리**로 다뤄야 한다. 한 글자씩 지우게 두면 `2. `가
  * `2.`가 되면서 그 줄이 리스트에서 빠지고, 남은 `2.`가 평문 정렬을 따라 옆으로
- * 튄다(제보: "Backspace를 눌렀는데 Tab이 걸린 것처럼 보인다"). 표준 에디터처럼
- * 들여쓴 줄은 한 단계 내어쓰고, 최상위 줄은 마커를 없앤다(들여쓰기는 유지).
- * 줄 맨 앞(마커 앞)에서는 `null` — 그건 앞 줄과 합치는 평범한 삭제다. */
-export function listBackspaceOp(text: string, caret: number): ListOp | null {
+ * 튄다(제보: "Backspace를 눌렀는데 Tab이 걸린 것처럼 보인다").
+ *
+ * 규칙(표준 에디터 관례 + 제보 반영):
+ * - 들여쓴 줄 → 한 단계 **내어쓰기**
+ * - 내용이 있는 최상위 줄 → **마커만 제거**(텍스트는 남는다)
+ * - **내용이 빈** 최상위 줄이고 앞에 줄이 있으면 → 그 **항목을 통째로 삭제**
+ *   (마커 + 앞의 줄바꿈). 마커만 지우면 빈 줄이 남아 캐럿이 도형 하단 가운데로
+ *   떨어져 보인다(제보) — 빈 항목을 지우려는 의도이므로 줄까지 없앤다.
+ * - 줄 맨 앞(마커 앞) → `null`. 그건 앞 줄과 합치는 평범한 삭제다. */
+export function listBackspaceOp(text: string, caret: number): ListBackspace | null {
   if (caret <= 0) return null;
   const lineStart = text.lastIndexOf('\n', caret - 1) + 1;
   const nl = text.indexOf('\n', lineStart);
-  const p = parseListPrefix(text.slice(lineStart, nl === -1 ? undefined : nl));
+  const line = text.slice(lineStart, nl === -1 ? undefined : nl);
+  const p = parseListPrefix(line);
   if (!p) return null;
   if (caret <= lineStart || caret > lineStart + p.raw.length) return null;
-  return p.indent > 0 ? { type: 'indent', dir: -1 } : { type: 'toggle', kind: p.kind };
+  if (p.indent > 0) return { kind: 'op', op: { type: 'indent', dir: -1 } };
+  if (!line.slice(p.raw.length).trim() && lineStart > 0) {
+    // 앞의 줄바꿈까지 지워 항목을 통째로 없앤다. 남은 목록의 번호는 다시 매긴다
+    // (가운데 항목을 지우면 1., 3.으로 벌어지므로) — 삭제 후 텍스트에서 계산한
+    // 편집을 원래 인덱스로 되돌려 함께 돌려준다(서로 겹치지 않는다).
+    const del: TextEdit = { at: lineStart - 1, remove: p.raw.length + 1, insert: '' };
+    const after = text.slice(0, del.at) + text.slice(del.at + del.remove);
+    const renum = renumberEdits(after).map((e) => (e.at >= del.at ? { ...e, at: e.at + del.remove } : e));
+    return { kind: 'edit', edits: [del, ...renum] };
+  }
+  return { kind: 'op', op: { type: 'toggle', kind: p.kind } };
 }
 
 /** 편집 적용 후 커서/선택 오프셋이 어디로 갔는지 — 접두가 늘거나 줄어든 만큼

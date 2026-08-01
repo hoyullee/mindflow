@@ -623,7 +623,7 @@ describe('번호 매기기 후 줄바꿈 — 정렬/Backspace', () => {
     expect(listGroup(editor)?.style.margin).toBe('0px auto'); // 그대로 가운데
   });
 
-  it('마커 바로 뒤의 Backspace는 마커를 없앤다 (반쯤 지워 깨뜨리지 않는다)', () => {
+  it('빈 항목의 마커 뒤 Backspace는 그 항목을 통째로 지운다 (빈 줄을 남기지 않는다)', () => {
     localStorage.setItem('mindflow_doc_bs1', JSON.stringify(docWith({ c1: { id: 'c1', text: '1. 하나', emoji: '', parent: 'root', children: [], collapsed: false, color: null, x: 0, y: 0 } })));
     const { container } = renderEditor('/editor?map=bs1&title=x');
     const editor = startEditingNode(container, 'c1');
@@ -632,12 +632,22 @@ describe('번호 매기기 후 줄바꿈 — 정렬/Backspace', () => {
     expect(domToRuns(editor, true).text).toBe('1. 하나\n2. ');
 
     fireEvent.keyDown(editor, { key: 'Backspace' });
-    expect(domToRuns(editor, true).text).toBe('1. 하나\n'); // `2.`가 남지 않는다
-    // 캐럿은 빈 둘째 줄에 **접힌 채** 남아야 한다. 예전엔 오프셋을 못 풀면
-    // 편집 박스 전체를 선택해 버려서, 이어서 한 글자만 쳐도 본문이 통째로 날아갔다.
+    // 마커만 지우면 빈 줄이 남아 캐럿이 도형 하단 가운데로 떨어진다(제보) — 줄까지 없앤다.
+    expect(domToRuns(editor, true).text).toBe('1. 하나');
+    // 캐럿은 앞 줄 끝에 **접힌 채** 남아야 한다. 예전엔 오프셋을 못 풀면 편집 박스
+    // 전체를 선택해 버려서, 이어서 한 글자만 쳐도 본문이 통째로 날아갔다.
     const sel = window.getSelection();
     expect(sel?.isCollapsed).toBe(true);
     expect(sel?.toString()).toBe('');
+  });
+
+  it('가운데 빈 항목을 지우면 뒤 번호가 다시 매겨진다', () => {
+    localStorage.setItem('mindflow_doc_bs4', JSON.stringify(docWith({ c1: { id: 'c1', text: '1. 하나\n2. \n3. 셋', emoji: '', parent: 'root', children: [], collapsed: false, color: null, x: 0, y: 0 } })));
+    const { container } = renderEditor('/editor?map=bs4&title=x');
+    const editor = startEditingNode(container, 'c1');
+    setLinearSelection(editor, 9, 9); // '2. ' 끝
+    fireEvent.keyDown(editor, { key: 'Backspace' });
+    expect(domToRuns(editor, true).text).toBe('1. 하나\n2. 셋');
   });
 
   it('들여쓴 마커 뒤의 Backspace는 한 단계 내어쓴다', () => {
@@ -672,7 +682,7 @@ describe('메모(플로트) 마커 안 Backspace', () => {
     expect(ta.value).toBe('1. 하나\n2. ');
     ta.setSelectionRange(ta.value.length, ta.value.length);
     fireEvent.keyDown(ta, { key: 'Backspace' });
-    expect(ta.value).toBe('1. 하나\n');
+    expect(ta.value).toBe('1. 하나'); // 빈 항목은 줄까지 사라진다
   });
 
   it('내용 안에서는 기본 삭제 그대로 둔다', () => {

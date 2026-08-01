@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import type { MouseEvent as ReactMouseEvent, PointerEvent as ReactPointerEvent } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
-import type { Box, Doc, Float, Line, LineAnchor, LayoutMode, ListOp, Node, NodeMap, SizeOf, SnapCandidate, Zone } from '@mindflow/mindmap-core';
+import type { Box, Doc, Float, Line, LineAnchor, LayoutMode, ListOp, Node, NodeMap, SizeOf, SnapCandidate, TextEdit, Zone } from '@mindflow/mindmap-core';
 import { HistoryStack, ROOT_ID, applyListOp as applyListOpToText, applyMarkdownShortcuts, applyPartialStyle, charsToRuns, cubicAt, findLineSnap, layout, resolveLineEndpoints, resolveLineGeometry, runsToChars, serializeDoc, shiftOffset, toMarkdown } from '@mindflow/mindmap-core';
 import { domToRuns, linearize } from './richtextDom';
 import { nodeTextAlign, renderListEdit } from './listLines';
@@ -326,6 +326,8 @@ export interface EditorController {
   /** 줄 단위 리스트 연산 — 글머리/번호 토글, 들여쓰기(Tab)/내어쓰기(Shift+Tab).
    * 편집 중인 노드 텍스트에만 적용된다(`richElRef`가 가리키는 박스). */
   applyListOp: (op: ListOp) => void;
+  /** 마커 안 Backspace가 만든 편집을 적용한다(빈 항목 통째 삭제 — `listBackspaceOp`). */
+  applyListEdits: (edits: TextEdit[]) => void;
   startEditFloat: (id: string) => void;
   commitFloatText: (id: string, text: string) => void;
   cancelFloatEdit: () => void;
@@ -2076,7 +2078,10 @@ export function useEditorState(): EditorController {
    * 그 편집 목록을 **char-model에 그대로 splice** 해 부분 서식(rich 런)을 보존한
    * 뒤 리스트 구조로 다시 그린다(`applyPartial`과 같은 재료).
    */
-  const applyListOp = useCallback((op: ListOp) => {
+  /** 편집 박스의 현재 선택 범위를 읽어 `make`가 만든 편집을 char-model에 적용하고
+   * 다시 그린다 — 리스트 연산(`applyListOp`)과 마커 안 Backspace(`applyListEdits`)의
+   * 공용 몸통. 편집은 char-model에 splice하므로 부분 서식이 보존된다. */
+  const withEditorSelection = useCallback((make: (text: string, a: number, b: number) => TextEdit[]) => {
     const ed = richElRef.current;
     if (!ed) return;
     const ws = window.getSelection();
@@ -2089,7 +2094,7 @@ export function useEditorState(): EditorController {
     const a = Math.min(lin.pos[0] ?? 0, lin.pos[1] ?? 0);
     const b = Math.max(lin.pos[0] ?? 0, lin.pos[1] ?? 0);
     const parsed = domToRuns(ed, true);
-    const edits = applyListOpToText(parsed.text, a, b, op);
+    const edits = make(parsed.text, a, b);
     if (!edits.length) return;
     const chars = runsToChars(parsed);
     // 뒤에서부터 적용해야 앞 편집의 인덱스가 밀리지 않는다. 삽입 글자는 무서식
@@ -2102,6 +2107,14 @@ export function useEditorState(): EditorController {
     const next = { text: chars.map((c) => c.ch).join(''), rich: styled ? runs : null };
     renderListEdit(ed, next, editedNodeAlign(ed), shiftOffset(a, edits), shiftOffset(b, edits));
   }, []);
+
+  const applyListOp = useCallback(
+    (op: ListOp) => withEditorSelection((text, a, b) => applyListOpToText(text, a, b, op)),
+    [withEditorSelection],
+  );
+
+  /** 마커 안 Backspace가 만든 편집(빈 항목 통째 삭제)을 그대로 적용한다. */
+  const applyListEdits = useCallback((edits: TextEdit[]) => withEditorSelection(() => edits), [withEditorSelection]);
 
   const startEditFloat = useCallback((id: string) => {
     setSelectionState({ kind: 'float', id });
@@ -3540,6 +3553,7 @@ export function useEditorState(): EditorController {
     setRichEditorEl,
     applyPartial,
     applyListOp,
+    applyListEdits,
     startEditFloat,
     commitFloatText,
     cancelFloatEdit,

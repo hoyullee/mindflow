@@ -1,6 +1,6 @@
 import type { CSSProperties } from 'react';
 import { useEffect, useRef } from 'react';
-import type { Float, ListOp } from '@mindflow/mindmap-core';
+import type { Float, ListOp, TextEdit } from '@mindflow/mindmap-core';
 import { applyListOp, continueListMarker, listBackspaceOp, listDisplayLine, shiftOffset } from '@mindflow/mindmap-core';
 import { ListTextBlock, plainContentLines } from '../listLines';
 import { hexA } from '../theme';
@@ -197,11 +197,10 @@ function FloatEditBox({ f, onCommit, onCancel }: { f: Float; onCommit: (text: st
         // Tab = 들여쓰기 / Shift+Tab = 내어쓰기 (노드 편집과 같은 코어 규칙).
         // 리스트가 아니어도 기본 동작은 막는다 — 포커스가 나가면 blur 커밋으로
         // 편집이 끝나 버린다.
-        const runListOp = (el: HTMLTextAreaElement, op: ListOp): void => {
+        const applyEdits = (el: HTMLTextAreaElement, edits: TextEdit[]): void => {
+          if (!edits.length) return;
           const a = el.selectionStart ?? 0;
           const b = el.selectionEnd ?? a;
-          const edits = applyListOp(el.value, a, b, op);
-          if (!edits.length) return;
           let next = el.value;
           [...edits].sort((x, y) => y.at - x.at).forEach((ed) => {
             next = next.slice(0, ed.at) + ed.insert + next.slice(ed.at + ed.remove);
@@ -211,6 +210,8 @@ function FloatEditBox({ f, onCommit, onCancel }: { f: Float; onCommit: (text: st
           el.selectionEnd = shiftOffset(b, edits);
           autoSize(el);
         };
+        const runListOp = (el: HTMLTextAreaElement, op: ListOp): void =>
+          applyEdits(el, applyListOp(el.value, el.selectionStart ?? 0, el.selectionEnd ?? el.selectionStart ?? 0, op));
         if (e.key === 'Tab' && !(e.nativeEvent.isComposing || e.keyCode === 229)) {
           e.preventDefault();
           runListOp(e.currentTarget, { type: 'indent', dir: e.shiftKey ? -1 : 1 });
@@ -221,10 +222,11 @@ function FloatEditBox({ f, onCommit, onCancel }: { f: Float; onCommit: (text: st
         if (e.key === 'Backspace' && !(e.nativeEvent.isComposing || e.keyCode === 229)) {
           const el = e.currentTarget;
           const a = el.selectionStart ?? 0;
-          const op = a === (el.selectionEnd ?? a) ? listBackspaceOp(el.value, a) : null;
-          if (op) {
+          const act = a === (el.selectionEnd ?? a) ? listBackspaceOp(el.value, a) : null;
+          if (act) {
             e.preventDefault();
-            runListOp(el, op);
+            if (act.kind === 'op') runListOp(el, act.op);
+            else applyEdits(el, act.edits);
             return;
           }
         }
