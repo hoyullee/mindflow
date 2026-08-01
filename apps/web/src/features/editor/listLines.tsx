@@ -7,6 +7,7 @@ import type { CSSProperties } from 'react';
 import type { ListPrefix, Node, RichRun } from '@mindflow/mindmap-core';
 import { parseListPrefix } from '@mindflow/mindmap-core';
 import { escHtml, runsToHtml, setLinearSelection } from './richtextDom';
+import { RichSpan } from './richSpans';
 import type { RichTextValue } from './richtextDom';
 
 export interface LineSeg {
@@ -15,6 +16,8 @@ export interface LineSeg {
   c?: string | null;
   i?: boolean;
   s?: boolean;
+  /** 하이퍼링크 — 커밋된 렌더에서 밑줄 + Ctrl/⌘+클릭으로 열기(`RichSpan`). */
+  href?: string;
 }
 
 export interface ContentLine {
@@ -34,7 +37,7 @@ function splitLines(node: Pick<Node, 'rich' | 'text'>): LineSeg[][] {
         .split('\n')
         .forEach((p, i) => {
           if (i > 0) lines.push([]);
-          if (p) lines[lines.length - 1]?.push({ t: p, b: r.b, c: r.c, i: r.i, s: r.s });
+          if (p) lines[lines.length - 1]?.push({ t: p, b: r.b, c: r.c, i: r.i, s: r.s, href: r.href });
         });
     });
     return lines;
@@ -116,16 +119,7 @@ export function listItemJustify(align?: CSSProperties['textAlign']): 'flex-start
  * (정렬)가 블록을 움직일 수 있다(`1 1 auto`면 항상 행을 꽉 채워 정렬이 죽는다).
  */
 export function ListTextBlock({ lines, align, lineHeight = 1.35 }: { lines: ContentLine[]; align?: CSSProperties['textAlign']; lineHeight?: number }) {
-  const renderSegs = (ln: ContentLine) =>
-    ln.segs.map((sg, si) =>
-      sg.b || sg.c || sg.i || sg.s ? (
-        <span key={si} style={{ fontWeight: sg.b ? 800 : 'inherit', color: sg.c || 'inherit', fontStyle: sg.i ? 'italic' : undefined, textDecoration: sg.s ? 'line-through' : undefined }}>
-          {sg.t}
-        </span>
-      ) : (
-        <span key={si}>{sg.t}</span>
-      ),
-    );
+  const renderSegs = (ln: ContentLine) => ln.segs.map((sg, si) => <RichSpan key={si} seg={sg}>{sg.t}</RichSpan>);
   return (
     <span style={{ lineHeight, flex: '1 1 auto', width: '100%', minWidth: 0, boxSizing: 'border-box' }}>
       {lines.map((ln, li) =>

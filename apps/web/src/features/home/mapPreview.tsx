@@ -42,6 +42,8 @@ interface WrapSeg {
   c?: string | null;
   i?: boolean;
   s?: boolean;
+  /** 하이퍼링크 — 썸네일에서는 밑줄로만 보인다(클릭 동작 없음). */
+  href?: string;
 }
 
 /** Merge adjacent same-style tokens on a line back into segments (fewer tspans). */
@@ -49,8 +51,8 @@ function mergeToks(line: WrapSeg[]): WrapSeg[] {
   const segs: WrapSeg[] = [];
   line.forEach((tk) => {
     const last = segs[segs.length - 1];
-    if (last && !!last.b === !!tk.b && (last.c ?? null) === (tk.c ?? null) && !!last.i === !!tk.i && !!last.s === !!tk.s) last.t += tk.t;
-    else segs.push({ t: tk.t, b: tk.b, c: tk.c, i: tk.i, s: tk.s });
+    if (last && !!last.b === !!tk.b && (last.c ?? null) === (tk.c ?? null) && !!last.i === !!tk.i && !!last.s === !!tk.s && (last.href ?? null) === (tk.href ?? null)) last.t += tk.t;
+    else segs.push({ t: tk.t, b: tk.b, c: tk.c, i: tk.i, s: tk.s, href: tk.href });
   });
   return segs;
 }
@@ -126,7 +128,7 @@ function wrapRuns(runs: WrapSeg[], maxW: number, fpx: number, baseFw: number, me
     const toks: (WrapSeg & { w: number; sp: boolean })[] = [];
     segs.forEach((sg) => {
       const f = `${sg.i ? 'italic ' : ''}${sg.b ? 800 : baseFw} ${fpx}px Pretendard`;
-      (String(sg.t).match(/[A-Za-z0-9]+|\s+|./gu) || []).forEach((p) => toks.push({ t: p, w: measurer.measure(p, f), sp: /^\s+$/.test(p), b: sg.b, c: sg.c, i: sg.i, s: sg.s }));
+      (String(sg.t).match(/[A-Za-z0-9]+|\s+|./gu) || []).forEach((p) => toks.push({ t: p, w: measurer.measure(p, f), sp: /^\s+$/.test(p), b: sg.b, c: sg.c, i: sg.i, s: sg.s, href: sg.href }));
     });
     let line: typeof toks = [];
     let cur = 0;
@@ -624,7 +626,15 @@ function buildPreview(rawDoc: string, hueFallback: string): JSX.Element | null {
               dy={li === 0 ? 0 : lineH}
             >
               {ln.segs.map((s, si) => (
-                <tspan key={si} fontWeight={s.b ? 800 : undefined} fill={s.c || undefined} fontStyle={s.i ? 'italic' : undefined} textDecoration={s.s ? 'line-through' : undefined}>
+                <tspan
+                  key={si}
+                  fontWeight={s.b ? 800 : undefined}
+                  fill={s.c || undefined}
+                  fontStyle={s.i ? 'italic' : undefined}
+                  // 링크는 밑줄로 — 에디터 렌더(`richSpans`)와 같은 신호. 썸네일은
+                  // 읽기 전용이라 클릭 동작은 없다.
+                  textDecoration={[s.s ? 'line-through' : '', s.href ? 'underline' : ''].filter(Boolean).join(' ') || undefined}
+                >
                   {s.t}
                 </tspan>
               ))}

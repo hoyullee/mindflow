@@ -13,6 +13,7 @@ import { MapUnavailable } from './components/MapUnavailable';
 import { MobileSelectBar } from './components/MobileSelectBar';
 import { useIsMobile } from '../../hooks/useMediaQuery';
 import { useUpdateGuard } from '../../pwa/updateGate';
+import { useLinkModifier } from './richSpans';
 
 /**
  * React port of `MindFlow.dc.html`'s editor — the mindmap canvas. This is the
@@ -76,6 +77,9 @@ export function Editor() {
   // so a bottom-anchored element (the zoom/minimap cluster) ends up below the
   // fold, behind the browser chrome. `100dvh` tracks the visible viewport so
   // bottom-right controls stay on screen. Equals `100vh` on desktop.
+  // Ctrl/⌘ 를 누르고 있는 동안만 링크 위에 손가락 커서(`editor.css`).
+  const linkMod = useLinkModifier();
+
   const rootStyle: CSSProperties = {
     height: '100dvh',
     width: '100%',
@@ -103,7 +107,7 @@ export function Editor() {
   if (controller.bodyMissing) return <MapUnavailable onRetry={controller.retryLoad} />;
 
   return (
-    <div style={rootStyle}>
+    <div className={linkMod ? 'mf-ed-linkmod' : undefined} style={rootStyle}>
       <Toolbar controller={controller} />
       {/* 공유 모달 — 아웃라인 보기에서도 열 수 있어야 하므로 view 분기 밖에 둔다. */}
       <ShareModal controller={controller} />

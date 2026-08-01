@@ -33,6 +33,8 @@ export interface RichChar {
   i?: boolean;
   /** 취소선 — post-dc 추가(RichRun.s 참고). */
   s?: boolean;
+  /** 하이퍼링크 — post-dc 추가(RichRun.href 참고). */
+  href?: string | null;
 }
 
 /** Explodes `src.rich` (or, absent that, `src.text` as one unstyled run) into
@@ -43,7 +45,7 @@ export function runsToChars(src: RichSource): RichChar[] {
   const chars: RichChar[] = [];
   runs.forEach((r) => {
     const t = r.t || '';
-    for (let i = 0; i < t.length; i++) chars.push({ ch: t[i]!, b: !!r.b, c: r.c || null, i: !!r.i, s: !!r.s });
+    for (let i = 0; i < t.length; i++) chars.push({ ch: t[i]!, b: !!r.b, c: r.c || null, i: !!r.i, s: !!r.s, href: r.href || null });
   });
   return chars;
 }
@@ -56,13 +58,14 @@ export function charsToRuns(chars: RichChar[]): RichRun[] {
   const runs: RichRun[] = [];
   chars.forEach((x) => {
     const last = runs[runs.length - 1];
-    if (last && !!last.b === x.b && (last.c || null) === x.c && !!last.i === !!x.i && !!last.s === !!x.s) last.t += x.ch;
+    if (last && !!last.b === x.b && (last.c || null) === x.c && !!last.i === !!x.i && !!last.s === !!x.s && (last.href || null) === (x.href || null)) last.t += x.ch;
     else {
-      // i/s는 true일 때만 키를 만든다 — 원본(dc) 시절 문서와 같은 직렬화 모양을
-      // 유지해 골든/CRDT 무회귀 (RichRun doc 참고).
+      // i/s/href는 값이 있을 때만 키를 만든다 — 원본(dc) 시절 문서와 같은 직렬화
+      // 모양을 유지해 골든/CRDT 무회귀 (RichRun doc 참고).
       const r: RichRun = { t: x.ch, b: x.b, c: x.c };
       if (x.i) r.i = true;
       if (x.s) r.s = true;
+      if (x.href) r.href = x.href;
       runs.push(r);
     }
   });
@@ -88,7 +91,13 @@ export function charsToRuns(chars: RichChar[]): RichRun[] {
  * text/rich unchanged (normalized: an empty `rich` array collapses to
  * `null`), matching the original's early `if (s0 === s1) return;`.
  */
-export function applyPartialStyle(src: RichSource, s0In: number, s1In: number, kind: 'b' | 'i' | 's' | 'c' | 'clear', val?: string | null): { text: string; rich: RichRun[] | null } {
+export function applyPartialStyle(
+  src: RichSource,
+  s0In: number,
+  s1In: number,
+  kind: 'b' | 'i' | 's' | 'c' | 'link' | 'clear',
+  val?: string | null,
+): { text: string; rich: RichRun[] | null } {
   let s0 = s0In;
   let s1 = s1In;
   if (s1 < s0) {
@@ -111,30 +120,40 @@ export function applyPartialStyle(src: RichSource, s0In: number, s1In: number, k
     else if (kind === 'i') c.i = target as boolean;
     else if (kind === 's') c.s = target as boolean;
     else if (kind === 'c') c.c = val ?? null;
+    else if (kind === 'link') c.href = val || null;
     else {
       c.b = false;
       c.c = null;
       c.i = false;
       c.s = false;
+      c.href = null;
     }
   }
   const nruns = charsToRuns(chars).filter((r) => r.t);
-  const styled = nruns.some((r) => r.b || r.c || r.i || r.s);
-  return { text: chars.map((x) => x.ch).join(''), rich: styled ? nruns : null };
+  return { text: chars.map((x) => x.ch).join(''), rich: isStyledRuns(nruns) ? nruns : null };
+}
+
+/** 이 런들이 **서식을 담고 있는가** — 아니면 평문이라 `rich`를 `null`로 접어도 된다.
+ *
+ * 서식 키가 늘 때마다 이 판정을 빠뜨리면 그 서식만 걸린 텍스트가 조용히 평문으로
+ * 되돌아간다(링크만 걸린 런이 그랬다). 그래서 판정을 **여기 한 곳**에 둔다 —
+ * 웹의 커밋 경로들도 이 함수를 쓴다. */
+export function isStyledRuns(runs: RichRun[] | null | undefined): boolean {
+  return !!runs && runs.some((r) => r.b || r.c || r.i || r.s || r.href);
 }
 
 /** Removes one style key from every run, dropping back to plain (`null`)
  * `rich` if nothing else is styled afterward — pure port of `Component#stripRich`
  * (MindFlow.dc.html:2727), used when a WHOLE-node style toggle (e.g. the
  * bold-everything button) should override any conflicting partial run. */
-export function stripRichStyle(rich: RichRun[] | null | undefined, key: 'b' | 'c' | 'i' | 's'): RichRun[] | null {
+export function stripRichStyle(rich: RichRun[] | null | undefined, key: 'b' | 'c' | 'i' | 's' | 'href'): RichRun[] | null {
   if (!rich || !rich.length) return null;
   const next = rich.map((r) => {
     const o = { ...r };
     delete o[key];
     return o;
   });
-  return next.some((r) => r.b || r.c || r.i || r.s) ? next : null;
+  return isStyledRuns(next) ? next : null;
 }
 
 // ── 마크다운 단축 문법 ─────────────────────────────────────────────────────

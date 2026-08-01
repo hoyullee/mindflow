@@ -1,7 +1,7 @@
 import type { CSSProperties, ReactNode } from 'react';
 import { useEffect, useRef } from 'react';
 import type { LayoutMode, Node, NodeMap, RichRun } from '@mindflow/mindmap-core';
-import { ROOT_ID, charsToRuns, continueListMarker, listBackspaceOp, parseListPrefix, runsToChars } from '@mindflow/mindmap-core';
+import { ROOT_ID, charsToRuns, continueListMarker, isStyledRuns, listBackspaceOp, parseListPrefix, runsToChars } from '@mindflow/mindmap-core';
 import { colorOf, descendants } from '../tree';
 import { isPanButton } from '../pointerButtons';
 import { hexA } from '../theme';
@@ -13,6 +13,7 @@ import { RemotePeerTag } from './RemotePeerTag';
 import { ResizeHandle } from './ResizeHandle';
 import { domToRuns, linearize } from '../richtextDom';
 import { ListTextBlock, domMarkerSignature, listLinesOf, listSigOf, listSignature, markerSignature, nodeTextAlign, renderListEdit } from '../listLines';
+import { RichSpan } from '../richSpans';
 
 interface NodeLayerProps {
   nodes: NodeMap;
@@ -237,9 +238,9 @@ function NodeBox({ id, node: n, g, nodes, mode, theme: th, rootX, controller }: 
   ) : n.rich && n.rich.length ? (
     <span style={{ lineHeight: 1.35, flex: '1 1 auto', width: '100%', minWidth: 0, boxSizing: 'border-box', textAlign: align, whiteSpace: 'pre-wrap', wordBreak: 'break-word' }}>
       {n.rich.map((r, ri) => (
-        <span key={ri} style={{ fontWeight: r.b ? 800 : 'inherit', color: r.c || 'inherit', fontStyle: r.i ? 'italic' : undefined, textDecoration: r.s ? 'line-through' : undefined }}>
+        <RichSpan key={ri} seg={r}>
           {r.t}
-        </span>
+        </RichSpan>
       ))}
     </span>
   ) : (
@@ -465,8 +466,7 @@ function maybeContinueList(e: { preventDefault: () => void }, el: HTMLDivElement
     caret = a + insert.length;
   }
   const runs = charsToRuns(chars).filter((r) => r.t);
-  const styled = runs.some((r) => r.b || r.c || r.i || r.s);
-  render({ text: chars.map((c) => c.ch).join(''), rich: styled ? runs : null }, caret);
+  render({ text: chars.map((c) => c.ch).join(''), rich: isStyledRuns(runs) ? runs : null }, caret);
   return true;
 }
 
@@ -644,7 +644,11 @@ function NodeEditBox({ id, n, boxStyle, align, controller }: NodeEditBoxProps) {
         }
       }}
       onKeyUp={(e) => e.stopPropagation()}
-      onBlur={() => controller.commitNodeRichText(id, ref.current)}
+      // 링크 주소 입력창이 열려 있는 동안엔 커밋하지 않는다 — 입력창으로 포커스가
+      // 넘어가는 순간 편집이 끝나 버리면 링크를 걸 수가 없다.
+      onBlur={() => {
+        if (!controller.isBlurCommitPaused()) controller.commitNodeRichText(id, ref.current);
+      }}
       style={{
         border: 'none',
         background: 'transparent',

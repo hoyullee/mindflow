@@ -36,6 +36,10 @@ export interface RichRun {
   i?: boolean;
   /** 취소선 (`~~x~~`). */
   s?: boolean;
+  /** 하이퍼링크 대상 — post-dc 순수 추가. **값이 있을 때만** 직렬화에 실린다
+   * (`i`/`s`와 같은 규칙). 저장 전에 `normalizeUrl`을 통과한 값만 들어오므로
+   * `http`/`https`/`mailto` 스킴만 존재한다(`javascript:` 등은 차단). */
+  href?: string;
 }
 
 /**

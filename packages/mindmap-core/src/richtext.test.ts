@@ -1,14 +1,14 @@
 import { describe, expect, it } from 'vitest';
-import { applyPartialStyle, charsToRuns, runsToChars, stripRichStyle } from './richtext';
+import { applyPartialStyle, charsToRuns, isStyledRuns, runsToChars, stripRichStyle } from './richtext';
 import type { RichRun } from './model';
 
 describe('runsToChars / charsToRuns', () => {
   it('explodes a plain (no rich) source into one unstyled char per character', () => {
     const chars = runsToChars({ text: 'abc' });
     expect(chars).toEqual([
-      { ch: 'a', b: false, c: null, i: false, s: false },
-      { ch: 'b', b: false, c: null, i: false, s: false },
-      { ch: 'c', b: false, c: null, i: false, s: false },
+      { ch: 'a', b: false, c: null, i: false, s: false, href: null },
+      { ch: 'b', b: false, c: null, i: false, s: false, href: null },
+      { ch: 'c', b: false, c: null, i: false, s: false, href: null },
     ]);
   });
 
@@ -19,16 +19,16 @@ describe('runsToChars / charsToRuns', () => {
     ];
     const chars = runsToChars({ text: 'abcd', rich });
     expect(chars).toEqual([
-      { ch: 'a', b: true, c: null, i: false, s: false },
-      { ch: 'b', b: true, c: null, i: false, s: false },
-      { ch: 'c', b: false, c: '#ff0000', i: false, s: false },
-      { ch: 'd', b: false, c: '#ff0000', i: false, s: false },
+      { ch: 'a', b: true, c: null, i: false, s: false, href: null },
+      { ch: 'b', b: true, c: null, i: false, s: false, href: null },
+      { ch: 'c', b: false, c: '#ff0000', i: false, s: false, href: null },
+      { ch: 'd', b: false, c: '#ff0000', i: false, s: false, href: null },
     ]);
   });
 
   it('an empty `rich` array is treated as absent (falls back to plain text)', () => {
     const chars = runsToChars({ text: 'x', rich: [] });
-    expect(chars).toEqual([{ ch: 'x', b: false, c: null, i: false, s: false }]);
+    expect(chars).toEqual([{ ch: 'x', b: false, c: null, i: false, s: false, href: null }]);
   });
 
   it('re-merges adjacent same-style characters back into runs', () => {
@@ -245,5 +245,45 @@ describe('applyMarkdownShortcuts', () => {
 
   it('마커가 줄을 걸치면 발동하지 않는다', () => {
     expect(applyMarkdownShortcuts({ text: '*줄\n걸침*' })).toBeNull();
+  });
+});
+
+describe('applyPartialStyle — 하이퍼링크', () => {
+  it('선택 범위에만 href를 건다', () => {
+    const out = applyPartialStyle({ text: '문서 보기' }, 0, 2, 'link', 'https://example.com/');
+    expect(out.rich).toEqual([
+      { t: '문서', b: false, c: null, href: 'https://example.com/' },
+      { t: ' 보기', b: false, c: null },
+    ]);
+  });
+
+  it('링크만 걸린 런도 rich로 남는다 (평문으로 접히면 링크가 사라진다)', () => {
+    const out = applyPartialStyle({ text: 'abc' }, 0, 3, 'link', 'https://a.com/');
+    expect(out.rich).not.toBeNull();
+    expect(isStyledRuns(out.rich)).toBe(true);
+  });
+
+  it('null을 주면 링크를 뗀다', () => {
+    const linked = applyPartialStyle({ text: 'abc' }, 0, 3, 'link', 'https://a.com/');
+    const off = applyPartialStyle({ text: linked.text, rich: linked.rich }, 0, 3, 'link', null);
+    expect(off.rich).toBeNull(); // 다른 서식이 없으면 평문으로
+  });
+
+  it('지우기는 링크도 함께 뗀다', () => {
+    const linked = applyPartialStyle({ text: 'abc' }, 0, 3, 'link', 'https://a.com/');
+    const cleared = applyPartialStyle({ text: linked.text, rich: linked.rich }, 0, 3, 'clear');
+    expect(cleared.rich).toBeNull();
+  });
+
+  it('굵게와 링크는 같은 글자에 공존한다', () => {
+    const linked = applyPartialStyle({ text: 'abc' }, 0, 3, 'link', 'https://a.com/');
+    const bolded = applyPartialStyle({ text: linked.text, rich: linked.rich }, 0, 3, 'b');
+    expect(bolded.rich).toEqual([{ t: 'abc', b: true, c: null, href: 'https://a.com/' }]);
+  });
+
+  it('href가 다르면 런이 합쳐지지 않는다', () => {
+    const a = applyPartialStyle({ text: 'ab' }, 0, 1, 'link', 'https://a.com/');
+    const b = applyPartialStyle({ text: a.text, rich: a.rich }, 1, 2, 'link', 'https://b.com/');
+    expect(b.rich).toHaveLength(2);
   });
 });
