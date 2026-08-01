@@ -313,62 +313,64 @@ describe('편집 중 즉시 리스트 렌더', () => {
 });
 
 // 제보 ②: 리스트가 적용된 텍스트는 정렬 설정과 무관하게 늘 좌측에 붙었다.
-// 수리: 연속한 리스트 줄 **묶음**을 `width: fit-content` 상자로 묶어 그 상자만
-// 정렬한다(auto margin). 항목을 하나씩 따로 정렬하면 마커 열이 흩어지고, 특히
-// 들여쓴 항목이 상위보다 왼쪽에 놓여 계층이 거꾸로 읽힌다.
+// 처음엔 연속 항목을 `width: fit-content` 상자로 묶어 그 상자만 정렬했는데,
+// 도형이 내용 크기에 맞춰 커지는 탓에 상자가 움직일 여백이 5px밖에 안 남아
+// **정렬이 여전히 보이지 않았다**(재제보). 그래서 워드프로세서 표준대로
+// **항목마다** 정렬한다 — 마커가 자기 텍스트와 함께 움직인다.
 describe('리스트 정렬 — 사용자 설정(좌/중앙/우) 반영', () => {
   const listNode = (align?: string) => ({
     c1: { id: 'c1', text: '- 하나\n- 둘', emoji: '', parent: 'root', children: [], collapsed: false, color: null, x: 0, y: 0, ...(align ? { align } : {}) },
   });
-  /** 리스트 묶음 상자(정렬을 담당하는 `fit-content` 블록)의 margin. */
-  const groupMargin = (container: HTMLElement, id = 'c1') =>
+  /** 리스트 항목 행([마커|내용] flex 행)의 justify-content. */
+  const itemJustify = (container: HTMLElement, id = 'c1') =>
     Array.from(nodeBox(container, id).querySelectorAll('span'))
-      .filter((s) => s.style.width === 'fit-content')
-      .map((s) => s.style.margin);
+      .filter((sp) => sp.style.display === 'flex')
+      .map((sp) => sp.style.justifyContent);
 
-  it('기본(가운데) 정렬이면 리스트 묶음이 가운데', () => {
+  it('기본(가운데) 정렬이면 항목마다 가운데', () => {
     localStorage.setItem('mindflow_doc_la1', JSON.stringify(docWith(listNode())));
     const { container } = renderEditor('/editor?map=la1&title=x');
-    expect(groupMargin(container)).toEqual(['0px auto']);
+    expect(itemJustify(container)).toEqual(['center', 'center']);
   });
 
   it('좌측 정렬', () => {
     localStorage.setItem('mindflow_doc_la2', JSON.stringify(docWith(listNode('left'))));
     const { container } = renderEditor('/editor?map=la2&title=x');
-    expect(groupMargin(container)).toEqual(['0px']);
+    expect(itemJustify(container)).toEqual(['flex-start', 'flex-start']);
   });
 
   it('우측 정렬', () => {
     localStorage.setItem('mindflow_doc_la3', JSON.stringify(docWith(listNode('right'))));
     const { container } = renderEditor('/editor?map=la3&title=x');
-    expect(groupMargin(container)).toEqual(['0px 0px 0px auto']);
+    expect(itemJustify(container)).toEqual(['flex-end', 'flex-end']);
   });
 
-  it('편집 박스의 리스트 묶음도 같은 정렬을 따른다', () => {
+  it('편집 박스의 항목도 같은 정렬을 따른다', () => {
     localStorage.setItem('mindflow_doc_la4', JSON.stringify(docWith(listNode('right'))));
     const { container } = renderEditor('/editor?map=la4&title=x');
     const editor = startEditingNode(container, 'c1');
-    const groups = Array.from(editor.querySelectorAll('div')).filter((d) => d.style.width === 'fit-content');
-    expect(groups.map((g) => g.style.margin)).toEqual(['0px 0px 0px auto']);
-    // 묶음 안 행은 두 줄 모두 좌측 기준(마커 열이 선다)
-    expect(groups[0]!.querySelectorAll('div[style*="flex"]').length).toBe(2);
+    const rows = Array.from(editor.querySelectorAll('div')).filter((d) => d.style.display === 'flex');
+    expect(rows.map((r) => r.style.justifyContent)).toEqual(['flex-end', 'flex-end']);
   });
 
-  it('두 항목이 한 묶음으로 묶여 마커 열이 유지된다', () => {
+  it('마커는 자기 항목 안에 남는다 (덩어리째 움직인다)', () => {
     localStorage.setItem('mindflow_doc_la5', JSON.stringify(docWith(listNode('center'))));
     const { container } = renderEditor('/editor?map=la5&title=x');
-    const groups = Array.from(nodeBox(container, 'c1').querySelectorAll('span')).filter((s) => s.style.width === 'fit-content');
-    expect(groups).toHaveLength(1); // 두 항목이 따로 정렬되지 않는다
-    expect(groups[0]!.children.length).toBe(2); // 항목 두 행이 같은 상자 안
+    const rows = Array.from(nodeBox(container, 'c1').querySelectorAll('span')).filter((sp) => sp.style.display === 'flex');
+    expect(rows).toHaveLength(2);
+    // 각 행은 [마커][내용] 두 스팬 — 정렬은 행 단위로 걸린다
+    rows.forEach((r) => expect(r.children.length).toBe(2));
   });
 
-  it('평문 줄이 끼면 리스트 묶음이 끊긴다', () => {
+  it('평문 줄은 기존대로 textAlign으로 정렬된다', () => {
     localStorage.setItem(
       'mindflow_doc_la6',
       JSON.stringify(docWith({ c1: { id: 'c1', text: '- 하나\n평문\n- 둘', emoji: '', parent: 'root', children: [], collapsed: false, color: null, x: 0, y: 0 } })),
     );
     const { container } = renderEditor('/editor?map=la6&title=x');
-    expect(groupMargin(container)).toEqual(['0px auto', '0px auto']); // 묶음 두 개
+    expect(itemJustify(container)).toEqual(['center', 'center']); // 리스트 항목 둘
+    const plain = Array.from(nodeBox(container, 'c1').querySelectorAll('span')).filter((sp) => sp.style.display === 'block');
+    expect(plain.map((p) => p.style.textAlign)).toEqual(['center']);
   });
 });
 
@@ -605,7 +607,7 @@ describe('단계별 마커 — 들여쓰기/내어쓰기로 기호가 바뀐다'
 //  ① 들여쓰기하면 텍스트 전체 정렬이 틀어진다
 //  ② Backspace를 누르면 Tab이 걸린 것처럼 보인다
 describe('번호 매기기 후 줄바꿈 — 정렬/Backspace', () => {
-  const listGroup = (el: HTMLElement) => el.querySelector('div[style*="fit-content"]') as HTMLElement | null;
+  const itemRows = (el: HTMLElement) => Array.from(el.querySelectorAll('div')).filter((d) => d.style.display === 'flex');
 
   it('들여쓰기해도 리스트 묶음 정렬이 노드 정렬(기본 가운데)을 유지한다', () => {
     // align을 지정하지 않은 노드 = 가운데 정렬이 기본. 컨트롤러가 `n.align`을
@@ -615,12 +617,11 @@ describe('번호 매기기 후 줄바꿈 — 정렬/Backspace', () => {
     const editor = startEditingNode(container, 'c1');
     setLinearSelection(editor, 5, 5); // '1. 하나' 끝
 
-    const before = listGroup(editor)?.style.margin;
-    expect(before).toBe('0px auto'); // 가운데
+    expect(itemRows(editor).map((r) => r.style.justifyContent)).toEqual(['center']); // 가운데
     fireEvent.keyDown(editor, { key: 'Enter', shiftKey: true }); // → '2. '
     fireEvent.keyDown(editor, { key: 'Tab' }); // 들여쓰기
     expect(domToRuns(editor, true).text).toBe('1. 하나\n  a. ');
-    expect(listGroup(editor)?.style.margin).toBe('0px auto'); // 그대로 가운데
+    expect(itemRows(editor).map((r) => r.style.justifyContent)).toEqual(['center', 'center']); // 그대로 가운데
   });
 
   it('빈 항목의 마커 뒤 Backspace는 그 항목을 통째로 지운다 (빈 줄을 남기지 않는다)', () => {

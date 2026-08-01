@@ -93,29 +93,17 @@ export function nodeTextAlign(n: Pick<Node, 'align'>): 'left' | 'center' | 'righ
   return (n.align as 'left' | 'center' | 'right' | undefined) || 'center';
 }
 
-/** 연속한 리스트 줄 **묶음 전체**를 사용자 정렬대로 놓는 CSS margin.
+/** 리스트 **항목 하나**([마커|내용] 한 덩어리)를 사용자 정렬대로 놓는 flex 정렬.
  *
- * 항목을 하나씩 따로 정렬하면 리스트가 깨진다: 가운데 정렬에서 길이가 다른
- * 항목들의 마커가 제각각 놓여 열이 사라지고, 특히 **들여쓴 항목이 상위 항목보다
- * 왼쪽에 놓여 계층이 거꾸로 읽힌다**(실측: 1단계 들여쓴 줄의 마커가 상위보다
- * 23px 왼쪽). 그래서 묶음을 `width: fit-content`(=가장 긴 항목 폭)로 묶어 그
- * 상자만 정렬하고, 안에서는 항상 좌측 기준 — 마커가 한 열에 서고 들여쓰기가
- * 오른쪽으로 쌓인다. 썸네일(`mapPreview`)·PNG(`png.ts`)도 같은 모델을 쓴다
- * (그쪽은 묶음의 최대 항목 폭 `itemW`로 같은 계산). */
-export function listGroupMargin(align?: CSSProperties['textAlign']): string {
-  return align === 'right' ? '0 0 0 auto' : align === 'center' ? '0 auto' : '0';
-}
-
-/** 연속한 리스트 줄을 한 묶음으로 — 평문 줄이 끼면 묶음이 끊긴다. */
-export function groupListLines(lines: ContentLine[]): { list: boolean; lines: ContentLine[] }[] {
-  const groups: { list: boolean; lines: ContentLine[] }[] = [];
-  lines.forEach((ln) => {
-    const isList = !!ln.list;
-    const last = groups[groups.length - 1];
-    if (last && last.list === isList) last.lines.push(ln);
-    else groups.push({ list: isList, lines: [ln] });
-  });
-  return groups;
+ * 예전엔 연속한 항목을 `width: fit-content` 상자로 묶어 그 **상자만** 정렬했다
+ * (마커를 한 열에 세우려고). 그런데 도형이 내용 크기에 맞춰 커지는 탓에 상자가
+ * 움직일 여백이 5px밖에 안 남아 **정렬이 사실상 보이지 않았다**(제보: "정렬
+ * 설정과 무관하게 좌측 정렬"). 그래서 워드프로세서 표준대로 **항목마다** 정렬한다
+ * — 마커가 자기 텍스트와 함께 움직인다.
+ * 소비처(에디터 렌더/편집 박스·썸네일 `mapPreview`·PNG `png.ts`)가 모두 같은
+ * 규칙을 쓴다(그쪽은 각 항목의 폭 `itemW`로 같은 계산). */
+export function listItemJustify(align?: CSSProperties['textAlign']): 'flex-start' | 'center' | 'flex-end' {
+  return align === 'right' ? 'flex-end' : align === 'center' ? 'center' : 'flex-start';
 }
 
 /** 리스트가 있을 때만 쓰는 노드/메모 본문 블록 — 하드 줄마다 [마커|내용] flex 행.
@@ -140,23 +128,17 @@ export function ListTextBlock({ lines, align, lineHeight = 1.35 }: { lines: Cont
     );
   return (
     <span style={{ lineHeight, flex: '1 1 auto', width: '100%', minWidth: 0, boxSizing: 'border-box' }}>
-      {groupListLines(lines).map((grp, gi) =>
-        grp.list ? (
-          // 묶음 상자만 정렬(`fit-content` + auto margin) — 안쪽은 항상 좌측 기준.
-          <span key={gi} style={{ display: 'block', width: 'fit-content', maxWidth: '100%', margin: listGroupMargin(align), textAlign: 'left' }}>
-            {grp.lines.map((ln, li) => (
-              <span key={li} style={{ display: 'flex', alignItems: 'flex-start' }}>
-                <span style={{ whiteSpace: 'pre', flexShrink: 0 }}>{ln.list!.display}</span>
-                <span style={{ flex: '0 1 auto', minWidth: 0, whiteSpace: 'pre-wrap', wordBreak: 'break-word' }}>{ln.segs.length ? renderSegs(ln) : '​'}</span>
-              </span>
-            ))}
+      {lines.map((ln, li) =>
+        ln.list ? (
+          // 항목([마커|내용]) 한 덩어리를 사용자 정렬대로 — 마커가 텍스트와 함께 움직인다.
+          <span key={li} style={{ display: 'flex', alignItems: 'flex-start', justifyContent: listItemJustify(align) }}>
+            <span style={{ whiteSpace: 'pre', flexShrink: 0 }}>{ln.list.display}</span>
+            <span style={{ flex: '0 1 auto', minWidth: 0, whiteSpace: 'pre-wrap', wordBreak: 'break-word' }}>{ln.segs.length ? renderSegs(ln) : '​'}</span>
           </span>
         ) : (
-          grp.lines.map((ln, li) => (
-            <span key={`${gi}-${li}`} style={{ display: 'block', textAlign: align, whiteSpace: 'pre-wrap', wordBreak: 'break-word' }}>
-              {ln.segs.length ? renderSegs(ln) : '​'}
-            </span>
-          ))
+          <span key={li} style={{ display: 'block', textAlign: align, whiteSpace: 'pre-wrap', wordBreak: 'break-word' }}>
+            {ln.segs.length ? renderSegs(ln) : '​'}
+          </span>
         ),
       )}
     </span>
@@ -181,12 +163,12 @@ export function listEditHtml(v: RichTextValue, align?: CSSProperties['textAlign'
   const lines = nodeContentLines(v);
   // 리스트가 없으면 기존 렌더 그대로 — 리스트를 안 쓰는 편집의 DOM을 바꾸지 않는다.
   if (!lines.some((l) => l.list)) return runsToHtml(v);
-  const margin = listGroupMargin(align);
+  const justify = listItemJustify(align);
   const rowHtml = (ln: ContentLine): string => {
     const inner = runsToHtml({ text: ln.segs.map((s) => s.t).join(''), rich: ln.segs as RichRun[] }) || '<br>';
     if (!ln.list) return `<div>${inner}</div>`;
     return (
-      `<div style="display:flex;align-items:flex-start">` +
+      `<div style="display:flex;align-items:flex-start;justify-content:${justify}">` +
       // `data-list-marker`: ① 캐럿이 마커 끝 경계에 오면 **내용 쪽**으로 보낸다
       //   (`setLinearSelection`) ② 사용자가 마커 스팬 안에 글자를 넣었는지 감지한다.
       //   마커 스팬은 `white-space: pre`라 그 안에 들어간 글자는 **줄바꿈되지 않아**
@@ -196,13 +178,7 @@ export function listEditHtml(v: RichTextValue, align?: CSSProperties['textAlign'
       `</div>`
     );
   };
-  return groupListLines(lines)
-    .map((grp) =>
-      grp.list
-        ? `<div style="width:fit-content;max-width:100%;margin:${margin};text-align:left">${grp.lines.map(rowHtml).join('')}</div>`
-        : grp.lines.map(rowHtml).join(''),
-    )
-    .join('');
+  return lines.map(rowHtml).join('');
 }
 
 /** 줄별 마커 구성을 요약한 문자열 — 편집 중 DOM 재구성이 **필요한 순간**(마커가
