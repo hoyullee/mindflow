@@ -670,6 +670,49 @@ describe('번호 매기기 후 줄바꿈 — 정렬/Backspace', () => {
   });
 });
 
+// 제보: 번호/글머리 적용 후 텍스트를 길게 쓰면 도형을 벗어난다.
+// 원인은 마커 스팬(`white-space: pre`, flex-shrink 0)에 본문이 쌓인 것 —
+// Shift+Enter·Tab 직후 캐럿이 정확히 마커 끝 경계라 이어지는 타이핑이 전부
+// 그 안으로 들어갔고, `pre`라 줄바꿈이 안 돼 박스를 뚫고 나갔다.
+describe('마커 스팬에 본문이 쌓이지 않는다 (긴 텍스트가 도형을 벗어나던 문제)', () => {
+  const markerSpans = (el: HTMLElement) => Array.from(el.querySelectorAll('[data-list-marker]'));
+  const inMarker = (n: Node | null | undefined) => {
+    const el = n ? (n.nodeType === 1 ? (n as Element) : n.parentElement) : null;
+    return !!el?.closest('[data-list-marker]');
+  };
+
+  it('Shift+Enter 직후 캐럿은 마커 밖(내용 쪽)에 있다', () => {
+    localStorage.setItem('mindflow_doc_mk1', JSON.stringify(docWith({ c1: { id: 'c1', text: '1. 하나', emoji: '', parent: 'root', children: [], collapsed: false, color: null, x: 0, y: 0 } })));
+    const { container } = renderEditor('/editor?map=mk1&title=x');
+    const editor = startEditingNode(container, 'c1');
+    setLinearSelection(editor, 5, 5);
+    fireEvent.keyDown(editor, { key: 'Enter', shiftKey: true });
+    expect(inMarker(window.getSelection()?.anchorNode)).toBe(false);
+  });
+
+  it('Tab(들여쓰기) 직후 캐럿도 마커 밖에 있다', () => {
+    localStorage.setItem('mindflow_doc_mk2', JSON.stringify(docWith({ c1: { id: 'c1', text: '1. 하나\n2. 둘', emoji: '', parent: 'root', children: [], collapsed: false, color: null, x: 0, y: 0 } })));
+    const { container } = renderEditor('/editor?map=mk2&title=x');
+    const editor = startEditingNode(container, 'c1');
+    setLinearSelection(editor, 9, 9); // '2. ' 끝
+    fireEvent.keyDown(editor, { key: 'Tab' });
+    expect(inMarker(window.getSelection()?.anchorNode)).toBe(false);
+  });
+
+  it('마커 스팬 안에 글자가 들어가면 다음 입력에서 스스로 고쳐진다', () => {
+    localStorage.setItem('mindflow_doc_mk3', JSON.stringify(docWith({ c1: { id: 'c1', text: '1. 하나', emoji: '', parent: 'root', children: [], collapsed: false, color: null, x: 0, y: 0 } })));
+    const { container } = renderEditor('/editor?map=mk3&title=x');
+    const editor = startEditingNode(container, 'c1');
+    // 사용자가 마커 스팬 안(캐럿을 직접 옮겨)에 타이핑한 상황을 재현
+    const marker = markerSpans(editor)[0]!;
+    marker.textContent = '1. 긴텍스트';
+    fireEvent.input(editor);
+
+    expect(markerSpans(editor).map((m) => m.textContent)).toEqual(['1. ']); // 마커는 마커만
+    expect(domToRuns(editor, true).text).toBe('1. 긴텍스트하나'); // 글자는 보존된 채 내용 쪽으로
+  });
+});
+
 describe('메모(플로트) 마커 안 Backspace', () => {
   it('마커 뒤 Backspace가 마커를 없애고, 들여쓴 줄은 내어쓴다', () => {
     localStorage.setItem('mindflow_doc_mbs', JSON.stringify(docWith({}, [{ id: 'f1', text: '1. 하나\n  a. ', x: 100, y: 100, w: 160 }])));
