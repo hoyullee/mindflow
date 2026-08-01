@@ -2,7 +2,7 @@ import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } fr
 import type { MouseEvent as ReactMouseEvent, PointerEvent as ReactPointerEvent } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import type { Box, Doc, Float, Line, LineAnchor, LayoutMode, ListOp, Node, NodeMap, SizeOf, SnapCandidate, TextEdit, Zone } from '@mindflow/mindmap-core';
-import { HistoryStack, ROOT_ID, applyListOp as applyListOpToText, applyMarkdownShortcuts, applyPartialStyle, charsToRuns, cubicAt, findLineSnap, layout, resolveLineEndpoints, resolveLineGeometry, runsToChars, serializeDoc, shiftOffset, toMarkdown } from '@mindflow/mindmap-core';
+import { HistoryStack, ROOT_ID, applyListOp as applyListOpToText, applyMarkdownShortcuts, applyPartialStyle, charsToRuns, cubicAt, isStyledRuns, findLineSnap, layout, resolveLineEndpoints, resolveLineGeometry, runsToChars, serializeDoc, shiftOffset, toMarkdown } from '@mindflow/mindmap-core';
 import { domToRuns, linearize } from './richtextDom';
 import { nodeTextAlign, renderListEdit } from './listLines';
 import type { ShareStore } from '../../adapters/ports';
@@ -322,10 +322,19 @@ export interface EditorController {
    * DOM-only (rewrites the `contentEditable`'s innerHTML + restores the
    * selection); the actual doc/undo commit happens later, on blur/Enter, via
    * `commitNodeRichText` reading the same live DOM. */
-  applyPartial: (kind: 'b' | 'i' | 's' | 'c' | 'clear', val?: string | null) => void;
+  applyPartial: (kind: 'b' | 'i' | 's' | 'c' | 'link' | 'clear', val?: string | null) => void;
   /** 줄 단위 리스트 연산 — 글머리/번호 토글, 들여쓰기(Tab)/내어쓰기(Shift+Tab).
    * 편집 중인 노드 텍스트에만 적용된다(`richElRef`가 가리키는 박스). */
   applyListOp: (op: ListOp) => void;
+  /** 편집 박스의 적용 대상 범위(선택, 없으면 전체) — 링크 입력창이 열 때 잡아 둔다. */
+  selectionRange: () => { a: number; b: number } | null;
+  /** 잡아 둔 범위에 부분 서식 적용(`applyPartial`의 명시적 범위 버전). */
+  applyPartialRange: (a: number, b: number, kind: 'b' | 'i' | 's' | 'c' | 'link' | 'clear', val?: string | null) => void;
+  /** 현재 선택에 걸린 링크 주소(없거나 섞였으면 null). */
+  selectionLink: () => string | null;
+  /** 링크 입력창이 열린 동안 편집 박스의 blur 커밋을 멈춘다. */
+  pauseBlurCommit: (paused: boolean) => void;
+  isBlurCommitPaused: () => boolean;
   /** 마커 안 Backspace가 만든 편집을 적용한다(빈 항목 통째 삭제 — `listBackspaceOp`). */
   applyListEdits: (edits: TextEdit[]) => void;
   startEditFloat: (id: string) => void;
@@ -2046,31 +2055,74 @@ export function useEditorState(): EditorController {
     return n ? nodeTextAlign(n) : 'center';
   }, []);
 
-  const applyPartial = useCallback((kind: 'b' | 'i' | 's' | 'c' | 'clear', val?: string | null) => {
+  /** 편집 박스의 현재 선택을 **적용 대상 범위**로 — 선택이 없으면(캐럿만) 전체.
+   * 툴바가 편집 세션 동안 상시 노출되므로, 선택 없이 누른 버튼이 아무 일도 안
+   * 하면 죽은 것처럼 보인다(B/I/S와 같은 규칙). */
+  const selectionRange = useCallback((): { a: number; b: number } | null => {
     const ed = richElRef.current;
-    if (!ed) return;
+    if (!ed) return null;
     const ws = window.getSelection();
-    if (!ws || !ws.rangeCount) return;
+    if (!ws || !ws.rangeCount) return null;
     const rng = ws.getRangeAt(0);
     const lin = linearize(ed, [
       { container: rng.startContainer, offset: rng.startOffset },
       { container: rng.endContainer, offset: rng.endOffset },
     ]);
-    let a = lin.pos[0] ?? 0;
-    let b = lin.pos[1] ?? 0;
+    const a0 = Math.min(lin.pos[0] ?? 0, lin.pos[1] ?? 0);
+    const b0 = Math.max(lin.pos[0] ?? 0, lin.pos[1] ?? 0);
+    if (a0 !== b0) return { a: a0, b: b0 };
+    const len = domToRuns(ed).text.length;
+    return len ? { a: 0, b: len } : null;
+  }, []);
+
+  /** 지정한 범위에 부분 서식을 적용한다. 링크 입력처럼 **선택이 잠시 사라지는**
+   * UI는 열 때 범위를 잡아 두고 이 함수로 적용한다. */
+  const applyPartialRange = useCallback((a: number, b: number, kind: 'b' | 'i' | 's' | 'c' | 'link' | 'clear', val?: string | null) => {
+    const ed = richElRef.current;
+    if (!ed || a === b) return;
     const parsed = domToRuns(ed);
-    // 선택이 없으면(캐럿만) 전체 텍스트에 적용 — 툴바가 편집 세션 동안 상시
-    // 노출되므로, 선택 없이 누른 버튼이 아무 일도 안 하면 죽은 것처럼 보인다.
-    if (a === b) {
-      a = 0;
-      b = parsed.text.length;
-      if (!b) return;
-    }
     const next = applyPartialStyle(parsed, a, b, kind, val ?? null);
     // 리스트 줄이 있으면 편집 중 구조([마커|내용] 행)를 유지한 채 다시 그린다 —
     // 평범한 `runsToHtml`만 쓰면 서식 한 번 적용에 리스트 모양이 풀려 버린다.
     renderListEdit(ed, next, editedNodeAlign(ed), Math.min(a, b), Math.max(a, b));
   }, []);
+
+  const applyPartial = useCallback(
+    (kind: 'b' | 'i' | 's' | 'c' | 'link' | 'clear', val?: string | null) => {
+      const r = selectionRange();
+      if (r) applyPartialRange(r.a, r.b, kind, val);
+    },
+    [selectionRange, applyPartialRange],
+  );
+
+  /** 지금 선택(또는 캐럿 앞뒤)에 걸린 링크 주소 — 없거나 섞여 있으면 `null`.
+   * 링크 입력창의 초기값과 "링크 제거" 노출 판단에 쓴다. */
+  const selectionLink = useCallback((): string | null => {
+    const ed = richElRef.current;
+    if (!ed) return null;
+    const ws = window.getSelection();
+    if (!ws || !ws.rangeCount) return null;
+    const rng = ws.getRangeAt(0);
+    const lin = linearize(ed, [
+      { container: rng.startContainer, offset: rng.startOffset },
+      { container: rng.endContainer, offset: rng.endOffset },
+    ]);
+    const a = Math.min(lin.pos[0] ?? 0, lin.pos[1] ?? 0);
+    const b = Math.max(lin.pos[0] ?? 0, lin.pos[1] ?? 0);
+    const chars = runsToChars(domToRuns(ed));
+    if (a === b) return (chars[a - 1]?.href || chars[a]?.href || null) ?? null;
+    const seg = chars.slice(a, b);
+    const first = seg[0]?.href || null;
+    return first && seg.every((c) => (c.href || null) === first) ? first : null;
+  }, []);
+
+  /** 링크 주소 입력창이 열려 있는 동안은 편집 박스의 blur 커밋을 멈춘다 —
+   * 입력창으로 포커스가 넘어가는 순간 편집이 끝나 버리면 링크를 걸 수가 없다. */
+  const blurCommitPausedRef = useRef(false);
+  const pauseBlurCommit = useCallback((paused: boolean) => {
+    blurCommitPausedRef.current = paused;
+  }, []);
+  const isBlurCommitPaused = useCallback(() => blurCommitPausedRef.current, []);
 
   /**
    * 줄 단위 리스트 연산(글머리·번호 토글, 들여쓰기·내어쓰기) — 툴바 버튼과
@@ -2103,8 +2155,7 @@ export function useEditorState(): EditorController {
       .sort((x, y) => y.at - x.at)
       .forEach((e) => chars.splice(e.at, e.remove, ...Array.from(e.insert).map((ch) => ({ ch, b: false, c: null }))));
     const runs = charsToRuns(chars).filter((r) => r.t);
-    const styled = runs.some((r) => r.b || r.c || r.i || r.s);
-    const next = { text: chars.map((c) => c.ch).join(''), rich: styled ? runs : null };
+    const next = { text: chars.map((c) => c.ch).join(''), rich: isStyledRuns(runs) ? runs : null };
     renderListEdit(ed, next, editedNodeAlign(ed), shiftOffset(a, edits), shiftOffset(b, edits));
   }, []);
 
@@ -3554,6 +3605,11 @@ export function useEditorState(): EditorController {
     applyPartial,
     applyListOp,
     applyListEdits,
+    selectionRange,
+    applyPartialRange,
+    selectionLink,
+    pauseBlurCommit,
+    isBlurCommitPaused,
     startEditFloat,
     commitFloatText,
     cancelFloatEdit,

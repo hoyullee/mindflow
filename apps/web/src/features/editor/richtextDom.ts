@@ -7,6 +7,7 @@
 // element's DOM/Selection, which the core package's DOM-purity lint forbids.
 
 import type { RichRun } from '@mindflow/mindmap-core';
+import { isStyledRuns, normalizeUrl } from '@mindflow/mindmap-core';
 
 /** Port of `Component#escHtml` (MindFlow.dc.html:2558). */
 export function escHtml(s: string): string {
@@ -51,7 +52,12 @@ export function runsToHtml(n: RichTextValue): string {
       if (r.c) st += 'color:' + r.c + ';';
       if (r.i) st += 'font-style:italic;';
       if (r.s) st += 'text-decoration:line-through;';
-      return st ? `<span style="${st}">${conv(r.t)}</span>` : conv(r.t);
+      const inner = st ? `<span style="${st}">${conv(r.t)}</span>` : conv(r.t);
+      // 링크는 `data-href`를 가진 span으로 — 편집 박스(contentEditable) 안에서는
+      // 실제 `<a href>`가 브라우저 기본 동작(드래그로 링크 끌기 등)을 끌어들이고,
+      // 무엇보다 저장된 주소를 그대로 DOM 속성에 싣지 않아도 왕복이 된다.
+      // 클릭해서 여는 건 커밋된 렌더(`NodeLayer`)가 담당한다.
+      return r.href ? `<span data-href="${escHtml(r.href)}" style="text-decoration:underline">${inner}</span>` : inner;
     })
     .join('');
 }
@@ -72,15 +78,17 @@ export function domToRuns(el: HTMLElement, keepTrailing = false): { text: string
     c: string | null;
     i: boolean;
     s: boolean;
+    href: string | null;
   }
   const push = (t: string, st: St): void => {
     if (!t) return;
     const last = runs[runs.length - 1];
-    if (last && !!last.b === st.b && (last.c || null) === (st.c || null) && !!last.i === st.i && !!last.s === st.s) last.t += t;
+    if (last && !!last.b === st.b && (last.c || null) === (st.c || null) && !!last.i === st.i && !!last.s === st.s && (last.href || null) === (st.href || null)) last.t += t;
     else {
       const r: RichRun = { t, b: st.b, c: st.c || null };
       if (st.i) r.i = true;
       if (st.s) r.s = true;
+      if (st.href) r.href = st.href;
       runs.push(r);
     }
   };
@@ -101,6 +109,9 @@ export function domToRuns(el: HTMLElement, keepTrailing = false): { text: string
     if (tag === 'I' || tag === 'EM') next.i = true;
     if (tag === 'S' || tag === 'STRIKE' || tag === 'DEL') next.s = true;
     if (tag === 'FONT' && el2.getAttribute('color')) next.c = el2.getAttribute('color');
+    // 링크: 우리가 심은 `data-href`, 그리고 붙여넣기로 들어온 진짜 `<a href>`도 받는다.
+    const linkAttr = el2.getAttribute('data-href') || (tag === 'A' ? el2.getAttribute('href') : null);
+    if (linkAttr) next.href = normalizeUrl(linkAttr);
     if (el2.style) {
       const fw = el2.style.fontWeight;
       if (fw) {
@@ -121,7 +132,7 @@ export function domToRuns(el: HTMLElement, keepTrailing = false): { text: string
     if (isBlock && runs.length && runs[runs.length - 1]!.t.slice(-1) !== '\n') push('\n', st);
     el2.childNodes.forEach((child) => walk(child, next));
   };
-  el.childNodes.forEach((child) => walk(child, { b: false, c: null, i: false, s: false }));
+  el.childNodes.forEach((child) => walk(child, { b: false, c: null, i: false, s: false, href: null }));
   if (!keepTrailing) {
     while (runs.length && /^\n+$/.test(runs[runs.length - 1]!.t)) runs.pop();
     if (runs.length) runs[runs.length - 1]!.t = runs[runs.length - 1]!.t.replace(/\n+$/, '');
@@ -140,8 +151,9 @@ export function domToRuns(el: HTMLElement, keepTrailing = false): { text: string
     r.t = r.t.replace(/\u2002/g, ' ');
   });
   const text = runs.map((r) => r.t).join('');
-  const styled = runs.some((r) => r.b || r.c || r.i || r.s);
-  return { text, rich: styled ? runs.filter((r) => r.t) : null };
+  // "서식이 있는가" 판정은 코어 한 곳(`isStyledRuns`)에 있다 — 링크만 걸린 런이
+  // 평문으로 접혀 링크가 사라지는 일이 없게.
+  return { text, rich: isStyledRuns(runs) ? runs.filter((r) => r.t) : null };
 }
 
 /** One DOM position to resolve into a linear text offset — the `{ container, offset }`
