@@ -187,7 +187,11 @@ export function listEditHtml(v: RichTextValue, align?: CSSProperties['textAlign'
     if (!ln.list) return `<div>${inner}</div>`;
     return (
       `<div style="display:flex;align-items:flex-start">` +
-      `<span style="white-space:pre;flex-shrink:0">${escHtml(ln.list.display)}</span>` +
+      // `data-list-marker`: ① 캐럿이 마커 끝 경계에 오면 **내용 쪽**으로 보낸다
+      //   (`setLinearSelection`) ② 사용자가 마커 스팬 안에 글자를 넣었는지 감지한다.
+      //   마커 스팬은 `white-space: pre`라 그 안에 들어간 글자는 **줄바꿈되지 않아**
+      //   도형을 뚫고 나간다(제보: 리스트에 긴 텍스트를 쓰면 도형을 벗어남).
+      `<span data-list-marker style="white-space:pre;flex-shrink:0">${escHtml(ln.list.display)}</span>` +
       `<span style="flex:0 1 auto;min-width:0">${inner}</span>` +
       `</div>`
     );
@@ -220,6 +224,23 @@ export function renderListEdit(el: HTMLElement, v: RichTextValue, align: CSSProp
   el.innerHTML = listEditHtml(v, align);
   el.dataset.listSig = listSignature(v);
   setLinearSelection(el, s0, s1);
+}
+
+/** 편집 DOM의 마커 스팬들이 실제로 담고 있는 글자 — 텍스트에서 계산한
+ * `markerSignature`와 어긋나면 사용자가 마커 스팬 안에 글자를 넣은 것이다
+ * (`white-space: pre`라 줄바꿈이 안 돼 도형을 벗어난다). 그때 다시 그려 고친다. */
+export function domMarkerSignature(el: HTMLElement): string {
+  return Array.from(el.querySelectorAll('[data-list-marker]'))
+    .map((s) => s.textContent ?? '')
+    .join('\u0000');
+}
+
+/** 텍스트에서 계산한 마커들 — `domMarkerSignature`와 짝. */
+export function markerSignature(v: RichTextValue): string {
+  return nodeContentLines(v)
+    .filter((l) => l.list)
+    .map((l) => l.list!.display)
+    .join('\u0000');
 }
 
 /** 편집 박스에 새겨진 마지막 렌더의 줄 구성 서명(`renderListEdit` 참고). */

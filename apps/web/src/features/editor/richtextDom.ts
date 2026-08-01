@@ -210,11 +210,17 @@ export function setLinearSelection(el: HTMLElement, s0: number, s1: number): voi
     if (sC && eC) return;
     if (node.nodeType === 3) {
       const len = (node.nodeValue || '').length;
-      if (!sC && s0 <= acc + len) {
+      // 리스트 마커 스팬의 **끝 경계**는 내용 쪽에 양보한다. 마커 스팬은
+      // `white-space: pre`(flex-shrink 0)라 그 안에 들어간 글자는 줄바꿈되지 않아
+      // 도형을 뚫고 나간다(제보) — Shift+Enter·Tab 직후 캐럿이 정확히 이 경계에
+      // 오므로, 여기서 양보하지 않으면 이어지는 타이핑이 전부 마커 안에 쌓인다.
+      const inMarker = !!(node.parentElement && node.parentElement.hasAttribute('data-list-marker'));
+      const claim = (pos: number): boolean => pos < acc + len || (pos === acc + len && !inMarker);
+      if (!sC && claim(s0)) {
         sC = node;
         sO = Math.max(0, s0 - acc);
       }
-      if (!eC && s1 <= acc + len) {
+      if (!eC && claim(s1)) {
         eC = node;
         eO = Math.max(0, s1 - acc);
       }

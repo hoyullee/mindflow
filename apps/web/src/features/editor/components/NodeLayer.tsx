@@ -12,7 +12,7 @@ import { peersSelecting } from '../presenceSelection';
 import { RemotePeerTag } from './RemotePeerTag';
 import { ResizeHandle } from './ResizeHandle';
 import { domToRuns, linearize } from '../richtextDom';
-import { ListTextBlock, listLinesOf, listSigOf, listSignature, nodeTextAlign, renderListEdit } from '../listLines';
+import { ListTextBlock, domMarkerSignature, listLinesOf, listSigOf, listSignature, markerSignature, nodeTextAlign, renderListEdit } from '../listLines';
 
 interface NodeLayerProps {
   nodes: NodeMap;
@@ -503,7 +503,10 @@ function NodeEditBox({ id, n, boxStyle, align, controller }: NodeEditBoxProps) {
    * 재구성 — 제보: 편집 중에는 `- 항목` 원문이 보이고 확정해야 리스트가 됐다. */
   const syncListStructure = (el: HTMLDivElement): void => {
     const v = domToRuns(el, true);
-    if (listSignature(v) === listSigOf(el)) return;
+    // 줄 구성이 그대로여도, 사용자가 **마커 스팬 안에** 글자를 넣었으면 다시 그린다
+    // — 그 스팬은 `white-space: pre`라 글자가 줄바꿈되지 않아 도형을 벗어난다(제보).
+    const drifted = markerSignature(v) !== domMarkerSignature(el);
+    if (!drifted && listSignature(v) === listSigOf(el)) return;
     const ws = window.getSelection();
     let caret = v.text.length;
     if (ws && ws.rangeCount) {
