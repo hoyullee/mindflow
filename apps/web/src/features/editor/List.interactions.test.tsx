@@ -601,6 +601,92 @@ describe('단계별 마커 — 들여쓰기/내어쓰기로 기호가 바뀐다'
   });
 });
 
+// 제보 2건 — 번호 매기기 → 텍스트 → 줄바꿈(2. 생성) 뒤에
+//  ① 들여쓰기하면 텍스트 전체 정렬이 틀어진다
+//  ② Backspace를 누르면 Tab이 걸린 것처럼 보인다
+describe('번호 매기기 후 줄바꿈 — 정렬/Backspace', () => {
+  const listGroup = (el: HTMLElement) => el.querySelector('div[style*="fit-content"]') as HTMLElement | null;
+
+  it('들여쓰기해도 리스트 묶음 정렬이 노드 정렬(기본 가운데)을 유지한다', () => {
+    // align을 지정하지 않은 노드 = 가운데 정렬이 기본. 컨트롤러가 `n.align`을
+    // 날것으로 읽으면 undefined(=좌측)로 그려져 묶음만 왼쪽으로 튀었다.
+    localStorage.setItem('mindflow_doc_al1', JSON.stringify(docWith({ c1: { id: 'c1', text: '1. 하나', emoji: '', parent: 'root', children: [], collapsed: false, color: null, x: 0, y: 0 } })));
+    const { container } = renderEditor('/editor?map=al1&title=x');
+    const editor = startEditingNode(container, 'c1');
+    setLinearSelection(editor, 5, 5); // '1. 하나' 끝
+
+    const before = listGroup(editor)?.style.margin;
+    expect(before).toBe('0px auto'); // 가운데
+    fireEvent.keyDown(editor, { key: 'Enter', shiftKey: true }); // → '2. '
+    fireEvent.keyDown(editor, { key: 'Tab' }); // 들여쓰기
+    expect(domToRuns(editor, true).text).toBe('1. 하나\n  a. ');
+    expect(listGroup(editor)?.style.margin).toBe('0px auto'); // 그대로 가운데
+  });
+
+  it('마커 바로 뒤의 Backspace는 마커를 없앤다 (반쯤 지워 깨뜨리지 않는다)', () => {
+    localStorage.setItem('mindflow_doc_bs1', JSON.stringify(docWith({ c1: { id: 'c1', text: '1. 하나', emoji: '', parent: 'root', children: [], collapsed: false, color: null, x: 0, y: 0 } })));
+    const { container } = renderEditor('/editor?map=bs1&title=x');
+    const editor = startEditingNode(container, 'c1');
+    setLinearSelection(editor, 5, 5); // '1. 하나' 끝
+    fireEvent.keyDown(editor, { key: 'Enter', shiftKey: true });
+    expect(domToRuns(editor, true).text).toBe('1. 하나\n2. ');
+
+    fireEvent.keyDown(editor, { key: 'Backspace' });
+    expect(domToRuns(editor, true).text).toBe('1. 하나\n'); // `2.`가 남지 않는다
+    // 캐럿은 빈 둘째 줄에 **접힌 채** 남아야 한다. 예전엔 오프셋을 못 풀면
+    // 편집 박스 전체를 선택해 버려서, 이어서 한 글자만 쳐도 본문이 통째로 날아갔다.
+    const sel = window.getSelection();
+    expect(sel?.isCollapsed).toBe(true);
+    expect(sel?.toString()).toBe('');
+  });
+
+  it('들여쓴 마커 뒤의 Backspace는 한 단계 내어쓴다', () => {
+    localStorage.setItem('mindflow_doc_bs2', JSON.stringify(docWith({ c1: { id: 'c1', text: '1. 하나\n  a. ', emoji: '', parent: 'root', children: [], collapsed: false, color: null, x: 0, y: 0 } })));
+    const { container } = renderEditor('/editor?map=bs2&title=x');
+    const editor = startEditingNode(container, 'c1');
+    setLinearSelection(editor, 11, 11); // '  a. ' 끝
+    fireEvent.keyDown(editor, { key: 'Backspace' });
+    expect(domToRuns(editor, true).text).toBe('1. 하나\n2. ');
+  });
+
+  it('마커 밖(내용 안)의 Backspace는 기본 삭제 그대로 둔다', () => {
+    localStorage.setItem('mindflow_doc_bs3', JSON.stringify(docWith({ c1: { id: 'c1', text: '1. 하나', emoji: '', parent: 'root', children: [], collapsed: false, color: null, x: 0, y: 0 } })));
+    const { container } = renderEditor('/editor?map=bs3&title=x');
+    const editor = startEditingNode(container, 'c1');
+    setLinearSelection(editor, 5, 5); // '1. 하나' 끝
+    // preventDefault를 하지 않았다 = 브라우저 기본 삭제에 맡겼다
+    expect(fireEvent.keyDown(editor, { key: 'Backspace' })).toBe(true);
+    expect(domToRuns(editor, true).text).toBe('1. 하나'); // 우리가 건드리지 않았다
+  });
+});
+
+describe('메모(플로트) 마커 안 Backspace', () => {
+  it('마커 뒤 Backspace가 마커를 없애고, 들여쓴 줄은 내어쓴다', () => {
+    localStorage.setItem('mindflow_doc_mbs', JSON.stringify(docWith({}, [{ id: 'f1', text: '1. 하나\n  a. ', x: 100, y: 100, w: 160 }])));
+    const { container } = renderEditor('/editor?map=mbs&title=x');
+    const card = container.querySelector('[data-float-id="f1"]') as HTMLElement;
+    fireEvent.doubleClick(card);
+    const ta = card.querySelector('textarea') as HTMLTextAreaElement;
+    ta.setSelectionRange(ta.value.length, ta.value.length);
+    expect(fireEvent.keyDown(ta, { key: 'Backspace' })).toBe(false); // 우리가 처리했다
+    expect(ta.value).toBe('1. 하나\n2. ');
+    ta.setSelectionRange(ta.value.length, ta.value.length);
+    fireEvent.keyDown(ta, { key: 'Backspace' });
+    expect(ta.value).toBe('1. 하나\n');
+  });
+
+  it('내용 안에서는 기본 삭제 그대로 둔다', () => {
+    localStorage.setItem('mindflow_doc_mbs2', JSON.stringify(docWith({}, [{ id: 'f1', text: '1. 하나', x: 100, y: 100, w: 160 }])));
+    const { container } = renderEditor('/editor?map=mbs2&title=x');
+    const card = container.querySelector('[data-float-id="f1"]') as HTMLElement;
+    fireEvent.doubleClick(card);
+    const ta = card.querySelector('textarea') as HTMLTextAreaElement;
+    ta.setSelectionRange(ta.value.length, ta.value.length);
+    expect(fireEvent.keyDown(ta, { key: 'Backspace' })).toBe(true);
+    expect(ta.value).toBe('1. 하나');
+  });
+});
+
 describe('메모(플로트) 들여쓰기 — Tab / Shift+Tab', () => {
   it('Tab이 메모의 리스트 줄을 들여쓴다', () => {
     localStorage.setItem('mindflow_doc_mt1', JSON.stringify(docWith({}, [{ id: 'f1', text: '- 하나\n- 둘', x: 100, y: 100, w: 160 }])));

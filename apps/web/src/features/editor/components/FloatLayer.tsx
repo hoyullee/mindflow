@@ -1,7 +1,7 @@
 import type { CSSProperties } from 'react';
 import { useEffect, useRef } from 'react';
-import type { Float } from '@mindflow/mindmap-core';
-import { applyListOp, continueListMarker, listDisplayLine, shiftOffset } from '@mindflow/mindmap-core';
+import type { Float, ListOp } from '@mindflow/mindmap-core';
+import { applyListOp, continueListMarker, listBackspaceOp, listDisplayLine, shiftOffset } from '@mindflow/mindmap-core';
 import { ListTextBlock, plainContentLines } from '../listLines';
 import { hexA } from '../theme';
 import { isPanButton } from '../pointerButtons';
@@ -197,23 +197,36 @@ function FloatEditBox({ f, onCommit, onCancel }: { f: Float; onCommit: (text: st
         // Tab = 들여쓰기 / Shift+Tab = 내어쓰기 (노드 편집과 같은 코어 규칙).
         // 리스트가 아니어도 기본 동작은 막는다 — 포커스가 나가면 blur 커밋으로
         // 편집이 끝나 버린다.
-        if (e.key === 'Tab' && !(e.nativeEvent.isComposing || e.keyCode === 229)) {
-          e.preventDefault();
-          const el = e.currentTarget;
+        const runListOp = (el: HTMLTextAreaElement, op: ListOp): void => {
           const a = el.selectionStart ?? 0;
           const b = el.selectionEnd ?? a;
-          const edits = applyListOp(el.value, a, b, { type: 'indent', dir: e.shiftKey ? -1 : 1 });
-          if (edits.length) {
-            let next = el.value;
-            [...edits].sort((x, y) => y.at - x.at).forEach((ed) => {
-              next = next.slice(0, ed.at) + ed.insert + next.slice(ed.at + ed.remove);
-            });
-            el.value = next;
-            el.selectionStart = shiftOffset(a, edits);
-            el.selectionEnd = shiftOffset(b, edits);
-            autoSize(el);
-          }
+          const edits = applyListOp(el.value, a, b, op);
+          if (!edits.length) return;
+          let next = el.value;
+          [...edits].sort((x, y) => y.at - x.at).forEach((ed) => {
+            next = next.slice(0, ed.at) + ed.insert + next.slice(ed.at + ed.remove);
+          });
+          el.value = next;
+          el.selectionStart = shiftOffset(a, edits);
+          el.selectionEnd = shiftOffset(b, edits);
+          autoSize(el);
+        };
+        if (e.key === 'Tab' && !(e.nativeEvent.isComposing || e.keyCode === 229)) {
+          e.preventDefault();
+          runListOp(e.currentTarget, { type: 'indent', dir: e.shiftKey ? -1 : 1 });
           return;
+        }
+        // 마커 안에서의 Backspace는 마커를 한 덩어리로 다룬다(노드 편집과 동일 —
+        // 코어 `listBackspaceOp`가 단일 소스).
+        if (e.key === 'Backspace' && !(e.nativeEvent.isComposing || e.keyCode === 229)) {
+          const el = e.currentTarget;
+          const a = el.selectionStart ?? 0;
+          const op = a === (el.selectionEnd ?? a) ? listBackspaceOp(el.value, a) : null;
+          if (op) {
+            e.preventDefault();
+            runListOp(el, op);
+            return;
+          }
         }
         // 리스트 자동 이어쓰기 — 리스트 줄에서 Enter를 치면 다음 줄에 마커를
         // 이어 넣고, 마커만 남은 빈 줄이면 마커를 지워 리스트를 끝낸다.

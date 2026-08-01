@@ -83,6 +83,16 @@ export function plainContentLines(text: string): ContentLine[] {
     });
 }
 
+/** 노드 본문의 텍스트 정렬 — `align`이 없으면 **가운데**가 기본이다.
+ *
+ * 렌더(`NodeLayer`)와 편집 중 재구성(컨트롤러 `applyListOp`/`applyPartial`)이
+ * **같은 값**을 써야 한다. 예전엔 컨트롤러가 `n.align`을 날것으로 읽어
+ * `undefined`(=좌측)로 그렸고, 그래서 들여쓰기 직후 리스트 묶음만 왼쪽으로
+ * 튀었다(제보: "번호 매기기 후 들여쓰기 시 정렬이 틀어진다"). */
+export function nodeTextAlign(n: Pick<Node, 'align'>): 'left' | 'center' | 'right' {
+  return (n.align as 'left' | 'center' | 'right' | undefined) || 'center';
+}
+
 /** 연속한 리스트 줄 **묶음 전체**를 사용자 정렬대로 놓는 CSS margin.
  *
  * 항목을 하나씩 따로 정렬하면 리스트가 깨진다: 가운데 정렬에서 길이가 다른

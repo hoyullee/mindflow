@@ -1,7 +1,7 @@
 import type { CSSProperties, ReactNode } from 'react';
 import { useEffect, useRef } from 'react';
 import type { LayoutMode, Node, NodeMap, RichRun } from '@mindflow/mindmap-core';
-import { ROOT_ID, charsToRuns, continueListMarker, parseListPrefix, runsToChars } from '@mindflow/mindmap-core';
+import { ROOT_ID, charsToRuns, continueListMarker, listBackspaceOp, parseListPrefix, runsToChars } from '@mindflow/mindmap-core';
 import { colorOf, descendants } from '../tree';
 import { isPanButton } from '../pointerButtons';
 import { hexA } from '../theme';
@@ -12,7 +12,7 @@ import { peersSelecting } from '../presenceSelection';
 import { RemotePeerTag } from './RemotePeerTag';
 import { ResizeHandle } from './ResizeHandle';
 import { domToRuns, linearize } from '../richtextDom';
-import { ListTextBlock, listLinesOf, listSigOf, listSignature, renderListEdit } from '../listLines';
+import { ListTextBlock, listLinesOf, listSigOf, listSignature, nodeTextAlign, renderListEdit } from '../listLines';
 
 interface NodeLayerProps {
   nodes: NodeMap;
@@ -225,7 +225,7 @@ function NodeBox({ id, node: n, g, nodes, mode, theme: th, rootX, controller }: 
   const hasImg = !!(n.img && n.imgW && n.imgH);
   if (hasImg) boxStyle.flexDirection = 'column';
 
-  const align = (n.align || 'center') as CSSProperties['textAlign'];
+  const align = nodeTextAlign(n) as CSSProperties['textAlign'];
   const clipShape = shape === 'hexagon' || shape === 'diamond' || shape === 'parallelogram' || shape === 'ellipse' || shape === 'pill';
   const bodyWidth = clipShape ? Math.min(g.tw || g.w, g.w) : '100%';
 
@@ -418,6 +418,18 @@ function NodeBox({ id, node: n, g, nodes, mode, theme: th, rootX, controller }: 
  *
  * @returns 처리했으면 true(호출부는 return), 리스트 줄이 아니면 false(기본 줄바꿈).
  */
+/** 접힌 선택 없이 캐럿이 리스트 마커 안에 있는지 보고, Backspace가 대신 수행할
+ * 리스트 연산을 돌려준다(아니면 `null` → 브라우저 기본 삭제). 판정 규칙 자체는
+ * 코어 `listBackspaceOp`가 단일 소스다. */
+function listBackspaceOpAt(el: HTMLDivElement): ReturnType<typeof listBackspaceOp> {
+  const ws = window.getSelection();
+  if (!ws || !ws.rangeCount) return null;
+  const rng = ws.getRangeAt(0);
+  if (!rng.collapsed) return null; // 선택 삭제는 평범한 삭제다
+  const lin = linearize(el, [{ container: rng.startContainer, offset: rng.startOffset }]);
+  return listBackspaceOp(domToRuns(el, true).text, lin.pos[0] ?? 0);
+}
+
 function maybeContinueList(e: { preventDefault: () => void }, el: HTMLDivElement | null, render: (v: { text: string; rich: RichRun[] | null }, caret: number) => void): boolean {
   if (!el) return false;
   const ws = window.getSelection();
@@ -593,6 +605,20 @@ function NodeEditBox({ id, n, boxStyle, align, controller }: NodeEditBoxProps) {
         // Tab = 들여쓰기 / Shift+Tab = 내어쓰기 (리스트 줄에만 반응). 리스트가
         // 아니어도 기본 동작은 막는다 — Tab으로 포커스가 나가면 blur 커밋이
         // 걸려 편집이 갑자기 끝나 버린다.
+        // Backspace가 마커 **안**에 있으면 마커를 한 덩어리로 다룬다 — 한 글자씩
+        // 지우게 두면 `2. `가 `2.`가 되면서 그 줄이 리스트에서 빠지고, 남은 `2.`가
+        // 평문 정렬(가운데)을 따라 옆으로 튀어 "Tab이 걸린 것처럼" 보였다(제보).
+        // 들여쓴 줄은 한 단계 내어쓰고, 최상위 줄은 마커를 없앤다(표준 관례).
+        if (e.key === 'Backspace' && !composing) {
+          const el = ref.current;
+          const op = el ? listBackspaceOpAt(el) : null;
+          if (op) {
+            e.preventDefault();
+            controller.applyListOp(op);
+            controller.updateNodeEditSize(id, ref.current);
+            return;
+          }
+        }
         if (e.key === 'Tab' && !composing) {
           e.preventDefault();
           controller.applyListOp({ type: 'indent', dir: e.shiftKey ? -1 : 1 });

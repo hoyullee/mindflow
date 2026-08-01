@@ -201,6 +201,11 @@ export function setLinearSelection(el: HTMLElement, s0: number, s1: number): voi
   let sO = 0;
   let eC: Node | null = null;
   let eO = 0;
+  // 마지막으로 지나온 위치 — 어떤 이유로든 오프셋을 못 찾았을 때의 폴백.
+  // 예전엔 못 찾으면 `el` 전체를 선택했는데, 그러면 다음 타이핑이 본문을 통째로
+  // 갈아엎는다(제보: 빈 줄에서 Backspace 후 글자를 치면 전부 사라짐).
+  let lastC: Node | null = null;
+  let lastO = 0;
   const walk = (node: Node): void => {
     if (sC && eC) return;
     if (node.nodeType === 3) {
@@ -214,11 +219,29 @@ export function setLinearSelection(el: HTMLElement, s0: number, s1: number): voi
         eO = Math.max(0, s1 - acc);
       }
       acc += len;
+      lastC = node;
+      lastO = len;
       return;
     }
     if (node.nodeType !== 1) return;
     if (node.nodeName === 'BR') {
+      // 빈 줄은 텍스트 노드가 없고 `<br>`만 있다 — 그 자리를 캐럿 위치로 인정한다
+      // (부모 + 자식 인덱스). 이게 없으면 빈 줄로 가는 오프셋이 영영 안 풀린다.
+      const parent = node.parentNode;
+      const idx = parent ? Array.prototype.indexOf.call(parent.childNodes, node) : 0;
+      if (!sC && s0 <= acc) {
+        sC = parent;
+        sO = idx;
+      }
+      if (!eC && s1 <= acc) {
+        eC = parent;
+        eO = idx;
+      }
       acc += 1;
+      if (parent) {
+        lastC = parent;
+        lastO = idx;
+      }
       return;
     }
     const isBlock = (node.nodeName === 'DIV' || node.nodeName === 'P') && node !== el;
@@ -233,8 +256,10 @@ export function setLinearSelection(el: HTMLElement, s0: number, s1: number): voi
     const ws = window.getSelection();
     if (!ws) return;
     const r = document.createRange();
-    r.setStart(sC || el, sC ? sO : 0);
-    r.setEnd(eC || el, eC ? eO : el.childNodes.length);
+    // 못 찾은 오프셋은 **마지막으로 지나온 자리**로 모은다(내용이 아예 없을 때만
+    // `el` 전체 — 그때는 선택할 것도 없다).
+    r.setStart(sC || lastC || el, sC ? sO : lastC ? lastO : 0);
+    r.setEnd(eC || lastC || el, eC ? eO : lastC ? lastO : el.childNodes.length);
     ws.removeAllRanges();
     ws.addRange(r);
     el.focus();

@@ -41,6 +41,7 @@ export {
   listDisplayLine,
   continueListMarker,
   applyListOp,
+  listBackspaceOp,
   shiftOffset,
   bulletGlyphFor,
   ordinalStyleFor,

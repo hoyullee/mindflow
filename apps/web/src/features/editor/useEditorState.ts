@@ -4,7 +4,7 @@ import { useNavigate, useSearchParams } from 'react-router-dom';
 import type { Box, Doc, Float, Line, LineAnchor, LayoutMode, ListOp, Node, NodeMap, SizeOf, SnapCandidate, Zone } from '@mindflow/mindmap-core';
 import { HistoryStack, ROOT_ID, applyListOp as applyListOpToText, applyMarkdownShortcuts, applyPartialStyle, charsToRuns, cubicAt, findLineSnap, layout, resolveLineEndpoints, resolveLineGeometry, runsToChars, serializeDoc, shiftOffset, toMarkdown } from '@mindflow/mindmap-core';
 import { domToRuns, linearize } from './richtextDom';
-import { renderListEdit } from './listLines';
+import { nodeTextAlign, renderListEdit } from './listLines';
 import type { ShareStore } from '../../adapters/ports';
 import type { CollabStatus } from '../../collab/ports';
 import { useBackend, useDocStore, useShareStore, useSpaceStore } from '../../adapters/BackendContext';
@@ -2035,9 +2035,13 @@ export function useEditorState(): EditorController {
    * same span keep working. */
   /** 편집 중인 노드의 텍스트 정렬 — 리스트 행을 그 정렬대로 놓기 위해 필요하다.
    * 편집 박스는 노드 박스(`data-node-id`) 안에 있으므로 DOM에서 되짚는다. */
-  const editedNodeAlign = useCallback((ed: HTMLElement): 'left' | 'center' | 'right' | undefined => {
+  const editedNodeAlign = useCallback((ed: HTMLElement): 'left' | 'center' | 'right' => {
     const id = (ed.closest('[data-node-id]') as HTMLElement | null)?.dataset.nodeId;
-    return (id ? docRef.current.nodes[id]?.align : undefined) as 'left' | 'center' | 'right' | undefined;
+    const n = id ? docRef.current.nodes[id] : undefined;
+    // `nodeTextAlign`으로 **렌더와 같은 기본값**을 쓴다 — 날것의 `n.align`을 쓰면
+    // 정렬을 지정하지 않은 노드에서 undefined(=좌측)가 되어, 들여쓰기 직후
+    // 리스트 묶음만 왼쪽으로 튀었다(제보).
+    return n ? nodeTextAlign(n) : 'center';
   }, []);
 
   const applyPartial = useCallback((kind: 'b' | 'i' | 's' | 'c' | 'clear', val?: string | null) => {

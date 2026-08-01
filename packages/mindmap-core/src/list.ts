@@ -357,6 +357,24 @@ export function applyListOp(text: string, s0: number, s1: number, op: ListOp): T
   return edits;
 }
 
+/** 캐럿이 리스트 **마커 안**(들여쓰기 공백 포함, 마커 바로 뒤까지)에 있을 때
+ * Backspace가 해야 할 일 — 아니면 `null`(브라우저 기본 삭제).
+ *
+ * 마커는 텍스트지만 **한 덩어리**로 다뤄야 한다. 한 글자씩 지우게 두면 `2. `가
+ * `2.`가 되면서 그 줄이 리스트에서 빠지고, 남은 `2.`가 평문 정렬을 따라 옆으로
+ * 튄다(제보: "Backspace를 눌렀는데 Tab이 걸린 것처럼 보인다"). 표준 에디터처럼
+ * 들여쓴 줄은 한 단계 내어쓰고, 최상위 줄은 마커를 없앤다(들여쓰기는 유지).
+ * 줄 맨 앞(마커 앞)에서는 `null` — 그건 앞 줄과 합치는 평범한 삭제다. */
+export function listBackspaceOp(text: string, caret: number): ListOp | null {
+  if (caret <= 0) return null;
+  const lineStart = text.lastIndexOf('\n', caret - 1) + 1;
+  const nl = text.indexOf('\n', lineStart);
+  const p = parseListPrefix(text.slice(lineStart, nl === -1 ? undefined : nl));
+  if (!p) return null;
+  if (caret <= lineStart || caret > lineStart + p.raw.length) return null;
+  return p.indent > 0 ? { type: 'indent', dir: -1 } : { type: 'toggle', kind: p.kind };
+}
+
 /** 편집 적용 후 커서/선택 오프셋이 어디로 갔는지 — 접두가 늘거나 줄어든 만큼
  * 뒤 오프셋을 민다. 접두 **안쪽**을 가리키던 오프셋은 새 접두 끝으로 모은다. */
 export function shiftOffset(pos: number, edits: TextEdit[]): number {
