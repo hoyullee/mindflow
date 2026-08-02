@@ -1,6 +1,7 @@
 import { ROOT_ID, layout, listDisplayLine, parseListPrefix } from '@mindflow/mindmap-core';
 import type { Doc, EdgeStyle, Float, LayoutMode, Node as CoreNode } from '@mindflow/mindmap-core';
 import { buildEdgePath, edgeStrokeWidth } from '../editor/edges';
+import { linkInk } from '../editor/richSpans';
 import { CanvasTextMeasurer, computeMetrics, measureFloatHeight } from '../editor/metrics';
 import type { TextMeasurer } from '../editor/metrics';
 import { hexA } from './storage';
@@ -111,7 +112,7 @@ function wrapRuns(runs: WrapSeg[], maxW: number, fpx: number, baseFw: number, me
       .split('\n')
       .forEach((p, i) => {
         if (i > 0) hard.push([]);
-        if (p) hard[hard.length - 1]!.push({ t: p, b: r.b, c: r.c, i: r.i, s: r.s });
+        if (p) hard[hard.length - 1]!.push({ t: p, b: r.b, c: r.c, i: r.i, s: r.s, href: r.href });
       });
   });
   const out: WrapLine[] = [];
@@ -200,7 +201,7 @@ interface DocNode {
   /** 텍스트 정렬 (에디터 `n.align` — 없으면 center). */
   align?: string;
   /** Partial rich-text runs (bold/color spans); mirrors core `RichRun`. */
-  rich?: Array<{ t: string; b?: boolean; c?: string | null }> | null;
+  rich?: Array<{ t: string; b?: boolean; c?: string | null; i?: boolean; s?: boolean; href?: string }> | null;
   children?: string[];
   /** 노드 썸네일 이미지 (core `Node.img/imgW/imgH` — 항상 세트). */
   img?: string;
@@ -559,6 +560,9 @@ function buildPreview(rawDoc: string, hueFallback: string): JSX.Element | null {
     // (the plain `text` colour for the box-less underline shape), body nodes
     // use the theme `text` colour — both overridden by an explicit `textColor`.
     const baseTextColor = n.textColor || (isRoot ? (shape === 'underline' ? TH.text : TH.accentInk) : TH.text);
+    // 하이퍼링크는 에디터와 같은 신호 — 파란 글자 + 밑줄. 파랑은 도형 글자색의
+    // 밝기를 보고 고른다(`linkInk`), 런에 지정색이 있으면 그 색이 이긴다.
+    const linkFill = linkInk(baseTextColor);
     // Render the text WRAPPED, at the editor's font size (`fpx`) and its exact
     // line breaks (same measurer + token model + content width `MAXW` that
     // `computeMetrics` sized the box with) — so the thumbnail's text flows like
@@ -614,7 +618,13 @@ function buildPreview(rawDoc: string, hueFallback: string): JSX.Element | null {
       const lineH = lineHN;
       const startY = cy + imgShift - ((wrapped.length - 1) * lineH) / 2;
       rects.push(
-        <text key={`t${id}`} x={tx} y={startY} textAnchor={anchor} dominantBaseline="central" fontSize={fpx} fontWeight={fontWeight} fill={baseTextColor} fontFamily="Pretendard, sans-serif">
+        // `central`이 아니라 `middle`인 이유: 크롬은 SVG에서 밑줄·취소선을 **베이스라인
+        // 기준**으로 그리는데 `central`은 글자만 아래로 밀어 놓아 링크 밑줄이 글자
+        // **위**에 그어진다(실브라우저 재현 — 하이퍼링크가 썸네일에서 윗줄로 보였다).
+        // `middle`은 같은 자리에 글자를 놓으면서(20px에서 1.7px 차, 카드 축척에서는
+        // 눈에 띄지 않음 — 카드 스크린샷 비교로 확인) 장식을 제 위치에 그린다.
+        // 리치 런이 붙는 본문 텍스트만 바꾼다(존 라벨·이모지·선 라벨·메모는 장식 없음).
+        <text key={`t${id}`} x={tx} y={startY} textAnchor={anchor} dominantBaseline="middle" fontSize={fpx} fontWeight={fontWeight} fill={baseTextColor} fontFamily="Pretendard, sans-serif">
           {wrapped.map((ln, li) => (
             // 리스트 줄: 항목 블록을 사용자 정렬대로 놓고(에디터 `ListTextBlock`의
             // `justifyContent`와 같은 결과) 그 안에서 행잉 인덴트로 그린다.
@@ -629,7 +639,7 @@ function buildPreview(rawDoc: string, hueFallback: string): JSX.Element | null {
                 <tspan
                   key={si}
                   fontWeight={s.b ? 800 : undefined}
-                  fill={s.c || undefined}
+                  fill={s.c || (s.href ? linkFill : undefined)}
                   fontStyle={s.i ? 'italic' : undefined}
                   // 링크는 밑줄로 — 에디터 렌더(`richSpans`)와 같은 신호. 썸네일은
                   // 읽기 전용이라 클릭 동작은 없다.

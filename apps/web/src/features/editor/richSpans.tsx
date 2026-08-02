@@ -40,8 +40,13 @@ export function linkHandlers(href: string) {
   };
 }
 
-/** 링크 span의 시각 — 밑줄만. 색은 런의 색(없으면 도형 글자색)을 그대로 쓴다:
- * 도형 배경이 테마마다 달라 고정 링크색은 어딘가에서 반드시 안 보인다. */
+/** 링크 span의 시각 — **파란 글자 + 밑줄**(요청). 색 자체는 CSS 변수
+ * `--mf-link`가 정하고(아래 `linkInk` 참고) 여기서는 밑줄만 잡는다: 그래야
+ * 편집 박스가 쓰는 HTML 문자열 경로(`runsToHtml`)와 같은 규칙을 공유하고,
+ * 무엇보다 인라인 `color`를 심지 않아 **커밋 때 파란색이 모델에 굳지 않는다**
+ * (`domToRuns`가 인라인 색을 읽어 `c`로 저장한다 — 그러면 링크를 떼도 파란 글자가
+ * 남는다). 런에 사용자가 고른 색이 있으면 안쪽 span의 인라인 색이 이겨서
+ * 그 색이 그대로 보인다(색 지정이 먹히지 않으면 그게 더 이상하다). */
 export const linkSpanStyle: CSSProperties = {
   textDecoration: 'underline',
   textUnderlineOffset: 2,
@@ -50,6 +55,47 @@ export const linkSpanStyle: CSSProperties = {
   // 누른 클릭은 우리가 아무것도 하지 않으므로 그대로 도형까지 버블한다.
   pointerEvents: 'auto',
 };
+
+/** 링크 span에 붙는 클래스 — `.mf-link { color: var(--mf-link, …) }`(editor.css).
+ * React 렌더와 편집 박스용 HTML 문자열이 같은 이름을 쓰도록 한 곳에 둔다. */
+export const LINK_CLASS = 'mf-link';
+
+/** 밝은 배경(글자가 어두운 곳)용 링크색 / 어두운 배경(글자가 밝은 곳)용 링크색. */
+export const LINK_INK_ON_LIGHT = '#1a63d8';
+export const LINK_INK_ON_DARK = '#8ec8ff';
+
+/** 이 색이 우리가 넣은 링크 파랑인가 — 커밋 때 모델로 새어 들어가지 않게
+ * 거르는 데 쓴다(`richtextDom.domToRuns`). */
+export function isLinkInk(hex: string): boolean {
+  const v = hex.trim().toLowerCase();
+  return v === LINK_INK_ON_LIGHT || v === LINK_INK_ON_DARK;
+}
+
+/** `#rrggbb`(또는 `#rgb`)의 상대 휘도. 못 읽으면 `null`. */
+function luminance(hex: string): number | null {
+  const c = hex.trim().replace('#', '');
+  const full = c.length === 3 ? c.split('').map((x) => x + x).join('') : c;
+  if (!/^[0-9a-fA-F]{6}$/.test(full)) return null;
+  const ch = [0, 2, 4].map((i) => {
+    const v = parseInt(full.substring(i, i + 2), 16) / 255;
+    return v <= 0.03928 ? v / 12.92 : ((v + 0.055) / 1.055) ** 2.4;
+  });
+  return 0.2126 * ch[0]! + 0.7152 * ch[1]! + 0.0722 * ch[2]!;
+}
+
+/** 도형의 **글자색**을 보고 그 위에서 읽히는 파랑을 고른다.
+ *
+ * 배경이 아니라 글자색을 기준으로 삼는 이유: 배경은 사용자가 색·투명도를 바꿀 수
+ * 있고 캔버스 위에 겹쳐 보이지만, 글자색은 이미 "이 배경에서 읽히도록" 정해진
+ * 값이다(테마 `text`/`accentInk`, 또는 사용자가 고른 `textColor`). 그 밝기를
+ * 따라가면 다크 테마·진한 루트 도형에서도 파랑이 배경에 묻히지 않는다.
+ * (그래도 대비가 약한 조합은 남으므로 **밑줄은 항상 함께 그린다** — 파랑은 힌트,
+ *  링크임을 보장하는 건 밑줄이다.) */
+export function linkInk(baseColor: string | null | undefined): string {
+  const l = baseColor ? luminance(baseColor) : null;
+  if (l == null) return LINK_INK_ON_LIGHT;
+  return l > 0.5 ? LINK_INK_ON_DARK : LINK_INK_ON_LIGHT;
+}
 
 const MOD_LABEL = typeof navigator !== 'undefined' && /Mac|iPhone|iPad/.test(navigator.platform || navigator.userAgent || '') ? '⌘' : 'Ctrl';
 
@@ -68,7 +114,7 @@ export function RichSpan({ seg, children }: { seg: { b?: boolean; c?: string | n
   );
   if (!seg.href) return inner;
   return (
-    <span data-href={seg.href} role="link" title={linkTitle(seg.href)} style={linkSpanStyle} {...linkHandlers(seg.href)}>
+    <span data-href={seg.href} role="link" title={linkTitle(seg.href)} className={LINK_CLASS} style={linkSpanStyle} {...linkHandlers(seg.href)}>
       {inner}
     </span>
   );

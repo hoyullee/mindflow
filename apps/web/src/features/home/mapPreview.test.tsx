@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, it } from 'vitest';
 import { cleanup, render } from '@testing-library/react';
 import { realPreview } from './mapPreview';
+import { LINK_INK_ON_LIGHT } from '../editor/richSpans';
 
 afterEach(cleanup);
 
@@ -276,6 +277,26 @@ describe('realPreview', () => {
     const label = (Array.from(container.querySelectorAll('svg text')) as SVGTextElement[]).find((t) => t.textContent?.includes('자유 도형 노트'));
     expect(label).toBeTruthy();
     expect(label!.getAttribute('font-size')).toBe('15'); // depth 0(20px)이면 회귀
+  });
+
+  // 하이퍼링크는 에디터와 같은 신호로 — 파란 글자 + 밑줄. 파랑은 도형 글자색의
+  // 밝기를 보고 고르므로(`linkInk`) 어두운 도형·다크 테마에서도 묻히지 않는다.
+  it('링크 글자는 파랗고 밑줄이 있다 (에디터와 같은 신호)', () => {
+    const withLink = {
+      ...doc,
+      nodes: {
+        ...doc.nodes,
+        a: { ...doc.nodes.a, text: '문서 보기', rich: [{ t: '문서', b: false, c: null, href: 'https://example.com/' }, { t: ' 보기', b: false, c: null }] },
+      },
+    };
+    const { container } = render(realPreview(JSON.stringify(withLink), '#f0663f')!);
+    const linked = (Array.from(container.querySelectorAll('svg tspan')) as SVGTSpanElement[]).find((t) => t.textContent === '문서');
+    expect(linked).toBeTruthy();
+    expect(linked!.getAttribute('fill')).toBe(LINK_INK_ON_LIGHT);
+    expect(linked!.getAttribute('text-decoration')).toContain('underline');
+    // 크롬은 SVG 장식을 베이스라인 기준으로 그린다 — `central`이면 글자만 아래로
+    // 밀려 밑줄이 글자 **위**에 그어진다(실브라우저 재현). 회귀 가드.
+    expect(linked!.closest('text')!.getAttribute('dominant-baseline')).toBe('middle');
   });
 
   // 텍스트 굵기도 측정에 쓴 fw 그대로(루트 700, depth1 600, depth2+ 500) —

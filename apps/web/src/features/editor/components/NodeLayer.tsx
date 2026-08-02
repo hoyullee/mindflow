@@ -13,7 +13,7 @@ import { RemotePeerTag } from './RemotePeerTag';
 import { ResizeHandle } from './ResizeHandle';
 import { domToRuns, linearize } from '../richtextDom';
 import { ListTextBlock, domMarkerSignature, listLinesOf, listSigOf, listSignature, markerSignature, nodeTextAlign, renderListEdit } from '../listLines';
-import { RichSpan, isLinkOpenModifier, openLink } from '../richSpans';
+import { RichSpan, isLinkOpenModifier, linkInk, openLink } from '../richSpans';
 
 interface NodeLayerProps {
   nodes: NodeMap;
@@ -218,6 +218,10 @@ function NodeBox({ id, node: n, g, nodes, mode, theme: th, rootX, controller }: 
   }
 
   if (n.textColor) boxStyle.color = n.textColor;
+  // 링크 글자색 — 도형의 **글자색**을 보고 그 위에서 읽히는 파랑을 고른다
+  // (`richSpans.linkInk`). 변수로 내려 주면 커밋된 렌더(`RichSpan`)와 편집 박스가
+  // 쓰는 HTML 문자열(`runsToHtml`)이 같은 값을 물려받는다 — 둘 다 `.mf-link`.
+  (boxStyle as Record<string, unknown>)['--mf-link'] = linkInk(boxStyle.color as string | undefined);
   if (g.fpx) boxStyle.fontSize = g.fpx;
   if (g.fw) boxStyle.fontWeight = g.fw;
 

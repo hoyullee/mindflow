@@ -172,3 +172,25 @@ describe('runsToHtml / domToRuns — 기울임·취소선', () => {
     expect(domToRuns(div).rich).toEqual(rich);
   });
 });
+
+
+describe('링크 파랑은 모델로 새지 않는다', () => {
+  it('크롬이 타이핑 자리에 굳혀 넣은 링크색을 무시한다 (span·font 양쪽)', () => {
+    // 링크 글자를 통째로 지우고 새로 타이핑하면 크롬이 그 자리의 계산된 색을
+    // 굳혀 넣는다(typing style) — 실브라우저에서 `<font color="#1a63d8"><u>X</u></font>`
+    // 형태로 재현. 그대로 읽으면 링크를 떼도 파란 글자만 남는다.
+    const el = document.createElement('div');
+    el.innerHTML = `<span style="color: rgb(26, 99, 216)">타이핑</span>`;
+    expect(domToRuns(el).rich).toBeNull();
+
+    const el2 = document.createElement('div');
+    el2.innerHTML = `<font color="#1a63d8"><u>X</u></font>`;
+    expect(domToRuns(el2).rich).toBeNull();
+  });
+
+  it('사용자가 고른 스와치 색은 그대로 저장한다', () => {
+    const el = document.createElement('div');
+    el.innerHTML = `<span style="color: rgb(217, 38, 38)">빨강</span>`;
+    expect(domToRuns(el).rich).toEqual([{ t: '빨강', b: false, c: '#d92626' }]);
+  });
+});

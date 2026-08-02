@@ -4,6 +4,7 @@ import { MemoryRouter, Route, Routes } from 'react-router-dom';
 import { parseDoc } from '@mindflow/mindmap-core';
 import { Editor } from './Editor';
 import { setLinearSelection } from './richtextDom';
+import { LINK_INK_ON_DARK, LINK_INK_ON_LIGHT, linkInk } from './richSpans';
 
 // 하이퍼링크 — 선택한 글자에만 링크를 건다(`RichRun.href`). 캔버스에서는
 // Ctrl/⌘+클릭으로만 열린다(단일 클릭=선택, 더블클릭=편집과 충돌하지 않게).
@@ -271,5 +272,68 @@ describe('하이퍼링크 — 캔버스에서 열기', () => {
     const link = nodeBox(container, 'c1').querySelector('[data-href]') as HTMLElement;
     expect(link.style.textDecoration).toBe('underline');
     expect(link.getAttribute('title')).toContain('example.com');
+  });
+});
+
+describe('하이퍼링크 — 파란 글자로 표시(요청)', () => {
+  it('밝은 도형은 진한 파랑, 어두운 도형은 밝은 파랑을 쓴다', () => {
+    // 배경이 아니라 **글자색**의 밝기를 본다: 글자색은 이미 그 배경에서 읽히도록
+    // 정해진 값이라(테마 text/accentInk, 또는 사용자의 textColor) 그걸 따라가면
+    // 다크 테마·진한 루트 도형에서도 파랑이 묻히지 않는다.
+    expect(linkInk('#33281f')).toBe(LINK_INK_ON_LIGHT);
+    expect(linkInk('#f3ece4')).toBe(LINK_INK_ON_DARK);
+    expect(linkInk('#ffffff')).toBe(LINK_INK_ON_DARK);
+    expect(linkInk(null)).toBe(LINK_INK_ON_LIGHT); // 못 읽으면 밝은 배경 기준
+  });
+
+  it('커밋된 렌더에서 링크가 파란 글자다', () => {
+    localStorage.setItem('mindflow_doc_lkb1', JSON.stringify(LINKED_DOC));
+    const { container } = renderEditor('/editor?map=lkb1&title=x');
+    const box = nodeBox(container, 'c1');
+    const link = box.querySelector('[data-href]') as HTMLElement;
+    expect(link.className).toContain('mf-link');
+    // 색 자체는 도형이 내려 주는 CSS 변수 — 코랄 테마의 어두운 글자색 → 진한 파랑.
+    expect(box.style.getPropertyValue('--mf-link')).toBe(LINK_INK_ON_LIGHT);
+  });
+
+  it('편집 박스에서도 파랗게 보인다', () => {
+    localStorage.setItem('mindflow_doc_lkb2', JSON.stringify(LINKED_DOC));
+    const { container } = renderEditor('/editor?map=lkb2&title=x');
+    const editor = startEditingNode(container, 'c1');
+    const link = editor.querySelector('[data-href]') as HTMLElement;
+    expect(link.className).toContain('mf-link');
+  });
+
+  it('파란색이 모델에 굳지 않는다 — 이미 링크가 걸린 글을 다시 커밋해도 색이 비어 있다', async () => {
+    // 인라인 `color`로 심으면 `domToRuns`가 그걸 런의 `c`로 저장한다 — 그러면
+    // 나중에 링크를 떼도 파란 글자만 남는다. 그래서 색은 클래스로만 준다.
+    localStorage.setItem('mindflow_doc_lkb3', JSON.stringify(LINKED_DOC));
+    const { container } = renderEditor('/editor?map=lkb3&title=x');
+    const editor = startEditingNode(container, 'c1');
+    // 실제로 한 글자 고쳐야 저장이 돈다(무변경이면 원본이 그대로 남아 통과해 버린다).
+    editor.appendChild(document.createTextNode('!'));
+    fireEvent.keyDown(editor, { key: 'Enter' });
+    fireEvent.keyDown(window, { key: 's', ctrlKey: true });
+    await waitFor(() => {
+      const rich = readSavedDoc('lkb3').nodes.c1?.rich;
+      expect(readSavedDoc('lkb3').nodes.c1?.text).toContain('!'); // 저장이 실제로 돌았는지
+      expect(rich?.[0]?.t).toBe('공식');
+      expect(rich?.[0]?.href).toBe('https://example.com/');
+      expect(rich?.[0]?.c ?? null).toBeNull();
+    });
+  });
+
+  it('사용자가 고른 글자색이 있으면 그 색이 이긴다', () => {
+    localStorage.setItem(
+      'mindflow_doc_lkb4',
+      JSON.stringify({
+        ...DOC,
+        nodes: { ...DOC.nodes, c1: { ...DOC.nodes.c1, rich: [{ t: '공식', b: false, c: '#d92626', href: 'https://example.com/' }, { t: ' 문서', b: false, c: null }] } },
+      }),
+    );
+    const { container } = renderEditor('/editor?map=lkb4&title=x');
+    const link = nodeBox(container, 'c1').querySelector('[data-href]') as HTMLElement;
+    const inner = link.querySelector('span') as HTMLElement;
+    expect(inner.style.color).toBe('rgb(217, 38, 38)');
   });
 });
