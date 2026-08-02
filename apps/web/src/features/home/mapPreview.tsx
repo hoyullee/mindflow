@@ -43,8 +43,10 @@ interface WrapSeg {
   c?: string | null;
   i?: boolean;
   s?: boolean;
-  /** 하이퍼링크 — 썸네일에서는 밑줄로만 보인다(클릭 동작 없음). */
+  /** 하이퍼링크 — 썸네일에서는 파란 글자 + 밑줄로 보인다(클릭 동작 없음). */
   href?: string;
+  /** 측정된 폭(user unit). 밑줄·취소선을 직접 그릴 때 x 오프셋을 잡는 데 쓴다. */
+  w?: number;
 }
 
 /** Merge adjacent same-style tokens on a line back into segments (fewer tspans). */
@@ -52,8 +54,10 @@ function mergeToks(line: WrapSeg[]): WrapSeg[] {
   const segs: WrapSeg[] = [];
   line.forEach((tk) => {
     const last = segs[segs.length - 1];
-    if (last && !!last.b === !!tk.b && (last.c ?? null) === (tk.c ?? null) && !!last.i === !!tk.i && !!last.s === !!tk.s && (last.href ?? null) === (tk.href ?? null)) last.t += tk.t;
-    else segs.push({ t: tk.t, b: tk.b, c: tk.c, i: tk.i, s: tk.s, href: tk.href });
+    if (last && !!last.b === !!tk.b && (last.c ?? null) === (tk.c ?? null) && !!last.i === !!tk.i && !!last.s === !!tk.s && (last.href ?? null) === (tk.href ?? null)) {
+      last.t += tk.t;
+      last.w = (last.w ?? 0) + (tk.w ?? 0);
+    } else segs.push({ t: tk.t, b: tk.b, c: tk.c, i: tk.i, s: tk.s, href: tk.href, w: tk.w });
   });
   return segs;
 }
@@ -67,6 +71,8 @@ interface WrapLine {
   indent: number;
   list: boolean;
   itemW: number;
+  /** 이 시각 줄의 폭(마커 제외, user unit) — 정렬에 따라 세그 x를 잡는 데 쓴다. */
+  w: number;
 }
 
 /** 리스트 항목 블록의 왼쪽 x — 사용자 정렬(좌/중앙/우)대로 블록을 통째로 놓는다.
@@ -149,12 +155,51 @@ function wrapRuns(runs: WrapSeg[], maxW: number, fpx: number, baseFw: number, me
     const contentColW = visual.length > 1 ? lineMaxW : (visual[0]?.w ?? 0);
     const itemW = markerW + contentColW;
     visual.forEach((v, vi) => {
-      if (lp) out.push(vi === 0 ? { segs: [{ t: lp.display }, ...v.segs], indent: 0, list: true, itemW } : { segs: v.segs, indent: markerW, list: true, itemW });
-      else out.push({ segs: v.segs, indent: 0, list: false, itemW: v.w });
+      if (lp) out.push(vi === 0 ? { segs: [{ t: lp.display, w: markerW }, ...v.segs], indent: 0, list: true, itemW, w: markerW + v.w } : { segs: v.segs, indent: markerW, list: true, itemW, w: v.w });
+      else out.push({ segs: v.segs, indent: 0, list: false, itemW: v.w, w: v.w });
     });
   });
   // 항목마다 **자기 폭**으로 정렬한다(에디터 `listItemJustify`와 같은 모델).
-  return out.length ? out : [{ segs: [], indent: 0, list: false, itemW: 0 }];
+  return out.length ? out : [{ segs: [], indent: 0, list: false, itemW: 0, w: 0 }];
+}
+
+/** 밑줄·취소선을 `<rect>`로 직접 그린다.
+ *
+ * SVG `text-decoration`을 쓰지 않는 이유: 크롬은 장식을 **베이스라인 기준**으로
+ * 그리는데 이 텍스트는 `dominant-baseline`으로 글자를 세로 가운데 맞추므로 장식만
+ * 제자리에 남는다 — 링크 밑줄이 글자 **위**에 그어지고(제보), 취소선은 글자 윗부분을
+ * 스치며 두께도 축척에 눌려 사실상 보이지 않았다. 직접 그리면 위치·두께를 우리가
+ * 정하고(축척이 작아도 최소 1 user unit) 두 장식이 같은 규칙을 따른다.
+ *
+ * `dominant-baseline="middle"`은 글자를 **x-height 중앙**에 맞추므로 그 줄의 `y`가
+ * 곧 취소선 자리다. 밑줄은 거기서 글자 높이의 절반쯤 아래.
+ */
+function decoRects(key: string, segs: WrapSeg[], lineLeft: number, cy: number, fpx: number, baseColor: string, linkFill: string): JSX.Element[] {
+  const out: JSX.Element[] = [];
+  // 두께는 축척을 견뎌야 한다 — 카드 안에서 SVG가 0.5~0.7배로 줄어들어, 1 user unit로
+  // 그으면 1 CSS px 아래로 내려가 특히 글자 위를 지나는 취소선이 안티에일리어싱에
+  // 묻혀 사라진다(제보: "취소선이 안 보인다" — rect로 바꾼 뒤에도 얇아서 그랬다).
+  const th = Math.max(1.8, fpx * 0.09);
+  let x = lineLeft;
+  segs.forEach((sg, si) => {
+    const w = sg.w ?? 0;
+    if (w > 0) {
+      const color = sg.c || (sg.href ? linkFill : baseColor);
+      // 한글은 음절 블록이 전체 높이를 채워 x-height 중앙보다 살짝 위가 눈에 가운데로 보인다.
+      if (sg.s) out.push(<rect key={`${key}s${si}`} x={x} y={cy - fpx * 0.04 - th / 2} width={w} height={th} fill={color} />);
+      if (sg.href) out.push(<rect key={`${key}u${si}`} x={x} y={cy + fpx * 0.32} width={w} height={th} fill={color} />);
+    }
+    x += w;
+  });
+  return out;
+}
+
+/** 한 시각 줄의 왼쪽 x — `<text>`의 정렬(anchor)과 같은 규칙. */
+function lineLeftOf(ln: WrapLine, listLeft: number, tx: number, align: 'left' | 'center' | 'right'): number {
+  if (ln.list) return listLeft;
+  if (align === 'right') return tx - ln.w;
+  if (align === 'center') return tx - ln.w / 2;
+  return tx;
 }
 
 /** Home.dc.html `realPreview` — mirrors the editor's theme accent/branch palettes so a
@@ -618,12 +663,8 @@ function buildPreview(rawDoc: string, hueFallback: string): JSX.Element | null {
       const lineH = lineHN;
       const startY = cy + imgShift - ((wrapped.length - 1) * lineH) / 2;
       rects.push(
-        // `central`이 아니라 `middle`인 이유: 크롬은 SVG에서 밑줄·취소선을 **베이스라인
-        // 기준**으로 그리는데 `central`은 글자만 아래로 밀어 놓아 링크 밑줄이 글자
-        // **위**에 그어진다(실브라우저 재현 — 하이퍼링크가 썸네일에서 윗줄로 보였다).
-        // `middle`은 같은 자리에 글자를 놓으면서(20px에서 1.7px 차, 카드 축척에서는
-        // 눈에 띄지 않음 — 카드 스크린샷 비교로 확인) 장식을 제 위치에 그린다.
-        // 리치 런이 붙는 본문 텍스트만 바꾼다(존 라벨·이모지·선 라벨·메모는 장식 없음).
+        // 글자를 세로 가운데 맞추는 기준선. `middle`(x-height 중앙)이라 **이 줄의 y가
+        // 곧 취소선 자리**다 — 아래 `decoRects`가 그 관계를 쓴다.
         <text key={`t${id}`} x={tx} y={startY} textAnchor={anchor} dominantBaseline="middle" fontSize={fpx} fontWeight={fontWeight} fill={baseTextColor} fontFamily="Pretendard, sans-serif">
           {wrapped.map((ln, li) => (
             // 리스트 줄: 항목 블록을 사용자 정렬대로 놓고(에디터 `ListTextBlock`의
@@ -641,9 +682,8 @@ function buildPreview(rawDoc: string, hueFallback: string): JSX.Element | null {
                   fontWeight={s.b ? 800 : undefined}
                   fill={s.c || (s.href ? linkFill : undefined)}
                   fontStyle={s.i ? 'italic' : undefined}
-                  // 링크는 밑줄로 — 에디터 렌더(`richSpans`)와 같은 신호. 썸네일은
-                  // 읽기 전용이라 클릭 동작은 없다.
-                  textDecoration={[s.s ? 'line-through' : '', s.href ? 'underline' : ''].filter(Boolean).join(' ') || undefined}
+                  // 밑줄·취소선은 `text-decoration`이 아니라 아래 `decoRects`가 직접
+                  // 그린다 — 이유는 그쪽 주석 참고.
                 >
                   {s.t}
                 </tspan>
@@ -652,6 +692,13 @@ function buildPreview(rawDoc: string, hueFallback: string): JSX.Element | null {
           ))}
         </text>,
       );
+      // 밑줄·취소선(장식)은 글자 위에 겹쳐 그린다 — `text-decoration`을 쓰지 않는
+      // 이유는 `decoRects` 주석 참고.
+      wrapped.forEach((ln, li) => {
+        if (!ln.segs.some((sg) => sg.s || sg.href)) return;
+        const listLeft = listBlockLeft(ln.itemW, align, textL, textR) + ln.indent;
+        rects.push(...decoRects(`d${id}-${li}`, ln.segs, lineLeftOf(ln, listLeft, tx, align), startY + li * lineH, fpx, baseTextColor, linkFill));
+      });
     }
   });
 
@@ -719,7 +766,7 @@ function buildPreview(rawDoc: string, hueFallback: string): JSX.Element | null {
     const innerW = Math.max(8, fw - 32 - 11);
     // 접힌 메모의 한 줄도 리스트 글리프(`- `→`• `)를 치환(에디터 FloatLayer와 동일).
     const lines: WrapLine[] = f.collapsed
-      ? [{ segs: [{ t: listDisplayLine((f.text || '').split('\n')[0] || '') }], indent: 0, list: false, itemW: 0 }]
+      ? [{ segs: [{ t: listDisplayLine((f.text || '').split('\n')[0] || '') }], indent: 0, list: false, itemW: 0, w: 0 }]
       : wrapRuns([{ t: f.text || '' }], innerW, ffpx, bold ? 700 : 400, previewMeasurer);
     if (lines.some((ln) => ln.segs.some((s) => s.t.trim()))) {
       const textX = f.x + 32;
