@@ -156,7 +156,14 @@ export function ListTextBlock({ lines, align, lineHeight = 1.35 }: { lines: Cont
 export function listEditHtml(v: RichTextValue, align?: CSSProperties['textAlign']): string {
   const lines = nodeContentLines(v);
   // 리스트가 없으면 기존 렌더 그대로 — 리스트를 안 쓰는 편집의 DOM을 바꾸지 않는다.
-  if (!lines.some((l) => l.list)) return runsToHtml(v);
+  if (!lines.some((l) => l.list)) {
+    const html = runsToHtml(v);
+    // 마지막 줄이 비어 있으면 `<br>` **하나로는 화면에 나타나지 않는다**(브라우저가
+    // 자기 placeholder를 하나 더 넣는 자리) — 직접 넣어 준다. 이게 없으면 줄 끝에서
+    // Shift+Enter를 눌러도 줄이 바뀐 것처럼 보이지 않아 **두 번 눌러야** 했다(제보).
+    // 읽을 때는 `domToRuns(el, true)`가 후행 줄바꿈 하나를 접어 원래 값으로 돌린다.
+    return /\n$/.test(v.text || '') ? `${html}<br>` : html;
+  }
   const justify = listItemJustify(align);
   const rowHtml = (ln: ContentLine): string => {
     const inner = runsToHtml({ text: ln.segs.map((s) => s.t).join(''), rich: ln.segs as RichRun[] }) || '<br>';

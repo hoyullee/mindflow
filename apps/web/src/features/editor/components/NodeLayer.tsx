@@ -474,6 +474,33 @@ function maybeContinueList(e: { preventDefault: () => void }, el: HTMLDivElement
   return true;
 }
 
+/** Shift+Enter 줄바꿈 — 브라우저 기본에 맡기지 않고 char-model로 직접 넣는다.
+ *
+ * 기본 동작에 맡기면 두 가지가 어긋난다(제보): ① contentEditable에서 글 끝에 넣은
+ * `<br>` **하나는 화면에 나타나지 않아** 두 번 눌러야 줄이 바뀌고 ② 우리 측정
+ * (`updateNodeEditSize`)이 그 자리에서 돌지 않아 도형이 다음 글자를 칠 때에야 커진다.
+ * 리스트 이어쓰기(`maybeContinueList`)와 같은 경로로 통일하면 둘 다 해결된다 —
+ * `render`가 곧바로 다시 그리고 크기까지 갱신하기 때문이다. */
+function insertLineBreak(el: HTMLDivElement | null, render: (v: { text: string; rich: RichRun[] | null }, caret: number) => void): boolean {
+  if (!el) return false;
+  const ws = window.getSelection();
+  if (!ws || !ws.rangeCount) return false;
+  const rng = ws.getRangeAt(0);
+  const lin = linearize(el, [
+    { container: rng.startContainer, offset: rng.startOffset },
+    { container: rng.endContainer, offset: rng.endOffset },
+  ]);
+  const a = Math.min(lin.pos[0] ?? 0, lin.pos[1] ?? 0);
+  const b = Math.max(lin.pos[0] ?? 0, lin.pos[1] ?? 0);
+  // `keepTrailing` — 이미 끝에 있던 빈 줄을 이 삽입이 먹어 버리지 않게.
+  const chars = runsToChars(domToRuns(el, true));
+  chars.splice(a, b - a);
+  chars.splice(a, 0, { ch: '\n', b: false, c: null });
+  const runs = charsToRuns(chars).filter((r) => r.t);
+  render({ text: chars.map((c) => c.ch).join(''), rich: isStyledRuns(runs) ? runs : null }, a + 1);
+  return true;
+}
+
 interface NodeEditBoxProps {
   id: string;
   n: Node;
@@ -653,6 +680,8 @@ function NodeEditBox({ id, n, boxStyle, align, controller }: NodeEditBoxProps) {
           // 끝낸다(표준 에디터 관례). 리스트 줄이 아니면 브라우저 기본 줄바꿈.
           const el = ref.current;
           if (el && maybeContinueList(e, el, (v, caret) => render(el, v, caret))) return;
+          // 리스트 줄이 아니면 평범한 줄바꿈 — 이것도 직접 넣는다(`insertLineBreak` 주석).
+          if (el && insertLineBreak(el, (v, caret) => render(el, v, caret))) e.preventDefault();
         } else if (e.key === 'Escape' && !composing) {
           e.preventDefault();
           controller.cancelNodeEdit();
