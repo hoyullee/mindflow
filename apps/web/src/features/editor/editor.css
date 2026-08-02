@@ -93,3 +93,13 @@
 .mf-ed-linkmod [data-href] {
   cursor: pointer;
 }
+
+/* 링크 글자색 — **파랑**(요청). 실제 값은 도형이 자기 글자색을 보고 정해
+   `--mf-link`로 내려 준다(`richSpans.linkInk`); 여기 폴백은 밝은 배경 기준이다.
+   인라인이 아니라 클래스인 이유: 편집 박스(contentEditable)를 커밋할 때
+   `domToRuns`가 인라인 `color`를 읽어 런의 `c`로 저장하는데, 그러면 링크를 떼도
+   파란색이 글자색으로 남는다. 클래스면 `style.color`가 비어 있어 그 일이 없다.
+   런에 사용자가 고른 색이 있으면 안쪽 span의 인라인 색이 이겨서 그 색이 보인다. */
+.mf-link {
+  color: var(--mf-link, #1a63d8);
+}

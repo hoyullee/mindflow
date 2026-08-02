@@ -8,6 +8,7 @@
 
 import type { RichRun } from '@mindflow/mindmap-core';
 import { isStyledRuns, normalizeUrl } from '@mindflow/mindmap-core';
+import { LINK_CLASS, isLinkInk } from './richSpans';
 
 /** Port of `Component#escHtml` (MindFlow.dc.html:2558). */
 export function escHtml(s: string): string {
@@ -57,7 +58,9 @@ export function runsToHtml(n: RichTextValue): string {
       // 실제 `<a href>`가 브라우저 기본 동작(드래그로 링크 끌기 등)을 끌어들이고,
       // 무엇보다 저장된 주소를 그대로 DOM 속성에 싣지 않아도 왕복이 된다.
       // 클릭해서 여는 건 커밋된 렌더(`NodeLayer`)가 담당한다.
-      return r.href ? `<span data-href="${escHtml(r.href)}" style="text-decoration:underline">${inner}</span>` : inner;
+      // 색은 `.mf-link` 클래스(→ `--mf-link`)가 준다 — 인라인 `color`로 심으면
+      // 커밋 때 `domToRuns`가 그걸 런의 `c`로 저장해 링크를 떼도 파란색이 남는다.
+      return r.href ? `<span class="${LINK_CLASS}" data-href="${escHtml(r.href)}" style="text-decoration:underline">${inner}</span>` : inner;
     })
     .join('');
 }
@@ -108,7 +111,7 @@ export function domToRuns(el: HTMLElement, keepTrailing = false): { text: string
     if (tag === 'B' || tag === 'STRONG') next.b = true;
     if (tag === 'I' || tag === 'EM') next.i = true;
     if (tag === 'S' || tag === 'STRIKE' || tag === 'DEL') next.s = true;
-    if (tag === 'FONT' && el2.getAttribute('color')) next.c = el2.getAttribute('color');
+    if (tag === 'FONT' && el2.getAttribute('color') && !isLinkInk(el2.getAttribute('color') || '')) next.c = el2.getAttribute('color');
     // 링크: 우리가 심은 `data-href`, 그리고 붙여넣기로 들어온 진짜 `<a href>`도 받는다.
     const linkAttr = el2.getAttribute('data-href') || (tag === 'A' ? el2.getAttribute('href') : null);
     if (linkAttr) next.href = normalizeUrl(linkAttr);
@@ -118,7 +121,15 @@ export function domToRuns(el: HTMLElement, keepTrailing = false): { text: string
         const w = parseInt(fw, 10);
         next.b = fw === 'bold' || (!!w && w >= 600) ? true : fw === 'normal' || (!!w && w < 600) ? false : next.b;
       }
-      if (el2.style.color) next.c = rgbToHex(el2.style.color) || next.c;
+      if (el2.style.color) {
+        const hex = rgbToHex(el2.style.color);
+        // 링크 파랑은 **표시용**이지 모델 값이 아니다. 클래스로만 주는데도 여기
+        // 걸리는 경로가 하나 있다: 링크 글자 위에서 타이핑하면 크롬이 그 자리의
+        // 계산된 색을 인라인 span으로 굳혀 넣는다(typing style). 그대로 읽으면
+        // 링크를 떼도 파란 글자가 남는다 — 실브라우저에서 재현. 색 선택은 스와치
+        // 전용이고 두 링크색은 어느 테마 팔레트에도 없어, 걸러도 잃는 게 없다.
+        if (hex && !isLinkInk(hex)) next.c = hex;
+      }
       const fs = el2.style.fontStyle;
       if (fs === 'italic' || fs === 'oblique') next.i = true;
       else if (fs === 'normal') next.i = false;
