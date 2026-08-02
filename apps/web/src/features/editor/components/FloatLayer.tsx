@@ -1,7 +1,7 @@
 import type { CSSProperties } from 'react';
 import { useEffect, useRef } from 'react';
 import type { Float, ListOp, TextEdit } from '@mindflow/mindmap-core';
-import { applyListOp, continueListMarker, listBackspaceOp, listDisplayLine, shiftOffset } from '@mindflow/mindmap-core';
+import { applyListOp, continueListMarker, listBackspaceOp, listDisplayLine, renumberEdits, shiftOffset } from '@mindflow/mindmap-core';
 import { ListTextBlock, plainContentLines } from '../listLines';
 import { hexA } from '../theme';
 import { isPanButton } from '../pointerButtons';
@@ -255,6 +255,9 @@ function FloatEditBox({ f, onCommit, onCancel }: { f: Float; onCommit: (text: st
               el.value = el.value.slice(0, caret) + insert + el.value.slice(selEnd);
               el.selectionStart = el.selectionEnd = caret + insert.length;
             }
+            // 이어쓰기/내어쓰기로 어긋난 이웃 번호 정리 — 노드 편집과 같은 규칙
+            // (내어쓴 항목은 상위 번호를 잇고, 중간 삽입은 뒤 번호를 민다).
+            applyEdits(el, renumberEdits(el.value));
             autoSize(el);
           }
         }

@@ -361,8 +361,13 @@ function prefixEdits(lines: LineInfo[]): TextEdit[] {
   return edits;
 }
 
-/** 텍스트 전체의 번호를 다시 매기는 편집 목록(다른 건 건드리지 않는다). */
-function renumberEdits(text: string): TextEdit[] {
+/** 텍스트 전체의 번호를 다시 매기는 편집 목록(다른 건 건드리지 않는다).
+ *
+ * 자동 이어쓰기(`continueListMarker`)의 호출부가 삽입/내어쓰기 **후에** 반드시
+ * 이걸 적용해야 한다 — 마커 한 줄만 보고 정한 번호는 이웃과 어긋날 수 있다:
+ * 하위 목록의 빈 `b.`를 내어쓰면 상위의 `2.` 다음이므로 `3.`이어야 하고(제보),
+ * 목록 **중간**에 항목을 끼우면 뒤 항목들이 한 칸씩 밀려야 한다. */
+export function renumberEdits(text: string): TextEdit[] {
   const lines: LineInfo[] = splitLines(text).map((l) => {
     const prefix = parseListPrefix(l.text);
     return { start: l.start, text: l.text, prefix, next: prefix ? prefix.raw : '', target: false };

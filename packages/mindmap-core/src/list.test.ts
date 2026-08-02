@@ -9,6 +9,7 @@ import {
   ordinalStyleFor,
   parseListPrefix,
   parseOrdinal,
+  renumberEdits,
   shiftOffset,
 } from './list';
 
@@ -359,5 +360,44 @@ describe('shiftOffset', () => {
       { at: 10, remove: 0, insert: '  ' },
     ];
     expect(shiftOffset(12, edits)).toBe(16);
+  });
+});
+
+
+describe('renumberEdits — 이어쓰기/내어쓰기 후 이웃 번호 정리', () => {
+  const apply = (text: string): string => {
+    let out = text;
+    [...renumberEdits(text)]
+      .sort((x, y) => y.at - x.at)
+      .forEach((e) => {
+        out = out.slice(0, e.at) + e.insert + out.slice(e.at + e.remove);
+      });
+    return out;
+  };
+
+  it('내어쓴 항목이 상위 번호를 잇는다 (제보: 2.가 아니라 3.)', () => {
+    expect(apply('1. 한번더\n2. 확인\n  a. 오케이\n2. ')).toBe('1. 한번더\n2. 확인\n  a. 오케이\n3. ');
+  });
+
+  it('목록 중간에 끼운 항목이 뒤 번호를 민다', () => {
+    expect(apply('1. 하나\n2. 둘\n3. \n3. 셋')).toBe('1. 하나\n2. 둘\n3. \n4. 셋');
+  });
+
+  it('하위 목록을 건너 상위 번호가 이어지고, 하위는 자기 단계에서 매겨진다', () => {
+    expect(apply('1. a\n  a. x\n  a. y\n2. b')).toBe('1. a\n  a. x\n  b. y\n2. b');
+  });
+
+  it('글머리 줄과 평문은 건드리지 않는다', () => {
+    const t = '• 하나\n평문\n• 둘';
+    expect(apply(t)).toBe(t);
+  });
+
+  it('묶음 시작 번호는 보존한다 (5로 시작하면 5, 6, 7)', () => {
+    expect(apply('5. a\n5. b\n5. c')).toBe('5. a\n6. b\n7. c');
+  });
+
+  it('빈 줄이 목록을 끊으면 다음 묶음은 제 시작 번호를 지킨다', () => {
+    const t = '1. a\n\n3. b\n3. c';
+    expect(apply(t)).toBe('1. a\n\n3. b\n4. c');
   });
 });
