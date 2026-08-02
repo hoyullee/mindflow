@@ -242,6 +242,13 @@ export function setLinearSelection(el: HTMLElement, s0: number, s1: number): voi
   // 갈아엎는다(제보: 빈 줄에서 Backspace 후 글자를 치면 전부 사라짐).
   let lastC: Node | null = null;
   let lastO = 0;
+  // 방금 센 글자가 줄바꿈이었나 — 블록(`<div>`)이 만드는 **암묵적 줄바꿈**을
+  // `linearize`/`domToRuns`와 **같은 규칙**으로 세기 위한 상태다. 두 곳은 앞이 이미
+  // 줄바꿈이면 더 넣지 않는데 여기만 무조건 1을 더해, 빈 줄(`<div><br></div>`)이
+  // 하나 있을 때마다 오프셋이 1씩 밀렸다(제보: 빈 줄 뒤에 새 리스트를 만들면 캐럿이
+  // 마커 **안**에 떨어져 다음 글자가 마커를 부쉈다). 시작은 `true` — 맨 앞 블록은
+  // 줄바꿈을 만들지 않는다.
+  let lastNl = true;
   const walk = (node: Node): void => {
     if (sC && eC) return;
     if (node.nodeType === 3) {
@@ -261,6 +268,7 @@ export function setLinearSelection(el: HTMLElement, s0: number, s1: number): voi
         eO = Math.max(0, s1 - acc);
       }
       acc += len;
+      if (len) lastNl = (node.nodeValue || '').slice(-1) === '\n';
       lastC = node;
       lastO = len;
       return;
@@ -280,6 +288,7 @@ export function setLinearSelection(el: HTMLElement, s0: number, s1: number): voi
         eO = idx;
       }
       acc += 1;
+      lastNl = true;
       if (parent) {
         lastC = parent;
         lastO = idx;
@@ -287,7 +296,10 @@ export function setLinearSelection(el: HTMLElement, s0: number, s1: number): voi
       return;
     }
     const isBlock = (node.nodeName === 'DIV' || node.nodeName === 'P') && node !== el;
-    if (isBlock && acc > 0) acc += 1;
+    if (isBlock && acc > 0 && !lastNl) {
+      acc += 1;
+      lastNl = true;
+    }
     for (let i = 0; i < node.childNodes.length; i++) {
       walk(node.childNodes[i]!);
       if (sC && eC) return;
