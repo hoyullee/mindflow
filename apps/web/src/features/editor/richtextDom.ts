@@ -167,6 +167,19 @@ export function domToRuns(el: HTMLElement, keepTrailing = false): { text: string
   return { text, rich: isStyledRuns(runs) ? runs.filter((r) => r.t) : null };
 }
 
+/** 편집 박스의 **현재 값**과, `linearize`가 준 오프셋을 그 값 안으로 맞추는 클램프.
+ *
+ * 편집 박스는 빈 마지막 줄을 보이게 하려고 placeholder `<br>`를 하나 더 둔다
+ * (`listEditHtml`). `linearize`는 그 `<br>`까지 한 글자로 세는 반면 값 쪽은 후행
+ * 줄바꿈 하나를 접으므로, 캐럿이 맨 끝에 있을 때 오프셋이 값보다 1 크다.
+ * 둘을 따로 읽으면 그 한 칸이 어긋난다 — 실제로 "빈 줄에서 Shift+Enter를 눌렀는데
+ * 캐럿이 **앞 줄**로 읽혀 리스트가 되살아나던" 제보의 원인이었다. `keepTrailing`으로
+ * 읽고(빈 줄을 값에 남기고) 오프셋을 값 길이로 자르면 두 좌표계가 다시 맞는다. */
+export function liveEditValue(el: HTMLElement): { text: string; rich: RichRun[] | null; clamp: (n: number) => number } {
+  const v = domToRuns(el, true);
+  return { text: v.text, rich: v.rich, clamp: (n) => Math.max(0, Math.min(n, v.text.length)) };
+}
+
 /** One DOM position to resolve into a linear text offset — the `{ container, offset }`
  * shape a `Range`'s `startContainer`/`startOffset` (or `endContainer`/`endOffset`) already
  * has, so callers typically pass those straight through. */

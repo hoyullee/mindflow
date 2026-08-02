@@ -199,6 +199,23 @@ describe('리스트 자동 이어쓰기 — 노드 편집(Shift+Enter)', () => {
     expect(domToRuns(editor, true).text).toBe('평문\n');
   });
 
+  // 제보: "1. 단어" → Shift+Enter(=2. 이어짐) → Shift+Enter(=리스트 끝) →
+  // Shift+Enter 하면 빈 줄이 되어야 하는데 `2. `가 되살아났다. 원인은 좌표계 어긋남 —
+  // 캐럿 오프셋은 `linearize`(placeholder `<br>`까지 셈)에서 오는데 값은 후행 줄바꿈을
+  // 버린 채 읽어, 빈 줄의 캐럿이 **앞 줄**(리스트 줄)로 읽혔다.
+  it('리스트를 끝낸 빈 줄에서 Shift+Enter → 마커가 되살아나지 않는다', () => {
+    localStorage.setItem('mindflow_doc_lc4c', JSON.stringify(docWith({ c1: { id: 'c1', text: '1. 단어', emoji: '', parent: 'root', children: [], collapsed: false, color: null, x: 0, y: 0 } })));
+    const { container } = renderEditor('/editor?map=lc4c&title=x');
+    const editor = startEditingNode(container, 'c1');
+    setLinearSelection(editor, 5, 5); // "1. 단어" 끝
+    fireEvent.keyDown(editor, { key: 'Enter', shiftKey: true });
+    expect(domToRuns(editor, true).text).toBe('1. 단어\n2. '); // 이어쓰기
+    fireEvent.keyDown(editor, { key: 'Enter', shiftKey: true });
+    expect(domToRuns(editor, true).text).toBe('1. 단어\n'); // 마커 제거 = 리스트 끝
+    fireEvent.keyDown(editor, { key: 'Enter', shiftKey: true });
+    expect(domToRuns(editor, true).text).toBe('1. 단어\n\n'); // 평범한 빈 줄
+  });
+
   it('줄바꿈 직후(글자를 더 치기 전에) 도형이 이미 커져 있다', () => {
     localStorage.setItem('mindflow_doc_lc4b', JSON.stringify(docWith({ c1: { id: 'c1', text: '평문', emoji: '', parent: 'root', children: [], collapsed: false, color: null, x: 0, y: 0 } })));
     const { container } = renderEditor('/editor?map=lc4b&title=x');

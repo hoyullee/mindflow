@@ -3,7 +3,7 @@ import type { MouseEvent as ReactMouseEvent, PointerEvent as ReactPointerEvent }
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import type { Box, Doc, Float, Line, LineAnchor, LayoutMode, ListOp, Node, NodeMap, SizeOf, SnapCandidate, TextEdit, Zone } from '@mindflow/mindmap-core';
 import { HistoryStack, ROOT_ID, applyListOp as applyListOpToText, applyAutoLinks, applyMarkdownShortcuts, applyPartialStyle, charsToRuns, cubicAt, isStyledRuns, findLineSnap, layout, resolveLineEndpoints, resolveLineGeometry, runsToChars, serializeDoc, shiftOffset, toMarkdown } from '@mindflow/mindmap-core';
-import { domToRuns, linearize } from './richtextDom';
+import { domToRuns, linearize, liveEditValue } from './richtextDom';
 import { nodeTextAlign, renderListEdit } from './listLines';
 import type { ShareStore } from '../../adapters/ports';
 import type { CollabStatus } from '../../collab/ports';
@@ -2077,11 +2077,12 @@ export function useEditorState(): EditorController {
       { container: rng.startContainer, offset: rng.startOffset },
       { container: rng.endContainer, offset: rng.endOffset },
     ]);
-    const a0 = Math.min(lin.pos[0] ?? 0, lin.pos[1] ?? 0);
-    const b0 = Math.max(lin.pos[0] ?? 0, lin.pos[1] ?? 0);
+    // `liveEditValue` — 오프셋(linearize)과 값의 좌표계를 맞춘다(placeholder `<br>` 한 칸).
+    const v = liveEditValue(ed);
+    const a0 = v.clamp(Math.min(lin.pos[0] ?? 0, lin.pos[1] ?? 0));
+    const b0 = v.clamp(Math.max(lin.pos[0] ?? 0, lin.pos[1] ?? 0));
     if (a0 !== b0) return { a: a0, b: b0 };
-    const len = domToRuns(ed).text.length;
-    return len ? { a: 0, b: len } : null;
+    return v.text.length ? { a: 0, b: v.text.length } : null;
   }, []);
 
   /** 지정한 범위에 부분 서식을 적용한다. 링크 입력처럼 **선택이 잠시 사라지는**
@@ -2089,7 +2090,8 @@ export function useEditorState(): EditorController {
   const applyPartialRange = useCallback((a: number, b: number, kind: 'b' | 'i' | 's' | 'c' | 'link' | 'clear', val?: string | null) => {
     const ed = richElRef.current;
     if (!ed || a === b) return;
-    const parsed = domToRuns(ed);
+    // 값도 같은 규칙으로 읽는다 — 아니면 끝에 만들어 둔 빈 줄이 서식 한 번에 사라진다.
+    const parsed = liveEditValue(ed);
     const next = applyPartialStyle(parsed, a, b, kind, val ?? null);
     // 리스트 줄이 있으면 편집 중 구조([마커|내용] 행)를 유지한 채 다시 그린다 —
     // 평범한 `runsToHtml`만 쓰면 서식 한 번 적용에 리스트 모양이 풀려 버린다.
@@ -2116,9 +2118,10 @@ export function useEditorState(): EditorController {
       { container: rng.startContainer, offset: rng.startOffset },
       { container: rng.endContainer, offset: rng.endOffset },
     ]);
-    const a = Math.min(lin.pos[0] ?? 0, lin.pos[1] ?? 0);
-    const b = Math.max(lin.pos[0] ?? 0, lin.pos[1] ?? 0);
-    const chars = runsToChars(domToRuns(ed));
+    const v = liveEditValue(ed);
+    const a = v.clamp(Math.min(lin.pos[0] ?? 0, lin.pos[1] ?? 0));
+    const b = v.clamp(Math.max(lin.pos[0] ?? 0, lin.pos[1] ?? 0));
+    const chars = runsToChars(v);
     if (a === b) return (chars[a - 1]?.href || chars[a]?.href || null) ?? null;
     const seg = chars.slice(a, b);
     const first = seg[0]?.href || null;
