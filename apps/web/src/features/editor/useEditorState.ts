@@ -2,7 +2,7 @@ import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } fr
 import type { MouseEvent as ReactMouseEvent, PointerEvent as ReactPointerEvent } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import type { Box, Doc, Float, Line, LineAnchor, LayoutMode, ListOp, Node, NodeMap, SizeOf, SnapCandidate, TextEdit, Zone } from '@mindflow/mindmap-core';
-import { HistoryStack, ROOT_ID, applyListOp as applyListOpToText, applyMarkdownShortcuts, applyPartialStyle, charsToRuns, cubicAt, isStyledRuns, findLineSnap, layout, resolveLineEndpoints, resolveLineGeometry, runsToChars, serializeDoc, shiftOffset, toMarkdown } from '@mindflow/mindmap-core';
+import { HistoryStack, ROOT_ID, applyListOp as applyListOpToText, applyAutoLinks, applyMarkdownShortcuts, applyPartialStyle, charsToRuns, cubicAt, isStyledRuns, findLineSnap, layout, resolveLineEndpoints, resolveLineGeometry, runsToChars, serializeDoc, shiftOffset, toMarkdown } from '@mindflow/mindmap-core';
 import { domToRuns, linearize } from './richtextDom';
 import { nodeTextAlign, renderListEdit } from './listLines';
 import type { ShareStore } from '../../adapters/ports';
@@ -2017,7 +2017,10 @@ export function useEditorState(): EditorController {
       // 마크다운 단축 문법(**굵게**, *기울임*, ~~취소선~~)을 커밋 시 서식으로 변환.
       // 편집 중에는 마커가 그대로 보이고(예측 가능), 확정하는 순간 정리된다.
       const md = applyMarkdownShortcuts(parsed);
-      const finalText = md ?? parsed;
+      // 타이핑한 URL을 링크로 — 마크다운 단축 문법과 같은 자리(커밋 시 한 번).
+      // 편집 중 실시간으로 걸면 반쯤 친 주소가 링크가 됐다 풀렸다 하며 캐럿·IME가 흔들린다.
+      const base = md ?? parsed;
+      const finalText = applyAutoLinks(base) ?? base;
       commitDoc((d) => ({ ...d, nodes: mutations.commitNodeRichText(d.nodes, id, finalText.text, finalText.rich) }));
       setEditingNodeId(null);
       setEditLiveSize(null);
@@ -2064,6 +2067,9 @@ export function useEditorState(): EditorController {
     const ws = window.getSelection();
     if (!ws || !ws.rangeCount) return null;
     const rng = ws.getRangeAt(0);
+    // 선택이 편집 박스 **밖**이면(예: 링크 주소 입력창에 포커스) 범위가 없다 —
+    // 밖의 컨테이너를 `linearize`에 넣으면 엉뚱한 오프셋이 나온다.
+    if (!ed.contains(rng.startContainer) || !ed.contains(rng.endContainer)) return null;
     const lin = linearize(ed, [
       { container: rng.startContainer, offset: rng.startOffset },
       { container: rng.endContainer, offset: rng.endOffset },

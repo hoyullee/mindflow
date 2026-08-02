@@ -14,6 +14,7 @@
 // rich-text-bearing source) rather than a whole `Node`.
 
 import type { RichRun } from './model';
+import { findAutoLinks } from './url';
 
 /** The `{ text, rich }` shape `applyPartialStyle` reads/writes — a structural
  * subset of `Node` (and anything else that carries a rich-text body). */
@@ -238,4 +239,32 @@ export function applyMarkdownShortcuts(src: RichSource): { text: string; rich: R
   const runs = charsToRuns(chars).filter((r) => r.t);
   const styled = runs.some((r) => r.b || r.c || r.i || r.s);
   return { text: chars.map((x) => x.ch).join(''), rich: styled ? runs : null };
+}
+
+/**
+ * 타이핑한 URL을 링크로 — **커밋 시점**에 한 번 돌린다(마크다운 단축 문법과 같은
+ * 자리). 편집 중에 실시간으로 걸면 반쯤 친 주소가 링크가 됐다 풀렸다 하며
+ * 캐럿·IME를 흔든다.
+ *
+ * 이미 링크가 걸린 글자는 건드리지 않는다 — 사용자가 손으로 지정한 주소가
+ * 자동 인식에 덮이면 안 된다. 바뀐 게 없으면 `null`(호출부는 원본을 그대로 쓴다).
+ */
+export function applyAutoLinks(src: RichSource): { text: string; rich: RichRun[] | null } | null {
+  const spans = findAutoLinks(src.text);
+  if (!spans.length) return null;
+  const chars = runsToChars(src);
+  let touched = false;
+  spans.forEach((sp) => {
+    for (let i = sp.start; i < sp.end && i < chars.length; i++) {
+      const c = chars[i]!;
+      if (c.href) return; // 이미 링크가 걸린 구간은 통째로 건너뛴다
+    }
+    for (let i = sp.start; i < sp.end && i < chars.length; i++) {
+      chars[i]!.href = sp.href;
+      touched = true;
+    }
+  });
+  if (!touched) return null;
+  const runs = charsToRuns(chars).filter((r) => r.t);
+  return { text: chars.map((x) => x.ch).join(''), rich: isStyledRuns(runs) ? runs : null };
 }
