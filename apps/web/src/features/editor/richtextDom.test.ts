@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { domToRuns, escHtml, linearize, rgbToHex, runsToHtml } from './richtextDom';
+import { domToRuns, escHtml, linearize, rgbToHex, runsToHtml, setLinearSelection } from './richtextDom';
 
 // DOM-facing rich-text helpers (`richtextDom.ts`, port of MindFlow.dc.html:2558-2698).
 // Per CLAUDE.md's task brief: jsdom's `Selection`/`Range` support is limited, so
@@ -192,5 +192,36 @@ describe('링크 파랑은 모델로 새지 않는다', () => {
     const el = document.createElement('div');
     el.innerHTML = `<span style="color: rgb(217, 38, 38)">빨강</span>`;
     expect(domToRuns(el).rich).toEqual([{ t: '빨강', b: false, c: '#d92626' }]);
+  });
+});
+
+
+describe('setLinearSelection — 블록 줄바꿈 계산이 linearize와 같아야 한다', () => {
+  // 빈 줄(`<div><br></div>`)이 있으면 예전엔 오프셋이 1씩 밀렸다: 블록마다 무조건
+  // 줄바꿈 1을 더했기 때문(앞이 이미 줄바꿈이면 더하지 않는 linearize·domToRuns와 불일치).
+  // 그래서 빈 줄 뒤에 새 리스트를 만들면 캐럿이 마커 **안**에 떨어져 다음 글자가 마커를 부쉈다.
+  it('빈 줄 뒤 블록의 오프셋이 linearize와 일치한다', () => {
+    const el = document.createElement('div');
+    document.body.appendChild(el);
+    el.innerHTML = `<div>가나</div><div><br></div><div>다라</div>`;
+    // 값 기준 텍스트: "가나\n\n다라" — '다' 앞은 4, '라' 앞은 5
+    expect(domToRuns(el, true).text).toBe('가나\n\n다라');
+    setLinearSelection(el, 5, 5);
+    const sel = window.getSelection()!;
+    const r = sel.getRangeAt(0);
+    const back = linearize(el, [{ container: r.startContainer, offset: r.startOffset }]);
+    expect(back.pos[0]).toBe(5);
+    el.remove();
+  });
+
+  it('빈 줄이 여러 개여도 어긋나지 않는다', () => {
+    const el = document.createElement('div');
+    document.body.appendChild(el);
+    el.innerHTML = `<div>가</div><div><br></div><div><br></div><div>나다</div>`;
+    expect(domToRuns(el, true).text).toBe('가\n\n\n나다');
+    setLinearSelection(el, 5, 5); // '다' 앞
+    const r = window.getSelection()!.getRangeAt(0);
+    expect(linearize(el, [{ container: r.startContainer, offset: r.startOffset }]).pos[0]).toBe(5);
+    el.remove();
   });
 });

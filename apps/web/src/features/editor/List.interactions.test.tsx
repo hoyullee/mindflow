@@ -216,6 +216,25 @@ describe('리스트 자동 이어쓰기 — 노드 편집(Shift+Enter)', () => {
     expect(domToRuns(editor, true).text).toBe('1. 단어\n\n'); // 평범한 빈 줄
   });
 
+  // 제보: 리스트 뒤에 빈 줄을 만든 뒤 새 리스트를 시작하면 정상적으로 안 써졌다.
+  // 캐럿이 마커 스팬 **안**(`1. `의 2번 자리)에 떨어져 다음 글자가 마커를 부쉈다.
+  it('빈 줄 뒤에서 새 리스트를 시작해도 마커가 온전하다', () => {
+    localStorage.setItem('mindflow_doc_lc4d', JSON.stringify(docWith({ c1: { id: 'c1', text: '1. 단어\n\n', emoji: '', parent: 'root', children: [], collapsed: false, color: null, x: 0, y: 0 } })));
+    const { container } = renderEditor('/editor?map=lc4d&title=x');
+    const editor = startEditingNode(container, 'c1');
+    // 마지막(빈) 줄에 `1. `을 친 상태를 만든다 — 마커가 생기며 재구성이 걸린다
+    const last = editor.lastElementChild as HTMLElement;
+    last.textContent = '1. ';
+    setLinearSelection(editor, domToRuns(editor, true).text.length, domToRuns(editor, true).text.length);
+    fireEvent.input(editor);
+    // 캐럿이 마커 밖(내용 쪽)에 있어야 한다
+    const sel = window.getSelection()!;
+    const node = sel.getRangeAt(0).startContainer as HTMLElement;
+    const holder = node.nodeType === 3 ? node.parentElement : node;
+    expect(holder?.closest('[data-list-marker]')).toBeNull();
+    expect(domToRuns(editor, true).text).toBe('1. 단어\n\n1. ');
+  });
+
   it('줄바꿈 직후(글자를 더 치기 전에) 도형이 이미 커져 있다', () => {
     localStorage.setItem('mindflow_doc_lc4b', JSON.stringify(docWith({ c1: { id: 'c1', text: '평문', emoji: '', parent: 'root', children: [], collapsed: false, color: null, x: 0, y: 0 } })));
     const { container } = renderEditor('/editor?map=lc4b&title=x');
