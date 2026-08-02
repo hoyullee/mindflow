@@ -54,3 +54,29 @@ export function displayUrl(href: string, max = 42): string {
     .replace(/\/$/, '');
   return short.length > max ? `${short.slice(0, max - 1)}…` : short;
 }
+
+// ── 자동 링크(타이핑한 URL을 커밋할 때 링크로) ──────────────────────────────
+
+/** 자동 링크로 인정하는 꼴 — 예측 가능한 것만 좁게 잡는다.
+ *
+ * `http(s)://…`, `www.…`, 이메일. 맨 도메인(`example.com`)까지 잡으면 `1.5`나
+ * 파일 이름(`report.pdf`) 같은 평범한 텍스트가 링크가 된다 — Notion·Docs도
+ * 같은 선을 긋는다. 끝에 붙은 문장부호는 주소에서 제외한다(`…example.com/a.`). */
+const AUTOLINK_RE = /(https?:\/\/[^\s<>()[\]]+|www\.[^\s<>()[\]]+|[^\s<>()[\]@]+@[^\s<>()[\]@]+\.[a-zA-Z]{2,})/g;
+/** 주소 끝에 딸려 오기 쉬운 문장부호 — 링크에서 뗀다. */
+const TRAILING_RE = /[.,;:!?)\]}'"]+$/;
+
+/** 텍스트에서 자동 링크 대상 구간들을 찾는다 — `[시작, 끝)`과 정규화된 주소. */
+export function findAutoLinks(text: string): { start: number; end: number; href: string }[] {
+  const out: { start: number; end: number; href: string }[] = [];
+  const src = String(text || '');
+  AUTOLINK_RE.lastIndex = 0;
+  for (let m = AUTOLINK_RE.exec(src); m; m = AUTOLINK_RE.exec(src)) {
+    const raw = m[0].replace(TRAILING_RE, '');
+    if (!raw) continue;
+    const href = normalizeUrl(raw);
+    if (!href) continue;
+    out.push({ start: m.index, end: m.index + raw.length, href });
+  }
+  return out;
+}

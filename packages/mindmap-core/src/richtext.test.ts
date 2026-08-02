@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { applyPartialStyle, charsToRuns, isStyledRuns, runsToChars, stripRichStyle } from './richtext';
+import { applyAutoLinks, applyPartialStyle, charsToRuns, isStyledRuns, runsToChars, stripRichStyle } from './richtext';
 import type { RichRun } from './model';
 
 describe('runsToChars / charsToRuns', () => {
@@ -285,5 +285,33 @@ describe('applyPartialStyle — 하이퍼링크', () => {
     const a = applyPartialStyle({ text: 'ab' }, 0, 1, 'link', 'https://a.com/');
     const b = applyPartialStyle({ text: a.text, rich: a.rich }, 1, 2, 'link', 'https://b.com/');
     expect(b.rich).toHaveLength(2);
+  });
+});
+
+describe('applyAutoLinks — 타이핑한 URL을 커밋 시 링크로', () => {
+  it('URL 구간에만 href를 건다', () => {
+    const out = applyAutoLinks({ text: '문서 https://example.com/a 참고' })!;
+    expect(out.rich).toEqual([
+      { t: '문서 ', b: false, c: null },
+      { t: 'https://example.com/a', b: false, c: null, href: 'https://example.com/a' },
+      { t: ' 참고', b: false, c: null },
+    ]);
+  });
+
+  it('링크가 없으면 null (호출부가 원본을 그대로 쓴다)', () => {
+    expect(applyAutoLinks({ text: '그냥 텍스트' })).toBeNull();
+  });
+
+  it('손으로 건 링크는 덮지 않는다', () => {
+    const manual = applyPartialStyle({ text: 'https://example.com/a' }, 0, 21, 'link', 'https://other.com/');
+    const out = applyAutoLinks({ text: manual.text, rich: manual.rich });
+    expect(out).toBeNull();
+  });
+
+  it('굵게 등 다른 서식은 보존한다', () => {
+    const bold = applyPartialStyle({ text: '보기 https://a.com' }, 0, 2, 'b');
+    const out = applyAutoLinks({ text: bold.text, rich: bold.rich })!;
+    expect(out.rich?.[0]).toEqual({ t: '보기', b: true, c: null });
+    expect(out.rich?.[out.rich.length - 1]?.href).toBe('https://a.com/');
   });
 });

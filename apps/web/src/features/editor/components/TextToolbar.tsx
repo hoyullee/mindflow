@@ -54,6 +54,22 @@ export function TextToolbar({ controller }: TextToolbarProps) {
     controller.pauseBlurCommit(false);
   }, [textCtx, editingNodeId, controller]);
 
+  // 링크 입력창이 열린 뒤 사용자가 **다른 텍스트를 선택**하면(마우스든 키보드든)
+  // 잡아 둔 범위가 더 이상 의도와 맞지 않는다 — 입력창을 닫는다(제보).
+  useEffect(() => {
+    if (!link) return;
+    const onSel = (): void => {
+      const r = controller.selectionRange();
+      if (!r) return; // 포커스가 입력창에 있는 동안은 편집 박스 선택을 읽지 않는다
+      if (r.a !== link.a || r.b !== link.b) {
+        controller.pauseBlurCommit(false);
+        setLink(null);
+      }
+    };
+    document.addEventListener('selectionchange', onSel);
+    return () => document.removeEventListener('selectionchange', onSel);
+  }, [link, controller]);
+
   const openLinkInput = (): void => {
     const r = controller.selectionRange();
     if (!r) return;
@@ -310,7 +326,9 @@ function clearButtonStyle(th: EditorController['theme']): CSSProperties {
     border: `1px solid ${th.border}`,
     borderRadius: 7,
     background: th.panel,
-    color: th.subtext,
+    // 본문색 — 예전엔 `subtext`(회색)라 늘 비활성처럼 보였다(제보).
+    // 정말 잠긴 버튼만 호출부에서 `subtext`로 낮춘다(링크 '적용').
+    color: th.text,
     fontSize: 11.5,
     fontWeight: 700,
     cursor: 'pointer',

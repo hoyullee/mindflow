@@ -33,7 +33,7 @@ export type { HistoryStackOptions } from './history';
 export { HistoryStack } from './history';
 
 export type { RichSource, RichChar } from './richtext';
-export { runsToChars, charsToRuns, applyPartialStyle, stripRichStyle, isStyledRuns, applyMarkdownShortcuts } from './richtext';
+export { runsToChars, charsToRuns, applyPartialStyle, stripRichStyle, isStyledRuns, applyMarkdownShortcuts, applyAutoLinks } from './richtext';
 
 export type { ListPrefix, TextEdit, ListOp, ListBackspace, OrdinalStyle } from './list';
 export {
@@ -51,7 +51,7 @@ export {
   MAX_LIST_INDENT,
 } from './list';
 
-export { normalizeUrl, displayUrl } from './url';
+export { normalizeUrl, displayUrl, findAutoLinks } from './url';
 
 export type { NodeSize, SizeOf, LayoutOptions } from './layout';
 export { layout } from './layout';

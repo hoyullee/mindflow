@@ -13,7 +13,7 @@ import { RemotePeerTag } from './RemotePeerTag';
 import { ResizeHandle } from './ResizeHandle';
 import { domToRuns, linearize } from '../richtextDom';
 import { ListTextBlock, domMarkerSignature, listLinesOf, listSigOf, listSignature, markerSignature, nodeTextAlign, renderListEdit } from '../listLines';
-import { RichSpan } from '../richSpans';
+import { RichSpan, isLinkOpenModifier, openLink } from '../richSpans';
 
 interface NodeLayerProps {
   nodes: NodeMap;
@@ -563,6 +563,17 @@ function NodeEditBox({ id, n, boxStyle, align, controller }: NodeEditBoxProps) {
       onMouseDown={(e) => e.stopPropagation()}
       onPointerDown={(e) => e.stopPropagation()}
       onMouseUp={(e) => e.stopPropagation()}
+      // 편집 중에도 Ctrl/⌘+클릭으로 링크를 연다(요청). 편집 박스 안의 링크는
+      // `runsToHtml`이 심은 `data-href` span이라 여기서 한 번에 처리한다 —
+      // 기본 동작(캐럿 이동)은 막는다.
+      onClick={(e) => {
+        if (!isLinkOpenModifier(e)) return;
+        const href = (e.target as HTMLElement | null)?.closest?.('[data-href]')?.getAttribute('data-href');
+        if (!href) return;
+        e.preventDefault();
+        e.stopPropagation();
+        openLink(href);
+      }}
       // 편집 중의 더블클릭(단어 선택)은 여기서 멈춘다. 안 그러면 노드 박스의
       // `onDoubleClick`까지 올라가 `startEditNode`가 다시 불리고, 그 안의
       // `setTextCtx(null)`이 **방금 뜬 서식 툴바를 바로 닫아** 버렸다(제보:
