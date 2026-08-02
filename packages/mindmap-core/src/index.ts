@@ -42,6 +42,7 @@ export {
   continueListMarker,
   applyListOp,
   listBackspaceOp,
+  renumberEdits,
   shiftOffset,
   bulletGlyphFor,
   ordinalStyleFor,

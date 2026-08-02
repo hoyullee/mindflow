@@ -1,7 +1,7 @@
 import type { CSSProperties, ReactNode } from 'react';
 import { useEffect, useRef } from 'react';
 import type { LayoutMode, Node, NodeMap, RichRun } from '@mindflow/mindmap-core';
-import { ROOT_ID, charsToRuns, continueListMarker, isStyledRuns, listBackspaceOp, parseListPrefix, runsToChars } from '@mindflow/mindmap-core';
+import { ROOT_ID, charsToRuns, continueListMarker, isStyledRuns, listBackspaceOp, parseListPrefix, renumberEdits, runsToChars, shiftOffset } from '@mindflow/mindmap-core';
 import { colorOf, descendants } from '../tree';
 import { isPanButton } from '../pointerButtons';
 import { hexA } from '../theme';
@@ -471,6 +471,15 @@ function maybeContinueList(e: { preventDefault: () => void }, el: HTMLDivElement
     chars.splice(a, 0, ...Array.from(insert).map((ch) => ({ ch, b: false, c: null })));
     caret = a + insert.length;
   }
+  // 이어쓰기/내어쓰기로 어긋난 이웃 번호를 정리한다 — 하위 목록의 빈 `b.`를
+  // 내어쓰면 상위 `2.` 다음이므로 `3.`이어야 하고(제보), 목록 **중간**에 항목을
+  // 끼우면 뒤 항목들이 한 칸씩 밀려야 한다. `continueListMarker`는 한 줄만 보므로
+  // 전체 번호는 여기서 맞춘다(Tab의 `applyListOp`는 자체적으로 한다).
+  const renum = renumberEdits(chars.map((c) => c.ch).join(''));
+  [...renum]
+    .sort((x, y) => y.at - x.at)
+    .forEach((ed) => chars.splice(ed.at, ed.remove, ...Array.from(ed.insert).map((ch) => ({ ch, b: false, c: null }))));
+  caret = shiftOffset(caret, renum);
   const runs = charsToRuns(chars).filter((r) => r.t);
   render({ text: chars.map((c) => c.ch).join(''), rich: isStyledRuns(runs) ? runs : null }, caret);
   return true;

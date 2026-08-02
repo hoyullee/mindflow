@@ -216,6 +216,28 @@ describe('리스트 자동 이어쓰기 — 노드 편집(Shift+Enter)', () => {
     expect(domToRuns(editor, true).text).toBe('1. 단어\n\n'); // 평범한 빈 줄
   });
 
+  // 제보: 1, 2 작성 → 들여쓰기(a) → 빈 마커에서 내어쓰기 하면 "3."이 아니라
+  // "2."가 됐다 — continueListMarker는 한 줄만 보고 값을 유지하는데, 앞의 상위
+  // 형제(2.)를 이어야 한다. 이제 이어쓰기/내어쓰기 후 renumberEdits가 정리한다.
+  it('하위 목록의 빈 마커를 내어쓰면 상위 번호를 잇는다 (2. → 3.)', () => {
+    localStorage.setItem('mindflow_doc_lc6', JSON.stringify(docWith({ c1: { id: 'c1', text: '1. 한번더\n2. 확인\n  a. 오케이\n  b. ', emoji: '', parent: 'root', children: [], collapsed: false, color: null, x: 0, y: 0 } })));
+    const { container } = renderEditor('/editor?map=lc6&title=x');
+    const editor = startEditingNode(container, 'c1');
+    const len = domToRuns(editor, true).text.length;
+    setLinearSelection(editor, len, len); // 빈 `b. ` 끝
+    fireEvent.keyDown(editor, { key: 'Enter', shiftKey: true });
+    expect(domToRuns(editor, true).text).toBe('1. 한번더\n2. 확인\n  a. 오케이\n3. ');
+  });
+
+  it('목록 중간에서 이어쓰면 뒤 번호가 한 칸씩 밀린다', () => {
+    localStorage.setItem('mindflow_doc_lc7', JSON.stringify(docWith({ c1: { id: 'c1', text: '1. 하나\n2. 둘\n3. 셋', emoji: '', parent: 'root', children: [], collapsed: false, color: null, x: 0, y: 0 } })));
+    const { container } = renderEditor('/editor?map=lc7&title=x');
+    const editor = startEditingNode(container, 'c1');
+    setLinearSelection(editor, 10, 10); // "2. 둘" 끝
+    fireEvent.keyDown(editor, { key: 'Enter', shiftKey: true });
+    expect(domToRuns(editor, true).text).toBe('1. 하나\n2. 둘\n3. \n4. 셋');
+  });
+
   // 제보: 리스트 뒤에 빈 줄을 만든 뒤 새 리스트를 시작하면 정상적으로 안 써졌다.
   // 캐럿이 마커 스팬 **안**(`1. `의 2번 자리)에 떨어져 다음 글자가 마커를 부쉈다.
   it('빈 줄 뒤에서 새 리스트를 시작해도 마커가 온전하다', () => {
