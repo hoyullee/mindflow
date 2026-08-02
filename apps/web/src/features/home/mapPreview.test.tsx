@@ -293,10 +293,40 @@ describe('realPreview', () => {
     const linked = (Array.from(container.querySelectorAll('svg tspan')) as SVGTSpanElement[]).find((t) => t.textContent === '문서');
     expect(linked).toBeTruthy();
     expect(linked!.getAttribute('fill')).toBe(LINK_INK_ON_LIGHT);
-    expect(linked!.getAttribute('text-decoration')).toContain('underline');
-    // 크롬은 SVG 장식을 베이스라인 기준으로 그린다 — `central`이면 글자만 아래로
-    // 밀려 밑줄이 글자 **위**에 그어진다(실브라우저 재현). 회귀 가드.
-    expect(linked!.closest('text')!.getAttribute('dominant-baseline')).toBe('middle');
+    // 밑줄은 `text-decoration`이 아니라 rect다 — 크롬이 SVG 장식을 베이스라인 기준으로
+    // 그려 글자 **위**에 그어지던 문제(실브라우저 재현) 때문. 링크색으로 칠한다.
+    expect(linked!.getAttribute('text-decoration')).toBeNull();
+    const rules = Array.from(container.querySelectorAll('svg rect')).filter((r) => r.getAttribute('fill') === LINK_INK_ON_LIGHT);
+    expect(rules).toHaveLength(1);
+    expect(Number(rules[0]!.getAttribute('height'))).toBeGreaterThanOrEqual(1.8);
+  });
+
+  // 취소선도 같은 경로 — 예전엔 `text-decoration="line-through"`가 붙는데도 축척에
+  // 눌려 사실상 보이지 않았다(제보).
+  it('취소선이 글자 가운데를 지나는 rect로 그려진다', () => {
+    const withStrike = {
+      ...doc,
+      nodes: {
+        ...doc.nodes,
+        a: { ...doc.nodes.a, text: '취소선 텍스트', rich: [{ t: '취소선', b: false, c: null, s: true }, { t: ' 텍스트', b: false, c: null }] },
+      },
+    };
+    const { container } = render(realPreview(JSON.stringify(withStrike), '#f0663f')!);
+    const seg = (Array.from(container.querySelectorAll('svg tspan')) as SVGTSpanElement[]).find((t) => t.textContent === '취소선');
+    expect(seg).toBeTruthy();
+    const line = seg!.closest('text')!;
+    const cy = Number(line.getAttribute('y'));
+    const fpx = Number(line.getAttribute('font-size'));
+    // 본문 텍스트는 x-height 중앙 정렬(`middle`)이라 줄의 y가 곧 취소선 자리다
+    // (한글 음절 블록 때문에 아주 살짝 위로 올린다 — `decoRects` 참고).
+    const strikes = Array.from(container.querySelectorAll('svg rect')).filter((r) => {
+      const h = Number(r.getAttribute('height'));
+      return h >= 1 && h <= 4 && Math.abs(Number(r.getAttribute('y')) + h / 2 - cy) <= fpx * 0.05;
+    });
+    expect(strikes).toHaveLength(1);
+    expect(Number(strikes[0]!.getAttribute('width'))).toBeGreaterThan(0);
+    // 축척(0.5~0.7배)을 견딜 두께여야 한다 — 1 user unit면 카드에서 사라진다.
+    expect(Number(strikes[0]!.getAttribute('height'))).toBeGreaterThanOrEqual(1.8);
   });
 
   // 텍스트 굵기도 측정에 쓴 fw 그대로(루트 700, depth1 600, depth2+ 500) —
