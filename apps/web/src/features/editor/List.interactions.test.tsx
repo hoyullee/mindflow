@@ -183,13 +183,30 @@ describe('리스트 자동 이어쓰기 — 노드 편집(Shift+Enter)', () => {
     expect(domToRuns(editor).text).toBe('• 하나');
   });
 
-  it('리스트가 아닌 줄의 Shift+Enter는 개입하지 않는다 (preventDefault 없음)', () => {
+  // 예전엔 리스트가 아닌 줄의 Shift+Enter를 브라우저 기본에 맡겼다. 그런데
+  // contentEditable에서 글 끝에 넣은 `<br>` **하나는 화면에 나타나지 않아**
+  // 두 번 눌러야 줄이 바뀌었고(제보), 우리 측정도 그 자리에서 돌지 않아 도형이
+  // 다음 글자를 칠 때에야 커졌다. 지금은 리스트 이어쓰기와 같은 경로로 직접 넣는다.
+  it('리스트가 아닌 줄도 Shift+Enter 한 번에 줄이 바뀐다', () => {
     localStorage.setItem('mindflow_doc_lc4', JSON.stringify(docWith({ c1: { id: 'c1', text: '평문', emoji: '', parent: 'root', children: [], collapsed: false, color: null, x: 0, y: 0 } })));
     const { container } = renderEditor('/editor?map=lc4&title=x');
     const editor = startEditingNode(container, 'c1');
     setLinearSelection(editor, 2, 2);
-    // fireEvent는 preventDefault가 불리지 않았으면 true를 돌려준다
-    expect(fireEvent.keyDown(editor, { key: 'Enter', shiftKey: true })).toBe(true);
+    // fireEvent는 preventDefault가 불렸으면 false를 돌려준다 — 우리가 처리했다는 뜻
+    expect(fireEvent.keyDown(editor, { key: 'Enter', shiftKey: true })).toBe(false);
+    // 빈 마지막 줄은 `<br>` 하나로는 안 보인다 — placeholder까지 두 개여야 한다
+    expect(editor.querySelectorAll('br')).toHaveLength(2);
+    expect(domToRuns(editor, true).text).toBe('평문\n');
+  });
+
+  it('줄바꿈 직후(글자를 더 치기 전에) 도형이 이미 커져 있다', () => {
+    localStorage.setItem('mindflow_doc_lc4b', JSON.stringify(docWith({ c1: { id: 'c1', text: '평문', emoji: '', parent: 'root', children: [], collapsed: false, color: null, x: 0, y: 0 } })));
+    const { container } = renderEditor('/editor?map=lc4b&title=x');
+    const editor = startEditingNode(container, 'c1');
+    const before = nodeBox(container, 'c1').style.height;
+    setLinearSelection(editor, 2, 2);
+    fireEvent.keyDown(editor, { key: 'Enter', shiftKey: true });
+    expect(nodeBox(container, 'c1').style.height).not.toBe(before);
   });
 
   it('이어쓴 리스트는 커밋 후에도 마커가 텍스트에 남는다 (재파싱 왕복)', async () => {

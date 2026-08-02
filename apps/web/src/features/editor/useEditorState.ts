@@ -1987,7 +1987,10 @@ export function useEditorState(): EditorController {
       const base = docRef.current.nodes[id];
       if (!base) return;
       const depth = geomRef.current[id]?.depth ?? (id === ROOT_ID ? 0 : 1);
-      const parsed = domToRuns(el);
+      // `keepTrailing` — 끝에 만든 빈 줄도 세어야 **줄바꿈하는 순간** 도형이 커진다
+      // (제보: 줄을 바꿔도 다음 글자를 칠 때에야 커졌다). 편집 박스는 빈 마지막 줄에
+      // placeholder `<br>`를 하나 더 두므로, 하나를 접는 이 모드가 곧 실제 값이다.
+      const parsed = domToRuns(el, true);
       const liveNode: Node = { ...base, text: parsed.text, rich: parsed.rich };
       const m = computeMetrics(liveNode, depth, measurer);
       setEditLiveSize((prev) => (prev && prev.w === m.w && prev.h === m.h && prev.tw === m.tw ? prev : { w: m.w, h: m.h, tw: m.tw }));
