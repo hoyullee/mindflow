@@ -11,7 +11,7 @@ import type { GeomMap } from '../types';
 import { peersSelecting } from '../presenceSelection';
 import { RemotePeerTag } from './RemotePeerTag';
 import { ResizeHandle } from './ResizeHandle';
-import { domToRuns, linearize } from '../richtextDom';
+import { domToRuns, linearize, liveEditValue } from '../richtextDom';
 import { ListTextBlock, domMarkerSignature, listLinesOf, listSigOf, listSignature, markerSignature, nodeTextAlign, renderListEdit } from '../listLines';
 import { RichSpan, isLinkOpenModifier, linkInk, openLink } from '../richSpans';
 
@@ -444,9 +444,11 @@ function maybeContinueList(e: { preventDefault: () => void }, el: HTMLDivElement
     { container: rng.startContainer, offset: rng.startOffset },
     { container: rng.endContainer, offset: rng.endOffset },
   ]);
-  const a = Math.min(lin.pos[0] ?? 0, lin.pos[1] ?? 0);
-  const b = Math.max(lin.pos[0] ?? 0, lin.pos[1] ?? 0);
-  const parsed = domToRuns(el);
+  // 값과 오프셋을 같은 좌표계로 — placeholder `<br>` 한 칸 차이가 캐럿을 **앞 줄**로
+  // 읽게 만들어, 리스트를 끝낸 빈 줄에서 다시 마커가 생기던 제보의 원인이었다.
+  const parsed = liveEditValue(el);
+  const a = parsed.clamp(Math.min(lin.pos[0] ?? 0, lin.pos[1] ?? 0));
+  const b = parsed.clamp(Math.max(lin.pos[0] ?? 0, lin.pos[1] ?? 0));
   const text = parsed.text;
   const lineStart = text.lastIndexOf('\n', a - 1) + 1;
   const lineEndIdx = text.indexOf('\n', a);
@@ -490,10 +492,11 @@ function insertLineBreak(el: HTMLDivElement | null, render: (v: { text: string; 
     { container: rng.startContainer, offset: rng.startOffset },
     { container: rng.endContainer, offset: rng.endOffset },
   ]);
-  const a = Math.min(lin.pos[0] ?? 0, lin.pos[1] ?? 0);
-  const b = Math.max(lin.pos[0] ?? 0, lin.pos[1] ?? 0);
-  // `keepTrailing` — 이미 끝에 있던 빈 줄을 이 삽입이 먹어 버리지 않게.
-  const chars = runsToChars(domToRuns(el, true));
+  const v = liveEditValue(el);
+  const a = v.clamp(Math.min(lin.pos[0] ?? 0, lin.pos[1] ?? 0));
+  const b = v.clamp(Math.max(lin.pos[0] ?? 0, lin.pos[1] ?? 0));
+  // 이미 끝에 있던 빈 줄을 이 삽입이 먹어 버리지 않게 `liveEditValue`로 읽는다.
+  const chars = runsToChars(v);
   chars.splice(a, b - a);
   chars.splice(a, 0, { ch: '\n', b: false, c: null });
   const runs = charsToRuns(chars).filter((r) => r.t);
