@@ -39,11 +39,8 @@ interface PngLine {
 
 /** 리스트 항목 블록의 왼쪽 x — 에디터 `ListTextBlock`의 `justifyContent`,
  * 썸네일 `mapPreview`의 같은 이름 헬퍼와 동일 규칙. */
-function listBlockLeft(itemW: number, align: 'left' | 'center' | 'right', left: number, right: number): number {
-  if (align === 'right') return right - itemW;
-  if (align === 'center') return (left + right) / 2 - itemW / 2;
-  return left;
-}
+// 리스트 줄의 왼쪽 x는 **항상 텍스트 열 왼쪽**(Notion 방식, 사용자 선정 —
+// `listLines.tsx`의 LIST_ROW_JUSTIFY 참고). 정렬 설정은 평문 줄에만 적용된다.
 
 /** Soft-wrap `text` to `maxW` px with the ctx's CURRENT font, mirroring the
  * editor's `wrapMeasure` token model (whitespace-preserving, breaks between CJK
@@ -394,14 +391,13 @@ export async function exportPng(doc: Doc, geom: GeomMap, theme: Theme, filename:
     // left, so the text region (and a centered block) shifts right by `emojiFlex`.
     const align = n.align === 'left' ? 'left' : n.align === 'right' ? 'right' : 'center';
     const tx = align === 'left' ? x + padX + emojiFlex : align === 'right' ? x + g.w - padX : g.x + emojiFlex / 2;
-    // 리스트 줄: 항목 블록을 사용자 정렬대로 놓고 그 안에서 행잉 인덴트(에디터·썸네일과 동일).
+    // 리스트 줄: 정렬 설정과 무관하게 텍스트 열 왼쪽 + 행잉 인덴트(에디터·썸네일과 동일).
     const listL = x + padX + emojiFlex;
-    const listR = x + g.w - padX;
     ctx.fillStyle = tcol;
     ctx.textBaseline = 'middle';
     lines.forEach((ln, i) => {
       ctx.textAlign = ln.list ? 'left' : align;
-      ctx.fillText(ln.t, ln.list ? listBlockLeft(ln.itemW, align, listL, listR) + ln.indent : tx, ty0 + i * lh);
+      ctx.fillText(ln.t, ln.list ? listL + ln.indent : tx, ty0 + i * lh);
     });
     if (n.emoji) {
       ctx.font = `${emojiPx}px Pretendard, sans-serif`;
