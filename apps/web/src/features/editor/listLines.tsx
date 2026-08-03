@@ -127,7 +127,11 @@ export function ListTextBlock({ lines, align, lineHeight = 1.35 }: { lines: Cont
           // 항목([마커|내용]) 한 덩어리를 사용자 정렬대로 — 마커가 텍스트와 함께 움직인다.
           <span key={li} style={{ display: 'flex', alignItems: 'flex-start', justifyContent: listItemJustify(align) }}>
             <span style={{ whiteSpace: 'pre', flexShrink: 0 }}>{ln.list.display}</span>
-            <span style={{ flex: '0 1 auto', minWidth: 0, whiteSpace: 'pre-wrap', wordBreak: 'break-word' }}>{ln.segs.length ? renderSegs(ln) : '​'}</span>
+            {/* 내용 열은 항상 좌측 — 도형의 text-align(가운데 등)이 상속되면 **감긴
+                줄만** 그 정렬을 따라 튀어 보인다(제보: 줄바꿈된 텍스트가 중앙 정렬).
+                항목 위치는 justifyContent가 정하고, 열 안은 행잉 인덴트 기준이다
+                (썸네일·PNG의 wrap 모델과 동일). */}
+            <span style={{ flex: '0 1 auto', minWidth: 0, whiteSpace: 'pre-wrap', wordBreak: 'break-word', textAlign: 'left' }}>{ln.segs.length ? renderSegs(ln) : '​'}</span>
           </span>
         ) : (
           <span key={li} style={{ display: 'block', textAlign: align, whiteSpace: 'pre-wrap', wordBreak: 'break-word' }}>
@@ -175,7 +179,9 @@ export function listEditHtml(v: RichTextValue, align?: CSSProperties['textAlign'
       //   마커 스팬은 `white-space: pre`라 그 안에 들어간 글자는 **줄바꿈되지 않아**
       //   도형을 뚫고 나간다(제보: 리스트에 긴 텍스트를 쓰면 도형을 벗어남).
       `<span data-list-marker style="white-space:pre;flex-shrink:0">${escHtml(ln.list.display)}</span>` +
-      `<span style="flex:0 1 auto;min-width:0">${inner}</span>` +
+      // 내용 열은 항상 좌측(커밋 렌더 `ListTextBlock`과 같은 이유 — 감긴 줄이
+      // 도형 정렬을 상속해 중앙으로 튀지 않게).
+      `<span style="flex:0 1 auto;min-width:0;text-align:left">${inner}</span>` +
       `</div>`
     );
   };

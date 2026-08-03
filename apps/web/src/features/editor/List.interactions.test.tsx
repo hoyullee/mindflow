@@ -808,6 +808,30 @@ describe('마커 스팬에 본문이 쌓이지 않는다 (긴 텍스트가 도�
   });
 });
 
+describe('리스트 감긴 줄 정렬', () => {
+  // 제보: 리스트 항목이 길어 줄바꿈되면 감긴 줄만 중앙 정렬로 보였다 — 내용
+  // 스팬이 도형의 text-align(기본 center)을 상속했기 때문. 내용 열은 항상
+  // 좌측(행잉 인덴트, 썸네일·PNG와 동일 모델)이어야 한다.
+  it('커밋 렌더의 리스트 내용 열은 도형 정렬과 무관하게 좌측이다', () => {
+    localStorage.setItem('mindflow_doc_lw1', JSON.stringify(docWith({ c1: { id: 'c1', text: '1. 아주 긴 항목이 줄바꿈됩니다', emoji: '', parent: 'root', children: [], collapsed: false, color: null, x: 0, y: 0 } })));
+    const { container } = renderEditor('/editor?map=lw1&title=x');
+    const box = nodeBox(container, 'c1');
+    const marker = Array.from(box.querySelectorAll('span')).find((s) => s.textContent === '1. ');
+    expect(marker).toBeTruthy();
+    const content = marker!.nextElementSibling as HTMLElement;
+    expect(content.style.textAlign).toBe('left');
+  });
+
+  it('편집 박스의 리스트 내용 열도 좌측이다', () => {
+    localStorage.setItem('mindflow_doc_lw2', JSON.stringify(docWith({ c1: { id: 'c1', text: '1. 아주 긴 항목이 줄바꿈됩니다', emoji: '', parent: 'root', children: [], collapsed: false, color: null, x: 0, y: 0 } })));
+    const { container } = renderEditor('/editor?map=lw2&title=x');
+    const editor = startEditingNode(container, 'c1');
+    const marker = editor.querySelector('[data-list-marker]') as HTMLElement;
+    const content = marker.nextElementSibling as HTMLElement;
+    expect(content.style.textAlign).toBe('left');
+  });
+});
+
 describe('메모(플로트) 마커 안 Backspace', () => {
   function startEditFloat(container: HTMLElement, id = 'f1'): HTMLDivElement {
     const card = container.querySelector(`[data-float-id="${id}"]`) as HTMLElement;
