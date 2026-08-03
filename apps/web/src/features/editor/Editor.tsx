@@ -11,6 +11,7 @@ import { PropertyPanel } from './components/PropertyPanel';
 import { PresenceBar } from './components/PresenceBar';
 import { SearchBar } from './components/SearchBar';
 import { ShortcutHelp } from './components/ShortcutHelp';
+import { VersionHistory } from './components/VersionHistory';
 import { MapUnavailable } from './components/MapUnavailable';
 import { MobileSelectBar } from './components/MobileSelectBar';
 import { useIsMobile } from '../../hooks/useMediaQuery';
@@ -114,6 +115,7 @@ export function Editor() {
       {/* 공유 모달 — 아웃라인 보기에서도 열 수 있어야 하므로 view 분기 밖에 둔다. */}
       <ShareModal controller={controller} />
       <ShortcutHelp controller={controller} />
+      <VersionHistory controller={controller} />
 
       <div style={{ position: 'relative', flex: '1 1 auto', overflow: 'hidden', display: 'flex' }}>
         {controller.view === 'map' ? (

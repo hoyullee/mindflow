@@ -4,6 +4,7 @@ import { useNavigate, useSearchParams } from 'react-router-dom';
 import type { Box, Doc, Float, Line, LineAnchor, LayoutMode, ListOp, Node, NodeMap, SizeOf, SnapCandidate, TextEdit, Zone } from '@mindflow/mindmap-core';
 import { HistoryStack, ROOT_ID, applyListOp as applyListOpToText, applyAutoLinks, applyMarkdownShortcuts, applyPartialStyle, charsToRuns, cubicAt, isStyledRuns, findLineSnap, layout, resolveLineEndpoints, resolveLineGeometry, runsToChars, serializeDoc, shiftOffset, toMarkdown } from '@mindflow/mindmap-core';
 import { domToRuns, linearize, liveEditValue } from './richtextDom';
+import { recordVersion, versionDoc } from './versionHistory';
 import { nodeTextAlign, renderListEdit } from './listLines';
 import type { ShareStore } from '../../adapters/ports';
 import type { CollabStatus } from '../../collab/ports';
@@ -271,6 +272,14 @@ export interface EditorController {
   /** 단축키 도움말 열림 상태 — `?` 키(비편집)와 보기/☰ 메뉴가 조작한다. */
   helpOpen: boolean;
   setHelpOpen: (open: boolean) => void;
+  /** 버전 기록 모달 열림 상태 — 편집/☰ 메뉴가 조작한다. */
+  historyOpen: boolean;
+  setHistoryOpen: (open: boolean) => void;
+  /** 이 문서의 로컬 스냅샷 키(= 저장 대상 id) — 모달이 목록/본문 조회에 쓴다. */
+  historyDocId: string;
+  /** 스냅샷을 현재 문서로 복원 — undo 가능한 커밋이며, 복원 **직전 상태**도
+   * 강제 스냅샷으로 먼저 남긴다(돌아올 길 보장). 실패(손상)면 false. */
+  restoreVersion: (at: number) => boolean;
   /** 검색 일치 대상(전부) — NodeLayer/FloatLayer가 하이라이트 링을 그린다.
    * 검색 바가 계산해 내려 주고, 닫히면 `null`. */
   searchMarks: { nodes: Set<string>; floats: Set<string> } | null;
@@ -1824,6 +1833,12 @@ export function useEditorState(): EditorController {
       } catch {
         /* storage unavailable — non-fatal */
       }
+      // 버전 히스토리 스냅샷 — 저장이 **성공한** 본문만 기록한다(versionHistory.ts).
+      try {
+        recordVersion(docStoreId, docRef.current);
+      } catch {
+        /* 히스토리는 부가 기능 — 실패해도 저장 흐름을 막지 않는다 */
+      }
       setSaveStateState('saved');
       setSaveConflict(null);
     } else if (result.reason === 'conflict') {
@@ -1866,6 +1881,25 @@ export function useEditorState(): EditorController {
       void persistDoc();
     }, 200);
   }, [persistDoc]);
+
+  /** 버전 기록의 스냅샷을 현재 문서로 복원한다(`versionHistory.ts`). undo 가능한
+   * 커밋이고, 복원 직전의 현재 상태를 **강제 스냅샷**으로 먼저 남겨 돌아올 길을
+   * 보장한다. 이후 자동저장이 복원본을 저장한다. */
+  const restoreVersion = useCallback(
+    (at: number): boolean => {
+      const snap = versionDoc(docStoreId, at);
+      if (!snap) return false;
+      try {
+        recordVersion(docStoreId, docRef.current, { force: true });
+      } catch {
+        /* 부가 기능 — 복원 자체는 계속 */
+      }
+      commitDoc(() => snap);
+      setHistoryOpen(false);
+      return true;
+    },
+    [docStoreId, commitDoc],
+  );
 
   /**
    * **곧 페이지가 리로드될 때**(새 버전 적용 — `pwa/updateGate`) 호출하는 정리 훅.
@@ -2733,6 +2767,7 @@ export function useEditorState(): EditorController {
   const toggleMinimap = useCallback(() => setShowMinimap((v) => !v), []);
   const [searchOpen, setSearchOpen] = useState(false);
   const [helpOpen, setHelpOpen] = useState(false);
+  const [historyOpen, setHistoryOpen] = useState(false);
   const [searchMarks, setSearchMarks] = useState<{ nodes: Set<string>; floats: Set<string> } | null>(null);
 
   const panToCanvasPoint = useCallback((cx: number, cy: number) => {
@@ -3652,6 +3687,10 @@ export function useEditorState(): EditorController {
     setSearchOpen,
     helpOpen,
     setHelpOpen,
+    historyOpen,
+    setHistoryOpen,
+    historyDocId: docStoreId,
+    restoreVersion,
     searchMarks,
     setSearchMarks,
     centerObjectAboveSheet,

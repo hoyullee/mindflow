@@ -111,6 +111,17 @@ export function EditMenu({ controller, onDone, isMobile }: { controller: EditorC
           onDone();
         }}
       />
+      <MenuDivider theme={th} />
+      <MenuItem
+        theme={th}
+        isMobile={isMobile}
+        icon={<HistoryIcon />}
+        label="버전 기록"
+        onClick={() => {
+          controller.setHistoryOpen(true);
+          onDone();
+        }}
+      />
     </MenuShell>
   );
 }
@@ -210,12 +221,22 @@ export function MoreMenu({ controller, onDone, isMobile }: { controller: EditorC
       <MenuItem theme={th} isMobile={isMobile} icon={<PngIcon />} label="PNG 이미지" onClick={() => { controller.exportPNG(); onDone(); }} />
       <MenuItem theme={th} isMobile={isMobile} icon={<JsonIcon />} label="JSON 파일 (.json)" onClick={() => { controller.exportJSON(); onDone(); }} />
       <MenuDivider theme={th} />
+      <MenuItem theme={th} isMobile={isMobile} icon={<HistoryIcon />} label="버전 기록" onClick={() => { controller.setHistoryOpen(true); onDone(); }} />
       <MenuItem theme={th} isMobile={isMobile} icon={<HelpIcon />} label="단축키 도움말" onClick={() => { controller.setHelpOpen(true); onDone(); }} />
     </MenuShell>
   );
 }
 
 // ---- icons (shared by the menu bar triggers + rows) ----
+export function HistoryIcon() {
+  return (
+    <svg width={15} height={15} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round">
+      <path d="M3 12a9 9 0 1 0 3-6.7L3 8" />
+      <polyline points="3 3 3 8 8 8" />
+      <polyline points="12 7 12 12 15.5 14" />
+    </svg>
+  );
+}
 export function HelpIcon() {
   return (
     <svg width={15} height={15} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round">
