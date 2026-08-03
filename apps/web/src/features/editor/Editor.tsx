@@ -110,7 +110,16 @@ export function Editor() {
   if (controller.bodyMissing) return <MapUnavailable onRetry={controller.retryLoad} />;
 
   return (
-    <div className={linkMod ? 'mf-ed-linkmod' : undefined} style={rootStyle}>
+    <div
+      className={linkMod ? 'mf-ed-linkmod' : undefined}
+      style={rootStyle}
+      // 에디터 안에서는 브라우저 네이티브 드래그를 통째로 끈다 — 남아 있던 텍스트
+      // 선택·링크·이미지 등 무엇이 근원이든, 그 위에서 드래그가 시작되면 화면
+      // 일부를 반투명 스냅샷으로 끌고 다니는 고스트가 뜬다(제보: "브라우저 전체가
+      // 이미지화되어 이동"). 파일 드롭(이미지 첨부)은 drop/dragover 쪽이라 무관하고,
+      // 객체 이동은 전부 pointer 이벤트로 우리가 직접 그린다.
+      onDragStartCapture={(e) => e.preventDefault()}
+    >
       <Toolbar controller={controller} />
       {/* 공유 모달 — 아웃라인 보기에서도 열 수 있어야 하므로 view 분기 밖에 둔다. */}
       <ShareModal controller={controller} />

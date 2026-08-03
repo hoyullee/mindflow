@@ -3213,10 +3213,15 @@ export function useEditorState(): EditorController {
   // parked in `pendingNudgeRef` (set on drop / text-commit / create / paste) are
   // nudged — never the ones they landed on — so a stationary shape stays put (only
   // the shapes the user acted on move). Runs once the interaction settles (not
-  // mid-edit / mid-drag) so `geomRef` holds each shape's final laid-out size +
-  // position. Applied via `setDoc` (a normalization, not an undoable action —
-  // matching the original's plain `setState` in `resolveOverlapFree`).
-  useEffect(() => {
+  // mid-edit / mid-drag). Applied via `setDoc` (a normalization, not an undoable
+  // action — matching the original's plain `setState` in `resolveOverlapFree`).
+  //
+  // **layout effect + 이 render의 `geom`**인 이유(제보: 밀려날 때 깜빡임): 일반
+  // effect는 페인트 **뒤**에 돌아 겹친 자리가 한 프레임 그려진 다음 옮겨진다.
+  // layout effect의 setDoc은 페인트 전에 동기 재렌더를 일으키므로 겹친 프레임이
+  // 화면에 나가지 않는다. geomRef는 일반 effect에서 갱신돼 여기선 낡았을 수 있어
+  // 렌더 스코프의 `geom`(방금 계산된 값)을 직접 읽는다.
+  useLayoutEffect(() => {
     const targets = pendingNudgeRef.current;
     if (!targets || !targets.length) return;
     if (editingNodeId || editingFloatId || editingZoneId || editingLineId) return;
@@ -3231,7 +3236,7 @@ export function useEditorState(): EditorController {
       // 패스와 같은 규칙). 트리 노드는 doc x/y가 0이라 geom에서, 크기는 항상 geom.
       const cand = nodes;
       const boxOf = (id: string) => {
-        const gg = geomRef.current[id];
+        const gg = geom[id];
         if (!gg) return null;
         const nn = cand[id];
         const isFreeRoot = !!nn && !nn.parent && id !== ROOT_ID;
@@ -3240,7 +3245,7 @@ export function useEditorState(): EditorController {
       nodes = mutations.nudgeFreeNode(nodes, target, boxOf);
     }
     if (nodes !== doc.nodes) setDoc((prev) => (prev.nodes === doc.nodes ? { ...prev, nodes } : prev));
-  }, [doc.nodes, nudgeTick, editingNodeId, editingFloatId, editingZoneId, editingLineId]);
+  }, [doc.nodes, geom, nudgeTick, editingNodeId, editingFloatId, editingZoneId, editingLineId]);
 
   // After a reparent (drag-attach) re-lays out the tree, push EVERY free shape
   // clear of the new tree (and of each other) — the tree layout doesn't know
@@ -3248,7 +3253,9 @@ export function useEditorState(): EditorController {
   // `applyFreeNudge` over all free roots (MindFlow.dc.html:2155). Runs once geom
   // settles (like the single-shape nudge above) so `geomRef` holds the NEW tree
   // positions; applied as a normalization (plain `setDoc`, not undoable).
-  useEffect(() => {
+  // layout effect + 렌더 스코프 `geom` — 위의 단일 nudge effect와 같은 이유
+  // (겹친 프레임이 페인트되기 전에 밀어낸다 — 깜빡임 제거).
+  useLayoutEffect(() => {
     const req = pendingReflowNudgeRef.current;
     if (!req) return;
     if (editingNodeId || editingFloatId || editingZoneId || editingLineId) return;
@@ -3265,7 +3272,7 @@ export function useEditorState(): EditorController {
       // — read them there so each free clears the ones already nudged this pass;
       // tree nodes' doc x/y is 0, so take their positions from geom. Sizes are
       // position-independent → geom is always fine.
-      const gg = geomRef.current[id];
+      const gg = geom[id];
       if (!gg) return null;
       const nn = cand[id];
       const isFreeRoot = !!nn && !nn.parent && id !== ROOT_ID;
@@ -3278,7 +3285,7 @@ export function useEditorState(): EditorController {
     // 겹친 경우뿐이다 — 자유 도형들은 위에서 전부 비켜났다) 그때만 anchor가 비켜난다.
     if (anchor) nodes = mutations.nudgeFreeNode(nodes, anchor, boxOfIn(nodes));
     if (nodes !== doc.nodes) setDoc((prev) => (prev.nodes === doc.nodes ? { ...prev, nodes } : prev));
-  }, [doc.nodes, nudgeTick, editingNodeId, editingFloatId, editingZoneId, editingLineId]);
+  }, [doc.nodes, geom, nudgeTick, editingNodeId, editingFloatId, editingZoneId, editingLineId]);
 
   function capturePointer(e: ReactPointerEvent): void {
     try {
@@ -3622,6 +3629,24 @@ export function useEditorState(): EditorController {
         if (k === 'v' || e.code === 'KeyV') {
           e.preventDefault();
           pasteClipboardAt();
+          return;
+        }
+        // 전체 선택 — 캔버스의 모든 객체를 다중 선택한다(마인드맵 관례).
+        // preventDefault가 본질이다: 가로채지 않으면 브라우저가 **페이지 텍스트
+        // 전체**를 선택하고, 그 선택 위에서 드래그를 시작하는 순간 화면 전체를
+        // 반투명 스냅샷으로 끌고 다니는 네이티브 드래그가 발동한다(제보 —
+        // "브라우저 전체가 이미지화되어 이동"). 루트는 제외(이동·삭제 불가 기준점,
+        // 마퀴와 같은 규칙).
+        if (k === 'a' || e.code === 'KeyA') {
+          e.preventDefault();
+          const d = docRef.current;
+          const allNodes = Object.keys(d.nodes).filter((id) => id !== ROOT_ID);
+          const allFloats = d.floats.map((f) => f.id);
+          const allLines = d.lines.map((l) => l.id);
+          if (allNodes.length + allFloats.length + allLines.length > 0) {
+            setSelectionState(null);
+            setMultiSelectionState({ nodes: allNodes, floats: allFloats, lines: allLines });
+          }
           return;
         }
       }
