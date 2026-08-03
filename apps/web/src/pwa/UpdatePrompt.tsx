@@ -4,6 +4,7 @@ import { UpdateToast } from './UpdateToast';
 import { anyPeerBusy, canAutoApply, notifyPeersApplied, setUpdateChecker, startPeerResponder, useUpdateGate } from './updateGate';
 import { consumeUpdateApplied, markUpdateApplied } from './updateApplied';
 import { UpdateAppliedNotice } from './UpdateAppliedNotice';
+import { UpdateOverlay } from './UpdateOverlay';
 import { applyUpdate } from './applyUpdate';
 
 /**
@@ -75,6 +76,10 @@ export function UpdatePrompt() {
 
   /** 적용이 진행 중 — 버튼에 그대로 비춘다(누른 게 먹었는지 보이지 않으면 고장으로 읽힌다). */
   const [applying, setApplying] = useState(false);
+  /** 전체 화면 dim(요청) — 실제 적용 절차(저장→skipWaiting→리로드)가 도는 동안만.
+   * `applying`과 따로인 이유: 자동 적용은 피어(다른 탭) 확인에서 일찍 물러날 수
+   * 있는데, 그 짧은 왕복까지 dim을 켰다 끄면 화면이 깜빡인다. */
+  const [blocking, setBlocking] = useState(false);
   /** 직전 로드가 "새 버전 적용"이었는지 — 표식은 마운트 때 한 번만 소비한다. */
   const [justUpdated, setJustUpdated] = useState(false);
   useEffect(() => {
@@ -98,6 +103,7 @@ export function UpdatePrompt() {
         if (auto && (await anyPeerBusy())) return; // 아래 재시도 타이머가 다시 노린다
 
         setSaveBlocked(false);
+        setBlocking(true); // 여기서부터 진짜 적용 — 화면을 덮어 클릭을 막는다
         const outcome = await applyUpdate({
           prepare,
           skipWaiting: () => {
@@ -114,6 +120,9 @@ export function UpdatePrompt() {
       } finally {
         applyingRef.current = false;
         setApplying(false);
+        // 정상 경로는 리로드로 페이지째 사라진다 — 여기 도달 = 저장 실패로 멈췄거나
+        // 리로드가 늦는 경우이므로 화면을 되돌려 준다.
+        setBlocking(false);
       }
     },
     [prepare, updateServiceWorker],
@@ -131,6 +140,7 @@ export function UpdatePrompt() {
 
   return (
     <>
+      <UpdateOverlay visible={blocking} />
       <UpdateAppliedNotice visible={justUpdated} onDone={() => setJustUpdated(false)} />
       <UpdateToast
       // 자동으로 적용될 상황이면 굳이 묻지 않는다 — 곧 조용히 갈아끼워진다.

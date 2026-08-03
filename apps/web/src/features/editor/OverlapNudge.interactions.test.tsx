@@ -344,6 +344,48 @@ describe('도형 겹침 자동 정리 — 후속 3건', () => {
   });
 });
 
+// 요청: 다중 선택 이동을 단일 드래그처럼 — 드래그 중에는 실물 대신 **점선
+// 고스트**가 따라오고, 실물은 놓는 순간 한 번에 이동한다(undo도 한 단계).
+describe('그룹 이동 고스트', () => {
+  it('드래그 중에는 실물이 움직이지 않고 멤버 수만큼 고스트가 뜬다; 드롭 시 한 번에 이동하고 undo 한 번에 복귀한다', async () => {
+    localStorage.setItem('mindflow_doc_gg1', JSON.stringify(DOC));
+    const { container } = renderEditor('/editor?map=gg1&title=x');
+    await waitFor(() => expect(container.querySelector('[data-node-id="fy"]')).toBeTruthy());
+    fireEvent.keyDown(window, { key: 'a', ctrlKey: true }); // fx+fy 다중 선택
+
+    const fxBefore = rectOf(container.querySelector('[data-node-id="fx"]') as HTMLElement);
+    const fyBefore = rectOf(container.querySelector('[data-node-id="fy"]') as HTMLElement);
+
+    const fxEl = container.querySelector('[data-node-id="fx"]') as HTMLElement;
+    firePointer(fxEl, 'pointerdown', { pointerId: 41, clientX: 300, clientY: 300, button: 0 });
+    firePointer(window, 'pointermove', { pointerId: 41, clientX: 380, clientY: 420 });
+
+    // 드래그 중: 실물은 제자리, 고스트 2개(멤버 수)
+    expect(rectOf(container.querySelector('[data-node-id="fx"]') as HTMLElement)).toEqual(fxBefore);
+    expect(rectOf(container.querySelector('[data-node-id="fy"]') as HTMLElement)).toEqual(fyBefore);
+    expect(container.querySelectorAll('[data-group-ghost]').length).toBe(2);
+
+    firePointer(window, 'pointerup', { pointerId: 41, clientX: 380, clientY: 420 });
+
+    // 드롭: 고스트가 사라지고 실물이 한 번에 이동(두 멤버가 같은 delta)
+    await waitFor(() => {
+      expect(container.querySelectorAll('[data-group-ghost]').length).toBe(0);
+      const fxAfter = rectOf(container.querySelector('[data-node-id="fx"]') as HTMLElement);
+      const fyAfter = rectOf(container.querySelector('[data-node-id="fy"]') as HTMLElement);
+      expect(fxAfter.x0).toBeGreaterThan(fxBefore.x0);
+      expect(fxAfter.x0 - fxBefore.x0).toBeCloseTo(fyAfter.x0 - fyBefore.x0, 1);
+      expect(fxAfter.y0 - fxBefore.y0).toBeCloseTo(fyAfter.y0 - fyBefore.y0, 1);
+    });
+
+    // undo **한 번**에 두 멤버가 모두 원위치(예전 연속 커밋 모델은 조각날 수 있었다)
+    fireEvent.keyDown(window, { key: 'z', ctrlKey: true });
+    await waitFor(() => {
+      expect(rectOf(container.querySelector('[data-node-id="fx"]') as HTMLElement)).toEqual(fxBefore);
+      expect(rectOf(container.querySelector('[data-node-id="fy"]') as HTMLElement)).toEqual(fyBefore);
+    });
+  });
+});
+
 // 제보: **자식을 가진** 자유 도형을 옮기면 ① 엉뚱한 좌표로 튀고 ② 하위 도형이
 // 겹친 채 남았다. 원인은 드롭 인라인 nudge가 이동 **전** geom으로 서브트리 박스를
 // 재던 것("새 루트 ~ 옛 자식"으로 늘어난 유령 박스가 있지도 않은 충돌을 만든다).
