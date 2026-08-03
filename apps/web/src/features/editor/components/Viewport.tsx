@@ -108,6 +108,7 @@ export function Viewport({ doc, controller }: ViewportProps) {
                 <LineLayer lines={doc.lines} theme={theme} controller={controller} />
                 <FloatLayer floats={doc.floats} theme={theme} controller={controller} />
                 <MarqueeLayer rect={controller.marquee} theme={theme} />
+                <GroupGhostLayer doc={doc} controller={controller} />
                 <PresenceLayer controller={controller} />
               </div>
               {/* Move grip (mobile) — screen-space so it stays a constant tap size at any zoom. */}
@@ -210,5 +211,59 @@ function LoadErrorCanvas({ theme, onRetry }: { theme: import('../theme').Theme; 
         다시 시도
       </button>
     </div>
+  );
+}
+
+/**
+ * 그룹(다중 선택) 드래그 고스트 — 단일 드래그의 점선 고스트(NodeLayer)와 같은
+ * 모델(요청: "단일 도형 이동하는 것처럼"). 멤버들의 점선 윤곽이 (dx,dy)만큼
+ * 이동해 보이고, 실물은 드롭에서 한 번에 옮겨진다(`useEditorState`의 'group'
+ * onMove/onUp 참고). 노드는 geom 박스, 메모는 x/y(좌상단)+w(+측정 h가 없으니
+ * 저장 h 폴백), 선은 두 끝점의 bbox — 전부 윤곽 힌트라 근사로 충분하다.
+ */
+function GroupGhostLayer({ doc, controller }: { doc: Doc; controller: EditorController }) {
+  const gg = controller.groupGhost;
+  const { theme, geom } = controller;
+  if (!gg) return null;
+  const boxes: { key: string; l: number; t: number; w: number; h: number; r: number }[] = [];
+  gg.nodes.forEach((id) => {
+    const g = geom[id];
+    if (g) boxes.push({ key: `n-${id}`, l: g.x - g.w / 2 + gg.dx, t: g.y - g.h / 2 + gg.dy, w: g.w, h: g.h, r: 10 });
+  });
+  gg.floats.forEach((id) => {
+    const f = doc.floats.find((x) => x.id === id);
+    if (f) boxes.push({ key: `f-${id}`, l: f.x + gg.dx, t: f.y + gg.dy, w: f.w ?? 180, h: f.h ?? 44, r: 12 });
+  });
+  gg.lines.forEach((id) => {
+    const l = doc.lines.find((x) => x.id === id);
+    if (!l) return;
+    const x0 = Math.min(l.x1, l.x2);
+    const y0 = Math.min(l.y1, l.y2);
+    boxes.push({ key: `l-${id}`, l: x0 + gg.dx - 4, t: y0 + gg.dy - 4, w: Math.abs(l.x2 - l.x1) + 8, h: Math.abs(l.y2 - l.y1) + 8, r: 6 });
+  });
+  return (
+    <>
+      {boxes.map((b) => (
+        <div
+          key={b.key}
+          aria-hidden="true"
+          data-group-ghost
+          style={{
+            position: 'absolute',
+            left: b.l,
+            top: b.t,
+            width: b.w,
+            height: b.h,
+            borderRadius: b.r,
+            border: `2px dashed ${theme.accent}`,
+            background: 'rgba(240,102,63,.08)',
+            opacity: 0.85,
+            pointerEvents: 'none',
+            zIndex: 40,
+            boxSizing: 'border-box',
+          }}
+        />
+      ))}
+    </>
   );
 }

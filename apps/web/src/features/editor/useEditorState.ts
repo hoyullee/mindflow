@@ -498,6 +498,9 @@ export interface EditorController {
   /** Start moving the current selection from a deliberate move-handle grip (mobile). */
   beginMoveSelected: (e: ReactPointerEvent) => void;
   dragGhost: { id: string; x: number; y: number } | null;
+  /** 그룹(다중 선택) 드래그 중의 고스트 — 멤버들의 점선 윤곽이 (dx,dy)만큼 이동해
+   * 보인다(단일 드래그의 `dragGhost`와 같은 모델). 실물은 드롭에서 한 번에 이동. */
+  groupGhost: { dx: number; dy: number; nodes: string[]; floats: string[]; lines: string[] } | null;
 
   // ---- undo/redo/save/export ----
   canUndo: boolean;
@@ -630,6 +633,7 @@ export function useEditorState(): EditorController {
   const [measured, setMeasured] = useState<boolean>(typeof ResizeObserver === 'undefined');
   const [rootAnchor, setRootAnchor] = useState<PanState>({ x: 0, y: 0 });
   const [dragGhost, setDragGhost] = useState<{ id: string; x: number; y: number } | null>(null);
+  const [groupGhost, setGroupGhost] = useState<{ dx: number; dy: number; nodes: string[]; floats: string[]; lines: string[] } | null>(null);
 
   const [selection, setSelectionState] = useState<Selection | null>(null);
   const [multiSelection, setMultiSelectionState] = useState<MultiSelection | null>(null);
@@ -3041,15 +3045,11 @@ export function useEditorState(): EditorController {
           break;
         }
         case 'group': {
-          commitDoc(
-            (doc0) => ({
-              ...doc0,
-              nodes: mutations.translateNodesBy(doc0.nodes, d.nodesOrig, dx, dy),
-              floats: mutations.translateFloatsBy(doc0.floats, d.floatsOrig, dx, dy),
-              lines: mutations.translateLinesBy(doc0.lines, d.linesOrig, dx, dy),
-            }),
-            true,
-          );
+          // 단일 도형 드래그와 같은 모델(요청): 실물은 그대로 두고 **점선 고스트**만
+          // 커서를 따라온다. 실제 이동은 놓는 순간 한 번에 커밋된다(onUp) — undo도
+          // 한 단계가 된다. 예전엔 매 이동마다 문서를 커밋해 멤버 전부가 실시간으로
+          // 끌려다녔다.
+          setGroupGhost({ dx, dy, nodes: Object.keys(d.nodesOrig), floats: Object.keys(d.floatsOrig), lines: Object.keys(d.linesOrig) });
           break;
         }
         case 'node-resize': {
@@ -3239,17 +3239,28 @@ export function useEditorState(): EditorController {
           // small move, no target: snap back — nothing to commit (matches MindFlow.dc.html:1799)
         }
       } else if (d.kind === 'group') {
-        if (d.nodesOrig[ROOT_ID]) {
-          // the root moved as part of the group → remember its new spot as the pinned anchor
-          // (matches the single-drag `d.type === 'node' && d.id === this.rootId` branch, MindFlow.dc.html:1816-1819)
-          const r = docRef.current.nodes[ROOT_ID];
-          if (r) setRootAnchor({ x: r.x, y: r.y });
-        }
-        // 그룹으로 옮긴 자유 도형들도 단일 드롭과 같은 마그넷을 받는다(제보 ② —
-        // 예전엔 그룹 이동만 밀어내기 없이 겹친 채 놓였다). 움직인 건 그룹이므로
-        // 그룹 멤버들이 비켜난다(구경꾼은 그대로 — 단일 드롭과 같은 원칙). 멤버끼리는
-        // 드래그 전에 이미 안 겹쳤고 함께 평행이동했으므로 서로 겹칠 일이 없다.
-        if (objDragMovedRef.current) {
+        setGroupGhost(null);
+        // 고스트 모델(onMove 참고): 실제 이동은 여기서 **한 번에** 커밋된다.
+        const vp = viewportRef.current;
+        const gdx = (e.clientX - d.startClientX) / (vp.zoom || 1);
+        const gdy = (e.clientY - d.startClientY) / (vp.zoom || 1);
+        if (objDragMovedRef.current && (Math.abs(gdx) > 0.5 || Math.abs(gdy) > 0.5)) {
+          commitDoc((doc0) => ({
+            ...doc0,
+            nodes: mutations.translateNodesBy(doc0.nodes, d.nodesOrig, gdx, gdy),
+            floats: mutations.translateFloatsBy(doc0.floats, d.floatsOrig, gdx, gdy),
+            lines: mutations.translateLinesBy(doc0.lines, d.linesOrig, gdx, gdy),
+          }));
+          if (d.nodesOrig[ROOT_ID]) {
+            // the root moved as part of the group → remember its new spot as the pinned
+            // anchor (matches the single-drag branch, MindFlow.dc.html:1816-1819)
+            const ro = d.nodesOrig[ROOT_ID]!;
+            setRootAnchor({ x: ro.x + gdx, y: ro.y + gdy });
+          }
+          // 그룹으로 옮긴 자유 도형들도 단일 드롭과 같은 마그넷을 받는다(제보 —
+          // 예전엔 그룹 이동만 밀어내기 없이 겹친 채 놓였다). 움직인 건 그룹이므로
+          // 그룹 멤버들이 비켜난다(구경꾼은 그대로). 멤버끼리는 드래그 전에 이미
+          // 안 겹쳤고 함께 평행이동했으므로 서로 겹칠 일이 없다.
           const movedFrees = Object.keys(d.nodesOrig).filter((id) => id !== ROOT_ID);
           if (movedFrees.length) {
             pendingNudgeRef.current = movedFrees;
@@ -3979,6 +3990,7 @@ export function useEditorState(): EditorController {
     beginLineCurveDrag,
     beginMoveSelected,
     dragGhost,
+    groupGhost,
 
     canUndo: historyRef.current.canUndo(),
     canRedo: historyRef.current.canRedo(),
