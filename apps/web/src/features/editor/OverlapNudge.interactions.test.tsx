@@ -386,6 +386,69 @@ describe('그룹 이동 고스트', () => {
   });
 });
 
+// 제보: 다중 선택 이동에서 멤버의 **하위 도형** 고스트가 빠졌다(단일 드래그는
+// #295에서 서브트리 고스트가 됐는데 그룹만 루트 윤곽뿐이었다).
+describe('그룹 이동 고스트 — 서브트리 포함', () => {
+  it('자식 달린 멤버는 하위 도형까지 고스트로 그려진다', async () => {
+    const doc = {
+      ...DOC,
+      nodes: {
+        root: { ...DOC.nodes.root },
+        fp: { id: 'fp', text: '부모도형', emoji: '', parent: null, children: ['fc'], collapsed: false, color: null, x: 600, y: 300, free: true },
+        fc: { id: 'fc', text: '하위도형', emoji: '', parent: 'fp', children: [], collapsed: false, color: null, x: 0, y: 0 },
+        fz: { id: 'fz', text: '이웃도형', emoji: '', parent: null, children: [], collapsed: false, color: null, x: 600, y: 500, free: true },
+      },
+    };
+    localStorage.setItem('mindflow_doc_ggs', JSON.stringify(doc));
+    const { container } = renderEditor('/editor?map=ggs&title=x');
+    await waitFor(() => expect(container.querySelector('[data-node-id="fz"]')).toBeTruthy());
+    fireEvent.keyDown(window, { key: 'a', ctrlKey: true }); // fp(+fc)+fz 다중 선택
+
+    const fpEl = container.querySelector('[data-node-id="fp"]') as HTMLElement;
+    firePointer(fpEl, 'pointerdown', { pointerId: 45, clientX: 300, clientY: 300, button: 0 });
+    firePointer(window, 'pointermove', { pointerId: 45, clientX: 380, clientY: 400 });
+    // 멤버 fp의 서브트리(fp+fc) + fz = 고스트 3개
+    expect(container.querySelectorAll('[data-group-ghost]').length).toBe(3);
+    firePointer(window, 'pointerup', { pointerId: 45, clientX: 380, clientY: 400 });
+    await waitFor(() => expect(container.querySelectorAll('[data-group-ghost]').length).toBe(0));
+  });
+});
+
+// 제보: 노드에 자식 도형을 추가하면 트리가 커지며 개별 도형과 겹쳤다 —
+// 리파런트/노드 붙여넣기와 같은 리플로우 밀어내기를 연결.
+describe('자식 추가 시 밀어내기', () => {
+  it('루트 오른쪽에 개별 도형이 있을 때 Tab으로 자식을 추가하면 개별 도형이 비켜난다', async () => {
+    const doc = {
+      ...DOC,
+      nodes: {
+        root: { ...DOC.nodes.root },
+        // 새 자식이 놓일 루트 오른쪽 자리에 개별 도형을 둔다
+        fz: { id: 'fz', text: '옆도형', emoji: '', parent: null, children: [], collapsed: false, color: null, x: 170, y: 0, free: true },
+      },
+    };
+    localStorage.setItem('mindflow_doc_ac1', JSON.stringify(doc));
+    const { container } = renderEditor('/editor?map=ac1&title=x');
+    await waitFor(() => expect(container.querySelector('[data-node-id="fz"]')).toBeTruthy());
+    const fzBefore = rectOf(container.querySelector('[data-node-id="fz"]') as HTMLElement);
+
+    // 루트 선택 → Tab(자식 추가) → 이름 확정(Enter)
+    selectNodeBox(container.querySelector('[data-node-id="root"]') as HTMLElement);
+    fireEvent.keyDown(window, { key: 'Tab' });
+    const editable = container.querySelector('.mf-richedit') as HTMLElement;
+    expect(editable).toBeTruthy();
+    fireEvent.keyDown(editable, { key: 'Enter', bubbles: true });
+
+    await waitFor(() => {
+      // 새 자식이 생겼고(노드 3개), 개별 도형이 밀려나 아무것도 안 겹친다
+      expect(getViewport(container).querySelectorAll('[data-node-id]').length).toBe(3);
+      assertNoNodeOverlap(container);
+      const fzAfter = rectOf(container.querySelector('[data-node-id="fz"]') as HTMLElement);
+      const moved = Math.abs(fzAfter.x0 - fzBefore.x0) > 0.5 || Math.abs(fzAfter.y0 - fzBefore.y0) > 0.5;
+      expect(moved).toBe(true);
+    });
+  });
+});
+
 // 제보: **자식을 가진** 자유 도형을 옮기면 ① 엉뚱한 좌표로 튀고 ② 하위 도형이
 // 겹친 채 남았다. 원인은 드롭 인라인 nudge가 이동 **전** geom으로 서브트리 박스를
 // 재던 것("새 루트 ~ 옛 자식"으로 늘어난 유령 박스가 있지도 않은 충돌을 만든다).

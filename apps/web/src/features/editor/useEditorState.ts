@@ -2184,9 +2184,15 @@ export function useEditorState(): EditorController {
       setEditingNodeId(null);
       setEditLiveSize(null);
       setTextCtx(null);
-      // A free shape whose box just grew may now overlap a neighbour — flag it for
-      // the nudge effect (fires once editing clears + geom reflects the new size).
-      pendingNudgeRef.current = [id];
+      // 커진 박스가 이웃과 겹칠 수 있다 — 자유 도형은 자기가 비켜나고(단일 마그넷),
+      // **트리 노드**는 움직일 수 없으니 개별(자유) 도형들이 밀려난다(리플로우 —
+      // 자식 추가 직후의 이름 확정이 바로 이 경로다).
+      if (docRef.current.nodes[id]?.parent) {
+        pendingReflowNudgeRef.current = {};
+        setNudgeTick((t) => t + 1);
+      } else {
+        pendingNudgeRef.current = [id];
+      }
     },
     [commitDoc],
   );
@@ -2430,6 +2436,11 @@ export function useEditorState(): EditorController {
     commitDoc((d) => ({ ...d, nodes: mutations.addChildNode(d.nodes, id, newId) }));
     setSelectionState({ kind: 'node', id: newId });
     setEditingNodeId(newId);
+    // 새 자식으로 트리가 커지며 개별(자유) 도형 위에 얹힐 수 있다(제보) — 리파런트/
+    // 노드 붙여넣기와 같은 리플로우 밀어내기. 편집 세션이 열려 있는 동안은 effect가
+    // 대기했다가 이름 확정(편집 종료) 후 최종 크기로 민다.
+    pendingReflowNudgeRef.current = {};
+    setNudgeTick((t) => t + 1);
   }, [selection, commitDoc]);
 
   const addSibling = useCallback(() => {
@@ -2443,6 +2454,8 @@ export function useEditorState(): EditorController {
     });
     setSelectionState({ kind: 'node', id: newId });
     setEditingNodeId(newId);
+    pendingReflowNudgeRef.current = {}; // addChild와 같은 이유
+    setNudgeTick((t) => t + 1);
   }, [selection, commitDoc]);
 
   const deleteSelection = useCallback(() => {
@@ -2955,6 +2968,14 @@ export function useEditorState(): EditorController {
     (id: string, text: string) => {
       commitDoc((d) => ({ ...d, nodes: mutations.commitNodeText(d.nodes, id, text) }));
       setOutlineEditId(null);
+      // 캔버스 텍스트 확정과 같은 규칙 — 커진 트리는 자유 도형을 밀어내고,
+      // 자유 도형은 자기가 비켜난다(맵으로 돌아왔을 때 겹침 방지).
+      if (docRef.current.nodes[id]?.parent) {
+        pendingReflowNudgeRef.current = {};
+        setNudgeTick((t) => t + 1);
+      } else {
+        pendingNudgeRef.current = [id];
+      }
     },
     [commitDoc],
   );
@@ -2965,6 +2986,8 @@ export function useEditorState(): EditorController {
       commitDoc((d) => ({ ...d, nodes: mutations.addChildNode(d.nodes, id, newId) }));
       setSelectionState({ kind: 'node', id: newId });
       setOutlineEditId(newId);
+      pendingReflowNudgeRef.current = {}; // 캔버스 addChild와 같은 이유(맵으로 돌아왔을 때 겹침 방지)
+      setNudgeTick((t) => t + 1);
     },
     [commitDoc, idFactory],
   );
@@ -2979,6 +3002,8 @@ export function useEditorState(): EditorController {
       });
       setSelectionState({ kind: 'node', id: newId });
       setOutlineEditId(newId);
+      pendingReflowNudgeRef.current = {}; // 캔버스 addChild와 같은 이유
+      setNudgeTick((t) => t + 1);
     },
     [commitDoc, idFactory],
   );
