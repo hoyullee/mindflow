@@ -1141,6 +1141,26 @@ export function useEditorState(): EditorController {
     });
   }, []);
 
+  /**
+   * 직전 커밋의 **일부**로 취급되는 정규화(겹침 밀어내기)를 반영한다 — 화면과
+   * undo 기준점(`HistoryStack.amend`)을 함께 갱신하되 새 undo 단계는 만들지
+   * 않는다. 예전엔 밀어내기를 plain `setDoc`(기록 없음)으로 적용했는데, 그러면
+   * 다음 커밋이 **밀어내기 전**(겹친) 좌표를 기준점으로 스택에 밀어 넣어 undo가
+   * 그 겹친 자리로 도형을 되돌렸다(제보 ③ — "undo 시 다른 좌표로 옮겨지며 겹침").
+   */
+  const amendDoc = useCallback((updater: (d: Doc) => Doc) => {
+    if (readOnlyRef.current) return;
+    setDoc((prev) => {
+      const next = updater(prev);
+      const changed =
+        next.nodes !== prev.nodes || next.floats !== prev.floats || next.lines !== prev.lines || next.zones !== prev.zones || next.layoutMode !== prev.layoutMode;
+      if (changed) {
+        historyRef.current!.amend({ nodes: next.nodes, floats: next.floats, lines: next.lines, zones: next.zones, layoutMode: next.layoutMode, edgeStyle: edgeStyleRef.current });
+      }
+      return changed ? next : prev;
+    });
+  }, []);
+
   function applySnapshot(snap: Snapshot): void {
     setDoc((prev) => ({ ...prev, nodes: snap.nodes, floats: snap.floats, lines: snap.lines, zones: snap.zones, layoutMode: snap.layoutMode, edgeStyle: snap.edgeStyle }));
     setEdgeStyleState(snap.edgeStyle);
@@ -2495,6 +2515,13 @@ export function useEditorState(): EditorController {
         return !!n && !n.parent;
       });
       if (freeRoots.length) pendingNudgeRef.current = freeRoots;
+      // 노드의 **자식으로** 붙은 경우: 트리가 새 자식 주위로 재배치되며 자유 도형
+      // 위에 얹힐 수 있다(제보 ① — 리파런트/디태치와 같은 상황). 리플로우 패스로
+      // 자유 도형들을 새 트리에서 밀어낸다.
+      if (pastedIds.some((id) => !!out.doc.nodes[id]?.parent)) {
+        pendingReflowNudgeRef.current = {};
+        setNudgeTick((t) => t + 1);
+      }
     },
     [commitDoc, idFactory],
   );
@@ -3192,11 +3219,24 @@ export function useEditorState(): EditorController {
           }
           // small move, no target: snap back — nothing to commit (matches MindFlow.dc.html:1799)
         }
-      } else if (d.kind === 'group' && d.nodesOrig[ROOT_ID]) {
-        // the root moved as part of the group → remember its new spot as the pinned anchor
-        // (matches the single-drag `d.type === 'node' && d.id === this.rootId` branch, MindFlow.dc.html:1816-1819)
-        const r = docRef.current.nodes[ROOT_ID];
-        if (r) setRootAnchor({ x: r.x, y: r.y });
+      } else if (d.kind === 'group') {
+        if (d.nodesOrig[ROOT_ID]) {
+          // the root moved as part of the group → remember its new spot as the pinned anchor
+          // (matches the single-drag `d.type === 'node' && d.id === this.rootId` branch, MindFlow.dc.html:1816-1819)
+          const r = docRef.current.nodes[ROOT_ID];
+          if (r) setRootAnchor({ x: r.x, y: r.y });
+        }
+        // 그룹으로 옮긴 자유 도형들도 단일 드롭과 같은 마그넷을 받는다(제보 ② —
+        // 예전엔 그룹 이동만 밀어내기 없이 겹친 채 놓였다). 움직인 건 그룹이므로
+        // 그룹 멤버들이 비켜난다(구경꾼은 그대로 — 단일 드롭과 같은 원칙). 멤버끼리는
+        // 드래그 전에 이미 안 겹쳤고 함께 평행이동했으므로 서로 겹칠 일이 없다.
+        if (objDragMovedRef.current) {
+          const movedFrees = Object.keys(d.nodesOrig).filter((id) => id !== ROOT_ID);
+          if (movedFrees.length) {
+            pendingNudgeRef.current = movedFrees;
+            setNudgeTick((t) => t + 1);
+          }
+        }
       }
     }
     window.addEventListener('pointermove', onMove);
@@ -3244,7 +3284,7 @@ export function useEditorState(): EditorController {
       };
       nodes = mutations.nudgeFreeNode(nodes, target, boxOf);
     }
-    if (nodes !== doc.nodes) setDoc((prev) => (prev.nodes === doc.nodes ? { ...prev, nodes } : prev));
+    if (nodes !== doc.nodes) amendDoc((prev) => (prev.nodes === doc.nodes ? { ...prev, nodes } : prev));
   }, [doc.nodes, geom, nudgeTick, editingNodeId, editingFloatId, editingZoneId, editingLineId]);
 
   // After a reparent (drag-attach) re-lays out the tree, push EVERY free shape
@@ -3284,7 +3324,7 @@ export function useEditorState(): EditorController {
     // 폴백: 남들이 다 비켰는데도 anchor가 여전히 겹치면(움직일 수 없는 **트리**와
     // 겹친 경우뿐이다 — 자유 도형들은 위에서 전부 비켜났다) 그때만 anchor가 비켜난다.
     if (anchor) nodes = mutations.nudgeFreeNode(nodes, anchor, boxOfIn(nodes));
-    if (nodes !== doc.nodes) setDoc((prev) => (prev.nodes === doc.nodes ? { ...prev, nodes } : prev));
+    if (nodes !== doc.nodes) amendDoc((prev) => (prev.nodes === doc.nodes ? { ...prev, nodes } : prev));
   }, [doc.nodes, geom, nudgeTick, editingNodeId, editingFloatId, editingZoneId, editingLineId]);
 
   function capturePointer(e: ReactPointerEvent): void {

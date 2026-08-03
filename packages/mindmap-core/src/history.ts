@@ -148,6 +148,21 @@ export class HistoryStack<T> {
    * before invoking this). Returns the snapshot to restore the host state
    * to, or `undefined` if the undo stack is empty.
    */
+  /**
+   * 직전에 기록된 커밋을 **그 자리에서 고쳐 쓴다** — 새 undo 단계를 만들지 않고
+   * 현재 기준점(`snapCur`)만 `next`로 바꾼다. 겹침 밀어내기처럼 "직전 동작의
+   * 일부"인 정규화가 쓴다: 기록 없이 화면만 바꾸면(과거 방식) undo가 정규화
+   * **이전**(겹친) 좌표를 복원해 도형이 엉뚱한 자리로 튄다. `record`의 coalesce는
+   * 직전 기록도 continuous여야 병합되므로(붙여넣기 같은 discrete 커밋 뒤에는
+   * 불가) 별도 진입점이 필요하다. 스택은 건드리지 않는다 — undo하면 직전 동작
+   * 이전으로, redo하면 정규화가 반영된 상태로 돌아온다.
+   */
+  amend(next: T): void {
+    // 스택 불변 — 기준점만 교체한다(첫 커밋 전이라면 `record`의 seed와 동일하게
+    // 기준점을 심는 것이 된다).
+    this.snapCur = next;
+  }
+
   undo(): T | undefined {
     if (this.undoStack.length === 0) return undefined;
     const snap = this.undoStack.pop() as T;

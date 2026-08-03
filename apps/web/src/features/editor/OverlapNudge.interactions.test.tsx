@@ -228,6 +228,122 @@ describe('도형 겹침 자동 정리', () => {
   });
 });
 
+/** 모든 노드 박스 쌍이 겹치지 않는지 — 겹침 배터리의 공용 불변식. */
+function assertNoNodeOverlap(container: HTMLElement): void {
+  const els = Array.from(getViewport(container).querySelectorAll<HTMLElement>('[data-node-id]'));
+  const rects = els.map((el) => ({ id: el.dataset.nodeId, ...rectOf(el) }));
+  for (let i = 0; i < rects.length; i++) {
+    for (let j = i + 1; j < rects.length; j++) {
+      if (overlaps(rects[i]!, rects[j]!)) {
+        throw new Error(`겹침: ${rects[i]!.id} × ${rects[j]!.id}`);
+      }
+    }
+  }
+}
+
+describe('도형 겹침 자동 정리 — 후속 3건', () => {
+  it('④ 노드에 붙여넣기(자식 편입) 후에도 자유 도형과 겹치지 않는다 (트리 리플로우 밀어내기)', async () => {
+    // 루트 오른쪽(right 레이아웃에서 새 자식이 놓일 자리)에 자유 도형을 둔다.
+    const doc = {
+      ...DOC,
+      nodes: {
+        root: { ...DOC.nodes.root },
+        fx: { ...DOC.nodes.fx }, // 복사 원본 (멀리)
+        fz: { id: 'fz', text: '옆도형', emoji: '', parent: null, children: [], collapsed: false, color: null, x: 200, y: 0, free: true },
+      },
+    };
+    localStorage.setItem('mindflow_doc_ov4', JSON.stringify(doc));
+    const { container } = renderEditor('/editor?map=ov4&title=x');
+    await waitFor(() => expect(container.querySelector('[data-node-id="fz"]')).toBeTruthy());
+
+    selectNodeBox(container.querySelector('[data-node-id="fx"]') as HTMLElement);
+    fireEvent.keyDown(window, { key: 'c', ctrlKey: true });
+    selectNodeBox(container.querySelector('[data-node-id="root"]') as HTMLElement);
+    fireEvent.keyDown(window, { key: 'v', ctrlKey: true });
+
+    // 사본이 루트의 자식으로 붙고(원본도형 2개), 자유 도형이 밀려나 아무것도 안 겹친다
+    await waitFor(() => {
+      const copies = Array.from(getViewport(container).querySelectorAll<HTMLElement>('[data-node-id]')).filter((el) => el.textContent?.includes('원본도형'));
+      expect(copies.length).toBe(2);
+      assertNoNodeOverlap(container);
+    });
+  });
+
+  it('⑤ 그룹 이동으로 다른 도형 위에 놓으면 그룹 멤버가 밀려난다', async () => {
+    // fx·fy(그룹)와 장애물 루트. Ctrl+A로 전체 선택 후 그룹을 루트 위로 끌어다 놓는다.
+    localStorage.setItem('mindflow_doc_ov5', JSON.stringify(DOC));
+    const { container } = renderEditor('/editor?map=ov5&title=x');
+    await waitFor(() => expect(container.querySelector('[data-node-id="fy"]')).toBeTruthy());
+    fireEvent.keyDown(window, { key: 'a', ctrlKey: true }); // fx+fy 다중 선택
+
+    // 그룹 멤버(fx)를 잡고 루트 위로 — 캔버스 좌표 (0,0) 근처로 평행이동.
+    const { pan, zoom, geom } = computeViewport(parseDoc(DOC)!);
+    const from = { x: geom.fx!.x * zoom + pan.x, y: geom.fx!.y * zoom + pan.y };
+    const to = { x: geom.root!.x * zoom + pan.x, y: geom.root!.y * zoom + pan.y };
+    const fxEl = container.querySelector('[data-node-id="fx"]') as HTMLElement;
+    firePointer(fxEl, 'pointerdown', { pointerId: 21, clientX: from.x, clientY: from.y, button: 0 });
+    firePointer(window, 'pointermove', { pointerId: 21, clientX: (from.x + to.x) / 2, clientY: (from.y + to.y) / 2 });
+    firePointer(window, 'pointermove', { pointerId: 21, clientX: to.x, clientY: to.y });
+    firePointer(window, 'pointerup', { pointerId: 21, clientX: to.x, clientY: to.y });
+
+    await waitFor(() => assertNoNodeOverlap(container));
+  });
+
+  it('⑥ 붙여넣기 → 이동 → undo 시 밀어낸 **후** 좌표로 돌아온다 (겹친 자리가 아니라)', async () => {
+    localStorage.setItem('mindflow_doc_ov6', JSON.stringify(DOC));
+    const { container } = renderEditor('/editor?map=ov6&title=x');
+    await waitFor(() => expect(container.querySelector('[data-node-id="fx"]')).toBeTruthy());
+
+    // 원본 복사 → 원본 바로 옆(겹칠 자리)에 붙여넣기 → 마그넷으로 비켜난 좌표 P1
+    selectNodeBox(container.querySelector('[data-node-id="fx"]') as HTMLElement);
+    fireEvent.keyDown(window, { key: 'c', ctrlKey: true });
+    const { pan, zoom, geom } = computeViewport(parseDoc(DOC)!);
+    const g = geom.fx!;
+    fireEvent.contextMenu(getViewport(container), { clientX: (g.x + g.w / 2 + 30) * zoom + pan.x, clientY: g.y * zoom + pan.y, button: 2 });
+    const pasteItem = await screen.findByText('붙여넣기');
+    clickMenuItem(pasteItem);
+
+    const copyEl = (): HTMLElement => {
+      const els = Array.from(getViewport(container).querySelectorAll<HTMLElement>('[data-node-id]')).filter((el) => el.textContent?.includes('원본도형'));
+      const el = els.find((e) => e.dataset.nodeId !== 'fx');
+      if (!el) throw new Error('copy not found');
+      return el;
+    };
+    let p1 = { x0: 0, y0: 0, x1: 0, y1: 0 };
+    await waitFor(() => {
+      assertNoNodeOverlap(container);
+      p1 = rectOf(copyEl());
+    });
+
+    // 사본을 빈 곳으로 이동 (node-move 드래그)
+    const cid = copyEl().dataset.nodeId!;
+    const cx = (p1.x0 + p1.x1) / 2 * zoom + pan.x;
+    const cy = (p1.y0 + p1.y1) / 2 * zoom + pan.y;
+    firePointer(copyEl(), 'pointerdown', { pointerId: 22, clientX: cx, clientY: cy, button: 0 });
+    firePointer(window, 'pointermove', { pointerId: 22, clientX: cx + 200, clientY: cy + 260 });
+    firePointer(window, 'pointerup', { pointerId: 22, clientX: cx + 200, clientY: cy + 260 });
+    await waitFor(() => {
+      const moved = rectOf(container.querySelector(`[data-node-id="${cid}"]`) as HTMLElement);
+      expect(Math.abs(moved.x0 - p1.x0) > 10 || Math.abs(moved.y0 - p1.y0) > 10).toBe(true);
+    });
+
+    // undo → **밀어낸 후** 좌표(P1)로 복귀 — 겹친 자리(붙여넣기 원좌표)가 아니다
+    fireEvent.keyDown(window, { key: 'z', ctrlKey: true });
+    await waitFor(() => {
+      const back = rectOf(container.querySelector(`[data-node-id="${cid}"]`) as HTMLElement);
+      expect(back.x0).toBeCloseTo(p1.x0, 1);
+      expect(back.y0).toBeCloseTo(p1.y0, 1);
+      assertNoNodeOverlap(container);
+    });
+    // 한 번 더 undo → 사본 자체가 사라진다(붙여넣기 취소)
+    fireEvent.keyDown(window, { key: 'z', ctrlKey: true });
+    await waitFor(() => {
+      const copies = Array.from(getViewport(container).querySelectorAll<HTMLElement>('[data-node-id]')).filter((el) => el.textContent?.includes('원본도형'));
+      expect(copies.length).toBe(1);
+    });
+  });
+});
+
 // 제보: 미선택 객체를 잡고 끌면 "브라우저 전체가 이미지화되어 이동"하는 듯한
 // 네이티브 드래그 고스트가 떴다. 근원이 무엇이든(남은 텍스트 선택·Ctrl+A의 페이지
 // 전체 선택 등) 에디터 안에서는 네이티브 드래그를 차단하고, Ctrl+A는 페이지 텍스트
