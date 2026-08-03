@@ -75,13 +75,8 @@ interface WrapLine {
   w: number;
 }
 
-/** 리스트 항목 블록의 왼쪽 x — 사용자 정렬(좌/중앙/우)대로 블록을 통째로 놓는다.
- * 에디터 `ListTextBlock`의 `justifyContent`, PNG의 같은 이름 헬퍼와 동일 규칙. */
-function listBlockLeft(itemW: number, align: 'left' | 'center' | 'right', left: number, right: number): number {
-  if (align === 'right') return right - itemW;
-  if (align === 'center') return (left + right) / 2 - itemW / 2;
-  return left;
-}
+// 리스트 줄의 왼쪽 x는 **항상 텍스트 열 왼쪽**(Notion 방식, 사용자 선정 —
+// `listLines.tsx`의 LIST_ROW_JUSTIFY 참고). 정렬 설정은 평문 줄에만 적용된다.
 
 /** 리스트 마커 글자 수만큼 세그 앞부분을 뗀다(런 경계에 걸쳐도 안전). */
 function stripLeadSegs(segs: WrapSeg[], nChars: number): WrapSeg[] {
@@ -674,7 +669,7 @@ function buildPreview(rawDoc: string, hueFallback: string): JSX.Element | null {
             // 첫 줄 segs에는 표시 마커(• )가 포함돼 있다.
             <tspan
               key={li}
-              x={ln.list ? listBlockLeft(ln.itemW, align, textL, textR) + ln.indent : tx}
+              x={ln.list ? textL + ln.indent : tx}
               textAnchor={ln.list ? 'start' : undefined}
               dy={li === 0 ? 0 : lineH}
             >
@@ -698,7 +693,7 @@ function buildPreview(rawDoc: string, hueFallback: string): JSX.Element | null {
       // 이유는 `decoRects` 주석 참고.
       wrapped.forEach((ln, li) => {
         if (!ln.segs.some((sg) => sg.s || sg.href)) return;
-        const listLeft = listBlockLeft(ln.itemW, align, textL, textR) + ln.indent;
+        const listLeft = textL + ln.indent;
         rects.push(...decoRects(`d${id}-${li}`, ln.segs, lineLeftOf(ln, listLeft, tx, align), startY + li * lineH, fpx, baseTextColor, linkFill));
       });
     }

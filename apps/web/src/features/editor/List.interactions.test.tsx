@@ -411,7 +411,10 @@ describe('편집 중 즉시 리스트 렌더', () => {
 // 도형이 내용 크기에 맞춰 커지는 탓에 상자가 움직일 여백이 5px밖에 안 남아
 // **정렬이 여전히 보이지 않았다**(재제보). 그래서 워드프로세서 표준대로
 // **항목마다** 정렬한다 — 마커가 자기 텍스트와 함께 움직인다.
-describe('리스트 정렬 — 사용자 설정(좌/중앙/우) 반영', () => {
+describe('리스트 정렬 — 리스트 줄은 항상 좌측 (Notion 방식, 사용자 선정)', () => {
+  // 항목마다 정렬(Word 방식)은 가운데 정렬에서 마커가 들쭉날쭉하고 하위 항목이
+  // 상위보다 왼쪽에 놓여 이상해 보였다(제보). 리스트 줄은 정렬 설정과 무관하게
+  // 좌측 고정, 평문 줄만 도형 정렬을 따른다.
   const listNode = (align?: string) => ({
     c1: { id: 'c1', text: '- 하나\n- 둘', emoji: '', parent: 'root', children: [], collapsed: false, color: null, x: 0, y: 0, ...(align ? { align } : {}) },
   });
@@ -421,30 +424,21 @@ describe('리스트 정렬 — 사용자 설정(좌/중앙/우) 반영', () => {
       .filter((sp) => sp.style.display === 'flex')
       .map((sp) => sp.style.justifyContent);
 
-  it('기본(가운데) 정렬이면 항목마다 가운데', () => {
-    localStorage.setItem('mindflow_doc_la1', JSON.stringify(docWith(listNode())));
-    const { container } = renderEditor('/editor?map=la1&title=x');
-    expect(itemJustify(container)).toEqual(['center', 'center']);
+  it('기본(가운데)·좌측·우측 어떤 정렬이어도 리스트 항목은 좌측이다', () => {
+    for (const [key, align] of [['lan1', undefined], ['lan2', 'left'], ['lan3', 'right']] as const) {
+      localStorage.setItem(`mindflow_doc_${key}`, JSON.stringify(docWith(listNode(align))));
+      const { container, unmount } = renderEditor(`/editor?map=${key}&title=x`);
+      expect(itemJustify(container)).toEqual(['flex-start', 'flex-start']);
+      unmount();
+    }
   });
 
-  it('좌측 정렬', () => {
-    localStorage.setItem('mindflow_doc_la2', JSON.stringify(docWith(listNode('left'))));
-    const { container } = renderEditor('/editor?map=la2&title=x');
-    expect(itemJustify(container)).toEqual(['flex-start', 'flex-start']);
-  });
-
-  it('우측 정렬', () => {
-    localStorage.setItem('mindflow_doc_la3', JSON.stringify(docWith(listNode('right'))));
-    const { container } = renderEditor('/editor?map=la3&title=x');
-    expect(itemJustify(container)).toEqual(['flex-end', 'flex-end']);
-  });
-
-  it('편집 박스의 항목도 같은 정렬을 따른다', () => {
+  it('편집 박스의 항목도 좌측이다', () => {
     localStorage.setItem('mindflow_doc_la4', JSON.stringify(docWith(listNode('right'))));
     const { container } = renderEditor('/editor?map=la4&title=x');
     const editor = startEditingNode(container, 'c1');
     const rows = Array.from(editor.querySelectorAll('div')).filter((d) => d.style.display === 'flex');
-    expect(rows.map((r) => r.style.justifyContent)).toEqual(['flex-end', 'flex-end']);
+    expect(rows.map((r) => r.style.justifyContent)).toEqual(['flex-start', 'flex-start']);
   });
 
   it('마커는 자기 항목 안에 남는다 (덩어리째 움직인다)', () => {
@@ -462,7 +456,7 @@ describe('리스트 정렬 — 사용자 설정(좌/중앙/우) 반영', () => {
       JSON.stringify(docWith({ c1: { id: 'c1', text: '- 하나\n평문\n- 둘', emoji: '', parent: 'root', children: [], collapsed: false, color: null, x: 0, y: 0 } })),
     );
     const { container } = renderEditor('/editor?map=la6&title=x');
-    expect(itemJustify(container)).toEqual(['center', 'center']); // 리스트 항목 둘
+    expect(itemJustify(container)).toEqual(['flex-start', 'flex-start']); // 리스트 항목은 좌측
     const plain = Array.from(nodeBox(container, 'c1').querySelectorAll('span')).filter((sp) => sp.style.display === 'block');
     expect(plain.map((p) => p.style.textAlign)).toEqual(['center']);
   });
@@ -703,19 +697,17 @@ describe('단계별 마커 — 들여쓰기/내어쓰기로 기호가 바뀐다'
 describe('번호 매기기 후 줄바꿈 — 정렬/Backspace', () => {
   const itemRows = (el: HTMLElement) => Array.from(el.querySelectorAll('div')).filter((d) => d.style.display === 'flex');
 
-  it('들여쓰기해도 리스트 묶음 정렬이 노드 정렬(기본 가운데)을 유지한다', () => {
-    // align을 지정하지 않은 노드 = 가운데 정렬이 기본. 컨트롤러가 `n.align`을
-    // 날것으로 읽으면 undefined(=좌측)로 그려져 묶음만 왼쪽으로 튀었다.
+  it('들여쓰기 전후 모두 리스트 항목은 좌측이다 (Notion 방식 — 조작마다 튀지 않는다)', () => {
     localStorage.setItem('mindflow_doc_al1', JSON.stringify(docWith({ c1: { id: 'c1', text: '1. 하나', emoji: '', parent: 'root', children: [], collapsed: false, color: null, x: 0, y: 0 } })));
     const { container } = renderEditor('/editor?map=al1&title=x');
     const editor = startEditingNode(container, 'c1');
     setLinearSelection(editor, 5, 5); // '1. 하나' 끝
 
-    expect(itemRows(editor).map((r) => r.style.justifyContent)).toEqual(['center']); // 가운데
+    expect(itemRows(editor).map((r) => r.style.justifyContent)).toEqual(['flex-start']);
     fireEvent.keyDown(editor, { key: 'Enter', shiftKey: true }); // → '2. '
     fireEvent.keyDown(editor, { key: 'Tab' }); // 들여쓰기
     expect(domToRuns(editor, true).text).toBe('1. 하나\n  a. ');
-    expect(itemRows(editor).map((r) => r.style.justifyContent)).toEqual(['center', 'center']); // 그대로 가운데
+    expect(itemRows(editor).map((r) => r.style.justifyContent)).toEqual(['flex-start', 'flex-start']); // 그대로 좌측
   });
 
   it('빈 항목의 마커 뒤 Backspace는 그 항목을 통째로 지운다 (빈 줄을 남기지 않는다)', () => {

@@ -96,18 +96,14 @@ export function nodeTextAlign(n: Pick<Node, 'align'>): 'left' | 'center' | 'righ
   return (n.align as 'left' | 'center' | 'right' | undefined) || 'center';
 }
 
-/** 리스트 **항목 하나**([마커|내용] 한 덩어리)를 사용자 정렬대로 놓는 flex 정렬.
- *
- * 예전엔 연속한 항목을 `width: fit-content` 상자로 묶어 그 **상자만** 정렬했다
- * (마커를 한 열에 세우려고). 그런데 도형이 내용 크기에 맞춰 커지는 탓에 상자가
- * 움직일 여백이 5px밖에 안 남아 **정렬이 사실상 보이지 않았다**(제보: "정렬
- * 설정과 무관하게 좌측 정렬"). 그래서 워드프로세서 표준대로 **항목마다** 정렬한다
- * — 마커가 자기 텍스트와 함께 움직인다.
- * 소비처(에디터 렌더/편집 박스·썸네일 `mapPreview`·PNG `png.ts`)가 모두 같은
- * 규칙을 쓴다(그쪽은 각 항목의 폭 `itemW`로 같은 계산). */
-export function listItemJustify(align?: CSSProperties['textAlign']): 'flex-start' | 'center' | 'flex-end' {
-  return align === 'right' ? 'flex-end' : align === 'center' ? 'center' : 'flex-start';
-}
+/** 리스트 줄의 가로 배치 — 정렬 설정과 무관하게 **항상 좌측**(Notion 방식,
+ * 사용자 선정). 정렬 모델의 여정: ① fit-content 묶음 정렬(마커 열 유지) — 도형이
+ * 내용에 딱 맞아 여백이 5px뿐이라 정렬이 안 보였다 ② 항목마다 정렬(Word 방식) —
+ * 가운데 정렬에서 마커가 들쭉날쭉하고 하위 항목이 상위보다 왼쪽에 놓여 "이상해
+ * 보인다"(제보). 지금은 리스트 줄은 좌측 고정, **평문 줄만** 도형 정렬을 따른다 —
+ * 마커가 한 열에 서고 계층이 또렷하다. 소비처(에디터 렌더/편집 박스·썸네일
+ * `mapPreview`·PNG `png.ts`)가 모두 같은 규칙(그쪽은 줄 왼쪽 = 텍스트 열 왼쪽). */
+const LIST_ROW_JUSTIFY = 'flex-start';
 
 /** 리스트가 있을 때만 쓰는 노드/메모 본문 블록 — 하드 줄마다 [마커|내용] flex 행.
  *
@@ -125,7 +121,7 @@ export function ListTextBlock({ lines, align, lineHeight = 1.35 }: { lines: Cont
       {lines.map((ln, li) =>
         ln.list ? (
           // 항목([마커|내용]) 한 덩어리를 사용자 정렬대로 — 마커가 텍스트와 함께 움직인다.
-          <span key={li} style={{ display: 'flex', alignItems: 'flex-start', justifyContent: listItemJustify(align) }}>
+          <span key={li} style={{ display: 'flex', alignItems: 'flex-start', justifyContent: LIST_ROW_JUSTIFY }}>
             <span style={{ whiteSpace: 'pre', flexShrink: 0 }}>{ln.list.display}</span>
             {/* 내용 열은 항상 좌측 — 도형의 text-align(가운데 등)이 상속되면 **감긴
                 줄만** 그 정렬을 따라 튀어 보인다(제보: 줄바꿈된 텍스트가 중앙 정렬).
@@ -168,12 +164,12 @@ export function listEditHtml(v: RichTextValue, align?: CSSProperties['textAlign'
     // 읽을 때는 `domToRuns(el, true)`가 후행 줄바꿈 하나를 접어 원래 값으로 돌린다.
     return /\n$/.test(v.text || '') ? `${html}<br>` : html;
   }
-  const justify = listItemJustify(align);
   const rowHtml = (ln: ContentLine): string => {
     const inner = runsToHtml({ text: ln.segs.map((s) => s.t).join(''), rich: ln.segs as RichRun[] }) || '<br>';
-    if (!ln.list) return `<div>${inner}</div>`;
+    // 평문 줄만 도형 정렬을 따른다 — 리스트 줄은 아래에서 항상 좌측(Notion 방식).
+    if (!ln.list) return `<div${align ? ` style="text-align:${align}"` : ''}>${inner}</div>`;
     return (
-      `<div style="display:flex;align-items:flex-start;justify-content:${justify}">` +
+      `<div style="display:flex;align-items:flex-start;justify-content:${LIST_ROW_JUSTIFY}">` +
       // `data-list-marker`: ① 캐럿이 마커 끝 경계에 오면 **내용 쪽**으로 보낸다
       //   (`setLinearSelection`) ② 사용자가 마커 스팬 안에 글자를 넣었는지 감지한다.
       //   마커 스팬은 `white-space: pre`라 그 안에 들어간 글자는 **줄바꿈되지 않아**
