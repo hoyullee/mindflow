@@ -124,14 +124,15 @@ export function Editor() {
             <DocChip controller={controller} />
             <PresenceBar controller={controller} />
             <SearchBar controller={controller} />
-            <PropertyPanel controller={controller} />
+            {/* 보기 전용(#22): 속성 패널의 모든 조작이 문서 변이라 패널째 감춘다. */}
+            {!controller.readOnly && <PropertyPanel controller={controller} />}
             {/* Mobile: a tap selects (no auto-sheet); this bar offers 편집/속성/삭제와
                 전체 메뉴로 가는 메뉴(⋯). Hidden once the sheet is open (it has its own
                 close control below).
                 ⋯ 메뉴가 열려 있을 때는 바를 **그대로 둔다** — 메뉴가 바에 꼬리로
                 붙어 "바에서 파생된" 것으로 읽혀야 하므로. 반면 길게 누르기로 연
                 메뉴(anchor 없음)는 손가락 위치에 뜨므로 바를 숨겨 겹침을 피한다. */}
-            {isMobile && controller.selection && !controller.propsOpen && (!controller.ctxMenu || !!controller.ctxMenu.anchor) && (
+            {isMobile && !controller.readOnly && controller.selection && !controller.propsOpen && (!controller.ctxMenu || !!controller.ctxMenu.anchor) && (
               <MobileSelectBar controller={controller} theme={th} />
             )}
             {/* Close handle for the mobile property sheet — dismisses it WITHOUT
@@ -187,8 +188,16 @@ export function Editor() {
                   lineHeight: 1.7,
                 }}
               >
-                <b style={{ color: th.text }}>좌드래그</b> 선택 · <b style={{ color: th.text }}>우클릭/휠클릭 드래그</b> 이동 ·{' '}
-                <b style={{ color: th.text }}>더블클릭</b> 편집 · <b style={{ color: th.text }}>스크롤/핀치</b> 줌
+                {controller.readOnly ? (
+                  <>
+                    <b style={{ color: th.text }}>보기 전용</b> 맵 · <b style={{ color: th.text }}>우클릭/휠클릭 드래그</b> 이동 · <b style={{ color: th.text }}>스크롤/핀치</b> 줌
+                  </>
+                ) : (
+                  <>
+                    <b style={{ color: th.text }}>좌드래그</b> 선택 · <b style={{ color: th.text }}>우클릭/휠클릭 드래그</b> 이동 ·{' '}
+                    <b style={{ color: th.text }}>더블클릭</b> 편집 · <b style={{ color: th.text }}>스크롤/핀치</b> 줌
+                  </>
+                )}
               </div>
             )}
           </>

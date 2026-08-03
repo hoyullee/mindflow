@@ -15,8 +15,10 @@ export function DocChip({ controller }: DocChipProps) {
   const th = controller.uiTheme;
   // 열 수 없는 맵(`bodyMissing`)은 여기서 다루지 않는다 — 에디터 자체가 렌더되지 않고
   // 전용 화면(`MapUnavailable`)이 대신 나온다.
-  const dotColor = controller.saveState === 'saved' ? '#3fae6a' : controller.saveState === 'saving' ? '#e0b23c' : th.subtext;
-  const label = controller.saveState === 'saved' ? '저장됨' : controller.saveState === 'saving' ? '저장 중…' : controller.saveState === 'unsaved' ? '저장 전' : '변경됨';
+  const dotColor = controller.readOnly ? '#3f8fd0' : controller.saveState === 'saved' ? '#3fae6a' : controller.saveState === 'saving' ? '#e0b23c' : th.subtext;
+  // 보기 전용(#22)에는 저장 상태 대신 권한을 말한다 — 뷰어에게 "저장됨"은 무의미하고,
+  // 제목 옆에서 이 맵을 왜 못 고치는지 한 번 더 설명해 준다.
+  const label = controller.readOnly ? '보기 전용' : controller.saveState === 'saved' ? '저장됨' : controller.saveState === 'saving' ? '저장 중…' : controller.saveState === 'unsaved' ? '저장 전' : '변경됨';
 
   return (
     <div
@@ -70,7 +72,7 @@ export function DocChip({ controller }: DocChipProps) {
           <div
             title={controller.docTitle}
             onDoubleClick={controller.startEditTitle}
-            style={{ fontSize: 13.5, fontWeight: 700, color: th.text, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', lineHeight: 1.2, cursor: 'text' }}
+            style={{ fontSize: 13.5, fontWeight: 700, color: th.text, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', lineHeight: 1.2, cursor: controller.readOnly ? 'default' : 'text' }}
           >
             {controller.docTitle}
           </div>
@@ -111,6 +113,7 @@ export function DocChip({ controller }: DocChipProps) {
           </div>
         )}
       </div>
+      {!controller.readOnly && (
       <button
         type="button"
         className="mf-ed-btn"
@@ -138,6 +141,7 @@ export function DocChip({ controller }: DocChipProps) {
           <polyline points="7 3 7 8 15 8" />
         </svg>
       </button>
+      )}
     </div>
   );
 }

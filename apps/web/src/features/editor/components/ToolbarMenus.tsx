@@ -221,7 +221,9 @@ export function MoreMenu({ controller, onDone, isMobile }: { controller: EditorC
       <MenuItem theme={th} isMobile={isMobile} icon={<PngIcon />} label="PNG 이미지" onClick={() => { controller.exportPNG(); onDone(); }} />
       <MenuItem theme={th} isMobile={isMobile} icon={<JsonIcon />} label="JSON 파일 (.json)" onClick={() => { controller.exportJSON(); onDone(); }} />
       <MenuDivider theme={th} />
-      <MenuItem theme={th} isMobile={isMobile} icon={<HistoryIcon />} label="버전 기록" onClick={() => { controller.setHistoryOpen(true); onDone(); }} />
+      {/* 버전 기록의 복원은 문서 변이다 — 보기 전용(#22)에는 감춘다(기록 자체도
+          이 기기에서 저장한 판이 없어 비어 있다). */}
+      {!controller.readOnly && <MenuItem theme={th} isMobile={isMobile} icon={<HistoryIcon />} label="버전 기록" onClick={() => { controller.setHistoryOpen(true); onDone(); }} />}
       <MenuItem theme={th} isMobile={isMobile} icon={<HelpIcon />} label="단축키 도움말" onClick={() => { controller.setHelpOpen(true); onDone(); }} />
     </MenuShell>
   );

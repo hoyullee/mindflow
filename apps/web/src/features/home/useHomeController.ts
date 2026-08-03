@@ -55,7 +55,7 @@ export function useHomeController() {
   // 출렁인다(새로고침 깜빡임).
   const [state, setState] = useState<HomeState>(() => ({ ...initialHomeState(), recent: loadRecent() }));
   const navigate = useNavigate();
-  const { auth, docStore, spaceStore, mode: backendMode } = useBackend();
+  const { auth, docStore, spaceStore, shareStore, mode: backendMode } = useBackend();
   const importInputRef = useRef<HTMLInputElement | null>(null);
   const loaderTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
   // 새 맵 카드 등록을 로더 페인트 뒤로 미룰 때의 폴백 타이머(rAF 없는 환경).
@@ -98,7 +98,7 @@ export function useHomeController() {
     // they opened a map in the editor), so returning to Home lands back on that
     // space instead of the default 일반 공간.
     const restore = loadActiveView();
-    const res = await Promise.allSettled([spaceStore.load(), docStore.list()]);
+    const res = await Promise.allSettled([spaceStore.load(), docStore.list(), shareStore.listSharedWithMe()]);
     if (!mountedRef.current) return;
     // Only allow persisting the workspace once the load actually SUCCEEDED. If
     // it rejected (network/RLS/transient), we must not save — otherwise the
@@ -111,7 +111,12 @@ export function useHomeController() {
     // 내 스페이스에 카드로 박히고 그대로 저장된다. 그래서 아래 모든 워크스페이스
     // 계산에는 **내 문서만** 넘긴다. 공유받은 문서는 별도 목록으로 다룬다(sharedMetas).
     const metas = allMetas.filter((m) => m.ownedByMe !== false);
-    const sharedMetas = allMetas.filter((m) => m.ownedByMe === false && !m.deletedAt);
+    // 내 권한(편집/보기 전용)은 `document_shares`의 내 행에서 온다 — LNB의
+    // "보기 전용" 배지 근거(#22). 조회 실패는 'edit' 폴백(기존 표시와 동일).
+    const myRoles = new Map(res[2].status === 'fulfilled' ? res[2].value.map((s) => [s.documentId, s.role]) : []);
+    const sharedMetas = allMetas
+      .filter((m) => m.ownedByMe === false && !m.deletedAt)
+      .map((m) => ({ ...m, sharedRole: m.sharedRole ?? myRoles.get(m.id) }));
     // 썸네일 캐시 키(버전 판별)용 — loadPreview에 (version, updatedAt)을 넘겨
     // 같은 판이면 재다운로드를 건너뛴다(previewBodyCache 참고).
     docMetaRef.current = new Map(allMetas.map((m) => [m.id, { version: m.version, updatedAt: m.updatedAt }]));

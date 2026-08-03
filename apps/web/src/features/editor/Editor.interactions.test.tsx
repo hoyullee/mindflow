@@ -448,10 +448,10 @@ describe('Editor interactions (M3-Editor-b)', () => {
       await user.type(screen.getByLabelText('초대할 이메일'), 'friend@example.com');
       await user.click(screen.getByRole('button', { name: '초대' }));
 
-      // 포트를 이 문서 id로 부른다 — 권한은 edit(지금 UI가 제공하는 유일한 권한)
+      // 포트를 이 문서 id로 부른다 — 권한 셀렉트의 기본값은 edit(#22 이후에도 유지)
       await waitFor(() => expect(shareStore.add).toHaveBeenCalledWith('share1', 'friend@example.com', 'edit'));
       await waitFor(() => expect(screen.getByText('friend@example.com')).toBeTruthy());
-      expect(screen.getByText('편집 가능')).toBeTruthy();
+      expect((screen.getByLabelText('friend@example.com 권한') as HTMLSelectElement).value).toBe('edit');
     });
 
     it('이메일 형식이 아니면 서버를 부르지 않고 알려 준다', async () => {
@@ -495,6 +495,58 @@ describe('Editor interactions (M3-Editor-b)', () => {
       await user.click(screen.getByRole('button', { name: '초대' }));
 
       expect((await screen.findByRole('alert')).textContent).toMatch(/row-level security/);
+    });
+
+    it('보기 전용을 골라 초대하면 포트에 view 권한이 전달된다 (#22)', async () => {
+      localStorage.setItem('mindflow_doc_share7', JSON.stringify(DOC));
+      const user = userEvent.setup();
+      const { shareStore } = shareBackend();
+      renderWithShare(shareStore, 'supabase', 'share7');
+
+      await user.click(screen.getByRole('button', { name: '공유' }));
+      await user.type(screen.getByLabelText('초대할 이메일'), 'reader@example.com');
+      await user.selectOptions(screen.getByLabelText('초대 권한'), 'view');
+      await user.click(screen.getByRole('button', { name: '초대' }));
+
+      await waitFor(() => expect(shareStore.add).toHaveBeenCalledWith('share7', 'reader@example.com', 'view'));
+      // 소유자에겐 행마다 권한 셀렉트가 뜨고 현재 값이 보기 전용이다
+      await waitFor(() => expect((screen.getByLabelText('reader@example.com 권한') as HTMLSelectElement).value).toBe('view'));
+    });
+
+    it('소유자는 이미 초대한 사람의 권한을 행에서 바로 바꾼다 (upsert)', async () => {
+      localStorage.setItem('mindflow_doc_share8', JSON.stringify(DOC));
+      const user = userEvent.setup();
+      const { shareStore, shares } = shareBackend();
+      await shareStore.add('share8', 'friend@example.com', 'edit');
+      // upsert 흉내 — 실제 어댑터(Local/Supabase)는 onConflict로 권한만 갱신한다.
+      shareStore.add = vi.fn(async (id: string, email: string, role: 'edit' | 'view' = 'edit') => {
+        const at = shares.findIndex((s) => s.documentId === id && s.email === email);
+        if (at >= 0) shares[at] = { ...shares[at]!, role };
+        return {};
+      });
+      renderWithShare(shareStore, 'supabase', 'share8');
+
+      await user.click(screen.getByRole('button', { name: '공유' }));
+      await waitFor(() => expect(screen.getByLabelText('friend@example.com 권한')).toBeTruthy());
+      await user.selectOptions(screen.getByLabelText('friend@example.com 권한'), 'view');
+
+      await waitFor(() => expect(shareStore.add).toHaveBeenCalledWith('share8', 'friend@example.com', 'view'));
+      await waitFor(() => expect((screen.getByLabelText('friend@example.com 권한') as HTMLSelectElement).value).toBe('view'));
+    });
+
+    it('자기 자신은 초대할 수 없다 — 소유자 행이 생겨 스스로를 잠그는 것 방지', async () => {
+      localStorage.setItem('mindflow_doc_share9', JSON.stringify(DOC));
+      localStorage.setItem('mf_demo_session', JSON.stringify({ user: { id: 'u-me', email: 'me@example.com' } }));
+      const user = userEvent.setup();
+      const { shareStore } = shareBackend();
+      renderWithShare(shareStore, 'supabase', 'share9');
+
+      await user.click(screen.getByRole('button', { name: '공유' }));
+      await user.type(screen.getByLabelText('초대할 이메일'), 'ME@example.com');
+      await user.click(screen.getByRole('button', { name: '초대' }));
+
+      expect((await screen.findByRole('alert')).textContent).toContain('자기 자신');
+      expect(shareStore.add).not.toHaveBeenCalled();
     });
 
     it('소유자와 초대받은 사람의 프로필명·가입 대기 상태를 보여 준다 (참가자 정보가 있을 때)', async () => {
