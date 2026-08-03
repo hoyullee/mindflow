@@ -216,6 +216,12 @@ function NodeBox({ id, node: n, g, nodes, mode, theme: th, rootX, controller }: 
     const rc = hexA(remotePeer.user.color, 0.9);
     boxStyle.boxShadow = boxStyle.boxShadow && boxStyle.boxShadow !== 'none' ? `${boxStyle.boxShadow}, 0 0 0 3px ${rc}` : `0 0 0 3px ${rc}`;
   }
+  // 검색 일치 링 — 모든 일치 대상에 노란 링(현재 항목은 검색 바가 실제 선택까지
+  // 얹어 accent 링과 겹친다). 색은 선택(accent)·원격(피어색)과 구별되는 앰버.
+  if (controller.searchMarks?.nodes.has(id)) {
+    const sc = hexA('#e0b23c', 0.9);
+    boxStyle.boxShadow = boxStyle.boxShadow && boxStyle.boxShadow !== 'none' ? `${boxStyle.boxShadow}, 0 0 0 3px ${sc}` : `0 0 0 3px ${sc}`;
+  }
 
   if (n.textColor) boxStyle.color = n.textColor;
   // 링크 글자색 — 도형의 **글자색**을 보고 그 위에서 읽히는 파랑을 고른다

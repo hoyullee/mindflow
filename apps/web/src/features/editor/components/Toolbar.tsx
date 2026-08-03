@@ -140,6 +140,34 @@ export function Toolbar({ controller }: ToolbarProps) {
 
       <div style={{ flex: '1 1 auto' }} />
 
+      {/* 맵 안 검색 — 바로 열리는 버튼(Ctrl/⌘+F와 동일). 모바일에서도 남긴다:
+          긴 맵에서 찾기는 터치 사용자가 더 아쉬운 기능이고 아이콘 하나 폭이다. */}
+      <button
+        type="button"
+        className="mf-ed-btn"
+        onClick={() => controller.setSearchOpen(!controller.searchOpen)}
+        title="맵에서 검색 (Ctrl+F)"
+        aria-label="맵에서 검색"
+        style={{
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          width: isMobile ? 44 : 34,
+          height: isMobile ? 44 : 34,
+          marginRight: 2,
+          border: 'none',
+          borderRadius: 9,
+          background: controller.searchOpen ? th.panel2 : 'none',
+          color: 'inherit',
+          cursor: 'pointer',
+        }}
+      >
+        <svg width="16" height="16" viewBox="0 0 15 15" aria-hidden="true">
+          <circle cx="6.4" cy="6.4" r="4.6" fill="none" stroke="currentColor" strokeWidth="1.7" />
+          <line x1="10" y1="10" x2="13.6" y2="13.6" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" />
+        </svg>
+      </button>
+
       {/* 공유 — 메뉴가 아니라 바로 열리는 버튼이다(초대는 한 단계로 끝나는 동작이라
           플라이아웃을 한 겹 더 씌울 이유가 없다). 모바일에서도 남긴다: 협업이
           이 화면의 목적 중 하나이고 44px 터치 타겟으로 들어간다. */}

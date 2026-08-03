@@ -39,6 +39,8 @@ export function FloatLayer({ floats, theme: th, controller }: FloatLayerProps) {
         const remotePeer = peersSelecting(controller.presence.peers, 'floats', f.id)[0];
         let boxShadow = selected ? `0 0 0 2px ${th.panel}, 0 0 0 4px ${hexA(th.accent, 0.55)}, 0 3px 10px rgba(0,0,0,.10)` : '0 3px 10px rgba(0,0,0,.10)';
         if (remotePeer) boxShadow += `, 0 0 0 3px ${hexA(remotePeer.user.color, 0.9)}`;
+        // 검색 일치 링 — 노드와 같은 앰버(NodeLayer 참고).
+        if (controller.searchMarks?.floats.has(f.id)) boxShadow += `, 0 0 0 3px ${hexA('#e0b23c', 0.9)}`;
         const boxStyle: CSSProperties = {
           position: 'absolute',
           left: f.x,
