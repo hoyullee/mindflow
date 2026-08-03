@@ -6,7 +6,7 @@ import { listVersions, MAX_ENTRIES, MIN_INTERVAL_MS, recordVersion, versionBody,
 // 문서 버전 히스토리(#21) — 로컬 스냅샷 보관함의 순수 로직.
 
 function docWith(text: string): Doc {
-  return parseDoc({
+  const parsed = parseDoc({
     v: 1,
     nodes: { root: { id: 'root', text, emoji: '', parent: null, children: [], collapsed: false, color: null, x: 0, y: 0 } },
     floats: [],
@@ -15,6 +15,8 @@ function docWith(text: string): Doc {
     layoutMode: 'right',
     themeKey: 'coral',
   });
+  if (!parsed) throw new Error('테스트 픽스처 파싱 실패');
+  return parsed;
 }
 
 const T0 = 1_700_000_000_000;
