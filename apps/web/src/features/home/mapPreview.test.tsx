@@ -329,6 +329,21 @@ describe('realPreview', () => {
     expect(Number(strikes[0]!.getAttribute('height'))).toBeGreaterThanOrEqual(1.8);
   });
 
+  // 메모(플로트) rich 서식 — 노드와 같은 신호(굵게 tspan·링크 파랑+밑줄 rect).
+  it('메모의 rich 런이 굵게/링크로 그려진다', () => {
+    const withFloat = {
+      ...doc,
+      floats: [{ id: 'f1', x: 300, y: 200, w: 200, text: '굵게 문서', rich: [{ t: '굵게', b: true, c: null }, { t: ' 문서', b: false, c: null, href: 'https://example.com/' }] }],
+    };
+    const { container } = render(realPreview(JSON.stringify(withFloat), '#f0663f')!);
+    const tspans = Array.from(container.querySelectorAll('svg tspan')) as SVGTSpanElement[];
+    expect(tspans.some((t) => t.textContent === '굵게' && t.getAttribute('font-weight') === '800')).toBe(true);
+    const linked = tspans.find((t) => t.textContent === ' 문서');
+    expect(linked?.getAttribute('fill')).toBe(LINK_INK_ON_LIGHT);
+    // 밑줄 rect가 링크색으로 그려진다(decoRects — 노드와 같은 경로)
+    expect(Array.from(container.querySelectorAll('svg rect')).some((r) => r.getAttribute('fill') === LINK_INK_ON_LIGHT)).toBe(true);
+  });
+
   // 텍스트 굵기도 측정에 쓴 fw 그대로(루트 700, depth1 600, depth2+ 500) —
   // 더 굵게 그리면 렌더 폭이 측정 폭을 넘어 미세하게 상자를 벗어난다.
   it('텍스트 굵기가 에디터 메트릭 fw와 일치한다(루트 700 / 본문 600)', () => {

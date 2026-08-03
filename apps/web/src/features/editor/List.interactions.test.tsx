@@ -303,37 +303,56 @@ describe('리스트 — 메모(플로트)', () => {
     expect(card.textContent).not.toContain('두 번째'); // 접힘: 첫 줄만
   });
 
-  it('메모 편집 중 Enter가 리스트를 이어쓴다 (번호 +1)', () => {
+  // 메모 편집이 노드와 같은 contentEditable + 키 규칙으로 바뀌었다(요청):
+  // Enter = 편집 확정, Shift+Enter = 줄바꿈(리스트 이어쓰기 포함).
+  function startEditFloat(container: HTMLElement, id = 'f1'): HTMLDivElement {
+    const card = container.querySelector(`[data-float-id="${id}"]`) as HTMLElement;
+    fireEvent.doubleClick(card);
+    const editor = card.querySelector('.mf-richedit') as HTMLDivElement;
+    expect(editor).toBeTruthy();
+    return editor;
+  }
+
+  it('메모 편집 중 Shift+Enter가 리스트를 이어쓴다 (번호 +1)', () => {
     localStorage.setItem('mindflow_doc_lf3', JSON.stringify(docWith({}, [{ ...FLOAT, text: '1. 항목' }])));
     const { container } = renderEditor('/editor?map=lf3&title=x');
-    const card = container.querySelector('[data-float-id="f1"]') as HTMLElement;
-    fireEvent.doubleClick(card);
-    const ta = card.querySelector('textarea') as HTMLTextAreaElement;
-    expect(ta).toBeTruthy();
-    ta.setSelectionRange(ta.value.length, ta.value.length);
-    fireEvent.keyDown(ta, { key: 'Enter' });
-    expect(ta.value).toBe('1. 항목\n2. ');
+    const editor = startEditFloat(container);
+    setLinearSelection(editor, 5, 5);
+    fireEvent.keyDown(editor, { key: 'Enter', shiftKey: true });
+    expect(domToRuns(editor, true).text).toBe('1. 항목\n2. ');
   });
 
-  it('메모 편집 중 빈 마커 줄의 Enter는 마커를 지운다', () => {
+  it('메모 편집 중 빈 마커 줄의 Shift+Enter는 마커를 지운다', () => {
     localStorage.setItem('mindflow_doc_lf4', JSON.stringify(docWith({}, [{ ...FLOAT, text: '- 항목\n- ' }])));
     const { container } = renderEditor('/editor?map=lf4&title=x');
-    const card = container.querySelector('[data-float-id="f1"]') as HTMLElement;
-    fireEvent.doubleClick(card);
-    const ta = card.querySelector('textarea') as HTMLTextAreaElement;
-    ta.setSelectionRange(ta.value.length, ta.value.length);
-    fireEvent.keyDown(ta, { key: 'Enter' });
-    expect(ta.value).toBe('- 항목\n');
+    const editor = startEditFloat(container);
+    const len = domToRuns(editor, true).text.length;
+    setLinearSelection(editor, len, len);
+    fireEvent.keyDown(editor, { key: 'Enter', shiftKey: true });
+    expect(domToRuns(editor, true).text).toBe('• 항목\n');
   });
 
-  it('리스트 없는 메모의 Enter는 개입하지 않는다', () => {
+  it('메모의 Enter는 편집을 확정한다 (도형과 동일한 키 규칙)', async () => {
     localStorage.setItem('mindflow_doc_lf5', JSON.stringify(docWith({}, [{ ...FLOAT, text: '그냥 메모' }])));
     const { container } = renderEditor('/editor?map=lf5&title=x');
-    const card = container.querySelector('[data-float-id="f1"]') as HTMLElement;
-    fireEvent.doubleClick(card);
-    const ta = card.querySelector('textarea') as HTMLTextAreaElement;
-    ta.setSelectionRange(ta.value.length, ta.value.length);
-    expect(fireEvent.keyDown(ta, { key: 'Enter' })).toBe(true);
+    const editor = startEditFloat(container);
+    setLinearSelection(editor, 2, 2);
+    fireEvent.keyDown(editor, { key: 'Enter' });
+    // 편집 박스가 닫히고(확정) 저장까지 돈다
+    expect(container.querySelector('[data-float-id="f1"] .mf-richedit')).toBeNull();
+    fireEvent.keyDown(window, { key: 's', ctrlKey: true });
+    await waitFor(() => {
+      expect(readSavedDoc('lf5').floats[0]?.text).toBe('그냥 메모');
+    });
+  });
+
+  it('리스트 없는 메모의 Shift+Enter는 한 번에 줄을 바꾼다', () => {
+    localStorage.setItem('mindflow_doc_lf6', JSON.stringify(docWith({}, [{ ...FLOAT, text: '그냥 메모' }])));
+    const { container } = renderEditor('/editor?map=lf6&title=x');
+    const editor = startEditFloat(container);
+    setLinearSelection(editor, 5, 5);
+    expect(fireEvent.keyDown(editor, { key: 'Enter', shiftKey: true })).toBe(false); // 우리가 처리
+    expect(domToRuns(editor, true).text).toBe('그냥 메모\n');
   });
 });
 
@@ -790,29 +809,33 @@ describe('마커 스팬에 본문이 쌓이지 않는다 (긴 텍스트가 도�
 });
 
 describe('메모(플로트) 마커 안 Backspace', () => {
+  function startEditFloat(container: HTMLElement, id = 'f1'): HTMLDivElement {
+    const card = container.querySelector(`[data-float-id="${id}"]`) as HTMLElement;
+    fireEvent.doubleClick(card);
+    return card.querySelector('.mf-richedit') as HTMLDivElement;
+  }
+
   it('마커 뒤 Backspace가 마커를 없애고, 들여쓴 줄은 내어쓴다', () => {
     localStorage.setItem('mindflow_doc_mbs', JSON.stringify(docWith({}, [{ id: 'f1', text: '1. 하나\n  a. ', x: 100, y: 100, w: 160 }])));
     const { container } = renderEditor('/editor?map=mbs&title=x');
-    const card = container.querySelector('[data-float-id="f1"]') as HTMLElement;
-    fireEvent.doubleClick(card);
-    const ta = card.querySelector('textarea') as HTMLTextAreaElement;
-    ta.setSelectionRange(ta.value.length, ta.value.length);
-    expect(fireEvent.keyDown(ta, { key: 'Backspace' })).toBe(false); // 우리가 처리했다
-    expect(ta.value).toBe('1. 하나\n2. ');
-    ta.setSelectionRange(ta.value.length, ta.value.length);
-    fireEvent.keyDown(ta, { key: 'Backspace' });
-    expect(ta.value).toBe('1. 하나'); // 빈 항목은 줄까지 사라진다
+    const editor = startEditFloat(container);
+    let len = domToRuns(editor, true).text.length;
+    setLinearSelection(editor, len, len);
+    expect(fireEvent.keyDown(editor, { key: 'Backspace' })).toBe(false); // 우리가 처리했다
+    expect(domToRuns(editor, true).text).toBe('1. 하나\n2. ');
+    len = domToRuns(editor, true).text.length;
+    setLinearSelection(editor, len, len);
+    fireEvent.keyDown(editor, { key: 'Backspace' });
+    expect(domToRuns(editor, true).text).toBe('1. 하나'); // 빈 항목은 줄까지 사라진다
   });
 
   it('내용 안에서는 기본 삭제 그대로 둔다', () => {
     localStorage.setItem('mindflow_doc_mbs2', JSON.stringify(docWith({}, [{ id: 'f1', text: '1. 하나', x: 100, y: 100, w: 160 }])));
     const { container } = renderEditor('/editor?map=mbs2&title=x');
-    const card = container.querySelector('[data-float-id="f1"]') as HTMLElement;
-    fireEvent.doubleClick(card);
-    const ta = card.querySelector('textarea') as HTMLTextAreaElement;
-    ta.setSelectionRange(ta.value.length, ta.value.length);
-    expect(fireEvent.keyDown(ta, { key: 'Backspace' })).toBe(true);
-    expect(ta.value).toBe('1. 하나');
+    const editor = startEditFloat(container);
+    setLinearSelection(editor, 5, 5);
+    expect(fireEvent.keyDown(editor, { key: 'Backspace' })).toBe(true);
+    expect(domToRuns(editor, true).text).toBe('1. 하나');
   });
 });
 
@@ -822,11 +845,12 @@ describe('메모(플로트) 들여쓰기 — Tab / Shift+Tab', () => {
     const { container } = renderEditor('/editor?map=mt1&title=x');
     const card = container.querySelector('[data-float-id="f1"]') as HTMLElement;
     fireEvent.doubleClick(card);
-    const ta = card.querySelector('textarea') as HTMLTextAreaElement;
-    ta.setSelectionRange(ta.value.length, ta.value.length);
-    expect(fireEvent.keyDown(ta, { key: 'Tab' })).toBe(false);
-    expect(ta.value).toBe('- 하나\n  ◦ 둘');
-    fireEvent.keyDown(ta, { key: 'Tab', shiftKey: true });
-    expect(ta.value).toBe('- 하나\n• 둘'); // 내어쓰면 0단계 글리프로
+    const editor = card.querySelector('.mf-richedit') as HTMLDivElement;
+    const len = domToRuns(editor, true).text.length;
+    setLinearSelection(editor, len, len);
+    expect(fireEvent.keyDown(editor, { key: 'Tab' })).toBe(false);
+    expect(domToRuns(editor, true).text).toBe('• 하나\n  ◦ 둘');
+    fireEvent.keyDown(editor, { key: 'Tab', shiftKey: true });
+    expect(domToRuns(editor, true).text).toBe('• 하나\n• 둘'); // 내어쓰면 0단계 글리프로
   });
 });

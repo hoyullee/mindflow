@@ -39,7 +39,10 @@ export function TextToolbar({ controller }: TextToolbarProps) {
   // 방금 쓴 색이 목록에서 사라지는 편이 더 혼란스럽다.
   // (트레이드오프: 파랑·초록·보라 테마의 테마-맞춤 색은 이 팝업에서 고를 수 없다.
   //  그 색들은 속성 패널의 텍스트 색 스와치에 그대로 남아 있다.)
-  const { textCtx, editingNodeId, uiTheme: th, vw } = controller;
+  const { textCtx, editingNodeId, editingFloatId, uiTheme: th, vw } = controller;
+  // 서식 툴바는 노드 편집과 **메모(플로트) 편집** 양쪽에서 뜬다 — 같은
+  // richElRef 기반이라 아래 로직은 대상 종류와 무관하다.
+  const editingAny = editingNodeId || editingFloatId;
   // 링크 입력창 — 열 때 **선택 범위를 잡아 두고**(입력창에 포커스가 가면 편집 박스의
   // Selection이 사라진다) 적용 시 그 범위에 건다.
   const [link, setLink] = useState<{ a: number; b: number; value: string; had: boolean } | null>(null);
@@ -49,10 +52,10 @@ export function TextToolbar({ controller }: TextToolbarProps) {
   }, [link]);
   // 편집이 끝나면(툴바가 닫히면) 입력창 상태와 blur 잠금을 반드시 푼다.
   useEffect(() => {
-    if (textCtx && editingNodeId) return;
+    if (textCtx && editingAny) return;
     setLink(null);
     controller.pauseBlurCommit(false);
-  }, [textCtx, editingNodeId, controller]);
+  }, [textCtx, editingAny, controller]);
 
   // 링크 입력창이 열린 뒤 사용자가 **다른 텍스트를 선택**하면(마우스든 키보드든)
   // 잡아 둔 범위가 더 이상 의도와 맞지 않는다 — 입력창을 닫는다(제보).
@@ -111,7 +114,7 @@ export function TextToolbar({ controller }: TextToolbarProps) {
     return () => window.removeEventListener('mousedown', onDown);
   }, [textCtx, controller]);
 
-  if (!textCtx || !editingNodeId) return null;
+  if (!textCtx || !editingAny) return null;
 
   // port of `textCtxStyle` (MindFlow.dc.html:3089-3092) — clamped so the toolbar never
   // overflows past the right edge of the viewport, and never sits above its top edge.

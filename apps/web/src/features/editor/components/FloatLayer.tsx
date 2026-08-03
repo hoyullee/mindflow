@@ -1,8 +1,8 @@
 import type { CSSProperties } from 'react';
 import { useEffect, useRef } from 'react';
-import type { Float, ListOp, TextEdit } from '@mindflow/mindmap-core';
-import { applyListOp, continueListMarker, listBackspaceOp, listDisplayLine, renumberEdits, shiftOffset } from '@mindflow/mindmap-core';
-import { ListTextBlock, plainContentLines } from '../listLines';
+import type { Float, RichRun } from '@mindflow/mindmap-core';
+import { listDisplayLine } from '@mindflow/mindmap-core';
+import { ListTextBlock, domMarkerSignature, listSigOf, listSignature, markerSignature, nodeContentLines, plainContentLines, renderListEdit } from '../listLines';
 import { hexA } from '../theme';
 import { isPanButton } from '../pointerButtons';
 import type { Theme } from '../theme';
@@ -10,6 +10,9 @@ import type { EditorController } from '../useEditorState';
 import { peersSelecting } from '../presenceSelection';
 import { RemotePeerTag } from './RemotePeerTag';
 import { ResizeHandle } from './ResizeHandle';
+import { domToRuns, linearize } from '../richtextDom';
+import { isLinkOpenModifier, linkInk, openLink } from '../richSpans';
+import { insertLineBreak, listBackspaceOpAt, maybeContinueList } from './NodeLayer';
 
 interface FloatLayerProps {
   floats: Float[];
@@ -75,8 +78,12 @@ export function FloatLayer({ floats, theme: th, controller }: FloatLayerProps) {
         }
         // 접힌 메모의 한 줄 표시도 리스트 글리프(`- `→단계 글리프)를 치환해 펼친 모습과 일치.
         const shown = collapsed ? listDisplayLine(String(f.text || '').split('\n')[0] || '') : f.text;
-        // 리스트 마커가 있는 펼친 메모만 줄 단위 렌더(행잉 인덴트) — 없으면 기존 경로.
-        const floatLines = !collapsed && !editing && f.text ? plainContentLines(f.text) : null;
+        // 링크 글자색 — 노드와 같은 규칙(글자색 밝기 기반, `richSpans.linkInk`).
+        (boxStyle as Record<string, unknown>)['--mf-link'] = linkInk((boxStyle.color as string) || null);
+        // rich(부분 서식)가 있으면 노드와 같은 줄 단위 rich 렌더(리스트 포함),
+        // 평문 리스트는 기존 경로, 그 외 평문은 기존 단일 div — 무회귀 우선.
+        const richLines = !collapsed && !editing && f.rich && f.rich.length ? nodeContentLines({ text: f.text, rich: f.rich }) : null;
+        const floatLines = !richLines && !collapsed && !editing && f.text ? plainContentLines(f.text) : null;
         const hasList = !!floatLines && floatLines.some((l) => l.list);
         return (
           <div
@@ -130,7 +137,11 @@ export function FloatLayer({ floats, theme: th, controller }: FloatLayerProps) {
                 style={{ display: 'block', width: '100%', height: '100%', objectFit: 'cover', pointerEvents: 'none', userSelect: 'none' }}
               />
             ) : editing ? (
-              <FloatEditBox f={f} onCommit={(text) => controller.commitFloatText(f.id, text)} onCancel={controller.cancelFloatEdit} />
+              <FloatEditBox f={f} controller={controller} />
+            ) : richLines ? (
+              <div style={{ pointerEvents: 'none', minHeight: 18 }}>
+                <ListTextBlock lines={richLines} align="left" lineHeight={1.55} />
+              </div>
             ) : hasList && floatLines ? (
               <div style={{ pointerEvents: 'none', minHeight: 18 }}>
                 <ListTextBlock lines={floatLines} align="left" lineHeight={1.55} />
@@ -161,109 +172,140 @@ export function FloatLayer({ floats, theme: th, controller }: FloatLayerProps) {
   );
 }
 
-function FloatEditBox({ f, onCommit, onCancel }: { f: Float; onCommit: (text: string) => void; onCancel: () => void }) {
-  const ref = useRef<HTMLTextAreaElement | null>(null);
-  // Grow the textarea to fit its content so the editor shows the SAME wrapped
-  // height as the committed memo (a plain textarea caps at its rows and scrolls,
-  // showing only ~2 lines — the reported mismatch).
-  const autoSize = (el: HTMLTextAreaElement | null): void => {
-    if (!el) return;
-    el.style.height = 'auto';
-    el.style.height = `${el.scrollHeight}px`;
+function FloatEditBox({ f, controller }: { f: Float; controller: EditorController }) {
+  const ref = useRef<HTMLDivElement | null>(null);
+
+  /** 편집 값을 리스트 구조까지 반영해 다시 그리고 캐럿을 복원한다(노드 편집과
+   * 같은 경로 — 메모는 좌측 정렬 고정, 라이브 크기 갱신은 필요 없다: 편집 박스가
+   * 메모 카드 **안**에 있어 내용이 늘면 카드가 자연히 자란다). */
+  const render = (el: HTMLDivElement, v: { text: string; rich: RichRun[] | null }, caret: number): void => {
+    renderListEdit(el, v, 'left', caret, caret);
   };
+
+  /** 입력 후 줄 구조(마커 생성/삭제·마커 드리프트)가 바뀌었으면 다시 그린다 —
+   * `NodeEditBox.syncListStructure`와 같은 규칙. */
+  const syncListStructure = (el: HTMLDivElement): void => {
+    const v = domToRuns(el, true);
+    const drifted = markerSignature(v) !== domMarkerSignature(el);
+    if (!drifted && listSignature(v) === listSigOf(el)) return;
+    const ws = window.getSelection();
+    let caret = v.text.length;
+    if (ws && ws.rangeCount) {
+      const r = ws.getRangeAt(0);
+      caret = linearize(el, [{ container: r.startContainer, offset: r.startOffset }]).pos[0] ?? caret;
+    }
+    render(el, v, caret);
+  };
+
   useEffect(() => {
     const el = ref.current;
     if (!el) return;
-    autoSize(el);
+    // 시작부터 리스트/서식 모양으로(노드와 동일) — 마커 글자 수가 같아 캐럿은 그대로.
+    renderListEdit(el, { text: f.text, rich: f.rich ?? null }, 'left', 0, 0);
+    controller.setRichEditorEl(el);
     el.focus();
-    el.select();
+    const range = document.createRange();
+    range.selectNodeContents(el);
+    const sel = window.getSelection();
+    sel?.removeAllRanges();
+    sel?.addRange(range);
+    // 서식 툴바 상시 노출 — 노드 편집과 같은 규칙(메모 카드 위에 고정).
+    const box = el.closest('[data-float-id]') as HTMLElement | null;
+    const vpEl = el.closest('.mf-ed-vp');
+    if (box && vpEl && typeof box.getBoundingClientRect === 'function' && typeof vpEl.getBoundingClientRect === 'function') {
+      const br = box.getBoundingClientRect();
+      const vr = vpEl.getBoundingClientRect();
+      controller.openTextCtx(br.left + br.width / 2 - vr.left, br.top - vr.top);
+    } else {
+      controller.openTextCtx(0, 60); // jsdom 폴백
+    }
+    return () => controller.setRichEditorEl(null);
+    // Mount-once: 이 박스는 한 편집 세션 동안만 존재한다(NodeEditBox와 동일).
   }, []);
+
   return (
-    <textarea
+    <div
       ref={ref}
-      className="mf-edit"
-      rows={1}
-      defaultValue={f.text}
+      className="mf-edit mf-richedit"
+      contentEditable
+      suppressContentEditableWarning
       onMouseDown={(e) => e.stopPropagation()}
       onPointerDown={(e) => e.stopPropagation()}
-      onInput={(e) => autoSize(e.currentTarget)}
+      onMouseUp={(e) => e.stopPropagation()}
+      // 편집 중에도 Ctrl/⌘+클릭으로 링크 열기(노드와 동일).
+      onClick={(e) => {
+        if (!isLinkOpenModifier(e)) return;
+        const href = (e.target as HTMLElement | null)?.closest?.('[data-href]')?.getAttribute('data-href');
+        if (!href) return;
+        e.preventDefault();
+        e.stopPropagation();
+        openLink(href);
+      }}
+      onDoubleClick={(e) => e.stopPropagation()}
+      onInput={(e) => {
+        const el = ref.current;
+        if (el && !(e.nativeEvent as InputEvent).isComposing) syncListStructure(el);
+      }}
+      onCompositionEnd={() => {
+        const el = ref.current;
+        if (el) syncListStructure(el);
+      }}
       onKeyDown={(e) => {
         e.stopPropagation();
-        if (e.key === 'Escape') {
-          e.preventDefault();
-          onCancel();
-          return;
-        }
-        // Tab = 들여쓰기 / Shift+Tab = 내어쓰기 (노드 편집과 같은 코어 규칙).
-        // 리스트가 아니어도 기본 동작은 막는다 — 포커스가 나가면 blur 커밋으로
-        // 편집이 끝나 버린다.
-        const applyEdits = (el: HTMLTextAreaElement, edits: TextEdit[]): void => {
-          if (!edits.length) return;
-          const a = el.selectionStart ?? 0;
-          const b = el.selectionEnd ?? a;
-          let next = el.value;
-          [...edits].sort((x, y) => y.at - x.at).forEach((ed) => {
-            next = next.slice(0, ed.at) + ed.insert + next.slice(ed.at + ed.remove);
-          });
-          el.value = next;
-          el.selectionStart = shiftOffset(a, edits);
-          el.selectionEnd = shiftOffset(b, edits);
-          autoSize(el);
-        };
-        const runListOp = (el: HTMLTextAreaElement, op: ListOp): void =>
-          applyEdits(el, applyListOp(el.value, el.selectionStart ?? 0, el.selectionEnd ?? el.selectionStart ?? 0, op));
-        if (e.key === 'Tab' && !(e.nativeEvent.isComposing || e.keyCode === 229)) {
-          e.preventDefault();
-          runListOp(e.currentTarget, { type: 'indent', dir: e.shiftKey ? -1 : 1 });
-          return;
-        }
-        // 마커 안에서의 Backspace는 마커를 한 덩어리로 다룬다(노드 편집과 동일 —
-        // 코어 `listBackspaceOp`가 단일 소스).
-        if (e.key === 'Backspace' && !(e.nativeEvent.isComposing || e.keyCode === 229)) {
-          const el = e.currentTarget;
-          const a = el.selectionStart ?? 0;
-          const act = a === (el.selectionEnd ?? a) ? listBackspaceOp(el.value, a) : null;
-          if (act) {
+        const composing = e.nativeEvent.isComposing || e.keyCode === 229;
+        // Ctrl/Cmd+B·I는 브라우저 기본 토글 대신 툴바와 같은 applyPartial로
+        // (노드 편집과 동일 — 기본 토글은 굵은 박스에서 거꾸로 동작한다).
+        if ((e.ctrlKey || e.metaKey) && !e.altKey && !composing) {
+          const k = e.key.toLowerCase();
+          if (k === 'b' || k === 'i') {
             e.preventDefault();
-            if (act.kind === 'op') runListOp(el, act.op);
-            else applyEdits(el, act.edits);
+            controller.applyPartial(k);
+            return;
+          }
+          if (k === 'u') {
+            e.preventDefault(); // 밑줄은 모델에 없다 — 커밋 때 사라질 서식을 안 보여준다
             return;
           }
         }
-        // 리스트 자동 이어쓰기 — 리스트 줄에서 Enter를 치면 다음 줄에 마커를
-        // 이어 넣고, 마커만 남은 빈 줄이면 마커를 지워 리스트를 끝낸다.
-        // (textarea라 char-model이 필요 없다 — 값/캐럿을 직접 조작.)
-        const composing = e.nativeEvent.isComposing || e.keyCode === 229;
-        if (e.key === 'Enter' && !composing) {
-          const el = e.currentTarget;
-          const caret = el.selectionStart ?? el.value.length;
-          const selEnd = el.selectionEnd ?? caret;
-          const lineStart = el.value.lastIndexOf('\n', caret - 1) + 1;
-          const lineEndIdx = el.value.indexOf('\n', caret);
-          const line = el.value.slice(lineStart, lineEndIdx === -1 ? el.value.length : lineEndIdx);
-          const cont = continueListMarker(line);
-          if (cont) {
+        if (e.key === 'Escape') {
+          e.preventDefault();
+          controller.cancelFloatEdit();
+          return;
+        }
+        // 마커 안 Backspace는 마커를 한 덩어리로(노드와 동일).
+        if (e.key === 'Backspace' && !composing) {
+          const el = ref.current;
+          const act = el ? listBackspaceOpAt(el) : null;
+          if (act) {
             e.preventDefault();
-            if ('end' in cont) {
-              // 마커만 남은 빈 줄 → 접두를 `replaceWith`로(들여쓴 줄은 한 단계
-              // 내어쓰기, 최상위는 제거로 리스트 종료)
-              const lineEnd = lineEndIdx === -1 ? el.value.length : lineEndIdx;
-              el.value = el.value.slice(0, lineStart) + cont.replaceWith + el.value.slice(lineEnd);
-              el.selectionStart = el.selectionEnd = lineStart + cont.replaceWith.length;
-            } else {
-              const insert = `\n${cont.next}`;
-              el.value = el.value.slice(0, caret) + insert + el.value.slice(selEnd);
-              el.selectionStart = el.selectionEnd = caret + insert.length;
-            }
-            // 이어쓰기/내어쓰기로 어긋난 이웃 번호 정리 — 노드 편집과 같은 규칙
-            // (내어쓴 항목은 상위 번호를 잇고, 중간 삽입은 뒤 번호를 민다).
-            applyEdits(el, renumberEdits(el.value));
-            autoSize(el);
+            if (act.kind === 'op') controller.applyListOp(act.op);
+            else controller.applyListEdits(act.edits);
+            return;
           }
         }
+        // Tab = 들여쓰기 / Shift+Tab = 내어쓰기. 리스트가 아니어도 기본 동작은
+        // 막는다(포커스 이탈 = blur 커밋으로 편집이 끊긴다).
+        if (e.key === 'Tab' && !composing) {
+          e.preventDefault();
+          controller.applyListOp({ type: 'indent', dir: e.shiftKey ? -1 : 1 });
+          return;
+        }
+        // Enter = 편집 확정, Shift+Enter = 줄바꿈(리스트 이어쓰기 포함) —
+        // 도형(노드) 편집과 동일한 키 규칙(요청).
+        if (e.key === 'Enter' && !composing && !e.shiftKey) {
+          e.preventDefault();
+          controller.commitFloatRichText(f.id, ref.current);
+        } else if (e.key === 'Enter' && !composing && e.shiftKey) {
+          const el = ref.current;
+          if (el && maybeContinueList(e, el, (v, caret) => render(el, v, caret))) return;
+          if (el && insertLineBreak(el, (v, caret) => render(el, v, caret))) e.preventDefault();
+        }
       }}
-      onBlur={(e) => onCommit(e.currentTarget.value)}
-      placeholder="메모 입력…"
+      onKeyUp={(e) => e.stopPropagation()}
+      // 링크 주소 입력창이 열려 있는 동안엔 커밋하지 않는다(노드와 동일).
+      onBlur={() => {
+        if (!controller.isBlurCommitPaused()) controller.commitFloatRichText(f.id, ref.current);
+      }}
       style={{
         display: 'block',
         width: '100%',
@@ -274,10 +316,11 @@ function FloatEditBox({ f, onCommit, onCancel }: { f: Float; onCommit: (text: st
         font: 'inherit',
         lineHeight: 'inherit',
         outline: 'none',
-        resize: 'none',
-        overflow: 'hidden',
+        whiteSpace: 'pre-wrap',
+        wordBreak: 'break-word',
         padding: 0,
         cursor: 'text',
+        userSelect: 'text',
       }}
     />
   );

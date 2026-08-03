@@ -426,7 +426,7 @@ function NodeBox({ id, node: n, g, nodes, mode, theme: th, rootX, controller }: 
 /** 접힌 선택 없이 캐럿이 리스트 마커 안에 있는지 보고, Backspace가 대신 수행할
  * 리스트 연산을 돌려준다(아니면 `null` → 브라우저 기본 삭제). 판정 규칙 자체는
  * 코어 `listBackspaceOp`가 단일 소스다. */
-function listBackspaceOpAt(el: HTMLDivElement): ReturnType<typeof listBackspaceOp> {
+export function listBackspaceOpAt(el: HTMLDivElement): ReturnType<typeof listBackspaceOp> {
   const ws = window.getSelection();
   if (!ws || !ws.rangeCount) return null;
   const rng = ws.getRangeAt(0);
@@ -435,7 +435,7 @@ function listBackspaceOpAt(el: HTMLDivElement): ReturnType<typeof listBackspaceO
   return listBackspaceOp(domToRuns(el, true).text, lin.pos[0] ?? 0);
 }
 
-function maybeContinueList(e: { preventDefault: () => void }, el: HTMLDivElement | null, render: (v: { text: string; rich: RichRun[] | null }, caret: number) => void): boolean {
+export function maybeContinueList(e: { preventDefault: () => void }, el: HTMLDivElement | null, render: (v: { text: string; rich: RichRun[] | null }, caret: number) => void): boolean {
   if (!el) return false;
   const ws = window.getSelection();
   if (!ws || !ws.rangeCount) return false;
@@ -492,7 +492,7 @@ function maybeContinueList(e: { preventDefault: () => void }, el: HTMLDivElement
  * (`updateNodeEditSize`)이 그 자리에서 돌지 않아 도형이 다음 글자를 칠 때에야 커진다.
  * 리스트 이어쓰기(`maybeContinueList`)와 같은 경로로 통일하면 둘 다 해결된다 —
  * `render`가 곧바로 다시 그리고 크기까지 갱신하기 때문이다. */
-function insertLineBreak(el: HTMLDivElement | null, render: (v: { text: string; rich: RichRun[] | null }, caret: number) => void): boolean {
+export function insertLineBreak(el: HTMLDivElement | null, render: (v: { text: string; rich: RichRun[] | null }, caret: number) => void): boolean {
   if (!el) return false;
   const ws = window.getSelection();
   if (!ws || !ws.rangeCount) return false;

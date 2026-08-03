@@ -339,6 +339,8 @@ export interface EditorController {
   applyListEdits: (edits: TextEdit[]) => void;
   startEditFloat: (id: string) => void;
   commitFloatText: (id: string, text: string) => void;
+  /** 메모 rich 커밋 — 노드의 `commitNodeRichText`와 같은 훅(마크다운·자동 링크). */
+  commitFloatRichText: (id: string, el: HTMLElement | null) => void;
   cancelFloatEdit: () => void;
   startEditLineLabel: (id: string) => void;
   commitLineLabel: (id: string, text: string) => void;
@@ -2054,6 +2056,8 @@ export function useEditorState(): EditorController {
   /** 편집 중인 노드의 텍스트 정렬 — 리스트 행을 그 정렬대로 놓기 위해 필요하다.
    * 편집 박스는 노드 박스(`data-node-id`) 안에 있으므로 DOM에서 되짚는다. */
   const editedNodeAlign = useCallback((ed: HTMLElement): 'left' | 'center' | 'right' => {
+    // 메모(플로트) 편집 박스는 항상 좌측 정렬이다(커밋 렌더와 동일).
+    if (ed.closest('[data-float-id]')) return 'left';
     const id = (ed.closest('[data-node-id]') as HTMLElement | null)?.dataset.nodeId;
     const n = id ? docRef.current.nodes[id] : undefined;
     // `nodeTextAlign`으로 **렌더와 같은 기본값**을 쓴다 — 날것의 `n.align`을 쓰면
@@ -2194,7 +2198,28 @@ export function useEditorState(): EditorController {
     },
     [commitDoc],
   );
-  const cancelFloatEdit = useCallback(() => setEditingFloatId(null), []);
+  /** 메모 rich 커밋 — `commitNodeRichText`와 같은 훅(마크다운 단축 → URL 자동 링크)
+   * 을 태우고 `text`+`rich`를 함께 저장한다. 평문이면 `rich`는 `null`. */
+  const commitFloatRichText = useCallback(
+    (id: string, el: HTMLElement | null) => {
+      setTextCtx(null);
+      if (!el) {
+        setEditingFloatId(null);
+        return;
+      }
+      const parsed = domToRuns(el);
+      const md = applyMarkdownShortcuts(parsed);
+      const base = md ?? parsed;
+      const finalText = applyAutoLinks(base) ?? base;
+      commitDoc((d) => ({ ...d, floats: mutations.updateFloatItem(d.floats, id, { text: finalText.text, rich: finalText.rich }) }));
+      setEditingFloatId(null);
+    },
+    [commitDoc],
+  );
+  const cancelFloatEdit = useCallback(() => {
+    setEditingFloatId(null);
+    setTextCtx(null);
+  }, []);
 
   const startEditLineLabel = useCallback((id: string) => {
     setSelectionState({ kind: 'line', id });
@@ -3625,6 +3650,7 @@ export function useEditorState(): EditorController {
     isBlurCommitPaused,
     startEditFloat,
     commitFloatText,
+    commitFloatRichText,
     cancelFloatEdit,
     startEditLineLabel,
     commitLineLabel,
