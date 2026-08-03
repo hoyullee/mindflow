@@ -226,9 +226,17 @@ function GroupGhostLayer({ doc, controller }: { doc: Doc; controller: EditorCont
   const { theme, geom } = controller;
   if (!gg) return null;
   const boxes: { key: string; l: number; t: number; w: number; h: number; r: number }[] = [];
+  // 멤버 노드는 **서브트리째** — 단일 드래그 고스트(NodeLayer)와 같은 규칙(요청:
+  // 다중 선택 이동에서도 하위 도형 고스트). 접힌 가지의 자식은 geom에 없어 빠진다.
   gg.nodes.forEach((id) => {
-    const g = geom[id];
-    if (g) boxes.push({ key: `n-${id}`, l: g.x - g.w / 2 + gg.dx, t: g.y - g.h / 2 + gg.dy, w: g.w, h: g.h, r: 10 });
+    const walk = (nid: string): void => {
+      const g = geom[nid];
+      if (g) boxes.push({ key: `n-${nid}`, l: g.x - g.w / 2 + gg.dx, t: g.y - g.h / 2 + gg.dy, w: g.w, h: g.h, r: 10 });
+      doc.nodes[nid]?.children.forEach((c) => {
+        if (doc.nodes[c]) walk(c);
+      });
+    };
+    walk(id);
   });
   gg.floats.forEach((id) => {
     const f = doc.floats.find((x) => x.id === id);
