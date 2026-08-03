@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import type { EditorController } from '../../useEditorState';
 import { BoldSizeRow, Divider, PanelSection, PanelTitle, SectionLabel, SwatchRow, panelBodyStyle, panelWrapStyle } from './panelPrimitives';
+import { floatFullyRich } from '../../mutations';
 
 interface FloatPanelProps {
   controller: EditorController;
@@ -69,7 +70,19 @@ export function FloatPanel({ controller, floatIds, isMobile = false }: FloatPane
 
         <Divider theme={th} />
         <PanelSection theme={th} title="텍스트 스타일" open={openSec === 'ftext'} onToggle={() => toggle('ftext')}>
-          <BoldSizeRow theme={th} bold={!!f.bold} size={f.tsize} onToggleBold={controller.toggleFloatBold} onSetSize={controller.setFloatTsize} />
+          <BoldSizeRow
+            theme={th}
+            bold={!!f.bold}
+            size={f.tsize}
+            onToggleBold={controller.toggleFloatBold}
+            onSetSize={controller.setFloatTsize}
+            // I·S는 노드 패널과 같은 whole-toggle(전체 텍스트에 rich 적용) — 서식
+            // 파리티 완성. 활성 표시도 노드와 같은 첫 대상 기준.
+            italic={floatFullyRich(f, 'i')}
+            strike={floatFullyRich(f, 's')}
+            onToggleItalic={() => controller.toggleFloatRichStyle('i')}
+            onToggleStrike={() => controller.toggleFloatRichStyle('s')}
+          />
           <SectionLabel theme={th}>글자 색상</SectionLabel>
           <SwatchRow
             theme={th}

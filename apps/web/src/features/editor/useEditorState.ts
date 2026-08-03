@@ -409,6 +409,8 @@ export interface EditorController {
   // port of `Component#applyFloatText`-backed setters, MindFlow.dc.html:2733-2737) ----
   setFloatBg: (hex: string | null) => void;
   toggleFloatBold: () => void;
+  /** 메모 전체 기울임('i')/취소선('s') 토글 — 노드와 같은 whole-toggle 규칙. */
+  toggleFloatRichStyle: (key: 'i' | 's') => void;
   setFloatTsize: (v: 's' | 'm' | 'l') => void;
   setFloatTextColor: (hex: string | null) => void;
   toggleFloatCollapse: (id: string) => void;
@@ -2638,6 +2640,11 @@ export function useEditorState(): EditorController {
     const cur = !!docRef.current.floats.find((f) => f.id === first)?.bold;
     commitDoc((d) => ({ ...d, floats: mutations.updateFloatItems(d.floats, ids, { bold: !cur }) }));
   }, [floatTargetIds, commitDoc]);
+  /** 메모 전체 기울임/취소선 토글 — 노드 `toggleNodeRichStyle`의 플로트 짝. */
+  const toggleFloatRichStyle = useCallback(
+    (key: 'i' | 's') => commitDoc((d) => ({ ...d, floats: mutations.toggleFloatsRichStyle(d.floats, floatTargetIds(), key) })),
+    [floatTargetIds, commitDoc],
+  );
   const setFloatTsize = useCallback(
     (v: 's' | 'm' | 'l') => commitDoc((d) => ({ ...d, floats: mutations.updateFloatItems(d.floats, floatTargetIds(), { tsize: v === 'm' ? undefined : v }) })),
     [floatTargetIds, commitDoc],
@@ -3699,6 +3706,7 @@ export function useEditorState(): EditorController {
 
     setFloatBg,
     toggleFloatBold,
+    toggleFloatRichStyle,
     setFloatTsize,
     setFloatTextColor,
     toggleFloatCollapse,

@@ -321,6 +321,34 @@ export function toggleNodesRichStyle(nodes: NodeMap, ids: string[], key: 'i' | '
   return out;
 }
 
+/** 메모 텍스트 전체가 해당 rich 스타일로 덮여 있는가 — `nodeFullyRich`의 플로트 짝
+ * (패널 버튼 활성 표시 + `toggleFloatsRichStyle`의 토글 기준). */
+export function floatFullyRich(f: Float | undefined, key: 'i' | 's'): boolean {
+  if (!f || !f.text) return false;
+  const chars = runsToChars({ text: f.text, rich: f.rich });
+  return chars.length > 0 && chars.every((c) => !!c[key]);
+}
+
+/** 메모 전체 텍스트 기울임/취소선 토글 — `toggleNodesRichStyle`의 플로트 짝.
+ * 다중 선택 규칙도 동일: FIRST 대상의 현재 상태 기준으로 전원 켜거나 전원 끈다.
+ * 부분 색상·굵게·링크는 보존된다. */
+export function toggleFloatsRichStyle(floats: Float[], ids: string[], key: 'i' | 's'): Float[] {
+  const valid = ids.filter((id) => floats.some((f) => f.id === id));
+  const first = valid[0];
+  if (!first) return floats;
+  const on = !floatFullyRich(floats.find((f) => f.id === first), key);
+  return floats.map((f) => {
+    if (!valid.includes(f.id) || !f.text) return f;
+    const chars = runsToChars({ text: f.text, rich: f.rich });
+    chars.forEach((c) => {
+      if (key === 'i') c.i = on;
+      else c.s = on;
+    });
+    const runs = charsToRuns(chars).filter((r) => r.t);
+    return { ...f, rich: runs.some((r) => r.b || r.c || r.i || r.s || r.href) ? runs : null };
+  });
+}
+
 /** Port of `Component#setEmoji` (MindFlow.dc.html:2555) — per-id toggle (unlike bold, each
  * node's emoji toggles independently against ITS OWN current value, not the first target's). */
 export function toggleNodesEmoji(nodes: NodeMap, ids: string[], emoji: string): NodeMap {

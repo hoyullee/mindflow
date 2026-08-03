@@ -28,6 +28,7 @@ export { serializeDoc, parseDoc, cloneNodes } from './serialize';
 
 export type { MarkdownSource } from './markdown';
 export { toMarkdown } from './markdown';
+export { richToMarkdown } from './richtext';
 
 export type { HistoryStackOptions } from './history';
 export { HistoryStack } from './history';

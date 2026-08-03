@@ -24,69 +24,144 @@ import type { Theme } from './theme';
 import { CanvasTextMeasurer, computeMetrics } from './metrics';
 import type { GeomMap, NodeGeom } from './types';
 import { downloadFile } from './download';
+import { linkInk } from './richSpans';
 
 const PAD = 46;
 
-/** 감싼 시각 줄 — 리스트 줄은 첫 줄 `t`에 표시 마커(`• `/`  a. ` 등)가 포함되고, 연속 줄은
- * 마커 폭만큼 `indent`를 갖는다(에디터 행잉 인덴트와 동일 모델). `itemW`는 그
- * 항목([마커|내용]) 블록의 폭 — 사용자 정렬대로 블록을 옮기는 데 쓴다. */
-interface PngLine {
+/** 스타일 세그먼트 — rich 런(굵게/색/기울임/취소선/링크)이 PNG까지 내려온다.
+ * `w`는 이 세그의 측정 폭(px, 세그별 폰트 기준). */
+interface PngSeg {
   t: string;
-  indent: number;
-  list: boolean;
-  itemW: number;
+  w: number;
+  b?: boolean;
+  c?: string | null;
+  i?: boolean;
+  s?: boolean;
+  href?: string;
 }
 
-/** 리스트 항목 블록의 왼쪽 x — 에디터 `ListTextBlock`의 `justifyContent`,
- * 썸네일 `mapPreview`의 같은 이름 헬퍼와 동일 규칙. */
-// 리스트 줄의 왼쪽 x는 **항상 텍스트 열 왼쪽**(Notion 방식, 사용자 선정 —
-// `listLines.tsx`의 LIST_ROW_JUSTIFY 참고). 정렬 설정은 평문 줄에만 적용된다.
+/** 감싼 시각 줄 — 리스트 줄은 첫 줄 segs 앞에 표시 마커(평문 세그)가 포함되고,
+ * 연속 줄은 마커 폭만큼 `indent`를 갖는다(에디터 행잉 인덴트와 동일 모델).
+ * 리스트 줄의 왼쪽 x는 **항상 텍스트 열 왼쪽**(Notion 방식 — `listLines.tsx`의
+ * LIST_ROW_JUSTIFY 참고). 정렬 설정은 평문 줄에만 적용된다. `w`는 줄 전체 폭. */
+interface PngLine {
+  segs: PngSeg[];
+  indent: number;
+  list: boolean;
+  w: number;
+}
 
-/** Soft-wrap `text` to `maxW` px with the ctx's CURRENT font, mirroring the
- * editor's `wrapMeasure` token model (whitespace-preserving, breaks between CJK
- * chars) — so a long node label wraps in the PNG exactly as it does on canvas,
- * instead of running off on one line. 리스트 줄(`parseListPrefix`)은 마커 폭을
- * 뗀 좁은 폭으로 내용을 감싼다(`metrics.wrapMeasure`와 동일 규칙). */
-function wrapLines(ctx: CanvasRenderingContext2D, text: string, maxW: number): PngLine[] {
+/** 세그 하나의 캔버스 폰트 — 굵게(800)/기울임이 폭을 바꾸므로 측정·렌더 모두
+ * 이 문자열을 쓴다(에디터 `wrapMeasure`·썸네일 `wrapRuns`와 같은 규칙). */
+type SegFont = (seg?: { b?: boolean; i?: boolean }) => string;
+
+/** Soft-wrap rich runs to `maxW` px, mirroring the editor's `wrapMeasure` token
+ * model — so the PNG wraps exactly like the canvas. 리스트 줄(`parseListPrefix`)은
+ * 마커 폭을 뗀 좁은 폭으로 내용을 감싸고, 마커는 평문 세그로 앞에 붙는다.
+ * 평문 텍스트는 무서식 세그 하나로 들어와 기존과 같은 결과를 낸다. */
+function wrapRichLines(ctx: CanvasRenderingContext2D, runs: Array<{ t: string; b?: boolean; c?: string | null; i?: boolean; s?: boolean; href?: string }>, maxW: number, fontOf: SegFont): PngLine[] {
+  // 하드 줄(\n) 단위로 세그를 나눈다.
+  const hard: Array<Array<{ t: string; b?: boolean; c?: string | null; i?: boolean; s?: boolean; href?: string }>> = [[]];
+  runs.forEach((r) => {
+    String(r.t ?? '')
+      .split('\n')
+      .forEach((piece, pi) => {
+        if (pi > 0) hard.push([]);
+        if (piece) hard[hard.length - 1]!.push({ ...r, t: piece });
+      });
+  });
+
   const out: PngLine[] = [];
-  for (const rawHard of String(text).split('\n')) {
-    const lp = parseListPrefix(rawHard);
+  hard.forEach((rawSegs) => {
+    const lineText = rawSegs.map((sg) => sg.t).join('');
+    const lp = parseListPrefix(lineText);
+    ctx.font = fontOf();
     const markerW = lp ? ctx.measureText(lp.display).width : 0;
-    const hard = lp ? rawHard.slice(lp.raw.length) : rawHard;
-    const lineMaxW = lp ? Math.max(24, maxW - markerW) : maxW;
-    const visual: { t: string; w: number }[] = [];
-    if (!hard) {
-      visual.push({ t: '', w: 0 });
-    } else {
-      const tokens = hard.match(/[A-Za-z0-9]+|\s+|./gu) || [hard];
-      let line = '';
-      let lineW = 0;
-      for (const tk of tokens) {
-        const w = ctx.measureText(tk).width;
-        const isSpace = /^\s+$/.test(tk);
-        if (line && lineW + w > lineMaxW && !isSpace) {
-          visual.push({ t: line, w: lineW });
-          line = isSpace ? '' : tk;
-          lineW = isSpace ? 0 : w;
-        } else {
-          line += tk;
-          lineW += w;
+    // 마커 글자를 세그에서 뗀다(런 경계에 걸쳐도 안전).
+    let strip = lp ? lp.raw.length : 0;
+    const segs = rawSegs
+      .map((sg) => {
+        if (strip <= 0) return sg;
+        if (sg.t.length <= strip) {
+          strip -= sg.t.length;
+          return null;
         }
-      }
-      visual.push({ t: line, w: lineW });
-    }
-    // 항목 블록 폭 = 마커 + 내용 열(감기면 가용 폭 전부) — mapPreview와 같은 모델.
-    const contentColW = visual.length > 1 ? lineMaxW : (visual[0]?.w ?? 0);
-    const itemW = markerW + contentColW;
-    visual.forEach((v, vi) => {
-      if (lp) out.push(vi === 0 ? { t: lp.display + v.t, indent: 0, list: true, itemW } : { t: v.t, indent: markerW, list: true, itemW });
-      else out.push({ t: v.t, indent: 0, list: false, itemW: v.w });
+        const cut = { ...sg, t: sg.t.slice(strip) };
+        strip = 0;
+        return cut;
+      })
+      .filter((sg): sg is NonNullable<typeof sg> => !!sg);
+    const lineMaxW = lp ? Math.max(24, maxW - markerW) : maxW;
+
+    // 토큰화(세그별 폰트로 측정) → 시각 줄로 감싼다.
+    const toks: PngSeg[] = [];
+    segs.forEach((sg) => {
+      ctx.font = fontOf(sg);
+      (String(sg.t).match(/[A-Za-z0-9]+|\s+|./gu) || []).forEach((piece) => {
+        toks.push({ t: piece, w: ctx.measureText(piece).width, b: sg.b, c: sg.c, i: sg.i, s: sg.s, href: sg.href });
+      });
     });
-  }
-  // 항목마다 **자기 폭**으로 정렬한다(에디터 `listItemJustify`와 같은 모델).
-  // 예전엔 연속 묶음을 최대 폭으로 통일해 묶음째 정렬했지만, 도형이 내용에
-  // 딱 맞게 커지는 탓에 정렬이 눈에 보이지 않았다(제보).
-  return out.length ? out : [{ t: '', indent: 0, list: false, itemW: 0 }];
+    const visual: PngSeg[][] = [];
+    let line: PngSeg[] = [];
+    let lineW = 0;
+    toks.forEach((tk) => {
+      if (line.length && lineW + tk.w > lineMaxW && !/^\s+$/.test(tk.t)) {
+        visual.push(line);
+        line = [tk];
+        lineW = tk.w;
+      } else {
+        line.push(tk);
+        lineW += tk.w;
+      }
+    });
+    visual.push(line);
+
+    // 같은 스타일의 이웃 토큰을 합쳐 세그 수를 줄인다.
+    const merge = (lineToks: PngSeg[]): PngSeg[] => {
+      const merged: PngSeg[] = [];
+      lineToks.forEach((tk) => {
+        const last = merged[merged.length - 1];
+        if (last && !!last.b === !!tk.b && (last.c ?? null) === (tk.c ?? null) && !!last.i === !!tk.i && !!last.s === !!tk.s && (last.href ?? null) === (tk.href ?? null)) {
+          last.t += tk.t;
+          last.w += tk.w;
+        } else merged.push({ ...tk });
+      });
+      return merged;
+    };
+    visual.forEach((v, vi) => {
+      const merged = merge(v);
+      const contentW = merged.reduce((acc, sg) => acc + sg.w, 0);
+      if (lp) {
+        if (vi === 0) out.push({ segs: [{ t: lp.display, w: markerW }, ...merged], indent: 0, list: true, w: markerW + contentW });
+        else out.push({ segs: merged, indent: markerW, list: true, w: contentW });
+      } else out.push({ segs: merged, indent: 0, list: false, w: contentW });
+    });
+  });
+  return out.length ? out : [{ segs: [], indent: 0, list: false, w: 0 }];
+}
+
+/** 한 시각 줄을 세그 단위로 그린다 — 세그별 폰트/색, 취소선·밑줄은 캔버스에
+ * `text-decoration`이 없어 **직접 그린다**(썸네일 `decoRects`와 같은 규칙:
+ * 취소선은 글자 세로 중앙 살짝 위, 밑줄은 중앙에서 fpx*0.32 아래). `y`는 줄의
+ * 세로 중앙(`textBaseline: 'middle'` 기준). */
+function drawRichLine(ctx: CanvasRenderingContext2D, ln: PngLine, startX: number, y: number, fpx: number, fontOf: SegFont, baseColor: string, linkColor: string): void {
+  const th = Math.max(1.2, fpx * 0.08);
+  let cx = startX;
+  ctx.textAlign = 'left';
+  ln.segs.forEach((sg) => {
+    ctx.font = fontOf(sg);
+    ctx.fillStyle = sg.c || (sg.href ? linkColor : baseColor);
+    if (sg.t) ctx.fillText(sg.t, cx, y);
+    if (sg.s) ctx.fillRect(cx, y - fpx * 0.04 - th / 2, sg.w, th);
+    if (sg.href) ctx.fillRect(cx, y + fpx * 0.32, sg.w, th);
+    cx += sg.w;
+  });
+}
+
+/** rich가 없으면 무서식 세그 하나 — 평문 경로가 기존과 같은 결과를 내게 한다. */
+function runsOf(src: { text?: string; rich?: Array<{ t: string; b?: boolean; c?: string | null; i?: boolean; s?: boolean; href?: string }> | null }, fallback = ' '): Array<{ t: string; b?: boolean; c?: string | null; i?: boolean; s?: boolean; href?: string }> {
+  if (src.rich && src.rich.length) return src.rich;
+  return [{ t: src.text || fallback }];
 }
 
 /** `ctx.roundRect` isn't in every lib.dom.d.ts version this repo might build against — draw it by hand. */
@@ -198,11 +273,13 @@ function floatBox(ctx: CanvasRenderingContext2D, f: Float): FloatBox {
   if (f.img) return { w, h: Math.max(24, Math.round(f.h ?? w * 0.75)), fpx, lh: 0, lines: [], collapsed: false };
   const lh = fpx * 1.55;
   const collapsed = !!f.collapsed;
-  ctx.font = `${f.bold ? 700 : 400} ${fpx}px Pretendard, sans-serif`;
+  const fw = f.bold ? 700 : 400;
+  const fontOf: SegFont = (sg) => `${sg?.i ? 'italic ' : ''}${sg?.b ? 800 : fw} ${fpx}px Pretendard, sans-serif`;
+  ctx.font = fontOf();
   const innerW = Math.max(8, w - 32 - 11); // left 32 (fold toggle), right 11
   const lines: PngLine[] = collapsed
-    ? [{ t: listDisplayLine(String(f.text || '').split('\n')[0] || ''), indent: 0, list: false, itemW: 0 }]
-    : wrapLines(ctx, f.text || '', innerW);
+    ? [{ segs: [{ t: listDisplayLine(String(f.text || '').split('\n')[0] || ''), w: 0 }], indent: 0, list: false, w: 0 }]
+    : wrapRichLines(ctx, runsOf(f, ''), innerW, fontOf);
   const textH = Math.max(18, lines.length * lh); // text block has a min-height of 18
   const grown = 9 + textH + 9; // top + bottom padding
   const h = collapsed ? Math.max(38, grown) : Math.max(f.h || 44, grown);
@@ -365,8 +442,9 @@ export async function exportPng(doc: Doc, geom: GeomMap, theme: Theme, filename:
       ctx.font = `${emojiPx}px Pretendard, sans-serif`;
       emojiFlex = ctx.measureText(n.emoji).width + 7;
     }
-    ctx.font = `${fw} ${fpx}px Pretendard, sans-serif`;
-    const lines = wrapLines(ctx, n.text || ' ', Math.max(8, g.w - padX * 2 - emojiFlex));
+    const fontOf: SegFont = (sg) => `${sg?.i ? 'italic ' : ''}${sg?.b ? 800 : fw} ${fpx}px Pretendard, sans-serif`;
+    ctx.font = fontOf();
+    const lines = wrapRichLines(ctx, runsOf(n), Math.max(8, g.w - padX * 2 - emojiFlex), fontOf);
     const lh = fpx * 1.35;
     // 노드 썸네일: 에디터의 세로 스택(이미지 → 8px 갭 → 내용)과 동일하게,
     // 텍스트/이모지는 (imgH+8)/2 만큼 내려가고 이미지는 텍스트 블록 위 중앙.
@@ -390,14 +468,16 @@ export async function exportPng(doc: Doc, geom: GeomMap, theme: Theme, filename:
     // center it, so left/right-aligned shapes looked wrong. The emoji sits to the
     // left, so the text region (and a centered block) shifts right by `emojiFlex`.
     const align = n.align === 'left' ? 'left' : n.align === 'right' ? 'right' : 'center';
-    const tx = align === 'left' ? x + padX + emojiFlex : align === 'right' ? x + g.w - padX : g.x + emojiFlex / 2;
     // 리스트 줄: 정렬 설정과 무관하게 텍스트 열 왼쪽 + 행잉 인덴트(에디터·썸네일과 동일).
     const listL = x + padX + emojiFlex;
-    ctx.fillStyle = tcol;
+    const rightL = x + g.w - padX;
+    // 링크 파랑은 도형 글자색 밝기로(에디터·썸네일과 같은 규칙 — `linkInk`).
+    const linkColor = linkInk(tcol);
     ctx.textBaseline = 'middle';
     lines.forEach((ln, i) => {
-      ctx.textAlign = ln.list ? 'left' : align;
-      ctx.fillText(ln.t, ln.list ? listL + ln.indent : tx, ty0 + i * lh);
+      // 세그 단위로 그리므로 정렬은 시작 x를 직접 계산한다(줄 폭 `ln.w`).
+      const startX = ln.list ? listL + ln.indent : align === 'left' ? listL : align === 'right' ? rightL - ln.w : g.x + emojiFlex / 2 - ln.w / 2;
+      drawRichLine(ctx, ln, startX, ty0 + i * lh, fpx, fontOf, tcol, linkColor);
     });
     if (n.emoji) {
       ctx.font = `${emojiPx}px Pretendard, sans-serif`;
@@ -482,16 +562,18 @@ export async function exportPng(doc: Doc, geom: GeomMap, theme: Theme, filename:
     ctx.textAlign = 'center';
     ctx.textBaseline = 'middle';
     ctx.fillText(m.collapsed ? '＋' : '−', f.x + 16, f.y + 16.5);
-    // text
+    // text — 세그 단위(굵게/색/기울임/취소선/링크). 세로는 줄 박스 중앙 기준
+    // (`middle`) — 이전 alphabetic 기준선과 시각 차이는 1px 미만이고, 장식(취소선·
+    // 밑줄) 위치 규칙을 노드와 공유하기 위해서다.
     if (f.text) {
-      ctx.fillStyle = f.textColor || theme.text;
-      ctx.font = `${f.bold ? 700 : 400} ${m.fpx}px Pretendard, sans-serif`;
-      ctx.textAlign = 'left';
-      ctx.textBaseline = 'alphabetic';
-      const firstBaseline = f.y + 9 + m.fpx * 1.15;
+      const fw = f.bold ? 700 : 400;
+      const fontOf: SegFont = (sg) => `${sg?.i ? 'italic ' : ''}${sg?.b ? 800 : fw} ${m.fpx}px Pretendard, sans-serif`;
+      const base = f.textColor || theme.text;
+      const linkColor = linkInk(base);
+      ctx.textBaseline = 'middle';
       m.lines.forEach((ln, i) => {
-        const ly = firstBaseline + i * m.lh;
-        if (ly < f.y + m.h - 4) ctx.fillText(ln.t, f.x + 32 + ln.indent, ly);
+        const cy = f.y + 9 + i * m.lh + m.lh / 2;
+        if (cy < f.y + m.h - 4) drawRichLine(ctx, ln, f.x + 32 + ln.indent, cy, m.fpx, fontOf, base, linkColor);
       });
     }
   });
