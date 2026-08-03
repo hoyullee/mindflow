@@ -9,6 +9,8 @@ import { Viewport } from './components/Viewport';
 import { OutlineView } from './components/OutlineView';
 import { PropertyPanel } from './components/PropertyPanel';
 import { PresenceBar } from './components/PresenceBar';
+import { SearchBar } from './components/SearchBar';
+import { ShortcutHelp } from './components/ShortcutHelp';
 import { MapUnavailable } from './components/MapUnavailable';
 import { MobileSelectBar } from './components/MobileSelectBar';
 import { useIsMobile } from '../../hooks/useMediaQuery';
@@ -111,6 +113,7 @@ export function Editor() {
       <Toolbar controller={controller} />
       {/* 공유 모달 — 아웃라인 보기에서도 열 수 있어야 하므로 view 분기 밖에 둔다. */}
       <ShareModal controller={controller} />
+      <ShortcutHelp controller={controller} />
 
       <div style={{ position: 'relative', flex: '1 1 auto', overflow: 'hidden', display: 'flex' }}>
         {controller.view === 'map' ? (
@@ -118,6 +121,7 @@ export function Editor() {
             <Viewport doc={doc} controller={controller} />
             <DocChip controller={controller} />
             <PresenceBar controller={controller} />
+            <SearchBar controller={controller} />
             <PropertyPanel controller={controller} />
             {/* Mobile: a tap selects (no auto-sheet); this bar offers 편집/속성/삭제와
                 전체 메뉴로 가는 메뉴(⋯). Hidden once the sheet is open (it has its own

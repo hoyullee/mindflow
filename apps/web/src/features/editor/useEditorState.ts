@@ -265,6 +265,16 @@ export interface EditorController {
   showMinimap: boolean;
   toggleMinimap: () => void;
   panToCanvasPoint: (x: number, y: number) => void;
+  /** 맵 안 텍스트 검색 바 열림 상태 — 툴바 버튼과 Ctrl/⌘+F가 함께 조작한다. */
+  searchOpen: boolean;
+  setSearchOpen: (open: boolean) => void;
+  /** 단축키 도움말 열림 상태 — `?` 키(비편집)와 보기/☰ 메뉴가 조작한다. */
+  helpOpen: boolean;
+  setHelpOpen: (open: boolean) => void;
+  /** 검색 일치 대상(전부) — NodeLayer/FloatLayer가 하이라이트 링을 그린다.
+   * 검색 바가 계산해 내려 주고, 닫히면 `null`. */
+  searchMarks: { nodes: Set<string>; floats: Set<string> } | null;
+  setSearchMarks: (marks: { nodes: Set<string>; floats: Set<string> } | null) => void;
   centerObjectAboveSheet: (kind: SelectionKind, id: string, reserveBottomPx: number) => void;
 
   // ---- drag-to-reparent drop target ----
@@ -2721,6 +2731,10 @@ export function useEditorState(): EditorController {
   // `showMinimap` was a design-time prop in the original (`this.props.showMinimap`); this port
   // exposes it as an in-app toggle next to the zoom controls instead (no props/config screen here). ----
   const toggleMinimap = useCallback(() => setShowMinimap((v) => !v), []);
+  const [searchOpen, setSearchOpen] = useState(false);
+  const [helpOpen, setHelpOpen] = useState(false);
+  const [searchMarks, setSearchMarks] = useState<{ nodes: Set<string>; floats: Set<string> } | null>(null);
+
   const panToCanvasPoint = useCallback((cx: number, cy: number) => {
     setViewport((prev) => ({ ...prev, pan: { x: prev.vw / 2 - cx * prev.zoom, y: prev.vh / 2 - cy * prev.zoom } }));
   }, []);
@@ -3386,6 +3400,20 @@ export function useEditorState(): EditorController {
         saveNow();
         return;
       }
+      // Ctrl/⌘+F = 맵 안 검색 — 브라우저 페이지 찾기 대신 우리 검색 바를 연다
+      // (캔버스 텍스트는 페이지 찾기로 못 찾는다). 이미 열려 있으면 입력창이
+      // 다시 포커스를 가져간다(SearchBar의 open 이펙트).
+      if ((e.metaKey || e.ctrlKey) && (e.key === 'f' || e.key === 'F') && !e.shiftKey && !e.altKey) {
+        e.preventDefault();
+        setSearchOpen(true);
+        return;
+      }
+      // `?` = 단축키 도움말 — 글자를 입력 중일 때는 그냥 물음표다.
+      if (e.key === '?' && !inEditable && !e.metaKey && !e.ctrlKey && !e.altKey) {
+        e.preventDefault();
+        setHelpOpen(true);
+        return;
+      }
 
       if (view === 'outline') {
         if ((e.metaKey || e.ctrlKey) && !e.shiftKey && (e.key === 'z' || e.key === 'Z')) {
@@ -3620,6 +3648,12 @@ export function useEditorState(): EditorController {
     showMinimap,
     toggleMinimap,
     panToCanvasPoint,
+    searchOpen,
+    setSearchOpen,
+    helpOpen,
+    setHelpOpen,
+    searchMarks,
+    setSearchMarks,
     centerObjectAboveSheet,
 
     attachTarget,

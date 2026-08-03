@@ -169,6 +169,17 @@ export function ViewMenu({ controller, onDone, isMobile }: { controller: EditorC
           onDone();
         }}
       />
+      <MenuDivider theme={th} />
+      <MenuItem
+        theme={th}
+        isMobile={isMobile}
+        icon={<HelpIcon />}
+        label="단축키 도움말"
+        onClick={() => {
+          controller.setHelpOpen(true);
+          onDone();
+        }}
+      />
     </MenuShell>
   );
 }
@@ -198,11 +209,23 @@ export function MoreMenu({ controller, onDone, isMobile }: { controller: EditorC
       <MenuSectionLabel theme={th}>내보내기</MenuSectionLabel>
       <MenuItem theme={th} isMobile={isMobile} icon={<PngIcon />} label="PNG 이미지" onClick={() => { controller.exportPNG(); onDone(); }} />
       <MenuItem theme={th} isMobile={isMobile} icon={<JsonIcon />} label="JSON 파일 (.json)" onClick={() => { controller.exportJSON(); onDone(); }} />
+      <MenuDivider theme={th} />
+      <MenuItem theme={th} isMobile={isMobile} icon={<HelpIcon />} label="단축키 도움말" onClick={() => { controller.setHelpOpen(true); onDone(); }} />
     </MenuShell>
   );
 }
 
 // ---- icons (shared by the menu bar triggers + rows) ----
+export function HelpIcon() {
+  return (
+    <svg width={15} height={15} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round">
+      <circle cx={12} cy={12} r={10} />
+      <path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3" />
+      <line x1={12} y1={17} x2={12.01} y2={17} />
+    </svg>
+  );
+}
+
 export function PngIcon() {
   return (
     <svg width={15} height={15} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round">
