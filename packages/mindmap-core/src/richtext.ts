@@ -268,3 +268,30 @@ export function applyAutoLinks(src: RichSource): { text: string; rich: RichRun[]
   const runs = charsToRuns(chars).filter((r) => r.t);
   return { text: chars.map((x) => x.ch).join(''), rich: isStyledRuns(runs) ? runs : null };
 }
+
+/** rich 런을 마크다운 인라인 문법으로 — `**굵게**`·`*기울임*`·`~~취소선~~`·`[텍스트](주소)`.
+ * `applyMarkdownShortcuts`(입력 방향)의 역방향으로, 내보내기(`toMarkdown`)가 쓴다.
+ *
+ * - 색은 마크다운에 문법이 없어 평문으로 내린다.
+ * - 마커는 공백을 감싸면 무효(`** 굵게 **`)라 런 가장자리 공백을 마커 **밖**으로 뺀다.
+ * - rich가 없으면 텍스트 그대로 — 옛 문서·평문 무회귀. */
+export function richToMarkdown(src: RichSource): string {
+  if (!src.rich || !src.rich.length) return src.text || '';
+  return src.rich
+    .map((r) => {
+      const styled = r.b || r.i || r.s || r.href;
+      if (!styled) return r.t;
+      const m = /^(\s*)([\s\S]*?)(\s*)$/.exec(r.t);
+      const lead = m?.[1] ?? '';
+      const core = m?.[2] ?? '';
+      const tail = m?.[3] ?? '';
+      if (!core) return r.t;
+      let out = core;
+      if (r.i) out = `*${out}*`;
+      if (r.b) out = `**${out}**`;
+      if (r.s) out = `~~${out}~~`;
+      if (r.href) out = `[${out}](${r.href})`;
+      return lead + out + tail;
+    })
+    .join('');
+}

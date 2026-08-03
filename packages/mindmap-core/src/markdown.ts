@@ -4,6 +4,7 @@
 
 import type { Doc } from './model';
 import { ROOT_ID } from './model';
+import { richToMarkdown } from './richtext';
 
 /** The subset of `Doc` that `toMarkdown` reads. */
 export type MarkdownSource = Pick<Doc, 'nodes' | 'floats'>;
@@ -27,7 +28,8 @@ export function toMarkdown(doc: MarkdownSource): string {
   const walk = (id: string, depth: number): void => {
     const n = nodes[id];
     if (!n) return;
-    const label = ((n.emoji ? n.emoji + ' ' : '') + (n.text || '').replace(/\n/g, ' ')).trim();
+    // rich 서식은 마크다운 인라인 문법으로 되살린다(굵게/기울임/취소선/링크 — 색은 평문).
+    const label = ((n.emoji ? n.emoji + ' ' : '') + richToMarkdown(n).replace(/\n/g, ' ')).trim();
     if (depth === 0) out.push('# ' + label);
     else out.push('  '.repeat(depth - 1) + '- ' + label);
     if (n.note && n.note.trim()) {
@@ -48,7 +50,7 @@ export function toMarkdown(doc: MarkdownSource): string {
   if (floats.some((f) => (f.text || '').trim())) {
     out.push('', '## 메모');
     floats.forEach((f) => {
-      if ((f.text || '').trim()) out.push('- ' + f.text.trim().replace(/\n/g, ' '));
+      if ((f.text || '').trim()) out.push('- ' + richToMarkdown(f).trim().replace(/\n/g, ' '));
     });
   }
 

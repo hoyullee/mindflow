@@ -198,3 +198,42 @@ describe('메모 편집 — 도형과 같은 키 규칙과 서식', () => {
     });
   });
 });
+
+
+describe('메모 속성 패널 — I·S whole-toggle (도형과 파리티)', () => {
+  it('메모 선택 → 패널 I 클릭 → 전체 기울임이 저장되고, 다시 클릭하면 풀린다', async () => {
+    localStorage.setItem('mindflow_doc_fp1', JSON.stringify(docWith()));
+    const { container } = renderEditor('/editor?map=fp1&title=x');
+    fireEvent.pointerDown(floatCard(container), { button: 0 });
+    fireEvent.pointerUp(floatCard(container), { button: 0 });
+    // 패널의 기울임 버튼(노드 패널과 같은 BoldSizeRow)
+    const italicBtn = Array.from(container.querySelectorAll('button')).find((b) => b.getAttribute('title') === '기울임');
+    expect(italicBtn).toBeTruthy();
+    fireEvent.click(italicBtn!);
+    save();
+    await waitFor(() => {
+      const f = readSavedFloat('fp1');
+      expect(f.rich?.every((r) => r.i)).toBe(true);
+    });
+    fireEvent.click(italicBtn!);
+    save();
+    await waitFor(() => {
+      expect(readSavedFloat('fp1').rich ?? null).toBeNull(); // 전부 풀리면 평문
+    });
+  });
+
+  it('부분 색이 있어도 취소선 토글이 색을 보존한다', async () => {
+    localStorage.setItem('mindflow_doc_fp2', JSON.stringify(docWith({ rich: [{ t: '메모', b: false, c: '#d92626' }, { t: ' 본문', b: false, c: null }], text: '메모 본문' })));
+    const { container } = renderEditor('/editor?map=fp2&title=x');
+    fireEvent.pointerDown(floatCard(container), { button: 0 });
+    fireEvent.pointerUp(floatCard(container), { button: 0 });
+    const strikeBtn = Array.from(container.querySelectorAll('button')).find((b) => b.getAttribute('title') === '취소선');
+    fireEvent.click(strikeBtn!);
+    save();
+    await waitFor(() => {
+      const f = readSavedFloat('fp2');
+      expect(f.rich?.every((r) => r.s)).toBe(true);
+      expect(f.rich?.find((r) => r.c === '#d92626')?.t).toBe('메모');
+    });
+  });
+});
