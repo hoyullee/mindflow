@@ -991,16 +991,22 @@ export function useEditorState(): EditorController {
   // the stored `f.h` if a measurement isn't ready yet.
   const floatBoxH = (f: Float): number => floatHeightsRef.current[f.id] ?? f.h ?? 44;
   const floatBoxHLive = (f: Float): number => floatHeights[f.id] ?? f.h ?? 44;
-  // Id of the free shape to magnet clear of overlap once the current interaction
-  // settles (set on text-commit / resize / create; consumed by the nudge effect).
-  // `nudgeTick` re-triggers that effect for interactions (resize) that don't
-  // otherwise change `doc.nodes` on release.
-  const pendingNudgeRef = useRef<string | null>(null);
+  // Ids of the free shapes to magnet clear of overlap once the current interaction
+  // settles (set on text-commit / create / paste; consumed by the nudge effect).
+  // 붙여넣기는 한 번에 여러 자유 도형을 만들 수 있어 목록이다 — 순서대로 처리하며
+  // 뒤의 도형은 앞의 도형이 옮겨 간 자리를 본다(reflow 패스와 같은 규칙).
+  // `nudgeTick` re-triggers that effect for interactions that don't otherwise
+  // change `doc.nodes` on release.
+  const pendingNudgeRef = useRef<string[] | null>(null);
   // Set when a tree STRUCTURAL change (e.g. a drag-reparent) re-lays out the
   // tree: every free shape must then be pushed clear of the new tree, since the
   // tree layout ignores free shapes (port of `applyFreeNudge`-over-all-frees,
   // MindFlow.dc.html:2155). Consumed by the reflow-nudge effect once geom settles.
-  const pendingReflowNudgeRef = useRef(false);
+  // `anchor`(있으면)는 **움직이지 않는 기준**이다 — 크기 조절 확정처럼 사용자가
+  // 방금 자리·크기를 정한 도형은 그대로 두고 겹친 나머지가 밀려나야 한다(제보).
+  // 남들이 다 비켜도 anchor가 여전히 겹치면(움직일 수 없는 트리와 겹침) 그때만
+  // anchor 자신이 비켜난다.
+  const pendingReflowNudgeRef = useRef<{ anchor?: string } | null>(null);
   const [nudgeTick, setNudgeTick] = useState(0);
   const multiSelectionRef = useRef(multiSelection);
   useEffect(() => {
@@ -2129,7 +2135,7 @@ export function useEditorState(): EditorController {
       setTextCtx(null);
       // A free shape whose box just grew may now overlap a neighbour — flag it for
       // the nudge effect (fires once editing clears + geom reflects the new size).
-      pendingNudgeRef.current = id;
+      pendingNudgeRef.current = [id];
     },
     [commitDoc],
   );
@@ -2465,18 +2471,30 @@ export function useEditorState(): EditorController {
         const vp = viewportRef.current;
         target = { kind: 'point', x: (vp.vw / 2 - vp.pan.x) / vp.zoom, y: (vp.vh / 2 - vp.pan.y) / vp.zoom };
       }
-      let res: ReturnType<typeof pasteClipboard> = null;
-      commitDoc((d) => {
-        res = pasteClipboard(d, clip, target, idFactory);
-        return res ? res.doc : d;
-      });
-      // commitDoc의 updater는 동기 실행이라 여기서 결과를 바로 쓸 수 있다.
-      const out = res as ReturnType<typeof pasteClipboard>;
+      // 결과는 updater **밖**에서 계산한다. 예전엔 updater 안에서 res를 채우고
+      // "동기 실행"을 믿었는데, React의 즉시 평가(eager evaluation)는 같은
+      // 핸들러에서 앞선 setState(컨텍스트 메뉴 닫기 등)가 큐를 채우면 **건너뛴다**
+      // — 그 경로에서 붙여넣기는 되는데 선택·후처리가 통째로 빠졌다(잠복 버그,
+      // 겹침 마그넷을 붙이다 발견). docRef는 이 시점의 최신 문서다.
+      if (readOnlyRef.current) return;
+      const out = pasteClipboard(docRef.current, clip, target, idFactory);
       if (!out) return;
+      commitDoc(() => out.doc);
       setSelectionState(out.selection);
       setMultiSelectionState(out.multi);
       setEditingNodeId(null);
       setEditingFloatId(null);
+      // 붙여넣은 **자유 도형**은 겹치지 않는 자리로 마그넷(제보 — 원본에서 24px만
+      // 어긋난 채 겹쳐 보였다). 노드의 자식으로 붙은 경우는 레이아웃이 자리를
+      // 정하므로 해당 없음(아래 필터의 `!parent`가 거른다). 메모/선/영역은 원래
+      // 자유 겹침 허용이라 그대로(도형-도형만 자동 정리 — overlap.ts 상단 규칙).
+      const pastedIds = out.multi ? out.multi.nodes : out.selection?.kind === 'node' ? [out.selection.id] : [];
+      // `docRef`는 커밋 렌더 후에야 갱신되므로, updater가 돌려준 새 문서에서 읽는다.
+      const freeRoots = pastedIds.filter((id) => {
+        const n = out.doc.nodes[id];
+        return !!n && !n.parent;
+      });
+      if (freeRoots.length) pendingNudgeRef.current = freeRoots;
     },
     [commitDoc, idFactory],
   );
@@ -2509,7 +2527,7 @@ export function useEditorState(): EditorController {
       setMultiSelectionState(null);
       setEditingNodeId(newId);
       // separate it from any shape it was staggered on top of, once its edit ends
-      pendingNudgeRef.current = newId;
+      pendingNudgeRef.current = [newId];
     },
     [commitDoc, idFactory],
   );
@@ -3089,14 +3107,15 @@ export function useEditorState(): EditorController {
       if (d.kind === 'node-resize') {
         setResizingNodeId(null); // drop it back to its normal layer
         if (objDragMovedRef.current) {
-          // a free shape resized into a neighbour → magnet it clear once the final
-          // size is in geom. Resize commits during the drag, so `doc.nodes` doesn't
-          // change on release — bump `nudgeTick` to re-run the nudge effect.
-          const rn = docRef.current.nodes[d.id];
-          if (rn && !rn.parent && d.id !== ROOT_ID) {
-            pendingNudgeRef.current = d.id;
-            setNudgeTick((t) => t + 1);
-          }
+          // 크기 확정으로 이웃과 겹치면 **겹친 개별(자유) 도형들이 밀려난다**(제보).
+          // 크기를 조절한 도형은 사용자가 방금 자리·크기를 정한 것이므로 anchor로
+          // 고정하고 나머지가 비켜난다 — 트리 노드를 키운 경우도 이 경로 하나로
+          // 해결된다(트리는 어차피 움직일 수 없어 상대만 밀 수 있다). anchor가
+          // 자유 도형인데 트리와 겹치면 그때만 자신이 비켜난다(effect의 폴백).
+          // Resize commits during the drag, so `doc.nodes` doesn't change on
+          // release — bump `nudgeTick` to re-run the nudge effect.
+          pendingReflowNudgeRef.current = { anchor: d.id };
+          setNudgeTick((t) => t + 1);
         }
       }
       if (d.kind === 'node-move') {
@@ -3126,7 +3145,7 @@ export function useEditorState(): EditorController {
           });
           // the tree re-lays out around the new child/sibling → push every free
           // shape clear of it once the new geom settles (the layout ignores frees).
-          pendingReflowNudgeRef.current = true;
+          pendingReflowNudgeRef.current = {};
           setNudgeTick((t) => t + 1);
         } else {
           const dist = Math.hypot(dropX - d.startGeomX, dropY - d.startGeomY); // = 포인터 이동량 (그랩 오프셋 무관)
@@ -3168,7 +3187,7 @@ export function useEditorState(): EditorController {
             // detached shape (and any bystander free shapes the reflow disturbed) end
             // up clear of every node. Port of dc's `detachNode` → `applyFreeNudge`
             // (MindFlow.dc.html:2164-2171), which nudges AFTER the layout, not before.
-            pendingReflowNudgeRef.current = true;
+            pendingReflowNudgeRef.current = {};
             setNudgeTick((t) => t + 1);
           }
           // small move, no target: snap back — nothing to commit (matches MindFlow.dc.html:1799)
@@ -3190,28 +3209,37 @@ export function useEditorState(): EditorController {
     };
   }, [commitDoc]);
 
-  // Magnet the JUST-moved shape clear of overlap. Only the shape whose id is
-  // parked in `pendingNudgeRef` (set on drop / text-commit / create) is nudged —
-  // never the ones it landed on — so a stationary shape stays put (only the shape
-  // the user acted on moves). Runs once the interaction settles (not mid-edit /
-  // mid-drag) so `geomRef` holds the shape's final laid-out size + position.
-  // Applied via `setDoc` (a normalization, not an undoable action — matching the
-  // original's plain `setState` in `resolveOverlapFree`).
+  // Magnet the JUST-moved shape(s) clear of overlap. Only the shapes whose ids are
+  // parked in `pendingNudgeRef` (set on drop / text-commit / create / paste) are
+  // nudged — never the ones they landed on — so a stationary shape stays put (only
+  // the shapes the user acted on move). Runs once the interaction settles (not
+  // mid-edit / mid-drag) so `geomRef` holds each shape's final laid-out size +
+  // position. Applied via `setDoc` (a normalization, not an undoable action —
+  // matching the original's plain `setState` in `resolveOverlapFree`).
   useEffect(() => {
-    const target = pendingNudgeRef.current;
-    if (!target) return;
+    const targets = pendingNudgeRef.current;
+    if (!targets || !targets.length) return;
     if (editingNodeId || editingFloatId || editingZoneId || editingLineId) return;
     if (objDragRef.current || dragRef.current) return;
     pendingNudgeRef.current = null;
-    const n = doc.nodes[target];
-    if (!n || n.parent) return; // gone, or reattached into the tree — nothing to separate
-    // positions from geom (laid-out) — NOT doc.nodes, whose tree-node x/y is 0
-    const boxOf = (id: string) => {
-      const gg = geomRef.current[id];
-      return gg ? { x: gg.x, y: gg.y, w: gg.w, h: gg.h } : null;
-    };
-    const nudged = mutations.nudgeFreeNode(doc.nodes, target, boxOf);
-    if (nudged !== doc.nodes) setDoc((prev) => (prev.nodes === doc.nodes ? { ...prev, nodes: nudged } : prev));
+    let nodes = doc.nodes;
+    for (const target of targets) {
+      const n = nodes[target];
+      if (!n || n.parent) continue; // gone, or reattached into the tree — nothing to separate
+      // 자유 도형의 위치는 진행 중인 후보 `nodes`에서 읽는다 — 붙여넣기처럼 여럿을
+      // 연달아 밀 때 뒤의 도형이 앞의 도형이 **옮겨 간** 자리를 봐야 한다(reflow
+      // 패스와 같은 규칙). 트리 노드는 doc x/y가 0이라 geom에서, 크기는 항상 geom.
+      const cand = nodes;
+      const boxOf = (id: string) => {
+        const gg = geomRef.current[id];
+        if (!gg) return null;
+        const nn = cand[id];
+        const isFreeRoot = !!nn && !nn.parent && id !== ROOT_ID;
+        return { x: isFreeRoot ? nn.x : gg.x, y: isFreeRoot ? nn.y : gg.y, w: gg.w, h: gg.h };
+      };
+      nodes = mutations.nudgeFreeNode(nodes, target, boxOf);
+    }
+    if (nodes !== doc.nodes) setDoc((prev) => (prev.nodes === doc.nodes ? { ...prev, nodes } : prev));
   }, [doc.nodes, nudgeTick, editingNodeId, editingFloatId, editingZoneId, editingLineId]);
 
   // After a reparent (drag-attach) re-lays out the tree, push EVERY free shape
@@ -3221,28 +3249,34 @@ export function useEditorState(): EditorController {
   // settles (like the single-shape nudge above) so `geomRef` holds the NEW tree
   // positions; applied as a normalization (plain `setDoc`, not undoable).
   useEffect(() => {
-    if (!pendingReflowNudgeRef.current) return;
+    const req = pendingReflowNudgeRef.current;
+    if (!req) return;
     if (editingNodeId || editingFloatId || editingZoneId || editingLineId) return;
     if (objDragRef.current || dragRef.current) return;
-    pendingReflowNudgeRef.current = false;
+    pendingReflowNudgeRef.current = null;
     const freeRoots = Object.keys(doc.nodes).filter((id) => id !== ROOT_ID && !doc.nodes[id]?.parent);
     if (!freeRoots.length) return;
+    // anchor(크기 조절을 확정한 도형)는 움직이지 않는다 — 겹친 쪽이 밀려난다.
+    const anchor = req.anchor && freeRoots.includes(req.anchor) ? req.anchor : null;
+    const movers = anchor ? freeRoots.filter((id) => id !== anchor) : freeRoots;
     let nodes = doc.nodes;
-    for (const fid of freeRoots) {
+    const boxOfIn = (cand: NodeMap) => (id: string) => {
       // Positions: free shapes carry live x/y in the (evolving) candidate `nodes`
       // — read them there so each free clears the ones already nudged this pass;
       // tree nodes' doc x/y is 0, so take their positions from geom. Sizes are
       // position-independent → geom is always fine.
-      const cand = nodes;
-      const boxOf = (id: string) => {
-        const gg = geomRef.current[id];
-        if (!gg) return null;
-        const nn = cand[id];
-        const isFreeRoot = !!nn && !nn.parent && id !== ROOT_ID;
-        return { x: isFreeRoot ? nn.x : gg.x, y: isFreeRoot ? nn.y : gg.y, w: gg.w, h: gg.h };
-      };
-      nodes = mutations.nudgeFreeNode(nodes, fid, boxOf);
+      const gg = geomRef.current[id];
+      if (!gg) return null;
+      const nn = cand[id];
+      const isFreeRoot = !!nn && !nn.parent && id !== ROOT_ID;
+      return { x: isFreeRoot ? nn.x : gg.x, y: isFreeRoot ? nn.y : gg.y, w: gg.w, h: gg.h };
+    };
+    for (const fid of movers) {
+      nodes = mutations.nudgeFreeNode(nodes, fid, boxOfIn(nodes));
     }
+    // 폴백: 남들이 다 비켰는데도 anchor가 여전히 겹치면(움직일 수 없는 **트리**와
+    // 겹친 경우뿐이다 — 자유 도형들은 위에서 전부 비켜났다) 그때만 anchor가 비켜난다.
+    if (anchor) nodes = mutations.nudgeFreeNode(nodes, anchor, boxOfIn(nodes));
     if (nodes !== doc.nodes) setDoc((prev) => (prev.nodes === doc.nodes ? { ...prev, nodes } : prev));
   }, [doc.nodes, nudgeTick, editingNodeId, editingFloatId, editingZoneId, editingLineId]);
 
