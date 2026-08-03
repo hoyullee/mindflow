@@ -404,6 +404,26 @@ describe('자식을 가진 자유 도형 이동', () => {
     return computeViewport(parseDoc(doc)!);
   }
 
+  it('드래그 중 고스트가 하위 도형까지 그려진다 (부모+자식 = 2개)', async () => {
+    localStorage.setItem('mindflow_doc_sub0', JSON.stringify(SUB_DOC));
+    const { container } = renderEditor('/editor?map=sub0&title=x');
+    await waitFor(() => expect(container.querySelector('[data-node-id="fp"]')).toBeTruthy());
+
+    const fpEl = container.querySelector('[data-node-id="fp"]') as HTMLElement;
+    firePointer(fpEl, 'pointerdown', { pointerId: 30, clientX: 500, clientY: 300, button: 0 });
+    firePointer(window, 'pointermove', { pointerId: 30, clientX: 560, clientY: 380 });
+    expect(container.querySelectorAll('[data-drag-ghost]').length).toBe(2); // fp + fc
+    firePointer(window, 'pointerup', { pointerId: 30, clientX: 560, clientY: 380 });
+    await waitFor(() => expect(container.querySelectorAll('[data-drag-ghost]').length).toBe(0));
+
+    // 자식 없는 도형은 기존처럼 1개 (무회귀)
+    const fzEl = container.querySelector('[data-node-id="fz"]') as HTMLElement;
+    firePointer(fzEl, 'pointerdown', { pointerId: 33, clientX: 520, clientY: 450, button: 0 });
+    firePointer(window, 'pointermove', { pointerId: 33, clientX: 560, clientY: 520 });
+    expect(container.querySelectorAll('[data-drag-ghost]').length).toBe(1);
+    firePointer(window, 'pointerup', { pointerId: 33, clientX: 560, clientY: 520 });
+  });
+
   it('빈 곳으로 옮기면 정확히 그 자리에 놓인다 — 유령 박스 충돌로 튀지 않는다', async () => {
     localStorage.setItem('mindflow_doc_sub1', JSON.stringify(SUB_DOC));
     const { container } = renderEditor('/editor?map=sub1&title=x');
