@@ -344,6 +344,71 @@ describe('도형 겹침 자동 정리 — 후속 3건', () => {
   });
 });
 
+// 제보: **자식을 가진** 자유 도형을 옮기면 ① 엉뚱한 좌표로 튀고 ② 하위 도형이
+// 겹친 채 남았다. 원인은 드롭 인라인 nudge가 이동 **전** geom으로 서브트리 박스를
+// 재던 것("새 루트 ~ 옛 자식"으로 늘어난 유령 박스가 있지도 않은 충돌을 만든다).
+describe('자식을 가진 자유 도형 이동', () => {
+  const SUB_DOC = {
+    ...DOC,
+    nodes: {
+      root: { ...DOC.nodes.root },
+      fp: { id: 'fp', text: '부모도형', emoji: '', parent: null, children: ['fc'], collapsed: false, color: null, x: 600, y: 300, free: true },
+      fc: { id: 'fc', text: '하위도형', emoji: '', parent: 'fp', children: [], collapsed: false, color: null, x: 0, y: 0 },
+      fz: { id: 'fz', text: '경유도형', emoji: '', parent: null, children: [], collapsed: false, color: null, x: 620, y: 450, free: true },
+    },
+  };
+
+  function viewportOf(doc: unknown) {
+    return computeViewport(parseDoc(doc)!);
+  }
+
+  it('빈 곳으로 옮기면 정확히 그 자리에 놓인다 — 유령 박스 충돌로 튀지 않는다', async () => {
+    localStorage.setItem('mindflow_doc_sub1', JSON.stringify(SUB_DOC));
+    const { container } = renderEditor('/editor?map=sub1&title=x');
+    await waitFor(() => expect(container.querySelector('[data-node-id="fp"]')).toBeTruthy());
+
+    const { zoom } = viewportOf(SUB_DOC);
+    const fpEl = () => container.querySelector('[data-node-id="fp"]') as HTMLElement;
+    const before = rectOf(fpEl());
+    // 아래로 300 캔버스 px — 이동 경로/유령 박스 안에 fz(620,450)가 들지만 최종
+    // 자리는 어떤 도형과도 겹치지 않는 빈 곳이다 → 마그넷이 발동하면 안 된다.
+    const dy = 300 * zoom;
+    firePointer(fpEl(), 'pointerdown', { pointerId: 31, clientX: 500, clientY: 300, button: 0 });
+    firePointer(window, 'pointermove', { pointerId: 31, clientX: 500, clientY: 300 + dy / 2 });
+    firePointer(window, 'pointermove', { pointerId: 31, clientX: 500, clientY: 300 + dy });
+    firePointer(window, 'pointerup', { pointerId: 31, clientX: 500, clientY: 300 + dy });
+
+    await waitFor(() => {
+      const after = rectOf(fpEl());
+      expect(after.x0).toBeCloseTo(before.x0, 0); // x 그대로
+      expect(after.y0).toBeCloseTo(before.y0 + 300, 0); // 정확히 +300
+      assertNoNodeOverlap(container);
+    });
+  });
+
+  it('다른 도형 위로 옮기면 하위 도형까지 포함해 겹치지 않는 자리로 비켜난다', async () => {
+    localStorage.setItem('mindflow_doc_sub2', JSON.stringify(SUB_DOC));
+    const { container } = renderEditor('/editor?map=sub2&title=x');
+    await waitFor(() => expect(container.querySelector('[data-node-id="fp"]')).toBeTruthy());
+
+    const { zoom } = viewportOf(SUB_DOC);
+    const fpEl = () => container.querySelector('[data-node-id="fp"]') as HTMLElement;
+    // fz(620,450) 위로 — 루트가 fz와 정면으로 겹치는 자리로 떨어뜨린다.
+    const dx = 20 * zoom;
+    const dy = 150 * zoom;
+    firePointer(fpEl(), 'pointerdown', { pointerId: 32, clientX: 500, clientY: 300, button: 0 });
+    firePointer(window, 'pointermove', { pointerId: 32, clientX: 500 + dx / 2, clientY: 300 + dy / 2 });
+    firePointer(window, 'pointermove', { pointerId: 32, clientX: 500 + dx, clientY: 300 + dy });
+    firePointer(window, 'pointerup', { pointerId: 32, clientX: 500 + dx, clientY: 300 + dy });
+
+    await waitFor(() => assertNoNodeOverlap(container));
+    // 하위 도형이 부모를 따라왔다(부모 오른쪽에 붙어 있다 — 좌표가 부모와 가까움)
+    const fp = rectOf(fpEl());
+    const fc = rectOf(container.querySelector('[data-node-id="fc"]') as HTMLElement);
+    expect(Math.abs(fc.y0 - fp.y0)).toBeLessThan(120);
+  });
+});
+
 // 제보: 미선택 객체를 잡고 끌면 "브라우저 전체가 이미지화되어 이동"하는 듯한
 // 네이티브 드래그 고스트가 떴다. 근원이 무엇이든(남은 텍스트 선택·Ctrl+A의 페이지
 // 전체 선택 등) 에디터 안에서는 네이티브 드래그를 차단하고, Ctrl+A는 페이지 텍스트

@@ -543,6 +543,33 @@ export interface EditorController {
   readOnly: boolean;
 }
 
+/**
+ * 겹침 nudge용 박스 조회 팩토리 — 위치 규칙 하나로 모든 경우를 맞춘다: 어떤 id든
+ * **최상위 조상**이 자유 루트라면, 그 루트가 geom 대비 옮겨 간 만큼(delta =
+ * 후보 `cand`의 루트 위치 − geom의 루트 위치) 자기 geom 위치를 평행이동해 읽는다.
+ * 루트 자신(delta 적용 = 후보 위치)과 그 **자식들**(같은 delta로 추종 — 자식을
+ * 가진 자유 도형을 옮기면 서브트리 박스가 "새 루트 ~ 옛 자식"으로 늘어나 엉뚱한
+ * 곳으로 튀던 제보의 원인)과 이번 패스에서 먼저 밀린 다른 자유 도형의 서브트리까지
+ * 전부 이 규칙 하나로 맞는다. 트리(문서 루트) 노드는 delta 0 — geom 그대로.
+ */
+function nudgeBoxOf(cand: NodeMap, geom: Record<string, { x: number; y: number; w: number; h: number }>) {
+  return (id: string): { x: number; y: number; w: number; h: number } | null => {
+    const gg = geom[id];
+    if (!gg) return null;
+    // 최상위 조상까지 걸어 올라간다(손상 문서의 순환 대비 hop 상한).
+    let r = id;
+    for (let hop = 0; hop < 200 && cand[r]?.parent; hop++) r = cand[r]!.parent!;
+    const rn = cand[r];
+    if (rn && !rn.parent && r !== ROOT_ID) {
+      const rg = geom[r];
+      const dx = rg ? rn.x - rg.x : 0;
+      const dy = rg ? rn.y - rg.y : 0;
+      return { x: gg.x + dx, y: gg.y + dy, w: gg.w, h: gg.h };
+    }
+    return { x: gg.x, y: gg.y, w: gg.w, h: gg.h };
+  };
+}
+
 function docSignature(d: Doc): string {
   try {
     return JSON.stringify([d.nodes, d.floats, d.lines, d.zones, d.layoutMode, d.themeKey, d.edgeStyle]);
@@ -3176,34 +3203,26 @@ export function useEditorState(): EditorController {
           setNudgeTick((t) => t + 1);
         } else {
           const dist = Math.hypot(dropX - d.startGeomX, dropY - d.startGeomY); // = 포인터 이동량 (그랩 오프셋 무관)
-          // Box lookup for the drop: the dragged shape's NEW position is already in
-          // the candidate `nodes` (moveFreeNode/detach set it), and every free shape
-          // carries its live position in the doc — so read positions from the doc for
-          // free shapes and from geom for tree nodes (whose doc x/y is 0). Sizes are
-          // position-independent, so geom is always fine for them. Doing this inline
-          // lets the drop + magnet land in ONE commit → the shape never renders at the
-          // overlapping spot first (no text flicker).
-          const boxOf = (nodes: NodeMap) => (id: string) => {
-            const gg = geomRef.current[id];
-            if (!gg) return null;
-            const nn = nodes[id];
-            const isFreeRoot = !!nn && !nn.parent && id !== ROOT_ID;
-            return { x: isFreeRoot ? nn.x : gg.x, y: isFreeRoot ? nn.y : gg.y, w: gg.w, h: gg.h };
-          };
           if (d.wasFree) {
-            // a free shape dropped clear of any target moves to the drop point, then
-            // magnets clear (only this shape) of anything it landed on — one commit.
-            if (dist > 0.5)
-              commitDoc((doc0) => {
-                const moved = mutations.moveFreeNode(doc0.nodes, d.id, dropX, dropY);
-                return { ...doc0, nodes: mutations.nudgeFreeNode(moved, d.id, boxOf(moved)) };
-              });
+            // 이동 커밋만 하고 마그넷은 **layout effect**(pendingNudge)에 맡긴다.
+            // 예전엔 여기서 인라인으로 nudge까지 했는데(한 커밋 = 깜빡임 방지),
+            // 그 시점의 geom은 이동 **전** 레이아웃이라 **자식을 가진** 자유 도형의
+            // 서브트리 박스가 "새 루트 위치 ~ 옛 자식 위치"로 늘어난 엉터리가 됐다
+            // (제보: 하위 도형이 있으면 엉뚱한 좌표로 튀고 하위가 겹친 채 남음 —
+            // 아래 detach 주석이 이미 문서화한 함정과 같은 것). nudge가 layout
+            // effect(페인트 전)로 옮겨진 지금은 다음 렌더의 **새 레이아웃 geom**으로
+            // 재도 깜빡임이 없다.
+            if (dist > 0.5) {
+              commitDoc((doc0) => ({ ...doc0, nodes: mutations.moveFreeNode(doc0.nodes, d.id, dropX, dropY) }));
+              pendingNudgeRef.current = [d.id];
+            }
           } else if (dist > 40) {
             // dragged clear of the tree → detach to a free shape at the drop point
-            // (MindFlow.dc.html:1791-1797), then magnet it clear — one commit.
+            // (MindFlow.dc.html:1791-1797). 마그넷은 아래 리플로우 패스가 새 geom으로
+            // 처리한다(인라인 nudge는 위와 같은 낡은-geom 함정 — 제거).
             commitDoc((doc0) => {
-              const detached = mutations.detachNodeToFree(doc0.nodes, d.id, dropX, dropY);
-              return { ...doc0, nodes: mutations.nudgeFreeNode(detached, d.id, boxOf(detached)) };
+              const next = mutations.detachNodeToFree(doc0.nodes, d.id, dropX, dropY);
+              return { ...doc0, nodes: next };
             });
             // Detaching removes the node from its parent → the tree RE-LAYS OUT, and
             // the just-detached shape's subtree only gets its real laid-out footprint
@@ -3271,18 +3290,10 @@ export function useEditorState(): EditorController {
     for (const target of targets) {
       const n = nodes[target];
       if (!n || n.parent) continue; // gone, or reattached into the tree — nothing to separate
-      // 자유 도형의 위치는 진행 중인 후보 `nodes`에서 읽는다 — 붙여넣기처럼 여럿을
-      // 연달아 밀 때 뒤의 도형이 앞의 도형이 **옮겨 간** 자리를 봐야 한다(reflow
-      // 패스와 같은 규칙). 트리 노드는 doc x/y가 0이라 geom에서, 크기는 항상 geom.
-      const cand = nodes;
-      const boxOf = (id: string) => {
-        const gg = geom[id];
-        if (!gg) return null;
-        const nn = cand[id];
-        const isFreeRoot = !!nn && !nn.parent && id !== ROOT_ID;
-        return { x: isFreeRoot ? nn.x : gg.x, y: isFreeRoot ? nn.y : gg.y, w: gg.w, h: gg.h };
-      };
-      nodes = mutations.nudgeFreeNode(nodes, target, boxOf);
+      // 위치 규칙은 `nudgeBoxOf` 하나로 — 자유 루트(와 그 서브트리)는 진행 중인
+      // 후보 `nodes`가 말하는 곳으로 평행이동해 읽는다(붙여넣기처럼 여럿을 연달아
+      // 밀 때 뒤의 도형이 앞의 도형이 **옮겨 간** 자리를 봐야 한다).
+      nodes = mutations.nudgeFreeNode(nodes, target, nudgeBoxOf(nodes, geom));
     }
     if (nodes !== doc.nodes) amendDoc((prev) => (prev.nodes === doc.nodes ? { ...prev, nodes } : prev));
   }, [doc.nodes, geom, nudgeTick, editingNodeId, editingFloatId, editingZoneId, editingLineId]);
@@ -3307,23 +3318,14 @@ export function useEditorState(): EditorController {
     const anchor = req.anchor && freeRoots.includes(req.anchor) ? req.anchor : null;
     const movers = anchor ? freeRoots.filter((id) => id !== anchor) : freeRoots;
     let nodes = doc.nodes;
-    const boxOfIn = (cand: NodeMap) => (id: string) => {
-      // Positions: free shapes carry live x/y in the (evolving) candidate `nodes`
-      // — read them there so each free clears the ones already nudged this pass;
-      // tree nodes' doc x/y is 0, so take their positions from geom. Sizes are
-      // position-independent → geom is always fine.
-      const gg = geom[id];
-      if (!gg) return null;
-      const nn = cand[id];
-      const isFreeRoot = !!nn && !nn.parent && id !== ROOT_ID;
-      return { x: isFreeRoot ? nn.x : gg.x, y: isFreeRoot ? nn.y : gg.y, w: gg.w, h: gg.h };
-    };
+    // 위치 규칙은 `nudgeBoxOf` 하나로 — 먼저 밀린 자유 도형의 서브트리까지
+    // 후보 `nodes` 기준으로 평행이동해 읽는다.
     for (const fid of movers) {
-      nodes = mutations.nudgeFreeNode(nodes, fid, boxOfIn(nodes));
+      nodes = mutations.nudgeFreeNode(nodes, fid, nudgeBoxOf(nodes, geom));
     }
     // 폴백: 남들이 다 비켰는데도 anchor가 여전히 겹치면(움직일 수 없는 **트리**와
     // 겹친 경우뿐이다 — 자유 도형들은 위에서 전부 비켜났다) 그때만 anchor가 비켜난다.
-    if (anchor) nodes = mutations.nudgeFreeNode(nodes, anchor, boxOfIn(nodes));
+    if (anchor) nodes = mutations.nudgeFreeNode(nodes, anchor, nudgeBoxOf(nodes, geom));
     if (nodes !== doc.nodes) amendDoc((prev) => (prev.nodes === doc.nodes ? { ...prev, nodes } : prev));
   }, [doc.nodes, geom, nudgeTick, editingNodeId, editingFloatId, editingZoneId, editingLineId]);
 
