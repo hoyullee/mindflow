@@ -268,6 +268,8 @@ interface DocFloat {
   tsize?: 's' | 'm' | 'l';
   /** 이미지 플로트 (core `Float.img`) — 메모 카드 대신 이미지로 그린다. */
   img?: string;
+  /** 부분 리치텍스트 런 (core `Float.rich`) — 노드와 같은 모델. */
+  rich?: Array<{ t: string; b?: boolean; c?: string | null; i?: boolean; s?: boolean; href?: string }> | null;
 }
 
 interface DocZone {
@@ -765,21 +767,34 @@ function buildPreview(rawDoc: string, hueFallback: string): JSX.Element | null {
     const bold = !!f.bold;
     const innerW = Math.max(8, fw - 32 - 11);
     // 접힌 메모의 한 줄도 리스트 글리프(`- `→`• `)를 치환(에디터 FloatLayer와 동일).
+    const floatRuns: WrapSeg[] = Array.isArray(f.rich) && f.rich.length ? (f.rich as WrapSeg[]) : [{ t: f.text || '' }];
     const lines: WrapLine[] = f.collapsed
       ? [{ segs: [{ t: listDisplayLine((f.text || '').split('\n')[0] || '') }], indent: 0, list: false, itemW: 0, w: 0 }]
-      : wrapRuns([{ t: f.text || '' }], innerW, ffpx, bold ? 700 : 400, previewMeasurer);
+      : wrapRuns(floatRuns, innerW, ffpx, bold ? 700 : 400, previewMeasurer);
     if (lines.some((ln) => ln.segs.some((s) => s.t.trim()))) {
       const textX = f.x + 32;
       const firstY = f.y + 9 + flh / 2; // centre of the first line box (top pad 9)
+      const fBase = f.textColor || '#5a4a3a';
+      const fLink = linkInk(fBase);
       floatEls.push(
-        <text key={`ft${i}`} x={textX} y={firstY} dominantBaseline="central" fontSize={ffpx} fontWeight={bold ? 700 : 400} fill={f.textColor || '#5a4a3a'} fontFamily="Pretendard, sans-serif">
+        // 노드 본문과 같은 규칙: `middle` = 장식(rect) 위치의 기준(decoRects 참고).
+        <text key={`ft${i}`} x={textX} y={firstY} dominantBaseline="middle" fontSize={ffpx} fontWeight={bold ? 700 : 400} fill={fBase} fontFamily="Pretendard, sans-serif">
           {lines.map((ln, li) => (
             <tspan key={li} x={textX + ln.indent} dy={li === 0 ? 0 : flh}>
-              {ln.segs.map((s) => s.t).join('')}
+              {ln.segs.map((sg, si) => (
+                <tspan key={si} fontWeight={sg.b ? 800 : undefined} fill={sg.c || (sg.href ? fLink : undefined)} fontStyle={sg.i ? 'italic' : undefined}>
+                  {sg.t}
+                </tspan>
+              ))}
             </tspan>
           ))}
         </text>,
       );
+      // 밑줄·취소선 — 노드와 같은 `decoRects`(메모는 좌측 정렬이라 줄 왼쪽이 곧 textX+indent).
+      lines.forEach((ln, li) => {
+        if (!ln.segs.some((sg) => sg.s || sg.href)) return;
+        floatEls.push(...decoRects(`fd${i}-${li}`, ln.segs, textX + ln.indent, firstY + li * flh, ffpx, fBase, fLink));
+      });
     }
   });
 

@@ -167,3 +167,28 @@ describe('cloneNodes', () => {
     expect(cloneNodes({})).toEqual({});
   });
 });
+
+
+describe('Float.rich — 메모 부분 서식 직렬화', () => {
+  it('rich가 있는 메모가 라운드트립을 통과하고, 없는 메모는 필드가 생기지 않는다', () => {
+    const doc = parseDoc({
+      v: 1,
+      nodes: { root: { id: 'root', text: '루트', emoji: '', parent: null, children: [], collapsed: false, color: null, x: 0, y: 0 } },
+      floats: [
+        { id: 'f1', text: '굵은 메모', x: 10, y: 20, w: 160, rich: [{ t: '굵은', b: true, c: null }, { t: ' 메모', b: false, c: null, href: 'https://example.com/' }] },
+        { id: 'f2', text: '평문 메모', x: 30, y: 40, w: 160 },
+      ],
+      lines: [],
+      zones: [],
+      layoutMode: 'right',
+      themeKey: 'coral',
+    })!;
+    expect(doc).toBeTruthy();
+    const round = parseDoc(JSON.parse(JSON.stringify(serializeDoc(doc))))!;
+    expect(round.floats[0]!.rich).toEqual([
+      { t: '굵은', b: true, c: null },
+      { t: ' 메모', b: false, c: null, href: 'https://example.com/' },
+    ]);
+    expect('rich' in round.floats[1]!).toBe(false);
+  });
+});

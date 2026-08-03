@@ -123,6 +123,13 @@ export interface Float {
    * every pre-existing doc, so serialization stays a pure passthrough.
    */
   img?: string;
+  /**
+   * 부분 리치텍스트 런(post-dc 순수 추가) — 노드의 `Node.rich`와 같은 모델을
+   * 메모에 이식한 것. `text`와 항상 같은 문자열로 합쳐지는 런 배열이고, 서식이
+   * 있을 때만 존재한다(평문 메모는 `null`/부재 — 옛 문서·직렬화·CRDT 모두
+   * 제네릭 통과라 무회귀).
+   */
+  rich?: RichRun[] | null;
 }
 
 /**

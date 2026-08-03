@@ -327,6 +327,8 @@ export function measureFloatHeight(f: Float, measurer: TextMeasurer): number {
   if (f.collapsed) return Math.max(38, grownOf(1));
   const font = `${f.bold ? 700 : 400} ${fpx}px Pretendard`;
   const innerW = Math.max(8, (f.w || 160) - 32 - 11); // left pad 32 (fold toggle), right pad 11
-  const lines = f.text ? countWrappedLines(f.text, innerW, font, measurer) : 1;
+  // rich(부분 서식) 메모는 굵게/기울임이 줄 폭을 바꾸므로 노드와 같은
+  // rich-aware 측정(`wrapMeasure`)으로 줄 수를 센다. 평문은 기존 경로 그대로.
+  const lines = f.rich && f.rich.length ? wrapMeasure({ text: f.text, rich: f.rich }, fpx, f.bold ? 700 : 400, innerW, measurer).count : f.text ? countWrappedLines(f.text, innerW, font, measurer) : 1;
   return Math.max(f.h || 44, grownOf(lines));
 }

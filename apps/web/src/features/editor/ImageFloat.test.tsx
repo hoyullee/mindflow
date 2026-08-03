@@ -141,8 +141,9 @@ describe('image float in the editor', () => {
     const card = vp.querySelector(`img[src="${IMG_SRC}"]`)!.parentElement as HTMLElement;
 
     await user.dblClick(card);
-    // 편집 textarea가 아니라 이미지 속성 패널이 뜬다
+    // 편집 박스가 아니라 이미지 속성 패널이 뜬다
     expect(card.querySelector('textarea')).toBeNull();
+    expect(card.querySelector('.mf-richedit')).toBeNull();
     expect(screen.getByText('선택한 이미지')).toBeTruthy();
   });
 

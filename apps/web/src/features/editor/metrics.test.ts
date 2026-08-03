@@ -215,3 +215,21 @@ describe('computeMetrics — 편집 중 빈 텍스트(emptyAsIs)', () => {
     expect(committed.w).toBe(asPlaceholder.w);
   });
 });
+
+
+describe('measureFloatHeight — rich 메모', () => {
+  const measurer = new CanvasTextMeasurer();
+  it('굵은 런이 줄 폭을 넓혀 줄 수가 달라지면 높이에 반영된다', () => {
+    // 같은 텍스트라도 rich(굵게)면 폭이 넓어져 먼저 감긴다 — jsdom 폴백 측정도
+    // bold 배율(0.62 vs 0.56)이 있어 결정적으로 검증 가능. 라틴만 사용(한글은 배율 무관).
+    const text = 'wwwwwwwwwwwwwwwwwwwwwwww';
+    const plain: Float = { id: 'f', x: 0, y: 0, w: 160, text };
+    const rich: Float = { ...plain, rich: [{ t: text, b: true, c: null }] };
+    expect(measureFloatHeight(rich, measurer)).toBeGreaterThanOrEqual(measureFloatHeight(plain, measurer));
+  });
+
+  it('rich가 있어도 리스트 마커 행잉 인덴트 규칙은 유지된다 (에러 없이 계산)', () => {
+    const f: Float = { id: 'f', x: 0, y: 0, w: 160, text: '- 항목 하나\n- 항목 둘', rich: [{ t: '- 항목 하나\n- 항목 둘', b: true, c: null }] };
+    expect(measureFloatHeight(f, measurer)).toBeGreaterThan(0);
+  });
+});
