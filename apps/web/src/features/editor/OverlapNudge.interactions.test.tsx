@@ -227,3 +227,42 @@ describe('도형 겹침 자동 정리', () => {
     });
   });
 });
+
+// 제보: 미선택 객체를 잡고 끌면 "브라우저 전체가 이미지화되어 이동"하는 듯한
+// 네이티브 드래그 고스트가 떴다. 근원이 무엇이든(남은 텍스트 선택·Ctrl+A의 페이지
+// 전체 선택 등) 에디터 안에서는 네이티브 드래그를 차단하고, Ctrl+A는 페이지 텍스트
+// 선택 대신 캔버스 객체 전체 선택으로 가로챈다.
+describe('네이티브 드래그 고스트 차단', () => {
+  it('에디터 안의 dragstart는 기본 동작이 차단된다', async () => {
+    localStorage.setItem('mindflow_doc_dg1', JSON.stringify(DOC));
+    const { container } = renderEditor('/editor?map=dg1&title=x');
+    await waitFor(() => expect(container.querySelector('[data-node-id="fx"]')).toBeTruthy());
+    // fireEvent는 preventDefault가 불리면 false를 돌려준다.
+    expect(fireEvent.dragStart(container.querySelector('[data-node-id="fx"]')!)).toBe(false);
+  });
+
+  it('Ctrl+A는 페이지 텍스트가 아니라 캔버스 객체 전체를 선택한다 (Delete로 일괄 삭제 가능)', async () => {
+    localStorage.setItem('mindflow_doc_dg2', JSON.stringify(DOC));
+    const { container } = renderEditor('/editor?map=dg2&title=x');
+    await waitFor(() => expect(container.querySelector('[data-node-id="fy"]')).toBeTruthy());
+    // preventDefault가 불려야 한다 — 브라우저의 전체 텍스트 선택(고스트의 뿌리) 차단
+    expect(fireEvent.keyDown(window, { key: 'a', ctrlKey: true })).toBe(false);
+    fireEvent.keyDown(window, { key: 'Delete' });
+    await waitFor(() => {
+      expect(container.querySelector('[data-node-id="fx"]')).toBeNull();
+      expect(container.querySelector('[data-node-id="fy"]')).toBeNull();
+      expect(container.querySelector('[data-node-id="root"]')).toBeTruthy(); // 루트는 제외
+    });
+  });
+
+  it('텍스트 편집 중의 Ctrl+A는 가로채지 않는다 (편집 박스 안 전체 선택 유지)', async () => {
+    localStorage.setItem('mindflow_doc_dg3', JSON.stringify(DOC));
+    const { container } = renderEditor('/editor?map=dg3&title=x');
+    await waitFor(() => expect(container.querySelector('[data-node-id="fx"]')).toBeTruthy());
+    fireEvent.doubleClick(container.querySelector('[data-node-id="fx"]')!);
+    const editable = container.querySelector('.mf-richedit') as HTMLElement;
+    expect(editable).toBeTruthy();
+    // 편집 중에는 우리 핸들러가 손대지 않는다(defaultPrevented 아님)
+    expect(fireEvent.keyDown(editable, { key: 'a', ctrlKey: true, bubbles: true })).toBe(true);
+  });
+});
