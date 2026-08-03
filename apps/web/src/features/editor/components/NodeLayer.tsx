@@ -44,25 +44,48 @@ export function NodeLayer({ nodes, geom, mode, theme, controller }: NodeLayerPro
         if (!n || !g) return null;
         return <NodeBox key={id} id={id} node={n} g={g} nodes={nodes} mode={mode} theme={theme} rootX={rootGeom?.x ?? 0} controller={controller} />;
       })}
-      {ghost && ghostGeom && (
-        <div
-          aria-hidden="true"
-          style={{
-            position: 'absolute',
-            left: ghost.x - ghostGeom.w / 2,
-            top: ghost.y - ghostGeom.h / 2,
-            width: ghostGeom.w,
-            height: ghostGeom.h,
-            borderRadius: 10,
-            border: `2px dashed ${theme.accent}`,
-            background: hexA(theme.accent, 0.1),
-            opacity: 0.85,
-            pointerEvents: 'none',
-            zIndex: 40,
-            boxSizing: 'border-box',
-          }}
-        />
-      )}
+      {ghost &&
+        ghostGeom &&
+        (() => {
+          // 잡은 노드만이 아니라 **하위 도형들도** 같은 이동량(delta)만큼 점선
+          // 윤곽으로 따라온다(요청) — 서브트리째 움직인다는 것이 드래그 중에
+          // 보인다. 접힌 가지의 자식은 geom에 없어 자연히 빠진다.
+          const dx = ghost.x - ghostGeom.x;
+          const dy = ghost.y - ghostGeom.y;
+          const ids: string[] = [];
+          const walk = (id: string): void => {
+            ids.push(id);
+            nodes[id]?.children.forEach((c) => {
+              if (nodes[c]) walk(c);
+            });
+          };
+          walk(ghost.id);
+          return ids.map((gid) => {
+            const g = geom[gid];
+            if (!g) return null;
+            return (
+              <div
+                key={`ghost-${gid}`}
+                aria-hidden="true"
+                data-drag-ghost
+                style={{
+                  position: 'absolute',
+                  left: g.x - g.w / 2 + dx,
+                  top: g.y - g.h / 2 + dy,
+                  width: g.w,
+                  height: g.h,
+                  borderRadius: 10,
+                  border: `2px dashed ${theme.accent}`,
+                  background: hexA(theme.accent, 0.1),
+                  opacity: 0.85,
+                  pointerEvents: 'none',
+                  zIndex: 40,
+                  boxSizing: 'border-box',
+                }}
+              />
+            );
+          });
+        })()}
     </>
   );
 }
