@@ -1992,7 +1992,8 @@ export function useEditorState(): EditorController {
       // placeholder `<br>`를 하나 더 두므로, 하나를 접는 이 모드가 곧 실제 값이다.
       const parsed = domToRuns(el, true);
       const liveNode: Node = { ...base, text: parsed.text, rich: parsed.rich };
-      const m = computeMetrics(liveNode, depth, measurer);
+      // `emptyAsIs` — 편집 중 빈 박스가 플레이스홀더('주제') 폭으로 부풀지 않게.
+      const m = computeMetrics(liveNode, depth, measurer, { emptyAsIs: true });
       setEditLiveSize((prev) => (prev && prev.w === m.w && prev.h === m.h && prev.tw === m.tw ? prev : { w: m.w, h: m.h, tw: m.tw }));
     },
     [measurer],

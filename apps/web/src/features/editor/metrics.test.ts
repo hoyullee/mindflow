@@ -194,3 +194,24 @@ describe('computeMetrics — resize monotonicity (텍스트 배율 도형)', () 
     expect(resized.wrapW).toBe(320);
   });
 });
+
+
+describe('computeMetrics — 편집 중 빈 텍스트(emptyAsIs)', () => {
+  const measurer = new CanvasTextMeasurer();
+  const bare = (text: string): Node => ({ id: 'n', text, emoji: '', parent: 'root', children: [], collapsed: false, color: null, x: 0, y: 0 });
+
+  it('빈 박스가 한 글자 박스와 같은 폭이다 (최소 폭으로 내려앉는다)', () => {
+    // 폴백('주제', 두 글자)이 한 글자보다 넓어 첫 글자를 치면 박스가 **줄어들던**
+    // 제보 — 편집 중 측정은 빈 값 그대로 재서 최소 폭에서 시작한다.
+    const empty = computeMetrics(bare(''), 1, measurer, { emptyAsIs: true });
+    const one = computeMetrics(bare('가'), 1, measurer, { emptyAsIs: true });
+    expect(empty.w).toBe(one.w);
+    expect(empty.h).toBe(one.h);
+  });
+
+  it('커밋된 빈 노드는 기존대로 플레이스홀더 크기다 (dc 파리티 무회귀)', () => {
+    const committed = computeMetrics(bare(''), 1, measurer);
+    const asPlaceholder = computeMetrics(bare('주제'), 1, measurer);
+    expect(committed.w).toBe(asPlaceholder.w);
+  });
+});

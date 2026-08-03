@@ -139,9 +139,10 @@ function wrapMeasure(
   fw: number,
   maxW: number,
   measurer: TextMeasurer,
+  placeholder = '주제',
 ): { maxW: number; count: number } {
   const hardLines: RichLineSeg[][] =
-    node.rich && node.rich.length ? richLines(node) : String(node.text || '주제').split('\n').map((l) => [{ t: l, b: false }]);
+    node.rich && node.rich.length ? richLines(node) : String(node.text || placeholder).split('\n').map((l) => [{ t: l, b: false }]);
   let count = 0;
   let widest = 0;
   hardLines.forEach((rawSegs) => {
@@ -186,7 +187,7 @@ function wrapMeasure(
  * node box sizing used by both `layout()` (as `SizeOf`, w/h only) and the
  * renderer (which additionally needs `font`/`fpx`/`fw`/`tw`/`shape`).
  */
-export function computeMetrics(node: Node, depth: number, measurer: TextMeasurer): NodeMetrics {
+export function computeMetrics(node: Node, depth: number, measurer: TextMeasurer, opts?: { emptyAsIs?: boolean }): NodeMetrics {
   const basePx = depth === 0 ? 20 : depth === 1 ? 15 : 14;
   const fpx = node.tsize === 's' ? basePx - 3 : node.tsize === 'l' ? basePx + 5 : basePx;
   const fw = node.bold ? 800 : depth === 0 ? 700 : depth === 1 ? 600 : 500;
@@ -198,7 +199,11 @@ export function computeMetrics(node: Node, depth: number, measurer: TextMeasurer
   /** 주어진 줄바꿈 허용 폭으로 자연 크기(도형 팽창·이미지 포함, cw/ch 클램프 제외)를 계산. */
   const build = (wrapW: number): { w: number; h: number; textW: number } => {
     let h = (depth === 0 ? 52 : depth === 1 ? 42 : 34) + (fpx - basePx) * 1.6;
-    const wm = wrapMeasure(node, fpx, fw, wrapW, measurer);
+    // 커밋된 빈 노드는 dc 원본대로 플레이스홀더('주제') 크기로 재지만, **편집 중**
+    // 실측정(`emptyAsIs`)은 빈 값 그대로 잰다 — 폴백 폭(두 글자)이 한 글자보다
+    // 넓어서, 글자를 지웠다 치면 박스가 늘었다 줄었다 했다(제보). 빈 박스는
+    // 최소 폭(minW)으로 내려앉아 한 글자 박스와 같은 크기가 된다.
+    const wm = wrapMeasure(node, fpx, fw, wrapW, measurer, opts?.emptyAsIs ? '' : undefined);
     const lineCount = wm.count;
     const maxLine = wm.maxW;
     let w = Math.ceil(maxLine) + padX * 2 + emW + 7;
