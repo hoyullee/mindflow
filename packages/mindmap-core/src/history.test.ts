@@ -134,3 +134,31 @@ describe('HistoryStack', () => {
     expect(hs.undo()).toBeUndefined();
   });
 });
+
+describe('HistoryStack.amend', () => {
+  it('새 undo 단계 없이 기준점만 고쳐 쓴다 — undo는 직전 동작 이전으로, redo는 정규화 반영 상태로', () => {
+    const clock = new FakeClock();
+    const hs = new HistoryStack<string>(clock);
+    hs.reset('s0');
+    hs.record('s1', false); // 붙여넣기 같은 discrete 커밋
+    hs.amend('s1n'); // 겹침 밀어내기(직전 커밋의 일부)
+    expect(hs.current).toBe('s1n');
+    expect(hs.undoDepth).toBe(1); // 새 단계가 생기지 않았다
+
+    hs.record('s2', false); // 이어지는 이동 커밋 — 기준점(s1n)이 스택에 실린다
+    expect(hs.undo()).toBe('s1n'); // undo가 밀어낸 **후** 좌표를 복원한다(제보 ③의 핵심)
+    expect(hs.undo()).toBe('s0');
+    expect(hs.redo()).toBe('s1n');
+    expect(hs.redo()).toBe('s2');
+  });
+
+  it('첫 커밋 전의 amend는 record의 seed와 같다', () => {
+    const clock = new FakeClock();
+    const hs = new HistoryStack<string>(clock);
+    hs.amend('s0');
+    expect(hs.current).toBe('s0');
+    expect(hs.canUndo()).toBe(false);
+    hs.record('s1', false);
+    expect(hs.undo()).toBe('s0');
+  });
+});
