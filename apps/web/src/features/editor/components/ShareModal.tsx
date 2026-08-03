@@ -1,5 +1,5 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
-import type { DocumentShare, ShareParticipant } from '../../../adapters/ports';
+import { useCallback, useEffect, useRef, useState, type CSSProperties } from 'react';
+import type { DocumentShare, ShareParticipant, ShareRole } from '../../../adapters/ports';
 import { useAuthUser } from '../../../adapters/useAuthUser';
 import { colorForSeed } from '../../../collab/identity';
 import type { EditorController } from '../useEditorState';
@@ -51,6 +51,22 @@ function PersonDot({ email, name, dimmed = false }: { email: string; name: strin
   );
 }
 
+/** 권한 셀렉트 공통 모양 — 초대 행(40px)과 참가자 행(28px)이 함께 쓴다. */
+function roleSelectStyle(th: EditorController['uiTheme']): CSSProperties {
+  return {
+    flexShrink: 0,
+    height: 28,
+    padding: '0 6px',
+    border: `1px solid ${th.border}`,
+    borderRadius: 8,
+    background: th.panel,
+    color: th.text,
+    fontFamily: 'inherit',
+    fontSize: 12,
+    cursor: 'pointer',
+  };
+}
+
 export function ShareModal({ controller }: ShareModalProps) {
   const th = controller.uiTheme;
   const { shareOpen, closeShare, docId, shareStore, backendMode } = controller;
@@ -59,6 +75,8 @@ export function ShareModal({ controller }: ShareModalProps) {
   // 이메일만 보여주는 기존 렌더로 폴백할 뿐이다(0011 RPC 미적용/일시 오류).
   const [participants, setParticipants] = useState<ShareParticipant[] | null>(null);
   const [email, setEmail] = useState('');
+  // 초대할 권한(#22). '편집 가능'이 기본 — 공유의 첫 용례(실시간 공동 편집)를 지킨다.
+  const [inviteRole, setInviteRole] = useState<ShareRole>('edit');
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(true);
@@ -123,8 +141,14 @@ export function ShareModal({ controller }: ShareModalProps) {
       setError('이메일 형식을 확인해 주세요.');
       return;
     }
+    // 자기 자신 초대 방지 — 소유자는 이미 전권이고, 자기 행이 생기면 에디터의
+    // "내 행이 view면 보기 전용" 판별(useEditorState)이 소유자를 잠글 수 있다.
+    if (target.toLowerCase() === myEmail) {
+      setError('자기 자신은 초대할 수 없어요.');
+      return;
+    }
     setBusy(true);
-    const res = await shareStore.add(docId, target, 'edit');
+    const res = await shareStore.add(docId, target, inviteRole);
     setBusy(false);
     if (res.error) {
       setError(res.error);
@@ -132,6 +156,18 @@ export function ShareModal({ controller }: ShareModalProps) {
     }
     setEmail('');
     setError('');
+    await refresh();
+  };
+
+  /** 이미 초대된 사람의 권한 변경(소유자 전용) — `add`는 upsert라 권한만 갱신된다. */
+  const changeRole = async (target: string, role: ShareRole): Promise<void> => {
+    setBusy(true);
+    const res = await shareStore.add(docId, target, role);
+    setBusy(false);
+    if (res.error) {
+      setError(res.error);
+      return;
+    }
     await refresh();
   };
 
@@ -172,7 +208,8 @@ export function ShareModal({ controller }: ShareModalProps) {
       >
         <div style={{ fontSize: 16, fontWeight: 800, marginBottom: 6 }}>공유</div>
         <div style={{ fontSize: 12.5, color: th.subtext, lineHeight: 1.6, marginBottom: 14 }}>
-          초대한 사람은 이 맵을 <strong style={{ color: th.text }}>함께 편집</strong>할 수 있어요. 같은 맵을 열면 서로의 커서와 편집이 실시간으로 보입니다.
+          <strong style={{ color: th.text }}>편집 가능</strong>으로 초대하면 같은 맵에서 서로의 커서와 편집이 실시간으로 보여요.{' '}
+          <strong style={{ color: th.text }}>보기 전용</strong>은 저장된 최신 맵을 열람만 할 수 있습니다.
         </div>
 
         {/* 소유자 — 공유받은 사람 입장에서 "누가 초대했는지"가 보여야 한다(제보).
@@ -214,6 +251,15 @@ export function ShareModal({ controller }: ShareModalProps) {
             aria-label="초대할 이메일"
             style={{ flex: '1 1 auto', minWidth: 0, height: 40, padding: '0 12px', border: `1px solid ${th.border}`, borderRadius: 10, background: th.panel, color: th.text, fontFamily: 'inherit', fontSize: 13.5, outline: 'none' }}
           />
+          <select
+            value={inviteRole}
+            onChange={(e) => setInviteRole(e.target.value === 'view' ? 'view' : 'edit')}
+            aria-label="초대 권한"
+            style={{ ...roleSelectStyle(th), height: 40, borderRadius: 10 }}
+          >
+            <option value="edit">편집 가능</option>
+            <option value="view">보기 전용</option>
+          </select>
           <button
             type="button"
             onClick={() => void invite()}
@@ -265,7 +311,21 @@ export function ShareModal({ controller }: ShareModalProps) {
                     가입 대기
                   </span>
                 )}
-                <span style={{ fontSize: 11.5, color: th.subtext, flexShrink: 0 }}>{s.role === 'view' ? '보기' : '편집 가능'}</span>
+                {/* 권한(#22): 소유자는 여기서 바로 바꾼다(upsert). 나머지에겐 표시만. */}
+                {isOwner ? (
+                  <select
+                    value={s.role}
+                    onChange={(e) => void changeRole(s.email, e.target.value === 'view' ? 'view' : 'edit')}
+                    disabled={busy}
+                    aria-label={`${s.email} 권한`}
+                    style={roleSelectStyle(th)}
+                  >
+                    <option value="edit">편집 가능</option>
+                    <option value="view">보기 전용</option>
+                  </select>
+                ) : (
+                  <span style={{ fontSize: 11.5, color: th.subtext, flexShrink: 0 }}>{s.role === 'view' ? '보기 전용' : '편집 가능'}</span>
+                )}
                 {/* 취소는 소유자만. 예외 하나: 나 자신은 공유에서 나갈 수 있다(서버
                     delete 정책도 정확히 이 둘만 허용한다 — 0009). */}
                 {isOwner ? (

@@ -6,7 +6,7 @@ import { HistoryStack, ROOT_ID, applyListOp as applyListOpToText, applyAutoLinks
 import { domToRuns, linearize, liveEditValue } from './richtextDom';
 import { recordVersion, versionDoc } from './versionHistory';
 import { nodeTextAlign, renderListEdit } from './listLines';
-import type { ShareStore } from '../../adapters/ports';
+import type { ShareRole, ShareStore } from '../../adapters/ports';
 import type { CollabStatus } from '../../collab/ports';
 import { useBackend, useDocStore, useShareStore, useSpaceStore } from '../../adapters/BackendContext';
 import { useAuthUser } from '../../adapters/useAuthUser';
@@ -537,6 +537,10 @@ export interface EditorController {
   /** 실시간 협업 전송이 실제로 붙었는지(`collab/ports.ts`의 `CollabStatus`).
    * 조용히 죽지 않도록 UI가 이걸 보고 알려 준다. */
   collabStatus: CollabStatus;
+  /** **보기 전용**으로 초대된 공유 문서인가(#22). true면 편집 크롬을 감추고
+   * 모든 문서 변이가 chokepoint(`commitDoc`)에서 차단된다. 진짜 게이트는 서버
+   * RLS(0009 — view 초대는 SELECT만)다. */
+  readOnly: boolean;
 }
 
 function docSignature(d: Doc): string {
@@ -781,6 +785,15 @@ export function useEditorState(): EditorController {
     };
   }, [docStore, docStoreId, mapId]);
 
+  // ---- 공유 권한(#22): '보기 전용'으로 초대된 문서인가 ----
+  // 판별 전 기본값은 'edit'(단독/소유 문서 무회귀). 잘못 판별돼도 위험하지 않다 —
+  // 서버 RLS(0009)가 view 초대의 UPDATE를 거부하므로, 이 상태는 "고쳐지는 척하다
+  // 저장은 안 되는" 화면을 만들지 않기 위한 클라이언트 어포던스다.
+  const [accessRole, setAccessRole] = useState<ShareRole>('edit');
+  const readOnly = accessRole === 'view';
+  const readOnlyRef = useRef(readOnly);
+  readOnlyRef.current = readOnly;
+
   // ---- M5: real-time collaboration ----
   // Backs `doc` with a live Y.Doc (Supabase Realtime if configured, else
   // BroadcastChannel for same-browser multi-tab, else a no-op — see
@@ -794,7 +807,11 @@ export function useEditorState(): EditorController {
   // 기기는 이 기기에 본문이 없어 마운트 시 **빈 자리표시자**를 들고 있고, 그 상태로
   // 붙으면 상대의 진짜 문서와 병합돼 자리표시자가 일부 필드에서 이길 수 있다. 열 수
   // 없는 맵(`bodyMissing`/`loadError`)에서도 붙지 않는다 — 편집 자체를 멈춘 상태다.
-  const collabDocId = hydrating || bodyMissing || loadError ? '' : docStoreId;
+  // 보기 전용 초대도 붙지 않는다 — 0009의 채널 **발신** 정책이 edit 초대에만 열려
+  // 있고, Yjs 동기화 프로토콜(합류 SV 교환·15초 치유)은 양방향 발신을 전제한다.
+  // 발신이 막힌 채 붙으면 증분 업데이트가 상대에서 영영 보류된다(#229의 교훈).
+  // 뷰어는 저장된 최신 판을 열람한다(리로드하면 새 판).
+  const collabDocId = hydrating || bodyMissing || loadError || readOnly ? '' : docStoreId;
   // 원격 문서가 도착하면 `edgeStyle` 로컬 미러도 함께 갱신한다 — 렌더(EdgeLayer)와
   // 스타일 드롭다운은 이 상태를 읽으므로, `setDoc`만 하면 상대가 바꾼 연결선 스타일이
   // 문서에는 있는데 화면에는 반영되지 않는다(제보: "연결선 스타일이 상대에게 안 보임").
@@ -815,6 +832,30 @@ export function useEditorState(): EditorController {
   const authUser = useAuthUser();
   const profileName = useProfileName(authUser?.email ?? null, authUser?.name ?? null);
   const presence = usePresence(awareness, authUser?.email, profileName);
+
+  // 내가 이 문서에 어떤 권한으로 초대됐는가 — 초대 목록에서 **내 행**을 읽는다.
+  // RLS(0009)의 결: 초대받은 사람은 자기 행만 보이고, 소유자의 목록에 자기 행은
+  // 없다(자기 자신은 초대할 수 없다 — ShareModal이 막는다) → 소유자는 'edit' 유지.
+  // 조회 실패는 'edit'로 둔다: 진짜 게이트는 서버라 잘못돼도 저장이 거부될 뿐이다.
+  const myShareEmail = (authUser?.email ?? '').trim().toLowerCase();
+  useEffect(() => {
+    let alive = true;
+    setAccessRole('edit'); // 문서/계정이 바뀌면 판별 전까지 기존 동작
+    if (!myShareEmail || !docStoreId) return;
+    void (async () => {
+      try {
+        const rows = await shareStore.list(docStoreId);
+        if (!alive) return;
+        const mine = rows.find((r) => r.email === myShareEmail);
+        if (mine) setAccessRole(mine.role);
+      } catch {
+        /* 판별 불가 — 편집 유지(서버가 최종 판단) */
+      }
+    })();
+    return () => {
+      alive = false;
+    };
+  }, [docStoreId, shareStore, myShareEmail]);
 
   // Broadcasts the LOCAL selection (single `selection` OR marquee `multiSelection`,
   // whichever is active — same precedence as `multiGroups` below, plus zones,
@@ -1078,6 +1119,7 @@ export function useEditorState(): EditorController {
    * (MindFlow.dc.html:551), driven explicitly per-action instead of a
    * `componentDidUpdate` diff (this hook has no equivalent lifecycle to diff against). */
   const commitDoc = useCallback((updater: (d: Doc) => Doc, continuous = false) => {
+    if (readOnlyRef.current) return; // 보기 전용(#22) — 모든 문서 변이의 chokepoint
     setDoc((prev) => {
       const next = updater(prev);
       const changed =
@@ -1208,6 +1250,8 @@ export function useEditorState(): EditorController {
    * part of an active multi-selection keeps the WHOLE group selected and opens the `'multi'`
    * menu instead (port of the `curM`/`inSel` check, MindFlow.dc.html:2797-2802). */
   function openCtxAt(clientX: number, clientY: number): void {
+    // 보기 전용(#22): 메뉴 항목이 전부 변이(추가·삭제·정렬)라 열 것이 없다.
+    if (readOnlyRef.current) return;
     // 다른 메뉴가 올라오면 서식 툴바는 내린다 — 편집 세션 동안 상시 노출로
     // 바뀐 뒤(아래 openTextCtx 주석), 두 팝업이 겹치지 않게 하는 유일한 규칙.
     setTextCtx(null);
@@ -1263,6 +1307,7 @@ export function useEditorState(): EditorController {
    * `sx`/`sy`는 `.mf-ed-vp` 박스 기준(= 바가 쓰는 좌표계와 동일).
    */
   const openCtxMenuForSelection = useCallback((anchor: { x: number; top: number; bottom: number }) => {
+    if (readOnlyRef.current) return; // 보기 전용(#22) — openCtxAt과 같은 이유
     setTextCtx(null); // 우클릭 메뉴와 동일 — 다른 메뉴가 뜨면 서식 툴바는 내린다
     const vp = viewportRef.current;
     const sx = anchor.x;
@@ -1822,6 +1867,10 @@ export function useEditorState(): EditorController {
     // `canPersistDocRef`). Prevents the empty mount seed from overwriting a real
     // backend doc while its `load()` is still in flight or has failed.
     if (!canPersistDocRef.current) return;
+    // 보기 전용(#22): 변이 자체가 차단돼 저장할 것도 없지만, 판별 전의 짧은 창에서
+    // 생긴 변경이 남의 문서에 쓰기를 시도하지 않도록 여기서도 막는다(RLS가 어차피
+    // 거부하지만 42501 소음을 만들 이유가 없다).
+    if (readOnlyRef.current) return;
     const title = safeDocTitle(docRef.current, titleParam);
     const result = await docStore.save(docStoreId, docRef.current, { prevVersion: docVersionRef.current, title });
     if (result.ok) {
@@ -2021,6 +2070,7 @@ export function useEditorState(): EditorController {
   const startEditNode = useCallback((id: string) => {
     setSelectionState({ kind: 'node', id });
     setMultiSelectionState(null);
+    if (readOnlyRef.current) return; // 보기 전용 — 선택까지만, 편집 세션은 열지 않는다
     setEditingNodeId(id);
     setEditLiveSize(null);
     setTextCtx(null);
@@ -2233,6 +2283,7 @@ export function useEditorState(): EditorController {
   const startEditFloat = useCallback((id: string) => {
     setSelectionState({ kind: 'float', id });
     setMultiSelectionState(null);
+    if (readOnlyRef.current) return; // 보기 전용 — 선택까지만
     // 이미지 플로트에는 편집할 텍스트가 없다 — 더블클릭/F2는 선택까지만.
     if (docRef.current.floats.find((f) => f.id === id)?.img) return;
     setEditingFloatId(id);
@@ -2270,6 +2321,7 @@ export function useEditorState(): EditorController {
   const startEditLineLabel = useCallback((id: string) => {
     setSelectionState({ kind: 'line', id });
     setMultiSelectionState(null);
+    if (readOnlyRef.current) return; // 보기 전용 — 선택까지만
     setEditingLineId(id);
   }, []);
   const commitLineLabel = useCallback(
@@ -2284,6 +2336,7 @@ export function useEditorState(): EditorController {
   const startEditZoneLabel = useCallback((id: string) => {
     setSelectionState({ kind: 'zone', id });
     setMultiSelectionState(null);
+    if (readOnlyRef.current) return; // 보기 전용 — 선택까지만
     setEditingZoneId(id);
   }, []);
   const commitZoneLabel = useCallback(
@@ -2295,7 +2348,10 @@ export function useEditorState(): EditorController {
   );
   const cancelZoneLabelEdit = useCallback(() => setEditingZoneId(null), []);
 
-  const startEditTitle = useCallback(() => setEditingTitle(true), []);
+  const startEditTitle = useCallback(() => {
+    if (readOnlyRef.current) return; // 보기 전용 — 제목도 문서의 일부다
+    setEditingTitle(true);
+  }, []);
   // Duplicate names are fully allowed (XMind-style) — identity is the doc id,
   // so a rename never needs to check other maps' titles. (An unchanged/empty
   // edit falls through to `commitRootTitle`, which restores the fallback when
@@ -2312,7 +2368,7 @@ export function useEditorState(): EditorController {
   // ---- structural ----
   const addChild = useCallback(() => {
     const id = isKind('node');
-    if (!id) return;
+    if (!id || readOnlyRef.current) return; // 보기 전용: commitDoc이 no-op이라 새 id가 생기지 않는다 — 유령 편집 세션 방지
     const newId = idFactory('x');
     commitDoc((d) => ({ ...d, nodes: mutations.addChildNode(d.nodes, id, newId) }));
     setSelectionState({ kind: 'node', id: newId });
@@ -2321,7 +2377,7 @@ export function useEditorState(): EditorController {
 
   const addSibling = useCallback(() => {
     const id = isKind('node');
-    if (!id) return;
+    if (!id || readOnlyRef.current) return; // addChild와 같은 이유
     const newId = idFactory('x');
     commitDoc((d) => {
       const next = mutations.addSiblingNode(d.nodes, id, newId);
@@ -2816,6 +2872,7 @@ export function useEditorState(): EditorController {
   const outlineStartEdit = useCallback((id: string) => {
     setSelectionState({ kind: 'node', id });
     setMultiSelectionState(null);
+    if (readOnlyRef.current) return; // 보기 전용 — 선택까지만
     setOutlineEditId(id);
   }, []);
   const outlineCommitEdit = useCallback(
@@ -2827,6 +2884,7 @@ export function useEditorState(): EditorController {
   );
   const outlineAddChild = useCallback(
     (id: string) => {
+      if (readOnlyRef.current) return; // 보기 전용 — addChild와 같은 이유
       const newId = idFactory('x');
       commitDoc((d) => ({ ...d, nodes: mutations.addChildNode(d.nodes, id, newId) }));
       setSelectionState({ kind: 'node', id: newId });
@@ -2836,6 +2894,7 @@ export function useEditorState(): EditorController {
   );
   const outlineAddSibling = useCallback(
     (id: string) => {
+      if (readOnlyRef.current) return; // 보기 전용 — addChild와 같은 이유
       const newId = idFactory('x');
       commitDoc((d) => {
         const next = mutations.addSiblingNode(d.nodes, id, newId);
@@ -3840,6 +3899,7 @@ export function useEditorState(): EditorController {
     docId: docStoreId,
     shareStore,
     backendMode,
+    readOnly,
     collabStatus,
   };
 }

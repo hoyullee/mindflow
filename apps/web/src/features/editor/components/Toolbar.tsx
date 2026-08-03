@@ -99,12 +99,41 @@ export function Toolbar({ controller }: ToolbarProps) {
 
       <Divider theme={th} />
 
-      <MenuBarButton label="편집" wrapRef={editRef} open={openMenu === 'edit'} onToggle={() => toggle('edit')} th={th} isMobile={isMobile} width={230} align="left">
-        <EditMenu controller={controller} onDone={close} isMobile={isMobile} />
-      </MenuBarButton>
-      <MenuBarButton label="삽입" wrapRef={insertRef} open={openMenu === 'insert'} onToggle={() => toggle('insert')} th={th} isMobile={isMobile} width={200} align="left">
-        <InsertMenu controller={controller} onDone={close} isMobile={isMobile} />
-      </MenuBarButton>
+      {/* 보기 전용(#22): 편집·삽입·스타일은 전부 문서 변이라 감춘다. 대신 지금
+          이 맵을 왜 못 고치는지 한눈에 보이도록 배지를 단다. */}
+      {controller.readOnly && (
+        <span
+          title="보기 전용으로 초대된 맵이에요. 편집하려면 소유자에게 '편집 가능' 권한을 요청하세요."
+          style={{
+            display: 'flex',
+            alignItems: 'center',
+            gap: 6,
+            height: isMobile ? 32 : 28,
+            padding: '0 11px',
+            borderRadius: 999,
+            background: th.panel2,
+            border: `1px solid ${th.border}`,
+            color: th.subtext,
+            fontSize: 12,
+            fontWeight: 700,
+            flexShrink: 0,
+            whiteSpace: 'nowrap',
+          }}
+        >
+          <EyeGlyph />
+          보기 전용
+        </span>
+      )}
+      {!controller.readOnly && (
+        <>
+          <MenuBarButton label="편집" wrapRef={editRef} open={openMenu === 'edit'} onToggle={() => toggle('edit')} th={th} isMobile={isMobile} width={230} align="left">
+            <EditMenu controller={controller} onDone={close} isMobile={isMobile} />
+          </MenuBarButton>
+          <MenuBarButton label="삽입" wrapRef={insertRef} open={openMenu === 'insert'} onToggle={() => toggle('insert')} th={th} isMobile={isMobile} width={200} align="left">
+            <InsertMenu controller={controller} onDone={close} isMobile={isMobile} />
+          </MenuBarButton>
+        </>
+      )}
       {/* 보기 is a top-level trigger on desktop; on mobile it folds into the ☰ menu
           on the right (with 내보내기) so the narrow bar doesn't scroll. */}
       {!isMobile && (
@@ -112,6 +141,7 @@ export function Toolbar({ controller }: ToolbarProps) {
           <ViewMenu controller={controller} onDone={close} isMobile={isMobile} />
         </MenuBarButton>
       )}
+      {!controller.readOnly && (
       <MenuBarButton
         label="스타일"
         wrapRef={styleRef}
@@ -137,6 +167,7 @@ export function Toolbar({ controller }: ToolbarProps) {
       >
         <StyleMenu controller={controller} />
       </MenuBarButton>
+      )}
 
       <div style={{ flex: '1 1 auto' }} />
 
@@ -300,6 +331,16 @@ function Caret({ open, color }: { open: boolean; color: string }) {
       aria-hidden="true"
     >
       <polyline points="6 9 12 15 18 9" />
+    </svg>
+  );
+}
+
+/** 보기 전용 배지의 눈 글리프. */
+function EyeGlyph() {
+  return (
+    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+      <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z" />
+      <circle cx="12" cy="12" r="3" />
     </svg>
   );
 }
