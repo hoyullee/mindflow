@@ -1112,3 +1112,61 @@ describe('방향키/클릭 캐럿 깜빡임 — rAF 사전 스냅', () => {
     expect(caretOffset(editor)).toBe(9);
   });
 });
+
+// 제보: 리스트에서 ↑를 눌러도 캐럿이 위로 안 올라감 — 크롬의 세로 캐럿 이동이
+// [마커|내용] flex 행 경계를 건너지 못한다(앱 JS 없는 정적 페이지로 확인, 리스트
+// 도입 때부터 잠복). ↑/↓를 직접 처리한다(listArrowVertical — jsdom에는 픽셀
+// API(caretRangeFromPoint)가 없어 내용-시작 기준 열 보존 폴백이 돈다).
+describe('리스트 ↑/↓ 세로 캐럿 이동', () => {
+  const V_DOC = { c1: { id: 'c1', text: '1. 하나둘\n2. 셋\n3. 넷다섯', emoji: '', parent: 'root', children: [], collapsed: false, color: null, x: 0, y: 0 } };
+  function caretOffset(editor: HTMLElement): number {
+    const ws = window.getSelection()!;
+    const r = ws.getRangeAt(0);
+    return linearize(editor, [{ container: r.startContainer, offset: r.startOffset }]).pos[0] ?? -1;
+  }
+  // 오프셋: '1. 하나둘'(0-5) \n(6)... 줄2 시작 7, 내용 10('셋'), \n 11, 줄3 시작 12, 내용 15('넷다섯')
+
+  it('↑가 윗줄로, ↓가 아랫줄로 — 내용 기준 열 보존', () => {
+    localStorage.setItem('mindflow_doc_v1', JSON.stringify(docWith(V_DOC)));
+    const { container } = renderEditor('/editor?map=v1&title=x');
+    const editor = startEditingNode(container, 'c1');
+    setLinearSelection(editor, 17, 17); // 줄3 '넷다*섯' — 내용 열 2
+    expect(fireEvent.keyDown(editor, { key: 'ArrowUp' })).toBe(false); // 처리됨
+    expect(caretOffset(editor)).toBe(11); // 줄2 내용 열 2 → 줄 끝('셋' 1자)으로 클램프
+    fireEvent.keyDown(editor, { key: 'ArrowUp' });
+    expect(caretOffset(editor)).toBe(4); // 줄1 내용 열 1('셋' 끝 = 열 1)
+    fireEvent.keyDown(editor, { key: 'ArrowDown' });
+    expect(caretOffset(editor)).toBe(11); // 다시 줄2(열 1 → '셋' 뒤)
+  });
+
+  it('첫 줄에서 ↑는 내용 시작으로, 끝 줄에서 ↓는 텍스트 끝으로', () => {
+    localStorage.setItem('mindflow_doc_v2', JSON.stringify(docWith(V_DOC)));
+    const { container } = renderEditor('/editor?map=v2&title=x');
+    const editor = startEditingNode(container, 'c1');
+    setLinearSelection(editor, 5, 5); // 줄1 중간
+    fireEvent.keyDown(editor, { key: 'ArrowUp' });
+    expect(caretOffset(editor)).toBe(3); // 줄1 내용 시작
+    setLinearSelection(editor, 16, 16); // 줄3 중간
+    fireEvent.keyDown(editor, { key: 'ArrowDown' });
+    expect(caretOffset(editor)).toBe(18); // 텍스트 끝
+  });
+
+  it('리스트가 없는 텍스트는 개입하지 않는다 (기본 동작 유지)', () => {
+    localStorage.setItem('mindflow_doc_v3', JSON.stringify(docWith({ c1: { id: 'c1', text: '평문 한 줄\n평문 두 줄', emoji: '', parent: 'root', children: [], collapsed: false, color: null, x: 0, y: 0 } })));
+    const { container } = renderEditor('/editor?map=v3&title=x');
+    const editor = startEditingNode(container, 'c1');
+    setLinearSelection(editor, 8, 8);
+    expect(fireEvent.keyDown(editor, { key: 'ArrowUp' })).toBe(true); // 막지 않는다
+  });
+
+  it('메모 편집 박스도 같은 규칙', () => {
+    localStorage.setItem('mindflow_doc_v4', JSON.stringify(docWith({}, [{ id: 'f1', text: '1. 하나\n2. 둘', x: 100, y: 100, w: 160 }])));
+    const { container } = renderEditor('/editor?map=v4&title=x');
+    const card = container.querySelector('[data-float-id="f1"]') as HTMLElement;
+    fireEvent.doubleClick(card);
+    const editor = card.querySelector('.mf-richedit') as HTMLDivElement;
+    setLinearSelection(editor, 10, 10); // 줄2 '둘' 뒤
+    expect(fireEvent.keyDown(editor, { key: 'ArrowUp' })).toBe(false);
+    expect(caretOffset(editor)).toBe(4); // 줄1 내용 열 1
+  });
+});

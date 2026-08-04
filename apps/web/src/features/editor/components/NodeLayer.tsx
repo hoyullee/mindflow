@@ -11,7 +11,7 @@ import type { GeomMap } from '../types';
 import { peersSelecting } from '../presenceSelection';
 import { RemotePeerTag } from './RemotePeerTag';
 import { ResizeHandle } from './ResizeHandle';
-import { domToRuns, linearize, listArrowLeft, liveEditValue, selectedRawText, snapCaretOffListMarker } from '../richtextDom';
+import { domToRuns, linearize, listArrowLeft, listArrowVertical, liveEditValue, selectedRawText, snapCaretOffListMarker } from '../richtextDom';
 import { ListTextBlock, domMarkerSignature, listLinesOf, listSigOf, listSignature, markerSignature, nodeTextAlign, renderListEdit } from '../listLines';
 import { RichSpan, isLinkOpenModifier, linkInk, openLink } from '../richSpans';
 
@@ -758,7 +758,14 @@ function NodeEditBox({ id, n, boxStyle, align, controller }: NodeEditBoxProps) {
         if (!composing && ref.current) {
           snapCaretOffListMarker(ref.current);
           scheduleSnap();
-          if (e.key === 'ArrowLeft' && !e.shiftKey && !e.altKey && !e.ctrlKey && !e.metaKey && listArrowLeft(ref.current)) {
+          const plainKey = !e.shiftKey && !e.altKey && !e.ctrlKey && !e.metaKey;
+          if (e.key === 'ArrowLeft' && plainKey && listArrowLeft(ref.current)) {
+            e.preventDefault();
+            return;
+          }
+          // ↑/↓는 리스트 행([마커|내용] flex)을 크롬 기본 이동이 건너지 못한다 —
+          // 우리가 직접 옮긴다(제보: ↑를 눌러도 캐럿이 위로 안 올라감).
+          if ((e.key === 'ArrowUp' || e.key === 'ArrowDown') && plainKey && listArrowVertical(ref.current, e.key === 'ArrowUp' ? -1 : 1)) {
             e.preventDefault();
             return;
           }

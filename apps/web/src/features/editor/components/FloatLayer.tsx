@@ -10,7 +10,7 @@ import type { EditorController } from '../useEditorState';
 import { peersSelecting } from '../presenceSelection';
 import { RemotePeerTag } from './RemotePeerTag';
 import { ResizeHandle } from './ResizeHandle';
-import { domToRuns, linearize, listArrowLeft, selectedRawText, snapCaretOffListMarker } from '../richtextDom';
+import { domToRuns, linearize, listArrowLeft, listArrowVertical, selectedRawText, snapCaretOffListMarker } from '../richtextDom';
 import { isLinkOpenModifier, linkInk, openLink } from '../richSpans';
 import { insertLineBreak, listBackspaceOpAt, maybeContinueList } from './NodeLayer';
 
@@ -335,7 +335,13 @@ function FloatEditBox({ f, controller }: { f: Float; controller: EditorControlle
         if (!composing && ref.current) {
           snapCaretOffListMarker(ref.current);
           scheduleSnap();
-          if (e.key === 'ArrowLeft' && !e.shiftKey && !e.altKey && !e.ctrlKey && !e.metaKey && listArrowLeft(ref.current)) {
+          const plainKey = !e.shiftKey && !e.altKey && !e.ctrlKey && !e.metaKey;
+          if (e.key === 'ArrowLeft' && plainKey && listArrowLeft(ref.current)) {
+            e.preventDefault();
+            return;
+          }
+          // ↑/↓ 세로 이동은 우리가 직접 — 크롬 기본이 리스트 행을 못 건넌다(노드와 동일).
+          if ((e.key === 'ArrowUp' || e.key === 'ArrowDown') && plainKey && listArrowVertical(ref.current, e.key === 'ArrowUp' ? -1 : 1)) {
             e.preventDefault();
             return;
           }
