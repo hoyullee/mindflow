@@ -5,10 +5,17 @@
 
 export type NavDir = 'up' | 'down' | 'left' | 'right';
 
-/** Any object with map-space centre coordinates (the editor's `GeomMap` entries qualify). */
+/**
+ * Any object with map-space centre coordinates (the editor's `GeomMap` entries
+ * qualify). `w`/`h` are optional box sizes: when present, `along`/`perp` are
+ * measured between box **edges** instead of centres (missing sizes read as 0,
+ * which degrades to the old centre model).
+ */
 export interface NavPoint {
   x: number;
   y: number;
+  w?: number;
+  h?: number;
 }
 
 /**
@@ -33,11 +40,26 @@ export interface NavPoint {
  * left but far *above* (sibling box centres differ by their own widths) instead
  * of the parent directly to the left. That read as the arrow moving by "some
  * other reference" rather than the selected node.
+ *
+ * When boxes are provided, distances are edge-based: `along` is the gap between
+ * the facing edges and `perp` is the gap between the boxes' projections on the
+ * cross axis (0 when they overlap — e.g. a node directly below shares the x
+ * range). Centre-based measuring broke variable-width columns: children are
+ * left-edge-aligned, so a wide node's centre sits far right of a narrow
+ * sibling's, and pressing Down saw the directly-below wide node as "diagonal"
+ * (perp > along → rejected by the tight cone) while a farther, narrower node two
+ * rows down passed and won — the arrow skipped a node. The reverse direction had
+ * different centre geometry and worked, which is why the skip felt intermittent.
  */
 export function nearestInDirection(points: Record<string, NavPoint>, fromId: string, dir: NavDir): string | null {
   const a = points[fromId];
   if (!a) return null;
   const ids = Object.keys(points);
+  const aw = a.w ?? 0;
+  const ah = a.h ?? 0;
+  // Cross-axis projection gap between two boxes (0 = they overlap on that axis).
+  const gap = (c1: number, s1: number, c2: number, s2: number): number =>
+    Math.max(0, Math.max(c1 - s1 / 2, c2 - s2 / 2) - Math.min(c1 + s1 / 2, c2 + s2 / 2));
   const pick = (accept: (along: number, perp: number) => boolean): string | null => {
     let best: string | null = null;
     let bestScore = Infinity;
@@ -45,6 +67,8 @@ export function nearestInDirection(points: Record<string, NavPoint>, fromId: str
       if (id === fromId) return;
       const b = points[id];
       if (!b) return;
+      const bw = b.w ?? 0;
+      const bh = b.h ?? 0;
       const dx = b.x - a.x;
       const dy = b.y - a.y;
       let along: number;
@@ -52,22 +76,25 @@ export function nearestInDirection(points: Record<string, NavPoint>, fromId: str
       let ok: boolean;
       if (dir === 'left') {
         ok = dx < -1;
-        along = -dx;
-        perp = Math.abs(dy);
+        along = (a.x - aw / 2) - (b.x + bw / 2);
+        perp = gap(a.y, ah, b.y, bh);
       } else if (dir === 'right') {
         ok = dx > 1;
-        along = dx;
-        perp = Math.abs(dy);
+        along = (b.x - bw / 2) - (a.x + aw / 2);
+        perp = gap(a.y, ah, b.y, bh);
       } else if (dir === 'up') {
         ok = dy < -1;
-        along = -dy;
-        perp = Math.abs(dx);
+        along = (a.y - ah / 2) - (b.y + bh / 2);
+        perp = gap(a.x, aw, b.x, bw);
       } else {
         ok = dy > 1;
-        along = dy;
-        perp = Math.abs(dx);
+        along = (b.y - bh / 2) - (a.y + ah / 2);
+        perp = gap(a.x, aw, b.x, bw);
       }
       if (!ok) return;
+      // Boxes can overlap in the pressed direction (edge gap < 0) while the
+      // centre is still genuinely that way — clamp so the cone/score stay sane.
+      along = Math.max(1, along);
       if (!accept(along, perp)) return;
       const score = along + perp * 2.2;
       if (score < bestScore) {
