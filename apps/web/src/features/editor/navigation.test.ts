@@ -53,6 +53,47 @@ describe('nearestInDirection', () => {
     expect(nearestInDirection(down, 'root', 'down')).toBe('b');
   });
 
+  it('Down does not skip a directly-below WIDE node in a left-aligned column (boxes provided)', () => {
+    // The reported bug: children are left-edge-aligned, so a wide node's CENTRE
+    // sits far right of a narrow sibling's. Centre-based perp made the
+    // directly-below wide node look diagonal (perp 80 > along 56 → rejected by
+    // the tight cone) while the narrower node two rows down passed and won —
+    // ArrowDown skipped a node. Edge-based gaps see the shared x-range (perp 0).
+    const col: Record<string, NavPoint> = {
+      a: { x: 300, y: 0, w: 100, h: 40 }, // "이히히히"
+      b: { x: 380, y: 56, w: 260, h: 40 }, // "우왘ㅋㅋㅋㅋㅋㅋㅋㅋㅋㅋ" — wide, left edge aligned with a
+      c: { x: 310, y: 112, w: 120, h: 40 }, // "이ㅏㅓㅣㅏㅇ" — two rows down, centre near a's
+    };
+    expect(nearestInDirection(col, 'a', 'down')).toBe('b');
+    // and the reverse hop stays symmetric (this direction already worked)
+    expect(nearestInDirection(col, 'c', 'up')).toBe('b');
+    expect(nearestInDirection(col, 'b', 'up')).toBe('a');
+    expect(nearestInDirection(col, 'b', 'down')).toBe('c');
+  });
+
+  it('Left/Right with boxes measure facing-edge gaps, so a wide sibling row does not distort the pick', () => {
+    // Parent directly left of a tall child column; the child boxes overlap the
+    // parent's y-range so perp is 0 regardless of their heights.
+    const t: Record<string, NavPoint> = {
+      parent: { x: 100, y: 50, w: 120, h: 44 },
+      child: { x: 320, y: 60, w: 200, h: 44 }, // slightly off-centre but overlapping rows
+      far: { x: 330, y: 220, w: 80, h: 44 },
+    };
+    expect(nearestInDirection(t, 'parent', 'right')).toBe('child');
+    expect(nearestInDirection(t, 'child', 'left')).toBe('parent');
+  });
+
+  it('boxes overlapping in the pressed direction clamp along to 1 instead of going negative', () => {
+    // b's box starts above a's bottom edge (overlap in y) but its centre is
+    // clearly below — the arrow must still reach it.
+    const t: Record<string, NavPoint> = {
+      a: { x: 0, y: 0, w: 100, h: 60 },
+      b: { x: 10, y: 40, w: 100, h: 60 },
+    };
+    expect(nearestInDirection(t, 'a', 'down')).toBe('b');
+    expect(nearestInDirection(t, 'b', 'up')).toBe('a');
+  });
+
   it('returns null when there is no node in the pressed direction', () => {
     expect(nearestInDirection(RIGHT, 'b', 'right')).toBeNull(); // b/c are the rightmost column
     expect(nearestInDirection({ only: { x: 0, y: 0 } }, 'only', 'up')).toBeNull();
