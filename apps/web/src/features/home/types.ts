@@ -162,7 +162,7 @@ export interface HomeState {
   sharedMaps: { docId: string; title: string; updatedAt: string; role: 'edit' | 'view' }[];
 
   importDone: string | null;
-  /** 가져온 맵이 폴더 안에 들어갔다면 그 폴더 이름 — 완료 토스트가 "현재 공간에
+  /** 가져온 맵이 폴더 안에 들어갔다면 그 폴더 이름 — 완료 토스트가 "현재 스페이스에
    * 추가했어요" 대신 어느 폴더인지 말할 수 있게. 최상위로 들어갔으면 null. */
   importDoneFolder: string | null;
   importError: string | null;
@@ -198,8 +198,8 @@ export interface HomeState {
 export const SPACE_COLORS = ['#f0663f', '#e0a53c', '#3fae9e', '#3f8fd0', '#8a6bd1', '#d0568f'];
 
 // 회원가입 시 노출되던 데모 시드 맵 3종은 제거됨. 이 카드들은 docId가 없어
-// DocStore(즐겨찾기/삭제/복원)에 영속되지 않아 새로고침 시 항상 일반 공간으로
-// 되돌아가는 이슈가 있었음. 일반 공간은 이제 실제 저장된 문서(`DocStore.list()`)
+// DocStore(즐겨찾기/삭제/복원)에 영속되지 않아 새로고침 시 항상 일반 스페이스로
+// 되돌아가는 이슈가 있었음. 일반 스페이스는 이제 실제 저장된 문서(`DocStore.list()`)
 // 로만 채워진다.
 export const DEFAULT_MAPS: MapCardData[] = [];
 
@@ -255,7 +255,7 @@ export function initialHomeState(): HomeState {
     creatingMap: false,
     loaderMsg: '',
 
-    spaces: [{ id: 'general', name: '일반 공간', home: true, color: '#f0663f', maps: DEFAULT_MAPS }],
+    spaces: [{ id: 'general', name: '일반 스페이스', home: true, color: '#f0663f', maps: DEFAULT_MAPS }],
     activeSpace: 'general',
     newSpaceOpen: false,
     newSpaceName: '',

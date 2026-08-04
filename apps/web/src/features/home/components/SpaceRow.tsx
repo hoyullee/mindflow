@@ -50,7 +50,7 @@ export function SpaceRow({ space, state, controller }: Props) {
           color: active ? '#d9542f' : '#7c6d60',
         }}
       >
-        {/* Every space (including the home "일반 공간") shows the same colored dot;
+        {/* Every space (including the home "일반 스페이스") shows the same colored dot;
             the home space's default color is the coral accent (#f0663f). */}
         <span style={{ width: 15, height: 15, borderRadius: 5, flexShrink: 0, background: space.color || '#f0663f', display: 'inline-block' }} />
         <span style={{ flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{space.name}</span>
@@ -58,7 +58,7 @@ export function SpaceRow({ space, state, controller }: Props) {
           className="space-dot"
           role="button"
           tabIndex={0}
-          aria-label="공간 메뉴"
+          aria-label="스페이스 메뉴"
           onClick={onMenuClick}
           onKeyDown={(e) => {
             if (e.key === 'Enter' || e.key === ' ') onMenuClick(e as unknown as MouseEvent<HTMLSpanElement>);
@@ -121,9 +121,9 @@ export function SpaceRow({ space, state, controller }: Props) {
             <polyline points="3 6 5 6 21 6" />
             <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2" />
           </svg>{' '}
-          공간 삭제
+          스페이스 삭제
         </div>
-        {(hasMaps || isLastSpace) && <div style={{ padding: '2px 13px 8px', fontSize: 11, color: '#c9b8a9', lineHeight: 1.4 }}>{hasMaps ? '맵이 없는 공간만 삭제할 수 있어요' : '마지막 공간은 삭제할 수 없어요'}</div>}
+        {(hasMaps || isLastSpace) && <div style={{ padding: '2px 13px 8px', fontSize: 11, color: '#c9b8a9', lineHeight: 1.4 }}>{hasMaps ? '맵이 없는 스페이스만 삭제할 수 있어요' : '마지막 스페이스는 삭제할 수 없어요'}</div>}
       </div>
     </div>
   );

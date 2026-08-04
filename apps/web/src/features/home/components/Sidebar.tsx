@@ -122,7 +122,7 @@ export function Sidebar({ state, view, controller, isMobile = false, isOpen = fa
 
       <div className="lnb-scroll" style={{ flex: '0 1 auto', minHeight: 60, overflowY: 'auto', overflowX: 'hidden', margin: '0 -4px', padding: '0 4px' }}>
         {/* Until the workspace loads (`state.loaded`), show skeleton rows instead
-            of the seed spaces — otherwise the default 일반 공간 flashes before the
+            of the seed spaces — otherwise the default 일반 스페이스 flashes before the
             user's real space list arrives (matches the map grid's skeleton). */}
         {state.loaded ? (
           state.spaces.map((sp) => <SpaceRow key={sp.id} space={sp} state={state} controller={controller} />)
@@ -148,7 +148,7 @@ export function Sidebar({ state, view, controller, isMobile = false, isOpen = fa
         }}
         style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '9px 10px', minHeight: isMobile ? 44 : undefined, borderRadius: 9, cursor: 'pointer', fontSize: 13.5, fontWeight: 500, color: '#7c6d60', flexShrink: 0 }}
       >
-        <span style={{ fontSize: 15, color: '#9c8b7e' }}>＋</span> 새 공간
+        <span style={{ fontSize: 15, color: '#9c8b7e' }}>＋</span> 새 스페이스
       </div>
 
       {SHOW_DRIVE_LNB && (
