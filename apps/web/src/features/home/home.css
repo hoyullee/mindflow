@@ -52,6 +52,17 @@ a:hover {
     transform: none;
   }
 }
+/* 전체 화면 dim 배경 전용 — mf-fade의 translateY를 fixed inset:0 배경에 걸면
+   레이어가 통째로 슬라이드해 상단에 dim 안 된 띠가 차오르는 게 보인다(제보).
+   배경은 제자리 페이드만. (에디터 쪽은 editor.css에 같은 정의) */
+@keyframes mf-dim-in {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
 @keyframes mf-ov-in {
   from {
     opacity: 0;

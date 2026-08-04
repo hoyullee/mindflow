@@ -454,6 +454,29 @@ describe('Editor interactions (M3-Editor-b)', () => {
       expect((screen.getByLabelText('friend@example.com 권한') as HTMLSelectElement).value).toBe('edit');
     });
 
+    it('dim 배경은 제자리 페이드(mf-dim-in)로만 뜨고, 안내 문구는 권한별 두 줄이다', async () => {
+      localStorage.setItem('mindflow_doc_shdim', JSON.stringify(DOC));
+      const user = userEvent.setup();
+      const { shareStore } = shareBackend();
+      renderWithShare(shareStore, 'supabase', 'shdim');
+
+      await user.click(screen.getByRole('button', { name: '공유' }));
+      const dialog = await screen.findByRole('dialog', { name: '공유' });
+
+      // 배경(fixed inset:0)에 translateY가 있는 mf-fade를 걸면 레이어가 통째로
+      // 슬라이드해 화면 상단에 dim 안 된 띠가 차오르는 게 보인다(제보) — 배경은
+      // 순수 페이드(mf-dim-in)여야 한다.
+      const backdrop = dialog.parentElement as HTMLElement;
+      expect(backdrop.style.animation).toContain('mf-dim-in');
+      expect(backdrop.style.animation).not.toContain('mf-fade');
+
+      // 안내 문구 — 권한마다 한 줄씩, <br>로 나뉜 두 문장(요청안 그대로).
+      expect(dialog.textContent).toContain('편집 가능 권한은 서로의 커서와 편집이 실시간으로 보여요.');
+      expect(dialog.textContent).toContain('보기 전용 권한은 저장된 최신 맵을 열람만 할 수 있습니다.');
+      const help = screen.getByText(/권한은 서로의 커서와 편집이 실시간으로 보여요/).closest('div') as HTMLElement;
+      expect(help.querySelector('br')).toBeTruthy();
+    });
+
     it('이메일 형식이 아니면 서버를 부르지 않고 알려 준다', async () => {
       localStorage.setItem('mindflow_doc_share2', JSON.stringify(DOC));
       const user = userEvent.setup();

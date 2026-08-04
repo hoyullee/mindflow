@@ -197,7 +197,9 @@ export function ShareModal({ controller }: ShareModalProps) {
 
   return (
     <div
-      style={{ position: 'fixed', inset: 0, background: 'rgba(30,20,14,.42)', backdropFilter: 'blur(2px)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 240, animation: 'mf-fade .18s ease-out' }}
+      // dim 배경은 제자리 페이드만(mf-dim-in) — translateY가 있는 mf-fade를 쓰면
+      // 배경 레이어가 통째로 슬라이드해 화면 상단에 빈 띠가 차오르는 게 보인다(제보).
+      style={{ position: 'fixed', inset: 0, background: 'rgba(30,20,14,.42)', backdropFilter: 'blur(2px)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 240, animation: 'mf-dim-in .18s ease-out' }}
       onClick={closeShare}
     >
       <div
@@ -208,8 +210,9 @@ export function ShareModal({ controller }: ShareModalProps) {
       >
         <div style={{ fontSize: 16, fontWeight: 800, marginBottom: 6 }}>공유</div>
         <div style={{ fontSize: 12.5, color: th.subtext, lineHeight: 1.6, marginBottom: 14 }}>
-          <strong style={{ color: th.text }}>편집 가능</strong>으로 초대하면 같은 맵에서 서로의 커서와 편집이 실시간으로 보여요.{' '}
-          <strong style={{ color: th.text }}>보기 전용</strong>은 저장된 최신 맵을 열람만 할 수 있습니다.
+          <strong style={{ color: th.text }}>편집 가능</strong> 권한은 서로의 커서와 편집이 실시간으로 보여요.
+          <br />
+          <strong style={{ color: th.text }}>보기 전용</strong> 권한은 저장된 최신 맵을 열람만 할 수 있습니다.
         </div>
 
         {/* 소유자 — 공유받은 사람 입장에서 "누가 초대했는지"가 보여야 한다(제보).

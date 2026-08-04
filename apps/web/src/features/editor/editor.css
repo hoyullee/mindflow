@@ -73,6 +73,20 @@
   }
 }
 
+/* 전체 화면 dim 배경 전용 페이드 — translateY가 있는 mf-fade를 fixed inset:0
+   배경에 걸면 레이어 전체가 아래에서 위로 슬라이드해 화면 상단에 dim 안 된 띠가
+   차오르는 게 보인다(제보). 배경은 제자리에서 투명도만 바뀌어야 한다.
+   (mf-fade는 home.css/login.css에만 있어 에디터 직행 시 없을 수도 있었다 —
+   에디터가 자기 스타일로 갖게 하는 김에 여기 정의한다.) */
+@keyframes mf-dim-in {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
 /* 모바일 선택 바의 '메뉴(⋯)'에서 열리는 팝오버 — 바에서 살짝 솟아오르듯 등장해
    "이 바에서 파생된 메뉴"로 읽히게 한다. transform-origin은 위쪽(꼬리 쪽). */
 @keyframes mf-ctx-pop {
