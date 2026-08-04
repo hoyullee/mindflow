@@ -447,8 +447,8 @@ export function MapCard({ card, controller, draggableEnabled, compact = false }:
       >
         {card.sketch}
       </div>
-      {/* 하단 정보 영역: [제목+변경일] 좌측 열 + ☰ 메뉴 버튼(영역 전체의
-          세로 중앙) — 버튼을 제목 행 안에 두면 변경일 줄 때문에 시각적으로
+      {/* 하단 정보 영역: [제목+수정일] 좌측 열 + ☰ 메뉴 버튼(영역 전체의
+          세로 중앙) — 버튼을 제목 행 안에 두면 수정일 줄 때문에 시각적으로
           위로 치우쳐 보인다. */}
       <div style={{ padding: compact ? '8px 10px' : '12px 16px', display: 'flex', alignItems: 'center', gap: 8 }}>
         <div style={{ minWidth: 0, flex: 1 }}>
@@ -502,7 +502,7 @@ export function MapCard({ card, controller, draggableEnabled, compact = false }:
             시각 정보가 없는 카드(Drive 데모 등)는 줄 자체를 생략한다. */}
         {!compact && formatLastEdited(card.updatedAt) && (
           <div title={formatFullDateTime(card.updatedAt)} style={{ fontSize: 12, color: '#9c8b7e' }}>
-            변경일 · {formatLastEdited(card.updatedAt)}
+            수정일 · {formatLastEdited(card.updatedAt)}
           </div>
         )}
         </div>
