@@ -3345,7 +3345,15 @@ export function useEditorState(): EditorController {
   useLayoutEffect(() => {
     const req = pendingReflowNudgeRef.current;
     if (!req) return;
-    if (editingNodeId || editingFloatId || editingZoneId || editingLineId) return;
+    // 편집 가드는 **자유 루트를 편집 중일 때만** — 이 패스의 movers가 자유
+    // 루트들이라, 편집 중인 자유 루트가 밀리면 편집 박스째 움직인다. 반면
+    // **트리 노드** 편집(자식 추가 직후의 이름 입력이 바로 이 경우)은 편집
+    // 대상이 movers가 아니므로 안전하고, 여기서 기다리면 이름을 다 입력할
+    // 때까지 겹친 화면이 유지된다(제보: "추가하면 옆 도형과 겹쳐진다" —
+    // 지난 수리가 확정 시점으로 미룬 것이 원인). 추가 즉시 placeholder
+    // 크기로 밀고, 확정 시 커밋 훅이 다시 리플로우를 걸어 최종 크기로 민다.
+    const editingFreeRoot = !!editingNodeId && !doc.nodes[editingNodeId]?.parent;
+    if (editingFreeRoot || editingFloatId || editingZoneId || editingLineId) return;
     if (objDragRef.current || dragRef.current) return;
     pendingReflowNudgeRef.current = null;
     const freeRoots = Object.keys(doc.nodes).filter((id) => id !== ROOT_ID && !doc.nodes[id]?.parent);
