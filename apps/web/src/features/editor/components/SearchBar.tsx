@@ -108,7 +108,9 @@ export function SearchBar({ controller }: { controller: EditorController }) {
 
   const close = (): void => controller.setSearchOpen(false);
 
-  const btn = (label: string, title: string, onClick: () => void, disabled = false): JSX.Element => (
+  // `narrow`: ↑/↓ 화살표 쌍 — 각각 정사각 버튼이면 글리프가 작아 두 화살표
+  // 사이가 벌어져 보인다(제보). 폭만 줄여 나란히 붙이고 높이(터치 타깃)는 유지.
+  const btn = (label: string, title: string, onClick: () => void, disabled = false, narrow = false): JSX.Element => (
     <button
       type="button"
       title={title}
@@ -116,7 +118,7 @@ export function SearchBar({ controller }: { controller: EditorController }) {
       onClick={onClick}
       disabled={disabled}
       style={{
-        width: isMobile ? 40 : 30,
+        width: isMobile ? (narrow ? 32 : 40) : (narrow ? 22 : 30),
         height: isMobile ? 40 : 30,
         display: 'flex',
         alignItems: 'center',
@@ -194,8 +196,8 @@ export function SearchBar({ controller }: { controller: EditorController }) {
         >
           {query.trim() ? (matches.length ? `${index + 1}/${matches.length}` : '없음') : ''}
         </span>
-        {btn('↑', '이전 (Shift+Enter)', () => go(-1), !matches.length)}
-        {btn('↓', '다음 (Enter)', () => go(1), !matches.length)}
+        {btn('↑', '이전 (Shift+Enter)', () => go(-1), !matches.length, true)}
+        {btn('↓', '다음 (Enter)', () => go(1), !matches.length, true)}
         <div style={{ width: 1, height: 18, background: th.border, flexShrink: 0 }} />
         {btn('✕', '닫기 (Esc)', close)}
       </div>

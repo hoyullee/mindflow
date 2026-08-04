@@ -56,6 +56,20 @@ describe('맵 안 검색', () => {
     expect(container.querySelector('input[aria-label="맵에서 검색"]')).toBeNull();
   });
 
+  it('↑/↓ 이동 버튼은 좁은 폭으로 나란히 붙는다 (간격이 벌어져 보이던 제보)', () => {
+    localStorage.setItem('mindflow_doc_srw', JSON.stringify(DOC));
+    const { container } = renderEditor('/editor?map=srw&title=x');
+    openSearch(container);
+    const prev = container.querySelector('button[aria-label="이전 (Shift+Enter)"]') as HTMLElement;
+    const next = container.querySelector('button[aria-label="다음 (Enter)"]') as HTMLElement;
+    const close = container.querySelector('button[aria-label="닫기 (Esc)"]') as HTMLElement;
+    // 화살표 쌍은 닫기 버튼보다 좁다 — 글리프 사이 여백이 좁혀졌다는 구조 계약.
+    expect(parseFloat(prev.style.width)).toBeLessThan(parseFloat(close.style.width));
+    expect(prev.style.width).toBe(next.style.width);
+    // 높이(클릭 타깃)는 그대로.
+    expect(prev.style.height).toBe(close.style.height);
+  });
+
   it('일치 개수를 세고, 일치 대상 전부에 앰버 링이 붙는다 (노드+메모)', () => {
     localStorage.setItem('mindflow_doc_sr2', JSON.stringify(DOC));
     const { container } = renderEditor('/editor?map=sr2&title=x');
