@@ -1003,3 +1003,65 @@ describe('리스트 마커 앞 캐럿 침범 방지', () => {
     expect(caretOffset(editor)).toBe(5);
   });
 });
+
+// 제보: 한글 조합 중 Shift+Enter — composing 가드에 걸려 브라우저 **기본 줄바꿈**이
+// 실행돼 [마커|내용] flex 행을 쪼갰다(캐럿이 리스트 앞에 그려졌다 재구성으로 튀는
+// "깜빡임"). 조합 중 Enter류는 기본 동작을 막고, 줄바꿈 의도(Shift)는 조합이 끝난
+// compositionend에서 우리 char-model 경로(doBreak)로 잇는다.
+describe('IME 조합 중 줄바꿈 — 기본 줄바꿈 차단 + 조합 종료 후 이어쓰기', () => {
+  const IME_DOC = { c1: { id: 'c1', text: '1. 하나', emoji: '', parent: 'root', children: [], collapsed: false, color: null, x: 0, y: 0 } };
+
+  it('조합 중 Shift+Enter는 기본 동작이 막히고, compositionend에서 마커가 이어진다', () => {
+    localStorage.setItem('mindflow_doc_ime1', JSON.stringify(docWith(IME_DOC)));
+    const { container } = renderEditor('/editor?map=ime1&title=x');
+    const editor = startEditingNode(container, 'c1');
+    const len = domToRuns(editor, true).text.length;
+    setLinearSelection(editor, len, len);
+    fireEvent.compositionStart(editor);
+    const notPrevented = fireEvent.keyDown(editor, { key: 'Enter', shiftKey: true, keyCode: 229 });
+    expect(notPrevented).toBe(false); // 기본 줄바꿈 차단
+    expect(domToRuns(editor, true).text).toBe('1. 하나'); // 아직 아무 일도 없다
+    fireEvent.compositionEnd(editor);
+    expect(domToRuns(editor, true).text).toBe('1. 하나\n2. '); // 조합 종료 후 이어쓰기
+  });
+
+  it('조합 중 맨 Enter는 IME 확정만 — 커밋도 줄바꿈도 하지 않는다', () => {
+    localStorage.setItem('mindflow_doc_ime2', JSON.stringify(docWith(IME_DOC)));
+    const { container } = renderEditor('/editor?map=ime2&title=x');
+    const editor = startEditingNode(container, 'c1');
+    fireEvent.compositionStart(editor);
+    const notPrevented = fireEvent.keyDown(editor, { key: 'Enter', keyCode: 229 });
+    expect(notPrevented).toBe(false);
+    fireEvent.compositionEnd(editor);
+    // 편집 박스가 그대로 살아 있고(커밋 안 됨) 텍스트 불변
+    expect(container.querySelector('.mf-richedit')).toBeTruthy();
+    expect(domToRuns(editor, true).text).toBe('1. 하나');
+  });
+
+  it('조합 중 Tab은 기본 동작(포커스 이탈)만 막고 들여쓰기는 하지 않는다', () => {
+    localStorage.setItem('mindflow_doc_ime3', JSON.stringify(docWith(IME_DOC)));
+    const { container } = renderEditor('/editor?map=ime3&title=x');
+    const editor = startEditingNode(container, 'c1');
+    const len = domToRuns(editor, true).text.length;
+    setLinearSelection(editor, len, len);
+    fireEvent.compositionStart(editor);
+    const notPrevented = fireEvent.keyDown(editor, { key: 'Tab', keyCode: 229 });
+    expect(notPrevented).toBe(false); // 포커스가 나가지 않는다
+    expect(domToRuns(editor, true).text).toBe('1. 하나'); // 들여쓰기 없음
+  });
+
+  it('메모 편집도 같은 규칙 (조합 중 Shift+Enter → compositionend에서 이어쓰기)', () => {
+    localStorage.setItem('mindflow_doc_ime4', JSON.stringify(docWith({}, [{ id: 'f1', text: '1. 하나', x: 100, y: 100, w: 160 }])));
+    const { container } = renderEditor('/editor?map=ime4&title=x');
+    const card = container.querySelector('[data-float-id="f1"]') as HTMLElement;
+    fireEvent.doubleClick(card);
+    const editor = card.querySelector('.mf-richedit') as HTMLDivElement;
+    const len = domToRuns(editor, true).text.length;
+    setLinearSelection(editor, len, len);
+    fireEvent.compositionStart(editor);
+    expect(fireEvent.keyDown(editor, { key: 'Enter', shiftKey: true, keyCode: 229 })).toBe(false);
+    expect(domToRuns(editor, true).text).toBe('1. 하나');
+    fireEvent.compositionEnd(editor);
+    expect(domToRuns(editor, true).text).toBe('1. 하나\n2. ');
+  });
+});

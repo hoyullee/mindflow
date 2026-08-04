@@ -178,12 +178,21 @@ function FloatEditBox({ f, controller }: { f: Float; controller: EditorControlle
   const ref = useRef<HTMLDivElement | null>(null);
   /** IME 조합 중 — 캐럿 스냅·재구성 보류(노드 편집과 동일). */
   const composingRef = useRef(false);
+  /** 조합 중에 들어온 Shift+Enter — compositionend에서 잇는다(노드 편집과 동일). */
+  const pendingBreakRef = useRef(false);
 
   /** 편집 값을 리스트 구조까지 반영해 다시 그리고 캐럿을 복원한다(노드 편집과
    * 같은 경로 — 메모는 좌측 정렬 고정, 라이브 크기 갱신은 필요 없다: 편집 박스가
    * 메모 카드 **안**에 있어 내용이 늘면 카드가 자연히 자란다). */
   const render = (el: HTMLDivElement, v: { text: string; rich: RichRun[] | null }, caret: number): void => {
     renderListEdit(el, v, 'left', caret, caret);
+  };
+
+  /** 줄바꿈 단일 경로(노드 편집의 `doBreak`와 동일) — 기본 줄바꿈은 행을 쪼갠다. */
+  const doBreak = (el: HTMLDivElement): void => {
+    if (!maybeContinueList({ preventDefault: () => {} }, el, (v, caret) => render(el, v, caret))) {
+      insertLineBreak(el, (v, caret) => render(el, v, caret));
+    }
   };
 
   /** 입력 후 줄 구조(마커 생성/삭제·마커 드리프트)가 바뀌었으면 다시 그린다 —
@@ -275,11 +284,35 @@ function FloatEditBox({ f, controller }: { f: Float; controller: EditorControlle
       onCompositionEnd={() => {
         composingRef.current = false;
         const el = ref.current;
-        if (el) syncListStructure(el);
+        if (!el) return;
+        // 조합 중에 눌린 Shift+Enter — IME 확정 뒤 여기서 잇는다(노드와 동일).
+        if (pendingBreakRef.current) {
+          pendingBreakRef.current = false;
+          doBreak(el);
+          return;
+        }
+        syncListStructure(el);
+      }}
+      // 기본 줄바꿈 차단 안전망(노드 편집과 동일 — 행을 쪼개 캐럿이 깜빡인다).
+      onBeforeInput={(e) => {
+        const it = (e.nativeEvent as InputEvent).inputType;
+        if (it !== 'insertLineBreak' && it !== 'insertParagraph') return;
+        e.preventDefault();
+        const el = ref.current;
+        if (!el) return;
+        if (composingRef.current) pendingBreakRef.current = true;
+        else doBreak(el);
       }}
       onKeyDown={(e) => {
         e.stopPropagation();
         const composing = e.nativeEvent.isComposing || e.keyCode === 229;
+        // 조합 중 Enter/Shift+Enter — 기본 줄바꿈을 막고 의도는 compositionend에서
+        // (노드 편집과 동일: Shift=줄바꿈 잇기, 맨 Enter=IME 확정만).
+        if (composing && e.key === 'Enter') {
+          e.preventDefault();
+          if (e.shiftKey) pendingBreakRef.current = true;
+          return;
+        }
         // 캐럿이 마커 구역이면 입력 전에 내용 시작으로 + ArrowLeft는 마커를 건너
         // 앞 줄 끝으로(노드 편집과 같은 규칙 — selectionchange 스냅의 이중화).
         if (!composing && ref.current) {
@@ -319,22 +352,22 @@ function FloatEditBox({ f, controller }: { f: Float; controller: EditorControlle
             return;
           }
         }
-        // Tab = 들여쓰기 / Shift+Tab = 내어쓰기. 리스트가 아니어도 기본 동작은
-        // 막는다(포커스 이탈 = blur 커밋으로 편집이 끊긴다).
-        if (e.key === 'Tab' && !composing) {
+        // Tab = 들여쓰기 / Shift+Tab = 내어쓰기. 리스트가 아니어도, 조합 중에도
+        // 기본 동작은 막는다(포커스 이탈 = blur 커밋으로 편집이 끊긴다).
+        if (e.key === 'Tab') {
           e.preventDefault();
+          if (composing) return;
           controller.applyListOp({ type: 'indent', dir: e.shiftKey ? -1 : 1 });
           return;
         }
         // Enter = 편집 확정, Shift+Enter = 줄바꿈(리스트 이어쓰기 포함) —
-        // 도형(노드) 편집과 동일한 키 규칙(요청).
+        // 도형(노드) 편집과 동일한 키 규칙(요청). 줄바꿈은 언제나 doBreak 한 경로.
         if (e.key === 'Enter' && !composing && !e.shiftKey) {
           e.preventDefault();
           controller.commitFloatRichText(f.id, ref.current);
         } else if (e.key === 'Enter' && !composing && e.shiftKey) {
-          const el = ref.current;
-          if (el && maybeContinueList(e, el, (v, caret) => render(el, v, caret))) return;
-          if (el && insertLineBreak(el, (v, caret) => render(el, v, caret))) e.preventDefault();
+          e.preventDefault();
+          if (ref.current) doBreak(ref.current);
         }
       }}
       onKeyUp={(e) => e.stopPropagation()}

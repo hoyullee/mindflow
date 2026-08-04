@@ -564,6 +564,9 @@ function NodeEditBox({ id, n, boxStyle, align, controller }: NodeEditBoxProps) {
   const ref = useRef<HTMLDivElement | null>(null);
   /** IME 조합 중 — 이때 캐럿을 옮기면 조합이 깨진다(스냅·재구성 모두 보류). */
   const composingRef = useRef(false);
+  /** 조합 중에 들어온 Shift+Enter — 기본 줄바꿈은 막았고(행을 쪼갠다), 조합이
+   * 끝나는 compositionend에서 우리 경로로 잇는다(제보: 캐럿 깜빡임). */
+  const pendingBreakRef = useRef(false);
 
   /** 편집 값을 리스트 구조까지 반영해 다시 그리고 캐럿을 복원한다. 줄 구성
    * 서명은 엘리먼트에 새겨진다(`renderListEdit`) — 컨트롤러(툴바·단축키)가 다시
@@ -571,6 +574,14 @@ function NodeEditBox({ id, n, boxStyle, align, controller }: NodeEditBoxProps) {
   const render = (el: HTMLDivElement, v: { text: string; rich: RichRun[] | null }, caret: number): void => {
     renderListEdit(el, v, align, caret, caret);
     controller.updateNodeEditSize(id, el);
+  };
+
+  /** 줄바꿈 — 리스트 줄이면 마커 이어쓰기, 아니면 평범한 `\n`. 언제나 이 경로
+   * 하나로만 들어간다(브라우저 기본 줄바꿈은 [마커|내용] 행을 쪼갠다). */
+  const doBreak = (el: HTMLDivElement): void => {
+    if (!maybeContinueList({ preventDefault: () => {} }, el, (v, caret) => render(el, v, caret))) {
+      insertLineBreak(el, (v, caret) => render(el, v, caret));
+    }
   };
 
   /** 입력 후 줄 구조가 바뀌었으면(마커 생성/삭제) 편집 DOM을 리스트 모양으로
@@ -688,11 +699,38 @@ function NodeEditBox({ id, n, boxStyle, align, controller }: NodeEditBoxProps) {
       onCompositionEnd={() => {
         composingRef.current = false;
         const el = ref.current;
-        if (el) syncListStructure(el);
+        if (!el) return;
+        // 조합 중에 눌린 Shift+Enter — IME가 글자를 확정한 지금 줄바꿈을 잇는다
+        // (doBreak가 재구성·크기 갱신까지 하므로 sync는 불필요).
+        if (pendingBreakRef.current) {
+          pendingBreakRef.current = false;
+          doBreak(el);
+          return;
+        }
+        syncListStructure(el);
+      }}
+      // 줄바꿈이 기본 동작으로 들어오는 마지막 구멍을 막는 안전망 — 조합 중 Enter는
+      // keydown preventDefault가 엔진에 따라 무시될 수 있다. 기본 줄바꿈은 [마커|내용]
+      // flex 행을 쪼개 캐럿이 리스트 앞에 그려졌다 재구성으로 튄다(제보: 깜빡임).
+      onBeforeInput={(e) => {
+        const it = (e.nativeEvent as InputEvent).inputType;
+        if (it !== 'insertLineBreak' && it !== 'insertParagraph') return;
+        e.preventDefault();
+        const el = ref.current;
+        if (!el) return;
+        if (composingRef.current) pendingBreakRef.current = true;
+        else doBreak(el);
       }}
       onKeyDown={(e) => {
         e.stopPropagation();
         const composing = e.nativeEvent.isComposing || e.keyCode === 229;
+        // 조합 중 Enter/Shift+Enter — 기본 줄바꿈을 막는다. 줄바꿈 의도(Shift)는
+        // compositionend에서 잇고, 맨 Enter는 IME 확정만(관례 — 한 번 더 눌러 커밋).
+        if (composing && e.key === 'Enter') {
+          e.preventDefault();
+          if (e.shiftKey) pendingBreakRef.current = true;
+          return;
+        }
         // 입력 전에 캐럿이 마커 구역이면 내용 시작으로 — selectionchange 스냅의
         // 이중화(클릭 직후 빠른 타이핑 등 이벤트 순서 편차 대비). ArrowLeft가
         // 내용 시작에 있으면 마커를 통째로 건너 앞 줄 끝으로(안 그러면 스냅에
@@ -743,8 +781,11 @@ function NodeEditBox({ id, n, boxStyle, align, controller }: NodeEditBoxProps) {
             return;
           }
         }
-        if (e.key === 'Tab' && !composing) {
+        if (e.key === 'Tab') {
+          // 조합 중에도 기본 동작은 막는다 — Tab 포커스 이탈은 blur 커밋으로
+          // 편집을 갑자기 끝낸다. 들여쓰기 연산 자체는 조합이 끝난 뒤에만.
           e.preventDefault();
+          if (composing) return;
           controller.applyListOp({ type: 'indent', dir: e.shiftKey ? -1 : 1 });
           controller.updateNodeEditSize(id, ref.current);
           return;
@@ -755,11 +796,10 @@ function NodeEditBox({ id, n, boxStyle, align, controller }: NodeEditBoxProps) {
         } else if (e.key === 'Enter' && !composing && e.shiftKey) {
           // 리스트 자동 이어쓰기: 리스트 줄에서 Shift+Enter(줄바꿈)를 치면 다음
           // 줄에 마커를 이어 넣고, 마커만 남은 빈 줄이면 마커를 지워 리스트를
-          // 끝낸다(표준 에디터 관례). 리스트 줄이 아니면 브라우저 기본 줄바꿈.
-          const el = ref.current;
-          if (el && maybeContinueList(e, el, (v, caret) => render(el, v, caret))) return;
-          // 리스트 줄이 아니면 평범한 줄바꿈 — 이것도 직접 넣는다(`insertLineBreak` 주석).
-          if (el && insertLineBreak(el, (v, caret) => render(el, v, caret))) e.preventDefault();
+          // 끝낸다(표준 에디터 관례). 리스트 줄이 아니면 평범한 `\n` — 어느 쪽도
+          // 브라우저 기본에 맡기지 않는다(`doBreak`).
+          e.preventDefault();
+          if (ref.current) doBreak(ref.current);
         } else if (e.key === 'Escape' && !composing) {
           e.preventDefault();
           controller.cancelNodeEdit();
