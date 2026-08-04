@@ -191,16 +191,8 @@ export function ViewMenu({ controller, onDone, isMobile }: { controller: EditorC
           onDone();
         }}
       />
-      <MenuItem
-        theme={th}
-        isMobile={isMobile}
-        icon={<FeedbackIcon />}
-        label="피드백 보내기"
-        onClick={() => {
-          controller.setFeedbackOpen(true);
-          onDone();
-        }}
-      />
+      {/* 피드백 보내기는 GNB 상시 아이콘으로 나갔다(요청) — 데스크톱 보기 메뉴에는
+          두지 않는다(진입점은 화면당 하나). 모바일 ☰(MoreMenu)에는 남는다. */}
     </MenuShell>
   );
 }

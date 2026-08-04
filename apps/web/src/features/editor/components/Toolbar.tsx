@@ -199,6 +199,37 @@ export function Toolbar({ controller }: ToolbarProps) {
         </svg>
       </button>
 
+      {/* 피드백 — 상시 노출 아이콘(요청: 메뉴 밖으로). 검색과 같은 아이콘 버튼
+          문법이라 자리를 거의 안 먹고, 의견 보내기의 심리적 문턱을 낮춘다.
+          데스크톱 전용 — 모바일은 툴바 폭이 빠듯해 ☰ 메뉴 항목(MoreMenu)을
+          유지한다(진입점은 화면당 하나). */}
+      {!isMobile && (
+        <button
+          type="button"
+          className="mf-ed-btn"
+          onClick={() => controller.setFeedbackOpen(true)}
+          title="피드백 보내기"
+          aria-label="피드백 보내기"
+          style={{
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            width: 34,
+            height: 34,
+            marginRight: 2,
+            border: 'none',
+            borderRadius: 9,
+            background: controller.feedbackOpen ? th.panel2 : 'none',
+            color: 'inherit',
+            cursor: 'pointer',
+          }}
+        >
+          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+            <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" />
+          </svg>
+        </button>
+      )}
+
       {/* 공유 — 메뉴가 아니라 바로 열리는 버튼이다(초대는 한 단계로 끝나는 동작이라
           플라이아웃을 한 겹 더 씌울 이유가 없다). 모바일에서도 남긴다: 협업이
           이 화면의 목적 중 하나이고 44px 터치 타겟으로 들어간다. */}
