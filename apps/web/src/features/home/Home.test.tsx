@@ -2322,13 +2322,17 @@ describe('Home', () => {
   });
 });
 
-// 피드백 보내기(홈 진입점) — 프로필 메뉴의 항목으로 모달이 열린다.
+// 피드백 보내기(홈 진입점) — LNB 최하단 고정 항목으로 모달이 열린다(사용자
+// 요청으로 프로필 메뉴에서 이동).
 describe('피드백 보내기 (홈 진입점)', () => {
-  it('프로필 메뉴 → 피드백 보내기 → 모달 → 제출', async () => {
+  it('LNB 최하단의 피드백 보내기 → 모달 → 제출 (프로필 메뉴에는 없다)', async () => {
     const user = userEvent.setup();
     renderHome();
-    await user.click(await screen.findByRole('button', { name: '계정 메뉴' })); // 프로필 스켈레톤 해제 대기
-    await user.click(screen.getByRole('button', { name: '피드백 보내기' }));
+    // 프로필 메뉴에서는 빠졌다 — 진입점은 LNB 하나.
+    await user.click(await screen.findByRole('button', { name: '계정 메뉴' }));
+    const popover = screen.getByRole('button', { name: '프로필명 변경' }).parentElement as HTMLElement;
+    expect(within(popover).queryByRole('button', { name: '피드백 보내기' })).toBeNull();
+    await user.click(screen.getByRole('button', { name: '피드백 보내기' })); // LNB 최하단
     const dialog = await screen.findByRole('dialog', { name: '피드백 보내기' });
     expect(dialog).toBeTruthy();
     // 로컬(데모) 백엔드 — 안내 문구가 뜨고, 제출은 mf_feedback에 쌓인다.
