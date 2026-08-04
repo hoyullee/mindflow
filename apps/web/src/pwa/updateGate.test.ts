@@ -10,6 +10,7 @@ import {
   currentRisk,
   runPrepare,
   startPeerResponder,
+  startWakeChecks,
   useUpdateGuard,
   __resetUpdateGate,
   type UpdatePrepare,
@@ -187,5 +188,48 @@ describe('화면 진입 시 새 버전 확인', () => {
       throw new Error('offline');
     });
     expect(() => render(createElement(Screen, { risk: 'defer' }))).not.toThrow();
+  });
+});
+
+// 화면 이동 없이 머무는 탭은 주기 폴링까지 배포를 몰랐다(제보: 반응이 너무 늦다).
+// 배포를 확인하러 앱 탭으로 **돌아오는 순간**이 자연스러운 확인 타이밍 — 탭 복귀·
+// 포커스·네트워크 복귀에 즉시 확인한다(연타는 기존 30초 스로틀이 거른다).
+describe('탭 복귀 시 새 버전 확인 (startWakeChecks)', () => {
+  it('탭이 다시 보이면 확인한다 (숨을 때는 하지 않는다)', () => {
+    const check = vi.fn();
+    setUpdateChecker(check);
+    const stop = startWakeChecks();
+    const setVisibility = (v: 'visible' | 'hidden'): void => {
+      Object.defineProperty(document, 'visibilityState', { value: v, configurable: true });
+      document.dispatchEvent(new Event('visibilitychange'));
+    };
+    setVisibility('hidden');
+    expect(check).toHaveBeenCalledTimes(0);
+    setVisibility('visible');
+    expect(check).toHaveBeenCalledTimes(1);
+    stop();
+  });
+
+  it('창 포커스·네트워크 복귀에도 확인하고, 연타는 스로틀로 한 번만 나간다', () => {
+    const check = vi.fn();
+    setUpdateChecker(check);
+    const stop = startWakeChecks();
+    window.dispatchEvent(new Event('focus'));
+    expect(check).toHaveBeenCalledTimes(1);
+    // 포커스는 보통 visibilitychange와 같이 온다 — 스로틀이 중복을 거른다.
+    window.dispatchEvent(new Event('focus'));
+    window.dispatchEvent(new Event('online'));
+    expect(check).toHaveBeenCalledTimes(1);
+    stop();
+  });
+
+  it('정리 함수 뒤에는 더 이상 확인하지 않는다', () => {
+    const check = vi.fn();
+    setUpdateChecker(check);
+    const stop = startWakeChecks();
+    stop();
+    window.dispatchEvent(new Event('focus'));
+    window.dispatchEvent(new Event('online'));
+    expect(check).toHaveBeenCalledTimes(0);
   });
 });
