@@ -98,38 +98,57 @@ export function FloatLayer({ floats, theme: th, controller }: FloatLayerProps) {
               controller.startEditFloat(f.id);
             }}
           >
-            {!isImage && (
-            <div
-              title={collapsed ? '펼치기' : '접기'}
-              onPointerDown={(e) => {
-                if (isPanButton(e)) return; // 우클릭·휠클릭 = 화면 이동
-                e.stopPropagation();
-                controller.toggleFloatCollapse(f.id);
-              }}
-              style={{
-                position: 'absolute',
-                left: 6,
-                top: 6,
-                width: 20,
-                height: 20,
-                borderRadius: '50%',
-                background: th.accent,
-                color: th.accentInk,
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'center',
-                fontSize: 12,
-                fontWeight: 700,
-                lineHeight: 1,
-                userSelect: 'none',
-                boxShadow: '0 1px 3px rgba(0,0,0,.2)',
-                zIndex: 4,
-                cursor: 'pointer',
-              }}
-            >
-              {collapsed ? '＋' : '−'}
-            </div>
-            )}
+            {!isImage && (() => {
+              // 접기/펼치기 토글 — 예전 코럴 원의 ＋/−는 "추가/삭제"로 읽혔다(제보:
+              // 직관적인 아이콘으로). 표준 디스클로저 관례인 **회전 셰브론**으로:
+              // 펼침=아래(내용이 아래로 이어짐), 접힘=오른쪽(더 있음). 색은 메모의
+              // 글자색에서 따와(커스텀 배경/다크 카드에서도 톤이 맞는다) 은은한
+              // 칩으로 두고, 호버에서만 또렷해진다(editor.css `.mf-float-fold`).
+              const ink = f.textColor || th.text;
+              return (
+                <div
+                  className="mf-float-fold"
+                  role="button"
+                  aria-label={collapsed ? '메모 펼치기' : '메모 접기'}
+                  aria-expanded={!collapsed}
+                  data-fold-toggle
+                  title={collapsed ? '펼치기' : '접기'}
+                  onPointerDown={(e) => {
+                    if (isPanButton(e)) return; // 우클릭·휠클릭 = 화면 이동
+                    e.stopPropagation();
+                    controller.toggleFloatCollapse(f.id);
+                  }}
+                  style={{
+                    position: 'absolute',
+                    left: 5,
+                    top: 7,
+                    width: 22,
+                    height: 22,
+                    borderRadius: 7,
+                    background: hexA(ink, 0.07),
+                    border: `1px solid ${hexA(ink, 0.14)}`,
+                    color: ink,
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    userSelect: 'none',
+                    zIndex: 4,
+                    cursor: 'pointer',
+                    boxSizing: 'border-box',
+                  }}
+                >
+                  <svg
+                    width="11"
+                    height="11"
+                    viewBox="0 0 10 10"
+                    aria-hidden="true"
+                    style={{ transform: collapsed ? 'rotate(-90deg)' : 'none', transition: 'transform .16s ease' }}
+                  >
+                    <path d="M2 3.4 L5 6.4 L8 3.4" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" />
+                  </svg>
+                </div>
+              );
+            })()}
             {remotePeer && !editing && <RemotePeerTag color={remotePeer.user.color} name={remotePeer.user.name} style={{ left: 0, top: -22 }} />}
             {isImage ? (
               <img
