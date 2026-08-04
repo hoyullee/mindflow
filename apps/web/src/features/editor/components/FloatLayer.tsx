@@ -10,7 +10,7 @@ import type { EditorController } from '../useEditorState';
 import { peersSelecting } from '../presenceSelection';
 import { RemotePeerTag } from './RemotePeerTag';
 import { ResizeHandle } from './ResizeHandle';
-import { domToRuns, linearize, selectedRawText } from '../richtextDom';
+import { domToRuns, linearize, listArrowLeft, selectedRawText, snapCaretOffListMarker } from '../richtextDom';
 import { isLinkOpenModifier, linkInk, openLink } from '../richSpans';
 import { insertLineBreak, listBackspaceOpAt, maybeContinueList } from './NodeLayer';
 
@@ -176,6 +176,8 @@ export function FloatLayer({ floats, theme: th, controller }: FloatLayerProps) {
 
 function FloatEditBox({ f, controller }: { f: Float; controller: EditorController }) {
   const ref = useRef<HTMLDivElement | null>(null);
+  /** IME 조합 중 — 캐럿 스냅·재구성 보류(노드 편집과 동일). */
+  const composingRef = useRef(false);
 
   /** 편집 값을 리스트 구조까지 반영해 다시 그리고 캐럿을 복원한다(노드 편집과
    * 같은 경로 — 메모는 좌측 정렬 고정, 라이브 크기 갱신은 필요 없다: 편집 박스가
@@ -221,7 +223,16 @@ function FloatEditBox({ f, controller }: { f: Float; controller: EditorControlle
     } else {
       controller.openTextCtx(0, 60); // jsdom 폴백
     }
-    return () => controller.setRichEditorEl(null);
+    // 캐럿이 리스트 마커 구역에 앉지 못하게(노드 편집과 같은 규칙 — 제보:
+    // 마커 앞에 캐럿이 서서 친 글자가 마커 앞에 쌓임).
+    const onSelChange = (): void => {
+      if (!composingRef.current && ref.current) snapCaretOffListMarker(ref.current);
+    };
+    document.addEventListener('selectionchange', onSelChange);
+    return () => {
+      document.removeEventListener('selectionchange', onSelChange);
+      controller.setRichEditorEl(null);
+    };
     // Mount-once: 이 박스는 한 편집 세션 동안만 존재한다(NodeEditBox와 동일).
   }, []);
 
@@ -258,13 +269,26 @@ function FloatEditBox({ f, controller }: { f: Float; controller: EditorControlle
         const el = ref.current;
         if (el && !(e.nativeEvent as InputEvent).isComposing) syncListStructure(el);
       }}
+      onCompositionStart={() => {
+        composingRef.current = true;
+      }}
       onCompositionEnd={() => {
+        composingRef.current = false;
         const el = ref.current;
         if (el) syncListStructure(el);
       }}
       onKeyDown={(e) => {
         e.stopPropagation();
         const composing = e.nativeEvent.isComposing || e.keyCode === 229;
+        // 캐럿이 마커 구역이면 입력 전에 내용 시작으로 + ArrowLeft는 마커를 건너
+        // 앞 줄 끝으로(노드 편집과 같은 규칙 — selectionchange 스냅의 이중화).
+        if (!composing && ref.current) {
+          snapCaretOffListMarker(ref.current);
+          if (e.key === 'ArrowLeft' && !e.shiftKey && !e.altKey && !e.ctrlKey && !e.metaKey && listArrowLeft(ref.current)) {
+            e.preventDefault();
+            return;
+          }
+        }
         // Ctrl/Cmd+B·I는 브라우저 기본 토글 대신 툴바와 같은 applyPartial로
         // (노드 편집과 동일 — 기본 토글은 굵은 박스에서 거꾸로 동작한다).
         if ((e.ctrlKey || e.metaKey) && !e.altKey && !composing) {

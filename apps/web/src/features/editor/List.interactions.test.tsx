@@ -3,7 +3,7 @@ import { cleanup, fireEvent, render, waitFor, within } from '@testing-library/re
 import { MemoryRouter, Route, Routes } from 'react-router-dom';
 import { parseDoc } from '@mindflow/mindmap-core';
 import { Editor } from './Editor';
-import { domToRuns, setLinearSelection } from './richtextDom';
+import { domToRuns, linearize, setLinearSelection } from './richtextDom';
 
 // 글머리 기호·번호 매기기(줄 단위 리스트) — 텍스트 마커가 곧 데이터인 설계
 // (코어 `list.ts` 참고): 렌더는 `- `→`• ` 글리프 치환 + [마커|내용] 행잉 인덴트
@@ -928,5 +928,78 @@ describe('리스트 마커 선택 불가 + 복사 보존', () => {
     const prevented = !fireEvent.copy(editor, { clipboardData: { setData } });
     expect(prevented).toBe(false);
     expect(setData).not.toHaveBeenCalled();
+  });
+});
+
+// 후속 제보(#301 배포 뒤): 마커 스팬 user-select:none이 크롬의 캐럿 배치를 바꿔
+// 마커 **앞**(행 시작)에 캐럿 자리가 생겼고, 거기서 친 글자가 마커 앞에 쌓여
+// 리스트가 풀렸다(`ㅇㅇㅇ5. 오케이`). 마커 구역은 캐럿 불가 지대다 — 어떤 경로로
+// 들어와도 내용 시작으로 스냅하고, ArrowLeft는 마커를 통째로 건넌다.
+describe('리스트 마커 앞 캐럿 침범 방지', () => {
+  const CARET_DOC = { c1: { id: 'c1', text: '1. 하나\n2. 둘', emoji: '', parent: 'root', children: [], collapsed: false, color: null, x: 0, y: 0 } };
+  function caretOffset(editor: HTMLElement): number {
+    const ws = window.getSelection()!;
+    const r = ws.getRangeAt(0);
+    return linearize(editor, [{ container: r.startContainer, offset: r.startOffset }]).pos[0] ?? -1;
+  }
+
+  it('마커 구역의 캐럿은 키 입력 전에 내용 시작으로 스냅된다', () => {
+    localStorage.setItem('mindflow_doc_cs1', JSON.stringify(docWith(CARET_DOC)));
+    const { container } = renderEditor('/editor?map=cs1&title=x');
+    const editor = startEditingNode(container, 'c1');
+    setLinearSelection(editor, 0, 0); // 마커 '1. ' 맨 앞
+    fireEvent.keyDown(editor, { key: 'x' });
+    expect(caretOffset(editor)).toBe(3); // '하나' 앞
+  });
+
+  it('selectionchange(클릭·Home 등)로도 스냅된다', () => {
+    localStorage.setItem('mindflow_doc_cs2', JSON.stringify(docWith(CARET_DOC)));
+    const { container } = renderEditor('/editor?map=cs2&title=x');
+    const editor = startEditingNode(container, 'c1');
+    setLinearSelection(editor, 7, 7); // 마커 '2. ' 안(줄2)
+    document.dispatchEvent(new Event('selectionchange'));
+    expect(caretOffset(editor)).toBe(9); // '둘' 앞
+  });
+
+  it('ArrowLeft는 내용 시작에서 마커를 건너 앞 줄 끝으로 간다', () => {
+    localStorage.setItem('mindflow_doc_cs3', JSON.stringify(docWith(CARET_DOC)));
+    const { container } = renderEditor('/editor?map=cs3&title=x');
+    const editor = startEditingNode(container, 'c1');
+    setLinearSelection(editor, 9, 9); // 줄2 내용 시작
+    const notPrevented = fireEvent.keyDown(editor, { key: 'ArrowLeft' });
+    expect(notPrevented).toBe(false); // preventDefault 됐다
+    expect(caretOffset(editor)).toBe(5); // 줄1 끝('하나' 뒤)
+  });
+
+  it('첫 줄 내용 시작의 ArrowLeft는 제자리(마커 구역 진입 없음)', () => {
+    localStorage.setItem('mindflow_doc_cs4', JSON.stringify(docWith(CARET_DOC)));
+    const { container } = renderEditor('/editor?map=cs4&title=x');
+    const editor = startEditingNode(container, 'c1');
+    setLinearSelection(editor, 3, 3);
+    const notPrevented = fireEvent.keyDown(editor, { key: 'ArrowLeft' });
+    expect(notPrevented).toBe(false);
+    expect(caretOffset(editor)).toBe(3);
+  });
+
+  it('내용 안 ArrowLeft는 기본 동작 그대로 (개입 없음)', () => {
+    localStorage.setItem('mindflow_doc_cs5', JSON.stringify(docWith(CARET_DOC)));
+    const { container } = renderEditor('/editor?map=cs5&title=x');
+    const editor = startEditingNode(container, 'c1');
+    setLinearSelection(editor, 4, 4); // '하나' 사이
+    const notPrevented = fireEvent.keyDown(editor, { key: 'ArrowLeft' });
+    expect(notPrevented).toBe(true); // 막지 않는다
+  });
+
+  it('메모 편집 박스도 같은 규칙', () => {
+    localStorage.setItem('mindflow_doc_cs6', JSON.stringify(docWith({}, [{ id: 'f1', text: '1. 하나\n2. 둘', x: 100, y: 100, w: 160 }])));
+    const { container } = renderEditor('/editor?map=cs6&title=x');
+    const card = container.querySelector('[data-float-id="f1"]') as HTMLElement;
+    fireEvent.doubleClick(card);
+    const editor = card.querySelector('.mf-richedit') as HTMLDivElement;
+    setLinearSelection(editor, 6, 6); // 줄2 마커 앞
+    fireEvent.keyDown(editor, { key: 'x' });
+    expect(caretOffset(editor)).toBe(9);
+    fireEvent.keyDown(editor, { key: 'ArrowLeft' });
+    expect(caretOffset(editor)).toBe(5);
   });
 });

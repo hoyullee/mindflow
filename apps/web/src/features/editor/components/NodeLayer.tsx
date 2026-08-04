@@ -11,7 +11,7 @@ import type { GeomMap } from '../types';
 import { peersSelecting } from '../presenceSelection';
 import { RemotePeerTag } from './RemotePeerTag';
 import { ResizeHandle } from './ResizeHandle';
-import { domToRuns, linearize, liveEditValue, selectedRawText } from '../richtextDom';
+import { domToRuns, linearize, listArrowLeft, liveEditValue, selectedRawText, snapCaretOffListMarker } from '../richtextDom';
 import { ListTextBlock, domMarkerSignature, listLinesOf, listSigOf, listSignature, markerSignature, nodeTextAlign, renderListEdit } from '../listLines';
 import { RichSpan, isLinkOpenModifier, linkInk, openLink } from '../richSpans';
 
@@ -562,6 +562,8 @@ interface NodeEditBoxProps {
  * bold toggle turns the WRONG way inside already-bold node boxes). */
 function NodeEditBox({ id, n, boxStyle, align, controller }: NodeEditBoxProps) {
   const ref = useRef<HTMLDivElement | null>(null);
+  /** IME 조합 중 — 이때 캐럿을 옮기면 조합이 깨진다(스냅·재구성 모두 보류). */
+  const composingRef = useRef(false);
 
   /** 편집 값을 리스트 구조까지 반영해 다시 그리고 캐럿을 복원한다. 줄 구성
    * 서명은 엘리먼트에 새겨진다(`renderListEdit`) — 컨트롤러(툴바·단축키)가 다시
@@ -618,7 +620,17 @@ function NodeEditBox({ id, n, boxStyle, align, controller }: NodeEditBoxProps) {
     } else {
       controller.openTextCtx(0, 60); // rect를 못 읽는 환경(jsdom) — 위치만 폴백
     }
-    return () => controller.setRichEditorEl(null);
+    // 캐럿이 리스트 마커 구역에 앉지 못하게 — 클릭·방향키·Home 등 모든 경로가
+    // selectionchange로 모인다(제보: user-select:none 이후 마커 **앞**에 캐럿이
+    // 서서 친 글자가 마커 앞에 쌓임).
+    const onSelChange = (): void => {
+      if (!composingRef.current && ref.current) snapCaretOffListMarker(ref.current);
+    };
+    document.addEventListener('selectionchange', onSelChange);
+    return () => {
+      document.removeEventListener('selectionchange', onSelChange);
+      controller.setRichEditorEl(null);
+    };
     // Mount-once (empty deps): this box only ever exists for the DURATION of one edit
     // session — `NodeBox` renders it exclusively while `editing` is true, so "on mount"
     // and "on entering edit mode" are the same moment here, unlike the original's single
@@ -670,13 +682,28 @@ function NodeEditBox({ id, n, boxStyle, align, controller }: NodeEditBoxProps) {
         if (!(e.nativeEvent as InputEvent).isComposing) syncListStructure(el);
         controller.updateNodeEditSize(id, el);
       }}
+      onCompositionStart={() => {
+        composingRef.current = true;
+      }}
       onCompositionEnd={() => {
+        composingRef.current = false;
         const el = ref.current;
         if (el) syncListStructure(el);
       }}
       onKeyDown={(e) => {
         e.stopPropagation();
         const composing = e.nativeEvent.isComposing || e.keyCode === 229;
+        // 입력 전에 캐럿이 마커 구역이면 내용 시작으로 — selectionchange 스냅의
+        // 이중화(클릭 직후 빠른 타이핑 등 이벤트 순서 편차 대비). ArrowLeft가
+        // 내용 시작에 있으면 마커를 통째로 건너 앞 줄 끝으로(안 그러면 스냅에
+        // 되튕겨 캐럿이 그 줄에 갇힌다).
+        if (!composing && ref.current) {
+          snapCaretOffListMarker(ref.current);
+          if (e.key === 'ArrowLeft' && !e.shiftKey && !e.altKey && !e.ctrlKey && !e.metaKey && listArrowLeft(ref.current)) {
+            e.preventDefault();
+            return;
+          }
+        }
         // Ctrl/Cmd+B·I는 브라우저 기본(execCommand bold/italic) 대신 우리
         // `applyPartial`로 라우팅한다. 기본 동작에 맡기면 루트(700)·1단계(600)
         // 노드처럼 박스 자체가 굵은 곳에서 브라우저가 "이미 굵다"고 판단해
