@@ -211,6 +211,33 @@ export function requestUpdateCheck(now = Date.now()): boolean {
 }
 
 /**
+ * 탭이 "다시 살아나는" 순간마다 새 버전을 확인한다 — 다른 탭에 갔다 돌아옴
+ * (`visibilitychange`), 창 포커스 복귀(`focus`), 네트워크 복귀(`online`).
+ *
+ * 배경(제보: 새 배포 반응이 너무 늦다): 확인 시점이 페이지 로드·화면 진입·주기
+ * 폴링뿐이라, 화면 이동 없이 머무는 탭은 다음 폴링까지 배포를 몰랐다. 배포를
+ * 확인하러 **앱 탭으로 돌아오는 바로 그 순간**이 가장 자연스러운 확인 타이밍인데
+ * 브라우저는 이때 스스로 확인해 주지 않는다. 연타(포커스가 visibility와 함께
+ * 오는 경우 등)는 `requestUpdateCheck`의 스로틀이 거른다.
+ */
+export function startWakeChecks(): () => void {
+  const onVisible = (): void => {
+    if (document.visibilityState === 'visible') requestUpdateCheck();
+  };
+  const onWake = (): void => {
+    requestUpdateCheck();
+  };
+  document.addEventListener('visibilitychange', onVisible);
+  window.addEventListener('focus', onWake);
+  window.addEventListener('online', onWake);
+  return () => {
+    document.removeEventListener('visibilitychange', onVisible);
+    window.removeEventListener('focus', onWake);
+    window.removeEventListener('online', onWake);
+  };
+}
+
+/**
  * 이 컴포넌트가 떠 있는 동안의 리로드 위험도를 신고한다.
  *
  * @param risk 지금 상태 기준 위험도 — 상태가 바뀌면 그대로 다시 넘기면 된다.

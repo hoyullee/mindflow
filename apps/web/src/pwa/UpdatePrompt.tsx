@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { useRegisterSW } from 'virtual:pwa-register/react';
 import { UpdateToast } from './UpdateToast';
-import { anyPeerBusy, canAutoApply, notifyPeersApplied, setUpdateChecker, startPeerResponder, useUpdateGate } from './updateGate';
+import { anyPeerBusy, canAutoApply, notifyPeersApplied, setUpdateChecker, startPeerResponder, startWakeChecks, useUpdateGate } from './updateGate';
 import { consumeUpdateApplied, markUpdateApplied } from './updateApplied';
 import { UpdateAppliedNotice } from './UpdateAppliedNotice';
 import { UpdateOverlay } from './UpdateOverlay';
@@ -31,8 +31,13 @@ import { applyUpdate } from './applyUpdate';
  * 테스트에서 가상 모듈 없이 그대로 다룰 수 있게 분리했다.
  */
 
-/** 열어 둔 탭에서도 배포를 놓치지 않도록 주기적으로 새 버전을 확인(1시간). */
-const UPDATE_CHECK_MS = 60 * 60 * 1000;
+/**
+ * 열어 둔 탭에서도 배포를 놓치지 않도록 주기적으로 새 버전을 확인.
+ * 원래 1시간이었는데 화면 이동 없이 머무는 탭이 배포를 한참 몰랐다(제보) — 확인
+ * 비용은 sw.js 몇 KB fetch(변경 없으면 304)뿐이라 5분으로 줄였다. 탭 복귀 순간의
+ * 즉시 확인은 `startWakeChecks`가 따로 맡는다.
+ */
+const UPDATE_CHECK_MS = 5 * 60 * 1000;
 
 /** 다른 탭이 바빠 자동 적용을 미뤘을 때 다시 물어보는 주기. */
 const PEER_RETRY_MS = 20 * 1000;
@@ -73,6 +78,9 @@ export function UpdatePrompt() {
 
   // 다른 탭의 "지금 적용해도 되나?" 질문에 답한다(모든 탭에 이 컴포넌트가 하나씩 있다).
   useEffect(() => startPeerResponder(), []);
+  // 탭 복귀·포커스·네트워크 복귀 순간 새 버전을 확인 — 배포 후 앱으로 돌아오는
+  // 바로 그 순간 잡히게(제보: 반응이 너무 늦다).
+  useEffect(() => startWakeChecks(), []);
 
   /** 적용이 진행 중 — 버튼에 그대로 비춘다(누른 게 먹었는지 보이지 않으면 고장으로 읽힌다). */
   const [applying, setApplying] = useState(false);
