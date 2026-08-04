@@ -33,6 +33,14 @@ const LIGHT: FeedbackTheme = {
   canvasBg: '#faf6f1',
 };
 
+/** 6자리 hex → rgba — 완료 배지의 은은한 배경(테마 accent 파생). */
+function tint(hex: string, alpha: number): string {
+  const m = /^#([0-9a-f]{6})$/i.exec(hex.trim());
+  if (!m) return hex;
+  const n = parseInt(m[1]!, 16);
+  return `rgba(${(n >> 16) & 255}, ${(n >> 8) & 255}, ${n & 255}, ${alpha})`;
+}
+
 const CATEGORIES: { key: FeedbackCategory; label: string }[] = [
   { key: 'ux', label: '불편해요' },
   { key: 'bug', label: '오류 제보' },
@@ -147,7 +155,18 @@ export function FeedbackModal({ open, onClose, page, theme }: { open: boolean; o
       <div role="dialog" aria-label="피드백 보내기" onClick={(e) => e.stopPropagation()} style={cardStyle}>
         {done ? (
           <div style={{ textAlign: 'center', padding: '18px 0 10px' }}>
-            <div aria-hidden="true" style={{ fontSize: 34, marginBottom: 10 }}>💌</div>
+            {/* SVG 배지(요청 — 이모지는 플랫폼마다 다르게 그려진다): 테마 accent를
+                따르는 원형 칩 + 종이비행기(보냄) 스트로크 아이콘. */}
+            <div
+              aria-hidden="true"
+              data-done-icon
+              style={{ width: 54, height: 54, margin: '0 auto 12px', borderRadius: '50%', background: tint(th.accent, 0.12), color: th.accent, display: 'flex', alignItems: 'center', justifyContent: 'center' }}
+            >
+              <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ marginLeft: -2, marginTop: 2 }}>
+                <path d="M22 2 11 13" />
+                <path d="M22 2 15 22 11 13 2 9z" />
+              </svg>
+            </div>
             <div style={{ fontSize: 16, fontWeight: 800, marginBottom: 6 }}>전달됐어요, 고마워요!</div>
             <div style={{ fontSize: 12.5, color: th.subtext, lineHeight: 1.6, marginBottom: 18 }}>보내 주신 의견은 그리오를 다듬는 데 큰 도움이 됩니다.</div>
             <button
