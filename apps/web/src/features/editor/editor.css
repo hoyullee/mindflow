@@ -100,6 +100,16 @@
   }
 }
 
+/* 리스트 마커·들여쓰기는 편집기가 관리하는 장식 — 선택 하이라이트를 그리지 않는다
+   (제보: 전체 선택 시 마커까지 선택된 것처럼 보임). 마커 스팬의 `user-select: none`
+   (listEditHtml)은 드래그로 선택이 시작되는 것만 막고, Ctrl+A처럼 범위가 마커를
+   물면 크롬이 하이라이트를 칠한다 — ::selection까지 꺼야 시각이 완성된다.
+   (마커는 값에는 그대로 있다 — 복사는 onCopy가 값에서 잘라 마커를 보존한다.) */
+.mf-richedit [data-list-marker]::selection,
+.mf-richedit [data-list-marker] *::selection {
+  background: transparent;
+}
+
 /* 하이퍼링크(커밋된 캔버스 렌더) — 밑줄은 인라인 스타일(`richSpans`)이 담당하고,
    여기서는 **손가락 커서**만 다룬다. 평소엔 기본 커서다: 그냥 클릭하면 링크가
    아니라 도형이 선택되므로, 상시 손가락 커서는 거짓말이 된다. Ctrl/⌘ 를 누르고

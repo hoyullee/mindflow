@@ -180,6 +180,32 @@ export function liveEditValue(el: HTMLElement): { text: string; rich: RichRun[] 
   return { text: v.text, rich: v.rich, clamp: (n) => Math.max(0, Math.min(n, v.text.length)) };
 }
 
+/**
+ * 편집 박스 안의 **현재 선택 구간**을 값(raw 텍스트) 좌표계에서 잘라 돌려준다 —
+ * 선택이 없거나(캐럿뿐) 박스 밖이면 `null`.
+ *
+ * 복사 전용: 리스트 마커 스팬은 `user-select: none`이라(제보: 전체 선택 시 마커까지
+ * 선택돼 보임) 브라우저 기본 복사에서는 마커가 **빠진** 텍스트가 실린다. 마커는
+ * 데이터의 일부이므로(텍스트 마커가 곧 리스트) 붙여넣으면 리스트가 사라진다 —
+ * 대신 값에서 자르면 선택 경계 **사이**의 마커·들여쓰기가 원문 그대로 보존된다.
+ * 한 줄 일부만 고른 선택은 경계가 내용 안이라 어차피 마커를 물지 않는다(무변경).
+ */
+export function selectedRawText(el: HTMLElement): string | null {
+  const ws = window.getSelection();
+  if (!ws || !ws.rangeCount || ws.isCollapsed) return null;
+  const rng = ws.getRangeAt(0);
+  if (!el.contains(rng.startContainer) || !el.contains(rng.endContainer)) return null;
+  const lin = linearize(el, [
+    { container: rng.startContainer, offset: rng.startOffset },
+    { container: rng.endContainer, offset: rng.endOffset },
+  ]);
+  const v = liveEditValue(el);
+  const a = v.clamp(Math.min(lin.pos[0] ?? 0, lin.pos[1] ?? 0));
+  const b = v.clamp(Math.max(lin.pos[0] ?? 0, lin.pos[1] ?? 0));
+  if (a === b) return null;
+  return v.text.slice(a, b);
+}
+
 /** One DOM position to resolve into a linear text offset — the `{ container, offset }`
  * shape a `Range`'s `startContainer`/`startOffset` (or `endContainer`/`endOffset`) already
  * has, so callers typically pass those straight through. */

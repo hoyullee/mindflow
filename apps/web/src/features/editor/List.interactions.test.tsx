@@ -1,4 +1,4 @@
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { cleanup, fireEvent, render, waitFor, within } from '@testing-library/react';
 import { MemoryRouter, Route, Routes } from 'react-router-dom';
 import { parseDoc } from '@mindflow/mindmap-core';
@@ -868,5 +868,65 @@ describe('메모(플로트) 들여쓰기 — Tab / Shift+Tab', () => {
     expect(domToRuns(editor, true).text).toBe('• 하나\n  ◦ 둘');
     fireEvent.keyDown(editor, { key: 'Tab', shiftKey: true });
     expect(domToRuns(editor, true).text).toBe('• 하나\n• 둘'); // 내어쓰면 0단계 글리프로
+  });
+});
+
+// 제보: 편집 중 전체 선택을 하면 리스트 마커·들여쓰기까지 선택된 것처럼 보인다 —
+// 마커는 편집기가 관리하는 장식이므로 선택 불가(`user-select: none`)여야 한다.
+// 단 마커는 데이터의 일부이기도 하다(텍스트 마커가 곧 리스트) — 기본 복사에
+// 맡기면 마커 없는 텍스트가 실려 붙여넣을 때 리스트가 사라지므로, onCopy가 값
+// 좌표계에서 잘라 원문(마커 포함)을 싣는다.
+describe('리스트 마커 선택 불가 + 복사 보존', () => {
+  it('편집 박스의 마커 스팬은 user-select: none (노드·메모 공통 경로)', () => {
+    localStorage.setItem('mindflow_doc_us1', JSON.stringify(docWith({ c1: { id: 'c1', text: '1. 하나\n2. 둘', emoji: '', parent: 'root', children: [], collapsed: false, color: null, x: 0, y: 0 } })));
+    const { container } = renderEditor('/editor?map=us1&title=x');
+    const editor = startEditingNode(container, 'c1');
+    const markers = Array.from(editor.querySelectorAll('[data-list-marker]')) as HTMLElement[];
+    expect(markers.length).toBe(2);
+    markers.forEach((m) => expect(m.style.userSelect).toBe('none'));
+  });
+
+  it('커밋 렌더(ListTextBlock)의 마커도 같은 계약', () => {
+    localStorage.setItem('mindflow_doc_us2', JSON.stringify(docWith({ c1: { id: 'c1', text: '- 하나', emoji: '', parent: 'root', children: [], collapsed: false, color: null, x: 0, y: 0 } })));
+    const { container } = renderEditor('/editor?map=us2&title=x');
+    const box = nodeBox(container, 'c1');
+    const marker = Array.from(box.querySelectorAll('span')).find((s) => s.textContent === '• ') as HTMLElement;
+    expect(marker).toBeTruthy();
+    expect(marker.style.userSelect).toBe('none');
+  });
+
+  it('전체 선택 복사에 마커가 원문 그대로 실린다 (노드)', () => {
+    localStorage.setItem('mindflow_doc_us3', JSON.stringify(docWith({ c1: { id: 'c1', text: '1. 하나\n2. 둘', emoji: '', parent: 'root', children: [], collapsed: false, color: null, x: 0, y: 0 } })));
+    const { container } = renderEditor('/editor?map=us3&title=x');
+    const editor = startEditingNode(container, 'c1');
+    const len = domToRuns(editor, true).text.length;
+    setLinearSelection(editor, 0, len);
+    const setData = vi.fn();
+    const prevented = !fireEvent.copy(editor, { clipboardData: { setData } });
+    expect(prevented).toBe(true);
+    expect(setData).toHaveBeenCalledWith('text/plain', '1. 하나\n2. 둘');
+  });
+
+  it('한 줄 내용만 고른 복사는 마커를 물지 않고, 메모도 같은 규칙', () => {
+    localStorage.setItem('mindflow_doc_us4', JSON.stringify(docWith({}, [{ id: 'f1', text: '1. 하나\n2. 둘', x: 100, y: 100, w: 160 }])));
+    const { container } = renderEditor('/editor?map=us4&title=x');
+    const card = container.querySelector('[data-float-id="f1"]') as HTMLElement;
+    fireEvent.doubleClick(card);
+    const editor = card.querySelector('.mf-richedit') as HTMLDivElement;
+    setLinearSelection(editor, 3, 5); // '하나'만
+    const setData = vi.fn();
+    fireEvent.copy(editor, { clipboardData: { setData } });
+    expect(setData).toHaveBeenCalledWith('text/plain', '하나');
+  });
+
+  it('리스트가 없는 텍스트의 복사는 기본 동작 그대로 (setData 미개입)', () => {
+    localStorage.setItem('mindflow_doc_us5', JSON.stringify(docWith({ c1: { id: 'c1', text: '평범한 텍스트', emoji: '', parent: 'root', children: [], collapsed: false, color: null, x: 0, y: 0 } })));
+    const { container } = renderEditor('/editor?map=us5&title=x');
+    const editor = startEditingNode(container, 'c1');
+    setLinearSelection(editor, 0, 3);
+    const setData = vi.fn();
+    const prevented = !fireEvent.copy(editor, { clipboardData: { setData } });
+    expect(prevented).toBe(false);
+    expect(setData).not.toHaveBeenCalled();
   });
 });
