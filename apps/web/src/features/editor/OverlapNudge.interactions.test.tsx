@@ -431,20 +431,24 @@ describe('자식 추가 시 밀어내기', () => {
     await waitFor(() => expect(container.querySelector('[data-node-id="fz"]')).toBeTruthy());
     const fzBefore = rectOf(container.querySelector('[data-node-id="fz"]') as HTMLElement);
 
-    // 루트 선택 → Tab(자식 추가) → 이름 확정(Enter)
+    // 루트 선택 → Tab(자식 추가) — 이름 입력이 **시작되기도 전에**(편집 중)
+    // 이미 밀려나 있어야 한다(제보: 확정까지 미루면 입력 내내 겹쳐 보인다)
     selectNodeBox(container.querySelector('[data-node-id="root"]') as HTMLElement);
     fireEvent.keyDown(window, { key: 'Tab' });
     const editable = container.querySelector('.mf-richedit') as HTMLElement;
     expect(editable).toBeTruthy();
-    fireEvent.keyDown(editable, { key: 'Enter', bubbles: true });
-
     await waitFor(() => {
-      // 새 자식이 생겼고(노드 3개), 개별 도형이 밀려나 아무것도 안 겹친다
       expect(getViewport(container).querySelectorAll('[data-node-id]').length).toBe(3);
+      assertNoNodeOverlap(container); // 편집 중인데도 무겹침
+      const fzMid = rectOf(container.querySelector('[data-node-id="fz"]') as HTMLElement);
+      expect(Math.abs(fzMid.x0 - fzBefore.x0) > 0.5 || Math.abs(fzMid.y0 - fzBefore.y0) > 0.5).toBe(true);
+    });
+
+    // 이름 확정 후에도 무겹침(최종 크기 기준 재조정)
+    fireEvent.keyDown(editable, { key: 'Enter', bubbles: true });
+    await waitFor(() => {
+      expect(container.querySelector('.mf-richedit')).toBeNull();
       assertNoNodeOverlap(container);
-      const fzAfter = rectOf(container.querySelector('[data-node-id="fz"]') as HTMLElement);
-      const moved = Math.abs(fzAfter.x0 - fzBefore.x0) > 0.5 || Math.abs(fzAfter.y0 - fzBefore.y0) > 0.5;
-      expect(moved).toBe(true);
     });
   });
 });
