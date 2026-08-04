@@ -237,3 +237,42 @@ describe('메모 속성 패널 — I·S whole-toggle (도형과 파리티)', () 
     });
   });
 });
+
+// 접기/펼치기 토글 — ＋/− 텍스트는 "추가/삭제"로 읽혔다(제보: 직관적 아이콘으로).
+// 표준 디스클로저 셰브론: 펼침=아래, 접힘=오른쪽(회전). 상태는 aria-expanded로 노출.
+describe('메모 접기 토글 — 회전 셰브론', () => {
+  function firePointerDown(target: Element): void {
+    const event = new MouseEvent('pointerdown', { bubbles: true, cancelable: true, button: 0 });
+    Object.defineProperty(event, 'pointerId', { value: 1, configurable: true });
+    fireEvent(target, event);
+  }
+
+  it('셰브론 SVG로 그려지고, 접힘/펼침이 회전과 aria로 드러난다', () => {
+    localStorage.setItem('mindflow_doc_fold1', JSON.stringify(docWith()));
+    const { container } = renderEditor('/editor?map=fold1&title=x');
+    const toggle = floatCard(container).querySelector('[data-fold-toggle]') as HTMLElement;
+    expect(toggle).toBeTruthy();
+    expect(toggle.textContent).toBe(''); // ＋/− 텍스트 글리프가 아니다
+    const svg = toggle.querySelector('svg') as SVGElement;
+    expect(svg).toBeTruthy();
+    // 펼침 상태: 아래 방향(회전 없음)
+    expect(toggle.getAttribute('aria-expanded')).toBe('true');
+    expect(svg.style.transform).not.toContain('rotate');
+    // 접기
+    firePointerDown(toggle);
+    const toggle2 = floatCard(container).querySelector('[data-fold-toggle]') as HTMLElement;
+    const svg2 = toggle2.querySelector('svg') as SVGElement;
+    expect(toggle2.getAttribute('aria-expanded')).toBe('false');
+    expect(svg2.style.transform).toContain('rotate(-90deg)'); // 오른쪽 방향
+    // 다시 펼치기
+    firePointerDown(toggle2);
+    expect((floatCard(container).querySelector('[data-fold-toggle]') as HTMLElement).getAttribute('aria-expanded')).toBe('true');
+  });
+
+  it('접으면 저장본에도 collapsed가 반영된다 (동작 무회귀)', async () => {
+    localStorage.setItem('mindflow_doc_fold2', JSON.stringify(docWith({ text: '첫 줄\n둘째 줄' })));
+    const { container } = renderEditor('/editor?map=fold2&title=x');
+    firePointerDown(floatCard(container).querySelector('[data-fold-toggle]') as HTMLElement);
+    await waitFor(() => expect(readSavedFloat('fold2').collapsed).toBe(true), { timeout: 3000 });
+  });
+});
