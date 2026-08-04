@@ -11,7 +11,7 @@ import type { GeomMap } from '../types';
 import { peersSelecting } from '../presenceSelection';
 import { RemotePeerTag } from './RemotePeerTag';
 import { ResizeHandle } from './ResizeHandle';
-import { domToRuns, linearize, liveEditValue } from '../richtextDom';
+import { domToRuns, linearize, liveEditValue, selectedRawText } from '../richtextDom';
 import { ListTextBlock, domMarkerSignature, listLinesOf, listSigOf, listSignature, markerSignature, nodeTextAlign, renderListEdit } from '../listLines';
 import { RichSpan, isLinkOpenModifier, linkInk, openLink } from '../richSpans';
 
@@ -652,6 +652,16 @@ function NodeEditBox({ id, n, boxStyle, align, controller }: NodeEditBoxProps) {
       // 더블클릭으로 선택하면 팝업이 안 뜬다). 순서가 mouseup(툴바 열림) →
       // dblclick(닫힘)이라 열렸다 사라지는 것처럼 보이지도 않았다.
       onDoubleClick={(e) => e.stopPropagation()}
+      // 리스트 마커는 `user-select: none`이라 기본 복사에서 빠진다 — 마커가 곧
+      // 데이터이므로(붙여넣으면 리스트가 사라짐) 값 좌표계에서 잘라 원문을 싣는다.
+      onCopy={(e) => {
+        const el = ref.current;
+        if (!el || !el.querySelector('[data-list-marker]')) return; // 리스트 없으면 기본 복사 그대로
+        const t = selectedRawText(el);
+        if (t == null) return;
+        e.preventDefault();
+        e.clipboardData.setData('text/plain', t);
+      }}
       onInput={(e) => {
         const el = ref.current;
         if (!el) return;

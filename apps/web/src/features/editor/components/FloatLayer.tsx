@@ -10,7 +10,7 @@ import type { EditorController } from '../useEditorState';
 import { peersSelecting } from '../presenceSelection';
 import { RemotePeerTag } from './RemotePeerTag';
 import { ResizeHandle } from './ResizeHandle';
-import { domToRuns, linearize } from '../richtextDom';
+import { domToRuns, linearize, selectedRawText } from '../richtextDom';
 import { isLinkOpenModifier, linkInk, openLink } from '../richSpans';
 import { insertLineBreak, listBackspaceOpAt, maybeContinueList } from './NodeLayer';
 
@@ -244,6 +244,16 @@ function FloatEditBox({ f, controller }: { f: Float; controller: EditorControlle
         openLink(href);
       }}
       onDoubleClick={(e) => e.stopPropagation()}
+      // 리스트 마커 복사 보존 — 노드 편집과 같은 규칙(마커는 user-select:none이라
+      // 기본 복사에서 빠진다).
+      onCopy={(e) => {
+        const el = ref.current;
+        if (!el || !el.querySelector('[data-list-marker]')) return;
+        const t = selectedRawText(el);
+        if (t == null) return;
+        e.preventDefault();
+        e.clipboardData.setData('text/plain', t);
+      }}
       onInput={(e) => {
         const el = ref.current;
         if (el && !(e.nativeEvent as InputEvent).isComposing) syncListStructure(el);
