@@ -67,14 +67,18 @@ describe('단축키 도움말', () => {
   });
 });
 
-// 피드백 보내기 — 보기/☰ 메뉴에서 열리는 수집 모달(FeedbackModal). 여기 두는
-// 이유: 같은 메뉴 경로를 검증하는 파일이라 렌더 헬퍼를 공유한다.
+// 피드백 보내기 — GNB 우측 상시 아이콘으로 열리는 수집 모달(FeedbackModal).
+// (요청으로 보기 메뉴에서 꺼냈다 — 데스크톱 진입점은 아이콘 하나, 모바일은 ☰ 유지.)
 describe('피드백 보내기 (에디터 진입점)', () => {
-  it('보기 메뉴의 "피드백 보내기"로 모달이 열리고 제출까지 흐른다', async () => {
+  it('GNB의 상시 아이콘으로 모달이 열리고 제출까지 흐른다 (보기 메뉴에는 없다)', async () => {
     localStorage.setItem('mindflow_doc_fb1', JSON.stringify(DOC));
     renderEditor('/editor?map=fb1&title=x');
+    // 보기 메뉴에서는 빠졌다.
     fireEvent.click(screen.getByRole('button', { name: '보기' }));
-    fireEvent.click(screen.getByText('피드백 보내기'));
+    expect(screen.queryByText('피드백 보내기')).toBeNull();
+    fireEvent.keyDown(window, { key: 'Escape' });
+    // GNB 상시 아이콘으로 연다.
+    fireEvent.click(screen.getByRole('button', { name: '피드백 보내기' }));
     const dialog = screen.getByRole('dialog', { name: '피드백 보내기' });
     expect(dialog).toBeTruthy();
     // 로컬(데모) 백엔드 — 제출하면 localStorage `mf_feedback`에 쌓인다.
