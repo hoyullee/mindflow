@@ -34,6 +34,8 @@ describe('FeedbackModal', () => {
     fireEvent.change(screen.getByLabelText('피드백 내용'), { target: { value: '메모가 이상해요' } });
     fireEvent.click(screen.getByRole('button', { name: '보내기' }));
     await waitFor(() => expect(screen.getByText('전달됐어요, 고마워요!')).toBeTruthy());
+    // 완료 배지는 이모지가 아니라 SVG 아이콘이다(요청 — 플랫폼 무관 렌더).
+    expect(document.querySelector('[data-done-icon] svg')).toBeTruthy();
     const entry = submit.mock.calls[0]![0];
     expect(entry).toMatchObject({ category: 'bug', message: '메모가 이상해요', page: 'home' });
     expect(entry.meta).toMatchObject({ build: expect.any(String), ua: expect.any(String) });
