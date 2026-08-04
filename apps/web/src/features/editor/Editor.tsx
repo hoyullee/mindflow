@@ -181,36 +181,42 @@ export function Editor() {
               </button>
             )}
             <ZoomControls controller={controller} panelOpen={panelOpen} />
-            {/* M6: this desktop mouse-gesture legend (우클릭/휠클릭/스크롤/핀치) doesn't
-                apply to touch, and there's no room for it above a bottom-sheet
-                property panel on narrow screens, so it's desktop-only. */}
+            {/* 좌측 하단 피드백 버튼(사용자 선정 위치) — 예전 마우스 제스처 범례
+                자리다. 범례는 단축키 도움말(?) 모달과 내용이 겹치는 정적 안내라
+                이 자리를 피드백 진입점에 내줬다(GNB 아이콘은 어색하다는 제보로
+                제거). 모바일은 이 구석이 없고 ☰ 메뉴 항목이 진입점. */}
             {!isMobile && (
-              <div
+              <button
+                type="button"
+                onClick={() => controller.setFeedbackOpen(true)}
+                aria-label="피드백 보내기"
+                title="피드백 보내기"
+                className="mf-ed-btn"
                 style={{
                   position: 'absolute',
                   left: 16,
                   bottom: 16,
-                  fontSize: 11.5,
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: 7,
+                  fontSize: 12,
+                  fontWeight: 600,
+                  fontFamily: 'inherit',
                   color: th.subtext,
                   background: th.panel,
                   border: `1px solid ${th.border}`,
-                  borderRadius: 9,
-                  padding: '7px 11px',
+                  borderRadius: 999,
+                  padding: '8px 13px',
                   zIndex: 15,
-                  lineHeight: 1.7,
+                  cursor: 'pointer',
+                  boxShadow: '0 2px 8px rgba(0,0,0,.06)',
                 }}
               >
-                {controller.readOnly ? (
-                  <>
-                    <b style={{ color: th.text }}>보기 전용</b> 맵 · <b style={{ color: th.text }}>우클릭/휠클릭 드래그</b> 이동 · <b style={{ color: th.text }}>스크롤/핀치</b> 줌
-                  </>
-                ) : (
-                  <>
-                    <b style={{ color: th.text }}>좌드래그</b> 선택 · <b style={{ color: th.text }}>우클릭/휠클릭 드래그</b> 이동 ·{' '}
-                    <b style={{ color: th.text }}>더블클릭</b> 편집 · <b style={{ color: th.text }}>스크롤/핀치</b> 줌
-                  </>
-                )}
-              </div>
+                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                  <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" />
+                </svg>
+                피드백 보내기
+              </button>
             )}
           </>
         ) : (

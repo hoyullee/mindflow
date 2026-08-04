@@ -67,17 +67,19 @@ describe('단축키 도움말', () => {
   });
 });
 
-// 피드백 보내기 — GNB 우측 상시 아이콘으로 열리는 수집 모달(FeedbackModal).
-// (요청으로 보기 메뉴에서 꺼냈다 — 데스크톱 진입점은 아이콘 하나, 모바일은 ☰ 유지.)
+// 피드백 보내기 — 화면 좌측 하단 상시 버튼(예전 제스처 범례 자리, 사용자 선정)
+// 으로 열리는 수집 모달. 데스크톱 진입점은 이 버튼 하나, 모바일은 ☰ 메뉴 유지.
 describe('피드백 보내기 (에디터 진입점)', () => {
-  it('GNB의 상시 아이콘으로 모달이 열리고 제출까지 흐른다 (보기 메뉴에는 없다)', async () => {
+  it('좌측 하단 상시 버튼으로 모달이 열리고 제출까지 흐른다 (보기 메뉴에는 없다)', async () => {
     localStorage.setItem('mindflow_doc_fb1', JSON.stringify(DOC));
     renderEditor('/editor?map=fb1&title=x');
-    // 보기 메뉴에서는 빠졌다.
+    // 보기 메뉴에서는 빠졌다 — 메뉴를 열어도 '피드백 보내기'는 좌측 하단 상시
+    // 버튼 하나뿐이다. (제스처 범례도 이 자리를 내주고 사라졌다.)
     fireEvent.click(screen.getByRole('button', { name: '보기' }));
-    expect(screen.queryByText('피드백 보내기')).toBeNull();
+    expect(screen.getAllByText('피드백 보내기')).toHaveLength(1);
     fireEvent.keyDown(window, { key: 'Escape' });
-    // GNB 상시 아이콘으로 연다.
+    expect(screen.queryByText(/좌드래그/)).toBeNull();
+    // 좌측 하단 상시 버튼으로 연다.
     fireEvent.click(screen.getByRole('button', { name: '피드백 보내기' }));
     const dialog = screen.getByRole('dialog', { name: '피드백 보내기' });
     expect(dialog).toBeTruthy();
