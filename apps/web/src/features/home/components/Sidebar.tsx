@@ -439,6 +439,32 @@ export function Sidebar({ state, view, controller, isMobile = false, isOpen = fa
           {!view.loading && view.trashItems.length === 0 && <div style={{ padding: '7px 10px 7px 30px', fontSize: 11.5, color: '#c9b8a9' }}>휴지통이 비어 있습니다</div>}
         </div>
       </div>
+
+      {/* 피드백 보내기 — LNB 최하단 고정(사용자 요청: 프로필 메뉴에서 이동).
+          `marginTop: auto`가 남는 공간을 밀어 올려 항상 바닥에 붙는다(공간이
+          모자라면 휴지통 아래로 자연히 이어진다). */}
+      <div style={{ marginTop: 'auto', flexShrink: 0, paddingTop: 8 }}>
+        <div style={{ height: 1, background: '#f0e6dd', margin: '0 4px 8px' }} />
+        <div
+          className="nav-item"
+          role="button"
+          tabIndex={0}
+          aria-label="피드백 보내기"
+          onClick={controller.openFeedback}
+          onKeyDown={(e) => {
+            if (e.key === 'Enter' || e.key === ' ') {
+              e.preventDefault();
+              controller.openFeedback();
+            }
+          }}
+          style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '9px 10px', minHeight: isMobile ? 44 : undefined, borderRadius: 9, cursor: 'pointer', fontSize: 13.5, fontWeight: 500, color: '#7c6d60' }}
+        >
+          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+            <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" />
+          </svg>{' '}
+          피드백 보내기
+        </div>
+      </div>
     </aside>
     </>
   );
