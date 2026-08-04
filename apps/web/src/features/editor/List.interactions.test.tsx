@@ -1065,3 +1065,50 @@ describe('IME 조합 중 줄바꿈 — 기본 줄바꿈 차단 + 조합 종료 �
     expect(domToRuns(editor, true).text).toBe('1. 하나\n2. ');
   });
 });
+
+// 제보(후속 정정): 리스트 1 끝에서 →를 누르면 캐럿이 리스트 2 **마커 앞에 한
+// 프레임 그려졌다가** 내용 뒤로 튄다 — 방향키/클릭의 기본 동작은 keydown 핸들러
+// **뒤에** 실행되고, 교정이 비동기 selectionchange(태스크)뿐이면 그 사이 페인트가
+// 낀다. keydown/mousedown에서 rAF 스냅을 예약해 페인트 **전에** 교정한다.
+describe('방향키/클릭 캐럿 깜빡임 — rAF 사전 스냅', () => {
+  const NAV_DOC = { c1: { id: 'c1', text: '1. 하나\n2. 둘', emoji: '', parent: 'root', children: [], collapsed: false, color: null, x: 0, y: 0 } };
+  function caretOffset(editor: HTMLElement): number {
+    const ws = window.getSelection()!;
+    const r = ws.getRangeAt(0);
+    return linearize(editor, [{ container: r.startContainer, offset: r.startOffset }]).pos[0] ?? -1;
+  }
+  const twoFrames = () => new Promise((res) => requestAnimationFrame(() => requestAnimationFrame(res)));
+
+  it('키 기본 동작으로 마커에 떨어진 캐럿을 다음 페인트 전에(rAF) 스냅한다', async () => {
+    localStorage.setItem('mindflow_doc_rf1', JSON.stringify(docWith(NAV_DOC)));
+    const { container } = renderEditor('/editor?map=rf1&title=x');
+    const editor = startEditingNode(container, 'c1');
+    setLinearSelection(editor, 5, 5); // 1행 끝
+    fireEvent.keyDown(editor, { key: 'ArrowRight' }); // rAF 스냅 예약
+    setLinearSelection(editor, 7, 7); // 기본 동작 흉내 — 2행 마커 안으로
+    await twoFrames();
+    expect(caretOffset(editor)).toBe(9); // '둘' 앞으로 교정
+  });
+
+  it('마우스 클릭(mousedown)도 같은 예약 경로', async () => {
+    localStorage.setItem('mindflow_doc_rf2', JSON.stringify(docWith(NAV_DOC)));
+    const { container } = renderEditor('/editor?map=rf2&title=x');
+    const editor = startEditingNode(container, 'c1');
+    fireEvent.mouseDown(editor); // rAF 스냅 예약
+    setLinearSelection(editor, 6, 6); // 기본 캐럿 배치 흉내 — 마커 안
+    await twoFrames();
+    expect(caretOffset(editor)).toBe(9);
+  });
+
+  it('메모 편집 박스도 같은 규칙', async () => {
+    localStorage.setItem('mindflow_doc_rf3', JSON.stringify(docWith({}, [{ id: 'f1', text: '1. 하나\n2. 둘', x: 100, y: 100, w: 160 }])));
+    const { container } = renderEditor('/editor?map=rf3&title=x');
+    const card = container.querySelector('[data-float-id="f1"]') as HTMLElement;
+    fireEvent.doubleClick(card);
+    const editor = card.querySelector('.mf-richedit') as HTMLDivElement;
+    fireEvent.keyDown(editor, { key: 'ArrowRight' });
+    setLinearSelection(editor, 7, 7);
+    await twoFrames();
+    expect(caretOffset(editor)).toBe(9);
+  });
+});

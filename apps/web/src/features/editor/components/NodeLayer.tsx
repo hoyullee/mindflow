@@ -584,6 +584,18 @@ function NodeEditBox({ id, n, boxStyle, align, controller }: NodeEditBoxProps) {
     }
   };
 
+  /** 다음 페인트 **직전**(rAF)에 캐럿 스냅 — 방향키·클릭의 기본 동작은 핸들러
+   * 뒤에 실행되므로, 비동기 selectionchange 스냅만으로는 마커 위에 선 캐럿이
+   * **한 프레임 화면에 그려진다**(제보: →로 다음 리스트 줄에 내려가면 마커 앞에
+   * 잠깐 머물렀다 튐). rAF 콜백은 같은 프레임의 페인트 전에 돌아 잘못된 위치가
+   * 화면에 나가지 않는다. */
+  const scheduleSnap = (): void => {
+    if (typeof requestAnimationFrame !== 'function') return;
+    requestAnimationFrame(() => {
+      if (!composingRef.current && ref.current) snapCaretOffListMarker(ref.current);
+    });
+  };
+
   /** 입력 후 줄 구조가 바뀌었으면(마커 생성/삭제) 편집 DOM을 리스트 모양으로
    * 재구성 — 제보: 편집 중에는 `- 항목` 원문이 보이고 확정해야 리스트가 됐다. */
   const syncListStructure = (el: HTMLDivElement): void => {
@@ -655,9 +667,16 @@ function NodeEditBox({ id, n, boxStyle, align, controller }: NodeEditBoxProps) {
       className="mf-edit mf-richedit"
       contentEditable
       suppressContentEditableWarning
-      onMouseDown={(e) => e.stopPropagation()}
+      // 마우스 캐럿 배치(기본 동작)도 마커 위에 떨어질 수 있다 — 페인트 전 스냅.
+      onMouseDown={(e) => {
+        e.stopPropagation();
+        scheduleSnap();
+      }}
       onPointerDown={(e) => e.stopPropagation()}
-      onMouseUp={(e) => e.stopPropagation()}
+      onMouseUp={(e) => {
+        e.stopPropagation();
+        scheduleSnap();
+      }}
       // 편집 중에도 Ctrl/⌘+클릭으로 링크를 연다(요청). 편집 박스 안의 링크는
       // `runsToHtml`이 심은 `data-href` span이라 여기서 한 번에 처리한다 —
       // 기본 동작(캐럿 이동)은 막는다.
@@ -734,9 +753,11 @@ function NodeEditBox({ id, n, boxStyle, align, controller }: NodeEditBoxProps) {
         // 입력 전에 캐럿이 마커 구역이면 내용 시작으로 — selectionchange 스냅의
         // 이중화(클릭 직후 빠른 타이핑 등 이벤트 순서 편차 대비). ArrowLeft가
         // 내용 시작에 있으면 마커를 통째로 건너 앞 줄 끝으로(안 그러면 스냅에
-        // 되튕겨 캐럿이 그 줄에 갇힌다).
+        // 되튕겨 캐럿이 그 줄에 갇힌다). 방향키의 **기본 동작**은 이 핸들러 뒤에
+        // 실행되므로 rAF 스냅도 예약해 마커에 떨어진 캐럿이 페인트되기 전에 교정.
         if (!composing && ref.current) {
           snapCaretOffListMarker(ref.current);
+          scheduleSnap();
           if (e.key === 'ArrowLeft' && !e.shiftKey && !e.altKey && !e.ctrlKey && !e.metaKey && listArrowLeft(ref.current)) {
             e.preventDefault();
             return;

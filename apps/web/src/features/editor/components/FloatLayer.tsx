@@ -195,6 +195,15 @@ function FloatEditBox({ f, controller }: { f: Float; controller: EditorControlle
     }
   };
 
+  /** 다음 페인트 직전(rAF) 캐럿 스냅 — 방향키·클릭 기본 동작으로 마커에 떨어진
+   * 캐럿이 한 프레임 그려지는 것 방지(노드 편집의 `scheduleSnap`과 동일, 제보). */
+  const scheduleSnap = (): void => {
+    if (typeof requestAnimationFrame !== 'function') return;
+    requestAnimationFrame(() => {
+      if (!composingRef.current && ref.current) snapCaretOffListMarker(ref.current);
+    });
+  };
+
   /** 입력 후 줄 구조(마커 생성/삭제·마커 드리프트)가 바뀌었으면 다시 그린다 —
    * `NodeEditBox.syncListStructure`와 같은 규칙. */
   const syncListStructure = (el: HTMLDivElement): void => {
@@ -251,9 +260,16 @@ function FloatEditBox({ f, controller }: { f: Float; controller: EditorControlle
       className="mf-edit mf-richedit"
       contentEditable
       suppressContentEditableWarning
-      onMouseDown={(e) => e.stopPropagation()}
+      // 마우스 캐럿 배치(기본 동작)도 마커 위에 떨어질 수 있다 — 페인트 전 스냅.
+      onMouseDown={(e) => {
+        e.stopPropagation();
+        scheduleSnap();
+      }}
       onPointerDown={(e) => e.stopPropagation()}
-      onMouseUp={(e) => e.stopPropagation()}
+      onMouseUp={(e) => {
+        e.stopPropagation();
+        scheduleSnap();
+      }}
       // 편집 중에도 Ctrl/⌘+클릭으로 링크 열기(노드와 동일).
       onClick={(e) => {
         if (!isLinkOpenModifier(e)) return;
@@ -315,8 +331,10 @@ function FloatEditBox({ f, controller }: { f: Float; controller: EditorControlle
         }
         // 캐럿이 마커 구역이면 입력 전에 내용 시작으로 + ArrowLeft는 마커를 건너
         // 앞 줄 끝으로(노드 편집과 같은 규칙 — selectionchange 스냅의 이중화).
+        // 방향키 기본 동작은 이 핸들러 뒤에 실행되므로 rAF 스냅도 예약(페인트 전 교정).
         if (!composing && ref.current) {
           snapCaretOffListMarker(ref.current);
+          scheduleSnap();
           if (e.key === 'ArrowLeft' && !e.shiftKey && !e.altKey && !e.ctrlKey && !e.metaKey && listArrowLeft(ref.current)) {
             e.preventDefault();
             return;

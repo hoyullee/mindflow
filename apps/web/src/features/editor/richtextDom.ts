@@ -241,12 +241,27 @@ function collapsedCaret(el: HTMLElement): { off: number; text: string } | null {
  * selectionchange·keydown 두 곳에서 부른다(클릭 직후 빠른 타이핑 대비 이중화).
  */
 export function snapCaretOffListMarker(el: HTMLElement): boolean {
+  const ws = window.getSelection();
+  if (!ws || !ws.rangeCount || !ws.isCollapsed) return false;
+  const rng = ws.getRangeAt(0);
+  if (!el.contains(rng.startContainer)) return false;
   const c = collapsedCaret(el);
   if (!c) return false;
   const cs = markerContentStart(c.text, c.off);
-  if (cs == null) return false;
-  setLinearSelection(el, cs, cs);
-  return true;
+  if (cs != null) {
+    setLinearSelection(el, cs, cs);
+    return true;
+  }
+  // 값 좌표는 이미 내용 시작(마커 끝 경계)이지만 DOM 앵커가 마커 **노드 안**에
+  // 남는 경우(↑/↓ 세로 이동 등) — 같은 픽셀 자리라 보이진 않아도, 다음 타이핑이
+  // 마커 스팬(white-space:pre)으로 들어간다. 내용 쪽으로 재앵커한다
+  // (`setLinearSelection`은 마커 끝 경계를 내용에 양보하므로 같은 오프셋이면 된다).
+  const anchor = rng.startContainer.nodeType === 3 ? rng.startContainer.parentElement : (rng.startContainer as Element | null);
+  if (anchor && typeof anchor.closest === 'function' && anchor.closest('[data-list-marker]')) {
+    setLinearSelection(el, c.off, c.off);
+    return true;
+  }
+  return false;
 }
 
 /**
