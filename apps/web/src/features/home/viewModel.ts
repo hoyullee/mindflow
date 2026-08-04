@@ -444,7 +444,7 @@ export function deriveHomeView(state: HomeState): HomeViewModel {
 
   // 제목 줄 = [상위 경로, 현재 폴더] — 중첩 폴더면 상위 경로가
   // "스페이스 / 상위폴더 / …"로 깊어진다(헤더는 …로 접고 전체는 툴팁에).
-  const rootName = isDriveSpace ? 'Google Drive' : activeSpaceObj ? activeSpaceObj.name : '일반 공간';
+  const rootName = isDriveSpace ? 'Google Drive' : activeSpaceObj ? activeSpaceObj.name : '일반 스페이스';
   const openFolderName = isDriveSpace ? driveFolder?.name : curFolder?.name;
   const parentChain = curFolder ? folderAncestors(curFolder).reverse().map((f) => f.name) : [];
   const titleParent = openFolderName ? [rootName, ...parentChain].join(' / ') : null;
@@ -459,7 +459,7 @@ export function deriveHomeView(state: HomeState): HomeViewModel {
   return {
     connected,
     isDriveSpace,
-    activeSpaceName: activeSpaceObj ? activeSpaceObj.name : '일반 공간',
+    activeSpaceName: activeSpaceObj ? activeSpaceObj.name : '일반 스페이스',
     isHome,
     spaceTitle: titleParent ? `${titleParent} / ${titleLeaf}` : titleLeaf,
     titleParent,
@@ -477,7 +477,7 @@ export function deriveHomeView(state: HomeState): HomeViewModel {
     sharedVisible: !loading,
     favItems,
     favCount: favItems.length ? String(favItems.length) : '',
-    trashItems: state.trash.map((t) => ({ title: t.title, isDrive: t.source === 'drive', badge: t.source === 'drive' ? 'Drive' : '내 공간', docId: t.docId })),
+    trashItems: state.trash.map((t) => ({ title: t.title, isDrive: t.source === 'drive', badge: t.source === 'drive' ? 'Drive' : '내 스페이스', docId: t.docId })),
     trashCount: state.trash.length ? String(state.trash.length) : '',
     loading,
     isEmpty,

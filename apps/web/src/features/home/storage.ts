@@ -460,7 +460,7 @@ export function coerceSpaces(raw: unknown[]): SpaceData[] {
  * (The rest of Home falls back to `spaces[0]` where a home space was assumed.) */
 export function ensureHomeSpace(spaces: SpaceData[]): SpaceData[] {
   if (spaces.length) return spaces;
-  return [{ id: 'general', name: '일반 공간', home: true as const, color: '#f0663f', maps: [] }];
+  return [{ id: 'general', name: '일반 스페이스', home: true as const, color: '#f0663f', maps: [] }];
 }
 
 /** Home.dc.html `syncDocsToCards()` — pick up maps saved from the editor under

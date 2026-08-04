@@ -71,7 +71,7 @@ export function SettingsPopover({ state, controller, userInitial }: Props) {
           </div>
         </div>
         <div style={{ padding: 6 }}>
-          {/* profile-name rename — opens the "프로필명 변경" popup (like 공간 이름 변경) */}
+          {/* profile-name rename — opens the "프로필명 변경" popup (like 스페이스 이름 변경) */}
           <div
             className="menu-row"
             role="button"

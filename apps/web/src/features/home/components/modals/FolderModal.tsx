@@ -15,7 +15,7 @@ export function FolderModal({ state, controller }: Props) {
     <div style={{ position: 'fixed', inset: 0, background: 'rgba(30,20,14,.42)', backdropFilter: 'blur(2px)', display: fm ? 'flex' : 'none', alignItems: 'center', justifyContent: 'center', zIndex: 130 }}>
       <div onClick={(e) => e.stopPropagation()} style={{ width: 380, background: '#fff', borderRadius: 16, boxShadow: '0 24px 60px rgba(0,0,0,.28)', padding: 26, animation: 'mf-fade .2s ease' }}>
         <div style={{ fontSize: 18, fontWeight: 800, marginBottom: 6 }}>{isRename ? '폴더 이름 변경' : '새 폴더 만들기'}</div>
-        <div style={{ fontSize: 13, color: '#9c8b7e', lineHeight: 1.6, marginBottom: 20 }}>폴더로 공간 안의 맵을 정리해요.</div>
+        <div style={{ fontSize: 13, color: '#9c8b7e', lineHeight: 1.6, marginBottom: 20 }}>폴더로 스페이스 안의 맵을 정리해요.</div>
         <div style={{ fontSize: 12.5, fontWeight: 600, marginBottom: 8 }}>폴더 이름</div>
         <input
           className="ns-input"

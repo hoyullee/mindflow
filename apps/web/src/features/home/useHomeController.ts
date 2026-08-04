@@ -77,7 +77,7 @@ export function useHomeController() {
   // Cross-device first-login race guards. On a fresh login (esp. the OAuth
   // redirect on a new PC) the Home mount can fire the workspace/doc reads BEFORE
   // Supabase has applied the auth session token, so the RLS-scoped queries come
-  // back empty and only the default 일반 공간 shows (a manual refresh then works,
+  // back empty and only the default 일반 스페이스 shows (a manual refresh then works,
   // because the persisted session is applied at client init). We therefore
   // re-hydrate ONCE when auth first confirms a session — the automatic version
   // of that refresh — but only while the user hasn't touched the workspace yet
@@ -306,7 +306,7 @@ export function useHomeController() {
   // Cross-device first-login fix: re-hydrate ONCE when auth first confirms a
   // session. On a fresh login the mount hydrate above can run before Supabase has
   // applied the session token, so its RLS-scoped reads return empty and only the
-  // default 일반 공간 shows until a manual refresh. `onAuthChange` fires an
+  // default 일반 스페이스 shows until a manual refresh. `onAuthChange` fires an
   // INITIAL_SESSION/SIGNED_IN event after the client has fully initialized (token
   // applied), so re-fetching then reliably pulls the real workspace — automatic,
   // no refresh needed. Guarded so it can't clobber: skip if the user already
@@ -472,7 +472,7 @@ export function useHomeController() {
 
   // ---- account / settings ----
   const toggleSettings = () => patch({ settingsOpen: !state.settingsOpen });
-  // Profile-name rename — a popup (like "공간 이름 변경"), driven by a draft so
+  // Profile-name rename — a popup (like "스페이스 이름 변경"), driven by a draft so
   // 취소 discards and 변경 commits. Opening it closes the profile popover.
   const openProfileNameEdit = () => patch({ profileNameOpen: true, profileNameDraft: state.userName, settingsOpen: false });
   const onProfileNameInput = (v: string) => patch({ profileNameDraft: (v || '').slice(0, 20) });
@@ -551,7 +551,7 @@ export function useHomeController() {
   };
 
   // ---- spaces ----
-  // The "새 공간 만들기" modal doubles as the rename dialog: `editingSpace === null`
+  // The "새 스페이스 만들기" modal doubles as the rename dialog: `editingSpace === null`
   // is create mode, a space id is edit mode (pre-filled name + color). `submitSpace`
   // branches on it, so both flows share one popup (name + accent color).
   const openNewSpace = () => patch({ newSpaceOpen: true, editingSpace: null, newSpaceName: '', newSpaceColor: '#f0663f' });
@@ -588,7 +588,7 @@ export function useHomeController() {
     if (anchor) spaceMenuAnchor.current = anchor;
     patch({ spaceMenu: state.spaceMenu === id ? null : id });
   };
-  /** Rename now opens the shared "새 공간 만들기" popup in EDIT mode (name + color),
+  /** Rename now opens the shared "새 스페이스 만들기" popup in EDIT mode (name + color),
    * pre-filled from the space — instead of an inline sidebar input. */
   const startRenameSpace = (id: string) => {
     const sp = state.spaces.find((s) => s.id === id);
@@ -720,7 +720,7 @@ export function useHomeController() {
     const origin = entry?.spaceId && state.spaces.some((s) => s.id === entry.spaceId) ? entry.spaceId : undefined;
     const targetId = origin ?? state.spaces.find((s) => s.home)?.id ?? state.spaces[0]?.id;
     const target = state.spaces.find((s) => s.id === targetId);
-    const toast = needsPlacement && target && !origin ? `원래 공간이 삭제되어 "${target.name}" 공간으로 복원했어요` : '';
+    const toast = needsPlacement && target && !origin ? `원래 스페이스가 삭제되어 "${target.name}" 스페이스로 복원했어요` : '';
     setState((prev) => {
       // Remove exactly ONE trash entry (the restored doc) — with same-title
       // entries allowed in the trash, a title-wide filter would eat siblings.
@@ -1316,7 +1316,7 @@ export function useHomeController() {
       });
       const mapFolders = { ...prev.mapFolders };
       delete mapFolders[key];
-      return { ...prev, spaces, mapFolders, openMenu: null, moveFor: null, moveSpaceFor: null, toast: `'${card.title}'을(를) '${target.name}' 공간으로 옮겼어요`, toastTitle: '이동 완료' };
+      return { ...prev, spaces, mapFolders, openMenu: null, moveFor: null, moveSpaceFor: null, toast: `'${card.title}'을(를) '${target.name}' 스페이스로 옮겼어요`, toastTitle: '이동 완료' };
     });
   };
   // 뒤로가기 = 한 계층 위로: 하위 폴더 안이면 상위 폴더로, 최상위 폴더면 스페이스로.

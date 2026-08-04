@@ -93,7 +93,7 @@ describe('Home', () => {
     expect(sidebar.getByText('즐겨찾기')).toBeTruthy();
     expect(sidebar.getByText('휴지통')).toBeTruthy();
     // the space list is a skeleton until the workspace load settles, then 일반 공간 appears
-    await waitFor(() => expect(sidebar.getByText('일반 공간')).toBeTruthy());
+    await waitFor(() => expect(sidebar.getByText('일반 스페이스')).toBeTruthy());
 
     // toolbar / main. With no saved maps the grid shows its empty state (after
     // the initial DocStore.list() settles — until then it shows a skeleton), so
@@ -574,12 +574,12 @@ describe('Home', () => {
     await waitFor(() => expect(screen.getByTitle('폴더공간 / 내폴더 / 하위자료')).toBeTruthy());
 
     // 뒤로가기 1회 = 상위 폴더('내폴더')로 — 하위 폴더 카드가 다시 보인다
-    await user.click(screen.getByRole('button', { name: '공간으로 돌아가기' }));
+    await user.click(screen.getByRole('button', { name: '스페이스로 돌아가기' }));
     await waitFor(() => expect(screen.getByText('하위자료')).toBeTruthy());
     expect(screen.getByTitle('폴더공간 / 내폴더')).toBeTruthy();
 
     // 뒤로가기 2회 = 스페이스 최상위 — 최상위 폴더 카드('내폴더')가 보인다
-    await user.click(screen.getByRole('button', { name: '공간으로 돌아가기' }));
+    await user.click(screen.getByRole('button', { name: '스페이스로 돌아가기' }));
     await waitFor(() => expect(screen.getByText('내폴더')).toBeTruthy());
     expect(screen.queryByText('하위자료')).toBeNull();
   });
@@ -689,7 +689,7 @@ describe('Home', () => {
       await waitFor(() => expect(second.container.querySelector('.mf-map-grid a[data-title="가져온 맵"]')).toBeTruthy());
 
       // 그리고 스페이스 최상위에는 없어야 한다(배정이 살아 있다는 뜻).
-      await user.click(screen.getByRole('button', { name: '공간으로 돌아가기' }));
+      await user.click(screen.getByRole('button', { name: '스페이스로 돌아가기' }));
       await waitFor(() => expect(second.container.querySelector('h2')?.textContent).toBe('내 공간'));
       expect(second.container.querySelector('.mf-map-grid a[data-title="가져온 맵"]')).toBeNull();
     });
@@ -825,7 +825,7 @@ describe('Home', () => {
 
       await upload(container, user);
 
-      await waitFor(() => expect(screen.getByText(/현재 공간에 추가했어요/)).toBeTruthy());
+      await waitFor(() => expect(screen.getByText(/현재 스페이스에 추가했어요/)).toBeTruthy());
       await user.click(screen.getByRole('button', { name: '확인' }));
       await waitFor(() => expect(container.querySelector('a[data-title="가져온 맵"]')).toBeTruthy());
 
@@ -1011,7 +1011,7 @@ describe('Home', () => {
 
     // the move toast labels itself "이동 완료" (not the old hardcoded "복원 완료")
     await waitFor(() => expect(screen.getByText('이동 완료')).toBeTruthy());
-    expect(screen.getByText(/공간비이.*공간으로 옮겼어요/)).toBeTruthy();
+    expect(screen.getByText(/공간비이.*스페이스로 옮겼어요/)).toBeTruthy();
     await user.click(screen.getByRole('button', { name: '확인' })); // dismiss toast
 
     // the map leaves the current (공간에이) view…
@@ -1025,11 +1025,11 @@ describe('Home', () => {
   it('a user-created space persists across a reload (localStorage)', async () => {
     const user = userEvent.setup();
     const { unmount } = renderHomeWithDocStore([]);
-    await waitFor(() => expect(screen.getByRole('button', { name: /새 공간/ })).toBeTruthy());
+    await waitFor(() => expect(screen.getByRole('button', { name: /새 스페이스/ })).toBeTruthy());
 
     // open "새 공간" → type a name → Enter (onNewSpaceKey → createSpace)
-    await user.click(screen.getByRole('button', { name: /새 공간/ }));
-    await user.type(screen.getByLabelText('공간 이름'), '내 스페이스{Enter}');
+    await user.click(screen.getByRole('button', { name: /새 스페이스/ }));
+    await user.type(screen.getByLabelText('스페이스 이름'), '내 스페이스{Enter}');
     await waitFor(() => expect(screen.getByText('내 스페이스')).toBeTruthy());
 
     // "reload": unmount and mount a fresh Home sharing the same localStorage
@@ -1047,11 +1047,11 @@ describe('Home', () => {
     await waitFor(() => expect(aside.getByText('옛이름')).toBeTruthy());
 
     // ⋮ menu → 이름 변경 opens the SAME popup as "새 공간", but in edit mode
-    await user.click(aside.getByLabelText('공간 메뉴'));
+    await user.click(aside.getByLabelText('스페이스 메뉴'));
     await user.click(aside.getByText('이름 변경'));
 
-    expect(screen.getByText('공간 이름 변경')).toBeTruthy();
-    const input = screen.getByLabelText('공간 이름') as HTMLInputElement;
+    expect(screen.getByText('스페이스 이름 변경')).toBeTruthy();
+    const input = screen.getByLabelText('스페이스 이름') as HTMLInputElement;
     expect(input.value).toBe('옛이름'); // pre-filled
 
     // change the name, pick a different tag color, then 변경
@@ -1095,17 +1095,17 @@ describe('Home', () => {
 
     // after the workspace load settles, the custom space shows and 일반 공간 is NOT re-created
     await waitFor(() => expect(screen.getAllByText('작업 공간').length).toBeGreaterThan(0));
-    expect(screen.queryByText('일반 공간')).toBeNull();
+    expect(screen.queryByText('일반 스페이스')).toBeNull();
   });
 
   it('creating a map while a custom space is active assigns it to that space (not the home space)', async () => {
     const user = userEvent.setup();
     renderHomeWithDocStore([]);
-    await waitFor(() => expect(screen.getByRole('button', { name: /새 공간/ })).toBeTruthy());
+    await waitFor(() => expect(screen.getByRole('button', { name: /새 스페이스/ })).toBeTruthy());
 
     // create a custom space, then activate it (click its sidebar row)
-    await user.click(screen.getByRole('button', { name: /새 공간/ }));
-    await user.type(screen.getByLabelText('공간 이름'), '작업 공간{Enter}');
+    await user.click(screen.getByRole('button', { name: /새 스페이스/ }));
+    await user.type(screen.getByLabelText('스페이스 이름'), '작업 공간{Enter}');
     await waitFor(() => expect(screen.getByText('작업 공간')).toBeTruthy());
     await user.click(screen.getByText('작업 공간'));
 
@@ -1120,7 +1120,7 @@ describe('Home', () => {
       return ws.spaces ?? [];
     };
     await waitFor(() => expect(readSpaces().find((s) => s.name === '작업 공간')?.maps?.length).toBe(1));
-    expect(readSpaces().find((s) => s.name === '일반 공간')?.maps?.length ?? 0).toBe(0);
+    expect(readSpaces().find((s) => s.name === '일반 스페이스')?.maps?.length ?? 0).toBe(0);
   });
 
   it('새로 만들기: 로더가 먼저 화면을 덮은 다음에 새 카드가 추가된다(배경 깜빡임 방지)', async () => {

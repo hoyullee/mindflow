@@ -131,8 +131,8 @@ export function Toolbar({ state, view, controller, isMobile = false, onOpenNav }
           <button
             className="btn"
             onClick={controller.backToSpace}
-            title="공간으로 돌아가기"
-            aria-label="공간으로 돌아가기"
+            title="스페이스로 돌아가기"
+            aria-label="스페이스로 돌아가기"
             style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', width: isMobile ? 44 : 34, height: isMobile ? 44 : 34, border: '1px solid #ecdfd5', borderRadius: 10, background: '#fff', color: '#7c6d60', cursor: 'pointer', padding: 0, flexShrink: 0 }}
           >
             <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
@@ -142,7 +142,7 @@ export function Toolbar({ state, view, controller, isMobile = false, onOpenNav }
           </button>
         )}
         {/* Skeleton the space title until the workspace loads, so the seed
-            일반 공간 name doesn't flash before the real space name arrives
+            일반 스페이스 name doesn't flash before the real space name arrives
             (matches the LNB space-list skeleton). */}
         {state.loaded ? (
           <BreadcrumbTitle parent={view.titleParent} leaf={view.titleLeaf} full={view.spaceTitle} />

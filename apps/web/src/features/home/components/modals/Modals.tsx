@@ -114,8 +114,8 @@ export function Modals({ state, controller }: Props) {
         zIndex={140}
         iconBg="#fdecec"
         icon={TRASH_ICON}
-        heading="공간을 삭제하시겠습니까?"
-        body={`'${deleteSpaceName}' 공간을 삭제합니다. 이 작업은 되돌릴 수 없어요.`}
+        heading="스페이스를 삭제하시겠습니까?"
+        body={`'${deleteSpaceName}' 스페이스를 삭제합니다. 이 작업은 되돌릴 수 없어요.`}
         cancelLabel="취소"
         confirmLabel="삭제"
         confirmColor="#d64545"
