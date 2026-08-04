@@ -41,3 +41,7 @@ export function useSpaceStore() {
 export function useShareStore() {
   return useBackend().shareStore;
 }
+
+export function useFeedbackStore() {
+  return useBackend().feedbackStore;
+}

@@ -319,6 +319,29 @@ export interface SpaceStore {
   save(data: WorkspaceData): Promise<void>;
 }
 
+// ── Feedback (사용자 의견 수집) ──────────────────────────────────────────
+
+/** 피드백 분류 — DB check 제약(0014)과 같은 목록. */
+export type FeedbackCategory = 'bug' | 'ux' | 'idea' | 'other';
+
+export interface FeedbackEntry {
+  category: FeedbackCategory;
+  message: string;
+  /** 어느 화면에서 보냈는가 ('home' | 'editor'). */
+  page: string;
+  /** 재현에 도움되는 맥락(빌드 스탬프·userAgent 등) — 작게 유지한다. */
+  meta?: Record<string, unknown>;
+}
+
+/**
+ * 사용자 피드백 제출함. **쓰기 전용** — 제출만 있고 조회는 없다(운영자가
+ * Supabase Studio에서 본다, 0014). 로컬/데모 모드는 localStorage에 쌓는다
+ * (실제 전송은 안 되지만 UI 흐름이 깨지지 않는다 — ShareStore와 같은 태도).
+ */
+export interface FeedbackStore {
+  submit(entry: FeedbackEntry): Promise<{ error?: string }>;
+}
+
 // ── Backend bundle ───────────────────────────────────────────────────────
 
 export interface Backend {
@@ -328,6 +351,8 @@ export interface Backend {
   spaceStore: SpaceStore;
   /** 문서 공유(초대 목록). 로컬/데모 모드에서도 같은 계약으로 동작한다. */
   shareStore: ShareStore;
+  /** 사용자 피드백 제출(쓰기 전용 우편함 — 0014). */
+  feedbackStore: FeedbackStore;
   /** `'local'` = demo/localStorage fallback (no env configured); `'supabase'`
    * = real Postgres + Auth. Used to decide whether auth routes are gated. */
   mode: 'local' | 'supabase';

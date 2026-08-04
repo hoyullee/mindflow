@@ -5,6 +5,7 @@ import { BackendProvider } from '../../adapters/BackendContext';
 import { LocalAuth } from '../../adapters/local/localAuth';
 import { LocalSpaceStore } from '../../adapters/local/localSpaceStore';
 import { LocalShareStore } from '../../adapters/local/localShareStore';
+import { LocalFeedbackStore } from '../../adapters/local/localFeedbackStore';
 import type { Backend, DocStore, LoadedDoc } from '../../adapters/ports';
 import { Editor } from './Editor';
 
@@ -39,7 +40,7 @@ function makeBackend(load: DocStore['load'], mode: Backend['mode']) {
     rename: async () => undefined,
     save,
   } as unknown as DocStore;
-  return { backend: { auth: new LocalAuth(), docStore, spaceStore: new LocalSpaceStore(), shareStore: new LocalShareStore(), mode } as Backend, save };
+  return { backend: { auth: new LocalAuth(), docStore, spaceStore: new LocalSpaceStore(), shareStore: new LocalShareStore(), feedbackStore: new LocalFeedbackStore(), mode } as Backend, save };
 }
 
 function renderEditor(backend: Backend, entry: string) {
@@ -305,7 +306,7 @@ describe('다른 계정이 쓰던 id로 저장하려 할 때 — 새 id로 옮�
       save,
     } as unknown as DocStore;
     const spaceStore = new LocalSpaceStore();
-    return { backend: { auth: new LocalAuth(), docStore, spaceStore, shareStore: new LocalShareStore(), mode: 'supabase' } as Backend, save, saved, spaceStore };
+    return { backend: { auth: new LocalAuth(), docStore, spaceStore, shareStore: new LocalShareStore(), feedbackStore: new LocalFeedbackStore(), mode: 'supabase' } as Backend, save, saved, spaceStore };
   }
 
   it('옛 id 저장이 막히면 새 id로 옮겨 저장하고, 그 뒤 저장은 새 id로 나간다', async () => {

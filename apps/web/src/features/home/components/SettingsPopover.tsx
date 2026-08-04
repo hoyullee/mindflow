@@ -115,6 +115,25 @@ export function SettingsPopover({ state, controller, userInitial }: Props) {
             className="menu-row"
             role="button"
             tabIndex={0}
+            aria-label="피드백 보내기"
+            onClick={controller.openFeedback}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter' || e.key === ' ') {
+                e.preventDefault();
+                controller.openFeedback();
+              }
+            }}
+            style={{ display: 'flex', alignItems: 'center', gap: 9, padding: '10px 12px', borderRadius: 9, fontSize: 13, fontWeight: 600, cursor: 'pointer', color: '#33281f' }}
+          >
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" />
+            </svg>{' '}
+            피드백 보내기
+          </div>
+          <div
+            className="menu-row"
+            role="button"
+            tabIndex={0}
             onClick={controller.logout}
             onKeyDown={(e) => {
               if (e.key === 'Enter' || e.key === ' ') {

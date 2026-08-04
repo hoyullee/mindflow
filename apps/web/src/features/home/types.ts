@@ -114,6 +114,8 @@ export interface HomeState {
   /** The 설정 (account settings) modal, opened from the profile popover. Hosts
    * the 회원 탈퇴 entry. */
   accountSettingsOpen: boolean;
+  /** 피드백 보내기 모달(프로필 메뉴에서 연다). */
+  feedbackOpen: boolean;
   /** The 회원 탈퇴 confirmation dialog (opened from the settings modal). */
   confirmDeleteAccount: boolean;
   /** What the user has typed into the 회원 탈퇴 confirmation box — the destructive
@@ -246,6 +248,7 @@ export function initialHomeState(): HomeState {
     profileNameDraft: '',
     confirmLogout: false,
     accountSettingsOpen: false,
+    feedbackOpen: false,
     confirmDeleteAccount: false,
     deleteAccountText: '',
     deleteAccountError: '',

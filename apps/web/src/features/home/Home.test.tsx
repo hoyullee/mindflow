@@ -8,6 +8,7 @@ import { BackendProvider } from '../../adapters/BackendContext';
 import { LocalAuth } from '../../adapters/local/localAuth';
 import { LocalSpaceStore } from '../../adapters/local/localSpaceStore';
 import { LocalShareStore } from '../../adapters/local/localShareStore';
+import { LocalFeedbackStore } from '../../adapters/local/localFeedbackStore';
 import { mapId } from './storage';
 import type { Backend, DocMeta, DocStore, LoadedDoc, SaveResult, SpaceStore, WorkspaceData } from '../../adapters/ports';
 
@@ -65,7 +66,7 @@ class MockDocStore implements DocStore {
  *  (예: ②의 "이미 있는 문서엔 손대지 않는다")을 볼 때 'supabase'를 넘긴다. */
 function renderHomeWithDocStore(metas: DocMeta[] = [], bodies: Record<string, LoadedDoc> = {}, mode: Backend['mode'] = 'local') {
   const docStore = new MockDocStore(metas, bodies);
-  const backend: Backend = { auth: new LocalAuth(), docStore, spaceStore: new LocalSpaceStore(), shareStore: new LocalShareStore(), mode };
+  const backend: Backend = { auth: new LocalAuth(), docStore, spaceStore: new LocalSpaceStore(), shareStore: new LocalShareStore(), feedbackStore: new LocalFeedbackStore(), mode };
   const utils = render(
     <MemoryRouter initialEntries={['/home']}>
       <BackendProvider backend={backend}>
@@ -125,7 +126,7 @@ describe('Home', () => {
         return { user: { id: 'g1', email: 'hoyul.lee@gmail.com', name: '이호율', avatarUrl: 'https://lh3.googleusercontent.com/a/photo=s96-c' } };
       }
     }
-    const backend: Backend = { auth: new GoogleAuth(), docStore: new MockDocStore(), spaceStore: new LocalSpaceStore(), shareStore: new LocalShareStore(), mode: 'local' };
+    const backend: Backend = { auth: new GoogleAuth(), docStore: new MockDocStore(), spaceStore: new LocalSpaceStore(), shareStore: new LocalShareStore(), feedbackStore: new LocalFeedbackStore(), mode: 'local' };
     const { container } = render(
       <MemoryRouter initialEntries={['/home']}>
         <BackendProvider backend={backend}>
@@ -260,7 +261,7 @@ describe('Home', () => {
       rename: vi.fn(async () => undefined),
       save: vi.fn(async (): Promise<SaveResult> => ({ ok: true, version: 1 })),
     };
-    const backend: Backend = { auth: new LocalAuth(), docStore, spaceStore: new LocalSpaceStore(), shareStore: new LocalShareStore(), mode: 'local' };
+    const backend: Backend = { auth: new LocalAuth(), docStore, spaceStore: new LocalSpaceStore(), shareStore: new LocalShareStore(), feedbackStore: new LocalFeedbackStore(), mode: 'local' };
     const { container } = render(
       <MemoryRouter initialEntries={['/home']}>
         <BackendProvider backend={backend}>
@@ -355,7 +356,7 @@ describe('Home', () => {
         return gate as ReturnType<LocalAuth['getSession']>;
       }
     }
-    const backend: Backend = { auth: new GatedAuth(), docStore: new MockDocStore(), spaceStore: new LocalSpaceStore(), shareStore: new LocalShareStore(), mode: 'local' };
+    const backend: Backend = { auth: new GatedAuth(), docStore: new MockDocStore(), spaceStore: new LocalSpaceStore(), shareStore: new LocalShareStore(), feedbackStore: new LocalFeedbackStore(), mode: 'local' };
     const { container } = render(
       <MemoryRouter initialEntries={['/home']}>
         <BackendProvider backend={backend}>
@@ -404,7 +405,7 @@ describe('Home', () => {
       rename: vi.fn(async () => undefined),
       save: vi.fn(async (): Promise<SaveResult> => ({ ok: true, version: 1 })),
     };
-    const backend: Backend = { auth: new LocalAuth(), docStore, spaceStore: new LocalSpaceStore(), shareStore: new LocalShareStore(), mode: 'local' };
+    const backend: Backend = { auth: new LocalAuth(), docStore, spaceStore: new LocalSpaceStore(), shareStore: new LocalShareStore(), feedbackStore: new LocalFeedbackStore(), mode: 'local' };
     render(
       <MemoryRouter initialEntries={['/home']}>
         <BackendProvider backend={backend}>
@@ -448,7 +449,7 @@ describe('Home', () => {
       rename: vi.fn(async () => undefined),
       save: vi.fn(async (): Promise<SaveResult> => ({ ok: true, version: 1 })),
     };
-    const backend: Backend = { auth: new LocalAuth(), docStore, spaceStore: new LocalSpaceStore(), shareStore: new LocalShareStore(), mode: 'local' };
+    const backend: Backend = { auth: new LocalAuth(), docStore, spaceStore: new LocalSpaceStore(), shareStore: new LocalShareStore(), feedbackStore: new LocalFeedbackStore(), mode: 'local' };
     render(
       <MemoryRouter initialEntries={['/home']}>
         <BackendProvider backend={backend}>
@@ -940,7 +941,7 @@ describe('Home', () => {
       }),
       save,
     };
-    const backend: Backend = { auth: new LocalAuth(), docStore: new MockDocStore([]), spaceStore, shareStore: new LocalShareStore(), mode: 'local' };
+    const backend: Backend = { auth: new LocalAuth(), docStore: new MockDocStore([]), spaceStore, shareStore: new LocalShareStore(), feedbackStore: new LocalFeedbackStore(), mode: 'local' };
     render(
       <MemoryRouter initialEntries={['/home']}>
         <BackendProvider backend={backend}>
@@ -964,7 +965,7 @@ describe('Home', () => {
       load: vi.fn(async (): Promise<WorkspaceData | null> => ({ spaces: [{ id: 'work', name: '작업 공간', color: '#3f8fd0', maps: [] }], mapFolders: {} })),
       save,
     };
-    const backend: Backend = { auth: new LocalAuth(), docStore: new MockDocStore([]), spaceStore, shareStore: new LocalShareStore(), mode: 'local' };
+    const backend: Backend = { auth: new LocalAuth(), docStore: new MockDocStore([]), spaceStore, shareStore: new LocalShareStore(), feedbackStore: new LocalFeedbackStore(), mode: 'local' };
     const { container } = render(
       <MemoryRouter initialEntries={['/home']}>
         <BackendProvider backend={backend}>
@@ -1238,7 +1239,7 @@ describe('Home', () => {
       override getProfileName = async (): Promise<string | null> => '서버닉네임';
       override setProfileName = setProfileName;
     }
-    const backend: Backend = { auth: new BackendAuth(), docStore: new MockDocStore([]), spaceStore: new LocalSpaceStore(), shareStore: new LocalShareStore(), mode: 'local' };
+    const backend: Backend = { auth: new BackendAuth(), docStore: new MockDocStore([]), spaceStore: new LocalSpaceStore(), shareStore: new LocalShareStore(), feedbackStore: new LocalFeedbackStore(), mode: 'local' };
     render(
       <MemoryRouter initialEntries={['/home']}>
         <BackendProvider backend={backend}>
@@ -2156,7 +2157,7 @@ describe('Home', () => {
           return new Promise<DocMeta[]>(() => {}); // never resolves
         }
       }
-      const backend: Backend = { auth: new LocalAuth(), docStore: new PendingDocStore(), spaceStore: new LocalSpaceStore(), shareStore: new LocalShareStore(), mode: 'local' };
+      const backend: Backend = { auth: new LocalAuth(), docStore: new PendingDocStore(), spaceStore: new LocalSpaceStore(), shareStore: new LocalShareStore(), feedbackStore: new LocalFeedbackStore(), mode: 'local' };
       const { container } = render(
         <MemoryRouter initialEntries={['/home']}>
           <BackendProvider backend={backend}>
@@ -2212,7 +2213,7 @@ describe('Home', () => {
         mapFolders: {},
       };
       const spaceStore = new RacySpaceStore(full);
-      const backend: Backend = { auth: new RacyAuth(), docStore: new MockDocStore([]), spaceStore, shareStore: new LocalShareStore(), mode: 'supabase' };
+      const backend: Backend = { auth: new RacyAuth(), docStore: new MockDocStore([]), spaceStore, shareStore: new LocalShareStore(), feedbackStore: new LocalFeedbackStore(), mode: 'supabase' };
       const { container } = render(
         <MemoryRouter initialEntries={['/home']}>
           <BackendProvider backend={backend}>
@@ -2285,7 +2286,7 @@ describe('Home', () => {
         rename: vi.fn(async () => undefined),
       } as unknown as DocStore;
 
-      const backend: Backend = { auth: new RacyAuth(), docStore, spaceStore, shareStore: new LocalShareStore(), mode: 'supabase' };
+      const backend: Backend = { auth: new RacyAuth(), docStore, spaceStore, shareStore: new LocalShareStore(), feedbackStore: new LocalFeedbackStore(), mode: 'supabase' };
       render(
         <MemoryRouter initialEntries={['/home']}>
           <BackendProvider backend={backend}>
@@ -2318,5 +2319,24 @@ describe('Home', () => {
         expect(thumb().querySelector('.mf-skel')).toBeNull(); // skeleton cleared
       });
     });
+  });
+});
+
+// 피드백 보내기(홈 진입점) — 프로필 메뉴의 항목으로 모달이 열린다.
+describe('피드백 보내기 (홈 진입점)', () => {
+  it('프로필 메뉴 → 피드백 보내기 → 모달 → 제출', async () => {
+    const user = userEvent.setup();
+    renderHome();
+    await user.click(await screen.findByRole('button', { name: '계정 메뉴' })); // 프로필 스켈레톤 해제 대기
+    await user.click(screen.getByRole('button', { name: '피드백 보내기' }));
+    const dialog = await screen.findByRole('dialog', { name: '피드백 보내기' });
+    expect(dialog).toBeTruthy();
+    // 로컬(데모) 백엔드 — 안내 문구가 뜨고, 제출은 mf_feedback에 쌓인다.
+    expect(screen.getByText(/데모 모드예요/)).toBeTruthy();
+    fireEvent.change(screen.getByLabelText('피드백 내용'), { target: { value: '홈에서 보냄' } });
+    await user.click(screen.getByRole('button', { name: '보내기' }));
+    expect(await screen.findByText('전달됐어요, 고마워요!')).toBeTruthy();
+    const saved = JSON.parse(localStorage.getItem('mf_feedback')!) as Array<Record<string, unknown>>;
+    expect(saved[0]).toMatchObject({ page: 'home', message: '홈에서 보냄' });
   });
 });
