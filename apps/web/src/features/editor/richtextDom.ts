@@ -7,7 +7,7 @@
 // element's DOM/Selection, which the core package's DOM-purity lint forbids.
 
 import type { RichRun } from '@mindflow/mindmap-core';
-import { isStyledRuns, normalizeUrl } from '@mindflow/mindmap-core';
+import { isStyledRuns, normalizeUrl, parseListPrefix } from '@mindflow/mindmap-core';
 import { LINK_CLASS, isLinkInk } from './richSpans';
 
 /** Port of `Component#escHtml` (MindFlow.dc.html:2558). */
@@ -204,6 +204,68 @@ export function selectedRawText(el: HTMLElement): string | null {
   const b = v.clamp(Math.max(lin.pos[0] ?? 0, lin.pos[1] ?? 0));
   if (a === b) return null;
   return v.text.slice(a, b);
+}
+
+/** `off`가 있는 줄이 리스트고 `off`가 마커 구역(줄 시작 ~ 마커 끝 직전) 안이면
+ * 그 줄의 **내용 시작** 오프셋을, 아니면 `null`을 돌려준다. */
+function markerContentStart(text: string, off: number): number | null {
+  const lineStart = text.lastIndexOf('\n', off - 1) + 1;
+  const nl = text.indexOf('\n', lineStart);
+  const line = text.slice(lineStart, nl === -1 ? undefined : nl);
+  const p = parseListPrefix(line);
+  if (!p) return null;
+  const cs = lineStart + p.raw.length;
+  return off < cs ? cs : null;
+}
+
+/** 편집 박스의 접힌 캐럿을 읽어 값 좌표 오프셋으로 — 선택이 없거나(범위 선택)
+ * 박스 밖이면 `null`. */
+function collapsedCaret(el: HTMLElement): { off: number; text: string } | null {
+  const ws = window.getSelection();
+  if (!ws || !ws.rangeCount || !ws.isCollapsed) return null;
+  const rng = ws.getRangeAt(0);
+  if (!el.contains(rng.startContainer)) return null;
+  const lin = linearize(el, [{ container: rng.startContainer, offset: rng.startOffset }]);
+  const v = liveEditValue(el);
+  return { off: v.clamp(lin.pos[0] ?? 0), text: v.text };
+}
+
+/**
+ * 캐럿이 리스트 **마커 구역**에 있으면 그 줄의 내용 시작으로 옮긴다(옮겼으면 true).
+ *
+ * 배경(제보): 마커 스팬에 `user-select: none`을 준 뒤 크롬이 마커 텍스트 안에는
+ * 캐럿을 놓지 않는 대신 **마커 앞**(행 시작)에 캐럿 자리를 만들었다 — 거기서 친
+ * 글자가 마커 앞에 쌓여 그 줄이 리스트에서 풀렸다(`ㅇㅇㅇ5. 오케이`). 마커는
+ * 편집기가 관리하는 장식이므로 캐럿이 앉을 자리가 아니다 — 클릭·방향키·Home 등
+ * 어떤 경로로 들어와도 내용 시작으로 스냅한다(Notion과 같은 감각). 편집 박스의
+ * selectionchange·keydown 두 곳에서 부른다(클릭 직후 빠른 타이핑 대비 이중화).
+ */
+export function snapCaretOffListMarker(el: HTMLElement): boolean {
+  const c = collapsedCaret(el);
+  if (!c) return false;
+  const cs = markerContentStart(c.text, c.off);
+  if (cs == null) return false;
+  setLinearSelection(el, cs, cs);
+  return true;
+}
+
+/**
+ * ArrowLeft 전용: 캐럿이 리스트 줄의 **내용 시작**에 있으면 마커를 통째로 건너
+ * 앞 줄 끝으로 보낸다(처리했으면 true — 호출부가 preventDefault). 스냅만 있으면
+ * 기본 ArrowLeft가 마커 구역으로 들어갔다 되튕겨 캐럿이 그 줄에 갇힌다.
+ * 첫 줄이면 갈 곳이 없어 제자리(그래도 true — 마커 구역 진입은 막는다).
+ */
+export function listArrowLeft(el: HTMLElement): boolean {
+  const c = collapsedCaret(el);
+  if (!c) return false;
+  const lineStart = c.text.lastIndexOf('\n', c.off - 1) + 1;
+  const nl = c.text.indexOf('\n', lineStart);
+  const line = c.text.slice(lineStart, nl === -1 ? undefined : nl);
+  const p = parseListPrefix(line);
+  if (!p || c.off !== lineStart + p.raw.length) return false;
+  const target = lineStart > 0 ? lineStart - 1 : c.off;
+  setLinearSelection(el, target, target);
+  return true;
 }
 
 /** One DOM position to resolve into a linear text offset — the `{ container, offset }`
