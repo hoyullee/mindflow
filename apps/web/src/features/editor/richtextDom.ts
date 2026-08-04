@@ -283,6 +283,81 @@ export function listArrowLeft(el: HTMLElement): boolean {
   return true;
 }
 
+/**
+ * ↑/↓ 세로 캐럿 이동 — 리스트 편집 박스에서는 **우리가 직접** 처리한다(처리했으면
+ * true — 호출부가 preventDefault).
+ *
+ * 배경(제보: ↑를 눌러도 캐럿이 위로 안 올라감): 크롬의 세로 캐럿 이동은
+ * [마커|내용] **flex 행 경계를 건너지 못한다** — 앱 JS가 전혀 없는 정적
+ * contenteditable로 재현해도(마커 user-select 여부와 무관) ↑가 이전 행으로 가지
+ * 않고 같은 행의 마커 끝 경계에 떨어진다. 리스트 도입 때부터의 잠복 문제.
+ *
+ * 이동 좌표는 **픽셀 기준**(`caretRangeFromPoint`) — 캐럿 rect에서 한 줄 높이만큼
+ * 위/아래 지점의 캐럿 자리를 찾으므로, 감긴 줄(한 행 안의 여러 시각 줄) 안 이동도
+ * 자연스럽다. 도착점이 마커 구역이면 내용 시작으로 클램프. 편집 박스 밖(첫 줄
+ * 위/끝 줄 아래)은 관례대로 첫 줄 내용 시작/텍스트 끝. 픽셀 API가 없는 환경
+ * (jsdom)은 내용-시작 기준 열 보존의 텍스트 모델로 폴백한다.
+ */
+export function listArrowVertical(el: HTMLElement, dir: -1 | 1): boolean {
+  // 리스트 행이 없으면 기본 동작 그대로 — 평문 줄(<div>)은 크롬이 잘 다닌다.
+  if (!el.querySelector('[data-list-marker]')) return false;
+  const c = collapsedCaret(el);
+  if (!c) return false;
+  const ws = window.getSelection()!;
+  const rng = ws.getRangeAt(0);
+
+  const place = (off: number): void => {
+    const snapped = markerContentStart(c.text, off);
+    setLinearSelection(el, snapped ?? off, snapped ?? off);
+  };
+
+  const fromPoint = (
+    document as Document & { caretRangeFromPoint?: (x: number, y: number) => Range | null }
+  ).caretRangeFromPoint?.bind(document);
+  if (typeof fromPoint === 'function' && typeof rng.getClientRects === 'function') {
+    let rect: { left: number; top: number; bottom: number; height: number } | null = rng.getClientRects()[0] ?? null;
+    if (!rect || !rect.height) {
+      // 빈 줄(<br>) 캐럿은 rect가 없다 — 앵커 요소(내용 스팬)의 좌상단으로 대신한다.
+      const host = rng.startContainer.nodeType === 3 ? rng.startContainer.parentElement : (rng.startContainer as Element | null);
+      const hr = host?.getBoundingClientRect?.();
+      if (hr && hr.height) rect = hr;
+    }
+    if (rect) {
+      const lh = rect.height || 18;
+      const target = fromPoint(rect.left, dir < 0 ? rect.top - lh / 2 : rect.bottom + lh / 2);
+      if (target && el.contains(target.startContainer)) {
+        const lin = linearize(el, [{ container: target.startContainer, offset: target.startOffset }]);
+        const v = liveEditValue(el);
+        place(v.clamp(lin.pos[0] ?? 0));
+        return true;
+      }
+      // 편집 박스 밖 — 첫 줄 위는 내용 시작으로, 끝 줄 아래는 텍스트 끝으로.
+      place(dir < 0 ? 0 : c.text.length);
+      return true;
+    }
+  }
+
+  // 텍스트 모델 폴백 — 내용 시작 기준 열 보존(마커 폭 차이를 흡수).
+  const lines = c.text.split('\n');
+  let idx = 0;
+  let start = 0;
+  while (idx < lines.length - 1 && start + lines[idx]!.length < c.off) {
+    start += lines[idx]!.length + 1;
+    idx++;
+  }
+  const ti = idx + dir;
+  if (ti < 0 || ti >= lines.length) {
+    place(dir < 0 ? 0 : c.text.length);
+    return true;
+  }
+  const col = Math.max(0, c.off - (start + (parseListPrefix(lines[idx]!)?.raw.length ?? 0)));
+  let tStart = 0;
+  for (let i = 0; i < ti; i++) tStart += lines[i]!.length + 1;
+  const tContent = tStart + (parseListPrefix(lines[ti]!)?.raw.length ?? 0);
+  place(Math.min(tContent + col, tStart + lines[ti]!.length));
+  return true;
+}
+
 /** One DOM position to resolve into a linear text offset — the `{ container, offset }`
  * shape a `Range`'s `startContainer`/`startOffset` (or `endContainer`/`endOffset`) already
  * has, so callers typically pass those straight through. */
