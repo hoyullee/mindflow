@@ -509,6 +509,8 @@ export function useHomeController() {
 
   // ---- account settings / 회원 탈퇴 ----
   const openAccountSettings = () => patch({ settingsOpen: false, accountSettingsOpen: true });
+  const openFeedback = () => patch({ settingsOpen: false, feedbackOpen: true });
+  const closeFeedback = () => patch({ feedbackOpen: false });
   const closeAccountSettings = () => patch({ accountSettingsOpen: false });
   const askDeleteAccount = () => patch({ accountSettingsOpen: false, confirmDeleteAccount: true, deleteAccountText: '', deleteAccountError: '' });
   const cancelDeleteAccount = () => patch({ confirmDeleteAccount: false, deleteAccountText: '', deleteAccountError: '' });
@@ -1368,6 +1370,8 @@ export function useHomeController() {
     cancelLogout,
     confirmLogoutYes,
     openAccountSettings,
+    openFeedback,
+    closeFeedback,
     closeAccountSettings,
     askDeleteAccount,
     cancelDeleteAccount,

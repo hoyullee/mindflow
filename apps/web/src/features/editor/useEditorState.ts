@@ -272,6 +272,9 @@ export interface EditorController {
   /** 단축키 도움말 열림 상태 — `?` 키(비편집)와 보기/☰ 메뉴가 조작한다. */
   helpOpen: boolean;
   setHelpOpen: (open: boolean) => void;
+  /** 피드백 보내기 모달(보기/☰ 메뉴). */
+  feedbackOpen: boolean;
+  setFeedbackOpen: (open: boolean) => void;
   /** 버전 기록 모달 열림 상태 — 편집/☰ 메뉴가 조작한다. */
   historyOpen: boolean;
   setHistoryOpen: (open: boolean) => void;
@@ -2912,6 +2915,7 @@ export function useEditorState(): EditorController {
   const toggleMinimap = useCallback(() => setShowMinimap((v) => !v), []);
   const [searchOpen, setSearchOpen] = useState(false);
   const [helpOpen, setHelpOpen] = useState(false);
+  const [feedbackOpen, setFeedbackOpen] = useState(false);
   const [historyOpen, setHistoryOpen] = useState(false);
   const [searchMarks, setSearchMarks] = useState<{ nodes: Set<string>; floats: Set<string> } | null>(null);
 
@@ -3891,6 +3895,8 @@ export function useEditorState(): EditorController {
     setSearchOpen,
     helpOpen,
     setHelpOpen,
+    feedbackOpen,
+    setFeedbackOpen,
     historyOpen,
     setHistoryOpen,
     historyDocId: docStoreId,

@@ -66,3 +66,22 @@ describe('단축키 도움말', () => {
     expect(screen.getByRole('dialog', { name: '키보드 단축키' })).toBeTruthy();
   });
 });
+
+// 피드백 보내기 — 보기/☰ 메뉴에서 열리는 수집 모달(FeedbackModal). 여기 두는
+// 이유: 같은 메뉴 경로를 검증하는 파일이라 렌더 헬퍼를 공유한다.
+describe('피드백 보내기 (에디터 진입점)', () => {
+  it('보기 메뉴의 "피드백 보내기"로 모달이 열리고 제출까지 흐른다', async () => {
+    localStorage.setItem('mindflow_doc_fb1', JSON.stringify(DOC));
+    renderEditor('/editor?map=fb1&title=x');
+    fireEvent.click(screen.getByRole('button', { name: '보기' }));
+    fireEvent.click(screen.getByText('피드백 보내기'));
+    const dialog = screen.getByRole('dialog', { name: '피드백 보내기' });
+    expect(dialog).toBeTruthy();
+    // 로컬(데모) 백엔드 — 제출하면 localStorage `mf_feedback`에 쌓인다.
+    fireEvent.change(screen.getByLabelText('피드백 내용'), { target: { value: '에디터에서 보냄' } });
+    fireEvent.click(screen.getByRole('button', { name: '보내기' }));
+    expect(await screen.findByText('전달됐어요, 고마워요!')).toBeTruthy();
+    const saved = JSON.parse(localStorage.getItem('mf_feedback')!) as Array<Record<string, unknown>>;
+    expect(saved[0]).toMatchObject({ page: 'editor', message: '에디터에서 보냄' });
+  });
+});

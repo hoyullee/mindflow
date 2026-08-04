@@ -13,6 +13,7 @@ import { SearchBar } from './components/SearchBar';
 import { ShortcutHelp } from './components/ShortcutHelp';
 import { VersionHistory } from './components/VersionHistory';
 import { MapUnavailable } from './components/MapUnavailable';
+import { FeedbackModal } from '../../components/FeedbackModal';
 import { MobileSelectBar } from './components/MobileSelectBar';
 import { useIsMobile } from '../../hooks/useMediaQuery';
 import { useUpdateGuard } from '../../pwa/updateGate';
@@ -125,6 +126,8 @@ export function Editor() {
       <ShareModal controller={controller} />
       <ShortcutHelp controller={controller} />
       <VersionHistory controller={controller} />
+      {/* 피드백(사용자 의견 수집) — 보기/☰ 메뉴에서 연다. 에디터 테마를 따른다. */}
+      <FeedbackModal open={controller.feedbackOpen} onClose={() => controller.setFeedbackOpen(false)} page="editor" theme={th} />
 
       <div style={{ position: 'relative', flex: '1 1 auto', overflow: 'hidden', display: 'flex' }}>
         {controller.view === 'map' ? (

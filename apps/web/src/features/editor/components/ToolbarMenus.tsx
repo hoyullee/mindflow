@@ -191,6 +191,16 @@ export function ViewMenu({ controller, onDone, isMobile }: { controller: EditorC
           onDone();
         }}
       />
+      <MenuItem
+        theme={th}
+        isMobile={isMobile}
+        icon={<FeedbackIcon />}
+        label="피드백 보내기"
+        onClick={() => {
+          controller.setFeedbackOpen(true);
+          onDone();
+        }}
+      />
     </MenuShell>
   );
 }
@@ -225,6 +235,7 @@ export function MoreMenu({ controller, onDone, isMobile }: { controller: EditorC
           이 기기에서 저장한 판이 없어 비어 있다). */}
       {!controller.readOnly && <MenuItem theme={th} isMobile={isMobile} icon={<HistoryIcon />} label="버전 기록" onClick={() => { controller.setHistoryOpen(true); onDone(); }} />}
       <MenuItem theme={th} isMobile={isMobile} icon={<HelpIcon />} label="단축키 도움말" onClick={() => { controller.setHelpOpen(true); onDone(); }} />
+      <MenuItem theme={th} isMobile={isMobile} icon={<FeedbackIcon />} label="피드백 보내기" onClick={() => { controller.setFeedbackOpen(true); onDone(); }} />
     </MenuShell>
   );
 }
@@ -236,6 +247,13 @@ export function HistoryIcon() {
       <path d="M3 12a9 9 0 1 0 3-6.7L3 8" />
       <polyline points="3 3 3 8 8 8" />
       <polyline points="12 7 12 12 15.5 14" />
+    </svg>
+  );
+}
+export function FeedbackIcon() {
+  return (
+    <svg width={15} height={15} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round">
+      <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" />
     </svg>
   );
 }
