@@ -36,9 +36,9 @@ export function FolderCard({ folder, controller }: Props) {
       onDragLeave={onDragLeave}
       onDrop={onDrop}
       style={{
-        border: folder.dragOver ? '2px dashed #f0663f' : '1px solid #ecdfd5',
+        border: folder.dragOver ? '2px dashed var(--mf-accent)' : '1px solid var(--mf-border)',
         borderRadius: 14,
-        background: folder.dragOver ? '#fdeee7' : '#fff',
+        background: folder.dragOver ? 'var(--mf-accent-soft)' : '#fff',
         cursor: 'pointer',
         transition: 'border-color .14s, box-shadow .14s, background .14s',
         position: 'relative',
@@ -46,7 +46,7 @@ export function FolderCard({ folder, controller }: Props) {
         alignItems: 'center',
         gap: 14,
         padding: folder.dragOver ? '17px 17px' : '18px 18px',
-        boxShadow: folder.dragOver ? '0 6px 18px rgba(240,102,63,.18)' : 'none',
+        boxShadow: folder.dragOver ? '0 6px 18px rgba(var(--mf-accent-rgb),.18)' : 'none',
       }}
     >
       <div
@@ -60,7 +60,7 @@ export function FolderCard({ folder, controller }: Props) {
         }}
         title="메뉴"
         aria-label="메뉴"
-        style={{ position: 'absolute', top: 10, right: 10, zIndex: 4, width: 28, height: 28, borderRadius: 8, background: 'rgba(255,255,255,.92)', border: '1px solid #ecdfd5', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 13, lineHeight: 1, color: '#7c6d60', cursor: 'pointer', boxShadow: '0 2px 6px rgba(0,0,0,.12)', opacity: folder.menuOpen ? 1 : 0, transition: 'opacity .15s' }}
+        style={{ position: 'absolute', top: 10, right: 10, zIndex: 4, width: 28, height: 28, borderRadius: 8, background: 'rgba(255,255,255,.92)', border: '1px solid var(--mf-border)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 13, lineHeight: 1, color: '#7c6d60', cursor: 'pointer', boxShadow: '0 2px 6px rgba(0,0,0,.12)', opacity: folder.menuOpen ? 1 : 0, transition: 'opacity .15s' }}
       >
         ☰
       </div>
@@ -69,7 +69,7 @@ export function FolderCard({ folder, controller }: Props) {
           e.preventDefault();
           e.stopPropagation();
         }}
-        style={{ position: 'absolute', top: 44, right: 10, zIndex: 20, width: 150, background: '#fff', border: '1px solid #ecdfd5', borderRadius: 10, boxShadow: '0 10px 28px rgba(0,0,0,.16)', padding: '5px 0', display: folder.menuOpen ? 'block' : 'none' }}
+        style={{ position: 'absolute', top: 44, right: 10, zIndex: 20, width: 150, background: '#fff', border: '1px solid var(--mf-border)', borderRadius: 10, boxShadow: '0 10px 28px rgba(0,0,0,.16)', padding: '5px 0', display: folder.menuOpen ? 'block' : 'none' }}
       >
         <div
           className="menu-row"
@@ -89,7 +89,7 @@ export function FolderCard({ folder, controller }: Props) {
           </span>{' '}
           이름 변경
         </div>
-        <div style={{ height: 1, background: '#f0e6dd', margin: '2px 0' }} />
+        <div style={{ height: 1, background: 'var(--mf-border-soft)', margin: '2px 0' }} />
         <div
           className="menu-row"
           onClick={(e) => {
@@ -109,8 +109,8 @@ export function FolderCard({ folder, controller }: Props) {
         </div>
       </div>
 
-      <div style={{ width: 52, height: 52, borderRadius: 14, background: '#fdeee7', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
-        <svg width="26" height="26" viewBox="0 0 24 24" fill="#f0663f" stroke="#f0663f" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round">
+      <div style={{ width: 52, height: 52, borderRadius: 14, background: 'var(--mf-accent-soft)', color: 'var(--mf-accent)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+        <svg width="26" height="26" viewBox="0 0 24 24" fill="currentColor" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round">
           <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z" fillOpacity=".18" />
         </svg>
       </div>

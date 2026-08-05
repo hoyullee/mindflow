@@ -26,7 +26,7 @@ export function ToastModal({ state, controller }: Props) {
         </div>
         <div style={{ fontSize: 16, fontWeight: 800, marginBottom: 8 }}>{title}</div>
         <div style={{ fontSize: 13, color: '#7c6d60', lineHeight: 1.6, marginBottom: 20 }}>{msg}</div>
-        <button className="btn" onClick={controller.closeToast} style={{ width: '100%', height: 42, border: 'none', borderRadius: 11, background: '#f0663f', color: '#fff', fontFamily: 'inherit', fontSize: 14, fontWeight: 700, cursor: 'pointer' }}>
+        <button className="btn" onClick={controller.closeToast} style={{ width: '100%', height: 42, border: 'none', borderRadius: 11, background: 'var(--mf-accent)', color: '#fff', fontFamily: 'inherit', fontSize: 14, fontWeight: 700, cursor: 'pointer' }}>
           확인
         </button>
       </div>

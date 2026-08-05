@@ -26,7 +26,7 @@ export function ConfirmModal({ visible, zIndex, iconBg, icon, heading, body, can
         <div style={{ fontSize: 17, fontWeight: 700, marginBottom: 8 }}>{heading}</div>
         <div style={{ fontSize: 13, color: '#8a7365', lineHeight: 1.6, marginBottom: 22 }}>{body}</div>
         <div style={{ display: 'flex', gap: 10 }}>
-          <button className="btn" onClick={onCancel} style={{ flex: 1, height: 42, border: '1px solid #ecdfd5', borderRadius: 11, background: '#fff', color: '#33281f', fontFamily: 'inherit', fontSize: 14, fontWeight: 600, cursor: 'pointer' }}>
+          <button className="btn" onClick={onCancel} style={{ flex: 1, height: 42, border: '1px solid var(--mf-border)', borderRadius: 11, background: '#fff', color: '#33281f', fontFamily: 'inherit', fontSize: 14, fontWeight: 600, cursor: 'pointer' }}>
             {cancelLabel}
           </button>
           <button className="btn" onClick={onConfirm} style={{ flex: 1, height: 42, border: 'none', borderRadius: 11, background: confirmColor, color: '#fff', fontFamily: 'inherit', fontSize: 14, fontWeight: 700, cursor: 'pointer' }}>

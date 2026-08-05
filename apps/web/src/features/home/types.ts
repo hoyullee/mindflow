@@ -1,5 +1,7 @@
 /** Mirrors the data shapes threaded through Home.dc.html's `class Component extends DCLogic`. */
 
+import { loadHomeThemeCache, type HomeThemeKey } from './theme';
+
 export interface MapCardData {
   title: string;
   when: string;
@@ -114,8 +116,11 @@ export interface HomeState {
   /** The 설정 (account settings) modal, opened from the profile popover. Hosts
    * the 회원 탈퇴 entry. */
   accountSettingsOpen: boolean;
-  /** 피드백 보내기 모달(프로필 메뉴에서 연다). */
+  /** 피드백 보내기 모달(LNB 최하단에서 연다). */
   feedbackOpen: boolean;
+  /** 홈 색상 테마(LNB 최하단에서 고른다). 정본은 워크스페이스 블롭이라 기기 간에
+   * 따라오고, 첫 페인트용 캐시는 `theme.ts`의 localStorage에 둔다. */
+  theme: HomeThemeKey;
   /** The 회원 탈퇴 confirmation dialog (opened from the settings modal). */
   confirmDeleteAccount: boolean;
   /** What the user has typed into the 회원 탈퇴 confirmation box — the destructive
@@ -249,6 +254,9 @@ export function initialHomeState(): HomeState {
     confirmLogout: false,
     accountSettingsOpen: false,
     feedbackOpen: false,
+    // 이 기기의 마지막 선택으로 시작한다 — 워크스페이스(정본)가 도착하면 그 값으로
+    // 맞춘다. 부팅 때 이미 같은 캐시로 CSS 변수를 입혀 뒀으므로 첫 페인트와 일치한다.
+    theme: loadHomeThemeCache(),
     confirmDeleteAccount: false,
     deleteAccountText: '',
     deleteAccountError: '',

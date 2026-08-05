@@ -4,6 +4,7 @@ import type { HomeState } from '../types';
 import type { HomeViewModel } from '../viewModel';
 import { SettingsPopover } from './SettingsPopover';
 import { SpaceRow } from './SpaceRow';
+import { HOME_THEMES, HOME_THEME_KEYS } from '../theme';
 
 /** How long the drawer's exit slide runs before the aside unmounts. Slightly
  * longer than the CSS transition (260ms, home.css `.mf-drawer`) so the last
@@ -39,6 +40,8 @@ export function Sidebar({ state, view, controller, isMobile = false, isOpen = fa
   //   `entered` — the on-screen state driving the CSS transition (transform/
   //   opacity). Opening mounts off-screen first, then flips `entered` on the
   //   next frame so the enter slide actually plays.
+  // 색상 테마 목록 펼침 — 순수 표현 상태라 컨트롤러(이식된 dc 상태)에 두지 않는다.
+  const [themeOpen, setThemeOpen] = useState(false);
   const [mounted, setMounted] = useState(isOpen);
   const [entered, setEntered] = useState(isOpen);
   useEffect(() => {
@@ -109,7 +112,7 @@ export function Sidebar({ state, view, controller, isMobile = false, isOpen = fa
         style={{
           ...asideStyle,
           background: '#fff',
-          borderRight: '1px solid #ecdfd5',
+          borderRight: '1px solid var(--mf-border)',
           display: 'flex',
           flexDirection: 'column',
           padding: '14px 12px',
@@ -170,8 +173,8 @@ export function Sidebar({ state, view, controller, isMobile = false, isOpen = fa
             cursor: 'pointer',
             fontSize: 13.5,
             fontWeight: view.isDriveSpace ? 600 : 500,
-            background: view.isDriveSpace ? '#fdeee7' : 'transparent',
-            color: view.isDriveSpace ? '#d9542f' : '#7c6d60',
+            background: view.isDriveSpace ? 'var(--mf-accent-soft)' : 'transparent',
+            color: view.isDriveSpace ? 'var(--mf-accent-strong)' : '#7c6d60',
           }}
         >
           <span style={{ width: 15, height: 15, borderRadius: 3, display: 'inline-block', background: view.connected ? '#34A853' : '#c9b8a9' }} />
@@ -270,7 +273,7 @@ export function Sidebar({ state, view, controller, isMobile = false, isOpen = fa
         </>
       )}
 
-      <div style={{ height: 1, background: '#f0e6dd', margin: '12px 4px' }} />
+      <div style={{ height: 1, background: 'var(--mf-border-soft)', margin: '12px 4px' }} />
 
       <div
         className="nav-item"
@@ -442,9 +445,77 @@ export function Sidebar({ state, view, controller, isMobile = false, isOpen = fa
 
       {/* 피드백 보내기 — LNB 최하단 고정(사용자 요청: 프로필 메뉴에서 이동).
           `marginTop: auto`가 남는 공간을 밀어 올려 항상 바닥에 붙는다(공간이
-          모자라면 휴지통 아래로 자연히 이어진다). */}
+          모자라면 휴지통 아래로 자연히 이어진다). 색상 테마도 같은 "설정" 층이라
+          바로 위에 둔다. */}
       <div style={{ marginTop: 'auto', flexShrink: 0, paddingTop: 8 }}>
-        <div style={{ height: 1, background: '#f0e6dd', margin: '0 4px 8px' }} />
+        <div style={{ height: 1, background: 'var(--mf-border-soft)', margin: '0 4px 8px' }} />
+
+        {/* 색상 테마 — 펼치면 색 점이 나오고, 누르는 즉시 화면 색이 바뀐다(적용
+            버튼 없음: 고르는 것이 곧 미리보기다). 공유받음·휴지통과 같은 접이식
+            항목 꼴이라 LNB 안에서 새 문법을 만들지 않는다. */}
+        <div
+          className="nav-item"
+          role="button"
+          tabIndex={0}
+          aria-label="색상 테마"
+          aria-expanded={themeOpen}
+          onClick={() => setThemeOpen((v) => !v)}
+          onKeyDown={(e) => {
+            if (e.key === 'Enter' || e.key === ' ') {
+              e.preventDefault();
+              setThemeOpen((v) => !v);
+            }
+          }}
+          style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '9px 10px', minHeight: isMobile ? 44 : undefined, borderRadius: 9, cursor: 'pointer', fontSize: 13.5, fontWeight: 500, color: '#7c6d60' }}
+        >
+          <PaletteGlyph /> 색상 테마
+          {/* 지금 색을 한 점으로 알려 준다 — 펼치지 않아도 무엇이 켜져 있는지 보인다. */}
+          <span aria-hidden="true" style={{ marginLeft: 'auto', width: 13, height: 13, borderRadius: '50%', background: 'var(--mf-accent)', boxShadow: 'inset 0 0 0 1px rgba(0,0,0,.08)' }} />
+        </div>
+        {themeOpen && (
+          <div role="radiogroup" aria-label="색상 테마 선택" style={{ display: 'flex', flexWrap: 'wrap', gap: 6, padding: '2px 10px 8px' }}>
+            {HOME_THEME_KEYS.map((key) => {
+              const t = HOME_THEMES[key];
+              const on = state.theme === key;
+              return (
+                <button
+                  key={key}
+                  type="button"
+                  role="radio"
+                  aria-checked={on}
+                  aria-label={`${t.label} 테마`}
+                  title={t.label}
+                  onClick={() => controller.setTheme(key)}
+                  style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    // 모바일은 44px 터치 타깃(다섯 개 + 간격이 248px LNB 안에 들어간다).
+                    width: isMobile ? 40 : 28,
+                    height: isMobile ? 40 : 28,
+                    padding: 0,
+                    border: 'none',
+                    borderRadius: 9,
+                    background: 'transparent',
+                    cursor: 'pointer',
+                  }}
+                >
+                  <span
+                    style={{
+                      width: 17,
+                      height: 17,
+                      borderRadius: '50%',
+                      background: t.accent,
+                      // 선택된 색은 흰 테두리 + 같은 색 링으로 "지금 이것"임을 알린다.
+                      boxShadow: on ? `0 0 0 2px #fff, 0 0 0 3.5px ${t.accent}` : 'inset 0 0 0 1px rgba(0,0,0,.12)',
+                    }}
+                  />
+                </button>
+              );
+            })}
+          </div>
+        )}
+
         <div
           className="nav-item"
           role="button"
@@ -467,6 +538,19 @@ export function Sidebar({ state, view, controller, isMobile = false, isOpen = fa
       </div>
     </aside>
     </>
+  );
+}
+
+/** 색상 테마 항목의 팔레트 아이콘 — 다른 LNB 아이콘과 같은 라인 스타일 SVG.
+ * `currentColor`라 행의 글자색(활성/비활성)을 그대로 따른다. */
+function PaletteGlyph({ size = 15 }: { size?: number }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" aria-hidden="true" style={{ flexShrink: 0 }}>
+      <path d="M12 21a9 9 0 1 1 9-9c0 1.66-1.34 3-3 3h-1.6a2 2 0 0 0-1.4 3.42c.39.39.39 1.02 0 1.41-.6.6-1.5 1.17-3 1.17Z" />
+      <circle cx="7.4" cy="12.4" r="1" fill="currentColor" stroke="none" />
+      <circle cx="9.6" cy="8.2" r="1" fill="currentColor" stroke="none" />
+      <circle cx="14.2" cy="7.4" r="1" fill="currentColor" stroke="none" />
+    </svg>
   );
 }
 

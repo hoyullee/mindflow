@@ -1,19 +1,36 @@
 /* Ported from Home.dc.html <helmet><style>. Kept global (not a CSS module) so the
    keyframe names and hover-only classnames referenced from inline styles resolve. */
 
+/* 홈 색상 테마의 기본값(코랄). 정본은 `features/home/theme.ts`의 `HOME_THEMES`이고,
+   `applyHomeTheme`가 부팅 시 사용자의 선택으로 이 값을 덮어쓴다(문서 루트 인라인
+   변수라 여기보다 우선한다). 기본값을 CSS에 둬야 스크립트가 돌기 전 첫 프레임이나
+   변수를 입히지 않는 환경에서도 색이 비지 않는다. */
+:root {
+  --mf-accent: #f0663f;
+  --mf-accent-rgb: 240, 102, 63;
+  --mf-accent-soft: #fdeee7;
+  --mf-accent-strong: #d9542f;
+  --mf-accent-mute: #f2c4b3;
+  --mf-bg: #fbf6f2;
+  --mf-sunken: #f5ece5;
+  --mf-panel2: #faf3ee;
+  --mf-border: #ecdfd5;
+  --mf-border-soft: #f0e6dd;
+}
+
 a {
-  color: #f0663f;
+  color: var(--mf-accent);
   text-decoration: none;
 }
 a:hover {
-  color: #d9542f;
+  color: var(--mf-accent-strong);
 }
 ::-webkit-scrollbar {
   width: 10px;
   height: 10px;
 }
 ::-webkit-scrollbar-thumb {
-  background: #ecdfd5;
+  background: var(--mf-border);
   border-radius: 6px;
 }
 .lnb-scroll {
@@ -128,7 +145,7 @@ a:hover {
   }
 }
 .mf-skel {
-  background-color: #f3ece5;
+  background-color: var(--mf-sunken);
   background-image: linear-gradient(90deg, rgba(255, 255, 255, 0) 0%, rgba(255, 255, 255, 0.55) 50%, rgba(255, 255, 255, 0) 100%);
   background-size: 320px 100%;
   background-repeat: no-repeat;
@@ -141,14 +158,14 @@ a:hover {
 }
 
 .mf-home .nav-item:hover {
-  background: #faf3ee !important;
+  background: var(--mf-panel2) !important;
 }
 .mf-home .tpl-card:hover {
   transform: translateY(-3px);
   box-shadow: 0 10px 24px rgba(0, 0, 0, 0.1) !important;
 }
 .mf-home .map-card:hover {
-  border-color: #f0663f !important;
+  border-color: var(--mf-accent) !important;
   box-shadow: 0 10px 24px rgba(0, 0, 0, 0.08) !important;
 }
 .mf-home .map-card:hover .fav-btn {
@@ -170,27 +187,27 @@ a:hover {
   opacity: 1 !important;
 }
 .mf-home .space-dot:hover {
-  background: #f0e6dd !important;
+  background: var(--mf-border-soft) !important;
 }
 .mf-home .fav-btn:hover {
   transform: scale(1.12);
 }
 .mf-home .menu-btn:hover {
-  background: #faf3ee !important;
+  background: var(--mf-panel2) !important;
 }
 .mf-home .menu-row:hover {
-  background: #faf3ee !important;
+  background: var(--mf-panel2) !important;
 }
 .mf-home .btn:hover {
   filter: brightness(0.97);
 }
 .mf-home .drive-file:hover {
-  background: #faf3ee !important;
+  background: var(--mf-panel2) !important;
 }
 /* LNB favorites: the leading star doubles as the unfavorite button — a subtle
    ring on hover separates "I'm about to unstar" from the row's open action. */
 .mf-home .mf-fav-unstar:hover {
-  background: #f0e6dd !important;
+  background: var(--mf-border-soft) !important;
 }
 
 /* LNB trash rows: the per-row restore(↺)/purge(✕) icon buttons stay hidden
@@ -211,7 +228,7 @@ a:hover {
   }
 }
 .mf-home .mf-trash-act:hover {
-  background: #f0e6dd !important;
+  background: var(--mf-border-soft) !important;
 }
 /* Trash header's 비우기: hidden at rest so the trash COUNT sits flush right,
    exactly aligned with the favorites count above it; hovering/focusing the
@@ -280,7 +297,7 @@ a:hover {
      identical to the page bg (#fbf6f2) so the tray wasn't perceivable as a
      container. The sunken tone reads as a "well" and makes white cards pop;
      the lighter step keeps the zone airy now that it spans the full width. */
-  background: #f5ece5;
+  background: var(--mf-sunken);
   border-radius: 14px; /* radius-lg */
   padding: 16px; /* space-4 */
   margin-bottom: 24px; /* space-6 */

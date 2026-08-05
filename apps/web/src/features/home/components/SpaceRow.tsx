@@ -46,12 +46,13 @@ export function SpaceRow({ space, state, controller }: Props) {
           cursor: 'pointer',
           fontSize: 13.5,
           fontWeight: active ? 600 : 500,
-          background: active ? '#fdeee7' : 'transparent',
-          color: active ? '#d9542f' : '#7c6d60',
+          background: active ? 'var(--mf-accent-soft)' : 'transparent',
+          color: active ? 'var(--mf-accent-strong)' : '#7c6d60',
         }}
       >
         {/* Every space (including the home "일반 스페이스") shows the same colored dot;
-            the home space's default color is the coral accent (#f0663f). */}
+            the home space's default color is the coral accent (#f0663f) — 테마가 아니라
+            스페이스에 저장된 **데이터** 색이므로 변수로 바꾸지 않는다. */}
         <span style={{ width: 15, height: 15, borderRadius: 5, flexShrink: 0, background: space.color || '#f0663f', display: 'inline-block' }} />
         <span style={{ flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{space.name}</span>
         <span
@@ -85,7 +86,7 @@ export function SpaceRow({ space, state, controller }: Props) {
           zIndex: 60,
           width: 168,
           background: '#fff',
-          border: '1px solid #ecdfd5',
+          border: '1px solid var(--mf-border)',
           borderRadius: 10,
           boxShadow: '0 10px 28px rgba(0,0,0,.16)',
           padding: '5px 0',
@@ -107,7 +108,7 @@ export function SpaceRow({ space, state, controller }: Props) {
           </svg>{' '}
           이름 변경
         </div>
-        <div style={{ height: 1, background: '#f0e6dd', margin: '2px 0' }} />
+        <div style={{ height: 1, background: 'var(--mf-border-soft)', margin: '2px 0' }} />
         <div
           className="menu-row"
           onClick={(e) => {

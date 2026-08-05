@@ -54,7 +54,7 @@ export function SettingsPopover({ state, controller, userInitial }: Props) {
           left: 0,
           width: 236,
           background: '#fff',
-          border: '1px solid #ecdfd5',
+          border: '1px solid var(--mf-border)',
           borderRadius: 14,
           boxShadow: '0 12px 32px rgba(0,0,0,.16)',
           padding: 0,
@@ -63,8 +63,8 @@ export function SettingsPopover({ state, controller, userInitial }: Props) {
           display: state.settingsOpen ? 'block' : 'none',
         }}
       >
-        <div style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '16px 16px 14px', background: 'linear-gradient(135deg,#fdeee7,#faf3ee)', borderRadius: '14px 14px 0 0' }}>
-          <ProfileAvatar initial={userInitial} avatarUrl={state.userAvatar} size={44} radius={13} fontSize={20} boxShadow="0 4px 10px rgba(240,102,63,.25)" />
+        <div style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '16px 16px 14px', background: 'linear-gradient(135deg,var(--mf-accent-soft),var(--mf-panel2))', borderRadius: '14px 14px 0 0' }}>
+          <ProfileAvatar initial={userInitial} avatarUrl={state.userAvatar} size={44} radius={13} fontSize={20} boxShadow="0 4px 10px rgba(var(--mf-accent-rgb),.25)" />
           <div style={{ minWidth: 0, flex: 1 }}>
             <div style={{ fontWeight: 700, fontSize: 15, color: '#33281f', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{state.userName}</div>
             {state.userEmail && <div style={{ fontSize: 12, color: '#9c8b7e', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{state.userEmail}</div>}

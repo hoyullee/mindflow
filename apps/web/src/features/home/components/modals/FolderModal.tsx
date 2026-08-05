@@ -26,16 +26,16 @@ export function FolderModal({ state, controller }: Props) {
           maxLength={10}
           placeholder="예: 기획 (최대 10자)"
           aria-label="폴더 이름"
-          style={{ width: '100%', height: 44, border: '1px solid #ecdfd5', borderRadius: 11, background: '#faf3ee', color: '#33281f', fontFamily: 'inherit', fontSize: 14, padding: '0 13px', outline: 'none', boxSizing: 'border-box', marginBottom: 24 }}
+          style={{ width: '100%', height: 44, border: '1px solid var(--mf-border)', borderRadius: 11, background: 'var(--mf-panel2)', color: '#33281f', fontFamily: 'inherit', fontSize: 14, padding: '0 13px', outline: 'none', boxSizing: 'border-box', marginBottom: 24 }}
         />
         <div style={{ display: 'flex', gap: 10 }}>
-          <button className="btn" onClick={controller.closeFolderModal} style={{ flex: 1, height: 44, border: '1px solid #ecdfd5', borderRadius: 11, background: '#fff', color: '#33281f', fontFamily: 'inherit', fontSize: 14, fontWeight: 600, cursor: 'pointer' }}>
+          <button className="btn" onClick={controller.closeFolderModal} style={{ flex: 1, height: 44, border: '1px solid var(--mf-border)', borderRadius: 11, background: '#fff', color: '#33281f', fontFamily: 'inherit', fontSize: 14, fontWeight: 600, cursor: 'pointer' }}>
             취소
           </button>
           <button
             className="btn"
             onClick={controller.saveFolderModal}
-            style={{ flex: 1, height: 44, border: 'none', borderRadius: 11, background: canSave ? '#f0663f' : '#f2c4b3', color: '#fff', fontFamily: 'inherit', fontSize: 14, fontWeight: 700, cursor: canSave ? 'pointer' : 'default' }}
+            style={{ flex: 1, height: 44, border: 'none', borderRadius: 11, background: canSave ? 'var(--mf-accent)' : 'var(--mf-accent-mute)', color: '#fff', fontFamily: 'inherit', fontSize: 14, fontWeight: 700, cursor: canSave ? 'pointer' : 'default' }}
           >
             {isRename ? '변경' : '만들기'}
           </button>

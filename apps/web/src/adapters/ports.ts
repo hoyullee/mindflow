@@ -306,6 +306,10 @@ export interface WorkspaceData {
    * devices. Optional for backward-compat with workspaces saved before it
    * existed — treat a missing value as "no synced recents yet". */
   recent?: string[];
+  /** 홈 색상 테마 키(`features/home/theme.ts`). 스페이스·최근 항목과 같은 per-user
+   * 블롭에 실어 기기 간에 따라오게 한다. 예전에 저장된 워크스페이스에는 없으므로
+   * 선택("아직 고른 적 없음" = 기본 테마). 값의 유효성은 홈 쪽에서 판별한다. */
+  theme?: string;
 }
 
 /**

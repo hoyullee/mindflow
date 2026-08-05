@@ -26,7 +26,7 @@ export function ProfileAvatar({ initial, avatarUrl, size, radius, fontSize, boxS
         width: size,
         height: size,
         borderRadius: radius,
-        background: '#f0663f',
+        background: 'var(--mf-accent)',
         color: '#fff',
         display: 'flex',
         alignItems: 'center',

@@ -54,7 +54,7 @@ export function RecentStripSkeleton({ count }: { count: number }) {
       </div>
       <div style={{ display: 'flex', gap: RECENT_GAP, overflow: 'hidden' }}>
         {Array.from({ length: n }, (_, i) => (
-          <div key={i} style={{ width: RECENT_CARD_W, flex: '0 0 auto', border: '1px solid #efe6dd', borderRadius: 10, background: '#fff', overflow: 'hidden' }}>
+          <div key={i} style={{ width: RECENT_CARD_W, flex: '0 0 auto', border: '1px solid var(--mf-border-soft)', borderRadius: 10, background: '#fff', overflow: 'hidden' }}>
             {/* compact MapCard와 footprint 정확히 일치:
                 썸네일 72 + 패딩 8·8 + 제목줄 15 + (marginTop 2 + 위치줄 14).
                 위치줄이 생기며 카드가 16px 높아졌으므로 스켈레톤도 같이 키운다 —
@@ -124,7 +124,7 @@ export function RecentStrip({ cards, controller }: { cards: CardViewData[]; cont
       {/* height/lineHeight를 px로 고정 — 폰트 스왑에 따른 행 높이 변화(→ 아래
           툴바 밀림)를 막고, 로딩 스켈레톤과 footprint를 정확히 일치시킨다. */}
       <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 10, height: 16 }}>
-        <span style={{ color: '#f0663f', display: 'inline-flex' }} aria-hidden="true">
+        <span style={{ color: 'var(--mf-accent)', display: 'inline-flex' }} aria-hidden="true">
           <ClockGlyph />
         </span>
         <span style={{ fontSize: 13, lineHeight: '16px', fontWeight: 700, letterSpacing: '-.01em', color: '#33281f' }}>최근 항목</span>

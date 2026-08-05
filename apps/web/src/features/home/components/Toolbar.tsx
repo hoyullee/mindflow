@@ -47,7 +47,7 @@ const MOBILE_ICON_BTN = {
   justifyContent: 'center',
   width: 44,
   height: 44,
-  border: '1px solid #ecdfd5',
+  border: '1px solid var(--mf-border)',
   borderRadius: 10,
   background: '#fff',
   color: '#33281f',
@@ -133,7 +133,7 @@ export function Toolbar({ state, view, controller, isMobile = false, onOpenNav }
             onClick={controller.backToSpace}
             title="스페이스로 돌아가기"
             aria-label="스페이스로 돌아가기"
-            style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', width: isMobile ? 44 : 34, height: isMobile ? 44 : 34, border: '1px solid #ecdfd5', borderRadius: 10, background: '#fff', color: '#7c6d60', cursor: 'pointer', padding: 0, flexShrink: 0 }}
+            style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', width: isMobile ? 44 : 34, height: isMobile ? 44 : 34, border: '1px solid var(--mf-border)', borderRadius: 10, background: '#fff', color: '#7c6d60', cursor: 'pointer', padding: 0, flexShrink: 0 }}
           >
             <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
               <path d="M19 12H5" />
@@ -157,7 +157,7 @@ export function Toolbar({ state, view, controller, isMobile = false, onOpenNav }
             role="button"
             tabIndex={0}
             className="drive-file"
-            style={{ display: 'flex', alignItems: 'center', padding: '0 12px', height: isMobile ? 44 : 38, borderRadius: 10, border: '1px solid #ecdfd5', background: '#fff', fontSize: 12.5, color: '#9c8b7e', cursor: 'pointer', whiteSpace: 'nowrap' }}
+            style={{ display: 'flex', alignItems: 'center', padding: '0 12px', height: isMobile ? 44 : 38, borderRadius: 10, border: '1px solid var(--mf-border)', background: '#fff', fontSize: 12.5, color: '#9c8b7e', cursor: 'pointer', whiteSpace: 'nowrap' }}
           >
             연결 해제
           </div>
@@ -169,7 +169,7 @@ export function Toolbar({ state, view, controller, isMobile = false, onOpenNav }
           <button
             className="btn"
             onClick={controller.openImport}
-            style={{ display: 'flex', alignItems: 'center', gap: 6, height: 38, padding: '0 14px', border: '1px solid #ecdfd5', borderRadius: 10, background: '#fff', color: '#33281f', fontFamily: 'inherit', fontSize: 13, fontWeight: 600, cursor: 'pointer', whiteSpace: 'nowrap', flexShrink: 0 }}
+            style={{ display: 'flex', alignItems: 'center', gap: 6, height: 38, padding: '0 14px', border: '1px solid var(--mf-border)', borderRadius: 10, background: '#fff', color: '#33281f', fontFamily: 'inherit', fontSize: 13, fontWeight: 600, cursor: 'pointer', whiteSpace: 'nowrap', flexShrink: 0 }}
           >
             <ImportGlyph /> 가져오기
           </button>
@@ -179,7 +179,7 @@ export function Toolbar({ state, view, controller, isMobile = false, onOpenNav }
           <button
             className="btn"
             onClick={controller.openNewFolder}
-            style={{ display: 'flex', alignItems: 'center', gap: 6, height: 38, padding: '0 14px', border: '1px solid #ecdfd5', borderRadius: 10, background: '#fff', color: '#33281f', fontFamily: 'inherit', fontSize: 13, fontWeight: 600, cursor: 'pointer', whiteSpace: 'nowrap', flexShrink: 0 }}
+            style={{ display: 'flex', alignItems: 'center', gap: 6, height: 38, padding: '0 14px', border: '1px solid var(--mf-border)', borderRadius: 10, background: '#fff', color: '#33281f', fontFamily: 'inherit', fontSize: 13, fontWeight: 600, cursor: 'pointer', whiteSpace: 'nowrap', flexShrink: 0 }}
           >
             <NewFolderGlyph /> 새 폴더
           </button>
@@ -189,7 +189,7 @@ export function Toolbar({ state, view, controller, isMobile = false, onOpenNav }
             here so nothing wraps onto a stray second line. Icon-only buttons keep
             44px touch targets and carry their label via aria-label/title. */}
         <div style={{ display: 'flex', alignItems: 'center', gap: isMobile ? 8 : 10, width: isMobile ? '100%' : undefined }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 8, flex: isMobile ? '1 1 auto' : undefined, width: isMobile ? undefined : 260, minWidth: 0, height: isMobile ? 44 : 38, padding: '0 12px', background: '#fff', border: '1px solid #ecdfd5', borderRadius: 10, color: '#9c8b7e' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8, flex: isMobile ? '1 1 auto' : undefined, width: isMobile ? undefined : 260, minWidth: 0, height: isMobile ? 44 : 38, padding: '0 12px', background: '#fff', border: '1px solid var(--mf-border)', borderRadius: 10, color: '#9c8b7e' }}>
             <span style={{ fontSize: 13, display: 'flex', alignItems: 'center', color: '#9c8b7e' }}>
               <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                 <circle cx="11" cy="11" r="7" />

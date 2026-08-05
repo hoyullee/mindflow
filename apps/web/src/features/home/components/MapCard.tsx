@@ -86,7 +86,7 @@ export function MapCard({ card, controller, draggableEnabled, compact = false }:
 
   const grey = card.openable === false;
   const cardStyle: CSSProperties = {
-    border: card.selected ? '2px solid #f0663f' : '1px solid #ecdfd5',
+    border: card.selected ? '2px solid var(--mf-accent)' : '1px solid var(--mf-border)',
     borderRadius: compact ? 10 : 14,
     background: grey ? '#fbf8f5' : '#fff',
     // The card no longer clips (was `overflow: hidden`) — otherwise the open ☰
@@ -98,7 +98,7 @@ export function MapCard({ card, controller, draggableEnabled, compact = false }:
     position: 'relative',
     zIndex: card.menuOpen ? 30 : undefined,
     opacity: card.dragging ? 0.45 : 1,
-    boxShadow: card.selected ? '0 0 0 3px rgba(240,102,63,.18)' : 'none',
+    boxShadow: card.selected ? '0 0 0 3px rgba(var(--mf-accent-rgb),.18)' : 'none',
     margin: card.selected ? -1 : 0,
     color: grey ? '#b6a596' : '#33281f',
     // 더블탭이 브라우저의 '두 번 눌러 확대' 제스처로 새지 않게 한다(스크롤·핀치는 유지).
@@ -137,7 +137,7 @@ export function MapCard({ card, controller, draggableEnabled, compact = false }:
           height: 28,
           borderRadius: '50%',
           background: card.isFav ? '#fff' : 'rgba(255,255,255,.9)',
-          border: `1px solid ${card.isFav ? '#f0c24a' : '#ecdfd5'}`,
+          border: `1px solid ${card.isFav ? '#f0c24a' : 'var(--mf-border)'}`,
           display: card.openable === false ? 'none' : 'flex',
           alignItems: 'center',
           justifyContent: 'center',
@@ -158,7 +158,7 @@ export function MapCard({ card, controller, draggableEnabled, compact = false }:
 
 
       {!compact && (
-      <div onClick={stopPrevent} style={{ position: 'absolute', bottom: 44, right: 10, zIndex: 20, width: 150, background: '#fff', border: '1px solid #ecdfd5', borderRadius: 10, boxShadow: '0 10px 28px rgba(0,0,0,.16)', padding: '5px 0', display: card.menuOpen ? 'block' : 'none' }}>
+      <div onClick={stopPrevent} style={{ position: 'absolute', bottom: 44, right: 10, zIndex: 20, width: 150, background: '#fff', border: '1px solid var(--mf-border)', borderRadius: 10, boxShadow: '0 10px 28px rgba(0,0,0,.16)', padding: '5px 0', display: card.menuOpen ? 'block' : 'none' }}>
         <div style={{ display: card.exportOpen || card.moveOpen || card.spaceMoveOpen ? 'none' : 'block' }}>
           {card.showFavRow && (
             <div
@@ -248,7 +248,7 @@ export function MapCard({ card, controller, draggableEnabled, compact = false }:
               폴더에서 꺼내기
             </div>
           )}
-          {card.showDivider && <div style={{ height: 1, background: '#f0e6dd', margin: '2px 0' }} />}
+          {card.showDivider && <div style={{ height: 1, background: 'var(--mf-border-soft)', margin: '2px 0' }} />}
           <div
             className="menu-row"
             onClick={(e) => {
@@ -280,7 +280,7 @@ export function MapCard({ card, controller, draggableEnabled, compact = false }:
           >
             ‹ 뒤로
           </div>
-          <div style={{ height: 1, background: '#f0e6dd', margin: '2px 0' }} />
+          <div style={{ height: 1, background: 'var(--mf-border-soft)', margin: '2px 0' }} />
           <div
             className="menu-row"
             onClick={(e) => {
@@ -352,7 +352,7 @@ export function MapCard({ card, controller, draggableEnabled, compact = false }:
           >
             ‹ 뒤로
           </div>
-          <div style={{ height: 1, background: '#f0e6dd', margin: '2px 0' }} />
+          <div style={{ height: 1, background: 'var(--mf-border-soft)', margin: '2px 0' }} />
           {card.moveTargets.map((ft) => (
             <div
               key={ft.id}
@@ -381,7 +381,7 @@ export function MapCard({ card, controller, draggableEnabled, compact = false }:
           >
             ‹ 뒤로
           </div>
-          <div style={{ height: 1, background: '#f0e6dd', margin: '2px 0' }} />
+          <div style={{ height: 1, background: 'var(--mf-border-soft)', margin: '2px 0' }} />
           {card.spaceMoveTargets.map((sp) => (
             <div
               key={sp.id}
@@ -435,7 +435,7 @@ export function MapCard({ card, controller, draggableEnabled, compact = false }:
         style={{
           height: compact ? 72 : 150,
           background: grey ? '#f4f0eb' : `linear-gradient(135deg,#fdfbfa,${card.isDrive ? 'rgba(52,168,83,.07)' : 'rgba(0,0,0,.02)'})`,
-          borderBottom: '1px solid #f0e6dd',
+          borderBottom: '1px solid var(--mf-border-soft)',
           display: 'flex',
           alignItems: 'center',
           justifyContent: 'center',
