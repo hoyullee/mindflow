@@ -16,6 +16,17 @@ const TRAY_PAD_X = 32; // desktop tray padding (16px × 2) — mobile doesn't us
 // a long history doesn't mount dozens of preview cards on a phone; must stay
 // ≤ RECENT_RENDER_MAX (storage.ts), which caps what the view materializes.
 const MOBILE_SWIPE_MAX = 20;
+/**
+ * 선택 링이 스크롤 박스 안에서 온전히 보이도록 두는 여유(px).
+ *
+ * 선택된 카드는 그리드와 같은 표시를 쓴다 — 2px 테두리 + 카드 **밖으로 3px** 번지는
+ * 글로우(`MapCard`의 `boxShadow: 0 0 0 3px`). 그런데 이 트레이는 가로 스크롤
+ * 컨테이너라 `overflow-x: auto`가 **다른 축까지 auto로 만들고**(CSS 규칙), 여유가
+ * 0이면 링이 위·아래·왼쪽에서 잘려 보였다(제보, 실측 각 4px). 스크롤 박스에 이만큼
+ * 패딩을 주고 같은 크기의 음수 마진으로 상쇄하면 **카드 위치는 그대로**인 채 링만
+ * 안쪽 여유에 들어간다.
+ */
+const RING_SLACK = 4;
 
 /** Small clock glyph in front of the "최근 항목" header (SVG per design-system
  * §10 — no emoji), colored via `currentColor` so it follows the header accent. */
@@ -118,7 +129,20 @@ export function RecentStrip({ cards, controller }: { cards: CardViewData[]; cont
         </span>
         <span style={{ fontSize: 13, lineHeight: '16px', fontWeight: 700, letterSpacing: '-.01em', color: '#33281f' }}>최근 항목</span>
       </div>
-      <div className="mf-recent-scroll" style={{ display: 'flex', gap: RECENT_GAP, overflowX: 'auto', scrollSnapType: 'x proximity' }}>
+      <div
+        className="mf-recent-scroll"
+        style={{
+          display: 'flex',
+          gap: RECENT_GAP,
+          overflowX: 'auto',
+          scrollSnapType: 'x proximity',
+          // 선택 링이 잘리지 않게 여유를 두고 같은 크기로 상쇄한다(RING_SLACK 참고).
+          // 스냅 지점도 그만큼 당겨 첫 카드가 여유 안쪽에 딱 맞게 선다.
+          padding: RING_SLACK,
+          margin: -RING_SLACK,
+          scrollPaddingLeft: RING_SLACK,
+        }}
+      >
         {cards.slice(0, shown).map((c) => (
           // Fixed-width, non-shrinking slot (`flex: 0 0 auto`) — the flex analogue
           // of the old fixed grid track. Never `flex: 1` (would stretch like `1fr`).
