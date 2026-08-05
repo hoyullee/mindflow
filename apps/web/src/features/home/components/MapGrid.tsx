@@ -18,7 +18,7 @@ const GRID_STYLE = { gap: 20 } as const;
  * two title lines), shown while the map list loads. */
 function SkeletonCard() {
   return (
-    <div style={{ border: '1px solid var(--mf-border-soft)', borderRadius: 16, background: '#fff', overflow: 'hidden' }}>
+    <div style={{ border: '1px solid var(--mf-border-soft)', borderRadius: 16, background: 'var(--mf-panel)', overflow: 'hidden' }}>
       <div className="mf-skel" style={{ height: 132, borderRadius: 0 }} />
       <div style={{ padding: '13px 15px 16px' }}>
         <div className="mf-skel" style={{ height: 13, width: '62%', borderRadius: 6, marginBottom: 9 }} />
@@ -45,7 +45,7 @@ export function MapGrid({ view, controller }: Props) {
           (see `RecentStrip` in Home.tsx), not inside a space's map list. */}
       {view.foldersSectionVisible && (
         <div>
-          <div style={{ fontSize: 12.5, fontWeight: 700, color: '#9c8b7e', marginBottom: 14 }}>폴더</div>
+          <div style={{ fontSize: 12.5, fontWeight: 700, color: 'var(--mf-muted)', marginBottom: 14 }}>폴더</div>
           <div className="mf-map-grid" style={{ ...GRID_STYLE, marginBottom: 26 }}>
             {view.folderCards.map((f) => (
               <FolderCard key={f.id} folder={f} controller={controller} />
@@ -57,7 +57,7 @@ export function MapGrid({ view, controller }: Props) {
 
       {view.mapsSectionVisible && (
         <div>
-          <div style={{ fontSize: 12.5, fontWeight: 700, color: '#9c8b7e', marginBottom: 14 }}>맵</div>
+          <div style={{ fontSize: 12.5, fontWeight: 700, color: 'var(--mf-muted)', marginBottom: 14 }}>맵</div>
           <div className="mf-map-grid" style={GRID_STYLE}>
             {/* Key by card identity (docId; title fallback) — duplicate TITLES are
                 fully allowed, and a duplicate React key makes reconciliation reuse
@@ -77,7 +77,7 @@ export function MapGrid({ view, controller }: Props) {
             </svg>
           </div>
           <div style={{ fontSize: 18, fontWeight: 700, marginBottom: 8 }}>이 폴더는 비어 있어요</div>
-          <div style={{ fontSize: 13.5, color: '#9c8b7e', lineHeight: 1.6, textAlign: 'center' }}>
+          <div style={{ fontSize: 13.5, color: 'var(--mf-muted)', lineHeight: 1.6, textAlign: 'center' }}>
             맵 카드의 ☰ 메뉴에서 &apos;폴더로 이동&apos;을 선택해
             <br /> 이 폴더로 맵을 옮길 수 있어요.
           </div>
@@ -99,7 +99,7 @@ export function MapGrid({ view, controller }: Props) {
             </svg>
           </div>
           <div style={{ fontSize: 18, fontWeight: 700, marginBottom: 8 }}>아직 만든 맵이 없어요</div>
-          <div style={{ fontSize: 13.5, color: '#9c8b7e', lineHeight: 1.6, marginBottom: 24, textAlign: 'center' }}>
+          <div style={{ fontSize: 13.5, color: 'var(--mf-muted)', lineHeight: 1.6, marginBottom: 24, textAlign: 'center' }}>
             첫 마인드맵을 만들어 생각을 정리해 보세요.
             <br /> 중심 주제에서 아이디어를 자유롭게 펼칠 수 있어요.
           </div>
@@ -110,7 +110,7 @@ export function MapGrid({ view, controller }: Props) {
               controller.onNewMapClick(e.currentTarget.getAttribute('href') || controller.newMapHref());
             }}
             className="btn"
-            style={{ height: 52, padding: '0 30px', borderRadius: 14, background: 'var(--mf-accent)', color: '#fff', fontFamily: 'inherit', fontSize: 16, fontWeight: 700, cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 9, boxShadow: '0 8px 22px rgba(var(--mf-accent-rgb),.32)' }}
+            style={{ height: 52, padding: '0 30px', borderRadius: 14, background: 'var(--mf-accent)', color: 'var(--mf-accent-ink)', fontFamily: 'inherit', fontSize: 16, fontWeight: 700, cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 9, boxShadow: '0 8px 22px rgba(var(--mf-accent-rgb),.32)' }}
           >
             ＋ 새로 만들기
           </a>
@@ -119,7 +119,7 @@ export function MapGrid({ view, controller }: Props) {
 
       {view.showDriveConnect && (
         <div style={{ display: 'flex', flex: '1 1 auto', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', minHeight: 0, padding: 20 }}>
-          <div style={{ width: 88, height: 88, borderRadius: 24, background: '#eaf5ee', display: 'flex', alignItems: 'center', justifyContent: 'center', marginBottom: 22 }}>
+          <div style={{ width: 88, height: 88, borderRadius: 24, background: 'var(--mf-success-soft)', display: 'flex', alignItems: 'center', justifyContent: 'center', marginBottom: 22 }}>
             <svg width="44" height="44" viewBox="0 0 87.3 78" xmlns="http://www.w3.org/2000/svg">
               <path d="m6.6 66.85 3.85 6.65c.8 1.4 1.95 2.5 3.3 3.3l13.75-23.8h-27.5c0 1.55.4 3.1 1.2 4.5z" fill="#0066da" />
               <path d="m43.65 25-13.75-23.8c-1.35.8-2.5 1.9-3.3 3.3l-25.4 44a9.06 9.06 0 0 0 -1.2 4.5h27.5z" fill="#00ac47" />
@@ -130,14 +130,14 @@ export function MapGrid({ view, controller }: Props) {
             </svg>
           </div>
           <div style={{ fontSize: 18, fontWeight: 700, marginBottom: 8 }}>Google Drive 연동이 필요해요</div>
-          <div style={{ fontSize: 13.5, color: '#9c8b7e', lineHeight: 1.6, marginBottom: 24, textAlign: 'center' }}>
+          <div style={{ fontSize: 13.5, color: 'var(--mf-muted)', lineHeight: 1.6, marginBottom: 24, textAlign: 'center' }}>
             Google Drive를 연결하면 저장된 마인드맵과 문서를
             <br /> 이곳에서 바로 확인할 수 있어요.
           </div>
           <button
             className="btn"
             onClick={controller.openDriveAuth}
-            style={{ height: 50, padding: '0 24px', border: '1px solid var(--mf-border)', borderRadius: 13, background: '#fff', color: '#33281f', fontFamily: 'inherit', fontSize: 15, fontWeight: 600, cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 10, boxShadow: '0 4px 14px rgba(0,0,0,.06)', whiteSpace: 'nowrap' }}
+            style={{ height: 50, padding: '0 24px', border: '1px solid var(--mf-border)', borderRadius: 13, background: 'var(--mf-panel)', color: 'var(--mf-text)', fontFamily: 'inherit', fontSize: 15, fontWeight: 600, cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 10, boxShadow: '0 4px 14px rgba(0,0,0,.06)', whiteSpace: 'nowrap' }}
           >
             <svg width="19" height="19" viewBox="0 0 48 48">
               <path fill="#EA4335" d="M24 9.5c3.54 0 6.71 1.22 9.21 3.6l6.85-6.85C35.9 2.38 30.47 0 24 0 14.62 0 6.51 5.38 2.56 13.22l7.98 6.19C12.43 13.72 17.74 9.5 24 9.5z" />

@@ -47,7 +47,7 @@ export function SpaceRow({ space, state, controller }: Props) {
           fontSize: 13.5,
           fontWeight: active ? 600 : 500,
           background: active ? 'var(--mf-accent-soft)' : 'transparent',
-          color: active ? 'var(--mf-accent-strong)' : '#7c6d60',
+          color: active ? 'var(--mf-accent-strong)' : 'var(--mf-subtext)',
         }}
       >
         {/* Every space (including the home "일반 스페이스") shows the same colored dot;
@@ -64,7 +64,7 @@ export function SpaceRow({ space, state, controller }: Props) {
           onKeyDown={(e) => {
             if (e.key === 'Enter' || e.key === ' ') onMenuClick(e as unknown as MouseEvent<HTMLSpanElement>);
           }}
-          style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', width: 22, height: 22, borderRadius: 6, marginLeft: 'auto', flexShrink: 0, color: '#9c8b7e', cursor: 'pointer', opacity: menuOpen ? 1 : 0, transition: 'opacity .15s' }}
+          style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', width: 22, height: 22, borderRadius: 6, marginLeft: 'auto', flexShrink: 0, color: 'var(--mf-muted)', cursor: 'pointer', opacity: menuOpen ? 1 : 0, transition: 'opacity .15s' }}
         >
           <svg width="15" height="15" viewBox="0 0 24 24" fill="currentColor">
             <circle cx="12" cy="5" r="1.7" />
@@ -85,7 +85,7 @@ export function SpaceRow({ space, state, controller }: Props) {
           left: menuOpen && anchor ? anchor.left : -9999,
           zIndex: 60,
           width: 168,
-          background: '#fff',
+          background: 'var(--mf-panel)',
           border: '1px solid var(--mf-border)',
           borderRadius: 10,
           boxShadow: '0 10px 28px rgba(0,0,0,.16)',
@@ -100,7 +100,7 @@ export function SpaceRow({ space, state, controller }: Props) {
             e.stopPropagation();
             controller.startRenameSpace(space.id);
           }}
-          style={{ display: 'flex', alignItems: 'center', gap: 9, padding: '9px 13px', fontSize: 13, cursor: 'pointer', color: '#33281f' }}
+          style={{ display: 'flex', alignItems: 'center', gap: 9, padding: '9px 13px', fontSize: 13, cursor: 'pointer', color: 'var(--mf-text)' }}
         >
           <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
             <path d="M12 20h9" />
@@ -116,7 +116,7 @@ export function SpaceRow({ space, state, controller }: Props) {
             e.stopPropagation();
             controller.askDeleteSpace(space.id);
           }}
-          style={{ display: 'flex', alignItems: 'center', gap: 9, padding: '9px 13px', fontSize: 13, cursor: hasMaps || isLastSpace ? 'not-allowed' : 'pointer', color: hasMaps || isLastSpace ? '#c9b8a9' : '#d64545' }}
+          style={{ display: 'flex', alignItems: 'center', gap: 9, padding: '9px 13px', fontSize: 13, cursor: hasMaps || isLastSpace ? 'not-allowed' : 'pointer', color: hasMaps || isLastSpace ? 'var(--mf-faint2)' : 'var(--mf-danger)' }}
         >
           <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
             <polyline points="3 6 5 6 21 6" />
@@ -124,7 +124,7 @@ export function SpaceRow({ space, state, controller }: Props) {
           </svg>{' '}
           스페이스 삭제
         </div>
-        {(hasMaps || isLastSpace) && <div style={{ padding: '2px 13px 8px', fontSize: 11, color: '#c9b8a9', lineHeight: 1.4 }}>{hasMaps ? '맵이 없는 스페이스만 삭제할 수 있어요' : '마지막 스페이스는 삭제할 수 없어요'}</div>}
+        {(hasMaps || isLastSpace) && <div style={{ padding: '2px 13px 8px', fontSize: 11, color: 'var(--mf-faint2)', lineHeight: 1.4 }}>{hasMaps ? '맵이 없는 스페이스만 삭제할 수 있어요' : '마지막 스페이스는 삭제할 수 없어요'}</div>}
       </div>
     </div>
   );

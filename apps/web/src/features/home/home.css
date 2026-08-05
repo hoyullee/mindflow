@@ -11,11 +11,35 @@
   --mf-accent-soft: #fdeee7;
   --mf-accent-strong: #d9542f;
   --mf-accent-mute: #f2c4b3;
+  --mf-accent-ink: #ffffff;
   --mf-bg: #fbf6f2;
   --mf-sunken: #f5ece5;
+  --mf-panel: #ffffff;
   --mf-panel2: #faf3ee;
+  --mf-panel-veil: rgba(255, 255, 255, 0.92);
+  --mf-panel-grey: #fbf8f5;
+  --mf-overlay-veil: rgba(251, 246, 242, 0.92);
   --mf-border: #ecdfd5;
   --mf-border-soft: #f0e6dd;
+  --mf-hairline: #f2e9e1;
+  --mf-scroll: #d9c8ba;
+  --mf-skel-sheen: rgba(255, 255, 255, 0.55);
+  --mf-text: #33281f;
+  --mf-subtext: #7c6d60;
+  --mf-muted: #9c8b7e;
+  --mf-faint: #b6a596;
+  --mf-faint2: #c9b8a9;
+  --mf-danger: #d64545;
+  --mf-danger-soft: #fdecec;
+  --mf-danger-bg: #fdf4f2;
+  --mf-danger-line: #f3d9d4;
+  --mf-danger-mute: #e7b9b3;
+  --mf-info: #3f8fd0;
+  --mf-star: #e0a53c;
+  --mf-hover-bright: 0.97;
+  --mf-success: #2f9e63;
+  --mf-success-soft: #e9f4ee;
+  --mf-success-ink: #1e7a3a;
 }
 
 a {
@@ -38,7 +62,7 @@ a:hover {
   scrollbar-color: transparent transparent;
 }
 .lnb-scroll:hover {
-  scrollbar-color: #d9c8ba transparent;
+  scrollbar-color: var(--mf-scroll) transparent;
 }
 .lnb-scroll::-webkit-scrollbar {
   width: 4px;
@@ -48,7 +72,7 @@ a:hover {
   border-radius: 4px;
 }
 .lnb-scroll:hover::-webkit-scrollbar-thumb {
-  background: #d9c8ba;
+  background: var(--mf-scroll);
 }
 .lnb-scroll::-webkit-scrollbar-track {
   background: transparent;
@@ -146,7 +170,7 @@ a:hover {
 }
 .mf-skel {
   background-color: var(--mf-sunken);
-  background-image: linear-gradient(90deg, rgba(255, 255, 255, 0) 0%, rgba(255, 255, 255, 0.55) 50%, rgba(255, 255, 255, 0) 100%);
+  background-image: linear-gradient(90deg, rgba(255, 255, 255, 0) 0%, var(--mf-skel-sheen) 50%, rgba(255, 255, 255, 0) 100%);
   background-size: 320px 100%;
   background-repeat: no-repeat;
   animation: mf-skel 1.15s ease-in-out infinite;
@@ -199,7 +223,7 @@ a:hover {
   background: var(--mf-panel2) !important;
 }
 .mf-home .btn:hover {
-  filter: brightness(0.97);
+  filter: brightness(var(--mf-hover-bright));
 }
 .mf-home .drive-file:hover {
   background: var(--mf-panel2) !important;
@@ -235,7 +259,7 @@ a:hover {
    header reveals the action (always visible on touch). Muted color at rest,
    danger-red only when the pointer commits to it. */
 .mf-home .mf-trash-empty {
-  color: #b6a596;
+  color: var(--mf-faint);
   opacity: 0;
   transition: color 0.12s, opacity 0.12s;
 }
@@ -249,7 +273,7 @@ a:hover {
   }
 }
 .mf-home .mf-trash-empty:hover {
-  color: #d64545;
+  color: var(--mf-danger);
 }
 
 /* M6: mobile nav drawer slide — the aside translates in from the left and the
@@ -315,7 +339,7 @@ a:hover {
   scrollbar-color: transparent transparent;
 }
 .mf-recent-scroll:hover {
-  scrollbar-color: #d9c8ba transparent;
+  scrollbar-color: var(--mf-scroll) transparent;
 }
 .mf-recent-scroll::-webkit-scrollbar {
   height: 5px;
@@ -325,7 +349,7 @@ a:hover {
   border-radius: 4px;
 }
 .mf-recent-scroll:hover::-webkit-scrollbar-thumb {
-  background: #d9c8ba;
+  background: var(--mf-scroll);
 }
 .mf-recent-scroll::-webkit-scrollbar-track {
   background: transparent;

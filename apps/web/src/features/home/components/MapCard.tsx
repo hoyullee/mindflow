@@ -88,7 +88,7 @@ export function MapCard({ card, controller, draggableEnabled, compact = false }:
   const cardStyle: CSSProperties = {
     border: card.selected ? '2px solid var(--mf-accent)' : '1px solid var(--mf-border)',
     borderRadius: compact ? 10 : 14,
-    background: grey ? '#fbf8f5' : '#fff',
+    background: grey ? 'var(--mf-panel-grey)' : 'var(--mf-panel)',
     // The card no longer clips (was `overflow: hidden`) — otherwise the open ☰
     // menu is cut off inside the card. The thumbnail keeps its own top-corner
     // clip below, and an open menu raises the card above its grid neighbours.
@@ -100,7 +100,7 @@ export function MapCard({ card, controller, draggableEnabled, compact = false }:
     opacity: card.dragging ? 0.45 : 1,
     boxShadow: card.selected ? '0 0 0 3px rgba(var(--mf-accent-rgb),.18)' : 'none',
     margin: card.selected ? -1 : 0,
-    color: grey ? '#b6a596' : '#33281f',
+    color: grey ? 'var(--mf-faint)' : 'var(--mf-text)',
     // 더블탭이 브라우저의 '두 번 눌러 확대' 제스처로 새지 않게 한다(스크롤·핀치는 유지).
     touchAction: 'manipulation',
   };
@@ -136,14 +136,14 @@ export function MapCard({ card, controller, draggableEnabled, compact = false }:
           width: 28,
           height: 28,
           borderRadius: '50%',
-          background: card.isFav ? '#fff' : 'rgba(255,255,255,.9)',
-          border: `1px solid ${card.isFav ? '#f0c24a' : 'var(--mf-border)'}`,
+          background: card.isFav ? 'var(--mf-panel)' : 'var(--mf-panel-veil)',
+          border: `1px solid ${card.isFav ? 'var(--mf-star)' : 'var(--mf-border)'}`,
           display: card.openable === false ? 'none' : 'flex',
           alignItems: 'center',
           justifyContent: 'center',
           fontSize: 15,
           lineHeight: 1,
-          color: card.isFav ? '#e0a53c' : '#b6a596',
+          color: card.isFav ? 'var(--mf-star)' : 'var(--mf-faint)',
           cursor: 'pointer',
           boxShadow: '0 2px 6px rgba(0,0,0,.12)',
           // Revealed on hover (see home.css), but also whenever the card is
@@ -158,7 +158,7 @@ export function MapCard({ card, controller, draggableEnabled, compact = false }:
 
 
       {!compact && (
-      <div onClick={stopPrevent} style={{ position: 'absolute', bottom: 44, right: 10, zIndex: 20, width: 150, background: '#fff', border: '1px solid var(--mf-border)', borderRadius: 10, boxShadow: '0 10px 28px rgba(0,0,0,.16)', padding: '5px 0', display: card.menuOpen ? 'block' : 'none' }}>
+      <div onClick={stopPrevent} style={{ position: 'absolute', bottom: 44, right: 10, zIndex: 20, width: 150, background: 'var(--mf-panel)', border: '1px solid var(--mf-border)', borderRadius: 10, boxShadow: '0 10px 28px rgba(0,0,0,.16)', padding: '5px 0', display: card.menuOpen ? 'block' : 'none' }}>
         <div style={{ display: card.exportOpen || card.moveOpen || card.spaceMoveOpen ? 'none' : 'block' }}>
           {card.showFavRow && (
             <div
@@ -169,9 +169,9 @@ export function MapCard({ card, controller, draggableEnabled, compact = false }:
                 controller.toggleFav(card.title, card.docId);
                 controller.closeMenu();
               }}
-              style={{ display: 'flex', alignItems: 'center', gap: 9, padding: '9px 13px', fontSize: 13, cursor: 'pointer', color: '#33281f' }}
+              style={{ display: 'flex', alignItems: 'center', gap: 9, padding: '9px 13px', fontSize: 13, cursor: 'pointer', color: 'var(--mf-text)' }}
             >
-              <span style={{ color: '#e0a53c' }}>★</span> {card.isFav ? '즐겨찾기 해제' : '즐겨찾기'}
+              <span style={{ color: 'var(--mf-star)' }}>★</span> {card.isFav ? '즐겨찾기 해제' : '즐겨찾기'}
             </div>
           )}
           {card.showFavRow && (
@@ -182,16 +182,16 @@ export function MapCard({ card, controller, draggableEnabled, compact = false }:
                 e.stopPropagation();
                 controller.setExportFor(card.key);
               }}
-              style={{ display: 'flex', alignItems: 'center', gap: 9, padding: '9px 13px', fontSize: 13, cursor: 'pointer', color: '#33281f' }}
+              style={{ display: 'flex', alignItems: 'center', gap: 9, padding: '9px 13px', fontSize: 13, cursor: 'pointer', color: 'var(--mf-text)' }}
             >
-              <span style={{ display: 'flex', color: '#7c6d60' }}>
+              <span style={{ display: 'flex', color: 'var(--mf-subtext)' }}>
                 <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                   <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
                   <polyline points="7 10 12 15 17 10" />
                   <line x1="12" y1="15" x2="12" y2="3" />
                 </svg>
               </span>{' '}
-              내보내기 <span style={{ marginLeft: 'auto', color: '#b6a596' }}>›</span>
+              내보내기 <span style={{ marginLeft: 'auto', color: 'var(--mf-faint)' }}>›</span>
             </div>
           )}
           {card.showMoveRow && (
@@ -202,9 +202,9 @@ export function MapCard({ card, controller, draggableEnabled, compact = false }:
                 e.stopPropagation();
                 controller.setMoveFor(card.key);
               }}
-              style={{ display: 'flex', alignItems: 'center', gap: 9, padding: '9px 13px', fontSize: 13, cursor: 'pointer', color: '#33281f' }}
+              style={{ display: 'flex', alignItems: 'center', gap: 9, padding: '9px 13px', fontSize: 13, cursor: 'pointer', color: 'var(--mf-text)' }}
             >
-              <span>📁</span> 폴더로 이동 <span style={{ marginLeft: 'auto', color: '#b6a596' }}>›</span>
+              <span>📁</span> 폴더로 이동 <span style={{ marginLeft: 'auto', color: 'var(--mf-faint)' }}>›</span>
             </div>
           )}
           {card.showSpaceMoveRow && (
@@ -215,9 +215,9 @@ export function MapCard({ card, controller, draggableEnabled, compact = false }:
                 e.stopPropagation();
                 controller.setMoveSpaceFor(card.key);
               }}
-              style={{ display: 'flex', alignItems: 'center', gap: 9, padding: '9px 13px', fontSize: 13, cursor: 'pointer', color: '#33281f' }}
+              style={{ display: 'flex', alignItems: 'center', gap: 9, padding: '9px 13px', fontSize: 13, cursor: 'pointer', color: 'var(--mf-text)' }}
             >
-              <span style={{ display: 'flex', color: '#7c6d60' }}>
+              <span style={{ display: 'flex', color: 'var(--mf-subtext)' }}>
                 <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                   <rect x="3" y="3" width="7" height="7" rx="1.5" />
                   <rect x="14" y="3" width="7" height="7" rx="1.5" />
@@ -225,7 +225,7 @@ export function MapCard({ card, controller, draggableEnabled, compact = false }:
                   <path d="M17.5 14v7M14 17.5h7" />
                 </svg>
               </span>{' '}
-              스페이스로 이동 <span style={{ marginLeft: 'auto', color: '#b6a596' }}>›</span>
+              스페이스로 이동 <span style={{ marginLeft: 'auto', color: 'var(--mf-faint)' }}>›</span>
             </div>
           )}
           {card.showUnfolderRow && (
@@ -236,9 +236,9 @@ export function MapCard({ card, controller, draggableEnabled, compact = false }:
                 e.stopPropagation();
                 controller.moveMapToFolder(card.key, null);
               }}
-              style={{ display: 'flex', alignItems: 'center', gap: 9, padding: '9px 13px', fontSize: 13, cursor: 'pointer', color: '#33281f' }}
+              style={{ display: 'flex', alignItems: 'center', gap: 9, padding: '9px 13px', fontSize: 13, cursor: 'pointer', color: 'var(--mf-text)' }}
             >
-              <span style={{ display: 'flex', color: '#7c6d60' }}>
+              <span style={{ display: 'flex', color: 'var(--mf-subtext)' }}>
                 <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                   <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z" />
                   <path d="M12 17v-6" />
@@ -256,7 +256,7 @@ export function MapCard({ card, controller, draggableEnabled, compact = false }:
               e.stopPropagation();
               controller.askDelete(card.title, card.docId);
             }}
-            style={{ display: 'flex', alignItems: 'center', gap: 9, padding: '9px 13px', fontSize: 13, cursor: 'pointer', color: '#d64545' }}
+            style={{ display: 'flex', alignItems: 'center', gap: 9, padding: '9px 13px', fontSize: 13, cursor: 'pointer', color: 'var(--mf-danger)' }}
           >
             <span style={{ display: 'flex' }}>
               <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
@@ -276,7 +276,7 @@ export function MapCard({ card, controller, draggableEnabled, compact = false }:
               e.stopPropagation();
               controller.setExportFor(null);
             }}
-            style={{ display: 'flex', alignItems: 'center', gap: 9, padding: '9px 13px', fontSize: 12.5, cursor: 'pointer', color: '#9c8b7e' }}
+            style={{ display: 'flex', alignItems: 'center', gap: 9, padding: '9px 13px', fontSize: 12.5, cursor: 'pointer', color: 'var(--mf-muted)' }}
           >
             ‹ 뒤로
           </div>
@@ -288,9 +288,9 @@ export function MapCard({ card, controller, draggableEnabled, compact = false }:
               e.stopPropagation();
               controller.exportMapPNG(card.title, card.docId);
             }}
-            style={{ display: 'flex', alignItems: 'center', gap: 9, padding: '9px 13px', fontSize: 13, cursor: 'pointer', color: '#33281f' }}
+            style={{ display: 'flex', alignItems: 'center', gap: 9, padding: '9px 13px', fontSize: 13, cursor: 'pointer', color: 'var(--mf-text)' }}
           >
-            <span style={{ display: 'flex', color: '#7c6d60' }}>
+            <span style={{ display: 'flex', color: 'var(--mf-subtext)' }}>
               <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                 <rect x="3" y="3" width="18" height="18" rx="2" />
                 <circle cx="8.5" cy="8.5" r="1.5" />
@@ -306,9 +306,9 @@ export function MapCard({ card, controller, draggableEnabled, compact = false }:
               e.stopPropagation();
               controller.exportMap(card.title, card.docId);
             }}
-            style={{ display: 'flex', alignItems: 'center', gap: 9, padding: '9px 13px', fontSize: 13, cursor: 'pointer', color: '#33281f' }}
+            style={{ display: 'flex', alignItems: 'center', gap: 9, padding: '9px 13px', fontSize: 13, cursor: 'pointer', color: 'var(--mf-text)' }}
           >
-            <span style={{ display: 'flex', color: '#7c6d60' }}>
+            <span style={{ display: 'flex', color: 'var(--mf-subtext)' }}>
               <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                 <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
                 <polyline points="14 2 14 8 20 8" />
@@ -323,9 +323,9 @@ export function MapCard({ card, controller, draggableEnabled, compact = false }:
               e.stopPropagation();
               controller.exportMapMarkdown(card.title, card.docId);
             }}
-            style={{ display: 'flex', alignItems: 'center', gap: 9, padding: '9px 13px', fontSize: 13, cursor: 'pointer', color: '#33281f' }}
+            style={{ display: 'flex', alignItems: 'center', gap: 9, padding: '9px 13px', fontSize: 13, cursor: 'pointer', color: 'var(--mf-text)' }}
           >
-            <span style={{ display: 'flex', color: '#7c6d60' }}>
+            <span style={{ display: 'flex', color: 'var(--mf-subtext)' }}>
               {/* 개요(불릿) 아이콘 — 목록 형태임을 보여 준다 */}
               <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                 <line x1="9" y1="6" x2="20" y2="6" />
@@ -348,7 +348,7 @@ export function MapCard({ card, controller, draggableEnabled, compact = false }:
               e.stopPropagation();
               controller.setMoveFor(null);
             }}
-            style={{ display: 'flex', alignItems: 'center', gap: 9, padding: '9px 13px', fontSize: 12.5, cursor: 'pointer', color: '#9c8b7e' }}
+            style={{ display: 'flex', alignItems: 'center', gap: 9, padding: '9px 13px', fontSize: 12.5, cursor: 'pointer', color: 'var(--mf-muted)' }}
           >
             ‹ 뒤로
           </div>
@@ -362,7 +362,7 @@ export function MapCard({ card, controller, draggableEnabled, compact = false }:
                 e.stopPropagation();
                 controller.moveMapToFolder(card.key, ft.id);
               }}
-              style={{ display: 'flex', alignItems: 'center', gap: 9, padding: '9px 13px', fontSize: 13, cursor: 'pointer', color: '#33281f', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}
+              style={{ display: 'flex', alignItems: 'center', gap: 9, padding: '9px 13px', fontSize: 13, cursor: 'pointer', color: 'var(--mf-text)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}
             >
               📁 {ft.name}
             </div>
@@ -377,7 +377,7 @@ export function MapCard({ card, controller, draggableEnabled, compact = false }:
               e.stopPropagation();
               controller.setMoveSpaceFor(null);
             }}
-            style={{ display: 'flex', alignItems: 'center', gap: 9, padding: '9px 13px', fontSize: 12.5, cursor: 'pointer', color: '#9c8b7e' }}
+            style={{ display: 'flex', alignItems: 'center', gap: 9, padding: '9px 13px', fontSize: 12.5, cursor: 'pointer', color: 'var(--mf-muted)' }}
           >
             ‹ 뒤로
           </div>
@@ -391,9 +391,9 @@ export function MapCard({ card, controller, draggableEnabled, compact = false }:
                 e.stopPropagation();
                 controller.moveMapToSpace(card.key, sp.id);
               }}
-              style={{ display: 'flex', alignItems: 'center', gap: 9, padding: '9px 13px', fontSize: 13, cursor: 'pointer', color: '#33281f', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}
+              style={{ display: 'flex', alignItems: 'center', gap: 9, padding: '9px 13px', fontSize: 13, cursor: 'pointer', color: 'var(--mf-text)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}
             >
-              <span style={{ display: 'flex', color: '#7c6d60', flexShrink: 0 }}>
+              <span style={{ display: 'flex', color: 'var(--mf-subtext)', flexShrink: 0 }}>
                 <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                   <rect x="3" y="3" width="7" height="7" rx="1.5" />
                   <rect x="14" y="3" width="7" height="7" rx="1.5" />
@@ -420,8 +420,8 @@ export function MapCard({ card, controller, draggableEnabled, compact = false }:
             gap: 4,
             padding: '3px 8px',
             borderRadius: 999,
-            background: card.openable ? 'rgba(52,168,83,.12)' : '#eeeae5',
-            color: card.openable ? '#1e7a3a' : '#b6a596',
+            background: card.openable ? 'rgba(52,168,83,.12)' : 'var(--mf-panel2)',
+            color: card.openable ? 'var(--mf-success-ink)' : 'var(--mf-faint)',
             fontSize: 11,
             fontWeight: 700,
           }}
@@ -434,7 +434,7 @@ export function MapCard({ card, controller, draggableEnabled, compact = false }:
         className="map-thumb"
         style={{
           height: compact ? 72 : 150,
-          background: grey ? '#f4f0eb' : `linear-gradient(135deg,#fdfbfa,${card.isDrive ? 'rgba(52,168,83,.07)' : 'rgba(0,0,0,.02)'})`,
+          background: grey ? 'var(--mf-panel2)' : `linear-gradient(135deg,var(--mf-panel),${card.isDrive ? 'rgba(52,168,83,.07)' : 'rgba(0,0,0,.02)'})`,
           borderBottom: '1px solid var(--mf-border-soft)',
           display: 'flex',
           alignItems: 'center',
@@ -495,13 +495,13 @@ export function MapCard({ card, controller, draggableEnabled, compact = false }:
             {card.pathLabel && card.spaceColor && (
               <span aria-hidden="true" style={{ width: 7, height: 7, borderRadius: 2.5, background: card.spaceColor, flexShrink: 0, boxShadow: 'inset 0 0 0 1px rgba(0,0,0,.18)' }} />
             )}
-            <span style={{ fontSize: 11, lineHeight: '14px', color: '#9c8b7e', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', minWidth: 0 }}>{card.pathLabel}</span>
+            <span style={{ fontSize: 11, lineHeight: '14px', color: 'var(--mf-muted)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', minWidth: 0 }}>{card.pathLabel}</span>
           </div>
         )}
         {/* 마지막 수정 시각 — 상대(7일 이내)/절대 혼합 표기, 전체 일시는 툴팁.
             시각 정보가 없는 카드(Drive 데모 등)는 줄 자체를 생략한다. */}
         {!compact && formatLastEdited(card.updatedAt) && (
-          <div title={formatFullDateTime(card.updatedAt)} style={{ fontSize: 12, color: '#9c8b7e' }}>
+          <div title={formatFullDateTime(card.updatedAt)} style={{ fontSize: 12, color: 'var(--mf-muted)' }}>
             수정일 · {formatLastEdited(card.updatedAt)}
           </div>
         )}
@@ -530,7 +530,7 @@ export function MapCard({ card, controller, draggableEnabled, compact = false }:
               justifyContent: 'center',
               fontSize: 15,
               lineHeight: 1,
-              color: '#7c6d60',
+              color: 'var(--mf-subtext)',
               cursor: 'pointer',
               // Revealed on hover (see home.css), but also when the menu is open
               // or the card is selected, so on touch (no hover) a selected map

@@ -7,13 +7,23 @@ interface LoadingOverlayProps {
    * overlay would let that insertion flash into view.
    */
   instant?: boolean;
+  /**
+   * 화면을 덮는 막의 색. 기본은 밝은 크림(로그인) — 홈은 자기 색상 테마를 넘겨
+   * 다크에서 밝은 막이 번쩍이지 않게 한다. 로더는 두 화면이 함께 쓰는 부품이라
+   * 홈의 CSS 변수를 여기서 직접 읽지 않는다(로그인까지 따라오면 안 된다).
+   */
+  veil?: string;
+  /** 막 위 글자색 — `veil`과 같은 이유로 프롭이다(다크 홈에서 어두운 막 위에
+   * 어두운 글자가 남지 않게). 로고 애니메이션은 브랜드 색이라 두 화면 공통. */
+  ink?: string;
+  subInk?: string;
 }
 
 /**
  * Ports the `<sc-if value="{{ loaderVisible }}">` block from Login.dc.html —
  * the mindmap "core + branches" loading animation.
  */
-export function LoadingOverlay({ message, instant = false }: LoadingOverlayProps) {
+export function LoadingOverlay({ message, instant = false, veil = 'rgba(251,246,242,.92)', ink = '#33281f', subInk = '#9c8b7e' }: LoadingOverlayProps) {
   return (
     <div
       role="status"
@@ -21,7 +31,7 @@ export function LoadingOverlay({ message, instant = false }: LoadingOverlayProps
       style={{
         position: 'fixed',
         inset: 0,
-        background: 'rgba(251,246,242,.92)',
+        background: veil,
         backdropFilter: 'blur(6px)',
         zIndex: 200,
         display: 'flex',
@@ -88,8 +98,8 @@ export function LoadingOverlay({ message, instant = false }: LoadingOverlayProps
           />
         ))}
       </div>
-      <div style={{ marginTop: 22, fontSize: 15, fontWeight: 700, color: '#33281f' }}>{message}</div>
-      <div style={{ marginTop: 6, fontSize: 12.5, color: '#9c8b7e' }}>잠시만 기다려 주세요</div>
+      <div style={{ marginTop: 22, fontSize: 15, fontWeight: 700, color: ink }}>{message}</div>
+      <div style={{ marginTop: 6, fontSize: 12.5, color: subInk }}>잠시만 기다려 주세요</div>
     </div>
   );
 }
