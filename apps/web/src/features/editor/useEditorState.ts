@@ -16,7 +16,7 @@ import { usePresence, type UsePresenceResult } from '../../collab/usePresence';
 import { EMPTY_PRESENCE_SELECTION, type PresenceSelection } from '../../collab/presence';
 import { CanvasTextMeasurer, computeMetrics, measureFloatHeight } from './metrics';
 import { attachImageFile, defaultFloatSize, firstImageFile, fitWithin } from './imageAttach';
-import { hasStoredDoc, loadOrSeedDoc, saveDoc } from './storage';
+import { hasPendingDoc, hasStoredDoc, loadOrSeedDoc, markDocPending, saveDoc } from './storage';
 import { newDocId, pushRecentEntry, rebindMovedDoc } from '../home/storage';
 import type { SpaceData } from '../home/types';
 import { isPanButton } from './pointerButtons';
@@ -755,7 +755,11 @@ export function useEditorState(): EditorController {
         const pristine = docSignature(docRef.current) === mountDocSigRef.current;
         if (res) {
           docVersionRef.current = res.version;
-          const adopt = docSignature(docRef.current) === mountDocSigRef.current && docSignature(res.doc) !== mountDocSigRef.current;
+          // 오프라인에서 쓴 사본이 아직 안 올라갔다면(`markDocPending`) 서버 판은
+          // **더 옛것**이다 — 채택하면 그 편집이 조용히 사라진다. 로컬을 지키고
+          // 아래에서 곧바로 올린다.
+          const localPending = hasPendingDoc(mapId);
+          const adopt = !localPending && docSignature(docRef.current) === mountDocSigRef.current && docSignature(res.doc) !== mountDocSigRef.current;
           if (adopt) {
             setDoc(res.doc);
             setEdgeStyleState((res.doc.edgeStyle as EdgeStyle | undefined) ?? 'curve');
@@ -781,17 +785,26 @@ export function useEditorState(): EditorController {
             });
             setHistoryTick((t) => t + 1);
           }
-          // Cache the backend truth locally: next open renders instantly (no
-          // empty-seed flash/race) AND it's a recovery copy if a write goes wrong.
-          try {
-            saveDoc(mapId, res.doc);
-          } catch {
-            /* storage unavailable — non-fatal */
+          if (localPending) {
+            // 못 올린 편집이 남아 있다 — 서버가 아는 판을 기준선으로 삼아 지금 올린다.
+            // (로컬 사본은 그대로 두고, 성공하면 `persistDoc`이 pending 표시를 지운다.)
+            lastSavedSigRef.current = docSignature(res.doc);
+            canPersistDocRef.current = true;
+            setSaveStateState('saving');
+            void persistDocRef.current();
+          } else {
+            // Cache the backend truth locally: next open renders instantly (no
+            // empty-seed flash/race) AND it's a recovery copy if a write goes wrong.
+            try {
+              saveDoc(mapId, res.doc);
+            } catch {
+              /* storage unavailable — non-fatal */
+            }
+            // The doc now mirrors the stored truth — clear a mount-time '저장 전'
+            // (backend doc opened on a fresh device). Skipped after a mid-load
+            // edit: the autosave flow already owns the chip then.
+            if (pristine) setSaveStateState('saved');
           }
-          // The doc now mirrors the stored truth — clear a mount-time '저장 전'
-          // (backend doc opened on a fresh device). Skipped after a mid-load
-          // edit: the autosave flow already owns the chip then.
-          if (pristine) setSaveStateState('saved');
         } else {
           docVersionRef.current = undefined; // confirmed brand-new map (no row yet)
         }
@@ -1994,6 +2007,7 @@ export function useEditorState(): EditorController {
       // Keep the local recovery copy in sync with every successful save.
       try {
         saveDoc(mapId, docRef.current);
+        markDocPending(mapId, false); // 서버와 같아졌다 — 못 올린 편집 표시를 지운다
       } catch {
         /* storage unavailable — non-fatal */
       }
@@ -2024,11 +2038,34 @@ export function useEditorState(): EditorController {
       await moveToFreshIdRef.current(title);
       return;
     } else {
+      // 저장 실패(오프라인·일시 오류) — 이 기기에는 남긴다. 다음에 열 때 서버의 옛
+      // 판에 덮이지 않도록 '아직 못 올림' 표시를 함께 남긴다(로드 분기의 `localPending`).
+      try {
+        saveDoc(mapId, docRef.current);
+        markDocPending(mapId, true);
+      } catch {
+        /* storage unavailable — non-fatal */
+      }
       setSaveStateState('dirty'); // keep dirty so the next autosave/Ctrl+S tick retries
       return;
     }
     }
   }, [docStore, docStoreId, titleParam, mapId]);
+
+  /** 다시 온라인이 되면 못 올린 편집을 바로 올린다 — 편집을 멈춘 채 연결이 돌아오면
+   * 다음 자동저장 계기(=다음 편집)가 없어 영영 대기 상태로 남았다. */
+  useEffect(() => {
+    const onOnline = (): void => {
+      if (!canPersistDocRef.current || readOnlyRef.current) return;
+      const sig = docSignature(docRef.current);
+      if (sig === lastSavedSigRef.current) return; // 올릴 게 없다
+      if (sig === remoteSigRef.current) return; // 상대가 만든 상태 — 그쪽이 저장한다(#320)
+      setSaveStateState('saving');
+      void persistDoc();
+    };
+    window.addEventListener('online', onOnline);
+    return () => window.removeEventListener('online', onOnline);
+  }, [persistDoc]);
   // Render-synced bridge for the initial-load effect's brand-new seed save
   // (declared up there, before this callback exists).
   persistDocRef.current = persistDoc;
