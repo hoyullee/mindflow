@@ -20,6 +20,8 @@ import type { DocMeta, DocStore, LoadedDoc, SaveOptions, SaveResult } from '../p
 import { readPreviewBody, writePreviewBody } from '../previewBodyCache';
 
 const TABLE = 'documents';
+/** `list()`가 읽는 칼럼(0015의 `updated_by` 제외 — 그건 아래에서 따로 붙인다). */
+const LIST_COLS = 'id,title,version,updated_at,is_favorite,deleted_at,owner';
 
 interface DocumentRow {
   id: string;
@@ -39,13 +41,24 @@ export class SupabaseDocStore implements DocStore {
   async list(): Promise<DocMeta[]> {
     // 내 uid는 세션에서 온다(supabase-js가 캐시한다). 못 알아내면 모두 내 것으로
     // 본다 — 공유 이전과 같은 동작이라 최악이라도 예전 상태로 퇴화할 뿐이다.
-    const [{ data, error }, { data: userData }] = await Promise.all([
-      this.client.from(TABLE).select('id,title,version,updated_at,is_favorite,deleted_at,owner,updated_by').order('updated_at', { ascending: false }),
+    const [listed, { data: userData }] = await Promise.all([
+      this.client.from(TABLE).select(`${LIST_COLS},updated_by`).order('updated_at', { ascending: false }),
       this.client.auth.getUser(),
     ]);
+    let data: DocumentRow[] | null = (listed.data as DocumentRow[] | null) ?? null;
+    let error = listed.error;
+    // `updated_by`(0015)가 아직 없는 서버 — 마이그레이션이 앱 배포보다 늦으면 이
+    // 칼럼 하나 때문에 **목록 전체가 실패**해 홈이 텅 비어 보인다. 칼럼 없이 한 번 더
+    // 읽어 예전과 같은 화면을 유지한다(이름만 안 보인다 — 배포 순서 안전).
+    if (error && /updated_by/.test(error.message)) {
+      const retry = await this.client.from(TABLE).select(LIST_COLS).order('updated_at', { ascending: false });
+      data = (retry.data as DocumentRow[] | null) ?? null;
+      error = retry.error;
+      if (!error) console.warn('[geurio] documents.updated_by 없음 — 마지막 수정자 표시 생략(마이그레이션 0015 대기)');
+    }
     if (error) throw new Error(error.message);
     const myId = userData?.user?.id ?? null;
-    return ((data ?? []) as DocumentRow[]).map((row) => ({
+    return (data ?? []).map((row) => ({
       id: row.id,
       title: row.title ?? '(제목 없음)',
       version: row.version,
@@ -65,7 +78,12 @@ export class SupabaseDocStore implements DocStore {
     const { data, error } = await this.client.rpc('document_editors', { doc_ids: docIds });
     // RPC 미배포(함수 없음)·일시 오류는 조용히 비운다 — 이름은 부가 정보라
     // 하나 못 읽었다고 홈 로드를 실패시킬 이유가 없다(썸네일 RPC와 같은 태도).
-    if (error) return {};
+    // 다만 콘솔에는 남긴다: "이름이 안 보인다"가 **조회 실패** 때문인지 **보여 줄
+    // 이름이 없어서**인지 구분할 방법이 없으면 제보를 받아도 원인을 못 찾는다.
+    if (error) {
+      console.warn('[geurio] document_editors RPC 실패 — 마지막 수정자 표시 생략:', error.message);
+      return {};
+    }
     const out: Record<string, string> = {};
     for (const row of (data ?? []) as { document_id: string; display_name: string | null }[]) {
       const name = (row.display_name ?? '').trim();
