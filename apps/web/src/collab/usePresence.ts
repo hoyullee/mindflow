@@ -15,6 +15,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { Awareness } from 'y-protocols/awareness';
+import { removeAwarenessStates } from 'y-protocols/awareness';
 import { colorForSeed, nameForSeed } from './identity';
 import { EMPTY_PRESENCE_SELECTION, type PresenceCursor, type PresenceSelection, type PresenceState, type PresenceUser, type RemotePeer } from './presence';
 
@@ -120,6 +121,37 @@ export function usePresence(awareness: Awareness | null, authedEmail?: string | 
     if (!awareness) return;
     awareness.setLocalStateField('user', localUser);
   }, [awareness, localUser]);
+
+  /**
+   * 탭이 닫히면 **즉시** 떠났다고 알린다.
+   *
+   * 왜: awareness는 소식이 끊긴 상대를 30초 뒤에야 정리한다(`outdatedTimeout`).
+   * 그래서 하드 클로즈한 탭이 접속자 목록에 30초간 유령으로 남고, 더 중요하게는
+   * "상대가 저장하기 전에 떠났으면 남은 쪽이 저장을 인수한다"는 안전망
+   * (`useEditorState`)이 그만큼 늦게 돈다(실측 32초).
+   *
+   * 문서 동기화는 건드리지 않는다 — awareness의 내 상태만 지운다. bfcache에서
+   * 되살아난 탭은 `pageshow`에서 정체성을 다시 심어 접속자 목록에 복귀한다
+   * (커서·선택은 다음 움직임에 다시 실린다).
+   */
+  useEffect(() => {
+    if (!awareness) return;
+    const onHide = (): void => {
+      // origin은 **반드시 'local'** — 전송(provider)들은 그 리터럴이 붙은 것만
+      // 밖으로 내보낸다(자기가 네트워크에서 적용한 업데이트가 되돌아 나가지 않게).
+      // 다른 문자열을 주면 상태는 지워지지만 상대에게는 알려지지 않는다.
+      removeAwarenessStates(awareness, [awareness.clientID], 'local');
+    };
+    const onShow = (): void => {
+      awareness.setLocalStateField('user', localUserRef.current);
+    };
+    window.addEventListener('pagehide', onHide);
+    window.addEventListener('pageshow', onShow);
+    return () => {
+      window.removeEventListener('pagehide', onHide);
+      window.removeEventListener('pageshow', onShow);
+    };
+  }, [awareness]);
 
   const cursorThrottleRef = useRef<{ lastSentAt: number; timer: ReturnType<typeof setTimeout> | undefined; pending: PresenceCursor | null }>({
     lastSentAt: 0,
