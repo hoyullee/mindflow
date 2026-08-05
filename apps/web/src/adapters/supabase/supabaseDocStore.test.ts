@@ -81,9 +81,9 @@ describe('SupabaseDocStore', () => {
     const metas = await store.list();
 
     expect(from).toHaveBeenCalledWith('documents');
-    expect(query.calls[0]).toEqual({ method: 'select', args: ['id,title,version,updated_at,is_favorite,deleted_at,owner'] });
+    expect(query.calls[0]).toEqual({ method: 'select', args: ['id,title,version,updated_at,is_favorite,deleted_at,owner,updated_by'] });
     expect(query.calls[1]).toEqual({ method: 'order', args: ['updated_at', { ascending: false }] });
-    expect(metas).toEqual([{ id: 'd1', title: 'A', version: 3, updatedAt: '2026-01-01T00:00:00Z', isFavorite: true, deletedAt: null, ownedByMe: true }]);
+    expect(metas).toEqual([{ id: 'd1', title: 'A', version: 3, updatedAt: '2026-01-01T00:00:00Z', isFavorite: true, deletedAt: null, ownedByMe: true, editedByMe: undefined }]);
   });
 
   // 공유(0009) 이후 `list()`는 남이 나에게 공유한 문서까지 돌려준다 — 홈이 그것을
@@ -107,6 +107,43 @@ describe('SupabaseDocStore', () => {
     const client = { from: vi.fn(() => query), auth: { getUser: vi.fn(async () => ({ data: { user: null }, error: null })) } } as unknown as import('@supabase/supabase-js').SupabaseClient;
     const metas = await new SupabaseDocStore(client).list();
     expect(metas[0]?.ownedByMe).toBe(true);
+  });
+
+  // 0015: 마지막으로 **저장한** 사람. 홈 카드는 그게 내가 아닐 때만 이름을 붙인다.
+  it('list() marks who saved last — only "not me" is actionable', async () => {
+    const rows = [
+      { id: 'mine', title: 'A', version: 1, updated_at: '2026-01-02T00:00:00Z', is_favorite: false, deleted_at: null, owner: 'me', updated_by: 'me' },
+      { id: 'theirs', title: 'B', version: 1, updated_at: '2026-01-01T00:00:00Z', is_favorite: false, deleted_at: null, owner: 'me', updated_by: 'someone-else' },
+      { id: 'legacy', title: 'C', version: 1, updated_at: '2026-01-01T00:00:00Z', is_favorite: false, deleted_at: null, owner: 'me', updated_by: null },
+    ];
+    const { client } = fakeClient({ data: rows, error: null }, 'me');
+    const metas = await new SupabaseDocStore(client).list();
+    expect(metas.map((m) => [m.id, m.editedByMe])).toEqual([
+      ['mine', true],
+      ['theirs', false],
+      ['legacy', undefined], // 0015 이전 행 — 판단하지 않는다(카드에 이름 없음)
+    ]);
+  });
+
+  it('listEditorNames() calls the document_editors RPC and maps rows', async () => {
+    const rpc = vi.fn(async () => ({ data: [{ document_id: 'd1', display_name: '홍길동' }, { document_id: 'd2', display_name: '  ' }], error: null }));
+    const client = { from: vi.fn(), auth: { getUser: vi.fn() }, rpc } as unknown as import('@supabase/supabase-js').SupabaseClient;
+    const names = await new SupabaseDocStore(client).listEditorNames(['d1', 'd2']);
+    expect(rpc).toHaveBeenCalledWith('document_editors', { doc_ids: ['d1', 'd2'] });
+    expect(names).toEqual({ d1: '홍길동' }); // 빈 이름은 키를 만들지 않는다
+  });
+
+  it('listEditorNames() stays silent when the RPC is missing or errors (배포 순서 안전)', async () => {
+    const rpc = vi.fn(async () => ({ data: null, error: { message: 'function public.document_editors does not exist' } }));
+    const client = { from: vi.fn(), auth: { getUser: vi.fn() }, rpc } as unknown as import('@supabase/supabase-js').SupabaseClient;
+    await expect(new SupabaseDocStore(client).listEditorNames(['d1'])).resolves.toEqual({});
+  });
+
+  it('listEditorNames() skips the round trip for an empty list', async () => {
+    const rpc = vi.fn();
+    const client = { from: vi.fn(), auth: { getUser: vi.fn() }, rpc } as unknown as import('@supabase/supabase-js').SupabaseClient;
+    await expect(new SupabaseDocStore(client).listEditorNames([])).resolves.toEqual({});
+    expect(rpc).not.toHaveBeenCalled();
   });
 
   it('list() throws when the query errors', async () => {

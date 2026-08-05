@@ -97,6 +97,11 @@ function listDocIds(): string[] {
  * (`adapters/factory.ts`) whenever Supabase env vars aren't configured.
  */
 export class LocalDocStore implements DocStore {
+  /** 데모(로컬) 모드에는 계정이 하나뿐이라 "남이 마지막으로 저장했다"가 성립하지 않는다. */
+  async listEditorNames(): Promise<Record<string, string>> {
+    return {};
+  }
+
   async list(): Promise<DocMeta[]> {
     const ids = listDocIds();
     const out: DocMeta[] = [];

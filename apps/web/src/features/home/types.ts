@@ -158,6 +158,9 @@ export interface HomeState {
   moveSpaceFor: string | null;
   exportFor: string | null;
   selectedCard: string | null;
+  /** 문서별 **마지막으로 저장한 사람**의 표시 이름(docId → 이름). 마지막 저장자가
+   * 나이거나 알 수 없으면 키가 없다 — 그때 카드는 이름을 붙이지 않는다(0015). */
+  editorNames: Record<string, string>;
   draggingMap: string | null;
   dragOverFolder: string | null;
 
@@ -288,6 +291,7 @@ export function initialHomeState(): HomeState {
     moveSpaceFor: null,
     exportFor: null,
     selectedCard: null,
+    editorNames: {},
     draggingMap: null,
     dragOverFolder: null,
 

@@ -38,6 +38,7 @@ function renderHome() {
  * test seeds it with; the mutating methods are spies so tests can assert
  * they were (or weren't) called, without touching real storage. */
 class MockDocStore implements DocStore {
+  listEditorNames = vi.fn(async (): Promise<Record<string, string>> => ({}));
   setFavorite = vi.fn(async (): Promise<void> => undefined);
   remove = vi.fn(async (): Promise<void> => undefined);
   restore = vi.fn(async (): Promise<void> => undefined);
@@ -260,6 +261,7 @@ describe('Home', () => {
       restore: vi.fn(async () => undefined),
       purge: vi.fn(async () => undefined),
       rename: vi.fn(async () => undefined),
+      listEditorNames: vi.fn(async () => ({})),
       save: vi.fn(async (): Promise<SaveResult> => ({ ok: true, version: 1 })),
     };
     const backend: Backend = { auth: new LocalAuth(), docStore, spaceStore: new LocalSpaceStore(), shareStore: new LocalShareStore(), feedbackStore: new LocalFeedbackStore(), mode: 'local' };
@@ -404,6 +406,7 @@ describe('Home', () => {
       restore: vi.fn(async () => undefined),
       purge: vi.fn(async () => undefined),
       rename: vi.fn(async () => undefined),
+      listEditorNames: vi.fn(async () => ({})),
       save: vi.fn(async (): Promise<SaveResult> => ({ ok: true, version: 1 })),
     };
     const backend: Backend = { auth: new LocalAuth(), docStore, spaceStore: new LocalSpaceStore(), shareStore: new LocalShareStore(), feedbackStore: new LocalFeedbackStore(), mode: 'local' };
@@ -448,6 +451,7 @@ describe('Home', () => {
       restore: vi.fn(async () => undefined),
       purge: vi.fn(async () => undefined),
       rename: vi.fn(async () => undefined),
+      listEditorNames: vi.fn(async () => ({})),
       save: vi.fn(async (): Promise<SaveResult> => ({ ok: true, version: 1 })),
     };
     const backend: Backend = { auth: new LocalAuth(), docStore, spaceStore: new LocalSpaceStore(), shareStore: new LocalShareStore(), feedbackStore: new LocalFeedbackStore(), mode: 'local' };
@@ -2387,6 +2391,7 @@ describe('Home', () => {
           await loadGate.promise;
           return id === docId ? JSON.stringify(body.doc) : null;
         },
+        listEditorNames: vi.fn(async () => ({})),
         save: vi.fn(async () => ({ ok: true, version: 1 })),
         setFavorite: vi.fn(async () => undefined),
         remove: vi.fn(async () => undefined),
@@ -2427,6 +2432,51 @@ describe('Home', () => {
         expect(thumb().querySelector('.mf-skel')).toBeNull(); // skeleton cleared
       });
     });
+  });
+});
+
+// 0015: 마지막으로 저장한 사람 — 공동 편집이 실사용에 들어가면서 "이 맵을 마지막으로
+// 건드린 사람이 누구인가"가 정보가 됐다. 단, 그게 **나**면 아무 정보도 아니다.
+describe('맵 카드의 마지막 수정자', () => {
+  function renderWith(metas: DocMeta[], names: Record<string, string>) {
+    const docStore = new MockDocStore(metas);
+    docStore.listEditorNames = vi.fn(async () => names);
+    const backend: Backend = { auth: new LocalAuth(), docStore, spaceStore: new LocalSpaceStore(), shareStore: new LocalShareStore(), feedbackStore: new LocalFeedbackStore(), mode: 'supabase' };
+    const utils = render(
+      <MemoryRouter initialEntries={['/home']}>
+        <BackendProvider backend={backend}>
+          <Routes>
+            <Route path="/home" element={<Home />} />
+          </Routes>
+        </BackendProvider>
+      </MemoryRouter>,
+    );
+    return { ...utils, docStore };
+  }
+
+  const meta = (id: string, title: string, editedByMe?: boolean): DocMeta => ({
+    id,
+    title,
+    version: 1,
+    updatedAt: new Date().toISOString(),
+    isFavorite: false,
+    deletedAt: null,
+    editedByMe,
+  });
+
+  it('남이 마지막으로 저장했으면 카드에 이름이 붙는다', async () => {
+    const { docStore } = renderWith([meta('d-them', '같이 쓰는 맵', false)], { 'd-them': '홍길동' });
+    await waitFor(() => expect(screen.getByText('같이 쓰는 맵')).toBeTruthy());
+    await waitFor(() => expect(screen.getByText(/수정일 · .* · 홍길동/)).toBeTruthy());
+    expect(docStore.listEditorNames).toHaveBeenCalledWith(['d-them']);
+  });
+
+  it('내가 마지막으로 저장했으면 이름을 묻지도, 붙이지도 않는다', async () => {
+    const { docStore } = renderWith([meta('d-mine', '내 맵', true), meta('d-old', '옛 맵', undefined)], {});
+    await waitFor(() => expect(screen.getByText('내 맵')).toBeTruthy());
+    expect(screen.queryByText(/수정일 · .* · /)).toBeNull();
+    // 대상이 하나도 없으면 요청 자체가 나가지 않는다(혼자 쓰는 사람은 왕복 0회).
+    expect(docStore.listEditorNames).not.toHaveBeenCalled();
   });
 });
 
