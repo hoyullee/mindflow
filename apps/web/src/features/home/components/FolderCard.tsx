@@ -1,6 +1,8 @@
-import type { DragEvent } from 'react';
+import type { DragEvent, MouseEvent } from 'react';
 import type { HomeController } from '../useHomeController';
 import type { FolderCardViewData } from '../viewModel';
+import { folderCardKey } from '../viewModel';
+import { useCardActivation } from './useCardActivation';
 
 interface Props {
   folder: FolderCardViewData;
@@ -9,6 +11,9 @@ interface Props {
 
 /** Home.dc.html:229-243 / driveFolderCards — a folder tile (local space or Google Drive). */
 export function FolderCard({ folder, controller }: Props) {
+  // 맵 카드와 같은 규칙 — 한 번 = 선택 / 두 번 = 진입(사용자 요청). 폴더만 한 번에
+  // 들어가면 같은 그리드 안에서 카드마다 클릭의 뜻이 달라진다.
+  const activation = useCardActivation();
   const onDragOver = (e: DragEvent<HTMLDivElement>) => {
     e.preventDefault();
     e.dataTransfer.dropEffect = 'move';
@@ -21,22 +26,40 @@ export function FolderCard({ folder, controller }: Props) {
     if (t) controller.moveMapToFolder(t, folder.id);
     controller.clearDrag();
   };
-  const onOpen = () => (folder.isDrive ? controller.openDriveFolder(folder.id) : controller.openFolder(folder.id));
+  const enter = () => (folder.isDrive ? controller.openDriveFolder(folder.id) : controller.openFolder(folder.id));
+  const onClick = (e: MouseEvent<HTMLDivElement>) => {
+    const target = e.target as HTMLElement;
+    if (target.closest && target.closest('.menu-btn,.menu-row')) return;
+    if (activation.click() === 'activate') {
+      enter();
+      return;
+    }
+    controller.selectCard(folderCardKey(folder.id)); // 선택 → ☰ 메뉴가 이 폴더의 것으로 드러난다
+  };
+  const onDoubleClick = (e: MouseEvent<HTMLDivElement>) => {
+    const target = e.target as HTMLElement;
+    if (target.closest && target.closest('.menu-btn,.menu-row')) return;
+    if (!activation.acceptDoubleClick()) return;
+    enter();
+  };
 
   return (
     <div
       className="map-card"
       role="button"
       tabIndex={0}
-      onClick={onOpen}
+      onClick={onClick}
+      onDoubleClick={onDoubleClick}
       onKeyDown={(e) => {
-        if (e.key === 'Enter' || e.key === ' ') onOpen();
+        // 키보드는 Enter/Space 한 번으로 진입한다 — 포인터의 "두 번"에 대응하는
+        // 관용구가 없고, 접근성 관점에서도 활성화 키는 곧 실행이다.
+        if (e.key === 'Enter' || e.key === ' ') enter();
       }}
       onDragOver={onDragOver}
       onDragLeave={onDragLeave}
       onDrop={onDrop}
       style={{
-        border: folder.dragOver ? '2px dashed var(--mf-accent)' : '1px solid var(--mf-border)',
+        border: folder.dragOver ? '2px dashed var(--mf-accent)' : folder.selected ? '2px solid var(--mf-accent)' : '1px solid var(--mf-border)',
         borderRadius: 14,
         background: folder.dragOver ? 'var(--mf-accent-soft)' : 'var(--mf-panel)',
         cursor: 'pointer',
@@ -45,8 +68,9 @@ export function FolderCard({ folder, controller }: Props) {
         display: 'flex',
         alignItems: 'center',
         gap: 14,
-        padding: folder.dragOver ? '17px 17px' : '18px 18px',
-        boxShadow: folder.dragOver ? '0 6px 18px rgba(var(--mf-accent-rgb),.18)' : 'none',
+        // 2px 테두리가 되는 상태(드롭 대기·선택)에선 패딩을 1px 줄여 카드 크기를 지킨다.
+        padding: folder.dragOver || folder.selected ? '17px 17px' : '18px 18px',
+        boxShadow: folder.dragOver ? '0 6px 18px rgba(var(--mf-accent-rgb),.18)' : folder.selected ? '0 0 0 3px rgba(var(--mf-accent-rgb),.18)' : 'none',
       }}
     >
       <div
@@ -56,7 +80,7 @@ export function FolderCard({ folder, controller }: Props) {
         onClick={(e) => {
           e.preventDefault();
           e.stopPropagation();
-          controller.toggleMenu('folder:' + folder.id);
+          controller.toggleMenu(folderCardKey(folder.id));
         }}
         title="메뉴"
         aria-label="메뉴"
