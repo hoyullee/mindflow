@@ -571,3 +571,12 @@ M5/M5-awareness가 Yjs 동기화와 커서 공유를 붙였지만, **`documents`
   한 번 저장되기 전까지 이름이 표시되지 않고, RPC가 아직 없는 서버에서는 어댑터가
   조용히 `{}`로 떨어집니다(순서에 안전 — 이름만 안 보입니다).
 - **확인 SQL**(Studio): `select id, title, updated_at, updated_by from documents order by updated_at desc limit 20;`
+- **검증**: 트리거와 RPC는 로컬 Postgres에 0001/0009/0010/0015를 실제로 적용해 확인했습니다
+  (`auth.uid()`/`auth.jwt()`를 GUC로 대체한 하네스). 기대 동작 네 가지가 그대로 나옵니다 —
+  ① insert 시 만든 사람으로 스탬프, ② 공유받은 편집자의 update 시 그 사람으로 바뀜,
+  ③ 소유자가 물으면 편집자의 프로필명이 나옴, ④ **자기 자신·제3자에게는 아무 행도 없음**.
+- **이름이 안 보일 때 어디를 보나**: 브라우저 콘솔.
+  `[geurio] document_editors RPC 실패` = 조회 자체가 실패(정책/미배포),
+  `[geurio] documents.updated_by 없음` = 마이그레이션 대기,
+  둘 다 없으면 **보여 줄 이름이 없는 것**(마지막 저장자가 나이거나 `updated_by`가 아직 빈 옛 행).
+  옛 문서는 0015 적용 후 **한 번 저장되면** 그때부터 이름이 붙습니다.

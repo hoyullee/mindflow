@@ -125,6 +125,28 @@ describe('SupabaseDocStore', () => {
     ]);
   });
 
+  // 마이그레이션(0015)이 앱 배포보다 늦으면 `updated_by` 칼럼이 없어 select 전체가
+  // 실패한다 — 그 하나 때문에 홈 목록이 텅 비면 안 된다.
+  it('list() falls back to the pre-0015 columns when `updated_by` does not exist yet', async () => {
+    const rows = [{ id: 'd1', title: 'A', version: 1, updated_at: '2026-01-01T00:00:00Z', is_favorite: false, deleted_at: null, owner: 'me' }];
+    let call = 0;
+    const from = vi.fn(() => {
+      call += 1;
+      return call === 1
+        ? new FakeQuery({ data: null, error: { message: 'column documents.updated_by does not exist' } })
+        : new FakeQuery({ data: rows, error: null });
+    });
+    const client = { from, auth: { getUser: vi.fn(async () => ({ data: { user: { id: 'me' } }, error: null })) } } as unknown as import('@supabase/supabase-js').SupabaseClient;
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => undefined);
+
+    const metas = await new SupabaseDocStore(client).list();
+
+    expect(metas.map((m) => [m.id, m.ownedByMe, m.editedByMe])).toEqual([['d1', true, undefined]]);
+    expect(from).toHaveBeenCalledTimes(2); // 칼럼 있는 select → 실패 → 없이 재시도
+    expect(warn).toHaveBeenCalled();
+    warn.mockRestore();
+  });
+
   it('listEditorNames() calls the document_editors RPC and maps rows', async () => {
     const rpc = vi.fn(async () => ({ data: [{ document_id: 'd1', display_name: '홍길동' }, { document_id: 'd2', display_name: '  ' }], error: null }));
     const client = { from: vi.fn(), auth: { getUser: vi.fn() }, rpc } as unknown as import('@supabase/supabase-js').SupabaseClient;
@@ -136,7 +158,11 @@ describe('SupabaseDocStore', () => {
   it('listEditorNames() stays silent when the RPC is missing or errors (배포 순서 안전)', async () => {
     const rpc = vi.fn(async () => ({ data: null, error: { message: 'function public.document_editors does not exist' } }));
     const client = { from: vi.fn(), auth: { getUser: vi.fn() }, rpc } as unknown as import('@supabase/supabase-js').SupabaseClient;
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => undefined);
     await expect(new SupabaseDocStore(client).listEditorNames(['d1'])).resolves.toEqual({});
+    // 조용히 비우되 콘솔에는 남는다 — "이름이 안 보인다"의 원인을 구분할 수 있게.
+    expect(warn).toHaveBeenCalled();
+    warn.mockRestore();
   });
 
   it('listEditorNames() skips the round trip for an empty list', async () => {

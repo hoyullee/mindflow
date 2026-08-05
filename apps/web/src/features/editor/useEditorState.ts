@@ -2059,6 +2059,49 @@ export function useEditorState(): EditorController {
     }, 200);
   }, [persistDoc]);
 
+  /**
+   * **닫기·전환 직전 강제 저장.** 자동저장은 0.9초 뒤에 도는데, 그 사이에 탭을 닫으면
+   * 마지막 편집이 아무 곳에도 남지 않았다(단독 사용도 마찬가지 — 협업 수리(#320)의
+   * 남은 한계로 적어 뒀던 것).
+   *
+   * 두 신호를 쓴다:
+   * - `visibilitychange`(hidden): 탭 전환·최소화·닫기 시작 시점. **페이지가 아직
+   *   살아 있어** 평범한 네트워크 저장이 끝까지 간다 — 실제 저장은 여기서 일어난다.
+   * - `pagehide`: 마지막 순간. 네트워크 요청은 끊길 수 있으므로 **동기 localStorage
+   *   복구본**을 먼저 남기고(항상 성공한다) 서버 저장도 한 번 던진다.
+   *
+   * 상대가 만든 상태(`remoteSigRef`)는 여기서도 저장하지 않는다 — 저장은 편집한
+   * 쪽 책임이고(#320), 탭 전환마다 남의 편집을 내 이름으로 저장하면 카드의 수정자가
+   * 틀린다.
+   */
+  const flushOnHide = useCallback(() => {
+    if (!canPersistDocRef.current || readOnlyRef.current) return;
+    const sig = docSignature(docRef.current);
+    if (sig === lastSavedSigRef.current) return; // 저장할 게 없다
+    if (sig === remoteSigRef.current) return; // 상대가 만든 상태 — 그쪽이 저장한다
+    // 예약된 자동저장은 취소한다(같은 내용을 두 번 쓰지 않게).
+    window.clearTimeout(autosaveTimerRef.current);
+    window.clearTimeout(savingTimerRef.current);
+    try {
+      saveDoc(mapId, docRef.current); // 동기 — 네트워크가 끊겨도 이 기기엔 남는다
+    } catch {
+      /* storage unavailable — non-fatal */
+    }
+    void persistDoc();
+  }, [persistDoc, mapId]);
+
+  useEffect(() => {
+    const onVisibility = (): void => {
+      if (document.visibilityState === 'hidden') flushOnHide();
+    };
+    document.addEventListener('visibilitychange', onVisibility);
+    window.addEventListener('pagehide', flushOnHide);
+    return () => {
+      document.removeEventListener('visibilitychange', onVisibility);
+      window.removeEventListener('pagehide', flushOnHide);
+    };
+  }, [flushOnHide]);
+
   /** 버전 기록의 스냅샷을 현재 문서로 복원한다(`versionHistory.ts`). undo 가능한
    * 커밋이고, 복원 직전의 현재 상태를 **강제 스냅샷**으로 먼저 남겨 돌아올 길을
    * 보장한다. 이후 자동저장이 복원본을 저장한다. */

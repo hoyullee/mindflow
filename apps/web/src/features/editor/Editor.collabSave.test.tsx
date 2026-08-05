@@ -168,6 +168,67 @@ describe('협업 중 저장 책임', () => {
   });
 });
 
+describe('닫기·전환 직전 강제 저장', () => {
+  /** 탭이 숨는 순간(전환·최소화·닫기 시작)을 흉내 낸다. */
+  function hide() {
+    Object.defineProperty(document, 'visibilityState', { value: 'hidden', configurable: true });
+    document.dispatchEvent(new Event('visibilitychange'));
+  }
+  function show() {
+    Object.defineProperty(document, 'visibilityState', { value: 'visible', configurable: true });
+  }
+
+  afterEach(show);
+
+  it('자동저장(0.9초)을 기다리지 않고, 숨는 순간 내 편집을 저장한다', async () => {
+    const docId = `hide-save-${Math.random()}`;
+    localStorage.setItem(`mindflow_doc_${docId}`, JSON.stringify(DOC));
+    const { backend, save } = makeBackend();
+    const { container } = renderEditor(backend, docId);
+    const vp = getViewport(container);
+    await waitFor(() => expect(within(vp).getByText('리서치')).toBeTruthy());
+    save.mockClear();
+
+    // 편집하고 **곧바로** 숨는다(자동저장 타이머가 돌기 전).
+    fireEvent.pointerDown(within(vp).getByText('리서치'), { button: 0, clientX: 10, clientY: 10 });
+    fireEvent.pointerUp(within(vp).getByText('리서치'), { button: 0, clientX: 10, clientY: 10 });
+    fireEvent.keyDown(window, { key: 'Tab' });
+    hide();
+
+    await waitFor(() => expect(save).toHaveBeenCalled(), { timeout: 1000 });
+  });
+
+  it('저장할 게 없으면 아무것도 쓰지 않는다', async () => {
+    const docId = `hide-clean-${Math.random()}`;
+    localStorage.setItem(`mindflow_doc_${docId}`, JSON.stringify(DOC));
+    const { backend, save } = makeBackend();
+    const { container } = renderEditor(backend, docId);
+    await waitFor(() => expect(within(getViewport(container)).getByText('리서치')).toBeTruthy());
+    save.mockClear();
+
+    hide();
+    await new Promise((r) => setTimeout(r, 300));
+    expect(save).not.toHaveBeenCalled();
+  });
+
+  it('상대가 만든 상태는 숨을 때도 내가 저장하지 않는다 (수정자 이름이 틀리지 않게)', async () => {
+    const docId = `hide-remote-${Math.random()}`;
+    localStorage.setItem(`mindflow_doc_${docId}`, JSON.stringify(DOC));
+    const { backend, save } = makeBackend();
+    const { container } = renderEditor(backend, docId);
+    await waitFor(() => expect(within(getViewport(container)).getByText('리서치')).toBeTruthy());
+    save.mockClear();
+
+    const { ydoc } = await joinPeer(docId);
+    peerAddsNode(ydoc, 'remoteChild', '원격 노드');
+    await waitFor(() => expect(within(getViewport(container)).getByText('원격 노드')).toBeTruthy());
+
+    hide();
+    await new Promise((r) => setTimeout(r, 300));
+    expect(save).not.toHaveBeenCalled();
+  });
+});
+
 describe('탭을 닫으면 즉시 떠났다고 알린다', () => {
   it('pagehide에서 내 awareness 상태를 지운다 (30초 타임아웃을 기다리지 않게)', async () => {
     const docId = `leave-${Math.random()}`;
