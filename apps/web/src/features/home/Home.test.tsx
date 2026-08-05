@@ -1432,6 +1432,49 @@ describe('Home', () => {
     await waitFor(() => expect(container.querySelector('.mf-map-grid a[data-title="폴더 속 맵"]')).toBeTruthy());
   });
 
+  it('폴더에 들어간 직후 그 자리의 맵을 한 번 눌러도 열리지 않는다 (제보: 빠른 연속 클릭)', async () => {
+    const user = userEvent.setup();
+    localStorage.setItem(
+      'mf_spaces',
+      JSON.stringify({
+        v: 1,
+        spaces: [
+          {
+            id: 'general',
+            name: '일반 스페이스',
+            home: true,
+            color: '#f0663f',
+            folders: [{ id: 'f1', name: '기획' }],
+            maps: [{ title: '폴더 속 맵', when: '내 맵', hue: '#f0663f', docId: 'doc-in' }],
+          },
+        ],
+        mapFolders: { 'doc-in': 'f1' },
+        recent: [],
+      }),
+    );
+    const { container } = renderHomeWithDocStore([
+      { id: 'doc-in', title: '폴더 속 맵', version: 1, updatedAt: '2026-01-01T00:00:00.000Z', isFavorite: false, deletedAt: null },
+    ]);
+
+    await user.click(await screen.findByText('기획')); // 폴더 진입(한 번 클릭)
+    const card = (await waitFor(() => container.querySelector('.mf-map-grid a[data-title="폴더 속 맵"]'))) as HTMLElement;
+
+    // 폴더 진입 클릭에 이어 카드를 **한 번** 클릭 — 크롬은 같은 지점·시간이면 이
+    // 클릭에 dblclick까지 얹어 준다(폴더 카드가 있던 자리에 맵 카드가 그려졌으므로).
+    fireEvent.click(card);
+    fireEvent.doubleClick(card);
+    // 열기는 로더를 거쳐 0.9초 뒤에 이동하므로, "안 열렸다"는 URL이 아니라 **로더가
+    // 뜨지 않았다**로 본다(즉시 판정 + 대기 시간에 기대지 않는다).
+    expect(screen.queryByText('맵을 불러오고 있어요')).toBeNull();
+
+    // 사용자가 진짜로 이 카드를 두 번 누르면 열린다.
+    fireEvent.click(card);
+    fireEvent.click(card);
+    fireEvent.doubleClick(card);
+    expect(screen.getByText('맵을 불러오고 있어요')).toBeTruthy();
+    await waitFor(() => expect(screen.getByText('EDITOR_PLACEHOLDER')).toBeTruthy(), { timeout: 3000 });
+  });
+
   it('permanently deletes a single trash entry via 영구 삭제 (confirm-gated, backend purge)', async () => {
     const user = userEvent.setup();
     localStorage.setItem('mf_recent', JSON.stringify(['영구삭제 맵']));
