@@ -46,7 +46,7 @@ export function DeleteAccountModal({ state, controller }: Props) {
           placeholder="탈퇴"
           aria-label="탈퇴 확인 입력"
           autoComplete="off"
-          style={{ width: '100%', height: 42, border: `1px solid ${armed ? '#d64545' : '#ecdfd5'}`, borderRadius: 11, background: '#fff', color: '#33281f', fontFamily: 'inherit', fontSize: 14, fontWeight: 600, padding: '0 12px', outline: 'none', boxSizing: 'border-box', marginBottom: state.deleteAccountError ? 8 : 20 }}
+          style={{ width: '100%', height: 42, border: `1px solid ${armed ? '#d64545' : 'var(--mf-border)'}`, borderRadius: 11, background: '#fff', color: '#33281f', fontFamily: 'inherit', fontSize: 14, fontWeight: 600, padding: '0 12px', outline: 'none', boxSizing: 'border-box', marginBottom: state.deleteAccountError ? 8 : 20 }}
         />
 
         {state.deleteAccountError && (
@@ -54,7 +54,7 @@ export function DeleteAccountModal({ state, controller }: Props) {
         )}
 
         <div style={{ display: 'flex', gap: 10 }}>
-          <button className="btn" onClick={controller.cancelDeleteAccount} style={{ flex: 1, height: 42, border: '1px solid #ecdfd5', borderRadius: 11, background: '#fff', color: '#33281f', fontFamily: 'inherit', fontSize: 14, fontWeight: 600, cursor: 'pointer' }}>
+          <button className="btn" onClick={controller.cancelDeleteAccount} style={{ flex: 1, height: 42, border: '1px solid var(--mf-border)', borderRadius: 11, background: '#fff', color: '#33281f', fontFamily: 'inherit', fontSize: 14, fontWeight: 600, cursor: 'pointer' }}>
             취소
           </button>
           <button

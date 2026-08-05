@@ -5,6 +5,7 @@ import type { Doc } from '@mindflow/mindmap-core';
 import { parseDoc, serializeDoc, toMarkdown } from '@mindflow/mindmap-core';
 import { exportDocPng } from '../editor/png';
 import { themeOf } from '../editor/theme';
+import { applyHomeTheme, homeThemeKeyOf, saveHomeThemeCache, type HomeThemeKey } from './theme';
 import { useBackend } from '../../adapters/BackendContext';
 import {
   DRIVE_FILES,
@@ -129,6 +130,13 @@ export function useHomeController() {
     // 로컬/데모 모드에서는 그 id의 문서가 곧 이 카드의 본문이므로 그대로 묶는다
     // (`planImportBinding`의 `adoptExisting` 참고).
     const binding = wsBase ? planImportBinding(wsBase, metas, backendMode === 'local') : [];
+    // 홈 색상 테마의 정본은 이 블롭이다(기기 간 동기화). 저장된 값이 있으면 곧바로
+    // 입히고 이 기기 캐시도 맞춰 둔다 — 다음 부팅의 첫 페인트가 바로 이 색이 되도록.
+    const wsTheme = ws && ws.theme !== undefined ? homeThemeKeyOf(ws.theme) : null;
+    if (wsTheme) {
+      applyHomeTheme(wsTheme);
+      saveHomeThemeCache(wsTheme);
+    }
     setState((prev) => {
       let base = wsBase ?? prev.spaces;
       let mapFolders = prev.mapFolders;
@@ -223,17 +231,19 @@ export function useHomeController() {
       // 안 그러면 저장 효과가 "바뀐 게 없다"고 보고 지나쳐 docId가 영속되지 않는다.
       // 그러면 업로드가 성공한 다음 진입에서는 백엔드에 행이 있어 묶기 조건이 깨지고,
       // 카드는 영원히 docId 없는 상태로 남는다.)
+      const theme = wsTheme ?? prev.theme;
       savedWorkspaceSigRef.current = JSON.stringify({
         spaces: binding.length ? merged : spaces,
         mapFolders: mfMigration.changed ? mfBeforeMigration : mapFolders,
         recent: recentMigration.changed ? recentBeforeMigration : recent,
+        theme,
       });
       // Always flip `loaded` so the grid drops its loading skeleton and
       // renders the real (possibly empty) state.
       // 카드의 "마지막 수정" 표기 원천 — 휴지통 문서 메타까지 포함해 통째로
       // 갱신한다 (복원 직후에도 카드에 시각이 바로 뜨도록). timeFormat.ts 참고.
       const docTimes = Object.fromEntries(allMetas.map((m) => [m.id, m.updatedAt]));
-      return { ...prev, spaces, activeSpace, curFolder, mapFolders, favs, deleted, trash, recent, docTimes, sharedMaps: sharedMetas.map((m) => ({ docId: m.id, title: m.title, updatedAt: m.updatedAt, role: m.sharedRole ?? 'edit' })), loaded: true };
+      return { ...prev, theme, spaces, activeSpace, curFolder, mapFolders, favs, deleted, trash, recent, docTimes, sharedMaps: sharedMetas.map((m) => ({ docId: m.id, title: m.title, updatedAt: m.updatedAt, role: m.sharedRole ?? 'edit' })), loaded: true };
     });
     // ② 묶은 카드의 본문을 올린다. `createOnly`라 이미 있으면 아무것도 하지 않는다
     // (다른 기기가 올린 문서를 덮지 않는다). 실패는 조용히 넘긴다 — 다음 진입에서
@@ -444,7 +454,7 @@ export function useHomeController() {
   // can't race a pending timer — space/folder edits are deliberate and infrequent.
   useEffect(() => {
     if (!state.loaded || !canPersistWorkspaceRef.current) return;
-    const sig = JSON.stringify({ spaces: state.spaces, mapFolders: state.mapFolders, recent: state.recent });
+    const sig = JSON.stringify({ spaces: state.spaces, mapFolders: state.mapFolders, recent: state.recent, theme: state.theme });
     if (sig === savedWorkspaceSigRef.current) return;
     savedWorkspaceSigRef.current = sig;
     // A genuine user change is being persisted — from here on the auth-confirmed
@@ -452,10 +462,10 @@ export function useHomeController() {
     workspaceMutatedRef.current = true;
     // `recent` rides along in the same per-user blob (opening a map bumps it), so
     // the recent-items list syncs across devices just like spaces/folders do.
-    void spaceStore.save({ spaces: state.spaces, mapFolders: state.mapFolders, recent: state.recent }).catch(() => {
+    void spaceStore.save({ spaces: state.spaces, mapFolders: state.mapFolders, recent: state.recent, theme: state.theme }).catch(() => {
       /* save failed (offline, RLS, ...) — non-fatal; the next change retries */
     });
-  }, [state.loaded, state.spaces, state.mapFolders, state.recent, spaceStore]);
+  }, [state.loaded, state.spaces, state.mapFolders, state.recent, state.theme, spaceStore]);
 
   // ---- drive (fake OAuth demo) ----
   const onDriveClick = () => patch({ activeSpace: 'drive', curFolder: null, driveFolder: null });
@@ -509,6 +519,15 @@ export function useHomeController() {
 
   // ---- account settings / 회원 탈퇴 ----
   const openAccountSettings = () => patch({ settingsOpen: false, accountSettingsOpen: true });
+  /** 홈 색상 테마 선택. 색은 CSS 변수라 **즉시** 반영하고(상태 반영을 기다리지 않는다
+   * — 고르는 즉시 화면이 바뀌는 게 이 기능의 전부다), 이 기기 캐시에 적어 다음 부팅의
+   * 첫 페인트를 맞추며, 상태 변경이 저장 효과를 태워 워크스페이스에 동기화된다. */
+  const setTheme = (key: HomeThemeKey) => {
+    applyHomeTheme(key);
+    saveHomeThemeCache(key);
+    patch({ theme: key });
+  };
+
   const openFeedback = () => patch({ settingsOpen: false, feedbackOpen: true });
   const closeFeedback = () => patch({ feedbackOpen: false });
   const closeAccountSettings = () => patch({ accountSettingsOpen: false });
@@ -1372,6 +1391,7 @@ export function useHomeController() {
     openAccountSettings,
     openFeedback,
     closeFeedback,
+    setTheme,
     closeAccountSettings,
     askDeleteAccount,
     cancelDeleteAccount,

@@ -28,7 +28,7 @@ export function NewSpaceModal({ state, controller }: Props) {
           maxLength={10}
           placeholder="예: 팀 프로젝트 (최대 10자)"
           aria-label="스페이스 이름"
-          style={{ width: '100%', height: 44, border: '1px solid #ecdfd5', borderRadius: 11, background: '#faf3ee', color: '#33281f', fontFamily: 'inherit', fontSize: 14, padding: '0 13px', outline: 'none', boxSizing: 'border-box', marginBottom: 16 }}
+          style={{ width: '100%', height: 44, border: '1px solid var(--mf-border)', borderRadius: 11, background: 'var(--mf-panel2)', color: '#33281f', fontFamily: 'inherit', fontSize: 14, padding: '0 13px', outline: 'none', boxSizing: 'border-box', marginBottom: 16 }}
         />
 
         <div style={{ fontSize: 12.5, fontWeight: 600, marginBottom: 8 }}>색상</div>
@@ -41,20 +41,20 @@ export function NewSpaceModal({ state, controller }: Props) {
                 onClick={() => controller.pickSpaceColor(c)}
                 aria-label={`색상 ${c}`}
                 aria-pressed={sel}
-                style={{ width: 30, height: 30, borderRadius: '50%', background: c, border: sel ? '2px solid #33281f' : '2px solid #fff', boxShadow: sel ? `0 0 0 2px ${c}` : '0 0 0 1px #ecdfd5', cursor: 'pointer', padding: 0 }}
+                style={{ width: 30, height: 30, borderRadius: '50%', background: c, border: sel ? '2px solid #33281f' : '2px solid #fff', boxShadow: sel ? `0 0 0 2px ${c}` : '0 0 0 1px var(--mf-border)', cursor: 'pointer', padding: 0 }}
               />
             );
           })}
         </div>
 
         <div style={{ display: 'flex', gap: 10 }}>
-          <button className="btn" onClick={controller.closeNewSpace} style={{ flex: 1, height: 44, border: '1px solid #ecdfd5', borderRadius: 11, background: '#fff', color: '#33281f', fontFamily: 'inherit', fontSize: 14, fontWeight: 600, cursor: 'pointer' }}>
+          <button className="btn" onClick={controller.closeNewSpace} style={{ flex: 1, height: 44, border: '1px solid var(--mf-border)', borderRadius: 11, background: '#fff', color: '#33281f', fontFamily: 'inherit', fontSize: 14, fontWeight: 600, cursor: 'pointer' }}>
             취소
           </button>
           <button
             className="btn"
             onClick={controller.submitSpace}
-            style={{ flex: 1, height: 44, border: 'none', borderRadius: 11, background: canSubmit ? '#f0663f' : '#e7d6ca', color: '#fff', fontFamily: 'inherit', fontSize: 14, fontWeight: 700, cursor: canSubmit ? 'pointer' : 'default' }}
+            style={{ flex: 1, height: 44, border: 'none', borderRadius: 11, background: canSubmit ? 'var(--mf-accent)' : 'var(--mf-accent-mute)', color: '#fff', fontFamily: 'inherit', fontSize: 14, fontWeight: 700, cursor: canSubmit ? 'pointer' : 'default' }}
           >
             {editing ? '변경' : '만들기'}
           </button>

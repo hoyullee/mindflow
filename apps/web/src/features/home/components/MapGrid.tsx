@@ -18,7 +18,7 @@ const GRID_STYLE = { gap: 20 } as const;
  * two title lines), shown while the map list loads. */
 function SkeletonCard() {
   return (
-    <div style={{ border: '1px solid #efe6dd', borderRadius: 16, background: '#fff', overflow: 'hidden' }}>
+    <div style={{ border: '1px solid var(--mf-border-soft)', borderRadius: 16, background: '#fff', overflow: 'hidden' }}>
       <div className="mf-skel" style={{ height: 132, borderRadius: 0 }} />
       <div style={{ padding: '13px 15px 16px' }}>
         <div className="mf-skel" style={{ height: 13, width: '62%', borderRadius: 6, marginBottom: 9 }} />
@@ -51,7 +51,7 @@ export function MapGrid({ view, controller }: Props) {
               <FolderCard key={f.id} folder={f} controller={controller} />
             ))}
           </div>
-          <div style={{ height: 1, background: '#ecdfd5', margin: '0 0 26px' }} />
+          <div style={{ height: 1, background: 'var(--mf-border)', margin: '0 0 26px' }} />
         </div>
       )}
 
@@ -71,8 +71,8 @@ export function MapGrid({ view, controller }: Props) {
 
       {view.folderEmpty && (
         <div style={{ display: 'flex', flex: '1 1 auto', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', minHeight: 0, padding: 20 }}>
-          <div style={{ width: 88, height: 88, borderRadius: 24, background: '#fdeee7', display: 'flex', alignItems: 'center', justifyContent: 'center', marginBottom: 20 }}>
-            <svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="#f0663f" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round">
+          <div style={{ width: 88, height: 88, borderRadius: 24, background: 'var(--mf-accent-soft)', color: 'var(--mf-accent)', display: 'flex', alignItems: 'center', justifyContent: 'center', marginBottom: 20 }}>
+            <svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round">
               <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z" />
             </svg>
           </div>
@@ -89,11 +89,11 @@ export function MapGrid({ view, controller }: Props) {
           {/* Mindmap glyph (SVG) instead of the 🗺️ emoji — matches the line-icon
               style of the sibling empty states (folder / Drive) so the empty
               screen reads as one design instead of an out-of-place emoji. */}
-          <div style={{ width: 88, height: 88, borderRadius: 24, background: '#fdeee7', display: 'flex', alignItems: 'center', justifyContent: 'center', marginBottom: 20 }}>
-            <svg width="42" height="42" viewBox="0 0 24 24" fill="none" stroke="#f0663f" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+          <div style={{ width: 88, height: 88, borderRadius: 24, background: 'var(--mf-accent-soft)', color: 'var(--mf-accent)', display: 'flex', alignItems: 'center', justifyContent: 'center', marginBottom: 20 }}>
+            <svg width="42" height="42" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
               <path d="M7.3 11.2C10 9.8 12.4 8.2 15.4 7" />
               <path d="M7.3 12.8C10 14.2 12.4 15.8 15.4 17" />
-              <circle cx="5" cy="12" r="2.7" fill="#f0663f" stroke="none" />
+              <circle cx="5" cy="12" r="2.7" fill="currentColor" stroke="none" />
               <circle cx="17.6" cy="6.4" r="2.4" />
               <circle cx="17.6" cy="17.6" r="2.4" />
             </svg>
@@ -110,7 +110,7 @@ export function MapGrid({ view, controller }: Props) {
               controller.onNewMapClick(e.currentTarget.getAttribute('href') || controller.newMapHref());
             }}
             className="btn"
-            style={{ height: 52, padding: '0 30px', borderRadius: 14, background: '#f0663f', color: '#fff', fontFamily: 'inherit', fontSize: 16, fontWeight: 700, cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 9, boxShadow: '0 8px 22px rgba(240,102,63,.32)' }}
+            style={{ height: 52, padding: '0 30px', borderRadius: 14, background: 'var(--mf-accent)', color: '#fff', fontFamily: 'inherit', fontSize: 16, fontWeight: 700, cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 9, boxShadow: '0 8px 22px rgba(var(--mf-accent-rgb),.32)' }}
           >
             ＋ 새로 만들기
           </a>
@@ -137,7 +137,7 @@ export function MapGrid({ view, controller }: Props) {
           <button
             className="btn"
             onClick={controller.openDriveAuth}
-            style={{ height: 50, padding: '0 24px', border: '1px solid #ecdfd5', borderRadius: 13, background: '#fff', color: '#33281f', fontFamily: 'inherit', fontSize: 15, fontWeight: 600, cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 10, boxShadow: '0 4px 14px rgba(0,0,0,.06)', whiteSpace: 'nowrap' }}
+            style={{ height: 50, padding: '0 24px', border: '1px solid var(--mf-border)', borderRadius: 13, background: '#fff', color: '#33281f', fontFamily: 'inherit', fontSize: 15, fontWeight: 600, cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 10, boxShadow: '0 4px 14px rgba(0,0,0,.06)', whiteSpace: 'nowrap' }}
           >
             <svg width="19" height="19" viewBox="0 0 48 48">
               <path fill="#EA4335" d="M24 9.5c3.54 0 6.71 1.22 9.21 3.6l6.85-6.85C35.9 2.38 30.47 0 24 0 14.62 0 6.51 5.38 2.56 13.22l7.98 6.19C12.43 13.72 17.74 9.5 24 9.5z" />

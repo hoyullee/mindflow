@@ -36,17 +36,17 @@ export function ProfileNameModal({ state, controller }: Props) {
           maxLength={20}
           placeholder="예: 홍길동 (최대 20자)"
           aria-label="프로필명"
-          style={{ width: '100%', height: 44, border: '1px solid #ecdfd5', borderRadius: 11, background: '#faf3ee', color: '#33281f', fontFamily: 'inherit', fontSize: 14, padding: '0 13px', outline: 'none', boxSizing: 'border-box', marginBottom: 24 }}
+          style={{ width: '100%', height: 44, border: '1px solid var(--mf-border)', borderRadius: 11, background: 'var(--mf-panel2)', color: '#33281f', fontFamily: 'inherit', fontSize: 14, padding: '0 13px', outline: 'none', boxSizing: 'border-box', marginBottom: 24 }}
         />
 
         <div style={{ display: 'flex', gap: 10 }}>
-          <button className="btn" onClick={controller.cancelProfileName} style={{ flex: 1, height: 44, border: '1px solid #ecdfd5', borderRadius: 11, background: '#fff', color: '#33281f', fontFamily: 'inherit', fontSize: 14, fontWeight: 600, cursor: 'pointer' }}>
+          <button className="btn" onClick={controller.cancelProfileName} style={{ flex: 1, height: 44, border: '1px solid var(--mf-border)', borderRadius: 11, background: '#fff', color: '#33281f', fontFamily: 'inherit', fontSize: 14, fontWeight: 600, cursor: 'pointer' }}>
             취소
           </button>
           <button
             className="btn"
             onClick={controller.submitProfileName}
-            style={{ flex: 1, height: 44, border: 'none', borderRadius: 11, background: canSubmit ? '#f0663f' : '#e7d6ca', color: '#fff', fontFamily: 'inherit', fontSize: 14, fontWeight: 700, cursor: canSubmit ? 'pointer' : 'default' }}
+            style={{ flex: 1, height: 44, border: 'none', borderRadius: 11, background: canSubmit ? 'var(--mf-accent)' : 'var(--mf-accent-mute)', color: '#fff', fontFamily: 'inherit', fontSize: 14, fontWeight: 700, cursor: canSubmit ? 'pointer' : 'default' }}
           >
             변경
           </button>

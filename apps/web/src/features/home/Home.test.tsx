@@ -10,6 +10,7 @@ import { LocalSpaceStore } from '../../adapters/local/localSpaceStore';
 import { LocalShareStore } from '../../adapters/local/localShareStore';
 import { LocalFeedbackStore } from '../../adapters/local/localFeedbackStore';
 import { mapId } from './storage';
+import { HOME_THEMES } from './theme';
 import type { Backend, DocMeta, DocStore, LoadedDoc, SaveResult, SpaceStore, WorkspaceData } from '../../adapters/ports';
 
 afterEach(() => {
@@ -1387,8 +1388,9 @@ describe('Home', () => {
 
     // selecting A must not select B (title-keyed state used to light up both)
     await user.click(cardA!);
-    expect(cardA!.style.border).toContain('rgb(240, 102, 63)');
-    expect(cardB!.style.border).not.toContain('rgb(240, 102, 63)');
+    // 선택 표시는 강조색 — 색상 테마(#41) 이후 값은 CSS 변수다(테마마다 색이 다르다).
+    expect(cardA!.style.border).toContain('var(--mf-accent)');
+    expect(cardB!.style.border).not.toContain('var(--mf-accent)');
 
     // opening A's ☰ menu must not open B's (the popover is the 150px-wide
     // container whose display flips with card.menuOpen)
@@ -2347,5 +2349,60 @@ describe('피드백 보내기 (홈 진입점)', () => {
     expect(await screen.findByText('전달됐어요, 고마워요!')).toBeTruthy();
     const saved = JSON.parse(localStorage.getItem('mf_feedback')!) as Array<Record<string, unknown>>;
     expect(saved[0]).toMatchObject({ page: 'home', message: '홈에서 보냄' });
+  });
+});
+
+// 홈 색상 테마 — LNB 최하단에서 고르고, 워크스페이스 블롭으로 기기 간에 따라온다.
+describe('홈 색상 테마', () => {
+  it('LNB에서 테마를 고르면 즉시 색이 바뀌고, 캐시·워크스페이스에 저장된다', async () => {
+    const user = userEvent.setup();
+    renderHome();
+
+    await user.click(await screen.findByRole('button', { name: '색상 테마' }));
+    const ocean = screen.getByRole('radio', { name: '오션 테마' });
+    expect(screen.getByRole('radio', { name: '코랄 테마' }).getAttribute('aria-checked')).toBe('true');
+
+    await user.click(ocean);
+
+    // ① 화면 색이 바로 바뀐다(CSS 변수) ② 이 기기 캐시 ③ 워크스페이스(정본)
+    expect(document.documentElement.style.getPropertyValue('--mf-accent')).toBe(HOME_THEMES.ocean.accent);
+    expect(localStorage.getItem('mf_home_theme')).toBe('ocean');
+    expect(ocean.getAttribute('aria-checked')).toBe('true');
+    await waitFor(() => {
+      const ws = JSON.parse(localStorage.getItem('mf_spaces')!) as { theme?: string };
+      expect(ws.theme).toBe('ocean');
+    });
+  });
+
+  it('저장된 워크스페이스의 테마를 불러와 입힌다 (다른 기기에서 고른 색)', async () => {
+    localStorage.setItem('mf_spaces', JSON.stringify({ spaces: [{ id: 'sa', name: '내 스페이스', home: true, color: '#f0663f', maps: [] }], mapFolders: {}, theme: 'forest' }));
+    renderHome();
+    await waitFor(() => expect(document.documentElement.style.getPropertyValue('--mf-accent')).toBe(HOME_THEMES.forest.accent));
+    expect(localStorage.getItem('mf_home_theme')).toBe('forest'); // 다음 부팅 첫 페인트용
+  });
+
+  it('테마를 고르지 않았으면 저장된 워크스페이스를 다시 쓰지 않는다 (불러온 그대로면 무저장)', async () => {
+    const saved: WorkspaceData[] = [];
+    const spaceStore: SpaceStore = {
+      load: async () => ({ spaces: [{ id: 'sa', name: '내 스페이스', home: true, color: '#f0663f', maps: [] }], mapFolders: {}, recent: [], theme: 'grape' }),
+      save: async (d) => {
+        saved.push(d);
+      },
+    };
+    const backend: Backend = { auth: new LocalAuth(), docStore: new MockDocStore([]), spaceStore, shareStore: new LocalShareStore(), feedbackStore: new LocalFeedbackStore(), mode: 'local' };
+    render(
+      <MemoryRouter initialEntries={['/home']}>
+        <BackendProvider backend={backend}>
+          <Routes>
+            <Route path="/home" element={<Home />} />
+          </Routes>
+        </BackendProvider>
+      </MemoryRouter>,
+    );
+    await waitFor(() => expect(document.documentElement.style.getPropertyValue('--mf-accent')).toBe(HOME_THEMES.grape.accent));
+    await act(async () => {
+      await Promise.resolve();
+    });
+    expect(saved).toEqual([]);
   });
 });
