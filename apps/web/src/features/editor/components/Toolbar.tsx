@@ -3,7 +3,7 @@ import type { EditorController } from '../useEditorState';
 import { StyleMenu } from './StyleMenu';
 import { ExportMenu } from './ExportMenu';
 import { AnchoredMenu } from './AnchoredMenu';
-import { EditMenu, InsertMenu, ViewMenu, MoreMenu } from './ToolbarMenus';
+import { EditMenu, InsertMenu, ViewMenu, MoreMenu, ShareGlyph } from './ToolbarMenus';
 import { useIsMobile } from '../../../hooks/useMediaQuery';
 import { BrandMark } from '../../../components/BrandMark';
 
@@ -200,35 +200,38 @@ export function Toolbar({ controller }: ToolbarProps) {
       </button>
 
       {/* 공유 — 메뉴가 아니라 바로 열리는 버튼이다(초대는 한 단계로 끝나는 동작이라
-          플라이아웃을 한 겹 더 씌울 이유가 없다). 모바일에서도 남긴다: 협업이
-          이 화면의 목적 중 하나이고 44px 터치 타겟으로 들어간다. */}
-      <button
-        type="button"
-        className="mf-ed-btn"
-        onClick={controller.openShare}
-        title="공유"
-        aria-label="공유"
-        style={{
-          display: 'flex',
-          alignItems: 'center',
-          gap: 6,
-          height: isMobile ? 44 : 34,
-          padding: isMobile ? '0 12px' : '0 11px',
-          marginRight: 6,
-          border: `1px solid ${th.border}`,
-          borderRadius: 9,
-          background: th.panel,
-          color: th.text,
-          fontFamily: 'inherit',
-          fontSize: 13,
-          fontWeight: 600,
-          cursor: 'pointer',
-          flexShrink: 0,
-        }}
-      >
-        <ShareGlyph />
-        {!isMobile && '공유'}
-      </button>
+          플라이아웃을 한 겹 더 씌울 이유가 없다). 모바일에서는 ☰(MoreMenu) 항목으로
+          접었다(요청) — 좁은 바에서 아이콘만 남은 버튼이라 뜻이 약했고, 자리를
+          비운 만큼 남은 버튼들의 44px 터치 타겟이 여유로워진다. */}
+      {!isMobile && (
+        <button
+          type="button"
+          className="mf-ed-btn"
+          onClick={controller.openShare}
+          title="공유"
+          aria-label="공유"
+          style={{
+            display: 'flex',
+            alignItems: 'center',
+            gap: 6,
+            height: 34,
+            padding: '0 11px',
+            marginRight: 6,
+            border: `1px solid ${th.border}`,
+            borderRadius: 9,
+            background: th.panel,
+            color: th.text,
+            fontFamily: 'inherit',
+            fontSize: 13,
+            fontWeight: 600,
+            cursor: 'pointer',
+            flexShrink: 0,
+          }}
+        >
+          <ShareGlyph />
+          공유
+        </button>
+      )}
       {isMobile ? (
         /* Mobile: one ☰ button on the right holds 보기 + 내보내기 (see `MoreMenu`),
            so the bar fits without a horizontal scroll. */
@@ -346,17 +349,6 @@ function EyeGlyph() {
 }
 
 /** 공유 글리프 — 사람 + 더하기(초대). */
-function ShareGlyph() {
-  return (
-    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-      <path d="M15 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2" />
-      <circle cx="8.5" cy="7" r="4" />
-      <line x1="19" y1="8" x2="19" y2="14" />
-      <line x1="16" y1="11" x2="22" y2="11" />
-    </svg>
-  );
-}
-
 function ExportGlyph() {
   return (
     <svg width={15} height={15} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2.2} strokeLinecap="round" strokeLinejoin="round">

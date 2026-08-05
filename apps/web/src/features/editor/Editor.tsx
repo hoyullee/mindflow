@@ -143,8 +143,11 @@ export function Editor() {
                 close control below).
                 ⋯ 메뉴가 열려 있을 때는 바를 **그대로 둔다** — 메뉴가 바에 꼬리로
                 붙어 "바에서 파생된" 것으로 읽혀야 하므로. 반면 길게 누르기로 연
-                메뉴(anchor 없음)는 손가락 위치에 뜨므로 바를 숨겨 겹침을 피한다. */}
-            {isMobile && !controller.readOnly && controller.selection && !controller.propsOpen && (!controller.ctxMenu || !!controller.ctxMenu.anchor) && (
+                메뉴(anchor 없음)는 손가락 위치에 뜨므로 바를 숨겨 겹침을 피한다.
+                텍스트 편집 중에도 숨긴다(요청) — 그때는 서식 툴바가 상시 떠 있어
+                두 개의 떠 있는 도구 모음이 좁은 화면에서 겹치고, 이 바의 동작
+                (하위/형제/삭제)은 편집을 끝낸 뒤에야 뜻이 통한다. */}
+            {isMobile && !controller.readOnly && controller.selection && !controller.propsOpen && !controller.editingNodeId && !controller.editingFloatId && (!controller.ctxMenu || !!controller.ctxMenu.anchor) && (
               <MobileSelectBar controller={controller} theme={th} />
             )}
             {/* Close handle for the mobile property sheet — dismisses it WITHOUT

@@ -215,6 +215,11 @@ export function MoreMenu({ controller, onDone, isMobile }: { controller: EditorC
   const th = controller.uiTheme;
   return (
     <MenuShell theme={th}>
+      {/* 공유 — 데스크톱은 GNB의 독립 버튼이지만 모바일은 이 메뉴가 진입점이다(요청).
+          맨 위에 두는 이유: 이 메뉴에서 유일하게 "다른 사람"과 얽히는 항목이라
+          보기/내보내기 묶음과 성격이 다르다. */}
+      <MenuItem theme={th} isMobile={isMobile} icon={<ShareGlyph />} label="공유" onClick={() => { controller.openShare(); onDone(); }} />
+      <MenuDivider theme={th} />
       <MenuSectionLabel theme={th}>보기</MenuSectionLabel>
       <MenuItem theme={th} isMobile={isMobile} icon={<MapIcon />} label="맵" active={controller.view === 'map'} onClick={() => { controller.setView('map'); onDone(); }} />
       <MenuItem theme={th} isMobile={isMobile} icon={<OutlineIcon />} label="아웃라인" active={controller.view === 'outline'} onClick={() => { controller.setView('outline'); onDone(); }} />
@@ -239,6 +244,17 @@ export function HistoryIcon() {
       <path d="M3 12a9 9 0 1 0 3-6.7L3 8" />
       <polyline points="3 3 3 8 8 8" />
       <polyline points="12 7 12 12 15.5 14" />
+    </svg>
+  );
+}
+/** 공유 글리프 — 사람 + 더하기(초대). GNB 버튼(데스크톱)과 ☰ 메뉴(모바일)가 공용. */
+export function ShareGlyph() {
+  return (
+    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M15 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2" />
+      <circle cx="8.5" cy="7" r="4" />
+      <line x1="19" y1="8" x2="19" y2="14" />
+      <line x1="16" y1="11" x2="22" y2="11" />
     </svg>
   );
 }
