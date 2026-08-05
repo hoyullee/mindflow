@@ -20,6 +20,8 @@ import { homeUpdateRisk } from './updateRisk';
 import { useIsMobile } from '../../hooks/useMediaQuery';
 import { useDrawerSwipe } from '../../hooks/useDrawerSwipe';
 import { useUpdateGuard } from '../../pwa/updateGate';
+import { InstallHint } from '../../pwa/InstallHint';
+import { useInstallHint } from '../../pwa/installHint';
 
 /**
  * React port of Home.dc.html — the map dashboard. State/behavior lives in
@@ -40,6 +42,7 @@ export function Home() {
   // cards return the same element reference and React skips their SVG subtrees.
   const view = useMemo(() => deriveHomeView(state), [state]);
   const isMobile = useIsMobile();
+  const installHint = useInstallHint(isMobile);
   const [navOpen, setNavOpen] = useState(false);
   // 새 배포 자동 적용 게이트: 목록은 리로드해도 그대로 다시 그려지니 기본은 조용히
   // 적용하고, 입력 중인 팝업·확인 다이얼로그·검색어가 있을 때만 물어본다.
@@ -70,6 +73,12 @@ export function Home() {
       <Sidebar state={state} view={view} controller={controller} isMobile={isMobile} isOpen={navOpen} onClose={() => setNavOpen(false)} />
 
       <ToastModal state={state} controller={controller} />
+
+      {/* "홈 화면에 추가" 안내(모바일). iOS에는 설치 배너가 없어 공유 시트의 절차를
+          사용자가 스스로 찾아야 하고, 안드로이드는 버튼 한 번으로 끝난다 —
+          `useInstallHint`가 그 차이를 판단하고 여기서는 띄우기만 한다. 홈에만
+          두는 이유: 로그인·랜딩은 아직 "쓰기로 한" 화면이 아니다. */}
+      <InstallHint mode={installHint.mode} onInstall={installHint.install} onDismiss={installHint.dismiss} />
 
       {/* `scrollbarGutter: 'stable'` reserves the vertical scrollbar's width
           whether or not it's showing, so crossing from "few maps" (no scroll) to
