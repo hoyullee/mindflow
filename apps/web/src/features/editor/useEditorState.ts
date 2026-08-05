@@ -88,8 +88,16 @@ const FIT_PADDING = 90;
 // Touch long-press → context menu (the touch equivalent of a right-click): a
 // stationary press held this long opens the menu; moving more than the
 // tolerance first cancels it (it's a pan).
-const LONG_PRESS_MS = 500;
-const LONG_PRESS_MOVE_TOL = 10;
+const LONG_PRESS_MS = 500; // iOS·안드로이드의 길게 누르기와 같은 길이
+/**
+ * 길게 누르는 동안 허용하는 손가락 흔들림(px, **직선 거리**).
+ *
+ * 예전엔 |dx|+|dy| ≤ 10이었다 — 맨해튼 합이라 대각선 흔들림에 1.4배로 엄했고
+ * (7,7)이면 실제로는 9.9px인데 취소됐다. 걷거나 차 안에서 누르면 그 정도는
+ * 예사라 "길게 눌러도 메뉴가 안 뜬다"가 된다. 직선 거리로 바꾸고, 플랫폼의
+ * 터치 슬롭(안드로이드 ~8dp)에 맞춰 14px로 넓혔다.
+ */
+const LONG_PRESS_MOVE_TOL = 14;
 
 interface ViewportState {
   pan: PanState;
@@ -1715,6 +1723,14 @@ export function useEditorState(): EditorController {
           longPressRef.current = null;
           dragRef.current = null;
           pendingTapRef.current = null;
+          // 짧은 진동으로 "지금 걸렸다"를 알린다 — 네이티브 길게 누르기의 감각이고,
+          // 메뉴가 손가락 아래에서 뜨므로 시각만으로는 알아채기 늦다. iOS 사파리는
+          // vibrate가 없어 조용히 넘어간다(기능 감지).
+          try {
+            navigator.vibrate?.(12);
+          } catch {
+            /* 지원하지 않는 기기 — 무시 */
+          }
           openCtxAt(px, py);
         }, LONG_PRESS_MS);
         longPressRef.current = { timer, x0: px, y0: py };
@@ -1736,7 +1752,7 @@ export function useEditorState(): EditorController {
       // moving past the tolerance turns the gesture into a pan → not a long-press
       if (longPressRef.current) {
         const lp = longPressRef.current;
-        if (Math.abs(e.clientX - lp.x0) + Math.abs(e.clientY - lp.y0) > LONG_PRESS_MOVE_TOL) cancelLongPress();
+        if (Math.hypot(e.clientX - lp.x0, e.clientY - lp.y0) > LONG_PRESS_MOVE_TOL) cancelLongPress();
       }
       if (activePointers.current.size === 2 && pinchRef.current) {
         const pts = Array.from(activePointers.current.values());
