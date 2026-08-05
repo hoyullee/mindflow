@@ -525,4 +525,77 @@ describe('Editor (mobile, M6)', () => {
       restore();
     }
   });
+
+  // ---- 모바일웹 제보 3건 ----
+
+  it('텍스트 편집 중에는 선택 바를 감춘다 — 서식 툴바와 두 겹으로 뜨지 않게(요청)', () => {
+    const restore = mockMatchMedia(true);
+    try {
+      localStorage.setItem('mindflow_doc_mtb1', JSON.stringify(DOC));
+      const { container } = renderEditor('/editor?map=mtb1&title=x');
+      const vp = getViewport(container);
+      selectNodeBox(within(vp).getByText('리서치').closest('[data-node-id]') as HTMLElement);
+
+      fireEvent.click(within(screen.getByRole('toolbar', { name: '선택 동작' })).getByText('편집'));
+      expect(vp.querySelector('.mf-richedit')).toBeTruthy(); // 편집 세션 시작
+      expect(screen.queryByRole('toolbar', { name: '선택 동작' })).toBeNull();
+
+      // 편집을 끝내면(Escape) 선택은 남고 바가 돌아온다
+      fireEvent.keyDown(vp.querySelector('.mf-richedit') as HTMLElement, { key: 'Escape' });
+      expect(screen.getByRole('toolbar', { name: '선택 동작' })).toBeTruthy();
+    } finally {
+      restore();
+    }
+  });
+
+  it('편집 박스 안의 컨텍스트 요청(모바일 롱프레스 = 텍스트 선택)은 캔버스 메뉴를 열지 않는다(제보)', () => {
+    // 제보: 편집 중 텍스트를 선택하려고 길게 누르면 선택 바는 사라지고 캔버스
+    // 메뉴 팝업만 떴다. 길게 누르기가 브라우저의 `contextmenu`로 올라오기 때문.
+    const restore = mockMatchMedia(true);
+    try {
+      localStorage.setItem('mindflow_doc_mtb2', JSON.stringify(DOC));
+      const { container } = renderEditor('/editor?map=mtb2&title=x');
+      const vp = getViewport(container);
+      selectNodeBox(within(vp).getByText('리서치').closest('[data-node-id]') as HTMLElement);
+      fireEvent.click(within(screen.getByRole('toolbar', { name: '선택 동작' })).getByText('편집'));
+      const box = vp.querySelector('.mf-richedit') as HTMLElement;
+
+      const ev = new MouseEvent('contextmenu', { bubbles: true, cancelable: true, clientX: 120, clientY: 120 });
+      act(() => {
+        box.dispatchEvent(ev);
+      });
+
+      expect(container.querySelector('.mf-ctx')).toBeNull(); // 캔버스 메뉴가 뜨지 않는다
+      expect(ev.defaultPrevented).toBe(false); // 기기의 선택/붙여넣기 메뉴는 그대로
+    } finally {
+      restore();
+    }
+  });
+
+  it('모바일 GNB에는 공유 버튼이 없고 ☰ 메뉴 항목으로 들어간다(요청)', () => {
+    const restore = mockMatchMedia(true);
+    try {
+      localStorage.setItem('mindflow_doc_mtb3', JSON.stringify(DOC));
+      renderEditor('/editor?map=mtb3&title=x');
+      expect(screen.queryByRole('button', { name: '공유' })).toBeNull();
+
+      fireEvent.click(screen.getByRole('button', { name: '더보기' }));
+      const share = screen.getByRole('button', { name: '공유' });
+      fireEvent.click(share);
+      expect(screen.getByRole('dialog', { name: '공유' })).toBeTruthy();
+    } finally {
+      restore();
+    }
+  });
+
+  it('데스크톱 GNB의 공유 버튼은 그대로다(무회귀)', () => {
+    const restore = mockMatchMedia(false);
+    try {
+      localStorage.setItem('mindflow_doc_mtb4', JSON.stringify(DOC));
+      renderEditor('/editor?map=mtb4&title=x');
+      expect(screen.getByRole('button', { name: '공유' })).toBeTruthy();
+    } finally {
+      restore();
+    }
+  });
 });

@@ -1440,6 +1440,14 @@ export function useEditorState(): EditorController {
   /** Port of `Component#onCtxMenu` (MindFlow.dc.html:2775-2791), minus the rich-text-selection
    * `textCtx` branch (out of scope — see this file's top-of-module doc comment). */
   const onContextMenu = useCallback((e: ReactMouseEvent<HTMLDivElement>) => {
+    // 텍스트를 편집 중인 박스 안에서 온 요청은 **플랫폼에 맡긴다**(preventDefault도
+    // 하지 않는다). 모바일에서 텍스트를 선택하는 제스처는 길게 누르기인데, 그게
+    // 브라우저의 `contextmenu`로 올라와 캔버스 메뉴를 열어 버렸다 — 선택 바는
+    // 사라지고(Editor.tsx: anchor 없는 메뉴는 바를 숨긴다) 메뉴 팝업만 남았다(제보).
+    // 데스크톱에서도 텍스트 필드 위의 우클릭은 기기의 편집 메뉴(붙여넣기·맞춤법)가
+    // 맞다 — 편집 중 서식은 상시 노출되는 서식 툴바가 이미 맡고 있다.
+    const t = e.target as HTMLElement | null;
+    if (t && typeof t.closest === 'function' && t.closest('.mf-richedit, input, textarea')) return;
     e.preventDefault();
     if (suppressCtxRef.current && Date.now() - suppressCtxRef.current < 300) {
       suppressCtxRef.current = 0;
