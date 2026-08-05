@@ -708,6 +708,25 @@ export function useEditorState(): EditorController {
   // load ERROR too (unknown backend state → refuse to persist, keep the map safe).
   const canPersistDocRef = useRef(false);
   const lastSavedSigRef = useRef(docSignature(doc));
+  /**
+   * 마지막으로 **상대에게서 받아** 적용한 문서 상태의 서명.
+   *
+   * 협업의 저장 책임 규칙: **편집한 쪽이 저장한다.** 받은 쪽은 그 상태를 저장하지
+   * 않는다(중복 쓰기·버전 충돌·엉뚱한 `updated_by`의 원인). 상대가 저장하기 전에
+   * 떠나면 남은 쪽이 인수한다(아래 피어 이탈 효과).
+   */
+  const remoteSigRef = useRef<string | null>(null);
+  /**
+   * 이 문서를 연 뒤 **한 번이라도 함께 편집했는가**(피어를 봤거나 원격 업데이트를 받음).
+   *
+   * 저장 충돌의 해석이 여기서 갈린다. 협업 세션에서는 내 문서가 상대의 편집과 CRDT로
+   * 이미 수렴해 있으므로 충돌은 "누가 먼저 저장했나"일 뿐이다 — 새 버전 기준으로 다시
+   * 쓰면 된다. "지금 붙어 있는가"가 아니라 "붙은 적이 있는가"인 이유: 상대가 저장 전에
+   * 떠나 내가 **인수 저장**하는 순간에는 이미 접속자가 0인데, 그때 내 버전 기준은
+   * 상대의 저장으로 낡아 있어 첫 시도가 반드시 충돌한다(실브라우저에서 확인 — 이걸
+   * "다른 기기가 먼저 저장"으로 보면 인수 저장이 실패하고 경고까지 뜬다).
+   */
+  const collabSessionRef = useRef(false);
   const initialLoadRef = useRef<Promise<void>>(Promise.resolve());
   // The load effect below needs `persistDoc` (declared later, with the other save
   // handlers) to kick the brand-new-map seed save — bridged via a render-synced
@@ -850,6 +869,12 @@ export function useEditorState(): EditorController {
   // 스타일 드롭다운은 이 상태를 읽으므로, `setDoc`만 하면 상대가 바꾼 연결선 스타일이
   // 문서에는 있는데 화면에는 반영되지 않는다(제보: "연결선 스타일이 상대에게 안 보임").
   const onRemoteDoc = useCallback((d: Doc) => {
+    // 이 상태를 만든 건 **상대**다. 아래 자동저장 효과가 그걸 알아야 한다 —
+    // 받은 쪽이 같이 저장하면 같은 문서에 두 명이 써서 버전 레이스가 나고(제보:
+    // "B가 편집했는데 소유자 A가 저장되고 B에게 충돌 경고"), `updated_by`도 실제로
+    // 편집하지 않은 사람으로 찍힌다.
+    remoteSigRef.current = docSignature(d);
+    collabSessionRef.current = true;
     setDoc(d);
     setEdgeStyleState((d.edgeStyle as EdgeStyle | undefined) ?? 'curve');
   }, []);
@@ -866,6 +891,8 @@ export function useEditorState(): EditorController {
   const authUser = useAuthUser();
   const profileName = useProfileName(authUser?.email ?? null, authUser?.name ?? null);
   const presence = usePresence(awareness, authUser?.email, profileName);
+  const peerCount = presence.peers.length;
+  if (peerCount > 0) collabSessionRef.current = true;
 
   // 내가 이 문서에 어떤 권한으로 초대됐는가 — 초대 목록에서 **내 행**을 읽는다.
   // RLS(0009)의 결: 초대받은 사람은 자기 행만 보이고, 소유자의 목록에 자기 행은
@@ -1932,6 +1959,8 @@ export function useEditorState(): EditorController {
     // 거부하지만 42501 소음을 만들 이유가 없다).
     if (readOnlyRef.current) return;
     const title = safeDocTitle(docRef.current, titleParam);
+    // 협업 중 충돌은 한 번 조용히 다시 쓴다(아래 conflict 분기 참고) — 그래서 루프다.
+    for (let attempt = 0; attempt < 2; attempt++) {
     const result = await docStore.save(docStoreId, docRef.current, { prevVersion: docVersionRef.current, title });
     if (result.ok) {
       docVersionRef.current = result.version;
@@ -1950,17 +1979,28 @@ export function useEditorState(): EditorController {
       }
       setSaveStateState('saved');
       setSaveConflict(null);
+      return;
     } else if (result.reason === 'conflict') {
       docVersionRef.current = result.currentVersion;
+      // **협업 중이면 경고가 아니다.** 같이 붙어 있는 사람이 있다는 건 내 문서가
+      // 그 사람의 편집과 이미 CRDT로 수렴해 있다는 뜻이고, 충돌은 그저 "둘이 거의
+      // 동시에 저장했다"는 사실이다. 새 버전을 기준으로 같은(수렴된) 내용을 한 번
+      // 더 쓰고 조용히 넘어간다 — "다른 기기/탭에서 먼저 저장됨" 배너는 같은 세션의
+      // 상대를 남의 기기로 오해하게 만든다(제보).
+      if (collabSessionRef.current && attempt === 0) continue;
       setSaveConflict({ currentVersion: result.currentVersion });
       setSaveStateState('saved');
+      return;
     } else if (result.reason === 'idTaken') {
       // 그 id는 **다른 계정의 문서**다(RLS가 가려서 `load()`는 빈 결과였다).
       // 계속 그 id로 쓰면 남의 행을 건드리는 요청이 자동저장마다 반복된다 —
       // 새 id로 옮겨 우리 내용을 살린다(아래 `moveToFreshId`).
       await moveToFreshIdRef.current(title);
+      return;
     } else {
       setSaveStateState('dirty'); // keep dirty so the next autosave/Ctrl+S tick retries
+      return;
+    }
     }
   }, [docStore, docStoreId, titleParam, mapId]);
   // Render-synced bridge for the initial-load effect's brand-new seed save
@@ -1970,6 +2010,10 @@ export function useEditorState(): EditorController {
   useEffect(() => {
     const sig = docSignature(doc);
     if (sig === lastSavedSigRef.current) return;
+    // 상대가 만든 상태는 **상대가** 저장한다(`remoteSigRef`). 내 화면의 저장 표시도
+    // 건드리지 않는다 — 내가 저장할 게 아니므로 "저장 안 됨"으로 보일 이유가 없다.
+    // 내가 손을 대면 서명이 달라져 곧바로 아래 정상 경로를 탄다.
+    if (sig === remoteSigRef.current) return;
     setSaveStateState('dirty');
     window.clearTimeout(autosaveTimerRef.current);
     autosaveTimerRef.current = window.setTimeout(() => {
@@ -1981,6 +2025,30 @@ export function useEditorState(): EditorController {
     }, 900);
     return () => window.clearTimeout(autosaveTimerRef.current);
   }, [doc, persistDoc]);
+
+  // 다른 문서로 넘어가면 협업 세션 기억을 지운다 — 이 맵에서 함께 편집한 적이 없다면
+  // 충돌은 다시 "다른 기기/탭이 먼저 저장"으로 읽어야 한다.
+  useEffect(() => {
+    collabSessionRef.current = false;
+    remoteSigRef.current = null;
+  }, [docStoreId]);
+
+  /**
+   * 마지막 상대가 떠났을 때, 아직 저장되지 않은 **상대의 편집**을 내가 인수해 저장한다.
+   *
+   * 평소엔 편집한 쪽이 0.9초 뒤 저장하므로 여기서 할 일이 없다(서명이 같아 그냥
+   * 지나간다). 상대가 저장 전에 창을 닫거나 네트워크가 끊긴 채 사라진 경우에만
+   * 실제로 쓴다 — 그 내용이 아무 곳에도 남지 않는 것을 막는 안전망이다.
+   */
+  const prevPeerCountRef = useRef(0);
+  useEffect(() => {
+    const had = prevPeerCountRef.current;
+    prevPeerCountRef.current = peerCount;
+    if (peerCount > 0 || had === 0) return;
+    if (docSignature(docRef.current) === lastSavedSigRef.current) return;
+    setSaveStateState('saving');
+    void persistDoc();
+  }, [peerCount, persistDoc]);
 
   const saveNow = useCallback(() => {
     window.clearTimeout(autosaveTimerRef.current);
