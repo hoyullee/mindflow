@@ -63,6 +63,16 @@ export interface FolderCardViewData {
   dragOver: boolean;
   canDelete: boolean;
   isDrive: boolean;
+  /** 맵 카드와 같은 "한 번 = 선택" 표시. 선택 상태는 맵과 **한 칸**(`selectedCard`)을
+   * 나눠 쓰므로 폴더를 고르면 맵 선택이 풀리고 그 반대도 같다 — 그리드 안에서
+   * 선택된 것은 언제나 하나다. */
+  selected: boolean;
+}
+
+/** 폴더의 선택/메뉴 키 — 맵 카드 키(제목·docId)와 섞이지 않게 접두를 붙인다.
+ * 메뉴(`openMenu`)가 이미 쓰던 규칙을 선택에도 그대로 쓴다. */
+export function folderCardKey(id: string): string {
+  return 'folder:' + id;
 }
 
 export interface HomeViewModel {
@@ -290,8 +300,9 @@ export function deriveHomeView(state: HomeState): HomeViewModel {
           id: f.id,
           name: f.name,
           count: DRIVE_FILES.filter((file) => dmf[file.name] === f.id && !state.deleted[file.name]).length,
-          menuOpen: state.openMenu === 'folder:' + f.id,
+          menuOpen: state.openMenu === folderCardKey(f.id),
           dragOver: state.dragOverFolder === f.id,
+          selected: state.selectedCard === folderCardKey(f.id),
           canDelete: DRIVE_FILES.filter((file) => dmf[file.name] === f.id && !state.deleted[file.name]).length === 0,
           isDrive: true,
         }))
@@ -317,8 +328,9 @@ export function deriveHomeView(state: HomeState): HomeViewModel {
             id: f.id,
             name: f.name,
             count: cnt,
-            menuOpen: state.openMenu === 'folder:' + f.id,
+            menuOpen: state.openMenu === folderCardKey(f.id),
             dragOver: state.dragOverFolder === f.id,
+            selected: state.selectedCard === folderCardKey(f.id),
             // 삭제는 "직접 담긴 맵 0 + 하위 폴더 0"일 때만 — 하위 폴더가 있으면
             // 지웠을 때 그 안의 것들이 고아가 되므로 막는다.
             canDelete: directCnt === 0 && !hasSubfolders(f.id),

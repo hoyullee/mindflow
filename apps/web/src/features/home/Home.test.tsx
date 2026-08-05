@@ -519,7 +519,7 @@ describe('Home', () => {
     expect(container.querySelector('a[data-title="새이름"]')).toBeNull();
     expect(container.querySelector('a[data-title="옛이름"]')).toBeNull();
     // entering the folder shows the renamed card
-    await user.click(screen.getByText('내폴더'));
+    await user.dblClick(screen.getByText('내폴더')); // 폴더 진입 = 더블클릭
     await waitFor(() => expect(container.querySelector('a[data-title="새이름"]')).toBeTruthy());
   });
 
@@ -536,7 +536,7 @@ describe('Home', () => {
 
     // enter the folder
     await waitFor(() => expect(screen.getByText('내폴더')).toBeTruthy());
-    await user.click(screen.getByText('내폴더'));
+    await user.dblClick(screen.getByText('내폴더')); // 폴더 진입 = 더블클릭
     await waitFor(() => expect(screen.getByText('이 폴더는 비어 있어요')).toBeTruthy());
 
     // create a new map from inside the folder (toolbar CTA)
@@ -561,7 +561,7 @@ describe('Home', () => {
     renderHomeWithDocStore([]);
 
     await waitFor(() => expect(screen.getByText('내폴더')).toBeTruthy());
-    await user.click(screen.getByText('내폴더'));
+    await user.dblClick(screen.getByText('내폴더')); // 폴더 진입 = 더블클릭
     await waitFor(() => expect(screen.getByText('이 폴더는 비어 있어요')).toBeTruthy());
 
     // 폴더 안에서 새 폴더 생성 → 하위 폴더 카드가 이 화면에 나타난다
@@ -571,7 +571,7 @@ describe('Home', () => {
     await waitFor(() => expect(screen.getByText('하위자료')).toBeTruthy());
 
     // 하위 폴더로 진입 → 브레드크럼 전체 경로가 깊어진다
-    await user.click(screen.getByText('하위자료'));
+    await user.dblClick(screen.getByText('하위자료')); // 폴더 진입 = 더블클릭
     await waitFor(() => expect(screen.getByTitle('폴더공간 / 내폴더 / 하위자료')).toBeTruthy());
 
     // 뒤로가기 1회 = 상위 폴더('내폴더')로 — 하위 폴더 카드가 다시 보인다
@@ -625,7 +625,7 @@ describe('Home', () => {
         seedFolderSpace();
         renderHomeWithDocStore([]);
         await waitFor(() => expect(screen.getByText('내폴더')).toBeTruthy());
-        await user.click(screen.getByText('내폴더'));
+        await user.dblClick(screen.getByText('내폴더')); // 폴더 진입 = 더블클릭
         await waitFor(() => expect(screen.getByText('이 폴더는 비어 있어요')).toBeTruthy());
 
         expect(screen.getByRole('button', { name: '가져오기' })).toBeTruthy();
@@ -641,7 +641,7 @@ describe('Home', () => {
       seedFolderSpace();
       const { container } = renderHomeWithDocStore([]);
       await waitFor(() => expect(screen.getByText('내폴더')).toBeTruthy());
-      await user.click(screen.getByText('내폴더'));
+      await user.dblClick(screen.getByText('내폴더')); // 폴더 진입 = 더블클릭
       await waitFor(() => expect(screen.getByText('이 폴더는 비어 있어요')).toBeTruthy());
 
       await upload(container, user);
@@ -675,7 +675,7 @@ describe('Home', () => {
       const first = renderHomeWithDocStore([other]);
 
       await waitFor(() => expect(screen.getByText('내폴더')).toBeTruthy());
-      await user.click(screen.getByText('내폴더'));
+      await user.dblClick(screen.getByText('내폴더')); // 폴더 진입 = 더블클릭
       await waitFor(() => expect(screen.getByText('이 폴더는 비어 있어요')).toBeTruthy());
       await upload(first.container, user);
       await waitFor(() => expect(screen.getByText(/'내폴더' 폴더에 추가했어요/)).toBeTruthy());
@@ -831,7 +831,7 @@ describe('Home', () => {
       await waitFor(() => expect(container.querySelector('a[data-title="가져온 맵"]')).toBeTruthy());
 
       // 폴더 안으로 들어가면 없다 — 최상위에 남았다는 뜻.
-      await user.click(screen.getByText('내폴더'));
+      await user.dblClick(screen.getByText('내폴더')); // 폴더 진입 = 더블클릭
       await waitFor(() => expect(screen.getByText('이 폴더는 비어 있어요')).toBeTruthy());
       expect(container.querySelector('a[data-title="가져온 맵"]')).toBeNull();
     });
@@ -852,7 +852,7 @@ describe('Home', () => {
       );
       const utils = renderHomeWithDocStore([]);
       await waitFor(() => expect(screen.getByText(LONG)).toBeTruthy());
-      await user.click(screen.getByText(LONG));
+      await user.dblClick(screen.getByText(LONG)); // 폴더 진입 = 더블클릭
       await waitFor(() => expect(screen.getByText('이 폴더는 비어 있어요')).toBeTruthy());
       return utils;
     }
@@ -1428,8 +1428,66 @@ describe('Home', () => {
     await waitFor(() => expect(screen.getByText('자료')).toBeTruthy());
     expect(container.querySelector('.mf-map-grid a[data-title="폴더 속 맵"]')).toBeNull();
     // entering the folder shows the map — the migrated docId key resolves
-    await user.click(screen.getByText('자료'));
+    await user.dblClick(screen.getByText('자료')); // 폴더 진입 = 더블클릭
     await waitFor(() => expect(container.querySelector('.mf-map-grid a[data-title="폴더 속 맵"]')).toBeTruthy());
+  });
+
+  it('폴더도 한 번 = 선택 / 두 번 = 진입 (맵 카드와 같은 규칙)', async () => {
+    const user = userEvent.setup();
+    localStorage.setItem(
+      'mf_spaces',
+      JSON.stringify({
+        v: 1,
+        spaces: [{ id: 'sf', name: '폴더공간', color: '#3f8fd0', maps: [], folders: [{ id: 'f1', name: '기획' }] }],
+        mapFolders: {},
+        recent: [],
+      }),
+    );
+    renderHomeWithDocStore([]);
+
+    const tile = () => (screen.getByText('기획').closest('.map-card') as HTMLElement);
+    await waitFor(() => expect(screen.getByText('기획')).toBeTruthy());
+    expect(tile().style.border).not.toContain('var(--mf-accent)');
+
+    // 한 번 = 선택(진입하지 않는다). 선택 표시는 맵 카드와 같은 강조색 테두리.
+    await user.click(tile());
+    expect(screen.queryByText('이 폴더는 비어 있어요')).toBeNull();
+    expect(tile().style.border).toBe('2px solid var(--mf-accent)');
+
+    // 두 번 = 진입
+    await user.dblClick(tile());
+    await waitFor(() => expect(screen.getByText('이 폴더는 비어 있어요')).toBeTruthy());
+  });
+
+  it('맵 카드를 누른 뒤 곧바로 폴더를 한 번 눌러도 들어가지 않는다 (같은 dblclick 함정)', async () => {
+    localStorage.setItem(
+      'mf_spaces',
+      JSON.stringify({
+        v: 1,
+        spaces: [
+          {
+            id: 'sf',
+            name: '폴더공간',
+            color: '#3f8fd0',
+            maps: [{ title: '바깥 맵', when: '내 맵', hue: '#f0663f', docId: 'doc-out' }],
+            folders: [{ id: 'f1', name: '기획' }],
+          },
+        ],
+        mapFolders: {},
+        recent: [],
+      }),
+    );
+    const { container } = renderHomeWithDocStore([
+      { id: 'doc-out', title: '바깥 맵', version: 1, updatedAt: '2026-01-01T00:00:00.000Z', isFavorite: false, deletedAt: null },
+    ]);
+    await waitFor(() => expect(screen.getByText('기획')).toBeTruthy());
+    const card = container.querySelector('.mf-map-grid a[data-title="바깥 맵"]') as HTMLElement;
+    const tile = screen.getByText('기획').closest('.map-card') as HTMLElement;
+
+    fireEvent.click(card); // 다른 카드를 한 번
+    fireEvent.click(tile); // 폴더를 한 번 — 크롬은 여기에 dblclick을 얹어 준다
+    fireEvent.doubleClick(tile);
+    expect(screen.queryByText('이 폴더는 비어 있어요')).toBeNull();
   });
 
   it('폴더에 들어간 직후 그 자리의 맵을 한 번 눌러도 열리지 않는다 (제보: 빠른 연속 클릭)', async () => {
@@ -1456,7 +1514,7 @@ describe('Home', () => {
       { id: 'doc-in', title: '폴더 속 맵', version: 1, updatedAt: '2026-01-01T00:00:00.000Z', isFavorite: false, deletedAt: null },
     ]);
 
-    await user.click(await screen.findByText('기획')); // 폴더 진입(한 번 클릭)
+    await user.dblClick(await screen.findByText('기획')); // 폴더 진입(더블클릭)
     const card = (await waitFor(() => container.querySelector('.mf-map-grid a[data-title="폴더 속 맵"]'))) as HTMLElement;
 
     // 폴더 진입 클릭에 이어 카드를 **한 번** 클릭 — 크롬은 같은 지점·시간이면 이

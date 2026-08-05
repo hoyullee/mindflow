@@ -1,9 +1,8 @@
-import { useRef } from 'react';
 import type { CSSProperties, DragEvent, MouseEvent } from 'react';
 import { formatFullDateTime, formatLastEdited } from '../timeFormat';
 import type { HomeController } from '../useHomeController';
 import type { CardViewData } from '../viewModel';
-import { useIsMobile } from '../../../hooks/useMediaQuery';
+import { useCardActivation } from './useCardActivation';
 
 interface Props {
   card: CardViewData;
@@ -15,61 +14,28 @@ interface Props {
   compact?: boolean;
 }
 
-/** 모바일에서 두 번째 탭을 "더블탭"으로 볼 최대 간격(ms). 시스템 더블클릭 임계값
- * (보통 300~500ms)과 비슷하게 잡아, 느리게 두 번 누르면 '선택 두 번'이 된다. */
-const DOUBLE_TAP_MS = 320;
-/** 데스크톱에서 "이 카드가 직전 클릭도 받았는가"를 볼 창. 실제 더블클릭 판정은
- * 브라우저(운영체제 설정, 보통 500ms 안팎)가 하므로 이 값은 그보다 넉넉하게 둔다 —
- * 우리는 트리거가 아니라 **문지기**다(다른 것을 누른 뒤의 한 번을 걸러내는 역할). */
-const DOUBLE_CLICK_MS = 800;
-
 /** Home.dc.html:251-303 `<sc-for list="{{ allCards }}">` — a single map/Drive-file card. */
 export function MapCard({ card, controller, draggableEnabled, compact = false }: Props) {
-  const isMobile = useIsMobile();
   const stopPrevent = (e: MouseEvent) => {
     e.preventDefault();
     e.stopPropagation();
   };
 
-  // 모바일 더블탭 감지용 — 직전 탭 시각. `dblclick` 이벤트를 쓰지 않는 이유는
-  // 아래 `onOpen` 주석 참고(모바일 브라우저가 안정적으로 쏘지 않는다).
-  const lastTapRef = useRef(0);
-  // 데스크톱: **이 카드가** 직전 클릭도 받았는지. 브라우저의 `dblclick`만 믿으면
-  // 다른 것을 누른 뒤 이 카드를 한 번만 눌러도 열린다 — 크롬은 두 클릭의 대상이
-  // 달라도(폴더 진입 → 그 자리에 새로 그려진 맵 카드) 같은 지점·시간이면 두 번째
-  // 클릭 대상에 dblclick을 쏘기 때문이다(제보: 폴더에 들어가자마자 한 번 더 누르면
-  // 에디터로 넘어감. 배경을 누른 뒤 카드를 누를 때도 같다).
-  const sawOwnFirstClickRef = useRef(false);
+  // 한 번 = 선택 / 두 번 = 열기. 규칙과 그 함정들은 `useCardActivation`에.
+  const activation = useCardActivation();
 
   const onOpen = (e: MouseEvent<HTMLAnchorElement>) => {
     e.preventDefault();
     if (card.openable === false) return;
     const target = e.target as HTMLElement;
     if (target.closest && target.closest('.menu-btn,.menu-row,.fav-btn')) return;
-    // 모바일도 데스크톱과 같은 "한 번 = 선택 / 두 번 = 열기"로 맞춘다. 한 번에
-    // 바로 열리면 카드의 ☰ 메뉴(즐겨찾기·이동·내보내기·삭제)에 닿기 전에 에디터로
-    // 넘어가 버려서, 카드에 딸린 동작을 쓸 방법이 사실상 없었다(제보).
-    //
-    // 단, `dblclick` 이벤트에 기대지 않는다 — 모바일 브라우저(특히 iOS Safari)가
-    // 더블탭에서 이 이벤트를 안정적으로 쏘지 않아, 예전에 데스크톱 관용구를 그대로
-    // 썼을 땐 카드가 아예 안 열렸다. 그래서 click 두 번의 간격을 직접 잰다.
-    if (isMobile) {
-      const now = Date.now();
-      const isSecondTap = now - lastTapRef.current < DOUBLE_TAP_MS;
-      lastTapRef.current = isSecondTap ? 0 : now; // 열고 나면 초기화(3번째 탭이 또 열지 않도록)
-      if (isSecondTap) {
-        controller.openWithLoader(card.href, card.title, card.docId);
-        return;
-      }
-      controller.selectCard(card.key); // 첫 탭: 선택 → ☰/☆가 이 카드의 것으로 드러난다
+    // 한 번에 바로 열리면 카드의 ☰ 메뉴(즐겨찾기·이동·내보내기·삭제)에 닿기 전에
+    // 에디터로 넘어가 버려서, 카드에 딸린 동작을 쓸 방법이 사실상 없었다(제보).
+    if (activation.click() === 'activate') {
+      controller.openWithLoader(card.href, card.title, card.docId);
       return;
     }
-    // 데스크톱: 이 클릭이 **이 카드에서의 두 번째**일 때만 뒤따르는 dblclick을 인정한다.
-    // (기준은 우리가 아니라 브라우저의 더블클릭 간격이므로, 넉넉한 창으로 문만 지킨다.)
-    const now = Date.now();
-    sawOwnFirstClickRef.current = now - lastTapRef.current < DOUBLE_CLICK_MS;
-    lastTapRef.current = now;
-    controller.selectCard(card.key);
+    controller.selectCard(card.key); // 선택 → ☰/☆가 이 카드의 것으로 드러난다
   };
   const onDblOpen = (e: MouseEvent<HTMLAnchorElement>) => {
     const target = e.target as HTMLElement;
@@ -82,14 +48,7 @@ export function MapCard({ card, controller, draggableEnabled, compact = false }:
       return;
     }
     e.preventDefault();
-    // 모바일은 위 탭 카운터가 이미 열었다 — 브라우저가 dblclick까지 쏘는 기기에서
-    // 두 번 열리지 않도록 여기서는 무시한다.
-    if (isMobile) return;
-    // 첫 클릭을 다른 것이 받았다면(폴더 진입·배경 클릭 직후) 이건 사용자가 이 카드를
-    // 두 번 누른 게 아니다 — 열지 않는다. 방금의 클릭은 선택으로 이미 처리됐다.
-    if (!sawOwnFirstClickRef.current) return;
-    sawOwnFirstClickRef.current = false;
-    lastTapRef.current = 0; // 세 번째 클릭이 곧바로 또 열지 않도록
+    if (!activation.acceptDoubleClick()) return;
     controller.openWithLoader(card.href, card.title, card.docId);
   };
 
