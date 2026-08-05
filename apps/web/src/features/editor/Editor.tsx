@@ -1,6 +1,7 @@
 import { useEffect, type CSSProperties } from 'react';
 import './editor.css';
 import { useEditorState } from './useEditorState';
+import type { SelectionKind } from './types';
 import { Toolbar } from './components/Toolbar';
 import { ShareModal } from './components/ShareModal';
 import { DocChip } from './components/DocChip';
@@ -16,6 +17,7 @@ import { MapUnavailable } from './components/MapUnavailable';
 import { FeedbackModal } from '../../components/FeedbackModal';
 import { MobileSelectBar } from './components/MobileSelectBar';
 import { useIsMobile } from '../../hooks/useMediaQuery';
+import { useKeyboardInset } from '../../hooks/useKeyboardInset';
 import { useUpdateGuard } from '../../pwa/updateGate';
 import { useLinkModifier } from './richSpans';
 
@@ -75,6 +77,23 @@ export function Editor() {
     if (!isMobile || !sel || !controller.propsOpen) return;
     controller.centerObjectAboveSheet(sel.kind, sel.id, Math.round(window.innerHeight * 0.55));
   }, [isMobile, sel?.kind, sel?.id, controller.propsOpen]);
+
+  // 소프트 키보드 회피: 모바일에서 도형·메모의 텍스트를 편집하는 동안 키보드가
+  // 올라오면, 그만큼을 "아래에서 가려진 높이"로 보고 편집 대상을 그 위로 옮긴다.
+  // 브라우저는 키보드가 떠도 레이아웃 뷰포트(=`100dvh`)를 줄이지 않으므로 CSS로는
+  // 알 수 없고(`useKeyboardInset`), 마침 속성 시트를 피할 때 쓰던 팬 계산이 그대로
+  // 맞는다(가려진 높이만 다를 뿐) — `centerObjectAboveSheet`를 재사용한다.
+  const kbInset = useKeyboardInset();
+  const editKind: SelectionKind | null = controller.editingNodeId ? 'node' : controller.editingFloatId ? 'float' : null;
+  const editId = controller.editingNodeId ?? controller.editingFloatId;
+  useEffect(() => {
+    if (!isMobile || !editKind || !editId || !kbInset) return;
+    // iOS Safari는 포커스 시 레이아웃 뷰포트째 밀어 올린다 — 우리 좌표계(고정 배치 +
+    // 캔버스 팬)가 통째로 어긋나므로 되돌리고, 우리가 직접 대상을 올린다.
+    if (typeof window.scrollTo === 'function' && window.scrollY) window.scrollTo(0, 0);
+    controller.centerObjectAboveSheet(editKind, editId, kbInset);
+    controller.refreshTextCtxAnchor(); // 서식 툴바도 옮겨 간 박스를 따라간다
+  }, [isMobile, editKind, editId, kbInset]);
 
   // M6-mobile: use `100dvh` (dynamic viewport height) rather than `100vh` — on
   // mobile browsers `100vh` is the *large* viewport (ignores the address bar),

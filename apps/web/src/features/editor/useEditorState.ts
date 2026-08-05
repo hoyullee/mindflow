@@ -330,6 +330,8 @@ export interface EditorController {
   /** Opens the toolbar at a screen (viewport-relative) point — called by
    * `NodeEditBox` when a drag-selection inside it becomes non-collapsed. */
   openTextCtx: (sx: number, sy: number) => void;
+  /** 편집 대상이 화면에서 옮겨 간 뒤 서식 툴바를 그 위로 다시 붙인다(키보드 회피 팬). */
+  refreshTextCtxAnchor: () => void;
   /** Port of the outside-click branch of the original's `_winDown` handler
    * for `textCtx` (MindFlow.dc.html:820) — also used on Escape/commit/cancel. */
   closeTextCtx: () => void;
@@ -1411,27 +1413,43 @@ export function useEditorState(): EditorController {
     setCtxMenu({ kind: s ? s.kind : 'bg', sx, sy, cx, cy, anchor });
   }, []);
 
+  /** 편집 중인 박스(노드·메모) 위에 서식 툴바를 앉힐 뷰포트 기준 좌표.
+   * `NodeEditBox`/`FloatEditBox`가 마운트에서 쓰는 계산과 같은 규칙이며,
+   * 편집 중이 아니면 `null`(richElRef는 편집 박스가 살아 있는 동안만 채워진다). */
+  const textCtxAnchor = useCallback((): TextCtxState | null => {
+    const ed = richElRef.current;
+    if (!ed || !ed.isConnected) return null;
+    const box = ed.closest('[data-node-id],[data-float-id]') as HTMLElement | null;
+    const vpEl = ed.closest('.mf-ed-vp');
+    if (box && vpEl && typeof box.getBoundingClientRect === 'function' && typeof vpEl.getBoundingClientRect === 'function') {
+      const br = box.getBoundingClientRect();
+      const vr = vpEl.getBoundingClientRect();
+      return { sx: br.left + br.width / 2 - vr.left, sy: br.top - vr.top };
+    }
+    return { sx: 0, sy: 60 }; // rect를 못 읽는 환경(jsdom) — 위치만 폴백
+  }, []);
+
+  /** 편집 대상이 화면에서 옮겨 간 뒤(키보드 회피 팬 등) 서식 툴바를 그 위로 다시
+   * 붙인다. 팬은 상태 변경이라 DOM rect는 다음 페인트에 갱신되므로 rAF 뒤에 잰다. */
+  const refreshTextCtxAnchor = useCallback(() => {
+    const apply = (): void => {
+      const a = textCtxAnchor();
+      if (a) setTextCtx(a);
+    };
+    if (typeof requestAnimationFrame === 'function') requestAnimationFrame(apply);
+    else apply();
+  }, [textCtxAnchor]);
+
   const closeCtxMenu = useCallback(() => {
     setCtxMenu(null);
     setCtxSub(null);
     // 편집 세션이 계속이면 서식 툴바를 되살린다 — 툴바는 편집 중 상시 노출이
     // 계약인데(NodeEditBox 마운트에서 열림), 우클릭 메뉴가 열리며 내려간 뒤
     // (openCtxAt의 setTextCtx(null)) 메뉴만 닫히면 편집은 그대로인데 툴바가
-    // 돌아오지 않았다(제보). richElRef는 편집 박스가 마운트된 동안만 채워지므로
-    // "편집 중"의 근거로 쓴다. 앵커 계산은 NodeEditBox 마운트와 동일.
-    const ed = richElRef.current;
-    if (ed && ed.isConnected) {
-      const box = ed.closest('[data-node-id]') as HTMLElement | null;
-      const vpEl = ed.closest('.mf-ed-vp');
-      if (box && vpEl && typeof box.getBoundingClientRect === 'function' && typeof vpEl.getBoundingClientRect === 'function') {
-        const br = box.getBoundingClientRect();
-        const vr = vpEl.getBoundingClientRect();
-        setTextCtx({ sx: br.left + br.width / 2 - vr.left, sy: br.top - vr.top });
-      } else {
-        setTextCtx({ sx: 0, sy: 60 }); // rect를 못 읽는 환경(jsdom) — 위치만 폴백
-      }
-    }
-  }, []);
+    // 돌아오지 않았다(제보).
+    const a = textCtxAnchor();
+    if (a) setTextCtx(a);
+  }, [textCtxAnchor]);
 
   const toggleCtxSub = useCallback((top: number) => {
     setCtxSub((prev) => (prev ? null : { top }));
@@ -4047,6 +4065,7 @@ export function useEditorState(): EditorController {
     cancelNodeEdit,
     textCtx,
     openTextCtx,
+    refreshTextCtxAnchor,
     closeTextCtx,
     setRichEditorEl,
     applyPartial,
