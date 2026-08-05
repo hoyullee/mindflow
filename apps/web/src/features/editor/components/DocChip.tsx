@@ -1,5 +1,6 @@
 import { useEffect, useRef } from 'react';
 import type { EditorController } from '../useEditorState';
+import { useOnline } from '../../../hooks/useOnline';
 
 interface DocChipProps {
   controller: EditorController;
@@ -15,10 +16,15 @@ export function DocChip({ controller }: DocChipProps) {
   const th = controller.uiTheme;
   // 열 수 없는 맵(`bodyMissing`)은 여기서 다루지 않는다 — 에디터 자체가 렌더되지 않고
   // 전용 화면(`MapUnavailable`)이 대신 나온다.
-  const dotColor = controller.readOnly ? '#3f8fd0' : controller.saveState === 'saved' ? '#3fae6a' : controller.saveState === 'saving' ? '#e0b23c' : th.subtext;
+  // 오프라인이면 저장 상태보다 **연결**이 먼저다 — "변경됨"만 보이면 저장이 왜
+  // 안 끝나는지 알 길이 없다. 연결이 돌아오면 컨트롤러가 바로 올린다(`online` 훅).
+  const online = useOnline();
+  const offline = !online && !controller.readOnly;
+  const dotColor = offline ? '#c0532e' : controller.readOnly ? '#3f8fd0' : controller.saveState === 'saved' ? '#3fae6a' : controller.saveState === 'saving' ? '#e0b23c' : th.subtext;
   // 보기 전용(#22)에는 저장 상태 대신 권한을 말한다 — 뷰어에게 "저장됨"은 무의미하고,
   // 제목 옆에서 이 맵을 왜 못 고치는지 한 번 더 설명해 준다.
-  const label = controller.readOnly ? '보기 전용' : controller.saveState === 'saved' ? '저장됨' : controller.saveState === 'saving' ? '저장 중…' : controller.saveState === 'unsaved' ? '저장 전' : '변경됨';
+  const saveLabel = controller.saveState === 'saved' ? '저장됨' : controller.saveState === 'saving' ? '저장 중…' : controller.saveState === 'unsaved' ? '저장 전' : '변경됨';
+  const label = offline ? (controller.saveState === 'saved' ? '오프라인' : '오프라인 · 저장 대기') : controller.readOnly ? '보기 전용' : saveLabel;
 
   return (
     <div

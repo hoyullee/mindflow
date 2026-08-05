@@ -79,3 +79,27 @@ export function saveDoc(mapId: string | null, doc: Doc): void {
     /* storage unavailable — non-fatal */
   }
 }
+
+/**
+ * "이 기기의 사본이 아직 서버에 못 올라갔다"는 표시(오프라인 편집).
+ *
+ * 없으면 로컬 사본은 늘 서버의 거울이므로, 다음에 열 때 서버 판을 그대로 채택해도
+ * 안전하다. 있으면 반대다 — 로컬이 **더 새것**이라 서버 판을 채택하면 오프라인에서
+ * 쓴 내용이 조용히 사라진다. 저장이 성공하는 순간 지운다.
+ */
+function pendingKey(mapId: string | null): string {
+  return `${docStorageKey(mapId)}__pending`;
+}
+
+export function markDocPending(mapId: string | null, pending: boolean): void {
+  try {
+    if (pending) localStorage.setItem(pendingKey(mapId), '1');
+    else localStorage.removeItem(pendingKey(mapId));
+  } catch {
+    /* storage unavailable — non-fatal */
+  }
+}
+
+export function hasPendingDoc(mapId: string | null): boolean {
+  return !!readRaw(pendingKey(mapId));
+}
