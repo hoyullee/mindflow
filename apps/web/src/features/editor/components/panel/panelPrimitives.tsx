@@ -80,7 +80,30 @@ export const SIZE_OPTIONS: { k: 's' | 'm' | 'l'; label: string }[] = [
  * 칩 바닥이 기본 패널 top(80)을 넘어 그림자가 패널을 침범한다(제보). 그동안만
  * 패널을 그만큼 내려 두 상자 사이 간격(10px)을 유지한다.
  */
-export function panelWrapStyle(th: Theme, isMobile = false, lowered = false): CSSProperties {
+export const MOBILE_SIDE_PANEL_W = 288;
+
+export function panelWrapStyle(th: Theme, isMobile = false, lowered = false, short = false): CSSProperties {
+  if (isMobile && short) {
+    // 가로로 돌린 폰: 높이가 350~430px 남짓이라 55dvh 바텀시트를 그대로 두면
+    // 캔버스가 거의 남지 않는다. 남는 축(가로)으로 돌려 **오른쪽 사이드 시트**로.
+    return {
+      position: 'fixed',
+      right: 0,
+      top: 0,
+      bottom: 0,
+      width: MOBILE_SIDE_PANEL_W,
+      maxWidth: '70vw',
+      border: `1px solid ${th.border}`,
+      borderRight: 'none',
+      borderRadius: '16px 0 0 16px',
+      boxShadow: '-8px 0 30px rgba(0,0,0,.14)',
+      zIndex: 25,
+      overflow: 'hidden',
+      display: 'flex',
+      flexDirection: 'column',
+      background: th.panel,
+    };
+  }
   if (isMobile) {
     return {
       position: 'fixed',

@@ -16,7 +16,8 @@ import { VersionHistory } from './components/VersionHistory';
 import { MapUnavailable } from './components/MapUnavailable';
 import { FeedbackModal } from '../../components/FeedbackModal';
 import { MobileSelectBar } from './components/MobileSelectBar';
-import { useIsMobile } from '../../hooks/useMediaQuery';
+import { MOBILE_SIDE_PANEL_W } from './components/panel/panelPrimitives';
+import { useIsMobile, useIsShortScreen } from '../../hooks/useMediaQuery';
 import { useKeyboardInset } from '../../hooks/useKeyboardInset';
 import { useUpdateGuard } from '../../pwa/updateGate';
 import { useLinkModifier } from './richSpans';
@@ -39,6 +40,8 @@ export function Editor() {
   // 문서 테마는 편집 영역(Viewport/아웃라인/미니맵 내용)만 칠한다.
   const th = controller.uiTheme;
   const isMobile = useIsMobile();
+  // 가로로 돌린 폰 — 속성 시트가 바텀에서 사이드로 바뀐다(`panelWrapStyle`).
+  const isShort = useIsShortScreen();
 
   // 새 배포 자동 적용 게이트. 에디터는 리로드로 잃는 게 많다(실행취소 기록·클립보드·
   // 선택·팬/줌) → 보고 있는 동안은 절대 자동 적용하지 않고(`defer`는 탭이 백그라운드일
@@ -75,8 +78,10 @@ export function Editor() {
   const sel = controller.selection;
   useEffect(() => {
     if (!isMobile || !sel || !controller.propsOpen) return;
-    controller.centerObjectAboveSheet(sel.kind, sel.id, Math.round(window.innerHeight * 0.55));
-  }, [isMobile, sel?.kind, sel?.id, controller.propsOpen]);
+    // 가로 폰에서는 시트가 아래가 아니라 **오른쪽**을 덮는다 — 예약할 축이 다르다.
+    if (isShort) controller.centerObjectAboveSheet(sel.kind, sel.id, 0, MOBILE_SIDE_PANEL_W);
+    else controller.centerObjectAboveSheet(sel.kind, sel.id, Math.round(window.innerHeight * 0.55));
+  }, [isMobile, isShort, sel?.kind, sel?.id, controller.propsOpen]);
 
   // 소프트 키보드 회피: 모바일에서 도형·메모의 텍스트를 편집하는 동안 키보드가
   // 올라오면, 그만큼을 "아래에서 가려진 높이"로 보고 편집 대상을 그 위로 옮긴다.
@@ -176,30 +181,57 @@ export function Editor() {
                 type="button"
                 aria-label="속성 닫기"
                 onClick={controller.closeProps}
-                style={{
-                  position: 'fixed',
-                  left: '50%',
-                  transform: 'translateX(-50%)',
-                  bottom: 'calc(55dvh - 30px)',
-                  width: 84,
-                  height: 30,
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'center',
-                  gap: 5,
-                  border: `1px solid ${th.border}`,
-                  borderBottom: 'none',
-                  borderRadius: '12px 12px 0 0',
-                  background: th.panel,
-                  color: th.subtext,
-                  fontFamily: 'inherit',
-                  fontSize: 12,
-                  fontWeight: 600,
-                  cursor: 'pointer',
-                  zIndex: 26,
-                }}
+                style={
+                  isShort
+                    ? {
+                        // 사이드 시트(가로 폰)에서는 손잡이도 옆으로 — 시트 왼쪽 변에 붙인다.
+                        position: 'fixed',
+                        right: MOBILE_SIDE_PANEL_W,
+                        top: '50%',
+                        transform: 'translateY(-50%)',
+                        width: 30,
+                        height: 84,
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        gap: 5,
+                        border: `1px solid ${th.border}`,
+                        borderRight: 'none',
+                        borderRadius: '12px 0 0 12px',
+                        background: th.panel,
+                        color: th.subtext,
+                        fontFamily: 'inherit',
+                        fontSize: 12,
+                        fontWeight: 600,
+                        cursor: 'pointer',
+                        zIndex: 26,
+                        writingMode: 'vertical-rl',
+                      }
+                    : {
+                        position: 'fixed',
+                        left: '50%',
+                        transform: 'translateX(-50%)',
+                        bottom: 'calc(55dvh - 30px)',
+                        width: 84,
+                        height: 30,
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        gap: 5,
+                        border: `1px solid ${th.border}`,
+                        borderBottom: 'none',
+                        borderRadius: '12px 12px 0 0',
+                        background: th.panel,
+                        color: th.subtext,
+                        fontFamily: 'inherit',
+                        fontSize: 12,
+                        fontWeight: 600,
+                        cursor: 'pointer',
+                        zIndex: 26,
+                      }
+                }
               >
-                <span style={{ fontSize: 14 }}>⌄</span> 닫기
+                <span style={{ fontSize: 14 }}>{isShort ? '›' : '⌄'}</span> 닫기
               </button>
             )}
             <ZoomControls controller={controller} panelOpen={panelOpen} />

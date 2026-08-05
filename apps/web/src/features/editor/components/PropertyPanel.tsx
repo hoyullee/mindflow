@@ -3,7 +3,7 @@ import { NodePanel } from './panel/NodePanel';
 import { LinePanel } from './panel/LinePanel';
 import { FloatPanel } from './panel/FloatPanel';
 import { ZonePanel } from './panel/ZonePanel';
-import { useIsMobile } from '../../../hooks/useMediaQuery';
+import { useIsMobile, useIsShortScreen } from '../../../hooks/useMediaQuery';
 
 interface PropertyPanelProps {
   controller: EditorController;
@@ -23,12 +23,15 @@ interface PropertyPanelProps {
  */
 export function PropertyPanel({ controller }: PropertyPanelProps) {
   const isMobile = useIsMobile();
+  // 가로로 돌린 폰(낮은 화면)에서는 바텀시트 대신 오른쪽 사이드 시트로 — 55dvh를
+  // 그대로 쓰면 캔버스가 거의 남지 않는다(`panelWrapStyle`).
+  const short = useIsShortScreen();
   // On mobile the panel is a bottom sheet that used to pop open on every
   // selection (covering the canvas + panning the map). Now it only shows when
   // the user explicitly opens it via the mobile selection bar (`propsOpen`).
   if (isMobile && !controller.propsOpen) return null;
   const sel = controller.selection;
-  if (sel?.kind === 'zone') return <ZonePanel controller={controller} zoneId={sel.id} isMobile={isMobile} />;
+  if (sel?.kind === 'zone') return <ZonePanel controller={controller} zoneId={sel.id} isMobile={isMobile} short={short} />;
 
   const m = controller.multiGroups;
   const nodesOnly = m.nodes.length > 0 && !m.lines.length && !m.floats.length;
@@ -38,8 +41,8 @@ export function PropertyPanel({ controller }: PropertyPanelProps) {
   // The `key` remounts the panel when the selection set changes, resetting each
   // panel's accordion (PanelSection) back to all-collapsed — matching the dc
   // original's "reset panelSec on selection change" (MindFlow.dc.html:853-859).
-  if (nodesOnly) return <NodePanel key={`nodes:${m.nodes.join(',')}`} controller={controller} nodeIds={m.nodes} isMobile={isMobile} />;
-  if (linesOnly) return <LinePanel key={`lines:${m.lines.join(',')}`} controller={controller} lineIds={m.lines} isMobile={isMobile} />;
-  if (floatsOnly) return <FloatPanel key={`floats:${m.floats.join(',')}`} controller={controller} floatIds={m.floats} isMobile={isMobile} />;
+  if (nodesOnly) return <NodePanel key={`nodes:${m.nodes.join(',')}`} controller={controller} nodeIds={m.nodes} isMobile={isMobile} short={short} />;
+  if (linesOnly) return <LinePanel key={`lines:${m.lines.join(',')}`} controller={controller} lineIds={m.lines} isMobile={isMobile} short={short} />;
+  if (floatsOnly) return <FloatPanel key={`floats:${m.floats.join(',')}`} controller={controller} floatIds={m.floats} isMobile={isMobile} short={short} />;
   return null;
 }

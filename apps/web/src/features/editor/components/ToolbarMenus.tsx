@@ -22,6 +22,10 @@ export function MenuShell({ theme: th, children, minWidth = 200 }: { theme: Them
         borderRadius: 10,
         boxShadow: '0 12px 32px rgba(0,0,0,.16)',
         padding: 5,
+        // 가로로 돌린 폰(높이 350~430px)에서는 항목이 많은 메뉴가 화면을 넘는다 —
+        // 넘치는 만큼만 스크롤한다(세로 화면에서는 걸리지 않는다).
+        maxHeight: 'calc(100dvh - 64px)',
+        overflowY: 'auto',
       }}
     >
       {children}
