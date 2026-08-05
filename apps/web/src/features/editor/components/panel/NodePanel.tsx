@@ -27,6 +27,8 @@ interface NodePanelProps {
   nodeIds: string[];
   /** M6: renders as a bottom sheet instead of a floating side panel. */
   isMobile?: boolean;
+  /** 가로로 돌린 폰(낮은 화면) — 바텀시트 대신 오른쪽 사이드 시트. */
+  short?: boolean;
 }
 
 /**
@@ -40,7 +42,7 @@ interface NodePanelProps {
  * 236) are hidden — everything else applies to every target at once, exactly
  * like the original's own `nodeTargets()`-driven setters.
  */
-export function NodePanel({ controller, nodeIds, isMobile = false }: NodePanelProps) {
+export function NodePanel({ controller, nodeIds, isMobile = false, short = false }: NodePanelProps) {
   const th = controller.uiTheme;
   // 스와치 팔레트도 **고정** `uiTheme`을 쓴다(`th`) — 문서 테마를 바꿔도 패널이 제안하는
   // 색은 변하지 않는다. 예전엔 문서 테마(`controller.theme`)의 팔레트를 썼는데, 테마를
@@ -56,7 +58,7 @@ export function NodePanel({ controller, nodeIds, isMobile = false }: NodePanelPr
   const toggle = (k: string) => setOpenSec((cur) => (cur === k ? null : k));
 
   return (
-    <div style={panelWrapStyle(th, isMobile, !!controller.saveConflict)}>
+    <div style={panelWrapStyle(th, isMobile, !!controller.saveConflict, short)}>
       <div style={panelBodyStyle(isMobile)}>
         {multi ? (
           <>

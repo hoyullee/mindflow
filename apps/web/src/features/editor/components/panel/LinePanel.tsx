@@ -10,6 +10,8 @@ interface LinePanelProps {
   lineIds: string[];
   /** M6: renders as a bottom sheet instead of a floating side panel. */
   isMobile?: boolean;
+  /** 가로로 돌린 폰(낮은 화면) — 바텀시트 대신 오른쪽 사이드 시트. */
+  short?: boolean;
 }
 
 /**
@@ -19,7 +21,7 @@ interface LinePanelProps {
  * MindFlow.dc.html:269) the header switches to a "다중 선택" count and the
  * 곡률/이름 편집 sections (single-only) are hidden.
  */
-export function LinePanel({ controller, lineIds, isMobile = false }: LinePanelProps) {
+export function LinePanel({ controller, lineIds, isMobile = false, short = false }: LinePanelProps) {
   const th = controller.uiTheme;
   // 스와치 팔레트도 **고정** `uiTheme`을 쓴다(`th`) — 문서 테마를 바꿔도 패널이 제안하는
   // 색은 변하지 않는다. 예전엔 문서 테마(`controller.theme`)의 팔레트를 썼는데, 테마를
@@ -36,7 +38,7 @@ export function LinePanel({ controller, lineIds, isMobile = false }: LinePanelPr
   const toggle = (k: string) => setOpenSec((cur) => (cur === k ? null : k));
 
   return (
-    <div style={panelWrapStyle(th, isMobile, !!controller.saveConflict)}>
+    <div style={panelWrapStyle(th, isMobile, !!controller.saveConflict, short)}>
       <div style={panelBodyStyle(isMobile)}>
         {multi ? (
           <>

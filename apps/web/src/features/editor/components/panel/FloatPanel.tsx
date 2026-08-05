@@ -10,6 +10,8 @@ interface FloatPanelProps {
   floatIds: string[];
   /** M6: renders as a bottom sheet instead of a floating side panel. */
   isMobile?: boolean;
+  /** 가로로 돌린 폰(낮은 화면) — 바텀시트 대신 오른쪽 사이드 시트. */
+  short?: boolean;
 }
 
 /**
@@ -18,7 +20,7 @@ interface FloatPanelProps {
  * ids (`multiFloatSel`, MindFlow.dc.html:3009) the header switches to a
  * "다중 선택" count.
  */
-export function FloatPanel({ controller, floatIds, isMobile = false }: FloatPanelProps) {
+export function FloatPanel({ controller, floatIds, isMobile = false, short = false }: FloatPanelProps) {
   const th = controller.uiTheme;
   // 스와치 팔레트도 **고정** `uiTheme`을 쓴다(`th`) — 문서 테마를 바꿔도 패널이 제안하는
   // 색은 변하지 않는다. 예전엔 문서 테마(`controller.theme`)의 팔레트를 썼는데, 테마를
@@ -39,7 +41,7 @@ export function FloatPanel({ controller, floatIds, isMobile = false }: FloatPane
   // 정보만 — 크기 조절은 캔버스의 코너 핸들(비율 고정), 삭제는 Del/우클릭.
   if (isImage) {
     return (
-      <div style={panelWrapStyle(th, isMobile, !!controller.saveConflict)}>
+      <div style={panelWrapStyle(th, isMobile, !!controller.saveConflict, short)}>
         <div style={panelBodyStyle(isMobile)}>
           <PanelTitle theme={th} kicker="선택한 이미지" name="이미지" />
           <div style={{ fontSize: 12, lineHeight: 1.7, opacity: 0.65 }}>
@@ -53,7 +55,7 @@ export function FloatPanel({ controller, floatIds, isMobile = false }: FloatPane
   }
 
   return (
-    <div style={panelWrapStyle(th, isMobile, !!controller.saveConflict)}>
+    <div style={panelWrapStyle(th, isMobile, !!controller.saveConflict, short)}>
       <div style={panelBodyStyle(isMobile)}>
         {multi ? (
           <>

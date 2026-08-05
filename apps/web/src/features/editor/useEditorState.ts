@@ -287,7 +287,7 @@ export interface EditorController {
    * 검색 바가 계산해 내려 주고, 닫히면 `null`. */
   searchMarks: { nodes: Set<string>; floats: Set<string> } | null;
   setSearchMarks: (marks: { nodes: Set<string>; floats: Set<string> } | null) => void;
-  centerObjectAboveSheet: (kind: SelectionKind, id: string, reserveBottomPx: number) => void;
+  centerObjectAboveSheet: (kind: SelectionKind, id: string, reserveBottomPx: number, reserveRightPx?: number) => void;
 
   // ---- drag-to-reparent drop target ----
   attachTarget: AttachTarget | null;
@@ -3120,13 +3120,16 @@ export function useEditorState(): EditorController {
    * sheet may cover; the object is centered in the remaining top region so it's
    * never hidden behind the sheet. Zoom is unchanged. */
   const centerObjectAboveSheet = useCallback(
-    (kind: SelectionKind, id: string, reserveBottomPx: number) => {
+    (kind: SelectionKind, id: string, reserveBottomPx: number, reserveRightPx = 0) => {
       const c = objectCanvasCenter(kind, id);
       if (!c) return;
       setViewport((prev) => {
         const reserve = Math.min(Math.max(0, reserveBottomPx), prev.vh * 0.85);
         const targetY = Math.max(prev.vh * 0.14, (prev.vh - reserve) / 2);
-        return { ...prev, pan: { x: prev.vw / 2 - c.x * prev.zoom, y: targetY - c.y * prev.zoom } };
+        // 가로 폰의 사이드 시트는 **오른쪽**을 덮는다 — 가려진 폭만큼 왼쪽으로 당긴다.
+        const reserveX = Math.min(Math.max(0, reserveRightPx), prev.vw * 0.85);
+        const targetX = (prev.vw - reserveX) / 2;
+        return { ...prev, pan: { x: targetX - c.x * prev.zoom, y: targetY - c.y * prev.zoom } };
       });
     },
     [objectCanvasCenter],

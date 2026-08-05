@@ -40,3 +40,12 @@ export function useMediaQuery(query: string): boolean {
 export function useIsMobile(): boolean {
   return useMediaQuery(`(max-width: ${MOBILE_BREAKPOINT - 1}px)`);
 }
+
+/** 화면이 **낮은가**(가로로 돌린 폰 등). 세로 공간을 크게 먹는 UI(속성 바텀시트·
+ * 드롭다운)는 이 조건에서 배치를 바꾼다 — 가로 폰은 높이가 350~430px 남짓이라
+ * 55dvh 시트를 그대로 두면 캔버스가 거의 남지 않는다. */
+export const SHORT_SCREEN_MAX_HEIGHT = 500;
+
+export function useIsShortScreen(): boolean {
+  return useMediaQuery(`(max-height: ${SHORT_SCREEN_MAX_HEIGHT}px)`);
+}
