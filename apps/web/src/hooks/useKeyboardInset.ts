@@ -17,11 +17,16 @@ export const KEYBOARD_MIN_INSET = 120;
 interface ViewportLike {
   height: number;
   offsetTop: number;
+  scale?: number;
 }
 
 /** 순수 계산부 — 테스트가 이 함수만으로 규칙을 고정한다. */
 export function keyboardInsetOf(vv: ViewportLike | null | undefined, layoutHeight: number): number {
   if (!vv || !layoutHeight) return 0;
+  // 사용자가 **두 손가락으로 화면을 확대**하면 시각 뷰포트가 그만큼 작아진다 —
+  // 키보드와 구분되지 않는 신호다. 글씨를 키워 읽는 중에 캔버스가 저절로 움직이면
+  // 그게 더 이상하므로, 확대 중에는 아예 관여하지 않는다.
+  if ((vv.scale ?? 1) > 1.05) return 0;
   const inset = layoutHeight - (vv.height + vv.offsetTop);
   return inset >= KEYBOARD_MIN_INSET ? Math.round(inset) : 0;
 }

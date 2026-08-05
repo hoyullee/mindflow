@@ -41,6 +41,26 @@ body {
   margin: 0;
   padding: 0;
   height: 100%;
+  /* 당겨서 새로고침(안드로이드 크롬)이 **리로드**로 이어지지 않게 스크롤 연쇄만
+     끊는다 — 화면 안 스크롤은 그대로. 에디터는 리로드로 잃는 게 많다(실행취소
+     기록·클립보드·선택·팬/줌, 그리고 아직 저장 안 된 편집). 캔버스는 이미
+     `touch-action: none`이라 무관하지만, 바텀시트·메뉴·홈 목록의 맨 위에서
+     아래로 끄는 제스처가 그대로 새어 나갔다. */
+  overscroll-behavior-y: contain;
+}
+
+/* 모바일: 조작 요소 위의 **탭 두 번**이 확대로 읽히지 않게(덤으로 300ms 탭 지연
+   제거). 두 손가락 확대는 일부러 남긴다 — 화면 전체를 `none`으로 막으면 저시력
+   사용자가 UI를 키울 길이 사라진다(접근성). 캔버스(`.mf-ed-vp`)만은 우리가 직접
+   핀치 줌을 처리하므로 `touch-action: none`을 유지한다. */
+button,
+[role='button'],
+a,
+input,
+select,
+textarea,
+label {
+  touch-action: manipulation;
 }
 
 /* 새 버전 토스트(UpdateToast) 등장 — 화면 아래에서 살짝 올라온다.
