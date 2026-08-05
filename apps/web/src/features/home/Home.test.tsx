@@ -1917,6 +1917,11 @@ describe('Home', () => {
       // of `1fr`, which is what previously made cards balloon "wide").
       const scroll = container.querySelector('.mf-recent-scroll') as HTMLElement;
       expect(scroll.style.overflowX).toBe('auto');
+      // 선택 링(카드 밖 3px 글로우)이 잘리지 않게 스크롤 박스에 여유를 두고 같은
+      // 크기의 음수 마진으로 상쇄한다 — `overflow-x: auto`는 세로축까지 auto로
+      // 만들어(CSS 규칙) 여유가 없으면 위·아래·왼쪽이 잘렸다(제보).
+      expect(parseFloat(scroll.style.padding)).toBeGreaterThanOrEqual(3);
+      expect(parseFloat(scroll.style.margin)).toBe(-parseFloat(scroll.style.padding));
       recent.forEach((card) => {
         const slot = card.parentElement as HTMLElement;
         expect(slot.style.width).toBe('128px');
