@@ -65,7 +65,7 @@ function getViewport(container: HTMLElement): HTMLElement {
   return el as HTMLElement;
 }
 
-function nodeBoxFor(container: HTMLElement, text: string): HTMLElement {
+function nodeBoxFor(container: HTMLElement, text: string | RegExp): HTMLElement {
   const vp = within(getViewport(container));
   const el = vp.getByText(text).closest('[data-node-id]');
   if (!el) throw new Error(`node box for "${text}" not found`);
@@ -156,6 +156,22 @@ describe('Editor interactions (M3-Editor-b)', () => {
 
     // the zone property panel is shown (zone got selected from a body click)
     expect(screen.getByText('선택한 영역')).toBeTruthy();
+  });
+
+  // 제보: 여러 줄 도형을 고르면 패널 제목이 내용 전체를 한 줄로 나열했다
+  // (제목 줄은 nowrap이라 줄바꿈이 공백으로 접힌다). 제목은 이름이므로 첫 줄만.
+  it('패널 제목은 도형 텍스트의 **첫 줄만** 보여 준다 (전체 나열 금지)', () => {
+    const multi = JSON.parse(JSON.stringify(DOC)) as typeof DOC;
+    (multi.nodes as Record<string, { text: string }>)['c1']!.text = '첫 줄 제목\n둘째 줄 내용\n셋째 줄';
+    localStorage.setItem('mindflow_doc_t1ml', JSON.stringify(multi));
+    const { container } = renderEditor('/editor?map=t1ml&title=x');
+
+    selectNodeBox(nodeBoxFor(container, /첫 줄 제목/));
+    const panel = within(screen.getByText('선택한 주제').parentElement as HTMLElement);
+    expect(panel.getByText('첫 줄 제목')).toBeTruthy();
+    expect(panel.queryByText(/둘째 줄 내용/)).toBeNull();
+    // 전체 텍스트는 툴팁에 남는다.
+    expect((panel.getByText('첫 줄 제목') as HTMLElement).title).toContain('둘째 줄 내용');
   });
 
   it('clicking the background clears the selection', () => {

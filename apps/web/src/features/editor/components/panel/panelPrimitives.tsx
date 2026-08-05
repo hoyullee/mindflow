@@ -174,11 +174,33 @@ export function PanelSection({ theme, title, open, onToggle, children }: { theme
   );
 }
 
+/**
+ * 패널 제목에 쓸 **한 줄** — 여러 줄 텍스트는 첫 줄만 남긴다.
+ *
+ * 제목은 "지금 무엇을 고쳤는가"를 가리키는 **이름**이지 내용 미리보기가 아니다.
+ * 제목 줄은 `white-space: nowrap`이라 줄바꿈이 공백으로 접히는데, 그래서 여러 줄
+ * 도형을 고르면 내용 전체가 한 줄로 나열됐다(제보).
+ *
+ * 첫 줄이 비어 있으면(줄바꿈으로 시작하는 텍스트) 다음 비지 않은 줄을 쓴다 —
+ * 빈 자리를 보여 주는 것보다 낫다.
+ */
+export function panelTitleLine(text: string): string {
+  for (const line of text.split('\n')) {
+    const t = line.trim();
+    if (t) return t;
+  }
+  return '';
+}
+
 export function PanelTitle({ theme, kicker, name }: { theme: Theme; kicker: string; name: string }) {
+  const line = panelTitleLine(name);
   return (
     <>
       <div style={{ fontSize: 11, fontWeight: 700, letterSpacing: '.04em', textTransform: 'uppercase', color: theme.subtext, marginBottom: 4 }}>{kicker}</div>
-      <div style={{ fontSize: 14, fontWeight: 600, marginBottom: 14, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{name}</div>
+      {/* 툴팁에는 전체 텍스트 — 첫 줄만 보이니 나머지를 확인할 길은 남겨 둔다. */}
+      <div title={name || undefined} style={{ fontSize: 14, fontWeight: 600, marginBottom: 14, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+        {line}
+      </div>
     </>
   );
 }
