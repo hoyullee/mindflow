@@ -42,7 +42,7 @@ export function SettingsPopover({ state, controller, userInitial }: Props) {
       >
         <ProfileAvatar initial={userInitial} avatarUrl={state.userAvatar} size={30} radius={9} fontSize={16} />
         <div style={{ fontWeight: 700, fontSize: 15 }}>{state.userName}</div>
-        <div style={{ marginLeft: 'auto', color: '#9c8b7e', fontSize: 12 }}>▾</div>
+        <div style={{ marginLeft: 'auto', color: 'var(--mf-muted)', fontSize: 12 }}>▾</div>
       </div>
 
       <div
@@ -53,7 +53,7 @@ export function SettingsPopover({ state, controller, userInitial }: Props) {
           top: 'calc(100% + 6px)',
           left: 0,
           width: 236,
-          background: '#fff',
+          background: 'var(--mf-panel)',
           border: '1px solid var(--mf-border)',
           borderRadius: 14,
           boxShadow: '0 12px 32px rgba(0,0,0,.16)',
@@ -66,8 +66,8 @@ export function SettingsPopover({ state, controller, userInitial }: Props) {
         <div style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '16px 16px 14px', background: 'linear-gradient(135deg,var(--mf-accent-soft),var(--mf-panel2))', borderRadius: '14px 14px 0 0' }}>
           <ProfileAvatar initial={userInitial} avatarUrl={state.userAvatar} size={44} radius={13} fontSize={20} boxShadow="0 4px 10px rgba(var(--mf-accent-rgb),.25)" />
           <div style={{ minWidth: 0, flex: 1 }}>
-            <div style={{ fontWeight: 700, fontSize: 15, color: '#33281f', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{state.userName}</div>
-            {state.userEmail && <div style={{ fontSize: 12, color: '#9c8b7e', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{state.userEmail}</div>}
+            <div style={{ fontWeight: 700, fontSize: 15, color: 'var(--mf-text)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{state.userName}</div>
+            {state.userEmail && <div style={{ fontSize: 12, color: 'var(--mf-muted)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{state.userEmail}</div>}
           </div>
         </div>
         <div style={{ padding: 6 }}>
@@ -84,7 +84,7 @@ export function SettingsPopover({ state, controller, userInitial }: Props) {
                 controller.openProfileNameEdit();
               }
             }}
-            style={{ display: 'flex', alignItems: 'center', gap: 9, padding: '10px 12px', borderRadius: 9, fontSize: 13, fontWeight: 600, cursor: 'pointer', color: '#33281f' }}
+            style={{ display: 'flex', alignItems: 'center', gap: 9, padding: '10px 12px', borderRadius: 9, fontSize: 13, fontWeight: 600, cursor: 'pointer', color: 'var(--mf-text)' }}
           >
             <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
               <path d="M12 20h9" />
@@ -103,7 +103,7 @@ export function SettingsPopover({ state, controller, userInitial }: Props) {
                 controller.openAccountSettings();
               }
             }}
-            style={{ display: 'flex', alignItems: 'center', gap: 9, padding: '10px 12px', borderRadius: 9, fontSize: 13, fontWeight: 600, cursor: 'pointer', color: '#33281f' }}
+            style={{ display: 'flex', alignItems: 'center', gap: 9, padding: '10px 12px', borderRadius: 9, fontSize: 13, fontWeight: 600, cursor: 'pointer', color: 'var(--mf-text)' }}
           >
             <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
               <circle cx="12" cy="12" r="3" />
@@ -122,7 +122,7 @@ export function SettingsPopover({ state, controller, userInitial }: Props) {
                 controller.logout();
               }
             }}
-            style={{ display: 'flex', alignItems: 'center', gap: 9, padding: '10px 12px', borderRadius: 9, fontSize: 13, fontWeight: 600, cursor: 'pointer', color: '#d64545' }}
+            style={{ display: 'flex', alignItems: 'center', gap: 9, padding: '10px 12px', borderRadius: 9, fontSize: 13, fontWeight: 600, cursor: 'pointer', color: 'var(--mf-danger)' }}
           >
             <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
               <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4" />

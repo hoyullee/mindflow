@@ -54,7 +54,7 @@ export function RecentStripSkeleton({ count }: { count: number }) {
       </div>
       <div style={{ display: 'flex', gap: RECENT_GAP, overflow: 'hidden' }}>
         {Array.from({ length: n }, (_, i) => (
-          <div key={i} style={{ width: RECENT_CARD_W, flex: '0 0 auto', border: '1px solid var(--mf-border-soft)', borderRadius: 10, background: '#fff', overflow: 'hidden' }}>
+          <div key={i} style={{ width: RECENT_CARD_W, flex: '0 0 auto', border: '1px solid var(--mf-border-soft)', borderRadius: 10, background: 'var(--mf-panel)', overflow: 'hidden' }}>
             {/* compact MapCard와 footprint 정확히 일치:
                 썸네일 72 + 패딩 8·8 + 제목줄 15 + (marginTop 2 + 위치줄 14).
                 위치줄이 생기며 카드가 16px 높아졌으므로 스켈레톤도 같이 키운다 —
@@ -127,7 +127,7 @@ export function RecentStrip({ cards, controller }: { cards: CardViewData[]; cont
         <span style={{ color: 'var(--mf-accent)', display: 'inline-flex' }} aria-hidden="true">
           <ClockGlyph />
         </span>
-        <span style={{ fontSize: 13, lineHeight: '16px', fontWeight: 700, letterSpacing: '-.01em', color: '#33281f' }}>최근 항목</span>
+        <span style={{ fontSize: 13, lineHeight: '16px', fontWeight: 700, letterSpacing: '-.01em', color: 'var(--mf-text)' }}>최근 항목</span>
       </div>
       <div
         className="mf-recent-scroll"

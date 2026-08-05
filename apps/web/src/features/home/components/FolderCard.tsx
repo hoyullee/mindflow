@@ -38,7 +38,7 @@ export function FolderCard({ folder, controller }: Props) {
       style={{
         border: folder.dragOver ? '2px dashed var(--mf-accent)' : '1px solid var(--mf-border)',
         borderRadius: 14,
-        background: folder.dragOver ? 'var(--mf-accent-soft)' : '#fff',
+        background: folder.dragOver ? 'var(--mf-accent-soft)' : 'var(--mf-panel)',
         cursor: 'pointer',
         transition: 'border-color .14s, box-shadow .14s, background .14s',
         position: 'relative',
@@ -60,7 +60,7 @@ export function FolderCard({ folder, controller }: Props) {
         }}
         title="메뉴"
         aria-label="메뉴"
-        style={{ position: 'absolute', top: 10, right: 10, zIndex: 4, width: 28, height: 28, borderRadius: 8, background: 'rgba(255,255,255,.92)', border: '1px solid var(--mf-border)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 13, lineHeight: 1, color: '#7c6d60', cursor: 'pointer', boxShadow: '0 2px 6px rgba(0,0,0,.12)', opacity: folder.menuOpen ? 1 : 0, transition: 'opacity .15s' }}
+        style={{ position: 'absolute', top: 10, right: 10, zIndex: 4, width: 28, height: 28, borderRadius: 8, background: 'var(--mf-panel-veil)', border: '1px solid var(--mf-border)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 13, lineHeight: 1, color: 'var(--mf-subtext)', cursor: 'pointer', boxShadow: '0 2px 6px rgba(0,0,0,.12)', opacity: folder.menuOpen ? 1 : 0, transition: 'opacity .15s' }}
       >
         ☰
       </div>
@@ -69,7 +69,7 @@ export function FolderCard({ folder, controller }: Props) {
           e.preventDefault();
           e.stopPropagation();
         }}
-        style={{ position: 'absolute', top: 44, right: 10, zIndex: 20, width: 150, background: '#fff', border: '1px solid var(--mf-border)', borderRadius: 10, boxShadow: '0 10px 28px rgba(0,0,0,.16)', padding: '5px 0', display: folder.menuOpen ? 'block' : 'none' }}
+        style={{ position: 'absolute', top: 44, right: 10, zIndex: 20, width: 150, background: 'var(--mf-panel)', border: '1px solid var(--mf-border)', borderRadius: 10, boxShadow: '0 10px 28px rgba(0,0,0,.16)', padding: '5px 0', display: folder.menuOpen ? 'block' : 'none' }}
       >
         <div
           className="menu-row"
@@ -79,9 +79,9 @@ export function FolderCard({ folder, controller }: Props) {
             if (folder.isDrive) controller.startRenameDriveFolder(folder.id);
             else controller.startRenameFolder(folder.id);
           }}
-          style={{ display: 'flex', alignItems: 'center', gap: 9, padding: '9px 13px', fontSize: 13, cursor: 'pointer', color: '#33281f' }}
+          style={{ display: 'flex', alignItems: 'center', gap: 9, padding: '9px 13px', fontSize: 13, cursor: 'pointer', color: 'var(--mf-text)' }}
         >
-          <span style={{ display: 'flex', color: '#7c6d60' }}>
+          <span style={{ display: 'flex', color: 'var(--mf-subtext)' }}>
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
               <path d="M12 20h9" />
               <path d="M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4z" />
@@ -97,7 +97,7 @@ export function FolderCard({ folder, controller }: Props) {
             e.stopPropagation();
             controller.askDeleteFolder(folder.id);
           }}
-          style={{ display: 'flex', alignItems: 'center', gap: 9, padding: '9px 13px', fontSize: 13, cursor: folder.canDelete ? 'pointer' : 'not-allowed', color: folder.canDelete ? '#d64545' : '#c9b8a9' }}
+          style={{ display: 'flex', alignItems: 'center', gap: 9, padding: '9px 13px', fontSize: 13, cursor: folder.canDelete ? 'pointer' : 'not-allowed', color: folder.canDelete ? 'var(--mf-danger)' : 'var(--mf-faint2)' }}
         >
           <span style={{ display: 'flex' }}>
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
@@ -116,7 +116,7 @@ export function FolderCard({ folder, controller }: Props) {
       </div>
       <div style={{ minWidth: 0 }}>
         <div style={{ fontSize: 14.5, fontWeight: 700, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{folder.name}</div>
-        <div style={{ fontSize: 12, color: '#9c8b7e', marginTop: 3 }}>맵 {folder.count}개</div>
+        <div style={{ fontSize: 12, color: 'var(--mf-muted)', marginTop: 3 }}>맵 {folder.count}개</div>
       </div>
     </div>
   );

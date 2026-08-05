@@ -2354,24 +2354,45 @@ describe('피드백 보내기 (홈 진입점)', () => {
 
 // 홈 색상 테마 — LNB 최하단에서 고르고, 워크스페이스 블롭으로 기기 간에 따라온다.
 describe('홈 색상 테마', () => {
-  it('LNB에서 테마를 고르면 즉시 색이 바뀌고, 캐시·워크스페이스에 저장된다', async () => {
+  /** 테마 선택은 프로필 메뉴 → 설정 모달 안에 있다(사용자 요청으로 LNB에서 이동). */
+  async function openThemeSettings(user: ReturnType<typeof userEvent.setup>) {
+    await user.click(await screen.findByRole('button', { name: '계정 메뉴' }));
+    await user.click(screen.getByRole('button', { name: '설정' }));
+    return within(await screen.findByRole('dialog', { name: '설정' }));
+  }
+
+  it('설정에서 테마를 고르면 즉시 색이 바뀌고, 캐시·워크스페이스에 저장된다', async () => {
     const user = userEvent.setup();
     renderHome();
 
-    await user.click(await screen.findByRole('button', { name: '색상 테마' }));
-    const ocean = screen.getByRole('radio', { name: '오션 테마' });
-    expect(screen.getByRole('radio', { name: '코랄 테마' }).getAttribute('aria-checked')).toBe('true');
+    const dialog = await openThemeSettings(user);
+    expect(dialog.getByRole('radio', { name: '코랄 테마' }).getAttribute('aria-checked')).toBe('true');
+    // LNB에는 더 이상 없다 — 진입점은 설정 하나.
+    expect(screen.queryByRole('button', { name: '색상 테마' })).toBeNull();
 
-    await user.click(ocean);
+    await user.click(dialog.getByRole('radio', { name: '오션 테마' }));
 
     // ① 화면 색이 바로 바뀐다(CSS 변수) ② 이 기기 캐시 ③ 워크스페이스(정본)
     expect(document.documentElement.style.getPropertyValue('--mf-accent')).toBe(HOME_THEMES.ocean.accent);
     expect(localStorage.getItem('mf_home_theme')).toBe('ocean');
-    expect(ocean.getAttribute('aria-checked')).toBe('true');
+    expect(dialog.getByRole('radio', { name: '오션 테마' }).getAttribute('aria-checked')).toBe('true');
     await waitFor(() => {
       const ws = JSON.parse(localStorage.getItem('mf_spaces')!) as { theme?: string };
       expect(ws.theme).toBe('ocean');
     });
+  });
+
+  it('다크를 고르면 면과 글자가 함께 뒤집힌다 (배경만 어두워지지 않는다)', async () => {
+    const user = userEvent.setup();
+    renderHome();
+    const dialog = await openThemeSettings(user);
+    await user.click(dialog.getByRole('radio', { name: '다크 테마' }));
+
+    const root = document.documentElement.style;
+    expect(root.getPropertyValue('--mf-bg')).toBe(HOME_THEMES.dark.bg);
+    expect(root.getPropertyValue('--mf-panel')).toBe(HOME_THEMES.dark.panel);
+    expect(root.getPropertyValue('--mf-text')).toBe(HOME_THEMES.dark.text);
+    expect(localStorage.getItem('mf_home_theme')).toBe('dark');
   });
 
   it('저장된 워크스페이스의 테마를 불러와 입힌다 (다른 기기에서 고른 색)', async () => {

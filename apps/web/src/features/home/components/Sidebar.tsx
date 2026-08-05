@@ -4,7 +4,6 @@ import type { HomeState } from '../types';
 import type { HomeViewModel } from '../viewModel';
 import { SettingsPopover } from './SettingsPopover';
 import { SpaceRow } from './SpaceRow';
-import { HOME_THEMES, HOME_THEME_KEYS } from '../theme';
 
 /** How long the drawer's exit slide runs before the aside unmounts. Slightly
  * longer than the CSS transition (260ms, home.css `.mf-drawer`) so the last
@@ -40,8 +39,6 @@ export function Sidebar({ state, view, controller, isMobile = false, isOpen = fa
   //   `entered` — the on-screen state driving the CSS transition (transform/
   //   opacity). Opening mounts off-screen first, then flips `entered` on the
   //   next frame so the enter slide actually plays.
-  // 색상 테마 목록 펼침 — 순수 표현 상태라 컨트롤러(이식된 dc 상태)에 두지 않는다.
-  const [themeOpen, setThemeOpen] = useState(false);
   const [mounted, setMounted] = useState(isOpen);
   const [entered, setEntered] = useState(isOpen);
   useEffect(() => {
@@ -111,7 +108,7 @@ export function Sidebar({ state, view, controller, isMobile = false, isOpen = fa
         className={isMobile ? 'mf-drawer' : undefined}
         style={{
           ...asideStyle,
-          background: '#fff',
+          background: 'var(--mf-panel)',
           borderRight: '1px solid var(--mf-border)',
           display: 'flex',
           flexDirection: 'column',
@@ -121,7 +118,7 @@ export function Sidebar({ state, view, controller, isMobile = false, isOpen = fa
       >
         <SettingsPopover state={state} controller={controller} userInitial={view.userInitial} />
 
-      <div style={{ fontSize: 11, fontWeight: 700, letterSpacing: '.04em', color: '#9c8b7e', padding: '14px 10px 8px' }}>스페이스</div>
+      <div style={{ fontSize: 11, fontWeight: 700, letterSpacing: '.04em', color: 'var(--mf-muted)', padding: '14px 10px 8px' }}>스페이스</div>
 
       <div className="lnb-scroll" style={{ flex: '0 1 auto', minHeight: 60, overflowY: 'auto', overflowX: 'hidden', margin: '0 -4px', padding: '0 4px' }}>
         {/* Until the workspace loads (`state.loaded`), show skeleton rows instead
@@ -149,9 +146,9 @@ export function Sidebar({ state, view, controller, isMobile = false, isOpen = fa
         onKeyDown={(e) => {
           if (e.key === 'Enter' || e.key === ' ') controller.openNewSpace();
         }}
-        style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '9px 10px', minHeight: isMobile ? 44 : undefined, borderRadius: 9, cursor: 'pointer', fontSize: 13.5, fontWeight: 500, color: '#7c6d60', flexShrink: 0 }}
+        style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '9px 10px', minHeight: isMobile ? 44 : undefined, borderRadius: 9, cursor: 'pointer', fontSize: 13.5, fontWeight: 500, color: 'var(--mf-subtext)', flexShrink: 0 }}
       >
-        <span style={{ fontSize: 15, color: '#9c8b7e' }}>＋</span> 새 스페이스
+        <span style={{ fontSize: 15, color: 'var(--mf-muted)' }}>＋</span> 새 스페이스
       </div>
 
       {SHOW_DRIVE_LNB && (
@@ -174,12 +171,12 @@ export function Sidebar({ state, view, controller, isMobile = false, isOpen = fa
             fontSize: 13.5,
             fontWeight: view.isDriveSpace ? 600 : 500,
             background: view.isDriveSpace ? 'var(--mf-accent-soft)' : 'transparent',
-            color: view.isDriveSpace ? 'var(--mf-accent-strong)' : '#7c6d60',
+            color: view.isDriveSpace ? 'var(--mf-accent-strong)' : 'var(--mf-subtext)',
           }}
         >
-          <span style={{ width: 15, height: 15, borderRadius: 3, display: 'inline-block', background: view.connected ? '#34A853' : '#c9b8a9' }} />
+          <span style={{ width: 15, height: 15, borderRadius: 3, display: 'inline-block', background: view.connected ? '#34A853' : 'var(--mf-faint2)' }} />
           <span>Google Drive</span>
-          <span style={{ marginLeft: 'auto', fontSize: 11, color: '#9c8b7e' }}>{view.connected ? '연결됨' : '연결'}</span>
+          <span style={{ marginLeft: 'auto', fontSize: 11, color: 'var(--mf-muted)' }}>{view.connected ? '연결됨' : '연결'}</span>
         </div>
       )}
 
@@ -212,12 +209,12 @@ export function Sidebar({ state, view, controller, isMobile = false, isOpen = fa
               cursor: 'pointer',
               fontSize: 13.5,
               fontWeight: 500,
-              color: '#7c6d60',
+              color: 'var(--mf-subtext)',
               flexShrink: 0,
             }}
           >
             <SharedGlyph size={15} /> 공유받음
-            <span style={{ marginLeft: 'auto', fontSize: 11, color: '#c9b8a9' }}>{view.sharedItems.length ? String(view.sharedItems.length) : ''}</span>
+            <span style={{ marginLeft: 'auto', fontSize: 11, color: 'var(--mf-faint2)' }}>{view.sharedItems.length ? String(view.sharedItems.length) : ''}</span>
           </div>
           <div
             style={{
@@ -254,19 +251,19 @@ export function Sidebar({ state, view, controller, isMobile = false, isOpen = fa
                     borderRadius: 8,
                     cursor: 'pointer',
                     fontSize: 12.5,
-                    color: '#5c4f44',
+                    color: 'var(--mf-subtext)',
                   }}
                 >
                   <MapMiniGlyph />
                   <span style={{ flex: '1 1 auto', minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{m.title}</span>
                   {/* 편집 권한은 기본값이라 표시하지 않는다 — 예외인 '보기'만 알린다. */}
                   {m.role === 'view' && (
-                    <span style={{ flexShrink: 0, padding: '1px 6px', borderRadius: 999, fontSize: 9.5, fontWeight: 700, background: 'rgba(63,143,208,.12)', color: '#2f6f9e' }}>보기</span>
+                    <span style={{ flexShrink: 0, padding: '1px 6px', borderRadius: 999, fontSize: 9.5, fontWeight: 700, background: 'rgba(63,143,208,.12)', color: 'var(--mf-info)' }}>보기</span>
                   )}
                 </div>
               ))}
               {!view.loading && view.sharedItems.length === 0 && (
-                <div style={{ padding: '7px 10px 7px 30px', fontSize: 11.5, color: '#c9b8a9' }}>공유받은 항목이 없습니다</div>
+                <div style={{ padding: '7px 10px 7px 30px', fontSize: 11.5, color: 'var(--mf-faint2)' }}>공유받은 항목이 없습니다</div>
               )}
             </div>
           </div>
@@ -283,10 +280,10 @@ export function Sidebar({ state, view, controller, isMobile = false, isOpen = fa
         onKeyDown={(e) => {
           if (e.key === 'Enter' || e.key === ' ') controller.toggleFavList();
         }}
-        style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '9px 10px', minHeight: isMobile ? 44 : undefined, borderRadius: 9, cursor: 'pointer', fontSize: 13.5, fontWeight: 500, color: '#7c6d60' }}
+        style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '9px 10px', minHeight: isMobile ? 44 : undefined, borderRadius: 9, cursor: 'pointer', fontSize: 13.5, fontWeight: 500, color: 'var(--mf-subtext)' }}
       >
         <StarGlyph size={15} /> 즐겨찾기
-        <span style={{ marginLeft: 'auto', fontSize: 11, color: '#c9b8a9' }}>{view.favCount}</span>
+        <span style={{ marginLeft: 'auto', fontSize: 11, color: 'var(--mf-faint2)' }}>{view.favCount}</span>
       </div>
       <div
         style={{
@@ -312,7 +309,7 @@ export function Sidebar({ state, view, controller, isMobile = false, isOpen = fa
                 }
               }}
               title={`'${f.title}' 열기`}
-              style={{ display: 'flex', alignItems: 'center', gap: 4, padding: '4px 10px 4px 24px', borderRadius: 8, cursor: 'pointer', fontSize: 12.5, color: '#5c4f44' }}
+              style={{ display: 'flex', alignItems: 'center', gap: 4, padding: '4px 10px 4px 24px', borderRadius: 8, cursor: 'pointer', fontSize: 12.5, color: 'var(--mf-subtext)' }}
             >
               {/* Leading star = UNFAVORITE button (the row itself opens the map).
                   stopPropagation on click AND keydown — both would otherwise
@@ -333,11 +330,11 @@ export function Sidebar({ state, view, controller, isMobile = false, isOpen = fa
               </button>
               <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{f.title}</span>
               {f.isDrive && (
-                <span style={{ flexShrink: 0, marginLeft: 'auto', display: 'flex', alignItems: 'center', padding: '1px 6px', borderRadius: 999, fontSize: 9.5, fontWeight: 700, background: 'rgba(52,168,83,.12)', color: '#1e7a3a' }}>Drive</span>
+                <span style={{ flexShrink: 0, marginLeft: 'auto', display: 'flex', alignItems: 'center', padding: '1px 6px', borderRadius: 999, fontSize: 9.5, fontWeight: 700, background: 'rgba(52,168,83,.12)', color: 'var(--mf-success-ink)' }}>Drive</span>
               )}
             </div>
           ))}
-          {!view.loading && view.favItems.length === 0 && <div style={{ padding: '7px 10px 7px 30px', fontSize: 11.5, color: '#c9b8a9' }}>즐겨찾기한 항목이 없습니다</div>}
+          {!view.loading && view.favItems.length === 0 && <div style={{ padding: '7px 10px 7px 30px', fontSize: 11.5, color: 'var(--mf-faint2)' }}>즐겨찾기한 항목이 없습니다</div>}
         </div>
       </div>
 
@@ -349,7 +346,7 @@ export function Sidebar({ state, view, controller, isMobile = false, isOpen = fa
         onKeyDown={(e) => {
           if (e.key === 'Enter' || e.key === ' ') controller.toggleTrashList();
         }}
-        style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '9px 10px', minHeight: isMobile ? 44 : undefined, borderRadius: 9, cursor: 'pointer', fontSize: 13.5, fontWeight: 500, color: '#7c6d60' }}
+        style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '9px 10px', minHeight: isMobile ? 44 : undefined, borderRadius: 9, cursor: 'pointer', fontSize: 13.5, fontWeight: 500, color: 'var(--mf-subtext)' }}
       >
         <TrashGlyph size={15} /> 휴지통
         {/* 비우기 sits BEFORE the count so the count stays at the far right —
@@ -378,7 +375,7 @@ export function Sidebar({ state, view, controller, isMobile = false, isOpen = fa
             비우기
           </span>
         )}
-        <span style={{ marginLeft: view.trashItems.length > 0 ? 0 : 'auto', fontSize: 11, color: '#c9b8a9' }}>{view.trashCount}</span>
+        <span style={{ marginLeft: view.trashItems.length > 0 ? 0 : 'auto', fontSize: 11, color: 'var(--mf-faint2)' }}>{view.trashCount}</span>
       </div>
       <div
         style={{
@@ -399,11 +396,11 @@ export function Sidebar({ state, view, controller, isMobile = false, isOpen = fa
             // unstar star) — the old "복원"/"영구 삭제" text links ate most of the
             // 248px column and left titles nearly invisible. They reveal on row
             // hover/focus (always visible on touch — see home.css .mf-trash-act).
-            <div key={t.docId || t.title} className="drive-file mf-trash-row" style={{ display: 'flex', alignItems: 'center', gap: 4, padding: '4px 8px 4px 28px', borderRadius: 8, fontSize: 12.5, color: '#8a7a6d' }}>
+            <div key={t.docId || t.title} className="drive-file mf-trash-row" style={{ display: 'flex', alignItems: 'center', gap: 4, padding: '4px 8px 4px 28px', borderRadius: 8, fontSize: 12.5, color: 'var(--mf-subtext)' }}>
               {t.isDrive ? <FolderMiniGlyph /> : <MapMiniGlyph />}
               <span style={{ flex: '1 1 auto', minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', margin: '0 2px 0 3px' }}>{t.title}</span>
               {t.isDrive && (
-                <span style={{ flexShrink: 0, padding: '1px 7px', borderRadius: 999, fontSize: 10, fontWeight: 700, background: 'rgba(52,168,83,.12)', color: '#1e7a3a' }}>{t.badge}</span>
+                <span style={{ flexShrink: 0, padding: '1px 7px', borderRadius: 999, fontSize: 10, fontWeight: 700, background: 'rgba(52,168,83,.12)', color: 'var(--mf-success-ink)' }}>{t.badge}</span>
               )}
               <button
                 type="button"
@@ -414,7 +411,7 @@ export function Sidebar({ state, view, controller, isMobile = false, isOpen = fa
                   controller.askRestore(t.title, t.docId);
                 }}
                 className="btn restore-link mf-trash-act"
-                style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', width: 26, height: 26, padding: 0, border: 'none', borderRadius: 7, background: 'transparent', color: '#2f9e63', cursor: 'pointer', flexShrink: 0 }}
+                style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', width: 26, height: 26, padding: 0, border: 'none', borderRadius: 7, background: 'transparent', color: 'var(--mf-success)', cursor: 'pointer', flexShrink: 0 }}
               >
                 <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
                   <polyline points="3 4 3 10 9 10" />
@@ -430,7 +427,7 @@ export function Sidebar({ state, view, controller, isMobile = false, isOpen = fa
                   controller.askPurge(t.title, t.docId);
                 }}
                 className="btn purge-link mf-trash-act"
-                style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', width: 26, height: 26, padding: 0, border: 'none', borderRadius: 7, background: 'transparent', color: '#d64545', cursor: 'pointer', flexShrink: 0 }}
+                style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', width: 26, height: 26, padding: 0, border: 'none', borderRadius: 7, background: 'transparent', color: 'var(--mf-danger)', cursor: 'pointer', flexShrink: 0 }}
               >
                 <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" aria-hidden="true">
                   <line x1="6" y1="6" x2="18" y2="18" />
@@ -439,82 +436,16 @@ export function Sidebar({ state, view, controller, isMobile = false, isOpen = fa
               </button>
             </div>
           ))}
-          {!view.loading && view.trashItems.length === 0 && <div style={{ padding: '7px 10px 7px 30px', fontSize: 11.5, color: '#c9b8a9' }}>휴지통이 비어 있습니다</div>}
+          {!view.loading && view.trashItems.length === 0 && <div style={{ padding: '7px 10px 7px 30px', fontSize: 11.5, color: 'var(--mf-faint2)' }}>휴지통이 비어 있습니다</div>}
         </div>
       </div>
 
       {/* 피드백 보내기 — LNB 최하단 고정(사용자 요청: 프로필 메뉴에서 이동).
           `marginTop: auto`가 남는 공간을 밀어 올려 항상 바닥에 붙는다(공간이
-          모자라면 휴지통 아래로 자연히 이어진다). 색상 테마도 같은 "설정" 층이라
-          바로 위에 둔다. */}
+          모자라면 휴지통 아래로 자연히 이어진다). 색상 테마는 여기 있다가
+          사용자 요청으로 설정 모달(`AccountSettingsModal`)로 옮겼다. */}
       <div style={{ marginTop: 'auto', flexShrink: 0, paddingTop: 8 }}>
         <div style={{ height: 1, background: 'var(--mf-border-soft)', margin: '0 4px 8px' }} />
-
-        {/* 색상 테마 — 펼치면 색 점이 나오고, 누르는 즉시 화면 색이 바뀐다(적용
-            버튼 없음: 고르는 것이 곧 미리보기다). 공유받음·휴지통과 같은 접이식
-            항목 꼴이라 LNB 안에서 새 문법을 만들지 않는다. */}
-        <div
-          className="nav-item"
-          role="button"
-          tabIndex={0}
-          aria-label="색상 테마"
-          aria-expanded={themeOpen}
-          onClick={() => setThemeOpen((v) => !v)}
-          onKeyDown={(e) => {
-            if (e.key === 'Enter' || e.key === ' ') {
-              e.preventDefault();
-              setThemeOpen((v) => !v);
-            }
-          }}
-          style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '9px 10px', minHeight: isMobile ? 44 : undefined, borderRadius: 9, cursor: 'pointer', fontSize: 13.5, fontWeight: 500, color: '#7c6d60' }}
-        >
-          <PaletteGlyph /> 색상 테마
-          {/* 지금 색을 한 점으로 알려 준다 — 펼치지 않아도 무엇이 켜져 있는지 보인다. */}
-          <span aria-hidden="true" style={{ marginLeft: 'auto', width: 13, height: 13, borderRadius: '50%', background: 'var(--mf-accent)', boxShadow: 'inset 0 0 0 1px rgba(0,0,0,.08)' }} />
-        </div>
-        {themeOpen && (
-          <div role="radiogroup" aria-label="색상 테마 선택" style={{ display: 'flex', flexWrap: 'wrap', gap: 6, padding: '2px 10px 8px' }}>
-            {HOME_THEME_KEYS.map((key) => {
-              const t = HOME_THEMES[key];
-              const on = state.theme === key;
-              return (
-                <button
-                  key={key}
-                  type="button"
-                  role="radio"
-                  aria-checked={on}
-                  aria-label={`${t.label} 테마`}
-                  title={t.label}
-                  onClick={() => controller.setTheme(key)}
-                  style={{
-                    display: 'flex',
-                    alignItems: 'center',
-                    justifyContent: 'center',
-                    // 모바일은 44px 터치 타깃(다섯 개 + 간격이 248px LNB 안에 들어간다).
-                    width: isMobile ? 40 : 28,
-                    height: isMobile ? 40 : 28,
-                    padding: 0,
-                    border: 'none',
-                    borderRadius: 9,
-                    background: 'transparent',
-                    cursor: 'pointer',
-                  }}
-                >
-                  <span
-                    style={{
-                      width: 17,
-                      height: 17,
-                      borderRadius: '50%',
-                      background: t.accent,
-                      // 선택된 색은 흰 테두리 + 같은 색 링으로 "지금 이것"임을 알린다.
-                      boxShadow: on ? `0 0 0 2px #fff, 0 0 0 3.5px ${t.accent}` : 'inset 0 0 0 1px rgba(0,0,0,.12)',
-                    }}
-                  />
-                </button>
-              );
-            })}
-          </div>
-        )}
 
         <div
           className="nav-item"
@@ -528,7 +459,7 @@ export function Sidebar({ state, view, controller, isMobile = false, isOpen = fa
               controller.openFeedback();
             }
           }}
-          style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '9px 10px', minHeight: isMobile ? 44 : undefined, borderRadius: 9, cursor: 'pointer', fontSize: 13.5, fontWeight: 500, color: '#7c6d60' }}
+          style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '9px 10px', minHeight: isMobile ? 44 : undefined, borderRadius: 9, cursor: 'pointer', fontSize: 13.5, fontWeight: 500, color: 'var(--mf-subtext)' }}
         >
           <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
             <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" />
@@ -541,25 +472,12 @@ export function Sidebar({ state, view, controller, isMobile = false, isOpen = fa
   );
 }
 
-/** 색상 테마 항목의 팔레트 아이콘 — 다른 LNB 아이콘과 같은 라인 스타일 SVG.
- * `currentColor`라 행의 글자색(활성/비활성)을 그대로 따른다. */
-function PaletteGlyph({ size = 15 }: { size?: number }) {
-  return (
-    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" aria-hidden="true" style={{ flexShrink: 0 }}>
-      <path d="M12 21a9 9 0 1 1 9-9c0 1.66-1.34 3-3 3h-1.6a2 2 0 0 0-1.4 3.42c.39.39.39 1.02 0 1.41-.6.6-1.5 1.17-3 1.17Z" />
-      <circle cx="7.4" cy="12.4" r="1" fill="currentColor" stroke="none" />
-      <circle cx="9.6" cy="8.2" r="1" fill="currentColor" stroke="none" />
-      <circle cx="14.2" cy="7.4" r="1" fill="currentColor" stroke="none" />
-    </svg>
-  );
-}
-
 /** Favorites star — a crisp filled-gold SVG in place of the ★ glyph, so it
  * renders identically across platforms and sits with the other SVG nav icons
  * instead of a font-dependent emoji. */
 function StarGlyph({ size = 15 }: { size?: number }) {
   return (
-    <svg width={size} height={size} viewBox="0 0 24 24" fill="#e0a53c" stroke="#e0a53c" strokeWidth={1.4} strokeLinejoin="round" aria-hidden="true" style={{ flexShrink: 0 }}>
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="var(--mf-star)" stroke="var(--mf-star)" strokeWidth={1.4} strokeLinejoin="round" aria-hidden="true" style={{ flexShrink: 0 }}>
       <polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26" />
     </svg>
   );
@@ -569,7 +487,7 @@ function StarGlyph({ size = 15 }: { size?: number }) {
  * 라인 스타일 SVG이고, 색만 파랑 계열로 두어 "내 것이 아닌 출처"임을 알린다. */
 function SharedGlyph({ size = 15 }: { size?: number }) {
   return (
-    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="#3f8fd0" strokeWidth={2.1} strokeLinecap="round" strokeLinejoin="round" aria-hidden="true" style={{ flexShrink: 0 }}>
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="var(--mf-info)" strokeWidth={2.1} strokeLinecap="round" strokeLinejoin="round" aria-hidden="true" style={{ flexShrink: 0 }}>
       <path d="M15 21v-1.6a3.4 3.4 0 0 0-3.4-3.4H6.4A3.4 3.4 0 0 0 3 19.4V21" />
       <circle cx="9" cy="7.5" r="3.5" />
       <path d="M17.5 11.5 21 8l-3.5-3.5" />
@@ -582,7 +500,7 @@ function SharedGlyph({ size = 15 }: { size?: number }) {
  * emoji, whose rendering varied by platform): a mini node diagram. */
 function MapMiniGlyph() {
   return (
-    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#b6a596" strokeWidth={2.2} strokeLinecap="round" strokeLinejoin="round" aria-hidden="true" style={{ flexShrink: 0 }}>
+    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="var(--mf-faint)" strokeWidth={2.2} strokeLinecap="round" strokeLinejoin="round" aria-hidden="true" style={{ flexShrink: 0 }}>
       <circle cx="6" cy="12" r="3" />
       <line x1="9" y1="12" x2="15" y2="7" />
       <line x1="9" y1="12" x2="15" y2="17" />
@@ -595,7 +513,7 @@ function MapMiniGlyph() {
 /** Tiny folder glyph for Drive trash rows (replaces the 📁 emoji). */
 function FolderMiniGlyph() {
   return (
-    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#b6a596" strokeWidth={2.2} strokeLinecap="round" strokeLinejoin="round" aria-hidden="true" style={{ flexShrink: 0 }}>
+    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="var(--mf-faint)" strokeWidth={2.2} strokeLinecap="round" strokeLinejoin="round" aria-hidden="true" style={{ flexShrink: 0 }}>
       <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z" />
     </svg>
   );
@@ -605,7 +523,7 @@ function FolderMiniGlyph() {
  * muted nav tone) replacing the 🗑 emoji. */
 function TrashGlyph({ size = 15 }: { size?: number }) {
   return (
-    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="#9c8b7e" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" aria-hidden="true" style={{ flexShrink: 0 }}>
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="var(--mf-muted)" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" aria-hidden="true" style={{ flexShrink: 0 }}>
       <polyline points="3 6 5 6 21 6" />
       <path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2" />
       <line x1="10" y1="11" x2="10" y2="17" />
