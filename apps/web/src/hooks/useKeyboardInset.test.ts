@@ -22,6 +22,14 @@ describe('keyboardInsetOf', () => {
     expect(keyboardInsetOf({ height: 780 - KEYBOARD_MIN_INSET, offsetTop: 0 }, 780)).toBe(KEYBOARD_MIN_INSET);
   });
 
+  it('페이지를 확대한 상태는 키보드로 오인하지 않는다', () => {
+    // 두 손가락 확대도 시각 뷰포트를 줄인다 — 글씨를 키워 읽는 중에 캔버스가
+    // 저절로 움직이면 안 된다.
+    expect(keyboardInsetOf({ height: 520, offsetTop: 0, scale: 1.5 }, 780)).toBe(0);
+    // 소수점 오차 수준(1.0x)은 확대가 아니다 — 키보드 판정을 그대로 한다.
+    expect(keyboardInsetOf({ height: 444, offsetTop: 0, scale: 1.0 }, 780)).toBe(336);
+  });
+
   it('visualViewport를 모르는 환경(jsdom 등)은 0 — 쓰는 쪽은 평소 동작', () => {
     expect(keyboardInsetOf(null, 780)).toBe(0);
     expect(keyboardInsetOf(undefined, 780)).toBe(0);
