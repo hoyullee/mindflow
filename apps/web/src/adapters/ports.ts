@@ -136,6 +136,15 @@ export interface DocMeta {
   ownedByMe?: boolean;
   /** 공유받은 문서일 때의 내 권한. 내 문서면 undefined. */
   sharedRole?: ShareRole;
+  /**
+   * 이 문서를 **마지막으로 저장한 사람이 나인가**(0015 `documents.updated_by`).
+   * 홈 카드는 이 값이 `false`일 때만 편집자 이름을 붙인다 — 혼자 쓰는 사람의
+   * 카드마다 자기 이름이 반복되면 정보가 아니라 잡음이다.
+   *
+   * `undefined` = 알 수 없음: 아직 한 번도 저장되지 않은 옛 행(`updated_by` null),
+   * 세션에서 내 uid를 못 읽은 경우, 로컬/데모 모드. 그때는 이름을 표시하지 않는다.
+   */
+  editedByMe?: boolean;
 }
 
 export interface LoadedDoc {
@@ -285,6 +294,18 @@ export interface DocStore {
    * confirm dialog. Must be idempotent (purging an unknown id is a no-op). */
   purge(id: string): Promise<void>;
   rename(id: string, title: string): Promise<void>;
+  /**
+   * 주어진 문서들을 **마지막으로 저장한 사람**의 표시 이름 — 홈 카드의
+   * "수정일 · 3시간 전 · 홍길동". 반환은 `{ docId: 이름 }`이고, 이름을 알 수 없거나
+   * 마지막 저장자가 **나 자신**인 문서는 키 자체가 없다.
+   *
+   * - Supabase: `document_editors` RPC(0015). 클라이언트는 `auth.users`도 남의
+   *   `profiles`도 읽을 수 없으므로 SECURITY DEFINER 함수가 조인을 대신하고,
+   *   노출 범위는 0009 공유 정책(소유 또는 공유받음)으로 제한된다. RPC가 아직
+   *   배포되지 않은 서버에서는 `{}`로 떨어진다(배포 순서 안전 — 이름만 안 보인다).
+   * - Local(데모): 계정이 하나뿐이라 언제나 `{}`.
+   */
+  listEditorNames(docIds: string[]): Promise<Record<string, string>>;
   setFavorite(id: string, favorite: boolean): Promise<void>;
 }
 

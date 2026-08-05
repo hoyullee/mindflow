@@ -245,6 +245,22 @@ export function useHomeController() {
       const docTimes = Object.fromEntries(allMetas.map((m) => [m.id, m.updatedAt]));
       return { ...prev, theme, spaces, activeSpace, curFolder, mapFolders, favs, deleted, trash, recent, docTimes, sharedMaps: sharedMetas.map((m) => ({ docId: m.id, title: m.title, updatedAt: m.updatedAt, role: m.sharedRole ?? 'edit' })), loaded: true };
     });
+    // 마지막 저장자가 **내가 아닌** 문서들만 이름을 물어본다(0015). 혼자 쓰는
+    // 사람은 대상이 하나도 없어 요청 자체가 나가지 않는다. 실패해도 조용히 넘어간다 —
+    // 이름은 부가 정보라 홈 로드를 붙잡을 이유가 없다.
+    const foreignIds = allMetas.filter((m) => m.editedByMe === false).map((m) => m.id);
+    if (foreignIds.length > 0) {
+      void docStore
+        .listEditorNames(foreignIds)
+        .then((names) => {
+          if (!mountedRef.current || Object.keys(names).length === 0) return;
+          setState((prev) => ({ ...prev, editorNames: { ...prev.editorNames, ...names } }));
+        })
+        .catch(() => {
+          /* 조회 실패 — 이름 없이 그린다 */
+        });
+    }
+
     // ② 묶은 카드의 본문을 올린다. `createOnly`라 이미 있으면 아무것도 하지 않는다
     // (다른 기기가 올린 문서를 덮지 않는다). 실패는 조용히 넘긴다 — 다음 진입에서
     // 조건이 그대로라 다시 시도한다.

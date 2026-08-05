@@ -30,6 +30,7 @@ interface DocumentRow {
   is_favorite: boolean | null;
   deleted_at: string | null;
   owner?: string | null;
+  updated_by?: string | null;
 }
 
 export class SupabaseDocStore implements DocStore {
@@ -39,7 +40,7 @@ export class SupabaseDocStore implements DocStore {
     // 내 uid는 세션에서 온다(supabase-js가 캐시한다). 못 알아내면 모두 내 것으로
     // 본다 — 공유 이전과 같은 동작이라 최악이라도 예전 상태로 퇴화할 뿐이다.
     const [{ data, error }, { data: userData }] = await Promise.all([
-      this.client.from(TABLE).select('id,title,version,updated_at,is_favorite,deleted_at,owner').order('updated_at', { ascending: false }),
+      this.client.from(TABLE).select('id,title,version,updated_at,is_favorite,deleted_at,owner,updated_by').order('updated_at', { ascending: false }),
       this.client.auth.getUser(),
     ]);
     if (error) throw new Error(error.message);
@@ -52,7 +53,25 @@ export class SupabaseDocStore implements DocStore {
       isFavorite: Boolean(row.is_favorite),
       deletedAt: row.deleted_at,
       ownedByMe: !myId || !row.owner ? true : row.owner === myId,
+      // 내 uid를 모르거나(세션 미확인) 아직 한 번도 저장된 적 없는 행(0015 이전
+      // 데이터)은 판단하지 않는다 — undefined면 카드가 이름을 붙이지 않는다.
+      editedByMe: !myId || !row.updated_by ? undefined : row.updated_by === myId,
     }));
+  }
+
+  /** 마지막 저장자 이름 — `document_editors` RPC(0015). 자세한 계약은 포트 주석에. */
+  async listEditorNames(docIds: string[]): Promise<Record<string, string>> {
+    if (docIds.length === 0) return {};
+    const { data, error } = await this.client.rpc('document_editors', { doc_ids: docIds });
+    // RPC 미배포(함수 없음)·일시 오류는 조용히 비운다 — 이름은 부가 정보라
+    // 하나 못 읽었다고 홈 로드를 실패시킬 이유가 없다(썸네일 RPC와 같은 태도).
+    if (error) return {};
+    const out: Record<string, string> = {};
+    for (const row of (data ?? []) as { document_id: string; display_name: string | null }[]) {
+      const name = (row.display_name ?? '').trim();
+      if (row.document_id && name) out[row.document_id] = name;
+    }
+    return out;
   }
 
   async load(id: string): Promise<LoadedDoc | null> {

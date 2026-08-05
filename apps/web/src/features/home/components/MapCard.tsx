@@ -478,10 +478,17 @@ export function MapCard({ card, controller, draggableEnabled, compact = false }:
           </div>
         )}
         {/* 마지막 수정 시각 — 상대(7일 이내)/절대 혼합 표기, 전체 일시는 툴팁.
-            시각 정보가 없는 카드(Drive 데모 등)는 줄 자체를 생략한다. */}
+            시각 정보가 없는 카드(Drive 데모 등)는 줄 자체를 생략한다.
+            공동 편집(0009) 이후: 마지막으로 **저장한 사람이 내가 아닐 때만** 이름을
+            덧붙인다(0015). 혼자 쓰는 사람의 카드마다 자기 이름이 반복되면 정보가
+            아니라 잡음이라, 이름은 알려 줄 게 있을 때만 나타난다. */}
         {!compact && formatLastEdited(card.updatedAt) && (
-          <div title={formatFullDateTime(card.updatedAt)} style={{ fontSize: 12, color: 'var(--mf-muted)' }}>
+          <div
+            title={card.editorName ? `${formatFullDateTime(card.updatedAt)} · ${card.editorName}님이 마지막으로 저장` : formatFullDateTime(card.updatedAt)}
+            style={{ fontSize: 12, color: 'var(--mf-muted)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}
+          >
             수정일 · {formatLastEdited(card.updatedAt)}
+            {card.editorName ? ` · ${card.editorName}` : ''}
           </div>
         )}
         </div>
