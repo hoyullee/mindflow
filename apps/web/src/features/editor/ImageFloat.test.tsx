@@ -57,7 +57,7 @@ describe('image attach — pure helpers', () => {
   });
 
   it('defaultFloatSize keeps aspect at the default display width', () => {
-    expect(defaultFloatSize(1024, 512)).toEqual({ w: DEFAULT_IMAGE_FLOAT_WIDTH, h: 130 });
+    expect(defaultFloatSize(1024, 512)).toEqual({ w: DEFAULT_IMAGE_FLOAT_WIDTH, h: Math.round((DEFAULT_IMAGE_FLOAT_WIDTH * 512) / 1024) });
     // 원본이 기본 폭보다 작으면 원본 크기 그대로
     expect(defaultFloatSize(120, 90)).toEqual({ w: 120, h: 90 });
   });

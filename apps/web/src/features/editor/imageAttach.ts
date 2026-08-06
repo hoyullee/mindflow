@@ -15,15 +15,25 @@
  * localStorage 쿼터이자 CRDT 업데이트 크기였다. 이제 실물은 Storage에 있으므로
  * 그 제약이 없다.
  *
- * 2048인 이유: 표시 크기는 문서 좌표 기준(메모 기본 260 / 노드 180)이지만 실제로
- * 화면에 찍히는 픽셀은 **표시 크기 × 캔버스 줌 × 기기 픽셀비**다. 기본 크기를 최대
- * 줌(MAX_ZOOM 2.4)으로 2배 화면에서 보면 260 × 2.4 × 2 = 1248이고, 2048이면 메모를
- * 기본보다 **1.6배 키워 놓고** 최대 줌으로 봐도 원본 픽셀이 모자라지 않는다.
- * 더 키우지 않는 이유는 전송량이다(2048 스크린샷 130KB / 사진 63KB 실측).
+ * 2048인 이유: 화면에 실제로 찍히는 픽셀은 **표시 크기 × 캔버스 줌 × 기기 픽셀비**다.
+ * 기본 삽입 폭 480을 2배 화면에서 2배로 확대해 보면 480 × 2 × 2 = 1920 — 2048이면
+ * 덮는다. 더 키우거나 최대 줌(2.4)까지 당기면 브라우저가 조금 늘려 그리지만, 거기서
+ * 더 올리는 건 눈에 보이는 이득 없이 전송량만 늘린다(2560/q0.92 255KB vs 2048/q0.92
+ * 178KB — 43% 비싼데 이 표시 크기에서는 차이가 안 보인다, 실측).
  */
 export const MAX_IMAGE_DIM = 2048;
-/** 캔버스에 놓일 때의 기본 표시 너비(px, 문서 좌표). */
-export const DEFAULT_IMAGE_FLOAT_WIDTH = 260;
+/**
+ * 캔버스에 놓일 때의 기본 표시 너비(px, 문서 좌표).
+ *
+ * **260 → 480으로 올렸다(제보: 이미지 안의 글자를 알아보기 힘들다).** 재 보니 한계는
+ * 인코딩이 아니라 **표시 크기**였다 — 2560×1600 스크린샷을 260px 폭에 넣으면 1/10
+ * 축소라, 품질을 q0.85로 놓든 q0.92로 놓든 원본을 2560으로 올리든 **똑같이 뭉갠다**.
+ * 실제로 읽히기 시작하는 지점이 480px이었다(260 뭉갬 / 360 아슬 / 480 읽힘 / 620 또렷).
+ *
+ * 원본보다 크게 늘리지는 않는다(`defaultFloatSize`의 `min`) — 작은 아이콘은 그대로.
+ * 이 값을 올리는 데 드는 저장·전송 비용은 **0이다**(같은 파일을 크게 보여 줄 뿐).
+ */
+export const DEFAULT_IMAGE_FLOAT_WIDTH = 480;
 /**
  * 인코딩 결과(데이터 URL 길이)가 이보다 크면 한 단계 더 줄여 재시도.
  *
@@ -126,7 +136,10 @@ export interface ImageFormat {
  * PNG는 PNG로, 나머지는 JPEG로.
  */
 export function pickImageFormat(fileType: string, webpSupported: boolean): ImageFormat {
-  if (webpSupported) return { mime: 'image/webp', ext: 'webp', quality: 0.85, retryQuality: 0.7 };
+  // q0.92 — 글자가 든 스크린샷의 가장자리가 뭉개지지 않게(제보). 장당 약 +25%
+  // (2048 스크린샷 142KB → 178KB 실측)인데, 첨부 이미지는 대개 '보라고' 넣는 것이라
+  // 그만큼은 쓴다. 사진은 원래 이보다 훨씬 작다.
+  if (webpSupported) return { mime: 'image/webp', ext: 'webp', quality: 0.92, retryQuality: 0.75 };
   if (fileType === 'image/png') return { mime: 'image/png', ext: 'png' };
   return { mime: 'image/jpeg', ext: 'jpg', quality: 0.85, retryQuality: 0.7 };
 }
