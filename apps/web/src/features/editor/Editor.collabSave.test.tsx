@@ -12,7 +12,7 @@
 // 새 버전 기준으로 한 번 더 쓴다.
 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
+import { cleanup, configure, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { MemoryRouter, Route, Routes } from 'react-router-dom';
 import * as Y from 'yjs';
 import { ROOT_ID, addNode, setNodeField, type Doc } from '@mindflow/mindmap-core';
@@ -98,6 +98,14 @@ function peerAddsNode(ydoc: Y.Doc, id: string, text: string) {
   addNode(ydoc, id, { id, text, emoji: '', parent: ROOT_ID, children: [], collapsed: false, color: null, x: 260, y: 260 });
   setNodeField(ydoc, ROOT_ID, 'children', [...children, id]);
 }
+
+// 이 파일의 테스트는 **진짜 시간** 위에서 돈다 — 두 피어가 BroadcastChannel로 오가고,
+// 자동저장 디바운스(0.9s+0.25s)를 실제로 기다린다. 그래서 CI가 붐빌 때(80개 파일 병렬)
+// waitFor의 기본 1초로는 모자라 간헐적으로 깨졌다(실제 CI 실패: "원격 노드"를 1초 안에
+// 못 찾음. 같은 커밋의 다른 실행은 통과 — 부하 의존). 기다림은 넉넉히, 대신 단정은
+// 그대로 둔다(느려도 결과는 같아야 한다).
+configure({ asyncUtilTimeout: 4000 });
+vi.setConfig({ testTimeout: 20_000 });
 
 beforeEach(() => {
   localStorage.clear();
