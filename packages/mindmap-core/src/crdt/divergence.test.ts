@@ -77,10 +77,11 @@ describe('끊긴 동안의 동시 편집 — 재연결 후 병합 결과', () =>
     setNodeField(A, 'a', 'text', 'A가 쓴 내용');
     setNodeField(B, 'a', 'text', 'B가 쓴 내용');
     reconnect(A, B);
-    const text = yDocToDoc(A).nodes.a?.text;
+    const text: string = yDocToDoc(A).nodes.a?.text ?? '';
     // 어느 쪽이 이길지는 Yjs의 결정적 규칙(클라이언트 id)에 달렸다 — 시간순이 아니다.
     expect(['A가 쓴 내용', 'B가 쓴 내용']).toContain(text);
-    expect(text === 'A가 쓴 내용' && text === 'B가 쓴 내용').toBe(false); // 둘 다일 수는 없다
+    // 하나의 값만 남는다 = 진 쪽의 편집은 어디에도 없다(합쳐지지 않는다).
+    expect([text].filter((t) => t === 'A가 쓴 내용' || t === 'B가 쓴 내용')).toHaveLength(1);
   });
 
   it('위험 ②: 각자 **자식을 추가**하면 노드는 남지만 한쪽은 트리에서 떨어진다', () => {
