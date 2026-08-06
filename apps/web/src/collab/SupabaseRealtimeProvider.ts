@@ -50,12 +50,22 @@ export class SupabaseRealtimeProvider implements CollabProvider {
    * 올리고, await 뒤에는 자기 세대가 아직 현재인지 확인한다. */
   private session = 0;
   /**
-   * 채널이 실제로 join된 상태인가. join 밖에서 `send()`하면 realtime-js가 REST로
+   * **어느 채널이** join됐는가. join 밖에서 `send()`하면 realtime-js가 REST로
    * 우회 전송하는데(콘솔의 "falling back to REST API" 스팸), 그 창에서 **수신**은
    * 전혀 안 되고 있으므로 어차피 반쪽이다 — 보내지 않고, 재합류/주기 동기화가
    * 밀린 연산을 diff로 나른다.
+   *
+   * 불리언이 아니라 **채널 참조**인 이유: 예전에는 공용 불리언이라, 버려진 옛 채널의
+   * 뒤늦은 CLOSED 통지가 **살아 있는** 채널의 join 상태를 꺼 버렸다(그러면 받기는
+   * 하는데 내 편집만 안 나가고, 상태는 'connected'라 아무 표시도 없다 — 제보
+   * "A의 편집이 B에게 즉시 반영되지 않는다"). 이제는 자기 채널의 상태만 끌 수 있다.
    */
-  private joined = false;
+  private joinedChannel: RealtimeChannel | null = null;
+
+  /** 지금 쓰는 채널이 join된 상태인가 — 발신 게이트. */
+  private get joined(): boolean {
+    return this.joinedChannel !== null && this.joinedChannel === this.channel;
+  }
   private syncTimer: ReturnType<typeof setInterval> | undefined;
   /** 완전히 끊겼을 때의 자동 재접속(백오프) — 없으면 새로고침만이 유일한 복구였다. */
   private retryTimer: ReturnType<typeof setTimeout> | undefined;
@@ -139,15 +149,18 @@ export class SupabaseRealtimeProvider implements CollabProvider {
     // `send()`는 소켓에 밀어 넣고 무조건 'ok'로 즉시 resolve한다(realtime-js
     // `RealtimeChannel#send`). 구독이 됐다고 **보낼 수 있다는 뜻은 아니어서**
     // (private 채널의 읽기·쓰기 정책은 서로 다른 정책이다) 확인이 필요하다.
-    this.joined = false; // 새 채널 — SUBSCRIBED가 다시 켠다
     const channel = this.client.channel(`mindflow-collab:${docId}`, { config: { private: wantPrivate, broadcast: { ack: true } } });
+    // **구독 전에** 현재 채널로 세워 둔다. 아래 콜백·핸들러가 전부 "내가 아직 현재
+    // 채널인가"로 자기 자격을 확인하는데, 구독 뒤에 세우면 콜백이 먼저 도는 순간
+    // (테스트의 동기 구독, 실제로는 캐시된 join 응답) 자기 자신을 남으로 오인한다.
+    this.channel = channel;
     channel
       .on('broadcast', { event: BROADCAST_EVENT }, ({ payload }: { payload: UpdatePayload }) => {
         if (!this.ydoc) return;
         Y.applyUpdate(this.ydoc, base64ToBytes(payload.update), this);
       })
       .on('broadcast', { event: SYNC_REQUEST_EVENT }, ({ payload }: { payload: SyncPayload }) => {
-        if (!this.ydoc) return;
+        if (!this.ydoc || this.channel !== channel) return; // 버려진 채널은 대신 대답하지 않는다
         // 요청자의 상태 벡터가 있으면 **빠진 연산만**(diff) 보낸다 — 전체 상태를
         // 반복 전송하면 이미지 인라인 문서에서 페이로드가 커진다. 벡터가 없으면
         // (구버전) 전체 상태.
@@ -158,7 +171,7 @@ export class SupabaseRealtimeProvider implements CollabProvider {
         void channel.send({ type: 'broadcast', event: SV_EVENT, payload: { sv: bytesToBase64(Y.encodeStateVector(this.ydoc)) } satisfies SyncPayload });
       })
       .on('broadcast', { event: SV_EVENT }, ({ payload }: { payload: SyncPayload }) => {
-        if (!this.ydoc || !payload?.sv) return;
+        if (!this.ydoc || !payload?.sv || this.channel !== channel) return;
         // 항상 응답한다(diff가 "비어 보여도" delete set은 실린다 — 삭제는 상태 벡터에
         // 잡히지 않아서, 삭제만 놓친 피어는 이 경로로만 복구된다). 적용은 멱등이다.
         void channel.send({ type: 'broadcast', event: BROADCAST_EVENT, payload: { update: bytesToBase64(Y.encodeStateAsUpdate(this.ydoc, base64ToBytes(payload.sv))) } satisfies UpdatePayload });
@@ -168,25 +181,38 @@ export class SupabaseRealtimeProvider implements CollabProvider {
         applyAwarenessUpdate(this.awareness, base64ToBytes(payload.update), this);
       })
       .on('broadcast', { event: AWARENESS_SYNC_REQUEST_EVENT }, () => {
-        if (!this.awareness) return;
+        if (!this.awareness || this.channel !== channel) return;
         const known = Array.from(this.awareness.getStates().keys());
         if (!known.length) return;
         void channel.send({ type: 'broadcast', event: AWARENESS_EVENT, payload: { update: bytesToBase64(encodeAwarenessUpdate(this.awareness, known)) } satisfies UpdatePayload });
       })
       .subscribe((status, err) => {
         if (gen !== this.session) return; // 죽은 세션의 콜백
+        // **버려진 채널의 콜백은 무시한다.** 세대(gen)는 connect/disconnect 사이만
+        // 보호하므로, 같은 세션 안에서 채널을 갈아탈 때(공개 폴백·재시도·오류
+        // 재구독) 옛 채널의 뒤늦은 통지가 그대로 통과했다. 그런데 그 통지는 늦게
+        // 온다 — phoenix의 `leave()`는 서버의 phx_leave 응답을 받은 **뒤에야**
+        // close를 쏘므로(`@supabase/phoenix` channel.js), 새 채널이 이미 붙은
+        // 다음에 도착하는 것이 정상이다. 그러면 아래 두 줄이 각각:
+        //   ① `joined = false` → 채널은 멀쩡히 받고 있는데 **내 편집만 안 나간다**
+        //      (상태도 'connected'라 배지조차 없다). 상대는 15초 주기 치유(ysv)에
+        //      실려 오는 것만 보게 된다 = "즉시 반영되지 않는다"는 그 제보.
+        //   ② `removeChannel(this.channel)` → 옛 채널의 부고가 **살아 있는** 채널을
+        //      걷어낸다.
+        // 자기 자격을 스스로 확인하게 해서 둘 다 막는다.
+        if (this.channel !== channel) return;
         if (status === 'SUBSCRIBED') {
           // 재합류 포함 — 끊긴 동안 양쪽에 쌓인 연산은 announce의 sync-request(내 SV)와
           // 그 응답의 SV 교환이 diff로 나른다.
-          this.joined = true;
+          this.joinedChannel = channel;
           void this.announce(gen, channel, docId, wantPrivate, onStatus);
           return;
         }
-        this.joined = false;
+        if (this.joinedChannel === channel) this.joinedChannel = null;
         if (status !== 'CHANNEL_ERROR' && status !== 'TIMED_OUT') return; // CLOSED = 우리가 끊은 것
         // 원인이 화면 밖으로 사라지지 않게 — 다음 제보 때 "왜"까지 알 수 있도록 남긴다.
         console.warn(`[collab] 실시간 채널 구독 실패 (${wantPrivate ? 'private' : 'public'}, ${status})`, err ?? '');
-        if (this.channel) void this.client.removeChannel(this.channel);
+        void this.client.removeChannel(channel); // 위 자격 검사 덕에 this.channel === channel
         this.channel = null;
         if (wantPrivate) {
           if (!retried) {
@@ -201,7 +227,6 @@ export class SupabaseRealtimeProvider implements CollabProvider {
         onStatus?.('offline'); // 공개 채널로도 못 붙었다 — 네트워크/프로젝트 문제
         this.scheduleRetry(gen, docId, onStatus);
       });
-    this.channel = channel;
   }
 
   /**
@@ -224,19 +249,26 @@ export class SupabaseRealtimeProvider implements CollabProvider {
     // 후에도 경고 아이콘이 그대로).
     if (ack === 'error' && wantPrivate) {
       console.warn('[collab] private 채널 구독은 됐지만 발신이 거부됐습니다 (collab_channel_write 정책 확인 — backend.md §6).');
-      if (this.channel) void this.client.removeChannel(this.channel);
+      this.joinedChannel = null;
+      void this.client.removeChannel(channel); // 위 자격 검사 덕에 this.channel === channel
       this.channel = null;
       this.fallbackToPublic(gen, docId, onStatus);
       return;
     }
     if (ack === 'timed out') console.warn('[collab] 브로드캐스트 ack가 오지 않았습니다 — 연결은 유지합니다.');
     if (ack === 'error') {
+      // 공개 채널인데도 발신이 거부됐다 = 이 채널로는 협업이 안 된다. 재시도 전에
+      // 반드시 물린다 — 남겨 두면 같은 토픽에 채널이 둘 겹치고, 옛 채널이 계속
+      // 받으면서 응답까지 해 무엇이 현재인지 알 수 없게 된다.
+      this.joinedChannel = null;
+      void this.client.removeChannel(channel);
+      this.channel = null;
       onStatus?.('offline');
       this.scheduleRetry(gen, docId, onStatus);
-    } else {
-      this.retryAttempt = 0; // 붙었다 — 다음 사고의 백오프는 처음부터
-      onStatus?.(wantPrivate ? 'connected' : 'connected-insecure');
+      return; // 물린 채널로 아래 동기화 요청을 마저 보내지 않는다
     }
+    this.retryAttempt = 0; // 붙었다 — 다음 사고의 백오프는 처음부터
+    onStatus?.(wantPrivate ? 'connected' : 'connected-insecure');
     // 요청만 하면 반쪽 동기화다 — 내 연산도 상대에게 가야 한다. 각 기기는 자기 로컬
     // 문서로 Y.Doc을 따로 심으므로 연산 이력이 서로 다르고, 상대가 내 심기 연산을 갖고
     // 있지 않으면 이후 내 편집 업데이트는 상대에서 **보류**돼 반영되지 않는다(부분 적용된
@@ -312,10 +344,10 @@ export class SupabaseRealtimeProvider implements CollabProvider {
     this.ydoc?.off('update', this.handleLocalUpdate);
     // Broadcasts this client's departure (local state -> null, origin 'local') to any
     // subscribed peers before the channel itself is removed — see
-    // `BroadcastChannelProvider.disconnect()`'s identical reasoning. `joined`를
+    // `BroadcastChannelProvider.disconnect()`'s identical reasoning. join 상태를
     // 끄기 **전에** 해야 이 마지막 방송이 send 게이트에 막히지 않는다.
     this.awareness?.destroy();
-    this.joined = false;
+    this.joinedChannel = null;
     if (this.channel) void this.client.removeChannel(this.channel);
     this.channel = null;
     this.ydoc = null;
