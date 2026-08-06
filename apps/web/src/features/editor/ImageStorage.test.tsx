@@ -10,12 +10,13 @@
 //  ③ 옛 문서(인라인)는 그대로 열리고, 열어 두면 저장소로 **옮겨진다**.
 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { cleanup, configure, render, waitFor, within } from '@testing-library/react';
+import { cleanup, configure, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { MemoryRouter, Route, Routes } from 'react-router-dom';
-import { makeImageRef, type Doc } from '@mindflow/mindmap-core';
+import { collectImageRefs, collectInlineImages, makeImageRef, type Doc } from '@mindflow/mindmap-core';
 import { Editor } from './Editor';
 import { attachImageFile, dataUrlToBlob, pickImageFormat } from './imageAttach';
 import { displaySrc } from './useImageUrls';
+import { inlineImagesForExport } from './imageExport';
 import { BackendProvider } from '../../adapters/BackendContext';
 import { LocalAuth } from '../../adapters/local/localAuth';
 import { LocalSpaceStore } from '../../adapters/local/localSpaceStore';
@@ -23,6 +24,15 @@ import { LocalShareStore } from '../../adapters/local/localShareStore';
 import { LocalFeedbackStore } from '../../adapters/local/localFeedbackStore';
 import { LocalImageStore } from '../../adapters/local/localImageStore';
 import type { Backend, DocStore, ImageStore } from '../../adapters/ports';
+
+/** 내려받은 파일 내용을 가로챈다 — jsdom에는 createObjectURL이 없고, 어차피
+ * 확인하고 싶은 건 "무엇을 담아 내려보냈는가" 하나다. */
+const dl = vi.hoisted(() => ({ files: [] as { name: string; data: string }[] }));
+vi.mock('./download', () => ({
+  downloadFile: (name: string, data: unknown) => {
+    dl.files.push({ name, data: String(data) });
+  },
+}));
 
 const DATA_URL = 'data:image/jpeg;base64,' + btoa('x'.repeat(90));
 
@@ -281,5 +291,87 @@ describe('화질 (제보: 삽입한 이미지가 깨져 보인다)', () => {
   it('기본 삽입 폭이 스크린샷 글자가 읽히는 크기다 (실측: 260 뭉갬 / 480부터 읽힘)', async () => {
     const { DEFAULT_IMAGE_FLOAT_WIDTH } = await import('./imageAttach');
     expect(DEFAULT_IMAGE_FLOAT_WIDTH).toBeGreaterThanOrEqual(480);
+  });
+});
+
+// 내보내는 파일은 **그 자체로 완결**돼야 한다. 참조만 담으면 두 가지가 깨진다:
+// ① 그 계정·그 문서에 접근할 수 있어야만 이미지가 보인다(예전엔 파일 하나로 끝났다)
+// ② 가져오기는 새 문서 id로 저장하는데, 참조 경로의 첫 조각은 **원본 문서 id**이고
+//    Storage 정책이 그걸로 권한을 판단한다 → 가져온 맵에서 이미지가 안 보인다.
+describe('내보내기 — 이미지를 파일에 다시 담는다', () => {
+  const PIXEL = 'data:image/webp;base64,' + btoa('webp-bytes');
+
+  /** 참조를 서명 URL로 풀어 주고, 그 URL을 fetch하면 실물 바이트를 돌려주는 저장소. */
+  function exportableStore(fail = false): ImageStore {
+    return {
+      upload: async () => null,
+      resolve: async (refs: string[]) => (fail ? {} : Object.fromEntries(refs.map((r) => [r, `https://cdn.example/${encodeURIComponent(r)}`]))),
+      removeForDoc: async () => undefined,
+    };
+  }
+
+  beforeEach(() => {
+    // fetch → blob → FileReader 경로를 실물 바이트로 흉내낸다.
+    vi.stubGlobal('fetch', vi.fn(async () => ({ ok: true, blob: async () => new Blob([new Uint8Array([1, 2, 3])], { type: 'image/webp' }) })));
+    vi.spyOn(FileReader.prototype, 'readAsDataURL').mockImplementation(function (this: FileReader) {
+      Object.defineProperty(this, 'result', { value: PIXEL, configurable: true });
+      this.onload?.(new ProgressEvent('load') as ProgressEvent<FileReader>);
+    });
+  });
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  it('참조를 실물 데이터 URL로 되돌린다 — 가져오기에서 그대로 열린다', async () => {
+    const ref = makeImageRef('원본문서/pic.webp');
+    const doc = docWithInlineImage();
+    doc.nodes.c1 = { ...doc.nodes.c1!, img: ref };
+    const { doc: full, missing } = await inlineImagesForExport(doc, exportableStore());
+
+    expect(missing).toBe(0);
+    expect(full.nodes.c1?.img).toBe(PIXEL);
+    expect(collectImageRefs(full)).toEqual([]); // 참조가 남지 않았다 = 자족적이다
+    // 가져오는 쪽은 손댈 게 없다 — 데이터 URL이 든 문서를 열면 기존 자동 이전이
+    // **새 문서 폴더로** 올려 준다(위 '옛 문서 이전' describe와 같은 경로).
+    expect(collectInlineImages(full)).toHaveLength(1);
+  });
+
+  it('참조가 없으면 네트워크를 타지 않고 원본 문서를 그대로 돌려준다', async () => {
+    const doc = docWithInlineImage(); // 데이터 URL만 (로컬/데모 모드, 텍스트 맵)
+    const { doc: same, missing } = await inlineImagesForExport(doc, exportableStore());
+    expect(same).toBe(doc);
+    expect(missing).toBe(0);
+    expect(fetch).not.toHaveBeenCalled();
+  });
+
+  it('받지 못한 이미지는 참조로 남기고 **몇 장인지 알린다** (조용히 빠뜨리지 않게)', async () => {
+    const ref = makeImageRef('원본문서/pic.webp');
+    const doc = docWithInlineImage();
+    doc.nodes.c1 = { ...doc.nodes.c1!, img: ref };
+    const { doc: partial, missing } = await inlineImagesForExport(doc, exportableStore(true));
+
+    expect(missing).toBe(1);
+    expect(partial.nodes.c1?.img).toBe(ref); // 텍스트까지 못 내보내는 것보다 낫다
+  });
+
+  it('에디터 JSON 내보내기에 참조가 아니라 실물이 들어간다 (수리 전 회귀 가드)', async () => {
+    const ref = makeImageRef('원본문서/pic.webp');
+    const doc = docWithInlineImage();
+    doc.nodes.c1 = { ...doc.nodes.c1!, img: ref };
+    const backend = makeBackend(exportableStore(), doc);
+    const docId = `img-export-${Math.random()}`;
+    localStorage.setItem(`mindflow_doc_${docId}`, JSON.stringify(doc));
+
+    dl.files.length = 0;
+
+    const { container } = renderEditor(backend, docId);
+    await waitFor(() => expect(within(getViewport(container)).getByText('리서치')).toBeTruthy());
+    fireEvent.click(screen.getByRole('button', { name: '내보내기' }));
+    fireEvent.click(await screen.findByText('JSON 파일 (.json)'));
+
+    await waitFor(() => expect(dl.files).toHaveLength(1));
+    const json = dl.files[0]!.data;
+    expect(json).toContain('data:image'); // 수리 전: 'mfimg:'만 들어 있었다
+    expect(json).not.toContain('mfimg:');
   });
 });

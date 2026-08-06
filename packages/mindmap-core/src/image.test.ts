@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { collectImageRefs, collectInlineImages, imageRefPath, isImageRef, makeImageRef, replaceInlineImages } from './image';
+import { collectImageRefs, collectInlineImages, imageRefPath, isImageRef, makeImageRef, replaceImageValues } from './image';
 import type { Doc, Float, Node } from './model';
 
 const node = (id: string, extra: Partial<Node> = {}): Node => ({
@@ -56,7 +56,7 @@ describe('이미지 참조 규칙', () => {
   it('인라인을 참조로 갈아 끼운다 — 같은 이미지가 여러 곳에 있어도 한 참조를 공유한다', () => {
     const d = doc([node('root'), node('a', { img: DATA })], [float('f1', { img: DATA })]);
     const ref = makeImageRef('d/1.jpg');
-    const next = replaceInlineImages(d, { [DATA]: ref });
+    const next = replaceImageValues(d, { [DATA]: ref });
     expect(next.nodes.a?.img).toBe(ref);
     expect(next.floats[0]?.img).toBe(ref);
     expect(collectInlineImages(next)).toEqual([]);
@@ -65,13 +65,13 @@ describe('이미지 참조 규칙', () => {
   it('옮기지 못한 것은 그대로 둔다 — 일부만 올라가도 문서는 온전하다', () => {
     const other = 'data:image/png;base64,BBBB';
     const d = doc([node('root'), node('a', { img: DATA }), node('b', { img: other })]);
-    const next = replaceInlineImages(d, { [DATA]: makeImageRef('d/1.jpg') });
+    const next = replaceImageValues(d, { [DATA]: makeImageRef('d/1.jpg') });
     expect(next.nodes.a?.img).toBe(makeImageRef('d/1.jpg'));
     expect(next.nodes.b?.img).toBe(other);
   });
 
   it('바꿀 게 없으면 **같은 문서 객체**를 돌려준다 (CRDT diff가 헛돌지 않게)', () => {
     const d = doc([node('root'), node('a', { img: makeImageRef('d/1.jpg') })]);
-    expect(replaceInlineImages(d, { [DATA]: makeImageRef('d/2.jpg') })).toBe(d);
+    expect(replaceImageValues(d, { [DATA]: makeImageRef('d/2.jpg') })).toBe(d);
   });
 });

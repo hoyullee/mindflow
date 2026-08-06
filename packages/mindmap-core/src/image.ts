@@ -61,23 +61,27 @@ export interface InlineImage {
 }
 
 /**
- * 인라인 이미지를 참조로 갈아 끼운 **새 문서**를 만든다(`byDataUrl`: 데이터 URL →
- * 참조). 옮기지 못한 것은 그대로 둔다 — 일부만 올라가도 문서는 언제나 온전하다.
+ * `img` 값을 갈아 끼운 **새 문서**를 만든다(`byValue`: 옛 값 → 새 값). 방향은
+ * 양쪽 다 쓴다:
+ *   · 인라인 → 참조 (첨부 이전 — 데이터 URL을 `mfimg:…`로)
+ *   · 참조 → 인라인 (**내보내기** — 파일 하나로 완결되게)
+ * 표에 없는 값은 그대로 둔다 — 일부만 바뀌어도 문서는 언제나 온전하다.
+ *
  * 순수 함수: 바뀐 곳만 새 객체가 되고 나머지는 참조가 유지된다(CRDT diff가 그
  * 항등성을 읽어 실제로 바뀐 필드만 연산으로 만든다).
  */
-export function replaceInlineImages(doc: Doc, byDataUrl: Record<string, string>): Doc {
+export function replaceImageValues(doc: Doc, byValue: Record<string, string>): Doc {
   let touched = false;
   const nodes = { ...doc.nodes };
   for (const id of Object.keys(nodes)) {
     const n = nodes[id];
-    const ref = n?.img ? byDataUrl[n.img] : undefined;
+    const ref = n?.img ? byValue[n.img] : undefined;
     if (!ref) continue;
     nodes[id] = { ...n!, img: ref };
     touched = true;
   }
   const floats = doc.floats.map((f) => {
-    const ref = f.img ? byDataUrl[f.img] : undefined;
+    const ref = f.img ? byValue[f.img] : undefined;
     if (!ref) return f;
     touched = true;
     return { ...f, img: ref };
