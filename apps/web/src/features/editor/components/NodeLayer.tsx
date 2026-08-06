@@ -15,6 +15,7 @@ import { domToRuns, linearize, listArrowLeft, listArrowVertical, liveEditValue, 
 import { ListTextBlock, domMarkerSignature, listLinesOf, listSigOf, listSignature, markerSignature, nodeTextAlign, renderListEdit } from '../listLines';
 import { RichSpan, isLinkOpenModifier, linkInk, openLink } from '../richSpans';
 import { useIsTouchDevice } from '../../../hooks/useMediaQuery';
+import { AttachedImg } from './AttachedImg';
 
 interface NodeLayerProps {
   nodes: NodeMap;
@@ -347,10 +348,9 @@ function NodeBox({ id, node: n, g, nodes, mode, theme: th, rootX, controller }: 
     >
       {shapeBg}
       {hasImg && (
-        <img
-          src={n.img}
-          alt=""
-          draggable={false}
+        <AttachedImg
+          img={n.img}
+          urls={controller.imageUrls}
           style={{ position: 'relative', zIndex: 1, width: n.imgW, height: n.imgH, objectFit: 'cover', borderRadius: 8, marginBottom: 8, pointerEvents: 'none', userSelect: 'none' }}
         />
       )}

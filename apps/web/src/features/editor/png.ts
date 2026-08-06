@@ -25,6 +25,7 @@ import { CanvasTextMeasurer, computeMetrics } from './metrics';
 import type { GeomMap, NodeGeom } from './types';
 import { downloadFile } from './download';
 import { linkInk } from './richSpans';
+import { displaySrc, type ImageUrlMap } from './useImageUrls';
 
 const PAD = 46;
 
@@ -290,13 +291,17 @@ function floatBox(ctx: CanvasRenderingContext2D, f: Float): FloatBox {
 function loadImageEl(src: string): Promise<HTMLImageElement | null> {
   return new Promise((resolve) => {
     const img = new Image();
+    // 별도 저장소의 이미지는 **다른 출처**다. CORS 없이 그리면 캔버스가 오염돼
+    // `toBlob`이 통째로 실패한다(내보내기가 아무 파일도 안 만든다) — 그러면 사진
+    // 하나 때문에 맵 전체를 못 내보낸다. Supabase Storage는 CORS를 허용한다.
+    img.crossOrigin = 'anonymous';
     img.onload = () => resolve(img);
     img.onerror = () => resolve(null);
     img.src = src;
   });
 }
 
-export async function exportPng(doc: Doc, geom: GeomMap, theme: Theme, filename: string): Promise<void> {
+export async function exportPng(doc: Doc, geom: GeomMap, theme: Theme, filename: string, imageUrls: ImageUrlMap = {}): Promise<void> {
   const ids = Object.keys(geom).filter((id) => doc.nodes[id]);
   if (!ids.length) return;
 
@@ -318,13 +323,15 @@ export async function exportPng(doc: Doc, geom: GeomMap, theme: Theme, filename:
     ...doc.floats
       .filter((f) => f.img)
       .map(async (f) => {
-        const el = await loadImageEl(f.img!);
+        const src = displaySrc(f.img, imageUrls);
+        const el = src ? await loadImageEl(src) : null;
         if (el) fImages.set(f.id, el);
       }),
     ...ids
       .filter((id) => doc.nodes[id]?.img)
       .map(async (id) => {
-        const el = await loadImageEl(doc.nodes[id]!.img!);
+        const src = displaySrc(doc.nodes[id]!.img, imageUrls);
+        const el = src ? await loadImageEl(src) : null;
         if (el) nImages.set(id, el);
       }),
   ]);
@@ -633,7 +640,7 @@ export async function exportPng(doc: Doc, geom: GeomMap, theme: Theme, filename:
  * via `exportPng`. Used by Home so a card download is the real map, not a
  * rasterized thumbnail (which cropped text).
  */
-export async function exportDocPng(doc: Doc, theme: Theme, filename: string): Promise<void> {
+export async function exportDocPng(doc: Doc, theme: Theme, filename: string, imageUrls: ImageUrlMap = {}): Promise<void> {
   const measurer = new CanvasTextMeasurer();
   const sizeOf = (node: Node, depth: number) => {
     const m = computeMetrics(node, depth, measurer);
@@ -648,5 +655,5 @@ export async function exportDocPng(doc: Doc, theme: Theme, filename: string): Pr
     const g: NodeGeom = { ...m, x: n.x, y: n.y, depth };
     geom[id] = g;
   });
-  await exportPng({ ...doc, nodes: laid }, geom, theme, filename);
+  await exportPng({ ...doc, nodes: laid }, geom, theme, filename, imageUrls);
 }

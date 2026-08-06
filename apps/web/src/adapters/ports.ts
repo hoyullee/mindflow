@@ -367,6 +367,32 @@ export interface FeedbackStore {
   submit(entry: FeedbackEntry): Promise<{ error?: string }>;
 }
 
+// ── Images ─────────────────────────────────────────────────────────────────
+
+/**
+ * 첨부 이미지의 **실물**을 두는 곳. 본문에는 참조(`mfimg:<경로>`)만 남는다 —
+ * 왜 그렇게 하는지는 core `image.ts`의 doc comment 참고(본문 인라인이 저장량과
+ * 실시간 메시지 크기를 함께 밀어 올렸다).
+ *
+ * 구현이 없으면(로컬/데모 모드) `upload`가 `null`을 돌려주고, 호출부는 예전처럼
+ * 본문에 인라인한다 — 데모가 깨지지 않고, 옛 문서도 그대로 열린다.
+ */
+export interface ImageStore {
+  /**
+   * 이미지를 올리고 **본문에 넣을 참조**를 돌려준다. 실패하거나 지원하지 않으면
+   * `null`(호출부가 인라인으로 폴백).
+   * @param docId 접근 권한이 문서를 따라가도록 경로의 첫 조각으로 쓴다.
+   */
+  upload(docId: string, blob: Blob, ext: string): Promise<string | null>;
+  /**
+   * 참조들을 **지금 화면에 그릴 수 있는 URL**로 바꾼다(한 번에 — 왕복 1회).
+   * 못 푼 참조는 결과에서 빠진다(호출부는 자리표시자를 그린다).
+   */
+  resolve(refs: string[]): Promise<Record<string, string>>;
+  /** 문서가 영구 삭제될 때 실물도 지운다. 지원하지 않으면 no-op. */
+  removeForDoc(docId: string): Promise<void>;
+}
+
 // ── Backend bundle ───────────────────────────────────────────────────────
 
 export interface Backend {
@@ -378,6 +404,8 @@ export interface Backend {
   shareStore: ShareStore;
   /** 사용자 피드백 제출(쓰기 전용 우편함 — 0014). */
   feedbackStore: FeedbackStore;
+  /** 첨부 이미지 실물 저장소(본문에는 참조만 — 0016). */
+  imageStore: ImageStore;
   /** `'local'` = demo/localStorage fallback (no env configured); `'supabase'`
    * = real Postgres + Auth. Used to decide whether auth routes are gated. */
   mode: 'local' | 'supabase';

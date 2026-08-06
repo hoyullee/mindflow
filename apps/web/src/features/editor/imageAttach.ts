@@ -27,11 +27,33 @@ export function defaultFloatSize(natW: number, natH: number): { w: number; h: nu
 }
 
 export interface AttachedImage {
-  /** 인라인 저장용 데이터 URL (다운스케일/재인코딩 완료본). */
+  /**
+   * 본문 `img`에 넣을 값 — 별도 저장소에 올라갔으면 **참조**(`mfimg:…`), 아니면
+   * 예전처럼 데이터 URL. 어느 쪽이든 문자열 한 개라 모델·직렬화·CRDT는 그대로다.
+   */
   src: string;
   /** 인코딩된 이미지의 실제 픽셀 치수. */
   natW: number;
   natH: number;
+}
+
+/** 실물을 올리고 참조를 돌려준다. `null`이면 호출부가 본문에 인라인한다. */
+export type ImageUploader = (blob: Blob, ext: string) => Promise<string | null>;
+
+/** 데이터 URL → Blob. `fetch(dataUrl)`는 환경에 따라 막혀 있어 직접 푼다. */
+export function dataUrlToBlob(dataUrl: string): Blob | null {
+  const comma = dataUrl.indexOf(',');
+  if (!dataUrl.startsWith('data:') || comma < 0) return null;
+  const meta = dataUrl.slice(5, comma);
+  const type = meta.split(';')[0] || 'application/octet-stream';
+  try {
+    const bin = atob(dataUrl.slice(comma + 1));
+    const bytes = new Uint8Array(bin.length);
+    for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
+    return new Blob([bytes], { type });
+  } catch {
+    return null;
+  }
 }
 
 function isImageFile(file: File | Blob): boolean {
@@ -63,7 +85,7 @@ function loadBitmap(file: Blob): Promise<HTMLImageElement> {
  * 는 JPEG(q=0.85)로 인코딩. 결과가 SOFT_BYTE_LIMIT을 넘으면 품질을 낮춰 한 번
  * 재시도한다(PNG는 치수를 한 단계 더 줄임).
  */
-export async function attachImageFile(file: File | Blob): Promise<AttachedImage | null> {
+export async function attachImageFile(file: File | Blob, upload?: ImageUploader): Promise<AttachedImage | null> {
   if (!isImageFile(file)) return null;
   let img: HTMLImageElement;
   try {
@@ -102,6 +124,16 @@ export async function attachImageFile(file: File | Blob): Promise<AttachedImage 
         ctx.drawImage(img, 0, 0, dim.w, dim.h);
         src = canvas.toDataURL('image/jpeg', 0.7);
       }
+    }
+  }
+  // 여기까지가 예전과 같다(다운스케일/재인코딩된 데이터 URL). 별도 저장소가 있으면
+  // 그 실물을 올리고 본문에는 **참조만** 남긴다 — 실패하면 인라인으로 폴백하므로
+  // 첨부 자체는 언제나 성공한다(오프라인·정책 미적용 서버에서도).
+  if (upload) {
+    const blob = dataUrlToBlob(src);
+    if (blob) {
+      const ref = await upload(blob, keepPng ? 'png' : 'jpg');
+      if (ref) return { src: ref, natW: dim.w, natH: dim.h };
     }
   }
   return { src, natW: dim.w, natH: dim.h };

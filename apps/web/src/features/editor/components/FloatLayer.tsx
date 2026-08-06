@@ -14,6 +14,7 @@ import { ResizeHandle } from './ResizeHandle';
 import { domToRuns, linearize, listArrowLeft, listArrowVertical, selectedRawText, snapCaretOffListMarker } from '../richtextDom';
 import { isLinkOpenModifier, linkInk, openLink } from '../richSpans';
 import { insertLineBreak, listBackspaceOpAt, maybeContinueList } from './NodeLayer';
+import { AttachedImg } from './AttachedImg';
 
 interface FloatLayerProps {
   floats: Float[];
@@ -152,10 +153,9 @@ export function FloatLayer({ floats, theme: th, controller }: FloatLayerProps) {
             })()}
             {remotePeer && !editing && <RemotePeerTag color={remotePeer.user.color} name={remotePeer.user.name} style={{ left: 0, top: -22 }} />}
             {isImage ? (
-              <img
-                src={f.img}
-                alt=""
-                draggable={false}
+              <AttachedImg
+                img={f.img}
+                urls={controller.imageUrls}
                 style={{ display: 'block', width: '100%', height: '100%', objectFit: 'cover', pointerEvents: 'none', userSelect: 'none' }}
               />
             ) : editing ? (

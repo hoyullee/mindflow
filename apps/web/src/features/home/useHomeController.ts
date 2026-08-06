@@ -2,7 +2,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import type { ChangeEvent, KeyboardEvent } from 'react';
 import { useNavigate } from 'react-router-dom';
 import type { Doc } from '@mindflow/mindmap-core';
-import { parseDoc, serializeDoc, toMarkdown } from '@mindflow/mindmap-core';
+import { collectImageRefs, parseDoc, serializeDoc, toMarkdown } from '@mindflow/mindmap-core';
 import { exportDocPng } from '../editor/png';
 import { themeOf } from '../editor/theme';
 import { applyHomeTheme, homeThemeKeyOf, saveHomeThemeCache, type HomeThemeKey } from './theme';
@@ -56,7 +56,7 @@ export function useHomeController() {
   // 출렁인다(새로고침 깜빡임).
   const [state, setState] = useState<HomeState>(() => ({ ...initialHomeState(), recent: loadRecent() }));
   const navigate = useNavigate();
-  const { auth, docStore, spaceStore, shareStore, mode: backendMode } = useBackend();
+  const { auth, docStore, spaceStore, shareStore, imageStore, mode: backendMode } = useBackend();
   const importInputRef = useRef<HTMLInputElement | null>(null);
   const loaderTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
   // 새 맵 카드 등록을 로더 페인트 뒤로 미룰 때의 폴백 타이머(rAF 없는 환경).
@@ -823,6 +823,9 @@ export function useHomeController() {
       return { ...prev, trash, deleted, recent, favs, confirmPurge: null, confirmPurgeDocId: null };
     });
     if (docId) {
+      // 첨부 실물도 함께 지운다 — 영구 삭제는 되돌릴 수 없으므로 여기서만 지운다
+      // (편집 중 이미지를 지웠다 undo하는 경우를 대비해 그때는 남겨 둔다).
+      void imageStore.removeForDoc(docId).catch(() => undefined);
       void docStore.purge(docId).catch(() => {
         // Backend purge failed (offline/RLS): the row will reappear via list()
         // on the next load — surface it so the user can retry.
@@ -859,6 +862,7 @@ export function useHomeController() {
     });
     const ids = entries.map((t) => t.docId).filter((id): id is string => !!id);
     if (ids.length) {
+      void Promise.allSettled(ids.map((id) => imageStore.removeForDoc(id)));
       void Promise.allSettled(ids.map((id) => docStore.purge(id))).then((results) => {
         if (!mountedRef.current) return;
         if (results.some((r) => r.status === 'rejected')) {
@@ -1091,7 +1095,13 @@ export function useHomeController() {
     try {
       const doc = parseDoc(JSON.parse(raw));
       if (!doc) throw new Error('unparseable');
-      void exportDocPng(doc, themeOf(doc.themeKey), safeFileName(title));
+      // 이미지는 본문이 아니라 별도 저장소에 있다 — 그리기 전에 URL을 받아 둔다
+      // (참조가 없는 문서면 빈 요청 없이 그냥 지나간다).
+      void (async () => {
+        const refs = collectImageRefs(doc);
+        const urls = refs.length ? await imageStore.resolve(refs) : {};
+        await exportDocPng(doc, themeOf(doc.themeKey), safeFileName(title), urls);
+      })();
     } catch {
       patch({ importError: '이미지를 만들 수 없어요. 맵을 한 번 열어 저장한 뒤 다시 시도해 주세요.' });
     }

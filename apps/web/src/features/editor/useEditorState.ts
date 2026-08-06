@@ -2,7 +2,7 @@ import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } fr
 import type { MouseEvent as ReactMouseEvent, PointerEvent as ReactPointerEvent } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import type { Box, Doc, Float, Line, LineAnchor, LayoutMode, ListOp, Node, NodeMap, SizeOf, SnapCandidate, TextEdit, Zone } from '@mindflow/mindmap-core';
-import { HistoryStack, ROOT_ID, applyListOp as applyListOpToText, applyAutoLinks, applyMarkdownShortcuts, applyPartialStyle, charsToRuns, cubicAt, isStyledRuns, findLineSnap, layout, resolveLineEndpoints, resolveLineGeometry, runsToChars, serializeDoc, shiftOffset, toMarkdown } from '@mindflow/mindmap-core';
+import { HistoryStack, ROOT_ID, collectInlineImages, replaceInlineImages, applyListOp as applyListOpToText, applyAutoLinks, applyMarkdownShortcuts, applyPartialStyle, charsToRuns, cubicAt, isStyledRuns, findLineSnap, layout, resolveLineEndpoints, resolveLineGeometry, runsToChars, serializeDoc, shiftOffset, toMarkdown } from '@mindflow/mindmap-core';
 import { domToRuns, linearize, liveEditValue } from './richtextDom';
 import { recordVersion, versionDoc } from './versionHistory';
 import { nodeTextAlign, renderListEdit } from './listLines';
@@ -15,7 +15,8 @@ import { useYjsDocSync } from '../../collab/useYjsDocSync';
 import { usePresence, type UsePresenceResult } from '../../collab/usePresence';
 import { EMPTY_PRESENCE_SELECTION, type PresenceSelection } from '../../collab/presence';
 import { CanvasTextMeasurer, computeMetrics, measureFloatHeight } from './metrics';
-import { attachImageFile, defaultFloatSize, firstImageFile, fitWithin } from './imageAttach';
+import { attachImageFile, dataUrlToBlob, defaultFloatSize, firstImageFile, fitWithin } from './imageAttach';
+import { useImageUrls, type ImageUrlMap } from './useImageUrls';
 import { hasPendingDoc, hasStoredDoc, loadOrSeedDoc, markDocPending, saveDoc } from './storage';
 import { newDocId, pushRecentEntry, rebindMovedDoc } from '../home/storage';
 import type { SpaceData } from '../home/types';
@@ -564,6 +565,8 @@ export interface EditorController {
   /** 실시간 협업 전송이 실제로 붙었는지(`collab/ports.ts`의 `CollabStatus`).
    * 조용히 죽지 않도록 UI가 이걸 보고 알려 준다. */
   collabStatus: CollabStatus;
+  /** 이미지 참조 → 표시용 URL. 렌더러는 `displaySrc(img, imageUrls)`로 읽는다. */
+  imageUrls: ImageUrlMap;
   /** 이 문서가 **실제로 공유돼 있는가**(초대 목록에 행이 있다). 실시간 연결이 끊겨도
    * 혼자 쓰는 맵에서는 알릴 이유가 없다 — 저장은 실시간 채널과 무관하다. */
   sharedDoc: boolean;
@@ -630,7 +633,9 @@ export function useEditorState(): EditorController {
   const docStore = useDocStore();
   const shareStore = useShareStore();
   const spaceStore = useSpaceStore();
-  const backendMode = useBackend().mode;
+  const backend = useBackend();
+  const backendMode = backend.mode;
+  const imageStore = backend.imageStore;
   const urlMapId = params.get('map') || null;
   /** 저장하려던 id가 **다른 계정의 문서**여서 새 id로 옮겨 간 경우의 새 id
    * (`DocStore.save`의 `idTaken` → `moveToFreshId` 참고). 이후의 저장·로컬 캐시·
@@ -642,11 +647,19 @@ export function useEditorState(): EditorController {
   const docStoreId = mapId || 'default';
   const titleParam = params.get('title') ? decodeURIComponent(params.get('title') || '') : '';
 
+  /** 첨부 실물을 올리는 함수 — `attachImageFile`에 넘긴다. 콜백 deps를 흔들지 않게
+   * ref로 들고 있는다(문서 id가 바뀌어도 첨부 콜백을 새로 만들 이유가 없다). */
+  const imageUploadRef = useRef<(blob: Blob, ext: string) => Promise<string | null>>(async () => null);
+  imageUploadRef.current = (blob, ext) => imageStore.upload(docStoreId, blob, ext);
+
   /** 새로 만들기로 들어왔는가 — `newMapHref`만 `new=1`을 붙인다(홈의 기존 카드 링크
    * `mapHref`에는 없다). "행이 없다"를 새 맵과 **본문이 다른 기기에 있는 기존 맵**으로
    * 가르는 유일한 근거다(아래 `bodyMissing` 참고). */
   const isNewMapParam = params.get('new') === '1';
   const [doc, setDoc] = useState<Doc>(() => loadOrSeedDoc(mapId, titleParam));
+  /** 본문의 이미지 참조 → 표시용 URL(별도 저장소). 옛 문서의 데이터 URL은 참조가
+   * 아니므로 여기 들어오지 않고 값 그대로 그려진다(`displaySrc`). */
+  const imageUrls = useImageUrls(doc, imageStore);
   /** 마운트 시점에 이 기기에 본문이 있었는가. 로드가 끝난 뒤 판단해야 하므로 그때의
    * 값을 고정해 둔다(로드 중 캐시가 채워질 수 있다). */
   const hadLocalBodyRef = useRef(hasStoredDoc(mapId));
@@ -2180,6 +2193,39 @@ export function useEditorState(): EditorController {
     return () => window.clearTimeout(t);
   }, [collabBlocked, docStoreId]);
 
+  /**
+   * **옛 문서 이전**: 본문에 인라인된 이미지를 별도 저장소로 옮기고 그 자리를
+   * 참조로 바꾼다(core `replaceInlineImages`).
+   *
+   * 왜 여는 김에 하는가: 이미 만들어 둔 맵들이 이 변경의 이득(저장량·실시간 전송량)을
+   * 하나도 못 받기 때문이다. 한 번 열면 그 뒤로는 가볍다.
+   *
+   * 안전장치 — 실패해도 문서는 온전하다(올라간 것만 참조로 바뀌고 나머지는 인라인
+   * 그대로). 보기 전용은 하지 않고(남의 문서를 고칠 수 없다), 문서당 한 번만 시도한다.
+   * 두 사람이 동시에 열어 각자 올리면 CRDT가 한쪽 참조를 고르고 다른 실물은 남는다 —
+   * 화면은 정상이고 남은 파일은 문서를 영구 삭제할 때 함께 지워진다.
+   */
+  const imageMigratedRef = useRef('');
+  useEffect(() => {
+    if (hydrating || readOnly || !docStoreId) return;
+    if (imageMigratedRef.current === docStoreId) return;
+    const inline = collectInlineImages(docRef.current);
+    if (!inline.length) return;
+    imageMigratedRef.current = docStoreId;
+    void (async () => {
+      const byDataUrl: Record<string, string> = {};
+      for (const item of inline) {
+        if (byDataUrl[item.dataUrl]) continue; // 같은 이미지가 여러 곳에 붙어 있을 수 있다
+        const blob = dataUrlToBlob(item.dataUrl);
+        if (!blob) continue;
+        const ref = await imageStore.upload(docStoreId, blob, blob.type.includes('png') ? 'png' : 'jpg');
+        if (ref) byDataUrl[item.dataUrl] = ref;
+      }
+      if (!Object.keys(byDataUrl).length) return; // 저장소가 없거나(로컬 모드) 전부 실패
+      commitDoc((d) => replaceInlineImages(d, byDataUrl));
+    })();
+  }, [hydrating, readOnly, docStoreId, imageStore, commitDoc]);
+
   // 다른 문서로 넘어가면 협업 세션 기억을 지운다 — 이 맵에서 함께 편집한 적이 없다면
   // 충돌은 다시 "다른 기기/탭이 먼저 저장"으로 읽어야 한다.
   useEffect(() => {
@@ -2899,7 +2945,7 @@ export function useEditorState(): EditorController {
    * 원하는 중심점(드롭 위치/컨텍스트 메뉴 클릭점); 없으면 뷰포트 중앙. */
   const addImageFloatFromFile = useCallback(
     async (file: File | Blob, at?: { x: number; y: number }) => {
-      const attached = await attachImageFile(file);
+      const attached = await attachImageFile(file, imageUploadRef.current);
       if (!attached) return; // 이미지가 아니거나 디코드 실패 — 조용히 무시
       const { w, h } = defaultFloatSize(attached.natW, attached.natH);
       let cx: number;
@@ -2937,7 +2983,7 @@ export function useEditorState(): EditorController {
   /** 노드 썸네일: 표시 크기는 긴 변 180px로 비율 고정 (metrics가 박스를 키움). */
   const attachNodeImageFromFile = useCallback(
     async (id: string, file: File | Blob) => {
-      const attached = await attachImageFile(file);
+      const attached = await attachImageFile(file, imageUploadRef.current);
       if (!attached) return;
       const disp = fitWithin(attached.natW, attached.natH, 180);
       commitDoc((d) => ({ ...d, nodes: mutations.setNodeImage(d.nodes, id, attached.src, disp.w, disp.h) }));
@@ -4091,7 +4137,7 @@ export function useEditorState(): EditorController {
     downloadFile(`${safeDocTitle(doc, titleParam)}.json`, JSON.stringify(serializeDoc(doc), null, 2), 'application/json');
   }, [doc, titleParam]);
   const exportPNG = useCallback(() => {
-    void exportPng(doc, geom, theme, safeDocTitle(doc, titleParam));
+    void exportPng(doc, geom, theme, safeDocTitle(doc, titleParam), imageUrls);
   }, [doc, geom, theme, titleParam]);
   /** 마크다운 개요로 내보낸다(코어 `toMarkdown`). 무손실 백업은 JSON이고, 이건 다른
    * 도구로 옮기거나 사람이 읽는 용도다 — 가져오기가 이 형식을 되읽는다(노트·자유
@@ -4322,6 +4368,7 @@ export function useEditorState(): EditorController {
     backendMode,
     readOnly,
     collabStatus,
+    imageUrls,
     sharedDoc,
     collabBlocked,
     collabPaused,
