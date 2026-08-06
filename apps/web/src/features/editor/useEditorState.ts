@@ -88,6 +88,17 @@ const FIT_PADDING = 90;
 // Touch long-press → context menu (the touch equivalent of a right-click): a
 // stationary press held this long opens the menu; moving more than the
 // tolerance first cancels it (it's a pan).
+/**
+ * 공유 맵에서 실시간이 이만큼 끊겨 있으면 **편집을 멈춘다**.
+ *
+ * 짧은 끊김에는 멈추지 않는다: 자동 재접속이 5초 뒤 첫 시도를 하고, 그 사이의 편집은
+ * 합류 시 CRDT diff로 서로에게 병합된다(연산 이력을 공유하는 같은 세션이므로). 반면
+ * 오래 끊긴 채 양쪽이 편집하면 두 문서가 갈라지는데, 서버에는 CRDT 로그가 아니라
+ * **최종 본문**만 저장되므로 나중에 저장한 쪽이 상대의 작업을 덮는다. 그 지점부터는
+ * 계속 편집하게 두는 것이 오히려 손실이다.
+ */
+const COLLAB_PAUSE_AFTER_MS = 30_000;
+
 const LONG_PRESS_MS = 500; // iOS·안드로이드의 길게 누르기와 같은 길이
 /**
  * 길게 누르는 동안 허용하는 손가락 흔들림(px, **직선 거리**).
@@ -556,6 +567,11 @@ export interface EditorController {
   /** 이 문서가 **실제로 공유돼 있는가**(초대 목록에 행이 있다). 실시간 연결이 끊겨도
    * 혼자 쓰는 맵에서는 알릴 이유가 없다 — 저장은 실시간 채널과 무관하다. */
   sharedDoc: boolean;
+  /** **편집 일시 중지**: 공유된 맵인데 실시간이 오래(=`COLLAB_PAUSE_AFTER_MS`) 끊겨
+   * 있다. 이때 계속 편집하면 상대와 문서가 갈라지고, 서버에는 마지막에 저장한 쪽만
+   * 남아 한쪽 작업이 사라진다(서버는 CRDT 로그가 아니라 최종 본문만 보관한다).
+   * 모든 문서 변이는 `commitDoc`에서 막히고, 화면은 새로고침을 안내한다. */
+  collabPaused: boolean;
   /** **보기 전용**으로 초대된 공유 문서인가(#22). true면 편집 크롬을 감추고
    * 모든 문서 변이가 chokepoint(`commitDoc`)에서 차단된다. 진짜 게이트는 서버
    * RLS(0009 — view 초대는 SELECT만)다. */
@@ -907,6 +923,15 @@ export function useEditorState(): EditorController {
     setEdgeStyleState((d.edgeStyle as EdgeStyle | undefined) ?? 'curve');
   }, []);
   const { awareness, status: collabStatus } = useYjsDocSync(collabDocId, doc, onRemoteDoc);
+  // 저장 경로가 "지금 실시간이 붙어 있는가"를 물어야 해서 ref로 미러링한다
+  // (`persistDoc`의 충돌 해석 — 아래 주석 참고).
+  const collabStatusRef = useRef(collabStatus);
+  collabStatusRef.current = collabStatus;
+  // 공유 맵에서 실시간이 **오래** 끊기면 편집을 멈춘다. 짧은 끊김은 자동 재접속이
+  // 메우고(그 사이 편집은 CRDT로 합류 시 병합된다) 멈추면 오히려 방해라, 유예를 둔다.
+  const [collabPaused, setCollabPaused] = useState(false);
+  const collabPausedRef = useRef(false);
+  collabPausedRef.current = collabPaused;
 
   // ---- presence (multi-user awareness on top of M5's document sync): cursor
   // position + selection + identity, broadcast via the SAME `Awareness`
@@ -1217,6 +1242,9 @@ export function useEditorState(): EditorController {
    * `componentDidUpdate` diff (this hook has no equivalent lifecycle to diff against). */
   const commitDoc = useCallback((updater: (d: Doc) => Doc, continuous = false) => {
     if (readOnlyRef.current) return; // 보기 전용(#22) — 모든 문서 변이의 chokepoint
+    // 공유 맵인데 실시간이 오래 끊겼다 — 지금 편집하면 상대와 갈라지고 저장에서
+    // 한쪽이 사라진다. 화면(`CollabPaused`)이 새로고침을 안내한다.
+    if (collabPausedRef.current) return;
     setDoc((prev) => {
       const next = updater(prev);
       const changed =
@@ -2050,7 +2078,13 @@ export function useEditorState(): EditorController {
       // 동시에 저장했다"는 사실이다. 새 버전을 기준으로 같은(수렴된) 내용을 한 번
       // 더 쓰고 조용히 넘어간다 — "다른 기기/탭에서 먼저 저장됨" 배너는 같은 세션의
       // 상대를 남의 기기로 오해하게 만든다(제보).
-      if (collabSessionRef.current && attempt === 0) continue;
+      //
+      // **다만 그 전제는 실시간이 붙어 있을 때만 성립한다.** 채널이 끊긴 채 양쪽이
+      // 편집하면 두 문서는 수렴하지 않고 갈라진다 — 그 상태에서 조용히 덮어쓰면
+      // 상대의 편집이 경고도 없이 사라진다(질문으로 드러난 구멍). 끊겨 있으면
+      // 충돌은 진짜 충돌이므로 덮어쓰지 않고 배너로 알린다.
+      const live = collabStatusRef.current === 'connected' || collabStatusRef.current === 'connected-insecure';
+      if (collabSessionRef.current && live && attempt === 0) continue;
       setSaveConflict({ currentVersion: result.currentVersion });
       setSaveStateState('saved');
       return;
@@ -2111,6 +2145,30 @@ export function useEditorState(): EditorController {
     }, 900);
     return () => window.clearTimeout(autosaveTimerRef.current);
   }, [doc, persistDoc]);
+
+  /**
+   * 공유 맵 + 실시간 끊김이 유예를 넘기면 편집을 멈춘다(그리고 붙는 즉시 푼다).
+   *
+   * 멈추기 직전에 지금 문서를 **이 기기의 버전 기록에 강제로 남긴다** — 새로고침하면
+   * 서버 판(상대가 저장한 것일 수 있다)으로 돌아가므로, 끊긴 동안 쓴 내용을 되찾을
+   * 길을 남겨 두는 것이다(안내 문구가 그 경로를 알려 준다).
+   */
+  useEffect(() => {
+    const risky = backendMode === 'supabase' && sharedDoc && collabStatus === 'offline';
+    if (!risky) {
+      setCollabPaused(false);
+      return;
+    }
+    const t = window.setTimeout(() => {
+      try {
+        recordVersion(docStoreId, docRef.current, { force: true });
+      } catch {
+        /* 기록은 부가 — 실패해도 멈춤 자체는 해야 한다 */
+      }
+      setCollabPaused(true);
+    }, COLLAB_PAUSE_AFTER_MS);
+    return () => window.clearTimeout(t);
+  }, [backendMode, sharedDoc, collabStatus, docStoreId]);
 
   // 다른 문서로 넘어가면 협업 세션 기억을 지운다 — 이 맵에서 함께 편집한 적이 없다면
   // 충돌은 다시 "다른 기기/탭이 먼저 저장"으로 읽어야 한다.
@@ -4255,5 +4313,6 @@ export function useEditorState(): EditorController {
     readOnly,
     collabStatus,
     sharedDoc,
+    collabPaused,
   };
 }

@@ -4,8 +4,9 @@
 // 다음에 열 때 그 표시가 있으면 서버 판(더 옛것)을 채택하지 않고 로컬을 올린다 —
 // 없으면 오프라인에서 쓴 내용이 조용히 사라진다.
 //
-// 대기 시간이 넉넉한 이유: 자동저장은 0.9초 디바운스라 전체 스위트를 함께 돌리는
-// 부하 상황에서는 기본 1초·4초 창을 넘기는 경우가 있었다(전체 실행에서만 깨짐).
+// 저장을 **Ctrl+S로 직접** 부르는 이유: 자동저장(0.9초 디바운스)에 기대면 전체 스위트를
+// 함께 돌리는 부하 상황에서 간헐적으로 창을 넘겨 깨졌다. 여기서 검증할 규칙은 "저장이
+// 실패했을 때"이지 디바운스가 아니므로, 타이밍을 테스트에서 걷어낸다.
 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
@@ -79,6 +80,11 @@ function edit(container: HTMLElement): void {
   fireEvent.keyDown(window, { key: 'Tab' }); // 자식 추가 = 내 편집
 }
 
+/** 자동저장을 기다리지 않고 지금 저장한다(Ctrl+S) — 타이밍 의존 제거. */
+function saveNow(): void {
+  fireEvent.keyDown(window, { key: 's', ctrlKey: true });
+}
+
 function setOnline(value: boolean): void {
   Object.defineProperty(navigator, 'onLine', { value, configurable: true });
 }
@@ -117,6 +123,7 @@ describe('오프라인', () => {
     await waitFor(() => expect(screen.getByText('저장됨')).toBeTruthy(), { timeout: 5000 });
 
     edit(container);
+    saveNow();
     await waitFor(() => expect(save).toHaveBeenCalled(), { timeout: 10000 });
 
     await waitFor(() => expect(hasPendingDoc('off2')).toBe(true), { timeout: 5000 });
@@ -129,6 +136,7 @@ describe('오프라인', () => {
     await waitFor(() => expect(screen.getByText('저장됨')).toBeTruthy(), { timeout: 5000 });
 
     edit(container);
+    saveNow();
     await waitFor(() => expect(save).toHaveBeenCalledTimes(1), { timeout: 10000 });
 
     await act(async () => {
