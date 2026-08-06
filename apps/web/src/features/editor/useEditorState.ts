@@ -2,7 +2,7 @@ import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } fr
 import type { MouseEvent as ReactMouseEvent, PointerEvent as ReactPointerEvent } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import type { Box, Doc, Float, Line, LineAnchor, LayoutMode, ListOp, Node, NodeMap, SizeOf, SnapCandidate, TextEdit, Zone } from '@mindflow/mindmap-core';
-import { HistoryStack, ROOT_ID, collectInlineImages, replaceInlineImages, applyListOp as applyListOpToText, applyAutoLinks, applyMarkdownShortcuts, applyPartialStyle, charsToRuns, cubicAt, isStyledRuns, findLineSnap, layout, resolveLineEndpoints, resolveLineGeometry, runsToChars, serializeDoc, shiftOffset, toMarkdown } from '@mindflow/mindmap-core';
+import { HistoryStack, ROOT_ID, collectInlineImages, isImageRef, replaceInlineImages, applyListOp as applyListOpToText, applyAutoLinks, applyMarkdownShortcuts, applyPartialStyle, charsToRuns, cubicAt, isStyledRuns, findLineSnap, layout, resolveLineEndpoints, resolveLineGeometry, runsToChars, serializeDoc, shiftOffset, toMarkdown } from '@mindflow/mindmap-core';
 import { domToRuns, linearize, liveEditValue } from './richtextDom';
 import { recordVersion, versionDoc } from './versionHistory';
 import { nodeTextAlign, renderListEdit } from './listLines';
@@ -545,6 +545,10 @@ export interface EditorController {
    * 알리고 사용자가 닫으면 사라진다 — `moveToFreshId` 참고. */
   movedNotice: boolean;
   dismissMovedNotice: () => void;
+  /** 첨부 실물을 별도 저장소에 못 올려 **본문에 인라인**했다는 알림(용량 초과·
+   * 권한·네트워크). 조용히 넘기면 협업 메시지 크기 사고와 DB 팽창이 되살아난다. */
+  imageInlined: boolean;
+  dismissImageInlined: () => void;
   dismissSaveConflict: () => void;
   exportJSON: () => void;
   exportPNG: () => void;
@@ -643,6 +647,7 @@ export function useEditorState(): EditorController {
   const [movedId, setMovedId] = useState<string | null>(null);
   /** 새 id로 옮겨졌음을 한 번 알리는 배너 플래그(사용자가 닫을 때까지 유지). */
   const [movedNotice, setMovedNotice] = useState(false);
+  const [imageInlined, setImageInlined] = useState(false);
   const mapId = movedId ?? urlMapId;
   const docStoreId = mapId || 'default';
   const titleParam = params.get('title') ? decodeURIComponent(params.get('title') || '') : '';
@@ -2343,6 +2348,7 @@ export function useEditorState(): EditorController {
 
   const dismissSaveConflict = useCallback(() => setSaveConflict(null), []);
   const dismissMovedNotice = useCallback(() => setMovedNotice(false), []);
+  const dismissImageInlined = useCallback(() => setImageInlined(false), []);
 
   const goHome = useCallback(() => {
     window.clearTimeout(autosaveTimerRef.current);
@@ -2941,12 +2947,30 @@ export function useEditorState(): EditorController {
     [commitDoc, idFactory],
   );
 
+  /**
+   * 별도 저장소를 **쓸 수 있는 모드인데도** 참조가 아니라 데이터 URL이 나왔다면
+   * 업로드가 실패한 것이다(용량 초과·권한·네트워크). 예전엔 그대로 본문에 인라인하고
+   * 조용히 넘어갔는데, 그러면 실시간 메시지 크기 사고(#335)와 DB 팽창이 되살아나는
+   * 데다 **아무도 그 사실을 모른다.** 한 번 알린다.
+   *
+   * 로컬/데모 모드는 인라인이 정상이라 알리지 않는다.
+   */
+  const noteIfInlined = useCallback(
+    (src: string) => {
+      if (backendMode !== 'supabase') return;
+      if (isImageRef(src)) return;
+      setImageInlined(true);
+    },
+    [backendMode],
+  );
+
   /** 이미지 파일 → (리사이즈/재인코딩) → 이미지 플로트 커밋. `at`은 캔버스 좌표의
    * 원하는 중심점(드롭 위치/컨텍스트 메뉴 클릭점); 없으면 뷰포트 중앙. */
   const addImageFloatFromFile = useCallback(
     async (file: File | Blob, at?: { x: number; y: number }) => {
       const attached = await attachImageFile(file, imageUploadRef.current);
       if (!attached) return; // 이미지가 아니거나 디코드 실패 — 조용히 무시
+      noteIfInlined(attached.src);
       const { w, h } = defaultFloatSize(attached.natW, attached.natH);
       let cx: number;
       let cy: number;
@@ -2985,6 +3009,7 @@ export function useEditorState(): EditorController {
     async (id: string, file: File | Blob) => {
       const attached = await attachImageFile(file, imageUploadRef.current);
       if (!attached) return;
+      noteIfInlined(attached.src);
       const disp = fitWithin(attached.natW, attached.natH, 180);
       commitDoc((d) => ({ ...d, nodes: mutations.setNodeImage(d.nodes, id, attached.src, disp.w, disp.h) }));
     },
@@ -4356,6 +4381,8 @@ export function useEditorState(): EditorController {
     saveConflict,
     movedNotice,
     dismissMovedNotice,
+    imageInlined,
+    dismissImageInlined,
     dismissSaveConflict,
     exportJSON,
     exportPNG,

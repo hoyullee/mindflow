@@ -10,13 +10,15 @@ import type { EditorController } from '../useEditorState';
 import { DocChip } from './DocChip';
 import { panelWrapStyle } from './panel/panelPrimitives';
 
-function stub(over: Partial<{ saveConflict: { currentVersion: number } | null }>): EditorController {
+function stub(over: Partial<{ saveConflict: { currentVersion: number } | null; imageInlined: boolean }>): EditorController {
   return {
     uiTheme: UI_THEME,
     docTitle: '테스트 맵',
     saveState: 'saved',
     editingTitle: false,
     saveConflict: over.saveConflict ?? null,
+    imageInlined: over.imageInlined ?? false,
+    dismissImageInlined: vi.fn(),
     goHome: vi.fn(),
     saveNow: vi.fn(),
     startEditTitle: vi.fn(),
@@ -50,6 +52,25 @@ describe('DocChip 저장 충돌 안내', () => {
     render(<DocChip controller={controller} />);
     fireEvent.click(screen.getByRole('alert'));
     expect(controller.dismissSaveConflict).toHaveBeenCalled();
+  });
+});
+
+describe('이미지 인라인 폴백 안내', () => {
+  it('저장소에 못 올려 본문에 담았을 때만 알린다 (평소에는 조용)', () => {
+    const { unmount } = render(<DocChip controller={stub({})} />);
+    expect(screen.queryByText(/저장소에 올리지 못해/)).toBeNull();
+    unmount();
+
+    // 조용히 넘기면 실시간 메시지 크기 사고와 DB 팽창이 되살아난다 — 반드시 보인다.
+    render(<DocChip controller={stub({ imageInlined: true })} />);
+    expect(screen.getAllByText(/저장소에 올리지 못해/).length).toBeGreaterThan(0);
+  });
+
+  it('클릭하면 닫힌다', () => {
+    const controller = stub({ imageInlined: true });
+    render(<DocChip controller={controller} />);
+    fireEvent.click(screen.getByRole('alert'));
+    expect(controller.dismissImageInlined).toHaveBeenCalled();
   });
 });
 

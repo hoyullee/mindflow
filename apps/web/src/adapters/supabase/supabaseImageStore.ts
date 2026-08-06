@@ -19,9 +19,27 @@ import { imageRefPath, makeImageRef } from '@mindflow/mindmap-core';
 import type { ImageStore } from '../ports';
 
 export const IMAGE_BUCKET = 'map-images';
-/** 서명 URL 유효 시간(초). 편집 세션은 이보다 길 수 있어서 화면 쪽이 만료 전에
- * 다시 받는다(`useImageUrls`) — 여기서는 넉넉하되 무한하지 않게. */
-export const SIGNED_URL_TTL_SEC = 60 * 60;
+/**
+ * 서명 URL 유효 시간(초) = 12시간.
+ *
+ * 짧게 잡으면 **전송량이 폭발한다**: URL 문자열이 바뀌면 브라우저 캐시가 무효화돼
+ * 화면의 이미지를 전부 다시 내려받는다. 1시간이던 시절엔 맵을 하루 열어 둔 사용자
+ * 한 명이 이미지 10장(2MB)을 열 번 넘게 다시 받았다(≈20MB/일). 12시간이면 한 세션에
+ * URL 하나 — 실질적으로 기기당 한 번만 내려받는다.
+ *
+ * 트레이드오프는 **유출된 URL의 유효 시간**이다. 그래서 무한(공개 버킷)으로 가지
+ * 않고 12시간에서 끊는다.
+ */
+export const SIGNED_URL_TTL_SEC = 12 * 60 * 60;
+/**
+ * 업로드 객체의 `Cache-Control` 최대 수명(초) = 1년.
+ *
+ * 경로가 uuid라 **같은 경로의 내용이 바뀌는 일이 없다**(수정은 새 파일을 만든다).
+ * 그래서 아무리 길게 잡아도 낡은 이미지를 보여 줄 위험이 없고, 대신 CDN·브라우저가
+ * 마음껏 캐시한다 — 무료 플랜에서 먼저 닿는 한도가 저장 용량이 아니라 전송량이라
+ * 이게 실질 수용 인원을 좌우한다.
+ */
+const OBJECT_CACHE_SEC = 31_536_000;
 
 function randomName(ext: string): string {
   const rand = typeof crypto !== 'undefined' && crypto.randomUUID ? crypto.randomUUID() : `${Date.now()}-${Math.random().toString(36).slice(2)}`;
@@ -39,7 +57,7 @@ export class SupabaseImageStore implements ImageStore {
       // 경로마다 uuid라 덮어쓸 일이 없다. upsert를 켜면 실수로 남의 파일을 덮는
       // 요청이 정책에 걸려 update 권한까지 필요해진다.
       upsert: false,
-      cacheControl: '3600',
+      cacheControl: String(OBJECT_CACHE_SEC),
     });
     if (error) {
       // 조용히 죽지 않게 — 실패하면 호출부가 인라인으로 폴백하므로 첨부 자체는 된다.

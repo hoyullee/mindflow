@@ -14,7 +14,7 @@ import { cleanup, configure, render, waitFor, within } from '@testing-library/re
 import { MemoryRouter, Route, Routes } from 'react-router-dom';
 import { makeImageRef, type Doc } from '@mindflow/mindmap-core';
 import { Editor } from './Editor';
-import { attachImageFile, dataUrlToBlob } from './imageAttach';
+import { attachImageFile, dataUrlToBlob, pickImageFormat } from './imageAttach';
 import { displaySrc } from './useImageUrls';
 import { BackendProvider } from '../../adapters/BackendContext';
 import { LocalAuth } from '../../adapters/local/localAuth';
@@ -217,5 +217,49 @@ describe('참조 렌더', () => {
     expect(ph).not.toBeNull();
     expect(ph!.style.width).toBe('80px');
     expect(ph!.style.height).toBe('60px');
+  });
+});
+
+describe('용량·전송량 (무료 한도에서 먼저 닿는 건 전송량이다)', () => {
+  it('WebP를 우선한다 — 같은 화질에서 JPEG보다 훨씬 작고 투명도까지 된다', () => {
+    expect(pickImageFormat('image/jpeg', true)).toMatchObject({ mime: 'image/webp', ext: 'webp' });
+    // PNG 원본도 WebP로 — WebP는 투명도를 지원하므로 잃는 게 없다
+    expect(pickImageFormat('image/png', true)).toMatchObject({ mime: 'image/webp', ext: 'webp' });
+  });
+
+  it('WebP를 못 쓰는 브라우저는 예전 규칙 그대로 (투명 PNG는 PNG, 나머지는 JPEG)', () => {
+    expect(pickImageFormat('image/png', false)).toMatchObject({ mime: 'image/png', ext: 'png' });
+    expect(pickImageFormat('image/png', false).quality).toBeUndefined(); // 무손실 — 품질 손잡이 없음
+    expect(pickImageFormat('image/jpeg', false)).toMatchObject({ mime: 'image/jpeg', ext: 'jpg' });
+  });
+
+  it('손실 포맷은 너무 클 때 낮춰 쓸 품질을 함께 들고 있다', () => {
+    const webp = pickImageFormat('image/jpeg', true);
+    expect(webp.retryQuality).toBeLessThan(webp.quality!);
+  });
+
+  it('서명 URL 수명이 갱신 주기보다 길다 — 만료된 URL을 그리는 일이 없게', async () => {
+    const { SIGNED_URL_TTL_SEC } = await import('../../adapters/supabase/supabaseImageStore');
+    const { IMAGE_URL_REFRESH_MS } = await import('./useImageUrls');
+    expect(IMAGE_URL_REFRESH_MS).toBeLessThan(SIGNED_URL_TTL_SEC * 1000);
+    // 그리고 한 세션에 몇 번씩 갱신하지 않는다(갱신 = 캐시 무효화 = 재다운로드).
+    expect(IMAGE_URL_REFRESH_MS).toBeGreaterThan(2 * 60 * 60 * 1000);
+  });
+});
+
+describe('업로드 실패는 조용히 넘기지 않는다', () => {
+  it('배경 이전이 실패해도 알림으로 방해하지 않는다 — 사용자가 시킨 일이 아니다', async () => {
+    // 업로드가 실패하는 저장소 — 문서는 인라인 그대로 남고, 다음에 열 때 재시도한다.
+    const store: ImageStore = { upload: async () => null, resolve: async () => ({}), removeForDoc: async () => undefined };
+    const backend = makeBackend(store, docWithInlineImage()); // mode: 'supabase'
+    const docId = `img-warn-${Math.random()}`;
+    localStorage.setItem(`mindflow_doc_${docId}`, JSON.stringify(docWithInlineImage()));
+    const { container } = renderEditor(backend, docId);
+    await waitFor(() => expect(within(getViewport(container)).getByText('리서치')).toBeTruthy());
+    await new Promise((r) => setTimeout(r, 300));
+
+    expect(document.body.textContent).not.toContain('저장소에 올리지 못해');
+    // 옮기지 못했으니 본문은 인라인 그대로 — 다음 기회에 다시 시도한다
+    expect(localStorage.getItem(`mindflow_doc_${docId}`)).toContain('data:image');
   });
 });
