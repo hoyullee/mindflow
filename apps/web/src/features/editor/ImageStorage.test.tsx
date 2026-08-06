@@ -267,16 +267,19 @@ describe('업로드 실패는 조용히 넘기지 않는다', () => {
 describe('화질 (제보: 삽입한 이미지가 깨져 보인다)', () => {
   it('원본 상한이 표시 크기 × 최대 줌 × 기기 픽셀비를 감당한다', async () => {
     const { MAX_IMAGE_DIM, DEFAULT_IMAGE_FLOAT_WIDTH } = await import('./imageAttach');
-    const MAX_ZOOM = 2.4; // useEditorState의 상한 — 여기서 쓰려고 export하진 않는다
     const DPR = 2; // 흔한 고해상도 화면
-    // 기본 크기를 최대 줌으로 2배 화면에서 봐도 원본 픽셀이 모자라지 않아야 한다.
-    // 1024이던 시절엔 여기서 이미 아슬아슬했고, PNG 스크린샷은 512로 반토막까지 났다.
-    expect(MAX_IMAGE_DIM).toBeGreaterThanOrEqual(Math.ceil(DEFAULT_IMAGE_FLOAT_WIDTH * MAX_ZOOM * DPR));
-    // 키워 놓고 보는 경우까지 여유가 있어야 한다(기본의 1.5배 이상).
-    expect(MAX_IMAGE_DIM).toBeGreaterThanOrEqual(Math.ceil(DEFAULT_IMAGE_FLOAT_WIDTH * 1.5 * MAX_ZOOM * DPR));
+    // 기본 삽입 크기를 2배 화면에서, 2배로 확대해서 봐도 원본 픽셀이 모자라지 않아야
+    // 한다. 1024이던 시절엔 기본 크기조차 아슬아슬했고, PNG 스크린샷은 512로
+    // 반토막까지 났다(그게 "깨져 보인다"의 정체였다).
+    expect(MAX_IMAGE_DIM).toBeGreaterThanOrEqual(DEFAULT_IMAGE_FLOAT_WIDTH * DPR * 2);
   });
 
-  it('WebP 품질이 화질 우선으로 올라가 있다', () => {
-    expect(pickImageFormat('image/png', true).quality).toBeGreaterThanOrEqual(0.85);
+  it('WebP 품질이 화질 우선으로 올라가 있다 (글자가 든 스크린샷 기준)', () => {
+    expect(pickImageFormat('image/png', true).quality).toBeGreaterThanOrEqual(0.9);
+  });
+
+  it('기본 삽입 폭이 스크린샷 글자가 읽히는 크기다 (실측: 260 뭉갬 / 480부터 읽힘)', async () => {
+    const { DEFAULT_IMAGE_FLOAT_WIDTH } = await import('./imageAttach');
+    expect(DEFAULT_IMAGE_FLOAT_WIDTH).toBeGreaterThanOrEqual(480);
   });
 });
