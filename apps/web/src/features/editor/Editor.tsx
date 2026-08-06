@@ -14,6 +14,7 @@ import { SearchBar } from './components/SearchBar';
 import { ShortcutHelp } from './components/ShortcutHelp';
 import { VersionHistory } from './components/VersionHistory';
 import { MapUnavailable } from './components/MapUnavailable';
+import { CollabPaused } from './components/CollabPaused';
 import { FeedbackModal } from '../../components/FeedbackModal';
 import { MobileSelectBar } from './components/MobileSelectBar';
 import { MOBILE_SIDE_PANEL_W } from './components/panel/panelPrimitives';
@@ -146,6 +147,9 @@ export function Editor() {
       onDragStartCapture={(e) => e.preventDefault()}
     >
       <Toolbar controller={controller} />
+      {/* 공유 맵에서 실시간이 오래 끊기면 편집을 멈추고 새로고침을 안내한다 —
+          갈라진 채 계속 쓰면 나중에 저장한 쪽이 상대 작업을 덮는다. */}
+      <CollabPaused controller={controller} />
       {/* 공유 모달 — 아웃라인 보기에서도 열 수 있어야 하므로 view 분기 밖에 둔다. */}
       <ShareModal controller={controller} />
       <ShortcutHelp controller={controller} />
