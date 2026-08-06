@@ -78,7 +78,11 @@ export function FloatLayer({ floats, theme: th, controller }: FloatLayerProps) {
           boxStyle.background = th.panel;
           boxStyle.minHeight = undefined;
           boxStyle.height = f.h || Math.round(f.w * 0.75);
-          boxStyle.overflow = 'hidden';
+          // `overflow: hidden`을 **박스에 걸지 않는다.** 둥근 모서리로 이미지를
+          // 자르려던 것인데, 그러면 박스 밖에 놓인 자식까지 잘린다 — 크기 조절
+          // 핸들(right/bottom −6)이 잘려 **이미지 안에 박힌 것처럼** 보였고
+          // (제보 스크린샷) 원격 피어 이름표(top −22)도 같이 잘렸다.
+          // 자르기는 이미지를 감싸는 안쪽 래퍼가 맡는다(아래 `mf-float-img-clip`).
         }
         // 접힌 메모의 한 줄 표시도 리스트 글리프(`- `→단계 글리프)를 치환해 펼친 모습과 일치.
         const shown = collapsed ? listDisplayLine(String(f.text || '').split('\n')[0] || '') : f.text;
@@ -153,11 +157,13 @@ export function FloatLayer({ floats, theme: th, controller }: FloatLayerProps) {
             })()}
             {remotePeer && !editing && <RemotePeerTag color={remotePeer.user.color} name={remotePeer.user.name} style={{ left: 0, top: -22 }} />}
             {isImage ? (
-              <AttachedImg
-                img={f.img}
-                urls={controller.imageUrls}
-                style={{ display: 'block', width: '100%', height: '100%', objectFit: 'cover', pointerEvents: 'none', userSelect: 'none' }}
-              />
+              <div data-float-img-clip style={{ position: 'absolute', inset: 0, overflow: 'hidden', borderRadius: 'inherit' }}>
+                <AttachedImg
+                  img={f.img}
+                  urls={controller.imageUrls}
+                  style={{ display: 'block', width: '100%', height: '100%', objectFit: 'cover', pointerEvents: 'none', userSelect: 'none' }}
+                />
+              </div>
             ) : editing ? (
               <FloatEditBox f={f} controller={controller} />
             ) : richLines ? (

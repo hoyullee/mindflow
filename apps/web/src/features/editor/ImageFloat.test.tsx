@@ -51,7 +51,7 @@ afterEach(() => {
 
 describe('image attach — pure helpers', () => {
   it('fitWithin caps the long side and keeps aspect', () => {
-    expect(fitWithin(2048, 1024, MAX_IMAGE_DIM)).toEqual({ w: 1024, h: 512 });
+    expect(fitWithin(4096, 2048, MAX_IMAGE_DIM)).toEqual({ w: 2048, h: 1024 });
     expect(fitWithin(500, 300, MAX_IMAGE_DIM)).toEqual({ w: 500, h: 300 }); // 이미 작으면 그대로
     expect(fitWithin(1000, 4000, 1024)).toEqual({ w: 256, h: 1024 });
   });

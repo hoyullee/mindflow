@@ -7,12 +7,33 @@
 // 어느 쪽이든 여기서 반드시 줄여서 내보낸다. 무료 플랜에서 먼저 닿는 한도가
 // **저장 용량이 아니라 전송량**이라, 한 장의 바이트 수가 곧 수용 인원이다.
 
-/** 긴 변 상한(px). 초과하면 비율 유지 다운스케일. */
-export const MAX_IMAGE_DIM = 1024;
+/**
+ * 긴 변 상한(px). 초과하면 비율 유지 다운스케일.
+ *
+ * **1024 → 2048로 올렸다(제보: 삽입한 이미지가 깨져 보인다).** 1024는 이미지가
+ * 문서 본문에 base64로 인라인되던 시절의 값이다 — 그때는 한 장의 크기가 곧
+ * localStorage 쿼터이자 CRDT 업데이트 크기였다. 이제 실물은 Storage에 있으므로
+ * 그 제약이 없다.
+ *
+ * 2048인 이유: 표시 크기는 문서 좌표 기준(메모 기본 260 / 노드 180)이지만 실제로
+ * 화면에 찍히는 픽셀은 **표시 크기 × 캔버스 줌 × 기기 픽셀비**다. 기본 크기를 최대
+ * 줌(MAX_ZOOM 2.4)으로 2배 화면에서 보면 260 × 2.4 × 2 = 1248이고, 2048이면 메모를
+ * 기본보다 **1.6배 키워 놓고** 최대 줌으로 봐도 원본 픽셀이 모자라지 않는다.
+ * 더 키우지 않는 이유는 전송량이다(2048 스크린샷 130KB / 사진 63KB 실측).
+ */
+export const MAX_IMAGE_DIM = 2048;
 /** 캔버스에 놓일 때의 기본 표시 너비(px, 문서 좌표). */
 export const DEFAULT_IMAGE_FLOAT_WIDTH = 260;
-/** 인코딩 결과가 이보다 크면 품질을 한 단계 낮춰 재시도. */
-const SOFT_BYTE_LIMIT = 600 * 1024;
+/**
+ * 인코딩 결과(데이터 URL 길이)가 이보다 크면 한 단계 더 줄여 재시도.
+ *
+ * **600KB → 1.5MB로 올렸다.** 이 경로는 "너무 큰 이미지"를 막는 안전판인데, 값이
+ * 낮으면 **평범한 스크린샷에서도 발동해 화질을 떨어뜨린다** — 예전에는 1024px PNG
+ * 스크린샷이 이 한계를 넘어 치수를 **512px로 반토막** 냈고, 그게 "삽입한 이미지가
+ * 깨져 보인다"의 정체였다. WebP로 인코딩하는 지금은 2048px 스크린샷이 130KB,
+ * 사진이 63KB(실측)라 정상 이미지에서는 사실상 발동하지 않는다.
+ */
+const SOFT_BYTE_LIMIT = 1_500 * 1024;
 
 /** 비율을 유지한 채 긴 변이 `max` 이하가 되는 정수 치수. 순수 함수(테스트 대상). */
 export function fitWithin(w: number, h: number, max: number): { w: number; h: number } {
@@ -105,7 +126,7 @@ export interface ImageFormat {
  * PNG는 PNG로, 나머지는 JPEG로.
  */
 export function pickImageFormat(fileType: string, webpSupported: boolean): ImageFormat {
-  if (webpSupported) return { mime: 'image/webp', ext: 'webp', quality: 0.8, retryQuality: 0.65 };
+  if (webpSupported) return { mime: 'image/webp', ext: 'webp', quality: 0.85, retryQuality: 0.7 };
   if (fileType === 'image/png') return { mime: 'image/png', ext: 'png' };
   return { mime: 'image/jpeg', ext: 'jpg', quality: 0.85, retryQuality: 0.7 };
 }
