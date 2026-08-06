@@ -104,6 +104,13 @@ function getViewport(container: HTMLElement): HTMLElement {
   return el as HTMLElement;
 }
 
+/** 자동저장(0.9초 디바운스)을 기다리지 않고 지금 저장한다 — 여기서 검증할 규칙은
+ * 충돌 해석이지 디바운스가 아니고, 부하가 걸린 CI에서는 그 대기가 테스트 제한(5초)을
+ * 넘겨 깨졌다. */
+function saveNow(): void {
+  fireEvent.keyDown(window, { key: 's', ctrlKey: true });
+}
+
 function edit(container: HTMLElement): void {
   const vp = getViewport(container);
   const label = within(vp).getByText('리서치');
@@ -156,7 +163,8 @@ describe('실시간이 끊긴 채 편집할 때', () => {
     save.mockClear();
 
     edit(container);
-    await waitFor(() => expect(save).toHaveBeenCalledTimes(1), { timeout: 10000 });
+    saveNow();
+    await waitFor(() => expect(save).toHaveBeenCalledTimes(1), { timeout: 4000 });
 
     // 두 번째 쓰기(덮어쓰기)를 시도하지 않고, 사용자에게 알린다.
     await waitFor(() => expect(screen.getAllByText(/다른 기기\/탭에서 먼저 저장됨/).length).toBeGreaterThan(0));
@@ -172,7 +180,8 @@ describe('실시간이 끊긴 채 편집할 때', () => {
     save.mockClear();
 
     edit(container);
-    await waitFor(() => expect(save).toHaveBeenCalledTimes(2), { timeout: 10000 });
+    saveNow();
+    await waitFor(() => expect(save).toHaveBeenCalledTimes(2), { timeout: 4000 });
     expect(screen.queryAllByText(/다른 기기\/탭에서 먼저 저장됨/)).toHaveLength(0);
   });
 
