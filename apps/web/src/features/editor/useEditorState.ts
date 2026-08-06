@@ -567,10 +567,15 @@ export interface EditorController {
   /** 이 문서가 **실제로 공유돼 있는가**(초대 목록에 행이 있다). 실시간 연결이 끊겨도
    * 혼자 쓰는 맵에서는 알릴 이유가 없다 — 저장은 실시간 채널과 무관하다. */
   sharedDoc: boolean;
-  /** **편집 일시 중지**: 공유된 맵인데 실시간이 오래(=`COLLAB_PAUSE_AFTER_MS`) 끊겨
-   * 있다. 이때 계속 편집하면 상대와 문서가 갈라지고, 서버에는 마지막에 저장한 쪽만
-   * 남아 한쪽 작업이 사라진다(서버는 CRDT 로그가 아니라 최종 본문만 보관한다).
-   * 모든 문서 변이는 `commitDoc`에서 막히고, 화면은 새로고침을 안내한다. */
+  /** **편집 차단(즉시)**: 공유된 맵인데 실시간이 끊겼다. 끊긴 동안의 편집은 재연결
+   * 시 CRDT로 병합되지만 **같은 대상을 상대도 건드렸다면 한쪽이 사라진다**
+   * (`mindmap-core`의 `crdt/divergence.test.ts`가 그 규칙을 고정한다: 같은 필드는
+   * 한쪽만, 부모의 `children`도 한쪽 목록만, 삭제가 편집을 이긴다). 유실 가능성이
+   * 있는 시간대에는 아예 편집을 만들지 않는 편이 안전하므로, 끊김을 알아차린 즉시
+   * `commitDoc`에서 모든 문서 변이를 막고 배너로 알린다. 다시 붙으면 곧 풀린다. */
+  collabBlocked: boolean;
+  /** **오래 끊김**: 차단이 `COLLAB_PAUSE_AFTER_MS`를 넘겼다. 짧은 끊김은 배너로 충분하지만
+   * 이쯤 되면 화면 전체로 알리고 새로고침을 안내한다(직전 문서는 버전 기록에 스냅샷). */
   collabPaused: boolean;
   /** **보기 전용**으로 초대된 공유 문서인가(#22). true면 편집 크롬을 감추고
    * 모든 문서 변이가 chokepoint(`commitDoc`)에서 차단된다. 진짜 게이트는 서버
@@ -927,8 +932,13 @@ export function useEditorState(): EditorController {
   // (`persistDoc`의 충돌 해석 — 아래 주석 참고).
   const collabStatusRef = useRef(collabStatus);
   collabStatusRef.current = collabStatus;
-  // 공유 맵에서 실시간이 **오래** 끊기면 편집을 멈춘다. 짧은 끊김은 자동 재접속이
-  // 메우고(그 사이 편집은 CRDT로 합류 시 병합된다) 멈추면 오히려 방해라, 유예를 둔다.
+  /** 공유 맵인데 실시간이 끊겼다 — **즉시** 편집을 막는다(위 인터페이스 주석 참고). */
+  const collabBlocked = backendMode === 'supabase' && sharedDoc && collabStatus === 'offline';
+  const collabBlockedRef = useRef(collabBlocked);
+  collabBlockedRef.current = collabBlocked;
+  // 공유 맵 + 실시간 끊김 = 지금 만든 편집이 상대 것과 갈라질 수 있다 → **즉시** 막는다.
+  // (유예를 두면 그 시간만큼 유실 창이 열린다 — 실제 병합 규칙은 core의
+  //  `crdt/divergence.test.ts` 참고.) 오래 끊기면 아래 타이머가 전체 안내로 승격한다.
   const [collabPaused, setCollabPaused] = useState(false);
   const collabPausedRef = useRef(false);
   collabPausedRef.current = collabPaused;
@@ -1242,9 +1252,10 @@ export function useEditorState(): EditorController {
    * `componentDidUpdate` diff (this hook has no equivalent lifecycle to diff against). */
   const commitDoc = useCallback((updater: (d: Doc) => Doc, continuous = false) => {
     if (readOnlyRef.current) return; // 보기 전용(#22) — 모든 문서 변이의 chokepoint
-    // 공유 맵인데 실시간이 오래 끊겼다 — 지금 편집하면 상대와 갈라지고 저장에서
-    // 한쪽이 사라진다. 화면(`CollabPaused`)이 새로고침을 안내한다.
-    if (collabPausedRef.current) return;
+    // 공유 맵인데 실시간이 끊겼다 — 지금 만드는 편집은 상대 것과 갈라질 수 있고,
+    // 병합에서 한쪽이 조용히 사라진다(core `crdt/divergence.test.ts`). 그래서 유예
+    // 없이 즉시 막는다. 화면은 배너(짧은 끊김)나 전용 안내(오래 끊김)로 알린다.
+    if (collabBlockedRef.current) return;
     setDoc((prev) => {
       const next = updater(prev);
       const changed =
@@ -2147,15 +2158,14 @@ export function useEditorState(): EditorController {
   }, [doc, persistDoc]);
 
   /**
-   * 공유 맵 + 실시간 끊김이 유예를 넘기면 편집을 멈춘다(그리고 붙는 즉시 푼다).
+   * 공유 맵 + 실시간 끊김이 유예를 넘기면 **전체 안내**로 승격한다(붙는 즉시 푼다).
    *
    * 멈추기 직전에 지금 문서를 **이 기기의 버전 기록에 강제로 남긴다** — 새로고침하면
    * 서버 판(상대가 저장한 것일 수 있다)으로 돌아가므로, 끊긴 동안 쓴 내용을 되찾을
    * 길을 남겨 두는 것이다(안내 문구가 그 경로를 알려 준다).
    */
   useEffect(() => {
-    const risky = backendMode === 'supabase' && sharedDoc && collabStatus === 'offline';
-    if (!risky) {
+    if (!collabBlocked) {
       setCollabPaused(false);
       return;
     }
@@ -2168,7 +2178,7 @@ export function useEditorState(): EditorController {
       setCollabPaused(true);
     }, COLLAB_PAUSE_AFTER_MS);
     return () => window.clearTimeout(t);
-  }, [backendMode, sharedDoc, collabStatus, docStoreId]);
+  }, [collabBlocked, docStoreId]);
 
   // 다른 문서로 넘어가면 협업 세션 기억을 지운다 — 이 맵에서 함께 편집한 적이 없다면
   // 충돌은 다시 "다른 기기/탭이 먼저 저장"으로 읽어야 한다.
@@ -4313,6 +4323,7 @@ export function useEditorState(): EditorController {
     readOnly,
     collabStatus,
     sharedDoc,
+    collabBlocked,
     collabPaused,
   };
 }

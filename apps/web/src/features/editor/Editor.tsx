@@ -15,6 +15,7 @@ import { ShortcutHelp } from './components/ShortcutHelp';
 import { VersionHistory } from './components/VersionHistory';
 import { MapUnavailable } from './components/MapUnavailable';
 import { CollabPaused } from './components/CollabPaused';
+import { CollabBlockedBanner } from './components/CollabBlockedBanner';
 import { FeedbackModal } from '../../components/FeedbackModal';
 import { MobileSelectBar } from './components/MobileSelectBar';
 import { MOBILE_SIDE_PANEL_W } from './components/panel/panelPrimitives';
@@ -164,6 +165,9 @@ export function Editor() {
             <DocChip controller={controller} />
             <PresenceBar controller={controller} />
             <SearchBar controller={controller} />
+            {/* 끊긴 즉시 편집이 멈췄음을 알리는 얇은 배너(짧은 끊김) — 오래 끊기면
+                위의 `CollabPaused`가 전체 안내로 승격한다. */}
+            <CollabBlockedBanner controller={controller} />
             {/* 보기 전용(#22): 속성 패널의 모든 조작이 문서 변이라 패널째 감춘다. */}
             {!controller.readOnly && <PropertyPanel controller={controller} />}
             {/* Mobile: a tap selects (no auto-sheet); this bar offers 편집/속성/삭제와
