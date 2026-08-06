@@ -22,6 +22,31 @@ async function flush(): Promise<void> {
   for (let i = 0; i < 12; i++) await Promise.resolve();
 }
 
+/** subscribe 콜백을 즉시 호출하지 않고 붙잡아 두는 채널 — 테스트가 원하는
+ * 시점에 상태를 흘려 보낼 수 있다. fire는 flush까지 겸한다(구독이 setAuth
+ * await 뒤로 미뤄져 있어서, 흘려 보낸 상태의 후속 처리도 비동기다). */
+function makeManualChannel(sendResult: 'ok' | 'error' | 'timed out' = 'ok') {
+  let cb: ((status: string) => void) | undefined;
+  const channel = {
+    on: vi.fn(() => channel),
+    subscribe: vi.fn((c?: (status: string) => void) => {
+      cb = c;
+      return channel;
+    }),
+    // 인자를 받는 시그니처로 둔다 — 테스트가 `send.mock.calls[i][0].event`로 무엇을
+    // 보냈는지 확인하는데, 인자 없는 시그니처면 calls의 타입이 빈 튜플이 된다.
+    send: vi.fn(async (...args: unknown[]) => {
+      void args;
+      return sendResult;
+    }),
+    fire: async (status: string) => {
+      cb?.(status);
+      await flush();
+    },
+  };
+  return channel;
+}
+
 function baseDoc(): Doc {
   return {
     v: 1,
@@ -349,26 +374,6 @@ describe('SupabaseRealtimeProvider', () => {
   });
 
   describe('인증된 채널이 거부될 때', () => {
-    /** subscribe 콜백을 즉시 호출하지 않고 붙잡아 두는 채널 — 테스트가 원하는
-     * 시점에 상태를 흘려 보낼 수 있다. fire는 flush까지 겸한다(구독이 setAuth
-     * await 뒤로 미뤄져 있어서, 흘려 보낸 상태의 후속 처리도 비동기다). */
-    function makeManualChannel(sendResult: 'ok' | 'error' | 'timed out' = 'ok') {
-      let cb: ((status: string) => void) | undefined;
-      const channel = {
-        on: vi.fn(() => channel),
-        subscribe: vi.fn((c?: (status: string) => void) => {
-          cb = c;
-          return channel;
-        }),
-        send: vi.fn(async () => sendResult),
-        fire: async (status: string) => {
-          cb?.(status);
-          await flush();
-        },
-      };
-      return channel;
-    }
-
     async function setup(channels: ReturnType<typeof makeManualChannel>[]) {
       let i = 0;
       const configs: unknown[] = [];
@@ -516,6 +521,175 @@ describe('SupabaseRealtimeProvider', () => {
       await flush();
 
       expect(i).toBe(0); // continuation이 세대 검사에 걸려 채널을 만들지 않았다
+    });
+  });
+
+  // 제보: "A유저가 편집한 내용이 B유저에게 즉시 반영되지 않는다."
+  //
+  // 뿌리는 **버려진 채널의 뒤늦은 콜백**이다. 우리가 채널을 갈아탈 때(공개 폴백·
+  // 재시도·오류 재구독) `removeChannel(old)`을 부르는데, phoenix의 `leave()`는
+  // 서버의 phx_leave 응답을 받은 **뒤에야** close를 쏜다(`@supabase/phoenix`
+  // channel.js `leave()`). 그 응답은 새 채널이 이미 SUBSCRIBED된 다음에 도착하는
+  // 것이 정상이고, 그때 옛 채널의 subscribe 콜백이 CLOSED로 불려 **공용 상태인
+  // `joined`를 false로 되돌렸다.** 세대(gen) 검사는 connect/disconnect 사이만
+  // 보호하므로 같은 세션 안의 채널 교체는 그대로 통과한다.
+  //
+  // 결과가 고약하다 — 채널은 살아서 잘 받고 있고 상태도 'connected'라 배지도 안
+  // 뜨는데, `handleLocalUpdate`의 `!joined` 게이트에 막혀 **내 편집만 나가지
+  // 않는다.** 그런데 `ysv`/`ysync-request` 응답 핸들러는 그 게이트가 없어서,
+  // 상대의 15초 주기 치유 요청에는 답한다 → 내 편집이 **최대 15초 뒤에** 도착한다.
+  // 정확히 "즉시 반영되지 않는다"는 증상이다.
+  describe('버려진 채널의 뒤늦은 콜백 (제보: 편집이 즉시 안 감)', () => {
+    async function fallenBackToPublic(docId: string) {
+      const priv = makeManualChannel('error'); // 구독은 되지만 발신이 정책에 거부 → 공개 폴백
+      const publicCh = makeManualChannel('ok');
+      const channels = [priv, publicCh];
+      let i = 0;
+      const client = {
+        channel: vi.fn(() => channels[Math.min(i++, channels.length - 1)]),
+        removeChannel: vi.fn(),
+        realtime: realtimeMock(),
+      } as unknown as import('@supabase/supabase-js').SupabaseClient;
+      const provider = new SupabaseRealtimeProvider(client);
+      const ydoc = docToYDoc(baseDoc());
+      provider.connect(docId, ydoc, () => undefined);
+      await flush();
+      await priv.fire('SUBSCRIBED'); // ack 'error' → fallbackToPublic
+      await publicCh.fire('SUBSCRIBED'); // 공개 채널로 붙었다
+      return { priv, publicCh, client, provider, ydoc };
+    }
+
+    it('옛 채널의 CLOSED가 뒤늦게 와도 내 편집은 계속 즉시 나간다', async () => {
+      const warn = vi.spyOn(console, 'warn').mockImplementation(() => undefined);
+      const { priv, publicCh, provider, ydoc } = await fallenBackToPublic('doc-stale-close');
+      publicCh.send.mockClear();
+
+      await priv.fire('CLOSED'); // removeChannel(priv)의 실제 결과 — 새 채널이 붙은 뒤에 도착한다
+
+      addNode(ydoc, 'n1', { id: 'n1', text: '내 편집', emoji: '', parent: ROOT_ID, children: [], collapsed: false, color: null, x: 0, y: 0 });
+      await flush();
+
+      const updates = publicCh.send.mock.calls.filter((c) => (c[0] as { event: string }).event === 'yupdate');
+      expect(updates).toHaveLength(1); // 수리 전: 0 — 15초 뒤 치유 요청에나 실려 갔다
+      provider.disconnect();
+      warn.mockRestore();
+    });
+
+    it('옛 채널의 뒤늦은 CHANNEL_ERROR가 살아 있는 채널을 걷어내지 않는다', async () => {
+      const warn = vi.spyOn(console, 'warn').mockImplementation(() => undefined);
+      const { priv, publicCh, client, provider } = await fallenBackToPublic('doc-stale-error');
+      const madeChannels = (client.channel as unknown as ReturnType<typeof vi.fn>).mock.calls.length;
+
+      await priv.fire('CHANNEL_ERROR'); // 옛 채널이 죽어 가며 마지막으로 알린다
+
+      // 수리 전: `this.channel`(=살아 있는 공개 채널)을 지우고 새로 구독했다 —
+      // 멀쩡한 연결을 옛 채널의 부고가 끊어 버리는 꼴.
+      expect(client.removeChannel).not.toHaveBeenCalledWith(publicCh);
+      expect((client.channel as unknown as ReturnType<typeof vi.fn>).mock.calls.length).toBe(madeChannels);
+      provider.disconnect();
+      warn.mockRestore();
+    });
+
+    /**
+     * 두 피어 수준에서 **제보 문장 그대로** 확인한다: A가 편집하면 B에게 즉시 보이는가.
+     *
+     * 버스는 실제 Realtime의 결을 흉내낸다 — 토픽 팬아웃, 자기 메시지는 안 받음,
+     * 구독은 비동기, 그리고 `removeChannel`의 close 통지는 **새 채널이 붙은 뒤에**
+     * 온다(phoenix `leave()`가 서버 응답을 기다리므로 이게 정상 순서다).
+     *
+     * 수리 전 이 테스트의 로그: `즉시=없음 / 15초 치유 후=A의 편집`.
+     */
+    function makeBus() {
+      const subs = new Set<{ topic: string; handlers: Record<string, ((a: { payload: unknown }) => void)[]>; alive: boolean }>();
+      const pendingCloses: (() => void)[] = [];
+
+      function makeClient(sendResults: ('ok' | 'error')[]) {
+        let made = 0;
+        return {
+          realtime: { setAuth: async () => undefined },
+          channel(topic: string) {
+            const entry = { topic, handlers: {} as Record<string, ((a: { payload: unknown }) => void)[]>, alive: true };
+            const result = sendResults[Math.min(made++, sendResults.length - 1)] ?? 'ok';
+            let closeCb: (() => void) | undefined;
+            const ch = {
+              on(_t: string, f: { event: string }, cb: (a: { payload: unknown }) => void) {
+                (entry.handlers[f.event] ??= []).push(cb);
+                return ch;
+              },
+              subscribe(cb?: (s: string) => void) {
+                setTimeout(() => {
+                  subs.add(entry);
+                  cb?.('SUBSCRIBED');
+                }, 0);
+                closeCb = () => cb?.('CLOSED');
+                return ch;
+              },
+              async send(msg: { event: string; payload: unknown }) {
+                if (!entry.alive) return 'error';
+                for (const s of subs) {
+                  if (s === entry || s.topic !== entry.topic || !s.alive) continue;
+                  for (const h of s.handlers[msg.event] ?? []) h({ payload: msg.payload });
+                }
+                return result;
+              },
+              __retire() {
+                entry.alive = false;
+                subs.delete(entry);
+                pendingCloses.push(() => closeCb?.());
+              },
+            };
+            return ch;
+          },
+          removeChannel(ch: { __retire?: () => void }) {
+            ch.__retire?.();
+          },
+        } as unknown as import('@supabase/supabase-js').SupabaseClient;
+      }
+
+      return {
+        makeClient,
+        deliverCloses: () => {
+          pendingCloses.splice(0).forEach((f) => f());
+        },
+      };
+    }
+
+    it('A가 편집하면 B에게 **즉시** 간다 — 15초 치유를 기다리지 않는다 (제보 문장 그대로)', async () => {
+      vi.useFakeTimers();
+      const warn = vi.spyOn(console, 'warn').mockImplementation(() => undefined);
+      try {
+        const bus = makeBus();
+        const clientA = bus.makeClient(['error', 'ok']); // A는 private 발신 거부 → 공개 폴백(채널 교체)
+        const clientB = bus.makeClient(['ok']);
+        const ydocA = docToYDoc(baseDoc());
+        const ydocB = docToYDoc(baseDoc());
+        const A = new SupabaseRealtimeProvider(clientA);
+        const B = new SupabaseRealtimeProvider(clientB);
+        A.connect('doc-pair', ydocA);
+        B.connect('doc-pair', ydocB);
+        await vi.advanceTimersByTimeAsync(1);
+        await flush();
+        await vi.advanceTimersByTimeAsync(1); // 폴백 채널 join
+        await flush();
+
+        // 서로 보이게 — 주기 치유 게이트(피어 없으면 skip)가 열린다
+        A.getAwareness()!.setLocalStateField('user', { name: 'A', color: '#111111' });
+        B.getAwareness()!.setLocalStateField('user', { name: 'B', color: '#222222' });
+        await flush();
+
+        bus.deliverCloses(); // 옛 private 채널의 뒤늦은 CLOSED가 여기서 도착한다
+        await flush();
+
+        addNode(ydocA, 'n1', { id: 'n1', text: 'A의 편집', emoji: '', parent: ROOT_ID, children: [], collapsed: false, color: null, x: 0, y: 0 });
+        await flush();
+
+        expect(yDocToDoc(ydocB).nodes.n1?.text).toBe('A의 편집'); // 수리 전: undefined
+        A.disconnect();
+        B.disconnect();
+      } finally {
+        warn.mockRestore();
+        vi.useRealTimers();
+      }
     });
   });
 });
