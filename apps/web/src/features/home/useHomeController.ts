@@ -3,6 +3,7 @@ import type { ChangeEvent, KeyboardEvent } from 'react';
 import { useNavigate } from 'react-router-dom';
 import type { Doc } from '@mindflow/mindmap-core';
 import { collectImageRefs, parseDoc, serializeDoc, toMarkdown } from '@mindflow/mindmap-core';
+import { inlineImagesForExport } from '../editor/imageExport';
 import { exportDocPng } from '../editor/png';
 import { themeOf } from '../editor/theme';
 import { applyHomeTheme, homeThemeKeyOf, saveHomeThemeCache, type HomeThemeKey } from './theme';
@@ -1040,7 +1041,17 @@ export function useHomeController() {
       // raw string if it isn't parseable as a MindFlow doc.
       try {
         const doc = parseDoc(JSON.parse(raw));
-        downloadFile(safe + '.json', doc ? JSON.stringify(serializeDoc(doc), null, 2) : raw);
+        if (!doc) {
+          downloadFile(safe + '.json', raw);
+          return;
+        }
+        // 이미지 실물은 Storage에 있고 본문에는 참조만 있다 — 내보내는 파일이 그
+        // 자체로 완결되게 다시 담는다(에디터 내보내기와 같은 규칙, `imageExport.ts`).
+        void (async () => {
+          const { doc: full, missing } = await inlineImagesForExport(doc, imageStore);
+          downloadFile(safe + '.json', JSON.stringify(serializeDoc(full), null, 2));
+          if (missing > 0) patch({ importError: `이미지 ${missing}장을 내보내기 파일에 담지 못했어요. 연결을 확인하고 다시 시도해 주세요.` });
+        })();
         return;
       } catch {
         downloadFile(safe + '.json', raw);

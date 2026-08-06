@@ -10,15 +10,15 @@ import type { EditorController } from '../useEditorState';
 import { DocChip } from './DocChip';
 import { panelWrapStyle } from './panel/panelPrimitives';
 
-function stub(over: Partial<{ saveConflict: { currentVersion: number } | null; imageInlined: boolean }>): EditorController {
+function stub(over: Partial<{ saveConflict: { currentVersion: number } | null; imageNotice: string | null }>): EditorController {
   return {
     uiTheme: UI_THEME,
     docTitle: '테스트 맵',
     saveState: 'saved',
     editingTitle: false,
     saveConflict: over.saveConflict ?? null,
-    imageInlined: over.imageInlined ?? false,
-    dismissImageInlined: vi.fn(),
+    imageNotice: over.imageNotice ?? null,
+    dismissImageNotice: vi.fn(),
     goHome: vi.fn(),
     saveNow: vi.fn(),
     startEditTitle: vi.fn(),
@@ -62,15 +62,15 @@ describe('이미지 인라인 폴백 안내', () => {
     unmount();
 
     // 조용히 넘기면 실시간 메시지 크기 사고와 DB 팽창이 되살아난다 — 반드시 보인다.
-    render(<DocChip controller={stub({ imageInlined: true })} />);
+    render(<DocChip controller={stub({ imageNotice: '이미지를 저장소에 올리지 못해 맵 본문에 담았어요 — 잠시 뒤 다시 첨부해 주세요' })} />);
     expect(screen.getAllByText(/저장소에 올리지 못해/).length).toBeGreaterThan(0);
   });
 
   it('클릭하면 닫힌다', () => {
-    const controller = stub({ imageInlined: true });
+    const controller = stub({ imageNotice: '이미지를 저장소에 올리지 못해 맵 본문에 담았어요 — 잠시 뒤 다시 첨부해 주세요' });
     render(<DocChip controller={controller} />);
     fireEvent.click(screen.getByRole('alert'));
-    expect(controller.dismissImageInlined).toHaveBeenCalled();
+    expect(controller.dismissImageNotice).toHaveBeenCalled();
   });
 });
 

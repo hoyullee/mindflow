@@ -2,7 +2,7 @@ import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } fr
 import type { MouseEvent as ReactMouseEvent, PointerEvent as ReactPointerEvent } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import type { Box, Doc, Float, Line, LineAnchor, LayoutMode, ListOp, Node, NodeMap, SizeOf, SnapCandidate, TextEdit, Zone } from '@mindflow/mindmap-core';
-import { HistoryStack, ROOT_ID, collectInlineImages, isImageRef, replaceInlineImages, applyListOp as applyListOpToText, applyAutoLinks, applyMarkdownShortcuts, applyPartialStyle, charsToRuns, cubicAt, isStyledRuns, findLineSnap, layout, resolveLineEndpoints, resolveLineGeometry, runsToChars, serializeDoc, shiftOffset, toMarkdown } from '@mindflow/mindmap-core';
+import { HistoryStack, ROOT_ID, collectInlineImages, isImageRef, replaceImageValues, applyListOp as applyListOpToText, applyAutoLinks, applyMarkdownShortcuts, applyPartialStyle, charsToRuns, cubicAt, isStyledRuns, findLineSnap, layout, resolveLineEndpoints, resolveLineGeometry, runsToChars, serializeDoc, shiftOffset, toMarkdown } from '@mindflow/mindmap-core';
 import { domToRuns, linearize, liveEditValue } from './richtextDom';
 import { recordVersion, versionDoc } from './versionHistory';
 import { nodeTextAlign, renderListEdit } from './listLines';
@@ -16,6 +16,7 @@ import { usePresence, type UsePresenceResult } from '../../collab/usePresence';
 import { EMPTY_PRESENCE_SELECTION, type PresenceSelection } from '../../collab/presence';
 import { CanvasTextMeasurer, computeMetrics, measureFloatHeight } from './metrics';
 import { attachImageFile, dataUrlToBlob, defaultFloatSize, firstImageFile, fitWithin } from './imageAttach';
+import { inlineImagesForExport } from './imageExport';
 import { useImageUrls, type ImageUrlMap } from './useImageUrls';
 import { hasPendingDoc, hasStoredDoc, loadOrSeedDoc, markDocPending, saveDoc } from './storage';
 import { newDocId, pushRecentEntry, rebindMovedDoc } from '../home/storage';
@@ -545,10 +546,12 @@ export interface EditorController {
    * 알리고 사용자가 닫으면 사라진다 — `moveToFreshId` 참고. */
   movedNotice: boolean;
   dismissMovedNotice: () => void;
-  /** 첨부 실물을 별도 저장소에 못 올려 **본문에 인라인**했다는 알림(용량 초과·
-   * 권한·네트워크). 조용히 넘기면 협업 메시지 크기 사고와 DB 팽창이 되살아난다. */
-  imageInlined: boolean;
-  dismissImageInlined: () => void;
+  /** 이미지 관련 한 줄 알림(독칩 전광판). 지금 쓰는 두 경우 모두 **조용히 넘기면
+   * 안 되는** 것들이다: 첨부 실물을 못 올려 본문에 인라인했을 때(협업 메시지 크기
+   * 사고·DB 팽창이 되살아난다), 내보내기에 이미지를 다 담지 못했을 때(파일이
+   * 반쪽인 걸 모른 채 보관하게 된다). */
+  imageNotice: string | null;
+  dismissImageNotice: () => void;
   dismissSaveConflict: () => void;
   exportJSON: () => void;
   exportPNG: () => void;
@@ -647,7 +650,7 @@ export function useEditorState(): EditorController {
   const [movedId, setMovedId] = useState<string | null>(null);
   /** 새 id로 옮겨졌음을 한 번 알리는 배너 플래그(사용자가 닫을 때까지 유지). */
   const [movedNotice, setMovedNotice] = useState(false);
-  const [imageInlined, setImageInlined] = useState(false);
+  const [imageNotice, setImageNotice] = useState<string | null>(null);
   const mapId = movedId ?? urlMapId;
   const docStoreId = mapId || 'default';
   const titleParam = params.get('title') ? decodeURIComponent(params.get('title') || '') : '';
@@ -2200,7 +2203,7 @@ export function useEditorState(): EditorController {
 
   /**
    * **옛 문서 이전**: 본문에 인라인된 이미지를 별도 저장소로 옮기고 그 자리를
-   * 참조로 바꾼다(core `replaceInlineImages`).
+   * 참조로 바꾼다(core `replaceImageValues`).
    *
    * 왜 여는 김에 하는가: 이미 만들어 둔 맵들이 이 변경의 이득(저장량·실시간 전송량)을
    * 하나도 못 받기 때문이다. 한 번 열면 그 뒤로는 가볍다.
@@ -2227,7 +2230,7 @@ export function useEditorState(): EditorController {
         if (ref) byDataUrl[item.dataUrl] = ref;
       }
       if (!Object.keys(byDataUrl).length) return; // 저장소가 없거나(로컬 모드) 전부 실패
-      commitDoc((d) => replaceInlineImages(d, byDataUrl));
+      commitDoc((d) => replaceImageValues(d, byDataUrl));
     })();
   }, [hydrating, readOnly, docStoreId, imageStore, commitDoc]);
 
@@ -2348,7 +2351,7 @@ export function useEditorState(): EditorController {
 
   const dismissSaveConflict = useCallback(() => setSaveConflict(null), []);
   const dismissMovedNotice = useCallback(() => setMovedNotice(false), []);
-  const dismissImageInlined = useCallback(() => setImageInlined(false), []);
+  const dismissImageNotice = useCallback(() => setImageNotice(null), []);
 
   const goHome = useCallback(() => {
     window.clearTimeout(autosaveTimerRef.current);
@@ -2959,7 +2962,7 @@ export function useEditorState(): EditorController {
     (src: string) => {
       if (backendMode !== 'supabase') return;
       if (isImageRef(src)) return;
-      setImageInlined(true);
+      setImageNotice('이미지를 저장소에 올리지 못해 맵 본문에 담았어요 — 잠시 뒤 다시 첨부해 주세요');
     },
     [backendMode],
   );
@@ -4159,7 +4162,13 @@ export function useEditorState(): EditorController {
 
   // ---- export (port of exportJSON/exportOutline/exportPNG, MindFlow.dc.html:613-771) ----
   const exportJSON = useCallback(() => {
-    downloadFile(`${safeDocTitle(doc, titleParam)}.json`, JSON.stringify(serializeDoc(doc), null, 2), 'application/json');
+    // 실물은 Storage에 있고 본문에는 참조만 있다 — 내보내는 파일은 **그 자체로
+    // 완결**돼야 하므로 이미지를 다시 담는다(`imageExport.ts`의 doc comment 참고).
+    void (async () => {
+      const { doc: full, missing } = await inlineImagesForExport(doc, imageStore);
+      downloadFile(`${safeDocTitle(doc, titleParam)}.json`, JSON.stringify(serializeDoc(full), null, 2), 'application/json');
+      if (missing > 0) setImageNotice(`이미지 ${missing}장을 내보내기 파일에 담지 못했어요 — 연결을 확인하고 다시 시도해 주세요`);
+    })();
   }, [doc, titleParam]);
   const exportPNG = useCallback(() => {
     void exportPng(doc, geom, theme, safeDocTitle(doc, titleParam), imageUrls);
@@ -4381,8 +4390,8 @@ export function useEditorState(): EditorController {
     saveConflict,
     movedNotice,
     dismissMovedNotice,
-    imageInlined,
-    dismissImageInlined,
+    imageNotice,
+    dismissImageNotice,
     dismissSaveConflict,
     exportJSON,
     exportPNG,
