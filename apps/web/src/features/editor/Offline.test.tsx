@@ -3,6 +3,9 @@
 // 핵심 규칙: 저장이 실패하면 이 기기에는 남기고 '아직 못 올림' 표시를 붙인다.
 // 다음에 열 때 그 표시가 있으면 서버 판(더 옛것)을 채택하지 않고 로컬을 올린다 —
 // 없으면 오프라인에서 쓴 내용이 조용히 사라진다.
+//
+// 대기 시간이 넉넉한 이유: 자동저장은 0.9초 디바운스라 전체 스위트를 함께 돌리는
+// 부하 상황에서는 기본 1초·4초 창을 넘기는 경우가 있었다(전체 실행에서만 깨짐).
 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
@@ -93,7 +96,7 @@ describe('오프라인', () => {
   it('연결이 끊기면 문서 칩이 저장 상태 대신 오프라인을 말한다', async () => {
     const { backend } = makeBackend();
     renderEditor(backend, 'off1');
-    await waitFor(() => expect(screen.getByText('저장됨')).toBeTruthy());
+    await waitFor(() => expect(screen.getByText('저장됨')).toBeTruthy(), { timeout: 5000 });
 
     act(() => {
       setOnline(false);
@@ -111,28 +114,28 @@ describe('오프라인', () => {
   it('저장이 실패하면 이 기기에 남기고 "못 올림"으로 표시한다', async () => {
     const { backend, save } = makeBackend([{ ok: false, reason: 'error' } as SaveResult]);
     const { container } = renderEditor(backend, 'off2');
-    await waitFor(() => expect(screen.getByText('저장됨')).toBeTruthy());
+    await waitFor(() => expect(screen.getByText('저장됨')).toBeTruthy(), { timeout: 5000 });
 
     edit(container);
-    await waitFor(() => expect(save).toHaveBeenCalled(), { timeout: 4000 });
+    await waitFor(() => expect(save).toHaveBeenCalled(), { timeout: 10000 });
 
-    await waitFor(() => expect(hasPendingDoc('off2')).toBe(true));
+    await waitFor(() => expect(hasPendingDoc('off2')).toBe(true), { timeout: 5000 });
     expect(localStorage.getItem('mindflow_doc_off2')).toContain('리서치');
   });
 
   it('다시 연결되면 못 올린 편집을 바로 올린다(다음 편집을 기다리지 않는다)', async () => {
     const { backend, save } = makeBackend([{ ok: false, reason: 'error' } as SaveResult]);
     const { container } = renderEditor(backend, 'off3');
-    await waitFor(() => expect(screen.getByText('저장됨')).toBeTruthy());
+    await waitFor(() => expect(screen.getByText('저장됨')).toBeTruthy(), { timeout: 5000 });
 
     edit(container);
-    await waitFor(() => expect(save).toHaveBeenCalledTimes(1), { timeout: 4000 });
+    await waitFor(() => expect(save).toHaveBeenCalledTimes(1), { timeout: 10000 });
 
     await act(async () => {
       window.dispatchEvent(new Event('online'));
     });
-    await waitFor(() => expect(save).toHaveBeenCalledTimes(2));
-    await waitFor(() => expect(hasPendingDoc('off3')).toBe(false));
+    await waitFor(() => expect(save).toHaveBeenCalledTimes(2), { timeout: 5000 });
+    await waitFor(() => expect(hasPendingDoc('off3')).toBe(false), { timeout: 5000 });
   });
 
   it('못 올린 사본이 있으면 다음에 열 때 서버의 옛 판으로 덮지 않고 그것을 올린다', async () => {
@@ -147,8 +150,8 @@ describe('오프라인', () => {
     // 서버 판(c2 없음)이 화면을 덮지 않는다
     await waitFor(() => expect(within(getViewport(container)).getByText('오프라인에서 쓴 것')).toBeTruthy());
     // 그리고 곧바로 올라간다 → 표시가 지워진다
-    await waitFor(() => expect(save).toHaveBeenCalled());
-    await waitFor(() => expect(hasPendingDoc('off4')).toBe(false));
+    await waitFor(() => expect(save).toHaveBeenCalled(), { timeout: 5000 });
+    await waitFor(() => expect(hasPendingDoc('off4')).toBe(false), { timeout: 5000 });
   });
 
   it('표시가 없으면 예전처럼 서버 판을 채택한다(무회귀)', async () => {

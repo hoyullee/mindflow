@@ -57,6 +57,9 @@ export class SupabaseRealtimeProvider implements CollabProvider {
    */
   private joined = false;
   private syncTimer: ReturnType<typeof setInterval> | undefined;
+  /** 완전히 끊겼을 때의 자동 재접속(백오프) — 없으면 새로고침만이 유일한 복구였다. */
+  private retryTimer: ReturnType<typeof setTimeout> | undefined;
+  private retryAttempt = 0;
 
   constructor(private readonly client: SupabaseClient) {}
 
@@ -96,6 +99,7 @@ export class SupabaseRealtimeProvider implements CollabProvider {
   connect(docId: string, ydoc: YDoc, onStatus?: CollabStatusListener): void {
     this.disconnect();
     const gen = this.session; // disconnect()가 방금 올렸다
+    this.retryAttempt = 0;
     this.ydoc = ydoc;
     this.awareness = new Awareness(ydoc);
     ydoc.on('update', this.handleLocalUpdate);
@@ -195,6 +199,7 @@ export class SupabaseRealtimeProvider implements CollabProvider {
           return;
         }
         onStatus?.('offline'); // 공개 채널로도 못 붙었다 — 네트워크/프로젝트 문제
+        this.scheduleRetry(gen, docId, onStatus);
       });
     this.channel = channel;
   }
@@ -225,7 +230,13 @@ export class SupabaseRealtimeProvider implements CollabProvider {
       return;
     }
     if (ack === 'timed out') console.warn('[collab] 브로드캐스트 ack가 오지 않았습니다 — 연결은 유지합니다.');
-    onStatus?.(ack === 'error' ? 'offline' : wantPrivate ? 'connected' : 'connected-insecure');
+    if (ack === 'error') {
+      onStatus?.('offline');
+      this.scheduleRetry(gen, docId, onStatus);
+    } else {
+      this.retryAttempt = 0; // 붙었다 — 다음 사고의 백오프는 처음부터
+      onStatus?.(wantPrivate ? 'connected' : 'connected-insecure');
+    }
     // 요청만 하면 반쪽 동기화다 — 내 연산도 상대에게 가야 한다. 각 기기는 자기 로컬
     // 문서로 Y.Doc을 따로 심으므로 연산 이력이 서로 다르고, 상대가 내 심기 연산을 갖고
     // 있지 않으면 이후 내 편집 업데이트는 상대에서 **보류**돼 반영되지 않는다(부분 적용된
@@ -239,6 +250,28 @@ export class SupabaseRealtimeProvider implements CollabProvider {
     if (this.awareness) {
       void channel.send({ type: 'broadcast', event: AWARENESS_EVENT, payload: { update: bytesToBase64(encodeAwarenessUpdate(this.awareness, [this.awareness.clientID])) } satisfies UpdatePayload });
     }
+  }
+
+  /**
+   * 완전히 끊긴 뒤 **스스로 다시 붙어 본다**(5s → 15s → 45s → 2m, 이후 2m 고정).
+   *
+   * 예전엔 여기서 끝이었다 — 상태가 'offline'으로 굳고 복구 수단은 새로고침뿐이라,
+   * 순간적인 네트워크 끊김 하나로 남은 세션 내내 배지가 떠 있었다(제보). 재시도는
+   * 구독 한 번이라 비용이 거의 없고, 붙는 순간 `announce`가 상태를 'connected'로
+   * 되돌려 배지도 사라진다. 세대(gen)로 죽은 세션의 타이머를 무효화한다.
+   */
+  private scheduleRetry(gen: number, docId: string, onStatus?: CollabStatusListener): void {
+    if (gen !== this.session) return;
+    if (this.retryTimer !== undefined) clearTimeout(this.retryTimer);
+    const delays = [5000, 15000, 45000, 120000];
+    const delay = delays[Math.min(this.retryAttempt, delays.length - 1)] ?? 120000;
+    this.retryAttempt++;
+    this.retryTimer = setTimeout(() => {
+      this.retryTimer = undefined;
+      if (gen !== this.session) return;
+      onStatus?.('connecting'); // 다시 시도하는 동안은 '고장'이 아니다
+      void this.subscribeChannel(gen, docId, { wantPrivate: true, retried: false }, onStatus);
+    }, delay);
   }
 
   /**
@@ -269,6 +302,10 @@ export class SupabaseRealtimeProvider implements CollabProvider {
     if (this.syncTimer !== undefined) {
       clearInterval(this.syncTimer);
       this.syncTimer = undefined;
+    }
+    if (this.retryTimer !== undefined) {
+      clearTimeout(this.retryTimer);
+      this.retryTimer = undefined;
     }
     this.ydoc?.off('update', this.handleLocalUpdate);
     // Broadcasts this client's departure (local state -> null, origin 'local') to any

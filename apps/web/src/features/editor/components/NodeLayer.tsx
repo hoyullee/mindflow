@@ -14,6 +14,7 @@ import { ResizeHandle } from './ResizeHandle';
 import { domToRuns, linearize, listArrowLeft, listArrowVertical, liveEditValue, selectedRawText, snapCaretOffListMarker } from '../richtextDom';
 import { ListTextBlock, domMarkerSignature, listLinesOf, listSigOf, listSignature, markerSignature, nodeTextAlign, renderListEdit } from '../listLines';
 import { RichSpan, isLinkOpenModifier, linkInk, openLink } from '../richSpans';
+import { useIsTouchDevice } from '../../../hooks/useMediaQuery';
 
 interface NodeLayerProps {
   nodes: NodeMap;
@@ -562,6 +563,13 @@ interface NodeEditBoxProps {
  * bold toggle turns the WRONG way inside already-bold node boxes). */
 function NodeEditBox({ id, n, boxStyle, align, controller }: NodeEditBoxProps) {
   const ref = useRef<HTMLDivElement | null>(null);
+  /**
+   * 소프트 키보드에는 Shift가 사실상 없다 — 폰에서 Enter가 편집을 끝내 버리면
+   * **줄바꿈을 넣을 방법 자체가 없어진다**(제보). 터치 기기에서는 Enter를 줄바꿈으로
+   * 두고, 편집은 바깥을 탭하면 끝난다(모바일의 일반적인 관례). 데스크톱은 그대로:
+   * Enter=확정, Shift+Enter=줄바꿈.
+   */
+  const softKeyboard = useIsTouchDevice();
   /** IME 조합 중 — 이때 캐럿을 옮기면 조합이 깨진다(스냅·재구성 모두 보류). */
   const composingRef = useRef(false);
   /** 조합 중에 들어온 Shift+Enter — 기본 줄바꿈은 막았고(행을 쪼갠다), 조합이
@@ -747,7 +755,7 @@ function NodeEditBox({ id, n, boxStyle, align, controller }: NodeEditBoxProps) {
         // compositionend에서 잇고, 맨 Enter는 IME 확정만(관례 — 한 번 더 눌러 커밋).
         if (composing && e.key === 'Enter') {
           e.preventDefault();
-          if (e.shiftKey) pendingBreakRef.current = true;
+          if (e.shiftKey || softKeyboard) pendingBreakRef.current = true;
           return;
         }
         // 입력 전에 캐럿이 마커 구역이면 내용 시작으로 — selectionchange 스냅의
@@ -818,7 +826,11 @@ function NodeEditBox({ id, n, boxStyle, align, controller }: NodeEditBoxProps) {
           controller.updateNodeEditSize(id, ref.current);
           return;
         }
-        if (e.key === 'Enter' && !composing && !e.shiftKey) {
+        if (e.key === 'Enter' && !composing && !e.shiftKey && softKeyboard) {
+          // 터치 기기: 소프트 키보드의 줄바꿈 키는 줄바꿈이다(편집 유지).
+          e.preventDefault();
+          if (ref.current) doBreak(ref.current);
+        } else if (e.key === 'Enter' && !composing && !e.shiftKey) {
           e.preventDefault();
           controller.commitNodeRichText(id, ref.current);
         } else if (e.key === 'Enter' && !composing && e.shiftKey) {

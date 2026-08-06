@@ -11,18 +11,22 @@ interface PresenceBarProps {
  * plain local/demo session (or a Supabase session nobody else has joined)
  * looks exactly like it did before this feature.
  *
- * 예외 하나: **실시간 전송이 끊겼을 때는 혼자여도 알린다.** 예전엔 채널이 죽어도
- * 화면이 "혼자 있는 것"과 똑같아서, 공유 맵을 함께 열어도 상대가 안 보이는 이유를
- * 알 수 없었다(제보로 배운 것 — `collab/ports.ts`의 `CollabStatus` 참고). 붙을
- * 대상이 아예 없는 데모/로컬 모드에서는 띄우지 않는다 — 그건 고장이 아니다.
- * 접속 과정('connecting', 수 초)도 고장이 아니므로 띄우지 않는다 — 진입할 때마다
- * "연결 끊김"이 잠깐 떠 보이던 거짓 경보의 원인이었다(제보). 문구도 목적(상대
- * 편집이 안 들어옴 → 새로고침)이 드러나게 "동기화 끊김 · 새로고침"으로.
+ * 예외 하나: **실시간 전송이 끊겼을 때는 알린다.** 예전엔 채널이 죽어도 화면이
+ * "혼자 있는 것"과 똑같아서, 공유 맵을 함께 열어도 상대가 안 보이는 이유를 알 수
+ * 없었다(제보로 배운 것 — `collab/ports.ts`의 `CollabStatus` 참고). 붙을 대상이
+ * 아예 없는 데모/로컬 모드에서는 띄우지 않는다 — 그건 고장이 아니다. 접속
+ * 과정('connecting', 수 초)도 고장이 아니므로 띄우지 않는다.
+ *
+ * **혼자 쓰는 맵에서는 띄우지 않는다**(제보): 실시간 채널은 남의 편집을 받는 통로일
+ * 뿐이고 저장과는 무관한데, 단독 편집 중에 "동기화 끊김 · 새로고침"이 뜨니 마치 더
+ * 이상 저장이 안 되는 것처럼 읽혔다. 그래서 조건은 "이 맵이 실제로 공유돼 있거나
+ * (`sharedDoc`) 지금 접속자가 있을 때"로 좁히고, 문구도 협업 이야기임이 분명하도록
+ * "공동 편집 연결 끊김"으로 바꿨다(툴팁 첫 문장이 저장은 정상임을 말한다).
  */
 export function PresenceBar({ controller }: PresenceBarProps) {
   const th = controller.uiTheme;
   const { peers } = controller.presence;
-  const down = controller.backendMode === 'supabase' && controller.collabStatus === 'offline';
+  const down = controller.backendMode === 'supabase' && controller.collabStatus === 'offline' && (controller.sharedDoc || peers.length > 0);
   const insecure = controller.collabStatus === 'connected-insecure';
   if (!peers.length && !down) return null;
   return (
@@ -41,7 +45,7 @@ export function PresenceBar({ controller }: PresenceBarProps) {
         boxShadow: '0 6px 22px rgba(0,0,0,.10)',
         padding: peers.length ? '6px 10px 6px 6px' : '6px 12px',
       }}
-      title={down ? '실시간 연결이 끊겨 다른 사람의 편집이 오지 않습니다. 편집 내용은 저장은 되지만, 함께 편집하려면 새로고침해 주세요.' : `${peers.length}명 접속 중`}
+      title={down ? '저장은 정상이에요 — 이 맵의 변경사항은 계속 저장됩니다. 다만 실시간 연결이 끊겨 다른 사람의 편집이 지금은 오지 않아요(자동으로 다시 연결을 시도합니다).' : `${peers.length}명 접속 중`}
     >
       {down ? (
         <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#c2603f" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true" style={{ flexShrink: 0 }}>
@@ -80,7 +84,7 @@ export function PresenceBar({ controller }: PresenceBarProps) {
           ))}
         </div>
       )}
-      <span style={{ fontSize: 11.5, fontWeight: 600, color: down ? '#c2603f' : th.subtext, whiteSpace: 'nowrap' }}>{down ? '동기화 끊김 · 새로고침' : `${peers.length}명 접속 중`}</span>
+      <span style={{ fontSize: 11.5, fontWeight: 600, color: down ? '#c2603f' : th.subtext, whiteSpace: 'nowrap' }}>{down ? '공동 편집 연결 끊김' : `${peers.length}명 접속 중`}</span>
       {/* 인증되지 않은 공개 채널로 폴백한 상태(서버에 Realtime Authorization 정책이
           없다). 협업은 되므로 막지 않고, 사실만 조용히 표시한다 — 조치 방법은
           콘솔 경고와 backend.md §6에 있다. */}

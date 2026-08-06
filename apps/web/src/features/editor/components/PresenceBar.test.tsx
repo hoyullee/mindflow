@@ -13,12 +13,15 @@ import { PresenceBar } from './PresenceBar';
 
 type Peer = EditorController['presence']['peers'][number];
 
-function stub(over: { peers?: Peer[]; collabStatus?: EditorController['collabStatus']; backendMode?: 'local' | 'supabase' }): EditorController {
+function stub(over: { peers?: Peer[]; collabStatus?: EditorController['collabStatus']; backendMode?: 'local' | 'supabase'; sharedDoc?: boolean }): EditorController {
   return {
     uiTheme: UI_THEME,
     presence: { peers: over.peers ?? [], reportCursor: () => undefined, clearCursor: () => undefined },
     collabStatus: over.collabStatus ?? 'connected',
     backendMode: over.backendMode ?? 'supabase',
+    // 기본값 true: 아래 대부분의 케이스는 "함께 쓰는 맵"을 전제한다(공유 여부 자체를
+    // 다루는 테스트만 false로 뒤집는다).
+    sharedDoc: over.sharedDoc ?? true,
   } as unknown as EditorController;
 }
 
@@ -40,9 +43,25 @@ describe('PresenceBar', () => {
     expect(screen.getByTitle('차분한 수달')).toBeTruthy();
   });
 
-  it('전송이 끊기면 혼자여도 알린다 — 조용히 죽지 않는다 (문구는 목적: 새로고침 유도)', () => {
+  it('공유된 맵에서 전송이 끊기면 알린다 — 조용히 죽지 않는다', () => {
     render(<PresenceBar controller={stub({ collabStatus: 'offline' })} />);
-    expect(screen.getByText('동기화 끊김 · 새로고침')).toBeTruthy();
+    expect(screen.getByText('공동 편집 연결 끊김')).toBeTruthy();
+  });
+
+  it('혼자 쓰는 맵에서는 끊겨도 띄우지 않는다 — 저장과 무관한데 "저장이 안 된다"로 읽혔다(제보)', () => {
+    const { container } = render(<PresenceBar controller={stub({ collabStatus: 'offline', sharedDoc: false })} />);
+    expect(container.firstChild).toBeNull();
+  });
+
+  it('공유 판별 전이라도 접속자가 있으면 알린다', () => {
+    render(<PresenceBar controller={stub({ collabStatus: 'offline', sharedDoc: false, peers: [peer('차분한 수달')] })} />);
+    expect(screen.getByText('공동 편집 연결 끊김')).toBeTruthy();
+  });
+
+  it('툴팁은 저장이 정상이라는 말로 시작한다(오해를 직접 푼다)', () => {
+    render(<PresenceBar controller={stub({ collabStatus: 'offline' })} />);
+    const tip = screen.getByText('공동 편집 연결 끊김').closest('div')?.getAttribute('title') ?? '';
+    expect(tip.startsWith('저장은 정상이에요')).toBe(true);
   });
 
   it('접속 중(connecting)에는 아무것도 띄우지 않는다 — 진입할 때마다 뜨던 거짓 경보의 원인', () => {
