@@ -301,13 +301,21 @@ function loadImageEl(src: string): Promise<HTMLImageElement | null> {
   });
 }
 
-export async function exportPng(doc: Doc, geom: GeomMap, theme: Theme, filename: string, imageUrls: ImageUrlMap = {}): Promise<void> {
+export interface PngExportResult {
+  /**
+   * 그리지 못한 이미지 수(URL을 못 받았거나 로드에 실패한 것). 0이 아니면 호출부가
+   * 알린다 — 사진 자리에 빈 상자만 남은 PNG를 **모른 채** 보관하는 일이 없게.
+   */
+  missingImages: number;
+}
+
+export async function exportPng(doc: Doc, geom: GeomMap, theme: Theme, filename: string, imageUrls: ImageUrlMap = {}): Promise<PngExportResult> {
   const ids = Object.keys(geom).filter((id) => doc.nodes[id]);
-  if (!ids.length) return;
+  if (!ids.length) return { missingImages: 0 };
 
   const canvas = document.createElement('canvas');
   const ctx = get2dContext(canvas);
-  if (!ctx || typeof canvas.toBlob !== 'function') return; // headless env (e.g. jsdom) — no-op, nothing to rasterize with
+  if (!ctx || typeof canvas.toBlob !== 'function') return { missingImages: 0 }; // headless env (e.g. jsdom) — no-op, nothing to rasterize with
 
   // Pre-measure memos up front so both the export bounds and the draw pass use
   // the same grown-to-fit height (measuring needs the `ctx`, so this must run
@@ -319,6 +327,7 @@ export async function exportPng(doc: Doc, geom: GeomMap, theme: Theme, filename:
   // 엘리먼트가 필요하므로 그리기 전에 전부 로드해 둔다(데이터 URL이라 즉시).
   const fImages = new Map<string, HTMLImageElement>();
   const nImages = new Map<string, HTMLImageElement>();
+  let missingImages = 0;
   await Promise.all([
     ...doc.floats
       .filter((f) => f.img)
@@ -326,6 +335,7 @@ export async function exportPng(doc: Doc, geom: GeomMap, theme: Theme, filename:
         const src = displaySrc(f.img, imageUrls);
         const el = src ? await loadImageEl(src) : null;
         if (el) fImages.set(f.id, el);
+        else missingImages++;
       }),
     ...ids
       .filter((id) => doc.nodes[id]?.img)
@@ -333,6 +343,7 @@ export async function exportPng(doc: Doc, geom: GeomMap, theme: Theme, filename:
         const src = displaySrc(doc.nodes[id]!.img, imageUrls);
         const el = src ? await loadImageEl(src) : null;
         if (el) nImages.set(id, el);
+        else missingImages++;
       }),
   ]);
 
@@ -632,6 +643,7 @@ export async function exportPng(doc: Doc, geom: GeomMap, theme: Theme, filename:
   canvas.toBlob((blob) => {
     if (blob) downloadFile(`${filename}.png`, blob);
   }, 'image/png');
+  return { missingImages };
 }
 
 /**
@@ -640,7 +652,7 @@ export async function exportPng(doc: Doc, geom: GeomMap, theme: Theme, filename:
  * via `exportPng`. Used by Home so a card download is the real map, not a
  * rasterized thumbnail (which cropped text).
  */
-export async function exportDocPng(doc: Doc, theme: Theme, filename: string, imageUrls: ImageUrlMap = {}): Promise<void> {
+export async function exportDocPng(doc: Doc, theme: Theme, filename: string, imageUrls: ImageUrlMap = {}): Promise<PngExportResult> {
   const measurer = new CanvasTextMeasurer();
   const sizeOf = (node: Node, depth: number) => {
     const m = computeMetrics(node, depth, measurer);
@@ -655,5 +667,5 @@ export async function exportDocPng(doc: Doc, theme: Theme, filename: string, ima
     const g: NodeGeom = { ...m, x: n.x, y: n.y, depth };
     geom[id] = g;
   });
-  await exportPng({ ...doc, nodes: laid }, geom, theme, filename, imageUrls);
+  return await exportPng({ ...doc, nodes: laid }, geom, theme, filename, imageUrls);
 }

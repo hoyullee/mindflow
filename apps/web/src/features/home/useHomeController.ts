@@ -47,6 +47,20 @@ import {
 } from './storage';
 
 /**
+ * 썸네일 본문(`preview_doc` RPC, 0012)이 이미지 데이터를 지운 자리에 남기는 값.
+ * 크기 필드는 유지되므로 박스 계산은 그대로고, 이 값이 보이면 "여기 이미지가 있었다"는
+ * 뜻이다 — 썸네일에는 충분하지만 내보내기에는 실물이 필요하다.
+ */
+const STRIPPED_IMG = 'stripped';
+
+function hasStrippedImage(doc: Doc): boolean {
+  for (const id of Object.keys(doc.nodes)) {
+    if (doc.nodes[id]?.img === STRIPPED_IMG) return true;
+  }
+  return doc.floats.some((f) => f.img === STRIPPED_IMG);
+}
+
+/**
  * React port of Home.dc.html's `class Component extends DCLogic`. Every exported
  * method below corresponds 1:1 to a method on the original controller; `patch()`
  * stands in for `this.setState`. `renderVals()`'s derived fields live in `viewModel.ts`.
@@ -1009,6 +1023,37 @@ export function useHomeController() {
     }
     return readDocRawByTitle(title);
   };
+  /**
+   * 내보내기용 **전체 본문**.
+   *
+   * 카드가 들고 있는 본문(`previewDocs`)은 썸네일 전송량을 아끼려고 이미지 데이터를
+   * 자리표시 문자열로 **지운** 것이다(`preview_doc` RPC, 0012). 썸네일에는 그걸로
+   * 충분하지만 내보내기는 실물이 필요하다 — 그대로 내보내면 JSON에는 `"img":"stripped"`가
+   * 담기고(가져오면 깨진 이미지), PNG에는 빈 상자만 남는다(제보).
+   *
+   * 그래서 지워진 흔적이 보일 때만 전문을 다시 받는다 — 이미지가 없는 맵은 왕복 0회고,
+   * 로컬/데모 모드의 본문은 애초에 지워지지 않아 그대로 쓴다.
+   */
+  const fullDocForExport = async (title: string, docId?: string): Promise<Doc | null> => {
+    const raw = docRawForExport(title, docId);
+    let doc: Doc | null = null;
+    if (raw) {
+      try {
+        doc = parseDoc(JSON.parse(raw));
+      } catch {
+        doc = null;
+      }
+    }
+    if (docId && doc && hasStrippedImage(doc)) {
+      try {
+        const loaded = await docStore.load(docId);
+        if (loaded?.doc) doc = loaded.doc;
+      } catch {
+        /* 네트워크 실패 — 있는 본문으로라도 내보낸다(이미지만 빈다) */
+      }
+    }
+    return doc;
+  };
   function readDocRawByTitle(title: string): string | null {
     const direct = readDocRaw(mapId(title));
     if (direct) return direct;
@@ -1039,24 +1084,21 @@ export function useHomeController() {
       // Re-serialize through the core so the download is the canonical doc
       // (nodes tree + floats/lines/zones), pretty-printed. Falls back to the
       // raw string if it isn't parseable as a MindFlow doc.
-      try {
-        const doc = parseDoc(JSON.parse(raw));
+      void (async () => {
+        // 썸네일 본문이 아니라 **전문**으로 내보낸다(`fullDocForExport`) — 미리보기
+        // 본문은 이미지가 지워져 있어 그대로 담으면 가져오기에서 깨진 이미지가 된다.
+        const doc = await fullDocForExport(title, docId);
         if (!doc) {
           downloadFile(safe + '.json', raw);
           return;
         }
         // 이미지 실물은 Storage에 있고 본문에는 참조만 있다 — 내보내는 파일이 그
         // 자체로 완결되게 다시 담는다(에디터 내보내기와 같은 규칙, `imageExport.ts`).
-        void (async () => {
-          const { doc: full, missing } = await inlineImagesForExport(doc, imageStore);
-          downloadFile(safe + '.json', JSON.stringify(serializeDoc(full), null, 2));
-          if (missing > 0) patch({ importError: `이미지 ${missing}장을 내보내기 파일에 담지 못했어요. 연결을 확인하고 다시 시도해 주세요.` });
-        })();
-        return;
-      } catch {
-        downloadFile(safe + '.json', raw);
-        return;
-      }
+        const { doc: full, missing } = await inlineImagesForExport(doc, imageStore);
+        downloadFile(safe + '.json', JSON.stringify(serializeDoc(full), null, 2));
+        if (missing > 0) patch({ importError: `이미지 ${missing}장을 내보내기 파일에 담지 못했어요. 연결을 확인하고 다시 시도해 주세요.` });
+      })();
+      return;
     }
     downloadFile(
       safe + '.json',
@@ -1103,19 +1145,22 @@ export function useHomeController() {
       patch({ importError: '미리보기가 없어 이미지를 만들 수 없어요. 맵을 한 번 열어 저장한 뒤 다시 시도해 주세요.' });
       return;
     }
-    try {
-      const doc = parseDoc(JSON.parse(raw));
-      if (!doc) throw new Error('unparseable');
-      // 이미지는 본문이 아니라 별도 저장소에 있다 — 그리기 전에 URL을 받아 둔다
-      // (참조가 없는 문서면 빈 요청 없이 그냥 지나간다).
-      void (async () => {
+    void (async () => {
+      try {
+        // JSON과 같은 이유로 **전문**이 필요하다 — 썸네일 본문으로 그리면 사진 자리가
+        // 빈 상자로 남는다(제보).
+        const doc = await fullDocForExport(title, docId);
+        if (!doc) throw new Error('unparseable');
+        // 이미지는 본문이 아니라 별도 저장소에 있다 — 그리기 전에 URL을 받아 둔다
+        // (참조가 없는 문서면 빈 요청 없이 그냥 지나간다).
         const refs = collectImageRefs(doc);
         const urls = refs.length ? await imageStore.resolve(refs) : {};
-        await exportDocPng(doc, themeOf(doc.themeKey), safeFileName(title), urls);
-      })();
-    } catch {
-      patch({ importError: '이미지를 만들 수 없어요. 맵을 한 번 열어 저장한 뒤 다시 시도해 주세요.' });
-    }
+        const { missingImages } = await exportDocPng(doc, themeOf(doc.themeKey), safeFileName(title), urls);
+        if (missingImages > 0) patch({ importError: `이미지 ${missingImages}장을 PNG에 담지 못했어요. 연결을 확인하고 다시 시도해 주세요.` });
+      } catch {
+        patch({ importError: '이미지를 만들 수 없어요. 맵을 한 번 열어 저장한 뒤 다시 시도해 주세요.' });
+      }
+    })();
   };
 
   const handleImport = (file: File) => {

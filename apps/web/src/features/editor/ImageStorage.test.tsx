@@ -15,7 +15,7 @@ import { MemoryRouter, Route, Routes } from 'react-router-dom';
 import { collectImageRefs, collectInlineImages, makeImageRef, type Doc } from '@mindflow/mindmap-core';
 import { Editor } from './Editor';
 import { attachImageFile, dataUrlToBlob, pickImageFormat } from './imageAttach';
-import { displaySrc } from './useImageUrls';
+import { displaySrc, type ImageUrlMap } from './useImageUrls';
 import { inlineImagesForExport } from './imageExport';
 import { BackendProvider } from '../../adapters/BackendContext';
 import { LocalAuth } from '../../adapters/local/localAuth';
@@ -32,6 +32,15 @@ vi.mock('./download', () => ({
   downloadFile: (name: string, data: unknown) => {
     dl.files.push({ name, data: String(data) });
   },
+}));
+
+/** PNG 래스터라이즈는 jsdom에 없다(canvas 2D 없음) — 그리기 대신 **무엇을 들고
+ * 들어갔는지**(참조가 풀린 URL 표)를 확인한다. */
+type ExportPngFn = (...args: unknown[]) => Promise<{ missingImages: number }>;
+const pngMock = vi.hoisted(() => ({ exportPng: vi.fn<ExportPngFn>(async () => ({ missingImages: 0 })) }));
+vi.mock('./png', () => ({
+  exportPng: pngMock.exportPng,
+  exportDocPng: vi.fn(async () => ({ missingImages: 0 })),
 }));
 
 const DATA_URL = 'data:image/jpeg;base64,' + btoa('x'.repeat(90));
@@ -141,6 +150,9 @@ describe('본문 → 별도 저장소', () => {
     expect(displaySrc(ref, {})).toBeUndefined(); // 아직 못 받았다 → 자리표시자
     expect(displaySrc(DATA_URL, {})).toBe(DATA_URL); // 옛 문서 무회귀
     expect(displaySrc(undefined, {})).toBeUndefined();
+    // 그릴 수 없는 값은 자리표시자로 — 예전 홈 내보내기가 썸네일 본문을 담아
+    // 만들어진 문서(`img: 'stripped'`)가 깨진 이미지 아이콘으로 뜨지 않게.
+    expect(displaySrc('stripped', {})).toBeUndefined();
   });
 
   it('첨부 시 실물을 올리고 본문에는 참조만 넣는다', async () => {
@@ -311,6 +323,8 @@ describe('내보내기 — 이미지를 파일에 다시 담는다', () => {
   }
 
   beforeEach(() => {
+    pngMock.exportPng.mockReset();
+    pngMock.exportPng.mockResolvedValue({ missingImages: 0 });
     // fetch → blob → FileReader 경로를 실물 바이트로 흉내낸다.
     vi.stubGlobal('fetch', vi.fn(async () => ({ ok: true, blob: async () => new Blob([new Uint8Array([1, 2, 3])], { type: 'image/webp' }) })));
     vi.spyOn(FileReader.prototype, 'readAsDataURL').mockImplementation(function (this: FileReader) {
@@ -373,5 +387,64 @@ describe('내보내기 — 이미지를 파일에 다시 담는다', () => {
     const json = dl.files[0]!.data;
     expect(json).toContain('data:image'); // 수리 전: 'mfimg:'만 들어 있었다
     expect(json).not.toContain('mfimg:');
+  });
+
+  // PNG는 참조를 **URL로 풀어서** 그린다. 예전엔 화면 렌더용으로 받아 둔 표만 썼기
+  // 때문에, 그 발급이 아직 안 끝났으면(막 연 맵, 느린 네트워크) 빈 표로 그려졌다 —
+  // 사진 자리가 통째로 빈 상자인 PNG가 나온다.
+  it('PNG 내보내기는 화면용 URL이 아직 안 왔어도 직접 받아서 그린다 (수리 전 회귀 가드)', async () => {
+    const ref = makeImageRef('원본문서/pic.webp');
+    const doc = docWithInlineImage();
+    doc.nodes.c1 = { ...doc.nodes.c1!, img: ref };
+    const drawnWith: ImageUrlMap[] = [];
+    pngMock.exportPng.mockImplementation(async (...args: unknown[]) => {
+      drawnWith.push((args[4] as ImageUrlMap) ?? {});
+      return { missingImages: 0 };
+    });
+
+    // 첫 발급(화면 렌더용)은 끝나지 않는다 = 아직 URL이 없는 상태.
+    let calls = 0;
+    const backend = makeBackend(
+      {
+        upload: async () => null,
+        resolve: async (refs: string[]) => {
+          calls++;
+          if (calls === 1) return await new Promise<Record<string, string>>(() => undefined);
+          return Object.fromEntries(refs.map((r) => [r, `https://cdn.example/${encodeURIComponent(r)}`]));
+        },
+        removeForDoc: async () => undefined,
+      },
+      doc,
+    );
+    const docId = `img-png-${Math.random()}`;
+    localStorage.setItem(`mindflow_doc_${docId}`, JSON.stringify(doc));
+
+    const { container } = renderEditor(backend, docId);
+    await waitFor(() => expect(within(getViewport(container)).getByText('리서치')).toBeTruthy());
+    fireEvent.click(screen.getByRole('button', { name: '내보내기' }));
+    fireEvent.click(await screen.findByText('PNG 이미지'));
+
+    await waitFor(() => expect(drawnWith).toHaveLength(1));
+    // 수리 전: `{}` — 참조가 풀리지 않아 `displaySrc`가 undefined를 돌려주고
+    // 그 자리에 아무것도 그려지지 않았다.
+    expect(drawnWith[0]![ref]).toBe(`https://cdn.example/${encodeURIComponent(ref)}`);
+  });
+
+  it('그리지 못한 이미지가 있으면 알린다 — 빈 상자만 남은 PNG를 모른 채 두지 않게', async () => {
+    const ref = makeImageRef('원본문서/pic.webp');
+    const doc = docWithInlineImage();
+    doc.nodes.c1 = { ...doc.nodes.c1!, img: ref };
+    pngMock.exportPng.mockResolvedValue({ missingImages: 1 });
+
+    const backend = makeBackend(exportableStore(true), doc);
+    const docId = `img-png-miss-${Math.random()}`;
+    localStorage.setItem(`mindflow_doc_${docId}`, JSON.stringify(doc));
+
+    const { container } = renderEditor(backend, docId);
+    await waitFor(() => expect(within(getViewport(container)).getByText('리서치')).toBeTruthy());
+    fireEvent.click(screen.getByRole('button', { name: '내보내기' }));
+    fireEvent.click(await screen.findByText('PNG 이미지'));
+
+    await waitFor(() => expect(screen.getAllByRole('alert').some((el) => /PNG에 담지 못했어요/.test(el.textContent || ''))).toBe(true));
   });
 });

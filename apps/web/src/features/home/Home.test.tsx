@@ -12,6 +12,7 @@ import { LocalFeedbackStore } from '../../adapters/local/localFeedbackStore';
 import { LocalImageStore } from '../../adapters/local/localImageStore';
 import { mapId } from './storage';
 import { HOME_THEMES } from './theme';
+import type { Doc } from '@mindflow/mindmap-core';
 import type { Backend, DocMeta, DocStore, LoadedDoc, SaveResult, SpaceStore, WorkspaceData } from '../../adapters/ports';
 
 afterEach(() => {
@@ -1669,6 +1670,107 @@ describe('Home', () => {
       expect(doc.nodes.root?.note).toBe('루트 노트');
       expect(Object.values(doc.nodes).map((n) => n.text)).toContain('가지');
       expect(doc.floats.map((f) => f.text)).toEqual(['메모 하나']);
+    });
+  });
+
+  // 카드가 들고 있는 본문은 **썸네일용**이다 — `preview_doc` RPC(0012)가 전송량을
+  // 아끼려고 이미지 데이터를 'stripped'로 지운 것. 썸네일에는 충분하지만 내보내기가
+  // 그걸 쓰면 JSON에 `"img":"stripped"`가 담기고, 가져온 맵은 `<img src="stripped">`가
+  // 되어 **깨진 이미지**로 보인다(제보). PNG도 같은 이유로 빈 상자만 남는다.
+  describe('내보내기는 썸네일 본문이 아니라 전문을 쓴다', () => {
+    const REF = 'mfimg:원본문서/pic.webp';
+    const PIXEL = 'data:image/webp;base64,' + btoa('webp-bytes');
+
+    function docs(): { full: Doc; preview: string } {
+      const full = {
+        v: 1,
+        nodes: {
+          root: { id: 'root', text: '사진 맵', emoji: '', parent: null, children: ['c1'], collapsed: false, color: null, x: 0, y: 0 },
+          c1: { id: 'c1', text: '스크린샷', emoji: '', parent: 'root', children: [], collapsed: false, color: null, x: 0, y: 0, img: REF, imgW: 180, imgH: 120 },
+        },
+        floats: [],
+        lines: [],
+        zones: [],
+        layoutMode: 'radial',
+        themeKey: 'coral',
+      } as unknown as Doc;
+      // RPC가 돌려주는 모습 그대로: 크기 필드는 남고 이미지 값만 지워진다.
+      const preview = JSON.stringify({ ...full, nodes: { ...full.nodes, c1: { ...full.nodes.c1, img: 'stripped' } } });
+      return { full, preview };
+    }
+
+    beforeEach(() => {
+      vi.stubGlobal('fetch', vi.fn(async () => ({ ok: true, blob: async () => new Blob([new Uint8Array([1, 2, 3])], { type: 'image/webp' }) })));
+      vi.spyOn(FileReader.prototype, 'readAsDataURL').mockImplementation(function (this: FileReader) {
+        Object.defineProperty(this, 'result', { value: PIXEL, configurable: true });
+        this.onload?.(new ProgressEvent('load') as ProgressEvent<FileReader>);
+      });
+    });
+    afterEach(() => {
+      vi.unstubAllGlobals();
+      vi.restoreAllMocks();
+    });
+
+    it('썸네일 본문에 이미지가 지워져 있으면 전문을 다시 받아 실물을 담는다', async () => {
+      const user = userEvent.setup();
+      const { full, preview } = docs();
+      const load = vi.fn(async () => ({ doc: full, version: 1, title: '사진 맵' }));
+      const docStore = {
+        list: async () => [{ id: 'doc-img', title: '사진 맵', version: 1, updatedAt: '2026-01-01T00:00:00.000Z', isFavorite: false, deletedAt: null }],
+        load,
+        loadPreview: vi.fn(async () => preview),
+        listEditorNames: async () => ({}),
+        setFavorite: async () => undefined,
+        remove: async () => undefined,
+        restore: async () => undefined,
+        purge: async () => undefined,
+        rename: async () => undefined,
+        save: async () => ({ ok: true as const, version: 1 }),
+      } as unknown as DocStore;
+      const imageStore = {
+        upload: async () => null,
+        resolve: async (refs: string[]) => Object.fromEntries(refs.map((r) => [r, `https://cdn.example/${encodeURIComponent(r)}`])),
+        removeForDoc: async () => undefined,
+      };
+      const backend: Backend = { auth: new LocalAuth(), docStore, spaceStore: new LocalSpaceStore(), shareStore: new LocalShareStore(), feedbackStore: new LocalFeedbackStore(), imageStore, mode: 'supabase' };
+
+      const created: Blob[] = [];
+      URL.createObjectURL = vi.fn((b: Blob | MediaSource) => {
+        created.push(b as Blob);
+        return 'blob:mock';
+      }) as typeof URL.createObjectURL;
+      URL.revokeObjectURL = vi.fn() as typeof URL.revokeObjectURL;
+      vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(() => undefined);
+
+      const { container } = render(
+        <MemoryRouter initialEntries={['/home']}>
+          <BackendProvider backend={backend}>
+            <Routes>
+              <Route path="/home" element={<Home />} />
+              <Route path="/editor" element={<div>EDITOR_PLACEHOLDER</div>} />
+            </Routes>
+          </BackendProvider>
+        </MemoryRouter>,
+      );
+      await waitFor(() => expect(container.querySelector('a[data-title="사진 맵"]')).toBeTruthy());
+      // 썸네일 본문이 카드에 실린 뒤에 내보낸다 — 그게 이 회귀가 나던 상태다.
+      await waitFor(() => expect(docStore.loadPreview).toHaveBeenCalled());
+
+      const card = container.querySelector('a[data-title="사진 맵"]') as HTMLElement;
+      await user.click(within(card).getByRole('button', { name: '메뉴' }));
+      await user.click(within(card).getByText(/내보내기/));
+      await user.click(within(card).getByText('JSON 파일 (.json)'));
+
+      await waitFor(() => expect(created).toHaveLength(1));
+      const json = await new Promise<string>((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onload = () => resolve(String(reader.result));
+        reader.onerror = () => reject(reader.error);
+        reader.readAsText(created[0]!);
+      });
+      expect(load).toHaveBeenCalledWith('doc-img'); // 전문을 다시 받았다
+      expect(json).not.toContain('stripped'); // 수리 전: "img": "stripped" 가 그대로 담겼다
+      expect(json).toContain('data:image'); // 실물이 들어 있다 = 가져오면 그대로 보인다
     });
   });
 

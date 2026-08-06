@@ -2,7 +2,7 @@ import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } fr
 import type { MouseEvent as ReactMouseEvent, PointerEvent as ReactPointerEvent } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import type { Box, Doc, Float, Line, LineAnchor, LayoutMode, ListOp, Node, NodeMap, SizeOf, SnapCandidate, TextEdit, Zone } from '@mindflow/mindmap-core';
-import { HistoryStack, ROOT_ID, collectInlineImages, isImageRef, replaceImageValues, applyListOp as applyListOpToText, applyAutoLinks, applyMarkdownShortcuts, applyPartialStyle, charsToRuns, cubicAt, isStyledRuns, findLineSnap, layout, resolveLineEndpoints, resolveLineGeometry, runsToChars, serializeDoc, shiftOffset, toMarkdown } from '@mindflow/mindmap-core';
+import { HistoryStack, ROOT_ID, collectImageRefs, collectInlineImages, isImageRef, replaceImageValues, applyListOp as applyListOpToText, applyAutoLinks, applyMarkdownShortcuts, applyPartialStyle, charsToRuns, cubicAt, isStyledRuns, findLineSnap, layout, resolveLineEndpoints, resolveLineGeometry, runsToChars, serializeDoc, shiftOffset, toMarkdown } from '@mindflow/mindmap-core';
 import { domToRuns, linearize, liveEditValue } from './richtextDom';
 import { recordVersion, versionDoc } from './versionHistory';
 import { nodeTextAlign, renderListEdit } from './listLines';
@@ -4171,8 +4171,16 @@ export function useEditorState(): EditorController {
     })();
   }, [doc, titleParam]);
   const exportPNG = useCallback(() => {
-    void exportPng(doc, geom, theme, safeDocTitle(doc, titleParam), imageUrls);
-  }, [doc, geom, theme, titleParam]);
+    void (async () => {
+      // 아직 URL을 못 받은 참조가 있으면 **여기서 받아서** 그린다. 예전엔 렌더 시점의
+      // `imageUrls`만 썼고, 그게 의존성 배열에도 없어서 맵을 열자마자 내보내면 URL이
+      // 도착하기 전의 빈 표로 그려졌다 — 사진 자리가 통째로 빈 상자였다(제보).
+      const refs = collectImageRefs(doc).filter((r) => !imageUrls[r]);
+      const extra = refs.length ? await imageStore.resolve(refs) : {};
+      const { missingImages } = await exportPng(doc, geom, theme, safeDocTitle(doc, titleParam), { ...imageUrls, ...extra });
+      if (missingImages > 0) setImageNotice(`이미지 ${missingImages}장을 PNG에 담지 못했어요 — 연결을 확인하고 다시 시도해 주세요`);
+    })();
+  }, [doc, geom, theme, titleParam, imageUrls, imageStore]);
   /** 마크다운 개요로 내보낸다(코어 `toMarkdown`). 무손실 백업은 JSON이고, 이건 다른
    * 도구로 옮기거나 사람이 읽는 용도다 — 가져오기가 이 형식을 되읽는다(노트·자유
    * 도형·메모까지, `parseOutline` 참고). */
