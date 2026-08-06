@@ -580,3 +580,62 @@ M5/M5-awareness가 Yjs 동기화와 커서 공유를 붙였지만, **`documents`
   `[geurio] documents.updated_by 없음` = 마이그레이션 대기,
   둘 다 없으면 **보여 줄 이름이 없는 것**(마지막 저장자가 나이거나 `updated_by`가 아직 빈 옛 행).
   옛 문서는 0015 적용 후 **한 번 저장되면** 그때부터 이름이 붙습니다.
+
+## 10. 첨부 이미지 (0016 Storage 버킷 `map-images`)
+
+**왜 옮겼나.** 이미지는 문서 본문(jsonb)에 base64 데이터 URL로 인라인돼 있었다.
+첨부 한 장이면 수백 KB라 ① 저장량·egress가 통째로 커지고 ② 실시간 협업에서는
+**메시지 크기 한도(무료 250KB)를 넘겨 합류 동기화가 조용히 버려졌다** — 커서는
+오는데 편집이 영영 안 오던 그 사고다. 이제 본문에는 `mfimg:<경로>` 참조만 남는다.
+
+**왜 Supabase Storage인가.** 이미 쓰는 프로젝트 안이라 새 벤더·새 키·새 요금제가
+없고, 무엇보다 `storage.objects`에 RLS를 걸 수 있어 **문서 권한 헬퍼
+(`owns_document`/`shared_with_me`, 0009)를 그대로 재사용**한다 — 이미지 접근 권한이
+문서 접근 권한과 자동으로 같아진다(공유하면 같이 보이고, 끊으면 같이 막힌다).
+별도 저장소(R2/S3 등)를 쓰면 그 규칙과 서명 발급을 우리가 다시 만들어야 하는데,
+이 앱에는 그걸 둘 서버가 없다.
+
+**경로 규칙**: `<document_id>/<uuid>.<ext>`. 첫 조각이 문서 id라서 정책이
+`split_part(name, '/', 1)`로 문서를 알아낸다.
+
+**정책 요약** (0016):
+| 동작 | 누구 |
+| --- | --- |
+| select(읽기) | 문서 소유자 또는 초대받은 사람(view 포함) |
+| insert(쓰기) | 소유자 또는 **edit** 초대 |
+| delete | 소유자만 (문서 영구 삭제 시 앱이 함께 정리) |
+
+버킷은 **비공개**다. 화면에 그릴 때마다 만료 1시간짜리 **서명 URL**을 받는다
+(`SupabaseImageStore.resolve` → `createSignedUrls`). 오래 열어 둔 탭에서 이미지가
+깨지지 않도록 45분마다 다시 받는다(`useImageUrls`).
+
+### 배포
+
+`supabase/migrations/0016_map_images.sql`은 GitHub 연동으로 자동 배포된다. 수동으로
+적용하려면 SQL Editor에서 파일 전체를 그대로 실행하면 된다(재실행 가능 —
+버킷은 `on conflict do nothing`, 정책은 `drop … if exists` 후 생성).
+
+### 확인
+
+```sql
+-- 버킷
+select id, public, file_size_limit from storage.buckets where id = 'map-images';
+-- 정책 3개
+select policyname, cmd from pg_policies
+where schemaname = 'storage' and tablename = 'objects' and policyname like 'map images%';
+-- 문서별 사용량
+select split_part(name, '/', 1) as doc_id, count(*) files,
+       pg_size_pretty(sum((metadata->>'size')::bigint)) as size
+from storage.objects where bucket_id = 'map-images' group by 1 order by 3 desc;
+```
+
+### 옛 문서 이전 · 정리
+
+- **이전은 자동**이다. 인라인 이미지가 있는 맵을 열면 에디터가 실물을 올리고 본문을
+  참조로 바꿔 저장한다(`useEditorState`의 `imageMigratedRef` 효과). 실패해도 문서는
+  온전하다 — 올라간 것만 참조가 되고 나머지는 인라인으로 남아 다음에 다시 시도한다.
+- **정리는 영구 삭제 때만.** 편집 중 이미지를 지웠다가 undo하면 참조가 살아 돌아오므로
+  그때는 실물을 지우지 않는다. 휴지통을 비울 때 `imageStore.removeForDoc`이 그 문서
+  폴더를 통째로 지운다. 그래서 고아 파일이 남을 수 있는 경우는 하나뿐이다 — 두 사람이
+  같은 옛 문서를 동시에 열어 각자 올렸을 때(한쪽 참조만 채택된다). 위 사용량 쿼리로
+  확인하고 필요하면 수동 정리한다.

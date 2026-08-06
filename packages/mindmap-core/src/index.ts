@@ -55,6 +55,9 @@ export {
 
 export { normalizeUrl, displayUrl, findAutoLinks } from './url';
 
+export type { InlineImage } from './image';
+export { IMAGE_REF_PREFIX, isImageRef, imageRefPath, makeImageRef, collectImageRefs, collectInlineImages, replaceInlineImages } from './image';
+
 export type { NodeSize, SizeOf, LayoutOptions } from './layout';
 export { layout } from './layout';
 

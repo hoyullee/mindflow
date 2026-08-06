@@ -43,6 +43,7 @@ const { BackendProvider } = await import('../../adapters/BackendContext');
 const { LocalAuth } = await import('../../adapters/local/localAuth');
 const { LocalSpaceStore } = await import('../../adapters/local/localSpaceStore');
 const { LocalFeedbackStore } = await import('../../adapters/local/localFeedbackStore');
+const { LocalImageStore } = await import('../../adapters/local/localImageStore');
 
 const DOC: Doc = {
   v: 1,
@@ -84,7 +85,7 @@ function makeBackend(results: SaveResult[], rows: { email: string; role: 'edit' 
     save,
   } as unknown as DocStore;
   // mode 'supabase' — 협업 경고/멈춤은 실제로 붙을 대상이 있는 모드에서만 뜻이 있다.
-  const backend: Backend = { auth: new LocalAuth(), docStore, spaceStore: new LocalSpaceStore(), shareStore: shareStore(rows), feedbackStore: new LocalFeedbackStore(), mode: 'supabase' };
+  const backend: Backend = { auth: new LocalAuth(), docStore, spaceStore: new LocalSpaceStore(), shareStore: shareStore(rows), feedbackStore: new LocalFeedbackStore(), imageStore: new LocalImageStore(), mode: 'supabase' };
   return { backend, save };
 }
 
