@@ -28,6 +28,23 @@ const AWARENESS_SYNC_REQUEST_EVENT = 'yaware-sync-request';
 /** 상태 벡터 알림 — "내 문서는 여기까지 안다". 받은 쪽은 자기 문서와의 diff를
  * 계산해 `yupdate`로 돌려준다(빠진 연산만, 전체 문서가 아니라). */
 const SV_EVENT = 'ysv';
+/**
+ * 큰 업데이트를 나눠 싣는 이벤트. Realtime은 **메시지 하나의 크기에 상한**이 있고
+ * (무료 플랜 250KB) 넘으면 서버가 조용히 버린다 — 발신자에게는 성공처럼 보인다.
+ *
+ * 우리 문서는 이미지를 본문에 base64로 인라인하므로(첨부 한 장이면 수백 KB) 이
+ * 상한을 쉽게 넘는다. 그러면 **합류 시 전체 상태 전송이 통째로 사라지고**, 상대는
+ * 내 기본 연산을 못 받은 채로 남아 이후의 작은 편집(텍스트 한 줄)까지 전부
+ * **보류**된다. 게다가 15초 주기 치유의 응답도 같은 크기라 매번 또 버려진다 —
+ * 영영 복구되지 않는다. 커서(awareness)는 작아서 멀쩡히 오가므로 **연결은 정상으로
+ * 보인다**(제보: "커서는 보이는데 편집 확정이 아무리 기다려도 반영 안 됨").
+ */
+const UPDATE_PART_EVENT = 'yupdate-part';
+/** 한 조각의 최대 base64 길이 — 한도(250KB)보다 넉넉히 아래로 잡는다. */
+const MAX_UPDATE_CHARS = 128 * 1024;
+/** 조립 중인 조각 묶음의 최대 개수. 한 조각이 유실되면 그 묶음은 영영 완성되지
+ * 않으므로(주기 치유가 다시 보낸다) 오래된 것부터 버려 메모리를 묶어 둔다. */
+const MAX_PENDING_PARTS = 8;
 /** 주기 치유 간격. Realtime은 끊긴 동안의 브로드캐스트를 재전송하지 않으므로,
  * 유실은 "언제든" 생길 수 있는 것으로 두고 주기적으로 메운다. */
 const SYNC_INTERVAL_MS = 15_000;
@@ -39,6 +56,14 @@ interface UpdatePayload {
 interface SyncPayload {
   /** 요청자의 상태 벡터(base64). 없으면(구버전 클라이언트) 전체 상태로 응답. */
   sv?: string;
+}
+
+interface PartPayload {
+  /** 묶음 id — 보낸 쪽 clientID + 일련번호라 피어끼리 겹치지 않는다. */
+  id: string;
+  i: number;
+  n: number;
+  part: string; // base64 조각
 }
 
 export class SupabaseRealtimeProvider implements CollabProvider {
@@ -71,12 +96,71 @@ export class SupabaseRealtimeProvider implements CollabProvider {
   private retryTimer: ReturnType<typeof setTimeout> | undefined;
   private retryAttempt = 0;
 
+  /** 조립 중인 조각 묶음(보낸 쪽 묶음 id → 조각들). */
+  private readonly parts = new Map<string, { n: number; got: number; slots: (string | undefined)[] }>();
+  private partSeq = 0;
+
   constructor(private readonly client: SupabaseClient) {}
+
+  /**
+   * Yjs 업데이트 하나를 보낸다 — **한도를 넘으면 나눠서**.
+   *
+   * 크기를 재서 나누는 이유는 `UPDATE_PART_EVENT`의 doc comment 참고(넘긴 메시지는
+   * 조용히 사라지고, 그 결과가 "커서는 오는데 편집만 영영 안 오는" 상태다).
+   */
+  private sendUpdate(channel: RealtimeChannel, update: Uint8Array): void {
+    const b64 = bytesToBase64(update);
+    if (b64.length <= MAX_UPDATE_CHARS) {
+      void this.ackedSend(channel, BROADCAST_EVENT, { update: b64 } satisfies UpdatePayload);
+      return;
+    }
+    const n = Math.ceil(b64.length / MAX_UPDATE_CHARS);
+    const id = `${this.ydoc?.clientID ?? 0}-${this.partSeq++}`;
+    for (let i = 0; i < n; i++) {
+      void this.ackedSend(channel, UPDATE_PART_EVENT, { id, i, n, part: b64.slice(i * MAX_UPDATE_CHARS, (i + 1) * MAX_UPDATE_CHARS) } satisfies PartPayload);
+    }
+  }
+
+  /**
+   * 결과를 **확인하는** send. 예전엔 문서 업데이트를 `void channel.send(...)`로 던지고
+   * 결과를 버렸다 — 우리 앱에서 가장 중요한 메시지가 실패해도 아무도 몰랐다.
+   * 실패해도 여기서 할 수 있는 건 없다(주기 치유가 다시 시도한다) — 대신 **남긴다**.
+   */
+  private async ackedSend(channel: RealtimeChannel, event: string, payload: UpdatePayload | PartPayload): Promise<void> {
+    const ack = await channel.send({ type: 'broadcast', event, payload });
+    if (ack !== 'ok' && this.channel === channel) {
+      console.warn(`[collab] 문서 업데이트 전송 실패 (${event}, ${ack}) — 다음 주기 동기화가 다시 시도합니다.`);
+    }
+  }
+
+  /** 조각을 모아 완성되면 적용한다. 유실된 묶음은 오래된 것부터 버린다. */
+  private receivePart(payload: PartPayload): void {
+    if (!this.ydoc || !payload?.id || !(payload.n > 0)) return;
+    let entry = this.parts.get(payload.id);
+    if (!entry) {
+      entry = { n: payload.n, got: 0, slots: new Array<string | undefined>(payload.n) };
+      this.parts.set(payload.id, entry);
+      // 오래된 미완성 묶음부터 버린다(Map은 삽입 순서를 지킨다).
+      while (this.parts.size > MAX_PENDING_PARTS) {
+        const oldest = this.parts.keys().next().value;
+        if (oldest === undefined) break;
+        this.parts.delete(oldest);
+      }
+    }
+    if (payload.i < 0 || payload.i >= entry.n) return;
+    if (entry.slots[payload.i] === undefined) {
+      entry.slots[payload.i] = payload.part;
+      entry.got++;
+    }
+    if (entry.got < entry.n) return;
+    this.parts.delete(payload.id);
+    Y.applyUpdate(this.ydoc, base64ToBytes(entry.slots.join('')), this);
+  }
 
   private readonly handleLocalUpdate = (update: Uint8Array, origin: unknown): void => {
     if (origin === this) return; // don't re-broadcast an update WE just applied from the network
-    if (!this.joined) return; // join 밖 — 재합류 시 diff 동기화가 나른다(위 doc comment)
-    void this.channel?.send({ type: 'broadcast', event: BROADCAST_EVENT, payload: { update: bytesToBase64(update) } satisfies UpdatePayload });
+    if (!this.joined || !this.channel) return; // join 밖 — 재합류 시 diff 동기화가 나른다(위 doc comment)
+    this.sendUpdate(this.channel, update);
   };
 
   /** See `BroadcastChannelProvider.handleLocalAwarenessUpdate`'s doc comment for why the
@@ -165,7 +249,9 @@ export class SupabaseRealtimeProvider implements CollabProvider {
         // 반복 전송하면 이미지 인라인 문서에서 페이로드가 커진다. 벡터가 없으면
         // (구버전) 전체 상태.
         const theirSv = payload?.sv ? base64ToBytes(payload.sv) : undefined;
-        void channel.send({ type: 'broadcast', event: BROADCAST_EVENT, payload: { update: bytesToBase64(Y.encodeStateAsUpdate(this.ydoc, theirSv)) } satisfies UpdatePayload });
+        // 합류 응답은 **가장 큰 메시지**다(상대가 내 연산을 하나도 모르면 전체 상태).
+        // 이미지가 든 문서에서 이게 통째로 버려지던 것이 제보의 뿌리다 — 나눠 보낸다.
+        this.sendUpdate(channel, Y.encodeStateAsUpdate(this.ydoc, theirSv));
         // 반대 방향도 닫는다: 내 상태 벡터를 알려 주면, 요청자가 **자기만 가진 연산**을
         // diff로 보내온다(SV_EVENT 핸들러). 합류 한 번으로 양방향이 수렴한다.
         void channel.send({ type: 'broadcast', event: SV_EVENT, payload: { sv: bytesToBase64(Y.encodeStateVector(this.ydoc)) } satisfies SyncPayload });
@@ -174,7 +260,10 @@ export class SupabaseRealtimeProvider implements CollabProvider {
         if (!this.ydoc || !payload?.sv || this.channel !== channel) return;
         // 항상 응답한다(diff가 "비어 보여도" delete set은 실린다 — 삭제는 상태 벡터에
         // 잡히지 않아서, 삭제만 놓친 피어는 이 경로로만 복구된다). 적용은 멱등이다.
-        void channel.send({ type: 'broadcast', event: BROADCAST_EVENT, payload: { update: bytesToBase64(Y.encodeStateAsUpdate(this.ydoc, base64ToBytes(payload.sv))) } satisfies UpdatePayload });
+        this.sendUpdate(channel, Y.encodeStateAsUpdate(this.ydoc, base64ToBytes(payload.sv)));
+      })
+      .on('broadcast', { event: UPDATE_PART_EVENT }, ({ payload }: { payload: PartPayload }) => {
+        this.receivePart(payload);
       })
       .on('broadcast', { event: AWARENESS_EVENT }, ({ payload }: { payload: UpdatePayload }) => {
         if (!this.awareness) return;
@@ -352,5 +441,6 @@ export class SupabaseRealtimeProvider implements CollabProvider {
     this.channel = null;
     this.ydoc = null;
     this.awareness = null;
+    this.parts.clear(); // 다음 문서로 조각이 넘어가지 않게
   }
 }

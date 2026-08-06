@@ -6,7 +6,7 @@
 
 import { describe, expect, it, vi } from 'vitest';
 import * as Y from 'yjs';
-import { ROOT_ID, addNode, docToYDoc, removeNode, yDocToDoc, type Doc } from '@mindflow/mindmap-core';
+import { ROOT_ID, addNode, docToYDoc, removeNode, setNodeField, yDocToDoc, type Doc } from '@mindflow/mindmap-core';
 import { SupabaseRealtimeProvider } from './SupabaseRealtimeProvider';
 import type { CollabStatus } from './ports';
 
@@ -684,6 +684,189 @@ describe('SupabaseRealtimeProvider', () => {
         await flush();
 
         expect(yDocToDoc(ydocB).nodes.n1?.text).toBe('A의 편집'); // 수리 전: undefined
+        A.disconnect();
+        B.disconnect();
+      } finally {
+        warn.mockRestore();
+        vi.useRealTimers();
+      }
+    });
+  });
+
+  // 제보(2차): "커서는 서로 보이는데, 텍스트 편집을 확정해도 아무리 기다려도(15초
+  // 넘게) 상대에게 반영되지 않는다."
+  //
+  // Realtime은 **메시지 하나의 크기에 상한**이 있고(무료 플랜 250KB) 넘으면 서버가
+  // 조용히 버린다 — 발신자에게는 성공처럼 보인다. 우리 문서는 이미지를 본문에
+  // base64로 인라인하므로 첨부 한 장이면 그 상한을 넘는다. 그러면:
+  //   · 합류 시 **전체 상태 전송이 통째로 사라지고** → 상대는 내 기본 연산이 없다
+  //   · 그 뒤의 작은 편집(텍스트 한 줄)은 의존 연산이 없어 상대에서 **보류**된다
+  //   · 15초 주기 치유의 응답도 같은 크기라 **매번 또** 버려진다 → 영영 복구 없음
+  //   · 커서(awareness)는 작아서 멀쩡히 오간다 → **연결은 정상으로 보인다**
+  // 이 조합이 제보 문장을 정확히 만든다. 수리는 큰 업데이트를 조각내 보내는 것.
+  describe('메시지 크기 한도 (이미지가 든 문서)', () => {
+    /** 크기 상한이 있는 버스 — 넘는 메시지는 **조용히** 사라진다(실제 서버처럼). */
+    function makeCappedBus(capBytes: number) {
+      const subs = new Set<{ topic: string; handlers: Record<string, ((a: { payload: unknown }) => void)[]> }>();
+      const dropped: string[] = [];
+      const inflight: { target: { handlers: Record<string, ((a: { payload: unknown }) => void)[]> }; event: string; payload: unknown }[] = [];
+      /** true면 메시지를 바로 전달하지 않고 `inflight`에 쌓는다(순서·유실 시험용). */
+      let hold = false;
+
+      function makeClient() {
+        return {
+          realtime: { setAuth: async () => undefined },
+          channel(topic: string) {
+            const entry = { topic, handlers: {} as Record<string, ((a: { payload: unknown }) => void)[]> };
+            const ch = {
+              on(_t: string, f: { event: string }, cb: (a: { payload: unknown }) => void) {
+                (entry.handlers[f.event] ??= []).push(cb);
+                return ch;
+              },
+              subscribe(cb?: (s: string) => void) {
+                subs.add(entry);
+                setTimeout(() => cb?.('SUBSCRIBED'), 0);
+                return ch;
+              },
+              async send(msg: { event: string; payload: unknown }) {
+                if (JSON.stringify(msg.payload).length > capBytes) {
+                  dropped.push(msg.event);
+                  return 'ok'; // 서버가 버려도 발신자는 성공으로 본다 — 그래서 조용하다
+                }
+                for (const s of subs) {
+                  if (s === entry || s.topic !== entry.topic) continue;
+                  if (hold) inflight.push({ target: s, event: msg.event, payload: msg.payload });
+                  else for (const h of s.handlers[msg.event] ?? []) h({ payload: msg.payload });
+                }
+                return 'ok';
+              },
+            };
+            return ch;
+          },
+          removeChannel() {},
+        } as unknown as import('@supabase/supabase-js').SupabaseClient;
+      }
+
+      return {
+        makeClient,
+        dropped,
+        setHold: (v: boolean) => {
+          hold = v;
+        },
+        /** 쌓아 둔 메시지를 원하는 순서로 흘린다. `skip`은 유실시킬 인덱스. */
+        release: (order?: (n: number) => number[], skip: number[] = []) => {
+          const queued = inflight.splice(0);
+          const idx = order ? order(queued.length) : queued.map((_, i) => i);
+          for (const i of idx) {
+            if (skip.includes(i)) continue;
+            const m = queued[i];
+            if (!m) continue;
+            for (const h of m.target.handlers[m.event] ?? []) h({ payload: m.payload });
+          }
+        },
+      };
+    }
+
+    /** 첨부 한 장이 든 문서 — 실제 앱은 긴변 1024로 줄여 base64로 본문에 인라인한다. */
+    function imageDoc(): Doc {
+      const d = baseDoc();
+      d.nodes.pic = {
+        id: 'pic',
+        text: '사진',
+        emoji: '',
+        parent: 'root',
+        children: [],
+        collapsed: false,
+        color: null,
+        x: 0,
+        y: 0,
+        img: 'data:image/jpeg;base64,' + 'A'.repeat(600 * 1024),
+        imgW: 180,
+        imgH: 120,
+      } as unknown as Doc['nodes'][string];
+      d.nodes.root = { ...d.nodes.root!, children: ['pic'] };
+      return d;
+    }
+
+    async function connectPair(bus: ReturnType<typeof makeCappedBus>, d: Doc) {
+      const ydocA = docToYDoc(d);
+      const ydocB = docToYDoc(d); // 두 기기가 서버 본문을 각자 자기 Y.Doc으로 심는다
+      const A = new SupabaseRealtimeProvider(bus.makeClient());
+      const B = new SupabaseRealtimeProvider(bus.makeClient());
+      A.connect('doc-cap', ydocA);
+      B.connect('doc-cap', ydocB);
+      await vi.advanceTimersByTimeAsync(1);
+      await flush();
+      A.getAwareness()!.setLocalStateField('user', { name: 'A', color: '#111111' });
+      B.getAwareness()!.setLocalStateField('user', { name: 'B', color: '#222222' });
+      await flush();
+      return { ydocA, ydocB, A, B };
+    }
+
+    it('이미지가 든 문서에서도 A의 텍스트 편집이 B에게 즉시 간다 (제보 2차)', async () => {
+      vi.useFakeTimers();
+      const warn = vi.spyOn(console, 'warn').mockImplementation(() => undefined);
+      try {
+        const bus = makeCappedBus(250 * 1024);
+        const { ydocA, ydocB, A, B } = await connectPair(bus, imageDoc());
+
+        // 커서는 멀쩡히 오간다 — 그래서 사용자에겐 "연결은 정상"으로 보였다
+        expect(B.getAwareness()!.getStates().size).toBeGreaterThanOrEqual(2);
+        expect(A.getAwareness()!.getStates().size).toBeGreaterThanOrEqual(2);
+
+        setNodeField(ydocA, 'root', 'text', 'A가 확정한 텍스트');
+        await flush();
+
+        expect(bus.dropped).toEqual([]); // 한도를 넘긴 메시지가 없다 = 조각내 보냈다
+        expect(yDocToDoc(ydocB).nodes.root?.text).toBe('A가 확정한 텍스트'); // 수리 전: '루트'인 채 영원히
+        A.disconnect();
+        B.disconnect();
+      } finally {
+        warn.mockRestore();
+        vi.useRealTimers();
+      }
+    });
+
+    it('조각이 뒤섞여 도착해도 원래 업데이트로 조립된다', async () => {
+      vi.useFakeTimers();
+      const warn = vi.spyOn(console, 'warn').mockImplementation(() => undefined);
+      try {
+        const bus = makeCappedBus(250 * 1024);
+        const { ydocA, ydocB, A, B } = await connectPair(bus, baseDoc());
+
+        bus.setHold(true);
+        setNodeField(ydocA, 'root', 'img', 'data:image/jpeg;base64,' + 'B'.repeat(600 * 1024));
+        await flush();
+        bus.release((n) => Array.from({ length: n }, (_, i) => n - 1 - i)); // 역순으로 흘린다
+        await flush();
+
+        expect((yDocToDoc(ydocB).nodes.root as unknown as { img?: string }).img).toHaveLength('data:image/jpeg;base64,'.length + 600 * 1024);
+        A.disconnect();
+        B.disconnect();
+      } finally {
+        warn.mockRestore();
+        vi.useRealTimers();
+      }
+    });
+
+    it('조각 하나가 유실되면 **아무것도 적용하지 않고**, 다음 주기 치유가 복구한다', async () => {
+      vi.useFakeTimers();
+      const warn = vi.spyOn(console, 'warn').mockImplementation(() => undefined);
+      try {
+        const bus = makeCappedBus(250 * 1024);
+        const { ydocA, ydocB, A, B } = await connectPair(bus, baseDoc());
+
+        bus.setHold(true);
+        setNodeField(ydocA, 'root', 'img', 'data:image/jpeg;base64,' + 'C'.repeat(600 * 1024));
+        await flush();
+        bus.release(undefined, [1]); // 두 번째 조각을 잃는다
+        await flush();
+        expect((yDocToDoc(ydocB).nodes.root as unknown as { img?: string }).img).toBeUndefined(); // 반쪽 적용 없음
+
+        bus.setHold(false);
+        await vi.advanceTimersByTimeAsync(15_000); // 주기 치유가 다시 보낸다
+        await flush();
+        expect((yDocToDoc(ydocB).nodes.root as unknown as { img?: string }).img).toHaveLength('data:image/jpeg;base64,'.length + 600 * 1024);
         A.disconnect();
         B.disconnect();
       } finally {
