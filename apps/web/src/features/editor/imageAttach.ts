@@ -1,10 +1,11 @@
-// 이미지 첨부 파이프라인 — 파일(File/Blob) → 문서 인라인용 데이터 URL.
+// 이미지 첨부 파이프라인 — 파일(File/Blob) → 다운스케일·재인코딩 → 별도 저장소.
 //
-// 저장 전략: 이미지는 Supabase Storage 같은 별도 저장소가 아니라 **문서 JSON
-// 안에 데이터 URL로 인라인**된다(`Float.img`). 그래서 저장·동기화·실시간
-// 협업·오프라인·PNG 내보내기가 전부 기존 문서 경로 그대로 동작한다. 대신
-// 첨부 시점에 반드시 여기서 다운스케일/재인코딩해 용량을 억제한다 —
-// localStorage(데모 모드) 쿼터와 CRDT 업데이트 크기가 직접적인 제약.
+// 저장 전략: 실물은 Storage에 올리고 본문에는 **참조만** 남긴다(core `image.ts`).
+// 저장소가 없거나 업로드가 실패하면 예전처럼 본문에 데이터 URL로 인라인한다 —
+// 데모 모드·오프라인에서도 첨부는 언제나 성공해야 하기 때문이다.
+//
+// 어느 쪽이든 여기서 반드시 줄여서 내보낸다. 무료 플랜에서 먼저 닿는 한도가
+// **저장 용량이 아니라 전송량**이라, 한 장의 바이트 수가 곧 수용 인원이다.
 
 /** 긴 변 상한(px). 초과하면 비율 유지 다운스케일. */
 export const MAX_IMAGE_DIM = 1024;
@@ -81,10 +82,50 @@ function loadBitmap(file: Blob): Promise<HTMLImageElement> {
  * 디코드에 실패하면 `null` (호출부는 조용히 무시 — 붙여넣기/드롭에는 이미지
  * 아닌 파일도 섞여 들어온다).
  *
- * 포맷 선택: PNG 원본은 투명도를 보존해야 하므로 PNG로, 그 외(JPEG/WebP/...)
- * 는 JPEG(q=0.85)로 인코딩. 결과가 SOFT_BYTE_LIMIT을 넘으면 품질을 낮춰 한 번
- * 재시도한다(PNG는 치수를 한 단계 더 줄임).
+ * 포맷은 `pickImageFormat`이 고른다(WebP 우선). 결과가 SOFT_BYTE_LIMIT을 넘으면
+ * 품질을 낮춰 한 번 재시도한다(무손실 PNG는 치수를 한 단계 더 줄임).
  */
+export interface ImageFormat {
+  mime: string;
+  ext: string;
+  /** `undefined` = 무손실(품질 손잡이 없음). */
+  quality?: number;
+  /** 결과가 너무 클 때 한 단계 낮춰 다시 인코딩할 품질. */
+  retryQuality?: number;
+}
+
+/**
+ * 어떤 포맷으로 인코딩할지. 순수 함수(테스트 대상).
+ *
+ * **WebP를 우선**한다 — 같은 체감 화질에서 JPEG보다 30~50% 작고, JPEG과 달리
+ * 투명도까지 지원해서 PNG 원본도 무손실을 포기하지 않고 받아 준다. 바이트 수가
+ * 곧 저장 용량이자 전송량이므로 이 선택 하나가 실질 수용 인원을 좌우한다.
+ *
+ * 지원하지 않는 브라우저(옛 사파리 등)에서는 예전 규칙 그대로 — 투명도가 필요한
+ * PNG는 PNG로, 나머지는 JPEG로.
+ */
+export function pickImageFormat(fileType: string, webpSupported: boolean): ImageFormat {
+  if (webpSupported) return { mime: 'image/webp', ext: 'webp', quality: 0.8, retryQuality: 0.65 };
+  if (fileType === 'image/png') return { mime: 'image/png', ext: 'png' };
+  return { mime: 'image/jpeg', ext: 'jpg', quality: 0.85, retryQuality: 0.7 };
+}
+
+/** 이 브라우저의 canvas가 WebP로 인코딩할 수 있는가(한 번만 재고 기억한다). */
+let webpSupport: boolean | null = null;
+export function canvasSupportsWebp(): boolean {
+  if (webpSupport !== null) return webpSupport;
+  try {
+    const canvas = document.createElement('canvas');
+    canvas.width = 1;
+    canvas.height = 1;
+    // 지원하지 않으면 브라우저가 조용히 PNG로 돌려준다 — 결과 문자열로 판별한다.
+    webpSupport = canvas.toDataURL('image/webp').startsWith('data:image/webp');
+  } catch {
+    webpSupport = false;
+  }
+  return webpSupport;
+}
+
 export async function attachImageFile(file: File | Blob, upload?: ImageUploader): Promise<AttachedImage | null> {
   if (!isImageFile(file)) return null;
   let img: HTMLImageElement;
@@ -96,34 +137,28 @@ export async function attachImageFile(file: File | Blob, upload?: ImageUploader)
   const natural = { w: img.naturalWidth || img.width, h: img.naturalHeight || img.height };
   if (!natural.w || !natural.h) return null;
 
-  const keepPng = file.type === 'image/png';
-  const draw = (dim: { w: number; h: number }): string | null => {
+  const fmt = pickImageFormat(file.type, canvasSupportsWebp());
+  const draw = (dim: { w: number; h: number }, quality = fmt.quality): string | null => {
     const canvas = document.createElement('canvas');
     canvas.width = dim.w;
     canvas.height = dim.h;
     const ctx = canvas.getContext('2d');
     if (!ctx) return null;
     ctx.drawImage(img, 0, 0, dim.w, dim.h);
-    return keepPng ? canvas.toDataURL('image/png') : canvas.toDataURL('image/jpeg', 0.85);
+    return quality === undefined ? canvas.toDataURL(fmt.mime) : canvas.toDataURL(fmt.mime, quality);
   };
 
   let dim = fitWithin(natural.w, natural.h, MAX_IMAGE_DIM);
   let src = draw(dim);
   if (!src) return null;
   if (src.length > SOFT_BYTE_LIMIT) {
-    // 데이터 URL 길이 ≈ 바이트*4/3 — 초과 시 한 단계 더 압축해 재시도
-    if (keepPng) {
+    // 데이터 URL 길이 ≈ 바이트*4/3 — 초과 시 한 단계 더 압축해 재시도.
+    // 무손실(PNG)은 품질 손잡이가 없으니 치수를 줄인다.
+    if (fmt.quality === undefined) {
       dim = fitWithin(dim.w, dim.h, Math.round(MAX_IMAGE_DIM / 2));
       src = draw(dim) ?? src;
     } else {
-      const canvas = document.createElement('canvas');
-      canvas.width = dim.w;
-      canvas.height = dim.h;
-      const ctx = canvas.getContext('2d');
-      if (ctx) {
-        ctx.drawImage(img, 0, 0, dim.w, dim.h);
-        src = canvas.toDataURL('image/jpeg', 0.7);
-      }
+      src = draw(dim, fmt.retryQuality) ?? src;
     }
   }
   // 여기까지가 예전과 같다(다운스케일/재인코딩된 데이터 URL). 별도 저장소가 있으면
@@ -132,7 +167,7 @@ export async function attachImageFile(file: File | Blob, upload?: ImageUploader)
   if (upload) {
     const blob = dataUrlToBlob(src);
     if (blob) {
-      const ref = await upload(blob, keepPng ? 'png' : 'jpg');
+      const ref = await upload(blob, fmt.ext);
       if (ref) return { src: ref, natW: dim.w, natH: dim.h };
     }
   }

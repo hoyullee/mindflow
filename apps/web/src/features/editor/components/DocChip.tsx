@@ -101,6 +101,20 @@ export function DocChip({ controller }: DocChipProps) {
             </span>
           </div>
         )}
+        {controller.imageInlined && (
+          <div
+            role="alert"
+            title="이미지 저장소에 올리지 못해 이 이미지는 맵 본문에 담았어요. 용량이 커져 동기화가 느려질 수 있으니, 잠시 뒤 다시 첨부해 보세요. (클릭해서 닫기)"
+            onClick={controller.dismissImageInlined}
+            className="mf-marquee"
+            style={{ fontSize: 10.5, fontWeight: 600, color: '#c0532e', cursor: 'pointer' }}
+          >
+            <span className="mf-marquee-run">
+              <span>⚠ 이미지를 저장소에 올리지 못해 맵 본문에 담았어요 — 잠시 뒤 다시 첨부해 주세요</span>
+              <span aria-hidden="true">⚠ 이미지를 저장소에 올리지 못해 맵 본문에 담았어요 — 잠시 뒤 다시 첨부해 주세요</span>
+            </span>
+          </div>
+        )}
         {controller.saveConflict && (
           <div
             role="alert"
