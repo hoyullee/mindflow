@@ -8,6 +8,7 @@ import { isPanButton } from '../pointerButtons';
 import type { Theme } from '../theme';
 import type { EditorController } from '../useEditorState';
 import { peersSelecting } from '../presenceSelection';
+import { useIsTouchDevice } from '../../../hooks/useMediaQuery';
 import { RemotePeerTag } from './RemotePeerTag';
 import { ResizeHandle } from './ResizeHandle';
 import { domToRuns, linearize, listArrowLeft, listArrowVertical, selectedRawText, snapCaretOffListMarker } from '../richtextDom';
@@ -197,8 +198,10 @@ function FloatEditBox({ f, controller }: { f: Float; controller: EditorControlle
   const ref = useRef<HTMLDivElement | null>(null);
   /** IME 조합 중 — 캐럿 스냅·재구성 보류(노드 편집과 동일). */
   const composingRef = useRef(false);
-  /** 조합 중에 들어온 Shift+Enter — compositionend에서 잇는다(노드 편집과 동일). */
+  /** 조합 중에 들어온 줄바꿈 의도 — compositionend에서 잇는다(노드 편집과 동일). */
   const pendingBreakRef = useRef(false);
+  /** 터치 기기(소프트 키보드)에서는 Enter가 줄바꿈이다 — 노드 편집과 같은 이유. */
+  const softKeyboard = useIsTouchDevice();
 
   /** 편집 값을 리스트 구조까지 반영해 다시 그리고 캐럿을 복원한다(노드 편집과
    * 같은 경로 — 메모는 좌측 정렬 고정, 라이브 크기 갱신은 필요 없다: 편집 박스가
@@ -345,7 +348,7 @@ function FloatEditBox({ f, controller }: { f: Float; controller: EditorControlle
         // (노드 편집과 동일: Shift=줄바꿈 잇기, 맨 Enter=IME 확정만).
         if (composing && e.key === 'Enter') {
           e.preventDefault();
-          if (e.shiftKey) pendingBreakRef.current = true;
+          if (e.shiftKey || softKeyboard) pendingBreakRef.current = true;
           return;
         }
         // 캐럿이 마커 구역이면 입력 전에 내용 시작으로 + ArrowLeft는 마커를 건너
@@ -405,7 +408,11 @@ function FloatEditBox({ f, controller }: { f: Float; controller: EditorControlle
         }
         // Enter = 편집 확정, Shift+Enter = 줄바꿈(리스트 이어쓰기 포함) —
         // 도형(노드) 편집과 동일한 키 규칙(요청). 줄바꿈은 언제나 doBreak 한 경로.
-        if (e.key === 'Enter' && !composing && !e.shiftKey) {
+        if (e.key === 'Enter' && !composing && !e.shiftKey && softKeyboard) {
+          // 터치 기기: 소프트 키보드의 줄바꿈 키는 줄바꿈이다(편집 유지 — 노드와 동일).
+          e.preventDefault();
+          if (ref.current) doBreak(ref.current);
+        } else if (e.key === 'Enter' && !composing && !e.shiftKey) {
           e.preventDefault();
           controller.commitFloatRichText(f.id, ref.current);
         } else if (e.key === 'Enter' && !composing && e.shiftKey) {

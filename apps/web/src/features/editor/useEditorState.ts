@@ -553,6 +553,9 @@ export interface EditorController {
   /** 실시간 협업 전송이 실제로 붙었는지(`collab/ports.ts`의 `CollabStatus`).
    * 조용히 죽지 않도록 UI가 이걸 보고 알려 준다. */
   collabStatus: CollabStatus;
+  /** 이 문서가 **실제로 공유돼 있는가**(초대 목록에 행이 있다). 실시간 연결이 끊겨도
+   * 혼자 쓰는 맵에서는 알릴 이유가 없다 — 저장은 실시간 채널과 무관하다. */
+  sharedDoc: boolean;
   /** **보기 전용**으로 초대된 공유 문서인가(#22). true면 편집 크롬을 감추고
    * 모든 문서 변이가 chokepoint(`commitDoc`)에서 차단된다. 진짜 게이트는 서버
    * RLS(0009 — view 초대는 SELECT만)다. */
@@ -866,6 +869,8 @@ export function useEditorState(): EditorController {
   // 서버 RLS(0009)가 view 초대의 UPDATE를 거부하므로, 이 상태는 "고쳐지는 척하다
   // 저장은 안 되는" 화면을 만들지 않기 위한 클라이언트 어포던스다.
   const [accessRole, setAccessRole] = useState<ShareRole>('edit');
+  // 초대 목록에 행이 있는가 = 남과 함께 쓰는 맵인가. 협업 연결 배지의 조건이다.
+  const [sharedDoc, setSharedDoc] = useState(false);
   const readOnly = accessRole === 'view';
   const readOnlyRef = useRef(readOnly);
   readOnlyRef.current = readOnly;
@@ -925,11 +930,13 @@ export function useEditorState(): EditorController {
   useEffect(() => {
     let alive = true;
     setAccessRole('edit'); // 문서/계정이 바뀌면 판별 전까지 기존 동작
+    setSharedDoc(false);
     if (!myShareEmail || !docStoreId) return;
     void (async () => {
       try {
         const rows = await shareStore.list(docStoreId);
         if (!alive) return;
+        setSharedDoc(rows.length > 0);
         const mine = rows.find((r) => r.email === myShareEmail);
         if (mine) setAccessRole(mine.role);
       } catch {
@@ -4247,5 +4254,6 @@ export function useEditorState(): EditorController {
     backendMode,
     readOnly,
     collabStatus,
+    sharedDoc,
   };
 }

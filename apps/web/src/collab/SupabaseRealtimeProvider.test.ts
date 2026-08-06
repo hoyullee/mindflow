@@ -457,6 +457,34 @@ describe('SupabaseRealtimeProvider', () => {
       warn.mockRestore();
     });
 
+    it('완전히 끊긴 뒤 스스로 다시 붙어 본다 — 복구가 새로고침뿐이면 안 된다(제보)', async () => {
+      vi.useFakeTimers();
+      const warn = vi.spyOn(console, 'warn').mockImplementation(() => undefined);
+      const priv1 = makeManualChannel();
+      const priv2 = makeManualChannel();
+      const publicCh = makeManualChannel();
+      const retryCh = makeManualChannel('ok'); // 재시도에서는 붙는다
+      const { client, provider, statuses } = await setup([priv1, priv2, publicCh, retryCh]);
+
+      await priv1.fire('TIMED_OUT');
+      await priv2.fire('TIMED_OUT');
+      await publicCh.fire('CHANNEL_ERROR');
+      expect(statuses).toEqual(['offline']);
+
+      const madeChannels = (client.channel as unknown as ReturnType<typeof vi.fn>).mock.calls.length;
+      await vi.advanceTimersByTimeAsync(5000); // 첫 백오프
+      await flush();
+      expect((client.channel as unknown as ReturnType<typeof vi.fn>).mock.calls.length).toBe(madeChannels + 1);
+      expect(statuses).toContain('connecting'); // 다시 시도하는 동안은 '고장'이 아니다
+
+      await retryCh.fire('SUBSCRIBED');
+      expect(statuses[statuses.length - 1]).toBe('connected'); // 배지가 스스로 사라진다
+
+      provider.disconnect();
+      warn.mockRestore();
+      vi.useRealTimers();
+    });
+
     it('정책이 제대로 있으면 폴백하지 않고 connected로 보고한다', async () => {
       const privateCh = makeManualChannel('ok');
       const { client, provider, statuses } = await setup([privateCh]);
