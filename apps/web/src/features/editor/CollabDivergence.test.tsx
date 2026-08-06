@@ -5,9 +5,11 @@
 // 예전엔 #320의 "협업 중 충돌은 경고가 아니다" 규칙이 **연결 여부를 보지 않아**, 끊긴
 // 상태의 충돌까지 조용히 덮어썼다.
 //
-// 규칙 둘:
+// 규칙 셋:
 //  ① 충돌을 조용히 덮어쓰는 건 **지금 실시간이 붙어 있을 때만**(그때만 수렴이 보장된다).
-//  ② 공유 맵에서 오래 끊겨 있으면 편집 자체를 멈추고 새로고침을 안내한다.
+//  ② 공유 맵에서 끊기면 **즉시** 편집을 멈춘다 — 재연결하면 수렴은 하지만 같은 대상을
+//     상대도 건드렸으면 한쪽이 사라진다(core `crdt/divergence.test.ts`가 그 규칙을 고정).
+//  ③ 끊김이 오래가면 배너에서 전체 안내(새로고침)로 승격한다.
 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
@@ -185,25 +187,39 @@ describe('실시간이 끊긴 채 편집할 때', () => {
     expect(screen.queryAllByText(/다른 기기\/탭에서 먼저 저장됨/)).toHaveLength(0);
   });
 
-  it('공유 맵에서 오래 끊기면 편집을 멈추고 새로고침을 안내한다', async () => {
+  it('공유 맵에서 끊기면 **즉시** 편집이 멈춘다(유실 창을 열지 않는다)', async () => {
     const { backend } = makeBackend([]);
     const { container } = renderEditor(backend, 'div3');
     await waitFor(() => expect(within(getViewport(container)).getByText('리서치')).toBeTruthy());
     const before = getViewport(container).querySelectorAll('[data-node-id]').length;
-
     await settleShare();
-    // 가짜 타이머는 **끊김을 알리기 전에** 켜야 한다 — 유예 타이머가 그 뒤에 잡힌다.
+
+    setStatus('offline');
+
+    // 유예 없음 — 그 즉시 문서 변이가 chokepoint에서 막힌다.
+    edit(container);
+    expect(getViewport(container).querySelectorAll('[data-node-id]').length).toBe(before);
+    // 짧은 끊김은 얇은 배너로만 알린다(화면 전체를 덮지 않는다).
+    expect(screen.getByText(/연결이 끊겨 편집을 잠시 멈췄어요/)).toBeTruthy();
+    expect(screen.queryByRole('dialog', { name: '공동 편집 연결 끊김' })).toBeNull();
+  });
+
+  it('끊김이 오래가면 배너에서 전체 안내(새로고침)로 승격한다', async () => {
+    const { backend } = makeBackend([]);
+    const { container } = renderEditor(backend, 'div3b');
+    await waitFor(() => expect(within(getViewport(container)).getByText('리서치')).toBeTruthy());
+    await settleShare();
+
+    // 가짜 타이머는 **끊김을 알리기 전에** 켜야 한다 — 승격 타이머가 그 뒤에 잡힌다.
     vi.useFakeTimers();
     setStatus('offline');
-    expect(screen.queryByRole('dialog', { name: '공동 편집 연결 끊김' })).toBeNull(); // 유예 중에는 멈추지 않는다
     act(() => {
       vi.advanceTimersByTime(31_000);
     });
     vi.useRealTimers();
 
     expect(screen.getByRole('dialog', { name: '공동 편집 연결 끊김' })).toBeTruthy();
-    edit(container); // 문서 변이는 chokepoint에서 막힌다
-    expect(getViewport(container).querySelectorAll('[data-node-id]').length).toBe(before);
+    expect(screen.queryByText(/연결이 끊겨 편집을 잠시 멈췄어요/)).toBeNull(); // 두 겹으로 알리지 않는다
   });
 
   it('다시 연결되면 멈춤이 풀린다(새로고침을 강요하지 않는다)', async () => {
@@ -242,6 +258,7 @@ describe('실시간이 끊긴 채 편집할 때', () => {
     vi.useRealTimers();
 
     expect(screen.queryByRole('dialog', { name: '공동 편집 연결 끊김' })).toBeNull();
+    expect(screen.queryByText(/연결이 끊겨 편집을 잠시 멈췄어요/)).toBeNull();
     edit(container);
     expect(getViewport(container).querySelectorAll('[data-node-id]').length).toBe(before + 1);
   });

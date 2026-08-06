@@ -253,7 +253,7 @@ export class SupabaseRealtimeProvider implements CollabProvider {
   }
 
   /**
-   * 완전히 끊긴 뒤 **스스로 다시 붙어 본다**(5s → 15s → 45s → 2m, 이후 2m 고정).
+   * 완전히 끊긴 뒤 **스스로 다시 붙어 본다**(2s → 8s → 30s → 2m, 이후 2m 고정).
    *
    * 예전엔 여기서 끝이었다 — 상태가 'offline'으로 굳고 복구 수단은 새로고침뿐이라,
    * 순간적인 네트워크 끊김 하나로 남은 세션 내내 배지가 떠 있었다(제보). 재시도는
@@ -263,7 +263,9 @@ export class SupabaseRealtimeProvider implements CollabProvider {
   private scheduleRetry(gen: number, docId: string, onStatus?: CollabStatusListener): void {
     if (gen !== this.session) return;
     if (this.retryTimer !== undefined) clearTimeout(this.retryTimer);
-    const delays = [5000, 15000, 45000, 120000];
+    // 첫 시도는 **빠르게**: 공유 맵에서는 끊긴 동안 편집이 멈추므로(apps/web
+    // `collabBlocked`), 이 지연이 곧 사용자가 멈춰 있는 시간이다.
+    const delays = [2000, 8000, 30000, 120000];
     const delay = delays[Math.min(this.retryAttempt, delays.length - 1)] ?? 120000;
     this.retryAttempt++;
     this.retryTimer = setTimeout(() => {
