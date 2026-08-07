@@ -93,13 +93,17 @@ export class SupabaseDocStore implements DocStore {
   }
 
   async load(id: string): Promise<LoadedDoc | null> {
-    const { data, error } = await this.client.from(TABLE).select('id,title,version,data').eq('id', id).maybeSingle();
+    // `owner`도 함께 읽는다 — 링크 공유(0017) 이후 "내 문서인가"를 초대 목록만으로는
+    // 알 수 없다(링크로 들어온 사람도 소유자도 자기 행이 없다). 에디터가 뷰어에게
+    // 편집 UI를 내주지 않으려면 이 신호가 필요하다.
+    const { data, error } = await this.client.from(TABLE).select('id,title,version,data,owner').eq('id', id).maybeSingle();
     if (error) throw new Error(error.message);
     if (!data) return null;
-    const row = data as DocumentRow;
+    const row = data as DocumentRow & { owner?: string | null };
     const doc: Doc | null = parseDoc(row.data);
     if (!doc) return null;
-    return { doc, version: row.version, title: row.title ?? '' };
+    const uid = (await this.client.auth.getUser()).data.user?.id ?? null;
+    return { doc, version: row.version, title: row.title ?? '', ownedByMe: !!uid && row.owner === uid };
   }
 
   async loadPreview(id: string, meta?: { version: number; updatedAt: string }): Promise<string | null> {

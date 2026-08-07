@@ -416,6 +416,7 @@ describe('Editor interactions (M3-Editor-b)', () => {
   describe('공유', () => {
     function shareBackend() {
       const shares: { documentId: string; email: string; role: 'edit' | 'view'; createdAt: string }[] = [];
+      let linkRole: 'edit' | 'view' | null = null;
       const shareStore = {
         list: vi.fn(async (id: string) => shares.filter((s) => s.documentId === id)),
         add: vi.fn(async (id: string, email: string, role: 'edit' | 'view' = 'edit') => {
@@ -431,6 +432,12 @@ describe('Editor interactions (M3-Editor-b)', () => {
         // 기본값 null = 참가자 정보 없음(0010 RPC 미적용 서버) — 팝업은 이메일만
         // 보여주는 폴백 렌더를 탄다. 참가자 UI는 아래 별도 테스트에서 값을 준다.
         listParticipants: vi.fn(async (): Promise<import('../../adapters/ports').ShareParticipant[] | null> => null),
+        // 링크 공유(0017) — 이 더블은 메모리 한 칸으로 켜고 끈다.
+        getLink: vi.fn(async () => linkRole),
+        setLink: vi.fn(async (_id: string, role: 'edit' | 'view' | null) => {
+          linkRole = role === 'view' ? 'view' : null;
+          return {};
+        }),
       };
       return { shareStore, shares };
     }
@@ -470,7 +477,7 @@ describe('Editor interactions (M3-Editor-b)', () => {
       expect((screen.getByLabelText('friend@example.com 권한') as HTMLSelectElement).value).toBe('edit');
     });
 
-    it('dim 배경은 제자리 페이드(mf-dim-in)로만 뜨고, 안내 문구는 권한별 두 줄이다', async () => {
+    it('dim 배경은 제자리 페이드(mf-dim-in)로만 뜨고, 권한 안내는 "?"를 눌러야 나온다', async () => {
       localStorage.setItem('mindflow_doc_shdim', JSON.stringify(DOC));
       const user = userEvent.setup();
       const { shareStore } = shareBackend();
@@ -486,11 +493,62 @@ describe('Editor interactions (M3-Editor-b)', () => {
       expect(backdrop.style.animation).toContain('mf-dim-in');
       expect(backdrop.style.animation).not.toContain('mf-fade');
 
-      // 안내 문구 — 권한마다 한 줄씩, <br>로 나뉜 두 문장(요청안 그대로).
-      expect(dialog.textContent).toContain('편집 가능 권한은 서로의 커서와 편집이 실시간으로 보여요.');
-      expect(dialog.textContent).toContain('보기 전용 권한은 저장된 최신 맵을 열람만 할 수 있습니다.');
-      const help = screen.getByText(/권한은 서로의 커서와 편집이 실시간으로 보여요/).closest('div') as HTMLElement;
-      expect(help.querySelector('br')).toBeTruthy();
+      // 권한 안내는 상시 문단이 아니라 제목 옆 "?"에 들어간다(요청) — 평소엔 없다가
+      // 누르면 툴팁으로 나온다. 팝업을 여는 사람 대부분은 이미 알고 있고, 두 줄이
+      // 매번 자리를 차지했다.
+      expect(dialog.textContent).not.toContain('편집 가능 권한은 서로의 커서와 편집이 실시간으로 보여요.');
+      expect(screen.queryByRole('tooltip')).toBeNull();
+
+      await user.click(within(dialog).getByRole('button', { name: '권한 안내' }));
+      const tip = await screen.findByRole('tooltip');
+      expect(tip.textContent).toContain('편집 가능 권한은 서로의 커서와 편집이 실시간으로 보여요.');
+      expect(tip.textContent).toContain('보기 전용 권한은 저장된 최신 맵을 열람만 할 수 있습니다.');
+
+      // 다시 누르면 닫힌다.
+      await user.click(within(dialog).getByRole('button', { name: '권한 안내' }));
+      expect(screen.queryByRole('tooltip')).toBeNull();
+    });
+
+    // 링크 공유(0017) — 이메일을 모르는 상대에게 "이거 봐 줘" 하는 가장 짧은 길.
+    // 보기 전용만 연다: 링크는 유출되면 끄기 전까지 회수할 수 없다.
+    it('링크 공유를 켜면 주소가 나오고, 끄면 사라진다 (보기 전용)', async () => {
+      localStorage.setItem('mindflow_doc_shlink', JSON.stringify(DOC));
+      const user = userEvent.setup();
+      const { shareStore } = shareBackend();
+      renderWithShare(shareStore, 'supabase', 'shlink');
+
+      await user.click(screen.getByRole('button', { name: '공유' }));
+      const dialog = await screen.findByRole('dialog', { name: '공유' });
+
+      const toggle = within(dialog).getByLabelText('링크가 있는 사람은 열람') as HTMLInputElement;
+      expect(toggle.checked).toBe(false);
+      expect(within(dialog).queryByLabelText('공유 링크')).toBeNull();
+
+      await user.click(toggle);
+      await waitFor(() => expect(shareStore.setLink).toHaveBeenCalledWith('shlink', 'view'));
+      const url = (await within(dialog).findByLabelText('공유 링크')) as HTMLInputElement;
+      expect(url.value).toContain('/editor?map=shlink');
+
+      await user.click(within(dialog).getByLabelText('링크가 있는 사람은 열람'));
+      await waitFor(() => expect(shareStore.setLink).toHaveBeenCalledWith('shlink', null));
+      await waitFor(() => expect(within(dialog).queryByLabelText('공유 링크')).toBeNull());
+    });
+
+    it('링크 복사 버튼은 그 주소를 클립보드에 넣는다', async () => {
+      localStorage.setItem('mindflow_doc_shcopy', JSON.stringify(DOC));
+      const user = userEvent.setup();
+      const writeText = vi.fn(async () => undefined);
+      Object.defineProperty(navigator, 'clipboard', { value: { writeText }, configurable: true });
+      const { shareStore } = shareBackend();
+      renderWithShare(shareStore, 'supabase', 'shcopy');
+
+      await user.click(screen.getByRole('button', { name: '공유' }));
+      const dialog = await screen.findByRole('dialog', { name: '공유' });
+      await user.click(within(dialog).getByLabelText('링크가 있는 사람은 열람'));
+      await user.click(await within(dialog).findByRole('button', { name: '링크 복사' }));
+
+      expect(writeText).toHaveBeenCalledWith(expect.stringContaining('/editor?map=shcopy'));
+      expect(await within(dialog).findByRole('button', { name: '복사됨' })).toBeTruthy();
     });
 
     it('이메일 형식이 아니면 서버를 부르지 않고 알려 준다', async () => {

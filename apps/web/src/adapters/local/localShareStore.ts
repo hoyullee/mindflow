@@ -10,6 +10,17 @@ import type { DocumentShare, ShareParticipant, ShareRole, ShareStore, SharedWith
 import { readSavedProfileName } from '../../features/home/storage';
 
 const KEY = 'mf_doc_shares';
+const LINK_KEY = 'mf_doc_links';
+
+function readLinks(): Record<string, string> {
+  try {
+    const raw = localStorage.getItem(LINK_KEY);
+    const parsed = raw ? (JSON.parse(raw) as unknown) : null;
+    return parsed && typeof parsed === 'object' && !Array.isArray(parsed) ? (parsed as Record<string, string>) : {};
+  } catch {
+    return {};
+  }
+}
 
 interface StoredShare {
   documentId: string;
@@ -42,6 +53,23 @@ function writeAll(list: StoredShare[]): void {
 }
 
 export class LocalShareStore implements ShareStore {
+  /** 링크 공유도 같은 태도 — 실제로 열어 주지는 않지만 계약과 UI 흐름은 동일하다. */
+  async getLink(documentId: string): Promise<ShareRole | null> {
+    return readLinks()[documentId] === 'view' ? 'view' : null;
+  }
+
+  async setLink(documentId: string, role: ShareRole | null): Promise<{ error?: string }> {
+    const all = readLinks();
+    if (role === 'view') all[documentId] = 'view';
+    else delete all[documentId];
+    try {
+      localStorage.setItem(LINK_KEY, JSON.stringify(all));
+    } catch {
+      /* storage unavailable — non-fatal */
+    }
+    return {};
+  }
+
   async list(documentId: string): Promise<DocumentShare[]> {
     return readAll()
       .filter((s) => s.documentId === documentId)

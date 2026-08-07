@@ -28,6 +28,27 @@ function toRole(raw: string): ShareRole {
 export class SupabaseShareStore implements ShareStore {
   constructor(private readonly client: SupabaseClient) {}
 
+  /**
+   * 링크 공유 상태(0017의 `documents.link_role`). 읽기는 문서를 볼 수 있는 사람이면
+   * 되지만, 쓰기는 RLS가 소유자만 허용한다.
+   */
+  async getLink(documentId: string): Promise<ShareRole | null> {
+    const { data, error } = await this.client.from('documents').select('link_role').eq('id', documentId).maybeSingle();
+    // 컬럼이 없는 서버(마이그레이션 전)나 일시 오류 → 꺼짐으로 본다. 켜져 있는데
+    // 꺼진 것으로 보이는 쪽이 안전하다(UI가 실수로 "공유 중"이라 말하지 않는다).
+    if (error) return null;
+    const raw = (data as { link_role?: string | null } | null)?.link_role;
+    return raw === 'view' ? 'view' : null;
+  }
+
+  async setLink(documentId: string, role: ShareRole | null): Promise<{ error?: string }> {
+    // 'edit' 링크는 0017의 check 제약이 막는다 — 열려면 의도적인 마이그레이션이 필요하다.
+    const next = role === 'view' ? 'view' : null;
+    const { error } = await this.client.from('documents').update({ link_role: next }).eq('id', documentId);
+    if (error) return { error: error.message };
+    return {};
+  }
+
   async list(documentId: string): Promise<DocumentShare[]> {
     const { data, error } = await this.client.from(TABLE).select('document_id,invitee_email,role,created_at').eq('document_id', documentId).order('created_at', { ascending: true });
     if (error) throw new Error(error.message);

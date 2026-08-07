@@ -142,4 +142,50 @@ describe('SupabaseShareStore', () => {
     const throwClient = { rpc: vi.fn(async () => { throw new Error('network'); }) } as unknown as import('@supabase/supabase-js').SupabaseClient;
     expect(await new SupabaseShareStore(throwClient).listParticipants('d1')).toBeNull();
   });
+
+  // 링크 공유(0017) — `documents.link_role`. 보기 전용만 열린다(check 제약).
+  describe('링크 공유', () => {
+    function linkClient(result: { data: unknown; error: unknown }) {
+      const calls: { method: string; args: unknown[] }[] = [];
+      const q = {
+        select: (...a: unknown[]) => (calls.push({ method: 'select', args: a }), q),
+        update: (...a: unknown[]) => (calls.push({ method: 'update', args: a }), q),
+        eq: (...a: unknown[]) => (calls.push({ method: 'eq', args: a }), q),
+        maybeSingle: () => Promise.resolve(result),
+        then: (f: (v: unknown) => unknown) => Promise.resolve(result).then(f),
+      };
+      const from = vi.fn(() => q);
+      return { client: { from } as unknown as import('@supabase/supabase-js').SupabaseClient, calls, from };
+    }
+
+    it('켜져 있으면 view, 꺼져 있으면 null', async () => {
+      const on = linkClient({ data: { link_role: 'view' }, error: null });
+      expect(await new SupabaseShareStore(on.client).getLink('d1')).toBe('view');
+      expect(on.from).toHaveBeenCalledWith('documents');
+
+      const off = linkClient({ data: { link_role: null }, error: null });
+      expect(await new SupabaseShareStore(off.client).getLink('d1')).toBeNull();
+    });
+
+    it('컬럼이 없는 서버(마이그레이션 전)나 오류는 **꺼짐**으로 본다 — 켜졌다고 잘못 말하지 않게', async () => {
+      const err = linkClient({ data: null, error: { message: 'column documents.link_role does not exist' } });
+      expect(await new SupabaseShareStore(err.client).getLink('d1')).toBeNull();
+    });
+
+    it('켜기/끄기는 그 문서 행의 link_role만 바꾼다', async () => {
+      const on = linkClient({ data: null, error: null });
+      await new SupabaseShareStore(on.client).setLink('d1', 'view');
+      expect(on.calls).toEqual([{ method: 'update', args: [{ link_role: 'view' }] }, { method: 'eq', args: ['id', 'd1'] }]);
+
+      const off = linkClient({ data: null, error: null });
+      await new SupabaseShareStore(off.client).setLink('d1', null);
+      expect(off.calls[0]).toEqual({ method: 'update', args: [{ link_role: null }] });
+    });
+
+    it('편집 링크는 열지 않는다 — 유출되면 회수할 수 없다(보기 전용만)', async () => {
+      const c = linkClient({ data: null, error: null });
+      await new SupabaseShareStore(c.client).setLink('d1', 'edit');
+      expect(c.calls[0]).toEqual({ method: 'update', args: [{ link_role: null }] });
+    });
+  });
 });
