@@ -202,7 +202,8 @@ export interface HomeState {
   /** 남이 나에게 공유한 맵들(0009의 `document_shares`). 내 워크스페이스 블롭에는
    * 없고 `DocStore.list()`가 돌려주는 메타에서만 온다 — 그래서 스페이스·폴더와
    * 섞이지 않는 별도 목록으로 들고 있다. */
-  sharedMaps: { docId: string; title: string; updatedAt: string; role: 'edit' | 'view' }[];
+  /** `isNew` = 아직 확인하지 않은 초대(0019의 `seen_at`이 null) — LNB 배지의 근거. */
+  sharedMaps: { docId: string; title: string; updatedAt: string; role: 'edit' | 'view'; isNew: boolean }[];
 
   importDone: string | null;
   /** 가져온 맵이 폴더 안에 들어갔다면 그 폴더 이름 — 완료 토스트가 "현재 스페이스에

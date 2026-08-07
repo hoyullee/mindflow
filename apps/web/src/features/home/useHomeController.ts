@@ -134,7 +134,11 @@ export function useHomeController() {
     const metas = allMetas.filter((m) => m.ownedByMe !== false);
     // 내 권한(편집/보기 전용)은 `document_shares`의 내 행에서 온다 — LNB의
     // "보기 전용" 배지 근거(#22). 조회 실패는 'edit' 폴백(기존 표시와 동일).
-    const myRoles = new Map(res[2].status === 'fulfilled' ? res[2].value.map((s) => [s.documentId, s.role]) : []);
+    const myShares = res[2].status === 'fulfilled' ? res[2].value : [];
+    const myRoles = new Map(myShares.map((s) => [s.documentId, s.role]));
+    // 아직 확인하지 않은 초대(= 배지). `seenAt`이 `undefined`인 환경(구 서버·오류)은
+    // "안 봤다"로 치지 않는다 — 없는 알림을 만들어 내는 쪽이 더 나쁘다.
+    const unseen = new Set(myShares.filter((s) => s.seenAt === null).map((s) => s.documentId));
     const sharedMetas = allMetas
       .filter((m) => m.ownedByMe === false && !m.deletedAt)
       .map((m) => ({ ...m, sharedRole: m.sharedRole ?? myRoles.get(m.id) }));
@@ -263,7 +267,7 @@ export function useHomeController() {
       // 카드의 "마지막 수정" 표기 원천 — 휴지통 문서 메타까지 포함해 통째로
       // 갱신한다 (복원 직후에도 카드에 시각이 바로 뜨도록). timeFormat.ts 참고.
       const docTimes = Object.fromEntries(allMetas.map((m) => [m.id, m.updatedAt]));
-      return { ...prev, theme, spaces, activeSpace, curFolder, mapFolders, favs, deleted, trash, recent, docTimes, sharedMaps: sharedMetas.map((m) => ({ docId: m.id, title: m.title, updatedAt: m.updatedAt, role: m.sharedRole ?? 'edit' })), loaded: true };
+      return { ...prev, theme, spaces, activeSpace, curFolder, mapFolders, favs, deleted, trash, recent, docTimes, sharedMaps: sharedMetas.map((m) => ({ docId: m.id, title: m.title, updatedAt: m.updatedAt, role: m.sharedRole ?? 'edit', isNew: unseen.has(m.id) })), loaded: true };
     });
     // 마지막 저장자가 **내가 아닌** 문서들만 이름을 물어본다(0015). 혼자 쓰는
     // 사람은 대상이 하나도 없어 요청 자체가 나가지 않는다. 실패해도 조용히 넘어간다 —
@@ -953,6 +957,19 @@ export function useHomeController() {
     navigateAfterLoader(href, '맵을 불러오고 있어요');
   };
 
+  /**
+   * 공유받은 맵을 연다 — 여는 순간 그 초대를 "봤다"로 표시해 배지에서 뺀다.
+   *
+   * 목록을 펼치기만 해도 지우지 않는 이유: 배지는 **아직 안 본 초대**를 세는
+   * 우편함이다. 펼쳐서 훑는 것과 실제로 열어 보는 것은 다르고, 후자가 정직한 신호다.
+   * 표시는 부수적이라 실패해도 여는 것을 막지 않는다(fire-and-forget).
+   */
+  const openSharedMap = (href: string, title: string, docId: string) => {
+    setState((prev) => ({ ...prev, sharedMaps: prev.sharedMaps.map((m) => (m.docId === docId ? { ...m, isNew: false } : m)) }));
+    void shareStore.markSharedSeen([docId]).catch(() => {});
+    openWithLoader(href, title, docId);
+  };
+
   /** Home.dc.html `onNewMapClick` (inline in `renderVals()`).
    *
    * Assigns the new map to the CURRENTLY-ACTIVE (non-drive) space so it's saved
@@ -1622,6 +1639,7 @@ export function useHomeController() {
     mapHref,
     newMapHref,
     openWithLoader,
+    openSharedMap,
     onNewMapClick,
     openImport,
     onImportFile,

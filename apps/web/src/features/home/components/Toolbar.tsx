@@ -116,15 +116,24 @@ export function Toolbar({ state, view, controller, isMobile = false, onOpenNav }
             type="button"
             className="btn"
             onClick={onOpenNav}
-            title="메뉴 열기"
-            aria-label="메뉴 열기"
-            style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', width: 44, height: 44, marginLeft: -12, marginRight: -6, border: 'none', borderRadius: 10, background: 'transparent', color: 'var(--mf-text)', cursor: 'pointer', padding: 0, flexShrink: 0 }}
+            title={view.sharedUnread > 0 ? `메뉴 열기 (새 공유 ${view.sharedUnread}개)` : '메뉴 열기'}
+            aria-label={view.sharedUnread > 0 ? `메뉴 열기, 확인하지 않은 공유 ${view.sharedUnread}개` : '메뉴 열기'}
+            style={{ position: 'relative', display: 'flex', alignItems: 'center', justifyContent: 'center', width: 44, height: 44, marginLeft: -12, marginRight: -6, border: 'none', borderRadius: 10, background: 'transparent', color: 'var(--mf-text)', cursor: 'pointer', padding: 0, flexShrink: 0 }}
           >
             <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
               <line x1="4" y1="7" x2="20" y2="7" />
               <line x1="4" y1="12" x2="20" y2="12" />
               <line x1="4" y1="17" x2="20" y2="17" />
             </svg>
+            {/* 폰에서는 LNB가 서랍이라 그 안의 배지가 보이지 않는다 — 알림이 닫힌
+                문 뒤에 있으면 알림이 아니다. 문에도 점을 찍는다. */}
+            {view.sharedUnread > 0 && (
+              <span
+                data-unread-dot
+                aria-hidden="true"
+                style={{ position: 'absolute', top: 9, right: 9, width: 8, height: 8, borderRadius: '50%', background: 'var(--mf-accent)', border: '2px solid var(--mf-bg)' }}
+              />
+            )}
           </button>
         )}
         {view.backVisible && (

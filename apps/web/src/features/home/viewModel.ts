@@ -111,7 +111,9 @@ export interface HomeViewModel {
    * 공유받은 맵은 내 스페이스·폴더에 속하지 않는 **다른 출처**이므로, 목록 안의 한
    * 구획이 아니라 사이드바의 출처 하나로 두는 게 정보 구조에도 맞는다.
    */
-  sharedItems: { docId: string; title: string; href: string; role: 'edit' | 'view' }[];
+  sharedItems: { docId: string; title: string; href: string; role: 'edit' | 'view'; isNew: boolean }[];
+  /** 아직 확인하지 않은 초대 수 — LNB "공유받음"의 알림 배지. 0이면 배지 없음. */
+  sharedUnread: number;
   /** LNB에 "공유받음" 구획을 그릴지. 처음엔 공유받은 게 없으면 숨겼는데, 항상
    * 보이는 고정 항목으로 바꿨다(사용자 결정) — 기능이 있다는 것 자체가 보여야
    * 공유를 써 볼 수 있다. 비어 있으면 즐겨찾기처럼 빈 안내를 편다. 로딩 중에만
@@ -473,7 +475,8 @@ export function deriveHomeView(state: HomeState): HomeViewModel {
   // 워크스페이스에는 없는 문서라 스페이스/폴더 필터를 타지 않는다.
   const sharedItems = state.sharedMaps
     .filter((m) => !isTrashedCard(m.title, m.docId))
-    .map((m) => ({ docId: m.docId, title: m.title, href: mapHref(m.title, m.docId), role: m.role }));
+    .map((m) => ({ docId: m.docId, title: m.title, href: mapHref(m.title, m.docId), role: m.role, isNew: m.isNew }));
+  const sharedUnread = sharedItems.filter((m) => m.isNew).length;
 
   return {
     connected,
@@ -491,6 +494,7 @@ export function deriveHomeView(state: HomeState): HomeViewModel {
     folderCards,
     recentCards,
     sharedItems,
+    sharedUnread,
     // LNB 항목이므로 폴더/검색 화면에서도 그대로 있다 — 사이드바는 "지금 보고 있는
     // 목록"이 아니라 어디로든 가는 길이다.
     sharedVisible: !loading,

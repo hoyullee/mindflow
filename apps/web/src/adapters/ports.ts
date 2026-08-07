@@ -225,6 +225,14 @@ export interface DocumentShare {
 export interface SharedWithMe {
   documentId: string;
   role: ShareRole;
+  /**
+   * 내가 이 공유를 **확인한 시각**(0019). `null`이면 아직 못 본 초대 —
+   * 홈의 "공유받음" 배지가 이걸 센다. 서버에 두는 이유는 기기 간 일관성이다:
+   * 폰에서 확인한 배지가 PC에서 또 뜨면 알림이 아니라 소음이 된다.
+   * 값을 못 얻는 환경(구 서버·오류)에서는 `undefined` — 배지를 띄우지 않는다
+   * (없는 알림을 만들어 내는 쪽이 더 나쁘다).
+   */
+  seenAt?: string | null;
 }
 
 /**
@@ -258,6 +266,11 @@ export interface ShareStore {
   remove(documentId: string, email: string): Promise<{ error?: string }>;
   /** 나에게 공유된 문서들. */
   listSharedWithMe(): Promise<SharedWithMe[]>;
+  /**
+   * 이 공유들을 "봤다"고 표시한다(배지에서 뺀다). 부가 기능이므로 실패해도
+   * throw하지 않는다 — 알림 표시가 맵 열기를 막아서는 안 된다.
+   */
+  markSharedSeen(documentIds: string[]): Promise<void>;
   /**
    * 공유 팝업용 참가자 정보(소유자 + 초대받은 사람의 프로필명/가입 여부).
    * `null` = 정보를 얻을 수 없음(RPC 미적용 서버, 일시 오류) — UI는 이메일만
