@@ -67,7 +67,10 @@ function HelpTip({ theme: th, open, onToggle, onClose }: { theme: EditorControll
   }, [open, onClose]);
 
   return (
-    <div ref={ref} style={{ position: 'relative', display: 'flex' }}>
+    // 일부러 `position: static` — 툴팁을 이 작은 래퍼가 아니라 **제목 행**(부모가
+    // 이미 relative)에 걸어 모달 본문 왼쪽 끝에서 시작하게 한다. "?" 버튼에 걸면
+    // 제목 폭만큼 오른쪽에서 시작해 한 줄에 들어갈 폭이 그만큼 모자란다.
+    <div ref={ref} style={{ display: 'flex' }}>
       <button
         type="button"
         onClick={onToggle}
@@ -98,9 +101,13 @@ function HelpTip({ theme: th, open, onToggle, onClose }: { theme: EditorControll
           role="tooltip"
           style={{
             position: 'absolute',
-            top: 24,
-            left: -6,
-            width: 264,
+            top: 26,
+            left: 0,
+            // 세 문장을 **한 줄씩** 보여 준다(요청) — 문장 중간에서 접히면 굵게
+            // 강조한 권한 이름과 설명이 갈라져 읽기 힘들다. 폭은 가장 긴 문장에
+            // 맞추고(`max-content`), 아주 좁은 화면에서만 접히도록 상한을 둔다.
+            width: 'max-content',
+            maxWidth: 'calc(100vw - 48px)',
             zIndex: 5,
             background: th.panel,
             border: `1px solid ${th.border}`,
