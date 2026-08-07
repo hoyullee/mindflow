@@ -86,7 +86,7 @@ export function Home() {
       {/* 오프라인이면 설치 안내 대신 연결 상태를 말한다 — 지금 급한 정보가 그쪽이고,
           같은 자리를 두 카드가 다투지도 않는다. */}
       <OfflineBar visible={!online} />
-      <InstallHint mode={online ? installHint.mode : null} onInstall={installHint.install} onDismiss={installHint.dismiss} />
+      <InstallHint mode={online ? installHint.mode : null} onInstall={installHint.install} onDismiss={installHint.dismiss} isMobile={isMobile} />
 
       {/* `scrollbarGutter: 'stable'` reserves the vertical scrollbar's width
           whether or not it's showing, so crossing from "few maps" (no scroll) to

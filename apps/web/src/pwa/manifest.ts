@@ -25,6 +25,13 @@ export const pwaManifest: Partial<ManifestOptions> = {
   background_color: '#fbf6f2',
   display: 'standalone',
   orientation: 'any',
+  /**
+   * 앱의 **고유 id**. 없으면 브라우저가 `start_url`을 id로 쓰므로 지금과 같은 값이다
+   * (= 이미 설치된 앱의 정체성이 바뀌지 않는다). 명시해 두는 이유는 앞으로
+   * `start_url`을 바꿔도 같은 앱으로 남게 하기 위해서다 — id가 바뀌면 브라우저는
+   * **다른 앱**으로 보고 중복 설치를 만든다.
+   */
+  id: '/home',
   // `/home` (not `/`): the root is now the public marketing landing page —
   // an INSTALLED app should launch into the user's documents (RequireAuth
   // still bounces anonymous users to /login).
