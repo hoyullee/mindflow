@@ -63,13 +63,13 @@ export function NodePanel({ controller, nodeIds, isMobile = false, short = false
         {multi ? (
           <>
             <SectionLabel theme={th}>다중 선택</SectionLabel>
-            <div style={{ fontSize: 14, fontWeight: 600, marginBottom: 14 }}>도형 {ids.length}개 선택됨</div>
+            <div style={{ fontSize: 14, fontWeight: 600, marginBottom: 14 }}>주제 {ids.length}개 선택됨</div>
           </>
         ) : (
           <PanelTitle theme={th} kicker="선택한 주제" name={n.text} />
         )}
 
-        <PanelSection theme={th} title="도형 스타일" open={openSec === 'shape'} onToggle={() => toggle('shape')}>
+        <PanelSection theme={th} title="주제 스타일" open={openSec === 'shape'} onToggle={() => toggle('shape')}>
           <SectionLabel theme={th}>모양</SectionLabel>
           {/* 8종을 4열 그리드(2행)로 — flex-wrap 시절엔 6+2로 감겨 줄이 들쭉날쭉했다
               (제보: 배치가 중구난방). 버튼은 셀 폭을 채워 열이 수직으로 정렬된다. */}

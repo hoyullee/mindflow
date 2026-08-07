@@ -146,7 +146,7 @@ afterEach(() => {
 });
 
 describe('Context menu — node', () => {
-  it('shows 자식 주제/형제 주제/텍스트 정렬/삭제 for a non-root node', async () => {
+  it('shows 하위 주제 추가/형제 주제 추가/텍스트 정렬/삭제 for a non-root node', async () => {
     localStorage.setItem('mindflow_doc_cm1', JSON.stringify(DOC));
     const { container } = renderEditor('/editor?map=cm1&title=x');
     const vp = getViewport(container);
@@ -156,8 +156,8 @@ describe('Context menu — node', () => {
 
     rightClickAt(vp, clientX, clientY);
 
-    await waitFor(() => expect(screen.getByText('자식 주제')).toBeTruthy());
-    expect(screen.getByText('형제 주제')).toBeTruthy();
+    await waitFor(() => expect(screen.getByText('하위 주제 추가')).toBeTruthy());
+    expect(screen.getByText('형제 주제 추가')).toBeTruthy();
     expect(screen.getByText('텍스트 정렬')).toBeTruthy();
     expect(screen.getByText('삭제')).toBeTruthy();
   });
@@ -205,7 +205,7 @@ describe('Context menu — node', () => {
     expect(screen.queryByText('이미지 제거')).toBeNull();
   });
 
-  it('omits 형제 주제/삭제 for the root node', async () => {
+  it('omits 형제 주제 추가/삭제 for the root node', async () => {
     localStorage.setItem('mindflow_doc_cm2', JSON.stringify(DOC));
     const { container } = renderEditor('/editor?map=cm2&title=x');
     const vp = getViewport(container);
@@ -215,9 +215,9 @@ describe('Context menu — node', () => {
 
     rightClickAt(vp, clientX, clientY);
 
-    await waitFor(() => expect(screen.getByText('자식 주제')).toBeTruthy());
+    await waitFor(() => expect(screen.getByText('하위 주제 추가')).toBeTruthy());
     expect(screen.getByText('텍스트 정렬')).toBeTruthy();
-    expect(screen.queryByText('형제 주제')).toBeNull();
+    expect(screen.queryByText('형제 주제 추가')).toBeNull();
     expect(screen.queryByText('삭제')).toBeNull();
   });
 
@@ -265,7 +265,7 @@ describe('Context menu — float / line / zone', () => {
     rightClickAt(vp, clientX, clientY);
 
     await waitFor(() => expect(screen.getByText('삭제')).toBeTruthy());
-    expect(screen.queryByText('자식 주제')).toBeNull();
+    expect(screen.queryByText('하위 주제 추가')).toBeNull();
     fireEvent.mouseDown(screen.getByText('삭제'));
 
     await waitFor(() => expect(screen.queryByText('주간 메모')).toBeNull());
@@ -352,7 +352,7 @@ describe('Context menu — background', () => {
     const { clientX, clientY } = toClient(pan, zoom, spotX, spotY);
 
     rightClickAt(vp, clientX, clientY);
-    await waitFor(() => expect(screen.getByText('도형 추가')).toBeTruthy());
+    await waitFor(() => expect(screen.getByText('주제 추가')).toBeTruthy());
     expect(screen.getByText('메모 추가')).toBeTruthy();
     expect(screen.getByText('선 추가')).toBeTruthy();
     expect(screen.getByText('영역 추가')).toBeTruthy();
@@ -383,10 +383,10 @@ describe('Context menu — closing', () => {
     const { clientX, clientY } = toClient(pan, zoom, 5000, 5000);
 
     rightClickAt(vp, clientX, clientY);
-    await waitFor(() => expect(screen.getByText('도형 추가')).toBeTruthy());
+    await waitFor(() => expect(screen.getByText('주제 추가')).toBeTruthy());
 
     fireEvent.keyDown(window, { key: 'Escape' });
-    await waitFor(() => expect(screen.queryByText('도형 추가')).toBeNull());
+    await waitFor(() => expect(screen.queryByText('주제 추가')).toBeNull());
   });
 
   it('an outside click closes it', async () => {
@@ -397,10 +397,10 @@ describe('Context menu — closing', () => {
     const { clientX, clientY } = toClient(pan, zoom, 5000, 5000);
 
     rightClickAt(vp, clientX, clientY);
-    await waitFor(() => expect(screen.getByText('도형 추가')).toBeTruthy());
+    await waitFor(() => expect(screen.getByText('주제 추가')).toBeTruthy());
 
     fireEvent.mouseDown(document.body);
-    await waitFor(() => expect(screen.queryByText('도형 추가')).toBeNull());
+    await waitFor(() => expect(screen.queryByText('주제 추가')).toBeNull());
   });
 
   it('a right-click-drag (pan) does not open the menu', async () => {
@@ -417,7 +417,7 @@ describe('Context menu — closing', () => {
 
     // give any (incorrect) async menu-open a tick to appear, then assert it never did
     await new Promise((r) => setTimeout(r, 10));
-    expect(screen.queryByText('도형 추가')).toBeNull();
+    expect(screen.queryByText('주제 추가')).toBeNull();
     expect(screen.queryByText('삭제')).toBeNull();
   });
 });

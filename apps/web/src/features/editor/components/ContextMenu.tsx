@@ -332,7 +332,7 @@ function buildItems(controller: EditorController, ctxMenu: ContextMenuState, tog
     if (!touch) {
       items.push({
         icon: '＋',
-        label: '자식 주제',
+        label: '하위 주제 추가',
         onSelect: () => {
           close();
           controller.addChild();
@@ -341,7 +341,7 @@ function buildItems(controller: EditorController, ctxMenu: ContextMenuState, tog
       if (!isRoot) {
         items.push({
           icon: '＋',
-          label: '형제 주제',
+          label: '형제 주제 추가',
           onSelect: () => {
             close();
             controller.addSibling();
@@ -496,7 +496,7 @@ function buildItems(controller: EditorController, ctxMenu: ContextMenuState, tog
   return [
     {
       icon: '▢',
-      label: '도형 추가',
+      label: '주제 추가',
       onSelect: () => {
         close();
         controller.addFreeNodeAt(at);

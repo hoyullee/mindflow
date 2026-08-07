@@ -82,7 +82,7 @@ describe('Editor multi-select (M3-Editor-c: marquee)', () => {
     firePointer(window, 'pointerup', { pointerId: 9, clientX: 100000, clientY: 100000 });
 
     await waitFor(() => expect(screen.getByText('다중 선택')).toBeTruthy());
-    expect(screen.getByText('도형 3개 선택됨')).toBeTruthy(); // root + c1 + c2
+    expect(screen.getByText('주제 3개 선택됨')).toBeTruthy(); // root + c1 + c2
   });
 
   it('Delete with a multi-selection removes every targeted node (except the root) in one action', async () => {
