@@ -15,9 +15,11 @@ import { Modals } from './components/modals/Modals';
 import { AccountSettingsModal } from './components/modals/AccountSettingsModal';
 import { DeleteAccountModal } from './components/modals/DeleteAccountModal';
 import { FeedbackModal } from '../../components/FeedbackModal';
+import { ShareModal } from '../../components/ShareModal';
 import { ProfileNameModal } from './components/modals/ProfileNameModal';
 import { useHomeController } from './useHomeController';
 import { deriveHomeView } from './viewModel';
+import { homeModalTheme } from './theme';
 import { homeUpdateRisk } from './updateRisk';
 import { useIsMobile } from '../../hooks/useMediaQuery';
 import { useDrawerSwipe } from '../../hooks/useDrawerSwipe';
@@ -45,6 +47,9 @@ export function Home() {
   // toggle below). `realPreview` is memoized too (see mapPreview), so unchanged
   // cards return the same element reference and React skips their SVG subtrees.
   const view = useMemo(() => deriveHomeView(state), [state]);
+  // 에디터와 함께 쓰는 모달(공유·피드백)은 CSS 변수를 스스로 읽지 않으므로
+  // 지금 테마의 색을 만들어 넘긴다 — 다크에서도 홈과 같은 면·글자색이 된다.
+  const modalTheme = useMemo(() => homeModalTheme(state.theme), [state.theme]);
   const isMobile = useIsMobile();
   const installHint = useInstallHint(isMobile);
   const online = useOnline();
@@ -119,8 +124,11 @@ export function Home() {
       <AccountSettingsModal state={state} controller={controller} />
       <ProfileNameModal state={state} controller={controller} />
       <DeleteAccountModal state={state} controller={controller} />
-      {/* 피드백(사용자 의견 수집) — 프로필 메뉴에서 연다. 홈은 라이트 고정이라 기본 테마. */}
-      <FeedbackModal open={state.feedbackOpen} onClose={controller.closeFeedback} page="home" />
+      {/* 피드백(사용자 의견 수집) — LNB 최하단에서 연다. */}
+      <FeedbackModal open={state.feedbackOpen} onClose={controller.closeFeedback} page="home" theme={modalTheme} />
+      {/* 공유 — 카드 메뉴에서 연다(요청). 에디터와 **같은 모달**이고 색만 홈 테마다.
+          그리드의 카드는 언제나 내 맵이라 보기 전용이 아니다(공유받은 맵은 LNB에만). */}
+      <ShareModal open={!!state.shareDocId} docId={state.shareDocId ?? ''} onClose={controller.closeShare} theme={modalTheme} />
       <Modals state={state} controller={controller} />
       <NewSpaceModal state={state} controller={controller} />
       <FolderModal state={state} controller={controller} />

@@ -3,7 +3,7 @@ import './editor.css';
 import { useEditorState } from './useEditorState';
 import type { SelectionKind } from './types';
 import { Toolbar } from './components/Toolbar';
-import { ShareModal } from './components/ShareModal';
+import { ShareModal } from '../../components/ShareModal';
 import { DocChip } from './components/DocChip';
 import { ZoomControls } from './components/ZoomControls';
 import { Viewport } from './components/Viewport';
@@ -152,7 +152,15 @@ export function Editor() {
           갈라진 채 계속 쓰면 나중에 저장한 쪽이 상대 작업을 덮는다. */}
       <CollabPaused controller={controller} />
       {/* 공유 모달 — 아웃라인 보기에서도 열 수 있어야 하므로 view 분기 밖에 둔다. */}
-      <ShareModal controller={controller} />
+      <ShareModal
+        open={controller.shareOpen}
+        docId={controller.docId}
+        onClose={controller.closeShare}
+        readOnly={controller.readOnly}
+        // 공유에서 나가면 이 맵에 더 접근할 수 없다 — 열려 있는 에디터에 남겨 두지 않는다.
+        onLeft={controller.goHome}
+        theme={th}
+      />
       <ShortcutHelp controller={controller} />
       <VersionHistory controller={controller} />
       {/* 피드백(사용자 의견 수집) — 보기/☰ 메뉴에서 연다. 에디터 테마를 따른다. */}

@@ -116,6 +116,9 @@ export interface HomeState {
   ctxMenu: HomeCtxMenu | null;
   /** 맵 이름 변경 팝업(카드 메뉴 → 이름 변경). `null`이면 닫힘. */
   renameMap: RenameMapState | null;
+  /** 공유 팝업을 연 맵의 문서 id(카드 메뉴 → 공유). `null`이면 닫힘.
+   *  에디터와 **같은 `ShareModal`**을 쓴다 — 맵을 열지 않고 바로 초대·링크 공유. */
+  shareDocId: string | null;
   deleted: Record<string, boolean>;
   confirmDelete: string | null;
   /** docId of the card behind `confirmDelete`, if it's a doc-backed map — carried
@@ -268,6 +271,7 @@ export function initialHomeState(): HomeState {
     sharedOpen: true,
     ctxMenu: null,
     renameMap: null,
+    shareDocId: null,
     deleted: {},
     confirmDelete: null,
     confirmDeleteDocId: null,

@@ -216,6 +216,16 @@ export function HomeContextMenu({ state, view, controller }: Props) {
 // ── 아이콘 ────────────────────────────────────────────────────────────────
 const stroke = { fill: 'none', stroke: 'currentColor', strokeWidth: 2, strokeLinecap: 'round', strokeLinejoin: 'round' } as const;
 
+/** 공유 — 에디터 툴바의 `ShareGlyph`(사람 + 더하기)와 같은 도형. 같은 동작은
+ * 같은 표식으로 알아본다. */
+const ShareIcon = (
+  <svg width="14" height="14" viewBox="0 0 24 24" {...stroke}>
+    <path d="M15 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2" />
+    <circle cx="8.5" cy="7" r="4" />
+    <line x1="19" y1="8" x2="19" y2="14" />
+    <line x1="22" y1="11" x2="16" y2="11" />
+  </svg>
+);
 const PencilIcon = (
   <svg width="14" height="14" viewBox="0 0 24 24" {...stroke}>
     <path d="M12 20h9" />
@@ -365,6 +375,12 @@ function mapItems(card: CardViewData, controller: HomeController): HomeMenuItem[
   }
   if (card.showRenameRow) {
     items.push({ key: 'rename', icon: PencilIcon, label: '이름 변경', onSelect: () => controller.startRenameMap(card.key) });
+  }
+  // 공유(요청) — 맵을 열지 않고 여기서 바로 초대·링크 공유. 팝업은 에디터가 쓰는
+  // 그 `ShareModal` 그대로다(색만 홈 테마).
+  if (card.showShareRow && card.docId) {
+    const docId = card.docId;
+    items.push({ key: 'share', icon: ShareIcon, label: '공유', onSelect: () => controller.openShareFor(docId) });
   }
   if (card.showFavRow) {
     items.push({
