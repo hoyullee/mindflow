@@ -69,6 +69,8 @@ export interface FolderModalState {
 export type HomeCtxTarget =
   | { kind: 'map'; key: string }
   | { kind: 'folder'; id: string }
+  /** LNB의 스페이스 행 — ⋮ 버튼과 우클릭이 같은 메뉴를 연다(카드와 같은 규칙). */
+  | { kind: 'space'; id: string }
   /** 카드가 없는 빈 자리 — "새로 만들기 · 새 폴더 · 가져오기 · 설정". */
   | { kind: 'bg' };
 
@@ -173,7 +175,6 @@ export interface HomeState {
   newSpaceOpen: boolean;
   newSpaceName: string;
   newSpaceColor: string;
-  spaceMenu: string | null;
   /** When the shared new-space popup is open in RENAME mode, the id of the space
    * being edited (name + color pre-filled); `null` = create mode. */
   editingSpace: string | null;
@@ -303,7 +304,6 @@ export function initialHomeState(): HomeState {
     newSpaceOpen: false,
     newSpaceName: '',
     newSpaceColor: '#f0663f',
-    spaceMenu: null,
     editingSpace: null,
     confirmDeleteSpace: null,
 

@@ -18,7 +18,7 @@ import {
 
 /** 같은 대상인지 비교하려고 쓰는 납작한 키(☰ 토글 판정). */
 export function ctxTargetKey(t: HomeCtxTarget): string {
-  return t.kind === 'map' ? `map:${t.key}` : t.kind === 'folder' ? `folder:${t.id}` : 'bg';
+  return t.kind === 'bg' ? 'bg' : `${t.kind}:${t.kind === 'map' ? t.key : t.id}`;
 }
 import {
   coerceSpaces,
@@ -82,7 +82,6 @@ export function useHomeController() {
   const loaderTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
   // 새 맵 카드 등록을 로더 페인트 뒤로 미룰 때의 폴백 타이머(rAF 없는 환경).
   const cardRegisterTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
-  const spaceMenuAnchor = useRef<{ top: number; left: number } | null>(null);
   // docIds whose body we've already fetched (or are fetching) for card previews,
   // so the prefetch effect never re-requests the same doc.
   const previewFetchedRef = useRef<Set<string>>(new Set());
@@ -312,7 +311,6 @@ export function useHomeController() {
         // 선택/설정/스페이스 메뉴만 본다.
         if (prev.selectedCard && !closest('.map-card')) next = { ...next, selectedCard: null };
         if (prev.settingsOpen && !closest('.settings-pop,.settings-btn')) next = { ...next, settingsOpen: false };
-        if (prev.spaceMenu && !closest('.space-dot,.menu-row,.space-row')) next = { ...next, spaceMenu: null };
         return next;
       });
     };
@@ -641,22 +639,18 @@ export function useHomeController() {
   };
   const pickSpaceColor = (c: string) => patch({ newSpaceColor: c });
   const setActiveSpace = (id: string) => patch({ activeSpace: id, curFolder: null, driveFolder: null });
-  const toggleSpaceMenu = (id: string, anchor?: { top: number; left: number }) => {
-    if (anchor) spaceMenuAnchor.current = anchor;
-    patch({ spaceMenu: state.spaceMenu === id ? null : id });
-  };
   /** Rename now opens the shared "새 스페이스 만들기" popup in EDIT mode (name + color),
    * pre-filled from the space — instead of an inline sidebar input. */
   const startRenameSpace = (id: string) => {
     const sp = state.spaces.find((s) => s.id === id);
     if (!sp) return;
-    patch({ newSpaceOpen: true, editingSpace: id, newSpaceName: sp.name, newSpaceColor: sp.color || '#f0663f', spaceMenu: null });
+    patch({ newSpaceOpen: true, editingSpace: id, newSpaceName: sp.name, newSpaceColor: sp.color || '#f0663f', ctxMenu: null });
   };
   const askDeleteSpace = (id: string) => {
     const sp = state.spaces.find((s) => s.id === id);
     if (!sp || (Array.isArray(sp.maps) && sp.maps.some((m) => !state.deleted[m.title]))) return;
     if (state.spaces.length <= 1) return;
-    patch({ confirmDeleteSpace: id, spaceMenu: null });
+    patch({ confirmDeleteSpace: id, ctxMenu: null });
   };
   const cancelDeleteSpace = () => patch({ confirmDeleteSpace: null });
   const confirmDeleteSpaceYes = () => {
@@ -1554,14 +1548,9 @@ export function useHomeController() {
   const selectCard = (title: string | null) => patch({ selectedCard: title });
   const setSearch = (v: string) => patch({ search: v });
 
-  const setSpaceMenuAnchor = (anchor: { top: number; left: number }) => {
-    spaceMenuAnchor.current = anchor;
-  };
-
   return {
     state,
     importInputRef,
-    spaceMenuAnchor,
     setImportRef,
     onDriveClick,
     openDriveAuth,
@@ -1593,8 +1582,6 @@ export function useHomeController() {
     submitSpace,
     pickSpaceColor,
     setActiveSpace,
-    toggleSpaceMenu,
-    setSpaceMenuAnchor,
     startRenameSpace,
     askDeleteSpace,
     cancelDeleteSpace,

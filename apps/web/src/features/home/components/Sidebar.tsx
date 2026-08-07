@@ -106,6 +106,17 @@ export function Sidebar({ state, view, controller, isMobile = false, isOpen = fa
       )}
       <aside
         className={isMobile ? 'mf-drawer' : undefined}
+        // LNB 우클릭: 메뉴가 있는 건 **스페이스 행 하나**뿐이고(그 행이 직접 처리하고
+        // 전파를 끊는다), 나머지(즐겨찾기·휴지통·공유받음·피드백)에는 항목 단위
+        // 동작이 없다. 그래서 여기서는 브라우저 기본 메뉴만 막는다 — 본문(`main`)이
+        // 이미 우클릭을 앱 메뉴로 쓰고 있어서, LNB만 브라우저 메뉴가 뜨면 같은 화면
+        // 안에서 우클릭의 뜻이 갈린다(사용자 요청).
+        onContextMenu={(e) => {
+          const t = e.target as HTMLElement;
+          // 입력창 위에서는 붙여넣기 등 기본 메뉴가 맞다(지금은 없지만 앞으로를 위해).
+          if (t.closest && t.closest('input, textarea, [contenteditable="true"]')) return;
+          e.preventDefault();
+        }}
         style={{
           ...asideStyle,
           background: 'var(--mf-panel)',

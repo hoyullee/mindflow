@@ -26,7 +26,7 @@ export function homeUpdateRisk(state: HomeState): UpdateRisk {
   if (state.confirmDeleteSpace || state.confirmDeleteFolder) return 'block';
 
   // 열어 둔 메뉴/서브메뉴와 드래그 중인 카드.
-  if (state.ctxMenu || state.spaceMenu) return 'block';
+  if (state.ctxMenu) return 'block';
   if (state.draggingMap) return 'block';
 
   // 검색어로 목록을 좁혀 둔 상태 — 리로드하면 전체 목록으로 되돌아간다.

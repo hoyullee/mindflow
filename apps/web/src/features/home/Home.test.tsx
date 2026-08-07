@@ -1055,9 +1055,10 @@ describe('Home', () => {
     const aside = within(container.querySelector('aside') as HTMLElement);
     await waitFor(() => expect(aside.getByText('옛이름')).toBeTruthy());
 
-    // ⋮ menu → 이름 변경 opens the SAME popup as "새 공간", but in edit mode
+    // ⋮ menu → 이름 변경 opens the SAME popup as "새 공간", but in edit mode.
+    // 메뉴는 이제 카드·폴더와 같은 공용 메뉴(`HomeContextMenu`)라 화면 위에 뜬다.
     await user.click(aside.getByLabelText('스페이스 메뉴'));
-    await user.click(aside.getByText('이름 변경'));
+    await user.click(await screen.findByRole('menuitem', { name: '이름 변경' }));
 
     expect(screen.getByText('스페이스 이름 변경')).toBeTruthy();
     const input = screen.getByLabelText('스페이스 이름') as HTMLInputElement;
@@ -2845,13 +2846,17 @@ describe('홈 우클릭 메뉴', () => {
 
   it('모바일에서는 메뉴 행이 44px 터치 타깃을 지킨다', async () => {
     mockMatchMedia(true);
-    const { container } = renderHomeWithDocStore([meta('doc-tt', '터치 맵')]);
-    await waitFor(() => expect(container.querySelector('a[data-title="터치 맵"]')).toBeTruthy());
-    const card = container.querySelector('a[data-title="터치 맵"]') as HTMLElement;
+    try {
+      const { container } = renderHomeWithDocStore([meta('doc-tt', '터치 맵')]);
+      await waitFor(() => expect(container.querySelector('a[data-title="터치 맵"]')).toBeTruthy());
+      const card = container.querySelector('a[data-title="터치 맵"]') as HTMLElement;
 
-    fireEvent.contextMenu(card, { clientX: 20, clientY: 20 });
-    const row = (await screen.findByRole('menuitem', { name: '새 탭에서 열기' })) as HTMLElement;
-    expect(row.style.minHeight).toBe('44px');
+      fireEvent.contextMenu(card, { clientX: 20, clientY: 20 });
+      const row = (await screen.findByRole('menuitem', { name: '새 탭에서 열기' })) as HTMLElement;
+      expect(row.style.minHeight).toBe('44px');
+    } finally {
+      mockMatchMedia(false); // 데스크톱으로 되돌린다 — LNB는 모바일에서 드로어라 안 붙어 있다
+    }
   });
 
   // 선택하면 테두리가 1px→2px가 되는데, 폴더 카드는 그걸 **패딩을 줄여** 맞추고
@@ -2876,6 +2881,48 @@ describe('홈 우클릭 메뉴', () => {
     // 패딩은 그대로 (= 패딩 박스가 안 움직인다 = 절대 배치된 ☰도 안 움직인다)
     expect(folderCard.style.padding).toBe(padBefore);
     expect(folderCard.style.margin).toBe('-1px'); // 늘어난 테두리는 마진이 상쇄
+  });
+
+  // LNB(사이드바) 우클릭 — 메뉴가 있는 건 스페이스 행 하나뿐이고, 나머지는
+  // 브라우저 기본 메뉴만 막는다(같은 화면 안에서 우클릭의 뜻이 갈리지 않게).
+  it('스페이스 행 우클릭은 ⋮과 같은 메뉴를 연다', async () => {
+    localStorage.setItem('mf_spaces', JSON.stringify({ spaces: [{ id: 'sx', name: '기획 공간', color: '#3f8fd0', maps: [] }, { id: 'sy', name: '다른 공간', color: '#4f9d69', maps: [] }], mapFolders: {} }));
+    const { container } = renderHomeWithDocStore([]);
+    const aside = container.querySelector('aside') as HTMLElement;
+    await waitFor(() => expect(within(aside).getByText('기획 공간')).toBeTruthy());
+    const row = within(aside).getByText('기획 공간').closest('.space-row') as HTMLElement;
+
+    fireEvent.contextMenu(row, { clientX: 80, clientY: 200 });
+
+    const menu = await screen.findByRole('menu');
+    expect(menu.getAttribute('data-home-ctx')).toBe('space');
+    expect(within(menu).getByRole('menuitem', { name: '이름 변경' })).toBeTruthy();
+    expect(within(menu).getByRole('menuitem', { name: '스페이스 삭제' })).toBeTruthy();
+  });
+
+  it('마지막 스페이스는 삭제가 잠기고 이유를 말한다', async () => {
+    localStorage.setItem('mf_spaces', JSON.stringify({ spaces: [{ id: 'sx', name: '유일한 공간', color: '#3f8fd0', maps: [] }], mapFolders: {} }));
+    const { container } = renderHomeWithDocStore([]);
+    const aside = container.querySelector('aside') as HTMLElement;
+    await waitFor(() => expect(within(aside).getByText('유일한 공간')).toBeTruthy());
+    const row = within(aside).getByText('유일한 공간').closest('.space-row') as HTMLElement;
+
+    fireEvent.contextMenu(row, { clientX: 80, clientY: 200 });
+    const del = await screen.findByRole('menuitem', { name: '스페이스 삭제' });
+    expect(del.style.cursor).toBe('not-allowed');
+    expect(screen.getByText('마지막 스페이스는 삭제할 수 없어요')).toBeTruthy();
+  });
+
+  it('LNB의 나머지 우클릭은 브라우저 기본 메뉴를 막기만 한다 (앱 메뉴도 열지 않는다)', async () => {
+    const { container } = renderHomeWithDocStore([]);
+    const aside = container.querySelector('aside') as HTMLElement;
+    await waitFor(() => expect(within(aside).getByText('휴지통')).toBeTruthy());
+
+    const evt = new MouseEvent('contextmenu', { bubbles: true, cancelable: true });
+    within(aside).getByText('휴지통').dispatchEvent(evt);
+
+    expect(evt.defaultPrevented).toBe(true); // 브라우저 메뉴 차단
+    expect(screen.queryByRole('menu')).toBeNull(); // 그렇다고 앱 메뉴가 뜨지도 않는다
   });
 
   it('Escape로 닫힌다', async () => {

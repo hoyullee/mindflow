@@ -11,21 +11,24 @@ interface Props {
 /** Home.dc.html:104-127 `<sc-for list="{{ spaceList }}">` — one row in the sidebar space list. */
 export function SpaceRow({ space, state, controller }: Props) {
   const active = space.id === state.activeSpace;
-  const menuOpen = state.spaceMenu === space.id;
-  const hasMaps = Array.isArray(space.maps) && space.maps.some((m) => !state.deleted[m.title]);
-  const isLastSpace = state.spaces.length <= 1;
-  const anchor = controller.spaceMenuAnchor.current;
+  const menuOpen = state.ctxMenu?.target.kind === 'space' && state.ctxMenu.target.id === space.id;
 
+  // ⋮ 버튼과 우클릭이 같은 메뉴를 연다 — 홈의 카드·폴더와 같은 규칙(공용
+  // `HomeContextMenu`). 버튼은 그 아래, 우클릭은 커서 자리에.
   const onMenuClick = (e: MouseEvent<HTMLSpanElement>) => {
     e.preventDefault();
     e.stopPropagation();
     const r = e.currentTarget.getBoundingClientRect();
-    controller.setSpaceMenuAnchor({ top: r.bottom + 6, left: Math.max(8, r.right - 168) });
-    controller.toggleSpaceMenu(space.id);
+    controller.openCtxMenu(r.right - 184, r.bottom + 6, { kind: 'space', id: space.id });
+  };
+  const onContextMenu = (e: MouseEvent<HTMLDivElement>) => {
+    e.preventDefault();
+    e.stopPropagation(); // LNB의 나머지 우클릭 차단(Sidebar)까지 가지 않게
+    controller.openCtxMenuAt(e.clientX, e.clientY, { kind: 'space', id: space.id });
   };
 
   return (
-    <div className="space-row" style={{ position: 'relative' }}>
+    <div className="space-row" onContextMenu={onContextMenu} style={{ position: 'relative' }}>
       <div
         className="nav-item"
         role="button"
@@ -74,58 +77,6 @@ export function SpaceRow({ space, state, controller }: Props) {
         </span>
       </div>
 
-      <div
-        onClick={(e) => {
-          e.preventDefault();
-          e.stopPropagation();
-        }}
-        style={{
-          position: 'fixed',
-          top: menuOpen && anchor ? anchor.top : -9999,
-          left: menuOpen && anchor ? anchor.left : -9999,
-          zIndex: 60,
-          width: 168,
-          background: 'var(--mf-panel)',
-          border: '1px solid var(--mf-border)',
-          borderRadius: 10,
-          boxShadow: '0 10px 28px rgba(0,0,0,.16)',
-          padding: '5px 0',
-          display: menuOpen ? 'block' : 'none',
-        }}
-      >
-        <div
-          className="menu-row"
-          onClick={(e) => {
-            e.preventDefault();
-            e.stopPropagation();
-            controller.startRenameSpace(space.id);
-          }}
-          style={{ display: 'flex', alignItems: 'center', gap: 9, padding: '9px 13px', fontSize: 13, cursor: 'pointer', color: 'var(--mf-text)' }}
-        >
-          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-            <path d="M12 20h9" />
-            <path d="M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4z" />
-          </svg>{' '}
-          이름 변경
-        </div>
-        <div style={{ height: 1, background: 'var(--mf-border-soft)', margin: '2px 0' }} />
-        <div
-          className="menu-row"
-          onClick={(e) => {
-            e.preventDefault();
-            e.stopPropagation();
-            controller.askDeleteSpace(space.id);
-          }}
-          style={{ display: 'flex', alignItems: 'center', gap: 9, padding: '9px 13px', fontSize: 13, cursor: hasMaps || isLastSpace ? 'not-allowed' : 'pointer', color: hasMaps || isLastSpace ? 'var(--mf-faint2)' : 'var(--mf-danger)' }}
-        >
-          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-            <polyline points="3 6 5 6 21 6" />
-            <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2" />
-          </svg>{' '}
-          스페이스 삭제
-        </div>
-        {(hasMaps || isLastSpace) && <div style={{ padding: '2px 13px 8px', fontSize: 11, color: 'var(--mf-faint2)', lineHeight: 1.4 }}>{hasMaps ? '맵이 없는 스페이스만 삭제할 수 있어요' : '마지막 스페이스는 삭제할 수 없어요'}</div>}
-      </div>
     </div>
   );
 }
