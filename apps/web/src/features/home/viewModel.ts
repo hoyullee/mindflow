@@ -31,6 +31,9 @@ export interface CardViewData {
   /** 이름 변경 가능 여부 — 문서로 뒷받침되는 내 맵만. 제목이 곧 식별자인 옛
    * 카드(docId 없음)와 Drive 데모는 이름을 바꾸면 그 카드를 잃는다. */
   showRenameRow: boolean;
+  /** 공유 가능 여부 — 서버 문서를 가리킬 docId가 있어야 초대·링크가 성립한다.
+   * (Drive 데모 파일과 docId 없는 옛 카드는 가리킬 문서가 없다.) */
+  showShareRow: boolean;
   showFavRow: boolean;
   showMoveRow: boolean;
   showSpaceMoveRow: boolean;
@@ -287,6 +290,7 @@ export function deriveHomeView(state: HomeState): HomeViewModel {
       dragging: state.draggingMap === key,
       dragOverTarget: false,
       showRenameRow: !isDriveSpace && !!c.docId,
+      showShareRow: !isDriveSpace && !!c.docId,
       showFavRow: hasFav,
       showMoveRow: hasMove,
       showSpaceMoveRow: canMoveSpace,
@@ -429,6 +433,7 @@ export function deriveHomeView(state: HomeState): HomeViewModel {
         dragging: false,
         dragOverTarget: false,
         showRenameRow: false,
+        showShareRow: false,
         showFavRow: false,
         showMoveRow: false,
         showSpaceMoveRow: false,

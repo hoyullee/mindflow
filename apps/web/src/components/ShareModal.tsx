@@ -1,11 +1,46 @@
 import { useCallback, useEffect, useRef, useState, type CSSProperties } from 'react';
-import type { DocumentShare, ShareParticipant, ShareRole } from '../../../adapters/ports';
-import { useAuthUser } from '../../../adapters/useAuthUser';
-import { colorForSeed } from '../../../collab/identity';
-import type { EditorController } from '../useEditorState';
+import type { DocumentShare, ShareParticipant, ShareRole } from '../adapters/ports';
+import { useAuthUser } from '../adapters/useAuthUser';
+import { useBackend, useShareStore } from '../adapters/BackendContext';
+import { colorForSeed } from '../collab/identity';
+
+/**
+ * 에디터의 `uiTheme`(라이트/다크)와 홈(테마 6종)이 **같은 모달**을 쓰도록 필요한
+ * 색만 구조적으로 받는다(`FeedbackTheme`과 같은 방식). 기본값은 홈 계열 라이트.
+ */
+export interface ShareTheme {
+  panel: string;
+  text: string;
+  subtext: string;
+  border: string;
+  accent: string;
+  accentInk: string;
+  canvasBg: string;
+}
+
+const LIGHT: ShareTheme = {
+  panel: '#ffffff',
+  text: '#33281f',
+  subtext: '#9c8b7e',
+  border: '#eee2d9',
+  accent: '#f0663f',
+  accentInk: '#ffffff',
+  canvasBg: '#faf6f1',
+};
 
 interface ShareModalProps {
-  controller: EditorController;
+  open: boolean;
+  /** 공유할 문서 id. */
+  docId: string;
+  onClose: () => void;
+  /**
+   * 보기 전용으로 들어온 사람인가 — 초대·링크·권한 변경을 전부 잠근다.
+   * 홈의 맵 카드는 언제나 내 맵이라 false다(공유받은 맵은 LNB에만 있다).
+   */
+  readOnly?: boolean;
+  /** 공유에서 나간 뒤 — 에디터는 홈으로 보내고, 홈은 그냥 닫는다. */
+  onLeft?: () => void;
+  theme?: ShareTheme;
 }
 
 /** 아주 느슨한 형식 검사 — 진짜 판정은 서버(초대받은 사람이 그 이메일로 로그인하는지)가
@@ -55,7 +90,7 @@ function PersonDot({ email, name, dimmed = false }: { email: string; name: strin
  * 제목 옆 "?" — 눌러야 뜨는 권한 안내(요청). 호버가 아니라 **클릭 토글**인 이유는
  * 터치다: 손가락에는 호버가 없어서 호버 전용 툴팁은 폰에서 아예 못 본다.
  */
-function HelpTip({ theme: th, open, onToggle, onClose }: { theme: EditorController['uiTheme']; open: boolean; onToggle: () => void; onClose: () => void }) {
+function HelpTip({ theme: th, open, onToggle, onClose }: { theme: ShareTheme; open: boolean; onToggle: () => void; onClose: () => void }) {
   const ref = useRef<HTMLDivElement | null>(null);
   useEffect(() => {
     if (!open) return;
@@ -136,7 +171,7 @@ function HelpTip({ theme: th, open, onToggle, onClose }: { theme: EditorControll
 }
 
 /** 권한 셀렉트 공통 모양 — 초대 행(40px)과 참가자 행(28px)이 함께 쓴다. */
-function roleSelectStyle(th: EditorController['uiTheme']): CSSProperties {
+function roleSelectStyle(th: ShareTheme): CSSProperties {
   return {
     flexShrink: 0,
     height: 28,
@@ -151,9 +186,10 @@ function roleSelectStyle(th: EditorController['uiTheme']): CSSProperties {
   };
 }
 
-export function ShareModal({ controller }: ShareModalProps) {
-  const th = controller.uiTheme;
-  const { shareOpen, closeShare, docId, shareStore, backendMode } = controller;
+export function ShareModal({ open: shareOpen, docId, onClose: closeShare, readOnly = false, onLeft, theme }: ShareModalProps) {
+  const th = theme ?? LIGHT;
+  const shareStore = useShareStore();
+  const backendMode = useBackend().mode;
   const [shares, setShares] = useState<DocumentShare[]>([]);
   // 참가자 정보(소유자·프로필명·가입 여부·권한) — 없어도(null) 공유는 동작한다.
   // 이메일만 보여주는 기존 렌더로 폴백할 뿐이다(0011 RPC 미적용/일시 오류).
@@ -232,9 +268,9 @@ export function ShareModal({ controller }: ShareModalProps) {
    * 그대로 열렸다. 서버 RLS가 실제 쓰기는 막고 있었으니 권한이 샌 것은 아니지만,
    * **할 수 없는 일을 할 수 있는 것처럼 보여 주는** 화면이었다. 목록이 비어 오는
    * 서버 쪽 원인은 0018이 고쳤고, 여기서는 그것과 무관하게 성립하는 신호
-   * (`controller.readOnly`)로 한 번 더 잠근다.
+   * (`readOnly`)로 한 번 더 잠근다.
    */
-  const viewerOnly = controller.readOnly;
+  const viewerOnly = readOnly;
   /** 초대·링크·권한 변경을 실제로 할 수 있는가. */
   const canManage = isOwner && !viewerOnly;
   /** 행 목록. 참가자 정보가 있으면 그것이 정본이다 — 초대받은 사람은 테이블
@@ -320,7 +356,7 @@ export function ShareModal({ controller }: ShareModalProps) {
   };
 
   /** 공유 나가기(비소유자가 자기 행을 지움) — 성공하면 이 맵에 더 접근할 수 없으므로
-   * 열려 있는 에디터에 남겨 두지 않고 홈으로 보낸다. */
+   * 열려 있는 에디터에 남겨 두지 않고 홈으로 보낸다(`onLeft`). */
   const leave = async (target: string): Promise<void> => {
     setBusy(true);
     const res = await shareStore.remove(docId, target);
@@ -329,7 +365,7 @@ export function ShareModal({ controller }: ShareModalProps) {
       setError(res.error);
       return;
     }
-    controller.goHome();
+    (onLeft ?? closeShare)();
   };
 
   return (

@@ -282,6 +282,27 @@ export function homeThemeKeyOf(v: unknown): HomeThemeKey {
   return typeof v === 'string' && (HOME_THEME_KEYS as string[]).includes(v) ? (v as HomeThemeKey) : DEFAULT_HOME_THEME;
 }
 
+/**
+ * 홈이 **에디터와 함께 쓰는 모달**(공유·피드백)에 넘기는 색 7종.
+ *
+ * 그 모달들은 인라인 스타일로 그려지므로 홈의 CSS 변수를 스스로 읽지 못한다 —
+ * 에디터가 `uiTheme`를 넘기듯 홈도 자기 테마에서 같은 모양의 값을 만들어 넘긴다.
+ * `canvasBg`(모달 안 가라앉은 행)는 홈의 `sunken`인데, 그 값은 다크에서 에디터의
+ * `canvasBg` 바로 그것이다(두 테마 표가 같은 팔레트에서 나온다).
+ */
+export function homeModalTheme(key: HomeThemeKey): {
+  panel: string;
+  text: string;
+  subtext: string;
+  border: string;
+  accent: string;
+  accentInk: string;
+  canvasBg: string;
+} {
+  const t = HOME_THEMES[homeThemeKeyOf(key)];
+  return { panel: t.panel, text: t.text, subtext: t.subtext, border: t.border, accent: t.accent, accentInk: t.accentInk, canvasBg: t.sunken };
+}
+
 /** 테마 → CSS 변수 이름/값 쌍. 순수 함수(테스트·SSR 안전). */
 export function homeThemeVars(key: HomeThemeKey): Record<string, string> {
   const t = HOME_THEMES[homeThemeKeyOf(key)];

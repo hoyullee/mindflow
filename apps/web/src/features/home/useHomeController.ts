@@ -1309,6 +1309,15 @@ export function useHomeController() {
     patch({ renameMap: { key, docId: card.docId, name: card.title }, ctxMenu: null });
   };
   const closeRenameMap = () => patch({ renameMap: null });
+
+  /**
+   * 공유 팝업(카드 메뉴 → 공유) — 맵을 열지 않고 바로 초대한다.
+   *
+   * 팝업은 에디터가 쓰는 `ShareModal` **그대로**다(색만 홈 테마로 넘긴다). 그리드의
+   * 카드는 언제나 내 맵이므로 `readOnly`는 아니다 — 공유받은 맵은 LNB 목록에만 있다.
+   */
+  const openShareFor = (docId: string) => patch({ shareDocId: docId, ctxMenu: null });
+  const closeShare = () => patch({ shareDocId: null });
   const onRenameMapName = (v: string) => setState((prev) => (prev.renameMap ? { ...prev, renameMap: { ...prev.renameMap, name: v.slice(0, 40), error: undefined } } : prev));
 
   /** 본문 루트 글자 + 메타 제목을 함께 바꾼다. 충돌하면 최신 판으로 한 번 다시 시도. */
@@ -1623,6 +1632,8 @@ export function useHomeController() {
     openNewFolder,
     startRenameMap,
     closeRenameMap,
+    openShareFor,
+    closeShare,
     onRenameMapName,
     onRenameMapKey,
     saveRenameMap,

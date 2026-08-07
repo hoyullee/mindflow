@@ -2959,6 +2959,64 @@ describe('홈 우클릭 메뉴', () => {
     expect(opts.prevVersion).toBe(3); // 낙관적 잠금 — 남의 저장을 덮지 않는다
   });
 
+  // 공유(요청) — 맵을 열지 않고 카드에서 바로 초대한다. 팝업은 에디터가 쓰는
+  // `ShareModal` 그대로이고, 색만 홈 테마로 넘어간다.
+  it('카드 메뉴의 "공유"가 에디터와 같은 공유 팝업을 연다 (맵은 열리지 않는다)', async () => {
+    const user = userEvent.setup();
+    const { container } = renderHomeWithDocStore([meta('doc-s', '공유할 맵')], { 'doc-s': { doc: mapDoc('공유할 맵'), version: 1, title: '공유할 맵' } });
+    await waitFor(() => expect(container.querySelector('a[data-title="공유할 맵"]')).toBeTruthy());
+    const card = container.querySelector('a[data-title="공유할 맵"]') as HTMLElement;
+
+    await user.click(within(card).getByRole('button', { name: '메뉴' }));
+    await user.click(await screen.findByRole('menuitem', { name: '공유' }));
+
+    const dialog = await screen.findByRole('dialog', { name: '공유' });
+    // 에디터로 넘어가지 않았다 — 홈에 그대로 있다(맵 카드가 여전히 보인다).
+    expect(container.querySelector('a[data-title="공유할 맵"]')).toBeTruthy();
+
+    // 이 문서에 대한 초대가 실제로 걸린다(로컬 어댑터).
+    await user.type(within(dialog).getByLabelText('초대할 이메일'), 'friend@example.com');
+    await user.click(within(dialog).getByRole('button', { name: '초대' }));
+    expect(await within(dialog).findByText('friend@example.com')).toBeTruthy();
+
+    await user.click(within(dialog).getByRole('button', { name: '닫기' }));
+    await waitFor(() => expect(screen.queryByRole('dialog', { name: '공유' })).toBeNull());
+  });
+
+  it('공유 팝업은 홈 테마를 따른다 (다크에서 밝은 모달이 남지 않는다)', async () => {
+    localStorage.setItem('mf_home_theme', 'dark');
+    const user = userEvent.setup();
+    const { container } = renderHomeWithDocStore([meta('doc-d', '다크 맵')], { 'doc-d': { doc: mapDoc('다크 맵'), version: 1, title: '다크 맵' } });
+    await waitFor(() => expect(container.querySelector('a[data-title="다크 맵"]')).toBeTruthy());
+    const card = container.querySelector('a[data-title="다크 맵"]') as HTMLElement;
+
+    await user.click(within(card).getByRole('button', { name: '메뉴' }));
+    await user.click(await screen.findByRole('menuitem', { name: '공유' }));
+
+    const dialog = await screen.findByRole('dialog', { name: '공유' });
+    // jsdom은 hex를 rgb()로 정규화한다 — 값을 맞춰 비교한다.
+    const rgb = (hex: string): string => {
+      const n = parseInt(hex.slice(1), 16);
+      return `rgb(${(n >> 16) & 255}, ${(n >> 8) & 255}, ${n & 255})`;
+    };
+    expect(dialog.style.background).toBe(rgb(HOME_THEMES.dark.panel));
+    expect(dialog.style.background).not.toBe(rgb(HOME_THEMES.coral.panel));
+  });
+
+  it('문서가 없는 옛 카드에는 공유를 내주지 않는다 (가리킬 문서가 없다)', async () => {
+    localStorage.setItem(
+      'mf_spaces',
+      JSON.stringify({ v: 1, spaces: [{ id: 'a', name: '내 스페이스', home: true, color: '#f0663f', maps: [{ title: '옛 카드', when: '방금', hue: '#f0663f' }], folders: [] }], mapFolders: {} }),
+    );
+    const { container } = renderHomeWithDocStore([]);
+    await waitFor(() => expect(container.querySelector('a[data-title="옛 카드"]')).toBeTruthy());
+    const card = container.querySelector('a[data-title="옛 카드"]') as HTMLElement;
+
+    fireEvent.contextMenu(card, { clientX: 10, clientY: 10 });
+    const menu = await screen.findByRole('menu');
+    expect(within(menu).queryByRole('menuitem', { name: '공유' })).toBeNull();
+  });
+
   it('문서가 없는 옛 카드에는 이름 변경을 내주지 않는다 (제목이 곧 식별자라 잃는다)', async () => {
     localStorage.setItem(
       'mf_spaces',
