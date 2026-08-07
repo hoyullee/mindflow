@@ -2854,6 +2854,30 @@ describe('홈 우클릭 메뉴', () => {
     expect(row.style.minHeight).toBe('44px');
   });
 
+  // 선택하면 테두리가 1px→2px가 되는데, 폴더 카드는 그걸 **패딩을 줄여** 맞추고
+  // 있었다. 그러면 카드 겉면은 그대로여도 패딩 박스가 1px 안으로 들어가고, ☰ 버튼은
+  // `position: absolute`로 거기 붙어 있어서 선택하는 순간 버튼만 (-1,+1)px 움직였다
+  // (제보). 맵 카드처럼 **음수 마진**으로 상쇄하면 안쪽 좌표계가 흔들리지 않는다.
+  it('폴더를 선택해도 ☰ 버튼이 움직이지 않는다 (패딩이 아니라 마진으로 테두리를 상쇄)', async () => {
+    const user = userEvent.setup();
+    localStorage.setItem(
+      'mf_spaces',
+      JSON.stringify({ v: 1, spaces: [{ id: 'a', name: '내 공간', home: true, color: '#f0663f', maps: [], folders: [{ id: 'f1', name: '기획' }] }], mapFolders: {} }),
+    );
+    renderHomeWithDocStore([]);
+    await waitFor(() => expect(screen.getByText('기획')).toBeTruthy());
+    const folderCard = screen.getByText('기획').closest('.map-card') as HTMLElement;
+
+    const padBefore = folderCard.style.padding;
+    expect(folderCard.style.margin).toBe('0px');
+
+    await user.click(folderCard); // 한 번 = 선택
+    expect(folderCard.style.border).toContain('2px');
+    // 패딩은 그대로 (= 패딩 박스가 안 움직인다 = 절대 배치된 ☰도 안 움직인다)
+    expect(folderCard.style.padding).toBe(padBefore);
+    expect(folderCard.style.margin).toBe('-1px'); // 늘어난 테두리는 마진이 상쇄
+  });
+
   it('Escape로 닫힌다', async () => {
     const { container } = renderHomeWithDocStore([]);
     await waitFor(() => expect(screen.getByText('아직 만든 맵이 없어요')).toBeTruthy());
