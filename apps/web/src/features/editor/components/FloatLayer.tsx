@@ -308,7 +308,11 @@ function FloatEditBox({ f, controller }: { f: Float; controller: EditorControlle
     // 캐럿이 리스트 마커 구역에 앉지 못하게(노드 편집과 같은 규칙 — 제보:
     // 마커 앞에 캐럿이 서서 친 글자가 마커 앞에 쌓임).
     const onSelChange = (): void => {
-      if (!composingRef.current && ref.current) snapCaretOffListMarker(ref.current);
+      if (composingRef.current || !ref.current) return;
+      snapCaretOffListMarker(ref.current);
+      // 툴바 버튼은 편집 박스 **밖**을 누르는 동작이라 그 순간의 선택을 믿을 수
+      // 없다 — 편집 중 여기서 계속 기록해 둔 캐럿이 그때의 기준점이 된다.
+      controller.noteEditCaret(ref.current);
     };
     document.addEventListener('selectionchange', onSelChange);
     return () => {
