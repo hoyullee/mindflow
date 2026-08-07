@@ -16,11 +16,6 @@ interface Props {
 
 /** Home.dc.html:251-303 `<sc-for list="{{ allCards }}">` — a single map/Drive-file card. */
 export function MapCard({ card, controller, draggableEnabled, compact = false }: Props) {
-  const stopPrevent = (e: MouseEvent) => {
-    e.preventDefault();
-    e.stopPropagation();
-  };
-
   // 한 번 = 선택 / 두 번 = 열기. 규칙과 그 함정들은 `useCardActivation`에.
   const activation = useCardActivation();
 
@@ -50,6 +45,18 @@ export function MapCard({ card, controller, draggableEnabled, compact = false }:
     e.preventDefault();
     if (!activation.acceptDoubleClick()) return;
     controller.openWithLoader(card.href, card.title, card.docId);
+  };
+
+  // 우클릭 = ☰과 같은 메뉴, 커서 자리에(요청). 카드 안에서 처리하고 전파를 끊어
+  // 배경 메뉴가 뒤이어 열리지 않게 한다.
+  const onContextMenu = (e: MouseEvent<HTMLAnchorElement>) => {
+    e.preventDefault();
+    e.stopPropagation();
+    // 최근 트레이 카드는 원래 메뉴가 없는 **바로가기**다(☰도 없다). 그래도 전파는
+    // 끊는다 — 카드를 눌렀는데 빈 자리 메뉴("새로 만들기…")가 뜨면 더 이상하다.
+    if (compact) return;
+    controller.selectCard(card.key);
+    controller.openCtxMenuAt(e.clientX, e.clientY, { kind: 'map', key: card.key });
   };
 
   const onDragStart = (e: DragEvent<HTMLAnchorElement>) => {
@@ -89,6 +96,7 @@ export function MapCard({ card, controller, draggableEnabled, compact = false }:
       href={card.href}
       onClick={onOpen}
       onDoubleClick={onDblOpen}
+      onContextMenu={onContextMenu}
       draggable={draggableEnabled}
       onDragStart={onDragStart}
       onDragEnd={onDragEnd}
@@ -135,257 +143,6 @@ export function MapCard({ card, controller, draggableEnabled, compact = false }:
         {card.isFav ? '★' : '☆'}
       </div>
 
-
-      {!compact && (
-      <div onClick={stopPrevent} style={{ position: 'absolute', bottom: 44, right: 10, zIndex: 20, width: 150, background: 'var(--mf-panel)', border: '1px solid var(--mf-border)', borderRadius: 10, boxShadow: '0 10px 28px rgba(0,0,0,.16)', padding: '5px 0', display: card.menuOpen ? 'block' : 'none' }}>
-        <div style={{ display: card.exportOpen || card.moveOpen || card.spaceMoveOpen ? 'none' : 'block' }}>
-          {card.showFavRow && (
-            <div
-              className="menu-row"
-              onClick={(e) => {
-                e.preventDefault();
-                e.stopPropagation();
-                controller.toggleFav(card.title, card.docId);
-                controller.closeMenu();
-              }}
-              style={{ display: 'flex', alignItems: 'center', gap: 9, padding: '9px 13px', fontSize: 13, cursor: 'pointer', color: 'var(--mf-text)' }}
-            >
-              <span style={{ color: 'var(--mf-star)' }}>★</span> {card.isFav ? '즐겨찾기 해제' : '즐겨찾기'}
-            </div>
-          )}
-          {card.showFavRow && (
-            <div
-              className="menu-row"
-              onClick={(e) => {
-                e.preventDefault();
-                e.stopPropagation();
-                controller.setExportFor(card.key);
-              }}
-              style={{ display: 'flex', alignItems: 'center', gap: 9, padding: '9px 13px', fontSize: 13, cursor: 'pointer', color: 'var(--mf-text)' }}
-            >
-              <span style={{ display: 'flex', color: 'var(--mf-subtext)' }}>
-                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                  <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
-                  <polyline points="7 10 12 15 17 10" />
-                  <line x1="12" y1="15" x2="12" y2="3" />
-                </svg>
-              </span>{' '}
-              내보내기 <span style={{ marginLeft: 'auto', color: 'var(--mf-faint)' }}>›</span>
-            </div>
-          )}
-          {card.showMoveRow && (
-            <div
-              className="menu-row"
-              onClick={(e) => {
-                e.preventDefault();
-                e.stopPropagation();
-                controller.setMoveFor(card.key);
-              }}
-              style={{ display: 'flex', alignItems: 'center', gap: 9, padding: '9px 13px', fontSize: 13, cursor: 'pointer', color: 'var(--mf-text)' }}
-            >
-              <span>📁</span> 폴더로 이동 <span style={{ marginLeft: 'auto', color: 'var(--mf-faint)' }}>›</span>
-            </div>
-          )}
-          {card.showSpaceMoveRow && (
-            <div
-              className="menu-row"
-              onClick={(e) => {
-                e.preventDefault();
-                e.stopPropagation();
-                controller.setMoveSpaceFor(card.key);
-              }}
-              style={{ display: 'flex', alignItems: 'center', gap: 9, padding: '9px 13px', fontSize: 13, cursor: 'pointer', color: 'var(--mf-text)' }}
-            >
-              <span style={{ display: 'flex', color: 'var(--mf-subtext)' }}>
-                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                  <rect x="3" y="3" width="7" height="7" rx="1.5" />
-                  <rect x="14" y="3" width="7" height="7" rx="1.5" />
-                  <rect x="3" y="14" width="7" height="7" rx="1.5" />
-                  <path d="M17.5 14v7M14 17.5h7" />
-                </svg>
-              </span>{' '}
-              스페이스로 이동 <span style={{ marginLeft: 'auto', color: 'var(--mf-faint)' }}>›</span>
-            </div>
-          )}
-          {card.showUnfolderRow && (
-            <div
-              className="menu-row"
-              onClick={(e) => {
-                e.preventDefault();
-                e.stopPropagation();
-                controller.moveMapToFolder(card.key, null);
-              }}
-              style={{ display: 'flex', alignItems: 'center', gap: 9, padding: '9px 13px', fontSize: 13, cursor: 'pointer', color: 'var(--mf-text)' }}
-            >
-              <span style={{ display: 'flex', color: 'var(--mf-subtext)' }}>
-                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                  <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z" />
-                  <path d="M12 17v-6" />
-                  <path d="M9 13.5 12 11l3 2.5" />
-                </svg>
-              </span>{' '}
-              폴더에서 꺼내기
-            </div>
-          )}
-          {card.showDivider && <div style={{ height: 1, background: 'var(--mf-border-soft)', margin: '2px 0' }} />}
-          <div
-            className="menu-row"
-            onClick={(e) => {
-              e.preventDefault();
-              e.stopPropagation();
-              controller.askDelete(card.title, card.docId);
-            }}
-            style={{ display: 'flex', alignItems: 'center', gap: 9, padding: '9px 13px', fontSize: 13, cursor: 'pointer', color: 'var(--mf-danger)' }}
-          >
-            <span style={{ display: 'flex' }}>
-              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                <polyline points="3 6 5 6 21 6" />
-                <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2" />
-              </svg>
-            </span>{' '}
-            삭제하기
-          </div>
-        </div>
-
-        <div style={{ display: card.exportOpen ? 'block' : 'none' }}>
-          <div
-            className="menu-row"
-            onClick={(e) => {
-              e.preventDefault();
-              e.stopPropagation();
-              controller.setExportFor(null);
-            }}
-            style={{ display: 'flex', alignItems: 'center', gap: 9, padding: '9px 13px', fontSize: 12.5, cursor: 'pointer', color: 'var(--mf-muted)' }}
-          >
-            ‹ 뒤로
-          </div>
-          <div style={{ height: 1, background: 'var(--mf-border-soft)', margin: '2px 0' }} />
-          <div
-            className="menu-row"
-            onClick={(e) => {
-              e.preventDefault();
-              e.stopPropagation();
-              controller.exportMapPNG(card.title, card.docId);
-            }}
-            style={{ display: 'flex', alignItems: 'center', gap: 9, padding: '9px 13px', fontSize: 13, cursor: 'pointer', color: 'var(--mf-text)' }}
-          >
-            <span style={{ display: 'flex', color: 'var(--mf-subtext)' }}>
-              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                <rect x="3" y="3" width="18" height="18" rx="2" />
-                <circle cx="8.5" cy="8.5" r="1.5" />
-                <polyline points="21 15 16 10 5 21" />
-              </svg>
-            </span>{' '}
-            PNG 이미지
-          </div>
-          <div
-            className="menu-row"
-            onClick={(e) => {
-              e.preventDefault();
-              e.stopPropagation();
-              controller.exportMap(card.title, card.docId);
-            }}
-            style={{ display: 'flex', alignItems: 'center', gap: 9, padding: '9px 13px', fontSize: 13, cursor: 'pointer', color: 'var(--mf-text)' }}
-          >
-            <span style={{ display: 'flex', color: 'var(--mf-subtext)' }}>
-              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
-                <polyline points="14 2 14 8 20 8" />
-              </svg>
-            </span>{' '}
-            JSON 파일 (.json)
-          </div>
-          <div
-            className="menu-row"
-            onClick={(e) => {
-              e.preventDefault();
-              e.stopPropagation();
-              controller.exportMapMarkdown(card.title, card.docId);
-            }}
-            style={{ display: 'flex', alignItems: 'center', gap: 9, padding: '9px 13px', fontSize: 13, cursor: 'pointer', color: 'var(--mf-text)' }}
-          >
-            <span style={{ display: 'flex', color: 'var(--mf-subtext)' }}>
-              {/* 개요(불릿) 아이콘 — 목록 형태임을 보여 준다 */}
-              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                <line x1="9" y1="6" x2="20" y2="6" />
-                <line x1="11" y1="12" x2="20" y2="12" />
-                <line x1="13" y1="18" x2="20" y2="18" />
-                <circle cx="5" cy="6" r="1.4" fill="currentColor" stroke="none" />
-                <circle cx="7" cy="12" r="1.4" fill="currentColor" stroke="none" />
-                <circle cx="9" cy="18" r="1.4" fill="currentColor" stroke="none" />
-              </svg>
-            </span>{' '}
-            Markdown 개요 (.md)
-          </div>
-        </div>
-
-        <div style={{ display: card.moveOpen ? 'block' : 'none' }}>
-          <div
-            className="menu-row"
-            onClick={(e) => {
-              e.preventDefault();
-              e.stopPropagation();
-              controller.setMoveFor(null);
-            }}
-            style={{ display: 'flex', alignItems: 'center', gap: 9, padding: '9px 13px', fontSize: 12.5, cursor: 'pointer', color: 'var(--mf-muted)' }}
-          >
-            ‹ 뒤로
-          </div>
-          <div style={{ height: 1, background: 'var(--mf-border-soft)', margin: '2px 0' }} />
-          {card.moveTargets.map((ft) => (
-            <div
-              key={ft.id}
-              className="menu-row"
-              onClick={(e) => {
-                e.preventDefault();
-                e.stopPropagation();
-                controller.moveMapToFolder(card.key, ft.id);
-              }}
-              style={{ display: 'flex', alignItems: 'center', gap: 9, padding: '9px 13px', fontSize: 13, cursor: 'pointer', color: 'var(--mf-text)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}
-            >
-              📁 {ft.name}
-            </div>
-          ))}
-        </div>
-
-        <div style={{ display: card.spaceMoveOpen ? 'block' : 'none' }}>
-          <div
-            className="menu-row"
-            onClick={(e) => {
-              e.preventDefault();
-              e.stopPropagation();
-              controller.setMoveSpaceFor(null);
-            }}
-            style={{ display: 'flex', alignItems: 'center', gap: 9, padding: '9px 13px', fontSize: 12.5, cursor: 'pointer', color: 'var(--mf-muted)' }}
-          >
-            ‹ 뒤로
-          </div>
-          <div style={{ height: 1, background: 'var(--mf-border-soft)', margin: '2px 0' }} />
-          {card.spaceMoveTargets.map((sp) => (
-            <div
-              key={sp.id}
-              className="menu-row"
-              onClick={(e) => {
-                e.preventDefault();
-                e.stopPropagation();
-                controller.moveMapToSpace(card.key, sp.id);
-              }}
-              style={{ display: 'flex', alignItems: 'center', gap: 9, padding: '9px 13px', fontSize: 13, cursor: 'pointer', color: 'var(--mf-text)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}
-            >
-              <span style={{ display: 'flex', color: 'var(--mf-subtext)', flexShrink: 0 }}>
-                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                  <rect x="3" y="3" width="7" height="7" rx="1.5" />
-                  <rect x="14" y="3" width="7" height="7" rx="1.5" />
-                  <rect x="3" y="14" width="7" height="7" rx="1.5" />
-                  <rect x="14" y="14" width="7" height="7" rx="1.5" />
-                </svg>
-              </span>{' '}
-              {sp.name}
-            </div>
-          ))}
-        </div>
-      </div>
-      )}
 
       {card.badge && (
         <div
@@ -500,7 +257,9 @@ export function MapCard({ card, controller, draggableEnabled, compact = false }:
             onClick={(e) => {
               e.preventDefault();
               e.stopPropagation();
-              controller.toggleMenu(card.key);
+              // ☰과 우클릭은 같은 메뉴다 — 버튼 아래(왼쪽 정렬)에 띄운다.
+              const r = e.currentTarget.getBoundingClientRect();
+              controller.openCtxMenu(r.right - 184, r.bottom + 6, { kind: 'map', key: card.key });
             }}
             title="메뉴"
             aria-label="메뉴"

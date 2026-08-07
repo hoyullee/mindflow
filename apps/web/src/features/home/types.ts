@@ -62,6 +62,33 @@ export interface FolderModalState {
   drive?: boolean;
 }
 
+/**
+ * 지금 메뉴가 가리키는 대상. 셋을 한 상태로 묶은 이유: 화면에 메뉴는 언제나
+ * 하나뿐이고, 그 하나를 여는 길이 ☰ 버튼과 우클릭 두 가지일 뿐이다.
+ */
+export type HomeCtxTarget =
+  | { kind: 'map'; key: string }
+  | { kind: 'folder'; id: string }
+  /** 카드가 없는 빈 자리 — "새로 만들기 · 새 폴더 · 가져오기 · 설정". */
+  | { kind: 'bg' };
+
+export interface HomeCtxMenu {
+  /** 뷰포트 좌표(우클릭 지점 또는 ☰ 버튼 아래). */
+  x: number;
+  y: number;
+  target: HomeCtxTarget;
+}
+
+export interface RenameMapState {
+  /** 대상 카드의 key(`cardKeyOf`) — 제목은 중복될 수 있어 이걸로 찾는다. */
+  key: string;
+  docId: string;
+  name: string;
+  /** 저장 중이면 버튼을 잠근다(문서 본문까지 고쳐야 해서 왕복이 있다). */
+  saving?: boolean;
+  error?: string;
+}
+
 export type AuthPhase = null | 'choose' | 'connecting';
 export type DriveConnection = 'idle' | 'connected';
 
@@ -77,7 +104,16 @@ export interface HomeState {
   /** LNB "공유받은 맵" 목록의 펼침 상태. 처음엔 펼쳐 둔다 — 섹션 자체가 공유받은
    * 문서가 있을 때만 생기므로, 새로 공유받은 맵이 한 번의 클릭 없이 눈에 띈다. */
   sharedOpen: boolean;
-  openMenu: string | null;
+  /**
+   * 지금 열려 있는 카드/배경 메뉴 — **☰ 버튼과 우클릭이 같은 메뉴를 쓴다**(요청).
+   * 위치(x·y)를 함께 들고 있어서 우클릭은 커서 자리에, ☰은 버튼 아래에 뜬다.
+   * `null`이면 닫힌 상태. 하위 메뉴(내보내기·폴더/스페이스로 이동)는 이제 화면을
+   * 갈아 끼우는 드릴다운이 아니라 옆으로 뻗는 플라이아웃이라, 그 열림 상태는
+   * 메뉴 컴포넌트의 지역 상태다(예전 `exportFor`/`moveFor`/`moveSpaceFor` 대체).
+   */
+  ctxMenu: HomeCtxMenu | null;
+  /** 맵 이름 변경 팝업(카드 메뉴 → 이름 변경). `null`이면 닫힘. */
+  renameMap: RenameMapState | null;
   deleted: Record<string, boolean>;
   confirmDelete: string | null;
   /** docId of the card behind `confirmDelete`, if it's a doc-backed map — carried
@@ -152,11 +188,6 @@ export interface HomeState {
   driveFolder: string | null;
   driveMapFolders: Record<string, string>;
 
-  moveFor: string | null;
-  /** Title of the card whose "스페이스로 이동" submenu is open (move a map to
-   * another space), mirroring `moveFor` for the folder submenu. */
-  moveSpaceFor: string | null;
-  exportFor: string | null;
   selectedCard: string | null;
   /** 문서별 **마지막으로 저장한 사람**의 표시 이름(docId → 이름). 마지막 저장자가
    * 나이거나 알 수 없으면 키가 없다 — 그때 카드는 이름을 붙이지 않는다(0015). */
@@ -234,7 +265,8 @@ export function initialHomeState(): HomeState {
     favs: {},
     favOpen: false,
     sharedOpen: true,
-    openMenu: null,
+    ctxMenu: null,
+    renameMap: null,
     deleted: {},
     confirmDelete: null,
     confirmDeleteDocId: null,
@@ -287,9 +319,6 @@ export function initialHomeState(): HomeState {
       return acc;
     }, {}),
 
-    moveFor: null,
-    moveSpaceFor: null,
-    exportFor: null,
     selectedCard: null,
     editorNames: {},
     draggingMap: null,

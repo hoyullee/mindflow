@@ -28,16 +28,17 @@ export interface CardViewData {
   selected: boolean;
   dragging: boolean;
   dragOverTarget: boolean;
-  exportOpen: boolean;
-  moveOpen: boolean;
-  spaceMoveOpen: boolean;
+  /** 이름 변경 가능 여부 — 문서로 뒷받침되는 내 맵만. 제목이 곧 식별자인 옛
+   * 카드(docId 없음)와 Drive 데모는 이름을 바꾸면 그 카드를 잃는다. */
+  showRenameRow: boolean;
   showFavRow: boolean;
   showMoveRow: boolean;
   showSpaceMoveRow: boolean;
   showUnfolderRow: boolean;
   showDivider: boolean;
   moveTargets: { id: string; name: string }[];
-  spaceMoveTargets: { id: string; name: string }[];
+  /** `color`는 LNB의 스페이스 점과 같은 색 — 메뉴에서도 같은 표식으로 알아본다. */
+  spaceMoveTargets: { id: string; name: string; color: string }[];
   /** Owning space's color — set only for the cross-space "최근 항목" strip, where a
    * small dot on each card shows which space the map lives in. */
   spaceColor?: string;
@@ -73,7 +74,7 @@ export interface FolderCardViewData {
 }
 
 /** 폴더의 선택/메뉴 키 — 맵 카드 키(제목·docId)와 섞이지 않게 접두를 붙인다.
- * 메뉴(`openMenu`)가 이미 쓰던 규칙을 선택에도 그대로 쓴다. */
+ * 메뉴(`ctxMenu`)가 이미 쓰던 규칙을 선택에도 그대로 쓴다. */
 export function folderCardKey(id: string): string {
   return 'folder:' + id;
 }
@@ -253,7 +254,7 @@ export function deriveHomeView(state: HomeState): HomeViewModel {
   const favs = state.favs;
   // Other real spaces a map can be moved to (excludes the current space and the
   // Drive pseudo-space). Available whenever the user has more than one space.
-  const spaceMoveTargets = state.spaces.filter((s) => s.id !== state.activeSpace).map((s) => ({ id: s.id, name: s.name }));
+  const spaceMoveTargets = state.spaces.filter((s) => s.id !== state.activeSpace).map((s) => ({ id: s.id, name: s.name, color: s.color || '#f0663f' }));
   const canMoveSpace = !isDriveSpace && spaceMoveTargets.length > 0;
   // 폴더로 이동 대상: 지금 보고 있는 폴더(이미 그 안에 있음)만 뺀 전체 폴더 —
   // 중첩 폴더가 생기면서 폴더 안에서도 다른(하위 포함) 폴더로 옮길 수 있다.
@@ -281,13 +282,11 @@ export function deriveHomeView(state: HomeState): HomeViewModel {
       // Per-card UI state keys off the card KEY, not the title — duplicate
       // titles are allowed, and selecting/opening one must not light up its
       // same-named sibling.
-      menuOpen: state.openMenu === key,
+      menuOpen: state.ctxMenu?.target.kind === 'map' && state.ctxMenu.target.key === key,
       selected: state.selectedCard === key,
       dragging: state.draggingMap === key,
       dragOverTarget: false,
-      exportOpen: state.exportFor === key,
-      moveOpen: state.moveFor === key,
-      spaceMoveOpen: state.moveSpaceFor === key,
+      showRenameRow: !isDriveSpace && !!c.docId,
       showFavRow: hasFav,
       showMoveRow: hasMove,
       showSpaceMoveRow: canMoveSpace,
@@ -304,7 +303,7 @@ export function deriveHomeView(state: HomeState): HomeViewModel {
           id: f.id,
           name: f.name,
           count: DRIVE_FILES.filter((file) => dmf[file.name] === f.id && !state.deleted[file.name]).length,
-          menuOpen: state.openMenu === folderCardKey(f.id),
+          menuOpen: state.ctxMenu?.target.kind === 'folder' && state.ctxMenu.target.id === f.id,
           dragOver: state.dragOverFolder === f.id,
           selected: state.selectedCard === folderCardKey(f.id),
           canDelete: DRIVE_FILES.filter((file) => dmf[file.name] === f.id && !state.deleted[file.name]).length === 0,
@@ -332,7 +331,7 @@ export function deriveHomeView(state: HomeState): HomeViewModel {
             id: f.id,
             name: f.name,
             count: cnt,
-            menuOpen: state.openMenu === folderCardKey(f.id),
+            menuOpen: state.ctxMenu?.target.kind === 'folder' && state.ctxMenu.target.id === f.id,
             dragOver: state.dragOverFolder === f.id,
             selected: state.selectedCard === folderCardKey(f.id),
             // 삭제는 "직접 담긴 맵 0 + 하위 폴더 0"일 때만 — 하위 폴더가 있으면
@@ -429,9 +428,7 @@ export function deriveHomeView(state: HomeState): HomeViewModel {
         selected: state.selectedCard === key,
         dragging: false,
         dragOverTarget: false,
-        exportOpen: false,
-        moveOpen: false,
-        spaceMoveOpen: false,
+        showRenameRow: false,
         showFavRow: false,
         showMoveRow: false,
         showSpaceMoveRow: false,
