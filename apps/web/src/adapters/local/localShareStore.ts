@@ -118,6 +118,11 @@ export class LocalShareStore implements ShareStore {
       .map((s) => ({ documentId: s.documentId, role: s.role, seenAt: s.seenAt ?? null }));
   }
 
+  /** 데모 모드에는 보낼 서버도 받을 사람도 없다 — 계약만 지키고 아무것도 하지 않는다. */
+  async notifyInvite(): Promise<void> {
+    /* no-op */
+  }
+
   async markSharedSeen(documentIds: string[]): Promise<void> {
     if (!documentIds.length) return;
     const me = demoEmail();

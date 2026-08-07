@@ -429,6 +429,9 @@ describe('Editor interactions (M3-Editor-b)', () => {
           return {};
         }),
         listSharedWithMe: vi.fn(async () => []),
+        markSharedSeen: vi.fn(async () => {}),
+        // 초대 메일(②) — 처음 초대에만 불린다. 실제 발송은 Edge Function이 한다.
+        notifyInvite: vi.fn(async () => {}),
         // 기본값 null = 참가자 정보 없음(0010 RPC 미적용 서버) — 팝업은 이메일만
         // 보여주는 폴백 렌더를 탄다. 참가자 UI는 아래 별도 테스트에서 값을 준다.
         listParticipants: vi.fn(async (): Promise<import('../../adapters/ports').ShareParticipant[] | null> => null),
@@ -600,6 +603,31 @@ describe('Editor interactions (M3-Editor-b)', () => {
       await user.click(screen.getByRole('button', { name: '초대' }));
 
       expect((await screen.findByRole('alert')).textContent).toMatch(/row-level security/);
+    });
+
+    // 초대 알림 ②: 처음 초대에만 메일을 보낸다. `add`는 upsert라 권한 변경과
+    // 구분되지 않으므로, 목록을 들고 있는 모달이 판단한다 — 같은 사람에게 같은
+    // 알림을 반복하면 스팸으로 읽힌다.
+    it('처음 초대에만 메일 알림을 부른다 (권한 변경·재초대는 보내지 않는다)', async () => {
+      localStorage.setItem('mindflow_doc_shmail', JSON.stringify(DOC));
+      const user = userEvent.setup();
+      const { shareStore } = shareBackend();
+      renderWithShare(shareStore, 'supabase', 'shmail');
+
+      await user.click(screen.getByRole('button', { name: '공유' }));
+      const dialog = await screen.findByRole('dialog', { name: '공유' });
+
+      await user.type(within(dialog).getByLabelText('초대할 이메일'), 'friend@example.com');
+      await user.click(within(dialog).getByRole('button', { name: '초대' }));
+      await waitFor(() => expect(shareStore.notifyInvite).toHaveBeenCalledWith('shmail', 'friend@example.com'));
+      expect(shareStore.notifyInvite).toHaveBeenCalledTimes(1);
+
+      // 같은 사람을 다시 넣는다(= 권한 변경) — 메일은 더 나가지 않는다.
+      await waitFor(() => expect(within(dialog).getByText('friend@example.com')).toBeTruthy());
+      await user.type(within(dialog).getByLabelText('초대할 이메일'), 'friend@example.com');
+      await user.click(within(dialog).getByRole('button', { name: '초대' }));
+      await waitFor(() => expect(shareStore.add).toHaveBeenCalledTimes(2));
+      expect(shareStore.notifyInvite).toHaveBeenCalledTimes(1);
     });
 
     it('보기 전용을 골라 초대하면 포트에 view 권한이 전달된다 (#22)', async () => {
