@@ -43,6 +43,21 @@ function mockDevice({ touch, mobile = touch }: { touch: boolean; mobile?: boolea
   };
 }
 
+/** 소프트 키보드가 화면 아래를 `inset`px 가리고 있는 상태(visualViewport 축소). */
+function mockSoftKeyboard(inset: number): () => void {
+  const had = Object.prototype.hasOwnProperty.call(window, 'visualViewport');
+  const original = (window as { visualViewport?: unknown }).visualViewport;
+  Object.defineProperty(window, 'visualViewport', {
+    configurable: true,
+    writable: true,
+    value: { height: window.innerHeight - inset, offsetTop: 0, scale: 1, addEventListener: () => {}, removeEventListener: () => {} },
+  });
+  return () => {
+    if (had) Object.defineProperty(window, 'visualViewport', { configurable: true, writable: true, value: original });
+    else delete (window as { visualViewport?: unknown }).visualViewport;
+  };
+}
+
 function renderEditor(entry: string) {
   return render(
     <MemoryRouter initialEntries={[entry]}>
@@ -169,6 +184,65 @@ describe('소프트 키보드의 줄바꿈 키', () => {
       // 편집은 유지되고, 다음 줄에 다음 번호 마커가 생긴다
       expect(getViewport(container).querySelector('.mf-richedit')).toBeTruthy();
       expect(editBox(container).textContent).toContain('2.');
+    } finally {
+      restore();
+    }
+  });
+
+  // 제보(모바일 웹): 폰에서 도형을 편집하다 키패드의 줄바꿈 키를 누르면 편집이
+  // 끝나 버린다. 위 테스트들이 통과하는데도 실기기에서 그런 이유는 **판정이 기기
+  // 종류에만 걸려 있었기** 때문이다 — 미디어 질의가 "데스크톱"이라고 답하는 환경이
+  // 실제로 있다(데스크톱 사이트 모드, 마우스를 붙인 태블릿, 일부 인앱 브라우저).
+  // 그 화면에서도 키보드는 소프트 키보드고, Shift가 없다.
+  it('미디어 질의가 데스크톱이라 답해도 소프트 키보드가 떠 있으면 Enter는 줄바꿈이다', () => {
+    const restore = mockDevice({ touch: false, mobile: false });
+    const restoreVv = mockSoftKeyboard(300);
+    try {
+      localStorage.setItem('mindflow_doc_sk7', JSON.stringify(DOC));
+      const { container } = renderEditor('/editor?map=sk7&title=x');
+      const ed = openNodeEdit(container, 'c1');
+      caretToEnd(ed);
+
+      fireEvent.keyDown(ed, { key: 'Enter' });
+
+      expect(getViewport(container).querySelector('.mf-richedit')).toBeTruthy(); // 편집 유지
+      expect(editBox(container).textContent).toContain('리서치');
+    } finally {
+      restoreVv();
+      restore();
+    }
+  });
+
+  it('메모도 같은 규칙 — 키보드가 떠 있으면 Enter는 줄바꿈', () => {
+    const restore = mockDevice({ touch: false, mobile: false });
+    const restoreVv = mockSoftKeyboard(300);
+    try {
+      localStorage.setItem('mindflow_doc_sk8', JSON.stringify(DOC));
+      const { container } = renderEditor('/editor?map=sk8&title=x');
+      const card = getViewport(container).querySelector('[data-float-id]') as HTMLElement;
+      fireEvent.doubleClick(card);
+      fireEvent.keyDown(editBox(container), { key: 'Enter' });
+
+      expect(getViewport(container).querySelector('.mf-richedit')).toBeTruthy();
+    } finally {
+      restoreVv();
+      restore();
+    }
+  });
+
+  // 키패드의 액션 키가 "완료/이동"이면 그 키는 **키보드를 내린다** → 편집 박스가
+  // blur → blur 커밋이 편집을 끝낸다. 어느 키를 그릴지는 `enterkeyhint`로 못박는다.
+  it('편집 박스는 소프트 키보드에 줄바꿈 키를 요청한다 (enterkeyhint)', () => {
+    const restore = mockDevice({ touch: true });
+    try {
+      localStorage.setItem('mindflow_doc_sk9', JSON.stringify(DOC));
+      const { container } = renderEditor('/editor?map=sk9&title=x');
+      expect(openNodeEdit(container, 'c1').getAttribute('enterkeyhint')).toBe('enter');
+
+      fireEvent.keyDown(editBox(container), { key: 'Escape' });
+      const card = getViewport(container).querySelector('[data-float-id]') as HTMLElement;
+      fireEvent.doubleClick(card);
+      expect(editBox(container).getAttribute('enterkeyhint')).toBe('enter');
     } finally {
       restore();
     }

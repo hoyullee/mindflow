@@ -15,6 +15,7 @@ import { domToRuns, linearize, listArrowLeft, listArrowVertical, liveEditValue, 
 import { ListTextBlock, domMarkerSignature, listLinesOf, listSigOf, listSignature, markerSignature, nodeTextAlign, renderListEdit } from '../listLines';
 import { RichSpan, isLinkOpenModifier, linkInk, openLink } from '../richSpans';
 import { useIsTouchDevice } from '../../../hooks/useMediaQuery';
+import { useSoftKeyboardOpen } from '../../../hooks/useKeyboardInset';
 import { AttachedImg } from './AttachedImg';
 
 interface NodeLayerProps {
@@ -569,7 +570,15 @@ function NodeEditBox({ id, n, boxStyle, align, controller }: NodeEditBoxProps) {
    * 두고, 편집은 바깥을 탭하면 끝난다(모바일의 일반적인 관례). 데스크톱은 그대로:
    * Enter=확정, Shift+Enter=줄바꿈.
    */
-  const softKeyboard = useIsTouchDevice();
+  // 판정은 **두 신호의 합**이다: 기기가 터치인가(미디어 질의) 또는 지금 실제로
+  // 소프트 키보드가 떠 있는가(visualViewport). 후자를 더한 이유는 앞의 하나가
+  // "데스크톱"이라고 답하는 환경이 실제로 있기 때문이다(크롬 안드로이드의 데스크톱
+  // 사이트 모드, 마우스를 붙인 태블릿, 일부 인앱 브라우저) — 그 화면에서도 Enter가
+  // 편집을 끝내면 줄바꿈을 넣을 방법이 없다(제보).
+  // `||`로 한 줄에 쓰면 앞이 true일 때 뒤의 훅이 **호출되지 않아** 훅 순서가 깨진다.
+  const touchDevice = useIsTouchDevice();
+  const keyboardOpen = useSoftKeyboardOpen();
+  const softKeyboard = touchDevice || keyboardOpen;
   /** IME 조합 중 — 이때 캐럿을 옮기면 조합이 깨진다(스냅·재구성 모두 보류). */
   const composingRef = useRef(false);
   /** 조합 중에 들어온 Shift+Enter — 기본 줄바꿈은 막았고(행을 쪼갠다), 조합이
@@ -675,6 +684,11 @@ function NodeEditBox({ id, n, boxStyle, align, controller }: NodeEditBoxProps) {
       className="mf-edit mf-richedit"
       contentEditable
       suppressContentEditableWarning
+      // 소프트 키보드의 액션 키를 **줄바꿈 키**로 못박는다. 이 힌트가 없으면 IME가
+      // 스스로 고르는데, "완료/이동"류를 고르면 그 키가 키보드를 내려 버리고 →
+      // 편집 박스가 blur → 우리 blur 커밋이 편집을 끝낸다(제보: 폰에서 엔터를
+      // 누르면 편집이 종료됨). 물리 키보드에는 아무 영향이 없다.
+      enterKeyHint="enter"
       // 마우스 캐럿 배치(기본 동작)도 마커 위에 떨어질 수 있다 — 페인트 전 스냅.
       onMouseDown={(e) => {
         e.stopPropagation();

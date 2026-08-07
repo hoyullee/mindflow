@@ -9,6 +9,7 @@ import type { Theme } from '../theme';
 import type { EditorController } from '../useEditorState';
 import { peersSelecting } from '../presenceSelection';
 import { useIsTouchDevice } from '../../../hooks/useMediaQuery';
+import { useSoftKeyboardOpen } from '../../../hooks/useKeyboardInset';
 import { RemotePeerTag } from './RemotePeerTag';
 import { ResizeHandle } from './ResizeHandle';
 import { domToRuns, linearize, listArrowLeft, listArrowVertical, selectedRawText, snapCaretOffListMarker } from '../richtextDom';
@@ -207,7 +208,15 @@ function FloatEditBox({ f, controller }: { f: Float; controller: EditorControlle
   /** 조합 중에 들어온 줄바꿈 의도 — compositionend에서 잇는다(노드 편집과 동일). */
   const pendingBreakRef = useRef(false);
   /** 터치 기기(소프트 키보드)에서는 Enter가 줄바꿈이다 — 노드 편집과 같은 이유. */
-  const softKeyboard = useIsTouchDevice();
+  // 판정은 **두 신호의 합**이다: 기기가 터치인가(미디어 질의) 또는 지금 실제로
+  // 소프트 키보드가 떠 있는가(visualViewport). 후자를 더한 이유는 앞의 하나가
+  // "데스크톱"이라고 답하는 환경이 실제로 있기 때문이다(크롬 안드로이드의 데스크톱
+  // 사이트 모드, 마우스를 붙인 태블릿, 일부 인앱 브라우저) — 그 화면에서도 Enter가
+  // 편집을 끝내면 줄바꿈을 넣을 방법이 없다(제보).
+  // `||`로 한 줄에 쓰면 앞이 true일 때 뒤의 훅이 **호출되지 않아** 훅 순서가 깨진다.
+  const touchDevice = useIsTouchDevice();
+  const keyboardOpen = useSoftKeyboardOpen();
+  const softKeyboard = touchDevice || keyboardOpen;
 
   /** 편집 값을 리스트 구조까지 반영해 다시 그리고 캐럿을 복원한다(노드 편집과
    * 같은 경로 — 메모는 좌측 정렬 고정, 라이브 크기 갱신은 필요 없다: 편집 박스가
@@ -288,6 +297,11 @@ function FloatEditBox({ f, controller }: { f: Float; controller: EditorControlle
       className="mf-edit mf-richedit"
       contentEditable
       suppressContentEditableWarning
+      // 소프트 키보드의 액션 키를 **줄바꿈 키**로 못박는다. 이 힌트가 없으면 IME가
+      // 스스로 고르는데, "완료/이동"류를 고르면 그 키가 키보드를 내려 버리고 →
+      // 편집 박스가 blur → 우리 blur 커밋이 편집을 끝낸다(제보: 폰에서 엔터를
+      // 누르면 편집이 종료됨). 물리 키보드에는 아무 영향이 없다.
+      enterKeyHint="enter"
       // 마우스 캐럿 배치(기본 동작)도 마커 위에 떨어질 수 있다 — 페인트 전 스냅.
       onMouseDown={(e) => {
         e.stopPropagation();
