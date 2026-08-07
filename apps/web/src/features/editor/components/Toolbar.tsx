@@ -239,9 +239,15 @@ export function Toolbar({ controller }: ToolbarProps) {
           <MoreMenu controller={controller} onDone={close} isMobile={isMobile} />
         </MenuBarButton>
       ) : (
-        <MenuBarButton label="내보내기" wrapRef={exportRef} open={openMenu === 'export'} onToggle={() => toggle('export')} th={th} isMobile={isMobile} width={200} align="right" leading={<ExportGlyph />}>
-          <ExportMenu controller={controller} onDone={close} />
-        </MenuBarButton>
+        /* 내보내기는 **보기 전용에서 감춘다**(요청). 편집·삽입·스타일과 같은 처리 —
+           이 앱의 보기 전용은 "할 수 없는 것은 보이지 않는다"로 일관돼 있다.
+           다만 이건 **보안 경계가 아니다**: 화면을 볼 수 있는 사람은 캡처할 수
+           있다. 정책·마찰 장치로 이해할 것. */
+        !controller.readOnly && (
+          <MenuBarButton label="내보내기" wrapRef={exportRef} open={openMenu === 'export'} onToggle={() => toggle('export')} th={th} isMobile={isMobile} width={200} align="right" leading={<ExportGlyph />}>
+            <ExportMenu controller={controller} onDone={close} />
+          </MenuBarButton>
+        )
       )}
     </div>
   );

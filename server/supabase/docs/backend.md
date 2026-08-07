@@ -737,6 +737,24 @@ where schemaname = 'storage' and tablename = 'objects'
   and policyname = 'map images readable by document readers';
 ```
 
+### 링크 뷰어에게 보이는 참가자 (0018)
+
+배포 후 제보: 링크로 연 사람의 공유 팝업에 **소유자가 안 보이고**, 소유자 전용
+UI(링크 토글·초대 입력)가 그대로 열려 있었다.
+
+원인은 `share_participants` RPC(0011)의 가드였다 — `owns_document or
+shared_with_me`만 통과시키는데 **링크 뷰어는 둘 다 아니다** → 빈 목록 → 클라이언트가
+"구 서버"로 착각해 나를 소유자로 폴백. 서버 RLS가 실제 쓰기는 막고 있었으니 권한이
+샌 것은 아니고, **할 수 없는 일을 할 수 있는 것처럼 보여 준** 화면이었다.
+
+0018이 **소유자 행에만** `link_shared(doc_id)`를 더한다. 초대 명단은 그대로
+`owns_document or shared_with_me`다 — 그 목록은 곧 **이메일 주소 목록**이고 링크는
+누구에게나 전달될 수 있다. "이 맵이 누구 것인가"는 뷰어가 알아야 하지만 "누구누구가
+초대돼 있는가"는 아니다.
+
+클라이언트에도 잠금이 하나 더 있다(`ShareModal`의 `viewerOnly`) — 참가자 목록이
+비어 오는 서버에서도 `readOnly` 하나로 공유 설정이 잠긴다.
+
 ### 전체 끄기(사고 대응)
 
 ```sql
