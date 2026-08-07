@@ -266,7 +266,7 @@ describe('에디터 복사/붙여넣기 — 컨텍스트 메뉴(모바일 길게
     await waitFor(() => expect(countText(container, '노드A')).toBe(1));
 
     rightClickNode(container, 'root');
-    await waitFor(() => expect(screen.getByText('자식 주제')).toBeTruthy());
+    await waitFor(() => expect(screen.getByText('하위 주제 추가')).toBeTruthy());
     expect(screen.queryByText('복사')).toBeNull();
     expect(screen.queryByText('잘라내기')).toBeNull();
   });

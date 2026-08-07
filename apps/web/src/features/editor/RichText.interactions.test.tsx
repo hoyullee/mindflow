@@ -378,10 +378,10 @@ describe('텍스트 서식 툴바 노출 조건 — 편집 중 상시 노출', (
     const editor = startEditingNode(container, 'c1');
 
     fireEvent.contextMenu(getViewport(container), { clientX: 40, clientY: 40 });
-    expect(within(getViewport(container)).queryByText('도형 추가')).toBeTruthy(); // bg 메뉴가 떴다
+    expect(within(getViewport(container)).queryByText('주제 추가')).toBeTruthy(); // bg 메뉴가 떴다
 
     fireEvent.mouseDown(editor); // 편집 박스 안에서 텍스트 선택 시작
-    expect(within(getViewport(container)).queryByText('도형 추가')).toBeNull();
+    expect(within(getViewport(container)).queryByText('주제 추가')).toBeNull();
     // 후속 제보: 메뉴가 닫히면(편집은 계속) 상시 노출 계약대로 툴바가 되살아나야 한다
     expect(toolbar(container)).toBeTruthy();
   });
@@ -395,7 +395,7 @@ describe('텍스트 서식 툴바 노출 조건 — 편집 중 상시 노출', (
     expect(toolbar(container)).toBeNull(); // 메뉴가 뜨며 툴바는 내려갔다
 
     fireEvent.keyDown(window, { key: 'Escape' });
-    expect(within(getViewport(container)).queryByText('도형 추가')).toBeNull(); // 메뉴 닫힘
+    expect(within(getViewport(container)).queryByText('주제 추가')).toBeNull(); // 메뉴 닫힘
     expect(toolbar(container)).toBeTruthy(); // 편집은 계속 → 툴바 복귀
   });
 
@@ -755,7 +755,7 @@ describe('속성 패널 텍스트 스타일 — I(기울임)·S(취소선) 토�
     fireEvent(vp, pev('pointerdown', -100000, -100000));
     fireEvent(window, pev('pointermove', 100000, 100000));
     fireEvent(window, pev('pointerup', 100000, 100000));
-    expect(screen.getByText(/도형 \d+개 선택됨/)).toBeTruthy();
+    expect(screen.getByText(/주제 \d+개 선택됨/)).toBeTruthy();
 
     fireEvent.click(screen.getByRole('button', { name: /텍스트 스타일/ }));
     fireEvent.click(screen.getByTitle('취소선'));

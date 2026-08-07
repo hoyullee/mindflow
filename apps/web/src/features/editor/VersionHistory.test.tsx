@@ -55,7 +55,7 @@ describe('버전 기록 모달', () => {
     const dialog = screen.getByRole('dialog', { name: '버전 기록' });
     expect(dialog).toBeTruthy();
     const items = dialog.querySelectorAll('div[style*="overflow-y"] button, div[style*="overflowY"] button');
-    expect(dialog.textContent).toContain('노드 1개');
+    expect(dialog.textContent).toContain('주제 1개');
     expect(items.length).toBeGreaterThanOrEqual(2);
     fireEvent.keyDown(window, { key: 'Escape' });
     expect(screen.queryByRole('dialog', { name: '버전 기록' })).toBeNull();

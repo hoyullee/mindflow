@@ -133,7 +133,7 @@ export function EditMenu({ controller, onDone, isMobile }: { controller: EditorC
 export function InsertMenu({ controller, onDone, isMobile }: { controller: EditorController; onDone: () => void; isMobile?: boolean }) {
   const th = controller.uiTheme;
   const items: { icon: ReactNode; label: string; run: () => void }[] = [
-    { icon: <ShapeIcon />, label: '도형 추가', run: () => controller.addFreeNodeAt() },
+    { icon: <ShapeIcon />, label: '주제 추가', run: () => controller.addFreeNodeAt() },
     { icon: <MemoIcon />, label: '메모 추가', run: () => controller.addFloatAt() },
     { icon: <ImageIcon />, label: '이미지 추가', run: () => controller.promptAddImage() },
     { icon: <LineIcon />, label: '선 추가', run: () => controller.addLineAt() },

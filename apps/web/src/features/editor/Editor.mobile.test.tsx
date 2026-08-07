@@ -215,8 +215,8 @@ describe('Editor (mobile, M6)', () => {
       const menu = container.querySelector('.mf-ctx') as HTMLElement;
       expect(menu).toBeTruthy();
       // 바에 이미 있는 하위/형제/삭제는 메뉴에서 빠진다(중복 제거)
-      expect(within(menu).queryByText('자식 주제')).toBeNull();
-      expect(within(menu).queryByText('형제 주제')).toBeNull();
+      expect(within(menu).queryByText('하위 주제 추가')).toBeNull();
+      expect(within(menu).queryByText('형제 주제 추가')).toBeNull();
       expect(within(menu).queryByText('삭제')).toBeNull();
       // 바에 없는 것들은 그대로 — 복사/잘라내기/이미지/정렬
       expect(within(menu).getByText('복사')).toBeTruthy();
@@ -351,10 +351,10 @@ describe('Editor (mobile, M6)', () => {
       touchEvent(vp, 'pointerdown', { pointerId: 11, clientX: 12, clientY: 12 });
       // before the hold elapses → no menu
       act(() => vi.advanceTimersByTime(300));
-      expect(screen.queryByText('도형 추가')).toBeNull();
+      expect(screen.queryByText('주제 추가')).toBeNull();
       // after the full hold → the (background) context menu opens
       act(() => vi.advanceTimersByTime(300));
-      expect(screen.getByText('도형 추가')).toBeTruthy();
+      expect(screen.getByText('주제 추가')).toBeTruthy();
     } finally {
       vi.useRealTimers();
       restore();
@@ -372,7 +372,7 @@ describe('Editor (mobile, M6)', () => {
       touchEvent(vp, 'pointerdown', { pointerId: 12, clientX: 12, clientY: 12 });
       touchEvent(window, 'pointermove', { pointerId: 12, clientX: 90, clientY: 80 }); // moves > tol
       act(() => vi.advanceTimersByTime(600));
-      expect(screen.queryByText('도형 추가')).toBeNull(); // long-press was cancelled
+      expect(screen.queryByText('주제 추가')).toBeNull(); // long-press was cancelled
     } finally {
       vi.useRealTimers();
       restore();

@@ -108,7 +108,7 @@ describe('Editor interactions (M3-Editor-b)', () => {
     const { container } = renderEditor('/editor?map=t1acc&title=x');
     selectNodeBox(nodeBoxFor(container, '리서치'));
 
-    const shapeHdr = screen.getByRole('button', { name: /도형 스타일/ });
+    const shapeHdr = screen.getByRole('button', { name: /주제 스타일/ });
     const textHdr = screen.getByRole('button', { name: /텍스트 스타일/ });
     const iconHdr = screen.getByRole('button', { name: /아이콘/ });
     // all collapsed initially
@@ -135,12 +135,12 @@ describe('Editor interactions (M3-Editor-b)', () => {
     const { container } = renderEditor('/editor?map=t1acc2&title=x');
 
     selectNodeBox(nodeBoxFor(container, '리서치'));
-    await user.click(screen.getByRole('button', { name: /도형 스타일/ }));
-    expect(screen.getByRole('button', { name: /도형 스타일/ }).getAttribute('aria-expanded')).toBe('true');
+    await user.click(screen.getByRole('button', { name: /주제 스타일/ }));
+    expect(screen.getByRole('button', { name: /주제 스타일/ }).getAttribute('aria-expanded')).toBe('true');
 
     // select a different node → panel remounts, sections back to collapsed
     selectNodeBox(nodeBoxFor(container, '디자인'));
-    expect(screen.getByRole('button', { name: /도형 스타일/ }).getAttribute('aria-expanded')).toBe('false');
+    expect(screen.getByRole('button', { name: /주제 스타일/ }).getAttribute('aria-expanded')).toBe('false');
   });
 
   it('clicking anywhere in a zone body (not just its label) selects the zone', () => {
@@ -970,7 +970,7 @@ describe('속성 패널의 색 스와치는 문서 테마를 따라가지 않는
   async function openShapeSection(container: HTMLElement) {
     const user = userEvent.setup();
     selectNodeBox(nodeBoxFor(container, '리서치'));
-    await user.click(screen.getByRole('button', { name: /도형 스타일/ }));
+    await user.click(screen.getByRole('button', { name: /주제 스타일/ }));
     return swatchColorsOf();
   }
 

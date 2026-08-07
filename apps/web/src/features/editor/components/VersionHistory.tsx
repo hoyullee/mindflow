@@ -132,7 +132,7 @@ export function VersionHistory({ controller }: { controller: EditorController })
                     }}
                   >
                     <div style={{ fontSize: 13, fontWeight: active ? 700 : 500, color: th.text }}>{fmt(v.at)}</div>
-                    <div style={{ fontSize: 11.5, color: th.subtext, marginTop: 1 }}>노드 {v.nodes}개</div>
+                    <div style={{ fontSize: 11.5, color: th.subtext, marginTop: 1 }}>주제 {v.nodes}개</div>
                   </button>
                 );
               })}

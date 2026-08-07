@@ -123,7 +123,7 @@ export function OutlineView({ controller }: OutlineViewProps) {
         );
       })}
       <div style={{ marginTop: 26, fontSize: 12, color: th.subtext, lineHeight: 1.7, paddingLeft: 4 }}>
-        <b style={{ color: th.text }}>Tab</b> 자식 추가 · <b style={{ color: th.text }}>Enter</b> 형제 추가 · <b style={{ color: th.text }}>F2/더블클릭</b> 이름 편집 ·{' '}
+        <b style={{ color: th.text }}>Tab</b> 하위 추가 · <b style={{ color: th.text }}>Enter</b> 형제 추가 · <b style={{ color: th.text }}>F2/더블클릭</b> 이름 편집 ·{' '}
         <b style={{ color: th.text }}>↑/↓</b> 이동 · <b style={{ color: th.text }}>Delete</b> 삭제
       </div>
     </div>
