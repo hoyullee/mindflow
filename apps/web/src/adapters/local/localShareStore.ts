@@ -27,6 +27,8 @@ interface StoredShare {
   email: string;
   role: ShareRole;
   createdAt: string;
+  /** 초대받은 사람이 확인한 시각(0019의 `seen_at`과 같은 뜻). */
+  seenAt?: string | null;
 }
 
 function readAll(): StoredShare[] {
@@ -41,6 +43,16 @@ function readAll(): StoredShare[] {
     });
   } catch {
     return [];
+  }
+}
+
+/** 이 브라우저의 데모 세션 이메일(소문자). 없으면 빈 문자열. */
+function demoEmail(): string {
+  try {
+    const session = JSON.parse(localStorage.getItem('mf_demo_session') || 'null') as { user?: { email?: string | null } } | null;
+    return (session?.user?.email ?? '').trim().toLowerCase();
+  } catch {
+    return '';
   }
 }
 
@@ -95,8 +107,24 @@ export class LocalShareStore implements ShareStore {
   }
 
   async listSharedWithMe(): Promise<SharedWithMe[]> {
-    // 이 모드에는 "남"이 없다 — 내가 만든 초대뿐이므로 공유받은 문서는 항상 없다.
-    return [];
+    // Supabase와 **같은 규칙**: 이 저장소의 초대 중 내 이메일로 온 것.
+    // 데모에는 "남"이 없어 보통은 비어 있지만(자기 자신 초대는 UI가 막는다),
+    // 규칙을 하드코딩된 `[]` 대신 실제 판정으로 두면 모드에 따라 화면이 달라지지
+    // 않는다 — 알림 배지 같은 후속 기능이 로컬 모드에서도 같은 길을 탄다.
+    const me = demoEmail();
+    if (!me) return [];
+    return readAll()
+      .filter((s) => s.email === me)
+      .map((s) => ({ documentId: s.documentId, role: s.role, seenAt: s.seenAt ?? null }));
+  }
+
+  async markSharedSeen(documentIds: string[]): Promise<void> {
+    if (!documentIds.length) return;
+    const me = demoEmail();
+    if (!me) return;
+    const ids = new Set(documentIds);
+    const now = new Date().toISOString();
+    writeAll(readAll().map((s) => (s.email === me && ids.has(s.documentId) && !s.seenAt ? { ...s, seenAt: now } : s)));
   }
 
   async listParticipants(documentId: string): Promise<ShareParticipant[] | null> {
@@ -104,13 +132,7 @@ export class LocalShareStore implements ShareStore {
     // 프로필명은 같은 브라우저의 캐시(mf_profile_names)에서만 알 수 있다 — 실제
     // 다른 사용자는 없으므로 초대 이메일의 이름은 대개 비어 "가입 대기"처럼 보인다
     // (Supabase 모드의 RPC 계약과 같은 모양을 유지하는 것이 목적).
-    let ownerEmail = '';
-    try {
-      const session = JSON.parse(localStorage.getItem('mf_demo_session') || 'null') as { user?: { email?: string | null } } | null;
-      ownerEmail = (session?.user?.email ?? '').trim().toLowerCase();
-    } catch {
-      /* 세션 없음 — 소유자 행 생략 */
-    }
+    const ownerEmail = demoEmail();
     const out: ShareParticipant[] = [];
     if (ownerEmail) {
       out.push({ kind: 'owner', email: ownerEmail, displayName: readSavedProfileName(ownerEmail), joined: true, role: 'edit' });

@@ -100,8 +100,33 @@ export class SupabaseShareStore implements ShareStore {
     const { data: userData } = await this.client.auth.getUser();
     const myEmail = (userData?.user?.email ?? '').trim().toLowerCase();
     if (!myEmail) return [];
+    // `seen_at`(0019)은 "아직 못 본 초대" 배지의 근거다. 마이그레이션이 아직 안 간
+    // 서버에서는 이 컬럼이 없어 select 자체가 실패하므로, 그때는 컬럼 없이 한 번 더
+    // 읽는다 — 배지만 사라지고 공유 목록은 그대로 뜬다(배포 순서 안전).
+    const withSeen = await this.client.from(TABLE).select('document_id,role,seen_at').eq('invitee_email', myEmail);
+    if (!withSeen.error) {
+      return ((withSeen.data ?? []) as { document_id: string; role: string; seen_at: string | null }[]).map((r) => ({
+        documentId: r.document_id,
+        role: toRole(r.role),
+        seenAt: r.seen_at,
+      }));
+    }
     const { data, error } = await this.client.from(TABLE).select('document_id,role').eq('invitee_email', myEmail);
     if (error) throw new Error(error.message);
     return ((data ?? []) as { document_id: string; role: string }[]).map((r) => ({ documentId: r.document_id, role: toRole(r.role) }));
+  }
+
+  /**
+   * "봤다" 표시(0019). 정책을 넓히는 대신 좁은 RPC 하나를 쓴다 — 초대받은 사람이
+   * 자기 행을 UPDATE할 수 있게 열면 `seen_at`만이 아니라 `role`까지 바꿀 수 있다
+   * (RLS는 컬럼 단위로 못 좁힌다). 실패는 삼킨다: 배지가 안 지워질 뿐이다.
+   */
+  async markSharedSeen(documentIds: string[]): Promise<void> {
+    if (!documentIds.length) return;
+    try {
+      await this.client.rpc('mark_shares_seen', { doc_ids: documentIds });
+    } catch {
+      /* RPC 미적용 서버·네트워크 오류 — 알림 표시는 부가 기능이다 */
+    }
   }
 }

@@ -1852,6 +1852,96 @@ describe('Home', () => {
       expect(aside.getByText('공유받은 항목이 없습니다')).toBeTruthy();
     });
 
+    // 초대 알림 ①(0019): 맵을 공유받아도 상대는 알 길이 없었다 — 직접 "링크 보냈어"라고
+    // 말해 줘야 했다. 아직 열어 보지 않은 초대를 LNB 배지로 알린다.
+    describe('초대 알림 배지', () => {
+      /** 이 브라우저의 데모 세션 + 아직 확인하지 않은 초대 한 건을 심는다. */
+      function seedUnseenInvite(docId: string): void {
+        localStorage.setItem('mf_demo_session', JSON.stringify({ user: { id: 'u1', email: 'me@example.com' } }));
+        localStorage.setItem('mf_doc_shares', JSON.stringify([{ documentId: docId, email: 'me@example.com', role: 'edit', createdAt: '2026-01-01T00:00:00.000Z' }]));
+      }
+
+      it('아직 열어 보지 않은 초대를 배지와 점으로 알리고, 열면 사라진다', async () => {
+        const user = userEvent.setup();
+        localStorage.setItem('mf_spaces', JSON.stringify({ spaces: [{ id: 'sa', name: '내 공간', color: '#f0663f', home: true, maps: [], folders: [] }], mapFolders: {} }));
+        seedUnseenInvite('theirs');
+        const { container } = renderHomeWithDocStore([mine, theirs]);
+
+        const aside = within(container.querySelector('aside') as HTMLElement);
+        expect(await waitFor(() => aside.getByLabelText('확인하지 않은 공유 1개'))).toBeTruthy();
+        expect(aside.getByLabelText('새로 공유됨')).toBeTruthy();
+
+        await user.click(aside.getByTitle("'남의 맵' 열기 (함께 편집)"));
+
+        // 열면 배지가 사라지고, "봤다"가 저장소에 남는다(다른 기기에서도 안 뜨도록).
+        await waitFor(() => expect(screen.getByText('EDITOR_PLACEHOLDER')).toBeTruthy(), { timeout: 3000 });
+        const stored = JSON.parse(localStorage.getItem('mf_doc_shares') || '[]') as { seenAt?: string | null }[];
+        expect(stored[0]?.seenAt).toBeTruthy();
+      });
+
+      it('모바일에서는 서랍이 닫혀 있어도 ☰에 점이 뜬다', async () => {
+        mockMatchMedia(true);
+        try {
+          localStorage.setItem('mf_spaces', JSON.stringify({ spaces: [{ id: 'sa', name: '내 공간', color: '#f0663f', home: true, maps: [], folders: [] }], mapFolders: {} }));
+          seedUnseenInvite('theirs');
+          const { container } = renderHomeWithDocStore([mine, theirs]);
+
+          const menu = await waitFor(() => screen.getByLabelText('메뉴 열기, 확인하지 않은 공유 1개'));
+          expect(menu.querySelector('[data-unread-dot]')).toBeTruthy();
+          expect(container).toBeTruthy();
+        } finally {
+          mockMatchMedia(false);
+        }
+      });
+
+      it('이미 확인한 초대는 배지를 만들지 않는다', async () => {
+        localStorage.setItem('mf_spaces', JSON.stringify({ spaces: [{ id: 'sa', name: '내 공간', color: '#f0663f', home: true, maps: [], folders: [] }], mapFolders: {} }));
+        localStorage.setItem('mf_demo_session', JSON.stringify({ user: { id: 'u1', email: 'me@example.com' } }));
+        localStorage.setItem(
+          'mf_doc_shares',
+          JSON.stringify([{ documentId: 'theirs', email: 'me@example.com', role: 'edit', createdAt: '2026-01-01T00:00:00.000Z', seenAt: '2026-01-02T00:00:00.000Z' }]),
+        );
+        const { container } = renderHomeWithDocStore([mine, theirs]);
+
+        const aside = within(container.querySelector('aside') as HTMLElement);
+        await waitFor(() => expect(aside.getByTitle("'남의 맵' 열기 (함께 편집)")).toBeTruthy());
+        expect(aside.queryByLabelText(/확인하지 않은 공유/)).toBeNull();
+        expect(aside.queryByLabelText('새로 공유됨')).toBeNull();
+      });
+
+      // 0019가 아직 안 간 서버에서는 `seenAt`을 알 수 없다(undefined). 그때 "안 봤다"로
+      // 치면 **없는 알림**을 만들어 낸다 — 모든 공유가 새것처럼 보인다.
+      it('seen 정보를 얻을 수 없으면(구 서버) 배지를 띄우지 않는다', async () => {
+        localStorage.setItem('mf_spaces', JSON.stringify({ spaces: [{ id: 'sa', name: '내 공간', color: '#f0663f', home: true, maps: [], folders: [] }], mapFolders: {} }));
+        const legacyShareStore = new LocalShareStore();
+        legacyShareStore.listSharedWithMe = async () => [{ documentId: 'theirs', role: 'edit' as const }];
+        const docStore = new MockDocStore([mine, theirs], {});
+        const backend: Backend = {
+          auth: new LocalAuth(),
+          docStore,
+          spaceStore: new LocalSpaceStore(),
+          shareStore: legacyShareStore,
+          feedbackStore: new LocalFeedbackStore(),
+          imageStore: new LocalImageStore(),
+          mode: 'local',
+        };
+        const { container } = render(
+          <MemoryRouter initialEntries={['/home']}>
+            <BackendProvider backend={backend}>
+              <Routes>
+                <Route path="/home" element={<Home />} />
+                <Route path="/editor" element={<div>EDITOR_PLACEHOLDER</div>} />
+              </Routes>
+            </BackendProvider>
+          </MemoryRouter>,
+        );
+
+        const aside = within(container.querySelector('aside') as HTMLElement);
+        await waitFor(() => expect(aside.getByTitle("'남의 맵' 열기 (함께 편집)")).toBeTruthy());
+        expect(aside.queryByLabelText(/확인하지 않은 공유/)).toBeNull();
+      });
+    });
+
     it('남의 문서의 즐겨찾기·휴지통 상태가 내 것으로 새지 않는다', async () => {
       localStorage.setItem('mf_spaces', JSON.stringify({ spaces: [{ id: 'sa', name: '내 공간', color: '#f0663f', home: true, maps: [], folders: [] }], mapFolders: {} }));
       // `theirs`는 isFavorite: true — 소유자가 별을 달아 둔 상태다. 내 LNB에는 안 보여야 한다.

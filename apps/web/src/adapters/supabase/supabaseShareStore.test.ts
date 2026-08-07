@@ -34,6 +34,20 @@ class FakeQuery implements PromiseLike<{ data: unknown; error: unknown }> {
   }
 }
 
+/** 호출마다 다른 결과를 돌려주는 쿼리 — 첫 select가 실패하는 상황을 만든다. */
+class SeqQuery extends FakeQuery {
+  constructor(private results: { data: unknown; error: unknown }[]) {
+    super(results[0]!);
+  }
+  override then<T1 = { data: unknown; error: unknown }, T2 = never>(
+    onfulfilled?: ((value: { data: unknown; error: unknown }) => T1 | PromiseLike<T1>) | null,
+    onrejected?: ((reason: unknown) => T2 | PromiseLike<T2>) | null,
+  ): PromiseLike<T1 | T2> {
+    const next = this.results.shift() ?? { data: null, error: null };
+    return Promise.resolve(next).then(onfulfilled, onrejected);
+  }
+}
+
 function fakeClient(result: { data: unknown; error: unknown }, email: string | null = 'me@example.com') {
   const query = new FakeQuery(result);
   const from = vi.fn(() => query);
@@ -97,15 +111,56 @@ describe('SupabaseShareStore', () => {
     expect(query.calls[2]).toEqual({ method: 'eq', args: ['invitee_email', 'a@example.com'] });
   });
 
-  it('listSharedWithMe()는 내 이메일로 온 초대만 읽는다', async () => {
-    const rows = [{ document_id: 'd9', role: 'edit' }];
+  it('listSharedWithMe()는 내 이메일로 온 초대만 읽는다 (seen_at 포함)', async () => {
+    const rows = [{ document_id: 'd9', role: 'edit', seen_at: null }];
     const { client, query } = fakeClient({ data: rows, error: null }, 'Me@Example.com');
 
     const mine = await new SupabaseShareStore(client).listSharedWithMe();
 
-    expect(query.calls[0]).toEqual({ method: 'select', args: ['document_id,role'] });
+    expect(query.calls[0]).toEqual({ method: 'select', args: ['document_id,role,seen_at'] });
     expect(query.calls[1]).toEqual({ method: 'eq', args: ['invitee_email', 'me@example.com'] });
-    expect(mine).toEqual([{ documentId: 'd9', role: 'edit' }]);
+    // `seenAt: null` = 아직 확인하지 않은 초대(홈 배지가 센다).
+    expect(mine).toEqual([{ documentId: 'd9', role: 'edit', seenAt: null }]);
+  });
+
+  // 0019가 아직 안 간 서버에는 `seen_at` 컬럼이 없어 select가 통째로 실패한다.
+  // 그때는 컬럼 없이 한 번 더 읽어 **목록은 그대로** 뜨게 한다(배지만 사라진다).
+  it('seen_at이 없는 구 서버에서는 컬럼 없이 다시 읽는다', async () => {
+    const query = new SeqQuery([
+      { data: null, error: { message: 'column document_shares.seen_at does not exist' } },
+      { data: [{ document_id: 'd9', role: 'view' }], error: null },
+    ]);
+    const client = {
+      from: vi.fn(() => query),
+      auth: { getUser: vi.fn(async () => ({ data: { user: { id: 'u1', email: 'me@example.com' } }, error: null })) },
+    } as unknown as import('@supabase/supabase-js').SupabaseClient;
+
+    const mine = await new SupabaseShareStore(client).listSharedWithMe();
+
+    expect(query.calls[0]).toEqual({ method: 'select', args: ['document_id,role,seen_at'] });
+    expect(query.calls[2]).toEqual({ method: 'select', args: ['document_id,role'] });
+    expect(mine).toEqual([{ documentId: 'd9', role: 'view' }]); // seenAt 없음 = 배지 없음
+  });
+
+  it('markSharedSeen()은 0019 RPC를 부르고, 빈 목록이면 부르지 않는다', async () => {
+    const rpc = vi.fn(async () => ({ data: null, error: null }));
+    const client = { rpc } as unknown as import('@supabase/supabase-js').SupabaseClient;
+    const store = new SupabaseShareStore(client);
+
+    await store.markSharedSeen([]);
+    expect(rpc).not.toHaveBeenCalled();
+
+    await store.markSharedSeen(['d1', 'd2']);
+    expect(rpc).toHaveBeenCalledWith('mark_shares_seen', { doc_ids: ['d1', 'd2'] });
+  });
+
+  it('markSharedSeen()의 실패는 삼킨다 — 알림 표시가 맵 열기를 막지 않는다', async () => {
+    const rpc = vi.fn(async () => {
+      throw new Error('function mark_shares_seen does not exist');
+    });
+    const client = { rpc } as unknown as import('@supabase/supabase-js').SupabaseClient;
+
+    await expect(new SupabaseShareStore(client).markSharedSeen(['d1'])).resolves.toBeUndefined();
   });
 
   it('로그인 정보가 없으면 조회하지 않고 빈 목록', async () => {
