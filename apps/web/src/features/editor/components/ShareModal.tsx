@@ -217,6 +217,19 @@ export function ShareModal({ controller }: ShareModalProps) {
    * 없으므로 보여 준다 — 진짜 권한은 어차피 서버 RLS가 판단한다(0009: insert는
    * 소유자만). 이 플래그는 어포던스 정리일 뿐이다. */
   const isOwner = owner ? owner.email === myEmail : true;
+  /**
+   * 보기 전용으로 들어온 사람(초대 'view' 또는 링크)은 **아무것도 바꿀 수 없다**.
+   *
+   * `isOwner`만으로는 부족했다(제보): 링크 뷰어에게는 참가자 목록이 비어 와서
+   * `owner`가 없고, 그러면 위 폴백이 나를 소유자로 간주해 링크 토글과 초대 입력이
+   * 그대로 열렸다. 서버 RLS가 실제 쓰기는 막고 있었으니 권한이 샌 것은 아니지만,
+   * **할 수 없는 일을 할 수 있는 것처럼 보여 주는** 화면이었다. 목록이 비어 오는
+   * 서버 쪽 원인은 0018이 고쳤고, 여기서는 그것과 무관하게 성립하는 신호
+   * (`controller.readOnly`)로 한 번 더 잠근다.
+   */
+  const viewerOnly = controller.readOnly;
+  /** 초대·링크·권한 변경을 실제로 할 수 있는가. */
+  const canManage = isOwner && !viewerOnly;
   /** 행 목록. 참가자 정보가 있으면 그것이 정본이다 — 초대받은 사람은 테이블
    * select(RLS)로는 자기 행만 보이지만, 참가자 명단(0011)은 전원에게 전체를 준다
    * ("소유자가 초대한 다른 사람이 안 보인다" 제보). */
@@ -353,10 +366,10 @@ export function ShareModal({ controller }: ShareModalProps) {
         {/* 링크 공유(0017) — 이메일을 모르는 상대에게 "이거 봐 줘" 하는 가장 짧은 길.
             보기 전용만 연다: 링크는 유출되면 회수할 수 없고(끄기 전까지), 열람은
             유출돼도 피해가 "봤다"에서 멈추지만 편집은 내용을 되돌릴 수 없게 만든다. */}
-        {isOwner && (
-          <div aria-label="링크 공유" style={{ border: `1px solid ${th.border}`, borderRadius: 11, background: th.canvasBg, padding: '10px 11px', marginBottom: 12 }}>
-            <label style={{ display: 'flex', alignItems: 'center', gap: 9, cursor: busy ? 'default' : 'pointer' }}>
-              <input type="checkbox" checked={!!linkRole} disabled={busy} onChange={() => void toggleLink()} aria-label="링크가 있는 사람은 열람" style={{ width: 15, height: 15, accentColor: th.accent, cursor: 'inherit' }} />
+        {(canManage || (viewerOnly && !!linkRole)) && (
+          <div aria-label="링크 공유" style={{ border: `1px solid ${th.border}`, borderRadius: 11, background: th.canvasBg, padding: '10px 11px', marginBottom: 12, opacity: canManage ? 1 : 0.6 }}>
+            <label style={{ display: 'flex', alignItems: 'center', gap: 9, cursor: canManage && !busy ? 'pointer' : 'default' }}>
+              <input type="checkbox" checked={!!linkRole} disabled={busy || !canManage} onChange={() => void toggleLink()} aria-label="링크가 있는 사람은 열람" style={{ width: 15, height: 15, accentColor: th.accent, cursor: 'inherit' }} />
               <span style={{ flex: '1 1 auto', minWidth: 0, fontSize: 13, fontWeight: 700 }}>링크가 있는 사람은 열람</span>
               <span style={{ flexShrink: 0, fontSize: 11.5, color: th.subtext }}>보기 전용</span>
             </label>
@@ -372,7 +385,8 @@ export function ShareModal({ controller }: ShareModalProps) {
                 <button
                   type="button"
                   onClick={() => void copyLink()}
-                  style={{ flexShrink: 0, height: 34, padding: '0 12px', border: 'none', borderRadius: 9, background: th.accent, color: th.accentInk, fontFamily: 'inherit', fontSize: 12.5, fontWeight: 700, cursor: 'pointer' }}
+                  disabled={!canManage}
+                  style={{ flexShrink: 0, height: 34, padding: '0 12px', border: 'none', borderRadius: 9, background: canManage ? th.accent : th.border, color: canManage ? th.accentInk : th.subtext, fontFamily: 'inherit', fontSize: 12.5, fontWeight: 700, cursor: canManage ? 'pointer' : 'not-allowed' }}
                 >
                   {copied ? '복사됨' : '링크 복사'}
                 </button>
@@ -381,12 +395,12 @@ export function ShareModal({ controller }: ShareModalProps) {
           </div>
         )}
 
-        {!isOwner && (
+        {!canManage && (
           <div style={{ fontSize: 12, color: th.subtext, background: th.canvasBg, border: `1px solid ${th.border}`, borderRadius: 9, padding: '8px 10px', marginBottom: 10, lineHeight: 1.5 }}>
-            초대와 초대 취소는 맵의 소유자만 할 수 있어요.
+            {viewerOnly ? '보기 전용으로 공유받은 맵이에요. 공유 설정은 소유자만 바꿀 수 있어요.' : '초대와 초대 취소는 맵의 소유자만 할 수 있어요.'}
           </div>
         )}
-        {isOwner && (
+        {canManage && (
         <div style={{ display: 'flex', gap: 8, marginBottom: 10 }}>
           <input
             ref={inputRef}
@@ -463,7 +477,7 @@ export function ShareModal({ controller }: ShareModalProps) {
                   </span>
                 )}
                 {/* 권한(#22): 소유자는 여기서 바로 바꾼다(upsert). 나머지에겐 표시만. */}
-                {isOwner ? (
+                {canManage ? (
                   <select
                     value={s.role}
                     onChange={(e) => void changeRole(s.email, e.target.value === 'view' ? 'view' : 'edit')}
@@ -478,8 +492,10 @@ export function ShareModal({ controller }: ShareModalProps) {
                   <span style={{ fontSize: 11.5, color: th.subtext, flexShrink: 0 }}>{s.role === 'view' ? '보기 전용' : '편집 가능'}</span>
                 )}
                 {/* 취소는 소유자만. 예외 하나: 나 자신은 공유에서 나갈 수 있다(서버
-                    delete 정책도 정확히 이 둘만 허용한다 — 0009). */}
-                {isOwner ? (
+                    delete 정책도 정확히 이 둘만 허용한다 — 0009). 보기 전용에게도
+                    **나가기는 남긴다** — 공유 설정을 바꾸는 게 아니라 자기 자신을
+                    빼는 것이고, 이걸 없애면 나갈 길이 사라진다. */}
+                {canManage ? (
                   <button
                     type="button"
                     onClick={() => void revoke(s.email)}

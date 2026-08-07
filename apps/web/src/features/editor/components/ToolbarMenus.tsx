@@ -227,10 +227,15 @@ export function MoreMenu({ controller, onDone, isMobile }: { controller: EditorC
       <MenuSectionLabel theme={th}>보기</MenuSectionLabel>
       <MenuItem theme={th} isMobile={isMobile} icon={<MapIcon />} label="맵" active={controller.view === 'map'} onClick={() => { controller.setView('map'); onDone(); }} />
       <MenuItem theme={th} isMobile={isMobile} icon={<OutlineIcon />} label="아웃라인" active={controller.view === 'outline'} onClick={() => { controller.setView('outline'); onDone(); }} />
-      <MenuDivider theme={th} />
-      <MenuSectionLabel theme={th}>내보내기</MenuSectionLabel>
-      <MenuItem theme={th} isMobile={isMobile} icon={<PngIcon />} label="PNG 이미지" onClick={() => { controller.exportPNG(); onDone(); }} />
-      <MenuItem theme={th} isMobile={isMobile} icon={<JsonIcon />} label="JSON 파일 (.json)" onClick={() => { controller.exportJSON(); onDone(); }} />
+      {/* 내보내기는 보기 전용에서 감춘다(요청) — 데스크톱 툴바와 같은 규칙. */}
+      {!controller.readOnly && (
+        <>
+          <MenuDivider theme={th} />
+          <MenuSectionLabel theme={th}>내보내기</MenuSectionLabel>
+          <MenuItem theme={th} isMobile={isMobile} icon={<PngIcon />} label="PNG 이미지" onClick={() => { controller.exportPNG(); onDone(); }} />
+          <MenuItem theme={th} isMobile={isMobile} icon={<JsonIcon />} label="JSON 파일 (.json)" onClick={() => { controller.exportJSON(); onDone(); }} />
+        </>
+      )}
       <MenuDivider theme={th} />
       {/* 버전 기록의 복원은 문서 변이다 — 보기 전용(#22)에는 감춘다(기록 자체도
           이 기기에서 저장한 판이 없어 비어 있다). */}
