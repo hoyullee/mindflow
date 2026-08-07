@@ -76,8 +76,16 @@ export function FolderCard({ folder, controller }: Props) {
         display: 'flex',
         alignItems: 'center',
         gap: 14,
-        // 2px 테두리가 되는 상태(드롭 대기·선택)에선 패딩을 1px 줄여 카드 크기를 지킨다.
-        padding: folder.dragOver || folder.selected ? '17px 17px' : '18px 18px',
+        // 2px 테두리가 되는 상태(드롭 대기·선택)에서도 **안쪽 좌표계가 흔들리지 않게**
+        // 패딩은 그대로 두고 **음수 마진**으로 늘어난 1px을 상쇄한다(맵 카드와 같은 방식).
+        //
+        // 예전엔 패딩을 18→17로 줄여 크기를 맞췄는데, 그러면 카드 겉면은 그대로여도
+        // **패딩 박스**가 1px 안쪽으로 들어간다. ☰ 버튼은 `position: absolute`의
+        // `top/right`로 그 패딩 박스에 붙어 있어서, 폴더를 선택하는 순간 버튼만
+        // (-1, +1)px 움직였다(제보 — 실측으로 확인). 마진으로 상쇄하면 테두리가
+        // 두꺼워진 만큼 바깥으로 나가므로 패딩 박스 위치가 그대로다.
+        padding: '18px 18px',
+        margin: folder.dragOver || folder.selected ? -1 : 0,
         boxShadow: folder.dragOver ? '0 6px 18px rgba(var(--mf-accent-rgb),.18)' : folder.selected ? '0 0 0 3px rgba(var(--mf-accent-rgb),.18)' : 'none',
       }}
     >
