@@ -630,6 +630,37 @@ function NodeEditBox({ id, n, boxStyle, align, controller }: NodeEditBoxProps) {
     render(el, v, caret);
   };
 
+
+  /** 최신 `doBreak`을 담아 둔다 — 아래 네이티브 리스너는 마운트 때 한 번만 붙는데,
+   * `doBreak`은 렌더마다 새로 만들어지므로 그때 잡은 것을 쓰면 낡는다. */
+  const doBreakRef = useRef(doBreak);
+  doBreakRef.current = doBreak;
+
+  /**
+   * 줄바꿈이 **브라우저 기본 동작으로** 들어오는 마지막 구멍을 막는 안전망.
+   *
+   * 이걸 React의 `onBeforeInput`으로 달아 뒀던 게 문제였다(제보) — React의
+   * `onBeforeInput`은 네이티브 `beforeinput`이 아니라 `textInput`/`keypress`에서
+   * **합성한 폴리필**이라 `inputType`이 없고, `insertParagraph`에는 아예 뜨지도
+   * 않는다. 실측: 안드로이드 IME처럼 keydown이 `keyCode 229`로 와서 우리 Enter
+   * 분기를 비껴가면, 네이티브 `beforeinput insertParagraph`가 **막히지 않은 채**
+   * 실행돼 [마커|내용] flex 행을 쪼갠다(그 뒤의 리스트 조작이 어긋나는 원인).
+   * 그래서 네이티브 이벤트에 직접 건다.
+   */
+  useEffect(() => {
+    const el = ref.current;
+    if (!el) return;
+    const onBeforeInput = (e: Event): void => {
+      const it = (e as InputEvent).inputType;
+      if (it !== 'insertLineBreak' && it !== 'insertParagraph') return;
+      e.preventDefault();
+      if (composingRef.current) pendingBreakRef.current = true;
+      else doBreakRef.current(el);
+    };
+    el.addEventListener('beforeinput', onBeforeInput);
+    return () => el.removeEventListener('beforeinput', onBeforeInput);
+  }, []);
+
   useEffect(() => {
     const el = ref.current;
     if (!el) return;
@@ -749,18 +780,6 @@ function NodeEditBox({ id, n, boxStyle, align, controller }: NodeEditBoxProps) {
           return;
         }
         syncListStructure(el);
-      }}
-      // 줄바꿈이 기본 동작으로 들어오는 마지막 구멍을 막는 안전망 — 조합 중 Enter는
-      // keydown preventDefault가 엔진에 따라 무시될 수 있다. 기본 줄바꿈은 [마커|내용]
-      // flex 행을 쪼개 캐럿이 리스트 앞에 그려졌다 재구성으로 튄다(제보: 깜빡임).
-      onBeforeInput={(e) => {
-        const it = (e.nativeEvent as InputEvent).inputType;
-        if (it !== 'insertLineBreak' && it !== 'insertParagraph') return;
-        e.preventDefault();
-        const el = ref.current;
-        if (!el) return;
-        if (composingRef.current) pendingBreakRef.current = true;
-        else doBreak(el);
       }}
       onKeyDown={(e) => {
         e.stopPropagation();

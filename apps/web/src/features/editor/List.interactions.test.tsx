@@ -1066,6 +1066,84 @@ describe('IME 조합 중 줄바꿈 — 기본 줄바꿈 차단 + 조합 종료 �
   });
 });
 
+// 제보(모바일): 리스트 항목에서 키패드 엔터 → 내어쓰기 → 타이핑을 했더니 엉뚱한
+// 줄에 글자가 붙었다. 뿌리는 **안전망이 한 번도 동작하지 않았다**는 것 — 줄바꿈이
+// 브라우저 기본 동작으로 들어오는 마지막 구멍을 React의 `onBeforeInput`으로 막고
+// 있었는데, 그건 네이티브 `beforeinput`이 아니라 `textInput`/`keypress`에서 합성한
+// 폴리필이라 `inputType`이 없고 `insertParagraph`에는 뜨지도 않는다(실브라우저에서
+// `prevented=false` 실측). 안드로이드 IME는 Enter를 `keyCode 229`로 보내 우리 keydown
+// 분기를 비껴가므로, 그때 이 구멍이 그대로 열린다.
+describe('네이티브 beforeinput 안전망 — 기본 줄바꿈이 [마커|내용] 행을 쪼개지 못한다', () => {
+  const DOC_ONE = { c1: { id: 'c1', text: '1. 하나', emoji: '', parent: 'root', children: [], collapsed: false, color: null, x: 0, y: 0 } };
+
+  /** 네이티브 `beforeinput`을 그대로 쏜다(React 합성 이벤트가 아니라). */
+  function nativeBeforeInput(el: HTMLElement, inputType: string): boolean {
+    const ev = new InputEvent('beforeinput', { inputType, bubbles: true, cancelable: true });
+    el.dispatchEvent(ev);
+    return ev.defaultPrevented;
+  }
+
+  it('도형: insertParagraph를 막고 우리 경로로 마커를 이어 준다', () => {
+    localStorage.setItem('mindflow_doc_bin1', JSON.stringify(docWith(DOC_ONE)));
+    const { container } = renderEditor('/editor?map=bin1&title=x');
+    const editor = startEditingNode(container, 'c1');
+    const len = domToRuns(editor, true).text.length;
+    setLinearSelection(editor, len, len);
+
+    expect(nativeBeforeInput(editor, 'insertParagraph')).toBe(true);
+    expect(domToRuns(editor, true).text).toBe('1. 하나\n2. ');
+  });
+
+  it('메모: insertLineBreak도 같은 경로로 막힌다', () => {
+    localStorage.setItem('mindflow_doc_bin2', JSON.stringify(docWith({}, [{ id: 'f1', text: '1. 하나', x: 100, y: 100, w: 160 }])));
+    const { container } = renderEditor('/editor?map=bin2&title=x');
+    const card = container.querySelector('[data-float-id="f1"]') as HTMLElement;
+    fireEvent.doubleClick(card);
+    const editor = card.querySelector('.mf-richedit') as HTMLDivElement;
+    const len = domToRuns(editor, true).text.length;
+    setLinearSelection(editor, len, len);
+
+    expect(nativeBeforeInput(editor, 'insertLineBreak')).toBe(true);
+    expect(domToRuns(editor, true).text).toBe('1. 하나\n2. ');
+  });
+
+  it('조합 중이면 미뤘다가 compositionend에서 잇는다', () => {
+    localStorage.setItem('mindflow_doc_bin3', JSON.stringify(docWith(DOC_ONE)));
+    const { container } = renderEditor('/editor?map=bin3&title=x');
+    const editor = startEditingNode(container, 'c1');
+    const len = domToRuns(editor, true).text.length;
+    setLinearSelection(editor, len, len);
+
+    fireEvent.compositionStart(editor);
+    expect(nativeBeforeInput(editor, 'insertParagraph')).toBe(true);
+    expect(domToRuns(editor, true).text).toBe('1. 하나'); // 아직 아무 일도 없다
+    fireEvent.compositionEnd(editor);
+    expect(domToRuns(editor, true).text).toBe('1. 하나\n2. ');
+  });
+
+  // 같은 경로의 방어 하나 더: 리스트 조작은 **편집 박스 안의 선택**만 믿는다.
+  // `linearize`는 찾지 못한 위치를 텍스트 끝으로 접으므로, 박스 밖 선택을 그대로
+  // 쓰면 엉뚱한 줄(마지막 줄)이 고쳐진다.
+  it('편집 박스 밖 선택으로는 리스트 조작이 일어나지 않는다', () => {
+    localStorage.setItem('mindflow_doc_bin4', JSON.stringify(docWith({ c1: { id: 'c1', text: '1. 하나\n2. 둘', emoji: '', parent: 'root', children: [], collapsed: false, color: null, x: 0, y: 0 } })));
+    const { container } = renderEditor('/editor?map=bin4&title=x');
+    const editor = startEditingNode(container, 'c1');
+    const before = domToRuns(editor, true).text;
+
+    // 선택을 편집 박스 **밖**(문서 body의 다른 노드)으로 옮긴 뒤 들여쓰기 버튼을 누른 셈.
+    const outside = container.querySelector('.mf-ed-vp') as HTMLElement;
+    const range = document.createRange();
+    range.selectNodeContents(outside);
+    range.collapse(true);
+    const sel = window.getSelection();
+    sel?.removeAllRanges();
+    sel?.addRange(range);
+    fireEvent.mouseDown(within(container).getByTitle('들여쓰기 (Tab)'));
+
+    expect(domToRuns(editor, true).text).toBe(before);
+  });
+});
+
 // 제보(후속 정정): 리스트 1 끝에서 →를 누르면 캐럿이 리스트 2 **마커 앞에 한
 // 프레임 그려졌다가** 내용 뒤로 튄다 — 방향키/클릭의 기본 동작은 keydown 핸들러
 // **뒤에** 실행되고, 교정이 비동기 selectionchange(태스크)뿐이면 그 사이 페인트가

@@ -256,6 +256,33 @@ function FloatEditBox({ f, controller }: { f: Float; controller: EditorControlle
     render(el, v, caret);
   };
 
+
+  /** 최신 `doBreak`을 담아 둔다(노드와 동일 — 아래 리스너는 마운트 때 한 번만 붙는다). */
+  const doBreakRef = useRef(doBreak);
+  doBreakRef.current = doBreak;
+
+  /**
+   * 기본 줄바꿈 차단 안전망 — **네이티브** `beforeinput`에 건다(노드와 동일).
+   *
+   * React의 `onBeforeInput`은 네이티브 이벤트가 아니라 `textInput`/`keypress`에서
+   * 합성한 폴리필이라 `inputType`이 없고 `insertParagraph`에는 뜨지도 않는다 —
+   * 실측으로 안 막히는 것을 확인했다(안드로이드 IME의 `keyCode 229` Enter가 그대로
+   * 실행돼 [마커|내용] 행을 쪼갠다).
+   */
+  useEffect(() => {
+    const el = ref.current;
+    if (!el) return;
+    const onBeforeInput = (e: Event): void => {
+      const it = (e as InputEvent).inputType;
+      if (it !== 'insertLineBreak' && it !== 'insertParagraph') return;
+      e.preventDefault();
+      if (composingRef.current) pendingBreakRef.current = true;
+      else doBreakRef.current(el);
+    };
+    el.addEventListener('beforeinput', onBeforeInput);
+    return () => el.removeEventListener('beforeinput', onBeforeInput);
+  }, []);
+
   useEffect(() => {
     const el = ref.current;
     if (!el) return;
@@ -350,16 +377,6 @@ function FloatEditBox({ f, controller }: { f: Float; controller: EditorControlle
           return;
         }
         syncListStructure(el);
-      }}
-      // 기본 줄바꿈 차단 안전망(노드 편집과 동일 — 행을 쪼개 캐럿이 깜빡인다).
-      onBeforeInput={(e) => {
-        const it = (e.nativeEvent as InputEvent).inputType;
-        if (it !== 'insertLineBreak' && it !== 'insertParagraph') return;
-        e.preventDefault();
-        const el = ref.current;
-        if (!el) return;
-        if (composingRef.current) pendingBreakRef.current = true;
-        else doBreak(el);
       }}
       onKeyDown={(e) => {
         e.stopPropagation();

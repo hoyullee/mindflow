@@ -2649,13 +2649,19 @@ export function useEditorState(): EditorController {
     const ws = window.getSelection();
     if (!ws || !ws.rangeCount) return;
     const rng = ws.getRangeAt(0);
+    // 선택이 편집 박스 **밖**이면 아무것도 하지 않는다 — `linearize`는 찾지 못한
+    // 위치를 텍스트 끝으로 접으므로, 남의 선택을 그대로 쓰면 엉뚱한 줄을 고친다.
+    if (!ed.contains(rng.startContainer) || !ed.contains(rng.endContainer)) return;
     const lin = linearize(ed, [
       { container: rng.startContainer, offset: rng.startOffset },
       { container: rng.endContainer, offset: rng.endOffset },
     ]);
-    const a = Math.min(lin.pos[0] ?? 0, lin.pos[1] ?? 0);
-    const b = Math.max(lin.pos[0] ?? 0, lin.pos[1] ?? 0);
-    const parsed = domToRuns(ed, true);
+    // 값과 오프셋은 **같은 좌표계**여야 한다(`liveEditValue` — 편집 박스의
+    // placeholder `<br>` 하나만큼 `linearize`가 더 세는 것을 값 길이로 자른다).
+    const live = liveEditValue(ed);
+    const a = live.clamp(Math.min(lin.pos[0] ?? 0, lin.pos[1] ?? 0));
+    const b = live.clamp(Math.max(lin.pos[0] ?? 0, lin.pos[1] ?? 0));
+    const parsed = { text: live.text, rich: live.rich };
     const edits = make(parsed.text, a, b);
     if (!edits.length) return;
     const chars = runsToChars(parsed);
