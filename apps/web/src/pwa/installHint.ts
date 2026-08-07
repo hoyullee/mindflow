@@ -1,11 +1,16 @@
 import { useCallback, useEffect, useState } from 'react';
 
 /**
- * "홈 화면에 추가" 안내(모바일웹 ④).
+ * 설치 안내 — "홈 화면에 추가"(모바일) / "앱으로 설치"(데스크톱).
  *
- * 안드로이드 크롬은 `beforeinstallprompt`를 던져 주므로 **버튼 한 번으로 설치**할 수
- * 있지만, iOS 사파리에는 그런 이벤트도 설치 배너도 없다 — 공유 시트의 "홈 화면에
- * 추가"를 사용자가 스스로 찾아야 한다. 그래서 안내가 필요한 쪽은 사실상 iOS다.
+ * 브라우저가 `beforeinstallprompt`를 던져 주면 **버튼 한 번으로 설치**할 수 있다.
+ * 이건 모바일만의 이야기가 아니다 — 데스크톱 크롬·엣지도 같은 이벤트를 주고,
+ * 설치하면 주소창 없는 창 하나로 열린다. 그래서 그 경우엔 기기를 가리지 않는다
+ * (사용자 요청).
+ *
+ * 반대로 iOS 사파리에는 그 이벤트도 설치 배너도 없어서, 공유 시트의 "홈 화면에
+ * 추가"를 사용자가 스스로 찾아야 한다 — 그 **수동 절차 안내만** 모바일 전용이다
+ * (데스크톱 사파리에는 대응하는 절차가 없다).
  *
  * 이 파일은 **판단만** 한다(표현은 `InstallHint.tsx`). 판단부는 순수 함수라
  * 테스트가 규칙을 그대로 고정한다.
@@ -14,7 +19,7 @@ import { useCallback, useEffect, useState } from 'react';
 export type InstallHintMode = 'prompt' | 'ios' | null;
 
 export interface InstallEnv {
-  /** 모바일 화면인가(데스크톱에는 안내하지 않는다). */
+  /** 모바일 화면인가 — iOS 수동 절차 안내에만 쓴다(한 번에 설치되는 길은 공통). */
   isMobile: boolean;
   /** 이미 홈 화면(독립 창)에서 실행 중인가. */
   standalone: boolean;
@@ -27,9 +32,11 @@ export interface InstallEnv {
 }
 
 export function installHintMode(env: InstallEnv): InstallHintMode {
-  if (!env.isMobile || env.standalone || env.dismissed) return null;
+  if (env.standalone || env.dismissed) return null;
+  // 한 번에 설치되는 길이 있으면 기기를 가리지 않는다(데스크톱 크롬·엣지 포함).
   if (env.canPrompt) return 'prompt';
-  return env.ios ? 'ios' : null;
+  // 손으로 하는 절차 안내는 iOS 모바일에만 — 데스크톱엔 안내할 절차가 없다.
+  return env.isMobile && env.ios ? 'ios' : null;
 }
 
 const KEY = 'mf_install_hint';

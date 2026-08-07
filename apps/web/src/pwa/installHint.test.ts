@@ -22,10 +22,22 @@ describe('installHintMode', () => {
     expect(installHintMode(base)).toBeNull();
   });
 
-  it('데스크톱·이미 홈 화면·한 번 닫은 기기에는 띄우지 않는다', () => {
+  // 데스크톱 크롬·엣지도 `beforeinstallprompt`를 준다 — 한 번에 설치되는 길이
+  // 있으면 기기를 가리지 않는다(사용자 요청). 반대로 **손으로 하는 절차 안내**는
+  // 그 절차가 있는 iOS 모바일에만.
+  it('데스크톱에서도 한 번에 설치되면 띄운다', () => {
+    expect(installHintMode({ ...base, isMobile: false, canPrompt: true })).toBe('prompt');
+  });
+
+  it('데스크톱에는 수동 절차를 안내하지 않는다 (안내할 절차가 없다)', () => {
     expect(installHintMode({ ...base, ios: true, isMobile: false })).toBeNull();
+    expect(installHintMode({ ...base, isMobile: false })).toBeNull();
+  });
+
+  it('이미 홈 화면·한 번 닫은 기기에는 띄우지 않는다', () => {
     expect(installHintMode({ ...base, ios: true, standalone: true })).toBeNull();
     expect(installHintMode({ ...base, ios: true, dismissed: true })).toBeNull();
     expect(installHintMode({ ...base, canPrompt: true, dismissed: true })).toBeNull();
+    expect(installHintMode({ ...base, isMobile: false, canPrompt: true, standalone: true })).toBeNull();
   });
 });

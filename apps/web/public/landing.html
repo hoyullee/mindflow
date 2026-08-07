@@ -4,6 +4,15 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <meta name="description" content="Geurio(그리오)는 중심 주제에서 가지를 뻗어 아이디어를 정리하는 마인드맵 서비스입니다." />
+    <!-- PWA: 루트(`/`)는 빌드 후 이 파일로 덮어써지므로(vite.config `landingRootSwap`)
+         vite-plugin-pwa가 SPA 셸에 주입한 매니페스트 링크가 여기엔 오지 않는다.
+         그런데 대부분의 사용자가 처음 닿는 페이지가 바로 여기다 — 링크가 없으면
+         브라우저가 이 페이지를 "설치할 수 없는 사이트"로 보고, 설치 메뉴가 아예
+         안 뜨거나 매니페스트 없는 **바로가기**만 만든다. 그래서 직접 건다.
+         (`pwa/manifest.test.ts`가 이 링크의 존재를 고정한다.) -->
+    <link rel="manifest" href="/manifest.webmanifest" />
+    <meta name="theme-color" content="#f0663f" />
+    <link rel="apple-touch-icon" href="/icons/apple-touch-icon.png" />
     <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
     <link rel="icon" type="image/png" sizes="32x32" href="/favicon-32x32.png" />
     <title>그리오 Geurio — 마인드맵 서비스</title>

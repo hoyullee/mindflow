@@ -98,3 +98,18 @@ label {
     transform: translateX(-50%);
   }
 }
+
+/* 가운데 정렬이 **아닌** 알림용(데스크톱 설치 안내는 오른쪽 아래에 붙는다).
+   위 키프레임을 그대로 쓰면 애니메이션의 translateX(-50%)가 인라인
+   transform을 덮어써서, 0.18초 동안 자기 폭의 절반만큼 왼쪽에 그려졌다가
+   제자리로 튄다(실측: 오른쪽 여백 20px여야 하는데 190px). */
+@keyframes mf-toast-in-corner {
+  from {
+    opacity: 0;
+    transform: translateY(10px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}

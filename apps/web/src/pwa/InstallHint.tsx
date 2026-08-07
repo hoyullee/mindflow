@@ -10,12 +10,14 @@ import type { InstallHintMode } from './installHint';
  */
 interface InstallHintProps {
   mode: InstallHintMode;
-  /** 안드로이드: 브라우저 설치 프롬프트를 띄운다. */
+  /** 브라우저 설치 프롬프트를 띄운다(안드로이드 크롬·데스크톱 크롬/엣지). */
   onInstall: () => void;
   onDismiss: () => void;
+  /** 문구와 자리를 가른다 — 폰은 "홈 화면", PC는 "앱으로 설치". */
+  isMobile?: boolean;
 }
 
-export function InstallHint({ mode, onInstall, onDismiss }: InstallHintProps) {
+export function InstallHint({ mode, onInstall, onDismiss, isMobile = true }: InstallHintProps) {
   if (!mode) return null;
 
   return (
@@ -24,13 +26,15 @@ export function InstallHint({ mode, onInstall, onDismiss }: InstallHintProps) {
       aria-live="polite"
       style={{
         ...toastShellStyle,
-        // 가운데 정렬(`left:50%` + translate)은 폭을 정하지 않으면 **뷰포트의 절반**
-        // 안에서만 줄어들어 문구가 두 줄로 접힌다(실측). 이 안내는 모바일 전용이라
-        // 양옆을 고정한 바로 편다.
-        left: 12,
-        right: 12,
+        // 폰: 가운데 정렬(`left:50%` + translate)은 폭을 정하지 않으면 **뷰포트의
+        // 절반** 안에서만 줄어들어 문구가 두 줄로 접힌다(실측) → 양옆을 고정한 바.
+        // PC: 화면을 가로지르는 바는 과하다 — 오른쪽 아래에 카드로 붙인다.
+        ...(isMobile
+          ? { left: 12, right: 12, maxWidth: 'none' }
+          : // 가운데 정렬이 아니므로 애니메이션도 X 이동이 없는 쪽을 쓴다
+            // (공용 `mf-toast-in`은 translateX(-50%)를 품고 있다 — index.css).
+            { left: 'auto', right: 20, maxWidth: 420, animation: 'mf-toast-in-corner .18s ease-out' }),
         transform: 'none',
-        maxWidth: 'none',
         zIndex: 290,
         gap: 10,
         padding: '11px 12px 11px 14px',
@@ -39,7 +43,7 @@ export function InstallHint({ mode, onInstall, onDismiss }: InstallHintProps) {
     >
       <AppIcon />
       <div style={{ flex: '1 1 auto', fontSize: 13, lineHeight: 1.45, minWidth: 0 }}>
-        <div style={{ fontWeight: 700 }}>홈 화면에 추가하면 앱처럼 열려요</div>
+        <div style={{ fontWeight: 700 }}>{isMobile ? '홈 화면에 추가하면 앱처럼 열려요' : '앱으로 설치하면 창 하나로 열려요'}</div>
         {mode === 'ios' && (
           <div style={{ opacity: 0.75, fontSize: 12, marginTop: 2 }}>
             아래 <ShareIcon /> 공유 → &lsquo;홈 화면에 추가&rsquo;
@@ -64,7 +68,7 @@ export function InstallHint({ mode, onInstall, onDismiss }: InstallHintProps) {
             cursor: 'pointer',
           }}
         >
-          추가
+          {isMobile ? '추가' : '설치'}
         </button>
       )}
       <button
