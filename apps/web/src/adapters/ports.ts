@@ -151,6 +151,15 @@ export interface LoadedDoc {
   doc: Doc;
   version: number;
   title: string;
+  /**
+   * 이 문서가 **내 것**인가. 링크 공유(0017) 이후로 필요해졌다: 링크로 들어온
+   * 사람은 `document_shares`에 행이 없어서 초대 목록만으로는 소유자와 구별되지
+   * 않는다(둘 다 "내 행 없음"). 그러면 뷰어에게 편집 UI를 내주고 저장은 서버가
+   * 거부하는 화면이 된다.
+   *
+   * `undefined` = 알 수 없음(로컬/데모 모드) — 호출부는 기존 동작(편집)을 유지한다.
+   */
+  ownedByMe?: boolean;
 }
 
 export type SaveResult =
@@ -256,6 +265,14 @@ export interface ShareStore {
    * 않는다.
    */
   listParticipants(documentId: string): Promise<ShareParticipant[] | null>;
+  /**
+   * 링크 공유 상태(0017). `'view'` = 링크를 아는 **로그인한** 사람이 열람 가능,
+   * `null` = 꺼짐. 조회 불가(구 서버·오류)도 `null`로 본다 — 켜져 있는데 꺼진 것으로
+   * 보이는 쪽이 안전하다(UI가 실수로 "공유 중"이라 말하지 않는다).
+   */
+  getLink(documentId: string): Promise<ShareRole | null>;
+  /** 링크 공유를 켜고 끈다. 소유자만(RLS). `null` = 끄기. */
+  setLink(documentId: string, role: ShareRole | null): Promise<{ error?: string }>;
 }
 
 /**

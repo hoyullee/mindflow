@@ -179,16 +179,25 @@ describe('SupabaseDocStore', () => {
   });
 
   it('load() selects a single row by id and parses the JSONB `data` column', async () => {
-    const row = { id: 'd1', title: 'A', version: 2, data: { v: 1, nodes: { root: { id: 'root', text: 'A', parent: null, children: [] } } } };
+    const row = { id: 'd1', title: 'A', version: 2, owner: 'me', data: { v: 1, nodes: { root: { id: 'root', text: 'A', parent: null, children: [] } } } };
     const { client, query, from } = fakeClient({ data: row, error: null });
     const store = new SupabaseDocStore(client);
 
     const loaded = await store.load('d1');
 
     expect(from).toHaveBeenCalledWith('documents');
-    expect(query.calls).toEqual([{ method: 'select', args: ['id,title,version,data'] }, { method: 'eq', args: ['id', 'd1'] }, { method: 'maybeSingle', args: [] }]);
-    expect(loaded).toMatchObject({ version: 2, title: 'A' });
+    // `owner`도 함께 읽는다 — 링크 공유(0017) 이후 "내 문서인가"를 초대 목록만으로는
+    // 알 수 없다(링크로 들어온 사람도 소유자도 자기 행이 없다).
+    expect(query.calls).toEqual([{ method: 'select', args: ['id,title,version,data,owner'] }, { method: 'eq', args: ['id', 'd1'] }, { method: 'maybeSingle', args: [] }]);
+    expect(loaded).toMatchObject({ version: 2, title: 'A', ownedByMe: true });
     expect(loaded!.doc.nodes.root!.text).toBe('A');
+  });
+
+  it('load()가 남의 문서면 ownedByMe=false — 링크로 연 사람에게 편집 UI를 내주지 않는 신호', async () => {
+    const row = { id: 'd1', title: 'A', version: 2, owner: 'someone-else', data: { v: 1, nodes: { root: { id: 'root', text: 'A', parent: null, children: [] } } } };
+    const { client } = fakeClient({ data: row, error: null });
+    const loaded = await new SupabaseDocStore(client).load('d1');
+    expect(loaded?.ownedByMe).toBe(false);
   });
 
   it('load() returns null when no row is found', async () => {

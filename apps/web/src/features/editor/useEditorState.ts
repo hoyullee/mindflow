@@ -861,6 +861,11 @@ export function useEditorState(): EditorController {
         } else {
           docVersionRef.current = undefined; // confirmed brand-new map (no row yet)
         }
+        // 남의 문서를 **링크로** 열었는가(0017). 링크로 들어온 사람은 초대 목록에
+        // 자기 행이 없어서 소유자와 구별되지 않는다 — 그러면 아래 권한 판별이
+        // 'edit'로 남아 편집 UI를 내주고 저장만 서버에 거부당한다. 로드가 알려 주는
+        // 소유 여부가 그 구별을 만든다(로컬/데모 모드는 undefined → 기존 동작).
+        setLoadedNotMine(res?.ownedByMe === false);
         // A RESOLVED load (doc OR null) means we know the backend state → saving
         // is now safe.
         canPersistDocRef.current = true;
@@ -911,6 +916,8 @@ export function useEditorState(): EditorController {
   // 서버 RLS(0009)가 view 초대의 UPDATE를 거부하므로, 이 상태는 "고쳐지는 척하다
   // 저장은 안 되는" 화면을 만들지 않기 위한 클라이언트 어포던스다.
   const [accessRole, setAccessRole] = useState<ShareRole>('edit');
+  /** 로드가 "내 문서가 아니다"라고 알려 준 상태(링크 공유 또는 초대). */
+  const [loadedNotMine, setLoadedNotMine] = useState(false);
   // 초대 목록에 행이 있는가 = 남과 함께 쓰는 맵인가. 협업 연결 배지의 조건이다.
   const [sharedDoc, setSharedDoc] = useState(false);
   const readOnly = accessRole === 'view';
@@ -995,6 +1002,10 @@ export function useEditorState(): EditorController {
         setSharedDoc(rows.length > 0);
         const mine = rows.find((r) => r.email === myShareEmail);
         if (mine) setAccessRole(mine.role);
+        // 내 문서가 아닌데 초대 행도 없다 = **링크로 열었다**(0017) → 보기 전용.
+        // 서버도 같은 판단을 한다(링크는 SELECT만 열고 UPDATE는 열지 않는다) —
+        // 이건 "고쳐지는 척하다 저장은 안 되는" 화면을 막는 어포던스다.
+        else if (loadedNotMine) setAccessRole('view');
       } catch {
         /* 판별 불가 — 편집 유지(서버가 최종 판단) */
       }
@@ -1002,7 +1013,7 @@ export function useEditorState(): EditorController {
     return () => {
       alive = false;
     };
-  }, [docStoreId, shareStore, myShareEmail]);
+  }, [docStoreId, shareStore, myShareEmail, loadedNotMine]);
 
   // Broadcasts the LOCAL selection (single `selection` OR marquee `multiSelection`,
   // whichever is active — same precedence as `multiGroups` below, plus zones,

@@ -1,7 +1,15 @@
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { MemoryRouter, Route, Routes } from 'react-router-dom';
 import { Editor } from './Editor';
+import { BackendProvider } from '../../adapters/BackendContext';
+import { LocalAuth } from '../../adapters/local/localAuth';
+import { LocalSpaceStore } from '../../adapters/local/localSpaceStore';
+import { LocalShareStore } from '../../adapters/local/localShareStore';
+import { LocalFeedbackStore } from '../../adapters/local/localFeedbackStore';
+import { LocalImageStore } from '../../adapters/local/localImageStore';
+import { LocalDocStore } from '../../adapters/local/localDocStore';
+import type { Backend, DocStore, ShareStore } from '../../adapters/ports';
 
 // 보기 전용 공유(#22) — `document_shares`의 내 행이 'view'면 에디터가 읽기
 // 전용으로 열린다. 로컬 모드에서도 같은 판별 경로(`LocalShareStore.list`)를
@@ -103,5 +111,69 @@ describe('보기 전용 에디터', () => {
     expect(screen.getByRole('button', { name: '편집' })).toBeTruthy();
     fireEvent.doubleClick(container.querySelector('[data-node-id="c1"]')!);
     expect(container.querySelector('.mf-richedit')).toBeTruthy();
+  });
+});
+
+/**
+ * 링크 공유(0017)로 남의 맵을 연 사람.
+ *
+ * 초대 목록에는 자기 행이 **없다** — 소유자도 자기 행이 없으므로 목록만으로는 둘이
+ * 구별되지 않는다. 그 구별을 만드는 게 `load()`가 실어 주는 `ownedByMe`다. 이게
+ * 없으면 뷰어에게 편집 UI를 내주고 저장만 서버(RLS)에 거부당하는 화면이 된다.
+ */
+describe('링크로 연 맵 (보기 전용)', () => {
+  function backendWith(ownedByMe: boolean | undefined): Backend {
+    const local = new LocalDocStore();
+    const docStore = {
+      ...local,
+      list: () => local.list(),
+      loadPreview: (id: string) => local.loadPreview(id),
+      save: (...a: Parameters<DocStore['save']>) => local.save(...a),
+      remove: (id: string) => local.remove(id),
+      restore: (id: string) => local.restore(id),
+      purge: (id: string) => local.purge(id),
+      rename: (id: string, t: string) => local.rename(id, t),
+      listEditorNames: () => local.listEditorNames(),
+      load: vi.fn(async (id: string) => {
+        const res = await local.load(id);
+        return res ? { ...res, ownedByMe } : null;
+      }),
+    } as unknown as DocStore;
+    // 링크로 들어온 사람에게는 초대 행이 하나도 보이지 않는다(RLS의 결).
+    const shareStore = { ...new LocalShareStore(), list: async () => [] } as unknown as ShareStore;
+    return { auth: new LocalAuth(), docStore, spaceStore: new LocalSpaceStore(), shareStore, feedbackStore: new LocalFeedbackStore(), imageStore: new LocalImageStore(), mode: 'supabase' };
+  }
+
+  function renderWith(backend: Backend, entry: string) {
+    return render(
+      <MemoryRouter initialEntries={[entry]}>
+        <BackendProvider backend={backend}>
+          <Routes>
+            <Route path="/editor" element={<Editor />} />
+            <Route path="/home" element={<div>HOME_PAGE</div>} />
+          </Routes>
+        </BackendProvider>
+      </MemoryRouter>,
+    );
+  }
+
+  it('내 문서가 아닌데 초대 행도 없으면 = 링크로 열었다 → 보기 전용', async () => {
+    localStorage.setItem('mindflow_doc_lk1', JSON.stringify(DOC));
+    renderWith(backendWith(false), '/editor?map=lk1&title=x');
+    await waitReadOnly();
+    expect(screen.queryByRole('button', { name: '편집' })).toBeNull();
+  });
+
+  it('내 문서면 그대로 편집할 수 있다 (무회귀)', async () => {
+    localStorage.setItem('mindflow_doc_lk2', JSON.stringify(DOC));
+    renderWith(backendWith(true), '/editor?map=lk2&title=x');
+    await waitFor(() => expect(screen.getByRole('button', { name: '편집' })).toBeTruthy());
+    expect(screen.queryByText('보기 전용')).toBeNull();
+  });
+
+  it('소유 여부를 모르는 백엔드(로컬/데모)는 기존 동작을 유지한다', async () => {
+    localStorage.setItem('mindflow_doc_lk3', JSON.stringify(DOC));
+    renderWith(backendWith(undefined), '/editor?map=lk3&title=x');
+    await waitFor(() => expect(screen.getByRole('button', { name: '편집' })).toBeTruthy());
   });
 });

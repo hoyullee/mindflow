@@ -51,6 +51,83 @@ function PersonDot({ email, name, dimmed = false }: { email: string; name: strin
   );
 }
 
+/**
+ * 제목 옆 "?" — 눌러야 뜨는 권한 안내(요청). 호버가 아니라 **클릭 토글**인 이유는
+ * 터치다: 손가락에는 호버가 없어서 호버 전용 툴팁은 폰에서 아예 못 본다.
+ */
+function HelpTip({ theme: th, open, onToggle, onClose }: { theme: EditorController['uiTheme']; open: boolean; onToggle: () => void; onClose: () => void }) {
+  const ref = useRef<HTMLDivElement | null>(null);
+  useEffect(() => {
+    if (!open) return;
+    const onDown = (e: MouseEvent): void => {
+      if (ref.current && !ref.current.contains(e.target as Node)) onClose();
+    };
+    window.addEventListener('mousedown', onDown, true);
+    return () => window.removeEventListener('mousedown', onDown, true);
+  }, [open, onClose]);
+
+  return (
+    <div ref={ref} style={{ position: 'relative', display: 'flex' }}>
+      <button
+        type="button"
+        onClick={onToggle}
+        aria-label="권한 안내"
+        aria-expanded={open}
+        style={{
+          width: 18,
+          height: 18,
+          borderRadius: '50%',
+          border: `1px solid ${th.border}`,
+          background: open ? th.accent : 'transparent',
+          color: open ? th.accentInk : th.subtext,
+          fontFamily: 'inherit',
+          fontSize: 11,
+          fontWeight: 800,
+          lineHeight: 1,
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          cursor: 'pointer',
+          padding: 0,
+        }}
+      >
+        ?
+      </button>
+      {open && (
+        <div
+          role="tooltip"
+          style={{
+            position: 'absolute',
+            top: 24,
+            left: -6,
+            width: 264,
+            zIndex: 5,
+            background: th.panel,
+            border: `1px solid ${th.border}`,
+            borderRadius: 10,
+            boxShadow: '0 10px 28px rgba(0,0,0,.18)',
+            padding: '10px 12px',
+            fontSize: 12.5,
+            fontWeight: 400,
+            color: th.subtext,
+            lineHeight: 1.6,
+          }}
+        >
+          <div>
+            <strong style={{ color: th.text }}>편집 가능</strong> 권한은 서로의 커서와 편집이 실시간으로 보여요.
+          </div>
+          <div style={{ marginTop: 4 }}>
+            <strong style={{ color: th.text }}>보기 전용</strong> 권한은 저장된 최신 맵을 열람만 할 수 있습니다.
+          </div>
+          <div style={{ marginTop: 4 }}>
+            <strong style={{ color: th.text }}>링크 공유</strong>는 링크를 아는 사람이 <strong style={{ color: th.text }}>로그인 후 열람</strong>만 할 수 있어요.
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
 /** 권한 셀렉트 공통 모양 — 초대 행(40px)과 참가자 행(28px)이 함께 쓴다. */
 function roleSelectStyle(th: EditorController['uiTheme']): CSSProperties {
   return {
@@ -86,6 +163,11 @@ export function ShareModal({ controller }: ShareModalProps) {
   const loadedForRef = useRef<string | null>(null);
   const inputRef = useRef<HTMLInputElement>(null);
   const authUser = useAuthUser();
+  /** 링크 공유(0017) — `'view'`면 켜짐, `null`이면 꺼짐. */
+  const [linkRole, setLinkRole] = useState<ShareRole | null>(null);
+  const [copied, setCopied] = useState(false);
+  /** 권한 안내 툴팁("?" 아이콘) — 문구를 상시 띄우는 대신 물어볼 때만 보여 준다. */
+  const [helpOpen, setHelpOpen] = useState(false);
 
   const refresh = useCallback(async () => {
     if (!docId) return;
@@ -96,6 +178,13 @@ export function ShareModal({ controller }: ShareModalProps) {
       setParticipants(people);
       setError('');
       loadedForRef.current = docId;
+      // 링크 상태는 **따로** 묻는다 — 실패해도 공유 목록까지 막지 않는다
+      // (`listParticipants`와 같은 태도: 부가 정보가 본 기능을 넘어뜨리면 안 된다).
+      try {
+        setLinkRole(await shareStore.getLink(docId));
+      } catch {
+        setLinkRole(null);
+      }
     } catch {
       setError('공유 목록을 불러오지 못했어요.');
     } finally {
@@ -134,6 +223,34 @@ export function ShareModal({ controller }: ShareModalProps) {
   const rows: { email: string; role: 'edit' | 'view' }[] = participants
     ? participants.filter((p) => p.kind === 'invitee').map((p) => ({ email: p.email, role: p.role }))
     : shares.map((s) => ({ email: s.email, role: s.role }));
+
+  /** 링크로 이 맵을 여는 주소 — 지금 보고 있는 그 주소다(비밀은 랜덤 문서 id 자체). */
+  const shareUrl = `${window.location.origin}/editor?map=${encodeURIComponent(docId)}`;
+
+  const toggleLink = async (): Promise<void> => {
+    const next: ShareRole | null = linkRole ? null : 'view';
+    setBusy(true);
+    const res = await shareStore.setLink(docId, next);
+    setBusy(false);
+    if (res.error) {
+      setError(res.error);
+      return;
+    }
+    setError('');
+    setLinkRole(next);
+    setCopied(false);
+  };
+
+  const copyLink = async (): Promise<void> => {
+    try {
+      await navigator.clipboard.writeText(shareUrl);
+      setCopied(true);
+      window.setTimeout(() => setCopied(false), 1600);
+    } catch {
+      // 클립보드가 막힌 환경(권한 거부·비보안 컨텍스트) — 주소를 직접 고를 수 있게 알린다.
+      setError('링크를 복사하지 못했어요. 주소창의 주소를 그대로 공유해 주세요.');
+    }
+  };
 
   const invite = async (): Promise<void> => {
     const target = email.trim();
@@ -208,11 +325,11 @@ export function ShareModal({ controller }: ShareModalProps) {
         onClick={(e) => e.stopPropagation()}
         style={{ width: 420, maxWidth: 'calc(100vw - 32px)', background: th.panel, borderRadius: 16, boxShadow: '0 22px 60px rgba(0,0,0,.28)', padding: '22px 22px 18px', boxSizing: 'border-box', color: th.text }}
       >
-        <div style={{ fontSize: 16, fontWeight: 800, marginBottom: 6 }}>공유</div>
-        <div style={{ fontSize: 12.5, color: th.subtext, lineHeight: 1.6, marginBottom: 14 }}>
-          <strong style={{ color: th.text }}>편집 가능</strong> 권한은 서로의 커서와 편집이 실시간으로 보여요.
-          <br />
-          <strong style={{ color: th.text }}>보기 전용</strong> 권한은 저장된 최신 맵을 열람만 할 수 있습니다.
+        {/* 권한 설명은 상시 문단이 아니라 "?"에 넣는다(요청) — 팝업을 여는 사람 대부분은
+            이미 알고 있고, 두 줄이 매번 자리를 차지했다. */}
+        <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 14, position: 'relative' }}>
+          <div style={{ fontSize: 16, fontWeight: 800 }}>공유</div>
+          <HelpTip theme={th} open={helpOpen} onToggle={() => setHelpOpen((v) => !v)} onClose={() => setHelpOpen(false)} />
         </div>
 
         {/* 소유자 — 공유받은 사람 입장에서 "누가 초대했는지"가 보여야 한다(제보).
@@ -230,6 +347,37 @@ export function ShareModal({ controller }: ShareModalProps) {
               <div style={{ fontSize: 11.5, color: th.subtext, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{owner.email}</div>
             </div>
             <span style={{ flexShrink: 0, fontSize: 11.5, color: th.subtext }}>소유자</span>
+          </div>
+        )}
+
+        {/* 링크 공유(0017) — 이메일을 모르는 상대에게 "이거 봐 줘" 하는 가장 짧은 길.
+            보기 전용만 연다: 링크는 유출되면 회수할 수 없고(끄기 전까지), 열람은
+            유출돼도 피해가 "봤다"에서 멈추지만 편집은 내용을 되돌릴 수 없게 만든다. */}
+        {isOwner && (
+          <div aria-label="링크 공유" style={{ border: `1px solid ${th.border}`, borderRadius: 11, background: th.canvasBg, padding: '10px 11px', marginBottom: 12 }}>
+            <label style={{ display: 'flex', alignItems: 'center', gap: 9, cursor: busy ? 'default' : 'pointer' }}>
+              <input type="checkbox" checked={!!linkRole} disabled={busy} onChange={() => void toggleLink()} aria-label="링크가 있는 사람은 열람" style={{ width: 15, height: 15, accentColor: th.accent, cursor: 'inherit' }} />
+              <span style={{ flex: '1 1 auto', minWidth: 0, fontSize: 13, fontWeight: 700 }}>링크가 있는 사람은 열람</span>
+              <span style={{ flexShrink: 0, fontSize: 11.5, color: th.subtext }}>보기 전용</span>
+            </label>
+            {linkRole && (
+              <div style={{ display: 'flex', gap: 8, marginTop: 9 }}>
+                <input
+                  readOnly
+                  value={shareUrl}
+                  aria-label="공유 링크"
+                  onFocus={(e) => e.currentTarget.select()}
+                  style={{ flex: '1 1 auto', minWidth: 0, height: 34, padding: '0 10px', border: `1px solid ${th.border}`, borderRadius: 9, background: th.panel, color: th.subtext, fontFamily: 'inherit', fontSize: 12, outline: 'none' }}
+                />
+                <button
+                  type="button"
+                  onClick={() => void copyLink()}
+                  style={{ flexShrink: 0, height: 34, padding: '0 12px', border: 'none', borderRadius: 9, background: th.accent, color: th.accentInk, fontFamily: 'inherit', fontSize: 12.5, fontWeight: 700, cursor: 'pointer' }}
+                >
+                  {copied ? '복사됨' : '링크 복사'}
+                </button>
+              </div>
+            )}
           </div>
         )}
 
