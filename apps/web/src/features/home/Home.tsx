@@ -9,6 +9,8 @@ import { AuthModal } from './components/modals/AuthModal';
 import { ToastModal } from './components/modals/ToastModal';
 import { NewSpaceModal } from './components/modals/NewSpaceModal';
 import { FolderModal } from './components/modals/FolderModal';
+import { MapRenameModal } from './components/modals/MapRenameModal';
+import { HomeContextMenu } from './components/HomeContextMenu';
 import { Modals } from './components/modals/Modals';
 import { AccountSettingsModal } from './components/modals/AccountSettingsModal';
 import { DeleteAccountModal } from './components/modals/DeleteAccountModal';
@@ -91,7 +93,18 @@ export function Home() {
           "many maps" (scroll appears) doesn't shrink the content box and shift the
           whole grid/toolbar left on devices with classic (space-taking) scrollbars.
           It's a no-op with overlay scrollbars (mobile), where there's no shift anyway. */}
-      <main style={{ flex: '1 1 auto', display: 'flex', flexDirection: 'column', overflowY: 'auto', scrollbarGutter: 'stable', padding: isMobile ? '16px 14px 32px' : '26px 32px 40px', minWidth: 0 }}>
+      <main
+        onContextMenu={(e) => {
+          // 빈 자리 우클릭 = "새로 만들기 · 새 폴더 · 가져오기 · 설정"(요청).
+          // 카드·폴더는 자기 메뉴를 열고 전파를 끊으므로 여기까지 오지 않고,
+          // 입력창·검색어 위에서는 브라우저 기본 메뉴(붙여넣기 등)를 지킨다.
+          const t = e.target as HTMLElement;
+          if (t.closest && t.closest('input, textarea, [contenteditable="true"], .mf-home-ctx')) return;
+          e.preventDefault();
+          controller.openCtxMenuAt(e.clientX, e.clientY, { kind: 'bg' });
+        }}
+        style={{ flex: '1 1 auto', display: 'flex', flexDirection: 'column', overflowY: 'auto', scrollbarGutter: 'stable', padding: isMobile ? '16px 14px 32px' : '26px 32px 40px', minWidth: 0 }}
+      >
         {/* Cross-space "최근 항목" strip sits ABOVE the space toolbar so it reads as a
             global "recently opened" bar, not part of the current space's maps.
             로딩 중엔(저장된 최근 기록이 있을 때) 같은 footprint의 스켈레톤을 미리
@@ -111,6 +124,10 @@ export function Home() {
       <Modals state={state} controller={controller} />
       <NewSpaceModal state={state} controller={controller} />
       <FolderModal state={state} controller={controller} />
+      <MapRenameModal state={state} controller={controller} />
+
+      {/* 홈의 단 하나뿐인 메뉴 — 카드 ☰·카드 우클릭·빈 자리 우클릭이 모두 이걸 연다. */}
+      <HomeContextMenu state={state} view={view} controller={controller} />
     </div>
   );
 }

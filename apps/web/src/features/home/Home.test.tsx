@@ -1012,9 +1012,11 @@ describe('Home', () => {
 
     // open ☰ → 스페이스로 이동 → 공간비이 (scope name lookups to the card's menu,
     // since the space name also appears in the sidebar)
+    // 메뉴는 이제 카드 안이 아니라 화면 위에 뜨는 공용 메뉴(`HomeContextMenu`)다 —
+    // 하위 항목도 드릴다운이 아니라 옆으로 뻗는 플라이아웃이다.
     await user.click(within(card).getByLabelText('메뉴'));
-    await user.click(within(card).getByText('스페이스로 이동'));
-    await user.click(within(card).getByText('공간비이'));
+    await user.click(await screen.findByRole('menuitem', { name: /스페이스로 이동/ }));
+    await user.click(await screen.findByRole('menuitem', { name: '공간비이' }));
 
     // the move toast labels itself "이동 완료" (not the old hardcoded "복원 완료")
     await waitFor(() => expect(screen.getByText('이동 완료')).toBeTruthy());
@@ -1398,12 +1400,13 @@ describe('Home', () => {
     expect(cardA!.style.border).toContain('var(--mf-accent)');
     expect(cardB!.style.border).not.toContain('var(--mf-accent)');
 
-    // opening A's ☰ menu must not open B's (the popover is the 150px-wide
-    // container whose display flips with card.menuOpen)
+    // A의 ☰이 B의 메뉴를 열면 안 된다. 메뉴는 화면에 하나뿐이므로 "어느 카드를
+    // 가리키는가"로 본다 — ☰ 버튼이 드러난 쪽(opacity 1)이 그 카드다.
     await user.click(within(cardA!).getByRole('button', { name: '메뉴' }));
-    const popoverOf = (el: HTMLElement) => el.querySelector('div[style*="width: 150px"]') as HTMLElement;
-    expect(popoverOf(cardA!).style.display).toBe('block');
-    expect(popoverOf(cardB!).style.display).toBe('none');
+    expect(screen.getByRole('menu')).toBeTruthy();
+    const menuBtnOf = (el: HTMLElement) => within(el).getByRole('button', { name: '메뉴' }) as HTMLElement;
+    expect(menuBtnOf(cardA!).style.opacity).toBe('1');
+    expect(menuBtnOf(cardB!).style.opacity).toBe('0');
   });
 
   it('keeps a legacy title-keyed folder assignment working (migrated to the docId key on load)', async () => {
@@ -1633,8 +1636,8 @@ describe('Home', () => {
 
       const card = container.querySelector('a[data-title="개요 맵"]') as HTMLElement;
       await user.click(within(card).getByRole('button', { name: '메뉴' }));
-      await user.click(within(card).getByText(/내보내기/));
-      await user.click(within(card).getByText('Markdown 개요 (.md)'));
+      await user.click(await screen.findByRole('menuitem', { name: /내보내기/ }));
+      await user.click(await screen.findByRole('menuitem', { name: 'Markdown 개요 (.md)' }));
 
       expect(names[0]).toBe('개요 맵.md');
       const md = await new Promise<string>((resolve, reject) => {
@@ -1758,8 +1761,8 @@ describe('Home', () => {
 
       const card = container.querySelector('a[data-title="사진 맵"]') as HTMLElement;
       await user.click(within(card).getByRole('button', { name: '메뉴' }));
-      await user.click(within(card).getByText(/내보내기/));
-      await user.click(within(card).getByText('JSON 파일 (.json)'));
+      await user.click(await screen.findByRole('menuitem', { name: /내보내기/ }));
+      await user.click(await screen.findByRole('menuitem', { name: 'JSON 파일 (.json)' }));
 
       await waitFor(() => expect(created).toHaveLength(1));
       const json = await new Promise<string>((resolve, reject) => {
@@ -2233,7 +2236,7 @@ describe('Home', () => {
       await waitFor(() => expect(screen.getByText('삭제할 맵')).toBeTruthy());
       const card = container.querySelector('a[data-title="삭제할 맵"]') as HTMLElement;
       await user.click(within(card).getByRole('button', { name: '메뉴' }));
-      await user.click(within(card).getByText('삭제하기'));
+      await user.click(await screen.findByRole('menuitem', { name: '삭제하기' }));
 
       // ConfirmModal is always mounted (display:none when hidden), so only the
       // now-visible delete-map dialog's button is in the accessibility tree —
@@ -2274,7 +2277,7 @@ describe('Home', () => {
       await waitFor(() => expect(container.querySelector('a[data-title="새 마인드맵_1 (2)"]')).toBeTruthy());
       const card = container.querySelector('a[data-title="새 마인드맵_1 (2)"]') as HTMLElement;
       await user.click(within(card).getByRole('button', { name: '메뉴' }));
-      await user.click(within(card).getByText('삭제하기'));
+      await user.click(await screen.findByRole('menuitem', { name: '삭제하기' }));
       await user.click(screen.getByRole('button', { name: '삭제' }));
 
       // gone from the grid…
@@ -2679,5 +2682,224 @@ describe('홈 색상 테마', () => {
       await Promise.resolve();
     });
     expect(saved).toEqual([]);
+  });
+});
+
+// 홈 우클릭 메뉴(요청) — ☰ 버튼과 우클릭이 **같은 메뉴**를 열고, 하위 메뉴는
+// 드릴다운이 아니라 옆으로 뻗는 플라이아웃이다. 빈 자리와 폴더에도 메뉴가 있다.
+describe('홈 우클릭 메뉴', () => {
+  const meta = (id: string, title: string): DocMeta => ({ id, title, version: 1, updatedAt: '2026-01-01T00:00:00.000Z', isFavorite: false, deletedAt: null });
+
+  function mapDoc(title: string) {
+    return {
+      v: 1,
+      nodes: { root: { id: 'root', text: title, emoji: '', parent: null, children: [], collapsed: false, color: null, x: 0, y: 0 } },
+      floats: [],
+      lines: [],
+      zones: [],
+      layoutMode: 'radial',
+      themeKey: 'coral',
+    } as unknown as Doc;
+  }
+
+  it('맵 카드 우클릭은 ☰과 같은 메뉴를 커서 자리에 연다', async () => {
+    const { container } = renderHomeWithDocStore([meta('doc-r', '주간 회의')]);
+    await waitFor(() => expect(container.querySelector('a[data-title="주간 회의"]')).toBeTruthy());
+    const card = container.querySelector('a[data-title="주간 회의"]') as HTMLElement;
+
+    fireEvent.contextMenu(card, { clientX: 240, clientY: 180 });
+
+    const menu = await screen.findByRole('menu');
+    expect(menu.getAttribute('data-home-ctx')).toBe('map');
+    // ☰을 눌렀을 때와 같은 항목들
+    ['새 탭에서 열기', /즐겨찾기/, '이름 변경', /내보내기/, '삭제하기'].forEach((label) => {
+      expect(within(menu).getByRole('menuitem', { name: label })).toBeTruthy();
+    });
+    // 커서 자리에 뜬다
+    expect(menu.style.left).toBe('240px');
+    expect(menu.style.top).toBe('180px');
+  });
+
+  it('하위 메뉴는 화면을 갈아 끼우지 않고 옆으로 뻗는다 (부모 항목이 그대로 보인다)', async () => {
+    const user = userEvent.setup();
+    const { container } = renderHomeWithDocStore([meta('doc-s', '내보낼 맵')]);
+    await waitFor(() => expect(container.querySelector('a[data-title="내보낼 맵"]')).toBeTruthy());
+    const card = container.querySelector('a[data-title="내보낼 맵"]') as HTMLElement;
+
+    await user.click(within(card).getByRole('button', { name: '메뉴' }));
+    await user.click(await screen.findByRole('menuitem', { name: /내보내기/ }));
+
+    // 하위 항목이 열렸는데도 상위 항목(삭제하기)은 그대로 보인다 = 플라이아웃.
+    expect(screen.getByRole('menuitem', { name: 'PNG 이미지' })).toBeTruthy();
+    expect(screen.getByRole('menuitem', { name: '삭제하기' })).toBeTruthy();
+    // 예전 드릴다운의 흔적("‹ 뒤로")은 없다.
+    expect(screen.queryByText(/뒤로/)).toBeNull();
+  });
+
+  it('"스페이스로 이동" 하위 목록은 LNB와 같은 스페이스 색 점을 쓴다', async () => {
+    const user = userEvent.setup();
+    localStorage.setItem(
+      'mf_spaces',
+      JSON.stringify({
+        v: 1,
+        spaces: [
+          { id: 'a', name: '내 공간', home: true, color: '#f0663f', maps: [{ title: '옮길 맵', when: '방금', hue: '#f0663f', docId: 'doc-m' }], folders: [] },
+          { id: 'b', name: '두 번째', color: '#3f8fd0', maps: [], folders: [] },
+        ],
+        mapFolders: {},
+      }),
+    );
+    const { container } = renderHomeWithDocStore([meta('doc-m', '옮길 맵')]);
+    await waitFor(() => expect(container.querySelector('a[data-title="옮길 맵"]')).toBeTruthy());
+    const card = container.querySelector('a[data-title="옮길 맵"]') as HTMLElement;
+
+    await user.click(within(card).getByRole('button', { name: '메뉴' }));
+    await user.click(await screen.findByRole('menuitem', { name: /스페이스로 이동/ }));
+    const row = await screen.findByRole('menuitem', { name: '두 번째' });
+    const dot = row.querySelector('span[style*="border-radius"]') as HTMLElement;
+    expect(dot.style.background).toBe('rgb(63, 143, 208)'); // 그 스페이스의 색
+  });
+
+  it('폴더 우클릭도 ☰과 같은 메뉴를 연다', async () => {
+    localStorage.setItem(
+      'mf_spaces',
+      JSON.stringify({ v: 1, spaces: [{ id: 'a', name: '내 공간', home: true, color: '#f0663f', maps: [], folders: [{ id: 'f1', name: '기획' }] }], mapFolders: {} }),
+    );
+    const { container } = renderHomeWithDocStore([]);
+    await waitFor(() => expect(screen.getByText('기획')).toBeTruthy());
+    const folderCard = (screen.getByText('기획').closest('.map-card') as HTMLElement) || (container.querySelector('.map-card') as HTMLElement);
+
+    fireEvent.contextMenu(folderCard, { clientX: 100, clientY: 120 });
+
+    const menu = await screen.findByRole('menu');
+    expect(menu.getAttribute('data-home-ctx')).toBe('folder');
+    expect(within(menu).getByRole('menuitem', { name: '이름 변경' })).toBeTruthy();
+    expect(within(menu).getByRole('menuitem', { name: '폴더 삭제' })).toBeTruthy();
+  });
+
+  it('빈 자리 우클릭은 "새로 만들기 · 새 폴더 · 가져오기 · 설정"을 연다', async () => {
+    const user = userEvent.setup();
+    const { container } = renderHomeWithDocStore([]);
+    await waitFor(() => expect(screen.getByText('아직 만든 맵이 없어요')).toBeTruthy());
+
+    fireEvent.contextMenu(container.querySelector('main') as HTMLElement, { clientX: 500, clientY: 300 });
+
+    const menu = await screen.findByRole('menu');
+    expect(menu.getAttribute('data-home-ctx')).toBe('bg');
+    expect(within(menu).getAllByRole('menuitem').map((b) => b.textContent)).toEqual(['새로 만들기', '새 폴더', '가져오기', '설정']);
+
+    // 실제로 동작한다 — "새 폴더"는 폴더 만들기 팝업을 연다.
+    await user.click(within(menu).getByRole('menuitem', { name: '새 폴더' }));
+    expect(screen.getByText('새 폴더 만들기')).toBeTruthy();
+  });
+
+  it('좁은 화면에서는 하위 메뉴가 옆이 아니라 부모 아래로 펼쳐진다 (화면 밖으로 안 나가게)', async () => {
+    const user = userEvent.setup();
+    const prev = window.innerWidth;
+    Object.defineProperty(window, 'innerWidth', { configurable: true, value: 390 });
+    try {
+      const { container } = renderHomeWithDocStore([meta('doc-w', '좁은 화면 맵')]);
+      await waitFor(() => expect(container.querySelector('a[data-title="좁은 화면 맵"]')).toBeTruthy());
+      const card = container.querySelector('a[data-title="좁은 화면 맵"]') as HTMLElement;
+      await user.click(within(card).getByRole('button', { name: '메뉴' }));
+      await user.click(await screen.findByRole('menuitem', { name: /내보내기/ }));
+      const sub = document.querySelector('[data-home-ctx-sub="export"]') as HTMLElement;
+      expect(sub.getAttribute('data-inline')).toBe('true');
+      expect(sub.style.position).not.toBe('absolute');
+    } finally {
+      Object.defineProperty(window, 'innerWidth', { configurable: true, value: prev });
+    }
+  });
+
+  it('최근 항목 카드의 우클릭은 빈 자리 메뉴로 새지 않는다 (그 카드엔 메뉴가 없다)', async () => {
+    localStorage.setItem('mf_recent', JSON.stringify(['doc-rc']));
+    const { container } = renderHomeWithDocStore([meta('doc-rc', '최근 맵')]);
+    await waitFor(() => expect(screen.getByText('최근 항목')).toBeTruthy());
+    const recentCard = container.querySelectorAll('a[data-title="최근 맵"]')[0] as HTMLElement;
+
+    fireEvent.contextMenu(recentCard, { clientX: 30, clientY: 30 });
+    expect(screen.queryByRole('menu')).toBeNull();
+  });
+
+  // 우클릭 메뉴가 브라우저 기본 메뉴를 대체하면서 카드가 링크라서 원래 있던
+  // "새 탭에서 열기"가 사라졌다 — 메뉴가 그걸 돌려준다.
+  it('"새 탭에서 열기"가 그 맵의 주소를 새 탭으로 연다 (최근 항목에도 남는다)', async () => {
+    const user = userEvent.setup();
+    const open = vi.fn();
+    vi.stubGlobal('open', open);
+    try {
+      const { container } = renderHomeWithDocStore([meta('doc-t', '새 탭 맵')]);
+      await waitFor(() => expect(container.querySelector('a[data-title="새 탭 맵"]')).toBeTruthy());
+      const card = container.querySelector('a[data-title="새 탭 맵"]') as HTMLElement;
+      const href = card.getAttribute('href');
+
+      await user.click(within(card).getByRole('button', { name: '메뉴' }));
+      await user.click(await screen.findByRole('menuitem', { name: '새 탭에서 열기' }));
+
+      expect(open).toHaveBeenCalledWith(href, '_blank', 'noopener,noreferrer');
+      expect(JSON.parse(localStorage.getItem('mf_recent') || '[]')).toContain('doc-t');
+    } finally {
+      vi.unstubAllGlobals();
+    }
+  });
+
+  it('모바일에서는 메뉴 행이 44px 터치 타깃을 지킨다', async () => {
+    mockMatchMedia(true);
+    const { container } = renderHomeWithDocStore([meta('doc-tt', '터치 맵')]);
+    await waitFor(() => expect(container.querySelector('a[data-title="터치 맵"]')).toBeTruthy());
+    const card = container.querySelector('a[data-title="터치 맵"]') as HTMLElement;
+
+    fireEvent.contextMenu(card, { clientX: 20, clientY: 20 });
+    const row = (await screen.findByRole('menuitem', { name: '새 탭에서 열기' })) as HTMLElement;
+    expect(row.style.minHeight).toBe('44px');
+  });
+
+  it('Escape로 닫힌다', async () => {
+    const { container } = renderHomeWithDocStore([]);
+    await waitFor(() => expect(screen.getByText('아직 만든 맵이 없어요')).toBeTruthy());
+    fireEvent.contextMenu(container.querySelector('main') as HTMLElement, { clientX: 20, clientY: 20 });
+    expect(await screen.findByRole('menu')).toBeTruthy();
+    fireEvent.keyDown(window, { key: 'Escape' });
+    await waitFor(() => expect(screen.queryByRole('menu')).toBeNull());
+  });
+
+  // 이름 변경(요청) — 목록의 메타 제목과 **문서 본문의 루트 글자**를 함께 고친다.
+  // 하나만 바꾸면 열자마자 옛 이름이 보이고, 다음 저장이 그 이름을 되돌린다.
+  it('이름 변경은 카드 제목과 문서 루트 글자를 함께 바꾼다', async () => {
+    const user = userEvent.setup();
+    const { container, docStore } = renderHomeWithDocStore([meta('doc-n', '옛 이름')], { 'doc-n': { doc: mapDoc('옛 이름'), version: 3, title: '옛 이름' } });
+    await waitFor(() => expect(container.querySelector('a[data-title="옛 이름"]')).toBeTruthy());
+    const card = container.querySelector('a[data-title="옛 이름"]') as HTMLElement;
+
+    await user.click(within(card).getByRole('button', { name: '메뉴' }));
+    await user.click(await screen.findByRole('menuitem', { name: '이름 변경' }));
+
+    const input = await screen.findByLabelText('맵 이름');
+    expect((input as HTMLInputElement).value).toBe('옛 이름');
+    await user.clear(input);
+    await user.type(input, '새 이름');
+    await user.click(screen.getByRole('button', { name: '변경' }));
+
+    await waitFor(() => expect(container.querySelector('a[data-title="새 이름"]')).toBeTruthy());
+    const [id, doc, opts] = docStore.save.mock.calls.at(-1) as unknown as [string, Doc, { prevVersion?: number; title?: string }];
+    expect(id).toBe('doc-n');
+    expect(doc.nodes.root?.text).toBe('새 이름'); // 본문도 함께 (에디터가 그리는 이름)
+    expect(opts.title).toBe('새 이름');
+    expect(opts.prevVersion).toBe(3); // 낙관적 잠금 — 남의 저장을 덮지 않는다
+  });
+
+  it('문서가 없는 옛 카드에는 이름 변경을 내주지 않는다 (제목이 곧 식별자라 잃는다)', async () => {
+    localStorage.setItem(
+      'mf_spaces',
+      JSON.stringify({ v: 1, spaces: [{ id: 'a', name: '내 공간', home: true, color: '#f0663f', maps: [{ title: '옛 카드', when: '방금', hue: '#f0663f' }], folders: [] }], mapFolders: {} }),
+    );
+    const { container } = renderHomeWithDocStore([]);
+    await waitFor(() => expect(container.querySelector('a[data-title="옛 카드"]')).toBeTruthy());
+    const card = container.querySelector('a[data-title="옛 카드"]') as HTMLElement;
+
+    fireEvent.contextMenu(card, { clientX: 10, clientY: 10 });
+    const menu = await screen.findByRole('menu');
+    expect(within(menu).queryByRole('menuitem', { name: '이름 변경' })).toBeNull();
+    expect(within(menu).getByRole('menuitem', { name: '삭제하기' })).toBeTruthy();
   });
 });

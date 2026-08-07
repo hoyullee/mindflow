@@ -2,7 +2,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import type { ChangeEvent, KeyboardEvent } from 'react';
 import { useNavigate } from 'react-router-dom';
 import type { Doc } from '@mindflow/mindmap-core';
-import { collectImageRefs, parseDoc, serializeDoc, toMarkdown } from '@mindflow/mindmap-core';
+import { ROOT_ID, collectImageRefs, parseDoc, serializeDoc, toMarkdown } from '@mindflow/mindmap-core';
 import { inlineImagesForExport } from '../editor/imageExport';
 import { exportDocPng } from '../editor/png';
 import { themeOf } from '../editor/theme';
@@ -12,8 +12,14 @@ import {
   DRIVE_FILES,
   initialHomeState,
   type FolderModalState,
+  type HomeCtxTarget,
   type HomeState,
 } from './types';
+
+/** 같은 대상인지 비교하려고 쓰는 납작한 키(☰ 토글 판정). */
+export function ctxTargetKey(t: HomeCtxTarget): string {
+  return t.kind === 'map' ? `map:${t.key}` : t.kind === 'folder' ? `folder:${t.id}` : 'bg';
+}
 import {
   coerceSpaces,
   docKey,
@@ -302,7 +308,8 @@ export function useHomeController() {
       const closest = (sel: string) => !!(target && target.closest && target.closest(sel));
       setState((prev) => {
         let next = prev;
-        if (prev.openMenu && !closest('.menu-btn,.menu-row')) next = { ...next, openMenu: null, moveFor: null, moveSpaceFor: null, exportFor: null };
+        // 메뉴는 자기 바깥 클릭에 스스로 닫힌다(`HomeContextMenu`) — 여기서는 카드
+        // 선택/설정/스페이스 메뉴만 본다.
         if (prev.selectedCard && !closest('.map-card')) next = { ...next, selectedCard: null };
         if (prev.settingsOpen && !closest('.settings-pop,.settings-btn')) next = { ...next, settingsOpen: false };
         if (prev.spaceMenu && !closest('.space-dot,.menu-row,.space-row')) next = { ...next, spaceMenu: null };
@@ -687,9 +694,19 @@ export function useHomeController() {
   };
   const toggleFavList = () => patch({ favOpen: !state.favOpen });
   const toggleSharedList = () => patch({ sharedOpen: !state.sharedOpen });
-  const toggleMenu = (title: string) => patch({ openMenu: state.openMenu === title ? null : title, moveFor: null, moveSpaceFor: null, exportFor: null });
-  const closeMenu = () => patch({ openMenu: null, moveFor: null, moveSpaceFor: null, exportFor: null });
-  const askDelete = (title: string, docId?: string) => patch({ confirmDelete: title, confirmDeleteDocId: docId ?? null, openMenu: null });
+  /**
+   * ☰ 버튼과 우클릭이 **같은 메뉴**를 연다(요청). 다른 점은 자리뿐이라, 여는 쪽이
+   * 좌표를 주고 메뉴는 그 자리에 뜬다(화면 밖으로 나가면 안쪽으로 당긴다).
+   * 같은 대상을 다시 누르면 닫힌다(☰ 토글 감각 유지).
+   */
+  const openCtxMenu = (x: number, y: number, target: HomeCtxTarget) => {
+    const same = state.ctxMenu && ctxTargetKey(state.ctxMenu.target) === ctxTargetKey(target);
+    patch({ ctxMenu: same ? null : { x, y, target } });
+  };
+  /** 우클릭 진입 — 같은 대상이라도 **새 자리**에 다시 연다(토글하지 않는다). */
+  const openCtxMenuAt = (x: number, y: number, target: HomeCtxTarget) => patch({ ctxMenu: { x, y, target } });
+  const closeMenu = () => patch({ ctxMenu: null });
+  const askDelete = (title: string, docId?: string) => patch({ confirmDelete: title, confirmDeleteDocId: docId ?? null, ctxMenu: null });
   const cancelDelete = () => patch({ confirmDelete: null, confirmDeleteDocId: null });
   const confirmDeleteYes = () => {
     const title = state.confirmDelete;
@@ -741,7 +758,7 @@ export function useHomeController() {
       const deleted = { ...prev.deleted, [title]: true };
       const favs = { ...prev.favs };
       delete favs[cardKeyOf(title, docId)];
-      return { ...prev, deleted, favs, openMenu: null };
+      return { ...prev, deleted, favs, ctxMenu: null };
     });
     if (docId) {
       void docStore.remove(docId).catch(() => {
@@ -1077,7 +1094,7 @@ export function useHomeController() {
   }
 
   const exportMap = (title: string, docId?: string) => {
-    patch({ openMenu: null, moveFor: null, exportFor: null });
+    patch({ ctxMenu: null });
     const raw = docRawForExport(title, docId);
     const safe = safeFileName(title);
     if (raw) {
@@ -1119,7 +1136,7 @@ export function useHomeController() {
    * 문구로 안내한다.
    */
   const exportMapMarkdown = (title: string, docId?: string) => {
-    patch({ openMenu: null, moveFor: null, exportFor: null });
+    patch({ ctxMenu: null });
     const raw = docRawForExport(title, docId);
     const safe = safeFileName(title);
     let doc: Doc | null = null;
@@ -1139,7 +1156,7 @@ export function useHomeController() {
 
   /** Render the map's real doc to a full-resolution PNG (shared editor renderer). */
   const exportMapPNG = (title: string, docId?: string) => {
-    patch({ openMenu: null, moveFor: null, exportFor: null });
+    patch({ ctxMenu: null });
     const raw = docRawForExport(title, docId);
     if (!raw) {
       patch({ importError: '미리보기가 없어 이미지를 만들 수 없어요. 맵을 한 번 열어 저장한 뒤 다시 시도해 주세요.' });
@@ -1275,6 +1292,100 @@ export function useHomeController() {
     if (f) handleImport(f);
   };
 
+  // ---- 맵 이름 변경 ----
+  //
+  // 맵의 이름은 두 곳에 있다: 목록이 읽는 **메타 제목**과, 에디터가 그리는 **루트
+  // 도형의 글자**. 둘 중 하나만 바꾸면 어긋난다 — 메타만 고치면 열자마자 옛 이름이
+  // 보이고, 다음 저장이 그 옛 이름을 메타에 도로 써 버린다. 그래서 본문까지 함께
+  // 고친다(에디터에서 제목을 고칠 때와 같은 결과).
+  //
+  // docId가 없는 옛 카드는 **제목이 곧 식별자**라 이름을 바꾸면 그 카드를 잃는다 —
+  // 그런 카드에는 메뉴 항목 자체를 내주지 않는다(`showRenameRow`).
+  const findCardByKey = (key: string) => {
+    for (const sp of state.spaces) {
+      for (const m of sp.maps || []) {
+        if (cardKeyOf(m.title, m.docId) === key) return m;
+      }
+    }
+    return null;
+  };
+  const startRenameMap = (key: string) => {
+    const card = findCardByKey(key);
+    if (!card?.docId) return;
+    patch({ renameMap: { key, docId: card.docId, name: card.title }, ctxMenu: null });
+  };
+  const closeRenameMap = () => patch({ renameMap: null });
+  const onRenameMapName = (v: string) => setState((prev) => (prev.renameMap ? { ...prev, renameMap: { ...prev.renameMap, name: v.slice(0, 40), error: undefined } } : prev));
+
+  /** 본문 루트 글자 + 메타 제목을 함께 바꾼다. 충돌하면 최신 판으로 한 번 다시 시도. */
+  const applyMapTitle = async (docId: string, title: string): Promise<boolean> => {
+    const writeBody = async (attempt: number): Promise<boolean> => {
+      const loaded = await docStore.load(docId);
+      // 본문이 없는 문서(아직 한 번도 저장 안 됨)는 메타 이름만 바꾼다.
+      if (!loaded) {
+        await docStore.rename(docId, title);
+        return true;
+      }
+      const root = loaded.doc.nodes[ROOT_ID];
+      if (!root) {
+        await docStore.rename(docId, title);
+        return true;
+      }
+      const next: Doc = { ...loaded.doc, nodes: { ...loaded.doc.nodes, [ROOT_ID]: { ...root, text: title } } };
+      const res = await docStore.save(docId, next, { prevVersion: loaded.version, title });
+      if (res.ok) {
+        try {
+          localStorage.setItem(docKey(docId), JSON.stringify(serializeDoc(next)));
+        } catch {
+          /* storage unavailable */
+        }
+        return true;
+      }
+      // 다른 기기/탭이 먼저 저장했다 → 그 판을 받아 한 번만 다시 시도한다.
+      if (res.reason === 'conflict' && attempt === 0) return writeBody(1);
+      return false;
+    };
+    try {
+      return await writeBody(0);
+    } catch {
+      return false;
+    }
+  };
+
+  const saveRenameMap = () => {
+    const rm = state.renameMap;
+    if (!rm || rm.saving) return;
+    const title = rm.name.trim();
+    if (!title) return;
+    const current = findCardByKey(rm.key);
+    if (current && current.title === title) {
+      patch({ renameMap: null });
+      return;
+    }
+    patch({ renameMap: { ...rm, saving: true, error: undefined } });
+    void (async () => {
+      const ok = await applyMapTitle(rm.docId, title);
+      if (!ok) {
+        setState((prev) => (prev.renameMap ? { ...prev, renameMap: { ...prev.renameMap, saving: false, error: '이름을 바꾸지 못했어요. 연결을 확인하고 다시 시도해 주세요.' } } : prev));
+        return;
+      }
+      setState((prev) => ({
+        ...prev,
+        renameMap: null,
+        spaces: prev.spaces.map((sp) => ({ ...sp, maps: (sp.maps || []).map((m) => (cardKeyOf(m.title, m.docId) === rm.key ? { ...m, title } : m)) })),
+      }));
+    })();
+  };
+  const onRenameMapKey = (e: KeyboardEvent<HTMLInputElement>) => {
+    if (e.key === 'Enter') {
+      e.preventDefault();
+      saveRenameMap();
+    } else if (e.key === 'Escape') {
+      e.preventDefault();
+      closeRenameMap();
+    }
+  };
+
   // ---- folders ----
   const activeFolders = () => {
     const sp = state.spaces.find((s) => s.id === state.activeSpace);
@@ -1286,7 +1397,7 @@ export function useHomeController() {
   const openNewFolder = () => patch({ folderModal: { mode: 'new', id: null, name: '', drive: state.activeSpace === 'drive' } });
   const startRenameFolder = (id: string) => {
     const f = activeFolders().find((x) => x.id === id);
-    patch({ folderModal: { mode: 'rename', id, name: f ? f.name : '' }, openMenu: null });
+    patch({ folderModal: { mode: 'rename', id, name: f ? f.name : '' }, ctxMenu: null });
   };
   const closeFolderModal = () => patch({ folderModal: null });
   const isDriveFolderId = (id: string) => state.driveFolders.some((f) => f.id === id);
@@ -1322,7 +1433,7 @@ export function useHomeController() {
   };
   const startRenameDriveFolder = (id: string) => {
     const f = state.driveFolders.find((x) => x.id === id);
-    patch({ folderModal: { mode: 'rename', id, name: f ? f.name : '', drive: true } as FolderModalState, openMenu: null });
+    patch({ folderModal: { mode: 'rename', id, name: f ? f.name : '', drive: true } as FolderModalState, ctxMenu: null });
   };
   const folderCount = (id: string) => {
     // Count from the ACTUAL maps (assignments are docId-keyed via cardKeyOf,
@@ -1344,7 +1455,7 @@ export function useHomeController() {
     if (cnt > 0) return;
     // 하위 폴더가 있으면 삭제 불가 — 지우면 그 아래가 통째로 고아가 된다.
     if (!isDrive && activeFolders().some((f) => (f.parent ?? null) === id)) return;
-    patch({ confirmDeleteFolder: id, openMenu: null });
+    patch({ confirmDeleteFolder: id, ctxMenu: null });
   };
   const cancelDeleteFolder = () => patch({ confirmDeleteFolder: null });
   const confirmDeleteFolderYes = () => {
@@ -1383,7 +1494,7 @@ export function useHomeController() {
         const driveMapFolders = { ...prev.driveMapFolders };
         if (folderId) driveMapFolders[key] = folderId;
         else delete driveMapFolders[key];
-        return { ...prev, driveMapFolders, openMenu: null, moveFor: null };
+        return { ...prev, driveMapFolders, ctxMenu: null };
       });
       return;
     }
@@ -1394,7 +1505,7 @@ export function useHomeController() {
       const mapFolders = { ...prev.mapFolders };
       if (folderId) mapFolders[key] = folderId;
       else delete mapFolders[key];
-      return { ...prev, mapFolders, openMenu: null, moveFor: null };
+      return { ...prev, mapFolders, ctxMenu: null };
     });
   };
   /** Move a map from its current (real, non-Drive) space to another space. The
@@ -1407,9 +1518,9 @@ export function useHomeController() {
       const src = prev.spaces.find((s) => Array.isArray(s.maps) && s.maps.some(byKey));
       const target = prev.spaces.find((s) => s.id === spaceId);
       // no-op if the map isn't in a real space, the target is gone, or it's already there
-      if (!src || !target || src.id === spaceId) return { ...prev, openMenu: null, moveFor: null, moveSpaceFor: null };
+      if (!src || !target || src.id === spaceId) return { ...prev, ctxMenu: null };
       const card = (src.maps || []).find(byKey);
-      if (!card) return { ...prev, openMenu: null, moveFor: null, moveSpaceFor: null };
+      if (!card) return { ...prev, ctxMenu: null };
       const spaces = prev.spaces.map((s) => {
         if (s.id === src.id) return { ...s, maps: (s.maps || []).filter((m) => !byKey(m)) };
         if (s.id === spaceId) return { ...s, maps: [...(s.maps || []), card] };
@@ -1417,7 +1528,7 @@ export function useHomeController() {
       });
       const mapFolders = { ...prev.mapFolders };
       delete mapFolders[key];
-      return { ...prev, spaces, mapFolders, openMenu: null, moveFor: null, moveSpaceFor: null, toast: `'${card.title}'을(를) '${target.name}' 스페이스로 옮겼어요`, toastTitle: '이동 완료' };
+      return { ...prev, spaces, mapFolders, ctxMenu: null, toast: `'${card.title}'을(를) '${target.name}' 스페이스로 옮겼어요`, toastTitle: '이동 완료' };
     });
   };
   // 뒤로가기 = 한 계층 위로: 하위 폴더 안이면 상위 폴더로, 최상위 폴더면 스페이스로.
@@ -1427,13 +1538,13 @@ export function useHomeController() {
       const fs = sp && Array.isArray(sp.folders) ? sp.folders : [];
       const cur = prev.curFolder ? fs.find((f) => f.id === prev.curFolder) : null;
       const parent = cur?.parent && fs.some((f) => f.id === cur.parent) ? cur.parent : null;
-      return { ...prev, curFolder: parent, driveFolder: null, openMenu: null };
+      return { ...prev, curFolder: parent, driveFolder: null, ctxMenu: null };
     });
-  const openFolder = (id: string) => patch({ curFolder: id, openMenu: null });
-  const openDriveFolder = (id: string) => patch({ driveFolder: id, openMenu: null });
+  const openFolder = (id: string) => patch({ curFolder: id, ctxMenu: null });
+  const openDriveFolder = (id: string) => patch({ driveFolder: id, ctxMenu: null });
 
   // ---- drag & drop ----
-  const setDraggingMap = (title: string | null) => patch({ draggingMap: title, openMenu: null, moveFor: null, moveSpaceFor: null });
+  const setDraggingMap = (title: string | null) => patch({ draggingMap: title, ctxMenu: null });
   const clearDrag = () => patch({ draggingMap: null, dragOverFolder: null });
   const setDragOverFolder = (id: string | null) => {
     if (state.dragOverFolder !== id) patch({ dragOverFolder: id });
@@ -1441,10 +1552,6 @@ export function useHomeController() {
 
   // ---- selection / search ----
   const selectCard = (title: string | null) => patch({ selectedCard: title });
-  // Opening one submenu closes the others (only one flyout panel at a time).
-  const setExportFor = (title: string | null) => patch({ exportFor: title, moveFor: null, moveSpaceFor: null });
-  const setMoveFor = (title: string | null) => patch({ moveFor: title, exportFor: null, moveSpaceFor: null });
-  const setMoveSpaceFor = (title: string | null) => patch({ moveSpaceFor: title, exportFor: null, moveFor: null });
   const setSearch = (v: string) => patch({ search: v });
 
   const setSpaceMenuAnchor = (anchor: { top: number; left: number }) => {
@@ -1495,7 +1602,8 @@ export function useHomeController() {
     toggleFav,
     toggleFavList,
     toggleSharedList,
-    toggleMenu,
+    openCtxMenu,
+    openCtxMenuAt,
     closeMenu,
     askDelete,
     cancelDelete,
@@ -1526,6 +1634,11 @@ export function useHomeController() {
     exportMapPNG,
     activeFolders,
     openNewFolder,
+    startRenameMap,
+    closeRenameMap,
+    onRenameMapName,
+    onRenameMapKey,
+    saveRenameMap,
     startRenameFolder,
     startRenameDriveFolder,
     closeFolderModal,
@@ -1546,9 +1659,6 @@ export function useHomeController() {
     clearDrag,
     setDragOverFolder,
     selectCard,
-    setExportFor,
-    setMoveFor,
-    setMoveSpaceFor,
     moveMapToSpace,
     setSearch,
   };

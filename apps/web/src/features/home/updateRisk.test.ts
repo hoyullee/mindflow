@@ -37,8 +37,9 @@ describe('homeUpdateRisk (홈에서 새 버전 자동 적용 판단)', () => {
   });
 
   it('열어 둔 메뉴와 드래그 중인 카드도 막는다', () => {
-    expect(homeUpdateRisk({ ...initialHomeState(), openMenu: '주간 회의' })).toBe('block');
-    expect(homeUpdateRisk({ ...initialHomeState(), moveFor: '주간 회의' })).toBe('block');
+    expect(homeUpdateRisk({ ...initialHomeState(), ctxMenu: { x: 10, y: 10, target: { kind: 'map', key: '주간 회의' } } })).toBe('block');
+    expect(homeUpdateRisk({ ...initialHomeState(), ctxMenu: { x: 10, y: 10, target: { kind: 'bg' } } })).toBe('block');
+    expect(homeUpdateRisk({ ...initialHomeState(), renameMap: { key: 'd1', docId: 'd1', name: '주간 회의' } })).toBe('block');
     expect(homeUpdateRisk({ ...initialHomeState(), draggingMap: '주간 회의' })).toBe('block');
   });
 

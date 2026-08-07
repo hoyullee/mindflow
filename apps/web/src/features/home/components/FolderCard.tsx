@@ -36,6 +36,13 @@ export function FolderCard({ folder, controller }: Props) {
     }
     controller.selectCard(folderCardKey(folder.id)); // 선택 → ☰ 메뉴가 이 폴더의 것으로 드러난다
   };
+  // 우클릭 = ☰과 같은 메뉴, 커서 자리에(요청).
+  const onContextMenu = (e: MouseEvent<HTMLDivElement>) => {
+    e.preventDefault();
+    e.stopPropagation();
+    controller.selectCard(folderCardKey(folder.id));
+    controller.openCtxMenuAt(e.clientX, e.clientY, { kind: 'folder', id: folder.id });
+  };
   const onDoubleClick = (e: MouseEvent<HTMLDivElement>) => {
     const target = e.target as HTMLElement;
     if (target.closest && target.closest('.menu-btn,.menu-row')) return;
@@ -50,6 +57,7 @@ export function FolderCard({ folder, controller }: Props) {
       tabIndex={0}
       onClick={onClick}
       onDoubleClick={onDoubleClick}
+      onContextMenu={onContextMenu}
       onKeyDown={(e) => {
         // 키보드는 Enter/Space 한 번으로 진입한다 — 포인터의 "두 번"에 대응하는
         // 관용구가 없고, 접근성 관점에서도 활성화 키는 곧 실행이다.
@@ -80,7 +88,8 @@ export function FolderCard({ folder, controller }: Props) {
         onClick={(e) => {
           e.preventDefault();
           e.stopPropagation();
-          controller.toggleMenu(folderCardKey(folder.id));
+          const r = e.currentTarget.getBoundingClientRect();
+          controller.openCtxMenu(r.right - 184, r.bottom + 6, { kind: 'folder', id: folder.id });
         }}
         title="메뉴"
         aria-label="메뉴"
@@ -88,51 +97,6 @@ export function FolderCard({ folder, controller }: Props) {
       >
         ☰
       </div>
-      <div
-        onClick={(e) => {
-          e.preventDefault();
-          e.stopPropagation();
-        }}
-        style={{ position: 'absolute', top: 44, right: 10, zIndex: 20, width: 150, background: 'var(--mf-panel)', border: '1px solid var(--mf-border)', borderRadius: 10, boxShadow: '0 10px 28px rgba(0,0,0,.16)', padding: '5px 0', display: folder.menuOpen ? 'block' : 'none' }}
-      >
-        <div
-          className="menu-row"
-          onClick={(e) => {
-            e.preventDefault();
-            e.stopPropagation();
-            if (folder.isDrive) controller.startRenameDriveFolder(folder.id);
-            else controller.startRenameFolder(folder.id);
-          }}
-          style={{ display: 'flex', alignItems: 'center', gap: 9, padding: '9px 13px', fontSize: 13, cursor: 'pointer', color: 'var(--mf-text)' }}
-        >
-          <span style={{ display: 'flex', color: 'var(--mf-subtext)' }}>
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-              <path d="M12 20h9" />
-              <path d="M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4z" />
-            </svg>
-          </span>{' '}
-          이름 변경
-        </div>
-        <div style={{ height: 1, background: 'var(--mf-border-soft)', margin: '2px 0' }} />
-        <div
-          className="menu-row"
-          onClick={(e) => {
-            e.preventDefault();
-            e.stopPropagation();
-            controller.askDeleteFolder(folder.id);
-          }}
-          style={{ display: 'flex', alignItems: 'center', gap: 9, padding: '9px 13px', fontSize: 13, cursor: folder.canDelete ? 'pointer' : 'not-allowed', color: folder.canDelete ? 'var(--mf-danger)' : 'var(--mf-faint2)' }}
-        >
-          <span style={{ display: 'flex' }}>
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-              <polyline points="3 6 5 6 21 6" />
-              <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2" />
-            </svg>
-          </span>{' '}
-          폴더 삭제
-        </div>
-      </div>
-
       <div style={{ width: 52, height: 52, borderRadius: 14, background: 'var(--mf-accent-soft)', color: 'var(--mf-accent)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
         <svg width="26" height="26" viewBox="0 0 24 24" fill="currentColor" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round">
           <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z" fillOpacity=".18" />

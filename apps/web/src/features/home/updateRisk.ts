@@ -18,6 +18,7 @@ export function homeUpdateRisk(state: HomeState): UpdateRisk {
   // 텍스트를 입력하는 팝업들.
   if (state.newSpaceOpen || state.folderModal || state.profileNameOpen) return 'block';
   if (state.accountSettingsOpen || state.confirmDeleteAccount) return 'block';
+  if (state.renameMap) return 'block';
 
   // 사용자가 답을 고르는 중인 확인 다이얼로그.
   if (state.confirmDelete || state.confirmRestore || state.confirmPurge) return 'block';
@@ -25,7 +26,7 @@ export function homeUpdateRisk(state: HomeState): UpdateRisk {
   if (state.confirmDeleteSpace || state.confirmDeleteFolder) return 'block';
 
   // 열어 둔 메뉴/서브메뉴와 드래그 중인 카드.
-  if (state.openMenu || state.spaceMenu || state.moveFor || state.moveSpaceFor || state.exportFor) return 'block';
+  if (state.ctxMenu || state.spaceMenu) return 'block';
   if (state.draggingMap) return 'block';
 
   // 검색어로 목록을 좁혀 둔 상태 — 리로드하면 전체 목록으로 되돌아간다.
