@@ -3,6 +3,7 @@ import { useEffect, useRef, useState } from 'react';
 import type { HomeState } from '../types';
 import type { HomeController } from '../useHomeController';
 import type { CardViewData, FolderCardViewData, HomeViewModel } from '../viewModel';
+import { useIsMobile } from '../../../hooks/useMediaQuery';
 
 /**
  * 홈의 **단 하나뿐인** 메뉴 — 맵 카드·폴더·빈 배경이 모두 이걸 쓴다.
@@ -31,19 +32,22 @@ export interface HomeMenuItem {
 const MENU_W = 184;
 const SUB_W = 196;
 const ROW_H = 34;
+/** 손가락용 행 높이 — 앱 전체가 지켜 온 44px 터치 타깃 규칙. */
+const TOUCH_ROW_H = 44;
 const MARGIN = 8;
 
 /** 행 수로 높이를 어림해 화면 밖으로 나가지 않게 당긴다(에디터 메뉴와 같은 방식). */
-function estimateHeight(items: HomeMenuItem[]): number {
-  return items.reduce((h, it) => h + (it.key.startsWith('sep') ? 9 : ROW_H) + (it.hint ? 26 : 0), 10);
+function estimateHeight(items: HomeMenuItem[], rowH: number): number {
+  return items.reduce((h, it) => h + (it.key.startsWith('sep') ? 9 : rowH) + (it.hint ? 26 : 0), 10);
 }
 
-const rowStyle = (item: HomeMenuItem): CSSProperties => ({
+const rowStyle = (item: HomeMenuItem, isMobile: boolean): CSSProperties => ({
   display: 'flex',
   alignItems: 'center',
   gap: 9,
   width: '100%',
-  padding: '8px 12px',
+  minHeight: isMobile ? TOUCH_ROW_H : undefined,
+  padding: isMobile ? '10px 14px' : '8px 12px',
   border: 'none',
   background: 'transparent',
   fontFamily: 'inherit',
@@ -54,7 +58,7 @@ const rowStyle = (item: HomeMenuItem): CSSProperties => ({
   color: item.disabled ? 'var(--mf-faint2)' : item.danger ? 'var(--mf-danger)' : 'var(--mf-text)',
 });
 
-function Row({ item, open, onOpenSub, onRun }: { item: HomeMenuItem; open: boolean; onOpenSub: (key: string | null) => void; onRun: (item: HomeMenuItem) => void }) {
+function Row({ item, open, isMobile, onOpenSub, onRun }: { item: HomeMenuItem; open: boolean; isMobile: boolean; onOpenSub: (key: string | null) => void; onRun: (item: HomeMenuItem) => void }) {
   return (
     <button
       type="button"
@@ -77,7 +81,7 @@ function Row({ item, open, onOpenSub, onRun }: { item: HomeMenuItem; open: boole
         }
         onRun(item);
       }}
-      style={{ ...rowStyle(item), background: open ? 'var(--mf-accent-soft)' : 'transparent' }}
+      style={{ ...rowStyle(item, isMobile), background: open ? 'var(--mf-accent-soft)' : 'transparent' }}
     >
       {item.icon && <span style={{ display: 'flex', flexShrink: 0, color: item.danger ? 'inherit' : 'var(--mf-subtext)' }}>{item.icon}</span>}
       <span style={{ flex: 1, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{item.label}</span>
@@ -94,6 +98,7 @@ interface Props {
 
 export function HomeContextMenu({ state, view, controller }: Props) {
   const ctx = state.ctxMenu;
+  const isMobile = useIsMobile();
   const rootRef = useRef<HTMLDivElement | null>(null);
   const [openSub, setOpenSub] = useState<string | null>(null);
 
@@ -127,7 +132,8 @@ export function HomeContextMenu({ state, view, controller }: Props) {
   const vw = typeof window !== 'undefined' ? window.innerWidth : 1280;
   const vh = typeof window !== 'undefined' ? window.innerHeight : 800;
   const left = Math.max(MARGIN, Math.min(ctx.x, vw - MENU_W - MARGIN));
-  const estH = estimateHeight(items);
+  const rowH = isMobile ? TOUCH_ROW_H : ROW_H;
+  const estH = estimateHeight(items, rowH);
   // 아래로 안 들어가면 클릭 지점 **위**로 뒤집는다(그래도 안 되면 위쪽 여백에 붙인다).
   const top = ctx.y + estH + MARGIN <= vh ? ctx.y : Math.max(MARGIN, Math.min(ctx.y - estH, vh - estH - MARGIN));
   // 플라이아웃은 기본 오른쪽. 오른쪽 공간이 모자라면 왼쪽으로 뒤집는다.
@@ -166,7 +172,7 @@ export function HomeContextMenu({ state, view, controller }: Props) {
           <div key={item.key} style={{ height: 1, background: 'var(--mf-border-soft)', margin: '4px 0' }} />
         ) : (
           <div key={item.key} style={{ position: 'relative' }}>
-            <Row item={item} open={openSub === item.key} onOpenSub={setOpenSub} onRun={run} />
+            <Row item={item} open={openSub === item.key} isMobile={isMobile} onOpenSub={setOpenSub} onRun={run} />
             {item.hint && <div style={{ padding: '0 12px 7px', fontSize: 11, color: 'var(--mf-faint2)', lineHeight: 1.4 }}>{item.hint}</div>}
             {item.submenu && openSub === item.key && (
               <div
@@ -181,7 +187,7 @@ export function HomeContextMenu({ state, view, controller }: Props) {
                         top: -5,
                         ...(subOnLeft ? { right: MENU_W - 4 } : { left: MENU_W - 4 }),
                         width: SUB_W,
-                        maxHeight: Math.max(160, vh - top - i * ROW_H - MARGIN * 2),
+                        maxHeight: Math.max(160, vh - top - i * rowH - MARGIN * 2),
                         overflowY: 'auto',
                         background: 'var(--mf-panel)',
                         border: '1px solid var(--mf-border)',
@@ -195,7 +201,7 @@ export function HomeContextMenu({ state, view, controller }: Props) {
                   sub.key.startsWith('sep') ? (
                     <div key={sub.key} style={{ height: 1, background: 'var(--mf-border-soft)', margin: '4px 0' }} />
                   ) : (
-                    <Row key={sub.key} item={sub} open={false} onOpenSub={() => undefined} onRun={run} />
+                    <Row key={sub.key} item={sub} open={false} isMobile={isMobile} onOpenSub={() => undefined} onRun={run} />
                   ),
                 )}
               </div>
@@ -273,6 +279,13 @@ const GearIcon = (
     <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 1 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.6 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 1 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.6 1.65 1.65 0 0 0 10 3.09V3a2 2 0 1 1 4 0v.09A1.65 1.65 0 0 0 15 4.6a1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9v.09A1.65 1.65 0 0 0 21 10h.09a2 2 0 1 1 0 4H21a1.65 1.65 0 0 0-1.6 1z" />
   </svg>
 );
+const NewTabIcon = (
+  <svg width="14" height="14" viewBox="0 0 24 24" {...stroke}>
+    <path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6" />
+    <polyline points="15 3 21 3 21 9" />
+    <line x1="10" y1="14" x2="21" y2="3" />
+  </svg>
+);
 const PngIcon = (
   <svg width="14" height="14" viewBox="0 0 24 24" {...stroke}>
     <rect x="3" y="3" width="18" height="18" rx="2" />
@@ -324,6 +337,20 @@ function findCard(view: HomeViewModel, key: string): CardViewData | undefined {
 
 function mapItems(card: CardViewData, controller: HomeController): HomeMenuItem[] {
   const items: HomeMenuItem[] = [];
+  // 우클릭 메뉴가 브라우저 기본 메뉴를 **대체**하므로, 카드가 링크(`<a href>`)라서
+  // 원래 거기 있던 "새 탭에서 열기"를 우리가 돌려준다(Notion·Drive도 같은 이유로 둔다).
+  if (card.openable !== false) {
+    items.push({
+      key: 'open-new-tab',
+      icon: NewTabIcon,
+      label: '새 탭에서 열기',
+      onSelect: () => {
+        // 새 탭도 '연 것'이다 — 최근 항목에 남지 않으면 목록이 실제와 어긋난다.
+        controller.recordRecent(card.title, card.docId);
+        window.open(card.href, '_blank', 'noopener,noreferrer');
+      },
+    });
+  }
   if (card.showFavRow) {
     items.push({
       key: 'fav',

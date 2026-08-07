@@ -2712,7 +2712,7 @@ describe('홈 우클릭 메뉴', () => {
     const menu = await screen.findByRole('menu');
     expect(menu.getAttribute('data-home-ctx')).toBe('map');
     // ☰을 눌렀을 때와 같은 항목들
-    [/즐겨찾기/, '이름 변경', /내보내기/, '삭제하기'].forEach((label) => {
+    ['새 탭에서 열기', /즐겨찾기/, '이름 변경', /내보내기/, '삭제하기'].forEach((label) => {
       expect(within(menu).getByRole('menuitem', { name: label })).toBeTruthy();
     });
     // 커서 자리에 뜬다
@@ -2819,6 +2819,39 @@ describe('홈 우클릭 메뉴', () => {
 
     fireEvent.contextMenu(recentCard, { clientX: 30, clientY: 30 });
     expect(screen.queryByRole('menu')).toBeNull();
+  });
+
+  // 우클릭 메뉴가 브라우저 기본 메뉴를 대체하면서 카드가 링크라서 원래 있던
+  // "새 탭에서 열기"가 사라졌다 — 메뉴가 그걸 돌려준다.
+  it('"새 탭에서 열기"가 그 맵의 주소를 새 탭으로 연다 (최근 항목에도 남는다)', async () => {
+    const user = userEvent.setup();
+    const open = vi.fn();
+    vi.stubGlobal('open', open);
+    try {
+      const { container } = renderHomeWithDocStore([meta('doc-t', '새 탭 맵')]);
+      await waitFor(() => expect(container.querySelector('a[data-title="새 탭 맵"]')).toBeTruthy());
+      const card = container.querySelector('a[data-title="새 탭 맵"]') as HTMLElement;
+      const href = card.getAttribute('href');
+
+      await user.click(within(card).getByRole('button', { name: '메뉴' }));
+      await user.click(await screen.findByRole('menuitem', { name: '새 탭에서 열기' }));
+
+      expect(open).toHaveBeenCalledWith(href, '_blank', 'noopener,noreferrer');
+      expect(JSON.parse(localStorage.getItem('mf_recent') || '[]')).toContain('doc-t');
+    } finally {
+      vi.unstubAllGlobals();
+    }
+  });
+
+  it('모바일에서는 메뉴 행이 44px 터치 타깃을 지킨다', async () => {
+    mockMatchMedia(true);
+    const { container } = renderHomeWithDocStore([meta('doc-tt', '터치 맵')]);
+    await waitFor(() => expect(container.querySelector('a[data-title="터치 맵"]')).toBeTruthy());
+    const card = container.querySelector('a[data-title="터치 맵"]') as HTMLElement;
+
+    fireEvent.contextMenu(card, { clientX: 20, clientY: 20 });
+    const row = (await screen.findByRole('menuitem', { name: '새 탭에서 열기' })) as HTMLElement;
+    expect(row.style.minHeight).toBe('44px');
   });
 
   it('Escape로 닫힌다', async () => {
