@@ -504,6 +504,14 @@ describe('Editor interactions (M3-Editor-b)', () => {
       expect(tip.textContent).toContain('편집 가능 권한은 서로의 커서와 편집이 실시간으로 보여요.');
       expect(tip.textContent).toContain('보기 전용 권한은 저장된 최신 맵을 열람만 할 수 있습니다.');
 
+      // 문장이 중간에서 접히면 굵게 강조한 권한 이름과 설명이 갈라져 읽기 힘들다(제보)
+      // — 폭은 가장 긴 문장에 맞추고(max-content), 툴팁은 "?" 버튼이 아니라 **제목
+      // 행**(모달 본문 왼쪽 끝)에 걸어 그 폭을 확보한다.
+      expect(tip.style.width).toBe('max-content');
+      expect(tip.style.left).toBe('0px');
+      const anchor = within(dialog).getByRole('button', { name: '권한 안내' }).parentElement as HTMLElement;
+      expect(anchor.style.position).not.toBe('relative');
+
       // 다시 누르면 닫힌다.
       await user.click(within(dialog).getByRole('button', { name: '권한 안내' }));
       expect(screen.queryByRole('tooltip')).toBeNull();
