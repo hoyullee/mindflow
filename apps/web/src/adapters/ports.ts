@@ -272,6 +272,16 @@ export interface ShareStore {
    */
   markSharedSeen(documentIds: string[]): Promise<void>;
   /**
+   * 방금 만든 초대를 **메일로** 알린다(초대 알림 ②).
+   *
+   * `add()`가 아니라 별도 메서드인 이유: "처음 초대인가"는 초대 목록을 들고 있는
+   * 화면만 안다(`add`는 upsert라 권한 변경과 구분되지 않는다). 같은 사람에게 같은
+   * 알림을 반복하면 스팸으로 읽히므로, 보낼지 말지는 호출부가 정한다.
+   *
+   * 실패해도 throw하지 않는다 — 초대는 이미 걸렸고 앱 안 배지가 그 사실을 알린다.
+   */
+  notifyInvite(documentId: string, email: string): Promise<void>;
+  /**
    * 공유 팝업용 참가자 정보(소유자 + 초대받은 사람의 프로필명/가입 여부).
    * `null` = 정보를 얻을 수 없음(RPC 미적용 서버, 일시 오류) — UI는 이메일만
    * 보여주는 기존 렌더로 폴백한다. 실패해도 공유 자체는 동작해야 하므로 throw하지

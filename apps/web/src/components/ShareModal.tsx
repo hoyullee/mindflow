@@ -320,6 +320,9 @@ export function ShareModal({ open: shareOpen, docId, onClose: closeShare, readOn
       setError('자기 자신은 초대할 수 없어요.');
       return;
     }
+    // 이미 명단에 있는 사람인가 — **처음 초대일 때만** 메일을 보낸다(아래).
+    // `add`는 upsert라 권한 변경과 구분되지 않으므로, 목록을 들고 있는 여기서 판단한다.
+    const alreadyInvited = rows.some((r) => r.email === target.toLowerCase());
     setBusy(true);
     const res = await shareStore.add(docId, target, inviteRole);
     setBusy(false);
@@ -329,6 +332,10 @@ export function ShareModal({ open: shareOpen, docId, onClose: closeShare, readOn
     }
     setEmail('');
     setError('');
+    // 초대 메일(②) — 처음 초대에만. 같은 사람에게 같은 알림을 반복하면 스팸으로
+    // 읽힌다. 결과는 기다리지도 보지도 않는다: 초대는 이미 걸렸고, 메일이 실패해도
+    // 앱 안 배지(①)가 그 사실을 알린다.
+    if (!alreadyInvited) void shareStore.notifyInvite(docId, target);
     await refresh();
   };
 

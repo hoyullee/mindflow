@@ -163,6 +163,24 @@ describe('SupabaseShareStore', () => {
     await expect(new SupabaseShareStore(client).markSharedSeen(['d1'])).resolves.toBeUndefined();
   });
 
+  it('notifyInvite()는 share-invite 함수를 부른다 — 키는 서버에만 있다', async () => {
+    const invoke = vi.fn(async () => ({ data: { sent: true }, error: null }));
+    const client = { functions: { invoke } } as unknown as import('@supabase/supabase-js').SupabaseClient;
+
+    await new SupabaseShareStore(client).notifyInvite('d1', 'friend@example.com');
+
+    expect(invoke).toHaveBeenCalledWith('share-invite', { body: { documentId: 'd1', email: 'friend@example.com' } });
+  });
+
+  it('notifyInvite()의 실패는 삼킨다 — 초대는 이미 걸렸고 앱 배지가 알린다', async () => {
+    const invoke = vi.fn(async () => {
+      throw new Error('function not deployed');
+    });
+    const client = { functions: { invoke } } as unknown as import('@supabase/supabase-js').SupabaseClient;
+
+    await expect(new SupabaseShareStore(client).notifyInvite('d1', 'a@b.com')).resolves.toBeUndefined();
+  });
+
   it('로그인 정보가 없으면 조회하지 않고 빈 목록', async () => {
     const { client, query } = fakeClient({ data: [], error: null }, null);
     expect(await new SupabaseShareStore(client).listSharedWithMe()).toEqual([]);

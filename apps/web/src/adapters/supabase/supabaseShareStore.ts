@@ -117,6 +117,26 @@ export class SupabaseShareStore implements ShareStore {
   }
 
   /**
+   * 초대 메일(초대 알림 ②) — Edge Function `share-invite`가 보낸다.
+   *
+   * 메일 서비스 API 키는 **서버에만** 있어야 한다: 클라이언트 번들에 넣으면 누구나
+   * 우리 도메인 이름으로 메일을 보낼 수 있다(피싱). 그래서 여기서는 "이 초대를
+   * 알려 달라"고만 하고, 요청자가 진짜 소유자인지·그 초대가 실제로 있는지는
+   * 함수가 서버에서 다시 확인한다.
+   *
+   * 시크릿(RESEND_API_KEY)이 없으면 함수가 `{sent:false}`로 조용히 넘어간다 —
+   * 설정 전까지 공유는 지금과 똑같이 동작한다. 실패도 삼킨다(초대는 이미 걸렸고
+   * 앱 안 배지가 그 사실을 알린다).
+   */
+  async notifyInvite(documentId: string, email: string): Promise<void> {
+    try {
+      await this.client.functions.invoke('share-invite', { body: { documentId, email } });
+    } catch {
+      /* 함수 미배포·네트워크 오류 — 알림은 공유의 부수 효과다 */
+    }
+  }
+
+  /**
    * "봤다" 표시(0019). 정책을 넓히는 대신 좁은 RPC 하나를 쓴다 — 초대받은 사람이
    * 자기 행을 UPDATE할 수 있게 열면 `seen_at`만이 아니라 `role`까지 바꿀 수 있다
    * (RLS는 컬럼 단위로 못 좁힌다). 실패는 삼킨다: 배지가 안 지워질 뿐이다.
