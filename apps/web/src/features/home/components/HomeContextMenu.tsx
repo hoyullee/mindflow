@@ -1,6 +1,6 @@
 import type { CSSProperties, ReactNode } from 'react';
 import { useEffect, useRef, useState } from 'react';
-import type { HomeState } from '../types';
+import type { HomeState, SpaceData } from '../types';
 import type { HomeController } from '../useHomeController';
 import type { CardViewData, FolderCardViewData, HomeViewModel } from '../viewModel';
 import { useIsMobile } from '../../../hooks/useMediaQuery';
@@ -126,7 +126,7 @@ export function HomeContextMenu({ state, view, controller }: Props) {
   }, [ctx, controller]);
 
   if (!ctx) return null;
-  const items = buildItems(ctx.target, view, controller);
+  const items = buildItems(ctx.target, state, view, controller);
   if (!items.length) return null;
 
   const vw = typeof window !== 'undefined' ? window.innerWidth : 1280;
@@ -319,7 +319,7 @@ function SpaceDot({ color }: { color: string }) {
 }
 
 // ── 대상별 항목 ───────────────────────────────────────────────────────────
-function buildItems(target: HomeState['ctxMenu'] extends null ? never : NonNullable<HomeState['ctxMenu']>['target'], view: HomeViewModel, controller: HomeController): HomeMenuItem[] {
+function buildItems(target: NonNullable<HomeState['ctxMenu']>['target'], state: HomeState, view: HomeViewModel, controller: HomeController): HomeMenuItem[] {
   if (target.kind === 'map') {
     const card = findCard(view, target.key);
     return card ? mapItems(card, controller) : [];
@@ -327,6 +327,10 @@ function buildItems(target: HomeState['ctxMenu'] extends null ? never : NonNulla
   if (target.kind === 'folder') {
     const folder = view.folderCards.find((f) => f.id === target.id);
     return folder ? folderItems(folder, controller) : [];
+  }
+  if (target.kind === 'space') {
+    const space = state.spaces.find((sp) => sp.id === target.id);
+    return space ? spaceItems(space, state, controller) : [];
   }
   return bgItems(controller);
 }
@@ -415,6 +419,28 @@ function folderItems(folder: FolderCardViewData, controller: HomeController): Ho
       disabled: !folder.canDelete,
       hint: folder.canDelete ? undefined : '맵이나 하위 폴더가 없는 폴더만 삭제할 수 있어요',
       onSelect: () => controller.askDeleteFolder(folder.id),
+    },
+  ];
+}
+
+/**
+ * 스페이스 행 메뉴 — LNB의 ⋮ 버튼이 열던 팝오버를 그대로 옮겨 왔다(같은 두 항목,
+ * 같은 삭제 불가 안내). 이제 홈의 다른 메뉴들과 한 컴포넌트를 쓴다.
+ */
+function spaceItems(space: SpaceData, state: HomeState, controller: HomeController): HomeMenuItem[] {
+  const hasMaps = Array.isArray(space.maps) && space.maps.some((m) => !state.deleted[m.title]);
+  const isLastSpace = state.spaces.length <= 1;
+  return [
+    { key: 'rename', icon: PencilIcon, label: '이름 변경', onSelect: () => controller.startRenameSpace(space.id) },
+    { key: 'sep-1', label: '' },
+    {
+      key: 'delete',
+      icon: TrashIcon,
+      label: '스페이스 삭제',
+      danger: true,
+      disabled: hasMaps || isLastSpace,
+      hint: hasMaps ? '맵이 없는 스페이스만 삭제할 수 있어요' : isLastSpace ? '마지막 스페이스는 삭제할 수 없어요' : undefined,
+      onSelect: () => controller.askDeleteSpace(space.id),
     },
   ];
 }
