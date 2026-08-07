@@ -362,6 +362,8 @@ export interface EditorController {
    * controller has no instance of its own to hang a ref off. `applyPartial`
    * reads from this. */
   setRichEditorEl: (el: HTMLDivElement | null) => void;
+  /** 편집 박스의 현재 캐럿을 기억해 둔다 — 툴바 버튼이 쓸 최후의 기준점. */
+  noteEditCaret: (el: HTMLElement) => void;
   /** Applies a partial style to the CURRENT DOM Selection inside the registered
    * rich editor — port of `Component#applyPartial` (MindFlow.dc.html:2701-2725).
    * DOM-only (rewrites the `contentEditable`'s innerHTML + restores the
@@ -736,8 +738,36 @@ export function useEditorState(): EditorController {
   // currently-mounted rich-text `contentEditable` element, registered by
   // `NodeEditBox` while it's the one rendered (`editingNodeId` is set to its id).
   const richElRef = useRef<HTMLDivElement | null>(null);
+  /**
+   * 편집 박스 안에서 **마지막으로 확인된 캐럿/선택**(값 좌표계).
+   *
+   * 서식 툴바의 버튼은 편집 박스 **밖**을 누르는 동작이라, 그 순간의
+   * `window.getSelection()`을 그대로 믿을 수 없다 — 손가락 탭은 마우스와 달리
+   * 선택을 옮기거나 지울 수 있고, 방금 다시 그린 DOM을 가리키는 낡은 Range가
+   * 남기도 한다(제보: 폰에서 툴바 내어쓰기를 쓰면 엉뚱한 결과). 그래서 편집 중에
+   * 계속 기록해 두고, 탭 시점의 선택이 쓸 수 없으면 이 값을 쓴다.
+   */
+  const lastEditSelRef = useRef<{ a: number; b: number } | null>(null);
   const setRichEditorEl = useCallback((el: HTMLDivElement | null) => {
     richElRef.current = el;
+    if (!el) lastEditSelRef.current = null; // 편집 세션이 끝나면 기억도 버린다
+  }, []);
+
+  /** 편집 박스의 현재 선택을 값 좌표계로 기록한다(박스 안일 때만). */
+  const noteEditCaret = useCallback((el: HTMLElement) => {
+    const ws = window.getSelection();
+    if (!ws || !ws.rangeCount) return;
+    const rng = ws.getRangeAt(0);
+    if (!el.contains(rng.startContainer) || !el.contains(rng.endContainer)) return;
+    const lin = linearize(el, [
+      { container: rng.startContainer, offset: rng.startOffset },
+      { container: rng.endContainer, offset: rng.endOffset },
+    ]);
+    const live = liveEditValue(el);
+    lastEditSelRef.current = {
+      a: live.clamp(Math.min(lin.pos[0] ?? 0, lin.pos[1] ?? 0)),
+      b: live.clamp(Math.max(lin.pos[0] ?? 0, lin.pos[1] ?? 0)),
+    };
   }, []);
 
   const idFactory = useRef(createIdFactory()).current;
@@ -2646,21 +2676,30 @@ export function useEditorState(): EditorController {
   const withEditorSelection = useCallback((make: (text: string, a: number, b: number) => TextEdit[]) => {
     const ed = richElRef.current;
     if (!ed) return;
-    const ws = window.getSelection();
-    if (!ws || !ws.rangeCount) return;
-    const rng = ws.getRangeAt(0);
-    // 선택이 편집 박스 **밖**이면 아무것도 하지 않는다 — `linearize`는 찾지 못한
-    // 위치를 텍스트 끝으로 접으므로, 남의 선택을 그대로 쓰면 엉뚱한 줄을 고친다.
-    if (!ed.contains(rng.startContainer) || !ed.contains(rng.endContainer)) return;
-    const lin = linearize(ed, [
-      { container: rng.startContainer, offset: rng.startOffset },
-      { container: rng.endContainer, offset: rng.endOffset },
-    ]);
     // 값과 오프셋은 **같은 좌표계**여야 한다(`liveEditValue` — 편집 박스의
     // placeholder `<br>` 하나만큼 `linearize`가 더 세는 것을 값 길이로 자른다).
     const live = liveEditValue(ed);
-    const a = live.clamp(Math.min(lin.pos[0] ?? 0, lin.pos[1] ?? 0));
-    const b = live.clamp(Math.max(lin.pos[0] ?? 0, lin.pos[1] ?? 0));
+    // 지금 선택이 편집 박스 **안**이면 그것이 정본. 밖이거나(툴바를 탭한 손가락이
+    // 선택을 옮겼다) 낡은 Range면 편집 중 기록해 둔 마지막 캐럿으로 되돌아간다 —
+    // 그것마저 없으면 아무것도 하지 않는다(엉뚱한 줄을 고치느니 무동작이 낫다).
+    const ws = window.getSelection();
+    const rng = ws && ws.rangeCount ? ws.getRangeAt(0) : null;
+    const inBox = !!rng && ed.contains(rng.startContainer) && ed.contains(rng.endContainer);
+    let a: number;
+    let b: number;
+    if (inBox && rng) {
+      const lin = linearize(ed, [
+        { container: rng.startContainer, offset: rng.startOffset },
+        { container: rng.endContainer, offset: rng.endOffset },
+      ]);
+      a = live.clamp(Math.min(lin.pos[0] ?? 0, lin.pos[1] ?? 0));
+      b = live.clamp(Math.max(lin.pos[0] ?? 0, lin.pos[1] ?? 0));
+    } else {
+      const remembered = lastEditSelRef.current;
+      if (!remembered) return;
+      a = live.clamp(remembered.a);
+      b = live.clamp(remembered.b);
+    }
     const parsed = { text: live.text, rich: live.rich };
     const edits = make(parsed.text, a, b);
     if (!edits.length) return;
@@ -4304,6 +4343,7 @@ export function useEditorState(): EditorController {
     refreshTextCtxAnchor,
     closeTextCtx,
     setRichEditorEl,
+    noteEditCaret,
     applyPartial,
     applyListOp,
     applyListEdits,

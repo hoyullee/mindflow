@@ -47,6 +47,7 @@ export function TextToolbar({ controller }: TextToolbarProps) {
   // Selection이 사라진다) 적용 시 그 범위에 건다.
   const [link, setLink] = useState<{ a: number; b: number; value: string; had: boolean } | null>(null);
   const linkInputRef = useRef<HTMLInputElement | null>(null);
+  const rootRef = useRef<HTMLDivElement | null>(null);
   useEffect(() => {
     if (link) linkInputRef.current?.focus();
   }, [link]);
@@ -114,6 +115,40 @@ export function TextToolbar({ controller }: TextToolbarProps) {
     return () => window.removeEventListener('mousedown', onDown);
   }, [textCtx, controller]);
 
+  /**
+   * 손가락 탭이 **편집 박스의 캐럿을 흔들지 못하게** touchstart에서 먼저 막는다.
+   *
+   * 버튼들은 `mousedown`에서 `preventDefault`로 포커스·선택을 지키는데, 그건
+   * 마우스 이야기다 — 터치에서는 합성 `mousedown`이 `touchend` **뒤에** 오므로
+   * 그때 막아 봐야 선택은 이미 흔들린 뒤다(제보: 폰에서 툴바 내어쓰기를 쓰면
+   * 결과가 어긋난다). React의 `onTouchStart`는 루트에 **passive**로 붙어
+   * `preventDefault`가 무시되므로, 네이티브 비-passive 리스너를 직접 건다.
+   *
+   * 위임 한 곳으로 두는 이유: 버튼마다 리스너를 달면 목록이 바뀔 때마다 빠뜨린다.
+   * `touchstart`를 막으면 합성 마우스 이벤트가 아예 오지 않으므로 이중 실행도 없다.
+   */
+  useEffect(() => {
+    const root = rootRef.current;
+    if (!root) return;
+    const onTouchStart = (e: TouchEvent): void => {
+      const target = e.target as HTMLElement | null;
+      // 입력창(링크 주소)은 손가락으로 포커스가 가야 하므로 건드리지 않는다.
+      if (!target || target.closest('input, textarea, select')) return;
+      const btn = target.closest('button');
+      if (!btn || !root.contains(btn)) return;
+      if (btn.disabled) return;
+      e.preventDefault();
+      e.stopPropagation();
+      // 버튼마다 동작이 걸린 이벤트가 다르다(대부분 `mousedown`, 링크 적용/제거는
+      // `click`) — 둘 다 흘려 준다. 한 버튼이 둘 다 **동작**시키는 경우는 없어
+      // 이중 실행이 아니다(링크 버튼의 mousedown은 preventDefault만 한다).
+      btn.dispatchEvent(new MouseEvent('mousedown', { bubbles: true, cancelable: true }));
+      btn.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true }));
+    };
+    root.addEventListener('touchstart', onTouchStart, { passive: false });
+    return () => root.removeEventListener('touchstart', onTouchStart);
+  });
+
   if (!textCtx || !editingAny) return null;
 
   // port of `textCtxStyle` (MindFlow.dc.html:3089-3092) — clamped so the toolbar never
@@ -145,8 +180,10 @@ export function TextToolbar({ controller }: TextToolbarProps) {
   // `th`는 고정 `uiTheme`이므로 이 목록도 문서 테마와 무관하다(위 주석 참고).
   const swatches = [th.text, ...th.palette];
 
+
   return (
     <div
+      ref={rootRef}
       className="mf-tctx"
       style={style}
       // Same trap as `ContextMenu.tsx`'s root: this toolbar is a child of `.mf-ed-vp`

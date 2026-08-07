@@ -1124,7 +1124,35 @@ describe('네이티브 beforeinput 안전망 — 기본 줄바꿈이 [마커|내
   // 같은 경로의 방어 하나 더: 리스트 조작은 **편집 박스 안의 선택**만 믿는다.
   // `linearize`는 찾지 못한 위치를 텍스트 끝으로 접으므로, 박스 밖 선택을 그대로
   // 쓰면 엉뚱한 줄(마지막 줄)이 고쳐진다.
-  it('편집 박스 밖 선택으로는 리스트 조작이 일어나지 않는다', () => {
+  // 툴바 버튼은 편집 박스 **밖**을 누르는 동작이다 — 손가락 탭이 선택을 옮겨 놓아도
+  // 편집 중 기록해 둔 마지막 캐럿으로 그 줄을 고친다(제보: 폰에서 툴바 내어쓰기).
+  it('선택이 편집 박스를 벗어나도 마지막 캐럿을 기준으로 내어쓰기한다', () => {
+    localStorage.setItem(
+      'mindflow_doc_bin5',
+      JSON.stringify(docWith({ c1: { id: 'c1', text: '5. 다섯\n  a. 하나\n  b. ', emoji: '', parent: 'root', children: [], collapsed: false, color: null, x: 0, y: 0 } })),
+    );
+    const { container } = renderEditor('/editor?map=bin5&title=x');
+    const editor = startEditingNode(container, 'c1');
+    // 마지막 줄 끝에 캐럿을 두고 selectionchange를 흘려 "마지막 캐럿"을 기록시킨다.
+    const len = domToRuns(editor, true).text.length;
+    setLinearSelection(editor, len, len);
+    document.dispatchEvent(new Event('selectionchange'));
+
+    // 탭이 선택을 박스 밖으로 옮긴 상태를 흉내낸다.
+    const outside = container.querySelector('.mf-ed-vp') as HTMLElement;
+    const range = document.createRange();
+    range.selectNodeContents(outside);
+    range.collapse(true);
+    const sel = window.getSelection();
+    sel?.removeAllRanges();
+    sel?.addRange(range);
+
+    fireEvent.mouseDown(within(container).getByTitle('내어쓰기 (Shift+Tab)'));
+
+    expect(domToRuns(editor, true).text).toBe('5. 다섯\n  a. 하나\n6. ');
+  });
+
+  it('기억해 둔 캐럿도 없으면 아무 일도 하지 않는다', () => {
     localStorage.setItem('mindflow_doc_bin4', JSON.stringify(docWith({ c1: { id: 'c1', text: '1. 하나\n2. 둘', emoji: '', parent: 'root', children: [], collapsed: false, color: null, x: 0, y: 0 } })));
     const { container } = renderEditor('/editor?map=bin4&title=x');
     const editor = startEditingNode(container, 'c1');
