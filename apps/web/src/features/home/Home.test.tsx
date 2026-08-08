@@ -11,7 +11,7 @@ import { LocalShareStore } from '../../adapters/local/localShareStore';
 import { LocalFeedbackStore } from '../../adapters/local/localFeedbackStore';
 import { LocalImageStore } from '../../adapters/local/localImageStore';
 import { mapId } from './storage';
-import { HOME_THEMES } from './theme';
+import { HOME_THEMES, UNREAD_BADGE_BG } from './theme';
 import type { Doc } from '@mindflow/mindmap-core';
 import type { Backend, DocMeta, DocStore, LoadedDoc, SaveResult, SpaceStore, WorkspaceData } from '../../adapters/ports';
 
@@ -1892,6 +1892,29 @@ describe('Home', () => {
         } finally {
           mockMatchMedia(false);
         }
+      });
+
+      // 제보: 홈 테마를 바꾸면 배지 색까지 함께 바뀌었다. 배지는 강조 UI가 아니라
+      // **알림**이라 테마와 무관하게 같은 색이어야 한다(모노 테마에서는 강조색이
+      // 회색이라 알림처럼 보이지도 않았다).
+      it('배지 색은 홈 테마를 따라가지 않는다', async () => {
+        localStorage.setItem('mf_spaces', JSON.stringify({ spaces: [{ id: 'sa', name: '내 공간', color: '#f0663f', home: true, maps: [], folders: [] }], mapFolders: {} }));
+        localStorage.setItem('mf_home_theme', 'ocean'); // 강조색이 파랑인 테마
+        seedUnseenInvite('theirs');
+        const { container } = renderHomeWithDocStore([mine, theirs]);
+
+        const aside = within(container.querySelector('aside') as HTMLElement);
+        // jsdom은 hex를 rgb()로 정규화한다 — 값을 맞춰 비교한다.
+        const rgb = (hex: string): string => {
+          const n = parseInt(hex.slice(1), 16);
+          return `rgb(${(n >> 16) & 255}, ${(n >> 8) & 255}, ${n & 255})`;
+        };
+        const badge = await waitFor(() => aside.getByLabelText('확인하지 않은 공유 1개'));
+        expect(badge.style.background).toBe(rgb(UNREAD_BADGE_BG));
+        expect(badge.style.background).not.toContain('var('); // 테마 변수를 쓰지 않는다
+        expect(aside.getByLabelText('새로 공유됨').style.background).toBe(rgb(UNREAD_BADGE_BG));
+        // 파랑 테마의 강조색과 달라야 한다(= 테마를 따라가지 않는다).
+        expect(badge.style.background).not.toBe(rgb(HOME_THEMES.ocean.accent));
       });
 
       it('이미 확인한 초대는 배지를 만들지 않는다', async () => {
