@@ -227,6 +227,10 @@ export interface HomeState {
   search: string;
   /** 입력창의 즉시값 — 타이핑은 늘 지체 없이 보인다. */
   searchInput: string;
+  /** 다른 스페이스의 본문을 받아 오는 중인가. 검색은 전역이지만 본문은 활성
+   * 스페이스 것만 미리 받아 두므로(썸네일), **첫 검색 때** 나머지를 마저 받는다.
+   * 받는 동안에도 제목 결과는 이미 보이고, 도착하면 본문 결과가 더해진다. */
+  searchBodiesLoading: boolean;
 
   /** False until the first `DocStore.list()` settles on mount. While false the
    * map grid renders skeleton placeholders (and the sidebar hides its empty-list
@@ -349,6 +353,7 @@ export function initialHomeState(): HomeState {
 
     search: '',
     searchInput: '',
+    searchBodiesLoading: false,
     loaded: false,
     previewDocs: {},
     previewResolved: {},

@@ -4,6 +4,8 @@ import { LoadingOverlay } from '../auth/LoadingOverlay';
 import { Sidebar } from './components/Sidebar';
 import { Toolbar } from './components/Toolbar';
 import { MapGrid } from './components/MapGrid';
+import { SearchBar } from './components/SearchBar';
+import { SearchResults } from './components/SearchResults';
 import { RecentStrip, RecentStripSkeleton } from './components/RecentStrip';
 import { AuthModal } from './components/modals/AuthModal';
 import { ToastModal } from './components/modals/ToastModal';
@@ -115,10 +117,19 @@ export function Home() {
             global "recently opened" bar, not part of the current space's maps.
             로딩 중엔(저장된 최근 기록이 있을 때) 같은 footprint의 스켈레톤을 미리
             깔아, 로드 완료 시 트레이가 끼어들며 툴바가 아래로 튀는 점프를 막는다. */}
-        {view.loading && state.recent.length > 0 && <RecentStripSkeleton count={state.recent.length} />}
-        {view.recentSectionVisible && <RecentStrip cards={view.recentCards} controller={controller} />}
-        <Toolbar state={state} view={view} controller={controller} isMobile={isMobile} onOpenNav={() => setNavOpen(true)} />
-        <MapGrid view={view} controller={controller} />
+        {/* 검색 줄은 늘 최상단 — 스페이스 헤더 위에 있어야 "전 스페이스"가 자리로
+            드러난다. 질의가 있는 동안에는 그 아래가 통째로 검색 결과 화면이 된다. */}
+        <SearchBar state={state} view={view} controller={controller} isMobile={isMobile} onOpenNav={() => setNavOpen(true)} />
+        {view.searchQuery ? (
+          <SearchResults view={view} controller={controller} />
+        ) : (
+          <>
+            {view.loading && state.recent.length > 0 && <RecentStripSkeleton count={state.recent.length} />}
+            {view.recentSectionVisible && <RecentStrip cards={view.recentCards} controller={controller} />}
+            <Toolbar state={state} view={view} controller={controller} isMobile={isMobile} />
+            <MapGrid view={view} controller={controller} />
+          </>
+        )}
       </main>
 
       <AuthModal state={state} controller={controller} />
