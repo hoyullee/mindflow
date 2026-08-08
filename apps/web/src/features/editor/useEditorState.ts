@@ -6,9 +6,9 @@ import { HistoryStack, ROOT_ID, collectImageRefs, collectInlineImages, isImageRe
 import { domToRuns, linearize, liveEditValue } from './richtextDom';
 import { recordVersion, versionDoc } from './versionHistory';
 import { nodeTextAlign, renderListEdit } from './listLines';
-import type { ShareRole, ShareStore } from '../../adapters/ports';
+import type { DocComment, ShareRole, ShareStore } from '../../adapters/ports';
 import type { CollabStatus } from '../../collab/ports';
-import { useBackend, useDocStore, useShareStore, useSpaceStore } from '../../adapters/BackendContext';
+import { useBackend, useCommentStore, useDocStore, useShareStore, useSpaceStore } from '../../adapters/BackendContext';
 import { useAuthUser } from '../../adapters/useAuthUser';
 import { useProfileName } from '../../adapters/useProfileName';
 import { useYjsDocSync } from '../../collab/useYjsDocSync';
@@ -297,6 +297,27 @@ export interface EditorController {
   /** 피드백 보내기 모달(보기/☰ 메뉴). */
   feedbackOpen: boolean;
   setFeedbackOpen: (open: boolean) => void;
+
+  // ---- 댓글(주제에 붙는 논의) ----
+  /** 댓글 패널이 열려 있는가. */
+  commentsOpen: boolean;
+  /** 지금 댓글을 보고 있는 주제. 주제를 고르면 따라간다(패널이 대상 없이 뜨지 않게). */
+  commentsNodeId: string;
+  /** 패널을 연다(대상 주제를 함께 지정할 수 있다 — 노드 메뉴·배지 클릭). */
+  openComments: (nodeId?: string) => void;
+  closeComments: () => void;
+  /** 이 문서의 댓글 전부(작성 순). 배지·패널이 함께 쓴다. */
+  comments: DocComment[];
+  /** 주제 id → 댓글 수 — 노드 배지가 읽는다. */
+  commentCounts: Record<string, number>;
+  /** 목록을 아직 불러오는 중인가(패널 스켈레톤용). */
+  commentsLoading: boolean;
+  addComment: (nodeId: string, body: string) => Promise<{ error?: string }>;
+  removeComment: (commentId: string) => Promise<{ error?: string }>;
+  /** 이 사람이 이 문서에 댓글을 쓸 수 있는가 — 소유자와 **초대받은 사람**만.
+   * 링크 공유(0017)로 열었으면 서버가 댓글을 아예 내주지 않으므로 진입점도 감춘다
+   * ("열리는 척하다 빈 목록"이 되지 않게). */
+  canComment: boolean;
   /** 버전 기록 모달 열림 상태 — 편집/☰ 메뉴가 조작한다. */
   historyOpen: boolean;
   setHistoryOpen: (open: boolean) => void;
@@ -642,6 +663,7 @@ export function useEditorState(): EditorController {
   const navigate = useNavigate();
   const docStore = useDocStore();
   const shareStore = useShareStore();
+  const commentStore = useCommentStore();
   const spaceStore = useSpaceStore();
   const backend = useBackend();
   const backendMode = backend.mode;
@@ -3315,6 +3337,86 @@ export function useEditorState(): EditorController {
   const [helpOpen, setHelpOpen] = useState(false);
   const [feedbackOpen, setFeedbackOpen] = useState(false);
   const [historyOpen, setHistoryOpen] = useState(false);
+
+  // ---- 댓글 ────────────────────────────────────────────────────────────────
+  // 본문(jsonb)이 아니라 별도 테이블(0020)에 산다 — 논의는 본문과 수명이 다르고
+  // (버전을 되돌려도 남아야 한다), 본문에 넣으면 CRDT 병합 대상이 되어 끊긴 채
+  // 양쪽이 달면 한쪽이 사라진다(#332).
+  const [commentsOpen, setCommentsOpen] = useState(false);
+  const [commentsNodeId, setCommentsNodeId] = useState<string>(ROOT_ID);
+  const [comments, setComments] = useState<DocComment[]>([]);
+  const [commentsLoading, setCommentsLoading] = useState(false);
+  // 링크로 연 사람(초대 행이 없는 남의 문서)에게는 서버가 댓글을 내주지 않는다 —
+  // 링크는 누구에게나 전달될 수 있는데 댓글은 내부 논의라 본문과 같은 무게로
+  // 다룰 수 없다(0020의 select 정책). 진입점부터 감춘다.
+  const canComment = !(loadedNotMine && !sharedDoc);
+
+  /** 서버에서 목록을 다시 읽는다. 댓글은 실시간 채널을 타지 않으므로(본문이 아니다)
+   * 열 때마다 새로 읽는 것이 상대의 새 댓글을 보는 유일한 길이다. */
+  const reloadComments = useCallback(async () => {
+    if (!docStoreId || !canComment) {
+      setComments([]);
+      return;
+    }
+    setCommentsLoading(true);
+    try {
+      setComments(await commentStore.list(docStoreId));
+    } catch {
+      setComments([]);
+    } finally {
+      setCommentsLoading(false);
+    }
+  }, [commentStore, docStoreId, canComment]);
+
+  // 마운트/문서 전환 시 한 번 — 배지(주제별 개수)는 패널을 열지 않아도 보여야 한다.
+  useEffect(() => {
+    if (hydrating) return; // 본문이 아직 없으면 대상 주제도 없다
+    void reloadComments();
+  }, [reloadComments, hydrating]);
+
+  // 주제를 고르면 패널이 따라간다 — 열어 둔 채 다른 주제를 눌렀는데 남의 댓글이
+  // 그대로 떠 있으면 어느 주제의 논의인지 알 수 없다. 주제가 아닌 것(메모·선·영역)을
+  // 고르거나 선택을 해제하면 보던 주제를 그대로 둔다.
+  useEffect(() => {
+    if (selection?.kind === 'node') setCommentsNodeId(selection.id);
+  }, [selection?.kind, selection?.id]);
+
+  const commentCounts = useMemo(() => {
+    const counts: Record<string, number> = {};
+    comments.forEach((c) => {
+      counts[c.nodeId] = (counts[c.nodeId] ?? 0) + 1;
+    });
+    return counts;
+  }, [comments]);
+
+  const openComments = useCallback(
+    (nodeId?: string) => {
+      if (nodeId) setCommentsNodeId(nodeId);
+      setCommentsOpen(true);
+      // 모바일에서는 속성 시트와 댓글이 둘 다 바텀 시트다 — 겹치지 않게 하나만 남긴다.
+      setPropsOpen(false);
+      void reloadComments();
+    },
+    [reloadComments],
+  );
+  const closeComments = useCallback(() => setCommentsOpen(false), []);
+
+  const addComment = useCallback(
+    async (nodeId: string, body: string) => {
+      const res = await commentStore.add(docStoreId, nodeId, body);
+      if (!res.error) await reloadComments();
+      return res;
+    },
+    [commentStore, docStoreId, reloadComments],
+  );
+  const removeComment = useCallback(
+    async (commentId: string) => {
+      const res = await commentStore.remove(docStoreId, commentId);
+      if (!res.error) await reloadComments();
+      return res;
+    },
+    [commentStore, docStoreId, reloadComments],
+  );
   const [searchMarks, setSearchMarks] = useState<{ nodes: Set<string>; floats: Set<string> } | null>(null);
 
   const panToCanvasPoint = useCallback((cx: number, cy: number) => {
@@ -4312,6 +4414,16 @@ export function useEditorState(): EditorController {
     setHelpOpen,
     feedbackOpen,
     setFeedbackOpen,
+    commentsOpen,
+    commentsNodeId,
+    openComments,
+    closeComments,
+    comments,
+    commentCounts,
+    commentsLoading,
+    addComment,
+    removeComment,
+    canComment,
     historyOpen,
     setHistoryOpen,
     historyDocId: docStoreId,

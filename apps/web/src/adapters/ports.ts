@@ -407,6 +407,39 @@ export interface FeedbackStore {
   submit(entry: FeedbackEntry): Promise<{ error?: string }>;
 }
 
+// ── Comments ───────────────────────────────────────────────────────────────
+
+export interface DocComment {
+  id: string;
+  /** 대상 주제의 id. 그 주제가 지워졌으면 앱이 "사라진 주제"로 보여 준다. */
+  nodeId: string;
+  /** 작성 시점의 표시 이름 스냅샷(0020) — 조인 없이 목록 하나로 끝내기 위해. */
+  authorName: string;
+  /** 내가 쓴 댓글인가 — 지우기 버튼을 내줄지 가른다(진짜 게이트는 RLS). */
+  mine: boolean;
+  body: string;
+  createdAt: string;
+}
+
+/**
+ * 주제(노드)에 붙는 댓글(0020).
+ *
+ * 문서 본문이 아니라 별도 저장소인 이유는 마이그레이션 주석 참고 — 요약하면
+ * 수명이 다르고(버전 되돌리기), CRDT 병합 대상이 되면 안 되며, 자동저장마다
+ * 통째로 오가는 값에 얹을 것이 아니다.
+ *
+ * 로컬/데모 모드는 localStorage에 쌓는다 — 혼자 쓰는 메모처럼 동작하지만 UI 흐름은
+ * 같다(ShareStore·FeedbackStore와 같은 태도).
+ */
+export interface CommentStore {
+  /** 그 문서의 댓글 전부(오래된 것부터). 읽을 수 없으면 빈 배열. */
+  list(documentId: string): Promise<DocComment[]>;
+  /** 댓글 달기. 실패는 사용자 문구로 돌려준다(throw하지 않는다). */
+  add(documentId: string, nodeId: string, body: string): Promise<{ error?: string }>;
+  /** 지우기 — 쓴 사람 본인 또는 문서 소유자만(RLS). */
+  remove(documentId: string, commentId: string): Promise<{ error?: string }>;
+}
+
 // ── Images ─────────────────────────────────────────────────────────────────
 
 /**
@@ -446,6 +479,8 @@ export interface Backend {
   feedbackStore: FeedbackStore;
   /** 첨부 이미지 실물 저장소(본문에는 참조만 — 0016). */
   imageStore: ImageStore;
+  /** 주제에 붙는 댓글(0020). */
+  commentStore: CommentStore;
   /** `'local'` = demo/localStorage fallback (no env configured); `'supabase'`
    * = real Postgres + Auth. Used to decide whether auth routes are gated. */
   mode: 'local' | 'supabase';
