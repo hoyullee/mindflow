@@ -4,7 +4,6 @@ import { LoadingOverlay } from '../auth/LoadingOverlay';
 import { Sidebar } from './components/Sidebar';
 import { Toolbar } from './components/Toolbar';
 import { MapGrid } from './components/MapGrid';
-import { SearchBar } from './components/SearchBar';
 import { SearchResults } from './components/SearchResults';
 import { RecentStrip, RecentStripSkeleton } from './components/RecentStrip';
 import { AuthModal } from './components/modals/AuthModal';
@@ -117,19 +116,15 @@ export function Home() {
             global "recently opened" bar, not part of the current space's maps.
             로딩 중엔(저장된 최근 기록이 있을 때) 같은 footprint의 스켈레톤을 미리
             깔아, 로드 완료 시 트레이가 끼어들며 툴바가 아래로 튀는 점프를 막는다. */}
-        {/* 검색 줄은 늘 최상단 — 스페이스 헤더 위에 있어야 "전 스페이스"가 자리로
-            드러난다. 질의가 있는 동안에는 그 아래가 통째로 검색 결과 화면이 된다. */}
-        <SearchBar state={state} view={view} controller={controller} isMobile={isMobile} onOpenNav={() => setNavOpen(true)} />
-        {view.searchQuery ? (
-          <SearchResults view={view} controller={controller} />
-        ) : (
-          <>
-            {view.loading && state.recent.length > 0 && <RecentStripSkeleton count={state.recent.length} />}
-            {view.recentSectionVisible && <RecentStrip cards={view.recentCards} controller={controller} />}
-            <Toolbar state={state} view={view} controller={controller} isMobile={isMobile} />
-            <MapGrid view={view} controller={controller} />
-          </>
-        )}
+        {/* 검색 중에는 최근 항목을 감춘다 — 질의로 걸러지지 않는 목록이 결과 위에
+            남아 있으면 무엇이 결과인지 흐려진다. */}
+        {view.loading && state.recent.length > 0 && !view.searchQuery && <RecentStripSkeleton count={state.recent.length} />}
+        {view.recentSectionVisible && <RecentStrip cards={view.recentCards} controller={controller} />}
+        {/* 툴바(검색창이 그 안에 있다)는 검색 중에도 남는다 — 검색창이 사라지면
+            글자를 고칠 수도, 지울 수도 없다. 스페이스 제목은 "지금 어디에 있는가",
+            즉 검색을 지웠을 때 돌아갈 자리를 계속 가리킨다. */}
+        <Toolbar state={state} view={view} controller={controller} isMobile={isMobile} onOpenNav={() => setNavOpen(true)} />
+        {view.searchQuery ? <SearchResults view={view} controller={controller} /> : <MapGrid view={view} controller={controller} />}
       </main>
 
       <AuthModal state={state} controller={controller} />
