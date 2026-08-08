@@ -2,6 +2,7 @@ import type { MouseEvent } from 'react';
 import type { HomeController } from '../useHomeController';
 import type { HomeState } from '../types';
 import type { HomeViewModel } from '../viewModel';
+import { UNREAD_BADGE_BG } from '../theme';
 
 interface Props {
   state: HomeState;
@@ -131,7 +132,7 @@ export function Toolbar({ state, view, controller, isMobile = false, onOpenNav }
               <span
                 data-unread-dot
                 aria-hidden="true"
-                style={{ position: 'absolute', top: 9, right: 9, width: 8, height: 8, borderRadius: '50%', background: 'var(--mf-accent)', border: '2px solid var(--mf-bg)' }}
+                style={{ position: 'absolute', top: 9, right: 9, width: 8, height: 8, borderRadius: '50%', background: UNREAD_BADGE_BG, border: '2px solid var(--mf-bg)' }}
               />
             )}
           </button>

@@ -20,6 +20,20 @@ import { hexA, THEMES } from '../editor/theme';
 
 export type HomeThemeKey = 'coral' | 'ocean' | 'forest' | 'grape' | 'mono' | 'dark';
 
+/**
+ * 알림 배지(공유받음 개수·새 항목 점·모바일 ☰ 점)의 색 — **테마를 따르지 않는다**.
+ *
+ * 처음엔 강조색(`--mf-accent`)을 썼는데, 홈 테마를 바꾸면 배지 색까지 함께 바뀌었다
+ * (제보). 배지는 "무엇을 강조하는 UI"가 아니라 **알림**이다: 테마마다 색이 달라지면
+ * 그때그때 다른 뜻으로 읽히고, 모노처럼 강조색이 회색인 테마에서는 알림처럼 보이지도
+ * 않는다. 어느 테마에서든 같은 색이어야 "이건 알림"이라는 신호가 유지된다.
+ *
+ * 값은 기본(코랄) 강조색 그대로다 — 지금까지 대부분의 사용자가 보던 그 색이다.
+ */
+export const UNREAD_BADGE_BG = '#f0663f';
+/** 배지 위 글자색. 배경이 고정이므로 이것도 고정이다(코랄 위에서는 흰색). */
+export const UNREAD_BADGE_INK = '#ffffff';
+
 export const HOME_THEME_KEYS: HomeThemeKey[] = ['coral', 'ocean', 'forest', 'grape', 'mono', 'dark'];
 
 export const DEFAULT_HOME_THEME: HomeThemeKey = 'coral';

@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import type { HomeController } from '../useHomeController';
 import type { HomeState } from '../types';
 import type { HomeViewModel } from '../viewModel';
+import { UNREAD_BADGE_BG, UNREAD_BADGE_INK } from '../theme';
 import { SettingsPopover } from './SettingsPopover';
 import { SpaceRow } from './SpaceRow';
 
@@ -235,8 +236,8 @@ export function Sidebar({ state, view, controller, isMobile = false, isOpen = fa
                   minWidth: 18,
                   padding: '1px 6px',
                   borderRadius: 999,
-                  background: 'var(--mf-accent)',
-                  color: 'var(--mf-accent-ink)',
+                  background: UNREAD_BADGE_BG,
+                  color: UNREAD_BADGE_INK,
                   fontSize: 10.5,
                   fontWeight: 800,
                   textAlign: 'center',
@@ -290,7 +291,7 @@ export function Sidebar({ state, view, controller, isMobile = false, isOpen = fa
                   <span style={{ flex: '1 1 auto', minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', fontWeight: m.isNew ? 700 : undefined, color: m.isNew ? 'var(--mf-text)' : undefined }}>{m.title}</span>
                   {/* 아직 안 열어 본 초대 — 어느 것이 새것인지 점으로 짚어 준다
                       (헤더 배지는 개수만 말한다). 열면 사라진다. */}
-                  {m.isNew && <span aria-label="새로 공유됨" title="아직 열어 보지 않은 공유" style={{ flexShrink: 0, width: 6, height: 6, borderRadius: '50%', background: 'var(--mf-accent)' }} />}
+                  {m.isNew && <span aria-label="새로 공유됨" title="아직 열어 보지 않은 공유" style={{ flexShrink: 0, width: 6, height: 6, borderRadius: '50%', background: UNREAD_BADGE_BG }} />}
                   {/* 편집 권한은 기본값이라 표시하지 않는다 — 예외인 '보기'만 알린다. */}
                   {m.role === 'view' && (
                     <span style={{ flexShrink: 0, padding: '1px 6px', borderRadius: 999, fontSize: 9.5, fontWeight: 700, background: 'rgba(63,143,208,.12)', color: 'var(--mf-info)' }}>보기</span>
