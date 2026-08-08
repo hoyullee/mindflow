@@ -213,8 +213,9 @@ describe('Home', () => {
 
     await user.type(screen.getByPlaceholderText('파일 검색'), '따라잡기');
 
+    // 적용은 입력이 멎은 뒤(디바운스) — 그래서 즉시가 아니라 기다려서 확인한다.
+    await waitFor(() => expect(container.querySelector('a[data-title="무상 비즈머니 지급"]')).toBeNull());
     expect(container.querySelector('a[data-title="따라잡기"]')).toBeTruthy();
-    expect(container.querySelector('a[data-title="무상 비즈머니 지급"]')).toBeNull();
   });
 
   it('renders a real-map thumbnail for a backend-stored map (body via DocStore.load, not localStorage)', async () => {
@@ -2820,6 +2821,53 @@ describe('홈 색상 테마', () => {
 
 // 홈 우클릭 메뉴(요청) — ☰ 버튼과 우클릭이 **같은 메뉴**를 열고, 하위 메뉴는
 // 드릴다운이 아니라 옆으로 뻗는 플라이아웃이다. 빈 자리와 폴더에도 메뉴가 있다.
+describe('검색 입력 디바운스', () => {
+  const meta = (id: string, title: string): DocMeta => ({ id, title, version: 1, updatedAt: '2026-01-01T00:00:00.000Z', isFavorite: false, deletedAt: null });
+
+  it('타이핑 중에는 목록을 다시 그리지 않고, 손을 뗀 뒤에 적용된다', async () => {
+    const user = userEvent.setup();
+    const { container } = renderHomeWithDocStore([meta('d1', '따라잡기'), meta('d2', '지급 내역')]);
+    await waitFor(() => expect(container.querySelectorAll('.mf-map-grid a[data-title]').length).toBe(2));
+
+    const box = screen.getByPlaceholderText('파일 검색');
+    await user.type(box, '따라');
+
+    // 입력값은 즉시 보인다 …
+    expect((box as HTMLInputElement).value).toBe('따라');
+    // … 하지만 목록은 아직 그대로다(중간 결과를 그리지 않는다)
+    expect(container.querySelectorAll('.mf-map-grid a[data-title]').length).toBe(2);
+
+    // 멎으면 적용된다
+    await waitFor(() => expect(container.querySelectorAll('.mf-map-grid a[data-title]').length).toBe(1));
+    expect(container.querySelector('a[data-title="따라잡기"]')).toBeTruthy();
+  });
+
+  it('Enter는 기다리지 않고 바로 적용한다', async () => {
+    const user = userEvent.setup();
+    const { container } = renderHomeWithDocStore([meta('d1', '따라잡기'), meta('d2', '지급 내역')]);
+    await waitFor(() => expect(container.querySelectorAll('.mf-map-grid a[data-title]').length).toBe(2));
+
+    const box = screen.getByPlaceholderText('파일 검색');
+    await user.type(box, '따라{Enter}');
+
+    // Enter 직후(디바운스를 기다리지 않고) 이미 걸러져 있다
+    expect(container.querySelectorAll('.mf-map-grid a[data-title]').length).toBe(1);
+  });
+
+  it('지우면 즉시 원상 복귀한다 — 지웠는데 결과가 남아 있으면 고장으로 읽힌다', async () => {
+    const user = userEvent.setup();
+    const { container } = renderHomeWithDocStore([meta('d1', '따라잡기'), meta('d2', '지급 내역')]);
+    await waitFor(() => expect(container.querySelectorAll('.mf-map-grid a[data-title]').length).toBe(2));
+
+    const box = screen.getByPlaceholderText('파일 검색');
+    await user.type(box, '따라{Enter}');
+    expect(container.querySelectorAll('.mf-map-grid a[data-title]').length).toBe(1);
+
+    await user.clear(box);
+    expect(container.querySelectorAll('.mf-map-grid a[data-title]').length).toBe(2);
+  });
+});
+
 describe('본문 검색', () => {
   const mkDoc = (rootText: string, extra: Record<string, unknown> = {}) => ({
     v: 1,
