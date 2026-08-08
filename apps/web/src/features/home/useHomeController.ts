@@ -72,6 +72,10 @@ function hasStrippedImage(doc: Doc): boolean {
  * method below corresponds 1:1 to a method on the original controller; `patch()`
  * stands in for `this.setState`. `renderVals()`'s derived fields live in `viewModel.ts`.
  */
+/** 입력이 멎고 이만큼 지나면 검색을 적용한다. 사람이 다음 글자를 치는 간격(~90ms)보다
+ * 넉넉히 길어 타이핑 중 중간 결과를 그리지 않고, 손을 뗀 뒤엔 기다렸다는 느낌이 없다. */
+const SEARCH_DEBOUNCE_MS = 180;
+
 export function useHomeController() {
   // 최근 기록은 동기(localStorage)로 초기 상태에 바로 싣는다 — 마운트 이펙트로
   // 늦게 넣으면 첫 페인트 프레임에 최근 항목 스켈레톤조차 없어 툴바가 한 번
@@ -83,6 +87,8 @@ export function useHomeController() {
   const loaderTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
   // 새 맵 카드 등록을 로더 페인트 뒤로 미룰 때의 폴백 타이머(rAF 없는 환경).
   const cardRegisterTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
+  /** 검색어 적용을 미루는 타이머 — `setSearch` 참고. */
+  const searchTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
   // docIds whose body we've already fetched (or are fetching) for card previews,
   // so the prefetch effect never re-requests the same doc.
   const previewFetchedRef = useRef<Set<string>>(new Set());
@@ -351,6 +357,7 @@ export function useHomeController() {
     mountedRef.current = true;
     return () => {
       mountedRef.current = false;
+      clearTimeout(searchTimer.current);
     };
   }, []);
 
@@ -1591,7 +1598,34 @@ export function useHomeController() {
 
   // ---- selection / search ----
   const selectCard = (title: string | null) => patch({ selectedCard: title });
-  const setSearch = (v: string) => patch({ search: v });
+
+  /**
+   * 검색 입력 — 글자는 즉시 보이고(`searchInput`), **적용**은 입력이 잠깐 멎은
+   * 뒤에 한다(`search`).
+   *
+   * 왜 디바운스인가(실측): 검색 계산 자체는 맵 수와 거의 무관하게 싸다(본문 파싱은
+   * docId 캐시라 한 번뿐). 값비싼 것은 **결과가 바뀔 때 카드 목록을 다시 그리는
+   * 것**이고, 그건 한 글자마다 일어날 이유가 없다. 맵 150개에서 키 입력당 59~83ms가
+   * 들고 롱태스크가 잡혔다 — 타이핑 도중의 중간 결과는 아무도 읽지 않으므로 그냥
+   * 건너뛴다.
+   *
+   * 비우기는 **즉시** 적용한다 — 지운 뒤에도 결과 화면이 남아 있으면 고장으로 읽힌다.
+   */
+  const applySearchNow = (v: string) => {
+    clearTimeout(searchTimer.current);
+    patch({ searchInput: v, search: v });
+  };
+  const setSearch = (v: string) => {
+    clearTimeout(searchTimer.current);
+    if (!v.trim()) {
+      patch({ searchInput: v, search: v });
+      return;
+    }
+    patch({ searchInput: v });
+    searchTimer.current = setTimeout(() => setState((prev) => (prev.searchInput === v ? { ...prev, search: v } : prev)), SEARCH_DEBOUNCE_MS);
+  };
+  /** Enter(또는 입력창을 벗어남) — 기다리지 않고 바로 적용한다. */
+  const flushSearch = () => applySearchNow(state.searchInput);
 
   return {
     state,
@@ -1699,6 +1733,7 @@ export function useHomeController() {
     selectCard,
     moveMapToSpace,
     setSearch,
+    flushSearch,
   };
 }
 

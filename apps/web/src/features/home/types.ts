@@ -219,8 +219,14 @@ export interface HomeState {
   toastTitle: string;
 
   /** Not present in the dc original (the search box there is a static placeholder) — added
-   * per the M3 Home ticket so the search input actually filters the map grid. */
+   * per the M3 Home ticket so the search input actually filters the map grid.
+   *
+   * **적용된** 질의 — 화면(뷰모델)이 읽는 값이고, 입력이 잠깐 멎은 뒤에 갱신된다.
+   * 입력창이 보여 주는 즉시값은 `searchInput`이다. 둘을 가른 이유는 타이핑 도중
+   * 매 글자마다 카드 목록을 다시 그리지 않기 위해서다(#360 후속). */
   search: string;
+  /** 입력창의 즉시값 — 타이핑은 늘 지체 없이 보인다. */
+  searchInput: string;
 
   /** False until the first `DocStore.list()` settles on mount. While false the
    * map grid renders skeleton placeholders (and the sidebar hides its empty-list
@@ -342,6 +348,7 @@ export function initialHomeState(): HomeState {
     toastTitle: '',
 
     search: '',
+    searchInput: '',
     loaded: false,
     previewDocs: {},
     previewResolved: {},

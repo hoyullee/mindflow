@@ -199,8 +199,14 @@ export function Toolbar({ state, view, controller, isMobile = false, onOpenNav }
               </svg>
             </span>
             <input
-              value={state.search}
+              // 보여 주는 값은 즉시값(`searchInput`) — 적용은 잠깐 뒤에 된다
+              // (`setSearch`의 디바운스). Enter/포커스 아웃은 기다리지 않는다.
+              value={state.searchInput}
               onChange={(e) => controller.setSearch(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter') controller.flushSearch();
+              }}
+              onBlur={controller.flushSearch}
               placeholder="파일 검색"
               aria-label="파일 검색"
               style={{ border: 'none', outline: 'none', background: 'transparent', fontFamily: 'inherit', fontSize: 13, width: '100%', minWidth: 0, color: 'var(--mf-text)' }}
