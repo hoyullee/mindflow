@@ -2972,6 +2972,24 @@ describe('홈 우클릭 메뉴', () => {
       expect(screen.queryByText('EDITOR_PLACEHOLDER')).toBeNull();
     });
 
+    it('카드 제목 앞은 이모지가 아니라 SVG 아이콘이다 (기기마다 다르게 그려지지 않게)', async () => {
+      const user = userEvent.setup();
+      renderHomeWithDocStore([]);
+      await waitFor(() => expect(screen.getAllByText('＋ 새로 만들기')[0]).toBeTruthy());
+
+      await user.click(screen.getAllByText('＋ 새로 만들기')[0]!);
+      const dialog = await screen.findByRole('dialog', { name: '새 맵 만들기' });
+
+      for (const tpl of MAP_TEMPLATES) {
+        const card = within(dialog).getByRole('button', { name: new RegExp(tpl.name) });
+        const title = card.querySelector('[data-template-icon]')?.parentElement as HTMLElement;
+        expect(title).toBeTruthy();
+        expect(title.querySelector(`[data-template-icon="${tpl.id}"]`)?.tagName.toLowerCase()).toBe('svg');
+        // 제목 줄에 이모지 글자가 남아 있으면 안 된다 (그림이 기기마다 갈린다)
+        expect(title.textContent).toBe(tpl.name);
+      }
+    });
+
     it('dim 배경도 함께 페이드한다 — 막만 툭 깔리고 내용이 뒤늦게 뜨면 깜빡임으로 보인다', async () => {
       const user = userEvent.setup();
       renderHomeWithDocStore([]);
