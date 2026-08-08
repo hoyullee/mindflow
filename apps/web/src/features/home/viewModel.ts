@@ -1,5 +1,6 @@
 import { RECENT_RENDER_MAX, docRawForTitle, cardKeyOf, hexA, mapHref, mapId, readDocRaw } from './storage';
 import { miniPreview, previewSkeleton, realPreview } from './mapPreview';
+import { docSearchText, matchesQuery } from './searchIndex';
 import type { DriveFolderData, FolderData, HomeState, MapCardData } from './types';
 import { DRIVE_FILES } from './types';
 
@@ -126,6 +127,12 @@ export interface HomeViewModel {
   loading: boolean;
   isEmpty: boolean;
   folderEmpty: boolean;
+  /** 검색 결과가 하나도 없을 때 — 빈 스페이스 안내와는 다른 문구를 쓴다. */
+  searchEmpty: boolean;
+  /** 검색 중이면 그 질의(원문). 결과 안내 줄과 빈 결과 문구가 쓴다. */
+  searchQuery: string;
+  /** 검색 결과 개수(맵 + 폴더). 안내 줄에 쓴다. */
+  searchCount: number;
   showDriveConnect: boolean;
   backVisible: boolean;
   newFolderVisible: boolean;
@@ -177,10 +184,22 @@ function buildCardPath(spaceName: string | undefined, folderName: string | undef
   return { label: parts[parts.length - 1] ?? '', full: [...parts, title].join(' › ') };
 }
 
-function matchesSearch(title: string, search: string): boolean {
-  const q = search.trim().toLowerCase();
-  if (!q) return true;
-  return title.toLowerCase().includes(q);
+/**
+ * 카드가 질의에 걸리는가 — **제목과 본문 둘 다** 본다.
+ *
+ * 본문은 썸네일이 이미 받아 둔 그 문자열(`previewDocs`, 없으면 이 기기의
+ * localStorage 사본)이라 검색을 위해 새로 내려받는 것이 없다. 아직 본문이 도착하지
+ * 않은 카드는 제목으로만 걸린다(도착하면 다시 걸러진다).
+ */
+function matchesSearch(
+  title: string,
+  docId: string | undefined,
+  query: string,
+  previewDocs: Record<string, string>,
+): boolean {
+  if (!query) return true;
+  const raw = docId ? previewDocs[docId] || readDocRaw(docId) : docRawForTitle(title);
+  return matchesQuery(title, docSearchText(docId || title, raw ?? undefined), query);
 }
 
 export function deriveHomeView(state: HomeState): HomeViewModel {
@@ -245,16 +264,23 @@ export function deriveHomeView(state: HomeState): HomeViewModel {
       : []
     : activeMaps.map((m) => ({ title: m.title, when: m.when, hue: m.hue, docId: m.docId, openable: true }));
 
+  /** 검색어(소문자·trim). 있으면 화면이 "찾는 중"으로 바뀐다. */
+  const query = state.search.trim().toLowerCase();
+  const searching = !!query;
+
   const allCardsFiltered = baseCards
     .filter((c) => !isTrashedCard(c.title, c.docId))
     .filter((c) => {
       if (isDriveSpace) return true;
+      // 검색 중에는 폴더 경계를 넘는다 — 어디 있는지 알면 찾을 이유가 없다.
+      // (스페이스 전체가 대상이고, 그 본문은 이미 받아 둔 것들이라 새 요청이 없다.)
+      if (searching) return true;
       // Folder assignments are docId-keyed (title fallback for docId-less
       // cards) so same-titled maps can't capture each other's assignment.
       const assigned = mapFolders[cardKeyOf(c.title, c.docId)];
       return curFolder ? assigned === curFolder.id : !assigned || !folders.find((f) => f.id === assigned);
     })
-    .filter((c) => matchesSearch(c.title, state.search));
+    .filter((c) => matchesSearch(c.title, c.docId, query, state.previewDocs));
 
   const favs = state.favs;
   // Other real spaces a map can be moved to (excludes the current space and the
@@ -265,6 +291,14 @@ export function deriveHomeView(state: HomeState): HomeViewModel {
   // 중첩 폴더가 생기면서 폴더 안에서도 다른(하위 포함) 폴더로 옮길 수 있다.
   // 이름은 경로("상위 / 하위")로 보여 같은 이름의 폴더를 구별한다.
   const localMoveTargets = folders.filter((f) => !curFolder || f.id !== curFolder.id).map((f) => ({ id: f.id, name: folderPathName(f) }));
+  /** 검색 결과 카드에 붙는 위치("폴더" 또는 "상위 / 하위"). 폴더 밖이면 빈 값 —
+   * 지금 스페이스는 하나뿐이라 스페이스 이름은 되풀이할 정보가 아니다. */
+  const searchPathOf = (title: string, docId?: string): string => {
+    if (!searching || isDriveSpace) return '';
+    const assigned = mapFolders[cardKeyOf(title, docId)];
+    const f = assigned ? folders.find((x) => x.id === assigned) : undefined;
+    return f ? folderPathName(f) : '';
+  };
   const allCards: CardViewData[] = allCardsFiltered.map((c) => {
     const hasFav = c.openable;
     const hasMove = isDriveSpace ? !driveFolder && state.driveFolders.length > 0 : localMoveTargets.length > 0;
@@ -298,6 +332,7 @@ export function deriveHomeView(state: HomeState): HomeViewModel {
       showSpaceMoveRow: canMoveSpace,
       showUnfolderRow: hasUnfolder,
       showDivider: hasFav || hasMove || canMoveSpace || hasUnfolder,
+      pathLabel: searchPathOf(c.title, c.docId),
       moveTargets: isDriveSpace ? state.driveFolders.map((f) => ({ id: f.id, name: f.name })) : localMoveTargets,
       spaceMoveTargets,
     };
@@ -321,7 +356,9 @@ export function deriveHomeView(state: HomeState): HomeViewModel {
   // 없으므로 전부 최상위 — 무회귀.)
   const localFolderCards: FolderCardViewData[] = !isDriveSpace
     ? folders
-        .filter((f) => (f.parent ?? null) === (curFolder ? curFolder.id : null))
+        // 검색 중에는 계층을 넘어 **이름이 걸리는 폴더**를 보여 준다 — 맵과 같은
+        // 규칙(폴더 경계를 넘는다)이라야 결과 화면이 한 가지 뜻으로 읽힌다.
+        .filter((f) => (searching ? f.name.toLowerCase().includes(query) : (f.parent ?? null) === (curFolder ? curFolder.id : null)))
         .map((f) => {
           // Count from the space's ACTUAL maps (assignments are docId-keyed, so
           // key iteration can't be matched back to titles) — trashed maps are
@@ -458,10 +495,13 @@ export function deriveHomeView(state: HomeState): HomeViewModel {
   // "아직 만든 맵이 없어요" + 새로 만들기 CTA is only for a genuinely empty space —
   // one with neither top-level maps NOR folders. A space that has folders (but no
   // loose maps) shows just its folder section, no empty-state prompt.
-  const isEmpty = !loading && !showDriveConnect && allCards.length === 0 && !curFolder && folderCards.length === 0;
+  const isEmpty = !loading && !searching && !showDriveConnect && allCards.length === 0 && !curFolder && folderCards.length === 0;
   // "이 폴더는 비어 있어요"는 맵도 하위 폴더도 없을 때만 — 하위 폴더가 있으면
   // 폴더 구획이 그려지므로 빈 안내가 그 위에 겹치면 안 된다.
-  const folderEmpty = !loading && !!curFolder && allCards.length === 0 && folderCards.length === 0;
+  const folderEmpty = !loading && !searching && !!curFolder && allCards.length === 0 && folderCards.length === 0;
+  /** 검색 결과 없음 — "아직 만든 맵이 없어요"(+새로 만들기 CTA)를 여기 쓰면
+   * 맵이 있는데도 없다고 말하는 셈이 된다. */
+  const searchEmpty = !loading && searching && !showDriveConnect && allCards.length === 0 && folderCards.length === 0;
 
   // 제목 줄 = [상위 경로, 현재 폴더] — 중첩 폴더면 상위 경로가
   // "스페이스 / 상위폴더 / …"로 깊어진다(헤더는 …로 접고 전체는 툴팁에).
@@ -505,6 +545,9 @@ export function deriveHomeView(state: HomeState): HomeViewModel {
     loading,
     isEmpty,
     folderEmpty,
+    searchEmpty,
+    searchQuery: searching ? state.search.trim() : '',
+    searchCount: allCards.length + folderCards.length,
     showDriveConnect,
     backVisible: !!(curFolder || driveFolder),
     // `새 폴더`는 폴더 안에서도 쓸 수 있다(중첩 폴더) — 현재 폴더가 부모가 된다
