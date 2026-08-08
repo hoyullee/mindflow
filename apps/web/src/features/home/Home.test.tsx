@@ -2018,12 +2018,8 @@ describe('Home', () => {
         expect(importBtn.style.width).toBe('44px');
         expect(folderBtn.style.width).toBe('44px');
         expect(newBtn.style.width).toBe('44px');
-        // 셋은 여전히 한 줄에 모여 있다(따로 노는 줄이 생기지 않는다). 검색은
-        // 이제 최상단 자기 줄로 빠졌으므로 이 행에 들어 있지 않다.
-        const row = importBtn.parentElement!;
-        expect(row.contains(folderBtn)).toBe(true);
-        expect(row.contains(newBtn)).toBe(true);
-        expect(row.contains(screen.getByPlaceholderText('모든 스페이스에서 검색'))).toBe(false);
+        // all three live in the SAME row container as the search field
+        const row = screen.getByPlaceholderText('모든 스페이스에서 검색').closest('div')!.parentElement!;
         expect(row.contains(importBtn)).toBe(true);
         expect(row.contains(folderBtn)).toBe(true);
         expect(row.contains(newBtn)).toBe(true);
@@ -2902,6 +2898,24 @@ describe('전역 검색 (모든 스페이스)', () => {
     expect(within(menu).queryByRole('menuitem', { name: /폴더로 이동/ })).toBeNull();
     // 스페이스 이동은 안전하다(원본 스페이스를 key로 찾는다)
     expect(within(menu).getByRole('menuitem', { name: /스페이스로 이동/ })).toBeTruthy();
+  });
+
+  it('검색 중에도 검색창과 스페이스 헤더가 남는다 — 글자를 고치거나 지울 수 있어야 한다', async () => {
+    const user = userEvent.setup();
+    seedTwoSpaces();
+    const { container } = renderHomeWithDocStore([meta('w1', '업무 회고'), meta('p1', '개인 노트')]);
+    await waitFor(() => expect(container.querySelector('a[data-title="업무 회고"]')).toBeTruthy());
+
+    await user.type(screen.getByPlaceholderText('모든 스페이스에서 검색'), '개인{Enter}');
+    await waitFor(() => expect(container.querySelector('[data-search-results]')).toBeTruthy());
+
+    // 검색창은 그 자리에 그대로(툴바 안) — 사라지면 질의를 고칠 방법이 없다
+    const box = screen.getByPlaceholderText('모든 스페이스에서 검색') as HTMLInputElement;
+    expect(box.value).toBe('개인');
+    // 스페이스 제목(헤더)도 남는다 — 지웠을 때 돌아갈 자리를 계속 가리킨다
+    expect(container.querySelector('main h2')?.textContent).toContain('업무');
+    // 최근 항목만 감춰진다(질의로 걸러지지 않는 목록이라 결과를 흐린다)
+    expect(screen.queryByText('최근 항목')).toBeNull();
   });
 
   it('검색을 지우면 원래 스페이스 화면으로 돌아온다', async () => {
