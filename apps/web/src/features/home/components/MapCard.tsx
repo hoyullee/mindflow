@@ -234,6 +234,22 @@ export function MapCard({ card, controller, draggableEnabled, compact = false }:
             <span style={{ fontSize: 11, lineHeight: '14px', color: 'var(--mf-muted)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', minWidth: 0 }}>{card.pathLabel}</span>
           </div>
         )}
+        {/* 검색 결과 카드의 위치 줄 — 검색은 폴더 경계를 넘으므로(viewModel) 어느
+            폴더의 맵인지 알려 줘야 한다. 평소 그리드 카드는 `pathLabel`이 비어 있어
+            이 줄 자체가 없다(레이아웃 무변화), 검색 중에는 결과 카드가 모두 같은
+            조건이라 한 행 안에서 높이가 어긋나지 않는다. */}
+        {!compact && card.pathLabel && (
+          <div
+            data-card-path
+            title={card.pathLabel}
+            style={{ display: 'flex', alignItems: 'center', gap: 5, marginTop: 4, minWidth: 0 }}
+          >
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true" style={{ color: 'var(--mf-faint)', flexShrink: 0 }}>
+              <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z" />
+            </svg>
+            <span style={{ fontSize: 11.5, color: 'var(--mf-muted)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', minWidth: 0 }}>{card.pathLabel}</span>
+          </div>
+        )}
         {/* 마지막 수정 시각 — 상대(7일 이내)/절대 혼합 표기, 전체 일시는 툴팁.
             시각 정보가 없는 카드(Drive 데모 등)는 줄 자체를 생략한다.
             공동 편집(0009) 이후: 마지막으로 **저장한 사람이 내가 아닐 때만** 이름을

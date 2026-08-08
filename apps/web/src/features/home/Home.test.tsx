@@ -2820,6 +2820,93 @@ describe('홈 색상 테마', () => {
 
 // 홈 우클릭 메뉴(요청) — ☰ 버튼과 우클릭이 **같은 메뉴**를 열고, 하위 메뉴는
 // 드릴다운이 아니라 옆으로 뻗는 플라이아웃이다. 빈 자리와 폴더에도 메뉴가 있다.
+describe('본문 검색', () => {
+  const mkDoc = (rootText: string, extra: Record<string, unknown> = {}) => ({
+    v: 1,
+    nodes: { root: { id: 'root', text: rootText, emoji: '', parent: null, children: [], collapsed: false, color: null, x: 0, y: 0 } },
+    floats: [],
+    lines: [],
+    zones: [],
+    layoutMode: 'radial',
+    themeKey: 'coral',
+    ...extra,
+  });
+  const meta = (id: string, title: string): DocMeta => ({ id, title, version: 1, updatedAt: '2026-01-01T00:00:00.000Z', isFavorite: false, deletedAt: null });
+
+  it('제목에 없는 낱말이 본문에 있으면 찾힌다', async () => {
+    const user = userEvent.setup();
+    const { container } = renderHomeWithDocStore(
+      [meta('d1', '1월 정리'), meta('d2', '2월 정리')],
+      {
+        d1: { doc: mkDoc('1월 정리', { floats: [{ id: 'f1', x: 0, y: 0, w: 200, text: '이탈률 개선 아이디어' }] }) as never, version: 1, title: '1월 정리' },
+        d2: { doc: mkDoc('2월 정리') as never, version: 1, title: '2월 정리' },
+      },
+    );
+    await waitFor(() => expect(container.querySelector('a[data-title="1월 정리"]')).toBeTruthy());
+    // 본문(메모)이 도착할 때까지 기다린다 — 도착 전에는 제목으로만 걸린다.
+    await waitFor(() => expect(container.querySelectorAll('.mf-map-grid a').length).toBe(2));
+
+    await user.type(screen.getByPlaceholderText('파일 검색'), '이탈률');
+
+    await waitFor(() => expect(container.querySelector('a[data-title="2월 정리"]')).toBeNull());
+    expect(container.querySelector('a[data-title="1월 정리"]')).toBeTruthy();
+  });
+
+  it('검색은 폴더 경계를 넘고, 결과 카드에 그 위치를 붙인다', async () => {
+    const user = userEvent.setup();
+    localStorage.setItem(
+      'mf_spaces',
+      JSON.stringify({
+        spaces: [{ id: 's1', name: '일반 스페이스', color: '#f0663f', home: true, maps: [{ title: '숨은 맵', when: '방금', hue: '#f0663f', docId: 'in-folder' }], folders: [{ id: 'fo1', name: '기획' }] }],
+        mapFolders: { 'in-folder': 'fo1' },
+        activeSpace: 's1',
+      }),
+    );
+    const { container } = renderHomeWithDocStore([meta('in-folder', '숨은 맵')], {
+      'in-folder': { doc: mkDoc('숨은 맵') as never, version: 1, title: '숨은 맵' },
+    });
+    await waitFor(() => expect(screen.getByText('기획')).toBeTruthy());
+    // 최상위에서는 폴더 안 맵이 보이지 않는다(기존 동작)
+    expect(container.querySelector('a[data-title="숨은 맵"]')).toBeNull();
+
+    await user.type(screen.getByPlaceholderText('파일 검색'), '숨은');
+
+    const card = await waitFor(() => {
+      const el = container.querySelector('a[data-title="숨은 맵"]');
+      expect(el).toBeTruthy();
+      return el as HTMLElement;
+    });
+    // 어느 폴더의 맵인지 카드가 알려 준다
+    expect(card.querySelector('[data-card-path]')?.textContent).toBe('기획');
+    // 그리고 결과가 스페이스 전체에서 모였다는 안내가 뜬다
+    expect(container.querySelector('[data-search-notice]')?.textContent).toContain('스페이스 전체');
+  });
+
+  it('결과가 없으면 "새로 만들기" 빈 화면이 아니라 검색 전용 안내가 뜬다', async () => {
+    const user = userEvent.setup();
+    const { container } = renderHomeWithDocStore([meta('d1', '1월 정리')], {
+      d1: { doc: mkDoc('1월 정리') as never, version: 1, title: '1월 정리' },
+    });
+    await waitFor(() => expect(container.querySelector('a[data-title="1월 정리"]')).toBeTruthy());
+
+    await user.type(screen.getByPlaceholderText('파일 검색'), '없는낱말');
+
+    await waitFor(() => expect(container.querySelector('[data-search-empty]')).toBeTruthy());
+    expect(screen.getByText("'없는낱말'에 맞는 맵이 없어요")).toBeTruthy();
+    // 맵이 있는데도 "아직 만든 맵이 없어요"라고 말하면 안 된다
+    expect(screen.queryByText('아직 만든 맵이 없어요')).toBeNull();
+  });
+
+  it('평소(검색 안 함) 카드에는 위치 줄도 안내 줄도 없다 — 레이아웃 무변화', async () => {
+    const { container } = renderHomeWithDocStore([meta('d1', '1월 정리')], {
+      d1: { doc: mkDoc('1월 정리') as never, version: 1, title: '1월 정리' },
+    });
+    await waitFor(() => expect(container.querySelector('a[data-title="1월 정리"]')).toBeTruthy());
+    expect(container.querySelector('[data-card-path]')).toBeNull();
+    expect(container.querySelector('[data-search-notice]')).toBeNull();
+  });
+});
+
 describe('홈 우클릭 메뉴', () => {
   const meta = (id: string, title: string): DocMeta => ({ id, title, version: 1, updatedAt: '2026-01-01T00:00:00.000Z', isFavorite: false, deletedAt: null });
 
