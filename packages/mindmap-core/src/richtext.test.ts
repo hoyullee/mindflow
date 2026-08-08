@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { applyAutoLinks, applyPartialStyle, charsToRuns, isStyledRuns, runsToChars, stripRichStyle } from './richtext';
+import { applyAutoLinks, applyPartialStyle, charsToRuns, isStyledRuns, runsToChars, stripRichStyle, applyMarkdownLinks, richToMarkdown } from './richtext';
 import type { RichRun } from './model';
 
 describe('runsToChars / charsToRuns', () => {
@@ -313,5 +313,45 @@ describe('applyAutoLinks — 타이핑한 URL을 커밋 시 링크로', () => {
     const out = applyAutoLinks({ text: bold.text, rich: bold.rich })!;
     expect(out.rich?.[0]).toEqual({ t: '보기', b: true, c: null });
     expect(out.rich?.[out.rich.length - 1]?.href).toBe('https://a.com/');
+  });
+});
+
+describe('applyMarkdownLinks — `[텍스트](주소)` 되읽기', () => {
+  it('마커를 걷어내고 그 구간에만 링크를 건다', () => {
+    const r = applyMarkdownLinks({ text: '자세한 건 [문서](https://ex.com/a)를 보세요' });
+    expect(r).not.toBeNull();
+    expect(r!.text).toBe('자세한 건 문서를 보세요');
+    const linked = (r!.rich || []).filter((x) => x.href);
+    expect(linked.map((x) => x.t)).toEqual(['문서']);
+    expect(linked[0]!.href).toBe('https://ex.com/a');
+  });
+
+  it('한 줄에 여럿도 모두 건다', () => {
+    const r = applyMarkdownLinks({ text: '[A](https://a.com) 그리고 [B](https://b.com)' });
+    expect(r!.text).toBe('A 그리고 B');
+    expect((r!.rich || []).filter((x) => x.href).map((x) => [x.t, x.href])).toEqual([
+      ['A', 'https://a.com/'],
+      ['B', 'https://b.com/'],
+    ]);
+  });
+
+  it('허용 스킴 밖의 주소는 문법 그대로 두고, 뒤의 멀쩡한 링크는 계속 건다', () => {
+    const r = applyMarkdownLinks({ text: '[나쁨](javascript:alert(1)) [좋음](https://ok.com)' });
+    expect(r!.text).toContain('[나쁨](javascript:alert(1))');
+    expect(r!.text).toContain('좋음');
+    expect((r!.rich || []).filter((x) => x.href).map((x) => x.t)).toEqual(['좋음']);
+  });
+
+  it('링크가 없으면 null (건드리지 않는다)', () => {
+    expect(applyMarkdownLinks({ text: '평범한 글자' })).toBeNull();
+  });
+
+  it('richToMarkdown과 왕복한다', () => {
+    const src = { text: '문서 보기', rich: [{ t: '문서 보기', b: false, c: null, href: 'https://ex.com/' }] };
+    const md = richToMarkdown(src);
+    expect(md).toBe('[문서 보기](https://ex.com/)');
+    const back = applyMarkdownLinks({ text: md });
+    expect(back!.text).toBe('문서 보기');
+    expect((back!.rich || [])[0]?.href).toBe('https://ex.com/');
   });
 });
