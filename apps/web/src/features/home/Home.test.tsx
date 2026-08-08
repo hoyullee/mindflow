@@ -2972,6 +2972,36 @@ describe('홈 우클릭 메뉴', () => {
       expect(screen.queryByText('EDITOR_PLACEHOLDER')).toBeNull();
     });
 
+    it('dim 배경도 함께 페이드한다 — 막만 툭 깔리고 내용이 뒤늦게 뜨면 깜빡임으로 보인다', async () => {
+      const user = userEvent.setup();
+      renderHomeWithDocStore([]);
+      await waitFor(() => expect(screen.getAllByText('＋ 새로 만들기')[0]).toBeTruthy());
+
+      await user.click(screen.getAllByText('＋ 새로 만들기')[0]!);
+      const dialog = await screen.findByRole('dialog', { name: '새 맵 만들기' });
+      const backdrop = dialog.parentElement as HTMLElement;
+      // 제자리 페이드(mf-dim-in)여야 한다 — mf-fade의 translateY를 fixed inset:0
+      // 배경에 걸면 레이어가 통째로 슬라이드한다(#331).
+      expect(backdrop.style.animation).toContain('mf-dim-in');
+      expect(dialog.style.animation).toContain('mf-fade');
+    });
+
+    it('열기 전에 한가할 때 미리보기를 미리 만들어 둔다 (첫 열기의 프레임 멈춤 방지)', async () => {
+      // 실측: 데우지 않으면 첫 열기에 55·60ms 롱태스크 두 개가 걸려 클릭한
+      // 프레임이 통째로 멎었다. 비용은 그대로지만 아무 일도 없을 때로 옮긴다.
+      const ric = vi.fn((cb: () => void) => {
+        cb();
+        return 1;
+      });
+      (window as unknown as { requestIdleCallback?: unknown }).requestIdleCallback = ric;
+      try {
+        renderHomeWithDocStore([]);
+        await waitFor(() => expect(ric).toHaveBeenCalled());
+      } finally {
+        delete (window as unknown as { requestIdleCallback?: unknown }).requestIdleCallback;
+      }
+    });
+
     it('빈 자리 우클릭의 "새로 만들기"도 같은 갤러리를 연다 (진입점이 갈리지 않는다)', async () => {
       const user = userEvent.setup();
       const { container } = renderHomeWithDocStore([]);

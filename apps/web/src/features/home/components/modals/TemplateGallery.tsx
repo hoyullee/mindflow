@@ -10,6 +10,16 @@ interface Props {
   controller: HomeController;
 }
 
+/** 템플릿의 직렬화 본문 — 내용이 고정이라 한 번만 만들면 된다(캐시 키이기도 하다). */
+const rawCache = new Map<string, string>();
+function templateRaw(id: string): string {
+  const hit = rawCache.get(id);
+  if (hit !== undefined) return hit;
+  const raw = JSON.stringify(buildTemplateDoc(id));
+  rawCache.set(id, raw);
+  return raw;
+}
+
 /**
  * 템플릿 갤러리 — "새로 만들기"가 여는 화면.
  *
@@ -25,12 +35,39 @@ export function TemplateGallery({ state, controller }: Props) {
   // 썸네일 hue는 지금 홈 테마의 강조색 — 카드 그리드와 같은 톤으로 보이게.
   const hue = HOME_THEMES[state.theme].accent;
 
-  // 문서 조립은 열려 있을 때만. 닫힌 모달이 6개 문서를 만들 이유가 없다
-  // (`realPreview`는 자체 캐시가 있어 다시 열 때는 값싸다).
-  const cards = useMemo(() => {
-    if (!open) return [];
-    return MAP_TEMPLATES.map((t) => ({ tpl: t, raw: JSON.stringify(buildTemplateDoc(t.id)) }));
-  }, [open]);
+  const cards = useMemo(() => MAP_TEMPLATES.map((t) => ({ tpl: t, raw: templateRaw(t.id) })), []);
+
+  /**
+   * 미리보기 캐시를 **한가할 때 미리 데운다**.
+   *
+   * 실측: 처음 열 때는 클릭에서 화면이 그려지기까지 78ms(롱태스크 55·60ms)가
+   * 걸리고 두 번째부터는 12ms다 — 차이는 전부 `realPreview`가 6개 문서를
+   * 레이아웃·측정하는 비용이고, 그 결과는 모듈 캐시에 남는다. 즉 느린 것은
+   * 갤러리가 아니라 **첫 한 번**이고, 그 한 번을 클릭 순간이 아니라 아무 일도
+   * 없는 때로 옮기면 사라진다(눌렀을 때 한 프레임 멎는 것이 깜빡임으로 보였다).
+   *
+   * hue가 캐시 키의 일부라 테마를 바꾸면 다시 데운다.
+   */
+  useEffect(() => {
+    let cancelled = false;
+    const warm = () => {
+      if (cancelled) return;
+      for (const t of MAP_TEMPLATES) realPreview(templateRaw(t.id), hue);
+    };
+    const ric = (window as unknown as { requestIdleCallback?: (cb: () => void) => number }).requestIdleCallback;
+    if (ric) {
+      ric(warm);
+    } else {
+      const id = setTimeout(warm, 300);
+      return () => {
+        cancelled = true;
+        clearTimeout(id);
+      };
+    }
+    return () => {
+      cancelled = true;
+    };
+  }, [hue]);
 
   useEffect(() => {
     if (!open) return;
@@ -46,7 +83,11 @@ export function TemplateGallery({ state, controller }: Props) {
   return (
     <div
       onClick={controller.closeTemplates}
-      style={{ position: 'fixed', inset: 0, background: 'rgba(30,20,14,.42)', backdropFilter: 'blur(2px)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 140, padding: 16 }}
+      // dim도 **함께 페이드**한다 — 애니메이션이 없으면 어두운 막이 한 프레임에
+      // 툭 깔린 뒤 내용만 0.2초에 걸쳐 떠서, 둘이 어긋나는 것이 깜빡임으로 보였다.
+      // `mf-fade`가 아니라 `mf-dim-in`인 이유는 #331과 같다(제자리 페이드가 아니면
+      // fixed inset:0 레이어가 통째로 슬라이드해 상단에 dim 안 된 띠가 보인다).
+      style={{ position: 'fixed', inset: 0, background: 'rgba(30,20,14,.42)', backdropFilter: 'blur(2px)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 140, padding: 16, animation: 'mf-dim-in .18s ease-out' }}
     >
       <div
         role="dialog"
