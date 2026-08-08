@@ -10,6 +10,7 @@ import { LocalAuth } from '../../adapters/local/localAuth';
 import { LocalSpaceStore } from '../../adapters/local/localSpaceStore';
 import { LocalShareStore } from '../../adapters/local/localShareStore';
 import { LocalFeedbackStore } from '../../adapters/local/localFeedbackStore';
+import { LocalCommentStore } from '../../adapters/local/localCommentStore';
 import { LocalImageStore } from '../../adapters/local/localImageStore';
 import { mapId } from './storage';
 import { HOME_THEMES, UNREAD_BADGE_BG } from './theme';
@@ -71,7 +72,7 @@ class MockDocStore implements DocStore {
  *  (예: ②의 "이미 있는 문서엔 손대지 않는다")을 볼 때 'supabase'를 넘긴다. */
 function renderHomeWithDocStore(metas: DocMeta[] = [], bodies: Record<string, LoadedDoc> = {}, mode: Backend['mode'] = 'local') {
   const docStore = new MockDocStore(metas, bodies);
-  const backend: Backend = { auth: new LocalAuth(), docStore, spaceStore: new LocalSpaceStore(), shareStore: new LocalShareStore(), feedbackStore: new LocalFeedbackStore(), imageStore: new LocalImageStore(), mode };
+  const backend: Backend = { auth: new LocalAuth(), docStore, spaceStore: new LocalSpaceStore(), shareStore: new LocalShareStore(), feedbackStore: new LocalFeedbackStore(), imageStore: new LocalImageStore(), commentStore: new LocalCommentStore(), mode };
   const utils = render(
     <MemoryRouter initialEntries={['/home']}>
       <BackendProvider backend={backend}>
@@ -147,7 +148,7 @@ describe('Home', () => {
         return { user: { id: 'g1', email: 'hoyul.lee@gmail.com', name: '이호율', avatarUrl: 'https://lh3.googleusercontent.com/a/photo=s96-c' } };
       }
     }
-    const backend: Backend = { auth: new GoogleAuth(), docStore: new MockDocStore(), spaceStore: new LocalSpaceStore(), shareStore: new LocalShareStore(), feedbackStore: new LocalFeedbackStore(), imageStore: new LocalImageStore(), mode: 'local' };
+    const backend: Backend = { auth: new GoogleAuth(), docStore: new MockDocStore(), spaceStore: new LocalSpaceStore(), shareStore: new LocalShareStore(), feedbackStore: new LocalFeedbackStore(), imageStore: new LocalImageStore(), commentStore: new LocalCommentStore(), mode: 'local' };
     const { container } = render(
       <MemoryRouter initialEntries={['/home']}>
         <BackendProvider backend={backend}>
@@ -284,7 +285,7 @@ describe('Home', () => {
       listEditorNames: vi.fn(async () => ({})),
       save: vi.fn(async (): Promise<SaveResult> => ({ ok: true, version: 1 })),
     };
-    const backend: Backend = { auth: new LocalAuth(), docStore, spaceStore: new LocalSpaceStore(), shareStore: new LocalShareStore(), feedbackStore: new LocalFeedbackStore(), imageStore: new LocalImageStore(), mode: 'local' };
+    const backend: Backend = { auth: new LocalAuth(), docStore, spaceStore: new LocalSpaceStore(), shareStore: new LocalShareStore(), feedbackStore: new LocalFeedbackStore(), imageStore: new LocalImageStore(), commentStore: new LocalCommentStore(), mode: 'local' };
     const { container } = render(
       <MemoryRouter initialEntries={['/home']}>
         <BackendProvider backend={backend}>
@@ -379,7 +380,7 @@ describe('Home', () => {
         return gate as ReturnType<LocalAuth['getSession']>;
       }
     }
-    const backend: Backend = { auth: new GatedAuth(), docStore: new MockDocStore(), spaceStore: new LocalSpaceStore(), shareStore: new LocalShareStore(), feedbackStore: new LocalFeedbackStore(), imageStore: new LocalImageStore(), mode: 'local' };
+    const backend: Backend = { auth: new GatedAuth(), docStore: new MockDocStore(), spaceStore: new LocalSpaceStore(), shareStore: new LocalShareStore(), feedbackStore: new LocalFeedbackStore(), imageStore: new LocalImageStore(), commentStore: new LocalCommentStore(), mode: 'local' };
     const { container } = render(
       <MemoryRouter initialEntries={['/home']}>
         <BackendProvider backend={backend}>
@@ -429,7 +430,7 @@ describe('Home', () => {
       listEditorNames: vi.fn(async () => ({})),
       save: vi.fn(async (): Promise<SaveResult> => ({ ok: true, version: 1 })),
     };
-    const backend: Backend = { auth: new LocalAuth(), docStore, spaceStore: new LocalSpaceStore(), shareStore: new LocalShareStore(), feedbackStore: new LocalFeedbackStore(), imageStore: new LocalImageStore(), mode: 'local' };
+    const backend: Backend = { auth: new LocalAuth(), docStore, spaceStore: new LocalSpaceStore(), shareStore: new LocalShareStore(), feedbackStore: new LocalFeedbackStore(), imageStore: new LocalImageStore(), commentStore: new LocalCommentStore(), mode: 'local' };
     render(
       <MemoryRouter initialEntries={['/home']}>
         <BackendProvider backend={backend}>
@@ -474,7 +475,7 @@ describe('Home', () => {
       listEditorNames: vi.fn(async () => ({})),
       save: vi.fn(async (): Promise<SaveResult> => ({ ok: true, version: 1 })),
     };
-    const backend: Backend = { auth: new LocalAuth(), docStore, spaceStore: new LocalSpaceStore(), shareStore: new LocalShareStore(), feedbackStore: new LocalFeedbackStore(), imageStore: new LocalImageStore(), mode: 'local' };
+    const backend: Backend = { auth: new LocalAuth(), docStore, spaceStore: new LocalSpaceStore(), shareStore: new LocalShareStore(), feedbackStore: new LocalFeedbackStore(), imageStore: new LocalImageStore(), commentStore: new LocalCommentStore(), mode: 'local' };
     render(
       <MemoryRouter initialEntries={['/home']}>
         <BackendProvider backend={backend}>
@@ -966,7 +967,7 @@ describe('Home', () => {
       }),
       save,
     };
-    const backend: Backend = { auth: new LocalAuth(), docStore: new MockDocStore([]), spaceStore, shareStore: new LocalShareStore(), feedbackStore: new LocalFeedbackStore(), imageStore: new LocalImageStore(), mode: 'local' };
+    const backend: Backend = { auth: new LocalAuth(), docStore: new MockDocStore([]), spaceStore, shareStore: new LocalShareStore(), feedbackStore: new LocalFeedbackStore(), imageStore: new LocalImageStore(), commentStore: new LocalCommentStore(), mode: 'local' };
     render(
       <MemoryRouter initialEntries={['/home']}>
         <BackendProvider backend={backend}>
@@ -990,7 +991,7 @@ describe('Home', () => {
       load: vi.fn(async (): Promise<WorkspaceData | null> => ({ spaces: [{ id: 'work', name: '작업 공간', color: '#3f8fd0', maps: [] }], mapFolders: {} })),
       save,
     };
-    const backend: Backend = { auth: new LocalAuth(), docStore: new MockDocStore([]), spaceStore, shareStore: new LocalShareStore(), feedbackStore: new LocalFeedbackStore(), imageStore: new LocalImageStore(), mode: 'local' };
+    const backend: Backend = { auth: new LocalAuth(), docStore: new MockDocStore([]), spaceStore, shareStore: new LocalShareStore(), feedbackStore: new LocalFeedbackStore(), imageStore: new LocalImageStore(), commentStore: new LocalCommentStore(), mode: 'local' };
     const { container } = render(
       <MemoryRouter initialEntries={['/home']}>
         <BackendProvider backend={backend}>
@@ -1267,7 +1268,7 @@ describe('Home', () => {
       override getProfileName = async (): Promise<string | null> => '서버닉네임';
       override setProfileName = setProfileName;
     }
-    const backend: Backend = { auth: new BackendAuth(), docStore: new MockDocStore([]), spaceStore: new LocalSpaceStore(), shareStore: new LocalShareStore(), feedbackStore: new LocalFeedbackStore(), imageStore: new LocalImageStore(), mode: 'local' };
+    const backend: Backend = { auth: new BackendAuth(), docStore: new MockDocStore([]), spaceStore: new LocalSpaceStore(), shareStore: new LocalShareStore(), feedbackStore: new LocalFeedbackStore(), imageStore: new LocalImageStore(), commentStore: new LocalCommentStore(), mode: 'local' };
     render(
       <MemoryRouter initialEntries={['/home']}>
         <BackendProvider backend={backend}>
@@ -1756,7 +1757,7 @@ describe('Home', () => {
         resolve: async (refs: string[]) => Object.fromEntries(refs.map((r) => [r, `https://cdn.example/${encodeURIComponent(r)}`])),
         removeForDoc: async () => undefined,
       };
-      const backend: Backend = { auth: new LocalAuth(), docStore, spaceStore: new LocalSpaceStore(), shareStore: new LocalShareStore(), feedbackStore: new LocalFeedbackStore(), imageStore, mode: 'supabase' };
+      const backend: Backend = { auth: new LocalAuth(), docStore, spaceStore: new LocalSpaceStore(), shareStore: new LocalShareStore(), feedbackStore: new LocalFeedbackStore(), imageStore, commentStore: new LocalCommentStore(), mode: 'supabase' };
 
       const created: Blob[] = [];
       URL.createObjectURL = vi.fn((b: Blob | MediaSource) => {
@@ -1965,7 +1966,7 @@ describe('Home', () => {
           spaceStore: new LocalSpaceStore(),
           shareStore: legacyShareStore,
           feedbackStore: new LocalFeedbackStore(),
-          imageStore: new LocalImageStore(),
+          imageStore: new LocalImageStore(), commentStore: new LocalCommentStore(),
           mode: 'local',
         };
         const { container } = render(
@@ -2509,7 +2510,7 @@ describe('Home', () => {
           return new Promise<DocMeta[]>(() => {}); // never resolves
         }
       }
-      const backend: Backend = { auth: new LocalAuth(), docStore: new PendingDocStore(), spaceStore: new LocalSpaceStore(), shareStore: new LocalShareStore(), feedbackStore: new LocalFeedbackStore(), imageStore: new LocalImageStore(), mode: 'local' };
+      const backend: Backend = { auth: new LocalAuth(), docStore: new PendingDocStore(), spaceStore: new LocalSpaceStore(), shareStore: new LocalShareStore(), feedbackStore: new LocalFeedbackStore(), imageStore: new LocalImageStore(), commentStore: new LocalCommentStore(), mode: 'local' };
       const { container } = render(
         <MemoryRouter initialEntries={['/home']}>
           <BackendProvider backend={backend}>
@@ -2565,7 +2566,7 @@ describe('Home', () => {
         mapFolders: {},
       };
       const spaceStore = new RacySpaceStore(full);
-      const backend: Backend = { auth: new RacyAuth(), docStore: new MockDocStore([]), spaceStore, shareStore: new LocalShareStore(), feedbackStore: new LocalFeedbackStore(), imageStore: new LocalImageStore(), mode: 'supabase' };
+      const backend: Backend = { auth: new RacyAuth(), docStore: new MockDocStore([]), spaceStore, shareStore: new LocalShareStore(), feedbackStore: new LocalFeedbackStore(), imageStore: new LocalImageStore(), commentStore: new LocalCommentStore(), mode: 'supabase' };
       const { container } = render(
         <MemoryRouter initialEntries={['/home']}>
           <BackendProvider backend={backend}>
@@ -2639,7 +2640,7 @@ describe('Home', () => {
         rename: vi.fn(async () => undefined),
       } as unknown as DocStore;
 
-      const backend: Backend = { auth: new RacyAuth(), docStore, spaceStore, shareStore: new LocalShareStore(), feedbackStore: new LocalFeedbackStore(), imageStore: new LocalImageStore(), mode: 'supabase' };
+      const backend: Backend = { auth: new RacyAuth(), docStore, spaceStore, shareStore: new LocalShareStore(), feedbackStore: new LocalFeedbackStore(), imageStore: new LocalImageStore(), commentStore: new LocalCommentStore(), mode: 'supabase' };
       render(
         <MemoryRouter initialEntries={['/home']}>
           <BackendProvider backend={backend}>
@@ -2681,7 +2682,7 @@ describe('맵 카드의 마지막 수정자', () => {
   function renderWith(metas: DocMeta[], names: Record<string, string>) {
     const docStore = new MockDocStore(metas);
     docStore.listEditorNames = vi.fn(async () => names);
-    const backend: Backend = { auth: new LocalAuth(), docStore, spaceStore: new LocalSpaceStore(), shareStore: new LocalShareStore(), feedbackStore: new LocalFeedbackStore(), imageStore: new LocalImageStore(), mode: 'supabase' };
+    const backend: Backend = { auth: new LocalAuth(), docStore, spaceStore: new LocalSpaceStore(), shareStore: new LocalShareStore(), feedbackStore: new LocalFeedbackStore(), imageStore: new LocalImageStore(), commentStore: new LocalCommentStore(), mode: 'supabase' };
     const utils = render(
       <MemoryRouter initialEntries={['/home']}>
         <BackendProvider backend={backend}>
@@ -2801,7 +2802,7 @@ describe('홈 색상 테마', () => {
         saved.push(d);
       },
     };
-    const backend: Backend = { auth: new LocalAuth(), docStore: new MockDocStore([]), spaceStore, shareStore: new LocalShareStore(), feedbackStore: new LocalFeedbackStore(), imageStore: new LocalImageStore(), mode: 'local' };
+    const backend: Backend = { auth: new LocalAuth(), docStore: new MockDocStore([]), spaceStore, shareStore: new LocalShareStore(), feedbackStore: new LocalFeedbackStore(), imageStore: new LocalImageStore(), commentStore: new LocalCommentStore(), mode: 'local' };
     render(
       <MemoryRouter initialEntries={['/home']}>
         <BackendProvider backend={backend}>

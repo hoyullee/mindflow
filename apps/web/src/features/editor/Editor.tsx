@@ -9,6 +9,7 @@ import { ZoomControls } from './components/ZoomControls';
 import { Viewport } from './components/Viewport';
 import { OutlineView } from './components/OutlineView';
 import { PropertyPanel } from './components/PropertyPanel';
+import { CommentPanel } from './components/CommentPanel';
 import { PresenceBar } from './components/PresenceBar';
 import { SearchBar } from './components/SearchBar';
 import { ShortcutHelp } from './components/ShortcutHelp';
@@ -177,7 +178,12 @@ export function Editor() {
                 위의 `CollabPaused`가 전체 안내로 승격한다. */}
             <CollabBlockedBanner controller={controller} />
             {/* 보기 전용(#22): 속성 패널의 모든 조작이 문서 변이라 패널째 감춘다. */}
-            {!controller.readOnly && <PropertyPanel controller={controller} />}
+            {/* 모바일에서는 속성도 댓글도 바텀 시트다 — 둘이 겹치지 않게 하나만.
+                데스크톱은 속성이 왼쪽, 댓글이 오른쪽이라 함께 떠도 된다. */}
+            {!controller.readOnly && !(isMobile && controller.commentsOpen) && <PropertyPanel controller={controller} />}
+            {/* 댓글 — 보기 전용에도 열린다. 댓글은 본문을 바꾸지 않고, 리뷰를 받으려고
+                보기 권한으로 부르는 일이 흔하다(0020의 insert 정책과 같은 생각). */}
+            <CommentPanel controller={controller} />
             {/* Mobile: a tap selects (no auto-sheet); this bar offers 편집/속성/삭제와
                 전체 메뉴로 가는 메뉴(⋯). Hidden once the sheet is open (it has its own
                 close control below).

@@ -45,3 +45,7 @@ export function useShareStore() {
 export function useFeedbackStore() {
   return useBackend().feedbackStore;
 }
+
+export function useCommentStore() {
+  return useBackend().commentStore;
+}

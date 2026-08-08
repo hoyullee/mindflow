@@ -22,6 +22,7 @@ import { LocalAuth } from '../../adapters/local/localAuth';
 import { LocalSpaceStore } from '../../adapters/local/localSpaceStore';
 import { LocalShareStore } from '../../adapters/local/localShareStore';
 import { LocalFeedbackStore } from '../../adapters/local/localFeedbackStore';
+import { LocalCommentStore } from '../../adapters/local/localCommentStore';
 import { LocalImageStore } from '../../adapters/local/localImageStore';
 import type { Backend, DocStore, ImageStore } from '../../adapters/ports';
 
@@ -95,6 +96,7 @@ function makeBackend(imageStore: ImageStore, doc: Doc) {
     shareStore: new LocalShareStore(),
     feedbackStore: new LocalFeedbackStore(),
     imageStore,
+    commentStore: new LocalCommentStore(),
     mode: 'supabase',
   };
   return backend;

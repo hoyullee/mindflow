@@ -7,6 +7,7 @@ import { LocalAuth } from '../../adapters/local/localAuth';
 import { LocalSpaceStore } from '../../adapters/local/localSpaceStore';
 import { LocalShareStore } from '../../adapters/local/localShareStore';
 import { LocalFeedbackStore } from '../../adapters/local/localFeedbackStore';
+import { LocalCommentStore } from '../../adapters/local/localCommentStore';
 import { LocalImageStore } from '../../adapters/local/localImageStore';
 import { LocalDocStore } from '../../adapters/local/localDocStore';
 import type { Backend, DocStore, ShareStore } from '../../adapters/ports';
@@ -143,7 +144,7 @@ describe('링크로 연 맵 (보기 전용)', () => {
     } as unknown as DocStore;
     // 링크로 들어온 사람에게는 초대 행이 하나도 보이지 않는다(RLS의 결).
     const shareStore = { ...new LocalShareStore(), list: async () => [] } as unknown as ShareStore;
-    return { auth: new LocalAuth(), docStore, spaceStore: new LocalSpaceStore(), shareStore, feedbackStore: new LocalFeedbackStore(), imageStore: new LocalImageStore(), mode: 'supabase' };
+    return { auth: new LocalAuth(), docStore, spaceStore: new LocalSpaceStore(), shareStore, feedbackStore: new LocalFeedbackStore(), imageStore: new LocalImageStore(), commentStore: new LocalCommentStore(), mode: 'supabase' };
   }
 
   function renderWith(backend: Backend, entry: string) {
@@ -212,7 +213,7 @@ describe('보기 전용 사용자의 공유 팝업', () => {
       spaceStore: new LocalSpaceStore(),
       shareStore,
       feedbackStore: new LocalFeedbackStore(),
-      imageStore: new LocalImageStore(),
+      imageStore: new LocalImageStore(), commentStore: new LocalCommentStore(),
       mode: 'supabase',
     };
     return { backend, shareStore };

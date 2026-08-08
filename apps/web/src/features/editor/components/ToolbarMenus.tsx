@@ -184,6 +184,22 @@ export function ViewMenu({ controller, onDone, isMobile }: { controller: EditorC
           onDone();
         }}
       />
+      {/* 댓글 — 배지는 댓글이 생긴 뒤에만 뜨므로, 첫 댓글을 남길 길은 여기다.
+          링크로 연 사람에게는 서버가 댓글을 내주지 않아 항목도 두지 않는다(0020). */}
+      {controller.canComment && (
+        <MenuItem
+          theme={th}
+          isMobile={isMobile}
+          icon={<CommentIcon />}
+          label="댓글"
+          active={controller.commentsOpen}
+          onClick={() => {
+            if (controller.commentsOpen) controller.closeComments();
+            else controller.openComments();
+            onDone();
+          }}
+        />
+      )}
       <MenuDivider theme={th} />
       <MenuItem
         theme={th}
@@ -227,6 +243,9 @@ export function MoreMenu({ controller, onDone, isMobile }: { controller: EditorC
       <MenuSectionLabel theme={th}>보기</MenuSectionLabel>
       <MenuItem theme={th} isMobile={isMobile} icon={<MapIcon />} label="맵" active={controller.view === 'map'} onClick={() => { controller.setView('map'); onDone(); }} />
       <MenuItem theme={th} isMobile={isMobile} icon={<OutlineIcon />} label="아웃라인" active={controller.view === 'outline'} onClick={() => { controller.setView('outline'); onDone(); }} />
+      {controller.canComment && (
+        <MenuItem theme={th} isMobile={isMobile} icon={<CommentIcon />} label="댓글" active={controller.commentsOpen} onClick={() => { if (controller.commentsOpen) controller.closeComments(); else controller.openComments(); onDone(); }} />
+      )}
       {/* 내보내기는 보기 전용에서 감춘다(요청) — 데스크톱 툴바와 같은 규칙. */}
       {!controller.readOnly && (
         <>
@@ -271,6 +290,19 @@ export function FeedbackIcon() {
   return (
     <svg width={15} height={15} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round">
       <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" />
+    </svg>
+  );
+}
+/**
+ * 댓글 — 말풍선 **안에 줄**. 피드백(빈 말풍선)과 나란히 놓이므로 일부러 다르게
+ * 그린다: 같은 도형이면 같은 동작으로 읽힌다.
+ */
+export function CommentIcon({ size = 15 }: { size?: number }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+      <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" />
+      <line x1={7.5} y1={8.5} x2={16.5} y2={8.5} />
+      <line x1={7.5} y1={12} x2={13} y2={12} />
     </svg>
   );
 }
