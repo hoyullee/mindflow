@@ -346,7 +346,13 @@ function buildItems(target: NonNullable<HomeState['ctxMenu']>['target'], state: 
 }
 
 function findCard(view: HomeViewModel, key: string): CardViewData | undefined {
-  return view.allCards.find((c) => c.key === key) || view.recentCards.find((c) => c.key === key);
+  // 검색 결과 카드도 찾아야 한다 — 전역 검색 중에는 그리드(`allCards`)에 없고
+  // 스페이스별 묶음 안에만 있으며, 그쪽 카드는 메뉴 항목이 다르다(폴더 이동 가림).
+  return (
+    view.allCards.find((c) => c.key === key) ||
+    view.searchGroups.flatMap((g) => g.cards).find((c) => c.key === key) ||
+    view.recentCards.find((c) => c.key === key)
+  );
 }
 
 function mapItems(card: CardViewData, controller: HomeController): HomeMenuItem[] {

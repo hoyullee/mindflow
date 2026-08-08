@@ -1,7 +1,6 @@
 import type { HomeController } from '../useHomeController';
 import type { HomeState } from '../types';
 import type { HomeViewModel } from '../viewModel';
-import { UNREAD_BADGE_BG } from '../theme';
 
 interface Props {
   state: HomeState;
@@ -100,35 +99,6 @@ export function Toolbar({ state, view, controller, isMobile = false, onOpenNav }
           "버튼 줄 / 제목 줄 / 검색 줄" 세 줄로 늘어졌다. 묶어 두면 이 덩어리가 한 줄을
           지키고 그 안에서 제목만 말줄임된다. */}
       <div style={{ display: 'flex', alignItems: 'center', gap: 12, flex: '1 1 auto', minWidth: 0 }}>
-        {isMobile && (
-          // Ghost app-bar button (no border/box) so "≡ + 스페이스명" reads as ONE
-          // header unit instead of a floating control pushing the title aside.
-          // The negative margin lines the glyph up with the content's left edge
-          // while the hit area stays a full 44px (§7).
-          <button
-            type="button"
-            className="btn"
-            onClick={onOpenNav}
-            title={view.sharedUnread > 0 ? `메뉴 열기 (새 공유 ${view.sharedUnread}개)` : '메뉴 열기'}
-            aria-label={view.sharedUnread > 0 ? `메뉴 열기, 확인하지 않은 공유 ${view.sharedUnread}개` : '메뉴 열기'}
-            style={{ position: 'relative', display: 'flex', alignItems: 'center', justifyContent: 'center', width: 44, height: 44, marginLeft: -12, marginRight: -6, border: 'none', borderRadius: 10, background: 'transparent', color: 'var(--mf-text)', cursor: 'pointer', padding: 0, flexShrink: 0 }}
-          >
-            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
-              <line x1="4" y1="7" x2="20" y2="7" />
-              <line x1="4" y1="12" x2="20" y2="12" />
-              <line x1="4" y1="17" x2="20" y2="17" />
-            </svg>
-            {/* 폰에서는 LNB가 서랍이라 그 안의 배지가 보이지 않는다 — 알림이 닫힌
-                문 뒤에 있으면 알림이 아니다. 문에도 점을 찍는다. */}
-            {view.sharedUnread > 0 && (
-              <span
-                data-unread-dot
-                aria-hidden="true"
-                style={{ position: 'absolute', top: 9, right: 9, width: 8, height: 8, borderRadius: '50%', background: UNREAD_BADGE_BG, border: '2px solid var(--mf-bg)' }}
-              />
-            )}
-          </button>
-        )}
         {view.backVisible && (
           <button
             className="btn"
@@ -191,27 +161,6 @@ export function Toolbar({ state, view, controller, isMobile = false, onOpenNav }
             here so nothing wraps onto a stray second line. Icon-only buttons keep
             44px touch targets and carry their label via aria-label/title. */}
         <div style={{ display: 'flex', alignItems: 'center', gap: isMobile ? 8 : 10, width: isMobile ? '100%' : undefined }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 8, flex: isMobile ? '1 1 auto' : undefined, width: isMobile ? undefined : 260, minWidth: 0, height: isMobile ? 44 : 38, padding: '0 12px', background: 'var(--mf-panel)', border: '1px solid var(--mf-border)', borderRadius: 10, color: 'var(--mf-muted)' }}>
-            <span style={{ fontSize: 13, display: 'flex', alignItems: 'center', color: 'var(--mf-muted)' }}>
-              <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                <circle cx="11" cy="11" r="7" />
-                <line x1="21" y1="21" x2="16.5" y2="16.5" />
-              </svg>
-            </span>
-            <input
-              // 보여 주는 값은 즉시값(`searchInput`) — 적용은 잠깐 뒤에 된다
-              // (`setSearch`의 디바운스). Enter/포커스 아웃은 기다리지 않는다.
-              value={state.searchInput}
-              onChange={(e) => controller.setSearch(e.target.value)}
-              onKeyDown={(e) => {
-                if (e.key === 'Enter') controller.flushSearch();
-              }}
-              onBlur={controller.flushSearch}
-              placeholder="파일 검색"
-              aria-label="파일 검색"
-              style={{ border: 'none', outline: 'none', background: 'transparent', fontFamily: 'inherit', fontSize: 13, width: '100%', minWidth: 0, color: 'var(--mf-text)' }}
-            />
-          </div>
           {isMobile && view.importVisible && (
             <button className="btn" onClick={controller.openImport} aria-label="가져오기" title="가져오기" style={MOBILE_ICON_BTN}>
               <ImportGlyph />

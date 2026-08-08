@@ -41,14 +41,6 @@ export function MapGrid({ view, controller }: Props) {
   }
   return (
     <>
-      {/* 검색 중 안내 — 결과가 **폴더 경계를 넘어** 모인다는 사실을 알려 준다.
-          이 줄이 없으면 다른 폴더의 맵이 섞여 나온 것이 오작동처럼 보인다. */}
-      {view.searchQuery && !view.searchEmpty && (
-        <div data-search-notice style={{ fontSize: 12.5, color: 'var(--mf-muted)', marginBottom: 16 }}>
-          <b style={{ color: 'var(--mf-text)' }}>&apos;{view.searchQuery}&apos;</b> 검색 결과 {view.searchCount}개 · 제목과 내용에서 이 스페이스 전체를 찾았어요
-        </div>
-      )}
-
       {/* The "최근 항목" strip is cross-space and now lives at the top of Home
           (see `RecentStrip` in Home.tsx), not inside a space's map list. */}
       {view.foldersSectionVisible && (
@@ -73,22 +65,6 @@ export function MapGrid({ view, controller }: Props) {
             {view.allCards.map((c) => (
               <MapCard key={c.key} card={c} controller={controller} draggableEnabled={!view.isDriveSpace} />
             ))}
-          </div>
-        </div>
-      )}
-
-      {view.searchEmpty && (
-        <div data-search-empty style={{ display: 'flex', flex: '1 1 auto', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', minHeight: 0, padding: 20 }}>
-          <div style={{ width: 88, height: 88, borderRadius: 24, background: 'var(--mf-accent-soft)', color: 'var(--mf-accent)', display: 'flex', alignItems: 'center', justifyContent: 'center', marginBottom: 20 }}>
-            <svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-              <circle cx="11" cy="11" r="7" />
-              <line x1="21" y1="21" x2="16.5" y2="16.5" />
-            </svg>
-          </div>
-          <div style={{ fontSize: 18, fontWeight: 700, marginBottom: 8 }}>&apos;{view.searchQuery}&apos;에 맞는 맵이 없어요</div>
-          <div style={{ fontSize: 13.5, color: 'var(--mf-muted)', lineHeight: 1.6, textAlign: 'center' }}>
-            맵 제목과 내용(주제·메모·영역 이름)에서 찾았어요.
-            <br /> 다른 낱말로 찾아보거나, 다른 스페이스를 확인해 보세요.
           </div>
         </div>
       )}

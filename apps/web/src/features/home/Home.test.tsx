@@ -119,7 +119,7 @@ describe('Home', () => {
     // toolbar / main. With no saved maps the grid shows its empty state (after
     // the initial DocStore.list() settles — until then it shows a skeleton), so
     // "＋ 새로 만들기" appears both in the toolbar and the empty-state CTA.
-    expect(screen.getByPlaceholderText('파일 검색')).toBeTruthy();
+    expect(screen.getByPlaceholderText('모든 스페이스에서 검색')).toBeTruthy();
     expect(screen.getAllByText('＋ 새로 만들기').length).toBeGreaterThan(0);
     await waitFor(() => expect(screen.getByText('아직 만든 맵이 없어요')).toBeTruthy());
   });
@@ -211,7 +211,7 @@ describe('Home', () => {
     await waitFor(() => expect(container.querySelector('a[data-title="따라잡기"]')).toBeTruthy());
     expect(container.querySelector('a[data-title="무상 비즈머니 지급"]')).toBeTruthy();
 
-    await user.type(screen.getByPlaceholderText('파일 검색'), '따라잡기');
+    await user.type(screen.getByPlaceholderText('모든 스페이스에서 검색'), '따라잡기');
 
     // 적용은 입력이 멎은 뒤(디바운스) — 그래서 즉시가 아니라 기다려서 확인한다.
     await waitFor(() => expect(container.querySelector('a[data-title="무상 비즈머니 지급"]')).toBeNull());
@@ -442,7 +442,7 @@ describe('Home', () => {
 
     // 로딩 중: 스켈레톤 트레이가 자리를 확보하고 있고, 툴바도 이미 그 아래에 있다
     await waitFor(() => expect(screen.getByLabelText('최근 항목을 불러오는 중')).toBeTruthy());
-    expect(screen.getByPlaceholderText('파일 검색')).toBeTruthy();
+    expect(screen.getByPlaceholderText('모든 스페이스에서 검색')).toBeTruthy();
 
     await act(async () => {
       resolveList([{ id: 'doc-r1', title: '최근맵', version: 1, updatedAt: '2026-01-01T00:00:00.000Z', isFavorite: false, deletedAt: null }]);
@@ -2018,8 +2018,12 @@ describe('Home', () => {
         expect(importBtn.style.width).toBe('44px');
         expect(folderBtn.style.width).toBe('44px');
         expect(newBtn.style.width).toBe('44px');
-        // all three live in the SAME row container as the search field
-        const row = screen.getByPlaceholderText('파일 검색').closest('div')!.parentElement!;
+        // 셋은 여전히 한 줄에 모여 있다(따로 노는 줄이 생기지 않는다). 검색은
+        // 이제 최상단 자기 줄로 빠졌으므로 이 행에 들어 있지 않다.
+        const row = importBtn.parentElement!;
+        expect(row.contains(folderBtn)).toBe(true);
+        expect(row.contains(newBtn)).toBe(true);
+        expect(row.contains(screen.getByPlaceholderText('모든 스페이스에서 검색'))).toBe(false);
         expect(row.contains(importBtn)).toBe(true);
         expect(row.contains(folderBtn)).toBe(true);
         expect(row.contains(newBtn)).toBe(true);
@@ -2128,7 +2132,7 @@ describe('Home', () => {
 
         // Drawer starts closed: no <aside> in the document at all (not just hidden).
         expect(container.querySelector('aside')).toBeNull();
-        expect(screen.getByPlaceholderText('파일 검색')).toBeTruthy();
+        expect(screen.getByPlaceholderText('모든 스페이스에서 검색')).toBeTruthy();
 
         await user.click(screen.getByRole('button', { name: '메뉴 열기' }));
 
@@ -2821,6 +2825,102 @@ describe('홈 색상 테마', () => {
 
 // 홈 우클릭 메뉴(요청) — ☰ 버튼과 우클릭이 **같은 메뉴**를 열고, 하위 메뉴는
 // 드릴다운이 아니라 옆으로 뻗는 플라이아웃이다. 빈 자리와 폴더에도 메뉴가 있다.
+describe('전역 검색 (모든 스페이스)', () => {
+  const mkDoc = (rootText: string, extra: Record<string, unknown> = {}) => ({
+    v: 1,
+    nodes: { root: { id: 'root', text: rootText, emoji: '', parent: null, children: [], collapsed: false, color: null, x: 0, y: 0 } },
+    floats: [], lines: [], zones: [], layoutMode: 'radial', themeKey: 'coral',
+    ...extra,
+  });
+  const meta = (id: string, title: string): DocMeta => ({ id, title, version: 1, updatedAt: '2026-01-01T00:00:00.000Z', isFavorite: false, deletedAt: null });
+
+  /** 스페이스 둘 — 활성('업무')과 비활성('개인'). 개인 스페이스의 맵은 평소 화면에 없다. */
+  function seedTwoSpaces() {
+    localStorage.setItem(
+      'mf_spaces',
+      JSON.stringify({
+        spaces: [
+          { id: 's1', name: '업무', color: '#f0663f', home: true, maps: [{ title: '업무 회고', when: '방금', hue: '#f0663f', docId: 'w1' }], folders: [] },
+          { id: 's2', name: '개인', color: '#2f7fd6', maps: [{ title: '개인 노트', when: '방금', hue: '#2f7fd6', docId: 'p1' }], folders: [{ id: 'pf1', name: '취미' }] },
+        ],
+        mapFolders: { p1: 'pf1' },
+        activeSpace: 's1',
+      }),
+    );
+  }
+
+  it('다른 스페이스의 맵도 찾고, 스페이스별로 묶어 보여 준다', async () => {
+    const user = userEvent.setup();
+    seedTwoSpaces();
+    const { container } = renderHomeWithDocStore([meta('w1', '업무 회고'), meta('p1', '개인 노트')], {
+      w1: { doc: mkDoc('업무 회고') as never, version: 1, title: '업무 회고' },
+      p1: { doc: mkDoc('개인 노트', { floats: [{ id: 'f1', x: 0, y: 0, w: 200, text: '등산 계획 메모' }] }) as never, version: 1, title: '개인 노트' },
+    });
+    await waitFor(() => expect(container.querySelector('a[data-title="업무 회고"]')).toBeTruthy());
+    // 평소엔 활성 스페이스만 보인다
+    expect(container.querySelector('a[data-title="개인 노트"]')).toBeNull();
+
+    // 다른 스페이스 맵의 **본문**에만 있는 낱말
+    await user.type(screen.getByPlaceholderText('모든 스페이스에서 검색'), '등산{Enter}');
+
+    await waitFor(() => expect(container.querySelector('a[data-title="개인 노트"]')).toBeTruthy());
+    // 결과는 그 맵이 사는 스페이스 이름 아래 묶인다
+    const results = container.querySelector('[data-search-results]') as HTMLElement;
+    expect(within(results).getByText('개인')).toBeTruthy();
+    expect(container.querySelector('a[data-title="업무 회고"]')).toBeNull();
+  });
+
+  it('폴더 이름도 스페이스를 가리지 않고 찾는다 (경로 이름으로)', async () => {
+    const user = userEvent.setup();
+    seedTwoSpaces();
+    const { container } = renderHomeWithDocStore([meta('w1', '업무 회고'), meta('p1', '개인 노트')]);
+    await waitFor(() => expect(container.querySelector('a[data-title="업무 회고"]')).toBeTruthy());
+
+    await user.type(screen.getByPlaceholderText('모든 스페이스에서 검색'), '취미{Enter}');
+
+    await waitFor(() => expect(container.querySelector('[data-search-results]')).toBeTruthy());
+    expect(screen.getByText('취미')).toBeTruthy();
+  });
+
+  it('다른 스페이스의 결과 카드에는 폴더 이동을 내주지 않는다 (미아 방지)', async () => {
+    const user = userEvent.setup();
+    seedTwoSpaces();
+    const { container } = renderHomeWithDocStore([meta('w1', '업무 회고'), meta('p1', '개인 노트')]);
+    await waitFor(() => expect(container.querySelector('a[data-title="업무 회고"]')).toBeTruthy());
+
+    await user.type(screen.getByPlaceholderText('모든 스페이스에서 검색'), '개인{Enter}');
+    const card = await waitFor(() => {
+      const el = container.querySelector('a[data-title="개인 노트"]');
+      expect(el).toBeTruthy();
+      return el as HTMLElement;
+    });
+
+    await user.click(within(card).getByRole('button', { name: '메뉴' }));
+    const menu = await screen.findByRole('menu');
+    // 폴더 이동은 없다 — mapFolders는 폴더 id만 들고 있어 다른 스페이스의 폴더에
+    // 배정하면 어느 목록에도 안 나오는 미아가 된다.
+    expect(within(menu).queryByRole('menuitem', { name: /폴더로 이동/ })).toBeNull();
+    // 스페이스 이동은 안전하다(원본 스페이스를 key로 찾는다)
+    expect(within(menu).getByRole('menuitem', { name: /스페이스로 이동/ })).toBeTruthy();
+  });
+
+  it('검색을 지우면 원래 스페이스 화면으로 돌아온다', async () => {
+    const user = userEvent.setup();
+    seedTwoSpaces();
+    const { container } = renderHomeWithDocStore([meta('w1', '업무 회고'), meta('p1', '개인 노트')]);
+    await waitFor(() => expect(container.querySelector('a[data-title="업무 회고"]')).toBeTruthy());
+
+    const box = screen.getByPlaceholderText('모든 스페이스에서 검색');
+    await user.type(box, '개인{Enter}');
+    await waitFor(() => expect(container.querySelector('[data-search-results]')).toBeTruthy());
+
+    await user.click(screen.getByRole('button', { name: '검색 지우기' }));
+    await waitFor(() => expect(container.querySelector('[data-search-results]')).toBeNull());
+    expect(container.querySelector('a[data-title="업무 회고"]')).toBeTruthy();
+    expect(container.querySelector('a[data-title="개인 노트"]')).toBeNull();
+  });
+});
+
 describe('검색 입력 디바운스', () => {
   const meta = (id: string, title: string): DocMeta => ({ id, title, version: 1, updatedAt: '2026-01-01T00:00:00.000Z', isFavorite: false, deletedAt: null });
 
@@ -2829,7 +2929,7 @@ describe('검색 입력 디바운스', () => {
     const { container } = renderHomeWithDocStore([meta('d1', '따라잡기'), meta('d2', '지급 내역')]);
     await waitFor(() => expect(container.querySelectorAll('.mf-map-grid a[data-title]').length).toBe(2));
 
-    const box = screen.getByPlaceholderText('파일 검색');
+    const box = screen.getByPlaceholderText('모든 스페이스에서 검색');
     await user.type(box, '따라');
 
     // 입력값은 즉시 보인다 …
@@ -2847,7 +2947,7 @@ describe('검색 입력 디바운스', () => {
     const { container } = renderHomeWithDocStore([meta('d1', '따라잡기'), meta('d2', '지급 내역')]);
     await waitFor(() => expect(container.querySelectorAll('.mf-map-grid a[data-title]').length).toBe(2));
 
-    const box = screen.getByPlaceholderText('파일 검색');
+    const box = screen.getByPlaceholderText('모든 스페이스에서 검색');
     await user.type(box, '따라{Enter}');
 
     // Enter 직후(디바운스를 기다리지 않고) 이미 걸러져 있다
@@ -2859,7 +2959,7 @@ describe('검색 입력 디바운스', () => {
     const { container } = renderHomeWithDocStore([meta('d1', '따라잡기'), meta('d2', '지급 내역')]);
     await waitFor(() => expect(container.querySelectorAll('.mf-map-grid a[data-title]').length).toBe(2));
 
-    const box = screen.getByPlaceholderText('파일 검색');
+    const box = screen.getByPlaceholderText('모든 스페이스에서 검색');
     await user.type(box, '따라{Enter}');
     expect(container.querySelectorAll('.mf-map-grid a[data-title]').length).toBe(1);
 
@@ -2894,7 +2994,7 @@ describe('본문 검색', () => {
     // 본문(메모)이 도착할 때까지 기다린다 — 도착 전에는 제목으로만 걸린다.
     await waitFor(() => expect(container.querySelectorAll('.mf-map-grid a').length).toBe(2));
 
-    await user.type(screen.getByPlaceholderText('파일 검색'), '이탈률');
+    await user.type(screen.getByPlaceholderText('모든 스페이스에서 검색'), '이탈률');
 
     await waitFor(() => expect(container.querySelector('a[data-title="2월 정리"]')).toBeNull());
     expect(container.querySelector('a[data-title="1월 정리"]')).toBeTruthy();
@@ -2917,7 +3017,7 @@ describe('본문 검색', () => {
     // 최상위에서는 폴더 안 맵이 보이지 않는다(기존 동작)
     expect(container.querySelector('a[data-title="숨은 맵"]')).toBeNull();
 
-    await user.type(screen.getByPlaceholderText('파일 검색'), '숨은');
+    await user.type(screen.getByPlaceholderText('모든 스페이스에서 검색'), '숨은');
 
     const card = await waitFor(() => {
       const el = container.querySelector('a[data-title="숨은 맵"]');
@@ -2927,7 +3027,7 @@ describe('본문 검색', () => {
     // 어느 폴더의 맵인지 카드가 알려 준다
     expect(card.querySelector('[data-card-path]')?.textContent).toBe('기획');
     // 그리고 결과가 스페이스 전체에서 모였다는 안내가 뜬다
-    expect(container.querySelector('[data-search-notice]')?.textContent).toContain('스페이스 전체');
+    expect(container.querySelector('[data-search-notice]')?.textContent).toContain('모든 스페이스');
   });
 
   it('결과가 없으면 "새로 만들기" 빈 화면이 아니라 검색 전용 안내가 뜬다', async () => {
@@ -2937,7 +3037,7 @@ describe('본문 검색', () => {
     });
     await waitFor(() => expect(container.querySelector('a[data-title="1월 정리"]')).toBeTruthy());
 
-    await user.type(screen.getByPlaceholderText('파일 검색'), '없는낱말');
+    await user.type(screen.getByPlaceholderText('모든 스페이스에서 검색'), '없는낱말');
 
     await waitFor(() => expect(container.querySelector('[data-search-empty]')).toBeTruthy());
     expect(screen.getByText("'없는낱말'에 맞는 맵이 없어요")).toBeTruthy();

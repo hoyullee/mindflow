@@ -489,6 +489,44 @@ export function useHomeController() {
     });
   }, [state.loaded, state.spaces, state.activeSpace, state.recent, docStore]);
 
+  /**
+   * 첫 검색이 시작되면 **나머지 스페이스의 본문**을 마저 받아 온다.
+   *
+   * 썸네일 프리페치는 활성 스페이스(+최근 항목)만 받으므로, 검색이 전역이 된 지금은
+   * 다른 스페이스가 제목으로만 걸린다. 검색은 의도적인 행동이라 그때 한 번 값을
+   * 치르는 게 맞고, `loadPreview`가 (id, version, updatedAt) 키로 캐시하므로 사실상
+   * **기기당 한 번**이다(홈에 들어오기만 해도 미리 받아 두면 검색하지 않는 사용자도
+   * 전송량을 치른다 — 그래서 검색을 시작할 때로 미룬다).
+   *
+   * `previewFetchedRef`가 썸네일 경로와 같은 dedupe를 하므로 이미 받은 것은 건너뛴다.
+   */
+  useEffect(() => {
+    if (!state.loaded || !state.search.trim()) return;
+    const wanted: string[] = [];
+    state.spaces.forEach((sp) => (Array.isArray(sp.maps) ? sp.maps : []).forEach((m) => {
+      if (m.docId && !previewFetchedRef.current.has(m.docId)) wanted.push(m.docId);
+    }));
+    if (!wanted.length) return;
+    wanted.forEach((id) => previewFetchedRef.current.add(id));
+    setState((prev) => ({ ...prev, searchBodiesLoading: true }));
+    void Promise.allSettled(wanted.map((id) => docStore.loadPreview(id, docMetaRef.current.get(id)))).then((results) => {
+      if (!mountedRef.current) return;
+      const add: Record<string, string> = {};
+      const resolved: Record<string, boolean> = {};
+      results.forEach((r, i) => {
+        const id = wanted[i]!;
+        resolved[id] = true;
+        if (r.status === 'fulfilled' && r.value) add[id] = r.value;
+      });
+      setState((prev) => ({
+        ...prev,
+        previewDocs: { ...prev.previewDocs, ...add },
+        previewResolved: { ...prev.previewResolved, ...resolved },
+        searchBodiesLoading: false,
+      }));
+    });
+  }, [state.loaded, state.search, state.spaces, docStore]);
+
   // Persist spaces (+ map→folder) via the `SpaceStore` port whenever they
   // actually change, so user-created spaces/folders survive a refresh AND (in
   // Supabase mode) sync across every device the user logs into. Two guards keep

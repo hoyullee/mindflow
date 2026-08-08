@@ -83,6 +83,17 @@ export function folderCardKey(id: string): string {
   return 'folder:' + id;
 }
 
+/** 검색 결과 한 묶음 = 한 스페이스. 헤더에 색 점 + 이름이 붙는다. */
+export interface SearchGroupViewData {
+  spaceId: string;
+  spaceName: string;
+  spaceColor: string;
+  /** 지금 보고 있는 스페이스인가 — 폴더 이동 메뉴를 내줄지 가른다. */
+  isActive: boolean;
+  cards: CardViewData[];
+  folders: FolderCardViewData[];
+}
+
 export interface HomeViewModel {
   connected: boolean;
   isDriveSpace: boolean;
@@ -133,6 +144,10 @@ export interface HomeViewModel {
   searchQuery: string;
   /** 검색 결과 개수(맵 + 폴더). 안내 줄에 쓴다. */
   searchCount: number;
+  /** 전역 검색 결과 — 스페이스별 묶음. 검색 중이 아니면 빈 배열. */
+  searchGroups: SearchGroupViewData[];
+  /** 다른 스페이스 본문을 아직 받는 중인가 — 그동안은 제목으로만 걸린다. */
+  searchLoading: boolean;
   showDriveConnect: boolean;
   backVisible: boolean;
   newFolderVisible: boolean;
@@ -268,19 +283,18 @@ export function deriveHomeView(state: HomeState): HomeViewModel {
   const query = state.search.trim().toLowerCase();
   const searching = !!query;
 
+  // 검색은 이제 이 그리드를 거르지 않는다 — 질의가 있으면 화면 자체가 **전역 검색
+  // 결과**로 바뀌고(아래 `searchGroups`), 이 목록은 그 뒤에 그대로 남아 있다가
+  // 검색을 지우면 되돌아온다.
   const allCardsFiltered = baseCards
     .filter((c) => !isTrashedCard(c.title, c.docId))
     .filter((c) => {
       if (isDriveSpace) return true;
-      // 검색 중에는 폴더 경계를 넘는다 — 어디 있는지 알면 찾을 이유가 없다.
-      // (스페이스 전체가 대상이고, 그 본문은 이미 받아 둔 것들이라 새 요청이 없다.)
-      if (searching) return true;
       // Folder assignments are docId-keyed (title fallback for docId-less
       // cards) so same-titled maps can't capture each other's assignment.
       const assigned = mapFolders[cardKeyOf(c.title, c.docId)];
       return curFolder ? assigned === curFolder.id : !assigned || !folders.find((f) => f.id === assigned);
-    })
-    .filter((c) => matchesSearch(c.title, c.docId, query, state.previewDocs));
+    });
 
   const favs = state.favs;
   // Other real spaces a map can be moved to (excludes the current space and the
@@ -291,14 +305,6 @@ export function deriveHomeView(state: HomeState): HomeViewModel {
   // 중첩 폴더가 생기면서 폴더 안에서도 다른(하위 포함) 폴더로 옮길 수 있다.
   // 이름은 경로("상위 / 하위")로 보여 같은 이름의 폴더를 구별한다.
   const localMoveTargets = folders.filter((f) => !curFolder || f.id !== curFolder.id).map((f) => ({ id: f.id, name: folderPathName(f) }));
-  /** 검색 결과 카드에 붙는 위치("폴더" 또는 "상위 / 하위"). 폴더 밖이면 빈 값 —
-   * 지금 스페이스는 하나뿐이라 스페이스 이름은 되풀이할 정보가 아니다. */
-  const searchPathOf = (title: string, docId?: string): string => {
-    if (!searching || isDriveSpace) return '';
-    const assigned = mapFolders[cardKeyOf(title, docId)];
-    const f = assigned ? folders.find((x) => x.id === assigned) : undefined;
-    return f ? folderPathName(f) : '';
-  };
   const allCards: CardViewData[] = allCardsFiltered.map((c) => {
     const hasFav = c.openable;
     const hasMove = isDriveSpace ? !driveFolder && state.driveFolders.length > 0 : localMoveTargets.length > 0;
@@ -332,7 +338,6 @@ export function deriveHomeView(state: HomeState): HomeViewModel {
       showSpaceMoveRow: canMoveSpace,
       showUnfolderRow: hasUnfolder,
       showDivider: hasFav || hasMove || canMoveSpace || hasUnfolder,
-      pathLabel: searchPathOf(c.title, c.docId),
       moveTargets: isDriveSpace ? state.driveFolders.map((f) => ({ id: f.id, name: f.name })) : localMoveTargets,
       spaceMoveTargets,
     };
@@ -356,9 +361,7 @@ export function deriveHomeView(state: HomeState): HomeViewModel {
   // 없으므로 전부 최상위 — 무회귀.)
   const localFolderCards: FolderCardViewData[] = !isDriveSpace
     ? folders
-        // 검색 중에는 계층을 넘어 **이름이 걸리는 폴더**를 보여 준다 — 맵과 같은
-        // 규칙(폴더 경계를 넘는다)이라야 결과 화면이 한 가지 뜻으로 읽힌다.
-        .filter((f) => (searching ? f.name.toLowerCase().includes(query) : (f.parent ?? null) === (curFolder ? curFolder.id : null)))
+        .filter((f) => (f.parent ?? null) === (curFolder ? curFolder.id : null))
         .map((f) => {
           // Count from the space's ACTUAL maps (assignments are docId-keyed, so
           // key iteration can't be matched back to titles) — trashed maps are
@@ -385,6 +388,121 @@ export function deriveHomeView(state: HomeState): HomeViewModel {
         })
     : [];
   const folderCards = isDriveSpace ? driveFolderCardsRaw : localFolderCards;
+
+  // ---- 전역 검색 결과 (스페이스별 묶음) ----
+  /**
+   * 질의가 있으면 **모든 스페이스**를 뒤져 스페이스별로 묶어 돌려준다.
+   *
+   * 왜 화면을 바꾸나: 검색이 전역이 된 순간, 스페이스 헤더 아래에서 그리드를 거르는
+   * 방식은 거짓말이 된다(다른 스페이스 것이 이 스페이스의 목록인 척한다). 그래서
+   * 검색 중에는 본문이 통째로 "검색 결과" 화면으로 바뀌고, 결과는 어느 스페이스의
+   * 것인지 헤더로 드러난다.
+   *
+   * 메뉴 가림: 다른 스페이스의 결과 카드는 **폴더 이동/폴더에서 빼기**를 내주지
+   * 않는다 — `mapFolders`는 폴더 id만 들고 있어서, A 스페이스의 맵을 B 스페이스의
+   * 폴더에 배정하면 어느 목록에도 나타나지 않는 미아가 된다. 스페이스 이동은
+   * 안전하다(`moveMapToSpace`가 key로 원본 스페이스를 스스로 찾는다).
+   */
+  const searchGroups: SearchGroupViewData[] = [];
+  if (searching) {
+    for (const sp of state.spaces) {
+      const spFolders = Array.isArray(sp.folders) ? sp.folders : [];
+      const ancestorsOf = (f: FolderData): FolderData[] => {
+        const out: FolderData[] = [];
+        let cur: FolderData | undefined = f;
+        let guard = 0;
+        while (cur?.parent && guard++ < 30) {
+          cur = spFolders.find((x) => x.id === cur!.parent);
+          if (!cur) break;
+          out.push(cur);
+        }
+        return out;
+      };
+      const pathNameOf = (f: FolderData): string => [...ancestorsOf(f).reverse().map((a) => a.name), f.name].join(' / ');
+      const spMaps = Array.isArray(sp.maps) ? sp.maps : [];
+      const isActive = sp.id === state.activeSpace;
+      const spColor = sp.color || '#f0663f';
+      // 다른 스페이스로 이동: **그 카드가 지금 있는 스페이스**만 뺀다(활성 스페이스가
+      // 아니라). 검색 결과는 여러 스페이스에서 오므로 대상이 카드마다 다르다.
+      const moveTargets = state.spaces.filter((x) => x.id !== sp.id).map((x) => ({ id: x.id, name: x.name, color: x.color || '#f0663f' }));
+
+      const cards: CardViewData[] = spMaps
+        .filter((m) => !isTrashedCard(m.title, m.docId))
+        .filter((m) => matchesSearch(m.title, m.docId, query, state.previewDocs))
+        .map((m) => {
+          const key = cardKeyOf(m.title, m.docId);
+          const assigned = state.mapFolders[key];
+          const f = assigned ? spFolders.find((x) => x.id === assigned) : undefined;
+          return {
+            key,
+            title: m.title,
+            when: m.when,
+            updatedAt: m.docId ? state.docTimes[m.docId] : undefined,
+            editorName: m.docId ? state.editorNames[m.docId] : undefined,
+            hue: m.hue,
+            docId: m.docId,
+            href: mapHref(m.title, m.docId),
+            sketch: cardSketch(m.title, m.hue, m.docId, state.previewDocs, state.previewResolved),
+            badge: '',
+            openable: true,
+            isFav: !!state.favs[key],
+            isDrive: false,
+            menuOpen: state.ctxMenu?.target.kind === 'map' && state.ctxMenu.target.key === key,
+            selected: state.selectedCard === key,
+            dragging: false,
+            dragOverTarget: false,
+            showRenameRow: !!m.docId,
+            showShareRow: !!m.docId,
+            showFavRow: true,
+            // 폴더 이동은 **같은 스페이스를 보고 있을 때만** — 위 주석 참고.
+            showMoveRow: isActive && spFolders.length > 0,
+            showSpaceMoveRow: moveTargets.length > 0,
+            showUnfolderRow: isActive && !!f,
+            showDivider: true,
+            moveTargets: isActive ? spFolders.map((x) => ({ id: x.id, name: pathNameOf(x) })) : [],
+            spaceMoveTargets: moveTargets,
+            pathLabel: f ? pathNameOf(f) : '',
+          };
+        });
+
+      const folderResults: FolderCardViewData[] = spFolders
+        .filter((f) => f.name.toLowerCase().includes(query))
+        .map((f) => {
+          const ids = new Set<string>([f.id]);
+          let grew = true;
+          let guard = 0;
+          while (grew && guard++ < 30) {
+            grew = false;
+            spFolders.forEach((x) => {
+              if (x.parent && ids.has(x.parent) && !ids.has(x.id)) {
+                ids.add(x.id);
+                grew = true;
+              }
+            });
+          }
+          return {
+            id: f.id,
+            name: pathNameOf(f),
+            count: spMaps.filter((m) => {
+              const a = state.mapFolders[cardKeyOf(m.title, m.docId)];
+              return !!a && ids.has(a);
+            }).length,
+            menuOpen: false,
+            dragOver: false,
+            selected: false,
+            // 검색 결과의 폴더 타일은 "여기 있어요"를 알려 주는 바로가기다 —
+            // 삭제 같은 조작은 그 스페이스로 들어가서 한다.
+            canDelete: false,
+            isDrive: false,
+          };
+        });
+
+      if (cards.length || folderResults.length) {
+        searchGroups.push({ spaceId: sp.id, spaceName: sp.name, spaceColor: spColor, isActive, cards, folders: folderResults });
+      }
+    }
+  }
+  const searchTotal = searchGroups.reduce((n, g) => n + g.cards.length + g.folders.length, 0);
 
   // Favorites are keyed by `cardKeyOf` (docId, title fallback), so the list is
   // built by resolving each LIVE map against the flags — a docId key can't be
@@ -501,7 +619,7 @@ export function deriveHomeView(state: HomeState): HomeViewModel {
   const folderEmpty = !loading && !searching && !!curFolder && allCards.length === 0 && folderCards.length === 0;
   /** 검색 결과 없음 — "아직 만든 맵이 없어요"(+새로 만들기 CTA)를 여기 쓰면
    * 맵이 있는데도 없다고 말하는 셈이 된다. */
-  const searchEmpty = !loading && searching && !showDriveConnect && allCards.length === 0 && folderCards.length === 0;
+  const searchEmpty = !loading && searching && searchTotal === 0 && !state.searchBodiesLoading;
 
   // 제목 줄 = [상위 경로, 현재 폴더] — 중첩 폴더면 상위 경로가
   // "스페이스 / 상위폴더 / …"로 깊어진다(헤더는 …로 접고 전체는 툴팁에).
@@ -547,7 +665,9 @@ export function deriveHomeView(state: HomeState): HomeViewModel {
     folderEmpty,
     searchEmpty,
     searchQuery: searching ? state.search.trim() : '',
-    searchCount: allCards.length + folderCards.length,
+    searchCount: searchTotal,
+    searchGroups,
+    searchLoading: searching && state.searchBodiesLoading,
     showDriveConnect,
     backVisible: !!(curFolder || driveFolder),
     // `새 폴더`는 폴더 안에서도 쓸 수 있다(중첩 폴더) — 현재 폴더가 부모가 된다
@@ -563,10 +683,10 @@ export function deriveHomeView(state: HomeState): HomeViewModel {
     // only while searching (it sits above the results and isn't filtered by the
     // query) and on the Drive-connect prompt (a full-screen empty state).
     recentSectionVisible: !loading && !state.search && !showDriveConnect && recentCards.length > 0,
-    foldersSectionVisible: !loading && folderCards.length > 0,
+    foldersSectionVisible: !loading && !searching && folderCards.length > 0,
     // Only render the "맵" section when there are actually maps to show — a space
     // with folders but no loose maps must not render an empty "맵" header.
-    mapsSectionVisible: !loading && !showDriveConnect && allCards.length > 0,
+    mapsSectionVisible: !loading && !searching && !showDriveConnect && allCards.length > 0,
     userInitial: (state.userName || 'M').trim().charAt(0).toUpperCase() || 'M',
   };
 }
