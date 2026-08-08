@@ -57,9 +57,14 @@ describe('parseOutline — 기존 동작(회귀 방어)', () => {
     expect(r.childTexts(a.id)).toEqual(['손자']);
   });
 
-  it('우리 것이 아닌 ## 제목은 예전처럼 무시하고, 그 아래 불릿은 트리에 계속 쌓인다', () => {
+  it('우리 것이 아닌 ## 제목은 이제 **계층**이 된다 (외부 마크다운 가져오기)', () => {
+    // 예전에는 무시하고 그 아래 불릿을 루트에 쌓았다. 바깥에서 만든 문서를
+    // 가져오려면 제목이 구조여야 하므로 의도적으로 바꿨다 — 우리 내보내기가
+    // 쓰는 두 문구(`개별 주제`·`메모`)만 예전처럼 섹션 전환으로 남는다.
     const r = read('# T\n- 가지\n\n## 참고 자료\n- 링크')!;
-    expect(r.childTexts('root')).toEqual(['가지', '링크']);
+    expect(r.childTexts('root')).toEqual(['가지', '참고 자료']);
+    const ref = Object.values(r.nodes).find((n) => n.text === '참고 자료')!;
+    expect(r.childTexts(ref.id)).toEqual(['링크']);
     expect(r.floats).toHaveLength(0);
   });
 });

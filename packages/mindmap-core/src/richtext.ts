@@ -14,7 +14,7 @@
 // rich-text-bearing source) rather than a whole `Node`.
 
 import type { RichRun } from './model';
-import { findAutoLinks } from './url';
+import { findAutoLinks, normalizeUrl } from './url';
 
 /** The `{ text, rich }` shape `applyPartialStyle` reads/writes — a structural
  * subset of `Node` (and anything else that carries a rich-text body). */
@@ -265,6 +265,52 @@ export function applyAutoLinks(src: RichSource): { text: string; rich: RichRun[]
     }
   });
   if (!touched) return null;
+  const runs = charsToRuns(chars).filter((r) => r.t);
+  return { text: chars.map((x) => x.ch).join(''), rich: isStyledRuns(runs) ? runs : null };
+}
+
+/**
+ * `[텍스트](주소)` → 링크가 걸린 텍스트. `richToMarkdown`(내보내기)의 **역방향**이라,
+ * 내보낸 `.md`를 다시 가져오면 링크가 문법 그대로 남지 않고 되살아난다.
+ *
+ * `applyMarkdownShortcuts`(굵게/기울임/취소선)와 나란한 자리에 둔 이유가 그것이다 —
+ * 둘을 합치지 않은 것은 주소에 `*`·`_`가 흔해서(쿼리 문자열) 마커 규칙과 섞이면
+ * 서로를 갉아먹기 때문이다. 링크를 **먼저** 걷어내고 나머지 마커를 적용하면 안전하다.
+ *
+ * 주소는 `normalizeUrl`을 통과한 것만 링크가 된다(허용 스킴 밖이면 문법 그대로 둔다) —
+ * 저장 시점에 거르는 기존 규칙과 같다.
+ */
+export function applyMarkdownLinks(src: RichSource): { text: string; rich: RichRun[] | null } | null {
+  const chars = runsToChars(src);
+  let changed = false;
+  let from = 0;
+  let guard = 0;
+  while (guard++ < 500) {
+    const text = chars.map((x) => x.ch).join('');
+    const re = /\[([^\]\n]+)\]\(([^)\s]*)\)/g;
+    re.lastIndex = from;
+    const m = re.exec(text);
+    if (!m) break;
+    const label = m[1] ?? '';
+    const href = normalizeUrl(m[2] ?? '');
+    if (!href) {
+      // 못 쓰는 주소(허용 스킴 밖)는 건드리지 않고 다음 후보로 — 여기서 멈추면
+      // 뒤에 있는 멀쩡한 링크까지 놓친다.
+      from = m.index + 1;
+      continue;
+    }
+    const start = m.index;
+    // 뒤(`](주소)`)부터 지운다 — 앞을 먼저 지우면 인덱스가 밀린다.
+    chars.splice(start + 1 + label.length, 3 + (m[2] ?? '').length);
+    chars.splice(start, 1);
+    for (let i = start; i < start + label.length; i++) {
+      const c = chars[i];
+      if (c) c.href = href;
+    }
+    changed = true;
+    from = start + label.length;
+  }
+  if (!changed) return null;
   const runs = charsToRuns(chars).filter((r) => r.t);
   return { text: chars.map((x) => x.ch).join(''), rich: isStyledRuns(runs) ? runs : null };
 }
