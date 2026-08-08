@@ -126,7 +126,7 @@ export function Home() {
           <>
             {view.loading && state.recent.length > 0 && <RecentStripSkeleton count={state.recent.length} />}
             {view.recentSectionVisible && <RecentStrip cards={view.recentCards} controller={controller} />}
-            <Toolbar state={state} view={view} controller={controller} isMobile={isMobile} onOpenNav={() => setNavOpen(true)} />
+            <Toolbar state={state} view={view} controller={controller} isMobile={isMobile} />
             <MapGrid view={view} controller={controller} />
           </>
         )}

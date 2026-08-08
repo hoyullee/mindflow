@@ -6,11 +6,9 @@ interface Props {
   state: HomeState;
   view: HomeViewModel;
   controller: HomeController;
-  /** M6: mobile renders a hamburger button (opens the `Sidebar` drawer via
-   * `onOpenNav`) and lets the trailing action cluster wrap to a second line
-   * instead of relying on a single non-wrapping row. */
+  /** M6: 모바일은 액션들을 아이콘 전용 44px 버튼으로 접어 한 줄에 담는다.
+   * (☰는 최상단 검색 줄(`SearchBar`)로 옮겨 갔다 — 앱 바가 거기다.) */
   isMobile?: boolean;
-  onOpenNav?: () => void;
 }
 
 /** Upload-arrow glyph shared by the labeled (desktop) and icon-only (mobile)
@@ -91,7 +89,7 @@ function BreadcrumbTitle({ parent, leaf, full }: { parent: string | null; leaf: 
 }
 
 /** Home.dc.html:191-207 — the "모두" toolbar above the map grid. */
-export function Toolbar({ state, view, controller, isMobile = false, onOpenNav }: Props) {
+export function Toolbar({ state, view, controller, isMobile = false }: Props) {
   return (
     <div style={{ display: 'flex', alignItems: 'center', marginBottom: 18, gap: 12, flexWrap: 'wrap' }}>
       {/* ≡ · ← · 제목은 한 덩어리다. 따로 두면 제목이 길 때 flex-wrap이 제목 항목을
