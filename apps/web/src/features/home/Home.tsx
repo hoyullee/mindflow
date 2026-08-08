@@ -17,6 +17,7 @@ import { DeleteAccountModal } from './components/modals/DeleteAccountModal';
 import { FeedbackModal } from '../../components/FeedbackModal';
 import { ShareModal } from '../../components/ShareModal';
 import { ProfileNameModal } from './components/modals/ProfileNameModal';
+import { TemplateGallery } from './components/modals/TemplateGallery';
 import { useHomeController } from './useHomeController';
 import { deriveHomeView } from './viewModel';
 import { homeModalTheme } from './theme';
@@ -129,6 +130,7 @@ export function Home() {
       {/* 공유 — 카드 메뉴에서 연다(요청). 에디터와 **같은 모달**이고 색만 홈 테마다.
           그리드의 카드는 언제나 내 맵이라 보기 전용이 아니다(공유받은 맵은 LNB에만). */}
       <ShareModal open={!!state.shareDocId} docId={state.shareDocId ?? ''} onClose={controller.closeShare} theme={modalTheme} />
+      <TemplateGallery state={state} controller={controller} />
       <Modals state={state} controller={controller} />
       <NewSpaceModal state={state} controller={controller} />
       <FolderModal state={state} controller={controller} />

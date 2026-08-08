@@ -159,6 +159,9 @@ export interface HomeState {
   accountSettingsOpen: boolean;
   /** 피드백 보내기 모달(LNB 최하단에서 연다). */
   feedbackOpen: boolean;
+  /** 템플릿 갤러리 — "새로 만들기"의 세 진입점(툴바·빈 자리 우클릭·빈 상태 CTA)이
+   * 전부 이걸 연다. 빈 맵도 갤러리의 첫 칸이다. */
+  templateOpen: boolean;
   /** 홈 색상 테마(LNB 최하단에서 고른다). 정본은 워크스페이스 블롭이라 기기 간에
    * 따라오고, 첫 페인트용 캐시는 `theme.ts`의 localStorage에 둔다. */
   theme: HomeThemeKey;
@@ -295,6 +298,7 @@ export function initialHomeState(): HomeState {
     confirmLogout: false,
     accountSettingsOpen: false,
     feedbackOpen: false,
+    templateOpen: false,
     // 이 기기의 마지막 선택으로 시작한다 — 워크스페이스(정본)가 도착하면 그 값으로
     // 맞춘다. 부팅 때 이미 같은 캐시로 CSS 변수를 입혀 뒀으므로 첫 페인트와 일치한다.
     theme: loadHomeThemeCache(),

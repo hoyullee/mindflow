@@ -2,6 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { MemoryRouter, Route, Routes } from 'react-router-dom';
+import { MAP_TEMPLATES } from '../../templates/mapTemplates';
 import { Home } from './Home';
 import { mockMatchMedia } from '../../test/matchMedia';
 import { BackendProvider } from '../../adapters/BackendContext';
@@ -83,6 +84,22 @@ function renderHomeWithDocStore(metas: DocMeta[] = [], bodies: Record<string, Lo
     </MemoryRouter>,
   );
   return { ...utils, docStore };
+}
+
+/**
+ * "새로 만들기"는 이제 **템플릿 갤러리**를 연다 — 빈 맵 칸까지 눌러야 예전과 같은
+ * 결과(로더 → 카드 등록 → /editor)가 된다. 세 진입점(툴바·빈 상태 CTA·빈 자리
+ * 우클릭)이 전부 같은 갤러리를 열므로 여는 버튼은 인자로 받는다.
+ */
+async function createBlankMap(user: ReturnType<typeof userEvent.setup>, opener?: HTMLElement) {
+  await user.click(opener ?? screen.getAllByText('＋ 새로 만들기')[0]!);
+  await user.click(await screen.findByRole('button', { name: /빈 맵/ }));
+}
+
+/** 워크스페이스 블롭에 등록된 맵 카드 제목들 — 새 맵 생성이 남기는 흔적. */
+function newMapTitles(): string[] {
+  const ws = JSON.parse(localStorage.getItem('mf_spaces') || '{}') as { spaces?: { maps?: { title: string }[] }[] };
+  return (ws.spaces ?? []).flatMap((sp) => (sp.maps ?? []).map((m) => m.title));
 }
 
 describe('Home', () => {
@@ -179,7 +196,7 @@ describe('Home', () => {
     const user = userEvent.setup();
     renderHome();
 
-    await user.click(screen.getAllByText('＋ 새로 만들기')[0]!);
+    await createBlankMap(user);
 
     expect(screen.getByText('새 마인드맵을 준비하고 있어요')).toBeTruthy();
     await waitFor(() => expect(screen.getByText('EDITOR_PLACEHOLDER')).toBeTruthy(), { timeout: 2000 });
@@ -546,7 +563,7 @@ describe('Home', () => {
     await waitFor(() => expect(screen.getByText('이 폴더는 비어 있어요')).toBeTruthy());
 
     // create a new map from inside the folder (toolbar CTA)
-    await user.click(screen.getAllByText('＋ 새로 만들기')[0]!);
+    await createBlankMap(user);
 
     // the folder view only renders cards filed to THIS folder, so the new map
     // appearing here proves it was filed into the folder (not the space top level).
@@ -1120,7 +1137,7 @@ describe('Home', () => {
     await user.click(screen.getByText('작업 공간'));
 
     // create a new map from the toolbar CTA
-    await user.click(screen.getAllByText('＋ 새로 만들기')[0]!);
+    await createBlankMap(user);
 
     // the new map's card is registered under "작업 공간", not "일반 공간".
     // 카드 등록은 로더가 페인트된 뒤(더블 rAF)로 미뤄지므로 waitFor로 기다린다
@@ -1143,7 +1160,7 @@ describe('Home', () => {
     const cardCount = () => screen.queryAllByText('새 마인드맵').length;
     const before = cardCount();
 
-    await user.click(screen.getAllByText('＋ 새로 만들기')[0]!);
+    await createBlankMap(user);
 
     // 클릭 직후: 로더는 이미 떠 있고, 새 카드는 아직 추가되지 않았다
     expect(screen.getByText('새 마인드맵을 준비하고 있어요')).toBeTruthy();
@@ -1381,9 +1398,11 @@ describe('Home', () => {
       { id: 'doc-n2', title: '새 마인드맵', version: 1, updatedAt: '2026-01-01T00:00:00.000Z', isFavorite: false, deletedAt: '2026-01-02T00:00:00.000Z' },
     ]);
     await waitFor(() => expect(container.querySelector('.mf-map-grid a[data-title="새 마인드맵"]')).toBeTruthy());
-    const newLink = Array.from(container.querySelectorAll('a')).find((a) => (a.textContent || '').includes('＋ 새로 만들기')) as HTMLAnchorElement;
-    const title = decodeURIComponent(new URLSearchParams(newLink.getAttribute('href')!.split('?')[1]!).get('title')!);
-    expect(title).toBe('새 마인드맵'); // not 새 마인드맵_1
+    // 갤러리의 "빈 맵"으로 만든 새 맵의 제목을 등록된 카드에서 확인한다
+    // (예전엔 툴바 링크의 href에서 읽었다 — 이제 버튼이라 href가 없다).
+    await createBlankMap(userEvent.setup());
+    await waitFor(() => expect(newMapTitles()).toContain('새 마인드맵'));
+    expect(newMapTitles().some((t) => /_\d+$/.test(t))).toBe(false); // not 새 마인드맵_1
   });
 
   it('same-titled cards in one space keep independent selection and ☰ menus (key-scoped UI state)', async () => {
@@ -1658,7 +1677,7 @@ describe('Home', () => {
       // 위 테스트가 만드는 것과 같은 내용의 개요
       const md = ['# 개요 맵', '  > 루트 노트', '- 가지', '', '## 메모', '- 메모 하나'].join('\n');
       const { container } = renderHomeWithDocStore([]);
-      await waitFor(() => expect(screen.getByRole('link', { name: /새로 만들기/ })).toBeTruthy());
+      await waitFor(() => expect(screen.getByRole('button', { name: /새로 만들기/ })).toBeTruthy());
 
       const input = container.querySelector('input[type="file"]') as HTMLInputElement;
       await user.upload(input, new File([md], '개요 맵.md', { type: 'text/markdown' }));
@@ -1989,7 +2008,7 @@ describe('Home', () => {
         await waitFor(() => expect(screen.getByRole('button', { name: '가져오기' })).toBeTruthy());
         const importBtn = screen.getByRole('button', { name: '가져오기' });
         const folderBtn = screen.getByRole('button', { name: '새 폴더' });
-        const newBtn = screen.getByRole('link', { name: '새로 만들기' });
+        const newBtn = screen.getByRole('button', { name: '새로 만들기' });
         // icon-only: the visible label text is gone…
         expect(importBtn.textContent).toBe('');
         expect(folderBtn.textContent).toBe('');
@@ -2475,10 +2494,10 @@ describe('Home', () => {
         { id: 'other', title: '기획 회의', version: 1, updatedAt: '2026-01-01T00:00:00.000Z', isFavorite: false, deletedAt: null },
       ]);
       await waitFor(() => expect(container.querySelector('a[data-title="기획 회의"]')).toBeTruthy());
-      const newLink = Array.from(container.querySelectorAll('a')).find((a) => (a.textContent || '').includes('＋ 새로 만들기')) as HTMLAnchorElement;
-      const href = newLink.getAttribute('href') || '';
-      // No collision → the title param is either absent or the plain default.
-      expect(href).not.toContain('_1');
+      await createBlankMap(userEvent.setup());
+      // No collision → the registered card carries the plain default title.
+      await waitFor(() => expect(newMapTitles()).toContain('새 마인드맵'));
+      expect(newMapTitles().some((t) => /_\d+$/.test(t))).toBe(false);
     });
 
     it('shows a loading skeleton (not the empty state) while DocStore.list() is pending', async () => {
@@ -2905,6 +2924,67 @@ describe('홈 우클릭 메뉴', () => {
     // 실제로 동작한다 — "새 폴더"는 폴더 만들기 팝업을 연다.
     await user.click(within(menu).getByRole('menuitem', { name: '새 폴더' }));
     expect(screen.getByText('새 폴더 만들기')).toBeTruthy();
+  });
+
+  describe('템플릿 갤러리', () => {
+    it('"새로 만들기"가 갤러리를 연다 — 첫 칸이 빈 맵, 그 뒤로 템플릿들', async () => {
+      const user = userEvent.setup();
+      renderHomeWithDocStore([]);
+      await waitFor(() => expect(screen.getAllByText('＋ 새로 만들기')[0]).toBeTruthy());
+
+      await user.click(screen.getAllByText('＋ 새로 만들기')[0]!);
+
+      const dialog = await screen.findByRole('dialog', { name: '새 맵 만들기' });
+      const cards = within(dialog).getAllByRole('button').filter((b) => b.hasAttribute('data-template'));
+      expect(cards[0]?.getAttribute('data-template')).toBe('blank');
+      expect(cards.map((c) => c.getAttribute('data-template'))).toEqual(
+        expect.arrayContaining(['blank', ...MAP_TEMPLATES.map((t) => t.id)]),
+      );
+      // 썸네일은 홈 카드와 같은 렌더러 — 템플릿 칸마다 실제 미리보기 SVG가 있다
+      const meeting = cards.find((c) => c.getAttribute('data-template') === 'meeting') as HTMLElement;
+      expect(meeting.querySelector('svg[viewBox]')).toBeTruthy();
+    });
+
+    it('템플릿을 고르면 그 이름으로 맵이 만들어지고 에디터로 넘어간다', async () => {
+      const user = userEvent.setup();
+      renderHomeWithDocStore([]);
+      await waitFor(() => expect(screen.getAllByText('＋ 새로 만들기')[0]).toBeTruthy());
+
+      await user.click(screen.getAllByText('＋ 새로 만들기')[0]!);
+      await user.click(await screen.findByRole('button', { name: /회의록/ }));
+
+      expect(screen.getByText('새 마인드맵을 준비하고 있어요')).toBeTruthy();
+      await waitFor(() => expect(newMapTitles()).toContain('회의록'));
+      await waitFor(() => expect(screen.getByText('EDITOR_PLACEHOLDER')).toBeTruthy(), { timeout: 2000 });
+    });
+
+    it('Escape로 닫으면 아무 맵도 만들어지지 않는다', async () => {
+      const user = userEvent.setup();
+      renderHomeWithDocStore([]);
+      await waitFor(() => expect(screen.getAllByText('＋ 새로 만들기')[0]).toBeTruthy());
+
+      await user.click(screen.getAllByText('＋ 새로 만들기')[0]!);
+      await screen.findByRole('dialog', { name: '새 맵 만들기' });
+      await user.keyboard('{Escape}');
+
+      await waitFor(() => expect(screen.queryByRole('dialog', { name: '새 맵 만들기' })).toBeNull());
+      expect(newMapTitles()).toEqual([]);
+      expect(screen.queryByText('EDITOR_PLACEHOLDER')).toBeNull();
+    });
+
+    it('빈 자리 우클릭의 "새로 만들기"도 같은 갤러리를 연다 (진입점이 갈리지 않는다)', async () => {
+      const user = userEvent.setup();
+      const { container } = renderHomeWithDocStore([]);
+      await waitFor(() => expect(screen.getByText('아직 만든 맵이 없어요')).toBeTruthy());
+
+      fireEvent.contextMenu(container.querySelector('main') as HTMLElement, { clientX: 500, clientY: 300 });
+      const menu = await screen.findByRole('menu');
+      await user.click(within(menu).getByRole('menuitem', { name: '새로 만들기' }));
+
+      expect(await screen.findByRole('dialog', { name: '새 맵 만들기' })).toBeTruthy();
+      // 메뉴는 닫힌다 — 메뉴가 갤러리 위에 남아 있으면 안 된다
+      expect(screen.queryByRole('menu')).toBeNull();
+    });
   });
 
   it('좁은 화면에서는 하위 메뉴가 옆이 아니라 부모 아래로 펼쳐진다 (화면 밖으로 안 나가게)', async () => {

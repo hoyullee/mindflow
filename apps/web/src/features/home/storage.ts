@@ -807,8 +807,11 @@ export function newDocId(): string {
   return `new-${Date.now().toString(36)}${Math.floor(Math.random() * 1000)}`;
 }
 
-export function newMapHref(title?: string): string {
+/** `templateId`가 있으면 에디터가 그 템플릿 문서를 씨앗으로 연다
+ * (`buildTemplateDoc`). 저장·카드 등록 등 나머지 경로는 빈 맵과 완전히 같다. */
+export function newMapHref(title?: string, templateId?: string): string {
   const base = `/editor?map=${newDocId()}&new=1`;
   const t = (title || '').trim();
-  return t ? `${base}&title=${encodeURIComponent(t)}` : base;
+  const withTitle = t ? `${base}&title=${encodeURIComponent(t)}` : base;
+  return templateId ? `${withTitle}&tpl=${encodeURIComponent(templateId)}` : withTitle;
 }

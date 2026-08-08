@@ -103,17 +103,14 @@ export function MapGrid({ view, controller }: Props) {
             첫 마인드맵을 만들어 생각을 정리해 보세요.
             <br /> 중심 주제에서 아이디어를 자유롭게 펼칠 수 있어요.
           </div>
-          <a
-            href={controller.newMapHref()}
-            onClick={(e) => {
-              e.preventDefault();
-              controller.onNewMapClick(e.currentTarget.getAttribute('href') || controller.newMapHref());
-            }}
+          <button
+            type="button"
+            onClick={controller.openTemplates}
             className="btn"
-            style={{ height: 52, padding: '0 30px', borderRadius: 14, background: 'var(--mf-accent)', color: 'var(--mf-accent-ink)', fontFamily: 'inherit', fontSize: 16, fontWeight: 700, cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 9, boxShadow: '0 8px 22px rgba(var(--mf-accent-rgb),.32)' }}
+            style={{ height: 52, padding: '0 30px', border: 'none', borderRadius: 14, background: 'var(--mf-accent)', color: 'var(--mf-accent-ink)', fontFamily: 'inherit', fontSize: 16, fontWeight: 700, cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 9, boxShadow: '0 8px 22px rgba(var(--mf-accent-rgb),.32)' }}
           >
             ＋ 새로 만들기
-          </a>
+          </button>
         </div>
       )}
 
