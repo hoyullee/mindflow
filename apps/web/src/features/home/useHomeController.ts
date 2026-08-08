@@ -8,6 +8,7 @@ import { exportDocPng } from '../editor/png';
 import { themeOf } from '../editor/theme';
 import { applyHomeTheme, homeThemeKeyOf, saveHomeThemeCache, type HomeThemeKey } from './theme';
 import { useBackend } from '../../adapters/BackendContext';
+import { findTemplate } from '../../templates/mapTemplates';
 import {
   DRIVE_FILES,
   initialHomeState,
@@ -1028,6 +1029,24 @@ export function useHomeController() {
     }
   };
 
+  // ---- 템플릿 갤러리 ----
+  /** "새로 만들기"의 모든 진입점이 여기로 온다 — 빈 맵도 갤러리의 첫 칸이라,
+   * 만드는 길이 하나뿐이고 어디서 시작하든 같은 선택지를 본다. */
+  const openTemplates = () => patch({ templateOpen: true, ctxMenu: null });
+  const closeTemplates = () => patch({ templateOpen: false });
+  /**
+   * 갤러리에서 고른 것으로 새 맵을 만든다. `templateId`가 없으면 예전 그대로 빈 맵.
+   *
+   * 이후 경로(로더 → 카드 등록 → 이동)는 `onNewMapClick` 하나를 그대로 쓴다 —
+   * 템플릿이 바꾸는 것은 **주소에 실리는 씨앗 id뿐**이고, 문서를 만드는 것은
+   * 에디터다(`buildTemplateDoc`). 홈이 문서를 조립해 저장하면 저장 경로가 둘이 된다.
+   */
+  const createFromTemplate = (templateId?: string) => {
+    const tpl = findTemplate(templateId);
+    patch({ templateOpen: false });
+    onNewMapClick(buildNewMapHref(tpl ? tpl.name : '새 마인드맵', tpl?.id));
+  };
+
   // ---- import / export ----
   const setImportRef = (el: HTMLInputElement | null) => {
     importInputRef.current = el;
@@ -1638,6 +1657,9 @@ export function useHomeController() {
     recordRecent,
     mapHref,
     newMapHref,
+    openTemplates,
+    closeTemplates,
+    createFromTemplate,
     openWithLoader,
     openSharedMap,
     onNewMapClick,

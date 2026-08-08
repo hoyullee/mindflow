@@ -20,6 +20,7 @@ import { inlineImagesForExport } from './imageExport';
 import { useImageUrls, type ImageUrlMap } from './useImageUrls';
 import { hasPendingDoc, hasStoredDoc, loadOrSeedDoc, markDocPending, saveDoc } from './storage';
 import { newDocId, pushRecentEntry, rebindMovedDoc } from '../home/storage';
+import { buildTemplateDoc } from '../../templates/mapTemplates';
 import type { SpaceData } from '../home/types';
 import { isPanButton } from './pointerButtons';
 import { buildVisible, descendants, outlineRows } from './tree';
@@ -666,7 +667,9 @@ export function useEditorState(): EditorController {
    * `mapHref`에는 없다). "행이 없다"를 새 맵과 **본문이 다른 기기에 있는 기존 맵**으로
    * 가르는 유일한 근거다(아래 `bodyMissing` 참고). */
   const isNewMapParam = params.get('new') === '1';
-  const [doc, setDoc] = useState<Doc>(() => loadOrSeedDoc(mapId, titleParam));
+  /** 템플릿에서 만든 새 맵(`tpl=<id>`) — 빈 루트 대신 그 템플릿 문서로 시작한다.
+   * 모르는 id면 `buildTemplateDoc`이 null이라 평범한 새 맵으로 떨어진다. */
+  const [doc, setDoc] = useState<Doc>(() => loadOrSeedDoc(mapId, titleParam, buildTemplateDoc(params.get('tpl'))));
   /** 본문의 이미지 참조 → 표시용 URL(별도 저장소). 옛 문서의 데이터 URL은 참조가
    * 아니므로 여기 들어오지 않고 값 그대로 그려진다(`displaySrc`). */
   const imageUrls = useImageUrls(doc, imageStore);

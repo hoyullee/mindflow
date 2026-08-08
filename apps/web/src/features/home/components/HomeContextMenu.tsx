@@ -470,7 +470,7 @@ function spaceItems(space: SpaceData, state: HomeState, controller: HomeControll
  */
 function bgItems(controller: HomeController): HomeMenuItem[] {
   return [
-    { key: 'new-map', icon: PlusIcon, label: '새로 만들기', onSelect: () => controller.onNewMapClick(controller.newMapHref()) },
+    { key: 'new-map', icon: PlusIcon, label: '새로 만들기', onSelect: controller.openTemplates },
     { key: 'new-folder', icon: FolderPlusIcon, label: '새 폴더', onSelect: controller.openNewFolder },
     { key: 'import', icon: UploadIcon, label: '가져오기', onSelect: controller.openImport },
     { key: 'sep-1', label: '' },

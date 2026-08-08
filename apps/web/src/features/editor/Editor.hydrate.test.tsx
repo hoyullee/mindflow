@@ -222,6 +222,45 @@ describe('Editor initial hydration', () => {
     });
   });
 
+  describe('템플릿에서 만든 새 맵 (tpl=)', () => {
+    it('빈 루트 대신 그 템플릿 문서로 열리고, 그대로 저장된다', async () => {
+      localStorage.clear();
+      const { backend, save } = makeBackend(vi.fn(async () => null), 'supabase');
+      const { container } = renderEditor(backend, '/editor?map=new-tpl1&new=1&tpl=meeting&title=회의록');
+
+      await waitFor(() => expect(save).toHaveBeenCalledTimes(1));
+      const texts = Array.from(container.querySelectorAll('[data-node-id]')).map((el) => el.textContent || '');
+      expect(texts.some((t) => t.includes('회의록'))).toBe(true);
+      expect(texts.some((t) => t.includes('안건'))).toBe(true);
+      // 저장된 본문도 템플릿 트리다(씨앗 한 개짜리 빈 맵이 아니다)
+      const call = save.mock.calls[0] as unknown as [string, { nodes: Record<string, unknown> }];
+      expect(Object.keys(call[1].nodes).length).toBeGreaterThan(3);
+    });
+
+    it('모르는 tpl 값은 평범한 빈 맵으로 떨어진다', async () => {
+      localStorage.clear();
+      const { backend, save } = makeBackend(vi.fn(async () => null), 'supabase');
+      renderEditor(backend, '/editor?map=new-tpl2&new=1&tpl=없는템플릿&title=새 마인드맵');
+
+      await waitFor(() => expect(save).toHaveBeenCalledTimes(1));
+      const call = save.mock.calls[0] as unknown as [string, { nodes: Record<string, { text: string }> }];
+      expect(Object.keys(call[1].nodes)).toEqual(['root']);
+      expect(call[1].nodes.root?.text).toBe('새 마인드맵');
+    });
+
+    it('저장된 본문이 있으면 템플릿을 무시한다 — 같은 주소를 다시 열어도 쓴 내용이 남는다', async () => {
+      localStorage.clear();
+      localStorage.setItem('mindflow_doc_new-tpl3', JSON.stringify(REAL_DOC));
+      const { backend } = makeBackend(vi.fn(async () => null), 'supabase');
+      const { container } = renderEditor(backend, '/editor?map=new-tpl3&new=1&tpl=meeting&title=회의록');
+
+      await waitFor(() => expect(container.querySelectorAll('[data-node-id]').length).toBeGreaterThan(0));
+      const texts = Array.from(container.querySelectorAll('[data-node-id]')).map((el) => el.textContent || '');
+      expect(texts.some((t) => t.includes('실제 루트'))).toBe(true);
+      expect(texts.some((t) => t.includes('안건'))).toBe(false);
+    });
+  });
+
   it('after an async load adopts the real doc, Undo rebases onto it and never reverts to the empty seed', async () => {
     localStorage.clear();
     let resolveLoad!: (v: LoadedDoc | null) => void;

@@ -1,4 +1,3 @@
-import type { MouseEvent } from 'react';
 import type { HomeController } from '../useHomeController';
 import type { HomeState } from '../types';
 import type { HomeViewModel } from '../viewModel';
@@ -94,13 +93,6 @@ function BreadcrumbTitle({ parent, leaf, full }: { parent: string | null; leaf: 
 
 /** Home.dc.html:191-207 — the "모두" toolbar above the map grid. */
 export function Toolbar({ state, view, controller, isMobile = false, onOpenNav }: Props) {
-  const newHref = controller.newMapHref();
-
-  const onNewMapClick = (e: MouseEvent<HTMLAnchorElement>) => {
-    e.preventDefault();
-    controller.onNewMapClick(e.currentTarget.getAttribute('href') || newHref);
-  };
-
   return (
     <div style={{ display: 'flex', alignItems: 'center', marginBottom: 18, gap: 12, flexWrap: 'wrap' }}>
       {/* ≡ · ← · 제목은 한 덩어리다. 따로 두면 제목이 길 때 flex-wrap이 제목 항목을
@@ -224,13 +216,15 @@ export function Toolbar({ state, view, controller, isMobile = false, onOpenNav }
               <NewFolderGlyph />
             </button>
           )}
-          <a
-            href={newHref}
-            onClick={onNewMapClick}
+          {/* 링크가 아니라 버튼이다 — 누르면 템플릿 갤러리가 열리고, 어떤 맵을 만들지는
+              거기서 정해진다(주소를 미리 알 수 없다). */}
+          <button
+            type="button"
+            onClick={controller.openTemplates}
             className="btn"
             aria-label={isMobile ? '새로 만들기' : undefined}
             title={isMobile ? '새로 만들기' : undefined}
-            style={{ height: isMobile ? 44 : 38, width: isMobile ? 44 : undefined, justifyContent: 'center', padding: isMobile ? 0 : '0 16px', borderRadius: 10, background: 'var(--mf-text)', color: 'var(--mf-accent-ink)', fontFamily: 'inherit', fontSize: 13, fontWeight: 600, cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 6, whiteSpace: 'nowrap', flexShrink: 0 }}
+            style={{ height: isMobile ? 44 : 38, width: isMobile ? 44 : undefined, justifyContent: 'center', padding: isMobile ? 0 : '0 16px', border: 'none', borderRadius: 10, background: 'var(--mf-text)', color: 'var(--mf-accent-ink)', fontFamily: 'inherit', fontSize: 13, fontWeight: 600, cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 6, whiteSpace: 'nowrap', flexShrink: 0 }}
           >
             {isMobile ? (
               // Icon-only primary: the dark pill + plus reads as "create" without
@@ -242,7 +236,7 @@ export function Toolbar({ state, view, controller, isMobile = false, onOpenNav }
             ) : (
               '＋ 새로 만들기'
             )}
-          </a>
+          </button>
         </div>
       </div>
     </div>

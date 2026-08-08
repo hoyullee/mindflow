@@ -57,8 +57,12 @@ export function hasStoredDoc(mapId: string | null): boolean {
   return !!readRaw(docStorageKey(mapId));
 }
 
-/** Loads the saved doc for `mapId`, or seeds a fresh one titled `title`. */
-export function loadOrSeedDoc(mapId: string | null, title: string): Doc {
+/** Loads the saved doc for `mapId`, or seeds a fresh one titled `title`.
+ *
+ * `seed`는 템플릿에서 만들어진 새 맵의 시작 문서다(`buildTemplateDoc`). 저장된
+ * 본문이 있으면 **언제나 그쪽이 이긴다** — 템플릿은 첫 씨앗일 뿐이고, 같은 주소를
+ * 다시 열었을 때 사용자가 쓴 내용을 덮어써서는 안 된다. */
+export function loadOrSeedDoc(mapId: string | null, title: string, seed?: Doc | null): Doc {
   const raw = readRaw(docStorageKey(mapId));
   if (raw) {
     try {
@@ -68,7 +72,7 @@ export function loadOrSeedDoc(mapId: string | null, title: string): Doc {
       // malformed localStorage entry — fall through to a fresh seed
     }
   }
-  return seedDoc(title);
+  return seed ?? seedDoc(title);
 }
 
 /** Persists the doc (best-effort; storage may be unavailable in private mode). */
