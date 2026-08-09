@@ -173,6 +173,20 @@ describe('주제 댓글', () => {
     expect(mark.textContent).toBe('@friend');
   });
 
+  it('멘션 후보에 나 자신은 없다 — 멘션은 남을 부르는 도구다(제보)', async () => {
+    localStorage.setItem('mindflow_doc_cm10', JSON.stringify(DOC));
+    localStorage.setItem('mf_doc_shares', JSON.stringify([{ documentId: 'cm10', email: 'friend@example.com', role: 'edit', createdAt: '2026-01-01T00:00:00.000Z' }]));
+    renderEditor('/editor?map=cm10&title=x');
+    const panel = await openCommentsViaMenu();
+
+    const box = within(panel).getByLabelText('댓글 입력') as HTMLTextAreaElement;
+    // 질의 없는 맨 '@' — 전체 후보가 나온다. 참가자는 소유자(나=me@example.com)와
+    // 초대(friend) 둘인데, 나는 걸러져 friend만 남아야 한다.
+    fireEvent.change(box, { target: { value: '@', selectionStart: 1 } });
+    await within(panel).findByText('friend@example.com');
+    expect(within(panel).queryByText(MY_EMAIL)).toBeNull();
+  });
+
   it('실시간: 다른 곳(다른 탭)의 댓글이 신호를 타고 즉시 나타난다 — 공유된 문서', async () => {
     localStorage.setItem('mindflow_doc_cm8', JSON.stringify(DOC));
     // 실시간 구독은 공유된 문서에서만(혼자 쓰는 문서에는 신호를 보낼 상대가 없다).
