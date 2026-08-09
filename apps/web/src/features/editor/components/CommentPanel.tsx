@@ -18,6 +18,7 @@ import { CommentIcon } from './ToolbarMenus';
 import { formatFullDateTime, formatLastEdited } from '../../home/timeFormat';
 import { useIsMobile } from '../../../hooks/useMediaQuery';
 import { useShareStore } from '../../../adapters/BackendContext';
+import { useAuthUser } from '../../../adapters/useAuthUser';
 
 interface Thread {
   root: DocComment;
@@ -43,16 +44,19 @@ export function CommentPanel({ controller }: { controller: EditorController }) {
   }, [nodeId]);
 
   // 멘션 후보는 패널이 열릴 때 한 번 — 참가자 목록은 세션 중 거의 바뀌지 않는다.
+  // **나 자신은 뺀다**(제보: "멘션에 나도 보여서 이상하다") — 멘션은 남을 부르는
+  // 도구고, 알림 트리거(0022)도 자기 멘션은 알리지 않으므로 골라 봐야 아무 일도 없다.
+  const myEmail = (useAuthUser()?.email ?? '').trim().toLowerCase();
   useEffect(() => {
     if (!open) return;
     let alive = true;
     void shareStore.listParticipants(controller.docId).then((rows) => {
-      if (alive && rows) setParticipants(rows);
+      if (alive && rows) setParticipants(rows.filter((p) => p.email.trim().toLowerCase() !== myEmail));
     });
     return () => {
       alive = false;
     };
-  }, [open, controller.docId, shareStore]);
+  }, [open, controller.docId, shareStore, myEmail]);
 
   if (!open) return null;
 
