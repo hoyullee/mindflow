@@ -468,6 +468,41 @@ export interface CommentStore {
   subscribe(documentId: string, onChange: () => void): () => void;
 }
 
+// ── Notifications ──────────────────────────────────────────────────────────
+
+export type NotificationKind = 'mention' | 'reply' | 'comment' | 'share';
+
+export interface AppNotification {
+  id: string;
+  kind: NotificationKind;
+  documentId: string | null;
+  /** 댓글류 알림의 대상 주제 — 에디터 딥링크(`?comments=<nodeId>`)가 쓴다. */
+  nodeId: string | null;
+  /** 행위자(댓글 작성자·초대한 사람) 이름 스냅샷. */
+  actorName: string;
+  /** 댓글 본문 일부(댓글류) — 공유 초대는 빈 문자열. */
+  preview: string;
+  /** 알림 시점의 맵 제목 스냅샷. */
+  docTitle: string;
+  createdAt: string;
+  read: boolean;
+}
+
+/**
+ * 알림 우편함(0022) — 홈의 알림 센터가 읽는다.
+ *
+ * **알림은 클라이언트가 만들지 않는다**: Supabase는 DB 트리거(댓글 insert →
+ * 멘션/답글/새 스레드, 공유 insert → 초대)가 넣고, 로컬/데모는 "서버 역할"인
+ * 로컬 어댑터들이 같은 시점에 넣는다(`localNotifications.ts`). 클라이언트
+ * insert를 열면 아무나 남의 우편함에 가짜 알림을 꽂을 수 있다.
+ */
+export interface NotificationStore {
+  /** 내 알림(최신 순, 상한 50). 읽을 수 없으면(테이블 미적용 등) 빈 배열. */
+  list(): Promise<AppNotification[]>;
+  /** 전부 읽음 처리 — 알림 센터를 **열었을 때** 부른다(0019 공유 배지와 같은 규칙). */
+  markAllRead(): Promise<{ error?: string }>;
+}
+
 // ── Images ─────────────────────────────────────────────────────────────────
 
 /**
@@ -509,6 +544,8 @@ export interface Backend {
   imageStore: ImageStore;
   /** 주제에 붙는 댓글(0020). */
   commentStore: CommentStore;
+  /** 알림 우편함(0022) — 홈 알림 센터. */
+  notificationStore: NotificationStore;
   /** `'local'` = demo/localStorage fallback (no env configured); `'supabase'`
    * = real Postgres + Auth. Used to decide whether auth routes are gated. */
   mode: 'local' | 'supabase';

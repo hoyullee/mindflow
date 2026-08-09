@@ -24,6 +24,7 @@ import { LocalSpaceStore } from '../../adapters/local/localSpaceStore';
 import { LocalShareStore } from '../../adapters/local/localShareStore';
 import { LocalFeedbackStore } from '../../adapters/local/localFeedbackStore';
 import { LocalCommentStore } from '../../adapters/local/localCommentStore';
+import { LocalNotificationStore } from '../../adapters/local/localNotificationStore';
 import { LocalImageStore } from '../../adapters/local/localImageStore';
 import type { Backend, DocStore, SaveResult } from '../../adapters/ports';
 
@@ -56,7 +57,7 @@ function makeBackend(results: SaveResult[] = []) {
     rename: async () => undefined,
     save,
   } as unknown as DocStore;
-  const backend: Backend = { auth: new LocalAuth(), docStore, spaceStore: new LocalSpaceStore(), shareStore: new LocalShareStore(), feedbackStore: new LocalFeedbackStore(), imageStore: new LocalImageStore(), commentStore: new LocalCommentStore(), mode: 'local' };
+  const backend: Backend = { auth: new LocalAuth(), docStore, spaceStore: new LocalSpaceStore(), shareStore: new LocalShareStore(), feedbackStore: new LocalFeedbackStore(), imageStore: new LocalImageStore(), commentStore: new LocalCommentStore(), notificationStore: new LocalNotificationStore(), mode: 'local' };
   return { backend, save };
 }
 

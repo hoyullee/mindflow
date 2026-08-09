@@ -15,6 +15,7 @@ import { LocalSpaceStore } from './local/localSpaceStore';
 import { LocalShareStore } from './local/localShareStore';
 import { LocalFeedbackStore } from './local/localFeedbackStore';
 import { LocalCommentStore } from './local/localCommentStore';
+import { LocalNotificationStore } from './local/localNotificationStore';
 import { LocalImageStore } from './local/localImageStore';
 import { getSupabaseClient } from './supabase/supabaseClient';
 import { SupabaseAuth } from './supabase/supabaseAuth';
@@ -23,6 +24,7 @@ import { SupabaseSpaceStore } from './supabase/supabaseSpaceStore';
 import { SupabaseShareStore } from './supabase/supabaseShareStore';
 import { SupabaseFeedbackStore } from './supabase/supabaseFeedbackStore';
 import { SupabaseCommentStore } from './supabase/supabaseCommentStore';
+import { SupabaseNotificationStore } from './supabase/supabaseNotificationStore';
 import { SupabaseImageStore } from './supabase/supabaseImageStore';
 import { isSupabaseConfigured, readViteEnv, type BackendEnv } from './env';
 
@@ -34,7 +36,7 @@ export function createBackend(envOverride?: BackendEnv): Backend {
   const env = envOverride ?? readViteEnv();
   if (isSupabaseConfigured(env)) {
     const client = getSupabaseClient(env.VITE_SUPABASE_URL!, env.VITE_SUPABASE_ANON_KEY!);
-    return { auth: new SupabaseAuth(client), docStore: new SupabaseDocStore(client), spaceStore: new SupabaseSpaceStore(client), shareStore: new SupabaseShareStore(client), feedbackStore: new SupabaseFeedbackStore(client), imageStore: new SupabaseImageStore(client), commentStore: new SupabaseCommentStore(client), mode: 'supabase' };
+    return { auth: new SupabaseAuth(client), docStore: new SupabaseDocStore(client), spaceStore: new SupabaseSpaceStore(client), shareStore: new SupabaseShareStore(client), feedbackStore: new SupabaseFeedbackStore(client), imageStore: new SupabaseImageStore(client), commentStore: new SupabaseCommentStore(client), notificationStore: new SupabaseNotificationStore(client), mode: 'supabase' };
   }
-  return { auth: new LocalAuth(), docStore: new LocalDocStore(), spaceStore: new LocalSpaceStore(), shareStore: new LocalShareStore(), feedbackStore: new LocalFeedbackStore(), imageStore: new LocalImageStore(), commentStore: new LocalCommentStore(), mode: 'local' };
+  return { auth: new LocalAuth(), docStore: new LocalDocStore(), spaceStore: new LocalSpaceStore(), shareStore: new LocalShareStore(), feedbackStore: new LocalFeedbackStore(), imageStore: new LocalImageStore(), commentStore: new LocalCommentStore(), notificationStore: new LocalNotificationStore(), mode: 'local' };
 }

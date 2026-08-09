@@ -3416,6 +3416,26 @@ export function useEditorState(): EditorController {
     return counts;
   }, [comments]);
 
+  // 알림 딥링크(`?comments=<nodeId>`) — 알림 센터에서 댓글 알림을 누르면 그 주제의
+  // 댓글 패널이 바로 열린다(맵만 열리면 무엇 때문에 왔는지 다시 찾아야 한다).
+  // 본문이 로드된 뒤 한 번만.
+  const commentsParam = params.get('comments');
+  const commentsDeepLinkedRef = useRef(false);
+  useEffect(() => {
+    if (hydrating || !commentsParam || commentsDeepLinkedRef.current) return;
+    commentsDeepLinkedRef.current = true;
+    if (!canCommentRef.current) return;
+    setCommentsNodeId(commentsParam);
+    setCommentsOpen(true);
+    // 대상 주제를 화면 가운데로 — 레이아웃(geom)은 다음 페인트에 나오므로 rAF 뒤에.
+    const center = (): void => {
+      const g = geomRef.current[commentsParam];
+      if (g) panToCanvasPoint(g.x, g.y);
+    };
+    if (typeof requestAnimationFrame === 'function') requestAnimationFrame(() => requestAnimationFrame(center));
+    else center();
+  }, [hydrating, commentsParam]);
+
   const openComments = useCallback(
     (nodeId?: string) => {
       if (nodeId) setCommentsNodeId(nodeId);
