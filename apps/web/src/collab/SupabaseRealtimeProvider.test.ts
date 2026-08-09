@@ -337,6 +337,7 @@ describe('SupabaseRealtimeProvider', () => {
             void args;
             return 'ok';
           }),
+          track: vi.fn(async () => 'ok'),
         };
         const client = { channel: vi.fn(() => channel), removeChannel: vi.fn(), realtime: realtimeMock() } as unknown as import('@supabase/supabase-js').SupabaseClient;
         const provider = new SupabaseRealtimeProvider(client);
@@ -633,6 +634,9 @@ describe('SupabaseRealtimeProvider', () => {
                   for (const h of s.handlers[msg.event] ?? []) h({ payload: msg.payload });
                 }
                 return result;
+              },
+              async track() {
+                return 'ok';
               },
               __retire() {
                 entry.alive = false;
