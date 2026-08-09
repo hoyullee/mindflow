@@ -6,6 +6,9 @@ export default tseslint.config(
     // dc prototype (design reference, do not lint) + build artifacts
     ignores: [
       '**/dist/**',
+      // vite-plugin-pwa의 dev 모드 SW 산출물 — dev 서버를 돌리면 생기는 생성물이라
+      // 소스가 아니다(지우지 않고 lint를 돌리면 no-undef로 가득 찬다).
+      '**/dev-dist/**',
       '**/node_modules/**',
       '**/.turbo/**',
       'vendor/**',
