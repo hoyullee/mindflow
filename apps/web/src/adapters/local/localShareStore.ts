@@ -8,6 +8,7 @@
 
 import type { DocumentShare, ShareParticipant, ShareRole, ShareStore, SharedWithMe } from '../ports';
 import { readSavedProfileName } from '../../features/home/storage';
+import { localDocTitle, pushLocalNotification } from './localNotifications';
 
 const KEY = 'mf_doc_shares';
 const LINK_KEY = 'mf_doc_links';
@@ -95,7 +96,11 @@ export class LocalShareStore implements ShareStore {
     const at = all.findIndex((s) => s.documentId === documentId && s.email === normalized);
     // Supabase 쪽 upsert와 같은 의미 — 이미 있으면 권한만 갱신한다.
     if (at >= 0) all[at] = { ...all[at]!, role };
-    else all.push({ documentId, email: normalized, role, createdAt: new Date().toISOString() });
+    else {
+      all.push({ documentId, email: normalized, role, createdAt: new Date().toISOString() });
+      // 알림 생성 — Supabase의 0022 트리거처럼 **처음 초대에만**(권한 변경 제외).
+      pushLocalNotification({ recipientEmail: normalized, kind: 'share', documentId, nodeId: null, actorName: demoEmail().split('@')[0] ?? '', preview: '', docTitle: localDocTitle(documentId) });
+    }
     writeAll(all);
     return {};
   }

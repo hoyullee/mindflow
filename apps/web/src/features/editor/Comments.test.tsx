@@ -8,6 +8,7 @@ import { LocalSpaceStore } from '../../adapters/local/localSpaceStore';
 import { LocalShareStore } from '../../adapters/local/localShareStore';
 import { LocalFeedbackStore } from '../../adapters/local/localFeedbackStore';
 import { LocalCommentStore } from '../../adapters/local/localCommentStore';
+import { LocalNotificationStore } from '../../adapters/local/localNotificationStore';
 import { LocalImageStore } from '../../adapters/local/localImageStore';
 import { LocalDocStore } from '../../adapters/local/localDocStore';
 import type { Backend, DocStore, ShareStore } from '../../adapters/ports';
@@ -192,6 +193,15 @@ describe('주제 댓글', () => {
 
   // 노드 우클릭 진입점은 좌표 히트테스트가 필요해 ContextMenu.interactions.test.tsx에서 검증.
 
+  it('알림 딥링크(?comments=<nodeId>)로 열면 그 주제의 댓글 패널이 바로 뜬다', async () => {
+    localStorage.setItem('mindflow_doc_cmd1', JSON.stringify(DOC));
+    seedComment('cmd1', 'c1', '딥링크 대상 논의');
+    renderEditor('/editor?map=cmd1&title=x&comments=c1');
+    const panel = await screen.findByLabelText('댓글');
+    expect(within(panel).getByText('자식 주제')).toBeTruthy();
+    await waitFor(() => expect(within(panel).getByText('딥링크 대상 논의')).toBeTruthy());
+  });
+
   it('다른 주제를 고르면 패널이 따라간다 — 어느 주제의 논의인지 흐려지지 않게', async () => {
     localStorage.setItem('mindflow_doc_cm4', JSON.stringify(DOC));
     renderEditor('/editor?map=cm4&title=x');
@@ -231,7 +241,7 @@ describe('링크로 연 맵', () => {
     } as unknown as DocStore;
     // 링크로 들어온 사람에게는 초대 행이 하나도 보이지 않는다(RLS의 결).
     const shareStore = { ...new LocalShareStore(), list: async () => [] } as unknown as ShareStore;
-    return { auth: new LocalAuth(), docStore, spaceStore: new LocalSpaceStore(), shareStore, feedbackStore: new LocalFeedbackStore(), imageStore: new LocalImageStore(), commentStore: new LocalCommentStore(), mode: 'supabase' };
+    return { auth: new LocalAuth(), docStore, spaceStore: new LocalSpaceStore(), shareStore, feedbackStore: new LocalFeedbackStore(), imageStore: new LocalImageStore(), commentStore: new LocalCommentStore(), notificationStore: new LocalNotificationStore(), mode: 'supabase' };
   }
 
   it('보기 메뉴에 댓글 항목이 없고, 남의 댓글 배지도 뜨지 않는다', async () => {

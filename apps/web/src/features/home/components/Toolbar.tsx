@@ -2,6 +2,7 @@ import type { HomeController } from '../useHomeController';
 import type { HomeState } from '../types';
 import type { HomeViewModel } from '../viewModel';
 import { UNREAD_BADGE_BG } from '../theme';
+import { NotificationBell } from './NotificationBell';
 
 interface Props {
   state: HomeState;
@@ -151,8 +152,17 @@ export function Toolbar({ state, view, controller, isMobile = false, onOpenNav }
         ) : (
           <div className="mf-skel" aria-label="스페이스를 불러오는 중" style={{ height: 24, width: 150, borderRadius: 7, margin: '3px 0' }} />
         )}
+        {/* 모바일 알림 센터 — 액션 줄은 이미 꽉 차 있어(검색+아이콘 3개) 제목 줄의
+            오른쪽 끝에 둔다(앱 바 관례). 데스크톱 벨은 아래 액션 묶음에 있다. */}
+        {isMobile && (
+          <div style={{ marginLeft: 'auto' }}>
+            <NotificationBell isMobile />
+          </div>
+        )}
       </div>
       <div style={{ marginLeft: isMobile ? 0 : 'auto', width: isMobile ? '100%' : undefined, order: isMobile ? 3 : undefined, display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
+        {/* 알림 센터(종) — 만들기 동작들과 성격이 달라 묶음의 맨 앞에 떼어 둔다. */}
+        {!isMobile && <NotificationBell />}
         {view.isDriveSpace && view.connected && (
           <div
             onClick={controller.disconnectDrive}

@@ -49,3 +49,7 @@ export function useFeedbackStore() {
 export function useCommentStore() {
   return useBackend().commentStore;
 }
+
+export function useNotificationStore() {
+  return useBackend().notificationStore;
+}

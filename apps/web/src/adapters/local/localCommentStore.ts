@@ -4,6 +4,7 @@
 // 같은 브라우저의 다른 탭이 즉시 다시 읽는다(M5 로컬 전송과 같은 판단).
 
 import type { CommentMention, CommentStore, DocComment } from '../ports';
+import { localDocTitle, pushLocalNotification } from './localNotifications';
 
 const KEY = 'mf_comments';
 /** 이 기기에 쌓아 둘 상한 — 데모라 넉넉하되 무한히 늘지는 않게. */
@@ -103,6 +104,22 @@ export class LocalCommentStore implements CommentStore {
     });
     writeAll(list);
     ping(documentId);
+    // 알림 생성 — Supabase에서는 DB 트리거(0022)가 하는 일. 데모에는 "남"이
+    // 없으므로 이메일이 있는 멘션만 우편함에 넣는다(답글·소유자 알림은 작성자
+    // 이메일을 모른다 — 어차피 한 사람뿐이라 알릴 상대도 없다).
+    const myEmail = (() => {
+      try {
+        const s = JSON.parse(localStorage.getItem('mf_demo_session') || 'null') as { user?: { email?: string | null } } | null;
+        return (s?.user?.email ?? '').trim().toLowerCase();
+      } catch {
+        return '';
+      }
+    })();
+    (opts?.mentions ?? []).forEach((m) => {
+      const to = m.email.trim().toLowerCase();
+      if (!to || to === myEmail) return;
+      pushLocalNotification({ recipientEmail: to, kind: 'mention', documentId, nodeId, actorName: demoName(), preview: text.slice(0, 140), docTitle: localDocTitle(documentId) });
+    });
     return {};
   }
 
