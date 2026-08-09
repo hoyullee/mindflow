@@ -1,71 +1,81 @@
-// 주제(노드)에 붙는 댓글 패널.
+// 주제(노드)에 붙는 댓글 패널 — 스레드(답글)·멘션·해결 표시(0021).
 //
 // 자리: 데스크톱은 **오른쪽**(속성 패널이 왼쪽이라 둘이 함께 떠도 부딪히지 않는다.
 // 위로는 접속자 아바타, 아래로는 미니맵/줌 묶음을 피한다), 모바일은 바텀 시트.
 //
 // 대상은 "지금 고른 주제" 하나다 — 주제를 바꾸면 패널이 따라간다(useEditorState).
 // 문서 전체 댓글은 루트 주제의 댓글로 대신한다(0020의 설계 메모 참고).
+//
+// 스레드 모델: 최상위 댓글이 스레드 뿌리, 답글은 단층(대댓글 없음 — 0021 트리거).
+// 해결 표시는 뿌리에만 있고, 해결된 스레드는 접힌 구획으로 내려간다 — 남은 논의만
+// 눈에 들어오게(배지도 미해결 스레드만 센다).
 
-import { useEffect, useRef, useState, type CSSProperties, type KeyboardEvent } from 'react';
+import { useEffect, useMemo, useRef, useState, type CSSProperties, type KeyboardEvent, type ReactNode } from 'react';
 import type { EditorController } from '../useEditorState';
+import type { CommentMention, DocComment, ShareParticipant } from '../../../adapters/ports';
 import { panelTitleLine } from './panel/panelPrimitives';
 import { CommentIcon } from './ToolbarMenus';
 import { formatFullDateTime, formatLastEdited } from '../../home/timeFormat';
 import { useIsMobile } from '../../../hooks/useMediaQuery';
+import { useShareStore } from '../../../adapters/BackendContext';
+
+interface Thread {
+  root: DocComment;
+  replies: DocComment[];
+}
 
 export function CommentPanel({ controller }: { controller: EditorController }) {
   const th = controller.uiTheme;
   const isMobile = useIsMobile();
-  const [draft, setDraft] = useState('');
-  const [busy, setBusy] = useState(false);
+  const shareStore = useShareStore();
+  const [showResolved, setShowResolved] = useState(false);
+  const [replyTo, setReplyTo] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const boxRef = useRef<HTMLTextAreaElement | null>(null);
+  /** 멘션 자동완성 대상 — 이 문서의 참가자(소유자 + 초대받은 사람). */
+  const [participants, setParticipants] = useState<ShareParticipant[]>([]);
   const nodeId = controller.commentsNodeId;
+  const open = controller.commentsOpen;
 
-  // 대상 주제가 바뀌면 쓰던 글은 그 주제의 것이므로 비운다(엉뚱한 주제에 달리지 않게).
+  // 대상 주제가 바뀌면 열려 있던 답글 입력은 그 주제의 것이므로 접는다.
   useEffect(() => {
-    setDraft('');
+    setReplyTo(null);
     setError(null);
   }, [nodeId]);
 
-  // 열면 바로 쓸 수 있게 — 다만 모바일에서는 포커스가 곧 키보드라, 읽으러 연 사람의
-  // 화면 절반을 빼앗는다. 데스크톱만.
+  // 멘션 후보는 패널이 열릴 때 한 번 — 참가자 목록은 세션 중 거의 바뀌지 않는다.
   useEffect(() => {
-    if (controller.commentsOpen && !isMobile) boxRef.current?.focus();
-  }, [controller.commentsOpen, isMobile]);
+    if (!open) return;
+    let alive = true;
+    void shareStore.listParticipants(controller.docId).then((rows) => {
+      if (alive && rows) setParticipants(rows);
+    });
+    return () => {
+      alive = false;
+    };
+  }, [open, controller.docId, shareStore]);
 
-  if (!controller.commentsOpen) return null;
+  if (!open) return null;
 
   const node = controller.doc.nodes[nodeId];
   // 주제가 지워져도 댓글은 남는다(0020) — 대상이 사라졌음을 그대로 말해 준다.
   const title = node ? panelTitleLine(node.text) : '사라진 주제';
-  const list = controller.comments.filter((c) => c.nodeId === nodeId);
+  const forNode = controller.comments.filter((c) => c.nodeId === nodeId);
+  const threads: Thread[] = forNode
+    .filter((c) => !c.parentId)
+    .map((root) => ({ root, replies: forNode.filter((r) => r.parentId === root.id) }));
+  const unresolved = threads.filter((t) => !t.root.resolved);
+  const resolved = threads.filter((t) => t.root.resolved);
 
-  const submit = async () => {
-    const body = draft.trim();
-    if (!body || busy) return;
-    setBusy(true);
-    const res = await controller.addComment(nodeId, body);
-    setBusy(false);
-    if (res.error) setError(res.error);
-    else {
-      setDraft('');
-      setError(null);
-    }
+  const submitThread = async (body: string, mentions: CommentMention[]) => {
+    const res = await controller.addComment(nodeId, body, mentions.length ? { mentions } : undefined);
+    setError(res.error ?? null);
+    return !res.error;
   };
-
-  const onKeyDown = (e: KeyboardEvent<HTMLTextAreaElement>) => {
-    // Enter는 **줄바꿈**이다 — 소프트 키보드에는 Shift가 없어서 Enter를 등록으로
-    // 쓰면 폰에서 여러 줄을 쓸 방법이 사라진다(#333과 같은 이유). 등록은 버튼과
-    // Ctrl/⌘+Enter.
-    if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) {
-      e.preventDefault();
-      void submit();
-    }
-    if (e.key === 'Escape') {
-      e.preventDefault();
-      controller.closeComments();
-    }
+  const submitReply = async (parentId: string, body: string, mentions: CommentMention[]) => {
+    const res = await controller.addComment(nodeId, body, { parentId, ...(mentions.length ? { mentions } : {}) });
+    setError(res.error ?? null);
+    if (!res.error) setReplyTo(null);
+    return !res.error;
   };
 
   const wrap: CSSProperties = isMobile
@@ -127,35 +137,65 @@ export function CommentPanel({ controller }: { controller: EditorController }) {
         </button>
       </header>
 
-      <div style={{ flex: '1 1 auto', minHeight: 0, overflowY: 'auto', padding: '10px 12px' }} data-comment-list>
-        {controller.commentsLoading && !list.length ? (
-          <div style={{ fontSize: 12, color: th.subtext, padding: '10px 0' }}>불러오는 중…</div>
-        ) : list.length ? (
-          list.map((c) => (
-            <article key={c.id} data-comment-item style={{ padding: '9px 0', borderBottom: `1px solid ${th.border}` }}>
-              <div style={{ display: 'flex', alignItems: 'baseline', gap: 6 }}>
-                <span style={{ fontSize: 12, fontWeight: 700, color: th.text, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{c.authorName || '알 수 없음'}</span>
-                <span title={formatFullDateTime(c.createdAt)} style={{ fontSize: 11, color: th.subtext, flex: '1 1 auto' }}>
-                  {formatLastEdited(c.createdAt)}
-                </span>
-                {c.mine && (
-                  <button
-                    type="button"
-                    className="mf-ed-btn"
-                    aria-label="댓글 삭제"
-                    title="삭제"
-                    onClick={() => void controller.removeComment(c.id)}
-                    style={{ border: 'none', background: 'transparent', color: th.subtext, fontSize: 11, cursor: 'pointer', fontFamily: 'inherit', padding: isMobile ? '8px 6px' : '2px 4px', borderRadius: 6 }}
-                  >
-                    삭제
-                  </button>
-                )}
-              </div>
-              <div style={{ fontSize: 12.5, lineHeight: 1.55, color: th.text, whiteSpace: 'pre-wrap', wordBreak: 'break-word', marginTop: 3 }}>{c.body}</div>
-            </article>
-          ))
+      <div style={{ flex: '1 1 auto', minHeight: 0, overflowY: 'auto', padding: '4px 12px 10px' }} data-comment-list>
+        {controller.commentsLoading && !threads.length ? (
+          <div style={{ fontSize: 12, color: th.subtext, padding: '12px 0' }}>불러오는 중…</div>
+        ) : threads.length ? (
+          <>
+            {unresolved.map((t) => (
+              <ThreadView
+                key={t.root.id}
+                thread={t}
+                controller={controller}
+                isMobile={isMobile}
+                participants={participants}
+                replyOpen={replyTo === t.root.id}
+                onReplyToggle={() => setReplyTo((prev) => (prev === t.root.id ? null : t.root.id))}
+                onReplySubmit={(body, mentions) => submitReply(t.root.id, body, mentions)}
+              />
+            ))}
+            {!unresolved.length && <div style={{ fontSize: 12, color: th.subtext, padding: '12px 0' }}>남은 논의가 없어요 — 모두 해결됐어요.</div>}
+            {resolved.length > 0 && (
+              <>
+                <button
+                  type="button"
+                  data-resolved-toggle
+                  onClick={() => setShowResolved((v) => !v)}
+                  style={{
+                    display: 'block',
+                    width: '100%',
+                    textAlign: 'left',
+                    border: 'none',
+                    background: 'transparent',
+                    color: th.subtext,
+                    fontFamily: 'inherit',
+                    fontSize: 11.5,
+                    fontWeight: 700,
+                    padding: isMobile ? '12px 0' : '9px 0 5px',
+                    cursor: 'pointer',
+                  }}
+                >
+                  {showResolved ? '▾' : '▸'} 해결된 스레드 {resolved.length}개
+                </button>
+                {showResolved &&
+                  resolved.map((t) => (
+                    <ThreadView
+                      key={t.root.id}
+                      thread={t}
+                      controller={controller}
+                      isMobile={isMobile}
+                      participants={participants}
+                      dimmed
+                      replyOpen={false}
+                      onReplyToggle={null}
+                      onReplySubmit={() => Promise.resolve(false)}
+                    />
+                  ))}
+              </>
+            )}
+          </>
         ) : (
-          <div style={{ fontSize: 12, color: th.subtext, lineHeight: 1.6, padding: '10px 0' }}>
+          <div style={{ fontSize: 12, color: th.subtext, lineHeight: 1.6, padding: '12px 0' }}>
             아직 댓글이 없어요.
             <br />이 주제에 대한 의견을 남겨 보세요.
           </div>
@@ -164,53 +204,403 @@ export function CommentPanel({ controller }: { controller: EditorController }) {
 
       <div style={{ borderTop: `1px solid ${th.border}`, padding: isMobile ? '10px 12px calc(10px + env(safe-area-inset-bottom, 0px))' : '10px 12px' }}>
         {error && <div style={{ fontSize: 11.5, color: '#d92626', marginBottom: 6 }}>{error}</div>}
-        <textarea
-          ref={boxRef}
-          value={draft}
-          onChange={(e) => setDraft(e.target.value)}
-          onKeyDown={onKeyDown}
-          rows={2}
-          maxLength={2000}
-          placeholder="댓글 남기기"
-          aria-label="댓글 입력"
-          style={{
-            width: '100%',
-            boxSizing: 'border-box',
-            resize: 'none',
-            border: `1px solid ${th.border}`,
-            borderRadius: 9,
-            background: th.panel2,
-            color: th.text,
-            fontFamily: 'inherit',
-            fontSize: 12.5,
-            lineHeight: 1.5,
-            padding: '8px 9px',
-            outline: 'none',
-          }}
+        <CommentComposer
+          controller={controller}
+          isMobile={isMobile}
+          participants={participants}
+          placeholder="댓글 남기기 (@로 멘션)"
+          submitLabel="남기기"
+          autoFocus={!isMobile}
+          onSubmit={submitThread}
         />
-        <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: 7 }}>
-          <button
-            type="button"
-            onClick={() => void submit()}
-            disabled={!draft.trim() || busy}
-            title="Ctrl/⌘ + Enter"
-            style={{
-              border: 'none',
-              borderRadius: 8,
-              padding: isMobile ? '11px 18px' : '7px 14px',
-              minHeight: isMobile ? 44 : undefined,
-              fontFamily: 'inherit',
-              fontSize: 12,
-              fontWeight: 700,
-              cursor: !draft.trim() || busy ? 'default' : 'pointer',
-              background: !draft.trim() || busy ? th.border : th.accent,
-              color: !draft.trim() || busy ? th.subtext : th.accentInk,
-            }}
-          >
-            남기기
-          </button>
-        </div>
       </div>
     </aside>
+  );
+}
+
+// ── 스레드 하나 ──────────────────────────────────────────────────────────────
+
+function ThreadView({
+  thread,
+  controller,
+  isMobile,
+  participants,
+  dimmed = false,
+  replyOpen,
+  onReplyToggle,
+  onReplySubmit,
+}: {
+  thread: Thread;
+  controller: EditorController;
+  isMobile: boolean;
+  participants: ShareParticipant[];
+  dimmed?: boolean;
+  replyOpen: boolean;
+  /** null = 답글 받기 종료(해결된 스레드 — 논의가 끝난 곳에 새 답글을 받지 않는다). */
+  onReplyToggle: (() => void) | null;
+  onReplySubmit: (body: string, mentions: CommentMention[]) => Promise<boolean>;
+}) {
+  const th = controller.uiTheme;
+  const { root, replies } = thread;
+  const linkBtn: CSSProperties = {
+    border: 'none',
+    background: 'transparent',
+    color: th.subtext,
+    fontSize: 11,
+    cursor: 'pointer',
+    fontFamily: 'inherit',
+    padding: isMobile ? '8px 6px' : '2px 4px',
+    borderRadius: 6,
+  };
+  return (
+    <section data-comment-thread={root.id} style={{ padding: '9px 0', borderBottom: `1px solid ${th.border}`, opacity: dimmed ? 0.66 : 1 }}>
+      {root.resolved && (
+        <div data-resolved-tag style={{ display: 'flex', alignItems: 'center', gap: 5, fontSize: 11, color: th.subtext, marginBottom: 4 }}>
+          <ResolveGlyph size={12} color={th.accent} filled />
+          해결됨{root.resolvedByName ? ` · ${root.resolvedByName}` : ''}
+          <button type="button" className="mf-ed-btn" style={{ ...linkBtn, marginLeft: 'auto' }} onClick={() => void controller.resolveComment(root.id, false)}>
+            다시 열기
+          </button>
+        </div>
+      )}
+      <CommentRow comment={root} controller={controller} isMobile={isMobile} deletable deleteTitle={replies.length ? '스레드 삭제 (답글 포함)' : '삭제'} />
+      {replies.map((r) => (
+        <div key={r.id} style={{ marginLeft: 14, paddingLeft: 9, borderLeft: `2px solid ${th.border}` }}>
+          <CommentRow comment={r} controller={controller} isMobile={isMobile} deletable deleteTitle="삭제" />
+        </div>
+      ))}
+      {!root.resolved && (
+        <div style={{ display: 'flex', gap: 6, marginTop: 3 }}>
+          {onReplyToggle && (
+            <button type="button" className="mf-ed-btn" data-reply-toggle style={linkBtn} onClick={onReplyToggle} aria-expanded={replyOpen}>
+              답글
+            </button>
+          )}
+          <button
+            type="button"
+            className="mf-ed-btn"
+            data-resolve-button
+            style={linkBtn}
+            title="해결됨으로 표시"
+            onClick={() => void controller.resolveComment(root.id, true)}
+          >
+            <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4 }}>
+              <ResolveGlyph size={12} color="currentColor" /> 해결
+            </span>
+          </button>
+        </div>
+      )}
+      {replyOpen && (
+        <div style={{ marginLeft: 14, paddingLeft: 9, borderLeft: `2px solid ${th.border}`, marginTop: 6 }}>
+          <CommentComposer
+            controller={controller}
+            isMobile={isMobile}
+            participants={participants}
+            placeholder="답글 남기기 (@로 멘션)"
+            submitLabel="답글"
+            autoFocus
+            compact
+            onSubmit={onReplySubmit}
+          />
+        </div>
+      )}
+    </section>
+  );
+}
+
+// ── 댓글 한 줄 ───────────────────────────────────────────────────────────────
+
+function CommentRow({ comment: c, controller, isMobile, deletable, deleteTitle }: { comment: DocComment; controller: EditorController; isMobile: boolean; deletable: boolean; deleteTitle: string }) {
+  const th = controller.uiTheme;
+  return (
+    <article data-comment-item={c.id} style={{ padding: '4px 0' }}>
+      <div style={{ display: 'flex', alignItems: 'baseline', gap: 6 }}>
+        <span style={{ fontSize: 12, fontWeight: 700, color: th.text, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{c.authorName || '알 수 없음'}</span>
+        <span title={formatFullDateTime(c.createdAt)} style={{ fontSize: 11, color: th.subtext, flex: '1 1 auto' }}>
+          {formatLastEdited(c.createdAt)}
+        </span>
+        {deletable && c.mine && (
+          <button
+            type="button"
+            className="mf-ed-btn"
+            aria-label="댓글 삭제"
+            title={deleteTitle}
+            onClick={() => void controller.removeComment(c.id)}
+            style={{ border: 'none', background: 'transparent', color: th.subtext, fontSize: 11, cursor: 'pointer', fontFamily: 'inherit', padding: isMobile ? '8px 6px' : '2px 4px', borderRadius: 6 }}
+          >
+            삭제
+          </button>
+        )}
+      </div>
+      <div style={{ fontSize: 12.5, lineHeight: 1.55, color: th.text, whiteSpace: 'pre-wrap', wordBreak: 'break-word', marginTop: 2 }}>{renderBody(c.body, c.mentions, th.accent)}</div>
+    </article>
+  );
+}
+
+/** 본문 렌더 — 멘션된 이름의 "@이름"만 강조색으로. 멘션 목록에 없는 @글자는 평문. */
+function renderBody(body: string, mentions: CommentMention[], accent: string): ReactNode {
+  if (!mentions.length) return body;
+  const names = [...new Set(mentions.map((m) => m.name).filter(Boolean))].sort((a, b) => b.length - a.length);
+  if (!names.length) return body;
+  const re = new RegExp(`@(${names.map((n) => n.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')).join('|')})`, 'g');
+  const out: ReactNode[] = [];
+  let last = 0;
+  let m: RegExpExecArray | null;
+  while ((m = re.exec(body))) {
+    if (m.index > last) out.push(body.slice(last, m.index));
+    out.push(
+      <span key={m.index} data-mention style={{ color: accent, fontWeight: 700 }}>
+        {m[0]}
+      </span>,
+    );
+    last = m.index + m[0].length;
+  }
+  if (last < body.length) out.push(body.slice(last));
+  return out;
+}
+
+// ── 입력창(멘션 자동완성 포함) — 새 스레드와 답글이 같은 것을 쓴다 ─────────────
+
+function participantName(p: ShareParticipant): string {
+  return (p.displayName || '').trim() || p.email.split('@')[0] || p.email;
+}
+
+/** 캐럿 앞의 `@토큰`(입력 중인 멘션). 없으면 null. */
+export function mentionTokenAt(text: string, caret: number): { start: number; query: string } | null {
+  const before = text.slice(0, caret);
+  const m = before.match(/(?:^|\s)@([^\s@]*)$/);
+  if (!m) return null;
+  return { start: caret - m[1]!.length - 1, query: m[1]! };
+}
+
+function CommentComposer({
+  controller,
+  isMobile,
+  participants,
+  placeholder,
+  submitLabel,
+  autoFocus,
+  compact = false,
+  onSubmit,
+}: {
+  controller: EditorController;
+  isMobile: boolean;
+  participants: ShareParticipant[];
+  placeholder: string;
+  submitLabel: string;
+  autoFocus: boolean;
+  compact?: boolean;
+  onSubmit: (body: string, mentions: CommentMention[]) => Promise<boolean>;
+}) {
+  const th = controller.uiTheme;
+  const [draft, setDraft] = useState('');
+  const [busy, setBusy] = useState(false);
+  /** 지금 캐럿에 걸린 @토큰(자동완성 드롭다운의 근거). */
+  const [token, setToken] = useState<{ start: number; query: string } | null>(null);
+  /** 이 입력에서 골라 넣은 멘션들 — 제출 시 본문에 "@이름"이 남아 있는 것만 싣는다
+   * (골랐다가 글자를 지웠으면 멘션도 아니다). */
+  const picked = useRef<Map<string, CommentMention>>(new Map());
+  const boxRef = useRef<HTMLTextAreaElement | null>(null);
+
+  // 마운트 시 한 번만 — 모바일에서는 포커스가 곧 키보드라, 읽으러 연 사람의
+  // 화면 절반을 빼앗으므로 데스크톱만.
+  const focusOnMount = useRef(autoFocus && !isMobile);
+  useEffect(() => {
+    if (focusOnMount.current) boxRef.current?.focus();
+  }, []);
+
+  /** 멘션 선택 후 복원할 캐럿 위치. rAF가 아니라 draft 커밋 직후(effect)에 적용해야
+   * 한다 — 다음 프레임을 기다리는 사이 타이핑이 끼어들면 그 글자가 캐럿이 아니라
+   * 텍스트 **끝**에 붙는다(실브라우저에서 재현된 레이스). */
+  const pendingCaret = useRef<number | null>(null);
+  useEffect(() => {
+    const el = boxRef.current;
+    if (pendingCaret.current == null || !el) return;
+    el.focus();
+    el.setSelectionRange(pendingCaret.current, pendingCaret.current);
+    pendingCaret.current = null;
+  }, [draft]);
+
+  const refreshToken = (el: HTMLTextAreaElement) => {
+    setToken(mentionTokenAt(el.value, el.selectionStart ?? el.value.length));
+  };
+
+  const candidates = useMemo(() => {
+    if (!token) return [];
+    const q = token.query.toLowerCase();
+    return participants
+      .filter((p) => {
+        const name = participantName(p).toLowerCase();
+        return !q || name.includes(q) || p.email.toLowerCase().includes(q);
+      })
+      .slice(0, 6);
+  }, [token, participants]);
+
+  const pick = (p: ShareParticipant) => {
+    const el = boxRef.current;
+    if (!el || !token) return;
+    const name = participantName(p);
+    const caret = el.selectionStart ?? el.value.length;
+    const next = `${el.value.slice(0, token.start)}@${name} ${el.value.slice(caret)}`;
+    picked.current.set(name, { email: p.email, name });
+    pendingCaret.current = token.start + name.length + 2; // "@이름 " 바로 뒤
+    setDraft(next);
+    setToken(null);
+  };
+
+  const submit = async () => {
+    const body = draft.trim();
+    if (!body || busy) return;
+    const mentions = [...picked.current.values()].filter((m) => body.includes(`@${m.name}`));
+    setBusy(true);
+    const ok = await onSubmit(body, mentions);
+    setBusy(false);
+    if (ok) {
+      setDraft('');
+      picked.current.clear();
+      setToken(null);
+    }
+  };
+
+  const onKeyDown = (e: KeyboardEvent<HTMLTextAreaElement>) => {
+    // 드롭다운이 떠 있을 때 Enter/Tab = 첫 후보 선택(자동완성 관례).
+    if (token && candidates.length && (e.key === 'Enter' || e.key === 'Tab') && !e.ctrlKey && !e.metaKey && !e.shiftKey) {
+      e.preventDefault();
+      pick(candidates[0]!);
+      return;
+    }
+    if (e.key === 'Escape') {
+      if (token) {
+        e.preventDefault();
+        setToken(null);
+        return;
+      }
+      e.preventDefault();
+      controller.closeComments();
+      return;
+    }
+    // Enter는 **줄바꿈**이다 — 소프트 키보드에는 Shift가 없어서 Enter를 등록으로
+    // 쓰면 폰에서 여러 줄을 쓸 방법이 사라진다(#333과 같은 이유). 등록은 버튼과
+    // Ctrl/⌘+Enter.
+    if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) {
+      e.preventDefault();
+      void submit();
+    }
+  };
+
+  return (
+    <div style={{ position: 'relative' }}>
+      {token && candidates.length > 0 && (
+        <div
+          data-mention-list
+          style={{
+            position: 'absolute',
+            bottom: '100%',
+            left: 0,
+            right: 0,
+            marginBottom: 4,
+            background: th.panel,
+            border: `1px solid ${th.border}`,
+            borderRadius: 9,
+            boxShadow: '0 6px 22px rgba(0,0,0,.12)',
+            overflow: 'hidden',
+            zIndex: 5,
+          }}
+        >
+          {candidates.map((p) => (
+            <button
+              key={p.email}
+              type="button"
+              className="mf-ed-btn"
+              data-mention-candidate={p.email}
+              // blur가 먼저 돌아 클릭이 무시되지 않게 mousedown에서 처리(서식 툴바와
+              // 같은 함정 — 버튼 클릭 전에 입력이 포커스를 잃으면 캐럿·토큰이 사라진다).
+              onMouseDown={(e) => {
+                e.preventDefault();
+                pick(p);
+              }}
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                gap: 7,
+                width: '100%',
+                border: 'none',
+                background: 'transparent',
+                fontFamily: 'inherit',
+                fontSize: 12,
+                color: th.text,
+                padding: isMobile ? '11px 10px' : '7px 10px',
+                cursor: 'pointer',
+                textAlign: 'left',
+              }}
+            >
+              <span style={{ fontWeight: 700 }}>{participantName(p)}</span>
+              <span style={{ color: th.subtext, fontSize: 11, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{p.email}</span>
+            </button>
+          ))}
+        </div>
+      )}
+      <textarea
+        ref={boxRef}
+        value={draft}
+        onChange={(e) => {
+          setDraft(e.target.value);
+          refreshToken(e.target);
+        }}
+        onKeyUp={(e) => refreshToken(e.currentTarget)}
+        onClick={(e) => refreshToken(e.currentTarget)}
+        onKeyDown={onKeyDown}
+        rows={compact ? 1 : 2}
+        maxLength={2000}
+        placeholder={placeholder}
+        aria-label={submitLabel === '답글' ? '답글 입력' : '댓글 입력'}
+        style={{
+          width: '100%',
+          boxSizing: 'border-box',
+          resize: 'none',
+          border: `1px solid ${th.border}`,
+          borderRadius: 9,
+          background: th.panel2,
+          color: th.text,
+          fontFamily: 'inherit',
+          fontSize: 12.5,
+          lineHeight: 1.5,
+          padding: '8px 9px',
+          outline: 'none',
+        }}
+      />
+      <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: compact ? 5 : 7 }}>
+        <button
+          type="button"
+          onClick={() => void submit()}
+          disabled={!draft.trim() || busy}
+          title="Ctrl/⌘ + Enter"
+          style={{
+            border: 'none',
+            borderRadius: 8,
+            padding: isMobile ? '11px 18px' : compact ? '5px 11px' : '7px 14px',
+            minHeight: isMobile ? 44 : undefined,
+            fontFamily: 'inherit',
+            fontSize: 12,
+            fontWeight: 700,
+            cursor: !draft.trim() || busy ? 'default' : 'pointer',
+            background: !draft.trim() || busy ? th.border : th.accent,
+            color: !draft.trim() || busy ? th.subtext : th.accentInk,
+          }}
+        >
+          {submitLabel}
+        </button>
+      </div>
+    </div>
+  );
+}
+
+/** 체크 원 — 해결 표시. */
+function ResolveGlyph({ size = 12, color = 'currentColor', filled = false }: { size?: number; color?: string; filled?: boolean }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill={filled ? color : 'none'} stroke={color} strokeWidth={2.2} strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+      <circle cx={12} cy={12} r={10} />
+      <path d="M8 12.5l2.7 2.7L16 9.5" stroke={filled ? '#fff' : color} fill="none" />
+    </svg>
   );
 }
