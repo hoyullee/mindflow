@@ -8,6 +8,7 @@ import { BackendProvider } from '../../adapters/BackendContext';
 import { LocalAuth } from '../../adapters/local/localAuth';
 import { LocalDocStore } from '../../adapters/local/localDocStore';
 import { LocalSpaceStore } from '../../adapters/local/localSpaceStore';
+import { LocalCommentStore } from '../../adapters/local/localCommentStore';
 import type { Backend } from '../../adapters/ports';
 
 // M3-Editor-b interaction tests: selection, text editing, structural add/
@@ -448,7 +449,7 @@ describe('Editor interactions (M3-Editor-b)', () => {
     // `docId`는 테스트가 실제로 씨딩한 키와 맞춰야 한다 — 본문이 없는 맵은 이제
     // 에디터가 아니라 전용 안내 화면(`MapUnavailable`)이 뜨므로 툴바조차 없다.
     function renderWithShare(shareStore: unknown, mode: Backend['mode'] = 'supabase', docId = 'share1') {
-      const backend = { auth: new LocalAuth(), docStore: new LocalDocStore(), spaceStore: new LocalSpaceStore(), shareStore, mode } as unknown as Backend;
+      const backend = { auth: new LocalAuth(), docStore: new LocalDocStore(), spaceStore: new LocalSpaceStore(), shareStore, commentStore: new LocalCommentStore(), mode } as unknown as Backend;
       return render(
         <MemoryRouter initialEntries={[`/editor?map=${docId}&title=x`]}>
           <BackendProvider backend={backend}>

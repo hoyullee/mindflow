@@ -409,16 +409,28 @@ export interface FeedbackStore {
 
 // ── Comments ───────────────────────────────────────────────────────────────
 
+/** 멘션 대상 — 이메일이 (이후) 알림이 겨냥할 키, 이름은 본문의 "@이름" 표시용. */
+export interface CommentMention {
+  email: string;
+  name: string;
+}
+
 export interface DocComment {
   id: string;
   /** 대상 주제의 id. 그 주제가 지워졌으면 앱이 "사라진 주제"로 보여 준다. */
   nodeId: string;
+  /** 답글이면 스레드 뿌리(최상위 댓글)의 id — 단층 스레드(대댓글 없음, 0021 트리거). */
+  parentId: string | null;
   /** 작성 시점의 표시 이름 스냅샷(0020) — 조인 없이 목록 하나로 끝내기 위해. */
   authorName: string;
   /** 내가 쓴 댓글인가 — 지우기 버튼을 내줄지 가른다(진짜 게이트는 RLS). */
   mine: boolean;
   body: string;
   createdAt: string;
+  /** 해결됨(스레드 뿌리에만 의미) — 해결한 사람의 이름 스냅샷과 함께. */
+  resolved: boolean;
+  resolvedByName: string | null;
+  mentions: CommentMention[];
 }
 
 /**
@@ -434,10 +446,26 @@ export interface DocComment {
 export interface CommentStore {
   /** 그 문서의 댓글 전부(오래된 것부터). 읽을 수 없으면 빈 배열. */
   list(documentId: string): Promise<DocComment[]>;
-  /** 댓글 달기. 실패는 사용자 문구로 돌려준다(throw하지 않는다). */
-  add(documentId: string, nodeId: string, body: string): Promise<{ error?: string }>;
-  /** 지우기 — 쓴 사람 본인 또는 문서 소유자만(RLS). */
+  /** 댓글/답글 달기. 실패는 사용자 문구로 돌려준다(throw하지 않는다). */
+  add(documentId: string, nodeId: string, body: string, opts?: { parentId?: string; mentions?: CommentMention[] }): Promise<{ error?: string }>;
+  /** 지우기 — 쓴 사람 본인 또는 문서 소유자만(RLS). 스레드 뿌리를 지우면 답글도 함께. */
   remove(documentId: string, commentId: string): Promise<{ error?: string }>;
+  /**
+   * 스레드 해결/해제(뿌리 댓글만). 권한은 댓글을 쓸 수 있는 사람 전원 — body는
+   * 손댈 수 없는 좁은 RPC(0021 `set_comment_resolved`)라 "수정은 열지 않는다"가
+   * 유지된다.
+   */
+  setResolved(documentId: string, commentId: string, resolved: boolean): Promise<{ error?: string }>;
+  /**
+   * "이 문서의 댓글이 바뀌었다"는 신호 구독. 반환값은 해지 함수.
+   *
+   * **신호에는 내용이 없다** — 받는 쪽이 `list()`로 다시 읽는다(그 select에 RLS가
+   * 걸려 있으므로, 신호 채널 자체는 비밀을 나르지 않는다). Supabase는 공개
+   * broadcast 채널의 ping(0009 발신 정책이 edit 전용이라 보기 전용 참가자는 private
+   * 채널에 발신할 수 없는데, 댓글은 보기 전용도 쓴다 — 내용 없는 ping이라 공개
+   * 채널로 충분하다), 로컬/데모는 BroadcastChannel(같은 브라우저의 다른 탭).
+   */
+  subscribe(documentId: string, onChange: () => void): () => void;
 }
 
 // ── Images ─────────────────────────────────────────────────────────────────

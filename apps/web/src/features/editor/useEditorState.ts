@@ -6,7 +6,7 @@ import { HistoryStack, ROOT_ID, collectImageRefs, collectInlineImages, isImageRe
 import { domToRuns, linearize, liveEditValue } from './richtextDom';
 import { recordVersion, versionDoc } from './versionHistory';
 import { nodeTextAlign, renderListEdit } from './listLines';
-import type { DocComment, ShareRole, ShareStore } from '../../adapters/ports';
+import type { CommentMention, DocComment, ShareRole, ShareStore } from '../../adapters/ports';
 import type { CollabStatus } from '../../collab/ports';
 import { useBackend, useCommentStore, useDocStore, useShareStore, useSpaceStore } from '../../adapters/BackendContext';
 import { useAuthUser } from '../../adapters/useAuthUser';
@@ -308,12 +308,15 @@ export interface EditorController {
   closeComments: () => void;
   /** 이 문서의 댓글 전부(작성 순). 배지·패널이 함께 쓴다. */
   comments: DocComment[];
-  /** 주제 id → 댓글 수 — 노드 배지가 읽는다. */
+  /** 주제 id → **미해결 스레드** 수 — 노드 배지가 읽는다(해결된 논의는 주의를
+   * 끌 필요가 없다. 전부 해결되면 배지가 사라진다). */
   commentCounts: Record<string, number>;
   /** 목록을 아직 불러오는 중인가(패널 스켈레톤용). */
   commentsLoading: boolean;
-  addComment: (nodeId: string, body: string) => Promise<{ error?: string }>;
+  addComment: (nodeId: string, body: string, opts?: { parentId?: string; mentions?: CommentMention[] }) => Promise<{ error?: string }>;
   removeComment: (commentId: string) => Promise<{ error?: string }>;
+  /** 스레드 해결/해제(뿌리 댓글만) — 댓글을 쓸 수 있는 사람 전원이 할 수 있다. */
+  resolveComment: (commentId: string, resolved: boolean) => Promise<{ error?: string }>;
   /** 이 사람이 이 문서에 댓글을 쓸 수 있는가 — 소유자와 **초대받은 사람**만.
    * 링크 공유(0017)로 열었으면 서버가 댓글을 아예 내주지 않으므로 진입점도 감춘다
    * ("열리는 척하다 빈 목록"이 되지 않게). */
@@ -978,6 +981,12 @@ export function useEditorState(): EditorController {
   const readOnly = accessRole === 'view';
   const readOnlyRef = useRef(readOnly);
   readOnlyRef.current = readOnly;
+  // 링크로 연 사람(초대 행이 없는 남의 문서)에게는 서버가 댓글을 내주지 않는다 —
+  // 링크는 누구에게나 전달될 수 있는데 댓글은 내부 논의라 본문과 같은 무게로
+  // 다룰 수 없다(0020의 select 정책). 진입점부터 감춘다.
+  const canComment = !(loadedNotMine && !sharedDoc);
+  const canCommentRef = useRef(canComment);
+  canCommentRef.current = canComment;
 
   // ---- M5: real-time collaboration ----
   // Backs `doc` with a live Y.Doc (Supabase Realtime if configured, else
@@ -1493,11 +1502,8 @@ export function useEditorState(): EditorController {
    * part of an active multi-selection keeps the WHOLE group selected and opens the `'multi'`
    * menu instead (port of the `curM`/`inSel` check, MindFlow.dc.html:2797-2802). */
   function openCtxAt(clientX: number, clientY: number): void {
-    // 보기 전용(#22): 메뉴 항목이 전부 변이(추가·삭제·정렬)라 열 것이 없다.
-    if (readOnlyRef.current) return;
     // 다른 메뉴가 올라오면 서식 툴바는 내린다 — 편집 세션 동안 상시 노출로
     // 바뀐 뒤(아래 openTextCtx 주석), 두 팝업이 겹치지 않게 하는 유일한 규칙.
-    setTextCtx(null);
     const vp = viewportRef.current;
     const p = toCanvasPoint(clientX, clientY, vp);
     const el = viewportElRef.current;
@@ -1505,6 +1511,19 @@ export function useEditorState(): EditorController {
     const sx = clientX - r.left;
     const sy = clientY - r.top;
     const hit = hitTestAll(p);
+    // 보기 전용(#22): 변이 항목(추가·삭제·정렬)은 열 것이 없지만 **댓글**은 있다
+    // (0020 — 보기 전용도 댓글은 쓴다). 주제 위에서만 메뉴를 열고, 항목 구성은
+    // ContextMenu가 readOnly를 보고 댓글만 남긴다.
+    if (readOnlyRef.current) {
+      if (!(hit && hit.kind === 'node' && canCommentRef.current)) return;
+      setTextCtx(null);
+      setSelectionState({ kind: 'node', id: hit.id }); // 선택은 보기 전용에도 허용
+      setMultiSelectionState(null);
+      setCtxSub(null);
+      setCtxMenu({ kind: 'node', sx, sy, cx: p.x, cy: p.y });
+      return;
+    }
+    setTextCtx(null);
     const ms = multiSelectionRef.current;
     if (ms && totalSelected(ms) > 1 && hit) {
       const inSel = (hit.kind === 'node' && ms.nodes.includes(hit.id)) || (hit.kind === 'float' && ms.floats.includes(hit.id)) || (hit.kind === 'line' && ms.lines.includes(hit.id));
@@ -3346,10 +3365,6 @@ export function useEditorState(): EditorController {
   const [commentsNodeId, setCommentsNodeId] = useState<string>(ROOT_ID);
   const [comments, setComments] = useState<DocComment[]>([]);
   const [commentsLoading, setCommentsLoading] = useState(false);
-  // 링크로 연 사람(초대 행이 없는 남의 문서)에게는 서버가 댓글을 내주지 않는다 —
-  // 링크는 누구에게나 전달될 수 있는데 댓글은 내부 논의라 본문과 같은 무게로
-  // 다룰 수 없다(0020의 select 정책). 진입점부터 감춘다.
-  const canComment = !(loadedNotMine && !sharedDoc);
 
   /** 서버에서 목록을 다시 읽는다. 댓글은 실시간 채널을 타지 않으므로(본문이 아니다)
    * 열 때마다 새로 읽는 것이 상대의 새 댓글을 보는 유일한 길이다. */
@@ -3374,6 +3389,15 @@ export function useEditorState(): EditorController {
     void reloadComments();
   }, [reloadComments, hydrating]);
 
+  // 실시간: "댓글이 바뀌었다"는 신호가 오면 다시 읽는다(신호에는 내용이 없다 —
+  // 자세한 설계는 CommentStore.subscribe의 doc comment). **공유된 문서일 때만**
+  // 구독한다: 혼자 쓰는 문서에는 신호를 보낼 상대가 없고, 유휴 연결은 Realtime
+  // 사용량을 그냥 태운다(#231에서 유휴 낭비를 걷어낸 것과 같은 판단).
+  useEffect(() => {
+    if (hydrating || !canComment || !(sharedDoc || loadedNotMine)) return;
+    return commentStore.subscribe(docStoreId, () => void reloadComments());
+  }, [hydrating, canComment, sharedDoc, loadedNotMine, commentStore, docStoreId, reloadComments]);
+
   // 주제를 고르면 패널이 따라간다 — 열어 둔 채 다른 주제를 눌렀는데 남의 댓글이
   // 그대로 떠 있으면 어느 주제의 논의인지 알 수 없다. 주제가 아닌 것(메모·선·영역)을
   // 고르거나 선택을 해제하면 보던 주제를 그대로 둔다.
@@ -3384,6 +3408,9 @@ export function useEditorState(): EditorController {
   const commentCounts = useMemo(() => {
     const counts: Record<string, number> = {};
     comments.forEach((c) => {
+      // 배지 = 미해결 **스레드** 수. 답글은 스레드에 딸린 것이고, 해결된 논의는
+      // 주의를 끌 필요가 없다(전부 해결되면 배지가 사라진다).
+      if (c.parentId || c.resolved) return;
       counts[c.nodeId] = (counts[c.nodeId] ?? 0) + 1;
     });
     return counts;
@@ -3402,8 +3429,8 @@ export function useEditorState(): EditorController {
   const closeComments = useCallback(() => setCommentsOpen(false), []);
 
   const addComment = useCallback(
-    async (nodeId: string, body: string) => {
-      const res = await commentStore.add(docStoreId, nodeId, body);
+    async (nodeId: string, body: string, opts?: { parentId?: string; mentions?: CommentMention[] }) => {
+      const res = await commentStore.add(docStoreId, nodeId, body, opts);
       if (!res.error) await reloadComments();
       return res;
     },
@@ -3412,6 +3439,14 @@ export function useEditorState(): EditorController {
   const removeComment = useCallback(
     async (commentId: string) => {
       const res = await commentStore.remove(docStoreId, commentId);
+      if (!res.error) await reloadComments();
+      return res;
+    },
+    [commentStore, docStoreId, reloadComments],
+  );
+  const resolveComment = useCallback(
+    async (commentId: string, resolved: boolean) => {
+      const res = await commentStore.setResolved(docStoreId, commentId, resolved);
       if (!res.error) await reloadComments();
       return res;
     },
@@ -4423,6 +4458,7 @@ export function useEditorState(): EditorController {
     commentsLoading,
     addComment,
     removeComment,
+    resolveComment,
     canComment,
     historyOpen,
     setHistoryOpen,

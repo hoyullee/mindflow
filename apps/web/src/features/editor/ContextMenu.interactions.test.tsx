@@ -162,6 +162,49 @@ describe('Context menu — node', () => {
     expect(screen.getByText('삭제')).toBeTruthy();
   });
 
+  it('댓글 항목(개수 포함)이 있고, 누르면 그 주제의 댓글 패널이 열린다', async () => {
+    localStorage.setItem('mindflow_doc_cmt1', JSON.stringify(DOC));
+    localStorage.setItem('mf_comments', JSON.stringify([{ id: 'x1', documentId: 'cmt1', nodeId: 'c1', authorName: '나', body: '기존 논의', createdAt: '2026-01-01T00:00:00.000Z' }]));
+    const { container } = renderEditor('/editor?map=cmt1&title=x');
+    const vp = getViewport(container);
+    const { pan, zoom, geom } = computeViewport(DOC as Doc);
+    const c1 = geom.c1!;
+    const { clientX, clientY } = toClient(pan, zoom, c1.x, c1.y);
+    // 목록이 로드된 뒤(배지 등장) 우클릭해야 개수 라벨이 정확하다.
+    await screen.findByLabelText('댓글 1개');
+
+    rightClickAt(vp, clientX, clientY);
+    const item = await screen.findByText('댓글 (1)');
+    clickMenuItem(item);
+
+    const panel = await screen.findByLabelText('댓글');
+    expect(within(panel).getByText('노드A')).toBeTruthy();
+    expect(within(panel).getByText('기존 논의')).toBeTruthy();
+  });
+
+  it('보기 전용(view 초대): 우클릭 메뉴가 댓글만 내주고, 열어서 쓸 수 있다', async () => {
+    // 보기 전용 판별 = 데모 세션 이메일로 걸린 view 초대 행(ReadOnly.interactions와 동일).
+    localStorage.setItem('mf_demo_session', JSON.stringify({ user: { id: 'u', email: 'viewer@example.com' } }));
+    localStorage.setItem('mf_doc_shares', JSON.stringify([{ documentId: 'cmt2', email: 'viewer@example.com', role: 'view', createdAt: '2026-01-01T00:00:00.000Z' }]));
+    localStorage.setItem('mindflow_doc_cmt2', JSON.stringify(DOC));
+    const { container } = renderEditor('/editor?map=cmt2&title=x');
+    await waitFor(() => expect(screen.getAllByText('보기 전용').length).toBeGreaterThan(0));
+    const vp = getViewport(container);
+    const { pan, zoom, geom } = computeViewport(DOC as Doc);
+    const c1 = geom.c1!;
+    const { clientX, clientY } = toClient(pan, zoom, c1.x, c1.y);
+
+    rightClickAt(vp, clientX, clientY);
+    const item = await screen.findByText('댓글');
+    // 변이 항목은 없다 — 보기 전용의 메뉴는 댓글뿐.
+    expect(screen.queryByText('하위 주제 추가')).toBeNull();
+    expect(screen.queryByText('삭제')).toBeNull();
+    expect(screen.queryByText('텍스트 정렬')).toBeNull();
+    clickMenuItem(item);
+    const panel = await screen.findByLabelText('댓글');
+    expect(within(panel).getByLabelText('댓글 입력')).toBeTruthy(); // 쓸 수 있다(0020)
+  });
+
   // 삭제 아이콘은 이모지(🗑)가 아니라 SVG여야 한다 — 이모지는 OS·브라우저마다
   // 모양/색이 달라 나머지 라인 아이콘과 따로 놀고, 위험(빨강) 색도 먹지 않는다.
   it('삭제 항목의 아이콘이 이모지가 아닌 SVG다 (위험 색을 따라간다)', async () => {

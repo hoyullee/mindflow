@@ -8,7 +8,7 @@ import type { ContextMenuState } from '../types';
 import { useIsMobile } from '../../../hooks/useMediaQuery';
 // 이미지/영역 아이콘은 상단 툴바 '삽입' 메뉴와 같은 SVG를 공유 — 두 진입점이
 // 같은 동작이므로 같은 그림이어야 한다.
-import { ImageIcon, ZoneIcon } from './ToolbarMenus';
+import { CommentIcon, ImageIcon, ZoneIcon } from './ToolbarMenus';
 
 interface ContextMenuProps {
   controller: EditorController;
@@ -325,6 +325,21 @@ function buildItems(controller: EditorController, ctxMenu: ContextMenuState, tog
     const nodeId = controller.selection?.kind === 'node' ? controller.selection.id : null;
     if (!nodeId) return [];
     const isRoot = nodeId === ROOT_ID;
+    // 보기 전용(#22): 변이 항목은 없고 댓글만 — openCtxAt이 이 조합일 때만 메뉴를 연다.
+    if (controller.readOnly) {
+      if (!controller.canComment) return [];
+      const n = controller.commentCounts[nodeId] ?? 0;
+      return [
+        {
+          icon: <CommentIcon size={14} />,
+          label: n > 0 ? `댓글 (${n})` : '댓글',
+          onSelect: () => {
+            close();
+            controller.openComments(nodeId);
+          },
+        },
+      ];
+    }
     const items: (MenuItem | 'divider')[] = [];
     // 모바일에선 자식/형제 추가와 삭제를 넣지 않는다 — 선택 바(MobileSelectBar)에
     // 하위·형제·삭제 버튼이 이미 있어 같은 동작이 두 번 나온다. 데스크톱은 바가
@@ -378,6 +393,20 @@ function buildItems(controller: EditorController, ctxMenu: ContextMenuState, tog
       // `alignParent`'s `onClick` (MindFlow.dc.html:3120).
       onSelect: (e) => toggleAlignSub(e.currentTarget.offsetTop),
     });
+    // 댓글 — 그 주제의 논의를 바로 연다. 보기 메뉴에만 있으면 "이 주제에 다는"
+    // 물건인데 진입점이 화면 반대편에 숨는다(제보). 링크 뷰어는 서버가 댓글을
+    // 내주지 않으므로 항목도 없다(0020).
+    if (controller.canComment) {
+      const n = controller.commentCounts[nodeId] ?? 0;
+      items.push({
+        icon: <CommentIcon size={14} />,
+        label: n > 0 ? `댓글 (${n})` : '댓글',
+        onSelect: () => {
+          close();
+          controller.openComments(nodeId);
+        },
+      });
+    }
     // 루트는 복사/잘라내기 대상이 아니다(삭제와 같은 규칙 — 맵 전체 복제는 의미가 없다).
     // 붙여넣기는 루트에도 허용 — 루트의 자식으로 붙는다.
     const nodeClip = [...(isRoot ? [] : copyItems({ cut: true })), ...pasteItem()];
