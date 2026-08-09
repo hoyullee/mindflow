@@ -39,6 +39,7 @@ function makeManualChannel(sendResult: 'ok' | 'error' | 'timed out' = 'ok') {
       void args;
       return sendResult;
     }),
+    track: vi.fn(async () => 'ok'),
     fire: async (status: string) => {
       cb?.(status);
       await flush();
@@ -92,6 +93,7 @@ function makeFakeChannelPair() {
         for (const h of otherHandlers[msg.event] ?? []) h({ payload: msg.payload });
         return 'ok';
       }),
+      track: vi.fn(async () => 'ok'),
     };
     return channel;
   }
@@ -103,7 +105,7 @@ function makeFakeChannelPair() {
 
 describe('SupabaseRealtimeProvider', () => {
   it('connect() subscribes a channel named after the docId and registers broadcast handlers', async () => {
-    const channel = { on: vi.fn().mockReturnThis(), subscribe: vi.fn().mockReturnThis(), send: vi.fn() };
+    const channel = { on: vi.fn().mockReturnThis(), subscribe: vi.fn().mockReturnThis(), send: vi.fn(), track: vi.fn(async () => 'ok') };
     const from = vi.fn();
     const client = { channel: vi.fn(() => channel), removeChannel: vi.fn(), from, realtime: realtimeMock() } as unknown as import('@supabase/supabase-js').SupabaseClient;
     const provider = new SupabaseRealtimeProvider(client);
@@ -114,7 +116,7 @@ describe('SupabaseRealtimeProvider', () => {
 
     // `private: true`가 빠지면 채널이 누구에게나 열린다(anon 키는 번들에 공개) —
     // Realtime Authorization 정책(0009)을 타기 위한 필수 인자다.
-    expect(client.channel).toHaveBeenCalledWith('mindflow-collab:doc-123', { config: { private: true, broadcast: { ack: true } } });
+    expect(client.channel).toHaveBeenCalledWith('mindflow-collab:doc-123', { config: { private: true, broadcast: { ack: true }, presence: { key: expect.any(String) } } });
     // private 채널은 소켓이 사용자 JWT를 들고 있어야 통과한다 — 구독 전에 맞춰 준다.
     expect((client as unknown as { realtime: { setAuth: ReturnType<typeof vi.fn> } }).realtime.setAuth).toHaveBeenCalled();
     expect(channel.on).toHaveBeenCalledWith('broadcast', { event: 'yupdate' }, expect.any(Function));
@@ -153,7 +155,7 @@ describe('SupabaseRealtimeProvider', () => {
   });
 
   it('disconnect() calls removeChannel and stops applying further local updates to the transport', async () => {
-    const channel = { on: vi.fn().mockReturnThis(), subscribe: vi.fn().mockReturnThis(), send: vi.fn() };
+    const channel = { on: vi.fn().mockReturnThis(), subscribe: vi.fn().mockReturnThis(), send: vi.fn(), track: vi.fn(async () => 'ok') };
     const removeChannel = vi.fn();
     const client = { channel: vi.fn(() => channel), removeChannel, realtime: realtimeMock() } as unknown as import('@supabase/supabase-js').SupabaseClient;
     const provider = new SupabaseRealtimeProvider(client);
@@ -168,7 +170,7 @@ describe('SupabaseRealtimeProvider', () => {
 
   describe('awareness (presence) relay', () => {
     it('connect() also registers the awareness broadcast/sync-request handlers', async () => {
-      const channel = { on: vi.fn().mockReturnThis(), subscribe: vi.fn().mockReturnThis(), send: vi.fn() };
+      const channel = { on: vi.fn().mockReturnThis(), subscribe: vi.fn().mockReturnThis(), send: vi.fn(), track: vi.fn(async () => 'ok') };
       const client = { channel: vi.fn(() => channel), removeChannel: vi.fn(), realtime: realtimeMock() } as unknown as import('@supabase/supabase-js').SupabaseClient;
       const provider = new SupabaseRealtimeProvider(client);
       const ydoc = docToYDoc(baseDoc());
@@ -226,7 +228,7 @@ describe('SupabaseRealtimeProvider', () => {
     });
 
     it('getAwareness() returns null before connect() and after disconnect()', () => {
-      const channel = { on: vi.fn().mockReturnThis(), subscribe: vi.fn().mockReturnThis(), send: vi.fn() };
+      const channel = { on: vi.fn().mockReturnThis(), subscribe: vi.fn().mockReturnThis(), send: vi.fn(), track: vi.fn(async () => 'ok') };
       const client = { channel: vi.fn(() => channel), removeChannel: vi.fn(), realtime: realtimeMock() } as unknown as import('@supabase/supabase-js').SupabaseClient;
       const provider = new SupabaseRealtimeProvider(client);
       expect(provider.getAwareness()).toBeNull();
@@ -358,7 +360,7 @@ describe('SupabaseRealtimeProvider', () => {
 
     it('join 밖에서는 send하지 않는다 — REST 폴백 스팸과 반쪽 발신의 원인이었다', async () => {
       // subscribe 콜백을 아예 부르지 않는 채널 = 소켓이 끊겨 join하지 못한 상태
-      const channel = { on: vi.fn().mockReturnThis(), subscribe: vi.fn().mockReturnThis(), send: vi.fn(async () => 'ok') };
+      const channel = { on: vi.fn().mockReturnThis(), subscribe: vi.fn().mockReturnThis(), send: vi.fn(async () => 'ok'), track: vi.fn(async () => 'ok') };
       const client = { channel: vi.fn(() => channel), removeChannel: vi.fn(), realtime: realtimeMock() } as unknown as import('@supabase/supabase-js').SupabaseClient;
       const provider = new SupabaseRealtimeProvider(client);
       const ydoc = docToYDoc(baseDoc());
@@ -402,9 +404,9 @@ describe('SupabaseRealtimeProvider', () => {
       await priv1.fire('CHANNEL_ERROR');
       // 일시 오류로 한 탭만 강등돼 피어들이 다른 채널에 갈라지지 않도록, 강등 전에
       // private을 한 번 더 시도한다.
-      expect(configs[1]).toEqual({ config: { private: true, broadcast: { ack: true } } });
+      expect(configs[1]).toEqual({ config: { private: true, broadcast: { ack: true }, presence: { key: expect.any(String) } } });
       await priv2.fire('CHANNEL_ERROR');
-      expect(configs[2]).toEqual({ config: { private: false, broadcast: { ack: true } } });
+      expect(configs[2]).toEqual({ config: { private: false, broadcast: { ack: true }, presence: { key: expect.any(String) } } });
       await publicCh.fire('SUBSCRIBED');
 
       expect(statuses).toEqual(['connected-insecure']);
@@ -738,6 +740,9 @@ describe('SupabaseRealtimeProvider', () => {
                   if (hold) inflight.push({ target: s, event: msg.event, payload: msg.payload });
                   else for (const h of s.handlers[msg.event] ?? []) h({ payload: msg.payload });
                 }
+                return 'ok';
+              },
+              async track() {
                 return 'ok';
               },
             };

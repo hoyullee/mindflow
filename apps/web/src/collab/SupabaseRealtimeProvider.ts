@@ -15,7 +15,7 @@
 // broadcast payloads are JSON.
 
 import * as Y from 'yjs';
-import { Awareness, applyAwarenessUpdate, encodeAwarenessUpdate } from 'y-protocols/awareness';
+import { Awareness, applyAwarenessUpdate, encodeAwarenessUpdate, removeAwarenessStates } from 'y-protocols/awareness';
 import type { SupabaseClient, RealtimeChannel } from '@supabase/supabase-js';
 import type { YDoc } from '@mindflow/mindmap-core';
 import type { CollabProvider, CollabStatusListener } from './ports';
@@ -233,7 +233,16 @@ export class SupabaseRealtimeProvider implements CollabProvider {
     // `send()`는 소켓에 밀어 넣고 무조건 'ok'로 즉시 resolve한다(realtime-js
     // `RealtimeChannel#send`). 구독이 됐다고 **보낼 수 있다는 뜻은 아니어서**
     // (private 채널의 읽기·쓰기 정책은 서로 다른 정책이다) 확인이 필요하다.
-    const channel = this.client.channel(`mindflow-collab:${docId}`, { config: { private: wantPrivate, broadcast: { ack: true } } });
+    // `presence`: **서버가 소켓 죽음을 아는 유일한 주체**라, 살아 있음(track)을
+    // 등록해 두면 새로고침·크래시로 소켓이 끊기는 즉시 서버가 leave를 모두에게
+    // 알린다. awareness의 pagehide "떠남" 방송은 소켓과 함께 죽어 유실되고, 그러면
+    // 유령이 y-protocols의 30초 타임아웃까지 남았다(제보: 새로고침마다 접속자 +1,
+    // 이탈자가 목록에 잔류). key = awareness clientID — leave에서 누구를 지울지
+    // 바로 안다. 0009 정책은 extension을 가리지 않아 presence도 같은 정책을 탄다
+    // (별도 마이그레이션 불필요).
+    const channel = this.client.channel(`mindflow-collab:${docId}`, {
+      config: { private: wantPrivate, broadcast: { ack: true }, presence: { key: String(this.ydoc?.clientID ?? '') } },
+    });
     // **구독 전에** 현재 채널로 세워 둔다. 아래 콜백·핸들러가 전부 "내가 아직 현재
     // 채널인가"로 자기 자격을 확인하는데, 구독 뒤에 세우면 콜백이 먼저 도는 순간
     // (테스트의 동기 구독, 실제로는 캐시된 join 응답) 자기 자신을 남으로 오인한다.
@@ -274,6 +283,17 @@ export class SupabaseRealtimeProvider implements CollabProvider {
         const known = Array.from(this.awareness.getStates().keys());
         if (!known.length) return;
         void channel.send({ type: 'broadcast', event: AWARENESS_EVENT, payload: { update: bytesToBase64(encodeAwarenessUpdate(this.awareness, known)) } satisfies UpdatePayload });
+      })
+      .on('presence', { event: 'leave' }, ({ key }: { key: string }) => {
+        // 서버가 알려 준 이탈(소켓 끊김 포함) — 그 클라이언트의 awareness를 그 자리에서
+        // 정리한다. origin은 'local'이 **아니어야** 한다(되방송 방지 — 이 leave는
+        // 피어마다 자기 서버 이벤트로 받는다). 정상 종료(pagehide)로 이미 지워졌으면
+        // no-op. 순간 재접속(네트워크 블립)의 leave는 상대가 재합류하며 자기 상태를
+        // 다시 알리므로(announce) 곧 복귀한다.
+        if (!this.awareness || this.channel !== channel) return;
+        const id = Number(key);
+        if (!Number.isFinite(id) || id === this.awareness.clientID) return;
+        if (this.awareness.getStates().has(id)) removeAwarenessStates(this.awareness, [id], this);
       })
       .subscribe((status, err) => {
         if (gen !== this.session) return; // 죽은 세션의 콜백
@@ -358,6 +378,12 @@ export class SupabaseRealtimeProvider implements CollabProvider {
     }
     this.retryAttempt = 0; // 붙었다 — 다음 사고의 백오프는 처음부터
     onStatus?.(wantPrivate ? 'connected' : 'connected-insecure');
+    // presence 등록 — 내 소켓이 죽으면 서버가 피어들에게 leave를 알린다(위 핸들러).
+    // 재합류(SUBSCRIBED 재발화)마다 announce가 돌므로 다시 track된다. 실패해도
+    // 협업 자체는 그대로다 — 유령 정리가 30초 타임아웃 폴백으로 내려갈 뿐.
+    void channel.track({}).then((res) => {
+      if (res !== 'ok') console.warn('[collab] presence 등록 실패 — 이탈 감지가 30초 타임아웃으로 동작합니다:', res);
+    });
     // 요청만 하면 반쪽 동기화다 — 내 연산도 상대에게 가야 한다. 각 기기는 자기 로컬
     // 문서로 Y.Doc을 따로 심으므로 연산 이력이 서로 다르고, 상대가 내 심기 연산을 갖고
     // 있지 않으면 이후 내 편집 업데이트는 상대에서 **보류**돼 반영되지 않는다(부분 적용된
