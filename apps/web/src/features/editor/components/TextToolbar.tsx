@@ -136,6 +136,44 @@ export function TextToolbar({ controller }: TextToolbarProps) {
         .slice(0, 4)
     : [];
 
+  // ── 멘션 리스트 키보드 내비게이션(요청) — ↑/↓로 활성 항목 이동, Enter로 선택.
+  // 편집 박스가 포커스를 쥔 채이므로 **document 캡처 단계**에서 가로챈다: 그냥
+  // 두면 Enter는 편집 확정(데스크톱)으로, 방향키는 캐럿 이동으로 새어 리스트가
+  // 닫힌다. IME 조합 중 Enter는 확정 동작이라 건드리지 않는다.
+  const [mentionIdx, setMentionIdx] = useState(0);
+  const mentionShowing = !!mention && mentionMatches.length > 0;
+  /** 캡처 리스너는 표시 여부가 바뀔 때만 등록/해제 — 최신 목록·인덱스는 ref로 읽는다. */
+  const mentionUiRef = useRef({ mention, matches: mentionMatches, idx: mentionIdx });
+  mentionUiRef.current = { mention, matches: mentionMatches, idx: mentionIdx };
+  // 토큰(질의)이 바뀌면 활성 항목을 처음으로 — 목록이 갈렸는데 옛 인덱스가 남으면
+  // 보이는 강조와 Enter가 고르는 항목이 어긋난다.
+  useEffect(() => {
+    setMentionIdx(0);
+  }, [mention?.start, mention?.query]);
+  useEffect(() => {
+    if (!mentionShowing) return;
+    const onKey = (e: KeyboardEvent): void => {
+      if (e.isComposing) return;
+      if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
+        e.preventDefault();
+        e.stopPropagation();
+        const n = mentionUiRef.current.matches.length;
+        if (n > 0) setMentionIdx((i) => (i + (e.key === 'ArrowDown' ? 1 : -1) + n) % n);
+      } else if (e.key === 'Enter') {
+        e.preventDefault();
+        e.stopPropagation();
+        const { mention: tok, matches, idx } = mentionUiRef.current;
+        const p = matches[Math.min(idx, matches.length - 1)];
+        if (tok && p) {
+          controller.insertMentionRange(tok.start, tok.end, participantName(p), p.email);
+          setMention(null);
+        }
+      }
+    };
+    document.addEventListener('keydown', onKey, true);
+    return () => document.removeEventListener('keydown', onKey, true);
+  }, [mentionShowing, controller]);
+
   // 팝업 실측 높이 — 내용(툴바 2행 ↔ 멘션 후보 1~4행 ↔ 링크 입력 행)에 따라
   // 달라지므로 렌더 후 페인트 전에 잰다(useLayoutEffect — 틀린 위치가 화면에
   // 나가지 않는다). 84 = 두 줄 툴바의 어림값(rect를 못 재는 jsdom 폴백).
@@ -249,25 +287,30 @@ export function TextToolbar({ controller }: TextToolbarProps) {
           blur로 캐럿·토큰이 사라지지 않게 mousedown에서 처리(다른 버튼들과 같은 함정). */}
       {mention && mentionMatches.length > 0 ? (
         <div data-mention-suggest style={{ display: 'flex', flexDirection: 'column', minWidth: 230, margin: '-2px -4px' }}>
-          {mentionMatches.map((p) => (
+          {mentionMatches.map((p, i) => (
             <button
               key={p.email}
               type="button"
               className="mf-ed-btn"
               data-mention-pick={p.email}
+              data-active={i === mentionIdx ? 'true' : undefined}
               onMouseDown={(e) => {
                 e.preventDefault();
                 e.stopPropagation();
                 controller.insertMentionRange(mention.start, mention.end, participantName(p), p.email);
                 setMention(null);
               }}
+              // 마우스가 지나가면 활성도 따라간다 — 키보드 강조와 hover 강조가
+              // 따로 놀면 Enter가 어느 항목을 고를지 헷갈린다.
+              onMouseEnter={() => setMentionIdx(i)}
               style={{
                 display: 'flex',
                 alignItems: 'center',
                 gap: 7,
                 width: '100%',
                 border: 'none',
-                background: 'transparent',
+                // 활성(키보드 ↑/↓ 또는 hover) 항목 강조 — Enter가 이걸 고른다.
+                background: i === mentionIdx ? th.panel2 : 'transparent',
                 fontFamily: 'inherit',
                 fontSize: 12,
                 color: th.text,
