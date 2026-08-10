@@ -87,6 +87,17 @@
   }
 }
 
+/* 협업 재연결 스피너 — 끊김 배너의 "다시 연결 중…" 옆에서 돌아, 지금 재시도가
+   진행 중임을 움직임으로 알린다(요청). */
+@keyframes mf-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+.mf-collab-spin {
+  animation: mf-spin 0.9s linear infinite;
+}
+
 /* 메모 접기/펼치기 셰브론 칩 — 평소엔 은은하게(내용을 방해하지 않게), 올리면
    또렷하게. 색은 인라인(메모 글자색 기반)이고 여기서는 세기만 다룬다. */
 .mf-float-fold {

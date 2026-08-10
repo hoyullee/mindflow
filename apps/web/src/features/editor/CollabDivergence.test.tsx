@@ -207,6 +207,32 @@ describe('실시간이 끊긴 채 편집할 때', () => {
     expect(screen.queryByRole('dialog', { name: '공동 편집 연결 끊김' })).toBeNull();
   });
 
+  it('끊김 배너가 뜨는 동안 배경이 dim되고 스피너가 돌며, 우상단 배지는 겹치지 않는다(제보)', async () => {
+    const { backend } = makeBackend([]);
+    const { container } = renderEditor(backend, 'div6');
+    await waitFor(() => expect(within(getViewport(container)).getByText('리서치')).toBeTruthy());
+    await settleShare();
+    // 평소에는 dim이 없다.
+    expect(document.querySelector('[data-collab-dim]')).toBeNull();
+
+    setStatus('offline');
+    await screen.findByText(/연결이 끊겨 편집을 잠시 멈췄어요/);
+    // dim 베일 — 시각 신호일 뿐 조작은 막지 않는다(차단은 commitDoc chokepoint,
+    // 읽기·이동·줌은 기존 설계 그대로).
+    const dim = document.querySelector('[data-collab-dim]') as HTMLElement;
+    expect(dim).toBeTruthy();
+    expect(dim.style.pointerEvents).toBe('none');
+    // 재연결 진행 애니메이션(스피너).
+    expect(document.querySelector('.mf-collab-spin')).toBeTruthy();
+    // 우상단 PresenceBar 배지는 배너와 같은 말을 두 번 하며 모바일에서 겹쳤다 —
+    // 배너가 뜨는 동안은 배너가 대신한다.
+    expect(screen.queryByText('공동 편집 연결 끊김')).toBeNull();
+
+    // 다시 연결되면 dim도 함께 걷힌다.
+    setStatus('connected');
+    await waitFor(() => expect(document.querySelector('[data-collab-dim]')).toBeNull());
+  });
+
   it('끊김이 오래가면 배너에서 전체 안내(새로고침)로 승격한다', async () => {
     const { backend } = makeBackend([]);
     const { container } = renderEditor(backend, 'div3b');
