@@ -90,6 +90,26 @@ describe('알림 센터', () => {
     await waitFor(() => expect(screen.getByTestId('loc').textContent).toBe('/editor?map=d3'));
   });
 
+  it('패널은 다듬은 스크롤바 클래스(.notif-scroll)를 쓰고, 모바일 벨은 고스트 아이콘이다(제보 2건)', async () => {
+    seed([{}]);
+    render(
+      <MemoryRouter initialEntries={['/']}>
+        <Routes>
+          <Route path="/" element={<NotificationBell isMobile />} />
+        </Routes>
+      </MemoryRouter>,
+    );
+    const bell = await screen.findByRole('button', { name: '알림 1개' });
+    // 모바일: 좁은 앱 바에서 박스형 버튼은 깨져 보인다 — ☰과 같은 고스트(테두리·면 없음).
+    expect(bell.getAttribute('style') || '').not.toContain('border: 1px solid'); // 박스형 테두리가 없다(jsdom은 border:none을 직렬화하지 않는다)
+    expect(bell.style.background).toBe('transparent');
+    expect(bell.querySelector('svg')?.getAttribute('width')).toBe('20');
+    fireEvent.click(bell);
+    const panel = await screen.findByRole('region', { name: '알림 센터' });
+    // 목록이 길어질 때 기본 스크롤바가 패널을 가리지 않게 — .lnb-scroll과 같은 처리.
+    expect(panel.classList.contains('notif-scroll')).toBe(true);
+  });
+
   it('알림이 없으면 배지 없이 빈 안내가 뜬다', async () => {
     renderBell();
     const bell = await screen.findByRole('button', { name: '알림' });
