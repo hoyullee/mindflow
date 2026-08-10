@@ -17,21 +17,22 @@ import { parseDoc, serializeDoc } from '@mindflow/mindmap-core';
 import type { DocMeta, DocStore, LoadedDoc, SaveOptions, SaveResult } from '../ports';
 import { pushLocalNotification } from './localNotifications';
 
-/** 직렬화 본문에서 인라인 멘션 이메일들(소문자, 중복 제거) — 0023 트리거의
- * `doc_mention_emails`와 같은 규칙(노드·메모의 rich 런 `m`). */
-function docMentionEmails(raw: unknown): string[] {
+/** 직렬화 본문에서 인라인 멘션의 (이메일, 객체 id) 쌍들 — 0026 트리거의
+ * `doc_mention_sites`와 같은 규칙(노드·메모의 rich 런 `m`). 이메일만 비교하면
+ * 같은 사람을 **다른 객체**에 다시 멘션해도 집합이 그대로라 알림이 없다. */
+function docMentionSites(raw: unknown): Set<string> {
   const out = new Set<string>();
-  const d = raw as { nodes?: Record<string, { rich?: Array<{ m?: string }> | null }>; floats?: Array<{ rich?: Array<{ m?: string }> | null }> } | null;
-  if (!d || typeof d !== 'object') return [];
-  const eat = (rich?: Array<{ m?: string }> | null): void => {
+  const d = raw as { nodes?: Record<string, { rich?: Array<{ m?: string }> | null }>; floats?: Array<{ id?: string; rich?: Array<{ m?: string }> | null }> } | null;
+  if (!d || typeof d !== 'object') return out;
+  const eat = (site: string, rich?: Array<{ m?: string }> | null): void => {
     (rich ?? []).forEach((r) => {
       const em = (r.m || '').trim().toLowerCase();
-      if (em) out.add(em);
+      if (em) out.add(`${em}|${site}`);
     });
   };
-  Object.values(d.nodes ?? {}).forEach((n) => eat(n.rich));
-  (d.floats ?? []).forEach((f) => eat(f.rich));
-  return [...out];
+  Object.entries(d.nodes ?? {}).forEach(([id, n]) => eat(id, n.rich));
+  (d.floats ?? []).forEach((f) => eat(f.id ?? '', f.rich));
+  return out;
 }
 
 /** 데모 세션의 표시 이름(이메일 로컬파트) — 로컬 알림의 actor. */
@@ -192,17 +193,21 @@ export class LocalDocStore implements DocStore {
     }
     const nextVersion = currentVersion + 1;
     const payload = JSON.stringify(serializeDoc(doc));
-    // 인라인 멘션 알림(0023의 로컬 짝) — 저장 전 본문과의 **집합 차이**만 알린다.
+    // 인라인 멘션 알림(0026의 로컬 짝) — 저장 전 본문과의 (이메일, 객체) **쌍
+    // 차이**만 알린다(새 객체에 단 멘션은 다시 울리고, 같은 저장에 여러 객체가
+    // 늘어도 사람당 한 번).
     const prevRaw = readRaw(docKey(id));
     if (!writeRaw(docKey(id), payload)) {
       return { ok: false, reason: 'error', message: '저장 공간을 사용할 수 없어요 (localStorage unavailable).' };
     }
     try {
-      const before = new Set(docMentionEmails(prevRaw ? (JSON.parse(prevRaw) as unknown) : null));
+      const before = docMentionSites(prevRaw ? (JSON.parse(prevRaw) as unknown) : null);
       const title = opts.title || existing?.title || rootTitleOf(doc);
-      docMentionEmails(JSON.parse(payload) as unknown)
-        .filter((em) => !before.has(em))
-        .forEach((em) => pushLocalNotification({ recipientEmail: em, kind: 'doc_mention', documentId: id, nodeId: null, actorName: demoActorName(), preview: '', docTitle: title }));
+      const fresh = new Set<string>();
+      docMentionSites(JSON.parse(payload) as unknown).forEach((pair) => {
+        if (!before.has(pair)) fresh.add(pair.split('|')[0] ?? '');
+      });
+      fresh.forEach((em) => pushLocalNotification({ recipientEmail: em, kind: 'doc_mention', documentId: id, nodeId: null, actorName: demoActorName(), preview: '', docTitle: title }));
     } catch {
       /* 알림은 저장을 방해하지 않는다 */
     }
