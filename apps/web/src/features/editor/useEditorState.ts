@@ -869,9 +869,22 @@ export function useEditorState(): EditorController {
    * 멈추고 안내한다(위 `!res` 분기 참고).
    */
   const [bodyMissing, setBodyMissing] = useState(false);
+  /**
+   * 백엔드 로드가 **정착**했는가(성공·실패 불문) — 커튼(canvasReady) 해제 조건.
+   *
+   * `hydrating`은 로컬 캐시가 있으면 곧장 false다(캐시로 먼저 그린다 — 오프라인
+   * 폴백·즉시 상호작용). 혼자 쓰는 맵은 마지막 저장을 이 기기가 했으니 캐시=서버라
+   * 문제가 없지만, **공동 편집 맵은 상대의 편집만큼 캐시가 낡아** 있어 캐시 →
+   * 서버 판 교체가 화면에 그대로 보였다(제보: 진입 시 편집 이전 내용이 잠깐
+   * 보였다가 현재 판으로 튐). 커튼이 서버 판 채택까지 가리면 공개되는 첫 화면이
+   * 언제나 최신 판이다. 로드 실패(오프라인 포함)도 "정착"이다 — 그때는 기존
+   * 오류/캐시 경로가 그대로 이어받는다(커튼이 무한정 남지 않는다).
+   */
+  const [backendSettled, setBackendSettled] = useState(backendMode !== 'supabase');
   const [shareOpen, setShareOpen] = useState(false);
   useEffect(() => {
     let cancelled = false;
+    if (backendMode === 'supabase') setBackendSettled(false); // 새 문서(id 이전 포함)의 로드가 다시 정착할 때까지
     const p = docStore
       .load(docStoreId)
       .then((res) => {
@@ -977,13 +990,16 @@ export function useEditorState(): EditorController {
         setLoadError(true);
       })
       .finally(() => {
-        if (!cancelled) setHydrating(false);
+        if (!cancelled) {
+          setHydrating(false);
+          setBackendSettled(true);
+        }
       });
     initialLoadRef.current = p;
     return () => {
       cancelled = true;
     };
-  }, [docStore, docStoreId, mapId]);
+  }, [docStore, docStoreId, mapId, backendMode]);
 
   // ---- 공유 권한(#22): '보기 전용'으로 초대된 문서인가 ----
   // 판별 전 기본값은 'edit'(단독/소유 문서 무회귀). 잘못 판별돼도 위험하지 않다 —
@@ -1797,7 +1813,7 @@ export function useEditorState(): EditorController {
   // 백엔드 하이드레이션도 끝난 상태. 이전에는 이 준비 과정이 그대로 보여서
   // 새로고침 때 좌상단 플래시→점프 깜빡임이 생겼다 — 이제 CanvasCurtain이
   // 준비될 때까지 캔버스를 가린다.
-  const canvasReady = initialFitDone && fontsSettled && !hydrating;
+  const canvasReady = initialFitDone && fontsSettled && !hydrating && backendSettled;
 
   const setLayoutMode = useCallback(
     (mode: LayoutMode) => {
