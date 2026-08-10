@@ -508,6 +508,14 @@ export interface NotificationStore {
   list(): Promise<AppNotification[]>;
   /** 전부 읽음 처리 — 알림 센터를 **열었을 때** 부른다(0019 공유 배지와 같은 규칙). */
   markAllRead(): Promise<{ error?: string }>;
+  /**
+   * 내 우편함에 새 알림이 생기면 부른다 — 댓글 실시간(#0021)과 같은 **내용 없는
+   * 신호(ping)**: Supabase는 DB 트리거(0027)가 수신자 채널로 쏘고, 로컬/데모는
+   * BroadcastChannel. 받는 쪽이 `list()`로 다시 읽으므로 채널은 비밀을 나르지
+   * 않는다. 신호가 유실될 수 있으므로 호출부의 주기 확인은 안전망으로 남긴다.
+   * @returns 구독 해제 함수.
+   */
+  subscribe(onChange: () => void): () => void;
 }
 
 // ── Images ─────────────────────────────────────────────────────────────────

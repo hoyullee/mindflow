@@ -2,7 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { MemoryRouter, Route, Routes, useLocation } from 'react-router-dom';
 import { NotificationBell } from './NotificationBell';
-import { readLocalNotifications, writeLocalNotifications, type StoredNotification } from '../../../adapters/local/localNotifications';
+import { pushLocalNotification, readLocalNotifications, writeLocalNotifications, type StoredNotification } from '../../../adapters/local/localNotifications';
 
 // 홈 알림 센터(0022의 로컬 짝) — 벨 배지·열기=읽음 처리·항목 클릭=딥링크.
 
@@ -95,6 +95,18 @@ describe('알림 센터', () => {
     const bell = await screen.findByRole('button', { name: '알림' });
     fireEvent.click(bell);
     expect(await screen.findByText(/새 알림이 없어요/)).toBeTruthy();
+  });
+
+  it('새 알림이 만들어지면 폴링을 기다리지 않고 즉시 배지가 선다(ping 신호)', async () => {
+    renderBell();
+    await screen.findByRole('button', { name: '알림' });
+    // 알림 생성 지점(로컬 어댑터 = 데모의 "DB 트리거")이 ping을 쏜다 — 60초
+    // 폴링만 있다면 이 테스트는 타임아웃 안에 배지를 보지 못한다.
+    act(() => {
+      pushLocalNotification({ recipientEmail: 'me@example.com', kind: 'doc_mention', documentId: 'd1', nodeId: null, actorName: '상대', preview: '', docTitle: '새 맵' });
+    });
+    const bell = await screen.findByRole('button', { name: '알림 1개' });
+    expect(within(bell).getByText('1')).toBeTruthy();
   });
 
   it('홈을 켜 둔 채 새 알림이 오면 벨을 누르지 않아도 배지가 선다(주기 확인, 제보)', async () => {
