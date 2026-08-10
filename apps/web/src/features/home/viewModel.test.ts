@@ -426,3 +426,29 @@ describe('deriveHomeView — 제목 경로 조각', () => {
     expect(view.spaceTitle).toBe('Google Drive / 드라이브 자료');
   });
 });
+
+// 최근 트레이 프리페치 대상(제보: "간헐적으로 미리보기가 로딩인 채로 남는다") —
+// 트레이가 실제로 그릴 카드와 같은 파이프라인으로 골라야 한다.
+describe('recentTrayDocIds', () => {
+  const spaces = [
+    { id: 's1', name: '일반', home: true, color: '#f0663f', maps: [{ title: '주간 계획', when: '', hue: '#f0663f', docId: 'docA' }] },
+    { id: 's2', name: '1212', color: '#3f8fd0', maps: [{ title: '주간 계획', when: '', hue: '#3f8fd0', docId: 'docB' }] },
+  ];
+
+  it('머리에 쌓인 사라진 문서·휴지통·별칭 항목이 보이는 카드를 밀어내지 못한다', async () => {
+    const { recentTrayDocIds } = await import('./viewModel');
+    // 원시 recent의 앞 40개가 전부 해석 불가(지워진 문서의 옛 키) — 예전 방식
+    // (slice(0, 32))이라면 docB는 창 밖이라 프리페치에서 빠졌다.
+    const stale = Array.from({ length: 40 }, (_, i) => `gone-${i}`);
+    const ids = recentTrayDocIds(spaces, [...stale, 'docB', 'docA'], [], {});
+    expect(ids).toEqual(['docB', 'docA']);
+  });
+
+  it('휴지통에 간 맵은 제외, 같은 문서의 별칭(제목 키)은 하나로 접힌다', async () => {
+    const { recentTrayDocIds } = await import('./viewModel');
+    const ids = recentTrayDocIds(spaces, ['docA', '주간 계획', 'docB'], [{ docId: 'docA' }], {});
+    // docA는 휴지통 — 제외. '주간 계획'(제목 별칭)은 첫 스페이스 규칙으로 docA를
+    // 가리키지만 그것도 휴지통이라 제외. docB만 남는다.
+    expect(ids).toEqual(['docB']);
+  });
+});
