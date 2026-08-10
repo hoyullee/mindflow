@@ -681,11 +681,14 @@ export function deriveHomeView(state: HomeState): HomeViewModel {
 
   // 제목 줄 = [상위 경로, 현재 폴더] — 중첩 폴더면 상위 경로가
   // "스페이스 / 상위폴더 / …"로 깊어진다(헤더는 …로 접고 전체는 툴팁에).
+  // 검색 중에는 **"검색"** — 결과는 전 스페이스에서 오는데 제목이 활성 스페이스명
+  // 그대로면 "이 스페이스 안에서 찾았다"로 읽힌다(제보). 검색을 지우면 원래
+  // 제목(=돌아갈 자리)으로 복귀한다.
   const rootName = isDriveSpace ? 'Google Drive' : activeSpaceObj ? activeSpaceObj.name : '일반 스페이스';
   const openFolderName = isDriveSpace ? driveFolder?.name : curFolder?.name;
   const parentChain = curFolder ? folderAncestors(curFolder).reverse().map((f) => f.name) : [];
-  const titleParent = openFolderName ? [rootName, ...parentChain].join(' / ') : null;
-  const titleLeaf = openFolderName || rootName;
+  const titleParent = searching ? null : openFolderName ? [rootName, ...parentChain].join(' / ') : null;
+  const titleLeaf = searching ? '검색' : openFolderName || rootName;
 
   // 공유받은 맵 — `state.sharedMaps`(DocStore.list의 남의 문서)로만 만든다. 내
   // 워크스페이스에는 없는 문서라 스페이스/폴더 필터를 타지 않는다.

@@ -1,5 +1,5 @@
 import type { CSSProperties, MouseEvent as ReactMouseEvent } from 'react';
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import type { ListOp } from '@mindflow/mindmap-core';
 import { normalizeUrl } from '@mindflow/mindmap-core';
 import type { EditorController } from '../useEditorState';
@@ -136,6 +136,15 @@ export function TextToolbar({ controller }: TextToolbarProps) {
         .slice(0, 4)
     : [];
 
+  // 팝업 실측 높이 — 내용(툴바 2행 ↔ 멘션 후보 1~4행 ↔ 링크 입력 행)에 따라
+  // 달라지므로 렌더 후 페인트 전에 잰다(useLayoutEffect — 틀린 위치가 화면에
+  // 나가지 않는다). 84 = 두 줄 툴바의 어림값(rect를 못 재는 jsdom 폴백).
+  const [popH, setPopH] = useState(84);
+  useLayoutEffect(() => {
+    const h = rootRef.current?.offsetHeight ?? 0;
+    if (h > 0) setPopH((prev) => (prev === h ? prev : h));
+  });
+
   // 편집 세션 동안 상시 노출(사용자 결정 — NodeEditBox 마운트에서 열림). 그래서
   // 편집 박스 안 클릭(캐럿 이동·드래그 선택)은 닫지 않는다 — 닫히는 경우는
   // ① 편집 종료(커밋/취소가 textCtx를 지움) ② 다른 메뉴 열림(openCtxAt)
@@ -194,10 +203,14 @@ export function TextToolbar({ controller }: TextToolbarProps) {
   // `flexWrap`만 걸어 폭이 넘치면 알아서 접히게 뒀는데, 접히는 지점이 색상 스와치
   // 중간이라 앞 두 개가 리스트 버튼 뒤에 매달렸다(제보). 줄을 직접 나누면 어떤
   // 테마·폭에서도 색상 줄이 항상 새 줄에서 시작한다.
+  //
+  // 세로 위치는 **실측 높이 기반**: 팝업의 바닥이 편집 박스 위 8px에 붙는다.
+  // 예전엔 두 줄 툴바 높이로 어림한 `sy - 92` 고정이라, 내용이 짧아지는 순간
+  // (멘션 후보 리스트가 툴바를 대체할 때) 바닥이 붕 떠 박스에서 멀어졌다(제보).
   const style: CSSProperties = {
     position: 'absolute',
     left: Math.max(8, Math.min(textCtx.sx, (vw || 600) - TOOLBAR_W - 8)),
-    top: Math.max(8, textCtx.sy - 92),
+    top: Math.max(8, textCtx.sy - popH - 8),
     display: 'flex',
     flexDirection: 'column',
     alignItems: 'flex-start',
