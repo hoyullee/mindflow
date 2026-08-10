@@ -6,6 +6,7 @@ import { isPanButton } from '../pointerButtons';
 import type { Theme } from '../theme';
 import type { EditorController } from '../useEditorState';
 import { peersSelecting } from '../presenceSelection';
+import { CommentBadge } from './CommentBadge';
 import { RemotePeerTag } from './RemotePeerTag';
 
 interface ZoneLayerProps {
@@ -98,6 +99,10 @@ export function ZoneLayer({ zones, theme: th, controller }: ZoneLayerProps) {
               </div>
             )}
             {remotePeer && !editing && <RemotePeerTag color={remotePeer.user.color} name={remotePeer.user.name} style={{ right: 10, top: -14 }} />}
+            {/* 댓글 배지 — 모든 객체 댓글. 라벨 알약(좌상단)과 대칭인 우상단. */}
+            {(controller.commentCounts[z.id] ?? 0) > 0 && (
+              <CommentBadge id={z.id} count={controller.commentCounts[z.id]!} accent={th.accent} panel={th.panel} onOpen={() => controller.openComments(z.id)} style={{ position: 'absolute', right: 10, top: -9, zIndex: 3 }} />
+            )}
             {selected && !editing && (
               <>
                 <div

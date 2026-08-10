@@ -1518,15 +1518,16 @@ export function useEditorState(): EditorController {
     const sy = clientY - r.top;
     const hit = hitTestAll(p);
     // 보기 전용(#22): 변이 항목(추가·삭제·정렬)은 열 것이 없지만 **댓글**은 있다
-    // (0020 — 보기 전용도 댓글은 쓴다). 주제 위에서만 메뉴를 열고, 항목 구성은
-    // ContextMenu가 readOnly를 보고 댓글만 남긴다.
+    // (0020 — 보기 전용도 댓글은 쓴다). 댓글이 모든 객체로 확장되면서(요청) 주제만이
+    // 아니라 **어떤 객체 위에서든** 메뉴를 열고, 항목 구성은 ContextMenu가 readOnly를
+    // 보고 댓글만 남긴다.
     if (readOnlyRef.current) {
-      if (!(hit && hit.kind === 'node' && canCommentRef.current)) return;
+      if (!(hit && canCommentRef.current)) return;
       setTextCtx(null);
-      setSelectionState({ kind: 'node', id: hit.id }); // 선택은 보기 전용에도 허용
+      setSelectionState({ kind: hit.kind, id: hit.id }); // 선택은 보기 전용에도 허용
       setMultiSelectionState(null);
       setCtxSub(null);
-      setCtxMenu({ kind: 'node', sx, sy, cx: p.x, cy: p.y });
+      setCtxMenu({ kind: hit.kind, sx, sy, cx: p.x, cy: p.y });
       return;
     }
     setTextCtx(null);
@@ -3404,11 +3405,12 @@ export function useEditorState(): EditorController {
     return commentStore.subscribe(docStoreId, () => void reloadComments());
   }, [hydrating, canComment, sharedDoc, loadedNotMine, commentStore, docStoreId, reloadComments]);
 
-  // 주제를 고르면 패널이 따라간다 — 열어 둔 채 다른 주제를 눌렀는데 남의 댓글이
-  // 그대로 떠 있으면 어느 주제의 논의인지 알 수 없다. 주제가 아닌 것(메모·선·영역)을
-  // 고르거나 선택을 해제하면 보던 주제를 그대로 둔다.
+  // 객체를 고르면 패널이 따라간다 — 열어 둔 채 다른 대상을 눌렀는데 남의 댓글이
+  // 그대로 떠 있으면 어느 대상의 논의인지 알 수 없다. 댓글이 모든 객체(주제·메모·
+  // 선·영역)로 확장되면서(요청) 어떤 선택이든 따라가고, 선택 해제만 보던 대상을
+  // 그대로 둔다.
   useEffect(() => {
-    if (selection?.kind === 'node') setCommentsNodeId(selection.id);
+    if (selection) setCommentsNodeId(selection.id);
   }, [selection?.kind, selection?.id]);
 
   const commentCounts = useMemo(() => {
@@ -3433,10 +3435,18 @@ export function useEditorState(): EditorController {
     if (!canCommentRef.current) return;
     setCommentsNodeId(commentsParam);
     setCommentsOpen(true);
-    // 대상 주제를 화면 가운데로 — 레이아웃(geom)은 다음 페인트에 나오므로 rAF 뒤에.
+    // 대상을 화면 가운데로 — 레이아웃(geom)은 다음 페인트에 나오므로 rAF 뒤에.
+    // 주제가 아닌 대상(메모·선·영역)은 geom에 없으므로 문서 좌표에서 중심을 구한다.
     const center = (): void => {
       const g = geomRef.current[commentsParam];
-      if (g) panToCanvasPoint(g.x, g.y);
+      if (g) return panToCanvasPoint(g.x, g.y);
+      const d = docRef.current;
+      const f = d.floats.find((x) => x.id === commentsParam);
+      if (f) return panToCanvasPoint(f.x + (f.w || 160) / 2, f.y + (f.h || 44) / 2);
+      const z = d.zones.find((x) => x.id === commentsParam);
+      if (z) return panToCanvasPoint(z.x + z.w / 2, z.y + z.h / 2);
+      const l = d.lines.find((x) => x.id === commentsParam);
+      if (l) return panToCanvasPoint((l.x1 + l.x2) / 2, (l.y1 + l.y2) / 2);
     };
     if (typeof requestAnimationFrame === 'function') requestAnimationFrame(() => requestAnimationFrame(center));
     else center();

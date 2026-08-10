@@ -26,6 +26,20 @@ interface Thread {
   replies: DocComment[];
 }
 
+/** 댓글 대상의 종류가 드러나는 한 줄 제목(순수) — 주제는 기존처럼 첫 줄만, 다른
+ * 객체는 종류를 접두한다("메모 · …", "연결선", "영역 · …"). 없으면 null. */
+export function commentTargetLabel(doc: EditorController['doc'], id: string): string | null {
+  const n = doc.nodes[id];
+  if (n) return panelTitleLine(n.text);
+  const f = doc.floats.find((x) => x.id === id);
+  if (f) return f.img ? '이미지' : `메모 · ${panelTitleLine(f.text) || '메모'}`;
+  const l = doc.lines.find((x) => x.id === id);
+  if (l) return l.label && l.label.trim() ? `연결선 · ${l.label.trim()}` : '연결선';
+  const z = doc.zones.find((x) => x.id === id);
+  if (z) return `영역 · ${z.label || '영역'}`;
+  return null;
+}
+
 export function CommentPanel({ controller }: { controller: EditorController }) {
   const th = controller.uiTheme;
   const isMobile = useIsMobile();
@@ -61,9 +75,9 @@ export function CommentPanel({ controller }: { controller: EditorController }) {
 
   if (!open) return null;
 
-  const node = controller.doc.nodes[nodeId];
-  // 주제가 지워져도 댓글은 남는다(0020) — 대상이 사라졌음을 그대로 말해 준다.
-  const title = node ? panelTitleLine(node.text) : '사라진 주제';
+  // 대상이 지워져도 댓글은 남는다(0020) — 대상이 사라졌음을 그대로 말해 준다.
+  // 댓글이 모든 객체로 확장되면서(요청) 대상 종류를 제목이 말해 준다.
+  const title = commentTargetLabel(controller.doc, nodeId) ?? '사라진 대상';
   const forNode = controller.comments.filter((c) => c.nodeId === nodeId);
   const threads: Thread[] = forNode
     .filter((c) => !c.parentId)
@@ -126,7 +140,7 @@ export function CommentPanel({ controller }: { controller: EditorController }) {
         </span>
         <div style={{ flex: '1 1 auto', minWidth: 0 }}>
           <div style={{ fontSize: 12.5, fontWeight: 700, color: th.text }}>댓글</div>
-          <div title={node?.text} style={{ fontSize: 11.5, color: th.subtext, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+          <div title={title} style={{ fontSize: 11.5, color: th.subtext, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
             {title}
           </div>
         </div>
