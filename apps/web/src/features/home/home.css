@@ -97,8 +97,18 @@ a:hover {
 .notif-scroll:hover::-webkit-scrollbar-thumb {
   background: var(--mf-scroll);
 }
+/* 위/아래 화살표 버튼 제거 — Windows 크롬은 스크롤바를 커스텀하면 버튼 자리가
+   빈 조각으로 남아 패널의 둥근 모서리에 잘린 것처럼 보인다(제보). */
+.notif-scroll::-webkit-scrollbar-button {
+  display: none;
+  width: 0;
+  height: 0;
+}
 .notif-scroll::-webkit-scrollbar-track {
   background: transparent;
+  /* 썸의 이동 구간을 둥근 모서리(반지름 14px) 안쪽으로 들여놓는다 — 썸이
+     모서리 곡선에 걸치지 않는다. */
+  margin: 12px 0;
 }
 
 @keyframes mf-spin {
