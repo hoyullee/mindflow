@@ -289,13 +289,6 @@ const GearIcon = (
     <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 1 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.6 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 1 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.6 1.65 1.65 0 0 0 10 3.09V3a2 2 0 1 1 4 0v.09A1.65 1.65 0 0 0 15 4.6a1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9v.09A1.65 1.65 0 0 0 21 10h.09a2 2 0 1 1 0 4H21a1.65 1.65 0 0 0-1.6 1z" />
   </svg>
 );
-const NewTabIcon = (
-  <svg width="14" height="14" viewBox="0 0 24 24" {...stroke}>
-    <path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6" />
-    <polyline points="15 3 21 3 21 9" />
-    <line x1="10" y1="14" x2="21" y2="3" />
-  </svg>
-);
 const PngIcon = (
   <svg width="14" height="14" viewBox="0 0 24 24" {...stroke}>
     <rect x="3" y="3" width="18" height="18" rx="2" />
@@ -375,20 +368,9 @@ function findCard(view: HomeViewModel, key: string): CardViewData | undefined {
 
 function mapItems(card: CardViewData, controller: HomeController): HomeMenuItem[] {
   const items: HomeMenuItem[] = [];
-  // 우클릭 메뉴가 브라우저 기본 메뉴를 **대체**하므로, 카드가 링크(`<a href>`)라서
-  // 원래 거기 있던 "새 탭에서 열기"를 우리가 돌려준다(Notion·Drive도 같은 이유로 둔다).
-  if (card.openable !== false) {
-    items.push({
-      key: 'open-new-tab',
-      icon: NewTabIcon,
-      label: '새 탭에서 열기',
-      onSelect: () => {
-        // 새 탭도 '연 것'이다 — 최근 항목에 남지 않으면 목록이 실제와 어긋난다.
-        controller.recordRecent(card.title, card.docId);
-        window.open(card.href, '_blank', 'noopener,noreferrer');
-      },
-    });
-  }
+  // "새 탭에서 열기"는 #345에서 넣었다가 사용자 결정으로 뺐다 — 안 쓰는 항목은
+  // 목록만 늘린다. 새 탭이 필요하면 카드 링크를 Ctrl/⌘+클릭하면 된다(카드는
+  // 여전히 `<a href>`다).
   if (card.showFavRow) {
     items.push({
       key: 'fav',

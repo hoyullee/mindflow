@@ -3135,7 +3135,7 @@ describe('홈 우클릭 메뉴', () => {
     const menu = await screen.findByRole('menu');
     expect(menu.getAttribute('data-home-ctx')).toBe('map');
     // ☰을 눌렀을 때와 같은 항목들
-    ['새 탭에서 열기', /즐겨찾기/, '이름 변경', /내보내기/, '삭제하기'].forEach((label) => {
+    [/즐겨찾기/, '이름 변경', /내보내기/, '삭제하기'].forEach((label) => {
       expect(within(menu).getByRole('menuitem', { name: label })).toBeTruthy();
     });
     // 커서 자리에 뜬다
@@ -3355,26 +3355,16 @@ describe('홈 우클릭 메뉴', () => {
     expect(screen.queryByRole('menu')).toBeNull();
   });
 
-  // 우클릭 메뉴가 브라우저 기본 메뉴를 대체하면서 카드가 링크라서 원래 있던
-  // "새 탭에서 열기"가 사라졌다 — 메뉴가 그걸 돌려준다.
-  it('"새 탭에서 열기"가 그 맵의 주소를 새 탭으로 연다 (최근 항목에도 남는다)', async () => {
+  // "새 탭에서 열기"는 #345에서 넣었다가 사용자 결정으로 뺐다 — 필요하면 카드
+  // 링크를 Ctrl/⌘+클릭하면 된다(카드는 여전히 <a href>다).
+  it('맵 카드 메뉴에 "새 탭에서 열기"가 없다 (사용자 결정으로 제거)', async () => {
     const user = userEvent.setup();
-    const open = vi.fn();
-    vi.stubGlobal('open', open);
-    try {
-      const { container } = renderHomeWithDocStore([meta('doc-t', '새 탭 맵')]);
-      await waitFor(() => expect(container.querySelector('a[data-title="새 탭 맵"]')).toBeTruthy());
-      const card = container.querySelector('a[data-title="새 탭 맵"]') as HTMLElement;
-      const href = card.getAttribute('href');
-
-      await user.click(within(card).getByRole('button', { name: '메뉴' }));
-      await user.click(await screen.findByRole('menuitem', { name: '새 탭에서 열기' }));
-
-      expect(open).toHaveBeenCalledWith(href, '_blank', 'noopener,noreferrer');
-      expect(JSON.parse(localStorage.getItem('mf_recent') || '[]')).toContain('doc-t');
-    } finally {
-      vi.unstubAllGlobals();
-    }
+    const { container } = renderHomeWithDocStore([meta('doc-t', '새 탭 맵')]);
+    await waitFor(() => expect(container.querySelector('a[data-title="새 탭 맵"]')).toBeTruthy());
+    const card = container.querySelector('a[data-title="새 탭 맵"]') as HTMLElement;
+    await user.click(within(card).getByRole('button', { name: '메뉴' }));
+    await screen.findByRole('menu');
+    expect(screen.queryByRole('menuitem', { name: '새 탭에서 열기' })).toBeNull();
   });
 
   it('모바일에서는 메뉴 행이 44px 터치 타깃을 지킨다', async () => {
@@ -3385,7 +3375,7 @@ describe('홈 우클릭 메뉴', () => {
       const card = container.querySelector('a[data-title="터치 맵"]') as HTMLElement;
 
       fireEvent.contextMenu(card, { clientX: 20, clientY: 20 });
-      const row = (await screen.findByRole('menuitem', { name: '새 탭에서 열기' })) as HTMLElement;
+      const row = (await screen.findByRole('menuitem', { name: '이름 변경' })) as HTMLElement;
       expect(row.style.minHeight).toBe('44px');
     } finally {
       mockMatchMedia(false); // 데스크톱으로 되돌린다 — LNB는 모바일에서 드로어라 안 붙어 있다

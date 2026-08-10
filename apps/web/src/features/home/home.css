@@ -77,6 +77,29 @@ a:hover {
 .lnb-scroll::-webkit-scrollbar-track {
   background: transparent;
 }
+/* 알림 센터 드롭다운 — .lnb-scroll과 같은 처리(평소엔 안 보이고 호버에서만
+   얇은 썸). 목록이 길어지면 기본 10px 스크롤바가 패널 오른쪽을 가려
+   디자인을 해쳤다(제보). */
+.notif-scroll {
+  scrollbar-width: thin;
+  scrollbar-color: transparent transparent;
+}
+.notif-scroll:hover {
+  scrollbar-color: var(--mf-scroll) transparent;
+}
+.notif-scroll::-webkit-scrollbar {
+  width: 4px;
+}
+.notif-scroll::-webkit-scrollbar-thumb {
+  background: transparent;
+  border-radius: 4px;
+}
+.notif-scroll:hover::-webkit-scrollbar-thumb {
+  background: var(--mf-scroll);
+}
+.notif-scroll::-webkit-scrollbar-track {
+  background: transparent;
+}
 
 @keyframes mf-spin {
   to {

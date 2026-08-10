@@ -300,8 +300,6 @@ export function deriveHomeView(state: HomeState): HomeViewModel {
     }
     return out;
   };
-  /** 이동 메뉴 등에 보여줄 경로 이름("상위 / 하위"). 최상위 폴더면 이름 그대로. */
-  const folderPathName = (f: FolderData): string => [...folderAncestors(f).reverse().map((a) => a.name), f.name].join(' / ');
   /** 해당 폴더와 그 아래 모든 하위 폴더의 id — 재귀 맵 개수 집계용. */
   const folderTreeIds = (id: string): Set<string> => {
     const ids = new Set<string>([id]);
@@ -356,10 +354,12 @@ export function deriveHomeView(state: HomeState): HomeViewModel {
   // Drive pseudo-space). Available whenever the user has more than one space.
   const spaceMoveTargets = state.spaces.filter((s) => s.id !== state.activeSpace).map((s) => ({ id: s.id, name: s.name, color: s.color || '#f0663f' }));
   const canMoveSpace = !isDriveSpace && spaceMoveTargets.length > 0;
-  // 폴더로 이동 대상: 지금 보고 있는 폴더(이미 그 안에 있음)만 뺀 전체 폴더 —
-  // 중첩 폴더가 생기면서 폴더 안에서도 다른(하위 포함) 폴더로 옮길 수 있다.
-  // 이름은 경로("상위 / 하위")로 보여 같은 이름의 폴더를 구별한다.
-  const localMoveTargets = folders.filter((f) => !curFolder || f.id !== curFolder.id).map((f) => ({ id: f.id, name: folderPathName(f) }));
+  // 폴더로 이동 대상: **현재 위치의 폴더만**(제보 — 예전엔 하위 폴더까지 전부
+  // 나와 목록이 길고 계층이 흐려졌다). 최상위에서는 최상위 폴더, 폴더 안에서는
+  // 그 폴더의 직속 하위 폴더가 대상이다 — 화면에 보이는 폴더 카드와 같은 목록이라
+  // "지금 보이는 저 폴더로 넣는다"로 읽힌다. 같은 계층이라 경로 없이 이름만으로
+  // 구별된다(더 깊이 넣고 싶으면 그 폴더로 들어가서 옮긴다 — 뒤로 가기와 대칭).
+  const localMoveTargets = folders.filter((f) => (curFolder ? (f.parent ?? null) === curFolder.id : !f.parent)).map((f) => ({ id: f.id, name: f.name }));
   const allCards: CardViewData[] = allCardsFiltered.map((c) => {
     const hasFav = c.openable;
     const hasMove = isDriveSpace ? !driveFolder && state.driveFolders.length > 0 : localMoveTargets.length > 0;

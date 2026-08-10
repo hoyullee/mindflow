@@ -176,15 +176,18 @@ export function NotificationBell({ isMobile = false }: { isMobile?: boolean }) {
           justifyContent: 'center',
           width: size,
           height: size,
-          border: '1px solid var(--mf-border)',
+          // 모바일은 제목 줄의 ☰과 같은 **고스트 버튼**(테두리·면 없음) — 좁은
+          // 앱 바에서 박스형 버튼은 디자인이 깨져 보인다(제보). 44px 터치
+          // 타깃은 유지되고, 데스크톱은 기존 박스형 그대로다.
+          border: isMobile ? 'none' : '1px solid var(--mf-border)',
           borderRadius: 10,
-          background: open ? 'var(--mf-panel2)' : 'var(--mf-panel)',
-          color: 'var(--mf-subtext)',
+          background: isMobile ? (open ? 'var(--mf-panel2)' : 'transparent') : open ? 'var(--mf-panel2)' : 'var(--mf-panel)',
+          color: isMobile ? 'var(--mf-text)' : 'var(--mf-subtext)',
           cursor: 'pointer',
           padding: 0,
         }}
       >
-        <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+        <svg width={isMobile ? 20 : 17} height={isMobile ? 20 : 17} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={isMobile ? 2.2 : 2} strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
           <path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9" />
           <path d="M13.73 21a2 2 0 0 1-3.46 0" />
         </svg>
@@ -194,8 +197,10 @@ export function NotificationBell({ isMobile = false }: { isMobile?: boolean }) {
             aria-hidden="true"
             style={{
               position: 'absolute',
-              top: -5,
-              right: -5,
+              // 고스트 버튼(모바일)은 44px 안에 20px 글리프가 떠 있어, 배지를
+              // 버튼 모서리가 아니라 **글리프 모서리**에 붙인다.
+              top: isMobile ? 2 : -5,
+              right: isMobile ? 2 : -5,
               minWidth: 16,
               height: 16,
               padding: '0 4px',
@@ -217,7 +222,7 @@ export function NotificationBell({ isMobile = false }: { isMobile?: boolean }) {
       </button>
 
       {open && (
-        <div style={panelStyle} data-notification-panel role="region" aria-label="알림 센터">
+        <div className="notif-scroll" style={panelStyle} data-notification-panel role="region" aria-label="알림 센터">
           <div style={{ padding: '8px 14px 6px', fontSize: 12.5, fontWeight: 800, color: 'var(--mf-text)' }}>알림</div>
           {items.length ? (
             items.map((n) => {

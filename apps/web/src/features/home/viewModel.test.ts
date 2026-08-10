@@ -368,12 +368,17 @@ describe('deriveHomeView — 중첩 폴더', () => {
     expect(view.spaceTitle).toBe('일반 공간 / 자료 / 하위');
   });
 
-  it('이동 대상 폴더는 경로 이름으로, 현재 폴더는 제외된다', () => {
+  it('이동 대상 폴더는 **현재 위치의 폴더만** — 최상위에서는 최상위, 폴더 안에서는 직속 하위(제보)', () => {
+    // 최상위: 최상위 폴더 둘만(하위 f2는 안 나온다 — 예전엔 "자료 / 하위"까지
+    // 전부 나와 목록이 길고 계층이 흐려졌다).
+    const top = deriveHomeView(nestedState());
+    expect(top.allCards[0]!.moveTargets.map((t) => t.name).sort()).toEqual(['다른최상위', '자료']);
+    // 폴더 안: 그 폴더의 직속 하위만 — 화면의 폴더 카드와 같은 목록이다.
     const state = nestedState();
     state.curFolder = 'f1';
     const view = deriveHomeView(state);
     const targets = view.allCards[0]!.moveTargets;
-    expect(targets.map((t) => t.name).sort()).toEqual(['다른최상위', '자료 / 하위']);
+    expect(targets.map((t) => t.name)).toEqual(['하위']);
     expect(targets.some((t) => t.id === 'f1')).toBe(false);
   });
 
