@@ -3565,6 +3565,23 @@ describe('홈 우클릭 메뉴', () => {
 
 // 맵 카드의 "공유 중" 표식(요청) — 내가 초대를 걸었거나 링크를 켜 둔 맵은 제목 옆에
 // 사람 아이콘이 뜬다(Google Drive 관례). 초대/링크 여부는 툴팁 문구로 갈린다.
+// 화면 밖 카드의 렌더링을 브라우저가 건너뛰는 계약(가상화의 저렴한 중간 단계) —
+// 실측: 150맵 기준 검색 해제 재마운트 1221ms → 347ms, 첫 로드 2047ms → 1019ms.
+// 이 속성이 빠지면 조용히 예전 비용으로 돌아가므로 스타일 계약으로 고정한다.
+describe('맵 카드 렌더 스킵(content-visibility)', () => {
+  const meta = (id: string, title: string): DocMeta => ({ id, title, version: 1, updatedAt: '2026-01-01T00:00:00.000Z', isFavorite: false, deletedAt: null });
+
+  it('그리드 카드가 content-visibility:auto + intrinsic-size를 갖는다', async () => {
+    const { container } = renderHomeWithDocStore([meta('doc-cv', '가벼운 맵')]);
+    await waitFor(() => expect(container.querySelector('a[data-title="가벼운 맵"]')).toBeTruthy());
+    const card = container.querySelector('a[data-title="가벼운 맵"]') as HTMLElement;
+    expect(card.style.contentVisibility).toBe('auto');
+    // intrinsic-size의 `auto`가 있어야 한 번 그려진 카드의 실제 크기를 기억한다
+    // (없으면 스크롤할 때마다 추정 높이로 접혀 스크롤바가 널뛴다).
+    expect(card.getAttribute('style') || '').toContain('contain-intrinsic-size: auto');
+  });
+});
+
 describe('맵 카드 공유 표식', () => {
   const meta = (id: string, title: string): DocMeta => ({ id, title, version: 1, updatedAt: '2026-01-01T00:00:00.000Z', isFavorite: false, deletedAt: null });
 

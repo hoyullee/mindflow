@@ -89,6 +89,14 @@ export function MapCard({ card, controller, draggableEnabled, compact = false }:
     color: grey ? 'var(--mf-faint)' : 'var(--mf-text)',
     // 더블탭이 브라우저의 '두 번 눌러 확대' 제스처로 새지 않게 한다(스크롤·핀치는 유지).
     touchAction: 'manipulation',
+    // 화면 밖 카드는 브라우저가 렌더링(스타일·레이아웃·페인트)을 건너뛴다 —
+    // 썸네일 SVG가 카드마다 수백 노드라, 150맵 그리드의 마운트/재마운트 비용이
+    // 뷰포트 분량으로 떨어진다(가상화의 저렴한 중간 단계: DOM·테스트·드래그·
+    // 접근성·Ctrl+F 전부 무변경, 실측은 CLAUDE.md 항목 참고). intrinsic-size의
+    // `auto`는 한 번 그려진 카드의 실제 크기를 기억하므로 추정값은 첫 페인트
+    // 전 스크롤바 자리에만 쓰인다.
+    contentVisibility: 'auto',
+    containIntrinsicSize: compact ? 'auto 130px' : 'auto 220px',
   };
 
   return (
