@@ -83,6 +83,13 @@ export class LocalShareStore implements ShareStore {
     return {};
   }
 
+  async listSharedByMe(): Promise<Record<string, { invitees: number; link: boolean }>> {
+    const out: Record<string, { invitees: number; link: boolean }> = {};
+    for (const s of readAll()) (out[s.documentId] ??= { invitees: 0, link: false }).invitees++;
+    for (const id of Object.keys(readLinks())) (out[id] ??= { invitees: 0, link: false }).link = true;
+    return out;
+  }
+
   async list(documentId: string): Promise<DocumentShare[]> {
     return readAll()
       .filter((s) => s.documentId === documentId)

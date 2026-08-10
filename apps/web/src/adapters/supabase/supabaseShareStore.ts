@@ -49,6 +49,30 @@ export class SupabaseShareStore implements ShareStore {
     return {};
   }
 
+  async listSharedByMe(): Promise<Record<string, { invitees: number; link: boolean }>> {
+    const out: Record<string, { invitees: number; link: boolean }> = {};
+    // 초대: RLS는 "내가 소유한 문서의 초대 전부 + 나에게 온 초대"를 보여 준다.
+    // 나에게 온 초대의 문서는 홈 그리드 카드가 아니어서 조회돼도 해가 없다 —
+    // 최근 트레이에 있다면 그 맵도 실제로 공유된 맵이니 표식이 맞다.
+    const invites = await this.client.from(TABLE).select('document_id');
+    if (invites.error) {
+      console.warn('[geurio] 공유 표식 조회 실패:', invites.error.message);
+      return out;
+    }
+    for (const r of (invites.data ?? []) as { document_id: string }[]) {
+      (out[r.document_id] ??= { invitees: 0, link: false }).invitees++;
+    }
+    // 링크 공유(0017): link_role이 켜진 문서. 구 서버(컬럼 없음)는 조용히 생략 —
+    // 표식이 빠질 뿐 홈은 그대로다.
+    const links = await this.client.from('documents').select('id').not('link_role', 'is', null);
+    if (!links.error) {
+      for (const r of (links.data ?? []) as { id: string }[]) {
+        (out[r.id] ??= { invitees: 0, link: false }).link = true;
+      }
+    }
+    return out;
+  }
+
   async list(documentId: string): Promise<DocumentShare[]> {
     const { data, error } = await this.client.from(TABLE).select('document_id,invitee_email,role,created_at').eq('document_id', documentId).order('created_at', { ascending: true });
     if (error) throw new Error(error.message);

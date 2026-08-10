@@ -17,6 +17,9 @@ export interface CardViewData {
   /** 마지막으로 **저장한 사람**의 이름 — 그게 내가 아닐 때만 채워진다(0015).
    * 카드 하단이 "수정일 · 3시간 전 · 홍길동"이 된다. */
   editorName?: string;
+  /** 이 맵이 공유돼 있으면 그 요약("2명과 공유 중" 등) — 있으면 카드 제목 옆에
+   * 사람 아이콘 표식이 뜨고 이 문구가 툴팁이 된다(`sharedLabelOf`). */
+  sharedLabel?: string;
   hue: string;
   docId?: string;
   href: string;
@@ -156,6 +159,17 @@ export interface HomeViewModel {
   foldersSectionVisible: boolean;
   mapsSectionVisible: boolean;
   userInitial: string;
+}
+
+
+/** 카드의 "공유 중" 표식 문구 — 공유돼 있지 않으면 undefined(표식 없음).
+ * 초대와 링크는 성격이 달라 나눠 말한다: 초대는 "누구와", 링크는 "누구든". */
+export function sharedLabelOf(docId: string | undefined, sharedByMe: Record<string, { invitees: number; link: boolean }>): string | undefined {
+  if (!docId) return undefined;
+  const s = sharedByMe[docId];
+  if (!s) return undefined;
+  if (s.invitees > 0) return `${s.invitees}명과 공유 중` + (s.link ? ' · 링크 공유 켜짐' : '');
+  return s.link ? '링크가 있는 사람이 열람 가능' : undefined;
 }
 
 function sourceIsDrive(title: string): boolean {
@@ -316,6 +330,7 @@ export function deriveHomeView(state: HomeState): HomeViewModel {
       when: c.when,
       updatedAt: c.docId ? state.docTimes[c.docId] : undefined,
       editorName: c.docId ? state.editorNames[c.docId] : undefined,
+      sharedLabel: sharedLabelOf(c.docId, state.sharedByMe),
       hue: c.hue,
       docId: c.docId,
       href: mapHref(c.title, c.docId),
@@ -439,6 +454,7 @@ export function deriveHomeView(state: HomeState): HomeViewModel {
             when: m.when,
             updatedAt: m.docId ? state.docTimes[m.docId] : undefined,
             editorName: m.docId ? state.editorNames[m.docId] : undefined,
+            sharedLabel: sharedLabelOf(m.docId, state.sharedByMe),
             hue: m.hue,
             docId: m.docId,
             href: mapHref(m.title, m.docId),
@@ -577,6 +593,7 @@ export function deriveHomeView(state: HomeState): HomeViewModel {
         when: base.when,
         updatedAt: base.docId ? state.docTimes[base.docId] : undefined,
         editorName: base.docId ? state.editorNames[base.docId] : undefined,
+        sharedLabel: sharedLabelOf(base.docId, state.sharedByMe),
         hue: base.hue,
         docId: base.docId,
         href: mapHref(base.title, base.docId),
