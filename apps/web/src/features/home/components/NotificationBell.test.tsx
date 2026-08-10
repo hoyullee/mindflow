@@ -110,6 +110,18 @@ describe('알림 센터', () => {
     expect(panel.classList.contains('notif-scroll')).toBe(true);
   });
 
+  it('알림 패널 스크롤바: 위/아래 화살표 버튼이 없고 트랙이 둥근 모서리 안쪽으로 들여진다(제보)', async () => {
+    // jsdom은 ::-webkit-scrollbar 의사 요소를 렌더하지 않으므로 CSS 계약을
+    // 파일에서 직접 가드한다(Windows 크롬에서만 보이는 버튼 조각이 대상).
+    const { readFileSync, existsSync } = await import('node:fs');
+    // vitest의 import.meta.url은 file: 스킴이 아니라 cwd 기준 상대 경로로 찾는다
+    // (apps/web에서 실행 / 루트에서 실행 둘 다).
+    const cssPath = ['src/features/home/home.css', 'apps/web/src/features/home/home.css'].find((f) => existsSync(f))!;
+    const css = readFileSync(cssPath, 'utf8');
+    expect(css).toMatch(/\.notif-scroll::-webkit-scrollbar-button\s*\{[^}]*display:\s*none/);
+    expect(css).toMatch(/\.notif-scroll::-webkit-scrollbar-track\s*\{[^}]*margin:\s*12px 0/);
+  });
+
   it('알림이 없으면 배지 없이 빈 안내가 뜬다', async () => {
     renderBell();
     const bell = await screen.findByRole('button', { name: '알림' });
