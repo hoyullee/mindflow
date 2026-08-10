@@ -26,6 +26,11 @@ interface PresenceBarProps {
 export function PresenceBar({ controller }: PresenceBarProps) {
   const th = controller.uiTheme;
   const { peers } = controller.presence;
+  // 공유 맵의 끊김은 `CollabBlockedBanner`(짧은 끊김)/`CollabPaused`(오래된 끊김)가
+  // 화면 가운데에서 말한다 — 같은 상태를 우상단 배지로 한 번 더 말하면 좁은 모바일
+  // 화면에서 배너와 겹친다(제보). 접속자 아바타도 끊긴 동안은 낡은 정보라 함께
+  // 내린다. 배너가 뜨지 않는 끊김(공유 안 된 맵 + 접속자 흔적)만 이 배지가 맡는다.
+  if (controller.collabBlocked) return null;
   const down = controller.backendMode === 'supabase' && controller.collabStatus === 'offline' && (controller.sharedDoc || peers.length > 0);
   const insecure = controller.collabStatus === 'connected-insecure';
   if (!peers.length && !down) return null;
