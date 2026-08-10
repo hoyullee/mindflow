@@ -149,3 +149,19 @@
 .mf-link {
   color: var(--mf-link, #1a63d8);
 }
+
+/* 댓글 입력창 — 작성 중 멘션 강조(백드롭 오버레이)를 위해 textarea 글자를
+   투명하게 그리는데, 크롬은 placeholder 색을 글자색에서 계산해 placeholder까지
+   투명해진다 → CSS 변수(인라인에서 테마 subtext를 내려 줌)로 되살린다.
+   스크롤바는 숨긴다(스크롤은 그대로 동작) — 스크롤바가 차지하는 폭만큼
+   textarea의 줄바꿈 폭이 백드롭과 달라져 글자가 어긋나기 때문. */
+.mf-cmt-input::placeholder {
+  color: var(--mf-cmt-ph, #9a9a9a);
+}
+.mf-cmt-input {
+  scrollbar-width: none;
+}
+.mf-cmt-input::-webkit-scrollbar {
+  width: 0;
+  height: 0;
+}
