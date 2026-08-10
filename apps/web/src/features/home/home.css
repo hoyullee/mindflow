@@ -57,12 +57,23 @@ a:hover {
   background: var(--mf-border);
   border-radius: 6px;
 }
-.lnb-scroll {
-  scrollbar-width: thin;
-  scrollbar-color: transparent transparent;
-}
-.lnb-scroll:hover {
-  scrollbar-color: var(--mf-scroll) transparent;
+/* ⚠️ 표준 속성(scrollbar-width/color)은 ::-webkit-scrollbar 미지원 브라우저
+   (Firefox) 전용으로 격리한다 — 크롬 121+는 표준 속성이 지정된 요소에서
+   ::-webkit-scrollbar 커스텀을 **통째로 무시**한다. 예전엔 둘을 같이 걸어서
+   4px 폭·버튼 숨김이 전혀 적용되지 않았고, Windows의 Fluent 스크롤바
+   화살표가 그대로 남았다(제보: 새 빌드에서도 화살표가 안 사라짐). */
+@supports not selector(::-webkit-scrollbar) {
+  .lnb-scroll,
+  .notif-scroll,
+  .mf-recent-scroll {
+    scrollbar-width: thin;
+    scrollbar-color: transparent transparent;
+  }
+  .lnb-scroll:hover,
+  .notif-scroll:hover,
+  .mf-recent-scroll:hover {
+    scrollbar-color: var(--mf-scroll) transparent;
+  }
 }
 .lnb-scroll::-webkit-scrollbar {
   width: 4px;
@@ -80,13 +91,6 @@ a:hover {
 /* 알림 센터 드롭다운 — .lnb-scroll과 같은 처리(평소엔 안 보이고 호버에서만
    얇은 썸). 목록이 길어지면 기본 10px 스크롤바가 패널 오른쪽을 가려
    디자인을 해쳤다(제보). */
-.notif-scroll {
-  scrollbar-width: thin;
-  scrollbar-color: transparent transparent;
-}
-.notif-scroll:hover {
-  scrollbar-color: var(--mf-scroll) transparent;
-}
 .notif-scroll::-webkit-scrollbar {
   width: 4px;
 }
@@ -367,13 +371,6 @@ a:hover {
 }
 /* Thin, hover-revealed horizontal scrollbar (same treatment as .lnb-scroll) so
    the tray doesn't grow a chunky 10px global scrollbar under the cards. */
-.mf-recent-scroll {
-  scrollbar-width: thin;
-  scrollbar-color: transparent transparent;
-}
-.mf-recent-scroll:hover {
-  scrollbar-color: var(--mf-scroll) transparent;
-}
 .mf-recent-scroll::-webkit-scrollbar {
   height: 5px;
 }
