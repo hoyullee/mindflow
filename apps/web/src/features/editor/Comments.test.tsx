@@ -248,6 +248,39 @@ describe('주제 댓글', () => {
     expect(within(panel).queryByText(MY_EMAIL)).toBeNull();
   });
 
+  it('댓글 멘션 리스트: ↑/↓로 항목을 이동하고 Enter로 활성 후보를 고른다(요청)', async () => {
+    localStorage.setItem('mindflow_doc_cm15', JSON.stringify(DOC));
+    localStorage.setItem(
+      'mf_doc_shares',
+      JSON.stringify([
+        { documentId: 'cm15', email: 'friend@example.com', role: 'edit', createdAt: '2026-01-01T00:00:00.000Z' },
+        { documentId: 'cm15', email: 'buddy@example.com', role: 'edit', createdAt: '2026-01-02T00:00:00.000Z' },
+      ]),
+    );
+    renderEditor('/editor?map=cm15&title=x');
+    const panel = await openCommentsViaMenu();
+
+    const box = within(panel).getByLabelText('댓글 입력') as HTMLTextAreaElement;
+    fireEvent.change(box, { target: { value: '@', selectionStart: 1 } });
+    await waitFor(() => expect(panel.querySelectorAll('[data-mention-candidate]')).toHaveLength(2));
+
+    // 첫 행이 활성으로 뜨고, ↑는 마지막으로 순환·↓는 다음으로(캔버스 리스트와 동일).
+    const activeEmail = (): string | null => panel.querySelector('[data-mention-candidate][data-active]')?.getAttribute('data-mention-candidate') ?? null;
+    expect(activeEmail()).toBe('friend@example.com');
+    fireEvent.keyDown(box, { key: 'ArrowUp' });
+    await waitFor(() => expect(activeEmail()).toBe('buddy@example.com'));
+    fireEvent.keyDown(box, { key: 'ArrowDown' });
+    await waitFor(() => expect(activeEmail()).toBe('friend@example.com'));
+    fireEvent.keyDown(box, { key: 'ArrowDown' });
+    await waitFor(() => expect(activeEmail()).toBe('buddy@example.com'));
+
+    // Enter = **활성** 후보 선택(예전엔 항상 첫 후보였다) — 리스트는 닫힌다.
+    fireEvent.keyDown(box, { key: 'Enter' });
+    await waitFor(() => expect(box.value).toContain('@buddy '));
+    expect(box.value).not.toContain('@friend');
+    expect(panel.querySelector('[data-mention-candidate]')).toBeNull();
+  });
+
   it('캔버스 인라인 멘션: 후보를 고르면 도형 박스가 그 자리에서 다시 측정돼 커진다(제보)', async () => {
     localStorage.setItem('mindflow_doc_cm13', JSON.stringify(DOC));
     localStorage.setItem('mf_doc_shares', JSON.stringify([{ documentId: 'cm13', email: 'friend@example.com', role: 'edit', createdAt: '2026-01-01T00:00:00.000Z' }]));
