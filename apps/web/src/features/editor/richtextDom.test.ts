@@ -225,3 +225,17 @@ describe('setLinearSelection — 블록 줄바꿈 계산이 linearize와 같아�
     el.remove();
   });
 });
+
+describe('인라인 멘션 왕복', () => {
+  it('멘션 런 → .mf-mention span(data-mention-email) → 다시 런의 m으로', async () => {
+    const { runsToHtml, domToRuns } = await import('./richtextDom');
+    const el = document.createElement('div');
+    el.innerHTML = runsToHtml({ text: '@kim 확인', rich: [{ t: '@kim', b: false, c: null, m: 'kim@x.io' }, { t: ' 확인', b: false, c: null }] });
+    const span = el.querySelector('.mf-mention')!;
+    expect(span.getAttribute('data-mention-email')).toBe('kim@x.io');
+    // 색은 클래스가 준다 — 인라인 color가 아니어야 커밋 때 c로 굳지 않는다(.mf-link와 같은 이유).
+    expect((span as HTMLElement).style.color).toBe('');
+    const back = domToRuns(el);
+    expect(back.rich?.find((r) => r.m)).toEqual({ t: '@kim', b: false, c: null, m: 'kim@x.io' });
+  });
+});

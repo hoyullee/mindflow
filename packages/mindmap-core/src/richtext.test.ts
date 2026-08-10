@@ -6,9 +6,9 @@ describe('runsToChars / charsToRuns', () => {
   it('explodes a plain (no rich) source into one unstyled char per character', () => {
     const chars = runsToChars({ text: 'abc' });
     expect(chars).toEqual([
-      { ch: 'a', b: false, c: null, i: false, s: false, href: null },
-      { ch: 'b', b: false, c: null, i: false, s: false, href: null },
-      { ch: 'c', b: false, c: null, i: false, s: false, href: null },
+      { ch: 'a', b: false, c: null, i: false, s: false, href: null, m: null },
+      { ch: 'b', b: false, c: null, i: false, s: false, href: null, m: null },
+      { ch: 'c', b: false, c: null, i: false, s: false, href: null, m: null },
     ]);
   });
 
@@ -19,16 +19,16 @@ describe('runsToChars / charsToRuns', () => {
     ];
     const chars = runsToChars({ text: 'abcd', rich });
     expect(chars).toEqual([
-      { ch: 'a', b: true, c: null, i: false, s: false, href: null },
-      { ch: 'b', b: true, c: null, i: false, s: false, href: null },
-      { ch: 'c', b: false, c: '#ff0000', i: false, s: false, href: null },
-      { ch: 'd', b: false, c: '#ff0000', i: false, s: false, href: null },
+      { ch: 'a', b: true, c: null, i: false, s: false, href: null, m: null },
+      { ch: 'b', b: true, c: null, i: false, s: false, href: null, m: null },
+      { ch: 'c', b: false, c: '#ff0000', i: false, s: false, href: null, m: null },
+      { ch: 'd', b: false, c: '#ff0000', i: false, s: false, href: null, m: null },
     ]);
   });
 
   it('an empty `rich` array is treated as absent (falls back to plain text)', () => {
     const chars = runsToChars({ text: 'x', rich: [] });
-    expect(chars).toEqual([{ ch: 'x', b: false, c: null, i: false, s: false, href: null }]);
+    expect(chars).toEqual([{ ch: 'x', b: false, c: null, i: false, s: false, href: null, m: null }]);
   });
 
   it('re-merges adjacent same-style characters back into runs', () => {

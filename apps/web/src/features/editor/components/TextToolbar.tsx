@@ -3,6 +3,8 @@ import { useEffect, useRef, useState } from 'react';
 import type { ListOp } from '@mindflow/mindmap-core';
 import { normalizeUrl } from '@mindflow/mindmap-core';
 import type { EditorController } from '../useEditorState';
+import { mentionTokenAt, participantName } from './CommentPanel';
+import { useAuthUser } from '../../../adapters/useAuthUser';
 
 /** 팝업 최대 폭 — 두 줄 중 넓은 쪽(색상 10 + 지우기)이 이 안에 들어간다.
  * 화면 오른쪽 끝 clamp도 이 값을 쓴다. */
@@ -100,6 +102,40 @@ export function TextToolbar({ controller }: TextToolbarProps) {
     setLink(null);
   };
 
+  // ── 인라인 멘션(@) — 캐럿 앞의 @토큰을 감지해 후보 행을 띄운다(요청). 후보는
+  // 공유 참가자(댓글 멘션과 같은 명단·같은 토큰 규칙 — `mentionTokenAt`), 나 자신은
+  // 뺀다. 감지는 selectionchange+input 두 신호(타이핑·캐럿 이동 모두 잡힌다).
+  const [mention, setMention] = useState<{ start: number; end: number; query: string } | null>(null);
+  const myEmail = (useAuthUser()?.email ?? '').trim().toLowerCase();
+  useEffect(() => {
+    if (!textCtx || !editingAny) return;
+    const refresh = (): void => {
+      const caret = controller.editCaretOffset();
+      if (caret == null) return setMention(null);
+      const text = controller.editValueText();
+      if (text == null) return setMention(null);
+      const tok = mentionTokenAt(text, caret);
+      if (!tok) return setMention(null);
+      controller.loadMentionCandidates();
+      setMention({ start: tok.start, end: caret, query: tok.query });
+    };
+    document.addEventListener('selectionchange', refresh);
+    document.addEventListener('input', refresh, true);
+    return () => {
+      document.removeEventListener('selectionchange', refresh);
+      document.removeEventListener('input', refresh, true);
+    };
+  }, [textCtx, editingAny, controller]);
+  const mentionMatches = mention
+    ? controller.mentionCandidates
+        .filter((p) => p.email.trim().toLowerCase() !== myEmail)
+        .filter((p) => {
+          const q = mention.query.toLowerCase();
+          return !q || participantName(p).toLowerCase().includes(q) || p.email.toLowerCase().includes(q);
+        })
+        .slice(0, 4)
+    : [];
+
   // 편집 세션 동안 상시 노출(사용자 결정 — NodeEditBox 마운트에서 열림). 그래서
   // 편집 박스 안 클릭(캐럿 이동·드래그 선택)은 닫지 않는다 — 닫히는 경우는
   // ① 편집 종료(커밋/취소가 textCtx를 지움) ② 다른 메뉴 열림(openCtxAt)
@@ -194,6 +230,29 @@ export function TextToolbar({ controller }: TextToolbarProps) {
       // `pointerdown` at the root keeps every toolbar interaction off the canvas.
       onPointerDown={(e) => e.stopPropagation()}
     >
+      {/* 0행 — 인라인 멘션 후보(캐럿 앞에 @토큰이 있을 때만). 클릭 전에 blur로
+          캐럿·토큰이 사라지지 않게 mousedown에서 처리(다른 버튼들과 같은 함정). */}
+      {mention && mentionMatches.length > 0 && (
+        <div style={rowStyle} data-mention-suggest>
+          {mentionMatches.map((p) => (
+            <button
+              key={p.email}
+              type="button"
+              data-mention-pick={p.email}
+              title={p.email}
+              onMouseDown={(e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                controller.insertMentionRange(mention.start, mention.end, participantName(p), p.email);
+                setMention(null);
+              }}
+              style={{ ...boldButtonStyle(th), width: 'auto', padding: '0 9px', fontWeight: 600, fontSize: 11.5 }}
+            >
+              @{participantName(p)}
+            </button>
+          ))}
+        </div>
+      )}
       {/* 1행 — 글자 서식과 줄 단위 리스트 */}
       <div style={rowStyle}>
         <button type="button" title="선택 영역 굵게 (**굵게**)" onMouseDown={(e) => applyAndGuard(e, controller, 'b')} style={boldButtonStyle(th)}>

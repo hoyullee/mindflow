@@ -2,11 +2,11 @@ import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } fr
 import type { MouseEvent as ReactMouseEvent, PointerEvent as ReactPointerEvent } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import type { Box, Doc, Float, Line, LineAnchor, LayoutMode, ListOp, Node, NodeMap, SizeOf, SnapCandidate, TextEdit, Zone } from '@mindflow/mindmap-core';
-import { HistoryStack, ROOT_ID, collectImageRefs, collectInlineImages, isImageRef, replaceImageValues, applyListOp as applyListOpToText, applyAutoLinks, applyMarkdownShortcuts, applyPartialStyle, charsToRuns, cubicAt, isStyledRuns, findLineSnap, layout, resolveLineEndpoints, resolveLineGeometry, runsToChars, serializeDoc, shiftOffset, toMarkdown } from '@mindflow/mindmap-core';
+import { HistoryStack, ROOT_ID, collectImageRefs, collectInlineImages, isImageRef, replaceImageValues, applyListOp as applyListOpToText, applyAutoLinks, applyMarkdownShortcuts, applyPartialStyle, insertMention, charsToRuns, cubicAt, isStyledRuns, findLineSnap, layout, resolveLineEndpoints, resolveLineGeometry, runsToChars, serializeDoc, shiftOffset, toMarkdown } from '@mindflow/mindmap-core';
 import { domToRuns, linearize, liveEditValue } from './richtextDom';
 import { recordVersion, versionDoc } from './versionHistory';
 import { nodeTextAlign, renderListEdit } from './listLines';
-import type { CommentMention, DocComment, ShareRole, ShareStore } from '../../adapters/ports';
+import type { CommentMention, DocComment, ShareParticipant, ShareRole, ShareStore } from '../../adapters/ports';
 import type { CollabStatus } from '../../collab/ports';
 import { useBackend, useCommentStore, useDocStore, useShareStore, useSpaceStore } from '../../adapters/BackendContext';
 import { useAuthUser } from '../../adapters/useAuthUser';
@@ -406,6 +406,16 @@ export interface EditorController {
   applyPartialRange: (a: number, b: number, kind: 'b' | 'i' | 's' | 'c' | 'link' | 'clear', val?: string | null) => void;
   /** 현재 선택에 걸린 링크 주소(없거나 섞였으면 null). */
   selectionLink: () => string | null;
+  /** 편집 박스의 현재 값 텍스트(캐럿 좌표계와 같은 `liveEditValue` 기준) — 인라인
+   * 멘션 토큰 감지용. 편집 중이 아니면 null. */
+  editValueText: () => string | null;
+  /** 접힌 캐럿의 값 좌표(편집 박스 안일 때만) — 없으면 null. */
+  editCaretOffset: () => number | null;
+  /** `[a,b)`(입력 중이던 @토큰)를 "@이름 "으로 갈아 끼우고 멘션 런을 심는다. */
+  insertMentionRange: (a: number, b: number, name: string, email: string) => void;
+  /** 인라인 멘션 후보(공유 참가자) — 첫 @에서 lazy 로드. */
+  mentionCandidates: ShareParticipant[];
+  loadMentionCandidates: () => void;
   /** 링크 입력창이 열린 동안 편집 박스의 blur 커밋을 멈춘다. */
   pauseBlurCommit: (paused: boolean) => void;
   isBlurCommitPaused: () => boolean;
@@ -2685,6 +2695,48 @@ export function useEditorState(): EditorController {
     [selectionRange, applyPartialRange],
   );
 
+  /** 접힌 캐럿의 값 좌표(편집 박스 안일 때만) — 인라인 멘션 토큰 감지용.
+   * `selectionRange`는 선택이 없으면 **전체**를 돌려주므로 여기 못 쓴다. */
+  const editCaretOffset = useCallback((): number | null => {
+    const ed = richElRef.current;
+    if (!ed) return null;
+    const ws = window.getSelection();
+    if (!ws || !ws.rangeCount || !ws.isCollapsed) return null;
+    const rng = ws.getRangeAt(0);
+    if (!ed.contains(rng.startContainer)) return null;
+    const lin = linearize(ed, [{ container: rng.startContainer, offset: rng.startOffset }]);
+    const v = liveEditValue(ed);
+    return v.clamp(lin.pos[0] ?? 0);
+  }, []);
+
+  /** 편집 박스의 현재 값 텍스트 — 인라인 멘션 토큰 감지용(캐럿과 같은 좌표계). */
+  const editValueText = useCallback((): string | null => {
+    const ed = richElRef.current;
+    return ed ? liveEditValue(ed).text : null;
+  }, []);
+
+  /** 입력 중이던 "@토큰"([a,b))을 "@이름 "으로 갈아 끼우고 멘션 런을 심는다 —
+   * `applyPartialRange`와 같은 렌더 경로(리스트 구조 유지 + 캐럿 복원). */
+  const insertMentionRange = useCallback((a: number, b: number, name: string, email: string) => {
+    const ed = richElRef.current;
+    if (!ed) return;
+    const parsed = liveEditValue(ed);
+    const next = insertMention(parsed, a, b, name, email);
+    renderListEdit(ed, next, editedNodeAlign(ed), next.caret, next.caret);
+  }, []);
+
+  // 인라인 멘션 후보(공유 참가자) — 첫 @에서 lazy 로드(멘션을 안 쓰는 세션은 왕복 0).
+  const [mentionCandidates, setMentionCandidates] = useState<ShareParticipant[]>([]);
+  const mentionCandidatesLoadedRef = useRef(false);
+  const loadMentionCandidates = useCallback(() => {
+    if (mentionCandidatesLoadedRef.current) return;
+    mentionCandidatesLoadedRef.current = true;
+    void shareStore
+      .listParticipants(docStoreId)
+      .then((rows) => setMentionCandidates(rows ?? []))
+      .catch(() => setMentionCandidates([]));
+  }, [shareStore, docStoreId]);
+
   /** 지금 선택(또는 캐럿 앞뒤)에 걸린 링크 주소 — 없거나 섞여 있으면 `null`.
    * 링크 입력창의 초기값과 "링크 제거" 노출 판단에 쓴다. */
   const selectionLink = useCallback((): string | null => {
@@ -4555,6 +4607,11 @@ export function useEditorState(): EditorController {
     selectionRange,
     applyPartialRange,
     selectionLink,
+    editCaretOffset,
+    editValueText,
+    insertMentionRange,
+    mentionCandidates,
+    loadMentionCandidates,
     pauseBlurCommit,
     isBlurCommitPaused,
     startEditFloat,

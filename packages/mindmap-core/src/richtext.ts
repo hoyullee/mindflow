@@ -36,6 +36,8 @@ export interface RichChar {
   s?: boolean;
   /** 하이퍼링크 — post-dc 추가(RichRun.href 참고). */
   href?: string | null;
+  /** 인라인 멘션 이메일 — post-dc 추가(RichRun.m 참고). */
+  m?: string | null;
 }
 
 /** Explodes `src.rich` (or, absent that, `src.text` as one unstyled run) into
@@ -46,7 +48,7 @@ export function runsToChars(src: RichSource): RichChar[] {
   const chars: RichChar[] = [];
   runs.forEach((r) => {
     const t = r.t || '';
-    for (let i = 0; i < t.length; i++) chars.push({ ch: t[i]!, b: !!r.b, c: r.c || null, i: !!r.i, s: !!r.s, href: r.href || null });
+    for (let i = 0; i < t.length; i++) chars.push({ ch: t[i]!, b: !!r.b, c: r.c || null, i: !!r.i, s: !!r.s, href: r.href || null, m: r.m || null });
   });
   return chars;
 }
@@ -59,7 +61,7 @@ export function charsToRuns(chars: RichChar[]): RichRun[] {
   const runs: RichRun[] = [];
   chars.forEach((x) => {
     const last = runs[runs.length - 1];
-    if (last && !!last.b === x.b && (last.c || null) === x.c && !!last.i === !!x.i && !!last.s === !!x.s && (last.href || null) === (x.href || null)) last.t += x.ch;
+    if (last && !!last.b === x.b && (last.c || null) === x.c && !!last.i === !!x.i && !!last.s === !!x.s && (last.href || null) === (x.href || null) && (last.m || null) === (x.m || null)) last.t += x.ch;
     else {
       // i/s/href는 값이 있을 때만 키를 만든다 — 원본(dc) 시절 문서와 같은 직렬화
       // 모양을 유지해 골든/CRDT 무회귀 (RichRun doc 참고).
@@ -67,6 +69,7 @@ export function charsToRuns(chars: RichChar[]): RichRun[] {
       if (x.i) r.i = true;
       if (x.s) r.s = true;
       if (x.href) r.href = x.href;
+      if (x.m) r.m = x.m;
       runs.push(r);
     }
   });
@@ -128,6 +131,7 @@ export function applyPartialStyle(
       c.i = false;
       c.s = false;
       c.href = null;
+      c.m = null;
     }
   }
   const nruns = charsToRuns(chars).filter((r) => r.t);
@@ -140,7 +144,7 @@ export function applyPartialStyle(
  * 되돌아간다(링크만 걸린 런이 그랬다). 그래서 판정을 **여기 한 곳**에 둔다 —
  * 웹의 커밋 경로들도 이 함수를 쓴다. */
 export function isStyledRuns(runs: RichRun[] | null | undefined): boolean {
-  return !!runs && runs.some((r) => r.b || r.c || r.i || r.s || r.href);
+  return !!runs && runs.some((r) => r.b || r.c || r.i || r.s || r.href || r.m);
 }
 
 /** Removes one style key from every run, dropping back to plain (`null`)
@@ -257,7 +261,7 @@ export function applyAutoLinks(src: RichSource): { text: string; rich: RichRun[]
   spans.forEach((sp) => {
     for (let i = sp.start; i < sp.end && i < chars.length; i++) {
       const c = chars[i]!;
-      if (c.href) return; // 이미 링크가 걸린 구간은 통째로 건너뛴다
+      if (c.href || c.m) return; // 이미 링크·멘션이 걸린 구간은 통째로 건너뛴다
     }
     for (let i = sp.start; i < sp.end && i < chars.length; i++) {
       chars[i]!.href = sp.href;
@@ -340,4 +344,29 @@ export function richToMarkdown(src: RichSource): string {
       return lead + out + tail;
     })
     .join('');
+}
+
+/**
+ * 인라인 멘션 삽입(순수) — `[s0, s1)` 자리(입력 중이던 "@토큰")를 "@이름 "으로
+ * 갈아 끼우고 "@이름" 글자에만 멘션(`m`=이메일)을 심는다. 뒤의 공백은 평문이라
+ * 이어서 치는 글자가 멘션 안으로 자라지 않는다. 캐럿은 공백 바로 뒤.
+ */
+export function insertMention(src: RichSource, s0In: number, s1In: number, name: string, email: string): { text: string; rich: RichRun[] | null; caret: number } {
+  let s0 = Math.min(s0In, s1In);
+  let s1 = Math.max(s0In, s1In);
+  const chars = runsToChars(src);
+  s1 = Math.min(s1, chars.length);
+  s0 = Math.min(s0, s1);
+  const label = `@${name}`;
+  const inserted: RichChar[] = [...label].map((ch) => ({ ch, b: false, c: null, m: email }));
+  inserted.push({ ch: ' ', b: false, c: null });
+  chars.splice(s0, s1 - s0, ...inserted);
+  const nruns = charsToRuns(chars).filter((r) => r.t);
+  return { text: chars.map((x) => x.ch).join(''), rich: isStyledRuns(nruns) ? nruns : null, caret: s0 + label.length + 1 };
+}
+
+/** 런에 담긴 멘션 이메일들(중복 제거) — 저장 훅과 알림 diff가 쓴다. */
+export function mentionEmails(rich: RichRun[] | null | undefined): string[] {
+  if (!rich) return [];
+  return [...new Set(rich.map((r) => (r.m || '').trim().toLowerCase()).filter(Boolean))];
 }
