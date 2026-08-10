@@ -105,13 +105,22 @@ export function linkTitle(href: string): string {
 }
 
 /** 한 런(또는 리스트 줄의 한 세그먼트)을 span으로. 링크면 클릭 핸들러까지 붙는다. */
-export function RichSpan({ seg, children }: { seg: { b?: boolean; c?: string | null; i?: boolean; s?: boolean; href?: string }; children: ReactNode }) {
+export function RichSpan({ seg, children }: { seg: { b?: boolean; c?: string | null; i?: boolean; s?: boolean; href?: string; m?: string }; children: ReactNode }) {
   const styled = seg.b || seg.c || seg.i || seg.s;
   const inner = styled ? (
     <span style={{ fontWeight: seg.b ? 800 : 'inherit', color: seg.c || 'inherit', fontStyle: seg.i ? 'italic' : undefined, textDecoration: seg.s ? 'line-through' : undefined }}>{children}</span>
   ) : (
     <span>{children}</span>
   );
+  // 인라인 멘션 — 링크와 같은 색 파이프라인(`--mf-link`)을 타되 밑줄은 없다
+  // (밑줄 있는 파랑 = 링크, 밑줄 없는 파랑 = 멘션). 폭이 변하는 굵게는 쓰지 않는다.
+  if (seg.m && !seg.href) {
+    return (
+      <span data-mention-email={seg.m} className="mf-mention">
+        {inner}
+      </span>
+    );
+  }
   if (!seg.href) return inner;
   return (
     <span data-href={seg.href} role="link" title={linkTitle(seg.href)} className={LINK_CLASS} style={linkSpanStyle} {...linkHandlers(seg.href)}>

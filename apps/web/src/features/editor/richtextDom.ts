@@ -60,7 +60,10 @@ export function runsToHtml(n: RichTextValue): string {
       // 클릭해서 여는 건 커밋된 렌더(`NodeLayer`)가 담당한다.
       // 색은 `.mf-link` 클래스(→ `--mf-link`)가 준다 — 인라인 `color`로 심으면
       // 커밋 때 `domToRuns`가 그걸 런의 `c`로 저장해 링크를 떼도 파란색이 남는다.
-      return r.href ? `<span class="${LINK_CLASS}" data-href="${escHtml(r.href)}" style="text-decoration:underline">${inner}</span>` : inner;
+      if (r.href) return `<span class="${LINK_CLASS}" data-href="${escHtml(r.href)}" style="text-decoration:underline">${inner}</span>`;
+      // 멘션 — 링크와 같은 이유로 클래스+data 속성만(색은 `.mf-mention`이 준다).
+      if (r.m) return `<span class="mf-mention" data-mention-email="${escHtml(r.m)}">${inner}</span>`;
+      return inner;
     })
     .join('');
 }
@@ -82,16 +85,18 @@ export function domToRuns(el: HTMLElement, keepTrailing = false): { text: string
     i: boolean;
     s: boolean;
     href: string | null;
+    m: string | null;
   }
   const push = (t: string, st: St): void => {
     if (!t) return;
     const last = runs[runs.length - 1];
-    if (last && !!last.b === st.b && (last.c || null) === (st.c || null) && !!last.i === st.i && !!last.s === st.s && (last.href || null) === (st.href || null)) last.t += t;
+    if (last && !!last.b === st.b && (last.c || null) === (st.c || null) && !!last.i === st.i && !!last.s === st.s && (last.href || null) === (st.href || null) && (last.m || null) === (st.m || null)) last.t += t;
     else {
       const r: RichRun = { t, b: st.b, c: st.c || null };
       if (st.i) r.i = true;
       if (st.s) r.s = true;
       if (st.href) r.href = st.href;
+      if (st.m) r.m = st.m;
       runs.push(r);
     }
   };
@@ -115,6 +120,8 @@ export function domToRuns(el: HTMLElement, keepTrailing = false): { text: string
     // 링크: 우리가 심은 `data-href`, 그리고 붙여넣기로 들어온 진짜 `<a href>`도 받는다.
     const linkAttr = el2.getAttribute('data-href') || (tag === 'A' ? el2.getAttribute('href') : null);
     if (linkAttr) next.href = normalizeUrl(linkAttr);
+    const mentionAttr = el2.getAttribute('data-mention-email');
+    if (mentionAttr) next.m = mentionAttr;
     if (el2.style) {
       const fw = el2.style.fontWeight;
       if (fw) {
@@ -143,7 +150,7 @@ export function domToRuns(el: HTMLElement, keepTrailing = false): { text: string
     if (isBlock && runs.length && runs[runs.length - 1]!.t.slice(-1) !== '\n') push('\n', st);
     el2.childNodes.forEach((child) => walk(child, next));
   };
-  el.childNodes.forEach((child) => walk(child, { b: false, c: null, i: false, s: false, href: null }));
+  el.childNodes.forEach((child) => walk(child, { b: false, c: null, i: false, s: false, href: null, m: null }));
   if (!keepTrailing) {
     while (runs.length && /^\n+$/.test(runs[runs.length - 1]!.t)) runs.pop();
     if (runs.length) runs[runs.length - 1]!.t = runs[runs.length - 1]!.t.replace(/\n+$/, '');

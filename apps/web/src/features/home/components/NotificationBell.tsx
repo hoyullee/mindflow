@@ -24,6 +24,7 @@ function lineOf(n: AppNotification): string {
   if (n.kind === 'mention') return `${who}님이 회원님을 멘션했어요`;
   if (n.kind === 'reply') return `${who}님이 답글을 남겼어요`;
   if (n.kind === 'comment') return `${who}님이 댓글을 남겼어요`;
+  if (n.kind === 'doc_mention') return `${who}님이 맵에서 회원님을 멘션했어요`;
   return `${who}님이 맵을 공유했어요`;
 }
 

@@ -958,3 +958,11 @@ from public.notifications where recipient = '<uid>' order by created_at desc;
 **메일 알림은 아직 없다** — 멘션의 이메일 명단(0021 `mentions`)과 Resend 인프라
 (§12)가 준비돼 있으므로, 원하면 `share-invite`와 같은 꼴의 Edge Function으로 붙일
 수 있다(시크릿 설정 전까지는 아무 일도 하지 않는 같은 계약으로).
+
+## 14b. 본문 인라인 멘션 알림 (0023)
+
+주제/메모 본문의 `@멘션`(rich 런 `m`=이메일)이 **새로 생긴** 저장에만 `doc_mention`
+알림을 만든다. 0022와 같은 원칙 — 클라이언트는 알림을 못 만들고, documents UPDATE
+트리거가 old/new 본문의 멘션 이메일 **집합 차이**만 알린다. 수신자는 그 문서의
+소유자·초대자만(임의 이메일 스팸 차단), 자기 멘션 제외, 미확인 동일 알림이 있으면
+생략(undo/CRDT 재등장 중복 억제). 마이그레이션은 GitHub 연동 자동 배포.

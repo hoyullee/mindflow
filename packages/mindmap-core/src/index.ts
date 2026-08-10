@@ -34,7 +34,7 @@ export type { HistoryStackOptions } from './history';
 export { HistoryStack } from './history';
 
 export type { RichSource, RichChar } from './richtext';
-export { runsToChars, charsToRuns, applyPartialStyle, stripRichStyle, isStyledRuns, applyMarkdownShortcuts, applyMarkdownLinks, applyAutoLinks } from './richtext';
+export { runsToChars, charsToRuns, applyPartialStyle, stripRichStyle, isStyledRuns, applyMarkdownShortcuts, applyMarkdownLinks, applyAutoLinks, insertMention, mentionEmails } from './richtext';
 
 export type { ListPrefix, TextEdit, ListOp, ListBackspace, OrdinalStyle } from './list';
 export {

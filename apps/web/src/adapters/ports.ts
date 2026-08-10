@@ -477,7 +477,7 @@ export interface CommentStore {
 
 // ── Notifications ──────────────────────────────────────────────────────────
 
-export type NotificationKind = 'mention' | 'reply' | 'comment' | 'share';
+export type NotificationKind = 'mention' | 'reply' | 'comment' | 'share' | 'doc_mention';
 
 export interface AppNotification {
   id: string;

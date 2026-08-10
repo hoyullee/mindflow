@@ -394,7 +394,7 @@ function renderBody(body: string, mentions: CommentMention[], accent: string): R
 
 // ── 입력창(멘션 자동완성 포함) — 새 스레드와 답글이 같은 것을 쓴다 ─────────────
 
-function participantName(p: ShareParticipant): string {
+export function participantName(p: ShareParticipant): string {
   return (p.displayName || '').trim() || p.email.split('@')[0] || p.email;
 }
 
