@@ -1,5 +1,5 @@
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
-import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { MemoryRouter, Route, Routes, useLocation } from 'react-router-dom';
 import { NotificationBell } from './NotificationBell';
 import { readLocalNotifications, writeLocalNotifications, type StoredNotification } from '../../../adapters/local/localNotifications';
@@ -95,5 +95,25 @@ describe('알림 센터', () => {
     const bell = await screen.findByRole('button', { name: '알림' });
     fireEvent.click(bell);
     expect(await screen.findByText(/새 알림이 없어요/)).toBeTruthy();
+  });
+
+  it('홈을 켜 둔 채 새 알림이 오면 벨을 누르지 않아도 배지가 선다(주기 확인, 제보)', async () => {
+    vi.useFakeTimers();
+    try {
+      renderBell();
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(0);
+      });
+      expect(screen.getByRole('button', { name: '알림' })).toBeTruthy();
+      // 홈에 머무는 동안 다른 곳(협업 상대)에서 알림이 만들어진다.
+      seed([{}]);
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(60_000);
+      });
+      const bell = screen.getByRole('button', { name: '알림 1개' });
+      expect(within(bell).getByText('1')).toBeTruthy();
+    } finally {
+      vi.useRealTimers();
+    }
   });
 });
