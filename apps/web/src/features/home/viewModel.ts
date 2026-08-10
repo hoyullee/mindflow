@@ -1,7 +1,7 @@
 import { RECENT_RENDER_MAX, docRawForTitle, cardKeyOf, hexA, mapHref, mapId, readDocRaw } from './storage';
 import { miniPreview, previewSkeleton, realPreview } from './mapPreview';
 import { docSearchText, matchesQuery } from './searchIndex';
-import type { DriveFolderData, FolderData, HomeState, MapCardData } from './types';
+import type { DriveFolderData, FolderData, HomeState, MapCardData, SpaceData } from './types';
 import { DRIVE_FILES } from './types';
 
 export interface CardViewData {
@@ -161,6 +161,47 @@ export interface HomeViewModel {
   userInitial: string;
 }
 
+
+
+/**
+ * 최근 트레이에 **실제로 그려질** 카드들의 docId — 트레이와 같은 파이프라인
+ * (해석 → 휴지통 제외 → 별칭 접기 → `RECENT_RENDER_MAX`)으로 고른다.
+ *
+ * 썸네일 프리페치(useHomeController)가 반드시 이 목록을 써야 한다. 예전에는 원시
+ * `recent`의 **앞 N개**를 잘랐는데, 휴지통에 간 맵·별칭(제목 키+docId 키 중복)·
+ * 지워진 문서의 옛 항목이 목록 머리에 쌓이면 — 트레이는 그것들을 거른 **뒤** N개를
+ * 그리므로 — 화면에 보이는 카드의 항목이 원시 앞 N개 밖에 놓여 프리페치에서 빠졌다.
+ * 그 카드는 `previewResolved`가 영영 안 뒤집혀 로딩 스켈레톤에 갇힌다(제보:
+ * "간헐적으로 미리보기가 로딩인 채로 남는다" — 간헐의 정체는 목록 상태였다).
+ *
+ * Drive 데모 항목은 여기 해석 지도에 없어 슬롯을 세지 않는다 — 트레이보다 한두 개
+ * **더** 프리페치할 수는 있어도(무해) 덜 하지는 않는다.
+ */
+export function recentTrayDocIds(spaces: SpaceData[], recent: string[], trash: { docId?: string }[], deleted: Record<string, boolean>): string[] {
+  const trashedIds = new Set(trash.map((t) => t.docId).filter((id): id is string => !!id));
+  const resolve = new Map<string, { title: string; docId?: string }>();
+  spaces.forEach((s) => (Array.isArray(s.maps) ? s.maps : []).forEach((m) => {
+    const aliases = m.docId ? [m.docId, m.title] : [m.title, mapId(m.title)];
+    aliases.forEach((k) => {
+      if (!resolve.has(k)) resolve.set(k, m);
+    });
+  }));
+  const seen = new Set<string>();
+  const out: string[] = [];
+  let slots = 0;
+  for (const e of recent) {
+    if (slots >= RECENT_RENDER_MAX) break;
+    const b = resolve.get(e);
+    if (!b) continue;
+    if (b.docId ? trashedIds.has(b.docId) : !!deleted[b.title]) continue;
+    const k = cardKeyOf(b.title, b.docId);
+    if (seen.has(k)) continue;
+    seen.add(k);
+    slots++;
+    if (b.docId) out.push(b.docId);
+  }
+  return out;
+}
 
 /** 카드의 "공유 중" 표식 문구 — 공유돼 있지 않으면 undefined(표식 없음).
  * 초대와 링크는 성격이 달라 나눠 말한다: 초대는 "누구와", 링크는 "누구든". */

@@ -43,7 +43,6 @@ import {
   applyImportBinding,
   readDocRaw,
   RECENT_CAP,
-  RECENT_RENDER_MAX,
   readSavedProfileName,
   rootTextOf,
   safeFileName,
@@ -52,6 +51,7 @@ import {
   sourceOf,
   writeSavedProfileName,
 } from './storage';
+import { recentTrayDocIds } from './viewModel';
 
 /**
  * 썸네일 본문(`preview_doc` RPC, 0012)이 이미지 데이터를 지운 자리에 남기는 값.
@@ -455,12 +455,11 @@ export function useHomeController() {
     const active = state.spaces.find((s) => s.id === state.activeSpace);
     const wanted = new Set((Array.isArray(active?.maps) ? active!.maps : []).map((m) => m.docId).filter((id): id is string => !!id));
     if (state.recent.length) {
-      // Entries are card keys — a doc matches by its docId (the canonical key)
-      // or its title (legacy entries recorded before the key migration).
-      const recentSet = new Set(state.recent.slice(0, RECENT_RENDER_MAX));
-      state.spaces.forEach((s) => (Array.isArray(s.maps) ? s.maps : []).forEach((m) => {
-        if (m.docId && (recentSet.has(m.docId) || recentSet.has(m.title))) wanted.add(m.docId);
-      }));
+      // 트레이가 **실제로 그릴** 카드들의 docId — 반드시 트레이와 같은 파이프라인으로
+      // 골라야 한다. 원시 recent의 앞 N개를 자르던 예전 방식은 휴지통·별칭·사라진
+      // 문서 항목이 머리에 쌓이면 화면에 보이는 카드가 프리페치에서 빠져 로딩
+      // 스켈레톤에 갇혔다(제보 — `recentTrayDocIds`의 doc comment 참고).
+      recentTrayDocIds(state.spaces, state.recent, state.trash, state.deleted).forEach((id) => wanted.add(id));
     }
     const ids = Array.from(wanted).filter((id) => !previewFetchedRef.current.has(id));
     if (!ids.length) return;
@@ -490,7 +489,7 @@ export function useHomeController() {
       // docs stop showing the loading skeleton and settle on their final preview.
       setState((prev) => ({ ...prev, previewDocs: { ...prev.previewDocs, ...add }, previewResolved: { ...prev.previewResolved, ...resolved } }));
     });
-  }, [state.loaded, state.spaces, state.activeSpace, state.recent, docStore]);
+  }, [state.loaded, state.spaces, state.activeSpace, state.recent, state.trash, state.deleted, docStore]);
 
   /**
    * 첫 검색이 시작되면 **나머지 스페이스의 본문**을 마저 받아 온다.

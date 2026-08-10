@@ -3552,3 +3552,47 @@ describe('맵 카드 공유 표식', () => {
     expect(await screen.findByRole('img', { name: '공유 중 — 링크가 있는 사람이 열람 가능' })).toBeTruthy();
   });
 });
+
+// 최근 트레이 미리보기가 로딩 스켈레톤에 갇히던 문제(제보 스크린샷) — 프리페치가
+// 원시 recent의 앞 N개를 잘라, 휴지통·사라진 문서 항목이 머리에 쌓이면 트레이에
+// 보이는 카드(특히 **비활성 스페이스**의 맵)가 프리페치에서 빠졌다.
+describe('최근 트레이 미리보기 프리페치', () => {
+  it('사라진 문서 항목이 머리에 쌓여도, 비활성 스페이스의 최근 카드가 스켈레톤에 갇히지 않는다', async () => {
+    const stale = Array.from({ length: 40 }, (_, i) => `gone-${i}`);
+    localStorage.setItem('mf_recent', JSON.stringify([...stale, 'doc-sk']));
+    localStorage.setItem(
+      'mf_spaces',
+      JSON.stringify({
+        spaces: [
+          { id: 's1', name: '일반 공간', home: true, color: '#f0663f', maps: [] },
+          { id: 's2', name: '1212', color: '#3f8fd0', maps: [{ title: '주간 계획', when: '방금', hue: '#3f8fd0', docId: 'doc-sk' }] },
+        ],
+        mapFolders: {},
+      }),
+    );
+    // 본문은 백엔드에만 있다(localStorage `mindflow_doc_doc-sk` 없음) — 미리보기는
+    // 오직 프리페치(loadPreview)로만 그려질 수 있다.
+    const body = {
+      doc: {
+        v: 1,
+        nodes: { root: { id: 'root', text: '주간 계획', emoji: '', parent: null, children: [], collapsed: false, color: null, x: 0, y: 0 } },
+        floats: [],
+        lines: [],
+        zones: [],
+        layoutMode: 'radial',
+        themeKey: 'coral',
+      } as unknown as Doc,
+      version: 1,
+      title: '주간 계획',
+      updatedAt: '2026-01-01T00:00:00.000Z',
+    };
+    renderHomeWithDocStore([{ id: 'doc-sk', title: '주간 계획', version: 1, updatedAt: '2026-01-01T00:00:00.000Z', isFavorite: false, deletedAt: null }], { 'doc-sk': body });
+
+    // 트레이 카드가 뜨고(비활성 스페이스라 그리드에는 없다), 스켈레톤이 실제
+    // 미리보기로 정착해야 한다. 수리 전: 프리페치 창(원시 앞 32개) 밖이라 영영 스켈레톤.
+    await screen.findByText('최근 항목');
+    const card = document.querySelector('[data-title="주간 계획"]')!;
+    expect(card).toBeTruthy();
+    await waitFor(() => expect(card.querySelector('.mf-skel')).toBeNull(), { timeout: 4000 });
+  });
+});
