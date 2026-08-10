@@ -2976,6 +2976,16 @@ describe('전역 검색 (모든 스페이스)', () => {
   });
 });
 
+describe('홈 루트 높이', () => {
+  const meta = (id: string, title: string): DocMeta => ({ id, title, version: 1, updatedAt: '2026-01-01T00:00:00.000Z', isFavorite: false, deletedAt: null });
+
+  it('루트는 100dvh — 모바일에서 100vh는 주소창만큼 길어져 페이지 스크롤이 하나 더 생긴다(제보: 이중 스크롤)', async () => {
+    const { container } = renderHomeWithDocStore([meta('d1', '맵')]);
+    const root = container.querySelector('.mf-home') as HTMLElement;
+    expect(root.getAttribute('style') || '').toContain('height: 100dvh');
+  });
+});
+
 describe('검색 입력 디바운스', () => {
   const meta = (id: string, title: string): DocMeta => ({ id, title, version: 1, updatedAt: '2026-01-01T00:00:00.000Z', isFavorite: false, deletedAt: null });
 
