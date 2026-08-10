@@ -1675,6 +1675,42 @@ describe('Home', () => {
       clickSpy.mockRestore();
     });
 
+    it('카드 메뉴에서 .svg 로 내려받는다 — 벡터 문서에 노드·메모 텍스트', async () => {
+      const user = userEvent.setup();
+      localStorage.setItem('mindflow_doc_doc-svg', JSON.stringify(MD_DOC));
+      const created: Blob[] = [];
+      URL.createObjectURL = vi.fn((b: Blob | MediaSource) => {
+        created.push(b as Blob);
+        return 'blob:mock';
+      }) as typeof URL.createObjectURL;
+      URL.revokeObjectURL = vi.fn() as typeof URL.revokeObjectURL;
+      const names: string[] = [];
+      const clickSpy = vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(function (this: HTMLAnchorElement) {
+        names.push(this.download);
+      });
+
+      const { container } = renderHomeWithDocStore([{ id: 'doc-svg', title: '개요 맵', version: 1, updatedAt: '2026-01-01T00:00:00.000Z', isFavorite: false, deletedAt: null }]);
+      await waitFor(() => expect(container.querySelector('a[data-title="개요 맵"]')).toBeTruthy());
+
+      const card = container.querySelector('a[data-title="개요 맵"]') as HTMLElement;
+      await user.click(within(card).getByRole('button', { name: '메뉴' }));
+      await user.click(await screen.findByRole('menuitem', { name: /내보내기/ }));
+      await user.click(await screen.findByRole('menuitem', { name: 'SVG 이미지 (.svg)' }));
+
+      await waitFor(() => expect(created.length).toBe(1));
+      expect(names[0]).toBe('개요 맵.svg');
+      const svg = await new Promise<string>((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onload = () => resolve(String(reader.result));
+        reader.onerror = () => reject(reader.error);
+        reader.readAsText(created[0]!);
+      });
+      expect(svg.startsWith('<svg xmlns="http://www.w3.org/2000/svg"')).toBe(true);
+      expect(svg).toContain('개요 맵');
+      expect(svg).toContain('메모 하나');
+      clickSpy.mockRestore();
+    });
+
     it('내보낸 .md 를 다시 가져오면 트리·노트·메모가 복원된다', async () => {
       const user = userEvent.setup();
       // 위 테스트가 만드는 것과 같은 내용의 개요
@@ -3115,6 +3151,8 @@ describe('홈 우클릭 메뉴', () => {
 
     // 하위 항목이 열렸는데도 상위 항목(삭제하기)은 그대로 보인다 = 플라이아웃.
     expect(screen.getByRole('menuitem', { name: 'PNG 이미지' })).toBeTruthy();
+    expect(screen.getByRole('menuitem', { name: 'SVG 이미지 (.svg)' })).toBeTruthy();
+    expect(screen.getByRole('menuitem', { name: 'PDF 문서 (.pdf)' })).toBeTruthy();
     expect(screen.getByRole('menuitem', { name: '삭제하기' })).toBeTruthy();
     // 예전 드릴다운의 흔적("‹ 뒤로")은 없다.
     expect(screen.queryByText(/뒤로/)).toBeNull();

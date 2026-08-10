@@ -319,6 +319,24 @@ const OutlineIcon = (
     <circle cx="9" cy="18" r="1.4" fill="currentColor" stroke="none" />
   </svg>
 );
+// 벡터(곡선+제어점) — 에디터 내보내기 메뉴의 SVG 아이콘과 같은 도형
+const SvgIcon = (
+  <svg width="14" height="14" viewBox="0 0 24 24" {...stroke}>
+    <path d="M5 7c4 8 10 8 14 0" />
+    <rect x="3" y="5" width="4" height="4" rx="1" />
+    <rect x="17" y="5" width="4" height="4" rx="1" />
+    <rect x="10" y="13" width="4" height="4" rx="1" />
+  </svg>
+);
+// 인쇄물(문서+본문 줄) — 에디터 내보내기 메뉴의 PDF 아이콘과 같은 도형
+const PdfIcon = (
+  <svg width="14" height="14" viewBox="0 0 24 24" {...stroke}>
+    <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
+    <polyline points="14 2 14 8 20 8" />
+    <line x1="8" y1="13" x2="16" y2="13" />
+    <line x1="8" y1="17" x2="13" y2="17" />
+  </svg>
+);
 
 /**
  * 스페이스 표식 — LNB의 스페이스 행과 **같은 색 사각 점**이다. 예전엔 어느 스페이스든
@@ -395,6 +413,8 @@ function mapItems(card: CardViewData, controller: HomeController): HomeMenuItem[
       label: '내보내기',
       submenu: [
         { key: 'export-png', icon: PngIcon, label: 'PNG 이미지', onSelect: () => controller.exportMapPNG(card.title, card.docId) },
+        { key: 'export-svg', icon: SvgIcon, label: 'SVG 이미지 (.svg)', onSelect: () => controller.exportMapSVG(card.title, card.docId) },
+        { key: 'export-pdf', icon: PdfIcon, label: 'PDF 문서 (.pdf)', onSelect: () => controller.exportMapPDF(card.title, card.docId) },
         { key: 'export-json', icon: JsonIcon, label: 'JSON 파일 (.json)', onSelect: () => controller.exportMap(card.title, card.docId) },
         { key: 'export-md', icon: OutlineIcon, label: 'Markdown 개요 (.md)', onSelect: () => controller.exportMapMarkdown(card.title, card.docId) },
       ],
