@@ -430,6 +430,12 @@ function CommentComposer({
   const [busy, setBusy] = useState(false);
   /** 지금 캐럿에 걸린 @토큰(자동완성 드롭다운의 근거). */
   const [token, setToken] = useState<{ start: number; query: string } | null>(null);
+  /** 드롭다운의 활성(키보드 선택) 행 — 캔버스 멘션 리스트와 같은 조작(↑/↓ 순환,
+   * Enter/Tab 선택, hover 동기). 질의가 바뀌면 후보 목록이 갈리므로 첫 행으로 리셋. */
+  const [activeIdx, setActiveIdx] = useState(0);
+  useEffect(() => {
+    setActiveIdx(0);
+  }, [token?.start, token?.query]);
   /** 이 입력에서 골라 넣은 멘션들 — 제출 시 본문에 "@이름"이 남아 있는 것만 싣는다
    * (골랐다가 글자를 지웠으면 멘션도 아니다). */
   const picked = useRef<Map<string, CommentMention>>(new Map());
@@ -508,11 +514,20 @@ function CommentComposer({
   };
 
   const onKeyDown = (e: KeyboardEvent<HTMLTextAreaElement>) => {
-    // 드롭다운이 떠 있을 때 Enter/Tab = 첫 후보 선택(자동완성 관례).
-    if (token && candidates.length && (e.key === 'Enter' || e.key === 'Tab') && !e.ctrlKey && !e.metaKey && !e.shiftKey) {
-      e.preventDefault();
-      pick(candidates[0]!);
-      return;
+    // 드롭다운이 떠 있을 때: ↑/↓ = 활성 행 이동(순환), Enter/Tab = 활성 후보 선택.
+    // IME 조합 중 키는 건드리지 않는다 — 조합 확정 Enter가 후보 선택으로 새면 안 된다.
+    if (token && candidates.length && !e.nativeEvent.isComposing) {
+      if ((e.key === 'ArrowDown' || e.key === 'ArrowUp') && !e.ctrlKey && !e.metaKey && !e.altKey && !e.shiftKey) {
+        e.preventDefault(); // 기본 동작(캐럿 줄 이동)이 토큰을 흔들지 않게
+        const n = candidates.length;
+        setActiveIdx((i) => (i + (e.key === 'ArrowDown' ? 1 : -1) + n) % n);
+        return;
+      }
+      if ((e.key === 'Enter' || e.key === 'Tab') && !e.ctrlKey && !e.metaKey && !e.shiftKey) {
+        e.preventDefault();
+        pick(candidates[Math.min(activeIdx, candidates.length - 1)]!);
+        return;
+      }
     }
     if (e.key === 'Escape') {
       if (token) {
@@ -552,25 +567,29 @@ function CommentComposer({
             zIndex: 5,
           }}
         >
-          {candidates.map((p) => (
+          {candidates.map((p, i) => (
             <button
               key={p.email}
               type="button"
               className="mf-ed-btn"
               data-mention-candidate={p.email}
+              data-active={i === activeIdx ? 'true' : undefined}
               // blur가 먼저 돌아 클릭이 무시되지 않게 mousedown에서 처리(서식 툴바와
               // 같은 함정 — 버튼 클릭 전에 입력이 포커스를 잃으면 캐럿·토큰이 사라진다).
               onMouseDown={(e) => {
                 e.preventDefault();
                 pick(p);
               }}
+              // hover도 활성 행을 옮긴다 — 마우스가 가리키는 행과 Enter가 고를 행이
+              // 달라 보이면 안 된다(캔버스 멘션 리스트와 같은 규칙).
+              onMouseEnter={() => setActiveIdx(i)}
               style={{
                 display: 'flex',
                 alignItems: 'center',
                 gap: 7,
                 width: '100%',
                 border: 'none',
-                background: 'transparent',
+                background: i === activeIdx ? th.panel2 : 'transparent',
                 fontFamily: 'inherit',
                 fontSize: 12,
                 color: th.text,
