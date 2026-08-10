@@ -321,25 +321,29 @@ function buildItems(controller: EditorController, ctxMenu: ContextMenuState, tog
         ]
       : [];
 
+  // 댓글 항목 — **모든 객체**(주제·메모·선·영역)가 같은 항목을 쓴다(요청).
+  // 링크 뷰어는 서버가 댓글을 내주지 않으므로 항목도 없다(0020).
+  const commentItem = (targetId: string): MenuItem[] => {
+    if (!controller.canComment) return [];
+    const n = controller.commentCounts[targetId] ?? 0;
+    return [
+      {
+        icon: <CommentIcon size={14} />,
+        label: n > 0 ? `댓글 (${n})` : '댓글',
+        onSelect: () => {
+          close();
+          controller.openComments(targetId);
+        },
+      },
+    ];
+  };
+
   if (ctxMenu.kind === 'node') {
     const nodeId = controller.selection?.kind === 'node' ? controller.selection.id : null;
     if (!nodeId) return [];
     const isRoot = nodeId === ROOT_ID;
     // 보기 전용(#22): 변이 항목은 없고 댓글만 — openCtxAt이 이 조합일 때만 메뉴를 연다.
-    if (controller.readOnly) {
-      if (!controller.canComment) return [];
-      const n = controller.commentCounts[nodeId] ?? 0;
-      return [
-        {
-          icon: <CommentIcon size={14} />,
-          label: n > 0 ? `댓글 (${n})` : '댓글',
-          onSelect: () => {
-            close();
-            controller.openComments(nodeId);
-          },
-        },
-      ];
-    }
+    if (controller.readOnly) return commentItem(nodeId);
     const items: (MenuItem | 'divider')[] = [];
     // 모바일에선 자식/형제 추가와 삭제를 넣지 않는다 — 선택 바(MobileSelectBar)에
     // 하위·형제·삭제 버튼이 이미 있어 같은 동작이 두 번 나온다. 데스크톱은 바가
@@ -394,19 +398,8 @@ function buildItems(controller: EditorController, ctxMenu: ContextMenuState, tog
       onSelect: (e) => toggleAlignSub(e.currentTarget.offsetTop),
     });
     // 댓글 — 그 주제의 논의를 바로 연다. 보기 메뉴에만 있으면 "이 주제에 다는"
-    // 물건인데 진입점이 화면 반대편에 숨는다(제보). 링크 뷰어는 서버가 댓글을
-    // 내주지 않으므로 항목도 없다(0020).
-    if (controller.canComment) {
-      const n = controller.commentCounts[nodeId] ?? 0;
-      items.push({
-        icon: <CommentIcon size={14} />,
-        label: n > 0 ? `댓글 (${n})` : '댓글',
-        onSelect: () => {
-          close();
-          controller.openComments(nodeId);
-        },
-      });
-    }
+    // 물건인데 진입점이 화면 반대편에 숨는다(제보).
+    items.push(...commentItem(nodeId));
     // 루트는 복사/잘라내기 대상이 아니다(삭제와 같은 규칙 — 맵 전체 복제는 의미가 없다).
     // 붙여넣기는 루트에도 허용 — 루트의 자식으로 붙는다.
     const nodeClip = [...(isRoot ? [] : copyItems({ cut: true })), ...pasteItem()];
@@ -432,6 +425,7 @@ function buildItems(controller: EditorController, ctxMenu: ContextMenuState, tog
   if (ctxMenu.kind === 'zone') {
     const zoneId = controller.selection?.kind === 'zone' ? controller.selection.id : null;
     if (!zoneId) return [];
+    if (controller.readOnly) return commentItem(zoneId); // 보기 전용 — 댓글만(주제와 동일)
     return [
       {
         icon: '✎',
@@ -441,6 +435,7 @@ function buildItems(controller: EditorController, ctxMenu: ContextMenuState, tog
           controller.startEditZoneLabel(zoneId);
         },
       },
+      ...commentItem(zoneId),
       'divider',
       ...copyItems({ cut: true }),
       // 모바일은 선택 바에 삭제가 있어 중복 제외(데스크톱은 바가 없으므로 유지).
@@ -463,7 +458,9 @@ function buildItems(controller: EditorController, ctxMenu: ContextMenuState, tog
   if (ctxMenu.kind === 'float') {
     const floatId = controller.selection?.kind === 'float' ? controller.selection.id : null;
     if (!floatId) return [];
+    if (controller.readOnly) return commentItem(floatId); // 보기 전용 — 댓글만(주제와 동일)
     return [
+      ...commentItem(floatId),
       ...copyItems({ cut: true }),
       ...(touch
         ? []
@@ -484,7 +481,9 @@ function buildItems(controller: EditorController, ctxMenu: ContextMenuState, tog
   if (ctxMenu.kind === 'line') {
     const lineId = controller.selection?.kind === 'line' ? controller.selection.id : null;
     if (!lineId) return [];
+    if (controller.readOnly) return commentItem(lineId); // 보기 전용 — 댓글만(주제와 동일)
     return [
+      ...commentItem(lineId),
       ...copyItems({ cut: true }),
       ...(touch
         ? []

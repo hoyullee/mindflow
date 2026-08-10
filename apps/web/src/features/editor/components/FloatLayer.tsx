@@ -8,6 +8,7 @@ import { isPanButton } from '../pointerButtons';
 import type { Theme } from '../theme';
 import type { EditorController } from '../useEditorState';
 import { peersSelecting } from '../presenceSelection';
+import { CommentBadge } from './CommentBadge';
 import { useIsTouchDevice } from '../../../hooks/useMediaQuery';
 import { useSoftKeyboardOpen } from '../../../hooks/useKeyboardInset';
 import { RemotePeerTag } from './RemotePeerTag';
@@ -193,6 +194,10 @@ export function FloatLayer({ floats, theme: th, controller }: FloatLayerProps) {
                 MindFlow.dc.html:1486 — hidden during a marquee multi-selection) */}
             {controller.selection?.kind === 'float' && controller.selection.id === f.id && !editing && (
               <ResizeHandle title="크기 조절" accent={th.accent} panel={th.panel} right={-6} bottom={-6} zIndex={6} onPointerDown={(e) => controller.beginFloatResize(e, f.id)} />
+            )}
+            {/* 댓글 배지 — 주제와 같은 문법(모든 객체 댓글). 접기 토글이 좌상단이라 우상단. */}
+            {(controller.commentCounts[f.id] ?? 0) > 0 && (
+              <CommentBadge id={f.id} count={controller.commentCounts[f.id]!} accent={th.accent} panel={th.panel} onOpen={() => controller.openComments(f.id)} style={{ position: 'absolute', top: -9, right: -9, zIndex: 6 }} />
             )}
           </div>
         );

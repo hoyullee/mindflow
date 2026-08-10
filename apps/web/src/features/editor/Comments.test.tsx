@@ -151,6 +151,38 @@ describe('주제 댓글', () => {
     expect(storedComments()[0]!.resolvedAt).toBeNull();
   });
 
+  it('메모(플로트)에도 댓글이 달린다 — 선택 추종·대상 제목·저장 키·배지 (모든 객체 댓글)', async () => {
+    const doc = { ...DOC, floats: [{ id: 'fm1', x: -300, y: 40, w: 180, text: '주간 회고 메모' }] };
+    localStorage.setItem('mindflow_doc_cm12', JSON.stringify(doc));
+    renderEditor('/editor?map=cm12&title=x');
+    const panel = await openCommentsViaMenu();
+
+    // 메모를 고르면 패널 대상이 따라간다(예전에는 주제만 따라갔다).
+    const floatEl = await waitFor(() => {
+      const el = document.querySelector('[data-float-id="fm1"]') as HTMLElement;
+      expect(el).toBeTruthy();
+      return el;
+    });
+    fireEvent.pointerDown(floatEl, { button: 0, clientX: 10, clientY: 10 });
+    fireEvent.pointerUp(floatEl, { button: 0, clientX: 10, clientY: 10 });
+    await waitFor(() => expect(within(panel).getByText('메모 · 주간 회고 메모')).toBeTruthy());
+
+    // 댓글 저장 키 = 메모 id (별도 컬럼 없이 대상 id 하나 — 서버 무변경).
+    const box = within(panel).getByLabelText('댓글 입력') as HTMLTextAreaElement;
+    fireEvent.change(box, { target: { value: '이 메모 좋아요' } });
+    fireEvent.click(within(panel).getByRole('button', { name: '남기기' }));
+    await waitFor(() => expect(storedComments()).toHaveLength(1));
+    expect(storedComments()[0]!.nodeId).toBe('fm1');
+
+    // 메모 카드에 개수 배지가 뜨고, 누르면 그 메모의 패널이 열린다.
+    const badge = await waitFor(() => {
+      const b = document.querySelector('[data-comment-badge="fm1"]') as HTMLElement;
+      expect(b).toBeTruthy();
+      return b;
+    });
+    expect(badge.textContent).toBe('1');
+  });
+
   it('@ 입력에 참가자 자동완성이 뜨고, 고르면 멘션이 저장·강조된다', async () => {
     localStorage.setItem('mindflow_doc_cm7', JSON.stringify(DOC));
     // 멘션 후보 = 공유 참가자(소유자 + 초대). 초대 한 명을 심는다.
