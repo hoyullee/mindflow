@@ -75,8 +75,12 @@ export function Home() {
     () => setNavOpen(false),
   );
 
+  // 루트는 `100dvh`(에디터와 동일, M6) — 모바일에서 `100vh`는 주소창을 무시한
+  // **큰** 뷰포트라 루트가 화면보다 길어지고, 그 차이만큼 **페이지 스크롤이 하나
+  // 더** 생겨 안쪽 목록(main) 스크롤과 이중이 됐다(제보: 최상단↔최하단 이동 시
+  // 두 스크롤이 따로 움직임). 데스크톱에서는 100vh와 같다.
   return (
-    <div className="mf-home" style={{ display: 'flex', height: '100vh', width: '100%', background: 'var(--mf-bg)', fontFamily: "Pretendard, 'Pretendard-fallback', system-ui, sans-serif", color: 'var(--mf-text)', overflow: 'hidden' }}>
+    <div className="mf-home" style={{ display: 'flex', height: '100dvh', width: '100%', background: 'var(--mf-bg)', fontFamily: "Pretendard, 'Pretendard-fallback', system-ui, sans-serif", color: 'var(--mf-text)', overflow: 'hidden' }}>
       {/* `instant`: Home의 로더는 뒤 배경을 함께 바꾸는 동작(새로 만들기=카드 추가,
           로그아웃/탈퇴=목록 정리)에 쓰이므로, 페이드인 중 반투명 구간으로 그 변화가
           비쳐 깜빡이지 않도록 첫 프레임부터 화면을 덮는다. */}
