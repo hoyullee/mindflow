@@ -283,6 +283,48 @@ describe('주제 댓글', () => {
     await waitFor(() => expect(widthOf()).toBeGreaterThan(before));
   });
 
+  it('캔버스 멘션 리스트: ↑/↓로 항목을 이동하고 Enter로 선택한다(요청) — Enter가 편집을 확정하지 않는다', async () => {
+    localStorage.setItem('mindflow_doc_cm14', JSON.stringify(DOC));
+    localStorage.setItem(
+      'mf_doc_shares',
+      JSON.stringify([
+        { documentId: 'cm14', email: 'friend@example.com', role: 'edit', createdAt: '2026-01-01T00:00:00.000Z' },
+        { documentId: 'cm14', email: 'buddy@example.com', role: 'edit', createdAt: '2026-01-02T00:00:00.000Z' },
+      ]),
+    );
+    const { container } = renderEditor('/editor?map=cm14&title=x');
+
+    const nodeBox = await waitFor(() => {
+      const el = container.querySelector('[data-node-id="c1"]') as HTMLElement;
+      expect(el).toBeTruthy();
+      return el;
+    });
+    fireEvent.doubleClick(nodeBox);
+    const editor = container.querySelector('.mf-richedit') as HTMLDivElement;
+    editor.textContent = '@';
+    fireEvent.input(editor);
+    setLinearSelection(editor, 1, 1);
+    fireEvent(document, new Event('selectionchange'));
+    await waitFor(() => expect(document.querySelectorAll('[data-mention-pick]')).toHaveLength(2));
+
+    // 처음엔 첫 항목이 활성 — ↓로 다음 항목으로 이동한다(끝에서는 처음으로 순환).
+    const activeEmail = (): string | null => document.querySelector('[data-mention-pick][data-active]')?.getAttribute('data-mention-pick') ?? null;
+    expect(activeEmail()).toBe('friend@example.com');
+    fireEvent.keyDown(editor, { key: 'ArrowDown' });
+    await waitFor(() => expect(activeEmail()).toBe('buddy@example.com'));
+    fireEvent.keyDown(editor, { key: 'ArrowUp' });
+    await waitFor(() => expect(activeEmail()).toBe('friend@example.com'));
+    fireEvent.keyDown(editor, { key: 'ArrowDown' });
+    await waitFor(() => expect(activeEmail()).toBe('buddy@example.com'));
+
+    // Enter = 활성 항목 선택 — 멘션이 들어가고 **편집 세션은 그대로**다
+    // (가로채지 않으면 Enter가 편집 확정으로 새어 리스트만 닫힌다).
+    fireEvent.keyDown(editor, { key: 'Enter' });
+    await waitFor(() => expect(editor.textContent).toContain('@buddy'));
+    expect(container.querySelector('.mf-richedit')).toBeTruthy();
+    await waitFor(() => expect(document.querySelector('[data-mention-suggest]')).toBeNull());
+  });
+
   it('실시간: 다른 곳(다른 탭)의 댓글이 신호를 타고 즉시 나타난다 — 공유된 문서', async () => {
     localStorage.setItem('mindflow_doc_cm8', JSON.stringify(DOC));
     // 실시간 구독은 공유된 문서에서만(혼자 쓰는 문서에는 신호를 보낼 상대가 없다).
