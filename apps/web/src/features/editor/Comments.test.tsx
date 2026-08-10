@@ -173,6 +173,34 @@ describe('주제 댓글', () => {
     expect(mark.textContent).toBe('@friend');
   });
 
+  it('작성 중에도 멘션이 강조된다 — 백드롭 오버레이(요청), 이름이 깨지면 해제', async () => {
+    localStorage.setItem('mindflow_doc_cm11', JSON.stringify(DOC));
+    localStorage.setItem('mf_doc_shares', JSON.stringify([{ documentId: 'cm11', email: 'friend@example.com', role: 'edit', createdAt: '2026-01-01T00:00:00.000Z' }]));
+    renderEditor('/editor?map=cm11&title=x');
+    const panel = await openCommentsViaMenu();
+
+    const box = within(panel).getByLabelText('댓글 입력') as HTMLTextAreaElement;
+    fireEvent.change(box, { target: { value: '@fri', selectionStart: 4 } });
+    const candidate = await within(panel).findByText('friend@example.com');
+    fireEvent.mouseDown(candidate.closest('button')!);
+    await waitFor(() => expect(box.value).toContain('@friend'));
+
+    // 제출 전인데도 오버레이가 멘션 구간만 강조해 그린다.
+    const overlay = panel.querySelector('[data-mention-overlay]')!;
+    const mark = overlay.querySelector('[data-mention-draft]')!;
+    expect(mark.textContent).toBe('@friend');
+    // 강조는 캐럿과 어긋나지 않게 색·배경뿐 — 굵게(폭 변화)는 쓰지 않는다.
+    expect((mark as HTMLElement).style.fontWeight).toBe('');
+    // textarea 글자는 백드롭이 대신 그린다(이중 렌더 방지) + 캐럿은 남긴다.
+    expect(box.style.color).toBe('transparent');
+    expect(box.style.caretColor).not.toBe('');
+
+    // 이름 글자를 지워 "@frien"이 되면 멘션이 아니다 — 강조도 함께 사라진다
+    // (제출 시 멘션 목록에서 빠지는 것과 같은 규칙).
+    fireEvent.change(box, { target: { value: box.value.replace('@friend', '@frien'), selectionStart: 6 } });
+    await waitFor(() => expect(panel.querySelector('[data-mention-draft]')).toBeNull());
+  });
+
   it('멘션 후보에 나 자신은 없다 — 멘션은 남을 부르는 도구다(제보)', async () => {
     localStorage.setItem('mindflow_doc_cm10', JSON.stringify(DOC));
     localStorage.setItem('mf_doc_shares', JSON.stringify([{ documentId: 'cm10', email: 'friend@example.com', role: 'edit', createdAt: '2026-01-01T00:00:00.000Z' }]));

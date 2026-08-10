@@ -14,6 +14,7 @@ import { useEffect, useMemo, useRef, useState, type CSSProperties, type Keyboard
 import type { EditorController } from '../useEditorState';
 import type { CommentMention, DocComment, ShareParticipant } from '../../../adapters/ports';
 import { panelTitleLine } from './panel/panelPrimitives';
+import { hexA } from '../theme';
 import { CommentIcon } from './ToolbarMenus';
 import { formatFullDateTime, formatLastEdited } from '../../home/timeFormat';
 import { useIsMobile } from '../../../hooks/useMediaQuery';
@@ -341,26 +342,40 @@ function CommentRow({ comment: c, controller, isMobile, deletable, deleteTitle }
   );
 }
 
+/** 본문을 멘션/평문 구간으로 가른다(순수) — 렌더된 댓글과 작성 중 오버레이가
+ * **같은 규칙**을 쓴다(멘션 목록에 있는 "@이름"만, 긴 이름 우선 매칭). */
+export function splitMentions(body: string, names: string[]): Array<{ t: string; m: boolean }> {
+  const uniq = [...new Set(names.filter(Boolean))].sort((a, b) => b.length - a.length);
+  if (!uniq.length || !body) return [{ t: body, m: false }];
+  const re = new RegExp(`@(${uniq.map((n) => n.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')).join('|')})`, 'g');
+  const out: Array<{ t: string; m: boolean }> = [];
+  let last = 0;
+  let match: RegExpExecArray | null;
+  while ((match = re.exec(body))) {
+    if (match.index > last) out.push({ t: body.slice(last, match.index), m: false });
+    out.push({ t: match[0], m: true });
+    last = match.index + match[0].length;
+  }
+  if (last < body.length) out.push({ t: body.slice(last), m: false });
+  return out;
+}
+
 /** 본문 렌더 — 멘션된 이름의 "@이름"만 강조색으로. 멘션 목록에 없는 @글자는 평문. */
 function renderBody(body: string, mentions: CommentMention[], accent: string): ReactNode {
-  if (!mentions.length) return body;
-  const names = [...new Set(mentions.map((m) => m.name).filter(Boolean))].sort((a, b) => b.length - a.length);
-  if (!names.length) return body;
-  const re = new RegExp(`@(${names.map((n) => n.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')).join('|')})`, 'g');
-  const out: ReactNode[] = [];
-  let last = 0;
-  let m: RegExpExecArray | null;
-  while ((m = re.exec(body))) {
-    if (m.index > last) out.push(body.slice(last, m.index));
-    out.push(
-      <span key={m.index} data-mention style={{ color: accent, fontWeight: 700 }}>
-        {m[0]}
-      </span>,
-    );
-    last = m.index + m[0].length;
-  }
-  if (last < body.length) out.push(body.slice(last));
-  return out;
+  const segs = splitMentions(
+    body,
+    mentions.map((m) => m.name),
+  );
+  if (segs.every((s) => !s.m)) return body;
+  return segs.map((s, i) =>
+    s.m ? (
+      <span key={i} data-mention style={{ color: accent, fontWeight: 700 }}>
+        {s.t}
+      </span>
+    ) : (
+      s.t
+    ),
+  );
 }
 
 // ── 입력창(멘션 자동완성 포함) — 새 스레드와 답글이 같은 것을 쓴다 ─────────────
@@ -405,6 +420,14 @@ function CommentComposer({
    * (골랐다가 글자를 지웠으면 멘션도 아니다). */
   const picked = useRef<Map<string, CommentMention>>(new Map());
   const boxRef = useRef<HTMLTextAreaElement | null>(null);
+  /** 작성 중 멘션 강조 오버레이(요청) — textarea는 글자를 스스로 색칠할 수 없어
+   * 글자를 투명하게 하고(캐럿은 caretColor로 남긴다) **같은 메트릭의 백드롭**이
+   * 전체 텍스트를 그리며 멘션 구간만 강조한다. 강조는 색+연한 배경뿐, 굵게는
+   * 쓰지 않는다 — 굵게는 글리프 폭을 바꿔 오버레이와 캐럿이 어긋난다. */
+  const overlayRef = useRef<HTMLDivElement | null>(null);
+  const syncOverlayScroll = () => {
+    if (overlayRef.current && boxRef.current) overlayRef.current.scrollTop = boxRef.current.scrollTop;
+  };
 
   // 마운트 시 한 번만 — 모바일에서는 포커스가 곧 키보드라, 읽으러 연 사람의
   // 화면 절반을 빼앗으므로 데스크톱만.
@@ -419,10 +442,14 @@ function CommentComposer({
   const pendingCaret = useRef<number | null>(null);
   useEffect(() => {
     const el = boxRef.current;
-    if (pendingCaret.current == null || !el) return;
-    el.focus();
-    el.setSelectionRange(pendingCaret.current, pendingCaret.current);
-    pendingCaret.current = null;
+    if (pendingCaret.current != null && el) {
+      el.focus();
+      el.setSelectionRange(pendingCaret.current, pendingCaret.current);
+      pendingCaret.current = null;
+    }
+    // 캐럿 이동·자동 스크롤 뒤 백드롭을 따라 붙인다(onScroll이 대부분 잡지만,
+    // 렌더 직후 한 번 더 맞춰 어긋난 프레임이 남지 않게).
+    syncOverlayScroll();
   }, [draft]);
 
   const refreshToken = (el: HTMLTextAreaElement) => {
@@ -544,35 +571,64 @@ function CommentComposer({
           ))}
         </div>
       )}
-      <textarea
-        ref={boxRef}
-        value={draft}
-        onChange={(e) => {
-          setDraft(e.target.value);
-          refreshToken(e.target);
-        }}
-        onKeyUp={(e) => refreshToken(e.currentTarget)}
-        onClick={(e) => refreshToken(e.currentTarget)}
-        onKeyDown={onKeyDown}
-        rows={compact ? 1 : 2}
-        maxLength={2000}
-        placeholder={placeholder}
-        aria-label={submitLabel === '답글' ? '답글 입력' : '댓글 입력'}
-        style={{
-          width: '100%',
-          boxSizing: 'border-box',
-          resize: 'none',
-          border: `1px solid ${th.border}`,
-          borderRadius: 9,
-          background: th.panel2,
-          color: th.text,
-          fontFamily: 'inherit',
-          fontSize: 12.5,
-          lineHeight: 1.5,
-          padding: '8px 9px',
-          outline: 'none',
-        }}
-      />
+      {(() => {
+        // 오버레이·textarea가 **같은 글자 상자**를 쓴다 — 하나라도 다르면 보이는
+        // 글자와 캐럿이 어긋난다.
+        const boxFont: CSSProperties = { fontFamily: 'inherit', fontSize: 12.5, lineHeight: 1.5, padding: '8px 9px', boxSizing: 'border-box' };
+        // 강조 대상 = 골라 넣었고 본문에 아직 살아 있는 멘션(제출 규칙과 동일).
+        const liveNames = [...picked.current.values()].filter((m) => draft.includes(`@${m.name}`)).map((m) => m.name);
+        const segs = splitMentions(draft, liveNames);
+        return (
+          <div style={{ position: 'relative', border: `1px solid ${th.border}`, borderRadius: 9, background: th.panel2, overflow: 'hidden' }}>
+            <div ref={overlayRef} aria-hidden data-mention-overlay style={{ ...boxFont, position: 'absolute', inset: 0, overflow: 'hidden', pointerEvents: 'none', whiteSpace: 'pre-wrap', overflowWrap: 'break-word', color: th.text }}>
+              {segs.map((s, i) =>
+                s.m ? (
+                  <span key={i} data-mention-draft style={{ color: th.accent, background: hexA(th.accent, 0.14), borderRadius: 4 }}>
+                    {s.t}
+                  </span>
+                ) : (
+                  <span key={i}>{s.t}</span>
+                ),
+              )}
+              {/* 후행 빈 줄도 스크롤 높이에 세도록 개행 하나를 더 둔다(백드롭 관례) */}
+              {'\n'}
+            </div>
+            <textarea
+              ref={boxRef}
+              className="mf-cmt-input"
+              value={draft}
+              onChange={(e) => {
+                setDraft(e.target.value);
+                refreshToken(e.target);
+              }}
+              onKeyUp={(e) => refreshToken(e.currentTarget)}
+              onClick={(e) => refreshToken(e.currentTarget)}
+              onKeyDown={onKeyDown}
+              onScroll={syncOverlayScroll}
+              rows={compact ? 1 : 2}
+              maxLength={2000}
+              placeholder={placeholder}
+              aria-label={submitLabel === '답글' ? '답글 입력' : '댓글 입력'}
+              style={
+                {
+                  ...boxFont,
+                  position: 'relative',
+                  display: 'block',
+                  width: '100%',
+                  resize: 'none',
+                  border: 'none',
+                  background: 'transparent',
+                  // 글자는 백드롭이 그린다 — 여기 글자가 보이면 이중으로 겹친다.
+                  color: 'transparent',
+                  caretColor: th.text,
+                  outline: 'none',
+                  '--mf-cmt-ph': th.subtext,
+                } as CSSProperties
+              }
+            />
+          </div>
+        );
+      })()}
       <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: compact ? 5 : 7 }}>
         <button
           type="button"
