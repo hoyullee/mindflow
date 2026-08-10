@@ -230,29 +230,47 @@ export function TextToolbar({ controller }: TextToolbarProps) {
       // `pointerdown` at the root keeps every toolbar interaction off the canvas.
       onPointerDown={(e) => e.stopPropagation()}
     >
-      {/* 0행 — 인라인 멘션 후보(캐럿 앞에 @토큰이 있을 때만). 클릭 전에 blur로
-          캐럿·토큰이 사라지지 않게 mousedown에서 처리(다른 버튼들과 같은 함정). */}
-      {mention && mentionMatches.length > 0 && (
-        <div style={rowStyle} data-mention-suggest>
+      {/* 인라인 멘션 후보 — 캐럿 앞에 @토큰이 있으면 **툴바 자리 전체가 이 리스트로
+          바뀐다**(요청: 리스트가 떠 있는 동안 툴바 숨김, 사라지면 툴바 복귀). 모양은
+          댓글 작성창의 후보 리스트와 동일(굵은 이름 + 회색 이메일 행). 클릭 전에
+          blur로 캐럿·토큰이 사라지지 않게 mousedown에서 처리(다른 버튼들과 같은 함정). */}
+      {mention && mentionMatches.length > 0 ? (
+        <div data-mention-suggest style={{ display: 'flex', flexDirection: 'column', minWidth: 230, margin: '-2px -4px' }}>
           {mentionMatches.map((p) => (
             <button
               key={p.email}
               type="button"
+              className="mf-ed-btn"
               data-mention-pick={p.email}
-              title={p.email}
               onMouseDown={(e) => {
                 e.preventDefault();
                 e.stopPropagation();
                 controller.insertMentionRange(mention.start, mention.end, participantName(p), p.email);
                 setMention(null);
               }}
-              style={{ ...boldButtonStyle(th), width: 'auto', padding: '0 9px', fontWeight: 600, fontSize: 11.5 }}
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                gap: 7,
+                width: '100%',
+                border: 'none',
+                background: 'transparent',
+                fontFamily: 'inherit',
+                fontSize: 12,
+                color: th.text,
+                padding: '7px 10px',
+                borderRadius: 8,
+                cursor: 'pointer',
+                textAlign: 'left',
+              }}
             >
-              @{participantName(p)}
+              <span style={{ fontWeight: 700 }}>{participantName(p)}</span>
+              <span style={{ color: th.subtext, fontSize: 11, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{p.email}</span>
             </button>
           ))}
         </div>
-      )}
+      ) : (
+        <>
       {/* 1행 — 글자 서식과 줄 단위 리스트 */}
       <div style={rowStyle}>
         <button type="button" title="선택 영역 굵게 (**굵게**)" onMouseDown={(e) => applyAndGuard(e, controller, 'b')} style={boldButtonStyle(th)}>
@@ -349,6 +367,8 @@ export function TextToolbar({ controller }: TextToolbarProps) {
           지우기
         </button>
       </div>
+        </>
+      )}
     </div>
   );
 }
