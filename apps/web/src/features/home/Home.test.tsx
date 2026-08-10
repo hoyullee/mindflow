@@ -3524,3 +3524,31 @@ describe('홈 우클릭 메뉴', () => {
     expect(within(menu).getByRole('menuitem', { name: '삭제하기' })).toBeTruthy();
   });
 });
+
+// 맵 카드의 "공유 중" 표식(요청) — 내가 초대를 걸었거나 링크를 켜 둔 맵은 제목 옆에
+// 사람 아이콘이 뜬다(Google Drive 관례). 초대/링크 여부는 툴팁 문구로 갈린다.
+describe('맵 카드 공유 표식', () => {
+  const meta = (id: string, title: string): DocMeta => ({ id, title, version: 1, updatedAt: '2026-01-01T00:00:00.000Z', isFavorite: false, deletedAt: null });
+
+  it('초대가 걸린 맵에만 표식이 뜨고, 툴팁이 인원수를 말한다', async () => {
+    localStorage.setItem(
+      'mf_doc_shares',
+      JSON.stringify([
+        { documentId: 'doc-sh', email: 'a@example.com', role: 'edit', createdAt: '2026-01-01T00:00:00.000Z' },
+        { documentId: 'doc-sh', email: 'b@example.com', role: 'view', createdAt: '2026-01-01T00:00:00.000Z' },
+      ]),
+    );
+    renderHomeWithDocStore([meta('doc-sh', '공유한 맵'), meta('doc-solo', '혼자 쓰는 맵')]);
+    const badge = await screen.findByRole('img', { name: '공유 중 — 2명과 공유 중' });
+    expect(badge.closest('[data-title]')?.getAttribute('data-title')).toBe('공유한 맵');
+    // 공유가 없는 카드에는 표식이 없다.
+    const soloCard = screen.getByText('혼자 쓰는 맵').closest('[data-title]')!;
+    expect(soloCard.querySelector('[data-shared-badge]')).toBeNull();
+  });
+
+  it('링크 공유만 켠 맵은 "링크" 문구의 표식이 뜬다', async () => {
+    localStorage.setItem('mf_doc_links', JSON.stringify({ 'doc-ln': 'view' }));
+    renderHomeWithDocStore([meta('doc-ln', '링크 공유 맵')]);
+    expect(await screen.findByRole('img', { name: '공유 중 — 링크가 있는 사람이 열람 가능' })).toBeTruthy();
+  });
+});

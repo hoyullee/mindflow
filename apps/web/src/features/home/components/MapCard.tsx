@@ -209,6 +209,25 @@ export function MapCard({ card, controller, draggableEnabled, compact = false }:
               메트릭을 따라가서 웹폰트 스왑 순간 카드/트레이 높이가 몇 px 출렁이고
               아래 툴바까지 밀렸다(새로고침 깜빡임). */}
           <div style={{ fontSize: compact ? 12 : 14, lineHeight: compact ? '15px' : undefined, fontWeight: 600, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', minWidth: 0 }}>{card.title}</div>
+          {/* "공유 중" 표식 — 제목 옆 사람 아이콘(Google Drive 관례). 에디터 공유
+              버튼·카드 메뉴와 같은 글리프(같은 뜻은 같은 표식)이되, 여기는 상태
+              표시라 더하기(+) 없이 사람 둘만 그린다. 자세한 내용은 툴팁으로. */}
+          {card.sharedLabel && (
+            <span
+              data-shared-badge
+              role="img"
+              title={card.sharedLabel}
+              aria-label={`공유 중 — ${card.sharedLabel}`}
+              style={{ display: 'flex', alignItems: 'center', flexShrink: 0, color: 'var(--mf-muted)' }}
+            >
+              <svg width={compact ? 11 : 13} height={compact ? 11 : 13} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2" />
+                <circle cx="9" cy="7" r="4" />
+                <path d="M23 21v-2a4 4 0 0 0-3-3.87" />
+                <path d="M16 3.13a4 4 0 0 1 0 7.75" />
+              </svg>
+            </span>
+          )}
         </div>
         {/* 최근 항목 전용 위치 줄 — "● 폴더"(폴더가 없으면 "● 스페이스"). 최근
             트레이는 스페이스를 가로지르는 목록이라 제목만으로는 어느 위치의 맵인지

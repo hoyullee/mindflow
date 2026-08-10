@@ -296,6 +296,13 @@ export interface ShareStore {
   getLink(documentId: string): Promise<ShareRole | null>;
   /** 링크 공유를 켜고 끈다. 소유자만(RLS). `null` = 끄기. */
   setLink(documentId: string, role: ShareRole | null): Promise<{ error?: string }>;
+  /**
+   * **내가 공유해 둔** 문서들의 요약 — 홈 맵 카드의 "공유 중" 표식이 읽는다.
+   * docId → { 초대 수, 링크 공유 여부 }. 한 번의 조회로 전 카드를 커버해야 하므로
+   * (카드마다 `list()`를 부르면 왕복이 카드 수만큼 난다) 목록 전체를 돌려준다.
+   * 조회 실패(구 서버·오류)는 빈 객체 — 표식이 빠질 뿐 홈은 그대로 동작한다.
+   */
+  listSharedByMe(): Promise<Record<string, { invitees: number; link: boolean }>>;
 }
 
 /**

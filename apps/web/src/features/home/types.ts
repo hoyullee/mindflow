@@ -207,6 +207,9 @@ export interface HomeState {
    * 섞이지 않는 별도 목록으로 들고 있다. */
   /** `isNew` = 아직 확인하지 않은 초대(0019의 `seen_at`이 null) — LNB 배지의 근거. */
   sharedMaps: { docId: string; title: string; updatedAt: string; role: 'edit' | 'view'; isNew: boolean }[];
+  /** **내가 공유해 둔** 문서 요약(docId → 초대 수·링크 여부) — 맵 카드의
+   * "공유 중" 표식 원천(`ShareStore.listSharedByMe`). */
+  sharedByMe: Record<string, { invitees: number; link: boolean }>;
 
   importDone: string | null;
   /** 가져온 맵이 폴더 안에 들어갔다면 그 폴더 이름 — 완료 토스트가 "현재 스페이스에
@@ -344,6 +347,7 @@ export function initialHomeState(): HomeState {
     dragOverFolder: null,
 
     sharedMaps: [],
+    sharedByMe: {},
 
     importDone: null,
     importDoneFolder: null,

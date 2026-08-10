@@ -126,7 +126,7 @@ export function useHomeController() {
     // they opened a map in the editor), so returning to Home lands back on that
     // space instead of the default 일반 공간.
     const restore = loadActiveView();
-    const res = await Promise.allSettled([spaceStore.load(), docStore.list(), shareStore.listSharedWithMe()]);
+    const res = await Promise.allSettled([spaceStore.load(), docStore.list(), shareStore.listSharedWithMe(), shareStore.listSharedByMe()]);
     if (!mountedRef.current) return;
     // Only allow persisting the workspace once the load actually SUCCEEDED. If
     // it rejected (network/RLS/transient), we must not save — otherwise the
@@ -274,7 +274,10 @@ export function useHomeController() {
       // 카드의 "마지막 수정" 표기 원천 — 휴지통 문서 메타까지 포함해 통째로
       // 갱신한다 (복원 직후에도 카드에 시각이 바로 뜨도록). timeFormat.ts 참고.
       const docTimes = Object.fromEntries(allMetas.map((m) => [m.id, m.updatedAt]));
-      return { ...prev, theme, spaces, activeSpace, curFolder, mapFolders, favs, deleted, trash, recent, docTimes, sharedMaps: sharedMetas.map((m) => ({ docId: m.id, title: m.title, updatedAt: m.updatedAt, role: m.sharedRole ?? 'edit', isNew: unseen.has(m.id) })), loaded: true };
+      // 카드의 "공유 중" 표식 원천 — 내가 걸어 둔 초대/링크의 일괄 요약. 조회
+      // 실패는 빈 객체(표식만 빠지고 홈은 그대로).
+      const sharedByMe = res[3].status === 'fulfilled' ? res[3].value : prev.sharedByMe;
+      return { ...prev, theme, spaces, activeSpace, curFolder, mapFolders, favs, deleted, trash, recent, docTimes, sharedByMe, sharedMaps: sharedMetas.map((m) => ({ docId: m.id, title: m.title, updatedAt: m.updatedAt, role: m.sharedRole ?? 'edit', isNew: unseen.has(m.id) })), loaded: true };
     });
     // 마지막 저장자가 **내가 아닌** 문서들만 이름을 물어본다(0015). 혼자 쓰는
     // 사람은 대상이 하나도 없어 요청 자체가 나가지 않는다. 실패해도 조용히 넘어간다 —
@@ -1398,7 +1401,13 @@ export function useHomeController() {
    * 카드는 언제나 내 맵이므로 `readOnly`는 아니다 — 공유받은 맵은 LNB 목록에만 있다.
    */
   const openShareFor = (docId: string) => patch({ shareDocId: docId, ctxMenu: null });
-  const closeShare = () => patch({ shareDocId: null });
+  const closeShare = () => {
+    patch({ shareDocId: null });
+    // 팝업에서 방금 초대를 걸거나 링크를 켰을 수 있다 — 카드 표식을 새로 읽는다.
+    void shareStore.listSharedByMe().then((sharedByMe) => {
+      if (mountedRef.current) patch({ sharedByMe });
+    });
+  };
   const onRenameMapName = (v: string) => setState((prev) => (prev.renameMap ? { ...prev, renameMap: { ...prev.renameMap, name: v.slice(0, 40), error: undefined } } : prev));
 
   /** 본문 루트 글자 + 메타 제목을 함께 바꾼다. 충돌하면 최신 판으로 한 번 다시 시도. */

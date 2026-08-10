@@ -77,3 +77,18 @@ describe('LocalShareStore', () => {
     ]);
   });
 });
+
+describe('listSharedByMe — 카드 "공유 중" 표식의 원천', () => {
+  beforeEach(() => localStorage.clear());
+
+  it('초대 수와 링크 여부를 문서별로 묶는다', async () => {
+    const store = new LocalShareStore();
+    await store.add('d1', 'a@example.com', 'edit');
+    await store.add('d1', 'b@example.com', 'view');
+    await store.setLink('d2', 'view');
+    const out = await store.listSharedByMe();
+    expect(out.d1).toEqual({ invitees: 2, link: false });
+    expect(out.d2).toEqual({ invitees: 0, link: true });
+    expect(out.d3).toBeUndefined(); // 공유 없는 문서는 항목 자체가 없다
+  });
+});
