@@ -78,6 +78,17 @@ export function NotificationBell({ isMobile = false }: { isMobile?: boolean }) {
     };
   }, [reload]);
 
+  // 즉시 신호 — 새 알림이 생기면(0027 트리거·로컬 ping) 바로 다시 읽어 배지를
+  // 세운다. 신호는 유실될 수 있으므로 아래 주기 확인이 안전망으로 남는다.
+  useEffect(
+    () =>
+      store.subscribe(() => {
+        lastLoadRef.current = Date.now();
+        void reload();
+      }),
+    [store, reload],
+  );
+
   // 주기 확인 — 화면이 보이는 동안만. 패널이 열려 있으면 쉰다(이미 보고 있고,
   // 목록을 갈아 끼우면 읽는 중에 항목이 움직인다).
   useEffect(() => {

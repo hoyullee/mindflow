@@ -51,14 +51,32 @@ export function localDocTitle(documentId: string): string {
   }
 }
 
+/** BroadcastChannel 이름 — 로컬 모드의 알림 ping(0027 realtime.send의 짝). */
+export const LOCAL_NOTIFY_CHANNEL = 'mf-notify';
+
+/** 다른 탭(과 같은 탭의 벨)에 "새 알림이 생겼다"고 알린다 — 내용 없는 신호,
+ * 받는 쪽이 자기 우편함을 다시 읽는다(댓글 ping과 같은 무늬). */
+function pingLocalNotify(recipientEmail: string): void {
+  if (typeof BroadcastChannel === 'undefined') return;
+  try {
+    const ch = new BroadcastChannel(LOCAL_NOTIFY_CHANNEL);
+    ch.postMessage({ recipientEmail });
+    ch.close();
+  } catch {
+    /* 신호는 부가 기능 — 실패해도 알림 자체는 저장됐다 */
+  }
+}
+
 export function pushLocalNotification(n: Omit<StoredNotification, 'id' | 'createdAt' | 'readAt'>): void {
   const list = readLocalNotifications();
+  const recipientEmail = n.recipientEmail.trim().toLowerCase();
   list.push({
     ...n,
-    recipientEmail: n.recipientEmail.trim().toLowerCase(),
+    recipientEmail,
     id: `n${Date.now().toString(36)}${Math.floor(Math.random() * 1000)}`,
     createdAt: new Date().toISOString(),
     readAt: null,
   });
   writeLocalNotifications(list);
+  pingLocalNotify(recipientEmail);
 }

@@ -3,7 +3,7 @@
 // 읽기 전용에 가깝다 — 알림을 **만드는** 것은 DB 트리거(댓글·공유 insert)뿐이고,
 // 여기서는 내 우편함을 읽고 읽음 처리만 한다(RLS: recipient = auth.uid()).
 
-import type { SupabaseClient } from '@supabase/supabase-js';
+import type { RealtimeChannel, SupabaseClient } from '@supabase/supabase-js';
 import type { AppNotification, NotificationStore } from '../ports';
 
 interface Row {
@@ -53,5 +53,26 @@ export class SupabaseNotificationStore implements NotificationStore {
       return { error: '읽음 처리에 실패했어요.' };
     }
     return {};
+  }
+
+  subscribe(onChange: () => void): () => void {
+    // 수신자 전용 ping 채널(0027 트리거의 realtime.send 짝) — 댓글(#0021)과
+    // 같은 공개 broadcast: 신호에 내용이 없고 실제 목록은 RLS 걸린 list()로
+    // 읽으므로 채널이 비밀을 나르지 않는다. uid는 비동기로 오므로 그 사이
+    // 해제되면 붙지 않는다.
+    let disposed = false;
+    let channel: RealtimeChannel | null = null;
+    void this.client.auth.getUser().then(({ data }) => {
+      const uid = data.user?.id;
+      if (!uid || disposed) return;
+      channel = this.client.channel(`mindflow-notify:${uid}`, { config: { private: false } });
+      channel.on('broadcast', { event: 'notify' }, () => onChange());
+      channel.subscribe();
+    });
+    return () => {
+      disposed = true;
+      if (channel) void this.client.removeChannel(channel);
+      channel = null;
+    };
   }
 }

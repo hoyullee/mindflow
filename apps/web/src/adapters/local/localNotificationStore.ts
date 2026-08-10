@@ -3,7 +3,7 @@
 // LocalShareStore의 초대 — Supabase의 DB 트리거(0022)와 같은 시점).
 
 import type { AppNotification, NotificationStore } from '../ports';
-import { readLocalNotifications, writeLocalNotifications } from './localNotifications';
+import { LOCAL_NOTIFY_CHANNEL, readLocalNotifications, writeLocalNotifications } from './localNotifications';
 
 function demoEmail(): string {
   try {
@@ -41,5 +41,16 @@ export class LocalNotificationStore implements NotificationStore {
     const now = new Date().toISOString();
     writeLocalNotifications(readLocalNotifications().map((n) => (n.recipientEmail === me && !n.readAt ? { ...n, readAt: now } : n)));
     return {};
+  }
+
+  subscribe(onChange: () => void): () => void {
+    // pushLocalNotification의 ping을 받는다 — 내 앞으로 온 신호만.
+    if (typeof BroadcastChannel === 'undefined') return () => {};
+    const ch = new BroadcastChannel(LOCAL_NOTIFY_CHANNEL);
+    ch.onmessage = (e) => {
+      const em = ((e.data as { recipientEmail?: string } | null)?.recipientEmail ?? '').trim().toLowerCase();
+      if (em && em === demoEmail()) onChange();
+    };
+    return () => ch.close();
   }
 }
