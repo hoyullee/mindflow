@@ -18,6 +18,9 @@ export interface LineSeg {
   s?: boolean;
   /** 하이퍼링크 — 커밋된 렌더에서 밑줄 + Ctrl/⌘+클릭으로 열기(`RichSpan`). */
   href?: string;
+  /** 인라인 멘션 이메일 — `RichSpan`이 `.mf-mention`(파랑)으로 그린다. 빠뜨리면
+   * 이 줄 분해를 지나는 렌더(메모 전체·리스트 줄)에서 멘션 색이 사라진다(제보). */
+  m?: string;
 }
 
 export interface ContentLine {
@@ -37,7 +40,7 @@ function splitLines(node: Pick<Node, 'rich' | 'text'>): LineSeg[][] {
         .split('\n')
         .forEach((p, i) => {
           if (i > 0) lines.push([]);
-          if (p) lines[lines.length - 1]?.push({ t: p, b: r.b, c: r.c, i: r.i, s: r.s, href: r.href });
+          if (p) lines[lines.length - 1]?.push({ t: p, b: r.b, c: r.c, i: r.i, s: r.s, href: r.href, m: r.m });
         });
     });
     return lines;

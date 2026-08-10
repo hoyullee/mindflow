@@ -240,6 +240,20 @@ describe('메모 속성 패널 — I·S whole-toggle (도형과 파리티)', () 
 
 // 접기/펼치기 토글 — ＋/− 텍스트는 "추가/삭제"로 읽혔다(제보: 직관적 아이콘으로).
 // 표준 디스클로저 셰브론: 펼침=아래, 접힘=오른쪽(회전). 상태는 aria-expanded로 노출.
+describe('메모 인라인 멘션 렌더', () => {
+  it('메모의 멘션이 .mf-mention(파랑)으로 그려진다 — 줄 분해가 m을 떨어뜨리지 않는다(제보)', () => {
+    localStorage.setItem(
+      'mindflow_doc_fmen1',
+      JSON.stringify(docWith({ text: '@friend 메모야', rich: [{ t: '@friend', b: false, c: null, m: 'friend@example.com' }, { t: ' 메모야', b: false, c: null }] })),
+    );
+    const { container } = renderEditor('/editor?map=fmen1&title=x');
+    const mark = floatCard(container).querySelector('.mf-mention') as HTMLElement;
+    expect(mark).toBeTruthy();
+    expect(mark.getAttribute('data-mention-email')).toBe('friend@example.com');
+    expect(mark.textContent).toBe('@friend');
+  });
+});
+
 describe('메모 접기 토글 — 회전 셰브론', () => {
   function firePointerDown(target: Element): void {
     const event = new MouseEvent('pointerdown', { bubbles: true, cancelable: true, button: 0 });
