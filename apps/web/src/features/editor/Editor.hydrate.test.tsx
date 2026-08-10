@@ -93,6 +93,45 @@ describe('Editor initial hydration', () => {
     });
   });
 
+  it('supabase mode: 로컬 캐시가 있어도 커튼은 서버 판 채택까지 남는다 — 낡은 판이 화면에 나가지 않는다(제보: 공동 편집 맵 진입 시 내용이 튐)', async () => {
+    localStorage.clear();
+    // 이 기기 캐시 = 상대의 편집 **이전** 판. 캐시로 먼저 그리는 것은 유지되지만
+    // (오프라인 폴백), 그 프레임은 커튼 아래여야 한다.
+    const OLD_DOC = {
+      ...REAL_DOC,
+      nodes: { root: { ...REAL_DOC.nodes.root, text: '편집 이전 루트', children: [] } },
+    };
+    localStorage.setItem('mindflow_doc_m9', JSON.stringify(OLD_DOC));
+    let resolveLoad!: (v: LoadedDoc | null) => void;
+    const gate = new Promise<LoadedDoc | null>((r) => {
+      resolveLoad = r;
+    });
+    const { backend } = makeBackend(vi.fn(async () => gate), 'supabase');
+    const { container } = renderEditor(backend, '/editor?map=m9&title=x');
+
+    // 캐시 트리는 그려져 있어도(hydrating=false 경로) 커튼이 아직 덮고 있다.
+    const curtain = await waitFor(() => {
+      const el = container.querySelector('[data-canvas-curtain]') as HTMLElement;
+      expect(el).toBeTruthy();
+      return el;
+    });
+    expect(curtain.style.opacity).toBe('1'); // ready=false — 아직 공개 전
+
+    await act(async () => {
+      resolveLoad({ doc: REAL_DOC as unknown as LoadedDoc['doc'], version: 5, title: '실제 루트' });
+      await gate;
+    });
+    // 커튼이 걷힐 때(ready) 화면은 이미 서버 판이다 — 낡은 판 → 새 판 교체가
+    // 공개 상태에서 일어나지 않는다.
+    await waitFor(() => {
+      const el = container.querySelector('[data-canvas-curtain]') as HTMLElement | null;
+      expect(!el || el.style.opacity === '0').toBe(true);
+    });
+    const vp = container.querySelector('.mf-ed-vp') as HTMLElement;
+    expect(within(vp).getByText('실제 루트')).toBeTruthy();
+    expect(within(vp).queryByText('편집 이전 루트')).toBeNull();
+  });
+
   it('local mode: paints the seed immediately with no loading spinner', async () => {
     localStorage.clear();
     const { backend } = makeBackend(async () => null, 'local');
