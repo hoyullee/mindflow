@@ -67,6 +67,14 @@ body {
   select:not(.mf-edit) {
     font-size: 16px !important;
   }
+
+  /* 댓글 작성창의 백드롭 오버레이 — textarea 글자는 투명하고 **이 div가 대신
+     그린다**(멘션 강조). 위 규칙이 textarea만 16px로 키우면 캐럿(16px 기준)과
+     보이는 글자(12.5px)가 어긋난다(제보: 커서 위치 틀어짐) — 같은 글자 상자
+     계약을 모바일에서도 지키려면 오버레이도 함께 키워야 한다. */
+  [data-mention-overlay] {
+    font-size: 16px !important;
+  }
 }
 
 /* 모바일: 조작 요소 위의 **탭 두 번**이 확대로 읽히지 않게(덤으로 300ms 탭 지연

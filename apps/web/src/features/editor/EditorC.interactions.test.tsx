@@ -105,6 +105,29 @@ describe('Editor multi-select (M3-Editor-c: marquee)', () => {
     expect(screen.queryByText('다중 선택')).toBeNull();
   });
 
+  it('삭제 가능한 객체가 하나뿐인 문서의 전체 선택도 Delete로 지워진다(제보: 주제 2개에서 삭제 안 됨)', async () => {
+    // 루트 + 자식 하나 — 전체 선택이 물 수 있는 건 자식 하나뿐이다. 예전에는
+    // 이때 1개짜리 **다중 선택**이 만들어졌는데, 그 상태는 어느 처리 분기도
+    // 몰랐다(키보드는 total > 1만, 단일 분기는 selection만) — 화면에는 선택돼
+    // 보이는데 Delete가 무시되는 유령 상태. 지금은 단일 선택으로 정규화된다.
+    const twoDoc = {
+      ...SIMPLE_DOC,
+      nodes: {
+        root: { ...SIMPLE_DOC.nodes.root, children: ['c1'] },
+        c1: SIMPLE_DOC.nodes.c1,
+      },
+    };
+    localStorage.setItem('mindflow_doc_mc4', JSON.stringify(twoDoc));
+    const { container } = renderEditor('/editor?map=mc4&title=x');
+    await waitFor(() => expect(countNodeBoxes(container)).toBe(2));
+
+    fireEvent.keyDown(window, { key: 'a', ctrlKey: true });
+    fireEvent.keyDown(window, { key: 'Delete' });
+
+    await waitFor(() => expect(countNodeBoxes(container)).toBe(1));
+    expect(within(getViewport(container)).getByText('루트')).toBeTruthy();
+  });
+
   it('Escape with a multi-selection clears it', async () => {
     localStorage.setItem('mindflow_doc_mc3', JSON.stringify(SIMPLE_DOC));
     const { container } = renderEditor('/editor?map=mc3&title=x');

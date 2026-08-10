@@ -2036,6 +2036,17 @@ export function useEditorState(): EditorController {
       if (!nodes.length && !floats.length && !lines.length) {
         setSelectionState(null);
         setMultiSelectionState(null);
+      } else if (nodes.length + floats.length + lines.length === 1) {
+        // 마퀴가 **하나만** 물었다 — 단일 선택으로 정규화한다(제보: 주제가 2개
+        // 남았을 때 드래그 선택 후 Delete가 안 먹힘). 다중 선택 1개짜리 상태는
+        // 어느 처리 분기도 모른다: 키보드(Delete/Escape)는 `total > 1`만 받고,
+        // 단일 분기들은 `selection`을 보는데 마퀴가 그걸 비워 두기 때문 —
+        // 화면에는 선택된 것으로 보이는데 아무 키도 듣지 않는 유령 상태가 된다.
+        // 단일 선택이면 삭제·속성 패널·방향키·F2가 전부 평소처럼 동작한다.
+        setMultiSelectionState(null);
+        setSelectionState(nodes.length ? { kind: 'node', id: nodes[0]! } : floats.length ? { kind: 'float', id: floats[0]! } : { kind: 'line', id: lines[0]! });
+        setEditingNodeId(null);
+        setEditingFloatId(null);
       } else {
         setSelectionState(null);
         setMultiSelectionState({ nodes, lines, floats });
@@ -4369,7 +4380,13 @@ export function useEditorState(): EditorController {
           const allNodes = Object.keys(d.nodes).filter((id) => id !== ROOT_ID);
           const allFloats = d.floats.map((f) => f.id);
           const allLines = d.lines.map((l) => l.id);
-          if (allNodes.length + allFloats.length + allLines.length > 0) {
+          const total = allNodes.length + allFloats.length + allLines.length;
+          if (total === 1) {
+            // 객체가 하나뿐이면 단일 선택 — 마퀴와 같은 정규화(1개짜리 다중
+            // 선택은 Delete 등 어느 분기도 받지 않는 유령 상태다).
+            setMultiSelectionState(null);
+            setSelectionState(allNodes.length ? { kind: 'node', id: allNodes[0]! } : allFloats.length ? { kind: 'float', id: allFloats[0]! } : { kind: 'line', id: allLines[0]! });
+          } else if (total > 1) {
             setSelectionState(null);
             setMultiSelectionState({ nodes: allNodes, floats: allFloats, lines: allLines });
           }
