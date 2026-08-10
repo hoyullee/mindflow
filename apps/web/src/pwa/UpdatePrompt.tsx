@@ -55,7 +55,7 @@ function usePageHidden(): boolean {
 
 export function UpdatePrompt() {
   const {
-    needRefresh: [needRefresh, setNeedRefresh],
+    needRefresh: [needRefresh],
     updateServiceWorker,
   } = useRegisterSW({
     onRegisteredSW(_swUrl, registration) {
@@ -139,12 +139,17 @@ export function UpdatePrompt() {
   const canAutoLocally = !saveBlocked && canAutoApply(risk, hidden);
 
   useEffect(() => {
-    if (!needRefresh || dismissed || !canAutoLocally) return;
+    // `dismissed`는 여기서 보지 않는다 — 토스트의 X는 **"지금 묻지 마"**(토스트
+    // 숨김)일 뿐, 화면이 안전해지는 순간의 조용한 적용까지 막는 뜻이 아니다.
+    // 예전엔 X가 자동 적용까지 걸어 잠갔고 세션 내내 풀리지 않아서, 편집 중
+    // 토스트를 한 번 닫은 장수 탭은 이후의 **어떤 배포도** 스스로 적용하지
+    // 못했다(제보: "업데이트 기능이 있는데 왜 수동으로 닫았다 열어야 하나").
+    if (!needRefresh || !canAutoLocally) return;
     void apply(true);
     // 다른 탭이 바빠 미뤄졌을 수 있다 — 그 탭이 한가해지는 대로 조용히 넘어가도록 재시도.
     const retry = window.setInterval(() => void apply(true), PEER_RETRY_MS);
     return () => window.clearInterval(retry);
-  }, [needRefresh, dismissed, canAutoLocally, apply]);
+  }, [needRefresh, canAutoLocally, apply]);
 
   return (
     <>
@@ -157,8 +162,10 @@ export function UpdatePrompt() {
       applying={applying}
       onRefresh={() => void apply(false)}
         onDismiss={() => {
+          // X = "지금 묻지 마"(토스트 숨김)만. `setNeedRefresh(false)`로 감지
+          // 플래그까지 끄면 — 같은 대기 SW로는 onNeedRefresh가 다시 발화하지
+          // 않아 — 화면이 안전해져도 자동 적용이 다시 볼 근거가 사라진다.
           setDismissed(true);
-          setNeedRefresh(false);
         }}
       />
     </>
