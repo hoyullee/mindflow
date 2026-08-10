@@ -5,6 +5,8 @@ import type { Doc } from '@mindflow/mindmap-core';
 import { ROOT_ID, collectImageRefs, parseDoc, serializeDoc, toMarkdown } from '@mindflow/mindmap-core';
 import { inlineImagesForExport } from '../editor/imageExport';
 import { exportDocPng } from '../editor/png';
+import { exportDocSvg } from '../editor/svg';
+import { exportDocPdf } from '../editor/pdf';
 import { themeOf } from '../editor/theme';
 import { applyHomeTheme, homeThemeKeyOf, saveHomeThemeCache, type HomeThemeKey } from './theme';
 import { useBackend } from '../../adapters/BackendContext';
@@ -1257,6 +1259,50 @@ export function useHomeController() {
     })();
   };
 
+  /** 벡터 SVG(.svg) — 에디터 내보내기와 같은 장면 렌더러(`exportScene`). 파일이
+   * 자족적이어야 하므로 이미지는 JSON과 같은 규칙으로 데이터 URL 인라인. */
+  const exportMapSVG = (title: string, docId?: string) => {
+    patch({ ctxMenu: null });
+    const raw = docRawForExport(title, docId);
+    if (!raw) {
+      patch({ importError: '내용이 없어 이미지를 만들 수 없어요. 맵을 한 번 열어 저장한 뒤 다시 시도해 주세요.' });
+      return;
+    }
+    void (async () => {
+      try {
+        const doc = await fullDocForExport(title, docId);
+        if (!doc) throw new Error('unparseable');
+        const { doc: full, missing } = await inlineImagesForExport(doc, imageStore);
+        exportDocSvg(full, themeOf(full.themeKey), safeFileName(title));
+        if (missing > 0) patch({ importError: `이미지 ${missing}장을 SVG에 담지 못했어요. 연결을 확인하고 다시 시도해 주세요.` });
+      } catch {
+        patch({ importError: '이미지를 만들 수 없어요. 맵을 한 번 열어 저장한 뒤 다시 시도해 주세요.' });
+      }
+    })();
+  };
+
+  /** 단일 페이지 PDF(.pdf) — PNG와 같은 캔버스 래스터를 임베드(인쇄·공유용). */
+  const exportMapPDF = (title: string, docId?: string) => {
+    patch({ ctxMenu: null });
+    const raw = docRawForExport(title, docId);
+    if (!raw) {
+      patch({ importError: '내용이 없어 PDF를 만들 수 없어요. 맵을 한 번 열어 저장한 뒤 다시 시도해 주세요.' });
+      return;
+    }
+    void (async () => {
+      try {
+        const doc = await fullDocForExport(title, docId);
+        if (!doc) throw new Error('unparseable');
+        const refs = collectImageRefs(doc);
+        const urls = refs.length ? await imageStore.resolve(refs) : {};
+        const { missingImages } = await exportDocPdf(doc, themeOf(doc.themeKey), safeFileName(title), urls);
+        if (missingImages > 0) patch({ importError: `이미지 ${missingImages}장을 PDF에 담지 못했어요. 연결을 확인하고 다시 시도해 주세요.` });
+      } catch {
+        patch({ importError: 'PDF를 만들 수 없어요. 맵을 한 번 열어 저장한 뒤 다시 시도해 주세요.' });
+      }
+    })();
+  };
+
   const handleImport = (file: File) => {
     const reader = new FileReader();
     reader.onload = () => {
@@ -1748,6 +1794,8 @@ export function useHomeController() {
     exportMap,
     exportMapMarkdown,
     exportMapPNG,
+    exportMapSVG,
+    exportMapPDF,
     activeFolders,
     openNewFolder,
     startRenameMap,

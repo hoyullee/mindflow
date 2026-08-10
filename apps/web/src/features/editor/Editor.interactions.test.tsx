@@ -413,6 +413,48 @@ describe('Editor interactions (M3-Editor-b)', () => {
     clickSpy.mockRestore();
   });
 
+  it('SVG(.svg)로 내보낸다 — 벡터 문서에 노드 텍스트가 담긴다', async () => {
+    localStorage.setItem('mindflow_doc_t7svg', JSON.stringify(DOC));
+    const created: Blob[] = [];
+    URL.createObjectURL = vi.fn((b: Blob | MediaSource) => {
+      created.push(b as Blob);
+      return 'blob:mock';
+    }) as typeof URL.createObjectURL;
+    URL.revokeObjectURL = vi.fn() as typeof URL.revokeObjectURL;
+    const names: string[] = [];
+    const clickSpy = vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(function (this: HTMLAnchorElement) {
+      names.push(this.download);
+    });
+
+    const user = userEvent.setup();
+    renderEditor('/editor?map=t7svg&title=x');
+
+    await user.click(screen.getByRole('button', { name: /내보내기/ }));
+    await user.click(screen.getByText('SVG 이미지 (.svg)'));
+
+    // 이미지 인라인 단계가 비동기라 다운로드도 한 틱 뒤에 온다
+    await waitFor(() => expect(created.length).toBe(1));
+    expect(names[0]?.endsWith('.svg')).toBe(true);
+    const svg = await readBlobText(created[0]!);
+    expect(svg.startsWith('<svg xmlns="http://www.w3.org/2000/svg"')).toBe(true);
+    expect(svg).toContain('제품 로드맵');
+    expect(svg).toContain('리서치');
+    expect(svg).toContain('주간 회고 메모');
+
+    clickSpy.mockRestore();
+  });
+
+  it('PDF 항목이 내보내기 메뉴에 있고, 캔버스 없는 환경에서는 조용히 no-op', async () => {
+    localStorage.setItem('mindflow_doc_t7pdf', JSON.stringify(DOC));
+    const user = userEvent.setup();
+    renderEditor('/editor?map=t7pdf&title=x');
+
+    await user.click(screen.getByRole('button', { name: /내보내기/ }));
+    // jsdom엔 canvas 2D가 없어 렌더가 no-op — 클릭이 예외 없이 지나가는 것까지 확인
+    await user.click(screen.getByText('PDF 문서 (.pdf)'));
+    expect(screen.queryByText('PDF 문서 (.pdf)')).toBeNull(); // 메뉴는 닫힌다
+  });
+
   // 공유 — 이메일 초대. 실제 접근 제어는 DB의 RLS이고(0009), 여기서는 UI가 포트를
   // 제대로 부르는지와 목록/취소가 도는지를 본다.
   describe('공유', () => {

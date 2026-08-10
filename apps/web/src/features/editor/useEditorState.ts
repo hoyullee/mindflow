@@ -30,6 +30,8 @@ import { UI_THEME, themeKeyOf, themeOf } from './theme';
 import type { Theme, ThemeKey } from './theme';
 import { downloadFile } from './download';
 import { exportPng } from './png';
+import { exportSvg } from './svg';
+import { exportPdf } from './pdf';
 import * as mutations from './mutations';
 import { createIdFactory } from './mutations';
 import { clipboardCount, collectClipboard, pasteClipboard, type ClipboardPayload, type PasteTarget } from './clipboard';
@@ -582,6 +584,10 @@ export interface EditorController {
   dismissSaveConflict: () => void;
   exportJSON: () => void;
   exportPNG: () => void;
+  /** 벡터 SVG(.svg) — PNG와 같은 장면을 확대해도 깨지지 않는 벡터로. */
+  exportSVG: () => void;
+  /** 단일 페이지 PDF(.pdf) — PNG와 같은 래스터(2배)를 임베드(인쇄·공유용). */
+  exportPDF: () => void;
   /** 마크다운 개요(.md)로 내보낸다 — 코어 `toMarkdown`. */
   exportMarkdown: () => void;
 
@@ -4397,6 +4403,24 @@ export function useEditorState(): EditorController {
       if (missingImages > 0) setImageNotice(`이미지 ${missingImages}장을 PNG에 담지 못했어요 — 연결을 확인하고 다시 시도해 주세요`);
     })();
   }, [doc, geom, theme, titleParam, imageUrls, imageStore]);
+  const exportSVG = useCallback(() => {
+    void (async () => {
+      // SVG는 파일이 그 자체로 완결돼야 한다 — 서명 URL은 몇 시간 뒤 만료되므로
+      // JSON 내보내기와 같은 규칙으로 이미지를 데이터 URL로 **인라인**해서 그린다.
+      const { doc: full, missing } = await inlineImagesForExport(doc, imageStore);
+      exportSvg(full, geom, theme, safeDocTitle(doc, titleParam));
+      if (missing > 0) setImageNotice(`이미지 ${missing}장을 SVG에 담지 못했어요 — 연결을 확인하고 다시 시도해 주세요`);
+    })();
+  }, [doc, geom, theme, titleParam, imageStore]);
+  const exportPDF = useCallback(() => {
+    void (async () => {
+      // PNG와 같은 캔버스 렌더 — URL을 아직 못 받은 참조는 여기서 받아서 그린다.
+      const refs = collectImageRefs(doc).filter((r) => !imageUrls[r]);
+      const extra = refs.length ? await imageStore.resolve(refs) : {};
+      const { missingImages } = await exportPdf(doc, geom, theme, safeDocTitle(doc, titleParam), { ...imageUrls, ...extra });
+      if (missingImages > 0) setImageNotice(`이미지 ${missingImages}장을 PDF에 담지 못했어요 — 연결을 확인하고 다시 시도해 주세요`);
+    })();
+  }, [doc, geom, theme, titleParam, imageUrls, imageStore]);
   /** 마크다운 개요로 내보낸다(코어 `toMarkdown`). 무손실 백업은 JSON이고, 이건 다른
    * 도구로 옮기거나 사람이 읽는 용도다 — 가져오기가 이 형식을 되읽는다(노트·자유
    * 도형·메모까지, `parseOutline` 참고). */
@@ -4631,6 +4655,8 @@ export function useEditorState(): EditorController {
     dismissSaveConflict,
     exportJSON,
     exportPNG,
+    exportSVG,
+    exportPDF,
     exportMarkdown,
     shareOpen,
     openShare: () => setShareOpen(true),
