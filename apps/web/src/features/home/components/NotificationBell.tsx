@@ -19,6 +19,12 @@ import { formatLastEdited } from '../timeFormat';
 /** 탭 복귀 시 다시 읽는 최소 간격 — 포커스가 들락거려도 요청이 몰리지 않게. */
 const REFRESH_THROTTLE_MS = 30_000;
 
+/** 홈을 켜 둔 채로도 배지가 서게 하는 주기 확인(제보: 새 알림이 와도 빨간 점이
+ * 안 뜨고, 벨을 눌러야 그때서야 보인다). 마운트·탭 복귀만으로는 화면을 떠나지
+ * 않는 사용자에게 갱신 계기가 없다 — 작은 select 하나라 60초면 비용은 미미하고,
+ * 탭이 가려져 있는 동안은 쉬었다가 복귀 시 기존 wake 경로가 즉시 확인한다. */
+const POLL_MS = 60_000;
+
 function lineOf(n: AppNotification): string {
   const who = n.actorName || '누군가';
   if (n.kind === 'mention') return `${who}님이 회원님을 멘션했어요`;
@@ -71,6 +77,17 @@ export function NotificationBell({ isMobile = false }: { isMobile?: boolean }) {
       document.removeEventListener('visibilitychange', onWake);
     };
   }, [reload]);
+
+  // 주기 확인 — 화면이 보이는 동안만. 패널이 열려 있으면 쉰다(이미 보고 있고,
+  // 목록을 갈아 끼우면 읽는 중에 항목이 움직인다).
+  useEffect(() => {
+    if (open) return;
+    const t = window.setInterval(() => {
+      if (document.visibilityState !== 'visible') return;
+      void reload();
+    }, POLL_MS);
+    return () => window.clearInterval(t);
+  }, [reload, open]);
 
   // 바깥 클릭/Esc로 닫기.
   useEffect(() => {
