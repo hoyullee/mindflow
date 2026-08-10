@@ -120,6 +120,12 @@ describe('알림 센터', () => {
     const css = readFileSync(cssPath, 'utf8');
     expect(css).toMatch(/\.notif-scroll::-webkit-scrollbar-button\s*\{[^}]*display:\s*none/);
     expect(css).toMatch(/\.notif-scroll::-webkit-scrollbar-track\s*\{[^}]*margin:\s*12px 0/);
+    // 표준 속성(scrollbar-width/color)은 ::-webkit-scrollbar 미지원 브라우저
+    // 전용 블록에만 있어야 한다 — 크롬 121+는 표준 속성이 있는 요소에서
+    // ::-webkit-scrollbar 커스텀을 통째로 무시하므로, 같이 걸면 위의 버튼
+    // 숨김·4px 폭이 전혀 적용되지 않는다(제보: 새 빌드에서도 화살표 잔존).
+    expect(css).toMatch(/@supports not selector\(::-webkit-scrollbar\)/);
+    expect(css).not.toMatch(/\n\.notif-scroll \{/); // 최상위 표준 속성 규칙 없음
   });
 
   it('알림이 없으면 배지 없이 빈 안내가 뜬다', async () => {
