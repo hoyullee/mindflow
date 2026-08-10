@@ -3583,6 +3583,7 @@ describe('최근 트레이 미리보기 프리페치', () => {
         themeKey: 'coral',
       } as unknown as Doc,
       version: 1,
+      title: '주간 계획',
       updatedAt: '2026-01-01T00:00:00.000Z',
     };
     renderHomeWithDocStore([{ id: 'doc-sk', title: '주간 계획', version: 1, updatedAt: '2026-01-01T00:00:00.000Z', isFavorite: false, deletedAt: null }], { 'doc-sk': body });
