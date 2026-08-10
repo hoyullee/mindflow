@@ -12,6 +12,7 @@ import { LocalNotificationStore } from '../../adapters/local/localNotificationSt
 import { LocalImageStore } from '../../adapters/local/localImageStore';
 import { LocalDocStore } from '../../adapters/local/localDocStore';
 import type { Backend, DocStore, ShareStore } from '../../adapters/ports';
+import { setLinearSelection } from './richtextDom';
 
 // 댓글(0020) — 주제에 붙는 논의. 본문이 아니라 별도 저장소(`CommentStore`)에 산다.
 // 로컬/데모 어댑터가 Supabase와 같은 포트를 구현하므로 흐름은 여기서 그대로 검증된다.
@@ -245,6 +246,41 @@ describe('주제 댓글', () => {
     fireEvent.change(box, { target: { value: '@', selectionStart: 1 } });
     await within(panel).findByText('friend@example.com');
     expect(within(panel).queryByText(MY_EMAIL)).toBeNull();
+  });
+
+  it('캔버스 인라인 멘션: 후보를 고르면 도형 박스가 그 자리에서 다시 측정돼 커진다(제보)', async () => {
+    localStorage.setItem('mindflow_doc_cm13', JSON.stringify(DOC));
+    localStorage.setItem('mf_doc_shares', JSON.stringify([{ documentId: 'cm13', email: 'friend@example.com', role: 'edit', createdAt: '2026-01-01T00:00:00.000Z' }]));
+    const { container } = renderEditor('/editor?map=cm13&title=x');
+
+    const nodeBox = await waitFor(() => {
+      const el = container.querySelector('[data-node-id="c1"]') as HTMLElement;
+      expect(el).toBeTruthy();
+      return el;
+    });
+    fireEvent.doubleClick(nodeBox);
+    const editor = container.querySelector('.mf-richedit') as HTMLDivElement;
+    expect(editor).toBeTruthy();
+
+    // 내용을 "@f"로 바꾸고 캐럿을 끝에 — 멘션 토큰 감지(selectionchange/input).
+    editor.textContent = '@f';
+    fireEvent.input(editor);
+    setLinearSelection(editor, 2, 2);
+    fireEvent(document, new Event('selectionchange'));
+    const pick = await waitFor(() => {
+      const b = document.querySelector('[data-mention-pick="friend@example.com"]') as HTMLElement;
+      expect(b).toBeTruthy();
+      return b;
+    });
+
+    // "@f"(2자) 기준 박스 폭 — 멘션을 고르면 "@friend "(8자)로 길어지므로
+    // 박스가 곧바로 커져야 한다. 예전엔 다시 그리기만 하고 재측정을 안 태워
+    // 텍스트가 도형을 벗어났다(제보 스크린샷).
+    const widthOf = (): number => parseFloat((container.querySelector('[data-node-id="c1"]') as HTMLElement).style.width || '0');
+    const before = widthOf();
+    fireEvent.mouseDown(pick);
+    expect(editor.textContent).toContain('@friend');
+    await waitFor(() => expect(widthOf()).toBeGreaterThan(before));
   });
 
   it('실시간: 다른 곳(다른 탭)의 댓글이 신호를 타고 즉시 나타난다 — 공유된 문서', async () => {

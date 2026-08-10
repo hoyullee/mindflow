@@ -2950,8 +2950,9 @@ describe('전역 검색 (모든 스페이스)', () => {
     // 검색창은 그 자리에 그대로(툴바 안) — 사라지면 질의를 고칠 방법이 없다
     const box = screen.getByPlaceholderText('모든 스페이스에서 검색') as HTMLInputElement;
     expect(box.value).toBe('개인');
-    // 스페이스 제목(헤더)도 남는다 — 지웠을 때 돌아갈 자리를 계속 가리킨다
-    expect(container.querySelector('main h2')?.textContent).toContain('업무');
+    // 제목은 "검색" — 결과는 전 스페이스에서 오는데 활성 스페이스명이 그대로면
+    // "이 스페이스 안에서 찾았다"로 읽힌다(제보).
+    expect(container.querySelector('main h2')?.textContent).toBe('검색');
     // 최근 항목만 감춰진다(질의로 걸러지지 않는 목록이라 결과를 흐린다)
     expect(screen.queryByText('최근 항목')).toBeNull();
   });
@@ -2970,6 +2971,8 @@ describe('전역 검색 (모든 스페이스)', () => {
     await waitFor(() => expect(container.querySelector('[data-search-results]')).toBeNull());
     expect(container.querySelector('a[data-title="업무 회고"]')).toBeTruthy();
     expect(container.querySelector('a[data-title="개인 노트"]')).toBeNull();
+    // 제목도 "검색"에서 원래 스페이스명으로 복귀한다.
+    expect(container.querySelector('main h2')?.textContent).toContain('업무');
   });
 });
 

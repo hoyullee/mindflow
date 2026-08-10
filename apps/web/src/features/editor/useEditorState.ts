@@ -2717,13 +2717,23 @@ export function useEditorState(): EditorController {
 
   /** 입력 중이던 "@토큰"([a,b))을 "@이름 "으로 갈아 끼우고 멘션 런을 심는다 —
    * `applyPartialRange`와 같은 렌더 경로(리스트 구조 유지 + 캐럿 복원). */
-  const insertMentionRange = useCallback((a: number, b: number, name: string, email: string) => {
-    const ed = richElRef.current;
-    if (!ed) return;
-    const parsed = liveEditValue(ed);
-    const next = insertMention(parsed, a, b, name, email);
-    renderListEdit(ed, next, editedNodeAlign(ed), next.caret, next.caret);
-  }, []);
+  const insertMentionRange = useCallback(
+    (a: number, b: number, name: string, email: string) => {
+      const ed = richElRef.current;
+      if (!ed) return;
+      const parsed = liveEditValue(ed);
+      const next = insertMention(parsed, a, b, name, email);
+      renderListEdit(ed, next, editedNodeAlign(ed), next.caret, next.caret);
+      // 삽입으로 텍스트가 길어졌다 — 노드 편집이면 박스를 그 자리에서 다시 잰다
+      // (제보: "@이름"이 도형을 벗어나 표시). 타이핑은 input 이벤트가 재는데 이건
+      // 프로그램적 DOM 교체라 그 경로를 타지 않는다. 메모는 편집 박스가 카드 안이라
+      // 스스로 자란다(FloatEditBox 주석 참고).
+      const nodeBox = ed.closest('[data-node-id]') as HTMLElement | null;
+      const nid = nodeBox?.getAttribute('data-node-id');
+      if (nid) updateNodeEditSize(nid, ed);
+    },
+    [updateNodeEditSize],
+  );
 
   // 인라인 멘션 후보(공유 참가자) — 첫 @에서 lazy 로드(멘션을 안 쓰는 세션은 왕복 0).
   const [mentionCandidates, setMentionCandidates] = useState<ShareParticipant[]>([]);
