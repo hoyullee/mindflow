@@ -43,7 +43,35 @@ export function FloatPanel({ controller, floatIds, isMobile = false, short = fal
     return (
       <div style={panelWrapStyle(th, isMobile, !!controller.saveConflict, short)}>
         <div style={panelBodyStyle(isMobile)}>
-          <PanelTitle theme={th} kicker="선택한 이미지" name="이미지" />
+          <PanelTitle theme={th} kicker="선택한 이미지" name={(f.caption || '').trim() || '이미지'} />
+          {/* 이미지 제목(캡션) — 이미지 아래 한 줄로 그려진다(Float.caption).
+              blur/Enter에 커밋(입력마다 커밋하면 타이핑마다 undo 단계가 쌓인다). */}
+          <SectionLabel theme={th}>제목</SectionLabel>
+          <input
+            key={refId}
+            type="text"
+            defaultValue={f.caption || ''}
+            placeholder="이미지 아래 표시할 제목"
+            maxLength={80}
+            aria-label="이미지 제목"
+            onBlur={(e) => controller.setFloatCaption(refId, e.currentTarget.value)}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter' && !e.nativeEvent.isComposing) e.currentTarget.blur();
+            }}
+            style={{
+              width: '100%',
+              boxSizing: 'border-box',
+              marginBottom: 12,
+              padding: '7px 9px',
+              border: `1px solid ${th.border}`,
+              borderRadius: 8,
+              background: th.panel2,
+              color: th.text,
+              fontFamily: 'inherit',
+              fontSize: 12.5,
+              outline: 'none',
+            }}
+          />
           <div style={{ fontSize: 12, lineHeight: 1.7, opacity: 0.65 }}>
             모서리 핸들로 크기를 조절할 수 있어요 (비율 유지).
             <br />

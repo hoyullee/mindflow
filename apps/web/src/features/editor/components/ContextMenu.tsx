@@ -520,16 +520,21 @@ function buildItems(controller: EditorController, ctxMenu: ContextMenuState, tog
 
   // 'bg' — port of MindFlow.dc.html:3140-3145: each item creates its object EXACTLY at the
   // right-clicked canvas point (`ctxMenu.cx/cy`).
+  // 화이트보드는 메모·이미지만(삽입 메뉴와 같은 규칙 — 주제/선/영역은 안 내준다).
   const at = { x: ctxMenu.cx, y: ctxMenu.cy };
   return [
-    {
-      icon: '▢',
-      label: '주제 추가',
-      onSelect: () => {
-        close();
-        controller.addFreeNodeAt(at);
-      },
-    },
+    ...(controller.isBoard
+      ? []
+      : [
+          {
+            icon: '▢',
+            label: '주제 추가',
+            onSelect: () => {
+              close();
+              controller.addFreeNodeAt(at);
+            },
+          } as const,
+        ]),
     {
       icon: <FloatIcon />,
       label: '메모 추가',
@@ -546,22 +551,26 @@ function buildItems(controller: EditorController, ctxMenu: ContextMenuState, tog
         controller.promptAddImage(at);
       },
     },
-    {
-      icon: <LineIcon />,
-      label: '선 추가',
-      onSelect: () => {
-        close();
-        controller.addLineAt(at);
-      },
-    },
-    {
-      icon: <ZoneIcon />,
-      label: '영역 추가',
-      onSelect: () => {
-        close();
-        controller.addZoneAt(at);
-      },
-    },
+    ...(controller.isBoard
+      ? []
+      : [
+          {
+            icon: <LineIcon />,
+            label: '선 추가',
+            onSelect: () => {
+              close();
+              controller.addLineAt(at);
+            },
+          },
+          {
+            icon: <ZoneIcon />,
+            label: '영역 추가',
+            onSelect: () => {
+              close();
+              controller.addZoneAt(at);
+            },
+          },
+        ]),
     // 빈 캔버스에 붙여넣기 — 클릭(길게 누른) 지점을 기준으로 배치된다.
     ...(controller.canPaste ? (['divider'] as const) : []),
     ...pasteItem(at),

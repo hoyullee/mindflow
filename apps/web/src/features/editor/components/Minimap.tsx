@@ -43,8 +43,11 @@ export function Minimap({ controller, isMobile = false }: MinimapProps) {
     return <div aria-hidden="true" data-minimap-holding style={{ width: W, height: H, borderRadius: 8, background: th.canvasBg }} />;
   }
 
+  // 내용 = 노드 geom ∪ 메모 박스 — 예전엔 노드만 봐서 화이트보드(트리 없는
+  // 문서)에서는 미니맵이 통째로 사라졌고, 맵에서도 멀리 둔 메모가 지도 밖이었다.
   const ids = Object.keys(geom);
-  if (!ids.length) return null;
+  const floats = controller.doc.floats;
+  if (!ids.length && !floats.length) return null;
 
   let cMinX = Infinity;
   let cMinY = Infinity;
@@ -57,6 +60,14 @@ export function Minimap({ controller, isMobile = false }: MinimapProps) {
     cMaxX = Math.max(cMaxX, n.x + n.w / 2);
     cMinY = Math.min(cMinY, n.y - n.h / 2);
     cMaxY = Math.max(cMaxY, n.y + n.h / 2);
+  });
+  const floatH = (f: (typeof floats)[number]): number => controller.floatHeights[f.id] ?? f.h ?? 44;
+  floats.forEach((f) => {
+    const h = floatH(f);
+    cMinX = Math.min(cMinX, f.x);
+    cMaxX = Math.max(cMaxX, f.x + f.w);
+    cMinY = Math.min(cMinY, f.y);
+    cMaxY = Math.max(cMaxY, f.y + h);
   });
 
   // viewport rect, in canvas coordinates (port of MindFlow.dc.html:1525-1527)
@@ -164,6 +175,13 @@ export function Minimap({ controller, isMobile = false }: MinimapProps) {
         const n = geom[id];
         if (!n) return null;
         return <circle key={id} cx={mx(n.x)} cy={my(n.y)} r={id === ROOT_ID ? 3.4 : 2.2} fill={colorOf(id, controller.doc.nodes, th)} opacity={0.9} />;
+      })}
+      {/* 메모/이미지 — 노드 점과 구별되게 작은 각진 사각으로(카드 모양의 축소). */}
+      {floats.map((f) => {
+        const h = floatH(f);
+        const w = Math.max(3, f.w * s);
+        const hh = Math.max(2.4, h * s);
+        return <rect key={f.id} data-minimap-float={f.id} x={mx(f.x)} y={my(f.y)} width={w} height={hh} rx={1} fill={th.subtext} opacity={0.55} />;
       })}
       <rect
         data-testid="minimap-viewport"

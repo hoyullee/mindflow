@@ -492,6 +492,7 @@ export interface EditorController {
   // ---- float property setters (bulk-aware: apply to `multiGroups.floats`,
   // port of `Component#applyFloatText`-backed setters, MindFlow.dc.html:2733-2737) ----
   setFloatBg: (hex: string | null) => void;
+  setFloatCaption: (id: string, caption: string) => void;
   toggleFloatBold: () => void;
   /** 메모 전체 기울임('i')/취소선('s') 토글 — 노드와 같은 whole-toggle 규칙. */
   toggleFloatRichStyle: (key: 'i' | 's') => void;
@@ -634,6 +635,9 @@ export interface EditorController {
    * 모든 문서 변이가 chokepoint(`commitDoc`)에서 차단된다. 진짜 게이트는 서버
    * RLS(0009 — view 초대는 SELECT만)다. */
   readOnly: boolean;
+  /** 화이트보드(`Doc.kind === 'board'`) — 트리 없이 메모·이미지만 자유 배치하는
+   * 문서. true면 주제/선/영역/레이아웃/아웃라인 UI가 감춰진다(메뉴들이 읽는다). */
+  isBoard: boolean;
 }
 
 /**
@@ -673,7 +677,7 @@ function docSignature(d: Doc): string {
 
 /** Port of `Component#docTitle` (MindFlow.dc.html:605) — used as the export filename base. */
 function safeDocTitle(doc: Doc, fallbackTitle: string): string {
-  const raw = doc.nodes[ROOT_ID]?.text || fallbackTitle || '마인드맵';
+  const raw = doc.nodes[ROOT_ID]?.text || fallbackTitle || (doc.kind === 'board' ? '화이트보드' : '마인드맵');
   return raw.trim().replace(/[\\/:*?"<>|]/g, '_');
 }
 
@@ -711,6 +715,16 @@ export function useEditorState(): EditorController {
   /** 템플릿에서 만든 새 맵(`tpl=<id>`) — 빈 루트 대신 그 템플릿 문서로 시작한다.
    * 모르는 id면 `buildTemplateDoc`이 null이라 평범한 새 맵으로 떨어진다. */
   const [doc, setDoc] = useState<Doc>(() => loadOrSeedDoc(mapId, titleParam, buildTemplateDoc(params.get('tpl'))));
+  /** 문서 제목의 **메타 사본** — 화이트보드(루트 없는 문서)의 제목 정본이다.
+   * 맵은 루트 텍스트가 계속 정본이고(`safeDocTitle`이 우선) 이 값은 폴백으로만
+   * 쓰인다. 첫 값은 URL의 title 파라미터(홈 카드가 넘겨 준다), 백엔드 로드가
+   * 저장된 메타 제목을 돌려주면 그걸 채택한다. */
+  const [metaTitle, setMetaTitle] = useState(titleParam);
+  const metaTitleRef = useRef(metaTitle);
+  metaTitleRef.current = metaTitle;
+  useEffect(() => {
+    setMetaTitle(titleParam); // 문서 전환(주소 교체) 시 URL 값으로 재시작
+  }, [titleParam]);
   /** 본문의 이미지 참조 → 표시용 URL(별도 저장소). 옛 문서의 데이터 URL은 참조가
    * 아니므로 여기 들어오지 않고 값 그대로 그려진다(`displaySrc`). */
   const imageUrls = useImageUrls(doc, imageStore);
@@ -895,6 +909,9 @@ export function useEditorState(): EditorController {
         const pristine = docSignature(docRef.current) === mountDocSigRef.current;
         if (res) {
           docVersionRef.current = res.version;
+          // 저장된 메타 제목 채택 — 화이트보드는 이게 제목의 정본이고(루트가 없다),
+          // 맵에서는 어차피 루트 텍스트가 우선이라 무해하다(URL 파라미터보다 최신).
+          if (res.title) setMetaTitle(res.title);
           // 오프라인에서 쓴 사본이 아직 안 올라갔다면(`markDocPending`) 서버 판은
           // **더 옛것**이다 — 채택하면 그 편집이 조용히 사라진다. 로컬을 지키고
           // 아래에서 곧바로 올린다.
@@ -1715,22 +1732,40 @@ export function useEditorState(): EditorController {
 
   // ---- fit-to-view (initial load + whenever a layout switch requests it) ----
   const pendingFitRef = useRef(true);
+  // 화면 맞춤·첫 센터링이 감싸야 할 **장면 바운즈 = 노드 geom ∪ 메모 박스**.
+  // 예전에는 노드만 봤는데, 그러면 ① 화이트보드(트리 없는 문서 — geom이 빔)는
+  // 첫 센터링이 영영 안 돌아 커튼이 안 걷히고 ② 맵에서도 트리 밖에 둔 메모가
+  // "화면 맞춤" 밖으로 잘렸다. 메모 높이는 실측값(floatHeights)을 쓴다.
+  const sceneBounds = useMemo(() => {
+    let minX = Infinity;
+    let minY = Infinity;
+    let maxX = -Infinity;
+    let maxY = -Infinity;
+    let any = false;
+    for (const id in geom) {
+      const g = geom[id];
+      if (!g) continue;
+      any = true;
+      minX = Math.min(minX, g.x - g.w / 2);
+      maxX = Math.max(maxX, g.x + g.w / 2);
+      minY = Math.min(minY, g.y - g.h / 2);
+      maxY = Math.max(maxY, g.y + g.h / 2);
+    }
+    doc.floats.forEach((f) => {
+      const h = floatHeights[f.id] ?? f.h ?? 44;
+      any = true;
+      minX = Math.min(minX, f.x);
+      maxX = Math.max(maxX, f.x + f.w);
+      minY = Math.min(minY, f.y);
+      maxY = Math.max(maxY, f.y + h);
+    });
+    return any ? { minX, minY, maxX, maxY } : null;
+  }, [geom, doc.floats, floatHeights]);
+
   const fitView = useCallback(() => {
     setViewport((prev) => {
-      const ids = Object.keys(geom);
-      if (!ids.length) return prev;
-      let minX = Infinity;
-      let minY = Infinity;
-      let maxX = -Infinity;
-      let maxY = -Infinity;
-      ids.forEach((id) => {
-        const g = geom[id];
-        if (!g) return;
-        minX = Math.min(minX, g.x - g.w / 2);
-        maxX = Math.max(maxX, g.x + g.w / 2);
-        minY = Math.min(minY, g.y - g.h / 2);
-        maxY = Math.max(maxY, g.y + g.h / 2);
-      });
+      if (!sceneBounds) return prev;
+      const { minX, minY, maxX, maxY } = sceneBounds;
       const bw = Math.max(1, maxX - minX);
       const bh = Math.max(1, maxY - minY);
       let z = Math.min((prev.vw - FIT_PADDING) / bw, (prev.vh - FIT_PADDING) / bh, 1.25);
@@ -1739,7 +1774,7 @@ export function useEditorState(): EditorController {
       const cy = (minY + maxY) / 2;
       return { ...prev, zoom: z, pan: { x: prev.vw / 2 - cx * z, y: prev.vh / 2 - cy * z } };
     });
-  }, [geom]);
+  }, [sceneBounds]);
 
   // Initial view (and re-view after a layout switch): center the ROOT node in
   // the viewport at a zoom that fits the whole map. The dc original + `fitView`
@@ -1750,20 +1785,8 @@ export function useEditorState(): EditorController {
   // somehow isn't laid out.
   const centerOnRoot = useCallback(() => {
     setViewport((prev) => {
-      const ids = Object.keys(geom);
-      if (!ids.length) return prev;
-      let minX = Infinity;
-      let minY = Infinity;
-      let maxX = -Infinity;
-      let maxY = -Infinity;
-      ids.forEach((id) => {
-        const g = geom[id];
-        if (!g) return;
-        minX = Math.min(minX, g.x - g.w / 2);
-        maxX = Math.max(maxX, g.x + g.w / 2);
-        minY = Math.min(minY, g.y - g.h / 2);
-        maxY = Math.max(maxY, g.y + g.h / 2);
-      });
+      if (!sceneBounds) return prev;
+      const { minX, minY, maxX, maxY } = sceneBounds;
       const rootG = geom[ROOT_ID];
       const cx = rootG ? rootG.x : (minX + maxX) / 2;
       const cy = rootG ? rootG.y : (minY + maxY) / 2;
@@ -1776,7 +1799,7 @@ export function useEditorState(): EditorController {
       z = Math.max(MIN_ZOOM, z);
       return { ...prev, zoom: z, pan: { x: prev.vw / 2 - cx * z, y: prev.vh / 2 - cy * z } };
     });
-  }, [geom]);
+  }, [geom, sceneBounds]);
 
   // 첫 센터링(fit)이 적용됐는지 — 커튼(CanvasCurtain) 해제 조건의 절반.
   // 레이아웃 이펙트인 이유: 센터링 pan/zoom이 "페인트 전에" 반영돼야
@@ -1786,13 +1809,18 @@ export function useEditorState(): EditorController {
   useLayoutEffect(() => {
     if (!pendingFitRef.current) return;
     if (!measured) return; // wait for the real canvas size before the first center
-    if (!Object.keys(geom).length) return;
+    // 장면 바운즈 기준(노드 ∪ 메모) — geom만 보면 화이트보드(트리 없음)에서
+    // 첫 센터링이 영영 안 돌아 커튼이 걷히지 않는다. 단, **완전히 빈** 보드
+    // (새로 만든 직후)는 감쌀 내용이 없으므로 기본 뷰(원점 중앙)로 곧장 연다.
+    const empty = !Object.keys(doc.nodes).length && !doc.floats.length;
+    if (!sceneBounds && !empty) return;
     if (viewport.vw <= 0 || viewport.vh <= 0) return;
     pendingFitRef.current = false;
-    centerOnRoot();
+    if (sceneBounds) centerOnRoot();
+    else setViewport((prev) => ({ ...prev, zoom: 1, pan: { x: prev.vw / 2, y: prev.vh / 2 } }));
     initialFitDoneRef.current = true;
     setInitialFitDone(true);
-  }, [geom, viewport.vw, viewport.vh, measured, centerOnRoot]);
+  }, [sceneBounds, doc.nodes, doc.floats, viewport.vw, viewport.vh, measured, centerOnRoot]);
 
   // 웹폰트 로드 정착 여부 — 커튼 해제 조건의 나머지 절반. 폰트가 로드되면
   // fontTick으로 전체 재측정하고, 아직 커튼이 내려가 있으면(공개 전) 재센터링
@@ -2223,7 +2251,7 @@ export function useEditorState(): EditorController {
     // 생긴 변경이 남의 문서에 쓰기를 시도하지 않도록 여기서도 막는다(RLS가 어차피
     // 거부하지만 42501 소음을 만들 이유가 없다).
     if (readOnlyRef.current) return;
-    const title = safeDocTitle(docRef.current, titleParam);
+    const title = safeDocTitle(docRef.current, metaTitleRef.current);
     // 협업 중 충돌은 한 번 조용히 다시 쓴다(아래 conflict 분기 참고) — 그래서 루프다.
     for (let attempt = 0; attempt < 2; attempt++) {
     const result = await docStore.save(docStoreId, docRef.current, { prevVersion: docVersionRef.current, title });
@@ -2282,7 +2310,7 @@ export function useEditorState(): EditorController {
       return;
     }
     }
-  }, [docStore, docStoreId, titleParam, mapId]);
+  }, [docStore, docStoreId, mapId]);
 
   /** 다시 온라인이 되면 못 올린 편집을 바로 올린다 — 편집을 멈춘 채 연결이 돌아오면
    * 다음 자동저장 계기(=다음 편집)가 없어 영영 대기 상태로 남았다. */
@@ -2954,10 +2982,24 @@ export function useEditorState(): EditorController {
   // text is blank.)
   const commitTitle = useCallback(
     (text: string) => {
+      // 화이트보드(루트 없는 문서): 제목의 정본은 본문이 아니라 **메타**다 —
+      // commitRootTitle은 루트가 없으면 조용한 no-op이라, 여기서 갈라 메타를
+      // 고치고 곧바로 저장한다(제목만의 변경은 자동저장(doc 감시)이 못 본다).
+      if (!docRef.current.nodes[ROOT_ID]) {
+        const t = text.trim();
+        setEditingTitle(false);
+        if (t && t !== metaTitleRef.current && !readOnlyRef.current) {
+          setMetaTitle(t);
+          metaTitleRef.current = t;
+          setSaveStateState('dirty');
+          void persistDoc();
+        }
+        return;
+      }
       commitDoc((d) => ({ ...d, nodes: mutations.commitRootTitle(d.nodes, text, titleParam) }));
       setEditingTitle(false);
     },
-    [commitDoc, titleParam],
+    [commitDoc, titleParam, persistDoc],
   );
   const cancelTitleEdit = useCallback(() => setEditingTitle(false), []);
 
@@ -3374,6 +3416,25 @@ export function useEditorState(): EditorController {
   // setters, MindFlow.dc.html:2733-2737) + per-instance actions (toggleFloatCollapse/deleteFloat stay
   // single-id: they act on the specific float box clicked, not the whole selection). ----
   const setFloatBg = useCallback((hex: string | null) => commitDoc((d) => ({ ...d, floats: mutations.updateFloatItems(d.floats, floatTargetIds(), { bg: hex ?? undefined }) })), [floatTargetIds, commitDoc]);
+  /** 이미지 플로트의 제목(캡션, `Float.caption`) — 빈 값이면 **키를 지운다**
+   * (직렬화·CRDT에 빈 문자열을 남기지 않는다 — `clearNodeImage`와 같은 규칙). */
+  const setFloatCaption = useCallback(
+    (id: string, caption: string) =>
+      commitDoc((d) => ({
+        ...d,
+        floats: d.floats.map((f) => {
+          if (f.id !== id) return f;
+          const t = caption.trim();
+          if (!t) {
+            const rest = { ...f };
+            delete rest.caption;
+            return rest;
+          }
+          return { ...f, caption: t };
+        }),
+      })),
+    [commitDoc],
+  );
   const toggleFloatBold = useCallback(() => {
     const ids = floatTargetIds();
     const first = ids[0];
@@ -4507,10 +4568,10 @@ export function useEditorState(): EditorController {
     // 완결**돼야 하므로 이미지를 다시 담는다(`imageExport.ts`의 doc comment 참고).
     void (async () => {
       const { doc: full, missing } = await inlineImagesForExport(doc, imageStore);
-      downloadFile(`${safeDocTitle(doc, titleParam)}.json`, JSON.stringify(serializeDoc(full), null, 2), 'application/json');
+      downloadFile(`${safeDocTitle(doc, metaTitle)}.json`, JSON.stringify(serializeDoc(full), null, 2), 'application/json');
       if (missing > 0) setImageNotice(`이미지 ${missing}장을 내보내기 파일에 담지 못했어요 — 연결을 확인하고 다시 시도해 주세요`);
     })();
-  }, [doc, titleParam]);
+  }, [doc, metaTitle]);
   const exportPNG = useCallback(() => {
     void (async () => {
       // 아직 URL을 못 받은 참조가 있으면 **여기서 받아서** 그린다. 예전엔 렌더 시점의
@@ -4518,36 +4579,36 @@ export function useEditorState(): EditorController {
       // 도착하기 전의 빈 표로 그려졌다 — 사진 자리가 통째로 빈 상자였다(제보).
       const refs = collectImageRefs(doc).filter((r) => !imageUrls[r]);
       const extra = refs.length ? await imageStore.resolve(refs) : {};
-      const { missingImages } = await exportPng(doc, geom, theme, safeDocTitle(doc, titleParam), { ...imageUrls, ...extra });
+      const { missingImages } = await exportPng(doc, geom, theme, safeDocTitle(doc, metaTitle), { ...imageUrls, ...extra });
       if (missingImages > 0) setImageNotice(`이미지 ${missingImages}장을 PNG에 담지 못했어요 — 연결을 확인하고 다시 시도해 주세요`);
     })();
-  }, [doc, geom, theme, titleParam, imageUrls, imageStore]);
+  }, [doc, geom, theme, metaTitle, imageUrls, imageStore]);
   const exportSVG = useCallback(() => {
     void (async () => {
       // SVG는 파일이 그 자체로 완결돼야 한다 — 서명 URL은 몇 시간 뒤 만료되므로
       // JSON 내보내기와 같은 규칙으로 이미지를 데이터 URL로 **인라인**해서 그린다.
       const { doc: full, missing } = await inlineImagesForExport(doc, imageStore);
-      exportSvg(full, geom, theme, safeDocTitle(doc, titleParam));
+      exportSvg(full, geom, theme, safeDocTitle(doc, metaTitle));
       if (missing > 0) setImageNotice(`이미지 ${missing}장을 SVG에 담지 못했어요 — 연결을 확인하고 다시 시도해 주세요`);
     })();
-  }, [doc, geom, theme, titleParam, imageStore]);
+  }, [doc, geom, theme, metaTitle, imageStore]);
   const exportPDF = useCallback(() => {
     void (async () => {
       // PNG와 같은 캔버스 렌더 — URL을 아직 못 받은 참조는 여기서 받아서 그린다.
       const refs = collectImageRefs(doc).filter((r) => !imageUrls[r]);
       const extra = refs.length ? await imageStore.resolve(refs) : {};
-      const { missingImages } = await exportPdf(doc, geom, theme, safeDocTitle(doc, titleParam), { ...imageUrls, ...extra });
+      const { missingImages } = await exportPdf(doc, geom, theme, safeDocTitle(doc, metaTitle), { ...imageUrls, ...extra });
       if (missingImages > 0) setImageNotice(`이미지 ${missingImages}장을 PDF에 담지 못했어요 — 연결을 확인하고 다시 시도해 주세요`);
     })();
-  }, [doc, geom, theme, titleParam, imageUrls, imageStore]);
+  }, [doc, geom, theme, metaTitle, imageUrls, imageStore]);
   /** 마크다운 개요로 내보낸다(코어 `toMarkdown`). 무손실 백업은 JSON이고, 이건 다른
    * 도구로 옮기거나 사람이 읽는 용도다 — 가져오기가 이 형식을 되읽는다(노트·자유
    * 도형·메모까지, `parseOutline` 참고). */
   const exportMarkdown = useCallback(() => {
-    downloadFile(`${safeDocTitle(doc, titleParam)}.md`, toMarkdown(doc), 'text/markdown');
-  }, [doc, titleParam]);
+    downloadFile(`${safeDocTitle(doc, metaTitle)}.md`, toMarkdown(doc, metaTitle), 'text/markdown');
+  }, [doc, metaTitle]);
 
-  const docTitle = laidOutNodes[ROOT_ID]?.text || titleParam || '새 마인드맵';
+  const docTitle = laidOutNodes[ROOT_ID]?.text || metaTitle || (doc.kind === 'board' ? '새 화이트보드' : '새 마인드맵');
 
   return {
     doc,
@@ -4573,6 +4634,7 @@ export function useEditorState(): EditorController {
     floatHeights,
     mapId,
     docTitle,
+    isBoard: doc.kind === 'board',
     setViewportEl,
     setLayoutMode,
     setEdgeStyle,
@@ -4721,6 +4783,7 @@ export function useEditorState(): EditorController {
     setTextAlign,
 
     setFloatBg,
+    setFloatCaption,
     toggleFloatBold,
     toggleFloatRichStyle,
     setFloatTsize,

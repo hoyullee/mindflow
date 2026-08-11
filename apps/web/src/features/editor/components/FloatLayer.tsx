@@ -159,13 +159,23 @@ export function FloatLayer({ floats, theme: th, controller }: FloatLayerProps) {
             })()}
             {remotePeer && !editing && <RemotePeerTag color={remotePeer.user.color} name={remotePeer.user.name} style={{ left: 0, top: -22 }} />}
             {isImage ? (
-              <div data-float-img-clip style={{ position: 'absolute', inset: 0, overflow: 'hidden', borderRadius: 'inherit' }}>
-                <AttachedImg
-                  img={f.img}
-                  urls={controller.imageUrls}
-                  style={{ display: 'block', width: '100%', height: '100%', objectFit: 'cover', pointerEvents: 'none', userSelect: 'none' }}
-                />
-              </div>
+              <>
+                <div data-float-img-clip style={{ position: 'absolute', inset: 0, overflow: 'hidden', borderRadius: 'inherit' }}>
+                  <AttachedImg
+                    img={f.img}
+                    urls={controller.imageUrls}
+                    style={{ display: 'block', width: '100%', height: '100%', objectFit: 'cover', pointerEvents: 'none', userSelect: 'none' }}
+                  />
+                </div>
+                {/* 이미지 제목(Float.caption, 화이트보드 요청) — 이미지 **아래 바깥**에
+                    한 줄. 박스 밖(top:100%)이라 히트 박스·리사이즈 핸들·겹침 계산이
+                    변하지 않고, 그림 캡션 관례대로 가운데 정렬. 편집은 속성 패널. */}
+                {!!(f.caption || '').trim() && (
+                  <div data-float-caption style={{ position: 'absolute', top: '100%', left: -20, right: -20, marginTop: 5, textAlign: 'center', fontSize: 12, fontWeight: 600, color: th.subtext, pointerEvents: 'none', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', userSelect: 'none' }}>
+                    {f.caption}
+                  </div>
+                )}
+              </>
             ) : editing ? (
               <FloatEditBox f={f} controller={controller} />
             ) : richLines ? (

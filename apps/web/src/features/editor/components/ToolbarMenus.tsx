@@ -132,13 +132,20 @@ export function EditMenu({ controller, onDone, isMobile }: { controller: EditorC
 
 export function InsertMenu({ controller, onDone, isMobile }: { controller: EditorController; onDone: () => void; isMobile?: boolean }) {
   const th = controller.uiTheme;
-  const items: { icon: ReactNode; label: string; run: () => void }[] = [
-    { icon: <ShapeIcon />, label: '주제 추가', run: () => controller.addFreeNodeAt() },
-    { icon: <MemoIcon />, label: '메모 추가', run: () => controller.addFloatAt() },
-    { icon: <ImageIcon />, label: '이미지 추가', run: () => controller.promptAddImage() },
-    { icon: <LineIcon />, label: '선 추가', run: () => controller.addLineAt() },
-    { icon: <ZoneIcon />, label: '영역 추가', run: () => controller.addZoneAt() },
-  ];
+  // 화이트보드는 **메모·이미지만** — 주제/선/영역은 일부러 내주지 않는다(허들 없는
+  // 메모 보드라는 정체성을 지키는 선, 사용자 결정).
+  const items: { icon: ReactNode; label: string; run: () => void }[] = controller.isBoard
+    ? [
+        { icon: <MemoIcon />, label: '메모 추가', run: () => controller.addFloatAt() },
+        { icon: <ImageIcon />, label: '이미지 추가', run: () => controller.promptAddImage() },
+      ]
+    : [
+        { icon: <ShapeIcon />, label: '주제 추가', run: () => controller.addFreeNodeAt() },
+        { icon: <MemoIcon />, label: '메모 추가', run: () => controller.addFloatAt() },
+        { icon: <ImageIcon />, label: '이미지 추가', run: () => controller.promptAddImage() },
+        { icon: <LineIcon />, label: '선 추가', run: () => controller.addLineAt() },
+        { icon: <ZoneIcon />, label: '영역 추가', run: () => controller.addZoneAt() },
+      ];
   return (
     <MenuShell theme={th}>
       {items.map((it) => (
@@ -173,17 +180,20 @@ export function ViewMenu({ controller, onDone, isMobile }: { controller: EditorC
           onDone();
         }}
       />
-      <MenuItem
-        theme={th}
-        isMobile={isMobile}
-        icon={<OutlineIcon />}
-        label="아웃라인"
-        active={controller.view === 'outline'}
-        onClick={() => {
-          controller.setView('outline');
-          onDone();
-        }}
-      />
+      {/* 아웃라인 = 트리의 목차 — 화이트보드에는 트리가 없어 빈 화면뿐이다. */}
+      {!controller.isBoard && (
+        <MenuItem
+          theme={th}
+          isMobile={isMobile}
+          icon={<OutlineIcon />}
+          label="아웃라인"
+          active={controller.view === 'outline'}
+          onClick={() => {
+            controller.setView('outline');
+            onDone();
+          }}
+        />
+      )}
       {/* 댓글 — 배지는 댓글이 생긴 뒤에만 뜨므로, 첫 댓글을 남길 길은 여기다.
           링크로 연 사람에게는 서버가 댓글을 내주지 않아 항목도 두지 않는다(0020). */}
       {controller.canComment && (
@@ -242,7 +252,9 @@ export function MoreMenu({ controller, onDone, isMobile }: { controller: EditorC
       <MenuDivider theme={th} />
       <MenuSectionLabel theme={th}>보기</MenuSectionLabel>
       <MenuItem theme={th} isMobile={isMobile} icon={<MapIcon />} label="맵" active={controller.view === 'map'} onClick={() => { controller.setView('map'); onDone(); }} />
-      <MenuItem theme={th} isMobile={isMobile} icon={<OutlineIcon />} label="아웃라인" active={controller.view === 'outline'} onClick={() => { controller.setView('outline'); onDone(); }} />
+      {!controller.isBoard && (
+        <MenuItem theme={th} isMobile={isMobile} icon={<OutlineIcon />} label="아웃라인" active={controller.view === 'outline'} onClick={() => { controller.setView('outline'); onDone(); }} />
+      )}
       {controller.canComment && (
         <MenuItem theme={th} isMobile={isMobile} icon={<CommentIcon />} label="댓글" active={controller.commentsOpen} onClick={() => { if (controller.commentsOpen) controller.closeComments(); else controller.openComments(); onDone(); }} />
       )}
