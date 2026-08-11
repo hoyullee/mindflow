@@ -1056,8 +1056,22 @@ export function useEditorState(): EditorController {
   // (`persistDoc`의 충돌 해석 — 아래 주석 참고).
   const collabStatusRef = useRef(collabStatus);
   collabStatusRef.current = collabStatus;
+  // 끊김은 **재시도 중에도 끊김이다** — 자동 재접속(#331 `scheduleRetry`)이 시도할
+  // 때마다 상태를 'connecting'으로 올리는데, 그걸 그대로 읽으면 ① 배너·dim이 재시도
+  // 주기(2s→8s→30s→2m)마다 내려갔다 다시 뜨고(실기기 제보: "비행기 모드인데
+  // 사라졌다가 다시 생긴다") ② 그 'connecting' 창 동안 편집 차단까지 풀려 유실 창이
+  // 다시 열리며 ③ 30초 승격 타이머(CollabPaused)도 매번 리셋돼 영영 승격되지 않는다.
+  // 그래서 offline을 한 번 봤으면 실제로 다시 붙을 때('connected*')까지 끊김으로
+  // 취급한다. 첫 접속 과정의 'connecting'(고장 아님)은 offline을 본 적이 없으므로
+  // 그대로 통과한다.
+  const [collabDown, setCollabDown] = useState(false);
+  useEffect(() => {
+    if (collabStatus === 'offline') setCollabDown(true);
+    else if (collabStatus === 'connected' || collabStatus === 'connected-insecure') setCollabDown(false);
+    // 'connecting'은 판단을 바꾸지 않는다 — 끊긴 뒤의 재시도면 down인 채로 지나간다.
+  }, [collabStatus]);
   /** 공유 맵인데 실시간이 끊겼다 — **즉시** 편집을 막는다(위 인터페이스 주석 참고). */
-  const collabBlocked = backendMode === 'supabase' && sharedDoc && collabStatus === 'offline';
+  const collabBlocked = backendMode === 'supabase' && sharedDoc && collabDown;
   const collabBlockedRef = useRef(collabBlocked);
   collabBlockedRef.current = collabBlocked;
   // 공유 맵 + 실시간 끊김 = 지금 만든 편집이 상대 것과 갈라질 수 있다 → **즉시** 막는다.

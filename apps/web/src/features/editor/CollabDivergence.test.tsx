@@ -20,7 +20,7 @@ import type { Backend, DocStore, SaveResult, ShareStore } from '../../adapters/p
 
 /** 실시간 전송을 테스트가 조종한다 — 상태(연결/끊김)를 마음대로 바꿀 수 있어야 한다. */
 const transport = {
-  status: 'connected' as 'connected' | 'offline',
+  status: 'connected' as 'connected' | 'offline' | 'connecting',
   emit: null as CollabStatusListener | null,
   ydoc: null as { getMap: (k: string) => { set: (k: string, v: unknown) => void } } | null,
 };
@@ -140,7 +140,7 @@ async function settleShare(): Promise<void> {
   });
 }
 
-function setStatus(status: 'connected' | 'offline'): void {
+function setStatus(status: 'connected' | 'offline' | 'connecting'): void {
   transport.status = status;
   act(() => {
     transport.emit?.(status);
@@ -231,6 +231,54 @@ describe('실시간이 끊긴 채 편집할 때', () => {
     // 다시 연결되면 dim도 함께 걷힌다.
     setStatus('connected');
     await waitFor(() => expect(document.querySelector('[data-collab-dim]')).toBeNull());
+  });
+
+  it('자동 재접속이 재시도(connecting)를 도는 동안에도 배너·dim·편집 차단이 유지된다(실기기 제보: 깜빡임)', async () => {
+    const { backend } = makeBackend([]);
+    const { container } = renderEditor(backend, 'div7');
+    await waitFor(() => expect(within(getViewport(container)).getByText('리서치')).toBeTruthy());
+    await settleShare();
+    const before = getViewport(container).querySelectorAll('[data-node-id]').length;
+
+    setStatus('offline');
+    await screen.findByText(/연결이 끊겨 편집을 잠시 멈췄어요/);
+
+    // 자동 재접속(#331)이 재시도할 때마다 provider가 'connecting'을 올린다 —
+    // 아직 붙지 못했으므로 배너·dim은 그대로 떠 있고 편집도 여전히 막혀야 한다.
+    // (예전엔 offline만 봐서 재시도 주기마다 배너가 내려갔다 다시 떴고, 그 창
+    // 동안 편집 차단까지 풀렸다.)
+    setStatus('connecting');
+    expect(screen.getByText(/연결이 끊겨 편집을 잠시 멈췄어요/)).toBeTruthy();
+    expect(document.querySelector('[data-collab-dim]')).toBeTruthy();
+    edit(container);
+    expect(getViewport(container).querySelectorAll('[data-node-id]').length).toBe(before);
+
+    // 실제로 붙어야 풀린다.
+    setStatus('connected');
+    await waitFor(() => expect(screen.queryByText(/연결이 끊겨 편집을 잠시 멈췄어요/)).toBeNull());
+    expect(document.querySelector('[data-collab-dim]')).toBeNull();
+  });
+
+  it('재시도로 상태가 오가도 30초 승격 타이머는 리셋되지 않는다', async () => {
+    const { backend } = makeBackend([]);
+    const { container } = renderEditor(backend, 'div8');
+    await waitFor(() => expect(within(getViewport(container)).getByText('리서치')).toBeTruthy());
+    await settleShare();
+
+    vi.useFakeTimers();
+    setStatus('offline');
+    act(() => {
+      vi.advanceTimersByTime(15_000);
+    });
+    setStatus('connecting'); // 재시도 시작 — 여전히 끊긴 상태다
+    act(() => {
+      vi.advanceTimersByTime(16_000);
+    });
+    vi.useRealTimers();
+
+    // 예전엔 'connecting'이 차단을 풀어 타이머가 리셋됐고, 재시도가 반복되는 한
+    // 전체 안내(새로고침)가 영영 뜨지 않았다.
+    expect(screen.getByRole('dialog', { name: '공동 편집 연결 끊김' })).toBeTruthy();
   });
 
   it('끊김이 오래가면 배너에서 전체 안내(새로고침)로 승격한다', async () => {
