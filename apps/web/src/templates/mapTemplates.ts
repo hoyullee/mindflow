@@ -144,6 +144,12 @@ function mkNode(id: string, text: string, emoji: string, parent: string | null):
  * 모양이 달라 한 문서 안에서 부딪히지도 않는다.
  */
 export function buildTemplateDoc(id: string | null | undefined): Doc | null {
+  // 화이트보드 — 트리 없는 빈 보드(`Doc.kind === 'board'`). 갤러리의 "화이트보드"
+  // 칸이 `tpl=board`로 들어온다. layoutMode는 board에서 쓰이지 않지만 직렬화
+  // 스키마의 필수 필드라 기본값을 채워 둔다.
+  if (id === 'board') {
+    return { v: 1, nodes: {}, floats: [], lines: [], zones: [], layoutMode: 'right', themeKey: DEFAULT_THEME_KEY, edgeStyle: DEFAULT_EDGE_STYLE, kind: 'board' };
+  }
   const t = findTemplate(id);
   if (!t) return null;
 

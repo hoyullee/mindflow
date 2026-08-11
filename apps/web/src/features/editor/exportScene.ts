@@ -421,7 +421,9 @@ export interface SceneBounds {
 /** 내보내기 경계 — 모든 노드·메모·영역·자유 선을 감싸고 EXPORT_PAD 여백. */
 export function computeSceneBounds(doc: Doc, geom: GeomMap, fBoxes: Map<string, SceneFloatBox>): SceneBounds | null {
   const ids = Object.keys(geom).filter((id) => doc.nodes[id]);
-  if (!ids.length) return null;
+  // 노드가 없어도 메모·영역·선이 있으면 그릴 것이 있다(화이트보드 — 트리 없는
+  // 문서). 정말 아무것도 없을 때만 null(호출부가 내보내기를 건너뛴다).
+  if (!ids.length && !doc.floats.length && !doc.zones.length && !doc.lines.length) return null;
   let x0 = Infinity;
   let y0 = Infinity;
   let x1 = -Infinity;

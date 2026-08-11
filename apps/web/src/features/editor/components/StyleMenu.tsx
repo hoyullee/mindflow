@@ -43,23 +43,29 @@ export function StyleMenu({ controller }: StyleMenuProps) {
         padding: 14,
       }}
     >
-      <div style={{ fontSize: 11, fontWeight: 700, letterSpacing: '.04em', textTransform: 'uppercase', color: controller.uiTheme.subtext, marginBottom: 8 }}>레이아웃</div>
-      <div style={{ display: 'flex', alignItems: 'center', gap: 0, padding: 3, background: controller.uiTheme.panel2, border: `1px solid ${controller.uiTheme.border}`, borderRadius: 10, marginBottom: 14 }}>
-        {LAYOUT_MODES.map((m) => (
-          <button key={m.k} type="button" className="mf-ed-btn" onClick={() => controller.setLayoutMode(m.k)} style={segStyle(controller.layoutMode === m.k)} aria-pressed={controller.layoutMode === m.k}>
-            {m.label}
-          </button>
-        ))}
-      </div>
+      {/* 화이트보드에는 트리가 없다 — 레이아웃(트리 배치)과 연결선(트리 간선)
+          구획은 누를 대상이 없으므로 감춘다("할 수 없는 것은 보이지 않는다"). */}
+      {!controller.isBoard && (
+        <>
+          <div style={{ fontSize: 11, fontWeight: 700, letterSpacing: '.04em', textTransform: 'uppercase', color: controller.uiTheme.subtext, marginBottom: 8 }}>레이아웃</div>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 0, padding: 3, background: controller.uiTheme.panel2, border: `1px solid ${controller.uiTheme.border}`, borderRadius: 10, marginBottom: 14 }}>
+            {LAYOUT_MODES.map((m) => (
+              <button key={m.k} type="button" className="mf-ed-btn" onClick={() => controller.setLayoutMode(m.k)} style={segStyle(controller.layoutMode === m.k)} aria-pressed={controller.layoutMode === m.k}>
+                {m.label}
+              </button>
+            ))}
+          </div>
 
-      <div style={{ fontSize: 11, fontWeight: 700, letterSpacing: '.04em', textTransform: 'uppercase', color: controller.uiTheme.subtext, marginBottom: 8 }}>연결선</div>
-      <div style={{ display: 'flex', alignItems: 'center', gap: 0, padding: 3, background: controller.uiTheme.panel2, border: `1px solid ${controller.uiTheme.border}`, borderRadius: 10, marginBottom: 14 }}>
-        {EDGE_MODES.map((m) => (
-          <button key={m.k} type="button" className="mf-ed-btn" onClick={() => controller.setEdgeStyle(m.k)} style={segStyle(controller.edgeStyle === m.k)} aria-pressed={controller.edgeStyle === m.k}>
-            {m.label}
-          </button>
-        ))}
-      </div>
+          <div style={{ fontSize: 11, fontWeight: 700, letterSpacing: '.04em', textTransform: 'uppercase', color: controller.uiTheme.subtext, marginBottom: 8 }}>연결선</div>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 0, padding: 3, background: controller.uiTheme.panel2, border: `1px solid ${controller.uiTheme.border}`, borderRadius: 10, marginBottom: 14 }}>
+            {EDGE_MODES.map((m) => (
+              <button key={m.k} type="button" className="mf-ed-btn" onClick={() => controller.setEdgeStyle(m.k)} style={segStyle(controller.edgeStyle === m.k)} aria-pressed={controller.edgeStyle === m.k}>
+                {m.label}
+              </button>
+            ))}
+          </div>
+        </>
+      )}
 
       <div style={{ fontSize: 11, fontWeight: 700, letterSpacing: '.04em', textTransform: 'uppercase', color: controller.uiTheme.subtext, marginBottom: 8 }}>테마</div>
       <div style={{ display: 'flex', alignItems: 'center', gap: 7 }}>

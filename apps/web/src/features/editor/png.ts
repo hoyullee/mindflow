@@ -65,7 +65,9 @@ export interface RenderedExportCanvas {
  */
 export async function renderExportCanvas(doc: Doc, geom: GeomMap, theme: Theme, imageUrls: ImageUrlMap = {}): Promise<RenderedExportCanvas | null> {
   const ids = Object.keys(geom).filter((id) => doc.nodes[id]);
-  if (!ids.length) return null;
+  // 화이트보드(트리 없는 문서)도 메모·이미지가 있으면 내보낼 것이 있다 —
+  // 경계 계산(computeSceneBounds)과 같은 기준으로 완화.
+  if (!ids.length && !doc.floats.length && !doc.zones.length && !doc.lines.length) return null;
 
   const canvas = document.createElement('canvas');
   const ctx = get2dContext(canvas);
