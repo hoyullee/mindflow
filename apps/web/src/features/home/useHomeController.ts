@@ -1091,8 +1091,14 @@ export function useHomeController() {
    * 에디터다(`buildTemplateDoc`). 홈이 문서를 조립해 저장하면 저장 경로가 둘이 된다.
    */
   const createFromTemplate = (templateId?: string) => {
-    const tpl = findTemplate(templateId);
     patch({ templateOpen: false });
+    // 화이트보드 — MAP_TEMPLATES에 없는 특수 칸(빈 보드). 에디터의
+    // `buildTemplateDoc('board')`가 tpl=board를 받아 트리 없는 문서를 시드한다.
+    if (templateId === 'board') {
+      onNewMapClick(buildNewMapHref('새 화이트보드', 'board'));
+      return;
+    }
+    const tpl = findTemplate(templateId);
     onNewMapClick(buildNewMapHref(tpl ? tpl.name : '새 마인드맵', tpl?.id));
   };
 
@@ -1313,10 +1319,12 @@ export function useHomeController() {
       let title = file.name.replace(/\.(json|md|markdown|txt)$/i, '');
       if (/\.json$/i.test(file.name)) {
         try {
-          const d = JSON.parse(text) as { nodes?: { root?: { text?: string } } };
-          if (d && d.nodes && d.nodes.root) {
+          const d = JSON.parse(text) as { nodes?: { root?: { text?: string } }; kind?: string };
+          // 유효 조건: 루트가 있는 맵 **또는** 화이트보드(kind='board' — 루트가
+          // 없는 것이 정상이다). 보드 제목은 본문에 없으므로 파일명을 쓴다.
+          if (d && d.nodes && (d.nodes.root || d.kind === 'board')) {
             doc = d as ImportedDoc;
-            title = (d.nodes.root.text || title).trim() || title;
+            title = (d.nodes.root?.text || title).trim() || title;
           }
         } catch {
           /* not valid JSON */

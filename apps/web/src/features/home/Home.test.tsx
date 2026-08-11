@@ -3247,6 +3247,39 @@ describe('홈 우클릭 메뉴', () => {
       expect(meeting.querySelector('svg[viewBox]')).toBeTruthy();
     });
 
+    it('화이트보드 칸 — 빈 맵 다음 자리, 고르면 "새 화이트보드"로 에디터에 넘어간다', async () => {
+      const user = userEvent.setup();
+      renderHomeWithDocStore([]);
+      await waitFor(() => expect(screen.getAllByText('＋ 새로 만들기')[0]).toBeTruthy());
+
+      await user.click(screen.getAllByText('＋ 새로 만들기')[0]!);
+      const dialog = await screen.findByRole('dialog', { name: '새 맵 만들기' });
+      const cards = within(dialog).getAllByRole('button').filter((b) => b.hasAttribute('data-template'));
+      // 빈 맵과 나란한 "시작" 칸 — 템플릿들보다 앞이다.
+      expect(cards[0]?.getAttribute('data-template')).toBe('blank');
+      expect(cards[1]?.getAttribute('data-template')).toBe('board');
+
+      await user.click(within(dialog).getByRole('button', { name: /화이트보드/ }));
+      await waitFor(() => expect(newMapTitles()).toContain('새 화이트보드'));
+      await waitFor(() => expect(screen.getByText('EDITOR_PLACEHOLDER')).toBeTruthy(), { timeout: 2000 });
+    });
+
+    it('화이트보드 JSON(루트 없는 문서)도 가져올 수 있다 — 제목은 파일명', async () => {
+      const user = userEvent.setup();
+      const { container, docStore } = renderHomeWithDocStore([]);
+      await waitFor(() => expect(screen.getAllByText('＋ 새로 만들기')[0]).toBeTruthy());
+
+      const boardJson = JSON.stringify({ v: 1, kind: 'board', nodes: {}, floats: [{ id: 'f1', x: 10, y: 20, w: 180, text: '보드 메모' }], lines: [], zones: [], layoutMode: 'right', themeKey: 'coral' });
+      const input = container.querySelector('input[type="file"]') as HTMLInputElement;
+      await user.upload(input, new File([boardJson], '아이디어 보드.json', { type: 'application/json' }));
+
+      await waitFor(() => expect(screen.getByText(/추가했어요/)).toBeTruthy());
+      const [, savedDoc, savedOpts] = docStore.save.mock.calls[0] as unknown as [string, { kind?: string; floats: unknown[] }, { title?: string }];
+      expect(savedOpts).toMatchObject({ title: '아이디어 보드' });
+      expect(savedDoc.kind).toBe('board');
+      expect(savedDoc.floats).toHaveLength(1);
+    });
+
     it('템플릿을 고르면 그 이름으로 맵이 만들어지고 에디터로 넘어간다', async () => {
       const user = userEvent.setup();
       renderHomeWithDocStore([]);

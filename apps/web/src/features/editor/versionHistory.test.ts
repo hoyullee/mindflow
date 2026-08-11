@@ -105,3 +105,26 @@ describe('versionBody / versionDoc', () => {
     expect(versionDoc('bad', T0)).toBeNull();
   });
 });
+
+// 화이트보드 — 주제가 늘 0이라 "주제 0개"로는 판을 구별할 수 없다. 내용의
+// 단위인 메모 수를 대신 센다(recordVersion의 board 분기).
+describe('recordVersion — 화이트보드', () => {
+  it('board 문서는 nodes 칸에 메모(플로트) 수를 싣는다', () => {
+    const board = parseDoc({
+      v: 1,
+      kind: 'board',
+      nodes: {},
+      floats: [
+        { id: 'f1', x: 0, y: 0, w: 180, text: '하나' },
+        { id: 'f2', x: 200, y: 0, w: 180, text: '둘' },
+      ],
+      lines: [],
+      zones: [],
+      layoutMode: 'right',
+      themeKey: 'coral',
+    });
+    if (!board) throw new Error('테스트 픽스처 파싱 실패');
+    recordVersion('b1', board, { now: T0 });
+    expect(listVersions('b1')[0]!.nodes).toBe(2);
+  });
+});

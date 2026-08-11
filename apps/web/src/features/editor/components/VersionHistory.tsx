@@ -132,7 +132,8 @@ export function VersionHistory({ controller }: { controller: EditorController })
                     }}
                   >
                     <div style={{ fontSize: 13, fontWeight: active ? 700 : 500, color: th.text }}>{fmt(v.at)}</div>
-                    <div style={{ fontSize: 11.5, color: th.subtext, marginTop: 1 }}>주제 {v.nodes}개</div>
+                    {/* 화이트보드는 세는 단위가 메모다(recordVersion이 플로트 수를 싣는다). */}
+                    <div style={{ fontSize: 11.5, color: th.subtext, marginTop: 1 }}>{controller.isBoard ? '메모' : '주제'} {v.nodes}개</div>
                   </button>
                 );
               })}
