@@ -10,7 +10,7 @@
 // 단위 테스트가 실제 출력 구조를 검증할 수 있다.
 
 import type { Box, Doc, Float, Line, LineAnchor, Node } from '@mindflow/mindmap-core';
-import { ROOT_ID, cubicAt, listDisplayLine, parseListPrefix, resolveLineEndpoints, resolveLineGeometry } from '@mindflow/mindmap-core';
+import { ROOT_ID, cubicAt, listDisplayLine, parseListPrefix, resolveLineEndpoints, resolveLineGeometry, strokeBounds, strokePathD } from '@mindflow/mindmap-core';
 import { colorOf } from './tree';
 import type { EdgeStyle } from './tree';
 import { buildEdgePath, edgeStrokeWidth } from './edges';
@@ -421,9 +421,9 @@ export interface SceneBounds {
 /** 내보내기 경계 — 모든 노드·메모·영역·자유 선을 감싸고 EXPORT_PAD 여백. */
 export function computeSceneBounds(doc: Doc, geom: GeomMap, fBoxes: Map<string, SceneFloatBox>): SceneBounds | null {
   const ids = Object.keys(geom).filter((id) => doc.nodes[id]);
-  // 노드가 없어도 메모·영역·선이 있으면 그릴 것이 있다(화이트보드 — 트리 없는
-  // 문서). 정말 아무것도 없을 때만 null(호출부가 내보내기를 건너뛴다).
-  if (!ids.length && !doc.floats.length && !doc.zones.length && !doc.lines.length) return null;
+  // 노드가 없어도 메모·영역·선·그리기 획이 있으면 그릴 것이 있다(화이트보드 —
+  // 트리 없는 문서). 정말 아무것도 없을 때만 null(호출부가 내보내기를 건너뛴다).
+  if (!ids.length && !doc.floats.length && !doc.zones.length && !doc.lines.length && !(doc.strokes ?? []).length) return null;
   let x0 = Infinity;
   let y0 = Infinity;
   let x1 = -Infinity;
@@ -443,6 +443,10 @@ export function computeSceneBounds(doc: Doc, geom: GeomMap, fBoxes: Map<string, 
     if (m) grow(f.x, f.y, f.x + m.w, f.y + m.h);
   });
   doc.zones.forEach((z) => grow(z.x, z.y - 16, z.x + z.w, z.y + z.h));
+  (doc.strokes ?? []).forEach((s) => {
+    const b = strokeBounds(s);
+    if (b) grow(b.x0, b.y0, b.x1, b.y1);
+  });
   doc.lines.forEach((l) => {
     const c = sceneLineGeom(l, doc, geom);
     grow(Math.min(c.P0.x, c.P3.x) - 12, Math.min(c.P0.y, c.P3.y) - 12, Math.max(c.P0.x, c.P3.x) + 12, Math.max(c.P0.y, c.P3.y) + 12);
@@ -594,6 +598,13 @@ export function paintScene(p: Painter, o: PaintSceneOpts): void {
     const lw = Math.min(maxPillW, labelW + 26);
     p.path(roundRectD(z.x + 10, z.y - 14, lw, 27, 13.5), { fill: zc });
     p.text(label, z.x + 10 + (lw - labelW) / 2, z.y - 0.5, { px: 12.5, weight: 700, fill: z.color ? '#fff' : theme.accentInk, w: labelW });
+  });
+
+  // 자유 그리기 획(화이트보드 M4) — 에디터 z-순서와 동일하게 메모/이미지 아래,
+  // 영역 위("보드 바닥의 잉크"). 획은 path 하나씩이라 세 백엔드(PNG·SVG·PDF)가
+  // 같은 문자열을 소비한다.
+  (doc.strokes ?? []).forEach((s) => {
+    p.path(strokePathD(s.pts), { stroke: s.color, width: s.w, round: true });
   });
 
   // memos — grown-to-fit cards (see `sceneFloatBox`), matching the editor's memo box.

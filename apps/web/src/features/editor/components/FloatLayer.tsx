@@ -37,7 +37,10 @@ export function FloatLayer({ floats, theme: th, controller }: FloatLayerProps) {
         // port of `MSEL.floats.includes(f.id)` — a marquee multi-selection rings every target.
         const selected = controller.multiGroups.floats.includes(f.id);
         const editing = controller.editingFloatId === f.id;
-        const collapsed = !!f.collapsed;
+        // 화이트보드에는 접기가 없다(요청) — 바탕화면 메모 감각에서 접힌 메모는
+        // 내용을 감추는 상태일 뿐이다. 맵에서 접어 둔 메모가 든 문서를 보드로
+        // 여는 일은 없지만, 혹시 collapsed가 남아 있어도 펼쳐서 그린다.
+        const collapsed = !!f.collapsed && !controller.isBoard;
         const fFpx = f.tsize === 's' ? 11.5 : f.tsize === 'l' ? 15.5 : 13;
         // presence: a remote peer's selection ring (see `NodeLayer`'s identical pattern).
         const remotePeer = peersSelecting(controller.presence.peers, 'floats', f.id)[0];
@@ -106,7 +109,7 @@ export function FloatLayer({ floats, theme: th, controller }: FloatLayerProps) {
               controller.startEditFloat(f.id);
             }}
           >
-            {!isImage && (() => {
+            {!isImage && !controller.isBoard && (() => {
               // 접기/펼치기 토글 — 예전 코럴 원의 ＋/−는 "추가/삭제"로 읽혔다(제보:
               // 직관적인 아이콘으로). 표준 디스클로저 관례인 **회전 셰브론**으로:
               // 펼침=아래(내용이 아래로 이어짐), 접힘=오른쪽(더 있음). 색은 메모의

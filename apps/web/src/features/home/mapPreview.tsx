@@ -1,4 +1,4 @@
-import { ROOT_ID, layout, listDisplayLine, parseListPrefix } from '@mindflow/mindmap-core';
+import { ROOT_ID, layout, listDisplayLine, parseListPrefix, strokeBounds, strokePathD } from '@mindflow/mindmap-core';
 import type { Doc, EdgeStyle, Float, LayoutMode, Node as CoreNode } from '@mindflow/mindmap-core';
 import { buildEdgePath, edgeStrokeWidth } from '../editor/edges';
 import { linkInk } from '../editor/richSpans';
@@ -304,6 +304,7 @@ interface PreviewDoc {
   floats?: DocFloat[];
   lines?: DocLine[];
   zones?: DocZone[];
+  strokes?: { id: string; pts: number[]; color: string; w: number }[];
 }
 
 /** Saved docs persist layout-derived node x/y as `0`: the React editor keeps
@@ -391,7 +392,7 @@ function buildPreview(rawDoc: string, hueFallback: string): JSX.Element | null {
   // 화이트보드(트리 없는 문서)는 노드 0개여도 메모·이미지가 곧 내용이다 —
   // 노드도 메모/영역/선도 없을 때만 포기한다(그때는 miniPreview 폴백).
   // 아래 `root`는 ids가 비면 undefined지만, 노드 렌더 루프가 돌지 않아 안전하다.
-  const hasLoose = (Array.isArray(d.floats) && d.floats.length > 0) || (Array.isArray(d.zones) && d.zones.length > 0) || (Array.isArray(d.lines) && d.lines.length > 0);
+  const hasLoose = (Array.isArray(d.floats) && d.floats.length > 0) || (Array.isArray(d.zones) && d.zones.length > 0) || (Array.isArray(d.lines) && d.lines.length > 0) || (Array.isArray(d.strokes) && d.strokes.length > 0);
   if (!ids.length && !hasLoose) return null;
   const palette = TH.palette;
   const root = ids.find((k) => !nodes[k]?.parent && !nodes[k]?.free) || ids[0]!;
@@ -471,6 +472,11 @@ function buildPreview(rawDoc: string, hueFallback: string): JSX.Element | null {
   });
   floats.forEach((f) => grow(f.x, f.y, f.x + (f.w || 160), f.y + floatH(f)));
   zones.forEach((z) => grow(z.x, z.y - 14, z.x + z.w, z.y + z.h));
+  const strokes = Array.isArray(d.strokes) ? d.strokes : [];
+  strokes.forEach((st) => {
+    const b = strokeBounds(st);
+    if (b) grow(b.x0, b.y0, b.x1, b.y1);
+  });
 
   const nodeBox = (id: string) => {
     const n = nodes[id]!;
@@ -800,6 +806,9 @@ function buildPreview(rawDoc: string, hueFallback: string): JSX.Element | null {
   return (
     <svg viewBox={`${x0} ${y0} ${x1 - x0} ${y1 - y0}`} width="88%" height="88%" preserveAspectRatio="xMidYMid meet" style={{ display: 'block' }}>
       {zoneEls}
+      {strokes.map((st) => (
+        <path key={`sk-${st.id}`} d={strokePathD(st.pts)} fill="none" stroke={st.color} strokeWidth={st.w} strokeLinecap="round" strokeLinejoin="round" />
+      ))}
       {edges}
       {rects}
       {lineEls}

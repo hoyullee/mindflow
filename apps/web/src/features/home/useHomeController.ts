@@ -7,7 +7,7 @@ import { inlineImagesForExport } from '../editor/imageExport';
 import { exportDocPng } from '../editor/png';
 import { exportDocSvg } from '../editor/svg';
 import { exportDocPdf } from '../editor/pdf';
-import { themeOf } from '../editor/theme';
+import { docThemeOf } from '../editor/theme';
 import { applyHomeTheme, homeThemeKeyOf, saveHomeThemeCache, type HomeThemeKey } from './theme';
 import { useBackend } from '../../adapters/BackendContext';
 import { findTemplate } from '../../templates/mapTemplates';
@@ -1257,7 +1257,7 @@ export function useHomeController() {
         // (참조가 없는 문서면 빈 요청 없이 그냥 지나간다).
         const refs = collectImageRefs(doc);
         const urls = refs.length ? await imageStore.resolve(refs) : {};
-        const { missingImages } = await exportDocPng(doc, themeOf(doc.themeKey), safeFileName(title), urls);
+        const { missingImages } = await exportDocPng(doc, docThemeOf(doc), safeFileName(title), urls);
         if (missingImages > 0) patch({ importError: `이미지 ${missingImages}장을 PNG에 담지 못했어요. 연결을 확인하고 다시 시도해 주세요.` });
       } catch {
         patch({ importError: '이미지를 만들 수 없어요. 맵을 한 번 열어 저장한 뒤 다시 시도해 주세요.' });
@@ -1279,7 +1279,7 @@ export function useHomeController() {
         const doc = await fullDocForExport(title, docId);
         if (!doc) throw new Error('unparseable');
         const { doc: full, missing } = await inlineImagesForExport(doc, imageStore);
-        exportDocSvg(full, themeOf(full.themeKey), safeFileName(title));
+        exportDocSvg(full, docThemeOf(full), safeFileName(title));
         if (missing > 0) patch({ importError: `이미지 ${missing}장을 SVG에 담지 못했어요. 연결을 확인하고 다시 시도해 주세요.` });
       } catch {
         patch({ importError: '이미지를 만들 수 없어요. 맵을 한 번 열어 저장한 뒤 다시 시도해 주세요.' });
@@ -1301,7 +1301,7 @@ export function useHomeController() {
         if (!doc) throw new Error('unparseable');
         const refs = collectImageRefs(doc);
         const urls = refs.length ? await imageStore.resolve(refs) : {};
-        const { missingImages } = await exportDocPdf(doc, themeOf(doc.themeKey), safeFileName(title), urls);
+        const { missingImages } = await exportDocPdf(doc, docThemeOf(doc), safeFileName(title), urls);
         if (missingImages > 0) patch({ importError: `이미지 ${missingImages}장을 PDF에 담지 못했어요. 연결을 확인하고 다시 시도해 주세요.` });
       } catch {
         patch({ importError: 'PDF를 만들 수 없어요. 맵을 한 번 열어 저장한 뒤 다시 시도해 주세요.' });

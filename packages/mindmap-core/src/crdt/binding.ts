@@ -34,7 +34,7 @@
 // structural change directly as its own transaction.
 
 import * as Y from 'yjs';
-import type { Doc, DocKind, EdgeStyle, Float, Line, LayoutMode, Node, NodeMap, Zone } from '../model';
+import type { Doc, DocKind, EdgeStyle, Float, Line, LayoutMode, Node, NodeMap, Stroke, Zone } from '../model';
 import { DEFAULT_LAYOUT_MODE, DEFAULT_THEME_KEY } from '../model';
 
 type PlainRecord = Record<string, unknown>;
@@ -200,13 +200,15 @@ export function yDocToDoc(ydoc: Y.Doc): Doc {
   const floats = readEntityList<Float>(ydoc, 'floats', 'floatsOrder');
   const lines = readEntityList<Line>(ydoc, 'lines', 'linesOrder');
   const zones = readEntityList<Zone>(ydoc, 'zones', 'zonesOrder');
+  // 그리기 획 — 옵션 컬렉션(비면 키 자체를 만들지 않는다, 라운드트립 동일성).
+  const strokes = readEntityList<Stroke>(ydoc, 'strokes', 'strokesOrder');
   const meta = ydoc.getMap<unknown>('meta');
   const layoutMode = (meta.get('layoutMode') as LayoutMode | undefined) ?? DEFAULT_LAYOUT_MODE;
   const themeKey = (meta.get('themeKey') as string | undefined) ?? DEFAULT_THEME_KEY;
   // `edgeStyle`은 옵션 필드 — 없으면 키 자체를 만들지 않는다(라운드트립 동일성 유지).
   const edgeStyle = meta.get('edgeStyle') as EdgeStyle | undefined;
   const kind = meta.get('kind') as DocKind | undefined;
-  return { v: 1, nodes, floats, lines, zones, layoutMode, themeKey, ...(edgeStyle !== undefined ? { edgeStyle } : {}), ...(kind !== undefined ? { kind } : {}) };
+  return { v: 1, nodes, floats, lines, zones, layoutMode, themeKey, ...(edgeStyle !== undefined ? { edgeStyle } : {}), ...(kind !== undefined ? { kind } : {}), ...(strokes.length ? { strokes } : {}) };
 }
 
 /**
@@ -228,6 +230,8 @@ export function applyDocToYDoc(ydoc: Y.Doc, nextDoc: Doc, prevDoc?: Doc | null, 
     syncEntityList<Float>(ydoc, 'floats', 'floatsOrder', prevDoc?.floats, nextDoc.floats);
     syncEntityList<Line>(ydoc, 'lines', 'linesOrder', prevDoc?.lines, nextDoc.lines);
     syncEntityList<Zone>(ydoc, 'zones', 'zonesOrder', prevDoc?.zones, nextDoc.zones);
+    // 그리기 획 — prev가 있는데 strokes 키가 없으면 빈 배열로 취급(옵션 필드).
+    syncEntityList<Stroke>(ydoc, 'strokes', 'strokesOrder', prevDoc ? (prevDoc.strokes ?? []) : undefined, nextDoc.strokes ?? []);
     const meta = ydoc.getMap<unknown>('meta');
     if (!prevDoc || prevDoc.layoutMode !== nextDoc.layoutMode) meta.set('layoutMode', nextDoc.layoutMode);
     if (!prevDoc || prevDoc.themeKey !== nextDoc.themeKey) meta.set('themeKey', nextDoc.themeKey);

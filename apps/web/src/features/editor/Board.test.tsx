@@ -35,6 +35,15 @@ function getViewport(container: HTMLElement): HTMLElement {
   return el as HTMLElement;
 }
 
+// jsdom엔 PointerEvent가 없어 fireEvent.pointer*가 좌표를 통째로 떨어뜨린다 —
+// MouseEvent를 pointer 이벤트 이름으로 던지고 pointerId만 심는다
+// (EditorC.interactions.test.tsx의 `firePointer`와 같은 처방).
+function firePointer(target: Element, type: 'pointerdown' | 'pointermove' | 'pointerup', init: { pointerId?: number; clientX?: number; clientY?: number; button?: number } = {}): void {
+  const event = new MouseEvent(type, { bubbles: true, cancelable: true, clientX: init.clientX ?? 0, clientY: init.clientY ?? 0, button: init.button ?? 0 });
+  Object.defineProperty(event, 'pointerId', { value: init.pointerId ?? 1, configurable: true });
+  fireEvent(target, event);
+}
+
 beforeEach(() => {
   localStorage.clear();
   localStorage.setItem('mf_demo_session', JSON.stringify({ user: { id: 'u', email: 'me@example.com' } }));
@@ -143,6 +152,117 @@ describe('화이트보드 에디터', () => {
       const saved = JSON.parse(localStorage.getItem('mindflow_doc_b4') || 'null');
       expect(saved?.floats?.[0]?.caption).toBe('킥오프 화이트보드');
     });
+  });
+
+  it('board 캔버스 배경은 테마와 무관하게 흰색이고, 메모에 접기 토글이 없다(요청)', async () => {
+    // 접힌 메모(collapsed)가 남아 있어도 보드에서는 펼쳐 그린다.
+    localStorage.setItem('mindflow_doc_b5', JSON.stringify({ ...BOARD, themeKey: 'dark', floats: [{ id: 'bf1', x: 40, y: 60, w: 180, text: '첫 줄\n둘째 줄', collapsed: true }] }));
+    const { container } = renderEditor('/editor?map=b5&title=x');
+    const floatEl = await waitFor(() => {
+      const el = container.querySelector('[data-float-id="bf1"]') as HTMLElement;
+      expect(el).toBeTruthy();
+      return el;
+    });
+    // 배경 레이어가 테마(dark) 대신 흰색.
+    const bg = container.querySelector('[data-canvas-bg]') as HTMLElement;
+    expect(bg.style.background || bg.style.backgroundColor).toContain('255, 255, 255');
+    // 접기 토글 부재 + collapsed여도 두 줄이 다 보인다.
+    expect(floatEl.querySelector('[data-fold-toggle]')).toBeNull();
+    expect(floatEl.textContent).toContain('둘째 줄');
+  });
+
+  it('펜으로 그린 획이 문서에 커밋되고(저장·undo 한 단계) 획 레이어에 그려진다(M4)', async () => {
+    localStorage.setItem('mindflow_doc_b6', JSON.stringify(BOARD));
+    const { container } = renderEditor('/editor?map=b6&title=x');
+    await waitFor(() => expect(within(getViewport(container)).getByText('아이디어 하나')).toBeTruthy());
+
+    // 도구 막대에서 펜 선택 → 그리기 오버레이가 뜬다.
+    fireEvent.click(screen.getByRole('button', { name: '펜' }));
+    const layer = await waitFor(() => {
+      const el = container.querySelector('[data-board-draw-layer]') as HTMLElement;
+      expect(el).toBeTruthy();
+      return el;
+    });
+
+    // 포인터 스트로크: down → move ×3 → up = 커밋 한 번.
+    firePointer(layer, 'pointerdown', { pointerId: 1, clientX: 200, clientY: 200 });
+    firePointer(layer, 'pointermove', { pointerId: 1, clientX: 240, clientY: 220 });
+    firePointer(layer, 'pointermove', { pointerId: 1, clientX: 280, clientY: 260 });
+    firePointer(layer, 'pointermove', { pointerId: 1, clientX: 320, clientY: 240 });
+    firePointer(layer, 'pointerup', { pointerId: 1, clientX: 320, clientY: 240 });
+
+    // 획이 문서에 커밋되어 StrokeLayer가 그린다.
+    await waitFor(() => expect(container.querySelector('[data-stroke-id]')).toBeTruthy());
+
+    // 저장본에 남는다(자동저장 디바운스 우회).
+    fireEvent.keyDown(window, { key: 's', ctrlKey: true });
+    await waitFor(() => {
+      const saved = JSON.parse(localStorage.getItem('mindflow_doc_b6') || 'null');
+      expect(saved?.strokes).toHaveLength(1);
+      expect(saved.strokes[0].pts.length).toBeGreaterThanOrEqual(4);
+      expect(saved.strokes[0].w).toBe(4);
+    });
+
+    // undo 한 번 = 획 하나가 통째로 사라진다(획은 원자 커밋).
+    fireEvent.keyDown(window, { key: 'z', ctrlKey: true });
+    await waitFor(() => expect(container.querySelector('[data-stroke-id]')).toBeNull());
+  });
+
+  it('지우개는 닿은 획만 지운다(M4)', async () => {
+    localStorage.setItem(
+      'mindflow_doc_b7',
+      JSON.stringify({
+        ...BOARD,
+        floats: [],
+        strokes: [
+          { id: 's1', pts: [0, 0, 40, 0], color: '#2b2b2b', w: 4 },
+          { id: 's2', pts: [0, 400, 40, 400], color: '#2b2b2b', w: 4 },
+        ],
+      }),
+    );
+    const { container } = renderEditor('/editor?map=b7&title=x');
+    await waitFor(() => expect(container.querySelectorAll('[data-stroke-id]')).toHaveLength(2));
+
+    fireEvent.click(screen.getByRole('button', { name: '지우개' }));
+    const layer = await waitFor(() => {
+      const el = container.querySelector('[data-board-draw-layer]') as HTMLElement;
+      expect(el).toBeTruthy();
+      return el;
+    });
+
+    // s1의 화면 좌표: 캔버스 (20,0) → 클라이언트 (pan.x + 20*zoom, pan.y).
+    // jsdom에서는 뷰포트 크기 실측이 안 되므로 pan/zoom을 셈에 넣지 않고,
+    // 획 레이어(팬 레이어 안 SVG)의 bounding box 대신 **컨트롤러와 같은 변환**을
+    // 신뢰한다 — 초기 fit이 센터링한 pan을 모르니, s1 위 지점을 다른 획(s2,
+    // y=400)과 충분히 떨어진 화면 좌표로 때려 맞히는 대신 s1 좌표를 직접 계산:
+    // 초기 뷰는 centerOnRoot(장면 중심) 기반이라 zoom=1.25 상한/최소 줌 사이 —
+    // 안전하게, 문서 좌표를 아는 두 획의 **중간 y**보다 위(=s1 쪽)를 huge 범위로
+    // 지우는 대신 pan 값을 pan-layer transform에서 읽는다.
+    const panLayer = container.querySelector('[data-pan-layer]') as HTMLElement;
+    const m = /translate\(([-\d.]+)px,\s*([-\d.]+)px\)\s*scale\(([\d.]+)\)/.exec(panLayer.style.transform || '');
+    if (!m) throw new Error(`pan transform not parsable: ${panLayer.style.transform}`);
+    const pan = { x: parseFloat(m[1]!), y: parseFloat(m[2]!) };
+    const zoom = parseFloat(m[3]!);
+    const cx = pan.x + 20 * zoom;
+    const cy = pan.y + 0 * zoom;
+    firePointer(layer, 'pointerdown', { pointerId: 1, clientX: cx, clientY: cy });
+    firePointer(layer, 'pointerup', { pointerId: 1, clientX: cx, clientY: cy });
+
+    await waitFor(() => {
+      expect(container.querySelector('[data-stroke-id="s1"]')).toBeNull();
+      expect(container.querySelector('[data-stroke-id="s2"]')).toBeTruthy();
+    });
+  });
+
+  it('그리기 도구 막대는 board 전용 — 맵에는 없다(M4)', async () => {
+    localStorage.setItem(
+      'mindflow_doc_m2',
+      JSON.stringify({ v: 1, nodes: { root: { id: 'root', text: '루트', emoji: '', parent: null, children: [], collapsed: false, color: null, x: 0, y: 0 } }, floats: [], lines: [], zones: [], layoutMode: 'right', themeKey: 'coral' }),
+    );
+    const { container } = renderEditor('/editor?map=m2&title=x');
+    await waitFor(() => expect(within(getViewport(container)).getByText('루트')).toBeTruthy());
+    expect(container.querySelector('[data-board-toolbar]')).toBeNull();
+    expect(container.querySelector('[data-board-draw-layer]')).toBeNull();
   });
 
   it('맵(무회귀): 삽입 메뉴 5종·스타일 레이아웃·보기 아웃라인이 그대로다', async () => {

@@ -119,6 +119,18 @@ export function themeOf(key: string | undefined | null): Theme {
   return (key && THEMES[key as ThemeKey]) || THEMES.coral;
 }
 
+/**
+ * 문서의 **렌더 테마** — 화이트보드는 캔버스 배경을 무조건 흰색으로 쓴다(요청).
+ * 도트도 흰 바탕에 맞는 중립 회색으로 함께 바꾼다(테마의 베이지·파스텔 도트는
+ * 흰색 위에서 얼룩처럼 보인다). 나머지(강조색·팔레트·패널)는 테마 그대로라
+ * 메모 색·커서 색은 계속 테마를 따른다. 에디터 캔버스·미니맵·커튼·내보내기
+ * 4종이 전부 이 테마를 받아 흐르므로 갈림이 없다.
+ */
+export function docThemeOf(doc: { themeKey?: string; kind?: string }): Theme {
+  const t = themeOf(doc.themeKey);
+  return doc.kind === 'board' ? { ...t, canvasBg: '#ffffff', dot: '#e6e6e6' } : t;
+}
+
 /** The valid theme key for `key`, falling back to the default when unrecognized. */
 export function themeKeyOf(key: string | undefined | null): ThemeKey {
   return key && (THEME_KEYS as string[]).includes(key) ? (key as ThemeKey) : 'coral';

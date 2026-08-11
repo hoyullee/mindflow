@@ -20,7 +20,7 @@ export const CORE_VERSION = '0.0.0';
 
 export type { TextMeasurer, Clock, IdGen } from './ports';
 
-export type { LayoutMode, EdgeStyle, RichRun, Node, NodeMap, Float, Line, LineAnchor, Zone, Doc, DocKind } from './model';
+export type { LayoutMode, EdgeStyle, RichRun, Node, NodeMap, Float, Line, LineAnchor, Zone, Doc, DocKind, Stroke } from './model';
 export { ROOT_ID, DEFAULT_LAYOUT_MODE, DEFAULT_THEME_KEY, DEFAULT_EDGE_STYLE } from './model';
 
 export type { SerializableState } from './serialize';
@@ -72,3 +72,6 @@ export { computeFreeNudge } from './overlap';
 // this stays framework-agnostic; transport lives in `apps/web/src/collab/`.
 export type { YDoc } from './crdt';
 export { docToYDoc, yDocToDoc, applyDocToYDoc, addNode, removeNode, setNodeField, encodeStateAsUpdate, applyUpdate } from './crdt';
+
+export type { StrokeBox } from './strokes';
+export { strokeBounds, strokeHit, strokePathD } from './strokes';

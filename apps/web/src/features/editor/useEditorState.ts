@@ -1,8 +1,8 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import type { MouseEvent as ReactMouseEvent, PointerEvent as ReactPointerEvent } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
-import type { Box, Doc, Float, Line, LineAnchor, LayoutMode, ListOp, Node, NodeMap, SizeOf, SnapCandidate, TextEdit, Zone } from '@mindflow/mindmap-core';
-import { HistoryStack, ROOT_ID, collectImageRefs, collectInlineImages, isImageRef, replaceImageValues, applyListOp as applyListOpToText, applyAutoLinks, applyMarkdownShortcuts, applyPartialStyle, insertMention, charsToRuns, cubicAt, isStyledRuns, findLineSnap, layout, resolveLineEndpoints, resolveLineGeometry, runsToChars, serializeDoc, shiftOffset, toMarkdown } from '@mindflow/mindmap-core';
+import type { Box, Doc, Float, Line, LineAnchor, LayoutMode, ListOp, Node, NodeMap, SizeOf, SnapCandidate, Stroke, TextEdit, Zone } from '@mindflow/mindmap-core';
+import { HistoryStack, ROOT_ID, collectImageRefs, collectInlineImages, isImageRef, replaceImageValues, applyListOp as applyListOpToText, applyAutoLinks, applyMarkdownShortcuts, applyPartialStyle, insertMention, charsToRuns, cubicAt, isStyledRuns, findLineSnap, layout, resolveLineEndpoints, resolveLineGeometry, runsToChars, serializeDoc, shiftOffset, strokeBounds, strokeHit, toMarkdown } from '@mindflow/mindmap-core';
 import { domToRuns, linearize, liveEditValue } from './richtextDom';
 import { recordVersion, versionDoc } from './versionHistory';
 import { nodeTextAlign, renderListEdit } from './listLines';
@@ -26,7 +26,7 @@ import { isPanButton } from './pointerButtons';
 import { buildVisible, descendants, outlineRows } from './tree';
 import type { EdgeStyle } from './tree';
 import { nearestInDirection } from './navigation';
-import { UI_THEME, themeKeyOf, themeOf } from './theme';
+import { UI_THEME, docThemeOf, themeKeyOf } from './theme';
 import type { Theme, ThemeKey } from './theme';
 import { downloadFile } from './download';
 import { exportPng } from './png';
@@ -146,6 +146,8 @@ interface Snapshot {
   zones: Zone[];
   layoutMode: LayoutMode;
   edgeStyle: EdgeStyle;
+  /** 그리기 획(M4) — 부재는 빈 배열로 정규화해 스냅샷에 싣는다. */
+  strokes: Stroke[];
 }
 
 type ObjDrag =
@@ -638,6 +640,20 @@ export interface EditorController {
   /** 화이트보드(`Doc.kind === 'board'`) — 트리 없이 메모·이미지만 자유 배치하는
    * 문서. true면 주제/선/영역/레이아웃/아웃라인 UI가 감춰진다(메뉴들이 읽는다). */
   isBoard: boolean;
+  /** 화이트보드 그리기 도구(M4). 'select'가 기본 — 펜/지우개일 때는 캔버스 위에
+   * 그리기 오버레이(BoardDrawLayer)가 포인터를 받는다. */
+  boardTool: 'select' | 'pen' | 'eraser';
+  setBoardTool: (t: 'select' | 'pen' | 'eraser') => void;
+  penColor: string;
+  setPenColor: (c: string) => void;
+  penWidth: number;
+  setPenWidth: (w: number) => void;
+  /** 그리는 중인 획(미리보기 좌표) — 없으면 null. */
+  liveStroke: number[] | null;
+  boardDrawDown: (clientX: number, clientY: number) => void;
+  boardDrawMove: (clientX: number, clientY: number) => void;
+  boardDrawUp: () => void;
+  boardDrawCancel: () => void;
 }
 
 /**
@@ -669,7 +685,7 @@ function nudgeBoxOf(cand: NodeMap, geom: Record<string, { x: number; y: number; 
 
 function docSignature(d: Doc): string {
   try {
-    return JSON.stringify([d.nodes, d.floats, d.lines, d.zones, d.layoutMode, d.themeKey, d.edgeStyle]);
+    return JSON.stringify([d.nodes, d.floats, d.lines, d.zones, d.layoutMode, d.themeKey, d.edgeStyle, d.strokes ?? []]);
   } catch {
     return '';
   }
@@ -939,6 +955,7 @@ export function useEditorState(): EditorController {
               zones: res.doc.zones,
               layoutMode: res.doc.layoutMode,
               edgeStyle: (res.doc.edgeStyle as EdgeStyle | undefined) ?? 'curve',
+              strokes: res.doc.strokes ?? [],
             });
             setHistoryTick((t) => t + 1);
           }
@@ -1217,7 +1234,8 @@ export function useEditorState(): EditorController {
     return out;
   }, [doc.floats, measurer]);
 
-  const theme = themeOf(doc.themeKey);
+  // 화이트보드는 캔버스 배경이 무조건 흰색이다(요청) — docThemeOf가 가른다.
+  const theme = docThemeOf(doc);
 
   // ---- multi-selection groups — port of `Component#msel()` (MindFlow.dc.html:1548-1556):
   // falls back to the single `selection` when there's no active marquee group, so every
@@ -1401,7 +1419,7 @@ export function useEditorState(): EditorController {
   useEffect(() => {
     if (historyInitRef.current) return;
     historyInitRef.current = true;
-    historyRef.current!.reset({ nodes: doc.nodes, floats: doc.floats, lines: doc.lines, zones: doc.zones, layoutMode: doc.layoutMode, edgeStyle });
+    historyRef.current!.reset({ nodes: doc.nodes, floats: doc.floats, lines: doc.lines, zones: doc.zones, layoutMode: doc.layoutMode, edgeStyle, strokes: doc.strokes ?? [] });
     // deliberately empty deps: only the initial (mount-time) doc/edgeStyle matter here
   }, []);
 
@@ -1418,10 +1436,10 @@ export function useEditorState(): EditorController {
     setDoc((prev) => {
       const next = updater(prev);
       const changed =
-        next.nodes !== prev.nodes || next.floats !== prev.floats || next.lines !== prev.lines || next.zones !== prev.zones || next.layoutMode !== prev.layoutMode;
+        next.nodes !== prev.nodes || next.floats !== prev.floats || next.lines !== prev.lines || next.zones !== prev.zones || next.layoutMode !== prev.layoutMode || next.strokes !== prev.strokes;
       if (changed) {
         historyRef.current!.record(
-          { nodes: next.nodes, floats: next.floats, lines: next.lines, zones: next.zones, layoutMode: next.layoutMode, edgeStyle: edgeStyleRef.current },
+          { nodes: next.nodes, floats: next.floats, lines: next.lines, zones: next.zones, layoutMode: next.layoutMode, edgeStyle: edgeStyleRef.current, strokes: next.strokes ?? [] },
           continuous,
         );
         setHistoryTick((t) => t + 1);
@@ -1442,16 +1460,16 @@ export function useEditorState(): EditorController {
     setDoc((prev) => {
       const next = updater(prev);
       const changed =
-        next.nodes !== prev.nodes || next.floats !== prev.floats || next.lines !== prev.lines || next.zones !== prev.zones || next.layoutMode !== prev.layoutMode;
+        next.nodes !== prev.nodes || next.floats !== prev.floats || next.lines !== prev.lines || next.zones !== prev.zones || next.layoutMode !== prev.layoutMode || next.strokes !== prev.strokes;
       if (changed) {
-        historyRef.current!.amend({ nodes: next.nodes, floats: next.floats, lines: next.lines, zones: next.zones, layoutMode: next.layoutMode, edgeStyle: edgeStyleRef.current });
+        historyRef.current!.amend({ nodes: next.nodes, floats: next.floats, lines: next.lines, zones: next.zones, layoutMode: next.layoutMode, edgeStyle: edgeStyleRef.current, strokes: next.strokes ?? [] });
       }
       return changed ? next : prev;
     });
   }, []);
 
   function applySnapshot(snap: Snapshot): void {
-    setDoc((prev) => ({ ...prev, nodes: snap.nodes, floats: snap.floats, lines: snap.lines, zones: snap.zones, layoutMode: snap.layoutMode, edgeStyle: snap.edgeStyle }));
+    setDoc((prev) => ({ ...prev, nodes: snap.nodes, floats: snap.floats, lines: snap.lines, zones: snap.zones, layoutMode: snap.layoutMode, edgeStyle: snap.edgeStyle, strokes: snap.strokes.length ? snap.strokes : undefined }));
     setEdgeStyleState(snap.edgeStyle);
     setSelectionState(null);
     setMultiSelectionState(null);
@@ -1759,8 +1777,18 @@ export function useEditorState(): EditorController {
       minY = Math.min(minY, f.y);
       maxY = Math.max(maxY, f.y + h);
     });
+    // 그리기 획(M4)도 장면이다 — 획만 있는 보드도 첫 센터링·화면 맞춤이 감싼다.
+    (doc.strokes ?? []).forEach((s) => {
+      const b = strokeBounds(s);
+      if (!b) return;
+      any = true;
+      minX = Math.min(minX, b.x0);
+      maxX = Math.max(maxX, b.x1);
+      minY = Math.min(minY, b.y0);
+      maxY = Math.max(maxY, b.y1);
+    });
     return any ? { minX, minY, maxX, maxY } : null;
-  }, [geom, doc.floats, floatHeights]);
+  }, [geom, doc.floats, floatHeights, doc.strokes]);
 
   const fitView = useCallback(() => {
     setViewport((prev) => {
@@ -1871,7 +1899,7 @@ export function useEditorState(): EditorController {
     // up — `docSignature` includes `edgeStyle`, so this dirties the doc.
     setDoc((prev) => (prev.edgeStyle === s ? prev : { ...prev, edgeStyle: s }));
     const d = docRef.current;
-    historyRef.current!.record({ nodes: d.nodes, floats: d.floats, lines: d.lines, zones: d.zones, layoutMode: d.layoutMode, edgeStyle: s }, false);
+    historyRef.current!.record({ nodes: d.nodes, floats: d.floats, lines: d.lines, zones: d.zones, layoutMode: d.layoutMode, edgeStyle: s, strokes: d.strokes ?? [] }, false);
     setHistoryTick((t) => t + 1);
   }, []);
 
@@ -3416,6 +3444,104 @@ export function useEditorState(): EditorController {
   // setters, MindFlow.dc.html:2733-2737) + per-instance actions (toggleFloatCollapse/deleteFloat stay
   // single-id: they act on the specific float box clicked, not the whole selection). ----
   const setFloatBg = useCallback((hex: string | null) => commitDoc((d) => ({ ...d, floats: mutations.updateFloatItems(d.floats, floatTargetIds(), { bg: hex ?? undefined }) })), [floatTargetIds, commitDoc]);
+  // ---- 화이트보드 그리기(M4): 펜·획 지우개 ------------------------------------
+  // 획 = 원자 값(코어 `Stroke`): 펜을 떼는 순간 하나의 커밋(=undo 한 단계)으로
+  // 확정된다. 입력 단순화(가까운 점 병합 + 0.1 단위 반올림)는 여기 입력 시점에서
+  // — 손글씨는 초당 수십 좌표를 만들어 문서가 부풀기 때문이다.
+  const [boardTool, setBoardToolState] = useState<'select' | 'pen' | 'eraser'>('select');
+  const boardToolRef = useRef(boardTool);
+  boardToolRef.current = boardTool;
+  const setBoardTool = useCallback((t: 'select' | 'pen' | 'eraser') => {
+    setBoardToolState(t);
+    if (t !== 'select') {
+      // 그리기 도구로 바꾸면 선택을 비운다 — 오버레이가 포인터를 삼키는 동안
+      // 남은 선택이 Delete 등 키보드 경로로 조작되면 "왜 지워졌지"가 된다.
+      setSelectionState(null);
+      setMultiSelectionState(null);
+      setCtxMenu(null);
+    }
+  }, []);
+  const [penColor, setPenColor] = useState('#2b2b2b');
+  // 기본 굵기는 도구 막대 선택지(2·4·8) 중 하나여야 한다 — 아니면 첫 사용에서
+  // 어떤 굵기도 눌린 상태로 보이지 않는다.
+  const [penWidth, setPenWidth] = useState(4);
+  const penRef = useRef({ color: penColor, w: penWidth });
+  penRef.current = { color: penColor, w: penWidth };
+  /** 그리는 중인 획의 좌표(미리보기) — StrokeLayer가 그린다. */
+  const [liveStroke, setLiveStroke] = useState<number[] | null>(null);
+  const liveStrokeRef = useRef<number[] | null>(null);
+  const erasingRef = useRef(false);
+
+  const eraseAtClient = useCallback((clientX: number, clientY: number) => {
+    const strokes = docRef.current.strokes ?? [];
+    if (!strokes.length) return;
+    const vp = viewportRef.current;
+    const p = toCanvasPoint(clientX, clientY, vp);
+    // 지우개 반경은 화면 기준(≈8px)이 감각에 맞는다 — 줌아웃하면 캔버스 기준으로 넓어진다.
+    const tol = 8 / (vp.zoom || 1);
+    const hit = new Set(strokes.filter((s) => strokeHit(s, p.x, p.y, tol + (s.w || 2) / 2)).map((s) => s.id));
+    if (!hit.size) return;
+    // continuous 커밋 — 한 번의 문지르기가 여러 획을 지나며 커밋을 여러 번 내도
+    // 1.2초 coalesce 창 안에서 undo 한 단계로 합쳐진다(드래그 이동과 같은 결).
+    commitDoc((d) => {
+      const rest = (d.strokes ?? []).filter((s) => !hit.has(s.id));
+      return { ...d, strokes: rest.length ? rest : undefined };
+    }, true);
+  }, [commitDoc]);
+
+  const boardDrawDown = useCallback(
+    (clientX: number, clientY: number) => {
+      if (readOnlyRef.current) return;
+      const tool = boardToolRef.current;
+      if (tool === 'eraser') {
+        erasingRef.current = true;
+        eraseAtClient(clientX, clientY);
+        return;
+      }
+      if (tool !== 'pen') return;
+      const p = toCanvasPoint(clientX, clientY, viewportRef.current);
+      liveStrokeRef.current = [Math.round(p.x * 10) / 10, Math.round(p.y * 10) / 10];
+      setLiveStroke(liveStrokeRef.current);
+    },
+    [eraseAtClient],
+  );
+  const boardDrawMove = useCallback(
+    (clientX: number, clientY: number) => {
+      if (erasingRef.current) {
+        eraseAtClient(clientX, clientY);
+        return;
+      }
+      const pts = liveStrokeRef.current;
+      if (!pts) return;
+      const vp = viewportRef.current;
+      const p = toCanvasPoint(clientX, clientY, vp);
+      const lx = pts[pts.length - 2]!;
+      const ly = pts[pts.length - 1]!;
+      // 화면 기준 ~1.5px보다 가까운 점은 버린다(단순화 1단계).
+      const min = 1.5 / (vp.zoom || 1);
+      if ((p.x - lx) * (p.x - lx) + (p.y - ly) * (p.y - ly) < min * min) return;
+      const next = [...pts, Math.round(p.x * 10) / 10, Math.round(p.y * 10) / 10];
+      liveStrokeRef.current = next;
+      setLiveStroke(next);
+    },
+    [eraseAtClient],
+  );
+  const boardDrawUp = useCallback(() => {
+    erasingRef.current = false;
+    const pts = liveStrokeRef.current;
+    liveStrokeRef.current = null;
+    setLiveStroke(null);
+    if (!pts || pts.length < 2) return;
+    const stroke: Stroke = { id: idFactory('s'), pts, color: penRef.current.color, w: penRef.current.w };
+    commitDoc((d) => ({ ...d, strokes: [...(d.strokes ?? []), stroke] }));
+  }, [commitDoc, idFactory]);
+  /** 두 번째 손가락이 닿는 등 제스처가 그리기가 아니게 됐을 때 — 커밋 없이 버린다. */
+  const boardDrawCancel = useCallback(() => {
+    erasingRef.current = false;
+    liveStrokeRef.current = null;
+    setLiveStroke(null);
+  }, []);
+
   /** 이미지 플로트의 제목(캡션, `Float.caption`) — 빈 값이면 **키를 지운다**
    * (직렬화·CRDT에 빈 문자열을 남기지 않는다 — `clearNodeImage`와 같은 규칙). */
   const setFloatCaption = useCallback(
@@ -4635,6 +4761,17 @@ export function useEditorState(): EditorController {
     mapId,
     docTitle,
     isBoard: doc.kind === 'board',
+    boardTool,
+    setBoardTool,
+    penColor,
+    setPenColor,
+    penWidth,
+    setPenWidth,
+    liveStroke,
+    boardDrawDown,
+    boardDrawMove,
+    boardDrawUp,
+    boardDrawCancel,
     setViewportEl,
     setLayoutMode,
     setEdgeStyle,
