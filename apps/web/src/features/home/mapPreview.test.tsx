@@ -385,4 +385,26 @@ describe('realPreview — 화이트보드', () => {
     const empty = { v: 1, kind: 'board', nodes: {}, floats: [], lines: [], zones: [], layoutMode: 'right', themeKey: 'coral' };
     expect(realPreview(JSON.stringify(empty), '#f0663f')).toBeNull();
   });
+
+  it('그리기 획(strokes)만 있는 보드도 미리보기에 획 path를 그린다(M4)', () => {
+    const board = {
+      v: 1,
+      kind: 'board',
+      nodes: {},
+      floats: [],
+      lines: [],
+      zones: [],
+      layoutMode: 'right',
+      themeKey: 'coral',
+      strokes: [{ id: 's1', pts: [10, 10, 60, 40, 120, 20], color: '#d92626', w: 4 }],
+    };
+    const el = realPreview(JSON.stringify(board), '#f0663f');
+    expect(el).not.toBeNull();
+    const { container } = render(el!);
+    const path = Array.from(container.querySelectorAll('svg path')).find((p) => p.getAttribute('stroke') === '#d92626');
+    expect(path).toBeTruthy();
+    expect(path!.getAttribute('d')).toContain('M 10 10');
+    expect(path!.getAttribute('stroke-width')).toBe('4');
+    expect(path!.getAttribute('fill')).toBe('none');
+  });
 });

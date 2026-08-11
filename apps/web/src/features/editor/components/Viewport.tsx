@@ -8,6 +8,9 @@ import { LineLayer } from './LineLayer';
 import { ZoneLayer } from './ZoneLayer';
 import { MarqueeLayer } from './MarqueeLayer';
 import { PresenceLayer } from './PresenceLayer';
+import { StrokeLayer } from './StrokeLayer';
+import { BoardDrawLayer } from './BoardDrawLayer';
+import { BoardToolbar } from './BoardToolbar';
 import { ContextMenu } from './ContextMenu';
 import { TextToolbar } from './TextToolbar';
 import { MoveHandle } from './MoveHandle';
@@ -103,6 +106,8 @@ export function Viewport({ doc, controller }: ViewportProps) {
                 }}
               >
                 <ZoneLayer zones={doc.zones} theme={theme} controller={controller} />
+                {/* 그리기 획(화이트보드 M4) — 보드 바닥의 잉크라 메모/이미지 아래. */}
+                <StrokeLayer strokes={doc.strokes} live={controller.liveStroke ? { pts: controller.liveStroke, color: controller.penColor, w: controller.penWidth } : null} />
                 <EdgeLayer nodes={doc.nodes} geom={geom} mode={layoutMode} edgeStyle={edgeStyle} theme={theme} />
                 <NodeLayer nodes={doc.nodes} geom={geom} mode={layoutMode} theme={theme} controller={controller} />
                 <LineLayer lines={doc.lines} theme={theme} controller={controller} />
@@ -113,9 +118,13 @@ export function Viewport({ doc, controller }: ViewportProps) {
               </div>
               {/* Move grip (mobile) — screen-space so it stays a constant tap size at any zoom. */}
               {showMoveHandle && <MoveHandle controller={controller} theme={theme} />}
+              {/* 그리기 입력 오버레이(펜/지우개 도구가 켜진 동안만) — 화면 좌표계. */}
+              <BoardDrawLayer controller={controller} />
             </>
           )}
         </div>
+        {/* 화이트보드 도구 막대 — 하단 중앙 알약(보드에서만). */}
+        <BoardToolbar controller={controller} />
         {/* 준비 커튼 — 첫 센터링·폰트 측정·하이드레이션이 끝날 때까지 캔버스를
             같은 배경(도트 포함)으로 가렸다가 짧게 페이드아웃. 새로고침 시
             좌상단에 그려졌다 중앙으로 점프하는 깜빡임을 여기서 흡수한다.

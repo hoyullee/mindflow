@@ -111,3 +111,55 @@ describe('루트 없는 toMarkdown', () => {
     expect(toMarkdown(map, '엉뚱한 제목')).toBe('# 진짜 제목');
   });
 });
+
+// ── 그리기 획(M4) ──────────────────────────────────────────────────────────
+
+import { strokeBounds, strokeHit, strokePathD } from './strokes';
+import type { Stroke } from './model';
+
+const STROKE: Stroke = { id: 's1', pts: [0, 0, 100, 0, 100, 50], color: '#2b2b2b', w: 4 };
+
+describe('Stroke 직렬화·CRDT', () => {
+  it('비어 있지 않을 때만 직렬화된다 — 기존 문서·골든 무변경 규칙', () => {
+    const withStroke = serializeDoc({ ...boardDoc(), strokes: [STROKE] });
+    expect(withStroke.strokes).toHaveLength(1);
+    expect(parseDoc(JSON.parse(JSON.stringify(withStroke)))?.strokes?.[0]).toEqual(STROKE);
+
+    const none = serializeDoc(boardDoc());
+    expect('strokes' in none).toBe(false);
+    expect('strokes' in (parseDoc(JSON.parse(JSON.stringify(none))) ?? {})).toBe(false);
+  });
+
+  it('Y.Doc 왕복·증분 적용에서 획이 흐른다(획 = 원자 항목)', () => {
+    const prev = boardDoc({ strokes: [STROKE] });
+    expect(yDocToDoc(docToYDoc(prev)).strokes?.[0]).toEqual(STROKE);
+
+    const ydoc = docToYDoc(prev);
+    const s2: Stroke = { id: 's2', pts: [10, 10, 20, 20], color: '#d92626', w: 2 };
+    applyDocToYDoc(ydoc, { ...prev, strokes: [STROKE, s2] }, prev);
+    expect(yDocToDoc(ydoc).strokes).toHaveLength(2);
+    // 지우개 = 항목 삭제.
+    applyDocToYDoc(ydoc, { ...prev, strokes: [s2] }, { ...prev, strokes: [STROKE, s2] });
+    expect(yDocToDoc(ydoc).strokes).toEqual([s2]);
+  });
+});
+
+describe('획 기하(strokes.ts)', () => {
+  it('strokeBounds — 선 굵기 절반을 포함한 경계 상자', () => {
+    expect(strokeBounds(STROKE)).toEqual({ x0: -2, y0: -2, x1: 102, y1: 52 });
+    expect(strokeBounds({ ...STROKE, pts: [] })).toBeNull();
+  });
+
+  it('strokeHit — 선분 위·근처만 true(획 지우개 판정)', () => {
+    expect(strokeHit(STROKE, 50, 0, 3)).toBe(true); // 첫 선분 위
+    expect(strokeHit(STROKE, 100, 25, 3)).toBe(true); // 둘째 선분 위
+    expect(strokeHit(STROKE, 50, 30, 3)).toBe(false); // 멀리
+    expect(strokeHit(STROKE, 50, 2.5, 3)).toBe(true); // 허용치 안
+  });
+
+  it('strokePathD — M/L 경로 문자열, 점 하나는 극소 선분(둥근 캡이 점이 된다)', () => {
+    expect(strokePathD([0, 0, 10, 5])).toBe('M 0 0 L 10 5');
+    expect(strokePathD([3, 4])).toBe('M 3 4 L 3.01 4');
+    expect(strokePathD([])).toBe('');
+  });
+});

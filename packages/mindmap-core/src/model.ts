@@ -206,6 +206,20 @@ export interface Zone {
 }
 
 /**
+ * 자유 그리기 획(화이트보드 M4, post-dc 순수 추가) — 펜을 떼는 순간 확정되는
+ * **원자 값**이다: 그린 뒤 내용이 공동 편집되는 일이 없다(지워지거나 남거나 둘뿐).
+ * 그래서 CRDT에서 획 하나가 통째로 하나의 항목이고, 배열 충돌의 여지가 없다.
+ * `pts`는 `[x0,y0,x1,y1,…]` 평탄 배열 — 문서(JSON)와 CRDT 양쪽에서 콤팩트하다.
+ */
+export interface Stroke {
+  id: string;
+  pts: number[];
+  color: string;
+  /** 선 굵기(px, 캔버스 단위). */
+  w: number;
+}
+
+/**
  * 문서 종류(post-dc 순수 추가). `'board'` = 화이트보드 — 트리(nodes) 없이
  * 메모·이미지 플로트만 자유 배치하는 보드(`nodes`는 빈 객체). 부재 = 기존
  * 마인드맵. 값이 `'board'`일 때만 직렬화·CRDT 전파되므로(`RichRun.href`와
@@ -230,6 +244,9 @@ export interface Doc {
   edgeStyle?: EdgeStyle;
   /** 문서 종류 — `'board'`일 때만 존재(위 {@link DocKind} 참고). */
   kind?: DocKind;
+  /** 자유 그리기 획들(화이트보드 M4) — **비어 있지 않을 때만** 직렬화·CRDT 전파
+   * (`kind`와 같은 규칙 — 골든·기존 저장본 무변경). */
+  strokes?: Stroke[];
 }
 
 /**

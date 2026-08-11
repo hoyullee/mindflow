@@ -1,7 +1,7 @@
 // Serialization core — ports of `serializeDoc()` / `loadDoc()` / `cloneNodes()`
 // from `MindFlow.dc.html`. Pure, no localStorage: callers own persistence.
 
-import type { Doc, DocKind, EdgeStyle, Float, Line, LayoutMode, NodeMap, Zone } from './model';
+import type { Doc, DocKind, EdgeStyle, Float, Line, LayoutMode, NodeMap, Stroke, Zone } from './model';
 import { DEFAULT_EDGE_STYLE, DEFAULT_LAYOUT_MODE, DEFAULT_THEME_KEY } from './model';
 
 /**
@@ -18,6 +18,7 @@ export interface SerializableState {
   themeKey: string;
   edgeStyle?: EdgeStyle | null;
   kind?: DocKind | null;
+  strokes?: Stroke[] | null;
 }
 
 /**
@@ -41,6 +42,8 @@ export function serializeDoc(state: SerializableState): Doc {
     // 픽스처와 기존 저장본이 전부 갈리므로, RichRun.href의 "값이 있을 때만"
     // 규칙을 따른다(기본값 = 마인드맵).
     ...(state.kind === 'board' ? { kind: 'board' as const } : {}),
+    // 그리기 획 — 비어 있지 않을 때만(kind와 같은 규칙: 골든·기존 저장본 무변경).
+    ...(state.strokes && state.strokes.length ? { strokes: state.strokes } : {}),
   };
 }
 
@@ -74,7 +77,18 @@ export function parseDoc(raw: unknown): Doc | null {
   const themeKey = (d.themeKey as string | undefined) || DEFAULT_THEME_KEY;
   const edgeStyle = (d.edgeStyle as EdgeStyle | undefined) || DEFAULT_EDGE_STYLE;
 
-  return { v: 1, nodes, floats, lines, zones, layoutMode, themeKey, edgeStyle, ...(d.kind === 'board' ? { kind: 'board' as const } : {}) };
+  return {
+    v: 1,
+    nodes,
+    floats,
+    lines,
+    zones,
+    layoutMode,
+    themeKey,
+    edgeStyle,
+    ...(d.kind === 'board' ? { kind: 'board' as const } : {}),
+    ...(Array.isArray(d.strokes) && d.strokes.length ? { strokes: d.strokes as Stroke[] } : {}),
+  };
 }
 
 /**
