@@ -217,13 +217,20 @@ describe('실시간이 끊긴 채 편집할 때', () => {
 
     setStatus('offline');
     await screen.findByText(/연결이 끊겨 편집을 잠시 멈췄어요/);
-    // dim 베일 — 시각 신호일 뿐 조작은 막지 않는다(차단은 commitDoc chokepoint,
-    // 읽기·이동·줌은 기존 설계 그대로).
+    // dim 베일 — 배포 후 사용자 결정으로 **상호작용까지 막는다**: 포인터를 삼키고
+    // (pointerEvents auto), 캔버스 안 최고 층(NodeLayer 편집 박스 100)보다 위에
+    // 선다. jsdom은 pointer-events를 실행하지 않으므로 계약을 스타일로 고정한다.
     const dim = document.querySelector('[data-collab-dim]') as HTMLElement;
     expect(dim).toBeTruthy();
-    expect(dim.style.pointerEvents).toBe('none');
-    // 재연결 진행 애니메이션(스피너).
-    expect(document.querySelector('.mf-collab-spin')).toBeTruthy();
+    expect(dim.style.pointerEvents).toBe('auto');
+    expect(Number(dim.style.zIndex)).toBeGreaterThan(100);
+    // 재연결 진행 애니메이션(스피너) — 안내문과 **다른 줄**(전용 행)에 선다(요청).
+    const retryRow = document.querySelector('[data-collab-retry-row]') as HTMLElement;
+    expect(retryRow.querySelector('.mf-collab-spin')).toBeTruthy();
+    expect(retryRow.textContent).toContain('다시 연결 중');
+    const banner = screen.getByRole('status');
+    expect(banner.style.flexDirection).toBe('column');
+    expect(Number(banner.style.zIndex)).toBeGreaterThan(Number(dim.style.zIndex));
     // 우상단 PresenceBar 배지는 배너와 같은 말을 두 번 하며 모바일에서 겹쳤다 —
     // 배너가 뜨는 동안은 배너가 대신한다.
     expect(screen.queryByText('공동 편집 연결 끊김')).toBeNull();
