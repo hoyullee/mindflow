@@ -243,6 +243,26 @@ export function TemplateGallery({ state, controller }: Props) {
             <div style={CARD_DESC_STYLE}>중심 주제 하나로 시작</div>
           </button>
 
+          {/* 화이트보드 — 트리 없이 메모·이미지만 자유롭게 붙이는 보드. 빈 맵과
+              나란한 "시작" 칸이다(둘 다 내용이 비어 있어 realPreview 대신 삽화). */}
+          <button className="btn" data-template="board" onClick={() => controller.createFromTemplate('board')} style={{ ...CARD_STYLE, cursor: 'pointer' }}>
+            <div style={{ ...THUMB_STYLE, color: 'var(--mf-faint)' }}>
+              <svg width="52" height="40" viewBox="0 0 52 40" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                <rect x="4" y="5" width="19" height="15" rx="2.5" />
+                <line x1="8.5" y1="10.5" x2="18.5" y2="10.5" />
+                <line x1="8.5" y1="14.5" x2="15.5" y2="14.5" />
+                <rect x="29" y="12" width="19" height="15" rx="2.5" />
+                <circle cx="34" cy="17" r="1.6" />
+                <path d="m29.5 24.5 5-5 4 4 3.5-3.5 5.5 5.5" />
+                <line x1="12" y1="27" x2="24" y2="33" strokeDasharray="0.1 3.6" />
+              </svg>
+            </div>
+            <div style={CARD_NAME_STYLE}>
+              <span style={{ minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis' }}>화이트보드</span>
+            </div>
+            <div style={CARD_DESC_STYLE}>메모와 이미지를 자유롭게 붙이는 보드</div>
+          </button>
+
           {cards.map(({ tpl, raw }) => (
             <button
               key={tpl.id}

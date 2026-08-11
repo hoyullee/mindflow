@@ -84,7 +84,9 @@ export function recordVersion(docId: string, doc: Doc, opts?: { force?: boolean;
   const entries = load(docId);
   const last = entries[entries.length - 1];
   if (last && last.body === body) return; // 내용이 그대로면 기록할 것도 없다
-  const nodes = Object.keys(doc.nodes).length;
+  // 화이트보드는 주제가 늘 0이라 "주제 0개"가 판을 구별해 주지 못한다 —
+  // 내용의 단위인 메모(플로트) 수를 대신 센다(표시 라벨도 함께 갈린다).
+  const nodes = doc.kind === 'board' ? doc.floats.length : Object.keys(doc.nodes).length;
   if (!opts?.force && last && now - last.at < MIN_INTERVAL_MS) {
     entries[entries.length - 1] = { at: now, body, nodes };
   } else {

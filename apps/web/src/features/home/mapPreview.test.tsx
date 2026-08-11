@@ -355,3 +355,34 @@ describe('realPreview', () => {
     expect(bodyT.getAttribute('font-weight')).toBe('600');
   });
 });
+
+// 화이트보드(kind='board', 트리 없는 문서) — 노드 0개여도 메모가 곧 내용이다.
+// 예전엔 `ids.length` 가드가 무조건 null을 돌려줘 모든 보드 카드가 장식용
+// miniPreview로 떨어졌다(M3에서 완화).
+describe('realPreview — 화이트보드', () => {
+  it('메모만 있는 보드도 실제 미리보기를 그린다', () => {
+    const board = {
+      v: 1,
+      kind: 'board',
+      nodes: {},
+      floats: [
+        { id: 'f1', x: 20, y: 30, w: 180, text: '보드 메모' },
+        { id: 'f2', x: 260, y: 120, w: 160, text: '둘째 메모' },
+      ],
+      lines: [],
+      zones: [],
+      layoutMode: 'right',
+      themeKey: 'coral',
+    };
+    const el = realPreview(JSON.stringify(board), '#f0663f');
+    expect(el).not.toBeNull();
+    const { container } = render(el!);
+    const labels = Array.from(container.querySelectorAll('svg text')).map((t) => t.textContent);
+    expect(labels).toEqual(expect.arrayContaining(['보드 메모', '둘째 메모']));
+  });
+
+  it('정말 아무것도 없는 빈 보드만 null(미니 스케치 폴백)', () => {
+    const empty = { v: 1, kind: 'board', nodes: {}, floats: [], lines: [], zones: [], layoutMode: 'right', themeKey: 'coral' };
+    expect(realPreview(JSON.stringify(empty), '#f0663f')).toBeNull();
+  });
+});
