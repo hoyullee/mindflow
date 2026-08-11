@@ -21,9 +21,15 @@ export type MarkdownSource = Pick<Doc, 'nodes' | 'floats'>;
  *   each float's trimmed, newline-flattened text as a bullet.
  * - Joined with `\n`, no trailing newline (matches `out.join('\n')`).
  */
-export function toMarkdown(doc: MarkdownSource): string {
+/**
+ * @param title 루트 노드가 없는 문서(화이트보드)의 H1 제목 — 그 문서의 제목은
+ *   본문(루트 텍스트)이 아니라 메타에 있으므로 호출부가 넘겨 준다. 루트가
+ *   있으면 무시된다(루트 텍스트가 곧 제목 — 기존 동작 무변경).
+ */
+export function toMarkdown(doc: MarkdownSource, title?: string): string {
   const nodes = doc.nodes;
   const out: string[] = [];
+  if (!nodes[ROOT_ID] && title && title.trim()) out.push('# ' + title.trim());
 
   const walk = (id: string, depth: number): void => {
     const n = nodes[id];
@@ -54,5 +60,6 @@ export function toMarkdown(doc: MarkdownSource): string {
     });
   }
 
-  return out.join('\n');
+  // 루트 없는 문서에서 첫 구획의 구분용 '' 항목이 선두 빈 줄로 남지 않게.
+  return out.join('\n').replace(/^\n+/, '');
 }

@@ -115,6 +115,15 @@ export function layout(doc: Doc, mode: LayoutMode, sizeOf: SizeOf, opts: LayoutO
     descendants(f, nodes).forEach((d) => freeSet.add(d));
   });
 
+  // 루트 없는 문서(화이트보드, `Doc.kind === 'board'` — nodes가 비었거나 자유
+  // 도형뿐): 트리 레이아웃은 할 일이 없고, 자유 도형의 하위 트리만 각자 배치해
+  // 돌려준다. board 이전에는 "루트는 반드시 있다"가 불변식이라 아래 `at()`이
+  // throw로 그 위반을 잡았지만, 이제 루트 부재는 오류가 아니라 문서 종류다.
+  if (!nodes[ROOT_ID]) {
+    freeRoots.forEach((f) => layoutFreeSub(nodes, f, sizeOf));
+    return nodes;
+  }
+
   if (mode === 'down') {
     layoutDown(nodes, sizeOf);
   } else {

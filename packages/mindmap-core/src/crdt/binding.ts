@@ -34,7 +34,7 @@
 // structural change directly as its own transaction.
 
 import * as Y from 'yjs';
-import type { Doc, EdgeStyle, Float, Line, LayoutMode, Node, NodeMap, Zone } from '../model';
+import type { Doc, DocKind, EdgeStyle, Float, Line, LayoutMode, Node, NodeMap, Zone } from '../model';
 import { DEFAULT_LAYOUT_MODE, DEFAULT_THEME_KEY } from '../model';
 
 type PlainRecord = Record<string, unknown>;
@@ -205,7 +205,8 @@ export function yDocToDoc(ydoc: Y.Doc): Doc {
   const themeKey = (meta.get('themeKey') as string | undefined) ?? DEFAULT_THEME_KEY;
   // `edgeStyle`은 옵션 필드 — 없으면 키 자체를 만들지 않는다(라운드트립 동일성 유지).
   const edgeStyle = meta.get('edgeStyle') as EdgeStyle | undefined;
-  return { v: 1, nodes, floats, lines, zones, layoutMode, themeKey, ...(edgeStyle !== undefined ? { edgeStyle } : {}) };
+  const kind = meta.get('kind') as DocKind | undefined;
+  return { v: 1, nodes, floats, lines, zones, layoutMode, themeKey, ...(edgeStyle !== undefined ? { edgeStyle } : {}), ...(kind !== undefined ? { kind } : {}) };
 }
 
 /**
@@ -235,6 +236,13 @@ export function applyDocToYDoc(ydoc: Y.Doc, nextDoc: Doc, prevDoc?: Doc | null, 
     if (prevDoc?.edgeStyle !== nextDoc.edgeStyle) {
       if (nextDoc.edgeStyle === undefined) meta.delete('edgeStyle');
       else meta.set('edgeStyle', nextDoc.edgeStyle);
+    }
+    // 문서 종류(화이트보드) — edgeStyle과 같은 이유로 meta에 실어야 한다:
+    // 빠뜨리면 협업 세션에서 원격 문서가 도착할 때 board가 조용히 맵으로 변해
+    // 다음 저장에 그대로 기록된다.
+    if (prevDoc?.kind !== nextDoc.kind) {
+      if (nextDoc.kind === undefined) meta.delete('kind');
+      else meta.set('kind', nextDoc.kind);
     }
   }, origin);
 }
