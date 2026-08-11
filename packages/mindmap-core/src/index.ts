@@ -20,7 +20,7 @@ export const CORE_VERSION = '0.0.0';
 
 export type { TextMeasurer, Clock, IdGen } from './ports';
 
-export type { LayoutMode, EdgeStyle, RichRun, Node, NodeMap, Float, Line, LineAnchor, Zone, Doc } from './model';
+export type { LayoutMode, EdgeStyle, RichRun, Node, NodeMap, Float, Line, LineAnchor, Zone, Doc, DocKind } from './model';
 export { ROOT_ID, DEFAULT_LAYOUT_MODE, DEFAULT_THEME_KEY, DEFAULT_EDGE_STYLE } from './model';
 
 export type { SerializableState } from './serialize';

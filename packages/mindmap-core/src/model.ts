@@ -128,6 +128,12 @@ export interface Float {
    */
   img?: string;
   /**
+   * 이미지 플로트의 짧은 제목(post-dc 순수 추가, 화이트보드 요청) — 이미지
+   * 아래 한 줄 캡션으로 그려진다. `img`가 없는 메모 플로트에서는 무시된다.
+   * 값이 있을 때만 존재(직렬화·CRDT 제네릭 통과 — 옛 문서 무회귀).
+   */
+  caption?: string;
+  /**
    * 부분 리치텍스트 런(post-dc 순수 추가) — 노드의 `Node.rich`와 같은 모델을
    * 메모에 이식한 것. `text`와 항상 같은 문자열로 합쳐지는 런 배열이고, 서식이
    * 있을 때만 존재한다(평문 메모는 `null`/부재 — 옛 문서·직렬화·CRDT 모두
@@ -200,6 +206,14 @@ export interface Zone {
 }
 
 /**
+ * 문서 종류(post-dc 순수 추가). `'board'` = 화이트보드 — 트리(nodes) 없이
+ * 메모·이미지 플로트만 자유 배치하는 보드(`nodes`는 빈 객체). 부재 = 기존
+ * 마인드맵. 값이 `'board'`일 때만 직렬화·CRDT 전파되므로(`RichRun.href`와
+ * 같은 규칙) 기존 문서·골든 픽스처는 바이트 하나 변하지 않는다.
+ */
+export type DocKind = 'map' | 'board';
+
+/**
  * The full serializable document, matching `serializeDoc()` 1:1
  * (MindFlow.dc.html:534-536).
  */
@@ -214,6 +228,8 @@ export interface Doc {
   /** Connector style. Optional so hand-built `Doc` literals need not set it;
    * `serializeDoc`/`parseDoc` always normalize it to a concrete value. */
   edgeStyle?: EdgeStyle;
+  /** 문서 종류 — `'board'`일 때만 존재(위 {@link DocKind} 참고). */
+  kind?: DocKind;
 }
 
 /**
