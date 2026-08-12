@@ -4,6 +4,7 @@ import type { Float, RichRun } from '@mindflow/mindmap-core';
 import { listDisplayLine } from '@mindflow/mindmap-core';
 import { ListTextBlock, domMarkerSignature, listSigOf, listSignature, markerSignature, nodeContentLines, plainContentLines, renderListEdit } from '../listLines';
 import { hexA } from '../theme';
+import { floatPadLeft } from '../metrics';
 import { isPanButton } from '../pointerButtons';
 import type { Theme } from '../theme';
 import type { EditorController } from '../useEditorState';
@@ -58,7 +59,8 @@ export function FloatLayer({ floats, theme: th, controller }: FloatLayerProps) {
           color: f.textColor || th.text,
           border: `1px solid ${f.bg ? hexA('#000000', 0.14) : th.appBg === '#191512' ? '#5a4a2f' : '#f0e3a0'}`,
           borderRadius: 8,
-          padding: '9px 11px 9px 32px',
+          // 좌측 패딩은 맵에서만 접기 토글 자리(32) — board는 토글이 없어 좌우 대칭(11).
+          padding: `9px 11px 9px ${floatPadLeft(controller.isBoard)}px`,
           fontFamily: 'Pretendard, sans-serif',
           fontSize: fFpx,
           fontWeight: f.bold ? 700 : 400,

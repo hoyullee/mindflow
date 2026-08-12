@@ -82,7 +82,7 @@ export async function renderExportCanvas(doc: Doc, geom: GeomMap, theme: Theme, 
   // the same grown-to-fit height (measuring needs the `ctx`, so this must run
   // BEFORE the canvas is resized — that resets ctx state, not the stored numbers).
   const fBoxes = new Map<string, SceneFloatBox>();
-  doc.floats.forEach((f) => fBoxes.set(f.id, sceneFloatBox(measure, f)));
+  doc.floats.forEach((f) => fBoxes.set(f.id, sceneFloatBox(measure, f, doc.kind === 'board')));
 
   // 이미지 프리디코드 — canvas 2D `drawImage`는 디코드 완료된 엘리먼트가
   // 필요하므로 그리기 전에 전부 로드해 둔다(데이터 URL이라 즉시).

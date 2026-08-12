@@ -311,13 +311,23 @@ function countWrappedLines(text: string, maxW: number, font: string, measurer: T
 }
 
 /**
+ * 메모 카드 좌측 패딩 — 맵은 접기 토글 자리를 비워 32, board는 토글이 없으므로
+ * 우측(11)과 대칭이다(제보: 접기가 사라졌는데 좌측만 넓다). 렌더(FloatLayer)·
+ * 측정(measureFloatHeight)·내보내기(sceneFloatBox/paintScene)·홈 썸네일이
+ * 전부 이 함수 하나를 쓴다 — 흩어지면 박스 높이와 줄바꿈이 화면마다 어긋난다.
+ */
+export function floatPadLeft(board?: boolean): number {
+  return board ? 11 : 32;
+}
+
+/**
  * Rendered height of a memo card — the same growing `min-height` box `FloatLayer`
  * draws (padding 9/32/9/11, `line-height: 1.55`, text wrapped to the inner
  * width), so line-anchor snapping/ports and hit-testing use the memo's ACTUAL
  * size instead of a fixed `f.h`. Port of the original's measured `_floatH`
  * (MindFlow.dc.html) — pure, via the injected `measurer` (canvas or fallback).
  */
-export function measureFloatHeight(f: Float, measurer: TextMeasurer): number {
+export function measureFloatHeight(f: Float, measurer: TextMeasurer, board?: boolean): number {
   // 이미지 플로트: 높이는 텍스트 측정이 아니라 첨부/리사이즈 때 기록된
   // 명시적 h(비율 유지)가 곧 박스 높이다.
   if (f.img) return Math.max(24, Math.round(f.h ?? (f.w || 160) * 0.75));
@@ -326,7 +336,7 @@ export function measureFloatHeight(f: Float, measurer: TextMeasurer): number {
   const grownOf = (lineCount: number): number => 9 + Math.max(18, lineCount * lh) + 9;
   if (f.collapsed) return Math.max(38, grownOf(1));
   const font = `${f.bold ? 700 : 400} ${fpx}px Pretendard`;
-  const innerW = Math.max(8, (f.w || 160) - 32 - 11); // left pad 32 (fold toggle), right pad 11
+  const innerW = Math.max(8, (f.w || 160) - floatPadLeft(board) - 11); // left pad(맵 32=접기 토글 / board 11), right pad 11
   // rich(부분 서식) 메모는 굵게/기울임이 줄 폭을 바꾸므로 노드와 같은
   // rich-aware 측정(`wrapMeasure`)으로 줄 수를 센다. 평문은 기존 경로 그대로.
   const lines = f.rich && f.rich.length ? wrapMeasure({ text: f.text, rich: f.rich }, fpx, f.bold ? 700 : 400, innerW, measurer).count : f.text ? countWrappedLines(f.text, innerW, font, measurer) : 1;
