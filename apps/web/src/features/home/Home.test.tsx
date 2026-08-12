@@ -573,6 +573,103 @@ describe('Home', () => {
     await waitFor(() => expect(container.querySelector('a[data-title="새 마인드맵"]')).toBeTruthy());
   });
 
+  // 요청: 내용이 있어도 폴더를 지울 수 있다. 폴더는 이름표라 지워도 안의 것은
+  // 남는다 — 맵과 하위 폴더는 한 단계 위로 올라온다.
+  it('내용이 있는 폴더도 삭제할 수 있고, 안의 맵·하위 폴더는 한 단계 위로 올라온다', async () => {
+    const user = userEvent.setup();
+    localStorage.setItem(
+      'mf_spaces',
+      JSON.stringify({
+        spaces: [
+          {
+            id: 'sd',
+            name: '삭제공간',
+            color: '#3f8fd0',
+            maps: [{ title: '폴더 안 맵', when: '내 맵', hue: '#f0663f', docId: 'd-in' }],
+            folders: [
+              { id: 'fa', name: '지울폴더' },
+              { id: 'fb', name: '하위폴더', parent: 'fa' },
+            ],
+          },
+        ],
+        mapFolders: { 'd-in': 'fa' },
+      }),
+    );
+    const { container } = renderHomeWithDocStore([{ id: 'd-in', title: '폴더 안 맵', updatedAt: '', version: 1, isFavorite: false, deletedAt: null }]);
+
+    await waitFor(() => expect(screen.getByText('지울폴더')).toBeTruthy());
+    fireEvent.contextMenu(screen.getByText('지울폴더'));
+    const menu = await screen.findByRole('menu');
+    const del = within(menu).getByRole('menuitem', { name: /폴더 삭제/ });
+    expect(del.getAttribute('aria-disabled')).not.toBe('true'); // 예전엔 막혀 있었다
+    await user.click(del);
+
+    // 확인창이 무엇이 어디로 가는지 말해 준다.
+    await waitFor(() => expect(screen.getByText(/맵 1개와 하위 폴더 1개는 삭제되지 않고 '삭제공간'\(으\)로 옮겨져요/)).toBeTruthy());
+    await user.click(screen.getByRole('button', { name: '삭제' }));
+
+    // 폴더는 사라지고, 안에 있던 하위 폴더와 맵이 최상위로 올라온다.
+    await waitFor(() => expect(screen.queryByText('지울폴더')).toBeNull());
+    expect(screen.getByText('하위폴더')).toBeTruthy();
+    expect(container.querySelector('.mf-map-grid a[data-title="폴더 안 맵"]')).toBeTruthy();
+  });
+
+  // 요청: 아래로는 드래그로 넣는데 위로 꺼내려면 우클릭 메뉴뿐이었다 — 그리드
+  // 첫 칸의 "상위 폴더" 타일이 드롭 대상이 되어 방향이 대칭을 이룬다.
+  it('상위 폴더 타일에 카드를 끌어다 놓으면 한 단계 위로 옮겨진다', async () => {
+    const user = userEvent.setup();
+    localStorage.setItem(
+      'mf_spaces',
+      JSON.stringify({
+        spaces: [
+          {
+            id: 'su',
+            name: '이동공간',
+            color: '#3f8fd0',
+            maps: [{ title: '올릴 맵', when: '내 맵', hue: '#f0663f', docId: 'd-up' }],
+            folders: [
+              { id: 'p1', name: '상위폴더' },
+              { id: 'p2', name: '하위폴더', parent: 'p1' },
+            ],
+          },
+        ],
+        mapFolders: { 'd-up': 'p2' },
+      }),
+    );
+    const { container } = renderHomeWithDocStore([{ id: 'd-up', title: '올릴 맵', updatedAt: '', version: 1, isFavorite: false, deletedAt: null }]);
+
+    await waitFor(() => expect(screen.getByText('상위폴더')).toBeTruthy());
+    await user.dblClick(screen.getByText('상위폴더'));
+    await waitFor(() => expect(screen.getByText('하위폴더')).toBeTruthy());
+    await user.dblClick(screen.getByText('하위폴더'));
+    await waitFor(() => expect(container.querySelector('a[data-title="올릴 맵"]')).toBeTruthy());
+
+    // 타일은 "올라가면 닿는 곳"의 이름을 말한다.
+    const tile = container.querySelector('[data-parent-tile]') as HTMLElement;
+    expect(tile).toBeTruthy();
+    expect(tile.textContent).toContain('상위폴더');
+
+    // jsdom의 fireEvent에는 dataTransfer가 없어 핸들러가 첫 줄에서 죽는다 — 최소 스텁.
+    const store: Record<string, string> = {};
+    const dataTransfer = {
+      effectAllowed: '',
+      dropEffect: '',
+      setData: (k: string, v: string) => {
+        store[k] = v;
+      },
+      getData: (k: string) => store[k] ?? '',
+    };
+    const card = container.querySelector('a[data-title="올릴 맵"]') as HTMLElement;
+    fireEvent.dragStart(card, { dataTransfer });
+    fireEvent.dragOver(tile, { dataTransfer });
+    fireEvent.drop(tile, { dataTransfer });
+
+    // 이 폴더(하위폴더)에서는 사라지고, 한 단계 위(상위폴더)에서 보인다.
+    await waitFor(() => expect(container.querySelector('a[data-title="올릴 맵"]')).toBeNull());
+    await user.click(screen.getByRole('button', { name: '상위 폴더 상위폴더(으)로 이동' }));
+    await waitFor(() => expect(container.querySelector('a[data-title="올릴 맵"]')).toBeTruthy());
+  });
+
   // 신규 기능: 폴더 안에 폴더(중첩 폴더). 폴더 안에서 새 폴더를 만들면 현재
   // 폴더가 부모가 되고, 뒤로가기는 한 계층씩 올라간다.
   it('폴더 안에서 새 폴더를 만들면 그 폴더의 하위 폴더가 되고, 뒤로가기는 한 계층씩 올라간다', async () => {
@@ -600,13 +697,14 @@ describe('Home', () => {
     await user.dblClick(screen.getByText('하위자료')); // 폴더 진입 = 더블클릭
     await waitFor(() => expect(screen.getByTitle('폴더공간 / 내폴더 / 하위자료')).toBeTruthy());
 
-    // 뒤로가기 1회 = 상위 폴더('내폴더')로 — 하위 폴더 카드가 다시 보인다
-    await user.click(screen.getByRole('button', { name: '스페이스로 돌아가기' }));
+    // 위로 1회 = 상위 폴더('내폴더')로 — 그리드 첫 칸의 "상위 폴더" 타일이
+    // 뒤로가기 버튼을 대신한다(요청).
+    await user.click(screen.getByRole('button', { name: '상위 폴더 내폴더(으)로 이동' }));
     await waitFor(() => expect(screen.getByText('하위자료')).toBeTruthy());
     expect(screen.getByTitle('폴더공간 / 내폴더')).toBeTruthy();
 
-    // 뒤로가기 2회 = 스페이스 최상위 — 최상위 폴더 카드('내폴더')가 보인다
-    await user.click(screen.getByRole('button', { name: '스페이스로 돌아가기' }));
+    // 위로 2회 = 스페이스 최상위 — 최상위 폴더 카드('내폴더')가 보인다
+    await user.click(screen.getByRole('button', { name: '상위 폴더 폴더공간(으)로 이동' }));
     await waitFor(() => expect(screen.getByText('내폴더')).toBeTruthy());
     expect(screen.queryByText('하위자료')).toBeNull();
   });
@@ -716,7 +814,7 @@ describe('Home', () => {
       await waitFor(() => expect(second.container.querySelector('.mf-map-grid a[data-title="가져온 맵"]')).toBeTruthy());
 
       // 그리고 스페이스 최상위에는 없어야 한다(배정이 살아 있다는 뜻).
-      await user.click(screen.getByRole('button', { name: '스페이스로 돌아가기' }));
+      await user.click(screen.getByRole('button', { name: '상위 폴더 내 공간(으)로 이동' }));
       await waitFor(() => expect(second.container.querySelector('h2')?.textContent).toBe('내 공간'));
       expect(second.container.querySelector('.mf-map-grid a[data-title="가져온 맵"]')).toBeNull();
     });

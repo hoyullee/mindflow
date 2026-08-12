@@ -130,20 +130,9 @@ export function Toolbar({ state, view, controller, isMobile = false, onOpenNav }
             )}
           </button>
         )}
-        {view.backVisible && (
-          <button
-            className="btn"
-            onClick={controller.backToSpace}
-            title="스페이스로 돌아가기"
-            aria-label="스페이스로 돌아가기"
-            style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', width: isMobile ? 44 : 34, height: isMobile ? 44 : 34, border: '1px solid var(--mf-border)', borderRadius: 10, background: 'var(--mf-panel)', color: 'var(--mf-subtext)', cursor: 'pointer', padding: 0, flexShrink: 0 }}
-          >
-            <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
-              <path d="M19 12H5" />
-              <path d="M12 19l-7-7 7-7" />
-            </svg>
-          </button>
-        )}
+        {/* 뒤로가기 버튼은 없앴다(요청) — 폴더 안에서는 그리드 첫 칸의 "상위 폴더"
+            타일이 그 자리를 대신한다(`ParentFolderCard`). 버튼은 누르는 것뿐이었는데
+            타일은 **끌어다 놓을 수도** 있어, 위로 옮기는 길이 아래로 넣는 길과 같아진다. */}
         {/* Skeleton the space title until the workspace loads, so the seed
             일반 스페이스 name doesn't flash before the real space name arrives
             (matches the LNB space-list skeleton). */}

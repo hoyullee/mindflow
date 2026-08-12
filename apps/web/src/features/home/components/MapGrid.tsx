@@ -1,6 +1,7 @@
 import type { HomeController } from '../useHomeController';
 import type { HomeViewModel } from '../viewModel';
 import { FolderCard } from './FolderCard';
+import { ParentFolderCard } from './ParentFolderCard';
 import { MapCard } from './MapCard';
 
 interface Props {
@@ -47,6 +48,8 @@ export function MapGrid({ view, controller }: Props) {
         <div>
           <div style={{ fontSize: 12.5, fontWeight: 700, color: 'var(--mf-muted)', marginBottom: 14 }}>폴더</div>
           <div className="mf-map-grid" style={{ ...GRID_STYLE, marginBottom: 26 }}>
+            {/* 첫 칸 = 상위 폴더(`..`) — 뒤로 가는 길이자 "위로 옮기기" 드롭 대상. */}
+            {view.parentTile && <ParentFolderCard tile={view.parentTile} controller={controller} />}
             {view.folderCards.map((f) => (
               <FolderCard key={f.id} folder={f} controller={controller} />
             ))}

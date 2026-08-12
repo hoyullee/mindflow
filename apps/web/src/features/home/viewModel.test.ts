@@ -351,12 +351,20 @@ describe('deriveHomeView — 중첩 폴더', () => {
     expect(view.folderCards.find((f) => f.id === 'f1')!.count).toBe(2); // 상위 맵 + 깊은 맵
   });
 
-  it('하위 폴더가 있는 폴더는 비어 보여도 삭제 불가(canDelete=false)', () => {
+  it('폴더 안에서는 그리드 첫 칸에 "상위 폴더" 타일이 선다(뒤로가기 대체·드롭 대상)', () => {
     const state = nestedState();
-    state.mapFolders = { 'd-deep': 'f2' }; // f1 직접 소속 맵 없음
-    const view = deriveHomeView(state);
-    expect(view.folderCards.find((f) => f.id === 'f1')!.canDelete).toBe(false);
-    expect(view.folderCards.find((f) => f.id === 'f3')!.canDelete).toBe(true);
+    // 최상위에는 없다 — 올라갈 곳이 없다.
+    expect(deriveHomeView(state).parentTile).toBeNull();
+
+    // 최상위 폴더 안 → 올라가면 스페이스
+    state.curFolder = 'f1';
+    const top = deriveHomeView(state);
+    expect(top.parentTile?.name).toBe('일반 공간'); // 픽스처 스페이스명
+    expect(top.foldersSectionVisible).toBe(true);
+
+    // 하위 폴더 안 → 올라가면 상위 폴더
+    state.curFolder = 'f2';
+    expect(deriveHomeView(state).parentTile?.name).toBe('자료'); // f2의 부모 = f1
   });
 
   it('브레드크럼: 하위 폴더 안에서는 상위 경로가 "스페이스 / 상위폴더"로 깊어진다', () => {

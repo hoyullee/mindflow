@@ -440,8 +440,8 @@ function folderItems(folder: FolderCardViewData, controller: HomeController): Ho
       icon: TrashIcon,
       label: '폴더 삭제',
       danger: true,
-      disabled: !folder.canDelete,
-      hint: folder.canDelete ? undefined : '맵이나 하위 폴더가 없는 폴더만 삭제할 수 있어요',
+      // 내용이 있어도 지울 수 있다(요청) — 안의 맵·하위 폴더는 지워지지 않고 한 단계
+      // 위로 올라온다. 무엇이 어디로 가는지는 확인창이 말해 준다.
       onSelect: () => controller.askDeleteFolder(folder.id),
     },
   ];

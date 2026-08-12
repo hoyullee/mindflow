@@ -29,7 +29,15 @@ interface Props {
 export function Modals({ state, controller }: Props) {
   const deleteIsDrive = state.confirmDelete ? sourceOf(state.confirmDelete, DRIVE_FILES) === 'drive' : false;
   const deleteSpaceName = state.spaces.find((s) => s.id === state.confirmDeleteSpace)?.name || '';
-  const deleteFolderName = controller.activeFolders().find((f) => f.id === state.confirmDeleteFolder)?.name || '';
+  // 폴더 삭제 확인창 — 폴더는 이름표라 지워도 안의 것은 남는다. 무엇이 몇 개
+  // 어디로 올라가는지 문장으로 밝힌다(내용이 있어도 삭제할 수 있게 되면서 필요해진
+  // 안내 — 예전에는 빈 폴더만 지울 수 있었다).
+  const del = state.confirmDeleteFolder ? controller.folderDeleteSummary(state.confirmDeleteFolder) : null;
+  const deleteFolderBody = del
+    ? del.maps || del.folders
+      ? `'${del.name}' 폴더를 삭제합니다. 안에 있는 ${[del.maps ? `맵 ${del.maps}개` : '', del.folders ? `하위 폴더 ${del.folders}개` : ''].filter(Boolean).join('와 ')}는 삭제되지 않고 '${del.upName}'(으)로 옮겨져요.`
+      : `'${del.name}' 폴더를 삭제합니다. 이 작업은 되돌릴 수 없어요.`
+    : '';
 
   return (
     <>
@@ -101,7 +109,7 @@ export function Modals({ state, controller }: Props) {
         iconBg="var(--mf-danger-soft)"
         icon={TRASH_ICON}
         heading="폴더를 삭제하시겠습니까?"
-        body={`'${deleteFolderName}' 폴더를 삭제합니다. 이 작업은 되돌릴 수 없어요.`}
+        body={deleteFolderBody}
         cancelLabel="취소"
         confirmLabel="삭제"
         confirmColor="var(--mf-danger)"
