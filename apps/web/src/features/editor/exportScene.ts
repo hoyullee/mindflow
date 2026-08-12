@@ -601,13 +601,6 @@ export function paintScene(p: Painter, o: PaintSceneOpts): void {
     p.text(label, z.x + 10 + (lw - labelW) / 2, z.y - 0.5, { px: 12.5, weight: 700, fill: z.color ? '#fff' : theme.accentInk, w: labelW });
   });
 
-  // 자유 그리기 획(화이트보드 M4) — 에디터 z-순서와 동일하게 메모/이미지 아래,
-  // 영역 위("보드 바닥의 잉크"). 획은 path 하나씩이라 세 백엔드(PNG·SVG·PDF)가
-  // 같은 문자열을 소비한다.
-  (doc.strokes ?? []).forEach((s) => {
-    p.path(strokePathD(s.pts), { stroke: s.color, width: s.w, round: true });
-  });
-
   // memos — grown-to-fit cards (see `sceneFloatBox`), matching the editor's memo box.
   doc.floats.forEach((f) => {
     const m = fBoxes.get(f.id);
@@ -671,5 +664,11 @@ export function paintScene(p: Painter, o: PaintSceneOpts): void {
       const labelW = measure(l.label, labelFont);
       p.text(l.label, mid.x - labelW / 2, mid.y + 1, { px: 11.5, weight: 600, fill: l.ltextColor || theme.text, w: labelW });
     }
+  });
+  // 자유 그리기 획(화이트보드 M4) — 에디터 z-순서와 같이 **맨 위**. 손으로 그은
+  // 잉크는 객체를 덮는다(제보: 메모 뒤로 숨었다). 획은 path 하나씩이라 세
+  // 백엔드(PNG·SVG·PDF)가 같은 문자열을 소비한다.
+  (doc.strokes ?? []).forEach((s) => {
+    p.path(strokePathD(s.pts), { stroke: s.color, width: s.w, round: true });
   });
 }

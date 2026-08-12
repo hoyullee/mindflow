@@ -199,6 +199,24 @@ describe('화이트보드 에디터', () => {
     await waitFor(() => expect(bg.style.background || bg.style.backgroundColor).toContain('255, 255, 255'));
   });
 
+  it('그린 획은 객체 위에 얹힌다 — 메모 뒤에 그려지고 z-index가 더 높다(제보)', async () => {
+    localStorage.setItem(
+      'mindflow_doc_b15',
+      JSON.stringify({ ...BOARD, floats: [{ id: 'bf1', x: 0, y: 0, w: 180, text: '메모' }], strokes: [{ id: 's1', pts: [10, 10, 80, 60], color: '#d92626', w: 4 }] }),
+    );
+    const { container } = renderEditor('/editor?map=b15&title=x');
+    const ink = await waitFor(() => {
+      const el = container.querySelector('[data-stroke-layer]') as SVGElement;
+      expect(el).toBeTruthy();
+      return el;
+    });
+    const memo = container.querySelector('[data-float-id="bf1"]') as HTMLElement;
+    // 같은 팬 레이어 안에서 잉크가 메모보다 **뒤**(= 위에 그려진다).
+    expect(memo.compareDocumentPosition(ink) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    // DOM 순서만으로는 부족하다 — 메모는 z-index를 쓰므로 잉크가 더 높아야 한다.
+    expect(Number(ink.style.zIndex)).toBeGreaterThan(Number(memo.style.zIndex || 0));
+  });
+
   it('board 캔버스는 문서 테마를 따르고(제보: 테마 변경이 안 먹음), 메모에 접기 토글이 없다', async () => {
     // 접힌 메모(collapsed)가 남아 있어도 보드에서는 펼쳐 그린다.
     localStorage.setItem('mindflow_doc_b5', JSON.stringify({ ...BOARD, themeKey: 'dark', floats: [{ id: 'bf1', x: 40, y: 60, w: 180, text: '첫 줄\n둘째 줄', collapsed: true }] }));

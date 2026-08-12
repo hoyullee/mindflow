@@ -810,13 +810,14 @@ function buildPreview(rawDoc: string, hueFallback: string): JSX.Element | null {
   return (
     <svg viewBox={`${x0} ${y0} ${x1 - x0} ${y1 - y0}`} width="88%" height="88%" preserveAspectRatio="xMidYMid meet" style={{ display: 'block' }}>
       {zoneEls}
-      {strokes.map((st) => (
-        <path key={`sk-${st.id}`} d={strokePathD(st.pts)} fill="none" stroke={st.color} strokeWidth={st.w} strokeLinecap="round" strokeLinejoin="round" />
-      ))}
       {edges}
       {rects}
       {lineEls}
       {floatEls}
+      {/* 그리기 획은 에디터·내보내기와 같이 **맨 위**(객체를 덮는 잉크). */}
+      {strokes.map((st) => (
+        <path key={`sk-${st.id}`} d={strokePathD(st.pts)} fill="none" stroke={st.color} strokeWidth={st.w} strokeLinecap="round" strokeLinejoin="round" />
+      ))}
     </svg>
   );
 }
