@@ -21,9 +21,8 @@ import type { CSSProperties } from 'react';
 import type { EditorController } from '../useEditorState';
 import { hexA } from '../theme';
 import { useIsMobile } from '../../../hooks/useMediaQuery';
-
-const PEN_COLORS = ['#2b2b2b', '#d92626', '#2f7fd6', '#2f9e63', '#e0a53c'];
-const PEN_WIDTHS = [2, 4, 8];
+import { HL_COLORS, HL_WIDTHS, PEN_COLORS, PEN_WIDTHS } from '../boardTools';
+import type { BoardTool } from '../boardTools';
 
 /** 폰에서 도구 막대가 차지하는 높이 + 여백 — 줌·미니맵 묶음(`ZoomControls`)과
  * 실행취소 알약이 이만큼 위로 올라가 막대와 겹치지 않는다. 버튼 44 + 패딩 10 +
@@ -58,7 +57,8 @@ export function BoardToolbar({ controller }: { controller: EditorController }) {
   );
   useEffect(() => () => { if (leaveTimer.current) clearTimeout(leaveTimer.current); }, []);
   useEffect(() => {
-    if (tool !== 'pen') switchPanel(false);
+    // 색·굵기가 딸린 도구(펜·형광펜)에서 벗어나면 옵션 메뉴는 저절로 닫힌다.
+    if (tool !== 'pen' && tool !== 'hl') switchPanel(false);
   }, [tool, switchPanel]);
 
   // Escape = 선택 도구로 복귀(그리기에서 빠져나오는 가장 익숙한 길).
@@ -86,7 +86,7 @@ export function BoardToolbar({ controller }: { controller: EditorController }) {
     padding: 0,
   } as const;
 
-  const toolBtn = (key: 'select' | 'pen' | 'eraser', label: string, hint: string, icon: JSX.Element) => (
+  const toolBtn = (key: BoardTool, label: string, hint: string, icon: JSX.Element) => (
     <button
       key={key}
       type="button"
@@ -96,8 +96,8 @@ export function BoardToolbar({ controller }: { controller: EditorController }) {
       title={`${label} (${hint})`}
       onClick={() => {
         controller.setBoardTool(key);
-        // 폰: 펜은 색·굵기가 딸린 도구라 누르는 순간 그 메뉴로 전환한다.
-        if (isMobile) switchPanel(key === 'pen');
+        // 폰: 펜·형광펜은 색·굵기가 딸린 도구라 누르는 순간 그 메뉴로 전환한다.
+        if (isMobile) switchPanel(key === 'pen' || key === 'hl');
       }}
       style={{ ...btnBase, background: tool === key ? hexA(th.accent, 0.14) : 'transparent', color: tool === key ? th.accent : th.subtext }}
     >
@@ -139,6 +139,17 @@ export function BoardToolbar({ controller }: { controller: EditorController }) {
       'P',
       <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
         <path d="M17 3a2.8 2.8 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5z" />
+      </svg>,
+    ),
+    toolBtn(
+      'hl',
+      '형광펜',
+      'H',
+      <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+        {/* 굵은 심의 마커 — 펜(가는 촉)과 실루엣으로 구별된다 */}
+        <path d="M15.5 3.5 20.5 8.5 11 18H6v-5z" />
+        <path d="M13 6 18 11" />
+        <path d="M3.5 21.5h9" />
       </svg>,
     ),
     toolBtn(
@@ -200,20 +211,29 @@ export function BoardToolbar({ controller }: { controller: EditorController }) {
     ),
   ];
 
-  const colorBtns = PEN_COLORS.map((c) => (
+  // 색·굵기 UI는 펜과 형광펜이 함께 쓴다 — 지금 켜진 도구의 값만 갈아 끼운다
+  // (설정은 도구별로 따로 기억된다: 형광펜을 한 번 쓴 뒤 펜이 노란 20px이 되면 안 된다).
+  const drawing = tool === 'hl' ? 'hl' : 'pen';
+  const curColor = drawing === 'hl' ? controller.hlColor : controller.penColor;
+  const curWidth = drawing === 'hl' ? controller.hlWidth : controller.penWidth;
+  const setColor = drawing === 'hl' ? controller.setHlColor : controller.setPenColor;
+  const setWidth = drawing === 'hl' ? controller.setHlWidth : controller.setPenWidth;
+  const colorLabel = drawing === 'hl' ? '형광펜' : '펜';
+
+  const colorBtns = (drawing === 'hl' ? HL_COLORS : PEN_COLORS).map((c) => (
     <button
       key={c}
       type="button"
-      aria-label={`펜 색 ${c}`}
-      aria-pressed={controller.penColor === c}
-      onClick={() => controller.setPenColor(c)}
+      aria-label={`${colorLabel} 색 ${c}`}
+      aria-pressed={curColor === c}
+      onClick={() => setColor(c)}
       style={{
         width: isMobile ? 26 : 20,
         height: isMobile ? 26 : 20,
         borderRadius: '50%',
         background: c,
-        border: `2px solid ${controller.penColor === c ? th.accent : th.panel}`,
-        boxShadow: controller.penColor === c ? `0 0 0 1.5px ${hexA(th.accent, 0.4)}` : '0 1px 3px rgba(0,0,0,.18)',
+        border: `2px solid ${curColor === c ? th.accent : th.panel}`,
+        boxShadow: curColor === c ? `0 0 0 1.5px ${hexA(th.accent, 0.4)}` : '0 1px 3px rgba(0,0,0,.18)',
         cursor: 'pointer',
         padding: 0,
         margin: '0 2px',
@@ -221,19 +241,19 @@ export function BoardToolbar({ controller }: { controller: EditorController }) {
     />
   ));
 
-  const widthBtns = PEN_WIDTHS.map((w) => (
+  const widthBtns = (drawing === 'hl' ? HL_WIDTHS : PEN_WIDTHS).map((w) => (
     <button
       key={w}
       type="button"
-      aria-label={`펜 굵기 ${w}`}
-      aria-pressed={controller.penWidth === w}
-      onClick={() => controller.setPenWidth(w)}
+      aria-label={`${colorLabel} 굵기 ${w}`}
+      aria-pressed={curWidth === w}
+      onClick={() => setWidth(w)}
       style={{
         width: isMobile ? 30 : 26,
         height: isMobile ? 30 : 26,
         border: 'none',
         borderRadius: 7,
-        background: controller.penWidth === w ? hexA(th.accent, 0.14) : 'transparent',
+        background: curWidth === w ? hexA(th.accent, 0.14) : 'transparent',
         cursor: 'pointer',
         display: 'flex',
         alignItems: 'center',
@@ -241,7 +261,8 @@ export function BoardToolbar({ controller }: { controller: EditorController }) {
         padding: 0,
       }}
     >
-      <span style={{ width: 14, height: w, minHeight: 2, borderRadius: 99, background: controller.penWidth === w ? th.accent : th.subtext, display: 'block' }} />
+      {/* 형광펜 심은 12~30px이라 그대로 그리면 버튼을 넘는다 — 비율만 보이게 줄인다. */}
+      <span style={{ width: 14, height: drawing === 'hl' ? Math.round(w / 4) : w, minHeight: 2, borderRadius: 99, background: curWidth === w ? th.accent : th.subtext, display: 'block' }} />
     </button>
   ));
 
@@ -338,7 +359,7 @@ export function BoardToolbar({ controller }: { controller: EditorController }) {
         {undoRedo}
       </div>
 
-      {tool === 'pen' && (
+      {(tool === 'pen' || tool === 'hl') && (
         <div style={{ display: 'flex', alignItems: 'center', gap: 4, paddingTop: 4, borderTop: `1px solid ${th.border}`, width: '100%', justifyContent: 'center' }}>
           <div style={rowStyle}>{colorBtns}</div>
           <div style={{ width: 1, alignSelf: 'stretch', margin: '2px 3px', background: th.border }} />

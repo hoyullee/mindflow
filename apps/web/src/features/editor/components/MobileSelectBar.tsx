@@ -27,6 +27,9 @@ export function MobileSelectBar({ controller, theme: th }: MobileSelectBarProps)
   // 노드 선택에는 하위/형제 추가 버튼이 붙는다 — 모바일에는 Tab/Enter도
   // 우클릭 컨텍스트 메뉴도 없어서, 이 바가 노드를 늘릴 유일한 진입점이다.
   const isNode = sel?.kind === 'node';
+  // 그리기 획에는 글자가 없고(편집 없음) 우클릭 메뉴도 삭제뿐이라, 바에는
+  // 속성·삭제만 남긴다 — 눌러도 아무 일 없는 버튼을 두지 않는다.
+  const isStroke = sel?.kind === 'stroke';
   const isRoot = isNode && sel?.id === ROOT_ID; // 루트는 형제가 없다(컨텍스트 메뉴와 동일)
   const ref = useRef<HTMLDivElement>(null);
   const [size, setSize] = useState<{ w: number; h: number }>({ w: 190, h: 54 });
@@ -43,7 +46,7 @@ export function MobileSelectBar({ controller, theme: th }: MobileSelectBarProps)
   // 바가 화면 밖으로 삐져나갔다. 터치 타겟 최소치(44px)는 바닥으로 지킨다.
   const BTN_GAP = 4;
   const BAR_PAD = 5;
-  const btnCount = 4 + (isNode ? 1 : 0) + (isNode && !isRoot ? 1 : 0); // 편집·속성·삭제·메뉴 + 하위/형제
+  const btnCount = (isStroke ? 2 : 4) + (isNode ? 1 : 0) + (isNode && !isRoot ? 1 : 0); // 편집·속성·삭제·메뉴 + 하위/형제 (획은 속성·삭제)
   const availW = Math.max(0, vw - 2 * M - 2 * BAR_PAD - (btnCount - 1) * BTN_GAP);
   const btnMin = Math.max(44, Math.min(56, Math.floor(availW / btnCount)));
 
@@ -52,7 +55,7 @@ export function MobileSelectBar({ controller, theme: th }: MobileSelectBarProps)
   useLayoutEffect(() => {
     const el = ref.current;
     if (el) setSize({ w: el.offsetWidth, h: el.offsetHeight });
-  }, [isNode, isRoot, btnMin]);
+  }, [isNode, isRoot, isStroke, btnMin]);
 
   if (!sel) return null; // 훅은 전부 위에서 호출한 뒤에 빠져나간다(hooks 규칙)
 
@@ -153,13 +156,15 @@ export function MobileSelectBar({ controller, theme: th }: MobileSelectBarProps)
           형제
         </button>
       )}
-      <button type="button" className="mf-ed-btn" style={btn} onClick={startEdit}>
-        <svg width={18} height={18} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round">
-          <path d="M12 20h9" />
-          <path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z" />
-        </svg>
-        편집
-      </button>
+      {!isStroke && (
+        <button type="button" className="mf-ed-btn" style={btn} onClick={startEdit}>
+          <svg width={18} height={18} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round">
+            <path d="M12 20h9" />
+            <path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z" />
+          </svg>
+          편집
+        </button>
+      )}
       <button type="button" className="mf-ed-btn" style={btn} onClick={controller.openProps}>
         <svg width={18} height={18} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round">
           <circle cx={12} cy={12} r={3} />
@@ -167,7 +172,7 @@ export function MobileSelectBar({ controller, theme: th }: MobileSelectBarProps)
         </svg>
         속성
       </button>
-      <button type="button" className="mf-ed-btn" style={{ ...btn, color: '#d92626' }} onClick={controller.deleteSelection}>
+      <button type="button" className="mf-ed-btn" style={{ ...btn, color: '#d92626' }} onClick={() => (isStroke ? controller.deleteStroke(sel.id) : controller.deleteSelection())}>
         <svg width={18} height={18} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round">
           <polyline points="3 6 5 6 21 6" />
           <path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2" />
@@ -183,28 +188,30 @@ export function MobileSelectBar({ controller, theme: th }: MobileSelectBarProps)
           열려 있는 동안 바는 숨겨 두 겹으로 겹치지 않게 한다(Editor.tsx).
           라벨이 '더보기'가 아닌 이유: 상단 툴바의 앱 메뉴(햄버거)가 이미 그 이름을
           쓰고 있어, 한 화면에 같은 이름의 버튼이 둘 생기지 않도록 구분한다. */}
-      <button
-        type="button"
-        className="mf-ed-btn"
-        style={btn}
-        aria-label="객체 메뉴"
-        aria-haspopup="menu"
-        onClick={(e) => {
-          // ⋯ 버튼의 중심 x(바 기준 좌표계로 환산)와 바의 위/아래 변을 넘긴다 —
-          // 메뉴가 바에 붙고 이 버튼을 가리키는 꼬리를 그릴 수 있도록.
-          const bar = ref.current;
-          const btnEl = e.currentTarget;
-          const bx = bar ? btnEl.getBoundingClientRect().left - bar.getBoundingClientRect().left : 0;
-          controller.openCtxMenuForSelection({ x: left + bx + btnEl.offsetWidth / 2, top, bottom: top + size.h });
-        }}
-      >
-        <svg width={18} height={18} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2.4} strokeLinecap="round">
-          <circle cx="5" cy="12" r="1" />
-          <circle cx="12" cy="12" r="1" />
-          <circle cx="19" cy="12" r="1" />
-        </svg>
-        메뉴
-      </button>
+      {!isStroke && (
+        <button
+          type="button"
+          className="mf-ed-btn"
+          style={btn}
+          aria-label="객체 메뉴"
+          aria-haspopup="menu"
+          onClick={(e) => {
+            // ⋯ 버튼의 중심 x(바 기준 좌표계로 환산)와 바의 위/아래 변을 넘긴다 —
+            // 메뉴가 바에 붙고 이 버튼을 가리키는 꼬리를 그릴 수 있도록.
+            const bar = ref.current;
+            const btnEl = e.currentTarget;
+            const bx = bar ? btnEl.getBoundingClientRect().left - bar.getBoundingClientRect().left : 0;
+            controller.openCtxMenuForSelection({ x: left + bx + btnEl.offsetWidth / 2, top, bottom: top + size.h });
+          }}
+        >
+          <svg width={18} height={18} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2.4} strokeLinecap="round">
+            <circle cx="5" cy="12" r="1" />
+            <circle cx="12" cy="12" r="1" />
+            <circle cx="19" cy="12" r="1" />
+          </svg>
+          메뉴
+        </button>
+      )}
     </div>
   );
 }

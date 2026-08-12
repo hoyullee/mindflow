@@ -1,4 +1,4 @@
-import { cubicAt } from '@mindflow/mindmap-core';
+import { cubicAt, strokeBounds } from '@mindflow/mindmap-core';
 import type { EditorController } from '../useEditorState';
 import type { Theme } from '../theme';
 
@@ -31,6 +31,11 @@ export function boxFor(controller: EditorController): Box | null {
   if (s.kind === 'zone') {
     const z = controller.doc.zones.find((x) => x.id === s.id);
     return z ? { x: z.x + z.w / 2, y: z.y + z.h / 2, w: z.w, h: z.h } : null;
+  }
+  if (s.kind === 'stroke') {
+    const st = (controller.doc.strokes ?? []).find((x) => x.id === s.id);
+    const b = st ? strokeBounds(st) : null;
+    return b ? { x: (b.x0 + b.x1) / 2, y: (b.y0 + b.y1) / 2, w: b.x1 - b.x0, h: b.y1 - b.y0 } : null;
   }
   const l = controller.doc.lines.find((x) => x.id === s.id);
   if (!l) return null;

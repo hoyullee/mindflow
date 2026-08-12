@@ -74,4 +74,4 @@ export type { YDoc } from './crdt';
 export { docToYDoc, yDocToDoc, applyDocToYDoc, addNode, removeNode, setNodeField, encodeStateAsUpdate, applyUpdate } from './crdt';
 
 export type { StrokeBox } from './strokes';
-export { strokeBounds, strokeHit, strokePathD } from './strokes';
+export { strokeBounds, strokeHit, strokePathD, translateStrokePts } from './strokes';

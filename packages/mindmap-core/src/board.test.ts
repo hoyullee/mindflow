@@ -114,7 +114,7 @@ describe('루트 없는 toMarkdown', () => {
 
 // ── 그리기 획(M4) ──────────────────────────────────────────────────────────
 
-import { strokeBounds, strokeHit, strokePathD } from './strokes';
+import { strokeBounds, strokeHit, strokePathD, translateStrokePts } from './strokes';
 import type { Stroke } from './model';
 
 const STROKE: Stroke = { id: 's1', pts: [0, 0, 100, 0, 100, 50], color: '#2b2b2b', w: 4 };
@@ -161,5 +161,36 @@ describe('획 기하(strokes.ts)', () => {
     expect(strokePathD([0, 0, 10, 5])).toBe('M 0 0 L 10 5');
     expect(strokePathD([3, 4])).toBe('M 3 4 L 3.01 4');
     expect(strokePathD([])).toBe('');
+  });
+
+  it('translateStrokePts — 모든 점을 같은 만큼, 그릴 때와 같은 0.1 단위로', () => {
+    expect(translateStrokePts([0, 0, 10, 5], 3, -2)).toEqual([3, -2, 13, 3]);
+    // 드래그 좌표는 줌에 따라 소수가 길어진다 — 저장본에 그대로 흘리지 않는다.
+    expect(translateStrokePts([0, 0], 1.234, 5.678)).toEqual([1.2, 5.7]);
+    expect(translateStrokePts([], 5, 5)).toEqual([]);
+  });
+});
+
+describe('하이라이터(형광펜) 획', () => {
+  const HL: Stroke = { id: 'h1', pts: [0, 0, 60, 0], color: '#ffe14d', w: 20, hl: true };
+
+  it('hl은 true일 때만 직렬화된다 — 기존 저장본·골든 무변경 규칙', () => {
+    const d = serializeDoc(boardDoc({ strokes: [HL, STROKE] }));
+    const [hl, pen] = d.strokes as Stroke[];
+    expect(hl?.hl).toBe(true);
+    expect(pen && 'hl' in pen).toBe(false);
+    const round = parseDoc(JSON.parse(JSON.stringify(d)));
+    expect(round?.strokes?.[0]).toEqual(HL);
+    expect(round?.strokes?.[1]).toEqual(STROKE);
+  });
+
+  it('Y.Doc 왕복에서도 hl이 살아 남는다(필드 제네릭 경로)', () => {
+    const prev = boardDoc({ strokes: [HL] });
+    expect(yDocToDoc(docToYDoc(prev)).strokes?.[0]).toEqual(HL);
+  });
+
+  it('굵은 획일수록 경계·히트 허용치가 넓다 — 하이라이터도 같은 기하를 쓴다', () => {
+    expect(strokeBounds(HL)).toEqual({ x0: -10, y0: -10, x1: 70, y1: 10 });
+    expect(strokeHit(HL, 30, 9, 10)).toBe(true);
   });
 });

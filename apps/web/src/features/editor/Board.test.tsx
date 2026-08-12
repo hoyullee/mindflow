@@ -8,6 +8,7 @@ import { MemoryRouter, Route, Routes } from 'react-router-dom';
 import { Editor } from './Editor';
 import { mockMatchMedia } from '../../test/matchMedia';
 import { BOARD_TEMPLATES } from '../../templates/mapTemplates';
+import { HL_COLORS, HL_OPACITY, HL_WIDTHS, PEN_COLORS } from './boardTools';
 
 const BOARD = {
   v: 1,
@@ -44,6 +45,23 @@ function firePointer(target: Element, type: 'pointerdown' | 'pointermove' | 'poi
   const event = new MouseEvent(type, { bubbles: true, cancelable: true, clientX: init.clientX ?? 0, clientY: init.clientY ?? 0, button: init.button ?? 0 });
   Object.defineProperty(event, 'pointerId', { value: init.pointerId ?? 1, configurable: true });
   fireEvent(target, event);
+}
+
+/** 캔버스 좌표 → 클라이언트 좌표. jsdom은 레이아웃을 재지 않으므로 팬 레이어의
+ * transform(초기 fit이 정한 pan/zoom)에서 직접 읽는다(지우개 테스트와 같은 처방). */
+function strokePoint(container: HTMLElement, cx: number, cy: number): { x: number; y: number } {
+  const panLayer = container.querySelector('[data-pan-layer]') as HTMLElement;
+  const m = /translate\(([-\d.]+)px,\s*([-\d.]+)px\)\s*scale\(([\d.]+)\)/.exec(panLayer.style.transform || '');
+  if (!m) throw new Error(`pan transform not parsable: ${panLayer.style.transform}`);
+  const zoom = parseFloat(m[3]!);
+  return { x: parseFloat(m[1]!) + cx * zoom, y: parseFloat(m[2]!) + cy * zoom };
+}
+
+/** jsdom이 인라인 색을 `rgb(...)`로 정규화하므로 헥사로 되돌려 비교한다. */
+function rgbHex(v: string): string {
+  const m = /rgb\((\d+),\s*(\d+),\s*(\d+)\)/.exec(v);
+  if (!m) return v.toLowerCase();
+  return `#${[m[1], m[2], m[3]].map((n) => Number(n).toString(16).padStart(2, '0')).join('')}`;
 }
 
 beforeEach(() => {
@@ -512,10 +530,10 @@ describe('화이트보드 에디터', () => {
       expect(undoPill.style.bottom).toBe('80px');
       expect(within(undoPill).getByRole('button', { name: '다시 실행' })).toBeTruthy();
 
-      // 도구(3)와 삽입(2) 사이에 구분선이 하나 선다(요청) — 두 묶음이 눈으로 갈린다.
+      // 도구(4: 선택·펜·형광펜·지우개)와 삽입(2) 사이에 구분선이 하나 선다(요청).
       const layer = bar.querySelector('div[style*="position: absolute"]') as HTMLElement;
       const kinds = Array.from(layer.children).map((el) => el.tagName);
-      expect(kinds).toEqual(['BUTTON', 'BUTTON', 'BUTTON', 'DIV', 'BUTTON', 'BUTTON']);
+      expect(kinds).toEqual(['BUTTON', 'BUTTON', 'BUTTON', 'BUTTON', 'DIV', 'BUTTON', 'BUTTON']);
       expect(layer.style.justifyContent).toBe('space-evenly'); // 양 끝 여백까지 균일
 
       // 줌·미니맵 묶음은 우측이되, 막대 높이만큼 올라앉는다. 폰에서는 미니맵만 —
@@ -633,5 +651,164 @@ describe('화이트보드 에디터', () => {
     fireEvent.keyDown(window, { key: 'Escape' });
     fireEvent.click(screen.getByRole('button', { name: '보기' }));
     await screen.findByRole('button', { name: '아웃라인' });
+  });
+  // ── 하이라이터 + 획 선택·이동 ─────────────────────────────────────────────
+
+  it('형광펜은 반투명·곱하기로 그려지고 저장본에 hl 표시가 남는다', async () => {
+    localStorage.setItem('mindflow_doc_b15', JSON.stringify(BOARD));
+    const { container } = renderEditor('/editor?map=b15&title=x');
+    await waitFor(() => expect(within(getViewport(container)).getByText('아이디어 하나')).toBeTruthy());
+
+    fireEvent.click(screen.getByRole('button', { name: '형광펜' }));
+    const layer = await waitFor(() => {
+      const el = container.querySelector('[data-board-draw-layer]') as HTMLElement;
+      expect(el).toBeTruthy();
+      return el;
+    });
+    firePointer(layer, 'pointerdown', { pointerId: 1, clientX: 200, clientY: 200 });
+    firePointer(layer, 'pointermove', { pointerId: 1, clientX: 260, clientY: 200 });
+    firePointer(layer, 'pointerup', { pointerId: 1, clientX: 260, clientY: 200 });
+
+    const path = await waitFor(() => {
+      const el = container.querySelector('[data-stroke-id]') as SVGPathElement;
+      expect(el).toBeTruthy();
+      return el;
+    });
+    // 화면: 반투명 + 곱하기 합성(형광펜은 밑을 가리는 게 아니라 걸러 낸다).
+    expect(path.getAttribute('data-stroke-hl')).toBe('1');
+    expect(Number(path.getAttribute('opacity'))).toBeCloseTo(HL_OPACITY, 3);
+    expect(path.style.mixBlendMode).toBe('multiply');
+
+    fireEvent.keyDown(window, { key: 's', ctrlKey: true });
+    await waitFor(() => {
+      const saved = JSON.parse(localStorage.getItem('mindflow_doc_b15') || 'null');
+      expect(saved?.strokes?.[0]?.hl).toBe(true);
+      expect(HL_COLORS).toContain(saved.strokes[0].color);
+      expect(HL_WIDTHS).toContain(saved.strokes[0].w);
+    });
+
+    // 펜으로 돌아오면 펜의 색·굵기 그대로 — 형광펜 설정이 펜을 물들이지 않는다.
+    fireEvent.click(screen.getByRole('button', { name: '펜' }));
+    firePointer(layer, 'pointerdown', { pointerId: 2, clientX: 300, clientY: 300 });
+    firePointer(layer, 'pointermove', { pointerId: 2, clientX: 340, clientY: 300 });
+    firePointer(layer, 'pointerup', { pointerId: 2, clientX: 340, clientY: 300 });
+    fireEvent.keyDown(window, { key: 's', ctrlKey: true });
+    await waitFor(() => {
+      const saved = JSON.parse(localStorage.getItem('mindflow_doc_b15') || 'null');
+      const pen = saved.strokes[1];
+      expect(pen.hl).toBeUndefined();
+      expect(pen.color).toBe(PEN_COLORS[0]);
+      expect(pen.w).toBe(4);
+    });
+  });
+
+  it('H 단축키로 형광펜, P로 펜 — 옵션 줄이 그 도구의 팔레트로 바뀐다', async () => {
+    localStorage.setItem('mindflow_doc_b16', JSON.stringify(BOARD));
+    const { container } = renderEditor('/editor?map=b16&title=x');
+    await waitFor(() => expect(within(getViewport(container)).getByText('아이디어 하나')).toBeTruthy());
+
+    fireEvent.keyDown(window, { key: 'h', code: 'KeyH' });
+    await waitFor(() => expect(screen.getByRole('button', { name: '형광펜' }).getAttribute('aria-pressed')).toBe('true'));
+    expect(screen.getByRole('button', { name: `형광펜 색 ${HL_COLORS[0]}` })).toBeTruthy();
+    expect(container.querySelector('[data-board-draw-layer]')).toBeTruthy();
+
+    fireEvent.keyDown(window, { key: 'p', code: 'KeyP' });
+    await waitFor(() => expect(screen.getByRole('button', { name: '펜' }).getAttribute('aria-pressed')).toBe('true'));
+    expect(screen.getByRole('button', { name: `펜 색 ${PEN_COLORS[0]}` })).toBeTruthy();
+    expect(screen.queryByRole('button', { name: `형광펜 색 ${HL_COLORS[0]}` })).toBeNull();
+  });
+
+  it('선택 도구로 획을 집으면 선택 상자·속성 패널이 뜨고, 끌면 그 획만 움직인다', async () => {
+    localStorage.setItem(
+      'mindflow_doc_b17',
+      JSON.stringify({ ...BOARD, floats: [], strokes: [{ id: 's1', pts: [0, 0, 40, 0], color: '#2b2b2b', w: 4 }] }),
+    );
+    const { container } = renderEditor('/editor?map=b17&title=x');
+    await waitFor(() => expect(container.querySelector('[data-stroke-id="s1"]')).toBeTruthy());
+
+    const vp = getViewport(container);
+    const at = strokePoint(container, 20, 0);
+    firePointer(vp, 'pointerdown', { pointerId: 1, clientX: at.x, clientY: at.y });
+    // 선택 표시(획에는 손잡이가 없다) + 속성 패널.
+    await waitFor(() => expect(container.querySelector('[data-stroke-selection]')).toBeTruthy());
+    expect(screen.getByText('선택한 그림')).toBeTruthy();
+
+    // 그대로 끌면 획이 따라온다 — 커밋은 문서 좌표로.
+    firePointer(document.body, 'pointermove', { pointerId: 1, clientX: at.x + 60, clientY: at.y + 40 });
+    firePointer(document.body, 'pointerup', { pointerId: 1, clientX: at.x + 60, clientY: at.y + 40 });
+    fireEvent.keyDown(window, { key: 's', ctrlKey: true });
+    const moved = await waitFor(() => {
+      const saved = JSON.parse(localStorage.getItem('mindflow_doc_b17') || 'null');
+      expect(saved.strokes[0].pts[0]).toBeGreaterThan(0);
+      return saved.strokes[0].pts as number[];
+    });
+    // 모든 점이 같은 만큼 옮겨진다(모양 불변).
+    expect(moved[2]! - moved[0]!).toBeCloseTo(40, 1);
+    expect(moved[1]).toBeCloseTo(moved[3]!, 1);
+
+    // Delete = 그 획만 삭제.
+    fireEvent.keyDown(window, { key: 'Delete' });
+    await waitFor(() => expect(container.querySelector('[data-stroke-id="s1"]')).toBeNull());
+  });
+
+  it('속성 패널에서 획의 색·굵기를 고칠 수 있다(형광펜은 형광 팔레트)', async () => {
+    localStorage.setItem(
+      'mindflow_doc_b18',
+      JSON.stringify({ ...BOARD, floats: [], strokes: [{ id: 's1', pts: [0, 0, 40, 0], color: HL_COLORS[0], w: HL_WIDTHS[1], hl: true }] }),
+    );
+    const { container } = renderEditor('/editor?map=b18&title=x');
+    await waitFor(() => expect(container.querySelector('[data-stroke-id="s1"]')).toBeTruthy());
+
+    const at = strokePoint(container, 20, 0);
+    firePointer(getViewport(container), 'pointerdown', { pointerId: 1, clientX: at.x, clientY: at.y });
+    firePointer(document.body, 'pointerup', { pointerId: 1, clientX: at.x, clientY: at.y });
+    await screen.findByText('형광펜 획');
+
+    // 팔레트는 그 획을 그린 도구의 것 — 형광펜 획에 검정 2px을 제안하지 않는다.
+    const swatches = Array.from(container.querySelectorAll('button')).filter((b) => (b as HTMLElement).style.borderRadius === '50%');
+    const pick = swatches.find((b) => rgbHex((b as HTMLElement).style.background) === HL_COLORS[2]!.toLowerCase());
+    expect(pick).toBeTruthy();
+    expect(swatches.some((b) => rgbHex((b as HTMLElement).style.background) === PEN_COLORS[0]!.toLowerCase())).toBe(false);
+    fireEvent.click(pick!);
+    fireEvent.click(screen.getByTitle(`굵기 ${HL_WIDTHS[2]}`));
+    fireEvent.keyDown(window, { key: 's', ctrlKey: true });
+    await waitFor(() => {
+      const saved = JSON.parse(localStorage.getItem('mindflow_doc_b18') || 'null');
+      expect(saved.strokes[0].color).toBe(HL_COLORS[2]);
+      expect(saved.strokes[0].w).toBe(HL_WIDTHS[2]);
+      expect(saved.strokes[0].hl).toBe(true);
+    });
+  });
+  it('폰: 획을 탭하면 선택 바가 속성·삭제만 내준다(편집·메뉴는 할 일이 없다)', async () => {
+    const restore = mockMatchMedia(true);
+    try {
+      localStorage.setItem(
+        'mindflow_doc_b19',
+        JSON.stringify({ ...BOARD, floats: [], strokes: [{ id: 's1', pts: [0, 0, 40, 0], color: '#2b2b2b', w: 4 }] }),
+      );
+      const { container } = renderEditor('/editor?map=b19&title=x');
+      await waitFor(() => expect(container.querySelector('[data-stroke-id="s1"]')).toBeTruthy());
+
+      const at = strokePoint(container, 20, 0);
+      const vp = getViewport(container);
+      // (jsdom엔 PointerEvent가 없어 MouseEvent로 대신 던진다 — 여기서 보는 것은
+      //  선택 후 **바의 구성**이다. 터치 첫 탭=선택 규칙 자체는 실기기 몫.)
+      firePointer(vp, 'pointerdown', { pointerId: 1, clientX: at.x, clientY: at.y });
+      firePointer(document.body, 'pointerup', { pointerId: 1, clientX: at.x, clientY: at.y });
+      const bar = await waitFor(() => {
+        const el = container.querySelector('[role="toolbar"][aria-label="선택 동작"]') as HTMLElement;
+        expect(el).toBeTruthy();
+        return el;
+      });
+      expect(within(bar).getByText('속성')).toBeTruthy();
+      expect(within(bar).getByText('삭제')).toBeTruthy();
+      expect(within(bar).queryByText('편집')).toBeNull();
+      expect(within(bar).queryByRole('button', { name: '객체 메뉴' })).toBeNull();
+
+      fireEvent.click(within(bar).getByText('삭제'));
+      await waitFor(() => expect(container.querySelector('[data-stroke-id="s1"]')).toBeNull());
+    } finally {
+      restore();
+    }
   });
 });
