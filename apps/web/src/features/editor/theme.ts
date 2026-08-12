@@ -18,7 +18,7 @@ export interface Theme {
   palette: string[];
 }
 
-export type ThemeKey = 'coral' | 'ocean' | 'forest' | 'grape' | 'dark' | 'mono';
+export type ThemeKey = 'coral' | 'ocean' | 'forest' | 'grape' | 'dark' | 'mono' | 'white';
 
 export const THEMES: Record<ThemeKey, Theme> = {
   coral: {
@@ -105,6 +105,24 @@ export const THEMES: Record<ThemeKey, Theme> = {
     accentInk: '#ffffff',
     palette: ['#3a3a3a', '#565656', '#727272', '#8e8e8e', '#4a4a4a', '#616161', '#787878', '#909090', '#d92626'],
   },
+  // 화이트 — 배경이 순백인 테마(요청). 화이트보드의 기본값이지만 마인드맵에서도
+  // 고를 수 있다. 도형 기본 채움(panel)이 캔버스와 같은 흰색이어도 **테두리가
+  // 가지 색**이라 도형은 또렷하게 보인다(Miro·Whimsical류의 흰 캔버스와 같은 결).
+  // 도트는 흰 바탕에서 얼룩지지 않는 중립 회색.
+  white: {
+    label: '화이트',
+    appBg: '#ffffff',
+    canvasBg: '#ffffff',
+    panel: '#ffffff',
+    panel2: '#f6f7f8',
+    border: '#e4e6ea',
+    dot: '#e6e6e6',
+    text: '#1f2328',
+    subtext: '#8b9199',
+    accent: '#2f7fd6',
+    accentInk: '#ffffff',
+    palette: ['#2f7fd6', '#e0663f', '#3fae9e', '#8a6bd1', '#8fb257', '#e0a53c', '#d0568f', '#4a5568', '#d92626'],
+  },
 };
 
 export const THEME_KEYS = Object.keys(THEMES) as ThemeKey[];
@@ -117,18 +135,6 @@ export const UI_THEME: Theme = THEMES.coral;
 /** Port of `Component#theme()` (MindFlow.dc.html:880) — falls back to coral for unknown keys. */
 export function themeOf(key: string | undefined | null): Theme {
   return (key && THEMES[key as ThemeKey]) || THEMES.coral;
-}
-
-/**
- * 문서의 **렌더 테마** — 화이트보드는 캔버스 배경을 무조건 흰색으로 쓴다(요청).
- * 도트도 흰 바탕에 맞는 중립 회색으로 함께 바꾼다(테마의 베이지·파스텔 도트는
- * 흰색 위에서 얼룩처럼 보인다). 나머지(강조색·팔레트·패널)는 테마 그대로라
- * 메모 색·커서 색은 계속 테마를 따른다. 에디터 캔버스·미니맵·커튼·내보내기
- * 4종이 전부 이 테마를 받아 흐르므로 갈림이 없다.
- */
-export function docThemeOf(doc: { themeKey?: string; kind?: string }): Theme {
-  const t = themeOf(doc.themeKey);
-  return doc.kind === 'board' ? { ...t, canvasBg: '#ffffff', dot: '#e6e6e6' } : t;
 }
 
 /** The valid theme key for `key`, falling back to the default when unrecognized. */

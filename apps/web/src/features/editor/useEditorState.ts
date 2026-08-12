@@ -26,7 +26,7 @@ import { isPanButton } from './pointerButtons';
 import { buildVisible, descendants, outlineRows } from './tree';
 import type { EdgeStyle } from './tree';
 import { nearestInDirection } from './navigation';
-import { UI_THEME, docThemeOf, themeKeyOf } from './theme';
+import { UI_THEME, themeOf, themeKeyOf } from './theme';
 import type { Theme, ThemeKey } from './theme';
 import { downloadFile } from './download';
 import { exportPng } from './png';
@@ -1241,8 +1241,9 @@ export function useEditorState(): EditorController {
 
   /** 화이트보드(트리 없는 문서)인가 — UI 트리밍·그리기 도구·패딩 규칙의 기준. */
   const isBoard = doc.kind === 'board';
-  // 화이트보드는 캔버스 배경이 무조건 흰색이다(요청) — docThemeOf가 가른다.
-  const theme = docThemeOf(doc);
+  // 문서 테마는 종류를 가리지 않는다 — 화이트보드의 흰 배경은 덮어쓰기가 아니라
+  // `white` 테마(새 보드의 기본값)라, 스타일 메뉴에서 고른 테마가 그대로 먹는다.
+  const theme = themeOf(doc.themeKey);
 
   // ---- multi-selection groups — port of `Component#msel()` (MindFlow.dc.html:1548-1556):
   // falls back to the single `selection` when there's no active marquee group, so every

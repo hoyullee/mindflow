@@ -407,4 +407,24 @@ describe('realPreview — 화이트보드', () => {
     expect(path!.getAttribute('stroke-width')).toBe('4');
     expect(path!.getAttribute('fill')).toBe('none');
   });
+  // 썸네일은 에디터의 `THEMES`를 **복사한 표**(THEME_PAL)로 그린다 — 새 테마를
+  // 한쪽에만 추가하면 그 테마의 맵 카드가 조용히 코랄로 그려진다(폴백). 화이트
+  // 테마가 실제로 반영되는지 강조색으로 확인한다.
+  it('화이트 테마 맵도 그 테마 색으로 그린다(에디터 THEMES 미러 드리프트 가드)', () => {
+    const whiteDoc = {
+      v: 1,
+      nodes: { root: { id: 'root', text: '루트', emoji: '', parent: null, children: [], collapsed: false, color: null, x: 0, y: 0 } },
+      floats: [],
+      lines: [],
+      zones: [],
+      layoutMode: 'right',
+      themeKey: 'white',
+    };
+    const el = realPreview(JSON.stringify(whiteDoc), '#f0663f');
+    expect(el).not.toBeNull();
+    const { container } = render(el!);
+    const fills = Array.from(container.querySelectorAll('svg rect')).map((r) => r.getAttribute('fill'));
+    expect(fills).toContain('rgba(47,127,214,1)'); // THEMES.white.accent(#2f7fd6) — 루트 채움
+    expect(fills.join(' ')).not.toContain('240,102,63'); // 코랄 폴백이면 이 색이 나온다
+  });
 });

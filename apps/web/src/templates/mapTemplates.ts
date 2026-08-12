@@ -14,6 +14,10 @@
 import type { Doc, Float, LayoutMode, Node, NodeMap } from '@mindflow/mindmap-core';
 import { DEFAULT_EDGE_STYLE, DEFAULT_THEME_KEY, ROOT_ID } from '@mindflow/mindmap-core';
 
+/** 화이트보드의 기본 테마 — 순백 캔버스(`THEMES.white`). 마인드맵의 기본값
+ * (`DEFAULT_THEME_KEY` = 코랄)과 갈리는 유일한 지점이다. */
+export const BOARD_THEME_KEY = 'white';
+
 /** 템플릿 트리의 한 가지. 색은 적지 않는다 — `colorOf`가 첫 단계 순서대로
  * 테마 팔레트를 돌려주므로 가지 색이 저절로 칠해진다. */
 export interface TemplateBranch {
@@ -153,7 +157,10 @@ export function buildTemplateDoc(id: string | null | undefined): Doc | null {
     // 좌표는 원점을 가운데 두게 잡는다(첫 센터링이 장면 바운즈 중심을 잡으므로
     // 이 메모가 화면 한가운데에 열린다).
     const starter: Float = { id: 'bf1', x: -125, y: -55, w: 250, text: '여기에 생각을 적어 보세요.\n\n메모는 두 번 눌러 고치고, 끌어서 어디든 옮길 수 있어요.' };
-    return { v: 1, nodes: {}, floats: [starter], lines: [], zones: [], layoutMode: 'right', themeKey: DEFAULT_THEME_KEY, edgeStyle: DEFAULT_EDGE_STYLE, kind: 'board' };
+    // 보드의 기본 테마는 **화이트**(순백 캔버스) — 예전에는 테마와 무관하게 흰
+    // 배경을 덮어썼는데, 그러면 스타일 메뉴에서 테마를 바꿔도 아무것도 안 바뀌었다
+    // (제보). 흰 배경을 테마 하나로 만들면 기본 인상은 그대로면서 바꿀 수도 있다.
+    return { v: 1, nodes: {}, floats: [starter], lines: [], zones: [], layoutMode: 'right', themeKey: BOARD_THEME_KEY, edgeStyle: DEFAULT_EDGE_STYLE, kind: 'board' };
   }
   const t = findTemplate(id);
   if (!t) return null;

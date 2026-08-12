@@ -218,6 +218,7 @@ const THEME_PAL: Record<string, ThemePal> = {
   grape: { accent: '#7d5bd0', panel: '#ffffff', text: '#2f2740', accentInk: '#ffffff', palette: ['#7d5bd0', '#a45bd0', '#d05fb0', '#d0568f', '#e07b4a', '#e0b23c', '#3fae9e', '#3f8fd0', '#d92626'] },
   dark: { accent: '#f0663f', panel: '#262019', text: '#f3ece4', accentInk: '#1b1712', palette: ['#f0804f', '#f0b04f', '#e8cf5a', '#9fce6a', '#4fc9b6', '#5fa8e8', '#a98be8', '#e87bb0', '#ff4d4d'] },
   mono: { accent: '#2b2b2b', panel: '#ffffff', text: '#202020', accentInk: '#ffffff', palette: ['#3a3a3a', '#565656', '#727272', '#8e8e8e', '#4a4a4a', '#616161', '#787878', '#909090', '#d92626'] },
+  white: { accent: '#2f7fd6', panel: '#ffffff', text: '#1f2328', accentInk: '#ffffff', palette: ['#2f7fd6', '#e0663f', '#3fae9e', '#8a6bd1', '#8fb257', '#e0a53c', '#d0568f', '#4a5568', '#d92626'] },
 };
 
 interface DocNode {
