@@ -77,13 +77,12 @@ function getTransformLayer(container: HTMLElement): HTMLElement {
   return el as HTMLElement;
 }
 
-/** Walk up from a node inside the zoom cluster to its absolutely-positioned root. */
+/** The absolutely-positioned zoom/minimap cluster root. 폰에서는 아래 버튼 줄
+ * (미니맵 토글·화면 맞춤)이 없으므로 버튼이 아니라 컨테이너로 잡는다. */
 function getZoomCluster(container: HTMLElement): HTMLElement {
-  const fit = within(container).getByTitle('화면 맞춤');
-  let el: HTMLElement | null = fit;
-  while (el && el.style.position !== 'absolute') el = el.parentElement;
+  const el = container.querySelector('[data-zoom-cluster]');
   if (!el) throw new Error('zoom cluster not found');
-  return el;
+  return el as HTMLElement;
 }
 
 beforeEach(() => {
@@ -103,14 +102,16 @@ describe('Editor (mobile, M6)', () => {
 
       // undo/redo now live inside the 편집 menu; the menu-bar trigger is present
       expect(screen.getByRole('button', { name: '편집' })).toBeTruthy();
-      expect(screen.getByTitle('화면 맞춤')).toBeTruthy();
+      expect(document.querySelector('[data-zoom-cluster]')).toBeTruthy();
       // the desktop-only mouse-gesture legend is dropped on mobile
       expect(screen.queryByText(/좌드래그/)).toBeNull();
-      // the −/배율/＋ zoom buttons are dropped on mobile (pinch to zoom instead),
-      // leaving just the minimap toggle + 화면 맞춤 so the cluster stays compact
+      // 폰에서는 미니맵만 남는다(요청) — 확대/축소는 핀치, 아래 버튼 줄(최소화·
+      // 화면 맞춤)은 좁은 화면에서 자리만 차지해 제거했다.
       expect(screen.queryByTitle('축소')).toBeNull();
       expect(screen.queryByTitle('확대')).toBeNull();
       expect(screen.queryByText(/%$/)).toBeNull();
+      expect(screen.queryByTitle('화면 맞춤')).toBeNull();
+      expect(screen.queryByTitle('미니맵 표시/숨기기')).toBeNull();
     } finally {
       restore();
     }
@@ -433,11 +434,11 @@ describe('Editor (mobile, M6)', () => {
       const nodeBox = within(vp).getByText('리서치').closest('[data-node-id]') as HTMLElement;
       selectNodeBox(nodeBox);
       // selection alone keeps the cluster (the sheet isn't open yet)
-      expect(within(container).queryByTitle('화면 맞춤')).toBeTruthy();
+      expect(container.querySelector('[data-zoom-cluster]')).toBeTruthy();
 
       openMobileProps();
       // panel open → the whole minimap/zoom cluster is gone
-      expect(within(container).queryByTitle('화면 맞춤')).toBeNull();
+      expect(container.querySelector('[data-zoom-cluster]')).toBeNull();
     } finally {
       restore();
     }

@@ -98,6 +98,62 @@
   animation: mf-spin 0.9s linear infinite;
 }
 
+/* 화이트보드 도구 막대(폰)의 도구 목록 ↔ 펜 메뉴 **밀어내기** 전환(요청).
+   펜을 열면 펜 메뉴가 오른쪽에서 들어오고 도구 목록은 왼쪽으로 나간다(‹는 반대).
+   길이는 BoardToolbar의 PANEL_ANIM_MS와 같은 값이어야 나가는 층이 제때 사라진다. */
+@keyframes mf-board-in-right {
+  from {
+    transform: translateX(26%);
+    opacity: 0;
+  }
+  to {
+    transform: none;
+    opacity: 1;
+  }
+}
+@keyframes mf-board-in-left {
+  from {
+    transform: translateX(-26%);
+    opacity: 0;
+  }
+  to {
+    transform: none;
+    opacity: 1;
+  }
+}
+@keyframes mf-board-out-left {
+  to {
+    transform: translateX(-26%);
+    opacity: 0;
+  }
+}
+@keyframes mf-board-out-right {
+  to {
+    transform: translateX(26%);
+    opacity: 0;
+  }
+}
+.mf-board-in-right {
+  animation: mf-board-in-right 0.2s ease-out both;
+}
+.mf-board-in-left {
+  animation: mf-board-in-left 0.2s ease-out both;
+}
+.mf-board-out-left {
+  animation: mf-board-out-left 0.2s ease-out both;
+}
+.mf-board-out-right {
+  animation: mf-board-out-right 0.2s ease-out both;
+}
+@media (prefers-reduced-motion: reduce) {
+  .mf-board-in-right,
+  .mf-board-in-left,
+  .mf-board-out-left,
+  .mf-board-out-right {
+    animation-duration: 0.01ms;
+  }
+}
+
 /* 메모 접기/펼치기 셰브론 칩 — 평소엔 은은하게(내용을 방해하지 않게), 올리면
    또렷하게. 색은 인라인(메모 글자색 기반)이고 여기서는 세기만 다룬다. */
 .mf-float-fold {
