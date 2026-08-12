@@ -408,25 +408,65 @@ describe('화이트보드 에디터', () => {
     }
   });
 
-  it('모바일 board: 줌·미니맵 묶음은 우측 하단 그대로이고, 도구 막대가 좌측으로 비켜선다(요청)', async () => {
-    // 잠시 묶음을 우측 상단으로 올렸다가 원래 자리가 낫다는 판단으로 되돌렸다 —
-    // 겹침은 도구 막대가 좌측 하단으로 붙고 폭을 양보해서 푼다.
+  it('모바일 board: 도구 막대는 바닥 전폭, 되돌리기·미니맵은 그 위 띠(시안)', async () => {
     const restore = mockMatchMedia(true);
     try {
       localStorage.setItem('mindflow_doc_b12', JSON.stringify(BOARD));
       const { container } = renderEditor('/editor?map=b12&title=x');
-      await waitFor(() => expect(container.querySelector('[data-zoom-cluster]')).toBeTruthy());
-      const cluster = container.querySelector('[data-zoom-cluster]') as HTMLElement;
-      expect(cluster.style.bottom).toBe('16px');
-      expect(cluster.style.top).toBe('');
+      await waitFor(() => expect(container.querySelector('[data-board-toolbar]')).toBeTruthy());
 
+      // 막대 = 바닥 전폭 한 줄(선택·펜·지우개·메모·이미지).
       const bar = container.querySelector('[data-board-toolbar]') as HTMLElement;
-      expect(bar.style.left).toBe('12px'); // 좌측 하단 — 중앙 정렬(50%)이 아니다
-      expect(bar.style.transform).toBe('');
-      // 폭이 묶음 자리를 빼고 잡혀 두 상자가 만나지 않는다.
-      expect(bar.style.maxWidth).toMatch(/calc\(100vw - 172px\)/);
-      // 도구 3 + 동작 4가 두 행으로 갈린다(한 행이면 좁은 폭을 넘는다).
-      expect(bar.querySelectorAll(':scope > div').length).toBe(2);
+      expect(bar.style.left).toBe('12px');
+      expect(bar.style.right).toBe('12px');
+      expect(bar.style.bottom).toBe('16px');
+      expect(bar.style.transform).toBe(''); // 중앙 정렬(50%)이 아니다
+      expect(within(bar).getByRole('button', { name: '선택' })).toBeTruthy();
+      expect(within(bar).getByRole('button', { name: '이미지 추가' })).toBeTruthy();
+      // 되돌리기는 막대에서 빠져 자기 알약으로 — 같은 띠 왼쪽.
+      expect(within(bar).queryByRole('button', { name: '실행 취소' })).toBeNull();
+      const undoPill = container.querySelector('[data-board-undo]') as HTMLElement;
+      expect(undoPill.style.left).toBe('12px');
+      expect(undoPill.style.bottom).toBe('80px');
+      expect(within(undoPill).getByRole('button', { name: '다시 실행' })).toBeTruthy();
+
+      // 줌·미니맵 묶음은 우측이되, 막대 높이만큼 올라앉는다.
+      const cluster = container.querySelector('[data-zoom-cluster]') as HTMLElement;
+      expect(cluster.style.right).toBe('16px');
+      expect(cluster.style.bottom).toBe('80px');
+      expect(cluster.style.top).toBe('');
+    } finally {
+      restore();
+    }
+  });
+
+  it('모바일 board: 펜을 누르면 막대가 색·굵기 메뉴로 전환되고 ‹로 돌아온다(요청)', async () => {
+    const restore = mockMatchMedia(true);
+    try {
+      localStorage.setItem('mindflow_doc_b14', JSON.stringify(BOARD));
+      const { container } = renderEditor('/editor?map=b14&title=x');
+      const bar = await waitFor(() => {
+        const el = container.querySelector('[data-board-toolbar]') as HTMLElement;
+        expect(el).toBeTruthy();
+        return el;
+      });
+      fireEvent.click(within(bar).getByRole('button', { name: '펜' }));
+
+      // 전환: 도구 목록 대신 뒤로·색·굵기. 행이 늘지 않는다(바닥이 두꺼워지지 않게).
+      await waitFor(() => expect(bar.getAttribute('data-pen-panel')).toBe('true'));
+      expect(within(bar).getByRole('button', { name: '도구 목록으로' })).toBeTruthy();
+      expect(within(bar).getByRole('button', { name: '펜 색 #d92626' })).toBeTruthy();
+      expect(within(bar).getByRole('button', { name: '펜 굵기 8' })).toBeTruthy();
+      expect(within(bar).queryByRole('button', { name: '지우개' })).toBeNull();
+
+      // ‹ = 메뉴 전환일 뿐, 펜은 그대로 켜져 있다.
+      fireEvent.click(within(bar).getByRole('button', { name: '도구 목록으로' }));
+      await waitFor(() => expect(bar.getAttribute('data-pen-panel')).toBeNull());
+      expect(within(bar).getByRole('button', { name: '펜' }).getAttribute('aria-pressed')).toBe('true');
+
+      // 다른 도구로 가면 펜 메뉴는 저절로 닫힌 상태를 유지한다.
+      fireEvent.click(within(bar).getByRole('button', { name: '지우개' }));
+      expect(bar.getAttribute('data-pen-panel')).toBeNull();
     } finally {
       restore();
     }

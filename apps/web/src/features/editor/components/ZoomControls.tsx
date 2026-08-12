@@ -1,6 +1,7 @@
 import type { CSSProperties } from 'react';
 import type { EditorController } from '../useEditorState';
 import { Minimap } from './Minimap';
+import { BOARD_BAR_LIFT } from './BoardToolbar';
 import { useIsMobile } from '../../../hooks/useMediaQuery';
 
 interface ZoomControlsProps {
@@ -46,10 +47,11 @@ export function ZoomControls({ controller, panelOpen = false }: ZoomControlsProp
     padding: 0,
   } as const;
 
-  // 자리는 **언제나 우측 하단**이다. 폰의 화이트보드에서 잠시 우측 상단으로
-  // 올려 봤지만(도구 막대와의 충돌 회피) 원래 자리가 낫다는 판단으로 되돌렸다
-  // — 겹침은 도구 막대 쪽이 비켜서 푼다(폰에서는 좌측 하단 정렬, BoardToolbar).
-  const anchor: CSSProperties = { bottom: 16 };
+  // 자리는 **언제나 우측 하단**이다(우측 상단으로 올려 봤다가 되돌렸다). 다만
+  // 폰의 화이트보드에서는 도구 막대가 바닥 전폭을 쓰므로(시안) 그 높이만큼 위로
+  // 올라앉는다 — 좌우가 아니라 위아래로 비켜서는 배치.
+  const liftForBoard = isMobile && controller.isBoard && !controller.readOnly;
+  const anchor: CSSProperties = { bottom: liftForBoard ? BOARD_BAR_LIFT : 16 };
 
   return (
     <div
