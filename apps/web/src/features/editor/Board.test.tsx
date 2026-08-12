@@ -261,6 +261,48 @@ describe('화이트보드 에디터', () => {
     expect(floatEl.querySelector('[data-fold-toggle]')).toBeTruthy();
   });
 
+  // 요청: 펜/지우개가 켜져 있어도 **두 손가락 드래그는 화면 이동**이어야 한다.
+  // 그리기 오버레이가 포인터를 전부 가져가므로, 그 레이어가 두 손가락 제스처를
+  // 컨트롤러로 넘긴다(한 손가락은 그대로 그리기).
+  it('펜을 켠 채로도 두 손가락 드래그는 화면을 옮기고, 획은 남지 않는다(요청)', async () => {
+    localStorage.setItem('mindflow_doc_b16', JSON.stringify(BOARD));
+    const { container } = renderEditor('/editor?map=b16&title=x');
+    await waitFor(() => expect(within(getViewport(container)).getByText('아이디어 하나')).toBeTruthy());
+    fireEvent.click(screen.getByRole('button', { name: '펜' }));
+    const layer = await waitFor(() => {
+      const el = container.querySelector('[data-board-draw-layer]') as HTMLElement;
+      expect(el).toBeTruthy();
+      return el;
+    });
+    const panLayer = (): HTMLElement => container.querySelector('[data-pan-layer]') as HTMLElement;
+    const before = panLayer().style.transform;
+
+    // 한 손가락으로 시작했다가 두 번째 손가락이 닿는다 → 그리기는 취소되고 제스처로.
+    firePointer(layer, 'pointerdown', { pointerId: 1, clientX: 200, clientY: 200 });
+    firePointer(layer, 'pointermove', { pointerId: 1, clientX: 210, clientY: 205 });
+    firePointer(layer, 'pointerdown', { pointerId: 2, clientX: 300, clientY: 200 });
+    // 두 손가락이 나란히 오른쪽 아래로 — 거리는 그대로이므로 배율은 안 변하고 화면만 옮겨진다.
+    // 두 점을 **같은 delta**로 옮긴다(거리 불변 = 순수 이동).
+    firePointer(layer, 'pointermove', { pointerId: 1, clientX: 260, clientY: 245 });
+    firePointer(layer, 'pointermove', { pointerId: 2, clientX: 350, clientY: 240 });
+    await waitFor(() => expect(panLayer().style.transform).not.toBe(before));
+    // 거리가 그대로면 배율도 그대로 — 바뀐 것은 이동(translate)뿐이다.
+    const scaleOf = (t: string): string => /scale\(([^)]+)\)/.exec(t)?.[1] ?? '';
+    expect(scaleOf(panLayer().style.transform)).toBe(scaleOf(before));
+
+    firePointer(layer, 'pointerup', { pointerId: 2, clientX: 350, clientY: 240 });
+    // 남은 손가락이 움직여도 이어서 그리지 않는다(화면을 옮기다 낙서가 생기면 안 된다).
+    firePointer(layer, 'pointermove', { pointerId: 1, clientX: 300, clientY: 300 });
+    firePointer(layer, 'pointerup', { pointerId: 1, clientX: 300, clientY: 300 });
+
+    fireEvent.keyDown(window, { key: 's', ctrlKey: true });
+    await waitFor(() => {
+      const saved = JSON.parse(localStorage.getItem('mindflow_doc_b16') || 'null');
+      expect(saved?.strokes ?? []).toHaveLength(0);
+    });
+    expect(container.querySelector('[data-stroke-id]')).toBeNull();
+  });
+
   it('펜으로 그린 획이 문서에 커밋되고(저장·undo 한 단계) 획 레이어에 그려진다(M4)', async () => {
     localStorage.setItem('mindflow_doc_b6', JSON.stringify(BOARD));
     const { container } = renderEditor('/editor?map=b6&title=x');

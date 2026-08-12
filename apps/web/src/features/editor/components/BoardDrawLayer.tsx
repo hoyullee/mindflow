@@ -3,40 +3,75 @@
 // 않고 그리기를 얹는 가장 파급 작은 방법). 문서 변이는 컨트롤러의
 // boardDraw* 핸들러가 chokepoint(commitDoc)를 거쳐 처리한다.
 //
-// 두 손가락 제스처(핀치)는 그리기가 아니다 — 두 번째 포인터가 닿는 순간 진행
-// 중인 획을 커밋 없이 버린다(줌은 도구를 '선택'으로 돌리고 쓰는 것이 v1 규칙).
+// 손가락 규칙(요청):
+//   한 손가락 = 그리기·지우기
+//   두 손가락 = **화면 이동·확대**(그리기 도구가 켜져 있어도)
+// 예전에는 두 번째 손가락이 닿으면 획만 버리고 아무 일도 하지 않아서, 펜을 켠 채로는
+// 화면을 옮길 수 없었다(도구를 '선택'으로 되돌려야 했다). 이 레이어가 포인터를 전부
+// 가져가므로 아래 배경 핸들러가 볼 수 없다 — 그래서 두 손가락 제스처를 컨트롤러의
+// `twoFinger*`로 **직접 넘긴다**(배경 핸들러가 쓰는 것과 같은 함수라 감각이 같다).
 
 import type { PointerEvent as ReactPointerEvent } from 'react';
 import { useRef } from 'react';
 import type { EditorController } from '../useEditorState';
 
 export function BoardDrawLayer({ controller }: { controller: EditorController }) {
-  const activePointers = useRef(new Set<number>());
+  const pointers = useRef(new Map<number, { x: number; y: number }>());
+  // 두 손가락 제스처가 시작되면 마지막 손가락이 떨어질 때까지 그리기를 재개하지
+  // 않는다 — 한 손가락이 먼저 떨어졌다고 남은 손가락이 갑자기 선을 긋기 시작하면
+  // 화면을 옮기다 낙서가 생긴다.
+  const gesturing = useRef(false);
+
   if (!controller.isBoard || controller.readOnly || controller.boardTool === 'select') return null;
+
+  const two = (): [{ x: number; y: number }, { x: number; y: number }] | null => {
+    const pts = Array.from(pointers.current.values());
+    return pts.length === 2 && pts[0] && pts[1] ? [pts[0], pts[1]] : null;
+  };
 
   const onDown = (e: ReactPointerEvent<HTMLDivElement>): void => {
     if (e.button !== 0 && e.pointerType === 'mouse') return; // 우클릭/휠클릭은 그리기가 아니다
     // `.mf-ed-vp`로 새어 나가면 배경 마퀴 드래그가 포인터를 다시 캡처해 이
     // 레이어의 move/up을 빼앗는다(BoardToolbar와 같은 함정).
     e.stopPropagation();
-    activePointers.current.add(e.pointerId);
-    if (activePointers.current.size > 1) {
-      controller.boardDrawCancel();
-      return;
-    }
+    pointers.current.set(e.pointerId, { x: e.clientX, y: e.clientY });
     try {
       e.currentTarget.setPointerCapture(e.pointerId);
     } catch {
       // jsdom 등 포인터 캡처 미구현 환경 — 캡처는 최적화지 필수 조건이 아니다.
     }
+    const pair = two();
+    if (pair) {
+      // 두 번째 손가락 — 그리던 획은 버리고(낙서로 남지 않게) 화면 조작으로 넘어간다.
+      gesturing.current = true;
+      controller.boardDrawCancel();
+      controller.twoFingerStart(pair[0].x, pair[0].y, pair[1].x, pair[1].y);
+      return;
+    }
+    if (pointers.current.size > 2 || gesturing.current) return; // 세 손가락은 무시
     controller.boardDrawDown(e.clientX, e.clientY);
   };
+
   const onMove = (e: ReactPointerEvent<HTMLDivElement>): void => {
-    if (activePointers.current.size !== 1) return;
+    if (!pointers.current.has(e.pointerId)) return;
+    pointers.current.set(e.pointerId, { x: e.clientX, y: e.clientY });
+    const pair = two();
+    if (pair) {
+      controller.twoFingerMove(pair[0].x, pair[0].y, pair[1].x, pair[1].y);
+      return;
+    }
+    if (gesturing.current || pointers.current.size !== 1) return;
     controller.boardDrawMove(e.clientX, e.clientY);
   };
+
   const onUpOrCancel = (e: ReactPointerEvent<HTMLDivElement>, cancelled: boolean): void => {
-    activePointers.current.delete(e.pointerId);
+    pointers.current.delete(e.pointerId);
+    if (pointers.current.size < 2) controller.twoFingerEnd();
+    if (gesturing.current) {
+      // 제스처 중이었다면 그릴 것이 없다. 마지막 손가락이 떨어져야 그리기 재개.
+      if (pointers.current.size === 0) gesturing.current = false;
+      return;
+    }
     if (cancelled) controller.boardDrawCancel();
     else controller.boardDrawUp();
   };
