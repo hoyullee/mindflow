@@ -3180,6 +3180,27 @@ export function useEditorState(): EditorController {
     [commitDoc, idFactory],
   );
 
+  /**
+   * Ctrl/⌘+V의 안전망 — 붙여넣기는 `paste` 이벤트가 맡지만, 그 이벤트가 오지
+   * 않는 환경에서도 **객체 붙여넣기**는 살아 있어야 한다. keydown이 이 타이머를
+   * 걸고, paste 이벤트가 오면 취소한다(이미지든 객체든 그쪽에서 처리된다).
+   */
+  const pasteFallbackRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const cancelPasteFallback = useCallback(() => {
+    if (pasteFallbackRef.current) {
+      clearTimeout(pasteFallbackRef.current);
+      pasteFallbackRef.current = null;
+    }
+  }, []);
+  const schedulePasteFallback = useCallback(() => {
+    cancelPasteFallback();
+    pasteFallbackRef.current = setTimeout(() => {
+      pasteFallbackRef.current = null;
+      pasteClipboardAt();
+    }, 120);
+  }, [cancelPasteFallback, pasteClipboardAt]);
+  useEffect(() => cancelPasteFallback, [cancelPasteFallback]);
+
   const toggleCollapse = useCallback(
     (id: string) => {
       commitDoc((d) => ({ ...d, nodes: mutations.toggleCollapseNode(d.nodes, id) }));
@@ -3327,8 +3348,16 @@ export function useEditorState(): EditorController {
     [commitDoc],
   );
 
-  // 클립보드 이미지 붙여넣기 → 뷰포트 중앙에 이미지 플로트. 텍스트 입력 중
-  // (노드/메모 편집, 검색창 등)의 붙여넣기는 그대로 통과시킨다.
+  /**
+   * 붙여넣기의 **단일 경로** — 클립보드에 이미지가 있으면 이미지 플로트,
+   * 아니면 복사해 둔 객체(주제·메모·선). 텍스트 입력 중(노드/메모 편집,
+   * 검색창, 댓글 작성창 등)의 붙여넣기는 그대로 통과시킨다.
+   *
+   * 둘을 한 곳에서 가르는 이유: Ctrl+V의 keydown에서 preventDefault를 하면
+   * 브라우저가 이 이벤트를 발생시키지 않아 이미지 경로가 통째로 죽는다.
+   * 그래서 keydown은 아무것도 막지 않고, 판단은 여기서 한 번만 한다.
+   * OS 클립보드의 이미지가 앱 안 클립보드보다 우선인 것은 대부분의 앱과 같다.
+   */
   useEffect(() => {
     const isTextEntry = (t: EventTarget | null): boolean => {
       const el = t as HTMLElement | null;
@@ -3336,14 +3365,20 @@ export function useEditorState(): EditorController {
     };
     const onPaste = (e: ClipboardEvent) => {
       if (isTextEntry(e.target)) return;
+      cancelPasteFallback(); // 이벤트가 왔으니 keydown 폴백은 취소
       const file = firstImageFile(e.clipboardData);
-      if (!file) return;
+      if (file) {
+        e.preventDefault();
+        void addImageFloatFromFile(file);
+        return;
+      }
+      // 이미지가 아니면 앱 안 클립보드(복사한 객체) — 비어 있으면 no-op.
       e.preventDefault();
-      void addImageFloatFromFile(file);
+      pasteClipboardAt();
     };
     document.addEventListener('paste', onPaste);
     return () => document.removeEventListener('paste', onPaste);
-  }, [addImageFloatFromFile]);
+  }, [addImageFloatFromFile, cancelPasteFallback, pasteClipboardAt]);
 
   // 파일 드래그앤드롭 → 드롭한 캔버스 지점에 이미지 플로트.
   useEffect(() => {
@@ -4602,8 +4637,17 @@ export function useEditorState(): EditorController {
           return;
         }
         if (k === 'v' || e.code === 'KeyV') {
-          e.preventDefault();
-          pasteClipboardAt();
+          // **preventDefault를 하지 않는다.** 여기서 막으면 브라우저가 `paste`
+          // 이벤트를 아예 발생시키지 않아, 클립보드 이미지 붙여넣기가 죽는다
+          // (실측: 캔버스에서 Ctrl+V → paste 이벤트 0회 — 이미지 첨부의 세
+          // 진입점 중 '붙여넣기'만 조용히 동작하지 않고 있었다). 실제 붙여넣기는
+          // 아래 `onPaste` 하나가 맡는다: 클립보드에 이미지가 있으면 이미지,
+          // 없으면 복사해 둔 객체.
+          //
+          // 폴백을 두는 이유: paste 이벤트가 오지 않는 환경(제한된 브라우저·
+          // 확장 프로그램)에서도 **객체 붙여넣기**는 살아 있어야 한다. 이벤트가
+          // 오면 취소된다.
+          schedulePasteFallback();
           return;
         }
         // 전체 선택 — 캔버스의 모든 객체를 다중 선택한다(마인드맵 관례).

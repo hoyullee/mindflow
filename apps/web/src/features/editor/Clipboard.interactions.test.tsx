@@ -232,6 +232,79 @@ describe('에디터 복사/붙여넣기 — 키보드', () => {
   });
 });
 
+// 붙여넣기는 **`paste` 이벤트 하나**가 가른다: 클립보드에 이미지가 있으면 이미지
+// 플로트, 없으면 앱 안 클립보드(복사한 객체). 예전엔 Ctrl+V의 keydown에서
+// preventDefault를 해 브라우저가 paste 이벤트를 아예 발생시키지 않았고, 그래서
+// 이미지 붙여넣기가 조용히 죽어 있었다(실브라우저 실측: paste 이벤트 0회).
+describe('에디터 붙여넣기 — 이미지 / 객체 갈림', () => {
+  /** jsdom엔 실 클립보드가 없다 — `paste` 이벤트에 clipboardData만 심어 던진다. */
+  function firePaste(target: EventTarget, files: File[]): Event {
+    const e = new Event('paste', { bubbles: true, cancelable: true }) as Event & { clipboardData: unknown };
+    Object.defineProperty(e, 'clipboardData', {
+      value: { items: files.map((f) => ({ kind: 'file', type: f.type, getAsFile: () => f })), files, getData: () => '' },
+      configurable: true,
+    });
+    target.dispatchEvent(e);
+    return e;
+  }
+
+  it('클립보드에 이미지가 있으면 이미지 경로로 간다 — 객체 붙여넣기는 하지 않는다(요청)', async () => {
+    // 실제 삽입까지는 이미지 디코드(canvas)가 필요해 jsdom에서 확인할 수 없다 —
+    // 여기서는 **갈림**만 본다(삽입 자체는 실브라우저 프로브로 검증했다):
+    // 이미지가 있으면 이벤트를 가로채고(preventDefault) 복사해 둔 객체는 붙지 않는다.
+    localStorage.setItem('mindflow_doc_cpi1', JSON.stringify(DOC));
+    const { container } = renderEditor('/editor?map=cpi1&title=x');
+    await waitFor(() => expect(countText(container, '노드A')).toBe(1));
+
+    selectNodeBox(nodeBoxFor(container, '노드A'));
+    fireEvent.keyDown(window, { key: 'c', ctrlKey: true }); // 앱 안 클립보드에 담아 둔다
+    selectNodeBox(nodeBoxFor(container, '노드B'));
+
+    const png = new File([new Uint8Array([0x89, 0x50, 0x4e, 0x47])], 'shot.png', { type: 'image/png' });
+    const e = firePaste(document, [png]);
+    expect(e.defaultPrevented).toBe(true);
+
+    await new Promise((r) => setTimeout(r, 300));
+    expect(countText(container, '노드A')).toBe(1); // 이미지가 이겼다 — 객체는 안 붙는다
+  });
+
+  it('이미지가 없으면 복사해 둔 객체를 붙여넣는다 — Ctrl+V가 이벤트를 막지 않는다(무회귀)', async () => {
+    localStorage.setItem('mindflow_doc_cpi2', JSON.stringify(DOC));
+    const { container } = renderEditor('/editor?map=cpi2&title=x');
+    await waitFor(() => expect(countText(container, '노드A')).toBe(1));
+
+    selectNodeBox(nodeBoxFor(container, '노드A'));
+    fireEvent.keyDown(window, { key: 'c', ctrlKey: true });
+    selectNodeBox(nodeBoxFor(container, '노드B'));
+    // 실제 브라우저의 순서: keydown(막지 않음) → paste 이벤트
+    fireEvent.keyDown(window, { key: 'v', ctrlKey: true });
+    firePaste(document, []);
+
+    await waitFor(() => expect(countText(container, '노드A')).toBe(2));
+    // 폴백 타이머(120ms)가 뒤늦게 한 번 더 붙여넣지 않는다
+    await new Promise((r) => setTimeout(r, 250));
+    expect(countText(container, '노드A')).toBe(2);
+  });
+
+  it('텍스트 입력 중에는 손대지 않는다 — 이미지가 있어도 삽입하지 않는다', async () => {
+    localStorage.setItem('mindflow_doc_cpi3', JSON.stringify(DOC));
+    const { container } = renderEditor('/editor?map=cpi3&title=x');
+    await waitFor(() => expect(countText(container, '노드A')).toBe(1));
+
+    fireEvent.doubleClick(nodeBoxFor(container, '노드A'));
+    const editable = await waitFor(() => {
+      const el = container.querySelector('.mf-richedit');
+      expect(el).toBeTruthy();
+      return el as HTMLElement;
+    });
+    const png = new File([new Uint8Array([0x89, 0x50, 0x4e, 0x47])], 'shot.png', { type: 'image/png' });
+    firePaste(editable, [png]);
+
+    await new Promise((r) => setTimeout(r, 300));
+    expect(container.querySelectorAll('[data-float-id]')).toHaveLength(0);
+  });
+});
+
 describe('에디터 복사/붙여넣기 — 컨텍스트 메뉴(모바일 길게 누르기 = 우클릭)', () => {
   it('노드 메뉴의 복사 → 다른 노드 메뉴의 붙여넣기로 키보드 없이 복제할 수 있다', async () => {
     localStorage.setItem('mindflow_doc_cb8', JSON.stringify(DOC));
