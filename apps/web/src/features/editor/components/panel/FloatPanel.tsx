@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import type { EditorController } from '../../useEditorState';
+import { FLOAT_CAPTION_MAX } from '../../useEditorState';
 import { BoldSizeRow, Divider, PanelSection, PanelTitle, SectionLabel, SwatchRow, panelBodyStyle, panelWrapStyle } from './panelPrimitives';
 import { floatFullyRich } from '../../mutations';
 
@@ -52,7 +53,9 @@ export function FloatPanel({ controller, floatIds, isMobile = false, short = fal
             type="text"
             defaultValue={f.caption || ''}
             placeholder="이미지 아래 표시할 제목"
-            maxLength={80}
+            // 한 줄 말줄임으로 그려지는 자리라 길게 적어도 보이지 않는다 —
+            // 입력 단계에서 20자로 끊는다(요청).
+            maxLength={FLOAT_CAPTION_MAX}
             aria-label="이미지 제목"
             onBlur={(e) => controller.setFloatCaption(refId, e.currentTarget.value)}
             onKeyDown={(e) => {

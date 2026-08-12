@@ -15,10 +15,6 @@ import { useIsMobile } from '../../../hooks/useMediaQuery';
 const PEN_COLORS = ['#2b2b2b', '#d92626', '#2f7fd6', '#2f9e63', '#e0a53c'];
 const PEN_WIDTHS = [2, 4, 8];
 
-/** 하단 중앙 도구 막대의 대략 높이(px) — 아래에서 겹치는 것들(줌·미니맵 묶음)이
- * 이만큼 위로 비켜선다. 1행(36+패딩)+바깥 여백. */
-export const BOARD_TOOLBAR_LIFT = 62;
-
 export function BoardToolbar({ controller }: { controller: EditorController }) {
   const th = controller.uiTheme;
   const tool = controller.boardTool;

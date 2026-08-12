@@ -337,18 +337,84 @@ describe('화이트보드 에디터', () => {
     await waitFor(() => expect(container.querySelectorAll('[data-float-id]')).toHaveLength(2));
   });
 
-  it('모바일: 줌·미니맵 묶음이 하단 도구 막대 위로 비켜선다(제보: 겹쳐 보임)', async () => {
-    const restore = mockMatchMedia(true); // 모바일 폭
+  it('모바일: 속성 시트가 하단 도구 막대보다 위에 놓이고, 닫기 손잡이는 없다(제보)', async () => {
+    const restore = mockMatchMedia(true);
     try {
-      localStorage.setItem('mindflow_doc_b10', JSON.stringify(BOARD));
-      const { container } = renderEditor('/editor?map=b10&title=x');
-      await waitFor(() => expect(container.querySelector('[data-board-toolbar]')).toBeTruthy());
-      const cluster = container.querySelector('[data-zoom-cluster]') as HTMLElement;
-      // 도구 막대는 bottom:16 — 묶음은 그보다 확실히 위(막대 높이만큼).
-      expect(parseFloat(cluster.style.bottom)).toBeGreaterThan(60);
+      localStorage.setItem(
+        'mindflow_doc_b11',
+        JSON.stringify({ ...BOARD, floats: [{ id: 'img1', x: 0, y: 0, w: 200, h: 150, text: '', img: 'data:image/png;base64,iVBORw0KGgo=', caption: '사진' }] }),
+      );
+      const { container } = renderEditor('/editor?map=b11&title=x');
+      const floatEl = await waitFor(() => {
+        const el = container.querySelector('[data-float-id="img1"]') as HTMLElement;
+        expect(el).toBeTruthy();
+        return el;
+      });
+      fireEvent.pointerDown(floatEl, { button: 0, clientX: 10, clientY: 10 });
+      fireEvent.pointerUp(floatEl, { button: 0, clientX: 10, clientY: 10 });
+      fireEvent.click(await screen.findByText('속성'));
+
+      const input = (await screen.findByLabelText('이미지 제목')) as HTMLInputElement;
+      const sheet = input.closest('div[style*="position: fixed"]') as HTMLElement;
+      const bar = container.querySelector('[data-board-toolbar]') as HTMLElement;
+      expect(Number(sheet.style.zIndex)).toBeGreaterThan(Number(bar.style.zIndex));
+      expect(screen.queryByLabelText('속성 닫기')).toBeNull();
+      // 제목은 20자까지
+      expect(input.maxLength).toBe(20);
     } finally {
       restore();
     }
+  });
+
+  it('모바일 board: 줌·미니맵 묶음이 우측 상단으로 올라간다(요청)', async () => {
+    const restore = mockMatchMedia(true);
+    try {
+      localStorage.setItem('mindflow_doc_b12', JSON.stringify(BOARD));
+      const { container } = renderEditor('/editor?map=b12&title=x');
+      await waitFor(() => expect(container.querySelector('[data-zoom-cluster]')).toBeTruthy());
+      const cluster = container.querySelector('[data-zoom-cluster]') as HTMLElement;
+      expect(cluster.style.top).toBe('16px');
+      expect(cluster.style.bottom).toBe('auto');
+    } finally {
+      restore();
+    }
+  });
+
+  it('맵(무회귀): 모바일에서도 줌·미니맵 묶음은 하단에 남는다', async () => {
+    const restore = mockMatchMedia(true);
+    try {
+      localStorage.setItem(
+        'mindflow_doc_m4',
+        JSON.stringify({ v: 1, nodes: { root: { id: 'root', text: '루트', emoji: '', parent: null, children: [], collapsed: false, color: null, x: 0, y: 0 } }, floats: [], lines: [], zones: [], layoutMode: 'right', themeKey: 'coral' }),
+      );
+      const { container } = renderEditor('/editor?map=m4&title=x');
+      await waitFor(() => expect(container.querySelector('[data-zoom-cluster]')).toBeTruthy());
+      const cluster = container.querySelector('[data-zoom-cluster]') as HTMLElement;
+      expect(cluster.style.bottom).toBe('16px');
+    } finally {
+      restore();
+    }
+  });
+
+  it('이미지 제목은 20자까지 — 커밋에서도 잘린다(요청)', async () => {
+    localStorage.setItem(
+      'mindflow_doc_b13',
+      JSON.stringify({ ...BOARD, floats: [{ id: 'img1', x: 0, y: 0, w: 200, h: 150, text: '', img: 'data:image/png;base64,iVBORw0KGgo=' }] }),
+    );
+    const { container } = renderEditor('/editor?map=b13&title=x');
+    const floatEl = await waitFor(() => {
+      const el = container.querySelector('[data-float-id="img1"]') as HTMLElement;
+      expect(el).toBeTruthy();
+      return el;
+    });
+    fireEvent.pointerDown(floatEl, { button: 0, clientX: 10, clientY: 10 });
+    fireEvent.pointerUp(floatEl, { button: 0, clientX: 10, clientY: 10 });
+    const input = (await screen.findByLabelText('이미지 제목')) as HTMLInputElement;
+    expect(input.maxLength).toBe(20);
+    // maxLength를 우회한 값(붙여넣기 등)도 커밋에서 잘린다.
+    fireEvent.change(input, { target: { value: '가'.repeat(40) } });
+    fireEvent.blur(input);
+    await waitFor(() => expect(floatEl.querySelector('[data-float-caption]')?.textContent).toBe('가'.repeat(20)));
   });
 
   it('그리기 도구 막대는 board 전용 — 맵에는 없다(M4)', async () => {

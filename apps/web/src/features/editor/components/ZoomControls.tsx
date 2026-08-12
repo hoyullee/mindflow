@@ -1,6 +1,6 @@
+import type { CSSProperties } from 'react';
 import type { EditorController } from '../useEditorState';
 import { Minimap } from './Minimap';
-import { BOARD_TOOLBAR_LIFT } from './BoardToolbar';
 import { useIsMobile } from '../../../hooks/useMediaQuery';
 
 interface ZoomControlsProps {
@@ -46,9 +46,13 @@ export function ZoomControls({ controller, panelOpen = false }: ZoomControlsProp
     padding: 0,
   } as const;
 
-  // 화이트보드의 하단 중앙 도구 막대는 폰에서 이 묶음과 가로로 부딪힌다(제보 —
-  // 겹쳐 보임). 좁은 화면에서는 도구 막대 높이만큼 위로 비켜선다.
-  const lift = isMobile && controller.isBoard ? BOARD_TOOLBAR_LIFT : 0;
+  // 폰의 화이트보드에서는 이 묶음이 **우측 상단**으로 올라간다(요청) — 하단
+  // 중앙 도구 막대 바로 위에 겹쳐 앉아 있으면 아래쪽이 무겁고, 그 자리는 이제
+  // 도구 막대의 자리다. 접속자 아바타(PresenceBar)도 우측 상단이라, 사람이
+  // 있을 때만 그 높이(34+여백)만큼 아래로 내려 나란히 선다.
+  const topRight = isMobile && controller.isBoard;
+  const peers = controller.presence.peers.length;
+  const anchor: CSSProperties = topRight ? { top: 16 + (peers ? 46 : 0), bottom: 'auto' } : { bottom: 16 };
 
   return (
     <div
@@ -56,7 +60,7 @@ export function ZoomControls({ controller, panelOpen = false }: ZoomControlsProp
       style={{
         position: 'absolute',
         right: 16,
-        bottom: 16 + lift,
+        ...anchor,
         background: th.panel,
         border: `1px solid ${th.border}`,
         borderRadius: 12,

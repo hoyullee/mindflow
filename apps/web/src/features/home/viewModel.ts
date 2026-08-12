@@ -20,6 +20,9 @@ export interface CardViewData {
   /** 이 맵이 공유돼 있으면 그 요약("2명과 공유 중" 등) — 있으면 카드 제목 옆에
    * 사람 아이콘 표식이 뜨고 이 문구가 툴팁이 된다(`sharedLabelOf`). */
   sharedLabel?: string;
+  /** 화이트보드 문서인가 — 카드 썸네일 바탕과 종류 배지가 달라진다(제보: 맵
+   * 카드와 구별이 안 된다). 본문을 아직 못 받았으면 false(받으면 다시 그려진다). */
+  isBoard: boolean;
   hue: string;
   docId?: string;
   href: string;
@@ -217,6 +220,24 @@ function sourceIsDrive(title: string): boolean {
   return DRIVE_FILES.some((f) => f.name === title);
 }
 
+/**
+ * 이 카드가 **화이트보드** 문서인가 — 카드 겉모습을 마인드맵과 다르게 그리는
+ * 기준(제보: 목록에서 구별이 안 된다).
+ *
+ * 본문을 다시 `JSON.parse` 하지 않고 문자열을 보는 이유: 카드마다·렌더마다 도는
+ * 자리인데 파싱 비용이 본문 크기에 비례한다(썸네일은 이미 `realPreview`가
+ * 캐시된 파싱을 쓴다). `kind`는 'board'일 때만 직렬화되는 짧은 필드라
+ * 문자열 검사로 충분하다(`serializeDoc` 참고).
+ */
+export function isBoardRaw(raw: string | null | undefined): boolean {
+  return !!raw && /"kind"\s*:\s*"board"/.test(raw);
+}
+
+/** 카드 본문(썸네일·종류 판별의 원천) — `cardSketch`와 같은 조회 순서. */
+function cardRaw(title: string, docId: string | undefined, previewDocs: Record<string, string>): string | null {
+  return (docId ? previewDocs[docId] || readDocRaw(docId) : docRawForTitle(title)) || null;
+}
+
 function cardSketch(title: string, hue: string, docId: string | undefined, previewDocs: Record<string, string>, previewResolved: Record<string, boolean>): JSX.Element {
   // A docId-backed card's body is keyed by that id alone: the prefetched
   // DocStore body (covers backend-stored maps), then the localStorage copy.
@@ -376,6 +397,7 @@ export function deriveHomeView(state: HomeState): HomeViewModel {
       docId: c.docId,
       href: mapHref(c.title, c.docId),
       sketch: cardSketch(c.title, c.hue, c.docId, state.previewDocs, state.previewResolved),
+      isBoard: isBoardRaw(cardRaw(c.title, c.docId, state.previewDocs)),
       badge: isDriveSpace ? 'Drive' : '',
       openable: c.openable,
       isFav: !!favs[key],
@@ -500,6 +522,7 @@ export function deriveHomeView(state: HomeState): HomeViewModel {
             docId: m.docId,
             href: mapHref(m.title, m.docId),
             sketch: cardSketch(m.title, m.hue, m.docId, state.previewDocs, state.previewResolved),
+            isBoard: isBoardRaw(cardRaw(m.title, m.docId, state.previewDocs)),
             badge: '',
             openable: true,
             isFav: !!state.favs[key],
@@ -639,6 +662,7 @@ export function deriveHomeView(state: HomeState): HomeViewModel {
         docId: base.docId,
         href: mapHref(base.title, base.docId),
         sketch: cardSketch(base.title, base.hue, base.docId, state.previewDocs, state.previewResolved),
+        isBoard: isBoardRaw(cardRaw(base.title, base.docId, state.previewDocs)),
         badge: '',
         openable: true,
         isFav: !!favs[key],

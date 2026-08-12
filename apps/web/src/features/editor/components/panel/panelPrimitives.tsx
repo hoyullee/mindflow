@@ -97,7 +97,9 @@ export function panelWrapStyle(th: Theme, isMobile = false, lowered = false, sho
       borderRight: 'none',
       borderRadius: '16px 0 0 16px',
       boxShadow: '-8px 0 30px rgba(0,0,0,.14)',
-      zIndex: 25,
+      // 화이트보드 하단 도구 막대(120)보다 위 — 폰에서 시트를 도구 막대가
+      // 가리고 있었다(제보). 시트는 "지금 고른 것"을 다루는 화면이라 그 위다.
+      zIndex: 130,
       overflow: 'hidden',
       display: 'flex',
       flexDirection: 'column',
@@ -116,7 +118,9 @@ export function panelWrapStyle(th: Theme, isMobile = false, lowered = false, sho
       borderBottom: 'none',
       borderRadius: '16px 16px 0 0',
       boxShadow: '0 -8px 30px rgba(0,0,0,.14)',
-      zIndex: 25,
+      // 화이트보드 하단 도구 막대(120)보다 위 — 폰에서 시트를 도구 막대가
+      // 가리고 있었다(제보).
+      zIndex: 130,
       overflow: 'hidden',
       display: 'flex',
       flexDirection: 'column',
