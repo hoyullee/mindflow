@@ -9,6 +9,7 @@ import { Editor } from './Editor';
 import { mockMatchMedia } from '../../test/matchMedia';
 import { BOARD_TEMPLATES } from '../../templates/mapTemplates';
 import { HL_COLORS, HL_OPACITY, HL_WIDTHS, PEN_COLORS } from './boardTools';
+import { VOTE_EMOJI } from '@mindflow/mindmap-core';
 
 const BOARD = {
   v: 1,
@@ -810,5 +811,134 @@ describe('화이트보드 에디터', () => {
     } finally {
       restore();
     }
+  });
+  // ── 스티커 반응·점 투표 ───────────────────────────────────────────────────
+
+  it('메모를 고르면 반응 추가 버튼이 뜨고, 고른 표가 칩으로 남는다(저장·토글)', async () => {
+    localStorage.setItem('mindflow_doc_b20', JSON.stringify(BOARD));
+    const { container } = renderEditor('/editor?map=b20&title=x');
+    const floatEl = await waitFor(() => {
+      const el = container.querySelector('[data-float-id="bf1"]') as HTMLElement;
+      expect(el).toBeTruthy();
+      return el;
+    });
+
+    // 고르지 않았으면 아무 것도 없다(빈 캔버스에 (+)가 떠 있으면 소음).
+    expect(container.querySelector('[data-reaction-row]')).toBeNull();
+
+    fireEvent.pointerDown(floatEl, { button: 0, clientX: 10, clientY: 10 });
+    fireEvent.pointerUp(floatEl, { button: 0, clientX: 10, clientY: 10 });
+    const add = await waitFor(() => {
+      const el = container.querySelector('[data-reaction-add]') as HTMLElement;
+      expect(el).toBeTruthy();
+      return el;
+    });
+
+    // (+) → 투표 점을 고른다.
+    fireEvent.click(add);
+
+    const pick = await waitFor(() => {
+      const el = container.querySelector(`[data-reaction-pick="${VOTE_EMOJI}"]`) as HTMLElement;
+      expect(el).toBeTruthy();
+      return el;
+    });
+    fireEvent.click(pick);
+
+    const chip = await waitFor(() => {
+      const el = container.querySelector(`[data-reaction="${VOTE_EMOJI}"]`) as HTMLElement;
+      expect(el).toBeTruthy();
+      return el;
+    });
+    expect(chip.textContent).toContain('1');
+    expect(chip.getAttribute('data-mine')).toBe('1'); // 내 표 표시
+
+    // 저장본에 항목 하나로 남는다(한 표 = 한 항목).
+    fireEvent.keyDown(window, { key: 's', ctrlKey: true });
+    await waitFor(() => {
+      const saved = JSON.parse(localStorage.getItem('mindflow_doc_b20') || 'null');
+      expect(saved.reactions).toHaveLength(1);
+      expect(saved.reactions[0]).toMatchObject({ target: 'bf1', emoji: VOTE_EMOJI, by: 'me@example.com' });
+    });
+
+    // 다시 누르면 내 표만 빠지고 칩이 사라진다.
+    fireEvent.click(chip);
+    await waitFor(() => expect(container.querySelector(`[data-reaction="${VOTE_EMOJI}"]`)).toBeNull());
+    fireEvent.keyDown(window, { key: 's', ctrlKey: true });
+    await waitFor(() => {
+      const saved = JSON.parse(localStorage.getItem('mindflow_doc_b20') || 'null');
+      expect(saved.reactions === undefined || saved.reactions.length === 0).toBe(true);
+    });
+  });
+
+  it('남이 던진 표는 선택하지 않아도 보이고, 내 표가 아니면 mine 표시가 없다', async () => {
+    localStorage.setItem(
+      'mindflow_doc_b21',
+      JSON.stringify({ ...BOARD, reactions: [{ id: 'r1', target: 'bf1', by: 'friend@example.com', byName: '친구', emoji: '👍' }] }),
+    );
+    const { container } = renderEditor('/editor?map=b21&title=x');
+    const chip = await waitFor(() => {
+      const el = container.querySelector('[data-reaction="👍"]') as HTMLElement;
+      expect(el).toBeTruthy();
+      return el;
+    });
+    expect(chip.textContent).toContain('1');
+    expect(chip.getAttribute('data-mine')).toBeNull();
+    expect(chip.getAttribute('title')).toBe('친구'); // 누가 눌렀는지 툴팁
+
+    // 내가 같은 이모지를 누르면 2가 되고 내 표 표시가 붙는다(항목이 하나 더 생긴다).
+    fireEvent.click(chip);
+    await waitFor(() => {
+      const c = container.querySelector('[data-reaction="👍"]') as HTMLElement;
+      expect(c.textContent).toContain('2');
+      expect(c.getAttribute('data-mine')).toBe('1');
+    });
+  });
+
+  it('메모를 지우면 그 메모의 반응도 함께 사라진다(고아 정리)', async () => {
+    localStorage.setItem(
+      'mindflow_doc_b22',
+      JSON.stringify({ ...BOARD, reactions: [{ id: 'r1', target: 'bf1', by: 'a@x', emoji: '👍' }] }),
+    );
+    const { container } = renderEditor('/editor?map=b22&title=x');
+    const floatEl = await waitFor(() => {
+      const el = container.querySelector('[data-float-id="bf1"]') as HTMLElement;
+      expect(el).toBeTruthy();
+      return el;
+    });
+    fireEvent.pointerDown(floatEl, { button: 0, clientX: 10, clientY: 10 });
+    fireEvent.pointerUp(floatEl, { button: 0, clientX: 10, clientY: 10 });
+    fireEvent.keyDown(window, { key: 'Delete' });
+    await waitFor(() => expect(container.querySelector('[data-float-id="bf1"]')).toBeNull());
+
+    fireEvent.keyDown(window, { key: 's', ctrlKey: true });
+    await waitFor(() => {
+      const saved = JSON.parse(localStorage.getItem('mindflow_doc_b22') || 'null');
+      expect(saved.reactions === undefined || saved.reactions.length === 0).toBe(true);
+    });
+  });
+
+  it('맵(마인드맵)의 메모에는 반응이 붙지 않는다 — 보드의 어휘다', async () => {
+    localStorage.setItem(
+      'mindflow_doc_m2',
+      JSON.stringify({
+        v: 1,
+        nodes: { root: { id: 'root', text: '루트', emoji: '', parent: null, children: [], collapsed: false, color: null, x: 0, y: 0 } },
+        floats: [{ id: 'mf1', x: -300, y: 0, w: 180, text: '메모' }],
+        lines: [],
+        zones: [],
+        layoutMode: 'right',
+        themeKey: 'coral',
+      }),
+    );
+    const { container } = renderEditor('/editor?map=m2&title=x');
+    const floatEl = await waitFor(() => {
+      const el = container.querySelector('[data-float-id="mf1"]') as HTMLElement;
+      expect(el).toBeTruthy();
+      return el;
+    });
+    fireEvent.pointerDown(floatEl, { button: 0, clientX: 10, clientY: 10 });
+    fireEvent.pointerUp(floatEl, { button: 0, clientX: 10, clientY: 10 });
+    await waitFor(() => expect(container.querySelector('[data-float-id="mf1"]')).toBeTruthy());
+    expect(container.querySelector('[data-reaction-add]')).toBeNull();
   });
 });

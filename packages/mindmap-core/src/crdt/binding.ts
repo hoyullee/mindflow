@@ -34,7 +34,7 @@
 // structural change directly as its own transaction.
 
 import * as Y from 'yjs';
-import type { Doc, DocKind, EdgeStyle, Float, Line, LayoutMode, Node, NodeMap, Stroke, Zone } from '../model';
+import type { Doc, DocKind, EdgeStyle, Float, Line, LayoutMode, Node, NodeMap, Reaction, Stroke, Zone } from '../model';
 import { DEFAULT_LAYOUT_MODE, DEFAULT_THEME_KEY } from '../model';
 
 type PlainRecord = Record<string, unknown>;
@@ -202,13 +202,15 @@ export function yDocToDoc(ydoc: Y.Doc): Doc {
   const zones = readEntityList<Zone>(ydoc, 'zones', 'zonesOrder');
   // 그리기 획 — 옵션 컬렉션(비면 키 자체를 만들지 않는다, 라운드트립 동일성).
   const strokes = readEntityList<Stroke>(ydoc, 'strokes', 'strokesOrder');
+  // 반응·투표 — 획과 같은 원자 항목(한 사람의 한 표 = 항목 하나).
+  const reactions = readEntityList<Reaction>(ydoc, 'reactions', 'reactionsOrder');
   const meta = ydoc.getMap<unknown>('meta');
   const layoutMode = (meta.get('layoutMode') as LayoutMode | undefined) ?? DEFAULT_LAYOUT_MODE;
   const themeKey = (meta.get('themeKey') as string | undefined) ?? DEFAULT_THEME_KEY;
   // `edgeStyle`은 옵션 필드 — 없으면 키 자체를 만들지 않는다(라운드트립 동일성 유지).
   const edgeStyle = meta.get('edgeStyle') as EdgeStyle | undefined;
   const kind = meta.get('kind') as DocKind | undefined;
-  return { v: 1, nodes, floats, lines, zones, layoutMode, themeKey, ...(edgeStyle !== undefined ? { edgeStyle } : {}), ...(kind !== undefined ? { kind } : {}), ...(strokes.length ? { strokes } : {}) };
+  return { v: 1, nodes, floats, lines, zones, layoutMode, themeKey, ...(edgeStyle !== undefined ? { edgeStyle } : {}), ...(kind !== undefined ? { kind } : {}), ...(strokes.length ? { strokes } : {}), ...(reactions.length ? { reactions } : {}) };
 }
 
 /**
@@ -232,6 +234,8 @@ export function applyDocToYDoc(ydoc: Y.Doc, nextDoc: Doc, prevDoc?: Doc | null, 
     syncEntityList<Zone>(ydoc, 'zones', 'zonesOrder', prevDoc?.zones, nextDoc.zones);
     // 그리기 획 — prev가 있는데 strokes 키가 없으면 빈 배열로 취급(옵션 필드).
     syncEntityList<Stroke>(ydoc, 'strokes', 'strokesOrder', prevDoc ? (prevDoc.strokes ?? []) : undefined, nextDoc.strokes ?? []);
+    // 반응·투표 — 항목 단위라 두 사람이 동시에 눌러도 표가 합쳐진다(#332의 교훈).
+    syncEntityList<Reaction>(ydoc, 'reactions', 'reactionsOrder', prevDoc ? (prevDoc.reactions ?? []) : undefined, nextDoc.reactions ?? []);
     const meta = ydoc.getMap<unknown>('meta');
     if (!prevDoc || prevDoc.layoutMode !== nextDoc.layoutMode) meta.set('layoutMode', nextDoc.layoutMode);
     if (!prevDoc || prevDoc.themeKey !== nextDoc.themeKey) meta.set('themeKey', nextDoc.themeKey);

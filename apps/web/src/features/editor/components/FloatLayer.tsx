@@ -10,6 +10,7 @@ import type { Theme } from '../theme';
 import type { EditorController } from '../useEditorState';
 import { peersSelecting } from '../presenceSelection';
 import { CommentBadge } from './CommentBadge';
+import { ReactionRow } from './ReactionRow';
 import { useIsTouchDevice } from '../../../hooks/useMediaQuery';
 import { useSoftKeyboardOpen } from '../../../hooks/useKeyboardInset';
 import { RemotePeerTag } from './RemotePeerTag';
@@ -209,6 +210,11 @@ export function FloatLayer({ floats, theme: th, controller }: FloatLayerProps) {
                 MindFlow.dc.html:1486 — hidden during a marquee multi-selection) */}
             {controller.selection?.kind === 'float' && controller.selection.id === f.id && !editing && (
               <ResizeHandle title="크기 조절" accent={th.accent} panel={th.panel} right={-6} bottom={-6} zIndex={6} onPointerDown={(e) => controller.beginFloatResize(e, f.id)} />
+            )}
+            {/* 스티커 반응·점 투표(화이트보드) — 카드 아래 바깥 칩 줄. 맵에는 두지
+                않는다: 회고에서 스티커에 표를 던지는 도구라 보드의 어휘다. */}
+            {controller.isBoard && !editing && (
+              <ReactionRow controller={controller} target={f.id} active={controller.selection?.kind === 'float' && controller.selection.id === f.id} />
             )}
             {/* 댓글 배지 — 주제와 같은 문법(모든 객체 댓글). 접기 토글이 좌상단이라 우상단. */}
             {(controller.commentCounts[f.id] ?? 0) > 0 && (

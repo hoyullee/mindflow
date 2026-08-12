@@ -13,6 +13,7 @@ import { parseDoc, serializeDoc } from './serialize';
 import { layout } from './layout';
 import { toMarkdown } from './markdown';
 import { docToYDoc, yDocToDoc, applyDocToYDoc } from './crdt/binding';
+import * as Y from 'yjs';
 
 const memo = (id: string, x: number, y: number, extra: Partial<Float> = {}): Float => ({ id, x, y, w: 180, text: '메모 ' + id, ...extra });
 
@@ -192,5 +193,77 @@ describe('하이라이터(형광펜) 획', () => {
   it('굵은 획일수록 경계·히트 허용치가 넓다 — 하이라이터도 같은 기하를 쓴다', () => {
     expect(strokeBounds(HL)).toEqual({ x0: -10, y0: -10, x1: 70, y1: 10 });
     expect(strokeHit(HL, 30, 9, 10)).toBe(true);
+  });
+});
+
+// ── 스티커 반응·점 투표 ─────────────────────────────────────────────────────
+
+import { findReaction, pruneReactions, reactionGroups, toggleReaction } from './reactions';
+import { VOTE_EMOJI } from './model';
+import type { Reaction } from './model';
+
+const R = (id: string, target: string, by: string, emoji: string, byName?: string): Reaction => ({ id, target, by, emoji, ...(byName ? { byName } : {}) });
+
+describe('반응·투표 모델', () => {
+  it('비어 있지 않을 때만 직렬화된다(획과 같은 규칙) + 왕복', () => {
+    const rs = [R('r1', 'f1', 'me@x', '👍', '나')];
+    const d = serializeDoc(boardDoc({ reactions: rs }));
+    expect(d.reactions).toEqual(rs);
+    expect(parseDoc(JSON.parse(JSON.stringify(d)))?.reactions).toEqual(rs);
+
+    const none = serializeDoc(boardDoc());
+    expect('reactions' in none).toBe(false);
+  });
+
+  it('한 표 = 한 항목이라 두 사람이 동시에 눌러도 표가 합쳐진다(#332의 교훈)', () => {
+    // 갈라진 두 피어가 **같은 대상**에 각자 표를 던진다.
+    const base = boardDoc({ reactions: [] });
+    const ydocA = docToYDoc(base);
+    const ydocB = docToYDoc(base);
+    const a = R('ra', 'f1', 'a@x', VOTE_EMOJI);
+    const b = R('rb', 'f1', 'b@x', VOTE_EMOJI);
+    applyDocToYDoc(ydocA, { ...base, reactions: [a] }, base);
+    applyDocToYDoc(ydocB, { ...base, reactions: [b] }, base);
+
+    // 재연결: 서로의 업데이트를 교환한다.
+    const upA = Y.encodeStateAsUpdate(ydocA);
+    const upB = Y.encodeStateAsUpdate(ydocB);
+    Y.applyUpdate(ydocA, upB);
+    Y.applyUpdate(ydocB, upA);
+
+    const merged = yDocToDoc(ydocA).reactions ?? [];
+    expect(merged.map((r) => r.id).sort()).toEqual(['ra', 'rb']);
+    expect(yDocToDoc(ydocB).reactions?.length).toBe(2);
+  });
+
+  it('reactionGroups — 이모지별 개수·내 표 여부·이름, 투표 점이 맨 앞', () => {
+    const rs = [R('r1', 'f1', 'a@x', '👍', '가'), R('r2', 'f1', 'me@x', '👍', '나'), R('r3', 'f1', 'a@x', VOTE_EMOJI, '가'), R('r4', 'f2', 'a@x', '❤️')];
+    const g = reactionGroups(rs, 'f1', 'me@x');
+    expect(g.map((x) => x.emoji)).toEqual([VOTE_EMOJI, '👍']);
+    const thumbs = g.find((x) => x.emoji === '👍')!;
+    expect(thumbs.count).toBe(2);
+    expect(thumbs.mine).toBe(true);
+    expect(thumbs.names).toEqual(['가', '나']);
+    expect(g.find((x) => x.emoji === VOTE_EMOJI)!.mine).toBe(false);
+    // 다른 대상의 반응은 섞이지 않는다.
+    expect(reactionGroups(rs, 'f2', 'me@x').map((x) => x.emoji)).toEqual(['❤️']);
+    expect(reactionGroups(undefined, 'f1', 'me@x')).toEqual([]);
+  });
+
+  it('toggleReaction — 처음엔 더하고 다시 누르면 내 표만 뺀다', () => {
+    const mine = R('r2', 'f1', 'me@x', '👍');
+    const list = [R('r1', 'f1', 'a@x', '👍')];
+    const added = toggleReaction(list, mine);
+    expect(added).toHaveLength(2);
+    expect(findReaction(added, 'f1', '👍', 'me@x')?.id).toBe('r2');
+
+    const removed = toggleReaction(added, R('r9', 'f1', 'me@x', '👍'));
+    expect(removed.map((r) => r.id)).toEqual(['r1']); // 남의 표는 그대로
+  });
+
+  it('pruneReactions — 사라진 대상의 반응은 걷어낸다', () => {
+    const rs = [R('r1', 'f1', 'a@x', '👍'), R('r2', 'gone', 'a@x', '👍')];
+    expect(pruneReactions(rs, new Set(['f1'])).map((r) => r.id)).toEqual(['r1']);
+    expect(pruneReactions(undefined, new Set())).toEqual([]);
   });
 });
