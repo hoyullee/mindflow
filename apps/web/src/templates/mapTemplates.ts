@@ -131,6 +131,100 @@ export const MAP_TEMPLATES: MapTemplate[] = [
   },
 ];
 
+/**
+ * 화이트보드 템플릿 — 보드에는 트리가 없으므로 **메모의 배치**가 곧 템플릿이다.
+ *
+ * 어휘를 보드가 실제로 만들 수 있는 것(메모·이미지·잉크)으로 제한한다: 사용자가
+ * 지웠다가 **다시 만들 수 없는 물건**(영역·연결선)을 템플릿만 슬쩍 심어 두면
+ * "이건 어떻게 되살리지?"가 된다. 열 제목도 그냥 색 있는 메모다.
+ *
+ * 좌표는 원점을 가운데 두게 잡는다 — 첫 센터링이 장면 바운즈의 중심을 잡으므로
+ * 열자마자 전체가 화면 한가운데에 놓인다.
+ */
+export interface BoardTemplateMemo {
+  text: string;
+  x: number;
+  y: number;
+  w: number;
+  /** 최소 높이. 없으면 글자에 맞춰 자란다(빈 카드는 44). 스티커처럼 보이게 쓴다. */
+  h?: number;
+  /** 카드 배경. 없으면 기본 노랑(스티커). */
+  bg?: string;
+  /** 굵게 — 열 제목처럼 한 줄짜리 머리에 쓴다(rich 런 하나로 저장된다). */
+  bold?: boolean;
+}
+
+export interface BoardTemplate {
+  id: string;
+  /** 갤러리 카드 이름이자 새 보드의 제목. */
+  name: string;
+  desc: string;
+  memos: BoardTemplateMemo[];
+}
+
+// 열 세 개짜리 보드의 공통 격자 — 메모 폭 260 + 간격 40(전체 860, 원점 기준 좌우 대칭).
+// 세로는 [제목][카드][카드]로 96 + 간격 18. 값이 겹치면 열자마자 카드가 포개져
+// 보이므로 테스트가 "어떤 두 메모도 겹치지 않는다"를 지킨다.
+const COL_X = [-430, -130, 170];
+const CARD_W = 260;
+const CARD_H = 96;
+const HEAD_Y = -190;
+const CARD_Y = [-120, -6];
+
+export const BOARD_TEMPLATES: BoardTemplate[] = [
+  {
+    id: 'board-retro',
+    name: '회고 (KPT)',
+    desc: '잘한 것 · 아쉬운 것 · 다음에 해볼 것',
+    memos: [
+      { text: 'Keep · 잘한 것', x: COL_X[0]!, y: HEAD_Y, w: CARD_W, bg: '#dff2e5', bold: true },
+      { text: 'Problem · 아쉬운 것', x: COL_X[1]!, y: HEAD_Y, w: CARD_W, bg: '#ffe3e0', bold: true },
+      { text: 'Try · 다음에 해볼 것', x: COL_X[2]!, y: HEAD_Y, w: CARD_W, bg: '#e0e9ff', bold: true },
+      { text: '예) 배포가 자동화되어 손이 덜 갔다', x: COL_X[0]!, y: CARD_Y[0]!, w: CARD_W, h: CARD_H },
+      { text: '', x: COL_X[0]!, y: CARD_Y[1]!, w: CARD_W, h: CARD_H },
+      { text: '예) 리뷰가 늦어 배포가 밀렸다', x: COL_X[1]!, y: CARD_Y[0]!, w: CARD_W, h: CARD_H },
+      { text: '', x: COL_X[1]!, y: CARD_Y[1]!, w: CARD_W, h: CARD_H },
+      { text: '예) 리뷰 담당을 미리 정해 두기', x: COL_X[2]!, y: CARD_Y[0]!, w: CARD_W, h: CARD_H },
+      { text: '', x: COL_X[2]!, y: CARD_Y[1]!, w: CARD_W, h: CARD_H },
+    ],
+  },
+  {
+    id: 'board-kanban',
+    name: '칸반 보드',
+    desc: '할 일 · 진행 중 · 완료로 옮겨 가며',
+    memos: [
+      { text: '할 일', x: COL_X[0]!, y: HEAD_Y, w: CARD_W, bg: '#eceef2', bold: true },
+      { text: '진행 중', x: COL_X[1]!, y: HEAD_Y, w: CARD_W, bg: '#e0e9ff', bold: true },
+      { text: '완료', x: COL_X[2]!, y: HEAD_Y, w: CARD_W, bg: '#dff2e5', bold: true },
+      { text: '예) 로그인 화면 만들기', x: COL_X[0]!, y: CARD_Y[0]!, w: CARD_W, h: CARD_H },
+      { text: '', x: COL_X[0]!, y: CARD_Y[1]!, w: CARD_W, h: CARD_H },
+      { text: '예) 검색 결과 정렬 고치기', x: COL_X[1]!, y: CARD_Y[0]!, w: CARD_W, h: CARD_H },
+      { text: '예) 첫 배포', x: COL_X[2]!, y: CARD_Y[0]!, w: CARD_W, h: CARD_H },
+    ],
+  },
+  {
+    // 이름이 맵 템플릿의 '브레인스토밍'과 겹치면 갤러리 한 화면에 같은 이름이
+    // 둘이 되어 무엇이 다른지 알 수 없다 — 보드 쪽은 하는 일(스티커 붙이기)로 부른다.
+    id: 'board-ideas',
+    name: '아이디어 스티커',
+    desc: '떠오르는 대로 붙이고 나중에 묶기',
+    memos: [
+      { text: '무엇을 고민하고 있나요?', x: -230, y: -210, w: 460, bg: '#e0e9ff', bold: true },
+      { text: '예) 엉뚱해도 일단 적기 — 고르는 건 나중에', x: -415, y: -130, w: 250, h: CARD_H },
+      { text: '', x: -125, y: -130, w: 250, h: CARD_H },
+      { text: '', x: 165, y: -130, w: 250, h: CARD_H },
+      { text: '', x: -415, y: -16, w: 250, h: CARD_H },
+      { text: '', x: -125, y: -16, w: 250, h: CARD_H },
+      { text: '', x: 165, y: -16, w: 250, h: CARD_H },
+    ],
+  },
+];
+
+export function findBoardTemplate(id: string | null | undefined): BoardTemplate | null {
+  if (!id) return null;
+  return BOARD_TEMPLATES.find((t) => t.id === id) ?? null;
+}
+
 export function findTemplate(id: string | null | undefined): MapTemplate | null {
   if (!id) return null;
   return MAP_TEMPLATES.find((t) => t.id === id) ?? null;
@@ -162,6 +256,22 @@ export function buildTemplateDoc(id: string | null | undefined): Doc | null {
     // (제보). 흰 배경을 테마 하나로 만들면 기본 인상은 그대로면서 바꿀 수도 있다.
     return { v: 1, nodes: {}, floats: [starter], lines: [], zones: [], layoutMode: 'right', themeKey: BOARD_THEME_KEY, edgeStyle: DEFAULT_EDGE_STYLE, kind: 'board' };
   }
+  const bt = findBoardTemplate(id);
+  if (bt) {
+    const floats: Float[] = bt.memos.map((m, i) => ({
+      id: `bt${i + 1}`,
+      x: m.x,
+      y: m.y,
+      w: m.w,
+      text: m.text,
+      ...(m.h ? { h: m.h } : {}),
+      ...(m.bg ? { bg: m.bg } : {}),
+      // 굵게는 rich 런 하나 — `text`와 글자가 같아야 한다(모델 계약).
+      ...(m.bold && m.text ? { rich: [{ t: m.text, b: true }] } : {}),
+    }));
+    return { v: 1, nodes: {}, floats, lines: [], zones: [], layoutMode: 'right', themeKey: BOARD_THEME_KEY, edgeStyle: DEFAULT_EDGE_STYLE, kind: 'board' };
+  }
+
   const t = findTemplate(id);
   if (!t) return null;
 

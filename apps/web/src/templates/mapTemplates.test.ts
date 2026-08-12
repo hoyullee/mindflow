@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { ROOT_ID, layout, parseDoc, serializeDoc } from '@mindflow/mindmap-core';
-import { MAP_TEMPLATES, buildTemplateDoc, findTemplate } from './mapTemplates';
+import { BOARD_TEMPLATES, BOARD_THEME_KEY, MAP_TEMPLATES, buildTemplateDoc, findBoardTemplate, findTemplate } from './mapTemplates';
 
 describe('맵 템플릿', () => {
   it('모르는 id는 null — 호출부가 평범한 빈 맵으로 떨어진다', () => {
@@ -61,5 +61,83 @@ describe('맵 템플릿', () => {
     const ids = Object.keys(doc.nodes).filter((id) => id !== ROOT_ID);
     expect(ids.length).toBeGreaterThan(0);
     for (const id of ids) expect(id).toMatch(/^t\d+$/);
+  });
+});
+
+describe('화이트보드 템플릿', () => {
+  // 메모 카드의 최소 높이(`measureFloatHeight`의 `f.h || 44`) — h를 적지 않은
+  // 제목 카드는 이 높이로 그려진다.
+  const MIN_H = 44;
+
+  it('id가 맵 템플릿과도 서로 겹치지 않는다 — 주소의 tpl 값 하나로 갈린다', () => {
+    const ids = [...BOARD_TEMPLATES.map((t) => t.id), ...MAP_TEMPLATES.map((t) => t.id), 'board'];
+    expect(new Set(ids).size).toBe(ids.length);
+    expect(findBoardTemplate('없는-보드')).toBeNull();
+    expect(findBoardTemplate(null)).toBeNull();
+    // 맵 조회는 보드 id를 모른다(그 반대도) — 두 목록이 섞이지 않는다.
+    expect(findTemplate('board-retro')).toBeNull();
+    expect(findBoardTemplate('meeting')).toBeNull();
+  });
+
+  it.each(BOARD_TEMPLATES.map((t) => [t.id, t] as const))('%s: 트리 없는 board 문서로 만들어진다', (_id, tpl) => {
+    const d = buildTemplateDoc(tpl.id)!;
+    expect(d).not.toBeNull();
+    // board = `nodes: {}`인 평범한 Doc — 숨은 루트를 두지 않는다(M1 결정).
+    expect(d.kind).toBe('board');
+    expect(Object.keys(d.nodes)).toEqual([]);
+    expect(d.themeKey).toBe(BOARD_THEME_KEY);
+    // 보드가 실제로 만들 수 있는 어휘(메모·이미지·잉크)만 쓴다 — 사용자가 지웠을 때
+    // 다시 만들 수 없는 물건(영역·연결선)을 템플릿만 슬쩍 심어 두지 않는다.
+    expect(d.lines).toEqual([]);
+    expect(d.zones).toEqual([]);
+    expect(d.floats.length).toBe(tpl.memos.length);
+
+    // 저장 포맷을 통과한다(= 그대로 저장하고 다시 열 수 있다)
+    const round = parseDoc(JSON.parse(JSON.stringify(serializeDoc(d))));
+    expect(round).not.toBeNull();
+    expect(round!.kind).toBe('board');
+    expect(round!.floats.length).toBe(d.floats.length);
+    expect(round!.floats[0]?.rich?.[0]?.t).toBe(d.floats[0]?.rich?.[0]?.t);
+  });
+
+  it('굵은 제목 카드의 rich 런 글자가 text와 같다(모델 계약)', () => {
+    for (const tpl of BOARD_TEMPLATES) {
+      const d = buildTemplateDoc(tpl.id)!;
+      d.floats.forEach((f, i) => {
+        const bold = tpl.memos[i]!.bold;
+        if (!bold) {
+          expect(f.rich).toBeUndefined();
+          return;
+        }
+        expect(f.rich).toEqual([{ t: f.text, b: true }]);
+      });
+    }
+  });
+
+  it('어떤 두 메모도 겹치지 않는다 — 열자마자 카드가 포개져 보이면 첫인상이 나쁘다', () => {
+    for (const tpl of BOARD_TEMPLATES) {
+      const boxes = buildTemplateDoc(tpl.id)!.floats.map((f) => ({ x: f.x, y: f.y, w: f.w, h: f.h ?? MIN_H }));
+      for (let i = 0; i < boxes.length; i++) {
+        for (let j = i + 1; j < boxes.length; j++) {
+          const a = boxes[i]!;
+          const b = boxes[j]!;
+          const hit = a.x < b.x + b.w && b.x < a.x + a.w && a.y < b.y + b.h && b.y < a.y + a.h;
+          expect(hit, `${tpl.id}: 메모 ${i}·${j}가 겹친다`).toBe(false);
+        }
+      }
+    }
+  });
+
+  it('메모 id가 에디터가 만드는 id와 모양이 달라 부딪히지 않는다', () => {
+    for (const tpl of BOARD_TEMPLATES) {
+      for (const f of buildTemplateDoc(tpl.id)!.floats) expect(f.id).toMatch(/^bt\d+$/);
+    }
+  });
+
+  it('빈 화이트보드(`tpl=board`)는 그대로다 — 안내 메모 하나로 시작', () => {
+    const d = buildTemplateDoc('board')!;
+    expect(d.kind).toBe('board');
+    expect(d.floats.length).toBe(1);
+    expect(d.floats[0]?.text.length).toBeGreaterThan(0);
   });
 });
