@@ -225,6 +225,12 @@ a:hover {
   transform: translateY(-3px);
   box-shadow: 0 10px 24px rgba(0, 0, 0, 0.1) !important;
 }
+/* 카드는 누르는 대상이지 읽을 글이 아니다 — 열기(두 번 클릭)가 제목 글자를
+   통째로 선택해 파랗게 남기지 않게 한다(제보: 폴더 진입 직후 상위 폴더 타일). */
+.mf-home .map-card {
+  user-select: none;
+  -webkit-user-select: none;
+}
 .mf-home .map-card:hover {
   border-color: var(--mf-accent) !important;
   box-shadow: 0 10px 24px rgba(0, 0, 0, 0.08) !important;

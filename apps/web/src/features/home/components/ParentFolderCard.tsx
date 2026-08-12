@@ -1,7 +1,8 @@
-import type { DragEvent } from 'react';
+import type { DragEvent, MouseEvent } from 'react';
 import type { HomeController } from '../useHomeController';
 import type { ParentTileViewData } from '../viewModel';
 import { PARENT_DROP_ID } from '../viewModel';
+import { useCardActivation } from './useCardActivation';
 
 interface Props {
   tile: ParentTileViewData;
@@ -17,11 +18,24 @@ interface Props {
  * 요구했다. 파일 탐색기의 `..` 관례를 그대로 쓴다: 목록 안에 있으니 눈에 띄고,
  * 끌어다 놓을 자리가 화면에 실제로 존재한다.
  *
- * 클릭 규칙: **한 번 = 상위로**. 폴더/맵 카드는 한 번=선택 / 두 번=열기지만,
- * 이 타일은 고를 대상이 아니다(선택도 메뉴도 속성도 없다) — 예전 뒤로가기 버튼을
- * 대신하므로 한 번 누르면 올라가는 편이 자연스럽다.
+ * 클릭 규칙: **폴더 카드와 같다 — 두 번 눌러야 올라간다**(제보). 한 번에 올라가게
+ * 했더니 폴더를 더블클릭해 들어오는 순간, 두 번째 클릭이 그 자리에 새로 그려진 이
+ * 타일에 떨어져 글자가 통째로 선택된 것처럼 보였다. 같은 그리드 안에서 카드마다
+ * 클릭의 뜻이 다른 것도 이상하다. `useCardActivation`을 그대로 쓰므로 **다른 것을
+ * 누른 뒤 이 타일에 떨어지는 dblclick은 무시된다**(#317의 문지기) — 폴더 진입 직후
+ * 곧바로 한 계층 더 올라가 버리는 일이 없다.
  */
 export function ParentFolderCard({ tile, controller }: Props) {
+  const activation = useCardActivation();
+  const onClick = () => {
+    // 모바일은 두 번째 탭에서 'activate'가 온다(dblclick을 못 믿는다).
+    if (activation.click() === 'activate') controller.backToSpace();
+  };
+  const onDoubleClick = (e: MouseEvent<HTMLDivElement>) => {
+    e.preventDefault(); // 더블클릭이 남기는 텍스트 선택을 지운다
+    if (!activation.acceptDoubleClick()) return;
+    controller.backToSpace();
+  };
   const onDragOver = (e: DragEvent<HTMLDivElement>) => {
     e.preventDefault();
     e.dataTransfer.dropEffect = 'move';
@@ -40,9 +54,10 @@ export function ParentFolderCard({ tile, controller }: Props) {
       className="map-card"
       role="button"
       tabIndex={0}
-      title={`${tile.name}(으)로 올라가기 · 맵을 끌어다 놓으면 옮겨져요`}
+      title={`${tile.name}(으)로 올라가기(두 번 클릭) · 맵을 끌어다 놓으면 옮겨져요`}
       aria-label={`상위 폴더 ${tile.name}(으)로 이동`}
-      onClick={controller.backToSpace}
+      onClick={onClick}
+      onDoubleClick={onDoubleClick}
       onKeyDown={(e) => {
         if (e.key === 'Enter' || e.key === ' ') controller.backToSpace();
       }}
@@ -62,6 +77,8 @@ export function ParentFolderCard({ tile, controller }: Props) {
         alignItems: 'center',
         gap: 14,
         padding: '18px 18px',
+        // 두 번 클릭이 글자를 선택하지 않게(제보) — 이 타일은 읽을 글이 아니라 버튼이다.
+        userSelect: 'none',
         margin: tile.dragOver ? -1 : 0,
         boxShadow: tile.dragOver ? '0 6px 18px rgba(var(--mf-accent-rgb),.18)' : 'none',
       }}
