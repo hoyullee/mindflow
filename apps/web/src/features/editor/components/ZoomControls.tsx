@@ -1,5 +1,6 @@
 import type { EditorController } from '../useEditorState';
 import { Minimap } from './Minimap';
+import { BOARD_TOOLBAR_LIFT } from './BoardToolbar';
 import { useIsMobile } from '../../../hooks/useMediaQuery';
 
 interface ZoomControlsProps {
@@ -45,12 +46,17 @@ export function ZoomControls({ controller, panelOpen = false }: ZoomControlsProp
     padding: 0,
   } as const;
 
+  // 화이트보드의 하단 중앙 도구 막대는 폰에서 이 묶음과 가로로 부딪힌다(제보 —
+  // 겹쳐 보임). 좁은 화면에서는 도구 막대 높이만큼 위로 비켜선다.
+  const lift = isMobile && controller.isBoard ? BOARD_TOOLBAR_LIFT : 0;
+
   return (
     <div
+      data-zoom-cluster
       style={{
         position: 'absolute',
         right: 16,
-        bottom: 16,
+        bottom: 16 + lift,
         background: th.panel,
         border: `1px solid ${th.border}`,
         borderRadius: 12,
