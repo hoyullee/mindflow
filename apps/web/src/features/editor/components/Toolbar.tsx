@@ -129,9 +129,15 @@ export function Toolbar({ controller }: ToolbarProps) {
           <MenuBarButton label="편집" wrapRef={editRef} open={openMenu === 'edit'} onToggle={() => toggle('edit')} th={th} isMobile={isMobile} width={230} align="left">
             <EditMenu controller={controller} onDone={close} isMobile={isMobile} />
           </MenuBarButton>
-          <MenuBarButton label="삽입" wrapRef={insertRef} open={openMenu === 'insert'} onToggle={() => toggle('insert')} th={th} isMobile={isMobile} width={200} align="left">
-            <InsertMenu controller={controller} onDone={close} isMobile={isMobile} />
-          </MenuBarButton>
+          {/* 화이트보드는 삽입할 것이 메모·이미지 둘뿐이고 그 둘이 하단 도구
+              막대에 나와 있다 — 같은 동작의 진입점을 둘로 두지 않는다(요청:
+              "GNB 메뉴에 들어가 있으니 불편하다"). 배경 우클릭 메뉴는 그대로
+              (그건 "누른 자리에 만든다"는 다른 동작이다). */}
+          {!controller.isBoard && (
+            <MenuBarButton label="삽입" wrapRef={insertRef} open={openMenu === 'insert'} onToggle={() => toggle('insert')} th={th} isMobile={isMobile} width={200} align="left">
+              <InsertMenu controller={controller} onDone={close} isMobile={isMobile} />
+            </MenuBarButton>
+          )}
         </>
       )}
       {/* 보기 is a top-level trigger on desktop; on mobile it folds into the ☰ menu

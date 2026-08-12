@@ -178,10 +178,12 @@ export function TemplateGallery({ state, controller }: Props) {
     >
       <div
         role="dialog"
-        aria-label="새 맵 만들기"
+        aria-label="새로 만들기"
         onClick={(e) => e.stopPropagation()}
         style={{
-          width: 760,
+          // 마인드맵·화이트보드 두 구획으로 나뉘면서 폭을 키웠다 — 좁으면 구획
+          // 제목만 늘고 카드는 한 줄에 두 장씩이라 "나눈 이유"가 잘 안 보인다.
+          width: 860,
           maxWidth: '100%',
           // 화면 높이를 넘기지 않고 본문만 스크롤한다 — 폰·가로 모드에서도 헤더와
           // 닫기 버튼이 늘 보인다.
@@ -197,8 +199,8 @@ export function TemplateGallery({ state, controller }: Props) {
       >
         <div style={{ display: 'flex', alignItems: 'center', padding: '18px 20px', borderBottom: '1px solid var(--mf-hairline)', flexShrink: 0 }}>
           <div>
-            <div style={{ fontSize: 17, fontWeight: 800 }}>새 맵 만들기</div>
-            <div style={{ fontSize: 12.5, color: 'var(--mf-muted)', marginTop: 3 }}>빈 맵으로 시작하거나, 템플릿을 골라 보세요.</div>
+            <div style={{ fontSize: 17, fontWeight: 800 }}>새로 만들기</div>
+            <div style={{ fontSize: 12.5, color: 'var(--mf-muted)', marginTop: 3 }}>생각을 가지로 뻗는 마인드맵, 자유롭게 붙이는 화이트보드 중에서 골라 보세요.</div>
           </div>
           <button
             className="btn"
@@ -213,77 +215,93 @@ export function TemplateGallery({ state, controller }: Props) {
           </button>
         </div>
 
-        <div
-          style={{
-            padding: 20,
-            overflowY: 'auto',
-            display: 'grid',
-            // auto-fill이라 폭에 따라 열 수가 알아서 3 → 2 → 1로 준다. 모바일
-            // 분기를 따로 두지 않는 이유다.
-            gridTemplateColumns: 'repeat(auto-fill, minmax(200px, 1fr))',
-            gap: 14,
-          }}
-        >
-          {/* 빈 맵 — 갤러리를 거치게 됐어도 "그냥 시작"이 첫 칸에 남는다. */}
-          <button
-            className="btn"
-            data-template="blank"
-            onClick={() => controller.createFromTemplate()}
-            style={{ ...CARD_STYLE, cursor: 'pointer' }}
-          >
-            <div style={{ ...THUMB_STYLE, color: 'var(--mf-faint)' }}>
-              <svg width="34" height="34" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round">
-                <line x1="12" y1="5" x2="12" y2="19" />
-                <line x1="5" y1="12" x2="19" y2="12" />
-              </svg>
-            </div>
-            <div style={CARD_NAME_STYLE}>
-              <span style={{ minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis' }}>빈 맵</span>
-            </div>
-            <div style={CARD_DESC_STYLE}>중심 주제 하나로 시작</div>
-          </button>
-
-          {/* 화이트보드 — 트리 없이 메모·이미지만 자유롭게 붙이는 보드. 빈 맵과
-              나란한 "시작" 칸이다(둘 다 내용이 비어 있어 realPreview 대신 삽화). */}
-          <button className="btn" data-template="board" onClick={() => controller.createFromTemplate('board')} style={{ ...CARD_STYLE, cursor: 'pointer' }}>
-            <div style={{ ...THUMB_STYLE, color: 'var(--mf-faint)' }}>
-              <svg width="52" height="40" viewBox="0 0 52 40" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-                <rect x="4" y="5" width="19" height="15" rx="2.5" />
-                <line x1="8.5" y1="10.5" x2="18.5" y2="10.5" />
-                <line x1="8.5" y1="14.5" x2="15.5" y2="14.5" />
-                <rect x="29" y="12" width="19" height="15" rx="2.5" />
-                <circle cx="34" cy="17" r="1.6" />
-                <path d="m29.5 24.5 5-5 4 4 3.5-3.5 5.5 5.5" />
-                <line x1="12" y1="27" x2="24" y2="33" strokeDasharray="0.1 3.6" />
-              </svg>
-            </div>
-            <div style={CARD_NAME_STYLE}>
-              <span style={{ minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis' }}>화이트보드</span>
-            </div>
-            <div style={CARD_DESC_STYLE}>메모와 이미지를 자유롭게 붙이는 보드</div>
-          </button>
-
-          {cards.map(({ tpl, raw }) => (
+        {/* 두 문서 종류가 한 그리드에 섞여 있어 구별이 어려웠다(제보) — 구획으로
+            나눈다. 마인드맵이 먼저인 이유는 칸 수가 많고(빈 맵 + 템플릿 6) 이
+            제품의 기본 문서이기 때문. */}
+        <div style={{ padding: 20, overflowY: 'auto' }}>
+          <SectionHead title="마인드맵" desc="중심 주제에서 가지를 뻗어 정리해요" />
+          <div style={GRID_STYLE}>
+            {/* 빈 맵 — 갤러리를 거치게 됐어도 "그냥 시작"이 첫 칸에 남는다. */}
             <button
-              key={tpl.id}
               className="btn"
-              data-template={tpl.id}
-              onClick={() => controller.createFromTemplate(tpl.id)}
+              data-template="blank"
+              onClick={() => controller.createFromTemplate()}
               style={{ ...CARD_STYLE, cursor: 'pointer' }}
             >
-              <div style={THUMB_STYLE}>{realPreview(raw, hue)}</div>
-              <div style={CARD_NAME_STYLE}>
-                <TemplateIcon id={tpl.id} />
-                <span style={{ minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis' }}>{tpl.name}</span>
+              <div style={{ ...THUMB_STYLE, color: 'var(--mf-faint)' }}>
+                <svg width="34" height="34" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round">
+                  <line x1="12" y1="5" x2="12" y2="19" />
+                  <line x1="5" y1="12" x2="19" y2="12" />
+                </svg>
               </div>
-              <div style={CARD_DESC_STYLE}>{tpl.desc}</div>
+              <div style={CARD_NAME_STYLE}>
+                <span style={{ minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis' }}>빈 맵</span>
+              </div>
+              <div style={CARD_DESC_STYLE}>중심 주제 하나로 시작</div>
             </button>
-          ))}
+
+            {cards.map(({ tpl, raw }) => (
+              <button
+                key={tpl.id}
+                className="btn"
+                data-template={tpl.id}
+                onClick={() => controller.createFromTemplate(tpl.id)}
+                style={{ ...CARD_STYLE, cursor: 'pointer' }}
+              >
+                <div style={THUMB_STYLE}>{realPreview(raw, hue)}</div>
+                <div style={CARD_NAME_STYLE}>
+                  <TemplateIcon id={tpl.id} />
+                  <span style={{ minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis' }}>{tpl.name}</span>
+                </div>
+                <div style={CARD_DESC_STYLE}>{tpl.desc}</div>
+              </button>
+            ))}
+          </div>
+
+          <div style={{ height: 1, background: 'var(--mf-hairline)', margin: '22px 0 18px' }} />
+
+          <SectionHead title="화이트보드" desc="트리 없이 메모와 이미지를 자유롭게 붙여요" />
+          <div style={GRID_STYLE}>
+            {/* 화이트보드 — 내용이 비어 있어 realPreview 대신 삽화. */}
+            <button className="btn" data-template="board" onClick={() => controller.createFromTemplate('board')} style={{ ...CARD_STYLE, cursor: 'pointer' }}>
+              <div style={{ ...THUMB_STYLE, color: 'var(--mf-faint)' }}>
+                <svg width="52" height="40" viewBox="0 0 52 40" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                  <rect x="4" y="5" width="19" height="15" rx="2.5" />
+                  <line x1="8.5" y1="10.5" x2="18.5" y2="10.5" />
+                  <line x1="8.5" y1="14.5" x2="15.5" y2="14.5" />
+                  <rect x="29" y="12" width="19" height="15" rx="2.5" />
+                  <circle cx="34" cy="17" r="1.6" />
+                  <path d="m29.5 24.5 5-5 4 4 3.5-3.5 5.5 5.5" />
+                  <line x1="12" y1="27" x2="24" y2="33" strokeDasharray="0.1 3.6" />
+                </svg>
+              </div>
+              <div style={CARD_NAME_STYLE}>
+                <span style={{ minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis' }}>빈 화이트보드</span>
+              </div>
+              <div style={CARD_DESC_STYLE}>메모 하나로 시작 · 펜으로 그리기</div>
+            </button>
+          </div>
         </div>
       </div>
     </div>
   );
 }
+
+/** 구획 머리 — 제목 + 한 줄 설명(무엇이 다른 문서인지). */
+function SectionHead({ title, desc }: { title: string; desc: string }) {
+  return (
+    <div data-gallery-section={title} style={{ marginBottom: 10 }}>
+      <div style={{ fontSize: 13.5, fontWeight: 800, color: 'var(--mf-text)' }}>{title}</div>
+      <div style={{ fontSize: 11.5, color: 'var(--mf-muted)', marginTop: 2 }}>{desc}</div>
+    </div>
+  );
+}
+
+// auto-fill이라 폭에 따라 열 수가 알아서 4 → 3 → 2 → 1로 준다. 모바일 분기를
+// 따로 두지 않는 이유다.
+// 최소 폭이 180인 이유: 860px 모달에서 네 열이 되어 마인드맵 칸 7개가 두 줄에
+// 들어간다(200이면 세 열 = 세 줄이라 화이트보드 구획이 접힌 화면 밖으로 밀린다).
+const GRID_STYLE = { display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(180px, 1fr))', gap: 14 } as const;
 
 const CARD_STYLE = {
   display: 'block',

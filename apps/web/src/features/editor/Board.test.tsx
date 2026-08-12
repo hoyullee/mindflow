@@ -6,6 +6,7 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { MemoryRouter, Route, Routes } from 'react-router-dom';
 import { Editor } from './Editor';
+import { mockMatchMedia } from '../../test/matchMedia';
 
 const BOARD = {
   v: 1,
@@ -53,21 +54,24 @@ afterEach(() => cleanup());
 describe('화이트보드 에디터', () => {
   it('tpl=board로 열면 트리 없는 빈 보드가 시드되고, 메모를 추가·저장할 수 있다', async () => {
     const { container } = renderEditor('/editor?map=b1&title=%EB%B3%B4%EB%93%9C&tpl=board&new=1');
-    // 커튼이 걷히고(빈 보드도 첫 센터링이 돈다) 캔버스가 뜬다 — 노드는 0개.
-    await waitFor(() => expect(screen.getByRole('button', { name: '삽입' })).toBeTruthy());
+    // 커튼이 걷히고 캔버스가 뜬다 — 노드는 0개.
+    await waitFor(() => expect(container.querySelector('[data-board-toolbar]')).toBeTruthy());
     expect(container.querySelectorAll('[data-node-id]')).toHaveLength(0);
 
-    // 삽입 → 메모 추가 → 플로트가 생기고 저장본이 board로 남는다.
-    fireEvent.click(screen.getByRole('button', { name: '삽입' }));
-    fireEvent.click(await screen.findByRole('button', { name: '메모 추가' }));
-    await waitFor(() => expect(container.querySelector('[data-float-id]')).toBeTruthy());
+    // 시드 메모 하나로 열린다(요청: 텅 빈 화면은 허전하다).
+    await waitFor(() => expect(container.querySelectorAll('[data-float-id]')).toHaveLength(1));
+
+    // 하단 도구 막대의 "메모 추가" → 메모가 하나 더 생기고 저장본이 board로 남는다
+    // (삽입은 GNB 메뉴가 아니라 도구 막대에 있다 — 요청).
+    fireEvent.click(screen.getByRole('button', { name: '메모 추가' }));
+    await waitFor(() => expect(container.querySelectorAll('[data-float-id]')).toHaveLength(2));
     // 자동저장 디바운스(0.9s)를 기다리지 않고 지금 저장한다 — 검증 대상은 저장
     // 내용이지 디바운스가 아니다(오프라인 테스트와 같은 처방).
     fireEvent.keyDown(window, { key: 's', ctrlKey: true });
     await waitFor(() => {
       const saved = JSON.parse(localStorage.getItem('mindflow_doc_b1') || 'null');
       expect(saved?.kind).toBe('board');
-      expect(saved?.floats).toHaveLength(1);
+      expect(saved?.floats).toHaveLength(2);
       expect(Object.keys(saved?.nodes ?? { x: 1 })).toHaveLength(0);
     });
   });
@@ -77,14 +81,15 @@ describe('화이트보드 에디터', () => {
     const { container } = renderEditor('/editor?map=b2&title=x');
     await waitFor(() => expect(within(getViewport(container)).getByText('아이디어 하나')).toBeTruthy());
 
-    // 삽입 메뉴: 메모·이미지만.
-    fireEvent.click(screen.getByRole('button', { name: '삽입' }));
-    await screen.findByRole('button', { name: '메모 추가' });
-    expect(screen.getByRole('button', { name: '이미지 추가' })).toBeTruthy();
+    // 삽입은 GNB에서 내려가고(같은 동작의 진입점을 둘로 두지 않는다) 하단 도구
+    // 막대가 맡는다 — 메모·이미지만.
+    expect(screen.queryByRole('button', { name: '삽입' })).toBeNull();
+    const bar = container.querySelector('[data-board-toolbar]') as HTMLElement;
+    expect(within(bar).getByRole('button', { name: '메모 추가' })).toBeTruthy();
+    expect(within(bar).getByRole('button', { name: '이미지 추가' })).toBeTruthy();
     expect(screen.queryByRole('button', { name: '주제 추가' })).toBeNull();
     expect(screen.queryByRole('button', { name: '선 추가' })).toBeNull();
     expect(screen.queryByRole('button', { name: '영역 추가' })).toBeNull();
-    fireEvent.keyDown(window, { key: 'Escape' });
 
     // 스타일 메뉴: 레이아웃/연결선 구획이 없고 테마는 남는다.
     fireEvent.click(screen.getByRole('button', { name: '스타일' }));
@@ -277,6 +282,73 @@ describe('화이트보드 에디터', () => {
       expect(container.querySelector('[data-stroke-id="s1"]')).toBeNull();
       expect(container.querySelector('[data-stroke-id="s2"]')).toBeTruthy();
     });
+  });
+
+  it('키보드로 도구를 바꾼다 — V(선택)·P(펜)·E(지우개)(요청)', async () => {
+    localStorage.setItem('mindflow_doc_b8', JSON.stringify(BOARD));
+    const { container } = renderEditor('/editor?map=b8&title=x');
+    await waitFor(() => expect(container.querySelector('[data-board-toolbar]')).toBeTruthy());
+
+    const pressed = (name: string) => (screen.getByRole('button', { name }) as HTMLElement).getAttribute('aria-pressed');
+    expect(pressed('선택')).toBe('true');
+
+    fireEvent.keyDown(window, { key: 'p', code: 'KeyP' });
+    await waitFor(() => expect(pressed('펜')).toBe('true'));
+    expect(container.querySelector('[data-board-draw-layer]')).toBeTruthy();
+
+    fireEvent.keyDown(window, { key: 'e', code: 'KeyE' });
+    await waitFor(() => expect(pressed('지우개')).toBe('true'));
+
+    fireEvent.keyDown(window, { key: 'v', code: 'KeyV' });
+    await waitFor(() => expect(pressed('선택')).toBe('true'));
+    expect(container.querySelector('[data-board-draw-layer]')).toBeNull();
+
+    // 수정 키가 붙으면 기존 단축키 그대로다 — Ctrl+V는 붙여넣기지 도구 전환이 아니다.
+    fireEvent.keyDown(window, { key: 'p', code: 'KeyP' });
+    await waitFor(() => expect(pressed('펜')).toBe('true'));
+    fireEvent.keyDown(window, { key: 'v', code: 'KeyV', ctrlKey: true });
+    expect(pressed('펜')).toBe('true');
+  });
+
+  it('도구 막대에서 메모·이미지 추가와 실행 취소/다시 실행을 한다(요청)', async () => {
+    localStorage.setItem('mindflow_doc_b9', JSON.stringify(BOARD));
+    const { container } = renderEditor('/editor?map=b9&title=x');
+    await waitFor(() => expect(container.querySelectorAll('[data-float-id]')).toHaveLength(1));
+    const bar = container.querySelector('[data-board-toolbar]') as HTMLElement;
+
+    // 그리기 도구가 켜져 있어도 메모를 추가할 수 있고, 추가하면 선택 도구로 돌아온다.
+    fireEvent.click(within(bar).getByRole('button', { name: '펜' }));
+    fireEvent.click(within(bar).getByRole('button', { name: '메모 추가' }));
+    await waitFor(() => expect(container.querySelectorAll('[data-float-id]')).toHaveLength(2));
+    expect(within(bar).getByRole('button', { name: '선택' }).getAttribute('aria-pressed')).toBe('true');
+
+    // 실행 취소 → 방금 만든 메모가 사라지고, 다시 실행하면 돌아온다.
+    // (메모를 추가하면 편집 세션이 곧바로 열리므로 먼저 닫는다 — 열린 채 취소하면
+    //  그 편집 커밋이 먼저 되돌려진다. 맵의 메모 추가와 같은 흐름.)
+    // 메모를 추가하면 편집 세션이 열린다 — 편집 중에는 되돌리기가 편집 박스의
+    // 몫이라 컨트롤러가 가로채지 않는다. 먼저 편집을 닫는다(실사용도 같은 순서).
+    const editBox = container.querySelector('.mf-richedit') as HTMLElement;
+    fireEvent.keyDown(editBox, { key: 'Escape' });
+    await waitFor(() => expect(container.querySelector('.mf-richedit')).toBeNull());
+
+    fireEvent.click(within(bar).getByRole('button', { name: '실행 취소' }));
+    await waitFor(() => expect(container.querySelectorAll('[data-float-id]')).toHaveLength(1));
+    fireEvent.click(within(bar).getByRole('button', { name: '다시 실행' }));
+    await waitFor(() => expect(container.querySelectorAll('[data-float-id]')).toHaveLength(2));
+  });
+
+  it('모바일: 줌·미니맵 묶음이 하단 도구 막대 위로 비켜선다(제보: 겹쳐 보임)', async () => {
+    const restore = mockMatchMedia(true); // 모바일 폭
+    try {
+      localStorage.setItem('mindflow_doc_b10', JSON.stringify(BOARD));
+      const { container } = renderEditor('/editor?map=b10&title=x');
+      await waitFor(() => expect(container.querySelector('[data-board-toolbar]')).toBeTruthy());
+      const cluster = container.querySelector('[data-zoom-cluster]') as HTMLElement;
+      // 도구 막대는 bottom:16 — 묶음은 그보다 확실히 위(막대 높이만큼).
+      expect(parseFloat(cluster.style.bottom)).toBeGreaterThan(60);
+    } finally {
+      restore();
+    }
   });
 
   it('그리기 도구 막대는 board 전용 — 맵에는 없다(M4)', async () => {

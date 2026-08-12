@@ -148,7 +148,12 @@ export function buildTemplateDoc(id: string | null | undefined): Doc | null {
   // 칸이 `tpl=board`로 들어온다. layoutMode는 board에서 쓰이지 않지만 직렬화
   // 스키마의 필수 필드라 기본값을 채워 둔다.
   if (id === 'board') {
-    return { v: 1, nodes: {}, floats: [], lines: [], zones: [], layoutMode: 'right', themeKey: DEFAULT_THEME_KEY, edgeStyle: DEFAULT_EDGE_STYLE, kind: 'board' };
+    // 메모 하나로 시작한다 — 텅 빈 흰 화면은 "무엇을 할 수 있는지"를 하나도
+    // 알려 주지 않는다(제보: 너무 허전하다). 첫 메모가 곧 안내이자 예시다.
+    // 좌표는 원점을 가운데 두게 잡는다(첫 센터링이 장면 바운즈 중심을 잡으므로
+    // 이 메모가 화면 한가운데에 열린다).
+    const starter: Float = { id: 'bf1', x: -125, y: -55, w: 250, text: '여기에 생각을 적어 보세요.\n\n메모는 두 번 눌러 고치고, 끌어서 어디든 옮길 수 있어요.' };
+    return { v: 1, nodes: {}, floats: [starter], lines: [], zones: [], layoutMode: 'right', themeKey: DEFAULT_THEME_KEY, edgeStyle: DEFAULT_EDGE_STYLE, kind: 'board' };
   }
   const t = findTemplate(id);
   if (!t) return null;

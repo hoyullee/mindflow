@@ -3236,7 +3236,7 @@ describe('홈 우클릭 메뉴', () => {
 
       await user.click(screen.getAllByText('＋ 새로 만들기')[0]!);
 
-      const dialog = await screen.findByRole('dialog', { name: '새 맵 만들기' });
+      const dialog = await screen.findByRole('dialog', { name: '새로 만들기' });
       const cards = within(dialog).getAllByRole('button').filter((b) => b.hasAttribute('data-template'));
       expect(cards[0]?.getAttribute('data-template')).toBe('blank');
       expect(cards.map((c) => c.getAttribute('data-template'))).toEqual(
@@ -3253,11 +3253,14 @@ describe('홈 우클릭 메뉴', () => {
       await waitFor(() => expect(screen.getAllByText('＋ 새로 만들기')[0]).toBeTruthy());
 
       await user.click(screen.getAllByText('＋ 새로 만들기')[0]!);
-      const dialog = await screen.findByRole('dialog', { name: '새 맵 만들기' });
+      const dialog = await screen.findByRole('dialog', { name: '새로 만들기' });
       const cards = within(dialog).getAllByRole('button').filter((b) => b.hasAttribute('data-template'));
-      // 빈 맵과 나란한 "시작" 칸 — 템플릿들보다 앞이다.
+      // 두 문서 종류를 구획으로 나눴다(제보: 섞여 있어 구별이 어렵다) — 마인드맵
+      // 구획(빈 맵 + 템플릿들) 뒤에 화이트보드 구획이 온다.
       expect(cards[0]?.getAttribute('data-template')).toBe('blank');
-      expect(cards[1]?.getAttribute('data-template')).toBe('board');
+      expect(cards[cards.length - 1]?.getAttribute('data-template')).toBe('board');
+      expect(within(dialog).getByText('마인드맵')).toBeTruthy();
+      expect(within(dialog).getByText('화이트보드')).toBeTruthy();
 
       await user.click(within(dialog).getByRole('button', { name: /화이트보드/ }));
       await waitFor(() => expect(newMapTitles()).toContain('새 화이트보드'));
@@ -3299,10 +3302,10 @@ describe('홈 우클릭 메뉴', () => {
       await waitFor(() => expect(screen.getAllByText('＋ 새로 만들기')[0]).toBeTruthy());
 
       await user.click(screen.getAllByText('＋ 새로 만들기')[0]!);
-      await screen.findByRole('dialog', { name: '새 맵 만들기' });
+      await screen.findByRole('dialog', { name: '새로 만들기' });
       await user.keyboard('{Escape}');
 
-      await waitFor(() => expect(screen.queryByRole('dialog', { name: '새 맵 만들기' })).toBeNull());
+      await waitFor(() => expect(screen.queryByRole('dialog', { name: '새로 만들기' })).toBeNull());
       expect(newMapTitles()).toEqual([]);
       expect(screen.queryByText('EDITOR_PLACEHOLDER')).toBeNull();
     });
@@ -3313,7 +3316,7 @@ describe('홈 우클릭 메뉴', () => {
       await waitFor(() => expect(screen.getAllByText('＋ 새로 만들기')[0]).toBeTruthy());
 
       await user.click(screen.getAllByText('＋ 새로 만들기')[0]!);
-      const dialog = await screen.findByRole('dialog', { name: '새 맵 만들기' });
+      const dialog = await screen.findByRole('dialog', { name: '새로 만들기' });
 
       for (const tpl of MAP_TEMPLATES) {
         const card = within(dialog).getByRole('button', { name: new RegExp(tpl.name) });
@@ -3331,7 +3334,7 @@ describe('홈 우클릭 메뉴', () => {
       await waitFor(() => expect(screen.getAllByText('＋ 새로 만들기')[0]).toBeTruthy());
 
       await user.click(screen.getAllByText('＋ 새로 만들기')[0]!);
-      const dialog = await screen.findByRole('dialog', { name: '새 맵 만들기' });
+      const dialog = await screen.findByRole('dialog', { name: '새로 만들기' });
       const backdrop = dialog.parentElement as HTMLElement;
       // 제자리 페이드(mf-dim-in)여야 한다 — mf-fade의 translateY를 fixed inset:0
       // 배경에 걸면 레이어가 통째로 슬라이드한다(#331).
@@ -3364,7 +3367,7 @@ describe('홈 우클릭 메뉴', () => {
       const menu = await screen.findByRole('menu');
       await user.click(within(menu).getByRole('menuitem', { name: '새로 만들기' }));
 
-      expect(await screen.findByRole('dialog', { name: '새 맵 만들기' })).toBeTruthy();
+      expect(await screen.findByRole('dialog', { name: '새로 만들기' })).toBeTruthy();
       // 메뉴는 닫힌다 — 메뉴가 갤러리 위에 남아 있으면 안 된다
       expect(screen.queryByRole('menu')).toBeNull();
     });

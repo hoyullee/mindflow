@@ -1236,6 +1236,8 @@ export function useEditorState(): EditorController {
     return out;
   }, [doc.floats, doc.kind, measurer]);
 
+  /** 화이트보드(트리 없는 문서)인가 — UI 트리밍·그리기 도구·패딩 규칙의 기준. */
+  const isBoard = doc.kind === 'board';
   // 화이트보드는 캔버스 배경이 무조건 흰색이다(요청) — docThemeOf가 가른다.
   const theme = docThemeOf(doc);
 
@@ -4556,6 +4558,18 @@ export function useEditorState(): EditorController {
       }
 
       if (inEditable) return;
+      // 화이트보드 도구 전환 — V(선택)·P(펜)·E(지우개). 수정 키가 없을 때만이라
+      // Ctrl+V(붙여넣기) 같은 기존 단축키와 겹치지 않는다. 한글 IME가 켜져 있으면
+      // e.key가 자모로 오므로 물리 키(e.code)도 함께 본다(복사/붙여넣기와 같은 처방).
+      if (isBoard && !e.metaKey && !e.ctrlKey && !e.altKey && !e.shiftKey) {
+        const k = e.key.toLowerCase();
+        const tool = k === 'v' || e.code === 'KeyV' ? 'select' : k === 'p' || e.code === 'KeyP' ? 'pen' : k === 'e' || e.code === 'KeyE' ? 'eraser' : null;
+        if (tool) {
+          e.preventDefault();
+          setBoardTool(tool);
+          return;
+        }
+      }
       if ((e.metaKey || e.ctrlKey) && !e.shiftKey && (e.key === 'z' || e.key === 'Z')) {
         e.preventDefault();
         undo();
@@ -4762,7 +4776,7 @@ export function useEditorState(): EditorController {
     floatHeights,
     mapId,
     docTitle,
-    isBoard: doc.kind === 'board',
+    isBoard,
     boardTool,
     setBoardTool,
     penColor,

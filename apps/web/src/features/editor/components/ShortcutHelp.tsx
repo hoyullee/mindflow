@@ -112,6 +112,17 @@ export function ShortcutHelp({ controller }: { controller: EditorController }) {
         </div>
 
         <div style={{ columns: isMobile ? 1 : 2, columnGap: 30 }}>
+          {/* 화이트보드에서만 뜨는 구획 — 그리기 도구는 board에만 있다. */}
+          {controller.isBoard &&
+            section(
+              '화이트보드 도구',
+              <>
+                {row(['V'], '선택')}
+                {row(['P'], '펜')}
+                {row(['E'], '지우개')}
+                {row(['Esc'], '선택 도구로 돌아가기')}
+              </>,
+            )}
           {section(
             '일반',
             <>
