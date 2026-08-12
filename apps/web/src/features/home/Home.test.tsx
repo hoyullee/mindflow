@@ -3276,10 +3276,9 @@ describe('홈 우클릭 메뉴', () => {
       const thumbBg = (card: HTMLElement) => ((card.querySelector('.map-thumb') as HTMLElement).style.background || '');
       expect(thumbBg(boardCard)).toContain('rgb(255, 255, 255)');
       expect(thumbBg(mapCard)).toContain('gradient');
-      // 이름 영역도 톤이 다르다(요청) — 보드만 가라앉은 면.
-      const footer = (card: HTMLElement) => (card.querySelector('.map-thumb')?.nextElementSibling as HTMLElement);
-      expect(footer(boardCard).style.background).toContain('--mf-sunken');
-      expect(footer(mapCard).style.background).toBe('');
+      // 테두리 색도 다르다(요청) — 이름 영역 면은 홈 배경과 비슷해 카드가 묻혔다(제보).
+      expect(boardCard.style.border).toContain('--mf-info');
+      expect(mapCard.style.border).toContain('--mf-border');
       // 배지는 카드 오른쪽 끝에 붙는다(제보: 너무 떨어져 있다).
       expect((boardCard.querySelector('[data-board-badge]') as HTMLElement).style.right).toBe('12px');
     });
