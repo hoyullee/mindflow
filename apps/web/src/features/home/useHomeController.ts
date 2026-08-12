@@ -1595,14 +1595,30 @@ export function useHomeController() {
     const mf = state.driveMapFolders;
     return DRIVE_FILES.filter((f) => mf[f.name] === id && !state.deleted[f.name]).length;
   };
-  const askDeleteFolder = (id: string) => {
+  /** 삭제 확인창이 보여 줄 내용 — 이 폴더에 **직접** 담긴 맵 수와 직속 하위 폴더 수,
+   * 그리고 그것들이 올라갈 자리의 이름. 폴더는 이름표일 뿐이라 지워도 안의 것은
+   * 지우지 않는다(아래 `confirmDeleteFolderYes`). */
+  const folderDeleteSummary = (id: string): { name: string; maps: number; folders: number; upName: string } => {
     const isDrive = isDriveFolderId(id);
-    const cnt = isDrive ? driveFolderCount(id) : folderCount(id);
-    if (cnt > 0) return;
-    // 하위 폴더가 있으면 삭제 불가 — 지우면 그 아래가 통째로 고아가 된다.
-    if (!isDrive && activeFolders().some((f) => (f.parent ?? null) === id)) return;
-    patch({ confirmDeleteFolder: id, ctxMenu: null });
+    if (isDrive) {
+      const f = state.driveFolders.find((x) => x.id === id);
+      return { name: f?.name || '', maps: driveFolderCount(id), folders: 0, upName: 'Google Drive' };
+    }
+    const fs = activeFolders();
+    const f = fs.find((x) => x.id === id);
+    const parent = f?.parent ? fs.find((x) => x.id === f.parent) : null;
+    const sp = state.spaces.find((s) => s.id === state.activeSpace);
+    return {
+      name: f?.name || '',
+      maps: folderCount(id),
+      folders: fs.filter((x) => (x.parent ?? null) === id).length,
+      upName: parent ? parent.name : sp?.name || '스페이스',
+    };
   };
+  // 내용이 있어도 삭제할 수 있다(요청) — 안의 맵·하위 폴더는 지워지지 않고 한 단계
+  // 위로 올라온다(아래 `confirmDeleteFolderYes`). 폴더는 맵을 담는 그릇이 아니라
+  // **이름표**라, 이름표를 떼는 일이 내용을 지울 이유가 되지 않는다.
+  const askDeleteFolder = (id: string) => patch({ confirmDeleteFolder: id, ctxMenu: null });
   const cancelDeleteFolder = () => patch({ confirmDeleteFolder: null });
   const confirmDeleteFolderYes = () => {
     const id = state.confirmDeleteFolder;
@@ -1622,14 +1638,27 @@ export function useHomeController() {
       return;
     }
     setState((prev) => {
+      const sp = prev.spaces.find((s) => s.id === prev.activeSpace);
+      const fs = sp && Array.isArray(sp.folders) ? sp.folders : [];
+      // 지운 폴더의 자리 = 그 부모(없으면 최상위). 안에 있던 것들이 여기로 올라온다.
+      const up = fs.find((f) => f.id === id)?.parent ?? null;
       const mapFolders = { ...prev.mapFolders };
-      for (const t in mapFolders) if (mapFolders[t] === id) delete mapFolders[t];
+      for (const t in mapFolders) {
+        if (mapFolders[t] !== id) continue;
+        if (up) mapFolders[t] = up;
+        else delete mapFolders[t]; // 최상위로
+      }
       return {
         ...prev,
-        spaces: mutateFolders(prev.spaces, (fs) => fs.filter((f) => f.id !== id)),
+        spaces: mutateFolders(prev.spaces, (list) =>
+          list
+            .filter((f) => f.id !== id)
+            // 직속 하위 폴더도 한 단계 올라온다 — 고아가 되지 않는다.
+            .map((f) => ((f.parent ?? null) === id ? { ...f, parent: up ?? undefined } : f)),
+        ),
         mapFolders,
         confirmDeleteFolder: null,
-        curFolder: prev.curFolder === id ? null : prev.curFolder,
+        curFolder: prev.curFolder === id ? up : prev.curFolder,
       };
     });
   };
@@ -1653,6 +1682,20 @@ export function useHomeController() {
       else delete mapFolders[key];
       return { ...prev, mapFolders, ctxMenu: null };
     });
+  };
+  /**
+   * 상위 폴더 타일에 드롭 — 지금 폴더의 **부모**(없으면 최상위)로 옮긴다.
+   * 아래로 넣는 길(폴더 카드에 드롭)과 대칭인 위로 꺼내는 길이다(요청).
+   */
+  const moveMapUp = (key: string) => {
+    if (state.activeSpace === 'drive') {
+      moveMapToFolder(key, null); // Drive 데모 폴더는 한 단계뿐
+      return;
+    }
+    const fs = activeFolders();
+    const cur = state.curFolder ? fs.find((f) => f.id === state.curFolder) : null;
+    const parent = cur?.parent && fs.some((f) => f.id === cur.parent) ? cur.parent : null;
+    moveMapToFolder(key, parent);
   };
   /** Move a map from its current (real, non-Drive) space to another space. The
    * card moves to the target space's top level, and its per-space folder
@@ -1826,6 +1869,8 @@ export function useHomeController() {
     cancelDeleteFolder,
     confirmDeleteFolderYes,
     moveMapToFolder,
+    moveMapUp,
+    folderDeleteSummary,
     backToSpace,
     openFolder,
     openDriveFolder,

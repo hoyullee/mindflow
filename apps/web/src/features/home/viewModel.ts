@@ -75,7 +75,6 @@ export interface FolderCardViewData {
   count: number;
   menuOpen: boolean;
   dragOver: boolean;
-  canDelete: boolean;
   isDrive: boolean;
   /** 맵 카드와 같은 "한 번 = 선택" 표시. 선택 상태는 맵과 **한 칸**(`selectedCard`)을
    * 나눠 쓰므로 폴더를 고르면 맵 선택이 풀리고 그 반대도 같다 — 그리드 안에서
@@ -89,6 +88,10 @@ export function folderCardKey(id: string): string {
   return 'folder:' + id;
 }
 
+/** "상위 폴더" 타일의 드롭 하이라이트 키 — 실제 폴더 id와 섞이지 않게 접두를 쓴다
+ * (`dragOverFolder`는 폴더 id를 담는 칸이라 값 하나를 이 타일 몫으로 예약한다). */
+export const PARENT_DROP_ID = 'folder-up:';
+
 /** 검색 결과 한 묶음 = 한 스페이스. 헤더에 색 점 + 이름이 붙는다. */
 export interface SearchGroupViewData {
   spaceId: string;
@@ -98,6 +101,15 @@ export interface SearchGroupViewData {
   isActive: boolean;
   cards: CardViewData[];
   folders: FolderCardViewData[];
+}
+
+/** 폴더 안에서 그리드 맨 앞에 서는 "상위 폴더" 타일 — 뒤로 가기이자 **드롭 대상**.
+ * 예전에는 상위로 옮기려면 우클릭 → "폴더에서 꺼내기"뿐이었다(제보): 아래로는
+ * 드래그로 넣는데 위로는 메뉴여야 하는 비대칭. 파일 탐색기의 `..` 관례이기도 하다. */
+export interface ParentTileViewData {
+  /** 올라가서 닿는 곳의 이름 — 상위 폴더명, 최상위면 스페이스명. */
+  name: string;
+  dragOver: boolean;
 }
 
 export interface HomeViewModel {
@@ -159,6 +171,8 @@ export interface HomeViewModel {
   newFolderVisible: boolean;
   importVisible: boolean;
   recentSectionVisible: boolean;
+  /** 폴더 안일 때만 — 그리드 첫 칸의 "상위 폴더" 타일. */
+  parentTile: ParentTileViewData | null;
   foldersSectionVisible: boolean;
   mapsSectionVisible: boolean;
   userInitial: string;
@@ -337,7 +351,6 @@ export function deriveHomeView(state: HomeState): HomeViewModel {
     }
     return ids;
   };
-  const hasSubfolders = (id: string): boolean => folders.some((f) => (f.parent ?? null) === id);
 
   // Trash policy: names do NOT interfere between the trash and the spaces — a
   // trashed map and a live map may share a title. So "is this hidden?" is
@@ -430,7 +443,6 @@ export function deriveHomeView(state: HomeState): HomeViewModel {
           menuOpen: state.ctxMenu?.target.kind === 'folder' && state.ctxMenu.target.id === f.id,
           dragOver: state.dragOverFolder === f.id,
           selected: state.selectedCard === folderCardKey(f.id),
-          canDelete: DRIVE_FILES.filter((file) => dmf[file.name] === f.id && !state.deleted[file.name]).length === 0,
           isDrive: true,
         }))
       : [];
@@ -450,7 +462,6 @@ export function deriveHomeView(state: HomeState): HomeViewModel {
             const a = mapFolders[cardKeyOf(m.title, m.docId)];
             return !!a && treeIds.has(a);
           }).length;
-          const directCnt = activeMaps.filter((m) => mapFolders[cardKeyOf(m.title, m.docId)] === f.id).length;
           return {
             id: f.id,
             name: f.name,
@@ -458,9 +469,6 @@ export function deriveHomeView(state: HomeState): HomeViewModel {
             menuOpen: state.ctxMenu?.target.kind === 'folder' && state.ctxMenu.target.id === f.id,
             dragOver: state.dragOverFolder === f.id,
             selected: state.selectedCard === folderCardKey(f.id),
-            // 삭제는 "직접 담긴 맵 0 + 하위 폴더 0"일 때만 — 하위 폴더가 있으면
-            // 지웠을 때 그 안의 것들이 고아가 되므로 막는다.
-            canDelete: directCnt === 0 && !hasSubfolders(f.id),
             isDrive: false,
           };
         })
@@ -570,9 +578,6 @@ export function deriveHomeView(state: HomeState): HomeViewModel {
             menuOpen: false,
             dragOver: false,
             selected: false,
-            // 검색 결과의 폴더 타일은 "여기 있어요"를 알려 주는 바로가기다 —
-            // 삭제 같은 조작은 그 스페이스로 들어가서 한다.
-            canDelete: false,
             isDrive: false,
           };
         });
@@ -714,6 +719,16 @@ export function deriveHomeView(state: HomeState): HomeViewModel {
   const titleParent = searching ? null : openFolderName ? [rootName, ...parentChain].join(' / ') : null;
   const titleLeaf = searching ? '검색' : openFolderName || rootName;
 
+  // 상위 폴더 타일 — 폴더 안(로컬·Drive)일 때만. 이름은 "올라가면 닿는 곳"이라
+  // 상위 폴더명, 최상위면 스페이스명이다(제목 줄의 경로와 같은 낱말).
+  const parentTile: ParentTileViewData | null =
+    !loading && !searching && (curFolder || driveFolder)
+      ? {
+          name: curFolder ? (folderAncestors(curFolder)[0]?.name ?? rootName) : rootName,
+          dragOver: state.dragOverFolder === PARENT_DROP_ID,
+        }
+      : null;
+
   // 공유받은 맵 — `state.sharedMaps`(DocStore.list의 남의 문서)로만 만든다. 내
   // 워크스페이스에는 없는 문서라 스페이스/폴더 필터를 타지 않는다.
   const sharedItems = state.sharedMaps
@@ -768,7 +783,9 @@ export function deriveHomeView(state: HomeState): HomeViewModel {
     // only while searching (it sits above the results and isn't filtered by the
     // query) and on the Drive-connect prompt (a full-screen empty state).
     recentSectionVisible: !loading && !state.search && !showDriveConnect && recentCards.length > 0,
-    foldersSectionVisible: !loading && !searching && folderCards.length > 0,
+    parentTile,
+    // 상위 폴더 타일도 이 구획에 서므로 폴더 카드가 없어도 구획이 열린다.
+    foldersSectionVisible: !loading && !searching && (folderCards.length > 0 || !!parentTile),
     // Only render the "맵" section when there are actually maps to show — a space
     // with folders but no loose maps must not render an empty "맵" header.
     mapsSectionVisible: !loading && !searching && !showDriveConnect && allCards.length > 0,
