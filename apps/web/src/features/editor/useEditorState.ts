@@ -657,6 +657,11 @@ export interface EditorController {
   boardDrawMove: (clientX: number, clientY: number) => void;
   boardDrawUp: () => void;
   boardDrawCancel: () => void;
+  /** 두 손가락 제스처 — 벌리면 확대, 함께 끌면 화면 이동. 그리기 오버레이가 포인터를
+   * 전부 가져가므로(펜/지우개), 그 레이어가 이 함수들로 직접 넘긴다. */
+  twoFingerStart: (ax: number, ay: number, bx: number, by: number) => void;
+  twoFingerMove: (ax: number, ay: number, bx: number, by: number) => void;
+  twoFingerEnd: () => void;
 }
 
 /**
@@ -1922,7 +1927,9 @@ export function useEditorState(): EditorController {
   // rubber-band selection; right/middle-button drag pans (matches the bottom-left hint text). ----
   const dragRef = useRef<BgDrag | null>(null);
   const marqueeRectRef = useRef<MarqueeRect | null>(null);
-  const pinchRef = useRef<{ dist: number; zoom: number; cx: number; cy: number } | null>(null);
+  /** 두 손가락 제스처의 시작 상태 — 벌리기/오므리기 = 확대·축소, 두 손가락을 함께
+   * 끌면 = 화면 이동. 매 이동을 **시작 상태 기준으로 다시** 계산해 누적 오차가 없다. */
+  const pinchRef = useRef<{ dist: number; zoom: number; cx: number; cy: number; pan: { x: number; y: number } } | null>(null);
   const activePointers = useRef<Map<number, { x: number; y: number }>>(new Map());
   // Touch-only: on a phone, a one-finger press on an object records the object
   // here and lets the press bubble to the background pan handler instead of
@@ -1941,18 +1948,36 @@ export function useEditorState(): EditorController {
     }
   };
 
+  /** 두 손가락이 닿았다 — 지금 뷰포트를 제스처의 기준점으로 잡는다. */
+  const twoFingerStart = useCallback((ax: number, ay: number, bx: number, by: number): void => {
+    setViewport((prev) => {
+      pinchRef.current = { dist: Math.hypot(bx - ax, by - ay) || 1, zoom: prev.zoom, cx: (ax + bx) / 2, cy: (ay + by) / 2, pan: prev.pan };
+      return prev;
+    });
+  }, []);
+  /** 두 손가락 이동 — 거리 비율로 확대·축소하고, **중점이 움직인 만큼 화면을 옮긴다**
+   * (두 손가락 드래그 = 화면 이동. 예전에는 거리만 봐서 함께 끌면 아무 일도 없었다). */
+  const twoFingerMove = useCallback((ax: number, ay: number, bx: number, by: number): void => {
+    const g = pinchRef.current;
+    if (!g) return;
+    const dist = Math.hypot(bx - ax, by - ay) || 1;
+    const cx = (ax + bx) / 2;
+    const cy = (ay + by) / 2;
+    setViewport((prev) => {
+      const zoomed = zoomAtState({ ...prev, zoom: g.zoom, pan: g.pan }, (g.zoom * dist) / g.dist, g.cx, g.cy);
+      return { ...zoomed, pan: { x: zoomed.pan.x + (cx - g.cx), y: zoomed.pan.y + (cy - g.cy) } };
+    });
+  }, []);
+  const twoFingerEnd = useCallback((): void => {
+    pinchRef.current = null;
+  }, []);
+
   const onBackgroundPointerDown = useCallback((e: ReactPointerEvent<HTMLDivElement>) => {
     activePointers.current.set(e.pointerId, { x: e.clientX, y: e.clientY });
     if (activePointers.current.size === 2) {
       const pts = Array.from(activePointers.current.values());
       const [a, b] = pts;
-      if (a && b) {
-        const dist = Math.hypot(b.x - a.x, b.y - a.y) || 1;
-        setViewport((prev) => {
-          pinchRef.current = { dist, zoom: prev.zoom, cx: (a.x + b.x) / 2, cy: (a.y + b.y) / 2 };
-          return prev;
-        });
-      }
+      if (a && b) twoFingerStart(a.x, a.y, b.x, b.y);
       dragRef.current = null;
       marqueeRectRef.current = null;
       pendingTapRef.current = null; // a two-finger pinch is a zoom, not a tap-select
@@ -2005,7 +2030,7 @@ export function useEditorState(): EditorController {
     dragRef.current = { kind: 'marquee', pointerId: e.pointerId, startClientX: e.clientX, startClientY: e.clientY, x0: p.x, y0: p.y, moved: false };
     marqueeRectRef.current = { x0: p.x, y0: p.y, x1: p.x, y1: p.y };
     setMarquee(marqueeRectRef.current);
-  }, []);
+  }, [twoFingerStart]);
 
   useEffect(() => {
     function onMove(e: PointerEvent): void {
@@ -2021,10 +2046,7 @@ export function useEditorState(): EditorController {
         const pts = Array.from(activePointers.current.values());
         const [a, b] = pts;
         if (!a || !b) return;
-        const dist = Math.hypot(b.x - a.x, b.y - a.y) || 1;
-        const pinch = pinchRef.current;
-        const nz = (pinch.zoom * dist) / pinch.dist;
-        setViewport((prev) => zoomAtState(prev, nz, pinch.cx, pinch.cy));
+        twoFingerMove(a.x, a.y, b.x, b.y);
         return;
       }
       const d = dragRef.current;
@@ -2046,7 +2068,7 @@ export function useEditorState(): EditorController {
     }
     function onUp(e: PointerEvent): void {
       activePointers.current.delete(e.pointerId);
-      if (activePointers.current.size < 2) pinchRef.current = null;
+      if (activePointers.current.size < 2) twoFingerEnd();
       cancelLongPress(); // a release before the hold elapsed is a tap, not a long-press
       const d = dragRef.current;
       if (!d || d.pointerId !== e.pointerId) return;
@@ -2157,7 +2179,7 @@ export function useEditorState(): EditorController {
       window.removeEventListener('pointercancel', onUp);
       cancelLongPress();
     };
-  }, []);
+  }, [twoFingerMove, twoFingerEnd]);
 
   // Ghost-click guard: after a touch tap-select (see `onUp`), the browser fires
   // one compatibility `click` at the tap point ~immediately. The property panel
@@ -4838,6 +4860,9 @@ export function useEditorState(): EditorController {
     boardDrawMove,
     boardDrawUp,
     boardDrawCancel,
+    twoFingerStart,
+    twoFingerMove,
+    twoFingerEnd,
     setViewportEl,
     setLayoutMode,
     setEdgeStyle,
