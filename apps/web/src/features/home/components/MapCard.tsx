@@ -163,7 +163,10 @@ export function MapCard({ card, controller, draggableEnabled, compact = false }:
           style={{
             position: 'absolute',
             top: compact ? 8 : 12,
-            right: compact ? 8 : 46,
+            // 오른쪽 끝에 붙인다(제보: 우측에서 너무 떨어져 있다). 46은 Drive
+            // 배지가 쓰던 값인데 이 자리 오른쪽에는 아무것도 없다(즐겨찾기 ★는
+            // 왼쪽, ☰은 카드 하단).
+            right: compact ? 8 : 12,
             zIndex: 2,
             display: 'flex',
             alignItems: 'center',
@@ -235,7 +238,19 @@ export function MapCard({ card, controller, draggableEnabled, compact = false }:
       {/* 하단 정보 영역: [제목+수정일] 좌측 열 + ☰ 메뉴 버튼(영역 전체의
           세로 중앙) — 버튼을 제목 행 안에 두면 수정일 줄 때문에 시각적으로
           위로 치우쳐 보인다. */}
-      <div style={{ padding: compact ? '8px 10px' : '12px 16px', display: 'flex', alignItems: 'center', gap: 8 }}>
+      <div
+        style={{
+          padding: compact ? '8px 10px' : '12px 16px',
+          display: 'flex',
+          alignItems: 'center',
+          gap: 8,
+          // 화이트보드는 이름 영역도 톤이 다르다(요청) — 썸네일(흰 종이)·배지와
+          // 함께 세 겹으로 "다른 종류"를 알린다. 새 색을 만들지 않고 앱의 가라앉은
+          // 면(`--mf-sunken`)을 써서 밝은 테마 다섯 벌·다크에서 자동으로 어울린다.
+          // 카드 아래 모서리를 각지게 만들지 않도록 반경을 물려받는다.
+          ...(card.isBoard ? { background: 'var(--mf-sunken)', borderRadius: compact ? '0 0 10px 10px' : '0 0 14px 14px' } : null),
+        }}
+      >
         <div style={{ minWidth: 0, flex: 1 }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 6, minWidth: 0, marginBottom: compact ? 0 : 4 }}>
           {/* Cross-space "최근 항목" strip: a small dot in the owning space's color.
