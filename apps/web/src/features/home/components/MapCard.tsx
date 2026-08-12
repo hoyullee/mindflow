@@ -152,6 +152,41 @@ export function MapCard({ card, controller, draggableEnabled, compact = false }:
       </div>
 
 
+      {/* 화이트보드 표식 — 목록에서 마인드맵 카드와 구별이 안 된다는 제보에.
+          썸네일 바탕(아래)과 함께 두 겹으로 다르게 보이게 한다: 바탕은 보드
+          캔버스처럼 **흰 종이**, 여기 배지는 종류 이름. 갤러리 카드의 삽화와
+          같은 메모+이미지 도형을 작게 줄여 같은 것을 가리킴을 알린다. */}
+      {card.isBoard && !card.badge && (
+        <div
+          data-board-badge
+          title="화이트보드"
+          style={{
+            position: 'absolute',
+            top: compact ? 8 : 12,
+            right: compact ? 8 : 46,
+            zIndex: 2,
+            display: 'flex',
+            alignItems: 'center',
+            gap: 4,
+            padding: compact ? '2px 6px' : '3px 8px',
+            borderRadius: 999,
+            background: 'var(--mf-panel-veil)',
+            border: '1px solid var(--mf-border)',
+            color: 'var(--mf-subtext)',
+            fontSize: compact ? 10 : 11,
+            fontWeight: 700,
+            whiteSpace: 'nowrap',
+          }}
+        >
+          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+            <rect x="2.5" y="4" width="9" height="7.5" rx="1.6" />
+            <rect x="13" y="12.5" width="8.5" height="7.5" rx="1.6" />
+            <path d="M4 15.5h6.5M4 18.5h4.5" />
+          </svg>
+          {compact ? '보드' : '화이트보드'}
+        </div>
+      )}
+
       {card.badge && (
         <div
           style={{
@@ -178,7 +213,13 @@ export function MapCard({ card, controller, draggableEnabled, compact = false }:
         className="map-thumb"
         style={{
           height: compact ? 72 : 150,
-          background: grey ? 'var(--mf-panel2)' : `linear-gradient(135deg,var(--mf-panel),${card.isDrive ? 'rgba(52,168,83,.07)' : 'rgba(0,0,0,.02)'})`,
+          // 화이트보드는 **흰 종이** 바탕 — 에디터의 보드 캔버스가 테마와 무관하게
+          // 흰색이라(docThemeOf) 카드도 같은 인상을 준다. 마인드맵은 기존 그라디언트.
+          background: grey
+            ? 'var(--mf-panel2)'
+            : card.isBoard
+              ? '#ffffff'
+              : `linear-gradient(135deg,var(--mf-panel),${card.isDrive ? 'rgba(52,168,83,.07)' : 'rgba(0,0,0,.02)'})`,
           borderBottom: '1px solid var(--mf-border-soft)',
           display: 'flex',
           alignItems: 'center',

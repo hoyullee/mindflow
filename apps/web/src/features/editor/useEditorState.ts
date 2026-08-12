@@ -87,6 +87,9 @@ import type {
 // line-geometry consumer (hit-testing, marquee, curve-drag, `LineLayer`,
 // PNG export) so anchored lines behave consistently everywhere.
 
+/** 이미지 제목(캡션) 글자 수 상한 — 한 줄 말줄임 자리라 길게 적어도 안 보인다(요청). */
+export const FLOAT_CAPTION_MAX = 20;
+
 const MIN_ZOOM = 0.25;
 const MAX_ZOOM = 2.4;
 const FIT_PADDING = 90;
@@ -3554,7 +3557,9 @@ export function useEditorState(): EditorController {
         ...d,
         floats: d.floats.map((f) => {
           if (f.id !== id) return f;
-          const t = caption.trim();
+          // 20자 상한은 입력창(maxLength)만이 아니라 **커밋에서도** 지킨다 —
+          // 붙여넣기·다른 경로로 들어온 값도 같은 규칙을 따라야 한다.
+          const t = caption.trim().slice(0, FLOAT_CAPTION_MAX);
           if (!t) {
             const rest = { ...f };
             delete rest.caption;

@@ -117,20 +117,15 @@ describe('가로로 돌린 폰(낮은 화면)', () => {
     }
   });
 
-  it('닫기 손잡이도 시트 옆으로 옮겨 온다', () => {
+  it('닫기 손잡이는 없다 — 시트 밖(캔버스)을 누르면 닫힌다(요청)', () => {
     const restore = mockViewport({ mobile: true, short: true });
     try {
       localStorage.setItem('mindflow_doc_ls3', JSON.stringify(DOC));
       const { container } = renderEditor('/editor?map=ls3&title=x');
       openProps(container);
 
-      const close = screen.getByLabelText('속성 닫기');
-      expect(close.style.right).toBe(`${MOBILE_SIDE_PANEL_W}px`);
-      expect(close.style.bottom).toBe('');
-      // 닫으면 선택은 남는다(세로와 같은 규칙)
-      fireEvent.click(close);
-      expect(screen.queryByText('선택한 주제')).toBeNull();
-      expect(screen.getByRole('toolbar', { name: '선택 동작' })).toBeTruthy();
+      expect(screen.getByText('선택한 주제')).toBeTruthy();
+      expect(screen.queryByLabelText('속성 닫기')).toBeNull();
     } finally {
       restore();
     }

@@ -196,66 +196,9 @@ export function Editor() {
             {isMobile && !controller.readOnly && controller.selection && !controller.propsOpen && !controller.editingNodeId && !controller.editingFloatId && (!controller.ctxMenu || !!controller.ctxMenu.anchor) && (
               <MobileSelectBar controller={controller} theme={th} />
             )}
-            {/* Close handle for the mobile property sheet — dismisses it WITHOUT
-                deselecting, so the object stays selected (e.g. to then move it). */}
-            {isMobile && controller.propsOpen && (
-              <button
-                type="button"
-                aria-label="속성 닫기"
-                onClick={controller.closeProps}
-                style={
-                  isShort
-                    ? {
-                        // 사이드 시트(가로 폰)에서는 손잡이도 옆으로 — 시트 왼쪽 변에 붙인다.
-                        position: 'fixed',
-                        right: MOBILE_SIDE_PANEL_W,
-                        top: '50%',
-                        transform: 'translateY(-50%)',
-                        width: 30,
-                        height: 84,
-                        display: 'flex',
-                        alignItems: 'center',
-                        justifyContent: 'center',
-                        gap: 5,
-                        border: `1px solid ${th.border}`,
-                        borderRight: 'none',
-                        borderRadius: '12px 0 0 12px',
-                        background: th.panel,
-                        color: th.subtext,
-                        fontFamily: 'inherit',
-                        fontSize: 12,
-                        fontWeight: 600,
-                        cursor: 'pointer',
-                        zIndex: 26,
-                        writingMode: 'vertical-rl',
-                      }
-                    : {
-                        position: 'fixed',
-                        left: '50%',
-                        transform: 'translateX(-50%)',
-                        bottom: 'calc(55dvh - 30px)',
-                        width: 84,
-                        height: 30,
-                        display: 'flex',
-                        alignItems: 'center',
-                        justifyContent: 'center',
-                        gap: 5,
-                        border: `1px solid ${th.border}`,
-                        borderBottom: 'none',
-                        borderRadius: '12px 12px 0 0',
-                        background: th.panel,
-                        color: th.subtext,
-                        fontFamily: 'inherit',
-                        fontSize: 12,
-                        fontWeight: 600,
-                        cursor: 'pointer',
-                        zIndex: 26,
-                      }
-                }
-              >
-                <span style={{ fontSize: 14 }}>{isShort ? '›' : '⌄'}</span> 닫기
-              </button>
-            )}
+            {/* 속성 시트의 '닫기' 손잡이는 없앴다(요청) — 시트 밖(캔버스)을 누르면
+                선택이 풀리며 시트도 닫히므로 같은 일을 하는 버튼이 하나 더 있는
+                셈이었다. 대신 좁은 화면의 시트 위쪽을 손잡이만큼 되찾는다. */}
             <ZoomControls controller={controller} panelOpen={panelOpen} />
             {/* 좌측 하단 피드백 버튼(사용자 선정 위치) — 예전 마우스 제스처 범례
                 자리다. 범례는 단축키 도움말(?) 모달과 내용이 겹치는 정적 안내라

@@ -141,12 +141,11 @@ describe('Editor (mobile, M6)', () => {
       expect(screen.queryByText('선택한 주제')).toBeNull();
       expect(screen.getByText('속성')).toBeTruthy();
 
-      // opening it via the bar reveals the panel; closing keeps the selection
+      // opening it via the bar reveals the panel. 닫기 손잡이는 없앴다(요청) —
+      // 시트 밖(캔버스)을 누르면 선택이 풀리며 시트도 닫힌다.
       openMobileProps();
       expect(screen.getByText('선택한 주제')).toBeTruthy();
-      fireEvent.click(screen.getByLabelText('속성 닫기'));
-      expect(screen.queryByText('선택한 주제')).toBeNull();
-      expect(screen.getByText('속성')).toBeTruthy(); // still selected → bar back
+      expect(screen.queryByLabelText('속성 닫기')).toBeNull();
     } finally {
       restore();
     }

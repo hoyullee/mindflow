@@ -3247,6 +3247,37 @@ describe('홈 우클릭 메뉴', () => {
       expect(meeting.querySelector('svg[viewBox]')).toBeTruthy();
     });
 
+    it('화이트보드 카드는 맵 카드와 다르게 보인다 — 종류 배지 + 흰 종이 썸네일(제보)', async () => {
+      // 본문이 board면 카드가 스스로 갈린다(썸네일 본문 하나로 판별 — isBoardRaw).
+      const boardDoc = { v: 1, kind: 'board', nodes: {}, floats: [{ id: 'f1', x: 10, y: 20, w: 180, text: '보드 메모' }], lines: [], zones: [], layoutMode: 'right', themeKey: 'coral' };
+      const mapDoc = { v: 1, nodes: { root: { id: 'root', text: '루트', emoji: '', parent: null, children: [], collapsed: false, color: null, x: 0, y: 0 } }, floats: [], lines: [], zones: [], layoutMode: 'right', themeKey: 'coral' };
+      const { container } = renderHomeWithDocStore(
+        [
+          { id: 'doc-board', title: '아이디어 보드', version: 1, updatedAt: '2026-01-01T00:00:00.000Z', isFavorite: false, deletedAt: null },
+          { id: 'doc-map', title: '제품 맵', version: 1, updatedAt: '2026-01-01T00:00:00.000Z', isFavorite: false, deletedAt: null },
+        ],
+        {
+          'doc-board': { doc: boardDoc as never, version: 1, title: '아이디어 보드' },
+          'doc-map': { doc: mapDoc as never, version: 1, title: '제품 맵' },
+        },
+      );
+
+      const boardCard = await waitFor(() => {
+        const el = container.querySelector('a[data-title="아이디어 보드"]') as HTMLElement;
+        expect(el).toBeTruthy();
+        return el;
+      });
+      const mapCard = container.querySelector('a[data-title="제품 맵"]') as HTMLElement;
+
+      // 종류 배지는 보드에만.
+      await waitFor(() => expect(boardCard.querySelector('[data-board-badge]')?.textContent).toContain('화이트보드'));
+      expect(mapCard.querySelector('[data-board-badge]')).toBeNull();
+      // 썸네일 바탕: 보드는 흰 종이, 맵은 기존 그라디언트.
+      const thumbBg = (card: HTMLElement) => ((card.querySelector('.map-thumb') as HTMLElement).style.background || '');
+      expect(thumbBg(boardCard)).toContain('rgb(255, 255, 255)');
+      expect(thumbBg(mapCard)).toContain('gradient');
+    });
+
     it('화이트보드 칸 — 빈 맵 다음 자리, 고르면 "새 화이트보드"로 에디터에 넘어간다', async () => {
       const user = userEvent.setup();
       renderHomeWithDocStore([]);
