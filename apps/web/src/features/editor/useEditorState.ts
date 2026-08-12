@@ -1,8 +1,8 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import type { MouseEvent as ReactMouseEvent, PointerEvent as ReactPointerEvent } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
-import type { Box, Doc, Float, Line, LineAnchor, LayoutMode, ListOp, Node, NodeMap, SizeOf, SnapCandidate, Stroke, TextEdit, Zone } from '@mindflow/mindmap-core';
-import { HistoryStack, ROOT_ID, collectImageRefs, collectInlineImages, isImageRef, replaceImageValues, applyListOp as applyListOpToText, applyAutoLinks, applyMarkdownShortcuts, applyPartialStyle, insertMention, charsToRuns, cubicAt, isStyledRuns, findLineSnap, layout, resolveLineEndpoints, resolveLineGeometry, runsToChars, serializeDoc, shiftOffset, strokeBounds, strokeHit, translateStrokePts, toMarkdown } from '@mindflow/mindmap-core';
+import type { Box, Doc, Float, Line, LineAnchor, LayoutMode, ListOp, Node, NodeMap, Reaction, ReactionGroup, SizeOf, SnapCandidate, Stroke, TextEdit, Zone } from '@mindflow/mindmap-core';
+import { HistoryStack, ROOT_ID, collectImageRefs, collectInlineImages, isImageRef, replaceImageValues, applyListOp as applyListOpToText, applyAutoLinks, applyMarkdownShortcuts, applyPartialStyle, insertMention, charsToRuns, cubicAt, isStyledRuns, findLineSnap, layout, resolveLineEndpoints, resolveLineGeometry, runsToChars, serializeDoc, shiftOffset, strokeBounds, strokeHit, translateStrokePts, reactionGroups, toggleReaction as toggleReactionList, pruneReactions, toMarkdown } from '@mindflow/mindmap-core';
 import { domToRuns, linearize, liveEditValue } from './richtextDom';
 import { HL_COLORS, HL_WIDTHS } from './boardTools';
 import type { BoardTool } from './boardTools';
@@ -153,6 +153,8 @@ interface Snapshot {
   edgeStyle: EdgeStyle;
   /** 그리기 획(M4) — 부재는 빈 배열로 정규화해 스냅샷에 싣는다. */
   strokes: Stroke[];
+  /** 스티커 반응·투표 — 획과 같은 규칙(undo가 표를 되돌릴 수 있어야 한다). */
+  reactions: Reaction[];
 }
 
 type ObjDrag =
@@ -540,6 +542,11 @@ export interface EditorController {
   // ---- zone property setters ----
   setZoneColor: (id: string, hex: string | null) => void;
   deleteZone: (id: string) => void;
+  /** 스티커 반응·점 투표(화이트보드) — 대상 하나에 이모지 한 표를 토글한다.
+   * 한 표 = 항목 하나라 두 사람이 동시에 눌러도 표가 합쳐진다(코어 주석 참고). */
+  toggleReaction: (target: string, emoji: string) => void;
+  /** 이 대상의 반응 묶음(개수·내 표 여부·이름) — 렌더가 그대로 그린다. */
+  reactionsOf: (target: string) => ReactionGroup[];
   /** 그리기 획(화이트보드) — 선택한 획 하나의 색·굵기·삭제. */
   setStrokeColor: (id: string, hex: string) => void;
   setStrokeWidth: (id: string, w: number) => void;
@@ -680,6 +687,22 @@ export interface EditorController {
 }
 
 /**
+ * 지워진 대상에 달려 있던 반응을 함께 걷어낸다 — **삭제 커밋에서만** 부른다.
+ *
+ * 모든 커밋에서 돌리지 않는 이유: CRDT는 의존 연산이 늦게 도착할 수 있어(#332),
+ * 상대가 방금 만든 메모의 반응이 메모보다 먼저 도착한 순간에 지워 버리면 남의
+ * 표가 사라진다. 지우는 순간에만 정리하면 그 위험이 없다(원격 삭제로 생긴
+ * 고아 반응은 화면에 그려지지 않을 뿐, 다음 삭제에서 함께 정리된다).
+ */
+function dropOrphanReactions(d: Doc): Doc {
+  if (!d.reactions || !d.reactions.length) return d;
+  const alive = new Set<string>([...Object.keys(d.nodes), ...d.floats.map((f) => f.id)]);
+  const next = pruneReactions(d.reactions, alive);
+  if (next.length === d.reactions.length) return d;
+  return { ...d, reactions: next.length ? next : undefined };
+}
+
+/**
  * 겹침 nudge용 박스 조회 팩토리 — 위치 규칙 하나로 모든 경우를 맞춘다: 어떤 id든
  * **최상위 조상**이 자유 루트라면, 그 루트가 geom 대비 옮겨 간 만큼(delta =
  * 후보 `cand`의 루트 위치 − geom의 루트 위치) 자기 geom 위치를 평행이동해 읽는다.
@@ -708,7 +731,7 @@ function nudgeBoxOf(cand: NodeMap, geom: Record<string, { x: number; y: number; 
 
 function docSignature(d: Doc): string {
   try {
-    return JSON.stringify([d.nodes, d.floats, d.lines, d.zones, d.layoutMode, d.themeKey, d.edgeStyle, d.strokes ?? []]);
+    return JSON.stringify([d.nodes, d.floats, d.lines, d.zones, d.layoutMode, d.themeKey, d.edgeStyle, d.strokes ?? [], d.reactions ?? []]);
   } catch {
     return '';
   }
@@ -979,6 +1002,7 @@ export function useEditorState(): EditorController {
               layoutMode: res.doc.layoutMode,
               edgeStyle: (res.doc.edgeStyle as EdgeStyle | undefined) ?? 'curve',
               strokes: res.doc.strokes ?? [],
+              reactions: res.doc.reactions ?? [],
             });
             setHistoryTick((t) => t + 1);
           }
@@ -1447,7 +1471,7 @@ export function useEditorState(): EditorController {
   useEffect(() => {
     if (historyInitRef.current) return;
     historyInitRef.current = true;
-    historyRef.current!.reset({ nodes: doc.nodes, floats: doc.floats, lines: doc.lines, zones: doc.zones, layoutMode: doc.layoutMode, edgeStyle, strokes: doc.strokes ?? [] });
+    historyRef.current!.reset({ nodes: doc.nodes, floats: doc.floats, lines: doc.lines, zones: doc.zones, layoutMode: doc.layoutMode, edgeStyle, strokes: doc.strokes ?? [], reactions: doc.reactions ?? [] });
     // deliberately empty deps: only the initial (mount-time) doc/edgeStyle matter here
   }, []);
 
@@ -1464,10 +1488,10 @@ export function useEditorState(): EditorController {
     setDoc((prev) => {
       const next = updater(prev);
       const changed =
-        next.nodes !== prev.nodes || next.floats !== prev.floats || next.lines !== prev.lines || next.zones !== prev.zones || next.layoutMode !== prev.layoutMode || next.strokes !== prev.strokes;
+        next.nodes !== prev.nodes || next.floats !== prev.floats || next.lines !== prev.lines || next.zones !== prev.zones || next.layoutMode !== prev.layoutMode || next.strokes !== prev.strokes || next.reactions !== prev.reactions;
       if (changed) {
         historyRef.current!.record(
-          { nodes: next.nodes, floats: next.floats, lines: next.lines, zones: next.zones, layoutMode: next.layoutMode, edgeStyle: edgeStyleRef.current, strokes: next.strokes ?? [] },
+          { nodes: next.nodes, floats: next.floats, lines: next.lines, zones: next.zones, layoutMode: next.layoutMode, edgeStyle: edgeStyleRef.current, strokes: next.strokes ?? [], reactions: next.reactions ?? [] },
           continuous,
         );
         setHistoryTick((t) => t + 1);
@@ -1488,16 +1512,16 @@ export function useEditorState(): EditorController {
     setDoc((prev) => {
       const next = updater(prev);
       const changed =
-        next.nodes !== prev.nodes || next.floats !== prev.floats || next.lines !== prev.lines || next.zones !== prev.zones || next.layoutMode !== prev.layoutMode || next.strokes !== prev.strokes;
+        next.nodes !== prev.nodes || next.floats !== prev.floats || next.lines !== prev.lines || next.zones !== prev.zones || next.layoutMode !== prev.layoutMode || next.strokes !== prev.strokes || next.reactions !== prev.reactions;
       if (changed) {
-        historyRef.current!.amend({ nodes: next.nodes, floats: next.floats, lines: next.lines, zones: next.zones, layoutMode: next.layoutMode, edgeStyle: edgeStyleRef.current, strokes: next.strokes ?? [] });
+        historyRef.current!.amend({ nodes: next.nodes, floats: next.floats, lines: next.lines, zones: next.zones, layoutMode: next.layoutMode, edgeStyle: edgeStyleRef.current, strokes: next.strokes ?? [], reactions: next.reactions ?? [] });
       }
       return changed ? next : prev;
     });
   }, []);
 
   function applySnapshot(snap: Snapshot): void {
-    setDoc((prev) => ({ ...prev, nodes: snap.nodes, floats: snap.floats, lines: snap.lines, zones: snap.zones, layoutMode: snap.layoutMode, edgeStyle: snap.edgeStyle, strokes: snap.strokes.length ? snap.strokes : undefined }));
+    setDoc((prev) => ({ ...prev, nodes: snap.nodes, floats: snap.floats, lines: snap.lines, zones: snap.zones, layoutMode: snap.layoutMode, edgeStyle: snap.edgeStyle, strokes: snap.strokes.length ? snap.strokes : undefined, reactions: snap.reactions?.length ? snap.reactions : undefined }));
     setEdgeStyleState(snap.edgeStyle);
     setSelectionState(null);
     setMultiSelectionState(null);
@@ -1953,7 +1977,7 @@ export function useEditorState(): EditorController {
     // up — `docSignature` includes `edgeStyle`, so this dirties the doc.
     setDoc((prev) => (prev.edgeStyle === s ? prev : { ...prev, edgeStyle: s }));
     const d = docRef.current;
-    historyRef.current!.record({ nodes: d.nodes, floats: d.floats, lines: d.lines, zones: d.zones, layoutMode: d.layoutMode, edgeStyle: s, strokes: d.strokes ?? [] }, false);
+    historyRef.current!.record({ nodes: d.nodes, floats: d.floats, lines: d.lines, zones: d.zones, layoutMode: d.layoutMode, edgeStyle: s, strokes: d.strokes ?? [], reactions: d.reactions ?? [] }, false);
     setHistoryTick((t) => t + 1);
   }, []);
 
@@ -3167,12 +3191,14 @@ export function useEditorState(): EditorController {
     // every targeted node's subtree + every targeted line/float, in one undo step.
     if (multiSelection && totalSelected(multiSelection) > 1) {
       const ms = multiSelection;
-      commitDoc((d) => ({
-        ...d,
-        nodes: mutations.deleteNodesMulti(d.nodes, ms.nodes),
-        lines: d.lines.filter((l) => !ms.lines.includes(l.id)),
-        floats: d.floats.filter((f) => !ms.floats.includes(f.id)),
-      }));
+      commitDoc((d) =>
+        dropOrphanReactions({
+          ...d,
+          nodes: mutations.deleteNodesMulti(d.nodes, ms.nodes),
+          lines: d.lines.filter((l) => !ms.lines.includes(l.id)),
+          floats: d.floats.filter((f) => !ms.floats.includes(f.id)),
+        }),
+      );
       setMultiSelectionState(null);
       setSelectionState(null);
       setEditingNodeId(null);
@@ -3187,11 +3213,11 @@ export function useEditorState(): EditorController {
         const res = mutations.deleteNodeSubtree(d.nodes, id);
         if (!res) return d;
         setSelectionState({ kind: 'node', id: res.nextSelected });
-        return { ...d, nodes: res.nodes };
+        return dropOrphanReactions({ ...d, nodes: res.nodes });
       });
       setEditingNodeId(null);
     } else if (selection.kind === 'float') {
-      commitDoc((d) => ({ ...d, floats: mutations.removeFloatItem(d.floats, selection.id) }));
+      commitDoc((d) => dropOrphanReactions({ ...d, floats: mutations.removeFloatItem(d.floats, selection.id) }));
       setSelectionState(null);
       setEditingFloatId(null);
     } else if (selection.kind === 'line') {
@@ -3733,7 +3759,7 @@ export function useEditorState(): EditorController {
   );
   const deleteFloat = useCallback(
     (id: string) => {
-      commitDoc((d) => ({ ...d, floats: mutations.removeFloatItem(d.floats, id) }));
+      commitDoc((d) => dropOrphanReactions({ ...d, floats: mutations.removeFloatItem(d.floats, id) }));
       setSelectionState(null);
       setEditingFloatId(null);
     },
@@ -3777,6 +3803,27 @@ export function useEditorState(): EditorController {
     },
     [commitDoc],
   );
+
+  // ---- 스티커 반응·점 투표 ----
+  // 정체성은 로그인 이메일(없으면 이 기기 표시자) — "한 사람이 한 번"을 셀 근거다.
+  // 데모/로컬에서도 토글이 동작해야 하므로 비로그인은 고정 문자열로 떨어진다
+  // (그 기기에서만 자기 표를 되돌릴 수 있다는 뜻 — 데모에서는 충분하다).
+  const meId = (authUser?.email ?? '').trim().toLowerCase() || 'local';
+  const meName = profileName || authUser?.email || '나';
+  const meRef = useRef({ id: meId, name: meName });
+  meRef.current = { id: meId, name: meName };
+
+  const toggleReaction = useCallback(
+    (target: string, emoji: string) => {
+      const me = meRef.current;
+      commitDoc((d) => {
+        const next = toggleReactionList(d.reactions, { id: idFactory('r'), target, by: me.id, byName: me.name, emoji });
+        return { ...d, reactions: next.length ? next : undefined };
+      });
+    },
+    [commitDoc, idFactory],
+  );
+  const reactionsOf = useCallback((target: string) => reactionGroups(doc.reactions, target, meId), [doc.reactions, meId]);
 
   // ---- 획(stroke) 속성 ----
   // 획은 그릴 때 정한 색·굵기를 나중에도 고칠 수 있다(잘못 고른 형광색을 지웠다
@@ -5169,6 +5216,8 @@ export function useEditorState(): EditorController {
     lineSnapBox,
 
     setZoneColor,
+    toggleReaction,
+    reactionsOf,
     setStrokeColor,
     setStrokeWidth,
     deleteStroke,

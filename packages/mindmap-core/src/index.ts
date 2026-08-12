@@ -20,8 +20,8 @@ export const CORE_VERSION = '0.0.0';
 
 export type { TextMeasurer, Clock, IdGen } from './ports';
 
-export type { LayoutMode, EdgeStyle, RichRun, Node, NodeMap, Float, Line, LineAnchor, Zone, Doc, DocKind, Stroke } from './model';
-export { ROOT_ID, DEFAULT_LAYOUT_MODE, DEFAULT_THEME_KEY, DEFAULT_EDGE_STYLE } from './model';
+export type { LayoutMode, EdgeStyle, RichRun, Node, NodeMap, Float, Line, LineAnchor, Zone, Doc, DocKind, Stroke, Reaction } from './model';
+export { ROOT_ID, DEFAULT_LAYOUT_MODE, DEFAULT_THEME_KEY, DEFAULT_EDGE_STYLE, VOTE_EMOJI } from './model';
 
 export type { SerializableState } from './serialize';
 export { serializeDoc, parseDoc, cloneNodes } from './serialize';
@@ -75,3 +75,5 @@ export { docToYDoc, yDocToDoc, applyDocToYDoc, addNode, removeNode, setNodeField
 
 export type { StrokeBox } from './strokes';
 export { strokeBounds, strokeHit, strokePathD, translateStrokePts } from './strokes';
+export type { ReactionGroup } from './reactions';
+export { reactionGroups, findReaction, toggleReaction, pruneReactions } from './reactions';
