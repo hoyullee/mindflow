@@ -159,7 +159,47 @@ describe('화이트보드 에디터', () => {
     });
   });
 
-  it('board 캔버스 배경은 테마와 무관하게 흰색이고, 메모에 접기 토글이 없다(요청)', async () => {
+  it('새 보드는 화이트 테마로 시드되고, 스타일 메뉴에서 테마를 바꾸면 캔버스가 바뀐다(제보)', async () => {
+    const { container } = renderEditor('/editor?map=b13&title=%EB%B3%B4%EB%93%9C&tpl=board&new=1');
+    await waitFor(() => expect(container.querySelector('[data-board-toolbar]')).toBeTruthy());
+    const bg = () => container.querySelector('[data-canvas-bg]') as HTMLElement;
+    const painted = (): string => bg().style.background || bg().style.backgroundColor;
+    // 기본은 순백 — 흰 배경이 덮어쓰기가 아니라 `white` 테마다.
+    expect(painted()).toContain('255, 255, 255');
+
+    fireEvent.click(screen.getByRole('button', { name: '스타일' }));
+    await waitFor(() => expect(screen.getByText('테마')).toBeTruthy());
+    // 화이트 스와치가 목록에 있고(요청), 지금 고른 테마다.
+    const white = screen.getByRole('button', { name: '화이트' });
+    expect(white.getAttribute('aria-pressed')).toBe('true');
+    // 다른 테마를 고르면 캔버스가 실제로 바뀐다 — 예전에는 보드만 그대로였다.
+    fireEvent.click(screen.getByRole('button', { name: '포레스트' }));
+    await waitFor(() => expect(painted()).toContain('233, 243, 236')); // THEMES.forest.canvasBg
+    expect(painted()).not.toContain('255, 255, 255');
+
+    fireEvent.keyDown(window, { key: 'Escape' });
+    fireEvent.keyDown(window, { key: 's', ctrlKey: true });
+    await waitFor(() => {
+      const saved = JSON.parse(localStorage.getItem('mindflow_doc_b13') || 'null');
+      expect(saved?.themeKey).toBe('forest');
+    });
+  });
+
+  it('맵도 화이트 테마를 고를 수 있다(요청)', async () => {
+    localStorage.setItem(
+      'mindflow_doc_m5',
+      JSON.stringify({ v: 1, nodes: { root: { id: 'root', text: '루트', emoji: '', parent: null, children: [], collapsed: false, color: null, x: 0, y: 0 } }, floats: [], lines: [], zones: [], layoutMode: 'right', themeKey: 'coral' }),
+    );
+    const { container } = renderEditor('/editor?map=m5&title=x');
+    await waitFor(() => expect(container.querySelector('[data-node-id="root"]')).toBeTruthy());
+    fireEvent.click(screen.getByRole('button', { name: '스타일' }));
+    await waitFor(() => expect(screen.getByText('테마')).toBeTruthy());
+    fireEvent.click(screen.getByRole('button', { name: '화이트' }));
+    const bg = container.querySelector('[data-canvas-bg]') as HTMLElement;
+    await waitFor(() => expect(bg.style.background || bg.style.backgroundColor).toContain('255, 255, 255'));
+  });
+
+  it('board 캔버스는 문서 테마를 따르고(제보: 테마 변경이 안 먹음), 메모에 접기 토글이 없다', async () => {
     // 접힌 메모(collapsed)가 남아 있어도 보드에서는 펼쳐 그린다.
     localStorage.setItem('mindflow_doc_b5', JSON.stringify({ ...BOARD, themeKey: 'dark', floats: [{ id: 'bf1', x: 40, y: 60, w: 180, text: '첫 줄\n둘째 줄', collapsed: true }] }));
     const { container } = renderEditor('/editor?map=b5&title=x');
@@ -168,9 +208,11 @@ describe('화이트보드 에디터', () => {
       expect(el).toBeTruthy();
       return el;
     });
-    // 배경 레이어가 테마(dark) 대신 흰색.
+    // 예전에는 보드면 흰색으로 덮어써서 어떤 테마를 골라도 화면이 그대로였다.
     const bg = container.querySelector('[data-canvas-bg]') as HTMLElement;
-    expect(bg.style.background || bg.style.backgroundColor).toContain('255, 255, 255');
+    const painted = bg.style.background || bg.style.backgroundColor;
+    expect(painted).toContain('32, 27, 22'); // THEMES.dark.canvasBg (#201b16)
+    expect(painted).not.toContain('255, 255, 255');
     // 접기 토글 부재 + collapsed여도 두 줄이 다 보인다.
     expect(floatEl.querySelector('[data-fold-toggle]')).toBeNull();
     expect(floatEl.textContent).toContain('둘째 줄');
@@ -366,15 +408,25 @@ describe('화이트보드 에디터', () => {
     }
   });
 
-  it('모바일 board: 줌·미니맵 묶음이 우측 상단으로 올라간다(요청)', async () => {
+  it('모바일 board: 줌·미니맵 묶음은 우측 하단 그대로이고, 도구 막대가 좌측으로 비켜선다(요청)', async () => {
+    // 잠시 묶음을 우측 상단으로 올렸다가 원래 자리가 낫다는 판단으로 되돌렸다 —
+    // 겹침은 도구 막대가 좌측 하단으로 붙고 폭을 양보해서 푼다.
     const restore = mockMatchMedia(true);
     try {
       localStorage.setItem('mindflow_doc_b12', JSON.stringify(BOARD));
       const { container } = renderEditor('/editor?map=b12&title=x');
       await waitFor(() => expect(container.querySelector('[data-zoom-cluster]')).toBeTruthy());
       const cluster = container.querySelector('[data-zoom-cluster]') as HTMLElement;
-      expect(cluster.style.top).toBe('16px');
-      expect(cluster.style.bottom).toBe('auto');
+      expect(cluster.style.bottom).toBe('16px');
+      expect(cluster.style.top).toBe('');
+
+      const bar = container.querySelector('[data-board-toolbar]') as HTMLElement;
+      expect(bar.style.left).toBe('12px'); // 좌측 하단 — 중앙 정렬(50%)이 아니다
+      expect(bar.style.transform).toBe('');
+      // 폭이 묶음 자리를 빼고 잡혀 두 상자가 만나지 않는다.
+      expect(bar.style.maxWidth).toMatch(/calc\(100vw - 172px\)/);
+      // 도구 3 + 동작 4가 두 행으로 갈린다(한 행이면 좁은 폭을 넘는다).
+      expect(bar.querySelectorAll(':scope > div').length).toBe(2);
     } finally {
       restore();
     }

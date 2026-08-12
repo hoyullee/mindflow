@@ -46,13 +46,10 @@ export function ZoomControls({ controller, panelOpen = false }: ZoomControlsProp
     padding: 0,
   } as const;
 
-  // 폰의 화이트보드에서는 이 묶음이 **우측 상단**으로 올라간다(요청) — 하단
-  // 중앙 도구 막대 바로 위에 겹쳐 앉아 있으면 아래쪽이 무겁고, 그 자리는 이제
-  // 도구 막대의 자리다. 접속자 아바타(PresenceBar)도 우측 상단이라, 사람이
-  // 있을 때만 그 높이(34+여백)만큼 아래로 내려 나란히 선다.
-  const topRight = isMobile && controller.isBoard;
-  const peers = controller.presence.peers.length;
-  const anchor: CSSProperties = topRight ? { top: 16 + (peers ? 46 : 0), bottom: 'auto' } : { bottom: 16 };
+  // 자리는 **언제나 우측 하단**이다. 폰의 화이트보드에서 잠시 우측 상단으로
+  // 올려 봤지만(도구 막대와의 충돌 회피) 원래 자리가 낫다는 판단으로 되돌렸다
+  // — 겹침은 도구 막대 쪽이 비켜서 푼다(폰에서는 좌측 하단 정렬, BoardToolbar).
+  const anchor: CSSProperties = { bottom: 16 };
 
   return (
     <div

@@ -1,6 +1,6 @@
 import type { CSSProperties } from 'react';
 import { LAYOUT_MODES, EDGE_MODES } from '../tree';
-import { THEME_KEYS, THEMES } from '../theme';
+import { THEME_KEYS, THEMES, hexA } from '../theme';
 import type { EditorController } from '../useEditorState';
 
 interface StyleMenuProps {
@@ -68,7 +68,10 @@ export function StyleMenu({ controller }: StyleMenuProps) {
       )}
 
       <div style={{ fontSize: 11, fontWeight: 700, letterSpacing: '.04em', textTransform: 'uppercase', color: controller.uiTheme.subtext, marginBottom: 8 }}>테마</div>
-      <div style={{ display: 'flex', alignItems: 'center', gap: 7 }}>
+      {/* 스와치는 **그 테마의 캔버스 면 + 강조색 점** — 강조색 원만 그리면
+          화이트·모노·다크처럼 면이 정체인 테마가 서로 구별되지 않는다(홈 설정
+          모달이 쓰는 것과 같은 문법). 개수가 늘어도 접히도록 wrap. */}
+      <div style={{ display: 'flex', alignItems: 'center', gap: 7, flexWrap: 'wrap' }}>
         {THEME_KEYS.map((k) => {
           const t = THEMES[k];
           const active = controller.themeKey === k;
@@ -76,21 +79,27 @@ export function StyleMenu({ controller }: StyleMenuProps) {
             <button
               key={k}
               type="button"
+              data-theme-swatch={k}
               title={t.label}
               aria-label={t.label}
               aria-pressed={active}
               onClick={() => controller.setThemeKey(k)}
               style={{
-                width: 22,
-                height: 22,
+                width: 24,
+                height: 24,
                 borderRadius: '50%',
-                background: t.accent,
-                border: active ? `2px solid ${controller.uiTheme.text}` : `2px solid ${controller.uiTheme.panel}`,
-                boxShadow: active ? `0 0 0 2px ${controller.uiTheme.accent}` : '0 1px 3px rgba(0,0,0,.15)',
+                background: t.canvasBg,
+                border: active ? `2px solid ${controller.uiTheme.accent}` : `1px solid ${t.border}`,
+                boxShadow: active ? `0 0 0 2px ${hexA(controller.uiTheme.accent, 0.28)}` : '0 1px 3px rgba(0,0,0,.12)',
                 cursor: 'pointer',
                 padding: 0,
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
               }}
-            />
+            >
+              <span style={{ width: 10, height: 10, borderRadius: '50%', background: t.accent, display: 'block' }} />
+            </button>
           );
         })}
       </div>

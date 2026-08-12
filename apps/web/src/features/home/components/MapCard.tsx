@@ -220,8 +220,9 @@ export function MapCard({ card, controller, draggableEnabled, compact = false }:
         className="map-thumb"
         style={{
           height: compact ? 72 : 150,
-          // 화이트보드는 **흰 종이** 바탕 — 에디터의 보드 캔버스가 테마와 무관하게
-          // 흰색이라(docThemeOf) 카드도 같은 인상을 준다. 마인드맵은 기존 그라디언트.
+          // 화이트보드는 **흰 종이** 바탕 — 보드의 기본 테마가 `white`라 대개 화면과
+          // 같은 인상이고, 무엇보다 이 바탕은 "종류"를 알리는 표식이다(배지·테두리와
+          // 세 겹). 카드 바탕은 문서 테마를 따르지 않는다 — 마인드맵도 마찬가지.
           background: grey
             ? 'var(--mf-panel2)'
             : card.isBoard
