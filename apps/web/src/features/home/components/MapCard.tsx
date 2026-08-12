@@ -72,7 +72,11 @@ export function MapCard({ card, controller, draggableEnabled, compact = false }:
 
   const grey = card.openable === false;
   const cardStyle: CSSProperties = {
-    border: card.selected ? '2px solid var(--mf-accent)' : '1px solid var(--mf-border)',
+    // 화이트보드는 **테두리 색**이 다르다(요청). 처음엔 이름 영역에 가라앉은 면을
+    // 깔았는데 그 색이 홈 배경과 비슷해 카드가 배경에 묻혀 보였다(제보) — 면 대신
+    // 선으로 옮겼다. 선택 표시(강조색 2px + 글로우)와는 굵기·글로우로 갈리므로
+    // "선택된 것"과 헷갈리지 않는다.
+    border: card.selected ? '2px solid var(--mf-accent)' : `1px solid var(--mf-${card.isBoard ? 'info' : 'border'})`,
     borderRadius: compact ? 10 : 14,
     background: grey ? 'var(--mf-panel-grey)' : 'var(--mf-panel)',
     // The card no longer clips (was `overflow: hidden`) — otherwise the open ☰
@@ -238,19 +242,7 @@ export function MapCard({ card, controller, draggableEnabled, compact = false }:
       {/* 하단 정보 영역: [제목+수정일] 좌측 열 + ☰ 메뉴 버튼(영역 전체의
           세로 중앙) — 버튼을 제목 행 안에 두면 수정일 줄 때문에 시각적으로
           위로 치우쳐 보인다. */}
-      <div
-        style={{
-          padding: compact ? '8px 10px' : '12px 16px',
-          display: 'flex',
-          alignItems: 'center',
-          gap: 8,
-          // 화이트보드는 이름 영역도 톤이 다르다(요청) — 썸네일(흰 종이)·배지와
-          // 함께 세 겹으로 "다른 종류"를 알린다. 새 색을 만들지 않고 앱의 가라앉은
-          // 면(`--mf-sunken`)을 써서 밝은 테마 다섯 벌·다크에서 자동으로 어울린다.
-          // 카드 아래 모서리를 각지게 만들지 않도록 반경을 물려받는다.
-          ...(card.isBoard ? { background: 'var(--mf-sunken)', borderRadius: compact ? '0 0 10px 10px' : '0 0 14px 14px' } : null),
-        }}
-      >
+      <div style={{ padding: compact ? '8px 10px' : '12px 16px', display: 'flex', alignItems: 'center', gap: 8 }}>
         <div style={{ minWidth: 0, flex: 1 }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 6, minWidth: 0, marginBottom: compact ? 0 : 4 }}>
           {/* Cross-space "최근 항목" strip: a small dot in the owning space's color.
