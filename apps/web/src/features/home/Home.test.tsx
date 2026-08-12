@@ -3276,6 +3276,12 @@ describe('홈 우클릭 메뉴', () => {
       const thumbBg = (card: HTMLElement) => ((card.querySelector('.map-thumb') as HTMLElement).style.background || '');
       expect(thumbBg(boardCard)).toContain('rgb(255, 255, 255)');
       expect(thumbBg(mapCard)).toContain('gradient');
+      // 이름 영역도 톤이 다르다(요청) — 보드만 가라앉은 면.
+      const footer = (card: HTMLElement) => (card.querySelector('.map-thumb')?.nextElementSibling as HTMLElement);
+      expect(footer(boardCard).style.background).toContain('--mf-sunken');
+      expect(footer(mapCard).style.background).toBe('');
+      // 배지는 카드 오른쪽 끝에 붙는다(제보: 너무 떨어져 있다).
+      expect((boardCard.querySelector('[data-board-badge]') as HTMLElement).style.right).toBe('12px');
     });
 
     it('화이트보드 칸 — 빈 맵 다음 자리, 고르면 "새 화이트보드"로 에디터에 넘어간다', async () => {
