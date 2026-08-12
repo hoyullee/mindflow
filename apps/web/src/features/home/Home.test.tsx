@@ -2,7 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { MemoryRouter, Route, Routes } from 'react-router-dom';
-import { MAP_TEMPLATES } from '../../templates/mapTemplates';
+import { BOARD_TEMPLATES, MAP_TEMPLATES } from '../../templates/mapTemplates';
 import { Home } from './Home';
 import { mockMatchMedia } from '../../test/matchMedia';
 import { BackendProvider } from '../../adapters/BackendContext';
@@ -3421,14 +3421,35 @@ describe('홈 우클릭 메뉴', () => {
       const dialog = await screen.findByRole('dialog', { name: '새로 만들기' });
       const cards = within(dialog).getAllByRole('button').filter((b) => b.hasAttribute('data-template'));
       // 두 문서 종류를 구획으로 나눴다(제보: 섞여 있어 구별이 어렵다) — 마인드맵
-      // 구획(빈 맵 + 템플릿들) 뒤에 화이트보드 구획이 온다.
+      // 구획(빈 맵 + 템플릿들) 뒤에 화이트보드 구획(빈 보드 + 보드 템플릿들)이 온다.
       expect(cards[0]?.getAttribute('data-template')).toBe('blank');
-      expect(cards[cards.length - 1]?.getAttribute('data-template')).toBe('board');
+      const ids = cards.map((c) => c.getAttribute('data-template'));
+      expect(ids.slice(-1 - BOARD_TEMPLATES.length)).toEqual(['board', ...BOARD_TEMPLATES.map((t) => t.id)]);
       expect(within(dialog).getByText('마인드맵')).toBeTruthy();
       expect(within(dialog).getByText('화이트보드')).toBeTruthy();
 
       await user.click(within(dialog).getByRole('button', { name: /화이트보드/ }));
       await waitFor(() => expect(newMapTitles()).toContain('새 화이트보드'));
+      await waitFor(() => expect(screen.getByText('EDITOR_PLACEHOLDER')).toBeTruthy(), { timeout: 2000 });
+    });
+
+    it('보드 템플릿 — 화이트보드 구획에 나란히, 고르면 그 이름의 보드가 열린다', async () => {
+      const user = userEvent.setup();
+      renderHomeWithDocStore([]);
+      await waitFor(() => expect(screen.getAllByText('＋ 새로 만들기')[0]).toBeTruthy());
+
+      await user.click(screen.getAllByText('＋ 새로 만들기')[0]!);
+      const dialog = await screen.findByRole('dialog', { name: '새로 만들기' });
+
+      const retro = BOARD_TEMPLATES[0]!;
+      const card = within(dialog).getByRole('button', { name: new RegExp(retro.name.replace(/[()]/g, '\\$&')) });
+      // 썸네일은 홈 카드와 같은 렌더러 — 보드 템플릿도 완성된 Doc이라 메모 배치가 그대로 보인다.
+      expect(card.querySelector('svg[viewBox]')).toBeTruthy();
+      // 제목 앞은 이모지가 아니라 SVG 아이콘(기기마다 갈리지 않게)
+      expect(card.querySelector(`[data-template-icon="${retro.id}"]`)?.tagName.toLowerCase()).toBe('svg');
+
+      await user.click(card);
+      await waitFor(() => expect(newMapTitles()).toContain(retro.name));
       await waitFor(() => expect(screen.getByText('EDITOR_PLACEHOLDER')).toBeTruthy(), { timeout: 2000 });
     });
 

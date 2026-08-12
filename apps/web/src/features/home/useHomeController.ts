@@ -10,7 +10,7 @@ import { exportDocPdf } from '../editor/pdf';
 import { themeOf } from '../editor/theme';
 import { applyHomeTheme, homeThemeKeyOf, saveHomeThemeCache, type HomeThemeKey } from './theme';
 import { useBackend } from '../../adapters/BackendContext';
-import { findTemplate } from '../../templates/mapTemplates';
+import { findBoardTemplate, findTemplate } from '../../templates/mapTemplates';
 import {
   DRIVE_FILES,
   initialHomeState,
@@ -1096,6 +1096,13 @@ export function useHomeController() {
     // `buildTemplateDoc('board')`가 tpl=board를 받아 트리 없는 문서를 시드한다.
     if (templateId === 'board') {
       onNewMapClick(buildNewMapHref('새 화이트보드', 'board'));
+      return;
+    }
+    // 화이트보드 템플릿(회고·칸반·브레인스토밍) — 맵 템플릿과 같은 길을 탄다:
+    // 주소에는 tpl만 실리고 문서는 에디터가 `buildTemplateDoc`으로 시드한다.
+    const bt = findBoardTemplate(templateId);
+    if (bt) {
+      onNewMapClick(buildNewMapHref(bt.name, bt.id));
       return;
     }
     const tpl = findTemplate(templateId);

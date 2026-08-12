@@ -1,7 +1,7 @@
 import { useEffect, useMemo } from 'react';
 import type { HomeState } from '../../types';
 import type { HomeController } from '../../useHomeController';
-import { MAP_TEMPLATES, buildTemplateDoc } from '../../../../templates/mapTemplates';
+import { BOARD_TEMPLATES, MAP_TEMPLATES, buildTemplateDoc } from '../../../../templates/mapTemplates';
 import { realPreview } from '../../mapPreview';
 import { HOME_THEMES } from '../../theme';
 
@@ -88,6 +88,29 @@ const TEMPLATE_ICON_PATHS: Record<string, JSX.Element> = {
       <path d="M19 7.5 16.5 13h5L19 7.5z" />
     </>
   ),
+  // 순환 화살표 — 돌아보고 다음으로
+  'board-retro': (
+    <>
+      <path d="M20 12a8 8 0 1 1-2.3-5.6" />
+      <polyline points="20 3 20 7.5 15.5 7.5" />
+      <path d="M9.5 12.2 11.6 14.4 15 10.6" />
+    </>
+  ),
+  // 세 열 — 할 일·진행·완료
+  'board-kanban': (
+    <>
+      <rect x="3" y="4.5" width="5" height="15" rx="1.2" />
+      <rect x="9.5" y="4.5" width="5" height="10" rx="1.2" />
+      <rect x="16" y="4.5" width="5" height="13" rx="1.2" />
+    </>
+  ),
+  // 스티커 두 장 — 붙였다 옮겼다
+  'board-ideas': (
+    <>
+      <rect x="3.5" y="6" width="10" height="10" rx="1.6" />
+      <path d="M10.5 10.5h10v7.5l-3.5 3.5h-6.5z" />
+    </>
+  ),
   // 펼친 책 — 배운 것
   study: (
     <>
@@ -123,6 +146,8 @@ export function TemplateGallery({ state, controller }: Props) {
   const hue = HOME_THEMES[state.theme].accent;
 
   const cards = useMemo(() => MAP_TEMPLATES.map((t) => ({ tpl: t, raw: templateRaw(t.id) })), []);
+  // 보드 템플릿도 완성된 `Doc`이라 썸네일은 같은 `realPreview`다(메모 배치가 그대로 보인다).
+  const boardCards = useMemo(() => BOARD_TEMPLATES.map((t) => ({ tpl: t, raw: templateRaw(t.id) })), []);
 
   /**
    * 미리보기 캐시를 **한가할 때 미리 데운다**.
@@ -140,6 +165,7 @@ export function TemplateGallery({ state, controller }: Props) {
     const warm = () => {
       if (cancelled) return;
       for (const t of MAP_TEMPLATES) realPreview(templateRaw(t.id), hue);
+      for (const t of BOARD_TEMPLATES) realPreview(templateRaw(t.id), hue);
     };
     const ric = (window as unknown as { requestIdleCallback?: (cb: () => void) => number }).requestIdleCallback;
     if (ric) {
@@ -280,6 +306,17 @@ export function TemplateGallery({ state, controller }: Props) {
               </div>
               <div style={CARD_DESC_STYLE}>메모 하나로 시작 · 펜으로 그리기</div>
             </button>
+
+            {boardCards.map(({ tpl, raw }) => (
+              <button key={tpl.id} className="btn" data-template={tpl.id} onClick={() => controller.createFromTemplate(tpl.id)} style={{ ...CARD_STYLE, cursor: 'pointer' }}>
+                <div style={THUMB_STYLE}>{realPreview(raw, hue)}</div>
+                <div style={CARD_NAME_STYLE}>
+                  <TemplateIcon id={tpl.id} />
+                  <span style={{ minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis' }}>{tpl.name}</span>
+                </div>
+                <div style={CARD_DESC_STYLE}>{tpl.desc}</div>
+              </button>
+            ))}
           </div>
         </div>
       </div>

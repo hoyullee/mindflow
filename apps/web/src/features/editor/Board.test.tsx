@@ -7,6 +7,7 @@ import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-li
 import { MemoryRouter, Route, Routes } from 'react-router-dom';
 import { Editor } from './Editor';
 import { mockMatchMedia } from '../../test/matchMedia';
+import { BOARD_TEMPLATES } from '../../templates/mapTemplates';
 
 const BOARD = {
   v: 1,
@@ -73,6 +74,27 @@ describe('화이트보드 에디터', () => {
       expect(saved?.kind).toBe('board');
       expect(saved?.floats).toHaveLength(2);
       expect(Object.keys(saved?.nodes ?? { x: 1 })).toHaveLength(0);
+    });
+  });
+
+  it('보드 템플릿(tpl=board-retro)은 메모 배치가 그대로 시드된다 — 저장본도 board', async () => {
+    const { container } = renderEditor('/editor?map=b14&title=%ED%9A%8C%EA%B3%A0&tpl=board-retro&new=1');
+    await waitFor(() => expect(container.querySelector('[data-board-toolbar]')).toBeTruthy());
+
+    const tpl = BOARD_TEMPLATES.find((t) => t.id === 'board-retro')!;
+    await waitFor(() => expect(container.querySelectorAll('[data-float-id]')).toHaveLength(tpl.memos.length));
+    expect(container.querySelectorAll('[data-node-id]')).toHaveLength(0);
+    // 열 제목은 굵은 rich 런으로 들어간다(모델 계약: 런 글자 = text).
+    expect(within(getViewport(container)).getByText(tpl.memos[0]!.text)).toBeTruthy();
+
+    fireEvent.keyDown(window, { key: 's', ctrlKey: true });
+    await waitFor(() => {
+      const saved = JSON.parse(localStorage.getItem('mindflow_doc_b14') || 'null');
+      expect(saved?.kind).toBe('board');
+      expect(saved?.floats).toHaveLength(tpl.memos.length);
+      // 보드가 만들 수 없는 물건(영역·연결선)은 템플릿도 쓰지 않는다.
+      expect(saved?.lines ?? []).toHaveLength(0);
+      expect(saved?.zones ?? []).toHaveLength(0);
     });
   });
 
