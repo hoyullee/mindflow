@@ -30,10 +30,10 @@ export function ZoomControls({ controller, panelOpen = false }: ZoomControlsProp
   // re-centered into the area above the sheet — see Editor). On desktop, or
   // with no panel, the cluster stays pinned bottom-right.
   if (isMobile && panelOpen) return null;
-  const btnSize = isMobile ? 44 : 26;
+  // 아래 버튼 줄은 이제 데스크톱 전용이다(폰 분기는 미니맵만 그리고 일찍 돌아간다).
   const btnStyle = {
-    width: btnSize,
-    height: btnSize,
+    width: 26,
+    height: 26,
     display: 'flex',
     alignItems: 'center',
     justifyContent: 'center',
@@ -53,6 +53,19 @@ export function ZoomControls({ controller, panelOpen = false }: ZoomControlsProp
   const liftForBoard = isMobile && controller.isBoard && !controller.readOnly;
   const anchor: CSSProperties = { bottom: liftForBoard ? BOARD_BAR_LIFT : 16 };
 
+  // 폰에서는 미니맵 **아래 버튼 줄(최소화·화면 맞춤)을 두지 않는다**(요청) —
+  // 좁은 화면에서 지도만 남기는 편이 깔끔하고, 그 자리는 이제 도구 막대·독칩이
+  // 쓴다. 확대/축소는 원래 핀치가 맡고, 화면 맞춤은 열 때 자동으로 한 번 돈다.
+  // 버튼이 없으면 미니맵을 껐을 때 껍데기만 남으므로 아예 그리지 않는다.
+  if (isMobile) {
+    if (!controller.showMinimap) return null;
+    return (
+      <div data-zoom-cluster style={{ position: 'absolute', right: 16, ...anchor, background: th.panel, border: `1px solid ${th.border}`, borderRadius: 12, boxShadow: '0 6px 22px rgba(0,0,0,.08)', zIndex: 15, padding: 6 }}>
+        <Minimap controller={controller} isMobile />
+      </div>
+    );
+  }
+
   return (
     <div
       data-zoom-cluster
@@ -71,7 +84,7 @@ export function ZoomControls({ controller, panelOpen = false }: ZoomControlsProp
     >
       {controller.showMinimap && (
         <div style={{ padding: '6px 6px 0' }}>
-          <Minimap controller={controller} isMobile={isMobile} />
+          <Minimap controller={controller} />
         </div>
       )}
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 2, padding: '4px 6px' }}>
@@ -85,20 +98,14 @@ export function ZoomControls({ controller, panelOpen = false }: ZoomControlsProp
         >
           <MinimapIcon />
         </button>
-        {/* Mobile pinches to zoom, so the −/배율/＋ cluster is dropped there to
-            keep the minimap control compact (leaving just 미니맵 토글 · 화면 맞춤). */}
-        {!isMobile && (
-          <>
-            <div style={{ width: 1, height: 16, background: th.border, margin: '0 3px' }} />
-            <button type="button" className="mf-ed-btn" onClick={controller.zoomOut} title="축소" style={btnStyle}>
-              −
-            </button>
-            <div style={{ minWidth: 42, textAlign: 'center', fontSize: 11.5, fontWeight: 600, color: th.subtext }}>{controller.zoomPct}%</div>
-            <button type="button" className="mf-ed-btn" onClick={controller.zoomIn} title="확대" style={btnStyle}>
-              ＋
-            </button>
-          </>
-        )}
+        <div style={{ width: 1, height: 16, background: th.border, margin: '0 3px' }} />
+        <button type="button" className="mf-ed-btn" onClick={controller.zoomOut} title="축소" style={btnStyle}>
+          −
+        </button>
+        <div style={{ minWidth: 42, textAlign: 'center', fontSize: 11.5, fontWeight: 600, color: th.subtext }}>{controller.zoomPct}%</div>
+        <button type="button" className="mf-ed-btn" onClick={controller.zoomIn} title="확대" style={btnStyle}>
+          ＋
+        </button>
         <div style={{ width: 1, height: 16, background: th.border, margin: '0 3px' }} />
         <button type="button" className="mf-ed-btn" onClick={controller.fitView} title="화면 맞춤" style={btnStyle}>
           <svg width={13} height={13} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round">

@@ -16,7 +16,7 @@
 // 않고, ‹로 돌아가도 펜은 그대로 켜져 있다(메뉴 전환이지 도구 변경이 아니다).
 // 데스크톱은 한 줄에 다 들어가므로 기존 배치(도구·삽입·되돌리기 + 펜 옵션 행) 그대로.
 
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import type { CSSProperties } from 'react';
 import type { EditorController } from '../useEditorState';
 import { hexA } from '../theme';
@@ -30,15 +30,36 @@ const PEN_WIDTHS = [2, 4, 8];
  * 테두리 2 = 56, 바닥 여백 16, 사이 8. */
 export const BOARD_BAR_LIFT = 80;
 
+/** 도구 목록 ↔ 펜 메뉴 밀어내기 전환 길이(ms) — editor.css의 키프레임과 같은 값. */
+const PANEL_ANIM_MS = 200;
+
 export function BoardToolbar({ controller }: { controller: EditorController }) {
   const th = controller.uiTheme;
   const tool = controller.boardTool;
   const isMobile = useIsMobile();
   // 폰에서 막대가 펜 옵션으로 전환돼 있는가. 펜에서 벗어나면 저절로 닫힌다.
   const [penPanel, setPenPanel] = useState(false);
+  // 전환 애니메이션 — 나가는 층이 무엇인지(true=펜 메뉴, false=도구 목록).
+  // 그 층을 잠깐 더 그려야 "밀려 나가는" 모습이 보인다. null이면 전환 아님.
+  const [leaving, setLeaving] = useState<boolean | null>(null);
+  const leaveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const switchPanel = useCallback(
+    (next: boolean) => {
+      if (penPanel === next) return;
+      setPenPanel(next);
+      setLeaving(penPanel);
+      if (leaveTimer.current) clearTimeout(leaveTimer.current);
+      leaveTimer.current = setTimeout(() => {
+        leaveTimer.current = null;
+        setLeaving(null);
+      }, PANEL_ANIM_MS);
+    },
+    [penPanel],
+  );
+  useEffect(() => () => { if (leaveTimer.current) clearTimeout(leaveTimer.current); }, []);
   useEffect(() => {
-    if (tool !== 'pen') setPenPanel(false);
-  }, [tool]);
+    if (tool !== 'pen') switchPanel(false);
+  }, [tool, switchPanel]);
 
   // Escape = 선택 도구로 복귀(그리기에서 빠져나오는 가장 익숙한 길).
   useEffect(() => {
@@ -76,7 +97,7 @@ export function BoardToolbar({ controller }: { controller: EditorController }) {
       onClick={() => {
         controller.setBoardTool(key);
         // 폰: 펜은 색·굵기가 딸린 도구라 누르는 순간 그 메뉴로 전환한다.
-        if (isMobile) setPenPanel(key === 'pen');
+        if (isMobile) switchPanel(key === 'pen');
       }}
       style={{ ...btnBase, background: tool === key ? hexA(th.accent, 0.14) : 'transparent', color: tool === key ? th.accent : th.subtext }}
     >
@@ -99,7 +120,9 @@ export function BoardToolbar({ controller }: { controller: EditorController }) {
     </button>
   );
 
-  const divider = (key: string) => <div key={key} style={{ width: 1, alignSelf: 'stretch', margin: '4px 3px', background: th.border }} />;
+  // 폰 막대에서는 좌우 마진을 두지 않는다 — 간격은 `space-evenly`가 정하므로
+  // 마진을 더하면 구분선 양옆만 넓어져 아이콘 열이 어긋나 보인다(실측 18 vs 21).
+  const divider = (key: string) => <div key={key} style={{ width: 1, alignSelf: 'stretch', margin: isMobile ? '4px 0' : '4px 3px', background: th.border }} />;
 
   const tools = [
     toolBtn(
@@ -239,6 +262,42 @@ export function BoardToolbar({ controller }: { controller: EditorController }) {
     boxShadow: '0 8px 24px rgba(0,0,0,.14)',
   };
 
+  // 폰 막대의 두 층 — 도구 목록(선택·펜·지우개 | 메모·이미지)과 펜 메뉴.
+  // 아이콘 간격은 `space-evenly`라 양 끝 여백까지 균일하고, 구분선은 그 간격
+  // 규칙 안의 한 항목이라 "도구"와 "삽입"이 눈으로 갈린다(요청).
+  const toolMenu = (
+    <>
+      {tools}
+      {divider('dm')}
+      {inserts}
+    </>
+  );
+  const penMenu = (
+    <>
+      <button
+        type="button"
+        className="mf-ed-btn"
+        aria-label="도구 목록으로"
+        title="도구 목록으로"
+        onClick={() => switchPanel(false)}
+        style={{ ...btnBase, background: hexA(th.accent, 0.14), color: th.accent }}
+      >
+        <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+          <path d="M15 5 8 12l7 7" />
+        </svg>
+      </button>
+      <div style={rowStyle}>{colorBtns}</div>
+      <div style={{ ...rowStyle, gap: 2, padding: 2, borderRadius: 10, background: th.panel2 }}>{widthBtns}</div>
+    </>
+  );
+  const layerStyle = (pen: boolean): CSSProperties => ({
+    position: 'absolute',
+    inset: 0,
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: pen ? 'space-between' : 'space-evenly',
+  });
+
   if (isMobile) {
     return (
       <>
@@ -250,35 +309,20 @@ export function BoardToolbar({ controller }: { controller: EditorController }) {
           {undoRedo[1]}
         </div>
 
-        <div
-          data-board-toolbar
-          data-pen-panel={penPanel ? 'true' : undefined}
-          style={{ ...shell, left: 12, right: 12, bottom: 16, display: 'flex', alignItems: 'center', justifyContent: penPanel ? 'space-between' : 'space-around', padding: 5 }}
-          {...stopDrag}
-        >
-          {penPanel ? (
-            <>
-              <button
-                type="button"
-                className="mf-ed-btn"
-                aria-label="도구 목록으로"
-                title="도구 목록으로"
-                onClick={() => setPenPanel(false)}
-                style={{ ...btnBase, background: hexA(th.accent, 0.14), color: th.accent }}
-              >
-                <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-                  <path d="M15 5 8 12l7 7" />
-                </svg>
-              </button>
-              <div style={rowStyle}>{colorBtns}</div>
-              <div style={{ ...rowStyle, gap: 2, padding: 2, borderRadius: 10, background: th.panel2 }}>{widthBtns}</div>
-            </>
-          ) : (
-            <>
-              {tools}
-              {inserts}
-            </>
-          )}
+        <div data-board-toolbar data-pen-panel={penPanel ? 'true' : undefined} style={{ ...shell, left: 12, right: 12, bottom: 16, padding: 5 }} {...stopDrag}>
+          {/* 전환은 **밀어내기**(요청): 펜을 열면 펜 메뉴가 오른쪽에서 들어오고
+              도구 목록은 왼쪽으로 나가고, ‹로 돌아오면 반대. 나가는 쪽을 잠깐 더
+              그려야 하므로 두 층을 겹쳐 놓는다 — 그래서 높이를 고정한다(버튼 높이). */}
+          <div style={{ position: 'relative', height: size, overflow: 'hidden' }}>
+            <div key={penPanel ? 'pen' : 'tools'} className={leaving === null ? undefined : penPanel ? 'mf-board-in-right' : 'mf-board-in-left'} style={layerStyle(penPanel)}>
+              {penPanel ? penMenu : toolMenu}
+            </div>
+            {leaving !== null && (
+              <div aria-hidden className={leaving ? 'mf-board-out-right' : 'mf-board-out-left'} style={{ ...layerStyle(leaving), pointerEvents: 'none' }}>
+                {leaving ? penMenu : toolMenu}
+              </div>
+            )}
+          </div>
         </div>
       </>
     );

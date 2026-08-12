@@ -430,11 +430,20 @@ describe('화이트보드 에디터', () => {
       expect(undoPill.style.bottom).toBe('80px');
       expect(within(undoPill).getByRole('button', { name: '다시 실행' })).toBeTruthy();
 
-      // 줌·미니맵 묶음은 우측이되, 막대 높이만큼 올라앉는다.
+      // 도구(3)와 삽입(2) 사이에 구분선이 하나 선다(요청) — 두 묶음이 눈으로 갈린다.
+      const layer = bar.querySelector('div[style*="position: absolute"]') as HTMLElement;
+      const kinds = Array.from(layer.children).map((el) => el.tagName);
+      expect(kinds).toEqual(['BUTTON', 'BUTTON', 'BUTTON', 'DIV', 'BUTTON', 'BUTTON']);
+      expect(layer.style.justifyContent).toBe('space-evenly'); // 양 끝 여백까지 균일
+
+      // 줌·미니맵 묶음은 우측이되, 막대 높이만큼 올라앉는다. 폰에서는 미니맵만 —
+      // 아래 버튼 줄(최소화·화면 맞춤)은 두지 않는다(요청).
       const cluster = container.querySelector('[data-zoom-cluster]') as HTMLElement;
       expect(cluster.style.right).toBe('16px');
       expect(cluster.style.bottom).toBe('80px');
       expect(cluster.style.top).toBe('');
+      expect(within(cluster).queryByTitle('화면 맞춤')).toBeNull();
+      expect(within(cluster).queryByTitle('미니맵 표시/숨기기')).toBeNull();
     } finally {
       restore();
     }
@@ -454,14 +463,19 @@ describe('화이트보드 에디터', () => {
 
       // 전환: 도구 목록 대신 뒤로·색·굵기. 행이 늘지 않는다(바닥이 두꺼워지지 않게).
       await waitFor(() => expect(bar.getAttribute('data-pen-panel')).toBe('true'));
+      // 밀어내기 애니메이션 — 들어오는 층은 오른쪽에서, 나가는 도구 목록은 왼쪽으로.
+      expect(bar.querySelector('.mf-board-in-right')).toBeTruthy();
+      expect(bar.querySelector('.mf-board-out-left')).toBeTruthy();
       expect(within(bar).getByRole('button', { name: '도구 목록으로' })).toBeTruthy();
       expect(within(bar).getByRole('button', { name: '펜 색 #d92626' })).toBeTruthy();
       expect(within(bar).getByRole('button', { name: '펜 굵기 8' })).toBeTruthy();
       expect(within(bar).queryByRole('button', { name: '지우개' })).toBeNull();
 
-      // ‹ = 메뉴 전환일 뿐, 펜은 그대로 켜져 있다.
+      // ‹ = 메뉴 전환일 뿐, 펜은 그대로 켜져 있다. 방향도 반대(오른쪽으로 밀려 나간다).
       fireEvent.click(within(bar).getByRole('button', { name: '도구 목록으로' }));
       await waitFor(() => expect(bar.getAttribute('data-pen-panel')).toBeNull());
+      expect(bar.querySelector('.mf-board-in-left')).toBeTruthy();
+      expect(bar.querySelector('.mf-board-out-right')).toBeTruthy();
       expect(within(bar).getByRole('button', { name: '펜' }).getAttribute('aria-pressed')).toBe('true');
 
       // 다른 도구로 가면 펜 메뉴는 저절로 닫힌 상태를 유지한다.
