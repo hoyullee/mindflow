@@ -116,7 +116,18 @@ export function Viewport({ doc, controller }: ViewportProps) {
                     부족해 z-index로 못박는다 — 객체 쪽에 z-index를 쓰는 요소가 있다
                     (노드 40·라인 25~28·메모 10/20·배지 81). 편집 박스(100)와 끌어
                     올린 노드(200)만 잉크 위로 올라온다(지금 만지는 것이 보여야 한다). */}
-                <StrokeLayer strokes={doc.strokes} live={controller.liveStroke ? { pts: controller.liveStroke, color: controller.penColor, w: controller.penWidth } : null} />
+                <StrokeLayer
+                  strokes={doc.strokes}
+                  live={
+                    controller.liveStroke
+                      ? controller.boardTool === 'hl'
+                        ? { pts: controller.liveStroke, color: controller.hlColor, w: controller.hlWidth, hl: true }
+                        : { pts: controller.liveStroke, color: controller.penColor, w: controller.penWidth }
+                      : null
+                  }
+                  selectedId={controller.selection?.kind === 'stroke' ? controller.selection.id : null}
+                  accent={theme.accent}
+                />
                 <MarqueeLayer rect={controller.marquee} theme={theme} />
                 <GroupGhostLayer doc={doc} controller={controller} />
                 <PresenceLayer controller={controller} />

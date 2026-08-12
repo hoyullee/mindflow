@@ -9,9 +9,14 @@
 // 원시 캔버스 좌표로 그대로 그린다(EdgeLayer와 같은 꼴). **0×0이면 안 된다**:
 // SVG 스펙에서 최상위 svg의 width/height 0은 렌더링 자체를 끈다(실브라우저에서
 // DOM에는 path가 있는데 화면에 아무것도 안 그려지는 것으로 드러났다).
+//
+// 하이라이터(`Stroke.hl`)는 반투명 + **곱하기 합성**이다: 알파만 낮추면 흰 바탕에선
+// 그럴듯해도 색 있는 메모 위에서 뿌옇게 뜬다(형광펜은 밑을 가리는 게 아니라 걸러
+// 낸다). 잉크 자체는 여전히 객체 **위** 층이므로 덮은 글자가 비쳐 보인다.
 
 import type { Stroke } from '@mindflow/mindmap-core';
-import { strokePathD } from '@mindflow/mindmap-core';
+import { strokeBounds, strokePathD } from '@mindflow/mindmap-core';
+import { HL_OPACITY, isHighlighter } from '../boardTools';
 
 /** 잉크가 앉는 층 — 객체(≤81) 위, 편집 박스(100)·드래그 중인 노드(200) 아래. */
 export const STROKE_Z = 90;
@@ -19,18 +24,50 @@ export const STROKE_Z = 90;
 interface StrokeLayerProps {
   strokes: Stroke[] | undefined;
   /** 그리는 중인 획의 미리보기(컨트롤러 `liveStroke`) — 커밋 전이라 문서에 없다. */
-  live: { pts: number[]; color: string; w: number } | null;
+  live: { pts: number[]; color: string; w: number; hl?: boolean } | null;
+  /** 지금 선택된 획의 id — 점선 상자로 표시한다(획에는 손잡이가 없다). */
+  selectedId?: string | null;
+  /** 선택 표시 색(테마 accent). */
+  accent?: string;
 }
 
-export function StrokeLayer({ strokes, live }: StrokeLayerProps) {
+/** 선택 상자가 획에서 떨어지는 여백(캔버스 단위) — 굵은 하이라이터도 상자가
+ * 잉크에 닿지 않게 굵기 절반(bounds에 이미 포함)에 조금 더 준다. */
+const SEL_PAD = 4;
+
+export function StrokeLayer({ strokes, live, selectedId, accent }: StrokeLayerProps) {
   const list = strokes ?? [];
   if (!list.length && !live) return null;
+  const sel = selectedId ? list.find((s) => s.id === selectedId) : undefined;
+  const selBox = sel ? strokeBounds(sel) : null;
+  const strokeProps = (s: { color: string; w: number; hl?: boolean }) => ({
+    fill: 'none',
+    stroke: s.color,
+    strokeWidth: s.w,
+    strokeLinecap: 'round' as const,
+    strokeLinejoin: 'round' as const,
+    ...(isHighlighter(s) ? { opacity: HL_OPACITY, style: { mixBlendMode: 'multiply' as const } } : {}),
+  });
   return (
     <svg data-stroke-layer width={10} height={10} overflow="visible" style={{ position: 'absolute', left: 0, top: 0, overflow: 'visible', pointerEvents: 'none', zIndex: STROKE_Z }} aria-hidden="true">
       {list.map((s) => (
-        <path key={s.id} data-stroke-id={s.id} d={strokePathD(s.pts)} fill="none" stroke={s.color} strokeWidth={s.w} strokeLinecap="round" strokeLinejoin="round" />
+        <path key={s.id} data-stroke-id={s.id} data-stroke-hl={isHighlighter(s) ? '1' : undefined} d={strokePathD(s.pts)} {...strokeProps(s)} />
       ))}
-      {live && live.pts.length >= 2 && <path data-live-stroke d={strokePathD(live.pts)} fill="none" stroke={live.color} strokeWidth={live.w} strokeLinecap="round" strokeLinejoin="round" />}
+      {live && live.pts.length >= 2 && <path data-live-stroke d={strokePathD(live.pts)} {...strokeProps(live)} />}
+      {selBox && (
+        <rect
+          data-stroke-selection
+          x={selBox.x0 - SEL_PAD}
+          y={selBox.y0 - SEL_PAD}
+          width={Math.max(1, selBox.x1 - selBox.x0 + SEL_PAD * 2)}
+          height={Math.max(1, selBox.y1 - selBox.y0 + SEL_PAD * 2)}
+          fill="none"
+          stroke={accent ?? '#f0663f'}
+          strokeWidth={1.5}
+          strokeDasharray="5 4"
+          rx={6}
+        />
+      )}
     </svg>
   );
 }

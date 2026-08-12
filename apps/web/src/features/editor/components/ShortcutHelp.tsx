@@ -119,8 +119,10 @@ export function ShortcutHelp({ controller }: { controller: EditorController }) {
               <>
                 {row(['V'], '선택')}
                 {row(['P'], '펜')}
+                {row(['H'], '형광펜')}
                 {row(['E'], '지우개')}
                 {row(['Esc'], '선택 도구로 돌아가기')}
+                {row(['Del'], '선택한 획 지우기')}
               </>,
             )}
           {section(

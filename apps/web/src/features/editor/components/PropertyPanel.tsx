@@ -3,6 +3,7 @@ import { NodePanel } from './panel/NodePanel';
 import { LinePanel } from './panel/LinePanel';
 import { FloatPanel } from './panel/FloatPanel';
 import { ZonePanel } from './panel/ZonePanel';
+import { StrokePanel } from './panel/StrokePanel';
 import { useIsMobile, useIsShortScreen } from '../../../hooks/useMediaQuery';
 
 interface PropertyPanelProps {
@@ -32,6 +33,8 @@ export function PropertyPanel({ controller }: PropertyPanelProps) {
   if (isMobile && !controller.propsOpen) return null;
   const sel = controller.selection;
   if (sel?.kind === 'zone') return <ZonePanel controller={controller} zoneId={sel.id} isMobile={isMobile} short={short} />;
+  // 그리기 획(화이트보드) — 마퀴에 담기지 않으므로 언제나 단일 선택이다.
+  if (sel?.kind === 'stroke') return <StrokePanel controller={controller} strokeId={sel.id} isMobile={isMobile} short={short} />;
 
   const m = controller.multiGroups;
   const nodesOnly = m.nodes.length > 0 && !m.lines.length && !m.floats.length;

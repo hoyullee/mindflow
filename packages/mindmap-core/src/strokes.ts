@@ -70,3 +70,19 @@ export function strokePathD(pts: number[]): string {
   for (let i = 2; i + 1 < pts.length; i += 2) d += ` L ${pts[i]} ${pts[i + 1]}`;
   return d;
 }
+
+/**
+ * 획을 (dx,dy)만큼 옮긴 새 좌표 — 획 이동(드래그)의 유일한 계산.
+ *
+ * 좌표는 그릴 때와 같은 0.1 단위로 반올림한다: 드래그는 매 이동마다 **시작
+ * 좌표 기준으로 다시** 계산되므로(누적이 아니다) 반올림이 쌓여 획이 뭉개질
+ * 일이 없고, 저장본에 소수점이 길게 붙지도 않는다.
+ */
+export function translateStrokePts(pts: number[], dx: number, dy: number): number[] {
+  const out = new Array<number>(pts.length);
+  for (let i = 0; i + 1 < pts.length; i += 2) {
+    out[i] = Math.round((pts[i]! + dx) * 10) / 10;
+    out[i + 1] = Math.round((pts[i + 1]! + dy) * 10) / 10;
+  }
+  return out;
+}

@@ -2,8 +2,10 @@ import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } fr
 import type { MouseEvent as ReactMouseEvent, PointerEvent as ReactPointerEvent } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import type { Box, Doc, Float, Line, LineAnchor, LayoutMode, ListOp, Node, NodeMap, SizeOf, SnapCandidate, Stroke, TextEdit, Zone } from '@mindflow/mindmap-core';
-import { HistoryStack, ROOT_ID, collectImageRefs, collectInlineImages, isImageRef, replaceImageValues, applyListOp as applyListOpToText, applyAutoLinks, applyMarkdownShortcuts, applyPartialStyle, insertMention, charsToRuns, cubicAt, isStyledRuns, findLineSnap, layout, resolveLineEndpoints, resolveLineGeometry, runsToChars, serializeDoc, shiftOffset, strokeBounds, strokeHit, toMarkdown } from '@mindflow/mindmap-core';
+import { HistoryStack, ROOT_ID, collectImageRefs, collectInlineImages, isImageRef, replaceImageValues, applyListOp as applyListOpToText, applyAutoLinks, applyMarkdownShortcuts, applyPartialStyle, insertMention, charsToRuns, cubicAt, isStyledRuns, findLineSnap, layout, resolveLineEndpoints, resolveLineGeometry, runsToChars, serializeDoc, shiftOffset, strokeBounds, strokeHit, translateStrokePts, toMarkdown } from '@mindflow/mindmap-core';
 import { domToRuns, linearize, liveEditValue } from './richtextDom';
+import { HL_COLORS, HL_WIDTHS } from './boardTools';
+import type { BoardTool } from './boardTools';
 import { recordVersion, versionDoc } from './versionHistory';
 import { nodeTextAlign, renderListEdit } from './listLines';
 import type { CommentMention, DocComment, ShareParticipant, ShareRole, ShareStore } from '../../adapters/ports';
@@ -179,6 +181,9 @@ type ObjDrag =
   | { kind: 'line-move'; id: string; pointerId: number; startClientX: number; startClientY: number; o: { x1: number; y1: number; x2: number; y2: number } }
   | { kind: 'line-end'; id: string; which: LineHandle; pointerId: number; startClientX: number; startClientY: number; ox: number; oy: number }
   | { kind: 'line-curve'; id: string; which: LineHandle; pointerId: number; startClientX: number; startClientY: number; oc: number; nx: number; ny: number }
+  /** 획 이동 — 원본 좌표(`o`)를 들고 매 이동마다 그 기준으로 다시 계산한다
+   * (누적하지 않으므로 0.1 반올림이 쌓여 획이 뭉개지지 않는다). */
+  | { kind: 'stroke-move'; id: string; pointerId: number; startClientX: number; startClientY: number; o: number[] }
   /** Multi-select group drag — port of `Component#startGroupDrag`/`onMove`'s `'group'` branch
    * (MindFlow.dc.html:1582-1594, 1706-1713). Only free-standing node roots are captured (see
    * `mutations.translateNodesBy`'s doc comment for why attached tree nodes can't be). */
@@ -535,6 +540,10 @@ export interface EditorController {
   // ---- zone property setters ----
   setZoneColor: (id: string, hex: string | null) => void;
   deleteZone: (id: string) => void;
+  /** 그리기 획(화이트보드) — 선택한 획 하나의 색·굵기·삭제. */
+  setStrokeColor: (id: string, hex: string) => void;
+  setStrokeWidth: (id: string, w: number) => void;
+  deleteStroke: (id: string) => void;
 
   // ---- right-click context menu — port of `Component#state.ctxMenu`/`ctxSub`
   // (MindFlow.dc.html:2775-2837, 3087-3170) ----
@@ -643,14 +652,20 @@ export interface EditorController {
   /** 화이트보드(`Doc.kind === 'board'`) — 트리 없이 메모·이미지만 자유 배치하는
    * 문서. true면 주제/선/영역/레이아웃/아웃라인 UI가 감춰진다(메뉴들이 읽는다). */
   isBoard: boolean;
-  /** 화이트보드 그리기 도구(M4). 'select'가 기본 — 펜/지우개일 때는 캔버스 위에
-   * 그리기 오버레이(BoardDrawLayer)가 포인터를 받는다. */
-  boardTool: 'select' | 'pen' | 'eraser';
-  setBoardTool: (t: 'select' | 'pen' | 'eraser') => void;
+  /** 화이트보드 그리기 도구(M4). 'select'가 기본 — 펜/하이라이터/지우개일 때는
+   * 캔버스 위에 그리기 오버레이(BoardDrawLayer)가 포인터를 받는다. */
+  boardTool: BoardTool;
+  setBoardTool: (t: BoardTool) => void;
+  /** 펜·하이라이터의 색/굵기는 **따로** 기억한다 — 도구를 오갈 때마다 상대의
+   * 설정이 지워지면 형광펜을 한 번 쓴 뒤 펜이 노란 20px이 된다. */
   penColor: string;
   setPenColor: (c: string) => void;
   penWidth: number;
   setPenWidth: (w: number) => void;
+  hlColor: string;
+  setHlColor: (c: string) => void;
+  hlWidth: number;
+  setHlWidth: (w: number) => void;
   /** 그리는 중인 획(미리보기 좌표) — 없으면 null. */
   liveStroke: number[] | null;
   boardDrawDown: (clientX: number, clientY: number) => void;
@@ -1587,6 +1602,25 @@ export function useEditorState(): EditorController {
       const pad = 4;
       if (p.x >= gg.x - gg.w / 2 - pad && p.x <= gg.x + gg.w / 2 + pad && p.y >= gg.y - gg.h / 2 - pad && p.y <= gg.y + gg.h / 2 + pad) return { kind: 'node', id };
     }
+    const st = strokeAt(p);
+    if (st) return { kind: 'stroke', id: st };
+    return null;
+  }
+
+  /**
+   * 이 점에 닿은 획의 id — 위에서부터(나중에 그린 것 우선) 찾는다.
+   *
+   * 허용치는 화면 기준 6px + 선 굵기 절반이다: 얇은 획도 집을 수 있으면서,
+   * 줌아웃 상태에서 화면상 같은 거리로 느껴진다(획 지우개와 같은 규칙).
+   */
+  function strokeAt(p: { x: number; y: number }): string | null {
+    const strokes = docRef.current.strokes ?? [];
+    if (!strokes.length) return null;
+    const tol = 6 / (viewportRef.current.zoom || 1);
+    for (let i = strokes.length - 1; i >= 0; i--) {
+      const s = strokes[i]!;
+      if (strokeHit(s, p.x, p.y, tol + (s.w || 2) / 2)) return s.id;
+    }
     return null;
   }
 
@@ -1610,7 +1644,9 @@ export function useEditorState(): EditorController {
     // 아니라 **어떤 객체 위에서든** 메뉴를 열고, 항목 구성은 ContextMenu가 readOnly를
     // 보고 댓글만 남긴다.
     if (readOnlyRef.current) {
-      if (!(hit && canCommentRef.current)) return;
+      // 획에는 댓글이 붙지 않으므로(ContextMenu의 'stroke' 분기 참고) 보기 전용에서
+      // 획 위 우클릭은 **아무 메뉴도 열지 않는다** — 빈 메뉴가 뜨는 것보다 낫다.
+      if (!(hit && hit.kind !== 'stroke' && canCommentRef.current)) return;
       setTextCtx(null);
       setSelectionState({ kind: hit.kind, id: hit.id }); // 선택은 보기 전용에도 허용
       setMultiSelectionState(null);
@@ -1644,6 +1680,11 @@ export function useEditorState(): EditorController {
       setMultiSelectionState(null);
       setCtxSub(null);
       setCtxMenu({ kind: 'line', sx, sy, cx: p.x, cy: p.y });
+    } else if (hit && hit.kind === 'stroke') {
+      setSelectionState({ kind: 'stroke', id: hit.id });
+      setMultiSelectionState(null);
+      setCtxSub(null);
+      setCtxMenu({ kind: 'stroke', sx, sy, cx: p.x, cy: p.y });
     } else if (hit && hit.kind === 'zone') {
       setSelectionState({ kind: 'zone', id: hit.id });
       setMultiSelectionState(null);
@@ -1990,11 +2031,42 @@ export function useEditorState(): EditorController {
     } catch {
       /* not implemented in some environments (e.g. jsdom) — non-fatal */
     }
+    // 그리기 획은 자기 DOM 요소가 없다(한 장의 SVG에 그려진 path들이고 포인터를
+    // 받지 않는다 — 잉크가 객체 위에 있어도 클릭이 통과해야 한다). 그래서 배경이
+    // 받은 포인터를 좌표로 히트테스트해 "획을 잡았는가"를 여기서 가른다.
+    const isTouch = e.pointerType === 'touch';
+    const bgPoint = toCanvasPoint(e.clientX, e.clientY, viewportRef.current);
+    const strokeId = e.button === 1 || e.button === 2 ? null : strokeAt(bgPoint);
+    if (strokeId) {
+      if (isTouch) {
+        // 터치는 다른 객체와 같은 규칙 — 첫 탭은 선택만, 드래그는 화면 이동.
+        // (이미 선택된 획이면 아래에서 곧바로 이동 드래그로 넘어간다.)
+        if (!isSelectedSingle('stroke', strokeId)) {
+          pendingTapRef.current = { kind: 'stroke', id: strokeId };
+        } else if (!readOnlyRef.current) {
+          const s = (docRef.current.strokes ?? []).find((x) => x.id === strokeId);
+          if (s) {
+            cancelLongPress();
+            startObjDrag({ kind: 'stroke-move', id: strokeId, pointerId: e.pointerId, startClientX: e.clientX, startClientY: e.clientY, o: s.pts });
+            return;
+          }
+        }
+      } else {
+        setSelectionState({ kind: 'stroke', id: strokeId });
+        setMultiSelectionState(null);
+        setEditingNodeId(null);
+        setEditingFloatId(null);
+        if (!readOnlyRef.current) {
+          const s = (docRef.current.strokes ?? []).find((x) => x.id === strokeId);
+          if (s) startObjDrag({ kind: 'stroke-move', id: strokeId, pointerId: e.pointerId, startClientX: e.clientX, startClientY: e.clientY, o: s.pts });
+        }
+        return;
+      }
+    }
     // Middle/right-mouse OR a single-finger TOUCH drag pans. Touch has no
     // right-click and panning to navigate matters far more than rubber-band
     // selection on a phone, so a one-finger drag moves the canvas (two fingers
     // pinch-zoom, handled above); mouse keeps left=marquee / right·middle=pan.
-    const isTouch = e.pointerType === 'touch';
     if (e.button === 1 || e.button === 2 || isTouch) {
       setViewport((prev) => {
         dragRef.current = { kind: 'pan', pointerId: e.pointerId, sx: e.clientX, sy: e.clientY, startPan: prev.pan, moved: false, touch: isTouch };
@@ -2025,8 +2097,7 @@ export function useEditorState(): EditorController {
       }
       return;
     }
-    const vp = viewportRef.current;
-    const p = toCanvasPoint(e.clientX, e.clientY, vp);
+    const p = bgPoint;
     dragRef.current = { kind: 'marquee', pointerId: e.pointerId, startClientX: e.clientX, startClientY: e.clientY, x0: p.x, y0: p.y, moved: false };
     marqueeRectRef.current = { x0: p.x, y0: p.y, x1: p.x, y1: p.y };
     setMarquee(marqueeRectRef.current);
@@ -3513,10 +3584,10 @@ export function useEditorState(): EditorController {
   // 획 = 원자 값(코어 `Stroke`): 펜을 떼는 순간 하나의 커밋(=undo 한 단계)으로
   // 확정된다. 입력 단순화(가까운 점 병합 + 0.1 단위 반올림)는 여기 입력 시점에서
   // — 손글씨는 초당 수십 좌표를 만들어 문서가 부풀기 때문이다.
-  const [boardTool, setBoardToolState] = useState<'select' | 'pen' | 'eraser'>('select');
+  const [boardTool, setBoardToolState] = useState<BoardTool>('select');
   const boardToolRef = useRef(boardTool);
   boardToolRef.current = boardTool;
-  const setBoardTool = useCallback((t: 'select' | 'pen' | 'eraser') => {
+  const setBoardTool = useCallback((t: BoardTool) => {
     setBoardToolState(t);
     if (t !== 'select') {
       // 그리기 도구로 바꾸면 선택을 비운다 — 오버레이가 포인터를 삼키는 동안
@@ -3530,8 +3601,11 @@ export function useEditorState(): EditorController {
   // 기본 굵기는 도구 막대 선택지(2·4·8) 중 하나여야 한다 — 아니면 첫 사용에서
   // 어떤 굵기도 눌린 상태로 보이지 않는다.
   const [penWidth, setPenWidth] = useState(4);
-  const penRef = useRef({ color: penColor, w: penWidth });
-  penRef.current = { color: penColor, w: penWidth };
+  // 하이라이터는 자기 색·굵기를 따로 기억한다(형광 팔레트·굵은 심).
+  const [hlColor, setHlColor] = useState(HL_COLORS[0]!);
+  const [hlWidth, setHlWidth] = useState(HL_WIDTHS[1]!);
+  const penRef = useRef({ color: penColor, w: penWidth, hlColor, hlWidth });
+  penRef.current = { color: penColor, w: penWidth, hlColor, hlWidth };
   /** 그리는 중인 획의 좌표(미리보기) — StrokeLayer가 그린다. */
   const [liveStroke, setLiveStroke] = useState<number[] | null>(null);
   const liveStrokeRef = useRef<number[] | null>(null);
@@ -3563,7 +3637,7 @@ export function useEditorState(): EditorController {
         eraseAtClient(clientX, clientY);
         return;
       }
-      if (tool !== 'pen') return;
+      if (tool !== 'pen' && tool !== 'hl') return;
       const p = toCanvasPoint(clientX, clientY, viewportRef.current);
       liveStrokeRef.current = [Math.round(p.x * 10) / 10, Math.round(p.y * 10) / 10];
       setLiveStroke(liveStrokeRef.current);
@@ -3597,7 +3671,12 @@ export function useEditorState(): EditorController {
     liveStrokeRef.current = null;
     setLiveStroke(null);
     if (!pts || pts.length < 2) return;
-    const stroke: Stroke = { id: idFactory('s'), pts, color: penRef.current.color, w: penRef.current.w };
+    const pen = penRef.current;
+    const hl = boardToolRef.current === 'hl';
+    // `hl`은 하이라이터일 때만 심는다 — 부재가 곧 "평범한 펜"이라 옛 저장본과 같다.
+    const stroke: Stroke = hl
+      ? { id: idFactory('s'), pts, color: pen.hlColor, w: pen.hlWidth, hl: true }
+      : { id: idFactory('s'), pts, color: pen.color, w: pen.w };
     commitDoc((d) => ({ ...d, strokes: [...(d.strokes ?? []), stroke] }));
   }, [commitDoc, idFactory]);
   /** 두 번째 손가락이 닿는 등 제스처가 그리기가 아니게 됐을 때 — 커밋 없이 버린다. */
@@ -3694,6 +3773,28 @@ export function useEditorState(): EditorController {
   const deleteLine = useCallback(
     (id: string) => {
       commitDoc((d) => ({ ...d, lines: mutations.removeLineItem(d.lines, id) }));
+      setSelectionState(null);
+    },
+    [commitDoc],
+  );
+
+  // ---- 획(stroke) 속성 ----
+  // 획은 그릴 때 정한 색·굵기를 나중에도 고칠 수 있다(잘못 고른 형광색을 지웠다
+  // 다시 그릴 이유가 없다). 대상은 언제나 **선택된 획 하나** — 마퀴가 획을 담지
+  // 않으므로 일괄 세터가 필요 없다.
+  const updateStroke = useCallback(
+    (id: string, patch: Partial<Stroke>) => commitDoc((d) => ({ ...d, strokes: (d.strokes ?? []).map((s) => (s.id === id ? { ...s, ...patch } : s)) })),
+    [commitDoc],
+  );
+  const setStrokeColor = useCallback((id: string, hex: string) => updateStroke(id, { color: hex }), [updateStroke]);
+  const setStrokeWidth = useCallback((id: string, w: number) => updateStroke(id, { w }), [updateStroke]);
+  const deleteStroke = useCallback(
+    (id: string) => {
+      commitDoc((d) => {
+        const rest = (d.strokes ?? []).filter((s) => s.id !== id);
+        // 빈 배열은 키째 지운다 — "비어 있지 않을 때만 직렬화" 규칙과 맞춘다.
+        return { ...d, strokes: rest.length ? rest : undefined };
+      });
       setSelectionState(null);
     },
     [commitDoc],
@@ -3864,6 +3965,11 @@ export function useEditorState(): EditorController {
     if (kind === 'zone') {
       const z = docRef.current.zones.find((x) => x.id === id);
       return z ? { x: z.x + z.w / 2, y: z.y + z.h / 2 } : null;
+    }
+    if (kind === 'stroke') {
+      const s = (docRef.current.strokes ?? []).find((x) => x.id === id);
+      const b = s ? strokeBounds(s) : null;
+      return b ? { x: (b.x0 + b.x1) / 2, y: (b.y0 + b.y1) / 2 } : null;
     }
     const l = docRef.current.lines.find((x) => x.id === id);
     return l ? cubicAt(lineGeometryOf(l), 0.5) : null; // line midpoint
@@ -4068,6 +4174,15 @@ export function useEditorState(): EditorController {
         case 'zone-resize':
           commitDoc(
             (doc0) => ({ ...doc0, zones: mutations.updateZoneItem(doc0.zones, d.id, { w: Math.max(160, Math.round(d.ow + dx)), h: Math.max(100, Math.round(d.oh + dy)) }) }),
+            true,
+          );
+          break;
+        case 'stroke-move':
+          // 매 이동을 **원본 좌표 기준으로** 다시 계산한다(누적하지 않는다) —
+          // 0.1 반올림이 쌓여 획이 뭉개지는 것을 막는다. continuous 커밋이라
+          // 한 번의 드래그가 undo 한 단계로 합쳐진다(메모 드래그와 같은 결).
+          commitDoc(
+            (doc0) => ({ ...doc0, strokes: (doc0.strokes ?? []).map((s) => (s.id === d.id ? { ...s, pts: translateStrokePts(d.o, dx, dy) } : s)) }),
             true,
           );
           break;
@@ -4621,12 +4736,21 @@ export function useEditorState(): EditorController {
       }
 
       if (inEditable) return;
-      // 화이트보드 도구 전환 — V(선택)·P(펜)·E(지우개). 수정 키가 없을 때만이라
+      // 화이트보드 도구 전환 — V(선택)·P(펜)·H(형광펜)·E(지우개). 수정 키가 없을 때만이라
       // Ctrl+V(붙여넣기) 같은 기존 단축키와 겹치지 않는다. 한글 IME가 켜져 있으면
       // e.key가 자모로 오므로 물리 키(e.code)도 함께 본다(복사/붙여넣기와 같은 처방).
       if (isBoard && !e.metaKey && !e.ctrlKey && !e.altKey && !e.shiftKey) {
         const k = e.key.toLowerCase();
-        const tool = k === 'v' || e.code === 'KeyV' ? 'select' : k === 'p' || e.code === 'KeyP' ? 'pen' : k === 'e' || e.code === 'KeyE' ? 'eraser' : null;
+        const tool: BoardTool | null =
+          k === 'v' || e.code === 'KeyV'
+            ? 'select'
+            : k === 'p' || e.code === 'KeyP'
+              ? 'pen'
+              : k === 'h' || e.code === 'KeyH'
+                ? 'hl'
+                : k === 'e' || e.code === 'KeyE'
+                  ? 'eraser'
+                  : null;
         if (tool) {
           e.preventDefault();
           setBoardTool(tool);
@@ -4759,6 +4883,15 @@ export function useEditorState(): EditorController {
           e.preventDefault();
           clearSelection();
         }
+      } else if (selection.kind === 'stroke') {
+        // 획은 글자도 자식도 없다 — 지우기와 선택 해제만.
+        if (e.key === 'Delete' || e.key === 'Backspace') {
+          e.preventDefault();
+          deleteStroke(selection.id);
+        } else if (e.key === 'Escape') {
+          e.preventDefault();
+          clearSelection();
+        }
       } else if (selection.kind === 'zone') {
         if (e.key === 'Delete' || e.key === 'Backspace') {
           e.preventDefault();
@@ -4855,6 +4988,10 @@ export function useEditorState(): EditorController {
     setPenColor,
     penWidth,
     setPenWidth,
+    hlColor,
+    setHlColor,
+    hlWidth,
+    setHlWidth,
     liveStroke,
     boardDrawDown,
     boardDrawMove,
@@ -5032,6 +5169,9 @@ export function useEditorState(): EditorController {
     lineSnapBox,
 
     setZoneColor,
+    setStrokeColor,
+    setStrokeWidth,
+    deleteStroke,
     deleteZone,
 
     ctxMenu,

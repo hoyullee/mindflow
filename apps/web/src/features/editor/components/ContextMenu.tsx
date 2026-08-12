@@ -501,6 +501,24 @@ function buildItems(controller: EditorController, ctxMenu: ContextMenuState, tog
     ];
   }
 
+  if (ctxMenu.kind === 'stroke') {
+    // 그리기 획 — 다룰 것이 삭제뿐이다(색·굵기는 속성 패널, 댓글은 붙지 않는다:
+    // 획은 글자가 없어 "무엇에 대한 논의인지"를 목록에서 가리킬 이름이 없다).
+    const strokeId = controller.selection?.kind === 'stroke' ? controller.selection.id : null;
+    if (!strokeId || controller.readOnly) return [];
+    return [
+      {
+        icon: <TrashIcon />,
+        label: '삭제',
+        danger: true,
+        onSelect: () => {
+          close();
+          controller.deleteStroke(strokeId);
+        },
+      },
+    ];
+  }
+
   if (ctxMenu.kind === 'multi') {
     const ms = controller.multiSelection;
     const count = ms ? ms.nodes.length + ms.lines.length + ms.floats.length : 0;

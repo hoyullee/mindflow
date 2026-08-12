@@ -17,6 +17,7 @@ import { buildEdgePath, edgeStrokeWidth } from './edges';
 import { hexA } from './theme';
 import type { Theme } from './theme';
 import { floatPadLeft } from './metrics';
+import { HL_OPACITY, isHighlighter } from './boardTools';
 import { linkInk } from './richSpans';
 import type { GeomMap } from './types';
 
@@ -200,6 +201,9 @@ export interface PathOpts {
   alpha?: number;
   /** round caps/joins (트리 연결선). */
   round?: boolean;
+  /** 곱하기 합성(하이라이터) — 밑의 글자를 가리지 않고 걸러 낸다. 캔버스는
+   * `globalCompositeOperation`, SVG는 `mix-blend-mode`로 같은 결과를 낸다. */
+  blend?: 'multiply';
 }
 
 export interface TextOpts {
@@ -240,6 +244,7 @@ export class CanvasPainter implements Painter {
     const ctx = this.ctx;
     const p2 = new Path2D(d);
     if (o.alpha != null) ctx.globalAlpha = o.alpha;
+    if (o.blend) ctx.globalCompositeOperation = o.blend;
     if (o.fill) {
       ctx.fillStyle = o.fill;
       ctx.fill(p2);
@@ -255,6 +260,7 @@ export class CanvasPainter implements Painter {
       ctx.lineCap = 'butt';
       ctx.lineJoin = 'miter';
     }
+    if (o.blend) ctx.globalCompositeOperation = 'source-over';
     if (o.alpha != null) ctx.globalAlpha = 1;
   }
 
@@ -316,6 +322,7 @@ export class SvgPainter implements Painter {
       if (o.round) at.push('stroke-linecap="round"', 'stroke-linejoin="round"');
     }
     if (o.alpha != null && o.alpha !== 1) at.push(`opacity="${fx(o.alpha)}"`);
+    if (o.blend) at.push(`style="mix-blend-mode:${o.blend}"`);
     this.els.push(`<path ${at.join(' ')}/>`);
   }
 
@@ -669,6 +676,8 @@ export function paintScene(p: Painter, o: PaintSceneOpts): void {
   // 잉크는 객체를 덮는다(제보: 메모 뒤로 숨었다). 획은 path 하나씩이라 세
   // 백엔드(PNG·SVG·PDF)가 같은 문자열을 소비한다.
   (doc.strokes ?? []).forEach((s) => {
-    p.path(strokePathD(s.pts), { stroke: s.color, width: s.w, round: true });
+    // 하이라이터는 화면과 **같은 값**으로 반투명·곱하기(boardTools의 HL_OPACITY) —
+    // 내보낸 파일이 에디터와 달라 보이면 그게 버그다.
+    p.path(strokePathD(s.pts), { stroke: s.color, width: s.w, round: true, ...(isHighlighter(s) ? { alpha: HL_OPACITY, blend: 'multiply' as const } : {}) });
   });
 }

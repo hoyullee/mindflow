@@ -2,6 +2,7 @@ import { ROOT_ID, layout, listDisplayLine, parseListPrefix, strokeBounds, stroke
 import type { Doc, EdgeStyle, Float, LayoutMode, Node as CoreNode } from '@mindflow/mindmap-core';
 import { buildEdgePath, edgeStrokeWidth } from '../editor/edges';
 import { linkInk } from '../editor/richSpans';
+import { HL_OPACITY, isHighlighter } from '../editor/boardTools';
 import { CanvasTextMeasurer, computeMetrics, floatPadLeft, measureFloatHeight } from '../editor/metrics';
 import type { TextMeasurer } from '../editor/metrics';
 import { hexA } from './storage';
@@ -305,7 +306,7 @@ interface PreviewDoc {
   floats?: DocFloat[];
   lines?: DocLine[];
   zones?: DocZone[];
-  strokes?: { id: string; pts: number[]; color: string; w: number }[];
+  strokes?: { id: string; pts: number[]; color: string; w: number; hl?: boolean }[];
   kind?: string;
 }
 
@@ -816,7 +817,16 @@ function buildPreview(rawDoc: string, hueFallback: string): JSX.Element | null {
       {floatEls}
       {/* 그리기 획은 에디터·내보내기와 같이 **맨 위**(객체를 덮는 잉크). */}
       {strokes.map((st) => (
-        <path key={`sk-${st.id}`} d={strokePathD(st.pts)} fill="none" stroke={st.color} strokeWidth={st.w} strokeLinecap="round" strokeLinejoin="round" />
+        <path
+          key={`sk-${st.id}`}
+          d={strokePathD(st.pts)}
+          fill="none"
+          stroke={st.color}
+          strokeWidth={st.w}
+          strokeLinecap="round"
+          strokeLinejoin="round"
+          {...(isHighlighter(st) ? { opacity: HL_OPACITY, style: { mixBlendMode: 'multiply' as const } } : {})}
+        />
       ))}
     </svg>
   );
