@@ -106,12 +106,17 @@ export function Viewport({ doc, controller }: ViewportProps) {
                 }}
               >
                 <ZoneLayer zones={doc.zones} theme={theme} controller={controller} />
-                {/* 그리기 획(화이트보드 M4) — 보드 바닥의 잉크라 메모/이미지 아래. */}
-                <StrokeLayer strokes={doc.strokes} live={controller.liveStroke ? { pts: controller.liveStroke, color: controller.penColor, w: controller.penWidth } : null} />
                 <EdgeLayer nodes={doc.nodes} geom={geom} mode={layoutMode} edgeStyle={edgeStyle} theme={theme} />
                 <NodeLayer nodes={doc.nodes} geom={geom} mode={layoutMode} theme={theme} controller={controller} />
                 <LineLayer lines={doc.lines} theme={theme} controller={controller} />
                 <FloatLayer floats={doc.floats} theme={theme} controller={controller} />
+                {/* 그리기 획(화이트보드 M4) — 손으로 그은 잉크는 **언제나 객체 위**다
+                    (제보: 메모 뒤로 숨었다). 종이에 펜으로 덧그리는 감각이기도 하고,
+                    가려지면 방금 그은 획이 사라진 것처럼 보인다. DOM 순서만으로는
+                    부족해 z-index로 못박는다 — 객체 쪽에 z-index를 쓰는 요소가 있다
+                    (노드 40·라인 25~28·메모 10/20·배지 81). 편집 박스(100)와 끌어
+                    올린 노드(200)만 잉크 위로 올라온다(지금 만지는 것이 보여야 한다). */}
+                <StrokeLayer strokes={doc.strokes} live={controller.liveStroke ? { pts: controller.liveStroke, color: controller.penColor, w: controller.penWidth } : null} />
                 <MarqueeLayer rect={controller.marquee} theme={theme} />
                 <GroupGhostLayer doc={doc} controller={controller} />
                 <PresenceLayer controller={controller} />

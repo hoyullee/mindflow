@@ -131,3 +131,19 @@ describe('shapePathD / SvgPainter', () => {
     expect(svg).toContain('a&lt;b&gt;&amp;&quot;c');
   });
 });
+
+describe('그리기 획(화이트보드)', () => {
+  it('획은 장면의 **맨 위**에 그려진다 — 메모보다 뒤에 나온다(제보: 잉크가 가려짐)', () => {
+    const doc = fixtureDoc();
+    doc.kind = 'board';
+    doc.strokes = [{ id: 's1', pts: [-380, 60, -300, 90, -240, 70], color: '#d92626', w: 4 }];
+    const laid = layoutDocGeom(doc);
+    const svg = buildSvgString(laid.doc, laid.geom, themeOf('white'))!.svg;
+    const inkAt = svg.indexOf('#d92626');
+    // 메모 카드(기본 노랑) 뒤에 잉크가 온다 = SVG 문서 순서상 나중 = 위에 그려진다.
+    const memoAt = svg.indexOf('#fff6cf');
+    expect(inkAt).toBeGreaterThan(-1);
+    expect(memoAt).toBeGreaterThan(-1);
+    expect(inkAt).toBeGreaterThan(memoAt);
+  });
+});
