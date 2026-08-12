@@ -16,6 +16,7 @@ import type { EdgeStyle } from './tree';
 import { buildEdgePath, edgeStrokeWidth } from './edges';
 import { hexA } from './theme';
 import type { Theme } from './theme';
+import { floatPadLeft } from './metrics';
 import { linkInk } from './richSpans';
 import type { GeomMap } from './types';
 
@@ -373,16 +374,16 @@ export interface SceneFloatBox {
 /** Memo card metrics mirroring `FloatLayer`'s CSS box: a `min-height` card that
  * GROWS to fit its wrapped text (padding 9/11/9/32, `line-height:1.55`), so the
  * export memo is the same size as the on-screen editor's — not clipped to `f.h`. */
-export function sceneFloatBox(measure: Measure, f: Float): SceneFloatBox {
+export function sceneFloatBox(measure: Measure, f: Float, board?: boolean): SceneFloatBox {
   const fpx = f.tsize === 's' ? 11.5 : f.tsize === 'l' ? 15.5 : 13;
   const w = f.w || 160;
   // 이미지 플로트: 박스 = 명시적 w×h (에디터 FloatLayer/metrics와 동일 규칙)
   if (f.img) return { w, h: Math.max(24, Math.round(f.h ?? w * 0.75)), fpx, lh: 0, lines: [], collapsed: false };
   const lh = fpx * 1.55;
-  const collapsed = !!f.collapsed;
+  const collapsed = !!f.collapsed && !board; // board는 접기가 없다 — 항상 펼쳐 그린다
   const fw = f.bold ? 700 : 400;
   const fontOf: SegFont = (sg) => fontStr(fpx, sg?.b ? 800 : fw, sg?.i);
-  const innerW = Math.max(8, w - 32 - 11); // left 32 (fold toggle), right 11
+  const innerW = Math.max(8, w - floatPadLeft(board) - 11); // left pad(맵 32=접기 토글 / board 11), right 11
   const lines: SceneLine[] = collapsed
     ? [{ segs: [{ t: listDisplayLine(String(f.text || '').split('\n')[0] || ''), w: 0 }], indent: 0, list: false, w: 0 }]
     : wrapRichLines(measure, runsOf(f, ''), innerW, fontOf);
@@ -625,9 +626,13 @@ export function paintScene(p: Painter, o: PaintSceneOpts): void {
       width: 1,
     });
     // fold toggle badge (accent circle at the card's top-left, like the editor)
-    p.path(circleD(f.x + 16, f.y + 16, 10), { fill: theme.accent });
-    const glyph = m.collapsed ? '＋' : '−';
-    p.text(glyph, f.x + 16 - measure(glyph, fontStr(12, 700)) / 2, f.y + 16.5, { px: 12, weight: 700, fill: theme.accentInk });
+    // — board에는 접기가 없으므로 배지도 그리지 않는다.
+    const board = doc.kind === 'board';
+    if (!board) {
+      p.path(circleD(f.x + 16, f.y + 16, 10), { fill: theme.accent });
+      const glyph = m.collapsed ? '＋' : '−';
+      p.text(glyph, f.x + 16 - measure(glyph, fontStr(12, 700)) / 2, f.y + 16.5, { px: 12, weight: 700, fill: theme.accentInk });
+    }
     // text — 세그 단위(굵게/색/기울임/취소선/링크). 세로는 줄 박스 중앙 기준.
     if (f.text) {
       const fw = f.bold ? 700 : 400;
@@ -635,7 +640,7 @@ export function paintScene(p: Painter, o: PaintSceneOpts): void {
       const linkColor = linkInk(base);
       m.lines.forEach((ln, i) => {
         const cy = f.y + 9 + i * m.lh + m.lh / 2;
-        if (cy < f.y + m.h - 4) paintRichLine(p, ln, f.x + 32 + ln.indent, cy, m.fpx, fw, base, linkColor);
+        if (cy < f.y + m.h - 4) paintRichLine(p, ln, f.x + floatPadLeft(board) + ln.indent, cy, m.fpx, fw, base, linkColor);
       });
     }
   });

@@ -169,6 +169,31 @@ describe('화이트보드 에디터', () => {
     // 접기 토글 부재 + collapsed여도 두 줄이 다 보인다.
     expect(floatEl.querySelector('[data-fold-toggle]')).toBeNull();
     expect(floatEl.textContent).toContain('둘째 줄');
+    // 접기 토글이 없으니 좌측 패딩도 우측과 대칭이다(제보: 좌측만 넓다).
+    expect(floatEl.style.paddingLeft).toBe(floatEl.style.paddingRight);
+  });
+
+  it('맵(무회귀): 메모 좌측 패딩은 접기 토글 자리(32px)를 유지한다', async () => {
+    localStorage.setItem(
+      'mindflow_doc_m3',
+      JSON.stringify({
+        v: 1,
+        nodes: { root: { id: 'root', text: '루트', emoji: '', parent: null, children: [], collapsed: false, color: null, x: 0, y: 0 } },
+        floats: [{ id: 'mf1', x: 40, y: 60, w: 180, text: '맵 메모' }],
+        lines: [],
+        zones: [],
+        layoutMode: 'right',
+        themeKey: 'coral',
+      }),
+    );
+    const { container } = renderEditor('/editor?map=m3&title=x');
+    const floatEl = await waitFor(() => {
+      const el = container.querySelector('[data-float-id="mf1"]') as HTMLElement;
+      expect(el).toBeTruthy();
+      return el;
+    });
+    expect(floatEl.style.paddingLeft).toBe('32px');
+    expect(floatEl.querySelector('[data-fold-toggle]')).toBeTruthy();
   });
 
   it('펜으로 그린 획이 문서에 커밋되고(저장·undo 한 단계) 획 레이어에 그려진다(M4)', async () => {

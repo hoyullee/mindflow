@@ -1228,11 +1228,13 @@ export function useEditorState(): EditorController {
   // fixed 44px one.
   const floatHeights = useMemo<Record<string, number>>(() => {
     const out: Record<string, number> = {};
+    // board는 접기 토글이 없어 좌측 패딩이 좁다(floatPadLeft) — 줄바꿈 폭이 다르다.
+    const board = doc.kind === 'board';
     doc.floats.forEach((f) => {
-      out[f.id] = measureFloatHeight(f, measurer);
+      out[f.id] = measureFloatHeight(f, measurer, board);
     });
     return out;
-  }, [doc.floats, measurer]);
+  }, [doc.floats, doc.kind, measurer]);
 
   // 화이트보드는 캔버스 배경이 무조건 흰색이다(요청) — docThemeOf가 가른다.
   const theme = docThemeOf(doc);
