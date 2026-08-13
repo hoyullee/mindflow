@@ -1154,4 +1154,163 @@ describe('화이트보드 에디터', () => {
     fireEvent.keyDown(window, { key: 'Delete' });
     await waitFor(() => expect(container.querySelectorAll('[data-stroke-id]')).toHaveLength(0));
   });
+  // ── 정렬·분배(요청) ───────────────────────────────────────────────────────
+  it('다중 선택 우클릭 → 정렬 ▸ 로 메모들을 줄 맞추고 간격을 균등하게 한다', async () => {
+    localStorage.setItem(
+      'mindflow_doc_b31',
+      JSON.stringify({
+        ...BOARD,
+        floats: [
+          { id: 'f1', x: -300, y: -160, w: 160, h: 80, text: '하나' },
+          { id: 'f2', x: -60, y: -60, w: 200, h: 80, text: '둘' },
+          { id: 'f3', x: 260, y: 40, w: 120, h: 80, text: '셋' },
+        ],
+      }),
+    );
+    const { container } = renderEditor('/editor?map=b31&title=x');
+    await waitFor(() => expect(container.querySelectorAll('[data-float-id]')).toHaveLength(3));
+
+    // Ctrl+A로 셋 다 고른다.
+    fireEvent.keyDown(window, { key: 'a', ctrlKey: true });
+    await waitFor(() => expect(screen.getByText(/메모 3개 선택됨|3개 선택됨/)).toBeTruthy());
+
+    // 다중 선택 위에서 우클릭 → 정렬 플라이아웃.
+    // 우클릭 지점은 f1의 **중심**(캔버스 좌표 → 클라이언트)으로 잡는다 — 다중 선택
+    // 메뉴는 "선택 안의 객체 위"에서만 뜨므로 좌표가 빗나가면 다른 메뉴가 열린다.
+    const p1 = strokePoint(container, -220, -120);
+    fireEvent.contextMenu(container.querySelector('[data-float-id="f1"]')!, { clientX: p1.x, clientY: p1.y });
+    fireEvent.mouseDown(await screen.findByText('정렬'));
+    const flyout = await waitFor(() => {
+      const el = container.querySelector('[data-arrange-flyout]') as HTMLElement;
+      expect(el).toBeTruthy();
+      return el;
+    });
+
+    fireEvent.mouseDown(flyout.querySelector('[data-arrange="top"]')!);
+    fireEvent.keyDown(window, { key: 's', ctrlKey: true });
+    await waitFor(() => {
+      const saved = JSON.parse(localStorage.getItem('mindflow_doc_b31') || 'null');
+      // 위쪽 맞춤 — 셋 다 가장 위(-160)에 선다. x는 그대로.
+      expect(saved.floats.map((f: { y: number }) => f.y)).toEqual([-160, -160, -160]);
+      expect(saved.floats.map((f: { x: number }) => f.x)).toEqual([-300, -60, 260]);
+    });
+
+    // 이어서 가로 간격 균등 — 양 끝은 고정되고 가운데가 옮겨진다.
+    const p2 = strokePoint(container, -220, -120);
+    fireEvent.contextMenu(container.querySelector('[data-float-id="f1"]')!, { clientX: p2.x, clientY: p2.y });
+    fireEvent.mouseDown(await screen.findByText('정렬'));
+    const fly2 = container.querySelector('[data-arrange-flyout]') as HTMLElement;
+    fireEvent.mouseDown(fly2.querySelector('[data-arrange="hspace"]')!);
+    fireEvent.keyDown(window, { key: 's', ctrlKey: true });
+    await waitFor(() => {
+      const saved = JSON.parse(localStorage.getItem('mindflow_doc_b31') || 'null');
+      const by = Object.fromEntries(saved.floats.map((f: { id: string; x: number; w: number }) => [f.id, f]));
+      expect(by.f1.x).toBe(-300); // 양 끝 고정
+      expect(by.f3.x).toBe(260);
+      const gap1 = by.f2.x - (by.f1.x + by.f1.w);
+      const gap2 = by.f3.x - (by.f2.x + by.f2.w);
+      expect(gap1).toBeCloseTo(gap2, 6);
+    });
+  });
+
+  it('둘만 고르면 "간격 균등"은 나오지 않는다 — 둘은 이미 균등하다', async () => {
+    localStorage.setItem(
+      'mindflow_doc_b32',
+      JSON.stringify({
+        ...BOARD,
+        floats: [
+          { id: 'f1', x: -300, y: -160, w: 160, h: 80, text: '하나' },
+          { id: 'f2', x: -60, y: -60, w: 200, h: 80, text: '둘' },
+          { id: 'far', x: 900, y: 700, w: 120, h: 80, text: '멀리' },
+        ],
+      }),
+    );
+    const { container } = renderEditor('/editor?map=b32&title=x');
+    await waitFor(() => expect(container.querySelectorAll('[data-float-id]')).toHaveLength(3));
+
+    // 마퀴로 앞의 둘만 담는다(멀리 있는 메모는 사각 밖).
+    const vp = getViewport(container);
+    const a = strokePoint(container, -360, -220);
+    const b = strokePoint(container, 200, 60);
+    firePointer(vp, 'pointerdown', { pointerId: 31, clientX: a.x, clientY: a.y, button: 0 });
+    firePointer(document.body, 'pointermove', { pointerId: 31, clientX: b.x, clientY: b.y });
+    firePointer(document.body, 'pointerup', { pointerId: 31, clientX: b.x, clientY: b.y });
+    await screen.findByText(/2개 선택됨/);
+
+    const p3 = strokePoint(container, -220, -120);
+    fireEvent.contextMenu(container.querySelector('[data-float-id="f1"]')!, { clientX: p3.x, clientY: p3.y });
+    fireEvent.mouseDown(await screen.findByText('정렬'));
+    const flyout = await waitFor(() => {
+      const el = container.querySelector('[data-arrange-flyout]') as HTMLElement;
+      expect(el).toBeTruthy();
+      return el;
+    });
+    expect(flyout.querySelector('[data-arrange="left"]')).toBeTruthy();
+    expect(flyout.querySelector('[data-arrange="hspace"]')).toBeNull();
+    expect(flyout.querySelector('[data-arrange="vspace"]')).toBeNull();
+  });
+  it('격자 스냅 — 메모를 끌면 좌표가 격자에 붙고, 보기 메뉴에서 끄면 그대로다(요청)', async () => {
+    localStorage.setItem(
+      'mindflow_doc_b33',
+      JSON.stringify({ ...BOARD, floats: [{ id: 'f1', x: 0, y: 0, w: 200, h: 90, text: '스티커' }] }),
+    );
+    const { container } = renderEditor('/editor?map=b33&title=x');
+    const el = await waitFor(() => {
+      const found = container.querySelector('[data-float-id="f1"]') as HTMLElement;
+      expect(found).toBeTruthy();
+      return found;
+    });
+
+    // 격자(10)에 붙는다 — 화면상 37px 끌면 캔버스 이동량이 얼마든 10의 배수에 선다.
+    const zoom = Number(/scale\(([\d.]+)\)/.exec((container.querySelector('[data-pan-layer]') as HTMLElement).style.transform || '')?.[1] ?? 1);
+    firePointer(el, 'pointerdown', { pointerId: 41, clientX: 100, clientY: 100, button: 0 });
+    firePointer(document.body, 'pointermove', { pointerId: 41, clientX: 100 + 37 * zoom, clientY: 100 + 23 * zoom });
+    firePointer(document.body, 'pointerup', { pointerId: 41, clientX: 100 + 37 * zoom, clientY: 100 + 23 * zoom });
+    fireEvent.keyDown(window, { key: 's', ctrlKey: true });
+    await waitFor(() => {
+      const saved = JSON.parse(localStorage.getItem('mindflow_doc_b33') || 'null');
+      expect(saved.floats[0].x % 10).toBe(0);
+      expect(saved.floats[0].y % 10).toBe(0);
+      expect(saved.floats[0].x).toBe(40); // 37 → 40
+      expect(saved.floats[0].y).toBe(20); // 23 → 20
+    });
+
+    // 보기 메뉴에서 끄면 끌린 그대로 남는다.
+    fireEvent.click(screen.getByRole('button', { name: '보기' }));
+    fireEvent.click(await screen.findByRole('button', { name: '격자에 맞추기' }));
+    firePointer(el, 'pointerdown', { pointerId: 42, clientX: 100, clientY: 100, button: 0 });
+    firePointer(document.body, 'pointermove', { pointerId: 42, clientX: 100 + 3 * zoom, clientY: 100 + 2 * zoom });
+    firePointer(document.body, 'pointerup', { pointerId: 42, clientX: 100 + 3 * zoom, clientY: 100 + 2 * zoom });
+    fireEvent.keyDown(window, { key: 's', ctrlKey: true });
+    await waitFor(() => {
+      const saved = JSON.parse(localStorage.getItem('mindflow_doc_b33') || 'null');
+      expect(saved.floats[0].x).toBe(43);
+      expect(saved.floats[0].y).toBe(22);
+    });
+  });
+
+  it('드래그 중 Alt를 누르고 있으면 스냅이 꺼진다(미세 조정 탈출구)', async () => {
+    localStorage.setItem(
+      'mindflow_doc_b34',
+      JSON.stringify({ ...BOARD, floats: [{ id: 'f1', x: 0, y: 0, w: 200, h: 90, text: '스티커' }] }),
+    );
+    const { container } = renderEditor('/editor?map=b34&title=x');
+    const el = await waitFor(() => {
+      const found = container.querySelector('[data-float-id="f1"]') as HTMLElement;
+      expect(found).toBeTruthy();
+      return found;
+    });
+    const zoom = Number(/scale\(([\d.]+)\)/.exec((container.querySelector('[data-pan-layer]') as HTMLElement).style.transform || '')?.[1] ?? 1);
+    firePointer(el, 'pointerdown', { pointerId: 43, clientX: 100, clientY: 100, button: 0 });
+    const move = new MouseEvent('pointermove', { bubbles: true, clientX: 100 + 37 * zoom, clientY: 100 + 23 * zoom, altKey: true });
+    Object.defineProperty(move, 'pointerId', { value: 43, configurable: true });
+    fireEvent(document.body, move);
+    firePointer(document.body, 'pointerup', { pointerId: 43, clientX: 100 + 37 * zoom, clientY: 100 + 23 * zoom });
+    fireEvent.keyDown(window, { key: 's', ctrlKey: true });
+    await waitFor(() => {
+      const saved = JSON.parse(localStorage.getItem('mindflow_doc_b34') || 'null');
+      expect(saved.floats[0].x).toBe(37);
+      expect(saved.floats[0].y).toBe(23);
+    });
+  });
 });

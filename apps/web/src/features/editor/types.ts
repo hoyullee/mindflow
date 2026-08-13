@@ -101,9 +101,13 @@ export interface ContextMenuState {
 
 /** The "텍스트 정렬 ▸" flyout submenu's own open/position state — port of
  * `Component#state.ctxSub` (MindFlow.dc.html:3120, 3149-3155). `top` is the
- * parent row's `offsetTop`, used to vertically anchor the flyout next to it. */
+ * parent row's `offsetTop`, used to vertically anchor the flyout next to it.
+ *
+ * `kind`는 플라이아웃이 둘이 되면서 생겼다(요청: 정렬·분배) — 기본은 dc 원본의
+ * 텍스트 정렬이고, 다중 선택 메뉴의 "정렬 ▸"는 `'arrange'`다. */
 export interface ContextSubState {
   top: number;
+  kind?: 'text' | 'arrange';
 }
 
 /** The floating partial-style toolbar's open/position state — port of
