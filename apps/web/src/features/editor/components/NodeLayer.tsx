@@ -18,6 +18,18 @@ import { useIsTouchDevice } from '../../../hooks/useMediaQuery';
 import { useSoftKeyboardOpen } from '../../../hooks/useKeyboardInset';
 import { AttachedImg } from './AttachedImg';
 
+/**
+ * IME 확정과 함께 처리한 줄바꿈이 **한 번 더** 도착하는 것을 막는 창(ms).
+ *
+ * 한글로 쓰다 Shift+Enter를 누르면 마지막 글자가 조합 중이라, 우리는 keydown에서
+ * 기본 동작을 막고 의도만 기억했다가 `compositionend`에서 줄을 바꾼다. 그런데
+ * 브라우저·IME 조합에 따라 **같은 물리적 Enter**가 조합이 끝난 뒤 평범한 keydown
+ * (또는 `beforeinput: insertLineBreak`)으로 한 번 더 온다 — 그러면 한 번 눌렀는데
+ * 두 줄이 내려간다(제보). 사람이 두 번 누르는 간격(보통 100ms 이상)보다 짧게
+ * 잡아, 연속 줄바꿈은 그대로 동작하고 메아리만 걸러진다.
+ */
+const IME_BREAK_ECHO_MS = 80;
+
 interface NodeLayerProps {
   nodes: NodeMap;
   geom: GeomMap;
@@ -662,8 +674,18 @@ function NodeEditBox({ id, n, boxStyle, align, controller }: NodeEditBoxProps) {
 
   /** 최신 `doBreak`을 담아 둔다 — 아래 네이티브 리스너는 마운트 때 한 번만 붙는데,
    * `doBreak`은 렌더마다 새로 만들어지므로 그때 잡은 것을 쓰면 낡는다. */
-  const doBreakRef = useRef(doBreak);
-  doBreakRef.current = doBreak;
+  /** IME 확정과 함께 줄을 바꾼 시각 — 같은 물리적 Enter의 메아리를 거른다
+   * (위 {@link IME_BREAK_ECHO_MS} 참고). */
+  const imeBreakAtRef = useRef(0);
+  /** 줄바꿈 요청 — IME 메아리면 무시한다. keydown·beforeinput처럼 **브라우저가
+   * 주는** 줄바꿈 신호는 전부 이 문을 지난다(compositionend는 원본이라 직접 호출). */
+  const requestBreak = (el: HTMLDivElement): void => {
+    if (Date.now() - imeBreakAtRef.current < IME_BREAK_ECHO_MS) return;
+    doBreak(el);
+  };
+
+  const doBreakRef = useRef(requestBreak);
+  doBreakRef.current = requestBreak;
 
   /**
    * 줄바꿈이 **브라우저 기본 동작으로** 들어오는 마지막 구멍을 막는 안전망.
@@ -809,6 +831,9 @@ function NodeEditBox({ id, n, boxStyle, align, controller }: NodeEditBoxProps) {
         // (doBreak가 재구성·크기 갱신까지 하므로 sync는 불필요).
         if (pendingBreakRef.current) {
           pendingBreakRef.current = false;
+          // 이 줄바꿈이 원본이다 — 같은 Enter가 곧 keydown/beforeinput으로 한 번 더
+          // 오더라도(제보: 한글로 쓰다 Shift+Enter를 누르면 두 줄) 걸러지도록 시각을 남긴다.
+          imeBreakAtRef.current = Date.now();
           doBreak(el);
           return;
         }
@@ -895,7 +920,7 @@ function NodeEditBox({ id, n, boxStyle, align, controller }: NodeEditBoxProps) {
         if (e.key === 'Enter' && !composing && !e.shiftKey && softKeyboard) {
           // 터치 기기: 소프트 키보드의 줄바꿈 키는 줄바꿈이다(편집 유지).
           e.preventDefault();
-          if (ref.current) doBreak(ref.current);
+          if (ref.current) requestBreak(ref.current);
         } else if (e.key === 'Enter' && !composing && !e.shiftKey) {
           e.preventDefault();
           controller.commitNodeRichText(id, ref.current);
@@ -905,7 +930,7 @@ function NodeEditBox({ id, n, boxStyle, align, controller }: NodeEditBoxProps) {
           // 끝낸다(표준 에디터 관례). 리스트 줄이 아니면 평범한 `\n` — 어느 쪽도
           // 브라우저 기본에 맡기지 않는다(`doBreak`).
           e.preventDefault();
-          if (ref.current) doBreak(ref.current);
+          if (ref.current) requestBreak(ref.current);
         } else if (e.key === 'Escape' && !composing) {
           e.preventDefault();
           controller.cancelNodeEdit();

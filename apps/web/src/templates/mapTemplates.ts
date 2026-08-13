@@ -171,6 +171,13 @@ const CARD_H = 96;
 const HEAD_Y = -190;
 const CARD_Y = [-120, -6];
 
+// 2×2 매트릭스용 격자 — 넓은 칸 둘을 좌우로, 각 칸은 [제목][카드]. 가로 간격 80,
+// 세로는 제목(44) 아래 카드(96)를 두고 칸 사이를 34 띄운다(겹침 없음, 테스트가 지킨다).
+const QUAD_X = [-420, 40];
+const QUAD_W = 380;
+const QUAD_HEAD_Y = [-230, -20];
+const QUAD_CARD_Y = [-150, 60];
+
 export const BOARD_TEMPLATES: BoardTemplate[] = [
   {
     id: 'board-retro',
@@ -189,17 +196,23 @@ export const BOARD_TEMPLATES: BoardTemplate[] = [
     ],
   },
   {
-    id: 'board-kanban',
-    name: '칸반 보드',
-    desc: '할 일 · 진행 중 · 완료로 옮겨 가며',
+    // 칸반은 **별도 기능**으로 만들 예정이라 템플릿에서 뺐다(요청) — 열을 옮기는
+    // 일은 붙였다 떼는 스티커보다 규칙이 있는 보드가 맞다.
+    //
+    // 대신 들어온 2×2 매트릭스는 세 열짜리(회고)·격자(아이디어)와 모양이 겹치지
+    // 않고, 스티커를 옮겨 담는 것 자체가 결론이 되는 판이다(점 투표와도 맞물린다).
+    id: 'board-priority',
+    name: '우선순위 정하기',
+    desc: '임팩트와 노력으로 네 칸에 나눠 담기',
     memos: [
-      { text: '할 일', x: COL_X[0]!, y: HEAD_Y, w: CARD_W, bg: '#eceef2', bold: true },
-      { text: '진행 중', x: COL_X[1]!, y: HEAD_Y, w: CARD_W, bg: '#e0e9ff', bold: true },
-      { text: '완료', x: COL_X[2]!, y: HEAD_Y, w: CARD_W, bg: '#dff2e5', bold: true },
-      { text: '예) 로그인 화면 만들기', x: COL_X[0]!, y: CARD_Y[0]!, w: CARD_W, h: CARD_H },
-      { text: '', x: COL_X[0]!, y: CARD_Y[1]!, w: CARD_W, h: CARD_H },
-      { text: '예) 검색 결과 정렬 고치기', x: COL_X[1]!, y: CARD_Y[0]!, w: CARD_W, h: CARD_H },
-      { text: '예) 첫 배포', x: COL_X[2]!, y: CARD_Y[0]!, w: CARD_W, h: CARD_H },
+      { text: '지금 하기 · 임팩트 크고 노력 적음', x: QUAD_X[0]!, y: QUAD_HEAD_Y[0]!, w: QUAD_W, bg: '#dff2e5', bold: true },
+      { text: '계획하기 · 임팩트 크고 노력 큼', x: QUAD_X[1]!, y: QUAD_HEAD_Y[0]!, w: QUAD_W, bg: '#e0e9ff', bold: true },
+      { text: '여유되면 · 임팩트 작고 노력 적음', x: QUAD_X[0]!, y: QUAD_HEAD_Y[1]!, w: QUAD_W, bg: '#eceef2', bold: true },
+      { text: '하지 않기 · 임팩트 작고 노력 큼', x: QUAD_X[1]!, y: QUAD_HEAD_Y[1]!, w: QUAD_W, bg: '#ffe3e0', bold: true },
+      { text: '예) 로그인 오류 메시지 고치기', x: QUAD_X[0]!, y: QUAD_CARD_Y[0]!, w: QUAD_W, h: CARD_H },
+      { text: '예) 검색 개편', x: QUAD_X[1]!, y: QUAD_CARD_Y[0]!, w: QUAD_W, h: CARD_H },
+      { text: '', x: QUAD_X[0]!, y: QUAD_CARD_Y[1]!, w: QUAD_W, h: CARD_H },
+      { text: '', x: QUAD_X[1]!, y: QUAD_CARD_Y[1]!, w: QUAD_W, h: CARD_H },
     ],
   },
   {

@@ -96,12 +96,12 @@ const TEMPLATE_ICON_PATHS: Record<string, JSX.Element> = {
       <path d="M9.5 12.2 11.6 14.4 15 10.6" />
     </>
   ),
-  // 세 열 — 할 일·진행·완료
-  'board-kanban': (
+  // 2×2 사분면 — 임팩트·노력으로 나눈 네 칸
+  'board-priority': (
     <>
-      <rect x="3" y="4.5" width="5" height="15" rx="1.2" />
-      <rect x="9.5" y="4.5" width="5" height="10" rx="1.2" />
-      <rect x="16" y="4.5" width="5" height="13" rx="1.2" />
+      <rect x="3.5" y="3.5" width="17" height="17" rx="2" />
+      <path d="M12 3.5v17" />
+      <path d="M3.5 12h17" />
     </>
   ),
   // 스티커 두 장 — 붙였다 옮겼다

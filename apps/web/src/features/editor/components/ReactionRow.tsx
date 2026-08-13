@@ -85,9 +85,11 @@ export function ReactionRow({ controller, target, active }: Props) {
           height: H,
           padding: isMobile ? '0 10px' : '0 7px',
           borderRadius: 999,
-          // 내 표는 강조색 테두리·연한 배경 — "이건 내가 눌렀다"가 한눈에.
-          border: `1px solid ${g.mine ? th.accent : th.border}`,
-          background: g.mine ? hexA(th.accent, 0.12) : th.panel,
+          // 내 표 표시는 **은은하게**(제보: 배경색이 너무 강렬하다) — 칩은 메모 옆의
+          // 곁다리 정보지 강조 대상이 아니다. 테두리를 강조색 반투명으로 낮추고
+          // 배경은 거의 비치지 않을 만큼만 깔아, 글자(개수)로 읽히게 둔다.
+          border: `1px solid ${g.mine ? hexA(th.accent, 0.4) : th.border}`,
+          background: g.mine ? hexA(th.accent, 0.06) : th.panel,
           color: vote && g.mine ? th.accent : th.text,
           fontSize: isMobile ? 13 : 11.5,
           fontWeight: 700,
