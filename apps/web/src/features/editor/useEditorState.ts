@@ -28,6 +28,7 @@ import { isPanButton } from './pointerButtons';
 import { buildVisible, descendants, outlineRows } from './tree';
 import type { EdgeStyle } from './tree';
 import { nearestInDirection } from './navigation';
+import type { NavDir, NavPoint } from './navigation';
 import { UI_THEME, themeOf, themeKeyOf } from './theme';
 import type { Theme, ThemeKey } from './theme';
 import { downloadFile } from './download';
@@ -2808,6 +2809,85 @@ export function useEditorState(): EditorController {
     },
     [selectNode],
   );
+  /** 메모(이미지 포함) 하나를 고르고, 화면 밖이면 보이도록 살짝 민다 —
+   * `selectAndReveal`의 메모 짝(같은 80px 여백 규칙, 좌표만 메모 박스 중심). */
+  const selectAndRevealFloat = useCallback(
+    (id: string) => {
+      selectFloat(id);
+      const f = docRef.current.floats.find((x) => x.id === id);
+      if (!f) return;
+      const cx = f.x + f.w / 2;
+      const cy = f.y + floatBoxH(f) / 2;
+      setViewport((prev) => {
+        const sx = cx * prev.zoom + prev.pan.x;
+        const sy = cy * prev.zoom + prev.pan.y;
+        const m = 80;
+        let nx = prev.pan.x;
+        let ny = prev.pan.y;
+        let need = false;
+        if (sx < m) {
+          nx = prev.pan.x + (m - sx);
+          need = true;
+        } else if (sx > prev.vw - m) {
+          nx = prev.pan.x - (sx - (prev.vw - m));
+          need = true;
+        }
+        if (sy < m) {
+          ny = prev.pan.y + (m - sy);
+          need = true;
+        } else if (sy > prev.vh - m) {
+          ny = prev.pan.y - (sy - (prev.vh - m));
+          need = true;
+        }
+        return need ? { ...prev, pan: { x: nx, y: ny } } : prev;
+      });
+    },
+    [selectFloat],
+  );
+
+  /**
+   * 방향키로 **메모에서 메모로** 선택을 옮긴다(요청) — 주제(트리)의 이웃 이동과
+   * 같은 채점(`nearestInDirection`: 박스 엣지 기준 거리 + 방향 콘)을 그대로 쓴다.
+   * 화이트보드에는 트리가 없어 방향키가 놀고 있었고, 맵에서도 메모는 방향키로
+   * 닿을 수 없었다.
+   *
+   * 메모끼리만 오간다 — 맵에서 주제로 건너뛰지 않는다(주제는 주제끼리, 메모는
+   * 메모끼리라야 "방금 누른 방향으로 한 칸"이 예측 가능하다).
+   * `fromId`가 없으면(아무것도 선택 안 함) 화면 중앙에서 가장 가까운 메모를 고른다
+   * — 보드에서 키보드만으로 시작할 수 있는 입구다.
+   */
+  const navigateFloats = useCallback(
+    (fromId: string | null, dir: NavDir) => {
+      const list = docRef.current.floats;
+      if (!list.length) return;
+      const points: Record<string, NavPoint> = {};
+      list.forEach((f) => {
+        const h = floatBoxH(f);
+        points[f.id] = { x: f.x + f.w / 2, y: f.y + h / 2, w: f.w, h };
+      });
+      if (!fromId || !points[fromId]) {
+        const vp = viewportRef.current;
+        const cx = (vp.vw / 2 - vp.pan.x) / vp.zoom;
+        const cy = (vp.vh / 2 - vp.pan.y) / vp.zoom;
+        let best: string | null = null;
+        let bestD = Infinity;
+        for (const id in points) {
+          const p = points[id]!;
+          const d = (p.x - cx) ** 2 + (p.y - cy) ** 2;
+          if (d < bestD) {
+            bestD = d;
+            best = id;
+          }
+        }
+        if (best) selectAndRevealFloat(best);
+        return;
+      }
+      const next = nearestInDirection(points, fromId, dir);
+      if (next) selectAndRevealFloat(next);
+    },
+    [selectAndRevealFloat],
+  );
+
   const navigateNodes = useCallback(
     (fromId: string | null, dir: 'up' | 'down' | 'left' | 'right') => {
       const g = geomRef.current;
@@ -4978,9 +5058,22 @@ export function useEditorState(): EditorController {
       // node — or nothing — selected; float/line/zone selections are handled by their own
       // branches below and don't navigate.
       if (e.key === 'ArrowUp' || e.key === 'ArrowDown' || e.key === 'ArrowLeft' || e.key === 'ArrowRight') {
+        const dir: NavDir = e.key === 'ArrowUp' ? 'up' : e.key === 'ArrowDown' ? 'down' : e.key === 'ArrowLeft' ? 'left' : 'right';
+        // 메모를 고른 상태면 **메모에서 메모로** 이동한다(요청). 예전에는 아무 일도
+        // 하지 않아, 트리가 없는 화이트보드에서는 방향키가 통째로 놀았다.
+        if (selection?.kind === 'float') {
+          e.preventDefault();
+          navigateFloats(selection.id, dir);
+          return;
+        }
         if (!selection || selection.kind === 'node') {
           e.preventDefault();
-          const dir = e.key === 'ArrowUp' ? 'up' : e.key === 'ArrowDown' ? 'down' : e.key === 'ArrowLeft' ? 'left' : 'right';
+          // 트리가 없는 문서(화이트보드)에서 아무것도 고르지 않았다면 메모를 고른다 —
+          // 주제 이동은 고를 것이 없고, 그대로 두면 방향키가 죽은 키가 된다.
+          if (!selection && !Object.keys(geomRef.current).length) {
+            navigateFloats(null, dir);
+            return;
+          }
           navigateNodes(selection?.kind === 'node' ? selection.id : null, dir);
           return;
         }

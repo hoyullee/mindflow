@@ -1070,3 +1070,118 @@ describe('속성 패널의 색 스와치는 문서 테마를 따라가지 않는
     expect(colors.some((c) => c.replace(/\s/g, '') === 'rgb(240,102,63)')).toBe(true);
   });
 });
+
+// 방향키로 **메모 사이를** 오간다(요청) — 주제(트리)의 이웃 이동과 같은 채점.
+describe('방향키 메모 이동', () => {
+  const MEMO_DOC = {
+    v: 1,
+    kind: 'board',
+    nodes: {},
+    // 2×2 배치: 좌상(a) 우상(b) / 좌하(c) 우하(d)
+    floats: [
+      { id: 'a', x: -300, y: -200, w: 200, h: 90, text: '왼쪽 위' },
+      { id: 'b', x: 100, y: -200, w: 200, h: 90, text: '오른쪽 위' },
+      { id: 'c', x: -300, y: 100, w: 200, h: 90, text: '왼쪽 아래' },
+      { id: 'd', x: 100, y: 100, w: 200, h: 90, text: '오른쪽 아래' },
+    ],
+    lines: [],
+    zones: [],
+    layoutMode: 'right',
+    themeKey: 'white',
+  };
+  const selectedText = () => {
+    const kicker = Array.from(document.querySelectorAll('div')).find((el) => el.textContent?.trim() === '선택한 메모');
+    return kicker?.nextElementSibling?.textContent?.trim() ?? '';
+  };
+  const clickFloat = (container: HTMLElement, id: string) => {
+    const el = container.querySelector(`[data-float-id="${id}"]`) as HTMLElement;
+    firePointer(el, 'pointerdown', { pointerId: 21, clientX: 5, clientY: 5, button: 0 });
+    firePointer(window, 'pointerup', { pointerId: 21, clientX: 5, clientY: 5, button: 0 });
+  };
+
+  it('메모를 고르고 방향키를 누르면 그 방향의 이웃 메모가 선택된다', async () => {
+    localStorage.setItem('mindflow_doc_fnav1', JSON.stringify(MEMO_DOC));
+    const { container } = renderEditor('/editor?map=fnav1&title=x');
+    await waitFor(() => expect(container.querySelector('[data-float-id="a"]')).toBeTruthy());
+    clickFloat(container, 'a');
+    await screen.findByText('선택한 메모');
+    expect(selectedText()).toBe('왼쪽 위');
+
+    fireEvent.keyDown(window, { key: 'ArrowRight' });
+    await waitFor(() => expect(selectedText()).toBe('오른쪽 위'));
+    fireEvent.keyDown(window, { key: 'ArrowDown' });
+    await waitFor(() => expect(selectedText()).toBe('오른쪽 아래'));
+    fireEvent.keyDown(window, { key: 'ArrowLeft' });
+    await waitFor(() => expect(selectedText()).toBe('왼쪽 아래'));
+    fireEvent.keyDown(window, { key: 'ArrowUp' });
+    await waitFor(() => expect(selectedText()).toBe('왼쪽 위'));
+  });
+
+  it('이동만 할 뿐 메모의 좌표는 그대로다(문서가 바뀌지 않는다)', async () => {
+    localStorage.setItem('mindflow_doc_fnav2', JSON.stringify(MEMO_DOC));
+    const { container } = renderEditor('/editor?map=fnav2&title=x');
+    await waitFor(() => expect(container.querySelector('[data-float-id="a"]')).toBeTruthy());
+    clickFloat(container, 'a');
+    await screen.findByText('선택한 메모');
+
+    fireEvent.keyDown(window, { key: 'ArrowRight' });
+    fireEvent.keyDown(window, { key: 'ArrowDown' });
+    await waitFor(() => expect(selectedText()).toBe('오른쪽 아래'));
+
+    fireEvent.keyDown(window, { key: 's', ctrlKey: true });
+    await waitFor(() => {
+      const saved = JSON.parse(localStorage.getItem('mindflow_doc_fnav2') || 'null');
+      expect(saved.floats.map((f: { id: string; x: number; y: number }) => [f.id, f.x, f.y])).toEqual(MEMO_DOC.floats.map((f) => [f.id, f.x, f.y]));
+    });
+  });
+
+  it('그 방향에 메모가 없으면 선택이 그대로 남는다', async () => {
+    localStorage.setItem('mindflow_doc_fnav3', JSON.stringify(MEMO_DOC));
+    const { container } = renderEditor('/editor?map=fnav3&title=x');
+    await waitFor(() => expect(container.querySelector('[data-float-id="a"]')).toBeTruthy());
+    clickFloat(container, 'a');
+    await screen.findByText('선택한 메모');
+
+    fireEvent.keyDown(window, { key: 'ArrowUp' });
+    fireEvent.keyDown(window, { key: 'ArrowLeft' });
+    await waitFor(() => expect(selectedText()).toBe('왼쪽 위'));
+  });
+
+  it('보드에서 아무것도 안 고른 채 방향키를 누르면 화면 가운데 메모부터 잡는다', async () => {
+    localStorage.setItem('mindflow_doc_fnav4', JSON.stringify(MEMO_DOC));
+    const { container } = renderEditor('/editor?map=fnav4&title=x');
+    await waitFor(() => expect(container.querySelector('[data-float-id="a"]')).toBeTruthy());
+    expect(screen.queryByText('선택한 메모')).toBeNull();
+
+    fireEvent.keyDown(window, { key: 'ArrowRight' });
+    await screen.findByText('선택한 메모');
+    expect(selectedText().length).toBeGreaterThan(0);
+  });
+
+  it('맵(무회귀): 주제를 고른 방향키는 그대로 이웃 주제로 간다', async () => {
+    localStorage.setItem('mindflow_doc_fnav5', JSON.stringify(DOC));
+    const { container } = renderEditor('/editor?map=fnav5&title=x');
+    const c1 = await waitFor(() => {
+      const el = container.querySelector('[data-node-id="c1"]') as HTMLElement;
+      expect(el).toBeTruthy();
+      return el;
+    });
+    firePointer(c1, 'pointerdown', { pointerId: 22, clientX: 5, clientY: 5, button: 0 });
+    firePointer(window, 'pointerup', { pointerId: 22, clientX: 5, clientY: 5, button: 0 });
+    await screen.findByText('선택한 주제');
+
+    const nodeName = () => {
+      const kicker = Array.from(document.querySelectorAll('div')).find((el) => el.textContent?.trim() === '선택한 주제');
+      return kicker?.nextElementSibling?.textContent?.trim() ?? '';
+    };
+    // 어느 방향이 이웃인지는 레이아웃(radial)이 정한다 — 여기서 고정하는 계약은
+    // "주제에서 방향키를 누르면 **다른 주제**로 가고, 메모로 새지 않는다"이다.
+    const seen = new Set([nodeName()]);
+    for (const key of ['ArrowDown', 'ArrowUp', 'ArrowLeft', 'ArrowRight']) {
+      fireEvent.keyDown(window, { key });
+      await waitFor(() => expect(screen.queryByText('선택한 메모')).toBeNull());
+      seen.add(nodeName());
+    }
+    expect(seen.size).toBeGreaterThan(1); // 실제로 옮겨 다녔다
+  });
+});
