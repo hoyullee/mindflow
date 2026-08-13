@@ -238,6 +238,18 @@ function CopyIcon() {
   );
 }
 
+/** 내용에 맞추기 — 안쪽으로 모이는 화살표 넷(축소·맞춤의 관용 기호). */
+function FitIcon() {
+  return (
+    <svg width={14} height={14} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round">
+      <path d="M9 3v6H3" />
+      <path d="M15 3v6h6" />
+      <path d="M9 21v-6H3" />
+      <path d="M15 21v-6h6" />
+    </svg>
+  );
+}
+
 /** 복제 — 겹쳐 놓인 같은 모양 둘(복사와 달리 "그 자리에 하나 더"라는 뜻). */
 function DuplicateIcon() {
   return (
@@ -463,16 +475,27 @@ function buildItems(
           controller.startEditZoneLabel(zoneId);
         },
       },
+      {
+        // 프레임은 그릇이다 — 안에 든 것을 감싸도록 크기를 맞춘다(빈 프레임은 no-op).
+        icon: <FitIcon />,
+        label: '내용에 맞추기',
+        onSelect: () => {
+          close();
+          controller.fitFrameToContents(zoneId);
+        },
+      },
       ...commentItem(zoneId),
       'divider',
       ...copyItems({ cut: true }),
-      // 모바일은 선택 바에 삭제가 있어 중복 제외(데스크톱은 바가 없으므로 유지).
+      // 삭제는 둘로 나뉜다: 평범한 삭제는 **비파괴**(프레임만 사라지고 내용은 제자리),
+      // 내용째 삭제는 열 하나를 통째로 버릴 때. 모바일은 선택 바에 삭제가 있어
+      // 프레임만 삭제는 중복이라 빼고, 내용째 삭제는 그 바에 없으므로 남긴다.
       ...(touch
         ? []
         : ([
             {
               icon: <TrashIcon />,
-              label: '삭제',
+              label: '프레임만 삭제',
               danger: true,
               onSelect: () => {
                 close();
@@ -480,6 +503,15 @@ function buildItems(
               },
             },
           ] as MenuItem[])),
+      {
+        icon: <TrashIcon />,
+        label: '내용까지 삭제',
+        danger: true,
+        onSelect: () => {
+          close();
+          controller.deleteFrameWithContents(zoneId);
+        },
+      },
     ];
   }
 
