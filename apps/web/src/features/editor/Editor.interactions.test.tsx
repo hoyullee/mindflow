@@ -1071,110 +1071,117 @@ describe('속성 패널의 색 스와치는 문서 테마를 따라가지 않는
   });
 });
 
-// 방향키 미세 이동(요청: "키보드 방향키를 이용해 메모를 이동") — 주제(트리)는
-// 예전처럼 "이웃으로 선택 이동"이고, 자기 좌표를 가진 객체만 움직인다.
-describe('방향키 미세 이동', () => {
-  const posOf = (container: HTMLElement, id: string) => {
-    const el = container.querySelector(`[data-float-id="${id}"]`) as HTMLElement;
-    return { x: parseFloat(el.style.left), y: parseFloat(el.style.top) };
+// 방향키로 **메모 사이를** 오간다(요청) — 주제(트리)의 이웃 이동과 같은 채점.
+describe('방향키 메모 이동', () => {
+  const MEMO_DOC = {
+    v: 1,
+    kind: 'board',
+    nodes: {},
+    // 2×2 배치: 좌상(a) 우상(b) / 좌하(c) 우하(d)
+    floats: [
+      { id: 'a', x: -300, y: -200, w: 200, h: 90, text: '왼쪽 위' },
+      { id: 'b', x: 100, y: -200, w: 200, h: 90, text: '오른쪽 위' },
+      { id: 'c', x: -300, y: 100, w: 200, h: 90, text: '왼쪽 아래' },
+      { id: 'd', x: 100, y: 100, w: 200, h: 90, text: '오른쪽 아래' },
+    ],
+    lines: [],
+    zones: [],
+    layoutMode: 'right',
+    themeKey: 'white',
   };
-  const selectFloat = async (container: HTMLElement, id: string) => {
-    const el = await waitFor(() => {
-      const found = container.querySelector(`[data-float-id="${id}"]`) as HTMLElement;
-      expect(found).toBeTruthy();
-      return found;
-    });
-    firePointer(el, 'pointerdown', { pointerId: 7, clientX: 10, clientY: 10, button: 0 });
-    firePointer(window, 'pointerup', { pointerId: 7, clientX: 10, clientY: 10, button: 0 });
-    await screen.findByText('선택한 메모');
-    return el;
+  const selectedText = () => {
+    const kicker = Array.from(document.querySelectorAll('div')).find((el) => el.textContent?.trim() === '선택한 메모');
+    return kicker?.nextElementSibling?.textContent?.trim() ?? '';
+  };
+  const clickFloat = (container: HTMLElement, id: string) => {
+    const el = container.querySelector(`[data-float-id="${id}"]`) as HTMLElement;
+    firePointer(el, 'pointerdown', { pointerId: 21, clientX: 5, clientY: 5, button: 0 });
+    firePointer(window, 'pointerup', { pointerId: 21, clientX: 5, clientY: 5, button: 0 });
   };
 
-  it('메모를 고르고 방향키를 누르면 1px씩, Shift면 10px씩 움직인다', async () => {
-    localStorage.setItem('mindflow_doc_nudge1', JSON.stringify(DOC));
-    const { container } = renderEditor('/editor?map=nudge1&title=x');
-    await selectFloat(container, 'flt1');
-    const before = posOf(container, 'flt1');
+  it('메모를 고르고 방향키를 누르면 그 방향의 이웃 메모가 선택된다', async () => {
+    localStorage.setItem('mindflow_doc_fnav1', JSON.stringify(MEMO_DOC));
+    const { container } = renderEditor('/editor?map=fnav1&title=x');
+    await waitFor(() => expect(container.querySelector('[data-float-id="a"]')).toBeTruthy());
+    clickFloat(container, 'a');
+    await screen.findByText('선택한 메모');
+    expect(selectedText()).toBe('왼쪽 위');
 
     fireEvent.keyDown(window, { key: 'ArrowRight' });
-    await waitFor(() => expect(posOf(container, 'flt1').x).toBe(before.x + 1));
-    fireEvent.keyDown(window, { key: 'ArrowDown', shiftKey: true });
-    await waitFor(() => expect(posOf(container, 'flt1').y).toBe(before.y + 10));
-    fireEvent.keyDown(window, { key: 'ArrowLeft', shiftKey: true });
+    await waitFor(() => expect(selectedText()).toBe('오른쪽 위'));
+    fireEvent.keyDown(window, { key: 'ArrowDown' });
+    await waitFor(() => expect(selectedText()).toBe('오른쪽 아래'));
+    fireEvent.keyDown(window, { key: 'ArrowLeft' });
+    await waitFor(() => expect(selectedText()).toBe('왼쪽 아래'));
     fireEvent.keyDown(window, { key: 'ArrowUp' });
-    await waitFor(() => {
-      const p = posOf(container, 'flt1');
-      expect([p.x, p.y]).toEqual([before.x - 9, before.y + 9]);
-    });
+    await waitFor(() => expect(selectedText()).toBe('왼쪽 위'));
+  });
 
-    // 저장본에도 남는다(자동저장 디바운스 우회).
+  it('이동만 할 뿐 메모의 좌표는 그대로다(문서가 바뀌지 않는다)', async () => {
+    localStorage.setItem('mindflow_doc_fnav2', JSON.stringify(MEMO_DOC));
+    const { container } = renderEditor('/editor?map=fnav2&title=x');
+    await waitFor(() => expect(container.querySelector('[data-float-id="a"]')).toBeTruthy());
+    clickFloat(container, 'a');
+    await screen.findByText('선택한 메모');
+
+    fireEvent.keyDown(window, { key: 'ArrowRight' });
+    fireEvent.keyDown(window, { key: 'ArrowDown' });
+    await waitFor(() => expect(selectedText()).toBe('오른쪽 아래'));
+
     fireEvent.keyDown(window, { key: 's', ctrlKey: true });
     await waitFor(() => {
-      const saved = JSON.parse(localStorage.getItem('mindflow_doc_nudge1') || 'null');
-      expect(saved.floats[0].x).toBe(DOC.floats[0]!.x - 9);
-      expect(saved.floats[0].y).toBe(DOC.floats[0]!.y + 9);
+      const saved = JSON.parse(localStorage.getItem('mindflow_doc_fnav2') || 'null');
+      expect(saved.floats.map((f: { id: string; x: number; y: number }) => [f.id, f.x, f.y])).toEqual(MEMO_DOC.floats.map((f) => [f.id, f.x, f.y]));
     });
   });
 
-  it('연타는 undo 한 단계로 뭉친다(드래그와 같은 결)', async () => {
-    localStorage.setItem('mindflow_doc_nudge2', JSON.stringify(DOC));
-    const { container } = renderEditor('/editor?map=nudge2&title=x');
-    await selectFloat(container, 'flt1');
-    const before = posOf(container, 'flt1');
+  it('그 방향에 메모가 없으면 선택이 그대로 남는다', async () => {
+    localStorage.setItem('mindflow_doc_fnav3', JSON.stringify(MEMO_DOC));
+    const { container } = renderEditor('/editor?map=fnav3&title=x');
+    await waitFor(() => expect(container.querySelector('[data-float-id="a"]')).toBeTruthy());
+    clickFloat(container, 'a');
+    await screen.findByText('선택한 메모');
 
-    fireEvent.keyDown(window, { key: 'ArrowRight' });
-    fireEvent.keyDown(window, { key: 'ArrowRight' });
-    fireEvent.keyDown(window, { key: 'ArrowRight' });
-    await waitFor(() => expect(posOf(container, 'flt1').x).toBe(before.x + 3));
-
-    fireEvent.keyDown(window, { key: 'z', ctrlKey: true });
-    await waitFor(() => expect(posOf(container, 'flt1').x).toBe(before.x));
+    fireEvent.keyDown(window, { key: 'ArrowUp' });
+    fireEvent.keyDown(window, { key: 'ArrowLeft' });
+    await waitFor(() => expect(selectedText()).toBe('왼쪽 위'));
   });
 
-  it('주제(트리)는 그대로 "이웃으로 선택 이동" — 좌표가 바뀌지 않는다(무회귀)', async () => {
-    localStorage.setItem('mindflow_doc_nudge3', JSON.stringify(DOC));
-    const { container } = renderEditor('/editor?map=nudge3&title=x');
+  it('보드에서 아무것도 안 고른 채 방향키를 누르면 화면 가운데 메모부터 잡는다', async () => {
+    localStorage.setItem('mindflow_doc_fnav4', JSON.stringify(MEMO_DOC));
+    const { container } = renderEditor('/editor?map=fnav4&title=x');
+    await waitFor(() => expect(container.querySelector('[data-float-id="a"]')).toBeTruthy());
+    expect(screen.queryByText('선택한 메모')).toBeNull();
+
+    fireEvent.keyDown(window, { key: 'ArrowRight' });
+    await screen.findByText('선택한 메모');
+    expect(selectedText().length).toBeGreaterThan(0);
+  });
+
+  it('맵(무회귀): 주제를 고른 방향키는 그대로 이웃 주제로 간다', async () => {
+    localStorage.setItem('mindflow_doc_fnav5', JSON.stringify(DOC));
+    const { container } = renderEditor('/editor?map=fnav5&title=x');
     const c1 = await waitFor(() => {
       const el = container.querySelector('[data-node-id="c1"]') as HTMLElement;
       expect(el).toBeTruthy();
       return el;
     });
-    firePointer(c1, 'pointerdown', { pointerId: 8, clientX: 10, clientY: 10, button: 0 });
-    firePointer(window, 'pointerup', { pointerId: 8, clientX: 10, clientY: 10, button: 0 });
+    firePointer(c1, 'pointerdown', { pointerId: 22, clientX: 5, clientY: 5, button: 0 });
+    firePointer(window, 'pointerup', { pointerId: 22, clientX: 5, clientY: 5, button: 0 });
     await screen.findByText('선택한 주제');
-    const memo = posOf(container, 'flt1');
 
-    fireEvent.keyDown(window, { key: 'ArrowRight' });
-    fireEvent.keyDown(window, { key: 'ArrowDown' });
-    // 메모는 그대로(선택된 게 아니므로) — 그리고 저장본의 노드 좌표는 레이아웃이 정한다.
-    expect(posOf(container, 'flt1')).toEqual(memo);
-    fireEvent.keyDown(window, { key: 's', ctrlKey: true });
-    await waitFor(() => {
-      const saved = JSON.parse(localStorage.getItem('mindflow_doc_nudge3') || 'null');
-      expect(saved.floats[0].x).toBe(DOC.floats[0]!.x);
-      expect(saved.floats[0].y).toBe(DOC.floats[0]!.y);
-    });
-  });
-
-  it('연결선·영역도 같은 규칙으로 움직인다', async () => {
-    localStorage.setItem('mindflow_doc_nudge4', JSON.stringify(DOC));
-    const { container } = renderEditor('/editor?map=nudge4&title=x');
-    // 영역: 히트 판을 눌러 선택(시각 판은 포인터를 받지 않는다).
-    const zoneHit = await waitFor(() => {
-      const el = container.querySelector('[data-zone-hit="zn1"]') as HTMLElement;
-      expect(el).toBeTruthy();
-      return el;
-    });
-    firePointer(zoneHit, 'pointerdown', { pointerId: 9, clientX: 10, clientY: 10, button: 0 });
-    firePointer(window, 'pointerup', { pointerId: 9, clientX: 10, clientY: 10, button: 0 });
-    await screen.findByText('선택한 영역');
-    fireEvent.keyDown(window, { key: 'ArrowRight', shiftKey: true });
-
-    fireEvent.keyDown(window, { key: 's', ctrlKey: true });
-    await waitFor(() => {
-      const saved = JSON.parse(localStorage.getItem('mindflow_doc_nudge4') || 'null');
-      expect(saved.zones[0].x).toBe(DOC.zones[0]!.x + 10);
-      expect(saved.zones[0].y).toBe(DOC.zones[0]!.y);
-    });
+    const nodeName = () => {
+      const kicker = Array.from(document.querySelectorAll('div')).find((el) => el.textContent?.trim() === '선택한 주제');
+      return kicker?.nextElementSibling?.textContent?.trim() ?? '';
+    };
+    // 어느 방향이 이웃인지는 레이아웃(radial)이 정한다 — 여기서 고정하는 계약은
+    // "주제에서 방향키를 누르면 **다른 주제**로 가고, 메모로 새지 않는다"이다.
+    const seen = new Set([nodeName()]);
+    for (const key of ['ArrowDown', 'ArrowUp', 'ArrowLeft', 'ArrowRight']) {
+      fireEvent.keyDown(window, { key });
+      await waitFor(() => expect(screen.queryByText('선택한 메모')).toBeNull());
+      seen.add(nodeName());
+    }
+    expect(seen.size).toBeGreaterThan(1); // 실제로 옮겨 다녔다
   });
 });
