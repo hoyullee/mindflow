@@ -418,6 +418,12 @@ export function translateFloatsBy(floats: Float[], orig: Record<string, { x: num
 export function translateLinesBy(lines: Line[], orig: Record<string, { x1: number; y1: number; x2: number; y2: number }>, dx: number, dy: number): Line[] {
   return lines.map((l) => (orig[l.id] ? { ...l, x1: orig[l.id]!.x1 + dx, y1: orig[l.id]!.y1 + dy, x2: orig[l.id]!.x2 + dx, y2: orig[l.id]!.y2 + dy } : l));
 }
+/** 영역(프레임) 평행이동 — 프레임을 끌면 자기 자신과 **자기 안의 프레임들**이
+ * 함께 움직인다(프레임을 그릇으로 만들면서 필요해졌다). 위의 셋과 같은 규칙:
+ * 원본 좌표 기준으로 매번 다시 계산한다(누적하지 않는다). */
+export function translateZonesBy(zones: Zone[], orig: Record<string, { x: number; y: number }>, dx: number, dy: number): Zone[] {
+  return zones.map((z) => (orig[z.id] ? { ...z, x: orig[z.id]!.x + dx, y: orig[z.id]!.y + dy } : z));
+}
 
 // ---- drag-drop reparenting — port of `Component#attachFreeNode` (MindFlow.dc.html:2132),
 // used for BOTH the free→attach case and the attached→re-parent case (the original also
