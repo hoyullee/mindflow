@@ -512,6 +512,8 @@ export interface EditorController {
   copySelection: () => boolean;
   /** 복사 후 원본을 즉시 삭제(캔버스 편집기 관례 — 붙여넣기 시점이 아니라 지금). */
   cutSelection: () => void;
+  /** 복제(Ctrl/⌘+D) — 클립보드를 건드리지 않고 그 자리에 하나 더. */
+  duplicateSelection: () => void;
   /** 클립보드 내용을 새 객체로 붙여넣는다. `at`(캔버스 좌표)이 있으면 그 지점에,
    * 없으면 선택된 노드의 자식으로, 그것도 아니면 뷰포트 중앙에. */
   pasteClipboardAt: (at?: { x: number; y: number }) => void;
@@ -1666,6 +1668,11 @@ export function useEditorState(): EditorController {
       const h = floatBoxH(f);
       if (p.x >= f.x && p.x <= f.x + f.w && p.y >= f.y && p.y <= f.y + h) return { kind: 'float', id: f.id };
     }
+    // 획은 **영역보다 먼저** 본다: 영역은 배경 판(z 8)이고 잉크는 그 위에 그려진
+    // 자국(z 90)이라, 프레임 안에 그은 획을 우클릭하면 영역 메뉴가 뜨던 것을 고친다.
+    // (원본 우선순위 float > zone > line > node는 그대로 — 획만 영역 앞으로.)
+    const inkFirst = strokeAt(p);
+    if (inkFirst) return { kind: 'stroke', id: inkFirst };
     for (const z of d.zones) {
       if (p.x >= z.x && p.x <= z.x + z.w && p.y >= z.y - 16 && p.y <= z.y + z.h) return { kind: 'zone', id: z.id };
     }
@@ -1683,8 +1690,6 @@ export function useEditorState(): EditorController {
       const pad = 4;
       if (p.x >= gg.x - gg.w / 2 - pad && p.x <= gg.x + gg.w / 2 + pad && p.y >= gg.y - gg.h / 2 - pad && p.y <= gg.y + gg.h / 2 + pad) return { kind: 'node', id };
     }
-    const st = strokeAt(p);
-    if (st) return { kind: 'stroke', id: st };
     return null;
   }
 
@@ -3543,7 +3548,10 @@ export function useEditorState(): EditorController {
   const [clipboardSize, setClipboardSize] = useState(0);
 
   const copySelection = useCallback(() => {
-    const clip = collectClipboard(docRef.current, selectionRef.current, multiSelectionRef.current);
+    // 프레임 안의 것을 함께 담을 때 쓰는 높이는 **드래그와 같은 측정값**이어야
+    // 한다(저장된 h는 실제 박스와 다를 수 있다) — 그래야 "끌면 오는데 복사하면
+    // 빠지는" 어긋남이 없다.
+    const clip = collectClipboard(docRef.current, selectionRef.current, multiSelectionRef.current, floatBoxH);
     if (!clip) return false; // 복사할 게 없으면(루트만 선택 등) 기존 클립보드를 지우지 않는다
     clipboardRef.current = clip;
     setClipboardSize(clipboardCount(clip));
@@ -3556,20 +3564,10 @@ export function useEditorState(): EditorController {
     deleteSelection();
   }, [copySelection, deleteSelection]);
 
-  const pasteClipboardAt = useCallback(
-    (at?: { x: number; y: number }) => {
-      const clip = clipboardRef.current;
+  /** 클립보드 페이로드를 문서에 넣고 선택·마그넷까지 마무리한다(붙여넣기·복제 공용). */
+  const applyPaste = useCallback(
+    (clip: ClipboardPayload | null, target: PasteTarget) => {
       if (!clip) return;
-      // 대상: 명시된 좌표 > 선택된 노드(자식으로) > 뷰포트 중앙
-      let target: PasteTarget;
-      if (at) {
-        target = { kind: 'point', ...at };
-      } else if (selectionRef.current?.kind === 'node') {
-        target = { kind: 'node', id: selectionRef.current.id };
-      } else {
-        const vp = viewportRef.current;
-        target = { kind: 'point', x: (vp.vw / 2 - vp.pan.x) / vp.zoom, y: (vp.vh / 2 - vp.pan.y) / vp.zoom };
-      }
       // 결과는 updater **밖**에서 계산한다. 예전엔 updater 안에서 res를 채우고
       // "동기 실행"을 믿었는데, React의 즉시 평가(eager evaluation)는 같은
       // 핸들러에서 앞선 setState(컨텍스트 메뉴 닫기 등)가 큐를 채우면 **건너뛴다**
@@ -3604,6 +3602,39 @@ export function useEditorState(): EditorController {
     },
     [commitDoc, idFactory],
   );
+
+  const pasteClipboardAt = useCallback(
+    (at?: { x: number; y: number }) => {
+      // 대상: 명시된 좌표 > 선택된 노드(자식으로) > 뷰포트 중앙
+      let target: PasteTarget;
+      if (at) {
+        target = { kind: 'point', ...at };
+      } else if (selectionRef.current?.kind === 'node') {
+        target = { kind: 'node', id: selectionRef.current.id };
+      } else {
+        const vp = viewportRef.current;
+        target = { kind: 'point', x: (vp.vw / 2 - vp.pan.x) / vp.zoom, y: (vp.vh / 2 - vp.pan.y) / vp.zoom };
+      }
+      applyPaste(clipboardRef.current, target);
+    },
+    [applyPaste],
+  );
+
+  /**
+   * 복제(Ctrl/⌘+D) — 클립보드를 **건드리지 않고** 지금 선택한 것을 그 자리에서
+   * 살짝 어긋나게 다시 만든다(복사해 둔 다른 것을 잃지 않는다).
+   *
+   * 트리에 붙은 주제를 복제하면 **형제**가 된다(같은 부모의 자식으로) — 제자리
+   * 복제는 자유 도형으로 떨어져 나가는 셈이라 마인드맵에서는 뜻이 어긋난다.
+   */
+  const duplicateSelection = useCallback(() => {
+    if (readOnlyRef.current) return;
+    const clip = collectClipboard(docRef.current, selectionRef.current, multiSelectionRef.current, floatBoxH);
+    if (!clip) return;
+    const sel = selectionRef.current;
+    const parent = sel?.kind === 'node' ? (docRef.current.nodes[sel.id]?.parent ?? null) : null;
+    applyPaste(clip, parent ? { kind: 'node', id: parent } : { kind: 'offset' });
+  }, [applyPaste]);
 
   /**
    * Ctrl/⌘+V의 안전망 — 붙여넣기는 `paste` 이벤트가 맡지만, 그 이벤트가 오지
@@ -5098,6 +5129,10 @@ export function useEditorState(): EditorController {
 
   const beginZoneDrag = useCallback((e: ReactPointerEvent, id: string) => {
     if (isPanButton(e)) return; // 우클릭·휠클릭 = 화면 이동 (배경으로 흘려보낸다)
+    // 프레임 안에 그은 획을 누른 것이면 **여기서 처리하지 않는다**(전파도 막지
+    // 않는다) — 획은 자기 DOM 요소가 없어 배경 핸들러가 좌표로 잡아 준다. 영역의
+    // 넓은 판이 그 클릭을 먼저 삼키면 프레임 안 잉크는 영영 고를 수 없다(실측).
+    if (strokeAt(toCanvasPoint(e.clientX, e.clientY, viewportRef.current))) return;
     if (e.pointerType === 'touch' && !isSelectedSingle('zone', id)) {
       pendingTapRef.current = { kind: 'zone', id };
       return;
@@ -5316,6 +5351,12 @@ export function useEditorState(): EditorController {
         if (k === 'x' || e.code === 'KeyX') {
           e.preventDefault();
           cutSelection();
+          return;
+        }
+        // 복제 — 클립보드를 건드리지 않고 그 자리에서 하나 더(디자인 툴 관례).
+        if (k === 'd' || e.code === 'KeyD') {
+          e.preventDefault(); // 크롬의 '북마크 추가'를 막는다
+          duplicateSelection();
           return;
         }
         if (k === 'v' || e.code === 'KeyV') {
@@ -5680,6 +5721,7 @@ export function useEditorState(): EditorController {
     frameDrop,
     copySelection,
     cutSelection,
+    duplicateSelection,
     pasteClipboardAt,
     /** 붙여넣을 내용이 있는지 — 메뉴에 '붙여넣기'를 노출할지 판단용. */
     canPaste: clipboardSize > 0,

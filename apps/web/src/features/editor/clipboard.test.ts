@@ -215,3 +215,67 @@ describe('pasteClipboard — 방어', () => {
     expect(clipboardCount(clip)).toBe(1); // 사용자가 고른 건 A 하나
   });
 });
+
+describe('그리기 획·프레임 내용 (요청: 복사/붙여넣기를 모든 객체로)', () => {
+  const stroke = (id: string, pts: number[]) => ({ id, pts, color: '#111', w: 4 });
+
+  function boardDoc(): Doc {
+    return {
+      nodes: {},
+      floats: [float('inF', 320, 320), float('outF', 900, 900)],
+      lines: [],
+      zones: [zone('z1', 300, 300)], // 300..500 × 300..420
+      strokes: [stroke('inK', [320, 340, 380, 380]), stroke('outK', [900, 900, 940, 940])],
+      layoutMode: 'right',
+      themeKey: 'white',
+      kind: 'board',
+    } as unknown as Doc;
+  }
+
+  it('획 하나를 고르면 그 획이 담기고, 붙여넣으면 좌표째 옮겨진 사본이 생긴다', () => {
+    const doc = boardDoc();
+    const clip = collectClipboard(doc, { kind: 'stroke', id: 'inK' }, null)!;
+    expect(clip.strokes.map((s) => s.id)).toEqual(['inK']);
+    expect(clipboardCount(clip)).toBe(1);
+    const out = pasteClipboard(doc, clip, { kind: 'point', x: 0, y: 0 }, ids())!;
+    expect(out.doc.strokes).toHaveLength(3);
+    const copy = out.doc.strokes!.find((s) => s.id !== 'inK' && s.id !== 'outK')!;
+    // 기준점은 **눈에 보이는 경계**(획 굵기 절반 포함)라 굵기 4의 획은 (2,2)에 선다.
+    expect(copy.pts.slice(0, 2)).toEqual([2, 2]);
+    expect(out.selection).toEqual({ kind: 'stroke', id: copy.id });
+  });
+
+  it('프레임을 복사하면 안에 든 것이 함께 담긴다(그릇 규칙 — 끌 때와 같다)', () => {
+    const doc = boardDoc();
+    const clip = collectClipboard(doc, { kind: 'zone', id: 'z1' }, null)!;
+    expect(clip.zones.map((z) => z.id)).toEqual(['z1']);
+    expect(clip.floats.map((f) => f.id)).toEqual(['inF']); // 밖의 메모는 아니다
+    expect(clip.strokes.map((s) => s.id)).toEqual(['inK']);
+    const out = pasteClipboard(doc, clip, { kind: 'offset' }, ids())!;
+    expect(out.doc.zones).toHaveLength(2);
+    expect(out.doc.floats).toHaveLength(3);
+    expect(out.doc.strokes).toHaveLength(3);
+    // 프레임과 내용이 **같은 델타**로 옮겨져 상대 위치가 유지된다.
+    const newZone = out.doc.zones[1]!;
+    const newFloat = out.doc.floats.find((f) => f.id !== 'inF' && f.id !== 'outF')!;
+    expect(newFloat.x - newZone.x).toBe(320 - 300);
+  });
+
+  it('다중 선택에 획만 있어도 복사된다', () => {
+    const doc = boardDoc();
+    const clip = collectClipboard(doc, null, { nodes: [], floats: [], lines: [], strokes: ['inK', 'outK'] })!;
+    expect(clip.strokes).toHaveLength(2);
+    const out = pasteClipboard(doc, clip, { kind: 'offset' }, ids())!;
+    expect(out.doc.strokes).toHaveLength(4);
+    expect(out.multi?.strokes).toHaveLength(2);
+  });
+
+  it('복제(offset)는 제자리에서 살짝 어긋난 사본을 만든다', () => {
+    const doc = boardDoc();
+    const clip = collectClipboard(doc, { kind: 'float', id: 'outF' }, null)!;
+    const out = pasteClipboard(doc, clip, { kind: 'offset' }, ids())!;
+    const copy = out.doc.floats.find((f) => f.id !== 'inF' && f.id !== 'outF')!;
+    expect(copy.x).toBe(900 + 24);
+    expect(copy.y).toBe(900 + 24);
+  });
+});

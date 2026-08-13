@@ -1289,6 +1289,133 @@ describe('화이트보드 에디터', () => {
     });
   });
 
+  it('그리기 획도 Ctrl+C/V로 복사된다(요청)', async () => {
+    localStorage.setItem(
+      'mindflow_doc_b41',
+      JSON.stringify({ ...BOARD, floats: [], strokes: [{ id: 's1', pts: [0, 0, 40, 0], color: '#2b2b2b', w: 4 }] }),
+    );
+    const { container } = renderEditor('/editor?map=b41&title=x');
+    await waitFor(() => expect(container.querySelector('[data-stroke-id="s1"]')).toBeTruthy());
+    const at = strokePoint(container, 20, 0);
+    firePointer(getViewport(container), 'pointerdown', { pointerId: 61, clientX: at.x, clientY: at.y });
+    firePointer(document.body, 'pointerup', { pointerId: 61, clientX: at.x, clientY: at.y });
+    await waitFor(() => expect(container.querySelector('[data-stroke-selection]')).toBeTruthy());
+
+    fireEvent.keyDown(window, { key: 'c', ctrlKey: true });
+    fireEvent.keyDown(window, { key: 'v', ctrlKey: true });
+    fireEvent.keyDown(window, { key: 's', ctrlKey: true });
+    await waitFor(() => {
+      const saved = JSON.parse(localStorage.getItem('mindflow_doc_b41') || 'null');
+      expect(saved.strokes).toHaveLength(2);
+    });
+  });
+
+  it('획 우클릭 메뉴에도 복사·복제가 있다(모바일에는 키보드가 없다)', async () => {
+    localStorage.setItem(
+      'mindflow_doc_b45',
+      JSON.stringify({ ...BOARD, floats: [], strokes: [{ id: 's1', pts: [0, 0, 40, 0], color: '#2b2b2b', w: 4 }] }),
+    );
+    const { container } = renderEditor('/editor?map=b45&title=x');
+    await waitFor(() => expect(container.querySelector('[data-stroke-id="s1"]')).toBeTruthy());
+    const at = strokePoint(container, 20, 0);
+    fireEvent.contextMenu(getViewport(container), { clientX: at.x, clientY: at.y });
+    await screen.findByText('복사');
+    fireEvent.mouseDown(screen.getByText('복제'));
+    fireEvent.keyDown(window, { key: 's', ctrlKey: true });
+    await waitFor(() => {
+      const saved = JSON.parse(localStorage.getItem('mindflow_doc_b45') || 'null');
+      expect(saved.strokes).toHaveLength(2);
+      expect(saved.strokes[1].pts[0]).toBe(24); // 제자리에서 24px 어긋난 사본
+    });
+  });
+
+  it('프레임 안에 그은 획도 클릭으로 고를 수 있다(영역 판이 삼키지 않는다)', async () => {
+    localStorage.setItem(
+      'mindflow_doc_b42',
+      JSON.stringify({
+        ...BOARD,
+        floats: [],
+        zones: [{ id: 'z1', x: -200, y: -150, w: 400, h: 300, label: '구획', color: null }],
+        strokes: [{ id: 's1', pts: [0, 0, 40, 0], color: '#2b2b2b', w: 4 }],
+      }),
+    );
+    const { container } = renderEditor('/editor?map=b42&title=x');
+    await waitFor(() => expect(container.querySelector('[data-stroke-id="s1"]')).toBeTruthy());
+    const at = strokePoint(container, 20, 0);
+    firePointer(container.querySelector('[data-zone-hit="z1"]')!, 'pointerdown', { pointerId: 62, clientX: at.x, clientY: at.y });
+    firePointer(document.body, 'pointerup', { pointerId: 62, clientX: at.x, clientY: at.y });
+    await waitFor(() => expect(container.querySelector('[data-stroke-selection]')).toBeTruthy());
+    expect(screen.getByText('선택한 그림')).toBeTruthy();
+  });
+
+  it('Ctrl+D로 그 자리에 복제한다 — 클립보드는 건드리지 않는다', async () => {
+    localStorage.setItem(
+      'mindflow_doc_b43',
+      JSON.stringify({
+        ...BOARD,
+        floats: [
+          { id: 'f1', x: 0, y: 0, w: 200, h: 90, text: '복사해 둘 것' },
+          { id: 'f2', x: 400, y: 0, w: 200, h: 90, text: '복제할 것' },
+        ],
+      }),
+    );
+    const { container } = renderEditor('/editor?map=b43&title=x');
+    await waitFor(() => expect(container.querySelectorAll('[data-float-id]')).toHaveLength(2));
+
+    // f1을 복사해 두고 → f2를 복제 → 붙여넣기는 여전히 f1을 낸다.
+    firePointer(container.querySelector('[data-float-id="f1"]')!, 'pointerdown', { pointerId: 64, clientX: 100, clientY: 100, button: 0 });
+    firePointer(document.body, 'pointerup', { pointerId: 64, clientX: 100, clientY: 100 });
+    fireEvent.keyDown(window, { key: 'c', ctrlKey: true });
+    firePointer(container.querySelector('[data-float-id="f2"]')!, 'pointerdown', { pointerId: 65, clientX: 300, clientY: 100, button: 0 });
+    firePointer(document.body, 'pointerup', { pointerId: 65, clientX: 300, clientY: 100 });
+    fireEvent.keyDown(window, { key: 'd', ctrlKey: true });
+    fireEvent.keyDown(window, { key: 's', ctrlKey: true });
+    await waitFor(() => {
+      const saved = JSON.parse(localStorage.getItem('mindflow_doc_b43') || 'null');
+      expect(saved.floats).toHaveLength(3);
+      expect(saved.floats[2]).toMatchObject({ x: 424, y: 24, text: '복제할 것' });
+    });
+
+    fireEvent.keyDown(window, { key: 'v', ctrlKey: true });
+    fireEvent.keyDown(window, { key: 's', ctrlKey: true });
+    await waitFor(() => {
+      const saved = JSON.parse(localStorage.getItem('mindflow_doc_b43') || 'null');
+      expect(saved.floats).toHaveLength(4);
+      expect(saved.floats[3].text).toBe('복사해 둘 것'); // 복제가 클립보드를 갈아치우지 않았다
+    });
+  });
+
+  it('프레임을 복사하면 안에 든 것도 함께 붙는다', async () => {
+    localStorage.setItem(
+      'mindflow_doc_b44',
+      JSON.stringify({
+        ...BOARD,
+        zones: [{ id: 'z1', x: -400, y: -200, w: 360, h: 260, label: '구획', color: null }],
+        floats: [
+          { id: 'inside', x: -300, y: -100, w: 160, h: 80, text: '안' },
+          { id: 'outside', x: 300, y: 300, w: 160, h: 80, text: '밖' },
+        ],
+      }),
+    );
+    const { container } = renderEditor('/editor?map=b44&title=x');
+    const zone = await waitFor(() => {
+      const found = container.querySelector('[data-zone-hit="z1"]') as HTMLElement;
+      expect(found).toBeTruthy();
+      return found;
+    });
+    firePointer(zone, 'pointerdown', { pointerId: 63, clientX: 300, clientY: 300, button: 0 });
+    firePointer(document.body, 'pointerup', { pointerId: 63, clientX: 300, clientY: 300 });
+    fireEvent.keyDown(window, { key: 'c', ctrlKey: true });
+    fireEvent.keyDown(window, { key: 'v', ctrlKey: true });
+    fireEvent.keyDown(window, { key: 's', ctrlKey: true });
+    await waitFor(() => {
+      const saved = JSON.parse(localStorage.getItem('mindflow_doc_b44') || 'null');
+      expect(saved.zones).toHaveLength(2);
+      expect(saved.floats).toHaveLength(3); // 안의 메모만 함께 왔다
+      expect(saved.floats[2].text).toBe('안');
+    });
+  });
+
   it('프레임은 그릇 — 끌면 안에 든 메모·획이 함께 오고, 밖의 것은 그대로다(undo도 한 번, 요청)', async () => {
     localStorage.setItem(
       'mindflow_doc_b37',
