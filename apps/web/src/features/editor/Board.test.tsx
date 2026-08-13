@@ -941,4 +941,57 @@ describe('화이트보드 에디터', () => {
     await waitFor(() => expect(container.querySelector('[data-float-id="mf1"]')).toBeTruthy());
     expect(container.querySelector('[data-reaction-add]')).toBeNull();
   });
+  it('한글 확정 Shift+Enter는 한 줄만 내려간다 — 같은 Enter가 두 번 와도(제보)', async () => {
+    localStorage.setItem('mindflow_doc_b23', JSON.stringify({ ...BOARD, floats: [{ id: 'f1', x: 0, y: 0, w: 300, text: '첫줄' }] }));
+    const { container } = renderEditor('/editor?map=b23&title=x');
+    const floatEl = await waitFor(() => {
+      const el = container.querySelector('[data-float-id="f1"]') as HTMLElement;
+      expect(el).toBeTruthy();
+      return el;
+    });
+    fireEvent.doubleClick(floatEl);
+    const box = await waitFor(() => {
+      const el = container.querySelector('.mf-richedit') as HTMLElement;
+      expect(el).toBeTruthy();
+      return el;
+    });
+    // 캐럿을 맨 끝으로(한글을 치던 상태)
+    const sel = window.getSelection()!;
+    const r = document.createRange();
+    r.selectNodeContents(box);
+    r.collapse(false);
+    sel.removeAllRanges();
+    sel.addRange(r);
+
+    // 한글 IME: 마지막 글자가 조합 중일 때 Shift+Enter → 조합 확정 → **같은 Enter가
+    // 평범한 keydown으로 한 번 더**(브라우저·IME 조합에 따라 온다). 한 번만 내려가야 한다.
+    fireEvent.compositionStart(box);
+    fireEvent.keyDown(box, { key: 'Enter', shiftKey: true, isComposing: true });
+    fireEvent.compositionEnd(box);
+    fireEvent.keyDown(box, { key: 'Enter', shiftKey: true });
+
+    await waitFor(() => expect(box.innerHTML).toContain('<br>'));
+    // 값 `첫줄\n` = `첫줄<br>` + 빈 마지막 줄용 placeholder `<br>` → br 2개.
+    // 두 줄 내려가면(`첫줄\n\n`) br이 3개가 된다.
+    expect(box.innerHTML.match(/<br>/g)?.length).toBe(2);
+  });
+  it('반응 칩의 내 표 표시는 은은하다 — 강조색 반투명 테두리·옅은 배경(제보)', async () => {
+    localStorage.setItem(
+      'mindflow_doc_b24',
+      JSON.stringify({ ...BOARD, reactions: [{ id: 'r1', target: 'bf1', by: 'me@example.com', emoji: '👍' }] }),
+    );
+    const { container } = renderEditor('/editor?map=b24&title=x');
+    const chip = await waitFor(() => {
+      const el = container.querySelector('[data-reaction="👍"]') as HTMLElement;
+      expect(el).toBeTruthy();
+      return el;
+    });
+    expect(chip.getAttribute('data-mine')).toBe('1');
+    // 배경·테두리 모두 반투명(rgba) — 불투명 강조색으로 칠하면 메모 옆에서 과하게 튄다.
+    expect(chip.style.background).toMatch(/rgba\(/);
+    expect(chip.style.border).toMatch(/rgba\(/);
+    const alpha = (v: string) => Number(/rgba\([^)]*,\s*([\d.]+)\)/.exec(v)?.[1] ?? '1');
+    expect(alpha(chip.style.background)).toBeLessThanOrEqual(0.08);
+    expect(alpha(chip.style.border)).toBeLessThanOrEqual(0.5);
+  });
 });
