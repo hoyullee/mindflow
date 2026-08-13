@@ -206,23 +206,6 @@ type BgDrag =
   | { kind: 'pan'; pointerId: number; sx: number; sy: number; startPan: PanState; moved: boolean; touch?: boolean }
   | { kind: 'marquee'; pointerId: number; startClientX: number; startClientY: number; x0: number; y0: number; moved: boolean };
 
-/** 방향키 미세 이동의 한 걸음(캔버스 단위) — 관례대로 방향키는 1px,
- * Shift를 누르면 10px(Figma·Keynote·PowerPoint와 같은 규칙). */
-const NUDGE_STEP = 1;
-const NUDGE_STEP_BIG = 10;
-
-function isArrowKey(key: string): boolean {
-  return key === 'ArrowUp' || key === 'ArrowDown' || key === 'ArrowLeft' || key === 'ArrowRight';
-}
-
-function arrowStep(key: string, big: boolean): { dx: number; dy: number } {
-  const n = big ? NUDGE_STEP_BIG : NUDGE_STEP;
-  if (key === 'ArrowUp') return { dx: 0, dy: -n };
-  if (key === 'ArrowDown') return { dx: 0, dy: n };
-  if (key === 'ArrowLeft') return { dx: -n, dy: 0 };
-  return { dx: n, dy: 0 };
-}
-
 function totalSelected(m: MultiSelection): number {
   return m.nodes.length + m.lines.length + m.floats.length + m.strokes.length;
 }
@@ -472,11 +455,6 @@ export interface EditorController {
   addChild: () => void;
   addSibling: () => void;
   deleteSelection: () => void;
-  /** 방향키 미세 이동(요청) — 선택한 **메모·이미지·연결선·영역·그리기 획**을
-   * (dx,dy)만큼 옮긴다. 캔버스 좌표 단위라 줌과 무관하게 같은 거리다.
-   * 주제(트리 노드)는 방향키가 "이웃으로 선택 이동"이라 여기 오지 않는다 —
-   * 다중 선택에 섞인 **자유 루트**만 그룹 드래그와 같은 규칙으로 함께 움직인다. */
-  nudgeSelection: (dx: number, dy: number) => void;
   /** 현재 선택(단일/다중)을 클립보드에 담는다. 담을 게 없으면(루트만 선택 등)
    * `false`를 돌려주고 기존 클립보드는 그대로 둔다. */
   copySelection: () => boolean;
@@ -3268,66 +3246,6 @@ export function useEditorState(): EditorController {
     setNudgeTick((t) => t + 1);
   }, [selection, commitDoc]);
 
-  /**
-   * 방향키 미세 이동 — 선택한 객체(들)를 (dx,dy)만큼 옮긴다.
-   *
-   * 대상은 **자기 좌표를 가진 것들**뿐이다: 메모·이미지 플로트, 연결선, 영역,
-   * 그리기 획, 그리고 다중 선택에 섞인 자유 루트(그룹 드래그와 같은 규칙 —
-   * 트리에 붙은 주제는 레이아웃이 자리를 정하므로 옮길 수 없다).
-   *
-   * `continuous` 커밋이라 연타·꾹 누르기가 **undo 한 단계**로 뭉친다(드래그와 같은
-   * 결). 겹침 마그넷(`pendingNudgeRef`)은 **일부러 걸지 않는다** — 1px씩 맞춰
-   * 놓는 중에 도형이 저 혼자 튀어 달아나면 미세 조정이 불가능해진다.
-   */
-  const nudgeSelection = useCallback(
-    (dx: number, dy: number) => {
-      const sel = selectionRef.current;
-      const ms = multiSelectionRef.current;
-      const multi = !!ms && totalSelected(ms) > 1;
-      const floats = multi ? ms!.floats : sel?.kind === 'float' ? [sel.id] : [];
-      const lines = multi ? ms!.lines : sel?.kind === 'line' ? [sel.id] : [];
-      const strokes = multi ? ms!.strokes : sel?.kind === 'stroke' ? [sel.id] : [];
-      // 영역은 마퀴에 담기지 않는다(dc 원본 규칙) — 단일 선택일 때만.
-      const zones = !multi && sel?.kind === 'zone' ? [sel.id] : [];
-      const nodes = multi ? ms!.nodes : [];
-      if (!floats.length && !lines.length && !strokes.length && !zones.length && !nodes.length) return;
-      commitDoc((d) => {
-        const nodesOrig: Record<string, { x: number; y: number }> = {};
-        nodes.forEach((id) => {
-          const n = d.nodes[id];
-          if (n && n.free && !n.parent) nodesOrig[id] = { x: n.x, y: n.y };
-        });
-        const floatsOrig: Record<string, { x: number; y: number }> = {};
-        floats.forEach((id) => {
-          const f = d.floats.find((x) => x.id === id);
-          if (f) floatsOrig[id] = { x: f.x, y: f.y };
-        });
-        const linesOrig: Record<string, { x1: number; y1: number; x2: number; y2: number }> = {};
-        lines.forEach((id) => {
-          const l = d.lines.find((x) => x.id === id);
-          if (l) linesOrig[id] = { x1: l.x1, y1: l.y1, x2: l.x2, y2: l.y2 };
-        });
-        const strokeSet = new Set(strokes);
-        const zoneSet = new Set(zones);
-        return {
-          ...d,
-          nodes: mutations.translateNodesBy(d.nodes, nodesOrig, dx, dy),
-          floats: mutations.translateFloatsBy(d.floats, floatsOrig, dx, dy),
-          lines: mutations.translateLinesBy(d.lines, linesOrig, dx, dy),
-          zones: d.zones.map((z) => (zoneSet.has(z.id) ? { ...z, x: z.x + dx, y: z.y + dy } : z)),
-          strokes: (d.strokes ?? []).map((st) => (strokeSet.has(st.id) ? { ...st, pts: translateStrokePts(st.pts, dx, dy) } : st)),
-        };
-      }, true);
-      // 자유 루트가 움직였으면 루트 앵커도 따라간다(그룹 드롭과 같은 처리).
-      const rootMoved = nodes.includes(ROOT_ID) && docRef.current.nodes[ROOT_ID]?.free;
-      if (rootMoved) {
-        const r = docRef.current.nodes[ROOT_ID]!;
-        setRootAnchor({ x: r.x, y: r.y });
-      }
-    },
-    [commitDoc],
-  );
-
   const deleteSelection = useCallback(() => {
     // multi-select bulk delete — port of `Component#deleteMulti` (MindFlow.dc.html:1595-1610):
     // every targeted node's subtree + every targeted line/float, in one undo step.
@@ -5052,11 +4970,6 @@ export function useEditorState(): EditorController {
         } else if (e.key === 'Escape') {
           e.preventDefault();
           clearSelection();
-        } else if (isArrowKey(e.key)) {
-          // 다중 선택에는 "이웃으로 이동"이라는 뜻이 없다 — 방향키는 미세 이동.
-          e.preventDefault();
-          const step = arrowStep(e.key, e.shiftKey);
-          nudgeSelection(step.dx, step.dy);
         }
         return;
       }
@@ -5064,20 +4977,13 @@ export function useEditorState(): EditorController {
       // (port of the dc original's final `else if` arrow block). Only meaningful with a
       // node — or nothing — selected; float/line/zone selections are handled by their own
       // branches below and don't navigate.
-      if (isArrowKey(e.key)) {
+      if (e.key === 'ArrowUp' || e.key === 'ArrowDown' || e.key === 'ArrowLeft' || e.key === 'ArrowRight') {
         if (!selection || selection.kind === 'node') {
           e.preventDefault();
           const dir = e.key === 'ArrowUp' ? 'up' : e.key === 'ArrowDown' ? 'down' : e.key === 'ArrowLeft' ? 'left' : 'right';
           navigateNodes(selection?.kind === 'node' ? selection.id : null, dir);
           return;
         }
-        // 그 밖의 객체(메모·이미지·연결선·영역·그리기 획)는 자기 좌표를 가지므로
-        // 방향키가 **미세 이동**이다(요청). 예전엔 아무 일도 하지 않았다 —
-        // 주제의 "이웃으로 선택 이동"을 빼앗지 않으면서 새로 더할 수 있는 자리.
-        e.preventDefault();
-        const step = arrowStep(e.key, e.shiftKey);
-        nudgeSelection(step.dx, step.dy);
-        return;
       }
       if (!selection) return;
       if (selection.kind === 'node') {
@@ -5348,7 +5254,6 @@ export function useEditorState(): EditorController {
     addChild,
     addSibling,
     deleteSelection,
-    nudgeSelection,
     copySelection,
     cutSelection,
     pasteClipboardAt,
