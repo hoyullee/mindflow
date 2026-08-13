@@ -86,11 +86,10 @@ describe('화이트보드 템플릿', () => {
     expect(d.kind).toBe('board');
     expect(Object.keys(d.nodes)).toEqual([]);
     expect(d.themeKey).toBe(BOARD_THEME_KEY);
-    // 보드가 실제로 만들 수 있는 어휘만 쓴다 — 사용자가 지웠을 때 다시 만들 수
-    // 없는 물건을 템플릿만 슬쩍 심어 두지 않는다. 영역(프레임)은 #419에서 보드
-    // 삽입 메뉴가 열렸으므로 이제 그 어휘 안이고, 열 모드는 우클릭으로 켤 수 있다.
+    // 보드가 실제로 만들 수 있는 어휘(메모·이미지·잉크)만 쓴다 — 사용자가 지웠을 때
+    // 다시 만들 수 없는 물건(영역·연결선)을 템플릿만 슬쩍 심어 두지 않는다.
     expect(d.lines).toEqual([]);
-    expect(d.zones.map((z) => ({ label: z.label, stack: z.stack }))).toEqual((tpl.columns ?? []).map((c) => ({ label: c.label, stack: 'column' })));
+    expect(d.zones).toEqual([]);
     expect(d.floats.length).toBe(tpl.memos.length);
 
     // 저장 포맷을 통과한다(= 그대로 저장하고 다시 열 수 있다)
