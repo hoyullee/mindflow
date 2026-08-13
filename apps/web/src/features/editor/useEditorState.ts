@@ -162,6 +162,19 @@ interface Snapshot {
   reactions: Reaction[];
 }
 
+/** 프레임을 내용에 맞출 때 주는 여백(캔버스 단위) — 라벨 알약이 위쪽 바깥에
+ * 걸리므로 위도 같은 값이면 충분하다. */
+const FRAME_FIT_PAD = 28;
+
+/** 프레임이 담고 있는 것들의 id — 옮기기·크기 맞춤·내용째 삭제가 함께 쓴다. */
+interface FrameMemberIds {
+  floats: string[];
+  zones: string[];
+  lines: string[];
+  strokes: string[];
+  nodes: string[];
+}
+
 /** 프레임이 담고 가는 것들의 **원본 좌표**(끌기 시작 시점). 종류마다 좌표를 담는
  * 방식이 달라 각자의 형태로 들고 있다가, 이동은 각 종류의 평행이동 변형에 맡긴다. */
 interface CarrySnapshot {
@@ -636,6 +649,10 @@ export interface EditorController {
   beginFloatDrag: (e: ReactPointerEvent, id: string) => void;
   beginFloatResize: (e: ReactPointerEvent, id: string) => void;
   beginZoneDrag: (e: ReactPointerEvent, id: string) => void;
+  /** 프레임 크기를 안에 든 것들에 맞춘다(빈 프레임은 no-op). */
+  fitFrameToContents: (id: string) => void;
+  /** 프레임과 그 안의 것을 함께 삭제(평범한 삭제는 프레임만 — 비파괴). */
+  deleteFrameWithContents: (id: string) => void;
   beginZoneResize: (e: ReactPointerEvent, id: string) => void;
   beginLineDrag: (e: ReactPointerEvent, id: string) => void;
   beginLineEndDrag: (e: ReactPointerEvent, id: string, which: LineHandle) => void;
@@ -5094,38 +5111,135 @@ export function useEditorState(): EditorController {
    * 스냅샷인 이유: 끄는 동안 매번 다시 판정하면 프레임이 지나가는 자리의 객체를
    * 주워 담았다 흘렸다 한다. 잡은 순간 화면에 보이던 것들이 함께 간다.
    */
-  const frameCarry = useCallback((z: Zone): CarrySnapshot => {
+  /**
+   * 이 프레임이 담고 있는 것들 — id와 **경계 상자**를 함께 돌려준다(소속 판정은
+   * `frames.ts` 한 곳: 중심이 사각형 안이면 소속). 옮기기(carry)·크기 맞춤·
+   * 내용째 삭제가 전부 이 하나를 쓴다 — 세 동작이 같은 것을 담아야 한다.
+   */
+  const frameMembers = useCallback((z: Zone): { ids: FrameMemberIds; boxes: ArrangeBox[] } => {
     const d = docRef.current;
     const rect = { x: z.x, y: z.y, w: z.w, h: z.h };
-    const carry: CarrySnapshot = { zones: { [z.id]: { x: z.x, y: z.y } }, floats: {}, lines: {}, strokes: {}, nodes: {} };
-    idsInFrame(rect, d.floats.map((f) => ({ id: f.id, x: f.x, y: f.y, w: f.w, h: floatBoxH(f) }))).forEach((fid) => {
-      const f = d.floats.find((x) => x.id === fid);
-      if (f) carry.floats[fid] = { x: f.x, y: f.y };
-    });
-    // 안에 든 프레임도 함께(중첩) — 자기 자신은 위에서 이미 담았다.
-    idsInFrame(rect, d.zones.filter((o) => o.id !== z.id).map((o) => ({ id: o.id, x: o.x, y: o.y, w: o.w, h: o.h }))).forEach((zid) => {
-      const o = d.zones.find((x) => x.id === zid);
-      if (o) carry.zones[zid] = { x: o.x, y: o.y };
+    const ids: FrameMemberIds = { floats: [], zones: [], lines: [], strokes: [], nodes: [] };
+    const boxes: ArrangeBox[] = [];
+    const take = (box: IdBox, bucket: keyof FrameMemberIds): void => {
+      if (!idsInFrame(rect, [box]).length) return;
+      ids[bucket].push(box.id);
+      boxes.push({ x: box.x, y: box.y, w: box.w, h: box.h });
+    };
+    d.floats.forEach((f) => take({ id: f.id, x: f.x, y: f.y, w: f.w, h: floatBoxH(f) }, 'floats'));
+    // 안에 든 프레임도 함께(중첩) — 자기 자신은 대상이 아니다.
+    d.zones.forEach((o) => {
+      if (o.id !== z.id) take({ id: o.id, x: o.x, y: o.y, w: o.w, h: o.h }, 'zones');
     });
     // 앵커가 걸린 선은 붙은 객체를 따라 저절로 움직이므로 **담지 않는다**(담으면 두 번 움직인다).
     d.lines.forEach((l) => {
       if (l.a1 || l.a2) return;
-      const box = { id: l.id, x: Math.min(l.x1, l.x2), y: Math.min(l.y1, l.y2), w: Math.abs(l.x2 - l.x1), h: Math.abs(l.y2 - l.y1) };
-      if (idsInFrame(rect, [box]).length) carry.lines[l.id] = { x1: l.x1, y1: l.y1, x2: l.x2, y2: l.y2 };
+      take({ id: l.id, x: Math.min(l.x1, l.x2), y: Math.min(l.y1, l.y2), w: Math.abs(l.x2 - l.x1), h: Math.abs(l.y2 - l.y1) }, 'lines');
     });
-    (d.strokes ?? []).forEach((s) => {
-      const b = strokeBounds(s);
-      if (b && idsInFrame(rect, [{ id: s.id, x: b.x0, y: b.y0, w: b.x1 - b.x0, h: b.y1 - b.y0 }]).length) carry.strokes[s.id] = s.pts;
+    (d.strokes ?? []).forEach((st) => {
+      const b = strokeBounds(st);
+      if (b) take({ id: st.id, x: b.x0, y: b.y0, w: b.x1 - b.x0, h: b.y1 - b.y0 }, 'strokes');
     });
     // 자유 주제(트리에 붙지 않은 루트)만 — 붙은 노드는 레이아웃이 자리를 정한다.
     Object.entries(d.nodes).forEach(([nid, n]) => {
       if (!n.free || n.parent) return;
       const g = geomRef.current[nid];
-      if (!g) return;
-      if (idsInFrame(rect, [{ id: nid, x: g.x - g.w / 2, y: g.y - g.h / 2, w: g.w, h: g.h }]).length) carry.nodes[nid] = { x: n.x, y: n.y };
+      if (g) take({ id: nid, x: g.x - g.w / 2, y: g.y - g.h / 2, w: g.w, h: g.h }, 'nodes');
     });
-    return carry;
+    return { ids, boxes };
   }, []);
+
+  const frameCarry = useCallback(
+    (z: Zone): CarrySnapshot => {
+      const d = docRef.current;
+      const { ids } = frameMembers(z);
+      const carry: CarrySnapshot = { zones: { [z.id]: { x: z.x, y: z.y } }, floats: {}, lines: {}, strokes: {}, nodes: {} };
+      ids.floats.forEach((id) => {
+        const f = d.floats.find((x) => x.id === id);
+        if (f) carry.floats[id] = { x: f.x, y: f.y };
+      });
+      ids.zones.forEach((id) => {
+        const o = d.zones.find((x) => x.id === id);
+        if (o) carry.zones[id] = { x: o.x, y: o.y };
+      });
+      ids.lines.forEach((id) => {
+        const l = d.lines.find((x) => x.id === id);
+        if (l) carry.lines[id] = { x1: l.x1, y1: l.y1, x2: l.x2, y2: l.y2 };
+      });
+      ids.strokes.forEach((id) => {
+        const st = (d.strokes ?? []).find((x) => x.id === id);
+        if (st) carry.strokes[id] = st.pts;
+      });
+      ids.nodes.forEach((id) => {
+        const n = d.nodes[id];
+        if (n) carry.nodes[id] = { x: n.x, y: n.y };
+      });
+      return carry;
+    },
+    [frameMembers],
+  );
+
+  /**
+   * 프레임 크기를 **내용에 맞춘다**(요청) — 담고 있는 것들을 감싸고 여백을 준다.
+   *
+   * 빈 프레임은 아무것도 하지 않는다(맞출 내용이 없다 — 최소 크기로 오그라들면
+   * 방금 그려 둔 빈 칸이 사라진 것처럼 보인다). 최소 크기는 손잡이 드래그와 같다.
+   */
+  const fitFrameToContents = useCallback(
+    (id: string) => {
+      if (readOnlyRef.current) return;
+      const z = docRef.current.zones.find((x) => x.id === id);
+      if (!z) return;
+      const { boxes } = frameMembers(z);
+      if (!boxes.length) return;
+      const minX = Math.min(...boxes.map((b) => b.x));
+      const minY = Math.min(...boxes.map((b) => b.y));
+      const maxX = Math.max(...boxes.map((b) => b.x + b.w));
+      const maxY = Math.max(...boxes.map((b) => b.y + b.h));
+      const x = Math.round(minX - FRAME_FIT_PAD);
+      const y = Math.round(minY - FRAME_FIT_PAD);
+      const w = Math.max(160, Math.round(maxX - minX + FRAME_FIT_PAD * 2));
+      const h = Math.max(100, Math.round(maxY - minY + FRAME_FIT_PAD * 2));
+      commitDoc((d) => ({ ...d, zones: mutations.updateZoneItem(d.zones, id, { x, y, w, h }) }));
+    },
+    [commitDoc, frameMembers],
+  );
+
+  /**
+   * 프레임과 **그 안의 것을 함께** 지운다(요청) — 평범한 삭제는 비파괴로 남긴다
+   * (프레임만 사라지고 내용은 제자리). 열 하나를 통째로 버릴 때 안의 스티커를
+   * 따로 골라 지우지 않아도 되게, 두 동작을 메뉴에서 나란히 내준다.
+   */
+  const deleteFrameWithContents = useCallback(
+    (id: string) => {
+      if (readOnlyRef.current) return;
+      const z = docRef.current.zones.find((x) => x.id === id);
+      if (!z) return;
+      const { ids } = frameMembers(z);
+      const gone = {
+        floats: new Set(ids.floats),
+        lines: new Set(ids.lines),
+        strokes: new Set(ids.strokes),
+        zones: new Set([id, ...ids.zones]),
+      };
+      commitDoc((d) => {
+        const next: Doc = {
+          ...d,
+          // 자유 주제는 **서브트리째** 사라진다(다중 삭제와 같은 규칙).
+          nodes: ids.nodes.length ? mutations.deleteNodesMulti(d.nodes, ids.nodes) : d.nodes,
+          floats: d.floats.filter((f) => !gone.floats.has(f.id)),
+          lines: d.lines.filter((l) => !gone.lines.has(l.id)),
+          zones: d.zones.filter((zz) => !gone.zones.has(zz.id)),
+        };
+        const strokes = (d.strokes ?? []).filter((st) => !gone.strokes.has(st.id));
+        if (d.strokes) next.strokes = strokes;
+        return dropOrphanReactions(next);
+      });
+      setSelectionState(null);
+      setEditingZoneId(null);
+    },
+    [commitDoc, frameMembers],
+  );
 
   const beginZoneDrag = useCallback((e: ReactPointerEvent, id: string) => {
     if (isPanButton(e)) return; // 우클릭·휠클릭 = 화면 이동 (배경으로 흘려보낸다)
@@ -5794,6 +5908,8 @@ export function useEditorState(): EditorController {
     beginFloatDrag,
     beginFloatResize,
     beginZoneDrag,
+    fitFrameToContents,
+    deleteFrameWithContents,
     beginZoneResize,
     beginLineDrag,
     beginLineEndDrag,

@@ -1289,6 +1289,107 @@ describe('화이트보드 에디터', () => {
     });
   });
 
+  it('프레임 "내용에 맞추기" — 안에 든 것을 감싸도록 크기가 줄어든다(요청)', async () => {
+    localStorage.setItem(
+      'mindflow_doc_b46',
+      JSON.stringify({
+        ...BOARD,
+        // 넓은 프레임 안에 메모 둘 — 실제 내용은 왼쪽 위에 몰려 있다.
+        zones: [{ id: 'z1', x: -600, y: -400, w: 1200, h: 800, label: '구획', color: null }],
+        floats: [
+          { id: 'f1', x: -400, y: -300, w: 200, h: 90, text: '하나' },
+          { id: 'f2', x: -140, y: -180, w: 200, h: 90, text: '둘' },
+        ],
+      }),
+    );
+    const { container } = renderEditor('/editor?map=b46&title=x');
+    const zone = await waitFor(() => {
+      const found = container.querySelector('[data-zone-hit="z1"]') as HTMLElement;
+      expect(found).toBeTruthy();
+      return found;
+    });
+    firePointer(zone, 'pointerdown', { pointerId: 66, clientX: 300, clientY: 300, button: 0 });
+    firePointer(document.body, 'pointerup', { pointerId: 66, clientX: 300, clientY: 300 });
+    fireEvent.contextMenu(zone, { clientX: 300, clientY: 300 });
+    fireEvent.mouseDown(await screen.findByText('내용에 맞추기'));
+    fireEvent.keyDown(window, { key: 's', ctrlKey: true });
+
+    await waitFor(() => {
+      const saved = JSON.parse(localStorage.getItem('mindflow_doc_b46') || 'null');
+      const z = saved.zones[0];
+      // 여백 28을 두고 두 메모를 감싼다 — 내용 상자는 (-400,-300)~(60,-90).
+      expect(z.x).toBe(-428);
+      expect(z.y).toBe(-328);
+      expect(z.w).toBe(516); // 460 + 28*2
+      expect(z.h).toBe(266); // 210 + 28*2
+      // 메모는 움직이지 않는다(프레임만 맞춘다).
+      expect(saved.floats[0]).toMatchObject({ x: -400, y: -300 });
+    });
+  });
+
+  it('빈 프레임은 "내용에 맞추기"가 아무 일도 하지 않는다', async () => {
+    localStorage.setItem(
+      'mindflow_doc_b47',
+      JSON.stringify({ ...BOARD, zones: [{ id: 'z1', x: -300, y: -200, w: 600, h: 400, label: '빈 칸', color: null }], floats: [] }),
+    );
+    const { container } = renderEditor('/editor?map=b47&title=x');
+    const zone = await waitFor(() => {
+      const found = container.querySelector('[data-zone-hit="z1"]') as HTMLElement;
+      expect(found).toBeTruthy();
+      return found;
+    });
+    firePointer(zone, 'pointerdown', { pointerId: 67, clientX: 300, clientY: 300, button: 0 });
+    firePointer(document.body, 'pointerup', { pointerId: 67, clientX: 300, clientY: 300 });
+    fireEvent.contextMenu(zone, { clientX: 300, clientY: 300 });
+    fireEvent.mouseDown(await screen.findByText('내용에 맞추기'));
+    fireEvent.keyDown(window, { key: 's', ctrlKey: true });
+    await waitFor(() => {
+      const saved = JSON.parse(localStorage.getItem('mindflow_doc_b47') || 'null');
+      expect(saved.zones[0]).toMatchObject({ x: -300, y: -200, w: 600, h: 400 });
+    });
+  });
+
+  it('"내용까지 삭제"는 프레임과 안의 것을 함께 지운다 — 밖의 것은 남는다(undo 한 번)', async () => {
+    localStorage.setItem(
+      'mindflow_doc_b48',
+      JSON.stringify({
+        ...BOARD,
+        zones: [{ id: 'z1', x: -400, y: -200, w: 360, h: 260, label: '구획', color: null }],
+        floats: [
+          { id: 'inside', x: -300, y: -100, w: 160, h: 80, text: '안' },
+          { id: 'outside', x: 300, y: 300, w: 160, h: 80, text: '밖' },
+        ],
+        strokes: [{ id: 's1', pts: [-350, -150, -300, -120], color: '#111', w: 4 }],
+      }),
+    );
+    const { container } = renderEditor('/editor?map=b48&title=x');
+    const zone = await waitFor(() => {
+      const found = container.querySelector('[data-zone-hit="z1"]') as HTMLElement;
+      expect(found).toBeTruthy();
+      return found;
+    });
+    firePointer(zone, 'pointerdown', { pointerId: 68, clientX: 300, clientY: 300, button: 0 });
+    firePointer(document.body, 'pointerup', { pointerId: 68, clientX: 300, clientY: 300 });
+    fireEvent.contextMenu(zone, { clientX: 300, clientY: 300 });
+    fireEvent.mouseDown(await screen.findByText('내용까지 삭제'));
+    fireEvent.keyDown(window, { key: 's', ctrlKey: true });
+    await waitFor(() => {
+      const saved = JSON.parse(localStorage.getItem('mindflow_doc_b48') || 'null');
+      expect(saved.zones).toHaveLength(0);
+      expect(saved.floats.map((f: { id: string }) => f.id)).toEqual(['outside']);
+      expect(saved.strokes ?? []).toHaveLength(0);
+    });
+
+    fireEvent.keyDown(window, { key: 'z', ctrlKey: true });
+    fireEvent.keyDown(window, { key: 's', ctrlKey: true });
+    await waitFor(() => {
+      const saved = JSON.parse(localStorage.getItem('mindflow_doc_b48') || 'null');
+      expect(saved.zones).toHaveLength(1);
+      expect(saved.floats).toHaveLength(2);
+      expect(saved.strokes).toHaveLength(1);
+    });
+  });
+
   it('그리기 획도 Ctrl+C/V로 복사된다(요청)', async () => {
     localStorage.setItem(
       'mindflow_doc_b41',

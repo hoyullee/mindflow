@@ -337,7 +337,7 @@ describe('Context menu — float / line / zone', () => {
     });
   });
 
-  it('zone right-click shows 이름 편집/삭제; 이름 편집 enters inline editing', async () => {
+  it('zone right-click shows 이름 편집/내용에 맞추기/삭제 두 갈래; 이름 편집 enters inline editing', async () => {
     localStorage.setItem('mindflow_doc_cm6', JSON.stringify(DOC));
     const { container } = renderEditor('/editor?map=cm6&title=x');
     const vp = getViewport(container);
@@ -355,7 +355,10 @@ describe('Context menu — float / line / zone', () => {
     });
     const scoped = within(menu);
     expect(scoped.getByText('이름 편집')).toBeTruthy();
-    expect(scoped.getByText('삭제')).toBeTruthy();
+    expect(scoped.getByText('내용에 맞추기')).toBeTruthy();
+    // 삭제는 둘로 나뉜다 — 프레임만(비파괴) / 내용까지.
+    expect(scoped.getByText('프레임만 삭제')).toBeTruthy();
+    expect(scoped.getByText('내용까지 삭제')).toBeTruthy();
     fireEvent.mouseDown(scoped.getByText('이름 편집'));
 
     await waitFor(() => expect(within(container).getByDisplayValue('1분기')).toBeTruthy());
