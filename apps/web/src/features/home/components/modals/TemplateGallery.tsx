@@ -96,17 +96,6 @@ const TEMPLATE_ICON_PATHS: Record<string, JSX.Element> = {
       <path d="M9.5 12.2 11.6 14.4 15 10.6" />
     </>
   ),
-  // 세 열 — 할 일/진행 중/완료
-  'board-kanban': (
-    <>
-      <rect x="2.5" y="4" width="5.5" height="16" rx="1.4" />
-      <rect x="9.25" y="4" width="5.5" height="16" rx="1.4" />
-      <rect x="16" y="4" width="5.5" height="16" rx="1.4" />
-      <path d="M4 8h2.5" />
-      <path d="M10.75 8h2.5" />
-      <path d="M17.5 8h2.5" />
-    </>
-  ),
   // 2×2 사분면 — 임팩트·노력으로 나눈 네 칸
   'board-priority': (
     <>
