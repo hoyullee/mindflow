@@ -85,6 +85,7 @@ export function LineLayer({ lines, theme: th, controller }: LineLayerProps) {
     paths.push(
       <path
         key={`v${l.id}`}
+        data-line-id={l.id}
         d={dv}
         fill="none"
         stroke={l.color || col}

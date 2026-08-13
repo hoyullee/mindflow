@@ -132,12 +132,19 @@ export function EditMenu({ controller, onDone, isMobile }: { controller: EditorC
 
 export function InsertMenu({ controller, onDone, isMobile }: { controller: EditorController; onDone: () => void; isMobile?: boolean }) {
   const th = controller.uiTheme;
-  // 화이트보드는 **메모·이미지만** — 주제/선/영역은 일부러 내주지 않는다(허들 없는
-  // 메모 보드라는 정체성을 지키는 선, 사용자 결정).
+  // 화이트보드의 어휘: 메모·이미지 + **연결선·영역**(요청). 스티커끼리 잇는 화살표와
+  // 스티커를 담는 구획은 화이트보드의 기본 도구다 — 모델·렌더·마그넷 앵커
+  // (`LineAnchor{kind:'float'}`)가 이미 있어서 M2에서 감췄던 진입점만 되돌려 놓으면 된다.
+  // **주제(트리 노드)만은 계속 내주지 않는다** — 보드에는 레이아웃할 트리가 없다.
+  // (보드에서 이 메뉴 자체는 GNB에 뜨지 않는다 — Toolbar가 감추고 하단 도구 막대와
+  //  배경 우클릭이 삽입을 맡는다. 목록은 그 게이트가 바뀌어도 어휘가 어긋나지
+  //  않도록 board 분기를 유지한다.)
   const items: { icon: ReactNode; label: string; run: () => void }[] = controller.isBoard
     ? [
         { icon: <MemoIcon />, label: '메모 추가', run: () => controller.addFloatAt() },
         { icon: <ImageIcon />, label: '이미지 추가', run: () => controller.promptAddImage() },
+        { icon: <LineIcon />, label: '연결선 추가', run: () => controller.addLineAt() },
+        { icon: <ZoneIcon />, label: '영역 추가', run: () => controller.addZoneAt() },
       ]
     : [
         { icon: <ShapeIcon />, label: '주제 추가', run: () => controller.addFreeNodeAt() },
