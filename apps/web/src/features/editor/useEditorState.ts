@@ -30,6 +30,8 @@ import type { EdgeStyle } from './tree';
 import { nearestInDirection } from './navigation';
 import { alignGuides, arrangeDeltas, snapValue } from './arrange';
 import type { ArrangeBox, ArrangeOp, SnapGuide } from './arrange';
+import { idsInFrame, innermostFrameFor } from './frames';
+import type { IdBox } from './frames';
 import type { NavDir, NavPoint } from './navigation';
 import { UI_THEME, themeOf, themeKeyOf } from './theme';
 import type { Theme, ThemeKey } from './theme';
@@ -160,6 +162,19 @@ interface Snapshot {
   reactions: Reaction[];
 }
 
+/** 프레임이 담고 가는 것들의 **원본 좌표**(끌기 시작 시점). 종류마다 좌표를 담는
+ * 방식이 달라 각자의 형태로 들고 있다가, 이동은 각 종류의 평행이동 변형에 맡긴다. */
+interface CarrySnapshot {
+  /** 자기 자신 + 안에 든 프레임들. */
+  zones: Record<string, { x: number; y: number }>;
+  floats: Record<string, { x: number; y: number }>;
+  /** 앵커가 없는 연결선만 — 앵커 걸린 선은 붙은 객체를 따라 저절로 움직인다. */
+  lines: Record<string, { x1: number; y1: number; x2: number; y2: number }>;
+  strokes: Record<string, number[]>;
+  /** 자유 주제(트리에 붙지 않은 루트)만 — 붙은 노드는 레이아웃이 자리를 정한다. */
+  nodes: Record<string, { x: number; y: number }>;
+}
+
 type ObjDrag =
   | { kind: 'root'; pointerId: number; startClientX: number; startClientY: number; startAnchor: PanState }
   /** Unified free/attached node drag — port of `Component#onMove`'s `d.type === 'node'` branch
@@ -181,7 +196,20 @@ type ObjDrag =
       tlX: number; tlY: number; anchorable: boolean }
   | { kind: 'float'; id: string; pointerId: number; startClientX: number; startClientY: number; ox: number; oy: number }
   | { kind: 'float-resize'; id: string; pointerId: number; startClientX: number; startClientY: number; ow: number; oh: number }
-  | { kind: 'zone'; id: string; pointerId: number; startClientX: number; startClientY: number; ox: number; oy: number }
+  /** 프레임 드래그 — 프레임은 **그릇**이라 안에 든 것들이 함께 움직인다.
+   * 소속은 잡는 순간 기하로 정해 스냅샷으로 들고 간다(`carry`): 끄는 동안 프레임이
+   * 지나가는 다른 객체를 주워 담지 않도록. 좌표는 전부 **원본 기준**으로 매번 다시
+   * 계산한다(누적하지 않는다 — 획·그룹 드래그와 같은 규칙). */
+  | {
+      kind: 'zone';
+      id: string;
+      pointerId: number;
+      startClientX: number;
+      startClientY: number;
+      ox: number;
+      oy: number;
+      carry: CarrySnapshot;
+    }
   | { kind: 'zone-resize'; id: string; pointerId: number; startClientX: number; startClientY: number; ow: number; oh: number }
   | { kind: 'line-move'; id: string; pointerId: number; startClientX: number; startClientY: number; o: { x1: number; y1: number; x2: number; y2: number } }
   | { kind: 'line-end'; id: string; which: LineHandle; pointerId: number; startClientX: number; startClientY: number; ox: number; oy: number }
@@ -477,6 +505,8 @@ export interface EditorController {
   setSnapGrid: (on: boolean) => void;
   /** 지금 그려야 할 맞춤 안내선 — 끌고 있는 동안만 채워진다(놓으면 빈 배열). */
   snapGuides: SnapGuide[];
+  /** 지금 끌고 있는 것이 담길 프레임 id — 그 테두리를 강조한다(끄는 동안만). */
+  frameDrop: string | null;
   /** 현재 선택(단일/다중)을 클립보드에 담는다. 담을 게 없으면(루트만 선택 등)
    * `false`를 돌려주고 기존 클립보드는 그대로 둔다. */
   copySelection: () => boolean;
@@ -4290,6 +4320,19 @@ export function useEditorState(): EditorController {
   const snapGridRef = useRef(snapGrid);
   snapGridRef.current = snapGrid;
   const [snapGuides, setSnapGuides] = useState<SnapGuide[]>([]);
+  /** 지금 끌고 있는 것이 들어갈 프레임 — 끄는 동안 그 프레임의 테두리를 강조해
+   * "여기에 담긴다"를 알린다(폴더 드래그앤드롭과 같은 어포던스). 소속 자체는
+   * 기하로 정해지므로 이 값은 순수한 표시이고, 손을 떼면 지운다. */
+  const [frameDrop, setFrameDropState] = useState<string | null>(null);
+  const setFrameDrop = useCallback((id: string | null) => setFrameDropState((prev) => (prev === id ? prev : id)), []);
+  /** 프레임이 담고 가는 모든 id — 맞춤(안내선) 기준에서 빼는 데 쓴다. */
+  const carriedIds = (carry: CarrySnapshot): Set<string> =>
+    new Set([...Object.keys(carry.zones), ...Object.keys(carry.floats), ...Object.keys(carry.lines), ...Object.keys(carry.strokes), ...Object.keys(carry.nodes)]);
+  /** 담고 가는 프레임들을 뺀 나머지 프레임 상자 — 프레임을 다른 프레임에 넣을 때의 강조용. */
+  const otherFrameBoxes = (carried: Record<string, { x: number; y: number }>): IdBox[] =>
+    docRef.current.zones.filter((z) => !carried[z.id]).map((z) => ({ id: z.id, x: z.x, y: z.y, w: z.w, h: z.h }));
+  /** 지금 끌고 있는 상자가 들어갈 프레임(가장 안쪽). */
+  const frameFor = (box: ArrangeBox): string | null => innermostFrameFor(otherFrameBoxes({}), box);
 
   /**
    * 끌고 있는 상자를 **이웃에 먼저**, 없으면 격자에 맞춘다(요청: 스마트 가이드).
@@ -4302,23 +4345,25 @@ export function useEditorState(): EditorController {
    * (트리 노드는 옮길 수 없지만 맞출 기준으로는 훌륭하다 — 오히려 그래서 좋다).
    * 연결선·획은 상자 경계가 모호해 뺐다.
    */
-  const snapDragBox = useCallback((box: ArrangeBox, excludeId: string, on: boolean): { x: number; y: number } => {
+  const snapDragBox = useCallback((box: ArrangeBox, exclude: string | Set<string>, on: boolean): { x: number; y: number } => {
     if (!on) {
       setSnapGuides((prev) => (prev.length ? [] : prev));
       return { x: box.x, y: box.y };
     }
+    const skip = typeof exclude === 'string' ? new Set([exclude]) : exclude;
     const d = docRef.current;
     const others: ArrangeBox[] = [];
     d.floats.forEach((f) => {
-      if (f.id === excludeId) return;
+      if (skip.has(f.id)) return;
       others.push({ x: f.x, y: f.y, w: f.w, h: floatBoxH(f) });
     });
     d.zones.forEach((z) => {
-      if (z.id === excludeId) return;
+      if (skip.has(z.id)) return;
       others.push({ x: z.x, y: z.y, w: z.w, h: z.h });
     });
     const g = geomRef.current;
     for (const id in g) {
+      if (skip.has(id)) continue;
       const gg = g[id];
       if (gg) others.push({ x: gg.x - gg.w / 2, y: gg.y - gg.h / 2, w: gg.w, h: gg.h });
     }
@@ -4551,6 +4596,9 @@ export function useEditorState(): EditorController {
           const f0 = docRef.current.floats.find((x) => x.id === d.id);
           const box = { x: d.ox + dx, y: d.oy + dy, w: f0?.w ?? 200, h: f0 ? floatBoxH(f0) : 44 };
           const at = snapDragBox(box, d.id, on);
+          // 어느 프레임에 담기는지 알려 준다(프레임 = 그릇). 소속은 놓는 자리의 기하로
+          // 정해지므로 여기서 커밋할 것은 없다 — 테두리 강조만.
+          setFrameDrop(frameFor({ ...box, x: at.x, y: at.y }));
           commitDoc((doc0) => ({ ...doc0, floats: mutations.updateFloatItem(doc0.floats, d.id, { x: at.x, y: at.y }) }), true);
           break;
         }
@@ -4574,8 +4622,27 @@ export function useEditorState(): EditorController {
           const on = snapGridRef.current && !e.altKey;
           const z0 = docRef.current.zones.find((x) => x.id === d.id);
           const box = { x: d.ox + dx, y: d.oy + dy, w: z0?.w ?? 340, h: z0?.h ?? 220 };
-          const at = snapDragBox(box, d.id, on);
-          commitDoc((doc0) => ({ ...doc0, zones: mutations.updateZoneItem(doc0.zones, d.id, { x: at.x, y: at.y }) }), true);
+          // 담고 가는 것들은 맞춤 기준에서 뺀다 — 함께 움직이므로 자기 짐에 붙는 셈이다.
+          const at = snapDragBox(box, carriedIds(d.carry), on);
+          // 프레임 = 그릇: 자기 자신과 담은 것들이 **같은 델타**로 함께 움직인다.
+          // 델타는 스냅이 정한 최종 자리에서 나온다(맞춤이 걸리면 짐도 그만큼).
+          const mdx = at.x - d.ox;
+          const mdy = at.y - d.oy;
+          setFrameDrop(innermostFrameFor(otherFrameBoxes(d.carry.zones), { ...box, x: at.x, y: at.y }));
+          commitDoc(
+            (doc0) => ({
+              ...doc0,
+              zones: mutations.translateZonesBy(doc0.zones, d.carry.zones, mdx, mdy),
+              floats: mutations.translateFloatsBy(doc0.floats, d.carry.floats, mdx, mdy),
+              lines: mutations.translateLinesBy(doc0.lines, d.carry.lines, mdx, mdy),
+              nodes: mutations.translateNodesBy(doc0.nodes, d.carry.nodes, mdx, mdy),
+              strokes: (doc0.strokes ?? []).map((st) => {
+                const o = d.carry.strokes[st.id];
+                return o ? { ...st, pts: translateStrokePts(o, mdx, mdy) } : st;
+              }),
+            }),
+            true,
+          );
           break;
         }
         case 'zone-resize':
@@ -4590,15 +4657,18 @@ export function useEditorState(): EditorController {
             true,
           );
           break;
-        case 'stroke-move':
+        case 'stroke-move': {
           // 매 이동을 **원본 좌표 기준으로** 다시 계산한다(누적하지 않는다) —
           // 0.1 반올림이 쌓여 획이 뭉개지는 것을 막는다. continuous 커밋이라
           // 한 번의 드래그가 undo 한 단계로 합쳐진다(메모 드래그와 같은 결).
+          const sb = strokeBounds({ id: d.id, pts: translateStrokePts(d.o, dx, dy), color: '#000', w: 1 });
+          setFrameDrop(sb ? frameFor({ x: sb.x0, y: sb.y0, w: sb.x1 - sb.x0, h: sb.y1 - sb.y0 }) : null);
           commitDoc(
             (doc0) => ({ ...doc0, strokes: (doc0.strokes ?? []).map((s) => (s.id === d.id ? { ...s, pts: translateStrokePts(d.o, dx, dy) } : s)) }),
             true,
           );
           break;
+        }
         case 'line-move':
           commitDoc(
             (doc0) => ({ ...doc0, lines: mutations.updateLineItem(doc0.lines, d.id, { x1: d.o.x1 + dx, y1: d.o.y1 + dy, x2: d.o.x2 + dx, y2: d.o.y2 + dy }) }),
@@ -4633,8 +4703,9 @@ export function useEditorState(): EditorController {
       const d = objDragRef.current;
       if (!d) return;
       objDragRef.current = null;
-      // 안내선은 **끄는 동안에만** 뜬다 — 손을 떼면(취소돼도) 곧바로 지운다.
+      // 안내선·프레임 강조는 **끄는 동안에만** 뜬다 — 손을 떼면(취소돼도) 곧바로 지운다.
       setSnapGuides((prev) => (prev.length ? [] : prev));
+      setFrameDrop(null);
       // deferred right-click menu (macOS): see the identical block in the background
       // drag's `onUp`, above — this covers a right-click that landed on a NODE/FLOAT/
       // ZONE/LINE (their `begin*Drag` starters don't filter by button, matching the
@@ -4985,6 +5056,46 @@ export function useEditorState(): EditorController {
     startObjDrag({ kind: 'float-resize', id, pointerId: e.pointerId, startClientX: e.clientX, startClientY: e.clientY, ow: f.w, oh: floatBoxH(f) });
   }, []);
 
+  /**
+   * 프레임을 잡는 순간 **무엇을 담고 있는지**를 기하로 정해 좌표째 스냅샷한다
+   * (프레임 = 그릇). 소속 규칙은 `frames.ts` 한 곳 — 중심이 사각형 안이면 소속.
+   *
+   * 스냅샷인 이유: 끄는 동안 매번 다시 판정하면 프레임이 지나가는 자리의 객체를
+   * 주워 담았다 흘렸다 한다. 잡은 순간 화면에 보이던 것들이 함께 간다.
+   */
+  const frameCarry = useCallback((z: Zone): CarrySnapshot => {
+    const d = docRef.current;
+    const rect = { x: z.x, y: z.y, w: z.w, h: z.h };
+    const carry: CarrySnapshot = { zones: { [z.id]: { x: z.x, y: z.y } }, floats: {}, lines: {}, strokes: {}, nodes: {} };
+    idsInFrame(rect, d.floats.map((f) => ({ id: f.id, x: f.x, y: f.y, w: f.w, h: floatBoxH(f) }))).forEach((fid) => {
+      const f = d.floats.find((x) => x.id === fid);
+      if (f) carry.floats[fid] = { x: f.x, y: f.y };
+    });
+    // 안에 든 프레임도 함께(중첩) — 자기 자신은 위에서 이미 담았다.
+    idsInFrame(rect, d.zones.filter((o) => o.id !== z.id).map((o) => ({ id: o.id, x: o.x, y: o.y, w: o.w, h: o.h }))).forEach((zid) => {
+      const o = d.zones.find((x) => x.id === zid);
+      if (o) carry.zones[zid] = { x: o.x, y: o.y };
+    });
+    // 앵커가 걸린 선은 붙은 객체를 따라 저절로 움직이므로 **담지 않는다**(담으면 두 번 움직인다).
+    d.lines.forEach((l) => {
+      if (l.a1 || l.a2) return;
+      const box = { id: l.id, x: Math.min(l.x1, l.x2), y: Math.min(l.y1, l.y2), w: Math.abs(l.x2 - l.x1), h: Math.abs(l.y2 - l.y1) };
+      if (idsInFrame(rect, [box]).length) carry.lines[l.id] = { x1: l.x1, y1: l.y1, x2: l.x2, y2: l.y2 };
+    });
+    (d.strokes ?? []).forEach((s) => {
+      const b = strokeBounds(s);
+      if (b && idsInFrame(rect, [{ id: s.id, x: b.x0, y: b.y0, w: b.x1 - b.x0, h: b.y1 - b.y0 }]).length) carry.strokes[s.id] = s.pts;
+    });
+    // 자유 주제(트리에 붙지 않은 루트)만 — 붙은 노드는 레이아웃이 자리를 정한다.
+    Object.entries(d.nodes).forEach(([nid, n]) => {
+      if (!n.free || n.parent) return;
+      const g = geomRef.current[nid];
+      if (!g) return;
+      if (idsInFrame(rect, [{ id: nid, x: g.x - g.w / 2, y: g.y - g.h / 2, w: g.w, h: g.h }]).length) carry.nodes[nid] = { x: n.x, y: n.y };
+    });
+    return carry;
+  }, []);
+
   const beginZoneDrag = useCallback((e: ReactPointerEvent, id: string) => {
     if (isPanButton(e)) return; // 우클릭·휠클릭 = 화면 이동 (배경으로 흘려보낸다)
     if (e.pointerType === 'touch' && !isSelectedSingle('zone', id)) {
@@ -4997,8 +5108,8 @@ export function useEditorState(): EditorController {
     if (!z) return;
     setSelectionState({ kind: 'zone', id });
     setMultiSelectionState(null);
-    startObjDrag({ kind: 'zone', id, pointerId: e.pointerId, startClientX: e.clientX, startClientY: e.clientY, ox: z.x, oy: z.y });
-  }, []);
+    startObjDrag({ kind: 'zone', id, pointerId: e.pointerId, startClientX: e.clientX, startClientY: e.clientY, ox: z.x, oy: z.y, carry: frameCarry(z) });
+  }, [frameCarry]);
 
   const beginZoneResize = useCallback((e: ReactPointerEvent, id: string) => {
     if (isPanButton(e)) return; // 우클릭·휠클릭 = 화면 이동 (배경으로 흘려보낸다)
@@ -5566,6 +5677,7 @@ export function useEditorState(): EditorController {
     snapGrid,
     setSnapGrid,
     snapGuides,
+    frameDrop,
     copySelection,
     cutSelection,
     pasteClipboardAt,

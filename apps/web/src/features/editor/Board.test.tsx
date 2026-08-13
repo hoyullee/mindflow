@@ -1289,6 +1289,138 @@ describe('화이트보드 에디터', () => {
     });
   });
 
+  it('프레임은 그릇 — 끌면 안에 든 메모·획이 함께 오고, 밖의 것은 그대로다(undo도 한 번, 요청)', async () => {
+    localStorage.setItem(
+      'mindflow_doc_b37',
+      JSON.stringify({
+        ...BOARD,
+        zones: [{ id: 'z1', x: -400, y: -200, w: 360, h: 260, label: 'Keep', color: null }],
+        floats: [
+          { id: 'inside', x: -300, y: -100, w: 160, h: 80, text: '안' },
+          { id: 'outside', x: 200, y: 200, w: 160, h: 80, text: '밖' },
+        ],
+        strokes: [{ id: 's1', pts: [-350, -150, -300, -120], color: '#111', w: 4 }],
+      }),
+    );
+    const { container } = renderEditor('/editor?map=b37&title=x');
+    const zone = await waitFor(() => {
+      const found = container.querySelector('[data-zone-hit="z1"]') as HTMLElement;
+      expect(found).toBeTruthy();
+      return found;
+    });
+    const zoom = Number(/scale\(([\d.]+)\)/.exec((container.querySelector('[data-pan-layer]') as HTMLElement).style.transform || '')?.[1] ?? 1);
+
+    // 프레임을 (+120, +80)만큼 끈다 — 격자(10)의 배수라 스냅이 델타를 바꾸지 않는다.
+    firePointer(zone, 'pointerdown', { pointerId: 51, clientX: 300, clientY: 300, button: 0 });
+    firePointer(document.body, 'pointermove', { pointerId: 51, clientX: 300 + 120 * zoom, clientY: 300 + 80 * zoom });
+    firePointer(document.body, 'pointerup', { pointerId: 51, clientX: 300 + 120 * zoom, clientY: 300 + 80 * zoom });
+    fireEvent.keyDown(window, { key: 's', ctrlKey: true });
+    await waitFor(() => {
+      const saved = JSON.parse(localStorage.getItem('mindflow_doc_b37') || 'null');
+      expect(saved.zones[0].x).toBe(-280); // -400 + 120
+      const by = Object.fromEntries(saved.floats.map((f: { id: string; x: number; y: number }) => [f.id, f]));
+      expect(by.inside).toMatchObject({ x: -180, y: -20 }); // 함께 왔다
+      expect(by.outside).toMatchObject({ x: 200, y: 200 }); // 밖은 그대로
+      expect(saved.strokes[0].pts.slice(0, 2)).toEqual([-230, -70]); // 잉크도 함께
+    });
+
+    // 한 번의 드래그 = undo 한 단계 — 프레임과 짐이 함께 되돌아온다.
+    fireEvent.keyDown(window, { key: 'z', ctrlKey: true });
+    fireEvent.keyDown(window, { key: 's', ctrlKey: true });
+    await waitFor(() => {
+      const saved = JSON.parse(localStorage.getItem('mindflow_doc_b37') || 'null');
+      expect(saved.zones[0].x).toBe(-400);
+      expect(saved.floats.find((f: { id: string }) => f.id === 'inside').x).toBe(-300);
+      expect(saved.strokes[0].pts.slice(0, 2)).toEqual([-350, -150]);
+    });
+  });
+
+  it('프레임 밖으로 뺀 메모는 더 이상 따라오지 않는다(넣기·빼기는 놓는 자리로 정해진다)', async () => {
+    localStorage.setItem(
+      'mindflow_doc_b38',
+      JSON.stringify({
+        ...BOARD,
+        zones: [{ id: 'z1', x: -400, y: -200, w: 360, h: 260, label: '구획', color: null }],
+        floats: [{ id: 'f1', x: -300, y: -100, w: 160, h: 80, text: '안' }],
+      }),
+    );
+    const { container } = renderEditor('/editor?map=b38&title=x');
+    const memo = await waitFor(() => {
+      const found = container.querySelector('[data-float-id="f1"]') as HTMLElement;
+      expect(found).toBeTruthy();
+      return found;
+    });
+    const zoom = Number(/scale\(([\d.]+)\)/.exec((container.querySelector('[data-pan-layer]') as HTMLElement).style.transform || '')?.[1] ?? 1);
+
+    // 메모를 프레임 밖으로(오른쪽으로 500) 끈다. 끄는 동안엔 프레임 강조가 없다.
+    firePointer(memo, 'pointerdown', { pointerId: 52, clientX: 200, clientY: 200, button: 0 });
+    firePointer(document.body, 'pointermove', { pointerId: 52, clientX: 200 + 500 * zoom, clientY: 200 });
+    expect(container.querySelector('[data-frame-drop]')).toBeNull();
+    firePointer(document.body, 'pointerup', { pointerId: 52, clientX: 200 + 500 * zoom, clientY: 200 });
+
+    // 이제 프레임을 끌어도 그 메모는 남는다.
+    const zone = container.querySelector('[data-zone-hit="z1"]') as HTMLElement;
+    firePointer(zone, 'pointerdown', { pointerId: 53, clientX: 300, clientY: 300, button: 0 });
+    firePointer(document.body, 'pointermove', { pointerId: 53, clientX: 300 + 100 * zoom, clientY: 300 });
+    firePointer(document.body, 'pointerup', { pointerId: 53, clientX: 300 + 100 * zoom, clientY: 300 });
+    fireEvent.keyDown(window, { key: 's', ctrlKey: true });
+    await waitFor(() => {
+      const saved = JSON.parse(localStorage.getItem('mindflow_doc_b38') || 'null');
+      expect(saved.zones[0].x).toBe(-300);
+      expect(saved.floats[0].x).toBe(200); // -300 + 500, 프레임을 끌어도 그대로
+    });
+  });
+
+  it('프레임 위로 메모를 끌면 그 프레임이 강조되고, 놓으면 강조가 사라진다', async () => {
+    localStorage.setItem(
+      'mindflow_doc_b39',
+      JSON.stringify({
+        ...BOARD,
+        zones: [{ id: 'z1', x: -400, y: -200, w: 360, h: 260, label: '구획', color: null }],
+        floats: [{ id: 'f1', x: 200, y: 0, w: 160, h: 80, text: '밖' }],
+      }),
+    );
+    const { container } = renderEditor('/editor?map=b39&title=x');
+    const memo = await waitFor(() => {
+      const found = container.querySelector('[data-float-id="f1"]') as HTMLElement;
+      expect(found).toBeTruthy();
+      return found;
+    });
+    const zoom = Number(/scale\(([\d.]+)\)/.exec((container.querySelector('[data-pan-layer]') as HTMLElement).style.transform || '')?.[1] ?? 1);
+
+    firePointer(memo, 'pointerdown', { pointerId: 54, clientX: 200, clientY: 200, button: 0 });
+    firePointer(document.body, 'pointermove', { pointerId: 54, clientX: 200 - 500 * zoom, clientY: 200 - 60 * zoom });
+    expect(container.querySelector('[data-zone-id="z1"]')?.getAttribute('data-frame-drop')).toBe('1');
+    firePointer(document.body, 'pointerup', { pointerId: 54, clientX: 200 - 500 * zoom, clientY: 200 - 60 * zoom });
+    expect(container.querySelector('[data-frame-drop]')).toBeNull();
+  });
+
+  it('프레임을 지워도 안의 내용은 남는다(비파괴)', async () => {
+    localStorage.setItem(
+      'mindflow_doc_b40',
+      JSON.stringify({
+        ...BOARD,
+        zones: [{ id: 'z1', x: -400, y: -200, w: 360, h: 260, label: '구획', color: null }],
+        floats: [{ id: 'f1', x: -300, y: -100, w: 160, h: 80, text: '안' }],
+      }),
+    );
+    const { container } = renderEditor('/editor?map=b40&title=x');
+    const zone = await waitFor(() => {
+      const found = container.querySelector('[data-zone-hit="z1"]') as HTMLElement;
+      expect(found).toBeTruthy();
+      return found;
+    });
+    firePointer(zone, 'pointerdown', { pointerId: 55, clientX: 300, clientY: 300, button: 0 });
+    firePointer(document.body, 'pointerup', { pointerId: 55, clientX: 300, clientY: 300 });
+    fireEvent.keyDown(window, { key: 'Delete' });
+    fireEvent.keyDown(window, { key: 's', ctrlKey: true });
+    await waitFor(() => {
+      const saved = JSON.parse(localStorage.getItem('mindflow_doc_b40') || 'null');
+      expect(saved.zones).toHaveLength(0);
+      expect(saved.floats.map((f: { id: string }) => f.id)).toEqual(['f1']);
+    });
+  });
+
   it('스마트 가이드 — 이웃의 기준선에 붙고 그 자리에 안내선이 뜬다(격자보다 우선, 요청)', async () => {
     localStorage.setItem(
       'mindflow_doc_b35',

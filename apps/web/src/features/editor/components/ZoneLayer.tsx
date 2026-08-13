@@ -61,12 +61,16 @@ export function ZoneLayer({ zones, theme: th, controller }: ZoneLayerProps) {
         const col = z.color || th.accent;
         const selected = controller.selection?.kind === 'zone' && controller.selection.id === z.id;
         const editing = controller.editingZoneId === z.id;
+        // 지금 끌고 있는 것이 이 프레임에 담기는 중 — 테두리를 채워 "여기에 들어간다"를
+        // 알린다(프레임 = 그릇). 소속은 기하로 정해지므로 이건 순수한 어포던스다.
+        const dropping = controller.frameDrop === z.id;
         // presence: a remote peer's selection ring (see `NodeLayer`'s identical pattern).
         const remotePeer = peersSelecting(controller.presence.peers, 'zones', z.id)[0];
         return (
           <div
             key={z.id}
             data-zone-id={z.id}
+            data-frame-drop={dropping ? '1' : undefined}
             // 테두리·라벨 판 — 맨 위에 그리되 **포인터는 받지 않는다**(아래 면
             // 판이 받는다). 선택/드래그는 여전히 영역의 빈 자리를 클릭하는 것이고
             // (dc 원본의 whole-box 히트 테스트, MindFlow.dc.html:2822), 안의
@@ -79,10 +83,10 @@ export function ZoneLayer({ zones, theme: th, controller }: ZoneLayerProps) {
               width: z.w,
               height: z.h,
               background: 'transparent', // 면은 아래 판이 그린다(안의 색을 물들이지 않게)
-              border: `2px dashed ${hexA(col, selected ? 0.9 : 0.55)}`,
+              border: dropping ? `2px solid ${hexA(col, 1)}` : `2px dashed ${hexA(col, selected ? 0.9 : 0.55)}`,
               borderRadius: 16,
               boxSizing: 'border-box',
-              boxShadow: remotePeer ? `0 0 0 3px ${hexA(remotePeer.user.color, 0.85)}` : 'none',
+              boxShadow: remotePeer ? `0 0 0 3px ${hexA(remotePeer.user.color, 0.85)}` : dropping ? `0 0 0 4px ${hexA(col, 0.18)}` : 'none',
               pointerEvents: 'none',
               zIndex: ZONE_FRAME_Z,
             }}
