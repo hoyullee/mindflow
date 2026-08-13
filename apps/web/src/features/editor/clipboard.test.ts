@@ -51,7 +51,7 @@ describe('collectClipboard', () => {
 
   it('조상과 자손이 함께 선택되면 조상만 남긴다(같은 노드 두 번 복사 방지)', () => {
     const doc = baseDoc();
-    const clip = collectClipboard(doc, null, { nodes: ['A', 'A1'], floats: ['f1'], lines: [] })!;
+    const clip = collectClipboard(doc, null, { nodes: ['A', 'A1'], floats: ['f1'], lines: [], strokes: [] })!;
     expect(clip.nodeRoots).toEqual(['A']); // A1은 A의 서브트리로 따라온다
     expect(clip.nodes.map((n) => n.id).sort()).toEqual(['A', 'A1']);
     expect(clip.floats.map((f) => f.id)).toEqual(['f1']);
@@ -129,7 +129,7 @@ describe('pasteClipboard — 좌표에 붙여넣기', () => {
   it('여러 객체의 상대 위치를 유지한 채 지정 지점에 배치된다', () => {
     const doc = baseDoc();
     doc.floats.push(float('f2', 60, 30)); // f1(10,10)에서 (+50,+20)
-    const clip = collectClipboard(doc, null, { nodes: [], floats: ['f1', 'f2'], lines: [] })!;
+    const clip = collectClipboard(doc, null, { nodes: [], floats: ['f1', 'f2'], lines: [], strokes: [] })!;
     const out = pasteClipboard(doc, clip, { kind: 'point', x: 1000, y: 2000 }, ids())!;
 
     const added = out.doc.floats.slice(doc.floats.length);
@@ -142,7 +142,7 @@ describe('pasteClipboard — 좌표에 붙여넣기', () => {
   it('여럿을 붙이면 다중 선택으로 잡힌다', () => {
     const doc = baseDoc();
     doc.floats.push(float('f2', 60, 30));
-    const clip = collectClipboard(doc, null, { nodes: [], floats: ['f1', 'f2'], lines: [] })!;
+    const clip = collectClipboard(doc, null, { nodes: [], floats: ['f1', 'f2'], lines: [], strokes: [] })!;
     const out = pasteClipboard(doc, clip, { kind: 'point', x: 0, y: 0 }, ids())!;
     expect(out.selection).toBeNull();
     expect(out.multi!.floats).toHaveLength(2);
@@ -162,7 +162,7 @@ describe('pasteClipboard — 선 앵커', () => {
   it('함께 복사된 노드를 가리키던 앵커는 새 사본으로 다시 연결된다', () => {
     const doc = baseDoc();
     doc.lines = [line('l1', { a1: { kind: 'node', id: 'A' }, a2: { kind: 'node', id: 'B' } })];
-    const clip = collectClipboard(doc, null, { nodes: ['A', 'B'], floats: [], lines: ['l1'] })!;
+    const clip = collectClipboard(doc, null, { nodes: ['A', 'B'], floats: [], lines: ['l1'], strokes: [] })!;
     const out = pasteClipboard(doc, clip, { kind: 'point', x: 0, y: 0 }, ids())!;
 
     const added = out.doc.lines[out.doc.lines.length - 1]!;

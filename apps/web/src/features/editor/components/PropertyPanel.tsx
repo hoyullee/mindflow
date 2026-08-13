@@ -33,13 +33,15 @@ export function PropertyPanel({ controller }: PropertyPanelProps) {
   if (isMobile && !controller.propsOpen) return null;
   const sel = controller.selection;
   if (sel?.kind === 'zone') return <ZonePanel controller={controller} zoneId={sel.id} isMobile={isMobile} short={short} />;
-  // 그리기 획(화이트보드) — 마퀴에 담기지 않으므로 언제나 단일 선택이다.
-  if (sel?.kind === 'stroke') return <StrokePanel controller={controller} strokeId={sel.id} isMobile={isMobile} short={short} />;
 
   const m = controller.multiGroups;
-  const nodesOnly = m.nodes.length > 0 && !m.lines.length && !m.floats.length;
-  const linesOnly = m.lines.length > 0 && !m.nodes.length && !m.floats.length;
-  const floatsOnly = m.floats.length > 0 && !m.nodes.length && !m.lines.length;
+  const nodesOnly = m.nodes.length > 0 && !m.lines.length && !m.floats.length && !m.strokes.length;
+  const linesOnly = m.lines.length > 0 && !m.nodes.length && !m.floats.length && !m.strokes.length;
+  const floatsOnly = m.floats.length > 0 && !m.nodes.length && !m.lines.length && !m.strokes.length;
+  // 그리기 획 — 단일이든 마퀴 다중이든 같은 패널(요청). 다중이면 색·굵기는 어느
+  // 값도 활성으로 표시하지 않는다(섞여 있을 수 있다) — 고르면 전부에 적용.
+  const strokesOnly = m.strokes.length > 0 && !m.nodes.length && !m.lines.length && !m.floats.length;
+  if (strokesOnly) return <StrokePanel key={`strokes:${m.strokes.join(',')}`} controller={controller} strokeIds={m.strokes} isMobile={isMobile} short={short} />;
 
   // The `key` remounts the panel when the selection set changes, resetting each
   // panel's accordion (PanelSection) back to all-collapsed — matching the dc

@@ -9,6 +9,7 @@ import { Editor } from './Editor';
 import { mockMatchMedia } from '../../test/matchMedia';
 import { BOARD_TEMPLATES } from '../../templates/mapTemplates';
 import { HL_COLORS, HL_OPACITY, HL_WIDTHS, PEN_COLORS } from './boardTools';
+import { STROKE_Z } from './components/StrokeLayer';
 import { VOTE_EMOJI } from '@mindflow/mindmap-core';
 
 const BOARD = {
@@ -1066,5 +1067,91 @@ describe('화이트보드 에디터', () => {
     } finally {
       restore();
     }
+  });
+
+  it('영역은 시각이 **맨 위**, 포인터는 아래 판이 받는다 — 안의 객체 클릭이 살아 있다(요청)', () => {
+    localStorage.setItem(
+      'mindflow_doc_b28',
+      JSON.stringify({ ...BOARD, zones: [{ id: 'z1', x: -300, y: -200, w: 600, h: 400, label: '프레임', color: null }] }),
+    );
+    const { container } = renderEditor('/editor?map=b28&title=x');
+    const visual = container.querySelector('[data-zone-id="z1"]') as HTMLElement;
+    const hit = container.querySelector('[data-zone-hit="z1"]') as HTMLElement;
+    expect(visual).toBeTruthy();
+    expect(hit).toBeTruthy();
+    // 테두리·라벨 판은 잉크(90)보다 위 + 포인터를 받지 않는다.
+    expect(Number(visual.style.zIndex)).toBeGreaterThan(STROKE_Z);
+    expect(visual.style.pointerEvents).toBe('none');
+    // 올라가는 건 **테두리뿐** — 면(7%)까지 위로 오면 그 안의 노란 스티커·잉크가
+    // 통째로 물든다. 면은 아래 판이 그린다.
+    expect(visual.style.background).toBe('transparent');
+    expect(visual.style.border).toContain('dashed');
+    expect(hit.style.background).toMatch(/rgba\(/);
+    // 면·히트 판은 콘텐츠(메모 10 · 주제 40)보다 아래 — 안의 객체가 먼저 잡힌다.
+    expect(Number(hit.style.zIndex)).toBeLessThan(10);
+    // 같은 자리·같은 크기여야 "보이는 대로 잡힌다".
+    expect([hit.style.left, hit.style.top, hit.style.width, hit.style.height]).toEqual([visual.style.left, visual.style.top, visual.style.width, visual.style.height]);
+  });
+
+  it('마퀴로 획을 여러 개 고르면 선택 상자·다중 패널이 뜨고 한 번에 지워진다(요청)', async () => {
+    localStorage.setItem(
+      'mindflow_doc_b29',
+      JSON.stringify({
+        ...BOARD,
+        floats: [],
+        strokes: [
+          { id: 's1', pts: [-100, -60, -60, -20], color: '#d92626', w: 4 },
+          { id: 's2', pts: [20, -60, 60, -20], color: '#1a1a1a', w: 8 },
+          { id: 's3', pts: [400, 400, 440, 440], color: '#1a1a1a', w: 2 }, // 마퀴 밖
+        ],
+      }),
+    );
+    const { container } = renderEditor('/editor?map=b29&title=x');
+    await waitFor(() => expect(container.querySelectorAll('[data-stroke-id]')).toHaveLength(3));
+
+    // 배경 드래그(마퀴)로 앞의 두 획을 감싼다.
+    const vp = getViewport(container);
+    const a = strokePoint(container, -160, -120);
+    const b = strokePoint(container, 120, 40);
+    firePointer(vp, 'pointerdown', { pointerId: 5, clientX: a.x, clientY: a.y, button: 0 });
+    firePointer(document.body, 'pointermove', { pointerId: 5, clientX: b.x, clientY: b.y });
+    firePointer(document.body, 'pointerup', { pointerId: 5, clientX: b.x, clientY: b.y });
+
+    // 두 획에 점선 선택 상자가 뜬다(획에는 손잡이가 없다).
+    await waitFor(() => expect(container.querySelectorAll('[data-stroke-selection]')).toHaveLength(2));
+    // 속성 패널은 다중 — 색·굵기 중 활성(aria-pressed)인 것이 없다(값이 섞여 있다).
+    const panel = (await screen.findByText('그림 2개 선택됨')).parentElement!.parentElement!;
+    // 값이 섞여 있을 수 있으므로 색·굵기 중 어느 것도 활성으로 표시하지 않는다.
+    expect(panel.querySelectorAll('[aria-pressed="true"]')).toHaveLength(0);
+
+    // 삭제는 단일·다중 관계없이 — 고른 둘만 사라진다.
+    fireEvent.keyDown(window, { key: 'Delete' });
+    await waitFor(() => expect(container.querySelectorAll('[data-stroke-id]')).toHaveLength(1));
+    fireEvent.keyDown(window, { key: 's', ctrlKey: true });
+    await waitFor(() => {
+      const saved = JSON.parse(localStorage.getItem('mindflow_doc_b29') || 'null');
+      expect(saved?.strokes.map((s: { id: string }) => s.id)).toEqual(['s3']);
+    });
+  });
+
+  it('마퀴가 획을 하나만 물면 단일 선택으로 정규화된다(유령 상태 방지)', async () => {
+    localStorage.setItem(
+      'mindflow_doc_b30',
+      JSON.stringify({ ...BOARD, floats: [], strokes: [{ id: 's1', pts: [-100, -60, -60, -20], color: '#d92626', w: 4 }] }),
+    );
+    const { container } = renderEditor('/editor?map=b30&title=x');
+    await waitFor(() => expect(container.querySelectorAll('[data-stroke-id]')).toHaveLength(1));
+
+    const vp = getViewport(container);
+    const a = strokePoint(container, -160, -120);
+    const b = strokePoint(container, 0, 40);
+    firePointer(vp, 'pointerdown', { pointerId: 6, clientX: a.x, clientY: a.y, button: 0 });
+    firePointer(document.body, 'pointermove', { pointerId: 6, clientX: b.x, clientY: b.y });
+    firePointer(document.body, 'pointerup', { pointerId: 6, clientX: b.x, clientY: b.y });
+
+    // 단일 선택 패널(제목이 "선택한 그림")이고, Delete가 그대로 듣는다.
+    expect(await screen.findByText('펜 획')).toBeTruthy();
+    fireEvent.keyDown(window, { key: 'Delete' });
+    await waitFor(() => expect(container.querySelectorAll('[data-stroke-id]')).toHaveLength(0));
   });
 });

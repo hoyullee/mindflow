@@ -521,12 +521,14 @@ function buildPreview(rawDoc: string, hueFallback: string): JSX.Element | null {
   x1 += pad;
   y1 += pad;
 
+  // 면은 맨 아래, 테두리·라벨은 맨 위 — 에디터·내보내기와 같은 순서(요청).
+  const zoneFills = zones.map((z, i) => <rect key={`zf${i}`} x={z.x} y={z.y} width={z.w} height={z.h} rx={16} fill={hexA(z.color || hue || hueFallback, 0.07)} />);
   const zoneEls = zones.map((z, i) => {
     const zc = z.color || hue || hueFallback;
     const labelW = Math.min(z.w - 20, (z.label || '영역').length * 13 + 24);
     return (
       <g key={`z${i}`}>
-        <rect x={z.x} y={z.y} width={z.w} height={z.h} rx={16} fill={hexA(zc, 0.07)} stroke={hexA(zc, 0.55)} strokeWidth={2} strokeDasharray="7 5" />
+        <rect x={z.x} y={z.y} width={z.w} height={z.h} rx={16} fill="none" stroke={hexA(zc, 0.55)} strokeWidth={2} strokeDasharray="7 5" />
         <rect x={z.x + 10} y={z.y - 13} width={labelW} height={26} rx={13} fill={zc} />
         <text x={z.x + 10 + labelW / 2} y={z.y} textAnchor="middle" dominantBaseline="central" fontSize={12.5} fontWeight={700} fill="#fff" fontFamily="Pretendard, sans-serif">
           {z.label || '영역'}
@@ -810,12 +812,12 @@ function buildPreview(rawDoc: string, hueFallback: string): JSX.Element | null {
 
   return (
     <svg viewBox={`${x0} ${y0} ${x1 - x0} ${y1 - y0}`} width="88%" height="88%" preserveAspectRatio="xMidYMid meet" style={{ display: 'block' }}>
-      {zoneEls}
+      {zoneFills}
       {edges}
       {rects}
       {lineEls}
       {floatEls}
-      {/* 그리기 획은 에디터·내보내기와 같이 **맨 위**(객체를 덮는 잉크). */}
+      {/* 그리기 획은 에디터·내보내기와 같이 잉크가 객체를 덮는다. */}
       {strokes.map((st) => (
         <path
           key={`sk-${st.id}`}
@@ -828,6 +830,8 @@ function buildPreview(rawDoc: string, hueFallback: string): JSX.Element | null {
           {...(isHighlighter(st) ? { opacity: HL_OPACITY, style: { mixBlendMode: 'multiply' as const } } : {})}
         />
       ))}
+      {/* 영역(프레임)은 **맨 위** — 에디터·내보내기와 같은 순서(요청). */}
+      {zoneEls}
     </svg>
   );
 }
@@ -838,6 +842,32 @@ function buildPreview(rawDoc: string, hueFallback: string): JSX.Element | null {
  * `.map-thumb` box. */
 export function previewSkeleton(): JSX.Element {
   return <div className="mf-skel" aria-hidden="true" style={{ width: '100%', height: '100%' }} />;
+}
+
+/**
+ * 화이트보드용 폴백 삽화 — 본문을 아직 못 받았거나(백엔드 지연) 내용이 정말
+ * 비어 있는 보드 카드에 뜬다. 예전에는 종류와 무관하게 `miniPreview`(가지 뻗은
+ * 마인드맵)를 그려서 **화이트보드 배지가 붙은 카드에 마인드맵 그림**이 나왔다(제보).
+ *
+ * 그림은 갤러리의 '빈 화이트보드' 카드와 같은 어휘(스티커 두 장 + 사진 + 잉크
+ * 자국)로 그린다 — 같은 것을 가리키는 자리는 같은 그림이어야 한다. 색은 카드
+ * 색조(hue)를 따라 마인드맵 폴백과 톤이 어긋나지 않게.
+ */
+export function miniBoardPreview(hue: string): JSX.Element {
+  return (
+    <svg data-board-sketch viewBox="0 0 300 150" width="76%" height="76%" style={{ display: 'block' }}>
+      {/* 스티커 두 장 — 메모 카드(노란 종이)의 축소 */}
+      <rect x={38} y={30} width={92} height={62} rx={7} fill="#fdf3c7" stroke="#e6d38a" strokeWidth={1.6} />
+      <rect x={50} y={48} width={62} height={4} rx={2} fill="#c9b26a" opacity={0.75} />
+      <rect x={50} y={60} width={44} height={4} rx={2} fill="#c9b26a" opacity={0.55} />
+      <rect x={150} y={62} width={92} height={58} rx={7} fill="#fff" stroke={hexA(hue, 0.5)} strokeWidth={1.6} />
+      {/* 사진(이미지 플로트) — 산 능선 한 줄 */}
+      <path d={`M 156 112 l 18 -20 l 13 13 l 12 -12 l 26 27 Z`} fill={hexA(hue, 0.22)} />
+      <circle cx={170} cy={78} r={5} fill={hexA(hue, 0.35)} />
+      {/* 손으로 그은 잉크 한 줄 — 보드의 그리기 */}
+      <path d="M 44 116 C 74 104 96 128 124 116 S 168 132 196 126" stroke={hue} strokeWidth={3} fill="none" strokeLinecap="round" opacity={0.85} />
+    </svg>
+  );
 }
 
 /** Home.dc.html `miniPreview(hue, seed)` — deterministic decorative sketch for maps

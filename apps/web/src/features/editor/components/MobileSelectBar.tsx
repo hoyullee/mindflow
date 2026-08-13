@@ -172,7 +172,7 @@ export function MobileSelectBar({ controller, theme: th }: MobileSelectBarProps)
         </svg>
         속성
       </button>
-      <button type="button" className="mf-ed-btn" style={{ ...btn, color: '#d92626' }} onClick={() => (isStroke ? controller.deleteStroke(sel.id) : controller.deleteSelection())}>
+      <button type="button" className="mf-ed-btn" style={{ ...btn, color: '#d92626' }} onClick={() => (isStroke ? controller.deleteStrokes([sel.id]) : controller.deleteSelection())}>
         <svg width={18} height={18} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round">
           <polyline points="3 6 5 6 21 6" />
           <path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2" />

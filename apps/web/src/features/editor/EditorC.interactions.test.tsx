@@ -817,10 +817,13 @@ describe('크기 조절 기준점 통일 (좌상단 고정)', () => {
     if (!el) throw new Error(`${sel} not found`);
     return { l: parseFloat(el.style.left), t: parseFloat(el.style.top) };
   };
-  /** 우하단 모서리 핸들을 잡고 (dx,dy)만큼 끈다. 놓기 전/후 좌상단을 돌려준다. */
-  const resize = (c: HTMLElement, sel: string, dx: number, dy: number) => {
+  /** 우하단 모서리 핸들을 잡고 (dx,dy)만큼 끈다. 놓기 전/후 좌상단을 돌려준다.
+   * `press`는 "선택하려고 누르는 표면" — 영역(프레임)은 시각 판이 맨 위로
+   * 올라가면서(요청) 포인터를 받는 판이 따로 있다(`[data-zone-hit]`). */
+  const resize = (c: HTMLElement, sel: string, dx: number, dy: number, press = sel) => {
     const el = getViewport(c).querySelector(sel)!;
-    firePointer(el, 'pointerdown', { pointerId: 11, clientX: 50, clientY: 50, button: 0 });
+    const target = getViewport(c).querySelector(press)!;
+    firePointer(target, 'pointerdown', { pointerId: 11, clientX: 50, clientY: 50, button: 0 });
     firePointer(window, 'pointerup', { pointerId: 11, clientX: 50, clientY: 50, button: 0 });
     const handle = el.querySelector<HTMLElement>('[title^="크기 조절"]');
     if (!handle) throw new Error(`${sel}: resize handle not found`);
@@ -833,15 +836,15 @@ describe('크기 조절 기준점 통일 (좌상단 고정)', () => {
   };
 
   // 위치를 우리가 소유하는 객체들 — 좌상단이 끄는 중에도, 놓은 뒤에도 그대로.
-  for (const { name, sel } of [
+  for (const { name, sel, press } of [
     { name: '자유 도형', sel: '[data-node-id="fx"]' },
     { name: '메모', sel: '[data-float-id="flt1"]' },
-    { name: '영역', sel: '[data-zone-id="zn1"]' },
+    { name: '영역', sel: '[data-zone-id="zn1"]', press: '[data-zone-hit="zn1"]' },
   ]) {
     it(`${name}: 좌상단이 끄는 중에도 놓은 뒤에도 고정된다`, async () => {
       const container = await setup(`anch-${name}`);
       const before = tlOf(container, sel);
-      const { during, after } = resize(container, sel, 140, 90);
+      const { during, after } = resize(container, sel, 140, 90, press ?? sel);
 
       expect(during).toEqual(before);
       expect(after).toEqual(before);

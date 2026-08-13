@@ -20,10 +20,43 @@ interface ZoneLayerProps {
  * (MindFlow.dc.html:2323-2367): drag-to-move, resize handle, delete badge,
  * and double-click/F2 label editing are wired (Editor-b).
  */
+/** 영역(프레임)의 **테두리·라벨** 레이어 z — 그리기 획(90)보다 위, 편집 박스(100)
+ * 아래. 요청: "영역을 최상위 레이어로". 화이트보드에서 영역은 "이 구획은 여기까지"를
+ * 긋는 표식이라, 안의 스티커·잉크에 경계가 가려지면 알아볼 수 없다.
+ *
+ * 올리는 건 **테두리와 라벨뿐**이다 — 옅은 채움(7%)까지 위로 올리면 그 안의
+ * 노란 스티커·잉크가 통째로 물들어 색이 달라 보인다(실브라우저 확인). 채움은
+ * 예전 자리(맨 아래)에 남아 "면은 배경, 경계는 앞"이 된다. */
+const ZONE_FRAME_Z = 95;
+/** 채움 + 히트(선택·드래그) 레이어 z — 예전 그대로 **맨 아래**. 히트를 위로
+ * 올리지 않는 이유: 영역이 덮은 넓은 사각이 안의 메모·주제 클릭을 통째로
+ * 삼킨다(빈 영역 클릭 = 영역 선택이라는 dc 원본 규칙도 그 자리에서 깨진다). */
+const ZONE_BASE_Z = 8;
+
 export function ZoneLayer({ zones, theme: th, controller }: ZoneLayerProps) {
   if (!zones.length) return null;
   return (
     <>
+      {/* 면 + 히트 판 — 콘텐츠(메모 10 / 주제 40 …)보다 아래라 영역 안의 객체
+          클릭이 먼저 잡히고, 빈 자리 클릭만 여기 닿는다. */}
+      {zones.map((z) => (
+        <div
+          key={`base${z.id}`}
+          data-zone-hit={z.id}
+          onPointerDown={controller.editingZoneId === z.id ? undefined : (e) => controller.beginZoneDrag(e, z.id)}
+          style={{
+            position: 'absolute',
+            left: z.x,
+            top: z.y,
+            width: z.w,
+            height: z.h,
+            background: hexA(z.color || th.accent, 0.07),
+            borderRadius: 16,
+            cursor: controller.editingZoneId === z.id ? 'default' : 'grab',
+            zIndex: ZONE_BASE_Z,
+          }}
+        />
+      ))}
       {zones.map((z) => {
         const col = z.color || th.accent;
         const selected = controller.selection?.kind === 'zone' && controller.selection.id === z.id;
@@ -34,28 +67,24 @@ export function ZoneLayer({ zones, theme: th, controller }: ZoneLayerProps) {
           <div
             key={z.id}
             data-zone-id={z.id}
-            // Select/drag the zone by clicking ANYWHERE in its area — not just the
-            // label (matches the dc original's whole-box hit test,
-            // MindFlow.dc.html:2822). Objects inside the zone render as
-            // higher-z-index siblings, so clicking a node/memo/line still targets
-            // that object; only clicks on the zone's own (empty) area hit this.
-            // `beginZoneDrag` stops propagation, so this doesn't also start a
-            // background marquee; the label/handles/delete children stop their
-            // own pointerdowns, so they aren't double-handled.
-            onPointerDown={editing ? undefined : (e) => controller.beginZoneDrag(e, z.id)}
+            // 테두리·라벨 판 — 맨 위에 그리되 **포인터는 받지 않는다**(아래 면
+            // 판이 받는다). 선택/드래그는 여전히 영역의 빈 자리를 클릭하는 것이고
+            // (dc 원본의 whole-box 히트 테스트, MindFlow.dc.html:2822), 안의
+            // 객체 클릭은 그 객체가 먼저 가져간다. 라벨·핸들·배지 같은 자식은
+            // 각자 `pointerEvents: 'auto'`로 되살린다(pointer-events는 상속).
             style={{
               position: 'absolute',
               left: z.x,
               top: z.y,
               width: z.w,
               height: z.h,
-              background: hexA(col, 0.07),
+              background: 'transparent', // 면은 아래 판이 그린다(안의 색을 물들이지 않게)
               border: `2px dashed ${hexA(col, selected ? 0.9 : 0.55)}`,
               borderRadius: 16,
               boxSizing: 'border-box',
               boxShadow: remotePeer ? `0 0 0 3px ${hexA(remotePeer.user.color, 0.85)}` : 'none',
-              cursor: editing ? 'default' : 'grab',
-              zIndex: 8,
+              pointerEvents: 'none',
+              zIndex: ZONE_FRAME_Z,
             }}
           >
             {editing ? (
@@ -93,6 +122,7 @@ export function ZoneLayer({ zones, theme: th, controller }: ZoneLayerProps) {
                   textOverflow: 'ellipsis',
                   zIndex: 3,
                   cursor: 'grab',
+                  pointerEvents: 'auto', // 시각 판은 none — 누를 수 있는 자식만 되살린다
                 }}
               >
                 {z.label || '영역'}
@@ -101,7 +131,7 @@ export function ZoneLayer({ zones, theme: th, controller }: ZoneLayerProps) {
             {remotePeer && !editing && <RemotePeerTag color={remotePeer.user.color} name={remotePeer.user.name} style={{ right: 10, top: -14 }} />}
             {/* 댓글 배지 — 모든 객체 댓글. 라벨 알약(좌상단)과 대칭인 우상단. */}
             {(controller.commentCounts[z.id] ?? 0) > 0 && (
-              <CommentBadge id={z.id} count={controller.commentCounts[z.id]!} accent={th.accent} panel={th.panel} onOpen={() => controller.openComments(z.id)} style={{ position: 'absolute', right: 10, top: -9, zIndex: 3 }} />
+              <CommentBadge id={z.id} count={controller.commentCounts[z.id]!} accent={th.accent} panel={th.panel} onOpen={() => controller.openComments(z.id)} style={{ position: 'absolute', right: 10, top: -9, zIndex: 3, pointerEvents: 'auto' }} />
             )}
             {selected && !editing && (
               <>
@@ -128,11 +158,15 @@ export function ZoneLayer({ zones, theme: th, controller }: ZoneLayerProps) {
                     cursor: 'pointer',
                     boxShadow: '0 1px 4px rgba(0,0,0,.25)',
                     zIndex: 5,
+                    pointerEvents: 'auto',
                   }}
                 >
                   ×
                 </div>
-                <ResizeHandle title="크기 조절" accent={th.accent} panel={th.panel} right={-13} bottom={-13} zIndex={6} onPointerDown={(e) => controller.beginZoneResize(e, z.id)} />
+                {/* pointer-events는 상속된다 — 시각 판(none) 아래에서 핸들만 되살린다 */}
+                <div style={{ pointerEvents: 'auto' }}>
+                  <ResizeHandle title="크기 조절" accent={th.accent} panel={th.panel} right={-13} bottom={-13} zIndex={6} onPointerDown={(e) => controller.beginZoneResize(e, z.id)} />
+                </div>
               </>
             )}
           </div>
@@ -200,6 +234,7 @@ function ZoneLabelEdit({ z, theme, onCommit, onCancel }: { z: Zone; theme: Theme
           outline: 'none',
           width,
           boxSizing: 'border-box',
+          pointerEvents: 'auto', // 시각 판이 none이라 입력창은 따로 되살린다
           textOverflow: 'ellipsis',
           zIndex: 3,
         }}
