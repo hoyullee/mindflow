@@ -12,7 +12,7 @@
 // (아래 `memo` 주석 참고).
 
 import type { Doc, Float, LayoutMode, Node, NodeMap } from '@mindflow/mindmap-core';
-import { DEFAULT_EDGE_STYLE, DEFAULT_THEME_KEY, ROOT_ID } from '@mindflow/mindmap-core';
+import { DEFAULT_EDGE_STYLE, DEFAULT_KANBAN_COLUMNS, DEFAULT_THEME_KEY, ROOT_ID } from '@mindflow/mindmap-core';
 
 /** 화이트보드의 기본 테마 — 순백 캔버스(`THEMES.white`). 마인드맵의 기본값
  * (`DEFAULT_THEME_KEY` = 코랄)과 갈리는 유일한 지점이다. */
@@ -270,6 +270,18 @@ export function buildTemplateDoc(id: string | null | undefined): Doc | null {
     // (제보). 흰 배경을 테마 하나로 만들면 기본 인상은 그대로면서 바꿀 수도 있다.
     return { v: 1, nodes: {}, floats: [starter], lines: [], zones: [], layoutMode: 'right', themeKey: BOARD_THEME_KEY, edgeStyle: DEFAULT_EDGE_STYLE, kind: 'board' };
   }
+  // 칸반 — 세 번째 문서 종류(`kind: 'kanban'`). 캔버스가 없으므로 nodes/floats는
+  // 비고, 열 셋으로 시작한다(열자마자 카드를 넣을 수 있게).
+  if (id === 'kanban') {
+    const columns = DEFAULT_KANBAN_COLUMNS.map((title, i) => ({ id: `kc${i + 1}`, title }));
+    const cards = [
+      { id: 'kd1', col: 'kc1', pos: 0, text: '카드를 두 번 눌러 내용을 고쳐 보세요' },
+      { id: 'kd2', col: 'kc1', pos: 1024, text: '＋ 카드 추가로 새 카드를 만듭니다' },
+      { id: 'kd3', col: 'kc2', pos: 0, text: '열 제목도 두 번 누르면 바뀌어요' },
+    ];
+    return { v: 1, nodes: {}, floats: [], lines: [], zones: [], layoutMode: 'right', themeKey: BOARD_THEME_KEY, edgeStyle: DEFAULT_EDGE_STYLE, kind: 'kanban', columns, cards };
+  }
+
   const bt = findBoardTemplate(id);
   if (bt) {
     const floats: Float[] = bt.memos.map((m, i) => ({

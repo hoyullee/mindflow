@@ -257,7 +257,40 @@ export const VOTE_EMOJI = '\u25CF';
  * 마인드맵. 값이 `'board'`일 때만 직렬화·CRDT 전파되므로(`RichRun.href`와
  * 같은 규칙) 기존 문서·골든 픽스처는 바이트 하나 변하지 않는다.
  */
-export type DocKind = 'map' | 'board';
+export type DocKind = 'map' | 'board' | 'kanban';
+
+/**
+ * 칸반 열 — 문서 종류 `'kanban'`에서만 쓰인다.
+ *
+ * 열의 **순서**는 배열 순서(`Doc.columns`)다: 열은 자주 바뀌지 않고, CRDT에서도
+ * 엔티티 목록(Y.Array)으로 병합되므로 카드처럼 정밀한 순서 값이 필요 없다.
+ */
+export interface KanbanColumn {
+  id: string;
+  title: string;
+  /** 열 머리 색(없으면 테마 기본). */
+  color?: string | null;
+}
+
+/**
+ * 칸반 카드.
+ *
+ * 순서는 열 안에서 **`pos` 분수 인덱스**다(두 이웃의 중간값을 준다). 배열로 들면
+ * 끊긴 채 두 사람이 카드를 옮길 때 한쪽 순서가 통째로 사라지는데(#332의 배열 필드
+ * 한계), `pos`는 카드 자신의 **필드**라 서로 다른 카드를 옮기면 둘 다 살아남는다.
+ */
+export interface KanbanCard {
+  id: string;
+  /** 소속 열 id — 열이 사라지면 그 카드도 함께 지운다(앱이 정리). */
+  col: string;
+  /** 열 안 순서(작을수록 위). 이웃 사이 중간값으로 끼워 넣는다. */
+  pos: number;
+  text: string;
+  /** 부분 서식 — 메모·주제와 같은 rich 런 모델을 그대로 쓴다. */
+  rich?: RichRun[];
+  /** 카드 배경(없으면 기본). */
+  bg?: string | null;
+}
 
 /**
  * The full serializable document, matching `serializeDoc()` 1:1
@@ -281,6 +314,10 @@ export interface Doc {
   strokes?: Stroke[];
   /** 스티커 반응·투표 — 획과 같은 규칙(비어 있지 않을 때만 직렬화·전파). */
   reactions?: Reaction[];
+  /** 칸반 열 — `kind === 'kanban'`일 때만(다른 종류에서는 없다). */
+  columns?: KanbanColumn[];
+  /** 칸반 카드 — 열과 같은 규칙. */
+  cards?: KanbanCard[];
 }
 
 /**

@@ -870,6 +870,31 @@ export function miniBoardPreview(hue: string): JSX.Element {
   );
 }
 
+/**
+ * 칸반 카드의 폴백 삽화 — 열 셋과 그 안의 카드 몇 장.
+ *
+ * 칸반은 캔버스가 아니라 열·카드 화면이라 `realPreview`(노드·메모 좌표를 그리는
+ * 렌더러)가 그릴 것이 없다. 갤러리의 '새 칸반 보드' 카드와 같은 도형을 쓴다.
+ */
+export function miniKanbanPreview(hue: string): JSX.Element {
+  const col = (x: number, cards: number[]): JSX.Element => (
+    <g key={x}>
+      <rect x={x} y={16} width={72} height={118} rx={7} fill={hexA(hue, 0.06)} stroke={hexA(hue, 0.35)} strokeWidth={1.4} />
+      <rect x={x + 10} y={26} width={34} height={5} rx={2.5} fill={hexA(hue, 0.55)} />
+      {cards.map((y) => (
+        <rect key={y} x={x + 8} y={y} width={56} height={22} rx={4} fill="#fff" stroke={hexA(hue, 0.4)} strokeWidth={1.3} />
+      ))}
+    </g>
+  );
+  return (
+    <svg data-kanban-sketch viewBox="0 0 300 150" width="80%" height="80%" style={{ display: 'block' }}>
+      {col(24, [40, 70, 100])}
+      {col(114, [40, 70])}
+      {col(204, [40])}
+    </svg>
+  );
+}
+
 /** Home.dc.html `miniPreview(hue, seed)` — deterministic decorative sketch for maps
  * that have never been opened/saved (no real node positions yet). */
 export function miniPreview(hue: string, seed: string): JSX.Element {

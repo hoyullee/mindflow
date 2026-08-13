@@ -1,8 +1,8 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import type { MouseEvent as ReactMouseEvent, PointerEvent as ReactPointerEvent } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
-import type { Box, Doc, Float, Line, LineAnchor, LayoutMode, ListOp, Node, NodeMap, Reaction, ReactionGroup, SizeOf, SnapCandidate, Stroke, TextEdit, Zone } from '@mindflow/mindmap-core';
-import { HistoryStack, ROOT_ID, collectImageRefs, collectInlineImages, isImageRef, replaceImageValues, applyListOp as applyListOpToText, applyAutoLinks, applyMarkdownShortcuts, applyPartialStyle, insertMention, charsToRuns, cubicAt, isStyledRuns, findLineSnap, layout, resolveLineEndpoints, resolveLineGeometry, runsToChars, serializeDoc, shiftOffset, strokeBounds, strokeHit, translateStrokePts, reactionGroups, toggleReaction as toggleReactionList, pruneReactions, toMarkdown } from '@mindflow/mindmap-core';
+import type { Box, Doc, Float, KanbanCard, KanbanColumn, Line, LineAnchor, LayoutMode, ListOp, Node, NodeMap, Reaction, ReactionGroup, SizeOf, SnapCandidate, Stroke, TextEdit, Zone } from '@mindflow/mindmap-core';
+import { HistoryStack, ROOT_ID, collectImageRefs, collectInlineImages, isImageRef, replaceImageValues, applyListOp as applyListOpToText, applyAutoLinks, applyMarkdownShortcuts, applyPartialStyle, insertMention, charsToRuns, cubicAt, isStyledRuns, findLineSnap, layout, resolveLineEndpoints, resolveLineGeometry, runsToChars, serializeDoc, shiftOffset, strokeBounds, strokeHit, translateStrokePts, reactionGroups, toggleReaction as toggleReactionList, pruneReactions, toMarkdown, posForIndex, removeColumn } from '@mindflow/mindmap-core';
 import { domToRuns, linearize, liveEditValue } from './richtextDom';
 import { HL_COLORS, HL_WIDTHS } from './boardTools';
 import type { BoardTool } from './boardTools';
@@ -160,7 +160,14 @@ interface Snapshot {
   strokes: Stroke[];
   /** 스티커 반응·투표 — 획과 같은 규칙(undo가 표를 되돌릴 수 있어야 한다). */
   reactions: Reaction[];
+  /** 칸반 열·카드 — 칸반 문서에서만 채워진다(다른 종류는 빈 배열). */
+  columns: KanbanColumn[];
+  cards: KanbanCard[];
 }
+
+/** 칸반이 아닌 문서에서 열·카드를 읽을 때 쓰는 빈 배열(참조가 매 렌더 바뀌지 않게). */
+const EMPTY_COLUMNS: KanbanColumn[] = [];
+const EMPTY_CARDS: KanbanCard[] = [];
 
 /** 프레임을 내용에 맞출 때 주는 여백(캔버스 단위) — 라벨 알약이 위쪽 바깥에
  * 걸리므로 위도 같은 값이면 충분하다. */
@@ -734,6 +741,25 @@ export interface EditorController {
   /** 화이트보드(`Doc.kind === 'board'`) — 트리 없이 메모·이미지만 자유 배치하는
    * 문서. true면 주제/선/영역/레이아웃/아웃라인 UI가 감춰진다(메뉴들이 읽는다). */
   isBoard: boolean;
+  /** 칸반 문서인가 — 에디터가 캔버스 대신 칸반 화면을 그린다. */
+  isKanban: boolean;
+  /** 칸반 열(왼→오 순서) / 카드(열 안 순서는 `pos`). */
+  columns: KanbanColumn[];
+  cards: KanbanCard[];
+  addColumn: () => void;
+  renameColumn: (id: string, title: string) => void;
+  deleteColumn: (id: string) => void;
+  /** 열 끝에 빈 카드를 추가하고 곧바로 편집을 연다. */
+  addCard: (colId: string) => void;
+  /** 카드 글을 확정한다(빈 값이면 카드를 지운다 — 빈 카드를 남기지 않는다). */
+  commitCardText: (id: string, text: string) => void;
+  deleteCard: (id: string) => void;
+  /** 지금 글을 고치고 있는 카드 id. */
+  editingCardId: string | null;
+  startEditCard: (id: string | null) => void;
+  /** 지금 고른 카드 id(칸반 전용 선택 — 캔버스 selection과 별개). */
+  selectedCardId: string | null;
+  selectCard: (id: string | null) => void;
   /** 화이트보드 그리기 도구(M4). 'select'가 기본 — 펜/하이라이터/지우개일 때는
    * 캔버스 위에 그리기 오버레이(BoardDrawLayer)가 포인터를 받는다. */
   boardTool: BoardTool;
@@ -806,7 +832,7 @@ function nudgeBoxOf(cand: NodeMap, geom: Record<string, { x: number; y: number; 
 
 function docSignature(d: Doc): string {
   try {
-    return JSON.stringify([d.nodes, d.floats, d.lines, d.zones, d.layoutMode, d.themeKey, d.edgeStyle, d.strokes ?? [], d.reactions ?? []]);
+    return JSON.stringify([d.nodes, d.floats, d.lines, d.zones, d.layoutMode, d.themeKey, d.edgeStyle, d.strokes ?? [], d.reactions ?? [], d.columns ?? [], d.cards ?? []]);
   } catch {
     return '';
   }
@@ -1078,6 +1104,8 @@ export function useEditorState(): EditorController {
               edgeStyle: (res.doc.edgeStyle as EdgeStyle | undefined) ?? 'curve',
               strokes: res.doc.strokes ?? [],
               reactions: res.doc.reactions ?? [],
+              columns: res.doc.columns ?? [],
+              cards: res.doc.cards ?? [],
             });
             setHistoryTick((t) => t + 1);
           }
@@ -1360,6 +1388,8 @@ export function useEditorState(): EditorController {
 
   /** 화이트보드(트리 없는 문서)인가 — UI 트리밍·그리기 도구·패딩 규칙의 기준. */
   const isBoard = doc.kind === 'board';
+  /** 칸반 문서 — 캔버스가 아니라 전용 화면(열·카드)으로 그린다. */
+  const isKanban = doc.kind === 'kanban';
   // 문서 테마는 종류를 가리지 않는다 — 화이트보드의 흰 배경은 덮어쓰기가 아니라
   // `white` 테마(새 보드의 기본값)라, 스타일 메뉴에서 고른 테마가 그대로 먹는다.
   const theme = themeOf(doc.themeKey);
@@ -1547,7 +1577,7 @@ export function useEditorState(): EditorController {
   useEffect(() => {
     if (historyInitRef.current) return;
     historyInitRef.current = true;
-    historyRef.current!.reset({ nodes: doc.nodes, floats: doc.floats, lines: doc.lines, zones: doc.zones, layoutMode: doc.layoutMode, edgeStyle, strokes: doc.strokes ?? [], reactions: doc.reactions ?? [] });
+    historyRef.current!.reset({ nodes: doc.nodes, floats: doc.floats, lines: doc.lines, zones: doc.zones, layoutMode: doc.layoutMode, edgeStyle, strokes: doc.strokes ?? [], reactions: doc.reactions ?? [], columns: doc.columns ?? [], cards: doc.cards ?? [] });
     // deliberately empty deps: only the initial (mount-time) doc/edgeStyle matter here
   }, []);
 
@@ -1564,10 +1594,20 @@ export function useEditorState(): EditorController {
     setDoc((prev) => {
       const next = updater(prev);
       const changed =
-        next.nodes !== prev.nodes || next.floats !== prev.floats || next.lines !== prev.lines || next.zones !== prev.zones || next.layoutMode !== prev.layoutMode || next.strokes !== prev.strokes || next.reactions !== prev.reactions;
+        next.nodes !== prev.nodes ||
+        next.floats !== prev.floats ||
+        next.lines !== prev.lines ||
+        next.zones !== prev.zones ||
+        next.layoutMode !== prev.layoutMode ||
+        next.strokes !== prev.strokes ||
+        next.reactions !== prev.reactions ||
+        // 칸반 열·카드 — 여기 빠뜨리면 그 문서의 **모든 편집이 조용히 버려진다**
+        // (커밋은 도는데 "바뀐 게 없다"로 판정돼 setDoc이 prev를 돌려준다).
+        next.columns !== prev.columns ||
+        next.cards !== prev.cards;
       if (changed) {
         historyRef.current!.record(
-          { nodes: next.nodes, floats: next.floats, lines: next.lines, zones: next.zones, layoutMode: next.layoutMode, edgeStyle: edgeStyleRef.current, strokes: next.strokes ?? [], reactions: next.reactions ?? [] },
+          { nodes: next.nodes, floats: next.floats, lines: next.lines, zones: next.zones, layoutMode: next.layoutMode, edgeStyle: edgeStyleRef.current, strokes: next.strokes ?? [], reactions: next.reactions ?? [], columns: next.columns ?? [], cards: next.cards ?? [] },
           continuous,
         );
         setHistoryTick((t) => t + 1);
@@ -1590,14 +1630,14 @@ export function useEditorState(): EditorController {
       const changed =
         next.nodes !== prev.nodes || next.floats !== prev.floats || next.lines !== prev.lines || next.zones !== prev.zones || next.layoutMode !== prev.layoutMode || next.strokes !== prev.strokes || next.reactions !== prev.reactions;
       if (changed) {
-        historyRef.current!.amend({ nodes: next.nodes, floats: next.floats, lines: next.lines, zones: next.zones, layoutMode: next.layoutMode, edgeStyle: edgeStyleRef.current, strokes: next.strokes ?? [], reactions: next.reactions ?? [] });
+        historyRef.current!.amend({ nodes: next.nodes, floats: next.floats, lines: next.lines, zones: next.zones, layoutMode: next.layoutMode, edgeStyle: edgeStyleRef.current, strokes: next.strokes ?? [], reactions: next.reactions ?? [], columns: next.columns ?? [], cards: next.cards ?? [] });
       }
       return changed ? next : prev;
     });
   }, []);
 
   function applySnapshot(snap: Snapshot): void {
-    setDoc((prev) => ({ ...prev, nodes: snap.nodes, floats: snap.floats, lines: snap.lines, zones: snap.zones, layoutMode: snap.layoutMode, edgeStyle: snap.edgeStyle, strokes: snap.strokes.length ? snap.strokes : undefined, reactions: snap.reactions?.length ? snap.reactions : undefined }));
+    setDoc((prev) => ({ ...prev, nodes: snap.nodes, floats: snap.floats, lines: snap.lines, zones: snap.zones, layoutMode: snap.layoutMode, edgeStyle: snap.edgeStyle, strokes: snap.strokes.length ? snap.strokes : undefined, reactions: snap.reactions?.length ? snap.reactions : undefined, ...(prev.kind === 'kanban' ? { columns: snap.columns ?? [], cards: snap.cards ?? [] } : {}) }));
     setEdgeStyleState(snap.edgeStyle);
     setSelectionState(null);
     setMultiSelectionState(null);
@@ -2079,7 +2119,7 @@ export function useEditorState(): EditorController {
     // up — `docSignature` includes `edgeStyle`, so this dirties the doc.
     setDoc((prev) => (prev.edgeStyle === s ? prev : { ...prev, edgeStyle: s }));
     const d = docRef.current;
-    historyRef.current!.record({ nodes: d.nodes, floats: d.floats, lines: d.lines, zones: d.zones, layoutMode: d.layoutMode, edgeStyle: s, strokes: d.strokes ?? [], reactions: d.reactions ?? [] }, false);
+    historyRef.current!.record({ nodes: d.nodes, floats: d.floats, lines: d.lines, zones: d.zones, layoutMode: d.layoutMode, edgeStyle: s, strokes: d.strokes ?? [], reactions: d.reactions ?? [], columns: d.columns ?? [], cards: d.cards ?? [] }, false);
     setHistoryTick((t) => t + 1);
   }, []);
 
@@ -5179,6 +5219,86 @@ export function useEditorState(): EditorController {
     [frameMembers],
   );
 
+  // ---- 칸반(문서 종류 'kanban') — 열·카드 ----
+  const [editingCardId, setEditingCardId] = useState<string | null>(null);
+  const [selectedCardId, setSelectedCardId] = useState<string | null>(null);
+  const columns = doc.columns ?? EMPTY_COLUMNS;
+  const cards = doc.cards ?? EMPTY_CARDS;
+
+  const addColumn = useCallback(() => {
+    if (readOnlyRef.current) return;
+    const id = idFactory('col');
+    commitDoc((d) => ({ ...d, columns: [...(d.columns ?? []), { id, title: '새 열' }] }));
+  }, [commitDoc, idFactory]);
+
+  const renameColumn = useCallback(
+    (id: string, title: string) => {
+      if (readOnlyRef.current) return;
+      commitDoc((d) => ({ ...d, columns: (d.columns ?? []).map((c) => (c.id === id ? { ...c, title: title.slice(0, 40) } : c)) }));
+    },
+    [commitDoc],
+  );
+
+  const deleteColumn = useCallback(
+    (id: string) => {
+      if (readOnlyRef.current) return;
+      // 열을 지우면 그 안의 카드도 함께 — 고아 카드를 남기지 않는다(코어 규칙).
+      commitDoc((d) => {
+        const out = removeColumn(d.columns ?? [], d.cards ?? [], id);
+        return { ...d, columns: out.columns, cards: out.cards };
+      });
+    },
+    [commitDoc],
+  );
+
+  const addCard = useCallback(
+    (colId: string) => {
+      if (readOnlyRef.current) return;
+      const id = idFactory('card');
+      commitDoc((d) => {
+        const list = d.cards ?? [];
+        return { ...d, cards: [...list, { id, col: colId, pos: posForIndex(list, colId, list.filter((c) => c.col === colId).length), text: '' }] };
+      });
+      // 만들자마자 글을 쓸 수 있게(추가 동작들과 같은 관례).
+      setSelectedCardId(id);
+      setEditingCardId(id);
+    },
+    [commitDoc, idFactory],
+  );
+
+  const commitCardText = useCallback(
+    (id: string, text: string) => {
+      setEditingCardId(null);
+      if (readOnlyRef.current) return;
+      const trimmed = text.trim();
+      commitDoc((d) => {
+        const list = d.cards ?? [];
+        // 빈 카드는 남기지 않는다 — 추가했다가 아무것도 안 쓰면 사라지는 게 자연스럽다.
+        if (!trimmed) return { ...d, cards: list.filter((c) => c.id !== id) };
+        return { ...d, cards: list.map((c) => (c.id === id ? { ...c, text: trimmed } : c)) };
+      });
+    },
+    [commitDoc],
+  );
+
+  const deleteCard = useCallback(
+    (id: string) => {
+      if (readOnlyRef.current) return;
+      commitDoc((d) => ({ ...d, cards: (d.cards ?? []).filter((c) => c.id !== id) }));
+      setSelectedCardId((prev) => (prev === id ? null : prev));
+      setEditingCardId((prev) => (prev === id ? null : prev));
+    },
+    [commitDoc],
+  );
+
+  const startEditCard = useCallback((id: string | null) => {
+    if (id && readOnlyRef.current) return;
+    setEditingCardId(id);
+    if (id) setSelectedCardId(id);
+  }, []);
+
+  const selectCard = useCallback((id: string | null) => setSelectedCardId(id), []);
+
   /**
    * 프레임 크기를 **내용에 맞춘다**(요청) — 담고 있는 것들을 감싸고 여백을 준다.
    *
@@ -5694,6 +5814,19 @@ export function useEditorState(): EditorController {
     mapId,
     docTitle,
     isBoard,
+    isKanban,
+    columns,
+    cards,
+    addColumn,
+    renameColumn,
+    deleteColumn,
+    addCard,
+    commitCardText,
+    deleteCard,
+    editingCardId,
+    startEditCard,
+    selectedCardId,
+    selectCard,
     boardTool,
     setBoardTool,
     penColor,

@@ -3453,12 +3453,26 @@ describe('홈 우클릭 메뉴', () => {
       // 구획(빈 맵 + 템플릿들) 뒤에 화이트보드 구획(빈 보드 + 보드 템플릿들)이 온다.
       expect(cards[0]?.getAttribute('data-template')).toBe('blank');
       const ids = cards.map((c) => c.getAttribute('data-template'));
-      expect(ids.slice(-1 - BOARD_TEMPLATES.length)).toEqual(['board', ...BOARD_TEMPLATES.map((t) => t.id)]);
+      // 마인드맵 → 화이트보드 → 칸반 보드 순서의 구획들.
+      expect(ids.slice(-2 - BOARD_TEMPLATES.length)).toEqual(['board', ...BOARD_TEMPLATES.map((t) => t.id), 'kanban']);
       expect(within(dialog).getByText('마인드맵')).toBeTruthy();
       expect(within(dialog).getByText('화이트보드')).toBeTruthy();
+      expect(within(dialog).getByText('칸반 보드')).toBeTruthy();
 
       await user.click(within(dialog).getByRole('button', { name: /화이트보드/ }));
       await waitFor(() => expect(newMapTitles()).toContain('새 화이트보드'));
+      await waitFor(() => expect(screen.getByText('EDITOR_PLACEHOLDER')).toBeTruthy(), { timeout: 2000 });
+    });
+
+    it('칸반 칸 — 고르면 "새 칸반 보드"로 에디터에 넘어간다(세 번째 문서 종류)', async () => {
+      const user = userEvent.setup();
+      renderHomeWithDocStore([]);
+      await waitFor(() => expect(screen.getAllByText('＋ 새로 만들기')[0]).toBeTruthy());
+
+      await user.click(screen.getAllByText('＋ 새로 만들기')[0]!);
+      const dialog = await screen.findByRole('dialog', { name: '새로 만들기' });
+      await user.click(within(dialog).getByRole('button', { name: /새 칸반 보드/ }));
+      await waitFor(() => expect(newMapTitles()).toContain('새 칸반 보드'));
       await waitFor(() => expect(screen.getByText('EDITOR_PLACEHOLDER')).toBeTruthy(), { timeout: 2000 });
     });
 

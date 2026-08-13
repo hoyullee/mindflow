@@ -76,7 +76,7 @@ export function MapCard({ card, controller, draggableEnabled, compact = false }:
     // 깔았는데 그 색이 홈 배경과 비슷해 카드가 배경에 묻혀 보였다(제보) — 면 대신
     // 선으로 옮겼다. 선택 표시(강조색 2px + 글로우)와는 굵기·글로우로 갈리므로
     // "선택된 것"과 헷갈리지 않는다.
-    border: card.selected ? '2px solid var(--mf-accent)' : `1px solid var(--mf-${card.isBoard ? 'info' : 'border'})`,
+    border: card.selected ? '2px solid var(--mf-accent)' : `1px solid var(--mf-${card.isBoard || card.isKanban ? 'info' : 'border'})`,
     borderRadius: compact ? 10 : 14,
     background: grey ? 'var(--mf-panel-grey)' : 'var(--mf-panel)',
     // The card no longer clips (was `overflow: hidden`) — otherwise the open ☰
@@ -160,10 +160,10 @@ export function MapCard({ card, controller, draggableEnabled, compact = false }:
           썸네일 바탕(아래)과 함께 두 겹으로 다르게 보이게 한다: 바탕은 보드
           캔버스처럼 **흰 종이**, 여기 배지는 종류 이름. 갤러리 카드의 삽화와
           같은 메모+이미지 도형을 작게 줄여 같은 것을 가리킴을 알린다. */}
-      {card.isBoard && !card.badge && (
+      {(card.isBoard || card.isKanban) && !card.badge && (
         <div
           data-board-badge
-          title="화이트보드"
+          title={card.isKanban ? '칸반 보드' : '화이트보드'}
           style={{
             position: 'absolute',
             top: compact ? 8 : 12,
@@ -185,12 +185,21 @@ export function MapCard({ card, controller, draggableEnabled, compact = false }:
             whiteSpace: 'nowrap',
           }}
         >
-          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-            <rect x="2.5" y="4" width="9" height="7.5" rx="1.6" />
-            <rect x="13" y="12.5" width="8.5" height="7.5" rx="1.6" />
-            <path d="M4 15.5h6.5M4 18.5h4.5" />
-          </svg>
-          {compact ? '보드' : '화이트보드'}
+          {card.isKanban ? (
+            /* 칸반 — 세로 열 셋(갤러리 카드·폴백 삽화와 같은 도형). */
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+              <rect x="2.5" y="4" width="5.5" height="16" rx="1.4" />
+              <rect x="9.25" y="4" width="5.5" height="16" rx="1.4" />
+              <rect x="16" y="4" width="5.5" height="16" rx="1.4" />
+            </svg>
+          ) : (
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+              <rect x="2.5" y="4" width="9" height="7.5" rx="1.6" />
+              <rect x="13" y="12.5" width="8.5" height="7.5" rx="1.6" />
+              <path d="M4 15.5h6.5M4 18.5h4.5" />
+            </svg>
+          )}
+          {card.isKanban ? (compact ? '칸반' : '칸반 보드') : compact ? '보드' : '화이트보드'}
         </div>
       )}
 
@@ -225,7 +234,7 @@ export function MapCard({ card, controller, draggableEnabled, compact = false }:
           // 세 겹). 카드 바탕은 문서 테마를 따르지 않는다 — 마인드맵도 마찬가지.
           background: grey
             ? 'var(--mf-panel2)'
-            : card.isBoard
+            : card.isBoard || card.isKanban
               ? '#ffffff'
               : `linear-gradient(135deg,var(--mf-panel),${card.isDrive ? 'rgba(52,168,83,.07)' : 'rgba(0,0,0,.02)'})`,
           borderBottom: '1px solid var(--mf-border-soft)',
