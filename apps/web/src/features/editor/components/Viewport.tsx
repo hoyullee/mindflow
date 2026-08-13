@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import type { Doc } from '@mindflow/mindmap-core';
+import { strokeBounds } from '@mindflow/mindmap-core';
 import type { EditorController } from '../useEditorState';
 import { NodeLayer } from './NodeLayer';
 import { EdgeLayer } from './EdgeLayer';
@@ -125,7 +126,7 @@ export function Viewport({ doc, controller }: ViewportProps) {
                         : { pts: controller.liveStroke, color: controller.penColor, w: controller.penWidth }
                       : null
                   }
-                  selectedId={controller.selection?.kind === 'stroke' ? controller.selection.id : null}
+                  selectedIds={controller.multiGroups.strokes}
                   accent={theme.accent}
                 />
                 <MarqueeLayer rect={controller.marquee} theme={theme} />
@@ -273,6 +274,13 @@ function GroupGhostLayer({ doc, controller }: { doc: Doc; controller: EditorCont
     const x0 = Math.min(l.x1, l.x2);
     const y0 = Math.min(l.y1, l.y2);
     boxes.push({ key: `l-${id}`, l: x0 + gg.dx - 4, t: y0 + gg.dy - 4, w: Math.abs(l.x2 - l.x1) + 8, h: Math.abs(l.y2 - l.y1) + 8, r: 6 });
+  });
+  // 그리기 획 — 잉크 bbox(굵기 절반 포함)를 윤곽으로. 선과 같은 근사면 충분하다.
+  gg.strokes.forEach((id) => {
+    const st = (doc.strokes ?? []).find((x) => x.id === id);
+    const b = st ? strokeBounds(st) : null;
+    if (!b) return;
+    boxes.push({ key: `s-${id}`, l: b.x0 + gg.dx - 4, t: b.y0 + gg.dy - 4, w: b.x1 - b.x0 + 8, h: b.y1 - b.y0 + 8, r: 6 });
   });
   return (
     <>

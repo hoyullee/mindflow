@@ -150,8 +150,10 @@ describe('Editor interactions (M3-Editor-b)', () => {
     const { container } = renderEditor('/editor?map=zsel&title=x');
 
     expect(screen.queryByText('선택한 영역')).toBeNull();
-    // click the zone's body rectangle, away from its label pill
-    const zoneBody = container.querySelector('[data-zone-id="zn1"]') as HTMLElement;
+    // click the zone's body rectangle, away from its label pill.
+    // 영역은 **시각 판**(`data-zone-id`, 맨 위)과 **히트 판**(`data-zone-hit`, 맨 아래)이
+    // 나뉜다 — 위에서 포인터까지 받으면 영역 안의 객체 클릭을 통째로 삼키기 때문.
+    const zoneBody = container.querySelector('[data-zone-hit="zn1"]') as HTMLElement;
     expect(zoneBody).toBeTruthy();
     fireEvent.pointerDown(zoneBody, { pointerId: 3, clientX: 400, clientY: 400, button: 0 });
     fireEvent.pointerUp(window, { pointerId: 3, clientX: 400, clientY: 400 });

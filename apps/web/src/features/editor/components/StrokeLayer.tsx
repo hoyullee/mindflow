@@ -25,8 +25,9 @@ interface StrokeLayerProps {
   strokes: Stroke[] | undefined;
   /** 그리는 중인 획의 미리보기(컨트롤러 `liveStroke`) — 커밋 전이라 문서에 없다. */
   live: { pts: number[]; color: string; w: number; hl?: boolean } | null;
-  /** 지금 선택된 획의 id — 점선 상자로 표시한다(획에는 손잡이가 없다). */
-  selectedId?: string | null;
+  /** 지금 선택된 획들의 id — 점선 상자로 표시한다(획에는 손잡이가 없다).
+   * 마퀴 다중 선택이 들어오면서(요청) 목록이 됐다 — 단일 선택은 원소 하나. */
+  selectedIds?: string[];
   /** 선택 표시 색(테마 accent). */
   accent?: string;
 }
@@ -35,11 +36,16 @@ interface StrokeLayerProps {
  * 잉크에 닿지 않게 굵기 절반(bounds에 이미 포함)에 조금 더 준다. */
 const SEL_PAD = 4;
 
-export function StrokeLayer({ strokes, live, selectedId, accent }: StrokeLayerProps) {
+export function StrokeLayer({ strokes, live, selectedIds, accent }: StrokeLayerProps) {
   const list = strokes ?? [];
   if (!list.length && !live) return null;
-  const sel = selectedId ? list.find((s) => s.id === selectedId) : undefined;
-  const selBox = sel ? strokeBounds(sel) : null;
+  const selBoxes = (selectedIds ?? [])
+    .map((id) => {
+      const s = list.find((x) => x.id === id);
+      const b = s ? strokeBounds(s) : null;
+      return b ? { id, b } : null;
+    })
+    .filter((v): v is { id: string; b: { x0: number; y0: number; x1: number; y1: number } } => !!v);
   const strokeProps = (s: { color: string; w: number; hl?: boolean }) => ({
     fill: 'none',
     stroke: s.color,
@@ -54,20 +60,21 @@ export function StrokeLayer({ strokes, live, selectedId, accent }: StrokeLayerPr
         <path key={s.id} data-stroke-id={s.id} data-stroke-hl={isHighlighter(s) ? '1' : undefined} d={strokePathD(s.pts)} {...strokeProps(s)} />
       ))}
       {live && live.pts.length >= 2 && <path data-live-stroke d={strokePathD(live.pts)} {...strokeProps(live)} />}
-      {selBox && (
+      {selBoxes.map(({ id, b }) => (
         <rect
-          data-stroke-selection
-          x={selBox.x0 - SEL_PAD}
-          y={selBox.y0 - SEL_PAD}
-          width={Math.max(1, selBox.x1 - selBox.x0 + SEL_PAD * 2)}
-          height={Math.max(1, selBox.y1 - selBox.y0 + SEL_PAD * 2)}
+          key={`sel-${id}`}
+          data-stroke-selection={id}
+          x={b.x0 - SEL_PAD}
+          y={b.y0 - SEL_PAD}
+          width={Math.max(1, b.x1 - b.x0 + SEL_PAD * 2)}
+          height={Math.max(1, b.y1 - b.y0 + SEL_PAD * 2)}
           fill="none"
           stroke={accent ?? '#f0663f'}
           strokeWidth={1.5}
           strokeDasharray="5 4"
           rx={6}
         />
-      )}
+      ))}
     </svg>
   );
 }

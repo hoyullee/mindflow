@@ -1,5 +1,5 @@
 import { RECENT_RENDER_MAX, docRawForTitle, cardKeyOf, hexA, mapHref, mapId, readDocRaw } from './storage';
-import { miniPreview, previewSkeleton, realPreview } from './mapPreview';
+import { miniBoardPreview, miniPreview, previewSkeleton, realPreview } from './mapPreview';
 import { docSearchText, matchesQuery } from './searchIndex';
 import type { DriveFolderData, FolderData, HomeState, MapCardData, SpaceData } from './types';
 import { DRIVE_FILES } from './types';
@@ -262,13 +262,17 @@ function cardSketch(title: string, hue: string, docId: string | undefined, previ
   // the new card showed A's preview). The title scan remains only for legacy
   // docId-less cards, whose body was stored under a `new-…` id.
   const raw = docId ? previewDocs[docId] || readDocRaw(docId) : docRawForTitle(title);
-  if (raw) return realPreview(raw, hue) || miniPreview(hue, title);
+  // 폴백 삽화는 **문서 종류를 따른다**(제보: 화이트보드 카드에 마인드맵 그림).
+  // 종류를 알 수 있는 건 본문이 있을 때뿐이고, 본문이 아예 없으면 배지도 안 뜨므로
+  // 그때는 예전처럼 마인드맵 삽화다.
+  const fallback = (): JSX.Element => (isBoardRaw(raw) ? miniBoardPreview(hue) : miniPreview(hue, title));
+  if (raw) return realPreview(raw, hue) || fallback();
   // No body available yet: if this card's backend body is still being fetched
   // (docId not yet resolved), show a neutral skeleton instead of the generic
   // sketch — this is what removes the "old preview flashes, then real nodes"
   // flicker. Once resolved with no body, fall back to the generic sketch.
   if (docId && !previewResolved[docId]) return previewSkeleton();
-  return miniPreview(hue, title);
+  return fallback();
 }
 
 /**

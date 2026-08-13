@@ -513,6 +513,11 @@ export function paintScene(p: Painter, o: PaintSceneOpts): void {
 
   p.rect(bounds.x0, bounds.y0, bounds.w, bounds.h, theme.canvasBg);
 
+  // 영역(프레임)의 **면** — 맨 아래(에디터 z 8). 테두리·라벨은 맨 위에서 따로 그린다.
+  doc.zones.forEach((z) => {
+    p.path(roundRectD(z.x, z.y, z.w, z.h, 16), { fill: hexA(z.color || theme.accent, 0.07) });
+  });
+
   // tree edges — honor the live layout mode + edge style (curve/elbow/straight),
   // same geometry as `EdgeLayer`/`buildEdgePath`, so 조직도(down)/꺾은선/직선 match.
   const mode = doc.layoutMode;
@@ -588,26 +593,6 @@ export function paintScene(p: Painter, o: PaintSceneOpts): void {
     if (n.emoji) p.text(n.emoji, x + padX, g.y + imgShift, { px: emojiPx, weight: 400, fill: tcol });
   });
 
-  // zones — drawn above nodes (editor z-index 8). Label pill ellipsizes to
-  // fit its width, matching `ZoneLayer`'s `text-overflow: ellipsis`.
-  doc.zones.forEach((z) => {
-    const zc = z.color || theme.accent;
-    p.path(roundRectD(z.x, z.y, z.w, z.h, 16), { fill: hexA(zc, 0.07), stroke: hexA(zc, 0.55), width: 2, dash: [7, 5] });
-    const labelFont = fontStr(12.5, 700);
-    const raw = z.label || '영역';
-    const maxPillW = Math.max(20, z.w - 20); // CSS: max-width calc(100% - 20px)
-    const innerMax = maxPillW - 26; // horizontal padding 13*2
-    let label = raw;
-    if (measure(label, labelFont) > innerMax) {
-      while (label.length > 1 && measure(label + '…', labelFont) > innerMax) label = label.slice(0, -1);
-      label += '…';
-    }
-    const labelW = measure(label, labelFont);
-    const lw = Math.min(maxPillW, labelW + 26);
-    p.path(roundRectD(z.x + 10, z.y - 14, lw, 27, 13.5), { fill: zc });
-    p.text(label, z.x + 10 + (lw - labelW) / 2, z.y - 0.5, { px: 12.5, weight: 700, fill: z.color ? '#fff' : theme.accentInk, w: labelW });
-  });
-
   // memos — grown-to-fit cards (see `sceneFloatBox`), matching the editor's memo box.
   doc.floats.forEach((f) => {
     const m = fBoxes.get(f.id);
@@ -679,5 +664,27 @@ export function paintScene(p: Painter, o: PaintSceneOpts): void {
     // 하이라이터는 화면과 **같은 값**으로 반투명·곱하기(boardTools의 HL_OPACITY) —
     // 내보낸 파일이 에디터와 달라 보이면 그게 버그다.
     p.path(strokePathD(s.pts), { stroke: s.color, width: s.w, round: true, ...(isHighlighter(s) ? { alpha: HL_OPACITY, blend: 'multiply' as const } : {}) });
+  });
+
+  // 영역(프레임)의 **테두리·라벨은 맨 위**(요청) — 화이트보드에서 영역은 "이
+  // 구획은 여기까지"를 긋는 표식이라 안의 스티커·잉크에 가려지면 안 된다. 면(7%)은
+  // 위에서 이미 그렸다(맨 아래) — 위로 올리면 그 안의 색을 물들인다. 에디터
+  // `ZoneLayer`와 같은 순서다(화면과 내보낸 파일이 달라 보이면 그게 버그다).
+  doc.zones.forEach((z) => {
+    const zc = z.color || theme.accent;
+    p.path(roundRectD(z.x, z.y, z.w, z.h, 16), { stroke: hexA(zc, 0.55), width: 2, dash: [7, 5] });
+    const labelFont = fontStr(12.5, 700);
+    const raw = z.label || '영역';
+    const maxPillW = Math.max(20, z.w - 20); // CSS: max-width calc(100% - 20px)
+    const innerMax = maxPillW - 26; // horizontal padding 13*2
+    let label = raw;
+    if (measure(label, labelFont) > innerMax) {
+      while (label.length > 1 && measure(label + '…', labelFont) > innerMax) label = label.slice(0, -1);
+      label += '…';
+    }
+    const labelW = measure(label, labelFont);
+    const lw = Math.min(maxPillW, labelW + 26);
+    p.path(roundRectD(z.x + 10, z.y - 14, lw, 27, 13.5), { fill: zc });
+    p.text(label, z.x + 10 + (lw - labelW) / 2, z.y - 0.5, { px: 12.5, weight: 700, fill: z.color ? '#fff' : theme.accentInk, w: labelW });
   });
 }

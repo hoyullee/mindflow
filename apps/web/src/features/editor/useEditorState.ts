@@ -197,6 +197,9 @@ type ObjDrag =
       nodesOrig: Record<string, { x: number; y: number }>;
       floatsOrig: Record<string, { x: number; y: number }>;
       linesOrig: Record<string, { x1: number; y1: number; x2: number; y2: number }>;
+      /** 획은 점 배열이 곧 좌표다 — 원본 배열을 들고 매번 그 기준으로 다시
+       * 계산한다(단일 `stroke-move`와 같은 이유: 누적하면 반올림이 쌓인다). */
+      strokesOrig: Record<string, number[]>;
     };
 
 type BgDrag =
@@ -204,7 +207,7 @@ type BgDrag =
   | { kind: 'marquee'; pointerId: number; startClientX: number; startClientY: number; x0: number; y0: number; moved: boolean };
 
 function totalSelected(m: MultiSelection): number {
-  return m.nodes.length + m.lines.length + m.floats.length;
+  return m.nodes.length + m.lines.length + m.floats.length + m.strokes.length;
 }
 
 export interface EditorController {
@@ -548,9 +551,10 @@ export interface EditorController {
   /** 이 대상의 반응 묶음(개수·내 표 여부·이름) — 렌더가 그대로 그린다. */
   reactionsOf: (target: string) => ReactionGroup[];
   /** 그리기 획(화이트보드) — 선택한 획 하나의 색·굵기·삭제. */
-  setStrokeColor: (id: string, hex: string) => void;
-  setStrokeWidth: (id: string, w: number) => void;
-  deleteStroke: (id: string) => void;
+  /** 선택한 획(들)의 색·굵기 — 마퀴 다중 선택도 같은 세터를 쓴다(한 번의 커밋). */
+  setStrokeColor: (ids: string[], hex: string) => void;
+  setStrokeWidth: (ids: string[], w: number) => void;
+  deleteStrokes: (ids: string[]) => void;
 
   // ---- right-click context menu — port of `Component#state.ctxMenu`/`ctxSub`
   // (MindFlow.dc.html:2775-2837, 3087-3170) ----
@@ -587,7 +591,7 @@ export interface EditorController {
   dragGhost: { id: string; x: number; y: number } | null;
   /** 그룹(다중 선택) 드래그 중의 고스트 — 멤버들의 점선 윤곽이 (dx,dy)만큼 이동해
    * 보인다(단일 드래그의 `dragGhost`와 같은 모델). 실물은 드롭에서 한 번에 이동. */
-  groupGhost: { dx: number; dy: number; nodes: string[]; floats: string[]; lines: string[] } | null;
+  groupGhost: { dx: number; dy: number; nodes: string[]; floats: string[]; lines: string[]; strokes: string[] } | null;
 
   // ---- undo/redo/save/export ----
   canUndo: boolean;
@@ -813,7 +817,7 @@ export function useEditorState(): EditorController {
   const [measured, setMeasured] = useState<boolean>(typeof ResizeObserver === 'undefined');
   const [rootAnchor, setRootAnchor] = useState<PanState>({ x: 0, y: 0 });
   const [dragGhost, setDragGhost] = useState<{ id: string; x: number; y: number } | null>(null);
-  const [groupGhost, setGroupGhost] = useState<{ dx: number; dy: number; nodes: string[]; floats: string[]; lines: string[] } | null>(null);
+  const [groupGhost, setGroupGhost] = useState<{ dx: number; dy: number; nodes: string[]; floats: string[]; lines: string[]; strokes: string[] } | null>(null);
 
   const [selection, setSelectionState] = useState<Selection | null>(null);
   const [multiSelection, setMultiSelectionState] = useState<MultiSelection | null>(null);
@@ -1299,6 +1303,7 @@ export function useEditorState(): EditorController {
       nodes: selection?.kind === 'node' ? [selection.id] : [],
       lines: selection?.kind === 'line' ? [selection.id] : [],
       floats: selection?.kind === 'float' ? [selection.id] : [],
+      strokes: selection?.kind === 'stroke' ? [selection.id] : [],
     };
   }, [multiSelection, selection]);
   const nodeTargetIds = useCallback((): string[] => multiGroups.nodes.filter((id) => doc.nodes[id]), [multiGroups, doc.nodes]);
@@ -1681,7 +1686,11 @@ export function useEditorState(): EditorController {
     setTextCtx(null);
     const ms = multiSelectionRef.current;
     if (ms && totalSelected(ms) > 1 && hit) {
-      const inSel = (hit.kind === 'node' && ms.nodes.includes(hit.id)) || (hit.kind === 'float' && ms.floats.includes(hit.id)) || (hit.kind === 'line' && ms.lines.includes(hit.id));
+      const inSel =
+        (hit.kind === 'node' && ms.nodes.includes(hit.id)) ||
+        (hit.kind === 'float' && ms.floats.includes(hit.id)) ||
+        (hit.kind === 'line' && ms.lines.includes(hit.id)) ||
+        (hit.kind === 'stroke' && ms.strokes.includes(hit.id));
       if (inSel) {
         setCtxSub(null);
         setCtxMenu({ kind: 'multi', sx, sy, cx: p.x, cy: p.y });
@@ -2080,6 +2089,16 @@ export function useEditorState(): EditorController {
     const bgPoint = toCanvasPoint(e.clientX, e.clientY, viewportRef.current);
     const strokeId = e.button === 1 || e.button === 2 ? null : strokeAt(bgPoint);
     if (strokeId) {
+      // 다중 선택 안의 획을 잡았다면 그룹 이동(다른 객체와 같은 규칙) — 여기서
+      // 선택을 갈아치우면 방금 마퀴로 고른 것이 통째로 풀린다.
+      const msNow = multiSelectionRef.current;
+      if (msNow && msNow.strokes.includes(strokeId) && totalSelected(msNow) > 1) {
+        if (!readOnlyRef.current) {
+          cancelLongPress();
+          beginGroupDrag(e, msNow);
+          return;
+        }
+      }
       if (isTouch) {
         // 터치는 다른 객체와 같은 규칙 — 첫 탭은 선택만, 드래그는 화면 이동.
         // (이미 선택된 획이면 아래에서 곧바로 이동 드래그로 넘어간다.)
@@ -2262,10 +2281,25 @@ export function useEditorState(): EditorController {
         }
         if (hitLine) lines.push(l.id);
       });
-      if (!nodes.length && !floats.length && !lines.length) {
+      // 그리기 획(화이트보드) — 잉크의 **점 하나라도** 사각 안에 들어오면 담는다
+      // (연결선과 같은 규칙: 걸친 것도 고른 것이다). 획의 점은 입력 시점에 촘촘히
+      // 샘플링돼 있어(화면 1.5px 간격) 사각을 가로지르는데 점이 하나도 안 걸리는
+      // 경우는 사실상 없다.
+      const strokes: string[] = [];
+      (docRef.current.strokes ?? []).forEach((st) => {
+        for (let i = 0; i + 1 < st.pts.length; i += 2) {
+          const px = st.pts[i]!;
+          const py = st.pts[i + 1]!;
+          if (px >= rx0 && px <= rx1 && py >= ry0 && py <= ry1) {
+            strokes.push(st.id);
+            break;
+          }
+        }
+      });
+      if (!nodes.length && !floats.length && !lines.length && !strokes.length) {
         setSelectionState(null);
         setMultiSelectionState(null);
-      } else if (nodes.length + floats.length + lines.length === 1) {
+      } else if (nodes.length + floats.length + lines.length + strokes.length === 1) {
         // 마퀴가 **하나만** 물었다 — 단일 선택으로 정규화한다(제보: 주제가 2개
         // 남았을 때 드래그 선택 후 Delete가 안 먹힘). 다중 선택 1개짜리 상태는
         // 어느 처리 분기도 모른다: 키보드(Delete/Escape)는 `total > 1`만 받고,
@@ -2273,12 +2307,20 @@ export function useEditorState(): EditorController {
         // 화면에는 선택된 것으로 보이는데 아무 키도 듣지 않는 유령 상태가 된다.
         // 단일 선택이면 삭제·속성 패널·방향키·F2가 전부 평소처럼 동작한다.
         setMultiSelectionState(null);
-        setSelectionState(nodes.length ? { kind: 'node', id: nodes[0]! } : floats.length ? { kind: 'float', id: floats[0]! } : { kind: 'line', id: lines[0]! });
+        setSelectionState(
+          nodes.length
+            ? { kind: 'node', id: nodes[0]! }
+            : floats.length
+              ? { kind: 'float', id: floats[0]! }
+              : lines.length
+                ? { kind: 'line', id: lines[0]! }
+                : { kind: 'stroke', id: strokes[0]! },
+        );
         setEditingNodeId(null);
         setEditingFloatId(null);
       } else {
         setSelectionState(null);
-        setMultiSelectionState({ nodes, lines, floats });
+        setMultiSelectionState({ nodes, lines, floats, strokes });
         setEditingNodeId(null);
         setEditingFloatId(null);
       }
@@ -3215,6 +3257,12 @@ export function useEditorState(): EditorController {
           nodes: mutations.deleteNodesMulti(d.nodes, ms.nodes),
           lines: d.lines.filter((l) => !ms.lines.includes(l.id)),
           floats: d.floats.filter((f) => !ms.floats.includes(f.id)),
+          // 획도 함께 지운다(요청: 단일·다중 관계없이 삭제). 남는 게 없으면
+          // 필드 자체를 뗀다 — 빈 배열을 남기면 직렬화 규칙(값이 있을 때만)이 깨진다.
+          strokes: ((): typeof d.strokes => {
+            const rest = (d.strokes ?? []).filter((st) => !ms.strokes.includes(st.id));
+            return rest.length ? rest : undefined;
+          })(),
         }),
       );
       setMultiSelectionState(null);
@@ -3845,22 +3893,30 @@ export function useEditorState(): EditorController {
 
   // ---- 획(stroke) 속성 ----
   // 획은 그릴 때 정한 색·굵기를 나중에도 고칠 수 있다(잘못 고른 형광색을 지웠다
-  // 다시 그릴 이유가 없다). 대상은 언제나 **선택된 획 하나** — 마퀴가 획을 담지
-  // 않으므로 일괄 세터가 필요 없다.
-  const updateStroke = useCallback(
-    (id: string, patch: Partial<Stroke>) => commitDoc((d) => ({ ...d, strokes: (d.strokes ?? []).map((s) => (s.id === id ? { ...s, ...patch } : s)) })),
+  // 다시 그릴 이유가 없다). 마퀴가 획을 담게 되면서(요청) 대상은 **여럿**일 수
+  // 있다 — 한 번의 커밋으로 전부 바꾼다(undo도 한 단계. id마다 커밋하면 실행취소를
+  // 고른 개수만큼 눌러야 한다).
+  const updateStrokes = useCallback(
+    (ids: string[], patch: Partial<Stroke>) => {
+      if (!ids.length) return;
+      const set = new Set(ids);
+      commitDoc((d) => ({ ...d, strokes: (d.strokes ?? []).map((s) => (set.has(s.id) ? { ...s, ...patch } : s)) }));
+    },
     [commitDoc],
   );
-  const setStrokeColor = useCallback((id: string, hex: string) => updateStroke(id, { color: hex }), [updateStroke]);
-  const setStrokeWidth = useCallback((id: string, w: number) => updateStroke(id, { w }), [updateStroke]);
-  const deleteStroke = useCallback(
-    (id: string) => {
+  const setStrokeColor = useCallback((ids: string[], hex: string) => updateStrokes(ids, { color: hex }), [updateStrokes]);
+  const setStrokeWidth = useCallback((ids: string[], w: number) => updateStrokes(ids, { w }), [updateStrokes]);
+  const deleteStrokes = useCallback(
+    (ids: string[]) => {
+      if (!ids.length) return;
+      const set = new Set(ids);
       commitDoc((d) => {
-        const rest = (d.strokes ?? []).filter((s) => s.id !== id);
+        const rest = (d.strokes ?? []).filter((s) => !set.has(s.id));
         // 빈 배열은 키째 지운다 — "비어 있지 않을 때만 직렬화" 규칙과 맞춘다.
         return { ...d, strokes: rest.length ? rest : undefined };
       });
       setSelectionState(null);
+      setMultiSelectionState(null);
     },
     [commitDoc],
   );
@@ -4180,7 +4236,7 @@ export function useEditorState(): EditorController {
           // 커서를 따라온다. 실제 이동은 놓는 순간 한 번에 커밋된다(onUp) — undo도
           // 한 단계가 된다. 예전엔 매 이동마다 문서를 커밋해 멤버 전부가 실시간으로
           // 끌려다녔다.
-          setGroupGhost({ dx, dy, nodes: Object.keys(d.nodesOrig), floats: Object.keys(d.floatsOrig), lines: Object.keys(d.linesOrig) });
+          setGroupGhost({ dx, dy, nodes: Object.keys(d.nodesOrig), floats: Object.keys(d.floatsOrig), lines: Object.keys(d.linesOrig), strokes: Object.keys(d.strokesOrig) });
           break;
         }
         case 'node-resize': {
@@ -4390,6 +4446,10 @@ export function useEditorState(): EditorController {
             nodes: mutations.translateNodesBy(doc0.nodes, d.nodesOrig, gdx, gdy),
             floats: mutations.translateFloatsBy(doc0.floats, d.floatsOrig, gdx, gdy),
             lines: mutations.translateLinesBy(doc0.lines, d.linesOrig, gdx, gdy),
+            strokes: (doc0.strokes ?? []).map((st) => {
+              const o = d.strokesOrig[st.id];
+              return o ? { ...st, pts: translateStrokePts(o, gdx, gdy) } : st;
+            }),
           }));
           if (d.nodesOrig[ROOT_ID]) {
             // the root moved as part of the group → remember its new spot as the pinned
@@ -4521,7 +4581,12 @@ export function useEditorState(): EditorController {
       const l = d.lines.find((x) => x.id === id);
       if (l) linesOrig[id] = { x1: l.x1, y1: l.y1, x2: l.x2, y2: l.y2 };
     });
-    startObjDrag({ kind: 'group', pointerId: e.pointerId, startClientX: e.clientX, startClientY: e.clientY, nodesOrig, floatsOrig, linesOrig });
+    const strokesOrig: Record<string, number[]> = {};
+    groups.strokes.forEach((id) => {
+      const st = (d.strokes ?? []).find((x) => x.id === id);
+      if (st) strokesOrig[id] = st.pts;
+    });
+    startObjDrag({ kind: 'group', pointerId: e.pointerId, startClientX: e.clientX, startClientY: e.clientY, nodesOrig, floatsOrig, linesOrig, strokesOrig });
   }
 
   // Touch object-move (option A): a press on the ALREADY-selected object starts a
@@ -4874,15 +4939,24 @@ export function useEditorState(): EditorController {
           const allNodes = Object.keys(d.nodes).filter((id) => id !== ROOT_ID);
           const allFloats = d.floats.map((f) => f.id);
           const allLines = d.lines.map((l) => l.id);
-          const total = allNodes.length + allFloats.length + allLines.length;
+          const allStrokes = (d.strokes ?? []).map((st) => st.id); // 그리기 획도 캔버스 객체다
+          const total = allNodes.length + allFloats.length + allLines.length + allStrokes.length;
           if (total === 1) {
             // 객체가 하나뿐이면 단일 선택 — 마퀴와 같은 정규화(1개짜리 다중
             // 선택은 Delete 등 어느 분기도 받지 않는 유령 상태다).
             setMultiSelectionState(null);
-            setSelectionState(allNodes.length ? { kind: 'node', id: allNodes[0]! } : allFloats.length ? { kind: 'float', id: allFloats[0]! } : { kind: 'line', id: allLines[0]! });
+            setSelectionState(
+              allNodes.length
+                ? { kind: 'node', id: allNodes[0]! }
+                : allFloats.length
+                  ? { kind: 'float', id: allFloats[0]! }
+                  : allLines.length
+                    ? { kind: 'line', id: allLines[0]! }
+                    : { kind: 'stroke', id: allStrokes[0]! },
+            );
           } else if (total > 1) {
             setSelectionState(null);
-            setMultiSelectionState({ nodes: allNodes, floats: allFloats, lines: allLines });
+            setMultiSelectionState({ nodes: allNodes, floats: allFloats, lines: allLines, strokes: allStrokes });
           }
           return;
         }
@@ -4952,7 +5026,7 @@ export function useEditorState(): EditorController {
         // 획은 글자도 자식도 없다 — 지우기와 선택 해제만.
         if (e.key === 'Delete' || e.key === 'Backspace') {
           e.preventDefault();
-          deleteStroke(selection.id);
+          deleteStrokes([selection.id]);
         } else if (e.key === 'Escape') {
           e.preventDefault();
           clearSelection();
@@ -5238,7 +5312,7 @@ export function useEditorState(): EditorController {
     reactionsOf,
     setStrokeColor,
     setStrokeWidth,
-    deleteStroke,
+    deleteStrokes,
     deleteZone,
 
     ctxMenu,

@@ -37,11 +37,17 @@ export type LineHandle = 1 | 2;
 
 /** Marquee (rubber-band) multi-selection — port of `Component#state.msel`
  * (MindFlow.dc.html:577, 1548-1556): zones are intentionally excluded, matching
- * the original (zones are never part of `msel`). */
+ * the original (zones are never part of `msel`).
+ *
+ * `strokes`는 화이트보드의 그리기 획(요청: "드래그해서 그리기 객체를 선택").
+ * post-dc 추가라 dc 원본에는 없다 — 필수 필드로 둔 이유는, 옵셔널이면 새로
+ * 만드는 자리마다 조용히 빠져 "화면엔 선택됐는데 삭제가 안 되는" 유령 상태가
+ * 생기기 때문이다(1개짜리 다중 선택에서 이미 겪은 함정). */
 export interface MultiSelection {
   nodes: string[];
   lines: string[];
   floats: string[];
+  strokes: string[];
 }
 
 /** In-progress marquee rectangle, in canvas (untransformed) coordinates. */

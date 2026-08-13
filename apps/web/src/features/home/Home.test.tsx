@@ -3412,6 +3412,35 @@ describe('홈 우클릭 메뉴', () => {
       expect((boardCard.querySelector('[data-board-badge]') as HTMLElement).style.right).toBe('12px');
     });
 
+    it('내용 없는 화이트보드 카드의 폴백 삽화는 마인드맵이 아니다(제보)', async () => {
+      // 그릴 내용이 없는 보드(막 만든 빈 보드, 또는 본문을 못 받은 카드)는
+      // 폴백 삽화로 떨어진다 — 예전에는 종류와 무관하게 가지 뻗은 마인드맵
+      // 그림이라 "화이트보드" 배지가 붙은 카드에 마인드맵이 그려졌다.
+      const emptyBoard = { v: 1, kind: 'board', nodes: {}, floats: [], lines: [], zones: [], layoutMode: 'right', themeKey: 'white' };
+      const emptyMap = { v: 1, nodes: {}, floats: [], lines: [], zones: [], layoutMode: 'right', themeKey: 'coral' };
+      const { container } = renderHomeWithDocStore(
+        [
+          { id: 'doc-eb', title: '빈 보드', version: 1, updatedAt: '2026-01-01T00:00:00.000Z', isFavorite: false, deletedAt: null },
+          { id: 'doc-em', title: '빈 맵', version: 1, updatedAt: '2026-01-01T00:00:00.000Z', isFavorite: false, deletedAt: null },
+        ],
+        {
+          'doc-eb': { doc: emptyBoard as never, version: 1, title: '빈 보드' },
+          'doc-em': { doc: emptyMap as never, version: 1, title: '빈 맵' },
+        },
+      );
+
+      const boardCard = await waitFor(() => {
+        const el = container.querySelector('a[data-title="빈 보드"]') as HTMLElement;
+        expect(el).toBeTruthy();
+        return el;
+      });
+      await waitFor(() => expect(boardCard.querySelector('[data-board-sketch]')).toBeTruthy());
+      // 맵 카드는 예전 그대로(마인드맵 삽화).
+      const mapCard = container.querySelector('a[data-title="빈 맵"]') as HTMLElement;
+      await waitFor(() => expect(mapCard.querySelector('.map-thumb svg')).toBeTruthy());
+      expect(mapCard.querySelector('[data-board-sketch]')).toBeNull();
+    });
+
     it('화이트보드 칸 — 빈 맵 다음 자리, 고르면 "새 화이트보드"로 에디터에 넘어간다', async () => {
       const user = userEvent.setup();
       renderHomeWithDocStore([]);

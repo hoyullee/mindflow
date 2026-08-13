@@ -513,7 +513,7 @@ function buildItems(controller: EditorController, ctxMenu: ContextMenuState, tog
         danger: true,
         onSelect: () => {
           close();
-          controller.deleteStroke(strokeId);
+          controller.deleteStrokes([strokeId]);
         },
       },
     ];

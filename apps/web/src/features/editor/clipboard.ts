@@ -250,7 +250,9 @@ export function pasteClipboard(doc: Doc, clip: ClipboardPayload | null, target: 
     else if (lineIds[0]) selection = { kind: 'line', id: lineIds[0] };
     else if (zoneIds[0]) selection = { kind: 'zone', id: zoneIds[0] };
   } else if (total > 1 && newNodeRoots.length + newFloatIds.length + lineIds.length > 1) {
-    multi = { nodes: newNodeRoots, floats: newFloatIds, lines: lineIds };
+    // 획은 클립보드에 담기지 않는다(복사·붙여넣기 범위 밖) — 붙여넣은 결과의
+    // 다중 선택에도 없다.
+    multi = { nodes: newNodeRoots, floats: newFloatIds, lines: lineIds, strokes: [] };
   }
 
   return { doc: { ...doc, nodes, floats, lines, zones }, selection, multi };
