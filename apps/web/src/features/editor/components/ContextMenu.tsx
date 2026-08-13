@@ -5,6 +5,7 @@ import { hexA } from '../theme';
 import type { Theme } from '../theme';
 import type { EditorController } from '../useEditorState';
 import type { ContextMenuState } from '../types';
+import type { ArrangeOp } from '../arrange';
 import { useIsMobile } from '../../../hooks/useMediaQuery';
 // 이미지/영역 아이콘은 상단 툴바 '삽입' 메뉴와 같은 SVG를 공유 — 두 진입점이
 // 같은 동작이므로 같은 그림이어야 한다.
@@ -83,7 +84,7 @@ export function ContextMenu({ controller }: ContextMenuProps) {
     const M = 8;
     // 메뉴 높이는 행 수로 추정(행 44 + 구분선 11 + 패딩 12) — 아래 공간이 부족하면
     // 바 위로 뒤집는다. 렌더 후 재측정 없이도 화면 밖으로 나가지 않게 하는 보수적 추정.
-    const rows = buildItems(controller, ctxMenu, () => {}, false, isMobile);
+    const rows = buildItems(controller, ctxMenu, () => {}, null, isMobile);
     const estH = rows.reduce((h, it) => h + (it === 'divider' ? 11 : 44), 12);
     left = Math.min(Math.max(anchor.x - MW / 2, M), Math.max(M, vw - MW - M));
     const below = anchor.bottom + 10;
@@ -110,7 +111,8 @@ export function ContextMenu({ controller }: ContextMenuProps) {
     ...(anchor ? { animation: 'mf-ctx-pop .13s ease-out' } : {}),
   };
 
-  const items = buildItems(controller, ctxMenu, (top2) => controller.toggleCtxSub(top2), !!ctxSub, isMobile);
+  const subKind = ctxSub?.kind ?? 'text';
+  const items = buildItems(controller, ctxMenu, (top2, kind) => controller.toggleCtxSub(top2, kind), ctxSub ? subKind : null, isMobile);
 
   return (
     <div
@@ -167,7 +169,8 @@ export function ContextMenu({ controller }: ContextMenuProps) {
           </button>
         ),
       )}
-      {ctxSub && <AlignFlyout controller={controller} ctxMenu={ctxMenu} top={ctxSub.top} />}
+      {ctxSub && subKind === 'text' && <AlignFlyout controller={controller} ctxMenu={ctxMenu} top={ctxSub.top} />}
+      {ctxSub && subKind === 'arrange' && <ArrangeFlyout controller={controller} ctxMenu={ctxMenu} top={ctxSub.top} />}
     </div>
   );
 }
@@ -277,7 +280,13 @@ function TrashIcon() {
  * (MindFlow.dc.html:3105-3146). `'divider'` stands in for the original's blank
  * separator row.
  */
-function buildItems(controller: EditorController, ctxMenu: ContextMenuState, toggleAlignSub: (top: number) => void, alignSubOpen: boolean, touch = false): (MenuItem | 'divider')[] {
+function buildItems(
+  controller: EditorController,
+  ctxMenu: ContextMenuState,
+  toggleSub: (top: number, kind: 'text' | 'arrange') => void,
+  subOpen: 'text' | 'arrange' | null,
+  touch = false,
+): (MenuItem | 'divider')[] {
   const close = () => controller.closeCtxMenu();
 
   // 복사/잘라내기/붙여넣기 — 모바일에는 키보드가 없어서 이 메뉴(길게 누르기)가
@@ -392,10 +401,10 @@ function buildItems(controller: EditorController, ctxMenu: ContextMenuState, tog
       icon: '≡',
       label: '텍스트 정렬',
       arrow: '▸',
-      active: alignSubOpen,
+      active: subOpen === 'text',
       // does NOT close the menu — toggles the flyout submenu instead, port of
       // `alignParent`'s `onClick` (MindFlow.dc.html:3120).
-      onSelect: (e) => toggleAlignSub(e.currentTarget.offsetTop),
+      onSelect: (e) => toggleSub(e.currentTarget.offsetTop, 'text'),
     });
     // 댓글 — 그 주제의 논의를 바로 연다. 보기 메뉴에만 있으면 "이 주제에 다는"
     // 물건인데 진입점이 화면 반대편에 숨는다(제보).
@@ -521,8 +530,22 @@ function buildItems(controller: EditorController, ctxMenu: ContextMenuState, tog
 
   if (ctxMenu.kind === 'multi') {
     const ms = controller.multiSelection;
-    const count = ms ? ms.nodes.length + ms.lines.length + ms.floats.length : 0;
+    const count = ms ? ms.nodes.length + ms.lines.length + ms.floats.length + ms.strokes.length : 0;
     return [
+      // 정렬·분배(요청) — 옮길 수 있는 대상이 둘 이상일 때만 내준다(트리에 붙은
+      // 주제는 레이아웃이 자리를 정하므로 대상이 아니다: `arrangeTargetCount`).
+      ...(controller.arrangeTargetCount >= 2 && !controller.readOnly
+        ? ([
+            {
+              icon: <ArrangeGlyph kind="left" />,
+              label: '정렬',
+              arrow: '▸',
+              active: subOpen === 'arrange',
+              onSelect: (e) => toggleSub(e.currentTarget.offsetTop, 'arrange'),
+            },
+            'divider',
+          ] as (MenuItem | 'divider')[])
+        : []),
       ...copyItems({ cut: true }),
       {
         icon: <TrashIcon />,
@@ -595,6 +618,106 @@ interface AlignFlyoutProps {
   controller: EditorController;
   ctxMenu: ContextMenuState;
   top: number;
+}
+
+/** 다중 선택의 "정렬 ▸" 플라이아웃(요청) — 줄 맞춤 6가지 + 간격 균등 2가지.
+ *
+ * 텍스트 정렬 플라이아웃과 같은 자리·같은 기하를 쓴다(부모 행에 붙고, 오른쪽이
+ * 모자라면 왼쪽으로 뒤집는다). 분배는 3개부터 뜻이 있으므로 대상이 둘뿐이면
+ * 그 두 줄을 아예 그리지 않는다 — 눌러도 아무 일 없는 항목을 두지 않는다.
+ */
+function ArrangeFlyout({ controller, ctxMenu, top }: AlignFlyoutProps) {
+  const th = controller.uiTheme;
+  const vw = controller.vw || 600;
+  const menuLeft = Math.min(ctxMenu.sx, vw - 160);
+  const flip = menuLeft + 150 + 150 > vw;
+  const style: CSSProperties = {
+    position: 'absolute',
+    left: flip ? -146 : 144,
+    top: top - 5,
+    width: 142,
+    background: th.panel,
+    border: `1px solid ${th.border}`,
+    borderRadius: 11,
+    boxShadow: '0 10px 30px rgba(0,0,0,.14)',
+    padding: 5,
+    zIndex: 41,
+  };
+  const rows: ({ op: ArrangeOp; label: string; icon: JSX.Element } | 'divider')[] = [
+    { op: 'left', label: '왼쪽 맞춤', icon: <ArrangeGlyph kind="left" /> },
+    { op: 'hcenter', label: '가로 가운데', icon: <ArrangeGlyph kind="hcenter" /> },
+    { op: 'right', label: '오른쪽 맞춤', icon: <ArrangeGlyph kind="right" /> },
+    'divider',
+    { op: 'top', label: '위쪽 맞춤', icon: <ArrangeGlyph kind="top" /> },
+    { op: 'vcenter', label: '세로 가운데', icon: <ArrangeGlyph kind="vcenter" /> },
+    { op: 'bottom', label: '아래쪽 맞춤', icon: <ArrangeGlyph kind="bottom" /> },
+    ...(controller.arrangeTargetCount >= 3
+      ? (['divider', { op: 'hspace' as const, label: '가로 간격 균등', icon: <ArrangeGlyph kind="hspace" /> }, { op: 'vspace' as const, label: '세로 간격 균등', icon: <ArrangeGlyph kind="vspace" /> }] as const)
+      : []),
+  ];
+  return (
+    <div className="mf-ctx" data-arrange-flyout style={style}>
+      {rows.map((r, i) =>
+        r === 'divider' ? (
+          <div key={`d${i}`} style={{ height: 1, background: th.border, margin: '4px 6px' }} />
+        ) : (
+          <button
+            key={r.op}
+            type="button"
+            className="mf-ed-btn"
+            data-arrange={r.op}
+            onMouseDown={(e) => {
+              e.preventDefault();
+              e.stopPropagation();
+              controller.arrangeSelection(r.op);
+              controller.closeCtxMenu();
+            }}
+            style={itemStyle(th)}
+          >
+            <span style={iconStyle(th)}>{r.icon}</span>
+            <span style={{ textAlign: 'left' }}>{r.label}</span>
+          </button>
+        ),
+      )}
+    </div>
+  );
+}
+
+/** 정렬 항목의 작은 도형 아이콘 — 기준선(강조색)과 그 선에 붙는 박스 둘. */
+function ArrangeGlyph({ kind }: { kind: ArrangeOp }) {
+  const line = { stroke: 'currentColor', strokeWidth: 1.6, strokeLinecap: 'round' as const };
+  const box = { fill: 'currentColor', opacity: 0.42 };
+  if (kind === 'left' || kind === 'right' || kind === 'hcenter') {
+    const gx = kind === 'left' ? 3.5 : kind === 'right' ? 14.5 : 9;
+    const bx = (w: number) => (kind === 'left' ? 4.5 : kind === 'right' ? 13.5 - w : 9 - w / 2);
+    return (
+      <svg width="18" height="18" viewBox="0 0 18 18" aria-hidden="true">
+        <path d={`M${gx} 2.5V15.5`} {...line} />
+        <rect x={bx(9)} y={4} width={9} height={4} rx={1.2} {...box} />
+        <rect x={bx(6)} y={10} width={6} height={4} rx={1.2} {...box} />
+      </svg>
+    );
+  }
+  if (kind === 'top' || kind === 'bottom' || kind === 'vcenter') {
+    const gy = kind === 'top' ? 3.5 : kind === 'bottom' ? 14.5 : 9;
+    const by = (h: number) => (kind === 'top' ? 4.5 : kind === 'bottom' ? 13.5 - h : 9 - h / 2);
+    return (
+      <svg width="18" height="18" viewBox="0 0 18 18" aria-hidden="true">
+        <path d={`M2.5 ${gy}H15.5`} {...line} />
+        <rect x={4} y={by(9)} width={4} height={9} rx={1.2} {...box} />
+        <rect x={10} y={by(6)} width={4} height={6} rx={1.2} {...box} />
+      </svg>
+    );
+  }
+  // 간격 균등 — 같은 간격으로 놓인 세 조각.
+  const horiz = kind === 'hspace';
+  return (
+    <svg width="18" height="18" viewBox="0 0 18 18" aria-hidden="true">
+      {[2.5, 7.5, 12.5].map((v) =>
+        horiz ? <rect key={v} x={v} y={4} width={3} height={10} rx={1.2} {...box} /> : <rect key={v} x={4} y={v} width={10} height={3} rx={1.2} {...box} />,
+      )}
+    </svg>
+  );
 }
 
 /** The "텍스트 정렬 ▸" flyout — port of `ctxSubStyle`/`ctxSubItems` (MindFlow.dc.html:3149-3167):

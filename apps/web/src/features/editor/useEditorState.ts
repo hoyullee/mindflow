@@ -28,6 +28,8 @@ import { isPanButton } from './pointerButtons';
 import { buildVisible, descendants, outlineRows } from './tree';
 import type { EdgeStyle } from './tree';
 import { nearestInDirection } from './navigation';
+import { arrangeDeltas, snapValue } from './arrange';
+import type { ArrangeBox, ArrangeOp } from './arrange';
 import type { NavDir, NavPoint } from './navigation';
 import { UI_THEME, themeOf, themeKeyOf } from './theme';
 import type { Theme, ThemeKey } from './theme';
@@ -206,6 +208,9 @@ type ObjDrag =
 type BgDrag =
   | { kind: 'pan'; pointerId: number; sx: number; sy: number; startPan: PanState; moved: boolean; touch?: boolean }
   | { kind: 'marquee'; pointerId: number; startClientX: number; startClientY: number; x0: number; y0: number; moved: boolean };
+
+/** 격자 스냅 on/off — 이 기기의 입력 보조라 문서가 아니라 localStorage에 남는다. */
+const SNAP_PREF_KEY = 'mf_snap_grid';
 
 function totalSelected(m: MultiSelection): number {
   return m.nodes.length + m.lines.length + m.floats.length + m.strokes.length;
@@ -456,6 +461,16 @@ export interface EditorController {
   addChild: () => void;
   addSibling: () => void;
   deleteSelection: () => void;
+  /** 다중 선택한 객체들을 줄 맞추거나 간격을 균등하게(요청) — 대상은 **옮길 수
+   * 있는 것들**뿐이다(메모·이미지·자유 주제·연결선·그리기 획). 트리에 붙은 주제는
+   * 레이아웃이 자리를 정하므로 기준에도 대상에도 들어가지 않는다. */
+  arrangeSelection: (op: ArrangeOp) => void;
+  /** 지금 정렬할 수 있는 대상 수 — 메뉴가 항목을 내줄지 가른다(정렬 2, 분배 3). */
+  arrangeTargetCount: number;
+  /** 격자 스냅(요청) — 메모·이미지·영역을 끌거나 크기를 조절할 때 좌표를 격자에
+   * 맞춘다. 드래그 중 Alt를 누르면 그 순간만 꺼진다(미세 조정용 탈출구). */
+  snapGrid: boolean;
+  setSnapGrid: (on: boolean) => void;
   /** 현재 선택(단일/다중)을 클립보드에 담는다. 담을 게 없으면(루트만 선택 등)
    * `false`를 돌려주고 기존 클립보드는 그대로 둔다. */
   copySelection: () => boolean;
@@ -574,7 +589,7 @@ export interface EditorController {
   /** Opens (or closes, if already open) the "텍스트 정렬 ▸" flyout, anchored to the
    * clicked row's `offsetTop` — port of the `alignParent` item's `onClick`
    * (MindFlow.dc.html:3120). */
-  toggleCtxSub: (top: number) => void;
+  toggleCtxSub: (top: number, kind?: 'text' | 'arrange') => void;
 
   // ---- drag / resize starters ----
   beginNodeDrag: (e: ReactPointerEvent, id: string) => void;
@@ -1794,8 +1809,9 @@ export function useEditorState(): EditorController {
     if (a) setTextCtx(a);
   }, [textCtxAnchor]);
 
-  const toggleCtxSub = useCallback((top: number) => {
-    setCtxSub((prev) => (prev ? null : { top }));
+  const toggleCtxSub = useCallback((top: number, kind: 'text' | 'arrange' = 'text') => {
+    // 같은 행을 다시 누르면 닫히고, 다른 종류를 누르면 그쪽으로 갈아 끼운다.
+    setCtxSub((prev) => (prev && (prev.kind ?? 'text') === kind ? null : { top, kind }));
   }, []);
 
   /** Port of `Component#onCtxMenu` (MindFlow.dc.html:2775-2791), minus the rich-text-selection
@@ -3326,6 +3342,113 @@ export function useEditorState(): EditorController {
     setNudgeTick((t) => t + 1);
   }, [selection, commitDoc]);
 
+  /**
+   * 정렬·분배 — 종류별 박스를 모아 `arrangeDeltas`(순수)로 옮길 양을 구하고,
+   * **한 번의 커밋**으로 적용한다(undo도 한 단계).
+   *
+   * 겹침 마그넷은 걸지 않는다: 방금 줄 맞춘 것을 도형이 저 혼자 비켜나면
+   * 정렬이 아니게 된다(방향키 이동과 같은 판단).
+   */
+  const arrangeBoxes = useCallback((): { boxes: Record<string, ArrangeBox>; kindOf: Record<string, 'node' | 'float' | 'line' | 'stroke'> } => {
+    const ms = multiSelectionRef.current;
+    const d = docRef.current;
+    const boxes: Record<string, ArrangeBox> = {};
+    const kindOf: Record<string, 'node' | 'float' | 'line' | 'stroke'> = {};
+    if (!ms) return { boxes, kindOf };
+    ms.nodes.forEach((id) => {
+      const n = d.nodes[id];
+      const g = geomRef.current[id];
+      // 트리에 붙은 주제는 옮길 수 없다(그룹 드래그와 같은 규칙) — 기준에서도 뺀다.
+      if (!n || !n.free || n.parent || !g) return;
+      boxes[id] = { x: g.x - g.w / 2, y: g.y - g.h / 2, w: g.w, h: g.h };
+      kindOf[id] = 'node';
+    });
+    ms.floats.forEach((id) => {
+      const f = d.floats.find((x) => x.id === id);
+      if (!f) return;
+      boxes[id] = { x: f.x, y: f.y, w: f.w, h: floatBoxH(f) };
+      kindOf[id] = 'float';
+    });
+    ms.lines.forEach((id) => {
+      const l = d.lines.find((x) => x.id === id);
+      if (!l) return;
+      const e = resolveLine(l); // 앵커가 걸린 선은 해석된 끝점 기준(화면과 같은 값)
+      boxes[id] = { x: Math.min(e.x1, e.x2), y: Math.min(e.y1, e.y2), w: Math.abs(e.x2 - e.x1), h: Math.abs(e.y2 - e.y1) };
+      kindOf[id] = 'line';
+    });
+    ms.strokes.forEach((id) => {
+      const st = (d.strokes ?? []).find((x) => x.id === id);
+      const b = st ? strokeBounds(st) : null;
+      if (!b) return;
+      boxes[id] = { x: b.x0, y: b.y0, w: b.x1 - b.x0, h: b.y1 - b.y0 };
+      kindOf[id] = 'stroke';
+    });
+    return { boxes, kindOf };
+  }, []);
+
+  /** 지금 정렬 가능한 대상 수 — 메뉴가 항목 노출을 가른다. 렌더마다 값이 필요하니
+   * ref가 아니라 현재 `multiGroups`/`geom`/`doc`으로 센다. */
+  const arrangeTargetCount = useMemo(() => {
+    if (!multiSelection) return 0;
+    let n = 0;
+    multiSelection.nodes.forEach((id) => {
+      const nd = doc.nodes[id];
+      if (nd && nd.free && !nd.parent && geom[id]) n++;
+    });
+    n += multiSelection.floats.filter((id) => doc.floats.some((f) => f.id === id)).length;
+    n += multiSelection.lines.filter((id) => doc.lines.some((l) => l.id === id)).length;
+    n += multiSelection.strokes.filter((id) => (doc.strokes ?? []).some((s0) => s0.id === id)).length;
+    return n;
+  }, [multiSelection, doc, geom]);
+
+  const arrangeSelection = useCallback(
+    (op: ArrangeOp) => {
+      const { boxes, kindOf } = arrangeBoxes();
+      const deltas = arrangeDeltas(boxes, op);
+      const ids = Object.keys(deltas).filter((id) => deltas[id]!.dx !== 0 || deltas[id]!.dy !== 0);
+      if (!ids.length) return;
+      commitDoc((d) => {
+        const nodesOrig: Record<string, { x: number; y: number }> = {};
+        const floatsOrig: Record<string, { x: number; y: number }> = {};
+        const linesOrig: Record<string, { x1: number; y1: number; x2: number; y2: number }> = {};
+        let nodes = d.nodes;
+        let floats = d.floats;
+        let lines = d.lines;
+        let strokes = d.strokes ?? [];
+        ids.forEach((id) => {
+          const { dx, dy } = deltas[id]!;
+          const kind = kindOf[id];
+          if (kind === 'node') {
+            const n = d.nodes[id];
+            if (n) {
+              nodesOrig[id] = { x: n.x + dx, y: n.y + dy };
+            }
+          } else if (kind === 'float') {
+            const f = d.floats.find((x) => x.id === id);
+            if (f) floatsOrig[id] = { x: f.x + dx, y: f.y + dy };
+          } else if (kind === 'line') {
+            const l = d.lines.find((x) => x.id === id);
+            if (l) linesOrig[id] = { x1: l.x1 + dx, y1: l.y1 + dy, x2: l.x2 + dx, y2: l.y2 + dy };
+          } else if (kind === 'stroke') {
+            strokes = strokes.map((st) => (st.id === id ? { ...st, pts: translateStrokePts(st.pts, dx, dy) } : st));
+          }
+        });
+        // 이미 "옮긴 뒤 좌표"를 담았으므로 이동량은 0으로 넘긴다(같은 변형 재사용).
+        nodes = mutations.translateNodesBy(nodes, nodesOrig, 0, 0);
+        floats = mutations.translateFloatsBy(floats, floatsOrig, 0, 0);
+        lines = mutations.translateLinesBy(lines, linesOrig, 0, 0);
+        return { ...d, nodes, floats, lines, strokes };
+      });
+      // 자유 루트가 움직였으면 루트 앵커도 따라간다(그룹 드롭과 같은 처리).
+      const rootD = deltas[ROOT_ID];
+      if (rootD && kindOf[ROOT_ID] === 'node') {
+        const r = docRef.current.nodes[ROOT_ID];
+        if (r) setRootAnchor({ x: r.x, y: r.y });
+      }
+    },
+    [arrangeBoxes, commitDoc],
+  );
+
   const deleteSelection = useCallback(() => {
     // multi-select bulk delete — port of `Component#deleteMulti` (MindFlow.dc.html:1595-1610):
     // every targeted node's subtree + every targeted line/float, in one undo step.
@@ -4149,6 +4272,26 @@ export function useEditorState(): EditorController {
   );
   const [searchMarks, setSearchMarks] = useState<{ nodes: Set<string>; floats: Set<string> } | null>(null);
 
+  // 격자 스냅 — **이 기기의 입력 보조**라 문서가 아니라 localStorage에 남긴다
+  // (협업 상대와 달라도 무방하다: 내가 끄고 켜는 손의 설정이지 문서 내용이 아니다).
+  const [snapGrid, setSnapGridState] = useState<boolean>(() => {
+    try {
+      return localStorage.getItem(SNAP_PREF_KEY) !== '0';
+    } catch {
+      return true;
+    }
+  });
+  const snapGridRef = useRef(snapGrid);
+  snapGridRef.current = snapGrid;
+  const setSnapGrid = useCallback((on: boolean) => {
+    setSnapGridState(on);
+    try {
+      localStorage.setItem(SNAP_PREF_KEY, on ? '1' : '0');
+    } catch {
+      /* 저장 실패해도 이번 세션에는 적용된다 */
+    }
+  }, []);
+
   const panToCanvasPoint = useCallback((cx: number, cy: number) => {
     setViewport((prev) => ({ ...prev, pan: { x: prev.vw / 2 - cx * prev.zoom, y: prev.vh / 2 - cy * prev.zoom } }));
   }, []);
@@ -4353,9 +4496,17 @@ export function useEditorState(): EditorController {
           }, true);
           break;
         }
-        case 'float':
-          commitDoc((doc0) => ({ ...doc0, floats: mutations.updateFloatItem(doc0.floats, d.id, { x: d.ox + dx, y: d.oy + dy }) }), true);
+        case 'float': {
+          // 격자 스냅(요청) — 좌상단을 격자에 붙인다. Alt를 누르고 있는 동안은 끈다
+          // (미세 조정 탈출구, 디자인 툴 관례). 커밋 값 자체를 스냅하므로 화면·저장본·
+          // 협업이 모두 같은 자리를 본다.
+          const snap = snapGridRef.current && !e.altKey;
+          commitDoc(
+            (doc0) => ({ ...doc0, floats: mutations.updateFloatItem(doc0.floats, d.id, { x: snapValue(d.ox + dx, snap), y: snapValue(d.oy + dy, snap) }) }),
+            true,
+          );
           break;
+        }
         case 'float-resize': {
           // 이미지 플로트는 비율 고정: 가로 드래그만 반영하고 높이는 원래
           // 종횡비(oh/ow)를 따라간다. 메모는 기존처럼 자유 리사이즈.
@@ -4365,16 +4516,27 @@ export function useEditorState(): EditorController {
                 const w = Math.max(60, Math.round(d.ow + dx));
                 return { w, h: Math.max(24, Math.round((w * d.oh) / Math.max(1, d.ow))) };
               })()
-            : { w: Math.max(120, Math.round(d.ow + dx)), h: Math.max(44, Math.round(d.oh + dy)) };
+            : (() => {
+                const snap = snapGridRef.current && !e.altKey;
+                return { w: Math.max(120, snapValue(Math.round(d.ow + dx), snap)), h: Math.max(44, snapValue(Math.round(d.oh + dy), snap)) };
+              })();
           commitDoc((doc0) => ({ ...doc0, floats: mutations.updateFloatItem(doc0.floats, d.id, patch) }), true);
           break;
         }
-        case 'zone':
-          commitDoc((doc0) => ({ ...doc0, zones: mutations.updateZoneItem(doc0.zones, d.id, { x: d.ox + dx, y: d.oy + dy }) }), true);
+        case 'zone': {
+          const snap = snapGridRef.current && !e.altKey;
+          commitDoc((doc0) => ({ ...doc0, zones: mutations.updateZoneItem(doc0.zones, d.id, { x: snapValue(d.ox + dx, snap), y: snapValue(d.oy + dy, snap) }) }), true);
           break;
+        }
         case 'zone-resize':
           commitDoc(
-            (doc0) => ({ ...doc0, zones: mutations.updateZoneItem(doc0.zones, d.id, { w: Math.max(160, Math.round(d.ow + dx)), h: Math.max(100, Math.round(d.oh + dy)) }) }),
+            (doc0) => ({
+              ...doc0,
+              zones: mutations.updateZoneItem(doc0.zones, d.id, {
+                w: Math.max(160, snapValue(Math.round(d.ow + dx), snapGridRef.current && !e.altKey)),
+                h: Math.max(100, snapValue(Math.round(d.oh + dy), snapGridRef.current && !e.altKey)),
+              }),
+            }),
             true,
           );
           break;
@@ -5347,6 +5509,10 @@ export function useEditorState(): EditorController {
     addChild,
     addSibling,
     deleteSelection,
+    arrangeSelection,
+    arrangeTargetCount,
+    snapGrid,
+    setSnapGrid,
     copySelection,
     cutSelection,
     pasteClipboardAt,

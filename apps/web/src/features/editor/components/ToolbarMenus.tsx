@@ -217,6 +217,21 @@ export function ViewMenu({ controller, onDone, isMobile }: { controller: EditorC
           }}
         />
       )}
+      {/* 격자에 맞추기(요청) — 메모·이미지·영역을 끌거나 크기를 조절할 때 좌표가
+          격자에 붙는다. 드래그 중 Alt를 누르면 그 순간만 꺼진다. */}
+      {!controller.readOnly && (
+        <MenuItem
+          theme={th}
+          isMobile={isMobile}
+          icon={<GridIcon />}
+          label="격자에 맞추기"
+          active={controller.snapGrid}
+          onClick={() => {
+            controller.setSnapGrid(!controller.snapGrid);
+            onDone();
+          }}
+        />
+      )}
       <MenuDivider theme={th} />
       <MenuItem
         theme={th}
@@ -261,6 +276,9 @@ export function MoreMenu({ controller, onDone, isMobile }: { controller: EditorC
       <MenuItem theme={th} isMobile={isMobile} icon={<MapIcon />} label="맵" active={controller.view === 'map'} onClick={() => { controller.setView('map'); onDone(); }} />
       {!controller.isBoard && (
         <MenuItem theme={th} isMobile={isMobile} icon={<OutlineIcon />} label="아웃라인" active={controller.view === 'outline'} onClick={() => { controller.setView('outline'); onDone(); }} />
+      )}
+      {!controller.readOnly && (
+        <MenuItem theme={th} isMobile={isMobile} icon={<GridIcon />} label="격자에 맞추기" active={controller.snapGrid} onClick={() => { controller.setSnapGrid(!controller.snapGrid); onDone(); }} />
       )}
       {controller.canComment && (
         <MenuItem theme={th} isMobile={isMobile} icon={<CommentIcon />} label="댓글" active={controller.commentsOpen} onClick={() => { if (controller.commentsOpen) controller.closeComments(); else controller.openComments(); onDone(); }} />
@@ -437,6 +455,15 @@ export function ExportIcon() {
       <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
       <polyline points="7 10 12 15 17 10" />
       <line x1={12} y1={15} x2={12} y2={3} />
+    </svg>
+  );
+}
+
+/** 격자 아이콘 — 3×3 점. "격자에 맞추기" 토글용. */
+function GridIcon() {
+  return (
+    <svg width="16" height="16" viewBox="0 0 16 16" aria-hidden="true">
+      {[3, 8, 13].map((y) => [3, 8, 13].map((x) => <circle key={`${x}-${y}`} cx={x} cy={y} r={1.3} fill="currentColor" />))}
     </svg>
   );
 }
