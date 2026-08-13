@@ -144,6 +144,7 @@ export function ShortcutHelp({ controller }: { controller: EditorController }) {
               {row([`${mod}+C`, `${mod}+V`], '주제 복사·붙여넣기')}
               {row(['Tab'], '하위 추가')}
               {row(['Enter'], '형제 추가')}
+              {row(['Alt+드래그'], '맞춤(안내선·격자) 잠시 끄기')}
               {row(['Delete'], '선택 삭제')}
               {row(['Esc'], '선택 해제 · 닫기')}
               {row(['휠', '핀치'], '확대/축소 (두 손가락 스크롤 = 이동)')}

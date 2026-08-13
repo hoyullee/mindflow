@@ -116,3 +116,75 @@ export const SNAP_GRID = 10;
 export function snapValue(v: number, on: boolean, grid = SNAP_GRID): number {
   return on ? Math.round(v / grid) * grid : v;
 }
+
+// ── 스마트 가이드(맞춤 안내선) ─────────────────────────────────────────────
+//
+// 끌고 있는 상자의 여섯 기준선(왼쪽·가로중심·오른쪽 / 위·세로중심·아래)을 **다른
+// 객체들의 같은 기준선**과 견줘, 허용치 안에서 가장 가까운 것에 붙인다. 격자보다
+// 먼저 적용한다: 격자는 "어딘가 반듯한 자리"지만 안내선은 "이것과 맞춘다"라는
+// 사용자의 의도에 훨씬 가깝다(그래서 둘 다 켜져 있어도 안내선이 이긴다).
+
+export type GuideAxis = 'x' | 'y';
+
+/** 그릴 안내선 하나 — 축 위치(`at`)와 그 선이 걸치는 구간(`from`~`to`). */
+export interface SnapGuide {
+  axis: GuideAxis;
+  at: number;
+  from: number;
+  to: number;
+}
+
+export interface GuideResult {
+  x: number;
+  y: number;
+  guides: SnapGuide[];
+}
+
+/** 상자의 축별 기준선 셋 — 시작·중심·끝. */
+function linesOf(b: ArrangeBox, axis: GuideAxis): [number, number, number] {
+  return axis === 'x' ? [b.x, b.x + b.w / 2, b.x + b.w] : [b.y, b.y + b.h / 2, b.y + b.h];
+}
+
+function matchAxis(moving: ArrangeBox, others: ArrangeBox[], axis: GuideAxis, tol: number): { delta: number; at: number; hits: ArrangeBox[] } | null {
+  const mine = linesOf(moving, axis);
+  let best: { delta: number; at: number } | null = null;
+  others.forEach((o) => {
+    linesOf(o, axis).forEach((line) => {
+      mine.forEach((m) => {
+        const delta = line - m;
+        if (Math.abs(delta) > tol) return;
+        // 같은 거리면 먼저 만난 것을 지킨다(끌 때 안내선이 흔들리지 않게).
+        if (!best || Math.abs(delta) < Math.abs(best.delta) - 0.001) best = { delta, at: line };
+      });
+    });
+  });
+  if (!best) return null;
+  const chosen: { delta: number; at: number } = best;
+  // 같은 선에 걸린 다른 상자들도 모아 안내선을 그만큼 길게 그린다.
+  const hits = others.filter((o) => linesOf(o, axis).some((line) => Math.abs(line - chosen.at) < 0.001));
+  return { delta: chosen.delta, at: chosen.at, hits };
+}
+
+/**
+ * 끌고 있는 상자를 이웃에 맞춘다. 축마다 따로 판단하므로 가로만·세로만 붙는 것도
+ * 자연스럽다. `tol`은 **캔버스 단위**(호출부가 화면 px을 줌으로 나눠 넘긴다 —
+ * 확대해도 손끝 감각이 같아야 한다).
+ */
+export function alignGuides(moving: ArrangeBox, others: ArrangeBox[], tol: number): GuideResult {
+  const mx = matchAxis(moving, others, 'x', tol);
+  const my = matchAxis(moving, others, 'y', tol);
+  const x = moving.x + (mx?.delta ?? 0);
+  const y = moving.y + (my?.delta ?? 0);
+  const snapped: ArrangeBox = { ...moving, x, y };
+  const guides: SnapGuide[] = [];
+  if (mx) {
+    // 세로 안내선 — 걸린 상자들과 끌고 있는 상자를 세로로 잇는다.
+    const boxes = [snapped, ...mx.hits];
+    guides.push({ axis: 'x', at: mx.at, from: Math.min(...boxes.map((b) => b.y)), to: Math.max(...boxes.map((b) => b.y + b.h)) });
+  }
+  if (my) {
+    const boxes = [snapped, ...my.hits];
+    guides.push({ axis: 'y', at: my.at, from: Math.min(...boxes.map((b) => b.x)), to: Math.max(...boxes.map((b) => b.x + b.w)) });
+  }
+  return { x, y, guides };
+}

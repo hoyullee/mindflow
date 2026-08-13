@@ -10,6 +10,7 @@ import { ZoneLayer } from './ZoneLayer';
 import { MarqueeLayer } from './MarqueeLayer';
 import { PresenceLayer } from './PresenceLayer';
 import { StrokeLayer } from './StrokeLayer';
+import { GuideLayer } from './GuideLayer';
 import { BoardDrawLayer } from './BoardDrawLayer';
 import { BoardToolbar } from './BoardToolbar';
 import { ContextMenu } from './ContextMenu';
@@ -129,6 +130,8 @@ export function Viewport({ doc, controller }: ViewportProps) {
                   selectedIds={controller.multiGroups.strokes}
                   accent={theme.accent}
                 />
+                {/* 맞춤 안내선 — 끌고 있는 동안에만 뜬다(컨트롤러가 손을 떼면 비운다). */}
+                <GuideLayer guides={controller.snapGuides} zoom={zoom} color={theme.accent} />
                 <MarqueeLayer rect={controller.marquee} theme={theme} />
                 <GroupGhostLayer doc={doc} controller={controller} />
                 <PresenceLayer controller={controller} />

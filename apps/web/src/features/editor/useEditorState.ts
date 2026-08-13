@@ -28,8 +28,8 @@ import { isPanButton } from './pointerButtons';
 import { buildVisible, descendants, outlineRows } from './tree';
 import type { EdgeStyle } from './tree';
 import { nearestInDirection } from './navigation';
-import { arrangeDeltas, snapValue } from './arrange';
-import type { ArrangeBox, ArrangeOp } from './arrange';
+import { alignGuides, arrangeDeltas, snapValue } from './arrange';
+import type { ArrangeBox, ArrangeOp, SnapGuide } from './arrange';
 import type { NavDir, NavPoint } from './navigation';
 import { UI_THEME, themeOf, themeKeyOf } from './theme';
 import type { Theme, ThemeKey } from './theme';
@@ -211,6 +211,10 @@ type BgDrag =
 
 /** 격자 스냅 on/off — 이 기기의 입력 보조라 문서가 아니라 localStorage에 남는다. */
 const SNAP_PREF_KEY = 'mf_snap_grid';
+/** 맞춤 안내선이 붙는 거리 — **화면 px**(줌으로 나눠 캔버스 단위로 쓴다). 8px은
+ * 손이 "가까이 가져가면 붙는다"고 느끼면서, 일부러 어긋나게 두려는 위치를
+ * 빼앗지 않는 거리다. */
+const GUIDE_TOL_PX = 8;
 
 function totalSelected(m: MultiSelection): number {
   return m.nodes.length + m.lines.length + m.floats.length + m.strokes.length;
@@ -471,6 +475,8 @@ export interface EditorController {
    * 맞춘다. 드래그 중 Alt를 누르면 그 순간만 꺼진다(미세 조정용 탈출구). */
   snapGrid: boolean;
   setSnapGrid: (on: boolean) => void;
+  /** 지금 그려야 할 맞춤 안내선 — 끌고 있는 동안만 채워진다(놓으면 빈 배열). */
+  snapGuides: SnapGuide[];
   /** 현재 선택(단일/다중)을 클립보드에 담는다. 담을 게 없으면(루트만 선택 등)
    * `false`를 돌려주고 기존 클립보드는 그대로 둔다. */
   copySelection: () => boolean;
@@ -4283,6 +4289,47 @@ export function useEditorState(): EditorController {
   });
   const snapGridRef = useRef(snapGrid);
   snapGridRef.current = snapGrid;
+  const [snapGuides, setSnapGuides] = useState<SnapGuide[]>([]);
+
+  /**
+   * 끌고 있는 상자를 **이웃에 먼저**, 없으면 격자에 맞춘다(요청: 스마트 가이드).
+   *
+   * 안내선이 격자를 이기는 이유: 격자는 "어딘가 반듯한 자리"지만 안내선은 "이것과
+   * 맞춘다"는 사용자의 의도 그 자체다. 허용치는 **화면 8px**을 줌으로 나눠 캔버스
+   * 단위로 바꾼다 — 확대해도 손끝 감각이 같아야 한다.
+   *
+   * 이웃 후보는 화면에 보이는 **면 있는 것들**: 다른 메모·이미지, 영역, 주제 박스
+   * (트리 노드는 옮길 수 없지만 맞출 기준으로는 훌륭하다 — 오히려 그래서 좋다).
+   * 연결선·획은 상자 경계가 모호해 뺐다.
+   */
+  const snapDragBox = useCallback((box: ArrangeBox, excludeId: string, on: boolean): { x: number; y: number } => {
+    if (!on) {
+      setSnapGuides((prev) => (prev.length ? [] : prev));
+      return { x: box.x, y: box.y };
+    }
+    const d = docRef.current;
+    const others: ArrangeBox[] = [];
+    d.floats.forEach((f) => {
+      if (f.id === excludeId) return;
+      others.push({ x: f.x, y: f.y, w: f.w, h: floatBoxH(f) });
+    });
+    d.zones.forEach((z) => {
+      if (z.id === excludeId) return;
+      others.push({ x: z.x, y: z.y, w: z.w, h: z.h });
+    });
+    const g = geomRef.current;
+    for (const id in g) {
+      const gg = g[id];
+      if (gg) others.push({ x: gg.x - gg.w / 2, y: gg.y - gg.h / 2, w: gg.w, h: gg.h });
+    }
+    const tol = GUIDE_TOL_PX / (viewportRef.current.zoom || 1);
+    const res = alignGuides(box, others, tol);
+    setSnapGuides((prev) => (prev.length === 0 && res.guides.length === 0 ? prev : res.guides));
+    // 안내선이 잡지 못한 축만 격자로 — 둘 다 켜져 있어도 서로 싸우지 않는다.
+    const hitX = res.guides.some((gd) => gd.axis === 'x');
+    const hitY = res.guides.some((gd) => gd.axis === 'y');
+    return { x: hitX ? res.x : snapValue(res.x, true), y: hitY ? res.y : snapValue(res.y, true) };
+  }, []);
   const setSnapGrid = useCallback((on: boolean) => {
     setSnapGridState(on);
     try {
@@ -4497,14 +4544,14 @@ export function useEditorState(): EditorController {
           break;
         }
         case 'float': {
-          // 격자 스냅(요청) — 좌상단을 격자에 붙인다. Alt를 누르고 있는 동안은 끈다
-          // (미세 조정 탈출구, 디자인 툴 관례). 커밋 값 자체를 스냅하므로 화면·저장본·
-          // 협업이 모두 같은 자리를 본다.
-          const snap = snapGridRef.current && !e.altKey;
-          commitDoc(
-            (doc0) => ({ ...doc0, floats: mutations.updateFloatItem(doc0.floats, d.id, { x: snapValue(d.ox + dx, snap), y: snapValue(d.oy + dy, snap) }) }),
-            true,
-          );
+          // 맞춤(요청) — 이웃의 기준선에 먼저, 없으면 격자에. Alt를 누르고 있는
+          // 동안은 둘 다 끈다(미세 조정 탈출구, 디자인 툴 관례). 커밋 값 자체를
+          // 맞추므로 화면·저장본·협업이 모두 같은 자리를 본다.
+          const on = snapGridRef.current && !e.altKey;
+          const f0 = docRef.current.floats.find((x) => x.id === d.id);
+          const box = { x: d.ox + dx, y: d.oy + dy, w: f0?.w ?? 200, h: f0 ? floatBoxH(f0) : 44 };
+          const at = snapDragBox(box, d.id, on);
+          commitDoc((doc0) => ({ ...doc0, floats: mutations.updateFloatItem(doc0.floats, d.id, { x: at.x, y: at.y }) }), true);
           break;
         }
         case 'float-resize': {
@@ -4524,8 +4571,11 @@ export function useEditorState(): EditorController {
           break;
         }
         case 'zone': {
-          const snap = snapGridRef.current && !e.altKey;
-          commitDoc((doc0) => ({ ...doc0, zones: mutations.updateZoneItem(doc0.zones, d.id, { x: snapValue(d.ox + dx, snap), y: snapValue(d.oy + dy, snap) }) }), true);
+          const on = snapGridRef.current && !e.altKey;
+          const z0 = docRef.current.zones.find((x) => x.id === d.id);
+          const box = { x: d.ox + dx, y: d.oy + dy, w: z0?.w ?? 340, h: z0?.h ?? 220 };
+          const at = snapDragBox(box, d.id, on);
+          commitDoc((doc0) => ({ ...doc0, zones: mutations.updateZoneItem(doc0.zones, d.id, { x: at.x, y: at.y }) }), true);
           break;
         }
         case 'zone-resize':
@@ -4583,6 +4633,8 @@ export function useEditorState(): EditorController {
       const d = objDragRef.current;
       if (!d) return;
       objDragRef.current = null;
+      // 안내선은 **끄는 동안에만** 뜬다 — 손을 떼면(취소돼도) 곧바로 지운다.
+      setSnapGuides((prev) => (prev.length ? [] : prev));
       // deferred right-click menu (macOS): see the identical block in the background
       // drag's `onUp`, above — this covers a right-click that landed on a NODE/FLOAT/
       // ZONE/LINE (their `begin*Drag` starters don't filter by button, matching the
@@ -5513,6 +5565,7 @@ export function useEditorState(): EditorController {
     arrangeTargetCount,
     snapGrid,
     setSnapGrid,
+    snapGuides,
     copySelection,
     cutSelection,
     pasteClipboardAt,

@@ -1277,7 +1277,7 @@ describe('화이트보드 에디터', () => {
 
     // 보기 메뉴에서 끄면 끌린 그대로 남는다.
     fireEvent.click(screen.getByRole('button', { name: '보기' }));
-    fireEvent.click(await screen.findByRole('button', { name: '격자에 맞추기' }));
+    fireEvent.click(await screen.findByRole('button', { name: '안내선·격자에 맞추기' }));
     firePointer(el, 'pointerdown', { pointerId: 42, clientX: 100, clientY: 100, button: 0 });
     firePointer(document.body, 'pointermove', { pointerId: 42, clientX: 100 + 3 * zoom, clientY: 100 + 2 * zoom });
     firePointer(document.body, 'pointerup', { pointerId: 42, clientX: 100 + 3 * zoom, clientY: 100 + 2 * zoom });
@@ -1286,6 +1286,81 @@ describe('화이트보드 에디터', () => {
       const saved = JSON.parse(localStorage.getItem('mindflow_doc_b33') || 'null');
       expect(saved.floats[0].x).toBe(43);
       expect(saved.floats[0].y).toBe(22);
+    });
+  });
+
+  it('스마트 가이드 — 이웃의 기준선에 붙고 그 자리에 안내선이 뜬다(격자보다 우선, 요청)', async () => {
+    localStorage.setItem(
+      'mindflow_doc_b35',
+      JSON.stringify({
+        ...BOARD,
+        floats: [
+          // 기준이 되는 이웃. x=23은 **격자(10)의 배수가 아니다** — 여기 붙으면
+          // 격자가 아니라 안내선이 이겼다는 뜻이 된다.
+          { id: 'f1', x: 23, y: -300, w: 200, h: 90, text: '기준' },
+          { id: 'f2', x: 400, y: 100, w: 160, h: 80, text: '끌 것' },
+        ],
+      }),
+    );
+    const { container } = renderEditor('/editor?map=b35&title=x');
+    const el = await waitFor(() => {
+      const found = container.querySelector('[data-float-id="f2"]') as HTMLElement;
+      expect(found).toBeTruthy();
+      return found;
+    });
+    const zoom = Number(/scale\(([\d.]+)\)/.exec((container.querySelector('[data-pan-layer]') as HTMLElement).style.transform || '')?.[1] ?? 1);
+
+    // 왼쪽 끝이 26 → 기준(23)에서 3만큼 어긋난 자리로 끈다.
+    firePointer(el, 'pointerdown', { pointerId: 44, clientX: 100, clientY: 100, button: 0 });
+    firePointer(document.body, 'pointermove', { pointerId: 44, clientX: 100 - 374 * zoom, clientY: 100 });
+    // 끄는 동안 안내선이 그 자리에 보인다.
+    const guide = container.querySelector('[data-guide-axis="x"]') as SVGLineElement | null;
+    expect(guide).toBeTruthy();
+    expect(guide!.getAttribute('data-guide-at')).toBe('23');
+    firePointer(document.body, 'pointerup', { pointerId: 44, clientX: 100 - 374 * zoom, clientY: 100 });
+    // 손을 떼면 사라진다 — 문서에 남는 것이 아니라 끄는 동안의 눈금이다.
+    expect(container.querySelector('[data-guide-axis]')).toBeNull();
+
+    fireEvent.keyDown(window, { key: 's', ctrlKey: true });
+    await waitFor(() => {
+      const saved = JSON.parse(localStorage.getItem('mindflow_doc_b35') || 'null');
+      const f2 = saved.floats.find((f: { id: string }) => f.id === 'f2');
+      expect(f2.x).toBe(23); // 26 → 23 (격자였다면 30이었다)
+      expect(f2.y).toBe(100); // 세로는 걸린 게 없어 그대로
+    });
+  });
+
+  it('허용치 밖이면 안내선 없이 격자로 간다', async () => {
+    localStorage.setItem(
+      'mindflow_doc_b36',
+      JSON.stringify({
+        ...BOARD,
+        floats: [
+          { id: 'f1', x: 23, y: -300, w: 200, h: 90, text: '기준' },
+          { id: 'f2', x: 400, y: 100, w: 160, h: 80, text: '끌 것' },
+        ],
+      }),
+    );
+    const { container } = renderEditor('/editor?map=b36&title=x');
+    const el = await waitFor(() => {
+      const found = container.querySelector('[data-float-id="f2"]') as HTMLElement;
+      expect(found).toBeTruthy();
+      return found;
+    });
+    const zoom = Number(/scale\(([\d.]+)\)/.exec((container.querySelector('[data-pan-layer]') as HTMLElement).style.transform || '')?.[1] ?? 1);
+
+    // 왼쪽 끝 92 — 기준의 세 기준선(왼쪽 23·중심 123·오른쪽 223) 어느 것과도
+    // 8 넘게 떨어진 자리다(끌고 있는 상자의 중심·오른쪽까지 따져 고른 값).
+    firePointer(el, 'pointerdown', { pointerId: 45, clientX: 100, clientY: 100, button: 0 });
+    firePointer(document.body, 'pointermove', { pointerId: 45, clientX: 100 - 308 * zoom, clientY: 100 });
+    expect(container.querySelectorAll('[data-guide-axis]')).toHaveLength(0);
+    firePointer(document.body, 'pointerup', { pointerId: 45, clientX: 100 - 308 * zoom, clientY: 100 });
+
+    fireEvent.keyDown(window, { key: 's', ctrlKey: true });
+    await waitFor(() => {
+      const saved = JSON.parse(localStorage.getItem('mindflow_doc_b36') || 'null');
+      const f2 = saved.floats.find((f: { id: string }) => f.id === 'f2');
+      expect(f2.x).toBe(90); // 92 → 격자 90
     });
   });
 
