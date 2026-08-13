@@ -1289,6 +1289,81 @@ describe('화이트보드 에디터', () => {
     });
   });
 
+  it('열 모드 프레임 — 카드가 세로로 쌓이고 폭이 열에 맞는다(칸반, 요청)', async () => {
+    localStorage.setItem(
+      'mindflow_doc_b49',
+      JSON.stringify({
+        ...BOARD,
+        zones: [{ id: 'z1', x: -200, y: -200, w: 320, h: 500, label: '할 일', color: null, stack: 'column' }],
+        floats: [
+          // 제멋대로 놓인 카드 둘 — 열 모드가 정리한다(아래가 먼저 오도록 y가 뒤바뀜).
+          { id: 'c2', x: -60, y: 40, w: 140, h: 60, text: '둘' },
+          { id: 'c1', x: -150, y: -150, w: 200, h: 60, text: '하나' },
+          { id: 'out', x: 600, y: 600, w: 200, h: 60, text: '밖' },
+        ],
+      }),
+    );
+    const { container } = renderEditor('/editor?map=b49&title=x');
+    await waitFor(() => expect(container.querySelectorAll('[data-float-id]')).toHaveLength(3));
+    fireEvent.keyDown(window, { key: 's', ctrlKey: true });
+
+    await waitFor(() => {
+      const saved = JSON.parse(localStorage.getItem('mindflow_doc_b49') || 'null');
+      const by = Object.fromEntries(saved.floats.map((f: { id: string }) => [f.id, f]));
+      // 안쪽 여백 16, 폭은 320-32 = 288.
+      expect(by.c1).toMatchObject({ x: -184, y: -184, w: 288 });
+      expect(by.c2.x).toBe(-184);
+      expect(by.c2.w).toBe(288);
+      expect(by.c2.y).toBeGreaterThan(by.c1.y); // 위에 있던 카드가 먼저
+      expect(by.out).toMatchObject({ x: 600, y: 600, w: 200 }); // 열 밖은 그대로
+    });
+
+    // 라벨 옆 카드 수 배지.
+    await waitFor(() => expect(container.querySelector('[data-column-count="z1"]')?.textContent).toBe('2'));
+  });
+
+  it('열 모드는 우클릭 메뉴로 켜고 끈다 — 끄면 카드가 그 자리에 남는다', async () => {
+    localStorage.setItem(
+      'mindflow_doc_b50',
+      JSON.stringify({
+        ...BOARD,
+        zones: [{ id: 'z1', x: -200, y: -200, w: 320, h: 500, label: '칸', color: null }],
+        floats: [{ id: 'c1', x: -150, y: 100, w: 140, h: 60, text: '카드' }],
+      }),
+    );
+    const { container } = renderEditor('/editor?map=b50&title=x');
+    const zone = await waitFor(() => {
+      const found = container.querySelector('[data-zone-hit="z1"]') as HTMLElement;
+      expect(found).toBeTruthy();
+      return found;
+    });
+    // 열 모드 전에는 카드가 놓인 자리 그대로.
+    expect(container.querySelector('[data-column-count="z1"]')).toBeNull();
+
+    // 영역 안의 빈 자리(카드가 가지 않는 아래쪽)를 캔버스 좌표로 집어 누른다.
+    const at = strokePoint(container, 60, 250);
+    firePointer(zone, 'pointerdown', { pointerId: 69, clientX: at.x, clientY: at.y, button: 0 });
+    firePointer(document.body, 'pointerup', { pointerId: 69, clientX: at.x, clientY: at.y });
+    fireEvent.contextMenu(zone, { clientX: at.x, clientY: at.y });
+    fireEvent.mouseDown(await screen.findByText('열 모드'));
+    fireEvent.keyDown(window, { key: 's', ctrlKey: true });
+    await waitFor(() => {
+      const saved = JSON.parse(localStorage.getItem('mindflow_doc_b50') || 'null');
+      expect(saved.zones[0].stack).toBe('column');
+      expect(saved.floats[0]).toMatchObject({ x: -184, y: -184, w: 288 }); // 자리로 정렬됨
+    });
+
+    // 다시 끄면 플래그만 사라지고 카드는 마지막 자리에 남는다.
+    fireEvent.contextMenu(zone, { clientX: at.x, clientY: at.y });
+    fireEvent.mouseDown(await screen.findByText('열 모드'));
+    fireEvent.keyDown(window, { key: 's', ctrlKey: true });
+    await waitFor(() => {
+      const saved = JSON.parse(localStorage.getItem('mindflow_doc_b50') || 'null');
+      expect(saved.zones[0].stack).toBeUndefined();
+      expect(saved.floats[0]).toMatchObject({ x: -184, y: -184 });
+    });
+  });
+
   it('프레임 "내용에 맞추기" — 안에 든 것을 감싸도록 크기가 줄어든다(요청)', async () => {
     localStorage.setItem(
       'mindflow_doc_b46',

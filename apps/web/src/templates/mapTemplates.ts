@@ -11,7 +11,7 @@
 // 자유 도형인 메모(플로트)뿐이라, 메모는 트리가 반드시 비켜 가는 자리에만 둔다
 // (아래 `memo` 주석 참고).
 
-import type { Doc, Float, LayoutMode, Node, NodeMap } from '@mindflow/mindmap-core';
+import type { Doc, Float, LayoutMode, Node, NodeMap, Zone } from '@mindflow/mindmap-core';
 import { DEFAULT_EDGE_STYLE, DEFAULT_THEME_KEY, ROOT_ID } from '@mindflow/mindmap-core';
 
 /** 화이트보드의 기본 테마 — 순백 캔버스(`THEMES.white`). 마인드맵의 기본값
@@ -155,12 +155,23 @@ export interface BoardTemplateMemo {
   bold?: boolean;
 }
 
+/** 열 모드 프레임(칸반) — 카드는 이 사각형 안에 놓기만 하면 소속된다(기하 판정). */
+export interface BoardTemplateColumn {
+  label: string;
+  x: number;
+  y: number;
+  w: number;
+  h: number;
+}
+
 export interface BoardTemplate {
   id: string;
   /** 갤러리 카드 이름이자 새 보드의 제목. */
   name: string;
   desc: string;
   memos: BoardTemplateMemo[];
+  /** 열 모드 프레임 — 있으면 그 안의 카드가 세로로 쌓인다. */
+  columns?: BoardTemplateColumn[];
 }
 
 // 열 세 개짜리 보드의 공통 격자 — 메모 폭 260 + 간격 40(전체 860, 원점 기준 좌우 대칭).
@@ -171,6 +182,13 @@ const CARD_W = 260;
 const CARD_H = 96;
 const HEAD_Y = -190;
 const CARD_Y = [-120, -6];
+
+// 칸반 열 셋 — 폭 280 + 간격 24(전체 888, 원점 기준 좌우 대칭). 열 높이는
+// 카드 서넛이 들어가는 정도로 잡고, 부족하면 사용자가 손잡이로 늘린다.
+const KANBAN_W = 280;
+const KANBAN_H = 420;
+const KANBAN_X = [-444, -140, 164];
+const KANBAN_Y = -180;
 
 // 2×2 매트릭스용 격자 — 넓은 칸 둘을 좌우로, 각 칸은 [제목][카드]. 가로 간격 80,
 // 세로는 제목(44) 아래 카드(96)를 두고 칸 사이를 34 띄운다(겹침 없음, 테스트가 지킨다).
@@ -197,11 +215,26 @@ export const BOARD_TEMPLATES: BoardTemplate[] = [
     ],
   },
   {
-    // 칸반은 **별도 기능**으로 만들 예정이라 템플릿에서 뺐다(요청) — 열을 옮기는
-    // 일은 붙였다 떼는 스티커보다 규칙이 있는 보드가 맞다.
-    //
-    // 대신 들어온 2×2 매트릭스는 세 열짜리(회고)·격자(아이디어)와 모양이 겹치지
-    // 않고, 스티커를 옮겨 담는 것 자체가 결론이 되는 판이다(점 투표와도 맞물린다).
+    // 칸반 — **열 모드 프레임** 셋. 카드는 프레임 안에 놓기만 하면 소속되고
+    // (기하 판정) 세로로 쌓인다. 순서는 y 좌표가 곧 규칙이라 협업에서도 안전하다.
+    id: 'board-kanban',
+    name: '칸반 보드',
+    desc: '할 일 · 진행 중 · 완료로 카드 옮기기',
+    columns: [
+      { label: '할 일', x: KANBAN_X[0]!, y: KANBAN_Y, w: KANBAN_W, h: KANBAN_H },
+      { label: '진행 중', x: KANBAN_X[1]!, y: KANBAN_Y, w: KANBAN_W, h: KANBAN_H },
+      { label: '완료', x: KANBAN_X[2]!, y: KANBAN_Y, w: KANBAN_W, h: KANBAN_H },
+    ],
+    memos: [
+      { text: '예) 로그인 오류 메시지 고치기', x: KANBAN_X[0]! + 16, y: KANBAN_Y + 16, w: KANBAN_W - 32, h: CARD_H },
+      { text: '예) 검색 결과 정렬 바꾸기', x: KANBAN_X[0]! + 16, y: KANBAN_Y + 16 + CARD_H + 12, w: KANBAN_W - 32, h: CARD_H },
+      { text: '예) 온보딩 문구 다듬기', x: KANBAN_X[1]! + 16, y: KANBAN_Y + 16, w: KANBAN_W - 32, h: CARD_H },
+      { text: '예) 주간 리포트 자동화', x: KANBAN_X[2]! + 16, y: KANBAN_Y + 16, w: KANBAN_W - 32, h: CARD_H },
+    ],
+  },
+  {
+    // 2×2 매트릭스는 세 열짜리(회고·칸반)·격자(아이디어)와 모양이 겹치지 않고,
+    // 스티커를 옮겨 담는 것 자체가 결론이 되는 판이다(점 투표와도 맞물린다).
     id: 'board-priority',
     name: '우선순위 정하기',
     desc: '임팩트와 노력으로 네 칸에 나눠 담기',
@@ -283,7 +316,17 @@ export function buildTemplateDoc(id: string | null | undefined): Doc | null {
       // 굵게는 rich 런 하나 — `text`와 글자가 같아야 한다(모델 계약).
       ...(m.bold && m.text ? { rich: [{ t: m.text, b: true }] } : {}),
     }));
-    return { v: 1, nodes: {}, floats, lines: [], zones: [], layoutMode: 'right', themeKey: BOARD_THEME_KEY, edgeStyle: DEFAULT_EDGE_STYLE, kind: 'board' };
+    const zones: Zone[] = (bt.columns ?? []).map((c, i) => ({
+      id: `bz${i + 1}`,
+      x: c.x,
+      y: c.y,
+      w: c.w,
+      h: c.h,
+      label: c.label,
+      color: null,
+      stack: 'column',
+    }));
+    return { v: 1, nodes: {}, floats, lines: [], zones, layoutMode: 'right', themeKey: BOARD_THEME_KEY, edgeStyle: DEFAULT_EDGE_STYLE, kind: 'board' };
   }
 
   const t = findTemplate(id);
