@@ -217,14 +217,15 @@ export function ViewMenu({ controller, onDone, isMobile }: { controller: EditorC
           }}
         />
       )}
-      {/* 격자에 맞추기(요청) — 메모·이미지·영역을 끌거나 크기를 조절할 때 좌표가
-          격자에 붙는다. 드래그 중 Alt를 누르면 그 순간만 꺼진다. */}
+      {/* 맞춤 도우미(요청) — 메모·이미지·영역을 끌면 **이웃의 기준선**(안내선)에
+          먼저, 없으면 격자에 붙는다. 토글 하나가 둘을 함께 켜고 끈다(사용자에겐
+          "손이 자석처럼 붙는다"는 한 가지 감각이다). 드래그 중 Alt는 그 순간만 끔. */}
       {!controller.readOnly && (
         <MenuItem
           theme={th}
           isMobile={isMobile}
           icon={<GridIcon />}
-          label="격자에 맞추기"
+          label="안내선·격자에 맞추기"
           active={controller.snapGrid}
           onClick={() => {
             controller.setSnapGrid(!controller.snapGrid);
@@ -278,7 +279,7 @@ export function MoreMenu({ controller, onDone, isMobile }: { controller: EditorC
         <MenuItem theme={th} isMobile={isMobile} icon={<OutlineIcon />} label="아웃라인" active={controller.view === 'outline'} onClick={() => { controller.setView('outline'); onDone(); }} />
       )}
       {!controller.readOnly && (
-        <MenuItem theme={th} isMobile={isMobile} icon={<GridIcon />} label="격자에 맞추기" active={controller.snapGrid} onClick={() => { controller.setSnapGrid(!controller.snapGrid); onDone(); }} />
+        <MenuItem theme={th} isMobile={isMobile} icon={<GridIcon />} label="안내선·격자에 맞추기" active={controller.snapGrid} onClick={() => { controller.setSnapGrid(!controller.snapGrid); onDone(); }} />
       )}
       {controller.canComment && (
         <MenuItem theme={th} isMobile={isMobile} icon={<CommentIcon />} label="댓글" active={controller.commentsOpen} onClick={() => { if (controller.commentsOpen) controller.closeComments(); else controller.openComments(); onDone(); }} />
@@ -459,7 +460,7 @@ export function ExportIcon() {
   );
 }
 
-/** 격자 아이콘 — 3×3 점. "격자에 맞추기" 토글용. */
+/** 격자 아이콘 — 3×3 점. 맞춤(안내선·격자) 토글용. */
 function GridIcon() {
   return (
     <svg width="16" height="16" viewBox="0 0 16 16" aria-hidden="true">

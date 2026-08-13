@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { arrangeDeltas, minTargets } from './arrange';
+import { alignGuides, arrangeDeltas, minTargets } from './arrange';
 
 const B = (x: number, y: number, w: number, h: number) => ({ x, y, w, h });
 
@@ -72,5 +72,52 @@ describe('정렬·분배 계산', () => {
     const moved = Object.fromEntries(Object.entries(boxes).map(([k, b]) => [k, { ...b, x: b.x + d1[k]!.dx }]));
     const d2 = arrangeDeltas(moved, 'left');
     Object.values(d2).forEach((d) => expect(d).toEqual({ dx: 0, dy: 0 }));
+  });
+});
+
+describe('스마트 가이드(맞춤 안내선)', () => {
+  const tol = 6;
+  // 기준이 되는 이웃: x 100..300, y 100..200 (중심 200/150)
+  const other = B(100, 100, 200, 100);
+
+  it('왼쪽 끝이 가까우면 붙고, 그 자리에 세로 안내선이 뜬다', () => {
+    const r = alignGuides(B(104, 400, 80, 40), [other], tol);
+    expect(r.x).toBe(100);
+    expect(r.y).toBe(400); // 세로는 걸린 게 없다
+    const g = r.guides.find((x) => x.axis === 'x')!;
+    expect(g.at).toBe(100);
+    // 안내선은 끌고 있는 상자와 이웃을 잇는 만큼 길다.
+    expect(g.from).toBe(100);
+    expect(g.to).toBe(440);
+    expect(r.guides.some((x) => x.axis === 'y')).toBe(false);
+  });
+
+  it('중심끼리도 맞는다 — 가로·세로 동시에', () => {
+    // 중심 (200,150)에 3px 어긋난 상자
+    const r = alignGuides(B(200 - 40 + 3, 150 - 20 - 2, 80, 40), [other], tol);
+    expect(r.x + 40).toBe(200);
+    expect(r.y + 20).toBe(150);
+    expect(r.guides.map((g) => g.axis).sort()).toEqual(['x', 'y']);
+  });
+
+  it('허용치 밖이면 붙지 않는다(안내선도 없다)', () => {
+    const r = alignGuides(B(112, 400, 80, 40), [other], tol);
+    expect(r.x).toBe(112);
+    expect(r.guides).toEqual([]);
+  });
+
+  it('여러 이웃이 같은 선에 있으면 안내선이 그만큼 길어진다', () => {
+    const far = B(100, 600, 60, 40); // 같은 x=100
+    const r = alignGuides(B(103, 300, 80, 40), [other, far], tol);
+    expect(r.x).toBe(100);
+    const g = r.guides.find((x) => x.axis === 'x')!;
+    expect(g.from).toBe(100); // other의 위
+    expect(g.to).toBe(640); // far의 아래
+  });
+
+  it('가장 가까운 선을 고른다 — 오른쪽 끝이 더 가까우면 그쪽', () => {
+    // 상자 오른쪽(x+80)이 300(이웃 오른쪽)에서 2px, 왼쪽은 100에서 218px
+    const r = alignGuides(B(218, 400, 80, 40), [other], tol);
+    expect(r.x + 80).toBe(300);
   });
 });
