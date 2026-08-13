@@ -117,20 +117,20 @@ describe('화이트보드 에디터', () => {
     });
   });
 
-  it('board에서는 주제/선/영역·레이아웃·아웃라인 UI가 없다 — 메모·이미지만', async () => {
+  it('board에서는 주제·레이아웃·아웃라인 UI가 없다 — 메모·이미지·연결선·영역만', async () => {
     localStorage.setItem('mindflow_doc_b2', JSON.stringify(BOARD));
     const { container } = renderEditor('/editor?map=b2&title=x');
     await waitFor(() => expect(within(getViewport(container)).getByText('아이디어 하나')).toBeTruthy());
 
     // 삽입은 GNB에서 내려가고(같은 동작의 진입점을 둘로 두지 않는다) 하단 도구
-    // 막대가 맡는다 — 메모·이미지만.
+    // 막대가 맡는다 — 보드 어휘 넷(메모·이미지·연결선·영역), 주제만 없다.
     expect(screen.queryByRole('button', { name: '삽입' })).toBeNull();
     const bar = container.querySelector('[data-board-toolbar]') as HTMLElement;
     expect(within(bar).getByRole('button', { name: '메모 추가' })).toBeTruthy();
     expect(within(bar).getByRole('button', { name: '이미지 추가' })).toBeTruthy();
+    expect(within(bar).getByRole('button', { name: '연결선 추가' })).toBeTruthy();
+    expect(within(bar).getByRole('button', { name: '영역 추가' })).toBeTruthy();
     expect(screen.queryByRole('button', { name: '주제 추가' })).toBeNull();
-    expect(screen.queryByRole('button', { name: '선 추가' })).toBeNull();
-    expect(screen.queryByRole('button', { name: '영역 추가' })).toBeNull();
 
     // 스타일 메뉴: 레이아웃/연결선 구획이 없고 테마는 남는다.
     fireEvent.click(screen.getByRole('button', { name: '스타일' }));
@@ -145,13 +145,13 @@ describe('화이트보드 에디터', () => {
     expect(screen.queryByRole('button', { name: '아웃라인' })).toBeNull();
     fireEvent.keyDown(window, { key: 'Escape' });
 
-    // 배경 우클릭: 메모/이미지만.
+    // 배경 우클릭: 보드 어휘 넷. 주제만 없다.
     fireEvent.contextMenu(getViewport(container), { clientX: 300, clientY: 300 });
     await screen.findByText('메모 추가');
     expect(screen.getByText('이미지 추가')).toBeTruthy();
+    expect(screen.getAllByText('연결선 추가').length).toBeGreaterThan(0);
+    expect(screen.getAllByText('영역 추가').length).toBeGreaterThan(0);
     expect(screen.queryByText('주제 추가')).toBeNull();
-    expect(screen.queryByText('선 추가')).toBeNull();
-    expect(screen.queryByText('영역 추가')).toBeNull();
   });
 
   it('board 제목은 메타가 정본 — 독칩에서 고치면 저장 메타에 반영된다(루트가 없어도)', async () => {
@@ -516,14 +516,16 @@ describe('화이트보드 에디터', () => {
       const { container } = renderEditor('/editor?map=b12&title=x');
       await waitFor(() => expect(container.querySelector('[data-board-toolbar]')).toBeTruthy());
 
-      // 막대 = 바닥 전폭 한 줄(선택·펜·지우개·메모·이미지).
+      // 막대 = 바닥 전폭 한 줄(선택·펜·형광펜·지우개 | 삽입).
       const bar = container.querySelector('[data-board-toolbar]') as HTMLElement;
       expect(bar.style.left).toBe('12px');
       expect(bar.style.right).toBe('12px');
       expect(bar.style.bottom).toBe('16px');
       expect(bar.style.transform).toBe(''); // 중앙 정렬(50%)이 아니다
       expect(within(bar).getByRole('button', { name: '선택' })).toBeTruthy();
-      expect(within(bar).getByRole('button', { name: '이미지 추가' })).toBeTruthy();
+      // 삽입 넷은 폰 폭에 한 줄로 들어가지 않는다 — 진입(＋) 하나만 두고 메뉴로 전환.
+      expect(within(bar).getByRole('button', { name: '삽입' })).toBeTruthy();
+      expect(within(bar).queryByRole('button', { name: '이미지 추가' })).toBeNull();
       // 되돌리기는 막대에서 빠져 자기 알약으로 — 같은 띠 왼쪽.
       expect(within(bar).queryByRole('button', { name: '실행 취소' })).toBeNull();
       const undoPill = container.querySelector('[data-board-undo]') as HTMLElement;
@@ -531,10 +533,10 @@ describe('화이트보드 에디터', () => {
       expect(undoPill.style.bottom).toBe('80px');
       expect(within(undoPill).getByRole('button', { name: '다시 실행' })).toBeTruthy();
 
-      // 도구(4: 선택·펜·형광펜·지우개)와 삽입(2) 사이에 구분선이 하나 선다(요청).
+      // 도구(4: 선택·펜·형광펜·지우개)와 삽입 진입(1) 사이에 구분선이 하나 선다(요청).
       const layer = bar.querySelector('div[style*="position: absolute"]') as HTMLElement;
       const kinds = Array.from(layer.children).map((el) => el.tagName);
-      expect(kinds).toEqual(['BUTTON', 'BUTTON', 'BUTTON', 'BUTTON', 'DIV', 'BUTTON', 'BUTTON']);
+      expect(kinds).toEqual(['BUTTON', 'BUTTON', 'BUTTON', 'BUTTON', 'DIV', 'BUTTON']);
       expect(layer.style.justifyContent).toBe('space-evenly'); // 양 끝 여백까지 균일
 
       // 줌·미니맵 묶음은 우측이되, 막대 높이만큼 올라앉는다. 폰에서는 미니맵만 —
@@ -993,5 +995,76 @@ describe('화이트보드 에디터', () => {
     const alpha = (v: string) => Number(/rgba\([^)]*,\s*([\d.]+)\)/.exec(v)?.[1] ?? '1');
     expect(alpha(chip.style.background)).toBeLessThanOrEqual(0.08);
     expect(alpha(chip.style.border)).toBeLessThanOrEqual(0.5);
+  });
+
+  // ── 연결선(화살표)·영역(프레임) — 보드 어휘 편입(요청) ────────────────────
+  it('보드 도구 막대에서 연결선·영역을 만들면 문서에 커밋되고 속성 패널이 뜬다', async () => {
+    localStorage.setItem('mindflow_doc_b25', JSON.stringify(BOARD));
+    const { container } = renderEditor('/editor?map=b25&title=x');
+    await waitFor(() => expect(container.querySelector('[data-board-toolbar]')).toBeTruthy());
+    const bar = container.querySelector('[data-board-toolbar]') as HTMLElement;
+
+    fireEvent.click(within(bar).getByRole('button', { name: '연결선 추가' }));
+    await waitFor(() => expect(container.querySelector('[data-line-id]')).toBeTruthy());
+    // 만든 직후 그것이 선택돼 속성 패널이 연결선 패널이 된다(선 스타일·화살표).
+    expect(await screen.findByText('선 스타일')).toBeTruthy();
+
+    fireEvent.click(within(bar).getByRole('button', { name: '영역 추가' }));
+    await waitFor(() => expect(container.querySelector('[data-zone-id]')).toBeTruthy());
+
+    fireEvent.keyDown(window, { key: 's', ctrlKey: true });
+    await waitFor(() => {
+      const saved = JSON.parse(localStorage.getItem('mindflow_doc_b25') || 'null');
+      expect(saved?.kind).toBe('board');
+      expect(saved?.lines).toHaveLength(1);
+      expect(saved?.zones).toHaveLength(1);
+    });
+  });
+
+  it('미니맵과 화면 맞춤이 영역·연결선도 감싼다 — 프레임만 있는 보드도 지도에 뜬다', async () => {
+    // 메모 없이 영역 하나 + 연결선 하나뿐인 보드: 예전 미니맵은 "노드도 메모도
+    // 없다"며 통째로 사라졌다(화면에는 보이는데 지도에는 없다).
+    localStorage.setItem(
+      'mindflow_doc_b26',
+      JSON.stringify({
+        ...BOARD,
+        floats: [],
+        zones: [{ id: 'z1', x: -200, y: -140, w: 320, h: 220, label: '프레임', color: null }],
+        lines: [{ id: 'l1', x1: 60, y1: 40, x2: 260, y2: 160, startArrow: false, endArrow: true, dashed: false, c1: 0, c2: 0, label: '' }],
+      }),
+    );
+    const { container } = renderEditor('/editor?map=b26&title=x');
+    await waitFor(() => expect(container.querySelector('[data-testid="minimap"]')).toBeTruthy());
+    const map = container.querySelector('[data-testid="minimap"]') as HTMLElement;
+    expect(map.querySelector('[data-minimap-zone="z1"]')).toBeTruthy();
+    expect(map.querySelector('[data-minimap-line="l1"]')).toBeTruthy();
+  });
+
+  it('폰 board: 삽입(＋)을 누르면 막대가 네 가지 삽입 메뉴로 전환되고, 고르면 도구 목록으로 돌아온다', async () => {
+    const restore = mockMatchMedia(true);
+    try {
+      localStorage.setItem('mindflow_doc_b27', JSON.stringify(BOARD));
+      const { container } = renderEditor('/editor?map=b27&title=x');
+      const bar = await waitFor(() => {
+        const el = container.querySelector('[data-board-toolbar]') as HTMLElement;
+        expect(el).toBeTruthy();
+        return el;
+      });
+
+      fireEvent.click(within(bar).getByRole('button', { name: '삽입' }));
+      await waitFor(() => expect(bar.getAttribute('data-board-panel')).toBe('insert'));
+      expect(within(bar).getByRole('button', { name: '도구 목록으로' })).toBeTruthy();
+      ['메모 추가', '이미지 추가', '연결선 추가', '영역 추가'].forEach((n) => {
+        expect(within(bar).getByRole('button', { name: n })).toBeTruthy();
+      });
+      expect(within(bar).queryByRole('button', { name: '지우개' })).toBeNull();
+
+      // 골라 넣으면 도구 목록으로 되돌아온다 — 방금 만든 것을 바로 만진다.
+      fireEvent.click(within(bar).getByRole('button', { name: '영역 추가' }));
+      await waitFor(() => expect(container.querySelector('[data-zone-id]')).toBeTruthy());
+      await waitFor(() => expect(bar.getAttribute('data-board-panel')).toBe('tools'));
+    } finally {
+      restore();
+    }
   });
 });

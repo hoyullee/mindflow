@@ -1855,6 +1855,24 @@ export function useEditorState(): EditorController {
       minY = Math.min(minY, f.y);
       maxY = Math.max(maxY, f.y + h);
     });
+    // 영역·연결선도 장면이다 — 보드에서 이들이 어휘가 되면서(요청) 프레임만 있는
+    // 보드도 첫 센터링·화면 맞춤이 감싸야 한다. 맵에서도 트리 밖에 둔 영역이
+    // 화면 맞춤에서 빠지던 것이 함께 고쳐진다(메모를 넣었던 M2와 같은 일반화).
+    doc.zones.forEach((z) => {
+      any = true;
+      minX = Math.min(minX, z.x);
+      maxX = Math.max(maxX, z.x + z.w);
+      minY = Math.min(minY, z.y - 16); // 라벨 알약이 위로 튀어나온다
+      maxY = Math.max(maxY, z.y + z.h);
+    });
+    doc.lines.forEach((l) => {
+      const e = resolveLineLive(l);
+      any = true;
+      minX = Math.min(minX, e.x1, e.x2);
+      maxX = Math.max(maxX, e.x1, e.x2);
+      minY = Math.min(minY, e.y1, e.y2);
+      maxY = Math.max(maxY, e.y1, e.y2);
+    });
     // 그리기 획(M4)도 장면이다 — 획만 있는 보드도 첫 센터링·화면 맞춤이 감싼다.
     (doc.strokes ?? []).forEach((s) => {
       const b = strokeBounds(s);
@@ -1866,7 +1884,7 @@ export function useEditorState(): EditorController {
       maxY = Math.max(maxY, b.y1);
     });
     return any ? { minX, minY, maxX, maxY } : null;
-  }, [geom, doc.floats, floatHeights, doc.strokes]);
+  }, [geom, doc.floats, doc.zones, doc.lines, floatHeights, doc.strokes]);
 
   const fitView = useCallback(() => {
     setViewport((prev) => {

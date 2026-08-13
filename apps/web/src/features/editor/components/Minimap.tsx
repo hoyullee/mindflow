@@ -43,11 +43,15 @@ export function Minimap({ controller, isMobile = false }: MinimapProps) {
     return <div aria-hidden="true" data-minimap-holding style={{ width: W, height: H, borderRadius: 8, background: th.canvasBg }} />;
   }
 
-  // 내용 = 노드 geom ∪ 메모 박스 — 예전엔 노드만 봐서 화이트보드(트리 없는
-  // 문서)에서는 미니맵이 통째로 사라졌고, 맵에서도 멀리 둔 메모가 지도 밖이었다.
+  // 내용 = 노드 geom ∪ 메모 박스 ∪ 영역 ∪ 연결선 — 예전엔 노드만 봐서 화이트보드
+  // (트리 없는 문서)에서는 미니맵이 통째로 사라졌고, 맵에서도 멀리 둔 메모가
+  // 지도 밖이었다. 영역·연결선이 보드 어휘가 되면서(요청) 프레임만 있는 보드도
+  // 지도에 나와야 한다 — 여기 빠지면 "지도에 아무것도 없는데 화면에는 있다"가 된다.
   const ids = Object.keys(geom);
   const floats = controller.doc.floats;
-  if (!ids.length && !floats.length) return null;
+  const zones = controller.doc.zones;
+  const lines = controller.doc.lines;
+  if (!ids.length && !floats.length && !zones.length && !lines.length) return null;
 
   let cMinX = Infinity;
   let cMinY = Infinity;
@@ -68,6 +72,21 @@ export function Minimap({ controller, isMobile = false }: MinimapProps) {
     cMaxX = Math.max(cMaxX, f.x + f.w);
     cMinY = Math.min(cMinY, f.y);
     cMaxY = Math.max(cMaxY, f.y + h);
+  });
+  zones.forEach((z) => {
+    cMinX = Math.min(cMinX, z.x);
+    cMaxX = Math.max(cMaxX, z.x + z.w);
+    cMinY = Math.min(cMinY, z.y);
+    cMaxY = Math.max(cMaxY, z.y + z.h);
+  });
+  // 앵커가 걸린 선은 대상 박스를 따라가므로 저장된 좌표가 아니라 **해석된**
+  // 끝점을 본다(에디터가 그리는 것과 같은 값 — `controller.resolveLine`).
+  const lineEnds = lines.map((l) => ({ l, ...controller.resolveLine(l) }));
+  lineEnds.forEach((e) => {
+    cMinX = Math.min(cMinX, e.x1, e.x2);
+    cMaxX = Math.max(cMaxX, e.x1, e.x2);
+    cMinY = Math.min(cMinY, e.y1, e.y2);
+    cMaxY = Math.max(cMaxY, e.y1, e.y2);
   });
 
   // viewport rect, in canvas coordinates (port of MindFlow.dc.html:1525-1527)
@@ -171,6 +190,36 @@ export function Minimap({ controller, isMobile = false }: MinimapProps) {
       onPointerUp={onPointerUp}
       onPointerCancel={onPointerUp}
     >
+      {/* 영역(프레임) — 캔버스와 같은 순서로 맨 뒤에, 테두리만(면을 칠하면 그 위의
+          점·사각이 묻힌다). 연결선은 그 위, 노드·메모 아래. */}
+      {zones.map((z) => (
+        <rect
+          key={z.id}
+          data-minimap-zone={z.id}
+          x={mx(z.x)}
+          y={my(z.y)}
+          width={Math.max(2, z.w * s)}
+          height={Math.max(2, z.h * s)}
+          rx={2}
+          fill="none"
+          stroke={z.color || th.subtext}
+          strokeWidth={1}
+          opacity={0.5}
+        />
+      ))}
+      {lineEnds.map(({ l, x1, y1, x2, y2 }) => (
+        <line
+          key={l.id}
+          data-minimap-line={l.id}
+          x1={mx(x1)}
+          y1={my(y1)}
+          x2={mx(x2)}
+          y2={my(y2)}
+          stroke={l.color || th.subtext}
+          strokeWidth={1}
+          opacity={0.6}
+        />
+      ))}
       {ids.map((id) => {
         const n = geom[id];
         if (!n) return null;

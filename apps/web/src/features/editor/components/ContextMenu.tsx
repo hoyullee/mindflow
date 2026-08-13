@@ -538,7 +538,7 @@ function buildItems(controller: EditorController, ctxMenu: ContextMenuState, tog
 
   // 'bg' — port of MindFlow.dc.html:3140-3145: each item creates its object EXACTLY at the
   // right-clicked canvas point (`ctxMenu.cx/cy`).
-  // 화이트보드는 메모·이미지만(삽입 메뉴와 같은 규칙 — 주제/선/영역은 안 내준다).
+  // 화이트보드도 메모·이미지·연결선·영역(삽입 메뉴와 같은 어휘) — 주제만 없다.
   const at = { x: ctxMenu.cx, y: ctxMenu.cy };
   return [
     ...(controller.isBoard
@@ -569,26 +569,22 @@ function buildItems(controller: EditorController, ctxMenu: ContextMenuState, tog
         controller.promptAddImage(at);
       },
     },
-    ...(controller.isBoard
-      ? []
-      : [
-          {
-            icon: <LineIcon />,
-            label: '선 추가',
-            onSelect: () => {
-              close();
-              controller.addLineAt(at);
-            },
-          },
-          {
-            icon: <ZoneIcon />,
-            label: '영역 추가',
-            onSelect: () => {
-              close();
-              controller.addZoneAt(at);
-            },
-          },
-        ]),
+    {
+      icon: <LineIcon />,
+      label: controller.isBoard ? '연결선 추가' : '선 추가',
+      onSelect: () => {
+        close();
+        controller.addLineAt(at);
+      },
+    },
+    {
+      icon: <ZoneIcon />,
+      label: '영역 추가',
+      onSelect: () => {
+        close();
+        controller.addZoneAt(at);
+      },
+    },
     // 빈 캔버스에 붙여넣기 — 클릭(길게 누른) 지점을 기준으로 배치된다.
     ...(controller.canPaste ? (['divider'] as const) : []),
     ...pasteItem(at),
