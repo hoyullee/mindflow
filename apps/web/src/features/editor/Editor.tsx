@@ -13,6 +13,7 @@ import { CommentPanel } from './components/CommentPanel';
 import { PresenceBar } from './components/PresenceBar';
 import { SearchBar } from './components/SearchBar';
 import { ShortcutHelp } from './components/ShortcutHelp';
+import { KanbanBoard } from './components/KanbanBoard';
 import { VersionHistory } from './components/VersionHistory';
 import { MapUnavailable } from './components/MapUnavailable';
 import { CollabPaused } from './components/CollabPaused';
@@ -168,7 +169,15 @@ export function Editor() {
       <FeedbackModal open={controller.feedbackOpen} onClose={() => controller.setFeedbackOpen(false)} page="editor" theme={th} />
 
       <div style={{ position: 'relative', flex: '1 1 auto', overflow: 'hidden', display: 'flex' }}>
-        {controller.view === 'map' ? (
+        {controller.isKanban ? (
+          /* 칸반 — 캔버스가 아니라 전용 고정 레이아웃(열·카드). 팬/줌·미니맵·
+             그리기가 없으므로 Viewport 계열 UI는 통째로 뜨지 않는다. */
+          <>
+            <KanbanBoard controller={controller} theme={th} />
+            <DocChip controller={controller} />
+            <PresenceBar controller={controller} />
+          </>
+        ) : controller.view === 'map' ? (
           <>
             <Viewport doc={doc} controller={controller} />
             <DocChip controller={controller} />

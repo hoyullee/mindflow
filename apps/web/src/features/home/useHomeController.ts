@@ -1098,6 +1098,11 @@ export function useHomeController() {
       onNewMapClick(buildNewMapHref('새 화이트보드', 'board'));
       return;
     }
+    // 칸반 — 세 번째 문서 종류. 보드와 같은 길(주소에 tpl만, 시드는 에디터가).
+    if (templateId === 'kanban') {
+      onNewMapClick(buildNewMapHref('새 칸반 보드', 'kanban'));
+      return;
+    }
     // 화이트보드 템플릿(회고·우선순위·아이디어 스티커) — 맵 템플릿과 같은 길을 탄다:
     // 주소에는 tpl만 실리고 문서는 에디터가 `buildTemplateDoc`으로 시드한다.
     const bt = findBoardTemplate(templateId);

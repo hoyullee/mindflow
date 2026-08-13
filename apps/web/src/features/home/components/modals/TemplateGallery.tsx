@@ -318,6 +318,30 @@ export function TemplateGallery({ state, controller }: Props) {
               </button>
             ))}
           </div>
+
+          <div style={{ height: 1, background: 'var(--mf-hairline)', margin: '22px 0 18px' }} />
+
+          <SectionHead title="칸반 보드" desc="할 일을 열로 나눠 옮기며 관리해요" />
+          <div style={GRID_STYLE}>
+            {/* 칸반 — 캔버스가 아니라 열·카드 화면이라 realPreview 대신 삽화. */}
+            <button className="btn" data-template="kanban" onClick={() => controller.createFromTemplate('kanban')} style={{ ...CARD_STYLE, cursor: 'pointer' }}>
+              <div style={{ ...THUMB_STYLE, color: 'var(--mf-faint)' }}>
+                <svg width="52" height="40" viewBox="0 0 52 40" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                  <rect x="3" y="4" width="14" height="32" rx="2.5" />
+                  <rect x="19" y="4" width="14" height="32" rx="2.5" />
+                  <rect x="35" y="4" width="14" height="32" rx="2.5" />
+                  <rect x="6" y="9" width="8" height="6" rx="1.4" />
+                  <rect x="6" y="18" width="8" height="6" rx="1.4" />
+                  <rect x="22" y="9" width="8" height="6" rx="1.4" />
+                  <rect x="38" y="9" width="8" height="6" rx="1.4" />
+                </svg>
+              </div>
+              <div style={CARD_NAME_STYLE}>
+                <span style={{ minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis' }}>새 칸반 보드</span>
+              </div>
+              <div style={CARD_DESC_STYLE}>할 일 · 진행 중 · 완료로 시작</div>
+            </button>
+          </div>
         </div>
       </div>
     </div>

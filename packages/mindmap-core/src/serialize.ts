@@ -1,7 +1,7 @@
 // Serialization core — ports of `serializeDoc()` / `loadDoc()` / `cloneNodes()`
 // from `MindFlow.dc.html`. Pure, no localStorage: callers own persistence.
 
-import type { Doc, DocKind, EdgeStyle, Float, Line, LayoutMode, NodeMap, Reaction, Stroke, Zone } from './model';
+import type { Doc, DocKind, EdgeStyle, Float, KanbanCard, KanbanColumn, Line, LayoutMode, NodeMap, Reaction, Stroke, Zone } from './model';
 import { DEFAULT_EDGE_STYLE, DEFAULT_LAYOUT_MODE, DEFAULT_THEME_KEY } from './model';
 
 /**
@@ -20,6 +20,8 @@ export interface SerializableState {
   kind?: DocKind | null;
   strokes?: Stroke[] | null;
   reactions?: Reaction[] | null;
+  columns?: KanbanColumn[] | null;
+  cards?: KanbanCard[] | null;
 }
 
 /**
@@ -42,7 +44,9 @@ export function serializeDoc(state: SerializableState): Doc {
     // 문서 종류는 'board'일 때만 기록한다 — edgeStyle처럼 항상 쓰면 골든
     // 픽스처와 기존 저장본이 전부 갈리므로, RichRun.href의 "값이 있을 때만"
     // 규칙을 따른다(기본값 = 마인드맵).
-    ...(state.kind === 'board' ? { kind: 'board' as const } : {}),
+    ...(state.kind === 'board' || state.kind === 'kanban' ? { kind: state.kind } : {}),
+    // 칸반 열·카드 — 칸반 문서에서만(다른 종류의 저장본은 한 글자도 달라지지 않는다).
+    ...(state.kind === 'kanban' ? { columns: state.columns ?? [], cards: state.cards ?? [] } : {}),
     // 그리기 획 — 비어 있지 않을 때만(kind와 같은 규칙: 골든·기존 저장본 무변경).
     ...(state.strokes && state.strokes.length ? { strokes: state.strokes } : {}),
     // 반응·투표 — 획과 같은 규칙(비어 있지 않을 때만).
@@ -90,6 +94,17 @@ export function parseDoc(raw: unknown): Doc | null {
     themeKey,
     edgeStyle,
     ...(d.kind === 'board' ? { kind: 'board' as const } : {}),
+    ...(d.kind === 'kanban'
+      ? {
+          kind: 'kanban' as const,
+          columns: Array.isArray(d.columns) ? (d.columns as KanbanColumn[]) : [],
+          // 소속 열이 사라진 카드는 버린다(열 삭제가 어디선가 반쪽으로 끝났어도
+          // 화면에 뜨지 않는 유령이 남지 않게 — 읽는 쪽에서 정규화한다).
+          cards: (Array.isArray(d.cards) ? (d.cards as KanbanCard[]) : []).filter((c) =>
+            (Array.isArray(d.columns) ? (d.columns as KanbanColumn[]) : []).some((col) => col.id === c.col),
+          ),
+        }
+      : {}),
     ...(Array.isArray(d.strokes) && d.strokes.length ? { strokes: d.strokes as Stroke[] } : {}),
     ...(Array.isArray(d.reactions) && d.reactions.length ? { reactions: d.reactions as Reaction[] } : {}),
   };

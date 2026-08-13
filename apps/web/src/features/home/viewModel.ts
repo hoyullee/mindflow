@@ -1,5 +1,5 @@
 import { RECENT_RENDER_MAX, docRawForTitle, cardKeyOf, hexA, mapHref, mapId, readDocRaw } from './storage';
-import { miniBoardPreview, miniPreview, previewSkeleton, realPreview } from './mapPreview';
+import { miniBoardPreview, miniKanbanPreview, miniPreview, previewSkeleton, realPreview } from './mapPreview';
 import { docSearchText, matchesQuery } from './searchIndex';
 import type { DriveFolderData, FolderData, HomeState, MapCardData, SpaceData } from './types';
 import { DRIVE_FILES } from './types';
@@ -23,6 +23,8 @@ export interface CardViewData {
   /** 화이트보드 문서인가 — 카드 썸네일 바탕과 종류 배지가 달라진다(제보: 맵
    * 카드와 구별이 안 된다). 본문을 아직 못 받았으면 false(받으면 다시 그려진다). */
   isBoard: boolean;
+  /** 칸반 보드인가 — 배지·썸네일 바탕이 갈린다(화이트보드와 같은 규칙). */
+  isKanban: boolean;
   hue: string;
   docId?: string;
   href: string;
@@ -247,6 +249,11 @@ export function isBoardRaw(raw: string | null | undefined): boolean {
   return !!raw && /"kind"\s*:\s*"board"/.test(raw);
 }
 
+/** 칸반 문서인가 — `isBoardRaw`와 같은 이유로 문자열만 본다. */
+export function isKanbanRaw(raw: string | null | undefined): boolean {
+  return !!raw && /"kind"\s*:\s*"kanban"/.test(raw);
+}
+
 /** 카드 본문(썸네일·종류 판별의 원천) — `cardSketch`와 같은 조회 순서. */
 function cardRaw(title: string, docId: string | undefined, previewDocs: Record<string, string>): string | null {
   return (docId ? previewDocs[docId] || readDocRaw(docId) : docRawForTitle(title)) || null;
@@ -265,7 +272,7 @@ function cardSketch(title: string, hue: string, docId: string | undefined, previ
   // 폴백 삽화는 **문서 종류를 따른다**(제보: 화이트보드 카드에 마인드맵 그림).
   // 종류를 알 수 있는 건 본문이 있을 때뿐이고, 본문이 아예 없으면 배지도 안 뜨므로
   // 그때는 예전처럼 마인드맵 삽화다.
-  const fallback = (): JSX.Element => (isBoardRaw(raw) ? miniBoardPreview(hue) : miniPreview(hue, title));
+  const fallback = (): JSX.Element => (isKanbanRaw(raw) ? miniKanbanPreview(hue) : isBoardRaw(raw) ? miniBoardPreview(hue) : miniPreview(hue, title));
   if (raw) return realPreview(raw, hue) || fallback();
   // No body available yet: if this card's backend body is still being fetched
   // (docId not yet resolved), show a neutral skeleton instead of the generic
@@ -415,6 +422,7 @@ export function deriveHomeView(state: HomeState): HomeViewModel {
       href: mapHref(c.title, c.docId),
       sketch: cardSketch(c.title, c.hue, c.docId, state.previewDocs, state.previewResolved),
       isBoard: isBoardRaw(cardRaw(c.title, c.docId, state.previewDocs)),
+      isKanban: isKanbanRaw(cardRaw(c.title, c.docId, state.previewDocs)),
       badge: isDriveSpace ? 'Drive' : '',
       openable: c.openable,
       isFav: !!favs[key],
@@ -535,6 +543,7 @@ export function deriveHomeView(state: HomeState): HomeViewModel {
             href: mapHref(m.title, m.docId),
             sketch: cardSketch(m.title, m.hue, m.docId, state.previewDocs, state.previewResolved),
             isBoard: isBoardRaw(cardRaw(m.title, m.docId, state.previewDocs)),
+            isKanban: isKanbanRaw(cardRaw(m.title, m.docId, state.previewDocs)),
             badge: '',
             openable: true,
             isFav: !!state.favs[key],
@@ -672,6 +681,7 @@ export function deriveHomeView(state: HomeState): HomeViewModel {
         href: mapHref(base.title, base.docId),
         sketch: cardSketch(base.title, base.hue, base.docId, state.previewDocs, state.previewResolved),
         isBoard: isBoardRaw(cardRaw(base.title, base.docId, state.previewDocs)),
+        isKanban: isKanbanRaw(cardRaw(base.title, base.docId, state.previewDocs)),
         badge: '',
         openable: true,
         isFav: !!favs[key],
