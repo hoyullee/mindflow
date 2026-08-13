@@ -140,7 +140,8 @@ export function ShortcutHelp({ controller }: { controller: EditorController }) {
             <>
               {row(['클릭'], '선택')}
               {row(['드래그'], '이동 (빈 곳은 여러 개 선택)')}
-              {row(['방향키'], '이웃 주제로 선택 이동')}
+              {row(['방향키'], '주제 선택 시 이웃으로 · 그 밖(메모·이미지·연결선·영역·그림)은 1px 이동')}
+              {row(['Shift+방향키'], '10px씩 이동')}
               {row([`${mod}+C`, `${mod}+V`], '주제 복사·붙여넣기')}
               {row(['Tab'], '하위 추가')}
               {row(['Enter'], '형제 추가')}
