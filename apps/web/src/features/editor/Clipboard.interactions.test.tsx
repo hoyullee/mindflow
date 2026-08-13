@@ -155,6 +155,24 @@ describe('에디터 복사/붙여넣기 — 키보드', () => {
     await waitFor(() => expect(countText(container, '노드A')).toBe(2));
   });
 
+  it('macOS: Cmd+X(잘라내기)·Cmd+D(복제)도 동일하게 동작한다', async () => {
+    localStorage.setItem('mindflow_doc_cb2b', JSON.stringify(DOC));
+    const { container } = renderEditor('/editor?map=cb2b&title=x');
+    await waitFor(() => expect(countText(container, '노드A')).toBe(1));
+
+    // ⌘D — 그 자리에 하나 더(트리에 붙은 주제는 형제로).
+    selectNodeBox(nodeBoxFor(container, '노드A'));
+    fireEvent.keyDown(window, { key: 'd', metaKey: true });
+    await waitFor(() => expect(countText(container, '노드A')).toBe(2));
+
+    // ⌘X — 원본이 즉시 사라지고, ⌘V로 되돌아온다.
+    selectNodeBox(nodeBoxFor(container, '노드B'));
+    fireEvent.keyDown(window, { key: 'x', metaKey: true });
+    await waitFor(() => expect(countText(container, '노드B')).toBe(0));
+    fireEvent.keyDown(window, { key: 'v', metaKey: true });
+    await waitFor(() => expect(countText(container, '노드B')).toBe(1));
+  });
+
   it('한글 IME가 켜져 있어 e.key가 자모로 와도 물리 키(e.code)로 동작한다', async () => {
     localStorage.setItem('mindflow_doc_cb3', JSON.stringify(DOC));
     const { container } = renderEditor('/editor?map=cb3&title=x');
