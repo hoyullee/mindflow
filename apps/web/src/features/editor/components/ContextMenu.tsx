@@ -238,6 +238,16 @@ function CopyIcon() {
   );
 }
 
+/** 복제 — 겹쳐 놓인 같은 모양 둘(복사와 달리 "그 자리에 하나 더"라는 뜻). */
+function DuplicateIcon() {
+  return (
+    <svg width={14} height={14} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round">
+      <rect x="4" y="4" width="12" height="12" rx="2" />
+      <path d="M8 20h10a2 2 0 0 0 2-2V8" />
+    </svg>
+  );
+}
+
 function CutIcon() {
   return (
     <svg width={14} height={14} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round">
@@ -312,6 +322,15 @@ function buildItems(
         },
       });
     }
+    // 복제 — 클립보드를 건드리지 않고 그 자리에 하나 더(Ctrl/⌘+D와 같은 동작).
+    out.push({
+      icon: <DuplicateIcon />,
+      label: '복제',
+      onSelect: () => {
+        close();
+        controller.duplicateSelection();
+      },
+    });
     return out;
   };
 
@@ -511,11 +530,14 @@ function buildItems(
   }
 
   if (ctxMenu.kind === 'stroke') {
-    // 그리기 획 — 다룰 것이 삭제뿐이다(색·굵기는 속성 패널, 댓글은 붙지 않는다:
-    // 획은 글자가 없어 "무엇에 대한 논의인지"를 목록에서 가리킬 이름이 없다).
+    // 그리기 획 — 색·굵기는 속성 패널, 댓글은 붙지 않는다(획은 글자가 없어
+    // "무엇에 대한 논의인지"를 목록에서 가리킬 이름이 없다). 복사·복제·삭제만.
     const strokeId = controller.selection?.kind === 'stroke' ? controller.selection.id : null;
     if (!strokeId || controller.readOnly) return [];
     return [
+      ...copyItems({ cut: true }),
+      ...pasteItem(),
+      'divider',
       {
         icon: <TrashIcon />,
         label: '삭제',

@@ -1,5 +1,5 @@
-// 에디터 객체 복사/잘라내기/붙여넣기 — 선택된 객체(노드 서브트리·메모·선·영역)를
-// 담아 두었다가 다른 위치에 그대로 다시 만든다.
+// 에디터 객체 복사/잘라내기/붙여넣기 — 선택된 객체(노드 서브트리·메모·선·영역·
+// 그리기 획)를 담아 두었다가 다른 위치에 그대로 다시 만든다.
 //
 // `mutations.ts`와 같은 성격의 "앱 편집 동작"이라 여기(웹)에 둔다 — 코어는
 // 모델/직렬화/레이아웃/기하/히스토리/마크다운만 소유한다(ADR-0001). 모든 함수는
@@ -9,9 +9,10 @@
 // 데이터 URL이라 localStorage로 미러링하면 용량을 넘길 수 있고, OS 클립보드는
 // 권한·비동기·모바일 제약이 있어서다. 대신 같은 탭 안에서는 항상 즉시 동작한다.
 
-import type { Doc, Float, Line, Node, Zone } from '@mindflow/mindmap-core';
-import { ROOT_ID, cloneNodes } from '@mindflow/mindmap-core';
+import type { Doc, Float, Line, Node, Stroke, Zone } from '@mindflow/mindmap-core';
+import { ROOT_ID, cloneNodes, strokeBounds, translateStrokePts } from '@mindflow/mindmap-core';
 import type { IdFactory } from './mutations';
+import { idsInFrame } from './frames';
 import { descendants } from './tree';
 import type { MultiSelection, Selection } from './types';
 
@@ -26,14 +27,17 @@ export interface ClipboardPayload {
   floats: Float[];
   lines: Line[];
   zones: Zone[];
+  /** 그리기 획 — 점 배열이 곧 좌표다(붙여넣을 때 통째로 평행이동한다). */
+  strokes: Stroke[];
 }
 
-/** 붙여넣기 위치: 노드에 붙이면 그 노드의 자식으로, 좌표에 붙이면 그 지점에 자유 배치. */
-export type PasteTarget = { kind: 'node'; id: string } | { kind: 'point'; x: number; y: number };
+/** 붙여넣기 위치: 노드에 붙이면 그 노드의 자식으로, 좌표에 붙이면 그 지점에 자유
+ * 배치, `offset`은 **제자리에서 살짝 어긋나게**(복제 — Ctrl/⌘+D). */
+export type PasteTarget = { kind: 'node'; id: string } | { kind: 'point'; x: number; y: number } | { kind: 'offset' };
 
 export function clipboardCount(c: ClipboardPayload | null): number {
   if (!c) return 0;
-  return c.nodeRoots.length + c.floats.length + c.lines.length + c.zones.length;
+  return c.nodeRoots.length + c.floats.length + c.lines.length + c.zones.length + c.strokes.length;
 }
 
 export function isClipboardEmpty(c: ClipboardPayload | null): boolean {
@@ -60,23 +64,43 @@ function topLevelNodeIds(doc: Doc, ids: string[]): string[] {
  * 현재 선택(단일 또는 다중)을 클립보드 페이로드로 모은다. 복사할 게 없으면 `null`
  * (루트만 선택된 경우 등) — 호출부는 클립보드를 건드리지 않는다.
  */
-export function collectClipboard(doc: Doc, selection: Selection | null, multi: MultiSelection | null): ClipboardPayload | null {
+export function collectClipboard(doc: Doc, selection: Selection | null, multi: MultiSelection | null, heightOf: (f: Float) => number = (f) => f.h ?? 44): ClipboardPayload | null {
   let nodeIds: string[] = [];
   let floatIds: string[] = [];
   let lineIds: string[] = [];
   let zoneIds: string[] = [];
+  let strokeIds: string[] = [];
 
-  const multiTotal = multi ? multi.nodes.length + multi.floats.length + multi.lines.length : 0;
+  const multiTotal = multi ? multi.nodes.length + multi.floats.length + multi.lines.length + multi.strokes.length : 0;
   if (multi && multiTotal > 1) {
     nodeIds = multi.nodes;
     floatIds = multi.floats;
     lineIds = multi.lines;
+    strokeIds = multi.strokes;
   } else if (selection) {
     if (selection.kind === 'node') nodeIds = [selection.id];
     else if (selection.kind === 'float') floatIds = [selection.id];
     else if (selection.kind === 'line') lineIds = [selection.id];
+    else if (selection.kind === 'stroke') strokeIds = [selection.id];
     else zoneIds = [selection.id];
   }
+
+  // 프레임은 **그릇**이다(#425) — 복사도 그 규칙을 따른다: 프레임을 복사하면 그
+  // 안에 든 것이 함께 담긴다(끌면 함께 오는데 복사만 빈 사각형이 나오면 같은
+  // 물건이 두 가지로 행동하는 셈이다). 소속 판정은 이동과 **같은 함수**를 쓴다.
+  zoneIds.forEach((zid) => {
+    const z = doc.zones.find((x) => x.id === zid);
+    if (!z) return;
+    const rect = { x: z.x, y: z.y, w: z.w, h: z.h };
+    floatIds = union(floatIds, idsInFrame(rect, doc.floats.map((f) => ({ id: f.id, x: f.x, y: f.y, w: f.w, h: heightOf(f) }))));
+    strokeIds = union(strokeIds, doc.strokes ? strokesInFrame(rect, doc.strokes) : []);
+    lineIds = union(
+      lineIds,
+      idsInFrame(rect, doc.lines.filter((l) => !l.a1 && !l.a2).map((l) => ({ id: l.id, x: Math.min(l.x1, l.x2), y: Math.min(l.y1, l.y2), w: Math.abs(l.x2 - l.x1), h: Math.abs(l.y2 - l.y1) }))),
+    );
+    // 안에 든 프레임(중첩)까지는 담지 않는다 — 한 단계면 충분하고, 중첩까지
+    // 재귀로 훑으면 "무엇이 복사됐는지"가 눈으로 예측되지 않는다.
+  });
 
   const roots = topLevelNodeIds(doc, nodeIds);
   // 각 루트의 서브트리를 통째로 — 깊은 복사는 붙여넣기 시점에 id를 새로 매기며 한다.
@@ -95,9 +119,25 @@ export function collectClipboard(doc: Doc, selection: Selection | null, multi: M
   const floats = doc.floats.filter((f) => floatIds.includes(f.id));
   const lines = doc.lines.filter((l) => lineIds.includes(l.id));
   const zones = doc.zones.filter((z) => zoneIds.includes(z.id));
+  const strokes = (doc.strokes ?? []).filter((st) => strokeIds.includes(st.id));
 
-  const payload: ClipboardPayload = { nodes: collected, nodeRoots: roots, floats, lines, zones };
+  const payload: ClipboardPayload = { nodes: collected, nodeRoots: roots, floats, lines, zones, strokes };
   return clipboardCount(payload) ? payload : null;
+}
+
+function union(a: string[], b: string[]): string[] {
+  return b.length ? [...new Set([...a, ...b])] : a;
+}
+
+/** 프레임 안에 든 획 — 획은 상자가 아니라 점 배열이라 경계 상자로 환산해 묻는다. */
+function strokesInFrame(rect: { x: number; y: number; w: number; h: number }, strokes: Stroke[]): string[] {
+  const boxes = strokes
+    .map((st) => {
+      const b = strokeBounds(st);
+      return b ? { id: st.id, x: b.x0, y: b.y0, w: b.x1 - b.x0, h: b.y1 - b.y0 } : null;
+    })
+    .filter((b): b is { id: string; x: number; y: number; w: number; h: number } => !!b);
+  return idsInFrame(rect, boxes);
 }
 
 /** 페이로드에서 위치를 가진 항목들의 좌상단 기준점 — '좌표에 붙여넣기'의 정렬 기준. */
@@ -122,6 +162,13 @@ function payloadOrigin(clip: ClipboardPayload): { x: number; y: number } | null 
   clip.zones.forEach((z) => {
     xs.push(z.x);
     ys.push(z.y);
+  });
+  clip.strokes.forEach((st) => {
+    const b = strokeBounds(st);
+    if (b) {
+      xs.push(b.x0);
+      ys.push(b.y0);
+    }
   });
   if (!xs.length || !ys.length) return null;
   return { x: Math.min(...xs), y: Math.min(...ys) };
@@ -151,6 +198,7 @@ export function pasteClipboard(doc: Doc, clip: ClipboardPayload | null, target: 
   if (!clip || isClipboardEmpty(clip)) return null;
   // 잘라내기 후 대상 노드 자체가 사라졌을 수 있다 → 좌표 붙여넣기로 내려앉는다.
   const intoNode = target.kind === 'node' && !!doc.nodes[target.id] ? target.id : null;
+  // (`offset`은 아래 기본값 PASTE_OFFSET을 그대로 쓴다)
 
   const origin = payloadOrigin(clip);
   let dx = PASTE_OFFSET;
@@ -217,6 +265,15 @@ export function pasteClipboard(doc: Doc, clip: ClipboardPayload | null, target: 
     zones.push({ ...z, id, x: z.x + dx, y: z.y + dy });
   });
 
+  // 3-b) 그리기 획 — 점 배열을 통째로 평행이동한다(좌표가 곧 내용).
+  const strokes = [...(doc.strokes ?? [])];
+  const strokeIds: string[] = [];
+  clip.strokes.forEach((st) => {
+    const id = newId('k');
+    strokeIds.push(id);
+    strokes.push({ ...st, id, pts: translateStrokePts(st.pts, dx, dy) });
+  });
+
   // 4) 선 — 앵커는 함께 복사된 대상만 재연결, 나머지는 떼어낸다.
   const lines = [...doc.lines];
   const lineIds: string[] = [];
@@ -241,7 +298,7 @@ export function pasteClipboard(doc: Doc, clip: ClipboardPayload | null, target: 
   // 5) 붙여넣은 결과를 선택 상태로 — 하나면 단일, 여럿이면 다중(영역 제외).
   const newNodeRoots = clip.nodeRoots.map((r) => nodeIdMap.get(r)).filter((r): r is string => !!r);
   const newFloatIds = clip.floats.map((f) => floatIdMap.get(f.id)).filter((f): f is string => !!f);
-  const total = newNodeRoots.length + newFloatIds.length + lineIds.length + zoneIds.length;
+  const total = newNodeRoots.length + newFloatIds.length + lineIds.length + zoneIds.length + strokeIds.length;
   let selection: Selection | null = null;
   let multi: MultiSelection | null = null;
   if (total === 1) {
@@ -249,11 +306,12 @@ export function pasteClipboard(doc: Doc, clip: ClipboardPayload | null, target: 
     else if (newFloatIds[0]) selection = { kind: 'float', id: newFloatIds[0] };
     else if (lineIds[0]) selection = { kind: 'line', id: lineIds[0] };
     else if (zoneIds[0]) selection = { kind: 'zone', id: zoneIds[0] };
-  } else if (total > 1 && newNodeRoots.length + newFloatIds.length + lineIds.length > 1) {
-    // 획은 클립보드에 담기지 않는다(복사·붙여넣기 범위 밖) — 붙여넣은 결과의
-    // 다중 선택에도 없다.
-    multi = { nodes: newNodeRoots, floats: newFloatIds, lines: lineIds, strokes: [] };
+    else if (strokeIds[0]) selection = { kind: 'stroke', id: strokeIds[0] };
+  } else if (total > 1 && newNodeRoots.length + newFloatIds.length + lineIds.length + strokeIds.length > 1) {
+    // 영역은 다중 선택 대상이 아니라 빠진다(마퀴와 같은 규칙) — 프레임을 복사하면
+    // 새 프레임 대신 그 안의 사본들이 잡힌다.
+    multi = { nodes: newNodeRoots, floats: newFloatIds, lines: lineIds, strokes: strokeIds };
   }
 
-  return { doc: { ...doc, nodes, floats, lines, zones }, selection, multi };
+  return { doc: { ...doc, nodes, floats, lines, zones, ...(strokes.length ? { strokes } : {}) }, selection, multi };
 }
