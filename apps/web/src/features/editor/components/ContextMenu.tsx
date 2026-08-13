@@ -238,6 +238,17 @@ function CopyIcon() {
   );
 }
 
+/** 열 모드 — 세로로 쌓인 카드 셋(칸반 열). */
+function ColumnIcon() {
+  return (
+    <svg width={14} height={14} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round">
+      <rect x="5" y="3" width="14" height="5" rx="1.5" />
+      <rect x="5" y="10" width="14" height="5" rx="1.5" />
+      <rect x="5" y="17" width="14" height="4" rx="1.5" />
+    </svg>
+  );
+}
+
 /** 내용에 맞추기 — 안쪽으로 모이는 화살표 넷(축소·맞춤의 관용 기호). */
 function FitIcon() {
   return (
@@ -473,6 +484,16 @@ function buildItems(
         onSelect: () => {
           close();
           controller.startEditZoneLabel(zoneId);
+        },
+      },
+      {
+        // 열 모드(칸반) — 켜면 이 프레임 안의 카드가 세로로 쌓이고 폭이 열에 맞는다.
+        icon: <ColumnIcon />,
+        label: '열 모드',
+        active: controller.doc.zones.find((z) => z.id === zoneId)?.stack === 'column',
+        onSelect: () => {
+          close();
+          controller.toggleColumnMode(zoneId);
         },
       },
       {

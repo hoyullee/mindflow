@@ -30,7 +30,8 @@ import type { EdgeStyle } from './tree';
 import { nearestInDirection } from './navigation';
 import { alignGuides, arrangeDeltas, snapValue } from './arrange';
 import type { ArrangeBox, ArrangeOp, SnapGuide } from './arrange';
-import { idsInFrame, innermostFrameFor } from './frames';
+import { centerInside, idsInFrame, innermostFrameFor } from './frames';
+import { COLUMN_PAD, columnCardWidth, columnInsertIndex, columnInsertY, columnLayout, columnLayoutWithInsert } from './columns';
 import type { IdBox } from './frames';
 import type { NavDir, NavPoint } from './navigation';
 import { UI_THEME, themeOf, themeKeyOf } from './theme';
@@ -520,6 +521,12 @@ export interface EditorController {
   snapGuides: SnapGuide[];
   /** 지금 끌고 있는 것이 담길 프레임 id — 그 테두리를 강조한다(끄는 동안만). */
   frameDrop: string | null;
+  /** 열 모드 프레임에 카드를 끌고 있을 때의 삽입 위치 선(끄는 동안만). */
+  columnInsert: { zoneId: string; y: number; x: number; w: number; index: number } | null;
+  /** 열 모드 프레임의 카드 수 — 라벨 옆에 보여 준다(열이 아닌 프레임은 없음). */
+  columnCounts: Record<string, number>;
+  /** 프레임의 열 모드를 켜고 끈다(칸반). */
+  toggleColumnMode: (id: string) => void;
   /** 현재 선택(단일/다중)을 클립보드에 담는다. 담을 게 없으면(루트만 선택 등)
    * `false`를 돌려주고 기존 클립보드는 그대로 둔다. */
   copySelection: () => boolean;
@@ -4373,6 +4380,34 @@ export function useEditorState(): EditorController {
    * 기하로 정해지므로 이 값은 순수한 표시이고, 손을 떼면 지운다. */
   const [frameDrop, setFrameDropState] = useState<string | null>(null);
   const setFrameDrop = useCallback((id: string | null) => setFrameDropState((prev) => (prev === id ? prev : id)), []);
+  /** 열 모드 프레임에 카드를 끌고 있을 때 그릴 삽입 위치 선. */
+  const [columnInsert, setColumnInsertState] = useState<{ zoneId: string; y: number; x: number; w: number; index: number } | null>(null);
+  const columnInsertRef = useRef(columnInsert);
+  columnInsertRef.current = columnInsert;
+  const setColumnInsert = useCallback(
+    (next: { zoneId: string; y: number; x: number; w: number; index: number } | null) =>
+      setColumnInsertState((prev) => {
+        if (!prev && !next) return prev;
+        if (prev && next && prev.zoneId === next.zoneId && prev.index === next.index && prev.y === next.y) return prev;
+        return next;
+      }),
+    [],
+  );
+
+  /** 이 카드를 그 열의 몇 번째에 끼울 것인가(+ 선을 그릴 자리). 열이 아니면 null. */
+  const columnInsertFor = useCallback((zoneId: string | null, cardId: string, y: number, h: number) => {
+    if (!zoneId) return null;
+    const z = docRef.current.zones.find((x) => x.id === zoneId);
+    if (!z || z.stack !== 'column') return null;
+    const rect = { x: z.x, y: z.y, w: z.w, h: z.h };
+    const cards = docRef.current.floats
+      .filter((f) => f.id !== cardId && centerInside(rect, { x: f.x, y: f.y, w: f.w, h: floatBoxH(f) }))
+      .map((f) => ({ id: f.id, x: f.x, y: f.y, w: f.w, h: floatBoxH(f) }));
+    // 삽입 기준은 끌고 있는 카드의 **중심** — 손이 가리키는 곳이 그 자리다.
+    const index = columnInsertIndex(cards, y + h / 2 - h / 2, cardId);
+    return { zoneId, index, y: columnInsertY(rect, cards, index, cardId), x: z.x + COLUMN_PAD, w: columnCardWidth(rect) };
+  }, []);
+
   /** 프레임이 담고 가는 모든 id — 맞춤(안내선) 기준에서 빼는 데 쓴다. */
   const carriedIds = (carry: CarrySnapshot): Set<string> =>
     new Set([...Object.keys(carry.zones), ...Object.keys(carry.floats), ...Object.keys(carry.lines), ...Object.keys(carry.strokes), ...Object.keys(carry.nodes)]);
@@ -4646,7 +4681,10 @@ export function useEditorState(): EditorController {
           const at = snapDragBox(box, d.id, on);
           // 어느 프레임에 담기는지 알려 준다(프레임 = 그릇). 소속은 놓는 자리의 기하로
           // 정해지므로 여기서 커밋할 것은 없다 — 테두리 강조만.
-          setFrameDrop(frameFor({ ...box, x: at.x, y: at.y }));
+          const dropFrame = frameFor({ ...box, x: at.x, y: at.y });
+          setFrameDrop(dropFrame);
+          // 열 모드 프레임 위라면 **몇 번째에 끼워질지**를 선으로 보여 준다.
+          setColumnInsert(columnInsertFor(dropFrame, d.id, at.y, box.h));
           commitDoc((doc0) => ({ ...doc0, floats: mutations.updateFloatItem(doc0.floats, d.id, { x: at.x, y: at.y }) }), true);
           break;
         }
@@ -4754,6 +4792,31 @@ export function useEditorState(): EditorController {
       // 안내선·프레임 강조는 **끄는 동안에만** 뜬다 — 손을 떼면(취소돼도) 곧바로 지운다.
       setSnapGuides((prev) => (prev.length ? [] : prev));
       setFrameDrop(null);
+      // 열 모드 프레임에 놓았다면 **그 자리(순서)로** 끼워 넣는다. 순서는 y 좌표가
+      // 곧 규칙이므로, 끼운 뒤의 자리를 계산해 한 번에 커밋하면 끝이다(continuous라
+      // 드래그 전체가 undo 한 단계로 합쳐진다). 이후 정렬은 layout effect가 맡는다.
+      const ci = columnInsertRef.current;
+      setColumnInsert(null);
+      if (ci && d.kind === 'float') {
+        const z = docRef.current.zones.find((x) => x.id === ci.zoneId);
+        if (z) {
+          const rect = { x: z.x, y: z.y, w: z.w, h: z.h };
+          const cards = docRef.current.floats
+            .filter((f) => f.id === d.id || centerInside(rect, { x: f.x, y: f.y, w: f.w, h: floatBoxH(f) }))
+            .map((f) => ({ id: f.id, x: f.x, y: f.y, w: f.w, h: floatBoxH(f) }));
+          const slots = columnLayoutWithInsert(rect, cards, d.id, ci.index);
+          commitDoc(
+            (doc0) => ({
+              ...doc0,
+              floats: doc0.floats.map((f) => {
+                const slot = slots[f.id];
+                return slot ? { ...f, x: slot.x, y: slot.y, w: slot.w } : f;
+              }),
+            }),
+            true,
+          );
+        }
+      }
       // deferred right-click menu (macOS): see the identical block in the background
       // drag's `onUp`, above — this covers a right-click that landed on a NODE/FLOAT/
       // ZONE/LINE (their `begin*Drag` starters don't filter by button, matching the
@@ -4960,6 +5023,42 @@ export function useEditorState(): EditorController {
     if (anchor) nodes = mutations.nudgeFreeNode(nodes, anchor, nudgeBoxOf(nodes, geom));
     if (nodes !== doc.nodes) amendDoc((prev) => (prev.nodes === doc.nodes ? { ...prev, nodes } : prev));
   }, [doc.nodes, geom, nudgeTick, editingNodeId, editingFloatId, editingZoneId, editingLineId]);
+
+  /**
+   * 열 모드 프레임(칸반)의 카드 정렬 — 열 안의 메모를 세로로 쌓고 폭을 맞춘다.
+   *
+   * nudge와 같은 자리(layout effect)에 두는 이유도 같다: 어긋난 자리가 한 프레임
+   * 그려진 뒤 옮겨지면 깜빡인다. 계산(`columnLayout`)이 **멱등**이라 이미 맞은
+   * 열은 아무것도 커밋하지 않고(무한 루프 없음), 카드 글이 길어져 높이가 변한
+   * 경우에도 다음 렌더에서 저절로 다시 맞는다.
+   *
+   * 드래그·편집 중에는 건드리지 않는다(손이 잡고 있는 것을 밀면 안 된다).
+   * 정규화이므로 `amendDoc` — 새 undo 단계를 만들지 않고 기준점만 바꾼다.
+   */
+  useLayoutEffect(() => {
+    const columns = doc.zones.filter((z) => z.stack === 'column');
+    if (!columns.length) return;
+    if (editingNodeId || editingFloatId || editingZoneId || editingLineId) return;
+    if (objDragRef.current || dragRef.current) return;
+    let floats = doc.floats;
+    columns.forEach((z) => {
+      const rect = { x: z.x, y: z.y, w: z.w, h: z.h };
+      const cards = floats
+        .filter((f) => centerInside(rect, { x: f.x, y: f.y, w: f.w, h: floatBoxH(f) }))
+        .map((f) => ({ id: f.id, x: f.x, y: f.y, w: f.w, h: floatBoxH(f) }));
+      if (!cards.length) return;
+      const slots = columnLayout(rect, cards);
+      let changed = false;
+      const next = floats.map((f) => {
+        const slot = slots[f.id];
+        if (!slot || (f.x === slot.x && f.y === slot.y && f.w === slot.w)) return f;
+        changed = true;
+        return { ...f, x: slot.x, y: slot.y, w: slot.w };
+      });
+      if (changed) floats = next;
+    });
+    if (floats !== doc.floats) amendDoc((prev) => (prev.floats === doc.floats ? { ...prev, floats } : prev));
+  }, [doc.floats, doc.zones, editingNodeId, editingFloatId, editingZoneId, editingLineId]);
 
   function capturePointer(e: ReactPointerEvent): void {
     try {
@@ -5203,6 +5302,44 @@ export function useEditorState(): EditorController {
       commitDoc((d) => ({ ...d, zones: mutations.updateZoneItem(d.zones, id, { x, y, w, h }) }));
     },
     [commitDoc, frameMembers],
+  );
+
+  /**
+   * 열 모드(칸반) 토글 — 켜면 그 프레임 안의 카드가 세로로 쌓이고 폭이 열에
+   * 맞춰진다(정렬은 layout effect가 맡는다). 끄면 마지막 자리에 그대로 남는다
+   * (되돌릴 때 카드가 흩어지면 무슨 일이 일어났는지 알 수 없다).
+   */
+  /** 열 모드 프레임별 카드 수 — 라벨 옆 배지(사용자 선정: 수만 표시, WIP 상한 없음). */
+  const columnCounts = useMemo(() => {
+    const out: Record<string, number> = {};
+    doc.zones.forEach((z) => {
+      if (z.stack !== 'column') return;
+      const rect = { x: z.x, y: z.y, w: z.w, h: z.h };
+      out[z.id] = doc.floats.filter((f) => centerInside(rect, { x: f.x, y: f.y, w: f.w, h: floatBoxH(f) })).length;
+    });
+    return out;
+  }, [doc.zones, doc.floats]);
+
+  const toggleColumnMode = useCallback(
+    (id: string) => {
+      if (readOnlyRef.current) return;
+      const z = docRef.current.zones.find((x) => x.id === id);
+      if (!z) return;
+      const on = z.stack !== 'column';
+      commitDoc((d) => ({
+        ...d,
+        zones: d.zones.map((zz) => {
+          if (zz.id !== id) return zz;
+          if (on) return { ...zz, stack: 'column' as const };
+          // 끌 때는 **키를 지운다** — undefined로 남기면 CRDT가 필드를 지우지 못한다
+          // (노드 이미지 제거와 같은 규칙).
+          const rest = { ...zz };
+          delete rest.stack;
+          return rest;
+        }),
+      }));
+    },
+    [commitDoc],
   );
 
   /**
@@ -5833,6 +5970,9 @@ export function useEditorState(): EditorController {
     setSnapGrid,
     snapGuides,
     frameDrop,
+    columnInsert,
+    columnCounts,
+    toggleColumnMode,
     copySelection,
     cutSelection,
     duplicateSelection,

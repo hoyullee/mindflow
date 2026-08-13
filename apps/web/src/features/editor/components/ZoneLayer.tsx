@@ -33,6 +33,12 @@ const ZONE_FRAME_Z = 95;
  * 삼킨다(빈 영역 클릭 = 영역 선택이라는 dc 원본 규칙도 그 자리에서 깨진다). */
 const ZONE_BASE_Z = 8;
 
+/** 라벨 알약의 대략 폭 — 카드 수 배지를 그 오른쪽에 붙이는 데만 쓴다(정확할
+ * 필요는 없다: 글자 폭 7.2 + 좌우 패딩 26 + 여백 8). */
+function labelWidthGuess(label: string): number {
+  return Math.min(200, label.length * 7.6 + 26) + 8;
+}
+
 export function ZoneLayer({ zones, theme: th, controller }: ZoneLayerProps) {
   if (!zones.length) return null;
   return (
@@ -57,6 +63,23 @@ export function ZoneLayer({ zones, theme: th, controller }: ZoneLayerProps) {
           }}
         />
       ))}
+      {/* 열 모드 프레임에 카드를 끌고 있을 때의 삽입 위치 — 놓으면 그 자리에 끼워진다. */}
+      {controller.columnInsert && (
+        <div
+          data-column-insert={controller.columnInsert.zoneId}
+          style={{
+            position: 'absolute',
+            left: controller.columnInsert.x,
+            top: controller.columnInsert.y - 1,
+            width: controller.columnInsert.w,
+            height: 3,
+            borderRadius: 2,
+            background: th.accent,
+            pointerEvents: 'none',
+            zIndex: ZONE_FRAME_Z + 1,
+          }}
+        />
+      )}
       {zones.map((z) => {
         const col = z.color || th.accent;
         const selected = controller.selection?.kind === 'zone' && controller.selection.id === z.id;
@@ -130,6 +153,29 @@ export function ZoneLayer({ zones, theme: th, controller }: ZoneLayerProps) {
                 }}
               >
                 {z.label || '영역'}
+              </div>
+            )}
+            {/* 열 모드(칸반) 카드 수 — 라벨 옆. 열이 아닌 프레임에는 없다. */}
+            {z.stack === 'column' && !editing && (
+              <div
+                data-column-count={z.id}
+                style={{
+                  position: 'absolute',
+                  left: 10,
+                  top: -14,
+                  height: 27,
+                  lineHeight: '27px',
+                  paddingLeft: labelWidthGuess(z.label || '영역'),
+                  fontSize: 12,
+                  fontWeight: 700,
+                  color: th.subtext,
+                  fontFamily: 'Pretendard, sans-serif',
+                  userSelect: 'none',
+                  pointerEvents: 'none',
+                  whiteSpace: 'nowrap',
+                }}
+              >
+                {controller.columnCounts[z.id] ?? 0}
               </div>
             )}
             {remotePeer && !editing && <RemotePeerTag color={remotePeer.user.color} name={remotePeer.user.name} style={{ right: 10, top: -14 }} />}
