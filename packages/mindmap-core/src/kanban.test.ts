@@ -83,6 +83,15 @@ describe('칸반 — 직렬화', () => {
     expect(round).toEqual(doc);
   });
 
+  it('카드 메타(분류·기한·담당·긴급)가 왕복한다 — 없는 필드는 저장본에도 없다', () => {
+    const meta = { ...card('a', 'c1', 0), tag: '개발', due: '2026-08-20', owner: 'me@ex.com', ownerName: '지수', flagged: true };
+    const doc = serializeDoc({ ...base, kind: 'kanban', columns: cols, cards: [meta, card('b', 'c1', 1024)] });
+    const round = parseDoc(JSON.parse(JSON.stringify(doc)))!;
+    expect(round.cards![0]).toEqual(meta);
+    // 값이 없는 카드는 키 자체가 없다(빈 필드를 흘리지 않는다 — CRDT·저장본 무게).
+    expect(Object.keys(round.cards![1]!).sort()).toEqual(['col', 'id', 'pos', 'text']);
+  });
+
   it('소속 열이 없는 카드는 읽을 때 버린다(유령 방지)', () => {
     const raw = { v: 1, nodes: {}, floats: [], lines: [], zones: [], layoutMode: 'right', themeKey: 'white', kind: 'kanban', columns: cols, cards: [card('a', 'c1', 0), card('ghost', 'gone', 0)] };
     const round = parseDoc(raw)!;
