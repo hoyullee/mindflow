@@ -17,7 +17,7 @@ import { hexA } from '../theme';
 import type { Theme } from '../theme';
 import { useIsMobile } from '../../../hooks/useMediaQuery';
 import { CommentIcon } from './ToolbarMenus';
-import { dropIndicator, dropTargetAt, edgeScroll } from '../kanbanDrag';
+import { columnDropIndex, columnDropIndicator, dropIndicator, dropTargetAt, edgeScroll } from '../kanbanDrag';
 import type { ColumnHit, DropTarget } from '../kanbanDrag';
 
 const COL_W = 288;
@@ -30,6 +30,18 @@ const CHIP_CLEARANCE = 78;
 const DRAG_THRESHOLD = 4;
 /** 터치는 **길게 눌러야** 드래그가 시작된다 — 그래야 평범한 손가락 스크롤이 산다. */
 const TOUCH_HOLD_MS = 320;
+
+/** 열 머리를 끌고 있는 상태 — 카드와 달리 가로 자리만 정한다. */
+interface ColDragState {
+  id: string;
+  x: number;
+  offX: number;
+  /** 잡은 열의 상단(화면 좌표) — 고스트가 원래 열 머리 높이에 그대로 놓이게. */
+  top: number;
+  w: number;
+  title: string;
+  index: number;
+}
 
 interface DragState {
   id: string;
@@ -44,6 +56,67 @@ interface DragState {
   target: DropTarget | null;
 }
 
+/**
+ * 포인터 드래그의 공통 골격 — 카드와 열이 **같은 감각**으로 움직이도록 한 곳에 모았다.
+ *
+ * 마우스는 4px 문턱(클릭·더블클릭과 구분), 터치는 길게 누르기(그래야 평범한 손가락
+ * 스크롤이 산다). 잡힌 뒤에는 비-passive `touchmove`를 막는다 — 그러지 않으면
+ * 브라우저가 세로 스크롤을 가져가며 `pointercancel`을 쏘고 드래그가 통째로 풀린다
+ * (`pointermove`의 preventDefault로는 밑에 깔린 터치 동작을 취소하지 못한다).
+ * **취소는 이동이 아니다** — `onDrop`은 실제로 놓았을 때만 부른다.
+ */
+function beginPointerDrag(
+  e: ReactPointerEvent,
+  handlers: { onStart: () => void; onMove: (ev: PointerEvent) => void; onDrop: (ev: PointerEvent) => void; onEnd: () => void },
+): void {
+  const startX = e.clientX;
+  const startY = e.clientY;
+  const touch = e.pointerType === 'touch';
+  let started = false;
+  let holdTimer: ReturnType<typeof setTimeout> | null = null;
+
+  const start = (): void => {
+    started = true;
+    handlers.onStart();
+  };
+  if (touch) holdTimer = setTimeout(start, TOUCH_HOLD_MS);
+
+  const onMove = (ev: PointerEvent): void => {
+    if (!started) {
+      if (touch) {
+        // 길게 누르기 전에 움직이면 스크롤 의도 — 드래그를 포기한다.
+        if (Math.hypot(ev.clientX - startX, ev.clientY - startY) > 8) cleanup();
+        return;
+      }
+      if (Math.hypot(ev.clientX - startX, ev.clientY - startY) < DRAG_THRESHOLD) return;
+      start();
+    }
+    ev.preventDefault();
+    handlers.onMove(ev);
+  };
+  const onTouchMove = (ev: TouchEvent): void => {
+    if (started && ev.cancelable) ev.preventDefault();
+  };
+  const onUp = (ev: PointerEvent): void => {
+    const was = started;
+    cleanup();
+    if (was) handlers.onDrop(ev);
+  };
+  const onCancel = (): void => cleanup();
+  function cleanup(): void {
+    if (holdTimer) clearTimeout(holdTimer);
+    window.removeEventListener('pointermove', onMove);
+    window.removeEventListener('touchmove', onTouchMove);
+    window.removeEventListener('pointerup', onUp);
+    window.removeEventListener('pointercancel', onCancel);
+    handlers.onEnd();
+  }
+  window.addEventListener('pointermove', onMove, { passive: false });
+  window.addEventListener('touchmove', onTouchMove, { passive: false });
+  window.addEventListener('pointerup', onUp);
+  window.addEventListener('pointercancel', onCancel);
+}
+
 export function KanbanBoard({ controller, theme: th }: { controller: EditorController; theme: Theme }) {
   const isMobile = useIsMobile();
   const { columns, cards, readOnly } = controller;
@@ -51,6 +124,7 @@ export function KanbanBoard({ controller, theme: th }: { controller: EditorContr
   const [drag, setDrag] = useState<DragState | null>(null);
   const dragRef = useRef<DragState | null>(null);
   dragRef.current = drag;
+  const [colDrag, setColDrag] = useState<ColDragState | null>(null);
 
   /** 지금 화면에 그려진 열·카드의 사각형 — 드롭 자리 계산의 입력(순수 부분은 `kanbanDrag.ts`). */
   const columnHits = useCallback((): ColumnHit[] => {
@@ -63,43 +137,26 @@ export function KanbanBoard({ controller, theme: th }: { controller: EditorContr
     }));
   }, []);
 
-  /** 카드에서 드래그를 시작한다(마우스는 문턱, 터치는 길게 누르기 — 각각의 관례). */
+  /** 카드에서 드래그를 시작한다(공용 제스처 골격 — `beginPointerDrag`). */
   const beginCardDrag = useCallback(
     (e: ReactPointerEvent, card: KanbanCard) => {
       if (controller.readOnly || controller.editingCardId) return;
-      const el = e.currentTarget as HTMLElement;
-      const rect = el.getBoundingClientRect();
+      const rect = (e.currentTarget as HTMLElement).getBoundingClientRect();
       const startX = e.clientX;
       const startY = e.clientY;
-      const touch = e.pointerType === 'touch';
-      let started = false;
-      let holdTimer: ReturnType<typeof setTimeout> | null = null;
-
-      const start = (): void => {
-        started = true;
-        const st: DragState = { id: card.id, x: startX, y: startY, offX: startX - rect.left, offY: startY - rect.top, w: rect.width, text: card.text, target: null };
-        setDrag(st);
-        dragRef.current = st;
-      };
-      if (touch) holdTimer = setTimeout(start, TOUCH_HOLD_MS);
-
-      const onMove = (ev: PointerEvent): void => {
-        if (!started) {
-          if (touch) {
-            // 길게 누르기 전에 움직이면 스크롤 의도 — 드래그를 포기한다.
-            if (Math.hypot(ev.clientX - startX, ev.clientY - startY) > 8) cleanup();
-            return;
-          }
-          if (Math.hypot(ev.clientX - startX, ev.clientY - startY) < DRAG_THRESHOLD) return;
-          start();
-        }
-        ev.preventDefault();
-        const hits = columnHits();
-        const target = dropTargetAt(hits, ev.clientX, ev.clientY, card.id);
-        setDrag((prev) => (prev ? { ...prev, x: ev.clientX, y: ev.clientY, target } : prev));
-        // 화면 밖 열·카드로도 끌고 갈 수 있게 가장자리에서 스크롤한다.
-        const board = boardRef.current;
-        if (board) {
+      beginPointerDrag(e, {
+        onStart: () => {
+          const st: DragState = { id: card.id, x: startX, y: startY, offX: startX - rect.left, offY: startY - rect.top, w: rect.width, text: card.text, target: null };
+          setDrag(st);
+          dragRef.current = st;
+        },
+        onMove: (ev) => {
+          const hits = columnHits();
+          const target = dropTargetAt(hits, ev.clientX, ev.clientY, card.id);
+          setDrag((prev) => (prev ? { ...prev, x: ev.clientX, y: ev.clientY, target } : prev));
+          // 화면 밖 열·카드로도 끌고 갈 수 있게 가장자리에서 스크롤한다.
+          const board = boardRef.current;
+          if (!board) return;
           const br = board.getBoundingClientRect();
           const dx = edgeScroll(ev.clientX, br.left, br.right);
           if (dx) board.scrollLeft += dx;
@@ -109,52 +166,52 @@ export function KanbanBoard({ controller, theme: th }: { controller: EditorContr
             const dy = edgeScroll(ev.clientY, cr.top, cr.bottom, 44, 12);
             if (dy) colEl.scrollTop += dy;
           }
-        }
-      };
-      /**
-       * 잡은 뒤에는 브라우저가 세로 스크롤을 가져가지 못하게 막는다.
-       *
-       * 카드는 `touch-action: pan-y`다(그래야 평범한 손가락 스크롤이 산다). 그
-       * 상태에서 세로로 끌면 브라우저가 스크롤을 시작하고 **pointercancel**을 쏘는데,
-       * `onMove`의 `preventDefault`는 pointermove에 걸려 있어 소용이 없다 — 포인터
-       * 이벤트는 밑에 깔린 터치 동작을 취소하지 못한다. 터치 스크롤을 멈추려면
-       * **touchmove**를 비-passive로 받아 막아야 한다(제보: "길게 눌러 잡은 뒤
-       * 위아래로 끌면 드래그가 풀리면서 자동으로 이동").
-       *
-       * 잡기 전(`started` 전)에는 막지 않는다 — 그때의 세로 이동은 스크롤 의도다.
-       */
-      const onTouchMove = (ev: TouchEvent): void => {
-        if (started && ev.cancelable) ev.preventDefault();
-      };
-      const onUp = (ev: PointerEvent): void => {
-        const st = dragRef.current;
-        cleanup();
-        if (!started || !st) return;
-        const target = dropTargetAt(columnHits(), ev.clientX, ev.clientY, card.id);
-        if (target) controller.moveCardTo(card.id, target.colId, target.index);
-      };
-      /** 취소는 **이동이 아니다** — 제스처가 무효가 된 것이므로 카드는 제자리에 둔다.
-       *  (예전에는 `onUp`에 물려 있어 브라우저가 스크롤을 가져간 순간 그 자리로
-       *  카드가 옮겨졌다.) */
-      const onCancel = (): void => cleanup();
-      function cleanup(): void {
-        if (holdTimer) clearTimeout(holdTimer);
-        window.removeEventListener('pointermove', onMove);
-        window.removeEventListener('touchmove', onTouchMove);
-        window.removeEventListener('pointerup', onUp);
-        window.removeEventListener('pointercancel', onCancel);
-        setDrag(null);
-        dragRef.current = null;
-      }
-      window.addEventListener('pointermove', onMove, { passive: false });
-      window.addEventListener('touchmove', onTouchMove, { passive: false });
-      window.addEventListener('pointerup', onUp);
-      window.addEventListener('pointercancel', onCancel);
+        },
+        onDrop: (ev) => {
+          const target = dropTargetAt(columnHits(), ev.clientX, ev.clientY, card.id);
+          if (target) controller.moveCardTo(card.id, target.colId, target.index);
+        },
+        onEnd: () => {
+          setDrag(null);
+          dragRef.current = null;
+        },
+      });
+    },
+    [columnHits, controller],
+  );
+
+  /** 열 머리에서 드래그를 시작한다 — 열 순서를 바꾼다. */
+  const beginColumnDrag = useCallback(
+    (e: ReactPointerEvent, col: KanbanColumn) => {
+      if (controller.readOnly) return;
+      // 머리 안의 버튼(✕)·제목 편집기에서 시작한 것은 드래그가 아니다.
+      const t = e.target as HTMLElement;
+      if (t.closest('[data-delete-column]') || t.closest('[data-column-title-edit]')) return;
+      const section = (e.currentTarget as HTMLElement).closest('[data-kanban-column]') as HTMLElement | null;
+      if (!section) return;
+      const rect = section.getBoundingClientRect();
+      const startX = e.clientX;
+      beginPointerDrag(e, {
+        onStart: () => setColDrag({ id: col.id, x: startX, offX: startX - rect.left, top: rect.top, w: rect.width, title: col.title, index: 0 }),
+        onMove: (ev) => {
+          const hits = columnHits();
+          const index = columnDropIndex(hits, ev.clientX, col.id);
+          setColDrag((prev) => (prev ? { ...prev, x: ev.clientX, index } : prev));
+          const board = boardRef.current;
+          if (!board) return;
+          const br = board.getBoundingClientRect();
+          const dx = edgeScroll(ev.clientX, br.left, br.right);
+          if (dx) board.scrollLeft += dx;
+        },
+        onDrop: (ev) => controller.moveColumnTo(col.id, columnDropIndex(columnHits(), ev.clientX, col.id)),
+        onEnd: () => setColDrag(null),
+      });
     },
     [columnHits, controller],
   );
 
   const indicator = drag?.target ? dropIndicator(columnHits(), drag.target, drag.id) : null;
+  const colIndicator = colDrag ? columnDropIndicator(columnHits(), colDrag.index, colDrag.id) : null;
 
   return (
     <div
@@ -178,7 +235,18 @@ export function KanbanBoard({ controller, theme: th }: { controller: EditorContr
       }}
     >
       {columns.map((col) => (
-        <Column key={col.id} col={col} cards={cardsInColumn(cards, col.id)} controller={controller} theme={th} isMobile={isMobile} onCardPointerDown={beginCardDrag} draggingId={drag?.id ?? null} />
+        <Column
+          key={col.id}
+          col={col}
+          cards={cardsInColumn(cards, col.id)}
+          controller={controller}
+          theme={th}
+          isMobile={isMobile}
+          onCardPointerDown={beginCardDrag}
+          onHeaderPointerDown={beginColumnDrag}
+          draggingId={drag?.id ?? null}
+          dragging={colDrag?.id === col.id}
+        />
       ))}
       {!readOnly && (
         <button
@@ -203,6 +271,33 @@ export function KanbanBoard({ controller, theme: th }: { controller: EditorContr
         >
           ＋ 열 추가
         </button>
+      )}
+
+      {/* 끌고 있는 열의 고스트(제목 알약)와 놓일 자리를 가리키는 세로 선. */}
+      {colDrag && (
+        <div
+          data-kanban-col-ghost
+          style={{ position: 'fixed', left: colDrag.x - colDrag.offX, top: colDrag.top, width: colDrag.w, padding: '10px 12px', borderRadius: 12, background: th.panel, border: `1px solid ${hexA(th.accent, 0.55)}`, boxShadow: '0 8px 24px rgba(0,0,0,.18)', fontSize: 13.5, fontWeight: 700, color: th.text, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', pointerEvents: 'none', opacity: 0.95, zIndex: 300 }}
+        >
+          {colDrag.title}
+        </div>
+      )}
+      {colIndicator && (
+        <div
+          data-kanban-col-drop-line
+          style={{
+            position: 'fixed',
+            left: colIndicator.left,
+            top: colIndicator.top,
+            height: colIndicator.height,
+            // 카드 가이드 선과 같은 문법 — 얇고 옅게, 양끝이 스며든다.
+            width: 2,
+            borderRadius: 999,
+            background: `linear-gradient(180deg, ${hexA(th.accent, 0)} 0%, ${hexA(th.accent, 0.5)} 8%, ${hexA(th.accent, 0.5)} 92%, ${hexA(th.accent, 0)} 100%)`,
+            pointerEvents: 'none',
+            zIndex: 299,
+          }}
+        />
       )}
 
       {/* 끌고 있는 카드의 고스트 + 삽입 위치 선 — 화면 좌표라 보드 스크롤과 무관하다. */}
@@ -244,7 +339,9 @@ function Column({
   theme: th,
   isMobile,
   onCardPointerDown,
+  onHeaderPointerDown,
   draggingId,
+  dragging,
 }: {
   col: KanbanColumn;
   cards: KanbanCard[];
@@ -252,7 +349,10 @@ function Column({
   theme: Theme;
   isMobile: boolean;
   onCardPointerDown: (e: ReactPointerEvent, card: KanbanCard) => void;
+  onHeaderPointerDown: (e: ReactPointerEvent, col: KanbanColumn) => void;
   draggingId: string | null;
+  /** 이 열을 끌고 있는가 — 원본은 자리를 지키되 흐리게(카드와 같은 규칙). */
+  dragging: boolean;
 }) {
   const [renaming, setRenaming] = useState(false);
   const readOnly = controller.readOnly;
@@ -270,9 +370,17 @@ function Column({
         border: `1px solid ${th.border}`,
         borderRadius: 14,
         boxSizing: 'border-box',
+        // 끌고 있는 원본은 자리를 지키되 흐리게 — 어디서 떠났는지 보인다(카드와 동일).
+        opacity: dragging ? 0.4 : 1,
       }}
     >
-      <header style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '11px 12px 9px' }}>
+      {/* 열 머리를 끌면 열 순서가 바뀐다. 제목 편집(더블클릭)·✕과 같은 자리를
+          쓰므로 카드와 같은 관례로 가른다: 마우스는 4px 문턱, 터치는 길게 누르기. */}
+      <header
+        data-column-head={col.id}
+        onPointerDown={(e) => onHeaderPointerDown(e, col)}
+        style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '11px 12px 9px', cursor: readOnly ? 'default' : 'grab', touchAction: 'pan-y' }}
+      >
         {renaming ? (
           <ColumnTitleEdit
             title={col.title}

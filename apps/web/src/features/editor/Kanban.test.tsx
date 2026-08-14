@@ -512,3 +512,48 @@ describe('칸반 — 드롭 위치 가이드 선(제보: 너무 진하다)', () 
     firePointer(window, 'pointerup', { clientX: 20, clientY: 130 });
   });
 });
+
+describe('칸반 — 열 순서 바꾸기', () => {
+  beforeEach(() => {
+    localStorage.clear();
+    mockMatchMedia(false);
+    localStorage.setItem('mf_demo_session', JSON.stringify({ user: { id: 'u', email: 'me@example.com' } }));
+  });
+  afterEach(cleanup);
+
+  it('열 머리를 끌어 순서를 바꾸면 저장된다 — undo 한 번으로 되돌아온다', async () => {
+    localStorage.setItem('mindflow_doc_kc1', JSON.stringify(KANBAN));
+    const { container } = renderEditor('/editor?map=kc1&title=x');
+    await waitFor(() => expect(container.querySelectorAll('[data-kanban-column]')).toHaveLength(2));
+
+    stubRects(container);
+    // c1의 머리를 잡아 c2의 중심(470) 오른쪽으로 끈다.
+    firePointer(container.querySelector('[data-column-head="c1"]')!, 'pointerdown', { clientX: 40, clientY: 20 });
+    firePointer(window, 'pointermove', { clientX: 500, clientY: 20 });
+    await waitFor(() => expect(container.querySelector('[data-kanban-col-ghost]')).toBeTruthy());
+    expect(container.querySelector('[data-kanban-col-drop-line]')).toBeTruthy();
+    firePointer(window, 'pointerup', { clientX: 500, clientY: 20 });
+
+    await waitFor(() => expect(Array.from(container.querySelectorAll('[data-kanban-column]')).map((e) => e.getAttribute('data-kanban-column'))).toEqual(['c2', 'c1']));
+    fireEvent.keyDown(window, { key: 's', ctrlKey: true });
+    await waitFor(() => expect(saved('kc1').columns.map((c: { id: string }) => c.id)).toEqual(['c2', 'c1']));
+
+    fireEvent.keyDown(window, { key: 'z', ctrlKey: true });
+    await waitFor(() => expect(Array.from(container.querySelectorAll('[data-kanban-column]')).map((e) => e.getAttribute('data-kanban-column'))).toEqual(['c1', 'c2']));
+  });
+
+  it('✕에서 끌어도 열 드래그가 아니고, 제목 더블클릭 편집도 그대로다', async () => {
+    localStorage.setItem('mindflow_doc_kc2', JSON.stringify(KANBAN));
+    const { container } = renderEditor('/editor?map=kc2&title=x');
+    await waitFor(() => expect(container.querySelectorAll('[data-kanban-column]')).toHaveLength(2));
+    stubRects(container);
+
+    firePointer(container.querySelector('[data-delete-column="c1"]')!, 'pointerdown', { clientX: 260, clientY: 20 });
+    firePointer(window, 'pointermove', { clientX: 500, clientY: 20 });
+    expect(container.querySelector('[data-kanban-col-ghost]')).toBeNull();
+    firePointer(window, 'pointerup', { clientX: 500, clientY: 20 });
+
+    fireEvent.doubleClick(container.querySelector('[data-column-title="c1"]')!);
+    await waitFor(() => expect(container.querySelector('[data-column-title-edit]')).toBeTruthy());
+  });
+});

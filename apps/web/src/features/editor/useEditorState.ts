@@ -2,7 +2,7 @@ import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } fr
 import type { MouseEvent as ReactMouseEvent, PointerEvent as ReactPointerEvent } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import type { Box, Doc, Float, KanbanCard, KanbanColumn, Line, LineAnchor, LayoutMode, ListOp, Node, NodeMap, Reaction, ReactionGroup, SizeOf, SnapCandidate, Stroke, TextEdit, Zone } from '@mindflow/mindmap-core';
-import { HistoryStack, ROOT_ID, collectImageRefs, collectInlineImages, isImageRef, replaceImageValues, applyListOp as applyListOpToText, applyAutoLinks, applyMarkdownShortcuts, applyPartialStyle, insertMention, charsToRuns, cubicAt, isStyledRuns, findLineSnap, layout, resolveLineEndpoints, resolveLineGeometry, runsToChars, serializeDoc, shiftOffset, strokeBounds, strokeHit, translateStrokePts, reactionGroups, toggleReaction as toggleReactionList, pruneReactions, toMarkdown, posForIndex, removeColumn, moveCard } from '@mindflow/mindmap-core';
+import { HistoryStack, ROOT_ID, collectImageRefs, collectInlineImages, isImageRef, replaceImageValues, applyListOp as applyListOpToText, applyAutoLinks, applyMarkdownShortcuts, applyPartialStyle, insertMention, charsToRuns, cubicAt, isStyledRuns, findLineSnap, layout, resolveLineEndpoints, resolveLineGeometry, runsToChars, serializeDoc, shiftOffset, strokeBounds, strokeHit, translateStrokePts, reactionGroups, toggleReaction as toggleReactionList, pruneReactions, toMarkdown, posForIndex, removeColumn, moveCard, moveColumn } from '@mindflow/mindmap-core';
 import { domToRuns, linearize, liveEditValue } from './richtextDom';
 import { HL_COLORS, HL_WIDTHS } from './boardTools';
 import type { BoardTool } from './boardTools';
@@ -762,6 +762,8 @@ export interface EditorController {
   selectCard: (id: string | null) => void;
   /** 카드를 그 열의 index 자리로 옮긴다(드래그 드롭이 부른다). */
   moveCardTo: (cardId: string, colId: string, index: number) => void;
+  /** 열을 `index` 자리로 옮긴다(열 머리 드래그). */
+  moveColumnTo: (colId: string, index: number) => void;
   /** 화이트보드 그리기 도구(M4). 'select'가 기본 — 펜/하이라이터/지우개일 때는
    * 캔버스 위에 그리기 오버레이(BoardDrawLayer)가 포인터를 받는다. */
   boardTool: BoardTool;
@@ -5324,6 +5326,18 @@ export function useEditorState(): EditorController {
     [commitDoc],
   );
 
+  /** 열을 `index` 자리로 옮긴다(열 순서는 배열 순서 — 코어 `moveColumn`). */
+  const moveColumnTo = useCallback(
+    (colId: string, index: number) => {
+      if (readOnlyRef.current) return;
+      commitDoc((d) => {
+        const next = moveColumn(d.columns ?? [], colId, index);
+        return next === (d.columns ?? []) ? d : { ...d, columns: next };
+      });
+    },
+    [commitDoc],
+  );
+
   /**
    * 프레임 크기를 **내용에 맞춘다**(요청) — 담고 있는 것들을 감싸고 여백을 준다.
    *
@@ -5886,6 +5900,7 @@ export function useEditorState(): EditorController {
     selectedCardId,
     selectCard,
     moveCardTo,
+    moveColumnTo,
     boardTool,
     setBoardTool,
     penColor,
