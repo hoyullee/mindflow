@@ -290,6 +290,21 @@ export interface KanbanCard {
   rich?: RichRun[];
   /** 카드 배경(없으면 기본). */
   bg?: string | null;
+  /**
+   * 분류(디자인 원본의 "태그") — 이름 하나. 색은 저장하지 않고 **이름에서 정한다**
+   * (테마 팔레트 인덱스로 결정적 매핑, `apps/web`의 `kanbanMeta`): 색을 함께 들면
+   * 테마를 바꿨을 때 카드마다 옛 색이 남고, 같은 이름이 문서마다 다른 색이 된다.
+   */
+  tag?: string;
+  /** 기한 — `YYYY-MM-DD`(로컬 날짜). 표시 문구·지남 판정은 화면이 정한다. */
+  due?: string;
+  /** 담당자 이메일 — 공유 참가자(0011)에서 고른다. */
+  owner?: string;
+  /** 담당자 표시 이름 **스냅샷**(댓글 `author_name`과 같은 이유 — 클라이언트는
+   * 남의 `profiles`를 못 읽는다). 이름을 바꾸면 옛 카드는 옛 이름을 유지한다. */
+  ownerName?: string;
+  /** 긴급 표시 — 카드에 붉은 배지가 붙는다. */
+  flagged?: boolean;
 }
 
 /**

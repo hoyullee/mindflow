@@ -7,26 +7,33 @@
 //
 // 카드 순서는 카드 자신의 `pos` 필드다(코어 `kanban.ts`) — 배열로 들면 끊긴 채
 // 두 사람이 카드를 옮길 때 한쪽 순서가 사라진다(#332의 교훈).
+//
+// 화면 구성은 디자인 원본(`Geurio 칸반보드.dc.html`)을 옮긴 것이다. 원본이 고정
+// 표로 들고 있던 값(분류 색·담당 명단)은 규칙으로 바꿨다(`kanbanMeta.ts` 머리말).
 
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { CSSProperties, KeyboardEvent as ReactKeyboardEvent, PointerEvent as ReactPointerEvent } from 'react';
-import { cardsInColumn, richToMarkdown } from '@mindflow/mindmap-core';
+import { cardsInColumn } from '@mindflow/mindmap-core';
 import type { KanbanCard, KanbanColumn } from '@mindflow/mindmap-core';
 import type { EditorController } from '../useEditorState';
 import { hexA } from '../theme';
 import type { Theme } from '../theme';
 import { useIsMobile } from '../../../hooks/useMediaQuery';
 import { CommentIcon } from './ToolbarMenus';
-import { CARD_LABELS, cardLabelName } from '../kanbanLabels';
 import { RichSpan, linkInk } from '../richSpans';
 import { columnDropIndex, columnDropIndicator, dropIndicator, dropTargetAt, edgeScroll } from '../kanbanDrag';
 import type { ColumnHit, DropTarget } from '../kanbanDrag';
+import { boardProgress, cardMatches, columnColor, dueLabel, dueTone, initialOf, ownerLabel, tagColor } from '../kanbanMeta';
+import { colorForSeed } from '../../../collab/identity';
+import { CardDetail } from './CardDetail';
 
-const COL_W = 288;
+const COL_W = 308;
 const COL_GAP = 16;
 /** 좌상단 문서 칩(DocChip)이 떠 있는 자리 — 캔버스에서는 빈 공간 위였지만 칸반은
  * 좌상단부터 열이 시작되므로 그만큼 내려서 겹치지 않게 한다. */
 const CHIP_CLEARANCE = 78;
+/** 긴급 배지 — 테마와 무관한 경고색(어느 팔레트에서나 "위험"으로 읽혀야 한다). */
+const URGENT = '#d9534f';
 
 /** 마우스가 이만큼 움직여야 "끄는 것"으로 친다(클릭·더블클릭과 구분). */
 const DRAG_THRESHOLD = 4;
@@ -127,6 +134,8 @@ export function KanbanBoard({ controller, theme: th }: { controller: EditorContr
   const dragRef = useRef<DragState | null>(null);
   dragRef.current = drag;
   const [colDrag, setColDrag] = useState<ColDragState | null>(null);
+  /** 카드 검색 — 화면에서만 거른다(문서는 그대로). */
+  const [query, setQuery] = useState('');
 
   /** 지금 화면에 그려진 열·카드의 사각형 — 드롭 자리 계산의 입력(순수 부분은 `kanbanDrag.ts`). */
   const columnHits = useCallback((): ColumnHit[] => {
@@ -142,7 +151,7 @@ export function KanbanBoard({ controller, theme: th }: { controller: EditorContr
   /** 카드에서 드래그를 시작한다(공용 제스처 골격 — `beginPointerDrag`). */
   const beginCardDrag = useCallback(
     (e: ReactPointerEvent, card: KanbanCard) => {
-      if (controller.readOnly || controller.editingCardId) return;
+      if (controller.readOnly) return;
       const rect = (e.currentTarget as HTMLElement).getBoundingClientRect();
       const startX = e.clientX;
       const startY = e.clientY;
@@ -186,9 +195,9 @@ export function KanbanBoard({ controller, theme: th }: { controller: EditorContr
   const beginColumnDrag = useCallback(
     (e: ReactPointerEvent, col: KanbanColumn) => {
       if (controller.readOnly) return;
-      // 머리 안의 버튼(✕)·제목 편집기에서 시작한 것은 드래그가 아니다.
+      // 머리 안의 버튼(＋·⋯)·제목 편집기에서 시작한 것은 드래그가 아니다.
       const t = e.target as HTMLElement;
-      if (t.closest('[data-delete-column]') || t.closest('[data-column-title-edit]')) return;
+      if (t.closest('[data-column-btn]') || t.closest('[data-column-title-edit]')) return;
       const section = (e.currentTarget as HTMLElement).closest('[data-kanban-column]') as HTMLElement | null;
       if (!section) return;
       const rect = section.getBoundingClientRect();
@@ -214,66 +223,83 @@ export function KanbanBoard({ controller, theme: th }: { controller: EditorContr
 
   const indicator = drag?.target ? dropIndicator(columnHits(), drag.target, drag.id) : null;
   const colIndicator = colDrag ? columnDropIndicator(columnHits(), colDrag.index, colDrag.id) : null;
+  const progress = useMemo(() => boardProgress(columns, cards), [columns, cards]);
+  const detailCard = controller.detailCardId ? cards.find((c) => c.id === controller.detailCardId) : undefined;
 
   return (
     <div
-      ref={boardRef}
-      data-kanban-board
-      onPointerDown={(e) => {
-        // 빈 바닥을 누르면 선택 해제(캔버스의 배경 클릭과 같은 관례).
-        if (e.target === e.currentTarget) controller.selectCard(null);
-      }}
-      style={{
-        position: 'absolute',
-        inset: 0,
-        display: 'flex',
-        alignItems: 'stretch',
-        gap: COL_GAP,
-        padding: isMobile ? `${CHIP_CLEARANCE}px 12px 14px` : `${CHIP_CLEARANCE}px 20px 18px`,
-        overflowX: 'auto',
-        overflowY: 'hidden',
-        background: th.appBg,
-        boxSizing: 'border-box',
-      }}
+      data-kanban-root
+      style={{ position: 'absolute', inset: 0, display: 'flex', flexDirection: 'column', minHeight: 0, background: th.appBg, paddingTop: CHIP_CLEARANCE, boxSizing: 'border-box' }}
     >
-      {columns.map((col) => (
-        <Column
-          key={col.id}
-          col={col}
-          cards={cardsInColumn(cards, col.id)}
-          controller={controller}
-          theme={th}
-          isMobile={isMobile}
-          onCardPointerDown={beginCardDrag}
-          onHeaderPointerDown={beginColumnDrag}
-          draggingId={drag?.id ?? null}
-          dragging={colDrag?.id === col.id}
-        />
-      ))}
-      {!readOnly && (
-        <button
-          type="button"
-          data-add-column
-          onClick={controller.addColumn}
-          style={{
-            flex: '0 0 auto',
-            width: COL_W,
-            minHeight: 52,
-            alignSelf: 'flex-start',
-            border: `1.5px dashed ${th.border}`,
-            borderRadius: 14,
-            background: 'transparent',
-            color: th.subtext,
-            fontSize: 13.5,
-            fontWeight: 600,
-            fontFamily: 'inherit',
-            cursor: 'pointer',
-            padding: '15px 0',
-          }}
-        >
-          ＋ 열 추가
-        </button>
-      )}
+      <BoardBar theme={th} isMobile={isMobile} query={query} onQuery={setQuery} progress={progress} />
+
+      <div
+        ref={boardRef}
+        data-kanban-board
+        onPointerDown={(e) => {
+          // 빈 바닥을 누르면 선택 해제(캔버스의 배경 클릭과 같은 관례).
+          if (e.target === e.currentTarget) controller.selectCard(null);
+        }}
+        style={{
+          flex: '1 1 auto',
+          minHeight: 0,
+          display: 'flex',
+          alignItems: 'stretch',
+          gap: COL_GAP,
+          padding: isMobile ? '0 12px 14px' : '0 20px 18px',
+          overflowX: 'auto',
+          overflowY: 'hidden',
+          boxSizing: 'border-box',
+        }}
+      >
+        {columns.map((col, i) => (
+          <Column
+            key={col.id}
+            col={col}
+            index={i}
+            cards={cardsInColumn(cards, col.id)}
+            query={query}
+            controller={controller}
+            theme={th}
+            isMobile={isMobile}
+            onCardPointerDown={beginCardDrag}
+            onHeaderPointerDown={beginColumnDrag}
+            draggingId={drag?.id ?? null}
+            dragging={colDrag?.id === col.id}
+            dropTarget={drag?.target?.colId === col.id}
+          />
+        ))}
+        {!readOnly && (
+          <button
+            type="button"
+            data-add-column
+            onClick={controller.addColumn}
+            style={{
+              flex: '0 0 auto',
+              width: isMobile ? 232 : 264,
+              alignSelf: 'flex-start',
+              display: 'flex',
+              flexDirection: 'column',
+              alignItems: 'center',
+              justifyContent: 'center',
+              gap: 8,
+              border: `1.5px dashed ${th.border}`,
+              borderRadius: 16,
+              background: 'transparent',
+              color: th.subtext,
+              fontFamily: 'inherit',
+              cursor: 'pointer',
+              padding: '22px 0',
+            }}
+          >
+            <span style={{ width: 32, height: 32, borderRadius: 10, background: th.panel2, display: 'inline-flex', alignItems: 'center', justifyContent: 'center' }}>
+              <PlusIcon size={16} />
+            </span>
+            <span style={{ fontSize: 13, fontWeight: 700 }}>열 추가</span>
+            <span style={{ fontSize: 11.5, color: hexA(th.subtext, 0.8) }}>단계를 하나 더 만들어요</span>
+          </button>
+        )}
+      </div>
 
       {/* 끌고 있는 열의 고스트(제목 알약)와 놓일 자리를 가리키는 세로 선. */}
       {colDrag && (
@@ -306,7 +332,7 @@ export function KanbanBoard({ controller, theme: th }: { controller: EditorContr
       {drag && (
         <div
           data-kanban-ghost
-          style={{ position: 'fixed', left: drag.x - drag.offX, top: drag.y - drag.offY, width: drag.w, padding: '10px 11px', borderRadius: 10, background: th.panel, border: `1px solid ${th.accent}`, boxShadow: '0 8px 24px rgba(0,0,0,.18)', fontSize: 13.5, lineHeight: 1.5, color: th.text, whiteSpace: 'pre-wrap', wordBreak: 'break-word', pointerEvents: 'none', opacity: 0.95, zIndex: 300, transform: 'rotate(1.5deg)' }}
+          style={{ position: 'fixed', left: drag.x - drag.offX, top: drag.y - drag.offY, width: drag.w, padding: '12px 12px 11px', borderRadius: 12, background: th.panel, border: `1px solid ${th.accent}`, boxShadow: '0 8px 24px rgba(0,0,0,.18)', fontSize: 13.8, lineHeight: 1.5, fontWeight: 600, color: th.text, whiteSpace: 'pre-wrap', wordBreak: 'break-word', pointerEvents: 'none', opacity: 0.95, zIndex: 300, transform: 'rotate(1.5deg)' }}
         >
           {drag.text || '빈 카드'}
         </div>
@@ -330,13 +356,83 @@ export function KanbanBoard({ controller, theme: th }: { controller: EditorContr
           }}
         />
       )}
+
+      {detailCard && <CardDetail card={detailCard} controller={controller} theme={th} isMobile={isMobile} />}
     </div>
+  );
+}
+
+/**
+ * 보드 머리 줄 — 카드 검색과 진행률.
+ *
+ * 디자인 원본의 이 자리에는 제목·저장 상태·뷰 탭·필터도 있었다. 제목과 저장
+ * 상태는 이 앱에서 이미 좌상단 문서 칩(DocChip)이 말하고 있어 겹쳐 두지 않았고,
+ * 필터 버튼은 원본에도 동작이 없어(핸들러 없음) 두지 않았다 — 눌러도 아무 일
+ * 없는 버튼은 없느니만 못하다.
+ */
+function BoardBar({
+  theme: th,
+  isMobile,
+  query,
+  onQuery,
+  progress,
+}: {
+  theme: Theme;
+  isMobile: boolean;
+  query: string;
+  onQuery: (v: string) => void;
+  progress: ReturnType<typeof boardProgress>;
+}) {
+  return (
+    <div data-kanban-bar style={{ flex: '0 0 auto', display: 'flex', flexDirection: 'column', gap: 10, padding: isMobile ? '0 12px 12px' : '0 20px 14px' }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 10, justifyContent: 'flex-end' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 7, height: isMobile ? 40 : 34, padding: '0 12px', borderRadius: 999, border: `1px solid ${th.border}`, background: th.panel, minWidth: 0, width: isMobile ? '100%' : 220 }}>
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke={th.subtext} strokeWidth="2" strokeLinecap="round" aria-hidden="true">
+            <circle cx="11" cy="11" r="7" />
+            <path d="m20 20-3.5-3.5" />
+          </svg>
+          <input
+            className="mf-edit"
+            data-kanban-search
+            value={query}
+            onChange={(e) => onQuery(e.target.value)}
+            onKeyDown={(e) => {
+              e.stopPropagation(); // 에디터 전역 단축키(Delete·Enter 등)와 겹치지 않게
+              if (e.key === 'Escape') onQuery('');
+            }}
+            placeholder="카드 검색"
+            aria-label="카드 검색"
+            style={{ border: 0, outline: 'none', background: 'transparent', fontSize: 13, color: th.text, width: '100%', minWidth: 0, fontFamily: 'inherit' }}
+          />
+        </div>
+      </div>
+      {/* 진행률 — **마지막 열을 완료로 본다**(카드는 왼→오로 흐른다는 관례). */}
+      <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+        <div data-kanban-progress style={{ flex: '1 1 auto', height: 6, borderRadius: 999, background: th.border, overflow: 'hidden', display: 'flex' }}>
+          <span data-progress-done style={{ width: `${progress.donePct}%`, background: th.accent, display: 'block' }} />
+          <span data-progress-doing style={{ width: `${progress.doingPct}%`, background: hexA(th.accent, 0.4), display: 'block' }} />
+        </div>
+        <span title="마지막 열을 완료로 봅니다" style={{ flex: '0 0 auto', fontSize: 11.5, color: th.subtext, whiteSpace: 'nowrap' }}>
+          {progress.label}
+        </span>
+      </div>
+    </div>
+  );
+}
+
+function PlusIcon({ size = 14 }: { size?: number }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" aria-hidden="true">
+      <path d="M12 5v14M5 12h14" />
+    </svg>
   );
 }
 
 function Column({
   col,
+  index,
   cards,
+  query,
   controller,
   theme: th,
   isMobile,
@@ -344,9 +440,12 @@ function Column({
   onHeaderPointerDown,
   draggingId,
   dragging,
+  dropTarget,
 }: {
   col: KanbanColumn;
+  index: number;
   cards: KanbanCard[];
+  query: string;
   controller: EditorController;
   theme: Theme;
   isMobile: boolean;
@@ -355,9 +454,22 @@ function Column({
   draggingId: string | null;
   /** 이 열을 끌고 있는가 — 원본은 자리를 지키되 흐리게(카드와 같은 규칙). */
   dragging: boolean;
+  /** 이 열이 지금 드롭 대상인가 — 비어 있어도 "여기 들어간다"를 보여 준다. */
+  dropTarget: boolean;
 }) {
   const [renaming, setRenaming] = useState(false);
+  const [composing, setComposing] = useState(false);
+  const [menuAt, setMenuAt] = useState<{ x: number; y: number } | null>(null);
   const readOnly = controller.readOnly;
+  const dot = columnColor(col, index, th.palette);
+  const visible = query.trim() ? cards.filter((c) => cardMatches(c, query)) : cards;
+  const empty = visible.length === 0 && !composing;
+
+  const startCompose = (): void => {
+    if (readOnly) return;
+    setComposing(true);
+  };
+
   return (
     <section
       data-kanban-column={col.id}
@@ -369,20 +481,21 @@ function Column({
         minHeight: 0,
         maxHeight: '100%',
         background: th.panel2,
-        border: `1px solid ${th.border}`,
-        borderRadius: 14,
+        border: `1px solid ${dropTarget ? hexA(th.accent, 0.55) : th.border}`,
+        borderRadius: 16,
         boxSizing: 'border-box',
         // 끌고 있는 원본은 자리를 지키되 흐리게 — 어디서 떠났는지 보인다(카드와 동일).
         opacity: dragging ? 0.4 : 1,
       }}
     >
-      {/* 열 머리를 끌면 열 순서가 바뀐다. 제목 편집(더블클릭)·✕과 같은 자리를
+      {/* 열 머리를 끌면 열 순서가 바뀐다. 제목 편집(더블클릭)·버튼과 같은 자리를
           쓰므로 카드와 같은 관례로 가른다: 마우스는 4px 문턱, 터치는 길게 누르기. */}
       <header
         data-column-head={col.id}
         onPointerDown={(e) => onHeaderPointerDown(e, col)}
-        style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '11px 12px 9px', cursor: readOnly ? 'default' : 'grab', touchAction: 'pan-y' }}
+        style={{ display: 'flex', alignItems: 'center', gap: 9, padding: '13px 13px 11px', borderBottom: `1px solid ${th.border}`, cursor: readOnly ? 'default' : 'grab', touchAction: 'pan-y' }}
       >
+        <span data-column-dot={col.id} style={{ flex: '0 0 auto', width: 8, height: 8, borderRadius: 999, background: dot, display: 'block' }} />
         {renaming ? (
           <ColumnTitleEdit
             title={col.title}
@@ -405,66 +518,213 @@ function Column({
           </button>
         )}
         {/* 카드 수 — 사용자 선정: 수만 보여 주고 WIP 상한은 두지 않는다. */}
-        <span data-column-count={col.id} style={{ flex: '0 0 auto', fontSize: 12, fontWeight: 700, color: th.subtext }}>
+        <span
+          data-column-count={col.id}
+          style={{ flex: '0 0 auto', minWidth: 22, height: 22, padding: '0 7px', borderRadius: 999, background: th.panel, color: th.subtext, display: 'inline-flex', alignItems: 'center', justifyContent: 'center', fontSize: 11, fontWeight: 600 }}
+        >
           {cards.length}
         </span>
         {!readOnly && (
-          <button
-            type="button"
-            aria-label={`${col.title} 열 삭제`}
-            title="열 삭제"
-            data-delete-column={col.id}
-            onClick={() => controller.deleteColumn(col.id)}
-            style={{ flex: '0 0 auto', width: isMobile ? 32 : 24, height: isMobile ? 32 : 24, border: 'none', borderRadius: 7, background: 'transparent', color: th.subtext, cursor: 'pointer', fontSize: 15, lineHeight: 1 }}
-          >
-            ×
-          </button>
+          <>
+            <ColumnIconButton label="카드 추가" theme={th} isMobile={isMobile} data-add-card={col.id} onClick={startCompose}>
+              <PlusIcon size={15} />
+            </ColumnIconButton>
+            <ColumnIconButton
+              label={`${col.title} 열 메뉴`}
+              theme={th}
+              isMobile={isMobile}
+              data-column-menu={col.id}
+              onClick={(e) => {
+                const r = (e.currentTarget as HTMLElement).getBoundingClientRect();
+                setMenuAt((prev) => (prev ? null : { x: r.right, y: r.bottom + 6 }));
+              }}
+            >
+              <svg width="15" height="15" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+                <circle cx="5" cy="12" r="1.6" />
+                <circle cx="12" cy="12" r="1.6" />
+                <circle cx="19" cy="12" r="1.6" />
+              </svg>
+            </ColumnIconButton>
+          </>
         )}
       </header>
 
-      <div data-kanban-list style={{ flex: '1 1 auto', minHeight: 0, overflowY: 'auto', padding: '0 10px 10px', display: 'flex', flexDirection: 'column', gap: 8 }}>
-        {cards.map((card) => (
+      <div data-kanban-list style={{ flex: '1 1 auto', minHeight: 0, overflowY: 'auto', padding: 11, display: 'flex', flexDirection: 'column', gap: 9 }}>
+        {visible.map((card) => (
           <Card key={card.id} card={card} controller={controller} theme={th} onPointerDown={onCardPointerDown} dragging={draggingId === card.id} />
         ))}
-        {!readOnly && (
-          <button
-            type="button"
-            data-add-card={col.id}
-            onClick={() => controller.addCard(col.id)}
-            style={{ border: 'none', borderRadius: 10, background: 'transparent', color: th.subtext, fontSize: 13, fontWeight: 600, fontFamily: 'inherit', cursor: 'pointer', padding: '9px 10px', textAlign: 'left', minHeight: 40 }}
+
+        {composing && !readOnly && (
+          <CardComposer
+            theme={th}
+            onCancel={() => setComposing(false)}
+            onSubmit={(text) => {
+              setComposing(false);
+              if (text.trim()) controller.addCard(col.id, text);
+            }}
+          />
+        )}
+
+        {empty && (
+          <div
+            data-column-empty={col.id}
+            style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 7, padding: '26px 14px', borderRadius: 12, border: `1.5px dashed ${th.border}`, textAlign: 'center' }}
           >
-            ＋ 카드 추가
-          </button>
+            <span style={{ width: 30, height: 30, borderRadius: 9, background: th.panel, display: 'inline-flex', alignItems: 'center', justifyContent: 'center', color: th.subtext }}>
+              <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" aria-hidden="true">
+                <rect x="4" y="4" width="16" height="16" rx="4" />
+                <path d="M12 9v6M9 12h6" />
+              </svg>
+            </span>
+            <span style={{ fontSize: 12.5, color: th.subtext }}>{query.trim() ? '검색 결과가 없어요.' : '이 단계에 들어갈 카드를 추가해 보세요.'}</span>
+          </div>
         )}
       </div>
+
+      {!readOnly && (
+        <button
+          type="button"
+          data-add-card-foot={col.id}
+          onClick={startCompose}
+          style={{ display: 'flex', alignItems: 'center', gap: 7, width: '100%', padding: '11px 13px', border: 0, borderTop: `1px solid ${th.border}`, background: 'transparent', fontSize: 13, fontWeight: 600, fontFamily: 'inherit', color: th.subtext, cursor: 'pointer', borderRadius: '0 0 16px 16px', textAlign: 'left', minHeight: isMobile ? 44 : undefined }}
+        >
+          <PlusIcon />
+          카드 추가
+        </button>
+      )}
+
+      {menuAt && (
+        <ColumnMenu
+          col={col}
+          theme={th}
+          at={menuAt}
+          isMobile={isMobile}
+          onRename={() => {
+            setMenuAt(null);
+            setRenaming(true);
+          }}
+          onColor={(c) => {
+            setMenuAt(null);
+            controller.setColumnColor(col.id, c);
+          }}
+          onDelete={() => {
+            setMenuAt(null);
+            controller.deleteColumn(col.id);
+          }}
+          onClose={() => setMenuAt(null)}
+        />
+      )}
     </section>
   );
 }
 
+function ColumnIconButton({
+  label,
+  theme: th,
+  isMobile,
+  onClick,
+  children,
+  ...rest
+}: {
+  label: string;
+  theme: Theme;
+  isMobile: boolean;
+  onClick: (e: React.MouseEvent<HTMLButtonElement>) => void;
+  children: React.ReactNode;
+} & Record<`data-${string}`, string>) {
+  return (
+    <button
+      type="button"
+      data-column-btn
+      aria-label={label}
+      title={label}
+      onClick={onClick}
+      {...rest}
+      style={{ flex: '0 0 auto', width: isMobile ? 32 : 26, height: isMobile ? 32 : 26, display: 'inline-flex', alignItems: 'center', justifyContent: 'center', border: 0, borderRadius: 8, background: 'transparent', color: th.subtext, cursor: 'pointer', padding: 0 }}
+    >
+      {children}
+    </button>
+  );
+}
+
+/**
+ * 카드 만들기 — 열 안에 곧바로 뜨는 입력칸(디자인 원본의 composer).
+ *
+ * Enter=추가, Shift+Enter=줄바꿈, Esc=취소(도형·메모·카드 편집과 같은 규칙).
+ */
+function CardComposer({ theme: th, onSubmit, onCancel }: { theme: Theme; onSubmit: (text: string) => void; onCancel: () => void }) {
+  const ref = useRef<HTMLTextAreaElement | null>(null);
+  const [val, setVal] = useState('');
+  useEffect(() => ref.current?.focus(), []);
+  return (
+    <div data-card-composer style={{ padding: 10, borderRadius: 12, background: th.panel, border: `1.5px solid ${th.accent}`, boxShadow: `0 12px 26px -20px ${hexA(th.accent, 0.7)}` }}>
+      <textarea
+        ref={ref}
+        className="mf-edit"
+        data-card-composer-input
+        value={val}
+        rows={2}
+        placeholder="할 일을 적고 Enter"
+        onChange={(e) => setVal(e.target.value)}
+        onKeyDown={(e: ReactKeyboardEvent<HTMLTextAreaElement>) => {
+          e.stopPropagation();
+          if (e.nativeEvent.isComposing) return;
+          if (e.key === 'Enter' && !e.shiftKey) {
+            e.preventDefault();
+            onSubmit(e.currentTarget.value);
+          } else if (e.key === 'Escape') {
+            e.preventDefault();
+            onCancel();
+          }
+        }}
+        style={{ width: '100%', border: 0, outline: 'none', resize: 'none', background: 'transparent', fontSize: 13.5, lineHeight: 1.5, color: th.text, fontFamily: 'inherit' }}
+      />
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8, marginTop: 6 }}>
+        <span style={{ fontSize: 10.5, color: th.subtext }}>Esc 취소</span>
+        <div style={{ display: 'flex', gap: 6 }}>
+          <button
+            type="button"
+            data-composer-cancel
+            onClick={onCancel}
+            style={{ height: 28, padding: '0 11px', borderRadius: 8, border: `1px solid ${th.border}`, background: th.panel, fontSize: 12.5, fontWeight: 600, fontFamily: 'inherit', color: th.subtext, cursor: 'pointer' }}
+          >
+            취소
+          </button>
+          <button
+            type="button"
+            data-composer-submit
+            onClick={() => onSubmit(val)}
+            style={{ height: 28, padding: '0 13px', borderRadius: 8, border: `1px solid ${th.accent}`, background: th.accent, fontSize: 12.5, fontWeight: 700, fontFamily: 'inherit', color: th.accentInk, cursor: 'pointer' }}
+          >
+            추가
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function Card({ card, controller, theme: th, onPointerDown, dragging }: { card: KanbanCard; controller: EditorController; theme: Theme; onPointerDown: (e: ReactPointerEvent, card: KanbanCard) => void; dragging: boolean }) {
-  const editing = controller.editingCardId === card.id;
   const selected = controller.selectedCardId === card.id;
   const readOnly = controller.readOnly;
   const isMobile = useIsMobile();
   const [hover, setHover] = useState(false);
-  const [palette, setPalette] = useState<{ x: number; y: number } | null>(null);
   const comments = controller.canComment ? (controller.commentCounts[card.id] ?? 0) : 0;
+  const owner = ownerLabel(card);
+  const tone = card.due ? dueTone(card.due) : 'normal';
   const base: CSSProperties = {
     background: card.bg || th.panel,
     border: `1px solid ${selected ? th.accent : th.border}`,
-    boxShadow: selected ? `0 0 0 2px ${th.accent}33` : '0 1px 2px rgba(0,0,0,.05)',
-    borderRadius: 10,
-    padding: '10px 11px',
-    fontSize: 13.5,
-    lineHeight: 1.5,
+    boxShadow: selected ? `0 0 0 2px ${hexA(th.accent, 0.2)}` : '0 1px 2px rgba(0,0,0,.05)',
+    borderRadius: 12,
+    padding: '12px 12px 11px',
     color: th.text,
-    whiteSpace: 'pre-wrap',
-    wordBreak: 'break-word',
   };
   // 링크 잉크 — 커밋된 렌더(`RichSpan`)가 읽는 변수. 값은 **배경이 아니라 글자색**
   // 밝기에서 고른다(글자색은 이미 "이 배경에서 읽히도록" 정해진 값이다).
   (base as Record<string, unknown>)['--mf-link'] = linkInk(base.color as string | undefined);
-  if (editing) return <CardEdit card={card} style={base} onCommit={(t) => controller.commitCardText(card.id, t)} />;
+  const showActions = !readOnly && (selected || hover);
+
   return (
     <div
       data-kanban-card={card.id}
@@ -473,7 +733,9 @@ function Card({ card, controller, theme: th, onPointerDown, dragging }: { card: 
         controller.selectCard(card.id);
         onPointerDown(e, card);
       }}
-      onDoubleClick={() => controller.startEditCard(card.id)}
+      // 카드를 두 번 누르면 상세가 열린다 — 제목과 곁정보(분류·기한·담당·긴급)를
+      // 한자리에서 고친다(디자인 원본의 `card.onOpen`, 다른 칸반 앱들과 같은 관례).
+      onDoubleClick={() => controller.openCardDetail(card.id)}
       onMouseEnter={() => setHover(true)}
       onMouseLeave={() => setHover(false)}
       style={{
@@ -485,188 +747,173 @@ function Card({ card, controller, theme: th, onPointerDown, dragging }: { card: 
         opacity: dragging ? 0.35 : 1,
         // 터치: 세로 스크롤은 살리고(길게 눌러야 드래그) 가로 제스처만 막는다.
         touchAction: 'pan-y',
-        // 색 라벨·✕ 두 버튼 자리를 늘 비워 둔다 — 떴다 사라져도 글자가 밀리지 않게.
-        paddingRight: readOnly ? undefined : isMobile ? 66 : 50,
       }}
     >
-      {card.text ? <CardText card={card} /> : <span style={{ color: th.subtext }}>빈 카드</span>}
-      {/* 댓글 개수 — 캔버스의 주제 배지와 같은 뜻(미해결 스레드 수)이지만, 좌표가
-          없는 카드에서는 겹칠 자리를 찾는 대신 **글 아래 줄**로 흐른다(카드가 그만큼
-          자란다). 누르면 그 카드의 논의가 열린다 — 보기 전용에서도 동작한다. */}
-      {comments > 0 && (
-        <div style={{ display: 'flex', marginTop: 7 }}>
-          <button
-            type="button"
-            data-card-comments={card.id}
-            aria-label={`댓글 ${comments}개`}
-            title={`댓글 ${comments}개`}
-            onPointerDown={(e) => e.stopPropagation()}
-            onClick={(e) => {
-              e.stopPropagation();
-              controller.openComments(card.id);
-            }}
-            style={{
-              display: 'flex',
-              alignItems: 'center',
-              gap: 4,
-              padding: '2px 7px',
-              border: `1px solid ${th.border}`,
-              borderRadius: 999,
-              background: 'transparent',
-              color: th.subtext,
-              fontSize: 11,
-              fontWeight: 700,
-              fontFamily: 'inherit',
-              cursor: 'pointer',
-              lineHeight: 1.6,
-            }}
-          >
-            <CommentIcon />
-            {comments}
-          </button>
+      {/* 분류·긴급 배지 — 있을 때만 한 줄을 쓴다(없으면 카드가 그만큼 짧다). */}
+      {(card.tag || card.flagged) && (
+        <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 8, flexWrap: 'wrap', paddingRight: showActions ? 76 : 0 }}>
+          {card.tag && <TagBadge name={card.tag} theme={th} />}
+          {card.flagged && (
+            <span
+              data-card-urgent={card.id}
+              style={{ height: 20, padding: '0 7px', borderRadius: 6, background: hexA(URGENT, 0.14), color: URGENT, display: 'inline-flex', alignItems: 'center', fontSize: 10.5, fontWeight: 700 }}
+            >
+              긴급
+            </span>
+          )}
         </div>
       )}
-      {/* 색 라벨 — 지금 걸린 색을 그대로 보여 주는 동그란 버튼. 삭제 ✕와 같은
-          조건(고른 카드·마우스를 얹은 카드)으로만 뜬다. 우클릭 메뉴를 새로 두지
-          않은 이유: 터치에는 우클릭이 없고 길게 누르기는 이미 드래그가 쓴다 —
-          같은 버튼 하나면 데스크톱·폰이 같은 길을 쓴다. */}
-      {!readOnly && (selected || hover) && (
-        <button
-          type="button"
-          data-card-label={card.id}
-          aria-label={`색 라벨: ${cardLabelName(card.bg)}`}
-          title={`색 라벨: ${cardLabelName(card.bg)}`}
-          onPointerDown={(e) => e.stopPropagation()}
-          onClick={(e) => {
-            e.stopPropagation();
-            const r = (e.currentTarget as HTMLElement).getBoundingClientRect();
-            setPalette((prev) => (prev ? null : { x: r.right, y: r.bottom + 6 }));
-          }}
-          style={{
-            position: 'absolute',
-            top: 4,
-            right: isMobile ? 34 : 26,
-            width: isMobile ? 30 : 22,
-            height: isMobile ? 30 : 22,
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            border: 'none',
-            borderRadius: 6,
-            background: 'transparent',
-            cursor: 'pointer',
-            padding: 0,
-          }}
-        >
-          {/* 팔레트 글리프(원 + 물감 점 셋). **지금 색을 여기 채우지 않는다** —
-              카드 배경이 곧 그 색이라 같은 색을 겹쳐 그리면 버튼이 비어 보인다
-              (실브라우저에서 확인). 색은 카드가 말하고, 이 버튼은 ✕처럼
-              "여는 곳"만 가리킨다(현재 라벨 이름은 접근 이름·툴팁에 있다). */}
-          <svg width={14} height={14} viewBox="0 0 24 24" fill="none" stroke={th.subtext} strokeWidth={1.8} aria-hidden="true">
-            <path d="M12 3a9 9 0 1 0 0 18c.8 0 1.4-.6 1.4-1.4 0-.4-.15-.75-.4-1a1.4 1.4 0 0 1 1-2.4H16a5 5 0 0 0 5-5c0-4.4-4-8.2-9-8.2Z" strokeLinejoin="round" />
-            <circle cx={7.8} cy={12.2} r={1.05} fill={th.subtext} stroke="none" />
-            <circle cx={10.2} cy={8.4} r={1.05} fill={th.subtext} stroke="none" />
-            <circle cx={15} cy={8.4} r={1.05} fill={th.subtext} stroke="none" />
-          </svg>
-        </button>
+
+      <p style={{ margin: 0, fontSize: 13.8, lineHeight: 1.5, fontWeight: 600, whiteSpace: 'pre-wrap', wordBreak: 'break-word', paddingRight: showActions && !(card.tag || card.flagged) ? 76 : 0 }}>
+        {card.text ? <CardText card={card} /> : <span style={{ color: th.subtext, fontWeight: 500 }}>빈 카드</span>}
+      </p>
+
+      {/* 아래 줄 — 기한·댓글 수와 담당 아바타. 셋 다 없으면 줄 자체가 없다. */}
+      {(card.due || comments > 0 || owner) && (
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8, marginTop: 11 }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 10, fontSize: 11.5, color: th.subtext, minWidth: 0 }}>
+            {card.due && (
+              <span data-card-due={card.id} style={{ display: 'inline-flex', alignItems: 'center', gap: 4, color: tone === 'over' ? URGENT : tone === 'soon' ? th.accent : th.subtext, fontWeight: tone === 'normal' ? 500 : 700 }}>
+                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" aria-hidden="true">
+                  <rect x="3" y="5" width="18" height="16" rx="3" />
+                  <path d="M8 3v4M16 3v4M3 11h18" />
+                </svg>
+                {dueLabel(card.due)}
+              </span>
+            )}
+            {comments > 0 && (
+              <button
+                type="button"
+                data-card-comments={card.id}
+                aria-label={`댓글 ${comments}개`}
+                title={`댓글 ${comments}개`}
+                onPointerDown={(e) => e.stopPropagation()}
+                onClick={(e) => {
+                  e.stopPropagation();
+                  controller.openComments(card.id);
+                }}
+                style={{ display: 'inline-flex', alignItems: 'center', gap: 4, border: 0, background: 'transparent', padding: 0, color: 'inherit', fontSize: 11.5, fontFamily: 'inherit', cursor: 'pointer' }}
+              >
+                <CommentIcon />
+                {comments}
+              </button>
+            )}
+          </div>
+          {owner && <Avatar name={owner} email={card.owner ?? owner} size={24} />}
+        </div>
       )}
-      {palette && (
-        <CardLabelPicker
-          card={card}
-          theme={th}
-          at={palette}
-          isMobile={isMobile}
-          onPick={(bg) => {
-            controller.setCardBg(card.id, bg);
-            setPalette(null);
-          }}
-          onClose={() => setPalette(null)}
-        />
-      )}
-      {/* 삭제 — 열 머리의 ✕와 같은 문법. 평소엔 숨기고 **고른 카드**나 마우스를
-          얹은 카드에만 띄운다(카드마다 ✕이 늘 떠 있으면 목록이 시끄럽다).
-          터치 기기에는 hover가 없지만 탭이 곧 선택이라 같은 조건으로 뜬다. */}
-      {!readOnly && (selected || hover) && (
-        <button
-          type="button"
-          aria-label="카드 삭제"
-          title="카드 삭제"
-          data-delete-card={card.id}
-          // pointerdown을 삼켜야 카드 드래그가 시작되지 않는다(같은 자리에서 뗀다).
-          onPointerDown={(e) => e.stopPropagation()}
-          onClick={(e) => {
-            e.stopPropagation();
-            controller.deleteCard(card.id);
-          }}
-          style={{
-            position: 'absolute',
-            top: 4,
-            right: 4,
-            width: isMobile ? 30 : 22,
-            height: isMobile ? 30 : 22,
-            border: 'none',
-            borderRadius: 6,
-            background: 'transparent',
-            color: th.subtext,
-            cursor: 'pointer',
-            fontSize: 14,
-            lineHeight: 1,
-            padding: 0,
-          }}
-        >
-          ×
-        </button>
+
+      {/* 빠른 동작 — 이전/다음 단계로 옮기기와 삭제(디자인 원본의 hover 액션).
+          평소엔 숨기고 **고른 카드**나 마우스를 얹은 카드에만 띄운다. 터치 기기에는
+          hover가 없지만 탭이 곧 선택이라 같은 조건으로 뜬다. */}
+      {showActions && (
+        <div style={{ position: 'absolute', top: 8, right: 8, display: 'flex', gap: 3 }}>
+          <CardActionButton label="이전 단계로" theme={th} isMobile={isMobile} data-card-prev={card.id} onClick={() => controller.moveCardStep(card.id, -1)}>
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" aria-hidden="true">
+              <path d="m14 6-6 6 6 6" />
+            </svg>
+          </CardActionButton>
+          <CardActionButton label="다음 단계로" theme={th} isMobile={isMobile} data-card-next={card.id} onClick={() => controller.moveCardStep(card.id, 1)}>
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" aria-hidden="true">
+              <path d="m10 6 6 6-6 6" />
+            </svg>
+          </CardActionButton>
+          <CardActionButton label="카드 삭제" theme={th} isMobile={isMobile} danger data-delete-card={card.id} onClick={() => controller.deleteCard(card.id)}>
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" aria-hidden="true">
+              <path d="M18 6 6 18M6 6l12 12" />
+            </svg>
+          </CardActionButton>
+        </div>
       )}
     </div>
   );
 }
 
-function CardEdit({ card, style, onCommit }: { card: KanbanCard; style: CSSProperties; onCommit: (text: string) => void }) {
-  const ref = useRef<HTMLTextAreaElement | null>(null);
-  // **마크다운 원문**으로 연다 — 카드 편집기는 평범한 textarea라 서식을 그대로
-  // 보여 줄 수 없다. 확정 시 `applyMarkdownShortcuts`가 마커를 서식으로 바꾸므로,
-  // 다시 열 때 그 역방향(`richToMarkdown`)을 보여 주면 왕복이 맞는다
-  // (굵게였던 글자는 `**굵게**`로 보이고, 그대로 확정하면 다시 굵어진다).
-  const [val, setVal] = useState(() => richToMarkdown(card));
-  useEffect(() => {
-    const el = ref.current;
-    if (!el) return;
-    el.focus();
-    el.select();
-  }, []);
-  const grow = (el: HTMLTextAreaElement | null): void => {
-    if (!el) return;
-    el.style.height = 'auto';
-    el.style.height = `${el.scrollHeight}px`;
-  };
+function CardActionButton({
+  label,
+  theme: th,
+  isMobile,
+  danger,
+  onClick,
+  children,
+  ...rest
+}: {
+  label: string;
+  theme: Theme;
+  isMobile: boolean;
+  danger?: boolean;
+  onClick: () => void;
+  children: React.ReactNode;
+} & Record<`data-${string}`, string>) {
   return (
-    <textarea
-      ref={(el) => {
-        ref.current = el;
-        grow(el);
+    <button
+      type="button"
+      aria-label={label}
+      title={label}
+      // pointerdown을 삼켜야 카드 드래그가 시작되지 않는다(같은 자리에서 뗀다).
+      onPointerDown={(e) => e.stopPropagation()}
+      onClick={(e) => {
+        e.stopPropagation();
+        onClick();
       }}
-      className="mf-edit"
-      data-kanban-card-edit={card.id}
-      value={val}
-      onChange={(e) => {
-        setVal(e.target.value);
-        grow(e.target);
+      {...rest}
+      style={{
+        width: isMobile ? 28 : 22,
+        height: isMobile ? 28 : 22,
+        display: 'inline-flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+        border: `1px solid ${th.border}`,
+        borderRadius: 6,
+        background: th.panel,
+        color: danger ? URGENT : th.subtext,
+        cursor: 'pointer',
+        padding: 0,
       }}
-      onBlur={() => onCommit(val)}
-      onKeyDown={(e: ReactKeyboardEvent<HTMLTextAreaElement>) => {
-        e.stopPropagation(); // 에디터 전역 단축키(Delete·방향키 등)와 겹치지 않게
-        if (e.nativeEvent.isComposing) return;
-        // 카드 한 장은 짧은 글이라 Enter=확정, Shift+Enter=줄바꿈(도형·메모와 같은 규칙).
-        if (e.key === 'Enter' && !e.shiftKey) {
-          e.preventDefault();
-          onCommit(e.currentTarget.value);
-        } else if (e.key === 'Escape') {
-          e.preventDefault();
-          onCommit(card.text); // 되돌리기
-        }
+    >
+      {children}
+    </button>
+  );
+}
+
+/** 분류 배지 — 색은 이름에서 정한다(`tagColor`), 배경은 그 색의 옅은 판. */
+export function TagBadge({ name, theme: th }: { name: string; theme: Theme }) {
+  const c = tagColor(name, th.palette);
+  return (
+    <span
+      data-card-tag={name}
+      style={{ height: 20, padding: '0 8px', borderRadius: 6, background: hexA(c, 0.16), color: c, display: 'inline-flex', alignItems: 'center', fontSize: 10.5, fontWeight: 700, whiteSpace: 'nowrap' }}
+    >
+      {name}
+    </span>
+  );
+}
+
+/** 담당 아바타 — 색은 **접속자 커서와 같은 시드**라 같은 사람이 같은 색이다. */
+export function Avatar({ name, email, size = 24, ring }: { name: string; email: string; size?: number; ring?: string }) {
+  const bg = colorForSeed(email || name);
+  return (
+    <span
+      data-avatar={email || name}
+      title={name}
+      style={{
+        width: size,
+        height: size,
+        borderRadius: 999,
+        background: bg,
+        color: '#fff',
+        display: 'inline-flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+        fontSize: size * 0.44,
+        fontWeight: 700,
+        flexShrink: 0,
+        boxSizing: 'border-box',
+        border: ring ? `2px solid ${ring}` : undefined,
       }}
-      style={{ ...style, cursor: 'text', resize: 'none', outline: 'none', fontFamily: 'inherit', overflow: 'hidden', minHeight: 38 }}
-    />
+    >
+      {initialOf(name)}
+    </span>
   );
 }
 
@@ -703,24 +950,28 @@ function ColumnTitleEdit({ title, theme: th, onCommit, onCancel }: { title: stri
 }
 
 /**
- * 색 라벨 고르기 — 카드 라벨 버튼 아래에 뜨는 작은 스와치 판.
+ * 열 메뉴 — 이름 변경 · 색 · 삭제.
  *
- * `position: fixed`인 이유: 카드는 세로로 스크롤되는 열 안에 있어서(`overflow-y`)
- * 흐름 안에 두면 잘린다. 바깥을 누르거나 Esc로 닫힌다.
+ * `position: fixed`인 이유는 카드 색 판과 같다: 열은 세로로 스크롤되는 상자 안에
+ * 있어 흐름에 두면 잘린다. 바깥을 누르거나 Esc로 닫힌다.
  */
-function CardLabelPicker({
-  card,
+function ColumnMenu({
+  col,
   theme: th,
   at,
   isMobile,
-  onPick,
+  onRename,
+  onColor,
+  onDelete,
   onClose,
 }: {
-  card: KanbanCard;
+  col: KanbanColumn;
   theme: Theme;
   at: { x: number; y: number };
   isMobile: boolean;
-  onPick: (bg: string | null) => void;
+  onRename: () => void;
+  onColor: (c: string | null) => void;
+  onDelete: () => void;
   onClose: () => void;
 }) {
   const ref = useRef<HTMLDivElement | null>(null);
@@ -742,59 +993,61 @@ function CardLabelPicker({
     };
   }, [onClose]);
 
-  const cell = isMobile ? 34 : 28;
-  const W = cell * 4 + 10 * 2 + 6 * 3;
-  // 화면 밖으로 나가지 않게 안쪽으로 당긴다(컨텍스트 메뉴와 같은 clamp).
+  const W = 196;
   const left = Math.max(8, Math.min(at.x - W, window.innerWidth - W - 8));
+  const row: CSSProperties = {
+    display: 'flex',
+    alignItems: 'center',
+    gap: 8,
+    width: '100%',
+    minHeight: isMobile ? 44 : 34,
+    padding: '0 10px',
+    border: 0,
+    borderRadius: 8,
+    background: 'transparent',
+    color: th.text,
+    fontSize: 13,
+    fontFamily: 'inherit',
+    cursor: 'pointer',
+    textAlign: 'left',
+  };
   return (
     <div
       ref={ref}
-      data-card-label-picker={card.id}
+      data-column-menu-pop={col.id}
       role="menu"
-      aria-label="색 라벨"
-      style={{
-        position: 'fixed',
-        left,
-        top: at.y,
-        width: W,
-        boxSizing: 'border-box',
-        display: 'grid',
-        gridTemplateColumns: `repeat(4, ${cell}px)`,
-        gap: 6,
-        padding: 10,
-        background: th.panel,
-        border: `1px solid ${th.border}`,
-        borderRadius: 12,
-        boxShadow: '0 10px 28px rgba(0,0,0,.16)',
-        zIndex: 320,
-      }}
+      aria-label={`${col.title} 열 메뉴`}
+      style={{ position: 'fixed', left, top: at.y, width: W, boxSizing: 'border-box', padding: 6, background: th.panel, border: `1px solid ${th.border}`, borderRadius: 12, boxShadow: '0 10px 28px rgba(0,0,0,.16)', zIndex: 320 }}
     >
-      {CARD_LABELS.map((l) => {
-        const active = (card.bg ?? null) === l.bg;
-        return (
+      <button type="button" role="menuitem" data-column-rename onClick={onRename} style={row}>
+        이름 변경
+      </button>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 5, padding: '6px 10px', flexWrap: 'wrap' }}>
+        <button
+          type="button"
+          role="menuitem"
+          data-column-color="default"
+          aria-label="기본 색"
+          title="기본 색"
+          onClick={() => onColor(null)}
+          style={{ width: 18, height: 18, borderRadius: 999, border: `1px solid ${th.border}`, background: 'transparent', backgroundImage: `linear-gradient(to top right, transparent calc(50% - 1px), ${th.subtext} calc(50% - 1px), ${th.subtext} calc(50% + 1px), transparent calc(50% + 1px))`, cursor: 'pointer', padding: 0 }}
+        />
+        {th.palette.slice(0, 8).map((c) => (
           <button
-            key={l.name}
+            key={c}
             type="button"
             role="menuitem"
-            data-label-swatch={l.name}
-            aria-label={l.name}
-            title={l.name}
-            aria-current={active || undefined}
-            onClick={() => onPick(l.bg)}
-            style={{
-              width: cell,
-              height: cell,
-              borderRadius: 999,
-              background: l.bg || 'transparent',
-              // '없음'은 대각선(색 없음의 관례) — 나머지는 색 자체가 표시다.
-              backgroundImage: l.bg ? undefined : `linear-gradient(to top right, transparent calc(50% - 1px), ${th.subtext} calc(50% - 1px), ${th.subtext} calc(50% + 1px), transparent calc(50% + 1px))`,
-              border: active ? `2px solid ${th.accent}` : `1px solid ${th.border}`,
-              cursor: 'pointer',
-              padding: 0,
-            }}
+            data-column-color={c}
+            aria-label={`색 ${c}`}
+            title={`색 ${c}`}
+            onClick={() => onColor(c)}
+            style={{ width: 18, height: 18, borderRadius: 999, background: c, border: col.color === c ? `2px solid ${th.text}` : `1px solid ${hexA(th.text, 0.15)}`, cursor: 'pointer', padding: 0 }}
           />
-        );
-      })}
+        ))}
+      </div>
+      <button type="button" role="menuitem" data-delete-column={col.id} onClick={onDelete} style={{ ...row, color: URGENT }}>
+        열 삭제
+      </button>
     </div>
   );
 }
@@ -806,7 +1059,7 @@ function CardLabelPicker({
  * 렌더는 주제·메모와 **같은 `RichSpan`**을 쓰므로 굵게·기울임·취소선·색·링크가
  * 한 규칙으로 보인다(링크 파랑은 `--mf-link` 파이프라인 — 카드가 값을 내려 준다).
  */
-function CardText({ card }: { card: KanbanCard }) {
+export function CardText({ card }: { card: KanbanCard }) {
   if (!card.rich || !card.rich.length) return <>{card.text}</>;
   return (
     <>

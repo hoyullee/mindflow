@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import type { MouseEvent as ReactMouseEvent, PointerEvent as ReactPointerEvent } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
-import type { Box, Doc, Float, KanbanCard, KanbanColumn, Line, LineAnchor, LayoutMode, ListOp, Node, NodeMap, Reaction, ReactionGroup, SizeOf, SnapCandidate, Stroke, TextEdit, Zone } from '@mindflow/mindmap-core';
+import type { Box, Doc, Float, KanbanCard, KanbanColumn, Line, LineAnchor, LayoutMode, ListOp, Node, NodeMap, Reaction, ReactionGroup, RichRun, SizeOf, SnapCandidate, Stroke, TextEdit, Zone } from '@mindflow/mindmap-core';
 import { HistoryStack, ROOT_ID, collectImageRefs, collectInlineImages, isImageRef, replaceImageValues, applyListOp as applyListOpToText, applyAutoLinks, applyMarkdownShortcuts, applyPartialStyle, insertMention, charsToRuns, cubicAt, isStyledRuns, findLineSnap, layout, resolveLineEndpoints, resolveLineGeometry, runsToChars, serializeDoc, shiftOffset, strokeBounds, strokeHit, translateStrokePts, reactionGroups, toggleReaction as toggleReactionList, pruneReactions, toMarkdown, posForIndex, removeColumn, moveCard, moveColumn } from '@mindflow/mindmap-core';
 import { domToRuns, linearize, liveEditValue } from './richtextDom';
 import { HL_COLORS, HL_WIDTHS } from './boardTools';
@@ -749,14 +749,14 @@ export interface EditorController {
   addColumn: () => void;
   renameColumn: (id: string, title: string) => void;
   deleteColumn: (id: string) => void;
-  /** 열 끝에 빈 카드를 추가하고 곧바로 편집을 연다. */
-  addCard: (colId: string) => void;
+  /** 열 끝에 카드를 더한다. `text`를 주면 그 글로(컴포저), 없으면 빈 카드. */
+  addCard: (colId: string, text?: string) => void;
   /** 카드 글을 확정한다(빈 값이면 카드를 지운다 — 빈 카드를 남기지 않는다). */
   commitCardText: (id: string, text: string) => void;
   deleteCard: (id: string) => void;
-  /** 지금 글을 고치고 있는 카드 id. */
-  editingCardId: string | null;
-  startEditCard: (id: string | null) => void;
+  /** 상세를 연 카드 id(없으면 모달이 닫혀 있다). */
+  detailCardId: string | null;
+  openCardDetail: (id: string | null) => void;
   /** 지금 고른 카드 id(칸반 전용 선택 — 캔버스 selection과 별개). */
   selectedCardId: string | null;
   selectCard: (id: string | null) => void;
@@ -766,6 +766,12 @@ export interface EditorController {
   moveColumnTo: (colId: string, index: number) => void;
   /** 카드 색 라벨 — `null`이면 없앤다(키를 지워 CRDT 필드도 사라지게). */
   setCardBg: (id: string, bg: string | null) => void;
+  /** 카드 곁정보(분류·기한·담당·긴급) — 빈 값은 키를 지운다. */
+  setCardMeta: (id: string, patch: { tag?: string | null; due?: string | null; owner?: { email: string; name: string } | null; flagged?: boolean }) => void;
+  /** 열 머리 색 — `null`이면 순서 기반 기본색으로 돌아간다. */
+  setColumnColor: (id: string, color: string | null) => void;
+  /** 카드를 이전(-1)·다음(+1) 열의 맨 위로 옮긴다(카드 위 ‹ › 버튼). */
+  moveCardStep: (cardId: string, dir: -1 | 1) => void;
   /** 화이트보드 그리기 도구(M4). 'select'가 기본 — 펜/하이라이터/지우개일 때는
    * 캔버스 위에 그리기 오버레이(BoardDrawLayer)가 포인터를 받는다. */
   boardTool: BoardTool;
@@ -5238,7 +5244,9 @@ export function useEditorState(): EditorController {
   );
 
   // ---- 칸반(문서 종류 'kanban') — 열·카드 ----
-  const [editingCardId, setEditingCardId] = useState<string | null>(null);
+  // 카드 상세(모달)를 연 카드 — 디자인 원본의 `open`. 카드의 곁정보(분류·기한·
+  // 담당·긴급)와 제목을 한자리에서 고친다(다른 칸반 앱들과 같은 관례).
+  const [detailCardId, setDetailCardId] = useState<string | null>(null);
   const [selectedCardId, setSelectedCardId] = useState<string | null>(null);
   const columns = doc.columns ?? EMPTY_COLUMNS;
   const cards = doc.cards ?? EMPTY_CARDS;
@@ -5269,24 +5277,38 @@ export function useEditorState(): EditorController {
     [commitDoc],
   );
 
+  /**
+   * 카드 글의 **확정 변환** — 주제·메모와 같은 훅을 카드에도.
+   *
+   * `**굵게**`·`*기울임*`·`~~취소선~~` 마커를 걷어 서식으로 바꾸고, 타이핑한 URL을
+   * 링크로 만든다. 편집 중 실시간으로 걸지 않는 이유도 같다: 반쯤 친 주소가 링크가
+   * 됐다 풀렸다 하며 캐럿·IME가 흔들린다.
+   */
+  const cardTextValue = useCallback((text: string): { text: string; rich: RichRun[] | null } => {
+    const trimmed = text.trim();
+    const md = applyMarkdownShortcuts({ text: trimmed, rich: null });
+    const base = md ?? { text: trimmed, rich: null };
+    return applyAutoLinks(base) ?? base;
+  }, []);
+
   const addCard = useCallback(
-    (colId: string) => {
+    (colId: string, text?: string) => {
       if (readOnlyRef.current) return;
       const id = idFactory('card');
+      const val = text && text.trim() ? cardTextValue(text) : null;
       commitDoc((d) => {
         const list = d.cards ?? [];
-        return { ...d, cards: [...list, { id, col: colId, pos: posForIndex(list, colId, list.filter((c) => c.col === colId).length), text: '' }] };
+        const card: KanbanCard = { id, col: colId, pos: posForIndex(list, colId, list.filter((c) => c.col === colId).length), text: val ? val.text : '' };
+        if (val?.rich) card.rich = val.rich;
+        return { ...d, cards: [...list, card] };
       });
-      // 만들자마자 글을 쓸 수 있게(추가 동작들과 같은 관례).
       setSelectedCardId(id);
-      setEditingCardId(id);
     },
-    [commitDoc, idFactory],
+    [cardTextValue, commitDoc, idFactory],
   );
 
   const commitCardText = useCallback(
     (id: string, text: string) => {
-      setEditingCardId(null);
       if (readOnlyRef.current) return;
       const trimmed = text.trim();
       // 서식은 **확정할 때** 한 번 적용한다 — 주제·메모와 같은 훅(`commitNodeRichText`).
@@ -5297,9 +5319,7 @@ export function useEditorState(): EditorController {
       // 카드 편집기는 평범한 textarea라 **입력은 늘 평문**이다. 그래서 이전 `rich`는
       // 버리고 이 글자에서 다시 만든다 — 화면에 보이던 글자가 곧 값이라는 계약이
       // 지켜진다(보이지 않는 옛 서식이 유령처럼 남지 않는다).
-      const md = applyMarkdownShortcuts({ text: trimmed, rich: null });
-      const base = md ?? { text: trimmed, rich: null };
-      const out = applyAutoLinks(base) ?? base;
+      const out = cardTextValue(trimmed);
       commitDoc((d) => {
         const list = d.cards ?? [];
         // 빈 카드는 남기지 않는다 — 추가했다가 아무것도 안 쓰면 사라지는 게 자연스럽다.
@@ -5316,7 +5336,7 @@ export function useEditorState(): EditorController {
         };
       });
     },
-    [commitDoc],
+    [cardTextValue, commitDoc],
   );
 
   const deleteCard = useCallback(
@@ -5324,14 +5344,13 @@ export function useEditorState(): EditorController {
       if (readOnlyRef.current) return;
       commitDoc((d) => ({ ...d, cards: (d.cards ?? []).filter((c) => c.id !== id) }));
       setSelectedCardId((prev) => (prev === id ? null : prev));
-      setEditingCardId((prev) => (prev === id ? null : prev));
+      setDetailCardId((prev) => (prev === id ? null : prev));
     },
     [commitDoc],
   );
 
-  const startEditCard = useCallback((id: string | null) => {
-    if (id && readOnlyRef.current) return;
-    setEditingCardId(id);
+  const openCardDetail = useCallback((id: string | null) => {
+    setDetailCardId(id);
     if (id) setSelectedCardId(id);
   }, []);
 
@@ -5372,6 +5391,89 @@ export function useEditorState(): EditorController {
           // (`clearNodeImage`와 같은 규칙).
           const rest = { ...c };
           delete rest.bg;
+          return rest;
+        }),
+      }));
+    },
+    [commitDoc],
+  );
+
+  /**
+   * 카드의 곁정보(분류·기한·담당·긴급)를 한 번에 고친다.
+   *
+   * **값이 비면 키를 지운다** — 빈 필드가 CRDT로 계속 오가지 않게(`setCardBg`와
+   * 같은 규칙). 담당은 이메일과 이름 스냅샷이 늘 함께 움직인다(둘이 갈라지면
+   * "이름만 남은 담당자"가 생긴다).
+   */
+  const setCardMeta = useCallback(
+    (id: string, patch: { tag?: string | null; due?: string | null; owner?: { email: string; name: string } | null; flagged?: boolean }) => {
+      if (readOnlyRef.current) return;
+      commitDoc((d) => ({
+        ...d,
+        cards: (d.cards ?? []).map((c) => {
+          if (c.id !== id) return c;
+          const next = { ...c };
+          if ('tag' in patch) {
+            if (patch.tag) next.tag = patch.tag.slice(0, 24);
+            else delete next.tag;
+          }
+          if ('due' in patch) {
+            if (patch.due) next.due = patch.due;
+            else delete next.due;
+          }
+          if ('owner' in patch) {
+            if (patch.owner) {
+              next.owner = patch.owner.email;
+              next.ownerName = patch.owner.name;
+            } else {
+              delete next.owner;
+              delete next.ownerName;
+            }
+          }
+          if ('flagged' in patch) {
+            if (patch.flagged) next.flagged = true;
+            else delete next.flagged;
+          }
+          return next;
+        }),
+      }));
+    },
+    [commitDoc],
+  );
+
+  /**
+   * 카드를 **한 단계 옮긴다**(디자인 원본의 카드 위 ‹ ›). 새 열의 **맨 위**에 놓는다
+   * — 방금 옮긴 카드가 어디로 갔는지 눈에 바로 들어온다(원본과 같은 규칙).
+   * 양 끝(첫 열의 이전·마지막 열의 다음)에서는 아무 일도 하지 않는다.
+   */
+  const moveCardStep = useCallback(
+    (cardId: string, dir: -1 | 1) => {
+      if (readOnlyRef.current) return;
+      commitDoc((d) => {
+        const cols = d.columns ?? [];
+        const card = (d.cards ?? []).find((c) => c.id === cardId);
+        if (!card) return d;
+        const i = cols.findIndex((c) => c.id === card.col);
+        const j = i + dir;
+        if (i < 0 || j < 0 || j >= cols.length) return d;
+        const next = moveCard(d.cards ?? [], cardId, (cols[j] as KanbanColumn).id, 0);
+        return next === (d.cards ?? []) ? d : { ...d, cards: next };
+      });
+    },
+    [commitDoc],
+  );
+
+  /** 열 머리 색 — 없애면 키를 지운다(순서 기반 기본색으로 돌아간다). */
+  const setColumnColor = useCallback(
+    (id: string, color: string | null) => {
+      if (readOnlyRef.current) return;
+      commitDoc((d) => ({
+        ...d,
+        columns: (d.columns ?? []).map((c) => {
+          if (c.id !== id) return c;
+          if (color) return { ...c, color };
+          const rest = { ...c };
+          delete rest.color;
           return rest;
         }),
       }));
@@ -5605,7 +5707,7 @@ export function useEditorState(): EditorController {
         }
         if (e.key === 'Enter' || e.key === 'F2') {
           e.preventDefault();
-          startEditCard(cardId);
+          openCardDetail(cardId);
           return;
         }
         if (e.key === 'Escape') {
@@ -5948,13 +6050,16 @@ export function useEditorState(): EditorController {
     addCard,
     commitCardText,
     deleteCard,
-    editingCardId,
-    startEditCard,
+    detailCardId,
+    openCardDetail,
     selectedCardId,
     selectCard,
     moveCardTo,
     moveColumnTo,
     setCardBg,
+    setCardMeta,
+    setColumnColor,
+    moveCardStep,
     boardTool,
     setBoardTool,
     penColor,
