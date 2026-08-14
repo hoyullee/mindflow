@@ -54,6 +54,7 @@ export function AnchoredMenu({ anchorRef, width, align = 'right', children }: An
   if (!pos) return null;
   return createPortal(
     <div
+      data-anchored-menu
       style={{ position: 'fixed', top: pos.top, left: pos.left, width, zIndex: 200 }}
       // Keep clicks inside the menu from reaching the window `mousedown`
       // outside-close handler (the menu now lives outside the trigger's wrap).

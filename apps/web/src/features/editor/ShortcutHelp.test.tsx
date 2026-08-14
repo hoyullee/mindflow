@@ -58,10 +58,10 @@ describe('단축키 도움말', () => {
     expect(screen.queryByRole('dialog', { name: '키보드 단축키' })).toBeNull();
   });
 
-  it('보기 메뉴의 "단축키 도움말" 항목으로도 열린다', () => {
+  it('GNB 도움말 메뉴로도 열린다 (디자인 원본의 편집·보기·도움말)', () => {
     localStorage.setItem('mindflow_doc_hk3', JSON.stringify(DOC));
     renderEditor('/editor?map=hk3&title=x');
-    fireEvent.click(screen.getByRole('button', { name: '보기' }));
+    fireEvent.click(screen.getByRole('button', { name: '도움말' }));
     fireEvent.click(screen.getByText('단축키 도움말'));
     expect(screen.getByRole('dialog', { name: '키보드 단축키' })).toBeTruthy();
   });

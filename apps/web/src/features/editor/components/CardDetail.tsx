@@ -15,7 +15,7 @@ import type { Theme } from '../theme';
 import { useShareStore } from '../../../adapters/BackendContext';
 import type { ShareParticipant } from '../../../adapters/ports';
 import { CARD_LABELS, cardLabelName } from '../kanbanLabels';
-import { DEFAULT_TAGS, columnColor } from '../kanbanMeta';
+import { columnColor, tagColor } from '../kanbanMeta';
 import { Avatar } from './KanbanBoard';
 
 export function CardDetail({ card, controller, theme: th, isMobile }: { card: KanbanCard; controller: EditorController; theme: Theme; isMobile: boolean }) {
@@ -31,6 +31,8 @@ export function CardDetail({ card, controller, theme: th, isMobile }: { card: Ka
   const col = columns.find((c) => c.id === card.col);
   const colIndex = columns.findIndex((c) => c.id === card.col);
   const comments = controller.canComment ? (controller.commentCounts[card.id] ?? 0) : 0;
+  /** 지금 카드에 걸린 분류의 목록 항목 — 색을 고칠 대상. */
+  const activeTag = card.tag ? controller.tags.find((t) => t.name === card.tag) : undefined;
 
   /** 제목은 닫을 때 한 번 저장한다 — 글자마다 커밋하면 undo 단계가 타이핑 수만큼 쌓인다. */
   const commitTitle = useCallback(() => {
@@ -233,23 +235,104 @@ export function CardDetail({ card, controller, theme: th, isMobile }: { card: Ka
             </Section>
           </div>
 
+          {/* 분류 — 문서가 목록을 들고 있다(요청). 기본은 **없음**뿐이고, 직접 적어
+              추가하면 목록에 남는다. 색은 이름에서 자동으로 붙되, 고른 분류의
+              스와치 줄에서 바꾸면 그 색이 문서에 저장된다(테마를 바꿔도 유지). */}
           <Section label="분류" style={label}>
             <button type="button" data-detail-tag="none" aria-label="분류 없음" disabled={readOnly} onClick={() => controller.setCardMeta(card.id, { tag: null })} style={chip(!card.tag)}>
               없음
             </button>
-            {DEFAULT_TAGS.map((t) => (
-              <button key={t} type="button" data-detail-tag={t} disabled={readOnly} onClick={() => controller.setCardMeta(card.id, { tag: t })} style={chip(card.tag === t)}>
-                {t}
-              </button>
-            ))}
-            {/* 직접 적은 분류도 그대로 쓴다 — 색은 이름에서 정해지므로 목록에 없어도 된다. */}
-            {card.tag && !DEFAULT_TAGS.includes(card.tag) && (
-              <span data-detail-tag-custom style={chip(true)}>
-                {card.tag}
-              </span>
-            )}
-            {!readOnly && <TagInput theme={th} isMobile={isMobile} onCommit={(t) => controller.setCardMeta(card.id, { tag: t })} />}
+            {controller.tags.map((t) => {
+              const on = card.tag === t.name;
+              const c = tagColor(t.name, th.palette, controller.tags);
+              return (
+                <span key={t.id} data-detail-tag-wrap={t.name} style={{ display: 'inline-flex', alignItems: 'center' }}>
+                  <button
+                    type="button"
+                    data-detail-tag={t.name}
+                    disabled={readOnly}
+                    onClick={() => controller.setCardMeta(card.id, { tag: t.name })}
+                    style={{
+                      ...chip(on),
+                      paddingRight: readOnly ? undefined : 6,
+                      borderColor: on ? c : th.border,
+                      background: on ? hexA(c, 0.14) : th.panel,
+                      color: on ? c : th.subtext,
+                      gap: 7,
+                    }}
+                  >
+                    <span aria-hidden="true" style={{ width: 8, height: 8, borderRadius: 999, background: c, display: 'block' }} />
+                    {t.name}
+                    {!readOnly && (
+                      <span
+                        role="button"
+                        tabIndex={-1}
+                        data-detail-tag-remove={t.name}
+                        aria-label={`분류 '${t.name}' 삭제`}
+                        title="이 분류 삭제"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          controller.removeTag(t.id);
+                        }}
+                        style={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center', width: 18, height: 18, borderRadius: 999, color: th.subtext, cursor: 'pointer' }}
+                      >
+                        <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.6" strokeLinecap="round" aria-hidden="true">
+                          <path d="M18 6 6 18M6 6l12 12" />
+                        </svg>
+                      </span>
+                    )}
+                  </button>
+                </span>
+              );
+            })}
+            {!readOnly && <TagInput theme={th} isMobile={isMobile} onCommit={(t) => {
+              controller.addTag(t);
+              controller.setCardMeta(card.id, { tag: t });
+            }} />}
           </Section>
+
+          {/* 고른 분류의 색 — 분류마다 팔레트에서 고른다(목록에 저장). "자동"은
+              이름에서 정하는 기본색으로 되돌린다. */}
+          {card.tag && !readOnly && activeTag && (
+            <Section label={`'${card.tag}' 색`} style={label}>
+              <button
+                type="button"
+                data-tag-color="auto"
+                aria-label="자동 색"
+                title="자동(이름에서 정한 색)"
+                onClick={() => controller.setTagColor(activeTag.id, null)}
+                style={{
+                  width: isMobile ? 30 : 24,
+                  height: isMobile ? 30 : 24,
+                  borderRadius: 999,
+                  background: 'transparent',
+                  backgroundImage: `linear-gradient(to top right, transparent calc(50% - 1px), ${th.subtext} calc(50% - 1px), ${th.subtext} calc(50% + 1px), transparent calc(50% + 1px))`,
+                  border: activeTag.color ? `1px solid ${th.border}` : `2px solid ${th.accent}`,
+                  cursor: 'pointer',
+                  padding: 0,
+                }}
+              />
+              {th.palette.map((c) => (
+                <button
+                  key={c}
+                  type="button"
+                  data-tag-color={c}
+                  aria-label={`색 ${c}`}
+                  title={c}
+                  onClick={() => controller.setTagColor(activeTag.id, c)}
+                  style={{
+                    width: isMobile ? 30 : 24,
+                    height: isMobile ? 30 : 24,
+                    borderRadius: 999,
+                    background: c,
+                    border: activeTag.color === c ? `2px solid ${th.text}` : `1px solid ${hexA(th.text, 0.15)}`,
+                    cursor: 'pointer',
+                    padding: 0,
+                  }}
+                />
+              ))}
+            </Section>
+          )}
 
           <Section label="색" style={label}>
             {CARD_LABELS.map((l) => {

@@ -174,6 +174,29 @@ export function InsertMenu({ controller, onDone, isMobile }: { controller: Edito
 
 export function ViewMenu({ controller, onDone, isMobile }: { controller: EditorController; onDone: () => void; isMobile?: boolean }) {
   const th = controller.uiTheme;
+  // 칸반의 보기는 **보드·리스트·타임라인 셋**뿐이다(요청) — 맵/아웃라인·격자는
+  // 캔버스의 것이고, 단축키 도움말은 GNB의 도움말 메뉴로, 댓글은 보드 머리의
+  // 아이콘과 카드 배지·상세가 맡는다.
+  if (controller.isKanban) {
+    return (
+      <MenuShell theme={th}>
+        {(['board', 'list', 'timeline'] as const).map((v) => (
+          <MenuItem
+            key={v}
+            theme={th}
+            isMobile={isMobile}
+            icon={v === 'board' ? <BoardViewIcon /> : v === 'list' ? <OutlineIcon /> : <TimelineIcon />}
+            label={v === 'board' ? '보드' : v === 'list' ? '리스트' : '타임라인'}
+            active={controller.kanbanView === v}
+            onClick={() => {
+              controller.setKanbanView(v);
+              onDone();
+            }}
+          />
+        ))}
+      </MenuShell>
+    );
+  }
   return (
     <MenuShell theme={th}>
       <MenuItem
@@ -233,20 +256,47 @@ export function ViewMenu({ controller, onDone, isMobile }: { controller: EditorC
           }}
         />
       )}
-      <MenuDivider theme={th} />
+    </MenuShell>
+  );
+}
+
+/** 도움말 메뉴 — 단축키 도움말(요청: GNB에 편집·보기와 나란히). */
+export function HelpMenu({ controller, onDone, isMobile }: { controller: EditorController; onDone: () => void; isMobile?: boolean }) {
+  const th = controller.uiTheme;
+  return (
+    <MenuShell theme={th}>
       <MenuItem
         theme={th}
         isMobile={isMobile}
         icon={<HelpIcon />}
         label="단축키 도움말"
+        hint="?"
         onClick={() => {
           controller.setHelpOpen(true);
           onDone();
         }}
       />
-      {/* 피드백 보내기는 GNB 상시 아이콘으로 나갔다(요청) — 데스크톱 보기 메뉴에는
-          두지 않는다(진입점은 화면당 하나). 모바일 ☰(MoreMenu)에는 남는다. */}
     </MenuShell>
+  );
+}
+
+/** 칸반 보드 보기 아이콘 — 세로 열 셋. */
+function BoardViewIcon() {
+  return (
+    <svg width={15} height={15} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.9} strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+      <rect x="2.5" y="4" width="5.5" height="16" rx="1.4" />
+      <rect x="9.25" y="4" width="5.5" height="16" rx="1.4" />
+      <rect x="16" y="4" width="5.5" height="16" rx="1.4" />
+    </svg>
+  );
+}
+
+/** 타임라인 보기 아이콘 — 서로 다른 길이의 막대 셋. */
+function TimelineIcon() {
+  return (
+    <svg width={15} height={15} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.9} strokeLinecap="round" aria-hidden="true">
+      <path d="M4 7h11M4 12h7M4 17h14" />
+    </svg>
   );
 }
 
@@ -274,12 +324,32 @@ export function MoreMenu({ controller, onDone, isMobile }: { controller: EditorC
       <MenuItem theme={th} isMobile={isMobile} icon={<ShareGlyph />} label="공유" onClick={() => { controller.openShare(); onDone(); }} />
       <MenuDivider theme={th} />
       <MenuSectionLabel theme={th}>보기</MenuSectionLabel>
-      <MenuItem theme={th} isMobile={isMobile} icon={<MapIcon />} label="맵" active={controller.view === 'map'} onClick={() => { controller.setView('map'); onDone(); }} />
-      {!controller.isBoard && (
-        <MenuItem theme={th} isMobile={isMobile} icon={<OutlineIcon />} label="아웃라인" active={controller.view === 'outline'} onClick={() => { controller.setView('outline'); onDone(); }} />
-      )}
-      {!controller.readOnly && (
-        <MenuItem theme={th} isMobile={isMobile} icon={<GridIcon />} label="안내선·격자에 맞추기" active={controller.snapGrid} onClick={() => { controller.setSnapGrid(!controller.snapGrid); onDone(); }} />
+      {/* 칸반의 보기는 보드·리스트·타임라인 셋뿐이다(데스크톱 보기 메뉴와 같은 규칙). */}
+      {controller.isKanban ? (
+        (['board', 'list', 'timeline'] as const).map((v) => (
+          <MenuItem
+            key={v}
+            theme={th}
+            isMobile={isMobile}
+            icon={v === 'board' ? <BoardViewIcon /> : v === 'list' ? <OutlineIcon /> : <TimelineIcon />}
+            label={v === 'board' ? '보드' : v === 'list' ? '리스트' : '타임라인'}
+            active={controller.kanbanView === v}
+            onClick={() => {
+              controller.setKanbanView(v);
+              onDone();
+            }}
+          />
+        ))
+      ) : (
+        <>
+          <MenuItem theme={th} isMobile={isMobile} icon={<MapIcon />} label="맵" active={controller.view === 'map'} onClick={() => { controller.setView('map'); onDone(); }} />
+          {!controller.isBoard && (
+            <MenuItem theme={th} isMobile={isMobile} icon={<OutlineIcon />} label="아웃라인" active={controller.view === 'outline'} onClick={() => { controller.setView('outline'); onDone(); }} />
+          )}
+          {!controller.readOnly && (
+            <MenuItem theme={th} isMobile={isMobile} icon={<GridIcon />} label="안내선·격자에 맞추기" active={controller.snapGrid} onClick={() => { controller.setSnapGrid(!controller.snapGrid); onDone(); }} />
+          )}
+        </>
       )}
       {controller.canComment && (
         <MenuItem theme={th} isMobile={isMobile} icon={<CommentIcon />} label="댓글" active={controller.commentsOpen} onClick={() => { if (controller.commentsOpen) controller.closeComments(); else controller.openComments(); onDone(); }} />

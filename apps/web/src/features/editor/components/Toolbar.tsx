@@ -3,7 +3,7 @@ import type { EditorController } from '../useEditorState';
 import { StyleMenu } from './StyleMenu';
 import { ExportMenu } from './ExportMenu';
 import { AnchoredMenu } from './AnchoredMenu';
-import { EditMenu, InsertMenu, ViewMenu, MoreMenu, ShareGlyph } from './ToolbarMenus';
+import { EditMenu, InsertMenu, ViewMenu, HelpMenu, MoreMenu, ShareGlyph } from './ToolbarMenus';
 import { useIsMobile } from '../../../hooks/useMediaQuery';
 import { BrandMark } from '../../../components/BrandMark';
 
@@ -11,7 +11,7 @@ interface ToolbarProps {
   controller: EditorController;
 }
 
-type MenuKey = 'edit' | 'insert' | 'view' | 'style' | 'export' | 'more';
+type MenuKey = 'edit' | 'insert' | 'view' | 'style' | 'export' | 'help' | 'more';
 
 /**
  * Top menu bar (GNB) — a port of `.mf-topbar` (MindFlow.dc.html:36-96)
@@ -33,7 +33,8 @@ export function Toolbar({ controller }: ToolbarProps) {
   const styleRef = useRef<HTMLDivElement>(null);
   const exportRef = useRef<HTMLDivElement>(null);
   const moreRef = useRef<HTMLDivElement>(null);
-  const refs: Record<MenuKey, RefObject<HTMLDivElement>> = { edit: editRef, insert: insertRef, view: viewRef, style: styleRef, export: exportRef, more: moreRef };
+  const helpRef = useRef<HTMLDivElement>(null);
+  const refs: Record<MenuKey, RefObject<HTMLDivElement>> = { edit: editRef, insert: insertRef, view: viewRef, style: styleRef, export: exportRef, help: helpRef, more: moreRef };
 
   useEffect(() => {
     if (!openMenu) return;
@@ -148,6 +149,13 @@ export function Toolbar({ controller }: ToolbarProps) {
           <ViewMenu controller={controller} onDone={close} isMobile={isMobile} />
         </MenuBarButton>
       )}
+      {/* 도움말 — 디자인 원본의 헤더가 편집·보기·도움말 셋이다(요청). 단축키
+          도움말은 여기로 모으고 보기 메뉴에서는 뺐다(진입점은 화면당 하나). */}
+      {!isMobile && (
+        <MenuBarButton label="도움말" wrapRef={helpRef} open={openMenu === 'help'} onToggle={() => toggle('help')} th={th} isMobile={isMobile} width={200} align="left">
+          <HelpMenu controller={controller} onDone={close} isMobile={isMobile} />
+        </MenuBarButton>
+      )}
       {/* 칸반에는 캔버스가 없어 테마·레이아웃·연결선 스타일이 뜻을 갖지 않는다. */}
       {!controller.readOnly && !controller.isKanban && (
       <MenuBarButton
@@ -226,10 +234,12 @@ export function Toolbar({ controller }: ToolbarProps) {
             alignItems: 'center',
             gap: 6,
             height: 34,
-            padding: '0 11px',
-            marginRight: 6,
+            padding: '0 13px',
+            marginRight: 8,
             border: `1px solid ${th.border}`,
-            borderRadius: 9,
+            // 알약 — 디자인 원본의 헤더 버튼 모양(요청). 내보내기(강조 알약)와
+            // 짝을 이뤄 "보조 / 주 동작"이 한눈에 갈린다.
+            borderRadius: 999,
             background: th.panel,
             color: th.text,
             fontFamily: 'inherit',
@@ -255,7 +265,7 @@ export function Toolbar({ controller }: ToolbarProps) {
            다만 이건 **보안 경계가 아니다**: 화면을 볼 수 있는 사람은 캡처할 수
            있다. 정책·마찰 장치로 이해할 것. */
         !controller.readOnly && (
-          <MenuBarButton label="내보내기" wrapRef={exportRef} open={openMenu === 'export'} onToggle={() => toggle('export')} th={th} isMobile={isMobile} width={200} align="right" leading={<ExportGlyph />}>
+          <MenuBarButton label="내보내기" wrapRef={exportRef} open={openMenu === 'export'} onToggle={() => toggle('export')} th={th} isMobile={isMobile} width={200} align="right" leading={<ExportGlyph />} primary>
             <ExportMenu controller={controller} onDone={close} />
           </MenuBarButton>
         )
@@ -278,6 +288,7 @@ function MenuBarButton({
   width,
   align,
   noCaret,
+  primary,
   children,
 }: {
   label: string;
@@ -291,31 +302,55 @@ function MenuBarButton({
   width: number;
   align: 'left' | 'right';
   noCaret?: boolean;
+  /** 강조 알약(내보내기) — 디자인 원본의 primary 버튼. */
+  primary?: boolean;
   children: ReactNode;
 }) {
-  const triggerStyle: CSSProperties = {
-    display: 'flex',
-    alignItems: 'center',
-    gap: 6,
-    height: isMobile ? 44 : 34,
-    padding: label ? '0 11px' : '0 9px',
-    border: `1px solid ${open ? th.accent : 'transparent'}`,
-    borderRadius: 9,
-    background: open ? th.panel2 : 'transparent',
-    color: th.text,
-    fontSize: 13.5,
-    fontWeight: 600,
-    cursor: 'pointer',
-    fontFamily: 'inherit',
-    whiteSpace: 'nowrap',
-    flexShrink: 0,
-  };
+  // 메뉴 트리거는 **테두리 없는 텍스트**다(디자인 원본) — 열렸을 때만 옅은 배경이
+  // 깔린다. 예전엔 열림 표시로 강조색 테두리를 둘렀는데, 항목이 여럿이면 바가
+  // 상자로 가득 차 보였다.
+  const triggerStyle: CSSProperties = primary
+    ? {
+        display: 'flex',
+        alignItems: 'center',
+        gap: 6,
+        height: isMobile ? 44 : 34,
+        padding: '0 14px',
+        border: `1px solid ${th.accent}`,
+        borderRadius: 999,
+        background: th.accent,
+        color: th.accentInk,
+        fontSize: 13,
+        fontWeight: 700,
+        cursor: 'pointer',
+        fontFamily: 'inherit',
+        whiteSpace: 'nowrap',
+        flexShrink: 0,
+        boxShadow: `0 8px 18px -10px ${th.accent}`,
+      }
+    : {
+        display: 'flex',
+        alignItems: 'center',
+        gap: 6,
+        height: isMobile ? 44 : 34,
+        padding: label ? '0 11px' : '0 9px',
+        border: '1px solid transparent',
+        borderRadius: 9,
+        background: open ? th.panel2 : 'transparent',
+        color: open ? th.text : th.subtext,
+        fontSize: 13.5,
+        fontWeight: 600,
+        cursor: 'pointer',
+        fontFamily: 'inherit',
+        whiteSpace: 'nowrap',
+        flexShrink: 0,
+      };
   return (
     <div ref={wrapRef} style={{ position: 'relative', flexShrink: 0 }}>
       <button type="button" className="mf-ed-btn" onClick={onToggle} aria-expanded={open} aria-haspopup="menu" aria-label={ariaLabel} style={triggerStyle}>
         {leading}
         {label}
-        {!noCaret && <Caret open={open} color={th.subtext} />}
+        {!noCaret && <Caret open={open} color={primary ? th.accentInk : th.subtext} />}
       </button>
       {open && (
         <AnchoredMenu anchorRef={wrapRef} width={width} align={align}>

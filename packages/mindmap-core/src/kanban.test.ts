@@ -92,6 +92,15 @@ describe('칸반 — 직렬화', () => {
     expect(Object.keys(round.cards![1]!).sort()).toEqual(['col', 'id', 'pos', 'text']);
   });
 
+  it('분류 목록(tags)도 함께 실린다 — 카드가 다 지워져도 분류는 남는다', () => {
+    const tags = [{ id: 't1', name: '개발', color: '#3f8fd0' }, { id: 't2', name: '리서치' }];
+    const doc = serializeDoc({ ...base, kind: 'kanban', columns: cols, cards: [], tags });
+    expect(doc.tags).toEqual(tags);
+    expect(parseDoc(JSON.parse(JSON.stringify(doc)))!.tags).toEqual(tags);
+    // 칸반이 아닌 문서에는 실리지 않는다.
+    expect(serializeDoc({ ...base, tags }).tags).toBeUndefined();
+  });
+
   it('소속 열이 없는 카드는 읽을 때 버린다(유령 방지)', () => {
     const raw = { v: 1, nodes: {}, floats: [], lines: [], zones: [], layoutMode: 'right', themeKey: 'white', kind: 'kanban', columns: cols, cards: [card('a', 'c1', 0), card('ghost', 'gone', 0)] };
     const round = parseDoc(raw)!;
