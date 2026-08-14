@@ -342,6 +342,13 @@ function SpaceDot({ color }: { color: string }) {
 // ── 대상별 항목 ───────────────────────────────────────────────────────────
 function buildItems(target: NonNullable<HomeState['ctxMenu']>['target'], state: HomeState, view: HomeViewModel, controller: HomeController): HomeMenuItem[] {
   if (target.kind === 'map') {
+    // 여러 장을 골라 두고 그중 하나를 우클릭 → 일괄 메뉴(요청). 우클릭이 선택 밖에서
+    // 오면 `MapCard`가 먼저 그 카드 하나로 선택을 바꾸므로 여기서는 늘 참이다.
+    const sel = state.selectedCards;
+    if (sel.length > 1 && sel.includes(target.key)) {
+      const cards = sel.map((k) => findCard(view, k)).filter((c): c is CardViewData => !!c);
+      if (cards.length > 1) return multiItems(cards, controller);
+    }
     const card = findCard(view, target.key);
     return card ? mapItems(card, controller) : [];
   }
@@ -364,6 +371,53 @@ function findCard(view: HomeViewModel, key: string): CardViewData | undefined {
     view.searchGroups.flatMap((g) => g.cards).find((c) => c.key === key) ||
     view.recentCards.find((c) => c.key === key)
   );
+}
+
+/**
+ * 여러 장을 골라 두고 그중 하나를 우클릭했을 때의 메뉴(요청).
+ *
+ * 한 장에만 뜻이 있는 항목(이름 변경·공유·내보내기)은 내주지 않는다 — 여러 장에
+ * 걸치면 무엇이 일어날지 예측되지 않는다. **즐겨찾기도 뺐다**(사용자 결정).
+ * 폴더 이동은 **선택이 한 스페이스 안일 때만** — 폴더 id는 그 스페이스에서만
+ * 유효해서, 전역 검색 결과처럼 여러 스페이스가 섞이면 미아가 생긴다(단일 카드
+ * 메뉴의 `showMoveRow` 규칙과 같은 이유).
+ */
+function multiItems(cards: CardViewData[], controller: HomeController): HomeMenuItem[] {
+  const items: HomeMenuItem[] = [];
+  const keys = cards.map((c) => c.key);
+  const n = cards.length;
+  // 모두 같은 목록에서 왔고 그 목록이 폴더 이동을 내주는 경우에만.
+  const first = cards[0]!;
+  const sameTargets = cards.every((c) => c.showMoveRow && c.moveTargets.length === first.moveTargets.length && c.moveTargets.every((t, i) => t.id === first.moveTargets[i]?.id));
+  if (sameTargets && first.moveTargets.length) {
+    items.push({
+      key: 'move',
+      icon: FolderIcon,
+      label: '폴더로 이동',
+      submenu: first.moveTargets.map((ft) => ({ key: `move-${ft.id}`, icon: FolderIcon, label: ft.name, onSelect: () => controller.moveMapsToFolder(keys, ft.id) })),
+    });
+  }
+  const spaceTargets = cards.every((c) => c.showSpaceMoveRow) ? first.spaceMoveTargets : [];
+  if (spaceTargets.length) {
+    items.push({
+      key: 'space',
+      icon: SpaceMoveIcon,
+      label: '스페이스로 이동',
+      submenu: spaceTargets.map((sp) => ({ key: `space-${sp.id}`, icon: <SpaceDot color={sp.color} />, label: sp.name, onSelect: () => controller.moveMapsToSpace(keys, sp.id) })),
+    });
+  }
+  if (cards.every((c) => c.showUnfolderRow)) {
+    items.push({ key: 'unfolder', icon: FolderOutIcon, label: '폴더에서 꺼내기', onSelect: () => controller.moveMapsToFolder(keys, null) });
+  }
+  if (items.length) items.push({ key: 'sep-1', label: '' });
+  items.push({
+    key: 'delete',
+    icon: TrashIcon,
+    label: `삭제하기 (${n}개)`,
+    danger: true,
+    onSelect: () => controller.askDeleteMany(cards.map((c) => ({ key: c.key, title: c.title, docId: c.docId }))),
+  });
+  return items;
 }
 
 function mapItems(card: CardViewData, controller: HomeController): HomeMenuItem[] {

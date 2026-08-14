@@ -44,7 +44,8 @@ export function ParentFolderCard({ tile, controller }: Props) {
   const onDrop = (e: DragEvent<HTMLDivElement>) => {
     e.preventDefault();
     const key = controller.state.draggingMap || e.dataTransfer.getData('text/plain');
-    if (key) controller.moveMapUp(key);
+    // 선택 전체를 끌고 있으면 함께 꺼낸다(폴더 카드 드롭과 같은 규칙).
+    if (key) controller.dragKeys(key).forEach((k) => controller.moveMapUp(k));
     controller.clearDrag();
   };
 

@@ -26,6 +26,14 @@ export function MapCard({ card, controller, draggableEnabled, compact = false }:
     if (target.closest && target.closest('.menu-btn,.menu-row,.fav-btn')) return;
     // 한 번에 바로 열리면 카드의 ☰ 메뉴(즐겨찾기·이동·내보내기·삭제)에 닿기 전에
     // 에디터로 넘어가 버려서, 카드에 딸린 동작을 쓸 방법이 사실상 없었다(제보).
+    // 수정 키를 쥔 클릭은 **선택을 고치는 동작**이지 여는 동작이 아니다 —
+    // 여기서 활성화 판정을 태우면 Ctrl+클릭 두 번이 맵을 열어 버린다.
+    const additive = e.ctrlKey || e.metaKey;
+    const range = e.shiftKey;
+    if (additive || range) {
+      controller.selectCard(card.key, { additive, range });
+      return;
+    }
     if (activation.click() === 'activate') {
       controller.openWithLoader(card.href, card.title, card.docId);
       return;
@@ -55,7 +63,9 @@ export function MapCard({ card, controller, draggableEnabled, compact = false }:
     // 최근 트레이 카드는 원래 메뉴가 없는 **바로가기**다(☰도 없다). 그래도 전파는
     // 끊는다 — 카드를 눌렀는데 빈 자리 메뉴("새로 만들기…")가 뜨면 더 이상하다.
     if (compact) return;
-    controller.selectCard(card.key);
+    // 선택 **밖**에서 우클릭하면 그 카드 하나로 교체, **안**이면 선택을 유지한다
+    // (OS 표준 — 여러 장을 골라 놓고 그중 하나를 우클릭하는 것이 일괄 동작의 길).
+    if (!controller.state.selectedCards.includes(card.key)) controller.selectCard(card.key);
     controller.openCtxMenuAt(e.clientX, e.clientY, { kind: 'map', key: card.key });
   };
 
@@ -68,6 +78,12 @@ export function MapCard({ card, controller, draggableEnabled, compact = false }:
     }
     controller.setDraggingMap(card.key);
   };
+  /** 선택 전체를 끌고 있는가 — 카드에 개수 배지를 띄운다. */
+  const dragCount = card.dragging ? controller.dragKeys(card.key).length : 0;
+
+  // `data-card-key`: 다중 선택의 범위(Shift)·전체 선택(Ctrl+A)이 **화면에 그려진
+  // 순서**를 이 표식으로 읽는다. 최근 항목 트레이 카드(compact)는 원래 메뉴 없는
+  // 바로가기라 표식을 달지 않는다 — 다중 선택에도 끼지 않는다(#345와 같은 결).
   const onDragEnd = () => controller.clearDrag();
 
   const grey = card.openable === false;
@@ -114,8 +130,37 @@ export function MapCard({ card, controller, draggableEnabled, compact = false }:
       onDragEnd={onDragEnd}
       className="map-card"
       data-title={card.title}
+      data-card-key={compact ? undefined : card.key}
       style={cardStyle}
     >
+      {/* 여러 장을 끌고 있다는 표시 — 끌리는 카드마다 개수를 달면 시끄러우므로
+          **잡은 카드에만** 붙인다(브라우저의 드래그 이미지는 우리가 못 그린다). */}
+      {dragCount > 1 && (
+        <div
+          data-drag-count
+          aria-hidden="true"
+          style={{
+            position: 'absolute',
+            top: -8,
+            right: -8,
+            minWidth: 22,
+            height: 22,
+            padding: '0 6px',
+            borderRadius: 999,
+            background: 'var(--mf-accent)',
+            color: 'var(--mf-accent-ink)',
+            fontSize: 11.5,
+            fontWeight: 800,
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            boxShadow: '0 2px 8px rgba(0,0,0,.18)',
+            zIndex: 31,
+          }}
+        >
+          {dragCount}
+        </div>
+      )}
       <div
         className="fav-btn"
         role="button"

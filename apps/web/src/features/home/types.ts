@@ -196,6 +196,18 @@ export interface HomeState {
   driveMapFolders: Record<string, string>;
 
   selectedCard: string | null;
+  /**
+   * 다중 선택된 **맵 카드**의 key 목록(요청).
+   *
+   * 단일 선택은 길이 1인 다중 선택이다 — 진실의 원천이 하나여서 "화면엔 선택돼
+   * 보이는데 메뉴는 다른 카드의 것"이 생기지 않는다. `selectedCard`는 그중 **앵커**
+   * (마지막에 누른 카드, Shift 범위의 기준)이고 폴더 카드도 이 칸을 쓴다.
+   * 폴더는 다중 선택 대상이 아니다 — 이동·삭제의 뜻이 맵과 달라 섞이면 메뉴가
+   * 모호해진다. 최근 항목 트레이 카드도 제외(원래 메뉴 없는 바로가기, #345).
+   */
+  selectedCards: string[];
+  /** 여러 장을 한 번에 지울 때의 확인 대상 — 한 장이면 기존 `confirmDelete` 경로. */
+  confirmDeleteMulti: { key: string; title: string; docId?: string }[] | null;
   /** 문서별 **마지막으로 저장한 사람**의 표시 이름(docId → 이름). 마지막 저장자가
    * 나이거나 알 수 없으면 키가 없다 — 그때 카드는 이름을 붙이지 않는다(0015). */
   editorNames: Record<string, string>;
@@ -342,6 +354,8 @@ export function initialHomeState(): HomeState {
     }, {}),
 
     selectedCard: null,
+    selectedCards: [],
+    confirmDeleteMulti: null,
     editorNames: {},
     draggingMap: null,
     dragOverFolder: null,

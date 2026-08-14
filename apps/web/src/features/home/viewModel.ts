@@ -86,8 +86,10 @@ export interface FolderCardViewData {
 
 /** 폴더의 선택/메뉴 키 — 맵 카드 키(제목·docId)와 섞이지 않게 접두를 붙인다.
  * 메뉴(`ctxMenu`)가 이미 쓰던 규칙을 선택에도 그대로 쓴다. */
+export const FOLDER_CARD_PREFIX = 'folder:';
+
 export function folderCardKey(id: string): string {
-  return 'folder:' + id;
+  return FOLDER_CARD_PREFIX + id;
 }
 
 /** "상위 폴더" 타일의 드롭 하이라이트 키 — 실제 폴더 id와 섞이지 않게 접두를 쓴다
@@ -431,7 +433,7 @@ export function deriveHomeView(state: HomeState): HomeViewModel {
       // titles are allowed, and selecting/opening one must not light up its
       // same-named sibling.
       menuOpen: state.ctxMenu?.target.kind === 'map' && state.ctxMenu.target.key === key,
-      selected: state.selectedCard === key,
+      selected: state.selectedCards.includes(key),
       dragging: state.draggingMap === key,
       dragOverTarget: false,
       showRenameRow: !isDriveSpace && !!c.docId,
@@ -549,7 +551,7 @@ export function deriveHomeView(state: HomeState): HomeViewModel {
             isFav: !!state.favs[key],
             isDrive: false,
             menuOpen: state.ctxMenu?.target.kind === 'map' && state.ctxMenu.target.key === key,
-            selected: state.selectedCard === key,
+            selected: state.selectedCards.includes(key),
             dragging: false,
             dragOverTarget: false,
             showRenameRow: !!m.docId,
@@ -687,7 +689,7 @@ export function deriveHomeView(state: HomeState): HomeViewModel {
         isFav: !!favs[key],
         isDrive: sourceIsDrive(base.title),
         menuOpen: false,
-        selected: state.selectedCard === key,
+        selected: state.selectedCards.includes(key),
         dragging: false,
         dragOverTarget: false,
         showRenameRow: false,
