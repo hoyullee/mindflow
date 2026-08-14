@@ -67,7 +67,7 @@ function stubRects(container: HTMLElement): void {
 }
 
 /** jsdom엔 PointerEvent가 없다 — MouseEvent를 pointer 이름으로 던진다(다른 테스트와 같은 처방). */
-function firePointer(target: Element | Window, type: 'pointerdown' | 'pointermove' | 'pointerup', init: { clientX?: number; clientY?: number; pointerType?: string } = {}): void {
+function firePointer(target: Element | Window, type: 'pointerdown' | 'pointermove' | 'pointerup' | 'pointercancel', init: { clientX?: number; clientY?: number; pointerType?: string } = {}): void {
   const ev = new MouseEvent(type, { bubbles: true, cancelable: true, clientX: init.clientX ?? 0, clientY: init.clientY ?? 0 });
   Object.defineProperty(ev, 'pointerType', { value: init.pointerType ?? 'mouse', configurable: true });
   Object.defineProperty(ev, 'pointerId', { value: 1, configurable: true });
