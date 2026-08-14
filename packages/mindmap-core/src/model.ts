@@ -273,6 +273,20 @@ export interface KanbanColumn {
 }
 
 /**
+ * 칸반 **분류**(태그) — 문서가 들고 있는 목록.
+ *
+ * 카드의 `tag`는 이름 문자열이고, 그 이름이 여기 있으면 목록에 뜨고 색도 지정할 수
+ * 있다. 목록을 문서에 두는 이유: 카드에만 있으면 **그 태그를 쓰는 카드를 다 지운
+ * 순간 분류도 사라진다**(직접 만든 분류가 조용히 없어진다). 색은 선택 — 없으면
+ * 이름에서 정한다(`kanbanMeta.tagColor`).
+ */
+export interface KanbanTag {
+  id: string;
+  name: string;
+  color?: string | null;
+}
+
+/**
  * 칸반 카드.
  *
  * 순서는 열 안에서 **`pos` 분수 인덱스**다(두 이웃의 중간값을 준다). 배열로 들면
@@ -333,6 +347,8 @@ export interface Doc {
   columns?: KanbanColumn[];
   /** 칸반 카드 — 열과 같은 규칙. */
   cards?: KanbanCard[];
+  /** 칸반 분류 목록 — 열·카드와 같은 규칙(칸반일 때만). */
+  tags?: KanbanTag[];
 }
 
 /**

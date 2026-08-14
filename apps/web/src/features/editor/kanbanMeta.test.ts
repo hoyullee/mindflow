@@ -7,13 +7,13 @@ const col = (id: string, color?: string): KanbanColumn => ({ id, title: id, ...(
 const card = (id: string, c: string, extra: Partial<KanbanCard> = {}): KanbanCard => ({ id, col: c, pos: 0, text: id, ...extra });
 
 describe('칸반 곁정보 — 색', () => {
-  it('같은 분류 이름은 언제나 같은 색, 기본 다섯은 팔레트 순서대로', () => {
-    expect(tagColor('기획', PAL)).toBe('#a');
-    expect(tagColor('디자인', PAL)).toBe('#b');
-    expect(tagColor('QA', PAL)).toBe('#e');
+  it('같은 이름은 언제나 같은 색이고, 목록에 지정한 색이 있으면 그것을 쓴다', () => {
     expect(tagColor('내가 만든 분류', PAL)).toBe(tagColor('내가 만든 분류', PAL));
-    // 색을 저장하지 않으므로 테마를 바꾸면 함께 바뀐다.
-    expect(tagColor('기획', ['#x', '#y'])).toBe('#x');
+    expect(PAL).toContain(tagColor('개발', PAL));
+    // 지정색이 이긴다(문서의 분류 목록).
+    expect(tagColor('개발', PAL, [{ id: 't1', name: '개발', color: '#zzz' }])).toBe('#zzz');
+    // 지정색이 없으면 팔레트에서 — 테마를 바꾸면 함께 바뀐다.
+    expect(['#x', '#y']).toContain(tagColor('개발', ['#x', '#y']));
   });
 
   it('열 점 색은 지정이 있으면 그것, 없으면 순서대로', () => {

@@ -7,10 +7,7 @@
 //    저장하면 테마를 바꿨을 때 옛 색이 남고, 같은 이름이 문서마다 달라진다.
 //  · 담당은 **공유 참가자**(0011)에서 고르고 이름은 스냅샷으로 카드에 남긴다.
 
-import type { KanbanCard, KanbanColumn } from '@mindflow/mindmap-core';
-
-/** 분류 기본 목록 — 디자인 원본의 다섯 가지. 직접 적은 이름도 그대로 쓸 수 있다. */
-export const DEFAULT_TAGS: readonly string[] = ['기획', '디자인', '개발', '마케팅', 'QA'];
+import type { KanbanCard, KanbanColumn, KanbanTag } from '@mindflow/mindmap-core';
 
 /** 문자열 → 안정적인 작은 정수(같은 이름은 언제나 같은 색). */
 function hashCode(s: string): number {
@@ -19,12 +16,18 @@ function hashCode(s: string): number {
   return Math.abs(h);
 }
 
-/** 이 분류 이름의 색 — 테마 팔레트에서 고른다(테마를 바꾸면 함께 바뀐다). */
-export function tagColor(name: string, palette: readonly string[]): string {
+/**
+ * 이 분류의 색 — **문서의 분류 목록에 지정된 색이 있으면 그것**, 없으면 이름에서
+ * 정한다(테마 팔레트 인덱스 → 테마를 바꾸면 함께 바뀐다).
+ *
+ * 이름 기반 기본색 덕분에 분류를 만들자마자 색이 붙고, 색을 고르면 그때부터
+ * 문서에 남는다(`KanbanTag.color`).
+ */
+export function tagColor(name: string, palette: readonly string[], tags: readonly KanbanTag[] = []): string {
+  const pick = tags.find((t) => t.name === name);
+  if (pick?.color) return pick.color;
   if (!palette.length) return '#888888';
-  const i = DEFAULT_TAGS.indexOf(name);
-  // 기본 다섯은 팔레트 앞쪽을 순서대로 — 한 보드에서 서로 또렷이 갈린다.
-  return (i >= 0 ? palette[i % palette.length] : palette[hashCode(name) % palette.length]) as string;
+  return palette[hashCode(name) % palette.length] as string;
 }
 
 /** 열 머리의 점 색 — 지정이 없으면 열 순서대로 팔레트에서(디자인의 단계별 색). */

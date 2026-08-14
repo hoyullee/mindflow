@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import type { MouseEvent as ReactMouseEvent, PointerEvent as ReactPointerEvent } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
-import type { Box, Doc, Float, KanbanCard, KanbanColumn, Line, LineAnchor, LayoutMode, ListOp, Node, NodeMap, Reaction, ReactionGroup, RichRun, SizeOf, SnapCandidate, Stroke, TextEdit, Zone } from '@mindflow/mindmap-core';
+import type { Box, Doc, Float, KanbanCard, KanbanColumn, KanbanTag, Line, LineAnchor, LayoutMode, ListOp, Node, NodeMap, Reaction, ReactionGroup, RichRun, SizeOf, SnapCandidate, Stroke, TextEdit, Zone } from '@mindflow/mindmap-core';
 import { HistoryStack, ROOT_ID, collectImageRefs, collectInlineImages, isImageRef, replaceImageValues, applyListOp as applyListOpToText, applyAutoLinks, applyMarkdownShortcuts, applyPartialStyle, insertMention, charsToRuns, cubicAt, isStyledRuns, findLineSnap, layout, resolveLineEndpoints, resolveLineGeometry, runsToChars, serializeDoc, shiftOffset, strokeBounds, strokeHit, translateStrokePts, reactionGroups, toggleReaction as toggleReactionList, pruneReactions, toMarkdown, posForIndex, removeColumn, moveCard, moveColumn } from '@mindflow/mindmap-core';
 import { domToRuns, linearize, liveEditValue } from './richtextDom';
 import { HL_COLORS, HL_WIDTHS } from './boardTools';
@@ -163,11 +163,14 @@ interface Snapshot {
   /** 칸반 열·카드 — 칸반 문서에서만 채워진다(다른 종류는 빈 배열). */
   columns: KanbanColumn[];
   cards: KanbanCard[];
+  /** 칸반 분류 목록 — 열·카드와 같은 이유로 스냅샷에 싣는다(undo가 되돌려야 한다). */
+  tags: KanbanTag[];
 }
 
 /** 칸반이 아닌 문서에서 열·카드를 읽을 때 쓰는 빈 배열(참조가 매 렌더 바뀌지 않게). */
 const EMPTY_COLUMNS: KanbanColumn[] = [];
 const EMPTY_CARDS: KanbanCard[] = [];
+const EMPTY_TAGS: KanbanTag[] = [];
 
 /** 프레임을 내용에 맞출 때 주는 여백(캔버스 단위) — 라벨 알약이 위쪽 바깥에
  * 걸리므로 위도 같은 값이면 충분하다. */
@@ -754,6 +757,9 @@ export interface EditorController {
   /** 카드 글을 확정한다(빈 값이면 카드를 지운다 — 빈 카드를 남기지 않는다). */
   commitCardText: (id: string, text: string) => void;
   deleteCard: (id: string) => void;
+  /** 칸반 보기 모드(보드·리스트·타임라인) — 보는 사람의 상태(문서 아님). */
+  kanbanView: 'board' | 'list' | 'timeline';
+  setKanbanView: (v: 'board' | 'list' | 'timeline') => void;
   /** 상세를 연 카드 id(없으면 모달이 닫혀 있다). */
   detailCardId: string | null;
   openCardDetail: (id: string | null) => void;
@@ -766,6 +772,11 @@ export interface EditorController {
   moveColumnTo: (colId: string, index: number) => void;
   /** 카드 색 라벨 — `null`이면 없앤다(키를 지워 CRDT 필드도 사라지게). */
   setCardBg: (id: string, bg: string | null) => void;
+  /** 이 문서의 분류 목록(칸반) — 카드의 `tag`는 이 이름들 중 하나다. */
+  tags: KanbanTag[];
+  addTag: (name: string) => void;
+  removeTag: (id: string) => void;
+  setTagColor: (id: string, color: string | null) => void;
   /** 카드 곁정보(분류·기한·담당·긴급) — 빈 값은 키를 지운다. */
   setCardMeta: (id: string, patch: { tag?: string | null; due?: string | null; owner?: { email: string; name: string } | null; flagged?: boolean }) => void;
   /** 열 머리 색 — `null`이면 순서 기반 기본색으로 돌아간다. */
@@ -844,7 +855,7 @@ function nudgeBoxOf(cand: NodeMap, geom: Record<string, { x: number; y: number; 
 
 function docSignature(d: Doc): string {
   try {
-    return JSON.stringify([d.nodes, d.floats, d.lines, d.zones, d.layoutMode, d.themeKey, d.edgeStyle, d.strokes ?? [], d.reactions ?? [], d.columns ?? [], d.cards ?? []]);
+    return JSON.stringify([d.nodes, d.floats, d.lines, d.zones, d.layoutMode, d.themeKey, d.edgeStyle, d.strokes ?? [], d.reactions ?? [], d.columns ?? [], d.cards ?? [], d.tags ?? []]);
   } catch {
     return '';
   }
@@ -1118,6 +1129,7 @@ export function useEditorState(): EditorController {
               reactions: res.doc.reactions ?? [],
               columns: res.doc.columns ?? [],
               cards: res.doc.cards ?? [],
+              tags: res.doc.tags ?? [],
             });
             setHistoryTick((t) => t + 1);
           }
@@ -1589,7 +1601,7 @@ export function useEditorState(): EditorController {
   useEffect(() => {
     if (historyInitRef.current) return;
     historyInitRef.current = true;
-    historyRef.current!.reset({ nodes: doc.nodes, floats: doc.floats, lines: doc.lines, zones: doc.zones, layoutMode: doc.layoutMode, edgeStyle, strokes: doc.strokes ?? [], reactions: doc.reactions ?? [], columns: doc.columns ?? [], cards: doc.cards ?? [] });
+    historyRef.current!.reset({ nodes: doc.nodes, floats: doc.floats, lines: doc.lines, zones: doc.zones, layoutMode: doc.layoutMode, edgeStyle, strokes: doc.strokes ?? [], reactions: doc.reactions ?? [], columns: doc.columns ?? [], cards: doc.cards ?? [], tags: doc.tags ?? [] });
     // deliberately empty deps: only the initial (mount-time) doc/edgeStyle matter here
   }, []);
 
@@ -1616,10 +1628,11 @@ export function useEditorState(): EditorController {
         // 칸반 열·카드 — 여기 빠뜨리면 그 문서의 **모든 편집이 조용히 버려진다**
         // (커밋은 도는데 "바뀐 게 없다"로 판정돼 setDoc이 prev를 돌려준다).
         next.columns !== prev.columns ||
-        next.cards !== prev.cards;
+        next.cards !== prev.cards ||
+        next.tags !== prev.tags;
       if (changed) {
         historyRef.current!.record(
-          { nodes: next.nodes, floats: next.floats, lines: next.lines, zones: next.zones, layoutMode: next.layoutMode, edgeStyle: edgeStyleRef.current, strokes: next.strokes ?? [], reactions: next.reactions ?? [], columns: next.columns ?? [], cards: next.cards ?? [] },
+          { nodes: next.nodes, floats: next.floats, lines: next.lines, zones: next.zones, layoutMode: next.layoutMode, edgeStyle: edgeStyleRef.current, strokes: next.strokes ?? [], reactions: next.reactions ?? [], columns: next.columns ?? [], cards: next.cards ?? [], tags: next.tags ?? [] },
           continuous,
         );
         setHistoryTick((t) => t + 1);
@@ -1642,14 +1655,14 @@ export function useEditorState(): EditorController {
       const changed =
         next.nodes !== prev.nodes || next.floats !== prev.floats || next.lines !== prev.lines || next.zones !== prev.zones || next.layoutMode !== prev.layoutMode || next.strokes !== prev.strokes || next.reactions !== prev.reactions;
       if (changed) {
-        historyRef.current!.amend({ nodes: next.nodes, floats: next.floats, lines: next.lines, zones: next.zones, layoutMode: next.layoutMode, edgeStyle: edgeStyleRef.current, strokes: next.strokes ?? [], reactions: next.reactions ?? [], columns: next.columns ?? [], cards: next.cards ?? [] });
+        historyRef.current!.amend({ nodes: next.nodes, floats: next.floats, lines: next.lines, zones: next.zones, layoutMode: next.layoutMode, edgeStyle: edgeStyleRef.current, strokes: next.strokes ?? [], reactions: next.reactions ?? [], columns: next.columns ?? [], cards: next.cards ?? [], tags: next.tags ?? [] });
       }
       return changed ? next : prev;
     });
   }, []);
 
   function applySnapshot(snap: Snapshot): void {
-    setDoc((prev) => ({ ...prev, nodes: snap.nodes, floats: snap.floats, lines: snap.lines, zones: snap.zones, layoutMode: snap.layoutMode, edgeStyle: snap.edgeStyle, strokes: snap.strokes.length ? snap.strokes : undefined, reactions: snap.reactions?.length ? snap.reactions : undefined, ...(prev.kind === 'kanban' ? { columns: snap.columns ?? [], cards: snap.cards ?? [] } : {}) }));
+    setDoc((prev) => ({ ...prev, nodes: snap.nodes, floats: snap.floats, lines: snap.lines, zones: snap.zones, layoutMode: snap.layoutMode, edgeStyle: snap.edgeStyle, strokes: snap.strokes.length ? snap.strokes : undefined, reactions: snap.reactions?.length ? snap.reactions : undefined, ...(prev.kind === 'kanban' ? { columns: snap.columns ?? [], cards: snap.cards ?? [], tags: snap.tags ?? [] } : {}) }));
     setEdgeStyleState(snap.edgeStyle);
     setSelectionState(null);
     setMultiSelectionState(null);
@@ -2137,7 +2150,7 @@ export function useEditorState(): EditorController {
     // up — `docSignature` includes `edgeStyle`, so this dirties the doc.
     setDoc((prev) => (prev.edgeStyle === s ? prev : { ...prev, edgeStyle: s }));
     const d = docRef.current;
-    historyRef.current!.record({ nodes: d.nodes, floats: d.floats, lines: d.lines, zones: d.zones, layoutMode: d.layoutMode, edgeStyle: s, strokes: d.strokes ?? [], reactions: d.reactions ?? [], columns: d.columns ?? [], cards: d.cards ?? [] }, false);
+    historyRef.current!.record({ nodes: d.nodes, floats: d.floats, lines: d.lines, zones: d.zones, layoutMode: d.layoutMode, edgeStyle: s, strokes: d.strokes ?? [], reactions: d.reactions ?? [], columns: d.columns ?? [], cards: d.cards ?? [], tags: d.tags ?? [] }, false);
     setHistoryTick((t) => t + 1);
   }, []);
 
@@ -5244,12 +5257,18 @@ export function useEditorState(): EditorController {
   );
 
   // ---- 칸반(문서 종류 'kanban') — 열·카드 ----
+  /** 칸반 보기 모드 — 보드·리스트·타임라인. **문서가 아니라 보는 사람의 상태**다
+   * (문서에 넣으면 한 사람의 탭 전환이 모두의 화면을 바꾼다). 보드 머리의 탭과
+   * GNB 보기 메뉴가 같은 값을 쓴다. */
+  const [kanbanView, setKanbanView] = useState<'board' | 'list' | 'timeline'>('board');
+
   // 카드 상세(모달)를 연 카드 — 디자인 원본의 `open`. 카드의 곁정보(분류·기한·
   // 담당·긴급)와 제목을 한자리에서 고친다(다른 칸반 앱들과 같은 관례).
   const [detailCardId, setDetailCardId] = useState<string | null>(null);
   const [selectedCardId, setSelectedCardId] = useState<string | null>(null);
   const columns = doc.columns ?? EMPTY_COLUMNS;
   const cards = doc.cards ?? EMPTY_CARDS;
+  const tags = doc.tags ?? EMPTY_TAGS;
 
   const addColumn = useCallback(() => {
     if (readOnlyRef.current) return;
@@ -5296,15 +5315,22 @@ export function useEditorState(): EditorController {
       if (readOnlyRef.current) return;
       const id = idFactory('card');
       const val = text && text.trim() ? cardTextValue(text) : null;
+      // 담당은 **나 자신**으로 시작한다(요청) — 카드를 만드는 사람이 대개 맡는 사람이고,
+      // 아니면 상세에서 바로 바꾸면 된다(비워 두면 아무도 안 챙기는 카드가 쌓인다).
+      const me = authUser?.email ? { email: authUser.email, name: profileName || authUser.name || (authUser.email.split('@')[0] as string) } : null;
       commitDoc((d) => {
         const list = d.cards ?? [];
         const card: KanbanCard = { id, col: colId, pos: posForIndex(list, colId, list.filter((c) => c.col === colId).length), text: val ? val.text : '' };
         if (val?.rich) card.rich = val.rich;
+        if (me) {
+          card.owner = me.email;
+          card.ownerName = me.name;
+        }
         return { ...d, cards: [...list, card] };
       });
       setSelectedCardId(id);
     },
-    [cardTextValue, commitDoc, idFactory],
+    [authUser, cardTextValue, commitDoc, idFactory, profileName],
   );
 
   const commitCardText = useCallback(
@@ -5459,6 +5485,63 @@ export function useEditorState(): EditorController {
         const next = moveCard(d.cards ?? [], cardId, (cols[j] as KanbanColumn).id, 0);
         return next === (d.cards ?? []) ? d : { ...d, cards: next };
       });
+    },
+    [commitDoc],
+  );
+
+  /**
+   * 분류(태그) — 문서가 목록을 들고 있다. 목록에 두는 이유는 **직접 만든 분류가
+   * 사라지지 않게** 하기 위해서다(카드에만 있으면 그 카드를 다 지우는 순간 없어진다).
+   */
+  const addTag = useCallback(
+    (name: string): void => {
+      const t = name.trim().slice(0, 24);
+      if (!t || readOnlyRef.current) return;
+      commitDoc((d) => {
+        const list = d.tags ?? [];
+        if (list.some((x) => x.name === t)) return d; // 같은 이름은 하나만
+        return { ...d, tags: [...list, { id: idFactory('tag'), name: t }] };
+      });
+    },
+    [commitDoc, idFactory],
+  );
+
+  /** 분류를 지운다 — 그 분류를 쓰던 카드의 `tag`도 함께 뗀다(유령 분류 방지). */
+  const removeTag = useCallback(
+    (id: string) => {
+      if (readOnlyRef.current) return;
+      commitDoc((d) => {
+        const tag = (d.tags ?? []).find((t) => t.id === id);
+        if (!tag) return d;
+        return {
+          ...d,
+          tags: (d.tags ?? []).filter((t) => t.id !== id),
+          cards: (d.cards ?? []).map((c) => {
+            if (c.tag !== tag.name) return c;
+            const rest = { ...c };
+            delete rest.tag;
+            return rest;
+          }),
+        };
+      });
+    },
+    [commitDoc],
+  );
+
+  /** 분류 색 — `null`이면 이름에서 정하는 기본색으로 돌아간다. */
+  const setTagColor = useCallback(
+    (id: string, color: string | null) => {
+      if (readOnlyRef.current) return;
+      commitDoc((d) => ({
+        ...d,
+        tags: (d.tags ?? []).map((t) => {
+          if (t.id !== id) return t;
+          if (color) return { ...t, color };
+          const rest = { ...t };
+          delete rest.color;
+          return rest;
+        }),
+      }));
     },
     [commitDoc],
   );
@@ -6050,6 +6133,8 @@ export function useEditorState(): EditorController {
     addCard,
     commitCardText,
     deleteCard,
+    kanbanView,
+    setKanbanView,
     detailCardId,
     openCardDetail,
     selectedCardId,
@@ -6059,6 +6144,10 @@ export function useEditorState(): EditorController {
     setCardBg,
     setCardMeta,
     setColumnColor,
+    tags,
+    addTag,
+    removeTag,
+    setTagColor,
     moveCardStep,
     boardTool,
     setBoardTool,

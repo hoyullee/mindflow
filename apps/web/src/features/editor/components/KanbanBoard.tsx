@@ -14,7 +14,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { CSSProperties, KeyboardEvent as ReactKeyboardEvent, PointerEvent as ReactPointerEvent } from 'react';
 import { cardsInColumn } from '@mindflow/mindmap-core';
-import type { KanbanCard, KanbanColumn } from '@mindflow/mindmap-core';
+import type { KanbanCard, KanbanColumn, KanbanTag } from '@mindflow/mindmap-core';
 import type { EditorController } from '../useEditorState';
 import { hexA } from '../theme';
 import type { Theme } from '../theme';
@@ -36,6 +36,8 @@ const COL_GAP = 16;
 const CHIP_CLEARANCE = 78;
 /** 긴급 배지 — 테마와 무관한 경고색(어느 팔레트에서나 "위험"으로 읽혀야 한다). */
 const URGENT = '#d9534f';
+/** 놓일 자리를 가리키는 점선 상자의 높이(카드 한 장 남짓). */
+const DROP_BOX_H = 44;
 
 /** 마우스가 이만큼 움직여야 "끄는 것"으로 친다(클릭·더블클릭과 구분). */
 const DRAG_THRESHOLD = 4;
@@ -138,9 +140,10 @@ export function KanbanBoard({ controller, theme: th }: { controller: EditorContr
   const [colDrag, setColDrag] = useState<ColDragState | null>(null);
   /** 카드 검색 — 화면에서만 거른다(문서는 그대로). */
   const [query, setQuery] = useState('');
-  /** 보기 모드 — **보는 사람의 상태**다(문서에 넣으면 한 사람이 탭을 바꿀 때 모두의
-   * 화면이 함께 바뀐다). 그래서 저장·협업과 무관하다. */
-  const [view, setView] = useState<KanbanView>('board');
+  // 보기 모드는 컨트롤러가 들고 있다 — 보드 머리의 탭과 GNB 보기 메뉴가 같은 값을
+  // 본다(문서가 아니라 보는 사람의 상태라는 점은 그대로).
+  const view = controller.kanbanView;
+  const setView = controller.setKanbanView;
 
   /** 지금 화면에 그려진 열·카드의 사각형 — 드롭 자리 계산의 입력(순수 부분은 `kanbanDrag.ts`). */
   const columnHits = useCallback((): ColumnHit[] => {
@@ -230,13 +233,23 @@ export function KanbanBoard({ controller, theme: th }: { controller: EditorContr
   const colIndicator = colDrag ? columnDropIndicator(columnHits(), colDrag.index, colDrag.id) : null;
   const progress = useMemo(() => boardProgress(columns, cards), [columns, cards]);
   const detailCard = controller.detailCardId ? cards.find((c) => c.id === controller.detailCardId) : undefined;
+  const dragCard = drag ? cards.find((c) => c.id === drag.id) : undefined;
 
   return (
     <div
       data-kanban-root
       style={{ position: 'absolute', inset: 0, display: 'flex', flexDirection: 'column', minHeight: 0, background: th.appBg, paddingTop: CHIP_CLEARANCE, boxSizing: 'border-box' }}
     >
-      <BoardBar theme={th} isMobile={isMobile} query={query} onQuery={setQuery} progress={progress} view={view} onView={setView} />
+      <BoardBar
+        theme={th}
+        isMobile={isMobile}
+        query={query}
+        onQuery={setQuery}
+        progress={progress}
+        view={view}
+        onView={setView}
+        onComments={controller.canComment ? () => (controller.commentsOpen ? controller.closeComments() : controller.openComments()) : undefined}
+      />
 
       {view === 'list' && <KanbanList controller={controller} theme={th} query={query} isMobile={isMobile} />}
       {view === 'timeline' && <KanbanTimeline controller={controller} theme={th} query={query} isMobile={isMobile} />}
@@ -275,6 +288,7 @@ export function KanbanBoard({ controller, theme: th }: { controller: EditorContr
             draggingId={drag?.id ?? null}
             dragging={colDrag?.id === col.id}
             dropTarget={drag?.target?.colId === col.id}
+            done={i === columns.length - 1}
           />
         ))}
         {!readOnly && (
@@ -337,28 +351,52 @@ export function KanbanBoard({ controller, theme: th }: { controller: EditorContr
       )}
 
       {/* 끌고 있는 카드의 고스트 + 삽입 위치 선 — 화면 좌표라 보드 스크롤과 무관하다. */}
-      {drag && (
+      {/* 고스트 — **끌고 있는 카드와 같은 얼굴**(요청). 글자만 보여 주면 배지·기한·
+          담당이 사라져 "무엇을 옮기는 중인지"가 흐려진다. */}
+      {dragCard && drag && (
         <div
           data-kanban-ghost
-          style={{ position: 'fixed', left: drag.x - drag.offX, top: drag.y - drag.offY, width: drag.w, padding: '12px 12px 11px', borderRadius: 12, background: th.panel, border: `1px solid ${th.accent}`, boxShadow: '0 8px 24px rgba(0,0,0,.18)', fontSize: 13.8, lineHeight: 1.5, fontWeight: 600, color: th.text, whiteSpace: 'pre-wrap', wordBreak: 'break-word', pointerEvents: 'none', opacity: 0.95, zIndex: 300, transform: 'rotate(1.5deg)' }}
+          style={{
+            ...cardBase(dragCard, th, false),
+            position: 'fixed',
+            left: drag.x - drag.offX,
+            top: drag.y - drag.offY,
+            width: drag.w,
+            border: `1px solid ${th.accent}`,
+            boxShadow: '0 8px 24px rgba(0,0,0,.18)',
+            boxSizing: 'border-box',
+            pointerEvents: 'none',
+            opacity: 0.95,
+            zIndex: 300,
+            transform: 'rotate(1.5deg)',
+          }}
         >
-          {drag.text || '빈 카드'}
+          <CardFace
+            card={dragCard}
+            theme={th}
+            comments={controller.canComment ? (controller.commentCounts[dragCard.id] ?? 0) : 0}
+            tags={controller.tags}
+            done={columns.length > 0 && dragCard.col === (columns[columns.length - 1] as KanbanColumn).id}
+          />
         </div>
       )}
+      {/* 놓일 자리 — **점선 사각형**(요청·디자인 원본의 placeholder). 선 하나보다
+          "여기 카드가 들어간다"가 또렷하다. 자리를 실제로 밀어내지 않고 겹쳐 그리는
+          이유는 그래야 드래그 중 카드들의 사각형(히트 계산의 입력)이 흔들리지 않기
+          때문이다. */}
       {indicator && (
         <div
           data-kanban-drop-line
           style={{
             position: 'fixed',
             left: indicator.left,
-            top: indicator.top,
+            top: indicator.top - DROP_BOX_H / 2,
             width: indicator.width,
-            // 얇고 옅게(제보: 너무 진하다). 이 선은 **자리를 가리키는 눈금**이지
-            // 강조 대상이 아니다 — 손가락/커서를 따라오는 고스트가 이미 주인공이다.
-            height: 2,
-            borderRadius: 999,
-            // 양끝이 배경으로 스며들게 — 딱 잘린 막대는 카드 사이에 이물처럼 보인다.
-            background: `linear-gradient(90deg, ${hexA(th.accent, 0)} 0%, ${hexA(th.accent, 0.5)} 10%, ${hexA(th.accent, 0.5)} 90%, ${hexA(th.accent, 0)} 100%)`,
+            height: DROP_BOX_H,
+            borderRadius: 12,
+            border: `1.5px dashed ${hexA(th.accent, 0.75)}`,
+            background: hexA(th.accent, 0.08),
+            boxSizing: 'border-box',
             pointerEvents: 'none',
             zIndex: 299,
           }}
@@ -386,6 +424,7 @@ function BoardBar({
   progress,
   view,
   onView,
+  onComments,
 }: {
   theme: Theme;
   isMobile: boolean;
@@ -394,6 +433,8 @@ function BoardBar({
   progress: ReturnType<typeof boardProgress>;
   view: KanbanView;
   onView: (v: KanbanView) => void;
+  /** 보드 전체 댓글 열기 — 댓글을 쓸 수 없는 문서(링크로 연 사람)에서는 없다. */
+  onComments?: () => void;
 }) {
   const tab = (v: KanbanView, label: string) => {
     const on = view === v;
@@ -423,13 +464,9 @@ function BoardBar({
   };
   return (
     <div data-kanban-bar style={{ flex: '0 0 auto', display: 'flex', flexDirection: 'column', gap: 10, padding: isMobile ? '0 12px 12px' : '0 20px 14px' }}>
-      <div style={{ display: 'flex', alignItems: 'center', gap: 10, justifyContent: 'space-between', flexWrap: 'wrap' }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 2, padding: 3, borderRadius: 999, border: `1px solid ${th.border}`, background: th.panel2 }}>
-          {tab('board', '보드')}
-          {tab('list', '리스트')}
-          {tab('timeline', '타임라인')}
-        </div>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 7, height: isMobile ? 40 : 34, padding: '0 12px', borderRadius: 999, border: `1px solid ${th.border}`, background: th.panel, minWidth: 0, flex: isMobile ? '1 1 100%' : '0 0 auto', width: isMobile ? undefined : 220 }}>
+      {/* 디자인 원본과 같은 자리 — 오른쪽에 [검색][보기 탭] 한 묶음(요청). */}
+      <div style={{ display: 'flex', alignItems: 'center', gap: 8, justifyContent: 'flex-end', flexWrap: 'wrap' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 7, height: isMobile ? 40 : 34, padding: '0 12px', borderRadius: 999, border: `1px solid ${th.border}`, background: th.panel, minWidth: 0, flex: isMobile ? '1 1 100%' : '0 0 auto', width: isMobile ? undefined : 200 }}>
           <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke={th.subtext} strokeWidth="2" strokeLinecap="round" aria-hidden="true">
             <circle cx="11" cy="11" r="7" />
             <path d="m20 20-3.5-3.5" />
@@ -448,6 +485,26 @@ function BoardBar({
             style={{ border: 0, outline: 'none', background: 'transparent', fontSize: 13, color: th.text, width: '100%', minWidth: 0, fontFamily: 'inherit' }}
           />
         </div>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 2, padding: 3, borderRadius: 999, border: `1px solid ${th.border}`, background: th.panel2 }}>
+          {tab('board', '보드')}
+          {tab('list', '리스트')}
+          {tab('timeline', '타임라인')}
+        </div>
+        {/* 보드 전체 댓글 — 칸반의 보기 메뉴는 세 보기만 담으므로(요청) 첫 댓글을
+            남길 길을 여기 둔다. 카드의 논의는 카드 배지·상세가 맡는다. */}
+        {onComments && (
+          <button
+            type="button"
+            className="mf-ed-btn"
+            data-kanban-comments
+            onClick={onComments}
+            title="보드 전체 댓글"
+            aria-label="보드 전체 댓글"
+            style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', width: isMobile ? 40 : 34, height: isMobile ? 40 : 34, borderRadius: 999, border: `1px solid ${th.border}`, background: th.panel, color: th.subtext, cursor: 'pointer', padding: 0, flexShrink: 0 }}
+          >
+            <CommentIcon />
+          </button>
+        )}
       </div>
       {/* 진행률 — **마지막 열을 완료로 본다**(카드는 왼→오로 흐른다는 관례). */}
       <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
@@ -455,7 +512,7 @@ function BoardBar({
           <span data-progress-done style={{ width: `${progress.donePct}%`, background: th.accent, display: 'block' }} />
           <span data-progress-doing style={{ width: `${progress.doingPct}%`, background: hexA(th.accent, 0.4), display: 'block' }} />
         </div>
-        <span title="마지막 열을 완료로 봅니다" style={{ flex: '0 0 auto', fontSize: 11.5, color: th.subtext, whiteSpace: 'nowrap' }}>
+        <span data-progress-label title="마지막 열을 완료로 봅니다" style={{ flex: '0 0 auto', fontSize: 13, color: th.subtext, whiteSpace: 'nowrap' }}>
           {progress.label}
         </span>
       </div>
@@ -484,6 +541,7 @@ function Column({
   draggingId,
   dragging,
   dropTarget,
+  done,
 }: {
   col: KanbanColumn;
   index: number;
@@ -499,6 +557,8 @@ function Column({
   dragging: boolean;
   /** 이 열이 지금 드롭 대상인가 — 비어 있어도 "여기 들어간다"를 보여 준다. */
   dropTarget: boolean;
+  /** 마지막 열(완료)인가 — 지난 기한을 경고로 쓰지 않는다. */
+  done: boolean;
 }) {
   const [renaming, setRenaming] = useState(false);
   const [composing, setComposing] = useState(false);
@@ -522,6 +582,10 @@ function Column({
         display: 'flex',
         flexDirection: 'column',
         minHeight: 0,
+        // 열은 **내용만큼만** 높다(요청) — 카드가 적은 열이 화면 끝까지 늘어나면
+        // 어느 단계가 비었는지 한눈에 안 들어온다. 길어지면 화면 높이에서 멈추고
+        // 열 안이 스크롤된다.
+        alignSelf: 'flex-start',
         maxHeight: '100%',
         background: th.panel2,
         border: `1px solid ${dropTarget ? hexA(th.accent, 0.55) : th.border}`,
@@ -592,9 +656,9 @@ function Column({
         )}
       </header>
 
-      <div data-kanban-list style={{ flex: '1 1 auto', minHeight: 0, overflowY: 'auto', padding: 11, display: 'flex', flexDirection: 'column', gap: 9 }}>
+      <div data-kanban-list style={{ flex: '0 1 auto', minHeight: 44, overflowY: 'auto', padding: 11, display: 'flex', flexDirection: 'column', gap: 9 }}>
         {visible.map((card) => (
-          <Card key={card.id} card={card} controller={controller} theme={th} onPointerDown={onCardPointerDown} dragging={draggingId === card.id} />
+          <Card key={card.id} card={card} controller={controller} theme={th} onPointerDown={onCardPointerDown} dragging={draggingId === card.id} done={done} />
         ))}
 
         {composing && !readOnly && (
@@ -747,55 +811,24 @@ function CardComposer({ theme: th, onSubmit, onCancel }: { theme: Theme; onSubmi
   );
 }
 
-function Card({ card, controller, theme: th, onPointerDown, dragging }: { card: KanbanCard; controller: EditorController; theme: Theme; onPointerDown: (e: ReactPointerEvent, card: KanbanCard) => void; dragging: boolean }) {
-  const selected = controller.selectedCardId === card.id;
-  const readOnly = controller.readOnly;
-  const isMobile = useIsMobile();
-  const [hover, setHover] = useState(false);
-  const comments = controller.canComment ? (controller.commentCounts[card.id] ?? 0) : 0;
+/**
+ * 카드 한 장의 **얼굴** — 분류·긴급 배지 / 본문 / 기한·댓글·담당.
+ *
+ * 카드 자신과 **드래그 고스트**가 같은 것을 그리도록 떼어 냈다(요청: "고스트를
+ * 현재 모양과 정보를 동일하게"). 곁정보는 **비어 있어도 자리를 지킨다** — 값이
+ * 없으면 "날짜 없음"·0·점선 아바타로 그려서(요청·디자인 원본) 카드마다 높이가
+ * 들쭉날쭉하지 않고, 무엇을 아직 안 정했는지도 보인다.
+ */
+export function CardFace({ card, theme: th, comments, tags, done }: { card: KanbanCard; theme: Theme; comments: number; tags: KanbanTag[]; done?: boolean }) {
   const owner = ownerLabel(card);
-  const tone = card.due ? dueTone(card.due) : 'normal';
-  const base: CSSProperties = {
-    background: card.bg || th.panel,
-    border: `1px solid ${selected ? th.accent : th.border}`,
-    boxShadow: selected ? `0 0 0 2px ${hexA(th.accent, 0.2)}` : '0 1px 2px rgba(0,0,0,.05)',
-    borderRadius: 12,
-    padding: '12px 12px 11px',
-    color: th.text,
-  };
-  // 링크 잉크 — 커밋된 렌더(`RichSpan`)가 읽는 변수. 값은 **배경이 아니라 글자색**
-  // 밝기에서 고른다(글자색은 이미 "이 배경에서 읽히도록" 정해진 값이다).
-  (base as Record<string, unknown>)['--mf-link'] = linkInk(base.color as string | undefined);
-  const showActions = !readOnly && (selected || hover);
-
+  // 마지막 열(완료)의 카드는 기한이 지나도 붉게 쓰지 않는다 — 끝난 일이다
+  // (리스트·타임라인과 같은 규칙).
+  const tone = card.due && !done ? dueTone(card.due) : 'normal';
   return (
-    <div
-      data-kanban-card={card.id}
-      data-selected={selected ? '1' : undefined}
-      onPointerDown={(e) => {
-        controller.selectCard(card.id);
-        onPointerDown(e, card);
-      }}
-      // 카드를 두 번 누르면 상세가 열린다 — 제목과 곁정보(분류·기한·담당·긴급)를
-      // 한자리에서 고친다(디자인 원본의 `card.onOpen`, 다른 칸반 앱들과 같은 관례).
-      onDoubleClick={() => controller.openCardDetail(card.id)}
-      onMouseEnter={() => setHover(true)}
-      onMouseLeave={() => setHover(false)}
-      style={{
-        ...base,
-        position: 'relative',
-        cursor: 'pointer',
-        userSelect: 'none',
-        // 끌고 있는 원본은 자리를 지키되 흐리게 — 어디서 떠났는지 보인다.
-        opacity: dragging ? 0.35 : 1,
-        // 터치: 세로 스크롤은 살리고(길게 눌러야 드래그) 가로 제스처만 막는다.
-        touchAction: 'pan-y',
-      }}
-    >
-      {/* 분류·긴급 배지 — 있을 때만 한 줄을 쓴다(없으면 카드가 그만큼 짧다). */}
+    <>
       {(card.tag || card.flagged) && (
-        <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 8, flexWrap: 'wrap', paddingRight: showActions ? 76 : 0 }}>
-          {card.tag && <TagBadge name={card.tag} theme={th} />}
+        <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 8, flexWrap: 'wrap' }}>
+          {card.tag && <TagBadge name={card.tag} theme={th} tags={tags} />}
           {card.flagged && (
             <span
               data-card-urgent={card.id}
@@ -807,121 +840,103 @@ function Card({ card, controller, theme: th, onPointerDown, dragging }: { card: 
         </div>
       )}
 
-      <p style={{ margin: 0, fontSize: 13.8, lineHeight: 1.5, fontWeight: 600, whiteSpace: 'pre-wrap', wordBreak: 'break-word', paddingRight: showActions && !(card.tag || card.flagged) ? 76 : 0 }}>
+      <p style={{ margin: 0, fontSize: 13.8, lineHeight: 1.5, fontWeight: 600, whiteSpace: 'pre-wrap', wordBreak: 'break-word' }}>
         {card.text ? <CardText card={card} /> : <span style={{ color: th.subtext, fontWeight: 500 }}>빈 카드</span>}
       </p>
 
-      {/* 아래 줄 — 기한·댓글 수와 담당 아바타. 셋 다 없으면 줄 자체가 없다. */}
-      {(card.due || comments > 0 || owner) && (
-        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8, marginTop: 11 }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 10, fontSize: 11.5, color: th.subtext, minWidth: 0 }}>
-            {card.due && (
-              <span data-card-due={card.id} style={{ display: 'inline-flex', alignItems: 'center', gap: 4, color: tone === 'over' ? URGENT : tone === 'soon' ? th.accent : th.subtext, fontWeight: tone === 'normal' ? 500 : 700 }}>
-                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" aria-hidden="true">
-                  <rect x="3" y="5" width="18" height="16" rx="3" />
-                  <path d="M8 3v4M16 3v4M3 11h18" />
-                </svg>
-                {dueLabel(card.due)}
-              </span>
-            )}
-            {comments > 0 && (
-              <button
-                type="button"
-                data-card-comments={card.id}
-                aria-label={`댓글 ${comments}개`}
-                title={`댓글 ${comments}개`}
-                onPointerDown={(e) => e.stopPropagation()}
-                onClick={(e) => {
-                  e.stopPropagation();
-                  controller.openComments(card.id);
-                }}
-                style={{ display: 'inline-flex', alignItems: 'center', gap: 4, border: 0, background: 'transparent', padding: 0, color: 'inherit', fontSize: 11.5, fontFamily: 'inherit', cursor: 'pointer' }}
-              >
-                <CommentIcon />
-                {comments}
-              </button>
-            )}
-          </div>
-          {owner && <Avatar name={owner} email={card.owner ?? owner} size={24} />}
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8, marginTop: 11 }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 10, fontSize: 11.5, color: th.subtext, minWidth: 0 }}>
+          <span data-card-due={card.id} style={{ display: 'inline-flex', alignItems: 'center', gap: 4, color: tone === 'over' ? URGENT : tone === 'soon' ? th.accent : th.subtext, fontWeight: tone === 'normal' ? 500 : 700 }}>
+            <CalendarGlyph />
+            {card.due ? dueLabel(card.due) : '날짜 없음'}
+          </span>
+          <span data-card-comment-count={card.id} style={{ display: 'inline-flex', alignItems: 'center', gap: 4 }}>
+            <CommentIcon />
+            {comments}
+          </span>
         </div>
-      )}
+        {owner ? <Avatar name={owner} email={card.owner ?? owner} size={24} /> : <NoOwnerGlyph theme={th} />}
+      </div>
+    </>
+  );
+}
 
-      {/* 빠른 동작 — 이전/다음 단계로 옮기기와 삭제(디자인 원본의 hover 액션).
-          평소엔 숨기고 **고른 카드**나 마우스를 얹은 카드에만 띄운다. 터치 기기에는
-          hover가 없지만 탭이 곧 선택이라 같은 조건으로 뜬다. */}
-      {showActions && (
-        <div style={{ position: 'absolute', top: 8, right: 8, display: 'flex', gap: 3 }}>
-          <CardActionButton label="이전 단계로" theme={th} isMobile={isMobile} data-card-prev={card.id} onClick={() => controller.moveCardStep(card.id, -1)}>
-            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" aria-hidden="true">
-              <path d="m14 6-6 6 6 6" />
-            </svg>
-          </CardActionButton>
-          <CardActionButton label="다음 단계로" theme={th} isMobile={isMobile} data-card-next={card.id} onClick={() => controller.moveCardStep(card.id, 1)}>
-            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" aria-hidden="true">
-              <path d="m10 6 6 6-6 6" />
-            </svg>
-          </CardActionButton>
-          <CardActionButton label="카드 삭제" theme={th} isMobile={isMobile} danger data-delete-card={card.id} onClick={() => controller.deleteCard(card.id)}>
-            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" aria-hidden="true">
-              <path d="M18 6 6 18M6 6l12 12" />
-            </svg>
-          </CardActionButton>
-        </div>
-      )}
+/** 담당이 없을 때의 자리 — 점선 원 안의 사람 실루엣(비었음을 그린다). */
+function NoOwnerGlyph({ theme: th }: { theme: Theme }) {
+  return (
+    <span
+      data-card-no-owner
+      role="img"
+      aria-label="담당 없음"
+      title="담당 없음"
+      style={{ width: 24, height: 24, borderRadius: 999, border: `1.5px dashed ${th.border}`, color: th.subtext, display: 'inline-flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, boxSizing: 'border-box' }}
+    >
+      <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" aria-hidden="true">
+        <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2" />
+        <circle cx="12" cy="7" r="4" />
+      </svg>
+    </span>
+  );
+}
+
+function CalendarGlyph() {
+  return (
+    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" aria-hidden="true">
+      <rect x="3" y="5" width="18" height="16" rx="3" />
+      <path d="M8 3v4M16 3v4M3 11h18" />
+    </svg>
+  );
+}
+
+/** 카드 배경 계열 — 카드와 고스트가 같은 값을 쓰도록 한 곳에. */
+function cardBase(card: KanbanCard, th: Theme, selected: boolean): CSSProperties {
+  const base: CSSProperties = {
+    background: card.bg || th.panel,
+    border: `1px solid ${selected ? th.accent : th.border}`,
+    boxShadow: selected ? `0 0 0 2px ${hexA(th.accent, 0.2)}` : '0 1px 2px rgba(0,0,0,.05)',
+    borderRadius: 12,
+    padding: '12px 12px 11px',
+    color: th.text,
+  };
+  // 링크 잉크 — 커밋된 렌더(`RichSpan`)가 읽는 변수. 값은 **배경이 아니라 글자색**
+  // 밝기에서 고른다(글자색은 이미 "이 배경에서 읽히도록" 정해진 값이다).
+  (base as Record<string, unknown>)['--mf-link'] = linkInk(base.color as string | undefined);
+  return base;
+}
+
+function Card({ card, controller, theme: th, onPointerDown, dragging, done }: { card: KanbanCard; controller: EditorController; theme: Theme; onPointerDown: (e: ReactPointerEvent, card: KanbanCard) => void; dragging: boolean; done?: boolean }) {
+  const selected = controller.selectedCardId === card.id;
+  const comments = controller.canComment ? (controller.commentCounts[card.id] ?? 0) : 0;
+  return (
+    <div
+      data-kanban-card={card.id}
+      data-selected={selected ? '1' : undefined}
+      onPointerDown={(e) => {
+        controller.selectCard(card.id);
+        onPointerDown(e, card);
+      }}
+      // 카드를 두 번 누르면 상세가 열린다 — 제목과 곁정보(분류·기한·담당·긴급)를
+      // 한자리에서 고친다(디자인 원본의 `card.onOpen`, 다른 칸반 앱들과 같은 관례).
+      // 카드 위 빠른 동작(‹ › ✕)은 없앴다(요청) — 그 셋 다 상세에 있다.
+      onDoubleClick={() => controller.openCardDetail(card.id)}
+      style={{
+        ...cardBase(card, th, selected),
+        position: 'relative',
+        cursor: 'pointer',
+        userSelect: 'none',
+        // 끌고 있는 원본은 자리를 지키되 흐리게 — 어디서 떠났는지 보인다.
+        opacity: dragging ? 0.35 : 1,
+        // 터치: 세로 스크롤은 살리고(길게 눌러야 드래그) 가로 제스처만 막는다.
+        touchAction: 'pan-y',
+      }}
+    >
+      <CardFace card={card} theme={th} comments={comments} tags={controller.tags} done={done} />
     </div>
   );
 }
 
-function CardActionButton({
-  label,
-  theme: th,
-  isMobile,
-  danger,
-  onClick,
-  children,
-  ...rest
-}: {
-  label: string;
-  theme: Theme;
-  isMobile: boolean;
-  danger?: boolean;
-  onClick: () => void;
-  children: React.ReactNode;
-} & Record<`data-${string}`, string>) {
-  return (
-    <button
-      type="button"
-      aria-label={label}
-      title={label}
-      // pointerdown을 삼켜야 카드 드래그가 시작되지 않는다(같은 자리에서 뗀다).
-      onPointerDown={(e) => e.stopPropagation()}
-      onClick={(e) => {
-        e.stopPropagation();
-        onClick();
-      }}
-      {...rest}
-      style={{
-        width: isMobile ? 28 : 22,
-        height: isMobile ? 28 : 22,
-        display: 'inline-flex',
-        alignItems: 'center',
-        justifyContent: 'center',
-        border: `1px solid ${th.border}`,
-        borderRadius: 6,
-        background: th.panel,
-        color: danger ? URGENT : th.subtext,
-        cursor: 'pointer',
-        padding: 0,
-      }}
-    >
-      {children}
-    </button>
-  );
-}
-
-/** 분류 배지 — 색은 이름에서 정한다(`tagColor`), 배경은 그 색의 옅은 판. */
-export function TagBadge({ name, theme: th }: { name: string; theme: Theme }) {
-  const c = tagColor(name, th.palette);
+export function TagBadge({ name, theme: th, tags = [] }: { name: string; theme: Theme; tags?: KanbanTag[] }) {
+  const c = tagColor(name, th.palette, tags);
   return (
     <span
       data-card-tag={name}

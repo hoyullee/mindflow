@@ -1,7 +1,7 @@
 // Serialization core — ports of `serializeDoc()` / `loadDoc()` / `cloneNodes()`
 // from `MindFlow.dc.html`. Pure, no localStorage: callers own persistence.
 
-import type { Doc, DocKind, EdgeStyle, Float, KanbanCard, KanbanColumn, Line, LayoutMode, NodeMap, Reaction, Stroke, Zone } from './model';
+import type { Doc, DocKind, EdgeStyle, Float, KanbanCard, KanbanColumn, KanbanTag, Line, LayoutMode, NodeMap, Reaction, Stroke, Zone } from './model';
 import { DEFAULT_EDGE_STYLE, DEFAULT_LAYOUT_MODE, DEFAULT_THEME_KEY } from './model';
 
 /**
@@ -22,6 +22,7 @@ export interface SerializableState {
   reactions?: Reaction[] | null;
   columns?: KanbanColumn[] | null;
   cards?: KanbanCard[] | null;
+  tags?: KanbanTag[] | null;
 }
 
 /**
@@ -46,7 +47,7 @@ export function serializeDoc(state: SerializableState): Doc {
     // 규칙을 따른다(기본값 = 마인드맵).
     ...(state.kind === 'board' || state.kind === 'kanban' ? { kind: state.kind } : {}),
     // 칸반 열·카드 — 칸반 문서에서만(다른 종류의 저장본은 한 글자도 달라지지 않는다).
-    ...(state.kind === 'kanban' ? { columns: state.columns ?? [], cards: state.cards ?? [] } : {}),
+    ...(state.kind === 'kanban' ? { columns: state.columns ?? [], cards: state.cards ?? [], tags: state.tags ?? [] } : {}),
     // 그리기 획 — 비어 있지 않을 때만(kind와 같은 규칙: 골든·기존 저장본 무변경).
     ...(state.strokes && state.strokes.length ? { strokes: state.strokes } : {}),
     // 반응·투표 — 획과 같은 규칙(비어 있지 않을 때만).
@@ -103,6 +104,7 @@ export function parseDoc(raw: unknown): Doc | null {
           cards: (Array.isArray(d.cards) ? (d.cards as KanbanCard[]) : []).filter((c) =>
             (Array.isArray(d.columns) ? (d.columns as KanbanColumn[]) : []).some((col) => col.id === c.col),
           ),
+          tags: Array.isArray(d.tags) ? (d.tags as KanbanTag[]) : [],
         }
       : {}),
     ...(Array.isArray(d.strokes) && d.strokes.length ? { strokes: d.strokes as Stroke[] } : {}),
