@@ -234,6 +234,75 @@ export const BOARD_TEMPLATES: BoardTemplate[] = [
   },
 ];
 
+/**
+ * 칸반 템플릿 — 열 이름과 시작 카드 몇 장.
+ *
+ * 화이트보드 템플릿과 같은 설계: **템플릿은 그냥 `Doc` 하나**라 갤러리 썸네일·저장·
+ * 협업·undo·내보내기가 전부 기존 경로 그대로다. 좌표 개념이 없어 겹침을 걱정할
+ * 일도 없다(열이 가로로 늘어서는 고정 레이아웃).
+ *
+ * 카드는 **보드가 실제로 만들 수 있는 것**만 쓴다 — 글자와 색 라벨. 사용자가 지웠다
+ * 다시 만들 수 없는 물건을 템플릿만 슬쩍 심어 두면 "이건 어떻게 되살리지?"가 된다.
+ */
+export interface KanbanTemplate {
+  id: string;
+  name: string;
+  desc: string;
+  columns: string[];
+  /** `col`은 위 `columns`의 인덱스. `bg`는 색 라벨(`CARD_LABELS`의 값). */
+  cards: { col: number; text: string; bg?: string }[];
+}
+
+export const KANBAN_TEMPLATES: KanbanTemplate[] = [
+  {
+    id: 'kanban-sprint',
+    name: '스프린트 보드',
+    desc: '백로그에서 완료까지 이번 주기를 굴려요',
+    columns: ['백로그', '이번 스프린트', '진행 중', '리뷰', '완료'],
+    cards: [
+      { col: 0, text: '결제 실패 로그 정리' },
+      { col: 0, text: '온보딩 문구 다듬기' },
+      { col: 1, text: '검색 응답 시간 측정', bg: '#fdead0' },
+      { col: 1, text: '주간 지표 자동 집계' },
+      { col: 2, text: '알림 중복 발송 수정', bg: '#fde3dc' },
+      { col: 3, text: '설정 화면 접근성 점검' },
+      { col: 4, text: '리텐션 대시보드 배포', bg: '#dcf0e2' },
+    ],
+  },
+  {
+    id: 'kanban-triage',
+    name: '이슈 트리아지',
+    desc: '들어온 제보를 확인하고 고칠 것만 골라요',
+    columns: ['새로 들어옴', '확인 필요', '고칠 것', '보류', '해결됨'],
+    cards: [
+      { col: 0, text: '로그인 후 빈 화면이 보인다는 제보' },
+      { col: 0, text: '첨부한 이미지가 흐리게 보임' },
+      { col: 1, text: '재현 조건 확인 — 어떤 기기·브라우저인지' },
+      { col: 2, text: '저장 실패 시 안내가 없다', bg: '#fde3dc' },
+      { col: 3, text: '다크 모드 미세 대비 — 다음 주기에', bg: '#e8e4de' },
+      { col: 4, text: '드래그가 풀리던 문제', bg: '#dcf0e2' },
+    ],
+  },
+  {
+    id: 'kanban-content',
+    name: '콘텐츠 파이프라인',
+    desc: '아이디어에서 발행까지 글의 단계를 봐요',
+    columns: ['아이디어', '초안', '검토', '발행'],
+    cards: [
+      { col: 0, text: '사용자 인터뷰에서 나온 이야기 3가지' },
+      { col: 0, text: '자주 묻는 질문 모음' },
+      { col: 1, text: '새 기능 소개 글 — 초안 쓰는 중', bg: '#fdead0' },
+      { col: 2, text: '릴리스 노트 — 문구 검토 요청', bg: '#d9e8f8' },
+      { col: 3, text: '지난달 회고 글', bg: '#dcf0e2' },
+    ],
+  },
+];
+
+export function findKanbanTemplate(id: string | null | undefined): KanbanTemplate | null {
+  if (!id) return null;
+  return KANBAN_TEMPLATES.find((t) => t.id === id) ?? null;
+}
+
 export function findBoardTemplate(id: string | null | undefined): BoardTemplate | null {
   if (!id) return null;
   return BOARD_TEMPLATES.find((t) => t.id === id) ?? null;
@@ -279,6 +348,20 @@ export function buildTemplateDoc(id: string | null | undefined): Doc | null {
       { id: 'kd2', col: 'kc1', pos: 1024, text: '＋ 카드 추가로 새 카드를 만듭니다' },
       { id: 'kd3', col: 'kc2', pos: 0, text: '열 제목도 두 번 누르면 바뀌어요' },
     ];
+    return { v: 1, nodes: {}, floats: [], lines: [], zones: [], layoutMode: 'right', themeKey: BOARD_THEME_KEY, edgeStyle: DEFAULT_EDGE_STYLE, kind: 'kanban', columns, cards };
+  }
+
+  const kt = findKanbanTemplate(id);
+  if (kt) {
+    const columns = kt.columns.map((title, i) => ({ id: `kc${i + 1}`, title }));
+    const cards = kt.cards.map((c, i) => ({
+      id: `kd${i + 1}`,
+      col: `kc${c.col + 1}`,
+      // 열 안 순서는 배열 순서 — 한 칸씩 벌려 둔다(코어 `posForIndex`가 쓰는 간격).
+      pos: kt.cards.slice(0, i).filter((x) => x.col === c.col).length * 1024,
+      text: c.text,
+      ...(c.bg ? { bg: c.bg } : {}),
+    }));
     return { v: 1, nodes: {}, floats: [], lines: [], zones: [], layoutMode: 'right', themeKey: BOARD_THEME_KEY, edgeStyle: DEFAULT_EDGE_STYLE, kind: 'kanban', columns, cards };
   }
 
