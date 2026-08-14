@@ -5277,11 +5277,31 @@ export function useEditorState(): EditorController {
       setEditingCardId(null);
       if (readOnlyRef.current) return;
       const trimmed = text.trim();
+      // 서식은 **확정할 때** 한 번 적용한다 — 주제·메모와 같은 훅(`commitNodeRichText`).
+      // `**굵게**`·`*기울임*`·`~~취소선~~` 마커를 걷어 서식으로 바꾸고, 타이핑한
+      // URL을 링크로 만든다. 편집 중 실시간으로 걸지 않는 이유도 같다: 반쯤 친
+      // 주소가 링크가 됐다 풀렸다 하며 캐럿·IME가 흔들린다.
+      //
+      // 카드 편집기는 평범한 textarea라 **입력은 늘 평문**이다. 그래서 이전 `rich`는
+      // 버리고 이 글자에서 다시 만든다 — 화면에 보이던 글자가 곧 값이라는 계약이
+      // 지켜진다(보이지 않는 옛 서식이 유령처럼 남지 않는다).
+      const md = applyMarkdownShortcuts({ text: trimmed, rich: null });
+      const base = md ?? { text: trimmed, rich: null };
+      const out = applyAutoLinks(base) ?? base;
       commitDoc((d) => {
         const list = d.cards ?? [];
         // 빈 카드는 남기지 않는다 — 추가했다가 아무것도 안 쓰면 사라지는 게 자연스럽다.
-        if (!trimmed) return { ...d, cards: list.filter((c) => c.id !== id) };
-        return { ...d, cards: list.map((c) => (c.id === id ? { ...c, text: trimmed } : c)) };
+        if (!out.text.trim()) return { ...d, cards: list.filter((c) => c.id !== id) };
+        return {
+          ...d,
+          cards: list.map((c) => {
+            if (c.id !== id) return c;
+            const next = { ...c, text: out.text };
+            if (out.rich) next.rich = out.rich;
+            else delete next.rich; // 평문이면 키를 지운다(빈 서식을 흘리지 않게)
+            return next;
+          }),
+        };
       });
     },
     [commitDoc],

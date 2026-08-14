@@ -355,3 +355,19 @@ describe('applyMarkdownLinks — `[텍스트](주소)` 되읽기', () => {
     expect((back!.rich || [])[0]?.href).toBe('https://ex.com/');
   });
 });
+
+describe('richToMarkdown — 자동 링크는 부풀리지 않는다', () => {
+  it('글자 자체가 주소면 맨 URL로 남는다(다시 편집할 때 원문이 그대로 보이게)', () => {
+    // 픽스처를 손으로 적지 않고 **실제 자동 링크 결과**로 만든다 — href 정규화
+    // (스킴 보정·끝 슬래시)가 바뀌어도 테스트가 현실과 어긋나지 않게.
+    for (const raw of ['https://ex.com/a', 'www.ex.com', 'a@b.com']) {
+      const linked = applyAutoLinks({ text: raw, rich: null });
+      expect(linked).not.toBeNull();
+      expect(richToMarkdown(linked!)).toBe(raw);
+    }
+  });
+
+  it('글자와 주소가 다르면 `[텍스트](주소)` 그대로', () => {
+    expect(richToMarkdown({ text: '문서', rich: [{ t: '문서', b: false, c: null, href: 'https://ex.com/a' }] })).toBe('[문서](https://ex.com/a)');
+  });
+});

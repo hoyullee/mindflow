@@ -10,7 +10,7 @@
 
 import { useCallback, useEffect, useRef, useState } from 'react';
 import type { CSSProperties, KeyboardEvent as ReactKeyboardEvent, PointerEvent as ReactPointerEvent } from 'react';
-import { cardsInColumn } from '@mindflow/mindmap-core';
+import { cardsInColumn, richToMarkdown } from '@mindflow/mindmap-core';
 import type { KanbanCard, KanbanColumn } from '@mindflow/mindmap-core';
 import type { EditorController } from '../useEditorState';
 import { hexA } from '../theme';
@@ -18,6 +18,7 @@ import type { Theme } from '../theme';
 import { useIsMobile } from '../../../hooks/useMediaQuery';
 import { CommentIcon } from './ToolbarMenus';
 import { CARD_LABELS, cardLabelName } from '../kanbanLabels';
+import { RichSpan, linkInk } from '../richSpans';
 import { columnDropIndex, columnDropIndicator, dropIndicator, dropTargetAt, edgeScroll } from '../kanbanDrag';
 import type { ColumnHit, DropTarget } from '../kanbanDrag';
 
@@ -460,6 +461,9 @@ function Card({ card, controller, theme: th, onPointerDown, dragging }: { card: 
     whiteSpace: 'pre-wrap',
     wordBreak: 'break-word',
   };
+  // 링크 잉크 — 커밋된 렌더(`RichSpan`)가 읽는 변수. 값은 **배경이 아니라 글자색**
+  // 밝기에서 고른다(글자색은 이미 "이 배경에서 읽히도록" 정해진 값이다).
+  (base as Record<string, unknown>)['--mf-link'] = linkInk(base.color as string | undefined);
   if (editing) return <CardEdit card={card} style={base} onCommit={(t) => controller.commitCardText(card.id, t)} />;
   return (
     <div
@@ -485,7 +489,7 @@ function Card({ card, controller, theme: th, onPointerDown, dragging }: { card: 
         paddingRight: readOnly ? undefined : isMobile ? 66 : 50,
       }}
     >
-      {card.text || <span style={{ color: th.subtext }}>빈 카드</span>}
+      {card.text ? <CardText card={card} /> : <span style={{ color: th.subtext }}>빈 카드</span>}
       {/* 댓글 개수 — 캔버스의 주제 배지와 같은 뜻(미해결 스레드 수)이지만, 좌표가
           없는 카드에서는 겹칠 자리를 찾는 대신 **글 아래 줄**로 흐른다(카드가 그만큼
           자란다). 누르면 그 카드의 논의가 열린다 — 보기 전용에서도 동작한다. */}
@@ -619,7 +623,11 @@ function Card({ card, controller, theme: th, onPointerDown, dragging }: { card: 
 
 function CardEdit({ card, style, onCommit }: { card: KanbanCard; style: CSSProperties; onCommit: (text: string) => void }) {
   const ref = useRef<HTMLTextAreaElement | null>(null);
-  const [val, setVal] = useState(card.text);
+  // **마크다운 원문**으로 연다 — 카드 편집기는 평범한 textarea라 서식을 그대로
+  // 보여 줄 수 없다. 확정 시 `applyMarkdownShortcuts`가 마커를 서식으로 바꾸므로,
+  // 다시 열 때 그 역방향(`richToMarkdown`)을 보여 주면 왕복이 맞는다
+  // (굵게였던 글자는 `**굵게**`로 보이고, 그대로 확정하면 다시 굵어진다).
+  const [val, setVal] = useState(() => richToMarkdown(card));
   useEffect(() => {
     const el = ref.current;
     if (!el) return;
@@ -788,5 +796,25 @@ function CardLabelPicker({
         );
       })}
     </div>
+  );
+}
+
+/**
+ * 카드 본문 — 부분 서식(`rich`)이 있으면 런마다 그린다.
+ *
+ * 서식은 확정할 때 마크다운 단축·자동 링크로 만들어진다(`commitCardText`).
+ * 렌더는 주제·메모와 **같은 `RichSpan`**을 쓰므로 굵게·기울임·취소선·색·링크가
+ * 한 규칙으로 보인다(링크 파랑은 `--mf-link` 파이프라인 — 카드가 값을 내려 준다).
+ */
+function CardText({ card }: { card: KanbanCard }) {
+  if (!card.rich || !card.rich.length) return <>{card.text}</>;
+  return (
+    <>
+      {card.rich.map((r, i) => (
+        <RichSpan key={i} seg={r}>
+          {r.t}
+        </RichSpan>
+      ))}
+    </>
   );
 }
