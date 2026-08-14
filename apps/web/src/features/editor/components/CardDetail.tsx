@@ -17,6 +17,7 @@ import type { ShareParticipant } from '../../../adapters/ports';
 import { CARD_LABELS, cardLabelName } from '../kanbanLabels';
 import { columnColor, tagColor } from '../kanbanMeta';
 import { Avatar } from './KanbanBoard';
+import { CommentThreads } from './CommentPanel';
 
 export function CardDetail({ card, controller, theme: th, isMobile }: { card: KanbanCard; controller: EditorController; theme: Theme; isMobile: boolean }) {
   const readOnly = controller.readOnly;
@@ -182,7 +183,9 @@ export function CardDetail({ card, controller, theme: th, isMobile }: { card: Ka
             })}
           </Section>
 
-          <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : 'repeat(auto-fit, minmax(200px, 1fr))', gap: 14 }}>
+          {/* 담당은 아바타가 여러 개라 넓게, 기한은 입력 하나라 좁게 — 가운데로
+              몰리지 않도록 폭을 갈랐다(요청). */}
+          <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : 'minmax(0, 1fr) 260px', gap: 14 }}>
             <Section label="담당" style={label}>
               <button
                 type="button"
@@ -227,8 +230,16 @@ export function CardDetail({ card, controller, theme: th, isMobile }: { card: Ka
                 onChange={(e) => controller.setCardMeta(card.id, { due: e.target.value || null })}
                 style={{ height: isMobile ? 40 : 34, padding: '0 11px', borderRadius: 9, border: `1px solid ${th.border}`, background: th.panel, outline: 'none', fontSize: 13, color: th.text, fontFamily: 'inherit' }}
               />
-              {card.due && !readOnly && (
-                <button type="button" data-detail-due-clear onClick={() => controller.setCardMeta(card.id, { due: null })} style={{ ...chip(false), height: isMobile ? 40 : 34 }}>
+              {/* 지우기는 **항상 자리를 지킨다** — 기한이 없으면 비활성(요청).
+                  버튼이 떴다 사라지면 그 줄의 폭이 들썩인다. */}
+              {!readOnly && (
+                <button
+                  type="button"
+                  data-detail-due-clear
+                  disabled={!card.due}
+                  onClick={() => controller.setCardMeta(card.id, { due: null })}
+                  style={{ ...chip(false), height: isMobile ? 40 : 34, cursor: card.due ? 'pointer' : 'default', opacity: card.due ? 1 : 0.45 }}
+                >
                   지우기
                 </button>
               )}
@@ -334,7 +345,7 @@ export function CardDetail({ card, controller, theme: th, isMobile }: { card: Ka
             </Section>
           )}
 
-          <Section label="색" style={label}>
+          <Section label="카드 배경색" style={label}>
             {CARD_LABELS.map((l) => {
               const on = (card.bg ?? null) === l.bg;
               return (
@@ -375,23 +386,14 @@ export function CardDetail({ card, controller, theme: th, isMobile }: { card: Ka
             <span style={{ fontSize: 12, color: th.subtext }}>보드에서 붉은 배지가 붙어요</span>
           </label>
 
-          {/* 댓글은 이 앱의 댓글 기능이 맡는다(스레드·멘션·해결·실시간) — 여기서는
-              몇 개인지 알리고 그리로 보낸다. 모달과 패널이 함께 떠 있으면 좁은
-              화면에서 서로 자리를 다툰다. */}
+          {/* 댓글 — 이 앱의 댓글 기능(스레드·멘션·해결·실시간)을 **모달 안에서**
+              그대로 쓴다(요청·디자인 원본). 패널과 같은 몸통(`CommentThreads`)이라
+              로직은 한 벌이고 껍데기만 다르다. */}
           {controller.canComment && (
-            <button
-              type="button"
-              data-detail-comments
-              onClick={() => {
-                commitTitle();
-                controller.openCardDetail(null);
-                controller.openComments(card.id);
-              }}
-              style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8, width: '100%', padding: '12px 13px', borderRadius: 11, border: `1px solid ${th.border}`, background: th.panel, color: th.text, fontSize: 13, fontWeight: 600, fontFamily: 'inherit', cursor: 'pointer' }}
-            >
-              <span>댓글 {comments}</span>
-              <span style={{ color: th.subtext, fontSize: 12.5 }}>열기 ›</span>
-            </button>
+            <div data-detail-comments style={{ display: 'flex', flexDirection: 'column', gap: 8, paddingTop: 4, borderTop: `1px solid ${th.border}` }}>
+              <span style={{ ...label, paddingTop: 12 }}>댓글 {comments || ''}</span>
+              <CommentThreads controller={controller} nodeId={card.id} />
+            </div>
           )}
         </div>
       </div>

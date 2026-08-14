@@ -13,15 +13,17 @@ export interface CardLabel {
   name: string;
 }
 
+// 값은 흰 카드 위에 아주 옅게 얹히는 톤이다(제보: "카드에 어울리게 더 옅어야
+// 할 것 같다") — 예전 값은 스티커처럼 진해 분류 배지·본문과 경쟁했다.
 export const CARD_LABELS: readonly CardLabel[] = [
   { bg: null, name: '없음' },
-  { bg: '#fde3dc', name: '빨강' },
-  { bg: '#fdead0', name: '주황' },
-  { bg: '#f9f2c4', name: '노랑' },
-  { bg: '#dcf0e2', name: '초록' },
-  { bg: '#d9e8f8', name: '파랑' },
-  { bg: '#e6dcf8', name: '보라' },
-  { bg: '#e8e4de', name: '회색' },
+  { bg: '#fdf0ec', name: '빨강' },
+  { bg: '#fdf4e8', name: '주황' },
+  { bg: '#fbf8e4', name: '노랑' },
+  { bg: '#edf7f0', name: '초록' },
+  { bg: '#edf4fc', name: '파랑' },
+  { bg: '#f2edfc', name: '보라' },
+  { bg: '#f3f1ee', name: '회색' },
 ];
 
 /** 지금 카드에 걸린 라벨 이름(없으면 '없음') — 버튼 접근 이름에 쓴다. */

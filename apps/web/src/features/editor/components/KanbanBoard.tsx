@@ -21,7 +21,7 @@ import type { Theme } from '../theme';
 import { useIsMobile } from '../../../hooks/useMediaQuery';
 import { CommentIcon } from './ToolbarMenus';
 import { RichSpan, linkInk } from '../richSpans';
-import { columnDropIndex, columnDropIndicator, dropIndicator, dropTargetAt, edgeScroll } from '../kanbanDrag';
+import { columnDropIndex, columnDropIndicator, dropTargetAt, edgeScroll } from '../kanbanDrag';
 import type { ColumnHit, DropTarget } from '../kanbanDrag';
 import { boardProgress, cardMatches, columnColor, dueLabel, dueTone, initialOf, ownerLabel, tagColor } from '../kanbanMeta';
 import type { KanbanView } from '../kanbanMeta';
@@ -36,8 +36,6 @@ const COL_GAP = 16;
 const CHIP_CLEARANCE = 78;
 /** 긴급 배지 — 테마와 무관한 경고색(어느 팔레트에서나 "위험"으로 읽혀야 한다). */
 const URGENT = '#d9534f';
-/** 놓일 자리를 가리키는 점선 상자의 높이(카드 한 장 남짓). */
-const DROP_BOX_H = 44;
 
 /** 마우스가 이만큼 움직여야 "끄는 것"으로 친다(클릭·더블클릭과 구분). */
 const DRAG_THRESHOLD = 4;
@@ -65,7 +63,12 @@ interface DragState {
   offX: number;
   offY: number;
   w: number;
+  /** 잡은 카드의 높이 — 놓일 자리(점선 상자)를 **실제 카드 크기**로 그린다(요청). */
+  h: number;
   text: string;
+  /** 원래 자리 — 아직 어디에도 겨누지 않았을 때 그 자리에 빈칸을 남긴다. */
+  fromCol: string;
+  fromIndex: number;
   target: DropTarget | null;
 }
 
@@ -163,9 +166,10 @@ export function KanbanBoard({ controller, theme: th }: { controller: EditorContr
       const rect = (e.currentTarget as HTMLElement).getBoundingClientRect();
       const startX = e.clientX;
       const startY = e.clientY;
+      const fromIndex = cardsInColumn(controller.cards, card.col).findIndex((c) => c.id === card.id);
       beginPointerDrag(e, {
         onStart: () => {
-          const st: DragState = { id: card.id, x: startX, y: startY, offX: startX - rect.left, offY: startY - rect.top, w: rect.width, text: card.text, target: null };
+          const st: DragState = { id: card.id, x: startX, y: startY, offX: startX - rect.left, offY: startY - rect.top, w: rect.width, h: rect.height, text: card.text, fromCol: card.col, fromIndex: Math.max(0, fromIndex), target: null };
           setDrag(st);
           dragRef.current = st;
         },
@@ -229,9 +233,11 @@ export function KanbanBoard({ controller, theme: th }: { controller: EditorContr
     [columnHits, controller],
   );
 
-  const indicator = drag?.target ? dropIndicator(columnHits(), drag.target, drag.id) : null;
+  // 놓일 자리 — 아직 어디에도 겨누지 않았으면 **원래 자리**에 빈칸을 남긴다
+  // (그래야 끄는 동안 열들이 들썩이지 않는다).
+  const dropAt: DropTarget | null = drag ? (drag.target ?? { colId: drag.fromCol, index: drag.fromIndex }) : null;
   const colIndicator = colDrag ? columnDropIndicator(columnHits(), colDrag.index, colDrag.id) : null;
-  const progress = useMemo(() => boardProgress(columns, cards), [columns, cards]);
+  const progress = useMemo(() => boardProgress(columns, cards, th.palette), [columns, cards, th.palette]);
   const detailCard = controller.detailCardId ? cards.find((c) => c.id === controller.detailCardId) : undefined;
   const dragCard = drag ? cards.find((c) => c.id === drag.id) : undefined;
 
@@ -288,6 +294,8 @@ export function KanbanBoard({ controller, theme: th }: { controller: EditorContr
             draggingId={drag?.id ?? null}
             dragging={colDrag?.id === col.id}
             dropTarget={drag?.target?.colId === col.id}
+            dropIndex={dropAt?.colId === col.id ? dropAt.index : null}
+            dropHeight={drag?.h ?? 0}
             done={i === columns.length - 1}
           />
         ))}
@@ -380,29 +388,6 @@ export function KanbanBoard({ controller, theme: th }: { controller: EditorContr
           />
         </div>
       )}
-      {/* 놓일 자리 — **점선 사각형**(요청·디자인 원본의 placeholder). 선 하나보다
-          "여기 카드가 들어간다"가 또렷하다. 자리를 실제로 밀어내지 않고 겹쳐 그리는
-          이유는 그래야 드래그 중 카드들의 사각형(히트 계산의 입력)이 흔들리지 않기
-          때문이다. */}
-      {indicator && (
-        <div
-          data-kanban-drop-line
-          style={{
-            position: 'fixed',
-            left: indicator.left,
-            top: indicator.top - DROP_BOX_H / 2,
-            width: indicator.width,
-            height: DROP_BOX_H,
-            borderRadius: 12,
-            border: `1.5px dashed ${hexA(th.accent, 0.75)}`,
-            background: hexA(th.accent, 0.08),
-            boxSizing: 'border-box',
-            pointerEvents: 'none',
-            zIndex: 299,
-          }}
-        />
-      )}
-
       {detailCard && <CardDetail card={detailCard} controller={controller} theme={th} isMobile={isMobile} />}
     </div>
   );
@@ -508,9 +493,17 @@ function BoardBar({
       </div>
       {/* 진행률 — **마지막 열을 완료로 본다**(카드는 왼→오로 흐른다는 관례). */}
       <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+        {/* 열별 구간 — 각 열의 카드 비율만큼 **그 열의 색**으로(요청). 열 색을
+            바꾸면 여기도 함께 바뀌므로 "무엇이 어느 단계에 몰려 있는가"가 한 줄로 보인다. */}
         <div data-kanban-progress style={{ flex: '1 1 auto', height: 6, borderRadius: 999, background: th.border, overflow: 'hidden', display: 'flex' }}>
-          <span data-progress-done style={{ width: `${progress.donePct}%`, background: th.accent, display: 'block' }} />
-          <span data-progress-doing style={{ width: `${progress.doingPct}%`, background: hexA(th.accent, 0.4), display: 'block' }} />
+          {progress.segments.map((seg) => (
+            <span
+              key={seg.id}
+              data-progress-seg={seg.id}
+              title={`${seg.title} ${seg.count}장`}
+              style={{ width: `${seg.pct}%`, background: seg.color, display: 'block' }}
+            />
+          ))}
         </div>
         <span data-progress-label title="마지막 열을 완료로 봅니다" style={{ flex: '0 0 auto', fontSize: 13, color: th.subtext, whiteSpace: 'nowrap' }}>
           {progress.label}
@@ -541,6 +534,8 @@ function Column({
   draggingId,
   dragging,
   dropTarget,
+  dropIndex,
+  dropHeight,
   done,
 }: {
   col: KanbanColumn;
@@ -557,6 +552,10 @@ function Column({
   dragging: boolean;
   /** 이 열이 지금 드롭 대상인가 — 비어 있어도 "여기 들어간다"를 보여 준다. */
   dropTarget: boolean;
+  /** 놓일 자리(카드 목록 안 index) — 없으면 이 열이 대상이 아니다. */
+  dropIndex: number | null;
+  /** 놓일 자리 상자의 높이 = 끌고 있는 카드의 높이. */
+  dropHeight: number;
   /** 마지막 열(완료)인가 — 지난 기한을 경고로 쓰지 않는다. */
   done: boolean;
 }) {
@@ -565,8 +564,11 @@ function Column({
   const [menuAt, setMenuAt] = useState<{ x: number; y: number } | null>(null);
   const readOnly = controller.readOnly;
   const dot = columnColor(col, index, th.palette);
-  const visible = query.trim() ? cards.filter((c) => cardMatches(c, query)) : cards;
-  const empty = visible.length === 0 && !composing;
+  const visible = (query.trim() ? cards.filter((c) => cardMatches(c, query)) : cards).filter((c) => c.id !== draggingId);
+  /** 그릴 차례 — 놓일 자리(점선 상자)를 카드 목록 사이에 끼운 것. */
+  const rendered: ({ kind: 'card'; card: KanbanCard } | { kind: 'gap' })[] = visible.map((card) => ({ kind: 'card' as const, card }));
+  if (dropIndex !== null) rendered.splice(Math.max(0, Math.min(dropIndex, rendered.length)), 0, { kind: 'gap' });
+  const empty = visible.length === 0 && !composing && dropIndex === null;
 
   const startCompose = (): void => {
     if (readOnly) return;
@@ -590,6 +592,8 @@ function Column({
         background: th.panel2,
         border: `1px solid ${dropTarget ? hexA(th.accent, 0.55) : th.border}`,
         borderRadius: 16,
+        // 배경과 또렷이 갈리게 — 디자인 원본의 열 그림자.
+        boxShadow: '0 18px 40px -34px rgba(46,42,38,.4)',
         boxSizing: 'border-box',
         // 끌고 있는 원본은 자리를 지키되 흐리게 — 어디서 떠났는지 보인다(카드와 동일).
         opacity: dragging ? 0.4 : 1,
@@ -657,9 +661,21 @@ function Column({
       </header>
 
       <div data-kanban-list style={{ flex: '0 1 auto', minHeight: 44, overflowY: 'auto', padding: 11, display: 'flex', flexDirection: 'column', gap: 9 }}>
-        {visible.map((card) => (
-          <Card key={card.id} card={card} controller={controller} theme={th} onPointerDown={onCardPointerDown} dragging={draggingId === card.id} done={done} />
-        ))}
+        {/* 끌고 있는 카드는 **자리를 비우고**(원본을 그리지 않는다) 놓일 자리에 같은
+            크기의 점선 상자를 끼운다(요청 ④⑤) — 열이 그만큼 늘고 줄어 "여기 들어간다"가
+            레이아웃으로 보인다. 히트 계산은 `[data-kanban-card]`만 보므로 이 상자는
+            자동으로 빠진다. */}
+        {rendered.map((item) =>
+          item.kind === 'gap' ? (
+            <div
+              key="gap"
+              data-kanban-drop-slot
+              style={{ flex: '0 0 auto', height: dropHeight || 44, borderRadius: 12, border: `1.5px dashed ${hexA(th.accent, 0.75)}`, background: hexA(th.accent, 0.08), boxSizing: 'border-box' }}
+            />
+          ) : (
+            <Card key={item.card.id} card={item.card} controller={controller} theme={th} onPointerDown={onCardPointerDown} dragging={false} done={done} />
+          ),
+        )}
 
         {composing && !readOnly && (
           <CardComposer

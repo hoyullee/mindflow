@@ -205,12 +205,12 @@ describe('칸반 에디터', () => {
     await waitFor(() => expect(container.querySelector('[data-kanban-ghost]')).toBeTruthy());
     // 두 번째 열(320~620)의 위쪽으로.
     firePointer(window, 'pointermove', { clientX: 470, clientY: 60 });
-    await waitFor(() => expect(container.querySelector('[data-kanban-drop-line]')).toBeTruthy());
+    await waitFor(() => expect(container.querySelector('[data-kanban-column="c2"] [data-kanban-drop-slot]')).toBeTruthy());
     firePointer(window, 'pointerup', { clientX: 470, clientY: 60 });
 
-    // 고스트·선은 손을 떼면 사라진다.
+    // 고스트·놓일 자리는 손을 떼면 사라진다.
     await waitFor(() => expect(container.querySelector('[data-kanban-ghost]')).toBeNull());
-    expect(container.querySelector('[data-kanban-drop-line]')).toBeNull();
+    expect(container.querySelector('[data-kanban-drop-slot]')).toBeNull();
 
     fireEvent.keyDown(window, { key: 's', ctrlKey: true });
     await waitFor(() => {
@@ -418,11 +418,10 @@ describe('칸반 — 카드 댓글(M3)', () => {
     await waitFor(() => expect(container.querySelector('[data-card-comment-count="k2"]')?.textContent).toContain('1'));
     expect(container.querySelector('[data-card-comment-count="k1"]')?.textContent).toContain('0');
 
+    // 댓글은 **상세 안에서** 읽고 쓴다(요청) — 패널로 넘기지 않는다.
     fireEvent.doubleClick(container.querySelector('[data-kanban-card="k2"]')!);
-    fireEvent.click(await waitFor(() => container.querySelector('[data-detail-comments]') as HTMLElement));
-    const panel = await screen.findByLabelText('댓글');
-    expect(within(panel).getByText('카드 · 둘째 카드')).toBeTruthy();
-    expect(within(panel).getByText('이 문구 확인 부탁')).toBeTruthy();
+    const detail = await waitFor(() => container.querySelector('[data-card-detail="k2"]') as HTMLElement);
+    expect(within(detail).getByText('이 문구 확인 부탁')).toBeTruthy();
   });
 });
 
@@ -497,16 +496,18 @@ describe('칸반 — 드롭 위치 표시(점선 사각형)', () => {
     stubRects(container);
     firePointer(container.querySelector('[data-kanban-card="k1"]')!, 'pointerdown', { clientX: 20, clientY: 60 });
     firePointer(window, 'pointermove', { clientX: 20, clientY: 130 });
-    const line = await waitFor(() => {
-      const el = container.querySelector('[data-kanban-drop-line]') as HTMLElement;
+    const slot = await waitFor(() => {
+      const el = container.querySelector('[data-kanban-drop-slot]') as HTMLElement;
       expect(el).toBeTruthy();
       return el;
     });
 
-    // 카드 한 장이 들어갈 자리가 보이도록 점선 상자로 그린다.
-    expect(parseFloat(line.style.height)).toBeGreaterThanOrEqual(40);
-    expect(line.style.border).toContain('dashed');
-    expect(parseFloat(line.style.borderRadius)).toBeGreaterThan(0);
+    // 카드 한 장이 들어갈 자리가 보이도록 **열 안**에 점선 상자를 끼운다(요청).
+    expect(slot.closest('[data-kanban-list]')).toBeTruthy();
+    expect(slot.style.border).toContain('dashed');
+    expect(parseFloat(slot.style.borderRadius)).toBeGreaterThan(0);
+    // 끌고 있는 카드는 자리를 비운다 — 그래야 열 크기가 놓일 자리에 맞게 재배열된다.
+    expect(container.querySelector('[data-kanban-card="k1"]')).toBeNull();
   });
 });
 
@@ -576,7 +577,7 @@ describe('칸반 — 카드 색 라벨', () => {
     fireEvent.click(within(detail).getByRole('button', { name: '색 파랑' }));
     await waitFor(() => expect((container.querySelector('[data-kanban-card="k1"]') as HTMLElement).style.background).toBeTruthy());
     fireEvent.keyDown(window, { key: 's', ctrlKey: true });
-    await waitFor(() => expect(saved('kl1').cards.find((c: { id: string }) => c.id === 'k1').bg).toBe('#d9e8f8'));
+    await waitFor(() => expect(saved('kl1').cards.find((c: { id: string }) => c.id === 'k1').bg).toBe('#edf4fc'));
     // 다른 카드는 그대로.
     expect(saved('kl1').cards.find((c: { id: string }) => c.id === 'k2').bg).toBeUndefined();
 
@@ -796,7 +797,14 @@ describe('칸반 — 보드 머리(검색·진행률)', () => {
     fireEvent.click(detail.querySelector('[data-detail-status="c2"]')!);
     fireEvent.click(detail.querySelector('[data-detail-close]')!);
     await waitFor(() => expect(container.querySelector('[data-kanban-bar]')?.textContent).toContain('완료 1/2'));
-    expect((container.querySelector('[data-progress-done]') as HTMLElement).style.width).toBe('50%');
+    // 바는 **열별 구간**이고 색은 그 열의 머리 색이다(요청).
+    const segs = Array.from(container.querySelectorAll('[data-progress-seg]')).map((e) => ({ col: e.getAttribute('data-progress-seg'), w: (e as HTMLElement).style.width }));
+    expect(segs).toEqual([
+      { col: 'c1', w: '50%' },
+      { col: 'c2', w: '50%' },
+    ]);
+    const dot = (container.querySelector('[data-column-dot="c2"]') as HTMLElement).style.background;
+    expect((container.querySelector('[data-progress-seg="c2"]') as HTMLElement).style.background).toBe(dot);
   });
 
   it('열 메뉴에서 색을 고르면 머리 점이 그 색이 된다', async () => {
@@ -1009,5 +1017,83 @@ describe('칸반 — 후속 요청', () => {
     fireEvent.click(screen.getByRole('button', { name: '도움말' }));
     fireEvent.click(await screen.findByRole('button', { name: /단축키 도움말/ }));
     expect(await screen.findByLabelText('키보드 단축키')).toBeTruthy();
+  });
+});
+
+/** 배포 후 제보 7건 — 상세 안 댓글·기한 자리·드롭 자리·열 그림자·진행률 색. */
+describe('칸반 — 후속 7건', () => {
+  beforeEach(() => {
+    localStorage.clear();
+    mockMatchMedia(false);
+    localStorage.setItem('mf_demo_session', JSON.stringify({ user: { id: 'u', email: 'me@example.com' } }));
+  });
+  afterEach(cleanup);
+
+  it('상세 안에서 댓글을 읽고 남긴다 — 패널로 넘기지 않는다', async () => {
+    localStorage.setItem('mindflow_doc_kn1', JSON.stringify(KANBAN));
+    const { container } = renderEditor('/editor?map=kn1&title=x');
+    await waitFor(() => expect(container.querySelectorAll('[data-kanban-card]')).toHaveLength(2));
+
+    fireEvent.doubleClick(container.querySelector('[data-kanban-card="k1"]')!);
+    const detail = await waitFor(() => container.querySelector('[data-card-detail="k1"]') as HTMLElement);
+    const box = within(detail).getByPlaceholderText('댓글 남기기 (@로 멘션)');
+    fireEvent.change(box, { target: { value: '여기서 바로 남긴다' } });
+    fireEvent.click(within(detail).getByRole('button', { name: '남기기' }));
+
+    await waitFor(() => expect(within(detail).getByText('여기서 바로 남긴다')).toBeTruthy());
+    // 저장은 댓글 저장소로 — 카드 앞면의 개수도 함께 는다.
+    await waitFor(() => {
+      const rows = JSON.parse(localStorage.getItem('mf_comments') || '[]') as { nodeId: string; body: string }[];
+      expect(rows.some((r) => r.nodeId === 'k1' && r.body === '여기서 바로 남긴다')).toBe(true);
+    });
+    fireEvent.click(detail.querySelector('[data-detail-close]')!);
+    await waitFor(() => expect(container.querySelector('[data-card-comment-count="k1"]')?.textContent).toContain('1'));
+  });
+
+  it('기한 지우기는 항상 보이되 기한이 없으면 비활성이다', async () => {
+    localStorage.setItem('mindflow_doc_kn2', JSON.stringify(KANBAN));
+    const { container } = renderEditor('/editor?map=kn2&title=x');
+    await waitFor(() => expect(container.querySelectorAll('[data-kanban-card]')).toHaveLength(2));
+
+    fireEvent.doubleClick(container.querySelector('[data-kanban-card="k1"]')!);
+    const detail = await waitFor(() => container.querySelector('[data-card-detail="k1"]') as HTMLElement);
+    const clear = detail.querySelector('[data-detail-due-clear]') as HTMLButtonElement;
+    expect(clear).toBeTruthy();
+    expect(clear.disabled).toBe(true);
+
+    fireEvent.change(detail.querySelector('[data-detail-due]')!, { target: { value: '2026-09-01' } });
+    await waitFor(() => expect((detail.querySelector('[data-detail-due-clear]') as HTMLButtonElement).disabled).toBe(false));
+    fireEvent.click(detail.querySelector('[data-detail-due-clear]')!);
+    await waitFor(() => expect((detail.querySelector('[data-detail-due-clear]') as HTMLButtonElement).disabled).toBe(true));
+  });
+
+  it('빈 열로 끌면 머리 아래(카드 목록 안)에 자리가 생긴다', async () => {
+    localStorage.setItem('mindflow_doc_kn3', JSON.stringify(KANBAN));
+    const { container } = renderEditor('/editor?map=kn3&title=x');
+    await waitFor(() => expect(container.querySelectorAll('[data-kanban-card]')).toHaveLength(2));
+    stubRects(container);
+
+    firePointer(container.querySelector('[data-kanban-card="k1"]')!, 'pointerdown', { clientX: 150, clientY: 70 });
+    firePointer(window, 'pointermove', { clientX: 470, clientY: 200 }); // 빈 열(c2)
+    const slot = await waitFor(() => container.querySelector('[data-kanban-column="c2"] [data-kanban-drop-slot]') as HTMLElement);
+    // 머리(header)가 아니라 **카드 목록 안**에 있다 — 제목 위에 뜨지 않는다.
+    expect(slot.closest('[data-kanban-list]')).toBeTruthy();
+    expect(slot.closest('[data-column-head]')).toBeNull();
+    // 크기는 끌고 있는 카드와 같다(stubRects가 심은 40px).
+    expect(slot.style.height).toBe('40px');
+    firePointer(window, 'pointerup', { clientX: 470, clientY: 200 });
+  });
+
+  it('열은 그림자로 배경과 갈리고, 진행 바는 열 색으로 그려진다', async () => {
+    localStorage.setItem('mindflow_doc_kn4', JSON.stringify(KANBAN));
+    const { container } = renderEditor('/editor?map=kn4&title=x');
+    const col = await waitFor(() => container.querySelector('[data-kanban-column="c1"]') as HTMLElement);
+    expect(col.style.boxShadow).toContain('rgba');
+
+    // 카드가 c1에만 둘 있으므로 구간도 c1 하나(100%).
+    const segs = Array.from(container.querySelectorAll('[data-progress-seg]'));
+    expect(segs).toHaveLength(1);
+    expect((segs[0] as HTMLElement).style.width).toBe('100%');
+    expect((segs[0] as HTMLElement).style.background).toBe((container.querySelector('[data-column-dot="c1"]') as HTMLElement).style.background);
   });
 });
