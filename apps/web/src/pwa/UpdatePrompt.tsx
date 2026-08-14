@@ -63,6 +63,11 @@ export function UpdatePrompt() {
       // 화면 진입(`useUpdateGuard`)마다 확인할 수 있게 등록 — 클라이언트 사이드 이동은
       // 페이지 로드가 아니라서 브라우저가 스스로 확인해 주지 않는다(`updateGate` 참고).
       setUpdateChecker(() => void registration.update());
+      // **등록 직후 한 번 확인한다.** 등록 자체도 소프트 업데이트를 트리거하지만,
+      // 이미 같은 SW가 등록돼 있으면 브라우저가 확인을 건너뛸 수 있다(제보: 배포
+      // 됐는데 크롬에서 아무 반응이 없음 — 그 탭은 `waiting`도 `installing`도
+      // 없었다). 여기서 명시적으로 물어보면 첫 화면에서 바로 잡힌다.
+      void registration.update();
       // 장시간 열어 둔 편집 세션(브라우저가 스스로 확인하지 않을 수 있음) 대비.
       setInterval(() => {
         void registration.update();
@@ -75,6 +80,11 @@ export function UpdatePrompt() {
   const [dismissed, setDismissed] = useState(false);
   /** `prepare()`가 저장 실패를 보고한 상태 — 리로드하면 편집분이 사라지므로 멈춘다. */
   const [saveBlocked, setSaveBlocked] = useState(false);
+  /** 자동 적용이 **다른 탭 때문에** 미뤄진 상태 — 그 탭이 한가해질 때까지 재시도만
+   * 돌고 화면에는 아무 표시가 없었다(safe 화면은 토스트를 숨기므로). 사용자가
+   * "배포됐는데 아무 반응이 없다"고 느끼는 자리라, 이때는 토스트를 내보내 직접
+   * 적용할 길을 준다(수동 적용은 피어를 묻지 않는다). */
+  const [peerBusy, setPeerBusy] = useState(false);
 
   // 다른 탭의 "지금 적용해도 되나?" 질문에 답한다(모든 탭에 이 컴포넌트가 하나씩 있다).
   useEffect(() => startPeerResponder(), []);
@@ -108,7 +118,11 @@ export function UpdatePrompt() {
         // 적용은 이 탭만의 일이 아니다 — skipWaiting이 다른 탭까지 리로드시킨다.
         // 그래서 **자동** 적용은 편집 중인 탭이 없는지 먼저 확인한다(사용자가 직접
         // 누른 경우는 본인 선택이므로 묻지 않는다).
-        if (auto && (await anyPeerBusy())) return; // 아래 재시도 타이머가 다시 노린다
+        if (auto && (await anyPeerBusy())) {
+          setPeerBusy(true); // 토스트로 알린다 — 아래 재시도 타이머도 계속 노린다
+          return;
+        }
+        setPeerBusy(false);
 
         setSaveBlocked(false);
         setBlocking(true); // 여기서부터 진짜 적용 — 화면을 덮어 클릭을 막는다
@@ -157,7 +171,7 @@ export function UpdatePrompt() {
       <UpdateAppliedNotice visible={justUpdated} onDone={() => setJustUpdated(false)} />
       <UpdateToast
       // 자동으로 적용될 상황이면 굳이 묻지 않는다 — 곧 조용히 갈아끼워진다.
-      visible={needRefresh && !dismissed && !canAutoLocally}
+      visible={needRefresh && !dismissed && (!canAutoLocally || peerBusy)}
       saveBlocked={saveBlocked}
       applying={applying}
       onRefresh={() => void apply(false)}
