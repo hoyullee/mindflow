@@ -23,7 +23,8 @@ export function FolderCard({ folder, controller }: Props) {
   const onDrop = (e: DragEvent<HTMLDivElement>) => {
     e.preventDefault();
     const t = controller.state.draggingMap || e.dataTransfer.getData('text/plain');
-    if (t) controller.moveMapToFolder(t, folder.id);
+    // 선택 전체를 끌고 있으면 함께 옮긴다(잡은 카드가 선택 밖이면 그 한 장).
+    if (t) controller.moveMapsToFolder(controller.dragKeys(t), folder.id);
     controller.clearDrag();
   };
   const enter = () => (folder.isDrive ? controller.openDriveFolder(folder.id) : controller.openFolder(folder.id));

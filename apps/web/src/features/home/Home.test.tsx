@@ -3934,3 +3934,183 @@ describe('최근 트레이 미리보기 프리페치', () => {
     await waitFor(() => expect(card.querySelector('.mf-skel')).toBeNull(), { timeout: 4000 });
   });
 });
+
+describe('홈 카드 다중 선택', () => {
+  /** 맵 셋이 있는 홈 — 카드 키(`data-card-key`) 순서가 곧 화면 순서다. */
+  const seedThree = () => {
+    localStorage.setItem(
+      'mf_spaces',
+      JSON.stringify({
+        spaces: [
+          { id: 's1', name: '일반 스페이스', color: '#f0663f', maps: [{ title: 'A맵', docId: 'da' }, { title: 'B맵', docId: 'db' }, { title: 'C맵', docId: 'dc' }], folders: [{ id: 'fx', name: '보관함' }] },
+          { id: 's2', name: '다른 스페이스', color: '#3f8fd0', maps: [], folders: [] },
+        ],
+        activeSpace: 's1',
+        mapFolders: {},
+        recent: [],
+      }),
+    );
+  };
+  const keys = (container: HTMLElement) => Array.from(container.querySelectorAll('[data-card-key]')).map((e) => e.getAttribute('data-card-key')!);
+  const selectedKeys = (container: HTMLElement) =>
+    Array.from(container.querySelectorAll('[data-card-key]'))
+      .filter((e) => (e as HTMLElement).style.border.includes('2px'))
+      .map((e) => e.getAttribute('data-card-key')!);
+
+  it('Ctrl+클릭으로 더하고 빼며, Shift+클릭은 앵커부터 범위로 고른다', async () => {
+    seedThree();
+    const { container } = renderHomeWithDocStore([]);
+    await waitFor(() => expect(keys(container)).toHaveLength(3));
+    const [k1, k2, k3] = keys(container);
+    const card = (k: string) => container.querySelector(`[data-card-key="${k}"]`) as HTMLElement;
+
+    fireEvent.click(card(k1!));
+    expect(selectedKeys(container)).toEqual([k1]);
+
+    // Ctrl+클릭 = 더하기
+    fireEvent.click(card(k3!), { ctrlKey: true });
+    expect(selectedKeys(container).sort()).toEqual([k1, k3].sort());
+    // 한 번 더 = 빼기
+    fireEvent.click(card(k3!), { ctrlKey: true });
+    expect(selectedKeys(container)).toEqual([k1]);
+
+    // Shift+클릭 = 앵커(k1)부터 범위
+    fireEvent.click(card(k3!), { shiftKey: true });
+    expect(selectedKeys(container)).toEqual([k1, k2, k3]);
+
+    // 수정 키 클릭은 **여는 동작이 아니다** — 에디터로 넘어가지 않았다.
+    expect(screen.queryByText('EDITOR_PLACEHOLDER')).toBeNull();
+  });
+
+  it('여러 장을 고르고 우클릭하면 일괄 메뉴가 뜬다 — 즐겨찾기·이름 변경은 없다', async () => {
+    seedThree();
+    const { container } = renderHomeWithDocStore([]);
+    await waitFor(() => expect(keys(container)).toHaveLength(3));
+    const [k1, k2] = keys(container);
+    const card = (k: string) => container.querySelector(`[data-card-key="${k}"]`) as HTMLElement;
+
+    fireEvent.click(card(k1!));
+    fireEvent.click(card(k2!), { ctrlKey: true });
+    fireEvent.contextMenu(card(k2!), { clientX: 200, clientY: 200 });
+
+    const menu = await screen.findByRole('menu');
+    expect(within(menu).getByText('삭제하기 (2개)')).toBeTruthy();
+    expect(within(menu).getByText('폴더로 이동')).toBeTruthy();
+    expect(within(menu).getByText('스페이스로 이동')).toBeTruthy();
+    // 한 장에만 뜻이 있는 항목·즐겨찾기(사용자 결정)는 없다.
+    expect(within(menu).queryByText('즐겨찾기')).toBeNull();
+    expect(within(menu).queryByText('이름 변경')).toBeNull();
+    expect(within(menu).queryByText('공유')).toBeNull();
+    expect(within(menu).queryByText('내보내기')).toBeNull();
+  });
+
+  it('일괄 폴더 이동 — 고른 것만 그 폴더로 들어간다', async () => {
+    seedThree();
+    const { container } = renderHomeWithDocStore([]);
+    await waitFor(() => expect(keys(container)).toHaveLength(3));
+    const [k1, k2] = keys(container);
+    const card = (k: string) => container.querySelector(`[data-card-key="${k}"]`) as HTMLElement;
+
+    fireEvent.click(card(k1!));
+    fireEvent.click(card(k2!), { ctrlKey: true });
+    fireEvent.contextMenu(card(k2!), { clientX: 200, clientY: 200 });
+    const menu = await screen.findByRole('menu');
+    fireEvent.mouseEnter(within(menu).getByText('폴더로 이동'));
+    const sub = await waitFor(() => menu.querySelector('[data-home-ctx-sub]') as HTMLElement);
+    fireEvent.click(within(sub).getByText('보관함'));
+
+    await waitFor(() => {
+      const ws = JSON.parse(localStorage.getItem('mf_spaces') || '{}') as { mapFolders?: Record<string, string> };
+      expect(ws.mapFolders?.[k1!]).toBe('fx');
+      expect(ws.mapFolders?.[k2!]).toBe('fx');
+      expect(ws.mapFolders?.[keys(container)[2] ?? 'x']).toBeUndefined();
+    });
+  });
+
+  it('일괄 삭제 — 확인창이 개수를 말하고, 고른 것만 휴지통으로', async () => {
+    seedThree();
+    const { container } = renderHomeWithDocStore([]);
+    await waitFor(() => expect(keys(container)).toHaveLength(3));
+    const [k1, k2] = keys(container);
+    const card = (k: string) => container.querySelector(`[data-card-key="${k}"]`) as HTMLElement;
+
+    fireEvent.click(card(k1!));
+    fireEvent.click(card(k2!), { ctrlKey: true });
+    fireEvent.contextMenu(card(k2!), { clientX: 200, clientY: 200 });
+    fireEvent.click(within(await screen.findByRole('menu')).getByText('삭제하기 (2개)'));
+
+    const body = await screen.findByText(/맵 2개를 휴지통으로 이동합니다/);
+    const dialog = body.closest('div[style]')!.parentElement as HTMLElement;
+    fireEvent.click(within(dialog).getByText('삭제'));
+
+    await waitFor(() => expect(keys(container)).toHaveLength(1));
+    // 휴지통 행(복원 링크가 달린 LNB 행)에 둘 다 들어갔다.
+    await waitFor(() => {
+      const trash = Array.from(container.querySelectorAll('aside .drive-file'))
+        .filter((r) => r.querySelector('.restore-link'))
+        .map((r) => (r.textContent || '').trim());
+      expect(trash.some((t) => t.includes('A맵'))).toBe(true);
+      expect(trash.some((t) => t.includes('B맵'))).toBe(true);
+      expect(trash.some((t) => t.includes('C맵'))).toBe(false);
+    });
+  });
+
+  it('선택 전체를 끌어 폴더에 놓으면 함께 들어간다 — 잡은 카드에 개수 배지', async () => {
+    seedThree();
+    const { container } = renderHomeWithDocStore([]);
+    await waitFor(() => expect(keys(container)).toHaveLength(3));
+    const [k1, k2] = keys(container);
+    const card = (k: string) => container.querySelector(`[data-card-key="${k}"]`) as HTMLElement;
+
+    fireEvent.click(card(k1!));
+    fireEvent.click(card(k2!), { ctrlKey: true });
+
+    // jsdom의 fireEvent에는 dataTransfer가 없다 — 최소 스텁(기존 드래그 테스트와 동일).
+    const store: Record<string, string> = {};
+    const dataTransfer = { effectAllowed: '', dropEffect: '', setData: (k: string, v: string) => { store[k] = v; }, getData: (k: string) => store[k] ?? '' };
+    fireEvent.dragStart(card(k2!), { dataTransfer });
+    // 잡은 카드에 "2"가 뜬다 — 선택 전체를 끌고 있다는 표시.
+    await waitFor(() => expect(card(k2!).querySelector('[data-drag-count]')?.textContent).toBe('2'));
+
+    const folder = container.querySelector('[data-folder-card]') ?? screen.getByText('보관함').closest('div')!;
+    fireEvent.dragOver(folder, { dataTransfer });
+    fireEvent.drop(folder, { dataTransfer });
+
+    // 둘 다 폴더로 들어가 그리드에서 사라지고, 고르지 않은 한 장만 남는다.
+    await waitFor(() => expect(keys(container)).toHaveLength(1));
+  });
+
+  it('메뉴를 누르는 동안 선택이 풀리지 않는다 — 일괄 메뉴가 단일로 갈아 끼워지지 않게', async () => {
+    // 실브라우저가 잡은 결함: 메뉴 행의 mousedown이 "카드 밖 클릭"으로 읽혀 선택을
+    // 비웠고, 클릭이 도착하기 전에 메뉴가 일괄 → 단일로 바뀌어 엉뚱한 항목이 실행됐다.
+    seedThree();
+    const { container } = renderHomeWithDocStore([]);
+    await waitFor(() => expect(keys(container)).toHaveLength(3));
+    const [k1, k2] = keys(container);
+    const card = (k: string) => container.querySelector(`[data-card-key="${k}"]`) as HTMLElement;
+
+    fireEvent.click(card(k1!));
+    fireEvent.click(card(k2!), { ctrlKey: true });
+    fireEvent.contextMenu(card(k2!), { clientX: 200, clientY: 200 });
+    const menu = await screen.findByRole('menu');
+
+    // 메뉴 안에서 눌러도 선택은 그대로 — 항목이 여전히 일괄이다.
+    fireEvent.mouseDown(within(menu).getByText('삭제하기 (2개)'));
+    expect(selectedKeys(container)).toHaveLength(2);
+    expect(within(menu).getByText('삭제하기 (2개)')).toBeTruthy();
+  });
+
+  it('빈 배경을 누르면 선택이 풀린다', async () => {
+    seedThree();
+    const { container } = renderHomeWithDocStore([]);
+    await waitFor(() => expect(keys(container)).toHaveLength(3));
+    const [k1, k2] = keys(container);
+    const card = (k: string) => container.querySelector(`[data-card-key="${k}"]`) as HTMLElement;
+    fireEvent.click(card(k1!));
+    fireEvent.click(card(k2!), { ctrlKey: true });
+    expect(selectedKeys(container)).toHaveLength(2);
+
+    fireEvent.mouseDown(container.querySelector('main') as HTMLElement);
+    await waitFor(() => expect(selectedKeys(container)).toHaveLength(0));
+  });
+});

@@ -53,7 +53,7 @@ import {
   sourceOf,
   writeSavedProfileName,
 } from './storage';
-import { recentTrayDocIds } from './viewModel';
+import { FOLDER_CARD_PREFIX, recentTrayDocIds } from './viewModel';
 
 /**
  * 썸네일 본문(`preview_doc` RPC, 0012)이 이미지 데이터를 지운 자리에 남기는 값.
@@ -325,12 +325,39 @@ export function useHomeController() {
         let next = prev;
         // 메뉴는 자기 바깥 클릭에 스스로 닫힌다(`HomeContextMenu`) — 여기서는 카드
         // 선택/설정/스페이스 메뉴만 본다.
-        if (prev.selectedCard && !closest('.map-card')) next = { ...next, selectedCard: null };
+        // 카드 밖을 누르면 선택 해제. 단, **선택에 대한 메뉴**(`.mf-home-ctx`) 안은
+        // 예외다 — 그 메뉴를 누르는 mousedown이 선택을 지우면, 클릭이 도착하기 전에
+        // 메뉴가 일괄에서 단일로 갈아 끼워져 엉뚱한 항목이 실행된다(실브라우저에서
+        // 확인: 일괄 폴더 이동·삭제가 통째로 먹지 않았다).
+        if ((prev.selectedCard || prev.selectedCards.length) && !closest('.map-card') && !closest('.mf-home-ctx')) {
+          next = { ...next, selectedCard: null, selectedCards: [] };
+        }
         if (prev.settingsOpen && !closest('.settings-pop,.settings-btn')) next = { ...next, settingsOpen: false };
         return next;
       });
     };
     window.addEventListener('mousedown', onDocMouseDown);
+
+    // Ctrl/⌘+A — 지금 보이는 맵 카드를 모두 고른다(파일 탐색기 관례). 글자를 입력
+    // 중이면(검색·이름 변경·댓글) 그건 "글자 전체 선택"이므로 손대지 않는다.
+    const onKeyDown = (e: globalThis.KeyboardEvent) => {
+      if (!(e.metaKey || e.ctrlKey) || e.shiftKey || e.altKey) return;
+      if (e.key !== 'a' && e.key !== 'A' && e.code !== 'KeyA') return;
+      const t = e.target as HTMLElement | null;
+      if (t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.isContentEditable)) return;
+      // 모달이 떠 있으면 그 안의 일이다(설정·공유·갤러리…). 확인창들은 닫혀 있어도
+      // `display: none`으로 **마운트된 채**라 존재만 보면 Ctrl+A가 영영 막힌다
+      // (실브라우저에서 확인: 늘 3개가 붙어 있다) — 실제로 보이는 것만 센다.
+      const dialogOpen = Array.from(document.querySelectorAll('[role="dialog"]')).some((el) => el.getClientRects().length > 0);
+      if (dialogOpen) return;
+      const keys = Array.from(document.querySelectorAll<HTMLElement>('[data-card-key]'))
+        .map((el) => el.getAttribute('data-card-key') || '')
+        .filter(Boolean);
+      if (!keys.length) return;
+      e.preventDefault();
+      setState((prev) => ({ ...prev, selectedCards: keys, selectedCard: keys[keys.length - 1] ?? null }));
+    };
+    window.addEventListener('keydown', onKeyDown);
 
     // Back/forward bfcache restore: the browser can restore this page with the
     // full-screen loader (`creatingMap`) frozen as it was when we navigated
@@ -351,6 +378,7 @@ export function useHomeController() {
 
     return () => {
       window.removeEventListener('mousedown', onDocMouseDown);
+      window.removeEventListener('keydown', onKeyDown);
       window.removeEventListener('pageshow', onPageShow);
       clearTimeout(loaderTimer.current);
       clearTimeout(cardRegisterTimer.current);
@@ -755,12 +783,16 @@ export function useHomeController() {
   const openCtxMenuAt = (x: number, y: number, target: HomeCtxTarget) => patch({ ctxMenu: { x, y, target } });
   const closeMenu = () => patch({ ctxMenu: null });
   const askDelete = (title: string, docId?: string) => patch({ confirmDelete: title, confirmDeleteDocId: docId ?? null, ctxMenu: null });
-  const cancelDelete = () => patch({ confirmDelete: null, confirmDeleteDocId: null });
-  const confirmDeleteYes = () => {
-    const title = state.confirmDelete;
-    if (!title) return;
-    const docId = state.confirmDeleteDocId;
-    setState((prev) => {
+  const cancelDelete = () => patch({ confirmDelete: null, confirmDeleteDocId: null, confirmDeleteMulti: null });
+  /**
+   * 카드 한 장을 워크스페이스에서 **빼고 휴지통에 담는다**(순수 상태 변환).
+   *
+   * 한 장 삭제와 여러 장 삭제가 같은 규칙을 쓰도록 본문을 여기 하나로 모았다 —
+   * 휴지통 기록(어느 스페이스·폴더에 있었는지)·즐겨찾기 정리·중복 방지가 갈리면
+   * 되돌리기가 경로마다 달라진다.
+   */
+  const removeCardFrom = (prev: HomeState, title: string, docId: string | null): HomeState => {
+
       // Match the exact card: by docId when the card is doc-backed (avoids
       // touching a same-titled sibling like "새 마인드맵_1" vs "…_1 (2)"), else
       // a title-only card.
@@ -791,7 +823,36 @@ export function useHomeController() {
       const already = prev.trash.some((t) => (docId ? t.docId === docId : t.title === title));
       const trash = already ? prev.trash : [...prev.trash, { title, source: src, docId: docId ?? undefined, spaceId, folder }];
       return { ...prev, spaces, mapFolders, deleted, favs, trash, confirmDelete: null, confirmDeleteDocId: null };
-    });
+  };
+
+  /** 여러 장을 한 번에(요청) — 확인창은 "N개를 휴지통으로". */
+  const askDeleteMany = (cards: { key: string; title: string; docId?: string }[]) => {
+    if (!cards.length) return;
+    if (cards.length === 1) {
+      const c = cards[0]!;
+      patch({ confirmDelete: c.title, confirmDeleteDocId: c.docId ?? null, confirmDeleteMulti: null, ctxMenu: null });
+      return;
+    }
+    patch({ confirmDeleteMulti: cards, confirmDelete: null, confirmDeleteDocId: null, ctxMenu: null });
+  };
+  const confirmDeleteYes = () => {
+    // 여러 장 — 한 장 삭제를 그대로 접는다(휴지통 기록·서버 삭제까지 같은 규칙).
+    const many = state.confirmDeleteMulti;
+    if (many) {
+      many.forEach((c) => setState((prev) => removeCardFrom(prev, c.title, c.docId ?? null)));
+      patch({ confirmDeleteMulti: null, selectedCards: [], selectedCard: null });
+      many.forEach((c) => {
+        if (!c.docId) return;
+        void docStore.remove(c.docId).catch(() => {
+          patch({ importError: '삭제가 서버에 반영되지 않았어요. 네트워크 확인 후 다시 시도해 주세요.' });
+        });
+      });
+      return;
+    }
+    const title = state.confirmDelete;
+    if (!title) return;
+    const docId = state.confirmDeleteDocId;
+    setState((prev) => removeCardFrom(prev, title, docId));
     if (docId) {
       void docStore.remove(docId).catch(() => {
         // Backend delete failed (offline/RLS): the card is already gone locally,
@@ -1738,6 +1799,55 @@ export function useHomeController() {
       return { ...prev, spaces, mapFolders, ctxMenu: null, toast: `'${card.title}'을(를) '${target.name}' 스페이스로 옮겼어요`, toastTitle: '이동 완료' };
     });
   };
+  /** 여러 장을 한 폴더로(요청) — 단일 이동을 접어 한 번의 상태 변경으로 만든다. */
+  const moveMapsToFolder = (keys: string[], folderId: string | null) => {
+    if (!keys.length) return;
+    if (state.activeSpace === 'drive') {
+      setState((prev) => {
+        const driveMapFolders = { ...prev.driveMapFolders };
+        keys.forEach((k) => {
+          if (folderId) driveMapFolders[k] = folderId;
+          else delete driveMapFolders[k];
+        });
+        return { ...prev, driveMapFolders, ctxMenu: null };
+      });
+      return;
+    }
+    setState((prev) => {
+      const mapFolders = { ...prev.mapFolders };
+      keys.forEach((k) => {
+        if (folderId) mapFolders[k] = folderId;
+        else delete mapFolders[k];
+      });
+      return { ...prev, mapFolders, ctxMenu: null };
+    });
+  };
+
+  /** 여러 장을 한 스페이스로 — 토스트는 "N개를"로 한 번만. */
+  const moveMapsToSpace = (keys: string[], spaceId: string) => {
+    if (!keys.length) return;
+    setState((prev) => {
+      const target = prev.spaces.find((s) => s.id === spaceId);
+      if (!target) return { ...prev, ctxMenu: null };
+      const set = new Set(keys);
+      const inSet = (m: { title: string; docId?: string }) => set.has(cardKeyOf(m.title, m.docId));
+      // 원본 카드 객체를 그대로 옮긴다(필드를 손으로 추리면 hue 같은 값이 떨어진다).
+      const moving = prev.spaces.flatMap((s) => (s.id === spaceId || !Array.isArray(s.maps) ? [] : s.maps.filter(inSet)));
+      if (!moving.length) return { ...prev, ctxMenu: null };
+      const spaces = prev.spaces.map((s) => {
+        if (s.id === spaceId) return { ...s, maps: [...(s.maps || []), ...moving] };
+        if (!Array.isArray(s.maps)) return s;
+        const maps = s.maps.filter((m) => !inSet(m));
+        return maps.length === s.maps.length ? s : { ...s, maps };
+      });
+      const mapFolders = { ...prev.mapFolders };
+      // 폴더는 스페이스 하나에 속한다 — 옮기면 폴더 배정을 뗀다(단일 이동과 같은 규칙).
+      keys.forEach((k) => delete mapFolders[k]);
+      const label = moving.length === 1 ? `'${moving[0]!.title}'을(를)` : `맵 ${moving.length}개를`;
+      return { ...prev, spaces, mapFolders, ctxMenu: null, toast: `${label} '${target.name}' 스페이스로 옮겼어요`, toastTitle: '이동 완료' };
+    });
+  };
+
   // 뒤로가기 = 한 계층 위로: 하위 폴더 안이면 상위 폴더로, 최상위 폴더면 스페이스로.
   const backToSpace = () =>
     setState((prev) => {
@@ -1751,6 +1861,12 @@ export function useHomeController() {
   const openDriveFolder = (id: string) => patch({ driveFolder: id, ctxMenu: null });
 
   // ---- drag & drop ----
+  /**
+   * 이 드래그가 옮기는 카드들 — 잡은 카드가 **선택에 포함돼 있으면 선택 전체**,
+   * 아니면 그 한 장(파일 탐색기 관례). 드롭 대상(폴더 카드·상위 폴더 타일)이
+   * 같은 규칙을 쓰도록 여기 한 곳에 둔다.
+   */
+  const dragKeys = (primary: string): string[] => (state.selectedCards.includes(primary) ? state.selectedCards : [primary]);
   const setDraggingMap = (title: string | null) => patch({ draggingMap: title, ctxMenu: null });
   const clearDrag = () => patch({ draggingMap: null, dragOverFolder: null });
   const setDragOverFolder = (id: string | null) => {
@@ -1758,7 +1874,59 @@ export function useHomeController() {
   };
 
   // ---- selection / search ----
-  const selectCard = (title: string | null) => patch({ selectedCard: title });
+  /**
+   * 카드 선택. `opts`로 파일 탐색기 관례를 그대로 따른다(요청):
+   *  · 그냥 클릭 → 이 카드 하나
+   *  · Ctrl/⌘+클릭 → 넣었다 뺐다(토글)
+   *  · Shift+클릭 → 앵커부터 여기까지 한 묶음
+   *
+   * 범위의 "순서"는 **화면에 그려진 순서**를 읽는다(`visibleMapKeys`) — 그리드든
+   * 검색 결과든 사용자가 보고 있는 그 줄이 곧 범위다. 뷰모델의 목록을 컨트롤러가
+   * 다시 계산하면 둘이 어긋날 수 있다.
+   */
+  const selectCard = (key: string | null, opts?: { additive?: boolean; range?: boolean }) => {
+    if (!key) {
+      patch({ selectedCard: null, selectedCards: [] });
+      return;
+    }
+    // 폴더 카드는 다중 선택 대상이 아니다 — 고르면 맵 선택은 비운다.
+    if (key.startsWith(FOLDER_CARD_PREFIX)) {
+      patch({ selectedCard: key, selectedCards: [] });
+      return;
+    }
+    if (opts?.range && state.selectedCard && !state.selectedCard.startsWith(FOLDER_CARD_PREFIX)) {
+      const order = visibleMapKeys();
+      const a = order.indexOf(state.selectedCard);
+      const b = order.indexOf(key);
+      if (a >= 0 && b >= 0) {
+        const [lo, hi] = a <= b ? [a, b] : [b, a];
+        patch({ selectedCards: order.slice(lo, hi + 1), selectedCard: key });
+        return;
+      }
+    }
+    if (opts?.additive) {
+      const has = state.selectedCards.includes(key);
+      const next = has ? state.selectedCards.filter((k) => k !== key) : [...state.selectedCards, key];
+      // 앵커(Shift 범위의 기준)는 **선택에 남아 있는 카드**여야 한다 — 방금 뺀
+      // 카드를 앵커로 두면 그다음 Shift+클릭이 그 카드 하나만 고른다.
+      patch({ selectedCards: next, selectedCard: has ? (next[next.length - 1] ?? null) : key });
+      return;
+    }
+    patch({ selectedCard: key, selectedCards: [key] });
+  };
+
+  /** 지금 화면에 그려진 맵 카드의 key — DOM 순서 그대로(최근 트레이는 제외). */
+  const visibleMapKeys = (): string[] =>
+    Array.from(document.querySelectorAll<HTMLElement>('[data-card-key]'))
+      .map((el) => el.getAttribute('data-card-key') || '')
+      .filter(Boolean);
+
+  /** Ctrl/⌘+A — 지금 보이는 맵 카드를 모두. */
+  const selectAllCards = () => {
+    const keys = visibleMapKeys();
+    if (!keys.length) return;
+    patch({ selectedCards: keys, selectedCard: keys[keys.length - 1] ?? null });
+  };
 
   /**
    * 검색 입력 — 글자는 즉시 보이고(`searchInput`), **적용**은 입력이 잠깐 멎은
@@ -1887,12 +2055,17 @@ export function useHomeController() {
     cancelDeleteFolder,
     confirmDeleteFolderYes,
     moveMapToFolder,
+    moveMapsToFolder,
+    moveMapsToSpace,
+    askDeleteMany,
+    selectAllCards,
     moveMapUp,
     folderDeleteSummary,
     backToSpace,
     openFolder,
     openDriveFolder,
     setDraggingMap,
+    dragKeys,
     clearDrag,
     setDragOverFolder,
     selectCard,

@@ -61,6 +61,21 @@ export function Modals({ state, controller }: Props) {
         onConfirm={controller.confirmDeleteYes}
       />
 
+      {/* 여러 장 삭제(요청) — 한 장 확인창과 같은 꼴이되 몇 개인지 말한다. */}
+      <ConfirmModal
+        visible={!!state.confirmDeleteMulti}
+        zIndex={120}
+        iconBg="var(--mf-danger-soft)"
+        icon={TRASH_ICON}
+        heading="선택한 맵을 삭제할까요?"
+        body={`맵 ${state.confirmDeleteMulti?.length ?? 0}개를 휴지통으로 이동합니다. 휴지통에서 다시 복원할 수 있어요.`}
+        cancelLabel="취소"
+        confirmLabel="삭제"
+        confirmColor="var(--mf-danger)"
+        onCancel={controller.cancelDelete}
+        onConfirm={controller.confirmDeleteYes}
+      />
+
       <ConfirmModal
         visible={!!state.confirmRestore}
         zIndex={120}
