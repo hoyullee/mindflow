@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { dropIndicator, dropTargetAt, edgeScroll } from './kanbanDrag';
+import { columnDropIndex, columnDropIndicator, dropIndicator, dropTargetAt, edgeScroll } from './kanbanDrag';
 import type { ColumnHit } from './kanbanDrag';
 
 const rect = (left: number, top: number, right: number, bottom: number) => ({ left, top, right, bottom });
@@ -49,5 +49,22 @@ describe('칸반 카드 드래그 — 드롭 자리', () => {
     expect(edgeScroll(10, 0, 1000)).toBeLessThan(0);
     expect(edgeScroll(990, 0, 1000)).toBeGreaterThan(0);
     expect(edgeScroll(500, 0, 1000)).toBe(0);
+  });
+});
+
+describe('칸반 열 드래그 — 놓일 자리', () => {
+  it('열의 **중심**을 넘어야 자리가 바뀐다 (끌고 있는 열은 계산에서 뺀다)', () => {
+    // c1(0~300) c2(320~620). c1을 끌고 있으면 후보는 c2 하나뿐이다.
+    expect(columnDropIndex(columns, 100, 'c1')).toBe(0); // c2의 중심(470) 앞
+    expect(columnDropIndex(columns, 500, 'c1')).toBe(1); // c2의 중심 뒤
+    // c2를 끌고 있으면 후보는 c1.
+    expect(columnDropIndex(columns, 100, 'c2')).toBe(0);
+    expect(columnDropIndex(columns, 200, 'c2')).toBe(1);
+  });
+
+  it('세로 선은 후보 열의 왼쪽/오른쪽 바깥에 그린다', () => {
+    expect(columnDropIndicator(columns, 0, 'c1')).toMatchObject({ left: 312, top: 0, height: 800 });
+    expect(columnDropIndicator(columns, 1, 'c1')).toMatchObject({ left: 628 });
+    expect(columnDropIndicator([], 0, 'c1')).toBeNull();
   });
 });

@@ -56,6 +56,33 @@ export function dropIndicator(columns: ColumnHit[], target: DropTarget, dragging
   return { left, width, top };
 }
 
+/**
+ * 열 머리를 끌 때 놓일 자리(열 목록에서의 index).
+ *
+ * 카드와 같은 규칙 — 열의 **중심**을 넘어야 자리가 바뀐다. 끌고 있는 열은 계산에서
+ * 빼므로 "지금 있는 자리" 때문에 한 칸씩 밀리지 않는다(코어 `moveColumn`이 받는
+ * index도 자기 자신을 뺀 목록 기준이다).
+ */
+export function columnDropIndex(columns: ColumnHit[], x: number, draggingId: string): number {
+  const others = columns.filter((c) => c.id !== draggingId);
+  let index = 0;
+  for (const c of others) {
+    if (x < (c.rect.left + c.rect.right) / 2) break;
+    index += 1;
+  }
+  return index;
+}
+
+/** 열 사이에 그릴 세로 선의 화면 좌표. 열이 하나도 없으면 null. */
+export function columnDropIndicator(columns: ColumnHit[], index: number, draggingId: string): { left: number; top: number; height: number } | null {
+  const others = columns.filter((c) => c.id !== draggingId);
+  if (!others.length) return null;
+  const i = Math.max(0, Math.min(index, others.length));
+  const ref = (i === 0 ? others[0] : others[i - 1]) as ColumnHit;
+  const left = i === 0 ? ref.rect.left - 8 : ref.rect.right + 8;
+  return { left, top: ref.rect.top, height: ref.rect.bottom - ref.rect.top };
+}
+
 /** 가장자리에 가까우면 스크롤할 양(px) — 화면 밖 열·카드로 끌고 갈 수 있게. */
 export function edgeScroll(pos: number, min: number, max: number, zone = 60, speed = 14): number {
   if (pos < min + zone) return -speed;
