@@ -340,7 +340,10 @@ export function richToMarkdown(src: RichSource): string {
       if (r.i) out = `*${out}*`;
       if (r.b) out = `**${out}**`;
       if (r.s) out = `~~${out}~~`;
-      if (r.href) out = `[${out}](${r.href})`;
+      // 자동 링크(글자 자체가 곧 주소)는 `[주소](주소)`로 부풀리지 않는다 —
+      // 마크다운 렌더러도 맨 URL을 링크로 읽고, 이 글을 **다시 편집**할 때
+      // 원문이 그대로 보여야 왕복이 자연스럽다(칸반 카드 편집기가 그 경우다).
+      if (r.href && r.href !== normalizeUrl(core)) out = `[${out}](${r.href})`;
       return lead + out + tail;
     })
     .join('');

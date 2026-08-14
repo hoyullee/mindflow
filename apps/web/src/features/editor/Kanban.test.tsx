@@ -614,3 +614,72 @@ describe('칸반 — 카드 색 라벨', () => {
     firePointer(window, 'pointerup', { clientX: 250, clientY: 140 });
   });
 });
+
+describe('칸반 — 카드 서식(마크다운 단축·자동 링크)', () => {
+  beforeEach(() => {
+    localStorage.clear();
+    mockMatchMedia(false);
+    localStorage.setItem('mf_demo_session', JSON.stringify({ user: { id: 'u', email: 'me@example.com' } }));
+  });
+  afterEach(cleanup);
+
+  const editCard = async (container: HTMLElement, id: string, value: string): Promise<void> => {
+    fireEvent.doubleClick(container.querySelector(`[data-kanban-card="${id}"]`)!);
+    const box = await waitFor(() => container.querySelector(`[data-kanban-card-edit="${id}"]`) as HTMLTextAreaElement);
+    fireEvent.change(box, { target: { value } });
+    fireEvent.keyDown(box, { key: 'Enter' });
+  };
+
+  it('확정하면 마커가 서식이 되고, URL은 링크가 된다', async () => {
+    localStorage.setItem('mindflow_doc_kf1', JSON.stringify(KANBAN));
+    const { container } = renderEditor('/editor?map=kf1&title=x');
+    await waitFor(() => expect(container.querySelectorAll('[data-kanban-card]')).toHaveLength(2));
+
+    await editCard(container, 'k1', '**중요** 확인 https://ex.com/a');
+    fireEvent.keyDown(window, { key: 's', ctrlKey: true });
+    await waitFor(() => {
+      const c = saved('kf1').cards.find((x: { id: string }) => x.id === 'k1');
+      // 마커는 사라지고 서식만 남는다.
+      expect(c.text).toBe('중요 확인 https://ex.com/a');
+      expect(c.rich.some((r: { b?: boolean }) => r.b)).toBe(true);
+      expect(c.rich.some((r: { href?: string }) => r.href === 'https://ex.com/a')).toBe(true);
+    });
+    // 화면도 서식대로 — 굵은 조각과 링크 조각이 있다.
+    const card = container.querySelector('[data-kanban-card="k1"]') as HTMLElement;
+    expect(Array.from(card.querySelectorAll('span')).some((el) => el.style.fontWeight === '800')).toBe(true);
+    expect(card.querySelector('[data-href="https://ex.com/a"]')).toBeTruthy();
+  });
+
+  it('다시 열면 마크다운 원문으로 보이고, 그대로 확정하면 서식이 유지된다', async () => {
+    localStorage.setItem('mindflow_doc_kf2', JSON.stringify(KANBAN));
+    const { container } = renderEditor('/editor?map=kf2&title=x');
+    await waitFor(() => expect(container.querySelectorAll('[data-kanban-card]')).toHaveLength(2));
+
+    await editCard(container, 'k1', '~~취소~~ 그리고 *기울임*');
+    await waitFor(() => expect(container.querySelector('[data-kanban-card-edit]')).toBeNull());
+
+    fireEvent.doubleClick(container.querySelector('[data-kanban-card="k1"]')!);
+    const box = await waitFor(() => container.querySelector('[data-kanban-card-edit="k1"]') as HTMLTextAreaElement);
+    expect(box.value).toBe('~~취소~~ 그리고 *기울임*');
+    fireEvent.keyDown(box, { key: 'Enter' });
+
+    fireEvent.keyDown(window, { key: 's', ctrlKey: true });
+    await waitFor(() => {
+      const c = saved('kf2').cards.find((x: { id: string }) => x.id === 'k1');
+      expect(c.rich.some((r: { s?: boolean }) => r.s)).toBe(true);
+      expect(c.rich.some((r: { i?: boolean }) => r.i)).toBe(true);
+    });
+  });
+
+  it('평문으로 고치면 rich 키가 사라진다', async () => {
+    localStorage.setItem('mindflow_doc_kf3', JSON.stringify(KANBAN));
+    const { container } = renderEditor('/editor?map=kf3&title=x');
+    await waitFor(() => expect(container.querySelectorAll('[data-kanban-card]')).toHaveLength(2));
+
+    await editCard(container, 'k1', '**굵게**');
+    await waitFor(() => expect(container.querySelector('[data-kanban-card-edit]')).toBeNull());
+    await editCard(container, 'k1', '그냥 글자');
+    fireEvent.keyDown(window, { key: 's', ctrlKey: true });
+    await waitFor(() => expect('rich' in saved('kf3').cards.find((x: { id: string }) => x.id === 'k1')).toBe(false));
+  });
+});
