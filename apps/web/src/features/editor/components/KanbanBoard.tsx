@@ -348,12 +348,15 @@ export function KanbanBoard({ controller, theme: th }: { controller: EditorContr
         {!readOnly && (
           <button
             type="button"
+            className="mf-ed-btn"
             data-add-column
             onClick={controller.addColumn}
             style={{
               flex: '0 0 auto',
               width: isMobile ? 232 : 264,
-              alignSelf: 'flex-start',
+              // 디자인 원본은 이 타일을 띠 전체 높이로 늘린다(`align-self: stretch`)
+              // — 열보다 짧으면 "여기에 열이 하나 더 선다"로 읽히지 않는다(요청).
+              alignSelf: 'stretch',
               display: 'flex',
               flexDirection: 'column',
               alignItems: 'center',
@@ -856,7 +859,9 @@ function Column({
         // 열 안이 스크롤된다.
         alignSelf: 'flex-start',
         maxHeight: '100%',
-        background: th.panel2,
+        // 디자인 원본의 열 배경(#FBF6F1)처럼 패널2보다 **한 톤 더 옅게**(제보).
+        // 바닥과 같은 방식으로 관계를 적어 테마가 바뀌어도 순서가 유지된다.
+        background: mixHex(th.panel2, th.panel, 0.25),
         border: `1px solid ${dropTarget ? hexA(th.accent, 0.55) : th.border}`,
         borderRadius: 16,
         // 배경과 또렷이 갈리게 — 디자인 원본의 열 그림자.
@@ -972,6 +977,7 @@ function Column({
       {!readOnly && (
         <button
           type="button"
+          className="mf-ed-btn"
           data-add-card-foot={col.id}
           onClick={startCompose}
           style={{ display: 'flex', alignItems: 'center', gap: 7, width: '100%', padding: '11px 13px', border: 0, borderTop: `1px solid ${th.border}`, background: 'transparent', fontSize: 13, fontWeight: 600, fontFamily: 'inherit', color: th.subtext, cursor: 'pointer', borderRadius: '0 0 16px 16px', textAlign: 'left', minHeight: isMobile ? 44 : undefined }}
@@ -1023,6 +1029,7 @@ function ColumnIconButton({
   return (
     <button
       type="button"
+      className="mf-ed-btn"
       data-column-btn
       aria-label={label}
       title={label}
@@ -1190,6 +1197,7 @@ function Card({ card, controller, theme: th, onPointerDown, dragging, done }: { 
   const comments = controller.canComment ? (controller.commentCounts[card.id] ?? 0) : 0;
   return (
     <div
+      className="mf-kb-card"
       data-kanban-card={card.id}
       data-selected={selected ? '1' : undefined}
       onPointerDown={(e) => {

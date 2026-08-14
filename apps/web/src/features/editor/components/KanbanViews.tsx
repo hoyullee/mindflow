@@ -68,6 +68,7 @@ function ListRow({ card, col, index, done, controller, theme: th, isMobile }: { 
   const tone = card.due && !done ? dueTone(card.due) : 'normal';
   return (
     <div
+      className="mf-kb-row"
       data-list-row={card.id}
       role="button"
       tabIndex={0}
@@ -137,7 +138,7 @@ export function KanbanTimeline({ controller, theme: th, query, filter = EMPTY_FI
         </div>
 
         {withDue.map(({ card, col, index }) => {
-          const span = timelineSpan(card.due as string, days);
+          const span = timelineSpan(card, days);
           const left = span ? (span.start / days.length) * 100 : 0;
           const width = span ? ((span.end - span.start + 1) / days.length) * 100 : 0;
           // 마지막 열(완료)의 카드는 기한이 지났어도 **늦은 일이 아니다** — 끝난 일에
@@ -149,6 +150,7 @@ export function KanbanTimeline({ controller, theme: th, query, filter = EMPTY_FI
           return (
             <div
               key={card.id}
+              className="mf-kb-row"
               data-timeline-row={card.id}
               role="button"
               tabIndex={0}

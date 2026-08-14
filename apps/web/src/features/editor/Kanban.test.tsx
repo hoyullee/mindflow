@@ -1251,3 +1251,88 @@ describe('칸반 — 후속 6건', () => {
     await waitFor(() => expect(container.querySelectorAll('[data-list-row]')).toHaveLength(1));
   });
 });
+
+describe('칸반 — 후속(열 색·열 추가 길이·호버·시작일)', () => {
+  beforeEach(() => {
+    localStorage.clear();
+    mockMatchMedia(false);
+    localStorage.setItem('mf_demo_session', JSON.stringify({ user: { id: 'u', email: 'me@example.com' } }));
+  });
+  afterEach(cleanup);
+
+  it('열 배경은 패널2보다 옅고, 바닥보다는 진하다', async () => {
+    localStorage.setItem('mindflow_doc_kh1', JSON.stringify(KANBAN));
+    const { container } = renderEditor('/editor?map=kh1&title=x');
+    const col = await waitFor(() => container.querySelector('[data-kanban-column="c1"]') as HTMLElement);
+    const rgb = (hex: string): string => {
+      const c = hex.replace('#', '');
+      return `rgb(${parseInt(c.slice(0, 2), 16)}, ${parseInt(c.slice(2, 4), 16)}, ${parseInt(c.slice(4, 6), 16)})`;
+    };
+    expect(col.style.background).toBe(rgb(mixHex(UI_THEME.panel2, UI_THEME.panel, 0.25)));
+    // 바닥 → 열 → 카드 순으로 진해진다(디자인 원본의 층).
+    expect(col.style.background).not.toBe((container.querySelector('[data-kanban-root]') as HTMLElement).style.background);
+  });
+
+  it('열 추가 타일은 띠 전체 높이로 늘어난다', async () => {
+    localStorage.setItem('mindflow_doc_kh2', JSON.stringify(KANBAN));
+    const { container } = renderEditor('/editor?map=kh2&title=x');
+    const add = await waitFor(() => container.querySelector('[data-add-column]') as HTMLElement);
+    expect(add.style.alignSelf).toBe('stretch');
+  });
+
+  /** 호버는 CSS라 jsdom이 그리지 않는다 — **어디에 붙어 있는지**를 계약으로 고정한다
+   *  (인라인 배경을 이기는 `.mf-ed-btn::after` 덧칠은 실브라우저에서 실측). */
+  it('호버가 붙어야 할 곳에 클래스가 있다 — GNB·열·카드·행', async () => {
+    localStorage.setItem('mindflow_doc_kh3', JSON.stringify(KANBAN));
+    const { container } = renderEditor('/editor?map=kh3&title=x');
+    await waitFor(() => expect(container.querySelectorAll('[data-kanban-card]')).toHaveLength(2));
+
+    const hoverable = (sel: string): boolean => (container.querySelector(sel) as HTMLElement | null)?.classList.contains('mf-ed-btn') ?? false;
+    expect(screen.getByRole('button', { name: '보기' }).classList.contains('mf-ed-btn')).toBe(true);
+    expect(screen.getByRole('button', { name: '공유' }).classList.contains('mf-ed-btn')).toBe(true);
+    expect(hoverable('[data-add-card="c1"]')).toBe(true);
+    expect(hoverable('[data-column-menu="c1"]')).toBe(true);
+    expect(hoverable('[data-add-card-foot="c1"]')).toBe(true);
+    expect(hoverable('[data-add-column]')).toBe(true);
+    expect((container.querySelector('[data-kanban-card="k1"]') as HTMLElement).classList.contains('mf-kb-card')).toBe(true);
+
+    // 상세 팝업의 삭제·닫기
+    fireEvent.doubleClick(container.querySelector('[data-kanban-card="k1"]')!);
+    const detail = await waitFor(() => container.querySelector('[data-card-detail="k1"]') as HTMLElement);
+    expect((detail.querySelector('[data-detail-delete]') as HTMLElement).classList.contains('mf-ed-danger')).toBe(true);
+    expect((detail.querySelector('[data-detail-close]') as HTMLElement).classList.contains('mf-ed-btn')).toBe(true);
+    fireEvent.click(detail.querySelector('[data-detail-close]')!);
+
+    // 리스트·타임라인의 행
+    fireEvent.click(container.querySelector('[data-kanban-tab="list"]')!);
+    await waitFor(() => expect((container.querySelector('[data-list-row]') as HTMLElement).classList.contains('mf-kb-row')).toBe(true));
+  });
+
+  it('상세에서 시작일을 정하면 저장되고, 지우기로 키가 사라진다', async () => {
+    localStorage.setItem('mindflow_doc_kh4', JSON.stringify(KANBAN));
+    const { container } = renderEditor('/editor?map=kh4&title=x');
+    await waitFor(() => expect(container.querySelectorAll('[data-kanban-card]')).toHaveLength(2));
+
+    fireEvent.doubleClick(container.querySelector('[data-kanban-card="k1"]')!);
+    const detail = await waitFor(() => container.querySelector('[data-card-detail="k1"]') as HTMLElement);
+    const start = detail.querySelector('[data-detail-start]') as HTMLInputElement;
+    expect((detail.querySelector('[data-detail-start-clear]') as HTMLButtonElement).disabled).toBe(true);
+
+    fireEvent.change(start, { target: { value: '2026-08-10' } });
+    fireEvent.change(detail.querySelector('[data-detail-due]')!, { target: { value: '2026-08-20' } });
+    fireEvent.keyDown(window, { key: 's', ctrlKey: true });
+    await waitFor(() => {
+      const c = saved('kh4').cards.find((x: { id: string }) => x.id === 'k1');
+      expect(c.start).toBe('2026-08-10');
+      expect(c.due).toBe('2026-08-20');
+    });
+
+    fireEvent.click(detail.querySelector('[data-detail-start-clear]')!);
+    fireEvent.keyDown(window, { key: 's', ctrlKey: true });
+    await waitFor(() => {
+      const c = saved('kh4').cards.find((x: { id: string }) => x.id === 'k1');
+      expect('start' in c).toBe(false);
+      expect(c.due).toBe('2026-08-20');
+    });
+  });
+});

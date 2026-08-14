@@ -118,6 +118,7 @@ export function CardDetail({ card, controller, theme: th, isMobile }: { card: Ka
             {!readOnly && (
               <button
                 type="button"
+                className="mf-ed-btn mf-ed-danger"
                 data-detail-delete
                 onClick={() => {
                   controller.deleteCard(card.id);
@@ -130,6 +131,7 @@ export function CardDetail({ card, controller, theme: th, isMobile }: { card: Ka
             )}
             <button
               type="button"
+              className="mf-ed-btn"
               data-detail-close
               aria-label="닫기"
               title="닫기"
@@ -183,9 +185,9 @@ export function CardDetail({ card, controller, theme: th, isMobile }: { card: Ka
             })}
           </Section>
 
-          {/* 담당은 아바타가 여러 개라 넓게, 기한은 입력 하나라 좁게 — 가운데로
-              몰리지 않도록 폭을 갈랐다(요청). */}
-          <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : 'minmax(0, 1fr) 260px', gap: 14 }}>
+          {/* 담당은 아바타가 여러 개라 한 줄을 통째로 쓰고, 날짜 둘은 그 아래에서
+              반씩 나눈다 — 셋을 한 줄에 몰면 아바타가 낄 폭이 남지 않는다. */}
+          <div style={{ display: 'grid', gap: 14 }}>
             <Section label="담당" style={label}>
               <button
                 type="button"
@@ -219,31 +221,60 @@ export function CardDetail({ card, controller, theme: th, isMobile }: { card: Ka
               {!participants.length && <span style={{ fontSize: 12.5, color: th.subtext }}>공유한 사람이 없어요</span>}
             </Section>
 
-            <Section label="기한" style={label}>
-              <input
-                className="mf-edit"
-                type="date"
-                data-detail-due
-                value={card.due ?? ''}
-                readOnly={readOnly}
-                onKeyDown={(e) => e.stopPropagation()}
-                onChange={(e) => controller.setCardMeta(card.id, { due: e.target.value || null })}
-                style={{ height: isMobile ? 40 : 34, padding: '0 11px', borderRadius: 9, border: `1px solid ${th.border}`, background: th.panel, outline: 'none', fontSize: 13, color: th.text, fontFamily: 'inherit' }}
-              />
-              {/* 지우기는 **항상 자리를 지킨다** — 기한이 없으면 비활성(요청).
-                  버튼이 떴다 사라지면 그 줄의 폭이 들썩인다. */}
-              {!readOnly && (
-                <button
-                  type="button"
-                  data-detail-due-clear
-                  disabled={!card.due}
-                  onClick={() => controller.setCardMeta(card.id, { due: null })}
-                  style={{ ...chip(false), height: isMobile ? 40 : 34, cursor: card.due ? 'pointer' : 'default', opacity: card.due ? 1 : 0.45 }}
-                >
-                  지우기
-                </button>
-              )}
-            </Section>
+            {/* 시작일 · 기한 — 타임라인 막대가 이 둘 사이를 그린다(시작일이 없으면
+                오늘부터). 지우기는 **항상 자리를 지킨다** — 값이 없으면 비활성(요청):
+                버튼이 떴다 사라지면 그 줄의 폭이 들썩인다. */}
+            <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : '1fr 1fr', gap: 14 }}>
+              <Section label="시작일" style={label}>
+                <input
+                  className="mf-edit"
+                  type="date"
+                  data-detail-start
+                  value={card.start ?? ''}
+                  readOnly={readOnly}
+                  onKeyDown={(e) => e.stopPropagation()}
+                  onChange={(e) => controller.setCardMeta(card.id, { start: e.target.value || null })}
+                  style={{ height: isMobile ? 40 : 34, padding: '0 11px', borderRadius: 9, border: `1px solid ${th.border}`, background: th.panel, outline: 'none', fontSize: 13, color: th.text, fontFamily: 'inherit' }}
+                />
+                {!readOnly && (
+                  <button
+                    type="button"
+                    className="mf-ed-btn"
+                    data-detail-start-clear
+                    disabled={!card.start}
+                    onClick={() => controller.setCardMeta(card.id, { start: null })}
+                    style={{ ...chip(false), height: isMobile ? 40 : 34, cursor: card.start ? 'pointer' : 'default', opacity: card.start ? 1 : 0.45 }}
+                  >
+                    지우기
+                  </button>
+                )}
+              </Section>
+
+              <Section label="기한" style={label}>
+                <input
+                  className="mf-edit"
+                  type="date"
+                  data-detail-due
+                  value={card.due ?? ''}
+                  readOnly={readOnly}
+                  onKeyDown={(e) => e.stopPropagation()}
+                  onChange={(e) => controller.setCardMeta(card.id, { due: e.target.value || null })}
+                  style={{ height: isMobile ? 40 : 34, padding: '0 11px', borderRadius: 9, border: `1px solid ${th.border}`, background: th.panel, outline: 'none', fontSize: 13, color: th.text, fontFamily: 'inherit' }}
+                />
+                {!readOnly && (
+                  <button
+                    type="button"
+                    className="mf-ed-btn"
+                    data-detail-due-clear
+                    disabled={!card.due}
+                    onClick={() => controller.setCardMeta(card.id, { due: null })}
+                    style={{ ...chip(false), height: isMobile ? 40 : 34, cursor: card.due ? 'pointer' : 'default', opacity: card.due ? 1 : 0.45 }}
+                  >
+                    지우기
+                  </button>
+                )}
+              </Section>
+            </div>
           </div>
 
           {/* 분류 — 문서가 목록을 들고 있다(요청). 기본은 **없음**뿐이고, 직접 적어

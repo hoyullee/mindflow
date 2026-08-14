@@ -222,21 +222,26 @@ export function timelineRange(today: Date = new Date()): TimelineDay[] {
 }
 
 /**
- * 기한 막대가 차지하는 칸 범위 — **오늘부터 기한까지**(지났으면 기한부터 오늘까지).
+ * 기한 막대가 차지하는 칸 범위.
  *
- * 원본은 카드마다 시작·끝 날(`s`/`e`)을 들고 있었지만 우리 카드에는 기한 하나뿐이다.
- * 새 필드를 만드는 대신 "지금부터 그날까지 남은 기간"을 그린다 — 손대지 않아도
- * 뜻이 통하고, 늦은 일은 오늘까지 뻗어 눈에 띈다. 창(14일) 밖은 가장자리로 자른다.
+ * **시작일이 있으면 시작일부터 기한까지**, 없으면 **오늘부터 기한까지**(지났으면
+ * 기한부터 오늘까지). 시작일은 나중에 더한 필드라(요청) 적지 않은 카드가 대부분인데,
+ * 그때도 "지금부터 그날까지 남은 기간"이 뜻이 통하고 늦은 일은 오늘까지 뻗어
+ * 눈에 띈다. 창(14일) 밖은 가장자리로 자른다.
  */
-export function timelineSpan(due: string, days: TimelineDay[], today: Date = new Date()): { start: number; end: number; late: boolean } | null {
+export function timelineSpan(card: { due?: string; start?: string } | string, days: TimelineDay[], today: Date = new Date()): { start: number; end: number; late: boolean } | null {
   if (!days.length) return null;
+  const due = typeof card === 'string' ? card : (card.due ?? '');
+  const startIso = typeof card === 'string' ? '' : (card.start ?? '');
   const dueDay = dayDiff(due, today);
   if (dueDay === null) return null;
   const first = dayDiff(days[0]!.iso, today) as number;
   const last = dayDiff(days[days.length - 1]!.iso, today) as number;
   const late = dueDay < 0;
-  const lo = Math.min(0, dueDay);
-  const hi = Math.max(0, dueDay);
+  // 기준점 — 시작일이 있으면 그 날, 없으면 오늘(0).
+  const anchor = startIso ? (dayDiff(startIso, today) ?? 0) : 0;
+  const lo = Math.min(anchor, dueDay);
+  const hi = Math.max(anchor, dueDay);
   // 창 밖으로 완전히 벗어난 기한도 **가장자리에 붙여** 보여 준다(원본의 clamp).
   const start = Math.max(first, Math.min(lo, last));
   const end = Math.max(first, Math.min(hi, last));
