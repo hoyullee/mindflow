@@ -764,6 +764,8 @@ export interface EditorController {
   moveCardTo: (cardId: string, colId: string, index: number) => void;
   /** 열을 `index` 자리로 옮긴다(열 머리 드래그). */
   moveColumnTo: (colId: string, index: number) => void;
+  /** 카드 색 라벨 — `null`이면 없앤다(키를 지워 CRDT 필드도 사라지게). */
+  setCardBg: (id: string, bg: string | null) => void;
   /** 화이트보드 그리기 도구(M4). 'select'가 기본 — 펜/하이라이터/지우개일 때는
    * 캔버스 위에 그리기 오버레이(BoardDrawLayer)가 포인터를 받는다. */
   boardTool: BoardTool;
@@ -5326,6 +5328,25 @@ export function useEditorState(): EditorController {
     [commitDoc],
   );
 
+  const setCardBg = useCallback(
+    (id: string, bg: string | null) => {
+      if (readOnlyRef.current) return;
+      commitDoc((d) => ({
+        ...d,
+        cards: (d.cards ?? []).map((c) => {
+          if (c.id !== id) return c;
+          if (bg) return { ...c, bg };
+          // 없앨 때는 키를 **지운다** — 남겨 두면 CRDT에 빈 필드가 계속 오간다
+          // (`clearNodeImage`와 같은 규칙).
+          const rest = { ...c };
+          delete rest.bg;
+          return rest;
+        }),
+      }));
+    },
+    [commitDoc],
+  );
+
   /** 열을 `index` 자리로 옮긴다(열 순서는 배열 순서 — 코어 `moveColumn`). */
   const moveColumnTo = useCallback(
     (colId: string, index: number) => {
@@ -5901,6 +5922,7 @@ export function useEditorState(): EditorController {
     selectCard,
     moveCardTo,
     moveColumnTo,
+    setCardBg,
     boardTool,
     setBoardTool,
     penColor,
