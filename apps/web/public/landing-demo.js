@@ -219,4 +219,21 @@
   };
   if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', boot);
   else boot();
+
+  /* 새 버전 확인 — 랜딩은 **정적 페이지**라 앱 번들(SW 등록·주기 확인·토스트)이
+   * 실행되지 않는다. 게다가 이 페이지 자체가 서비스 워커의 precache 대상이라,
+   * 랜딩만 열어 두면 배포가 나가도 옛 화면이 계속 뜨고 아무도 확인하지 않는다
+   * (제보: "Vercel엔 배포됐는데 크롬에선 업데이트가 안 뜬다").
+   *
+   * 여기서 하는 일은 **확인 요청 한 번**뿐이다: 새 SW가 있으면 설치되고, 다음
+   * 방문(또는 앱 화면 진입)에서 최신이 뜬다. 랜딩을 저절로 리로드하지는 않는다
+   * — 읽고 있는 페이지가 예고 없이 새로 고쳐지면 그게 더 이상하다.
+   * 실패해도 데모에는 영향이 없다(등록이 없으면 조용히 끝난다). */
+  try {
+    if (navigator.serviceWorker) {
+      navigator.serviceWorker.getRegistration().then((reg) => reg && reg.update()).catch(() => {});
+    }
+  } catch {
+    /* 구형 브라우저·차단 환경 — 랜딩 표시에는 영향 없음 */
+  }
 })();

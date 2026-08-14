@@ -11,12 +11,15 @@ import { __resetUpdateGate, useUpdateGuard, type UpdateRisk } from './updateGate
 
 const updateServiceWorker = vi.fn();
 const setNeedRefresh = vi.fn();
+/** 등록된 SW의 `update()` — "새 버전이 있나" 확인 요청. */
+const swUpdate = vi.fn();
 vi.mock('virtual:pwa-register/react', () => ({
-  useRegisterSW: () => ({
-    needRefresh: [true, setNeedRefresh],
-    offlineReady: [false, vi.fn()],
-    updateServiceWorker,
-  }),
+  useRegisterSW: (opts?: { onRegisteredSW?: (url: string, reg: unknown) => void }) => {
+    // 실제 훅은 등록이 끝나면 이 콜백을 부른다 — 그 자리에서 무엇을 하는지가
+    // 이 파일의 검증 대상 중 하나다(등록 직후 즉시 확인).
+    opts?.onRegisteredSW?.('/sw.js', { update: swUpdate });
+    return { needRefresh: [true, setNeedRefresh], offlineReady: [false, vi.fn()], updateServiceWorker };
+  },
 }));
 
 /** 화면 역할 — 게이트에 위험도를 신고한다(홈/에디터가 하는 일). */
@@ -29,6 +32,7 @@ beforeEach(() => {
   __resetUpdateGate();
   updateServiceWorker.mockClear();
   setNeedRefresh.mockClear();
+  swUpdate.mockClear();
 });
 afterEach(() => cleanup());
 
@@ -57,5 +61,37 @@ describe('UpdatePrompt — 닫기(X)와 자동 적용', () => {
     );
     // anyPeerBusy의 응답 대기(250ms)를 지나 skipWaiting까지 도달해야 한다.
     await waitFor(() => expect(updateServiceWorker).toHaveBeenCalled(), { timeout: 3000 });
+  });
+
+  it('등록되자마자 새 버전을 한 번 확인한다(제보: 배포됐는데 아무 반응이 없다)', () => {
+    // 화면 가드(`useUpdateGuard`)는 화면 진입마다 따로 확인을 요청한다 — 그것과
+    // 섞이지 않게 **가드 없이** 띄워서 등록 자체의 확인만 본다.
+    render(<UpdatePrompt />);
+    // 등록만으로도 브라우저가 소프트 업데이트를 돌리지만, 이미 같은 SW가 등록돼
+    // 있으면 건너뛸 수 있다 — 첫 화면에서 우리가 직접 물어본다.
+    expect(swUpdate).toHaveBeenCalled();
+  });
+
+  it('다른 탭 때문에 자동 적용이 미뤄지면 토스트로 알린다(조용히 멈춰 있지 않게)', async () => {
+    // safe 화면은 원래 묻지 않고 조용히 적용한다 — 그런데 다른 탭이 편집 중이면
+    // 적용이 계속 미뤄지면서 화면에는 아무 표시가 없었다(재시도만 20초마다).
+    const channel = new BroadcastChannel('mf-update-gate');
+    channel.onmessage = (event: MessageEvent) => {
+      const data = event.data as { t?: string; id?: string } | null;
+      if (data?.t === 'poll') channel.postMessage({ t: 'busy', id: data.id });
+    };
+    try {
+      render(
+        <>
+          <Guard risk="safe" />
+          <UpdatePrompt />
+        </>,
+      );
+      // 피어가 바쁘다고 답했으므로 적용은 미뤄지고, 대신 토스트가 뜬다.
+      expect(await screen.findByRole('button', { name: '새로고침' }, { timeout: 3000 })).toBeTruthy();
+      expect(updateServiceWorker).not.toHaveBeenCalled();
+    } finally {
+      channel.close();
+    }
   });
 });
