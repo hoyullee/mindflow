@@ -1327,6 +1327,73 @@ describe('화이트보드 에디터', () => {
     });
   });
 
+  it('겹친 프레임 — 작은 프레임이 위라 안쪽을 집을 수 있고, 큰 프레임은 따라오지 않는다(제보)', async () => {
+    localStorage.setItem(
+      'mindflow_doc_b48',
+      JSON.stringify({
+        ...BOARD,
+        // 큰 프레임을 **나중에** 만든 배치(배열 뒤 = 예전에는 DOM 위) — 작은
+        // 프레임의 빈 자리를 눌러도 큰 프레임이 잡혀 안쪽을 영영 못 집었다.
+        zones: [
+          { id: 'zs', x: -200, y: -160, w: 240, h: 160, label: '작은 영역', color: null },
+          { id: 'zb', x: -320, y: -260, w: 620, h: 420, label: '큰 영역', color: null },
+        ],
+        floats: [],
+      }),
+    );
+    const { container } = renderEditor('/editor?map=b48&title=x');
+    await waitFor(() => expect(container.querySelector('[data-zone-hit="zs"]')).toBeTruthy());
+
+    // 작은 프레임이 큰 프레임보다 **뒤에** 그려진다(같은 z에서 DOM 순서가 승자).
+    const hits = Array.from(container.querySelectorAll('[data-zone-hit]')).map((e) => e.getAttribute('data-zone-hit'));
+    expect(hits).toEqual(['zb', 'zs']);
+
+    // 작은 프레임을 끌면 큰 프레임은 제자리다(예전에는 중심 규칙이라 서로 담았다).
+    const small = container.querySelector('[data-zone-hit="zs"]') as HTMLElement;
+    firePointer(small, 'pointerdown', { pointerId: 71, clientX: 300, clientY: 300, button: 0 });
+    firePointer(document.body, 'pointermove', { pointerId: 71, clientX: 340, clientY: 330 });
+    firePointer(document.body, 'pointerup', { pointerId: 71, clientX: 340, clientY: 330 });
+    fireEvent.keyDown(window, { key: 's', ctrlKey: true });
+
+    await waitFor(() => {
+      const saved = JSON.parse(localStorage.getItem('mindflow_doc_b48') || 'null');
+      const zs = saved.zones.find((z: { id: string }) => z.id === 'zs');
+      const zb = saved.zones.find((z: { id: string }) => z.id === 'zb');
+      expect(zs.x).not.toBe(-200); // 움직였다
+      expect(zb).toMatchObject({ x: -320, y: -260 }); // 큰 프레임은 그대로
+    });
+  });
+
+  it('겹친 프레임 — 큰 프레임을 끌면 **완전히** 든 작은 프레임은 따라온다(중첩은 그대로)', async () => {
+    localStorage.setItem(
+      'mindflow_doc_b49',
+      JSON.stringify({
+        ...BOARD,
+        zones: [
+          { id: 'zs', x: -200, y: -160, w: 240, h: 160, label: '작은 영역', color: null },
+          { id: 'zb', x: -320, y: -260, w: 620, h: 420, label: '큰 영역', color: null },
+        ],
+        floats: [],
+      }),
+    );
+    const { container } = renderEditor('/editor?map=b49&title=x');
+    const big = await waitFor(() => container.querySelector('[data-zone-hit="zb"]') as HTMLElement);
+    firePointer(big, 'pointerdown', { pointerId: 72, clientX: 300, clientY: 300, button: 0 });
+    firePointer(document.body, 'pointermove', { pointerId: 72, clientX: 360, clientY: 300 });
+    firePointer(document.body, 'pointerup', { pointerId: 72, clientX: 360, clientY: 300 });
+    fireEvent.keyDown(window, { key: 's', ctrlKey: true });
+
+    await waitFor(() => {
+      const saved = JSON.parse(localStorage.getItem('mindflow_doc_b49') || 'null');
+      const zs = saved.zones.find((z: { id: string }) => z.id === 'zs');
+      const zb = saved.zones.find((z: { id: string }) => z.id === 'zb');
+      expect(zb.x).not.toBe(-320);
+      expect(zs.x).not.toBe(-200); // 안에 든 프레임이 함께 왔다
+      // 둘의 상대 위치가 그대로 — 계층이 통째로 움직였다.
+      expect(zs.x - zb.x).toBe(120);
+    });
+  });
+
   it('빈 프레임은 "내용에 맞추기"가 아무 일도 하지 않는다', async () => {
     localStorage.setItem(
       'mindflow_doc_b47',

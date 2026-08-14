@@ -35,11 +35,16 @@ const ZONE_BASE_Z = 8;
 
 export function ZoneLayer({ zones, theme: th, controller }: ZoneLayerProps) {
   if (!zones.length) return null;
+  // **작은 영역이 위**로 오게 그린다(큰 것부터). 히트 판은 전부 같은 z(8)라 승자를
+  // 정하는 것은 DOM 순서인데, 배열 순서대로 그리면 나중에 만든 큰 영역이 작은 영역을
+  // 통째로 덮어 안쪽 영역을 영영 집을 수 없다(제보). 겹친 프레임에서 안쪽이 위라는
+  // 규칙은 히트 테스트(`innermostFrameAt`)와도 같은 방향이다.
+  const stacked = [...zones].sort((a, b) => b.w * b.h - a.w * a.h);
   return (
     <>
       {/* 면 + 히트 판 — 콘텐츠(메모 10 / 주제 40 …)보다 아래라 영역 안의 객체
           클릭이 먼저 잡히고, 빈 자리 클릭만 여기 닿는다. */}
-      {zones.map((z) => (
+      {stacked.map((z) => (
         <div
           key={`base${z.id}`}
           data-zone-hit={z.id}
@@ -57,7 +62,7 @@ export function ZoneLayer({ zones, theme: th, controller }: ZoneLayerProps) {
           }}
         />
       ))}
-      {zones.map((z) => {
+      {stacked.map((z) => {
         const col = z.color || th.accent;
         const selected = controller.selection?.kind === 'zone' && controller.selection.id === z.id;
         const editing = controller.editingZoneId === z.id;

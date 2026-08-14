@@ -30,7 +30,7 @@ import type { EdgeStyle } from './tree';
 import { nearestInDirection } from './navigation';
 import { alignGuides, arrangeDeltas, snapValue } from './arrange';
 import type { ArrangeBox, ArrangeOp, SnapGuide } from './arrange';
-import { idsInFrame, innermostFrameFor } from './frames';
+import { fullyInside, idsInFrame, innermostFrameAt, innermostFrameFor } from './frames';
 import type { IdBox } from './frames';
 import type { NavDir, NavPoint } from './navigation';
 import { UI_THEME, themeOf, themeKeyOf } from './theme';
@@ -1736,9 +1736,15 @@ export function useEditorState(): EditorController {
     // (원본 우선순위 float > zone > line > node는 그대로 — 획만 영역 앞으로.)
     const inkFirst = strokeAt(p);
     if (inkFirst) return { kind: 'stroke', id: inkFirst };
-    for (const z of d.zones) {
-      if (p.x >= z.x && p.x <= z.x + z.w && p.y >= z.y - 16 && p.y <= z.y + z.h) return { kind: 'zone', id: z.id };
-    }
+    // 겹친 영역 중 **가장 안쪽(작은)** 것 — 배열 순서로 첫 번째를 집으면 나중에
+    // 만든 큰 영역이 작은 영역을 통째로 가로챈다(제보: 작은 영역을 못 집는다).
+    const zoneHit = innermostFrameAt(
+      d.zones.map((z) => ({ id: z.id, x: z.x, y: z.y, w: z.w, h: z.h })),
+      p.x,
+      p.y,
+      16, // 라벨 알약이 위로 튀어나온 만큼
+    );
+    if (zoneHit) return { kind: 'zone', id: zoneHit };
     for (const l of d.lines) {
       const geo = lineGeometryOf(l);
       for (let t = 0; t <= 1.0001; t += 0.04) {
@@ -5174,8 +5180,14 @@ export function useEditorState(): EditorController {
     };
     d.floats.forEach((f) => take({ id: f.id, x: f.x, y: f.y, w: f.w, h: floatBoxH(f) }, 'floats'));
     // 안에 든 프레임도 함께(중첩) — 자기 자신은 대상이 아니다.
+    // **완전히** 들어간 것만 담는다(중심 규칙이 아니라 — `fullyInside`의 이유 참고):
+    // 중심만 보면 서로가 서로를 담아 어느 쪽을 끌어도 상대가 따라온다(제보).
     d.zones.forEach((o) => {
-      if (o.id !== z.id) take({ id: o.id, x: o.x, y: o.y, w: o.w, h: o.h }, 'zones');
+      if (o.id === z.id) return;
+      const box = { x: o.x, y: o.y, w: o.w, h: o.h };
+      if (!fullyInside(rect, box)) return;
+      ids.zones.push(o.id);
+      boxes.push(box);
     });
     // 앵커가 걸린 선은 붙은 객체를 따라 저절로 움직이므로 **담지 않는다**(담으면 두 번 움직인다).
     d.lines.forEach((l) => {

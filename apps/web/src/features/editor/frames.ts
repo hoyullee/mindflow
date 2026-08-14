@@ -30,6 +30,30 @@ export function centerInside(frame: Box, box: Box): boolean {
   return cx >= frame.x && cx <= frame.x + frame.w && cy >= frame.y && cy <= frame.y + frame.h;
 }
 
+/**
+ * 상자가 프레임에 **완전히** 들어가는가.
+ *
+ * 프레임이 프레임을 담을 때 쓰는 규칙이다(물건은 위의 중심 규칙 그대로). 중심만
+ * 보면 **서로가 서로를 담는 일이 생긴다** — 큰 프레임의 중심이 작은 프레임 안에
+ * 들어가는 배치가 흔하고(실측: 작은 240×160 안에 620×420의 중심이 든다),
+ * 부분 겹침에서도 양쪽 중심이 상대 안에 들어갈 수 있다. 그러면 어느 쪽을 끌어도
+ * 상대가 통째로 따라와 화면이 꼬인다(제보). 완전 포함은 한쪽으로만 성립하므로
+ * 계층이 언제나 한 방향이다: 안에 든 프레임은 따라오고, 부분 겹침은 형제다.
+ */
+export function fullyInside(frame: Box, box: Box): boolean {
+  return box.x >= frame.x && box.y >= frame.y && box.x + box.w <= frame.x + frame.w && box.y + box.h <= frame.y + frame.h;
+}
+
+/** 겹친 프레임들 중 이 점을 담는 **가장 작은** 것 — 클릭·우클릭이 늘 안쪽에 닿게. */
+export function innermostFrameAt(frames: IdBox[], x: number, y: number, padTop = 0): string | null {
+  let best: IdBox | null = null;
+  frames.forEach((f) => {
+    if (x < f.x || x > f.x + f.w || y < f.y - padTop || y > f.y + f.h) return;
+    if (!best || f.w * f.h < best.w * best.h) best = f;
+  });
+  return best ? (best as IdBox).id : null;
+}
+
 /** 이 프레임이 담고 있는 것들의 id. */
 export function idsInFrame(frame: Box, boxes: IdBox[]): string[] {
   return boxes.filter((b) => centerInside(frame, b)).map((b) => b.id);
