@@ -5301,6 +5301,12 @@ export function useEditorState(): EditorController {
 
   const selectCard = useCallback((id: string | null) => setSelectedCardId(id), []);
 
+  // 댓글 대상은 고른 **카드**를 따라간다 — 캔버스의 `selection` 규칙과 같은 뜻이다
+  // (어느 카드의 논의인지 흐려지지 않게). 선택 해제는 대상을 그대로 둔다.
+  useEffect(() => {
+    if (selectedCardId) setCommentsNodeId(selectedCardId);
+  }, [selectedCardId]);
+
   /**
    * 카드를 그 열의 `index` 자리로 옮긴다(열 간·열 안 공용 — 코어 `moveCard`).
    *

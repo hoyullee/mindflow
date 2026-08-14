@@ -11,6 +11,7 @@
 // 눈에 들어오게(배지도 미해결 스레드만 센다).
 
 import { useEffect, useMemo, useRef, useState, type CSSProperties, type KeyboardEvent, type ReactNode } from 'react';
+import { ROOT_ID } from '@mindflow/mindmap-core';
 import type { EditorController } from '../useEditorState';
 import type { CommentMention, DocComment, ShareParticipant } from '../../../adapters/ports';
 import { panelTitleLine } from './panel/panelPrimitives';
@@ -29,6 +30,14 @@ interface Thread {
 /** 댓글 대상의 종류가 드러나는 한 줄 제목(순수) — 주제는 기존처럼 첫 줄만, 다른
  * 객체는 종류를 접두한다("메모 · …", "연결선", "영역 · …"). 없으면 null. */
 export function commentTargetLabel(doc: EditorController['doc'], id: string): string | null {
+  // 칸반 — 대상은 카드다. 문서 전체 댓글은 마인드맵과 같은 자리(ROOT_ID)를 쓰는데,
+  // 칸반에는 루트 주제가 없으므로 "보드 전체"라고 말한다.
+  if (doc.kind === 'kanban') {
+    const c = (doc.cards ?? []).find((x) => x.id === id);
+    if (c) return `카드 · ${panelTitleLine(c.text) || '카드'}`;
+    if (id === ROOT_ID) return '보드 전체';
+    return null;
+  }
   const n = doc.nodes[id];
   if (n) return panelTitleLine(n.text);
   const f = doc.floats.find((x) => x.id === id);
