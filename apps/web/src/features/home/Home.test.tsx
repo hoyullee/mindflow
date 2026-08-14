@@ -2,7 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { MemoryRouter, Route, Routes } from 'react-router-dom';
-import { BOARD_TEMPLATES, MAP_TEMPLATES } from '../../templates/mapTemplates';
+import { BOARD_TEMPLATES, KANBAN_TEMPLATES, MAP_TEMPLATES } from '../../templates/mapTemplates';
 import { Home } from './Home';
 import { mockMatchMedia } from '../../test/matchMedia';
 import { BackendProvider } from '../../adapters/BackendContext';
@@ -3454,7 +3454,7 @@ describe('홈 우클릭 메뉴', () => {
       expect(cards[0]?.getAttribute('data-template')).toBe('blank');
       const ids = cards.map((c) => c.getAttribute('data-template'));
       // 마인드맵 → 화이트보드 → 칸반 보드 순서의 구획들.
-      expect(ids.slice(-2 - BOARD_TEMPLATES.length)).toEqual(['board', ...BOARD_TEMPLATES.map((t) => t.id), 'kanban']);
+      expect(ids.slice(-2 - BOARD_TEMPLATES.length - KANBAN_TEMPLATES.length)).toEqual(['board', ...BOARD_TEMPLATES.map((t) => t.id), 'kanban', ...KANBAN_TEMPLATES.map((t) => t.id)]);
       expect(within(dialog).getByText('마인드맵')).toBeTruthy();
       expect(within(dialog).getByText('화이트보드')).toBeTruthy();
       expect(within(dialog).getByText('칸반 보드')).toBeTruthy();
@@ -3473,6 +3473,21 @@ describe('홈 우클릭 메뉴', () => {
       const dialog = await screen.findByRole('dialog', { name: '새로 만들기' });
       await user.click(within(dialog).getByRole('button', { name: /새 칸반 보드/ }));
       await waitFor(() => expect(newMapTitles()).toContain('새 칸반 보드'));
+      await waitFor(() => expect(screen.getByText('EDITOR_PLACEHOLDER')).toBeTruthy(), { timeout: 2000 });
+    });
+
+    it('칸반 템플릿 — 칸반 구획에 나란히, 고르면 그 이름의 보드가 열린다', async () => {
+      // 갤러리 → 생성 경로를 통째로 지킨다. 데이터·빌더만 만들고 `createFromTemplate`에
+      // 분기를 빠뜨리면 카드는 보이는데 눌러도 아무 일이 없다(실브라우저가 잡았던 구멍).
+      const user = userEvent.setup();
+      renderHomeWithDocStore([]);
+      await waitFor(() => expect(screen.getAllByText('＋ 새로 만들기')[0]).toBeTruthy());
+
+      await user.click(screen.getAllByText('＋ 새로 만들기')[0]!);
+      const dialog = await screen.findByRole('dialog', { name: '새로 만들기' });
+      const first = KANBAN_TEMPLATES[0]!;
+      await user.click(within(dialog).getByRole('button', { name: new RegExp(first.name) }));
+      await waitFor(() => expect(newMapTitles()).toContain(first.name));
       await waitFor(() => expect(screen.getByText('EDITOR_PLACEHOLDER')).toBeTruthy(), { timeout: 2000 });
     });
 

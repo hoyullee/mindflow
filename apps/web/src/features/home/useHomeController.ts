@@ -10,7 +10,7 @@ import { exportDocPdf } from '../editor/pdf';
 import { themeOf } from '../editor/theme';
 import { applyHomeTheme, homeThemeKeyOf, saveHomeThemeCache, type HomeThemeKey } from './theme';
 import { useBackend } from '../../adapters/BackendContext';
-import { findBoardTemplate, findTemplate } from '../../templates/mapTemplates';
+import { findBoardTemplate, findKanbanTemplate, findTemplate } from '../../templates/mapTemplates';
 import {
   DRIVE_FILES,
   initialHomeState,
@@ -1101,6 +1101,12 @@ export function useHomeController() {
     // 칸반 — 세 번째 문서 종류. 보드와 같은 길(주소에 tpl만, 시드는 에디터가).
     if (templateId === 'kanban') {
       onNewMapClick(buildNewMapHref('새 칸반 보드', 'kanban'));
+      return;
+    }
+    // 칸반 템플릿(스프린트·트리아지·콘텐츠) — 보드 템플릿과 같은 길.
+    const kt = findKanbanTemplate(templateId);
+    if (kt) {
+      onNewMapClick(buildNewMapHref(kt.name, kt.id));
       return;
     }
     // 화이트보드 템플릿(회고·우선순위·아이디어 스티커) — 맵 템플릿과 같은 길을 탄다:

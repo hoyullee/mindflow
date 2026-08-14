@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { ROOT_ID, layout, parseDoc, serializeDoc } from '@mindflow/mindmap-core';
-import { BOARD_TEMPLATES, BOARD_THEME_KEY, MAP_TEMPLATES, buildTemplateDoc, findBoardTemplate, findTemplate } from './mapTemplates';
+import { BOARD_TEMPLATES, BOARD_THEME_KEY, KANBAN_TEMPLATES, MAP_TEMPLATES, buildTemplateDoc, findBoardTemplate, findKanbanTemplate, findTemplate } from './mapTemplates';
+import { CARD_LABELS } from '../features/editor/kanbanLabels';
 
 describe('맵 템플릿', () => {
   it('모르는 id는 null — 호출부가 평범한 빈 맵으로 떨어진다', () => {
@@ -139,5 +140,58 @@ describe('화이트보드 템플릿', () => {
     expect(d.kind).toBe('board');
     expect(d.floats.length).toBe(1);
     expect(d.floats[0]?.text.length).toBeGreaterThan(0);
+  });
+});
+
+describe('칸반 템플릿', () => {
+  it('id가 다른 목록과 겹치지 않는다 — 주소의 tpl 값 하나로 갈린다', () => {
+    const ids = [...KANBAN_TEMPLATES.map((t) => t.id), ...BOARD_TEMPLATES.map((t) => t.id), ...MAP_TEMPLATES.map((t) => t.id), 'board', 'kanban'];
+    expect(new Set(ids).size).toBe(ids.length);
+    expect(findKanbanTemplate('없는-칸반')).toBeNull();
+    expect(findKanbanTemplate(null)).toBeNull();
+    // 목록끼리 섞이지 않는다.
+    expect(findTemplate('kanban-sprint')).toBeNull();
+    expect(findBoardTemplate('kanban-sprint')).toBeNull();
+    expect(findKanbanTemplate('board-retro')).toBeNull();
+  });
+
+  it.each(KANBAN_TEMPLATES.map((t) => [t.id, t] as const))('%s: 열·카드가 있는 칸반 문서이고 직렬화 왕복을 견딘다', (_id, tpl) => {
+    const doc = buildTemplateDoc(tpl.id);
+    expect(doc).not.toBeNull();
+    const d = doc!;
+    expect(d.kind).toBe('kanban');
+    expect(Object.keys(d.nodes)).toHaveLength(0); // 칸반에는 트리가 없다
+    expect(d.floats).toHaveLength(0);
+    expect(d.columns?.map((c) => c.title)).toEqual(tpl.columns);
+    expect(d.cards).toHaveLength(tpl.cards.length);
+    const back = parseDoc(JSON.parse(JSON.stringify(serializeDoc(d))));
+    expect(back).not.toBeNull();
+    expect(back!.columns).toEqual(d.columns);
+    expect(back!.cards).toEqual(d.cards);
+  });
+
+  it.each(KANBAN_TEMPLATES.map((t) => [t.id, t] as const))('%s: 모든 카드가 실제 열에 속하고, 열 안 순서가 배열 순서와 같다', (_id, tpl) => {
+    const d = buildTemplateDoc(tpl.id)!;
+    const colIds = new Set(d.columns!.map((c) => c.id));
+    d.cards!.forEach((c) => expect(colIds.has(c.col)).toBe(true));
+    // 열마다 pos 순 = 템플릿에 적은 순서.
+    d.columns!.forEach((col, ci) => {
+      const wanted = tpl.cards.filter((c) => c.col === ci).map((c) => c.text);
+      const got = d
+        .cards!.filter((c) => c.col === col.id)
+        .sort((a, b) => a.pos - b.pos)
+        .map((c) => c.text);
+      expect(got).toEqual(wanted);
+    });
+  });
+
+  it('색 라벨은 고를 수 있는 값만 쓴다 — 템플릿만 아는 색을 심지 않는다', () => {
+    const allowed = new Set(CARD_LABELS.map((l) => l.bg).filter(Boolean));
+    KANBAN_TEMPLATES.forEach((t) => t.cards.forEach((c) => c.bg && expect(allowed.has(c.bg)).toBe(true)));
+  });
+
+  it('카드 id가 에디터가 만드는 id와 모양이 달라 부딪히지 않는다', () => {
+    const d = buildTemplateDoc('kanban-sprint')!;
+    [...d.columns!.map((c) => c.id), ...d.cards!.map((c) => c.id)].forEach((id) => expect(id).not.toMatch(/^x\d+_/));
   });
 });

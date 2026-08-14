@@ -683,3 +683,37 @@ describe('칸반 — 카드 서식(마크다운 단축·자동 링크)', () => {
     await waitFor(() => expect('rich' in saved('kf3').cards.find((x: { id: string }) => x.id === 'k1')).toBe(false));
   });
 });
+
+describe('칸반 — 템플릿', () => {
+  beforeEach(() => {
+    localStorage.clear();
+    mockMatchMedia(false);
+    localStorage.setItem('mf_demo_session', JSON.stringify({ user: { id: 'u', email: 'me@example.com' } }));
+  });
+  afterEach(cleanup);
+
+  it('tpl=kanban-sprint로 열면 그 열·카드로 시작한다', async () => {
+    const { container } = renderEditor('/editor?map=kt1&title=스프린트&tpl=kanban-sprint&new=1');
+    await waitFor(() => expect(container.querySelectorAll('[data-kanban-column]').length).toBeGreaterThan(3));
+    const titles = Array.from(container.querySelectorAll('[data-column-title]')).map((e) => e.textContent);
+    expect(titles).toEqual(['백로그', '이번 스프린트', '진행 중', '리뷰', '완료']);
+    // 색 라벨이 걸린 카드가 실제로 칠해져 있다.
+    const painted = Array.from(container.querySelectorAll('[data-kanban-card]')).filter((e) => (e as HTMLElement).style.background);
+    expect(painted.length).toBeGreaterThan(0);
+
+    fireEvent.keyDown(window, { key: 's', ctrlKey: true });
+    await waitFor(() => {
+      const d = saved('kt1');
+      expect(d.kind).toBe('kanban');
+      expect(d.columns).toHaveLength(5);
+      expect(d.cards.length).toBeGreaterThan(0);
+    });
+  });
+
+  it('저장된 본문이 있으면 템플릿을 무시한다 — 쓴 내용이 덮이지 않는다', async () => {
+    localStorage.setItem('mindflow_doc_kt2', JSON.stringify(KANBAN));
+    const { container } = renderEditor('/editor?map=kt2&title=x&tpl=kanban-sprint&new=1');
+    await waitFor(() => expect(container.querySelectorAll('[data-kanban-column]')).toHaveLength(2));
+    expect(Array.from(container.querySelectorAll('[data-column-title]')).map((e) => e.textContent)).toEqual(['할 일', '진행 중']);
+  });
+});

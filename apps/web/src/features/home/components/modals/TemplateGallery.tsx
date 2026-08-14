@@ -1,7 +1,7 @@
 import { useEffect, useMemo } from 'react';
 import type { HomeState } from '../../types';
 import type { HomeController } from '../../useHomeController';
-import { BOARD_TEMPLATES, MAP_TEMPLATES, buildTemplateDoc } from '../../../../templates/mapTemplates';
+import { BOARD_TEMPLATES, KANBAN_TEMPLATES, MAP_TEMPLATES, buildTemplateDoc } from '../../../../templates/mapTemplates';
 import { realPreview } from '../../mapPreview';
 import { HOME_THEMES } from '../../theme';
 
@@ -43,6 +43,28 @@ function TemplateIcon({ id }: { id: string }) {
 }
 
 const TEMPLATE_ICON_PATHS: Record<string, JSX.Element> = {
+  // 달리기 트랙(화살표가 오른쪽으로) — 주기를 굴리는 스프린트
+  'kanban-sprint': (
+    <>
+      <path d="M3 12h13" />
+      <path d="M12 7l5 5-5 5" />
+      <path d="M20 5v14" />
+    </>
+  ),
+  // 깔때기 — 들어온 것을 걸러 내는 트리아지
+  'kanban-triage': (
+    <>
+      <path d="M3 5h18l-7 8v6l-4 2v-8L3 5z" />
+    </>
+  ),
+  // 펜과 줄 — 글이 단계를 지나는 파이프라인
+  'kanban-content': (
+    <>
+      <path d="M4 20l3.5-1 9-9a2.1 2.1 0 0 0-3-3l-9 9L4 20z" />
+      <path d="M13.5 6.5l3 3" />
+      <path d="M4 4h7" />
+    </>
+  ),
   // 전구 — 떠오르는 생각
   brainstorm: (
     <>
@@ -148,6 +170,7 @@ export function TemplateGallery({ state, controller }: Props) {
   const cards = useMemo(() => MAP_TEMPLATES.map((t) => ({ tpl: t, raw: templateRaw(t.id) })), []);
   // 보드 템플릿도 완성된 `Doc`이라 썸네일은 같은 `realPreview`다(메모 배치가 그대로 보인다).
   const boardCards = useMemo(() => BOARD_TEMPLATES.map((t) => ({ tpl: t, raw: templateRaw(t.id) })), []);
+  const kanbanCards = useMemo(() => KANBAN_TEMPLATES.map((t) => ({ tpl: t, raw: templateRaw(t.id) })), []);
 
   /**
    * 미리보기 캐시를 **한가할 때 미리 데운다**.
@@ -166,6 +189,7 @@ export function TemplateGallery({ state, controller }: Props) {
       if (cancelled) return;
       for (const t of MAP_TEMPLATES) realPreview(templateRaw(t.id), hue);
       for (const t of BOARD_TEMPLATES) realPreview(templateRaw(t.id), hue);
+      for (const t of KANBAN_TEMPLATES) realPreview(templateRaw(t.id), hue);
     };
     const ric = (window as unknown as { requestIdleCallback?: (cb: () => void) => number }).requestIdleCallback;
     if (ric) {
@@ -341,6 +365,16 @@ export function TemplateGallery({ state, controller }: Props) {
               </div>
               <div style={CARD_DESC_STYLE}>할 일 · 진행 중 · 완료로 시작</div>
             </button>
+            {kanbanCards.map(({ tpl, raw }) => (
+              <button key={tpl.id} className="btn" data-template={tpl.id} onClick={() => controller.createFromTemplate(tpl.id)} style={{ ...CARD_STYLE, cursor: 'pointer' }}>
+                <div style={THUMB_STYLE}>{realPreview(raw, 'var(--mf-accent)') ?? null}</div>
+                <div style={CARD_NAME_STYLE}>
+                  <TemplateIcon id={tpl.id} />
+                  <span style={{ minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis' }}>{tpl.name}</span>
+                </div>
+                <div style={CARD_DESC_STYLE}>{tpl.desc}</div>
+              </button>
+            ))}
           </div>
         </div>
       </div>
