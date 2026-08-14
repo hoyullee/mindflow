@@ -17,6 +17,7 @@ import { hexA } from '../theme';
 import type { Theme } from '../theme';
 import { useIsMobile } from '../../../hooks/useMediaQuery';
 import { CommentIcon } from './ToolbarMenus';
+import { CARD_LABELS, cardLabelName } from '../kanbanLabels';
 import { columnDropIndex, columnDropIndicator, dropIndicator, dropTargetAt, edgeScroll } from '../kanbanDrag';
 import type { ColumnHit, DropTarget } from '../kanbanDrag';
 
@@ -445,6 +446,7 @@ function Card({ card, controller, theme: th, onPointerDown, dragging }: { card: 
   const readOnly = controller.readOnly;
   const isMobile = useIsMobile();
   const [hover, setHover] = useState(false);
+  const [palette, setPalette] = useState<{ x: number; y: number } | null>(null);
   const comments = controller.canComment ? (controller.commentCounts[card.id] ?? 0) : 0;
   const base: CSSProperties = {
     background: card.bg || th.panel,
@@ -479,8 +481,8 @@ function Card({ card, controller, theme: th, onPointerDown, dragging }: { card: 
         opacity: dragging ? 0.35 : 1,
         // 터치: 세로 스크롤은 살리고(길게 눌러야 드래그) 가로 제스처만 막는다.
         touchAction: 'pan-y',
-        // ✕ 자리를 늘 비워 둔다 — 버튼이 떴다 사라져도 글자가 밀리지 않게.
-        paddingRight: readOnly ? undefined : 26,
+        // 색 라벨·✕ 두 버튼 자리를 늘 비워 둔다 — 떴다 사라져도 글자가 밀리지 않게.
+        paddingRight: readOnly ? undefined : isMobile ? 66 : 50,
       }}
     >
       {card.text || <span style={{ color: th.subtext }}>빈 카드</span>}
@@ -519,6 +521,63 @@ function Card({ card, controller, theme: th, onPointerDown, dragging }: { card: 
             {comments}
           </button>
         </div>
+      )}
+      {/* 색 라벨 — 지금 걸린 색을 그대로 보여 주는 동그란 버튼. 삭제 ✕와 같은
+          조건(고른 카드·마우스를 얹은 카드)으로만 뜬다. 우클릭 메뉴를 새로 두지
+          않은 이유: 터치에는 우클릭이 없고 길게 누르기는 이미 드래그가 쓴다 —
+          같은 버튼 하나면 데스크톱·폰이 같은 길을 쓴다. */}
+      {!readOnly && (selected || hover) && (
+        <button
+          type="button"
+          data-card-label={card.id}
+          aria-label={`색 라벨: ${cardLabelName(card.bg)}`}
+          title={`색 라벨: ${cardLabelName(card.bg)}`}
+          onPointerDown={(e) => e.stopPropagation()}
+          onClick={(e) => {
+            e.stopPropagation();
+            const r = (e.currentTarget as HTMLElement).getBoundingClientRect();
+            setPalette((prev) => (prev ? null : { x: r.right, y: r.bottom + 6 }));
+          }}
+          style={{
+            position: 'absolute',
+            top: 4,
+            right: isMobile ? 34 : 26,
+            width: isMobile ? 30 : 22,
+            height: isMobile ? 30 : 22,
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            border: 'none',
+            borderRadius: 6,
+            background: 'transparent',
+            cursor: 'pointer',
+            padding: 0,
+          }}
+        >
+          {/* 팔레트 글리프(원 + 물감 점 셋). **지금 색을 여기 채우지 않는다** —
+              카드 배경이 곧 그 색이라 같은 색을 겹쳐 그리면 버튼이 비어 보인다
+              (실브라우저에서 확인). 색은 카드가 말하고, 이 버튼은 ✕처럼
+              "여는 곳"만 가리킨다(현재 라벨 이름은 접근 이름·툴팁에 있다). */}
+          <svg width={14} height={14} viewBox="0 0 24 24" fill="none" stroke={th.subtext} strokeWidth={1.8} aria-hidden="true">
+            <path d="M12 3a9 9 0 1 0 0 18c.8 0 1.4-.6 1.4-1.4 0-.4-.15-.75-.4-1a1.4 1.4 0 0 1 1-2.4H16a5 5 0 0 0 5-5c0-4.4-4-8.2-9-8.2Z" strokeLinejoin="round" />
+            <circle cx={7.8} cy={12.2} r={1.05} fill={th.subtext} stroke="none" />
+            <circle cx={10.2} cy={8.4} r={1.05} fill={th.subtext} stroke="none" />
+            <circle cx={15} cy={8.4} r={1.05} fill={th.subtext} stroke="none" />
+          </svg>
+        </button>
+      )}
+      {palette && (
+        <CardLabelPicker
+          card={card}
+          theme={th}
+          at={palette}
+          isMobile={isMobile}
+          onPick={(bg) => {
+            controller.setCardBg(card.id, bg);
+            setPalette(null);
+          }}
+          onClose={() => setPalette(null)}
+        />
       )}
       {/* 삭제 — 열 머리의 ✕와 같은 문법. 평소엔 숨기고 **고른 카드**나 마우스를
           얹은 카드에만 띄운다(카드마다 ✕이 늘 떠 있으면 목록이 시끄럽다).
@@ -632,5 +691,102 @@ function ColumnTitleEdit({ title, theme: th, onCommit, onCancel }: { title: stri
       }}
       style={{ flex: '1 1 auto', minWidth: 0, border: `1.5px solid ${th.accent}`, borderRadius: 7, background: th.panel, color: th.text, fontSize: 13.5, fontWeight: 700, fontFamily: 'inherit', padding: '3px 7px', outline: 'none' }}
     />
+  );
+}
+
+/**
+ * 색 라벨 고르기 — 카드 라벨 버튼 아래에 뜨는 작은 스와치 판.
+ *
+ * `position: fixed`인 이유: 카드는 세로로 스크롤되는 열 안에 있어서(`overflow-y`)
+ * 흐름 안에 두면 잘린다. 바깥을 누르거나 Esc로 닫힌다.
+ */
+function CardLabelPicker({
+  card,
+  theme: th,
+  at,
+  isMobile,
+  onPick,
+  onClose,
+}: {
+  card: KanbanCard;
+  theme: Theme;
+  at: { x: number; y: number };
+  isMobile: boolean;
+  onPick: (bg: string | null) => void;
+  onClose: () => void;
+}) {
+  const ref = useRef<HTMLDivElement | null>(null);
+  useEffect(() => {
+    const onDown = (e: PointerEvent): void => {
+      if (!ref.current?.contains(e.target as Node)) onClose();
+    };
+    const onKey = (e: KeyboardEvent): void => {
+      if (e.key === 'Escape') {
+        e.stopPropagation();
+        onClose();
+      }
+    };
+    window.addEventListener('pointerdown', onDown, true);
+    window.addEventListener('keydown', onKey, true);
+    return () => {
+      window.removeEventListener('pointerdown', onDown, true);
+      window.removeEventListener('keydown', onKey, true);
+    };
+  }, [onClose]);
+
+  const cell = isMobile ? 34 : 28;
+  const W = cell * 4 + 10 * 2 + 6 * 3;
+  // 화면 밖으로 나가지 않게 안쪽으로 당긴다(컨텍스트 메뉴와 같은 clamp).
+  const left = Math.max(8, Math.min(at.x - W, window.innerWidth - W - 8));
+  return (
+    <div
+      ref={ref}
+      data-card-label-picker={card.id}
+      role="menu"
+      aria-label="색 라벨"
+      style={{
+        position: 'fixed',
+        left,
+        top: at.y,
+        width: W,
+        boxSizing: 'border-box',
+        display: 'grid',
+        gridTemplateColumns: `repeat(4, ${cell}px)`,
+        gap: 6,
+        padding: 10,
+        background: th.panel,
+        border: `1px solid ${th.border}`,
+        borderRadius: 12,
+        boxShadow: '0 10px 28px rgba(0,0,0,.16)',
+        zIndex: 320,
+      }}
+    >
+      {CARD_LABELS.map((l) => {
+        const active = (card.bg ?? null) === l.bg;
+        return (
+          <button
+            key={l.name}
+            type="button"
+            role="menuitem"
+            data-label-swatch={l.name}
+            aria-label={l.name}
+            title={l.name}
+            aria-current={active || undefined}
+            onClick={() => onPick(l.bg)}
+            style={{
+              width: cell,
+              height: cell,
+              borderRadius: 999,
+              background: l.bg || 'transparent',
+              // '없음'은 대각선(색 없음의 관례) — 나머지는 색 자체가 표시다.
+              backgroundImage: l.bg ? undefined : `linear-gradient(to top right, transparent calc(50% - 1px), ${th.subtext} calc(50% - 1px), ${th.subtext} calc(50% + 1px), transparent calc(50% + 1px))`,
+              border: active ? `2px solid ${th.accent}` : `1px solid ${th.border}`,
+              cursor: 'pointer',
+              padding: 0,
+            }}
+          />
+        );
+      })}
+    </div>
   );
 }

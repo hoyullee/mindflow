@@ -309,7 +309,7 @@ interface PreviewDoc {
   strokes?: { id: string; pts: number[]; color: string; w: number; hl?: boolean }[];
   kind?: string;
   columns?: { id: string; title: string }[];
-  cards?: { id: string; col: string; pos: number; text: string }[];
+  cards?: { id: string; col: string; pos: number; text: string; bg?: string | null }[];
 }
 
 /** Saved docs persist layout-derived node x/y as `0`: the React editor keeps
@@ -910,7 +910,7 @@ function kanbanPreview(d: PreviewDoc, accent: string): JSX.Element | null {
               const cy = KB_CARDS_TOP + i * (KB_CARD_H + KB_CARD_GAP);
               return (
                 <g key={c.id}>
-                  <rect x={x + 8} y={cy} width={innerW} height={KB_CARD_H} rx={5} fill="#fff" stroke={hexA(accent, 0.34)} strokeWidth={1.1} />
+                  <rect x={x + 8} y={cy} width={innerW} height={KB_CARD_H} rx={5} fill={c.bg || '#fff'} stroke={hexA(accent, 0.34)} strokeWidth={1.1} />
                   <text x={x + 14} y={cy + KB_CARD_H / 2} fontSize={10} fill="#2f2a26" dominantBaseline="middle" fontFamily="Pretendard, system-ui, sans-serif">
                     {kbClip(c.text, innerW - 12, cardFont)}
                   </text>
