@@ -2,7 +2,7 @@
 // 저장·공유·협업은 문서 기반이라 기존 경로를 그대로 탄다.
 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { MemoryRouter, Route, Routes } from 'react-router-dom';
 import { Editor } from './Editor';
 import { mockMatchMedia } from '../../test/matchMedia';
@@ -363,5 +363,61 @@ describe('칸반 — 내보내기(M3)', () => {
     expect(md).toContain('- 첫 카드');
     expect(md).toContain('- 둘째 카드');
     expect(md).toContain('## 진행 중');
+  });
+});
+
+describe('칸반 — 카드 댓글(M3)', () => {
+  beforeEach(() => {
+    localStorage.clear();
+    mockMatchMedia(false);
+    localStorage.setItem('mf_demo_session', JSON.stringify({ user: { id: 'u', email: 'me@example.com' } }));
+  });
+  afterEach(cleanup);
+
+  const openViaMenu = async (): Promise<HTMLElement> => {
+    fireEvent.click(screen.getByRole('button', { name: '보기' }));
+    fireEvent.click(await screen.findByRole('button', { name: '댓글' }));
+    return await screen.findByLabelText('댓글');
+  };
+
+  it('고른 카드가 대상이 되고, 남긴 댓글이 그 카드에 저장된다', async () => {
+    localStorage.setItem('mindflow_doc_kc1', JSON.stringify(KANBAN));
+    const { container } = renderEditor('/editor?map=kc1&title=x');
+    await waitFor(() => expect(container.querySelectorAll('[data-kanban-card]')).toHaveLength(2));
+
+    // 아무 카드도 고르지 않았으면 문서 전체(칸반에는 루트 주제가 없다).
+    let panel = await openViaMenu();
+    expect(within(panel).getByText('보드 전체')).toBeTruthy();
+
+    // 카드를 고르면 패널이 따라간다.
+    firePointer(container.querySelector('[data-kanban-card="k1"]')!, 'pointerdown', { clientX: 20, clientY: 60 });
+    firePointer(window, 'pointerup', { clientX: 20, clientY: 60 });
+    panel = await screen.findByLabelText('댓글');
+    await waitFor(() => expect(within(panel).getByText('카드 · 첫 카드')).toBeTruthy());
+
+    fireEvent.change(within(panel).getByLabelText('댓글 입력'), { target: { value: '이건 다음 스프린트로' } });
+    fireEvent.click(within(panel).getByRole('button', { name: '남기기' }));
+    await waitFor(() => expect(within(panel).getByText('이건 다음 스프린트로')).toBeTruthy());
+
+    const stored = JSON.parse(localStorage.getItem('mf_comments') || '[]') as { documentId: string; nodeId: string }[];
+    expect(stored).toHaveLength(1);
+    expect(stored[0]).toMatchObject({ documentId: 'kc1', nodeId: 'k1' });
+  });
+
+  it('댓글이 있는 카드에 개수 배지가 뜨고, 누르면 그 카드의 논의가 열린다', async () => {
+    localStorage.setItem('mindflow_doc_kc2', JSON.stringify(KANBAN));
+    localStorage.setItem(
+      'mf_comments',
+      JSON.stringify([{ id: 'x1', documentId: 'kc2', nodeId: 'k2', authorName: '나', body: '이 문구 확인 부탁', createdAt: '2026-01-01T00:00:00.000Z' }]),
+    );
+    const { container } = renderEditor('/editor?map=kc2&title=x');
+    await waitFor(() => expect(container.querySelector('[data-card-comments="k2"]')).toBeTruthy());
+    // 댓글 없는 카드에는 배지가 없다.
+    expect(container.querySelector('[data-card-comments="k1"]')).toBeNull();
+
+    fireEvent.click(container.querySelector('[data-card-comments="k2"]')!);
+    const panel = await screen.findByLabelText('댓글');
+    expect(within(panel).getByText('카드 · 둘째 카드')).toBeTruthy();
+    expect(within(panel).getByText('이 문구 확인 부탁')).toBeTruthy();
   });
 });

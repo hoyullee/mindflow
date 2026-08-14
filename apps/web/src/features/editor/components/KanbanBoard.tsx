@@ -15,6 +15,7 @@ import type { KanbanCard, KanbanColumn } from '@mindflow/mindmap-core';
 import type { EditorController } from '../useEditorState';
 import type { Theme } from '../theme';
 import { useIsMobile } from '../../../hooks/useMediaQuery';
+import { CommentIcon } from './ToolbarMenus';
 import { dropIndicator, dropTargetAt, edgeScroll } from '../kanbanDrag';
 import type { ColumnHit, DropTarget } from '../kanbanDrag';
 
@@ -301,6 +302,7 @@ function Card({ card, controller, theme: th, onPointerDown, dragging }: { card: 
   const readOnly = controller.readOnly;
   const isMobile = useIsMobile();
   const [hover, setHover] = useState(false);
+  const comments = controller.canComment ? (controller.commentCounts[card.id] ?? 0) : 0;
   const base: CSSProperties = {
     background: card.bg || th.panel,
     border: `1px solid ${selected ? th.accent : th.border}`,
@@ -339,6 +341,42 @@ function Card({ card, controller, theme: th, onPointerDown, dragging }: { card: 
       }}
     >
       {card.text || <span style={{ color: th.subtext }}>빈 카드</span>}
+      {/* 댓글 개수 — 캔버스의 주제 배지와 같은 뜻(미해결 스레드 수)이지만, 좌표가
+          없는 카드에서는 겹칠 자리를 찾는 대신 **글 아래 줄**로 흐른다(카드가 그만큼
+          자란다). 누르면 그 카드의 논의가 열린다 — 보기 전용에서도 동작한다. */}
+      {comments > 0 && (
+        <div style={{ display: 'flex', marginTop: 7 }}>
+          <button
+            type="button"
+            data-card-comments={card.id}
+            aria-label={`댓글 ${comments}개`}
+            title={`댓글 ${comments}개`}
+            onPointerDown={(e) => e.stopPropagation()}
+            onClick={(e) => {
+              e.stopPropagation();
+              controller.openComments(card.id);
+            }}
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              gap: 4,
+              padding: '2px 7px',
+              border: `1px solid ${th.border}`,
+              borderRadius: 999,
+              background: 'transparent',
+              color: th.subtext,
+              fontSize: 11,
+              fontWeight: 700,
+              fontFamily: 'inherit',
+              cursor: 'pointer',
+              lineHeight: 1.6,
+            }}
+          >
+            <CommentIcon />
+            {comments}
+          </button>
+        </div>
+      )}
       {/* 삭제 — 열 머리의 ✕와 같은 문법. 평소엔 숨기고 **고른 카드**나 마우스를
           얹은 카드에만 띄운다(카드마다 ✕이 늘 떠 있으면 목록이 시끄럽다).
           터치 기기에는 hover가 없지만 탭이 곧 선택이라 같은 조건으로 뜬다. */}

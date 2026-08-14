@@ -176,6 +176,9 @@ export function Editor() {
             <KanbanBoard controller={controller} theme={th} />
             <DocChip controller={controller} />
             <PresenceBar controller={controller} />
+            {/* 댓글 — 대상은 고른 카드(없으면 보드 전체). 칸반에는 속성 시트가
+                없으므로 모바일에서도 바텀 시트가 다툴 상대가 없다. */}
+            <CommentPanel controller={controller} />
           </>
         ) : controller.view === 'map' ? (
           <>
