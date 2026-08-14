@@ -476,3 +476,39 @@ describe('칸반 — 폰에서 잡은 카드의 세로 드래그(제보)', () =>
     firePointer(window, 'pointerup', { clientX: 20, clientY: 60, pointerType: 'touch' });
   });
 });
+
+describe('칸반 — 드롭 위치 가이드 선(제보: 너무 진하다)', () => {
+  beforeEach(() => {
+    localStorage.clear();
+    mockMatchMedia(false);
+    localStorage.setItem('mf_demo_session', JSON.stringify({ user: { id: 'u', email: 'me@example.com' } }));
+  });
+  afterEach(cleanup);
+
+  it('강조색 원본이 아니라 옅게·양끝이 스며드는 얇은 선이다', async () => {
+    localStorage.setItem('mindflow_doc_kg1', JSON.stringify(KANBAN));
+    const { container } = renderEditor('/editor?map=kg1&title=x');
+    await waitFor(() => expect(container.querySelectorAll('[data-kanban-card]')).toHaveLength(2));
+
+    stubRects(container);
+    firePointer(container.querySelector('[data-kanban-card="k1"]')!, 'pointerdown', { clientX: 20, clientY: 60 });
+    firePointer(window, 'pointermove', { clientX: 20, clientY: 130 });
+    const line = await waitFor(() => {
+      const el = container.querySelector('[data-kanban-drop-line]') as HTMLElement;
+      expect(el).toBeTruthy();
+      return el;
+    });
+
+    // 이 선은 자리를 가리키는 눈금이지 강조 대상이 아니다.
+    expect(parseFloat(line.style.height)).toBeLessThanOrEqual(2);
+    // 딱 잘린 진한 막대가 아니라 양끝이 배경으로 스며드는 그라디언트.
+    expect(line.style.background).toContain('linear-gradient');
+    expect(line.style.background).toContain('rgba');
+    // 어느 정지점도 불투명한 강조색이 아니다(alpha < 1).
+    const alphas = [...line.style.background.matchAll(/rgba\([^)]*?,\s*([\d.]+)\)/g)].map((m) => parseFloat(m[1]!));
+    expect(alphas.length).toBeGreaterThan(0);
+    expect(Math.max(...alphas)).toBeLessThan(1);
+
+    firePointer(window, 'pointerup', { clientX: 20, clientY: 130 });
+  });
+});
