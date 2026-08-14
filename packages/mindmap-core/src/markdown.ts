@@ -4,10 +4,11 @@
 
 import type { Doc } from './model';
 import { ROOT_ID } from './model';
+import { cardsInColumn } from './kanban';
 import { richToMarkdown } from './richtext';
 
 /** The subset of `Doc` that `toMarkdown` reads. */
-export type MarkdownSource = Pick<Doc, 'nodes' | 'floats'>;
+export type MarkdownSource = Pick<Doc, 'nodes' | 'floats'> & Partial<Pick<Doc, 'kind' | 'columns' | 'cards'>>;
 
 /**
  * Port of `Component#exportOutline` (MindFlow.dc.html:617-637):
@@ -30,6 +31,21 @@ export function toMarkdown(doc: MarkdownSource, title?: string): string {
   const nodes = doc.nodes;
   const out: string[] = [];
   if (!nodes[ROOT_ID] && title && title.trim()) out.push('# ' + title.trim());
+
+  // 칸반은 트리가 아니라 **열과 카드**다 — 열이 H2, 카드가 그 아래 목록.
+  // 빈 열도 제목을 남긴다("완료: 아직 없음"도 정보다). 카드 순서는 화면과
+  // 같은 `pos` 순(`cardsInColumn`).
+  if (doc.kind === 'kanban') {
+    const cards = doc.cards ?? [];
+    (doc.columns ?? []).forEach((col) => {
+      out.push('', '## ' + col.title.trim());
+      cardsInColumn(cards, col.id).forEach((c) => {
+        const label = richToMarkdown(c).trim().replace(/\n/g, ' ');
+        if (label) out.push('- ' + label);
+      });
+    });
+    return out.join('\n').replace(/^\n+/, '');
+  }
 
   const walk = (id: string, depth: number): void => {
     const n = nodes[id];

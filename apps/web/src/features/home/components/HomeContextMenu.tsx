@@ -394,9 +394,15 @@ function mapItems(card: CardViewData, controller: HomeController): HomeMenuItem[
       icon: DownloadIcon,
       label: '내보내기',
       submenu: [
-        { key: 'export-png', icon: PngIcon, label: 'PNG 이미지', onSelect: () => controller.exportMapPNG(card.title, card.docId) },
-        { key: 'export-svg', icon: SvgIcon, label: 'SVG 이미지 (.svg)', onSelect: () => controller.exportMapSVG(card.title, card.docId) },
-        { key: 'export-pdf', icon: PdfIcon, label: 'PDF 문서 (.pdf)', onSelect: () => controller.exportMapPDF(card.title, card.docId) },
+        // 칸반에는 그릴 캔버스가 없다(좌표 없는 열·카드) — 그림 형식 셋은 빈
+        // 파일이 되므로 내주지 않는다. 에디터 내보내기 메뉴와 같은 규칙.
+        ...(card.isKanban
+          ? []
+          : [
+              { key: 'export-png', icon: PngIcon, label: 'PNG 이미지', onSelect: () => controller.exportMapPNG(card.title, card.docId) },
+              { key: 'export-svg', icon: SvgIcon, label: 'SVG 이미지 (.svg)', onSelect: () => controller.exportMapSVG(card.title, card.docId) },
+              { key: 'export-pdf', icon: PdfIcon, label: 'PDF 문서 (.pdf)', onSelect: () => controller.exportMapPDF(card.title, card.docId) },
+            ]),
         { key: 'export-json', icon: JsonIcon, label: 'JSON 파일 (.json)', onSelect: () => controller.exportMap(card.title, card.docId) },
         { key: 'export-md', icon: OutlineIcon, label: 'Markdown 개요 (.md)', onSelect: () => controller.exportMapMarkdown(card.title, card.docId) },
       ],

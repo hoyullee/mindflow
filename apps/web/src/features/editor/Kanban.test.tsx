@@ -1,11 +1,19 @@
 // 칸반 — 세 번째 문서 종류(`kind: 'kanban'`). 캔버스가 아니라 열·카드 화면이고,
 // 저장·공유·협업은 문서 기반이라 기존 경로를 그대로 탄다.
 
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { MemoryRouter, Route, Routes } from 'react-router-dom';
 import { Editor } from './Editor';
 import { mockMatchMedia } from '../../test/matchMedia';
+
+/** 내려받은 파일 내용을 가로챈다 — jsdom에는 createObjectURL이 없다(다른 내보내기 테스트와 같은 처방). */
+const dl = vi.hoisted(() => ({ files: [] as { name: string; data: string }[] }));
+vi.mock('./download', () => ({
+  downloadFile: (name: string, data: unknown) => {
+    dl.files.push({ name, data: String(data) });
+  },
+}));
 
 const KANBAN = {
   v: 1,
@@ -260,5 +268,100 @@ describe('칸반 에디터', () => {
       expect(d.columns.map((c: { title: string }) => c.title)).toEqual(['할 일', '진행 중', '완료']);
       expect(d.nodes).toEqual({});
     });
+  });
+});
+
+describe('칸반 — 카드 삭제(제보: 지울 방법이 없다)', () => {
+  beforeEach(() => {
+    localStorage.clear();
+    mockMatchMedia(false);
+    localStorage.setItem('mf_demo_session', JSON.stringify({ user: { id: 'u', email: 'me@example.com' } }));
+  });
+  afterEach(cleanup);
+
+  it('고른 카드에 ✕가 뜨고, 누르면 그 카드만 사라진다', async () => {
+    localStorage.setItem('mindflow_doc_kd1', JSON.stringify(KANBAN));
+    const { container } = renderEditor('/editor?map=kd1&title=x');
+    await waitFor(() => expect(container.querySelectorAll('[data-kanban-card]')).toHaveLength(2));
+
+    // 아무것도 고르지 않았으면 ✕는 없다(카드마다 늘 떠 있으면 목록이 시끄럽다).
+    expect(container.querySelectorAll('[data-delete-card]')).toHaveLength(0);
+
+    firePointer(container.querySelector('[data-kanban-card="k1"]')!, 'pointerdown', { clientX: 20, clientY: 60 });
+    firePointer(window, 'pointerup', { clientX: 20, clientY: 60 });
+    const del = await waitFor(() => {
+      const el = container.querySelector('[data-delete-card="k1"]');
+      expect(el).toBeTruthy();
+      return el!;
+    });
+    fireEvent.click(del);
+
+    await waitFor(() => expect(container.querySelectorAll('[data-kanban-card]')).toHaveLength(1));
+    fireEvent.keyDown(window, { key: 's', ctrlKey: true });
+    await waitFor(() => expect(saved('kd1').cards.map((c: { id: string }) => c.id)).toEqual(['k2']));
+  });
+
+  it('Delete 키로도 지운다 — undo 한 번에 돌아온다', async () => {
+    localStorage.setItem('mindflow_doc_kd2', JSON.stringify(KANBAN));
+    const { container } = renderEditor('/editor?map=kd2&title=x');
+    await waitFor(() => expect(container.querySelectorAll('[data-kanban-card]')).toHaveLength(2));
+
+    firePointer(container.querySelector('[data-kanban-card="k2"]')!, 'pointerdown', { clientX: 20, clientY: 100 });
+    firePointer(window, 'pointerup', { clientX: 20, clientY: 100 });
+    fireEvent.keyDown(window, { key: 'Delete' });
+    await waitFor(() => expect(container.querySelectorAll('[data-kanban-card]')).toHaveLength(1));
+
+    fireEvent.keyDown(window, { key: 'z', ctrlKey: true });
+    await waitFor(() => expect(container.querySelectorAll('[data-kanban-card]')).toHaveLength(2));
+    fireEvent.keyDown(window, { key: 's', ctrlKey: true });
+    await waitFor(() => expect(saved('kd2').cards).toHaveLength(2));
+  });
+
+  it('보기 전용에서는 ✕도 Delete도 없다', async () => {
+    localStorage.setItem('mindflow_doc_kd3', JSON.stringify(KANBAN));
+    // 다른 사람의 문서 = 보기 전용(로컬 어댑터도 같은 판별 경로를 탄다).
+    localStorage.setItem('mf_doc_shares', JSON.stringify([{ documentId: 'kd3', email: 'me@example.com', role: 'view', createdAt: '2026-01-01T00:00:00.000Z' }]));
+    const { container } = renderEditor('/editor?map=kd3&title=x');
+    await waitFor(() => expect(container.querySelectorAll('[data-kanban-card]')).toHaveLength(2));
+    await waitFor(() => expect(screen.getAllByText('보기 전용').length).toBeGreaterThan(0));
+
+    firePointer(container.querySelector('[data-kanban-card="k1"]')!, 'pointerdown', { clientX: 20, clientY: 60 });
+    firePointer(window, 'pointerup', { clientX: 20, clientY: 60 });
+    expect(container.querySelectorAll('[data-delete-card]')).toHaveLength(0);
+    fireEvent.keyDown(window, { key: 'Delete' });
+    await waitFor(() => expect(container.querySelectorAll('[data-kanban-card]')).toHaveLength(2));
+  });
+});
+
+describe('칸반 — 내보내기(M3)', () => {
+  beforeEach(() => {
+    localStorage.clear();
+    mockMatchMedia(false);
+    localStorage.setItem('mf_demo_session', JSON.stringify({ user: { id: 'u', email: 'me@example.com' } }));
+    dl.files.length = 0;
+  });
+  afterEach(cleanup);
+
+  it('내보내기 메뉴에 그림 형식은 없고, Markdown이 열·카드 목록으로 나온다', async () => {
+    localStorage.setItem('mindflow_doc_ke1', JSON.stringify(KANBAN));
+    renderEditor('/editor?map=ke1&title=내 보드');
+    await waitFor(() => expect(screen.getAllByText('첫 카드').length).toBeGreaterThan(0));
+
+    fireEvent.click(screen.getByRole('button', { name: '내보내기' }));
+    // 칸반에는 그릴 캔버스가 없다 — 그림 형식 셋은 내주지 않는다.
+    await waitFor(() => expect(screen.queryByText('Markdown 개요 (.md)')).toBeTruthy());
+    expect(screen.queryByText('PNG 이미지')).toBeNull();
+    expect(screen.queryByText('SVG 이미지 (.svg)')).toBeNull();
+    expect(screen.queryByText('PDF 문서 (.pdf)')).toBeNull();
+    expect(screen.queryByText('JSON 파일 (.json)')).toBeTruthy();
+
+    fireEvent.click(screen.getByText('Markdown 개요 (.md)'));
+    await waitFor(() => expect(dl.files.length).toBe(1));
+    const md = dl.files[0]!.data;
+    expect(md).toContain('# 내 보드');
+    expect(md).toContain('## 할 일');
+    expect(md).toContain('- 첫 카드');
+    expect(md).toContain('- 둘째 카드');
+    expect(md).toContain('## 진행 중');
   });
 });

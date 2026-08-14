@@ -112,6 +112,22 @@ export function ShortcutHelp({ controller }: { controller: EditorController }) {
         </div>
 
         <div style={{ columns: isMobile ? 1 : 2, columnGap: 30 }}>
+          {/* 칸반은 캔버스가 없어 아래 구획들(선택·이동·리스트·서식)이 뜻을 갖지
+              않는다 — 카드에 대한 것만 보여 준다. */}
+          {controller.isKanban &&
+            section(
+              '칸반',
+              <>
+                {row(['클릭'], '카드 선택')}
+                {row(['더블클릭'], '카드 편집 (열 제목도 같다)')}
+                {row(['Enter', 'F2'], '고른 카드 편집')}
+                {row(['Delete'], '고른 카드 삭제')}
+                {row(['Enter'], '편집 확정')}
+                {row(['Shift+Enter'], '줄바꿈')}
+                {row(['Esc'], '편집 취소 · 선택 해제')}
+                {row(['드래그'], '카드를 다른 열·다른 자리로 (터치는 길게 누르기)')}
+              </>,
+            )}
           {/* 화이트보드에서만 뜨는 구획 — 그리기 도구는 board에만 있다. */}
           {controller.isBoard &&
             section(
@@ -129,13 +145,13 @@ export function ShortcutHelp({ controller }: { controller: EditorController }) {
             '일반',
             <>
               {row([`${mod}+S`], '저장')}
-              {row([`${mod}+F`], '맵에서 검색')}
+              {!controller.isKanban && row([`${mod}+F`], '맵에서 검색')}
               {row([`${mod}+Z`], '실행 취소')}
               {row([`${mod}+Y`, `${mod}+Shift+Z`], '다시 실행')}
               {row(['?'], '이 도움말')}
             </>,
           )}
-          {section(
+          {!controller.isKanban && section(
             '선택·이동',
             <>
               {row(['클릭'], '선택')}
@@ -153,7 +169,7 @@ export function ShortcutHelp({ controller }: { controller: EditorController }) {
               {row(['우클릭', '길게 누르기'], '상황 메뉴')}
             </>,
           )}
-          {section(
+          {!controller.isKanban && section(
             '텍스트 편집',
             <>
               {row(['더블클릭'], '편집 시작')}
@@ -163,7 +179,7 @@ export function ShortcutHelp({ controller }: { controller: EditorController }) {
               {row([`${mod}+B`, `${mod}+I`], '굵게 · 기울임')}
             </>,
           )}
-          {section(
+          {!controller.isKanban && section(
             '리스트',
             <>
               {row(['- ', '1. '], '줄 앞에 입력 = 리스트 시작')}
@@ -172,7 +188,7 @@ export function ShortcutHelp({ controller }: { controller: EditorController }) {
               {row(['Backspace'], '마커 앞에서 = 내어쓰기/항목 삭제')}
             </>,
           )}
-          {section(
+          {!controller.isKanban && section(
             '서식 입력',
             <>
               {row(['**굵게**'], '굵게')}

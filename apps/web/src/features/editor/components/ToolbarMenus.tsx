@@ -289,7 +289,12 @@ export function MoreMenu({ controller, onDone, isMobile }: { controller: EditorC
         <>
           <MenuDivider theme={th} />
           <MenuSectionLabel theme={th}>내보내기</MenuSectionLabel>
-          <MenuItem theme={th} isMobile={isMobile} icon={<PngIcon />} label="PNG 이미지" onClick={() => { controller.exportPNG(); onDone(); }} />
+          {/* 칸반에는 그릴 캔버스가 없다 — PNG 자리를 Markdown(열·카드 목록)에 내준다. */}
+          {controller.isKanban ? (
+            <MenuItem theme={th} isMobile={isMobile} icon={<OutlineIcon />} label="Markdown 개요 (.md)" onClick={() => { controller.exportMarkdown(); onDone(); }} />
+          ) : (
+            <MenuItem theme={th} isMobile={isMobile} icon={<PngIcon />} label="PNG 이미지" onClick={() => { controller.exportPNG(); onDone(); }} />
+          )}
           <MenuItem theme={th} isMobile={isMobile} icon={<JsonIcon />} label="JSON 파일 (.json)" onClick={() => { controller.exportJSON(); onDone(); }} />
         </>
       )}

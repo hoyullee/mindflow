@@ -73,3 +73,25 @@ describe('홈 본문 검색 색인', () => {
     expect(matchesQuery('분기 회고', t, '없는낱말')).toBe(false);
   });
 });
+
+describe('docSearchText — 칸반', () => {
+  const kb = JSON.stringify({
+    kind: 'kanban',
+    nodes: {},
+    floats: [],
+    zones: [],
+    columns: [{ id: 'c1', title: '이번 스프린트' }],
+    cards: [
+      { id: 'k1', col: 'c1', pos: 0, text: '결제 실패 로그 확인' },
+      { id: 'k2', col: 'c1', pos: 1024, text: '온보딩 문구 다듬기' },
+    ],
+  });
+
+  it('카드 글자와 열 제목으로 찾힌다', () => {
+    const t = docSearchText('kb1', kb);
+    expect(matchesQuery('내 보드', t, '결제 실패')).toBe(true);
+    expect(matchesQuery('내 보드', t, '온보딩')).toBe(true);
+    expect(matchesQuery('내 보드', t, '스프린트')).toBe(true); // 열 제목
+    expect(matchesQuery('내 보드', t, '없는낱말')).toBe(false);
+  });
+});

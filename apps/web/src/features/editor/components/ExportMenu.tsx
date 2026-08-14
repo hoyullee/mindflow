@@ -38,6 +38,11 @@ export function ExportMenu({ controller, onDone }: ExportMenuProps) {
         padding: 5,
       }}
     >
+      {/* 칸반에는 그릴 캔버스가 없다(좌표가 없는 열·카드 문서) — 그림 형식 셋은
+          빈 파일이 되므로 아예 내주지 않는다. 남는 JSON·Markdown이 칸반의
+          내보내기다("할 수 없는 것은 보이지 않는다"). */}
+      {!controller.isKanban && (
+      <>
       <button
         type="button"
         className="mf-ed-btn"
@@ -90,6 +95,8 @@ export function ExportMenu({ controller, onDone }: ExportMenuProps) {
         </svg>
         PDF 문서 (.pdf)
       </button>
+      </>
+      )}
       <button
         type="button"
         className="mf-ed-btn"

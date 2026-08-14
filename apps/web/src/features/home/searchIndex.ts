@@ -24,6 +24,8 @@ function collectText(doc: unknown, out: string[]): void {
     nodes?: Record<string, { text?: unknown; note?: unknown }>;
     floats?: { text?: unknown }[];
     zones?: { label?: unknown }[];
+    columns?: { title?: unknown }[];
+    cards?: { text?: unknown }[];
   } | null;
   if (!d || typeof d !== 'object') return;
   const push = (v: unknown): void => {
@@ -38,6 +40,9 @@ function collectText(doc: unknown, out: string[]): void {
   }
   if (Array.isArray(d.floats)) for (const f of d.floats) push(f?.text);
   if (Array.isArray(d.zones)) for (const z of d.zones) push(z?.label);
+  // 칸반 — 열 제목과 카드 글자도 사용자가 쓴 내용이다.
+  if (Array.isArray(d.columns)) for (const c of d.columns) push(c?.title);
+  if (Array.isArray(d.cards)) for (const c of d.cards) push(c?.text);
 }
 
 /**
