@@ -27,12 +27,17 @@ interface Props {
  */
 export function ParentFolderCard({ tile, controller }: Props) {
   const activation = useCardActivation();
+  // 선택 모드에서는 폴더 카드와 같이 반응하지 않는다(흐리게) — 고른 맵을 두고
+  // 다른 목록으로 올라가면 무엇을 고르고 있었는지 흐려진다.
+  const selectMode = controller.state.selectMode;
   const onClick = () => {
+    if (selectMode) return;
     // 모바일은 두 번째 탭에서 'activate'가 온다(dblclick을 못 믿는다).
     if (activation.click() === 'activate') controller.backToSpace();
   };
   const onDoubleClick = (e: MouseEvent<HTMLDivElement>) => {
     e.preventDefault(); // 더블클릭이 남기는 텍스트 선택을 지운다
+    if (selectMode) return;
     if (!activation.acceptDoubleClick()) return;
     controller.backToSpace();
   };
@@ -60,6 +65,7 @@ export function ParentFolderCard({ tile, controller }: Props) {
       onClick={onClick}
       onDoubleClick={onDoubleClick}
       onKeyDown={(e) => {
+        if (selectMode) return;
         if (e.key === 'Enter' || e.key === ' ') controller.backToSpace();
       }}
       onDragOver={onDragOver}
@@ -71,8 +77,9 @@ export function ParentFolderCard({ tile, controller }: Props) {
         border: tile.dragOver ? '2px dashed var(--mf-accent)' : '1px dashed var(--mf-border)',
         borderRadius: 14,
         background: tile.dragOver ? 'var(--mf-accent-soft)' : 'var(--mf-sunken)',
-        cursor: 'pointer',
-        transition: 'border-color .14s, box-shadow .14s, background .14s',
+        cursor: selectMode ? 'default' : 'pointer',
+        opacity: selectMode ? 0.45 : 1,
+        transition: 'border-color .14s, box-shadow .14s, background .14s, opacity .14s',
         position: 'relative',
         display: 'flex',
         alignItems: 'center',

@@ -1,7 +1,9 @@
-import type { CSSProperties, DragEvent, MouseEvent } from 'react';
+import { useEffect, useRef } from 'react';
+import type { CSSProperties, DragEvent, MouseEvent, PointerEvent as ReactPointerEvent } from 'react';
 import { formatFullDateTime, formatLastEdited } from '../timeFormat';
 import type { HomeController } from '../useHomeController';
 import type { CardViewData } from '../viewModel';
+import { useIsMobile } from '../../../hooks/useMediaQuery';
 import { useCardActivation } from './useCardActivation';
 
 interface Props {
@@ -14,16 +16,82 @@ interface Props {
   compact?: boolean;
 }
 
+/** 모바일 선택 모드 진입 — 누르고 있어야 하는 시간(iOS·안드로이드의 길게 누르기와 같은 길이). */
+const LONG_PRESS_MS = 500;
+/** 누르는 동안 허용하는 흔들림(px, 직선 거리) — 이보다 크면 스크롤 의도로 본다. */
+const LONG_PRESS_SLOP = 10;
+
 /** Home.dc.html:251-303 `<sc-for list="{{ allCards }}">` — a single map/Drive-file card. */
 export function MapCard({ card, controller, draggableEnabled, compact = false }: Props) {
   // 한 번 = 선택 / 두 번 = 열기. 규칙과 그 함정들은 `useCardActivation`에.
   const activation = useCardActivation();
+  // 선택 모드는 **모바일 레이아웃에서만** 켠다 — 선택 바가 모바일 툴바 자리를 쓰기
+  // 때문이다(터치 화면이 달린 데스크톱에서 길게 눌러 들어가면 나갈 길이 없다).
+  const isMobile = useIsMobile();
+  const selectMode = controller.state.selectMode;
+
+  // ---- 모바일 선택 모드: 길게 누르기(요청) ----
+  // 시간을 **직접 잰다**(칸반 카드 드래그의 `beginPointerDrag`와 같은 골격):
+  // 브라우저의 길게 누르기(=`contextmenu`)는 기기·브라우저마다 발화 여부가 갈리고,
+  // iOS는 `-webkit-touch-callout: none`을 걸면 아예 오지 않기도 한다. 둘 중 **먼저
+  // 오는 쪽**이 모드를 켜고, 나머지는 이미 켜져 있으므로 아무 일도 하지 않는다.
+  const holdTimer = useRef<number | undefined>(undefined);
+  const holdStart = useRef<{ x: number; y: number } | null>(null);
+  /** 이번 제스처가 터치였는가 — `contextmenu`가 우클릭인지 길게 누르기인지 가른다. */
+  const wasTouch = useRef(false);
+  /** 길게 누르기로 모드에 들어간 직후 따라오는 클릭 한 번을 삼킨다. */
+  const swallowClick = useRef(false);
+
+  const cancelHold = () => {
+    if (holdTimer.current !== undefined) window.clearTimeout(holdTimer.current);
+    holdTimer.current = undefined;
+    holdStart.current = null;
+  };
+  useEffect(() => cancelHold, []);
+
+  /** 길게 누르기가 실제로 성립했을 때 — 두 경로(타이머·contextmenu)가 함께 쓴다. */
+  const beginSelectMode = () => {
+    cancelHold();
+    swallowClick.current = true;
+    if (controller.state.selectMode) return;
+    // 메뉴가 손가락 **아래에서** 뜨는 것과 같은 이유로 시각만으로는 알아채기 늦다.
+    navigator.vibrate?.(12);
+    controller.enterSelectMode(card.key);
+  };
+
+  const onPointerDown = (e: ReactPointerEvent<HTMLAnchorElement>) => {
+    wasTouch.current = e.pointerType === 'touch';
+    // 새 제스처의 시작 — 앞선 제스처가 남긴 억제 플래그를 여기서 푼다(클릭이 끝내
+    // 오지 않은 경우에도 다음 탭이 먹히도록).
+    swallowClick.current = false;
+    cancelHold();
+    if (!wasTouch.current || !isMobile || compact || selectMode) return;
+    const t = e.target as HTMLElement;
+    if (t.closest && t.closest('.menu-btn,.fav-btn')) return;
+    holdStart.current = { x: e.clientX, y: e.clientY };
+    holdTimer.current = window.setTimeout(beginSelectMode, LONG_PRESS_MS);
+  };
+  const onPointerMove = (e: ReactPointerEvent<HTMLAnchorElement>) => {
+    const s = holdStart.current;
+    if (!s) return;
+    if (Math.hypot(e.clientX - s.x, e.clientY - s.y) > LONG_PRESS_SLOP) cancelHold();
+  };
 
   const onOpen = (e: MouseEvent<HTMLAnchorElement>) => {
     e.preventDefault();
+    const inControls = (e.target as HTMLElement).closest?.('.menu-btn,.menu-row,.fav-btn');
+    // 길게 누르기로 방금 모드에 들어왔다 — 손을 떼며 따라오는 이 클릭은 토글이 아니다.
+    if (swallowClick.current) {
+      swallowClick.current = false;
+      return;
+    }
+    // 선택 모드에서는 탭이 곧 체크 토글이다(더블탭 열기는 아래에서 꺼진다).
+    if (selectMode && !compact) {
+      if (!inControls) controller.toggleCardSelected(card.key);
+      return;
+    }
     if (card.openable === false) return;
-    const target = e.target as HTMLElement;
-    if (target.closest && target.closest('.menu-btn,.menu-row,.fav-btn')) return;
+    if (inControls) return;
     // 한 번에 바로 열리면 카드의 ☰ 메뉴(즐겨찾기·이동·내보내기·삭제)에 닿기 전에
     // 에디터로 넘어가 버려서, 카드에 딸린 동작을 쓸 방법이 사실상 없었다(제보).
     // 수정 키를 쥔 클릭은 **선택을 고치는 동작**이지 여는 동작이 아니다 —
@@ -42,6 +110,11 @@ export function MapCard({ card, controller, draggableEnabled, compact = false }:
   };
   const onDblOpen = (e: MouseEvent<HTMLAnchorElement>) => {
     const target = e.target as HTMLElement;
+    // 선택 모드 안에서는 두 번 탭해도 열리지 않는다 — 그 시간대의 탭은 토글이다.
+    if (selectMode && !compact) {
+      e.preventDefault();
+      return;
+    }
     if (target.closest && target.closest('.menu-btn,.menu-row,.fav-btn')) {
       e.preventDefault();
       return;
@@ -63,6 +136,12 @@ export function MapCard({ card, controller, draggableEnabled, compact = false }:
     // 최근 트레이 카드는 원래 메뉴가 없는 **바로가기**다(☰도 없다). 그래도 전파는
     // 끊는다 — 카드를 눌렀는데 빈 자리 메뉴("새로 만들기…")가 뜨면 더 이상하다.
     if (compact) return;
+    // 터치의 `contextmenu`는 곧 **길게 누르기**다 — 그 뜻은 이제 선택 모드 진입이고,
+    // 카드 메뉴는 ☰이 맡는다(터치에서는 ☰이 항상 보인다: home.css `@media (hover: none)`).
+    if (wasTouch.current && isMobile) {
+      beginSelectMode();
+      return;
+    }
     // 선택 **밖**에서 우클릭하면 그 카드 하나로 교체, **안**이면 선택을 유지한다
     // (OS 표준 — 여러 장을 골라 놓고 그중 하나를 우클릭하는 것이 일괄 동작의 길).
     if (!controller.state.selectedCards.includes(card.key)) controller.selectCard(card.key);
@@ -109,6 +188,9 @@ export function MapCard({ card, controller, draggableEnabled, compact = false }:
     color: grey ? 'var(--mf-faint)' : 'var(--mf-text)',
     // 더블탭이 브라우저의 '두 번 눌러 확대' 제스처로 새지 않게 한다(스크롤·핀치는 유지).
     touchAction: 'manipulation',
+    // iOS는 길게 누르면 링크 미리보기/공유 시트를 띄운다 — 그 자리를 선택 모드가
+    // 쓰므로 막는다(카드의 `user-select: none`은 home.css에 이미 있다, #418).
+    WebkitTouchCallout: 'none',
     // 화면 밖 카드는 브라우저가 렌더링(스타일·레이아웃·페인트)을 건너뛴다 —
     // 썸네일 SVG가 카드마다 수백 노드라, 150맵 그리드의 마운트/재마운트 비용이
     // 뷰포트 분량으로 떨어진다(가상화의 저렴한 중간 단계: DOM·테스트·드래그·
@@ -125,6 +207,10 @@ export function MapCard({ card, controller, draggableEnabled, compact = false }:
       onClick={onOpen}
       onDoubleClick={onDblOpen}
       onContextMenu={onContextMenu}
+      onPointerDown={onPointerDown}
+      onPointerMove={onPointerMove}
+      onPointerUp={cancelHold}
+      onPointerCancel={cancelHold}
       draggable={draggableEnabled}
       onDragStart={onDragStart}
       onDragEnd={onDragEnd}
@@ -161,6 +247,38 @@ export function MapCard({ card, controller, draggableEnabled, compact = false }:
           {dragCount}
         </div>
       )}
+      {/* 선택 모드의 체크 표시 — ★ 자리를 그대로 쓰고 그동안 ★은 감춘다(한 자리에
+          두 표식이 겹치지 않게). 카드 전체가 이미 터치 타깃이라 이 동그라미는
+          누르는 버튼이 아니라 **상태 표시**다(탭은 카드 어디서나 토글). */}
+      {selectMode && !compact && (
+        <div
+          data-select-check
+          aria-hidden="true"
+          style={{
+            position: 'absolute',
+            top: 10,
+            left: 10,
+            zIndex: 4,
+            width: 26,
+            height: 26,
+            borderRadius: '50%',
+            background: card.selected ? 'var(--mf-accent)' : 'var(--mf-panel-veil)',
+            border: `1.5px solid ${card.selected ? 'var(--mf-accent)' : 'var(--mf-border)'}`,
+            color: 'var(--mf-accent-ink)',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            boxShadow: '0 2px 6px rgba(0,0,0,.12)',
+          }}
+        >
+          {card.selected && (
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round">
+              <polyline points="20 6 9 17 4 12" />
+            </svg>
+          )}
+        </div>
+      )}
+
       <div
         className="fav-btn"
         role="button"
@@ -182,7 +300,7 @@ export function MapCard({ card, controller, draggableEnabled, compact = false }:
           borderRadius: '50%',
           background: card.isFav ? 'var(--mf-panel)' : 'var(--mf-panel-veil)',
           border: `1px solid ${card.isFav ? 'var(--mf-star)' : 'var(--mf-border)'}`,
-          display: card.openable === false ? 'none' : 'flex',
+          display: card.openable === false || (selectMode && !compact) ? 'none' : 'flex',
           alignItems: 'center',
           justifyContent: 'center',
           fontSize: 15,
@@ -395,7 +513,9 @@ export function MapCard({ card, controller, draggableEnabled, compact = false }:
           </div>
         )}
         </div>
-        {!compact && (
+        {/* 선택 모드에서는 카드의 ☰을 감춘다 — 여러 장을 골라 둔 채 한 장의 메뉴를
+            여는 것은 뜻이 어긋난다. 그때의 메뉴는 선택 바의 ⋯이다. */}
+        {!compact && !selectMode && (
           <div
             className="menu-btn"
             role="button"

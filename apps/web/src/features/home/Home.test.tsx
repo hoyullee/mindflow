@@ -4114,3 +4114,187 @@ describe('홈 카드 다중 선택', () => {
     await waitFor(() => expect(selectedKeys(container)).toHaveLength(0));
   });
 });
+
+/**
+ * 모바일 다중 선택 — 진입은 **길게 누르기**(요청). 터치에는 수정 키가 없어
+ * Ctrl/Shift 관례를 쓸 수 없고, 폰에서는 카드 드래그도 발화하지 않으므로
+ * 이동·삭제는 선택 바의 ⋯ 메뉴가 맡는다.
+ */
+describe('모바일 홈 다중 선택', () => {
+  /** 길게 누르기의 두 경로가 모두 이 pointerdown으로 시작한다(터치였음을 기록). */
+  const touchDown = (el: Element, x = 40, y = 40) => {
+    const ev = new MouseEvent('pointerdown', { bubbles: true, cancelable: true, clientX: x, clientY: y });
+    Object.defineProperty(ev, 'pointerType', { value: 'touch', configurable: true });
+    Object.defineProperty(ev, 'pointerId', { value: 1, configurable: true });
+    fireEvent(el, ev);
+  };
+  const touchMove = (el: Element, x: number, y: number) => {
+    const ev = new MouseEvent('pointermove', { bubbles: true, cancelable: true, clientX: x, clientY: y });
+    Object.defineProperty(ev, 'pointerType', { value: 'touch', configurable: true });
+    fireEvent(el, ev);
+  };
+  const seedTwo = () => {
+    localStorage.setItem(
+      'mf_spaces',
+      JSON.stringify({
+        spaces: [
+          { id: 's1', name: '일반 스페이스', color: '#f0663f', maps: [{ title: 'A맵', docId: 'da' }, { title: 'B맵', docId: 'db' }], folders: [{ id: 'fx', name: '보관함' }] },
+        ],
+        activeSpace: 's1',
+        mapFolders: {},
+        recent: [],
+      }),
+    );
+  };
+  const keys = (container: HTMLElement) => Array.from(container.querySelectorAll('[data-card-key]')).map((e) => e.getAttribute('data-card-key')!);
+  const checked = (container: HTMLElement) => Array.from(container.querySelectorAll('[data-select-check] svg')).length;
+
+  it('길게 누르면(타이머) 선택 모드 — 툴바가 선택 바로 바뀌고 탭이 토글이 된다', async () => {
+    const restore = mockMatchMedia(true);
+    try {
+      seedTwo();
+      const { container } = renderHomeWithDocStore([]);
+      await waitFor(() => expect(keys(container)).toHaveLength(2));
+      const [k1, k2] = keys(container);
+      const card = (k: string) => container.querySelector(`[data-card-key="${k}"]`) as HTMLElement;
+
+      touchDown(card(k1!));
+      await new Promise((r) => setTimeout(r, 560)); // 길게 누르기(500ms)
+
+      // 툴바 자리를 선택 바가 쓴다 — 검색·만들기는 그 시간대의 일이 아니다.
+      await waitFor(() => expect(screen.getByText('1개 선택')).toBeTruthy());
+      expect(screen.queryByPlaceholderText('모든 스페이스에서 검색')).toBeNull();
+      expect(checked(container)).toBe(1);
+
+      // 모드 안의 탭 = 토글. 더블탭 열기는 꺼져 있다.
+      fireEvent.click(card(k2!));
+      await waitFor(() => expect(screen.getByText('2개 선택')).toBeTruthy());
+      fireEvent.click(card(k2!));
+      fireEvent.click(card(k2!)); // 두 번 연속 탭해도 에디터로 넘어가지 않는다
+      await waitFor(() => expect(screen.getByText('2개 선택')).toBeTruthy());
+      expect(screen.queryByText('EDITOR_PLACEHOLDER')).toBeNull();
+
+      // ✕ = 모드 종료 + 선택 비움 → 평소 툴바 복귀
+      fireEvent.click(screen.getByRole('button', { name: '선택 종료' }));
+      await waitFor(() => expect(screen.getByPlaceholderText('모든 스페이스에서 검색')).toBeTruthy());
+      expect(checked(container)).toBe(0);
+    } finally {
+      restore();
+    }
+  });
+
+  it('기기의 길게 누르기(contextmenu)도 같은 모드로 — 카드 메뉴는 뜨지 않는다', async () => {
+    const restore = mockMatchMedia(true);
+    try {
+      seedTwo();
+      const { container } = renderHomeWithDocStore([]);
+      await waitFor(() => expect(keys(container)).toHaveLength(2));
+      const card = container.querySelector(`[data-card-key="${keys(container)[0]}"]`) as HTMLElement;
+
+      touchDown(card);
+      fireEvent.contextMenu(card, { clientX: 40, clientY: 40 });
+
+      await waitFor(() => expect(screen.getByText('1개 선택')).toBeTruthy());
+      // 길게 누르기의 옛 뜻(카드 메뉴)은 ☰이 맡는다 — 여기서 메뉴가 뜨면 둘이 겹친다.
+      expect(screen.queryByRole('menu')).toBeNull();
+    } finally {
+      restore();
+    }
+  });
+
+  it('누르는 동안 손가락이 밀리면(스크롤) 모드에 들어가지 않는다', async () => {
+    const restore = mockMatchMedia(true);
+    try {
+      seedTwo();
+      const { container } = renderHomeWithDocStore([]);
+      await waitFor(() => expect(keys(container)).toHaveLength(2));
+      const card = container.querySelector(`[data-card-key="${keys(container)[0]}"]`) as HTMLElement;
+
+      touchDown(card, 40, 40);
+      touchMove(card, 44, 90); // 세로로 밀었다 = 스크롤 의도
+      await new Promise((r) => setTimeout(r, 560));
+
+      expect(screen.queryByText('1개 선택')).toBeNull();
+      expect(screen.getByPlaceholderText('모든 스페이스에서 검색')).toBeTruthy();
+    } finally {
+      restore();
+    }
+  });
+
+  it('선택 모드에서는 폴더 카드가 반응하지 않는다 — 선택이 비워진 채 모드만 남지 않게', async () => {
+    const restore = mockMatchMedia(true);
+    try {
+      seedTwo();
+      const { container } = renderHomeWithDocStore([]);
+      await waitFor(() => expect(keys(container)).toHaveLength(2));
+      const card = container.querySelector(`[data-card-key="${keys(container)[0]}"]`) as HTMLElement;
+
+      touchDown(card);
+      fireEvent.contextMenu(card, { clientX: 40, clientY: 40 });
+      await waitFor(() => expect(screen.getByText('1개 선택')).toBeTruthy());
+
+      // 폴더는 다중 선택 대상이 아니다 — 여기서 선택이 바뀌면 "0개 선택" 바가 뜬다.
+      const folder = screen.getByText('보관함').closest('.map-card') as HTMLElement;
+      fireEvent.click(folder);
+      fireEvent.doubleClick(folder);
+      await new Promise((r) => setTimeout(r, 60));
+      expect(screen.getByText('1개 선택')).toBeTruthy();
+      expect(keys(container)).toHaveLength(2); // 폴더 안으로 들어가지도 않았다
+    } finally {
+      restore();
+    }
+  });
+
+  it('선택 바의 전체 선택 · ⋯ — 데스크톱과 같은 일괄 메뉴가 뜨고 폴더로 옮긴다', async () => {
+    const restore = mockMatchMedia(true);
+    try {
+      seedTwo();
+      const { container } = renderHomeWithDocStore([]);
+      await waitFor(() => expect(keys(container)).toHaveLength(2));
+      const [k1, k2] = keys(container);
+      const card = container.querySelector(`[data-card-key="${k1}"]`) as HTMLElement;
+
+      touchDown(card);
+      fireEvent.contextMenu(card, { clientX: 40, clientY: 40 });
+      await waitFor(() => expect(screen.getByText('1개 선택')).toBeTruthy());
+
+      fireEvent.click(screen.getByText('전체 선택'));
+      await waitFor(() => expect(screen.getByText('2개 선택')).toBeTruthy());
+
+      fireEvent.click(screen.getByRole('button', { name: '선택한 맵 메뉴' }));
+      const menu = await screen.findByRole('menu');
+      expect(within(menu).getByText('삭제하기 (2개)')).toBeTruthy();
+      fireEvent.mouseEnter(within(menu).getByText('폴더로 이동'));
+      const sub = await waitFor(() => menu.querySelector('[data-home-ctx-sub]') as HTMLElement);
+      fireEvent.click(within(sub).getByText('보관함'));
+
+      await waitFor(() => {
+        const ws = JSON.parse(localStorage.getItem('mf_spaces') || '{}') as { mapFolders?: Record<string, string> };
+        expect(ws.mapFolders?.[k1!]).toBe('fx');
+        expect(ws.mapFolders?.[k2!]).toBe('fx');
+      });
+      // 일괄 동작이 끝나면 모드도 나간다 — 옮긴 카드는 이 목록에서 사라진다.
+      await waitFor(() => expect(screen.getByPlaceholderText('모든 스페이스에서 검색')).toBeTruthy());
+    } finally {
+      restore();
+    }
+  });
+
+  it('데스크톱에서는 길게 눌러도 모드에 들어가지 않는다 — 그 자리는 카드 메뉴 그대로', async () => {
+    const restore = mockMatchMedia(false);
+    try {
+      seedTwo();
+      const { container } = renderHomeWithDocStore([]);
+      await waitFor(() => expect(keys(container)).toHaveLength(2));
+      const card = container.querySelector(`[data-card-key="${keys(container)[0]}"]`) as HTMLElement;
+
+      touchDown(card);
+      fireEvent.contextMenu(card, { clientX: 40, clientY: 40 });
+
+      expect(await screen.findByRole('menu')).toBeTruthy();
+      expect(screen.queryByText('1개 선택')).toBeNull();
+    } finally {
+      restore();
+    }
+  });
+});

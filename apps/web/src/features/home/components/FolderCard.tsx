@@ -14,6 +14,11 @@ export function FolderCard({ folder, controller }: Props) {
   // 맵 카드와 같은 규칙 — 한 번 = 선택 / 두 번 = 진입(사용자 요청). 폴더만 한 번에
   // 들어가면 같은 그리드 안에서 카드마다 클릭의 뜻이 달라진다.
   const activation = useCardActivation();
+  // 모바일 선택 모드에서는 폴더가 **반응하지 않는다**(흐리게 표시). 폴더는 다중 선택
+  // 대상이 아니라서, 여기서 `selectCard`가 돌면 맵 선택이 비워진 채 모드만 남아
+  // "0개 선택" 바가 뜬다. 진입도 마찬가지 — 고른 맵을 두고 다른 목록으로 넘어가면
+  // 무엇을 고르고 있었는지 흐려진다. 먼저 선택을 끝내고(또는 ✕) 폴더로 간다.
+  const selectMode = controller.state.selectMode;
   const onDragOver = (e: DragEvent<HTMLDivElement>) => {
     e.preventDefault();
     e.dataTransfer.dropEffect = 'move';
@@ -29,6 +34,7 @@ export function FolderCard({ folder, controller }: Props) {
   };
   const enter = () => (folder.isDrive ? controller.openDriveFolder(folder.id) : controller.openFolder(folder.id));
   const onClick = (e: MouseEvent<HTMLDivElement>) => {
+    if (selectMode) return;
     const target = e.target as HTMLElement;
     if (target.closest && target.closest('.menu-btn,.menu-row')) return;
     if (activation.click() === 'activate') {
@@ -41,10 +47,12 @@ export function FolderCard({ folder, controller }: Props) {
   const onContextMenu = (e: MouseEvent<HTMLDivElement>) => {
     e.preventDefault();
     e.stopPropagation();
+    if (selectMode) return;
     controller.selectCard(folderCardKey(folder.id));
     controller.openCtxMenuAt(e.clientX, e.clientY, { kind: 'folder', id: folder.id });
   };
   const onDoubleClick = (e: MouseEvent<HTMLDivElement>) => {
+    if (selectMode) return;
     const target = e.target as HTMLElement;
     if (target.closest && target.closest('.menu-btn,.menu-row')) return;
     if (!activation.acceptDoubleClick()) return;
@@ -62,6 +70,7 @@ export function FolderCard({ folder, controller }: Props) {
       onKeyDown={(e) => {
         // 키보드는 Enter/Space 한 번으로 진입한다 — 포인터의 "두 번"에 대응하는
         // 관용구가 없고, 접근성 관점에서도 활성화 키는 곧 실행이다.
+        if (selectMode) return;
         if (e.key === 'Enter' || e.key === ' ') enter();
       }}
       onDragOver={onDragOver}
@@ -71,8 +80,9 @@ export function FolderCard({ folder, controller }: Props) {
         border: folder.dragOver ? '2px dashed var(--mf-accent)' : folder.selected ? '2px solid var(--mf-accent)' : '1px solid var(--mf-border)',
         borderRadius: 14,
         background: folder.dragOver ? 'var(--mf-accent-soft)' : 'var(--mf-panel)',
-        cursor: 'pointer',
-        transition: 'border-color .14s, box-shadow .14s, background .14s',
+        cursor: selectMode ? 'default' : 'pointer',
+        opacity: selectMode ? 0.45 : 1,
+        transition: 'border-color .14s, box-shadow .14s, background .14s, opacity .14s',
         position: 'relative',
         display: 'flex',
         alignItems: 'center',
@@ -102,7 +112,7 @@ export function FolderCard({ folder, controller }: Props) {
         }}
         title="메뉴"
         aria-label="메뉴"
-        style={{ position: 'absolute', top: 10, right: 10, zIndex: 4, width: 28, height: 28, borderRadius: 8, background: 'var(--mf-panel-veil)', border: '1px solid var(--mf-border)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 13, lineHeight: 1, color: 'var(--mf-subtext)', cursor: 'pointer', boxShadow: '0 2px 6px rgba(0,0,0,.12)', opacity: folder.menuOpen ? 1 : 0, transition: 'opacity .15s' }}
+        style={{ position: 'absolute', top: 10, right: 10, zIndex: 4, width: 28, height: 28, borderRadius: 8, background: 'var(--mf-panel-veil)', border: '1px solid var(--mf-border)', display: selectMode ? 'none' : 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 13, lineHeight: 1, color: 'var(--mf-subtext)', cursor: 'pointer', boxShadow: '0 2px 6px rgba(0,0,0,.12)', opacity: folder.menuOpen ? 1 : 0, transition: 'opacity .15s' }}
       >
         ☰
       </div>

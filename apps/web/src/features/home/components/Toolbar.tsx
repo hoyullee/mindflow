@@ -92,8 +92,76 @@ function BreadcrumbTitle({ parent, leaf, full }: { parent: string | null; leaf: 
   );
 }
 
+/**
+ * 모바일 선택 모드의 툴바 — 평소 툴바(제목·검색·만들기)를 **대체**한다.
+ *
+ * 하단 고정 바를 새로 만들지 않은 이유: 그 자리는 설치 안내·오프라인 바가 이미
+ * 쓰고 있어 셋이 겹친다. 지금 무엇을 고르고 있는지는 화면 맨 위가 말하는 편이
+ * 자연스럽고(파일 앱 관례), 검색·만들기는 그 시간대에 할 일이 아니다.
+ */
+function SelectionBar({ state, controller }: { state: HomeState; controller: HomeController }) {
+  const n = state.selectedCards.length;
+  const anchor = state.selectedCard ?? state.selectedCards[n - 1] ?? null;
+  const btn = {
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'center',
+    minWidth: 44,
+    height: 44,
+    border: 'none',
+    borderRadius: 10,
+    background: 'transparent',
+    color: 'var(--mf-text)',
+    fontFamily: 'inherit',
+    fontSize: 13,
+    fontWeight: 600,
+    cursor: 'pointer',
+    padding: '0 10px',
+    flexShrink: 0,
+  } as const;
+  return (
+    <div className="mf-sel-bar" style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 18, minWidth: 0 }}>
+      <button type="button" className="btn" onClick={controller.exitSelectMode} aria-label="선택 종료" title="선택 종료" style={{ ...btn, marginLeft: -12 }}>
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round">
+          <line x1="18" y1="6" x2="6" y2="18" />
+          <line x1="6" y1="6" x2="18" y2="18" />
+        </svg>
+      </button>
+      <div style={{ fontSize: 16, fontWeight: 800, letterSpacing: '-.01em', minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{n}개 선택</div>
+      <div style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: 2 }}>
+        <button type="button" className="btn" onClick={controller.selectAllCards} style={btn}>
+          전체 선택
+        </button>
+        {/* ⋯ — 데스크톱 우클릭과 **같은** 메뉴다(`HomeContextMenu`). 한 장만 골랐으면
+            그 카드의 단일 메뉴가, 여러 장이면 일괄 메뉴가 뜬다(기존 라우팅 그대로). */}
+        <button
+          type="button"
+          className="btn"
+          data-sel-menu
+          aria-label="선택한 맵 메뉴"
+          title="메뉴"
+          onClick={(e) => {
+            if (!anchor) return;
+            const r = e.currentTarget.getBoundingClientRect();
+            controller.openCtxMenu(r.right - 184, r.bottom + 6, { kind: 'map', key: anchor });
+          }}
+          style={btn}
+        >
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+            <circle cx="5" cy="12" r="1.9" />
+            <circle cx="12" cy="12" r="1.9" />
+            <circle cx="19" cy="12" r="1.9" />
+          </svg>
+        </button>
+      </div>
+    </div>
+  );
+}
+
 /** Home.dc.html:191-207 — the "모두" toolbar above the map grid. */
 export function Toolbar({ state, view, controller, isMobile = false, onOpenNav }: Props) {
+  // 선택 모드(모바일 전용)에서는 툴바 자리를 선택 바가 쓴다.
+  if (isMobile && state.selectMode) return <SelectionBar state={state} controller={controller} />;
   return (
     <div style={{ display: 'flex', alignItems: 'center', marginBottom: 18, gap: 12, flexWrap: 'wrap' }}>
       {/* ≡ · ← · 제목은 한 덩어리다. 따로 두면 제목이 길 때 flex-wrap이 제목 항목을
