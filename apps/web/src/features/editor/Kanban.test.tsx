@@ -6,6 +6,7 @@ import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-li
 import { MemoryRouter, Route, Routes } from 'react-router-dom';
 import { Editor } from './Editor';
 import { mockMatchMedia } from '../../test/matchMedia';
+import { UI_THEME, mixHex } from './theme';
 
 /** 내려받은 파일 내용을 가로챈다 — jsdom에는 createObjectURL이 없다(다른 내보내기 테스트와 같은 처방). */
 const dl = vi.hoisted(() => ({ files: [] as { name: string; data: string }[] }));
@@ -377,9 +378,11 @@ describe('칸반 — 카드 댓글(M3)', () => {
   });
   afterEach(cleanup);
 
-  /** 보드 전체 댓글 — 칸반의 보기 메뉴는 세 보기뿐이라(요청) 보드 머리의 아이콘으로 연다. */
-  const openViaMenu = async (container: HTMLElement): Promise<HTMLElement> => {
-    fireEvent.click(container.querySelector('[data-kanban-comments]')!);
+  /** 보드 전체 댓글 — 보드 머리의 아이콘 자리를 필터에 내줘서(요청) 보기 메뉴로 연다. */
+  const openViaMenu = async (): Promise<HTMLElement> => {
+    fireEvent.click(screen.getByRole('button', { name: '보기' }));
+    const menu = await waitFor(() => document.querySelector('[data-anchored-menu]') as HTMLElement);
+    fireEvent.click(within(menu).getByRole('button', { name: '보드 전체 댓글' }));
     return await screen.findByLabelText('댓글');
   };
 
@@ -389,7 +392,7 @@ describe('칸반 — 카드 댓글(M3)', () => {
     await waitFor(() => expect(container.querySelectorAll('[data-kanban-card]')).toHaveLength(2));
 
     // 아무 카드도 고르지 않았으면 문서 전체(칸반에는 루트 주제가 없다).
-    let panel = await openViaMenu(container);
+    let panel = await openViaMenu();
     expect(within(panel).getByText('보드 전체')).toBeTruthy();
 
     // 카드를 고르면 패널이 따라간다.
@@ -529,7 +532,9 @@ describe('칸반 — 열 순서 바꾸기', () => {
     firePointer(container.querySelector('[data-column-head="c1"]')!, 'pointerdown', { clientX: 40, clientY: 20 });
     firePointer(window, 'pointermove', { clientX: 500, clientY: 20 });
     await waitFor(() => expect(container.querySelector('[data-kanban-col-ghost]')).toBeTruthy());
-    expect(container.querySelector('[data-kanban-col-drop-line]')).toBeTruthy();
+    // 카드와 같은 규칙 — 원본은 목록에서 빠지고 그 자리에 점선 상자가 선다.
+    expect(container.querySelector('[data-kanban-col-slot]')).toBeTruthy();
+    expect(container.querySelector('[data-kanban-column="c1"]')).toBeNull();
     firePointer(window, 'pointerup', { clientX: 500, clientY: 20 });
 
     await waitFor(() => expect(Array.from(container.querySelectorAll('[data-kanban-column]')).map((e) => e.getAttribute('data-kanban-column'))).toEqual(['c2', 'c1']));
@@ -777,7 +782,7 @@ describe('칸반 — 보드 머리(검색·진행률)', () => {
     fireEvent.change(container.querySelector('[data-kanban-search]')!, { target: { value: '둘째' } });
     await waitFor(() => expect(container.querySelectorAll('[data-kanban-card]')).toHaveLength(1));
     // 걸리지 않은 열은 "검색 결과가 없어요"
-    expect(container.querySelector('[data-column-empty="c2"]')?.textContent).toContain('검색 결과가 없어요');
+    expect(container.querySelector('[data-column-empty="c2"]')?.textContent).toContain('조건에 맞는 카드가 없어요');
     // 열 머리의 수는 **문서의 수** 그대로(거른 결과가 아니다).
     expect(container.querySelector('[data-column-count="c1"]')?.textContent).toBe('2');
 
@@ -797,12 +802,10 @@ describe('칸반 — 보드 머리(검색·진행률)', () => {
     fireEvent.click(detail.querySelector('[data-detail-status="c2"]')!);
     fireEvent.click(detail.querySelector('[data-detail-close]')!);
     await waitFor(() => expect(container.querySelector('[data-kanban-bar]')?.textContent).toContain('완료 1/2'));
-    // 바는 **열별 구간**이고 색은 그 열의 머리 색이다(요청).
+    // 바는 **완료부터 왼쪽에서** 그린다(제보) — 첫 열(c1)은 아직 시작하지 않은
+    // 일이라 빈 트랙으로 남는다. 색은 그 열의 머리 색(요청).
     const segs = Array.from(container.querySelectorAll('[data-progress-seg]')).map((e) => ({ col: e.getAttribute('data-progress-seg'), w: (e as HTMLElement).style.width }));
-    expect(segs).toEqual([
-      { col: 'c1', w: '50%' },
-      { col: 'c2', w: '50%' },
-    ]);
+    expect(segs).toEqual([{ col: 'c2', w: '50%' }]);
     const dot = (container.querySelector('[data-column-dot="c2"]') as HTMLElement).style.background;
     expect((container.querySelector('[data-progress-seg="c2"]') as HTMLElement).style.background).toBe(dot);
   });
@@ -897,7 +900,7 @@ describe('칸반 — 리스트·타임라인 보기', () => {
     fireEvent.change(container.querySelector('[data-kanban-search]')!, { target: { value: '늦은' } });
     fireEvent.click(container.querySelector('[data-kanban-tab="list"]')!);
     await waitFor(() => expect(container.querySelectorAll('[data-list-row]')).toHaveLength(1));
-    expect(container.querySelector('[data-list-empty="c1"]')?.textContent).toContain('검색 결과가 없어요');
+    expect(container.querySelector('[data-list-empty="c1"]')?.textContent).toContain('조건에 맞는 카드가 없어요');
 
     fireEvent.click(container.querySelector('[data-kanban-tab="timeline"]')!);
     await waitFor(() => expect(container.querySelectorAll('[data-timeline-row]')).toHaveLength(1));
@@ -1008,7 +1011,8 @@ describe('칸반 — 후속 요청', () => {
     // (보드 머리의 탭에도 같은 이름의 버튼이 있으므로 드롭다운 안에서 찾는다.)
     const menu = await waitFor(() => document.querySelector('[data-anchored-menu]') as HTMLElement);
     const labels = Array.from(menu.querySelectorAll('button')).map((el) => (el.textContent || '').trim());
-    expect(labels).toEqual(['보드', '리스트', '타임라인']);
+    // 보기 **모드**는 셋뿐이고, 보드 전체 댓글은 구분선 뒤에 따로 선다.
+    expect(labels).toEqual(['보드', '리스트', '타임라인', '보드 전체 댓글']);
 
     // 탭과 같은 상태를 쓴다 — 메뉴로 고르면 화면도 바뀐다.
     fireEvent.click(within(menu).getByRole('button', { name: '리스트' }));
@@ -1090,10 +1094,160 @@ describe('칸반 — 후속 7건', () => {
     const col = await waitFor(() => container.querySelector('[data-kanban-column="c1"]') as HTMLElement);
     expect(col.style.boxShadow).toContain('rgba');
 
-    // 카드가 c1에만 둘 있으므로 구간도 c1 하나(100%).
-    const segs = Array.from(container.querySelectorAll('[data-progress-seg]'));
-    expect(segs).toHaveLength(1);
-    expect((segs[0] as HTMLElement).style.width).toBe('100%');
-    expect((segs[0] as HTMLElement).style.background).toBe((container.querySelector('[data-column-dot="c1"]') as HTMLElement).style.background);
+    // 카드가 첫 열에만 있으면 **채워진 구간이 없다**(아직 시작하지 않은 일).
+    expect(container.querySelectorAll('[data-progress-seg]')).toHaveLength(0);
+
+    // 마지막 열로 옮기면 그 열의 색으로 왼쪽부터 찬다.
+    fireEvent.doubleClick(container.querySelector('[data-kanban-card="k1"]')!);
+    const detail = await waitFor(() => container.querySelector('[data-card-detail="k1"]') as HTMLElement);
+    fireEvent.click(detail.querySelector('[data-detail-status="c2"]')!);
+    fireEvent.click(detail.querySelector('[data-detail-close]')!);
+    const segs = await waitFor(() => {
+      const list = Array.from(container.querySelectorAll('[data-progress-seg]'));
+      expect(list).toHaveLength(1);
+      return list;
+    });
+    expect((segs[0] as HTMLElement).getAttribute('data-progress-seg')).toBe('c2');
+    expect((segs[0] as HTMLElement).style.background).toBe((container.querySelector('[data-column-dot="c2"]') as HTMLElement).style.background);
+  });
+});
+
+describe('칸반 — 후속 6건', () => {
+  beforeEach(() => {
+    localStorage.clear();
+    mockMatchMedia(false);
+    localStorage.setItem('mf_demo_session', JSON.stringify({ user: { id: 'u', email: 'me@example.com' } }));
+  });
+  afterEach(cleanup);
+
+  /** 세 열 · 담당과 분류가 섞인 보드 — 진행 바 순서와 필터를 함께 본다. */
+  const BOARD = {
+    ...KANBAN,
+    columns: [
+      { id: 'c1', title: '할 일' },
+      { id: 'c2', title: '진행 중' },
+      { id: 'c3', title: '완료' },
+    ],
+    tags: [
+      { id: 't1', name: '개발' },
+      { id: 't2', name: '기획' },
+    ],
+    cards: [
+      { id: 'k1', col: 'c1', pos: 0, text: '첫 카드', owner: 'a@x.com', ownerName: '지수', tag: '개발' },
+      { id: 'k2', col: 'c1', pos: 1024, text: '둘째 카드', owner: 'b@x.com', ownerName: '민호', tag: '기획', flagged: true },
+      { id: 'k3', col: 'c2', pos: 0, text: '셋째 카드', owner: 'a@x.com', ownerName: '지수' },
+      { id: 'k4', col: 'c3', pos: 0, text: '넷째 카드' },
+    ],
+  };
+
+  it('진행 바는 완료부터 **왼쪽**에서 차고, 첫 열은 빈 트랙으로 남는다', async () => {
+    localStorage.setItem('mindflow_doc_kf1', JSON.stringify(BOARD));
+    const { container } = renderEditor('/editor?map=kf1&title=x');
+    await waitFor(() => expect(container.querySelector('[data-kanban-progress]')).toBeTruthy());
+
+    // 왼쪽부터 c3(완료) → c2(진행). 시작하지 않은 c1은 그리지 않는다.
+    const segs = Array.from(container.querySelectorAll('[data-progress-seg]')).map((e) => e.getAttribute('data-progress-seg'));
+    expect(segs).toEqual(['c3', 'c2']);
+    // 채워진 폭의 합이 100%보다 작다 = 남은 자리가 빈 트랙이다.
+    const widths = Array.from(container.querySelectorAll('[data-progress-seg]')).map((e) => parseFloat((e as HTMLElement).style.width));
+    expect(widths.reduce((a, b) => a + b, 0)).toBeLessThan(100);
+  });
+
+  it('열 추가 타일도 열과 같은 그림자를 쓴다', async () => {
+    localStorage.setItem('mindflow_doc_kf2', JSON.stringify(BOARD));
+    const { container } = renderEditor('/editor?map=kf2&title=x');
+    const add = await waitFor(() => container.querySelector('[data-add-column]') as HTMLElement);
+    const col = container.querySelector('[data-kanban-column="c1"]') as HTMLElement;
+    expect(add.style.boxShadow).toBe(col.style.boxShadow);
+    expect(add.style.boxShadow).toContain('rgba');
+  });
+
+  it('바닥은 열(패널)보다 옅다 — 앱 배경을 그대로 쓰지 않는다', async () => {
+    localStorage.setItem('mindflow_doc_kf3', JSON.stringify(BOARD));
+    const { container } = renderEditor('/editor?map=kf3&title=x');
+    const root = await waitFor(() => container.querySelector('[data-kanban-root]') as HTMLElement);
+    // 칸반 화면은 캔버스가 아니라 크롬이라 UI 테마(고정 팔레트)를 쓴다.
+    // jsdom은 색을 `rgb(...)`로 정규화하므로 비교도 같은 꼴로 맞춘다.
+    const rgb = (hex: string): string => {
+      const c = hex.replace('#', '');
+      return `rgb(${parseInt(c.slice(0, 2), 16)}, ${parseInt(c.slice(2, 4), 16)}, ${parseInt(c.slice(4, 6), 16)})`;
+    };
+    expect(root.style.background).toBe(rgb(mixHex(UI_THEME.appBg, UI_THEME.panel, 0.55)));
+    expect(root.style.background).not.toBe(rgb(UI_THEME.appBg));
+  });
+
+  it('검색·탭·필터는 문서 칩과 같은 선에 선다(데스크톱)', async () => {
+    localStorage.setItem('mindflow_doc_kf4', JSON.stringify(BOARD));
+    const { container } = renderEditor('/editor?map=kf4&title=x');
+    const row = await waitFor(() => container.querySelector('[data-kanban-actions]') as HTMLElement);
+    // 칩은 떠 있는 오버레이라 자리를 차지하지 않는다 — 그 폭만큼 왼쪽을 비운다.
+    expect(parseFloat(row.style.paddingLeft)).toBeGreaterThan(200);
+    expect(parseFloat(row.style.minHeight)).toBeGreaterThan(40);
+  });
+
+  it('열 고스트는 카드까지 담고, 원본 자리에는 점선 상자가 선다', async () => {
+    localStorage.setItem('mindflow_doc_kf5', JSON.stringify(BOARD));
+    const { container } = renderEditor('/editor?map=kf5&title=x');
+    await waitFor(() => expect(container.querySelectorAll('[data-kanban-column]')).toHaveLength(3));
+    stubRects(container);
+
+    firePointer(container.querySelector('[data-column-head="c1"]')!, 'pointerdown', { clientX: 40, clientY: 20 });
+    firePointer(window, 'pointermove', { clientX: 500, clientY: 20 });
+
+    const ghost = await waitFor(() => container.querySelector('[data-kanban-col-ghost="c1"]') as HTMLElement);
+    // 카드 고스트와 같은 규칙 — 열의 **얼굴**(제목 + 카드)이 따라온다.
+    expect(ghost.textContent).toContain('할 일');
+    expect(ghost.textContent).toContain('첫 카드');
+    const slot = container.querySelector('[data-kanban-col-slot]') as HTMLElement;
+    expect(slot).toBeTruthy();
+    expect(slot.style.height).toBe('800px'); // stubRects가 심은 열 높이
+    firePointer(window, 'pointerup', { clientX: 40, clientY: 20 });
+  });
+
+  it('필터 — 담당·분류·긴급으로 좁히고, 초기화로 되돌린다', async () => {
+    localStorage.setItem('mindflow_doc_kf6', JSON.stringify(BOARD));
+    const { container } = renderEditor('/editor?map=kf6&title=x');
+    await waitFor(() => expect(container.querySelectorAll('[data-kanban-card]')).toHaveLength(4));
+    // 아이콘 자리는 필터가 가져갔다 — 보드 머리에 댓글 버튼은 없다.
+    expect(container.querySelector('[data-kanban-comments]')).toBeNull();
+
+    fireEvent.click(container.querySelector('[data-kanban-filter]')!);
+    const panel = await waitFor(() => container.querySelector('[data-kanban-filter-panel]') as HTMLElement);
+    expect(panel.textContent).toContain('4 / 4개 카드 표시 중');
+
+    // 담당 — 지수의 카드 둘만.
+    fireEvent.click(panel.querySelector('[data-filter-owner="a@x.com"]')!);
+    await waitFor(() => expect(container.querySelectorAll('[data-kanban-card]')).toHaveLength(2));
+    expect(container.querySelector('[data-filter-count]')?.textContent).toContain('2 / 4');
+
+    // 분류를 함께 걸면 교집합(지수 + 개발) 하나.
+    fireEvent.click(panel.querySelector('[data-filter-tag="개발"]')!);
+    await waitFor(() => expect(container.querySelectorAll('[data-kanban-card]')).toHaveLength(1));
+
+    // 초기화 — 전부 돌아온다.
+    fireEvent.click(panel.querySelector('[data-filter-reset]')!);
+    await waitFor(() => expect(container.querySelectorAll('[data-kanban-card]')).toHaveLength(4));
+
+    // 긴급만 보기 — flagged 하나.
+    fireEvent.click(panel.querySelector('[data-filter-urgent]')!);
+    await waitFor(() => expect(container.querySelectorAll('[data-kanban-card]')).toHaveLength(1));
+    expect(container.querySelector('[data-kanban-card="k2"]')).toBeTruthy();
+
+    // 문서는 그대로 — 필터는 화면에서만 거른다.
+    fireEvent.keyDown(window, { key: 's', ctrlKey: true });
+    await waitFor(() => expect(saved('kf6').cards).toHaveLength(4));
+  });
+
+  it('필터는 리스트·타임라인 보기에도 함께 걸린다', async () => {
+    localStorage.setItem('mindflow_doc_kf7', JSON.stringify(BOARD));
+    const { container } = renderEditor('/editor?map=kf7&title=x');
+    await waitFor(() => expect(container.querySelectorAll('[data-kanban-card]')).toHaveLength(4));
+
+    fireEvent.click(container.querySelector('[data-kanban-filter]')!);
+    const panel = await waitFor(() => container.querySelector('[data-kanban-filter-panel]') as HTMLElement);
+    fireEvent.click(panel.querySelector('[data-filter-owner="b@x.com"]')!);
+
+    fireEvent.click(container.querySelector('[data-kanban-tab="list"]')!);
+    await waitFor(() => expect(container.querySelectorAll('[data-list-row]')).toHaveLength(1));
   });
 });

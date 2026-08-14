@@ -10,7 +10,8 @@ import type { KanbanCard, KanbanColumn } from '@mindflow/mindmap-core';
 import type { EditorController } from '../useEditorState';
 import { hexA } from '../theme';
 import type { Theme } from '../theme';
-import { cardMatches, columnColor, dueLabel, dueTone, ownerLabel, timelineRange, timelineSpan } from '../kanbanMeta';
+import { EMPTY_FILTER, cardPasses, columnColor, dueLabel, dueTone, filterActive, ownerLabel, timelineRange, timelineSpan } from '../kanbanMeta';
+import type { CardFilter } from '../kanbanMeta';
 import { Avatar, CardText, TagBadge } from './KanbanBoard';
 import { CommentIcon } from './ToolbarMenus';
 
@@ -18,14 +19,14 @@ import { CommentIcon } from './ToolbarMenus';
 const URGENT = '#d9534f';
 
 /** 열별로 묶어 거른 목록 — 세 보기가 같은 규칙으로 카드를 고른다. */
-function groups(columns: KanbanColumn[], cards: KanbanCard[], query: string): { col: KanbanColumn; index: number; cards: KanbanCard[] }[] {
-  return columns.map((col, index) => ({ col, index, cards: cardsInColumn(cards, col.id).filter((c) => cardMatches(c, query)) }));
+function groups(columns: KanbanColumn[], cards: KanbanCard[], query: string, filter: CardFilter): { col: KanbanColumn; index: number; cards: KanbanCard[] }[] {
+  return columns.map((col, index) => ({ col, index, cards: cardsInColumn(cards, col.id).filter((c) => cardPasses(c, query, filter)) }));
 }
 
 const GRID = 'minmax(200px, 1fr) 104px 116px 108px 56px';
 
-export function KanbanList({ controller, theme: th, query, isMobile }: { controller: EditorController; theme: Theme; query: string; isMobile: boolean }) {
-  const rows = groups(controller.columns, controller.cards, query);
+export function KanbanList({ controller, theme: th, query, filter = EMPTY_FILTER, isMobile }: { controller: EditorController; theme: Theme; query: string; filter?: CardFilter; isMobile: boolean }) {
+  const rows = groups(controller.columns, controller.cards, query, filter);
   const head: CSSProperties = { fontSize: 11.5, fontWeight: 700, color: th.subtext, letterSpacing: '.02em' };
   return (
     <div data-kanban-list-view style={{ flex: '1 1 auto', minHeight: 0, overflow: 'auto', padding: isMobile ? '0 12px 18px' : '0 20px 20px' }}>
@@ -50,7 +51,7 @@ export function KanbanList({ controller, theme: th, query, isMobile }: { control
             ))}
             {!cards.length && (
               <div data-list-empty={col.id} style={{ padding: '14px 16px', borderBottom: `1px solid ${th.border}`, fontSize: 12.5, color: th.subtext }}>
-                {query.trim() ? '검색 결과가 없어요.' : '아직 카드가 없어요.'}
+                {query.trim() || filterActive(filter) ? '조건에 맞는 카드가 없어요.' : '아직 카드가 없어요.'}
               </div>
             )}
           </div>
@@ -110,9 +111,9 @@ function ListRow({ card, col, index, done, controller, theme: th, isMobile }: { 
   );
 }
 
-export function KanbanTimeline({ controller, theme: th, query, isMobile }: { controller: EditorController; theme: Theme; query: string; isMobile: boolean }) {
+export function KanbanTimeline({ controller, theme: th, query, filter = EMPTY_FILTER, isMobile }: { controller: EditorController; theme: Theme; query: string; filter?: CardFilter; isMobile: boolean }) {
   const days = timelineRange();
-  const rows = groups(controller.columns, controller.cards, query);
+  const rows = groups(controller.columns, controller.cards, query, filter);
   const withDue = rows.flatMap(({ col, index, cards }) => cards.filter((c) => c.due).map((card) => ({ card, col, index })));
   const noDue = rows.reduce((n, g) => n + g.cards.filter((c) => !c.due).length, 0);
   const NAME_W = isMobile ? 150 : 240;

@@ -16,24 +16,31 @@ import type { CSSProperties, KeyboardEvent as ReactKeyboardEvent, PointerEvent a
 import { cardsInColumn } from '@mindflow/mindmap-core';
 import type { KanbanCard, KanbanColumn, KanbanTag } from '@mindflow/mindmap-core';
 import type { EditorController } from '../useEditorState';
-import { hexA } from '../theme';
+import { hexA, mixHex } from '../theme';
 import type { Theme } from '../theme';
 import { useIsMobile } from '../../../hooks/useMediaQuery';
 import { CommentIcon } from './ToolbarMenus';
 import { RichSpan, linkInk } from '../richSpans';
-import { columnDropIndex, columnDropIndicator, dropTargetAt, edgeScroll } from '../kanbanDrag';
+import { columnDropIndex, dropTargetAt, edgeScroll } from '../kanbanDrag';
 import type { ColumnHit, DropTarget } from '../kanbanDrag';
-import { boardProgress, cardMatches, columnColor, dueLabel, dueTone, initialOf, ownerLabel, tagColor } from '../kanbanMeta';
-import type { KanbanView } from '../kanbanMeta';
+import { EMPTY_FILTER, boardProgress, cardPasses, columnColor, dueLabel, dueTone, filterActive, initialOf, ownerLabel, ownerOptions, tagColor } from '../kanbanMeta';
+import type { CardFilter, KanbanView } from '../kanbanMeta';
 import { colorForSeed } from '../../../collab/identity';
 import { CardDetail } from './CardDetail';
 import { KanbanList, KanbanTimeline } from './KanbanViews';
 
 const COL_W = 308;
 const COL_GAP = 16;
-/** 좌상단 문서 칩(DocChip)이 떠 있는 자리 — 캔버스에서는 빈 공간 위였지만 칸반은
- * 좌상단부터 열이 시작되므로 그만큼 내려서 겹치지 않게 한다. */
+/** 좌상단 문서 칩(DocChip)이 차지하는 띠 — `left:16, top:16`에 높이 약 54px. */
+const CHIP_TOP = 16;
+const CHIP_H = 54;
+/** 칩 오른쪽으로 비워 두는 폭(칩 236 + 여백) — 이 띠에 함께 서는 도구 줄이 칩을
+ * 덮지 않게. 좁아지면 도구 줄은 칩 아래로 내려간다(모바일). */
+const CHIP_RESERVE = 236 + CHIP_TOP + 16;
+/** 모바일에서 칩 아래로 내려설 때의 위 여백. */
 const CHIP_CLEARANCE = 78;
+/** 열 상자의 그림자 — 배경에서 또렷이 갈리게(디자인 원본). 열 추가 타일도 같은 값. */
+const COL_SHADOW = '0 18px 40px -34px rgba(46,42,38,.4)';
 /** 긴급 배지 — 테마와 무관한 경고색(어느 팔레트에서나 "위험"으로 읽혀야 한다). */
 const URGENT = '#d9534f';
 
@@ -50,7 +57,8 @@ interface ColDragState {
   /** 잡은 열의 상단(화면 좌표) — 고스트가 원래 열 머리 높이에 그대로 놓이게. */
   top: number;
   w: number;
-  title: string;
+  /** 잡은 열의 높이 — 비워 둔 자리(점선 상자)를 **실제 열 크기**로 그린다. */
+  h: number;
   index: number;
 }
 
@@ -143,6 +151,8 @@ export function KanbanBoard({ controller, theme: th }: { controller: EditorContr
   const [colDrag, setColDrag] = useState<ColDragState | null>(null);
   /** 카드 검색 — 화면에서만 거른다(문서는 그대로). */
   const [query, setQuery] = useState('');
+  /** 필터(담당·분류·긴급) — 검색어와 같은 성격이라 함께 화면에서만 거른다. */
+  const [filter, setFilter] = useState<CardFilter>(EMPTY_FILTER);
   // 보기 모드는 컨트롤러가 들고 있다 — 보드 머리의 탭과 GNB 보기 메뉴가 같은 값을
   // 본다(문서가 아니라 보는 사람의 상태라는 점은 그대로).
   const view = controller.kanbanView;
@@ -215,7 +225,7 @@ export function KanbanBoard({ controller, theme: th }: { controller: EditorContr
       const rect = section.getBoundingClientRect();
       const startX = e.clientX;
       beginPointerDrag(e, {
-        onStart: () => setColDrag({ id: col.id, x: startX, offX: startX - rect.left, top: rect.top, w: rect.width, title: col.title, index: 0 }),
+        onStart: () => setColDrag({ id: col.id, x: startX, offX: startX - rect.left, top: rect.top, w: rect.width, h: rect.height, index: Math.max(0, controller.columns.findIndex((c) => c.id === col.id)) }),
         onMove: (ev) => {
           const hits = columnHits();
           const index = columnDropIndex(hits, ev.clientX, col.id);
@@ -236,15 +246,38 @@ export function KanbanBoard({ controller, theme: th }: { controller: EditorContr
   // 놓일 자리 — 아직 어디에도 겨누지 않았으면 **원래 자리**에 빈칸을 남긴다
   // (그래야 끄는 동안 열들이 들썩이지 않는다).
   const dropAt: DropTarget | null = drag ? (drag.target ?? { colId: drag.fromCol, index: drag.fromIndex }) : null;
-  const colIndicator = colDrag ? columnDropIndicator(columnHits(), colDrag.index, colDrag.id) : null;
   const progress = useMemo(() => boardProgress(columns, cards, th.palette), [columns, cards, th.palette]);
   const detailCard = controller.detailCardId ? cards.find((c) => c.id === controller.detailCardId) : undefined;
   const dragCard = drag ? cards.find((c) => c.id === drag.id) : undefined;
+  const dragCol = colDrag ? columns.find((c) => c.id === colDrag.id) : undefined;
+
+  /** 그릴 열 차례 — 끌고 있는 열은 **빼고**, 놓일 자리에 같은 크기의 점선 상자를
+   *  끼운다(카드와 같은 규칙 — 요청). 히트 계산은 `[data-kanban-column]`만 보므로
+   *  이 상자는 자동으로 빠지고, `columnDropIndex`가 받는 좌표계와도 어긋나지 않는다. */
+  const colRendered: ({ kind: 'col'; col: KanbanColumn; index: number } | { kind: 'gap' })[] = columns
+    .map((col, index) => ({ kind: 'col' as const, col, index }))
+    .filter((it) => it.col.id !== colDrag?.id);
+  if (colDrag) colRendered.splice(Math.max(0, Math.min(colDrag.index, colRendered.length)), 0, { kind: 'gap' });
+
+  /** 화면에 보이는 카드 수 / 전체 — 필터 패널이 "8 / 8개 카드 표시 중"으로 알린다. */
+  const shown = cards.filter((c) => cardPasses(c, query, filter)).length;
 
   return (
     <div
       data-kanban-root
-      style={{ position: 'absolute', inset: 0, display: 'flex', flexDirection: 'column', minHeight: 0, background: th.appBg, paddingTop: CHIP_CLEARANCE, boxSizing: 'border-box' }}
+      style={{
+        position: 'absolute',
+        inset: 0,
+        display: 'flex',
+        flexDirection: 'column',
+        minHeight: 0,
+        // 바닥은 앱 배경을 패널 쪽으로 살짝 민 색 — 디자인 원본의 `#FDFAF7`처럼
+        // 열(패널)보다 **한 톤 더 옅다**(제보: 지금은 너무 진하다). 값을 테마마다
+        // 새로 적지 않고 관계로 만들어 다크·화이트에서도 같은 방향으로 성립한다.
+        background: mixHex(th.appBg, th.panel, 0.55),
+        paddingTop: isMobile ? CHIP_CLEARANCE : CHIP_TOP,
+        boxSizing: 'border-box',
+      }}
     >
       <BoardBar
         theme={th}
@@ -254,11 +287,16 @@ export function KanbanBoard({ controller, theme: th }: { controller: EditorContr
         progress={progress}
         view={view}
         onView={setView}
-        onComments={controller.canComment ? () => (controller.commentsOpen ? controller.closeComments() : controller.openComments()) : undefined}
+        filter={filter}
+        onFilter={setFilter}
+        owners={ownerOptions(cards)}
+        tags={controller.tags}
+        shown={shown}
+        total={cards.length}
       />
 
-      {view === 'list' && <KanbanList controller={controller} theme={th} query={query} isMobile={isMobile} />}
-      {view === 'timeline' && <KanbanTimeline controller={controller} theme={th} query={query} isMobile={isMobile} />}
+      {view === 'list' && <KanbanList controller={controller} theme={th} query={query} filter={filter} isMobile={isMobile} />}
+      {view === 'timeline' && <KanbanTimeline controller={controller} theme={th} query={query} filter={filter} isMobile={isMobile} />}
 
       <div
         ref={boardRef}
@@ -279,26 +317,34 @@ export function KanbanBoard({ controller, theme: th }: { controller: EditorContr
           boxSizing: 'border-box',
         }}
       >
-        {columns.map((col, i) => (
-          <Column
-            key={col.id}
-            col={col}
-            index={i}
-            cards={cardsInColumn(cards, col.id)}
-            query={query}
-            controller={controller}
-            theme={th}
-            isMobile={isMobile}
-            onCardPointerDown={beginCardDrag}
-            onHeaderPointerDown={beginColumnDrag}
-            draggingId={drag?.id ?? null}
-            dragging={colDrag?.id === col.id}
-            dropTarget={drag?.target?.colId === col.id}
-            dropIndex={dropAt?.colId === col.id ? dropAt.index : null}
-            dropHeight={drag?.h ?? 0}
-            done={i === columns.length - 1}
-          />
-        ))}
+        {colRendered.map((item) =>
+          item.kind === 'gap' ? (
+            <div
+              key="col-gap"
+              data-kanban-col-slot
+              style={{ flex: '0 0 auto', width: isMobile ? 264 : COL_W, height: colDrag?.h, alignSelf: 'flex-start', borderRadius: 16, border: `1.5px dashed ${hexA(th.accent, 0.75)}`, background: hexA(th.accent, 0.08), boxSizing: 'border-box' }}
+            />
+          ) : (
+            <Column
+              key={item.col.id}
+              col={item.col}
+              index={item.index}
+              cards={cardsInColumn(cards, item.col.id)}
+              query={query}
+              filter={filter}
+              controller={controller}
+              theme={th}
+              isMobile={isMobile}
+              onCardPointerDown={beginCardDrag}
+              onHeaderPointerDown={beginColumnDrag}
+              draggingId={drag?.id ?? null}
+              dropTarget={drag?.target?.colId === item.col.id}
+              dropIndex={dropAt?.colId === item.col.id ? dropAt.index : null}
+              dropHeight={drag?.h ?? 0}
+              done={item.index === columns.length - 1}
+            />
+          ),
+        )}
         {!readOnly && (
           <button
             type="button"
@@ -316,6 +362,8 @@ export function KanbanBoard({ controller, theme: th }: { controller: EditorContr
               border: `1.5px dashed ${th.border}`,
               borderRadius: 16,
               background: 'transparent',
+              // 열과 같은 그림자 — 점선 타일이 바닥에 묻히지 않게(요청).
+              boxShadow: COL_SHADOW,
               color: th.subtext,
               fontFamily: 'inherit',
               cursor: 'pointer',
@@ -331,31 +379,50 @@ export function KanbanBoard({ controller, theme: th }: { controller: EditorContr
         )}
       </div>
 
-      {/* 끌고 있는 열의 고스트(제목 알약)와 놓일 자리를 가리키는 세로 선. */}
-      {colDrag && (
+      {/* 끌고 있는 열의 고스트 — **카드와 같은 규칙**(요청): 원본은 목록에서 빠지고
+          그 자리에 같은 크기의 점선 상자가, 손끝에는 열의 얼굴(머리 + 카드들)이
+          따라온다. 글자 알약만 떠 있으면 무엇을 옮기는 중인지 흐려진다. */}
+      {colDrag && dragCol && (
         <div
-          data-kanban-col-ghost
-          style={{ position: 'fixed', left: colDrag.x - colDrag.offX, top: colDrag.top, width: colDrag.w, padding: '10px 12px', borderRadius: 12, background: th.panel, border: `1px solid ${hexA(th.accent, 0.55)}`, boxShadow: '0 8px 24px rgba(0,0,0,.18)', fontSize: 13.5, fontWeight: 700, color: th.text, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', pointerEvents: 'none', opacity: 0.95, zIndex: 300 }}
-        >
-          {colDrag.title}
-        </div>
-      )}
-      {colIndicator && (
-        <div
-          data-kanban-col-drop-line
+          data-kanban-col-ghost={dragCol.id}
           style={{
             position: 'fixed',
-            left: colIndicator.left,
-            top: colIndicator.top,
-            height: colIndicator.height,
-            // 카드 가이드 선과 같은 문법 — 얇고 옅게, 양끝이 스며든다.
-            width: 2,
-            borderRadius: 999,
-            background: `linear-gradient(180deg, ${hexA(th.accent, 0)} 0%, ${hexA(th.accent, 0.5)} 8%, ${hexA(th.accent, 0.5)} 92%, ${hexA(th.accent, 0)} 100%)`,
+            left: colDrag.x - colDrag.offX,
+            top: colDrag.top,
+            width: colDrag.w,
+            maxHeight: Math.min(colDrag.h, 360),
+            overflow: 'hidden',
+            display: 'flex',
+            flexDirection: 'column',
+            background: th.panel2,
+            border: `1px solid ${th.accent}`,
+            borderRadius: 16,
+            boxShadow: '0 8px 24px rgba(0,0,0,.18)',
+            boxSizing: 'border-box',
             pointerEvents: 'none',
-            zIndex: 299,
+            opacity: 0.95,
+            zIndex: 300,
+            transform: 'rotate(1.5deg)',
           }}
-        />
+        >
+          <div style={{ display: 'flex', alignItems: 'center', gap: 9, padding: '13px 13px 11px', borderBottom: `1px solid ${th.border}` }}>
+            <span style={{ flex: '0 0 auto', width: 8, height: 8, borderRadius: 999, background: columnColor(dragCol, colDrag.index, th.palette), display: 'block' }} />
+            <span style={{ flex: '1 1 auto', minWidth: 0, fontSize: 13.5, fontWeight: 700, color: th.text, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{dragCol.title}</span>
+            <span style={{ flex: '0 0 auto', minWidth: 22, height: 22, padding: '0 7px', borderRadius: 999, background: th.panel, color: th.subtext, display: 'inline-flex', alignItems: 'center', justifyContent: 'center', fontSize: 11, fontWeight: 600 }}>
+              {cardsInColumn(cards, dragCol.id).length}
+            </span>
+          </div>
+          <div style={{ padding: 11, display: 'flex', flexDirection: 'column', gap: 9 }}>
+            {cardsInColumn(cards, dragCol.id)
+              .filter((c) => cardPasses(c, query, filter))
+              .slice(0, 4)
+              .map((c) => (
+                <div key={c.id} style={cardBase(c, th, false)}>
+                  <CardFace card={c} theme={th} comments={controller.canComment ? (controller.commentCounts[c.id] ?? 0) : 0} tags={controller.tags} done={colDrag.index === columns.length - 1} />
+                </div>
+              ))}
+          </div>
+        </div>
       )}
 
       {/* 끌고 있는 카드의 고스트 + 삽입 위치 선 — 화면 좌표라 보드 스크롤과 무관하다. */}
@@ -394,12 +461,11 @@ export function KanbanBoard({ controller, theme: th }: { controller: EditorContr
 }
 
 /**
- * 보드 머리 줄 — 카드 검색과 진행률.
+ * 보드 머리 줄 — 검색 · 보기 탭 · 필터, 그리고 진행률.
  *
- * 디자인 원본의 이 자리에는 제목·저장 상태·뷰 탭·필터도 있었다. 제목과 저장
- * 상태는 이 앱에서 이미 좌상단 문서 칩(DocChip)이 말하고 있어 겹쳐 두지 않았고,
- * 필터 버튼은 원본에도 동작이 없어(핸들러 없음) 두지 않았다 — 눌러도 아무 일
- * 없는 버튼은 없느니만 못하다.
+ * 디자인 원본의 이 자리에는 제목·저장 상태도 있었지만 이 앱에서는 좌상단 문서
+ * 칩(DocChip)이 이미 말하고 있어 겹쳐 두지 않았다. 대신 도구 줄이 **그 칩과 같은
+ * 선**에 서므로(요청) 위쪽 한 띠에 문서 상태와 도구가 나란히 놓인다.
  */
 function BoardBar({
   theme: th,
@@ -409,7 +475,12 @@ function BoardBar({
   progress,
   view,
   onView,
-  onComments,
+  filter,
+  onFilter,
+  owners,
+  tags,
+  shown,
+  total,
 }: {
   theme: Theme;
   isMobile: boolean;
@@ -418,9 +489,14 @@ function BoardBar({
   progress: ReturnType<typeof boardProgress>;
   view: KanbanView;
   onView: (v: KanbanView) => void;
-  /** 보드 전체 댓글 열기 — 댓글을 쓸 수 없는 문서(링크로 연 사람)에서는 없다. */
-  onComments?: () => void;
+  filter: CardFilter;
+  onFilter: (f: CardFilter) => void;
+  owners: { key: string; name: string }[];
+  tags: KanbanTag[];
+  shown: number;
+  total: number;
 }) {
+  const [filterOpen, setFilterOpen] = useState(false);
   const tab = (v: KanbanView, label: string) => {
     const on = view === v;
     return (
@@ -449,8 +525,21 @@ function BoardBar({
   };
   return (
     <div data-kanban-bar style={{ flex: '0 0 auto', display: 'flex', flexDirection: 'column', gap: 10, padding: isMobile ? '0 12px 12px' : '0 20px 14px' }}>
-      {/* 디자인 원본과 같은 자리 — 오른쪽에 [검색][보기 탭] 한 묶음(요청). */}
-      <div style={{ display: 'flex', alignItems: 'center', gap: 8, justifyContent: 'flex-end', flexWrap: 'wrap' }}>
+      {/* 데스크톱에서는 좌상단 문서 칩과 **같은 선**에 선다(요청) — 칩은 떠 있는
+          오버레이라 자리를 차지하지 않으므로, 그 폭만큼 왼쪽을 비워 두고 오른쪽
+          끝에 [검색][보기 탭][필터]를 묶는다. 모바일은 폭이 모자라 칩 아래로. */}
+      <div
+        data-kanban-actions
+        style={{
+          display: 'flex',
+          alignItems: 'center',
+          gap: 8,
+          justifyContent: 'flex-end',
+          flexWrap: 'wrap',
+          minHeight: isMobile ? undefined : CHIP_H,
+          paddingLeft: isMobile ? 0 : CHIP_RESERVE,
+        }}
+      >
         <div style={{ display: 'flex', alignItems: 'center', gap: 7, height: isMobile ? 40 : 34, padding: '0 12px', borderRadius: 999, border: `1px solid ${th.border}`, background: th.panel, minWidth: 0, flex: isMobile ? '1 1 100%' : '0 0 auto', width: isMobile ? undefined : 200 }}>
           <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke={th.subtext} strokeWidth="2" strokeLinecap="round" aria-hidden="true">
             <circle cx="11" cy="11" r="7" />
@@ -475,21 +564,48 @@ function BoardBar({
           {tab('list', '리스트')}
           {tab('timeline', '타임라인')}
         </div>
-        {/* 보드 전체 댓글 — 칸반의 보기 메뉴는 세 보기만 담으므로(요청) 첫 댓글을
-            남길 길을 여기 둔다. 카드의 논의는 카드 배지·상세가 맡는다. */}
-        {onComments && (
+        {/* 필터 — 디자인 원본의 자리. 원본에는 동작이 없던 버튼이라 그동안 두지
+            않았는데, 이제 담당·분류·긴급으로 실제로 좁힌다(요청). */}
+        <div style={{ position: 'relative', flexShrink: 0 }}>
           <button
             type="button"
             className="mf-ed-btn"
-            data-kanban-comments
-            onClick={onComments}
-            title="보드 전체 댓글"
-            aria-label="보드 전체 댓글"
-            style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', width: isMobile ? 40 : 34, height: isMobile ? 40 : 34, borderRadius: 999, border: `1px solid ${th.border}`, background: th.panel, color: th.subtext, cursor: 'pointer', padding: 0, flexShrink: 0 }}
+            data-kanban-filter
+            aria-expanded={filterOpen}
+            onClick={() => setFilterOpen((v) => !v)}
+            style={{
+              display: 'inline-flex',
+              alignItems: 'center',
+              gap: 6,
+              height: isMobile ? 40 : 34,
+              padding: '0 12px',
+              borderRadius: 999,
+              border: `1px solid ${filterActive(filter) ? th.accent : th.border}`,
+              background: filterActive(filter) ? hexA(th.accent, 0.12) : th.panel,
+              color: filterActive(filter) ? th.accent : th.subtext,
+              fontSize: 13,
+              fontWeight: 600,
+              fontFamily: 'inherit',
+              cursor: 'pointer',
+            }}
           >
-            <CommentIcon />
+            <FilterGlyph />
+            필터
           </button>
-        )}
+          {filterOpen && (
+            <FilterPanel
+              theme={th}
+              isMobile={isMobile}
+              filter={filter}
+              onFilter={onFilter}
+              owners={owners}
+              tags={tags}
+              shown={shown}
+              total={total}
+              onClose={() => setFilterOpen(false)}
+            />
+          )}
+        </div>
       </div>
       {/* 진행률 — **마지막 열을 완료로 본다**(카드는 왼→오로 흐른다는 관례). */}
       <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
@@ -513,6 +629,158 @@ function BoardBar({
   );
 }
 
+function FilterGlyph() {
+  return (
+    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" aria-hidden="true">
+      <path d="M4 7h16M7 12h10M10 17h4" />
+    </svg>
+  );
+}
+
+/**
+ * 필터 패널 — 담당 · 분류 · 긴급만 보기(디자인 원본의 구성).
+ *
+ * 후보는 **지금 이 보드에 실제로 있는 것**만 담는다: 담당은 카드에 적힌 사람,
+ * 분류는 문서의 분류 목록. 고를 것이 없으면 그 구획을 아예 그리지 않는다 —
+ * 눌러도 결과가 없는 칩은 없느니만 못하다.
+ *
+ * `position: absolute`인 이유는 열 메뉴·색 판과 같다(스크롤되는 상자 밖으로
+ * 벗어나야 한다). 바깥을 누르거나 Esc로 닫힌다.
+ */
+function FilterPanel({
+  theme: th,
+  isMobile,
+  filter,
+  onFilter,
+  owners,
+  tags,
+  shown,
+  total,
+  onClose,
+}: {
+  theme: Theme;
+  isMobile: boolean;
+  filter: CardFilter;
+  onFilter: (f: CardFilter) => void;
+  owners: { key: string; name: string }[];
+  tags: KanbanTag[];
+  shown: number;
+  total: number;
+  onClose: () => void;
+}) {
+  const ref = useRef<HTMLDivElement | null>(null);
+  useEffect(() => {
+    const onDown = (e: PointerEvent): void => {
+      const t = e.target as HTMLElement;
+      if (!ref.current?.contains(t) && !t.closest('[data-kanban-filter]')) onClose();
+    };
+    const onKey = (e: KeyboardEvent): void => {
+      if (e.key === 'Escape') {
+        e.stopPropagation();
+        onClose();
+      }
+    };
+    window.addEventListener('pointerdown', onDown, true);
+    window.addEventListener('keydown', onKey, true);
+    return () => {
+      window.removeEventListener('pointerdown', onDown, true);
+      window.removeEventListener('keydown', onKey, true);
+    };
+  }, [onClose]);
+
+  const toggle = (list: string[], v: string): string[] => (list.includes(v) ? list.filter((x) => x !== v) : [...list, v]);
+  const label: CSSProperties = { fontSize: 11.5, fontWeight: 700, color: th.subtext, margin: '2px 0 7px' };
+  const chip = (on: boolean): CSSProperties => ({
+    display: 'inline-flex',
+    alignItems: 'center',
+    gap: 6,
+    height: isMobile ? 34 : 28,
+    padding: '0 10px 0 6px',
+    borderRadius: 999,
+    border: `1px solid ${on ? th.accent : th.border}`,
+    background: on ? hexA(th.accent, 0.12) : th.panel,
+    color: th.text,
+    fontSize: 12.5,
+    fontWeight: 600,
+    fontFamily: 'inherit',
+    cursor: 'pointer',
+  });
+
+  return (
+    <div
+      ref={ref}
+      data-kanban-filter-panel
+      role="dialog"
+      aria-label="필터"
+      style={{ position: 'absolute', right: 0, top: 'calc(100% + 8px)', width: 268, boxSizing: 'border-box', padding: 14, background: th.panel, border: `1px solid ${th.border}`, borderRadius: 14, boxShadow: '0 14px 34px rgba(0,0,0,.16)', zIndex: 320, textAlign: 'left' }}
+    >
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 10 }}>
+        <strong style={{ fontSize: 13.5, color: th.text }}>필터</strong>
+        <button
+          type="button"
+          data-filter-reset
+          onClick={() => onFilter(EMPTY_FILTER)}
+          disabled={!filterActive(filter)}
+          style={{ border: 0, background: 'transparent', padding: 0, fontSize: 12, fontFamily: 'inherit', color: filterActive(filter) ? th.text : th.subtext, cursor: filterActive(filter) ? 'pointer' : 'default' }}
+        >
+          초기화
+        </button>
+      </div>
+
+      {owners.length > 0 && (
+        <>
+          <p style={label}>담당</p>
+          <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginBottom: 12 }}>
+            {owners.map((o) => {
+              const on = filter.owners.includes(o.key);
+              return (
+                <button key={o.key} type="button" data-filter-owner={o.key} aria-pressed={on} onClick={() => onFilter({ ...filter, owners: toggle(filter.owners, o.key) })} style={chip(on)}>
+                  <Avatar name={o.name} email={o.key} size={20} />
+                  {o.name}
+                </button>
+              );
+            })}
+          </div>
+        </>
+      )}
+
+      {tags.length > 0 && (
+        <>
+          <p style={label}>분류</p>
+          <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginBottom: 12 }}>
+            {tags.map((t) => {
+              const on = filter.tags.includes(t.name);
+              const c = tagColor(t.name, th.palette, tags);
+              return (
+                <button
+                  key={t.id}
+                  type="button"
+                  data-filter-tag={t.name}
+                  aria-pressed={on}
+                  onClick={() => onFilter({ ...filter, tags: toggle(filter.tags, t.name) })}
+                  style={{ ...chip(on), padding: '0 10px' }}
+                >
+                  <span style={{ width: 8, height: 8, borderRadius: 999, background: c, display: 'block' }} />
+                  {t.name}
+                </button>
+              );
+            })}
+          </div>
+        </>
+      )}
+
+      <label style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '9px 10px', borderRadius: 10, border: `1px solid ${th.border}`, background: th.panel2, fontSize: 12.5, color: th.text, cursor: 'pointer', minHeight: isMobile ? 44 : undefined, boxSizing: 'border-box' }}>
+        <input type="checkbox" data-filter-urgent checked={filter.urgentOnly} onChange={(e) => onFilter({ ...filter, urgentOnly: e.target.checked })} style={{ margin: 0, accentColor: th.accent }} />
+        긴급만 보기
+      </label>
+
+      <p data-filter-count style={{ margin: '10px 0 0', fontSize: 11.5, color: th.subtext }}>
+        {shown} / {total}개 카드 표시 중
+      </p>
+    </div>
+  );
+}
+
 function PlusIcon({ size = 14 }: { size?: number }) {
   return (
     <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" aria-hidden="true">
@@ -526,13 +794,13 @@ function Column({
   index,
   cards,
   query,
+  filter,
   controller,
   theme: th,
   isMobile,
   onCardPointerDown,
   onHeaderPointerDown,
   draggingId,
-  dragging,
   dropTarget,
   dropIndex,
   dropHeight,
@@ -542,14 +810,13 @@ function Column({
   index: number;
   cards: KanbanCard[];
   query: string;
+  filter: CardFilter;
   controller: EditorController;
   theme: Theme;
   isMobile: boolean;
   onCardPointerDown: (e: ReactPointerEvent, card: KanbanCard) => void;
   onHeaderPointerDown: (e: ReactPointerEvent, col: KanbanColumn) => void;
   draggingId: string | null;
-  /** 이 열을 끌고 있는가 — 원본은 자리를 지키되 흐리게(카드와 같은 규칙). */
-  dragging: boolean;
   /** 이 열이 지금 드롭 대상인가 — 비어 있어도 "여기 들어간다"를 보여 준다. */
   dropTarget: boolean;
   /** 놓일 자리(카드 목록 안 index) — 없으면 이 열이 대상이 아니다. */
@@ -564,7 +831,7 @@ function Column({
   const [menuAt, setMenuAt] = useState<{ x: number; y: number } | null>(null);
   const readOnly = controller.readOnly;
   const dot = columnColor(col, index, th.palette);
-  const visible = (query.trim() ? cards.filter((c) => cardMatches(c, query)) : cards).filter((c) => c.id !== draggingId);
+  const visible = cards.filter((c) => c.id !== draggingId && cardPasses(c, query, filter));
   /** 그릴 차례 — 놓일 자리(점선 상자)를 카드 목록 사이에 끼운 것. */
   const rendered: ({ kind: 'card'; card: KanbanCard } | { kind: 'gap' })[] = visible.map((card) => ({ kind: 'card' as const, card }));
   if (dropIndex !== null) rendered.splice(Math.max(0, Math.min(dropIndex, rendered.length)), 0, { kind: 'gap' });
@@ -593,10 +860,8 @@ function Column({
         border: `1px solid ${dropTarget ? hexA(th.accent, 0.55) : th.border}`,
         borderRadius: 16,
         // 배경과 또렷이 갈리게 — 디자인 원본의 열 그림자.
-        boxShadow: '0 18px 40px -34px rgba(46,42,38,.4)',
+        boxShadow: COL_SHADOW,
         boxSizing: 'border-box',
-        // 끌고 있는 원본은 자리를 지키되 흐리게 — 어디서 떠났는지 보인다(카드와 동일).
-        opacity: dragging ? 0.4 : 1,
       }}
     >
       {/* 열 머리를 끌면 열 순서가 바뀐다. 제목 편집(더블클릭)·버튼과 같은 자리를
@@ -699,7 +964,7 @@ function Column({
                 <path d="M12 9v6M9 12h6" />
               </svg>
             </span>
-            <span style={{ fontSize: 12.5, color: th.subtext }}>{query.trim() ? '검색 결과가 없어요.' : '이 단계에 들어갈 카드를 추가해 보세요.'}</span>
+            <span style={{ fontSize: 12.5, color: th.subtext }}>{query.trim() || filterActive(filter) ? '조건에 맞는 카드가 없어요.' : '이 단계에 들어갈 카드를 추가해 보세요.'}</span>
           </div>
         )}
       </div>
