@@ -99,6 +99,8 @@ export interface BoardProgress {
   donePct: number;
   doingPct: number;
   label: string;
+  /** 열별 구간 — 바를 **열 색**으로 그린다(요청). 카드가 없는 열은 빠진다. */
+  segments: { id: string; title: string; count: number; pct: number; color: string }[];
 }
 
 /**
@@ -107,14 +109,19 @@ export interface BoardProgress {
  * 사용자가 만드는 것이라 이름을 약속할 수 없다. 가운데 열들(첫 열도 마지막 열도
  * 아닌)이 "진행 중"이다. 열이 둘 이하면 진행 구간이 없다.
  */
-export function boardProgress(columns: readonly KanbanColumn[], cards: readonly KanbanCard[]): BoardProgress {
+export function boardProgress(columns: readonly KanbanColumn[], cards: readonly KanbanCard[], palette: readonly string[] = []): BoardProgress {
   const ids = columns.map((c) => c.id);
   const inCol = (id: string): number => cards.filter((c) => c.col === id).length;
   const total = cards.filter((c) => ids.includes(c.col)).length;
   const done = ids.length ? inCol(ids[ids.length - 1] as string) : 0;
   const doing = ids.slice(1, -1).reduce((n, id) => n + inCol(id), 0);
   const pct = (n: number): number => (total ? Math.round((n / total) * 100) : 0);
-  return { total, done, doing, donePct: pct(done), doingPct: pct(doing), label: `완료 ${done}/${total} · 진행 ${doing}` };
+  // 바는 **열 순서대로** 그 열의 카드 비율만큼, 열 머리와 같은 색으로 그린다(요청).
+  // 사용자가 열 색을 정했으면 그 색이 곧 진행 상황의 색이 된다.
+  const segments = columns
+    .map((c, i) => ({ id: c.id, title: c.title, count: inCol(c.id), pct: pct(inCol(c.id)), color: columnColor(c, i, palette) }))
+    .filter((seg) => seg.count > 0);
+  return { total, done, doing, donePct: pct(done), doingPct: pct(doing), label: `완료 ${done}/${total} · 진행 ${doing}`, segments };
 }
 
 /** 검색어가 이 카드에 걸리는가 — 본문과 분류를 본다(대소문자 무시). */

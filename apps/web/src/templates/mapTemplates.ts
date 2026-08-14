@@ -262,11 +262,11 @@ export const KANBAN_TEMPLATES: KanbanTemplate[] = [
     cards: [
       { col: 0, text: '결제 실패 로그 정리' },
       { col: 0, text: '온보딩 문구 다듬기' },
-      { col: 1, text: '검색 응답 시간 측정', bg: '#fdead0' },
+      { col: 1, text: '검색 응답 시간 측정', bg: '#fdf4e8' },
       { col: 1, text: '주간 지표 자동 집계' },
-      { col: 2, text: '알림 중복 발송 수정', bg: '#fde3dc' },
+      { col: 2, text: '알림 중복 발송 수정', bg: '#fdf0ec' },
       { col: 3, text: '설정 화면 접근성 점검' },
-      { col: 4, text: '리텐션 대시보드 배포', bg: '#dcf0e2' },
+      { col: 4, text: '리텐션 대시보드 배포', bg: '#edf7f0' },
     ],
   },
   {
@@ -278,9 +278,9 @@ export const KANBAN_TEMPLATES: KanbanTemplate[] = [
       { col: 0, text: '로그인 후 빈 화면이 보인다는 제보' },
       { col: 0, text: '첨부한 이미지가 흐리게 보임' },
       { col: 1, text: '재현 조건 확인 — 어떤 기기·브라우저인지' },
-      { col: 2, text: '저장 실패 시 안내가 없다', bg: '#fde3dc' },
-      { col: 3, text: '다크 모드 미세 대비 — 다음 주기에', bg: '#e8e4de' },
-      { col: 4, text: '드래그가 풀리던 문제', bg: '#dcf0e2' },
+      { col: 2, text: '저장 실패 시 안내가 없다', bg: '#fdf0ec' },
+      { col: 3, text: '다크 모드 미세 대비 — 다음 주기에', bg: '#f3f1ee' },
+      { col: 4, text: '드래그가 풀리던 문제', bg: '#edf7f0' },
     ],
   },
   {
@@ -291,9 +291,9 @@ export const KANBAN_TEMPLATES: KanbanTemplate[] = [
     cards: [
       { col: 0, text: '사용자 인터뷰에서 나온 이야기 3가지' },
       { col: 0, text: '자주 묻는 질문 모음' },
-      { col: 1, text: '새 기능 소개 글 — 초안 쓰는 중', bg: '#fdead0' },
-      { col: 2, text: '릴리스 노트 — 문구 검토 요청', bg: '#d9e8f8' },
-      { col: 3, text: '지난달 회고 글', bg: '#dcf0e2' },
+      { col: 1, text: '새 기능 소개 글 — 초안 쓰는 중', bg: '#fdf4e8' },
+      { col: 2, text: '릴리스 노트 — 문구 검토 요청', bg: '#edf4fc' },
+      { col: 3, text: '지난달 회고 글', bg: '#edf7f0' },
     ],
   },
 ];

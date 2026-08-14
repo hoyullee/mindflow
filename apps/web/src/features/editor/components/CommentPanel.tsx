@@ -52,59 +52,14 @@ export function commentTargetLabel(doc: EditorController['doc'], id: string): st
 export function CommentPanel({ controller }: { controller: EditorController }) {
   const th = controller.uiTheme;
   const isMobile = useIsMobile();
-  const shareStore = useShareStore();
-  const [showResolved, setShowResolved] = useState(false);
-  const [replyTo, setReplyTo] = useState<string | null>(null);
-  const [error, setError] = useState<string | null>(null);
-  /** 멘션 자동완성 대상 — 이 문서의 참가자(소유자 + 초대받은 사람). */
-  const [participants, setParticipants] = useState<ShareParticipant[]>([]);
   const nodeId = controller.commentsNodeId;
   const open = controller.commentsOpen;
-
-  // 대상 주제가 바뀌면 열려 있던 답글 입력은 그 주제의 것이므로 접는다.
-  useEffect(() => {
-    setReplyTo(null);
-    setError(null);
-  }, [nodeId]);
-
-  // 멘션 후보는 패널이 열릴 때 한 번 — 참가자 목록은 세션 중 거의 바뀌지 않는다.
-  // **나 자신은 뺀다**(제보: "멘션에 나도 보여서 이상하다") — 멘션은 남을 부르는
-  // 도구고, 알림 트리거(0022)도 자기 멘션은 알리지 않으므로 골라 봐야 아무 일도 없다.
-  const myEmail = (useAuthUser()?.email ?? '').trim().toLowerCase();
-  useEffect(() => {
-    if (!open) return;
-    let alive = true;
-    void shareStore.listParticipants(controller.docId).then((rows) => {
-      if (alive && rows) setParticipants(rows.filter((p) => p.email.trim().toLowerCase() !== myEmail));
-    });
-    return () => {
-      alive = false;
-    };
-  }, [open, controller.docId, shareStore, myEmail]);
 
   if (!open) return null;
 
   // 대상이 지워져도 댓글은 남는다(0020) — 대상이 사라졌음을 그대로 말해 준다.
   // 댓글이 모든 객체로 확장되면서(요청) 대상 종류를 제목이 말해 준다.
   const title = commentTargetLabel(controller.doc, nodeId) ?? '사라진 대상';
-  const forNode = controller.comments.filter((c) => c.nodeId === nodeId);
-  const threads: Thread[] = forNode
-    .filter((c) => !c.parentId)
-    .map((root) => ({ root, replies: forNode.filter((r) => r.parentId === root.id) }));
-  const unresolved = threads.filter((t) => !t.root.resolved);
-  const resolved = threads.filter((t) => t.root.resolved);
-
-  const submitThread = async (body: string, mentions: CommentMention[]) => {
-    const res = await controller.addComment(nodeId, body, mentions.length ? { mentions } : undefined);
-    setError(res.error ?? null);
-    return !res.error;
-  };
-  const submitReply = async (parentId: string, body: string, mentions: CommentMention[]) => {
-    const res = await controller.addComment(nodeId, body, { parentId, ...(mentions.length ? { mentions } : {}) });
-    setError(res.error ?? null);
-    if (!res.error) setReplyTo(null);
-    return !res.error;
-  };
 
   const wrap: CSSProperties = isMobile
     ? {
@@ -164,8 +119,71 @@ export function CommentPanel({ controller }: { controller: EditorController }) {
           ✕
         </button>
       </header>
+      <CommentThreads controller={controller} nodeId={nodeId} scroll />
+    </aside>
+  );
+}
 
-      <div style={{ flex: '1 1 auto', minHeight: 0, overflowY: 'auto', padding: '4px 12px 10px' }} data-comment-list>
+/**
+ * 스레드 목록 + 작성칸 — **패널과 카드 상세가 함께 쓰는 몸통**.
+ *
+ * 카드 상세 모달 안에서도 같은 댓글을 다루게 하려고(요청) 떼어 냈다. 로직(스레드
+ * 구성·답글·해결·멘션·실시간)은 한 벌이고, 다른 것은 껍데기뿐이다: 패널은 자기
+ * 높이 안에서 목록만 스크롤하고(`scroll`), 모달 안에서는 흐름에 따라 늘어난다
+ * (모달 자신이 스크롤한다).
+ */
+export function CommentThreads({ controller, nodeId, scroll = false }: { controller: EditorController; nodeId: string; scroll?: boolean }) {
+  const th = controller.uiTheme;
+  const isMobile = useIsMobile();
+  const shareStore = useShareStore();
+  const [showResolved, setShowResolved] = useState(false);
+  const [replyTo, setReplyTo] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  /** 멘션 자동완성 대상 — 이 문서의 참가자(소유자 + 초대받은 사람). */
+  const [participants, setParticipants] = useState<ShareParticipant[]>([]);
+
+  // 대상이 바뀌면 열려 있던 답글 입력은 그 대상의 것이므로 접는다.
+  useEffect(() => {
+    setReplyTo(null);
+    setError(null);
+  }, [nodeId]);
+
+  // 멘션 후보는 한 번만 — 참가자 목록은 세션 중 거의 바뀌지 않는다.
+  // **나 자신은 뺀다**(제보: "멘션에 나도 보여서 이상하다") — 멘션은 남을 부르는
+  // 도구고, 알림 트리거(0022)도 자기 멘션은 알리지 않으므로 골라 봐야 아무 일도 없다.
+  const myEmail = (useAuthUser()?.email ?? '').trim().toLowerCase();
+  useEffect(() => {
+    let alive = true;
+    void shareStore.listParticipants(controller.docId).then((rows) => {
+      if (alive && rows) setParticipants(rows.filter((p) => p.email.trim().toLowerCase() !== myEmail));
+    });
+    return () => {
+      alive = false;
+    };
+  }, [controller.docId, shareStore, myEmail]);
+
+  const forNode = controller.comments.filter((c) => c.nodeId === nodeId);
+  const threads: Thread[] = forNode
+    .filter((c) => !c.parentId)
+    .map((root) => ({ root, replies: forNode.filter((r) => r.parentId === root.id) }));
+  const unresolved = threads.filter((t) => !t.root.resolved);
+  const resolved = threads.filter((t) => t.root.resolved);
+
+  const submitThread = async (body: string, mentions: CommentMention[]) => {
+    const res = await controller.addComment(nodeId, body, mentions.length ? { mentions } : undefined);
+    setError(res.error ?? null);
+    return !res.error;
+  };
+  const submitReply = async (parentId: string, body: string, mentions: CommentMention[]) => {
+    const res = await controller.addComment(nodeId, body, { parentId, ...(mentions.length ? { mentions } : {}) });
+    setError(res.error ?? null);
+    if (!res.error) setReplyTo(null);
+    return !res.error;
+  };
+
+  return (
+    <>
+      <div style={scroll ? { flex: '1 1 auto', minHeight: 0, overflowY: 'auto', padding: '4px 12px 10px' } : { padding: '2px 0 6px' }} data-comment-list>
         {controller.commentsLoading && !threads.length ? (
           <div style={{ fontSize: 12, color: th.subtext, padding: '12px 0' }}>불러오는 중…</div>
         ) : threads.length ? (
@@ -223,14 +241,11 @@ export function CommentPanel({ controller }: { controller: EditorController }) {
             )}
           </>
         ) : (
-          <div style={{ fontSize: 12, color: th.subtext, lineHeight: 1.6, padding: '12px 0' }}>
-            아직 댓글이 없어요.
-            <br />이 주제에 대한 의견을 남겨 보세요.
-          </div>
+          <div style={{ fontSize: 12, color: th.subtext, lineHeight: 1.6, padding: '12px 0' }}>아직 댓글이 없어요. 의견을 남겨 보세요.</div>
         )}
       </div>
 
-      <div style={{ borderTop: `1px solid ${th.border}`, padding: isMobile ? '10px 12px calc(10px + env(safe-area-inset-bottom, 0px))' : '10px 12px' }}>
+      <div style={{ borderTop: `1px solid ${th.border}`, padding: scroll ? (isMobile ? '10px 12px calc(10px + env(safe-area-inset-bottom, 0px))' : '10px 12px') : '10px 0 0' }}>
         {error && <div style={{ fontSize: 11.5, color: '#d92626', marginBottom: 6 }}>{error}</div>}
         <CommentComposer
           controller={controller}
@@ -238,11 +253,11 @@ export function CommentPanel({ controller }: { controller: EditorController }) {
           participants={participants}
           placeholder="댓글 남기기 (@로 멘션)"
           submitLabel="남기기"
-          autoFocus={!isMobile}
+          autoFocus={false}
           onSubmit={submitThread}
         />
       </div>
-    </aside>
+    </>
   );
 }
 
