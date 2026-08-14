@@ -39,6 +39,33 @@ function renderEditor(entry: string) {
 
 const saved = (id: string) => JSON.parse(localStorage.getItem(`mindflow_doc_${id}`) || 'null');
 
+/** jsdom은 레이아웃을 재지 않는다 — 드래그가 읽는 사각형을 우리가 심어 준다.
+ * 열은 가로로 나란히, 카드는 열 안에 세로로 쌓인 모양(실제 화면과 같은 배치). */
+function stubRects(container: HTMLElement): void {
+  const put = (el: Element, r: { left: number; top: number; right: number; bottom: number }): void => {
+    (el as HTMLElement).getBoundingClientRect = () => ({ ...r, x: r.left, y: r.top, width: r.right - r.left, height: r.bottom - r.top, toJSON: () => r }) as DOMRect;
+  };
+  put(container.querySelector('[data-kanban-board]')!, { left: 0, top: 0, right: 900, bottom: 800 });
+  Array.from(container.querySelectorAll('[data-kanban-column]')).forEach((colEl, i) => {
+    const left = i * 320;
+    put(colEl, { left, top: 0, right: left + 300, bottom: 800 });
+    const list = colEl.querySelector('[data-kanban-list]');
+    if (list) put(list, { left, top: 40, right: left + 300, bottom: 800 });
+    Array.from(colEl.querySelectorAll('[data-kanban-card]')).forEach((cardEl, j) => {
+      const top = 50 + j * 48;
+      put(cardEl, { left: left + 10, top, right: left + 290, bottom: top + 40 });
+    });
+  });
+}
+
+/** jsdom엔 PointerEvent가 없다 — MouseEvent를 pointer 이름으로 던진다(다른 테스트와 같은 처방). */
+function firePointer(target: Element | Window, type: 'pointerdown' | 'pointermove' | 'pointerup', init: { clientX?: number; clientY?: number; pointerType?: string } = {}): void {
+  const ev = new MouseEvent(type, { bubbles: true, cancelable: true, clientX: init.clientX ?? 0, clientY: init.clientY ?? 0 });
+  Object.defineProperty(ev, 'pointerType', { value: init.pointerType ?? 'mouse', configurable: true });
+  Object.defineProperty(ev, 'pointerId', { value: 1, configurable: true });
+  fireEvent(target as Element, ev);
+}
+
 describe('칸반 에디터', () => {
   beforeEach(() => {
     localStorage.clear();
@@ -150,6 +177,76 @@ describe('칸반 에디터', () => {
       const d = saved('kb5');
       expect(d.columns.map((c: { id: string }) => c.id)).toContain('c1');
       expect(d.cards).toHaveLength(2);
+    });
+  });
+
+  it('카드를 다른 열로 끌어다 놓으면 그 자리에 들어간다(M2)', async () => {
+    localStorage.setItem('mindflow_doc_kb7', JSON.stringify(KANBAN));
+    const { container } = renderEditor('/editor?map=kb7&title=x');
+    await waitFor(() => expect(container.querySelectorAll('[data-kanban-card]')).toHaveLength(2));
+    stubRects(container);
+
+    const card = container.querySelector('[data-kanban-card="k1"]')!;
+    firePointer(card, 'pointerdown', { clientX: 150, clientY: 70 });
+    // 문턱을 넘어야 드래그가 시작된다.
+    firePointer(window, 'pointermove', { clientX: 160, clientY: 80 });
+    await waitFor(() => expect(container.querySelector('[data-kanban-ghost]')).toBeTruthy());
+    // 두 번째 열(320~620)의 위쪽으로.
+    firePointer(window, 'pointermove', { clientX: 470, clientY: 60 });
+    await waitFor(() => expect(container.querySelector('[data-kanban-drop-line]')).toBeTruthy());
+    firePointer(window, 'pointerup', { clientX: 470, clientY: 60 });
+
+    // 고스트·선은 손을 떼면 사라진다.
+    await waitFor(() => expect(container.querySelector('[data-kanban-ghost]')).toBeNull());
+    expect(container.querySelector('[data-kanban-drop-line]')).toBeNull();
+
+    fireEvent.keyDown(window, { key: 's', ctrlKey: true });
+    await waitFor(() => {
+      const d = saved('kb7');
+      expect(d.cards.find((c: { id: string }) => c.id === 'k1').col).toBe('c2');
+      expect(d.cards.find((c: { id: string }) => c.id === 'k2').col).toBe('c1');
+    });
+  });
+
+  it('같은 열 안에서 순서를 바꾼다 — 끌던 카드는 자기 자리 때문에 밀리지 않는다', async () => {
+    localStorage.setItem('mindflow_doc_kb8', JSON.stringify(KANBAN));
+    const { container } = renderEditor('/editor?map=kb8&title=x');
+    await waitFor(() => expect(container.querySelectorAll('[data-kanban-card]')).toHaveLength(2));
+    stubRects(container);
+
+    // 둘째 카드를 첫째 위로.
+    const card = container.querySelector('[data-kanban-card="k2"]')!;
+    firePointer(card, 'pointerdown', { clientX: 150, clientY: 118 });
+    firePointer(window, 'pointermove', { clientX: 150, clientY: 108 });
+    firePointer(window, 'pointermove', { clientX: 150, clientY: 55 });
+    firePointer(window, 'pointerup', { clientX: 150, clientY: 55 });
+    fireEvent.keyDown(window, { key: 's', ctrlKey: true });
+
+    await waitFor(() => {
+      const d = saved('kb8');
+      const inC1 = d.cards.filter((c: { col: string }) => c.col === 'c1').sort((a: { pos: number }, b: { pos: number }) => a.pos - b.pos);
+      expect(inC1.map((c: { id: string }) => c.id)).toEqual(['k2', 'k1']);
+    });
+  });
+
+  it('문턱을 넘지 않은 클릭은 드래그가 아니다(선택만) — 순서도 그대로', async () => {
+    localStorage.setItem('mindflow_doc_kb9', JSON.stringify(KANBAN));
+    const { container } = renderEditor('/editor?map=kb9&title=x');
+    await waitFor(() => expect(container.querySelectorAll('[data-kanban-card]')).toHaveLength(2));
+    stubRects(container);
+
+    const card = container.querySelector('[data-kanban-card="k1"]')!;
+    firePointer(card, 'pointerdown', { clientX: 150, clientY: 70 });
+    firePointer(window, 'pointermove', { clientX: 151, clientY: 71 }); // 1px — 문턱 아래
+    expect(container.querySelector('[data-kanban-ghost]')).toBeNull();
+    firePointer(window, 'pointerup', { clientX: 151, clientY: 71 });
+
+    expect(container.querySelector('[data-kanban-card="k1"]')?.getAttribute('data-selected')).toBe('1');
+    fireEvent.keyDown(window, { key: 's', ctrlKey: true });
+    await waitFor(() => {
+      const d = saved('kb9');
+      expect(d.cards.map((c: { id: string }) => c.id)).toEqual(['k1', 'k2']);
+      expect(d.cards.every((c: { col: string }) => c.col === 'c1')).toBe(true);
     });
   });
 

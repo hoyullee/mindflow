@@ -2,7 +2,7 @@ import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } fr
 import type { MouseEvent as ReactMouseEvent, PointerEvent as ReactPointerEvent } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import type { Box, Doc, Float, KanbanCard, KanbanColumn, Line, LineAnchor, LayoutMode, ListOp, Node, NodeMap, Reaction, ReactionGroup, SizeOf, SnapCandidate, Stroke, TextEdit, Zone } from '@mindflow/mindmap-core';
-import { HistoryStack, ROOT_ID, collectImageRefs, collectInlineImages, isImageRef, replaceImageValues, applyListOp as applyListOpToText, applyAutoLinks, applyMarkdownShortcuts, applyPartialStyle, insertMention, charsToRuns, cubicAt, isStyledRuns, findLineSnap, layout, resolveLineEndpoints, resolveLineGeometry, runsToChars, serializeDoc, shiftOffset, strokeBounds, strokeHit, translateStrokePts, reactionGroups, toggleReaction as toggleReactionList, pruneReactions, toMarkdown, posForIndex, removeColumn } from '@mindflow/mindmap-core';
+import { HistoryStack, ROOT_ID, collectImageRefs, collectInlineImages, isImageRef, replaceImageValues, applyListOp as applyListOpToText, applyAutoLinks, applyMarkdownShortcuts, applyPartialStyle, insertMention, charsToRuns, cubicAt, isStyledRuns, findLineSnap, layout, resolveLineEndpoints, resolveLineGeometry, runsToChars, serializeDoc, shiftOffset, strokeBounds, strokeHit, translateStrokePts, reactionGroups, toggleReaction as toggleReactionList, pruneReactions, toMarkdown, posForIndex, removeColumn, moveCard } from '@mindflow/mindmap-core';
 import { domToRuns, linearize, liveEditValue } from './richtextDom';
 import { HL_COLORS, HL_WIDTHS } from './boardTools';
 import type { BoardTool } from './boardTools';
@@ -760,6 +760,8 @@ export interface EditorController {
   /** 지금 고른 카드 id(칸반 전용 선택 — 캔버스 selection과 별개). */
   selectedCardId: string | null;
   selectCard: (id: string | null) => void;
+  /** 카드를 그 열의 index 자리로 옮긴다(드래그 드롭이 부른다). */
+  moveCardTo: (cardId: string, colId: string, index: number) => void;
   /** 화이트보드 그리기 도구(M4). 'select'가 기본 — 펜/하이라이터/지우개일 때는
    * 캔버스 위에 그리기 오버레이(BoardDrawLayer)가 포인터를 받는다. */
   boardTool: BoardTool;
@@ -5300,6 +5302,23 @@ export function useEditorState(): EditorController {
   const selectCard = useCallback((id: string | null) => setSelectedCardId(id), []);
 
   /**
+   * 카드를 그 열의 `index` 자리로 옮긴다(열 간·열 안 공용 — 코어 `moveCard`).
+   *
+   * 순서는 카드의 `pos` 필드라 이동은 값 하나를 바꾸는 일이다: 갈라진 두 사람이
+   * 서로 다른 카드를 옮겨도 둘 다 살아남는다(코어 분기 테스트로 고정).
+   */
+  const moveCardTo = useCallback(
+    (cardId: string, colId: string, index: number) => {
+      if (readOnlyRef.current) return;
+      commitDoc((d) => {
+        const next = moveCard(d.cards ?? [], cardId, colId, index);
+        return next === (d.cards ?? []) ? d : { ...d, cards: next };
+      });
+    },
+    [commitDoc],
+  );
+
+  /**
    * 프레임 크기를 **내용에 맞춘다**(요청) — 담고 있는 것들을 감싸고 여백을 준다.
    *
    * 빈 프레임은 아무것도 하지 않는다(맞출 내용이 없다 — 최소 크기로 오그라들면
@@ -5827,6 +5846,7 @@ export function useEditorState(): EditorController {
     startEditCard,
     selectedCardId,
     selectCard,
+    moveCardTo,
     boardTool,
     setBoardTool,
     penColor,
