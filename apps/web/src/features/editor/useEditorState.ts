@@ -778,7 +778,7 @@ export interface EditorController {
   removeTag: (id: string) => void;
   setTagColor: (id: string, color: string | null) => void;
   /** 카드 곁정보(분류·기한·담당·긴급) — 빈 값은 키를 지운다. */
-  setCardMeta: (id: string, patch: { tag?: string | null; due?: string | null; owner?: { email: string; name: string } | null; flagged?: boolean }) => void;
+  setCardMeta: (id: string, patch: { tag?: string | null; start?: string | null; due?: string | null; owner?: { email: string; name: string } | null; flagged?: boolean }) => void;
   /** 열 머리 색 — `null`이면 순서 기반 기본색으로 돌아간다. */
   setColumnColor: (id: string, color: string | null) => void;
   /** 카드를 이전(-1)·다음(+1) 열의 맨 위로 옮긴다(카드 위 ‹ › 버튼). */
@@ -5432,7 +5432,7 @@ export function useEditorState(): EditorController {
    * "이름만 남은 담당자"가 생긴다).
    */
   const setCardMeta = useCallback(
-    (id: string, patch: { tag?: string | null; due?: string | null; owner?: { email: string; name: string } | null; flagged?: boolean }) => {
+    (id: string, patch: { tag?: string | null; start?: string | null; due?: string | null; owner?: { email: string; name: string } | null; flagged?: boolean }) => {
       if (readOnlyRef.current) return;
       commitDoc((d) => ({
         ...d,
@@ -5442,6 +5442,10 @@ export function useEditorState(): EditorController {
           if ('tag' in patch) {
             if (patch.tag) next.tag = patch.tag.slice(0, 24);
             else delete next.tag;
+          }
+          if ('start' in patch) {
+            if (patch.start) next.start = patch.start;
+            else delete next.start;
           }
           if ('due' in patch) {
             if (patch.due) next.due = patch.due;

@@ -11,13 +11,38 @@
 }
 
 .mf-ed-btn {
+  position: relative;
   transition:
     background 0.12s,
+    color 0.12s,
     transform 0.06s,
     box-shadow 0.12s;
 }
-.mf-ed-btn:hover:not(:disabled) {
-  background: var(--mf-ed-hover, rgba(0, 0, 0, 0.04));
+/* 호버 표시는 **덧칠 레이어**로 한다(제보: 버튼에 마우스를 얹어도 반응이 없다).
+   이 앱의 버튼은 색이 테마에서 오므로 `background`를 전부 **인라인**으로 준다 —
+   인라인은 클래스 규칙을 이기기 때문에 `:hover { background: … }`는 한 번도
+   적용된 적이 없었다. 대신 `::after`가 글자색(`currentColor`)을 옅게 덮으므로
+   배경이 무엇이든(투명·패널·강조색) 같은 규칙 하나로 반응한다. 강조색 버튼은
+   글자가 흰색이라 **밝아지고**(디자인 원본의 `brightness(1.04)`와 같은 방향),
+   보통 버튼은 글자가 어두워 **살짝 눌린 것처럼 어두워진다**. */
+.mf-ed-btn::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  background: currentColor;
+  opacity: 0;
+  transition: opacity 0.12s;
+  pointer-events: none;
+}
+.mf-ed-btn:hover:not(:disabled)::after {
+  opacity: 0.075;
+}
+/* 파괴적 동작(카드 삭제 등) — 호버에서 경고색으로 바뀐다(디자인 원본과 같은 결).
+   인라인 색을 이겨야 하므로 여기만 !important를 쓴다. */
+.mf-ed-danger:hover:not(:disabled) {
+  color: #c0532e !important;
+  border-color: rgba(192, 83, 46, 0.45) !important;
 }
 .mf-ed-btn:active:not(:disabled) {
   transform: translateY(1px);
@@ -239,4 +264,30 @@
    커밋 때 domToRuns가 인라인 색을 런의 c로 저장해 멘션을 지워도 색이 남는다. */
 .mf-mention {
   color: var(--mf-link, #1a63d8);
+}
+
+/* ── 칸반 ─────────────────────────────────────────────────────────────
+   카드·행의 호버(디자인 원본 `Geurio 칸반보드.dc.html`). 카드의 그림자·테두리는
+   인라인이라 클래스가 이기지 못하므로, 겹치지 않는 속성(`transform`)으로 들어
+   올리고 그림자만 좁게 !important로 덮는다. **고른 카드는 제외** — 선택 링
+   (`box-shadow`)이 호버 그림자에 지워지면 무엇을 고른 상태인지 사라진다. */
+.mf-kb-card {
+  transition:
+    transform 0.16s ease,
+    box-shadow 0.16s ease,
+    border-color 0.16s ease;
+}
+.mf-kb-card:hover {
+  transform: translateY(-2px);
+}
+.mf-kb-card:not([data-selected]):hover {
+  box-shadow: 0 12px 24px -18px rgba(46, 42, 38, 0.55) !important;
+}
+
+/* 리스트·타임라인의 행 — 배경을 인라인으로 주지 않으므로 평범한 규칙으로 충분하다. */
+.mf-kb-row {
+  transition: background 0.12s;
+}
+.mf-kb-row:hover {
+  background: rgba(46, 42, 38, 0.035);
 }

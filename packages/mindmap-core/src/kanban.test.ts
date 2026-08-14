@@ -83,8 +83,8 @@ describe('칸반 — 직렬화', () => {
     expect(round).toEqual(doc);
   });
 
-  it('카드 메타(분류·기한·담당·긴급)가 왕복한다 — 없는 필드는 저장본에도 없다', () => {
-    const meta = { ...card('a', 'c1', 0), tag: '개발', due: '2026-08-20', owner: 'me@ex.com', ownerName: '지수', flagged: true };
+  it('카드 메타(분류·시작일·기한·담당·긴급)가 왕복한다 — 없는 필드는 저장본에도 없다', () => {
+    const meta = { ...card('a', 'c1', 0), tag: '개발', start: '2026-08-10', due: '2026-08-20', owner: 'me@ex.com', ownerName: '지수', flagged: true };
     const doc = serializeDoc({ ...base, kind: 'kanban', columns: cols, cards: [meta, card('b', 'c1', 1024)] });
     const round = parseDoc(JSON.parse(JSON.stringify(doc)))!;
     expect(round.cards![0]).toEqual(meta);

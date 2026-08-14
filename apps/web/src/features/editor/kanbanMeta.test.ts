@@ -106,3 +106,21 @@ describe('칸반 타임라인', () => {
     expect(timelineSpan('엉망', days, today)).toBeNull();
   });
 });
+
+describe('타임라인 — 시작일', () => {
+  const today = new Date(2026, 7, 14, 12, 0, 0);
+  const days = timelineRange(today);
+
+  it('시작일이 있으면 그 날부터 기한까지 그린다', () => {
+    // 오늘은 넷째 칸(index 3). 시작 8/12(=1) ~ 기한 8/17(=6).
+    expect(timelineSpan({ start: '2026-08-12', due: '2026-08-17' }, days, today)).toEqual({ start: 1, end: 6, late: false });
+  });
+
+  it('시작일이 없으면 예전처럼 오늘부터 기한까지', () => {
+    expect(timelineSpan({ due: '2026-08-17' }, days, today)).toEqual({ start: 3, end: 6, late: false });
+  });
+
+  it('시작일이 기한보다 늦어도 두 날 사이를 그린다', () => {
+    expect(timelineSpan({ start: '2026-08-17', due: '2026-08-15' }, days, today)).toEqual({ start: 4, end: 6, late: false });
+  });
+});
