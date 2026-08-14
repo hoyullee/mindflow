@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { KanbanCard, KanbanColumn } from '@mindflow/mindmap-core';
-import { boardProgress, cardMatches, columnColor, dueLabel, dueTone, initialOf, ownerLabel, tagColor } from './kanbanMeta';
+import { TIMELINE_DAYS, boardProgress, cardMatches, columnColor, dueLabel, dueTone, initialOf, ownerLabel, tagColor, timelineRange, timelineSpan } from './kanbanMeta';
 
 const PAL = ['#a', '#b', '#c', '#d', '#e'];
 const col = (id: string, color?: string): KanbanColumn => ({ id, title: id, ...(color ? { color } : {}) });
@@ -78,5 +78,31 @@ describe('칸반 검색', () => {
     expect(cardMatches(c, '지수')).toBe(true);
     expect(cardMatches(c, 'QA')).toBe(false);
     expect(cardMatches(c, '   ')).toBe(true); // 빈 질의는 전부 통과
+  });
+});
+
+describe('칸반 타임라인', () => {
+  const today = new Date(2026, 7, 14, 9, 0, 0); // 2026-08-14
+
+  it('오늘이 앞에서 넷째 칸인 14일', () => {
+    const days = timelineRange(today);
+    expect(days).toHaveLength(TIMELINE_DAYS);
+    expect(days[3]).toMatchObject({ iso: '2026-08-14', label: '오늘', today: true });
+    expect(days[0]!.iso).toBe('2026-08-11');
+    expect(days[13]!.iso).toBe('2026-08-24');
+    // 달이 바뀌는 날은 'M/D'로 — 숫자만 보면 어느 달인지 알 수 없다.
+    const cross = timelineRange(new Date(2026, 7, 30, 9, 0, 0));
+    expect(cross.find((d) => d.iso === '2026-09-01')?.label).toBe('9/1');
+  });
+
+  it('막대는 오늘부터 기한까지, 지난 기한은 기한부터 오늘까지', () => {
+    const days = timelineRange(today);
+    expect(timelineSpan('2026-08-17', days, today)).toEqual({ start: 3, end: 6, late: false });
+    expect(timelineSpan('2026-08-14', days, today)).toEqual({ start: 3, end: 3, late: false });
+    expect(timelineSpan('2026-08-12', days, today)).toEqual({ start: 1, end: 3, late: true });
+    // 창 밖은 가장자리로 자른다(원본과 같은 clamp).
+    expect(timelineSpan('2027-01-01', days, today)).toEqual({ start: 3, end: 13, late: false });
+    expect(timelineSpan('2020-01-01', days, today)).toEqual({ start: 0, end: 3, late: true });
+    expect(timelineSpan('엉망', days, today)).toBeNull();
   });
 });

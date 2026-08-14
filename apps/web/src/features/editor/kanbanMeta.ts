@@ -120,3 +120,56 @@ export function cardMatches(card: KanbanCard, query: string): boolean {
   if (!q) return true;
   return (card.text || '').toLowerCase().includes(q) || (card.tag || '').toLowerCase().includes(q) || (card.ownerName || '').toLowerCase().includes(q);
 }
+
+/** 보기 모드 — 디자인 원본의 탭(보드·리스트·타임라인). 문서가 아니라 **보는 사람**의
+ * 상태다: 문서에 넣으면 한 사람이 탭을 바꿀 때 모두의 화면이 함께 바뀐다. */
+export type KanbanView = 'board' | 'list' | 'timeline';
+
+/** 타임라인이 보여 주는 날 수와 오늘의 자리(디자인 원본은 14일·오늘이 넷째 칸). */
+export const TIMELINE_DAYS = 14;
+const TIMELINE_BEFORE = 3;
+
+export interface TimelineDay {
+  /** `YYYY-MM-DD` */
+  iso: string;
+  /** 칸 머리 글자 — 오늘은 '오늘', 달이 바뀌는 날은 'M/D', 그 밖은 일(day). */
+  label: string;
+  today: boolean;
+}
+
+function isoOf(d: Date): string {
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+}
+
+/** 오늘을 앞에서 넷째 칸에 두는 14일 — 지난 며칠도 보여야 "늦은 일"이 보인다. */
+export function timelineRange(today: Date = new Date()): TimelineDay[] {
+  const out: TimelineDay[] = [];
+  for (let i = 0; i < TIMELINE_DAYS; i++) {
+    const d = new Date(today.getFullYear(), today.getMonth(), today.getDate() - TIMELINE_BEFORE + i, 12, 0, 0, 0);
+    const first = i === 0 || d.getDate() === 1;
+    out.push({ iso: isoOf(d), label: i === TIMELINE_BEFORE ? '오늘' : first ? `${d.getMonth() + 1}/${d.getDate()}` : String(d.getDate()), today: i === TIMELINE_BEFORE });
+  }
+  return out;
+}
+
+/**
+ * 기한 막대가 차지하는 칸 범위 — **오늘부터 기한까지**(지났으면 기한부터 오늘까지).
+ *
+ * 원본은 카드마다 시작·끝 날(`s`/`e`)을 들고 있었지만 우리 카드에는 기한 하나뿐이다.
+ * 새 필드를 만드는 대신 "지금부터 그날까지 남은 기간"을 그린다 — 손대지 않아도
+ * 뜻이 통하고, 늦은 일은 오늘까지 뻗어 눈에 띈다. 창(14일) 밖은 가장자리로 자른다.
+ */
+export function timelineSpan(due: string, days: TimelineDay[], today: Date = new Date()): { start: number; end: number; late: boolean } | null {
+  if (!days.length) return null;
+  const dueDay = dayDiff(due, today);
+  if (dueDay === null) return null;
+  const first = dayDiff(days[0]!.iso, today) as number;
+  const last = dayDiff(days[days.length - 1]!.iso, today) as number;
+  const late = dueDay < 0;
+  const lo = Math.min(0, dueDay);
+  const hi = Math.max(0, dueDay);
+  // 창 밖으로 완전히 벗어난 기한도 **가장자리에 붙여** 보여 준다(원본의 clamp).
+  const start = Math.max(first, Math.min(lo, last));
+  const end = Math.max(first, Math.min(hi, last));
+  return { start: start - first, end: end - first, late };
+}

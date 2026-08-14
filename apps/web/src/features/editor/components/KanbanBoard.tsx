@@ -24,8 +24,10 @@ import { RichSpan, linkInk } from '../richSpans';
 import { columnDropIndex, columnDropIndicator, dropIndicator, dropTargetAt, edgeScroll } from '../kanbanDrag';
 import type { ColumnHit, DropTarget } from '../kanbanDrag';
 import { boardProgress, cardMatches, columnColor, dueLabel, dueTone, initialOf, ownerLabel, tagColor } from '../kanbanMeta';
+import type { KanbanView } from '../kanbanMeta';
 import { colorForSeed } from '../../../collab/identity';
 import { CardDetail } from './CardDetail';
+import { KanbanList, KanbanTimeline } from './KanbanViews';
 
 const COL_W = 308;
 const COL_GAP = 16;
@@ -136,6 +138,9 @@ export function KanbanBoard({ controller, theme: th }: { controller: EditorContr
   const [colDrag, setColDrag] = useState<ColDragState | null>(null);
   /** 카드 검색 — 화면에서만 거른다(문서는 그대로). */
   const [query, setQuery] = useState('');
+  /** 보기 모드 — **보는 사람의 상태**다(문서에 넣으면 한 사람이 탭을 바꿀 때 모두의
+   * 화면이 함께 바뀐다). 그래서 저장·협업과 무관하다. */
+  const [view, setView] = useState<KanbanView>('board');
 
   /** 지금 화면에 그려진 열·카드의 사각형 — 드롭 자리 계산의 입력(순수 부분은 `kanbanDrag.ts`). */
   const columnHits = useCallback((): ColumnHit[] => {
@@ -231,7 +236,10 @@ export function KanbanBoard({ controller, theme: th }: { controller: EditorContr
       data-kanban-root
       style={{ position: 'absolute', inset: 0, display: 'flex', flexDirection: 'column', minHeight: 0, background: th.appBg, paddingTop: CHIP_CLEARANCE, boxSizing: 'border-box' }}
     >
-      <BoardBar theme={th} isMobile={isMobile} query={query} onQuery={setQuery} progress={progress} />
+      <BoardBar theme={th} isMobile={isMobile} query={query} onQuery={setQuery} progress={progress} view={view} onView={setView} />
+
+      {view === 'list' && <KanbanList controller={controller} theme={th} query={query} isMobile={isMobile} />}
+      {view === 'timeline' && <KanbanTimeline controller={controller} theme={th} query={query} isMobile={isMobile} />}
 
       <div
         ref={boardRef}
@@ -243,7 +251,7 @@ export function KanbanBoard({ controller, theme: th }: { controller: EditorContr
         style={{
           flex: '1 1 auto',
           minHeight: 0,
-          display: 'flex',
+          display: view === 'board' ? 'flex' : 'none',
           alignItems: 'stretch',
           gap: COL_GAP,
           padding: isMobile ? '0 12px 14px' : '0 20px 18px',
@@ -376,17 +384,52 @@ function BoardBar({
   query,
   onQuery,
   progress,
+  view,
+  onView,
 }: {
   theme: Theme;
   isMobile: boolean;
   query: string;
   onQuery: (v: string) => void;
   progress: ReturnType<typeof boardProgress>;
+  view: KanbanView;
+  onView: (v: KanbanView) => void;
 }) {
+  const tab = (v: KanbanView, label: string) => {
+    const on = view === v;
+    return (
+      <button
+        key={v}
+        type="button"
+        data-kanban-tab={v}
+        aria-pressed={on}
+        onClick={() => onView(v)}
+        style={{
+          padding: isMobile ? '8px 14px' : '5px 13px',
+          borderRadius: 999,
+          border: 0,
+          fontSize: 12.5,
+          fontWeight: 700,
+          fontFamily: 'inherit',
+          cursor: 'pointer',
+          background: on ? th.panel : 'transparent',
+          color: on ? th.text : th.subtext,
+          boxShadow: on ? '0 2px 6px -4px rgba(0,0,0,.4)' : 'none',
+        }}
+      >
+        {label}
+      </button>
+    );
+  };
   return (
     <div data-kanban-bar style={{ flex: '0 0 auto', display: 'flex', flexDirection: 'column', gap: 10, padding: isMobile ? '0 12px 12px' : '0 20px 14px' }}>
-      <div style={{ display: 'flex', alignItems: 'center', gap: 10, justifyContent: 'flex-end' }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 7, height: isMobile ? 40 : 34, padding: '0 12px', borderRadius: 999, border: `1px solid ${th.border}`, background: th.panel, minWidth: 0, width: isMobile ? '100%' : 220 }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 10, justifyContent: 'space-between', flexWrap: 'wrap' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 2, padding: 3, borderRadius: 999, border: `1px solid ${th.border}`, background: th.panel2 }}>
+          {tab('board', '보드')}
+          {tab('list', '리스트')}
+          {tab('timeline', '타임라인')}
+        </div>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 7, height: isMobile ? 40 : 34, padding: '0 12px', borderRadius: 999, border: `1px solid ${th.border}`, background: th.panel, minWidth: 0, flex: isMobile ? '1 1 100%' : '0 0 auto', width: isMobile ? undefined : 220 }}>
           <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke={th.subtext} strokeWidth="2" strokeLinecap="round" aria-hidden="true">
             <circle cx="11" cy="11" r="7" />
             <path d="m20 20-3.5-3.5" />

@@ -844,3 +844,96 @@ describe('칸반 — 보드 머리(검색·진행률)', () => {
     await waitFor(() => expect(saved('kq3').columns.find((c: { id: string }) => c.id === 'c1').color).toBe(color));
   });
 });
+
+describe('칸반 — 리스트·타임라인 보기', () => {
+  beforeEach(() => {
+    localStorage.clear();
+    mockMatchMedia(false);
+    localStorage.setItem('mf_demo_session', JSON.stringify({ user: { id: 'u', email: 'me@example.com' } }));
+  });
+  afterEach(cleanup);
+
+  /** 기한이 붙은 카드가 있는 보드 — 오늘 기준 상대 날짜로 심는다. */
+  const withDue = () => {
+    const iso = (d: number): string => {
+      const t = new Date();
+      const x = new Date(t.getFullYear(), t.getMonth(), t.getDate() + d);
+      return `${x.getFullYear()}-${String(x.getMonth() + 1).padStart(2, '0')}-${String(x.getDate()).padStart(2, '0')}`;
+    };
+    return {
+      ...KANBAN,
+      cards: [
+        { id: 'k1', col: 'c1', pos: 0, text: '첫 카드', tag: '개발', due: iso(2), owner: 'a@ex.com', ownerName: '지수' },
+        { id: 'k2', col: 'c1', pos: 1024, text: '둘째 카드' },
+        { id: 'k3', col: 'c2', pos: 0, text: '늦은 카드', due: iso(-2) },
+      ],
+    };
+  };
+
+  it('리스트 보기 — 열별로 묶어 한 줄씩, 누르면 상세가 열린다', async () => {
+    localStorage.setItem('mindflow_doc_kv1', JSON.stringify(withDue()));
+    const { container } = renderEditor('/editor?map=kv1&title=x');
+    await waitFor(() => expect(container.querySelector('[data-kanban-tab="list"]')).toBeTruthy());
+
+    fireEvent.click(container.querySelector('[data-kanban-tab="list"]')!);
+    const list = await waitFor(() => container.querySelector('[data-kanban-list-view]') as HTMLElement);
+    // 보드는 감춰지고(열 자체는 남아 있어도 화면에 없다) 리스트가 뜬다.
+    expect((container.querySelector('[data-kanban-board]') as HTMLElement).style.display).toBe('none');
+    expect(list.querySelectorAll('[data-list-row]')).toHaveLength(3);
+    expect(list.querySelector('[data-list-group="c1"]')?.textContent).toContain('할 일');
+    expect(list.querySelector('[data-list-row="k1"]')?.textContent).toContain('첫 카드');
+
+    fireEvent.click(list.querySelector('[data-list-row="k1"]')!);
+    await waitFor(() => expect(container.querySelector('[data-card-detail="k1"]')).toBeTruthy());
+  });
+
+  it('타임라인 보기 — 기한이 있는 카드만 막대로, 없는 카드 수는 밝힌다', async () => {
+    localStorage.setItem('mindflow_doc_kv2', JSON.stringify(withDue()));
+    const { container } = renderEditor('/editor?map=kv2&title=x');
+    await waitFor(() => expect(container.querySelector('[data-kanban-tab="timeline"]')).toBeTruthy());
+
+    fireEvent.click(container.querySelector('[data-kanban-tab="timeline"]')!);
+    const tl = await waitFor(() => container.querySelector('[data-kanban-timeline]') as HTMLElement);
+    expect(tl.querySelectorAll('[data-timeline-day]')).toHaveLength(14);
+    expect(tl.querySelectorAll('[data-timeline-row]')).toHaveLength(2); // 기한 있는 둘
+    expect(tl.querySelector('[data-timeline-nodue]')?.textContent).toContain('1장');
+
+    // 막대는 오늘부터 기한까지 — 늦은 카드는 오늘 왼쪽에서 시작한다.
+    const bar = tl.querySelector('[data-timeline-bar="k3"]') as HTMLElement;
+    expect(parseFloat(bar.style.left)).toBeLessThan((3 / 14) * 100 + 0.01);
+    expect(parseFloat(bar.style.width)).toBeGreaterThan(0);
+    // k3은 **마지막 열**의 카드다 — 기한이 지났어도 붉게 칠하지 않는다(끝난 일).
+    expect(bar.style.border).toContain('rgba'); // 색이 실제로 인라인에 실렸다
+    expect(bar.style.border).not.toContain('217, 83, 79');
+
+    fireEvent.click(tl.querySelector('[data-timeline-row="k1"]')!);
+    await waitFor(() => expect(container.querySelector('[data-card-detail="k1"]')).toBeTruthy());
+  });
+
+  it('검색은 세 보기에 함께 걸린다', async () => {
+    localStorage.setItem('mindflow_doc_kv3', JSON.stringify(withDue()));
+    const { container } = renderEditor('/editor?map=kv3&title=x');
+    await waitFor(() => expect(container.querySelector('[data-kanban-search]')).toBeTruthy());
+
+    fireEvent.change(container.querySelector('[data-kanban-search]')!, { target: { value: '늦은' } });
+    fireEvent.click(container.querySelector('[data-kanban-tab="list"]')!);
+    await waitFor(() => expect(container.querySelectorAll('[data-list-row]')).toHaveLength(1));
+    expect(container.querySelector('[data-list-empty="c1"]')?.textContent).toContain('검색 결과가 없어요');
+
+    fireEvent.click(container.querySelector('[data-kanban-tab="timeline"]')!);
+    await waitFor(() => expect(container.querySelectorAll('[data-timeline-row]')).toHaveLength(1));
+  });
+
+  it('보기 모드는 문서에 저장되지 않는다 — 보는 사람의 상태다', async () => {
+    localStorage.setItem('mindflow_doc_kv4', JSON.stringify(withDue()));
+    const { container } = renderEditor('/editor?map=kv4&title=x');
+    await waitFor(() => expect(container.querySelector('[data-kanban-tab="list"]')).toBeTruthy());
+    const before = localStorage.getItem('mindflow_doc_kv4');
+
+    fireEvent.click(container.querySelector('[data-kanban-tab="list"]')!);
+    await waitFor(() => expect(container.querySelector('[data-kanban-list-view]')).toBeTruthy());
+    fireEvent.keyDown(window, { key: 's', ctrlKey: true });
+    await new Promise((r) => setTimeout(r, 60));
+    expect(localStorage.getItem('mindflow_doc_kv4')).toBe(before);
+  });
+});
