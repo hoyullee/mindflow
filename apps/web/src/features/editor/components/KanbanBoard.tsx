@@ -13,6 +13,7 @@ import type { CSSProperties, KeyboardEvent as ReactKeyboardEvent, PointerEvent a
 import { cardsInColumn } from '@mindflow/mindmap-core';
 import type { KanbanCard, KanbanColumn } from '@mindflow/mindmap-core';
 import type { EditorController } from '../useEditorState';
+import { hexA } from '../theme';
 import type { Theme } from '../theme';
 import { useIsMobile } from '../../../hooks/useMediaQuery';
 import { CommentIcon } from './ToolbarMenus';
@@ -216,7 +217,20 @@ export function KanbanBoard({ controller, theme: th }: { controller: EditorContr
       {indicator && (
         <div
           data-kanban-drop-line
-          style={{ position: 'fixed', left: indicator.left, top: indicator.top, width: indicator.width, height: 3, borderRadius: 2, background: th.accent, pointerEvents: 'none', zIndex: 299 }}
+          style={{
+            position: 'fixed',
+            left: indicator.left,
+            top: indicator.top,
+            width: indicator.width,
+            // 얇고 옅게(제보: 너무 진하다). 이 선은 **자리를 가리키는 눈금**이지
+            // 강조 대상이 아니다 — 손가락/커서를 따라오는 고스트가 이미 주인공이다.
+            height: 2,
+            borderRadius: 999,
+            // 양끝이 배경으로 스며들게 — 딱 잘린 막대는 카드 사이에 이물처럼 보인다.
+            background: `linear-gradient(90deg, ${hexA(th.accent, 0)} 0%, ${hexA(th.accent, 0.5)} 10%, ${hexA(th.accent, 0.5)} 90%, ${hexA(th.accent, 0)} 100%)`,
+            pointerEvents: 'none',
+            zIndex: 299,
+          }}
         />
       )}
     </div>
