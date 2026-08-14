@@ -206,6 +206,16 @@ export interface HomeState {
    * 모호해진다. 최근 항목 트레이 카드도 제외(원래 메뉴 없는 바로가기, #345).
    */
   selectedCards: string[];
+  /**
+   * 모바일 **선택 모드**(요청) — 카드를 길게 눌러 들어간다.
+   *
+   * `selectedCards.length > 0`을 모드로 삼지 않는 이유: 모바일에서 탭 한 번은 이미
+   * '선택'이라(☰·★이 드러난다) 평범한 탭에도 선택 바가 떠 버린다. 모드 밖에서는
+   * 지금 그대로(탭=선택 표시, 더블탭=열기), 모드 안에서는 탭이 체크 토글이고
+   * 더블탭 열기는 꺼진다. 마지막 하나를 해제해 0개가 되면 스스로 나간다 — 상태
+   * 둘(모드/선택)이 어긋나지 않게.
+   */
+  selectMode: boolean;
   /** 여러 장을 한 번에 지울 때의 확인 대상 — 한 장이면 기존 `confirmDelete` 경로. */
   confirmDeleteMulti: { key: string; title: string; docId?: string }[] | null;
   /** 문서별 **마지막으로 저장한 사람**의 표시 이름(docId → 이름). 마지막 저장자가
@@ -355,6 +365,7 @@ export function initialHomeState(): HomeState {
 
     selectedCard: null,
     selectedCards: [],
+    selectMode: false,
     confirmDeleteMulti: null,
     editorNames: {},
     draggingMap: null,

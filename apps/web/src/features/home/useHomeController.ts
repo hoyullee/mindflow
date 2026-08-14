@@ -78,6 +78,14 @@ function hasStrippedImage(doc: Doc): boolean {
  * 넉넉히 길어 타이핑 중 중간 결과를 그리지 않고, 손을 뗀 뒤엔 기다렸다는 느낌이 없다. */
 const SEARCH_DEBOUNCE_MS = 180;
 
+/**
+ * 일괄 동작(이동·삭제)을 끝낸 뒤의 선택 상태 — 비운다.
+ *
+ * 옮긴 카드는 지금 보고 있는 목록에서 사라지고 지운 카드는 없어지므로, 선택만
+ * 남으면 화면에 없는 것을 고르고 있는 셈이다. 모바일 선택 모드도 함께 나간다.
+ */
+const clearSelection = { selectedCards: [] as string[], selectedCard: null, selectMode: false };
+
 export function useHomeController() {
   // 최근 기록은 동기(localStorage)로 초기 상태에 바로 싣는다 — 마운트 이펙트로
   // 늦게 넣으면 첫 페인트 프레임에 최근 항목 스켈레톤조차 없어 툴바가 한 번
@@ -329,8 +337,10 @@ export function useHomeController() {
         // 예외다 — 그 메뉴를 누르는 mousedown이 선택을 지우면, 클릭이 도착하기 전에
         // 메뉴가 일괄에서 단일로 갈아 끼워져 엉뚱한 항목이 실행된다(실브라우저에서
         // 확인: 일괄 폴더 이동·삭제가 통째로 먹지 않았다).
-        if ((prev.selectedCard || prev.selectedCards.length) && !closest('.map-card') && !closest('.mf-home-ctx')) {
-          next = { ...next, selectedCard: null, selectedCards: [] };
+        // 선택 바(`.mf-sel-bar`)도 같은 이유로 예외다 — 그 안의 ⋯·전체 선택을 누르는
+        // mousedown이 선택을 비우면 버튼이 누른 순간 대상을 잃는다.
+        if ((prev.selectedCard || prev.selectedCards.length) && !closest('.map-card') && !closest('.mf-home-ctx') && !closest('.mf-sel-bar')) {
+          next = { ...next, selectedCard: null, selectedCards: [], selectMode: false };
         }
         if (prev.settingsOpen && !closest('.settings-pop,.settings-btn')) next = { ...next, settingsOpen: false };
         return next;
@@ -840,7 +850,7 @@ export function useHomeController() {
     const many = state.confirmDeleteMulti;
     if (many) {
       many.forEach((c) => setState((prev) => removeCardFrom(prev, c.title, c.docId ?? null)));
-      patch({ confirmDeleteMulti: null, selectedCards: [], selectedCard: null });
+      patch({ confirmDeleteMulti: null, ...clearSelection });
       many.forEach((c) => {
         if (!c.docId) return;
         void docStore.remove(c.docId).catch(() => {
@@ -1809,7 +1819,7 @@ export function useHomeController() {
           if (folderId) driveMapFolders[k] = folderId;
           else delete driveMapFolders[k];
         });
-        return { ...prev, driveMapFolders, ctxMenu: null };
+        return { ...prev, driveMapFolders, ctxMenu: null, ...clearSelection };
       });
       return;
     }
@@ -1819,7 +1829,7 @@ export function useHomeController() {
         if (folderId) mapFolders[k] = folderId;
         else delete mapFolders[k];
       });
-      return { ...prev, mapFolders, ctxMenu: null };
+      return { ...prev, mapFolders, ctxMenu: null, ...clearSelection };
     });
   };
 
@@ -1844,7 +1854,7 @@ export function useHomeController() {
       // 폴더는 스페이스 하나에 속한다 — 옮기면 폴더 배정을 뗀다(단일 이동과 같은 규칙).
       keys.forEach((k) => delete mapFolders[k]);
       const label = moving.length === 1 ? `'${moving[0]!.title}'을(를)` : `맵 ${moving.length}개를`;
-      return { ...prev, spaces, mapFolders, ctxMenu: null, toast: `${label} '${target.name}' 스페이스로 옮겼어요`, toastTitle: '이동 완료' };
+      return { ...prev, spaces, mapFolders, ctxMenu: null, ...clearSelection, toast: `${label} '${target.name}' 스페이스로 옮겼어요`, toastTitle: '이동 완료' };
     });
   };
 
@@ -1913,6 +1923,31 @@ export function useHomeController() {
       return;
     }
     patch({ selectedCard: key, selectedCards: [key] });
+  };
+
+  /**
+   * 모바일 선택 모드 진입 — 카드를 **길게 눌러**(`MapCard`) 들어온다.
+   *
+   * 터치에는 수정 키가 없어 Ctrl/Shift 관례를 쓸 수 없다. 대신 모드가 켜져 있는
+   * 동안 탭이 곧 토글이고(`toggleCardSelected`), 더블탭 열기는 꺼진다.
+   */
+  const enterSelectMode = (key: string) => patch({ selectMode: true, selectedCards: [key], selectedCard: key });
+
+  /** ✕ / 배경 탭 — 모드 종료 + 선택 비움. */
+  const exitSelectMode = () => patch({ selectMode: false, selectedCards: [], selectedCard: null });
+
+  /**
+   * 선택 모드 안의 탭 = 체크 토글. 마지막 하나를 빼서 0개가 되면 모드도 함께
+   * 나간다 — 선택이 하나도 없는 선택 바는 할 수 있는 일이 없다.
+   */
+  const toggleCardSelected = (key: string) => {
+    const has = state.selectedCards.includes(key);
+    const next = has ? state.selectedCards.filter((k) => k !== key) : [...state.selectedCards, key];
+    if (!next.length) {
+      exitSelectMode();
+      return;
+    }
+    patch({ selectedCards: next, selectedCard: has ? (next[next.length - 1] ?? null) : key });
   };
 
   /** 지금 화면에 그려진 맵 카드의 key — DOM 순서 그대로(최근 트레이는 제외). */
@@ -2059,6 +2094,9 @@ export function useHomeController() {
     moveMapsToSpace,
     askDeleteMany,
     selectAllCards,
+    enterSelectMode,
+    exitSelectMode,
+    toggleCardSelected,
     moveMapUp,
     folderDeleteSummary,
     backToSpace,
