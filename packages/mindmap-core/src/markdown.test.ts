@@ -139,3 +139,49 @@ describe('toMarkdown — rich 서식 인라인 문법', () => {
     expect(toMarkdown(doc)).toContain('- ***강조***');
   });
 });
+
+describe('toMarkdown — 칸반(열·카드)', () => {
+  const kb = {
+    v: 1 as const,
+    nodes: {},
+    floats: [],
+    lines: [],
+    zones: [],
+    layoutMode: 'right' as const,
+    themeKey: 'white',
+    kind: 'kanban' as const,
+    columns: [
+      { id: 'c1', title: '할 일' },
+      { id: 'c2', title: '진행 중' },
+      { id: 'c3', title: '완료' },
+    ],
+    cards: [
+      // 일부러 pos 역순으로 담는다 — 화면 순서(`pos`)를 따르는지 보려고.
+      { id: 'k2', col: 'c1', pos: 1024, text: '둘째' },
+      { id: 'k1', col: 'c1', pos: 0, text: '첫째' },
+      { id: 'k3', col: 'c2', pos: 0, text: '진행 중인 것' },
+    ],
+  };
+
+  it('열이 H2, 카드가 그 아래 목록이다 — 빈 열도 제목을 남긴다', () => {
+    expect(toMarkdown(kb, '내 보드')).toBe(['# 내 보드', '', '## 할 일', '- 첫째', '- 둘째', '', '## 진행 중', '- 진행 중인 것', '', '## 완료'].join('\n'));
+  });
+
+  it('여러 줄 카드는 한 줄로 접고, rich 서식은 마크다운 문법으로 되살린다', () => {
+    const md = toMarkdown({
+      ...kb,
+      columns: [{ id: 'c1', title: '할 일' }],
+      cards: [
+        { id: 'a', col: 'c1', pos: 0, text: '첫 줄\n둘째 줄' },
+        { id: 'b', col: 'c1', pos: 1024, text: '굵게', rich: [{ t: '굵게', b: true, c: null }] },
+      ],
+    });
+    expect(md).toContain('- 첫 줄 둘째 줄');
+    expect(md).toContain('- **굵게**');
+  });
+
+  it('마인드맵·화이트보드는 무회귀 — 칸반 분기를 타지 않는다', () => {
+    const doc = parseDoc({ ...kb, kind: undefined, columns: undefined, cards: undefined, nodes: { root: { id: 'root', text: '루트', emoji: '', parent: null, children: [], collapsed: false, color: null, x: 0, y: 0 } } })!;
+    expect(toMarkdown(doc)).toBe('# 루트');
+  });
+});

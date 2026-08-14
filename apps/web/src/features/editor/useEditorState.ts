@@ -5509,6 +5509,39 @@ export function useEditorState(): EditorController {
         return;
       }
 
+      // 칸반 — 캔버스 단축키(마퀴·방향키 이동·붙여넣기)는 뜻이 없다. 고른 카드에
+      // 대한 것만 받는다. 카드 편집 중(textarea)에는 그쪽이 자기 키를 처리한다.
+      if (isKanban) {
+        if ((e.metaKey || e.ctrlKey) && !e.shiftKey && (e.key === 'z' || e.key === 'Z')) {
+          e.preventDefault();
+          undo();
+          return;
+        }
+        if ((e.metaKey || e.ctrlKey) && ((e.key === 'y' || e.key === 'Y') || (e.shiftKey && (e.key === 'z' || e.key === 'Z')))) {
+          e.preventDefault();
+          redo();
+          return;
+        }
+        if (inEditable) return;
+        const cardId = selectedCardId;
+        if (!cardId) return;
+        if (e.key === 'Delete' || e.key === 'Backspace') {
+          e.preventDefault();
+          deleteCard(cardId);
+          return;
+        }
+        if (e.key === 'Enter' || e.key === 'F2') {
+          e.preventDefault();
+          startEditCard(cardId);
+          return;
+        }
+        if (e.key === 'Escape') {
+          e.preventDefault();
+          selectCard(null);
+        }
+        return;
+      }
+
       if (view === 'outline') {
         if ((e.metaKey || e.ctrlKey) && !e.shiftKey && (e.key === 'z' || e.key === 'Z')) {
           e.preventDefault();

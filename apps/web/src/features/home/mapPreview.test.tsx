@@ -428,3 +428,41 @@ describe('realPreview — 화이트보드', () => {
     expect(fills.join(' ')).not.toContain('240,102,63'); // 코랄 폴백이면 이 색이 나온다
   });
 });
+
+describe('realPreview — 칸반(열·카드)', () => {
+  const kb = (cards: { id: string; col: string; pos: number; text: string }[]) =>
+    JSON.stringify({
+      v: 1,
+      nodes: {},
+      floats: [],
+      lines: [],
+      zones: [],
+      layoutMode: 'right',
+      themeKey: 'white',
+      kind: 'kanban',
+      columns: [
+        { id: 'c1', title: '할 일' },
+        { id: 'c2', title: '완료' },
+      ],
+      cards,
+    });
+
+  it('실제 열 제목과 카드 글자를 그린다 — 폴백 삽화가 아니다', () => {
+    const el = realPreview(kb([
+      { id: 'k2', col: 'c1', pos: 1024, text: '둘째' },
+      { id: 'k1', col: 'c1', pos: 0, text: '첫째' },
+      { id: 'k3', col: 'c2', pos: 0, text: '끝난 것' },
+    ]), '#f0663f');
+    expect(el).not.toBeNull();
+    const { container } = render(el!);
+    expect(container.querySelector('[data-kanban-preview]')).toBeTruthy();
+    const texts = Array.from(container.querySelectorAll('svg text')).map((t) => t.textContent);
+    // 열 제목 + 카드 글자, 카드는 pos 순서(첫째 → 둘째).
+    expect(texts).toEqual(['할 일', '첫째', '둘째', '완료', '끝난 것']);
+  });
+
+  it('열이 하나도 없으면 null — 카드가 폴백 삽화로 떨어진다', () => {
+    const raw = JSON.stringify({ v: 1, nodes: {}, floats: [], lines: [], zones: [], layoutMode: 'right', themeKey: 'white', kind: 'kanban', columns: [], cards: [] });
+    expect(realPreview(raw, '#f0663f')).toBeNull();
+  });
+});

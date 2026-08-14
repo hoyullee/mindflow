@@ -298,6 +298,9 @@ function Column({
 function Card({ card, controller, theme: th, onPointerDown, dragging }: { card: KanbanCard; controller: EditorController; theme: Theme; onPointerDown: (e: ReactPointerEvent, card: KanbanCard) => void; dragging: boolean }) {
   const editing = controller.editingCardId === card.id;
   const selected = controller.selectedCardId === card.id;
+  const readOnly = controller.readOnly;
+  const isMobile = useIsMobile();
+  const [hover, setHover] = useState(false);
   const base: CSSProperties = {
     background: card.bg || th.panel,
     border: `1px solid ${selected ? th.accent : th.border}`,
@@ -320,17 +323,56 @@ function Card({ card, controller, theme: th, onPointerDown, dragging }: { card: 
         onPointerDown(e, card);
       }}
       onDoubleClick={() => controller.startEditCard(card.id)}
+      onMouseEnter={() => setHover(true)}
+      onMouseLeave={() => setHover(false)}
       style={{
         ...base,
+        position: 'relative',
         cursor: 'pointer',
         userSelect: 'none',
         // 끌고 있는 원본은 자리를 지키되 흐리게 — 어디서 떠났는지 보인다.
         opacity: dragging ? 0.35 : 1,
         // 터치: 세로 스크롤은 살리고(길게 눌러야 드래그) 가로 제스처만 막는다.
         touchAction: 'pan-y',
+        // ✕ 자리를 늘 비워 둔다 — 버튼이 떴다 사라져도 글자가 밀리지 않게.
+        paddingRight: readOnly ? undefined : 26,
       }}
     >
       {card.text || <span style={{ color: th.subtext }}>빈 카드</span>}
+      {/* 삭제 — 열 머리의 ✕와 같은 문법. 평소엔 숨기고 **고른 카드**나 마우스를
+          얹은 카드에만 띄운다(카드마다 ✕이 늘 떠 있으면 목록이 시끄럽다).
+          터치 기기에는 hover가 없지만 탭이 곧 선택이라 같은 조건으로 뜬다. */}
+      {!readOnly && (selected || hover) && (
+        <button
+          type="button"
+          aria-label="카드 삭제"
+          title="카드 삭제"
+          data-delete-card={card.id}
+          // pointerdown을 삼켜야 카드 드래그가 시작되지 않는다(같은 자리에서 뗀다).
+          onPointerDown={(e) => e.stopPropagation()}
+          onClick={(e) => {
+            e.stopPropagation();
+            controller.deleteCard(card.id);
+          }}
+          style={{
+            position: 'absolute',
+            top: 4,
+            right: 4,
+            width: isMobile ? 30 : 22,
+            height: isMobile ? 30 : 22,
+            border: 'none',
+            borderRadius: 6,
+            background: 'transparent',
+            color: th.subtext,
+            cursor: 'pointer',
+            fontSize: 14,
+            lineHeight: 1,
+            padding: 0,
+          }}
+        >
+          ×
+        </button>
+      )}
     </div>
   );
 }

@@ -1,4 +1,4 @@
-import { ROOT_ID, layout, listDisplayLine, parseListPrefix, strokeBounds, strokePathD } from '@mindflow/mindmap-core';
+import { ROOT_ID, cardsInColumn, layout, listDisplayLine, parseListPrefix, strokeBounds, strokePathD } from '@mindflow/mindmap-core';
 import type { Doc, EdgeStyle, Float, LayoutMode, Node as CoreNode } from '@mindflow/mindmap-core';
 import { buildEdgePath, edgeStrokeWidth } from '../editor/edges';
 import { linkInk } from '../editor/richSpans';
@@ -308,6 +308,8 @@ interface PreviewDoc {
   zones?: DocZone[];
   strokes?: { id: string; pts: number[]; color: string; w: number; hl?: boolean }[];
   kind?: string;
+  columns?: { id: string; title: string }[];
+  cards?: { id: string; col: string; pos: number; text: string }[];
 }
 
 /** Saved docs persist layout-derived node x/y as `0`: the React editor keeps
@@ -377,6 +379,12 @@ function buildPreview(rawDoc: string, hueFallback: string): JSX.Element | null {
     return null;
   }
   if (!d || !d.nodes) return null;
+  // 칸반은 트리도 좌표도 없다 — 열·카드를 그리는 전용 렌더로 간다(열이 하나도
+  // 없으면 null → 카드가 폴백 삽화 `miniKanbanPreview`로 떨어진다).
+  if (d.kind === 'kanban') {
+    const TH = (d.themeKey && THEME_PAL[d.themeKey]) || THEME_PAL.coral!;
+    return kanbanPreview(d, TH.accent);
+  }
   // Editor-identical node box sizing: `computeMetrics` (real canvas text
   // measurement). The layout pass records each node's box into `metricsById` so
   // the DRAWN box is exactly the box the layout positioned (see `dim`).
@@ -842,6 +850,83 @@ function buildPreview(rawDoc: string, hueFallback: string): JSX.Element | null {
  * `.map-thumb` box. */
 export function previewSkeleton(): JSX.Element {
   return <div className="mf-skel" aria-hidden="true" style={{ width: '100%', height: '100%' }} />;
+}
+
+/* ── 칸반 썸네일 ─────────────────────────────────────────────────────────────
+ * 칸반은 캔버스가 아니라 **열과 카드**다 — 마인드맵의 레이아웃·측정 기계를 태울
+ * 것이 없으므로(좌표가 문서에 없다) 에디터의 고정 배치를 축소해 그대로 그린다.
+ * 열 폭·간격·카드 높이는 에디터 `KanbanBoard`의 비율을 따르고, 화면에 안 들어가는
+ * 카드는 "+N"으로 접는다(카드가 많은 열이 썸네일을 벽으로 만들지 않게). */
+const KB_COL_W = 96;
+const KB_GAP = 10;
+const KB_PAD = 9;
+const KB_H = 150;
+const KB_CARD_H = 24;
+const KB_CARD_GAP = 6;
+/** 열이 시작되는 높이 — 위쪽은 카드 우상단의 '칸반 보드' 배지 자리로 비워 둔다
+ * (그러지 않으면 배지가 마지막 열의 제목을 덮는다). */
+const KB_TOP = 26;
+const KB_CARDS_TOP = KB_TOP + 25;
+
+/** 한 줄에 들어갈 만큼만 남기고 뒤를 …로 접는다(실측 폭 기준). */
+function kbClip(text: string, maxW: number, font: string): string {
+  const one = (text || '').split('\n')[0] ?? '';
+  if (!one) return '';
+  if (previewMeasurer.measure(one, font) <= maxW) return one;
+  let lo = 0;
+  let hi = one.length;
+  while (lo < hi) {
+    const mid = Math.ceil((lo + hi) / 2);
+    if (previewMeasurer.measure(`${one.slice(0, mid)}…`, font) <= maxW) lo = mid;
+    else hi = mid - 1;
+  }
+  return lo > 0 ? `${one.slice(0, lo)}…` : '…';
+}
+
+function kanbanPreview(d: PreviewDoc, accent: string): JSX.Element | null {
+  const columns = d.columns ?? [];
+  const cards = d.cards ?? [];
+  if (!columns.length) return null;
+  const W = KB_PAD * 2 + columns.length * KB_COL_W + (columns.length - 1) * KB_GAP;
+  const innerW = KB_COL_W - 16;
+  const titleFont = '700 11px Pretendard, system-ui, sans-serif';
+  const cardFont = '500 10px Pretendard, system-ui, sans-serif';
+  // 열 안에 그릴 수 있는 카드 수 — 넘치면 마지막 줄을 "+N"으로 쓴다.
+  const room = Math.max(1, Math.floor((KB_H - KB_CARDS_TOP - KB_PAD) / (KB_CARD_H + KB_CARD_GAP)));
+  return (
+    <svg data-kanban-preview viewBox={`0 0 ${W} ${KB_H}`} width="92%" height="92%" preserveAspectRatio="xMidYMid meet" style={{ display: 'block' }}>
+      {columns.map((col, ci) => {
+        const x = KB_PAD + ci * (KB_COL_W + KB_GAP);
+        const list = cardsInColumn(cards, col.id);
+        const shown = list.length > room ? list.slice(0, room - 1) : list;
+        const hidden = list.length - shown.length;
+        return (
+          <g key={col.id}>
+            <rect x={x} y={KB_TOP} width={KB_COL_W} height={KB_H - KB_TOP - KB_PAD} rx={8} fill={hexA(accent, 0.06)} stroke={hexA(accent, 0.3)} strokeWidth={1.2} />
+            <text x={x + 8} y={KB_TOP + 15} fontSize={11} fontWeight={700} fill={hexA(accent, 0.95)} fontFamily="Pretendard, system-ui, sans-serif">
+              {kbClip(col.title, innerW, titleFont)}
+            </text>
+            {shown.map((c, i) => {
+              const cy = KB_CARDS_TOP + i * (KB_CARD_H + KB_CARD_GAP);
+              return (
+                <g key={c.id}>
+                  <rect x={x + 8} y={cy} width={innerW} height={KB_CARD_H} rx={5} fill="#fff" stroke={hexA(accent, 0.34)} strokeWidth={1.1} />
+                  <text x={x + 14} y={cy + KB_CARD_H / 2} fontSize={10} fill="#2f2a26" dominantBaseline="middle" fontFamily="Pretendard, system-ui, sans-serif">
+                    {kbClip(c.text, innerW - 12, cardFont)}
+                  </text>
+                </g>
+              );
+            })}
+            {hidden > 0 && (
+              <text x={x + 14} y={KB_CARDS_TOP + shown.length * (KB_CARD_H + KB_CARD_GAP) + 11} fontSize={10} fontWeight={600} fill={hexA(accent, 0.7)} fontFamily="Pretendard, system-ui, sans-serif">
+                {`+${hidden}`}
+              </text>
+            )}
+          </g>
+        );
+      })}
+    </svg>
+  );
 }
 
 /**
