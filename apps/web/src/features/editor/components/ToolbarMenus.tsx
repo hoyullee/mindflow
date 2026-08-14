@@ -174,9 +174,12 @@ export function InsertMenu({ controller, onDone, isMobile }: { controller: Edito
 
 export function ViewMenu({ controller, onDone, isMobile }: { controller: EditorController; onDone: () => void; isMobile?: boolean }) {
   const th = controller.uiTheme;
-  // 칸반의 보기는 **보드·리스트·타임라인 셋**뿐이다(요청) — 맵/아웃라인·격자는
-  // 캔버스의 것이고, 단축키 도움말은 GNB의 도움말 메뉴로, 댓글은 보드 머리의
-  // 아이콘과 카드 배지·상세가 맡는다.
+  // 칸반의 **보기 모드**는 보드·리스트·타임라인 셋뿐이다(요청) — 맵/아웃라인·격자는
+  // 캔버스의 것이고, 단축키 도움말은 GNB의 도움말 메뉴로.
+  //
+  // 보드 전체 댓글은 그 아래 구분선 뒤에 따로 둔다: 보드 머리의 아이콘 자리를
+  // 필터에 내주면서(요청) 데스크톱에는 첫 댓글을 남길 길이 사라졌다. 모바일 ☰도
+  // 예전부터 [보기 3종] + [댓글] 구성이라 두 화면이 같은 꼴이 된다.
   if (controller.isKanban) {
     return (
       <MenuShell theme={th}>
@@ -194,6 +197,23 @@ export function ViewMenu({ controller, onDone, isMobile }: { controller: EditorC
             }}
           />
         ))}
+        {controller.canComment && (
+          <>
+            <MenuDivider theme={th} />
+            <MenuItem
+              theme={th}
+              isMobile={isMobile}
+              icon={<CommentIcon />}
+              label="보드 전체 댓글"
+              active={controller.commentsOpen}
+              onClick={() => {
+                if (controller.commentsOpen) controller.closeComments();
+                else controller.openComments();
+                onDone();
+              }}
+            />
+          </>
+        )}
       </MenuShell>
     );
   }

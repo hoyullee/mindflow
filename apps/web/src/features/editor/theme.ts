@@ -142,6 +142,22 @@ export function themeKeyOf(key: string | undefined | null): ThemeKey {
   return key && (THEME_KEYS as string[]).includes(key) ? (key as ThemeKey) : 'coral';
 }
 
+/** 두 색을 섞는다(`t`=0이면 `a`, 1이면 `b`) — 테마마다 정확한 값을 더 적어 두는
+ * 대신 **관계**로 만든다(예: 칸반 바닥 = 앱 배경을 패널 쪽으로 살짝 민 색). */
+export function mixHex(a: string, b: string, t: number): string {
+  const parse = (h: string): [number, number, number] => {
+    const c = h.replace('#', '');
+    return [parseInt(c.substring(0, 2), 16), parseInt(c.substring(2, 4), 16), parseInt(c.substring(4, 6), 16)];
+  };
+  const [ar, ag, ab] = parse(a);
+  const [br, bg, bb] = parse(b);
+  const mix = (x: number, y: number): string =>
+    Math.round(x + (y - x) * t)
+      .toString(16)
+      .padStart(2, '0');
+  return `#${mix(ar, br)}${mix(ag, bg)}${mix(ab, bb)}`;
+}
+
 /** Port of `Component#hexA` (MindFlow.dc.html:883). */
 export function hexA(hex: string, a: number): string {
   const c = hex.replace('#', '');
