@@ -110,6 +110,21 @@ export function KanbanBoard({ controller, theme: th }: { controller: EditorContr
           }
         }
       };
+      /**
+       * 잡은 뒤에는 브라우저가 세로 스크롤을 가져가지 못하게 막는다.
+       *
+       * 카드는 `touch-action: pan-y`다(그래야 평범한 손가락 스크롤이 산다). 그
+       * 상태에서 세로로 끌면 브라우저가 스크롤을 시작하고 **pointercancel**을 쏘는데,
+       * `onMove`의 `preventDefault`는 pointermove에 걸려 있어 소용이 없다 — 포인터
+       * 이벤트는 밑에 깔린 터치 동작을 취소하지 못한다. 터치 스크롤을 멈추려면
+       * **touchmove**를 비-passive로 받아 막아야 한다(제보: "길게 눌러 잡은 뒤
+       * 위아래로 끌면 드래그가 풀리면서 자동으로 이동").
+       *
+       * 잡기 전(`started` 전)에는 막지 않는다 — 그때의 세로 이동은 스크롤 의도다.
+       */
+      const onTouchMove = (ev: TouchEvent): void => {
+        if (started && ev.cancelable) ev.preventDefault();
+      };
       const onUp = (ev: PointerEvent): void => {
         const st = dragRef.current;
         cleanup();
@@ -117,17 +132,23 @@ export function KanbanBoard({ controller, theme: th }: { controller: EditorContr
         const target = dropTargetAt(columnHits(), ev.clientX, ev.clientY, card.id);
         if (target) controller.moveCardTo(card.id, target.colId, target.index);
       };
+      /** 취소는 **이동이 아니다** — 제스처가 무효가 된 것이므로 카드는 제자리에 둔다.
+       *  (예전에는 `onUp`에 물려 있어 브라우저가 스크롤을 가져간 순간 그 자리로
+       *  카드가 옮겨졌다.) */
+      const onCancel = (): void => cleanup();
       function cleanup(): void {
         if (holdTimer) clearTimeout(holdTimer);
         window.removeEventListener('pointermove', onMove);
+        window.removeEventListener('touchmove', onTouchMove);
         window.removeEventListener('pointerup', onUp);
-        window.removeEventListener('pointercancel', onUp);
+        window.removeEventListener('pointercancel', onCancel);
         setDrag(null);
         dragRef.current = null;
       }
       window.addEventListener('pointermove', onMove, { passive: false });
+      window.addEventListener('touchmove', onTouchMove, { passive: false });
       window.addEventListener('pointerup', onUp);
-      window.addEventListener('pointercancel', onUp);
+      window.addEventListener('pointercancel', onCancel);
     },
     [columnHits, controller],
   );

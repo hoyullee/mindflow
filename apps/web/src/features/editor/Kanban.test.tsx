@@ -67,7 +67,7 @@ function stubRects(container: HTMLElement): void {
 }
 
 /** jsdom엔 PointerEvent가 없다 — MouseEvent를 pointer 이름으로 던진다(다른 테스트와 같은 처방). */
-function firePointer(target: Element | Window, type: 'pointerdown' | 'pointermove' | 'pointerup', init: { clientX?: number; clientY?: number; pointerType?: string } = {}): void {
+function firePointer(target: Element | Window, type: 'pointerdown' | 'pointermove' | 'pointerup' | 'pointercancel', init: { clientX?: number; clientY?: number; pointerType?: string } = {}): void {
   const ev = new MouseEvent(type, { bubbles: true, cancelable: true, clientX: init.clientX ?? 0, clientY: init.clientY ?? 0 });
   Object.defineProperty(ev, 'pointerType', { value: init.pointerType ?? 'mouse', configurable: true });
   Object.defineProperty(ev, 'pointerId', { value: 1, configurable: true });
@@ -419,5 +419,60 @@ describe('칸반 — 카드 댓글(M3)', () => {
     const panel = await screen.findByLabelText('댓글');
     expect(within(panel).getByText('카드 · 둘째 카드')).toBeTruthy();
     expect(within(panel).getByText('이 문구 확인 부탁')).toBeTruthy();
+  });
+});
+
+describe('칸반 — 폰에서 잡은 카드의 세로 드래그(제보)', () => {
+  beforeEach(() => {
+    localStorage.clear();
+    mockMatchMedia(false);
+    localStorage.setItem('mf_demo_session', JSON.stringify({ user: { id: 'u', email: 'me@example.com' } }));
+  });
+  afterEach(cleanup);
+
+  /** 길게 눌러 카드를 잡는다(터치 관례 — 320ms). */
+  const hold = async (container: HTMLElement, id: string, x = 20, y = 60): Promise<void> => {
+    stubRects(container);
+    firePointer(container.querySelector(`[data-kanban-card="${id}"]`)!, 'pointerdown', { clientX: x, clientY: y, pointerType: 'touch' });
+    await new Promise((r) => setTimeout(r, 400));
+  };
+
+  it('브라우저가 제스처를 취소하면 카드는 **제자리에 머문다** — 취소는 이동이 아니다', async () => {
+    localStorage.setItem('mindflow_doc_kt1', JSON.stringify(KANBAN));
+    const { container } = renderEditor('/editor?map=kt1&title=x');
+    await waitFor(() => expect(container.querySelectorAll('[data-kanban-card]')).toHaveLength(2));
+
+    await hold(container, 'k1');
+    await waitFor(() => expect(container.querySelector('[data-kanban-ghost]')).toBeTruthy());
+    // 아래로 끌다가 브라우저가 스크롤을 가져가 취소한다.
+    firePointer(window, 'pointermove', { clientX: 20, clientY: 130, pointerType: 'touch' });
+    firePointer(window, 'pointercancel', { clientX: 20, clientY: 130, pointerType: 'touch' });
+    await waitFor(() => expect(container.querySelector('[data-kanban-ghost]')).toBeNull());
+
+    // 화면 순서로 단정한다 — 저장을 기다리면 아직 안 쓰인 초기 본문이 그대로
+    // 통과해 버려(둘 다 k1,k2) 가드가 되지 않는다.
+    expect(Array.from(container.querySelectorAll('[data-kanban-card]')).map((e) => e.getAttribute('data-kanban-card'))).toEqual(['k1', 'k2']);
+  });
+
+  it('잡은 뒤의 touchmove를 막는다 — 그래야 브라우저가 세로 스크롤을 가져가지 않는다', async () => {
+    localStorage.setItem('mindflow_doc_kt2', JSON.stringify(KANBAN));
+    const { container } = renderEditor('/editor?map=kt2&title=x');
+    await waitFor(() => expect(container.querySelectorAll('[data-kanban-card]')).toHaveLength(2));
+
+    // 잡기 **전**의 세로 이동은 스크롤 의도다 — 막지 않는다.
+    stubRects(container);
+    firePointer(container.querySelector('[data-kanban-card="k1"]')!, 'pointerdown', { clientX: 20, clientY: 60, pointerType: 'touch' });
+    const before = new Event('touchmove', { bubbles: true, cancelable: true });
+    window.dispatchEvent(before);
+    expect(before.defaultPrevented).toBe(false);
+
+    // 320ms 뒤 잡히면 그때부터 막는다.
+    await new Promise((r) => setTimeout(r, 400));
+    await waitFor(() => expect(container.querySelector('[data-kanban-ghost]')).toBeTruthy());
+    const after = new Event('touchmove', { bubbles: true, cancelable: true });
+    window.dispatchEvent(after);
+    expect(after.defaultPrevented).toBe(true);
+
+    firePointer(window, 'pointerup', { clientX: 20, clientY: 60, pointerType: 'touch' });
   });
 });
