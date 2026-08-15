@@ -197,11 +197,20 @@ export interface HomeState {
 
   selectedCard: string | null;
   /**
+   * Shift 범위의 **기준점**(앵커) — 수정 키 없이 누르거나 Ctrl/⌘로 토글한 카드.
+   *
+   * `selectedCard`와 따로 두는 이유(제보): Shift+클릭을 이어서 하면 그때마다
+   * `selectedCard`(=지금 초점)가 끝점으로 옮겨 가는데, 앵커까지 함께 옮기면
+   * C → B → A로 고를 때 마지막 범위가 B..A가 되어 **C가 빠진다**. 앵커는 다음
+   * 평범한 클릭까지 제자리에 있어야 파일 탐색기와 같은 감각이 된다.
+   */
+  selectAnchor: string | null;
+  /**
    * 다중 선택된 **맵 카드**의 key 목록(요청).
    *
    * 단일 선택은 길이 1인 다중 선택이다 — 진실의 원천이 하나여서 "화면엔 선택돼
-   * 보이는데 메뉴는 다른 카드의 것"이 생기지 않는다. `selectedCard`는 그중 **앵커**
-   * (마지막에 누른 카드, Shift 범위의 기준)이고 폴더 카드도 이 칸을 쓴다.
+   * 보이는데 메뉴는 다른 카드의 것"이 생기지 않는다. `selectedCard`는 그중 **지금
+   * 초점**(마지막에 누른 카드)이고 폴더 카드도 이 칸을 쓴다.
    * 폴더는 다중 선택 대상이 아니다 — 이동·삭제의 뜻이 맵과 달라 섞이면 메뉴가
    * 모호해진다. 최근 항목 트레이 카드도 제외(원래 메뉴 없는 바로가기, #345).
    */
@@ -364,6 +373,7 @@ export function initialHomeState(): HomeState {
     }, {}),
 
     selectedCard: null,
+    selectAnchor: null,
     selectedCards: [],
     selectMode: false,
     confirmDeleteMulti: null,

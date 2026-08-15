@@ -84,7 +84,7 @@ const SEARCH_DEBOUNCE_MS = 180;
  * 옮긴 카드는 지금 보고 있는 목록에서 사라지고 지운 카드는 없어지므로, 선택만
  * 남으면 화면에 없는 것을 고르고 있는 셈이다. 모바일 선택 모드도 함께 나간다.
  */
-const clearSelection = { selectedCards: [] as string[], selectedCard: null, selectMode: false };
+const clearSelection = { selectedCards: [] as string[], selectedCard: null, selectAnchor: null, selectMode: false };
 
 export function useHomeController() {
   // 최근 기록은 동기(localStorage)로 초기 상태에 바로 싣는다 — 마운트 이펙트로
@@ -340,7 +340,7 @@ export function useHomeController() {
         // 선택 바(`.mf-sel-bar`)도 같은 이유로 예외다 — 그 안의 ⋯·전체 선택을 누르는
         // mousedown이 선택을 비우면 버튼이 누른 순간 대상을 잃는다.
         if ((prev.selectedCard || prev.selectedCards.length) && !closest('.map-card') && !closest('.mf-home-ctx') && !closest('.mf-sel-bar')) {
-          next = { ...next, selectedCard: null, selectedCards: [], selectMode: false };
+          next = { ...next, selectedCard: null, selectAnchor: null, selectedCards: [], selectMode: false };
         }
         if (prev.settingsOpen && !closest('.settings-pop,.settings-btn')) next = { ...next, settingsOpen: false };
         return next;
@@ -365,7 +365,7 @@ export function useHomeController() {
         .filter(Boolean);
       if (!keys.length) return;
       e.preventDefault();
-      setState((prev) => ({ ...prev, selectedCards: keys, selectedCard: keys[keys.length - 1] ?? null }));
+      setState((prev) => ({ ...prev, selectedCards: keys, selectedCard: keys[keys.length - 1] ?? null, selectAnchor: keys[0] ?? null }));
     };
     window.addEventListener('keydown', onKeyDown);
 
@@ -1896,33 +1896,38 @@ export function useHomeController() {
    */
   const selectCard = (key: string | null, opts?: { additive?: boolean; range?: boolean }) => {
     if (!key) {
-      patch({ selectedCard: null, selectedCards: [] });
+      patch({ selectedCard: null, selectAnchor: null, selectedCards: [] });
       return;
     }
     // 폴더 카드는 다중 선택 대상이 아니다 — 고르면 맵 선택은 비운다.
     if (key.startsWith(FOLDER_CARD_PREFIX)) {
-      patch({ selectedCard: key, selectedCards: [] });
+      patch({ selectedCard: key, selectAnchor: null, selectedCards: [] });
       return;
     }
-    if (opts?.range && state.selectedCard && !state.selectedCard.startsWith(FOLDER_CARD_PREFIX)) {
+    // Shift 범위 — 기준은 **앵커**다(`selectedCard`가 아니라). 이어서 Shift+클릭할
+    // 때마다 끝점이 앵커가 되면 C → B → A에서 마지막 범위가 B..A가 되어 C가
+    // 빠진다(제보). 앵커는 다음 평범한/토글 클릭까지 제자리에 있는다.
+    const anchor = state.selectAnchor ?? state.selectedCard;
+    if (opts?.range && anchor && !anchor.startsWith(FOLDER_CARD_PREFIX)) {
       const order = visibleMapKeys();
-      const a = order.indexOf(state.selectedCard);
+      const a = order.indexOf(anchor);
       const b = order.indexOf(key);
       if (a >= 0 && b >= 0) {
         const [lo, hi] = a <= b ? [a, b] : [b, a];
-        patch({ selectedCards: order.slice(lo, hi + 1), selectedCard: key });
+        patch({ selectedCards: order.slice(lo, hi + 1), selectedCard: key, selectAnchor: anchor });
         return;
       }
     }
     if (opts?.additive) {
       const has = state.selectedCards.includes(key);
       const next = has ? state.selectedCards.filter((k) => k !== key) : [...state.selectedCards, key];
-      // 앵커(Shift 범위의 기준)는 **선택에 남아 있는 카드**여야 한다 — 방금 뺀
-      // 카드를 앵커로 두면 그다음 Shift+클릭이 그 카드 하나만 고른다.
-      patch({ selectedCards: next, selectedCard: has ? (next[next.length - 1] ?? null) : key });
+      // 앵커는 **선택에 남아 있는 카드**여야 한다 — 방금 뺀 카드를 앵커로 두면
+      // 그다음 Shift+클릭이 그 카드 하나만 고른다.
+      const focus = has ? (next[next.length - 1] ?? null) : key;
+      patch({ selectedCards: next, selectedCard: focus, selectAnchor: focus });
       return;
     }
-    patch({ selectedCard: key, selectedCards: [key] });
+    patch({ selectedCard: key, selectAnchor: key, selectedCards: [key] });
   };
 
   /**
@@ -1931,10 +1936,10 @@ export function useHomeController() {
    * 터치에는 수정 키가 없어 Ctrl/Shift 관례를 쓸 수 없다. 대신 모드가 켜져 있는
    * 동안 탭이 곧 토글이고(`toggleCardSelected`), 더블탭 열기는 꺼진다.
    */
-  const enterSelectMode = (key: string) => patch({ selectMode: true, selectedCards: [key], selectedCard: key });
+  const enterSelectMode = (key: string) => patch({ selectMode: true, selectedCards: [key], selectedCard: key, selectAnchor: key });
 
   /** ✕ / 배경 탭 — 모드 종료 + 선택 비움. */
-  const exitSelectMode = () => patch({ selectMode: false, selectedCards: [], selectedCard: null });
+  const exitSelectMode = () => patch({ selectMode: false, selectedCards: [], selectedCard: null, selectAnchor: null });
 
   /**
    * 선택 모드 안의 탭 = 체크 토글. 마지막 하나를 빼서 0개가 되면 모드도 함께
@@ -1947,7 +1952,8 @@ export function useHomeController() {
       exitSelectMode();
       return;
     }
-    patch({ selectedCards: next, selectedCard: has ? (next[next.length - 1] ?? null) : key });
+    const focus = has ? (next[next.length - 1] ?? null) : key;
+    patch({ selectedCards: next, selectedCard: focus, selectAnchor: focus });
   };
 
   /** 지금 화면에 그려진 맵 카드의 key — DOM 순서 그대로(최근 트레이는 제외). */
@@ -1960,7 +1966,18 @@ export function useHomeController() {
   const selectAllCards = () => {
     const keys = visibleMapKeys();
     if (!keys.length) return;
-    patch({ selectedCards: keys, selectedCard: keys[keys.length - 1] ?? null });
+    patch({ selectedCards: keys, selectedCard: keys[keys.length - 1] ?? null, selectAnchor: keys[0] ?? null });
+  };
+
+  /**
+   * 마퀴(드래그 사각형) 선택 — 빈 자리에서 끌어 카드들을 한 번에 고른다(요청).
+   *
+   * 끄는 동안 매 이동마다 불리므로 **교체**로 반영한다(누적이 아니라). 수정 키를
+   * 쥔 채 시작했으면 `base`(시작 시점의 선택)에 더한다 — 탐색기와 같은 관례.
+   */
+  const marqueeSelect = (keys: string[], base?: string[]) => {
+    const merged = base?.length ? [...base, ...keys.filter((k) => !base.includes(k))] : keys;
+    patch({ selectedCards: merged, selectedCard: merged[merged.length - 1] ?? null, selectAnchor: merged[0] ?? null });
   };
 
   /**
@@ -2094,6 +2111,7 @@ export function useHomeController() {
     moveMapsToSpace,
     askDeleteMany,
     selectAllCards,
+    marqueeSelect,
     enterSelectMode,
     exitSelectMode,
     toggleCardSelected,

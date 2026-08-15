@@ -3935,6 +3935,14 @@ describe('최근 트레이 미리보기 프리페치', () => {
   });
 });
 
+/** jsdom엔 PointerEvent가 없다 — MouseEvent를 pointer 이름으로 던진다(에디터 테스트와 같은 처방). */
+function firePointer(target: Element | Window, type: 'pointerdown' | 'pointermove' | 'pointerup', init: { clientX?: number; clientY?: number }): void {
+  const ev = new MouseEvent(type, { bubbles: true, cancelable: true, clientX: init.clientX ?? 0, clientY: init.clientY ?? 0 });
+  Object.defineProperty(ev, 'pointerType', { value: 'mouse', configurable: true });
+  Object.defineProperty(ev, 'pointerId', { value: 1, configurable: true });
+  fireEvent(target as Element, ev);
+}
+
 describe('홈 카드 다중 선택', () => {
   /** 맵 셋이 있는 홈 — 카드 키(`data-card-key`) 순서가 곧 화면 순서다. */
   const seedThree = () => {
@@ -3980,6 +3988,71 @@ describe('홈 카드 다중 선택', () => {
 
     // 수정 키 클릭은 **여는 동작이 아니다** — 에디터로 넘어가지 않았다.
     expect(screen.queryByText('EDITOR_PLACEHOLDER')).toBeNull();
+  });
+
+  it('Shift+클릭을 이어서 해도 앵커가 움직이지 않는다 — C → B → A에서 C가 빠지지 않는다(제보)', async () => {
+    seedThree();
+    const { container } = renderHomeWithDocStore([]);
+    await waitFor(() => expect(keys(container)).toHaveLength(3));
+    const [kA, kB, kC] = keys(container);
+    const card = (k: string) => container.querySelector(`[data-card-key="${k}"]`) as HTMLElement;
+
+    // C를 고르고(앵커=C) B → A로 이어서 Shift+클릭.
+    fireEvent.click(card(kC!));
+    fireEvent.click(card(kB!), { shiftKey: true });
+    expect(selectedKeys(container).sort()).toEqual([kB, kC].sort());
+
+    // 수리 전: 앵커가 B로 옮겨 가 범위가 B..A가 되고 **C가 빠졌다**.
+    fireEvent.click(card(kA!), { shiftKey: true });
+    expect(selectedKeys(container).sort()).toEqual([kA, kB, kC].sort());
+
+    // 평범한 클릭은 앵커를 다시 세운다 — 그다음 Shift는 거기서부터.
+    fireEvent.click(card(kB!));
+    fireEvent.click(card(kC!), { shiftKey: true });
+    expect(selectedKeys(container).sort()).toEqual([kB, kC].sort());
+  });
+
+  it('빈 자리에서 끌면 사각형으로 여러 장을 고른다(요청)', async () => {
+    seedThree();
+    const { container } = renderHomeWithDocStore([]);
+    await waitFor(() => expect(keys(container)).toHaveLength(3));
+    const [kA, kB] = keys(container);
+
+    // jsdom은 레이아웃을 재지 않는다 — 카드 사각형을 심어 준다(에디터 드래그 테스트와 같은 처방).
+    const put = (k: string, left: number, top: number) => {
+      const el = container.querySelector(`[data-card-key="${k}"]`) as HTMLElement;
+      el.getBoundingClientRect = () =>
+        ({ left, top, right: left + 100, bottom: top + 60, width: 100, height: 60, x: left, y: top, toJSON: () => ({}) }) as DOMRect;
+    };
+    put(kA!, 0, 0);
+    put(kB!, 120, 0);
+    put(keys(container)[2]!, 400, 400);
+
+    const main = container.querySelector('main') as HTMLElement;
+    firePointer(main, 'pointerdown', { clientX: 5, clientY: 200 });
+    firePointer(window, 'pointermove', { clientX: 200, clientY: 210 });
+    // 문턱(5px)을 넘긴 뒤라야 사각형이 뜬다.
+    await waitFor(() => expect(container.querySelector('[data-marquee]')).toBeTruthy());
+    firePointer(window, 'pointermove', { clientX: 230, clientY: 10 });
+    await waitFor(() => expect(selectedKeys(container).sort()).toEqual([kA, kB].sort()));
+
+    firePointer(window, 'pointerup', {});
+    // 사각형은 사라지고 선택은 남는다.
+    await waitFor(() => expect(container.querySelector('[data-marquee]')).toBeNull());
+    expect(selectedKeys(container).sort()).toEqual([kA, kB].sort());
+  });
+
+  it('카드 위에서 시작한 드래그는 마퀴가 아니다 — 카드 드래그(폴더로 옮기기)를 지킨다', async () => {
+    seedThree();
+    const { container } = renderHomeWithDocStore([]);
+    await waitFor(() => expect(keys(container)).toHaveLength(3));
+    const [kA] = keys(container);
+    const card = container.querySelector(`[data-card-key="${kA}"]`) as HTMLElement;
+
+    firePointer(card, 'pointerdown', { clientX: 10, clientY: 10 });
+    firePointer(window, 'pointermove', { clientX: 200, clientY: 200 });
+    expect(container.querySelector('[data-marquee]')).toBeNull();
+    firePointer(window, 'pointerup', {});
   });
 
   it('여러 장을 고르고 우클릭하면 일괄 메뉴가 뜬다 — 즐겨찾기·이름 변경은 없다', async () => {

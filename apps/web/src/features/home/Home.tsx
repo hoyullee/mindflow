@@ -30,6 +30,7 @@ import { InstallHint } from '../../pwa/InstallHint';
 import { useInstallHint } from '../../pwa/installHint';
 import { OfflineBar } from '../../components/OfflineBar';
 import { useOnline } from '../../hooks/useOnline';
+import { useMarqueeSelect } from './marquee';
 
 /**
  * React port of Home.dc.html — the map dashboard. State/behavior lives in
@@ -53,6 +54,13 @@ export function Home() {
   // 지금 테마의 색을 만들어 넘긴다 — 다크에서도 홈과 같은 면·글자색이 된다.
   const modalTheme = useMemo(() => homeModalTheme(state.theme), [state.theme]);
   const isMobile = useIsMobile();
+  // 빈 자리에서 끌어 카드를 한 번에 고른다(요청) — 마우스에서만. 터치에는 길게
+  // 누르기(선택 모드)가 이미 있고, 손가락 드래그는 목록 스크롤이다.
+  const marquee = useMarqueeSelect({
+    onSelect: controller.marqueeSelect,
+    currentSelection: () => controller.state.selectedCards,
+    disabled: isMobile,
+  });
   const installHint = useInstallHint(isMobile);
   const online = useOnline();
   const [navOpen, setNavOpen] = useState(false);
@@ -105,6 +113,7 @@ export function Home() {
           whole grid/toolbar left on devices with classic (space-taking) scrollbars.
           It's a no-op with overlay scrollbars (mobile), where there's no shift anyway. */}
       <main
+        onPointerDown={marquee.onPointerDown}
         onContextMenu={(e) => {
           // 빈 자리 우클릭 = "새로 만들기 · 새 폴더 · 가져오기 · 설정"(요청).
           // 카드·폴더는 자기 메뉴를 열고 전파를 끊으므로 여기까지 오지 않고,
@@ -130,6 +139,26 @@ export function Home() {
         <Toolbar state={state} view={view} controller={controller} isMobile={isMobile} onOpenNav={() => setNavOpen(true)} />
         {view.searchQuery ? <SearchResults view={view} controller={controller} /> : <MapGrid view={view} controller={controller} />}
       </main>
+
+      {/* 마퀴 — 화면 좌표라 `position: fixed`. 포인터를 가로채면 그 아래 카드가
+          hover·drop 대상을 잃으므로 `pointer-events: none`. */}
+      {marquee.rect && (
+        <div
+          data-marquee
+          style={{
+            position: 'fixed',
+            left: marquee.rect.x,
+            top: marquee.rect.y,
+            width: marquee.rect.w,
+            height: marquee.rect.h,
+            border: '1px solid var(--mf-accent)',
+            background: 'rgba(var(--mf-accent-rgb), .10)',
+            borderRadius: 4,
+            pointerEvents: 'none',
+            zIndex: 60,
+          }}
+        />
+      )}
 
       <AuthModal state={state} controller={controller} />
       <AccountSettingsModal state={state} controller={controller} />

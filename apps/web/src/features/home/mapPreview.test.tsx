@@ -461,6 +461,41 @@ describe('realPreview — 칸반(열·카드)', () => {
     expect(texts).toEqual(['할 일', '첫째', '둘째', '완료', '끝난 것']);
   });
 
+  it('에디터와 같은 어휘로 그린다 — 열 색 점·진행 바·분류 배지·열 배경(제보)', () => {
+    const raw = JSON.stringify({
+      v: 1,
+      nodes: {},
+      floats: [],
+      lines: [],
+      zones: [],
+      layoutMode: 'right',
+      themeKey: 'white',
+      kind: 'kanban',
+      columns: [
+        { id: 'c1', title: '할 일' },
+        { id: 'c2', title: '완료', color: '#8fb257', bg: '#edf4fc' },
+      ],
+      tags: [{ id: 't1', name: '개발', color: '#3f8fd0' }],
+      cards: [
+        { id: 'k1', col: 'c1', pos: 0, text: '첫 카드', tag: '개발' },
+        { id: 'k2', col: 'c2', pos: 0, text: '끝난 것' },
+      ],
+    });
+    const { container } = render(realPreview(raw, '#f0663f')!);
+
+    // 열 머리의 색 점 — 지정한 색이 그대로.
+    const dots = Array.from(container.querySelectorAll('circle')).map((c) => c.getAttribute('fill'));
+    expect(dots).toContain('#8fb257');
+    // 열 배경 — 사용자가 고른 색(`col.bg`)을 따른다.
+    const fills = Array.from(container.querySelectorAll('rect')).map((r) => r.getAttribute('fill'));
+    expect(fills).toContain('#edf4fc');
+    // 진행 바 구간 — 완료 열의 색으로 한 칸(첫 열은 빈 트랙).
+    expect(fills.filter((f) => f === '#8fb257')).not.toHaveLength(0);
+    // 분류 배지 — 이름이 글자로 그려진다.
+    const texts = Array.from(container.querySelectorAll('svg text')).map((t) => t.textContent);
+    expect(texts).toContain('개발');
+  });
+
   it('열이 하나도 없으면 null — 카드가 폴백 삽화로 떨어진다', () => {
     const raw = JSON.stringify({ v: 1, nodes: {}, floats: [], lines: [], zones: [], layoutMode: 'right', themeKey: 'white', kind: 'kanban', columns: [], cards: [] });
     expect(realPreview(raw, '#f0663f')).toBeNull();

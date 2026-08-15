@@ -6,6 +6,8 @@ import { HL_OPACITY, isHighlighter } from '../editor/boardTools';
 import { CanvasTextMeasurer, computeMetrics, floatPadLeft, measureFloatHeight } from '../editor/metrics';
 import type { TextMeasurer } from '../editor/metrics';
 import { hexA } from './storage';
+import { UI_THEME } from '../editor/theme';
+import { boardProgress, columnBg, columnColor, tagColor, tagInk } from '../editor/kanbanMeta';
 
 // Match the editor EXACTLY: size preview node boxes with the same canvas text
 // measurement (`computeMetrics` + `CanvasTextMeasurer`) the editor uses, instead
@@ -308,8 +310,9 @@ interface PreviewDoc {
   zones?: DocZone[];
   strokes?: { id: string; pts: number[]; color: string; w: number; hl?: boolean }[];
   kind?: string;
-  columns?: { id: string; title: string }[];
-  cards?: { id: string; col: string; pos: number; text: string; bg?: string | null }[];
+  columns?: { id: string; title: string; color?: string | null; bg?: string | null }[];
+  cards?: { id: string; col: string; pos: number; text: string; bg?: string | null; tag?: string }[];
+  tags?: { id: string; name: string; color?: string | null }[];
 }
 
 /** Saved docs persist layout-derived node x/y as `0`: the React editor keeps
@@ -381,10 +384,9 @@ function buildPreview(rawDoc: string, hueFallback: string): JSX.Element | null {
   if (!d || !d.nodes) return null;
   // 칸반은 트리도 좌표도 없다 — 열·카드를 그리는 전용 렌더로 간다(열이 하나도
   // 없으면 null → 카드가 폴백 삽화 `miniKanbanPreview`로 떨어진다).
-  if (d.kind === 'kanban') {
-    const TH = (d.themeKey && THEME_PAL[d.themeKey]) || THEME_PAL.coral!;
-    return kanbanPreview(d, TH.accent);
-  }
+  // 칸반 화면은 캔버스가 아니라 크롬이라 에디터도 **UI 테마**(고정 팔레트)로
+  // 그린다 — 썸네일도 같은 팔레트를 써야 카드와 화면이 같은 색으로 보인다.
+  if (d.kind === 'kanban') return kanbanPreview(d);
   // Editor-identical node box sizing: `computeMetrics` (real canvas text
   // measurement). The layout pass records each node's box into `metricsById` so
   // the DRAWN box is exactly the box the layout positioned (see `dim`).
@@ -861,12 +863,19 @@ const KB_COL_W = 96;
 const KB_GAP = 10;
 const KB_PAD = 9;
 const KB_H = 150;
-const KB_CARD_H = 24;
-const KB_CARD_GAP = 6;
-/** 열이 시작되는 높이 — 위쪽은 카드 우상단의 '칸반 보드' 배지 자리로 비워 둔다
+const KB_CARD_GAP = 5;
+/** 카드 높이 — 분류 배지가 있으면 한 줄이 더 붙는다(에디터와 같은 구성). */
+const KB_CARD_H = 22;
+const KB_CARD_TAG_H = 31;
+const KB_CARD_GAP_BOTTOM = 10;
+/** 열이 시작되는 높이 — 위쪽은 진행 바와, 카드 우상단의 '칸반 보드' 배지 자리다
  * (그러지 않으면 배지가 마지막 열의 제목을 덮는다). */
-const KB_TOP = 26;
-const KB_CARDS_TOP = KB_TOP + 25;
+const KB_TOP = 24;
+const KB_CARDS_TOP = KB_TOP + 22;
+/** 진행 바 — 에디터 보드 머리의 그 줄(열 색 구간). 썸네일에서 "칸반"임을 가장
+ * 먼저 알리는 표식이라 열보다 위에 그대로 둔다. */
+const KB_BAR_Y = 10;
+const KB_BAR_H = 4;
 
 /** 한 줄에 들어갈 만큼만 남기고 뒤를 …로 접는다(실측 폭 기준). */
 function kbClip(text: string, maxW: number, font: string): string {
@@ -883,42 +892,86 @@ function kbClip(text: string, maxW: number, font: string): string {
   return lo > 0 ? `${one.slice(0, lo)}…` : '…';
 }
 
-function kanbanPreview(d: PreviewDoc, accent: string): JSX.Element | null {
+function kanbanPreview(d: PreviewDoc): JSX.Element | null {
   const columns = d.columns ?? [];
   const cards = d.cards ?? [];
   if (!columns.length) return null;
+  const th = UI_THEME;
   const W = KB_PAD * 2 + columns.length * KB_COL_W + (columns.length - 1) * KB_GAP;
   const innerW = KB_COL_W - 16;
   const titleFont = '700 11px Pretendard, system-ui, sans-serif';
-  const cardFont = '500 10px Pretendard, system-ui, sans-serif';
-  // 열 안에 그릴 수 있는 카드 수 — 넘치면 마지막 줄을 "+N"으로 쓴다.
-  const room = Math.max(1, Math.floor((KB_H - KB_CARDS_TOP - KB_PAD) / (KB_CARD_H + KB_CARD_GAP)));
+  const cardFont = '600 10px Pretendard, system-ui, sans-serif';
+  const tagFont = '700 8px Pretendard, system-ui, sans-serif';
+  const bottom = KB_H - KB_PAD;
+  const barW = W - KB_PAD * 2;
+  const progress = boardProgress(columns, cards, th.palette);
+  let segX = KB_PAD;
+
   return (
-    <svg data-kanban-preview viewBox={`0 0 ${W} ${KB_H}`} width="92%" height="92%" preserveAspectRatio="xMidYMid meet" style={{ display: 'block' }}>
+    <svg data-kanban-preview viewBox={`0 0 ${W} ${KB_H}`} width="94%" height="94%" preserveAspectRatio="xMidYMid meet" style={{ display: 'block' }}>
+      {/* 진행 바 — 완료부터 왼쪽에서 차고 첫 열은 빈 트랙(에디터와 같은 규칙). */}
+      <rect x={KB_PAD} y={KB_BAR_Y} width={barW} height={KB_BAR_H} rx={KB_BAR_H / 2} fill={th.border} />
+      {progress.segments.map((seg) => {
+        const w = (seg.pct / 100) * barW;
+        const el = <rect key={seg.id} x={segX} y={KB_BAR_Y} width={Math.max(0, w)} height={KB_BAR_H} fill={seg.color} />;
+        segX += w;
+        return el;
+      })}
+
       {columns.map((col, ci) => {
         const x = KB_PAD + ci * (KB_COL_W + KB_GAP);
         const list = cardsInColumn(cards, col.id);
-        const shown = list.length > room ? list.slice(0, room - 1) : list;
-        const hidden = list.length - shown.length;
+        // 카드 높이가 제각각이라(분류 배지 유무) 들어가는 만큼 쌓고 나머지를 접는다.
+        const laid: { card: (typeof list)[number]; y: number; h: number }[] = [];
+        let cy = KB_CARDS_TOP;
+        for (const c of list) {
+          const h = c.tag ? KB_CARD_TAG_H : KB_CARD_H;
+          if (cy + h > bottom - KB_CARD_GAP_BOTTOM) break;
+          laid.push({ card: c, y: cy, h });
+          cy += h + KB_CARD_GAP;
+        }
+        const hidden = list.length - laid.length;
         return (
           <g key={col.id}>
-            <rect x={x} y={KB_TOP} width={KB_COL_W} height={KB_H - KB_TOP - KB_PAD} rx={8} fill={hexA(accent, 0.06)} stroke={hexA(accent, 0.3)} strokeWidth={1.2} />
-            <text x={x + 8} y={KB_TOP + 15} fontSize={11} fontWeight={700} fill={hexA(accent, 0.95)} fontFamily="Pretendard, system-ui, sans-serif">
-              {kbClip(col.title, innerW, titleFont)}
+            {/* 열 — 배경은 사용자가 고른 색(`col.bg`)이 있으면 그것(에디터와 동일). */}
+            <rect x={x} y={KB_TOP} width={KB_COL_W} height={bottom - KB_TOP} rx={8} fill={columnBg(col, th)} stroke={th.border} strokeWidth={1} />
+            <circle cx={x + 11} cy={KB_TOP + 12} r={3} fill={columnColor(col, ci, th.palette)} />
+            <text x={x + 18} y={KB_TOP + 12} fontSize={10.5} fontWeight={700} fill={th.text} dominantBaseline="middle" fontFamily="Pretendard, system-ui, sans-serif">
+              {kbClip(col.title, innerW - 12, titleFont)}
             </text>
-            {shown.map((c, i) => {
-              const cy = KB_CARDS_TOP + i * (KB_CARD_H + KB_CARD_GAP);
+
+            {laid.map(({ card: c, y, h }) => {
+              const tagCol = c.tag ? tagColor(c.tag, th.palette, d.tags ?? []) : null;
+              const tagText = c.tag ? kbClip(c.tag, innerW - 12, tagFont) : '';
+              const tagW = tagText ? Math.min(innerW, previewMeasurer.measure(tagText, tagFont) + 9) : 0;
               return (
                 <g key={c.id}>
-                  <rect x={x + 8} y={cy} width={innerW} height={KB_CARD_H} rx={5} fill={c.bg || '#fff'} stroke={hexA(accent, 0.34)} strokeWidth={1.1} />
-                  <text x={x + 14} y={cy + KB_CARD_H / 2} fontSize={10} fill="#2f2a26" dominantBaseline="middle" fontFamily="Pretendard, system-ui, sans-serif">
-                    {kbClip(c.text, innerW - 12, cardFont)}
+                  <rect x={x + 8} y={y} width={innerW} height={h} rx={5} fill={c.bg || th.panel} stroke={th.border} strokeWidth={1} />
+                  {tagCol && (
+                    <>
+                      <rect x={x + 13} y={y + 5} width={tagW} height={10} rx={3} fill={hexA(tagCol, 0.16)} />
+                      <text x={x + 17.5} y={y + 10.5} fontSize={8} fontWeight={700} fill={tagInk(tagCol, th.text)} dominantBaseline="middle" fontFamily="Pretendard, system-ui, sans-serif">
+                        {tagText}
+                      </text>
+                    </>
+                  )}
+                  <text
+                    x={x + 13}
+                    y={tagCol ? y + 23 : y + h / 2}
+                    fontSize={10}
+                    fontWeight={600}
+                    fill={th.text}
+                    dominantBaseline="middle"
+                    fontFamily="Pretendard, system-ui, sans-serif"
+                  >
+                    {kbClip(c.text, innerW - 10, cardFont)}
                   </text>
                 </g>
               );
             })}
+
             {hidden > 0 && (
-              <text x={x + 14} y={KB_CARDS_TOP + shown.length * (KB_CARD_H + KB_CARD_GAP) + 11} fontSize={10} fontWeight={600} fill={hexA(accent, 0.7)} fontFamily="Pretendard, system-ui, sans-serif">
+              <text x={x + 13} y={bottom - 5} fontSize={9.5} fontWeight={600} fill={th.subtext} fontFamily="Pretendard, system-ui, sans-serif">
                 {`+${hidden}`}
               </text>
             )}
