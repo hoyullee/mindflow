@@ -37,10 +37,11 @@ describe('PresenceBar', () => {
     expect(container.firstChild).toBeNull();
   });
 
-  it('접속자가 있으면 아바타와 인원수를 보여 준다', () => {
-    render(<PresenceBar controller={stub({ peers: [peer('차분한 수달')] })} />);
-    expect(screen.getByText('1명 접속 중')).toBeTruthy();
-    expect(screen.getByTitle('차분한 수달')).toBeTruthy();
+  // 접속자 **얼굴**은 상단 바(`PresenceAvatars`, 디자인 원본)로 옮겼다 — 이 배지는
+  // 얼굴만으로는 알 수 없는 두 가지(끊김·보안 경고)만 맡는다.
+  it('연결이 정상이면 접속자가 있어도 배지를 띄우지 않는다 (얼굴은 상단 바가 그린다)', () => {
+    const { container } = render(<PresenceBar controller={stub({ peers: [peer('차분한 수달')] })} />);
+    expect(container.firstChild).toBeNull();
   });
 
   it('공유된 맵에서 전송이 끊기면 알린다 — 조용히 죽지 않는다', () => {
@@ -76,7 +77,7 @@ describe('PresenceBar', () => {
 
   it('인증되지 않은 공개 채널로 폴백했으면 협업은 그대로 두고 경고만 덧붙인다', () => {
     render(<PresenceBar controller={stub({ peers: [peer('차분한 수달')], collabStatus: 'connected-insecure' })} />);
-    expect(screen.getByText('1명 접속 중')).toBeTruthy(); // 협업은 막지 않는다
+    expect(screen.getByText('공개 채널로 연결됨')).toBeTruthy(); // 협업은 막지 않는다
     expect(screen.getByLabelText('보안 경고')).toBeTruthy();
   });
 

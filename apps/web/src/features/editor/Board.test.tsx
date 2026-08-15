@@ -1852,6 +1852,25 @@ describe('화이트보드 디자인 이식', () => {
     expect(within(pop).getByLabelText(`펜 색 ${PEN_COLORS[0]}`)).toBeTruthy();
   });
 
+  it('펜·형광펜 팔레트가 여덟 색이고, 폰에서는 색 묶음이 가로로 스크롤된다(요청)', async () => {
+    expect(PEN_COLORS).toHaveLength(8);
+    expect(HL_COLORS).toHaveLength(8);
+    mockMatchMedia(true); // 폰
+    localStorage.setItem('mindflow_doc_bdz4', JSON.stringify(BOARD));
+    renderEditor('/editor?map=bdz4&title=보드');
+    fireEvent.click(await screen.findByLabelText(/^펜/));
+    const strip = await waitFor(() => {
+      const el = document.querySelector('[data-board-toolbar] .mf-noscrollbar') as HTMLElement;
+      expect(el).toBeTruthy();
+      return el;
+    });
+    // 여덟 개가 다 들어 있고, 넘치면 스크롤한다(`.mf-ed-vp`의 touch-action: none을 되살린다).
+    expect(within(strip).getAllByLabelText(/^펜 색 /)).toHaveLength(8);
+    expect(strip.style.overflowX).toBe('auto');
+    expect(strip.style.touchAction).toBe('pan-x');
+    mockMatchMedia(false);
+  });
+
   it('메모에 복제·삭제 빠른 동작이 붙는다(평소엔 숨어 있다)', async () => {
     localStorage.setItem('mindflow_doc_bdz3', JSON.stringify(BOARD));
     const { container } = renderEditor('/editor?map=bdz3&title=보드');

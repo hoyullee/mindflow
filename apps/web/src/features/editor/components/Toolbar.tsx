@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState, type CSSProperties, type ReactNode, type RefObject } from 'react';
 import type { EditorController } from '../useEditorState';
+import { PresenceAvatars } from './PresenceAvatars';
 import { StyleMenu } from './StyleMenu';
 import { ExportMenu } from './ExportMenu';
 import { AnchoredMenu } from './AnchoredMenu';
@@ -186,6 +187,11 @@ export function Toolbar({ controller }: ToolbarProps) {
       )}
 
       <div style={{ flex: '1 1 auto' }} />
+
+      {/* 접속자 — 디자인 원본은 얼굴을 **상단 바 오른쪽 묶음 앞**에 겹쳐 세운다.
+          예전의 떠 있는 알약("N명 접속 중")보다 캔버스를 덜 가리고, 얼굴 수가
+          곧 사람 수다. 끊김·보안 경고는 여전히 `PresenceBar`가 맡는다. */}
+      <PresenceAvatars controller={controller} isMobile={isMobile} />
 
       {/* 맵 안 검색 — 바로 열리는 버튼(Ctrl/⌘+F와 동일). 모바일에서도 남긴다:
           긴 맵에서 찾기는 터치 사용자가 더 아쉬운 기능이고 아이콘 하나 폭이다.

@@ -167,7 +167,7 @@ describe('협업 중 저장 책임', () => {
     save.mockClear();
 
     const peer = await joinPeer(docId);
-    await waitFor(() => expect(screen.getByText(/명 접속 중/)).toBeTruthy());
+    await waitFor(() => expect(screen.getByLabelText(/명 접속 중/)).toBeTruthy());
     peerAddsNode(peer.ydoc, 'remoteChild', '원격 노드');
     await waitFor(() => expect(within(getViewport(container)).getByText('원격 노드')).toBeTruthy());
     expect(save).not.toHaveBeenCalled();
@@ -274,7 +274,7 @@ describe('협업 중 저장 충돌 해석', () => {
     await waitFor(() => expect(within(vp).getByText('리서치')).toBeTruthy());
 
     await joinPeer(docId);
-    await waitFor(() => expect(screen.getByText(/명 접속 중/)).toBeTruthy());
+    await waitFor(() => expect(screen.getByLabelText(/명 접속 중/)).toBeTruthy());
     save.mockClear();
 
     fireEvent.pointerDown(within(vp).getByText('리서치'), { button: 0, clientX: 10, clientY: 10 });

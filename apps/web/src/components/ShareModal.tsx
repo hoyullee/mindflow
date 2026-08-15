@@ -379,14 +379,15 @@ export function ShareModal({ open: shareOpen, docId, onClose: closeShare, readOn
     <div
       // dim 배경은 제자리 페이드만(mf-dim-in) — translateY가 있는 mf-fade를 쓰면
       // 배경 레이어가 통째로 슬라이드해 화면 상단에 빈 띠가 차오르는 게 보인다(제보).
-      style={{ position: 'fixed', inset: 0, background: 'rgba(30,20,14,.42)', backdropFilter: 'blur(2px)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 240, animation: 'mf-dim-in .18s ease-out' }}
+      style={{ position: 'fixed', inset: 0, background: 'rgba(46,42,38,.34)', backdropFilter: 'blur(3px)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 240, animation: 'mf-dim-in .18s ease-out' }}
       onClick={closeShare}
     >
       <div
         role="dialog"
         aria-label="공유"
         onClick={(e) => e.stopPropagation()}
-        style={{ width: 420, maxWidth: 'calc(100vw - 32px)', background: th.panel, borderRadius: 16, boxShadow: '0 22px 60px rgba(0,0,0,.28)', padding: '22px 22px 18px', boxSizing: 'border-box', color: th.text }}
+        // 디자인 원본의 모달: 452폭 · 라운드 22 · 아래로 길게 깔리는 그늘.
+        style={{ width: 452, maxWidth: 'calc(100vw - 32px)', background: th.panel, borderRadius: 22, border: `1px solid ${th.border}`, boxShadow: '0 40px 90px -40px rgba(46,42,38,.7)', padding: '22px 22px 18px', boxSizing: 'border-box', color: th.text }}
       >
         {/* 권한 설명은 상시 문단이 아니라 "?"에 넣는다(요청) — 팝업을 여는 사람 대부분은
             이미 알고 있고, 두 줄이 매번 자리를 차지했다. */}
@@ -479,7 +480,7 @@ export function ShareModal({ open: shareOpen, docId, onClose: closeShare, readOn
             type="button"
             onClick={() => void invite()}
             disabled={busy}
-            style={{ height: 40, padding: '0 16px', border: 'none', borderRadius: 10, background: th.accent, color: th.accentInk, fontFamily: 'inherit', fontSize: 13.5, fontWeight: 700, cursor: busy ? 'default' : 'pointer', opacity: busy ? 0.6 : 1, flexShrink: 0 }}
+            style={{ height: 40, padding: '0 16px', border: 'none', borderRadius: 10, ...accentFill(th.accent), color: th.accentInk, fontFamily: 'inherit', fontSize: 13.5, fontWeight: 700, cursor: busy ? 'default' : 'pointer', opacity: busy ? 0.6 : 1, flexShrink: 0 }}
           >
             초대
           </button>
@@ -583,4 +584,17 @@ export function ShareModal({ open: shareOpen, docId, onClose: closeShare, readOn
       </div>
     </div>
   );
+}
+
+/** 강조(주 동작) 버튼의 면 — 디자인 원본의 세로 그라디언트 + 색 그림자.
+ * 에디터 `chrome.ts`와 같은 규칙이지만, 이 모달은 홈과 함께 쓰므로 테마 프롭의
+ * 강조색에서 직접 만든다(에디터 팔레트에 묶이지 않게). */
+function accentFill(accent: string): { background: string; boxShadow: string } {
+  const c = accent.replace('#', '');
+  const n = (i: number) => parseInt(c.substring(i, i + 2), 16);
+  const mix = (v: number, to: number, t: number) => Math.round(v + (to - v) * t);
+  const hex = (r: number, g: number, b: number) => `#${[r, g, b].map((x) => x.toString(16).padStart(2, '0')).join('')}`;
+  const top = hex(mix(n(0), 255, 0.08), mix(n(2), 255, 0.08), mix(n(4), 255, 0.08));
+  const bottom = hex(mix(n(0), 0, 0.06), mix(n(2), 0, 0.06), mix(n(4), 0, 0.06));
+  return { background: `linear-gradient(180deg,${top},${bottom})`, boxShadow: `0 10px 20px -12px rgba(${n(0)},${n(2)},${n(4)},.9)` };
 }

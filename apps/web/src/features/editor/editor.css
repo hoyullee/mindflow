@@ -355,3 +355,12 @@
     opacity: 1;
   }
 }
+
+/* 가로 스크롤 묶음(폰 도구 막대의 색 스와치) — 막대가 얇아 스크롤바가 들어갈
+   자리가 없다. 스크롤 자체는 그대로 두고 막대만 감춘다. */
+.mf-noscrollbar {
+  scrollbar-width: none;
+}
+.mf-noscrollbar::-webkit-scrollbar {
+  display: none;
+}
