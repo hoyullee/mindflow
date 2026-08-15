@@ -177,6 +177,8 @@ describe('칸반 에디터', () => {
 
     fireEvent.click(container.querySelector('[data-column-menu="c1"]')!);
     fireEvent.click(await waitFor(() => container.querySelector('[data-delete-column="c1"]') as HTMLElement));
+    // 열 삭제는 확인창을 한 번 지난다(요청) — 안의 카드가 함께 사라지기 때문.
+    fireEvent.click(await waitFor(() => container.querySelector('[data-confirm-delete]') as HTMLElement));
     fireEvent.keyDown(window, { key: 's', ctrlKey: true });
     await waitFor(() => {
       const d = saved('kb5');
@@ -1371,5 +1373,65 @@ describe('칸반 — 열 메뉴 구분(제보)', () => {
 
     // 지정 색이 없으면 '기본 색' 칸이 활성이다(무엇이 걸려 있는지 보인다).
     expect(swatch.style.border).toContain('2px');
+  });
+});
+
+describe('칸반 — 열 삭제 확인(요청)', () => {
+  beforeEach(() => {
+    localStorage.clear();
+    mockMatchMedia(false);
+    localStorage.setItem('mf_demo_session', JSON.stringify({ user: { id: 'u', email: 'me@example.com' } }));
+  });
+  afterEach(cleanup);
+
+  const openConfirm = async (container: HTMLElement, colId: string): Promise<HTMLElement> => {
+    fireEvent.click(container.querySelector(`[data-column-menu="${colId}"]`)!);
+    fireEvent.click(await waitFor(() => container.querySelector(`[data-delete-column="${colId}"]`) as HTMLElement));
+    return await waitFor(() => container.querySelector(`[data-confirm-delete-column="${colId}"]`) as HTMLElement);
+  };
+
+  it('메뉴에서 삭제를 눌러도 바로 지우지 않고 묻는다 — 취소하면 그대로', async () => {
+    localStorage.setItem('mindflow_doc_kd1', JSON.stringify(KANBAN));
+    const { container } = renderEditor('/editor?map=kd1&title=x');
+    await waitFor(() => expect(container.querySelectorAll('[data-kanban-column]')).toHaveLength(2));
+
+    const dialog = await openConfirm(container, 'c1');
+    // 아직 아무것도 사라지지 않았다.
+    expect(container.querySelectorAll('[data-kanban-column]')).toHaveLength(2);
+    // 무엇이 몇 장 사라지는지 밝힌다(c1에는 카드 둘).
+    expect(dialog.querySelector('[data-confirm-body]')?.textContent).toContain('카드 2장');
+
+    fireEvent.click(dialog.querySelector('[data-confirm-cancel]')!);
+    await waitFor(() => expect(container.querySelector('[data-confirm-delete-column="c1"]')).toBeNull());
+    expect(container.querySelectorAll('[data-kanban-column]')).toHaveLength(2);
+    expect(container.querySelectorAll('[data-kanban-card]')).toHaveLength(2);
+  });
+
+  it('확인하면 열과 그 안의 카드가 함께 사라진다 — undo 한 번으로 복구', async () => {
+    localStorage.setItem('mindflow_doc_kd2', JSON.stringify(KANBAN));
+    const { container } = renderEditor('/editor?map=kd2&title=x');
+    await waitFor(() => expect(container.querySelectorAll('[data-kanban-column]')).toHaveLength(2));
+
+    const dialog = await openConfirm(container, 'c1');
+    fireEvent.click(dialog.querySelector('[data-confirm-delete]')!);
+    await waitFor(() => expect(container.querySelectorAll('[data-kanban-column]')).toHaveLength(1));
+    expect(container.querySelectorAll('[data-kanban-card]')).toHaveLength(0);
+
+    fireEvent.keyDown(window, { key: 'z', ctrlKey: true });
+    await waitFor(() => expect(container.querySelectorAll('[data-kanban-column]')).toHaveLength(2));
+  });
+
+  it('Esc로 닫히고, 빈 열이면 문구가 달라진다', async () => {
+    localStorage.setItem('mindflow_doc_kd3', JSON.stringify(KANBAN));
+    const { container } = renderEditor('/editor?map=kd3&title=x');
+    await waitFor(() => expect(container.querySelectorAll('[data-kanban-column]')).toHaveLength(2));
+
+    // c2는 비어 있다.
+    const dialog = await openConfirm(container, 'c2');
+    expect(dialog.querySelector('[data-confirm-body]')?.textContent).toContain('카드가 없어요');
+
+    fireEvent.keyDown(window, { key: 'Escape' });
+    await waitFor(() => expect(container.querySelector('[data-confirm-delete-column="c2"]')).toBeNull());
+    expect(container.querySelectorAll('[data-kanban-column]')).toHaveLength(2);
   });
 });
