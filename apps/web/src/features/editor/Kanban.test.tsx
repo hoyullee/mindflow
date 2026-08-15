@@ -1336,3 +1336,40 @@ describe('칸반 — 후속(열 색·열 추가 길이·호버·시작일)', () 
     });
   });
 });
+
+describe('칸반 — 열 메뉴 구분(제보)', () => {
+  beforeEach(() => {
+    localStorage.clear();
+    mockMatchMedia(false);
+    localStorage.setItem('mf_demo_session', JSON.stringify({ user: { id: 'u', email: 'me@example.com' } }));
+  });
+  afterEach(cleanup);
+
+  it('이름 변경 · 열 색 · 삭제가 구분선과 구획 이름으로 갈린다', async () => {
+    localStorage.setItem('mindflow_doc_km1', JSON.stringify(KANBAN));
+    const { container } = renderEditor('/editor?map=km1&title=x');
+    await waitFor(() => expect(container.querySelectorAll('[data-kanban-column]')).toHaveLength(2));
+
+    fireEvent.click(container.querySelector('[data-column-menu="c1"]')!);
+    const pop = await waitFor(() => container.querySelector('[data-column-menu-pop="c1"]') as HTMLElement);
+
+    // 구획 이름과 구분선 둘 — [이름 변경] ── [열 색] ── [열 삭제]
+    expect(pop.textContent).toContain('열 색');
+    const dividers = Array.from(pop.children).filter((el) => (el as HTMLElement).style.height === '1px');
+    expect(dividers).toHaveLength(2);
+
+    // 순서: 이름 변경 → 구분선 → 색 판 → 구분선 → 삭제
+    const rename = pop.querySelector('[data-column-rename]') as HTMLElement;
+    const swatch = pop.querySelector('[data-column-color="default"]') as HTMLElement;
+    const del = pop.querySelector('[data-delete-column="c1"]') as HTMLElement;
+    expect(rename.compareDocumentPosition(swatch) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(swatch.compareDocumentPosition(del) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+
+    // 행에는 호버가 붙고, 삭제는 파괴적 동작 표시를 함께 쓴다.
+    expect(rename.classList.contains('mf-ed-btn')).toBe(true);
+    expect(del.classList.contains('mf-ed-danger')).toBe(true);
+
+    // 지정 색이 없으면 '기본 색' 칸이 활성이다(무엇이 걸려 있는지 보인다).
+    expect(swatch.style.border).toContain('2px');
+  });
+});

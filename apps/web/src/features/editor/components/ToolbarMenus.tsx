@@ -321,10 +321,10 @@ function TimelineIcon() {
 }
 
 /** Small uppercase section label inside a dropdown (used by `MoreMenu`). */
-function MenuSectionLabel({ theme: th, children }: { theme: Theme; children: ReactNode }) {
+export function MenuSectionLabel({ theme: th, children }: { theme: Theme; children: ReactNode }) {
   return <div style={{ fontSize: 10.5, fontWeight: 700, letterSpacing: '.04em', textTransform: 'uppercase', color: th.subtext, padding: '6px 10px 3px' }}>{children}</div>;
 }
-function MenuDivider({ theme: th }: { theme: Theme }) {
+export function MenuDivider({ theme: th }: { theme: Theme }) {
   return <div style={{ height: 1, background: th.border, margin: '5px 6px' }} />;
 }
 
