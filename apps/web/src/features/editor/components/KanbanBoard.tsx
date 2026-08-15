@@ -23,7 +23,7 @@ import { CommentIcon, MenuDivider, MenuSectionLabel } from './ToolbarMenus';
 import { RichSpan, linkInk } from '../richSpans';
 import { columnDropIndex, dropTargetAt, edgeScroll } from '../kanbanDrag';
 import type { ColumnHit, DropTarget } from '../kanbanDrag';
-import { EMPTY_FILTER, boardProgress, cardPasses, columnColor, dueLabel, dueTone, filterActive, initialOf, ownerLabel, ownerOptions, tagColor } from '../kanbanMeta';
+import { EMPTY_FILTER, boardProgress, cardPasses, columnColor, dueLabel, dueTone, filterActive, initialOf, ownerLabel, ownerOptions, tagColor, tagInk } from '../kanbanMeta';
 import type { CardFilter, KanbanView } from '../kanbanMeta';
 import { colorForSeed } from '../../../collab/identity';
 import { CardDetail } from './CardDetail';
@@ -836,6 +836,10 @@ function Column({
   const [confirming, setConfirming] = useState(false);
   const readOnly = controller.readOnly;
   const dot = columnColor(col, index, th.palette);
+  // 열 **안쪽** 구분선(머리 아래·바닥 위)은 바깥 테두리보다 한 톤 옅다
+  // (디자인 원본: 바깥 `#F0E6DC` / 안쪽 `#F2E8DF`) — 안쪽 선이 같은 굵기로
+  // 진하면 카드보다 칸막이가 먼저 눈에 들어온다.
+  const divider = mixHex(th.border, th.panel, 0.35);
   const visible = cards.filter((c) => c.id !== draggingId && cardPasses(c, query, filter));
   /** 그릴 차례 — 놓일 자리(점선 상자)를 카드 목록 사이에 끼운 것. */
   const rendered: ({ kind: 'card'; card: KanbanCard } | { kind: 'gap' })[] = visible.map((card) => ({ kind: 'card' as const, card }));
@@ -876,7 +880,7 @@ function Column({
       <header
         data-column-head={col.id}
         onPointerDown={(e) => onHeaderPointerDown(e, col)}
-        style={{ display: 'flex', alignItems: 'center', gap: 9, padding: '13px 13px 11px', borderBottom: `1px solid ${th.border}`, cursor: readOnly ? 'default' : 'grab', touchAction: 'pan-y' }}
+        style={{ display: 'flex', alignItems: 'center', gap: 9, padding: '13px 13px 11px', borderBottom: `1px solid ${divider}`, cursor: readOnly ? 'default' : 'grab', touchAction: 'pan-y' }}
       >
         <span data-column-dot={col.id} style={{ flex: '0 0 auto', width: 8, height: 8, borderRadius: 999, background: dot, display: 'block' }} />
         {renaming ? (
@@ -982,7 +986,7 @@ function Column({
           className="mf-ed-btn"
           data-add-card-foot={col.id}
           onClick={startCompose}
-          style={{ display: 'flex', alignItems: 'center', gap: 7, width: '100%', padding: '11px 13px', border: 0, borderTop: `1px solid ${th.border}`, background: 'transparent', fontSize: 13, fontWeight: 600, fontFamily: 'inherit', color: th.subtext, cursor: 'pointer', borderRadius: '0 0 16px 16px', textAlign: 'left', minHeight: isMobile ? 44 : undefined }}
+          style={{ display: 'flex', alignItems: 'center', gap: 7, width: '100%', padding: '11px 13px', border: 0, borderTop: `1px solid ${divider}`, background: 'transparent', fontSize: 13, fontWeight: 600, fontFamily: 'inherit', color: th.subtext, cursor: 'pointer', borderRadius: '0 0 16px 16px', textAlign: 'left', minHeight: isMobile ? 44 : undefined }}
         >
           <PlusIcon />
           카드 추가
@@ -1229,7 +1233,7 @@ export function CardFace({ card, theme: th, comments, tags, done }: { card: Kanb
 
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8, marginTop: 11 }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 10, fontSize: 11.5, color: th.subtext, minWidth: 0 }}>
-          <span data-card-due={card.id} style={{ display: 'inline-flex', alignItems: 'center', gap: 4, color: tone === 'over' ? URGENT : tone === 'soon' ? th.accent : th.subtext, fontWeight: tone === 'normal' ? 500 : 700 }}>
+          <span data-card-due={card.id} style={{ display: 'inline-flex', alignItems: 'center', gap: 4, color: tone === 'over' ? URGENT : tone === 'soon' ? th.accent : th.subtext, fontWeight: tone === 'normal' ? 400 : 600 }}>
             <CalendarGlyph />
             {card.due ? dueLabel(card.due) : '날짜 없음'}
           </span>
@@ -1324,7 +1328,7 @@ export function TagBadge({ name, theme: th, tags = [] }: { name: string; theme: 
   return (
     <span
       data-card-tag={name}
-      style={{ height: 20, padding: '0 8px', borderRadius: 6, background: hexA(c, 0.16), color: c, display: 'inline-flex', alignItems: 'center', fontSize: 10.5, fontWeight: 700, whiteSpace: 'nowrap' }}
+      style={{ height: 20, padding: '0 8px', borderRadius: 6, background: hexA(c, 0.16), color: tagInk(c, th.text), display: 'inline-flex', alignItems: 'center', fontSize: 10.5, fontWeight: 700, whiteSpace: 'nowrap' }}
     >
       {name}
     </span>

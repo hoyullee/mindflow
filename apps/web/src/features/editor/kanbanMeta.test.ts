@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { KanbanCard, KanbanColumn } from '@mindflow/mindmap-core';
-import { TIMELINE_DAYS, boardProgress, cardMatches, columnColor, dueLabel, dueTone, initialOf, ownerLabel, tagColor, timelineRange, timelineSpan } from './kanbanMeta';
+import { TIMELINE_DAYS, boardProgress, tagInk, cardMatches, columnColor, dueLabel, dueTone, initialOf, ownerLabel, tagColor, timelineRange, timelineSpan } from './kanbanMeta';
 
 const PAL = ['#a', '#b', '#c', '#d', '#e'];
 const col = (id: string, color?: string): KanbanColumn => ({ id, title: id, ...(color ? { color } : {}) });
@@ -122,5 +122,16 @@ describe('타임라인 — 시작일', () => {
 
   it('시작일이 기한보다 늦어도 두 날 사이를 그린다', () => {
     expect(timelineSpan({ start: '2026-08-17', due: '2026-08-15' }, days, today)).toEqual({ start: 4, end: 6, late: false });
+  });
+});
+
+describe('분류 배지 글자색', () => {
+  it('분류 색을 글자색 쪽으로 눌러 짙게 만든다 — 원색 그대로 쓰지 않는다', () => {
+    const ink = tagInk('#3f8fd0', '#33281f');
+    expect(ink).not.toBe('#3f8fd0');
+    // 같은 색조를 유지한 채 명도만 낮춘다(파랑은 여전히 파랑).
+    const at = (i: number): number => parseInt(ink.slice(i, i + 2), 16);
+    expect(at(5)).toBeGreaterThan(at(1)); // 파랑 성분이 여전히 가장 크다
+    expect(at(5)).toBeLessThan(0x8f); // 원색(0xd0)보다 어둡다
   });
 });

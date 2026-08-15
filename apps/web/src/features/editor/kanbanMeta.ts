@@ -8,6 +8,7 @@
 //  · 담당은 **공유 참가자**(0011)에서 고르고 이름은 스냅샷으로 카드에 남긴다.
 
 import type { KanbanCard, KanbanColumn, KanbanTag } from '@mindflow/mindmap-core';
+import { mixHex } from './theme';
 
 /** 문자열 → 안정적인 작은 정수(같은 이름은 언제나 같은 색). */
 function hashCode(s: string): number {
@@ -28,6 +29,20 @@ export function tagColor(name: string, palette: readonly string[], tags: readonl
   if (pick?.color) return pick.color;
   if (!palette.length) return '#888888';
   return palette[hashCode(name) % palette.length] as string;
+}
+
+/**
+ * 분류 배지의 **글자색** — 그 분류 색을 글자색 쪽으로 눌러 짙게 만든다.
+ *
+ * 디자인 원본은 분류 5종의 색쌍을 손으로 골랐고(예: 개발 `#EAF3F6` 배경에 `#3F6C7C`
+ * 글자) 글자 쪽은 언제나 **채도를 죽인 짙은 색**이다. 우리 분류는 사용자가 만드는
+ * 것이라 표를 둘 수 없어 이름에서 팔레트색을 뽑는데(`tagColor`), 그 원색을 10.5px
+ * 700 글자에 그대로 쓰면 배지가 튄다(제보). 같은 색조를 유지한 채 명도만 낮춰
+ * 원본 톤에 맞춘다 — 실측 `#3f8fd0` → `#3a6180`(원본 개발 `#3F6C7C`와 근접).
+ * 배경은 그대로 옅은 틴트라 색 구분은 그대로 읽힌다.
+ */
+export function tagInk(color: string, textColor: string): string {
+  return mixHex(color, textColor, 0.45);
 }
 
 /** 열 머리의 점 색 — 지정이 없으면 열 순서대로 팔레트에서(디자인의 단계별 색). */
