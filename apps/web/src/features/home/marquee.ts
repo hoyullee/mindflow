@@ -51,6 +51,17 @@ export function canStartMarquee(target: HTMLElement | null): boolean {
 const THRESHOLD = 5;
 
 /**
+ * 끄는 동안 **브라우저의 글자 선택**을 막는다(제보: 다중 선택 후 폴더로 옮기면
+ * 화면의 글자가 파랗게 선택된 채 남았다).
+ *
+ * `pointermove`의 `preventDefault`로는 막히지 않는다 — 글자 선택은 그 아래
+ * 네이티브 마우스 동작이라 포인터 이벤트가 취소하지 못한다(실측: 사각형을 끄는
+ * 동안 카드 글자가 통째로 선택됐다). 그래서 **누른 순간부터** `user-select: none`을
+ * 걸고, 놓을 때 남아 있는 선택까지 비운다.
+ */
+const NOSELECT = 'mf-noselect';
+
+/**
  * 마퀴 훅 — `onPointerDown`을 본문(`main`)에 걸고, 돌려주는 `rect`를 그린다.
  *
  * 끄는 동안 매 이동마다 `onSelect`를 부른다(교체). 수정 키(Ctrl/⌘·Shift)를 쥐고
@@ -77,6 +88,8 @@ export function useMarqueeSelect(opts: {
 
     const startX = e.clientX;
     const startY = e.clientY;
+    document.body.classList.add(NOSELECT);
+
     const additive = e.ctrlKey || e.metaKey || e.shiftKey;
     const base = additive ? ref.current.currentSelection() : undefined;
     let started = false;
@@ -102,6 +115,10 @@ export function useMarqueeSelect(opts: {
       window.removeEventListener('pointermove', onMove);
       window.removeEventListener('pointerup', finish);
       window.removeEventListener('pointercancel', finish);
+      document.body.classList.remove(NOSELECT);
+      // 누르기 전에 남아 있던 선택도 함께 비운다 — 카드를 폴더로 끌고 간 뒤
+      // 화면에 파란 글자가 남지 않게.
+      window.getSelection()?.removeAllRanges();
       cleanupRef.current = null;
       setRect(null);
     };

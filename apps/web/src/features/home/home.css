@@ -404,3 +404,13 @@ a:hover {
     aspect-ratio: 304 / 150;
   }
 }
+
+/* 마퀴(드래그 사각형) 선택 중에는 브라우저의 **글자 선택**을 끈다(제보: 다중
+   선택 후 폴더로 옮기면 화면 글자가 선택된 채 남았다). 포인터 이벤트의
+   preventDefault로는 막히지 않아(글자 선택은 그 아래 네이티브 동작) 클래스로
+   끈다 — 누르는 순간 붙고 놓을 때 떨어진다(`marquee.ts`). */
+.mf-noselect,
+.mf-noselect * {
+  user-select: none !important;
+  -webkit-user-select: none !important;
+}
