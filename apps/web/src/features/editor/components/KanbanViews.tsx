@@ -10,7 +10,7 @@ import type { KanbanCard, KanbanColumn } from '@mindflow/mindmap-core';
 import type { EditorController } from '../useEditorState';
 import { hexA } from '../theme';
 import type { Theme } from '../theme';
-import { EMPTY_FILTER, cardPasses, columnColor, dueLabel, dueTone, filterActive, ownerLabel, timelineRange, timelineSpan } from '../kanbanMeta';
+import { EMPTY_FILTER, boardSurface, cardPasses, columnBg, columnColor, columnSurface, dueLabel, dueTone, filterActive, innerLine, ownerLabel, tagInk, timelineRange, timelineSpan } from '../kanbanMeta';
 import type { CardFilter } from '../kanbanMeta';
 import { Avatar, CardText, TagBadge } from './KanbanBoard';
 import { CommentIcon } from './ToolbarMenus';
@@ -32,7 +32,7 @@ export function KanbanList({ controller, theme: th, query, filter = EMPTY_FILTER
     <div data-kanban-list-view style={{ flex: '1 1 auto', minHeight: 0, overflow: 'auto', padding: isMobile ? '0 12px 18px' : '0 20px 20px' }}>
       <div style={{ maxWidth: 1100, borderRadius: 16, border: `1px solid ${th.border}`, background: th.panel, overflow: 'hidden' }}>
         {/* 좁은 화면에서는 제목·기한만 남긴다 — 다섯 열을 390px에 밀어 넣으면 전부 잘린다. */}
-        <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr 96px' : GRID, gap: 12, padding: '10px 16px', background: th.panel2, borderBottom: `1px solid ${th.border}`, ...head }}>
+        <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr 96px' : GRID, gap: 12, padding: '10px 16px', background: columnSurface(th), borderBottom: `1px solid ${th.border}`, ...head }}>
           <span>제목</span>
           {!isMobile && <span>분류</span>}
           <span>기한</span>
@@ -41,7 +41,7 @@ export function KanbanList({ controller, theme: th, query, filter = EMPTY_FILTER
         </div>
         {rows.map(({ col, index, cards }) => (
           <div key={col.id}>
-            <div data-list-group={col.id} style={{ display: 'flex', alignItems: 'center', gap: 9, padding: '11px 16px', background: th.appBg, borderBottom: `1px solid ${th.border}` }}>
+            <div data-list-group={col.id} style={{ display: 'flex', alignItems: 'center', gap: 9, padding: '11px 16px', background: columnBg(col, th) === columnSurface(th) ? boardSurface(th) : columnBg(col, th), borderBottom: `1px solid ${innerLine(th)}` }}>
               <span style={{ width: 8, height: 8, borderRadius: 999, background: columnColor(col, index, th.palette), display: 'block' }} />
               <span style={{ fontSize: 12.5, fontWeight: 700, color: th.text }}>{col.title}</span>
               <span style={{ fontSize: 11, color: th.subtext }}>{cards.length}</span>
@@ -50,7 +50,7 @@ export function KanbanList({ controller, theme: th, query, filter = EMPTY_FILTER
               <ListRow key={card.id} card={card} col={col} index={index} done={index === controller.columns.length - 1} controller={controller} theme={th} isMobile={isMobile} />
             ))}
             {!cards.length && (
-              <div data-list-empty={col.id} style={{ padding: '14px 16px', borderBottom: `1px solid ${th.border}`, fontSize: 12.5, color: th.subtext }}>
+              <div data-list-empty={col.id} style={{ padding: '14px 16px', borderBottom: `1px solid ${innerLine(th)}`, fontSize: 12.5, color: th.subtext }}>
                 {query.trim() || filterActive(filter) ? '조건에 맞는 카드가 없어요.' : '아직 카드가 없어요.'}
               </div>
             )}
@@ -79,7 +79,7 @@ function ListRow({ card, col, index, done, controller, theme: th, isMobile }: { 
           controller.openCardDetail(card.id);
         }
       }}
-      style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr 96px' : GRID, gap: 12, alignItems: 'center', padding: '12px 16px', borderBottom: `1px solid ${th.border}`, cursor: 'pointer', minHeight: isMobile ? 44 : undefined }}
+      style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr 96px' : GRID, gap: 12, alignItems: 'center', padding: '12px 16px', borderBottom: `1px solid ${innerLine(th)}`, cursor: 'pointer', minHeight: isMobile ? 44 : undefined }}
     >
       <span style={{ display: 'flex', alignItems: 'center', gap: 9, minWidth: 0 }}>
         <span style={{ width: 15, height: 15, borderRadius: 5, border: `1.5px solid ${columnColor(col, index, th.palette)}`, display: 'inline-block', flex: '0 0 auto' }} />
@@ -100,12 +100,8 @@ function ListRow({ card, col, index, done, controller, theme: th, isMobile }: { 
       )}
       {!isMobile && (
         <span style={{ display: 'flex', alignItems: 'center', gap: 4, justifyContent: 'flex-end', fontSize: 12, color: th.subtext }}>
-          {comments > 0 && (
-            <>
-              <CommentIcon />
-              {comments}
-            </>
-          )}
+          <CommentIcon />
+          {comments}
         </span>
       )}
     </div>
@@ -122,7 +118,7 @@ export function KanbanTimeline({ controller, theme: th, query, filter = EMPTY_FI
   return (
     <div data-kanban-timeline style={{ flex: '1 1 auto', minHeight: 0, overflow: 'auto', padding: isMobile ? '0 12px 18px' : '0 20px 20px' }}>
       <div style={{ minWidth: 720, borderRadius: 16, border: `1px solid ${th.border}`, background: th.panel, overflow: 'hidden' }}>
-        <div style={{ display: 'grid', gridTemplateColumns: `${NAME_W}px 1fr`, borderBottom: `1px solid ${th.border}`, background: th.panel2 }}>
+        <div style={{ display: 'grid', gridTemplateColumns: `${NAME_W}px 1fr`, borderBottom: `1px solid ${th.border}`, background: columnSurface(th) }}>
           <span style={{ padding: '11px 16px', fontSize: 11.5, fontWeight: 700, color: th.subtext }}>작업</span>
           <div style={{ display: 'flex' }}>
             {days.map((d) => (
@@ -143,9 +139,10 @@ export function KanbanTimeline({ controller, theme: th, query, filter = EMPTY_FI
           const width = span ? ((span.end - span.start + 1) / days.length) * 100 : 0;
           // 마지막 열(완료)의 카드는 기한이 지났어도 **늦은 일이 아니다** — 끝난 일에
           // 붉은 막대가 남으면 남은 일과 구분되지 않는다(원본도 완료 막대를 달리 칠했다).
-          const done = index === controller.columns.length - 1;
-          const late = !!span?.late && !done;
-          const ink = done ? th.subtext : late ? URGENT : th.accent;
+          // 막대는 **그 열의 색**을 따른다(요청) — 어느 단계의 일인지 색으로 읽힌다.
+          // 글자는 배지와 같은 규칙으로 눌러(`tagInk`) 옅은 막대 위에서도 읽힌다.
+          const bar = columnColor(col, index, th.palette);
+          const ink = tagInk(bar, th.text);
           const owner = ownerLabel(card);
           return (
             <div
@@ -161,7 +158,7 @@ export function KanbanTimeline({ controller, theme: th, query, filter = EMPTY_FI
                   controller.openCardDetail(card.id);
                 }
               }}
-              style={{ display: 'grid', gridTemplateColumns: `${NAME_W}px 1fr`, alignItems: 'center', borderBottom: `1px solid ${th.border}`, cursor: 'pointer' }}
+              style={{ display: 'grid', gridTemplateColumns: `${NAME_W}px 1fr`, alignItems: 'center', borderBottom: `1px solid ${innerLine(th)}`, cursor: 'pointer' }}
             >
               <span style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '12px 16px', minWidth: 0 }}>
                 <span style={{ width: 7, height: 7, borderRadius: 999, background: columnColor(col, index, th.palette), flex: '0 0 auto' }} />
@@ -183,8 +180,8 @@ export function KanbanTimeline({ controller, theme: th, query, filter = EMPTY_FI
                     top: 9,
                     height: 24,
                     borderRadius: 8,
-                    background: hexA(ink, 0.14),
-                    border: `1px solid ${hexA(ink, 0.45)}`,
+                    background: hexA(bar, 0.16),
+                    border: `1px solid ${hexA(bar, 0.45)}`,
                     display: 'flex',
                     alignItems: 'center',
                     gap: 6,

@@ -291,3 +291,19 @@
 .mf-kb-row:hover {
   background: rgba(46, 42, 38, 0.035);
 }
+
+/* 열 추가 타일 — 디자인 원본의 호버(배경 틴트 + 코럴 테두리·글자). 공용 덧칠
+   (`.mf-ed-btn::after`)은 글자색(회색)을 덮는 규칙이라 이 자리에는 약하다: 원본은
+   "여기 누르면 열이 하나 더 선다"를 **강조색**으로 말한다. 인라인 스타일을 이겨야
+   해서 !important를 쓰고, 색은 에디터 루트가 내려 주는 --accent를 읽는다. */
+.mf-kb-addcol {
+  transition:
+    background 0.16s ease,
+    border-color 0.16s ease,
+    color 0.16s ease;
+}
+.mf-kb-addcol:hover {
+  background: color-mix(in srgb, var(--accent) 8%, transparent) !important;
+  border-color: var(--accent) !important;
+  color: var(--accent) !important;
+}

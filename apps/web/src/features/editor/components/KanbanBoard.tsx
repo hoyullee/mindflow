@@ -16,14 +16,15 @@ import type { CSSProperties, KeyboardEvent as ReactKeyboardEvent, PointerEvent a
 import { cardsInColumn } from '@mindflow/mindmap-core';
 import type { KanbanCard, KanbanColumn, KanbanTag } from '@mindflow/mindmap-core';
 import type { EditorController } from '../useEditorState';
-import { hexA, mixHex } from '../theme';
+import { hexA } from '../theme';
 import type { Theme } from '../theme';
 import { useIsMobile } from '../../../hooks/useMediaQuery';
 import { CommentIcon, MenuDivider, MenuSectionLabel } from './ToolbarMenus';
 import { RichSpan, linkInk } from '../richSpans';
 import { columnDropIndex, dropTargetAt, edgeScroll } from '../kanbanDrag';
 import type { ColumnHit, DropTarget } from '../kanbanDrag';
-import { EMPTY_FILTER, boardProgress, cardPasses, columnColor, dueLabel, dueTone, filterActive, initialOf, ownerLabel, ownerOptions, tagColor, tagInk } from '../kanbanMeta';
+import { EMPTY_FILTER, boardProgress, boardSurface, cardPasses, columnBg, columnColor, dueLabel, dueTone, filterActive, initialOf, innerLine, ownerLabel, ownerOptions, tagColor, tagInk } from '../kanbanMeta';
+import { CARD_LABELS } from '../kanbanLabels';
 import type { CardFilter, KanbanView } from '../kanbanMeta';
 import { colorForSeed } from '../../../collab/identity';
 import { CardDetail } from './CardDetail';
@@ -271,10 +272,8 @@ export function KanbanBoard({ controller, theme: th }: { controller: EditorContr
         display: 'flex',
         flexDirection: 'column',
         minHeight: 0,
-        // 바닥은 앱 배경을 패널 쪽으로 살짝 민 색 — 디자인 원본의 `#FDFAF7`처럼
-        // 열(패널)보다 **한 톤 더 옅다**(제보: 지금은 너무 진하다). 값을 테마마다
-        // 새로 적지 않고 관계로 만들어 다크·화이트에서도 같은 방향으로 성립한다.
-        background: mixHex(th.appBg, th.panel, 0.55),
+        // 바닥 < 열 < 카드 층(`kanbanMeta`의 면 헬퍼) — 세 보기가 같은 함수를 쓴다.
+        background: boardSurface(th),
         paddingTop: isMobile ? CHIP_CLEARANCE : CHIP_TOP,
         boxSizing: 'border-box',
       }}
@@ -348,15 +347,17 @@ export function KanbanBoard({ controller, theme: th }: { controller: EditorContr
         {!readOnly && (
           <button
             type="button"
-            className="mf-ed-btn"
+            className="mf-kb-addcol"
             data-add-column
             onClick={controller.addColumn}
             style={{
               flex: '0 0 auto',
               width: isMobile ? 232 : 264,
-              // 디자인 원본은 이 타일을 띠 전체 높이로 늘린다(`align-self: stretch`)
-              // — 열보다 짧으면 "여기에 열이 하나 더 선다"로 읽히지 않는다(요청).
+              // 띠 높이를 따르되 **화면의 절반까지만**(제보: 너무 길다) — 열보다
+              // 짧으면 "여기에 열이 하나 더 선다"로 읽히지 않고, 끝까지 늘어나면
+              // 빈 점선이 화면을 지배한다.
               alignSelf: 'stretch',
+              maxHeight: '50%',
               display: 'flex',
               flexDirection: 'column',
               alignItems: 'center',
@@ -397,7 +398,7 @@ export function KanbanBoard({ controller, theme: th }: { controller: EditorContr
             overflow: 'hidden',
             display: 'flex',
             flexDirection: 'column',
-            background: th.panel2,
+            background: columnBg(dragCol, th),
             border: `1px solid ${th.accent}`,
             borderRadius: 16,
             boxShadow: '0 8px 24px rgba(0,0,0,.18)',
@@ -836,10 +837,8 @@ function Column({
   const [confirming, setConfirming] = useState(false);
   const readOnly = controller.readOnly;
   const dot = columnColor(col, index, th.palette);
-  // 열 **안쪽** 구분선(머리 아래·바닥 위)은 바깥 테두리보다 한 톤 옅다
-  // (디자인 원본: 바깥 `#F0E6DC` / 안쪽 `#F2E8DF`) — 안쪽 선이 같은 굵기로
-  // 진하면 카드보다 칸막이가 먼저 눈에 들어온다.
-  const divider = mixHex(th.border, th.panel, 0.35);
+  // 열 **안쪽** 구분선(머리 아래·바닥 위)은 바깥 테두리보다 한 톤 옅다.
+  const divider = innerLine(th);
   const visible = cards.filter((c) => c.id !== draggingId && cardPasses(c, query, filter));
   /** 그릴 차례 — 놓일 자리(점선 상자)를 카드 목록 사이에 끼운 것. */
   const rendered: ({ kind: 'card'; card: KanbanCard } | { kind: 'gap' })[] = visible.map((card) => ({ kind: 'card' as const, card }));
@@ -865,9 +864,8 @@ function Column({
         // 열 안이 스크롤된다.
         alignSelf: 'flex-start',
         maxHeight: '100%',
-        // 디자인 원본의 열 배경(#FBF6F1)처럼 패널2보다 **한 톤 더 옅게**(제보).
-        // 바닥과 같은 방식으로 관계를 적어 테마가 바뀌어도 순서가 유지된다.
-        background: mixHex(th.panel2, th.panel, 0.25),
+        // 열 배경 — 사용자가 고른 색(`col.bg`, 열 메뉴)이 있으면 그것.
+        background: columnBg(col, th),
         border: `1px solid ${dropTarget ? hexA(th.accent, 0.55) : th.border}`,
         borderRadius: 16,
         // 배경과 또렷이 갈리게 — 디자인 원본의 열 그림자.
@@ -1003,9 +1001,14 @@ function Column({
             setMenuAt(null);
             setRenaming(true);
           }}
+          count={cards.length}
           onColor={(c) => {
             setMenuAt(null);
             controller.setColumnColor(col.id, c);
+          }}
+          onBg={(c) => {
+            setMenuAt(null);
+            controller.setColumnBg(col.id, c);
           }}
           onDelete={() => {
             setMenuAt(null);
@@ -1411,8 +1414,10 @@ function ColumnMenu({
   theme: th,
   at,
   isMobile,
+  count,
   onRename,
   onColor,
+  onBg,
   onDelete,
   onClose,
 }: {
@@ -1420,8 +1425,11 @@ function ColumnMenu({
   theme: Theme;
   at: { x: number; y: number };
   isMobile: boolean;
+  /** 이 열의 카드 수 — 삭제 행에 "N개"로 함께 밝힌다(요청). */
+  count: number;
   onRename: () => void;
   onColor: (c: string | null) => void;
+  onBg: (c: string | null) => void;
   onDelete: () => void;
   onClose: () => void;
 }) {
@@ -1444,7 +1452,7 @@ function ColumnMenu({
     };
   }, [onClose]);
 
-  const W = 236;
+  const W = 268;
   const left = Math.max(8, Math.min(at.x - W, window.innerWidth - W - 8));
   const row: CSSProperties = {
     display: 'flex',
@@ -1463,9 +1471,14 @@ function ColumnMenu({
     textAlign: 'left',
   };
   const glyph = (color: string): CSSProperties => ({ display: 'flex', width: 18, justifyContent: 'center', color, flex: '0 0 auto' });
-  // 스와치는 **한 줄로 떨어지는 그리드**다(속성 패널의 색 줄과 같은 규칙) — wrap에
-  // 맡기면 7+2처럼 어중간하게 접혀 어느 색이 어느 단계인지 눈이 헤맨다.
-  const swatch: CSSProperties = { width: '100%', aspectRatio: '1', borderRadius: 999, cursor: 'pointer', padding: 0, boxSizing: 'border-box' };
+  // 스와치는 **한 줄로 떨어지는 그리드**다 — wrap에 맡기면 어중간하게 접혀 어느
+  // 색인지 눈이 헤맨다. 고른 칸에는 체크를 얹어 무엇이 걸려 있는지 한눈에 보인다.
+  const swatch: CSSProperties = { width: 28, height: 28, borderRadius: 999, cursor: 'pointer', padding: 0, boxSizing: 'border-box', display: 'inline-flex', alignItems: 'center', justifyContent: 'center' };
+  // 두 구획이 **같은 격자**를 쓴다(5열 고정 28px) — 칸 크기가 다르면 같은 메뉴
+  // 안에서 색 고르기가 두 가지 물건처럼 보인다. 색은 10개(2행 꽉), 배경은 8개라
+  // 마지막 행이 3칸이지만 열이 맞아 떨어져 흐트러져 보이지 않는다.
+  const grid: CSSProperties = { display: 'grid', gridTemplateColumns: 'repeat(5, 28px)', gap: 9, padding: '2px 10px 10px' };
+
   return (
     <div
       ref={ref}
@@ -1482,8 +1495,8 @@ function ColumnMenu({
       </button>
 
       <MenuDivider theme={th} />
-      <MenuSectionLabel theme={th}>열 색</MenuSectionLabel>
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(9, 1fr)', gap: 5, padding: '2px 10px 8px' }}>
+      <MenuSectionLabel theme={th}>열 색상</MenuSectionLabel>
+      <div style={grid}>
         {/* 기본 색 — 대각선은 이 앱에서 "색 없음"의 관례다(속성 패널의 '자동' 칩).
             지정이 없으면 열 순서대로 팔레트를 따르므로 이 칸이 활성이 된다. */}
         <button
@@ -1500,7 +1513,7 @@ function ColumnMenu({
             backgroundImage: `linear-gradient(to top right, transparent calc(50% - 1px), ${th.subtext} calc(50% - 1px), ${th.subtext} calc(50% + 1px), transparent calc(50% + 1px))`,
           }}
         />
-        {th.palette.slice(0, 8).map((c) => (
+        {th.palette.map((c) => (
           <button
             key={c}
             type="button"
@@ -1509,9 +1522,44 @@ function ColumnMenu({
             aria-label={`색 ${c}`}
             title={`색 ${c}`}
             onClick={() => onColor(c)}
-            style={{ ...swatch, background: c, border: col.color === c ? `2px solid ${th.text}` : `1px solid ${hexA(th.text, 0.15)}` }}
-          />
+            style={{ ...swatch, background: c, border: col.color === c ? `2px solid ${th.text}` : `1px solid ${hexA(th.text, 0.15)}`, color: '#fff' }}
+          >
+            {col.color === c && <CheckGlyph />}
+          </button>
         ))}
+      </div>
+
+      <MenuDivider theme={th} />
+      <MenuSectionLabel theme={th}>배경색</MenuSectionLabel>
+      {/* 열 **배경**(요청) — 머리 점 색과 따로 고른다. 값은 카드 배경과 같은
+          **연한 틴트**뿐이다: 열 전체를 칠하므로 진한 색을 넣으면 그 안의 카드·
+          글자가 통째로 읽히지 않는다. */}
+      <div style={grid}>
+        {CARD_LABELS.map((lab) => {
+          const on = (col.bg ?? null) === lab.bg;
+          return (
+            <button
+              key={lab.name}
+              type="button"
+              role="menuitem"
+              data-column-bg={lab.bg ?? 'default'}
+              aria-label={`배경 ${lab.name}`}
+              title={`배경 ${lab.name}`}
+              onClick={() => onBg(lab.bg)}
+              style={{
+                ...swatch,
+                background: lab.bg ?? 'transparent',
+                backgroundImage: lab.bg
+                  ? undefined
+                  : `linear-gradient(to top right, transparent calc(50% - 1px), ${th.subtext} calc(50% - 1px), ${th.subtext} calc(50% + 1px), transparent calc(50% + 1px))`,
+                border: on ? `2px solid ${th.text}` : `1px solid ${hexA(th.text, 0.15)}`,
+                color: th.text,
+              }}
+            >
+              {on && lab.bg && <CheckGlyph />}
+            </button>
+          );
+        })}
       </div>
 
       <MenuDivider theme={th} />
@@ -1519,9 +1567,22 @@ function ColumnMenu({
         <span style={glyph(URGENT)}>
           <TrashGlyph />
         </span>
-        열 삭제
+        <span style={{ flex: '1 1 auto' }}>열 삭제</span>
+        {/* 이 열과 함께 사라지는 카드 수(요청) — 누르기 전에 무게를 보여 준다. */}
+        {count > 0 && (
+          <span data-delete-column-count style={{ flex: '0 0 auto', fontSize: 11.5, color: hexA(URGENT, 0.75) }}>{count}개</span>
+        )}
       </button>
     </div>
+  );
+}
+
+/** 고른 스와치 위의 체크 — 무엇이 걸려 있는지 한눈에(디자인 시안). */
+function CheckGlyph() {
+  return (
+    <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3.4" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+      <polyline points="20 6 9 17 4 12" />
+    </svg>
   );
 }
 
