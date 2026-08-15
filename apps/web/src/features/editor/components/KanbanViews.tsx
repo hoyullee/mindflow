@@ -89,7 +89,7 @@ function ListRow({ card, col, index, done, controller, theme: th, isMobile }: { 
         {card.flagged && <span style={{ flex: '0 0 auto', height: 18, padding: '0 6px', borderRadius: 5, background: hexA(URGENT, 0.14), color: URGENT, fontSize: 10, fontWeight: 700, display: 'inline-flex', alignItems: 'center' }}>긴급</span>}
       </span>
       {!isMobile && <span style={{ justifySelf: 'start' }}>{card.tag ? <TagBadge name={card.tag} theme={th} /> : null}</span>}
-      <span style={{ fontSize: 12.5, color: tone === 'over' ? URGENT : tone === 'soon' ? th.accent : th.subtext, fontWeight: tone === 'normal' ? 500 : 700, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+      <span style={{ fontSize: 12.5, color: tone === 'over' ? URGENT : tone === 'soon' ? th.accent : th.subtext, fontWeight: tone === 'normal' ? 400 : 600, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
         {card.due ? dueLabel(card.due) : ''}
       </span>
       {!isMobile && (

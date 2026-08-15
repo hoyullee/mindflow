@@ -7,6 +7,7 @@ import { MemoryRouter, Route, Routes } from 'react-router-dom';
 import { Editor } from './Editor';
 import { mockMatchMedia } from '../../test/matchMedia';
 import { UI_THEME, mixHex } from './theme';
+import { tagColor, tagInk } from './kanbanMeta';
 
 /** 내려받은 파일 내용을 가로챈다 — jsdom에는 createObjectURL이 없다(다른 내보내기 테스트와 같은 처방). */
 const dl = vi.hoisted(() => ({ files: [] as { name: string; data: string }[] }));
@@ -1433,5 +1434,39 @@ describe('칸반 — 열 삭제 확인(요청)', () => {
     fireEvent.keyDown(window, { key: 'Escape' });
     await waitFor(() => expect(container.querySelector('[data-confirm-delete-column="c2"]')).toBeNull());
     expect(container.querySelectorAll('[data-kanban-column]')).toHaveLength(2);
+  });
+});
+
+describe('칸반 — 가독성 정돈(제보: 디자인 원본보다 도드라진다)', () => {
+  beforeEach(() => {
+    localStorage.clear();
+    mockMatchMedia(false);
+    localStorage.setItem('mf_demo_session', JSON.stringify({ user: { id: 'u', email: 'me@example.com' } }));
+  });
+  afterEach(cleanup);
+
+  const DOC = {
+    ...KANBAN,
+    tags: [{ id: 't1', name: '개발' }],
+    cards: [{ id: 'k1', col: 'c1', pos: 0, text: '첫 카드', tag: '개발', due: '2030-01-01' }],
+  };
+
+  it('분류 배지 글자는 원색이 아니라 눌린 색이고, 기한은 굵지 않다', async () => {
+    localStorage.setItem('mindflow_doc_kr1', JSON.stringify(DOC));
+    const { container } = renderEditor('/editor?map=kr1&title=x');
+    const badge = await waitFor(() => container.querySelector('[data-card-tag="개발"]') as HTMLElement);
+
+    // 배지: 배경은 그대로 옅은 틴트, 글자만 짙게 눌린다.
+    const rgb = (hex: string): string => {
+      const c = hex.replace('#', '');
+      return `rgb(${parseInt(c.slice(0, 2), 16)}, ${parseInt(c.slice(2, 4), 16)}, ${parseInt(c.slice(4, 6), 16)})`;
+    };
+    const raw = tagColor('개발', UI_THEME.palette, [{ id: 't1', name: '개발' }]);
+    expect(badge.style.color).not.toBe(rgb(raw));
+    expect(badge.style.color).toBe(rgb(tagInk(raw, UI_THEME.text)));
+
+    // 기한: 원본과 같은 400(예전엔 500).
+    const due = container.querySelector('[data-card-due="k1"]') as HTMLElement;
+    expect(due.style.fontWeight).toBe('400');
   });
 });
