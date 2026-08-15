@@ -434,9 +434,14 @@ export interface DocComment {
   mine: boolean;
   body: string;
   createdAt: string;
-  /** 해결됨(스레드 뿌리에만 의미) — 해결한 사람의 이름 스냅샷과 함께. */
+  /** 해결됨(스레드 뿌리에만 의미) — 해결한 사람의 이름 스냅샷과 함께.
+   * UI에서는 걷어냈지만(요청: 해결 대신 좋아요) 서버 컬럼과 포트는 그대로 둔다. */
   resolved: boolean;
   resolvedByName: string | null;
+  /** 좋아요 수(0028) — 한 사람의 한 표가 행 하나다. */
+  likes: number;
+  /** 내가 눌렀는가 — 버튼 활성 표시. */
+  likedByMe: boolean;
   mentions: CommentMention[];
 }
 
@@ -463,6 +468,8 @@ export interface CommentStore {
    * 유지된다.
    */
   setResolved(documentId: string, commentId: string, resolved: boolean): Promise<{ error?: string }>;
+  /** 좋아요 토글(0028) — 자기 표만 넣고 뺀다(RLS). */
+  setLiked(documentId: string, commentId: string, liked: boolean): Promise<{ error?: string }>;
   /**
    * "이 문서의 댓글이 바뀌었다"는 신호 구독. 반환값은 해지 함수.
    *
