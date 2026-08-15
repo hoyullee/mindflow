@@ -1,6 +1,7 @@
 import { useEffect, useRef } from 'react';
 import type { EditorController } from '../useEditorState';
 import { useOnline } from '../../../hooks/useOnline';
+import { CHIP_SHADOW, accentButton, glassCard } from '../chrome';
 
 interface DocChipProps {
   controller: EditorController;
@@ -38,11 +39,11 @@ export function DocChip({ controller }: DocChipProps) {
         display: 'flex',
         alignItems: 'center',
         gap: 10,
-        background: th.panel,
-        border: `1px solid ${th.border}`,
-        borderRadius: 12,
-        boxShadow: '0 6px 22px rgba(0,0,0,.10)',
-        padding: '8px 10px',
+        // 디자인 원본: 캔버스가 비치는 유리질 카드(반투명 + 블러).
+        ...glassCard(th),
+        borderRadius: 14,
+        boxShadow: CHIP_SHADOW,
+        padding: '9px 10px',
       }}
     >
       <button
@@ -51,14 +52,14 @@ export function DocChip({ controller }: DocChipProps) {
         onClick={controller.goHome}
         title="홈으로"
         style={{
-          width: 36,
-          height: 36,
+          width: 34,
+          height: 34,
           flexShrink: 0,
           display: 'flex',
           alignItems: 'center',
           justifyContent: 'center',
           border: `1px solid ${th.border}`,
-          borderRadius: 9,
+          borderRadius: 11,
           background: th.panel2,
           color: th.text,
           cursor: 'pointer',
@@ -140,16 +141,14 @@ export function DocChip({ controller }: DocChipProps) {
         onClick={controller.saveNow}
         title="저장 (Ctrl+S)"
         style={{
-          width: 36,
-          height: 36,
+          width: 34,
+          height: 34,
           flexShrink: 0,
           display: 'flex',
           alignItems: 'center',
           justifyContent: 'center',
-          border: 'none',
-          borderRadius: 9,
-          background: th.accent,
-          color: th.accentInk,
+          borderRadius: 11,
+          ...accentButton(th),
           cursor: 'pointer',
           fontFamily: 'inherit',
           padding: 0,

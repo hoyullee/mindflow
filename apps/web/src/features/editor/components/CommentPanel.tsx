@@ -16,6 +16,7 @@ import type { EditorController } from '../useEditorState';
 import type { CommentMention, DocComment, ShareParticipant } from '../../../adapters/ports';
 import { panelTitleLine } from './panel/panelPrimitives';
 import { hexA } from '../theme';
+import { CARD_SHADOW, glassCard } from '../chrome';
 import { CommentIcon } from './ToolbarMenus';
 import { formatFullDateTime, formatLastEdited } from '../../home/timeFormat';
 import { useIsMobile } from '../../../hooks/useMediaQuery';
@@ -83,14 +84,14 @@ export function CommentPanel({ controller }: { controller: EditorController }) {
         position: 'absolute',
         right: 16,
         top: 80,
-        width: 288,
+        // 디자인 원본의 댓글 패널(326) — 유리질 카드 + 더 둥근 모서리.
+        width: 326,
         // 아래로는 미니맵/줌 묶음(우하단)을 피한다 — 미니맵이 접혀 있으면 더 길게.
         maxHeight: `calc(100% - ${80 + (controller.showMinimap ? 190 : 68)}px)`,
-        border: `1px solid ${th.border}`,
-        borderRadius: 14,
-        boxShadow: '0 8px 30px rgba(0,0,0,.10)',
+        ...glassCard(th, 0.97),
+        borderRadius: 18,
+        boxShadow: CARD_SHADOW,
         zIndex: 16,
-        background: th.panel,
         display: 'flex',
         flexDirection: 'column',
         overflow: 'hidden',
@@ -98,12 +99,13 @@ export function CommentPanel({ controller }: { controller: EditorController }) {
 
   return (
     <aside style={wrap} data-comment-panel aria-label="댓글">
-      <header style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '11px 12px', borderBottom: `1px solid ${th.border}` }}>
-        <span style={{ color: th.accent, display: 'flex' }}>
+      <header style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '13px 14px', borderBottom: `1px solid ${th.border}`, background: `linear-gradient(180deg,${th.panel},${th.panel2})` }}>
+        {/* 디자인 원본: 아이콘을 강조색 틴트 칩에 담아 머리를 또렷하게. */}
+        <span style={{ width: 30, height: 30, flexShrink: 0, borderRadius: 10, background: hexA(th.accent, 0.1), color: th.accent, display: 'inline-flex', alignItems: 'center', justifyContent: 'center' }}>
           <CommentIcon size={15} />
         </span>
         <div style={{ flex: '1 1 auto', minWidth: 0 }}>
-          <div style={{ fontSize: 12.5, fontWeight: 700, color: th.text }}>댓글</div>
+          <div style={{ fontSize: 13, fontWeight: 800, letterSpacing: '-.01em', color: th.text }}>댓글</div>
           <div title={title} style={{ fontSize: 11.5, color: th.subtext, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
             {title}
           </div>

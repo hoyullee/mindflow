@@ -3,6 +3,7 @@ import type { EditorController } from '../useEditorState';
 import { Minimap } from './Minimap';
 import { BOARD_BAR_LIFT } from './BoardToolbar';
 import { useIsMobile } from '../../../hooks/useMediaQuery';
+import { CARD_SHADOW, MONO_FONT, glassCard } from '../chrome';
 
 interface ZoomControlsProps {
   controller: EditorController;
@@ -31,16 +32,17 @@ export function ZoomControls({ controller, panelOpen = false }: ZoomControlsProp
   // with no panel, the cluster stays pinned bottom-right.
   if (isMobile && panelOpen) return null;
   // 아래 버튼 줄은 이제 데스크톱 전용이다(폰 분기는 미니맵만 그리고 일찍 돌아간다).
+  // 디자인 원본: 28px 정사각 · 라운드 8 · 면 없는 아이콘 버튼.
   const btnStyle = {
-    width: 26,
-    height: 26,
+    width: 28,
+    height: 28,
     display: 'flex',
     alignItems: 'center',
     justifyContent: 'center',
     border: 'none',
-    borderRadius: 7,
+    borderRadius: 8,
     background: 'transparent',
-    color: th.text,
+    color: th.subtext,
     fontSize: 16,
     cursor: 'pointer',
     fontFamily: 'inherit',
@@ -60,7 +62,7 @@ export function ZoomControls({ controller, panelOpen = false }: ZoomControlsProp
   if (isMobile) {
     if (!controller.showMinimap) return null;
     return (
-      <div data-zoom-cluster style={{ position: 'absolute', right: 16, ...anchor, background: th.panel, border: `1px solid ${th.border}`, borderRadius: 12, boxShadow: '0 6px 22px rgba(0,0,0,.08)', zIndex: 15, padding: 6 }}>
+      <div data-zoom-cluster style={{ position: 'absolute', right: 16, ...anchor, ...glassCard(th), borderRadius: 14, boxShadow: CARD_SHADOW, zIndex: 15, padding: 6 }}>
         <Minimap controller={controller} isMobile />
       </div>
     );
@@ -71,23 +73,24 @@ export function ZoomControls({ controller, panelOpen = false }: ZoomControlsProp
       data-zoom-cluster
       style={{
         position: 'absolute',
-        right: 16,
+        right: 18,
         ...anchor,
-        background: th.panel,
-        border: `1px solid ${th.border}`,
-        borderRadius: 12,
-        boxShadow: '0 6px 22px rgba(0,0,0,.08)',
+        ...glassCard(th),
+        borderRadius: 14,
+        boxShadow: CARD_SHADOW,
         zIndex: 15,
         display: 'flex',
         flexDirection: 'column',
+        overflow: 'hidden',
       }}
     >
       {controller.showMinimap && (
-        <div style={{ padding: '6px 6px 0' }}>
+        // 지도는 카드 **위쪽 칸**을 통째로 쓰고 아래 줄과 선으로 갈린다(디자인 원본).
+        <div style={{ padding: 7, borderBottom: `1px solid ${th.border}`, background: th.panel2 }}>
           <Minimap controller={controller} />
         </div>
       )}
-      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 2, padding: '4px 6px' }}>
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 4, padding: '6px 7px' }}>
         <button
           type="button"
           className="mf-ed-btn"
@@ -102,7 +105,9 @@ export function ZoomControls({ controller, panelOpen = false }: ZoomControlsProp
         <button type="button" className="mf-ed-btn" onClick={controller.zoomOut} title="축소" style={btnStyle}>
           −
         </button>
-        <div style={{ minWidth: 42, textAlign: 'center', fontSize: 11.5, fontWeight: 600, color: th.subtext }}>{controller.zoomPct}%</div>
+        <button type="button" className="mf-ed-btn" onClick={controller.zoomReset} title="100%로" style={{ ...btnStyle, width: 'auto', minWidth: 52, padding: '0 6px', fontFamily: MONO_FONT, fontSize: 11.5, fontWeight: 500, color: th.text }}>
+          {controller.zoomPct}%
+        </button>
         <button type="button" className="mf-ed-btn" onClick={controller.zoomIn} title="확대" style={btnStyle}>
           ＋
         </button>

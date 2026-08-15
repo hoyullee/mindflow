@@ -22,10 +22,11 @@
 // 두고, 누르면 [‹ 뒤로][메모][이미지][연결선][영역]으로 밀려 들어온다(펜 메뉴와
 // 같은 문법). 삽입하면 도구 목록으로 돌아온다 — 방금 만든 것을 바로 만진다.
 
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
 import type { CSSProperties } from 'react';
 import type { EditorController } from '../useEditorState';
 import { hexA } from '../theme';
+import { FLOAT_SHADOW, accentGradient, glassCard } from '../chrome';
 import { useIsMobile } from '../../../hooks/useMediaQuery';
 import { HL_COLORS, HL_WIDTHS, PEN_COLORS, PEN_WIDTHS } from '../boardTools';
 import type { BoardTool } from '../boardTools';
@@ -50,6 +51,11 @@ export function BoardToolbar({ controller }: { controller: EditorController }) {
   // 전환 애니메이션 — 나가는 층이 무엇인지. 그 층을 잠깐 더 그려야 "밀려 나가는"
   // 모습이 보인다. null이면 전환 아님.
   const [leaving, setLeaving] = useState<BoardPanel | null>(null);
+  // 펜·형광펜 옵션 팝오버의 **꼬리**가 그 도구 버튼을 가리키게 — 알약 중심에서
+  // 얼마나 벗어났는지를 재서 옮긴다(도구가 늘어도 값을 손으로 고칠 일이 없다).
+  const shellRef = useRef<HTMLDivElement | null>(null);
+  const activeToolRef = useRef<HTMLButtonElement | null>(null);
+  const [tailDx, setTailDx] = useState(0);
   const leaveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const switchPanel = useCallback(
     (next: BoardPanel) => {
@@ -65,6 +71,15 @@ export function BoardToolbar({ controller }: { controller: EditorController }) {
     [panel],
   );
   useEffect(() => () => { if (leaveTimer.current) clearTimeout(leaveTimer.current); }, []);
+  useLayoutEffect(() => {
+    const shell = shellRef.current;
+    const btn = activeToolRef.current;
+    if (!shell || !btn) return;
+    const s = shell.getBoundingClientRect();
+    const b = btn.getBoundingClientRect();
+    const dx = Math.round(b.left + b.width / 2 - (s.left + s.width / 2));
+    setTailDx((cur) => (cur === dx ? cur : dx));
+  });
   useEffect(() => {
     // 색·굵기가 딸린 도구(펜·형광펜)에서 벗어나면 옵션 메뉴는 저절로 닫힌다.
     if (tool !== 'pen' && tool !== 'hl') setPanel((cur) => (cur === 'draw' ? 'tools' : cur));
@@ -82,12 +97,13 @@ export function BoardToolbar({ controller }: { controller: EditorController }) {
 
   if (!controller.isBoard || controller.readOnly) return null;
 
-  const size = isMobile ? 44 : 36;
+  // 디자인 원본: 알약 안의 **원형 버튼**(38px). 폰은 44px 터치 타깃.
+  const size = isMobile ? 44 : 38;
   const btnBase = {
     width: size,
     height: size,
     border: 'none',
-    borderRadius: 9,
+    borderRadius: 999,
     cursor: 'pointer',
     display: 'flex',
     alignItems: 'center',
@@ -95,24 +111,31 @@ export function BoardToolbar({ controller }: { controller: EditorController }) {
     padding: 0,
   } as const;
 
-  const toolBtn = (key: BoardTool, label: string, hint: string, icon: JSX.Element) => (
-    <button
-      key={key}
-      type="button"
-      className="mf-ed-btn"
-      aria-label={label}
-      aria-pressed={tool === key}
-      title={`${label} (${hint})`}
-      onClick={() => {
-        controller.setBoardTool(key);
-        // 폰: 펜·형광펜은 색·굵기가 딸린 도구라 누르는 순간 그 메뉴로 전환한다.
-        if (isMobile) switchPanel(key === 'pen' || key === 'hl' ? 'draw' : 'tools');
-      }}
-      style={{ ...btnBase, background: tool === key ? hexA(th.accent, 0.14) : 'transparent', color: tool === key ? th.accent : th.subtext }}
-    >
-      {icon}
-    </button>
-  );
+  // 켜진 도구는 **강조색 그라디언트 + 아래 점**(디자인 원본) — 옅은 틴트보다
+  // 지금 무엇으로 캔버스를 만지는지가 멀리서도 읽힌다.
+  const toolBtn = (key: BoardTool, label: string, hint: string, icon: JSX.Element) => {
+    const on = tool === key;
+    return (
+      <button
+        key={key}
+        ref={on ? activeToolRef : undefined}
+        type="button"
+        className="mf-ed-btn"
+        aria-label={label}
+        aria-pressed={on}
+        title={`${label} (${hint})`}
+        onClick={() => {
+          controller.setBoardTool(key);
+          // 폰: 펜·형광펜은 색·굵기가 딸린 도구라 누르는 순간 그 메뉴로 전환한다.
+          if (isMobile) switchPanel(key === 'pen' || key === 'hl' ? 'draw' : 'tools');
+        }}
+        style={{ ...btnBase, background: on ? accentGradient(th) : 'transparent', color: on ? th.accentInk : th.subtext }}
+      >
+        {icon}
+        {on && <span aria-hidden style={{ position: 'absolute', bottom: 4, left: '50%', transform: 'translateX(-50%)', width: 4, height: 4, borderRadius: 999, background: th.accentInk }} />}
+      </button>
+    );
+  };
 
   const actionBtn = (label: string, icon: JSX.Element, run: () => void, disabled?: boolean) => (
     <button
@@ -131,7 +154,7 @@ export function BoardToolbar({ controller }: { controller: EditorController }) {
 
   // 폰 막대에서는 좌우 마진을 두지 않는다 — 간격은 `space-evenly`가 정하므로
   // 마진을 더하면 구분선 양옆만 넓어져 아이콘 열이 어긋나 보인다(실측 18 vs 21).
-  const divider = (key: string) => <div key={key} style={{ width: 1, alignSelf: 'stretch', margin: isMobile ? '4px 0' : '4px 3px', background: th.border }} />;
+  const divider = (key: string) => <div key={key} style={{ width: 1, height: 24, alignSelf: 'center', margin: isMobile ? 0 : '0 3px', background: th.border }} />;
 
   const tools = [
     toolBtn(
@@ -256,8 +279,8 @@ export function BoardToolbar({ controller }: { controller: EditorController }) {
         height: isMobile ? 26 : 20,
         borderRadius: '50%',
         background: c,
-        border: `2px solid ${curColor === c ? th.accent : th.panel}`,
-        boxShadow: curColor === c ? `0 0 0 1.5px ${hexA(th.accent, 0.4)}` : '0 1px 3px rgba(0,0,0,.18)',
+        border: `2px solid ${curColor === c ? th.accent : 'transparent'}`,
+        boxShadow: 'inset 0 0 0 1px rgba(46,42,38,.1)',
         cursor: 'pointer',
         padding: 0,
         margin: '0 2px',
@@ -273,10 +296,10 @@ export function BoardToolbar({ controller }: { controller: EditorController }) {
       aria-pressed={curWidth === w}
       onClick={() => setWidth(w)}
       style={{
-        width: isMobile ? 30 : 26,
+        width: isMobile ? 34 : 32,
         height: isMobile ? 30 : 26,
         border: 'none',
-        borderRadius: 7,
+        borderRadius: 8,
         background: curWidth === w ? hexA(th.accent, 0.14) : 'transparent',
         cursor: 'pointer',
         display: 'flex',
@@ -301,10 +324,10 @@ export function BoardToolbar({ controller }: { controller: EditorController }) {
   const shell: CSSProperties = {
     position: 'absolute',
     zIndex: 120, // 그리기 오버레이(110)보다 위 — 그리는 중에도 도구를 바꾼다
-    background: th.panel,
-    border: `1px solid ${th.border}`,
-    borderRadius: 14,
-    boxShadow: '0 8px 24px rgba(0,0,0,.14)',
+    ...glassCard(th, 0.96),
+    // 디자인 원본의 **알약**: 버튼(38·44) + 패딩 7 만큼의 반지름이면 완전한 알약이 된다.
+    borderRadius: 999,
+    boxShadow: FLOAT_SHADOW,
   };
 
   // 폰 막대의 두 층 — 도구 목록(선택·펜·지우개 | 메모·이미지)과 펜 메뉴.
@@ -371,7 +394,7 @@ export function BoardToolbar({ controller }: { controller: EditorController }) {
       <>
         {/* 되돌리기 묶음 — 도구가 아니라 "방금 한 일"을 다루므로 막대에서 떼어
             위 띠 왼쪽에 둔다(시안). 오른쪽 같은 띠에는 줌·미니맵 묶음이 선다. */}
-        <div data-board-undo style={{ ...shell, left: 12, bottom: BOARD_BAR_LIFT, display: 'flex', alignItems: 'center', padding: 4 }} {...stopDrag}>
+        <div data-board-undo style={{ ...shell, left: 12, bottom: BOARD_BAR_LIFT, display: 'flex', alignItems: 'center', padding: 5 }} {...stopDrag}>
           {undoRedo[0]}
           {divider('du')}
           {undoRedo[1]}
@@ -381,7 +404,7 @@ export function BoardToolbar({ controller }: { controller: EditorController }) {
           data-board-toolbar
           data-board-panel={panel}
           data-pen-panel={panel === 'draw' ? 'true' : undefined}
-          style={{ ...shell, left: 12, right: 12, bottom: 16, padding: 5 }}
+          style={{ ...shell, left: 12, right: 12, bottom: 16, padding: 6 }}
           {...stopDrag}
         >
           {/* 전환은 **밀어내기**(요청): 하위 메뉴(펜·삽입)를 열면 오른쪽에서 들어오고
@@ -403,19 +426,51 @@ export function BoardToolbar({ controller }: { controller: EditorController }) {
   }
 
   return (
-    <div data-board-toolbar style={{ ...shell, left: '50%', transform: 'translateX(-50%)', bottom: 16, display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 5, padding: 5, borderRadius: 12, maxWidth: 'calc(100vw - 24px)' }} {...stopDrag}>
-      <div style={rowStyle}>
-        {tools}
-        {divider('d1')}
-        {inserts}
-        {divider('d2')}
-        {undoRedo}
-      </div>
+    <div ref={shellRef} data-board-toolbar style={{ ...shell, left: '50%', transform: 'translateX(-50%)', bottom: 22, display: 'flex', alignItems: 'center', gap: 5, padding: 7, maxWidth: 'calc(100vw - 24px)' }} {...stopDrag}>
+      {tools}
+      {divider('d1')}
+      {inserts}
+      {divider('d2')}
+      {undoRedo}
 
+      {/* 색·굵기는 막대에 줄을 더하지 않고 **위에 뜬 팝오버**로(디자인 원본) —
+          꼬리가 지금 켜진 도구를 가리키므로 무엇의 설정인지 헷갈리지 않는다. */}
       {(tool === 'pen' || tool === 'hl') && (
-        <div style={{ display: 'flex', alignItems: 'center', gap: 4, paddingTop: 4, borderTop: `1px solid ${th.border}`, width: '100%', justifyContent: 'center' }}>
+        <div
+          data-stroke-popover
+          className="mf-board-rise"
+          style={{
+            position: 'absolute',
+            left: '50%',
+            bottom: '100%',
+            marginBottom: 10,
+            transform: 'translateX(-50%)',
+            display: 'flex',
+            alignItems: 'center',
+            gap: 14,
+            padding: '9px 16px',
+            borderRadius: 20,
+            ...glassCard(th, 0.97),
+            boxShadow: '0 18px 38px -22px rgba(46,42,38,.5)',
+          }}
+        >
+          <span
+            aria-hidden
+            style={{
+              position: 'absolute',
+              left: '50%',
+              bottom: -5,
+              width: 10,
+              height: 10,
+              transform: `translateX(calc(-50% + ${tailDx}px)) rotate(45deg)`,
+              background: th.panel,
+              borderRight: `1px solid ${th.border}`,
+              borderBottom: `1px solid ${th.border}`,
+              display: 'block',
+            }}
+          />
           <div style={rowStyle}>{colorBtns}</div>
-          <div style={{ width: 1, alignSelf: 'stretch', margin: '2px 3px', background: th.border }} />
+          <div style={{ width: 1, height: 20, background: th.border }} />
           <div style={rowStyle}>{widthBtns}</div>
         </div>
       )}

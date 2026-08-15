@@ -1035,7 +1035,8 @@ describe('속성 패널의 색 스와치는 문서 테마를 따라가지 않는
   const themedDoc = (themeKey: string) => ({ ...DOC, themeKey });
   /** 패널에 그려진 스와치 원의 배경색 목록. */
   const swatchColorsOf = (): string[] => {
-    const panel = screen.getByText('선택한 주제').closest('div')?.parentElement as HTMLElement;
+    // 패널 머리의 DOM 모양은 디자인 개편으로 바뀔 수 있으므로 **표식**으로 잡는다.
+    const panel = document.querySelector('[data-props-panel]') as HTMLElement;
     return Array.from(panel.querySelectorAll<HTMLButtonElement>('button'))
       .map((b) => b.style.background)
       .filter((bg) => bg.startsWith('rgb') || bg.startsWith('#'));
@@ -1089,10 +1090,7 @@ describe('방향키 메모 이동', () => {
     layoutMode: 'right',
     themeKey: 'white',
   };
-  const selectedText = () => {
-    const kicker = Array.from(document.querySelectorAll('div')).find((el) => el.textContent?.trim() === '선택한 메모');
-    return kicker?.nextElementSibling?.textContent?.trim() ?? '';
-  };
+  const selectedText = () => document.querySelector('[data-panel-name]')?.textContent?.trim() ?? '';
   const clickFloat = (container: HTMLElement, id: string) => {
     const el = container.querySelector(`[data-float-id="${id}"]`) as HTMLElement;
     firePointer(el, 'pointerdown', { pointerId: 21, clientX: 5, clientY: 5, button: 0 });
@@ -1170,10 +1168,7 @@ describe('방향키 메모 이동', () => {
     firePointer(window, 'pointerup', { pointerId: 22, clientX: 5, clientY: 5, button: 0 });
     await screen.findByText('선택한 주제');
 
-    const nodeName = () => {
-      const kicker = Array.from(document.querySelectorAll('div')).find((el) => el.textContent?.trim() === '선택한 주제');
-      return kicker?.nextElementSibling?.textContent?.trim() ?? '';
-    };
+    const nodeName = () => document.querySelector('[data-panel-name]')?.textContent?.trim() ?? '';
     // 어느 방향이 이웃인지는 레이아웃(radial)이 정한다 — 여기서 고정하는 계약은
     // "주제에서 방향키를 누르면 **다른 주제**로 가고, 메모로 새지 않는다"이다.
     const seen = new Set([nodeName()]);

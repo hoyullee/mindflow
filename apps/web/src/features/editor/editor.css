@@ -1,3 +1,14 @@
+/* 수치를 읽는 자리(줌 배율·색 이름)의 등폭 글꼴 — 화이트보드 디자인 원본이
+   눈금처럼 쓰는 글꼴이다. 랜딩과 같은 파일(같은 출처)이라 새 요청이 생기지 않는다. */
+@font-face {
+  font-family: 'JetBrains Mono';
+  font-style: normal;
+  font-weight: 400 500;
+  font-display: swap;
+  src: url('/fonts/jetbrains-mono/jetbrains-mono-latin.woff2') format('woff2');
+  unicode-range: U+0000-00FF, U+2000-206F;
+}
+
 /* Editor-scoped chrome (hover/active states, scrollbars) — the pixel styling
    itself (colors/spacing/fonts) is applied inline per-node via CSSProperties
    so it can react to the live theme; this stylesheet only covers what plain
@@ -170,11 +181,29 @@
 .mf-board-out-right {
   animation: mf-board-out-right 0.2s ease-out both;
 }
+/* 도구 막대 위로 떠오르는 팝오버(펜·형광펜 옵션) — 디자인 원본의 `wbRise`.
+   가운데 정렬용 translateX(-50%)가 키프레임 안에 있어야 뜨는 동안 좌우로
+   튀지 않는다(#331에서 겪은 함정 — transform은 통째로 덮어써진다). */
+@keyframes mf-board-rise {
+  from {
+    opacity: 0;
+    transform: translateX(-50%) translateY(8px) scale(0.96);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(-50%) translateY(0) scale(1);
+  }
+}
+.mf-board-rise {
+  transform-origin: bottom center;
+  animation: mf-board-rise 0.22s cubic-bezier(0.2, 0.9, 0.25, 1) both;
+}
 @media (prefers-reduced-motion: reduce) {
   .mf-board-in-right,
   .mf-board-in-left,
   .mf-board-out-left,
-  .mf-board-out-right {
+  .mf-board-out-right,
+  .mf-board-rise {
     animation-duration: 0.01ms;
   }
 }
@@ -306,4 +335,23 @@
   background: color-mix(in srgb, var(--accent) 8%, transparent) !important;
   border-color: var(--accent) !important;
   color: var(--accent) !important;
+}
+
+/* 메모 위 빠른 동작(복제·삭제) — 평소엔 숨어 있다가 마우스를 얹거나 고른 동안
+   뜬다. 터치 기기에는 hover가 없으므로 처음부터 보인다(고른 메모에만). */
+.mf-float-grip {
+  opacity: 0;
+  transition: opacity 0.15s ease;
+}
+[data-float-id]:hover .mf-float-grip,
+.mf-float-grip[data-visible='true'] {
+  opacity: 1;
+}
+@media (hover: none) {
+  .mf-float-grip {
+    opacity: 0;
+  }
+  .mf-float-grip[data-visible='true'] {
+    opacity: 1;
+  }
 }

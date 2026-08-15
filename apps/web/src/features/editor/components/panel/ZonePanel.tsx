@@ -22,9 +22,9 @@ export function ZonePanel({ controller, zoneId, isMobile = false, short = false 
   if (!z) return null;
 
   return (
-    <div style={panelWrapStyle(th, isMobile, !!controller.saveConflict, short)}>
+    <div data-props-panel style={panelWrapStyle(th, isMobile, !!controller.saveConflict, short)}>
       <div style={panelBodyStyle(isMobile)}>
-        <PanelTitle theme={th} kicker="선택한 영역" name={z.label || '영역'} />
+        <PanelTitle theme={th} kicker="선택한 영역" name={z.label || '영역'} swatch={z.color || th.subtext} />
         <SectionLabel theme={th}>영역 색상</SectionLabel>
         <SwatchRow theme={th} palette={th.palette} current={z.color} onPick={(hex) => controller.setZoneColor(zoneId, hex)} onReset={() => controller.setZoneColor(zoneId, null)} />
         <RenameButton theme={th} onClick={() => controller.startEditZoneLabel(zoneId)} />
