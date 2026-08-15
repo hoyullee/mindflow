@@ -781,6 +781,8 @@ export interface EditorController {
   setCardMeta: (id: string, patch: { tag?: string | null; start?: string | null; due?: string | null; owner?: { email: string; name: string } | null; flagged?: boolean }) => void;
   /** 열 머리 색 — `null`이면 순서 기반 기본색으로 돌아간다. */
   setColumnColor: (id: string, color: string | null) => void;
+  /** 열 **배경**(요청) — 머리 점 색(`setColumnColor`)과 따로 고른다. */
+  setColumnBg: (id: string, bg: string | null) => void;
   /** 카드를 이전(-1)·다음(+1) 열의 맨 위로 옮긴다(카드 위 ‹ › 버튼). */
   moveCardStep: (cardId: string, dir: -1 | 1) => void;
   /** 화이트보드 그리기 도구(M4). 'select'가 기본 — 펜/하이라이터/지우개일 때는
@@ -5568,6 +5570,24 @@ export function useEditorState(): EditorController {
     [commitDoc],
   );
 
+  const setColumnBg = useCallback(
+    (id: string, bg: string | null) => {
+      if (readOnlyRef.current) return;
+      commitDoc((d) => ({
+        ...d,
+        columns: (d.columns ?? []).map((c) => {
+          if (c.id !== id) return c;
+          if (bg) return { ...c, bg };
+          // 없애면 키 자체를 지운다 — 빈 필드가 CRDT로 계속 오가지 않게.
+          const rest = { ...c };
+          delete rest.bg;
+          return rest;
+        }),
+      }));
+    },
+    [commitDoc],
+  );
+
   /** 열을 `index` 자리로 옮긴다(열 순서는 배열 순서 — 코어 `moveColumn`). */
   const moveColumnTo = useCallback(
     (colId: string, index: number) => {
@@ -6148,6 +6168,7 @@ export function useEditorState(): EditorController {
     setCardBg,
     setCardMeta,
     setColumnColor,
+    setColumnBg,
     tags,
     addTag,
     removeTag,

@@ -9,6 +9,29 @@
 
 import type { KanbanCard, KanbanColumn, KanbanTag } from '@mindflow/mindmap-core';
 import { mixHex } from './theme';
+import type { Theme } from './theme';
+
+/**
+ * 칸반 화면의 **면 층** — 디자인 원본의 바닥 `#FDFAF7` < 열 `#FBF6F1` < 카드 `#FFFDFB`.
+ *
+ * 테마마다 값을 새로 적는 대신 **관계**로 만든다(다크·화이트에서도 같은 방향이
+ * 성립한다). 보드·리스트·타임라인이 같은 함수를 쓰므로 세 보기의 층이 어긋나지
+ * 않는다.
+ */
+export function boardSurface(th: Theme): string {
+  return mixHex(th.appBg, th.panel, 0.55);
+}
+export function columnSurface(th: Theme): string {
+  return mixHex(th.panel2, th.panel, 0.25);
+}
+/** 열 **안쪽** 구분선 — 바깥 테두리보다 한 톤 옅다(원본: 바깥 `#F0E6DC` / 안쪽 `#F2E8DF`). */
+export function innerLine(th: Theme): string {
+  return mixHex(th.border, th.panel, 0.35);
+}
+/** 이 열의 배경 — 사용자가 고른 색이 있으면 그것, 없으면 기본 면. */
+export function columnBg(col: Pick<KanbanColumn, 'bg'>, th: Theme): string {
+  return col.bg || columnSurface(th);
+}
 
 /** 문자열 → 안정적인 작은 정수(같은 이름은 언제나 같은 색). */
 function hashCode(s: string): number {

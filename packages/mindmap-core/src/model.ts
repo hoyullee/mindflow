@@ -270,6 +270,8 @@ export interface KanbanColumn {
   title: string;
   /** 열 머리 색(없으면 테마 기본). */
   color?: string | null;
+  /** 열 **배경**(없으면 테마 기본) — 머리 점 색(`color`)과 따로 고른다. */
+  bg?: string | null;
 }
 
 /**

@@ -6,8 +6,8 @@ import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-li
 import { MemoryRouter, Route, Routes } from 'react-router-dom';
 import { Editor } from './Editor';
 import { mockMatchMedia } from '../../test/matchMedia';
-import { UI_THEME, mixHex } from './theme';
-import { tagColor, tagInk } from './kanbanMeta';
+import { UI_THEME, hexA, mixHex } from './theme';
+import { boardSurface, tagColor, tagInk } from './kanbanMeta';
 
 /** 내려받은 파일 내용을 가로챈다 — jsdom에는 createObjectURL이 없다(다른 내보내기 테스트와 같은 처방). */
 const dl = vi.hoisted(() => ({ files: [] as { name: string; data: string }[] }));
@@ -1296,7 +1296,7 @@ describe('칸반 — 후속(열 색·열 추가 길이·호버·시작일)', () 
     expect(hoverable('[data-add-card="c1"]')).toBe(true);
     expect(hoverable('[data-column-menu="c1"]')).toBe(true);
     expect(hoverable('[data-add-card-foot="c1"]')).toBe(true);
-    expect(hoverable('[data-add-column]')).toBe(true);
+    expect((container.querySelector('[data-add-column]') as HTMLElement).classList.contains('mf-kb-addcol')).toBe(true);
     expect((container.querySelector('[data-kanban-card="k1"]') as HTMLElement).classList.contains('mf-kb-card')).toBe(true);
 
     // 상세 팝업의 삭제·닫기
@@ -1356,10 +1356,11 @@ describe('칸반 — 열 메뉴 구분(제보)', () => {
     fireEvent.click(container.querySelector('[data-column-menu="c1"]')!);
     const pop = await waitFor(() => container.querySelector('[data-column-menu-pop="c1"]') as HTMLElement);
 
-    // 구획 이름과 구분선 둘 — [이름 변경] ── [열 색] ── [열 삭제]
-    expect(pop.textContent).toContain('열 색');
+    // 구획 이름과 구분선 — [이름 변경] ── [열 색상] ── [배경색] ── [열 삭제]
+    expect(pop.textContent).toContain('열 색상');
+    expect(pop.textContent).toContain('배경색');
     const dividers = Array.from(pop.children).filter((el) => (el as HTMLElement).style.height === '1px');
-    expect(dividers).toHaveLength(2);
+    expect(dividers).toHaveLength(3);
 
     // 순서: 이름 변경 → 구분선 → 색 판 → 구분선 → 삭제
     const rename = pop.querySelector('[data-column-rename]') as HTMLElement;
@@ -1468,5 +1469,105 @@ describe('칸반 — 가독성 정돈(제보: 디자인 원본보다 도드라�
     // 기한: 원본과 같은 400(예전엔 500).
     const due = container.querySelector('[data-card-due="k1"]') as HTMLElement;
     expect(due.style.fontWeight).toBe('400');
+  });
+});
+
+describe('칸반 — 후속 6건(열 배경·메뉴·리스트·타임라인)', () => {
+  beforeEach(() => {
+    localStorage.clear();
+    mockMatchMedia(false);
+    localStorage.setItem('mf_demo_session', JSON.stringify({ user: { id: 'u', email: 'me@example.com' } }));
+  });
+  afterEach(cleanup);
+
+  const DOC = {
+    ...KANBAN,
+    columns: [
+      { id: 'c1', title: '할 일' },
+      { id: 'c2', title: '완료', color: '#8fb257' },
+    ],
+    cards: [
+      { id: 'k1', col: 'c1', pos: 0, text: '첫 카드' },
+      { id: 'k2', col: 'c1', pos: 1024, text: '둘째 카드' },
+      { id: 'k3', col: 'c2', pos: 0, text: '끝난 카드', due: '2030-03-04' },
+    ],
+  };
+
+  it('열 추가 타일은 화면 절반까지만 늘어난다', async () => {
+    localStorage.setItem('mindflow_doc_kn1', JSON.stringify(DOC));
+    const { container } = renderEditor('/editor?map=kn1&title=x');
+    const add = await waitFor(() => container.querySelector('[data-add-column]') as HTMLElement);
+    expect(add.style.alignSelf).toBe('stretch');
+    expect(add.style.maxHeight).toBe('50%');
+  });
+
+  it('열 메뉴에서 배경색을 고르면 열 배경이 바뀌고 저장된다 — 없애면 키가 사라진다', async () => {
+    localStorage.setItem('mindflow_doc_kn2', JSON.stringify(DOC));
+    const { container } = renderEditor('/editor?map=kn2&title=x');
+    await waitFor(() => expect(container.querySelectorAll('[data-kanban-column]')).toHaveLength(2));
+
+    fireEvent.click(container.querySelector('[data-column-menu="c1"]')!);
+    fireEvent.click(await waitFor(() => container.querySelector('[data-column-bg="#edf4fc"]') as HTMLElement));
+    await waitFor(() => expect((container.querySelector('[data-kanban-column="c1"]') as HTMLElement).style.background).toBe('rgb(237, 244, 252)'));
+    fireEvent.keyDown(window, { key: 's', ctrlKey: true });
+    await waitFor(() => expect(saved('kn2').columns[0].bg).toBe('#edf4fc'));
+
+    fireEvent.click(container.querySelector('[data-column-menu="c1"]')!);
+    fireEvent.click(await waitFor(() => container.querySelector('[data-column-bg="default"]') as HTMLElement));
+    fireEvent.keyDown(window, { key: 's', ctrlKey: true });
+    await waitFor(() => expect('bg' in saved('kn2').columns[0]).toBe(false));
+  });
+
+  it('열 메뉴 — 삭제 행이 함께 사라질 카드 수를 밝히고, 고른 색에 체크가 뜬다', async () => {
+    localStorage.setItem('mindflow_doc_kn3', JSON.stringify(DOC));
+    const { container } = renderEditor('/editor?map=kn3&title=x');
+    await waitFor(() => expect(container.querySelectorAll('[data-kanban-column]')).toHaveLength(2));
+
+    fireEvent.click(container.querySelector('[data-column-menu="c1"]')!);
+    const pop = await waitFor(() => container.querySelector('[data-column-menu-pop="c1"]') as HTMLElement);
+    // c1에는 카드 둘.
+    expect(pop.querySelector('[data-delete-column-count]')?.textContent).toBe('2개');
+    // 색을 지정하지 않은 열은 '기본 색' 칸이 활성(대각선 칸이라 체크 대신 테두리로).
+    expect((pop.querySelector('[data-column-color="default"]') as HTMLElement).style.border).toContain('2px');
+    fireEvent.keyDown(window, { key: 'Escape' });
+
+    // 색을 지정한 열은 그 칸에 체크.
+    fireEvent.click(container.querySelector('[data-column-menu="c2"]')!);
+    const pop2 = await waitFor(() => container.querySelector('[data-column-menu-pop="c2"]') as HTMLElement);
+    expect(pop2.querySelector('[data-column-color="#8fb257"] svg')).toBeTruthy();
+    expect(pop2.querySelector('[data-column-color="default"] svg')).toBeNull();
+    // 카드가 하나뿐인 열도 수를 밝힌다.
+    expect(pop2.querySelector('[data-delete-column-count]')?.textContent).toBe('1개');
+  });
+
+  it('리스트 보기 — 댓글이 0개여도 표시하고, 면은 보드와 같은 층을 쓴다', async () => {
+    localStorage.setItem('mindflow_doc_kn4', JSON.stringify(DOC));
+    const { container } = renderEditor('/editor?map=kn4&title=x');
+    await waitFor(() => expect(container.querySelector('[data-kanban-tab="list"]')).toBeTruthy());
+    fireEvent.click(container.querySelector('[data-kanban-tab="list"]')!);
+
+    const row = await waitFor(() => container.querySelector('[data-list-row="k1"]') as HTMLElement);
+    // 예전에는 0이면 아무것도 그리지 않았다.
+    expect(row.textContent).toContain('0');
+
+    const rgb = (hex: string): string => {
+      const c = hex.replace('#', '');
+      return `rgb(${parseInt(c.slice(0, 2), 16)}, ${parseInt(c.slice(2, 4), 16)}, ${parseInt(c.slice(4, 6), 16)})`;
+    };
+    const group = container.querySelector('[data-list-group="c1"]') as HTMLElement;
+    expect(group.style.background).toBe(rgb(boardSurface(UI_THEME)));
+  });
+
+  it('타임라인 보기 — 막대가 그 열의 색을 따른다', async () => {
+    localStorage.setItem('mindflow_doc_kn5', JSON.stringify(DOC));
+    const { container } = renderEditor('/editor?map=kn5&title=x');
+    await waitFor(() => expect(container.querySelector('[data-kanban-tab="timeline"]')).toBeTruthy());
+    fireEvent.click(container.querySelector('[data-kanban-tab="timeline"]')!);
+
+    const bar = await waitFor(() => container.querySelector('[data-timeline-bar="k3"]') as HTMLElement);
+    // c2의 색(#8fb257) 틴트 — 예전엔 상태색(accent/URGENT)이었다.
+    const spaced = (v: string): string => v.replace(/,/g, ', ');
+    expect(bar.style.background).toBe(spaced(hexA('#8fb257', 0.16)));
+    expect(bar.style.border).toContain(spaced(hexA('#8fb257', 0.45)));
   });
 });
