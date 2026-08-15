@@ -20,6 +20,8 @@ interface Stored {
   createdAt: string;
   resolvedAt?: string | null;
   resolvedByName?: string | null;
+  /** 좋아요(데모는 나 혼자라 불리언이면 충분하다). */
+  liked?: boolean;
   mentions?: CommentMention[];
 }
 
@@ -79,6 +81,9 @@ export class LocalCommentStore implements CommentStore {
         createdAt: c.createdAt,
         resolved: !!c.resolvedAt,
         resolvedByName: c.resolvedByName ?? null,
+        // 데모에는 남이 없다 — 내가 누른 것이 곧 전부다.
+        likes: c.liked ? 1 : 0,
+        likedByMe: !!c.liked,
         mentions: Array.isArray(c.mentions) ? c.mentions : [],
       }));
   }
@@ -137,6 +142,16 @@ export class LocalCommentStore implements CommentStore {
     if (c.parentId) return { error: '답글은 해결 표시를 할 수 없어요.' };
     c.resolvedAt = resolved ? new Date().toISOString() : null;
     c.resolvedByName = resolved ? demoName() : null;
+    writeAll(list);
+    ping(documentId);
+    return {};
+  }
+
+  async setLiked(documentId: string, commentId: string, liked: boolean): Promise<{ error?: string }> {
+    const list = readAll();
+    const c = list.find((x) => x.documentId === documentId && x.id === commentId);
+    if (!c) return { error: '댓글을 찾을 수 없어요.' };
+    c.liked = liked;
     writeAll(list);
     ping(documentId);
     return {};

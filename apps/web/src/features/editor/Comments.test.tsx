@@ -129,27 +129,30 @@ describe('주제 댓글', () => {
     expect(stored[1]!.parentId).toBe(stored[0]!.id);
   });
 
-  it('해결 표시 — 스레드가 접힌 구획으로 내려가고 배지에서 빠진다, 다시 열기로 복귀', async () => {
-    localStorage.setItem('mindflow_doc_cm6', JSON.stringify(DOC));
-    seedComment('cm6', 'c1', '해결할 논의');
-    renderEditor('/editor?map=cm6&title=x');
-    // 배지 1 → 해결하면 사라진다(배지 = 미해결 스레드).
-    await screen.findByLabelText('댓글 1개');
-    fireEvent.click(screen.getByLabelText('댓글 1개'));
-    const panel = await screen.findByLabelText('댓글');
-    await waitFor(() => expect(within(panel).getByText('해결할 논의')).toBeTruthy());
+  // 해결 기능은 걷어냈다(요청: 해결 대신 좋아요). 스레드는 하나의 목록이고,
+  // 공감은 좋아요 수로 남는다 — 서버 컬럼(0021)은 그대로 두되 UI에서 사라진다.
+  it('해결 버튼은 없고, 좋아요를 누르면 수가 오르고 다시 누르면 내린다', async () => {
+    localStorage.setItem('mindflow_doc_cmlike', JSON.stringify(DOC));
+    seedComment('cmlike', 'root', '좋아요 대상');
+    renderEditor('/editor?map=cmlike&title=x');
+    const panel = await openCommentsViaMenu();
+    await waitFor(() => expect(within(panel).getByText('좋아요 대상')).toBeTruthy());
 
-    fireEvent.click(within(panel).getByTitle('해결됨으로 표시'));
-    await waitFor(() => expect(within(panel).getByText(/해결된 스레드 1개/)).toBeTruthy());
-    await waitFor(() => expect(screen.queryByLabelText('댓글 1개')).toBeNull());
-    expect(storedComments()[0]!.resolvedAt).toBeTruthy();
+    expect(screen.queryByTitle('해결됨으로 표시')).toBeNull();
+    const like = await waitFor(() => {
+      const el = document.querySelector('[data-like-button]') as HTMLElement;
+      expect(el).toBeTruthy();
+      return el;
+    });
+    expect(like.getAttribute('aria-pressed')).toBe('false');
+    expect(like.textContent).toContain('0');
 
-    // 접힌 구획을 펼치면 "해결됨 · 이름"이 보이고, 다시 열면 배지가 돌아온다.
-    fireEvent.click(within(panel).getByText(/해결된 스레드 1개/));
-    await waitFor(() => expect(within(panel).getByText(/해결됨 · /)).toBeTruthy());
-    fireEvent.click(within(panel).getByRole('button', { name: '다시 열기' }));
-    await waitFor(() => expect(screen.getByLabelText('댓글 1개')).toBeTruthy());
-    expect(storedComments()[0]!.resolvedAt).toBeNull();
+    fireEvent.click(like);
+    await waitFor(() => expect((document.querySelector('[data-like-button]') as HTMLElement).getAttribute('aria-pressed')).toBe('true'));
+    expect((document.querySelector('[data-like-button]') as HTMLElement).textContent).toContain('1');
+
+    fireEvent.click(document.querySelector('[data-like-button]') as HTMLElement);
+    await waitFor(() => expect((document.querySelector('[data-like-button]') as HTMLElement).getAttribute('aria-pressed')).toBe('false'));
   });
 
   it('메모(플로트)에도 댓글이 달린다 — 선택 추종·대상 제목·저장 키·배지 (모든 객체 댓글)', async () => {

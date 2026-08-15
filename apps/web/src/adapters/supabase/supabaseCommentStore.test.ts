@@ -95,7 +95,9 @@ describe('SupabaseCommentStore — 답글·멘션·해결', () => {
       })),
     } as unknown as SupabaseClient;
     const list = await new SupabaseCommentStore(client).list('d1');
-    expect(calls).toHaveLength(2);
+    // 댓글 표를 두 번 읽는다(확장 → 기본). 좋아요(0028) 읽기는 곁다리라 세지 않는다 —
+    // 이 스텁에는 `.in`이 없어 그 시도가 던지지만, 목록은 그대로 떠야 한다.
+    expect(calls.filter((c) => !c.includes('comment_id'))).toHaveLength(2);
     expect(list).toHaveLength(1);
     expect(list[0]).toMatchObject({ id: 'c1', parentId: null, resolved: false, mentions: [], mine: true });
   });

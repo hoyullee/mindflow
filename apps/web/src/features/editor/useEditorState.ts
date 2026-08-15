@@ -396,6 +396,7 @@ export interface EditorController {
   removeComment: (commentId: string) => Promise<{ error?: string }>;
   /** 스레드 해결/해제(뿌리 댓글만) — 댓글을 쓸 수 있는 사람 전원이 할 수 있다. */
   resolveComment: (commentId: string, resolved: boolean) => Promise<{ error?: string }>;
+  likeComment: (commentId: string, liked: boolean) => Promise<{ error?: string }>;
   /** 이 사람이 이 문서에 댓글을 쓸 수 있는가 — 소유자와 **초대받은 사람**만.
    * 링크 공유(0017)로 열었으면 서버가 댓글을 아예 내주지 않으므로 진입점도 감춘다
    * ("열리는 척하다 빈 목록"이 되지 않게). */
@@ -4433,6 +4434,15 @@ export function useEditorState(): EditorController {
     },
     [commentStore, docStoreId, reloadComments],
   );
+  /** 좋아요 토글(요청: 해결 대신 좋아요) — 자기 표만 넣고 뺀다(0028 RLS). */
+  const likeComment = useCallback(
+    async (commentId: string, liked: boolean) => {
+      const res = await commentStore.setLiked(docStoreId, commentId, liked);
+      if (!res.error) await reloadComments();
+      return res;
+    },
+    [commentStore, docStoreId, reloadComments],
+  );
   const [searchMarks, setSearchMarks] = useState<{ nodes: Set<string>; floats: Set<string> } | null>(null);
 
   // 격자 스냅 — **이 기기의 입력 보조**라 문서가 아니라 localStorage에 남긴다
@@ -6248,6 +6258,7 @@ export function useEditorState(): EditorController {
     addComment,
     removeComment,
     resolveComment,
+    likeComment,
     canComment,
     historyOpen,
     setHistoryOpen,

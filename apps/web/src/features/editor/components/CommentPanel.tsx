@@ -15,8 +15,10 @@ import { ROOT_ID } from '@mindflow/mindmap-core';
 import type { EditorController } from '../useEditorState';
 import type { CommentMention, DocComment, ShareParticipant } from '../../../adapters/ports';
 import { panelTitleLine } from './panel/panelPrimitives';
-import { hexA } from '../theme';
-import { CARD_SHADOW, glassCard } from '../chrome';
+import { hexA, mixHex } from '../theme';
+import { useIsTouchDevice } from '../../../hooks/useMediaQuery';
+import { useSoftKeyboardOpen } from '../../../hooks/useKeyboardInset';
+import { CARD_SHADOW, MONO_FONT, glassCard } from '../chrome';
 import { CommentIcon } from './ToolbarMenus';
 import { formatFullDateTime, formatLastEdited } from '../../home/timeFormat';
 import { useIsMobile } from '../../../hooks/useMediaQuery';
@@ -138,7 +140,6 @@ export function CommentThreads({ controller, nodeId, scroll = false }: { control
   const th = controller.uiTheme;
   const isMobile = useIsMobile();
   const shareStore = useShareStore();
-  const [showResolved, setShowResolved] = useState(false);
   const [replyTo, setReplyTo] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   /** 멘션 자동완성 대상 — 이 문서의 참가자(소유자 + 초대받은 사람). */
@@ -168,8 +169,6 @@ export function CommentThreads({ controller, nodeId, scroll = false }: { control
   const threads: Thread[] = forNode
     .filter((c) => !c.parentId)
     .map((root) => ({ root, replies: forNode.filter((r) => r.parentId === root.id) }));
-  const unresolved = threads.filter((t) => !t.root.resolved);
-  const resolved = threads.filter((t) => t.root.resolved);
 
   const submitThread = async (body: string, mentions: CommentMention[]) => {
     const res = await controller.addComment(nodeId, body, mentions.length ? { mentions } : undefined);
@@ -190,7 +189,9 @@ export function CommentThreads({ controller, nodeId, scroll = false }: { control
           <div style={{ fontSize: 12, color: th.subtext, padding: '12px 0' }}>불러오는 중…</div>
         ) : threads.length ? (
           <>
-            {unresolved.map((t) => (
+            {/* 해결 표시는 걷어냈다(요청) — 논의를 접는 대신 **좋아요**로 공감을 남긴다.
+                그래서 스레드는 하나의 목록이고, 배지도 전부를 센다. */}
+            {threads.map((t) => (
               <ThreadView
                 key={t.root.id}
                 thread={t}
@@ -202,45 +203,6 @@ export function CommentThreads({ controller, nodeId, scroll = false }: { control
                 onReplySubmit={(body, mentions) => submitReply(t.root.id, body, mentions)}
               />
             ))}
-            {!unresolved.length && <div style={{ fontSize: 12, color: th.subtext, padding: '12px 0' }}>남은 논의가 없어요 — 모두 해결됐어요.</div>}
-            {resolved.length > 0 && (
-              <>
-                <button
-                  type="button"
-                  data-resolved-toggle
-                  onClick={() => setShowResolved((v) => !v)}
-                  style={{
-                    display: 'block',
-                    width: '100%',
-                    textAlign: 'left',
-                    border: 'none',
-                    background: 'transparent',
-                    color: th.subtext,
-                    fontFamily: 'inherit',
-                    fontSize: 11.5,
-                    fontWeight: 700,
-                    padding: isMobile ? '12px 0' : '9px 0 5px',
-                    cursor: 'pointer',
-                  }}
-                >
-                  {showResolved ? '▾' : '▸'} 해결된 스레드 {resolved.length}개
-                </button>
-                {showResolved &&
-                  resolved.map((t) => (
-                    <ThreadView
-                      key={t.root.id}
-                      thread={t}
-                      controller={controller}
-                      isMobile={isMobile}
-                      participants={participants}
-                      dimmed
-                      replyOpen={false}
-                      onReplyToggle={null}
-                      onReplySubmit={() => Promise.resolve(false)}
-                    />
-                  ))}
-              </>
-            )}
           </>
         ) : (
           <div style={{ fontSize: 12, color: th.subtext, lineHeight: 1.6, padding: '12px 0' }}>아직 댓글이 없어요. 의견을 남겨 보세요.</div>
@@ -287,54 +249,15 @@ function ThreadView({
 }) {
   const th = controller.uiTheme;
   const { root, replies } = thread;
-  const linkBtn: CSSProperties = {
-    border: 'none',
-    background: 'transparent',
-    color: th.subtext,
-    fontSize: 11,
-    cursor: 'pointer',
-    fontFamily: 'inherit',
-    padding: isMobile ? '8px 6px' : '2px 4px',
-    borderRadius: 6,
-  };
+
   return (
     <section data-comment-thread={root.id} style={{ padding: '9px 0', borderBottom: `1px solid ${th.border}`, opacity: dimmed ? 0.66 : 1 }}>
-      {root.resolved && (
-        <div data-resolved-tag style={{ display: 'flex', alignItems: 'center', gap: 5, fontSize: 11, color: th.subtext, marginBottom: 4 }}>
-          <ResolveGlyph size={12} color={th.accent} filled />
-          해결됨{root.resolvedByName ? ` · ${root.resolvedByName}` : ''}
-          <button type="button" className="mf-ed-btn" style={{ ...linkBtn, marginLeft: 'auto' }} onClick={() => void controller.resolveComment(root.id, false)}>
-            다시 열기
-          </button>
-        </div>
-      )}
-      <CommentRow comment={root} controller={controller} isMobile={isMobile} deletable deleteTitle={replies.length ? '스레드 삭제 (답글 포함)' : '삭제'} />
+      <CommentRow comment={root} controller={controller} isMobile={isMobile} deletable deleteTitle={replies.length ? '스레드 삭제 (답글 포함)' : '삭제'} actions={onReplyToggle ? { onReply: onReplyToggle, replyOpen } : { replyOpen: false }} />
       {replies.map((r) => (
-        <div key={r.id} style={{ marginLeft: 14, paddingLeft: 9, borderLeft: `2px solid ${th.border}` }}>
-          <CommentRow comment={r} controller={controller} isMobile={isMobile} deletable deleteTitle="삭제" />
+        <div key={r.id} style={{ marginLeft: 34, paddingLeft: 0 }}>
+          <CommentRow comment={r} controller={controller} isMobile={isMobile} deletable deleteTitle="삭제" actions={{ replyOpen: false }} />
         </div>
       ))}
-      {!root.resolved && (
-        <div style={{ display: 'flex', gap: 6, marginTop: 3 }}>
-          {onReplyToggle && (
-            <button type="button" className="mf-ed-btn" data-reply-toggle style={linkBtn} onClick={onReplyToggle} aria-expanded={replyOpen}>
-              답글
-            </button>
-          )}
-          <button
-            type="button"
-            className="mf-ed-btn"
-            data-resolve-button
-            style={linkBtn}
-            title="해결됨으로 표시"
-            onClick={() => void controller.resolveComment(root.id, true)}
-          >
-            <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4 }}>
-              <ResolveGlyph size={12} color="currentColor" /> 해결
-            </span>
-          </button>
-        </div>
-      )}
       {replyOpen && (
         <div style={{ marginLeft: 14, paddingLeft: 9, borderLeft: `2px solid ${th.border}`, marginTop: 6 }}>
           <CommentComposer
@@ -355,30 +278,124 @@ function ThreadView({
 
 // ── 댓글 한 줄 ───────────────────────────────────────────────────────────────
 
-function CommentRow({ comment: c, controller, isMobile, deletable, deleteTitle }: { comment: DocComment; controller: EditorController; isMobile: boolean; deletable: boolean; deleteTitle: string }) {
+function CommentRow({
+  comment: c,
+  controller,
+  isMobile,
+  deletable,
+  deleteTitle,
+  actions,
+}: {
+  comment: DocComment;
+  controller: EditorController;
+  isMobile: boolean;
+  deletable: boolean;
+  deleteTitle: string;
+  /** 아래 동작 줄 — 답글은 스레드 뿌리에만, 좋아요는 모든 줄에. */
+  actions: { onReply?: () => void; replyOpen: boolean };
+}) {
   const th = controller.uiTheme;
+  const name = c.authorName || '알 수 없음';
+  const pill: CSSProperties = {
+    height: isMobile ? 30 : 24,
+    padding: '0 9px',
+    borderRadius: 999,
+    border: `1px solid ${th.border}`,
+    background: th.panel,
+    color: th.subtext,
+    fontFamily: 'inherit',
+    fontSize: 11,
+    fontWeight: 600,
+    cursor: 'pointer',
+    display: 'inline-flex',
+    alignItems: 'center',
+    gap: 5,
+  };
   return (
-    <article data-comment-item={c.id} style={{ padding: '4px 0' }}>
-      <div style={{ display: 'flex', alignItems: 'baseline', gap: 6 }}>
-        <span style={{ fontSize: 12, fontWeight: 700, color: th.text, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{c.authorName || '알 수 없음'}</span>
-        <span title={formatFullDateTime(c.createdAt)} style={{ fontSize: 11, color: th.subtext, flex: '1 1 auto' }}>
-          {formatLastEdited(c.createdAt)}
-        </span>
-        {deletable && c.mine && (
+    <article data-comment-item={c.id} style={{ display: 'flex', gap: 9, alignItems: 'flex-start', padding: '5px 0' }}>
+      {/* 작성자 얼굴(디자인 원본) — 이름에서 색을 정한다(같은 사람은 늘 같은 색). */}
+      <span
+        data-comment-avatar
+        aria-hidden
+        style={{
+          width: 26,
+          height: 26,
+          flexShrink: 0,
+          borderRadius: 999,
+          background: authorTint(name).bg,
+          color: authorTint(name).ink,
+          display: 'inline-flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          fontSize: 10.5,
+          fontWeight: 700,
+        }}
+      >
+        {name.slice(0, 1)}
+      </span>
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 4, minWidth: 0, flex: 1 }}>
+        <div style={{ display: 'flex', alignItems: 'baseline', gap: 7 }}>
+          <span style={{ fontSize: 12.5, fontWeight: 700, color: th.text, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{name}</span>
+          <span title={formatFullDateTime(c.createdAt)} style={{ fontFamily: MONO_FONT, fontSize: 10.5, color: th.subtext, flex: '1 1 auto' }}>
+            {formatLastEdited(c.createdAt)}
+          </span>
+          {deletable && c.mine && (
+            <button
+              type="button"
+              className="mf-ed-btn"
+              aria-label="댓글 삭제"
+              title={deleteTitle}
+              onClick={() => void controller.removeComment(c.id)}
+              style={{ border: 'none', background: 'transparent', color: th.subtext, fontSize: 11, cursor: 'pointer', fontFamily: 'inherit', padding: isMobile ? '8px 6px' : '2px 4px', borderRadius: 6, flexShrink: 0 }}
+            >
+              삭제
+            </button>
+          )}
+        </div>
+        <p style={{ margin: 0, fontSize: 12.5, lineHeight: 1.6, color: th.text, whiteSpace: 'pre-wrap', wordBreak: 'break-word' }}>{renderBody(c.body, c.mentions, th.accent)}</p>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginTop: 1 }}>
+          {actions.onReply && (
+            <button type="button" className="mf-ed-btn" data-reply-toggle aria-expanded={actions.replyOpen} onClick={actions.onReply} style={{ ...pill, fontWeight: 700 }}>
+              답글
+            </button>
+          )}
+          {/* 좋아요(요청: 해결 대신) — 누른 표는 강조색으로. 수는 등폭으로 읽는다. */}
           <button
             type="button"
             className="mf-ed-btn"
-            aria-label="댓글 삭제"
-            title={deleteTitle}
-            onClick={() => void controller.removeComment(c.id)}
-            style={{ border: 'none', background: 'transparent', color: th.subtext, fontSize: 11, cursor: 'pointer', fontFamily: 'inherit', padding: isMobile ? '8px 6px' : '2px 4px', borderRadius: 6 }}
+            data-like-button
+            aria-pressed={c.likedByMe}
+            aria-label={c.likedByMe ? '좋아요 취소' : '좋아요'}
+            title={c.likedByMe ? '좋아요 취소' : '좋아요'}
+            onClick={() => void controller.likeComment(c.id, !c.likedByMe)}
+            style={{ ...pill, borderColor: c.likedByMe ? hexA(th.accent, 0.45) : th.border, background: c.likedByMe ? hexA(th.accent, 0.08) : th.panel, color: c.likedByMe ? th.accent : th.subtext }}
           >
-            삭제
+            <ThumbGlyph size={12} filled={c.likedByMe} />
+            <span style={{ fontFamily: MONO_FONT, fontSize: 10.5 }}>{c.likes}</span>
           </button>
-        )}
+        </div>
       </div>
-      <div style={{ fontSize: 12.5, lineHeight: 1.55, color: th.text, whiteSpace: 'pre-wrap', wordBreak: 'break-word', marginTop: 2 }}>{renderBody(c.body, c.mentions, th.accent)}</div>
     </article>
+  );
+}
+
+/** 이름에서 만든 얼굴 색 한 쌍(파스텔 면 + 진한 잉크) — 접속자 아바타와 같은 결.
+ * 같은 이름은 늘 같은 색이라 스레드에서 누가 말했는지 색으로도 읽힌다. */
+const AVATAR_HUES = ['#f0663f', '#e0a53c', '#3f9e6a', '#3f8fd0', '#8a63d2', '#d0568f', '#3fae9e'];
+function authorTint(name: string): { bg: string; ink: string } {
+  let h = 0;
+  for (let i = 0; i < name.length; i += 1) h = (h * 31 + name.charCodeAt(i)) >>> 0;
+  const base = AVATAR_HUES[h % AVATAR_HUES.length]!;
+  return { bg: mixHex(base, '#ffffff', 0.6), ink: mixHex(base, '#000000', 0.45) };
+}
+
+/** 좋아요 글리프 — 디자인 원본의 엄지. */
+function ThumbGlyph({ size = 12, filled = false }: { size?: number; filled?: boolean }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill={filled ? 'currentColor' : 'none'} stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+      <path d="M7 11v9H4a1 1 0 0 1-1-1v-7a1 1 0 0 1 1-1z" />
+      <path d="M7 11l4.5-7.5A2 2 0 0 1 15 4.6L14 9h5a2 2 0 0 1 2 2.4l-1.4 6A2 2 0 0 1 17.6 19H7" />
+    </svg>
   );
 }
 
@@ -539,6 +556,11 @@ function CommentComposer({
     }
   };
 
+  // 폰 키패드에는 Shift가 없다 — 그때만 Enter가 줄바꿈으로 남는다.
+  const touch = useIsTouchDevice();
+  const kbOpen = useSoftKeyboardOpen();
+  const softKeyboard = touch || kbOpen;
+
   const onKeyDown = (e: KeyboardEvent<HTMLTextAreaElement>) => {
     // 드롭다운이 떠 있을 때: ↑/↓ = 활성 행 이동(순환), Enter/Tab = 활성 후보 선택.
     // IME 조합 중 키는 건드리지 않는다 — 조합 확정 Enter가 후보 선택으로 새면 안 된다.
@@ -565,10 +587,16 @@ function CommentComposer({
       controller.closeComments();
       return;
     }
-    // Enter는 **줄바꿈**이다 — 소프트 키보드에는 Shift가 없어서 Enter를 등록으로
-    // 쓰면 폰에서 여러 줄을 쓸 방법이 사라진다(#333과 같은 이유). 등록은 버튼과
-    // Ctrl/⌘+Enter.
+    // **Enter = 등록 / Shift+Enter = 줄바꿈**(요청). 단, 소프트 키보드에는 Shift가
+    // 없으므로 폰에서는 예전 그대로 Enter가 줄바꿈이고 등록은 버튼이 맡는다
+    // (#333에서 캔버스 편집에 세운 규칙과 같은 판단 — 판정도 같은 훅을 쓴다:
+    // "이 기기가 터치인가"가 아니라 "지금 Shift 없는 키보드로 치고 있는가").
     if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) {
+      e.preventDefault();
+      void submit();
+      return;
+    }
+    if (e.key === 'Enter' && !e.shiftKey && !softKeyboard && !e.nativeEvent.isComposing) {
       e.preventDefault();
       void submit();
     }
@@ -693,7 +721,7 @@ function CommentComposer({
           type="button"
           onClick={() => void submit()}
           disabled={!draft.trim() || busy}
-          title="Ctrl/⌘ + Enter"
+          title={softKeyboard ? '등록' : 'Enter'}
           style={{
             border: 'none',
             borderRadius: 8,
@@ -715,11 +743,3 @@ function CommentComposer({
 }
 
 /** 체크 원 — 해결 표시. */
-function ResolveGlyph({ size = 12, color = 'currentColor', filled = false }: { size?: number; color?: string; filled?: boolean }) {
-  return (
-    <svg width={size} height={size} viewBox="0 0 24 24" fill={filled ? color : 'none'} stroke={color} strokeWidth={2.2} strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-      <circle cx={12} cy={12} r={10} />
-      <path d="M8 12.5l2.7 2.7L16 9.5" stroke={filled ? '#fff' : color} fill="none" />
-    </svg>
-  );
-}

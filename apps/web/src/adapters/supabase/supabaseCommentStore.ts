@@ -68,7 +68,25 @@ export class SupabaseCommentStore implements CommentStore {
       console.warn('[geurio] 댓글을 불러오지 못했어요:', error.message);
       return [];
     }
-    return (data as Partial<Row>[] | null ?? []).map((r) => ({
+    const rows = (data as Partial<Row>[] | null) ?? [];
+    // 좋아요는 별도 표(0028) — 목록 하나를 더 읽어 개수와 "내가 눌렀는가"를 붙인다.
+    // 미적용 서버에서는 조용히 0으로 둔다(배포 순서 안전 — 목록이 죽으면 안 된다).
+    const likes = new Map<string, { n: number; mine: boolean }>();
+    if (rows.length) {
+      const ids = rows.map((r) => r.id).filter((v): v is string => !!v);
+      try {
+        const { data: likeRows, error: likeErr } = await this.client.from('comment_likes').select('comment_id,user_id').in('comment_id', ids);
+        if (likeErr) console.warn('[geurio] 댓글 좋아요를 불러오지 못했어요:', likeErr.message);
+        for (const l of (likeRows as { comment_id: string; user_id: string }[] | null) ?? []) {
+          const cur = likes.get(l.comment_id) ?? { n: 0, mine: false };
+          likes.set(l.comment_id, { n: cur.n + 1, mine: cur.mine || (!!uid && l.user_id === uid) });
+        }
+      } catch (e) {
+        // 좋아요는 곁다리다 — 못 읽어도 **댓글 목록은 뜬다**(0028 미적용 서버 안전).
+        console.warn('[geurio] 댓글 좋아요를 불러오지 못했어요:', e);
+      }
+    }
+    return rows.map((r) => ({
       id: r.id ?? '',
       nodeId: r.node_id ?? '',
       parentId: r.parent_id ?? null,
@@ -78,6 +96,8 @@ export class SupabaseCommentStore implements CommentStore {
       createdAt: r.created_at ?? '',
       resolved: !!r.resolved_at,
       resolvedByName: r.resolved_by_name || null,
+      likes: likes.get(r.id ?? '')?.n ?? 0,
+      likedByMe: likes.get(r.id ?? '')?.mine ?? false,
       mentions: mentionsOf(r.mentions),
     }));
   }
@@ -102,6 +122,21 @@ export class SupabaseCommentStore implements CommentStore {
     if (error) {
       console.warn('[geurio] 댓글 저장 실패:', error.message);
       return { error: '댓글을 남기지 못했어요. 잠시 후 다시 시도해 주세요.' };
+    }
+    this.ping(documentId);
+    return {};
+  }
+
+  async setLiked(documentId: string, commentId: string, liked: boolean): Promise<{ error?: string }> {
+    const { data } = await this.client.auth.getUser();
+    const uid = data?.user?.id;
+    if (!uid) return { error: '로그인이 필요해요.' };
+    const { error } = liked
+      ? await this.client.from('comment_likes').upsert({ comment_id: commentId, user_id: uid }, { onConflict: 'comment_id,user_id' })
+      : await this.client.from('comment_likes').delete().eq('comment_id', commentId).eq('user_id', uid);
+    if (error) {
+      console.warn('[geurio] 좋아요 저장 실패:', error.message);
+      return { error: '좋아요를 반영하지 못했어요.' };
     }
     this.ping(documentId);
     return {};

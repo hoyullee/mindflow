@@ -41,11 +41,48 @@ function tint(hex: string, alpha: number): string {
   return `rgba(${(n >> 16) & 255}, ${(n >> 8) & 255}, ${n & 255}, ${alpha})`;
 }
 
-const CATEGORIES: { key: FeedbackCategory; label: string }[] = [
-  { key: 'ux', label: '불편해요' },
-  { key: 'bug', label: '오류 제보' },
-  { key: 'idea', label: '아이디어' },
-  { key: 'other', label: '기타' },
+/** 디자인 원본의 네 갈래 — 아이콘까지 원본 도형 그대로(찡그린 얼굴·경고 삼각형·
+ * 전구·말풍선). 안내 문구도 고른 갈래에 따라 바뀐다(무엇을 적어야 할지 알려 준다). */
+const CATEGORIES: { key: FeedbackCategory; label: string; ph: string; icon: JSX.Element }[] = [
+  {
+    key: 'ux',
+    label: '불편해요',
+    ph: '예) 메모를 접었을 때 스크롤 위치가 초기화돼요',
+    icon: (
+      <>
+        <circle cx="12" cy="12" r="9" />
+        <path d="M8.5 15.5c1-1 5-1 6 0M9 9.5h.01M15 9.5h.01" />
+      </>
+    ),
+  },
+  {
+    key: 'bug',
+    label: '오류 제보',
+    ph: '어떤 동작에서 문제가 생겼는지 알려 주세요',
+    icon: (
+      <>
+        <path d="M12 4.5 20 19H4z" />
+        <path d="M12 10v4M12 16.5h.01" />
+      </>
+    ),
+  },
+  {
+    key: 'idea',
+    label: '아이디어',
+    ph: '있었으면 하는 기능을 자유롭게 적어 주세요',
+    icon: (
+      <>
+        <path d="M9 18h6M10 21h4" />
+        <path d="M12 3a6 6 0 0 0-3.5 10.9c.4.3.5.7.5 1.1h6c0-.4.1-.8.5-1.1A6 6 0 0 0 12 3z" />
+      </>
+    ),
+  },
+  {
+    key: 'other',
+    label: '기타',
+    ph: '무엇이든 편하게 남겨 주세요',
+    icon: <path d="M21 12a8 8 0 0 1-8 8H8l-4 3v-6a8 8 0 0 1 8-8h1a8 8 0 0 1 8 3z" />,
+  },
 ];
 
 export function FeedbackModal({ open, onClose, page, theme }: { open: boolean; onClose: () => void; page: 'home' | 'editor'; theme?: FeedbackTheme }) {
@@ -109,7 +146,7 @@ export function FeedbackModal({ open, onClose, page, theme }: { open: boolean; o
     setDone(true);
   };
 
-  const chip = (c: { key: FeedbackCategory; label: string }): JSX.Element => {
+  const chip = (c: (typeof CATEGORIES)[number]): JSX.Element => {
     const active = category === c.key;
     return (
       <button
@@ -118,22 +155,30 @@ export function FeedbackModal({ open, onClose, page, theme }: { open: boolean; o
         onClick={() => setCategory(c.key)}
         aria-pressed={active}
         style={{
-          height: 32,
-          padding: '0 13px',
-          borderRadius: 999,
+          height: 56,
+          borderRadius: 14,
           border: `1.5px solid ${active ? th.accent : th.border}`,
-          background: active ? th.accent : 'transparent',
-          color: active ? th.accentInk : th.text,
+          background: active ? tint(th.accent, 0.09) : th.panel,
+          color: active ? th.accent : th.subtext,
           fontFamily: 'inherit',
-          fontSize: 12.5,
-          fontWeight: active ? 700 : 500,
+          fontSize: 11.5,
+          fontWeight: 700,
           cursor: 'pointer',
+          display: 'flex',
+          flexDirection: 'column',
+          alignItems: 'center',
+          justifyContent: 'center',
+          gap: 5,
         }}
       >
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+          {c.icon}
+        </svg>
         {c.label}
       </button>
     );
   };
+
 
   const cardStyle: CSSProperties = {
     width: 452,
@@ -179,11 +224,19 @@ export function FeedbackModal({ open, onClose, page, theme }: { open: boolean; o
           </div>
         ) : (
           <>
-            <div style={{ fontSize: 16, fontWeight: 800, marginBottom: 6 }}>피드백 보내기</div>
-            <div style={{ fontSize: 12.5, color: th.subtext, lineHeight: 1.6, marginBottom: 14 }}>
-              사용하며 불편했던 점, 이상하게 동작하는 부분, 있었으면 하는 기능 — 무엇이든 편하게 남겨 주세요.
+            {/* 디자인 원본의 머리: 강조색 틴트 칩에 담은 말풍선 + 제목/설명. */}
+            <div style={{ display: 'flex', alignItems: 'flex-start', gap: 12, marginBottom: 15 }}>
+              <span style={{ width: 34, height: 34, flexShrink: 0, borderRadius: 11, background: tint(th.accent, 0.12), color: th.accent, display: 'inline-flex', alignItems: 'center', justifyContent: 'center' }}>
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+                  <path d="M21 12a8 8 0 0 1-8 8H8l-4 3v-6a8 8 0 0 1 8-8h1a8 8 0 0 1 8 3z" />
+                </svg>
+              </span>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 4, minWidth: 0 }}>
+                <span style={{ fontSize: 16, fontWeight: 800, letterSpacing: '-.02em' }}>피드백 보내기</span>
+                <span style={{ fontSize: 12, lineHeight: 1.6, color: th.subtext }}>불편했던 점, 이상하게 동작하는 부분, 있었으면 하는 기능. 무엇이든 편하게 남겨 주세요.</span>
+              </div>
             </div>
-            <div style={{ display: 'flex', gap: 7, flexWrap: 'wrap', marginBottom: 12 }}>{CATEGORIES.map(chip)}</div>
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 7, marginBottom: 13 }}>{CATEGORIES.map(chip)}</div>
             <textarea
               ref={areaRef}
               value={message}
@@ -191,7 +244,7 @@ export function FeedbackModal({ open, onClose, page, theme }: { open: boolean; o
                 setMessage(e.target.value);
                 setError('');
               }}
-              placeholder="예) 메모를 접었을 때 …가 불편했어요"
+              placeholder={(CATEGORIES.find((c) => c.key === category) ?? CATEGORIES[0]!).ph}
               aria-label="피드백 내용"
               rows={5}
               maxLength={4000}
@@ -200,8 +253,8 @@ export function FeedbackModal({ open, onClose, page, theme }: { open: boolean; o
                 boxSizing: 'border-box',
                 padding: '10px 12px',
                 border: `1px solid ${th.border}`,
-                borderRadius: 10,
-                background: th.panel,
+                borderRadius: 14,
+                background: th.canvasBg,
                 color: th.text,
                 fontFamily: 'inherit',
                 fontSize: 13.5,
@@ -211,6 +264,12 @@ export function FeedbackModal({ open, onClose, page, theme }: { open: boolean; o
                 minHeight: 110,
               }}
             />
+            {/* 남은 글자수 — 디자인 원본의 `0/500` 자리(우리 상한은 4000자). */}
+            <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: 7 }}>
+              <span data-fb-count style={{ fontFamily: "'JetBrains Mono',ui-monospace,monospace", fontSize: 11, color: th.subtext }}>
+                {message.length}/4000
+              </span>
+            </div>
             {mode === 'local' && (
               <div style={{ fontSize: 12, color: th.subtext, background: th.canvasBg, border: `1px solid ${th.border}`, borderRadius: 9, padding: '8px 10px', marginTop: 10, lineHeight: 1.5 }}>
                 데모 모드예요. 피드백은 이 브라우저에만 저장되고 실제로 전송되지는 않습니다.
@@ -225,7 +284,7 @@ export function FeedbackModal({ open, onClose, page, theme }: { open: boolean; o
               <button
                 type="button"
                 onClick={onClose}
-                style={{ flex: '1 1 auto', height: 42, border: `1px solid ${th.border}`, borderRadius: 11, background: 'transparent', color: th.text, fontFamily: 'inherit', fontSize: 14, fontWeight: 700, cursor: 'pointer' }}
+                style={{ flex: '1 1 auto', height: 42, border: `1px solid ${th.border}`, borderRadius: 999, background: 'transparent', color: th.text, fontFamily: 'inherit', fontSize: 14, fontWeight: 700, cursor: 'pointer' }}
               >
                 취소
               </button>
@@ -233,7 +292,7 @@ export function FeedbackModal({ open, onClose, page, theme }: { open: boolean; o
                 type="button"
                 onClick={() => void submit()}
                 disabled={busy}
-                style={{ flex: '1 1 auto', height: 42, border: 'none', borderRadius: 11, ...accentFill(th.accent), color: th.accentInk, fontFamily: 'inherit', fontSize: 14, fontWeight: 700, cursor: busy ? 'default' : 'pointer', opacity: busy ? 0.6 : 1 }}
+                style={{ flex: '1.6 1 auto', height: 42, border: 'none', borderRadius: 999, ...accentFill(th.accent), color: th.accentInk, fontFamily: 'inherit', fontSize: 14, fontWeight: 700, cursor: busy ? 'default' : 'pointer', opacity: busy ? 0.6 : 1 }}
               >
                 {busy ? '보내는 중…' : '보내기'}
               </button>
