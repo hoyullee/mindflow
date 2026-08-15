@@ -19,7 +19,7 @@ import type { EditorController } from '../useEditorState';
 import { hexA, mixHex } from '../theme';
 import type { Theme } from '../theme';
 import { useIsMobile } from '../../../hooks/useMediaQuery';
-import { CommentIcon } from './ToolbarMenus';
+import { CommentIcon, MenuDivider, MenuSectionLabel } from './ToolbarMenus';
 import { RichSpan, linkInk } from '../richSpans';
 import { columnDropIndex, dropTargetAt, edgeScroll } from '../kanbanDrag';
 import type { ColumnHit, DropTarget } from '../kanbanDrag';
@@ -1297,7 +1297,12 @@ function ColumnTitleEdit({ title, theme: th, onCommit, onCancel }: { title: stri
 }
 
 /**
- * 열 메뉴 — 이름 변경 · 색 · 삭제.
+ * 열 메뉴 — 이름 변경 · 열 색 · 삭제.
+ *
+ * 세 가지가 **성격이 다른 묶음**이라 구분선과 구획 이름으로 갈랐다(제보: 메뉴 안이
+ * 구분되지 않는다): 이름 변경(즉시 실행) / 열 색(고르는 판) / 삭제(파괴적). 행의
+ * 문법은 GNB 드롭다운과 같다 — 아이콘 + 라벨, `mf-ed-btn` 호버, `MenuDivider`·
+ * `MenuSectionLabel`을 그대로 가져다 써서 앱 안의 메뉴가 한 언어를 쓴다.
  *
  * `position: fixed`인 이유는 카드 색 판과 같다: 열은 세로로 스크롤되는 상자 안에
  * 있어 흐름에 두면 잘린다. 바깥을 누르거나 Esc로 닫힌다.
@@ -1340,14 +1345,14 @@ function ColumnMenu({
     };
   }, [onClose]);
 
-  const W = 196;
+  const W = 236;
   const left = Math.max(8, Math.min(at.x - W, window.innerWidth - W - 8));
   const row: CSSProperties = {
     display: 'flex',
     alignItems: 'center',
-    gap: 8,
+    gap: 10,
     width: '100%',
-    minHeight: isMobile ? 44 : 34,
+    minHeight: isMobile ? 44 : 38,
     padding: '0 10px',
     border: 0,
     borderRadius: 8,
@@ -1358,18 +1363,30 @@ function ColumnMenu({
     cursor: 'pointer',
     textAlign: 'left',
   };
+  const glyph = (color: string): CSSProperties => ({ display: 'flex', width: 18, justifyContent: 'center', color, flex: '0 0 auto' });
+  // 스와치는 **한 줄로 떨어지는 그리드**다(속성 패널의 색 줄과 같은 규칙) — wrap에
+  // 맡기면 7+2처럼 어중간하게 접혀 어느 색이 어느 단계인지 눈이 헤맨다.
+  const swatch: CSSProperties = { width: '100%', aspectRatio: '1', borderRadius: 999, cursor: 'pointer', padding: 0, boxSizing: 'border-box' };
   return (
     <div
       ref={ref}
       data-column-menu-pop={col.id}
       role="menu"
       aria-label={`${col.title} 열 메뉴`}
-      style={{ position: 'fixed', left, top: at.y, width: W, boxSizing: 'border-box', padding: 6, background: th.panel, border: `1px solid ${th.border}`, borderRadius: 12, boxShadow: '0 10px 28px rgba(0,0,0,.16)', zIndex: 320 }}
+      style={{ position: 'fixed', left, top: at.y, width: W, boxSizing: 'border-box', padding: 5, background: th.panel, border: `1px solid ${th.border}`, borderRadius: 12, boxShadow: '0 12px 32px rgba(0,0,0,.16)', zIndex: 320 }}
     >
-      <button type="button" role="menuitem" data-column-rename onClick={onRename} style={row}>
+      <button type="button" className="mf-ed-btn" role="menuitem" data-column-rename onClick={onRename} style={row}>
+        <span style={glyph(th.subtext)}>
+          <PencilGlyph />
+        </span>
         이름 변경
       </button>
-      <div style={{ display: 'flex', alignItems: 'center', gap: 5, padding: '6px 10px', flexWrap: 'wrap' }}>
+
+      <MenuDivider theme={th} />
+      <MenuSectionLabel theme={th}>열 색</MenuSectionLabel>
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(9, 1fr)', gap: 5, padding: '2px 10px 8px' }}>
+        {/* 기본 색 — 대각선은 이 앱에서 "색 없음"의 관례다(속성 패널의 '자동' 칩).
+            지정이 없으면 열 순서대로 팔레트를 따르므로 이 칸이 활성이 된다. */}
         <button
           type="button"
           role="menuitem"
@@ -1377,7 +1394,12 @@ function ColumnMenu({
           aria-label="기본 색"
           title="기본 색"
           onClick={() => onColor(null)}
-          style={{ width: 18, height: 18, borderRadius: 999, border: `1px solid ${th.border}`, background: 'transparent', backgroundImage: `linear-gradient(to top right, transparent calc(50% - 1px), ${th.subtext} calc(50% - 1px), ${th.subtext} calc(50% + 1px), transparent calc(50% + 1px))`, cursor: 'pointer', padding: 0 }}
+          style={{
+            ...swatch,
+            border: col.color ? `1px solid ${th.border}` : `2px solid ${th.text}`,
+            background: 'transparent',
+            backgroundImage: `linear-gradient(to top right, transparent calc(50% - 1px), ${th.subtext} calc(50% - 1px), ${th.subtext} calc(50% + 1px), transparent calc(50% + 1px))`,
+          }}
         />
         {th.palette.slice(0, 8).map((c) => (
           <button
@@ -1388,14 +1410,36 @@ function ColumnMenu({
             aria-label={`색 ${c}`}
             title={`색 ${c}`}
             onClick={() => onColor(c)}
-            style={{ width: 18, height: 18, borderRadius: 999, background: c, border: col.color === c ? `2px solid ${th.text}` : `1px solid ${hexA(th.text, 0.15)}`, cursor: 'pointer', padding: 0 }}
+            style={{ ...swatch, background: c, border: col.color === c ? `2px solid ${th.text}` : `1px solid ${hexA(th.text, 0.15)}` }}
           />
         ))}
       </div>
-      <button type="button" role="menuitem" data-delete-column={col.id} onClick={onDelete} style={{ ...row, color: URGENT }}>
+
+      <MenuDivider theme={th} />
+      <button type="button" className="mf-ed-btn mf-ed-danger" role="menuitem" data-delete-column={col.id} onClick={onDelete} style={{ ...row, color: URGENT }}>
+        <span style={glyph(URGENT)}>
+          <TrashGlyph />
+        </span>
         열 삭제
       </button>
     </div>
+  );
+}
+
+function PencilGlyph() {
+  return (
+    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+      <path d="M12 20h9" />
+      <path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4Z" />
+    </svg>
+  );
+}
+
+function TrashGlyph() {
+  return (
+    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+      <path d="M3 6h18M8 6V4h8v2M6 6l1 14h10l1-14" />
+    </svg>
   );
 }
 
