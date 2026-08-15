@@ -136,10 +136,10 @@ export function FeedbackModal({ open, onClose, page, theme }: { open: boolean; o
   };
 
   const cardStyle: CSSProperties = {
-    width: 440,
+    width: 452,
     maxWidth: 'calc(100vw - 32px)',
     background: th.panel,
-    borderRadius: 16,
+    borderRadius: 22,
     boxShadow: '0 22px 60px rgba(0,0,0,.28)',
     padding: '22px 22px 18px',
     boxSizing: 'border-box',
@@ -172,7 +172,7 @@ export function FeedbackModal({ open, onClose, page, theme }: { open: boolean; o
             <button
               type="button"
               onClick={onClose}
-              style={{ height: 40, padding: '0 22px', border: 'none', borderRadius: 10, background: th.accent, color: th.accentInk, fontFamily: 'inherit', fontSize: 13.5, fontWeight: 700, cursor: 'pointer' }}
+              style={{ height: 40, padding: '0 22px', border: 'none', borderRadius: 10, ...accentFill(th.accent), color: th.accentInk, fontFamily: 'inherit', fontSize: 13.5, fontWeight: 700, cursor: 'pointer' }}
             >
               닫기
             </button>
@@ -233,7 +233,7 @@ export function FeedbackModal({ open, onClose, page, theme }: { open: boolean; o
                 type="button"
                 onClick={() => void submit()}
                 disabled={busy}
-                style={{ flex: '1 1 auto', height: 42, border: 'none', borderRadius: 11, background: th.accent, color: th.accentInk, fontFamily: 'inherit', fontSize: 14, fontWeight: 700, cursor: busy ? 'default' : 'pointer', opacity: busy ? 0.6 : 1 }}
+                style={{ flex: '1 1 auto', height: 42, border: 'none', borderRadius: 11, ...accentFill(th.accent), color: th.accentInk, fontFamily: 'inherit', fontSize: 14, fontWeight: 700, cursor: busy ? 'default' : 'pointer', opacity: busy ? 0.6 : 1 }}
               >
                 {busy ? '보내는 중…' : '보내기'}
               </button>
@@ -243,4 +243,17 @@ export function FeedbackModal({ open, onClose, page, theme }: { open: boolean; o
       </div>
     </div>
   );
+}
+
+/** 강조(주 동작) 버튼의 면 — 디자인 원본의 세로 그라디언트 + 색 그림자.
+ * 에디터 `chrome.ts`와 같은 규칙이지만, 이 모달은 홈과 함께 쓰므로 테마 프롭의
+ * 강조색에서 직접 만든다(에디터 팔레트에 묶이지 않게). */
+function accentFill(accent: string): { background: string; boxShadow: string } {
+  const c = accent.replace('#', '');
+  const n = (i: number) => parseInt(c.substring(i, i + 2), 16);
+  const mix = (v: number, to: number, t: number) => Math.round(v + (to - v) * t);
+  const hex = (r: number, g: number, b: number) => `#${[r, g, b].map((x) => x.toString(16).padStart(2, '0')).join('')}`;
+  const top = hex(mix(n(0), 255, 0.08), mix(n(2), 255, 0.08), mix(n(4), 255, 0.08));
+  const bottom = hex(mix(n(0), 0, 0.06), mix(n(2), 0, 0.06), mix(n(4), 0, 0.06));
+  return { background: `linear-gradient(180deg,${top},${bottom})`, boxShadow: `0 10px 20px -12px rgba(${n(0)},${n(2)},${n(4)},.9)` };
 }

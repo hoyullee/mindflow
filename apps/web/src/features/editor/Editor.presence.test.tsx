@@ -58,7 +58,7 @@ describe('Editor presence (multi-user awareness)', () => {
     const { container } = renderEditor(`/editor?map=${docId}&title=x`);
 
     await waitFor(() => expect(within(getViewport(container)).getByText('리서치')).toBeTruthy());
-    expect(screen.queryByText(/명 접속 중/)).toBeNull();
+    expect(screen.queryByLabelText(/명 접속 중/)).toBeNull();
   });
 
   it("renders a remote peer's presence avatar, cursor, and node-selection highlight", async () => {
@@ -79,11 +79,17 @@ describe('Editor presence (multi-user awareness)', () => {
       selection: { nodes: ['c1'], floats: [], lines: [], zones: [] },
     });
 
-    await waitFor(() => expect(screen.getByText('1명 접속 중')).toBeTruthy());
+    // 얼굴은 상단 바에 겹쳐 선다(디자인 원본) — 접근 이름이 인원수를 말한다.
+    await waitFor(() => expect(screen.getByLabelText('1명 접속 중')).toBeTruthy());
     // the remote peer's name tag (NodeLayer's `RemotePeerTag`) shows up near the selected node.
     await waitFor(() => expect(within(getViewport(container)).getAllByText('차분한 수달').length).toBeGreaterThan(0));
 
+    // 얼굴은 **상단 바 안**에 겹쳐 선다(디자인 원본) — 캔버스 위 알약이 아니다.
+    const avatars = screen.getByLabelText('1명 접속 중');
+    expect(avatars.closest('.mf-ed-topbar')).toBeTruthy();
+    expect(getComputedStyle(avatars).position).not.toBe('absolute');
+
     remoteProvider.disconnect();
-    await waitFor(() => expect(screen.queryByText(/명 접속 중/)).toBeNull());
+    await waitFor(() => expect(screen.queryByLabelText(/명 접속 중/)).toBeNull());
   });
 });

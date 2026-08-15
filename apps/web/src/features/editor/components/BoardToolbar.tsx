@@ -284,6 +284,7 @@ export function BoardToolbar({ controller }: { controller: EditorController }) {
         cursor: 'pointer',
         padding: 0,
         margin: '0 2px',
+        flexShrink: 0,
       }}
     />
   ));
@@ -369,8 +370,14 @@ export function BoardToolbar({ controller }: { controller: EditorController }) {
   const penMenu = (
     <>
       {backBtn}
-      <div style={rowStyle}>{colorBtns}</div>
-      <div style={{ ...rowStyle, gap: 2, padding: 2, borderRadius: 10, background: th.panel2 }}>{widthBtns}</div>
+      {/* 색이 여덟이 되면서 폰 한 줄에 다 들어가지 않는다(실측 390px에서 넘침) —
+          색 묶음만 **가로로 스크롤**한다. 굵기와 ‹는 자리를 지켜 늘 눌린다.
+          `.mf-ed-vp`가 `touch-action: none`이라 그대로 두면 손가락 스크롤이
+          먹지 않는다 — 이 묶음에서만 `pan-x`로 되살린다. */}
+      <div className="mf-noscrollbar" style={{ ...rowStyle, flex: '1 1 auto', minWidth: 0, overflowX: 'auto', touchAction: 'pan-x' }}>
+        {colorBtns}
+      </div>
+      <div style={{ ...rowStyle, gap: 2, padding: 2, borderRadius: 10, background: th.panel2, flexShrink: 0 }}>{widthBtns}</div>
     </>
   );
   const insertMenu = (

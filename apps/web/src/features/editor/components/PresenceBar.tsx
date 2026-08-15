@@ -33,7 +33,9 @@ export function PresenceBar({ controller }: PresenceBarProps) {
   if (controller.collabBlocked) return null;
   const down = controller.backendMode === 'supabase' && controller.collabStatus === 'offline' && (controller.sharedDoc || peers.length > 0);
   const insecure = controller.collabStatus === 'connected-insecure';
-  if (!peers.length && !down) return null;
+  // 접속자 **얼굴**은 이제 상단 바가 그린다(`PresenceAvatars`, 디자인 원본) —
+  // 이 배지는 얼굴만으로는 알 수 없는 두 가지, **끊김**과 **보안 경고**만 맡는다.
+  if (!down && !(insecure && peers.length)) return null;
   return (
     <div
       style={{
@@ -48,9 +50,13 @@ export function PresenceBar({ controller }: PresenceBarProps) {
         border: `1px solid ${down ? '#e6c9c0' : th.border}`,
         borderRadius: 999,
         boxShadow: '0 6px 22px rgba(0,0,0,.10)',
-        padding: peers.length ? '6px 10px 6px 6px' : '6px 12px',
+        padding: '6px 12px',
       }}
-      title={down ? '저장은 정상이에요 — 이 맵의 변경사항은 계속 저장됩니다. 다만 실시간 연결이 끊겨 다른 사람의 편집이 지금은 오지 않아요(자동으로 다시 연결을 시도합니다).' : `${peers.length}명 접속 중`}
+      title={
+        down
+          ? '저장은 정상이에요 — 이 맵의 변경사항은 계속 저장됩니다. 다만 실시간 연결이 끊겨 다른 사람의 편집이 지금은 오지 않아요(자동으로 다시 연결을 시도합니다).'
+          : '실시간 채널이 인증되지 않은 공개 채널로 연결됐습니다. 협업은 되지만, 문서 ID를 아는 사람이 끼어들 수 있어요. (서버 설정 필요 — backend.md §6)'
+      }
     >
       {down ? (
         <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#c2603f" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true" style={{ flexShrink: 0 }}>
@@ -62,50 +68,18 @@ export function PresenceBar({ controller }: PresenceBarProps) {
           <line x1="12" y1="19" x2="12" y2="19.01" />
         </svg>
       ) : (
-        <div style={{ display: 'flex' }}>
-          {peers.map((p, i) => (
-            <div
-              key={p.clientId}
-              title={p.user.name}
-              style={{
-                width: 26,
-                height: 26,
-                borderRadius: '50%',
-                background: p.user.color,
-                color: '#fff',
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'center',
-                fontSize: 11,
-                fontWeight: 800,
-                border: `2px solid ${th.panel}`,
-                marginLeft: i === 0 ? 0 : -8,
-                boxShadow: '0 1px 3px rgba(0,0,0,.25)',
-                flexShrink: 0,
-              }}
-            >
-              {p.user.name.slice(0, 1)}
-            </div>
-          ))}
-        </div>
-      )}
-      <span style={{ fontSize: 11.5, fontWeight: 600, color: down ? '#c2603f' : th.subtext, whiteSpace: 'nowrap' }}>{down ? '공동 편집 연결 끊김' : `${peers.length}명 접속 중`}</span>
-      {/* 인증되지 않은 공개 채널로 폴백한 상태(서버에 Realtime Authorization 정책이
-          없다). 협업은 되므로 막지 않고, 사실만 조용히 표시한다 — 조치 방법은
-          콘솔 경고와 backend.md §6에 있다. */}
-      {insecure && !!peers.length && (
-        <span
-          aria-label="보안 경고"
-          title="실시간 채널이 인증되지 않은 공개 채널로 연결됐습니다. 협업은 되지만, 문서 ID를 아는 사람이 끼어들 수 있어요. (서버 설정 필요 — backend.md §6)"
-          style={{ display: 'flex', flexShrink: 0, color: '#c9922f' }}
-        >
-          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+        /* 인증되지 않은 공개 채널로 폴백한 상태(서버에 Realtime Authorization 정책이
+           없다). 협업은 되므로 막지 않고, 사실만 조용히 표시한다 — 조치 방법은
+           콘솔 경고와 backend.md §6에 있다. */
+        <span aria-label="보안 경고" style={{ display: 'flex', flexShrink: 0, color: '#c9922f' }}>
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
             <path d="M10.3 3.6 1.8 18a2 2 0 0 0 1.7 3h17a2 2 0 0 0 1.7-3L13.7 3.6a2 2 0 0 0-3.4 0z" />
             <line x1="12" y1="9" x2="12" y2="13" />
             <line x1="12" y1="17" x2="12" y2="17.01" />
           </svg>
         </span>
       )}
+      <span style={{ fontSize: 11.5, fontWeight: 600, color: down ? '#c2603f' : '#a07a24', whiteSpace: 'nowrap' }}>{down ? '공동 편집 연결 끊김' : '공개 채널로 연결됨'}</span>
     </div>
   );
 }

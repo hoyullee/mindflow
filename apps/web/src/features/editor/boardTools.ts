@@ -4,13 +4,16 @@
 /** 선택 / 펜 / 하이라이터 / 획 지우개. */
 export type BoardTool = 'select' | 'pen' | 'hl' | 'eraser';
 
-export const PEN_COLORS = ['#2b2b2b', '#d92626', '#2f7fd6', '#2f9e63', '#e0a53c'];
+/** 펜 팔레트 8색 — 뒤 셋(바이올렛·틸·브라운)은 디자인 원본에서 가져왔다(요청).
+ * 앞 다섯은 그대로 둔다: 이미 그려 둔 획의 색과 스와치가 어긋나면 그 획을 골랐을 때
+ * 어느 칸도 켜지지 않는다. */
+export const PEN_COLORS = ['#2b2b2b', '#d92626', '#2f7fd6', '#2f9e63', '#e0a53c', '#8b5fd6', '#1e9e9e', '#9a6b44'];
 export const PEN_WIDTHS = [2, 4, 8];
 
 /** 형광펜 팔레트 — 밝은 바탕 위에서 글자를 덮어도 읽히는 채도의 형광색.
  * 펜 팔레트와 굳이 다른 값을 쓰는 이유는 곱하기 합성 때문이다: 어두운 색으로
  * 칠하면 밑의 글자가 그대로 어두워져 하이라이트가 아니라 먹칠이 된다. */
-export const HL_COLORS = ['#ffe14d', '#9be36a', '#7cc7ff', '#ff9ecb', '#ffb45c'];
+export const HL_COLORS = ['#ffe14d', '#9be36a', '#7cc7ff', '#ff9ecb', '#ffb45c', '#c0aeef', '#96dcc6', '#f79e90'];
 /** 심 굵기 — 형광펜은 글자 줄을 덮는 도구라 펜보다 훨씬 굵다. */
 export const HL_WIDTHS = [12, 20, 30];
 
