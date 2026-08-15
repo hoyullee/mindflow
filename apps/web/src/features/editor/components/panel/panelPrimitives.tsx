@@ -1,6 +1,7 @@
 import { useLayoutEffect, useRef, useState, type CSSProperties, type ReactNode } from 'react';
 import { hexA } from '../../theme';
 import type { Theme } from '../../theme';
+import { CARD_SHADOW, MONO_FONT, glassCard } from '../../chrome';
 
 /** Emoji picker options — port of `Component.EMOJIS` (MindFlow.dc.html:475). */
 export const EMOJIS = ['🎯', '💪', '🚀', '📚', '💰', '❤️', '🎨', '✨', '🔥', '🌱', '🧠', '⭐', '📈', '🏆', '🧘', '☕', '✈️', '🎸', '📷', '🍎'];
@@ -132,16 +133,16 @@ export function panelWrapStyle(th: Theme, isMobile = false, lowered = false, sho
     position: 'absolute',
     left: 16,
     top,
-    width: 236,
+    // 디자인 원본의 좌측 패널(260) — 유리질 카드 + 아래로 깔리는 그늘.
+    width: 260,
     maxHeight: `calc(100% - ${top + 78}px)`,
-    border: `1px solid ${th.border}`,
+    ...glassCard(th),
     borderRadius: 14,
-    boxShadow: '0 8px 30px rgba(0,0,0,.10)',
+    boxShadow: CARD_SHADOW,
     zIndex: 15,
     overflow: 'hidden',
     display: 'flex',
     flexDirection: 'column',
-    background: th.panel,
   };
 }
 
@@ -158,7 +159,9 @@ export function panelBodyStyle(isMobile = false): CSSProperties {
 }
 
 export function SectionLabel({ theme, children }: { theme: Theme; children: ReactNode }) {
-  return <div style={{ fontSize: 11, fontWeight: 700, letterSpacing: '.04em', textTransform: 'uppercase', color: theme.subtext, marginBottom: 8 }}>{children}</div>;
+  // 디자인 원본은 구획 이름을 **대문자 트래킹이 아니라** 작고 굵은 한 줄로 쓴다
+  // (한글에는 대문자가 없어 letter-spacing만 남아 자간이 벌어져 보였다).
+  return <div style={{ fontSize: 11.5, fontWeight: 700, color: theme.subtext, marginBottom: 8 }}>{children}</div>;
 }
 
 /**
@@ -169,7 +172,7 @@ export function SectionLabel({ theme, children }: { theme: Theme; children: Reac
  * remount the panel (via a React `key`) on selection change to reset to all
  * collapsed — matching the original's one-open accordion + reset behavior.
  */
-export function PanelSection({ theme, title, open, onToggle, children }: { theme: Theme; title: string; open: boolean; onToggle: () => void; children: ReactNode }) {
+export function PanelSection({ theme, title, value, open, onToggle, children }: { theme: Theme; title: string; value?: string; open: boolean; onToggle: () => void; children: ReactNode }) {
   const bodyRef = useRef<HTMLDivElement | null>(null);
   const [maxH, setMaxH] = useState(0);
   // Keep the expanded height in sync with the (always-rendered) body content so
@@ -186,10 +189,28 @@ export function PanelSection({ theme, title, open, onToggle, children }: { theme
         role="button"
         aria-expanded={open}
         onClick={onToggle}
-        style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', cursor: 'pointer', margin: '0 -6px 8px', padding: '5px 6px', borderRadius: 8 }}
+        style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8, cursor: 'pointer', margin: '0 -6px 8px', padding: '5px 6px', borderRadius: 8 }}
       >
-        <span style={{ fontSize: 11, fontWeight: 700, letterSpacing: '.04em', textTransform: 'uppercase', color: theme.subtext }}>{title}</span>
-        <span style={{ fontSize: 15, color: theme.subtext }}>{open ? '▾' : '▸'}</span>
+        <span style={{ fontSize: 11.5, fontWeight: 700, color: theme.subtext, whiteSpace: 'nowrap' }}>{title}</span>
+        <span style={{ display: 'inline-flex', alignItems: 'center', gap: 7, flexShrink: 0 }}>
+          {/* 지금 값(글자 크기·색 이름)을 접힌 채로도 읽는다 — 디자인 원본이
+              등폭으로 눈금처럼 보여 주는 자리. */}
+          {value && <span style={{ fontFamily: MONO_FONT, fontSize: 10.5, color: theme.subtext, opacity: 0.75 }}>{value}</span>}
+          {/* ▸/▾ 글자 대신 회전하는 셰브론(디자인 원본) — 열림·닫힘이 움직임으로 읽힌다. */}
+          <svg
+            width="12"
+            height="12"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke={theme.subtext}
+            strokeWidth="2.4"
+            strokeLinecap="round"
+            aria-hidden
+            style={{ transform: `rotate(${open ? 90 : 0}deg)`, transition: 'transform .18s ease', display: 'block' }}
+          >
+            <path d="m9 6 6 6-6 6" />
+          </svg>
+        </span>
       </div>
       <div
         ref={bodyRef}
@@ -219,16 +240,23 @@ export function panelTitleLine(text: string): string {
   return '';
 }
 
-export function PanelTitle({ theme, kicker, name }: { theme: Theme; kicker: string; name: string }) {
+/**
+ * 패널 머리 — 디자인 원본은 **색 조각 + [무엇을 고르고 있는가 / 그 이름]**을
+ * 가라앉은 띠에 얹는다. `swatch`(지금 대상의 색)를 주면 그 조각이 함께 뜬다.
+ */
+export function PanelTitle({ theme, kicker, name, swatch }: { theme: Theme; kicker: string; name: string; swatch?: string | null }) {
   const line = panelTitleLine(name);
   return (
-    <>
-      <div style={{ fontSize: 11, fontWeight: 700, letterSpacing: '.04em', textTransform: 'uppercase', color: theme.subtext, marginBottom: 4 }}>{kicker}</div>
-      {/* 툴팁에는 전체 텍스트 — 첫 줄만 보이니 나머지를 확인할 길은 남겨 둔다. */}
-      <div title={name || undefined} style={{ fontSize: 14, fontWeight: 600, marginBottom: 14, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-        {line}
+    <div style={{ display: 'flex', alignItems: 'flex-start', gap: 9, margin: '-14px -14px 12px', padding: '12px 13px', borderBottom: `1px solid ${theme.border}`, background: theme.panel2 }}>
+      {swatch && <span aria-hidden style={{ width: 26, height: 26, flexShrink: 0, borderRadius: 8, background: swatch, boxShadow: 'inset 0 0 0 1px rgba(46,42,38,.12)', marginTop: 1 }} />}
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 2, minWidth: 0 }}>
+        <span data-panel-kicker style={{ fontSize: 10.5, fontWeight: 700, color: theme.subtext }}>{kicker}</span>
+        {/* 툴팁에는 전체 텍스트 — 첫 줄만 보이니 나머지를 확인할 길은 남겨 둔다. */}
+        <span data-panel-name title={name || undefined} style={{ fontSize: 13, fontWeight: 700, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+          {line}
+        </span>
       </div>
-    </>
+    </div>
   );
 }
 

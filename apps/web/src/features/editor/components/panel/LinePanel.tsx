@@ -38,7 +38,7 @@ export function LinePanel({ controller, lineIds, isMobile = false, short = false
   const toggle = (k: string) => setOpenSec((cur) => (cur === k ? null : k));
 
   return (
-    <div style={panelWrapStyle(th, isMobile, !!controller.saveConflict, short)}>
+    <div data-props-panel style={panelWrapStyle(th, isMobile, !!controller.saveConflict, short)}>
       <div style={panelBodyStyle(isMobile)}>
         {multi ? (
           <>
@@ -46,7 +46,7 @@ export function LinePanel({ controller, lineIds, isMobile = false, short = false
             <div style={{ fontSize: 14, fontWeight: 600, marginBottom: 14 }}>선 {ids.length}개 선택됨</div>
           </>
         ) : (
-          <PanelTitle theme={th} kicker="선택한 선" name={name} />
+          <PanelTitle theme={th} kicker="선택한 선" name={name} swatch={l.color || th.subtext} />
         )}
 
         <PanelSection theme={th} title="선 스타일" open={openSec === 'lstyle'} onToggle={() => toggle('lstyle')}>

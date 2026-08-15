@@ -321,6 +321,7 @@ export interface EditorController {
   onBackgroundPointerDown: (e: ReactPointerEvent<HTMLDivElement>) => void;
   zoomIn: () => void;
   zoomOut: () => void;
+  zoomReset: () => void;
   fitView: () => void;
   goHome: () => void;
 
@@ -2534,6 +2535,11 @@ export function useEditorState(): EditorController {
   }, []);
   const zoomOut = useCallback(() => {
     setViewport((prev) => zoomAtState(prev, prev.zoom / 1.2, prev.vw / 2, prev.vh / 2));
+  }, []);
+  /** 배율만 100%로 — 화면 중앙을 붙든 채 되돌린다(화면 맞춤과 달리 위치는 그대로).
+   * 줌 배율 읽는 자리를 눌러 쓴다(디자인 원본의 "100%로"). */
+  const zoomReset = useCallback(() => {
+    setViewport((prev) => zoomAtState(prev, 1, prev.vw / 2, prev.vh / 2));
   }, []);
 
   // ---- save (manual + debounced autosave) — port of `saveDoc`/`scheduleAutoSave`/`saveNow`
@@ -6200,6 +6206,7 @@ export function useEditorState(): EditorController {
     onBackgroundPointerDown,
     zoomIn,
     zoomOut,
+    zoomReset,
     fitView,
     goHome,
 

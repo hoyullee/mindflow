@@ -1,4 +1,5 @@
 import { useEffect, type CSSProperties } from 'react';
+import { CHIP_SHADOW, glassCard } from './chrome';
 import './editor.css';
 import { useEditorState } from './useEditorState';
 import type { SelectionKind } from './types';
@@ -234,13 +235,12 @@ export function Editor() {
                   fontWeight: 600,
                   fontFamily: 'inherit',
                   color: th.subtext,
-                  background: th.panel,
-                  border: `1px solid ${th.border}`,
+                  ...glassCard(th),
                   borderRadius: 999,
                   padding: '8px 13px',
                   zIndex: 15,
                   cursor: 'pointer',
-                  boxShadow: '0 2px 8px rgba(0,0,0,.06)',
+                  boxShadow: CHIP_SHADOW,
                 }}
               >
                 <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">

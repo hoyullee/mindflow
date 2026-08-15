@@ -42,7 +42,7 @@ export function FloatPanel({ controller, floatIds, isMobile = false, short = fal
   // 정보만 — 크기 조절은 캔버스의 코너 핸들(비율 고정), 삭제는 Del/우클릭.
   if (isImage) {
     return (
-      <div style={panelWrapStyle(th, isMobile, !!controller.saveConflict, short)}>
+      <div data-props-panel style={panelWrapStyle(th, isMobile, !!controller.saveConflict, short)}>
         <div style={panelBodyStyle(isMobile)}>
           <PanelTitle theme={th} kicker="선택한 이미지" name={(f.caption || '').trim() || '이미지'} />
           {/* 이미지 제목(캡션) — 이미지 아래 한 줄로 그려진다(Float.caption).
@@ -86,7 +86,7 @@ export function FloatPanel({ controller, floatIds, isMobile = false, short = fal
   }
 
   return (
-    <div style={panelWrapStyle(th, isMobile, !!controller.saveConflict, short)}>
+    <div data-props-panel style={panelWrapStyle(th, isMobile, !!controller.saveConflict, short)}>
       <div style={panelBodyStyle(isMobile)}>
         {multi ? (
           <>
@@ -94,7 +94,7 @@ export function FloatPanel({ controller, floatIds, isMobile = false, short = fal
             <div style={{ fontSize: 14, fontWeight: 600, marginBottom: 14 }}>메모 {ids.length}개 선택됨</div>
           </>
         ) : (
-          <PanelTitle theme={th} kicker="선택한 메모" name={name} />
+          <PanelTitle theme={th} kicker="선택한 메모" name={name} swatch={f.bg || (th.appBg === '#191512' ? '#3a2f22' : '#fff6cf')} />
         )}
 
         <PanelSection theme={th} title="메모 스타일" open={openSec === 'fbg'} onToggle={() => toggle('fbg')}>

@@ -58,7 +58,12 @@ export function FloatLayer({ floats, theme: th, controller }: FloatLayerProps) {
         const fFpx = f.tsize === 's' ? 11.5 : f.tsize === 'l' ? 15.5 : 13;
         // presence: a remote peer's selection ring (see `NodeLayer`'s identical pattern).
         const remotePeer = peersSelecting(controller.presence.peers, 'floats', f.id)[0];
-        let boxShadow = selected ? `0 0 0 2px ${th.panel}, 0 0 0 4px ${hexA(th.accent, 0.55)}, 0 3px 10px rgba(0,0,0,.10)` : '0 3px 10px rgba(0,0,0,.10)';
+        // 디자인 원본의 메모: 위쪽에 얇은 흰 하이라이트(종이가 살짝 들린 느낌) +
+        // 아래로 길게 깔리는 그늘. 선택 링은 이 앱의 관례대로 **강조색**이다
+        // (원본은 파란 아웃라인이지만, 도형·선·영역이 전부 강조색이라 메모만
+        // 파랗게 두면 "선택"이 두 가지 색으로 갈린다).
+        const cardShadow = 'inset 0 1px 0 rgba(255,255,255,.7), 0 22px 40px -26px rgba(46,42,38,.6)';
+        let boxShadow = selected ? `0 0 0 2px ${th.panel}, 0 0 0 4px ${hexA(th.accent, 0.55)}, ${cardShadow}` : cardShadow;
         if (remotePeer) boxShadow += `, 0 0 0 3px ${hexA(remotePeer.user.color, 0.9)}`;
         // 검색 일치 링 — 노드와 같은 앰버(NodeLayer 참고).
         if (controller.searchMarks?.floats.has(f.id)) boxShadow += `, 0 0 0 3px ${hexA('#e0b23c', 0.9)}`;
@@ -70,8 +75,8 @@ export function FloatLayer({ floats, theme: th, controller }: FloatLayerProps) {
           minHeight: f.h || 44,
           background: f.bg ? f.bg : th.appBg === '#191512' ? '#3a2f22' : '#fff6cf',
           color: f.textColor || th.text,
-          border: `1px solid ${f.bg ? hexA('#000000', 0.14) : th.appBg === '#191512' ? '#5a4a2f' : '#f0e3a0'}`,
-          borderRadius: 8,
+          border: `1px solid ${f.bg ? hexA('#2e2a26', 0.1) : th.appBg === '#191512' ? '#5a4a2f' : '#f0e3a0'}`,
+          borderRadius: 14,
           // 좌측 패딩은 맵에서만 접기 토글 자리(32) — board는 토글이 없어 좌우 대칭(11).
           padding: `9px 11px 9px ${floatPadLeft(controller.isBoard)}px`,
           fontFamily: 'Pretendard, sans-serif',
@@ -124,6 +129,42 @@ export function FloatLayer({ floats, theme: th, controller }: FloatLayerProps) {
               controller.startEditFloat(f.id);
             }}
           >
+            {/* 메모 위 **빠른 동작**(디자인 원본) — 평소엔 숨어 있다가 마우스를 얹거나
+                고른 동안 뜬다(터치에는 hover가 없다). 복제·삭제는 이미 있는 동작이라
+                단축키(Ctrl+D·Delete)를 모르는 사람에게 길을 하나 더 내주는 셈이다.
+                포인터를 삼켜(stopPropagation) 여기서 끌어도 메모가 끌려가지 않는다. */}
+            {!controller.readOnly && (
+              <span
+                className="mf-float-grip"
+                data-float-grip
+                data-visible={selected ? 'true' : undefined}
+                style={{ position: 'absolute', top: 7, right: 8, display: 'flex', gap: 3, zIndex: 3 }}
+                onPointerDown={(e) => e.stopPropagation()}
+                onDoubleClick={(e) => e.stopPropagation()}
+              >
+                {[
+                  { key: 'dup', label: '복제', run: () => { controller.selectFloat(f.id); controller.duplicateSelection(); }, icon: <><rect x="9" y="9" width="12" height="12" rx="3" /><path d="M15 5H6a2 2 0 0 0-2 2v9" /></> },
+                  { key: 'del', label: '삭제', run: () => controller.deleteFloat(f.id), icon: <path d="M18 6 6 18M6 6l12 12" /> },
+                ].map((g) => (
+                  <button
+                    key={g.key}
+                    type="button"
+                    className="mf-ed-btn"
+                    aria-label={`메모 ${g.label}`}
+                    title={g.label}
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      g.run();
+                    }}
+                    style={{ width: 22, height: 22, borderRadius: 6, border: `1px solid ${hexA('#2e2a26', 0.1)}`, background: hexA('#ffffff', 0.7), color: hexA(String(boxStyle.color || th.text), 0.7), display: 'inline-flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', padding: 0 }}
+                  >
+                    <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+                      {g.icon}
+                    </svg>
+                  </button>
+                ))}
+              </span>
+            )}
             {!isImage && !controller.isBoard && (() => {
               // 접기/펼치기 토글 — 예전 코럴 원의 ＋/−는 "추가/삭제"로 읽혔다(제보:
               // 직관적인 아이콘으로). 표준 디스클로저 관례인 **회전 셰브론**으로:

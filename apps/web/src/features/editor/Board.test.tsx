@@ -1816,3 +1816,52 @@ describe('화이트보드 에디터', () => {
     });
   });
 });
+
+// 디자인 이식(화이트보드 디자인 원본) — 시각 계약만 고정한다. 값 자체가 아니라
+// **"원본이 그렇게 정한 꼴"**(원형 도구 버튼 / 켜진 도구는 강조색 그라디언트 +
+// 아래 점 / 색·굵기는 막대 위 팝오버)이 유지되는지를 본다.
+describe('화이트보드 디자인 이식', () => {
+  it('도구는 원형 버튼이고, 켜진 도구는 강조색 그라디언트 + 아래 점으로 표시된다', async () => {
+    localStorage.setItem('mindflow_doc_bdz1', JSON.stringify(BOARD));
+    renderEditor('/editor?map=bdz1&title=보드');
+    const bar = await screen.findByLabelText('선택').then((b) => b.closest('[data-board-toolbar]') as HTMLElement);
+    const select = within(bar).getByLabelText('선택');
+    const pen = within(bar).getByLabelText(/^펜/);
+    expect(select.style.borderRadius).toBe('999px');
+    // 켜진 것(선택)은 그라디언트, 꺼진 것(펜)은 투명.
+    expect(select.style.background).toContain('gradient');
+    expect(pen.style.background).toBe('transparent');
+    // 아래 점은 켜진 버튼에만.
+    expect(select.querySelector('span')).toBeTruthy();
+    expect(pen.querySelector('span')).toBeNull();
+  });
+
+  it('펜을 켜면 색·굵기가 막대 **위 팝오버**로 뜬다(막대에 줄을 더하지 않는다)', async () => {
+    localStorage.setItem('mindflow_doc_bdz2', JSON.stringify(BOARD));
+    renderEditor('/editor?map=bdz2&title=보드');
+    const pen = await screen.findByLabelText(/^펜/);
+    expect(document.querySelector('[data-stroke-popover]')).toBeNull();
+    fireEvent.click(pen);
+    const pop = await waitFor(() => {
+      const el = document.querySelector('[data-stroke-popover]') as HTMLElement;
+      expect(el).toBeTruthy();
+      return el;
+    });
+    // 막대 **밖 위쪽**에 뜬다 — 알약 안에 줄이 하나 더 생기는 게 아니다.
+    expect(pop.style.bottom).toBe('100%');
+    expect(within(pop).getByLabelText(`펜 색 ${PEN_COLORS[0]}`)).toBeTruthy();
+  });
+
+  it('메모에 복제·삭제 빠른 동작이 붙는다(평소엔 숨어 있다)', async () => {
+    localStorage.setItem('mindflow_doc_bdz3', JSON.stringify(BOARD));
+    const { container } = renderEditor('/editor?map=bdz3&title=보드');
+    await waitFor(() => expect(container.querySelector('[data-float-id="bf1"]')).toBeTruthy());
+    const grip = container.querySelector('[data-float-grip]') as HTMLElement;
+    expect(grip).toBeTruthy();
+    expect(grip.getAttribute('data-visible')).toBeNull(); // 고르기 전에는 숨김 상태
+
+    // 삭제를 누르면 메모가 사라진다(포인터는 삼켜져 드래그로 새지 않는다).
+    fireEvent.click(within(grip).getByLabelText('메모 삭제'));
+    await waitFor(() => expect(container.querySelector('[data-float-id="bf1"]')).toBeNull());
+  });
+});

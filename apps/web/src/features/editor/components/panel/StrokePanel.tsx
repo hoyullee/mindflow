@@ -39,7 +39,7 @@ export function StrokePanel({ controller, strokeIds, isMobile = false, short = f
   const curWidth = multi ? null : first.w;
 
   return (
-    <div style={panelWrapStyle(th, isMobile, !!controller.saveConflict, short)}>
+    <div data-props-panel style={panelWrapStyle(th, isMobile, !!controller.saveConflict, short)}>
       <div style={panelBodyStyle(isMobile)}>
         {multi ? (
           <>
@@ -47,7 +47,7 @@ export function StrokePanel({ controller, strokeIds, isMobile = false, short = f
             <div style={{ fontSize: 14, fontWeight: 600, marginBottom: 14 }}>그림 {ids.length}개 선택됨</div>
           </>
         ) : (
-          <PanelTitle theme={th} kicker="선택한 그림" name={hl ? '형광펜 획' : '펜 획'} />
+          <PanelTitle theme={th} kicker="선택한 그림" name={hl ? '형광펜 획' : '펜 획'} swatch={first.color} />
         )}
         <SectionLabel theme={th}>색상</SectionLabel>
         <SwatchRow theme={th} palette={palette} current={curColor} onPick={(hex) => controller.setStrokeColor(ids, hex)} />

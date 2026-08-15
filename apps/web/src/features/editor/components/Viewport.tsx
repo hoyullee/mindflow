@@ -71,8 +71,10 @@ export function Viewport({ doc, controller }: ViewportProps) {
             zIndex: 0,
             pointerEvents: 'none',
             backgroundColor: theme.canvasBg,
-            backgroundImage: `radial-gradient(${theme.dot} 1.2px, transparent 1.2px)`,
-            backgroundSize: '26px 26px',
+            // 디자인 원본: 도트 격자 **위에** 위쪽에서 스며드는 얇은 흰 빛 —
+            // 캔버스 상단(도구가 몰려 있는 곳)이 살짝 가벼워 보인다.
+            backgroundImage: `radial-gradient(120% 90% at 50% 0%, rgba(255,255,255,.85) 0%, rgba(255,255,255,0) 58%), radial-gradient(${theme.dot} 1.2px, transparent 1.2px)`,
+            backgroundSize: '100% 100%, 26px 26px',
             transform: 'translateZ(0)',
           }}
         />
