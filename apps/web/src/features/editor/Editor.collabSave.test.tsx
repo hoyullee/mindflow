@@ -103,12 +103,13 @@ function peerAddsNode(ydoc: Y.Doc, id: string, text: string) {
 }
 
 // 이 파일의 테스트는 **진짜 시간** 위에서 돈다 — 두 피어가 BroadcastChannel로 오가고,
-// 자동저장 디바운스(0.9s+0.25s)를 실제로 기다린다. 그래서 CI가 붐빌 때(80개 파일 병렬)
-// waitFor의 기본 1초로는 모자라 간헐적으로 깨졌다(실제 CI 실패: "원격 노드"를 1초 안에
-// 못 찾음. 같은 커밋의 다른 실행은 통과 — 부하 의존). 기다림은 넉넉히, 대신 단정은
-// 그대로 둔다(느려도 결과는 같아야 한다).
-configure({ asyncUtilTimeout: 4000 });
-vi.setConfig({ testTimeout: 20_000 });
+// 자동저장 디바운스(0.9s+0.25s)를 실제로 기다린다. 그래서 CI가 붐빌 때(100개 파일 병렬)
+// waitFor의 기본 1초로는 모자라 간헐적으로 깨졌다(실제 CI 실패: "원격 노드"를 제한 시간
+// 안에 못 찾음. **같은 커밋의 다른 실행은 통과** — 부하 의존이라는 증거다). 4초로 올린
+// 뒤에도 한 번 더 같은 자리에서 깨져 8초로 늘렸다. 기다림은 넉넉히, 대신 단정은 그대로
+// 둔다(느려도 결과는 같아야 한다).
+configure({ asyncUtilTimeout: 8000 });
+vi.setConfig({ testTimeout: 30_000 });
 
 beforeEach(() => {
   localStorage.clear();
