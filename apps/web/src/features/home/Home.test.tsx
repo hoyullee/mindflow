@@ -4030,6 +4030,9 @@ describe('홈 카드 다중 선택', () => {
 
     const main = container.querySelector('main') as HTMLElement;
     firePointer(main, 'pointerdown', { clientX: 5, clientY: 200 });
+    // 끄는 동안 브라우저의 글자 선택을 끈다 — 그러지 않으면 카드 글자가 통째로
+    // 선택되고, 폴더로 옮긴 뒤에도 파랗게 남는다(제보).
+    expect(document.body.classList.contains('mf-noselect')).toBe(true);
     firePointer(window, 'pointermove', { clientX: 200, clientY: 210 });
     // 문턱(5px)을 넘긴 뒤라야 사각형이 뜬다.
     await waitFor(() => expect(container.querySelector('[data-marquee]')).toBeTruthy());
@@ -4040,6 +4043,8 @@ describe('홈 카드 다중 선택', () => {
     // 사각형은 사라지고 선택은 남는다.
     await waitFor(() => expect(container.querySelector('[data-marquee]')).toBeNull());
     expect(selectedKeys(container).sort()).toEqual([kA, kB].sort());
+    // 놓으면 글자 선택 잠금도 풀린다(다른 화면에서 글자를 못 고르면 안 된다).
+    expect(document.body.classList.contains('mf-noselect')).toBe(false);
   });
 
   it('카드 위에서 시작한 드래그는 마퀴가 아니다 — 카드 드래그(폴더로 옮기기)를 지킨다', async () => {
