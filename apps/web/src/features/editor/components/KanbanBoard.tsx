@@ -832,6 +832,8 @@ function Column({
   const [renaming, setRenaming] = useState(false);
   const [composing, setComposing] = useState(false);
   const [menuAt, setMenuAt] = useState<{ x: number; y: number } | null>(null);
+  /** 열 삭제 확인(요청) — 열을 지우면 **안의 카드도 함께** 사라지므로 한 번 묻는다. */
+  const [confirming, setConfirming] = useState(false);
   const readOnly = controller.readOnly;
   const dot = columnColor(col, index, th.palette);
   const visible = cards.filter((c) => c.id !== draggingId && cardPasses(c, query, filter));
@@ -1003,12 +1005,105 @@ function Column({
           }}
           onDelete={() => {
             setMenuAt(null);
-            controller.deleteColumn(col.id);
+            setConfirming(true);
           }}
           onClose={() => setMenuAt(null)}
         />
       )}
+
+      {confirming && (
+        <ConfirmDeleteColumn
+          col={col}
+          count={cards.length}
+          theme={th}
+          isMobile={isMobile}
+          onCancel={() => setConfirming(false)}
+          onConfirm={() => {
+            setConfirming(false);
+            controller.deleteColumn(col.id);
+          }}
+        />
+      )}
     </section>
+  );
+}
+
+/**
+ * 열 삭제 확인(요청).
+ *
+ * 열을 지우면 **안의 카드도 함께** 사라진다 — 되돌릴 수는 있지만(한 번의 커밋이라
+ * Ctrl+Z 한 번) 메뉴 한 번 잘못 눌러 여러 장이 사라지는 일은 막아야 한다. 그래서
+ * 무엇이 몇 장 사라지는지 문장으로 밝히고, 되돌릴 수 있다는 것도 함께 말한다
+ * (홈의 폴더 삭제 확인창과 같은 결).
+ *
+ * 파괴적 버튼에 처음부터 초점이 가지 않게 **취소에 초점**을 둔다 — Enter를 눌러
+ * 지워지는 일이 없다.
+ */
+function ConfirmDeleteColumn({
+  col,
+  count,
+  theme: th,
+  isMobile,
+  onCancel,
+  onConfirm,
+}: {
+  col: KanbanColumn;
+  count: number;
+  theme: Theme;
+  isMobile: boolean;
+  onCancel: () => void;
+  onConfirm: () => void;
+}) {
+  const cancelRef = useRef<HTMLButtonElement | null>(null);
+  useEffect(() => {
+    cancelRef.current?.focus();
+    const onKey = (e: KeyboardEvent): void => {
+      if (e.key !== 'Escape') return;
+      e.stopPropagation();
+      onCancel();
+    };
+    window.addEventListener('keydown', onKey, true);
+    return () => window.removeEventListener('keydown', onKey, true);
+  }, [onCancel]);
+
+  const btn: CSSProperties = {
+    height: isMobile ? 44 : 36,
+    padding: '0 16px',
+    borderRadius: 10,
+    fontSize: 13,
+    fontWeight: 700,
+    fontFamily: 'inherit',
+    cursor: 'pointer',
+  };
+  return (
+    <div
+      data-confirm-delete-column-veil
+      onPointerDown={(e) => {
+        if (e.target === e.currentTarget) onCancel();
+      }}
+      style={{ position: 'fixed', inset: 0, zIndex: 350, background: hexA('#2e2a26', 0.34), display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 24 }}
+    >
+      <div
+        data-confirm-delete-column={col.id}
+        role="dialog"
+        aria-modal="true"
+        aria-label="열 삭제 확인"
+        style={{ width: 'min(380px, 100%)', boxSizing: 'border-box', padding: 20, borderRadius: 16, background: th.panel, border: `1px solid ${th.border}`, boxShadow: '0 40px 90px -40px rgba(0,0,0,.6)' }}
+      >
+        <strong style={{ display: 'block', fontSize: 15.5, color: th.text, marginBottom: 8 }}>‘{col.title}’ 열을 삭제할까요?</strong>
+        <p data-confirm-body style={{ margin: 0, fontSize: 13, lineHeight: 1.6, color: th.subtext }}>
+          {count > 0 ? `이 열에 있는 카드 ${count}장도 함께 삭제돼요.` : '이 열에는 카드가 없어요.'} 실행 취소(Ctrl+Z)로 되돌릴 수 있어요.
+        </p>
+        <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8, marginTop: 18 }}>
+          <button ref={cancelRef} type="button" className="mf-ed-btn" data-confirm-cancel onClick={onCancel} style={{ ...btn, border: `1px solid ${th.border}`, background: th.panel, color: th.text }}>
+            취소
+          </button>
+          <button type="button" className="mf-ed-btn" data-confirm-delete onClick={onConfirm} style={{ ...btn, border: `1px solid ${URGENT}`, background: URGENT, color: '#fff' }}>
+            삭제
+          </button>
+        </div>
+      </div>
+    </div>
   );
 }
 
