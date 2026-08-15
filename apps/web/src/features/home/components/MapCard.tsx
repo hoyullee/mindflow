@@ -16,6 +16,19 @@ interface Props {
   compact?: boolean;
 }
 
+/**
+ * 문서 종류별 테두리 색(요청) — 종류를 말하는 표식이라 테마를 따르지 않는 고정색이다
+ * (색은 `home/theme.ts`의 `docMap`/`docBoard`/`docKanban`, 다크만 한 단계 밝다).
+ */
+function docKindBorder(card: CardViewData): string {
+  // 열 수 없는 카드(Drive 데모의 비지원 파일)는 종류를 말할 게 없다 — 회색 카드에
+  // 종류 색만 남으면 "열리는 맵"처럼 보인다.
+  if (card.openable === false) return 'var(--mf-border)';
+  if (card.isKanban) return 'var(--mf-doc-kanban)';
+  if (card.isBoard) return 'var(--mf-doc-board)';
+  return 'var(--mf-doc-map)';
+}
+
 /** 모바일 선택 모드 진입 — 누르고 있어야 하는 시간(iOS·안드로이드의 길게 누르기와 같은 길이). */
 const LONG_PRESS_MS = 500;
 /** 누르는 동안 허용하는 흔들림(px, 직선 거리) — 이보다 크면 스크롤 의도로 본다. */
@@ -167,11 +180,12 @@ export function MapCard({ card, controller, draggableEnabled, compact = false }:
 
   const grey = card.openable === false;
   const cardStyle: CSSProperties = {
-    // 화이트보드는 **테두리 색**이 다르다(요청). 처음엔 이름 영역에 가라앉은 면을
-    // 깔았는데 그 색이 홈 배경과 비슷해 카드가 배경에 묻혀 보였다(제보) — 면 대신
-    // 선으로 옮겼다. 선택 표시(강조색 2px + 글로우)와는 굵기·글로우로 갈리므로
-    // "선택된 것"과 헷갈리지 않는다.
-    border: card.selected ? '2px solid var(--mf-accent)' : `1px solid var(--mf-${card.isBoard || card.isKanban ? 'info' : 'border'})`,
+    // 문서 **종류**를 테두리 색으로 알린다(요청) — 마인드맵 초록 · 화이트보드 파랑 ·
+    // 칸반 보라. 처음엔 화이트보드만 갈랐고 이름 영역에 가라앉은 면을 깔았는데 그
+    // 색이 홈 배경과 비슷해 카드가 배경에 묻혀 보였다(제보) — 면 대신 선으로 옮겼고,
+    // 이제 셋이 각자의 색을 쓴다. 선택 표시(강조색 2px + 글로우)와는 굵기·글로우로
+    // 갈리므로 "선택된 것"과 헷갈리지 않는다.
+    border: card.selected ? '2px solid var(--mf-accent)' : `1px solid ${docKindBorder(card)}`,
     borderRadius: compact ? 10 : 14,
     background: grey ? 'var(--mf-panel-grey)' : 'var(--mf-panel)',
     // The card no longer clips (was `overflow: hidden`) — otherwise the open ☰

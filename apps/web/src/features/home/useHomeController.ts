@@ -1758,7 +1758,7 @@ export function useHomeController() {
         const driveMapFolders = { ...prev.driveMapFolders };
         if (folderId) driveMapFolders[key] = folderId;
         else delete driveMapFolders[key];
-        return { ...prev, driveMapFolders, ctxMenu: null };
+        return { ...prev, driveMapFolders, ctxMenu: null, ...clearSelection };
       });
       return;
     }
@@ -1769,22 +1769,33 @@ export function useHomeController() {
       const mapFolders = { ...prev.mapFolders };
       if (folderId) mapFolders[key] = folderId;
       else delete mapFolders[key];
-      return { ...prev, mapFolders, ctxMenu: null };
+      // 옮긴 카드는 이 목록에서 사라진다 — 선택도 함께 끝낸다(일괄 이동과 같은 규칙).
+      return { ...prev, mapFolders, ctxMenu: null, ...clearSelection };
     });
   };
   /**
    * 상위 폴더 타일에 드롭 — 지금 폴더의 **부모**(없으면 최상위)로 옮긴다.
    * 아래로 넣는 길(폴더 카드에 드롭)과 대칭인 위로 꺼내는 길이다(요청).
    */
-  const moveMapUp = (key: string) => {
+  const moveMapUp = (key: string) => moveMapsUp([key]);
+  /**
+   * 여러 장을 한 계층 위로 — 상위 폴더 타일에 **선택 전체**를 끌어다 놓는 길이다.
+   *
+   * 예전에는 타일이 `moveMapUp`을 키마다 불렀는데, 그 단일 경로는 선택을 비우지
+   * 않아 **옮긴 카드들이 고른 채로 남았다**(제보: 상위 폴더로 올라가 보니 그대로
+   * 다중 선택돼 있었다). 폴더 카드 드롭·메뉴 이동과 같은 일괄 경로를 쓰게 해
+   * "옮긴 카드는 이 목록에서 사라진다 → 선택도 끝난다"는 규칙을 한 곳에 둔다.
+   */
+  const moveMapsUp = (keys: string[]) => {
+    if (!keys.length) return;
     if (state.activeSpace === 'drive') {
-      moveMapToFolder(key, null); // Drive 데모 폴더는 한 단계뿐
+      moveMapsToFolder(keys, null); // Drive 데모 폴더는 한 단계뿐
       return;
     }
     const fs = activeFolders();
     const cur = state.curFolder ? fs.find((f) => f.id === state.curFolder) : null;
     const parent = cur?.parent && fs.some((f) => f.id === cur.parent) ? cur.parent : null;
-    moveMapToFolder(key, parent);
+    moveMapsToFolder(keys, parent);
   };
   /** Move a map from its current (real, non-Drive) space to another space. The
    * card moves to the target space's top level, and its per-space folder
@@ -1806,7 +1817,7 @@ export function useHomeController() {
       });
       const mapFolders = { ...prev.mapFolders };
       delete mapFolders[key];
-      return { ...prev, spaces, mapFolders, ctxMenu: null, toast: `'${card.title}'을(를) '${target.name}' 스페이스로 옮겼어요`, toastTitle: '이동 완료' };
+      return { ...prev, spaces, mapFolders, ctxMenu: null, ...clearSelection, toast: `'${card.title}'을(를) '${target.name}' 스페이스로 옮겼어요`, toastTitle: '이동 완료' };
     });
   };
   /** 여러 장을 한 폴더로(요청) — 단일 이동을 접어 한 번의 상태 변경으로 만든다. */
@@ -2116,6 +2127,7 @@ export function useHomeController() {
     exitSelectMode,
     toggleCardSelected,
     moveMapUp,
+    moveMapsUp,
     folderDeleteSummary,
     backToSpace,
     openFolder,
