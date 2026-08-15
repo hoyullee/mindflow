@@ -701,6 +701,75 @@ describe('Home', () => {
     await waitFor(() => expect(container.querySelector('a[data-title="올릴 맵"]')).toBeTruthy());
   });
 
+  // 제보: 여러 장을 골라 상위 폴더 타일로 끌어 올린 뒤 그 폴더로 올라가 보니
+  // **옮긴 카드들이 그대로 다중 선택돼** 있었다. 타일이 단일 경로(`moveMapUp`)를
+  // 키마다 불렀는데 그 길은 선택을 비우지 않았다 — 폴더 카드 드롭·메뉴 이동과
+  // 같은 일괄 경로를 쓰게 해 "옮긴 카드는 이 목록에서 사라진다 → 선택도 끝난다".
+  it('상위 폴더 타일로 여러 장을 올리면 선택이 남지 않는다', async () => {
+    const user = userEvent.setup();
+    localStorage.setItem(
+      'mf_spaces',
+      JSON.stringify({
+        spaces: [
+          {
+            id: 'sm',
+            name: '이동공간',
+            color: '#3f8fd0',
+            maps: [
+              { title: '맵하나', when: '내 맵', hue: '#f0663f', docId: 'm1' },
+              { title: '맵둘', when: '내 맵', hue: '#f0663f', docId: 'm2' },
+            ],
+            folders: [
+              { id: 'q1', name: '위폴더' },
+              { id: 'q2', name: '아래폴더', parent: 'q1' },
+            ],
+          },
+        ],
+        mapFolders: { m1: 'q2', m2: 'q2' },
+      }),
+    );
+    const { container } = renderHomeWithDocStore([
+      { id: 'm1', title: '맵하나', updatedAt: '', version: 1, isFavorite: false, deletedAt: null },
+      { id: 'm2', title: '맵둘', updatedAt: '', version: 1, isFavorite: false, deletedAt: null },
+    ]);
+    const cardKeys = () => Array.from(container.querySelectorAll('[data-card-key]')).map((e) => e.getAttribute('data-card-key')!);
+    const chosen = () =>
+      Array.from(container.querySelectorAll('[data-card-key]')).filter((e) => (e as HTMLElement).style.border.includes('2px')).length;
+
+    await waitFor(() => expect(screen.getByText('위폴더')).toBeTruthy());
+    await user.dblClick(screen.getByText('위폴더'));
+    await waitFor(() => expect(screen.getByText('아래폴더')).toBeTruthy());
+    await user.dblClick(screen.getByText('아래폴더'));
+    await waitFor(() => expect(cardKeys()).toHaveLength(2));
+
+    // 둘을 고른다.
+    const card = (k: string) => container.querySelector(`[data-card-key="${k}"]`) as HTMLElement;
+    const [ka, kb] = cardKeys();
+    fireEvent.click(card(ka!));
+    fireEvent.click(card(kb!), { ctrlKey: true });
+    expect(chosen()).toBe(2);
+
+    const store: Record<string, string> = {};
+    const dataTransfer = {
+      effectAllowed: '',
+      dropEffect: '',
+      setData: (k: string, v: string) => {
+        store[k] = v;
+      },
+      getData: (k: string) => store[k] ?? '',
+    };
+    const tile = container.querySelector('[data-parent-tile]') as HTMLElement;
+    fireEvent.dragStart(card(ka!), { dataTransfer });
+    fireEvent.dragOver(tile, { dataTransfer });
+    fireEvent.drop(tile, { dataTransfer });
+
+    // 둘 다 이 폴더에서 사라지고, 한 단계 위로 올라가도 **선택 표시가 없다**.
+    await waitFor(() => expect(cardKeys()).toHaveLength(0));
+    await user.dblClick(screen.getByRole('button', { name: '상위 폴더 위폴더(으)로 이동' }));
+    await waitFor(() => expect(cardKeys()).toHaveLength(2));
+    expect(chosen()).toBe(0);
+  });
+
   // 신규 기능: 폴더 안에 폴더(중첩 폴더). 폴더 안에서 새 폴더를 만들면 현재
   // 폴더가 부모가 되고, 뒤로가기는 한 계층씩 올라간다.
   it('폴더 안에서 새 폴더를 만들면 그 폴더의 하위 폴더가 되고, 뒤로가기는 한 계층씩 올라간다', async () => {
@@ -3406,10 +3475,50 @@ describe('홈 우클릭 메뉴', () => {
       expect(thumbBg(boardCard)).toContain('rgb(255, 255, 255)');
       expect(thumbBg(mapCard)).toContain('gradient');
       // 테두리 색도 다르다(요청) — 이름 영역 면은 홈 배경과 비슷해 카드가 묻혔다(제보).
-      expect(boardCard.style.border).toContain('--mf-info');
-      expect(mapCard.style.border).toContain('--mf-border');
+      expect(boardCard.style.border).toContain('--mf-doc-board');
+      expect(mapCard.style.border).toContain('--mf-doc-map');
       // 배지는 카드 오른쪽 끝에 붙는다(제보: 너무 떨어져 있다).
       expect((boardCard.querySelector('[data-board-badge]') as HTMLElement).style.right).toBe('12px');
+    });
+
+    // 요청: 세 종류의 테두리 색이 서로 **명확히 구별**돼야 한다(예전엔 화이트보드와
+    // 칸반이 같은 파랑을 썼고 마인드맵은 중립 경계선이었다).
+    it('마인드맵·화이트보드·칸반 카드의 테두리 색이 각각 다르다(요청)', async () => {
+      const mapDoc = { v: 1, nodes: { root: { id: 'root', text: '루트', emoji: '', parent: null, children: [], collapsed: false, color: null, x: 0, y: 0 } }, floats: [], lines: [], zones: [], layoutMode: 'right', themeKey: 'coral' };
+      const boardDoc = { v: 1, kind: 'board', nodes: {}, floats: [{ id: 'f1', x: 10, y: 20, w: 180, text: '메모' }], lines: [], zones: [], layoutMode: 'right', themeKey: 'white' };
+      const kanbanDoc = { v: 1, kind: 'kanban', nodes: {}, floats: [], lines: [], zones: [], layoutMode: 'right', themeKey: 'coral', columns: [{ id: 'c1', title: '할 일' }], cards: [{ id: 'k1', col: 'c1', pos: 1, text: '카드' }] };
+      const { container } = renderHomeWithDocStore(
+        [
+          { id: 'd-m', title: '맵 카드', version: 1, updatedAt: '2026-01-01T00:00:00.000Z', isFavorite: false, deletedAt: null },
+          { id: 'd-b', title: '보드 카드', version: 1, updatedAt: '2026-01-01T00:00:00.000Z', isFavorite: false, deletedAt: null },
+          { id: 'd-k', title: '칸반 카드', version: 1, updatedAt: '2026-01-01T00:00:00.000Z', isFavorite: false, deletedAt: null },
+        ],
+        {
+          'd-m': { doc: mapDoc as never, version: 1, title: '맵 카드' },
+          'd-b': { doc: boardDoc as never, version: 1, title: '보드 카드' },
+          'd-k': { doc: kanbanDoc as never, version: 1, title: '칸반 카드' },
+        },
+      );
+      const card = async (t: string) =>
+        await waitFor(() => {
+          const el = container.querySelector(`a[data-title="${t}"]`) as HTMLElement;
+          expect(el).toBeTruthy();
+          return el;
+        });
+      const kanban = await card('칸반 카드');
+      await waitFor(() => expect(kanban.querySelector('[data-board-badge]')?.textContent).toContain('칸반'));
+      expect((await card('맵 카드')).style.border).toContain('--mf-doc-map');
+      expect((await card('보드 카드')).style.border).toContain('--mf-doc-board');
+      expect(kanban.style.border).toContain('--mf-doc-kanban');
+      // 값도 실제로 다르다 — 변수 이름만 갈라 두고 같은 색을 넣는 실수를 막는다.
+      // 종류 색은 **테마를 따르지 않으므로**(무엇인가를 말하는 표식) 밝은 다섯 벌이
+      // 같은 값을 쓰고 다크만 한 단계 밝다 — 그 계약도 함께 고정한다.
+      for (const key of ['coral', 'ocean', 'forest', 'grape', 'mono', 'dark'] as const) {
+        const t = HOME_THEMES[key];
+        expect(new Set([t.docMap, t.docBoard, t.docKanban]).size).toBe(3);
+      }
+      expect(HOME_THEMES.ocean.docMap).toBe(HOME_THEMES.coral.docMap);
+      expect(HOME_THEMES.dark.docKanban).not.toBe(HOME_THEMES.coral.docKanban);
     });
 
     it('내용 없는 화이트보드 카드의 폴백 삽화는 마인드맵이 아니다(제보)', async () => {

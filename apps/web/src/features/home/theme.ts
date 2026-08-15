@@ -109,6 +109,17 @@ export interface HomeTheme {
   dangerMute: string;
   /** 정보(공유받음처럼 "내 것이 아닌 출처"). */
   info: string;
+  /**
+   * 문서 **종류**를 알리는 카드 테두리 색 셋(마인드맵·화이트보드·칸반).
+   *
+   * 테마마다 달라지지 않는다 — 이 색은 "무엇을 강조하는가"가 아니라 **무엇인가**를
+   * 말하므로(알림 배지와 같은 판단, #376) 밝은 다섯 벌이 같은 값을 쓰고 다크만
+   * 어두운 면에서 죽지 않게 한 단계 밝힌다. 강조색(선택 링)과 하필 같은 계열인
+   * 테마가 있어도 굵기(1px vs 2px)와 글로우로 갈린다.
+   */
+  docMap: string;
+  docBoard: string;
+  docKanban: string;
   /** 즐겨찾기 별의 금색. */
   star: string;
   /** `.btn:hover`의 밝기 필터 — 밝은 테마는 살짝 어둡게, 다크는 살짝 밝게(어두운
@@ -140,6 +151,11 @@ const LIGHT_INK = {
   dangerLine: '#f3d9d4',
   dangerMute: '#e7b9b3',
   info: '#3f8fd0',
+  // 종류 색: 초록(마인드맵)·파랑(화이트보드)·보라(칸반). 파랑은 화이트보드가
+  // 이미 쓰던 값 그대로라 배포된 인상이 바뀌지 않는다.
+  docMap: '#3f9e6a',
+  docBoard: '#3f8fd0',
+  docKanban: '#8a63d2',
   star: '#e0a53c',
   hoverBright: '0.97',
   success: '#2f9e63',
@@ -283,6 +299,9 @@ export const HOME_THEMES: Record<HomeThemeKey, HomeTheme> = {
     dangerLine: '#4a2e2b',
     dangerMute: '#7a3b38',
     info: '#5fa8e8',
+    docMap: '#5ec38b',
+    docBoard: '#5fa8e8',
+    docKanban: '#a98ae6',
     star: '#e8bd57',
     hoverBright: '1.12',
     success: '#4cbf82',
@@ -350,6 +369,9 @@ export function homeThemeVars(key: HomeThemeKey): Record<string, string> {
     '--mf-danger-line': t.dangerLine,
     '--mf-danger-mute': t.dangerMute,
     '--mf-info': t.info,
+    '--mf-doc-map': t.docMap,
+    '--mf-doc-board': t.docBoard,
+    '--mf-doc-kanban': t.docKanban,
     '--mf-star': t.star,
     '--mf-hover-bright': t.hoverBright,
     '--mf-success': t.success,
