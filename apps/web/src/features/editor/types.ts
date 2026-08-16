@@ -19,7 +19,8 @@ export interface PanState {
 /** What the property panel (and Delete/F2/Tab/Enter) currently targets.
  * `'stroke'`는 화이트보드의 그리기 획(M4) — 글자도 자식도 없어 편집·리스트 경로에는
  * 등장하지 않고 선택·이동·색/굵기·삭제만 받는다. */
-export type SelectionKind = 'node' | 'float' | 'line' | 'zone' | 'stroke';
+/** `commentPin` — 캔버스에 꽂은 댓글 핀(자리만 든 객체, 말은 서버 표에). */
+export type SelectionKind = 'node' | 'float' | 'line' | 'zone' | 'stroke' | 'commentPin';
 
 export interface Selection {
   kind: SelectionKind;
@@ -79,7 +80,7 @@ export interface HitResult {
  * (MindFlow.dc.html:2792-2813): which object (if any) the click landed on, resolved
  * BEFORE the menu opens (`openCtxAt` also selects that object as a side effect,
  * except for `'bg'`/`'multi'`, matching the original). */
-export type ContextMenuKind = 'node' | 'float' | 'line' | 'zone' | 'stroke' | 'multi' | 'bg';
+export type ContextMenuKind = 'node' | 'float' | 'line' | 'zone' | 'stroke' | 'commentPin' | 'multi' | 'bg';
 
 /** Right-click context menu state — port of `Component#state.ctxMenu`
  * (MindFlow.dc.html:2792-2813, 3101-3146). `sx/sy` are screen (viewport-relative)

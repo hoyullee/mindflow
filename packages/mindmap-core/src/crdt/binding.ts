@@ -34,7 +34,7 @@
 // structural change directly as its own transaction.
 
 import * as Y from 'yjs';
-import type { Doc, DocKind, EdgeStyle, Float, KanbanCard, KanbanColumn, KanbanTag, Line, LayoutMode, Node, NodeMap, Reaction, Stroke, Zone } from '../model';
+import type { Doc, DocKind, EdgeStyle, Float, KanbanCard, KanbanColumn, KanbanTag, Line, LayoutMode, Node, NodeMap, Reaction, Stroke, Zone, CommentPin } from '../model';
 import { DEFAULT_LAYOUT_MODE, DEFAULT_THEME_KEY } from '../model';
 
 type PlainRecord = Record<string, unknown>;
@@ -204,6 +204,8 @@ export function yDocToDoc(ydoc: Y.Doc): Doc {
   const strokes = readEntityList<Stroke>(ydoc, 'strokes', 'strokesOrder');
   // 반응·투표 — 획과 같은 원자 항목(한 사람의 한 표 = 항목 하나).
   const reactions = readEntityList<Reaction>(ydoc, 'reactions', 'reactionsOrder');
+  // 댓글 핀 — 자리만 든 원자 항목(말은 서버 표에).
+  const commentPins = readEntityList<CommentPin>(ydoc, 'commentPins', 'commentPinsOrder');
   // 칸반 — 열은 목록 순서가 곧 순서, 카드는 자기 `pos` 필드가 순서다(#429 재설계).
   const columns = readEntityList<KanbanColumn>(ydoc, 'columns', 'columnsOrder');
   const cards = readEntityList<KanbanCard>(ydoc, 'cards', 'cardsOrder');
@@ -214,7 +216,7 @@ export function yDocToDoc(ydoc: Y.Doc): Doc {
   // `edgeStyle`은 옵션 필드 — 없으면 키 자체를 만들지 않는다(라운드트립 동일성 유지).
   const edgeStyle = meta.get('edgeStyle') as EdgeStyle | undefined;
   const kind = meta.get('kind') as DocKind | undefined;
-  return { v: 1, nodes, floats, lines, zones, layoutMode, themeKey, ...(edgeStyle !== undefined ? { edgeStyle } : {}), ...(kind !== undefined ? { kind } : {}), ...(strokes.length ? { strokes } : {}), ...(reactions.length ? { reactions } : {}), ...(kind === 'kanban' ? { columns, cards: cards.filter((c) => columns.some((col) => col.id === c.col)), tags } : {}) };
+  return { v: 1, nodes, floats, lines, zones, layoutMode, themeKey, ...(edgeStyle !== undefined ? { edgeStyle } : {}), ...(kind !== undefined ? { kind } : {}), ...(strokes.length ? { strokes } : {}), ...(reactions.length ? { reactions } : {}), ...(commentPins.length ? { commentPins } : {}), ...(kind === 'kanban' ? { columns, cards: cards.filter((c) => columns.some((col) => col.id === c.col)), tags } : {}) };
 }
 
 /**
@@ -238,6 +240,7 @@ export function applyDocToYDoc(ydoc: Y.Doc, nextDoc: Doc, prevDoc?: Doc | null, 
     syncEntityList<Zone>(ydoc, 'zones', 'zonesOrder', prevDoc?.zones, nextDoc.zones);
     // 그리기 획 — prev가 있는데 strokes 키가 없으면 빈 배열로 취급(옵션 필드).
     syncEntityList<Stroke>(ydoc, 'strokes', 'strokesOrder', prevDoc ? (prevDoc.strokes ?? []) : undefined, nextDoc.strokes ?? []);
+    syncEntityList<CommentPin>(ydoc, 'commentPins', 'commentPinsOrder', prevDoc ? (prevDoc.commentPins ?? []) : undefined, nextDoc.commentPins ?? []);
     // 반응·투표 — 항목 단위라 두 사람이 동시에 눌러도 표가 합쳐진다(#332의 교훈).
     syncEntityList<Reaction>(ydoc, 'reactions', 'reactionsOrder', prevDoc ? (prevDoc.reactions ?? []) : undefined, nextDoc.reactions ?? []);
     // 칸반 열·카드 — 다른 컬렉션과 같은 제네릭 경로(카드의 `col`·`pos`는 평범한

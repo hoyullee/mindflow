@@ -329,6 +329,13 @@ export interface KanbanCard {
  * The full serializable document, matching `serializeDoc()` 1:1
  * (MindFlow.dc.html:534-536).
  */
+/** 캔버스 위의 댓글 핀 — 자리(문서 좌표)만 든다. 말은 서버 `comments` 표에. */
+export interface CommentPin {
+  id: string;
+  x: number;
+  y: number;
+}
+
 export interface Doc {
   v: 1;
   nodes: NodeMap;
@@ -347,6 +354,15 @@ export interface Doc {
   strokes?: Stroke[];
   /** 스티커 반응·투표 — 획과 같은 규칙(비어 있지 않을 때만 직렬화·전파). */
   reactions?: Reaction[];
+  /**
+   * 캔버스에 꽂는 **댓글 핀**(Figma 방식) — 획과 같은 규칙으로 비어 있지 않을 때만
+   * 직렬화·전파한다.
+   *
+   * 핀은 **자리만** 들고 있고 말은 서버 `comments` 표에 그대로 남는다(핀 id가
+   * 대상 id). 그래서 서버는 한 줄도 바뀌지 않고, 본문이 오갈 때 댓글 내용이
+   * 딸려 다니지도 않는다. 댓글이 하나도 없는 핀은 앱이 지운다(빈 핀은 뜻이 없다).
+   */
+  commentPins?: CommentPin[];
   /** 칸반 열 — `kind === 'kanban'`일 때만(다른 종류에서는 없다). */
   columns?: KanbanColumn[];
   /** 칸반 카드 — 열과 같은 규칙. */

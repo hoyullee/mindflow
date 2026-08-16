@@ -235,6 +235,19 @@ export function BoardToolbar({ controller }: { controller: EditorController }) {
       </svg>,
       insert(controller.addZoneAt),
     ),
+    // 댓글 핀 — 다른 객체와 같은 줄에서 만든다(요청). 꽂으면 그 핀의 팝업이 열린다.
+    ...(controller.canComment
+      ? [
+          actionBtn(
+            '댓글 추가',
+            <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+              <path d="M21 12a8 8 0 0 1-8 8H8l-4 3v-6a8 8 0 0 1 8-8h1a8 8 0 0 1 8 3z" />
+              <path d="M8.5 11.5h7M8.5 14.5h4" />
+            </svg>,
+            insert(controller.addCommentPinAt),
+          ),
+        ]
+      : []),
   ];
 
   const undoRedo = [
