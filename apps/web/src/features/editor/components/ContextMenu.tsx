@@ -361,29 +361,16 @@ function buildItems(
         ]
       : [];
 
-  // 댓글 항목 — **모든 객체**(주제·메모·선·영역)가 같은 항목을 쓴다(요청).
-  // 링크 뷰어는 서버가 댓글을 내주지 않으므로 항목도 없다(0020).
-  const commentItem = (targetId: string): MenuItem[] => {
-    if (!controller.canComment) return [];
-    const n = controller.commentCounts[targetId] ?? 0;
-    return [
-      {
-        icon: <CommentIcon size={14} />,
-        label: n > 0 ? `댓글 (${n})` : '댓글',
-        onSelect: () => {
-          close();
-          controller.openComments(targetId);
-        },
-      },
-    ];
-  };
+  // 댓글은 이제 **댓글 핀**에만 붙는다(요청 ⑧) — 주제·메모·선·영역의 우클릭 메뉴에는
+  // 댓글 항목이 없다. 캔버스 어디든 댓글을 남기는 길은 배경 메뉴의 '댓글 추가'(아래)와
+  // 화이트보드 도구 막대의 댓글 도구다.
 
   if (ctxMenu.kind === 'node') {
     const nodeId = controller.selection?.kind === 'node' ? controller.selection.id : null;
     if (!nodeId) return [];
     const isRoot = nodeId === ROOT_ID;
-    // 보기 전용(#22): 변이 항목은 없고 댓글만 — openCtxAt이 이 조합일 때만 메뉴를 연다.
-    if (controller.readOnly) return commentItem(nodeId);
+    // 보기 전용(#22): 변이 항목이 전부라 열 것이 없다(댓글은 이제 핀에만 붙는다).
+    if (controller.readOnly) return [];
     const items: (MenuItem | 'divider')[] = [];
     // 모바일에선 자식/형제 추가와 삭제를 넣지 않는다 — 선택 바(MobileSelectBar)에
     // 하위·형제·삭제 버튼이 이미 있어 같은 동작이 두 번 나온다. 데스크톱은 바가
@@ -437,9 +424,6 @@ function buildItems(
       // `alignParent`'s `onClick` (MindFlow.dc.html:3120).
       onSelect: (e) => toggleSub(e.currentTarget.offsetTop, 'text'),
     });
-    // 댓글 — 그 주제의 논의를 바로 연다. 보기 메뉴에만 있으면 "이 주제에 다는"
-    // 물건인데 진입점이 화면 반대편에 숨는다(제보).
-    items.push(...commentItem(nodeId));
     // 루트는 복사/잘라내기 대상이 아니다(삭제와 같은 규칙 — 맵 전체 복제는 의미가 없다).
     // 붙여넣기는 루트에도 허용 — 루트의 자식으로 붙는다.
     const nodeClip = [...(isRoot ? [] : copyItems({ cut: true })), ...pasteItem()];
@@ -465,7 +449,7 @@ function buildItems(
   if (ctxMenu.kind === 'zone') {
     const zoneId = controller.selection?.kind === 'zone' ? controller.selection.id : null;
     if (!zoneId) return [];
-    if (controller.readOnly) return commentItem(zoneId); // 보기 전용 — 댓글만(주제와 동일)
+    if (controller.readOnly) return []; // 보기 전용 — 변이 항목뿐이라 열 것이 없다
     return [
       {
         icon: '✎',
@@ -484,7 +468,6 @@ function buildItems(
           controller.fitFrameToContents(zoneId);
         },
       },
-      ...commentItem(zoneId),
       'divider',
       ...copyItems({ cut: true }),
       // 삭제는 둘로 나뉜다: 평범한 삭제는 **비파괴**(프레임만 사라지고 내용은 제자리),
@@ -518,9 +501,8 @@ function buildItems(
   if (ctxMenu.kind === 'float') {
     const floatId = controller.selection?.kind === 'float' ? controller.selection.id : null;
     if (!floatId) return [];
-    if (controller.readOnly) return commentItem(floatId); // 보기 전용 — 댓글만(주제와 동일)
+    if (controller.readOnly) return []; // 보기 전용 — 변이 항목뿐이라 열 것이 없다
     return [
-      ...commentItem(floatId),
       ...copyItems({ cut: true }),
       ...(touch
         ? []
@@ -541,9 +523,8 @@ function buildItems(
   if (ctxMenu.kind === 'line') {
     const lineId = controller.selection?.kind === 'line' ? controller.selection.id : null;
     if (!lineId) return [];
-    if (controller.readOnly) return commentItem(lineId); // 보기 전용 — 댓글만(주제와 동일)
+    if (controller.readOnly) return []; // 보기 전용 — 변이 항목뿐이라 열 것이 없다
     return [
-      ...commentItem(lineId),
       ...copyItems({ cut: true }),
       ...(touch
         ? []
@@ -662,8 +643,8 @@ function buildItems(
         controller.addZoneAt(at);
       },
     },
-    // 댓글 핀 — 다른 객체와 같은 자리에서 만든다(요청). 꽂으면 곧바로 그 핀의
-    // 댓글 팝업이 열리고, 첫 댓글을 남기지 않으면 핀은 스스로 사라진다.
+    // 댓글 핀 — 다른 객체와 같은 자리에서 만든다(요청). 누른 자리에 **첫 댓글
+    // 말풍선**이 뜨고, 한 마디를 남겨야 핀이 문서에 들어간다(요청 ④·⑤).
     ...(controller.canComment
       ? [
           {
@@ -671,7 +652,7 @@ function buildItems(
             label: '댓글 추가',
             onSelect: () => {
               close();
-              controller.addCommentPinAt(at);
+              controller.startCommentDraft(at);
             },
           },
         ]

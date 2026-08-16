@@ -20,6 +20,7 @@ import { useIsTouchDevice } from '../../../hooks/useMediaQuery';
 import { useSoftKeyboardOpen } from '../../../hooks/useKeyboardInset';
 import { CARD_SHADOW, MONO_FONT, glassCard } from '../chrome';
 import { CommentIcon } from './ToolbarMenus';
+import { anchoredBoxPos } from './commentAnchor';
 import { formatFullDateTime, formatLastEdited } from '../../home/timeFormat';
 import { useIsMobile } from '../../../hooks/useMediaQuery';
 import { useShareStore } from '../../../adapters/BackendContext';
@@ -30,8 +31,14 @@ interface Thread {
   replies: DocComment[];
 }
 
-/** 댓글 대상의 종류가 드러나는 한 줄 제목(순수) — 주제는 기존처럼 첫 줄만, 다른
- * 객체는 종류를 접두한다("메모 · …", "연결선", "영역 · …"). 없으면 null. */
+/**
+ * 댓글 대상의 종류가 드러나는 한 줄 제목(순수). 없으면 null이고, 그때는 부제 줄을
+ * 아예 그리지 않는다.
+ *
+ * 캔버스 문서에서 댓글은 **핀에만** 붙는다(요청 ⑧) — 핀에는 이름이 없고 자리가 곧
+ * 정체라 부제로 할 말이 없다. 예전에는 그런 대상에 "사라진 대상"이라고 적었는데,
+ * 멀쩡한 핀을 열어 놓고 사라졌다고 말하는 꼴이었다(제보 ⑥).
+ */
 export function commentTargetLabel(doc: EditorController['doc'], id: string): string | null {
   // 칸반 — 대상은 카드다. 문서 전체 댓글은 마인드맵과 같은 자리(ROOT_ID)를 쓰는데,
   // 칸반에는 루트 주제가 없으므로 "보드 전체"라고 말한다.
@@ -39,17 +46,26 @@ export function commentTargetLabel(doc: EditorController['doc'], id: string): st
     const c = (doc.cards ?? []).find((x) => x.id === id);
     if (c) return `카드 · ${panelTitleLine(c.text) || '카드'}`;
     if (id === ROOT_ID) return '보드 전체';
-    return null;
+    return '사라진 카드';
   }
-  const n = doc.nodes[id];
-  if (n) return panelTitleLine(n.text);
-  const f = doc.floats.find((x) => x.id === id);
-  if (f) return f.img ? '이미지' : `메모 · ${panelTitleLine(f.text) || '메모'}`;
-  const l = doc.lines.find((x) => x.id === id);
-  if (l) return l.label && l.label.trim() ? `연결선 · ${l.label.trim()}` : '연결선';
-  const z = doc.zones.find((x) => x.id === id);
-  if (z) return `영역 · ${z.label || '영역'}`;
   return null;
+}
+
+const PANEL_W = 326;
+const PANEL_MAX_H = 420;
+
+/**
+ * 데스크톱 팝업의 자리 — 대상이 **핀이면 그 핀 옆**(요청 ⑦: 객체 근처에), 아니면
+ * 예전처럼 우상단(칸반 카드·보드 전체 댓글).
+ *
+ * 핀 옆에 두는 이유는 단순하다: 캔버스에 여럿 꽂힌 핀 중 **어느 것의 논의인지**를
+ * 화면 구석의 패널은 말해 주지 못한다(핀에는 이름도 없다 — 그래서 부제도 없앴다).
+ */
+function panelPos(controller: EditorController): CSSProperties {
+  const pin = (controller.doc.commentPins ?? []).find((p) => p.id === controller.commentsNodeId);
+  if (!pin || !controller.vw || !controller.vh) return { right: 16, top: 80 };
+  const { left, top } = anchoredBoxPos({ pan: controller.pan, zoom: controller.zoom, vw: controller.vw, vh: controller.vh }, pin, PANEL_W, PANEL_MAX_H);
+  return { left, top };
 }
 
 export function CommentPanel({ controller }: { controller: EditorController }) {
@@ -60,9 +76,7 @@ export function CommentPanel({ controller }: { controller: EditorController }) {
 
   if (!open) return null;
 
-  // 대상이 지워져도 댓글은 남는다(0020) — 대상이 사라졌음을 그대로 말해 준다.
-  // 댓글이 모든 객체로 확장되면서(요청) 대상 종류를 제목이 말해 준다.
-  const title = commentTargetLabel(controller.doc, nodeId) ?? '사라진 대상';
+  const title = commentTargetLabel(controller.doc, nodeId);
 
   const wrap: CSSProperties = isMobile
     ? {
@@ -84,12 +98,10 @@ export function CommentPanel({ controller }: { controller: EditorController }) {
       }
     : {
         position: 'absolute',
-        right: 16,
-        top: 80,
         // 디자인 원본의 댓글 패널(326) — 유리질 카드 + 더 둥근 모서리.
-        width: 326,
-        // 아래로는 미니맵/줌 묶음(우하단)을 피한다 — 미니맵이 접혀 있으면 더 길게.
-        maxHeight: `calc(100% - ${80 + (controller.showMinimap ? 190 : 68)}px)`,
+        width: PANEL_W,
+        ...panelPos(controller),
+        maxHeight: PANEL_MAX_H,
         ...glassCard(th, 0.97),
         borderRadius: 18,
         boxShadow: CARD_SHADOW,
@@ -108,9 +120,12 @@ export function CommentPanel({ controller }: { controller: EditorController }) {
         </span>
         <div style={{ flex: '1 1 auto', minWidth: 0 }}>
           <div style={{ fontSize: 13, fontWeight: 800, letterSpacing: '-.01em', color: th.text }}>댓글</div>
-          <div title={title} style={{ fontSize: 11.5, color: th.subtext, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
-            {title}
-          </div>
+          {/* 부제는 **할 말이 있을 때만**(칸반 카드·보드 전체). 핀에는 이름이 없다. */}
+          {title && (
+            <div title={title} style={{ fontSize: 11.5, color: th.subtext, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+              {title}
+            </div>
+          )}
         </div>
         <button
           type="button"
@@ -139,31 +154,16 @@ export function CommentPanel({ controller }: { controller: EditorController }) {
 export function CommentThreads({ controller, nodeId, scroll = false }: { controller: EditorController; nodeId: string; scroll?: boolean }) {
   const th = controller.uiTheme;
   const isMobile = useIsMobile();
-  const shareStore = useShareStore();
   const [replyTo, setReplyTo] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   /** 멘션 자동완성 대상 — 이 문서의 참가자(소유자 + 초대받은 사람). */
-  const [participants, setParticipants] = useState<ShareParticipant[]>([]);
+  const participants = useCommentParticipants(controller.docId);
 
   // 대상이 바뀌면 열려 있던 답글 입력은 그 대상의 것이므로 접는다.
   useEffect(() => {
     setReplyTo(null);
     setError(null);
   }, [nodeId]);
-
-  // 멘션 후보는 한 번만 — 참가자 목록은 세션 중 거의 바뀌지 않는다.
-  // **나 자신은 뺀다**(제보: "멘션에 나도 보여서 이상하다") — 멘션은 남을 부르는
-  // 도구고, 알림 트리거(0022)도 자기 멘션은 알리지 않으므로 골라 봐야 아무 일도 없다.
-  const myEmail = (useAuthUser()?.email ?? '').trim().toLowerCase();
-  useEffect(() => {
-    let alive = true;
-    void shareStore.listParticipants(controller.docId).then((rows) => {
-      if (alive && rows) setParticipants(rows.filter((p) => p.email.trim().toLowerCase() !== myEmail));
-    });
-    return () => {
-      alive = false;
-    };
-  }, [controller.docId, shareStore, myEmail]);
 
   const forNode = controller.comments.filter((c) => c.nodeId === nodeId);
   const threads: Thread[] = forNode
@@ -223,6 +223,33 @@ export function CommentThreads({ controller, nodeId, scroll = false }: { control
       </div>
     </>
   );
+}
+
+/**
+ * 멘션 자동완성 후보 — 이 문서의 참가자(소유자 + 초대받은 사람)에서 **나 자신만 뺀다**
+ * (제보: "멘션에 나도 보여서 이상하다" — 멘션은 남을 부르는 도구고, 알림 트리거(0022)도
+ * 자기 멘션은 알리지 않으므로 골라 봐야 아무 일도 없다).
+ *
+ * 스레드 목록과 초안 말풍선(`CommentDraftBubble`)이 같은 훅을 쓴다 — 후보가 두 곳에서
+ * 달라질 이유가 없다. 조회는 한 번뿐이다(참가자는 세션 중 거의 바뀌지 않는다).
+ */
+export function useCommentParticipants(docId: string, enabled = true): ShareParticipant[] {
+  const shareStore = useShareStore();
+  const [participants, setParticipants] = useState<ShareParticipant[]>([]);
+  const myEmail = (useAuthUser()?.email ?? '').trim().toLowerCase();
+  useEffect(() => {
+    // 댓글을 쓰는 화면이 떠 있을 때만 묻는다 — 초안 말풍선은 항상 마운트돼 있고
+    // 대부분의 시간에는 접혀 있다(왕복을 그냥 태울 이유가 없다).
+    if (!enabled) return;
+    let alive = true;
+    void shareStore.listParticipants(docId).then((rows) => {
+      if (alive && rows) setParticipants(rows.filter((p) => p.email.trim().toLowerCase() !== myEmail));
+    });
+    return () => {
+      alive = false;
+    };
+  }, [docId, shareStore, myEmail, enabled]);
+  return participants;
 }
 
 // ── 스레드 하나 ──────────────────────────────────────────────────────────────
@@ -449,7 +476,7 @@ export function mentionTokenAt(text: string, caret: number): { start: number; qu
   return { start: caret - m[1]!.length - 1, query: m[1]! };
 }
 
-function CommentComposer({
+export function CommentComposer({
   controller,
   isMobile,
   participants,

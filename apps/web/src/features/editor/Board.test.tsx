@@ -534,10 +534,10 @@ describe('화이트보드 에디터', () => {
       expect(undoPill.style.bottom).toBe('80px');
       expect(within(undoPill).getByRole('button', { name: '다시 실행' })).toBeTruthy();
 
-      // 도구(4: 선택·펜·형광펜·지우개)와 삽입 진입(1) 사이에 구분선이 하나 선다(요청).
+      // 도구(5: 선택·펜·형광펜·지우개·댓글)와 삽입 진입(1) 사이에 구분선이 하나 선다(요청).
       const layer = bar.querySelector('div[style*="position: absolute"]') as HTMLElement;
       const kinds = Array.from(layer.children).map((el) => el.tagName);
-      expect(kinds).toEqual(['BUTTON', 'BUTTON', 'BUTTON', 'BUTTON', 'DIV', 'BUTTON']);
+      expect(kinds).toEqual(['BUTTON', 'BUTTON', 'BUTTON', 'BUTTON', 'BUTTON', 'DIV', 'BUTTON']);
       expect(layer.style.justifyContent).toBe('space-evenly'); // 양 끝 여백까지 균일
 
       // 줌·미니맵 묶음은 우측이되, 막대 높이만큼 올라앉는다. 폰에서는 미니맵만 —
@@ -1871,16 +1871,14 @@ describe('화이트보드 디자인 이식', () => {
     mockMatchMedia(false);
   });
 
-  it('메모에 복제·삭제 빠른 동작이 붙는다(평소엔 숨어 있다)', async () => {
+  // 요청 ⑨: 메모 위 복제·삭제 빠른 동작은 걷어냈다 — 같은 동작이 우클릭 메뉴·
+  // 단축키(Ctrl+D·Delete)·모바일 선택 바에 이미 있어 카드 위 버튼은 소음이었다.
+  it('메모에는 복제·삭제 빠른 동작이 없다(요청)', async () => {
     localStorage.setItem('mindflow_doc_bdz3', JSON.stringify(BOARD));
     const { container } = renderEditor('/editor?map=bdz3&title=보드');
     await waitFor(() => expect(container.querySelector('[data-float-id="bf1"]')).toBeTruthy());
-    const grip = container.querySelector('[data-float-grip]') as HTMLElement;
-    expect(grip).toBeTruthy();
-    expect(grip.getAttribute('data-visible')).toBeNull(); // 고르기 전에는 숨김 상태
-
-    // 삭제를 누르면 메모가 사라진다(포인터는 삼켜져 드래그로 새지 않는다).
-    fireEvent.click(within(grip).getByLabelText('메모 삭제'));
-    await waitFor(() => expect(container.querySelector('[data-float-id="bf1"]')).toBeNull());
+    expect(container.querySelector('[data-float-grip]')).toBeNull();
+    expect(screen.queryByLabelText('메모 삭제')).toBeNull();
+    expect(screen.queryByLabelText('메모 복제')).toBeNull();
   });
 });

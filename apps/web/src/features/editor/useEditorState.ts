@@ -384,9 +384,22 @@ export interface EditorController {
   commentsOpen: boolean;
   /** 지금 댓글을 보고 있는 주제. 주제를 고르면 따라간다(패널이 대상 없이 뜨지 않게). */
   commentsNodeId: string;
-  /** 패널을 연다(대상 주제를 함께 지정할 수 있다 — 노드 메뉴·배지 클릭). */
+  /** 패널을 연다(대상 핀을 함께 지정할 수 있다 — 핀 클릭·알림 딥링크). */
   openComments: (nodeId?: string) => void;
-  addCommentPinAt: (at?: { x: number; y: number }) => void;
+  /**
+   * 첫 댓글을 받을 **초안 핀**을 그 자리에 띄운다(Figma 방식, 요청) — 문서에는 아직
+   * 아무것도 넣지 않는다. 한 마디를 남겨야 비로소 핀이 문서에 들어가므로, 쓰지 않고
+   * 다른 곳을 누르면 지울 것도 없다(요청 ⑤).
+   */
+  startCommentDraft: (at?: { x: number; y: number }) => void;
+  /** 화면 좌표로 초안 핀 띄우기 — 댓글 도구가 캔버스 클릭에서 쓴다. */
+  startCommentDraftAtClient: (clientX: number, clientY: number) => void;
+  /** 지금 첫 댓글을 기다리는 초안 핀의 캔버스 좌표(없으면 null). */
+  commentDraft: { x: number; y: number } | null;
+  /** 초안을 접는다 — 문서 변경 없음. */
+  cancelCommentDraft: () => void;
+  /** 초안에 첫 댓글을 남긴다 — 저장에 성공해야 핀이 문서에 들어간다. */
+  submitCommentDraft: (body: string, mentions?: CommentMention[]) => Promise<{ error?: string }>;
   moveCommentPin: (id: string, x: number, y: number, continuous?: boolean) => void;
   removeCommentPin: (id: string) => void;
   selectCommentPin: (id: string) => void;
@@ -1823,21 +1836,11 @@ export function useEditorState(): EditorController {
     const sx = clientX - r.left;
     const sy = clientY - r.top;
     const hit = hitTestAll(p);
-    // 보기 전용(#22): 변이 항목(추가·삭제·정렬)은 열 것이 없지만 **댓글**은 있다
-    // (0020 — 보기 전용도 댓글은 쓴다). 댓글이 모든 객체로 확장되면서(요청) 주제만이
-    // 아니라 **어떤 객체 위에서든** 메뉴를 열고, 항목 구성은 ContextMenu가 readOnly를
-    // 보고 댓글만 남긴다.
-    if (readOnlyRef.current) {
-      // 획에는 댓글이 붙지 않으므로(ContextMenu의 'stroke' 분기 참고) 보기 전용에서
-      // 획 위 우클릭은 **아무 메뉴도 열지 않는다** — 빈 메뉴가 뜨는 것보다 낫다.
-      if (!(hit && hit.kind !== 'stroke' && canCommentRef.current)) return;
-      setTextCtx(null);
-      setSelectionState({ kind: hit.kind, id: hit.id }); // 선택은 보기 전용에도 허용
-      setMultiSelectionState(null);
-      setCtxSub(null);
-      setCtxMenu({ kind: hit.kind, sx, sy, cx: p.x, cy: p.y });
-      return;
-    }
+    // 보기 전용(#22): 이제 어떤 메뉴도 열지 않는다 — 항목이 전부 변이이기 때문이다.
+    // 예전에는 **댓글**만 남긴 메뉴를 열었지만, 댓글은 댓글 핀에만 붙게 되면서
+    // (요청 ⑧) 객체 위 메뉴에는 남길 것이 없어졌다(빈 메뉴를 여는 것보다 낫다).
+    // 보기 전용 사용자는 꽂혀 있는 핀을 눌러 논의에 참여한다.
+    if (readOnlyRef.current) return;
     setTextCtx(null);
     const ms = multiSelectionRef.current;
     if (ms && totalSelected(ms) > 1 && hit) {
@@ -4324,9 +4327,26 @@ export function useEditorState(): EditorController {
   const [commentsNodeId, setCommentsNodeId] = useState<string>(ROOT_ID);
   const [comments, setComments] = useState<DocComment[]>([]);
   const [commentsLoading, setCommentsLoading] = useState(false);
+  /** 첫 댓글을 기다리는 **초안 핀**의 자리 — 문서에는 아직 없다(요청 ④·⑤). */
+  const [commentDraft, setCommentDraft] = useState<{ x: number; y: number } | null>(null);
+  const commentDraftRef = useRef(commentDraft);
+  commentDraftRef.current = commentDraft;
+  // 다른 도구로 옮기면 쓰던 초안은 접힌다 — 손이 이미 다른 일을 하고 있다.
+  // (마인드맵에는 도구 막대가 없어 `boardTool`이 바뀌지 않으므로 무관하다.)
+  useEffect(() => {
+    if (boardTool !== 'comment') setCommentDraft(null);
+  }, [boardTool]);
 
   /** 서버에서 목록을 다시 읽는다. 댓글은 실시간 채널을 타지 않으므로(본문이 아니다)
-   * 열 때마다 새로 읽는 것이 상대의 새 댓글을 보는 유일한 길이다. */
+   * 열 때마다 새로 읽는 것이 상대의 새 댓글을 보는 유일한 길이다.
+   *
+   * **빈 핀 정리도 여기서** 한다(성공한 조회에서만) — 예전엔 별도 effect가 했는데,
+   * 그 effect는 `comments`/`commentsLoading`을 **렌더 클로저**로 읽어서 로드 직후
+   * 한 프레임 동안 "댓글 0개 + 로딩 아님"으로 보였다: 문서에 저장돼 있던 핀이
+   * 열자마자 전부 지워지고 그 상태가 자동저장돼 **핀이 저장되지 않는 것처럼**
+   * 보였다(제보 ①). 목록을 막 받은 이 자리에서는 목록과 핀이 같은 순간의 값이라
+   * 그 어긋남이 없다. 조회 실패(catch)에서는 아무것도 지우지 않는다 — 못 읽은 것과
+   * 댓글이 없는 것은 다르다. */
   const reloadComments = useCallback(async () => {
     if (!docStoreId || !canComment) {
       setComments([]);
@@ -4334,13 +4354,19 @@ export function useEditorState(): EditorController {
     }
     setCommentsLoading(true);
     try {
-      setComments(await commentStore.list(docStoreId));
+      const rows = await commentStore.list(docStoreId);
+      setComments(rows);
+      const alive = new Set(rows.map((c) => c.nodeId));
+      const pins = docRef.current.commentPins ?? [];
+      if (pins.some((p) => !alive.has(p.id))) {
+        commitDoc((d) => ({ ...d, commentPins: (d.commentPins ?? []).filter((p) => alive.has(p.id)) }));
+      }
     } catch {
       setComments([]);
     } finally {
       setCommentsLoading(false);
     }
-  }, [commentStore, docStoreId, canComment]);
+  }, [commentStore, commitDoc, docStoreId, canComment]);
 
   // 마운트/문서 전환 시 한 번 — 배지(주제별 개수)는 패널을 열지 않아도 보여야 한다.
   useEffect(() => {
@@ -4357,12 +4383,11 @@ export function useEditorState(): EditorController {
     return commentStore.subscribe(docStoreId, () => void reloadComments());
   }, [hydrating, canComment, sharedDoc, loadedNotMine, commentStore, docStoreId, reloadComments]);
 
-  // 객체를 고르면 패널이 따라간다 — 열어 둔 채 다른 대상을 눌렀는데 남의 댓글이
-  // 그대로 떠 있으면 어느 대상의 논의인지 알 수 없다. 댓글이 모든 객체(주제·메모·
-  // 선·영역)로 확장되면서(요청) 어떤 선택이든 따라가고, 선택 해제만 보던 대상을
-  // 그대로 둔다.
+  // 핀을 고르면 패널이 따라간다 — 열어 둔 채 다른 핀을 눌렀는데 앞 핀의 논의가
+  // 그대로 떠 있으면 어느 자리의 논의인지 알 수 없다. **댓글은 이제 핀에만 붙으므로**
+  // (요청 ⑧) 다른 객체를 고르는 것은 대상을 바꾸지 않는다.
   useEffect(() => {
-    if (selection) setCommentsNodeId(selection.id);
+    if (selection?.kind === 'commentPin') setCommentsNodeId(selection.id);
   }, [selection?.kind, selection?.id]);
 
   const commentCounts = useMemo(() => {
@@ -4405,28 +4430,49 @@ export function useEditorState(): EditorController {
   }, [hydrating, commentsParam]);
 
   /**
-   * 캔버스에 **댓글 핀**을 꽂는다(Figma 방식, 요청) — 다른 객체를 만드는 것과 같은
-   * 손놀림이고, 꽂자마자 그 핀의 댓글 팝업이 열린다.
+   * 첫 댓글을 받을 **초안 핀**을 그 자리에 띄운다(Figma 방식, 요청 ④).
    *
-   * 핀은 자리만 든다: 말은 서버 `comments` 표에 **핀 id를 대상으로** 그대로 저장되므로
-   * 서버는 한 줄도 바뀌지 않는다. 댓글이 하나도 없는 핀은 살려 두지 않는다
-   * (`prunePins` — 빈 핀은 뜻이 없다).
+   * 예전에는 누르는 즉시 핀이 문서에 들어가고 댓글 패널이 통째로 열렸다. 지금은
+   * 말풍선 하나만 뜨고 **한 마디를 남겨야** 핀이 문서에 들어간다 — 그래서 쓰지 않고
+   * 다른 곳을 누르면 지울 것도 없다(요청 ⑤: 미작성 핀 즉시 제거). 핀은 여전히 자리만
+   * 들고, 말은 서버 `comments` 표에 **핀 id를 대상으로** 저장된다(서버 무변경).
    */
-  const addCommentPinAt = useCallback(
-    (at?: { x: number; y: number }) => {
-      const vp = viewportRef.current;
-      const cx = at ? at.x : (vp.vw / 2 - vp.pan.x) / vp.zoom;
-      const cy = at ? at.y : (vp.vh / 2 - vp.pan.y) / vp.zoom;
-      const newId = idFactory('cp');
-      commitDoc((d) => ({ ...d, commentPins: [...(d.commentPins ?? []), { id: newId, x: Math.round(cx), y: Math.round(cy) }] }));
-      setSelectionState({ kind: 'commentPin', id: newId });
-      setMultiSelectionState(null);
-      setCommentsNodeId(newId);
-      setCommentsOpen(true);
-      setPropsOpen(false);
-      void reloadComments();
+  const startCommentDraft = useCallback((at?: { x: number; y: number }) => {
+    const vp = viewportRef.current;
+    const cx = at ? at.x : (vp.vw / 2 - vp.pan.x) / vp.zoom;
+    const cy = at ? at.y : (vp.vh / 2 - vp.pan.y) / vp.zoom;
+    setCommentDraft({ x: Math.round(cx), y: Math.round(cy) });
+    setSelectionState(null);
+    setMultiSelectionState(null);
+    setCommentsOpen(false);
+    setPropsOpen(false);
+  }, []);
+  const startCommentDraftAtClient = useCallback(
+    (clientX: number, clientY: number) => {
+      startCommentDraft(toCanvasPoint(clientX, clientY, viewportRef.current));
     },
-    [commitDoc, idFactory, reloadComments],
+    [startCommentDraft],
+  );
+  const cancelCommentDraft = useCallback(() => setCommentDraft(null), []);
+  /**
+   * 초안에 첫 댓글을 남긴다 — **댓글 저장이 성공한 뒤에** 핀을 문서에 넣는다.
+   * 순서를 뒤집으면(핀 먼저) 저장이 실패했을 때 말 없는 핀이 남고, 그 핀은 다음
+   * 목록 조회에서 조용히 사라진다.
+   */
+  const submitCommentDraft = useCallback(
+    async (body: string, mentions?: CommentMention[]) => {
+      const at = commentDraftRef.current;
+      if (!at) return { error: '댓글을 남길 자리가 없어요.' };
+      const newId = idFactory('cp');
+      const res = await commentStore.add(docStoreId, newId, body, mentions && mentions.length ? { mentions } : undefined);
+      if (res.error) return res;
+      commitDoc((d) => ({ ...d, commentPins: [...(d.commentPins ?? []), { id: newId, x: at.x, y: at.y }] }));
+      setCommentDraft(null);
+      setSelectionState({ kind: 'commentPin', id: newId });
+      await reloadComments();
+      return res;
+    },
+    [commentStore, commitDoc, docStoreId, idFactory, reloadComments],
   );
   /** 핀 옮기기 — 드래그 중에는 continuous(끄는 동안 undo가 조각나지 않게). */
   const moveCommentPin = useCallback(
@@ -4451,6 +4497,7 @@ export function useEditorState(): EditorController {
     (nodeId?: string) => {
       if (nodeId) setCommentsNodeId(nodeId);
       setCommentsOpen(true);
+      setCommentDraft(null); // 초안을 띄운 채 다른 핀을 열면 초안은 접힌다(요청 ⑤)
       // 모바일에서는 속성 시트와 댓글이 둘 다 바텀 시트다 — 겹치지 않게 하나만 남긴다.
       setPropsOpen(false);
       void reloadComments();
@@ -4458,18 +4505,6 @@ export function useEditorState(): EditorController {
     [reloadComments],
   );
   const closeComments = useCallback(() => setCommentsOpen(false), []);
-  // **빈 핀은 살려 두지 않는다**(요청: 댓글이 1개 이상일 때만 유지 — Figma와 같은 규칙).
-  // 방금 꽂아 팝업이 열려 있는 핀만 예외다 — 첫 댓글을 쓰는 중이라 지우면 안 된다.
-  useEffect(() => {
-    if (commentsLoading) return;
-    const pins = doc.commentPins ?? [];
-    if (!pins.length) return;
-    const alive = new Set(comments.map((c) => c.nodeId));
-    const orphan = pins.filter((p) => !alive.has(p.id) && !(commentsOpen && commentsNodeId === p.id));
-    if (!orphan.length) return;
-    const drop = new Set(orphan.map((p) => p.id));
-    commitDoc((d) => ({ ...d, commentPins: (d.commentPins ?? []).filter((p) => !drop.has(p.id)) }));
-  }, [comments, commentsLoading, commentsOpen, commentsNodeId, doc.commentPins, commitDoc]);
 
   const addComment = useCallback(
     async (nodeId: string, body: string, opts?: { parentId?: string; mentions?: CommentMention[] }) => {
@@ -5951,7 +5986,7 @@ export function useEditorState(): EditorController {
       }
 
       if (inEditable) return;
-      // 화이트보드 도구 전환 — V(선택)·P(펜)·H(형광펜)·E(지우개). 수정 키가 없을 때만이라
+      // 화이트보드 도구 전환 — V(선택)·P(펜)·H(형광펜)·E(지우개)·C(댓글). 수정 키가 없을 때만이라
       // Ctrl+V(붙여넣기) 같은 기존 단축키와 겹치지 않는다. 한글 IME가 켜져 있으면
       // e.key가 자모로 오므로 물리 키(e.code)도 함께 본다(복사/붙여넣기와 같은 처방).
       if (isBoard && !e.metaKey && !e.ctrlKey && !e.altKey && !e.shiftKey) {
@@ -5965,7 +6000,9 @@ export function useEditorState(): EditorController {
                 ? 'hl'
                 : k === 'e' || e.code === 'KeyE'
                   ? 'eraser'
-                  : null;
+                  : k === 'c' || e.code === 'KeyC'
+                    ? 'comment'
+                    : null;
         if (tool) {
           e.preventDefault();
           setBoardTool(tool);
@@ -6312,7 +6349,11 @@ export function useEditorState(): EditorController {
     commentsOpen,
     commentsNodeId,
     openComments,
-    addCommentPinAt,
+    startCommentDraft,
+    startCommentDraftAtClient,
+    commentDraft,
+    cancelCommentDraft,
+    submitCommentDraft,
     moveCommentPin,
     removeCommentPin,
     selectCommentPin,

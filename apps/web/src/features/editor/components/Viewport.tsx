@@ -11,6 +11,7 @@ import { MarqueeLayer } from './MarqueeLayer';
 import { PresenceLayer } from './PresenceLayer';
 import { StrokeLayer } from './StrokeLayer';
 import { CommentPinLayer } from './CommentPinLayer';
+import { CommentDraftBubble } from './CommentDraftBubble';
 import { GuideLayer } from './GuideLayer';
 import { BoardDrawLayer } from './BoardDrawLayer';
 import { BoardToolbar } from './BoardToolbar';
@@ -160,6 +161,9 @@ export function Viewport({ doc, controller }: ViewportProps) {
             MindFlow.dc.html:2794-2795), so this sits in the SAME untransformed box `.mf-ed-vp`
             itself occupies. */}
         <ContextMenu controller={controller} />
+        {/* 첫 댓글 말풍선 — 핀이 문서에 들어가기 전 단계(화면 좌표라 확대해도 글자
+            크기가 그대로다). 팬/줌이 바뀌면 다시 계산돼 그 자리를 따라간다. */}
+        <CommentDraftBubble controller={controller} />
         {/* Same untransformed screen-coordinate box as `ContextMenu` above — `textCtx.sx/sy`
             are already viewport-relative (`NodeEditBox`'s `openTextCtx` call). */}
         <TextToolbar controller={controller} />

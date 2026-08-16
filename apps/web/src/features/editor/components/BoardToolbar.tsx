@@ -30,6 +30,7 @@ import { FLOAT_SHADOW, accentGradient, glassCard } from '../chrome';
 import { useIsMobile } from '../../../hooks/useMediaQuery';
 import { HL_COLORS, HL_WIDTHS, PEN_COLORS, PEN_WIDTHS } from '../boardTools';
 import type { BoardTool } from '../boardTools';
+import { CommentIcon } from './ToolbarMenus';
 
 /** 폰에서 도구 막대가 차지하는 높이 + 여백 — 줌·미니맵 묶음(`ZoomControls`)과
  * 실행취소 알약이 이만큼 위로 올라가 막대와 겹치지 않는다. 버튼 44 + 패딩 10 +
@@ -192,6 +193,10 @@ export function BoardToolbar({ controller }: { controller: EditorController }) {
         <path d="M20 20H8.5l-5-5a2 2 0 0 1 0-2.8l8.7-8.7a2 2 0 0 1 2.8 0l5 5a2 2 0 0 1 0 2.8L13 18.5" />
       </svg>,
     ),
+    // 댓글 — 삽입이 아니라 **도구**다(요청 ④): 누르는 즉시 핀이 생기지 않고, 커서가
+    // 댓글 아이콘으로 바뀌어 "누른 자리"에 첫 댓글 말풍선이 뜬다(Figma와 같은 감각).
+    // 팝업 머리·핀과 같은 아이콘을 쓴다(요청 ②).
+    ...(controller.canComment ? [toolBtn('comment', '댓글', 'C', <CommentIcon size={17} />)] : []),
   ];
 
   // 삽입 — 화이트보드가 담을 수 있는 것들(메모·이미지·연결선·영역). 그리기 도구가
@@ -235,19 +240,6 @@ export function BoardToolbar({ controller }: { controller: EditorController }) {
       </svg>,
       insert(controller.addZoneAt),
     ),
-    // 댓글 핀 — 다른 객체와 같은 줄에서 만든다(요청). 꽂으면 그 핀의 팝업이 열린다.
-    ...(controller.canComment
-      ? [
-          actionBtn(
-            '댓글 추가',
-            <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-              <path d="M21 12a8 8 0 0 1-8 8H8l-4 3v-6a8 8 0 0 1 8-8h1a8 8 0 0 1 8 3z" />
-              <path d="M8.5 11.5h7M8.5 14.5h4" />
-            </svg>,
-            insert(controller.addCommentPinAt),
-          ),
-        ]
-      : []),
   ];
 
   const undoRedo = [

@@ -244,22 +244,9 @@ export function ViewMenu({ controller, onDone, isMobile }: { controller: EditorC
           }}
         />
       )}
-      {/* 댓글 — 배지는 댓글이 생긴 뒤에만 뜨므로, 첫 댓글을 남길 길은 여기다.
-          링크로 연 사람에게는 서버가 댓글을 내주지 않아 항목도 두지 않는다(0020). */}
-      {controller.canComment && (
-        <MenuItem
-          theme={th}
-          isMobile={isMobile}
-          icon={<CommentIcon />}
-          label="댓글"
-          active={controller.commentsOpen}
-          onClick={() => {
-            if (controller.commentsOpen) controller.closeComments();
-            else controller.openComments();
-            onDone();
-          }}
-        />
-      )}
+      {/* 캔버스 문서에는 '댓글' 항목이 없다(요청 ⑧) — 댓글은 **댓글 핀**에만 붙으므로
+          대상 없이 여는 목록이 성립하지 않는다. 남기는 길은 화이트보드 도구 막대의
+          댓글 도구와 배경 우클릭의 '댓글 추가'이고, 읽는 길은 그 핀을 누르는 것이다. */}
       {/* 맞춤 도우미(요청) — 메모·이미지·영역을 끌면 **이웃의 기준선**(안내선)에
           먼저, 없으면 격자에 붙는다. 토글 하나가 둘을 함께 켜고 끈다(사용자에겐
           "손이 자석처럼 붙는다"는 한 가지 감각이다). 드래그 중 Alt는 그 순간만 끔. */}
@@ -371,8 +358,9 @@ export function MoreMenu({ controller, onDone, isMobile }: { controller: EditorC
           )}
         </>
       )}
-      {controller.canComment && (
-        <MenuItem theme={th} isMobile={isMobile} icon={<CommentIcon />} label="댓글" active={controller.commentsOpen} onClick={() => { if (controller.commentsOpen) controller.closeComments(); else controller.openComments(); onDone(); }} />
+      {/* 칸반의 '보드 전체 댓글'만 남는다 — 캔버스 문서의 댓글은 핀에 붙는다(요청 ⑧). */}
+      {controller.canComment && controller.isKanban && (
+        <MenuItem theme={th} isMobile={isMobile} icon={<CommentIcon />} label="보드 전체 댓글" active={controller.commentsOpen} onClick={() => { if (controller.commentsOpen) controller.closeComments(); else controller.openComments(); onDone(); }} />
       )}
       {/* 내보내기는 보기 전용에서 감춘다(요청) — 데스크톱 툴바와 같은 규칙. */}
       {!controller.readOnly && (

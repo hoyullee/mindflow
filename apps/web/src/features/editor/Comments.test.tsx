@@ -43,11 +43,34 @@ function renderEditor(entry: string) {
   );
 }
 
-/** 보기 메뉴 → 댓글. */
-async function openCommentsViaMenu(): Promise<HTMLElement> {
-  fireEvent.click(screen.getByRole('button', { name: '보기' }));
-  fireEvent.click(await screen.findByRole('button', { name: '댓글' }));
+/** 댓글이 붙는 자리는 **댓글 핀** 하나뿐이다(요청 ⑧) — 핀 하나를 심은 문서. */
+const PIN_ID = 'p1';
+const DOC_WITH_PIN = { ...DOC, commentPins: [{ id: PIN_ID, x: 120, y: 60 }] };
+
+/** 꽂혀 있는 핀을 눌러 그 핀의 댓글 팝업을 연다. */
+async function openPinComments(): Promise<HTMLElement> {
+  const el = await waitFor(() => {
+    const e = document.querySelector(`[data-comment-pin="${PIN_ID}"]`) as HTMLElement;
+    expect(e).toBeTruthy();
+    return e;
+  });
+  fireEvent.click(el);
   return await screen.findByLabelText('댓글');
+}
+
+/** 배경 우클릭 → '댓글 추가' → 첫 댓글 말풍선. */
+async function openDraftViaMenu(container: HTMLElement, clientX = 300, clientY = 240): Promise<HTMLElement> {
+  fireEvent.contextMenu(container.querySelector('.mf-ed-vp') as HTMLElement, { clientX, clientY });
+  fireEvent.mouseDown(await screen.findByText('댓글 추가'));
+  return await screen.findByLabelText('첫 댓글 남기기');
+}
+
+/** jsdom에는 PointerEvent가 없다 — MouseEvent로 흉내 낸다(Board.test와 같은 처방).
+ * `fireEvent.pointerDown`을 그대로 쓰면 clientX/Y가 실리지 않아 좌표 판정이 깨진다. */
+function firePointer(target: Element | Window, type: 'pointerdown' | 'pointermove' | 'pointerup', init: { clientX?: number; clientY?: number; button?: number } = {}): void {
+  const event = new MouseEvent(type, { bubbles: true, cancelable: true, clientX: init.clientX ?? 0, clientY: init.clientY ?? 0, button: init.button ?? 0 });
+  Object.defineProperty(event, 'pointerId', { value: 1, configurable: true });
+  fireEvent(target as Element, event);
 }
 
 function seedComment(documentId: string, nodeId: string, body: string, extra?: Record<string, unknown>): void {
@@ -66,56 +89,67 @@ beforeEach(() => {
 });
 afterEach(() => cleanup());
 
-describe('주제 댓글', () => {
-  it('보기 메뉴에서 열어 댓글을 남기면 목록에 뜨고 저장된다', async () => {
+describe('댓글(핀에 붙는 논의)', () => {
+  it('꽂은 자리의 말풍선에 첫 댓글을 남기면 그때 핀이 생기고 저장된다(요청 ④)', async () => {
     localStorage.setItem('mindflow_doc_cm1', JSON.stringify(DOC));
-    renderEditor('/editor?map=cm1&title=x');
-    const panel = await openCommentsViaMenu();
-    // 대상은 기본적으로 루트 주제.
-    expect(within(panel).getByText('루트 주제')).toBeTruthy();
-    expect(within(panel).getByText(/아직 댓글이 없어요/)).toBeTruthy();
+    const { container } = renderEditor('/editor?map=cm1&title=x');
+    await waitFor(() => expect(container.querySelector('.mf-ed-vp')).toBeTruthy());
 
-    fireEvent.change(within(panel).getByLabelText('댓글 입력'), { target: { value: '여기 정리가 필요해요' } });
-    fireEvent.click(within(panel).getByRole('button', { name: '남기기' }));
+    const bubble = await openDraftViaMenu(container);
+    // 아직 핀도, 팝업도 없다 — 말풍선 하나가 첫 마디를 기다린다.
+    expect(container.querySelector('[data-comment-pin]')).toBeNull();
+    expect(screen.queryByLabelText('댓글')).toBeNull();
 
-    await waitFor(() => expect(within(panel).getByText('여기 정리가 필요해요')).toBeTruthy());
-    const stored = JSON.parse(localStorage.getItem('mf_comments') || '[]') as { documentId: string; nodeId: string; body: string }[];
+    fireEvent.change(within(bubble).getByLabelText('댓글 입력'), { target: { value: '여기 정리가 필요해요' } });
+    fireEvent.click(within(bubble).getByRole('button', { name: '남기기' }));
+
+    const pin = await waitFor(() => {
+      const el = container.querySelector('[data-comment-pin]') as HTMLElement;
+      expect(el).toBeTruthy();
+      return el;
+    });
+    await waitFor(() => expect(container.querySelector('[data-comment-draft]')).toBeNull());
+    const stored = storedComments();
     expect(stored).toHaveLength(1);
-    expect(stored[0]).toMatchObject({ documentId: 'cm1', nodeId: 'root', body: '여기 정리가 필요해요' });
+    expect(stored[0]).toMatchObject({ nodeId: pin.getAttribute('data-comment-pin')!, body: '여기 정리가 필요해요' });
+    // 문서에도 그 핀이 들어간다 — 자동저장이 실어 나른다(요청 ①).
+    await waitFor(
+      () => {
+        const now = JSON.parse(localStorage.getItem('mindflow_doc_cm1') || '{}') as { commentPins?: { id: string }[] };
+        expect(now.commentPins?.[0]?.id).toBe(pin.getAttribute('data-comment-pin'));
+      },
+      { timeout: 4000 },
+    );
   });
 
   it('내 댓글은 지울 수 있다', async () => {
-    localStorage.setItem('mindflow_doc_cm2', JSON.stringify(DOC));
-    seedComment('cm2', 'root', '지울 댓글');
+    localStorage.setItem('mindflow_doc_cm2', JSON.stringify(DOC_WITH_PIN));
+    seedComment('cm2', PIN_ID, '지울 댓글');
     renderEditor('/editor?map=cm2&title=x');
-    const panel = await openCommentsViaMenu();
+    const panel = await openPinComments();
     await waitFor(() => expect(within(panel).getByText('지울 댓글')).toBeTruthy());
     fireEvent.click(within(panel).getByRole('button', { name: '댓글 삭제' }));
     await waitFor(() => expect(within(panel).queryByText('지울 댓글')).toBeNull());
     expect(JSON.parse(localStorage.getItem('mf_comments') || '[]')).toHaveLength(0);
   });
 
-  it('댓글이 달린 주제에 배지가 뜨고, 누르면 그 주제의 댓글이 열린다', async () => {
-    localStorage.setItem('mindflow_doc_cm3', JSON.stringify(DOC));
-    seedComment('cm3', 'c1', '자식에 남긴 말');
-    seedComment('cm3', 'c1', '하나 더');
+  it('핀에 댓글 수가 적히고, 누르면 그 핀의 논의가 열린다 — 제목에 "사라진 대상"은 없다(요청 ⑥)', async () => {
+    localStorage.setItem('mindflow_doc_cm3', JSON.stringify(DOC_WITH_PIN));
+    seedComment('cm3', PIN_ID, '핀에 남긴 말');
+    seedComment('cm3', PIN_ID, '하나 더');
     renderEditor('/editor?map=cm3&title=x');
-    // 댓글이 없는 루트에는 배지가 없다 — 배지는 논의가 있는 주제만 가리킨다.
-    const badge = await screen.findByLabelText('댓글 2개');
-    expect(badge.getAttribute('data-comment-badge')).toBe('c1');
-    expect(screen.queryByLabelText('댓글 1개')).toBeNull();
+    await waitFor(() => expect((document.querySelector('[data-pin-count]') as HTMLElement)?.textContent).toBe('2'));
 
-    fireEvent.click(badge);
-    const panel = await screen.findByLabelText('댓글');
-    expect(within(panel).getByText('자식 주제')).toBeTruthy();
-    expect(within(panel).getByText('자식에 남긴 말')).toBeTruthy();
+    const panel = await openPinComments();
+    expect(within(panel).getByText('핀에 남긴 말')).toBeTruthy();
+    expect(within(panel).queryByText('사라진 대상')).toBeNull();
   });
 
   it('답글이 스레드 아래에 달리고 parentId로 저장된다', async () => {
-    localStorage.setItem('mindflow_doc_cm5', JSON.stringify(DOC));
-    seedComment('cm5', 'root', '뿌리 댓글');
+    localStorage.setItem('mindflow_doc_cm5', JSON.stringify(DOC_WITH_PIN));
+    seedComment('cm5', PIN_ID, '뿌리 댓글');
     renderEditor('/editor?map=cm5&title=x');
-    const panel = await openCommentsViaMenu();
+    const panel = await openPinComments();
     await waitFor(() => expect(within(panel).getByText('뿌리 댓글')).toBeTruthy());
 
     fireEvent.click(within(panel).getByRole('button', { name: '답글' }));
@@ -132,10 +166,10 @@ describe('주제 댓글', () => {
   // 해결 기능은 걷어냈다(요청: 해결 대신 좋아요). 스레드는 하나의 목록이고,
   // 공감은 좋아요 수로 남는다 — 서버 컬럼(0021)은 그대로 두되 UI에서 사라진다.
   it('해결 버튼은 없고, 좋아요를 누르면 수가 오르고 다시 누르면 내린다', async () => {
-    localStorage.setItem('mindflow_doc_cmlike', JSON.stringify(DOC));
-    seedComment('cmlike', 'root', '좋아요 대상');
+    localStorage.setItem('mindflow_doc_cmlike', JSON.stringify(DOC_WITH_PIN));
+    seedComment('cmlike', PIN_ID, '좋아요 대상');
     renderEditor('/editor?map=cmlike&title=x');
-    const panel = await openCommentsViaMenu();
+    const panel = await openPinComments();
     await waitFor(() => expect(within(panel).getByText('좋아요 대상')).toBeTruthy());
 
     expect(screen.queryByTitle('해결됨으로 표시')).toBeNull();
@@ -155,44 +189,28 @@ describe('주제 댓글', () => {
     await waitFor(() => expect((document.querySelector('[data-like-button]') as HTMLElement).getAttribute('aria-pressed')).toBe('false'));
   });
 
-  it('메모(플로트)에도 댓글이 달린다 — 선택 추종·대상 제목·저장 키·배지 (모든 객체 댓글)', async () => {
+  // 요청 ⑧: 주제·메모·선·영역에는 댓글을 달 수 없다 — 진입점도 표시도 없다.
+  it('기존 객체에는 댓글 진입점이 없다(보기 메뉴 항목·객체 배지 모두)', async () => {
     const doc = { ...DOC, floats: [{ id: 'fm1', x: -300, y: 40, w: 180, text: '주간 회고 메모' }] };
     localStorage.setItem('mindflow_doc_cm12', JSON.stringify(doc));
-    renderEditor('/editor?map=cm12&title=x');
-    const panel = await openCommentsViaMenu();
+    // 옛 데이터(객체에 달려 있던 댓글)가 남아 있어도 화면에는 드러나지 않는다.
+    seedComment('cm12', 'fm1', '옛 메모 댓글');
+    const { container } = renderEditor('/editor?map=cm12&title=x');
+    await waitFor(() => expect(container.querySelector('[data-float-id="fm1"]')).toBeTruthy());
 
-    // 메모를 고르면 패널 대상이 따라간다(예전에는 주제만 따라갔다).
-    const floatEl = await waitFor(() => {
-      const el = document.querySelector('[data-float-id="fm1"]') as HTMLElement;
-      expect(el).toBeTruthy();
-      return el;
-    });
-    fireEvent.pointerDown(floatEl, { button: 0, clientX: 10, clientY: 10 });
-    fireEvent.pointerUp(floatEl, { button: 0, clientX: 10, clientY: 10 });
-    await waitFor(() => expect(within(panel).getByText('메모 · 주간 회고 메모')).toBeTruthy());
-
-    // 댓글 저장 키 = 메모 id (별도 컬럼 없이 대상 id 하나 — 서버 무변경).
-    const box = within(panel).getByLabelText('댓글 입력') as HTMLTextAreaElement;
-    fireEvent.change(box, { target: { value: '이 메모 좋아요' } });
-    fireEvent.click(within(panel).getByRole('button', { name: '남기기' }));
-    await waitFor(() => expect(storedComments()).toHaveLength(1));
-    expect(storedComments()[0]!.nodeId).toBe('fm1');
-
-    // 메모 카드에 개수 배지가 뜨고, 누르면 그 메모의 패널이 열린다.
-    const badge = await waitFor(() => {
-      const b = document.querySelector('[data-comment-badge="fm1"]') as HTMLElement;
-      expect(b).toBeTruthy();
-      return b;
-    });
-    expect(badge.textContent).toBe('1');
+    fireEvent.click(screen.getByRole('button', { name: '보기' }));
+    expect(await screen.findByText('맵')).toBeTruthy(); // 메뉴는 열렸다
+    expect(screen.queryByRole('button', { name: '댓글' })).toBeNull();
+    expect(document.querySelector('[data-comment-badge]')).toBeNull();
   });
 
   it('@ 입력에 참가자 자동완성이 뜨고, 고르면 멘션이 저장·강조된다', async () => {
-    localStorage.setItem('mindflow_doc_cm7', JSON.stringify(DOC));
+    localStorage.setItem('mindflow_doc_cm7', JSON.stringify(DOC_WITH_PIN));
+    seedComment('cm7', PIN_ID, '먼저 있던 말');
     // 멘션 후보 = 공유 참가자(소유자 + 초대). 초대 한 명을 심는다.
     localStorage.setItem('mf_doc_shares', JSON.stringify([{ documentId: 'cm7', email: 'friend@example.com', role: 'edit', createdAt: '2026-01-01T00:00:00.000Z' }]));
     renderEditor('/editor?map=cm7&title=x');
-    const panel = await openCommentsViaMenu();
+    const panel = await openPinComments();
 
     const box = within(panel).getByLabelText('댓글 입력') as HTMLTextAreaElement;
     fireEvent.change(box, { target: { value: '@fri', selectionStart: 4 } });
@@ -202,18 +220,20 @@ describe('주제 댓글', () => {
 
     fireEvent.change(box, { target: { value: box.value + ' 확인 부탁해요' } });
     fireEvent.click(within(panel).getByRole('button', { name: '남기기' }));
-    await waitFor(() => expect(storedComments()).toHaveLength(1));
-    expect(storedComments()[0]!.mentions).toEqual([{ email: 'friend@example.com', name: 'friend' }]);
+    // 먼저 심어 둔 말(핀을 살려 두는 첫 댓글) 뒤에 새 댓글이 붙는다.
+    await waitFor(() => expect(storedComments()).toHaveLength(2));
+    expect(storedComments()[1]!.mentions).toEqual([{ email: 'friend@example.com', name: 'friend' }]);
     // 본문에서 멘션만 강조된다.
     const mark = panel.querySelector('[data-mention]')!;
     expect(mark.textContent).toBe('@friend');
   });
 
   it('작성 중에도 멘션이 강조된다 — 백드롭 오버레이(요청), 이름이 깨지면 해제', async () => {
-    localStorage.setItem('mindflow_doc_cm11', JSON.stringify(DOC));
+    localStorage.setItem('mindflow_doc_cm11', JSON.stringify(DOC_WITH_PIN));
+    seedComment('cm11', PIN_ID, '먼저 있던 말');
     localStorage.setItem('mf_doc_shares', JSON.stringify([{ documentId: 'cm11', email: 'friend@example.com', role: 'edit', createdAt: '2026-01-01T00:00:00.000Z' }]));
     renderEditor('/editor?map=cm11&title=x');
-    const panel = await openCommentsViaMenu();
+    const panel = await openPinComments();
 
     const box = within(panel).getByLabelText('댓글 입력') as HTMLTextAreaElement;
     fireEvent.change(box, { target: { value: '@fri', selectionStart: 4 } });
@@ -238,10 +258,11 @@ describe('주제 댓글', () => {
   });
 
   it('멘션 후보에 나 자신은 없다 — 멘션은 남을 부르는 도구다(제보)', async () => {
-    localStorage.setItem('mindflow_doc_cm10', JSON.stringify(DOC));
+    localStorage.setItem('mindflow_doc_cm10', JSON.stringify(DOC_WITH_PIN));
+    seedComment('cm10', PIN_ID, '먼저 있던 말');
     localStorage.setItem('mf_doc_shares', JSON.stringify([{ documentId: 'cm10', email: 'friend@example.com', role: 'edit', createdAt: '2026-01-01T00:00:00.000Z' }]));
     renderEditor('/editor?map=cm10&title=x');
-    const panel = await openCommentsViaMenu();
+    const panel = await openPinComments();
 
     const box = within(panel).getByLabelText('댓글 입력') as HTMLTextAreaElement;
     // 질의 없는 맨 '@' — 전체 후보가 나온다. 참가자는 소유자(나=me@example.com)와
@@ -252,7 +273,8 @@ describe('주제 댓글', () => {
   });
 
   it('댓글 멘션 리스트: ↑/↓로 항목을 이동하고 Enter로 활성 후보를 고른다(요청)', async () => {
-    localStorage.setItem('mindflow_doc_cm15', JSON.stringify(DOC));
+    localStorage.setItem('mindflow_doc_cm15', JSON.stringify(DOC_WITH_PIN));
+    seedComment('cm15', PIN_ID, '먼저 있던 말');
     localStorage.setItem(
       'mf_doc_shares',
       JSON.stringify([
@@ -261,7 +283,7 @@ describe('주제 댓글', () => {
       ]),
     );
     renderEditor('/editor?map=cm15&title=x');
-    const panel = await openCommentsViaMenu();
+    const panel = await openPinComments();
 
     const box = within(panel).getByLabelText('댓글 입력') as HTMLTextAreaElement;
     fireEvent.change(box, { target: { value: '@', selectionStart: 1 } });
@@ -362,45 +384,46 @@ describe('주제 댓글', () => {
   });
 
   it('실시간: 다른 곳(다른 탭)의 댓글이 신호를 타고 즉시 나타난다 — 공유된 문서', async () => {
-    localStorage.setItem('mindflow_doc_cm8', JSON.stringify(DOC));
+    localStorage.setItem('mindflow_doc_cm8', JSON.stringify(DOC_WITH_PIN));
+    seedComment('cm8', PIN_ID, '먼저 있던 말');
     // 실시간 구독은 공유된 문서에서만(혼자 쓰는 문서에는 신호를 보낼 상대가 없다).
     localStorage.setItem('mf_doc_shares', JSON.stringify([{ documentId: 'cm8', email: 'friend@example.com', role: 'edit', createdAt: '2026-01-01T00:00:00.000Z' }]));
     renderEditor('/editor?map=cm8&title=x');
-    const panel = await openCommentsViaMenu();
-    await waitFor(() => expect(within(panel).getByText(/아직 댓글이 없어요/)).toBeTruthy());
+    const panel = await openPinComments();
+    await waitFor(() => expect(within(panel).getByText('먼저 있던 말')).toBeTruthy());
 
     // 다른 탭의 저장소 인스턴스가 댓글을 단다 — BroadcastChannel 신호로 이 화면이
     // 스스로 다시 읽어야 한다(패널을 닫았다 열지 않아도).
     const other = new LocalCommentStore();
     await waitFor(async () => {
       // 구독 effect가 붙기 전의 add는 신호가 유실될 수 있어, 붙을 때까지 재시도.
-      if (storedComments().length === 0) await other.add('cm8', 'root', '옆 탭에서 단 댓글');
+      if (storedComments().length === 1) await other.add('cm8', PIN_ID, '옆 탭에서 단 댓글');
       expect(within(panel).getByText('옆 탭에서 단 댓글')).toBeTruthy();
     });
   });
 
   // 노드 우클릭 진입점은 좌표 히트테스트가 필요해 ContextMenu.interactions.test.tsx에서 검증.
 
-  it('알림 딥링크(?comments=<nodeId>)로 열면 그 주제의 댓글 패널이 바로 뜬다', async () => {
-    localStorage.setItem('mindflow_doc_cmd1', JSON.stringify(DOC));
-    seedComment('cmd1', 'c1', '딥링크 대상 논의');
-    renderEditor('/editor?map=cmd1&title=x&comments=c1');
+  it('알림 딥링크(?comments=<대상 id>)로 열면 그 핀의 댓글 패널이 바로 뜬다', async () => {
+    localStorage.setItem('mindflow_doc_cmd1', JSON.stringify(DOC_WITH_PIN));
+    seedComment('cmd1', PIN_ID, '딥링크 대상 논의');
+    renderEditor(`/editor?map=cmd1&title=x&comments=${PIN_ID}`);
     const panel = await screen.findByLabelText('댓글');
-    expect(within(panel).getByText('자식 주제')).toBeTruthy();
     await waitFor(() => expect(within(panel).getByText('딥링크 대상 논의')).toBeTruthy());
   });
 
-  it('다른 주제를 고르면 패널이 따라간다 — 어느 주제의 논의인지 흐려지지 않게', async () => {
-    localStorage.setItem('mindflow_doc_cm4', JSON.stringify(DOC));
+  it('다른 핀을 고르면 패널이 따라간다 — 어느 자리의 논의인지 흐려지지 않게', async () => {
+    const doc = { ...DOC, commentPins: [{ id: PIN_ID, x: 120, y: 60 }, { id: 'p2', x: 260, y: 160 }] };
+    localStorage.setItem('mindflow_doc_cm4', JSON.stringify(doc));
+    seedComment('cm4', PIN_ID, '첫 핀의 말');
+    seedComment('cm4', 'p2', '둘째 핀의 말');
     renderEditor('/editor?map=cm4&title=x');
-    const panel = await openCommentsViaMenu();
-    expect(within(panel).getByText('루트 주제')).toBeTruthy();
+    const panel = await openPinComments();
+    await waitFor(() => expect(within(panel).getByText('첫 핀의 말')).toBeTruthy());
 
-    const child = await screen.findByText('자식 주제');
-    const box = child.closest('[data-node-id]') as HTMLElement;
-    fireEvent.pointerDown(box, { pointerId: 1, clientX: 100, clientY: 100, button: 0 });
-    fireEvent.pointerUp(window, { pointerId: 1, clientX: 100, clientY: 100 });
-    await waitFor(() => expect(within(panel).getByText('자식 주제')).toBeTruthy());
+    fireEvent.click(document.querySelector('[data-comment-pin="p2"]') as HTMLElement);
+    await waitFor(() => expect(within(panel).getByText('둘째 핀의 말')).toBeTruthy());
+    expect(within(panel).queryByText('첫 핀의 말')).toBeNull();
   });
 });
 
@@ -432,9 +455,9 @@ describe('링크로 연 맵', () => {
     return { auth: new LocalAuth(), docStore, spaceStore: new LocalSpaceStore(), shareStore, feedbackStore: new LocalFeedbackStore(), imageStore: new LocalImageStore(), commentStore: new LocalCommentStore(), notificationStore: new LocalNotificationStore(), mode: 'supabase' };
   }
 
-  it('보기 메뉴에 댓글 항목이 없고, 남의 댓글 배지도 뜨지 않는다', async () => {
-    localStorage.setItem('mindflow_doc_lk9', JSON.stringify(DOC));
-    seedComment('lk9', 'c1', '보이면 안 되는 말');
+  it('꽂혀 있는 핀의 댓글도, 배경 메뉴의 댓글 추가도 없다', async () => {
+    localStorage.setItem('mindflow_doc_lk9', JSON.stringify(DOC_WITH_PIN));
+    seedComment('lk9', PIN_ID, '보이면 안 되는 말');
     render(
       <MemoryRouter initialEntries={['/editor?map=lk9&title=x']}>
         <BackendProvider backend={linkViewerBackend()}>
@@ -446,51 +469,144 @@ describe('링크로 연 맵', () => {
       </MemoryRouter>,
     );
     await waitFor(() => expect(screen.getAllByText('보기 전용').length).toBeGreaterThan(0));
-    fireEvent.click(screen.getByRole('button', { name: '보기' }));
-    expect(screen.queryByRole('button', { name: '댓글' })).toBeNull();
-    await waitFor(() => expect(screen.queryByLabelText('댓글 1개')).toBeNull());
+    // 핀은 그려지지만(문서의 일부다) 그 논의는 서버가 내주지 않아 수도 붙지 않는다.
+    await waitFor(() => expect(document.querySelector('[data-pin-count]')).toBeNull());
+    expect(screen.queryByText('보이면 안 되는 말')).toBeNull();
   });
 });
 
-// 요청: 댓글을 "객체에 다는 것"이 아니라 **캔버스에 꽂는 객체**로(Figma 방식).
-// 핀은 자리만 들고(`Doc.commentPins`) 말은 지금 표에 그 핀 id를 대상으로 저장된다 —
-// 서버는 한 줄도 바뀌지 않는다.
+// 요청 ④·⑤·③·⑦: 댓글 핀은 Figma처럼 **두 걸음**으로 생긴다 — 도구/메뉴가 초안
+// 말풍선을 띄우고, 첫 마디를 남겨야 문서에 들어간다. 옮기는 동안에는 서버를 다시
+// 읽지 않고, 팝업은 그 핀 옆에 뜬다.
 describe('댓글 핀(캔버스 객체)', () => {
-  it('배경 우클릭으로 핀을 꽂으면 그 핀의 팝업이 열리고, 댓글을 남기면 개수가 붙는다', async () => {
-    localStorage.setItem('mindflow_doc_pin1', JSON.stringify(DOC));
-    const { container } = renderEditor('/editor?map=pin1&title=x');
-    await waitFor(() => expect(container.querySelector('.mf-ed-vp')).toBeTruthy());
-
-    fireEvent.contextMenu(container.querySelector('.mf-ed-vp') as HTMLElement, { clientX: 300, clientY: 240 });
-    fireEvent.mouseDown(await screen.findByText('댓글 추가'));
-
-    // 핀이 문서에 들어가고(자리만), 그 핀의 댓글 팝업이 열린다.
-    const pin = await waitFor(() => {
-      const el = container.querySelector('[data-comment-pin]') as HTMLElement;
-      expect(el).toBeTruthy();
-      return el;
-    });
-    const panel = await screen.findByLabelText('댓글');
-
-    // 댓글을 남기면 핀에 개수가 붙는다 — 대상 id는 **핀 id**다.
-    const box = within(panel).getByLabelText('댓글 입력');
-    fireEvent.change(box, { target: { value: '핀에 남긴 말' } });
-    fireEvent.keyDown(box, { key: 'Enter', ctrlKey: true });
-    await waitFor(() => expect(within(panel).getByText('핀에 남긴 말')).toBeTruthy());
-    await waitFor(() => expect((container.querySelector('[data-pin-count]') as HTMLElement)?.textContent).toBe('1'));
-    expect(storedComments()[0]!.nodeId).toBe(pin.getAttribute('data-comment-pin'));
-  });
-
-  it('댓글이 하나도 없는 핀은 팝업을 닫으면 사라진다(1개 이상일 때만 유지)', async () => {
+  it('첫 댓글을 쓰지 않고 다른 곳을 누르면 초안이 사라진다 — 문서에는 아무것도 남지 않는다(요청 ⑤)', async () => {
     localStorage.setItem('mindflow_doc_pin2', JSON.stringify(DOC));
     const { container } = renderEditor('/editor?map=pin2&title=x');
     await waitFor(() => expect(container.querySelector('.mf-ed-vp')).toBeTruthy());
-    fireEvent.contextMenu(container.querySelector('.mf-ed-vp') as HTMLElement, { clientX: 300, clientY: 240 });
-    fireEvent.mouseDown(await screen.findByText('댓글 추가'));
-    await waitFor(() => expect(container.querySelector('[data-comment-pin]')).toBeTruthy());
+    await openDraftViaMenu(container);
 
-    // 한 마디도 남기지 않고 닫으면 핀이 스스로 사라진다.
-    fireEvent.click(await screen.findByLabelText('댓글 닫기'));
-    await waitFor(() => expect(container.querySelector('[data-comment-pin]')).toBeNull());
+    firePointer(container.querySelector('.mf-ed-vp') as HTMLElement, 'pointerdown', { clientX: 500, clientY: 400 });
+    await waitFor(() => expect(container.querySelector('[data-comment-draft]')).toBeNull());
+    expect(container.querySelector('[data-comment-pin]')).toBeNull();
+    expect(storedComments()).toHaveLength(0);
+  });
+
+  // 제보 ①: 저장된 핀이 열자마자 사라졌다(로드 직후 정리 로직이 낡은 목록을 보고
+  // 전부 고아로 판정 → 그 상태가 자동저장). 문서를 다시 열어도 핀은 남아야 한다.
+  it('댓글이 달린 핀은 문서를 다시 열어도 남는다(요청 ①)', async () => {
+    localStorage.setItem('mindflow_doc_pin3', JSON.stringify(DOC_WITH_PIN));
+    seedComment('pin3', PIN_ID, '남아 있어야 하는 말');
+    const { container } = renderEditor('/editor?map=pin3&title=x');
+    await waitFor(() => expect(container.querySelector(`[data-comment-pin="${PIN_ID}"]`)).toBeTruthy());
+    // 목록 로드가 끝나고 자동저장이 한 바퀴 돌아도 핀은 그대로다.
+    await waitFor(() => expect((document.querySelector('[data-pin-count]') as HTMLElement)?.textContent).toBe('1'));
+    await new Promise((r) => setTimeout(r, 1300));
+    expect(container.querySelector(`[data-comment-pin="${PIN_ID}"]`)).toBeTruthy();
+    const saved = JSON.parse(localStorage.getItem('mindflow_doc_pin3') || '{}') as { commentPins?: { id: string }[] };
+    expect(saved.commentPins?.[0]?.id).toBe(PIN_ID);
+  });
+
+  it('핀을 끌어 옮겨도 댓글 목록을 다시 읽지 않는다(제보 ③)', async () => {
+    localStorage.setItem('mindflow_doc_pin4', JSON.stringify(DOC_WITH_PIN));
+    seedComment('pin4', PIN_ID, '핀의 말');
+    const store = new LocalCommentStore();
+    let listCalls = 0;
+    const commentStore = {
+      list: (id: string) => {
+        listCalls += 1;
+        return store.list(id);
+      },
+      add: (...a: Parameters<LocalCommentStore['add']>) => store.add(...a),
+      remove: (...a: Parameters<LocalCommentStore['remove']>) => store.remove(...a),
+      setResolved: (...a: Parameters<LocalCommentStore['setResolved']>) => store.setResolved(...a),
+      setLiked: (...a: Parameters<LocalCommentStore['setLiked']>) => store.setLiked(...a),
+      subscribe: (...a: Parameters<LocalCommentStore['subscribe']>) => store.subscribe(...a),
+    } as unknown as LocalCommentStore;
+    const backend: Backend = {
+      auth: new LocalAuth(),
+      docStore: new LocalDocStore(),
+      spaceStore: new LocalSpaceStore(),
+      shareStore: new LocalShareStore(),
+      feedbackStore: new LocalFeedbackStore(),
+      imageStore: new LocalImageStore(),
+      commentStore,
+      notificationStore: new LocalNotificationStore(),
+      mode: 'local',
+    };
+    const { container } = render(
+      <MemoryRouter initialEntries={['/editor?map=pin4&title=x']}>
+        <BackendProvider backend={backend}>
+          <Routes>
+            <Route path="/editor" element={<Editor />} />
+          </Routes>
+        </BackendProvider>
+      </MemoryRouter>,
+    );
+    const pin = await waitFor(() => {
+      const el = container.querySelector(`[data-comment-pin="${PIN_ID}"]`) as HTMLElement;
+      expect(el).toBeTruthy();
+      return el;
+    });
+    await waitFor(() => expect(listCalls).toBeGreaterThan(0));
+    await new Promise((r) => setTimeout(r, 200)); // 초기 로드(마운트·권한 판별)가 잦아들 때까지
+    const before = listCalls;
+
+    // 끌어서 옮긴다 — 드래그 끝의 click은 "열기"가 아니다.
+    firePointer(pin, 'pointerdown', { clientX: 100, clientY: 100 });
+    firePointer(window, 'pointermove', { clientX: 160, clientY: 140 });
+    firePointer(window, 'pointerup', { clientX: 160, clientY: 140 });
+    fireEvent.click(pin);
+    await new Promise((r) => setTimeout(r, 50));
+    expect(listCalls).toBe(before);
+    expect(screen.queryByLabelText('댓글')).toBeNull();
+
+    // 평범한 클릭(움직이지 않음)은 예전처럼 팝업을 연다.
+    fireEvent.click(pin);
+    await screen.findByLabelText('댓글');
+  });
+
+  it('팝업이 그 핀 옆에 뜬다(요청 ⑦)', async () => {
+    localStorage.setItem('mindflow_doc_pin5', JSON.stringify(DOC_WITH_PIN));
+    seedComment('pin5', PIN_ID, '핀의 말');
+    const { container } = renderEditor('/editor?map=pin5&title=x');
+    const panel = await openPinComments();
+    // 화면 자리 = 문서 좌표 × 줌 + 팬(팬 레이어의 transform에서 읽는다).
+    const panLayer = container.querySelector('[data-pan-layer]') as HTMLElement;
+    const m = /translate\(([-\d.]+)px,\s*([-\d.]+)px\)\s*scale\(([\d.]+)\)/.exec(panLayer.style.transform || '');
+    expect(m).toBeTruthy();
+    const px = 120 * parseFloat(m![3]!) + parseFloat(m![1]!);
+    // 우상단 고정(right/top)이 아니라 핀 근처의 left/top이다.
+    expect(panel.style.right).toBe('');
+    expect(Math.abs(parseFloat(panel.style.left) - px)).toBeLessThan(200);
+  });
+});
+
+// 요청 ④: 화이트보드 도구 막대의 댓글은 **도구**다 — 누르는 즉시 핀이 생기지 않고,
+// 캔버스를 누른 자리에 첫 댓글 말풍선이 뜬다.
+describe('댓글 도구(화이트보드)', () => {
+  const BOARD = { ...DOC, kind: 'board', nodes: {}, floats: [{ id: 'bf1', x: -200, y: -40, w: 180, text: '메모' }] };
+
+  it('도구를 켜도 핀이 생기지 않고, 캔버스를 누른 자리에 말풍선이 뜬다', async () => {
+    localStorage.setItem('mindflow_doc_bcm1', JSON.stringify(BOARD));
+    const { container } = renderEditor('/editor?map=bcm1&title=보드');
+    await waitFor(() => expect(container.querySelector('[data-board-toolbar]')).toBeTruthy());
+
+    fireEvent.click(screen.getByRole('button', { name: '댓글' }));
+    // 켜는 것만으로는 아무것도 만들지 않는다(예전엔 즉시 핀이 꽂혔다).
+    expect(container.querySelector('[data-comment-pin]')).toBeNull();
+    expect(container.querySelector('[data-comment-draft]')).toBeNull();
+
+    const layer = await waitFor(() => {
+      const el = container.querySelector('[data-board-draw-layer]') as HTMLElement;
+      expect(el).toBeTruthy();
+      return el;
+    });
+    // 커서가 댓글 아이콘이 된다.
+    expect(layer.style.cursor).toContain('data:image/svg+xml');
+
+    firePointer(layer, 'pointerdown', { clientX: 320, clientY: 260 });
+    firePointer(layer, 'pointerup', { clientX: 320, clientY: 260 });
+    await screen.findByLabelText('첫 댓글 남기기');
+    expect(container.querySelector('[data-comment-pin]')).toBeNull();
   });
 });

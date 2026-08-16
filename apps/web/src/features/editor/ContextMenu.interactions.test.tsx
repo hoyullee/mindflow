@@ -162,7 +162,9 @@ describe('Context menu — node', () => {
     expect(screen.getByText('삭제')).toBeTruthy();
   });
 
-  it('댓글 항목(개수 포함)이 있고, 누르면 그 주제의 댓글 패널이 열린다', async () => {
+  // 요청 ⑧: 댓글은 **댓글 핀**에만 붙는다 — 주제·메모·선·영역의 우클릭 메뉴에는
+  // 댓글 항목이 없다(캔버스 어디든 남기는 길은 배경 메뉴의 '댓글 추가'다).
+  it('주제 메뉴에 댓글 항목이 없다(댓글은 핀에만 붙는다)', async () => {
     localStorage.setItem('mindflow_doc_cmt1', JSON.stringify(DOC));
     localStorage.setItem('mf_comments', JSON.stringify([{ id: 'x1', documentId: 'cmt1', nodeId: 'c1', authorName: '나', body: '기존 논의', createdAt: '2026-01-01T00:00:00.000Z' }]));
     const { container } = renderEditor('/editor?map=cmt1&title=x');
@@ -170,19 +172,16 @@ describe('Context menu — node', () => {
     const { pan, zoom, geom } = computeViewport(DOC as Doc);
     const c1 = geom.c1!;
     const { clientX, clientY } = toClient(pan, zoom, c1.x, c1.y);
-    // 목록이 로드된 뒤(배지 등장) 우클릭해야 개수 라벨이 정확하다.
-    await screen.findByLabelText('댓글 1개');
 
     rightClickAt(vp, clientX, clientY);
-    const item = await screen.findByText('댓글 (1)');
-    clickMenuItem(item);
-
-    const panel = await screen.findByLabelText('댓글');
-    expect(within(panel).getByText('노드A')).toBeTruthy();
-    expect(within(panel).getByText('기존 논의')).toBeTruthy();
+    await waitFor(() => expect(screen.getByText('하위 주제 추가')).toBeTruthy());
+    expect(screen.queryByText('댓글')).toBeNull();
+    expect(screen.queryByText('댓글 (1)')).toBeNull();
+    // 주제에 붙던 개수 배지도 없다.
+    expect(screen.queryByLabelText('댓글 1개')).toBeNull();
   });
 
-  it('보기 전용(view 초대): 우클릭 메뉴가 댓글만 내주고, 열어서 쓸 수 있다', async () => {
+  it('보기 전용(view 초대): 객체 위 우클릭은 아무 메뉴도 열지 않는다 — 항목이 전부 변이다', async () => {
     // 보기 전용 판별 = 데모 세션 이메일로 걸린 view 초대 행(ReadOnly.interactions와 동일).
     localStorage.setItem('mf_demo_session', JSON.stringify({ user: { id: 'u', email: 'viewer@example.com' } }));
     localStorage.setItem('mf_doc_shares', JSON.stringify([{ documentId: 'cmt2', email: 'viewer@example.com', role: 'view', createdAt: '2026-01-01T00:00:00.000Z' }]));
@@ -195,14 +194,10 @@ describe('Context menu — node', () => {
     const { clientX, clientY } = toClient(pan, zoom, c1.x, c1.y);
 
     rightClickAt(vp, clientX, clientY);
-    const item = await screen.findByText('댓글');
-    // 변이 항목은 없다 — 보기 전용의 메뉴는 댓글뿐.
-    expect(screen.queryByText('하위 주제 추가')).toBeNull();
+    // 빈 메뉴를 여느니 열지 않는다 — 보기 전용 사용자는 꽂혀 있는 핀을 눌러 논의한다.
+    await waitFor(() => expect(screen.queryByText('하위 주제 추가')).toBeNull());
+    expect(screen.queryByText('댓글')).toBeNull();
     expect(screen.queryByText('삭제')).toBeNull();
-    expect(screen.queryByText('텍스트 정렬')).toBeNull();
-    clickMenuItem(item);
-    const panel = await screen.findByLabelText('댓글');
-    expect(within(panel).getByLabelText('댓글 입력')).toBeTruthy(); // 쓸 수 있다(0020)
   });
 
   // 삭제 아이콘은 이모지(🗑)가 아니라 SVG여야 한다 — 이모지는 OS·브라우저마다
