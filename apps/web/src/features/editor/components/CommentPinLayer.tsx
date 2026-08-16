@@ -82,12 +82,12 @@ export function CommentPinLayer({ controller }: { controller: EditorController }
               zIndex: 30,
               cursor: 'grab',
               // 얼굴이 주인공이라 평소엔 흰 바탕, 고른 핀만 강조색으로 도드라진다(시안 ①).
-              ...commentPinBoxStyle(th, selected, 1, selected ? 'accent' : 'panel'),
+              ...commentPinBoxStyle(th, selected, 1, selected ? 'accent' : 'panel', false),
               opacity: resolved ? 0.72 : 1,
             }}
           >
             <Avatar name={author} size={24} ring={selected ? th.panel : undefined} />
-            {resolved ? <CommentPinResolved th={th} /> : <CommentPinCount count={count} th={th} />}
+            {resolved ? <CommentPinResolved th={th} /> : <CommentPinCount count={count} th={th} onAccent={selected} />}
           </div>
         );
       })}

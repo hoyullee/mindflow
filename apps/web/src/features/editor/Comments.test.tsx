@@ -14,7 +14,7 @@ import { LocalDocStore } from '../../adapters/local/localDocStore';
 import type { Backend, DocStore, ShareStore } from '../../adapters/ports';
 import { setLinearSelection } from './richtextDom';
 import { COMMENT_PIN_W } from './components/commentPinShape';
-import { FILLED_BUBBLE_PATH } from './components/commentPinShape';
+import { THREAD_BUBBLE_PATH } from './components/commentPinShape';
 
 // 댓글(0020) — 주제에 붙는 논의. 본문이 아니라 별도 저장소(`CommentStore`)에 산다.
 // 로컬/데모 어댑터가 Supabase와 같은 포트를 구현하므로 흐름은 여기서 그대로 검증된다.
@@ -611,6 +611,36 @@ describe('댓글 핀 다듬기(프리뷰 후속)', () => {
     expect(parseFloat(panel.style.left)).toBeGreaterThanOrEqual(pinLeft + COMMENT_PIN_W);
   });
 
+  // 시안 ①·②: 미선택 = 흰 몸통 + 얼굴, 선택 = 강조색 몸통 + 잉크 배지.
+  // 그리고 **브라우저 기본 포커스 외곽선을 끈다** — 클릭한 핀에 검은 링이 얹혀
+  // 디자인이 통째로 깨졌다(제보 스크린샷).
+  it('핀은 고르면 강조색 몸통 + 잉크 배지가 되고, 검은 포커스 링은 없다(시안 ①·②)', async () => {
+    localStorage.setItem('mindflow_doc_pf5', JSON.stringify(DOC_WITH_PIN));
+    seedComment('pf5', PIN_ID, '핀의 말');
+    const { container } = renderEditor('/editor?map=pf5&title=x');
+    const pin = await waitFor(() => {
+      const el = container.querySelector(`[data-comment-pin="${PIN_ID}"]`) as HTMLElement;
+      expect(el).toBeTruthy();
+      return el;
+    });
+    // 미선택 — 흰 몸통에 얼굴, 배지는 강조색.
+    await waitFor(() => expect(container.querySelector('[data-pin-count]')).toBeTruthy());
+    const idleBadge = container.querySelector('[data-pin-count]') as HTMLElement;
+    expect(pin.style.background).not.toContain('gradient');
+    expect(pin.style.outline).toBe('none');
+    const idleBg = idleBadge.style.background;
+
+    // 선택은 pointerdown이 정한다(클릭은 팝업 열기) — 실제 조작 순서 그대로.
+    firePointer(pin, 'pointerdown', { clientX: 10, clientY: 10 });
+    firePointer(window, 'pointerup', { clientX: 10, clientY: 10 });
+    fireEvent.click(pin);
+    await waitFor(() => expect(container.querySelector('[data-comment-pin]')!.getAttribute('style')).toContain('gradient'));
+    // 배지는 잉크색으로 뒤집힌다 — 강조색 몸통 위에서 강조색 배지는 묻힌다.
+    expect((container.querySelector('[data-pin-count]') as HTMLElement).style.background).not.toBe(idleBg);
+    // 실루엣은 두 상태가 같다(같은 물건이다) — 왼쪽 아래만 각진 둥근 사각.
+    expect((container.querySelector('[data-comment-pin]') as HTMLElement).style.borderRadius).toBe(pin.style.borderRadius);
+  });
+
   it('첫 댓글을 남기면 선택 도구로 돌아온다(요청 ②)', async () => {
     const board = { ...DOC, kind: 'board', nodes: {}, floats: [] };
     localStorage.setItem('mindflow_doc_pf2', JSON.stringify(board));
@@ -653,9 +683,9 @@ describe('댓글 핀 다듬기(프리뷰 후속)', () => {
     expect(draftPin.style.borderStyle).not.toBe('dashed');
     // 담는 것만 다르다: 꽂힌 핀은 **첫 글을 쓴 사람의 얼굴**(시안 ①), 초안은 말풍선(시안 ②).
     expect(pin.querySelector('[data-avatar]')?.textContent).toBe('나');
-    expect(draftPin.querySelector('svg path')?.getAttribute('d')).toBe(FILLED_BUBBLE_PATH);
+    expect(draftPin.querySelector('svg path')?.getAttribute('d')).toBe(THREAD_BUBBLE_PATH);
     // 커서도 초안 핀과 같은 말풍선을 굽는다.
-    expect(decodeURIComponent(layer.style.cursor)).toContain(FILLED_BUBBLE_PATH);
+    expect(decodeURIComponent(layer.style.cursor)).toContain(THREAD_BUBBLE_PATH);
   });
 
   it('배경이나 다른 객체를 고르면 팝업이 닫힌다(요청 ⑤)', async () => {

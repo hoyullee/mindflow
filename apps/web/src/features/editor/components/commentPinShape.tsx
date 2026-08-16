@@ -12,16 +12,20 @@
 import type { CSSProperties } from 'react';
 import type { Theme } from '../theme';
 import { accentGradient } from '../chrome';
-import { mixHex } from '../theme';
+import { hexA, mixHex } from '../theme';
 
 /** 핀 본체의 가로·세로(px, 문서 좌표계). 개수·해결 배지는 이 상자 **밖**에 붙는다. */
 export const COMMENT_PIN_W = 34;
 
-/** 지도 핀 관례 — 왼쪽 아래 꼭짓점이 가리키는 지점이다(그래서 anchor에 붙는다). */
-const PIN_RADIUS = '999px 999px 999px 6px';
+/**
+ * 시안의 실루엣 — **둥근 사각의 왼쪽 아래만 각지게** 깎아 그 꼭짓점이 지점을 가리킨다.
+ * 예전 값(999px = 원)은 위가 완전히 둥글어 핀이 아니라 아치처럼 보였다(제보).
+ */
+const PIN_RADIUS = '15px 15px 15px 3px';
 
-/** 채운 말풍선 — 초안 핀과 마우스 커서가 함께 쓴다(시안 ②의 아이콘). */
-export const FILLED_BUBBLE_PATH = 'M5 3.4h14a2.6 2.6 0 0 1 2.6 2.6v8.2a2.6 2.6 0 0 1-2.6 2.6H9.2L4.6 20.6a.6.6 0 0 1-1-.46V6a2.6 2.6 0 0 1 2.6-2.6z';
+/** 말풍선 윤곽 — 초안 핀·마우스 커서·도구 막대 아이콘이 함께 쓴다(시안 ③).
+ * 안이 비어 있어(선) 코럴 바탕 위에서 흰 말풍선으로 또렷하게 읽힌다. */
+export const THREAD_BUBBLE_PATH = 'M21 14.6a2.4 2.4 0 0 1-2.4 2.4H8.2L4 20.6V5.4A2.4 2.4 0 0 1 6.4 3h12.2A2.4 2.4 0 0 1 21 5.4z';
 
 /**
  * 핀 본체의 스타일. `zoom`은 **화면 좌표에 놓이는 핀**(초안)만 쓴다 — 꽂혀 있는 핀은
@@ -29,8 +33,10 @@ export const FILLED_BUBBLE_PATH = 'M5 3.4h14a2.6 2.6 0 0 1 2.6 2.6v8.2a2.6 2.6 0
  * 초안 핀만 작게 보인다(실측: 배율 1.25에서 34 vs 43 — 제보).
  *
  * `tone`: 'accent'(초안·선택된 핀) / 'panel'(평소의 핀 — 얼굴이 주인공이라 흰 바탕).
+ * `edge`: 흰 테두리. 초안 핀은 배경이 무엇이든 도드라져야 해서 두르지만, **고른 핀은
+ * 두르지 않는다** — 몸통(코럴)·흰 테두리·얼굴의 흰 링이 겹쳐 과녁처럼 보인다(시안 ②).
  */
-export function commentPinBoxStyle(th: Theme, selected: boolean, zoom = 1, tone: 'accent' | 'panel' = 'accent'): CSSProperties {
+export function commentPinBoxStyle(th: Theme, selected: boolean, zoom = 1, tone: 'accent' | 'panel' = 'accent', edge = true): CSSProperties {
   const onAccent = tone === 'accent';
   return {
     width: COMMENT_PIN_W,
@@ -39,8 +45,11 @@ export function commentPinBoxStyle(th: Theme, selected: boolean, zoom = 1, tone:
     borderRadius: PIN_RADIUS,
     background: onAccent ? accentGradient(th) : th.panel,
     color: onAccent ? th.accentInk : th.text,
-    border: onAccent ? `2px solid ${th.panel}` : `1px solid ${th.border}`,
-    boxShadow: selected ? `0 0 0 3px ${th.accent}40, 0 6px 16px rgba(46,42,38,.3)` : '0 5px 14px rgba(46,42,38,.22)',
+    border: onAccent ? (edge ? `2px solid ${th.panel}` : 'none') : `1px solid ${th.border}`,
+    boxShadow: selected ? `0 0 0 3px ${hexA(th.accent, 0.28)}, 0 6px 16px rgba(46,42,38,.3)` : '0 5px 14px rgba(46,42,38,.22)',
+    // 브라우저 기본 포커스 외곽선을 끈다 — 고른 핀은 위 그림자(강조색 후광)가 말한다.
+    // 그대로 두면 클릭한 핀에 **검은 링**이 얹혀 디자인이 통째로 깨진다(제보 스크린샷).
+    outline: 'none',
     display: 'flex',
     alignItems: 'center',
     justifyContent: 'center',
@@ -90,17 +99,19 @@ export function Avatar({ name, size = 24, ring }: { name: string; size?: number;
   );
 }
 
-/** 초안 핀·커서가 담는 것: 채운 말풍선(아직 얼굴이 없다). */
-export function CommentPinGlyph({ size = 17, color = 'currentColor' }: { size?: number; color?: string }) {
+/** 초안 핀·커서·도구 막대가 담는 것: 말풍선 윤곽(아직 얼굴이 없다 — 시안 ③). */
+export function CommentPinGlyph({ size = 17, color = 'currentColor', width = 2.1 }: { size?: number; color?: string; width?: number }) {
   return (
-    <svg width={size} height={size} viewBox="0 0 24 24" fill={color} aria-hidden="true">
-      <path d={FILLED_BUBBLE_PATH} />
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke={color} strokeWidth={width} strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+      <path d={THREAD_BUBBLE_PATH} />
     </svg>
   );
 }
 
-/** 스레드의 글 수 — 본체 우상단에 걸친다(본체 폭을 늘리지 않는다). */
-export function CommentPinCount({ count, th }: { count: number; th: Theme }) {
+/** 스레드의 글 수 — 본체 우상단에 걸친다(본체 폭을 늘리지 않는다).
+ * 고른 핀은 몸통이 강조색이라 배지도 강조색이면 묻힌다 — 그때만 **잉크색**으로
+ * 뒤집는다(시안 ②). */
+export function CommentPinCount({ count, th, onAccent = false }: { count: number; th: Theme; onAccent?: boolean }) {
   if (count <= 0) return null;
   return (
     <span
@@ -114,9 +125,9 @@ export function CommentPinCount({ count, th }: { count: number; th: Theme }) {
         boxSizing: 'border-box',
         padding: '0 5px',
         borderRadius: 999,
-        background: th.accent,
+        background: onAccent ? th.text : th.accent,
         border: `2px solid ${th.panel}`,
-        color: th.accentInk,
+        color: onAccent ? th.panel : th.accentInk,
         fontSize: 10,
         fontWeight: 800,
         lineHeight: '14px',
@@ -163,12 +174,14 @@ export function CommentPinResolved({ th }: { th: Theme }) {
  */
 export function commentPinCursor(accent: string, ink: string): string {
   const S = 30; // 커서 이미지 크기 — 실제 핀(34)보다 살짝 작게(커서 관례)
+  // 본체: 둥근 사각의 왼쪽 아래만 각지게(핀 CSS의 13/13/13/5와 같은 비율).
+  const body = 'M14 1.5h3.4A11.1 11.1 0 0 1 28.5 12.6v3.4a11.1 11.1 0 0 1-11.1 11.1H1.5V12.6A11.1 11.1 0 0 1 12.6 1.5z';
   const svg =
     `<svg xmlns="http://www.w3.org/2000/svg" width="${S}" height="${S}" viewBox="0 0 ${S} ${S}">` +
-    // 물방울 — 핀 본체와 같은 실루엣(왼쪽 아래 꼬리)
-    `<path d="M6 1.5h18a4.5 4.5 0 0 1 4.5 4.5v11a4.5 4.5 0 0 1-4.5 4.5H10l-8.5 6.5V6A4.5 4.5 0 0 1 6 1.5z" fill="${accent}" stroke="#ffffff" stroke-width="2.4" stroke-linejoin="round"/>` +
-    // 안쪽: 채운 말풍선(핀·초안과 같은 path)
-    `<g transform="translate(6.6 5.2) scale(0.66)" fill="${ink}"><path d="${FILLED_BUBBLE_PATH}"/></g></svg>`;
-  // hotspot = 꼬리 끝 → 누른 자리가 핀이 가리키는 지점이 된다.
+    `<path d="${body}" fill="${accent}" stroke="#ffffff" stroke-width="2.2" stroke-linejoin="round"/>` +
+    // 안쪽: 핀·초안과 **같은 말풍선 윤곽**(시안 ③) — 잉크색으로 그린다.
+    `<g transform="translate(6.6 5.6) scale(0.7)" fill="none" stroke="${ink}" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round">` +
+    `<path d="${THREAD_BUBBLE_PATH}"/></g></svg>`;
+  // hotspot = 왼쪽 아래 꼭짓점 → 누른 자리가 핀이 가리키는 지점이 된다.
   return `url("data:image/svg+xml,${encodeURIComponent(svg)}") 2 28, crosshair`;
 }

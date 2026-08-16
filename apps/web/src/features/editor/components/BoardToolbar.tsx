@@ -30,7 +30,7 @@ import { FLOAT_SHADOW, accentGradient, glassCard } from '../chrome';
 import { useIsMobile } from '../../../hooks/useMediaQuery';
 import { HL_COLORS, HL_WIDTHS, PEN_COLORS, PEN_WIDTHS } from '../boardTools';
 import type { BoardTool } from '../boardTools';
-import { CommentIcon } from './ToolbarMenus';
+import { CommentPinGlyph } from './commentPinShape';
 
 /** 폰에서 도구 막대가 차지하는 높이 + 여백 — 줌·미니맵 묶음(`ZoomControls`)과
  * 실행취소 알약이 이만큼 위로 올라가 막대와 겹치지 않는다. 버튼 44 + 패딩 10 +
@@ -196,7 +196,7 @@ export function BoardToolbar({ controller }: { controller: EditorController }) {
     // 스레드 — 삽입이 아니라 **도구**다: 누르는 즉시 핀이 생기지 않고, 커서가 핀
     // 아이콘으로 바뀌어 "누른 자리"에 첫 글 말풍선이 뜬다(Figma와 같은 감각).
     // 자리를 정하는 순간 손은 선택 도구로 돌아온다(요청).
-    ...(controller.canComment ? [toolBtn('comment', '스레드', 'C', <CommentIcon size={17} />)] : []),
+    ...(controller.canComment ? [toolBtn('comment', '스레드', 'C', <CommentPinGlyph size={17} width={2} />)] : []),
   ];
 
   // 삽입 — 화이트보드가 담을 수 있는 것들(메모·이미지·연결선·영역). 그리기 도구가
