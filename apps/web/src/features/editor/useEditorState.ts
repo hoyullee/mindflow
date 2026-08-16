@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import type { MouseEvent as ReactMouseEvent, PointerEvent as ReactPointerEvent } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
-import type { Box, Doc, Float, KanbanCard, KanbanColumn, KanbanTag, Line, LineAnchor, LayoutMode, ListOp, Node, NodeMap, Reaction, ReactionGroup, RichRun, SizeOf, SnapCandidate, Stroke, TextEdit, Zone } from '@mindflow/mindmap-core';
+import type { Box, Doc, Float, KanbanCard, KanbanColumn, KanbanTag, Line, LineAnchor, LayoutMode, ListOp, Node, NodeMap, Reaction, ReactionGroup, RichRun, SizeOf, SnapCandidate, Stroke, TextEdit, Zone, CommentPin } from '@mindflow/mindmap-core';
 import { HistoryStack, ROOT_ID, collectImageRefs, collectInlineImages, isImageRef, replaceImageValues, applyListOp as applyListOpToText, applyAutoLinks, applyMarkdownShortcuts, applyPartialStyle, insertMention, charsToRuns, cubicAt, isStyledRuns, findLineSnap, layout, resolveLineEndpoints, resolveLineGeometry, runsToChars, serializeDoc, shiftOffset, strokeBounds, strokeHit, translateStrokePts, reactionGroups, toggleReaction as toggleReactionList, pruneReactions, toMarkdown, posForIndex, removeColumn, moveCard, moveColumn } from '@mindflow/mindmap-core';
 import { domToRuns, linearize, liveEditValue } from './richtextDom';
 import { HL_COLORS, HL_WIDTHS } from './boardTools';
@@ -160,6 +160,8 @@ interface Snapshot {
   strokes: Stroke[];
   /** 스티커 반응·투표 — 획과 같은 규칙(undo가 표를 되돌릴 수 있어야 한다). */
   reactions: Reaction[];
+  /** 댓글 핀 — 획과 같은 규칙(undo가 핀을 되돌릴 수 있어야 한다). */
+  commentPins: CommentPin[];
   /** 칸반 열·카드 — 칸반 문서에서만 채워진다(다른 종류는 빈 배열). */
   columns: KanbanColumn[];
   cards: KanbanCard[];
@@ -384,6 +386,10 @@ export interface EditorController {
   commentsNodeId: string;
   /** 패널을 연다(대상 주제를 함께 지정할 수 있다 — 노드 메뉴·배지 클릭). */
   openComments: (nodeId?: string) => void;
+  addCommentPinAt: (at?: { x: number; y: number }) => void;
+  moveCommentPin: (id: string, x: number, y: number, continuous?: boolean) => void;
+  removeCommentPin: (id: string) => void;
+  selectCommentPin: (id: string) => void;
   closeComments: () => void;
   /** 이 문서의 댓글 전부(작성 순). 배지·패널이 함께 쓴다. */
   comments: DocComment[];
@@ -859,7 +865,7 @@ function nudgeBoxOf(cand: NodeMap, geom: Record<string, { x: number; y: number; 
 
 function docSignature(d: Doc): string {
   try {
-    return JSON.stringify([d.nodes, d.floats, d.lines, d.zones, d.layoutMode, d.themeKey, d.edgeStyle, d.strokes ?? [], d.reactions ?? [], d.columns ?? [], d.cards ?? [], d.tags ?? []]);
+    return JSON.stringify([d.nodes, d.floats, d.lines, d.zones, d.layoutMode, d.themeKey, d.edgeStyle, d.strokes ?? [], d.reactions ?? [], d.commentPins ?? [], d.columns ?? [], d.cards ?? [], d.tags ?? []]);
   } catch {
     return '';
   }
@@ -1130,7 +1136,7 @@ export function useEditorState(): EditorController {
               layoutMode: res.doc.layoutMode,
               edgeStyle: (res.doc.edgeStyle as EdgeStyle | undefined) ?? 'curve',
               strokes: res.doc.strokes ?? [],
-              reactions: res.doc.reactions ?? [],
+              reactions: res.doc.reactions ?? [], commentPins: res.doc.commentPins ?? [],
               columns: res.doc.columns ?? [],
               cards: res.doc.cards ?? [],
               tags: res.doc.tags ?? [],
@@ -1605,7 +1611,7 @@ export function useEditorState(): EditorController {
   useEffect(() => {
     if (historyInitRef.current) return;
     historyInitRef.current = true;
-    historyRef.current!.reset({ nodes: doc.nodes, floats: doc.floats, lines: doc.lines, zones: doc.zones, layoutMode: doc.layoutMode, edgeStyle, strokes: doc.strokes ?? [], reactions: doc.reactions ?? [], columns: doc.columns ?? [], cards: doc.cards ?? [], tags: doc.tags ?? [] });
+    historyRef.current!.reset({ nodes: doc.nodes, floats: doc.floats, lines: doc.lines, zones: doc.zones, layoutMode: doc.layoutMode, edgeStyle, strokes: doc.strokes ?? [], reactions: doc.reactions ?? [], commentPins: doc.commentPins ?? [], columns: doc.columns ?? [], cards: doc.cards ?? [], tags: doc.tags ?? [] });
     // deliberately empty deps: only the initial (mount-time) doc/edgeStyle matter here
   }, []);
 
@@ -1628,7 +1634,7 @@ export function useEditorState(): EditorController {
         next.zones !== prev.zones ||
         next.layoutMode !== prev.layoutMode ||
         next.strokes !== prev.strokes ||
-        next.reactions !== prev.reactions ||
+        next.reactions !== prev.reactions || next.commentPins !== prev.commentPins ||
         // 칸반 열·카드 — 여기 빠뜨리면 그 문서의 **모든 편집이 조용히 버려진다**
         // (커밋은 도는데 "바뀐 게 없다"로 판정돼 setDoc이 prev를 돌려준다).
         next.columns !== prev.columns ||
@@ -1636,7 +1642,7 @@ export function useEditorState(): EditorController {
         next.tags !== prev.tags;
       if (changed) {
         historyRef.current!.record(
-          { nodes: next.nodes, floats: next.floats, lines: next.lines, zones: next.zones, layoutMode: next.layoutMode, edgeStyle: edgeStyleRef.current, strokes: next.strokes ?? [], reactions: next.reactions ?? [], columns: next.columns ?? [], cards: next.cards ?? [], tags: next.tags ?? [] },
+          { nodes: next.nodes, floats: next.floats, lines: next.lines, zones: next.zones, layoutMode: next.layoutMode, edgeStyle: edgeStyleRef.current, strokes: next.strokes ?? [], reactions: next.reactions ?? [], commentPins: next.commentPins ?? [], columns: next.columns ?? [], cards: next.cards ?? [], tags: next.tags ?? [] },
           continuous,
         );
         setHistoryTick((t) => t + 1);
@@ -1657,16 +1663,16 @@ export function useEditorState(): EditorController {
     setDoc((prev) => {
       const next = updater(prev);
       const changed =
-        next.nodes !== prev.nodes || next.floats !== prev.floats || next.lines !== prev.lines || next.zones !== prev.zones || next.layoutMode !== prev.layoutMode || next.strokes !== prev.strokes || next.reactions !== prev.reactions;
+        next.nodes !== prev.nodes || next.floats !== prev.floats || next.lines !== prev.lines || next.zones !== prev.zones || next.layoutMode !== prev.layoutMode || next.strokes !== prev.strokes || next.reactions !== prev.reactions || next.commentPins !== prev.commentPins;
       if (changed) {
-        historyRef.current!.amend({ nodes: next.nodes, floats: next.floats, lines: next.lines, zones: next.zones, layoutMode: next.layoutMode, edgeStyle: edgeStyleRef.current, strokes: next.strokes ?? [], reactions: next.reactions ?? [], columns: next.columns ?? [], cards: next.cards ?? [], tags: next.tags ?? [] });
+        historyRef.current!.amend({ nodes: next.nodes, floats: next.floats, lines: next.lines, zones: next.zones, layoutMode: next.layoutMode, edgeStyle: edgeStyleRef.current, strokes: next.strokes ?? [], reactions: next.reactions ?? [], commentPins: next.commentPins ?? [], columns: next.columns ?? [], cards: next.cards ?? [], tags: next.tags ?? [] });
       }
       return changed ? next : prev;
     });
   }, []);
 
   function applySnapshot(snap: Snapshot): void {
-    setDoc((prev) => ({ ...prev, nodes: snap.nodes, floats: snap.floats, lines: snap.lines, zones: snap.zones, layoutMode: snap.layoutMode, edgeStyle: snap.edgeStyle, strokes: snap.strokes.length ? snap.strokes : undefined, reactions: snap.reactions?.length ? snap.reactions : undefined, ...(prev.kind === 'kanban' ? { columns: snap.columns ?? [], cards: snap.cards ?? [], tags: snap.tags ?? [] } : {}) }));
+    setDoc((prev) => ({ ...prev, nodes: snap.nodes, floats: snap.floats, lines: snap.lines, zones: snap.zones, layoutMode: snap.layoutMode, edgeStyle: snap.edgeStyle, strokes: snap.strokes.length ? snap.strokes : undefined, reactions: snap.reactions?.length ? snap.reactions : undefined, commentPins: snap.commentPins?.length ? snap.commentPins : undefined, ...(prev.kind === 'kanban' ? { columns: snap.columns ?? [], cards: snap.cards ?? [], tags: snap.tags ?? [] } : {}) }));
     setEdgeStyleState(snap.edgeStyle);
     setSelectionState(null);
     setMultiSelectionState(null);
@@ -2154,7 +2160,7 @@ export function useEditorState(): EditorController {
     // up — `docSignature` includes `edgeStyle`, so this dirties the doc.
     setDoc((prev) => (prev.edgeStyle === s ? prev : { ...prev, edgeStyle: s }));
     const d = docRef.current;
-    historyRef.current!.record({ nodes: d.nodes, floats: d.floats, lines: d.lines, zones: d.zones, layoutMode: d.layoutMode, edgeStyle: s, strokes: d.strokes ?? [], reactions: d.reactions ?? [], columns: d.columns ?? [], cards: d.cards ?? [], tags: d.tags ?? [] }, false);
+    historyRef.current!.record({ nodes: d.nodes, floats: d.floats, lines: d.lines, zones: d.zones, layoutMode: d.layoutMode, edgeStyle: s, strokes: d.strokes ?? [], reactions: d.reactions ?? [], commentPins: d.commentPins ?? [], columns: d.columns ?? [], cards: d.cards ?? [], tags: d.tags ?? [] }, false);
     setHistoryTick((t) => t + 1);
   }, []);
 
@@ -4398,6 +4404,49 @@ export function useEditorState(): EditorController {
     else center();
   }, [hydrating, commentsParam]);
 
+  /**
+   * 캔버스에 **댓글 핀**을 꽂는다(Figma 방식, 요청) — 다른 객체를 만드는 것과 같은
+   * 손놀림이고, 꽂자마자 그 핀의 댓글 팝업이 열린다.
+   *
+   * 핀은 자리만 든다: 말은 서버 `comments` 표에 **핀 id를 대상으로** 그대로 저장되므로
+   * 서버는 한 줄도 바뀌지 않는다. 댓글이 하나도 없는 핀은 살려 두지 않는다
+   * (`prunePins` — 빈 핀은 뜻이 없다).
+   */
+  const addCommentPinAt = useCallback(
+    (at?: { x: number; y: number }) => {
+      const vp = viewportRef.current;
+      const cx = at ? at.x : (vp.vw / 2 - vp.pan.x) / vp.zoom;
+      const cy = at ? at.y : (vp.vh / 2 - vp.pan.y) / vp.zoom;
+      const newId = idFactory('cp');
+      commitDoc((d) => ({ ...d, commentPins: [...(d.commentPins ?? []), { id: newId, x: Math.round(cx), y: Math.round(cy) }] }));
+      setSelectionState({ kind: 'commentPin', id: newId });
+      setMultiSelectionState(null);
+      setCommentsNodeId(newId);
+      setCommentsOpen(true);
+      setPropsOpen(false);
+      void reloadComments();
+    },
+    [commitDoc, idFactory, reloadComments],
+  );
+  /** 핀 옮기기 — 드래그 중에는 continuous(끄는 동안 undo가 조각나지 않게). */
+  const moveCommentPin = useCallback(
+    (id: string, x: number, y: number, continuous = true) => {
+      commitDoc((d) => ({ ...d, commentPins: (d.commentPins ?? []).map((p) => (p.id === id ? { ...p, x: Math.round(x), y: Math.round(y) } : p)) }), continuous);
+    },
+    [commitDoc],
+  );
+  const selectCommentPin = useCallback((id: string) => {
+    setSelectionState({ kind: 'commentPin', id });
+    setMultiSelectionState(null);
+  }, []);
+  const removeCommentPin = useCallback(
+    (id: string) => {
+      commitDoc((d) => ({ ...d, commentPins: (d.commentPins ?? []).filter((p) => p.id !== id) }));
+      setSelectionState((cur) => (cur && cur.kind === 'commentPin' && cur.id === id ? null : cur));
+    },
+    [commitDoc],
+  );
+
   const openComments = useCallback(
     (nodeId?: string) => {
       if (nodeId) setCommentsNodeId(nodeId);
@@ -4409,6 +4458,18 @@ export function useEditorState(): EditorController {
     [reloadComments],
   );
   const closeComments = useCallback(() => setCommentsOpen(false), []);
+  // **빈 핀은 살려 두지 않는다**(요청: 댓글이 1개 이상일 때만 유지 — Figma와 같은 규칙).
+  // 방금 꽂아 팝업이 열려 있는 핀만 예외다 — 첫 댓글을 쓰는 중이라 지우면 안 된다.
+  useEffect(() => {
+    if (commentsLoading) return;
+    const pins = doc.commentPins ?? [];
+    if (!pins.length) return;
+    const alive = new Set(comments.map((c) => c.nodeId));
+    const orphan = pins.filter((p) => !alive.has(p.id) && !(commentsOpen && commentsNodeId === p.id));
+    if (!orphan.length) return;
+    const drop = new Set(orphan.map((p) => p.id));
+    commitDoc((d) => ({ ...d, commentPins: (d.commentPins ?? []).filter((p) => !drop.has(p.id)) }));
+  }, [comments, commentsLoading, commentsOpen, commentsNodeId, doc.commentPins, commitDoc]);
 
   const addComment = useCallback(
     async (nodeId: string, body: string, opts?: { parentId?: string; mentions?: CommentMention[] }) => {
@@ -6251,6 +6312,10 @@ export function useEditorState(): EditorController {
     commentsOpen,
     commentsNodeId,
     openComments,
+    addCommentPinAt,
+    moveCommentPin,
+    removeCommentPin,
+    selectCommentPin,
     closeComments,
     comments,
     commentCounts,

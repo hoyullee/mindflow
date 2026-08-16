@@ -662,6 +662,20 @@ function buildItems(
         controller.addZoneAt(at);
       },
     },
+    // 댓글 핀 — 다른 객체와 같은 자리에서 만든다(요청). 꽂으면 곧바로 그 핀의
+    // 댓글 팝업이 열리고, 첫 댓글을 남기지 않으면 핀은 스스로 사라진다.
+    ...(controller.canComment
+      ? [
+          {
+            icon: <CommentIcon size={15} />,
+            label: '댓글 추가',
+            onSelect: () => {
+              close();
+              controller.addCommentPinAt(at);
+            },
+          },
+        ]
+      : []),
     // 빈 캔버스에 붙여넣기 — 클릭(길게 누른) 지점을 기준으로 배치된다.
     ...(controller.canPaste ? (['divider'] as const) : []),
     ...pasteItem(at),

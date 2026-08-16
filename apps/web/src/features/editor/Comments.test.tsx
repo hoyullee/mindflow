@@ -451,3 +451,46 @@ describe('링크로 연 맵', () => {
     await waitFor(() => expect(screen.queryByLabelText('댓글 1개')).toBeNull());
   });
 });
+
+// 요청: 댓글을 "객체에 다는 것"이 아니라 **캔버스에 꽂는 객체**로(Figma 방식).
+// 핀은 자리만 들고(`Doc.commentPins`) 말은 지금 표에 그 핀 id를 대상으로 저장된다 —
+// 서버는 한 줄도 바뀌지 않는다.
+describe('댓글 핀(캔버스 객체)', () => {
+  it('배경 우클릭으로 핀을 꽂으면 그 핀의 팝업이 열리고, 댓글을 남기면 개수가 붙는다', async () => {
+    localStorage.setItem('mindflow_doc_pin1', JSON.stringify(DOC));
+    const { container } = renderEditor('/editor?map=pin1&title=x');
+    await waitFor(() => expect(container.querySelector('.mf-ed-vp')).toBeTruthy());
+
+    fireEvent.contextMenu(container.querySelector('.mf-ed-vp') as HTMLElement, { clientX: 300, clientY: 240 });
+    fireEvent.mouseDown(await screen.findByText('댓글 추가'));
+
+    // 핀이 문서에 들어가고(자리만), 그 핀의 댓글 팝업이 열린다.
+    const pin = await waitFor(() => {
+      const el = container.querySelector('[data-comment-pin]') as HTMLElement;
+      expect(el).toBeTruthy();
+      return el;
+    });
+    const panel = await screen.findByLabelText('댓글');
+
+    // 댓글을 남기면 핀에 개수가 붙는다 — 대상 id는 **핀 id**다.
+    const box = within(panel).getByLabelText('댓글 입력');
+    fireEvent.change(box, { target: { value: '핀에 남긴 말' } });
+    fireEvent.keyDown(box, { key: 'Enter', ctrlKey: true });
+    await waitFor(() => expect(within(panel).getByText('핀에 남긴 말')).toBeTruthy());
+    await waitFor(() => expect((container.querySelector('[data-pin-count]') as HTMLElement)?.textContent).toBe('1'));
+    expect(storedComments()[0]!.nodeId).toBe(pin.getAttribute('data-comment-pin'));
+  });
+
+  it('댓글이 하나도 없는 핀은 팝업을 닫으면 사라진다(1개 이상일 때만 유지)', async () => {
+    localStorage.setItem('mindflow_doc_pin2', JSON.stringify(DOC));
+    const { container } = renderEditor('/editor?map=pin2&title=x');
+    await waitFor(() => expect(container.querySelector('.mf-ed-vp')).toBeTruthy());
+    fireEvent.contextMenu(container.querySelector('.mf-ed-vp') as HTMLElement, { clientX: 300, clientY: 240 });
+    fireEvent.mouseDown(await screen.findByText('댓글 추가'));
+    await waitFor(() => expect(container.querySelector('[data-comment-pin]')).toBeTruthy());
+
+    // 한 마디도 남기지 않고 닫으면 핀이 스스로 사라진다.
+    fireEvent.click(await screen.findByLabelText('댓글 닫기'));
+    await waitFor(() => expect(container.querySelector('[data-comment-pin]')).toBeNull());
+  });
+});
