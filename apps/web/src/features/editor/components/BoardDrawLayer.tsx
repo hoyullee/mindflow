@@ -14,22 +14,7 @@
 import type { PointerEvent as ReactPointerEvent } from 'react';
 import { useRef } from 'react';
 import type { EditorController } from '../useEditorState';
-
-/**
- * 댓글 도구의 커서(요청 ④) — 손끝이 곧 댓글 아이콘이 된다.
- *
- * 팝업 머리·핀과 **같은 말풍선 도형**(`CommentIcon`)을 흰 테두리로 감싸 어떤 배경
- * 위에서도 보이게 하고, 왼쪽 위 꼭짓점(2,2)을 찍는 점으로 삼는다(핀이 그 자리에 선다).
- * 커서 이미지는 CSS 값이라 컴포넌트를 쓸 수 없어 같은 path를 데이터 URL로 굽는다.
- */
-const COMMENT_CURSOR = `url("data:image/svg+xml,${encodeURIComponent(
-  '<svg xmlns="http://www.w3.org/2000/svg" width="28" height="28" viewBox="0 0 28 28">' +
-    '<g transform="translate(2 2)" fill="none" stroke="#ffffff" stroke-width="4.5" stroke-linecap="round" stroke-linejoin="round">' +
-    '<path d="M22.5 15.5a2.1 2.1 0 0 1-2.1 2.1H7.8L3.6 21.8V5.6a2.1 2.1 0 0 1 2.1-2.1h14.7a2.1 2.1 0 0 1 2.1 2.1z"/></g>' +
-    '<g transform="translate(2 2)" fill="none" stroke="#2e2a26" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">' +
-    '<path d="M22.5 15.5a2.1 2.1 0 0 1-2.1 2.1H7.8L3.6 21.8V5.6a2.1 2.1 0 0 1 2.1-2.1h14.7a2.1 2.1 0 0 1 2.1 2.1z"/>' +
-    '<line x1="8" y1="8.9" x2="17.3" y2="8.9"/><line x1="8" y1="12.6" x2="13.7" y2="12.6"/></g></svg>',
-)}") 2 2, crosshair`;
+import { commentPinCursor } from './commentPinShape';
 
 export function BoardDrawLayer({ controller }: { controller: EditorController }) {
   const pointers = useRef(new Map<number, { x: number; y: number }>());
@@ -43,6 +28,7 @@ export function BoardDrawLayer({ controller }: { controller: EditorController })
   if (!controller.isBoard || controller.readOnly || controller.boardTool === 'select') return null;
 
   const comment = controller.boardTool === 'comment';
+  const th = controller.uiTheme;
 
   const two = (): [{ x: number; y: number }, { x: number; y: number }] | null => {
     const pts = Array.from(pointers.current.values());
@@ -125,7 +111,9 @@ export function BoardDrawLayer({ controller }: { controller: EditorController })
         // 모든 객체 위에 잉크를 얹는다. 도구 막대(BoardToolbar)는 이보다 위.
         zIndex: 110,
         touchAction: 'none',
-        cursor: comment ? COMMENT_CURSOR : controller.boardTool === 'pen' ? 'crosshair' : 'cell',
+        // 댓글 도구의 커서는 **꽂히는 핀 그대로**다(요청 ③) — 손끝의 그림과 놓이는
+        // 물건이 다르면 무엇을 만드는 중인지 헷갈린다.
+        cursor: comment ? commentPinCursor(th.accent, th.accentInk) : controller.boardTool === 'pen' ? 'crosshair' : 'cell',
       }}
     />
   );

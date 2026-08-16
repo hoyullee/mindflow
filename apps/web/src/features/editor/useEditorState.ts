@@ -4383,12 +4383,17 @@ export function useEditorState(): EditorController {
     return commentStore.subscribe(docStoreId, () => void reloadComments());
   }, [hydrating, canComment, sharedDoc, loadedNotMine, commentStore, docStoreId, reloadComments]);
 
-  // 핀을 고르면 패널이 따라간다 — 열어 둔 채 다른 핀을 눌렀는데 앞 핀의 논의가
-  // 그대로 떠 있으면 어느 자리의 논의인지 알 수 없다. **댓글은 이제 핀에만 붙으므로**
-  // (요청 ⑧) 다른 객체를 고르는 것은 대상을 바꾸지 않는다.
+  // 핀을 고르면 패널이 따라가고, **핀에서 벗어나면 패널을 닫는다**(요청 ⑤).
+  //
+  // 열어 둔 채 다른 핀을 눌렀는데 앞 핀의 논의가 그대로 떠 있으면 어느 자리의
+  // 논의인지 알 수 없고, 배경이나 다른 객체를 고른 뒤에도 팝업이 남아 있으면 그
+  // 논의가 무엇에 딸린 것인지 흐려진다(댓글은 이제 핀에만 붙는다 — 요청 ⑧).
+  // 칸반은 대상이 카드라 자기 effect가 따로 있다(아래 `selectedCardId`).
   useEffect(() => {
+    if (isKanban) return;
     if (selection?.kind === 'commentPin') setCommentsNodeId(selection.id);
-  }, [selection?.kind, selection?.id]);
+    else setCommentsOpen(false);
+  }, [selection?.kind, selection?.id, isKanban]);
 
   const commentCounts = useMemo(() => {
     const counts: Record<string, number> = {};
@@ -4468,7 +4473,12 @@ export function useEditorState(): EditorController {
       if (res.error) return res;
       commitDoc((d) => ({ ...d, commentPins: [...(d.commentPins ?? []), { id: newId, x: at.x, y: at.y }] }));
       setCommentDraft(null);
+      // 한 마디를 남겼으면 **손을 선택 도구로 돌려준다**(요청 ②) — 댓글 모드에 머물면
+      // 방금 만든 핀을 만지려는 클릭이 또 새 초안을 띄운다. 도구 전환이 선택을 비우므로
+      // (setBoardTool) 그 뒤에 이 핀을 고른다.
+      setBoardToolState('select');
       setSelectionState({ kind: 'commentPin', id: newId });
+      setMultiSelectionState(null);
       await reloadComments();
       return res;
     },

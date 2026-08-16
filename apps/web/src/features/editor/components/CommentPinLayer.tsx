@@ -2,17 +2,17 @@
 //
 // 핀은 자리만 든다(`Doc.commentPins`). 말은 서버 `comments` 표에 **핀 id를 대상으로**
 // 그대로 저장되므로 서버는 한 줄도 바뀌지 않는다. 고르면 기존 댓글 팝업이 그 핀의
-// 목록을 열고, 핀에는 **댓글 수**가 적힌다. 댓글이 하나도 없는 핀은 살아남지 않는다.
+// 목록을 열고, 핀에는 **댓글 수**가 배지로 붙는다. 댓글이 하나도 없는 핀은 살아남지
+// 않는다.
 //
-// 핀을 만드는 것은 이제 두 걸음이다(요청 ④): 댓글 도구/메뉴가 **초안 핀**을 띄우고,
+// 핀을 만드는 것은 두 걸음이다(요청 ④): 댓글 도구/메뉴가 **초안 핀**을 띄우고,
 // 첫 댓글을 남겨야 비로소 문서에 들어간다. 그래서 이 레이어는 확정된 핀만 그리고,
-// 초안은 아래 `CommentDraftBubble`이 맡는다.
+// 초안은 `CommentDraftBubble`이 맡는다 — 모양은 둘이 같다(`commentPinShape`).
 
 import type { PointerEvent as ReactPointerEvent } from 'react';
 import { useRef } from 'react';
 import type { EditorController } from '../useEditorState';
-import { accentGradient } from '../chrome';
-import { CommentIcon } from './ToolbarMenus';
+import { CommentPinCount, CommentPinGlyph, commentPinBoxStyle } from './commentPinShape';
 
 /** 이보다 적게 움직인 포인터는 "클릭"으로 본다 — 끌어 옮긴 뒤에는 팝업을 열지 않는다
  * (제보 ③: 핀을 움직일 때마다 댓글 목록을 다시 불러왔다). */
@@ -69,34 +69,10 @@ export function CommentPinLayer({ controller }: { controller: EditorController }
               }
               controller.openComments(pin.id);
             }}
-            style={{
-              position: 'absolute',
-              left: pin.x,
-              top: pin.y,
-              // 물방울 모양: 왼쪽 아래 꼭짓점이 가리키는 지점(지도 핀 관례).
-              minWidth: 28,
-              height: 28,
-              padding: '0 8px',
-              borderRadius: '999px 999px 999px 4px',
-              background: accentGradient(th),
-              color: th.accentInk,
-              border: `2px solid ${th.panel}`,
-              boxShadow: selected ? `0 0 0 3px ${th.accent}40, 0 6px 16px rgba(46,42,38,.35)` : '0 6px 16px rgba(46,42,38,.3)',
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              gap: 4,
-              fontSize: 12,
-              fontWeight: 800,
-              cursor: 'grab',
-              userSelect: 'none',
-              zIndex: 30,
-              transform: 'translate(0, -100%)',
-            }}
+            style={{ position: 'absolute', left: pin.x, top: pin.y, zIndex: 30, cursor: 'grab', ...commentPinBoxStyle(th, selected) }}
           >
-            {/* 팝업 머리와 **같은 아이콘**(요청 ②) — 같은 것을 가리키는 표식은 하나여야 한다. */}
-            <CommentIcon size={12} />
-            {count > 0 && <span data-pin-count>{count}</span>}
+            <CommentPinGlyph />
+            <CommentPinCount count={count} th={th} />
           </div>
         );
       })}

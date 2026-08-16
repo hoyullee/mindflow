@@ -10,8 +10,8 @@
 import { useEffect, useRef } from 'react';
 import type { CSSProperties } from 'react';
 import type { EditorController } from '../useEditorState';
-import { CARD_SHADOW, accentGradient, glassCard } from '../chrome';
-import { CommentIcon } from './ToolbarMenus';
+import { CARD_SHADOW, glassCard } from '../chrome';
+import { CommentPinGlyph, commentPinBoxStyle } from './commentPinShape';
 import { CommentComposer, useCommentParticipants } from './CommentPanel';
 import { anchoredBoxPos, pinScreenPos } from './commentAnchor';
 import { useIsMobile } from '../../../hooks/useMediaQuery';
@@ -59,30 +59,10 @@ export function CommentDraftBubble({ controller }: { controller: EditorControlle
 
   return (
     <>
-      {/* 초안 핀 — 확정된 핀과 같은 물방울이되 아직 문서에 없다는 뜻으로 점선 테두리. */}
-      <div
-        aria-hidden
-        data-comment-draft-pin
-        style={{
-          position: 'absolute',
-          left: p.x,
-          top: p.y,
-          width: 28,
-          height: 28,
-          transform: 'translate(0, -100%)',
-          borderRadius: '999px 999px 999px 4px',
-          background: accentGradient(th),
-          color: th.accentInk,
-          border: `2px dashed ${th.panel}`,
-          boxShadow: '0 6px 16px rgba(46,42,38,.3)',
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'center',
-          zIndex: 129,
-          pointerEvents: 'none',
-        }}
-      >
-        <CommentIcon size={12} />
+      {/* 초안 핀 — 곧 문서에 들어갈 그 핀과 **완전히 같은 모양**이다(요청 ④).
+          예전에는 더 작고 점선 테두리라 딴 물건처럼 보였다. */}
+      <div aria-hidden data-comment-draft-pin style={{ position: 'absolute', left: p.x, top: p.y, zIndex: 129, pointerEvents: 'none', ...commentPinBoxStyle(th, true, controller.zoom) }}>
+        <CommentPinGlyph />
       </div>
 
       <div

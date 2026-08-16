@@ -418,12 +418,20 @@ export function FeedbackIcon() {
  * 댓글 — 말풍선 **안에 줄**. 피드백(빈 말풍선)과 나란히 놓이므로 일부러 다르게
  * 그린다: 같은 도형이면 같은 동작으로 읽힌다.
  */
+/** 댓글 말풍선의 도형 — 아이콘·핀·마우스 커서가 **같은 문자열**을 쓴다(요청 ②·③).
+ * 커서는 CSS 값이라 컴포넌트를 쓸 수 없어 path만 따로 내보낸다. */
+export const COMMENT_GLYPH = {
+  bubble: 'M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z',
+  line1: 'M7.5 8.5h9',
+  line2: 'M7.5 12h5.5',
+};
+
 export function CommentIcon({ size = 15 }: { size?: number }) {
   return (
     <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-      <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" />
-      <line x1={7.5} y1={8.5} x2={16.5} y2={8.5} />
-      <line x1={7.5} y1={12} x2={13} y2={12} />
+      <path d={COMMENT_GLYPH.bubble} />
+      <path d={COMMENT_GLYPH.line1} />
+      <path d={COMMENT_GLYPH.line2} />
     </svg>
   );
 }

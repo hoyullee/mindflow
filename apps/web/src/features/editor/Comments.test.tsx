@@ -13,6 +13,8 @@ import { LocalImageStore } from '../../adapters/local/localImageStore';
 import { LocalDocStore } from '../../adapters/local/localDocStore';
 import type { Backend, DocStore, ShareStore } from '../../adapters/ports';
 import { setLinearSelection } from './richtextDom';
+import { COMMENT_PIN_W } from './components/commentPinShape';
+import { COMMENT_GLYPH } from './components/ToolbarMenus';
 
 // 댓글(0020) — 주제에 붙는 논의. 본문이 아니라 별도 저장소(`CommentStore`)에 산다.
 // 로컬/데모 어댑터가 Supabase와 같은 포트를 구현하므로 흐름은 여기서 그대로 검증된다.
@@ -578,6 +580,95 @@ describe('댓글 핀(캔버스 객체)', () => {
     // 우상단 고정(right/top)이 아니라 핀 근처의 left/top이다.
     expect(panel.style.right).toBe('');
     expect(Math.abs(parseFloat(panel.style.left) - px)).toBeLessThan(200);
+  });
+});
+
+// 프리뷰 확인 후 5건(요청) — 팝업이 핀을 가리지 않게, 작성 뒤 선택 도구 복귀,
+// 커서·초안 핀 모양 통일, 핀에서 벗어나면 팝업 닫기.
+describe('댓글 핀 다듬기(프리뷰 후속)', () => {
+  it('팝업이 핀을 가리지 않고 그 오른쪽에 선다(요청 ①)', async () => {
+    localStorage.setItem('mindflow_doc_pf1', JSON.stringify(DOC_WITH_PIN));
+    seedComment('pf1', PIN_ID, '핀의 말');
+    seedComment('pf1', PIN_ID, '둘');
+    seedComment('pf1', PIN_ID, '셋'); // 개수가 늘어도 본체 폭은 그대로여야 한다
+    const { container } = renderEditor('/editor?map=pf1&title=x');
+    const panel = await openPinComments();
+    const pin = container.querySelector(`[data-comment-pin="${PIN_ID}"]`) as HTMLElement;
+
+    // 핀 본체는 개수와 무관하게 고정 폭 — 개수는 본체 **밖** 배지다.
+    expect(pin.style.width).toBe(`${COMMENT_PIN_W}px`);
+    expect((pin.querySelector('[data-pin-count]') as HTMLElement).style.position).toBe('absolute');
+    // 팝업 왼쪽 변이 핀의 오른쪽 변보다 오른쪽에 있다(가리지 않는다).
+    const panLayer = container.querySelector('[data-pan-layer]') as HTMLElement;
+    const m = /translate\(([-\d.]+)px,\s*([-\d.]+)px\)\s*scale\(([\d.]+)\)/.exec(panLayer.style.transform || '')!;
+    const pinLeft = 120 * parseFloat(m[3]!) + parseFloat(m[1]!);
+    expect(parseFloat(panel.style.left)).toBeGreaterThanOrEqual(pinLeft + COMMENT_PIN_W);
+  });
+
+  it('첫 댓글을 남기면 선택 도구로 돌아온다(요청 ②)', async () => {
+    const board = { ...DOC, kind: 'board', nodes: {}, floats: [] };
+    localStorage.setItem('mindflow_doc_pf2', JSON.stringify(board));
+    const { container } = renderEditor('/editor?map=pf2&title=보드');
+    await waitFor(() => expect(container.querySelector('[data-board-toolbar]')).toBeTruthy());
+    fireEvent.click(screen.getByRole('button', { name: '댓글' }));
+    expect(screen.getByRole('button', { name: '댓글' }).getAttribute('aria-pressed')).toBe('true');
+
+    const layer = container.querySelector('[data-board-draw-layer]') as HTMLElement;
+    firePointer(layer, 'pointerdown', { clientX: 320, clientY: 260 });
+    firePointer(layer, 'pointerup', { clientX: 320, clientY: 260 });
+    const bubble = await screen.findByLabelText('첫 댓글 남기기');
+    fireEvent.change(within(bubble).getByLabelText('댓글 입력'), { target: { value: '첫 마디' } });
+    fireEvent.click(within(bubble).getByRole('button', { name: '남기기' }));
+
+    await waitFor(() => expect(container.querySelector('[data-comment-pin]')).toBeTruthy());
+    // 댓글 모드에 머물면 방금 만든 핀을 만지려는 클릭이 또 새 초안을 띄운다.
+    await waitFor(() => expect(screen.getByRole('button', { name: '선택' }).getAttribute('aria-pressed')).toBe('true'));
+    expect(container.querySelector('[data-board-draw-layer]')).toBeNull();
+  });
+
+  it('초안 핀은 확정된 핀과 같은 모양이고, 커서도 그 핀 그림이다(요청 ③·④)', async () => {
+    const board = { ...DOC, kind: 'board', nodes: {}, floats: [], commentPins: [{ id: PIN_ID, x: 40, y: 20 }] };
+    localStorage.setItem('mindflow_doc_pf3', JSON.stringify(board));
+    seedComment('pf3', PIN_ID, '이미 있는 말');
+    const { container } = renderEditor('/editor?map=pf3&title=보드');
+    await waitFor(() => expect(container.querySelector('[data-comment-pin]')).toBeTruthy());
+    fireEvent.click(screen.getByRole('button', { name: '댓글' }));
+    const layer = container.querySelector('[data-board-draw-layer]') as HTMLElement;
+    firePointer(layer, 'pointerdown', { clientX: 500, clientY: 380 });
+    firePointer(layer, 'pointerup', { clientX: 500, clientY: 380 });
+    await screen.findByLabelText('첫 댓글 남기기');
+
+    const pin = container.querySelector('[data-comment-pin]') as HTMLElement;
+    const draftPin = container.querySelector('[data-comment-draft-pin]') as HTMLElement;
+    // 크기·모양·배경이 같다 — 예전엔 초안이 더 작고 점선이라 딴 물건처럼 보였다.
+    expect(draftPin.style.width).toBe(pin.style.width);
+    expect(draftPin.style.height).toBe(pin.style.height);
+    expect(draftPin.style.borderRadius).toBe(pin.style.borderRadius);
+    expect(draftPin.style.borderStyle).not.toBe('dashed');
+    expect(draftPin.querySelector('svg path')?.getAttribute('d')).toBe(pin.querySelector('svg path')?.getAttribute('d'));
+    // 커서도 같은 말풍선 path를 굽는다.
+    expect(decodeURIComponent(layer.style.cursor)).toContain(COMMENT_GLYPH.bubble);
+  });
+
+  it('배경이나 다른 객체를 고르면 팝업이 닫힌다(요청 ⑤)', async () => {
+    const doc = { ...DOC, floats: [{ id: 'fm1', x: -300, y: 40, w: 180, text: '메모' }], commentPins: [{ id: PIN_ID, x: 120, y: 60 }] };
+    localStorage.setItem('mindflow_doc_pf4', JSON.stringify(doc));
+    seedComment('pf4', PIN_ID, '핀의 말');
+    const { container } = renderEditor('/editor?map=pf4&title=x');
+    await openPinComments();
+
+    // 다른 객체(메모)를 고르면 닫힌다.
+    const memo = container.querySelector('[data-float-id="fm1"]') as HTMLElement;
+    firePointer(memo, 'pointerdown', { clientX: 60, clientY: 60 });
+    firePointer(window, 'pointerup', { clientX: 60, clientY: 60 });
+    await waitFor(() => expect(screen.queryByLabelText('댓글')).toBeNull());
+
+    // 다시 열고, 이번엔 빈 배경을 눌러 닫는다.
+    await openPinComments();
+    const vp = container.querySelector('.mf-ed-vp') as HTMLElement;
+    firePointer(vp, 'pointerdown', { clientX: 700, clientY: 520 });
+    firePointer(window, 'pointerup', { clientX: 700, clientY: 520 });
+    await waitFor(() => expect(screen.queryByLabelText('댓글')).toBeNull());
   });
 });
 
