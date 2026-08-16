@@ -14,7 +14,7 @@ import { LocalDocStore } from '../../adapters/local/localDocStore';
 import type { Backend, DocStore, ShareStore } from '../../adapters/ports';
 import { setLinearSelection } from './richtextDom';
 import { COMMENT_PIN_W } from './components/commentPinShape';
-import { COMMENT_GLYPH } from './components/ToolbarMenus';
+import { FILLED_BUBBLE_PATH } from './components/commentPinShape';
 
 // 댓글(0020) — 주제에 붙는 논의. 본문이 아니라 별도 저장소(`CommentStore`)에 산다.
 // 로컬/데모 어댑터가 Supabase와 같은 포트를 구현하므로 흐름은 여기서 그대로 검증된다.
@@ -57,13 +57,13 @@ async function openPinComments(): Promise<HTMLElement> {
     return e;
   });
   fireEvent.click(el);
-  return await screen.findByLabelText('댓글');
+  return await screen.findByLabelText('스레드');
 }
 
 /** 배경 우클릭 → '댓글 추가' → 첫 댓글 말풍선. */
 async function openDraftViaMenu(container: HTMLElement, clientX = 300, clientY = 240): Promise<HTMLElement> {
   fireEvent.contextMenu(container.querySelector('.mf-ed-vp') as HTMLElement, { clientX, clientY });
-  fireEvent.mouseDown(await screen.findByText('댓글 추가'));
+  fireEvent.mouseDown(await screen.findByText('스레드 추가'));
   return await screen.findByLabelText('첫 댓글 남기기');
 }
 
@@ -100,7 +100,7 @@ describe('댓글(핀에 붙는 논의)', () => {
     const bubble = await openDraftViaMenu(container);
     // 아직 핀도, 팝업도 없다 — 말풍선 하나가 첫 마디를 기다린다.
     expect(container.querySelector('[data-comment-pin]')).toBeNull();
-    expect(screen.queryByLabelText('댓글')).toBeNull();
+    expect(screen.queryByLabelText('스레드')).toBeNull();
 
     fireEvent.change(within(bubble).getByLabelText('댓글 입력'), { target: { value: '여기 정리가 필요해요' } });
     fireEvent.click(within(bubble).getByRole('button', { name: '남기기' }));
@@ -165,16 +165,22 @@ describe('댓글(핀에 붙는 논의)', () => {
     expect(stored[1]!.parentId).toBe(stored[0]!.id);
   });
 
-  // 해결 기능은 걷어냈다(요청: 해결 대신 좋아요). 스레드는 하나의 목록이고,
-  // 공감은 좋아요 수로 남는다 — 서버 컬럼(0021)은 그대로 두되 UI에서 사라진다.
-  it('해결 버튼은 없고, 좋아요를 누르면 수가 오르고 다시 누르면 내린다', async () => {
+  // 시안 ①: 스레드 머리에 **해결** 토글이 있고, 해결하면 핀에 초록 체크가 뜬다.
+  // 좋아요(공감)는 그대로 각 글에 붙는다.
+  it('머리의 해결을 누르면 핀에 체크가 뜨고, 좋아요는 수가 오르내린다', async () => {
     localStorage.setItem('mindflow_doc_cmlike', JSON.stringify(DOC_WITH_PIN));
     seedComment('cmlike', PIN_ID, '좋아요 대상');
     renderEditor('/editor?map=cmlike&title=x');
     const panel = await openPinComments();
     await waitFor(() => expect(within(panel).getByText('좋아요 대상')).toBeTruthy());
 
-    expect(screen.queryByTitle('해결됨으로 표시')).toBeNull();
+    // 해결 토글 — 누르면 핀이 해결 표시(초록 체크)로 바뀐다.
+    fireEvent.click(within(panel).getByTitle('해결됨으로 표시'));
+    await waitFor(() => expect(document.querySelector('[data-pin-resolved]')).toBeTruthy());
+    expect(document.querySelector('[data-pin-count]')).toBeNull(); // 개수 자리를 체크가 대신한다
+    fireEvent.click(within(panel).getByTitle('해결 표시 지우기'));
+    await waitFor(() => expect(document.querySelector('[data-pin-resolved]')).toBeNull());
+
     const like = await waitFor(() => {
       const el = document.querySelector('[data-like-button]') as HTMLElement;
       expect(el).toBeTruthy();
@@ -410,7 +416,7 @@ describe('댓글(핀에 붙는 논의)', () => {
     localStorage.setItem('mindflow_doc_cmd1', JSON.stringify(DOC_WITH_PIN));
     seedComment('cmd1', PIN_ID, '딥링크 대상 논의');
     renderEditor(`/editor?map=cmd1&title=x&comments=${PIN_ID}`);
-    const panel = await screen.findByLabelText('댓글');
+    const panel = await screen.findByLabelText('스레드');
     await waitFor(() => expect(within(panel).getByText('딥링크 대상 논의')).toBeTruthy());
   });
 
@@ -560,11 +566,11 @@ describe('댓글 핀(캔버스 객체)', () => {
     fireEvent.click(pin);
     await new Promise((r) => setTimeout(r, 50));
     expect(listCalls).toBe(before);
-    expect(screen.queryByLabelText('댓글')).toBeNull();
+    expect(screen.queryByLabelText('스레드')).toBeNull();
 
     // 평범한 클릭(움직이지 않음)은 예전처럼 팝업을 연다.
     fireEvent.click(pin);
-    await screen.findByLabelText('댓글');
+    await screen.findByLabelText('스레드');
   });
 
   it('팝업이 그 핀 옆에 뜬다(요청 ⑦)', async () => {
@@ -610,8 +616,8 @@ describe('댓글 핀 다듬기(프리뷰 후속)', () => {
     localStorage.setItem('mindflow_doc_pf2', JSON.stringify(board));
     const { container } = renderEditor('/editor?map=pf2&title=보드');
     await waitFor(() => expect(container.querySelector('[data-board-toolbar]')).toBeTruthy());
-    fireEvent.click(screen.getByRole('button', { name: '댓글' }));
-    expect(screen.getByRole('button', { name: '댓글' }).getAttribute('aria-pressed')).toBe('true');
+    fireEvent.click(screen.getByRole('button', { name: '스레드' }));
+    expect(screen.getByRole('button', { name: '스레드' }).getAttribute('aria-pressed')).toBe('true');
 
     const layer = container.querySelector('[data-board-draw-layer]') as HTMLElement;
     firePointer(layer, 'pointerdown', { clientX: 320, clientY: 260 });
@@ -632,7 +638,7 @@ describe('댓글 핀 다듬기(프리뷰 후속)', () => {
     seedComment('pf3', PIN_ID, '이미 있는 말');
     const { container } = renderEditor('/editor?map=pf3&title=보드');
     await waitFor(() => expect(container.querySelector('[data-comment-pin]')).toBeTruthy());
-    fireEvent.click(screen.getByRole('button', { name: '댓글' }));
+    fireEvent.click(screen.getByRole('button', { name: '스레드' }));
     const layer = container.querySelector('[data-board-draw-layer]') as HTMLElement;
     firePointer(layer, 'pointerdown', { clientX: 500, clientY: 380 });
     firePointer(layer, 'pointerup', { clientX: 500, clientY: 380 });
@@ -640,14 +646,16 @@ describe('댓글 핀 다듬기(프리뷰 후속)', () => {
 
     const pin = container.querySelector('[data-comment-pin]') as HTMLElement;
     const draftPin = container.querySelector('[data-comment-draft-pin]') as HTMLElement;
-    // 크기·모양·배경이 같다 — 예전엔 초안이 더 작고 점선이라 딴 물건처럼 보였다.
+    // 크기·실루엣이 같다 — 예전엔 초안이 더 작고 점선이라 딴 물건처럼 보였다.
     expect(draftPin.style.width).toBe(pin.style.width);
     expect(draftPin.style.height).toBe(pin.style.height);
     expect(draftPin.style.borderRadius).toBe(pin.style.borderRadius);
     expect(draftPin.style.borderStyle).not.toBe('dashed');
-    expect(draftPin.querySelector('svg path')?.getAttribute('d')).toBe(pin.querySelector('svg path')?.getAttribute('d'));
-    // 커서도 같은 말풍선 path를 굽는다.
-    expect(decodeURIComponent(layer.style.cursor)).toContain(COMMENT_GLYPH.bubble);
+    // 담는 것만 다르다: 꽂힌 핀은 **첫 글을 쓴 사람의 얼굴**(시안 ①), 초안은 말풍선(시안 ②).
+    expect(pin.querySelector('[data-avatar]')?.textContent).toBe('나');
+    expect(draftPin.querySelector('svg path')?.getAttribute('d')).toBe(FILLED_BUBBLE_PATH);
+    // 커서도 초안 핀과 같은 말풍선을 굽는다.
+    expect(decodeURIComponent(layer.style.cursor)).toContain(FILLED_BUBBLE_PATH);
   });
 
   it('배경이나 다른 객체를 고르면 팝업이 닫힌다(요청 ⑤)', async () => {
@@ -661,14 +669,14 @@ describe('댓글 핀 다듬기(프리뷰 후속)', () => {
     const memo = container.querySelector('[data-float-id="fm1"]') as HTMLElement;
     firePointer(memo, 'pointerdown', { clientX: 60, clientY: 60 });
     firePointer(window, 'pointerup', { clientX: 60, clientY: 60 });
-    await waitFor(() => expect(screen.queryByLabelText('댓글')).toBeNull());
+    await waitFor(() => expect(screen.queryByLabelText('스레드')).toBeNull());
 
     // 다시 열고, 이번엔 빈 배경을 눌러 닫는다.
     await openPinComments();
     const vp = container.querySelector('.mf-ed-vp') as HTMLElement;
     firePointer(vp, 'pointerdown', { clientX: 700, clientY: 520 });
     firePointer(window, 'pointerup', { clientX: 700, clientY: 520 });
-    await waitFor(() => expect(screen.queryByLabelText('댓글')).toBeNull());
+    await waitFor(() => expect(screen.queryByLabelText('스레드')).toBeNull());
   });
 });
 
@@ -682,7 +690,7 @@ describe('댓글 도구(화이트보드)', () => {
     const { container } = renderEditor('/editor?map=bcm1&title=보드');
     await waitFor(() => expect(container.querySelector('[data-board-toolbar]')).toBeTruthy());
 
-    fireEvent.click(screen.getByRole('button', { name: '댓글' }));
+    fireEvent.click(screen.getByRole('button', { name: '스레드' }));
     // 켜는 것만으로는 아무것도 만들지 않는다(예전엔 즉시 핀이 꽂혔다).
     expect(container.querySelector('[data-comment-pin]')).toBeNull();
     expect(container.querySelector('[data-comment-draft]')).toBeNull();

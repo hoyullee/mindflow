@@ -394,8 +394,10 @@ export interface EditorController {
   startCommentDraft: (at?: { x: number; y: number }) => void;
   /** 화면 좌표로 초안 핀 띄우기 — 댓글 도구가 캔버스 클릭에서 쓴다. */
   startCommentDraftAtClient: (clientX: number, clientY: number) => void;
-  /** 지금 첫 댓글을 기다리는 초안 핀의 캔버스 좌표(없으면 null). */
+  /** 지금 첫 스레드를 기다리는 초안 핀의 캔버스 좌표(없으면 null). */
   commentDraft: { x: number; y: number } | null;
+  /** 내 표시 이름 — 초안 말풍선 머리와 아바타가 쓴다(저장될 작성자명과 같은 값). */
+  myName: string;
   /** 초안을 접는다 — 문서 변경 없음. */
   cancelCommentDraft: () => void;
   /** 초안에 첫 댓글을 남긴다 — 저장에 성공해야 핀이 문서에 들어간다. */
@@ -4052,11 +4054,19 @@ export function useEditorState(): EditorController {
   // 획 = 원자 값(코어 `Stroke`): 펜을 떼는 순간 하나의 커밋(=undo 한 단계)으로
   // 확정된다. 입력 단순화(가까운 점 병합 + 0.1 단위 반올림)는 여기 입력 시점에서
   // — 손글씨는 초당 수십 좌표를 만들어 문서가 부풀기 때문이다.
+  /** 첫 스레드를 기다리는 **초안 핀**의 자리 — 문서에는 아직 없다(요청 ④·⑤).
+   * `setBoardTool`이 이 상태를 접으므로 도구 상태보다 먼저 선언한다. */
+  const [commentDraft, setCommentDraft] = useState<{ x: number; y: number } | null>(null);
+  const commentDraftRef = useRef(commentDraft);
+  commentDraftRef.current = commentDraft;
   const [boardTool, setBoardToolState] = useState<BoardTool>('select');
   const boardToolRef = useRef(boardTool);
   boardToolRef.current = boardTool;
   const setBoardTool = useCallback((t: BoardTool) => {
     setBoardToolState(t);
+    // 손이 다른 도구로 옮겨 갔으면 쓰던 초안은 접는다. (도구 **자동** 복귀는 이
+    // 함수를 거치지 않는다 — 초안을 띄우면서 커서로 돌아가는 길이 있어야 한다.)
+    setCommentDraft(null);
     if (t !== 'select') {
       // 그리기 도구로 바꾸면 선택을 비운다 — 오버레이가 포인터를 삼키는 동안
       // 남은 선택이 Delete 등 키보드 경로로 조작되면 "왜 지워졌지"가 된다.
@@ -4327,15 +4337,6 @@ export function useEditorState(): EditorController {
   const [commentsNodeId, setCommentsNodeId] = useState<string>(ROOT_ID);
   const [comments, setComments] = useState<DocComment[]>([]);
   const [commentsLoading, setCommentsLoading] = useState(false);
-  /** 첫 댓글을 기다리는 **초안 핀**의 자리 — 문서에는 아직 없다(요청 ④·⑤). */
-  const [commentDraft, setCommentDraft] = useState<{ x: number; y: number } | null>(null);
-  const commentDraftRef = useRef(commentDraft);
-  commentDraftRef.current = commentDraft;
-  // 다른 도구로 옮기면 쓰던 초안은 접힌다 — 손이 이미 다른 일을 하고 있다.
-  // (마인드맵에는 도구 막대가 없어 `boardTool`이 바뀌지 않으므로 무관하다.)
-  useEffect(() => {
-    if (boardTool !== 'comment') setCommentDraft(null);
-  }, [boardTool]);
 
   /** 서버에서 목록을 다시 읽는다. 댓글은 실시간 채널을 타지 않으므로(본문이 아니다)
    * 열 때마다 새로 읽는 것이 상대의 새 댓글을 보는 유일한 길이다.
@@ -4447,6 +4448,9 @@ export function useEditorState(): EditorController {
     const cx = at ? at.x : (vp.vw / 2 - vp.pan.x) / vp.zoom;
     const cy = at ? at.y : (vp.vh / 2 - vp.pan.y) / vp.zoom;
     setCommentDraft({ x: Math.round(cx), y: Math.round(cy) });
+    // **자리를 정한 순간 손은 선택 도구로 돌아온다**(요청) — 쓰든 말든 상관없다.
+    // 한 번 놓았으면 다음 클릭은 "또 하나 꽂기"가 아니라 평범한 조작이다(Figma도 같다).
+    setBoardToolState('select');
     setSelectionState(null);
     setMultiSelectionState(null);
     setCommentsOpen(false);
@@ -4473,10 +4477,8 @@ export function useEditorState(): EditorController {
       if (res.error) return res;
       commitDoc((d) => ({ ...d, commentPins: [...(d.commentPins ?? []), { id: newId, x: at.x, y: at.y }] }));
       setCommentDraft(null);
-      // 한 마디를 남겼으면 **손을 선택 도구로 돌려준다**(요청 ②) — 댓글 모드에 머물면
-      // 방금 만든 핀을 만지려는 클릭이 또 새 초안을 띄운다. 도구 전환이 선택을 비우므로
-      // (setBoardTool) 그 뒤에 이 핀을 고른다.
-      setBoardToolState('select');
+      // 손은 초안을 띄울 때 이미 선택 도구로 돌아와 있다(startCommentDraft) —
+      // 여기서는 방금 만든 핀을 고르기만 한다.
       setSelectionState({ kind: 'commentPin', id: newId });
       setMultiSelectionState(null);
       await reloadComments();
@@ -6362,6 +6364,7 @@ export function useEditorState(): EditorController {
     startCommentDraft,
     startCommentDraftAtClient,
     commentDraft,
+    myName: meName,
     cancelCommentDraft,
     submitCommentDraft,
     moveCommentPin,

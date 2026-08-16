@@ -12,7 +12,7 @@
 import type { PointerEvent as ReactPointerEvent } from 'react';
 import { useRef } from 'react';
 import type { EditorController } from '../useEditorState';
-import { CommentPinCount, CommentPinGlyph, commentPinBoxStyle } from './commentPinShape';
+import { Avatar, CommentPinCount, CommentPinResolved, commentPinBoxStyle } from './commentPinShape';
 
 /** 이보다 적게 움직인 포인터는 "클릭"으로 본다 — 끌어 옮긴 뒤에는 팝업을 열지 않는다
  * (제보 ③: 핀을 움직일 때마다 댓글 목록을 다시 불러왔다). */
@@ -28,7 +28,13 @@ export function CommentPinLayer({ controller }: { controller: EditorController }
   return (
     <>
       {pins.map((pin) => {
-        const count = controller.comments.filter((c) => c.nodeId === pin.id).length;
+        // 이 핀의 스레드 = 그 핀을 대상으로 한 글 전부(뿌리 + 답글). 얼굴은 **첫 글을
+        // 쓴 사람**이고(시안 ①), 해결 여부는 뿌리 글이 든다.
+        const msgs = controller.comments.filter((c) => c.nodeId === pin.id);
+        const root = msgs.find((c) => !c.parentId) ?? msgs[0];
+        const author = root?.authorName || '?';
+        const resolved = !!root?.resolved;
+        const count = msgs.length;
         const selected = controller.selection?.kind === 'commentPin' && controller.selection.id === pin.id;
         const onPointerDown = (e: ReactPointerEvent) => {
           e.stopPropagation();
@@ -56,8 +62,8 @@ export function CommentPinLayer({ controller }: { controller: EditorController }
             data-comment-pin={pin.id}
             role="button"
             tabIndex={0}
-            aria-label={`댓글 핀 ${count}개`}
-            title={count ? `댓글 ${count}개` : '댓글 핀'}
+            aria-label={`스레드 ${count}개${resolved ? ' (해결됨)' : ''}`}
+            title={resolved ? `${author} · 해결된 스레드` : `${author} · 스레드 ${count}개`}
             onPointerDown={onPointerDown}
             onClick={(e) => {
               e.stopPropagation();
@@ -69,10 +75,19 @@ export function CommentPinLayer({ controller }: { controller: EditorController }
               }
               controller.openComments(pin.id);
             }}
-            style={{ position: 'absolute', left: pin.x, top: pin.y, zIndex: 30, cursor: 'grab', ...commentPinBoxStyle(th, selected) }}
+            style={{
+              position: 'absolute',
+              left: pin.x,
+              top: pin.y,
+              zIndex: 30,
+              cursor: 'grab',
+              // 얼굴이 주인공이라 평소엔 흰 바탕, 고른 핀만 강조색으로 도드라진다(시안 ①).
+              ...commentPinBoxStyle(th, selected, 1, selected ? 'accent' : 'panel'),
+              opacity: resolved ? 0.72 : 1,
+            }}
           >
-            <CommentPinGlyph />
-            <CommentPinCount count={count} th={th} />
+            <Avatar name={author} size={24} ring={selected ? th.panel : undefined} />
+            {resolved ? <CommentPinResolved th={th} /> : <CommentPinCount count={count} th={th} />}
           </div>
         );
       })}

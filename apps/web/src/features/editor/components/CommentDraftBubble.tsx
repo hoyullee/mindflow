@@ -11,13 +11,13 @@ import { useEffect, useRef } from 'react';
 import type { CSSProperties } from 'react';
 import type { EditorController } from '../useEditorState';
 import { CARD_SHADOW, glassCard } from '../chrome';
-import { CommentPinGlyph, commentPinBoxStyle } from './commentPinShape';
+import { Avatar, CommentPinGlyph, commentPinBoxStyle } from './commentPinShape';
 import { CommentComposer, useCommentParticipants } from './CommentPanel';
 import { anchoredBoxPos, pinScreenPos } from './commentAnchor';
 import { useIsMobile } from '../../../hooks/useMediaQuery';
 
-const BUBBLE_W = 280;
-const BUBBLE_H = 132;
+const BUBBLE_W = 300;
+const BUBBLE_H = 150;
 
 export function CommentDraftBubble({ controller }: { controller: EditorController }) {
   const th = controller.uiTheme;
@@ -50,12 +50,13 @@ export function CommentDraftBubble({ controller }: { controller: EditorControlle
     left,
     top,
     width: BUBBLE_W,
-    padding: 10,
+    padding: 12,
     borderRadius: 16,
     ...glassCard(th, 0.98),
     boxShadow: CARD_SHADOW,
     zIndex: 130, // 도구 막대(120)보다 위 — 방금 켠 도구가 만든 입력칸이다
   };
+  const me = controller.myName;
 
   return (
     <>
@@ -83,14 +84,22 @@ export function CommentDraftBubble({ controller }: { controller: EditorControlle
           }
         }}
       >
+        {/* 머리 — 내 얼굴과 "새 댓글"(시안 ②). 누가 남기는 말인지 먼저 말한다. */}
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 9 }}>
+          <Avatar name={me} size={24} />
+          <span style={{ fontSize: 12.5, color: th.subtext, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+            <b style={{ color: th.text, fontWeight: 700 }}>{me}</b> · 새 댓글
+          </span>
+        </div>
         <CommentComposer
           controller={controller}
           isMobile={isMobile}
           participants={participants}
-          placeholder="댓글 남기기 (@로 멘션)"
+          placeholder="댓글 남기기 · @로 멘션"
           submitLabel="남기기"
           autoFocus
           compact
+          onCancel={controller.cancelCommentDraft}
           onSubmit={async (body, mentions) => {
             const res = await controller.submitCommentDraft(body, mentions);
             return !res.error;

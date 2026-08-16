@@ -649,7 +649,7 @@ function buildItems(
       ? [
           {
             icon: <CommentIcon size={15} />,
-            label: '댓글 추가',
+            label: '스레드 추가',
             onSelect: () => {
               close();
               controller.startCommentDraft(at);

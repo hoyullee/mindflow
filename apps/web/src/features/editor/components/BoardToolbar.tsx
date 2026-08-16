@@ -193,10 +193,10 @@ export function BoardToolbar({ controller }: { controller: EditorController }) {
         <path d="M20 20H8.5l-5-5a2 2 0 0 1 0-2.8l8.7-8.7a2 2 0 0 1 2.8 0l5 5a2 2 0 0 1 0 2.8L13 18.5" />
       </svg>,
     ),
-    // 댓글 — 삽입이 아니라 **도구**다(요청 ④): 누르는 즉시 핀이 생기지 않고, 커서가
-    // 댓글 아이콘으로 바뀌어 "누른 자리"에 첫 댓글 말풍선이 뜬다(Figma와 같은 감각).
-    // 팝업 머리·핀과 같은 아이콘을 쓴다(요청 ②).
-    ...(controller.canComment ? [toolBtn('comment', '댓글', 'C', <CommentIcon size={17} />)] : []),
+    // 스레드 — 삽입이 아니라 **도구**다: 누르는 즉시 핀이 생기지 않고, 커서가 핀
+    // 아이콘으로 바뀌어 "누른 자리"에 첫 글 말풍선이 뜬다(Figma와 같은 감각).
+    // 자리를 정하는 순간 손은 선택 도구로 돌아온다(요청).
+    ...(controller.canComment ? [toolBtn('comment', '스레드', 'C', <CommentIcon size={17} />)] : []),
   ];
 
   // 삽입 — 화이트보드가 담을 수 있는 것들(메모·이미지·연결선·영역). 그리기 도구가
