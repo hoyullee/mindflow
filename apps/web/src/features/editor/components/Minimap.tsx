@@ -2,7 +2,7 @@ import { useRef, useState } from 'react';
 import type { PointerEvent as ReactPointerEvent } from 'react';
 import { ROOT_ID } from '@mindflow/mindmap-core';
 import { colorOf } from '../tree';
-import { hexA } from '../theme';
+import { hexA, mixHex } from '../theme';
 import type { EditorController } from '../useEditorState';
 
 interface MinimapProps {
@@ -11,11 +11,29 @@ interface MinimapProps {
   isMobile?: boolean;
 }
 
-const W_DESKTOP = 178;
-const H_DESKTOP = 116;
-const W_MOBILE = 120;
-const H_MOBILE = 78;
-const PAD = 8;
+// 시안 실측(요청 ③): 카드 폭 260 · 지도 148 · 도트 간격 15 · 뷰포트 파랑.
+// 지도는 카드 안에서 **여백 없이** 꽉 찬다(예전에는 7px 안쪽 여백이 있었다).
+const W_DESKTOP = 260;
+const H_DESKTOP = 148;
+const W_MOBILE = 140;
+const H_MOBILE = 84;
+/** 내용이 지도 가장자리에 붙지 않게 두는 안쪽 여유(그리기 좌표계 전용). */
+const PAD = 12;
+/** 도트 격자 — 캔버스와 같은 결의 texture라 배율과 무관한 화면 단위다(시안 15px). */
+const DOT_STEP = 15;
+const DOT_PATTERN_ID = 'mf-minimap-dots';
+/**
+ * 뷰포트 사각형의 파랑(시안 실측 `#7fa6e8`, 채움 알파 0.10).
+ *
+ * 테마 강조색을 쓰지 않는다 — 시안은 코랄 테마인데도 이 사각형만 파랑이다
+ * (강조색은 "선택한 것"을 뜻하는데 이건 **지금 보고 있는 자리**라 뜻이 다르다).
+ */
+const VIEW_BLUE = '#7fa6e8';
+/** 미니맵의 메모 색 — 캔버스 기본 노랑(`#fff6cf`)은 이 크기에서 배경에 묻혀
+ * 보이지 않는다. 시안이 쓰는 한 톤 진한 노랑을 기본값으로 둔다(직접 색을 고른
+ * 메모는 그 색 그대로). */
+const MEMO_MINI = '#ead893';
+const MEMO_MINI_DARK = '#5a4a2f';
 
 /**
  * Bottom-right minimap — port of `Component#renderMinimap`/`#minimapCenterTo`/`#onMinimapDown`
@@ -40,7 +58,7 @@ export function Minimap({ controller, isMobile = false }: MinimapProps) {
   // 준비 전 지오메트리로 점/뷰포트 사각형을 그렸다가 정착 후 튀는 깜빡임을
   // 캔버스 커튼과 같은 타이밍에 함께 숨긴다. 프레임(ZoomControls)은 그대로.
   if (!controller.canvasReady) {
-    return <div aria-hidden="true" data-minimap-holding style={{ width: W, height: H, borderRadius: 8, background: th.canvasBg }} />;
+    return <div aria-hidden="true" data-minimap-holding style={{ width: W, height: H }} />;
   }
 
   // 내용 = 노드 geom ∪ 메모 박스 ∪ 영역 ∪ 연결선 — 예전엔 노드만 봐서 화이트보드
@@ -184,12 +202,27 @@ export function Minimap({ controller, isMobile = false }: MinimapProps) {
       // scroll/zoom gesture and fires `pointercancel` instead of delivering
       // `pointermove`, so the drag dies the moment the finger moves (the main
       // canvas `.mf-ed-vp` sets this in editor.css for the same reason).
-      style={{ display: 'block', borderRadius: 8, cursor: 'grab', background: th.canvasBg, touchAction: 'none' }}
+      // 면은 카드의 유리질 배경이 그대로 비치게 둔다(시안의 지도 바탕 `#fdf8f4`가
+      // 곧 그 값이다) — 여기서 canvasBg를 칠하면 카드보다 어두운 판이 생긴다.
+      style={{ display: 'block', cursor: 'grab', touchAction: 'none' }}
       onPointerDown={onPointerDown}
       onPointerMove={onPointerMove}
       onPointerUp={onPointerUp}
       onPointerCancel={onPointerUp}
     >
+      {/* 도트 격자 — 지도가 "캔버스의 축소판"으로 읽히게 하는 바탕 texture(시안 ③). */}
+      <defs>
+        <pattern id={DOT_PATTERN_ID} width={DOT_STEP} height={DOT_STEP} patternUnits="userSpaceOnUse">
+          <path
+            d={`M${DOT_STEP / 2} ${DOT_STEP / 2 - 1.5}v3M${DOT_STEP / 2 - 1.5} ${DOT_STEP / 2}h3`}
+            stroke={th.dot}
+            strokeWidth={1}
+            strokeLinecap="round"
+            opacity={0.5}
+          />
+        </pattern>
+      </defs>
+      <rect data-minimap-dots x={0} y={0} width={W} height={H} fill={`url(#${DOT_PATTERN_ID})`} />
       {/* 영역(프레임) — 캔버스와 같은 순서로 맨 뒤에, 테두리만(면을 칠하면 그 위의
           점·사각이 묻힌다). 연결선은 그 위, 노드·메모 아래. */}
       {zones.map((z) => (
@@ -225,12 +258,27 @@ export function Minimap({ controller, isMobile = false }: MinimapProps) {
         if (!n) return null;
         return <circle key={id} cx={mx(n.x)} cy={my(n.y)} r={id === ROOT_ID ? 3.4 : 2.2} fill={colorOf(id, controller.doc.nodes, th)} opacity={0.9} />;
       })}
-      {/* 메모/이미지 — 노드 점과 구별되게 작은 각진 사각으로(카드 모양의 축소). */}
+      {/* 메모/이미지 — **자기 색 그대로**의 둥근 카드(시안 ③: 가운데 노란 사각).
+          예전에는 회색 점처럼 그려 무슨 물건인지 알 수 없었다. */}
       {floats.map((f) => {
         const h = floatH(f);
-        const w = Math.max(3, f.w * s);
-        const hh = Math.max(2.4, h * s);
-        return <rect key={f.id} data-minimap-float={f.id} x={mx(f.x)} y={my(f.y)} width={w} height={hh} rx={1} fill={th.subtext} opacity={0.55} />;
+        const w = Math.max(4, f.w * s);
+        const hh = Math.max(3, h * s);
+        const fill = f.bg || (th.appBg === '#191512' || th.canvasBg === '#201b16' ? MEMO_MINI_DARK : MEMO_MINI);
+        return (
+          <rect
+            key={f.id}
+            data-minimap-float={f.id}
+            x={mx(f.x)}
+            y={my(f.y)}
+            width={w}
+            height={hh}
+            rx={Math.min(5, hh / 3)}
+            fill={fill}
+            stroke={mixHex(fill, '#000000', 0.09)}
+            strokeWidth={1}
+          />
+        );
       })}
       <rect
         data-testid="minimap-viewport"
@@ -238,10 +286,10 @@ export function Minimap({ controller, isMobile = false }: MinimapProps) {
         y={ry0}
         width={Math.max(0, rx1 - rx0)}
         height={Math.max(0, ry1 - ry0)}
-        fill={hexA(th.accent, 0.12)}
-        stroke={th.accent}
-        strokeWidth={1.2}
-        rx={3}
+        fill={hexA(VIEW_BLUE, 0.1)}
+        stroke={VIEW_BLUE}
+        strokeWidth={1}
+        rx={4}
       />
     </svg>
   );

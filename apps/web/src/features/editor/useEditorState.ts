@@ -4478,9 +4478,13 @@ export function useEditorState(): EditorController {
       commitDoc((d) => ({ ...d, commentPins: [...(d.commentPins ?? []), { id: newId, x: at.x, y: at.y }] }));
       setCommentDraft(null);
       // 손은 초안을 띄울 때 이미 선택 도구로 돌아와 있다(startCommentDraft) —
-      // 여기서는 방금 만든 핀을 고르기만 한다.
+      // 여기서는 방금 만든 핀을 고르고 **그 스레드를 열어 둔다**(요청 ①): 방금 쓴
+      // 말과 이어서 답글을 달 자리가 바로 보인다(핀을 다시 눌러야 하지 않게).
       setSelectionState({ kind: 'commentPin', id: newId });
       setMultiSelectionState(null);
+      setCommentsNodeId(newId);
+      setCommentsOpen(true);
+      setPropsOpen(false); // 모바일에서는 속성 시트와 댓글이 같은 자리를 다툰다
       await reloadComments();
       return res;
     },

@@ -669,6 +669,59 @@ describe('댓글 핀 다듬기(프리뷰 후속)', () => {
     // 댓글 모드에 머물면 방금 만든 핀을 만지려는 클릭이 또 새 초안을 띄운다.
     await waitFor(() => expect(screen.getByRole('button', { name: '선택' }).getAttribute('aria-pressed')).toBe('true'));
     expect(container.querySelector('[data-board-draw-layer]')).toBeNull();
+    // 그리고 **그 스레드가 열린 채로 남는다**(요청 ①) — 방금 쓴 말과 이어서 답글을
+    // 달 자리가 바로 보여야 한다(핀을 다시 눌러야 하지 않게).
+    const panel = await waitFor(() => {
+      const el = container.querySelector('[data-comment-panel]') as HTMLElement;
+      expect(el).toBeTruthy();
+      return el;
+    });
+    await waitFor(() => expect(within(panel).getByText('첫 마디')).toBeTruthy());
+  });
+
+  // 요청 ②: 아래 입력칸은 답글이 아니라 **새 스레드 글**이다. 예전에는 이 칸이 첫
+  // 글의 답글로 들어가, `답글` 버튼으로 남긴 것과 결과가 구별되지 않았다.
+  it('팝업 아래 입력칸은 새 스레드 글로 남고, 답글은 답글 버튼만 맡는다(요청 ②)', async () => {
+    localStorage.setItem('mindflow_doc_pf6', JSON.stringify(DOC_WITH_PIN));
+    seedComment('pf6', PIN_ID, '첫 글');
+    const { container } = renderEditor('/editor?map=pf6&title=x');
+    const pin = await waitFor(() => {
+      const el = container.querySelector(`[data-comment-pin="${PIN_ID}"]`) as HTMLElement;
+      expect(el).toBeTruthy();
+      return el;
+    });
+    firePointer(pin, 'pointerdown', { clientX: 10, clientY: 10 });
+    firePointer(window, 'pointerup', { clientX: 10, clientY: 10 });
+    fireEvent.click(pin);
+    const panel = await screen.findByLabelText('스레드');
+
+    // 문구도 '스레드 남기기'다(예전 '답글 남기기' — 하는 일과 어긋났다).
+    const box = within(panel).getByLabelText('댓글 입력') as HTMLTextAreaElement;
+    expect(box.placeholder).toContain('스레드 남기기');
+    fireEvent.change(box, { target: { value: '두 번째 스레드' } });
+    fireEvent.click(within(panel).getByRole('button', { name: '남기기' }));
+
+    // 저장된 두 글 모두 뿌리(parentId 없음) → 스레드 블록도 둘이 된다.
+    await waitFor(() => expect(container.querySelectorAll('[data-comment-thread]').length).toBe(2));
+    const rows = JSON.parse(localStorage.getItem('mf_comments') || '[]') as { body: string; parentId?: string }[];
+    expect(rows.map((r) => [r.body, r.parentId ?? null])).toEqual([
+      ['첫 글', null],
+      ['두 번째 스레드', null],
+    ]);
+
+    // 대조군: `답글` 버튼이 여는 칸은 그대로 답글(parentId가 붙는다).
+    const thread = container.querySelector('[data-comment-thread]') as HTMLElement;
+    fireEvent.click(within(thread).getByRole('button', { name: '답글' }));
+    const replyBox = within(thread).getByLabelText('답글 입력') as HTMLTextAreaElement;
+    expect(replyBox.placeholder).toContain('답글 남기기');
+    fireEvent.change(replyBox, { target: { value: '답글이야' } });
+    // 이 스레드에는 '답글' 이름의 버튼이 둘이다(줄의 토글 + 입력칸의 등록) — 뒤가 등록.
+    const replyButtons = within(thread).getAllByRole('button', { name: '답글' });
+    fireEvent.click(replyButtons[replyButtons.length - 1]!);
+    await waitFor(() => {
+      const after = JSON.parse(localStorage.getItem('mf_comments') || '[]') as { body: string; parentId?: string }[];
+      expect(after.find((r) => r.body === '답글이야')?.parentId).toBeTruthy();
+    });
   });
 
   it('초안 핀은 확정된 핀과 같은 모양이고, 커서도 그 핀 그림이다(요청 ③·④)', async () => {

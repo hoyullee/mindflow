@@ -213,9 +213,9 @@ export function CommentThreads({ controller, nodeId, scroll = false, thread = fa
   const threads: Thread[] = forNode
     .filter((c) => !c.parentId)
     .map((root) => ({ root, replies: forNode.filter((r) => r.parentId === root.id) }));
-  /** 핀 = 하나의 스레드(시안 ①) — 아래 입력은 언제나 **그 스레드의 답글**이다.
-   * 새 논의는 핀을 새로 꽂아 시작한다(칸반 카드만 여러 논의를 담는다). */
-  const threadRoot = thread ? (threads[0]?.root ?? null) : null;
+  // 아래 입력은 **언제나 새 스레드 글**이다(요청 ②) — 예전에는 핀에서 이 칸이
+  // 첫 글의 답글로 들어가, 답글 버튼으로 남긴 것과 구별되지 않았다. 답글은
+  // 각 글의 `답글` 버튼이 여는 입력칸만 맡는다(그쪽 문구는 그대로 '답글 남기기').
 
   const submitThread = async (body: string, mentions: CommentMention[]) => {
     const res = await controller.addComment(nodeId, body, mentions.length ? { mentions } : undefined);
@@ -262,11 +262,11 @@ export function CommentThreads({ controller, nodeId, scroll = false, thread = fa
           controller={controller}
           isMobile={isMobile}
           participants={participants}
-          placeholder={threadRoot ? '답글 남기기 · @로 멘션' : '댓글 남기기 · @로 멘션'}
+          placeholder={thread ? '스레드 남기기 · @로 멘션' : '댓글 남기기 · @로 멘션'}
           submitLabel="남기기"
           autoFocus={false}
           footer={{ hint: true, avatar: controller.myName }}
-          onSubmit={(body, mentions) => (threadRoot ? submitReply(threadRoot.id, body, mentions) : submitThread(body, mentions))}
+          onSubmit={(body, mentions) => submitThread(body, mentions)}
         />
       </div>
     </>

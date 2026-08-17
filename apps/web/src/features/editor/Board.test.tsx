@@ -1041,6 +1041,40 @@ describe('화이트보드 에디터', () => {
     expect(map.querySelector('[data-minimap-line="l1"]')).toBeTruthy();
   });
 
+  // 시안(요청 ③) 실측을 계약으로 고정한다: 지도는 카드를 여백 없이 채우고(260×148),
+  // 아래 줄은 구분선 없이 다섯 버튼이 고르게 퍼지며, 바탕엔 도트 격자가 깔린다.
+  // 메모는 **자기 색**(노랑)이고 뷰포트 사각형은 **파랑**이다(강조색이 아니다 —
+  // 시안은 코랄 테마인데도 이 사각형만 파랑이라 뜻이 다른 표시임을 드러낸다).
+  it('미니맵 디자인 계약 — 여백 없는 260×148 지도 · 도트 격자 · 노란 메모 · 파란 뷰포트(시안)', async () => {
+    localStorage.setItem('mindflow_doc_b40', JSON.stringify({ ...BOARD, themeKey: 'coral' }));
+    const { container } = renderEditor('/editor?map=b40&title=x');
+    const map = await waitFor(() => {
+      const el = container.querySelector('[data-testid="minimap"]') as SVGSVGElement | null;
+      expect(el).toBeTruthy();
+      return el as SVGSVGElement;
+    });
+    expect(map.getAttribute('width')).toBe('260');
+    expect(map.getAttribute('height')).toBe('148');
+    // 지도를 감싼 칸에는 여백이 없다(예전 7px 안쪽 여백을 걷어냈다).
+    const wrap = map.parentElement as HTMLElement;
+    expect(wrap.style.padding).toBe('');
+    // 도트 격자
+    expect(map.querySelector('[data-minimap-dots]')?.getAttribute('fill')).toContain('url(#');
+    // 메모는 노랑(회색 점이 아니다) + 둥근 카드
+    const memo = map.querySelector('[data-minimap-float]') as SVGRectElement;
+    expect(memo.getAttribute('fill')?.toLowerCase()).toBe('#ead893');
+    expect(Number(memo.getAttribute('rx'))).toBeGreaterThan(0);
+    // 뷰포트 사각형은 파랑 — 코랄 강조색(#f0663f)이 아니다
+    const vp = map.querySelector('[data-testid="minimap-viewport"]') as SVGRectElement;
+    expect(vp.getAttribute('stroke')?.toLowerCase()).toBe('#7fa6e8');
+    expect(vp.getAttribute('stroke')?.toLowerCase()).not.toBe('#f0663f');
+    // 아래 줄: 버튼 다섯 · 구분선 없음 · 고르게 퍼짐
+    const bar = container.querySelector('[data-zoom-bar]') as HTMLElement;
+    expect(bar.querySelectorAll('button').length).toBe(5);
+    expect(bar.querySelectorAll(':scope > div').length).toBe(0);
+    expect(bar.style.justifyContent).toBe('space-evenly');
+  });
+
   it('폰 board: 삽입(＋)을 누르면 막대가 네 가지 삽입 메뉴로 전환되고, 고르면 도구 목록으로 돌아온다', async () => {
     const restore = mockMatchMedia(true);
     try {
