@@ -629,6 +629,10 @@ describe('댓글 핀 다듬기(프리뷰 후속)', () => {
     expect(pin.style.background).not.toContain('gradient');
     expect(pin.style.outline).toBe('none');
     const idleBg = idleBadge.style.background;
+    // 얼굴은 핀을 거의 채우고(시안 실측 비율), 미선택에서는 이름에서 나온 색이다.
+    const idleAvatar = pin.querySelector('[data-avatar]') as HTMLElement;
+    expect(parseFloat(idleAvatar.style.width)).toBeGreaterThanOrEqual(COMMENT_PIN_W - 8);
+    expect(idleAvatar.style.background).not.toContain('255, 255, 255');
 
     // 선택은 pointerdown이 정한다(클릭은 팝업 열기) — 실제 조작 순서 그대로.
     firePointer(pin, 'pointerdown', { clientX: 10, clientY: 10 });
@@ -639,6 +643,11 @@ describe('댓글 핀 다듬기(프리뷰 후속)', () => {
     expect((container.querySelector('[data-pin-count]') as HTMLElement).style.background).not.toBe(idleBg);
     // 실루엣은 두 상태가 같다(같은 물건이다) — 왼쪽 아래만 각진 둥근 사각.
     expect((container.querySelector('[data-comment-pin]') as HTMLElement).style.borderRadius).toBe(pin.style.borderRadius);
+    // 얼굴은 **반투명 흰 원 + 흰 글자**가 된다(시안 ②) — 파스텔 얼굴에 흰 링을
+    // 두르면 코럴 몸통과 겹쳐 과녁처럼 보였다(제보 "이전과 동일하게 보인다").
+    const selAvatar = container.querySelector('[data-comment-pin]')!.querySelector('[data-avatar]') as HTMLElement;
+    expect(selAvatar.style.background).toContain('255, 255, 255');
+    expect(selAvatar.style.border).toBe('');
   });
 
   it('첫 댓글을 남기면 선택 도구로 돌아온다(요청 ②)', async () => {

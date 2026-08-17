@@ -24,8 +24,12 @@ export const COMMENT_PIN_W = 34;
 const PIN_RADIUS = '15px 15px 15px 3px';
 
 /** 말풍선 윤곽 — 초안 핀·마우스 커서·도구 막대 아이콘이 함께 쓴다(시안 ③).
- * 안이 비어 있어(선) 코럴 바탕 위에서 흰 말풍선으로 또렷하게 읽힌다. */
-export const THREAD_BUBBLE_PATH = 'M21 14.6a2.4 2.4 0 0 1-2.4 2.4H8.2L4 20.6V5.4A2.4 2.4 0 0 1 6.4 3h12.2A2.4 2.4 0 0 1 21 5.4z';
+ * 안이 비어 있어(선) 코럴 바탕 위에서 흰 말풍선으로 또렷하게 읽힌다.
+ *
+ * **둥근 사각이 아니라 타원**이다 — 시안을 5배로 확대해 보면 몸통이 옆으로 퍼진
+ * 타원이고 왼쪽 아래에 짧은 꼬리가 달렸다(예전 사각 말풍선은 딴 물건으로 보였다). */
+export const THREAD_BUBBLE_PATH =
+  'M12.3 4.2C7.7 4.2 4 7.2 4 10.9c0 2.1 1.2 3.9 3.1 5.2L5.7 20.4l4.6-2.3c.65.1 1.32.15 2 .15 4.6 0 8.3-3 8.3-6.7s-3.7-6.7-8.3-6.7Z';
 
 /**
  * 핀 본체의 스타일. `zoom`은 **화면 좌표에 놓이는 핀**(초안)만 쓴다 — 꽂혀 있는 핀은
@@ -70,8 +74,12 @@ export function authorTint(name: string): { bg: string; ink: string } {
   return { bg: mixHex(base, '#ffffff', 0.6), ink: mixHex(base, '#000000', 0.45) };
 }
 
-/** 얼굴 — 이름의 첫 글자. 핀 안(24)과 스레드 목록(26)이 같은 것을 쓴다. */
-export function Avatar({ name, size = 24, ring }: { name: string; size?: number; ring?: string }) {
+/** 얼굴 — 이름의 첫 글자. 핀 안(28)과 스레드 목록(26)이 같은 것을 쓴다.
+ *
+ * `onAccent`: 강조색 몸통 **위**에 얹을 때. 이때는 이름 색을 쓰지 않고 **반투명 흰
+ * 원 + 흰 글자**가 된다(시안 ②) — 파스텔 얼굴을 그대로 두면 코럴 몸통·흰 링과
+ * 겹쳐 과녁처럼 보인다. */
+export function Avatar({ name, size = 24, ring, onAccent = false }: { name: string; size?: number; ring?: string; onAccent?: boolean }) {
   const tint = authorTint(name || '?');
   return (
     <span
@@ -82,8 +90,8 @@ export function Avatar({ name, size = 24, ring }: { name: string; size?: number;
         height: size,
         flexShrink: 0,
         borderRadius: 999,
-        background: tint.bg,
-        color: tint.ink,
+        background: onAccent ? 'rgba(255,255,255,.3)' : tint.bg,
+        color: onAccent ? '#ffffff' : tint.ink,
         border: ring ? `2px solid ${ring}` : undefined,
         boxSizing: 'border-box',
         display: 'inline-flex',
@@ -180,7 +188,9 @@ export function commentPinCursor(accent: string, ink: string): string {
     `<svg xmlns="http://www.w3.org/2000/svg" width="${S}" height="${S}" viewBox="0 0 ${S} ${S}">` +
     `<path d="${body}" fill="${accent}" stroke="#ffffff" stroke-width="2.2" stroke-linejoin="round"/>` +
     // 안쪽: 핀·초안과 **같은 말풍선 윤곽**(시안 ③) — 잉크색으로 그린다.
-    `<g transform="translate(6.6 5.6) scale(0.7)" fill="none" stroke="${ink}" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round">` +
+    // 말풍선의 광학적 중심을 몸통의 둥근 쪽(왼쪽 아래가 각져 무게가 위·오른쪽에
+    // 실린다)에 맞춘다 — 기하학적 중앙에 두면 살짝 아래로 처져 보인다.
+    `<g transform="translate(6.7 4.9) scale(0.7)" fill="none" stroke="${ink}" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round">` +
     `<path d="${THREAD_BUBBLE_PATH}"/></g></svg>`;
   // hotspot = 왼쪽 아래 꼭짓점 → 누른 자리가 핀이 가리키는 지점이 된다.
   return `url("data:image/svg+xml,${encodeURIComponent(svg)}") 2 28, crosshair`;

@@ -86,7 +86,9 @@ export function CommentPinLayer({ controller }: { controller: EditorController }
               opacity: resolved ? 0.72 : 1,
             }}
           >
-            <Avatar name={author} size={24} ring={selected ? th.panel : undefined} />
+            {/* 얼굴이 핀을 거의 채운다(시안 ① 실측 비율 0.81) — 예전 24는 흰 여백이
+                넓어 얼굴이 작은 점처럼 보였다. 고른 핀은 반투명 흰 얼굴(시안 ②). */}
+            <Avatar name={author} size={28} onAccent={selected} />
             {resolved ? <CommentPinResolved th={th} /> : <CommentPinCount count={count} th={th} onAccent={selected} />}
           </div>
         );

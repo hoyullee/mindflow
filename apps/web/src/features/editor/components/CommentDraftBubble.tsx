@@ -62,7 +62,20 @@ export function CommentDraftBubble({ controller }: { controller: EditorControlle
     <>
       {/* 초안 핀 — 곧 문서에 들어갈 그 핀과 **완전히 같은 모양**이다(요청 ④).
           예전에는 더 작고 점선 테두리라 딴 물건처럼 보였다. */}
-      <div aria-hidden data-comment-draft-pin style={{ position: 'absolute', left: p.x, top: p.y, zIndex: 129, pointerEvents: 'none', ...commentPinBoxStyle(th, true, controller.zoom) }}>
+      <div
+        aria-hidden
+        data-comment-draft-pin
+        style={{
+          position: 'absolute',
+          left: p.x,
+          top: p.y,
+          zIndex: 129,
+          pointerEvents: 'none',
+          // 흰 테두리 없이 **몸통 + 후광**만(시안 ③) — 테두리를 두르면 코럴 몸통이
+          // 잘려 보이고 꽂혀 있는 핀(고른 상태)과 다른 물건처럼 읽힌다.
+          ...commentPinBoxStyle(th, true, controller.zoom, 'accent', false),
+        }}
+      >
         <CommentPinGlyph />
       </div>
 
