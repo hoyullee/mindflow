@@ -27,7 +27,16 @@ export function pinScreenPos(vp: Viewportish, at: { x: number; y: number }): { x
  * 왼쪽 아래 꼭짓점이 지점) 폭을 모르면 상자가 핀 위에 걸터앉는다. 개수를 본체 밖
  * 배지로 뺀 것도 이 폭을 상수로 만들기 위해서다(`commentPinShape`).
  */
-export function anchoredBoxPos(vp: Viewportish, at: { x: number; y: number }, w: number, h: number, gapPx?: number): { left: number; top: number } {
+export function anchoredBoxPos(
+  vp: Viewportish,
+  at: { x: number; y: number },
+  w: number,
+  h: number,
+  gapPx?: number,
+  /** 화면 **아래쪽에 비워 둘 높이** — 보드의 하단 도구 막대처럼 이 상자보다 위에
+   * 그려지는 크롬이 있으면 그만큼 자리를 내주지 않으면 상자가 그 아래로 깔린다. */
+  bottomInset = 0,
+): { left: number; top: number } {
   const p = pinScreenPos(vp, at);
   // 핀은 팬/줌 레이어 안이라 화면에서는 배율만큼 커진다 — 간격도 함께 커져야
   // 확대한 캔버스에서 팝업이 핀을 덮지 않는다.
@@ -45,6 +54,6 @@ export function anchoredBoxPos(vp: Viewportish, at: { x: number; y: number }, w:
   if (clampedLeft < p.x + gap && clampedLeft + w > p.x - 12) top = p.y + 10;
   return {
     left: clampedLeft,
-    top: Math.max(pad, Math.min(top, Math.max(pad, vp.vh - h - pad))),
+    top: Math.max(pad, Math.min(top, Math.max(pad, vp.vh - h - pad - bottomInset))),
   };
 }

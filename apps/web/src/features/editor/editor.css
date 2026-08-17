@@ -287,6 +287,42 @@
   height: 0;
 }
 
+/* 스레드 팝업의 목록 스크롤 — 팝업이 **내용만큼 자라고** 화면을 넘을 때만
+   스크롤이 생긴다(요청). 기본 스크롤바(10px + Windows의 화살표 버튼)는 팝업의
+   둥근 모서리를 가로질러 디자인을 깨므로 얇은 알약 썸으로 바꾼다: 평소엔 옅고
+   호버에서 또렷해진다. 색은 패널이 `--mf-cmt-sb`로 내려 준다 — 에디터 테마는
+   인라인 값이라 CSS가 알 수 없다(홈의 `--mf-scroll`과 같은 방식).
+   ⚠️ 표준 속성(scrollbar-width/color)은 Firefox 전용으로 격리한다 — 크롬 121+는
+   그 속성이 지정된 요소에서 ::-webkit-scrollbar 커스텀을 통째로 무시한다(#391). */
+.mf-cmt-scroll::-webkit-scrollbar {
+  width: 8px;
+}
+.mf-cmt-scroll::-webkit-scrollbar-button {
+  display: none;
+  width: 0;
+  height: 0;
+}
+.mf-cmt-scroll::-webkit-scrollbar-track {
+  background: transparent;
+  margin: 8px 0;
+}
+.mf-cmt-scroll::-webkit-scrollbar-thumb {
+  background: var(--mf-cmt-sb, rgba(46, 42, 38, 0.16));
+  border: 2px solid transparent;
+  background-clip: padding-box;
+  border-radius: 999px;
+}
+.mf-cmt-scroll:hover::-webkit-scrollbar-thumb {
+  background: var(--mf-cmt-sb-hover, rgba(46, 42, 38, 0.3));
+  background-clip: padding-box;
+}
+@supports not selector(::-webkit-scrollbar) {
+  .mf-cmt-scroll {
+    scrollbar-width: thin;
+    scrollbar-color: var(--mf-cmt-sb, rgba(46, 42, 38, 0.16)) transparent;
+  }
+}
+
 /* 인라인 멘션(주제/메모 본문) — 링크와 같은 색 파이프라인(--mf-link, 도형이
    글자색 밝기로 정해 내려 줌)을 타되 **밑줄은 없다**: 밑줄 파랑=링크,
    민짜 파랑=멘션. 인라인 color가 아니라 클래스인 이유는 .mf-link와 동일 —

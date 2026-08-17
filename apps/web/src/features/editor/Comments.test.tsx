@@ -679,6 +679,47 @@ describe('댓글 핀 다듬기(프리뷰 후속)', () => {
     await waitFor(() => expect(within(panel).getByText('첫 마디')).toBeTruthy());
   });
 
+  // 요청: 팝업은 **내용만큼** 자라고 화면을 벗어나지 않는 선에서 멈춘다. 예전에는
+  // 420px 고정 상한이라 글이 조금만 늘어도 그 안에서 스크롤이 났다.
+  it('스레드 팝업은 내용만큼 자라고 상한은 화면 높이에서 나온다 — 목록에 얇은 스크롤바(요청)', async () => {
+    localStorage.setItem('mindflow_doc_pf7', JSON.stringify(DOC_WITH_PIN));
+    for (let i = 0; i < 12; i += 1) seedComment('pf7', PIN_ID, `${i}번째 글 — 길게 적어 목록이 넘치게 한다`.repeat(2));
+    const { container } = renderEditor('/editor?map=pf7&title=x');
+    const pin = await waitFor(() => {
+      const el = container.querySelector(`[data-comment-pin="${PIN_ID}"]`) as HTMLElement;
+      expect(el).toBeTruthy();
+      return el;
+    });
+    firePointer(pin, 'pointerdown', { clientX: 10, clientY: 10 });
+    firePointer(window, 'pointerup', { clientX: 10, clientY: 10 });
+    fireEvent.click(pin);
+    const panel = await screen.findByLabelText('스레드');
+
+    // 상한이 420 고정이 아니다 — 화면 높이에서 나온 값(여백을 뺀 만큼).
+    expect(panel.style.maxHeight).not.toBe('420px');
+    expect(parseFloat(panel.style.maxHeight)).toBeGreaterThan(500);
+    // 높이 자체는 인라인으로 고정하지 않는다(내용이 정한다).
+    expect(panel.style.height).toBe('');
+    // 스크롤은 목록에서만 나고, 얇은 스크롤바 클래스와 그 색 변수가 붙는다.
+    const list = panel.querySelector('[data-comment-list]') as HTMLElement;
+    expect(list.classList.contains('mf-cmt-scroll')).toBe(true);
+    expect(list.style.overflowY).toBe('auto');
+    expect(panel.style.getPropertyValue('--mf-cmt-sb')).toBeTruthy();
+  });
+
+  it('스레드 팝업 스크롤바 CSS 계약 — 화살표 버튼 없음, 표준 속성은 Firefox 전용으로 격리', async () => {
+    const { readFileSync, existsSync } = await import('node:fs');
+    // vitest의 import.meta.url이 file: 스킴이 아닐 수 있어 cwd 기준 경로를 함께 본다(#389).
+    const cssPath = ['src/features/editor/editor.css', 'apps/web/src/features/editor/editor.css'].find((f) => existsSync(f))!;
+    const css = readFileSync(cssPath, 'utf8');
+    expect(css).toMatch(/\.mf-cmt-scroll::-webkit-scrollbar\s*\{[^}]*width:\s*8px/);
+    expect(css).toMatch(/\.mf-cmt-scroll::-webkit-scrollbar-button\s*\{[^}]*display:\s*none/);
+    expect(css).toMatch(/\.mf-cmt-scroll::-webkit-scrollbar-thumb\s*\{[^}]*border-radius:\s*999px/);
+    // 크롬 121+는 표준 속성이 지정된 요소에서 웹킷 커스텀을 통째로 무시한다(#391).
+    expect(css).toMatch(/@supports not selector\(::-webkit-scrollbar\)\s*\{\s*\.mf-cmt-scroll/);
+    expect(css).not.toMatch(/\n\.mf-cmt-scroll \{/);
+  });
+
   // 요청 ②: 아래 입력칸은 답글이 아니라 **새 스레드 글**이다. 예전에는 이 칸이 첫
   // 글의 답글로 들어가, `답글` 버튼으로 남긴 것과 결과가 구별되지 않았다.
   it('팝업 아래 입력칸은 새 스레드 글로 남고, 답글은 답글 버튼만 맡는다(요청 ②)', async () => {

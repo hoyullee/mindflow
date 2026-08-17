@@ -10,7 +10,7 @@
 // 해결 표시는 뿌리에만 있고, 해결된 스레드는 접힌 구획으로 내려간다 — 남은 논의만
 // 눈에 들어오게(배지도 미해결 스레드만 센다).
 
-import { useEffect, useMemo, useRef, useState, type CSSProperties, type KeyboardEvent, type ReactNode } from 'react';
+import { useEffect, useLayoutEffect, useMemo, useRef, useState, type CSSProperties, type KeyboardEvent, type ReactNode } from 'react';
 import { ROOT_ID } from '@mindflow/mindmap-core';
 import type { EditorController } from '../useEditorState';
 import type { CommentMention, DocComment, ShareParticipant } from '../../../adapters/ports';
@@ -20,6 +20,7 @@ import { useIsTouchDevice } from '../../../hooks/useMediaQuery';
 import { useSoftKeyboardOpen } from '../../../hooks/useKeyboardInset';
 import { CARD_SHADOW, MONO_FONT, glassCard } from '../chrome';
 import { anchoredBoxPos } from './commentAnchor';
+import { BOARD_BAR_LIFT } from './BoardToolbar';
 import { Avatar } from './commentPinShape';
 import { formatFullDateTime, formatLastEdited } from '../../home/timeFormat';
 import { useIsMobile } from '../../../hooks/useMediaQuery';
@@ -52,7 +53,10 @@ export function commentTargetLabel(doc: EditorController['doc'], id: string): st
 }
 
 const PANEL_W = 326;
-const PANEL_MAX_H = 420;
+/** 높이를 아직 재지 못한 첫 프레임에 쓰는 어림값(곧 실측으로 교정된다). */
+const PANEL_H_GUESS = 300;
+/** 화면 위·아래로 남겨 두는 여유 — 팝업이 화면 끝에 딱 붙지 않게. */
+const PANEL_V_MARGIN = 24;
 
 /**
  * 데스크톱 팝업의 자리 — 대상이 **핀이면 그 핀 옆**(요청 ⑦: 객체 근처에), 아니면
@@ -60,11 +64,14 @@ const PANEL_MAX_H = 420;
  *
  * 핀 옆에 두는 이유는 단순하다: 캔버스에 여럿 꽂힌 핀 중 **어느 것의 논의인지**를
  * 화면 구석의 패널은 말해 주지 못한다(핀에는 이름도 없다 — 그래서 부제도 없앴다).
+ *
+ * 높이는 **실측값**을 넘긴다: 팝업이 내용만큼 자라므로(요청) 고정값으로 자리를
+ * 잡으면 짧은 스레드는 필요 이상으로 위로 밀리고, 긴 스레드는 화면을 넘는다.
  */
-function panelPos(controller: EditorController): CSSProperties {
+function panelPos(controller: EditorController, h: number, bottomInset: number): CSSProperties {
   const pin = (controller.doc.commentPins ?? []).find((p) => p.id === controller.commentsNodeId);
   if (!pin || !controller.vw || !controller.vh) return { right: 16, top: 80 };
-  const { left, top } = anchoredBoxPos({ pan: controller.pan, zoom: controller.zoom, vw: controller.vw, vh: controller.vh }, pin, PANEL_W, PANEL_MAX_H);
+  const { left, top } = anchoredBoxPos({ pan: controller.pan, zoom: controller.zoom, vw: controller.vw, vh: controller.vh }, pin, PANEL_W, h, undefined, bottomInset);
   return { left, top };
 }
 
@@ -73,10 +80,28 @@ export function CommentPanel({ controller }: { controller: EditorController }) {
   const isMobile = useIsMobile();
   const nodeId = controller.commentsNodeId;
   const open = controller.commentsOpen;
+  // 팝업 높이는 **내용이 정한다**(요청) — 자리를 잡으려면 그 값을 알아야 하므로
+  // 페인트 전에 재고(useLayoutEffect), 글이 늘어날 때마다 다시 잰다.
+  const panelRef = useRef<HTMLElement | null>(null);
+  const [panelH, setPanelH] = useState(PANEL_H_GUESS);
+  useLayoutEffect(() => {
+    const el = panelRef.current;
+    if (!el || isMobile || !open) return;
+    const measure = (): void => setPanelH(el.offsetHeight || PANEL_H_GUESS);
+    measure();
+    // jsdom에는 ResizeObserver가 없다 — 첫 실측만으로도 자리는 맞는다.
+    if (typeof ResizeObserver === 'undefined') return;
+    const ro = new ResizeObserver(measure);
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, [isMobile, open, nodeId, controller.comments.length]);
 
   if (!open) return null;
 
   const title = commentTargetLabel(controller.doc, nodeId);
+  /** 보드의 하단 도구 막대는 z가 이 팝업보다 높다 — 그 높이만큼 자리를 내준다
+   * (팝업이 화면 아래까지 자라면 막대가 입력칸을 덮는다). */
+  const bottomReserve = controller.isBoard && !controller.readOnly ? BOARD_BAR_LIFT : 0;
 
   const wrap: CSSProperties = isMobile
     ? {
@@ -100,8 +125,11 @@ export function CommentPanel({ controller }: { controller: EditorController }) {
         position: 'absolute',
         // 디자인 원본의 댓글 패널(326) — 유리질 카드 + 더 둥근 모서리.
         width: PANEL_W,
-        ...panelPos(controller),
-        maxHeight: PANEL_MAX_H,
+        ...panelPos(controller, panelH, bottomReserve),
+        // 높이는 내용만큼 자라고, **화면을 벗어나지 않는 선**에서 멈춘다(요청) —
+        // 예전에는 420px 고정 상한이라 짧은 글에도 그 안에서 스크롤이 났다.
+        // 보드에서는 하단 도구 막대(이 팝업보다 위에 그려진다)의 자리를 비워 둔다.
+        maxHeight: Math.max(220, (controller.vh || 800) - PANEL_V_MARGIN * 2 - bottomReserve),
         ...glassCard(th, 0.97),
         borderRadius: 18,
         boxShadow: CARD_SHADOW,
@@ -119,7 +147,17 @@ export function CommentPanel({ controller }: { controller: EditorController }) {
   const resolved = !!root?.resolved;
 
   return (
-    <aside style={wrap} data-comment-panel aria-label={pinThread ? '스레드' : '댓글'}>
+    <aside
+      ref={panelRef}
+      style={{
+        ...wrap,
+        // 스크롤바 색은 CSS가 알 수 없는 인라인 테마값이라 변수로 내려 준다.
+        ['--mf-cmt-sb' as string]: hexA(th.text, 0.16),
+        ['--mf-cmt-sb-hover' as string]: hexA(th.text, 0.32),
+      }}
+      data-comment-panel
+      aria-label={pinThread ? '스레드' : '댓글'}
+    >
       <header style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '11px 12px 11px 16px', borderBottom: `1px solid ${th.border}` }}>
         <div style={{ flex: '1 1 auto', minWidth: 0, display: 'flex', alignItems: 'center', gap: 7 }}>
           <span style={{ fontSize: 14, fontWeight: 800, letterSpacing: '-.01em', color: th.text }}>{pinThread ? '스레드' : '댓글'}</span>
@@ -231,7 +269,11 @@ export function CommentThreads({ controller, nodeId, scroll = false, thread = fa
 
   return (
     <>
-      <div style={scroll ? { flex: '1 1 auto', minHeight: 0, overflowY: 'auto', padding: '4px 12px 10px' } : { padding: '2px 0 6px' }} data-comment-list>
+      <div
+        className={scroll ? 'mf-cmt-scroll' : undefined}
+        style={scroll ? { flex: '1 1 auto', minHeight: 0, overflowY: 'auto', padding: '4px 12px 10px' } : { padding: '2px 0 6px' }}
+        data-comment-list
+      >
         {controller.commentsLoading && !threads.length ? (
           <div style={{ fontSize: 12, color: th.subtext, padding: '12px 0' }}>불러오는 중…</div>
         ) : threads.length ? (
