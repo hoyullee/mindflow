@@ -337,25 +337,6 @@
   color: var(--accent) !important;
 }
 
-/* 메모 위 빠른 동작(복제·삭제) — 평소엔 숨어 있다가 마우스를 얹거나 고른 동안
-   뜬다. 터치 기기에는 hover가 없으므로 처음부터 보인다(고른 메모에만). */
-.mf-float-grip {
-  opacity: 0;
-  transition: opacity 0.15s ease;
-}
-[data-float-id]:hover .mf-float-grip,
-.mf-float-grip[data-visible='true'] {
-  opacity: 1;
-}
-@media (hover: none) {
-  .mf-float-grip {
-    opacity: 0;
-  }
-  .mf-float-grip[data-visible='true'] {
-    opacity: 1;
-  }
-}
-
 /* 가로 스크롤 묶음(폰 도구 막대의 색 스와치) — 막대가 얇아 스크롤바가 들어갈
    자리가 없다. 스크롤 자체는 그대로 두고 막대만 감춘다. */
 .mf-noscrollbar {

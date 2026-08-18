@@ -137,18 +137,22 @@ export function BoardToolbar({ controller }: { controller: EditorController }) {
     );
   };
 
-  const actionBtn = (label: string, icon: JSX.Element, run: () => void, disabled?: boolean) => (
+  // `active`는 **도구처럼 켜지는 동작**을 위한 것이다(댓글) — 눌러도 곧바로
+  // 만들지 않고 다음 클릭을 기다리므로, 지금 켜져 있음이 보여야 한다.
+  const actionBtn = (label: string, icon: JSX.Element, run: () => void, disabled?: boolean, active?: boolean) => (
     <button
       key={label}
       type="button"
       className="mf-ed-btn"
       aria-label={label}
+      aria-pressed={active}
       title={label}
       disabled={disabled}
       onClick={run}
-      style={{ ...btnBase, background: 'transparent', color: th.subtext, opacity: disabled ? 0.38 : 1, cursor: disabled ? 'default' : 'pointer' }}
+      style={{ ...btnBase, background: active ? accentGradient(th) : 'transparent', color: active ? th.accentInk : th.subtext, opacity: disabled ? 0.38 : 1, cursor: disabled ? 'default' : 'pointer' }}
     >
       {icon}
+      {active && <span aria-hidden style={{ position: 'absolute', bottom: 4, left: '50%', transform: 'translateX(-50%)', width: 4, height: 4, borderRadius: 999, background: th.accentInk }} />}
     </button>
   );
 
@@ -235,16 +239,20 @@ export function BoardToolbar({ controller }: { controller: EditorController }) {
       </svg>,
       insert(controller.addZoneAt),
     ),
-    // 댓글 핀 — 다른 객체와 같은 줄에서 만든다(요청). 꽂으면 그 핀의 팝업이 열린다.
+    // 댓글 — 다른 삽입 버튼과 달리 **곧바로 만들지 않는다**(요청): 누르면 도구가
+    // 켜지고(커서가 바뀐다) 캔버스를 누른 자리에 첫 댓글 말풍선이 뜬다. 핀은 그
+    // 댓글이 저장된 뒤에 생긴다(Figma와 같은 순서).
     ...(controller.canComment
       ? [
           actionBtn(
             '댓글 추가',
             <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-              <path d="M21 12a8 8 0 0 1-8 8H8l-4 3v-6a8 8 0 0 1 8-8h1a8 8 0 0 1 8 3z" />
-              <path d="M8.5 11.5h7M8.5 14.5h4" />
+              <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" />
+              <path d="M7.5 8.5h9M7.5 12h5.5" />
             </svg>,
-            insert(controller.addCommentPinAt),
+            () => controller.setCommentTool(!controller.commentTool),
+            false,
+            controller.commentTool,
           ),
         ]
       : []),

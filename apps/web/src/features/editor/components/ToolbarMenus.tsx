@@ -244,22 +244,6 @@ export function ViewMenu({ controller, onDone, isMobile }: { controller: EditorC
           }}
         />
       )}
-      {/* 댓글 — 배지는 댓글이 생긴 뒤에만 뜨므로, 첫 댓글을 남길 길은 여기다.
-          링크로 연 사람에게는 서버가 댓글을 내주지 않아 항목도 두지 않는다(0020). */}
-      {controller.canComment && (
-        <MenuItem
-          theme={th}
-          isMobile={isMobile}
-          icon={<CommentIcon />}
-          label="댓글"
-          active={controller.commentsOpen}
-          onClick={() => {
-            if (controller.commentsOpen) controller.closeComments();
-            else controller.openComments();
-            onDone();
-          }}
-        />
-      )}
       {/* 맞춤 도우미(요청) — 메모·이미지·영역을 끌면 **이웃의 기준선**(안내선)에
           먼저, 없으면 격자에 붙는다. 토글 하나가 둘을 함께 켜고 끈다(사용자에겐
           "손이 자석처럼 붙는다"는 한 가지 감각이다). 드래그 중 Alt는 그 순간만 끔. */}
@@ -371,7 +355,10 @@ export function MoreMenu({ controller, onDone, isMobile }: { controller: EditorC
           )}
         </>
       )}
-      {controller.canComment && (
+      {/* 댓글 — **칸반만** 여기서 연다(대상은 고른 카드, 없으면 보드 전체).
+          캔버스(맵·화이트보드)의 댓글은 **댓글 핀**에만 붙으므로(요청) 대상 없이
+          여는 항목은 뜻이 없다 — 핀을 누르면 그 자리의 논의가 열린다. */}
+      {controller.canComment && controller.isKanban && (
         <MenuItem theme={th} isMobile={isMobile} icon={<CommentIcon />} label="댓글" active={controller.commentsOpen} onClick={() => { if (controller.commentsOpen) controller.closeComments(); else controller.openComments(); onDone(); }} />
       )}
       {/* 내보내기는 보기 전용에서 감춘다(요청) — 데스크톱 툴바와 같은 규칙. */}

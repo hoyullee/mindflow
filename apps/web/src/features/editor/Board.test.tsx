@@ -1871,16 +1871,13 @@ describe('화이트보드 디자인 이식', () => {
     mockMatchMedia(false);
   });
 
-  it('메모에 복제·삭제 빠른 동작이 붙는다(평소엔 숨어 있다)', async () => {
+  // 요청: 메모 위의 복제·삭제 빠른 동작은 걷어냈다(굳이 필요하지 않다) — 같은 동작은
+  // 우클릭 메뉴·단축키(Ctrl+D·Delete)에 그대로 있다.
+  it('메모에는 복제·삭제 빠른 동작이 없다(요청)', async () => {
     localStorage.setItem('mindflow_doc_bdz3', JSON.stringify(BOARD));
     const { container } = renderEditor('/editor?map=bdz3&title=보드');
     await waitFor(() => expect(container.querySelector('[data-float-id="bf1"]')).toBeTruthy());
-    const grip = container.querySelector('[data-float-grip]') as HTMLElement;
-    expect(grip).toBeTruthy();
-    expect(grip.getAttribute('data-visible')).toBeNull(); // 고르기 전에는 숨김 상태
-
-    // 삭제를 누르면 메모가 사라진다(포인터는 삼켜져 드래그로 새지 않는다).
-    fireEvent.click(within(grip).getByLabelText('메모 삭제'));
-    await waitFor(() => expect(container.querySelector('[data-float-id="bf1"]')).toBeNull());
+    expect(container.querySelector('[data-float-grip]')).toBeNull();
+    expect(screen.queryByLabelText('메모 삭제')).toBeNull();
   });
 });
