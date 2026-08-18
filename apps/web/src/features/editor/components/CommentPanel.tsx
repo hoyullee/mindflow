@@ -237,15 +237,47 @@ export function CommentPanel({ controller }: { controller: EditorController }) {
  * 높이 안에서 목록만 스크롤하고(`scroll`), 모달 안에서는 흐름에 따라 늘어난다
  * (모달 자신이 스크롤한다).
  */
+/** 그 글이 **보이도록** 목록을 옮긴다(제보: 길게 쓴 답글이 화면 밖에 남았다).
+ *
+ * 규칙 둘: 글이 보이는 높이보다 길면 **머리**를 위에 두고(끝으로 가면 꼬리만
+ * 보여 읽을 수가 없다), 짧으면 아래가 걸리지 않을 만큼만 민다. 레이아웃을 잴 수
+ * 없으면(테스트 환경) 예전처럼 끝으로 간다. */
+function revealComment(list: HTMLElement, id: string, scroll: boolean): void {
+  const el = list.querySelector(`[data-comment-item="${id}"]`) as HTMLElement | null;
+  if (!el) return;
+  if (!scroll) {
+    // 카드 상세 모달은 바깥이 스크롤한다 — 어디가 스크롤 상자인지 모르므로 맡긴다.
+    const tall = el.offsetHeight > (typeof window !== 'undefined' ? window.innerHeight : 0);
+    el.scrollIntoView?.({ block: tall ? 'start' : 'nearest' });
+    return;
+  }
+  const view = list.clientHeight;
+  if (!view) {
+    list.scrollTop = list.scrollHeight;
+    return;
+  }
+  const r = el.getBoundingClientRect();
+  const lr = list.getBoundingClientRect();
+  const top = r.top - lr.top + list.scrollTop;
+  const PAD = 8;
+  const target = r.height + PAD * 2 > view ? top - PAD : top + r.height + PAD - view;
+  list.scrollTop = Math.max(0, Math.min(target, Math.max(0, list.scrollHeight - view)));
+}
+
 export function CommentThreads({ controller, nodeId, scroll = false, thread = false }: { controller: EditorController; nodeId: string; scroll?: boolean; thread?: boolean }) {
   const th = controller.uiTheme;
   const isMobile = useIsMobile();
   const [replyTo, setReplyTo] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const listRef = useRef<HTMLDivElement | null>(null);
-  /** 방금 **내가** 남긴 글로 목록을 옮기기 위한 표시(요청 ②). 내 제출에만 세운다 —
-   * 남의 글이 실시간으로 도착할 때마다 읽던 자리가 끝으로 튀면 안 된다. */
-  const scrollToEndRef = useRef(false);
+  /** 방금 **내가** 남긴 글로 목록을 옮기기 위한 표시(요청 ②) — 제출 **직전**의 id
+   * 집합이다. 목록이 갱신되면 그중에 없던 글이 내가 쓴 것이므로, 그 글을 찾아
+   * 그리로 옮긴다. 내 제출에만 세운다 — 남의 글이 실시간으로 도착할 때마다 읽던
+   * 자리가 튀면 안 된다.
+   *
+   * 예전에는 "목록 끝으로"였는데 두 가지가 어긋났다(제보): 답글은 스레드 안에
+   * 끼어들어 **끝이 아니고**, 아주 긴 글은 끝으로 가면 그 글의 **꼬리**가 보인다. */
+  const focusAfterRef = useRef<Set<string> | null>(null);
   /** 멘션 자동완성 대상 — 이 문서의 참가자(소유자 + 초대받은 사람). */
   const participants = useCommentParticipants(controller.docId);
 
@@ -255,16 +287,24 @@ export function CommentThreads({ controller, nodeId, scroll = false, thread = fa
     setError(null);
   }, [nodeId]);
 
-  const forNodeCount = controller.comments.filter((c) => c.nodeId === nodeId).length;
   useLayoutEffect(() => {
-    if (!scrollToEndRef.current) return;
-    scrollToEndRef.current = false;
+    const before = focusAfterRef.current;
+    if (!before) return;
     const list = listRef.current;
     if (!list) return;
-    // 패널은 목록 자신이 스크롤하고(scroll), 카드 상세 모달은 바깥이 스크롤한다.
-    if (scroll) list.scrollTop = list.scrollHeight;
-    else list.lastElementChild?.scrollIntoView?.({ block: 'nearest' });
-  }, [forNodeCount, scroll]);
+    const added = controller.comments.find((c) => c.nodeId === nodeId && !before.has(c.id));
+    if (!added) return; // 아직 목록이 갱신되지 않았다 — 다음 렌더에서 다시 본다
+    focusAfterRef.current = null;
+    // 자리는 **두 번** 잡는다: 이 커밋에서 한 번, 다음 프레임에 한 번. 패널은 자기
+    // 높이를 재서 상태로 올리므로(위 `panelH`) 이 시점의 목록 높이가 최종이 아니고,
+    // 그러면 `scrollTop`이 옛 높이로 잘려 끝에 못 닿는다.
+    const run = (): void => revealComment(list, added.id, scroll);
+    run();
+    const raf = typeof requestAnimationFrame === 'function' ? requestAnimationFrame(run) : null;
+    return () => {
+      if (raf !== null) cancelAnimationFrame(raf);
+    };
+  }, [controller.comments, nodeId, scroll]);
 
   const forNode = controller.comments.filter((c) => c.nodeId === nodeId);
   const threads: Thread[] = forNode
@@ -274,19 +314,27 @@ export function CommentThreads({ controller, nodeId, scroll = false, thread = fa
   // 첫 글의 답글로 들어가, 답글 버튼으로 남긴 것과 구별되지 않았다. 답글은
   // 각 글의 `답글` 버튼이 여는 입력칸만 맡는다(그쪽 문구는 그대로 '답글 남기기').
 
+  /** 제출 직전의 id 집합을 남긴다 — 목록이 갱신된 뒤 "없던 글"이 곧 내가 쓴 글이다.
+   * **보내기 전에** 세워야 한다: `addComment`가 돌아올 때는 목록이 이미 갱신돼 있어
+   * 그 뒤에 세우면 효과가 다시 돌 일이 없다. */
+  const markMine = (): void => {
+    focusAfterRef.current = new Set(controller.comments.filter((c) => c.nodeId === nodeId).map((c) => c.id));
+  };
   const submitThread = async (body: string, mentions: CommentMention[]) => {
-    // 표시는 **보내기 전에** 세운다 — `addComment`가 돌아올 때는 목록이 이미 갱신돼
-    // 있어서, 그 뒤에 세우면 효과가 다시 돌 일이 없다(끝으로 가지 않는다).
-    scrollToEndRef.current = true;
+    markMine();
     const res = await controller.addComment(nodeId, body, mentions.length ? { mentions } : undefined);
     setError(res.error ?? null);
-    if (res.error) scrollToEndRef.current = false;
+    if (res.error) focusAfterRef.current = null;
     return !res.error;
   };
   const submitReply = async (parentId: string, body: string, mentions: CommentMention[]) => {
+    // 답글도 같은 길을 쓴다(제보) — 예전에는 답글에 아예 표시를 세우지 않아, 길게
+    // 쓴 답글이 화면 밖에 남았다. 답글은 스레드 안에 끼어드니 "끝으로"로는 못 찾는다.
+    markMine();
     const res = await controller.addComment(nodeId, body, { parentId, ...(mentions.length ? { mentions } : {}) });
     setError(res.error ?? null);
-    if (!res.error) setReplyTo(null);
+    if (res.error) focusAfterRef.current = null;
+    else setReplyTo(null);
     return !res.error;
   };
 

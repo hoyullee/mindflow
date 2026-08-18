@@ -793,6 +793,53 @@ describe('댓글 핀 다듬기(프리뷰 후속)', () => {
     }
   });
 
+  // 제보: 아주 긴 답글을 남기면 그 답글로 스크롤이 가지 않았다. 원인 둘 — 답글에는
+  // 표시를 아예 세우지 않았고(끝으로도 안 갔다), "끝으로"는 긴 글의 **꼬리**를
+  // 보여 준다. 이제 새 글을 찾아 그 글이 보이도록 옮긴다(길면 머리를 위에).
+  it('길게 쓴 답글을 남기면 그 답글의 머리가 보이게 목록을 옮긴다(제보)', async () => {
+    localStorage.setItem('mindflow_doc_pf9', JSON.stringify(DOC_WITH_PIN));
+    for (let i = 0; i < 6; i += 1) seedComment('pf9', PIN_ID, `${i}번째 글`);
+    const { container } = renderEditor('/editor?map=pf9&title=x');
+    const pin = await waitFor(() => {
+      const el = container.querySelector(`[data-comment-pin="${PIN_ID}"]`) as HTMLElement;
+      expect(el).toBeTruthy();
+      return el;
+    });
+    firePointer(pin, 'pointerdown', { clientX: 10, clientY: 10 });
+    firePointer(window, 'pointerup', { clientX: 10, clientY: 10 });
+    fireEvent.click(pin);
+    const panel = await screen.findByLabelText('스레드');
+    const thread = container.querySelector('[data-comment-thread]') as HTMLElement;
+    fireEvent.click(within(thread).getByRole('button', { name: '답글' }));
+    await waitFor(() => expect(thread.querySelector('[data-reply-composer]')).toBeTruthy());
+
+    // jsdom은 레이아웃이 없다 — 목록 높이 300, 새 답글은 그보다 긴 600에 목록
+    // 좌표 940에 있다고 심는다(스크롤에 따라 움직이는 진짜 rect처럼).
+    const LONG = '아주 긴 답글'.repeat(40);
+    const list = panel.querySelector('[data-comment-list]') as HTMLElement;
+    let scrolledTo = 0;
+    Object.defineProperty(list, 'clientHeight', { value: 300, configurable: true });
+    Object.defineProperty(list, 'scrollHeight', { value: 1600, configurable: true });
+    Object.defineProperty(list, 'scrollTop', { configurable: true, get: () => scrolledTo, set: (v: number) => { scrolledTo = v; } });
+    const origRect = Element.prototype.getBoundingClientRect;
+    Element.prototype.getBoundingClientRect = function (this: Element) {
+      if (this === list) return { top: 0, height: 300, left: 0, right: 0, bottom: 300, width: 0, x: 0, y: 0, toJSON: () => ({}) } as DOMRect;
+      if (this instanceof HTMLElement && this.dataset.commentItem && this.textContent?.includes(LONG)) {
+        return { top: 940 - scrolledTo, height: 600, left: 0, right: 0, bottom: 0, width: 0, x: 0, y: 0, toJSON: () => ({}) } as DOMRect;
+      }
+      return origRect.call(this) as DOMRect;
+    } as typeof Element.prototype.getBoundingClientRect;
+    try {
+      fireEvent.change(within(thread).getByLabelText('답글 입력'), { target: { value: LONG } });
+      const submits = within(thread).getAllByRole('button', { name: '답글' });
+      fireEvent.click(submits[submits.length - 1] as HTMLElement);
+      // 머리(940)가 위에서 8px 아래에 오게 — 끝(1300)으로 가지 않는다.
+      await waitFor(() => expect(scrolledTo).toBe(932));
+    } finally {
+      Element.prototype.getBoundingClientRect = origRect;
+    }
+  });
+
   // 요청 ②: 아래 입력칸은 답글이 아니라 **새 스레드 글**이다. 예전에는 이 칸이 첫
   // 글의 답글로 들어가, `답글` 버튼으로 남긴 것과 결과가 구별되지 않았다.
   it('팝업 아래 입력칸은 새 스레드 글로 남고, 답글은 답글 버튼만 맡는다(요청 ②)', async () => {
