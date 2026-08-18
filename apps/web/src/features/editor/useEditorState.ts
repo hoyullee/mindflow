@@ -6002,10 +6002,21 @@ export function useEditorState(): EditorController {
       }
 
       if (inEditable) return;
-      // 화이트보드 도구 전환 — V(선택)·P(펜)·H(형광펜)·E(지우개)·C(댓글). 수정 키가 없을 때만이라
+      // 켜 둔 댓글 도구는 Escape로 끈다 — 화이트보드에서는 도구 막대가 이 일을
+      // 맡지만(BoardToolbar) 맵에는 막대가 없어서 여기서 받는다.
+      if (e.key === 'Escape' && boardToolRef.current === 'comment') {
+        e.preventDefault();
+        setBoardTool('select');
+        return;
+      }
+      // 캔버스 도구 전환 — V(선택)·P(펜)·H(형광펜)·E(지우개)·C(스레드). 수정 키가 없을 때만이라
       // Ctrl+V(붙여넣기) 같은 기존 단축키와 겹치지 않는다. 한글 IME가 켜져 있으면
       // e.key가 자모로 오므로 물리 키(e.code)도 함께 본다(복사/붙여넣기와 같은 처방).
-      if (isBoard && !e.metaKey && !e.ctrlKey && !e.altKey && !e.shiftKey) {
+      //
+      // **그리기 도구(펜·형광펜·지우개)는 화이트보드 전용**이고, 선택·스레드는 맵에서도
+      // 쓴다(요청) — 맵에는 하단 도구 막대가 없어 예전에는 스레드 진입이 배경
+      // 우클릭 하나뿐이었다. 칸반은 캔버스가 없으므로 어느 쪽도 아니다.
+      if (!isKanban && !e.metaKey && !e.ctrlKey && !e.altKey && !e.shiftKey) {
         const k = e.key.toLowerCase();
         const tool: BoardTool | null =
           k === 'v' || e.code === 'KeyV'
@@ -6019,7 +6030,10 @@ export function useEditorState(): EditorController {
                   : k === 'c' || e.code === 'KeyC'
                     ? 'comment'
                     : null;
-        if (tool) {
+        // 스레드 도구는 **남길 수 있을 때만** 켠다 — 켜 봐야 아무 일도 없으면
+        // 커서만 바뀐 채 먹통이 된다(보기 전용·스토어 없음).
+        const usable = tool && (isBoard || tool === 'select' || (tool === 'comment' && canCommentRef.current));
+        if (tool && usable) {
           e.preventDefault();
           setBoardTool(tool);
           return;

@@ -147,6 +147,9 @@ export function ShortcutHelp({ controller }: { controller: EditorController }) {
             <>
               {row([`${mod}+S`], '저장')}
               {!controller.isKanban && row([`${mod}+F`], '맵에서 검색')}
+              {/* 스레드 도구 — 화이트보드는 위 전용 구획에 적혀 있다(도구가 여럿이라
+                  한 묶음으로 읽는 편이 낫다). 맵에는 그 구획이 없으므로 여기에. */}
+              {!controller.isBoard && !controller.isKanban && controller.canComment && row(['C'], '스레드 (누른 자리에 남긴다)')}
               {row([`${mod}+Z`], '실행 취소')}
               {row([`${mod}+Y`, `${mod}+Shift+Z`], '다시 실행')}
               {row(['?'], '이 도움말')}

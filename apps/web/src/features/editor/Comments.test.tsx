@@ -962,3 +962,61 @@ describe('댓글 도구(화이트보드)', () => {
     expect(container.querySelector('[data-comment-pin]')).toBeNull();
   });
 });
+
+// 요청: 마인드맵에서도 스레드를 쓸 수 있게. 기능(핀·팝업·답글)은 원래 문서 종류와
+// 무관하게 동작했지만 **진입 방식**이 갈려 있었다 — 도구 모드·단축키 C·도구 버튼은
+// 하단 도구 막대(화이트보드 전용)에만 있어서, 맵에서는 배경 우클릭이 유일한 길이었다.
+describe('마인드맵 스레드 진입점(요청)', () => {
+  it('삽입 메뉴의 스레드 추가가 초안 말풍선을 띄운다', async () => {
+    localStorage.setItem('mindflow_doc_mp1', JSON.stringify(DOC));
+    renderEditor('/editor?map=mp1&title=맵');
+    fireEvent.click(await screen.findByRole('button', { name: '삽입' }));
+    fireEvent.click(await screen.findByRole('button', { name: '스레드 추가' }));
+    const bubble = await screen.findByLabelText('첫 스레드 남기기');
+    // 다른 삽입과 달리 **문서에는 아직 아무것도 들어가지 않는다**(요청 ⑤).
+    expect(JSON.parse(localStorage.getItem('mindflow_doc_mp1') as string).commentPins ?? []).toHaveLength(0);
+    fireEvent.change(within(bubble).getByLabelText('스레드 입력'), { target: { value: '맵에서 남긴 첫 마디' } });
+    fireEvent.click(within(bubble).getByRole('button', { name: '남기기' }));
+    await waitFor(() => expect(document.querySelector('[data-comment-pin]')).toBeTruthy());
+  });
+
+  it('C로 스레드 도구를 켜 누른 자리에 남기고, Escape로 끈다', async () => {
+    localStorage.setItem('mindflow_doc_mp2', JSON.stringify(DOC));
+    const { container } = renderEditor('/editor?map=mp2&title=맵');
+    await waitFor(() => expect(container.querySelector('.mf-ed-vp')).toBeTruthy());
+    // 맵에는 하단 도구 막대가 없다 — 단축키가 그 자리를 대신한다.
+    expect(container.querySelector('[data-board-toolbar]')).toBeNull();
+
+    fireEvent.keyDown(window, { key: 'c', code: 'KeyC' });
+    const layer = await waitFor(() => {
+      const el = container.querySelector('[data-board-draw-layer]') as HTMLElement;
+      expect(el).toBeTruthy();
+      return el;
+    });
+    firePointer(layer, 'pointerdown', { clientX: 420, clientY: 300 });
+    firePointer(layer, 'pointerup', { clientX: 420, clientY: 300 });
+    await screen.findByLabelText('첫 스레드 남기기');
+    // 자리를 정한 순간 손은 선택 도구로 돌아온다(보드와 같은 규칙).
+    await waitFor(() => expect(container.querySelector('[data-board-draw-layer]')).toBeNull());
+
+    // 켜 두고 마음이 바뀌면 Escape — 맵에는 도구 막대가 없으므로 전역 키가 받는다.
+    fireEvent.keyDown(window, { key: 'c', code: 'KeyC' });
+    await waitFor(() => expect(container.querySelector('[data-board-draw-layer]')).toBeTruthy());
+    fireEvent.keyDown(window, { key: 'Escape' });
+    await waitFor(() => expect(container.querySelector('[data-board-draw-layer]')).toBeNull());
+  });
+
+  it('그리기 도구는 맵에서 켜지지 않는다(화이트보드 전용)', async () => {
+    localStorage.setItem('mindflow_doc_mp3', JSON.stringify(DOC));
+    const { container } = renderEditor('/editor?map=mp3&title=맵');
+    await waitFor(() => expect(container.querySelector('.mf-ed-vp')).toBeTruthy());
+    for (const [key, code] of [
+      ['p', 'KeyP'],
+      ['h', 'KeyH'],
+      ['e', 'KeyE'],
+    ] as const) {
+      fireEvent.keyDown(window, { key, code });
+    }
+    expect(container.querySelector('[data-board-draw-layer]')).toBeNull();
+  });
+});
