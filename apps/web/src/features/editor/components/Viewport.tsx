@@ -13,6 +13,7 @@ import { StrokeLayer } from './StrokeLayer';
 import { CommentPinLayer } from './CommentPinLayer';
 import { GuideLayer } from './GuideLayer';
 import { BoardDrawLayer } from './BoardDrawLayer';
+import { CommentDraftBubble, CommentToolLayer } from './CommentDraftLayer';
 import { BoardToolbar } from './BoardToolbar';
 import { ContextMenu } from './ContextMenu';
 import { TextToolbar } from './TextToolbar';
@@ -145,6 +146,10 @@ export function Viewport({ doc, controller }: ViewportProps) {
               {showMoveHandle && <MoveHandle controller={controller} theme={theme} />}
               {/* 그리기 입력 오버레이(펜/지우개 도구가 켜진 동안만) — 화면 좌표계. */}
               <BoardDrawLayer controller={controller} />
+              {/* 댓글 도구 오버레이 + 첫 댓글 말풍선 — 둘 다 화면 좌표계(확대해도
+                  입력칸 글자 크기가 같다). 핀은 첫 댓글이 저장된 뒤에 생긴다. */}
+              <CommentToolLayer controller={controller} />
+              <CommentDraftBubble controller={controller} />
             </>
           )}
         </div>

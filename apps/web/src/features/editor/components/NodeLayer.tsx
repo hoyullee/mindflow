@@ -348,15 +348,6 @@ function NodeBox({ id, node: n, g, nodes, mode, theme: th, rootX, controller }: 
   if (noteSign > 0) noteStyle.right = -7;
   else noteStyle.left = -7;
 
-  // 댓글 배지 — 노트 배지와 같은 문법(같은 크기·같은 변)이되, 노트가 있으면 옆으로
-  // 비켜선다. 누르면 그 주제의 댓글 패널이 열린다(보기 전용에서도 동작한다 —
-  // 댓글은 본문을 바꾸지 않는다).
-  const commentCount = controller.commentCounts[id] ?? 0;
-  const commentStyle: CSSProperties = { ...noteStyle, color: th.accent, fontWeight: 700, fontSize: 9.5, cursor: 'pointer' };
-  const commentShift = hasNote ? 21 : 0;
-  if (noteSign > 0) commentStyle.right = -7 + commentShift;
-  else commentStyle.left = -7 + commentShift;
-
   return (
     <div
       style={boxStyle}
@@ -402,26 +393,6 @@ function NodeBox({ id, node: n, g, nodes, mode, theme: th, rootX, controller }: 
           }}
         >
           {n.collapsed ? String(descendants(nodes, id).length) : '−'}
-        </div>
-      )}
-      {commentCount > 0 && (
-        <div
-          role="button"
-          tabIndex={-1}
-          data-comment-badge={id}
-          title={`댓글 ${commentCount}개`}
-          aria-label={`댓글 ${commentCount}개`}
-          style={commentStyle}
-          onPointerDown={(e) => {
-            if (isPanButton(e)) return; // 우클릭·휠클릭 = 화면 이동
-            e.stopPropagation(); // 노드 드래그로 새지 않게
-          }}
-          onClick={(e) => {
-            e.stopPropagation();
-            controller.openComments(id);
-          }}
-        >
-          {commentCount}
         </div>
       )}
       {hasNote && (

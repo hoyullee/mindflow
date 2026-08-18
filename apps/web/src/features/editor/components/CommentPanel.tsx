@@ -25,6 +25,9 @@ import { useIsMobile } from '../../../hooks/useMediaQuery';
 import { useShareStore } from '../../../adapters/BackendContext';
 import { useAuthUser } from '../../../adapters/useAuthUser';
 
+/** 디자인 원본의 댓글 패널 폭. */
+const PANEL_W = 326;
+
 interface Thread {
   root: DocComment;
   replies: DocComment[];
@@ -60,9 +63,30 @@ export function CommentPanel({ controller }: { controller: EditorController }) {
 
   if (!open) return null;
 
-  // 대상이 지워져도 댓글은 남는다(0020) — 대상이 사라졌음을 그대로 말해 준다.
-  // 댓글이 모든 객체로 확장되면서(요청) 대상 종류를 제목이 말해 준다.
-  const title = commentTargetLabel(controller.doc, nodeId) ?? '사라진 대상';
+  // 부제는 **있을 때만** 그린다. 캔버스 댓글은 이제 핀에만 붙는데(요청) 핀에는
+  // 이름이 없어 예전 폴백 문구("사라진 대상")가 늘 떠 있었다(제보) — 머리의 "댓글"이
+  // 이미 무엇인지 말하므로 없는 이름을 지어내지 않는다. 칸반 카드는 그대로 이름을 쓴다.
+  const title = commentTargetLabel(controller.doc, nodeId);
+
+  // 데스크톱: **핀 곁에** 뜬다(요청) — 어느 자리의 논의인지 팝업이 스스로 말한다.
+  // 화면 밖으로 나가면 반대쪽으로 넘기고, 그래도 모자라면 안쪽으로 당긴다.
+  // 핀이 아닌 대상(칸반 카드·문서 전체)은 예전처럼 우상단에 선다.
+  const pin = (controller.doc.commentPins ?? []).find((p) => p.id === nodeId);
+  const deskPlace: CSSProperties = (() => {
+    const bottomGuard = controller.showMinimap ? 190 : 68; // 우하단 미니맵/줌 묶음
+    if (!pin) return { right: 16, top: 80, maxHeight: `calc(100% - ${80 + bottomGuard}px)` };
+    const sx = controller.pan.x + pin.x * controller.zoom;
+    const sy = controller.pan.y + pin.y * controller.zoom;
+    const vw = controller.vw || 1200;
+    const vh = controller.vh || 800;
+    const gap = 16;
+    // 핀(물방울 ~40px) 오른쪽에 붙는다 — 겹치면 어느 자리의 논의인지 가려진다.
+    let left = sx + 46;
+    if (left + PANEL_W + gap > vw) left = sx - PANEL_W - 10; // 오른쪽이 모자라면 왼쪽으로
+    left = Math.max(gap, Math.min(left, Math.max(gap, vw - PANEL_W - gap)));
+    const top = Math.max(gap, Math.min(sy - 34, Math.max(gap, vh - 220)));
+    return { left, top, maxHeight: Math.max(180, vh - top - gap) };
+  })();
 
   const wrap: CSSProperties = isMobile
     ? {
@@ -84,12 +108,9 @@ export function CommentPanel({ controller }: { controller: EditorController }) {
       }
     : {
         position: 'absolute',
-        right: 16,
-        top: 80,
+        ...deskPlace,
         // 디자인 원본의 댓글 패널(326) — 유리질 카드 + 더 둥근 모서리.
-        width: 326,
-        // 아래로는 미니맵/줌 묶음(우하단)을 피한다 — 미니맵이 접혀 있으면 더 길게.
-        maxHeight: `calc(100% - ${80 + (controller.showMinimap ? 190 : 68)}px)`,
+        width: PANEL_W,
         ...glassCard(th, 0.97),
         borderRadius: 18,
         boxShadow: CARD_SHADOW,
@@ -108,9 +129,11 @@ export function CommentPanel({ controller }: { controller: EditorController }) {
         </span>
         <div style={{ flex: '1 1 auto', minWidth: 0 }}>
           <div style={{ fontSize: 13, fontWeight: 800, letterSpacing: '-.01em', color: th.text }}>댓글</div>
-          <div title={title} style={{ fontSize: 11.5, color: th.subtext, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
-            {title}
-          </div>
+          {title && (
+            <div title={title} style={{ fontSize: 11.5, color: th.subtext, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+              {title}
+            </div>
+          )}
         </div>
         <button
           type="button"
@@ -136,34 +159,41 @@ export function CommentPanel({ controller }: { controller: EditorController }) {
  * 높이 안에서 목록만 스크롤하고(`scroll`), 모달 안에서는 흐름에 따라 늘어난다
  * (모달 자신이 스크롤한다).
  */
+/** 멘션 자동완성 대상 — 이 문서의 참가자(소유자 + 초대받은 사람).
+ *
+ * 목록은 세션 중 거의 바뀌지 않으므로 한 번만 읽는다. **나 자신은 뺀다**(제보:
+ * "멘션에 나도 보여서 이상하다") — 멘션은 남을 부르는 도구고, 알림 트리거(0022)도
+ * 자기 멘션은 알리지 않으므로 골라 봐야 아무 일도 없다. 패널과 첫 댓글 말풍선이
+ * 같은 후보를 쓰도록 훅으로 뽑았다. */
+export function useMentionParticipants(docId: string, enabled = true): ShareParticipant[] {
+  const shareStore = useShareStore();
+  const [participants, setParticipants] = useState<ShareParticipant[]>([]);
+  const myEmail = (useAuthUser()?.email ?? '').trim().toLowerCase();
+  useEffect(() => {
+    if (!enabled) return;
+    let alive = true;
+    void shareStore.listParticipants(docId).then((rows) => {
+      if (alive && rows) setParticipants(rows.filter((p) => p.email.trim().toLowerCase() !== myEmail));
+    });
+    return () => {
+      alive = false;
+    };
+  }, [docId, shareStore, myEmail, enabled]);
+  return participants;
+}
+
 export function CommentThreads({ controller, nodeId, scroll = false }: { controller: EditorController; nodeId: string; scroll?: boolean }) {
   const th = controller.uiTheme;
   const isMobile = useIsMobile();
-  const shareStore = useShareStore();
   const [replyTo, setReplyTo] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
-  /** 멘션 자동완성 대상 — 이 문서의 참가자(소유자 + 초대받은 사람). */
-  const [participants, setParticipants] = useState<ShareParticipant[]>([]);
+  const participants = useMentionParticipants(controller.docId);
 
   // 대상이 바뀌면 열려 있던 답글 입력은 그 대상의 것이므로 접는다.
   useEffect(() => {
     setReplyTo(null);
     setError(null);
   }, [nodeId]);
-
-  // 멘션 후보는 한 번만 — 참가자 목록은 세션 중 거의 바뀌지 않는다.
-  // **나 자신은 뺀다**(제보: "멘션에 나도 보여서 이상하다") — 멘션은 남을 부르는
-  // 도구고, 알림 트리거(0022)도 자기 멘션은 알리지 않으므로 골라 봐야 아무 일도 없다.
-  const myEmail = (useAuthUser()?.email ?? '').trim().toLowerCase();
-  useEffect(() => {
-    let alive = true;
-    void shareStore.listParticipants(controller.docId).then((rows) => {
-      if (alive && rows) setParticipants(rows.filter((p) => p.email.trim().toLowerCase() !== myEmail));
-    });
-    return () => {
-      alive = false;
-    };
-  }, [controller.docId, shareStore, myEmail]);
 
   const forNode = controller.comments.filter((c) => c.nodeId === nodeId);
   const threads: Thread[] = forNode
@@ -449,7 +479,7 @@ export function mentionTokenAt(text: string, caret: number): { start: number; qu
   return { start: caret - m[1]!.length - 1, query: m[1]! };
 }
 
-function CommentComposer({
+export function CommentComposer({
   controller,
   isMobile,
   participants,

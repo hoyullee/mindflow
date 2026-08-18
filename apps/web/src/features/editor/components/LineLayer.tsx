@@ -8,7 +8,6 @@ import { isPanButton } from '../pointerButtons';
 import type { Theme } from '../theme';
 import type { EditorController } from '../useEditorState';
 import { peersSelecting } from '../presenceSelection';
-import { CommentBadge } from './CommentBadge';
 import { RemotePeerTag } from './RemotePeerTag';
 
 interface LineLayerProps {
@@ -185,21 +184,6 @@ export function LineLayer({ lines, theme: th, controller }: LineLayerProps) {
         >
           {l.label}
         </div>,
-      );
-    }
-    // 댓글 배지 — 모든 객체 댓글. 라벨이 있으면 그 위, 없으면 곡선 중점 위.
-    const commentCount = controller.commentCounts[l.id] ?? 0;
-    if (commentCount > 0 && !editing) {
-      overlays.push(
-        <CommentBadge
-          key={`cmt${l.id}`}
-          id={l.id}
-          count={commentCount}
-          accent={th.accent}
-          panel={th.panel}
-          onOpen={() => controller.openComments(l.id)}
-          style={{ position: 'absolute', left: mp.x, top: mp.y - (l.label && l.label.trim() ? 28 : 16), transform: 'translate(-50%,-50%)', zIndex: 26 }}
-        />,
       );
     }
   });
