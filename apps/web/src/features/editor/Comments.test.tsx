@@ -720,6 +720,59 @@ describe('댓글 핀 다듬기(프리뷰 후속)', () => {
     expect(css).not.toMatch(/\n\.mf-cmt-scroll \{/);
   });
 
+  // 요청: 스크롤이 생긴 팝업에서 ① 답글 칸을 열면 그 자리로 옮기고, ② 내가 남긴
+  // 글이 화면에 들어오게 목록 끝으로 옮긴다(예전엔 둘 다 아래에 가려 보이지 않았다).
+  it('스크롤이 생긴 스레드에서 답글 칸을 열면 그 자리로, 글을 남기면 목록 끝으로 옮긴다(요청)', async () => {
+    const seen: { el: Element; opts: unknown }[] = [];
+    const orig = Element.prototype.scrollIntoView;
+    Element.prototype.scrollIntoView = function (this: Element, opts?: unknown) {
+      seen.push({ el: this, opts });
+    } as typeof Element.prototype.scrollIntoView;
+    try {
+      localStorage.setItem('mindflow_doc_pf8', JSON.stringify(DOC_WITH_PIN));
+      for (let i = 0; i < 8; i += 1) seedComment('pf8', PIN_ID, `${i}번째 글`);
+      const { container } = renderEditor('/editor?map=pf8&title=x');
+      const pin = await waitFor(() => {
+        const el = container.querySelector(`[data-comment-pin="${PIN_ID}"]`) as HTMLElement;
+        expect(el).toBeTruthy();
+        return el;
+      });
+      firePointer(pin, 'pointerdown', { clientX: 10, clientY: 10 });
+      firePointer(window, 'pointerup', { clientX: 10, clientY: 10 });
+      fireEvent.click(pin);
+      const panel = await screen.findByLabelText('스레드');
+
+      // ① 답글 칸을 열면 그 칸이 보이도록 목록을 민다.
+      const thread = container.querySelector('[data-comment-thread]') as HTMLElement;
+      fireEvent.click(within(thread).getByRole('button', { name: '답글' }));
+      const composer = await waitFor(() => {
+        const el = thread.querySelector('[data-reply-composer]') as HTMLElement;
+        expect(el).toBeTruthy();
+        return el;
+      });
+      expect(seen.some((c) => c.el === composer)).toBe(true);
+
+      // ② 새 스레드 글을 남기면 목록 끝으로 — 스크롤이 있을 때만 뜻이 있으므로
+      // 목록의 스크롤 높이를 심어 두고 실제로 끝까지 갔는지 본다.
+      // jsdom은 레이아웃이 없어 scrollTop 대입이 늘 0으로 되돌아간다 — 세터를 지켜본다.
+      const list = panel.querySelector('[data-comment-list]') as HTMLElement;
+      let scrolledTo: number | null = null;
+      Object.defineProperty(list, 'scrollHeight', { value: 900, configurable: true });
+      Object.defineProperty(list, 'scrollTop', {
+        configurable: true,
+        get: () => scrolledTo ?? 0,
+        set: (v: number) => {
+          scrolledTo = v;
+        },
+      });
+      fireEvent.change(within(panel).getByLabelText('댓글 입력'), { target: { value: '마지막 글' } });
+      fireEvent.click(within(panel).getByRole('button', { name: '남기기' }));
+      await waitFor(() => expect(scrolledTo).toBe(900));
+    } finally {
+      Element.prototype.scrollIntoView = orig;
+    }
+  });
+
   // 요청 ②: 아래 입력칸은 답글이 아니라 **새 스레드 글**이다. 예전에는 이 칸이 첫
   // 글의 답글로 들어가, `답글` 버튼으로 남긴 것과 결과가 구별되지 않았다.
   it('팝업 아래 입력칸은 새 스레드 글로 남고, 답글은 답글 버튼만 맡는다(요청 ②)', async () => {

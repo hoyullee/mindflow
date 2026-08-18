@@ -238,6 +238,10 @@ export function CommentThreads({ controller, nodeId, scroll = false, thread = fa
   const isMobile = useIsMobile();
   const [replyTo, setReplyTo] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const listRef = useRef<HTMLDivElement | null>(null);
+  /** 방금 **내가** 남긴 글로 목록을 옮기기 위한 표시(요청 ②). 내 제출에만 세운다 —
+   * 남의 글이 실시간으로 도착할 때마다 읽던 자리가 끝으로 튀면 안 된다. */
+  const scrollToEndRef = useRef(false);
   /** 멘션 자동완성 대상 — 이 문서의 참가자(소유자 + 초대받은 사람). */
   const participants = useCommentParticipants(controller.docId);
 
@@ -246,6 +250,17 @@ export function CommentThreads({ controller, nodeId, scroll = false, thread = fa
     setReplyTo(null);
     setError(null);
   }, [nodeId]);
+
+  const forNodeCount = controller.comments.filter((c) => c.nodeId === nodeId).length;
+  useLayoutEffect(() => {
+    if (!scrollToEndRef.current) return;
+    scrollToEndRef.current = false;
+    const list = listRef.current;
+    if (!list) return;
+    // 패널은 목록 자신이 스크롤하고(scroll), 카드 상세 모달은 바깥이 스크롤한다.
+    if (scroll) list.scrollTop = list.scrollHeight;
+    else list.lastElementChild?.scrollIntoView?.({ block: 'nearest' });
+  }, [forNodeCount, scroll]);
 
   const forNode = controller.comments.filter((c) => c.nodeId === nodeId);
   const threads: Thread[] = forNode
@@ -256,8 +271,12 @@ export function CommentThreads({ controller, nodeId, scroll = false, thread = fa
   // 각 글의 `답글` 버튼이 여는 입력칸만 맡는다(그쪽 문구는 그대로 '답글 남기기').
 
   const submitThread = async (body: string, mentions: CommentMention[]) => {
+    // 표시는 **보내기 전에** 세운다 — `addComment`가 돌아올 때는 목록이 이미 갱신돼
+    // 있어서, 그 뒤에 세우면 효과가 다시 돌 일이 없다(끝으로 가지 않는다).
+    scrollToEndRef.current = true;
     const res = await controller.addComment(nodeId, body, mentions.length ? { mentions } : undefined);
     setError(res.error ?? null);
+    if (res.error) scrollToEndRef.current = false;
     return !res.error;
   };
   const submitReply = async (parentId: string, body: string, mentions: CommentMention[]) => {
@@ -270,6 +289,7 @@ export function CommentThreads({ controller, nodeId, scroll = false, thread = fa
   return (
     <>
       <div
+        ref={listRef}
         className={scroll ? 'mf-cmt-scroll' : undefined}
         style={scroll ? { flex: '1 1 auto', minHeight: 0, overflowY: 'auto', padding: '4px 12px 10px' } : { padding: '2px 0 6px' }}
         data-comment-list
@@ -422,6 +442,14 @@ function ThreadView({
 }) {
   const th = controller.uiTheme;
   const { root, replies } = thread;
+  // 답글 칸이 열리면 **그 자리로 목록을 옮긴다**(요청 ①) — 스레드가 길어 스크롤이
+  // 생기면 칸이 아래에 반쯤 가려 어디에 쓰는지 보이지 않았다. `block: 'nearest'`라
+  // 이미 다 보이면 아무것도 움직이지 않는다(필요한 만큼만 민다).
+  const replyRef = useRef<HTMLDivElement | null>(null);
+  useLayoutEffect(() => {
+    if (!replyOpen) return;
+    replyRef.current?.scrollIntoView?.({ block: 'nearest' });
+  }, [replyOpen]);
 
   return (
     <section data-comment-thread={root.id} style={{ padding: '9px 0', borderBottom: `1px solid ${th.border}`, opacity: dimmed ? 0.66 : 1 }}>
@@ -432,7 +460,7 @@ function ThreadView({
         </div>
       ))}
       {replyOpen && (
-        <div style={{ marginLeft: 14, paddingLeft: 9, borderLeft: `2px solid ${th.border}`, marginTop: 6 }}>
+        <div ref={replyRef} data-reply-composer style={{ marginLeft: 14, paddingLeft: 9, borderLeft: `2px solid ${th.border}`, marginTop: 6 }}>
           <CommentComposer
             controller={controller}
             isMobile={isMobile}
