@@ -11,9 +11,9 @@ import { MarqueeLayer } from './MarqueeLayer';
 import { PresenceLayer } from './PresenceLayer';
 import { StrokeLayer } from './StrokeLayer';
 import { CommentPinLayer } from './CommentPinLayer';
+import { CommentDraftBubble } from './CommentDraftBubble';
 import { GuideLayer } from './GuideLayer';
 import { BoardDrawLayer } from './BoardDrawLayer';
-import { CommentDraftBubble, CommentToolLayer } from './CommentDraftLayer';
 import { BoardToolbar } from './BoardToolbar';
 import { ContextMenu } from './ContextMenu';
 import { TextToolbar } from './TextToolbar';
@@ -146,10 +146,6 @@ export function Viewport({ doc, controller }: ViewportProps) {
               {showMoveHandle && <MoveHandle controller={controller} theme={theme} />}
               {/* 그리기 입력 오버레이(펜/지우개 도구가 켜진 동안만) — 화면 좌표계. */}
               <BoardDrawLayer controller={controller} />
-              {/* 댓글 도구 오버레이 + 첫 댓글 말풍선 — 둘 다 화면 좌표계(확대해도
-                  입력칸 글자 크기가 같다). 핀은 첫 댓글이 저장된 뒤에 생긴다. */}
-              <CommentToolLayer controller={controller} />
-              <CommentDraftBubble controller={controller} />
             </>
           )}
         </div>
@@ -165,6 +161,9 @@ export function Viewport({ doc, controller }: ViewportProps) {
             MindFlow.dc.html:2794-2795), so this sits in the SAME untransformed box `.mf-ed-vp`
             itself occupies. */}
         <ContextMenu controller={controller} />
+        {/* 첫 댓글 말풍선 — 핀이 문서에 들어가기 전 단계(화면 좌표라 확대해도 글자
+            크기가 그대로다). 팬/줌이 바뀌면 다시 계산돼 그 자리를 따라간다. */}
+        <CommentDraftBubble controller={controller} />
         {/* Same untransformed screen-coordinate box as `ContextMenu` above — `textCtx.sx/sy`
             are already viewport-relative (`NodeEditBox`'s `openTextCtx` call). */}
         <TextToolbar controller={controller} />

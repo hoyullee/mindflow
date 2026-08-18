@@ -121,7 +121,7 @@ export class SupabaseCommentStore implements CommentStore {
     const { error } = await this.client.from('document_comments').insert(row);
     if (error) {
       console.warn('[geurio] 댓글 저장 실패:', error.message);
-      return { error: '댓글을 남기지 못했어요. 잠시 후 다시 시도해 주세요.' };
+      return { error: '글을 남기지 못했어요. 잠시 후 다시 시도해 주세요.' };
     }
     this.ping(documentId);
     return {};

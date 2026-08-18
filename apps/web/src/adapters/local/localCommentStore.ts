@@ -95,7 +95,7 @@ export class LocalCommentStore implements CommentStore {
     if (opts?.parentId) {
       // 0021 트리거와 같은 규칙: 부모는 같은 문서의 최상위 댓글이어야 한다.
       const parent = list.find((c) => c.id === opts.parentId && c.documentId === documentId);
-      if (!parent || parent.parentId) return { error: '답글을 남길 수 없는 댓글이에요.' };
+      if (!parent || parent.parentId) return { error: '답글을 남길 수 없는 글이에요.' };
     }
     list.push({
       id: `c${Date.now().toString(36)}${Math.floor(Math.random() * 1000)}`,
@@ -138,7 +138,7 @@ export class LocalCommentStore implements CommentStore {
   async setResolved(documentId: string, commentId: string, resolved: boolean): Promise<{ error?: string }> {
     const list = readAll();
     const c = list.find((x) => x.documentId === documentId && x.id === commentId);
-    if (!c) return { error: '댓글을 찾을 수 없어요.' };
+    if (!c) return { error: '글을 찾을 수 없어요.' };
     if (c.parentId) return { error: '답글은 해결 표시를 할 수 없어요.' };
     c.resolvedAt = resolved ? new Date().toISOString() : null;
     c.resolvedByName = resolved ? demoName() : null;
@@ -150,7 +150,7 @@ export class LocalCommentStore implements CommentStore {
   async setLiked(documentId: string, commentId: string, liked: boolean): Promise<{ error?: string }> {
     const list = readAll();
     const c = list.find((x) => x.documentId === documentId && x.id === commentId);
-    if (!c) return { error: '댓글을 찾을 수 없어요.' };
+    if (!c) return { error: '글을 찾을 수 없어요.' };
     c.liked = liked;
     writeAll(list);
     ping(documentId);

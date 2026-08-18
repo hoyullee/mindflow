@@ -244,6 +244,9 @@ export function ViewMenu({ controller, onDone, isMobile }: { controller: EditorC
           }}
         />
       )}
+      {/* 캔버스 문서에는 '댓글' 항목이 없다(요청 ⑧) — 댓글은 **댓글 핀**에만 붙으므로
+          대상 없이 여는 목록이 성립하지 않는다. 남기는 길은 화이트보드 도구 막대의
+          댓글 도구와 배경 우클릭의 '댓글 추가'이고, 읽는 길은 그 핀을 누르는 것이다. */}
       {/* 맞춤 도우미(요청) — 메모·이미지·영역을 끌면 **이웃의 기준선**(안내선)에
           먼저, 없으면 격자에 붙는다. 토글 하나가 둘을 함께 켜고 끈다(사용자에겐
           "손이 자석처럼 붙는다"는 한 가지 감각이다). 드래그 중 Alt는 그 순간만 끔. */}
@@ -355,11 +358,9 @@ export function MoreMenu({ controller, onDone, isMobile }: { controller: EditorC
           )}
         </>
       )}
-      {/* 댓글 — **칸반만** 여기서 연다(대상은 고른 카드, 없으면 보드 전체).
-          캔버스(맵·화이트보드)의 댓글은 **댓글 핀**에만 붙으므로(요청) 대상 없이
-          여는 항목은 뜻이 없다 — 핀을 누르면 그 자리의 논의가 열린다. */}
+      {/* 칸반의 '보드 전체 댓글'만 남는다 — 캔버스 문서의 댓글은 핀에 붙는다(요청 ⑧). */}
       {controller.canComment && controller.isKanban && (
-        <MenuItem theme={th} isMobile={isMobile} icon={<CommentIcon />} label="댓글" active={controller.commentsOpen} onClick={() => { if (controller.commentsOpen) controller.closeComments(); else controller.openComments(); onDone(); }} />
+        <MenuItem theme={th} isMobile={isMobile} icon={<CommentIcon />} label="보드 전체 댓글" active={controller.commentsOpen} onClick={() => { if (controller.commentsOpen) controller.closeComments(); else controller.openComments(); onDone(); }} />
       )}
       {/* 내보내기는 보기 전용에서 감춘다(요청) — 데스크톱 툴바와 같은 규칙. */}
       {!controller.readOnly && (
@@ -417,12 +418,20 @@ export function FeedbackIcon() {
  * 댓글 — 말풍선 **안에 줄**. 피드백(빈 말풍선)과 나란히 놓이므로 일부러 다르게
  * 그린다: 같은 도형이면 같은 동작으로 읽힌다.
  */
+/** 댓글 말풍선의 도형 — 아이콘·핀·마우스 커서가 **같은 문자열**을 쓴다(요청 ②·③).
+ * 커서는 CSS 값이라 컴포넌트를 쓸 수 없어 path만 따로 내보낸다. */
+export const COMMENT_GLYPH = {
+  bubble: 'M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z',
+  line1: 'M7.5 8.5h9',
+  line2: 'M7.5 12h5.5',
+};
+
 export function CommentIcon({ size = 15 }: { size?: number }) {
   return (
     <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-      <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" />
-      <line x1={7.5} y1={8.5} x2={16.5} y2={8.5} />
-      <line x1={7.5} y1={12} x2={13} y2={12} />
+      <path d={COMMENT_GLYPH.bubble} />
+      <path d={COMMENT_GLYPH.line1} />
+      <path d={COMMENT_GLYPH.line2} />
     </svg>
   );
 }

@@ -361,12 +361,15 @@ function buildItems(
         ]
       : [];
 
+  // 댓글은 이제 **댓글 핀**에만 붙는다(요청 ⑧) — 주제·메모·선·영역의 우클릭 메뉴에는
+  // 댓글 항목이 없다. 캔버스 어디든 댓글을 남기는 길은 배경 메뉴의 '댓글 추가'(아래)와
+  // 화이트보드 도구 막대의 댓글 도구다.
+
   if (ctxMenu.kind === 'node') {
     const nodeId = controller.selection?.kind === 'node' ? controller.selection.id : null;
     if (!nodeId) return [];
     const isRoot = nodeId === ROOT_ID;
-    // 보기 전용(#22): 변이 항목뿐이라 내줄 것이 없다 — 댓글은 캔버스의 **댓글 핀**에만
-    // 붙는다(요청: 다른 객체의 댓글 기능은 걷어냄).
+    // 보기 전용(#22): 변이 항목이 전부라 열 것이 없다(댓글은 이제 핀에만 붙는다).
     if (controller.readOnly) return [];
     const items: (MenuItem | 'divider')[] = [];
     // 모바일에선 자식/형제 추가와 삭제를 넣지 않는다 — 선택 바(MobileSelectBar)에
@@ -421,8 +424,6 @@ function buildItems(
       // `alignParent`'s `onClick` (MindFlow.dc.html:3120).
       onSelect: (e) => toggleSub(e.currentTarget.offsetTop, 'text'),
     });
-    // 댓글 — 그 주제의 논의를 바로 연다. 보기 메뉴에만 있으면 "이 주제에 다는"
-    // 물건인데 진입점이 화면 반대편에 숨는다(제보).
     // 루트는 복사/잘라내기 대상이 아니다(삭제와 같은 규칙 — 맵 전체 복제는 의미가 없다).
     // 붙여넣기는 루트에도 허용 — 루트의 자식으로 붙는다.
     const nodeClip = [...(isRoot ? [] : copyItems({ cut: true })), ...pasteItem()];
@@ -448,7 +449,7 @@ function buildItems(
   if (ctxMenu.kind === 'zone') {
     const zoneId = controller.selection?.kind === 'zone' ? controller.selection.id : null;
     if (!zoneId) return [];
-    if (controller.readOnly) return [];
+    if (controller.readOnly) return []; // 보기 전용 — 변이 항목뿐이라 열 것이 없다
     return [
       {
         icon: '✎',
@@ -500,7 +501,7 @@ function buildItems(
   if (ctxMenu.kind === 'float') {
     const floatId = controller.selection?.kind === 'float' ? controller.selection.id : null;
     if (!floatId) return [];
-    if (controller.readOnly) return [];
+    if (controller.readOnly) return []; // 보기 전용 — 변이 항목뿐이라 열 것이 없다
     return [
       ...copyItems({ cut: true }),
       ...(touch
@@ -522,7 +523,7 @@ function buildItems(
   if (ctxMenu.kind === 'line') {
     const lineId = controller.selection?.kind === 'line' ? controller.selection.id : null;
     if (!lineId) return [];
-    if (controller.readOnly) return [];
+    if (controller.readOnly) return []; // 보기 전용 — 변이 항목뿐이라 열 것이 없다
     return [
       ...copyItems({ cut: true }),
       ...(touch
@@ -642,13 +643,13 @@ function buildItems(
         controller.addZoneAt(at);
       },
     },
-    // 댓글 — 누른 자리에 **첫 댓글 말풍선**을 연다(요청). 핀은 그 댓글이 저장된
-    // 뒤에 생기므로 쓰지 않고 다른 곳을 누르면 아무것도 남지 않는다.
+    // 댓글 핀 — 다른 객체와 같은 자리에서 만든다(요청). 누른 자리에 **첫 댓글
+    // 말풍선**이 뜨고, 한 마디를 남겨야 핀이 문서에 들어간다(요청 ④·⑤).
     ...(controller.canComment
       ? [
           {
             icon: <CommentIcon size={15} />,
-            label: '댓글 추가',
+            label: '스레드 추가',
             onSelect: () => {
               close();
               controller.startCommentDraft(at);

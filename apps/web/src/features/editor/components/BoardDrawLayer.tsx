@@ -14,6 +14,7 @@
 import type { PointerEvent as ReactPointerEvent } from 'react';
 import { useRef } from 'react';
 import type { EditorController } from '../useEditorState';
+import { commentPinCursor } from './commentPinShape';
 
 export function BoardDrawLayer({ controller }: { controller: EditorController }) {
   const pointers = useRef(new Map<number, { x: number; y: number }>());
@@ -21,8 +22,13 @@ export function BoardDrawLayer({ controller }: { controller: EditorController })
   // 않는다 — 한 손가락이 먼저 떨어졌다고 남은 손가락이 갑자기 선을 긋기 시작하면
   // 화면을 옮기다 낙서가 생긴다.
   const gesturing = useRef(false);
+  /** 댓글 도구: 누른 자리(움직였으면 "클릭"이 아니라 화면 이동으로 본다). */
+  const pressAt = useRef<{ x: number; y: number } | null>(null);
 
   if (!controller.isBoard || controller.readOnly || controller.boardTool === 'select') return null;
+
+  const comment = controller.boardTool === 'comment';
+  const th = controller.uiTheme;
 
   const two = (): [{ x: number; y: number }, { x: number; y: number }] | null => {
     const pts = Array.from(pointers.current.values());
@@ -49,6 +55,12 @@ export function BoardDrawLayer({ controller }: { controller: EditorController })
       return;
     }
     if (pointers.current.size > 2 || gesturing.current) return; // 세 손가락은 무시
+    if (comment) {
+      // 댓글은 긋는 것이 아니라 **꽂는 것**이다 — 손을 뗄 때 그 자리에 말풍선을 띄운다
+      // (누르자마자 띄우면 화면을 끌려던 손짓에도 말풍선이 뜬다).
+      pressAt.current = { x: e.clientX, y: e.clientY };
+      return;
+    }
     controller.boardDrawDown(e.clientX, e.clientY);
   };
 
@@ -61,6 +73,7 @@ export function BoardDrawLayer({ controller }: { controller: EditorController })
       return;
     }
     if (gesturing.current || pointers.current.size !== 1) return;
+    if (comment) return; // 한 손가락 이동은 아래 onUp의 슬롭 판정이 본다
     controller.boardDrawMove(e.clientX, e.clientY);
   };
 
@@ -70,6 +83,13 @@ export function BoardDrawLayer({ controller }: { controller: EditorController })
     if (gesturing.current) {
       // 제스처 중이었다면 그릴 것이 없다. 마지막 손가락이 떨어져야 그리기 재개.
       if (pointers.current.size === 0) gesturing.current = false;
+      return;
+    }
+    if (comment) {
+      const at = pressAt.current;
+      pressAt.current = null;
+      // 4px 안쪽으로 움직인 포인터만 "여기에 댓글"이다.
+      if (!cancelled && at && Math.hypot(e.clientX - at.x, e.clientY - at.y) <= 4) controller.startCommentDraftAtClient(e.clientX, e.clientY);
       return;
     }
     if (cancelled) controller.boardDrawCancel();
@@ -91,7 +111,9 @@ export function BoardDrawLayer({ controller }: { controller: EditorController })
         // 모든 객체 위에 잉크를 얹는다. 도구 막대(BoardToolbar)는 이보다 위.
         zIndex: 110,
         touchAction: 'none',
-        cursor: controller.boardTool === 'pen' ? 'crosshair' : 'cell',
+        // 댓글 도구의 커서는 **꽂히는 핀 그대로**다(요청 ③) — 손끝의 그림과 놓이는
+        // 물건이 다르면 무엇을 만드는 중인지 헷갈린다.
+        cursor: comment ? commentPinCursor(th.accent, th.accentInk) : controller.boardTool === 'pen' ? 'crosshair' : 'cell',
       }}
     />
   );

@@ -3,7 +3,8 @@ import type { EditorController } from '../useEditorState';
 import { Minimap } from './Minimap';
 import { BOARD_BAR_LIFT } from './BoardToolbar';
 import { useIsMobile } from '../../../hooks/useMediaQuery';
-import { CARD_SHADOW, MONO_FONT, glassCard } from '../chrome';
+import { CARD_SHADOW, glassCard } from '../chrome';
+import { hexA, mixHex } from '../theme';
 
 interface ZoomControlsProps {
   controller: EditorController;
@@ -62,7 +63,7 @@ export function ZoomControls({ controller, panelOpen = false }: ZoomControlsProp
   if (isMobile) {
     if (!controller.showMinimap) return null;
     return (
-      <div data-zoom-cluster style={{ position: 'absolute', right: 16, ...anchor, ...glassCard(th), borderRadius: 14, boxShadow: CARD_SHADOW, zIndex: 15, padding: 6 }}>
+      <div data-zoom-cluster style={{ position: 'absolute', right: 16, ...anchor, ...glassCard(th), borderRadius: 14, boxShadow: CARD_SHADOW, zIndex: 15, overflow: 'hidden' }}>
         <Minimap controller={controller} isMobile />
       </div>
     );
@@ -85,39 +86,73 @@ export function ZoomControls({ controller, panelOpen = false }: ZoomControlsProp
       }}
     >
       {controller.showMinimap && (
-        // 지도는 카드 **위쪽 칸**을 통째로 쓰고 아래 줄과 선으로 갈린다(디자인 원본).
-        <div style={{ padding: 7, borderBottom: `1px solid ${th.border}`, background: th.panel2 }}>
+        // 지도는 카드 위쪽 칸을 **여백 없이** 채우고(시안 ③) 아래 줄과 선으로 갈린다.
+        // 면을 따로 칠하지 않는다 — 카드의 유리질 배경이 그대로 지도 바탕이 된다.
+        <div
+          style={{
+            borderBottom: `1px solid ${hexA(th.border, 0.65)}`,
+            lineHeight: 0,
+            // 시안의 지도 바탕은 카드보다 **한 톤 따뜻하다**(실측 #fdf8f4) — 캔버스색을
+            // 흰 면에 살짝 섞은 값이라, 아래 흰 줄과 두 톤으로 갈린다.
+            background: mixHex(th.panel, th.canvasBg, 0.35),
+          }}
+        >
           <Minimap controller={controller} />
         </div>
       )}
-      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 4, padding: '6px 7px' }}>
+      {/* 아래 줄: [미니맵][−][배율][＋][화면 맞춤] — 시안에는 구분선이 없고 다섯이
+          같은 간격으로 퍼진다(지도를 켜면 카드 폭에 맞춰 space-evenly). */}
+      <div
+        data-zoom-bar
+        style={{
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: controller.showMinimap ? 'space-evenly' : 'center',
+          gap: controller.showMinimap ? 0 : 6,
+          height: 50, // 시안 실측
+          padding: '0 8px',
+          // 시안은 지도 바탕(유리질)보다 **한 톤 밝은 흰 줄**이다(실측 #fffdfb).
+          background: th.panel,
+        }}
+      >
         <button
           type="button"
           className="mf-ed-btn"
           onClick={controller.toggleMinimap}
           title="미니맵 표시/숨기기"
           aria-pressed={controller.showMinimap}
-          style={{ ...btnStyle, color: controller.showMinimap ? th.accent : th.text }}
+          // 시안에서 이 아이콘은 옆의 다른 아이콘과 **같은 회색**이다(실측 #8a8078) —
+          // 켜짐 여부는 지도가 있는지로 이미 보이므로 색으로 또 말하지 않는다.
+          style={btnStyle}
         >
           <MinimapIcon />
         </button>
-        <div style={{ width: 1, height: 16, background: th.border, margin: '0 3px' }} />
-        <button type="button" className="mf-ed-btn" onClick={controller.zoomOut} title="축소" style={btnStyle}>
-          −
+        <button type="button" className="mf-ed-btn" onClick={controller.zoomOut} title="축소" style={btnStyle} aria-label="축소">
+          <svg width={15} height={15} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round">
+            <path d="M5 12h14" />
+          </svg>
         </button>
-        <button type="button" className="mf-ed-btn" onClick={controller.zoomReset} title="100%로" style={{ ...btnStyle, width: 'auto', minWidth: 52, padding: '0 6px', fontFamily: MONO_FONT, fontSize: 11.5, fontWeight: 500, color: th.text }}>
+        <button
+          type="button"
+          className="mf-ed-btn"
+          onClick={controller.zoomReset}
+          title="100%로"
+          style={{ ...btnStyle, width: 'auto', minWidth: 46, padding: '0 4px', fontSize: 14, fontWeight: 600, color: mixHex(th.text, th.panel, 0.12), letterSpacing: '-0.2px' }}
+        >
           {controller.zoomPct}%
         </button>
-        <button type="button" className="mf-ed-btn" onClick={controller.zoomIn} title="확대" style={btnStyle}>
-          ＋
+        <button type="button" className="mf-ed-btn" onClick={controller.zoomIn} title="확대" style={btnStyle} aria-label="확대">
+          <svg width={15} height={15} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round">
+            <path d="M12 5v14M5 12h14" />
+          </svg>
         </button>
-        <div style={{ width: 1, height: 16, background: th.border, margin: '0 3px' }} />
-        <button type="button" className="mf-ed-btn" onClick={controller.fitView} title="화면 맞춤" style={btnStyle}>
-          <svg width={13} height={13} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round">
-            <path d="M8 3H5a2 2 0 0 0-2 2v3" />
-            <path d="M16 3h3a2 2 0 0 1 2 2v3" />
-            <path d="M8 21H5a2 2 0 0 1-2-2v-3" />
-            <path d="M16 21h3a2 2 0 0 0 2-2v-3" />
+        <button type="button" className="mf-ed-btn" onClick={controller.fitView} title="화면 맞춤" style={btnStyle} aria-label="화면 맞춤">
+          {/* 시안의 자름표(crop mark) — 네 귀퉁이의 각진 ㄱ자. */}
+          <svg width={14} height={14} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round">
+            <path d="M4 9V4h5" />
+            <path d="M15 4h5v5" />
+            <path d="M20 15v5h-5" />
+            <path d="M9 20H4v-5" />
           </svg>
         </button>
       </div>
@@ -125,13 +160,12 @@ export function ZoomControls({ controller, panelOpen = false }: ZoomControlsProp
   );
 }
 
+/** 시안의 미니맵 글리프 — 둥근 사각 안에 작은 채운 사각(지도 안의 뷰포트). */
 function MinimapIcon() {
   return (
-    <svg width={13} height={13} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round">
-      <rect x={3} y={4} width={18} height={16} rx={2} />
-      <circle cx={8} cy={9} r={1.2} fill="currentColor" stroke="none" />
-      <circle cx={15} cy={11} r={1.2} fill="currentColor" stroke="none" />
-      <circle cx={11} cy={16} r={1.2} fill="currentColor" stroke="none" />
+    <svg width={15} height={15} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.8} strokeLinecap="round" strokeLinejoin="round">
+      <rect x={3.5} y={3.5} width={17} height={17} rx={4} />
+      <rect x={9.5} y={9.5} width={5} height={5} rx={1.2} fill="currentColor" stroke="none" />
     </svg>
   );
 }

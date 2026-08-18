@@ -10,6 +10,7 @@ import { useBackend, useFeedbackStore } from '../adapters/BackendContext';
 import type { FeedbackCategory } from '../adapters/ports';
 
 declare const __BUILD_AT__: string;
+declare const __BUILD_SHA__: string;
 
 /** 에디터의 `uiTheme`(라이트/다크)와 홈(항상 라이트)이 같은 모달을 쓰도록
  * 필요한 색만 구조적으로 받는다 — 기본값은 홈 계열 라이트. */
@@ -135,6 +136,8 @@ export function FeedbackModal({ open, onClose, page, theme }: { open: boolean; o
       page,
       meta: {
         build: typeof __BUILD_AT__ === 'string' ? __BUILD_AT__ : 'dev',
+        // 어느 커밋인지 — 제보를 받은 뒤 "그 화면이 어느 빌드였나"를 되짚는 유일한 단서다.
+        sha: typeof __BUILD_SHA__ === 'string' && __BUILD_SHA__ ? __BUILD_SHA__ : 'dev',
         ua: typeof navigator !== 'undefined' ? navigator.userAgent : '',
       },
     });

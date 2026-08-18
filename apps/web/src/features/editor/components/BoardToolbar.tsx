@@ -30,6 +30,7 @@ import { FLOAT_SHADOW, accentGradient, glassCard } from '../chrome';
 import { useIsMobile } from '../../../hooks/useMediaQuery';
 import { HL_COLORS, HL_WIDTHS, PEN_COLORS, PEN_WIDTHS } from '../boardTools';
 import type { BoardTool } from '../boardTools';
+import { CommentPinGlyph } from './commentPinShape';
 
 /** 폰에서 도구 막대가 차지하는 높이 + 여백 — 줌·미니맵 묶음(`ZoomControls`)과
  * 실행취소 알약이 이만큼 위로 올라가 막대와 겹치지 않는다. 버튼 44 + 패딩 10 +
@@ -137,22 +138,18 @@ export function BoardToolbar({ controller }: { controller: EditorController }) {
     );
   };
 
-  // `active`는 **도구처럼 켜지는 동작**을 위한 것이다(댓글) — 눌러도 곧바로
-  // 만들지 않고 다음 클릭을 기다리므로, 지금 켜져 있음이 보여야 한다.
-  const actionBtn = (label: string, icon: JSX.Element, run: () => void, disabled?: boolean, active?: boolean) => (
+  const actionBtn = (label: string, icon: JSX.Element, run: () => void, disabled?: boolean) => (
     <button
       key={label}
       type="button"
       className="mf-ed-btn"
       aria-label={label}
-      aria-pressed={active}
       title={label}
       disabled={disabled}
       onClick={run}
-      style={{ ...btnBase, background: active ? accentGradient(th) : 'transparent', color: active ? th.accentInk : th.subtext, opacity: disabled ? 0.38 : 1, cursor: disabled ? 'default' : 'pointer' }}
+      style={{ ...btnBase, background: 'transparent', color: th.subtext, opacity: disabled ? 0.38 : 1, cursor: disabled ? 'default' : 'pointer' }}
     >
       {icon}
-      {active && <span aria-hidden style={{ position: 'absolute', bottom: 4, left: '50%', transform: 'translateX(-50%)', width: 4, height: 4, borderRadius: 999, background: th.accentInk }} />}
     </button>
   );
 
@@ -196,6 +193,10 @@ export function BoardToolbar({ controller }: { controller: EditorController }) {
         <path d="M20 20H8.5l-5-5a2 2 0 0 1 0-2.8l8.7-8.7a2 2 0 0 1 2.8 0l5 5a2 2 0 0 1 0 2.8L13 18.5" />
       </svg>,
     ),
+    // 스레드 — 삽입이 아니라 **도구**다: 누르는 즉시 핀이 생기지 않고, 커서가 핀
+    // 아이콘으로 바뀌어 "누른 자리"에 첫 글 말풍선이 뜬다(Figma와 같은 감각).
+    // 자리를 정하는 순간 손은 선택 도구로 돌아온다(요청).
+    ...(controller.canComment ? [toolBtn('comment', '스레드', 'C', <CommentPinGlyph size={17} width={2} />)] : []),
   ];
 
   // 삽입 — 화이트보드가 담을 수 있는 것들(메모·이미지·연결선·영역). 그리기 도구가
@@ -239,23 +240,6 @@ export function BoardToolbar({ controller }: { controller: EditorController }) {
       </svg>,
       insert(controller.addZoneAt),
     ),
-    // 댓글 — 다른 삽입 버튼과 달리 **곧바로 만들지 않는다**(요청): 누르면 도구가
-    // 켜지고(커서가 바뀐다) 캔버스를 누른 자리에 첫 댓글 말풍선이 뜬다. 핀은 그
-    // 댓글이 저장된 뒤에 생긴다(Figma와 같은 순서).
-    ...(controller.canComment
-      ? [
-          actionBtn(
-            '댓글 추가',
-            <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-              <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" />
-              <path d="M7.5 8.5h9M7.5 12h5.5" />
-            </svg>,
-            () => controller.setCommentTool(!controller.commentTool),
-            false,
-            controller.commentTool,
-          ),
-        ]
-      : []),
   ];
 
   const undoRedo = [

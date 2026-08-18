@@ -162,10 +162,9 @@ describe('Context menu — node', () => {
     expect(screen.getByText('삭제')).toBeTruthy();
   });
 
-  // 요청: 캔버스 댓글은 **댓글 핀**에만 붙는다 — 주제·메모·선·영역의 우클릭 댓글
-  // 항목은 걷어냈다. 배경 메뉴의 "댓글 추가"는 그 자리에 **첫 댓글 말풍선**을 연다
-  // (핀은 그 댓글이 저장된 뒤에 생긴다).
-  it('주제 우클릭에는 댓글 항목이 없다(요청)', async () => {
+  // 요청 ⑧: 댓글은 **댓글 핀**에만 붙는다 — 주제·메모·선·영역의 우클릭 메뉴에는
+  // 댓글 항목이 없다(캔버스 어디든 남기는 길은 배경 메뉴의 '댓글 추가'다).
+  it('주제 메뉴에 댓글 항목이 없다(댓글은 핀에만 붙는다)', async () => {
     localStorage.setItem('mindflow_doc_cmt1', JSON.stringify(DOC));
     localStorage.setItem('mf_comments', JSON.stringify([{ id: 'x1', documentId: 'cmt1', nodeId: 'c1', authorName: '나', body: '기존 논의', createdAt: '2026-01-01T00:00:00.000Z' }]));
     const { container } = renderEditor('/editor?map=cmt1&title=x');
@@ -175,25 +174,14 @@ describe('Context menu — node', () => {
     const { clientX, clientY } = toClient(pan, zoom, c1.x, c1.y);
 
     rightClickAt(vp, clientX, clientY);
-    await screen.findByText('하위 주제 추가');
+    await waitFor(() => expect(screen.getByText('하위 주제 추가')).toBeTruthy());
     expect(screen.queryByText('댓글')).toBeNull();
     expect(screen.queryByText('댓글 (1)')).toBeNull();
-    // 옛 댓글이 남아 있어도 주제에 배지를 만들지 않는다.
-    expect(container.querySelector('[data-comment-badge]')).toBeNull();
+    // 주제에 붙던 개수 배지도 없다.
+    expect(screen.queryByLabelText('댓글 1개')).toBeNull();
   });
 
-  it('배경 우클릭 "댓글 추가"는 첫 댓글 말풍선을 연다 — 핀은 아직 생기지 않는다(요청)', async () => {
-    localStorage.setItem('mindflow_doc_cmt3', JSON.stringify(DOC));
-    const { container } = renderEditor('/editor?map=cmt3&title=x');
-    const vp = getViewport(container);
-    rightClickAt(vp, 40, 520); // 어떤 객체와도 겹치지 않는 빈 자리
-    clickMenuItem(await screen.findByText('댓글 추가'));
-
-    await waitFor(() => expect(container.querySelector('[data-comment-draft]')).toBeTruthy());
-    expect(container.querySelector('[data-comment-pin]')).toBeNull();
-  });
-
-  it('보기 전용(view 초대): 객체 우클릭 메뉴는 아예 열리지 않는다', async () => {
+  it('보기 전용(view 초대): 객체 위 우클릭은 아무 메뉴도 열지 않는다 — 항목이 전부 변이다', async () => {
     // 보기 전용 판별 = 데모 세션 이메일로 걸린 view 초대 행(ReadOnly.interactions와 동일).
     localStorage.setItem('mf_demo_session', JSON.stringify({ user: { id: 'u', email: 'viewer@example.com' } }));
     localStorage.setItem('mf_doc_shares', JSON.stringify([{ documentId: 'cmt2', email: 'viewer@example.com', role: 'view', createdAt: '2026-01-01T00:00:00.000Z' }]));
@@ -206,7 +194,7 @@ describe('Context menu — node', () => {
     const { clientX, clientY } = toClient(pan, zoom, c1.x, c1.y);
 
     rightClickAt(vp, clientX, clientY);
-    // 메뉴 항목은 전부 변이라 내줄 것이 없다 — 빈 메뉴가 뜨는 것보다 안 뜨는 편이 낫다.
+    // 빈 메뉴를 여느니 열지 않는다 — 보기 전용 사용자는 꽂혀 있는 핀을 눌러 논의한다.
     await waitFor(() => expect(screen.queryByText('하위 주제 추가')).toBeNull());
     expect(screen.queryByText('댓글')).toBeNull();
     expect(screen.queryByText('삭제')).toBeNull();

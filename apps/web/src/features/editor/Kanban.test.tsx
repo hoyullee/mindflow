@@ -1043,7 +1043,7 @@ describe('칸반 — 후속 7건', () => {
 
     fireEvent.doubleClick(container.querySelector('[data-kanban-card="k1"]')!);
     const detail = await waitFor(() => container.querySelector('[data-card-detail="k1"]') as HTMLElement);
-    const box = within(detail).getByPlaceholderText('댓글 남기기 (@로 멘션)');
+    const box = within(detail).getByPlaceholderText('댓글 남기기 · @로 멘션');
     fireEvent.change(box, { target: { value: '여기서 바로 남긴다' } });
     fireEvent.click(within(detail).getByRole('button', { name: '남기기' }));
 
