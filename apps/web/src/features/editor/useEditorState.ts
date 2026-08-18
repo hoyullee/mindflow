@@ -415,6 +415,8 @@ export interface EditorController {
   commentsLoading: boolean;
   addComment: (nodeId: string, body: string, opts?: { parentId?: string; mentions?: CommentMention[] }) => Promise<{ error?: string }>;
   removeComment: (commentId: string) => Promise<{ error?: string }>;
+  /** 이 대상(핀)의 **모든 글**을 지운다 — 뿌리를 지우면 답글은 서버가 함께 지운다. */
+  removeThread: (nodeId: string) => Promise<{ error?: string }>;
   /** 스레드 해결/해제(뿌리 댓글만) — 댓글을 쓸 수 있는 사람 전원이 할 수 있다. */
   resolveComment: (commentId: string, resolved: boolean) => Promise<{ error?: string }>;
   likeComment: (commentId: string, liked: boolean) => Promise<{ error?: string }>;
@@ -4336,6 +4338,8 @@ export function useEditorState(): EditorController {
   const [commentsOpen, setCommentsOpen] = useState(false);
   const [commentsNodeId, setCommentsNodeId] = useState<string>(ROOT_ID);
   const [comments, setComments] = useState<DocComment[]>([]);
+  const commentsRef = useRef(comments);
+  commentsRef.current = comments;
   const [commentsLoading, setCommentsLoading] = useState(false);
 
   /** 서버에서 목록을 다시 읽는다. 댓글은 실시간 채널을 타지 않으므로(본문이 아니다)
@@ -4395,6 +4399,21 @@ export function useEditorState(): EditorController {
     if (selection?.kind === 'commentPin') setCommentsNodeId(selection.id);
     else setCommentsOpen(false);
   }, [selection?.kind, selection?.id, isKanban]);
+
+  // 가리키던 핀이 사라졌으면 팝업도 닫는다(제보 ②).
+  //
+  // 스레드를 통째로 지우면 글이 0개가 되어 핀이 정리되는데(위 `reloadComments`),
+  // `selection`은 여전히 그 핀이라 위 effect는 닫지 않았다. 그러면 팝업이 가리킬
+  // 자리를 잃고 **화면 우측의 옛 자리**(핀 없는 대상용 배치)로 밀려나, 사용자에게는
+  // "지웠는데 다른 댓글 팝업이 떴다"로 보인다. 캔버스에서 논의는 핀에만 붙으므로
+  // (요청 ⑧) 핀이 없으면 열려 있을 이유가 없다 — 상대가 지운 경우·되돌리기도 같다.
+  useEffect(() => {
+    if (isKanban || !commentsOpen) return;
+    if ((doc.commentPins ?? []).some((p) => p.id === commentsNodeId)) return;
+    setCommentsOpen(false);
+    // 사라진 핀을 고른 상태로 남겨 두지 않는다(키보드 경로가 유령을 만지지 않게).
+    setSelectionState((prev) => (prev?.kind === 'commentPin' && prev.id === commentsNodeId ? null : prev));
+  }, [isKanban, commentsOpen, commentsNodeId, doc.commentPins]);
 
   const commentCounts = useMemo(() => {
     const counts: Record<string, number> = {};
@@ -4535,6 +4554,24 @@ export function useEditorState(): EditorController {
       const res = await commentStore.remove(docStoreId, commentId);
       if (!res.error) await reloadComments();
       return res;
+    },
+    [commentStore, docStoreId, reloadComments],
+  );
+  /** 스레드 통째로 지우기(⋯ 메뉴) — 예전에는 **첫 뿌리 글 하나만** 지워서, 여러
+   * 번 눌러야 스레드가 비었다(제보 ①). 뿌리를 지우면 답글은 서버가 함께 지우므로
+   * (0021 `on delete cascade`) 뿌리들만 돌면 된다. 목록 재조회는 **마지막에 한 번**.
+   * 남의 글이 섞여 있으면 그 글에서 실패할 수 있다(RLS: 작성자 또는 문서 소유자) —
+   * 첫 오류를 돌려주고, 지워진 것은 지워진 대로 둔다. */
+  const removeThread = useCallback(
+    async (nodeId: string): Promise<{ error?: string }> => {
+      const roots = commentsRef.current.filter((c) => c.nodeId === nodeId && !c.parentId);
+      let firstError: string | undefined;
+      for (const r of roots) {
+        const res = await commentStore.remove(docStoreId, r.id);
+        if (res.error && !firstError) firstError = res.error;
+      }
+      await reloadComments();
+      return firstError ? { error: firstError } : {};
     },
     [commentStore, docStoreId, reloadComments],
   );
@@ -6002,10 +6039,21 @@ export function useEditorState(): EditorController {
       }
 
       if (inEditable) return;
-      // 화이트보드 도구 전환 — V(선택)·P(펜)·H(형광펜)·E(지우개)·C(댓글). 수정 키가 없을 때만이라
+      // 켜 둔 댓글 도구는 Escape로 끈다 — 화이트보드에서는 도구 막대가 이 일을
+      // 맡지만(BoardToolbar) 맵에는 막대가 없어서 여기서 받는다.
+      if (e.key === 'Escape' && boardToolRef.current === 'comment') {
+        e.preventDefault();
+        setBoardTool('select');
+        return;
+      }
+      // 캔버스 도구 전환 — V(선택)·P(펜)·H(형광펜)·E(지우개)·C(스레드). 수정 키가 없을 때만이라
       // Ctrl+V(붙여넣기) 같은 기존 단축키와 겹치지 않는다. 한글 IME가 켜져 있으면
       // e.key가 자모로 오므로 물리 키(e.code)도 함께 본다(복사/붙여넣기와 같은 처방).
-      if (isBoard && !e.metaKey && !e.ctrlKey && !e.altKey && !e.shiftKey) {
+      //
+      // **그리기 도구(펜·형광펜·지우개)는 화이트보드 전용**이고, 선택·스레드는 맵에서도
+      // 쓴다(요청) — 맵에는 하단 도구 막대가 없어 예전에는 스레드 진입이 배경
+      // 우클릭 하나뿐이었다. 칸반은 캔버스가 없으므로 어느 쪽도 아니다.
+      if (!isKanban && !e.metaKey && !e.ctrlKey && !e.altKey && !e.shiftKey) {
         const k = e.key.toLowerCase();
         const tool: BoardTool | null =
           k === 'v' || e.code === 'KeyV'
@@ -6019,7 +6067,10 @@ export function useEditorState(): EditorController {
                   : k === 'c' || e.code === 'KeyC'
                     ? 'comment'
                     : null;
-        if (tool) {
+        // 스레드 도구는 **남길 수 있을 때만** 켠다 — 켜 봐야 아무 일도 없으면
+        // 커서만 바뀐 채 먹통이 된다(보기 전용·스토어 없음).
+        const usable = tool && (isBoard || tool === 'select' || (tool === 'comment' && canCommentRef.current));
+        if (tool && usable) {
           e.preventDefault();
           setBoardTool(tool);
           return;
@@ -6380,6 +6431,7 @@ export function useEditorState(): EditorController {
     commentsLoading,
     addComment,
     removeComment,
+    removeThread,
     resolveComment,
     likeComment,
     canComment,

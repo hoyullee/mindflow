@@ -152,6 +152,10 @@ export function InsertMenu({ controller, onDone, isMobile }: { controller: Edito
         { icon: <ImageIcon />, label: '이미지 추가', run: () => controller.promptAddImage() },
         { icon: <LineIcon />, label: '선 추가', run: () => controller.addLineAt() },
         { icon: <ZoneIcon />, label: '영역 추가', run: () => controller.addZoneAt() },
+        // 스레드 — 화이트보드는 하단 도구 막대가 이 일을 맡지만 맵에는 막대가 없다
+        // (요청). 다른 삽입과 달리 문서에 바로 넣지 않는다: 화면 가운데에 첫 글
+        // 말풍선이 뜨고, 한 마디를 남겨야 핀이 들어간다.
+        ...(controller.canComment ? [{ icon: <CommentIcon />, label: '스레드 추가', run: () => controller.startCommentDraft() }] : []),
       ];
   return (
     <MenuShell theme={th}>

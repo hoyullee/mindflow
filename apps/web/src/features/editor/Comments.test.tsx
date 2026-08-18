@@ -962,3 +962,98 @@ describe('댓글 도구(화이트보드)', () => {
     expect(container.querySelector('[data-comment-pin]')).toBeNull();
   });
 });
+
+// 요청: 마인드맵에서도 스레드를 쓸 수 있게. 기능(핀·팝업·답글)은 원래 문서 종류와
+// 무관하게 동작했지만 **진입 방식**이 갈려 있었다 — 도구 모드·단축키 C·도구 버튼은
+// 하단 도구 막대(화이트보드 전용)에만 있어서, 맵에서는 배경 우클릭이 유일한 길이었다.
+describe('마인드맵 스레드 진입점(요청)', () => {
+  it('삽입 메뉴의 스레드 추가가 초안 말풍선을 띄운다', async () => {
+    localStorage.setItem('mindflow_doc_mp1', JSON.stringify(DOC));
+    renderEditor('/editor?map=mp1&title=맵');
+    fireEvent.click(await screen.findByRole('button', { name: '삽입' }));
+    fireEvent.click(await screen.findByRole('button', { name: '스레드 추가' }));
+    const bubble = await screen.findByLabelText('첫 스레드 남기기');
+    // 다른 삽입과 달리 **문서에는 아직 아무것도 들어가지 않는다**(요청 ⑤).
+    expect(JSON.parse(localStorage.getItem('mindflow_doc_mp1') as string).commentPins ?? []).toHaveLength(0);
+    fireEvent.change(within(bubble).getByLabelText('스레드 입력'), { target: { value: '맵에서 남긴 첫 마디' } });
+    fireEvent.click(within(bubble).getByRole('button', { name: '남기기' }));
+    await waitFor(() => expect(document.querySelector('[data-comment-pin]')).toBeTruthy());
+  });
+
+  it('C로 스레드 도구를 켜 누른 자리에 남기고, Escape로 끈다', async () => {
+    localStorage.setItem('mindflow_doc_mp2', JSON.stringify(DOC));
+    const { container } = renderEditor('/editor?map=mp2&title=맵');
+    await waitFor(() => expect(container.querySelector('.mf-ed-vp')).toBeTruthy());
+    // 맵에는 하단 도구 막대가 없다 — 단축키가 그 자리를 대신한다.
+    expect(container.querySelector('[data-board-toolbar]')).toBeNull();
+
+    fireEvent.keyDown(window, { key: 'c', code: 'KeyC' });
+    const layer = await waitFor(() => {
+      const el = container.querySelector('[data-board-draw-layer]') as HTMLElement;
+      expect(el).toBeTruthy();
+      return el;
+    });
+    firePointer(layer, 'pointerdown', { clientX: 420, clientY: 300 });
+    firePointer(layer, 'pointerup', { clientX: 420, clientY: 300 });
+    await screen.findByLabelText('첫 스레드 남기기');
+    // 자리를 정한 순간 손은 선택 도구로 돌아온다(보드와 같은 규칙).
+    await waitFor(() => expect(container.querySelector('[data-board-draw-layer]')).toBeNull());
+
+    // 켜 두고 마음이 바뀌면 Escape — 맵에는 도구 막대가 없으므로 전역 키가 받는다.
+    fireEvent.keyDown(window, { key: 'c', code: 'KeyC' });
+    await waitFor(() => expect(container.querySelector('[data-board-draw-layer]')).toBeTruthy());
+    fireEvent.keyDown(window, { key: 'Escape' });
+    await waitFor(() => expect(container.querySelector('[data-board-draw-layer]')).toBeNull());
+  });
+
+  it('그리기 도구는 맵에서 켜지지 않는다(화이트보드 전용)', async () => {
+    localStorage.setItem('mindflow_doc_mp3', JSON.stringify(DOC));
+    const { container } = renderEditor('/editor?map=mp3&title=맵');
+    await waitFor(() => expect(container.querySelector('.mf-ed-vp')).toBeTruthy());
+    for (const [key, code] of [
+      ['p', 'KeyP'],
+      ['h', 'KeyH'],
+      ['e', 'KeyE'],
+    ] as const) {
+      fireEvent.keyDown(window, { key, code });
+    }
+    expect(container.querySelector('[data-board-draw-layer]')).toBeNull();
+  });
+});
+
+// 제보 ①②: ⋯의 "스레드 삭제"가 **글 하나씩** 지워서 여러 번 눌러야 스레드가 비었고,
+// 다 비운 뒤에는 가리킬 핀을 잃은 팝업이 **화면 우측 옛 자리**로 밀려나 "다른 댓글
+// 팝업이 떴다"로 보였다.
+describe('스레드 삭제(제보)', () => {
+  it('⋯ 삭제는 확인을 받고 스레드의 모든 글을 지우며, 팝업과 핀이 함께 사라진다', async () => {
+    localStorage.setItem('mindflow_doc_td1', JSON.stringify(DOC_WITH_PIN));
+    seedComment('td1', PIN_ID, '뿌리 글');
+    seedComment('td1', PIN_ID, '그 답글', { parentId: 'c1' });
+    seedComment('td1', PIN_ID, '두 번째 뿌리 글');
+    const { container } = renderEditor('/editor?map=td1&title=x');
+    const panel = await openPinComments();
+    await waitFor(() => expect(within(panel).getByText('두 번째 뿌리 글')).toBeTruthy());
+
+    fireEvent.click(within(panel).getByRole('button', { name: '스레드 메뉴' }));
+    fireEvent.click(within(panel).getByRole('button', { name: '스레드 삭제' }));
+
+    // ① 확인창이 먼저 뜨고, 무엇이 몇 개 사라지는지 밝힌다.
+    const dialog = await screen.findByRole('dialog', { name: '스레드 삭제 확인' });
+    expect(within(dialog).getByText(/글 3개/)).toBeTruthy();
+    // 취소하면 아무것도 지워지지 않는다.
+    fireEvent.click(within(dialog).getByRole('button', { name: '취소' }));
+    await waitFor(() => expect(screen.queryByRole('dialog', { name: '스레드 삭제 확인' })).toBeNull());
+    expect(storedComments()).toHaveLength(3);
+
+    fireEvent.click(within(panel).getByRole('button', { name: '스레드 메뉴' }));
+    fireEvent.click(within(panel).getByRole('button', { name: '스레드 삭제' }));
+    const dialog2 = await screen.findByRole('dialog', { name: '스레드 삭제 확인' });
+    fireEvent.click(within(dialog2).getByRole('button', { name: '삭제' }));
+
+    // 한 번에 **모든 글**이 사라진다(예전에는 첫 뿌리 글 하나만 지워졌다).
+    await waitFor(() => expect(storedComments()).toHaveLength(0));
+    // ② 그리고 팝업은 남지 않는다 — 가리킬 핀이 없으면 열려 있을 이유가 없다.
+    await waitFor(() => expect(container.querySelector('[data-comment-panel]')).toBeNull());
+    await waitFor(() => expect(container.querySelector('[data-comment-pin]')).toBeNull());
+  });
+});

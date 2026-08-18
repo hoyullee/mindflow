@@ -25,9 +25,11 @@ export function BoardDrawLayer({ controller }: { controller: EditorController })
   /** 댓글 도구: 누른 자리(움직였으면 "클릭"이 아니라 화면 이동으로 본다). */
   const pressAt = useRef<{ x: number; y: number } | null>(null);
 
-  if (!controller.isBoard || controller.readOnly || controller.boardTool === 'select') return null;
-
   const comment = controller.boardTool === 'comment';
+  // 그리기(펜·형광펜·지우개)는 화이트보드 전용이지만 **스레드 도구는 맵에서도** 쓴다
+  // (요청) — 맵에는 하단 도구 막대가 없어 예전에는 배경 우클릭이 유일한 진입점이었다.
+  if (controller.readOnly || controller.boardTool === 'select') return null;
+  if (!controller.isBoard && !comment) return null;
   const th = controller.uiTheme;
 
   const two = (): [{ x: number; y: number }, { x: number; y: number }] | null => {
