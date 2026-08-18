@@ -89,7 +89,9 @@ export function Sidebar({ state, view, controller, isMobile = false, isOpen = fa
         boxShadow: '0 0 32px rgba(0,0,0,.22)',
         transform: entered ? 'translateX(0)' : 'translateX(-105%)',
       } as const)
-    : ({ width: 250, flex: '0 0 auto' } as const);
+    : // 디자인 원본의 250은 content-box(+패딩 24 +테두리 1 = 실측 274)다 — 우리는
+      // border-box라 같은 겉폭이 되도록 274로 둔다(요청: LNB를 디자인 폭으로).
+      ({ width: 274, flex: '0 0 auto' } as const);
 
   return (
     <>

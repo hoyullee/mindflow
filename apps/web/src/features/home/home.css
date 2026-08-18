@@ -221,9 +221,40 @@ a:hover {
 .mf-home .nav-item:hover {
   background: var(--mf-panel2) !important;
 }
+/* 템플릿 카드 — 디자인 원본의 `.gh-tpl` hover/active. transition을 여기에만 둔다
+   (인라인로 얹으면 transform 전이가 덮여 hover가 툭 바뀐다 — 카드와 같은 함정). */
+.mf-home .tpl-card {
+  transition:
+    transform 0.16s ease,
+    box-shadow 0.16s ease,
+    border-color 0.16s ease;
+}
 .mf-home .tpl-card:hover {
   transform: translateY(-3px);
-  box-shadow: 0 10px 24px rgba(0, 0, 0, 0.1) !important;
+  border-color: var(--mf-border-hover) !important;
+  box-shadow: 0 22px 40px -26px rgba(46, 42, 38, 0.45) !important;
+}
+.mf-home .tpl-card:active {
+  transform: translateY(-1px) scale(0.994);
+}
+/* 갤러리 팝업의 등장 — 디자인 원본의 `ghPop`(살짝 위에서 커지며). */
+@keyframes mf-pop {
+  from {
+    opacity: 0;
+    transform: translateY(-6px) scale(0.985);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+.mf-gallery-pop {
+  animation: mf-pop 0.2s cubic-bezier(0.2, 0.9, 0.3, 1) both;
+}
+@media (prefers-reduced-motion: reduce) {
+  .mf-gallery-pop {
+    animation: none;
+  }
 }
 /* 카드는 누르는 대상이지 읽을 글이 아니다 — 열기(두 번 클릭)가 제목 글자를
    통째로 선택해 파랗게 남기지 않게 한다(제보: 폴더 진입 직후 상위 폴더 타일). */
@@ -232,18 +263,28 @@ a:hover {
   -webkit-user-select: none;
 }
 /* 홈 리디자인 — 마우스를 얹으면 카드가 **3px 떠오른다**(디자인 원본의
-   `.gh-card:hover`). 예전에는 테두리가 강조색으로 바뀌었는데, 그 색은 지금
-   **선택**(2px)이 쓰므로 hover는 한 톤 진한 경계 + 더 멀리 퍼지는 그늘로 갈랐다. */
+   `.gh-card:hover`). ⚠️ 이 transition이 유일한 정의여야 한다: 컴포넌트가 인라인
+   transition을 얹으면 이 규칙(transform 포함)을 덮어써 hover 떠오름이 전이 없이
+   A→B로 툭 바뀐다(제보 — "멈춘 두 그림만 있는 느낌"의 원인). */
 .mf-home .map-card {
   transition:
     transform 0.18s ease,
     box-shadow 0.18s ease,
-    border-color 0.18s ease;
+    border-color 0.18s ease,
+    outline-color 0.14s ease,
+    background 0.14s ease,
+    opacity 0.14s ease;
 }
 .mf-home .map-card:hover {
   transform: translateY(-3px);
   border-color: var(--mf-border-hover) !important;
   box-shadow: var(--mf-card-shadow-hover) !important;
+}
+/* 누르는 순간 살짝 눌린다(디자인 원본의 `.gh-card:active`) — 떠오름과 짝을 이뤄
+   카드가 "물성 있는 것"으로 느껴진다. */
+.mf-home .map-card:active {
+  transform: translateY(-1px) scale(0.993);
+  transition: transform 0.07s ease;
 }
 .mf-home .map-card:hover .fav-btn {
   opacity: 1 !important;
@@ -282,14 +323,26 @@ a:hover {
 .mf-home .fav-btn:hover {
   transform: scale(1.12);
 }
+/* ⋯는 면 없는 점 셋(요청) — hover에서는 배경 대신 **글자색만** 짙어진다. */
 .mf-home .menu-btn:hover {
-  background: var(--mf-panel2) !important;
+  color: var(--mf-text) !important;
 }
 .mf-home .menu-row:hover {
   background: var(--mf-panel2) !important;
 }
 .mf-home .btn:hover {
   filter: brightness(var(--mf-hover-bright));
+}
+/* 툴바의 2차 컨트롤(알림·가져오기·새 폴더·검색 옆 알약) — 디자인 원본은 어둡히는
+   필터가 아니라 **옅은 면**이 깔리고 글자가 짙어진다. 배경이 인라인이라 !important. */
+.mf-home .mf-ctl:hover {
+  filter: none;
+  background: var(--mf-panel2) !important;
+  color: var(--mf-text) !important;
+}
+/* 1차 버튼(새로 만들기) — 그라디언트 위라 면을 못 갈아끼우고 살짝 밝아진다(원본). */
+.mf-home .mf-ctl-primary:hover {
+  filter: brightness(1.05);
 }
 .mf-home .drive-file:hover {
   background: var(--mf-panel2) !important;

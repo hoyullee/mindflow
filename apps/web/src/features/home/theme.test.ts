@@ -26,6 +26,8 @@ describe('home theme', () => {
       '--mf-bg': '#fbf6f2',
       '--mf-sunken': '#f5ece5',
       '--mf-panel': '#ffffff',
+      // 카드의 면 — 디자인 원본의 살짝 따뜻한 흰색(#FFFDFB). 코랄만 값이 다르다.
+      '--mf-card': '#fffdfb',
       '--mf-panel2': '#faf3ee',
       '--mf-panel-veil': 'rgba(255,255,255,0.92)',
       '--mf-panel-grey': '#fbf8f5',
@@ -46,8 +48,9 @@ describe('home theme', () => {
       '--mf-danger-line': '#f3d9d4',
       '--mf-danger-mute': '#e7b9b3',
       '--mf-info': '#3f8fd0',
-      '--mf-doc-map': '#3f9e6a',
-      '--mf-doc-board': '#3f8fd0',
+      // 종류 색(요청): 빨강(마인드맵)·초록(화이트보드)·보라(칸반).
+      '--mf-doc-map': '#d9482b',
+      '--mf-doc-board': '#3f9e6a',
       '--mf-doc-kanban': '#8a63d2',
       '--mf-star': '#e0a53c',
       // 홈 리디자인에서 더한 카드 입체감 토큰(디자인 원본의 그늘·hover·미리보기 바탕).

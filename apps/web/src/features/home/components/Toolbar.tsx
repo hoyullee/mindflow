@@ -156,7 +156,9 @@ export function Toolbar({ state, view, controller, isMobile = false, onOpenNav }
   const activeSpace = state.spaces.find((sp) => sp.id === state.activeSpace);
   const spaceDot = activeSpace?.color || 'var(--mf-accent)';
   // 개수는 지금 화면에 그려지는 것과 같은 목록에서 센다(뷰모델을 손대지 않는다).
-  const meta = `맵 ${view.allCards.length}개 · 폴더 ${view.folderCards.length}개`;
+  // 용어(사용자 선정): 문서 종류가 셋이라 '맵'은 좁고 '카드'는 칸반의 카드와
+  // 충돌한다 — 종류를 아우르는 말로 **파일**을 쓴다.
+  const meta = `파일 ${view.allCards.length}개 · 폴더 ${view.folderCards.length}개`;
   return (
     <div style={{ display: 'flex', alignItems: 'center', marginBottom: 18, gap: isMobile ? 12 : 14, flexWrap: 'wrap' }}>
       {/* ≡ · 제목은 한 덩어리다. 따로 두면 제목이 길 때 flex-wrap이 제목 항목을
@@ -302,17 +304,17 @@ export function Toolbar({ state, view, controller, isMobile = false, onOpenNav }
           {view.importVisible && (
             // 가져오기는 데스크톱에서도 **아이콘만**이다(디자인 원본) — 자주 쓰는
             // 동작이 아니라 라벨 자리를 검색·만들기에 내준다.
-            <button className="btn" onClick={controller.openImport} aria-label="가져오기" title="가져오기" style={roundIconStyle(isMobile)}>
+            <button className="btn mf-ctl" onClick={controller.openImport} aria-label="가져오기" title="가져오기" style={roundIconStyle(isMobile)}>
               <ImportGlyph />
             </button>
           )}
           {view.newFolderVisible &&
             (isMobile ? (
-              <button className="btn" onClick={controller.openNewFolder} aria-label="새 폴더" title="새 폴더" style={roundIconStyle(true)}>
+              <button className="btn mf-ctl" onClick={controller.openNewFolder} aria-label="새 폴더" title="새 폴더" style={roundIconStyle(true)}>
                 <NewFolderGlyph />
               </button>
             ) : (
-              <button className="btn" onClick={controller.openNewFolder} style={pillStyle(false)}>
+              <button className="btn mf-ctl" onClick={controller.openNewFolder} style={pillStyle(false)}>
                 <NewFolderGlyph /> 새 폴더
               </button>
             ))}
@@ -321,7 +323,7 @@ export function Toolbar({ state, view, controller, isMobile = false, onOpenNav }
           <button
             type="button"
             onClick={controller.openTemplates}
-            className="btn"
+            className="btn mf-ctl-primary"
             aria-label={isMobile ? '새로 만들기' : undefined}
             title={isMobile ? '새로 만들기' : undefined}
             style={primaryPillStyle(isMobile)}

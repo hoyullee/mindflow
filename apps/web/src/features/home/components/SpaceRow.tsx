@@ -63,9 +63,6 @@ export function SpaceRow({ space, state, controller }: Props) {
             사각과 같은 꼴이라 "지금 이 스페이스"가 두 자리에서 같은 표식으로 읽힌다. */}
         <span style={{ width: 9, height: 9, borderRadius: 3, flexShrink: 0, background: space.color || '#f0663f', display: 'block' }} />
         <span style={{ flex: 1, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{space.name}</span>
-        {/* 활성 표시 — 오른쪽 끝의 작은 강조색 점(디자인 원본). ⋮ 메뉴가 뜨면 그
-            자리를 양보한다(둘이 겹치지 않게). */}
-        {active && !menuOpen && <span aria-hidden="true" style={{ width: 5, height: 5, borderRadius: 999, background: 'var(--mf-accent)', display: 'block', flexShrink: 0 }} />}
         <span
           className="space-dot"
           role="button"

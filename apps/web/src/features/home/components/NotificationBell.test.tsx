@@ -107,7 +107,8 @@ describe('알림 센터', () => {
     fireEvent.click(bell);
     const panel = await screen.findByRole('region', { name: '알림 센터' });
     // 목록이 길어질 때 기본 스크롤바가 패널을 가리지 않게 — .lnb-scroll과 같은 처리.
-    expect(panel.classList.contains('notif-scroll')).toBe(true);
+    // 홈 리디자인 후 스크롤은 패널이 아니라 **안쪽 목록**이 한다(머리·꼬리는 고정).
+    expect(panel.querySelector('.notif-scroll')).toBeTruthy();
   });
 
   it('알림 패널 스크롤바: 위/아래 화살표 버튼이 없고 트랙이 둥근 모서리 안쪽으로 들여진다(제보)', async () => {
@@ -145,6 +146,24 @@ describe('알림 센터', () => {
     });
     const bell = await screen.findByRole('button', { name: '알림 1개' });
     expect(within(bell).getByText('1')).toBeTruthy();
+  });
+
+  it('목록은 최신이 위 — 어댑터 배열 순서가 시간순이 아니어도 오늘 묶음이 이전 묶음보다 먼저 선다', async () => {
+    // 벨은 어댑터의 배열 순서를 믿지 않고 createdAt으로 정렬한다. 로컬 어댑터는
+    // "추가순 = 시간순"을 전제로 reverse()하는데, 저장 배열이 시간순이 아니면
+    // (기기 간 시계 어긋남·재작성 경로) '이전' 그룹이 '오늘' 위에 선다 —
+    // 실브라우저 프로브에서 재현한 화면.
+    seed([
+      { id: 'new', createdAt: new Date(Date.now() - 5 * 60_000).toISOString() },
+      { id: 'old', createdAt: new Date(Date.now() - 26 * 3600_000).toISOString(), kind: 'share', nodeId: null, preview: '' },
+    ]);
+    renderBell();
+    fireEvent.click(await screen.findByRole('button', { name: '알림 2개' }));
+    const panel = await screen.findByRole('region', { name: '알림 센터' });
+    const texts = [...panel.querySelectorAll('div,span')].map((e) => e.textContent?.trim()).filter((t) => t === '오늘' || t === '이전');
+    expect(texts[0]).toBe('오늘');
+    // 첫 행이 최신 항목(멘션)이다 — 공유(어제)가 위로 오면 안 된다.
+    expect(within(panel).getAllByText(/님이/)[0]!.textContent).toContain('멘션');
   });
 
   it('홈을 켜 둔 채 새 알림이 오면 벨을 누르지 않아도 배지가 선다(주기 확인, 제보)', async () => {

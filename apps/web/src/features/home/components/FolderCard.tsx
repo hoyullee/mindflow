@@ -77,54 +77,28 @@ export function FolderCard({ folder, controller }: Props) {
       onDragLeave={onDragLeave}
       onDrop={onDrop}
       style={{
-        border: folder.dragOver ? '2px dashed var(--mf-accent)' : folder.selected ? '2px solid var(--mf-accent)' : '1px solid var(--mf-border)',
+        // 드롭 대기만 테두리가 바뀐다(점선 = "여기에 넣는다") — 선택은 outline 링
+        // (디자인 원본, 맵 카드와 같은 문법)이라 테두리·패딩 박스가 흔들리지 않는다.
+        border: folder.dragOver ? '2px dashed var(--mf-accent)' : '1px solid var(--mf-border)',
+        outline: folder.selected && !folder.dragOver ? '2px solid var(--mf-accent)' : '2px solid transparent',
+        outlineOffset: 2,
         borderRadius: 16,
-        background: folder.dragOver ? 'var(--mf-accent-soft)' : 'var(--mf-panel)',
+        background: folder.dragOver ? 'var(--mf-accent-soft)' : 'var(--mf-card)',
         cursor: selectMode ? 'default' : 'pointer',
         opacity: selectMode ? 0.45 : 1,
-        transition: 'border-color .14s, box-shadow .14s, background .14s, opacity .14s',
+        // transition은 home.css의 `.map-card` 규칙이 정한다(transform 포함 — 인라인로
+        // 덮으면 hover 떠오름이 전이 없이 툭 바뀐다).
         position: 'relative',
         display: 'flex',
         alignItems: 'center',
         gap: 13,
-        // 2px 테두리가 되는 상태(드롭 대기·선택)에서도 **안쪽 좌표계가 흔들리지 않게**
-        // 패딩은 그대로 두고 **음수 마진**으로 늘어난 1px을 상쇄한다(맵 카드와 같은 방식).
-        //
-        // 예전엔 패딩을 18→17로 줄여 크기를 맞췄는데, 그러면 카드 겉면은 그대로여도
-        // **패딩 박스**가 1px 안쪽으로 들어간다. ☰ 버튼은 `position: absolute`의
-        // `top/right`로 그 패딩 박스에 붙어 있어서, 폴더를 선택하는 순간 버튼만
-        // (-1, +1)px 움직였다(제보 — 실측으로 확인). 마진으로 상쇄하면 테두리가
-        // 두꺼워진 만큼 바깥으로 나가므로 패딩 박스 위치가 그대로다.
         padding: '14px',
-        margin: folder.dragOver || folder.selected ? -1 : 0,
+        margin: folder.dragOver ? -1 : 0,
         // 맵 카드와 같은 그늘 — 폴더도 면 위에 떠 있다(디자인 원본).
-        boxShadow: folder.dragOver
-          ? '0 6px 18px rgba(var(--mf-accent-rgb),.18)'
-          : folder.selected
-            ? '0 0 0 3px rgba(var(--mf-accent-rgb),.18), var(--mf-card-shadow)'
-            : 'var(--mf-card-shadow)',
+        boxShadow: folder.dragOver ? '0 6px 18px rgba(var(--mf-accent-rgb),.18)' : 'var(--mf-card-shadow)',
       }}
     >
-      <div
-        className="menu-btn"
-        role="button"
-        tabIndex={-1}
-        onClick={(e) => {
-          e.preventDefault();
-          e.stopPropagation();
-          const r = e.currentTarget.getBoundingClientRect();
-          controller.openCtxMenu(r.right - 184, r.bottom + 6, { kind: 'folder', id: folder.id });
-        }}
-        title="메뉴"
-        aria-label="메뉴"
-        style={{ position: 'absolute', top: 8, right: 8, zIndex: 4, width: 28, height: 28, borderRadius: 9, background: 'var(--mf-panel2)', border: '1px solid var(--mf-border)', display: selectMode ? 'none' : 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--mf-subtext)', cursor: 'pointer', opacity: folder.menuOpen ? 1 : 0, transform: folder.menuOpen ? 'translateY(0)' : 'translateY(2px)', transition: 'opacity .18s ease, transform .18s ease' }}
-      >
-        <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
-          <circle cx="5" cy="12" r="1.6" />
-          <circle cx="12" cy="12" r="1.6" />
-          <circle cx="19" cy="12" r="1.6" />
-        </svg>
-      </div>
+
       {/* 아이콘 타일 — 옅은 세로 그라디언트 + 선 아이콘(디자인 원본). 강조색을 쓰지
           않는 이유: 폴더는 강조 대상이 아니라 담는 그릇이고, 강조색은 지금 "선택"과
           1차 버튼이 쓴다. */}
@@ -148,24 +122,31 @@ export function FolderCard({ folder, controller }: Props) {
       </div>
       <div style={{ minWidth: 0, flex: 1, display: 'flex', flexDirection: 'column', gap: 3 }}>
         <div style={{ fontSize: 14, fontWeight: 700, letterSpacing: '-.01em', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{folder.name}</div>
-        <div style={{ fontSize: 11.5, color: 'var(--mf-muted)' }}>맵 {folder.count}개</div>
+        <div style={{ fontSize: 11.5, color: 'var(--mf-muted)' }}>파일 {folder.count}개</div>
       </div>
-      {/* 진입 표시 — 마우스를 얹으면 오른쪽에서 나타난다(디자인 원본의 `gh-open`).
-          "두 번 누르면 들어간다"를 글로 적지 않고 방향으로 알린다. */}
-      <svg
-        className="card-open"
-        width="16"
-        height="16"
-        viewBox="0 0 24 24"
-        fill="none"
-        stroke="var(--mf-faint)"
-        strokeWidth="2"
-        strokeLinecap="round"
-        aria-hidden="true"
-        style={{ flexShrink: 0, opacity: 0, transform: 'translateY(2px)', transition: 'opacity .18s ease, transform .18s ease' }}
+      {/* ⋯ 메뉴 — 오른쪽 **세로 중앙**(요청). 예전에는 우상단 absolute였는데 hover의
+          진입 셰브론과 겹쳤다 — 셰브론을 없애고 이 자리 하나만 남긴다(들어가는 길은
+          더블클릭·Enter가 이미 말한다). 면·테두리 없는 점 셋(요청 4). */}
+      <div
+        className="menu-btn"
+        role="button"
+        tabIndex={-1}
+        onClick={(e) => {
+          e.preventDefault();
+          e.stopPropagation();
+          const r = e.currentTarget.getBoundingClientRect();
+          controller.openCtxMenu(r.right - 184, r.bottom + 6, { kind: 'folder', id: folder.id });
+        }}
+        title="메뉴"
+        aria-label="메뉴"
+        style={{ flexShrink: 0, width: 28, height: 28, borderRadius: 9, background: 'transparent', border: 'none', display: selectMode ? 'none' : 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--mf-subtext)', cursor: 'pointer', opacity: folder.menuOpen ? 1 : 0, transform: folder.menuOpen ? 'translateY(0)' : 'translateY(2px)', transition: 'opacity .18s ease, transform .18s ease' }}
       >
-        <path d="m9 6 6 6-6 6" />
-      </svg>
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+          <circle cx="5" cy="12" r="1.6" />
+          <circle cx="12" cy="12" r="1.6" />
+          <circle cx="19" cy="12" r="1.6" />
+        </svg>
+      </div>
     </div>
   );
 }

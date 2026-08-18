@@ -190,14 +190,19 @@ export function MapCard({ card, controller, draggableEnabled, compact = false }:
     // 색이 홈 배경과 비슷해 카드가 배경에 묻혀 보였다(제보) — 면 대신 선으로 옮겼고,
     // 이제 셋이 각자의 색을 쓴다. 선택 표시(강조색 2px + 글로우)와는 굵기·글로우로
     // 갈리므로 "선택된 것"과 헷갈리지 않는다.
-    border: card.selected ? '2px solid var(--mf-accent)' : '1px solid var(--mf-border)',
+    // 선택 표시는 **outline 링**(디자인 원본: 2px 강조색, 카드에서 2px 띄운다) —
+    // 레이아웃에 영향이 없어 예전의 "테두리 2px + 음수 마진" 곡예가 필요 없다.
+    border: '1px solid var(--mf-border)',
+    outline: card.selected ? '2px solid var(--mf-accent)' : '2px solid transparent',
+    outlineOffset: 2,
     borderRadius: compact ? 15 : 18,
-    background: grey ? 'var(--mf-panel-grey)' : 'var(--mf-panel)',
+    background: grey ? 'var(--mf-panel-grey)' : 'var(--mf-card)',
     // The card no longer clips (was `overflow: hidden`) — otherwise the open ☰
     // menu is cut off inside the card. The thumbnail keeps its own top-corner
     // clip below, and an open menu raises the card above its grid neighbours.
     cursor: grey ? 'default' : 'pointer',
-    transition: 'border-color .14s, box-shadow .14s, opacity .14s',
+    // ⚠️ transition은 인라인으로 두지 않는다 — home.css의 `.map-card` 규칙(transform
+    // 포함)을 인라인이 덮어써서, hover의 떠오름이 전이 없이 A→B로 툭 바뀌었다(제보).
     display: 'block',
     position: 'relative',
     zIndex: card.menuOpen ? 30 : undefined,
@@ -205,12 +210,7 @@ export function MapCard({ card, controller, draggableEnabled, compact = false }:
     // 카드는 면 위에 **떠 있다**(디자인 원본) — 평소에도 옅은 그늘이 있고 마우스를
     // 얹으면 3px 떠오르며 그늘이 멀어진다(home.css의 `.map-card:hover`).
     // 고른 카드는 강조색 글로우가 그늘 위에 겹친다.
-    boxShadow: card.selected
-      ? `0 0 0 3px rgba(var(--mf-accent-rgb),.18), ${compact ? 'var(--mf-card-shadow-sm)' : 'var(--mf-card-shadow)'}`
-      : compact
-        ? 'var(--mf-card-shadow-sm)'
-        : 'var(--mf-card-shadow)',
-    margin: card.selected ? -1 : 0,
+    boxShadow: compact ? 'var(--mf-card-shadow-sm)' : 'var(--mf-card-shadow)',
     color: grey ? 'var(--mf-faint)' : 'var(--mf-text)',
     // 더블탭이 브라우저의 '두 번 눌러 확대' 제스처로 새지 않게 한다(스크롤·핀치는 유지).
     touchAction: 'manipulation',
@@ -563,13 +563,13 @@ export function MapCard({ card, controller, draggableEnabled, compact = false }:
             aria-label="메뉴"
             style={{
               flexShrink: 0,
-              // 디자인 원본의 ⋯ 버튼 — 28px 둥근 사각에 옅은 면과 테두리가 있어
-              // 나타났을 때 "누를 수 있는 것"으로 읽힌다(예전엔 투명한 ☰ 글자였다).
+              // 심플하게 **점 셋만**(요청) — 면·테두리를 두르면 카드 안에서 버튼이
+              // 하나 더 있는 것처럼 무거워 보인다. hover에서 글자색만 짙어진다.
               width: 28,
               height: 28,
               borderRadius: 9,
-              background: 'var(--mf-panel2)',
-              border: '1px solid var(--mf-border)',
+              background: 'transparent',
+              border: 'none',
               display: 'flex',
               alignItems: 'center',
               justifyContent: 'center',

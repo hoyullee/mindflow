@@ -66,6 +66,10 @@ export interface HomeTheme {
   sunken: string;
   /** 카드·패널·모달의 면. */
   panel: string;
+  /** 카드(맵·폴더·최근 항목)의 면 — 디자인 원본의 살짝 따뜻한 흰색(#FFFDFB).
+   * 순백(panel)과 갈라 둔 이유: 카드가 페이지 위에 "종이"로 얹혀 보이려면 배경과
+   * 같은 색조를 아주 옅게 품어야 한다(코랄만 값이 다르고 나머지는 panel과 같다). */
+  card: string;
   /** 살짝 뜬 면(hover 배경·입력창). */
   panel2: string;
   /** 썸네일 위에 뜨는 반투명 패널(☆·☰ 버튼). */
@@ -150,6 +154,7 @@ const LIGHT_INK = {
   dark: false,
   accentInk: '#ffffff',
   panel: '#ffffff',
+  card: '#ffffff',
   panelGrey: '#fbf8f5',
   hairline: '#f2e9e1',
   scroll: '#d9c8ba',
@@ -165,10 +170,10 @@ const LIGHT_INK = {
   dangerLine: '#f3d9d4',
   dangerMute: '#e7b9b3',
   info: '#3f8fd0',
-  // 종류 색: 초록(마인드맵)·파랑(화이트보드)·보라(칸반). 파랑은 화이트보드가
-  // 이미 쓰던 값 그대로라 배포된 인상이 바뀌지 않는다.
-  docMap: '#3f9e6a',
-  docBoard: '#3f8fd0',
+  // 종류 색(요청): 빨강(마인드맵)·초록(화이트보드)·보라(칸반) — 셋이 색상환에서
+  // 멀어 한눈에 갈린다(예전 초록/파랑/보라는 파랑·보라가 붙어 있었다).
+  docMap: '#d9482b',
+  docBoard: '#3f9e6a',
   docKanban: '#8a63d2',
   star: '#e0a53c',
   // 홈 리디자인(디자인 원본의 그늘·hover 값). 밝은 다섯 벌이 공유한다 —
@@ -206,6 +211,7 @@ export const HOME_THEMES: Record<HomeThemeKey, HomeTheme> = {
     accentSoft: '#fdeee7',
     accentStrong: '#d9542f',
     accentMute: '#f2c4b3',
+    card: '#fffdfb',
     bg: THEMES.coral.appBg,
     sunken: THEMES.coral.canvasBg,
     panel2: THEMES.coral.panel2,
@@ -327,8 +333,9 @@ export const HOME_THEMES: Record<HomeThemeKey, HomeTheme> = {
     dangerLine: '#4a2e2b',
     dangerMute: '#7a3b38',
     info: '#5fa8e8',
-    docMap: '#5ec38b',
-    docBoard: '#5fa8e8',
+    card: '#262019', // = 다크 panel — 어두운 면에는 '따뜻한 흰색' 구분이 없다
+    docMap: '#e86a4e',
+    docBoard: '#5ec38b',
     docKanban: '#a98ae6',
     star: '#e8bd57',
     // 다크는 그늘을 검정으로 더 진하게 — 어두운 면 위에서 옅은 그늘은 보이지 않는다.
@@ -385,6 +392,7 @@ export function homeThemeVars(key: HomeThemeKey): Record<string, string> {
     '--mf-bg': t.bg,
     '--mf-sunken': t.sunken,
     '--mf-panel': t.panel,
+    '--mf-card': t.card,
     '--mf-panel2': t.panel2,
     '--mf-panel-veil': t.panelVeil,
     '--mf-panel-grey': t.panelGrey,

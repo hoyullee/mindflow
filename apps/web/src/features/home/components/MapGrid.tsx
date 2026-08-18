@@ -74,7 +74,7 @@ export function MapGrid({ view, controller }: Props) {
 
       {view.mapsSectionVisible && (
         <div>
-          <SectionHead label="맵" count={view.allCards.length} />
+          <SectionHead label="파일" count={view.allCards.length} />
           <div className="mf-map-grid" style={GRID_STYLE}>
             {/* Key by card identity (docId; title fallback) — duplicate TITLES are
                 fully allowed, and a duplicate React key makes reconciliation reuse

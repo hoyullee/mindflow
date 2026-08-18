@@ -738,7 +738,7 @@ describe('Home', () => {
     ]);
     const cardKeys = () => Array.from(container.querySelectorAll('[data-card-key]')).map((e) => e.getAttribute('data-card-key')!);
     const chosen = () =>
-      Array.from(container.querySelectorAll('[data-card-key]')).filter((e) => (e as HTMLElement).style.border.includes('2px')).length;
+      Array.from(container.querySelectorAll('[data-card-key]')).filter((e) => (e as HTMLElement).style.outline.includes('var(--mf-accent)')).length;
 
     await waitFor(() => expect(screen.getByText('위폴더')).toBeTruthy());
     await user.dblClick(screen.getByText('위폴더'));
@@ -1621,9 +1621,9 @@ describe('Home', () => {
 
     // selecting A must not select B (title-keyed state used to light up both)
     await user.click(cardA!);
-    // 선택 표시는 강조색 — 색상 테마(#41) 이후 값은 CSS 변수다(테마마다 색이 다르다).
-    expect(cardA!.style.border).toContain('var(--mf-accent)');
-    expect(cardB!.style.border).not.toContain('var(--mf-accent)');
+    // 선택 표시는 강조색 아웃라인 — 색상 테마(#41) 이후 값은 CSS 변수다(테마마다 색이 다르다).
+    expect(cardA!.style.outline).toContain('var(--mf-accent)');
+    expect(cardB!.style.outline).not.toContain('var(--mf-accent)');
 
     // A의 ☰이 B의 메뉴를 열면 안 된다. 메뉴는 화면에 하나뿐이므로 "어느 카드를
     // 가리키는가"로 본다 — ☰ 버튼이 드러난 쪽(opacity 1)이 그 카드다.
@@ -1681,12 +1681,12 @@ describe('Home', () => {
 
     const tile = () => (screen.getByText('기획').closest('.map-card') as HTMLElement);
     await waitFor(() => expect(screen.getByText('기획')).toBeTruthy());
-    expect(tile().style.border).not.toContain('var(--mf-accent)');
+    expect(tile().style.outline).not.toContain('var(--mf-accent)');
 
-    // 한 번 = 선택(진입하지 않는다). 선택 표시는 맵 카드와 같은 강조색 테두리.
+    // 한 번 = 선택(진입하지 않는다). 선택 표시는 맵 카드와 같은 강조색 outline 링.
     await user.click(tile());
     expect(screen.queryByText('이 폴더는 비어 있어요')).toBeNull();
-    expect(tile().style.border).toBe('2px solid var(--mf-accent)');
+    expect(tile().style.outline).toBe('2px solid var(--mf-accent)');
 
     // 두 번 = 진입
     await user.dblClick(tile());
@@ -3442,12 +3442,13 @@ describe('홈 우클릭 메뉴', () => {
       const dialog = await screen.findByRole('dialog', { name: '새로 만들기' });
       const cards = within(dialog).getAllByRole('button').filter((b) => b.hasAttribute('data-template'));
       expect(cards[0]?.getAttribute('data-template')).toBe('blank');
-      expect(cards.map((c) => c.getAttribute('data-template'))).toEqual(
-        expect.arrayContaining(['blank', ...MAP_TEMPLATES.map((t) => t.id)]),
-      );
+      // 마인드맵 구획은 **4칸**(요청: 빈 맵 + 브레인스토밍·주간 계획·학습 정리) —
+      // 데이터는 그대로 있고(옛 tpl 주소는 동작) 갤러리에만 내놓지 않는다.
+      expect(cards.map((c) => c.getAttribute('data-template'))).toEqual(expect.arrayContaining(['blank', 'brainstorm', 'weekly', 'study']));
+      expect(cards.some((c) => c.getAttribute('data-template') === 'meeting')).toBe(false);
       // 썸네일은 홈 카드와 같은 렌더러 — 템플릿 칸마다 실제 미리보기 SVG가 있다
-      const meeting = cards.find((c) => c.getAttribute('data-template') === 'meeting') as HTMLElement;
-      expect(meeting.querySelector('svg[viewBox]')).toBeTruthy();
+      const weekly = cards.find((c) => c.getAttribute('data-template') === 'weekly') as HTMLElement;
+      expect(weekly.querySelector('svg[viewBox]')).toBeTruthy();
     });
 
     it('화이트보드 카드는 맵 카드와 다르게 보인다 — 종류 배지 + 흰 종이 썸네일(제보)', async () => {
@@ -3576,11 +3577,12 @@ describe('홈 우클릭 메뉴', () => {
       const ids = cards.map((c) => c.getAttribute('data-template'));
       // 마인드맵 → 화이트보드 → 칸반 보드 순서의 구획들.
       expect(ids.slice(-2 - BOARD_TEMPLATES.length - KANBAN_TEMPLATES.length)).toEqual(['board', ...BOARD_TEMPLATES.map((t) => t.id), 'kanban', ...KANBAN_TEMPLATES.map((t) => t.id)]);
-      expect(within(dialog).getByText('마인드맵')).toBeTruthy();
-      expect(within(dialog).getByText('화이트보드')).toBeTruthy();
-      expect(within(dialog).getByText('칸반 보드')).toBeTruthy();
+      // 구획 이름은 탭에도 있다(디자인 개정판) — 하나 이상이면 된다.
+      expect(within(dialog).getAllByText('마인드맵').length).toBeGreaterThan(0);
+      expect(within(dialog).getAllByText('화이트보드').length).toBeGreaterThan(0);
+      expect(within(dialog).getAllByText('칸반 보드').length).toBeGreaterThan(0);
 
-      await user.click(within(dialog).getByRole('button', { name: /화이트보드/ }));
+      await user.click(within(dialog).getByRole('button', { name: /빈 화이트보드/ }));
       await waitFor(() => expect(newMapTitles()).toContain('새 화이트보드'));
       await waitFor(() => expect(screen.getByText('EDITOR_PLACEHOLDER')).toBeTruthy(), { timeout: 2000 });
     });
@@ -3624,8 +3626,10 @@ describe('홈 우클릭 메뉴', () => {
       const card = within(dialog).getByRole('button', { name: new RegExp(retro.name.replace(/[()]/g, '\\$&')) });
       // 썸네일은 홈 카드와 같은 렌더러 — 보드 템플릿도 완성된 Doc이라 메모 배치가 그대로 보인다.
       expect(card.querySelector('svg[viewBox]')).toBeTruthy();
-      // 제목 앞은 이모지가 아니라 SVG 아이콘(기기마다 갈리지 않게)
-      expect(card.querySelector(`[data-template-icon="${retro.id}"]`)?.tagName.toLowerCase()).toBe('svg');
+      // 제목 앞은 종류 색 점(홈 카드 배지와 같은 --mf-doc-* 토큰)
+      const dot = card.querySelector('[data-template-dot]') as HTMLElement;
+      expect(dot).toBeTruthy();
+      expect(dot.style.background).toContain('--mf-doc-board');
 
       await user.click(card);
       await waitFor(() => expect(newMapTitles()).toContain(retro.name));
@@ -3654,10 +3658,10 @@ describe('홈 우클릭 메뉴', () => {
       await waitFor(() => expect(screen.getAllByRole('button', { name: '새로 만들기' })[0]).toBeTruthy());
 
       await user.click(screen.getAllByRole('button', { name: '새로 만들기' })[0]!);
-      await user.click(await screen.findByRole('button', { name: /회의록/ }));
+      await user.click(await screen.findByRole('button', { name: /브레인스토밍/ }));
 
       expect(screen.getByText('새 마인드맵을 준비하고 있어요')).toBeTruthy();
-      await waitFor(() => expect(newMapTitles()).toContain('회의록'));
+      await waitFor(() => expect(newMapTitles()).toContain('브레인스토밍'));
       await waitFor(() => expect(screen.getByText('EDITOR_PLACEHOLDER')).toBeTruthy(), { timeout: 2000 });
     });
 
@@ -3675,7 +3679,7 @@ describe('홈 우클릭 메뉴', () => {
       expect(screen.queryByText('EDITOR_PLACEHOLDER')).toBeNull();
     });
 
-    it('카드 제목 앞은 이모지가 아니라 SVG 아이콘이다 (기기마다 다르게 그려지지 않게)', async () => {
+    it('카드 제목 줄은 색 점 + 이름뿐이다 (이모지 글자가 기기마다 다르게 그려지지 않게)', async () => {
       const user = userEvent.setup();
       renderHomeWithDocStore([]);
       await waitFor(() => expect(screen.getAllByRole('button', { name: '새로 만들기' })[0]).toBeTruthy());
@@ -3683,14 +3687,17 @@ describe('홈 우클릭 메뉴', () => {
       await user.click(screen.getAllByRole('button', { name: '새로 만들기' })[0]!);
       const dialog = await screen.findByRole('dialog', { name: '새로 만들기' });
 
-      for (const tpl of MAP_TEMPLATES) {
+      // 갤러리에 보이는 마인드맵 템플릿은 셋(빈 맵 포함 4칸 — 사용자 선정).
+      const galleryIds = ['brainstorm', 'weekly', 'study'];
+      for (const tpl of MAP_TEMPLATES.filter((t) => galleryIds.includes(t.id))) {
         const card = within(dialog).getByRole('button', { name: new RegExp(tpl.name) });
-        const title = card.querySelector('[data-template-icon]')?.parentElement as HTMLElement;
-        expect(title).toBeTruthy();
-        expect(title.querySelector(`[data-template-icon="${tpl.id}"]`)?.tagName.toLowerCase()).toBe('svg');
-        // 제목 줄에 이모지 글자가 남아 있으면 안 된다 (그림이 기기마다 갈린다)
-        expect(title.textContent).toBe(tpl.name);
+        const dot = card.querySelector('[data-template-dot]') as HTMLElement;
+        expect(dot).toBeTruthy();
+        // 제목 줄(점의 부모)에 이모지 글자가 남아 있으면 안 된다 (그림이 기기마다 갈린다)
+        expect(dot.parentElement?.textContent).toBe(tpl.name);
       }
+      // 갤러리에서 뺀 템플릿(회의록 등)은 카드가 없다 — 데이터는 남지만 훑기 화면은 넷뿐.
+      expect(within(dialog).queryByRole('button', { name: /회의록/ })).toBeNull();
     });
 
     it('dim 배경도 함께 페이드한다 — 막만 툭 깔리고 내용이 뒤늦게 뜨면 깜빡임으로 보인다', async () => {
@@ -3704,7 +3711,8 @@ describe('홈 우클릭 메뉴', () => {
       // 제자리 페이드(mf-dim-in)여야 한다 — mf-fade의 translateY를 fixed inset:0
       // 배경에 걸면 레이어가 통째로 슬라이드한다(#331).
       expect(backdrop.style.animation).toContain('mf-dim-in');
-      expect(dialog.style.animation).toContain('mf-fade');
+      // 카드의 등장 애니메이션은 home.css의 `.mf-gallery-pop`(mf-pop)이 맡는다.
+      expect(dialog.className).toContain('mf-gallery-pop');
     });
 
     it('열기 전에 한가할 때 미리보기를 미리 만들어 둔다 (첫 열기의 프레임 멈춤 방지)', async () => {
@@ -3811,10 +3819,12 @@ describe('홈 우클릭 메뉴', () => {
     expect(folderCard.style.margin).toBe('0px');
 
     await user.click(folderCard); // 한 번 = 선택
-    expect(folderCard.style.border).toContain('2px');
-    // 패딩은 그대로 (= 패딩 박스가 안 움직인다 = 절대 배치된 ☰도 안 움직인다)
+    // 디자인 개정판: 선택은 outline 링이라 테두리·패딩·마진이 **아무것도 안 변한다**
+    // (레이아웃 밖에 그려지므로 ⋯ 버튼도 1px도 움직일 수 없다).
+    expect(folderCard.style.outline).toBe('2px solid var(--mf-accent)');
+    expect(folderCard.style.border).toContain('1px');
     expect(folderCard.style.padding).toBe(padBefore);
-    expect(folderCard.style.margin).toBe('-1px'); // 늘어난 테두리는 마진이 상쇄
+    expect(folderCard.style.margin).toBe('0px');
   });
 
   // LNB(사이드바) 우클릭 — 메뉴가 있는 건 스페이스 행 하나뿐이고, 나머지는
@@ -4083,7 +4093,8 @@ describe('홈 카드 다중 선택', () => {
   const keys = (container: HTMLElement) => Array.from(container.querySelectorAll('[data-card-key]')).map((e) => e.getAttribute('data-card-key')!);
   const selectedKeys = (container: HTMLElement) =>
     Array.from(container.querySelectorAll('[data-card-key]'))
-      .filter((e) => (e as HTMLElement).style.border.includes('2px'))
+      // 선택 표시는 outline 링(디자인 개정판) — 테두리는 늘 1px 그대로다.
+      .filter((e) => (e as HTMLElement).style.outline.includes('var(--mf-accent)'))
       .map((e) => e.getAttribute('data-card-key')!);
 
   it('Ctrl+클릭으로 더하고 빼며, Shift+클릭은 앵커부터 범위로 고른다', async () => {
