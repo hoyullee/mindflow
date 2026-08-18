@@ -286,6 +286,12 @@ a:hover {
   transform: translateY(-1px) scale(0.993);
   transition: transform 0.07s ease;
 }
+/* 최근 항목 트레이의 카드 — hover 그림자가 **같은 기하로 진해지기만** 한다(제보:
+   멀리 퍼지는 그리드용 그림자는 가로 스크롤 상자의 아래 여유(18px)를 넘어 잘린
+   경계가 보였다). 선택자 특이도(3클래스)가 위의 `.map-card:hover`를 이긴다. */
+.mf-home .mf-recent-scroll .map-card:hover {
+  box-shadow: var(--mf-card-shadow-sm-hover) !important;
+}
 .mf-home .map-card:hover .fav-btn {
   opacity: 1 !important;
 }

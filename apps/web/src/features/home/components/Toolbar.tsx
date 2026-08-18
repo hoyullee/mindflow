@@ -2,7 +2,7 @@ import type { HomeController } from '../useHomeController';
 import type { HomeState } from '../types';
 import type { HomeViewModel } from '../viewModel';
 import { UNREAD_BADGE_BG } from '../theme';
-import { META_MONO, pillStyle, primaryPillStyle, roundIconStyle } from '../chrome';
+import { pillStyle, primaryPillStyle, roundIconStyle } from '../chrome';
 import { NotificationBell } from './NotificationBell';
 
 interface Props {
@@ -158,7 +158,6 @@ export function Toolbar({ state, view, controller, isMobile = false, onOpenNav }
   // 개수는 지금 화면에 그려지는 것과 같은 목록에서 센다(뷰모델을 손대지 않는다).
   // 용어(사용자 선정): 문서 종류가 셋이라 '맵'은 좁고 '카드'는 칸반의 카드와
   // 충돌한다 — 종류를 아우르는 말로 **파일**을 쓴다.
-  const meta = `파일 ${view.allCards.length}개 · 폴더 ${view.folderCards.length}개`;
   return (
     <div style={{ display: 'flex', alignItems: 'center', marginBottom: 18, gap: isMobile ? 12 : 14, flexWrap: 'wrap' }}>
       {/* ≡ · 제목은 한 덩어리다. 따로 두면 제목이 길 때 flex-wrap이 제목 항목을
@@ -208,13 +207,6 @@ export function Toolbar({ state, view, controller, isMobile = false, onOpenNav }
           <BreadcrumbTitle parent={view.titleParent} leaf={view.titleLeaf} full={view.spaceTitle} />
         ) : (
           <div className="mf-skel" aria-label="스페이스를 불러오는 중" style={{ height: 24, width: 150, borderRadius: 7, margin: '3px 0' }} />
-        )}
-        {/* 개수 — 등폭으로 곁들인다(디자인 원본의 "8 boards · 1 folder"). 폴더 안이나
-            검색 중에는 세는 대상이 달라지므로 띄우지 않는다. */}
-        {!isMobile && state.loaded && !view.searchQuery && !view.curFolder && (
-          <span data-space-meta style={{ ...META_MONO, fontSize: 11, paddingTop: 2, whiteSpace: 'nowrap', minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis' }}>
-            {meta}
-          </span>
         )}
         {/* 모바일 알림 센터 — 액션 줄은 이미 꽉 차 있어(검색+아이콘 3개) 제목 줄의
             오른쪽 끝에 둔다(앱 바 관례). 데스크톱 벨은 아래 묶음의 맨 앞에 있다. */}

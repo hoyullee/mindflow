@@ -80,7 +80,8 @@ export function ParentFolderCard({ tile, controller }: Props) {
         background: tile.dragOver ? 'var(--mf-accent-soft)' : 'var(--mf-sunken)',
         cursor: selectMode ? 'default' : 'pointer',
         opacity: selectMode ? 0.45 : 1,
-        transition: 'border-color .14s, box-shadow .14s, background .14s, opacity .14s',
+        // transition은 home.css의 `.map-card` 규칙이 정한다 — 인라인로 얹으면
+        // transform 전이를 덮어 hover 떠오름이 툭 바뀐다(카드와 같은 함정).
         position: 'relative',
         display: 'flex',
         alignItems: 'center',
@@ -89,7 +90,9 @@ export function ParentFolderCard({ tile, controller }: Props) {
         // 두 번 클릭이 글자를 선택하지 않게(제보) — 이 타일은 읽을 글이 아니라 버튼이다.
         userSelect: 'none',
         margin: tile.dragOver ? -1 : 0,
-        boxShadow: tile.dragOver ? '0 6px 18px rgba(var(--mf-accent-rgb),.18)' : 'none',
+        // 폴더 카드와 같은 그늘(요청) — 같은 줄에 서는데 이 타일만 판판하면 층이
+        // 갈려 보인다. 선택 효과(outline 링)는 없다 — 고를 대상이 아니라 길이다.
+        boxShadow: tile.dragOver ? '0 6px 18px rgba(var(--mf-accent-rgb),.18)' : 'var(--mf-card-shadow)',
       }}
     >
       <div style={{ width: 52, height: 52, borderRadius: 14, background: 'var(--mf-panel)', color: 'var(--mf-subtext)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, border: '1px solid var(--mf-border-soft)' }}>

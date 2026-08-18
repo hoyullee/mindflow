@@ -145,7 +145,7 @@ export interface HomeViewModel {
    * 공유받은 맵은 내 스페이스·폴더에 속하지 않는 **다른 출처**이므로, 목록 안의 한
    * 구획이 아니라 사이드바의 출처 하나로 두는 게 정보 구조에도 맞는다.
    */
-  sharedItems: { docId: string; title: string; href: string; role: 'edit' | 'view'; isNew: boolean }[];
+  sharedItems: { docId: string; title: string; href: string; role: 'edit' | 'view'; isNew: boolean; kind: DocKindName }[];
   /** 아직 확인하지 않은 초대 수 — LNB "공유받음"의 알림 배지. 0이면 배지 없음. */
   sharedUnread: number;
   /** LNB에 "공유받음" 구획을 그릴지. 처음엔 공유받은 게 없으면 숨겼는데, 항상
@@ -153,9 +153,9 @@ export interface HomeViewModel {
    * 공유를 써 볼 수 있다. 비어 있으면 즐겨찾기처럼 빈 안내를 편다. 로딩 중에만
    * 감춘다(스켈레톤과 겹치지 않게). */
   sharedVisible: boolean;
-  favItems: { title: string; isDrive: boolean; href: string; docId?: string }[];
+  favItems: { title: string; isDrive: boolean; href: string; docId?: string; kind: DocKindName }[];
   favCount: string;
-  trashItems: { title: string; isDrive: boolean; badge: string; docId?: string }[];
+  trashItems: { title: string; isDrive: boolean; badge: string; docId?: string; kind: DocKindName }[];
   trashCount: string;
   loading: boolean;
   isEmpty: boolean;
@@ -259,6 +259,14 @@ export function isKanbanRaw(raw: string | null | undefined): boolean {
 /** 카드 본문(썸네일·종류 판별의 원천) — `cardSketch`와 같은 조회 순서. */
 function cardRaw(title: string, docId: string | undefined, previewDocs: Record<string, string>): string | null {
   return (docId ? previewDocs[docId] || readDocRaw(docId) : docRawForTitle(title)) || null;
+}
+
+/** LNB 리스트 행(공유받음·즐겨찾기·휴지통)의 종류 아이콘용. 본문을 아직 못 받은
+ * 문서(예: 열어 본 적 없는 공유 문서)는 'map'으로 둔다 — 배지와 같은 판별 규칙. */
+export type DocKindName = 'map' | 'board' | 'kanban';
+function docKindOf(title: string, docId: string | undefined, previewDocs: Record<string, string>): DocKindName {
+  const raw = cardRaw(title, docId, previewDocs);
+  return isKanbanRaw(raw) ? 'kanban' : isBoardRaw(raw) ? 'board' : 'map';
 }
 
 function cardSketch(title: string, hue: string, docId: string | undefined, previewDocs: Record<string, string>, previewResolved: Record<string, boolean>): JSX.Element {
@@ -609,13 +617,13 @@ export function deriveHomeView(state: HomeState): HomeViewModel {
   // matched back to a title by key iteration. A trashed map never appears (it
   // lives only in the trash until restored), and a same-titled map in another
   // space keeps its own independent star.
-  const favItems: { title: string; isDrive: boolean; href: string; docId?: string }[] = [];
+  const favItems: { title: string; isDrive: boolean; href: string; docId?: string; kind: DocKindName }[] = [];
   const favConsumed = new Set<string>();
   state.spaces.forEach((s) => (Array.isArray(s.maps) ? s.maps : []).forEach((m) => {
     const k = cardKeyOf(m.title, m.docId);
     if (favs[k] && !favConsumed.has(k) && !isTrashedCard(m.title, m.docId)) {
       favConsumed.add(k);
-      favItems.push({ title: m.title, isDrive: false, href: mapHref(m.title, m.docId), docId: m.docId });
+      favItems.push({ title: m.title, isDrive: false, href: mapHref(m.title, m.docId), docId: m.docId, kind: docKindOf(m.title, m.docId, state.previewDocs) });
     }
   }));
   // Title-keyed leftovers: Drive demo files (never in `spaces`). Anything else
@@ -623,7 +631,7 @@ export function deriveHomeView(state: HomeState): HomeViewModel {
   Object.keys(favs).forEach((k) => {
     if (!favs[k] || favConsumed.has(k) || !sourceIsDrive(k)) return;
     if (state.deleted[k]) return;
-    favItems.push({ title: k, isDrive: true, href: mapHref(k, undefined), docId: undefined });
+    favItems.push({ title: k, isDrive: true, href: mapHref(k, undefined), docId: undefined, kind: 'map' });
   });
 
   // "최근 항목" is a GLOBAL, cross-space list shown at the top of Home. Entries
@@ -749,7 +757,7 @@ export function deriveHomeView(state: HomeState): HomeViewModel {
   // 워크스페이스에는 없는 문서라 스페이스/폴더 필터를 타지 않는다.
   const sharedItems = state.sharedMaps
     .filter((m) => !isTrashedCard(m.title, m.docId))
-    .map((m) => ({ docId: m.docId, title: m.title, href: mapHref(m.title, m.docId), role: m.role, isNew: m.isNew }));
+    .map((m) => ({ docId: m.docId, title: m.title, href: mapHref(m.title, m.docId), role: m.role, isNew: m.isNew, kind: docKindOf(m.title, m.docId, state.previewDocs) }));
   const sharedUnread = sharedItems.filter((m) => m.isNew).length;
 
   return {
@@ -774,7 +782,7 @@ export function deriveHomeView(state: HomeState): HomeViewModel {
     sharedVisible: !loading,
     favItems,
     favCount: favItems.length ? String(favItems.length) : '',
-    trashItems: state.trash.map((t) => ({ title: t.title, isDrive: t.source === 'drive', badge: t.source === 'drive' ? 'Drive' : '내 스페이스', docId: t.docId })),
+    trashItems: state.trash.map((t) => ({ title: t.title, isDrive: t.source === 'drive', badge: t.source === 'drive' ? 'Drive' : '내 스페이스', docId: t.docId, kind: docKindOf(t.title, t.docId, state.previewDocs) })),
     trashCount: state.trash.length ? String(state.trash.length) : '',
     loading,
     isEmpty,

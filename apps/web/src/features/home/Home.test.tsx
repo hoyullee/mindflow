@@ -16,6 +16,7 @@ import { LocalCommentStore } from '../../adapters/local/localCommentStore';
 import { LocalNotificationStore } from '../../adapters/local/localNotificationStore';
 import { LocalImageStore } from '../../adapters/local/localImageStore';
 import { mapId } from './storage';
+import { RECENT_CARD_W, recentFit } from './components/RecentStrip';
 import { HOME_THEMES, UNREAD_BADGE_BG } from './theme';
 import type { Doc } from '@mindflow/mindmap-core';
 import type { Backend, DocMeta, DocStore, LoadedDoc, SaveResult, SpaceStore, WorkspaceData } from '../../adapters/ports';
@@ -4569,3 +4570,82 @@ describe('홈 리디자인 계약', () => {
     }
   });
 });
+
+describe('홈 디자인 후속 6건', () => {
+  it('최근 항목 fit — 트레이 폭을 그대로 재서 마지막 칸이 들어갈 공간이 있으면 노출한다', () => {
+    const STEP = RECENT_CARD_W + 10; // 카드 158 + 간격 10
+    // 5칸이 딱 맞는 폭. 예전 계산은 좌우 패딩 몫(48px)을 빼서 4를 돌려줬다(제보:
+    // 마지막 항목에 공간이 넓어도 최근 항목이 추가되지 않는다).
+    expect(recentFit(5 * STEP - 10)).toBe(5);
+    expect(recentFit(5 * STEP - 11)).toBe(4);
+    expect(recentFit(0)).toBe(1); // 최소 1
+  });
+
+  it('최근 항목 hover 그림자 — 같은 기하로 진해지기만 한다(트레이 아래 여유를 넘지 않게)', () => {
+    const css = readFileSync(resolve('src/features/home/home.css'), 'utf8');
+    const rule = css.slice(css.indexOf('.mf-home .mf-recent-scroll .map-card:hover'));
+    expect(rule).toContain('var(--mf-card-shadow-sm-hover)');
+    // 토큰 자체의 기하가 기본(sm)과 같은지는 theme.test.ts의 스냅샷이 고정한다.
+  });
+
+  it('스페이스 제목 옆 파일·폴더 개수가 없다(요청 ④ — 구획 머리의 파일 N/폴더 N이 이미 말한다)', async () => {
+    const { container } = renderHomeWithDocStore([
+      { id: 'd-meta', title: '개수 확인', version: 1, updatedAt: '2026-01-01T00:00:00.000Z', isFavorite: false, deletedAt: null },
+    ]);
+    await waitFor(() => expect(screen.getByText('개수 확인')).toBeTruthy());
+    expect(container.querySelector('[data-space-meta]')).toBeNull();
+  });
+
+  it('LNB 배경은 카드 면(--mf-card)이고, 즐겨찾기·휴지통 행에 문서 종류 아이콘이 붙는다', async () => {
+    // 종류 판별은 localStorage 본문(readDocRaw)에서 온다 — 맵/보드/칸반 셋을 심는다.
+    localStorage.setItem(
+      'mindflow_doc_k-map',
+      JSON.stringify({ v: 1, nodes: { root: { id: 'root', text: '맵', emoji: '', parent: null, children: [], collapsed: false, color: null, x: 0, y: 0 } }, floats: [], lines: [], zones: [], layoutMode: 'right', themeKey: 'coral' }),
+    );
+    localStorage.setItem('mindflow_doc_k-board', JSON.stringify({ v: 1, kind: 'board', nodes: {}, floats: [{ id: 'f1', x: 0, y: 0, w: 100, text: '메모' }], lines: [], zones: [], layoutMode: 'right', themeKey: 'white' }));
+    localStorage.setItem('mindflow_doc_k-kanban', JSON.stringify({ v: 1, kind: 'kanban', nodes: {}, floats: [], lines: [], zones: [], layoutMode: 'right', themeKey: 'coral', columns: [{ id: 'c1', title: '할 일' }], cards: [] }));
+    const user = userEvent.setup();
+    const { container } = renderHomeWithDocStore([
+      { id: 'k-map', title: '맵 파일', version: 1, updatedAt: '2026-01-01T00:00:00.000Z', isFavorite: true, deletedAt: null },
+      { id: 'k-board', title: '보드 파일', version: 1, updatedAt: '2026-01-01T00:00:00.000Z', isFavorite: true, deletedAt: null },
+      { id: 'k-kanban', title: '칸반 파일', version: 1, updatedAt: '2026-01-01T00:00:00.000Z', isFavorite: false, deletedAt: '2026-01-02T00:00:00.000Z' },
+    ]);
+    await waitFor(() => expect(screen.getAllByText('맵 파일').length).toBeGreaterThan(0));
+
+    const aside = container.querySelector('aside') as HTMLElement;
+    expect(aside.style.background).toBe('var(--mf-card)');
+
+    // 즐겨찾기를 펼치면 행마다 종류 아이콘 — 색은 카드 배지와 같은 --mf-doc-* 토큰.
+    const favHead = [...aside.querySelectorAll('.nav-item')].find((el) => el.textContent?.includes('즐겨찾기')) as HTMLElement;
+    await user.click(favHead);
+    const favRows = [...container.querySelectorAll('aside [data-kind-icon]')];
+    expect(favRows.some((el) => el.getAttribute('data-kind-icon') === 'map')).toBe(true);
+    expect(favRows.some((el) => el.getAttribute('data-kind-icon') === 'board')).toBe(true);
+
+    // 휴지통을 펼치면 칸반 아이콘이 붙는다.
+    await user.click(aside.querySelector('.mf-trash-head') as HTMLElement);
+    await waitFor(() => expect(container.querySelector('aside [data-kind-icon="kanban"]')).toBeTruthy());
+  });
+
+  it('상위 폴더 타일 — 폴더 카드와 같은 그늘, 선택 링·인라인 transition 없음(요청 ③)', async () => {
+    localStorage.setItem(
+      'mf_spaces',
+      JSON.stringify({
+        v: 1,
+        spaces: [{ id: 's1', name: '작업공간', color: '#f0663f', maps: [], folders: [{ id: 'fo1', name: '기획' }] }],
+        mapFolders: {},
+      }),
+    );
+    const user = userEvent.setup();
+    const { container } = renderHomeWithDocStore([]);
+    await waitFor(() => expect(screen.getByText('기획')).toBeTruthy());
+    await user.dblClick(screen.getByText('기획'));
+
+    const tile = (await screen.findByLabelText(/상위 폴더/)).closest('[data-parent-tile]') as HTMLElement;
+    expect(tile.style.boxShadow).toBe('var(--mf-card-shadow)');
+    expect(tile.style.outline).toBe(''); // 선택 효과 없음
+    expect(tile.style.transition).toBe(''); // transition은 home.css의 .map-card가 정한다
+    void container;
+  });
+});
+

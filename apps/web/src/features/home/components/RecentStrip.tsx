@@ -21,9 +21,16 @@ const RECENT_STEP = RECENT_CARD_W + RECENT_GAP;
 const SLACK_TOP = 8;
 const SLACK_X = 24;
 const SLACK_BOTTOM = 18;
-// 트레이는 이제 상자가 아니라 선으로만 갈린 구획이라 좌우 패딩이 없다 —
-// 재는 폭은 컨테이너 폭 그대로다(선택 링 여유만 뺀다).
-const TRAY_PAD_X = SLACK_X * 2;
+
+/**
+ * 트레이 폭에 노출할 카드 수(순수 — 회귀 가드용 export). 카드가 쓰는 폭은 트레이
+ * 폭 **그대로**다: 스크롤 박스의 좌우 패딩(SLACK_X)은 같은 크기 음수 마진으로
+ * 상쇄돼 카드 시작·끝이 트레이 가장자리와 일치한다. 예전처럼 패딩 몫(48px)을
+ * 빼면 마지막 칸이 들어갈 공간이 있어도 카드가 하나 모자라게 노출된다(제보).
+ */
+export function recentFit(trayWidth: number): number {
+  return Math.max(1, Math.floor((trayWidth + RECENT_GAP) / RECENT_STEP));
+}
 // Mobile swipe depth: how far the touch tray scrolls back in history. Bounded so
 // a long history doesn't mount dozens of preview cards on a phone; must stay
 // ≤ RECENT_RENDER_MAX (storage.ts), which caps what the view materializes.
@@ -101,9 +108,9 @@ export function RecentStrip({ cards, controller }: { cards: CardViewData[]; cont
     const el = trayRef.current;
     if (!el) return;
     const measure = (): void => {
-      const w = el.clientWidth - TRAY_PAD_X;
+      const w = el.clientWidth;
       if (w <= 0) return; // jsdom/unlaid-out: keep the default
-      setFit(Math.max(1, Math.floor((w + RECENT_GAP) / RECENT_STEP)));
+      setFit(recentFit(w));
     };
     measure();
     // ResizeObserver is absent in some test/SSR environments (jsdom) — fall back

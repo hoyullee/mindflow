@@ -134,6 +134,10 @@ export interface HomeTheme {
   cardShadowHover: string;
   /** 작은 카드(최근 항목)의 그늘. */
   cardShadowSm: string;
+  /** 작은 카드에 마우스를 얹었을 때 — **같은 기하로 진해지기만** 한다. 최근 항목
+   * 트레이는 가로 스크롤 상자라 아래 여유(18px)를 넘는 그림자는 잘린 경계를
+   * 만든다(제보) — 그리드 카드처럼 멀리 퍼지는 대신 그 자리에서 짙어진다. */
+  cardShadowSmHover: string;
   /** 마우스를 얹은 카드의 경계 — 평소보다 한 톤 진하다. */
   borderHover: string;
   /** 미리보기 바탕(카드 썸네일) — 면과 배경 사이의 아주 옅은 톤. */
@@ -181,6 +185,7 @@ const LIGHT_INK = {
   cardShadow: '0 16px 32px -26px rgba(46,42,38,.42)',
   cardShadowHover: '0 24px 44px -26px rgba(46,42,38,.42)',
   cardShadowSm: '0 12px 26px -22px rgba(46,42,38,.4)',
+  cardShadowSmHover: '0 12px 26px -22px rgba(46,42,38,.62)',
   borderHover: '#e7dacc',
   wash: '#fcf8f3',
   dotGrid: 'rgba(0,0,0,.07)',
@@ -343,6 +348,7 @@ export const HOME_THEMES: Record<HomeThemeKey, HomeTheme> = {
     cardShadow: '0 16px 32px -24px rgba(0,0,0,.72)',
     cardShadowHover: '0 24px 44px -24px rgba(0,0,0,.8)',
     cardShadowSm: '0 12px 26px -20px rgba(0,0,0,.7)',
+    cardShadowSmHover: '0 12px 26px -20px rgba(0,0,0,.92)',
     borderHover: '#4a4038',
     wash: '#2a241d',
     dotGrid: 'rgba(255,255,255,.09)',
@@ -420,6 +426,7 @@ export function homeThemeVars(key: HomeThemeKey): Record<string, string> {
     '--mf-card-shadow': t.cardShadow,
     '--mf-card-shadow-hover': t.cardShadowHover,
     '--mf-card-shadow-sm': t.cardShadowSm,
+    '--mf-card-shadow-sm-hover': t.cardShadowSmHover,
     '--mf-border-hover': t.borderHover,
     '--mf-wash': t.wash,
     '--mf-dot-grid': t.dotGrid,
