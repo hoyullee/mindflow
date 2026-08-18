@@ -64,7 +64,7 @@ async function openPinComments(): Promise<HTMLElement> {
 async function openDraftViaMenu(container: HTMLElement, clientX = 300, clientY = 240): Promise<HTMLElement> {
   fireEvent.contextMenu(container.querySelector('.mf-ed-vp') as HTMLElement, { clientX, clientY });
   fireEvent.mouseDown(await screen.findByText('스레드 추가'));
-  return await screen.findByLabelText('첫 댓글 남기기');
+  return await screen.findByLabelText('첫 스레드 남기기');
 }
 
 /** jsdom에는 PointerEvent가 없다 — MouseEvent로 흉내 낸다(Board.test와 같은 처방).
@@ -102,7 +102,7 @@ describe('댓글(핀에 붙는 논의)', () => {
     expect(container.querySelector('[data-comment-pin]')).toBeNull();
     expect(screen.queryByLabelText('스레드')).toBeNull();
 
-    fireEvent.change(within(bubble).getByLabelText('댓글 입력'), { target: { value: '여기 정리가 필요해요' } });
+    fireEvent.change(within(bubble).getByLabelText('스레드 입력'), { target: { value: '여기 정리가 필요해요' } });
     fireEvent.click(within(bubble).getByRole('button', { name: '남기기' }));
 
     const pin = await waitFor(() => {
@@ -130,7 +130,7 @@ describe('댓글(핀에 붙는 논의)', () => {
     renderEditor('/editor?map=cm2&title=x');
     const panel = await openPinComments();
     await waitFor(() => expect(within(panel).getByText('지울 댓글')).toBeTruthy());
-    fireEvent.click(within(panel).getByRole('button', { name: '댓글 삭제' }));
+    fireEvent.click(within(panel).getByRole('button', { name: '스레드 글 삭제' }));
     await waitFor(() => expect(within(panel).queryByText('지울 댓글')).toBeNull());
     expect(JSON.parse(localStorage.getItem('mf_comments') || '[]')).toHaveLength(0);
   });
@@ -220,7 +220,7 @@ describe('댓글(핀에 붙는 논의)', () => {
     renderEditor('/editor?map=cm7&title=x');
     const panel = await openPinComments();
 
-    const box = within(panel).getByLabelText('댓글 입력') as HTMLTextAreaElement;
+    const box = within(panel).getByLabelText('스레드 입력') as HTMLTextAreaElement;
     fireEvent.change(box, { target: { value: '@fri', selectionStart: 4 } });
     const candidate = await within(panel).findByText('friend@example.com');
     fireEvent.mouseDown(candidate.closest('button')!);
@@ -243,7 +243,7 @@ describe('댓글(핀에 붙는 논의)', () => {
     renderEditor('/editor?map=cm11&title=x');
     const panel = await openPinComments();
 
-    const box = within(panel).getByLabelText('댓글 입력') as HTMLTextAreaElement;
+    const box = within(panel).getByLabelText('스레드 입력') as HTMLTextAreaElement;
     fireEvent.change(box, { target: { value: '@fri', selectionStart: 4 } });
     const candidate = await within(panel).findByText('friend@example.com');
     fireEvent.mouseDown(candidate.closest('button')!);
@@ -272,7 +272,7 @@ describe('댓글(핀에 붙는 논의)', () => {
     renderEditor('/editor?map=cm10&title=x');
     const panel = await openPinComments();
 
-    const box = within(panel).getByLabelText('댓글 입력') as HTMLTextAreaElement;
+    const box = within(panel).getByLabelText('스레드 입력') as HTMLTextAreaElement;
     // 질의 없는 맨 '@' — 전체 후보가 나온다. 참가자는 소유자(나=me@example.com)와
     // 초대(friend) 둘인데, 나는 걸러져 friend만 남아야 한다.
     fireEvent.change(box, { target: { value: '@', selectionStart: 1 } });
@@ -293,7 +293,7 @@ describe('댓글(핀에 붙는 논의)', () => {
     renderEditor('/editor?map=cm15&title=x');
     const panel = await openPinComments();
 
-    const box = within(panel).getByLabelText('댓글 입력') as HTMLTextAreaElement;
+    const box = within(panel).getByLabelText('스레드 입력') as HTMLTextAreaElement;
     fireEvent.change(box, { target: { value: '@', selectionStart: 1 } });
     await waitFor(() => expect(panel.querySelectorAll('[data-mention-candidate]')).toHaveLength(2));
 
@@ -661,8 +661,8 @@ describe('댓글 핀 다듬기(프리뷰 후속)', () => {
     const layer = container.querySelector('[data-board-draw-layer]') as HTMLElement;
     firePointer(layer, 'pointerdown', { clientX: 320, clientY: 260 });
     firePointer(layer, 'pointerup', { clientX: 320, clientY: 260 });
-    const bubble = await screen.findByLabelText('첫 댓글 남기기');
-    fireEvent.change(within(bubble).getByLabelText('댓글 입력'), { target: { value: '첫 마디' } });
+    const bubble = await screen.findByLabelText('첫 스레드 남기기');
+    fireEvent.change(within(bubble).getByLabelText('스레드 입력'), { target: { value: '첫 마디' } });
     fireEvent.click(within(bubble).getByRole('button', { name: '남기기' }));
 
     await waitFor(() => expect(container.querySelector('[data-comment-pin]')).toBeTruthy());
@@ -720,6 +720,26 @@ describe('댓글 핀 다듬기(프리뷰 후속)', () => {
     expect(css).not.toMatch(/\n\.mf-cmt-scroll \{/);
   });
 
+  // 요청(용어 통일): 캔버스(핀)의 논의는 **스레드**, 칸반 카드의 논의는 **댓글**이다.
+  // 예전에는 같은 팝업 안에서 제목만 '스레드'이고 닫기·입력·빈 안내는 '댓글'이었다.
+  it('캔버스 팝업의 문구는 스레드로 통일된다 — 화면에 "댓글"이 남지 않는다', async () => {
+    localStorage.setItem('mindflow_doc_pf9', JSON.stringify(DOC_WITH_PIN));
+    seedComment('pf9', PIN_ID, '핀에 남긴 말');
+    renderEditor('/editor?map=pf9&title=x');
+    const panel = await openPinComments();
+    expect(within(panel).getByLabelText('스레드 닫기')).toBeTruthy();
+    expect(within(panel).getByLabelText('스레드 입력')).toBeTruthy();
+    expect((within(panel).getByLabelText('스레드 입력') as HTMLTextAreaElement).placeholder).toContain('스레드 남기기');
+    expect(within(panel).getByRole('button', { name: '스레드 글 삭제' })).toBeTruthy();
+    // 접근 이름·플레이스홀더까지 통틀어 '댓글'이라는 낱말이 남아 있지 않다.
+    const words = [
+      panel.textContent ?? '',
+      ...Array.from(panel.querySelectorAll('[aria-label]')).map((e) => e.getAttribute('aria-label') ?? ''),
+      ...Array.from(panel.querySelectorAll('textarea')).map((e) => (e as HTMLTextAreaElement).placeholder),
+    ].join(' ');
+    expect(words).not.toContain('댓글');
+  });
+
   // 요청: 스크롤이 생긴 팝업에서 ① 답글 칸을 열면 그 자리로 옮기고, ② 내가 남긴
   // 글이 화면에 들어오게 목록 끝으로 옮긴다(예전엔 둘 다 아래에 가려 보이지 않았다).
   it('스크롤이 생긴 스레드에서 답글 칸을 열면 그 자리로, 글을 남기면 목록 끝으로 옮긴다(요청)', async () => {
@@ -765,7 +785,7 @@ describe('댓글 핀 다듬기(프리뷰 후속)', () => {
           scrolledTo = v;
         },
       });
-      fireEvent.change(within(panel).getByLabelText('댓글 입력'), { target: { value: '마지막 글' } });
+      fireEvent.change(within(panel).getByLabelText('스레드 입력'), { target: { value: '마지막 글' } });
       fireEvent.click(within(panel).getByRole('button', { name: '남기기' }));
       await waitFor(() => expect(scrolledTo).toBe(900));
     } finally {
@@ -790,7 +810,7 @@ describe('댓글 핀 다듬기(프리뷰 후속)', () => {
     const panel = await screen.findByLabelText('스레드');
 
     // 문구도 '스레드 남기기'다(예전 '답글 남기기' — 하는 일과 어긋났다).
-    const box = within(panel).getByLabelText('댓글 입력') as HTMLTextAreaElement;
+    const box = within(panel).getByLabelText('스레드 입력') as HTMLTextAreaElement;
     expect(box.placeholder).toContain('스레드 남기기');
     fireEvent.change(box, { target: { value: '두 번째 스레드' } });
     fireEvent.click(within(panel).getByRole('button', { name: '남기기' }));
@@ -828,7 +848,7 @@ describe('댓글 핀 다듬기(프리뷰 후속)', () => {
     const layer = container.querySelector('[data-board-draw-layer]') as HTMLElement;
     firePointer(layer, 'pointerdown', { clientX: 500, clientY: 380 });
     firePointer(layer, 'pointerup', { clientX: 500, clientY: 380 });
-    await screen.findByLabelText('첫 댓글 남기기');
+    await screen.findByLabelText('첫 스레드 남기기');
 
     const pin = container.querySelector('[data-comment-pin]') as HTMLElement;
     const draftPin = container.querySelector('[data-comment-draft-pin]') as HTMLElement;
@@ -891,7 +911,7 @@ describe('댓글 도구(화이트보드)', () => {
 
     firePointer(layer, 'pointerdown', { clientX: 320, clientY: 260 });
     firePointer(layer, 'pointerup', { clientX: 320, clientY: 260 });
-    await screen.findByLabelText('첫 댓글 남기기');
+    await screen.findByLabelText('첫 스레드 남기기');
     expect(container.querySelector('[data-comment-pin]')).toBeNull();
   });
 });

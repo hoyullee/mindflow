@@ -6,6 +6,10 @@
 // 대상은 "지금 고른 주제" 하나다 — 주제를 바꾸면 패널이 따라간다(useEditorState).
 // 문서 전체 댓글은 루트 주제의 댓글로 대신한다(0020의 설계 메모 참고).
 //
+// 용어(요청): 캔버스(맵·화이트보드)에서 핀에 붙는 논의는 **스레드**, 칸반 카드에
+// 붙는 목록형 논의는 **댓글**이다. 두 자리를 이 파일이 함께 그리므로 화면 문구는
+// `thread`(핀인가) 하나로 갈린다 — 알림 문구만 중립어('댓글')를 쓴다(양쪽에서 온다).
+//
 // 스레드 모델: 최상위 댓글이 스레드 뿌리, 답글은 단층(대댓글 없음 — 0021 트리거).
 // 해결 표시는 뿌리에만 있고, 해결된 스레드는 접힌 구획으로 내려간다 — 남은 논의만
 // 눈에 들어오게(배지도 미해결 스레드만 센다).
@@ -213,7 +217,7 @@ export function CommentPanel({ controller }: { controller: EditorController }) {
           type="button"
           className="mf-ed-btn"
           onClick={controller.closeComments}
-          aria-label="댓글 닫기"
+          aria-label={pinThread ? '스레드 닫기' : '댓글 닫기'}
           title="닫기"
           style={{ width: isMobile ? 44 : 26, height: isMobile ? 44 : 26, border: 'none', background: 'transparent', color: th.subtext, borderRadius: 7, cursor: 'pointer', fontSize: 15, fontFamily: 'inherit', flexShrink: 0 }}
         >
@@ -307,6 +311,7 @@ export function CommentThreads({ controller, nodeId, scroll = false, thread = fa
                 controller={controller}
                 isMobile={isMobile}
                 participants={participants}
+                pinMode={thread}
                 replyOpen={replyTo === t.root.id}
                 onReplyToggle={() => setReplyTo((prev) => (prev === t.root.id ? null : t.root.id))}
                 onReplySubmit={(body, mentions) => submitReply(t.root.id, body, mentions)}
@@ -314,7 +319,7 @@ export function CommentThreads({ controller, nodeId, scroll = false, thread = fa
             ))}
           </>
         ) : (
-          <div style={{ fontSize: 12, color: th.subtext, lineHeight: 1.6, padding: '12px 0' }}>아직 댓글이 없어요. 의견을 남겨 보세요.</div>
+          <div style={{ fontSize: 12, color: th.subtext, lineHeight: 1.6, padding: '12px 0' }}>{thread ? '아직 남긴 글이 없어요. 의견을 남겨 보세요.' : '아직 댓글이 없어요. 의견을 남겨 보세요.'}</div>
         )}
       </div>
 
@@ -325,6 +330,7 @@ export function CommentThreads({ controller, nodeId, scroll = false, thread = fa
           isMobile={isMobile}
           participants={participants}
           placeholder={thread ? '스레드 남기기 · @로 멘션' : '댓글 남기기 · @로 멘션'}
+          inputLabel={thread ? '스레드 입력' : '댓글 입력'}
           submitLabel="남기기"
           autoFocus={false}
           footer={{ hint: true, avatar: controller.myName }}
@@ -426,6 +432,7 @@ function ThreadView({
   isMobile,
   participants,
   dimmed = false,
+  pinMode = false,
   replyOpen,
   onReplyToggle,
   onReplySubmit,
@@ -435,6 +442,8 @@ function ThreadView({
   isMobile: boolean;
   participants: ShareParticipant[];
   dimmed?: boolean;
+  /** 캔버스 핀의 논의인가 — 화면 문구가 '스레드'/'댓글'로 갈린다(용어 규칙). */
+  pinMode?: boolean;
   replyOpen: boolean;
   /** null = 답글 받기 종료(해결된 스레드 — 논의가 끝난 곳에 새 답글을 받지 않는다). */
   onReplyToggle: (() => void) | null;
@@ -453,10 +462,10 @@ function ThreadView({
 
   return (
     <section data-comment-thread={root.id} style={{ padding: '9px 0', borderBottom: `1px solid ${th.border}`, opacity: dimmed ? 0.66 : 1 }}>
-      <CommentRow comment={root} controller={controller} isMobile={isMobile} deletable deleteTitle={replies.length ? '스레드 삭제 (답글 포함)' : '삭제'} actions={onReplyToggle ? { onReply: onReplyToggle, replyOpen } : { replyOpen: false }} />
+      <CommentRow comment={root} controller={controller} isMobile={isMobile} deletable pinMode={pinMode} deleteTitle={replies.length ? '스레드 삭제 (답글 포함)' : '삭제'} actions={onReplyToggle ? { onReply: onReplyToggle, replyOpen } : { replyOpen: false }} />
       {replies.map((r) => (
         <div key={r.id} style={{ marginLeft: 34, paddingLeft: 0 }}>
-          <CommentRow comment={r} controller={controller} isMobile={isMobile} deletable deleteTitle="삭제" actions={{ replyOpen: false }} />
+          <CommentRow comment={r} controller={controller} isMobile={isMobile} deletable pinMode={pinMode} deleteTitle="삭제" actions={{ replyOpen: false }} />
         </div>
       ))}
       {replyOpen && (
@@ -485,6 +494,7 @@ function CommentRow({
   isMobile,
   deletable,
   deleteTitle,
+  pinMode = false,
   actions,
 }: {
   comment: DocComment;
@@ -492,6 +502,8 @@ function CommentRow({
   isMobile: boolean;
   deletable: boolean;
   deleteTitle: string;
+  /** 캔버스 핀의 글인가 — 접근 이름이 '스레드 글 삭제'/'댓글 삭제'로 갈린다. */
+  pinMode?: boolean;
   /** 아래 동작 줄 — 답글은 스레드 뿌리에만, 좋아요는 모든 줄에. */
   actions: { onReply?: () => void; replyOpen: boolean };
 }) {
@@ -528,7 +540,7 @@ function CommentRow({
             <button
               type="button"
               className="mf-ed-btn"
-              aria-label="댓글 삭제"
+              aria-label={pinMode ? '스레드 글 삭제' : '댓글 삭제'}
               title={deleteTitle}
               onClick={() => void controller.removeComment(c.id)}
               style={{ border: 'none', background: 'transparent', color: th.subtext, fontSize: 11, cursor: 'pointer', fontFamily: 'inherit', padding: isMobile ? '8px 6px' : '2px 4px', borderRadius: 6, flexShrink: 0 }}
@@ -634,6 +646,7 @@ export function CommentComposer({
   isMobile,
   participants,
   placeholder,
+  inputLabel,
   submitLabel,
   autoFocus,
   compact = false,
@@ -645,6 +658,8 @@ export function CommentComposer({
   isMobile: boolean;
   participants: ShareParticipant[];
   placeholder: string;
+  /** 입력창의 접근 이름 — 없으면 제출 라벨에서 고른다(칸반의 '댓글 입력'). */
+  inputLabel?: string;
   submitLabel: string;
   autoFocus: boolean;
   compact?: boolean;
@@ -896,7 +911,7 @@ export function CommentComposer({
               rows={compact ? 1 : 2}
               maxLength={2000}
               placeholder={placeholder}
-              aria-label={submitLabel === '답글' ? '답글 입력' : '댓글 입력'}
+              aria-label={inputLabel ?? (submitLabel === '답글' ? '답글 입력' : '댓글 입력')}
               style={
                 {
                   ...boxFont,

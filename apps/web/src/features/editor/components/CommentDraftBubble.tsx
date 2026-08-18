@@ -83,7 +83,7 @@ export function CommentDraftBubble({ controller }: { controller: EditorControlle
         ref={rootRef}
         data-comment-draft
         role="dialog"
-        aria-label="첫 댓글 남기기"
+        aria-label="첫 스레드 남기기"
         style={card}
         // `.mf-ed-vp`가 배경 드래그를 소유한다 — 새어 나가면 마퀴가 포인터를 캡처해
         // 버튼이 click을 영영 못 받는다(ContextMenu·BoardToolbar와 같은 함정).
@@ -97,18 +97,19 @@ export function CommentDraftBubble({ controller }: { controller: EditorControlle
           }
         }}
       >
-        {/* 머리 — 내 얼굴과 "새 댓글"(시안 ②). 누가 남기는 말인지 먼저 말한다. */}
+        {/* 머리 — 내 얼굴과 "새 스레드"(시안 ②). 누가 남기는 말인지 먼저 말한다. */}
         <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 9 }}>
           <Avatar name={me} size={24} />
           <span style={{ fontSize: 12.5, color: th.subtext, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-            <b style={{ color: th.text, fontWeight: 700 }}>{me}</b> · 새 댓글
+            <b style={{ color: th.text, fontWeight: 700 }}>{me}</b> · 새 스레드
           </span>
         </div>
         <CommentComposer
           controller={controller}
           isMobile={isMobile}
           participants={participants}
-          placeholder="댓글 남기기 · @로 멘션"
+          placeholder="스레드 남기기 · @로 멘션"
+          inputLabel="스레드 입력"
           submitLabel="남기기"
           autoFocus
           compact

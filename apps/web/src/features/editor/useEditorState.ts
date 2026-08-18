@@ -4471,7 +4471,7 @@ export function useEditorState(): EditorController {
   const submitCommentDraft = useCallback(
     async (body: string, mentions?: CommentMention[]) => {
       const at = commentDraftRef.current;
-      if (!at) return { error: '댓글을 남길 자리가 없어요.' };
+      if (!at) return { error: '스레드를 남길 자리가 없어요.' };
       const newId = idFactory('cp');
       const res = await commentStore.add(docStoreId, newId, body, mentions && mentions.length ? { mentions } : undefined);
       if (res.error) return res;
