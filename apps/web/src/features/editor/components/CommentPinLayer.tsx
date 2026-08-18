@@ -65,6 +65,15 @@ export function CommentPinLayer({ controller }: { controller: EditorController }
             aria-label={`스레드 ${count}개${resolved ? ' (해결됨)' : ''}`}
             title={resolved ? `${author} · 해결된 스레드` : `${author} · 스레드 ${count}개`}
             onPointerDown={onPointerDown}
+            // 키보드로도 연다 — `role="button"`·`tabIndex`를 달아 놓고 Enter가 아무
+            // 일도 하지 않으면 초점만 받고 마는 버튼이 된다.
+            onKeyDown={(e) => {
+              if (e.key === 'Enter' || e.key === ' ') {
+                e.preventDefault();
+                controller.selectCommentPin(pin.id);
+                controller.openComments(pin.id);
+              }
+            }}
             onClick={(e) => {
               e.stopPropagation();
               // 옮긴 직후의 click은 "열기"가 아니다 — 여기서 팝업을 열면 드래그를
