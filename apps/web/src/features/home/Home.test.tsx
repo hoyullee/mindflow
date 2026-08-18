@@ -1,4 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { readFileSync } from 'node:fs';
+import { resolve } from 'node:path';
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { MemoryRouter, Route, Routes } from 'react-router-dom';
@@ -94,7 +96,7 @@ function renderHomeWithDocStore(metas: DocMeta[] = [], bodies: Record<string, Lo
  * 우클릭)이 전부 같은 갤러리를 열므로 여는 버튼은 인자로 받는다.
  */
 async function createBlankMap(user: ReturnType<typeof userEvent.setup>, opener?: HTMLElement) {
-  await user.click(opener ?? screen.getAllByText('＋ 새로 만들기')[0]!);
+  await user.click(opener ?? screen.getAllByRole('button', { name: '새로 만들기' })[0]!);
   await user.click(await screen.findByRole('button', { name: /빈 맵/ }));
 }
 
@@ -122,7 +124,7 @@ describe('Home', () => {
     // the initial DocStore.list() settles — until then it shows a skeleton), so
     // "＋ 새로 만들기" appears both in the toolbar and the empty-state CTA.
     expect(screen.getByPlaceholderText('모든 스페이스에서 검색')).toBeTruthy();
-    expect(screen.getAllByText('＋ 새로 만들기').length).toBeGreaterThan(0);
+    expect(screen.getAllByRole('button', { name: '새로 만들기' }).length).toBeGreaterThan(0);
     await waitFor(() => expect(screen.getByText('아직 만든 맵이 없어요')).toBeTruthy());
   });
 
@@ -134,7 +136,9 @@ describe('Home', () => {
 
     // the real email is shown (popover content is always in the DOM), and the
     // name defaults to its local part — not the hardcoded "mine" placeholder.
-    await waitFor(() => expect(aside.getByText('hoyul.lee@wantedlab.com')).toBeTruthy());
+    // 이메일은 사이드바에 **두 번** 나온다 — 프로필 버튼의 부제(디자인 원본)와
+    // 팝오버 머리(항상 DOM에 있다). 둘 중 하나라도 있으면 이 테스트의 뜻은 통한다.
+    await waitFor(() => expect(aside.getAllByText('hoyul.lee@wantedlab.com').length).toBeGreaterThan(0));
     expect(aside.getAllByText('hoyul.lee').length).toBeGreaterThan(0);
     expect(aside.queryByText('mine@wantedlab.com')).toBeNull();
     expect(aside.queryByText('mine')).toBeNull();
@@ -513,7 +517,7 @@ describe('Home', () => {
     // … but NOT the empty-space prompt, and the empty-state "＋ 새로 만들기" CTA is
     // gone (only the always-present toolbar button remains).
     expect(screen.queryByText('아직 만든 맵이 없어요')).toBeNull();
-    expect(screen.getAllByText('＋ 새로 만들기').length).toBe(1);
+    expect(screen.getAllByRole('button', { name: '새로 만들기' }).length).toBe(1);
   });
 
   it('still shows the "아직 만든 맵이 없어요" prompt for a space with neither maps nor folders', async () => {
@@ -521,7 +525,7 @@ describe('Home', () => {
     renderHomeWithDocStore([]);
     await waitFor(() => expect(screen.getByText('아직 만든 맵이 없어요')).toBeTruthy());
     // both the toolbar button and the empty-state CTA are present
-    expect(screen.getAllByText('＋ 새로 만들기').length).toBe(2);
+    expect(screen.getAllByRole('button', { name: '새로 만들기' }).length).toBe(2);
   });
 
   it('keeps a folder-filed map in its folder when the merge renames it to its backend title', async () => {
@@ -1356,7 +1360,7 @@ describe('Home', () => {
     // 로더는 클릭 즉시(같은 커밋) 뜨고, 카드 등록은 그 뒤 프레임으로 미뤄진다.
     const user = userEvent.setup();
     renderHomeWithDocStore([]);
-    await waitFor(() => expect(screen.getAllByText('＋ 새로 만들기')[0]).toBeTruthy());
+    await waitFor(() => expect(screen.getAllByRole('button', { name: '새로 만들기' })[0]).toBeTruthy());
 
     const cardCount = () => screen.queryAllByText('새 마인드맵').length;
     const before = cardCount();
@@ -2245,7 +2249,8 @@ describe('Home', () => {
         await waitFor(() => expect(screen.getByRole('button', { name: '가져오기' })).toBeTruthy());
         const importBtn = screen.getByRole('button', { name: '가져오기' });
         const folderBtn = screen.getByRole('button', { name: '새 폴더' });
-        const newBtn = screen.getByRole('button', { name: '새로 만들기' });
+        // 툴바 CTA와 빈 상태 CTA가 같은 이름을 쓴다 — 첫 번째(툴바)를 잡는다.
+        const newBtn = screen.getAllByRole('button', { name: '새로 만들기' })[0]!;
         // icon-only: the visible label text is gone…
         expect(importBtn.textContent).toBe('');
         expect(folderBtn.textContent).toBe('');
@@ -2458,9 +2463,9 @@ describe('Home', () => {
       const recentCard = container.querySelectorAll('a[data-title="최근 맵"]')[0] as HTMLElement;
       // no ☰ menu button on a recent card…
       expect(within(recentCard).queryByRole('button', { name: '메뉴' })).toBeNull();
-      // …and it's the compact thumbnail (72px), not the full 150px one
+      // …and it's the compact thumbnail (74px, 디자인 원본), not the full 150px one
       const thumb = recentCard.querySelector('.map-thumb') as HTMLElement;
-      expect(thumb.style.height).toBe('72px');
+      expect(thumb.style.height).toBe('74px');
 
       // the main-grid copy of the same map keeps its full card + ☰ menu
       const mainCard = container.querySelectorAll('a[data-title="최근 맵"]')[1] as HTMLElement;
@@ -2483,10 +2488,10 @@ describe('Home', () => {
       );
 
       await waitFor(() => expect(screen.getByText('최근 항목')).toBeTruthy());
-      // recent cards are the compact variant (72px thumbnail)
+      // recent cards are the compact variant (74px thumbnail — 디자인 원본)
       const recent = [...container.querySelectorAll('a[data-title]')].filter((c) => {
         const th = c.querySelector('.map-thumb') as HTMLElement | null;
-        return th?.style.height === '72px';
+        return th?.style.height === '74px';
       });
       // Desktop exposes only as many cards as FIT the measured width — jsdom has
       // no layout (clientWidth 0), so the strip keeps its pre-measurement default
@@ -2507,7 +2512,7 @@ describe('Home', () => {
       expect(parseFloat(scroll.style.margin)).toBe(-parseFloat(scroll.style.padding));
       recent.forEach((card) => {
         const slot = card.parentElement as HTMLElement;
-        expect(slot.style.width).toBe('128px');
+        expect(slot.style.width).toBe('158px');
         expect(slot.style.flex).toContain('0 0 auto');
       });
     });
@@ -2532,7 +2537,7 @@ describe('Home', () => {
         await waitFor(() => expect(screen.getByText('최근 항목')).toBeTruthy());
         const recent = [...container.querySelectorAll('a[data-title]')].filter((c) => {
           const th = c.querySelector('.map-thumb') as HTMLElement | null;
-          return th?.style.height === '72px';
+          return th?.style.height === '74px';
         });
         expect(recent.length).toBe(titles.length); // all reachable by swiping
       } finally {
@@ -3430,9 +3435,9 @@ describe('홈 우클릭 메뉴', () => {
     it('"새로 만들기"가 갤러리를 연다 — 첫 칸이 빈 맵, 그 뒤로 템플릿들', async () => {
       const user = userEvent.setup();
       renderHomeWithDocStore([]);
-      await waitFor(() => expect(screen.getAllByText('＋ 새로 만들기')[0]).toBeTruthy());
+      await waitFor(() => expect(screen.getAllByRole('button', { name: '새로 만들기' })[0]).toBeTruthy());
 
-      await user.click(screen.getAllByText('＋ 새로 만들기')[0]!);
+      await user.click(screen.getAllByRole('button', { name: '새로 만들기' })[0]!);
 
       const dialog = await screen.findByRole('dialog', { name: '새로 만들기' });
       const cards = within(dialog).getAllByRole('button').filter((b) => b.hasAttribute('data-template'));
@@ -3467,18 +3472,21 @@ describe('홈 우클릭 메뉴', () => {
       });
       const mapCard = container.querySelector('a[data-title="제품 맵"]') as HTMLElement;
 
-      // 종류 배지는 보드에만.
+      // 종류 배지는 **모든 카드**에 붙는다(홈 리디자인) — 종류 이름이 다르다.
       await waitFor(() => expect(boardCard.querySelector('[data-board-badge]')?.textContent).toContain('화이트보드'));
-      expect(mapCard.querySelector('[data-board-badge]')).toBeNull();
-      // 썸네일 바탕: 보드는 흰 종이, 맵은 기존 그라디언트.
+      expect(mapCard.querySelector('[data-board-badge]')?.textContent).toContain('마인드맵');
+      // 썸네일 바탕: 보드는 흰 종이, 맵은 옅은 wash(둘 다 도트 격자가 깔린다).
       const thumbBg = (card: HTMLElement) => ((card.querySelector('.map-thumb') as HTMLElement).style.background || '');
       expect(thumbBg(boardCard)).toContain('rgb(255, 255, 255)');
-      expect(thumbBg(mapCard)).toContain('gradient');
-      // 테두리 색도 다르다(요청) — 이름 영역 면은 홈 배경과 비슷해 카드가 묻혔다(제보).
-      expect(boardCard.style.border).toContain('--mf-doc-board');
-      expect(mapCard.style.border).toContain('--mf-doc-map');
+      expect(thumbBg(mapCard)).toContain('--mf-wash');
+      expect(boardCard.querySelector('[data-dot-grid]')).toBeTruthy();
+      expect(mapCard.querySelector('[data-dot-grid]')).toBeTruthy();
+      // 종류 색은 배지의 점이 말한다(홈 리디자인) — 테두리는 둘 다 같은 경계선.
+      expect((boardCard.querySelector('[data-board-badge] span') as HTMLElement).style.background).toContain('--mf-doc-board');
+      expect((mapCard.querySelector('[data-board-badge] span') as HTMLElement).style.background).toContain('--mf-doc-map');
+      expect(mapCard.style.border).toContain('--mf-border');
       // 배지는 카드 오른쪽 끝에 붙는다(제보: 너무 떨어져 있다).
-      expect((boardCard.querySelector('[data-board-badge]') as HTMLElement).style.right).toBe('12px');
+      expect((boardCard.querySelector('[data-board-badge]') as HTMLElement).style.right).toBe('10px');
     });
 
     // 요청: 세 종류의 테두리 색이 서로 **명확히 구별**돼야 한다(예전엔 화이트보드와
@@ -3507,9 +3515,13 @@ describe('홈 우클릭 메뉴', () => {
         });
       const kanban = await card('칸반 카드');
       await waitFor(() => expect(kanban.querySelector('[data-board-badge]')?.textContent).toContain('칸반'));
-      expect((await card('맵 카드')).style.border).toContain('--mf-doc-map');
-      expect((await card('보드 카드')).style.border).toContain('--mf-doc-board');
-      expect(kanban.style.border).toContain('--mf-doc-kanban');
+      // 종류 색은 이제 **배지의 점**에 있다(홈 리디자인) — 카드 테두리는 셋 다 같은
+      // 옅은 경계선이다(디자인 원본). 종류 신호는 배지 이름·점 색·흰 종이 바탕 세 겹.
+      const kindDot = (el: HTMLElement) => (el.querySelector('[data-board-badge] span') as HTMLElement).style.background;
+      expect(kindDot(await card('맵 카드'))).toContain('--mf-doc-map');
+      expect(kindDot(await card('보드 카드'))).toContain('--mf-doc-board');
+      expect(kindDot(kanban)).toContain('--mf-doc-kanban');
+      expect((await card('맵 카드')).style.border).toContain('--mf-border');
       // 값도 실제로 다르다 — 변수 이름만 갈라 두고 같은 색을 넣는 실수를 막는다.
       // 종류 색은 **테마를 따르지 않으므로**(무엇인가를 말하는 표식) 밝은 다섯 벌이
       // 같은 값을 쓰고 다크만 한 단계 밝다 — 그 계약도 함께 고정한다.
@@ -3553,9 +3565,9 @@ describe('홈 우클릭 메뉴', () => {
     it('화이트보드 칸 — 빈 맵 다음 자리, 고르면 "새 화이트보드"로 에디터에 넘어간다', async () => {
       const user = userEvent.setup();
       renderHomeWithDocStore([]);
-      await waitFor(() => expect(screen.getAllByText('＋ 새로 만들기')[0]).toBeTruthy());
+      await waitFor(() => expect(screen.getAllByRole('button', { name: '새로 만들기' })[0]).toBeTruthy());
 
-      await user.click(screen.getAllByText('＋ 새로 만들기')[0]!);
+      await user.click(screen.getAllByRole('button', { name: '새로 만들기' })[0]!);
       const dialog = await screen.findByRole('dialog', { name: '새로 만들기' });
       const cards = within(dialog).getAllByRole('button').filter((b) => b.hasAttribute('data-template'));
       // 두 문서 종류를 구획으로 나눴다(제보: 섞여 있어 구별이 어렵다) — 마인드맵
@@ -3576,9 +3588,9 @@ describe('홈 우클릭 메뉴', () => {
     it('칸반 칸 — 고르면 "새 칸반 보드"로 에디터에 넘어간다(세 번째 문서 종류)', async () => {
       const user = userEvent.setup();
       renderHomeWithDocStore([]);
-      await waitFor(() => expect(screen.getAllByText('＋ 새로 만들기')[0]).toBeTruthy());
+      await waitFor(() => expect(screen.getAllByRole('button', { name: '새로 만들기' })[0]).toBeTruthy());
 
-      await user.click(screen.getAllByText('＋ 새로 만들기')[0]!);
+      await user.click(screen.getAllByRole('button', { name: '새로 만들기' })[0]!);
       const dialog = await screen.findByRole('dialog', { name: '새로 만들기' });
       await user.click(within(dialog).getByRole('button', { name: /새 칸반 보드/ }));
       await waitFor(() => expect(newMapTitles()).toContain('새 칸반 보드'));
@@ -3590,9 +3602,9 @@ describe('홈 우클릭 메뉴', () => {
       // 분기를 빠뜨리면 카드는 보이는데 눌러도 아무 일이 없다(실브라우저가 잡았던 구멍).
       const user = userEvent.setup();
       renderHomeWithDocStore([]);
-      await waitFor(() => expect(screen.getAllByText('＋ 새로 만들기')[0]).toBeTruthy());
+      await waitFor(() => expect(screen.getAllByRole('button', { name: '새로 만들기' })[0]).toBeTruthy());
 
-      await user.click(screen.getAllByText('＋ 새로 만들기')[0]!);
+      await user.click(screen.getAllByRole('button', { name: '새로 만들기' })[0]!);
       const dialog = await screen.findByRole('dialog', { name: '새로 만들기' });
       const first = KANBAN_TEMPLATES[0]!;
       await user.click(within(dialog).getByRole('button', { name: new RegExp(first.name) }));
@@ -3603,9 +3615,9 @@ describe('홈 우클릭 메뉴', () => {
     it('보드 템플릿 — 화이트보드 구획에 나란히, 고르면 그 이름의 보드가 열린다', async () => {
       const user = userEvent.setup();
       renderHomeWithDocStore([]);
-      await waitFor(() => expect(screen.getAllByText('＋ 새로 만들기')[0]).toBeTruthy());
+      await waitFor(() => expect(screen.getAllByRole('button', { name: '새로 만들기' })[0]).toBeTruthy());
 
-      await user.click(screen.getAllByText('＋ 새로 만들기')[0]!);
+      await user.click(screen.getAllByRole('button', { name: '새로 만들기' })[0]!);
       const dialog = await screen.findByRole('dialog', { name: '새로 만들기' });
 
       const retro = BOARD_TEMPLATES[0]!;
@@ -3623,7 +3635,7 @@ describe('홈 우클릭 메뉴', () => {
     it('화이트보드 JSON(루트 없는 문서)도 가져올 수 있다 — 제목은 파일명', async () => {
       const user = userEvent.setup();
       const { container, docStore } = renderHomeWithDocStore([]);
-      await waitFor(() => expect(screen.getAllByText('＋ 새로 만들기')[0]).toBeTruthy());
+      await waitFor(() => expect(screen.getAllByRole('button', { name: '새로 만들기' })[0]).toBeTruthy());
 
       const boardJson = JSON.stringify({ v: 1, kind: 'board', nodes: {}, floats: [{ id: 'f1', x: 10, y: 20, w: 180, text: '보드 메모' }], lines: [], zones: [], layoutMode: 'right', themeKey: 'coral' });
       const input = container.querySelector('input[type="file"]') as HTMLInputElement;
@@ -3639,9 +3651,9 @@ describe('홈 우클릭 메뉴', () => {
     it('템플릿을 고르면 그 이름으로 맵이 만들어지고 에디터로 넘어간다', async () => {
       const user = userEvent.setup();
       renderHomeWithDocStore([]);
-      await waitFor(() => expect(screen.getAllByText('＋ 새로 만들기')[0]).toBeTruthy());
+      await waitFor(() => expect(screen.getAllByRole('button', { name: '새로 만들기' })[0]).toBeTruthy());
 
-      await user.click(screen.getAllByText('＋ 새로 만들기')[0]!);
+      await user.click(screen.getAllByRole('button', { name: '새로 만들기' })[0]!);
       await user.click(await screen.findByRole('button', { name: /회의록/ }));
 
       expect(screen.getByText('새 마인드맵을 준비하고 있어요')).toBeTruthy();
@@ -3652,9 +3664,9 @@ describe('홈 우클릭 메뉴', () => {
     it('Escape로 닫으면 아무 맵도 만들어지지 않는다', async () => {
       const user = userEvent.setup();
       renderHomeWithDocStore([]);
-      await waitFor(() => expect(screen.getAllByText('＋ 새로 만들기')[0]).toBeTruthy());
+      await waitFor(() => expect(screen.getAllByRole('button', { name: '새로 만들기' })[0]).toBeTruthy());
 
-      await user.click(screen.getAllByText('＋ 새로 만들기')[0]!);
+      await user.click(screen.getAllByRole('button', { name: '새로 만들기' })[0]!);
       await screen.findByRole('dialog', { name: '새로 만들기' });
       await user.keyboard('{Escape}');
 
@@ -3666,9 +3678,9 @@ describe('홈 우클릭 메뉴', () => {
     it('카드 제목 앞은 이모지가 아니라 SVG 아이콘이다 (기기마다 다르게 그려지지 않게)', async () => {
       const user = userEvent.setup();
       renderHomeWithDocStore([]);
-      await waitFor(() => expect(screen.getAllByText('＋ 새로 만들기')[0]).toBeTruthy());
+      await waitFor(() => expect(screen.getAllByRole('button', { name: '새로 만들기' })[0]).toBeTruthy());
 
-      await user.click(screen.getAllByText('＋ 새로 만들기')[0]!);
+      await user.click(screen.getAllByRole('button', { name: '새로 만들기' })[0]!);
       const dialog = await screen.findByRole('dialog', { name: '새로 만들기' });
 
       for (const tpl of MAP_TEMPLATES) {
@@ -3684,9 +3696,9 @@ describe('홈 우클릭 메뉴', () => {
     it('dim 배경도 함께 페이드한다 — 막만 툭 깔리고 내용이 뒤늦게 뜨면 깜빡임으로 보인다', async () => {
       const user = userEvent.setup();
       renderHomeWithDocStore([]);
-      await waitFor(() => expect(screen.getAllByText('＋ 새로 만들기')[0]).toBeTruthy());
+      await waitFor(() => expect(screen.getAllByRole('button', { name: '새로 만들기' })[0]).toBeTruthy());
 
-      await user.click(screen.getAllByText('＋ 새로 만들기')[0]!);
+      await user.click(screen.getAllByRole('button', { name: '새로 만들기' })[0]!);
       const dialog = await screen.findByRole('dialog', { name: '새로 만들기' });
       const backdrop = dialog.parentElement as HTMLElement;
       // 제자리 페이드(mf-dim-in)여야 한다 — mf-fade의 translateY를 fixed inset:0
@@ -4482,6 +4494,67 @@ describe('모바일 홈 다중 선택', () => {
       expect(screen.queryByText('1개 선택')).toBeNull();
     } finally {
       restore();
+    }
+  });
+});
+
+// 홈 리디자인(디자인 원본 `Geurio 홈 리디자인.dc.html` 이식) — 사용자가 콕 집어
+// 요청한 세 가지를 계약으로 고정한다: 툴바 버튼의 **순서**, 마우스 오버 **애니메이션**,
+// 카드 미리보기의 **틀**(옅은 wash + 도트 격자 + 종류 배지).
+describe('홈 리디자인 계약', () => {
+  it('툴바 순서 — 알림 · 검색 · 구분선 · 가져오기 · 새 폴더 · 새로 만들기', async () => {
+    renderHome();
+    const search = await screen.findByPlaceholderText('모든 스페이스에서 검색');
+    const bell = screen.getByRole('button', { name: '알림' });
+    const divider = document.querySelector('[data-toolbar-divider]') as HTMLElement;
+    const importBtn = screen.getByRole('button', { name: '가져오기' });
+    const folderBtn = screen.getByRole('button', { name: '새 폴더' });
+    const createBtn = screen.getAllByRole('button', { name: '새로 만들기' })[0]!;
+    expect(divider).toBeTruthy();
+    // DOM 순서가 곧 화면 순서다(모두 같은 행의 flex 항목).
+    const order = [bell, search, divider, importBtn, folderBtn, createBtn];
+    for (let i = 0; i < order.length - 1; i += 1) {
+      // Node.DOCUMENT_POSITION_FOLLOWING === 4
+      expect(order[i]!.compareDocumentPosition(order[i + 1]!) & 4).toBe(4);
+    }
+    // 컨트롤은 모두 알약(원형 반지름) — 디자인 원본의 32px 한 줄.
+    expect(getComputedStyle(bell).borderRadius).toBe('999px');
+    expect((importBtn as HTMLElement).style.borderRadius).toBe('999px');
+    expect((folderBtn as HTMLElement).style.borderRadius).toBe('999px');
+    expect((createBtn as HTMLElement).style.background).toContain('linear-gradient');
+  });
+
+  it('마우스 오버 애니메이션 — 카드가 3px 떠오르고 그늘·경계가 바뀐다(CSS 계약)', () => {
+    // jsdom은 :hover를 렌더하지 않으므로 규칙 자체를 읽어 고정한다(#391과 같은 처방).
+    const css = readFileSync(resolve('src/features/home/home.css'), 'utf8');
+    const hover = css.slice(css.indexOf('.mf-home .map-card:hover {'));
+    expect(hover).toContain('transform: translateY(-3px)');
+    expect(hover).toContain('var(--mf-border-hover)');
+    expect(hover).toContain('var(--mf-card-shadow-hover)');
+    // 카드 위에 얹힌 것들(★ · ⋯ · 진입 셰브론)은 hover에서 드러난다.
+    expect(css).toContain('.mf-home .map-card:hover .fav-btn');
+    expect(css).toContain('.mf-home .map-card:hover .card-open');
+    // 움직임을 줄이라고 한 사용자에게는 떠오르지 않는다.
+    const reduce = css.slice(css.indexOf('@media (prefers-reduced-motion: reduce)'));
+    expect(reduce).toContain('transform: none');
+  });
+
+  it('카드 미리보기 틀 — 옅은 wash + 도트 격자 + 종류 배지(최근 항목도 같은 틀)', async () => {
+    localStorage.setItem('mf_recent', JSON.stringify(['맵 하나']));
+    const { container } = renderHomeWithDocStore([
+      { id: 'd1', title: '맵 하나', version: 1, updatedAt: '2026-08-16T00:00:00.000Z', isFavorite: false, deletedAt: null },
+    ]);
+    const cards = await waitFor(() => {
+      const list = [...container.querySelectorAll('a[data-title="맵 하나"]')] as HTMLElement[];
+      expect(list.length).toBeGreaterThanOrEqual(1);
+      return list;
+    });
+    for (const card of cards) {
+      const thumb = card.querySelector('.map-thumb') as HTMLElement;
+      expect(thumb.style.background).toContain('--mf-wash');
+      const dots = card.querySelector('[data-dot-grid]') as HTMLElement;
+      expect(dots.style.backgroundImage).toContain('--mf-dot-grid');
+      expect(card.querySelector('[data-board-badge]')?.textContent).toContain('마인드맵');
     }
   });
 });

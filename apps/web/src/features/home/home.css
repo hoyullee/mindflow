@@ -231,23 +231,46 @@ a:hover {
   user-select: none;
   -webkit-user-select: none;
 }
+/* 홈 리디자인 — 마우스를 얹으면 카드가 **3px 떠오른다**(디자인 원본의
+   `.gh-card:hover`). 예전에는 테두리가 강조색으로 바뀌었는데, 그 색은 지금
+   **선택**(2px)이 쓰므로 hover는 한 톤 진한 경계 + 더 멀리 퍼지는 그늘로 갈랐다. */
+.mf-home .map-card {
+  transition:
+    transform 0.18s ease,
+    box-shadow 0.18s ease,
+    border-color 0.18s ease;
+}
 .mf-home .map-card:hover {
-  border-color: var(--mf-accent) !important;
-  box-shadow: 0 10px 24px rgba(0, 0, 0, 0.08) !important;
+  transform: translateY(-3px);
+  border-color: var(--mf-border-hover) !important;
+  box-shadow: var(--mf-card-shadow-hover) !important;
 }
 .mf-home .map-card:hover .fav-btn {
   opacity: 1 !important;
 }
-.mf-home .map-card:hover .menu-btn {
+.mf-home .map-card:hover .menu-btn,
+.mf-home .map-card:hover .card-open {
   opacity: 1 !important;
+  transform: translateY(0) !important;
+}
+/* 움직임을 줄이라고 한 사용자에게는 떠오르지 않는다 — 그늘·경계만 바뀐다. */
+@media (prefers-reduced-motion: reduce) {
+  .mf-home .map-card,
+  .mf-home .map-card:hover,
+  .mf-home .tpl-card:hover {
+    transform: none;
+    transition: box-shadow 0.18s ease, border-color 0.18s ease;
+  }
 }
 /* Touch devices have no hover, so the hover-revealed card controls (☆ favorite,
    ☰ menu on map & folder cards) would be permanently invisible. Always show
    them there so the ☰ menu is reachable. */
 @media (hover: none) {
   .mf-home .fav-btn,
-  .mf-home .menu-btn {
+  .mf-home .menu-btn,
+  .mf-home .card-open {
     opacity: 1 !important;
+    transform: none !important;
   }
 }
 .mf-home .space-row:hover .space-dot {
@@ -343,9 +366,22 @@ a:hover {
    below) so a full-width card holds the same proportions as a PC card instead
    of looking stretched. One column means every card is the same size whether
    the space has one map or many. */
+/* 카드 그리드 — 디자인 원본의 '보통' 밀도(minmax 286 / gap 16). */
 .mf-map-grid {
   display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(286px, 1fr));
+  gap: 16px;
+}
+/* 폴더는 한 줄짜리 가로 카드라 더 넓은 칸을 쓴다(디자인 원본 minmax 300 / gap 14). */
+.mf-folder-grid {
+  display: grid;
   grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+  gap: 14px;
+}
+@media (max-width: 767px) {
+  .mf-folder-grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
 }
 @media (max-width: 767px) {
   .mf-map-grid {
@@ -359,20 +395,18 @@ a:hover {
    background always spans the available width (it delineates the recent ZONE,
    sized by the viewport alone), and the fixed-width cards sit inside it. The
    card COUNT adapts to the width; the container does not adapt to the cards. */
+/* 홈 리디자인 — "최근 항목"은 더 이상 가라앉은 상자가 아니다.
+   디자인 원본은 이 구획을 **아래 선으로만** 가른다: 카드 자체가 그늘로 떠 있으므로
+   그 아래 또 하나의 면을 깔면 층이 둘이 되어 카드가 묻힌다. */
 .mf-recent-tray {
-  /* surface-sunken (light), NOT surface-raised(#faf3ee): raised is nearly
-     identical to the page bg (#fbf6f2) so the tray wasn't perceivable as a
-     container. The sunken tone reads as a "well" and makes white cards pop;
-     the lighter step keeps the zone airy now that it spans the full width. */
-  background: var(--mf-sunken);
-  border-radius: 14px; /* radius-lg */
-  padding: 16px; /* space-4 */
-  margin-bottom: 24px; /* space-6 */
+  padding-bottom: 26px;
+  border-bottom: 1px solid var(--mf-border-soft);
+  margin-bottom: 26px;
 }
 @media (max-width: 767px) {
   .mf-recent-tray {
-    padding: 12px; /* space-3 */
-    margin-bottom: 16px;
+    padding-bottom: 18px;
+    margin-bottom: 18px;
   }
 }
 /* Thin, hover-revealed horizontal scrollbar (same treatment as .lnb-scroll) so
@@ -413,4 +447,15 @@ a:hover {
 .mf-noselect * {
   user-select: none !important;
   -webkit-user-select: none !important;
+}
+
+/* 홈 본문의 첫 등장 — 디자인 원본의 `ghFade`(0.3s, 6px 아래에서). 마운트 때 한 번만
+   돈다. 움직임을 줄이라고 한 사용자에게는 나타나기만 한다. */
+.mf-home-main {
+  animation: mf-fade 0.3s ease both;
+}
+@media (prefers-reduced-motion: reduce) {
+  .mf-home-main {
+    animation: none;
+  }
 }

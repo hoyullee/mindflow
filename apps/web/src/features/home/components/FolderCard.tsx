@@ -78,7 +78,7 @@ export function FolderCard({ folder, controller }: Props) {
       onDrop={onDrop}
       style={{
         border: folder.dragOver ? '2px dashed var(--mf-accent)' : folder.selected ? '2px solid var(--mf-accent)' : '1px solid var(--mf-border)',
-        borderRadius: 14,
+        borderRadius: 16,
         background: folder.dragOver ? 'var(--mf-accent-soft)' : 'var(--mf-panel)',
         cursor: selectMode ? 'default' : 'pointer',
         opacity: selectMode ? 0.45 : 1,
@@ -86,7 +86,7 @@ export function FolderCard({ folder, controller }: Props) {
         position: 'relative',
         display: 'flex',
         alignItems: 'center',
-        gap: 14,
+        gap: 13,
         // 2px 테두리가 되는 상태(드롭 대기·선택)에서도 **안쪽 좌표계가 흔들리지 않게**
         // 패딩은 그대로 두고 **음수 마진**으로 늘어난 1px을 상쇄한다(맵 카드와 같은 방식).
         //
@@ -95,9 +95,14 @@ export function FolderCard({ folder, controller }: Props) {
         // `top/right`로 그 패딩 박스에 붙어 있어서, 폴더를 선택하는 순간 버튼만
         // (-1, +1)px 움직였다(제보 — 실측으로 확인). 마진으로 상쇄하면 테두리가
         // 두꺼워진 만큼 바깥으로 나가므로 패딩 박스 위치가 그대로다.
-        padding: '18px 18px',
+        padding: '14px',
         margin: folder.dragOver || folder.selected ? -1 : 0,
-        boxShadow: folder.dragOver ? '0 6px 18px rgba(var(--mf-accent-rgb),.18)' : folder.selected ? '0 0 0 3px rgba(var(--mf-accent-rgb),.18)' : 'none',
+        // 맵 카드와 같은 그늘 — 폴더도 면 위에 떠 있다(디자인 원본).
+        boxShadow: folder.dragOver
+          ? '0 6px 18px rgba(var(--mf-accent-rgb),.18)'
+          : folder.selected
+            ? '0 0 0 3px rgba(var(--mf-accent-rgb),.18), var(--mf-card-shadow)'
+            : 'var(--mf-card-shadow)',
       }}
     >
       <div
@@ -112,19 +117,55 @@ export function FolderCard({ folder, controller }: Props) {
         }}
         title="메뉴"
         aria-label="메뉴"
-        style={{ position: 'absolute', top: 10, right: 10, zIndex: 4, width: 28, height: 28, borderRadius: 8, background: 'var(--mf-panel-veil)', border: '1px solid var(--mf-border)', display: selectMode ? 'none' : 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 13, lineHeight: 1, color: 'var(--mf-subtext)', cursor: 'pointer', boxShadow: '0 2px 6px rgba(0,0,0,.12)', opacity: folder.menuOpen ? 1 : 0, transition: 'opacity .15s' }}
+        style={{ position: 'absolute', top: 8, right: 8, zIndex: 4, width: 28, height: 28, borderRadius: 9, background: 'var(--mf-panel2)', border: '1px solid var(--mf-border)', display: selectMode ? 'none' : 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--mf-subtext)', cursor: 'pointer', opacity: folder.menuOpen ? 1 : 0, transform: folder.menuOpen ? 'translateY(0)' : 'translateY(2px)', transition: 'opacity .18s ease, transform .18s ease' }}
       >
-        ☰
-      </div>
-      <div style={{ width: 52, height: 52, borderRadius: 14, background: 'var(--mf-accent-soft)', color: 'var(--mf-accent)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
-        <svg width="26" height="26" viewBox="0 0 24 24" fill="currentColor" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round">
-          <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z" fillOpacity=".18" />
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+          <circle cx="5" cy="12" r="1.6" />
+          <circle cx="12" cy="12" r="1.6" />
+          <circle cx="19" cy="12" r="1.6" />
         </svg>
       </div>
-      <div style={{ minWidth: 0 }}>
-        <div style={{ fontSize: 14.5, fontWeight: 700, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{folder.name}</div>
-        <div style={{ fontSize: 12, color: 'var(--mf-muted)', marginTop: 3 }}>맵 {folder.count}개</div>
+      {/* 아이콘 타일 — 옅은 세로 그라디언트 + 선 아이콘(디자인 원본). 강조색을 쓰지
+          않는 이유: 폴더는 강조 대상이 아니라 담는 그릇이고, 강조색은 지금 "선택"과
+          1차 버튼이 쓴다. */}
+      <div
+        style={{
+          width: 46,
+          height: 46,
+          borderRadius: 14,
+          background: 'linear-gradient(180deg, var(--mf-accent-soft), var(--mf-panel2))',
+          border: '1px solid var(--mf-border)',
+          color: 'var(--mf-accent-strong)',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          flexShrink: 0,
+        }}
+      >
+        <svg width="21" height="21" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round">
+          <path d="M3 7h5l2 2h9a1 1 0 0 1 1 1v8a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1z" />
+        </svg>
       </div>
+      <div style={{ minWidth: 0, flex: 1, display: 'flex', flexDirection: 'column', gap: 3 }}>
+        <div style={{ fontSize: 14, fontWeight: 700, letterSpacing: '-.01em', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{folder.name}</div>
+        <div style={{ fontSize: 11.5, color: 'var(--mf-muted)' }}>맵 {folder.count}개</div>
+      </div>
+      {/* 진입 표시 — 마우스를 얹으면 오른쪽에서 나타난다(디자인 원본의 `gh-open`).
+          "두 번 누르면 들어간다"를 글로 적지 않고 방향으로 알린다. */}
+      <svg
+        className="card-open"
+        width="16"
+        height="16"
+        viewBox="0 0 24 24"
+        fill="none"
+        stroke="var(--mf-faint)"
+        strokeWidth="2"
+        strokeLinecap="round"
+        aria-hidden="true"
+        style={{ flexShrink: 0, opacity: 0, transform: 'translateY(2px)', transition: 'opacity .18s ease, transform .18s ease' }}
+      >
+        <path d="m9 6 6 6-6 6" />
+      </svg>
     </div>
   );
 }

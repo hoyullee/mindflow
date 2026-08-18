@@ -8,14 +8,9 @@ import { MapCard } from './MapCard';
 // `1fr`/`minmax(…,1fr)`/`flex: 1`) so they can NOT stretch — that's what
 // previously made them balloon "wide". What varies with the viewport is only
 // HOW MANY are exposed, never the per-card size.
-export const RECENT_CARD_W = 128; // fixed px card width
-const RECENT_GAP = 12;
+export const RECENT_CARD_W = 158; // fixed px card width(디자인 원본)
+const RECENT_GAP = 10;
 const RECENT_STEP = RECENT_CARD_W + RECENT_GAP;
-const TRAY_PAD_X = 32; // desktop tray padding (16px × 2) — mobile doesn't use `fit`
-// Mobile swipe depth: how far the touch tray scrolls back in history. Bounded so
-// a long history doesn't mount dozens of preview cards on a phone; must stay
-// ≤ RECENT_RENDER_MAX (storage.ts), which caps what the view materializes.
-const MOBILE_SWIPE_MAX = 20;
 /**
  * 선택 링이 스크롤 박스 안에서 온전히 보이도록 두는 여유(px).
  *
@@ -27,6 +22,13 @@ const MOBILE_SWIPE_MAX = 20;
  * 안쪽 여유에 들어간다.
  */
 const RING_SLACK = 4;
+// 트레이는 이제 상자가 아니라 선으로만 갈린 구획이라 좌우 패딩이 없다 —
+// 재는 폭은 컨테이너 폭 그대로다(선택 링 여유만 뺀다).
+const TRAY_PAD_X = RING_SLACK * 2;
+// Mobile swipe depth: how far the touch tray scrolls back in history. Bounded so
+// a long history doesn't mount dozens of preview cards on a phone; must stay
+// ≤ RECENT_RENDER_MAX (storage.ts), which caps what the view materializes.
+const MOBILE_SWIPE_MAX = 20;
 
 /** Small clock glyph in front of the "최근 항목" header (SVG per design-system
  * §10 — no emoji), colored via `currentColor` so it follows the header accent. */
@@ -48,19 +50,20 @@ export function RecentStripSkeleton({ count }: { count: number }) {
   return (
     <div className="mf-recent-tray" aria-busy="true" aria-label="최근 항목을 불러오는 중">
       {/* 실제 헤더와 동일한 고정 높이(16px + marginBottom 10) */}
-      <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 10, height: 16 }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 12, height: 16 }}>
         <span className="mf-skel" style={{ width: 14, height: 14, borderRadius: 4 }} />
         <span className="mf-skel" style={{ width: 56, height: 13, borderRadius: 6 }} />
+        <span className="mf-skel" style={{ width: 62, height: 11, borderRadius: 6 }} />
       </div>
       <div style={{ display: 'flex', gap: RECENT_GAP, overflow: 'hidden' }}>
         {Array.from({ length: n }, (_, i) => (
-          <div key={i} style={{ width: RECENT_CARD_W, flex: '0 0 auto', border: '1px solid var(--mf-border-soft)', borderRadius: 10, background: 'var(--mf-panel)', overflow: 'hidden' }}>
+          <div key={i} style={{ width: RECENT_CARD_W, flex: '0 0 auto', border: '1px solid var(--mf-border-soft)', borderRadius: 15, background: 'var(--mf-panel)', overflow: 'hidden' }}>
             {/* compact MapCard와 footprint 정확히 일치:
-                썸네일 72 + 패딩 8·8 + 제목줄 15 + (marginTop 2 + 위치줄 14).
+                썸네일 74 + 패딩 9·11 + 제목줄 15 + (marginTop 2 + 위치줄 14).
                 위치줄이 생기며 카드가 16px 높아졌으므로 스켈레톤도 같이 키운다 —
                 어긋나면 로드 완료 순간 트레이 높이가 변하며 아래 툴바가 튄다. */}
-            <div className="mf-skel" style={{ height: 72, borderRadius: 0 }} />
-            <div style={{ padding: '8px 10px' }}>
+            <div className="mf-skel" style={{ height: 74, borderRadius: 0 }} />
+            <div style={{ padding: '9px 11px 11px' }}>
               <div style={{ height: 15, display: 'flex', alignItems: 'center' }}>
                 <div className="mf-skel" style={{ height: 11, width: '70%', borderRadius: 6 }} />
               </div>
@@ -123,11 +126,13 @@ export function RecentStrip({ cards, controller }: { cards: CardViewData[]; cont
           compete with the page title (the space name, 22px). */}
       {/* height/lineHeight를 px로 고정 — 폰트 스왑에 따른 행 높이 변화(→ 아래
           툴바 밀림)를 막고, 로딩 스켈레톤과 footprint를 정확히 일치시킨다. */}
-      <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 10, height: 16 }}>
-        <span style={{ color: 'var(--mf-accent)', display: 'inline-flex' }} aria-hidden="true">
+      <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 12, height: 16 }}>
+        <span style={{ color: 'var(--mf-faint)', display: 'inline-flex' }} aria-hidden="true">
           <ClockGlyph />
         </span>
-        <span style={{ fontSize: 13, lineHeight: '16px', fontWeight: 700, letterSpacing: '-.01em', color: 'var(--mf-text)' }}>최근 항목</span>
+        <span style={{ fontSize: 12.5, lineHeight: '16px', fontWeight: 700, letterSpacing: '-.01em', color: 'var(--mf-subtext)' }}>최근 항목</span>
+        {/* 범위를 문구가 말한다 — 이 목록만 스페이스를 가로지른다(디자인 원본). */}
+        <span style={{ fontSize: 11, lineHeight: '16px', color: 'var(--mf-faint)' }}>모든 스페이스</span>
       </div>
       <div
         className="mf-recent-scroll"

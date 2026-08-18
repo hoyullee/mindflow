@@ -50,6 +50,13 @@ describe('home theme', () => {
       '--mf-doc-board': '#3f8fd0',
       '--mf-doc-kanban': '#8a63d2',
       '--mf-star': '#e0a53c',
+      // 홈 리디자인에서 더한 카드 입체감 토큰(디자인 원본의 그늘·hover·미리보기 바탕).
+      '--mf-card-shadow': '0 16px 32px -26px rgba(46,42,38,.42)',
+      '--mf-card-shadow-hover': '0 24px 44px -26px rgba(46,42,38,.42)',
+      '--mf-card-shadow-sm': '0 12px 26px -22px rgba(46,42,38,.4)',
+      '--mf-border-hover': '#e7dacc',
+      '--mf-wash': '#fcf8f3',
+      '--mf-dot-grid': 'rgba(199,186,172,.45)',
       '--mf-hover-bright': '0.97',
       '--mf-success': '#2f9e63',
       '--mf-success-soft': '#e9f4ee',

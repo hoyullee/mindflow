@@ -5,6 +5,7 @@ import type { HomeViewModel } from '../viewModel';
 import { UNREAD_BADGE_BG, UNREAD_BADGE_INK } from '../theme';
 import { SettingsPopover } from './SettingsPopover';
 import { SpaceRow } from './SpaceRow';
+import { META_MONO, SECTION_LABEL } from '../chrome';
 
 /** How long the drawer's exit slide runs before the aside unmounts. Slightly
  * longer than the CSS transition (260ms, home.css `.mf-drawer`) so the last
@@ -88,7 +89,7 @@ export function Sidebar({ state, view, controller, isMobile = false, isOpen = fa
         boxShadow: '0 0 32px rgba(0,0,0,.22)',
         transform: entered ? 'translateX(0)' : 'translateX(-105%)',
       } as const)
-    : ({ width: 248, flex: '0 0 auto' } as const);
+    : ({ width: 250, flex: '0 0 auto' } as const);
 
   return (
     <>
@@ -124,13 +125,13 @@ export function Sidebar({ state, view, controller, isMobile = false, isOpen = fa
           borderRight: '1px solid var(--mf-border)',
           display: 'flex',
           flexDirection: 'column',
-          padding: '14px 12px',
+          padding: '14px 12px 12px',
           overflow: 'hidden',
         }}
       >
         <SettingsPopover state={state} controller={controller} userInitial={view.userInitial} />
 
-      <div style={{ fontSize: 11, fontWeight: 700, letterSpacing: '.04em', color: 'var(--mf-muted)', padding: '14px 10px 8px' }}>스페이스</div>
+      <div style={{ ...SECTION_LABEL, padding: '14px 9px 7px' }}>스페이스</div>
 
       <div className="lnb-scroll" style={{ flex: '0 1 auto', minHeight: 60, overflowY: 'auto', overflowX: 'hidden', margin: '0 -4px', padding: '0 4px' }}>
         {/* Until the workspace loads (`state.loaded`), show skeleton rows instead
@@ -158,9 +159,14 @@ export function Sidebar({ state, view, controller, isMobile = false, isOpen = fa
         onKeyDown={(e) => {
           if (e.key === 'Enter' || e.key === ' ') controller.openNewSpace();
         }}
-        style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '9px 10px', minHeight: isMobile ? 44 : undefined, borderRadius: 9, cursor: 'pointer', fontSize: 13.5, fontWeight: 500, color: 'var(--mf-subtext)', flexShrink: 0 }}
+        style={{ display: 'flex', alignItems: 'center', gap: 9, padding: '8px 9px', marginTop: 2, minHeight: isMobile ? 44 : undefined, borderRadius: 10, cursor: 'pointer', fontSize: 13, fontWeight: 500, color: 'var(--mf-muted)', flexShrink: 0 }}
       >
-        <span style={{ fontSize: 15, color: 'var(--mf-muted)' }}>＋</span> 새 스페이스
+        {/* 글리프(＋)는 글자가 아니라 선 아이콘으로 — 사이드바의 다른 항목들과 같은
+            언어를 쓴다(디자인 원본). */}
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" aria-hidden="true" style={{ flexShrink: 0 }}>
+          <path d="M12 5v14M5 12h14" />
+        </svg>
+        새 스페이스
       </div>
 
       {SHOW_DRIVE_LNB && (
@@ -212,14 +218,15 @@ export function Sidebar({ state, view, controller, isMobile = false, isOpen = fa
               }
             }}
             style={{
+              // 디자인 원본의 사이드바 행 — 8/9 패딩 · r10 · 13px.
               display: 'flex',
               alignItems: 'center',
-              gap: 10,
-              padding: '9px 10px',
+              gap: 9,
+              padding: '8px 9px',
               minHeight: isMobile ? 44 : undefined,
-              borderRadius: 9,
+              borderRadius: 10,
               cursor: 'pointer',
-              fontSize: 13.5,
+              fontSize: 13,
               fontWeight: 500,
               color: 'var(--mf-subtext)',
               flexShrink: 0,
@@ -246,7 +253,7 @@ export function Sidebar({ state, view, controller, isMobile = false, isOpen = fa
                 {view.sharedUnread}
               </span>
             ) : (
-              <span style={{ marginLeft: 'auto', fontSize: 11, color: 'var(--mf-faint2)' }}>{view.sharedItems.length ? String(view.sharedItems.length) : ''}</span>
+              <span style={{ ...META_MONO, marginLeft: 'auto' }}>{view.sharedItems.length ? String(view.sharedItems.length) : ''}</span>
             )}
           </div>
           <div
@@ -316,10 +323,10 @@ export function Sidebar({ state, view, controller, isMobile = false, isOpen = fa
         onKeyDown={(e) => {
           if (e.key === 'Enter' || e.key === ' ') controller.toggleFavList();
         }}
-        style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '9px 10px', minHeight: isMobile ? 44 : undefined, borderRadius: 9, cursor: 'pointer', fontSize: 13.5, fontWeight: 500, color: 'var(--mf-subtext)' }}
+        style={{ display: 'flex', alignItems: 'center', gap: 9, padding: '8px 9px', minHeight: isMobile ? 44 : undefined, borderRadius: 10, cursor: 'pointer', fontSize: 13, fontWeight: 500, color: 'var(--mf-subtext)' }}
       >
         <StarGlyph size={15} /> 즐겨찾기
-        <span style={{ marginLeft: 'auto', fontSize: 11, color: 'var(--mf-faint2)' }}>{view.favCount}</span>
+        <span style={{ ...META_MONO, marginLeft: 'auto' }}>{view.favCount}</span>
       </div>
       <div
         style={{
@@ -382,7 +389,7 @@ export function Sidebar({ state, view, controller, isMobile = false, isOpen = fa
         onKeyDown={(e) => {
           if (e.key === 'Enter' || e.key === ' ') controller.toggleTrashList();
         }}
-        style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '9px 10px', minHeight: isMobile ? 44 : undefined, borderRadius: 9, cursor: 'pointer', fontSize: 13.5, fontWeight: 500, color: 'var(--mf-subtext)' }}
+        style={{ display: 'flex', alignItems: 'center', gap: 9, padding: '8px 9px', minHeight: isMobile ? 44 : undefined, borderRadius: 10, cursor: 'pointer', fontSize: 13, fontWeight: 500, color: 'var(--mf-subtext)' }}
       >
         <TrashGlyph size={15} /> 휴지통
         {/* 비우기 sits BEFORE the count so the count stays at the far right —
@@ -411,7 +418,7 @@ export function Sidebar({ state, view, controller, isMobile = false, isOpen = fa
             비우기
           </span>
         )}
-        <span style={{ marginLeft: view.trashItems.length > 0 ? 0 : 'auto', fontSize: 11, color: 'var(--mf-faint2)' }}>{view.trashCount}</span>
+        <span style={{ ...META_MONO, marginLeft: view.trashItems.length > 0 ? 0 : 'auto' }}>{view.trashCount}</span>
       </div>
       <div
         style={{
@@ -495,7 +502,7 @@ export function Sidebar({ state, view, controller, isMobile = false, isOpen = fa
               controller.openFeedback();
             }
           }}
-          style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '9px 10px', minHeight: isMobile ? 44 : undefined, borderRadius: 9, cursor: 'pointer', fontSize: 13.5, fontWeight: 500, color: 'var(--mf-subtext)' }}
+          style={{ display: 'flex', alignItems: 'center', gap: 9, padding: '8px 9px', minHeight: isMobile ? 44 : undefined, borderRadius: 10, cursor: 'pointer', fontSize: 13, fontWeight: 500, color: 'var(--mf-subtext)' }}
         >
           <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
             <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" />

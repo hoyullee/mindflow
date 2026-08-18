@@ -41,23 +41,31 @@ export function SpaceRow({ space, state, controller }: Props) {
           }
         }}
         style={{
+          // 디자인 원본: 8/9 패딩 · r10 · 13px. 활성 행만 옅은 강조색 면과 굵은 글씨.
           display: 'flex',
           alignItems: 'center',
-          gap: 10,
-          padding: '9px 10px',
-          borderRadius: 9,
+          gap: 9,
+          padding: '8px 9px',
+          borderRadius: 10,
           cursor: 'pointer',
-          fontSize: 13.5,
-          fontWeight: active ? 600 : 500,
+          fontSize: 13,
+          fontWeight: active ? 700 : 500,
+          letterSpacing: '-.01em',
           background: active ? 'var(--mf-accent-soft)' : 'transparent',
-          color: active ? 'var(--mf-accent-strong)' : 'var(--mf-subtext)',
+          color: active ? 'var(--mf-text)' : 'var(--mf-subtext)',
+          transition: 'background .14s ease',
         }}
       >
         {/* Every space (including the home "일반 스페이스") shows the same colored dot;
             the home space's default color is the coral accent (#f0663f) — 테마가 아니라
-            스페이스에 저장된 **데이터** 색이므로 변수로 바꾸지 않는다. */}
-        <span style={{ width: 15, height: 15, borderRadius: 5, flexShrink: 0, background: space.color || '#f0663f', display: 'inline-block' }} />
-        <span style={{ flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{space.name}</span>
+            스페이스에 저장된 **데이터** 색이므로 변수로 바꾸지 않는다.
+            디자인 원본은 이 표식을 **작은 사각**(9px, r3)으로 둔다 — 툴바 제목 앞의
+            사각과 같은 꼴이라 "지금 이 스페이스"가 두 자리에서 같은 표식으로 읽힌다. */}
+        <span style={{ width: 9, height: 9, borderRadius: 3, flexShrink: 0, background: space.color || '#f0663f', display: 'block' }} />
+        <span style={{ flex: 1, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{space.name}</span>
+        {/* 활성 표시 — 오른쪽 끝의 작은 강조색 점(디자인 원본). ⋮ 메뉴가 뜨면 그
+            자리를 양보한다(둘이 겹치지 않게). */}
+        {active && !menuOpen && <span aria-hidden="true" style={{ width: 5, height: 5, borderRadius: 999, background: 'var(--mf-accent)', display: 'block', flexShrink: 0 }} />}
         <span
           className="space-dot"
           role="button"

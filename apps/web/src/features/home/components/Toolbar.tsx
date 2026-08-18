@@ -2,6 +2,7 @@ import type { HomeController } from '../useHomeController';
 import type { HomeState } from '../types';
 import type { HomeViewModel } from '../viewModel';
 import { UNREAD_BADGE_BG } from '../theme';
+import { META_MONO, pillStyle, primaryPillStyle, roundIconStyle } from '../chrome';
 import { NotificationBell } from './NotificationBell';
 
 interface Props {
@@ -39,23 +40,6 @@ function NewFolderGlyph() {
   );
 }
 
-// Mobile toolbar: a 44×44 icon-only secondary button (white, bordered). The
-// label moves to aria-label + title so the single action row fits a 360px
-// phone with the search field still getting usable width.
-const MOBILE_ICON_BTN = {
-  display: 'flex',
-  alignItems: 'center',
-  justifyContent: 'center',
-  width: 44,
-  height: 44,
-  border: '1px solid var(--mf-border)',
-  borderRadius: 10,
-  background: 'var(--mf-panel)',
-  color: 'var(--mf-text)',
-  cursor: 'pointer',
-  padding: 0,
-  flexShrink: 0,
-} as const;
 
 /**
  * 제목 줄. 폴더 안일 때 상위 경로(스페이스명)는 `…`로 접고 현재 폴더명만 보여 준다 —
@@ -78,7 +62,7 @@ function BreadcrumbTitle({ parent, leaf, full }: { parent: string | null; leaf: 
       // `flex: 0 1 auto` — 늘어나지는 않으므로 데스크톱 레이아웃은 그대로고, 자리가
       // 모자랄 때만 줄어들어 말줄임으로 넘어간다. `minWidth: 0`이 없으면 flex 항목의
       // 기본 최소 크기가 콘텐츠라서 절대 줄어들지 않는다(= 말줄임이 안 걸린다).
-      style={{ fontSize: 22, fontWeight: 800, margin: 0, letterSpacing: '-.02em', display: 'flex', alignItems: 'baseline', gap: 6, flex: '0 1 auto', minWidth: 0, whiteSpace: 'nowrap' }}
+      style={{ fontSize: 20, fontWeight: 800, margin: 0, letterSpacing: '-.03em', display: 'flex', alignItems: 'baseline', gap: 6, flex: '0 1 auto', minWidth: 0, whiteSpace: 'nowrap' }}
     >
       {parent && (
         // 접힌 상위 경로. 클릭 대상으로 만들지 않는다 — 왼쪽 화살표 버튼이 이미
@@ -158,22 +142,30 @@ function SelectionBar({ state, controller }: { state: HomeState; controller: Hom
   );
 }
 
-/** Home.dc.html:191-207 — the "모두" toolbar above the map grid. */
+/**
+ * 스페이스 헤더 줄 — 디자인 원본(`Geurio 홈 리디자인.dc.html`)의 툴바 이식.
+ *
+ * 왼쪽은 "여기가 어디인가"(스페이스 색 사각 + 이름 + 개수), 오른쪽은 도구 묶음이다.
+ * 묶음의 순서는 디자인 원본 그대로 **알림 · 검색 · | · 가져오기 · 새 폴더 · 새로 만들기**
+ * — 읽는 동작(알림·검색)이 먼저, 만드는 동작이 뒤로 가고 그 사이를 세로선이 가른다.
+ * 모두 32px 높이의 알약이라 한 줄에서 눈금이 맞는다(모바일은 44px 터치 타깃 유지).
+ */
 export function Toolbar({ state, view, controller, isMobile = false, onOpenNav }: Props) {
   // 선택 모드(모바일 전용)에서는 툴바 자리를 선택 바가 쓴다.
   if (isMobile && state.selectMode) return <SelectionBar state={state} controller={controller} />;
+  const activeSpace = state.spaces.find((sp) => sp.id === state.activeSpace);
+  const spaceDot = activeSpace?.color || 'var(--mf-accent)';
+  // 개수는 지금 화면에 그려지는 것과 같은 목록에서 센다(뷰모델을 손대지 않는다).
+  const meta = `맵 ${view.allCards.length}개 · 폴더 ${view.folderCards.length}개`;
   return (
-    <div style={{ display: 'flex', alignItems: 'center', marginBottom: 18, gap: 12, flexWrap: 'wrap' }}>
-      {/* ≡ · ← · 제목은 한 덩어리다. 따로 두면 제목이 길 때 flex-wrap이 제목 항목을
+    <div style={{ display: 'flex', alignItems: 'center', marginBottom: 18, gap: isMobile ? 12 : 14, flexWrap: 'wrap' }}>
+      {/* ≡ · 제목은 한 덩어리다. 따로 두면 제목이 길 때 flex-wrap이 제목 항목을
           통째로 다음 줄로 내려서(줄어들기 전에 줄바꿈이 먼저 일어난다) 모바일 헤더가
-          "버튼 줄 / 제목 줄 / 검색 줄" 세 줄로 늘어졌다. 묶어 두면 이 덩어리가 한 줄을
-          지키고 그 안에서 제목만 말줄임된다. */}
-      <div style={{ display: 'flex', alignItems: 'center', gap: 12, flex: '1 1 auto', minWidth: 0 }}>
+          "버튼 줄 / 제목 줄 / 검색 줄" 세 줄로 늘어졌다. */}
+      <div style={{ display: 'flex', alignItems: 'center', gap: 10, flex: '1 1 auto', minWidth: 0 }}>
         {isMobile && (
           // Ghost app-bar button (no border/box) so "≡ + 스페이스명" reads as ONE
           // header unit instead of a floating control pushing the title aside.
-          // The negative margin lines the glyph up with the content's left edge
-          // while the hit area stays a full 44px (§7).
           <button
             type="button"
             className="btn"
@@ -198,27 +190,40 @@ export function Toolbar({ state, view, controller, isMobile = false, onOpenNav }
             )}
           </button>
         )}
-        {/* 뒤로가기 버튼은 없앴다(요청) — 폴더 안에서는 그리드 첫 칸의 "상위 폴더"
-            타일이 그 자리를 대신한다(`ParentFolderCard`). 버튼은 누르는 것뿐이었는데
-            타일은 **끌어다 놓을 수도** 있어, 위로 옮기는 길이 아래로 넣는 길과 같아진다. */}
+        {/* 스페이스 색 사각 — 사이드바 목록의 점과 같은 색이라 "지금 이 스페이스"가
+            제목을 읽지 않고도 연결된다(디자인 원본). 검색 중에는 제목이 '검색'이라
+            가리킬 스페이스가 없어 띄우지 않는다. */}
+        {state.loaded && !view.searchQuery && (
+          <span
+            data-space-swatch
+            aria-hidden="true"
+            style={{ width: 11, height: 11, borderRadius: 4, background: spaceDot, flex: '0 0 auto', boxShadow: 'inset 0 0 0 1px rgba(0,0,0,.14)' }}
+          />
+        )}
         {/* Skeleton the space title until the workspace loads, so the seed
-            일반 스페이스 name doesn't flash before the real space name arrives
-            (matches the LNB space-list skeleton). */}
+            일반 스페이스 name doesn't flash before the real space name arrives. */}
         {state.loaded ? (
           <BreadcrumbTitle parent={view.titleParent} leaf={view.titleLeaf} full={view.spaceTitle} />
         ) : (
           <div className="mf-skel" aria-label="스페이스를 불러오는 중" style={{ height: 24, width: 150, borderRadius: 7, margin: '3px 0' }} />
         )}
+        {/* 개수 — 등폭으로 곁들인다(디자인 원본의 "8 boards · 1 folder"). 폴더 안이나
+            검색 중에는 세는 대상이 달라지므로 띄우지 않는다. */}
+        {!isMobile && state.loaded && !view.searchQuery && !view.curFolder && (
+          <span data-space-meta style={{ ...META_MONO, fontSize: 11, paddingTop: 2, whiteSpace: 'nowrap', minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis' }}>
+            {meta}
+          </span>
+        )}
         {/* 모바일 알림 센터 — 액션 줄은 이미 꽉 차 있어(검색+아이콘 3개) 제목 줄의
-            오른쪽 끝에 둔다(앱 바 관례). 데스크톱 벨은 아래 액션 묶음에 있다. */}
+            오른쪽 끝에 둔다(앱 바 관례). 데스크톱 벨은 아래 묶음의 맨 앞에 있다. */}
         {isMobile && (
           <div style={{ marginLeft: 'auto' }}>
             <NotificationBell isMobile />
           </div>
         )}
       </div>
-      <div style={{ marginLeft: isMobile ? 0 : 'auto', width: isMobile ? '100%' : undefined, order: isMobile ? 3 : undefined, display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
-        {/* 알림 센터(종) — 만들기 동작들과 성격이 달라 묶음의 맨 앞에 떼어 둔다. */}
+      <div style={{ marginLeft: isMobile ? 0 : 'auto', width: isMobile ? '100%' : undefined, order: isMobile ? 3 : undefined, display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+        {/* 알림 센터(종) — 읽는 동작이라 검색과 나란히 묶음의 맨 앞에 선다. */}
         {!isMobile && <NotificationBell />}
         {view.isDriveSpace && view.connected && (
           <div
@@ -226,43 +231,36 @@ export function Toolbar({ state, view, controller, isMobile = false, onOpenNav }
             role="button"
             tabIndex={0}
             className="drive-file"
-            style={{ display: 'flex', alignItems: 'center', padding: '0 12px', height: isMobile ? 44 : 38, borderRadius: 10, border: '1px solid var(--mf-border)', background: 'var(--mf-panel)', fontSize: 12.5, color: 'var(--mf-muted)', cursor: 'pointer', whiteSpace: 'nowrap' }}
+            style={{ ...pillStyle(isMobile), color: 'var(--mf-muted)', fontWeight: 600 }}
           >
             연결 해제
           </div>
         )}
-        {/* Desktop keeps the labeled 가져오기/새 폴더 buttons; on mobile they move
-            INTO the single action row below as 44px icon-only buttons — the
-            labeled pair used to wrap onto a lonely line of its own. */}
-        {!isMobile && view.importVisible && (
-          <button
-            className="btn"
-            onClick={controller.openImport}
-            style={{ display: 'flex', alignItems: 'center', gap: 6, height: 38, padding: '0 14px', border: '1px solid var(--mf-border)', borderRadius: 10, background: 'var(--mf-panel)', color: 'var(--mf-text)', fontFamily: 'inherit', fontSize: 13, fontWeight: 600, cursor: 'pointer', whiteSpace: 'nowrap', flexShrink: 0 }}
-          >
-            <ImportGlyph /> 가져오기
-          </button>
-        )}
         <input type="file" accept=".json,.md,.markdown,.txt" ref={controller.setImportRef} onChange={controller.onImportFile} style={{ display: 'none' }} aria-hidden="true" />
-        {!isMobile && view.newFolderVisible && (
-          <button
-            className="btn"
-            onClick={controller.openNewFolder}
-            style={{ display: 'flex', alignItems: 'center', gap: 6, height: 38, padding: '0 14px', border: '1px solid var(--mf-border)', borderRadius: 10, background: 'var(--mf-panel)', color: 'var(--mf-text)', fontFamily: 'inherit', fontSize: 13, fontWeight: 600, cursor: 'pointer', whiteSpace: 'nowrap', flexShrink: 0 }}
+        {/* 검색 → | → 가져오기 → 새 폴더 → 새로 만들기.
+            모바일에서는 이 묶음이 한 줄을 통째로 쓰고, 가져오기·새 폴더는 라벨을
+            떼어 44px 아이콘 버튼이 된다(좁은 폭에서 검색이 쓸 폭을 남긴다). */}
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8, width: isMobile ? '100%' : undefined }}>
+          <div
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              gap: 7,
+              flex: isMobile ? '1 1 auto' : undefined,
+              width: isMobile ? undefined : 200,
+              minWidth: 0,
+              height: isMobile ? 44 : 32,
+              padding: '0 12px',
+              background: 'var(--mf-panel)',
+              border: '1px solid var(--mf-border)',
+              borderRadius: 999,
+              color: 'var(--mf-muted)',
+            }}
           >
-            <NewFolderGlyph /> 새 폴더
-          </button>
-        )}
-        {/* THE action row: search + (mobile: icon-only 가져오기/새 폴더) + 새로 만들기.
-            On mobile it spans the full width on its own line; every action lives
-            here so nothing wraps onto a stray second line. Icon-only buttons keep
-            44px touch targets and carry their label via aria-label/title. */}
-        <div style={{ display: 'flex', alignItems: 'center', gap: isMobile ? 8 : 10, width: isMobile ? '100%' : undefined }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 8, flex: isMobile ? '1 1 auto' : undefined, width: isMobile ? undefined : 260, minWidth: 0, height: isMobile ? 44 : 38, padding: '0 12px', background: 'var(--mf-panel)', border: '1px solid var(--mf-border)', borderRadius: 10, color: 'var(--mf-muted)' }}>
-            <span style={{ fontSize: 13, display: 'flex', alignItems: 'center', color: 'var(--mf-muted)' }}>
-              <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+            <span style={{ display: 'flex', alignItems: 'center', color: 'var(--mf-faint)', flexShrink: 0 }}>
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                 <circle cx="11" cy="11" r="7" />
-                <line x1="21" y1="21" x2="16.5" y2="16.5" />
+                <line x1="20" y1="20" x2="16.5" y2="16.5" />
               </svg>
             </span>
             <input
@@ -275,12 +273,11 @@ export function Toolbar({ state, view, controller, isMobile = false, onOpenNav }
                 if (e.key === 'Escape') controller.setSearch('');
               }}
               onBlur={controller.flushSearch}
-              // 자리는 스페이스 헤더 아래지만 **범위는 전 스페이스**다 — 자리가
-              // 말해 주지 못하는 것을 문구가 말한다(결과 화면의 헤더와 스페이스별
-              // 묶음이 그것을 다시 확인해 준다).
+              // 범위는 전 스페이스다 — 자리가 말해 주지 못하는 것을 문구가 말한다
+              // (결과 화면의 헤더와 스페이스별 묶음이 그것을 다시 확인해 준다).
               placeholder="모든 스페이스에서 검색"
               aria-label="모든 스페이스에서 검색"
-              style={{ border: 'none', outline: 'none', background: 'transparent', fontFamily: 'inherit', fontSize: 13, width: '100%', minWidth: 0, color: 'var(--mf-text)' }}
+              style={{ border: 'none', outline: 'none', background: 'transparent', fontFamily: 'inherit', fontSize: 12.5, width: '100%', minWidth: 0, color: 'var(--mf-text)' }}
             />
             {!!state.searchInput.trim() && (
               <button
@@ -290,25 +287,35 @@ export function Toolbar({ state, view, controller, isMobile = false, onOpenNav }
                 aria-label="검색 지우기"
                 title="검색 지우기 (Esc)"
                 onClick={() => controller.setSearch('')}
-                style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', width: 20, height: 20, border: 'none', borderRadius: '50%', background: 'var(--mf-panel2)', color: 'var(--mf-subtext)', cursor: 'pointer', padding: 0, flexShrink: 0 }}
+                style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', width: 18, height: 18, border: 'none', borderRadius: '50%', background: 'var(--mf-panel2)', color: 'var(--mf-subtext)', cursor: 'pointer', padding: 0, flexShrink: 0 }}
               >
-                <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.6" strokeLinecap="round">
+                <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.6" strokeLinecap="round">
                   <line x1="18" y1="6" x2="6" y2="18" />
                   <line x1="6" y1="6" x2="18" y2="18" />
                 </svg>
               </button>
             )}
           </div>
-          {isMobile && view.importVisible && (
-            <button className="btn" onClick={controller.openImport} aria-label="가져오기" title="가져오기" style={MOBILE_ICON_BTN}>
+          {/* 읽는 동작과 만드는 동작을 가르는 세로선(디자인 원본). 좁은 화면에서는
+              묶음이 접히므로 선이 뜻을 잃어 띄우지 않는다. */}
+          {!isMobile && <span data-toolbar-divider aria-hidden="true" style={{ width: 1, height: 20, background: 'var(--mf-border)', display: 'block', flexShrink: 0, margin: '0 2px' }} />}
+          {view.importVisible && (
+            // 가져오기는 데스크톱에서도 **아이콘만**이다(디자인 원본) — 자주 쓰는
+            // 동작이 아니라 라벨 자리를 검색·만들기에 내준다.
+            <button className="btn" onClick={controller.openImport} aria-label="가져오기" title="가져오기" style={roundIconStyle(isMobile)}>
               <ImportGlyph />
             </button>
           )}
-          {isMobile && view.newFolderVisible && (
-            <button className="btn" onClick={controller.openNewFolder} aria-label="새 폴더" title="새 폴더" style={MOBILE_ICON_BTN}>
-              <NewFolderGlyph />
-            </button>
-          )}
+          {view.newFolderVisible &&
+            (isMobile ? (
+              <button className="btn" onClick={controller.openNewFolder} aria-label="새 폴더" title="새 폴더" style={roundIconStyle(true)}>
+                <NewFolderGlyph />
+              </button>
+            ) : (
+              <button className="btn" onClick={controller.openNewFolder} style={pillStyle(false)}>
+                <NewFolderGlyph /> 새 폴더
+              </button>
+            ))}
           {/* 링크가 아니라 버튼이다 — 누르면 템플릿 갤러리가 열리고, 어떤 맵을 만들지는
               거기서 정해진다(주소를 미리 알 수 없다). */}
           <button
@@ -317,18 +324,13 @@ export function Toolbar({ state, view, controller, isMobile = false, onOpenNav }
             className="btn"
             aria-label={isMobile ? '새로 만들기' : undefined}
             title={isMobile ? '새로 만들기' : undefined}
-            style={{ height: isMobile ? 44 : 38, width: isMobile ? 44 : undefined, justifyContent: 'center', padding: isMobile ? 0 : '0 16px', border: 'none', borderRadius: 10, background: 'var(--mf-text)', color: 'var(--mf-accent-ink)', fontFamily: 'inherit', fontSize: 13, fontWeight: 600, cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 6, whiteSpace: 'nowrap', flexShrink: 0 }}
+            style={primaryPillStyle(isMobile)}
           >
-            {isMobile ? (
-              // Icon-only primary: the dark pill + plus reads as "create" without
-              // a label, freeing the row for the search field on small phones.
-              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round">
-                <line x1="12" y1="5" x2="12" y2="19" />
-                <line x1="5" y1="12" x2="19" y2="12" />
-              </svg>
-            ) : (
-              '＋ 새로 만들기'
-            )}
+            <svg width={isMobile ? 18 : 14} height={isMobile ? 18 : 14} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.3" strokeLinecap="round" aria-hidden="true">
+              <line x1="12" y1="5" x2="12" y2="19" />
+              <line x1="5" y1="12" x2="19" y2="12" />
+            </svg>
+            {!isMobile && '새로 만들기'}
           </button>
         </div>
       </div>

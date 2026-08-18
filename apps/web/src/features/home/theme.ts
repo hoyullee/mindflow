@@ -122,6 +122,20 @@ export interface HomeTheme {
   docKanban: string;
   /** 즐겨찾기 별의 금색. */
   star: string;
+
+  // ── 카드 입체감(홈 리디자인) ──
+  /** 카드가 떠 있는 그늘(그리드 카드·폴더 카드). */
+  cardShadow: string;
+  /** 마우스를 얹었을 때 — 더 멀리 퍼지는 그늘(카드가 3px 떠오른다). */
+  cardShadowHover: string;
+  /** 작은 카드(최근 항목)의 그늘. */
+  cardShadowSm: string;
+  /** 마우스를 얹은 카드의 경계 — 평소보다 한 톤 진하다. */
+  borderHover: string;
+  /** 미리보기 바탕(카드 썸네일) — 면과 배경 사이의 아주 옅은 톤. */
+  wash: string;
+  /** 미리보기 바탕에 깔리는 도트 격자 색(캔버스의 점을 축소해 옮긴 것). */
+  dotGrid: string;
   /** `.btn:hover`의 밝기 필터 — 밝은 테마는 살짝 어둡게, 다크는 살짝 밝게(어두운
    * 면에서 더 어두워지면 반응이 아니라 사라지는 것처럼 보인다). */
   hoverBright: string;
@@ -157,6 +171,14 @@ const LIGHT_INK = {
   docBoard: '#3f8fd0',
   docKanban: '#8a63d2',
   star: '#e0a53c',
+  // 홈 리디자인(디자인 원본의 그늘·hover 값). 밝은 다섯 벌이 공유한다 —
+  // 그늘은 잉크색이라 면 색과 달리 테마마다 갈릴 이유가 없다.
+  cardShadow: '0 16px 32px -26px rgba(46,42,38,.42)',
+  cardShadowHover: '0 24px 44px -26px rgba(46,42,38,.42)',
+  cardShadowSm: '0 12px 26px -22px rgba(46,42,38,.4)',
+  borderHover: '#e7dacc',
+  wash: '#fcf8f3',
+  dotGrid: 'rgba(0,0,0,.07)',
   hoverBright: '0.97',
   success: '#2f9e63',
   successSoft: '#e9f4ee',
@@ -191,6 +213,8 @@ export const HOME_THEMES: Record<HomeThemeKey, HomeTheme> = {
     overlayVeil: hexA(THEMES.coral.appBg, 0.92),
     border: THEMES.coral.border,
     borderSoft: '#f0e6dd',
+    wash: '#fcf8f3',
+    dotGrid: 'rgba(199,186,172,.45)',
   },
   ocean: {
     key: 'ocean',
@@ -208,6 +232,7 @@ export const HOME_THEMES: Record<HomeThemeKey, HomeTheme> = {
     overlayVeil: hexA(THEMES.ocean.appBg, 0.92),
     border: THEMES.ocean.border,
     borderSoft: '#e0e9f2',
+    wash: '#f8fbfe',
   },
   forest: {
     key: 'forest',
@@ -225,6 +250,7 @@ export const HOME_THEMES: Record<HomeThemeKey, HomeTheme> = {
     overlayVeil: hexA(THEMES.forest.appBg, 0.92),
     border: THEMES.forest.border,
     borderSoft: '#ddebe2',
+    wash: '#f8fcf9',
   },
   grape: {
     key: 'grape',
@@ -242,6 +268,7 @@ export const HOME_THEMES: Record<HomeThemeKey, HomeTheme> = {
     overlayVeil: hexA(THEMES.grape.appBg, 0.92),
     border: THEMES.grape.border,
     borderSoft: '#e6dff2',
+    wash: '#fbf9fe',
   },
   mono: {
     key: 'mono',
@@ -259,6 +286,7 @@ export const HOME_THEMES: Record<HomeThemeKey, HomeTheme> = {
     overlayVeil: hexA(THEMES.mono.appBg, 0.92),
     border: THEMES.mono.border,
     borderSoft: '#e3e3e3',
+    wash: '#fafafa',
   },
   /**
    * 다크. 밝은 다섯 벌과 달리 **글자·상태색까지 뒤집는다** — 면만 어둡게 하면 흰 패널에
@@ -303,6 +331,14 @@ export const HOME_THEMES: Record<HomeThemeKey, HomeTheme> = {
     docBoard: '#5fa8e8',
     docKanban: '#a98ae6',
     star: '#e8bd57',
+    // 다크는 그늘을 검정으로 더 진하게 — 어두운 면 위에서 옅은 그늘은 보이지 않는다.
+    // hover 경계는 반대로 **밝아진다**(어두워지면 반응이 아니라 사라지는 것처럼 보인다).
+    cardShadow: '0 16px 32px -24px rgba(0,0,0,.72)',
+    cardShadowHover: '0 24px 44px -24px rgba(0,0,0,.8)',
+    cardShadowSm: '0 12px 26px -20px rgba(0,0,0,.7)',
+    borderHover: '#4a4038',
+    wash: '#2a241d',
+    dotGrid: 'rgba(255,255,255,.09)',
     hoverBright: '1.12',
     success: '#4cbf82',
     successSoft: '#22392c',
@@ -373,6 +409,12 @@ export function homeThemeVars(key: HomeThemeKey): Record<string, string> {
     '--mf-doc-board': t.docBoard,
     '--mf-doc-kanban': t.docKanban,
     '--mf-star': t.star,
+    '--mf-card-shadow': t.cardShadow,
+    '--mf-card-shadow-hover': t.cardShadowHover,
+    '--mf-card-shadow-sm': t.cardShadowSm,
+    '--mf-border-hover': t.borderHover,
+    '--mf-wash': t.wash,
+    '--mf-dot-grid': t.dotGrid,
     '--mf-hover-bright': t.hoverBright,
     '--mf-success': t.success,
     '--mf-success-soft': t.successSoft,

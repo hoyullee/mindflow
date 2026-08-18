@@ -143,7 +143,8 @@ export function NotificationBell({ isMobile = false }: { isMobile?: boolean }) {
     if (href) navigate(href);
   };
 
-  const size = isMobile ? 44 : 38;
+  // 데스크톱은 툴바의 다른 컨트롤과 같은 32px 원형(디자인 원본), 모바일은 고스트 44px.
+  const size = isMobile ? 44 : 32;
   const panelStyle: CSSProperties = {
     position: 'absolute',
     right: 0,
@@ -180,14 +181,14 @@ export function NotificationBell({ isMobile = false }: { isMobile?: boolean }) {
           // 앱 바에서 박스형 버튼은 디자인이 깨져 보인다(제보). 44px 터치
           // 타깃은 유지되고, 데스크톱은 기존 박스형 그대로다.
           border: isMobile ? 'none' : '1px solid var(--mf-border)',
-          borderRadius: 10,
+          borderRadius: isMobile ? 10 : 999,
           background: isMobile ? (open ? 'var(--mf-panel2)' : 'transparent') : open ? 'var(--mf-panel2)' : 'var(--mf-panel)',
           color: isMobile ? 'var(--mf-text)' : 'var(--mf-subtext)',
           cursor: 'pointer',
           padding: 0,
         }}
       >
-        <svg width={isMobile ? 20 : 17} height={isMobile ? 20 : 17} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={isMobile ? 2.2 : 2} strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+        <svg width={isMobile ? 20 : 15} height={isMobile ? 20 : 15} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={isMobile ? 2.2 : 2} strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
           <path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9" />
           <path d="M13.73 21a2 2 0 0 1-3.46 0" />
         </svg>
@@ -198,9 +199,11 @@ export function NotificationBell({ isMobile = false }: { isMobile?: boolean }) {
             style={{
               position: 'absolute',
               // 고스트 버튼(모바일)은 44px 안에 20px 글리프가 떠 있어, 배지를
-              // 버튼 모서리가 아니라 **글리프 모서리**에 붙인다.
-              top: isMobile ? 2 : -5,
-              right: isMobile ? 2 : -5,
+              // 버튼 모서리가 아니라 **글리프 모서리**에 붙인다. 데스크톱은 32px
+              // 원형이라 배지가 밖으로 나가면 옆 컨트롤과 부딪힌다 — 디자인 원본처럼
+              // 버튼 **안쪽** 위 모서리에 붙인다(개수는 접근 이름·툴팁에 남는다).
+              top: isMobile ? 2 : -3,
+              right: isMobile ? 2 : -3,
               minWidth: 16,
               height: 16,
               padding: '0 4px',
