@@ -59,7 +59,13 @@ export default defineConfig({
   // 지금 떠 있는 페이지가 어느 빌드인지 콘솔에서 바로 알 수 있게(main.tsx의
   // console.info). PWA는 에디터가 열려 있는 동안 업데이트를 미루므로, "고쳤다는데
   // 그대로예요" 제보의 절반은 이전 번들이었다 — 확인 수단을 박아 둔다.
-  define: { __BUILD_AT__: JSON.stringify(new Date().toISOString()) },
+  // 시각만으로는 "어느 커밋이 떠 있는가"를 알 수 없다 — 프리뷰는 커밋마다 주소가
+  // 따로 있어서, 옛 주소를 열어 둔 탭은 영영 옛 빌드를 보여 준다. 배포 환경이 주는
+  // 커밋 sha를 함께 박아 콘솔 한 줄로 대조할 수 있게 한다(로컬은 'dev').
+  define: {
+    __BUILD_AT__: JSON.stringify(new Date().toISOString()),
+    __BUILD_SHA__: JSON.stringify((process.env.VERCEL_GIT_COMMIT_SHA ?? process.env.GITHUB_SHA ?? '').slice(0, 7)),
+  },
   plugins: [
     react(),
     landingRootSwap(),

@@ -8,7 +8,10 @@ import { applyHomeTheme, loadHomeThemeCache } from './features/home/theme';
 // 어느 빌드가 떠 있는지 — PWA가 업데이트를 미루는 동안 이전 번들로 테스트하는 일이
 // 실제로 있었다(협업 버그 제보 중 절반이 그랬다). vite.config.ts의 `define` 참고.
 declare const __BUILD_AT__: string;
-console.info(`[geurio] build ${typeof __BUILD_AT__ === 'string' ? __BUILD_AT__ : 'dev'}`);
+declare const __BUILD_SHA__: string;
+const buildAt = typeof __BUILD_AT__ === 'string' ? __BUILD_AT__ : 'dev';
+const buildSha = typeof __BUILD_SHA__ === 'string' && __BUILD_SHA__ ? __BUILD_SHA__ : 'dev';
+console.info(`[geurio] build ${buildAt} (${buildSha})`);
 
 // 홈 색상 테마 — 이 기기의 마지막 선택을 **렌더 전에** 입힌다. 정본은 워크스페이스
 // 블롭이지만 그건 네트워크를 타므로, 캐시를 먼저 입혀야 홈이 기본 코랄로 한 프레임
