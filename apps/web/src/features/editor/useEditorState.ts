@@ -415,6 +415,8 @@ export interface EditorController {
   commentsLoading: boolean;
   addComment: (nodeId: string, body: string, opts?: { parentId?: string; mentions?: CommentMention[] }) => Promise<{ error?: string }>;
   removeComment: (commentId: string) => Promise<{ error?: string }>;
+  /** 이 대상(핀)의 **모든 글**을 지운다 — 뿌리를 지우면 답글은 서버가 함께 지운다. */
+  removeThread: (nodeId: string) => Promise<{ error?: string }>;
   /** 스레드 해결/해제(뿌리 댓글만) — 댓글을 쓸 수 있는 사람 전원이 할 수 있다. */
   resolveComment: (commentId: string, resolved: boolean) => Promise<{ error?: string }>;
   likeComment: (commentId: string, liked: boolean) => Promise<{ error?: string }>;
@@ -4336,6 +4338,8 @@ export function useEditorState(): EditorController {
   const [commentsOpen, setCommentsOpen] = useState(false);
   const [commentsNodeId, setCommentsNodeId] = useState<string>(ROOT_ID);
   const [comments, setComments] = useState<DocComment[]>([]);
+  const commentsRef = useRef(comments);
+  commentsRef.current = comments;
   const [commentsLoading, setCommentsLoading] = useState(false);
 
   /** 서버에서 목록을 다시 읽는다. 댓글은 실시간 채널을 타지 않으므로(본문이 아니다)
@@ -4395,6 +4399,21 @@ export function useEditorState(): EditorController {
     if (selection?.kind === 'commentPin') setCommentsNodeId(selection.id);
     else setCommentsOpen(false);
   }, [selection?.kind, selection?.id, isKanban]);
+
+  // 가리키던 핀이 사라졌으면 팝업도 닫는다(제보 ②).
+  //
+  // 스레드를 통째로 지우면 글이 0개가 되어 핀이 정리되는데(위 `reloadComments`),
+  // `selection`은 여전히 그 핀이라 위 effect는 닫지 않았다. 그러면 팝업이 가리킬
+  // 자리를 잃고 **화면 우측의 옛 자리**(핀 없는 대상용 배치)로 밀려나, 사용자에게는
+  // "지웠는데 다른 댓글 팝업이 떴다"로 보인다. 캔버스에서 논의는 핀에만 붙으므로
+  // (요청 ⑧) 핀이 없으면 열려 있을 이유가 없다 — 상대가 지운 경우·되돌리기도 같다.
+  useEffect(() => {
+    if (isKanban || !commentsOpen) return;
+    if ((doc.commentPins ?? []).some((p) => p.id === commentsNodeId)) return;
+    setCommentsOpen(false);
+    // 사라진 핀을 고른 상태로 남겨 두지 않는다(키보드 경로가 유령을 만지지 않게).
+    setSelectionState((prev) => (prev?.kind === 'commentPin' && prev.id === commentsNodeId ? null : prev));
+  }, [isKanban, commentsOpen, commentsNodeId, doc.commentPins]);
 
   const commentCounts = useMemo(() => {
     const counts: Record<string, number> = {};
@@ -4535,6 +4554,24 @@ export function useEditorState(): EditorController {
       const res = await commentStore.remove(docStoreId, commentId);
       if (!res.error) await reloadComments();
       return res;
+    },
+    [commentStore, docStoreId, reloadComments],
+  );
+  /** 스레드 통째로 지우기(⋯ 메뉴) — 예전에는 **첫 뿌리 글 하나만** 지워서, 여러
+   * 번 눌러야 스레드가 비었다(제보 ①). 뿌리를 지우면 답글은 서버가 함께 지우므로
+   * (0021 `on delete cascade`) 뿌리들만 돌면 된다. 목록 재조회는 **마지막에 한 번**.
+   * 남의 글이 섞여 있으면 그 글에서 실패할 수 있다(RLS: 작성자 또는 문서 소유자) —
+   * 첫 오류를 돌려주고, 지워진 것은 지워진 대로 둔다. */
+  const removeThread = useCallback(
+    async (nodeId: string): Promise<{ error?: string }> => {
+      const roots = commentsRef.current.filter((c) => c.nodeId === nodeId && !c.parentId);
+      let firstError: string | undefined;
+      for (const r of roots) {
+        const res = await commentStore.remove(docStoreId, r.id);
+        if (res.error && !firstError) firstError = res.error;
+      }
+      await reloadComments();
+      return firstError ? { error: firstError } : {};
     },
     [commentStore, docStoreId, reloadComments],
   );
@@ -6394,6 +6431,7 @@ export function useEditorState(): EditorController {
     commentsLoading,
     addComment,
     removeComment,
+    removeThread,
     resolveComment,
     likeComment,
     canComment,

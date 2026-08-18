@@ -1020,3 +1020,40 @@ describe('마인드맵 스레드 진입점(요청)', () => {
     expect(container.querySelector('[data-board-draw-layer]')).toBeNull();
   });
 });
+
+// 제보 ①②: ⋯의 "스레드 삭제"가 **글 하나씩** 지워서 여러 번 눌러야 스레드가 비었고,
+// 다 비운 뒤에는 가리킬 핀을 잃은 팝업이 **화면 우측 옛 자리**로 밀려나 "다른 댓글
+// 팝업이 떴다"로 보였다.
+describe('스레드 삭제(제보)', () => {
+  it('⋯ 삭제는 확인을 받고 스레드의 모든 글을 지우며, 팝업과 핀이 함께 사라진다', async () => {
+    localStorage.setItem('mindflow_doc_td1', JSON.stringify(DOC_WITH_PIN));
+    seedComment('td1', PIN_ID, '뿌리 글');
+    seedComment('td1', PIN_ID, '그 답글', { parentId: 'c1' });
+    seedComment('td1', PIN_ID, '두 번째 뿌리 글');
+    const { container } = renderEditor('/editor?map=td1&title=x');
+    const panel = await openPinComments();
+    await waitFor(() => expect(within(panel).getByText('두 번째 뿌리 글')).toBeTruthy());
+
+    fireEvent.click(within(panel).getByRole('button', { name: '스레드 메뉴' }));
+    fireEvent.click(within(panel).getByRole('button', { name: '스레드 삭제' }));
+
+    // ① 확인창이 먼저 뜨고, 무엇이 몇 개 사라지는지 밝힌다.
+    const dialog = await screen.findByRole('dialog', { name: '스레드 삭제 확인' });
+    expect(within(dialog).getByText(/글 3개/)).toBeTruthy();
+    // 취소하면 아무것도 지워지지 않는다.
+    fireEvent.click(within(dialog).getByRole('button', { name: '취소' }));
+    await waitFor(() => expect(screen.queryByRole('dialog', { name: '스레드 삭제 확인' })).toBeNull());
+    expect(storedComments()).toHaveLength(3);
+
+    fireEvent.click(within(panel).getByRole('button', { name: '스레드 메뉴' }));
+    fireEvent.click(within(panel).getByRole('button', { name: '스레드 삭제' }));
+    const dialog2 = await screen.findByRole('dialog', { name: '스레드 삭제 확인' });
+    fireEvent.click(within(dialog2).getByRole('button', { name: '삭제' }));
+
+    // 한 번에 **모든 글**이 사라진다(예전에는 첫 뿌리 글 하나만 지워졌다).
+    await waitFor(() => expect(storedComments()).toHaveLength(0));
+    // ② 그리고 팝업은 남지 않는다 — 가리킬 핀이 없으면 열려 있을 이유가 없다.
+    await waitFor(() => expect(container.querySelector('[data-comment-panel]')).toBeNull());
+    await waitFor(() => expect(container.querySelector('[data-comment-pin]')).toBeNull());
+  });
+});

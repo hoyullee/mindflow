@@ -15,6 +15,7 @@
 // 눈에 들어오게(배지도 미해결 스레드만 센다).
 
 import { useEffect, useLayoutEffect, useMemo, useRef, useState, type CSSProperties, type KeyboardEvent, type ReactNode } from 'react';
+import { createPortal } from 'react-dom';
 import { ROOT_ID } from '@mindflow/mindmap-core';
 import type { EditorController } from '../useEditorState';
 import type { CommentMention, DocComment, ShareParticipant } from '../../../adapters/ports';
@@ -100,6 +101,9 @@ export function CommentPanel({ controller }: { controller: EditorController }) {
     return () => ro.disconnect();
   }, [isMobile, open, nodeId, controller.comments.length]);
 
+  /** ⋯의 스레드 삭제 확인창(제보 ①) — 훅이므로 조기 return 위에 둔다. */
+  const [confirmDelete, setConfirmDelete] = useState(false);
+
   if (!open) return null;
 
   const title = commentTargetLabel(controller.doc, nodeId);
@@ -150,7 +154,7 @@ export function CommentPanel({ controller }: { controller: EditorController }) {
   const root = msgs.find((c) => !c.parentId) ?? null;
   const resolved = !!root?.resolved;
 
-  return (
+  const panel = (
     <aside
       ref={panelRef}
       style={{
@@ -211,8 +215,10 @@ export function CommentPanel({ controller }: { controller: EditorController }) {
             해결
           </button>
         )}
-        {/* ⋯ — 스레드 통째로 지우기(각 글의 '삭제'는 그 글만 지운다). 내 스레드일 때만. */}
-        {pinThread && root?.mine && <ThreadMenu th={th} isMobile={isMobile} onDelete={() => void controller.removeComment(root.id)} />}
+        {/* ⋯ — 스레드 통째로 지우기(각 글의 '삭제'는 그 글만 지운다). 내 스레드일 때만.
+            **확인을 먼저 받는다**(제보 ①): 글 여러 개가 한 번에 사라지고, 댓글은
+            본문이 아니라 별도 저장소에 살아서 실행 취소로 돌아오지 않는다. */}
+        {pinThread && root?.mine && <ThreadMenu th={th} isMobile={isMobile} onDelete={() => setConfirmDelete(true)} />}
         <button
           type="button"
           className="mf-ed-btn"
@@ -226,6 +232,120 @@ export function CommentPanel({ controller }: { controller: EditorController }) {
       </header>
       <CommentThreads controller={controller} nodeId={nodeId} scroll thread={pinThread} />
     </aside>
+  );
+
+  return (
+    <>
+      {panel}
+      {/* 확인창은 **패널 밖**(body)에 그린다 — 유리질 카드의 `backdrop-filter`가
+          fixed 자식의 기준 상자가 되고 `overflow: hidden`이 잘라서, 안에 두면
+          전체 화면 막이 패널 크기로 오그라든다(실브라우저에서 확인). */}
+      {confirmDelete &&
+        typeof document !== 'undefined' &&
+        createPortal(
+          <ConfirmDeleteThread
+            count={msgs.length}
+            theme={th}
+            isMobile={isMobile}
+            onCancel={() => setConfirmDelete(false)}
+            onConfirm={async () => {
+              const res = await controller.removeThread(nodeId);
+              // 실패했으면 확인창을 열어 둔 채 이유를 보여 준다(닫아 버리면 왜 남았는지
+              // 알 수 없다). 성공하면 핀이 정리되며 패널 자체가 닫힌다.
+              if (!res.error) setConfirmDelete(false);
+              return res;
+            }}
+          />,
+          document.body,
+        )}
+    </>
+  );
+}
+
+/**
+ * 스레드 삭제 확인(제보 ①).
+ *
+ * ⋯의 삭제는 예전에 **첫 글 하나만** 지웠다 — 여러 번 눌러야 스레드가 비었고,
+ * 그 사이 무엇이 지워지는지도 알 수 없었다. 이제 스레드의 글을 한 번에 지우므로
+ * **몇 개가 사라지는지 밝히고** 한 번 묻는다. 칸반 열 삭제 확인창과 같은 결이되,
+ * 되돌릴 수 있다는 말은 하지 않는다 — 댓글은 본문(문서)이 아니라 별도 저장소에
+ * 살아서 실행 취소로 돌아오지 않는다(핀만 되돌아온다).
+ *
+ * 파괴적 버튼에 처음부터 초점이 가지 않게 **취소에 초점**을 둔다.
+ */
+function ConfirmDeleteThread({
+  count,
+  theme: th,
+  isMobile,
+  onCancel,
+  onConfirm,
+}: {
+  count: number;
+  theme: EditorController['uiTheme'];
+  isMobile: boolean;
+  onCancel: () => void;
+  onConfirm: () => Promise<{ error?: string }>;
+}) {
+  const cancelRef = useRef<HTMLButtonElement | null>(null);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  useEffect(() => {
+    cancelRef.current?.focus();
+    const onKey = (e: globalThis.KeyboardEvent): void => {
+      if (e.key !== 'Escape') return;
+      e.stopPropagation();
+      onCancel();
+    };
+    window.addEventListener('keydown', onKey, true);
+    return () => window.removeEventListener('keydown', onKey, true);
+  }, [onCancel]);
+
+  const btn: CSSProperties = { height: isMobile ? 44 : 36, padding: '0 16px', borderRadius: 10, fontSize: 13, fontWeight: 700, fontFamily: 'inherit', cursor: 'pointer' };
+  return (
+    <div
+      data-confirm-delete-thread-veil
+      onPointerDown={(e) => {
+        e.stopPropagation();
+        if (e.target === e.currentTarget) onCancel();
+      }}
+      style={{ position: 'fixed', inset: 0, zIndex: 350, background: hexA('#2e2a26', 0.34), display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 24 }}
+    >
+      <div
+        data-confirm-delete-thread
+        role="dialog"
+        aria-modal="true"
+        aria-label="스레드 삭제 확인"
+        style={{ width: 'min(380px, 100%)', boxSizing: 'border-box', padding: 20, borderRadius: 16, background: th.panel, border: `1px solid ${th.border}`, boxShadow: '0 40px 90px -40px rgba(0,0,0,.6)' }}
+      >
+        <strong style={{ display: 'block', fontSize: 15.5, color: th.text, marginBottom: 8 }}>이 스레드를 삭제할까요?</strong>
+        <p data-confirm-body style={{ margin: 0, fontSize: 13, lineHeight: 1.6, color: th.subtext }}>
+          {`글 ${count}개가 모두 사라지고 캔버스의 핀도 함께 없어져요.`} 되돌릴 수 없어요.
+        </p>
+        {error && <p style={{ margin: '10px 0 0', fontSize: 12, color: '#c0532e' }}>{error}</p>}
+        <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8, marginTop: 18 }}>
+          <button ref={cancelRef} type="button" className="mf-ed-btn" data-confirm-cancel onClick={onCancel} disabled={busy} style={{ ...btn, border: `1px solid ${th.border}`, background: th.panel, color: th.text }}>
+            취소
+          </button>
+          <button
+            type="button"
+            className="mf-ed-btn"
+            data-confirm-delete
+            disabled={busy}
+            onClick={() => {
+              setBusy(true);
+              setError(null);
+              void onConfirm().then((res) => {
+                setBusy(false);
+                if (res.error) setError(res.error);
+              });
+            }}
+            style={{ ...btn, border: '1px solid #c0532e', background: '#c0532e', color: '#fff', opacity: busy ? 0.6 : 1 }}
+          >
+            삭제
+          </button>
+        </div>
+      </div>
+    </div>
   );
 }
 
