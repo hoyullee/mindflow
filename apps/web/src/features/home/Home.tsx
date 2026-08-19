@@ -123,7 +123,11 @@ export function Home() {
           e.preventDefault();
           controller.openCtxMenuAt(e.clientX, e.clientY, { kind: 'bg' });
         }}
-        style={{ flex: '1 1 auto', display: 'flex', flexDirection: 'column', overflowY: 'auto', scrollbarGutter: 'stable', padding: isMobile ? '16px 14px 32px' : '26px 32px 40px', minWidth: 0 }}
+        // 첫 진입에 살짝 떠오르며 나타난다(디자인 원본의 `ghFade`) — 마운트 때 한 번만
+        // 돌고, 움직임을 줄이라고 한 사용자에게는 home.css가 끈다.
+        className="mf-home-main"
+        // 본문 패딩은 디자인 원본(24/32/44). 모바일은 좁은 폭에 맞춰 줄인다.
+        style={{ flex: '1 1 auto', display: 'flex', flexDirection: 'column', overflowY: 'auto', scrollbarGutter: 'stable', padding: isMobile ? '16px 14px 32px' : '24px 32px 44px', minWidth: 0 }}
       >
         {/* Cross-space "최근 항목" strip sits ABOVE the space toolbar so it reads as a
             global "recently opened" bar, not part of the current space's maps.

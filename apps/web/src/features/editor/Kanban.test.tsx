@@ -7,7 +7,7 @@ import { MemoryRouter, Route, Routes } from 'react-router-dom';
 import { Editor } from './Editor';
 import { mockMatchMedia } from '../../test/matchMedia';
 import { UI_THEME, hexA, mixHex } from './theme';
-import { boardSurface, tagColor, tagInk } from './kanbanMeta';
+import { boardSurface, dueLabel, tagColor, tagInk } from './kanbanMeta';
 
 /** 내려받은 파일 내용을 가로챈다 — jsdom에는 createObjectURL이 없다(다른 내보내기 테스트와 같은 처방). */
 const dl = vi.hoisted(() => ({ files: [] as { name: string; data: string }[] }));
@@ -717,9 +717,16 @@ describe('칸반 — 카드 상세(분류·기한·담당·긴급)', () => {
     fireEvent.doubleClick(container.querySelector('[data-kanban-card="k1"]')!);
     const detail = await waitFor(() => container.querySelector('[data-card-detail="k1"]') as HTMLElement);
 
+    // 기한은 **오늘 기준 30일 뒤**를 계산해 심는다 — 고정 날짜('2026-08-20')를
+    // 쓰면 그날이 다가와 표기가 '내일'/'오늘'(상대 표기)로 바뀌는 순간 테스트가
+    // 깨진다(CI에서 실제로 깨진 날짜 롤오버 플레이크). 기대 문구도 같은 규칙
+    // (`dueLabel`)에서 얻는다 — 이 단정의 목적은 표기 규칙이 아니라 "카드 앞면에
+    // 기한이 실린다"는 배선이다(표기 규칙은 kanbanMeta 유닛이 맡는다).
+    const due = new Date(Date.now() + 30 * 86400000);
+    const dueValue = `${due.getFullYear()}-${String(due.getMonth() + 1).padStart(2, '0')}-${String(due.getDate()).padStart(2, '0')}`;
     fireEvent.change(detail.querySelector('[data-detail-tag-input]')!, { target: { value: '개발' } });
     fireEvent.keyDown(detail.querySelector('[data-detail-tag-input]')!, { key: 'Enter' });
-    fireEvent.change(detail.querySelector('[data-detail-due]')!, { target: { value: '2026-08-20' } });
+    fireEvent.change(detail.querySelector('[data-detail-due]')!, { target: { value: dueValue } });
     fireEvent.click(detail.querySelector('[data-detail-flag]')!);
     fireEvent.click(detail.querySelector('[data-detail-close]')!);
 
@@ -727,12 +734,12 @@ describe('칸반 — 카드 상세(분류·기한·담당·긴급)', () => {
     const card = await waitFor(() => container.querySelector('[data-kanban-card="k1"]') as HTMLElement);
     expect(card.querySelector('[data-card-tag="개발"]')).toBeTruthy();
     expect(card.querySelector('[data-card-urgent="k1"]')).toBeTruthy();
-    expect(card.querySelector('[data-card-due="k1"]')?.textContent).toContain('8월 20일');
+    expect(card.querySelector('[data-card-due="k1"]')?.textContent).toContain(dueLabel(dueValue));
 
     fireEvent.keyDown(window, { key: 's', ctrlKey: true });
     await waitFor(() => {
       const c = saved('km1').cards.find((x: { id: string }) => x.id === 'k1');
-      expect(c).toMatchObject({ tag: '개발', due: '2026-08-20', flagged: true });
+      expect(c).toMatchObject({ tag: '개발', due: dueValue, flagged: true });
     });
 
     // 없애면 **키가 사라진다**(빈 필드를 CRDT로 흘리지 않게).

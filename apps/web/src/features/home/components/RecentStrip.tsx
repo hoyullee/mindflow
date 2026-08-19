@@ -8,25 +8,33 @@ import { MapCard } from './MapCard';
 // `1fr`/`minmax(…,1fr)`/`flex: 1`) so they can NOT stretch — that's what
 // previously made them balloon "wide". What varies with the viewport is only
 // HOW MANY are exposed, never the per-card size.
-export const RECENT_CARD_W = 128; // fixed px card width
-const RECENT_GAP = 12;
+export const RECENT_CARD_W = 158; // fixed px card width(디자인 원본)
+const RECENT_GAP = 10;
 const RECENT_STEP = RECENT_CARD_W + RECENT_GAP;
-const TRAY_PAD_X = 32; // desktop tray padding (16px × 2) — mobile doesn't use `fit`
+/**
+ * 스크롤 박스가 카드 주변에 두는 여유(px) — 선택 링(outline 2px + offset 2)과
+ * hover 시 3px 떠오르는 카드의 **그림자**가 잘리지 않아야 한다(제보: 그림자가
+ * 하단 영역에 잘려 보인다). 가로 스크롤 컨테이너는 `overflow-x: auto`가 다른
+ * 축까지 auto로 만들어 여유가 없으면 안쪽에서 잘린다. 위·옆은 링/떠오름 몫,
+ * 아래는 그림자 몫(디자인 원본도 아래 12px을 상쇄하지 않고 남긴다).
+ */
+const SLACK_TOP = 8;
+const SLACK_X = 24;
+const SLACK_BOTTOM = 18;
+
+/**
+ * 트레이 폭에 노출할 카드 수(순수 — 회귀 가드용 export). 카드가 쓰는 폭은 트레이
+ * 폭 **그대로**다: 스크롤 박스의 좌우 패딩(SLACK_X)은 같은 크기 음수 마진으로
+ * 상쇄돼 카드 시작·끝이 트레이 가장자리와 일치한다. 예전처럼 패딩 몫(48px)을
+ * 빼면 마지막 칸이 들어갈 공간이 있어도 카드가 하나 모자라게 노출된다(제보).
+ */
+export function recentFit(trayWidth: number): number {
+  return Math.max(1, Math.floor((trayWidth + RECENT_GAP) / RECENT_STEP));
+}
 // Mobile swipe depth: how far the touch tray scrolls back in history. Bounded so
 // a long history doesn't mount dozens of preview cards on a phone; must stay
 // ≤ RECENT_RENDER_MAX (storage.ts), which caps what the view materializes.
 const MOBILE_SWIPE_MAX = 20;
-/**
- * 선택 링이 스크롤 박스 안에서 온전히 보이도록 두는 여유(px).
- *
- * 선택된 카드는 그리드와 같은 표시를 쓴다 — 2px 테두리 + 카드 **밖으로 3px** 번지는
- * 글로우(`MapCard`의 `boxShadow: 0 0 0 3px`). 그런데 이 트레이는 가로 스크롤
- * 컨테이너라 `overflow-x: auto`가 **다른 축까지 auto로 만들고**(CSS 규칙), 여유가
- * 0이면 링이 위·아래·왼쪽에서 잘려 보였다(제보, 실측 각 4px). 스크롤 박스에 이만큼
- * 패딩을 주고 같은 크기의 음수 마진으로 상쇄하면 **카드 위치는 그대로**인 채 링만
- * 안쪽 여유에 들어간다.
- */
-const RING_SLACK = 4;
 
 /** Small clock glyph in front of the "최근 항목" header (SVG per design-system
  * §10 — no emoji), colored via `currentColor` so it follows the header accent. */
@@ -48,19 +56,20 @@ export function RecentStripSkeleton({ count }: { count: number }) {
   return (
     <div className="mf-recent-tray" aria-busy="true" aria-label="최근 항목을 불러오는 중">
       {/* 실제 헤더와 동일한 고정 높이(16px + marginBottom 10) */}
-      <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 10, height: 16 }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 12, height: 16 }}>
         <span className="mf-skel" style={{ width: 14, height: 14, borderRadius: 4 }} />
         <span className="mf-skel" style={{ width: 56, height: 13, borderRadius: 6 }} />
+        <span className="mf-skel" style={{ width: 62, height: 11, borderRadius: 6 }} />
       </div>
       <div style={{ display: 'flex', gap: RECENT_GAP, overflow: 'hidden' }}>
         {Array.from({ length: n }, (_, i) => (
-          <div key={i} style={{ width: RECENT_CARD_W, flex: '0 0 auto', border: '1px solid var(--mf-border-soft)', borderRadius: 10, background: 'var(--mf-panel)', overflow: 'hidden' }}>
+          <div key={i} style={{ width: RECENT_CARD_W, flex: '0 0 auto', border: '1px solid var(--mf-border-soft)', borderRadius: 15, background: 'var(--mf-card)', overflow: 'hidden' }}>
             {/* compact MapCard와 footprint 정확히 일치:
-                썸네일 72 + 패딩 8·8 + 제목줄 15 + (marginTop 2 + 위치줄 14).
+                썸네일 74 + 패딩 9·11 + 제목줄 15 + (marginTop 2 + 위치줄 14).
                 위치줄이 생기며 카드가 16px 높아졌으므로 스켈레톤도 같이 키운다 —
                 어긋나면 로드 완료 순간 트레이 높이가 변하며 아래 툴바가 튄다. */}
-            <div className="mf-skel" style={{ height: 72, borderRadius: 0 }} />
-            <div style={{ padding: '8px 10px' }}>
+            <div className="mf-skel" style={{ height: 74, borderRadius: 0 }} />
+            <div style={{ padding: '9px 11px 11px' }}>
               <div style={{ height: 15, display: 'flex', alignItems: 'center' }}>
                 <div className="mf-skel" style={{ height: 11, width: '70%', borderRadius: 6 }} />
               </div>
@@ -99,9 +108,9 @@ export function RecentStrip({ cards, controller }: { cards: CardViewData[]; cont
     const el = trayRef.current;
     if (!el) return;
     const measure = (): void => {
-      const w = el.clientWidth - TRAY_PAD_X;
+      const w = el.clientWidth;
       if (w <= 0) return; // jsdom/unlaid-out: keep the default
-      setFit(Math.max(1, Math.floor((w + RECENT_GAP) / RECENT_STEP)));
+      setFit(recentFit(w));
     };
     measure();
     // ResizeObserver is absent in some test/SSR environments (jsdom) — fall back
@@ -123,11 +132,13 @@ export function RecentStrip({ cards, controller }: { cards: CardViewData[]; cont
           compete with the page title (the space name, 22px). */}
       {/* height/lineHeight를 px로 고정 — 폰트 스왑에 따른 행 높이 변화(→ 아래
           툴바 밀림)를 막고, 로딩 스켈레톤과 footprint를 정확히 일치시킨다. */}
-      <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 10, height: 16 }}>
-        <span style={{ color: 'var(--mf-accent)', display: 'inline-flex' }} aria-hidden="true">
+      <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 12, height: 16 }}>
+        <span style={{ color: 'var(--mf-faint)', display: 'inline-flex' }} aria-hidden="true">
           <ClockGlyph />
         </span>
-        <span style={{ fontSize: 13, lineHeight: '16px', fontWeight: 700, letterSpacing: '-.01em', color: 'var(--mf-text)' }}>최근 항목</span>
+        <span style={{ fontSize: 12.5, lineHeight: '16px', fontWeight: 700, letterSpacing: '-.01em', color: 'var(--mf-subtext)' }}>최근 항목</span>
+        {/* 범위를 문구가 말한다 — 이 목록만 스페이스를 가로지른다(디자인 원본). */}
+        <span style={{ fontSize: 11, lineHeight: '16px', color: 'var(--mf-faint)' }}>모든 스페이스</span>
       </div>
       <div
         className="mf-recent-scroll"
@@ -136,11 +147,12 @@ export function RecentStrip({ cards, controller }: { cards: CardViewData[]; cont
           gap: RECENT_GAP,
           overflowX: 'auto',
           scrollSnapType: 'x proximity',
-          // 선택 링이 잘리지 않게 여유를 두고 같은 크기로 상쇄한다(RING_SLACK 참고).
-          // 스냅 지점도 그만큼 당겨 첫 카드가 여유 안쪽에 딱 맞게 선다.
-          padding: RING_SLACK,
-          margin: -RING_SLACK,
-          scrollPaddingLeft: RING_SLACK,
+          // 링·그림자 여유(SLACK_* 참고) — 위·옆은 같은 크기 음수 마진으로 상쇄해
+          // 카드 위치가 그대로고, **아래는 상쇄하지 않아** 그림자가 놓일 자리가
+          // 실제로 넓어진다(상쇄하면 다음 구획이 그 위로 올라와 도로 잘린다).
+          padding: `${SLACK_TOP}px ${SLACK_X}px ${SLACK_BOTTOM}px`,
+          margin: `${-SLACK_TOP}px ${-SLACK_X}px 0`,
+          scrollPaddingLeft: SLACK_X,
         }}
       >
         {cards.slice(0, shown).map((c) => (

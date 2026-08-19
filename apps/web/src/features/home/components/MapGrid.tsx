@@ -3,6 +3,7 @@ import type { HomeViewModel } from '../viewModel';
 import { FolderCard } from './FolderCard';
 import { ParentFolderCard } from './ParentFolderCard';
 import { MapCard } from './MapCard';
+import { META_MONO, primaryPillStyle } from '../chrome';
 
 interface Props {
   view: HomeViewModel;
@@ -13,7 +14,19 @@ interface Props {
 // `home.css` (not inline) so the 768px mobile breakpoint (1 column) and a
 // 480-768px 2-column step can override the desktop `minmax(300px,1fr)`
 // auto-fill — inline styles would otherwise always win over a stylesheet rule.
-const GRID_STYLE = { gap: 20 } as const;
+// 간격은 이제 `.mf-map-grid`/`.mf-folder-grid`(home.css)가 정한다 — 디자인 원본의
+// 밀도 값을 미디어 쿼리와 함께 한곳에서 관리한다.
+const GRID_STYLE = {} as const;
+
+/** 구획 머리 — 이름 + 등폭 개수(디자인 원본). */
+function SectionHead({ label, count }: { label: string; count: number }) {
+  return (
+    <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 13 }}>
+      <span style={{ fontSize: 12.5, fontWeight: 700, color: 'var(--mf-subtext)' }}>{label}</span>
+      <span style={META_MONO}>{count}</span>
+    </div>
+  );
+}
 
 /** A single placeholder card matching `MapCard`'s footprint (preview block +
  * two title lines), shown while the map list loads. */
@@ -45,22 +58,23 @@ export function MapGrid({ view, controller }: Props) {
       {/* The "최근 항목" strip is cross-space and now lives at the top of Home
           (see `RecentStrip` in Home.tsx), not inside a space's map list. */}
       {view.foldersSectionVisible && (
-        <div>
-          <div style={{ fontSize: 12.5, fontWeight: 700, color: 'var(--mf-muted)', marginBottom: 14 }}>폴더</div>
-          <div className="mf-map-grid" style={{ ...GRID_STYLE, marginBottom: 26 }}>
+        <div style={{ marginBottom: 30 }}>
+          <SectionHead label="폴더" count={view.folderCards.length} />
+          <div className="mf-folder-grid">
             {/* 첫 칸 = 상위 폴더(`..`) — 뒤로 가는 길이자 "위로 옮기기" 드롭 대상. */}
             {view.parentTile && <ParentFolderCard tile={view.parentTile} controller={controller} />}
             {view.folderCards.map((f) => (
               <FolderCard key={f.id} folder={f} controller={controller} />
             ))}
           </div>
-          <div style={{ height: 1, background: 'var(--mf-border)', margin: '0 0 26px' }} />
+          {/* 구획 사이의 선은 없앴다(디자인 원본) — 카드가 그늘로 떠 있어 여백만으로
+              층이 갈리고, 선까지 있으면 화면이 칸으로 잘려 보인다. */}
         </div>
       )}
 
       {view.mapsSectionVisible && (
         <div>
-          <div style={{ fontSize: 12.5, fontWeight: 700, color: 'var(--mf-muted)', marginBottom: 14 }}>맵</div>
+          <SectionHead label="파일" count={view.allCards.length} />
           <div className="mf-map-grid" style={GRID_STYLE}>
             {/* Key by card identity (docId; title fallback) — duplicate TITLES are
                 fully allowed, and a duplicate React key makes reconciliation reuse
@@ -110,9 +124,14 @@ export function MapGrid({ view, controller }: Props) {
             type="button"
             onClick={controller.openTemplates}
             className="btn"
-            style={{ height: 52, padding: '0 30px', border: 'none', borderRadius: 14, background: 'var(--mf-accent)', color: 'var(--mf-accent-ink)', fontFamily: 'inherit', fontSize: 16, fontWeight: 700, cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 9, boxShadow: '0 8px 22px rgba(var(--mf-accent-rgb),.32)' }}
+            // 툴바의 1차 버튼과 같은 꼴을 크게 쓴다(그라디언트 알약 + 선 아이콘).
+            style={{ ...primaryPillStyle(false), height: 52, padding: '0 30px', borderRadius: 999, fontSize: 16, gap: 9 }}
           >
-            ＋ 새로 만들기
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.3" strokeLinecap="round" aria-hidden="true">
+              <line x1="12" y1="5" x2="12" y2="19" />
+              <line x1="5" y1="12" x2="19" y2="12" />
+            </svg>
+            새로 만들기
           </button>
         </div>
       )}

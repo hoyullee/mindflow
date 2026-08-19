@@ -5,6 +5,7 @@ import type { HomeController } from '../useHomeController';
 import type { CardViewData } from '../viewModel';
 import { useIsMobile } from '../../../hooks/useMediaQuery';
 import { useCardActivation } from './useCardActivation';
+import { dotGridStyle } from '../chrome';
 
 interface Props {
   card: CardViewData;
@@ -17,13 +18,17 @@ interface Props {
 }
 
 /**
- * 문서 종류별 테두리 색(요청) — 종류를 말하는 표식이라 테마를 따르지 않는 고정색이다
- * (색은 `home/theme.ts`의 `docMap`/`docBoard`/`docKanban`, 다크만 한 단계 밝다).
+ * 문서 **종류** 색 — 이제 카드 테두리가 아니라 **배지의 점**에만 쓴다.
+ *
+ * 예전에는 카드 테두리 전체를 이 색으로 칠했는데(요청), 홈 리디자인의 카드는 모두
+ * 같은 옅은 경계선을 쓰고 종류는 **배지(점 + 이름)**가 말한다 — 색 테두리를 그대로
+ * 두면 그리드가 초록·파랑·보라로 얼룩져 디자인 원본과 인상이 달라진다. 종류를
+ * 알리는 신호는 여전히 세 겹이다: 배지 이름 · 배지 점 색 · 화이트보드/칸반의 흰 종이 바탕.
+ * (색은 `home/theme.ts`의 `docMap`/`docBoard`/`docKanban` — 테마를 따르지 않는다.)
  */
-function docKindBorder(card: CardViewData): string {
-  // 열 수 없는 카드(Drive 데모의 비지원 파일)는 종류를 말할 게 없다 — 회색 카드에
-  // 종류 색만 남으면 "열리는 맵"처럼 보인다.
-  if (card.openable === false) return 'var(--mf-border)';
+function docKindColor(card: CardViewData): string {
+  // 열 수 없는 카드(Drive 데모의 비지원 파일)는 종류를 말할 게 없다.
+  if (card.openable === false) return 'var(--mf-faint)';
   if (card.isKanban) return 'var(--mf-doc-kanban)';
   if (card.isBoard) return 'var(--mf-doc-board)';
   return 'var(--mf-doc-map)';
@@ -185,20 +190,27 @@ export function MapCard({ card, controller, draggableEnabled, compact = false }:
     // 색이 홈 배경과 비슷해 카드가 배경에 묻혀 보였다(제보) — 면 대신 선으로 옮겼고,
     // 이제 셋이 각자의 색을 쓴다. 선택 표시(강조색 2px + 글로우)와는 굵기·글로우로
     // 갈리므로 "선택된 것"과 헷갈리지 않는다.
-    border: card.selected ? '2px solid var(--mf-accent)' : `1px solid ${docKindBorder(card)}`,
-    borderRadius: compact ? 10 : 14,
-    background: grey ? 'var(--mf-panel-grey)' : 'var(--mf-panel)',
+    // 선택 표시는 **outline 링**(디자인 원본: 2px 강조색, 카드에서 2px 띄운다) —
+    // 레이아웃에 영향이 없어 예전의 "테두리 2px + 음수 마진" 곡예가 필요 없다.
+    border: '1px solid var(--mf-border)',
+    outline: card.selected ? '2px solid var(--mf-accent)' : '2px solid transparent',
+    outlineOffset: 2,
+    borderRadius: compact ? 15 : 18,
+    background: grey ? 'var(--mf-panel-grey)' : 'var(--mf-card)',
     // The card no longer clips (was `overflow: hidden`) — otherwise the open ☰
     // menu is cut off inside the card. The thumbnail keeps its own top-corner
     // clip below, and an open menu raises the card above its grid neighbours.
     cursor: grey ? 'default' : 'pointer',
-    transition: 'border-color .14s, box-shadow .14s, opacity .14s',
+    // ⚠️ transition은 인라인으로 두지 않는다 — home.css의 `.map-card` 규칙(transform
+    // 포함)을 인라인이 덮어써서, hover의 떠오름이 전이 없이 A→B로 툭 바뀌었다(제보).
     display: 'block',
     position: 'relative',
     zIndex: card.menuOpen ? 30 : undefined,
     opacity: card.dragging ? 0.45 : 1,
-    boxShadow: card.selected ? '0 0 0 3px rgba(var(--mf-accent-rgb),.18)' : 'none',
-    margin: card.selected ? -1 : 0,
+    // 카드는 면 위에 **떠 있다**(디자인 원본) — 평소에도 옅은 그늘이 있고 마우스를
+    // 얹으면 3px 떠오르며 그늘이 멀어진다(home.css의 `.map-card:hover`).
+    // 고른 카드는 강조색 글로우가 그늘 위에 겹친다.
+    boxShadow: compact ? 'var(--mf-card-shadow-sm)' : 'var(--mf-card-shadow)',
     color: grey ? 'var(--mf-faint)' : 'var(--mf-text)',
     // 더블탭이 브라우저의 '두 번 눌러 확대' 제스처로 새지 않게 한다(스크롤·핀치는 유지).
     touchAction: 'manipulation',
@@ -306,22 +318,24 @@ export function MapCard({ card, controller, draggableEnabled, compact = false }:
         aria-label={card.isFav ? '즐겨찾기 해제' : '즐겨찾기'}
         style={{
           position: 'absolute',
-          top: 10,
-          left: 10,
+          top: compact ? 7 : 10,
+          left: compact ? 7 : 10,
           zIndex: 3,
-          width: 28,
-          height: 28,
-          borderRadius: '50%',
+          width: compact ? 24 : 28,
+          height: compact ? 24 : 28,
+          // 원이 아니라 **둥근 사각**이다(디자인 원본) — 미리보기 위에 얹히는 칩들
+          // (종류 배지·☰)과 같은 꼴이라 한 벌로 읽힌다.
+          borderRadius: compact ? 8 : 9,
           background: card.isFav ? 'var(--mf-panel)' : 'var(--mf-panel-veil)',
           border: `1px solid ${card.isFav ? 'var(--mf-star)' : 'var(--mf-border)'}`,
           display: card.openable === false || (selectMode && !compact) ? 'none' : 'flex',
           alignItems: 'center',
           justifyContent: 'center',
-          fontSize: 15,
+          fontSize: compact ? 13 : 15,
           lineHeight: 1,
           color: card.isFav ? 'var(--mf-star)' : 'var(--mf-faint)',
           cursor: 'pointer',
-          boxShadow: '0 2px 6px rgba(0,0,0,.12)',
+          backdropFilter: 'blur(6px)',
           // Revealed on hover (see home.css), but also whenever the card is
           // favorited or selected — so on touch (no hover) selecting a card
           // exposes its controls.
@@ -333,50 +347,45 @@ export function MapCard({ card, controller, draggableEnabled, compact = false }:
       </div>
 
 
-      {/* 화이트보드 표식 — 목록에서 마인드맵 카드와 구별이 안 된다는 제보에.
-          썸네일 바탕(아래)과 함께 두 겹으로 다르게 보이게 한다: 바탕은 보드
-          캔버스처럼 **흰 종이**, 여기 배지는 종류 이름. 갤러리 카드의 삽화와
-          같은 메모+이미지 도형을 작게 줄여 같은 것을 가리킴을 알린다. */}
-      {(card.isBoard || card.isKanban) && !card.badge && (
+      {/* 종류 배지 — 디자인 원본은 **모든 카드**에 종류를 적는다(마인드맵도).
+          점 색은 카드 테두리와 같은 종류색이라 배지·테두리·바탕이 세 겹으로 같은
+          것을 가리킨다. Drive 배지(`card.badge`)가 있는 카드는 그 자리를 양보한다. */}
+      {!card.badge && card.openable !== false && (
         <div
           data-board-badge
-          title={card.isKanban ? '칸반 보드' : '화이트보드'}
+          title={card.isKanban ? '칸반 보드' : card.isBoard ? '화이트보드' : '마인드맵'}
           style={{
             position: 'absolute',
-            top: compact ? 8 : 12,
-            // 오른쪽 끝에 붙인다(제보: 우측에서 너무 떨어져 있다). 46은 Drive
-            // 배지가 쓰던 값인데 이 자리 오른쪽에는 아무것도 없다(즐겨찾기 ★는
-            // 왼쪽, ☰은 카드 하단).
-            right: compact ? 8 : 12,
+            top: compact ? 7 : 10,
+            right: compact ? 7 : 10,
             zIndex: 2,
             display: 'flex',
             alignItems: 'center',
-            gap: 4,
-            padding: compact ? '2px 6px' : '3px 8px',
+            gap: compact ? 4 : 5,
+            height: compact ? 20 : 24,
+            padding: compact ? '0 7px' : '0 9px',
             borderRadius: 999,
             background: 'var(--mf-panel-veil)',
             border: '1px solid var(--mf-border)',
             color: 'var(--mf-subtext)',
-            fontSize: compact ? 10 : 11,
+            fontSize: compact ? 9.5 : 10.5,
             fontWeight: 700,
             whiteSpace: 'nowrap',
+            backdropFilter: 'blur(6px)',
           }}
         >
-          {card.isKanban ? (
-            /* 칸반 — 세로 열 셋(갤러리 카드·폴백 삽화와 같은 도형). */
-            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-              <rect x="2.5" y="4" width="5.5" height="16" rx="1.4" />
-              <rect x="9.25" y="4" width="5.5" height="16" rx="1.4" />
-              <rect x="16" y="4" width="5.5" height="16" rx="1.4" />
-            </svg>
-          ) : (
-            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-              <rect x="2.5" y="4" width="9" height="7.5" rx="1.6" />
-              <rect x="13" y="12.5" width="8.5" height="7.5" rx="1.6" />
-              <path d="M4 15.5h6.5M4 18.5h4.5" />
-            </svg>
-          )}
-          {card.isKanban ? (compact ? '칸반' : '칸반 보드') : compact ? '보드' : '화이트보드'}
+          <span
+            aria-hidden="true"
+            style={{
+              width: compact ? 5 : 6,
+              height: compact ? 5 : 6,
+              borderRadius: 2,
+              background: docKindColor(card),
+              display: 'block',
+              flexShrink: 0,
+            }}
+          />
+          {card.isKanban ? (compact ? '칸반' : '칸반 보드') : card.isBoard ? (compact ? '보드' : '화이트보드') : compact ? '마인드맵' : '마인드맵'}
         </div>
       )}
 
@@ -405,31 +414,40 @@ export function MapCard({ card, controller, draggableEnabled, compact = false }:
       <div
         className="map-thumb"
         style={{
-          height: compact ? 72 : 150,
-          // 화이트보드는 **흰 종이** 바탕 — 보드의 기본 테마가 `white`라 대개 화면과
-          // 같은 인상이고, 무엇보다 이 바탕은 "종류"를 알리는 표식이다(배지·테두리와
-          // 세 겹). 카드 바탕은 문서 테마를 따르지 않는다 — 마인드맵도 마찬가지.
+          // 디자인 원본의 미리보기 높이(최근 74 / 그리드 150).
+          height: compact ? 74 : 150,
+          position: 'relative',
+          // 바탕은 **옅은 wash**이고 그 위에 캔버스의 점 격자가 깔린다(디자인 원본) —
+          // 미리보기가 "캔버스의 축소판"으로 읽힌다. 화이트보드·칸반만 **흰 종이**로
+          // 남긴다: 그 바탕 자체가 종류를 알리는 표식이다(배지·테두리와 세 겹).
           background: grey
             ? 'var(--mf-panel2)'
             : card.isBoard || card.isKanban
               ? '#ffffff'
-              : `linear-gradient(135deg,var(--mf-panel),${card.isDrive ? 'rgba(52,168,83,.07)' : 'rgba(0,0,0,.02)'})`,
+              : 'var(--mf-wash)',
           borderBottom: '1px solid var(--mf-border-soft)',
           display: 'flex',
           alignItems: 'center',
           justifyContent: 'center',
           fontSize: compact ? 22 : 30,
           filter: grey ? 'grayscale(1) opacity(.55)' : 'none',
-          borderRadius: compact ? '10px 10px 0 0' : '14px 14px 0 0',
+          // 안쪽 반지름 = 겉면(15/18) − 테두리(1) — 미리보기가 모서리에서 삐져나오지 않게.
+          borderRadius: compact ? '14px 14px 0 0' : '17px 17px 0 0',
           overflow: 'hidden',
         }}
       >
-        {card.sketch}
+        {/* 도트 격자 — 내용(썸네일) **뒤**에 깔린다. 회색 카드(열 수 없는 파일)에는
+            그리지 않는다: 그 카드는 캔버스가 아니다. */}
+        {!grey && <span aria-hidden="true" data-dot-grid style={dotGridStyle(compact ? 13 : 18)} />}
+        {/* 실제 문서를 그린 썸네일 — 디자인 원본은 목업이라 추상 도형을 그렸지만,
+            우리는 에디터와 같은 렌더러로 실제 내용을 그린다(`mapPreview`). 틀(wash·
+            점 격자·배지)만 디자인을 따르고 내용은 진짜다. */}
+        <span style={{ position: 'relative', display: 'flex', alignItems: 'center', justifyContent: 'center', width: '100%', height: '100%' }}>{card.sketch}</span>
       </div>
       {/* 하단 정보 영역: [제목+수정일] 좌측 열 + ☰ 메뉴 버튼(영역 전체의
           세로 중앙) — 버튼을 제목 행 안에 두면 수정일 줄 때문에 시각적으로
           위로 치우쳐 보인다. */}
-      <div style={{ padding: compact ? '8px 10px' : '12px 16px', display: 'flex', alignItems: 'center', gap: 8 }}>
+      <div style={{ padding: compact ? '9px 11px 11px' : '13px 14px 14px', display: 'flex', alignItems: 'center', gap: 10 }}>
         <div style={{ minWidth: 0, flex: 1 }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 6, minWidth: 0, marginBottom: compact ? 0 : 4 }}>
           {/* Cross-space "최근 항목" strip: a small dot in the owning space's color.
@@ -451,7 +469,7 @@ export function MapCard({ card, controller, draggableEnabled, compact = false }:
           {/* compact(최근 항목 트레이): lineHeight를 px로 고정 — 'normal'은 폰트
               메트릭을 따라가서 웹폰트 스왑 순간 카드/트레이 높이가 몇 px 출렁이고
               아래 툴바까지 밀렸다(새로고침 깜빡임). */}
-          <div style={{ fontSize: compact ? 12 : 14, lineHeight: compact ? '15px' : undefined, fontWeight: 600, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', minWidth: 0 }}>{card.title}</div>
+          <div style={{ fontSize: compact ? 12 : 14, lineHeight: compact ? '15px' : undefined, fontWeight: 700, letterSpacing: compact ? '-.01em' : '-.015em', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', minWidth: 0 }}>{card.title}</div>
           {/* "공유 중" 표식 — 제목 옆 사람 아이콘(Google Drive 관례). 에디터 공유
               버튼·카드 메뉴와 같은 글리프(같은 뜻은 같은 표식)이되, 여기는 상태
               표시라 더하기(+) 없이 사람 둘만 그린다. 자세한 내용은 툴팁으로. */}
@@ -520,7 +538,7 @@ export function MapCard({ card, controller, draggableEnabled, compact = false }:
         {!compact && formatLastEdited(card.updatedAt) && (
           <div
             title={card.editorName ? `${formatFullDateTime(card.updatedAt)} · ${card.editorName}님이 마지막으로 저장` : formatFullDateTime(card.updatedAt)}
-            style={{ fontSize: 12, color: 'var(--mf-muted)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}
+            style={{ fontSize: 11.5, color: 'var(--mf-muted)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}
           >
             수정일 · {formatLastEdited(card.updatedAt)}
             {card.editorName ? ` · ${card.editorName}` : ''}
@@ -545,26 +563,32 @@ export function MapCard({ card, controller, draggableEnabled, compact = false }:
             aria-label="메뉴"
             style={{
               flexShrink: 0,
-              width: 32,
-              height: 32,
+              // 심플하게 **점 셋만**(요청) — 면·테두리를 두르면 카드 안에서 버튼이
+              // 하나 더 있는 것처럼 무거워 보인다. hover에서 글자색만 짙어진다.
+              width: 28,
+              height: 28,
               borderRadius: 9,
               background: 'transparent',
-              border: '1px solid transparent',
+              border: 'none',
               display: 'flex',
               alignItems: 'center',
               justifyContent: 'center',
-              fontSize: 15,
-              lineHeight: 1,
               color: 'var(--mf-subtext)',
               cursor: 'pointer',
               // Revealed on hover (see home.css), but also when the menu is open
               // or the card is selected, so on touch (no hover) a selected map
-              // exposes its ☰ menu button.
+              // exposes its ⋯ menu button.
               opacity: card.menuOpen || card.selected ? 1 : 0,
-              transition: 'opacity .15s',
+              transform: card.menuOpen || card.selected ? 'translateY(0)' : 'translateY(2px)',
+              transition: 'opacity .18s ease, transform .18s ease, background .15s ease',
             }}
           >
-            ☰
+            {/* 가로 점 셋 — 디자인 원본. ☰(세 줄)은 "메뉴 열기"보다 "목록"으로 읽힌다. */}
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+              <circle cx="5" cy="12" r="1.6" />
+              <circle cx="12" cy="12" r="1.6" />
+              <circle cx="19" cy="12" r="1.6" />
+            </svg>
           </div>
         )}
       </div>

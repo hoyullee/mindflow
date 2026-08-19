@@ -26,6 +26,8 @@ describe('home theme', () => {
       '--mf-bg': '#fbf6f2',
       '--mf-sunken': '#f5ece5',
       '--mf-panel': '#ffffff',
+      // 카드의 면 — 디자인 원본의 살짝 따뜻한 흰색(#FFFDFB). 코랄만 값이 다르다.
+      '--mf-card': '#fffdfb',
       '--mf-panel2': '#faf3ee',
       '--mf-panel-veil': 'rgba(255,255,255,0.92)',
       '--mf-panel-grey': '#fbf8f5',
@@ -46,10 +48,21 @@ describe('home theme', () => {
       '--mf-danger-line': '#f3d9d4',
       '--mf-danger-mute': '#e7b9b3',
       '--mf-info': '#3f8fd0',
-      '--mf-doc-map': '#3f9e6a',
-      '--mf-doc-board': '#3f8fd0',
+      // 종류 색(요청): 빨강(마인드맵)·초록(화이트보드)·보라(칸반).
+      '--mf-doc-map': '#d9482b',
+      '--mf-doc-board': '#3f9e6a',
       '--mf-doc-kanban': '#8a63d2',
       '--mf-star': '#e0a53c',
+      // 홈 리디자인에서 더한 카드 입체감 토큰(디자인 원본의 그늘·hover·미리보기 바탕).
+      '--mf-card-shadow': '0 16px 32px -26px rgba(46,42,38,.42)',
+      '--mf-card-shadow-hover': '0 16px 32px -26px rgba(46,42,38,.56)',
+      '--mf-card-shadow-sm': '0 12px 26px -22px rgba(46,42,38,.4)',
+      // 최근 항목 hover — **같은 기하로 진해지기만** 한다(트레이 아래 여유 18px을
+      // 넘는 그림자는 잘린 경계를 만든다, 제보).
+      '--mf-card-shadow-sm-hover': '0 12px 26px -22px rgba(46,42,38,.62)',
+      '--mf-border-hover': '#e7dacc',
+      '--mf-wash': '#fcf8f3',
+      '--mf-dot-grid': 'rgba(199,186,172,.45)',
       '--mf-hover-bright': '0.97',
       '--mf-success': '#2f9e63',
       '--mf-success-soft': '#e9f4ee',

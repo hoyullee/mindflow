@@ -1,10 +1,11 @@
 import { useEffect, useState } from 'react';
 import type { HomeController } from '../useHomeController';
 import type { HomeState } from '../types';
-import type { HomeViewModel } from '../viewModel';
+import type { DocKindName, HomeViewModel } from '../viewModel';
 import { UNREAD_BADGE_BG, UNREAD_BADGE_INK } from '../theme';
 import { SettingsPopover } from './SettingsPopover';
 import { SpaceRow } from './SpaceRow';
+import { META_MONO, SECTION_LABEL } from '../chrome';
 
 /** How long the drawer's exit slide runs before the aside unmounts. Slightly
  * longer than the CSS transition (260ms, home.css `.mf-drawer`) so the last
@@ -88,7 +89,9 @@ export function Sidebar({ state, view, controller, isMobile = false, isOpen = fa
         boxShadow: '0 0 32px rgba(0,0,0,.22)',
         transform: entered ? 'translateX(0)' : 'translateX(-105%)',
       } as const)
-    : ({ width: 248, flex: '0 0 auto' } as const);
+    : // 디자인 원본의 250은 content-box(+패딩 24 +테두리 1 = 실측 274)다 — 우리는
+      // border-box라 같은 겉폭이 되도록 274로 둔다(요청: LNB를 디자인 폭으로).
+      ({ width: 274, flex: '0 0 auto' } as const);
 
   return (
     <>
@@ -120,17 +123,19 @@ export function Sidebar({ state, view, controller, isMobile = false, isOpen = fa
         }}
         style={{
           ...asideStyle,
-          background: 'var(--mf-panel)',
+          // 디자인 원본의 aside 배경 #FFFDFB = 카드 면(--mf-card) — 순백(--mf-panel)이
+          // 아니라 본문 카드와 같은 따뜻한 면이다(요청 ②).
+          background: 'var(--mf-card)',
           borderRight: '1px solid var(--mf-border)',
           display: 'flex',
           flexDirection: 'column',
-          padding: '14px 12px',
+          padding: '14px 12px 12px',
           overflow: 'hidden',
         }}
       >
         <SettingsPopover state={state} controller={controller} userInitial={view.userInitial} />
 
-      <div style={{ fontSize: 11, fontWeight: 700, letterSpacing: '.04em', color: 'var(--mf-muted)', padding: '14px 10px 8px' }}>스페이스</div>
+      <div style={{ ...SECTION_LABEL, padding: '14px 9px 7px' }}>스페이스</div>
 
       <div className="lnb-scroll" style={{ flex: '0 1 auto', minHeight: 60, overflowY: 'auto', overflowX: 'hidden', margin: '0 -4px', padding: '0 4px' }}>
         {/* Until the workspace loads (`state.loaded`), show skeleton rows instead
@@ -158,9 +163,14 @@ export function Sidebar({ state, view, controller, isMobile = false, isOpen = fa
         onKeyDown={(e) => {
           if (e.key === 'Enter' || e.key === ' ') controller.openNewSpace();
         }}
-        style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '9px 10px', minHeight: isMobile ? 44 : undefined, borderRadius: 9, cursor: 'pointer', fontSize: 13.5, fontWeight: 500, color: 'var(--mf-subtext)', flexShrink: 0 }}
+        style={{ display: 'flex', alignItems: 'center', gap: 9, padding: '8px 9px', marginTop: 2, minHeight: isMobile ? 44 : undefined, borderRadius: 10, cursor: 'pointer', fontSize: 13, fontWeight: 500, color: 'var(--mf-muted)', flexShrink: 0 }}
       >
-        <span style={{ fontSize: 15, color: 'var(--mf-muted)' }}>＋</span> 새 스페이스
+        {/* 글리프(＋)는 글자가 아니라 선 아이콘으로 — 사이드바의 다른 항목들과 같은
+            언어를 쓴다(디자인 원본). */}
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" aria-hidden="true" style={{ flexShrink: 0 }}>
+          <path d="M12 5v14M5 12h14" />
+        </svg>
+        새 스페이스
       </div>
 
       {SHOW_DRIVE_LNB && (
@@ -212,14 +222,15 @@ export function Sidebar({ state, view, controller, isMobile = false, isOpen = fa
               }
             }}
             style={{
+              // 디자인 원본의 사이드바 행 — 8/9 패딩 · r10 · 13px.
               display: 'flex',
               alignItems: 'center',
-              gap: 10,
-              padding: '9px 10px',
+              gap: 9,
+              padding: '8px 9px',
               minHeight: isMobile ? 44 : undefined,
-              borderRadius: 9,
+              borderRadius: 10,
               cursor: 'pointer',
-              fontSize: 13.5,
+              fontSize: 13,
               fontWeight: 500,
               color: 'var(--mf-subtext)',
               flexShrink: 0,
@@ -246,7 +257,7 @@ export function Sidebar({ state, view, controller, isMobile = false, isOpen = fa
                 {view.sharedUnread}
               </span>
             ) : (
-              <span style={{ marginLeft: 'auto', fontSize: 11, color: 'var(--mf-faint2)' }}>{view.sharedItems.length ? String(view.sharedItems.length) : ''}</span>
+              <span style={{ ...META_MONO, marginLeft: 'auto' }}>{view.sharedItems.length ? String(view.sharedItems.length) : ''}</span>
             )}
           </div>
           <div
@@ -287,7 +298,7 @@ export function Sidebar({ state, view, controller, isMobile = false, isOpen = fa
                     color: 'var(--mf-subtext)',
                   }}
                 >
-                  <MapMiniGlyph />
+                  <KindMiniGlyph kind={m.kind} />
                   <span style={{ flex: '1 1 auto', minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', fontWeight: m.isNew ? 700 : undefined, color: m.isNew ? 'var(--mf-text)' : undefined }}>{m.title}</span>
                   {/* 아직 안 열어 본 초대 — 어느 것이 새것인지 점으로 짚어 준다
                       (헤더 배지는 개수만 말한다). 열면 사라진다. */}
@@ -316,25 +327,28 @@ export function Sidebar({ state, view, controller, isMobile = false, isOpen = fa
         onKeyDown={(e) => {
           if (e.key === 'Enter' || e.key === ' ') controller.toggleFavList();
         }}
-        style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '9px 10px', minHeight: isMobile ? 44 : undefined, borderRadius: 9, cursor: 'pointer', fontSize: 13.5, fontWeight: 500, color: 'var(--mf-subtext)' }}
+        style={{ display: 'flex', alignItems: 'center', gap: 9, padding: '8px 9px', minHeight: isMobile ? 44 : undefined, borderRadius: 10, cursor: 'pointer', fontSize: 13, fontWeight: 500, color: 'var(--mf-subtext)' }}
       >
         <StarGlyph size={15} /> 즐겨찾기
-        <span style={{ marginLeft: 'auto', fontSize: 11, color: 'var(--mf-faint2)' }}>{view.favCount}</span>
+        <span style={{ ...META_MONO, marginLeft: 'auto' }}>{view.favCount}</span>
+        <ChevronGlyph open={state.favOpen} />
       </div>
       <div
         style={{
           overflow: 'hidden',
           flexShrink: 0,
-          maxHeight: state.favOpen ? `${Math.max(1, view.favItems.length) * 34 + 12}px` : '0px',
+          maxHeight: state.favOpen ? `${Math.max(1, view.favItems.length) * (isMobile ? 46 : 38) + 30}px` : '0px',
           opacity: state.favOpen ? 1 : 0,
           transition: 'max-height .32s cubic-bezier(.4,0,.2,1), opacity .24s ease',
         }}
       >
-        <div style={{ overflow: 'hidden', minHeight: 0 }}>
+        {/* 펼친 목록은 **가라앉은 판** 안에 든다(디자인 원본의 리스트 패널 —
+            #FBF6F1 ≈ --mf-bg, 테두리 #F2E8DE ≈ --mf-hairline). */}
+        <div style={{ overflow: 'hidden', minHeight: 0, margin: '2px 2px 4px', padding: '6px 6px 5px', borderRadius: 12, background: 'var(--mf-bg)', border: '1px solid var(--mf-hairline)' }}>
           {view.favItems.map((f) => (
             <div
               key={f.title}
-              className="drive-file"
+              className="drive-file mf-trash-row"
               role="button"
               tabIndex={0}
               onClick={() => controller.openWithLoader(f.href, f.title, f.docId)}
@@ -345,14 +359,19 @@ export function Sidebar({ state, view, controller, isMobile = false, isOpen = fa
                 }
               }}
               title={`'${f.title}' 열기`}
-              style={{ display: 'flex', alignItems: 'center', gap: 4, padding: '4px 10px 4px 24px', borderRadius: 8, cursor: 'pointer', fontSize: 12.5, color: 'var(--mf-subtext)' }}
+              style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '5px 7px', minHeight: isMobile ? 44 : undefined, borderRadius: 9, cursor: 'pointer', fontSize: 12.5, color: 'var(--mf-subtext)' }}
             >
-              {/* Leading star = UNFAVORITE button (the row itself opens the map).
-                  stopPropagation on click AND keydown — both would otherwise
-                  bubble to the row's open handlers. */}
+              {/* 종류 아이콘(맵·보드·칸반) — 홈 카드 배지의 점 색과 같은 토큰이라
+                  배지·아이콘이 같은 색으로 같은 종류를 가리킨다(요청 ⑥). 해제(★)는
+                  트래시 행의 동작처럼 hover에서 오른쪽에 드러난다. */}
+              <KindMiniGlyph kind={f.kind} />
+              <span style={{ flex: '1 1 auto', minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{f.title}</span>
+              {f.isDrive && (
+                <span style={{ flexShrink: 0, display: 'flex', alignItems: 'center', padding: '1px 6px', borderRadius: 999, fontSize: 9.5, fontWeight: 700, background: 'rgba(52,168,83,.12)', color: 'var(--mf-success-ink)' }}>Drive</span>
+              )}
               <button
                 type="button"
-                className="btn mf-fav-unstar"
+                className="btn mf-fav-unstar mf-trash-act"
                 aria-label={`'${f.title}' 즐겨찾기 해제`}
                 title="즐겨찾기 해제"
                 onClick={(e) => {
@@ -364,13 +383,9 @@ export function Sidebar({ state, view, controller, isMobile = false, isOpen = fa
               >
                 <StarGlyph size={12} />
               </button>
-              <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{f.title}</span>
-              {f.isDrive && (
-                <span style={{ flexShrink: 0, marginLeft: 'auto', display: 'flex', alignItems: 'center', padding: '1px 6px', borderRadius: 999, fontSize: 9.5, fontWeight: 700, background: 'rgba(52,168,83,.12)', color: 'var(--mf-success-ink)' }}>Drive</span>
-              )}
             </div>
           ))}
-          {!view.loading && view.favItems.length === 0 && <div style={{ padding: '7px 10px 7px 30px', fontSize: 11.5, color: 'var(--mf-faint2)' }}>즐겨찾기한 항목이 없습니다</div>}
+          {!view.loading && view.favItems.length === 0 && <div style={{ padding: '6px 7px', fontSize: 11.5, color: 'var(--mf-faint2)' }}>즐겨찾기한 항목이 없습니다</div>}
         </div>
       </div>
 
@@ -382,7 +397,7 @@ export function Sidebar({ state, view, controller, isMobile = false, isOpen = fa
         onKeyDown={(e) => {
           if (e.key === 'Enter' || e.key === ' ') controller.toggleTrashList();
         }}
-        style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '9px 10px', minHeight: isMobile ? 44 : undefined, borderRadius: 9, cursor: 'pointer', fontSize: 13.5, fontWeight: 500, color: 'var(--mf-subtext)' }}
+        style={{ display: 'flex', alignItems: 'center', gap: 9, padding: '8px 9px', minHeight: isMobile ? 44 : undefined, borderRadius: 10, cursor: 'pointer', fontSize: 13, fontWeight: 500, color: 'var(--mf-subtext)' }}
       >
         <TrashGlyph size={15} /> 휴지통
         {/* 비우기 sits BEFORE the count so the count stays at the far right —
@@ -411,30 +426,33 @@ export function Sidebar({ state, view, controller, isMobile = false, isOpen = fa
             비우기
           </span>
         )}
-        <span style={{ marginLeft: view.trashItems.length > 0 ? 0 : 'auto', fontSize: 11, color: 'var(--mf-faint2)' }}>{view.trashCount}</span>
+        <span style={{ ...META_MONO, marginLeft: view.trashItems.length > 0 ? 0 : 'auto' }}>{view.trashCount}</span>
+        <ChevronGlyph open={state.trashOpen} />
       </div>
       <div
         style={{
           overflow: 'hidden',
           flexShrink: 0,
-          maxHeight: state.trashOpen ? `${Math.max(1, view.trashItems.length) * 34 + 12}px` : '0px',
+          maxHeight: state.trashOpen ? `${Math.max(1, view.trashItems.length) * (isMobile ? 46 : 38) + 30}px` : '0px',
           opacity: state.trashOpen ? 1 : 0,
           transition: 'max-height .32s cubic-bezier(.4,0,.2,1), opacity .24s ease',
         }}
       >
-        <div style={{ overflow: 'hidden', minHeight: 0 }}>
+        {/* 즐겨찾기와 같은 가라앉은 판. 디자인 원본의 "30일 후 영구 삭제" 헤더는
+            넣지 않는다 — 실제 30일 자동 삭제가 없어서 그 문구는 거짓 약속이 된다. */}
+        <div style={{ overflow: 'hidden', minHeight: 0, margin: '2px 2px 4px', padding: '6px 6px 5px', borderRadius: 12, background: 'var(--mf-bg)', border: '1px solid var(--mf-hairline)' }}>
           {view.trashItems.map((t) => (
             // Keyed by docId when present — the trash may hold two entries with
             // the same TITLE (different docs), which a title key would collapse.
-            // Row anatomy: [type glyph] [title — takes ALL free width, ellipsis]
+            // Row anatomy: [kind glyph] [title — takes ALL free width, ellipsis]
             // [restore ↺] [purge ✕]. The actions are icon-only 26px buttons
             // (labels live on aria-label/title, same treatment as the favorites
             // unstar star) — the old "복원"/"영구 삭제" text links ate most of the
             // 248px column and left titles nearly invisible. They reveal on row
             // hover/focus (always visible on touch — see home.css .mf-trash-act).
-            <div key={t.docId || t.title} className="drive-file mf-trash-row" style={{ display: 'flex', alignItems: 'center', gap: 4, padding: '4px 8px 4px 28px', borderRadius: 8, fontSize: 12.5, color: 'var(--mf-subtext)' }}>
-              {t.isDrive ? <FolderMiniGlyph /> : <MapMiniGlyph />}
-              <span style={{ flex: '1 1 auto', minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', margin: '0 2px 0 3px' }}>{t.title}</span>
+            <div key={t.docId || t.title} className="drive-file mf-trash-row" style={{ display: 'flex', alignItems: 'center', gap: 4, padding: '4px 7px', minHeight: isMobile ? 44 : undefined, borderRadius: 9, fontSize: 12.5, color: 'var(--mf-subtext)' }}>
+              {t.isDrive ? <FolderMiniGlyph /> : <KindMiniGlyph kind={t.kind} />}
+              <span style={{ flex: '1 1 auto', minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', margin: '0 2px 0 4px' }}>{t.title}</span>
               {t.isDrive && (
                 <span style={{ flexShrink: 0, padding: '1px 7px', borderRadius: 999, fontSize: 10, fontWeight: 700, background: 'rgba(52,168,83,.12)', color: 'var(--mf-success-ink)' }}>{t.badge}</span>
               )}
@@ -472,7 +490,7 @@ export function Sidebar({ state, view, controller, isMobile = false, isOpen = fa
               </button>
             </div>
           ))}
-          {!view.loading && view.trashItems.length === 0 && <div style={{ padding: '7px 10px 7px 30px', fontSize: 11.5, color: 'var(--mf-faint2)' }}>휴지통이 비어 있습니다</div>}
+          {!view.loading && view.trashItems.length === 0 && <div style={{ padding: '6px 7px', fontSize: 11.5, color: 'var(--mf-faint2)' }}>휴지통이 비어 있습니다</div>}
         </div>
       </div>
 
@@ -495,7 +513,7 @@ export function Sidebar({ state, view, controller, isMobile = false, isOpen = fa
               controller.openFeedback();
             }
           }}
-          style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '9px 10px', minHeight: isMobile ? 44 : undefined, borderRadius: 9, cursor: 'pointer', fontSize: 13.5, fontWeight: 500, color: 'var(--mf-subtext)' }}
+          style={{ display: 'flex', alignItems: 'center', gap: 9, padding: '8px 9px', minHeight: isMobile ? 44 : undefined, borderRadius: 10, cursor: 'pointer', fontSize: 13, fontWeight: 500, color: 'var(--mf-subtext)' }}
         >
           <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
             <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" />
@@ -532,16 +550,48 @@ function SharedGlyph({ size = 15 }: { size?: number }) {
   );
 }
 
-/** Tiny map glyph for trash rows (SVG per design-system §10 — replaces the 🗺
- * emoji, whose rendering varied by platform): a mini node diagram. */
-function MapMiniGlyph() {
+/** LNB 리스트 행(공유받음·즐겨찾기·휴지통)의 **종류 아이콘**(요청 ⑥ — 첨부 이미지의
+ * 문법). 색은 홈 카드 배지의 점과 같은 종류색 토큰(--mf-doc-*)이라, 배지·아이콘이
+ * 같은 색으로 같은 종류를 가리킨다. 모양: 맵=가지 다이어그램(기존 미니 글리프),
+ * 보드=종이에 긋는 펜, 칸반=두 열. */
+function KindMiniGlyph({ kind }: { kind: DocKindName }) {
+  if (kind === 'kanban') {
+    // 두 개의 **채운 세로 막대**(왼쪽이 김) — 첨부 이미지의 문법. 예전의 "틀 안
+    // 가는 선 둘"은 13px에서 보드·맵과 구별이 흐렸다(제보).
+    return (
+      <svg data-kind-icon="kanban" width="13" height="13" viewBox="0 0 24 24" fill="var(--mf-doc-kanban)" aria-hidden="true" style={{ flexShrink: 0 }}>
+        <rect x="4" y="3.5" width="6.8" height="17" rx="2.2" />
+        <rect x="13.2" y="3.5" width="6.8" height="11" rx="2.2" />
+      </svg>
+    );
+  }
+  if (kind === 'board') {
+    // 보드 = 틀 안의 펜 획(그리기 도구의 어휘). 대각선+꺾쇠 꼴은 13px에서
+    // "새 탭에서 열기(↗)"로 읽혀서 피한다.
+    return (
+      <svg data-kind-icon="board" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="var(--mf-doc-board)" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" aria-hidden="true" style={{ flexShrink: 0 }}>
+        <rect x="3.5" y="4" width="17" height="16" rx="3" />
+        <path d="M7.2 14.6c1.8-3.6 3.4-3.6 4.5-1.3s2.7 2.1 5.1-3" />
+      </svg>
+    );
+  }
   return (
-    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="var(--mf-faint)" strokeWidth={2.2} strokeLinecap="round" strokeLinejoin="round" aria-hidden="true" style={{ flexShrink: 0 }}>
+    <svg data-kind-icon="map" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="var(--mf-doc-map)" strokeWidth={2.2} strokeLinecap="round" strokeLinejoin="round" aria-hidden="true" style={{ flexShrink: 0 }}>
       <circle cx="6" cy="12" r="3" />
       <line x1="9" y1="12" x2="15" y2="7" />
       <line x1="9" y1="12" x2="15" y2="17" />
       <circle cx="18" cy="7" r="2.4" />
       <circle cx="18" cy="17" r="2.4" />
+    </svg>
+  );
+}
+
+/** 접이식 구획 머리의 회전 셰브론 — 닫힘=오른쪽(›), 열림=아래(⌄). 디자인 원본의
+ * 휴지통 머리와 같은 문법(첨부 이미지의 즐겨찾기·휴지통 ⌄). */
+function ChevronGlyph({ open }: { open: boolean }) {
+  return (
+    <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="var(--mf-faint2)" strokeWidth={2.4} strokeLinecap="round" strokeLinejoin="round" aria-hidden="true" style={{ flexShrink: 0, transform: open ? 'rotate(90deg)' : 'none', transition: 'transform .16s ease' }}>
+      <path d="m9 6 6 6-6 6" />
     </svg>
   );
 }

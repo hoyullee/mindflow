@@ -1,3 +1,4 @@
+import { ACCENT_GRAD } from '../chrome';
 interface Props {
   /** Fallback glyph shown when there is no (or a broken) avatar image. */
   initial: string;
@@ -26,7 +27,9 @@ export function ProfileAvatar({ initial, avatarUrl, size, radius, fontSize, boxS
         width: size,
         height: size,
         borderRadius: radius,
-        background: 'var(--mf-accent)',
+        // 단색이 아니라 세로 그라디언트(디자인 원본) — 1차 버튼과 같은 결이라
+        // 아바타가 브랜드 색의 일부로 읽힌다.
+        background: ACCENT_GRAD,
         color: 'var(--mf-accent-ink)',
         display: 'flex',
         alignItems: 'center',
