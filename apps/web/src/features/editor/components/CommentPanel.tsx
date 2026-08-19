@@ -792,11 +792,6 @@ function renderBody(body: string, mentions: CommentMention[], accent: string): R
 
 // ── 입력창(멘션 자동완성 포함) — 새 스레드와 답글이 같은 것을 쓴다 ─────────────
 
-/** 이 기기의 수정 키 표기 — 도움말(ShortcutHelp)과 같은 판정. */
-function mod(): string {
-  return typeof navigator !== 'undefined' && /Mac|iPhone|iPad/.test(navigator.platform || navigator.userAgent || '') ? '⌘' : 'Ctrl';
-}
-
 export function participantName(p: ShareParticipant): string {
   return (p.displayName || '').trim() || p.email.split('@')[0] || p.email;
 }
@@ -831,7 +826,7 @@ export function CommentComposer({
   submitLabel: string;
   autoFocus: boolean;
   compact?: boolean;
-  /** 시안 ①의 아래 줄 — 내 얼굴 + "⌘ + Enter 로 등록". 없으면 버튼만. */
+  /** 시안 ①의 아래 줄 — 내 얼굴 + "Enter로 등록". 없으면 버튼만. */
   footer?: { hint?: boolean; avatar?: string };
   /** 있으면 [취소] 버튼이 함께 선다(시안 ②의 초안 말풍선). */
   onCancel?: () => void;
@@ -1103,7 +1098,7 @@ export function CommentComposer({
       <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: compact ? 6 : 8 }}>
         {footer?.avatar && <Avatar name={footer.avatar} size={22} />}
         {footer?.hint && (
-          <span style={{ fontFamily: MONO_FONT, fontSize: 10.5, color: th.subtext }}>{softKeyboard ? '등록 버튼으로 남겨요' : `${mod()} + Enter 로 등록`}</span>
+          <span style={{ fontFamily: MONO_FONT, fontSize: 10.5, color: th.subtext }}>{softKeyboard ? '등록 버튼으로 남겨요' : 'Enter로 등록'}</span>
         )}
         <span style={{ flex: '1 1 auto' }} />
         {onCancel && (

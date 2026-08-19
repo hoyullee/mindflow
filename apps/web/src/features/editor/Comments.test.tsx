@@ -153,6 +153,9 @@ describe('댓글(핀에 붙는 논의)', () => {
     renderEditor('/editor?map=cm5&title=x');
     const panel = await openPinComments();
     await waitFor(() => expect(within(panel).getByText('뿌리 댓글')).toBeTruthy());
+    // 안내 문구는 실제 동작(데스크톱 Enter = 등록)을 말한다 — "Ctrl+Enter로 등록" 아님(요청).
+    expect(within(panel).getByText('Enter로 등록')).toBeTruthy();
+    expect(within(panel).queryByText(/Ctrl \+ Enter|⌘ \+ Enter/)).toBeNull();
 
     fireEvent.click(within(panel).getByRole('button', { name: '답글' }));
     const replyBox = within(panel).getByLabelText('답글 입력');
