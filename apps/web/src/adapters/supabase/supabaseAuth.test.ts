@@ -247,3 +247,59 @@ describe('SupabaseAuth 세션 정책 — signOut 범위 / 비밀번호 변경 �
     expect(calls).toEqual([]);
   });
 });
+
+// 설정 → 비밀번호 변경(backend.md §15): 현재 비밀번호로 본인을 확인한 뒤 바꾸고,
+// 다른 기기의 세션을 해지한다. Supabase는 세션만 있으면 비밀번호를 바꿔 주므로
+// 이 확인이 공용 PC에 남은 로그인으로 계정을 가져가는 것을 막는 유일한 장치다.
+describe('SupabaseAuth changePassword (현재 비밀번호 확인)', () => {
+  function client(opts: { email?: string | null; signInError?: string; updateError?: string }) {
+    const calls: string[] = [];
+    const c = {
+      auth: {
+        getUser: async () => ({ data: { user: opts.email === null ? null : { email: opts.email ?? 'me@geurio.com' } } }),
+        signInWithPassword: async (args: { email: string; password: string }) => {
+          calls.push(`signIn:${args.email}:${args.password}`);
+          return opts.signInError ? { data: { session: null }, error: { message: opts.signInError } } : { data: { session: { user: { id: 'u1' } } }, error: null };
+        },
+        updateUser: async () => {
+          calls.push('update');
+          return opts.updateError ? { error: { message: opts.updateError } } : { error: null };
+        },
+        signOut: async (o?: { scope?: string }) => {
+          calls.push(`signOut:${o?.scope ?? 'local'}`);
+          return { error: null };
+        },
+      },
+    } as unknown as SupabaseClient;
+    return { c, calls };
+  }
+
+  it('확인 → 변경 → 다른 세션 해지 순으로 진행한다', async () => {
+    const { c, calls } = client({});
+    const res = await new SupabaseAuth(c).changePassword('old-pw', 'new-pw');
+    expect(res.error).toBeUndefined();
+    expect(calls).toEqual(['signIn:me@geurio.com:old-pw', 'update', 'signOut:others']);
+  });
+
+  it('현재 비밀번호가 틀리면 wrongCurrent로 알리고 비밀번호를 건드리지 않는다', async () => {
+    const { c, calls } = client({ signInError: 'Invalid login credentials' });
+    const res = await new SupabaseAuth(c).changePassword('wrong', 'new-pw');
+    expect(res.wrongCurrent).toBe(true);
+    expect(calls).toEqual(['signIn:me@geurio.com:wrong']); // update/signOut 없음
+  });
+
+  it('새 비밀번호가 정책에 걸리면 그 오류를 돌려주고 세션을 해지하지 않는다', async () => {
+    const { c, calls } = client({ updateError: 'Password should be at least 6 characters' });
+    const res = await new SupabaseAuth(c).changePassword('old-pw', 'x');
+    expect(res.error).toBe('Password should be at least 6 characters');
+    expect(res.wrongCurrent).toBeUndefined();
+    expect(calls).toEqual(['signIn:me@geurio.com:old-pw', 'update']);
+  });
+
+  it('세션이 없으면(이메일을 못 얻으면) 아무것도 하지 않는다', async () => {
+    const { c, calls } = client({ email: null });
+    const res = await new SupabaseAuth(c).changePassword('a', 'b');
+    expect(res.error).toBeTruthy();
+    expect(calls).toEqual([]);
+  });
+});

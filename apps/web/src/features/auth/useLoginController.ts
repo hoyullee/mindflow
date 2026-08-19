@@ -60,7 +60,7 @@ function providerLabel(provider: string): string {
  * 원문 노출 대신 일반 안내로 폴백한다. 이미 한글인 메시지(클라이언트 자체 메시지)는
  * 그대로 통과시킨다.
  */
-function localizeAuthError(raw: string | undefined | null): string {
+export function localizeAuthError(raw: string | undefined | null): string {
   const msg = (raw || '').trim();
   if (!msg) return '요청을 처리하지 못했어요. 잠시 후 다시 시도해 주세요.';
   if (/[가-힣]/.test(msg)) return msg; // 이미 한글 → 그대로

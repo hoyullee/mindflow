@@ -132,6 +132,13 @@ export class LocalAuth implements AuthProvider {
     return {};
   }
 
+  // 데모 계정에는 비밀번호 자체가 없다(`signInWithPassword`가 무엇이든 받아 준다) —
+  // 확인할 것이 없으므로 성공으로 넘긴다. 데모에서 설정 흐름을 눌러 볼 수 있게 하는
+  // 게 목적이고, 실제 검증은 Supabase 어댑터가 한다.
+  async changePassword(): Promise<{ error?: string; wrongCurrent?: boolean }> {
+    return {};
+  }
+
   // In demo mode "the account" is just this browser's MindFlow storage, so
   // deleting it means wiping every namespaced key (docs, workspace, recents,
   // active view, session) and emitting a signed-out change — mirroring what

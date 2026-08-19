@@ -1518,6 +1518,109 @@ describe('Home', () => {
     expect(delBtn.disabled).toBe(false);
   });
 
+  // 제보: 로그인 후 비밀번호를 바꿀 자리가 없어(로그아웃 → '비밀번호 찾기'뿐) 설정에
+  // 항목을 추가했다. 현재 비밀번호 확인이 붙는다(backend.md §15).
+  it('설정 → 비밀번호 변경: 현재/새/확인을 받아 changePassword를 부르고 완료를 알린다', async () => {
+    const user = userEvent.setup();
+    const auth = new LocalAuth();
+    const calls: string[][] = [];
+    vi.spyOn(auth, 'changePassword').mockImplementation(async (...args: unknown[]) => {
+      calls.push(args as string[]);
+      return {};
+    });
+    vi.spyOn(auth, 'emailSignInProviders').mockResolvedValue(['email']);
+    const backend: Backend = { auth, docStore: new MockDocStore([], {}), spaceStore: new LocalSpaceStore(), shareStore: new LocalShareStore(), feedbackStore: new LocalFeedbackStore(), imageStore: new LocalImageStore(), commentStore: new LocalCommentStore(), notificationStore: new LocalNotificationStore(), mode: 'local' };
+    localStorage.setItem('mf_demo_session', JSON.stringify({ user: { id: 'u1', email: 'me@geurio.com' } }));
+    render(
+      <MemoryRouter initialEntries={['/home']}>
+        <BackendProvider backend={backend}>
+          <Routes>
+            <Route path="/home" element={<Home />} />
+            <Route path="/login" element={<div>LOGIN_PAGE</div>} />
+          </Routes>
+        </BackendProvider>
+      </MemoryRouter>,
+    );
+
+    await user.click(await screen.findByRole('button', { name: '계정 메뉴' }));
+    await user.click(screen.getByRole('button', { name: '설정' }));
+    const settingsDialog = screen.getByRole('dialog', { name: '설정' });
+    await user.click(within(settingsDialog).getByText('비밀번호 변경'));
+
+    const dialog = screen.getByRole('dialog', { name: '비밀번호 변경' });
+    // 확인이 맞지 않으면 서버를 부르지 않고 그 자리에서 알린다.
+    await user.type(within(dialog).getByLabelText('현재 비밀번호'), 'old-pw');
+    await user.type(within(dialog).getByLabelText('새 비밀번호'), 'new-pw');
+    await user.type(within(dialog).getByLabelText('새 비밀번호 확인'), 'new-pX');
+    await user.click(within(dialog).getByRole('button', { name: '비밀번호 변경' }));
+    expect(within(dialog).getByText('비밀번호가 일치하지 않습니다.')).toBeTruthy();
+    expect(calls).toEqual([]);
+
+    // 맞게 고치면 어댑터로 (현재, 새) 그대로 넘어가고 완료 화면이 뜬다.
+    await user.clear(within(dialog).getByLabelText('새 비밀번호 확인'));
+    await user.type(within(dialog).getByLabelText('새 비밀번호 확인'), 'new-pw');
+    await user.click(within(dialog).getByRole('button', { name: '비밀번호 변경' }));
+    await waitFor(() => expect(within(dialog).getByText('비밀번호를 변경했어요')).toBeTruthy());
+    expect(calls).toEqual([['old-pw', 'new-pw']]);
+    // 어댑터가 실제로 하는 일(다른 기기 세션 해지)을 사용자에게 알린다.
+    expect(within(dialog).getByText(/다른 기기의 로그인/)).toBeTruthy();
+  });
+
+  it('현재 비밀번호가 틀리면 그 사실만 알리고 모달에 머문다', async () => {
+    const user = userEvent.setup();
+    const auth = new LocalAuth();
+    vi.spyOn(auth, 'changePassword').mockResolvedValue({ wrongCurrent: true, error: 'Invalid login credentials' });
+    vi.spyOn(auth, 'emailSignInProviders').mockResolvedValue(['email']);
+    const backend: Backend = { auth, docStore: new MockDocStore([], {}), spaceStore: new LocalSpaceStore(), shareStore: new LocalShareStore(), feedbackStore: new LocalFeedbackStore(), imageStore: new LocalImageStore(), commentStore: new LocalCommentStore(), notificationStore: new LocalNotificationStore(), mode: 'local' };
+    render(
+      <MemoryRouter initialEntries={['/home']}>
+        <BackendProvider backend={backend}>
+          <Routes>
+            <Route path="/home" element={<Home />} />
+          </Routes>
+        </BackendProvider>
+      </MemoryRouter>,
+    );
+    await user.click(await screen.findByRole('button', { name: '계정 메뉴' }));
+    await user.click(screen.getByRole('button', { name: '설정' }));
+    await user.click(within(screen.getByRole('dialog', { name: '설정' })).getByText('비밀번호 변경'));
+    const dialog = screen.getByRole('dialog', { name: '비밀번호 변경' });
+    await user.type(within(dialog).getByLabelText('현재 비밀번호'), 'nope');
+    await user.type(within(dialog).getByLabelText('새 비밀번호'), 'new-pw');
+    await user.type(within(dialog).getByLabelText('새 비밀번호 확인'), 'new-pw');
+    await user.click(within(dialog).getByRole('button', { name: '비밀번호 변경' }));
+    await waitFor(() => expect(within(dialog).getByText('현재 비밀번호가 올바르지 않아요.')).toBeTruthy());
+    expect(within(dialog).queryByText('비밀번호를 변경했어요')).toBeNull();
+  });
+
+  it('Google로만 가입한 계정은 비밀번호 변경이 비활성 — 이유를 적는다', async () => {
+    const user = userEvent.setup();
+    const auth = new LocalAuth();
+    vi.spyOn(auth, 'emailSignInProviders').mockResolvedValue(['google']);
+    const backend: Backend = { auth, docStore: new MockDocStore([], {}), spaceStore: new LocalSpaceStore(), shareStore: new LocalShareStore(), feedbackStore: new LocalFeedbackStore(), imageStore: new LocalImageStore(), commentStore: new LocalCommentStore(), notificationStore: new LocalNotificationStore(), mode: 'local' };
+    localStorage.setItem('mf_demo_session', JSON.stringify({ user: { id: 'u1', email: 'me@gmail.com' } }));
+    const { container } = render(
+      <MemoryRouter initialEntries={['/home']}>
+        <BackendProvider backend={backend}>
+          <Routes>
+            <Route path="/home" element={<Home />} />
+          </Routes>
+        </BackendProvider>
+      </MemoryRouter>,
+    );
+    await user.click(await screen.findByRole('button', { name: '계정 메뉴' }));
+    await user.click(screen.getByRole('button', { name: '설정' }));
+    const row = await waitFor(() => {
+      const el = container.querySelector('[data-change-pw-row]') as HTMLElement;
+      expect(el.getAttribute('aria-disabled')).toBe('true');
+      return el;
+    });
+    expect(row.textContent).toContain('Google 계정으로 로그인하고 있어요');
+    // 눌러도 모달이 열리지 않는다(열려 봐야 확인 단계에서 막힌다).
+    await user.click(row);
+    expect(screen.queryByRole('dialog', { name: '비밀번호 변경' })).toBeNull();
+  });
+
   // 세션 정책 ①(backend.md §15) — 이 앱의 세션은 기기 수 제한 없이 오래 유지되므로
   // 분실·공용 PC의 로그인을 **회수할 수단**이 필요하다.
   it('설정 → 모든 기기에서 로그아웃: 확인 뒤 global 범위로 signOut하고 /login으로 간다', async () => {

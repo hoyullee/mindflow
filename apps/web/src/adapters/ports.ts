@@ -106,6 +106,18 @@ export interface AuthProvider {
   verifyOtp(email: string, token: string, type: 'signup' | 'recovery'): Promise<AuthResult>;
   updatePassword(newPassword: string): Promise<{ error?: string }>;
   /**
+   * 로그인한 사용자가 **스스로** 비밀번호를 바꾼다(설정 → 비밀번호 변경).
+   *
+   * 복구 흐름의 `updatePassword`와 다른 점은 **현재 비밀번호 확인**이다: Supabase는
+   * 세션만 있으면 비밀번호를 바꿔 주므로, 공용 PC에 남은 로그인으로 남이 비밀번호를
+   * 갈아 계정을 가져가는 것을 막으려면 본인 확인이 필요하다(업계 관례).
+   * 성공하면 `updatePassword`와 같은 규칙으로 **다른 기기의 세션을 해지**한다(§15).
+   *
+   * 오류는 원문(영문)을 그대로 돌려준다 — 문구 번역은 호출부(`localizeAuthError`)가
+   * 맡되, "현재 비밀번호가 틀렸다"는 이 어댑터가 아는 사실이라 전용 코드로 구분한다.
+   */
+  changePassword(currentPassword: string, newPassword: string): Promise<{ error?: string; wrongCurrent?: boolean }>;
+  /**
    * Permanently deletes the signed-in user's account and every row they own
    * (documents, workspace, profile) and signs them out. Irreversible. Returns
    * `{ error }` on failure so the caller can keep the user on the page. In

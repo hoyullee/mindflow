@@ -152,6 +152,21 @@ export class SupabaseAuth implements AuthProvider {
     return {};
   }
 
+  // 설정 → 비밀번호 변경: **현재 비밀번호로 본인을 확인한 뒤** 바꾼다.
+  //
+  // 확인은 같은 계정으로 `signInWithPassword`를 한 번 더 하는 방식이다(성공하면
+  // 같은 사용자의 새 세션이 되므로 사용자에게는 아무 일도 일어나지 않고, 실패하면
+  // 지금 세션은 그대로 남는다). Supabase에 "비밀번호만 검증" API가 없어서다.
+  // 성공 뒤는 `updatePassword`에 위임 — 다른 기기 세션 해지 규칙(§15)이 한 곳에 있다.
+  async changePassword(currentPassword: string, newPassword: string): Promise<{ error?: string; wrongCurrent?: boolean }> {
+    const { data } = await this.client.auth.getUser();
+    const email = data?.user?.email;
+    if (!email) return { error: 'Auth session missing' };
+    const { error: signInError } = await this.client.auth.signInWithPassword({ email, password: currentPassword });
+    if (signInError) return { wrongCurrent: true, error: signInError.message };
+    return this.updatePassword(newPassword);
+  }
+
   // The anon/authenticated client can't touch `auth.users`, so account deletion
   // goes through the `delete_account()` SECURITY DEFINER RPC (supabase/migrations/
   // 0005_delete_account.sql): it deletes the caller's `auth.users` row, which

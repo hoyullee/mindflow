@@ -10,6 +10,7 @@ import { exportDocPdf } from '../editor/pdf';
 import { themeOf } from '../editor/theme';
 import { applyHomeTheme, homeThemeKeyOf, saveHomeThemeCache, type HomeThemeKey } from './theme';
 import { forgetSignedIn } from '../auth/sessionNotice';
+import { localizeAuthError } from '../auth/useLoginController';
 import type { SignOutScope } from '../../adapters/ports';
 import { useBackend } from '../../adapters/BackendContext';
 import { findBoardTemplate, findKanbanTemplate, findTemplate } from '../../templates/mapTemplates';
@@ -659,7 +660,61 @@ export function useHomeController() {
   const confirmLogoutAllYes = () => runSignOut('global');
 
   // ---- account settings / 회원 탈퇴 ----
-  const openAccountSettings = () => patch({ settingsOpen: false, accountSettingsOpen: true });
+  const openAccountSettings = () => {
+    patch({ settingsOpen: false, accountSettingsOpen: true });
+    // 비밀번호 로그인 계정인지 확인한다(Google 전용이면 '비밀번호 변경'을 비활성).
+    // 이미 알고 있으면 다시 묻지 않고, 확인 불가(RPC 미배포·네트워크·데모)면
+    // `null`로 남겨 두지 않고 **비밀번호 있음**으로 본다 — 진짜 게이트는 현재
+    // 비밀번호 확인 단계이므로, 모르는 채로 항목을 잠그는 쪽이 더 나쁘다.
+    if (state.hasPasswordLogin !== null || !state.userEmail) return;
+    void auth
+      .emailSignInProviders(state.userEmail)
+      .then((providers) => {
+        setState((prev) => ({ ...prev, hasPasswordLogin: providers === null ? true : providers.includes('email') }));
+      })
+      .catch(() => setState((prev) => ({ ...prev, hasPasswordLogin: true })));
+  };
+
+  // ---- 비밀번호 변경(설정 → 계정 관리) ----
+  const openChangePassword = () => patch({ changePwOpen: true, changePwCur: '', changePwNew: '', changePwNew2: '', changePwError: '', changePwBusy: false, changePwDone: false });
+  const closeChangePassword = () => patch({ changePwOpen: false });
+  const onChangePwCur = (v: string) => patch({ changePwCur: v, changePwError: '' });
+  const onChangePwNew = (v: string) => patch({ changePwNew: v, changePwError: '' });
+  const onChangePwNew2 = (v: string) => patch({ changePwNew2: v, changePwError: '' });
+  /** 현재 비밀번호로 본인을 확인한 뒤 새 비밀번호로 바꾼다(어댑터가 확인·변경·다른
+   * 세션 해지를 한 몸으로 처리 — `AuthProvider.changePassword`). 검증 문구는 가입·
+   * 복구 흐름과 같은 규칙(4자 이상·일치)이고, 서버 문구는 `localizeAuthError`로 옮긴다. */
+  const submitChangePassword = () => {
+    if (state.changePwBusy) return;
+    if (!state.changePwCur) {
+      patch({ changePwError: '현재 비밀번호를 입력해 주세요.' });
+      return;
+    }
+    if ((state.changePwNew || '').length < 4) {
+      patch({ changePwError: '비밀번호는 4자 이상 입력해 주세요.' });
+      return;
+    }
+    if (state.changePwNew !== state.changePwNew2) {
+      patch({ changePwError: '비밀번호가 일치하지 않습니다.' });
+      return;
+    }
+    if (state.changePwNew === state.changePwCur) {
+      patch({ changePwError: '지금 쓰는 비밀번호와 달라야 해요.' });
+      return;
+    }
+    patch({ changePwBusy: true, changePwError: '' });
+    void auth.changePassword(state.changePwCur, state.changePwNew).then((res) => {
+      if (res.wrongCurrent) {
+        setState((prev) => ({ ...prev, changePwBusy: false, changePwError: '현재 비밀번호가 올바르지 않아요.' }));
+        return;
+      }
+      if (res.error) {
+        setState((prev) => ({ ...prev, changePwBusy: false, changePwError: localizeAuthError(res.error) }));
+        return;
+      }
+      setState((prev) => ({ ...prev, changePwBusy: false, changePwDone: true, changePwCur: '', changePwNew: '', changePwNew2: '' }));
+    });
+  };
   /** 홈 색상 테마 선택. 색은 CSS 변수라 **즉시** 반영하고(상태 반영을 기다리지 않는다
    * — 고르는 즉시 화면이 바뀌는 게 이 기능의 전부다), 이 기기 캐시에 적어 다음 부팅의
    * 첫 페인트를 맞추며, 상태 변경이 저장 효과를 태워 워크스페이스에 동기화된다. */
@@ -2054,6 +2109,12 @@ export function useHomeController() {
     cancelLogoutAll,
     confirmLogoutAllYes,
     openAccountSettings,
+    openChangePassword,
+    closeChangePassword,
+    onChangePwCur,
+    onChangePwNew,
+    onChangePwNew2,
+    submitChangePassword,
     openFeedback,
     closeFeedback,
     setTheme,
