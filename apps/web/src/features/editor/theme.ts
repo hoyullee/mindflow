@@ -159,14 +159,23 @@ export function mixHex(a: string, b: string, t: number): string {
 }
 
 /**
- * 캔버스 배경의 **은은한 방사형 그라데이션**(디자인 원본 `Geurio 마인드맵 리디자인` —
+ * 캔버스 배경의 **방사형 그라데이션**(디자인 원본 `Geurio 마인드맵 리디자인` —
  * `radial-gradient(1200px 700px at 62% 46%, #FFFDFB, #FDF7F2 55%, #FBF2EB)`).
- * 값을 그대로 박지 않고 **테마의 canvasBg에서 파생**한다: 중심은 흰색 쪽으로 많이,
- * 중간은 조금 민 색, 가장자리는 canvasBg 그대로 — 코랄에서 원본과 거의 같은 층이
- * 나오고 여섯 벌 테마·보드의 흰 캔버스에서도 성립한다. 어두운 캔버스(다크)는
- * 흰색을 크게 섞으면 잿빛으로 바래므로 아주 옅게만 밝힌다.
+ *
+ * 기본 캔버스 두 벌 — 코랄 맵(#f5ece5)과 화이트/화이트보드(#ffffff) — 은 원본
+ * **스톱 색을 그대로** 쓴다(요청: 색상 완전 동일). 파생식(canvasBg + 흰색 믹스)
+ * 으로는 채널별 비가 달라 정확히 같은 색이 나오지 않고, 순백 캔버스는 흰색에
+ * 흰색을 섞는 셈이라 그라데이션이 아예 보이지 않았다(화이트보드 제보의 원인).
+ *
+ * 나머지 테마는 기존 파생 그대로 — 오션·포레스트에 원본의 따뜻한 색을 그대로
+ * 얹으면 팔레트와 부딪히고, 어두운 캔버스(다크)는 흰색을 크게 섞으면 잿빛으로
+ * 바래므로 아주 옅게만 밝힌다.
  */
 export function canvasWash(canvasBg: string): string {
+  const key = canvasBg.toLowerCase();
+  if (key === '#f5ece5' || key === '#ffffff') {
+    return 'radial-gradient(1200px 700px at 62% 46%, #fffdfb 0%, #fdf7f2 55%, #fbf2eb 100%)';
+  }
   const c = canvasBg.replace('#', '');
   const lum = (parseInt(c.substring(0, 2), 16) * 0.2126 + parseInt(c.substring(2, 4), 16) * 0.7152 + parseInt(c.substring(4, 6), 16) * 0.0722) / 255;
   const [t0, t1] = lum < 0.5 ? [0.08, 0.04] : [0.8, 0.45];
