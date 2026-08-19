@@ -332,7 +332,7 @@ describe('Context menu — float / line / zone', () => {
     });
   });
 
-  it('zone right-click shows 이름 편집/내용에 맞추기/삭제 두 갈래; 이름 편집 enters inline editing', async () => {
+  it('맵 zone right-click은 이름 편집·삭제뿐(그릇 항목 없음); 이름 편집 enters inline editing', async () => {
     localStorage.setItem('mindflow_doc_cm6', JSON.stringify(DOC));
     const { container } = renderEditor('/editor?map=cm6&title=x');
     const vp = getViewport(container);
@@ -350,10 +350,12 @@ describe('Context menu — float / line / zone', () => {
     });
     const scoped = within(menu);
     expect(scoped.getByText('이름 편집')).toBeTruthy();
-    expect(scoped.getByText('내용에 맞추기')).toBeTruthy();
-    // 삭제는 둘로 나뉜다 — 프레임만(비파괴) / 내용까지.
-    expect(scoped.getByText('프레임만 삭제')).toBeTruthy();
-    expect(scoped.getByText('내용까지 삭제')).toBeTruthy();
+    // 프레임 = 그릇(내용에 맞추기·내용째 삭제)은 화이트보드 전용이다(요청: 맵과
+    // 보드는 별개) — 맵의 영역 메뉴는 이름 편집·복사·삭제뿐이고 삭제도 하나다.
+    expect(scoped.queryByText('내용에 맞추기')).toBeNull();
+    expect(scoped.queryByText('프레임만 삭제')).toBeNull();
+    expect(scoped.queryByText('내용까지 삭제')).toBeNull();
+    expect(scoped.getByText('삭제')).toBeTruthy();
     fireEvent.mouseDown(scoped.getByText('이름 편집'));
 
     await waitFor(() => expect(within(container).getByDisplayValue('1분기')).toBeTruthy());

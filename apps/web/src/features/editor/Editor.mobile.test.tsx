@@ -142,11 +142,12 @@ describe('Editor (mobile, M6)', () => {
       expect(screen.queryByText('선택한 주제')).toBeNull();
       expect(screen.getByText('속성')).toBeTruthy();
 
-      // opening it via the bar reveals the panel. 닫기 손잡이는 없앴다(요청) —
-      // 시트 밖(캔버스)을 누르면 선택이 풀리며 시트도 닫힌다.
+      // opening it via the bar reveals the panel. 옛 '닫기' 손잡이 줄은 없앴고(요청)
+      // 시트 밖(캔버스)을 누르면 선택이 풀리며 시트도 닫힌다 — 패널 머리의 ✕
+      // (속성 닫기)는 마인드맵 리디자인대로 남는다.
       openMobileProps();
       expect(screen.getByText('선택한 주제')).toBeTruthy();
-      expect(screen.queryByLabelText('속성 닫기')).toBeNull();
+      expect(screen.getByLabelText('속성 닫기')).toBeTruthy();
     } finally {
       restore();
     }
@@ -427,8 +428,9 @@ describe('Editor (mobile, M6)', () => {
       localStorage.setItem('mindflow_doc_m5', JSON.stringify(DOC));
       const { container } = renderEditor('/editor?map=m5&title=x');
 
-      // no selection → cluster is pinned bottom-right
-      expect(getZoomCluster(container).style.bottom).toBe('16px');
+      // no selection → cluster is pinned bottom-right, lifted above the bottom toolbar
+      // (마인드맵 리디자인 — 맵에도 하단 도구 막대가 선다)
+      expect(getZoomCluster(container).style.bottom).toBe('80px');
 
       const vp = getViewport(container);
       const nodeBox = within(vp).getByText('리서치').closest('[data-node-id]') as HTMLElement;

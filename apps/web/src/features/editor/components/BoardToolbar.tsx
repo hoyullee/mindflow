@@ -96,7 +96,11 @@ export function BoardToolbar({ controller }: { controller: EditorController }) {
     return () => window.removeEventListener('keydown', onKey);
   }, [tool, controller]);
 
-  if (!controller.isBoard || controller.readOnly) return null;
+  // 마인드맵에도 같은 막대가 선다(디자인 원본 `Geurio 마인드맵 리디자인`) —
+  // 그리기 도구 대신 [선택·하위·형제]와 삽입·스레드·되돌리기를 담는다.
+  if (controller.readOnly) return null;
+  const isBoard = controller.isBoard;
+  const nodeSel = controller.selection?.kind === 'node';
 
   // 디자인 원본: 알약 안의 **원형 버튼**(38px). 폰은 44px 터치 타깃.
   const size = isMobile ? 44 : 38;
@@ -138,13 +142,13 @@ export function BoardToolbar({ controller }: { controller: EditorController }) {
     );
   };
 
-  const actionBtn = (label: string, icon: JSX.Element, run: () => void, disabled?: boolean) => (
+  const actionBtn = (label: string, icon: JSX.Element, run: () => void, disabled?: boolean, hint?: string) => (
     <button
       key={label}
       type="button"
       className="mf-ed-btn"
       aria-label={label}
-      title={label}
+      title={hint ? `${label} (${hint})` : label}
       disabled={disabled}
       onClick={run}
       style={{ ...btnBase, background: 'transparent', color: th.subtext, opacity: disabled ? 0.38 : 1, cursor: disabled ? 'default' : 'pointer' }}
@@ -157,15 +161,50 @@ export function BoardToolbar({ controller }: { controller: EditorController }) {
   // 마진을 더하면 구분선 양옆만 넓어져 아이콘 열이 어긋나 보인다(실측 18 vs 21).
   const divider = (key: string) => <div key={key} style={{ width: 1, height: 24, alignSelf: 'center', margin: isMobile ? 0 : '0 3px', background: th.border }} />;
 
-  const tools = [
-    toolBtn(
-      'select',
-      '선택',
-      'V',
-      <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-        <path d="M5 3l14 8-6.5 1.5L9 19z" />
-      </svg>,
-    ),
+  const selectBtn = toolBtn(
+    'select',
+    '선택',
+    'V',
+    <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+      <path d="M5 3l14 8-6.5 1.5L9 19z" />
+    </svg>,
+  );
+  // 접근 이름을 '스레드 도구'로 — 댓글 팝업의 aria-label('스레드')과 겹치면
+  // 보조기술(과 테스트)이 어느 쪽인지 가릴 수 없다.
+  const threadBtn = controller.canComment ? toolBtn('comment', '스레드 도구', 'C', <CommentPinGlyph size={17} width={2} />) : null;
+
+  // 맵 전용 — 하위/형제 주제 추가(디자인 원본의 mmTools). 주제를 고르지 않았으면
+  // 비활성이다(눌러도 아무 일 없는 버튼을 두지 않는다 — 트리 어디에 붙일지 모른다).
+  const childSibling = isBoard
+    ? []
+    : [
+        actionBtn(
+          '하위 주제 추가',
+          <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+            <rect x="2.5" y="9" width="7" height="6" rx="2" />
+            <rect x="14.5" y="4" width="7" height="6" rx="2" />
+            <rect x="14.5" y="14" width="7" height="6" rx="2" />
+            <path d="M9.5 12h2.5v-5h2.5M12 12v5h2.5" />
+          </svg>,
+          controller.addChild,
+          !nodeSel,
+          'Tab',
+        ),
+        actionBtn(
+          '형제 주제 추가',
+          <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+            <rect x="7" y="2.5" width="14" height="6" rx="2" />
+            <rect x="7" y="15.5" width="14" height="6" rx="2" />
+            <path d="M3.5 5.5v13M3.5 5.5H7M3.5 18.5H7" />
+          </svg>,
+          controller.addSibling,
+          !nodeSel,
+          'Enter',
+        ),
+      ];
+
+  // 보드 전용 그리기 도구(펜·형광펜·지우개).
+  const boardTools = [
     toolBtn(
       'pen',
       '펜',
@@ -193,11 +232,10 @@ export function BoardToolbar({ controller }: { controller: EditorController }) {
         <path d="M20 20H8.5l-5-5a2 2 0 0 1 0-2.8l8.7-8.7a2 2 0 0 1 2.8 0l5 5a2 2 0 0 1 0 2.8L13 18.5" />
       </svg>,
     ),
-    // 스레드 — 삽입이 아니라 **도구**다: 누르는 즉시 핀이 생기지 않고, 커서가 핀
-    // 아이콘으로 바뀌어 "누른 자리"에 첫 글 말풍선이 뜬다(Figma와 같은 감각).
-    // 자리를 정하는 순간 손은 선택 도구로 돌아온다(요청).
-    ...(controller.canComment ? [toolBtn('comment', '스레드', 'C', <CommentPinGlyph size={17} width={2} />)] : []),
   ];
+  // 스레드는 삽입이 아니라 **도구**다(커서가 핀으로 바뀌고 누른 자리에 초안).
+  // 보드는 그리기 도구 옆(기존), 맵은 디자인 순서대로 삽입 묶음의 끝에 선다.
+  const tools = isBoard ? [selectBtn, ...boardTools, ...(threadBtn ? [threadBtn] : [])] : [selectBtn, ...childSibling];
 
   // 삽입 — 화이트보드가 담을 수 있는 것들(메모·이미지·연결선·영역). 그리기 도구가
   // 켜져 있어도 누를 수 있고, 누르면 선택 도구로 돌아온다(방금 만든 것을 바로 만진다).
@@ -225,7 +263,7 @@ export function BoardToolbar({ controller }: { controller: EditorController }) {
       insert(controller.promptAddImage),
     ),
     actionBtn(
-      '연결선 추가',
+      isBoard ? '연결선 추가' : '선 추가',
       <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
         {/* 화살표 달린 연결선 — 삽입 메뉴(ToolbarMenus)의 LineIcon과 같은 도형 */}
         <path d="M4 19 20 5" />
@@ -241,6 +279,11 @@ export function BoardToolbar({ controller }: { controller: EditorController }) {
       insert(controller.addZoneAt),
     ),
   ];
+
+  // 맵의 스레드 자리: 데스크톱은 디자인 순서대로 **삽입 묶음의 끝**, 폰은 도구 줄
+  // (삽입은 ＋ 전환 메뉴 안이라 도구인 스레드가 거기 섞이면 모드 전환이 숨는다).
+  const desktopInserts = isBoard || !threadBtn ? inserts : [...inserts, threadBtn];
+  const mobileTools = isBoard || !threadBtn ? tools : [...tools, threadBtn];
 
   const undoRedo = [
     actionBtn(
@@ -355,14 +398,14 @@ export function BoardToolbar({ controller }: { controller: EditorController }) {
   );
   const toolMenu = (
     <>
-      {tools}
+      {mobileTools}
       {divider('dm')}
       {/* 삽입 진입 — 넷을 한 줄에 늘어놓으면 폰 폭이 모자란다(파일 머리 설명). */}
       <button
         type="button"
         className="mf-ed-btn"
         aria-label="삽입"
-        title="삽입 (메모·이미지·연결선·영역)"
+        title={isBoard ? '삽입 (메모·이미지·연결선·영역)' : '삽입 (메모·이미지·선·영역)'}
         onClick={() => switchPanel('insert')}
         style={{ ...btnBase, background: 'transparent', color: th.subtext }}
       >
@@ -441,7 +484,7 @@ export function BoardToolbar({ controller }: { controller: EditorController }) {
     <div ref={shellRef} data-board-toolbar style={{ ...shell, left: '50%', transform: 'translateX(-50%)', bottom: 22, display: 'flex', alignItems: 'center', gap: 5, padding: 7, maxWidth: 'calc(100vw - 24px)' }} {...stopDrag}>
       {tools}
       {divider('d1')}
-      {inserts}
+      {desktopInserts}
       {divider('d2')}
       {undoRedo}
 

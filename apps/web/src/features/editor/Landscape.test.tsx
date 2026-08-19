@@ -125,7 +125,8 @@ describe('가로로 돌린 폰(낮은 화면)', () => {
       openProps(container);
 
       expect(screen.getByText('선택한 주제')).toBeTruthy();
-      expect(screen.queryByLabelText('속성 닫기')).toBeNull();
+      // 옛 '닫기' 손잡이 줄은 없고, 패널 머리의 ✕(속성 닫기)만 있다(마인드맵 리디자인).
+      expect(screen.getByLabelText('속성 닫기')).toBeTruthy();
     } finally {
       restore();
     }

@@ -280,7 +280,7 @@ describe('화이트보드 에디터', () => {
     expect(floatEl.style.paddingLeft).toBe(floatEl.style.paddingRight);
   });
 
-  it('맵(무회귀): 메모 좌측 패딩은 접기 토글 자리(32px)를 유지한다', async () => {
+  it('맵: 메모 접기 토글이 없고 좌측 패딩도 우측과 대칭이다(요청 — 접기 제거)', async () => {
     localStorage.setItem(
       'mindflow_doc_m3',
       JSON.stringify({
@@ -299,8 +299,9 @@ describe('화이트보드 에디터', () => {
       expect(el).toBeTruthy();
       return el;
     });
-    expect(floatEl.style.paddingLeft).toBe('32px');
-    expect(floatEl.querySelector('[data-fold-toggle]')).toBeTruthy();
+    expect(floatEl.style.paddingLeft).toBe('11px');
+    expect(floatEl.style.paddingLeft).toBe(floatEl.style.paddingRight);
+    expect(floatEl.querySelector('[data-fold-toggle]')).toBeNull();
   });
 
   // 요청: 펜/지우개가 켜져 있어도 **두 손가락 드래그는 화면 이동**이어야 한다.
@@ -502,7 +503,9 @@ describe('화이트보드 에디터', () => {
       const sheet = input.closest('div[style*="position: fixed"]') as HTMLElement;
       const bar = container.querySelector('[data-board-toolbar]') as HTMLElement;
       expect(Number(sheet.style.zIndex)).toBeGreaterThan(Number(bar.style.zIndex));
-      expect(screen.queryByLabelText('속성 닫기')).toBeNull();
+      // 시트의 옛 '닫기' 손잡이 줄은 없다(기존 결정) — 대신 패널 머리의 ✕(속성 닫기)가
+      // 디자인(마인드맵 리디자인)대로 선다.
+      expect(screen.getByLabelText('속성 닫기')).toBeTruthy();
       // 제목은 20자까지
       expect(input.maxLength).toBe(20);
     } finally {
@@ -590,7 +593,7 @@ describe('화이트보드 에디터', () => {
     }
   });
 
-  it('맵(무회귀): 모바일에서도 줌·미니맵 묶음은 하단에 남는다', async () => {
+  it('맵: 모바일에서도 하단 도구 막대가 서고, 줌·미니맵 묶음이 그만큼 올라앉는다(리디자인)', async () => {
     const restore = mockMatchMedia(true);
     try {
       localStorage.setItem(
@@ -599,8 +602,9 @@ describe('화이트보드 에디터', () => {
       );
       const { container } = renderEditor('/editor?map=m4&title=x');
       await waitFor(() => expect(container.querySelector('[data-zoom-cluster]')).toBeTruthy());
+      expect(container.querySelector('[data-board-toolbar]')).toBeTruthy();
       const cluster = container.querySelector('[data-zoom-cluster]') as HTMLElement;
-      expect(cluster.style.bottom).toBe('16px');
+      expect(cluster.style.bottom).toBe('80px');
     } finally {
       restore();
     }
@@ -627,14 +631,27 @@ describe('화이트보드 에디터', () => {
     await waitFor(() => expect(floatEl.querySelector('[data-float-caption]')?.textContent).toBe('가'.repeat(20)));
   });
 
-  it('그리기 도구 막대는 board 전용 — 맵에는 없다(M4)', async () => {
+  it('맵에도 하단 도구 막대가 서되, 그리기 도구는 없다(리디자인)', async () => {
     localStorage.setItem(
       'mindflow_doc_m2',
       JSON.stringify({ v: 1, nodes: { root: { id: 'root', text: '루트', emoji: '', parent: null, children: [], collapsed: false, color: null, x: 0, y: 0 } }, floats: [], lines: [], zones: [], layoutMode: 'right', themeKey: 'coral' }),
     );
     const { container } = renderEditor('/editor?map=m2&title=x');
     await waitFor(() => expect(within(getViewport(container)).getByText('루트')).toBeTruthy());
-    expect(container.querySelector('[data-board-toolbar]')).toBeNull();
+    const bar = container.querySelector('[data-board-toolbar]') as HTMLElement;
+    expect(bar).toBeTruthy();
+    // 맵의 도구 줄 = 선택 · 하위/형제 주제 추가(디자인 원본 mmTools) — 펜·형광펜·지우개는 board 전용.
+    expect(within(bar).getByRole('button', { name: '선택' })).toBeTruthy();
+    expect(within(bar).getByRole('button', { name: '하위 주제 추가' })).toBeTruthy();
+    expect(within(bar).getByRole('button', { name: '형제 주제 추가' })).toBeTruthy();
+    expect(within(bar).queryByRole('button', { name: '펜' })).toBeNull();
+    expect(within(bar).queryByRole('button', { name: '형광펜' })).toBeNull();
+    expect(within(bar).queryByRole('button', { name: '지우개' })).toBeNull();
+    // 삽입 묶음·되돌리기도 함께 선다.
+    expect(within(bar).getByRole('button', { name: '메모 추가' })).toBeTruthy();
+    expect(within(bar).getByRole('button', { name: '실행 취소' })).toBeTruthy();
+    // 주제가 선택돼 있지 않으면 하위/형제 추가는 비활성 — 대상이 없다.
+    expect((within(bar).getByRole('button', { name: '하위 주제 추가' }) as HTMLButtonElement).disabled).toBe(true);
     expect(container.querySelector('[data-board-draw-layer]')).toBeNull();
   });
 
@@ -646,9 +663,11 @@ describe('화이트보드 에디터', () => {
     const { container } = renderEditor('/editor?map=m1&title=x');
     await waitFor(() => expect(within(getViewport(container)).getByText('루트')).toBeTruthy());
     fireEvent.click(screen.getByRole('button', { name: '삽입' }));
-    await screen.findByRole('button', { name: '주제 추가' });
-    expect(screen.getByRole('button', { name: '선 추가' })).toBeTruthy();
-    expect(screen.getByRole('button', { name: '영역 추가' })).toBeTruthy();
+    // '선 추가'·'영역 추가'는 하단 도구 막대에도 있으므로(리디자인) 드롭다운 안으로 좁혀 본다.
+    const tpl = await screen.findByRole('button', { name: '주제 추가' });
+    const menu = tpl.parentElement as HTMLElement;
+    expect(within(menu).getByRole('button', { name: '선 추가' })).toBeTruthy();
+    expect(within(menu).getByRole('button', { name: '영역 추가' })).toBeTruthy();
     fireEvent.keyDown(window, { key: 'Escape' });
     fireEvent.click(screen.getByRole('button', { name: '스타일' }));
     await waitFor(() => expect(screen.getByText('레이아웃')).toBeTruthy());
@@ -1661,6 +1680,123 @@ describe('화이트보드 에디터', () => {
       expect(saved.zones[0].x).toBe(-400);
       expect(saved.floats.find((f: { id: string }) => f.id === 'inside').x).toBe(-300);
       expect(saved.strokes[0].pts.slice(0, 2)).toEqual([-350, -150]);
+    });
+  });
+
+  it('맵: 영역을 끌어도 안의 객체는 제자리 — 그릇은 화이트보드 전용이다(요청)', async () => {
+    localStorage.setItem(
+      'mindflow_doc_mz1',
+      JSON.stringify({
+        v: 1,
+        nodes: { root: { id: 'root', text: '루트', emoji: '', parent: null, children: [], collapsed: false, color: null, x: 0, y: 0 } },
+        floats: [{ id: 'inside', x: -300, y: -100, w: 160, h: 80, text: '안' }],
+        lines: [],
+        zones: [{ id: 'z1', x: -400, y: -200, w: 360, h: 260, label: '구획', color: null }],
+        layoutMode: 'right',
+        themeKey: 'coral',
+      }),
+    );
+    const { container } = renderEditor('/editor?map=mz1&title=x');
+    const zone = await waitFor(() => {
+      const found = container.querySelector('[data-zone-hit="z1"]') as HTMLElement;
+      expect(found).toBeTruthy();
+      return found;
+    });
+    const zoom = Number(/scale\(([\d.]+)\)/.exec((container.querySelector('[data-pan-layer]') as HTMLElement).style.transform || '')?.[1] ?? 1);
+
+    firePointer(zone, 'pointerdown', { pointerId: 52, clientX: 300, clientY: 300, button: 0 });
+    firePointer(document.body, 'pointermove', { pointerId: 52, clientX: 300 + 120 * zoom, clientY: 300 + 80 * zoom });
+    // 끄는 동안에도 담김 강조(data-frame-drop)가 뜨지 않는다 — 맵에는 그릇 개념이 없다.
+    expect(container.querySelector('[data-frame-drop]')).toBeNull();
+    firePointer(document.body, 'pointerup', { pointerId: 52, clientX: 300 + 120 * zoom, clientY: 300 + 80 * zoom });
+    fireEvent.keyDown(window, { key: 's', ctrlKey: true });
+    await waitFor(() => {
+      const saved = JSON.parse(localStorage.getItem('mindflow_doc_mz1') || 'null');
+      expect(saved.zones[0].x).toBe(-280); // 영역만 움직였다
+      expect(saved.floats[0]).toMatchObject({ x: -300, y: -100 }); // 안의 메모는 제자리
+    });
+  });
+
+  it('맵 z-순서: 영역 경계(9)는 메모(10) 아래, 이미지(5)는 영역 아래 — 영역 판 클릭이 이미지에 위임된다(요청)', async () => {
+    localStorage.setItem(
+      'mindflow_doc_mz3',
+      JSON.stringify({
+        v: 1,
+        nodes: { root: { id: 'root', text: '루트', emoji: '', parent: null, children: [], collapsed: false, color: null, x: 0, y: 0 } },
+        floats: [
+          { id: 'memo', x: -300, y: -140, w: 160, text: '메모' },
+          { id: 'img', x: -300, y: 20, w: 120, h: 90, text: '', img: 'data:image/png;base64,iVBORw0KGgo=' },
+        ],
+        lines: [],
+        zones: [{ id: 'z1', x: -400, y: -200, w: 360, h: 380, label: '구획', color: null }],
+        layoutMode: 'right',
+        themeKey: 'coral',
+      }),
+    );
+    const { container } = renderEditor('/editor?map=mz3&title=x');
+    const frame = await waitFor(() => {
+      const el = container.querySelector('[data-zone-id="z1"]') as HTMLElement;
+      expect(el).toBeTruthy();
+      return el;
+    });
+    // 경계·라벨 판은 콘텐츠 아래(9) — 메모(10)·주제(40)가 점선을 덮는다.
+    expect(frame.style.zIndex).toBe('9');
+    expect((container.querySelector('[data-float-id="memo"]') as HTMLElement).style.zIndex).toBe('10');
+    // 이미지는 영역(8·9)보다도 아래 — 배경 사진처럼 깔린다.
+    const img = container.querySelector('[data-float-id="img"]') as HTMLElement;
+    expect(img.style.zIndex).toBe('5');
+
+    // 영역 히트 판(8)이 이미지 위 클릭을 먼저 받는다 → 이미지에게 넘긴다(위임).
+    const p = strokePoint(container, -240, 60); // 이미지 박스 안의 한 점
+    const at = { clientX: p.x, clientY: p.y };
+    const hit = container.querySelector('[data-zone-hit="z1"]') as HTMLElement;
+    firePointer(hit, 'pointerdown', { pointerId: 61, ...at, button: 0 });
+    firePointer(document.body, 'pointerup', { pointerId: 61, ...at, button: 0 });
+    await screen.findByText('선택한 이미지'); // 영역이 아니라 이미지가 선택됐다
+    // 고른 동안은 위로 뜬다 — 리사이즈 핸들이 영역 판에 가리지 않게.
+    await waitFor(() => expect(img.style.zIndex).toBe('20'));
+  });
+
+  it('board(무회귀): 영역 경계·라벨 판은 잉크 위(95)다', async () => {
+    localStorage.setItem('mindflow_doc_bz9', JSON.stringify({ ...BOARD, zones: [{ id: 'bz', x: -400, y: -200, w: 360, h: 260, label: '프레임', color: null }] }));
+    const { container } = renderEditor('/editor?map=bz9&title=x');
+    const frame = await waitFor(() => {
+      const el = container.querySelector('[data-zone-id="bz"]') as HTMLElement;
+      expect(el).toBeTruthy();
+      return el;
+    });
+    expect(frame.style.zIndex).toBe('95');
+  });
+
+  it('맵: 영역 복사도 사각형만 담는다 — 안의 메모가 딸려 오지 않는다(요청)', async () => {
+    localStorage.setItem(
+      'mindflow_doc_mz2',
+      JSON.stringify({
+        v: 1,
+        nodes: { root: { id: 'root', text: '루트', emoji: '', parent: null, children: [], collapsed: false, color: null, x: 0, y: 0 } },
+        floats: [{ id: 'inside', x: -300, y: -100, w: 160, h: 80, text: '안' }],
+        lines: [],
+        zones: [{ id: 'z1', x: -400, y: -200, w: 360, h: 260, label: '구획', color: null }],
+        layoutMode: 'right',
+        themeKey: 'coral',
+      }),
+    );
+    const { container } = renderEditor('/editor?map=mz2&title=x');
+    const zone = await waitFor(() => {
+      const found = container.querySelector('[data-zone-hit="z1"]') as HTMLElement;
+      expect(found).toBeTruthy();
+      return found;
+    });
+    firePointer(zone, 'pointerdown', { pointerId: 53, clientX: 300, clientY: 300, button: 0 });
+    firePointer(document.body, 'pointerup', { pointerId: 53, clientX: 300, clientY: 300, button: 0 });
+    fireEvent.keyDown(window, { key: 'c', ctrlKey: true });
+    fireEvent.keyDown(window, { key: 'v', ctrlKey: true });
+    await new Promise((r) => setTimeout(r, 250)); // paste-이벤트 폴백(120ms) 대기
+    fireEvent.keyDown(window, { key: 's', ctrlKey: true });
+    await waitFor(() => {
+      const saved = JSON.parse(localStorage.getItem('mindflow_doc_mz2') || 'null');
+      expect(saved.zones).toHaveLength(2); // 영역 사본만 늘었다
+      expect(saved.floats).toHaveLength(1); // 메모는 복제되지 않았다
     });
   });
 

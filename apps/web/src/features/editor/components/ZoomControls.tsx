@@ -51,10 +51,10 @@ export function ZoomControls({ controller, panelOpen = false }: ZoomControlsProp
   } as const;
 
   // 자리는 **언제나 우측 하단**이다(우측 상단으로 올려 봤다가 되돌렸다). 다만
-  // 폰의 화이트보드에서는 도구 막대가 바닥 전폭을 쓰므로(시안) 그 높이만큼 위로
-  // 올라앉는다 — 좌우가 아니라 위아래로 비켜서는 배치.
-  const liftForBoard = isMobile && controller.isBoard && !controller.readOnly;
-  const anchor: CSSProperties = { bottom: liftForBoard ? BOARD_BAR_LIFT : 16 };
+  // 폰에서는 하단 도구 막대(이제 맵·보드 공통)가 바닥 전폭을 쓰므로 그 높이만큼
+  // 위로 올라앉는다 — 좌우가 아니라 위아래로 비켜서는 배치.
+  const liftForBar = isMobile && !controller.readOnly;
+  const anchor: CSSProperties = { bottom: liftForBar ? BOARD_BAR_LIFT : 16 };
 
   // 폰에서는 미니맵 **아래 버튼 줄(최소화·화면 맞춤)을 두지 않는다**(요청) —
   // 좁은 화면에서 지도만 남기는 편이 깔끔하고, 그 자리는 이제 도구 막대·독칩이

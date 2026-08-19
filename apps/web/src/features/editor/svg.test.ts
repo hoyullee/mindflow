@@ -87,6 +87,19 @@ describe('buildSvgString', () => {
     expect(built.svg).toContain('검증 &amp; 확인 영역');
   });
 
+  it('맵 z-순서 파리티 — 이미지는 영역 아래, 영역 점선은 메모 아래(요청, 에디터와 동일)', () => {
+    const svg = built.svg;
+    const firstImage = svg.indexOf('<image ');
+    const zoneFill = svg.indexOf('0.07)'); // 영역 채움 hexA(색, 0.07)
+    const zoneDash = svg.indexOf('stroke-dasharray="7 5"');
+    const memoCard = svg.indexOf('#fff6cf'); // 메모 카드 면
+    // 이미지 플로트 → 영역 채움 → 영역 점선·라벨 → (주제·메모) 순서로 그린다.
+    expect(firstImage).toBeGreaterThan(-1);
+    expect(firstImage).toBeLessThan(zoneFill);
+    expect(zoneFill).toBeLessThan(zoneDash);
+    expect(zoneDash).toBeLessThan(memoCard);
+  });
+
   it('자유 선 — 점선·화살표·라벨', () => {
     expect(built.svg).toContain('stroke-dasharray="7 7"');
     expect(built.svg).toContain('참고');

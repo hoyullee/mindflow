@@ -450,6 +450,37 @@ function buildItems(
     const zoneId = controller.selection?.kind === 'zone' ? controller.selection.id : null;
     if (!zoneId) return [];
     if (controller.readOnly) return []; // 보기 전용 — 변이 항목뿐이라 열 것이 없다
+    // 프레임 = 그릇(내용에 맞추기·내용째 삭제)은 **화이트보드의 어휘**다(요청:
+    // 맵과 보드는 별개). 맵의 영역은 표식이라 담긴 내용 개념 자체가 없다 —
+    // 메뉴는 이름 편집·복사·삭제만, 삭제 라벨도 그냥 '삭제'(내용은 원래 무관).
+    if (!controller.isBoard) {
+      return [
+        {
+          icon: '✎',
+          label: '이름 편집',
+          onSelect: () => {
+            close();
+            controller.startEditZoneLabel(zoneId);
+          },
+        },
+        'divider',
+        ...copyItems({ cut: true }),
+        // 모바일은 선택 바에 삭제가 있어 중복이라 뺀다(다른 객체 메뉴와 같은 규칙).
+        ...(touch
+          ? []
+          : ([
+              {
+                icon: <TrashIcon />,
+                label: '삭제',
+                danger: true,
+                onSelect: () => {
+                  close();
+                  controller.deleteZone(zoneId);
+                },
+              },
+            ] as MenuItem[])),
+      ];
+    }
     return [
       {
         icon: '✎',

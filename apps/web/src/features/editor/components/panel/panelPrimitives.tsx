@@ -1,7 +1,7 @@
 import { useLayoutEffect, useRef, useState, type CSSProperties, type ReactNode } from 'react';
-import { hexA } from '../../theme';
+import { hexA, mixHex } from '../../theme';
 import type { Theme } from '../../theme';
-import { CARD_SHADOW, MONO_FONT, glassCard } from '../../chrome';
+import { MONO_FONT, glassCard } from '../../chrome';
 
 /** Emoji picker options — port of `Component.EMOJIS` (MindFlow.dc.html:475). */
 export const EMOJIS = ['🎯', '💪', '🚀', '📚', '💰', '❤️', '🎨', '✨', '🔥', '🌱', '🧠', '⭐', '📈', '🏆', '🧘', '☕', '✈️', '🎸', '📷', '🍎'];
@@ -133,12 +133,13 @@ export function panelWrapStyle(th: Theme, isMobile = false, lowered = false, sho
     position: 'absolute',
     left: 16,
     top,
-    // 디자인 원본의 좌측 패널(260) — 유리질 카드 + 아래로 깔리는 그늘.
-    width: 260,
+    // 디자인 원본(마인드맵 리디자인)의 인스펙터 — 296폭·r18·가까운 선그늘 +
+    // 멀리 깔리는 큰 그늘. 유리질 면(반투명+블러)은 그대로.
+    width: 296,
     maxHeight: `calc(100% - ${top + 78}px)`,
     ...glassCard(th),
-    borderRadius: 14,
-    boxShadow: CARD_SHADOW,
+    borderRadius: 18,
+    boxShadow: '0 2px 5px -3px rgba(46,42,38,.18), 0 30px 60px -30px rgba(46,42,38,.55)',
     zIndex: 15,
     overflow: 'hidden',
     display: 'flex',
@@ -175,6 +176,16 @@ export function SectionLabel({ theme, children }: { theme: Theme; children: Reac
 export function PanelSection({ theme, title, value, open, onToggle, children }: { theme: Theme; title: string; value?: string; open: boolean; onToggle: () => void; children: ReactNode }) {
   const bodyRef = useRef<HTMLDivElement | null>(null);
   const [maxH, setMaxH] = useState(0);
+  // 첫 구획은 열린 채로 마운트된다(요청) — 그때 펼침 애니메이션이 재생되면
+  // "열려 있다"가 아니라 "지금 열렸다"로 읽힌다. 전이는 **open이 처음 바뀐
+  // 뒤**(사용자의 첫 토글)부터만 켠다. 패널은 선택이 바뀔 때 key로 리마운트되므로
+  // 매번 성립한다. (렌더 중 상태 조정 — React의 adjust-state-during-render 관용구.)
+  const [toggled, setToggled] = useState(false);
+  const prevOpenRef = useRef(open);
+  if (open !== prevOpenRef.current) {
+    prevOpenRef.current = open;
+    if (!toggled) setToggled(true);
+  }
   // Keep the expanded height in sync with the (always-rendered) body content so
   // the open transition animates to the right height even as content changes.
   useLayoutEffect(() => {
@@ -189,9 +200,11 @@ export function PanelSection({ theme, title, value, open, onToggle, children }: 
         role="button"
         aria-expanded={open}
         onClick={onToggle}
-        style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8, cursor: 'pointer', margin: '0 -6px 8px', padding: '5px 6px', borderRadius: 8 }}
+        style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8, cursor: 'pointer', margin: '0 -6px 4px', padding: '12px 6px', borderRadius: 10 }}
       >
-        <span style={{ fontSize: 11.5, fontWeight: 700, color: theme.subtext, whiteSpace: 'nowrap' }}>{title}</span>
+        {/* 디자인 원본의 구획 머리 — 작은 회색 라벨이 아니라 13px 잉크색 제목이
+            46px 행을 차지한다(접힌 패널에서도 구획이 목차처럼 읽힌다). */}
+        <span style={{ fontSize: 13, fontWeight: 600, color: theme.text, whiteSpace: 'nowrap' }}>{title}</span>
         <span style={{ display: 'inline-flex', alignItems: 'center', gap: 7, flexShrink: 0 }}>
           {/* 지금 값(글자 크기·색 이름)을 접힌 채로도 읽는다 — 디자인 원본이
               등폭으로 눈금처럼 보여 주는 자리. */}
@@ -214,7 +227,7 @@ export function PanelSection({ theme, title, value, open, onToggle, children }: 
       </div>
       <div
         ref={bodyRef}
-        style={{ overflow: 'hidden', opacity: open ? 1 : 0, maxHeight: open ? maxH : 0, transition: 'max-height .3s cubic-bezier(.4,0,.2,1), opacity .24s ease' }}
+        style={{ overflow: 'hidden', opacity: open ? 1 : 0, maxHeight: open ? maxH : 0, transition: toggled ? 'max-height .3s cubic-bezier(.4,0,.2,1), opacity .24s ease' : 'none' }}
       >
         <div style={{ paddingTop: 2 }}>{children}</div>
       </div>
@@ -244,18 +257,32 @@ export function panelTitleLine(text: string): string {
  * 패널 머리 — 디자인 원본은 **색 조각 + [무엇을 고르고 있는가 / 그 이름]**을
  * 가라앉은 띠에 얹는다. `swatch`(지금 대상의 색)를 주면 그 조각이 함께 뜬다.
  */
-export function PanelTitle({ theme, kicker, name, swatch }: { theme: Theme; kicker: string; name: string; swatch?: string | null }) {
+export function PanelTitle({ theme, kicker, name, swatch, onClose }: { theme: Theme; kicker: string; name: string; swatch?: string | null; onClose?: () => void }) {
   const line = panelTitleLine(name);
+  void swatch; // 디자인 개정: 머리에 색 조각을 두지 않는다(강조 띠가 정체를 말한다)
   return (
-    <div style={{ display: 'flex', alignItems: 'flex-start', gap: 9, margin: '-14px -14px 12px', padding: '12px 13px', borderBottom: `1px solid ${theme.border}`, background: theme.panel2 }}>
-      {swatch && <span aria-hidden style={{ width: 26, height: 26, flexShrink: 0, borderRadius: 8, background: swatch, boxShadow: 'inset 0 0 0 1px rgba(46,42,38,.12)', marginTop: 1 }} />}
-      <div style={{ display: 'flex', flexDirection: 'column', gap: 2, minWidth: 0 }}>
-        <span data-panel-kicker style={{ fontSize: 10.5, fontWeight: 700, color: theme.subtext }}>{kicker}</span>
+    <div style={{ display: 'flex', alignItems: 'flex-start', gap: 10, margin: '-14px -14px 10px', padding: '13px 15px 14px', borderBottom: `1px solid ${hexA(theme.accent, 0.18)}`, background: hexA(theme.accent, 0.1) }}>
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 3, minWidth: 0, flex: 1 }}>
+        <span data-panel-kicker style={{ fontSize: 11, fontWeight: 600, color: theme.subtext }}>{kicker}</span>
         {/* 툴팁에는 전체 텍스트 — 첫 줄만 보이니 나머지를 확인할 길은 남겨 둔다. */}
-        <span data-panel-name title={name || undefined} style={{ fontSize: 13, fontWeight: 700, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+        <span data-panel-name title={name || undefined} style={{ fontSize: 14.5, fontWeight: 800, letterSpacing: '-.015em', lineHeight: 1.35, color: theme.text, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
           {line}
         </span>
       </div>
+      {onClose && (
+        <button
+          type="button"
+          className="mf-ed-btn"
+          aria-label="속성 닫기"
+          title="닫기"
+          onClick={onClose}
+          style={{ width: 24, height: 24, flexShrink: 0, marginTop: 2, borderRadius: 8, border: 'none', background: 'transparent', color: theme.subtext, display: 'inline-flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', padding: 0 }}
+        >
+          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" aria-hidden="true">
+            <path d="M6 6l12 12M18 6 6 18" />
+          </svg>
+        </button>
+      )}
     </div>
   );
 }
@@ -408,27 +435,61 @@ export function BoldSizeRow({
   onToggleItalic?: () => void;
   onToggleStrike?: () => void;
 }) {
-  const sizeButtons = SIZE_OPTIONS.map((o) => <SegButton key={o.k} label={o.label} active={(size || 'm') === o.k} theme={theme} onClick={() => onSetSize(o.k)} />);
+  // 작게/보통/크게 — 디자인 원본(마인드맵 리디자인)의 **세그먼트 트랙**: 가라앉은
+  // 면(panel2) 위에서 활성 칸만 카드 면 + 진한 강조 잉크 + 작은 그늘로 떠오른다
+  // (원본 seg(): 활성 #FFFDFB/#C9512A/그늘, 비활성 투명/#8A8078). 값은 고정 헥스가
+  // 아니라 테마에서 파생 — 다크·모노에서도 성립한다.
+  const sizeSeg = (
+    <div data-size-seg style={{ display: 'flex', gap: 3, padding: 3, borderRadius: 11, background: theme.panel2, border: `1px solid ${theme.border}`, boxSizing: 'border-box', flex: 1, minWidth: 0 }}>
+      {SIZE_OPTIONS.map((o) => {
+        const on = (size || 'm') === o.k;
+        return (
+          <button
+            key={o.k}
+            type="button"
+            aria-pressed={on}
+            onClick={() => onSetSize(o.k)}
+            style={{
+              flex: 1,
+              height: 30,
+              border: 0,
+              borderRadius: 8,
+              padding: 0,
+              background: on ? theme.panel : 'transparent',
+              fontFamily: 'inherit',
+              fontSize: 12,
+              fontWeight: 700,
+              color: on ? mixHex(theme.accent, theme.text, 0.2) : theme.subtext,
+              boxShadow: on ? '0 2px 5px -3px rgba(46,42,38,.35)' : 'none',
+              cursor: 'pointer',
+            }}
+          >
+            {o.label}
+          </button>
+        );
+      })}
+    </div>
+  );
   // I·S가 있으면(노드 패널) 한 행에 다 안 들어가 '크게'가 홀로 다음 줄로 감겼다
-  // (제보: 배치가 중구난방). 3열 그리드 두 행 — [B|I|S] / [작게|보통|크게] — 으로
-  // 나눠 열이 수직으로 정렬되게 한다. I·S가 없는 패널(메모·선)은 기존 한 행 그대로.
+  // (제보: 배치가 중구난방). [B|I|S] 그리드 아래에 크기 세그 트랙 한 줄.
+  // I·S가 없는 패널(선)은 기존 한 행 그대로(B + 트랙).
   if (onToggleItalic || onToggleStrike) {
     return (
-      <div style={{ display: 'grid', gap: 6, marginBottom: 14 }}>
+      <div style={{ display: 'grid', gap: 8, marginBottom: 14 }}>
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 6 }}>
           <SegButton label="B" title="굵게" active={bold} theme={theme} onClick={onToggleBold} />
           {onToggleItalic && <SegButton label={<span style={{ fontStyle: 'italic', fontFamily: 'Georgia, serif' }}>I</span>} title="기울임" active={!!italic} theme={theme} onClick={onToggleItalic} />}
           {onToggleStrike && <SegButton label={<span style={{ textDecoration: 'line-through' }}>S</span>} title="취소선" active={!!strike} theme={theme} onClick={onToggleStrike} />}
         </div>
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 6 }}>{sizeButtons}</div>
+        {sizeSeg}
       </div>
     );
   }
   return (
     <div style={{ display: 'flex', gap: 6, marginBottom: 14, alignItems: 'center' }}>
       <SegButton label="B" title="굵게" active={bold} theme={theme} onClick={onToggleBold} />
-      <div style={{ width: 1, height: 20, background: theme.border }} />
-      {sizeButtons}
+      <div style={{ width: 1, height: 20, background: theme.border, flexShrink: 0 }} />
+      {sizeSeg}
     </div>
   );
 }

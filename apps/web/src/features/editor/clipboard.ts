@@ -88,7 +88,9 @@ export function collectClipboard(doc: Doc, selection: Selection | null, multi: M
   // 프레임은 **그릇**이다(#425) — 복사도 그 규칙을 따른다: 프레임을 복사하면 그
   // 안에 든 것이 함께 담긴다(끌면 함께 오는데 복사만 빈 사각형이 나오면 같은
   // 물건이 두 가지로 행동하는 셈이다). 소속 판정은 이동과 **같은 함수**를 쓴다.
-  zoneIds.forEach((zid) => {
+  // 단, 그릇은 **화이트보드의 어휘**다(요청: 맵과 보드는 별개) — 맵의 영역은
+  // 표식이라 이동도 복사도 사각형만 다룬다.
+  (doc.kind === 'board' ? zoneIds : []).forEach((zid) => {
     const z = doc.zones.find((x) => x.id === zid);
     if (!z) return;
     const rect = { x: z.x, y: z.y, w: z.w, h: z.h };

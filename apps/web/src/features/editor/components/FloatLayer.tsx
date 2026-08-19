@@ -1,11 +1,9 @@
 import type { CSSProperties } from 'react';
 import { useEffect, useRef } from 'react';
 import type { Float, RichRun } from '@mindflow/mindmap-core';
-import { listDisplayLine } from '@mindflow/mindmap-core';
 import { ListTextBlock, domMarkerSignature, listSigOf, listSignature, markerSignature, nodeContentLines, plainContentLines, renderListEdit } from '../listLines';
 import { hexA } from '../theme';
 import { floatPadLeft } from '../metrics';
-import { isPanButton } from '../pointerButtons';
 import type { Theme } from '../theme';
 import type { EditorController } from '../useEditorState';
 import { peersSelecting } from '../presenceSelection';
@@ -50,10 +48,6 @@ export function FloatLayer({ floats, theme: th, controller }: FloatLayerProps) {
         // port of `MSEL.floats.includes(f.id)` — a marquee multi-selection rings every target.
         const selected = controller.multiGroups.floats.includes(f.id);
         const editing = controller.editingFloatId === f.id;
-        // 화이트보드에는 접기가 없다(요청) — 바탕화면 메모 감각에서 접힌 메모는
-        // 내용을 감추는 상태일 뿐이다. 맵에서 접어 둔 메모가 든 문서를 보드로
-        // 여는 일은 없지만, 혹시 collapsed가 남아 있어도 펼쳐서 그린다.
-        const collapsed = !!f.collapsed && !controller.isBoard;
         const fFpx = f.tsize === 's' ? 11.5 : f.tsize === 'l' ? 15.5 : 13;
         // presence: a remote peer's selection ring (see `NodeLayer`'s identical pattern).
         const remotePeer = peersSelecting(controller.presence.peers, 'floats', f.id)[0];
@@ -76,8 +70,7 @@ export function FloatLayer({ floats, theme: th, controller }: FloatLayerProps) {
           color: f.textColor || th.text,
           border: `1px solid ${f.bg ? hexA('#2e2a26', 0.1) : th.appBg === '#191512' ? '#5a4a2f' : '#f0e3a0'}`,
           borderRadius: 14,
-          // 좌측 패딩은 맵에서만 접기 토글 자리(32) — board는 토글이 없어 좌우 대칭(11).
-          padding: `9px 11px 9px ${floatPadLeft(controller.isBoard)}px`,
+          padding: `9px 11px 9px ${floatPadLeft()}px`,
           fontFamily: 'Pretendard, sans-serif',
           fontSize: fFpx,
           fontWeight: f.bold ? 700 : 400,
@@ -90,13 +83,14 @@ export function FloatLayer({ floats, theme: th, controller }: FloatLayerProps) {
           userSelect: 'none',
           cursor: 'grab',
         };
-        if (collapsed && !editing) {
-          boxStyle.minHeight = 38;
-          boxStyle.whiteSpace = 'nowrap';
-        }
         // 이미지 플로트: 메모 카드가 아니라 이미지 자체가 박스를 채운다 —
-        // 패딩/메모 배경/접기 토글/텍스트 편집 전부 미적용 (Float.img 참고).
+        // 패딩/메모 배경/텍스트 편집 전부 미적용 (Float.img 참고).
         const isImage = !!f.img;
+        // 맵에서 이미지는 영역(채움 8·경계 9)보다 **아래**(요청) — 배경 사진처럼
+        // 깔린다. 단, 고른 동안은 위로 떠야 리사이즈 핸들이 영역 히트 판에
+        // 가리지 않는다(선택 = 지금 만지는 것). 첫 클릭은 영역 판이 받아
+        // `beginZoneDrag`가 이미지에게 넘긴다(획 back-off와 같은 결).
+        if (isImage && !controller.isBoard) boxStyle.zIndex = selected || editing ? 20 : 5;
         if (isImage) {
           boxStyle.padding = 0;
           boxStyle.background = th.panel;
@@ -108,14 +102,12 @@ export function FloatLayer({ floats, theme: th, controller }: FloatLayerProps) {
           // (제보 스크린샷) 원격 피어 이름표(top −22)도 같이 잘렸다.
           // 자르기는 이미지를 감싸는 안쪽 래퍼가 맡는다(아래 `mf-float-img-clip`).
         }
-        // 접힌 메모의 한 줄 표시도 리스트 글리프(`- `→단계 글리프)를 치환해 펼친 모습과 일치.
-        const shown = collapsed ? listDisplayLine(String(f.text || '').split('\n')[0] || '') : f.text;
         // 링크 글자색 — 노드와 같은 규칙(글자색 밝기 기반, `richSpans.linkInk`).
         (boxStyle as Record<string, unknown>)['--mf-link'] = linkInk((boxStyle.color as string) || null);
         // rich(부분 서식)가 있으면 노드와 같은 줄 단위 rich 렌더(리스트 포함),
         // 평문 리스트는 기존 경로, 그 외 평문은 기존 단일 div — 무회귀 우선.
-        const richLines = !collapsed && !editing && f.rich && f.rich.length ? nodeContentLines({ text: f.text, rich: f.rich }) : null;
-        const floatLines = !richLines && !collapsed && !editing && f.text ? plainContentLines(f.text) : null;
+        const richLines = !editing && f.rich && f.rich.length ? nodeContentLines({ text: f.text, rich: f.rich }) : null;
+        const floatLines = !richLines && !editing && f.text ? plainContentLines(f.text) : null;
         const hasList = !!floatLines && floatLines.some((l) => l.list);
         return (
           <div
@@ -128,57 +120,8 @@ export function FloatLayer({ floats, theme: th, controller }: FloatLayerProps) {
               controller.startEditFloat(f.id);
             }}
           >
-            {!isImage && !controller.isBoard && (() => {
-              // 접기/펼치기 토글 — 예전 코럴 원의 ＋/−는 "추가/삭제"로 읽혔다(제보:
-              // 직관적인 아이콘으로). 표준 디스클로저 관례인 **회전 셰브론**으로:
-              // 펼침=아래(내용이 아래로 이어짐), 접힘=오른쪽(더 있음). 색은 메모의
-              // 글자색에서 따와(커스텀 배경/다크 카드에서도 톤이 맞는다) 은은한
-              // 칩으로 두고, 호버에서만 또렷해진다(editor.css `.mf-float-fold`).
-              const ink = f.textColor || th.text;
-              return (
-                <div
-                  className="mf-float-fold"
-                  role="button"
-                  aria-label={collapsed ? '메모 펼치기' : '메모 접기'}
-                  aria-expanded={!collapsed}
-                  data-fold-toggle
-                  title={collapsed ? '펼치기' : '접기'}
-                  onPointerDown={(e) => {
-                    if (isPanButton(e)) return; // 우클릭·휠클릭 = 화면 이동
-                    e.stopPropagation();
-                    controller.toggleFloatCollapse(f.id);
-                  }}
-                  style={{
-                    position: 'absolute',
-                    left: 5,
-                    top: 7,
-                    width: 22,
-                    height: 22,
-                    borderRadius: 7,
-                    background: hexA(ink, 0.07),
-                    border: `1px solid ${hexA(ink, 0.14)}`,
-                    color: ink,
-                    display: 'flex',
-                    alignItems: 'center',
-                    justifyContent: 'center',
-                    userSelect: 'none',
-                    zIndex: 4,
-                    cursor: 'pointer',
-                    boxSizing: 'border-box',
-                  }}
-                >
-                  <svg
-                    width="11"
-                    height="11"
-                    viewBox="0 0 10 10"
-                    aria-hidden="true"
-                    style={{ transform: collapsed ? 'rotate(-90deg)' : 'none', transition: 'transform .16s ease' }}
-                  >
-                    <path d="M2 3.4 L5 6.4 L8 3.4" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" />
-                  </svg>
-                </div>
-              );
-            })()}
+            {/* 접기/펼치기 토글은 제거됐다(요청) — 메모는 항상 펼쳐진 상태이고,
+                토글 자리였던 좌측 패딩(32)도 우측과 대칭(11)으로 좁혔다. */}
             {remotePeer && !editing && <RemotePeerTag color={remotePeer.user.color} name={remotePeer.user.name} style={{ left: 0, top: -22 }} />}
             {isImage ? (
               <>
@@ -214,12 +157,9 @@ export function FloatLayer({ floats, theme: th, controller }: FloatLayerProps) {
                   pointerEvents: 'none',
                   minHeight: 18,
                   color: f.text ? 'inherit' : hexA(th.text, 0.4),
-                  overflow: collapsed ? 'hidden' : undefined,
-                  textOverflow: collapsed ? 'ellipsis' : undefined,
-                  whiteSpace: collapsed ? 'nowrap' : undefined,
                 }}
               >
-                {shown || '메모 입력…'}
+                {f.text || '메모 입력…'}
               </div>
             )}
             {/* resize handle only for a true single selection (port of `this.state.selFloat`,

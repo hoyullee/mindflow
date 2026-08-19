@@ -47,7 +47,7 @@ export function StrokePanel({ controller, strokeIds, isMobile = false, short = f
             <div style={{ fontSize: 14, fontWeight: 600, marginBottom: 14 }}>그림 {ids.length}개 선택됨</div>
           </>
         ) : (
-          <PanelTitle theme={th} kicker="선택한 그림" name={hl ? '형광펜 획' : '펜 획'} swatch={first.color} />
+          <PanelTitle theme={th} kicker="선택한 그림" name={hl ? '형광펜 획' : '펜 획'} swatch={first.color} onClose={controller.clearSelection} />
         )}
         <SectionLabel theme={th}>색상</SectionLabel>
         <SwatchRow theme={th} palette={palette} current={curColor} onPick={(hex) => controller.setStrokeColor(ids, hex)} />

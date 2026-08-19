@@ -615,7 +615,6 @@ export interface EditorController {
   toggleFloatRichStyle: (key: 'i' | 's') => void;
   setFloatTsize: (v: 's' | 'm' | 'l') => void;
   setFloatTextColor: (hex: string | null) => void;
-  toggleFloatCollapse: (id: string) => void;
   deleteFloat: (id: string) => void;
 
   // ---- line property setters (bulk-aware: apply to `multiGroups.lines`, except
@@ -1429,13 +1428,11 @@ export function useEditorState(): EditorController {
   // fixed 44px one.
   const floatHeights = useMemo<Record<string, number>>(() => {
     const out: Record<string, number> = {};
-    // board는 접기 토글이 없어 좌측 패딩이 좁다(floatPadLeft) — 줄바꿈 폭이 다르다.
-    const board = doc.kind === 'board';
     doc.floats.forEach((f) => {
-      out[f.id] = measureFloatHeight(f, measurer, board);
+      out[f.id] = measureFloatHeight(f, measurer);
     });
     return out;
-  }, [doc.floats, doc.kind, measurer]);
+  }, [doc.floats, measurer]);
 
   /** 화이트보드(트리 없는 문서)인가 — UI 트리밍·그리기 도구·패딩 규칙의 기준. */
   const isBoard = doc.kind === 'board';
@@ -4049,7 +4046,7 @@ export function useEditorState(): EditorController {
   );
 
   // ---- float property setters — bulk-aware style setters (port of `Component#applyFloatText`-backed
-  // setters, MindFlow.dc.html:2733-2737) + per-instance actions (toggleFloatCollapse/deleteFloat stay
+  // setters, MindFlow.dc.html:2733-2737) + per-instance actions (deleteFloat stays
   // single-id: they act on the specific float box clicked, not the whole selection). ----
   const setFloatBg = useCallback((hex: string | null) => commitDoc((d) => ({ ...d, floats: mutations.updateFloatItems(d.floats, floatTargetIds(), { bg: hex ?? undefined }) })), [floatTargetIds, commitDoc]);
   // ---- 화이트보드 그리기(M4): 펜·획 지우개 ------------------------------------
@@ -4206,10 +4203,6 @@ export function useEditorState(): EditorController {
   const setFloatTextColor = useCallback(
     (hex: string | null) => commitDoc((d) => ({ ...d, floats: mutations.updateFloatItems(d.floats, floatTargetIds(), { textColor: hex ?? undefined }) })),
     [floatTargetIds, commitDoc],
-  );
-  const toggleFloatCollapse = useCallback(
-    (id: string) => commitDoc((d) => ({ ...d, floats: mutations.updateFloatItem(d.floats, id, { collapsed: !d.floats.find((f) => f.id === id)?.collapsed }) })),
-    [commitDoc],
   );
   const deleteFloat = useCallback(
     (id: string) => {
@@ -4610,7 +4603,13 @@ export function useEditorState(): EditorController {
    * "여기에 담긴다"를 알린다(폴더 드래그앤드롭과 같은 어포던스). 소속 자체는
    * 기하로 정해지므로 이 값은 순수한 표시이고, 손을 떼면 지운다. */
   const [frameDrop, setFrameDropState] = useState<string | null>(null);
-  const setFrameDrop = useCallback((id: string | null) => setFrameDropState((prev) => (prev === id ? prev : id)), []);
+  // 프레임 = 그릇은 **화이트보드의 어휘**다(요청: 맵과 보드는 별개) — 맵에서는
+  // 영역이 표식일 뿐이라 담김 강조도 뜨지 않는다. 세터에서 한 번 가드하면
+  // 모든 드래그 경로(메모·획·영역)가 함께 조용해진다.
+  const setFrameDrop = useCallback((id: string | null) => {
+    const next = docRef.current.kind === 'board' ? id : null;
+    setFrameDropState((prev) => (prev === next ? prev : next));
+  }, []);
   /** 프레임이 담고 가는 모든 id — 맞춤(안내선) 기준에서 빼는 데 쓴다. */
   const carriedIds = (carry: CarrySnapshot): Set<string> =>
     new Set([...Object.keys(carry.zones), ...Object.keys(carry.floats), ...Object.keys(carry.lines), ...Object.keys(carry.strokes), ...Object.keys(carry.nodes)]);
@@ -5396,8 +5395,11 @@ export function useEditorState(): EditorController {
   const frameCarry = useCallback(
     (z: Zone): CarrySnapshot => {
       const d = docRef.current;
-      const { ids } = frameMembers(z);
       const carry: CarrySnapshot = { zones: { [z.id]: { x: z.x, y: z.y } }, floats: {}, lines: {}, strokes: {}, nodes: {} };
+      // 프레임 = 그릇은 화이트보드 전용(요청) — 맵의 영역은 표식이라 끌면
+      // 사각형만 움직이고 안의 객체는 제자리다(dc 원본의 결).
+      if (d.kind !== 'board') return carry;
+      const { ids } = frameMembers(z);
       ids.floats.forEach((id) => {
         const f = d.floats.find((x) => x.id === id);
         if (f) carry.floats[id] = { x: f.x, y: f.y };
@@ -5833,6 +5835,17 @@ export function useEditorState(): EditorController {
     // 않는다) — 획은 자기 DOM 요소가 없어 배경 핸들러가 좌표로 잡아 준다. 영역의
     // 넓은 판이 그 클릭을 먼저 삼키면 프레임 안 잉크는 영영 고를 수 없다(실측).
     if (strokeAt(toCanvasPoint(e.clientX, e.clientY, viewportRef.current))) return;
+    // 맵의 이미지 플로트는 영역 **아래**에 깔린다(요청 — z 5 < 히트 판 8). 그래서
+    // 영역 판이 그 클릭을 먼저 받는데, 누른 자리가 이미지 위면 그 이미지에게
+    // 넘긴다(획 back-off와 같은 결 — 아니면 영역 안 이미지는 영영 고를 수 없다).
+    if (docRef.current.kind !== 'board') {
+      const p = toCanvasPoint(e.clientX, e.clientY, viewportRef.current);
+      const img = [...docRef.current.floats].reverse().find((f) => !!f.img && p.x >= f.x && p.x <= f.x + f.w && p.y >= f.y && p.y <= f.y + floatBoxH(f));
+      if (img) {
+        beginFloatDrag(e, img.id);
+        return;
+      }
+    }
     if (e.pointerType === 'touch' && !isSelectedSingle('zone', id)) {
       pendingTapRef.current = { kind: 'zone', id };
       return;
@@ -5844,7 +5857,7 @@ export function useEditorState(): EditorController {
     setSelectionState({ kind: 'zone', id });
     setMultiSelectionState(null);
     startObjDrag({ kind: 'zone', id, pointerId: e.pointerId, startClientX: e.clientX, startClientY: e.clientY, ox: z.x, oy: z.y, carry: frameCarry(z) });
-  }, [frameCarry]);
+  }, [frameCarry, beginFloatDrag]);
 
   const beginZoneResize = useCallback((e: ReactPointerEvent, id: string) => {
     if (isPanButton(e)) return; // 우클릭·휠클릭 = 화면 이동 (배경으로 흘려보낸다)
@@ -6545,7 +6558,6 @@ export function useEditorState(): EditorController {
     toggleFloatRichStyle,
     setFloatTsize,
     setFloatTextColor,
-    toggleFloatCollapse,
     deleteFloat,
 
     setLineDashed,

@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import type { Doc } from '@mindflow/mindmap-core';
 import { strokeBounds } from '@mindflow/mindmap-core';
 import type { EditorController } from '../useEditorState';
+import { canvasWash } from '../theme';
 import { NodeLayer } from './NodeLayer';
 import { EdgeLayer } from './EdgeLayer';
 import { FloatLayer } from './FloatLayer';
@@ -73,10 +74,11 @@ export function Viewport({ doc, controller }: ViewportProps) {
             zIndex: 0,
             pointerEvents: 'none',
             backgroundColor: theme.canvasBg,
-            // 디자인 원본: 도트 격자 **위에** 위쪽에서 스며드는 얇은 흰 빛 —
-            // 캔버스 상단(도구가 몰려 있는 곳)이 살짝 가벼워 보인다.
-            backgroundImage: `radial-gradient(120% 90% at 50% 0%, rgba(255,255,255,.85) 0%, rgba(255,255,255,0) 58%), radial-gradient(${theme.dot} 1.2px, transparent 1.2px)`,
-            backgroundSize: '100% 100%, 26px 26px',
+            // 디자인 원본(마인드맵 리디자인): 캔버스 가운데가 살짝 밝은 **방사형
+            // 그라데이션** 위에 도트 격자. 도트가 먼저(위), 워시가 뒤(아래) —
+            // 순서를 바꾸면 불투명한 워시가 도트를 통째로 가린다.
+            backgroundImage: `radial-gradient(${theme.dot} 1.2px, transparent 1.2px), ${canvasWash(theme.canvasBg)}`,
+            backgroundSize: '26px 26px, 100% 100%',
             transform: 'translateZ(0)',
           }}
         />

@@ -10,7 +10,7 @@
 // 단위 테스트가 실제 출력 구조를 검증할 수 있다.
 
 import type { Box, Doc, Float, Line, LineAnchor, Node } from '@mindflow/mindmap-core';
-import { ROOT_ID, cubicAt, listDisplayLine, parseListPrefix, resolveLineEndpoints, resolveLineGeometry, strokeBounds, strokePathD } from '@mindflow/mindmap-core';
+import { ROOT_ID, cubicAt, parseListPrefix, resolveLineEndpoints, resolveLineGeometry, strokeBounds, strokePathD } from '@mindflow/mindmap-core';
 import { colorOf } from './tree';
 import type { EdgeStyle } from './tree';
 import { buildEdgePath, edgeStrokeWidth } from './edges';
@@ -375,29 +375,26 @@ export interface SceneFloatBox {
   fpx: number;
   lh: number;
   lines: SceneLine[];
-  collapsed: boolean;
 }
 
 /** Memo card metrics mirroring `FloatLayer`'s CSS box: a `min-height` card that
- * GROWS to fit its wrapped text (padding 9/11/9/32, `line-height:1.55`), so the
- * export memo is the same size as the on-screen editor's — not clipped to `f.h`. */
-export function sceneFloatBox(measure: Measure, f: Float, board?: boolean): SceneFloatBox {
+ * GROWS to fit its wrapped text (padding 9/11/9/11, `line-height:1.55`), so the
+ * export memo is the same size as the on-screen editor's — not clipped to `f.h`.
+ * 접기(collapsed)는 더 이상 보지 않는다 — 토글이 제거되어 항상 펼쳐 그린다(요청). */
+export function sceneFloatBox(measure: Measure, f: Float): SceneFloatBox {
   const fpx = f.tsize === 's' ? 11.5 : f.tsize === 'l' ? 15.5 : 13;
   const w = f.w || 160;
   // 이미지 플로트: 박스 = 명시적 w×h (에디터 FloatLayer/metrics와 동일 규칙)
-  if (f.img) return { w, h: Math.max(24, Math.round(f.h ?? w * 0.75)), fpx, lh: 0, lines: [], collapsed: false };
+  if (f.img) return { w, h: Math.max(24, Math.round(f.h ?? w * 0.75)), fpx, lh: 0, lines: [] };
   const lh = fpx * 1.55;
-  const collapsed = !!f.collapsed && !board; // board는 접기가 없다 — 항상 펼쳐 그린다
   const fw = f.bold ? 700 : 400;
   const fontOf: SegFont = (sg) => fontStr(fpx, sg?.b ? 800 : fw, sg?.i);
-  const innerW = Math.max(8, w - floatPadLeft(board) - 11); // left pad(맵 32=접기 토글 / board 11), right 11
-  const lines: SceneLine[] = collapsed
-    ? [{ segs: [{ t: listDisplayLine(String(f.text || '').split('\n')[0] || ''), w: 0 }], indent: 0, list: false, w: 0 }]
-    : wrapRichLines(measure, runsOf(f, ''), innerW, fontOf);
+  const innerW = Math.max(8, w - floatPadLeft() - 11); // 좌우 대칭 패딩(11/11)
+  const lines: SceneLine[] = wrapRichLines(measure, runsOf(f, ''), innerW, fontOf);
   const textH = Math.max(18, lines.length * lh); // text block has a min-height of 18
   const grown = 9 + textH + 9; // top + bottom padding
-  const h = collapsed ? Math.max(38, grown) : Math.max(f.h || 44, grown);
-  return { w, h, fpx, lh, lines, collapsed };
+  const h = Math.max(f.h || 44, grown);
+  return { w, h, fpx, lh, lines };
 }
 
 /** Line-anchor box lookup (port of `Component#lineTargetBox`, MindFlow.dc.html:2377-2390),
@@ -510,13 +507,72 @@ export interface PaintSceneOpts {
 export function paintScene(p: Painter, o: PaintSceneOpts): void {
   const { doc, geom, theme, measure, bounds, fBoxes } = o;
   const ids = Object.keys(geom).filter((id) => doc.nodes[id]);
+  const board = doc.kind === 'board';
+
+  // 영역(프레임)의 **테두리·라벨** — 그리는 시점이 종류마다 다르다(아래 참고).
+  const paintZoneFrames = (): void => {
+    doc.zones.forEach((z) => {
+      const zc = z.color || theme.accent;
+      p.path(roundRectD(z.x, z.y, z.w, z.h, 16), { stroke: hexA(zc, 0.55), width: 2, dash: [7, 5] });
+      const labelFont = fontStr(12.5, 700);
+      const raw = z.label || '영역';
+      const maxPillW = Math.max(20, z.w - 20); // CSS: max-width calc(100% - 20px)
+      const innerMax = maxPillW - 26; // horizontal padding 13*2
+      let label = raw;
+      if (measure(label, labelFont) > innerMax) {
+        while (label.length > 1 && measure(label + '…', labelFont) > innerMax) label = label.slice(0, -1);
+        label += '…';
+      }
+      const labelW = measure(label, labelFont);
+      const lw = Math.min(maxPillW, labelW + 26);
+      p.path(roundRectD(z.x + 10, z.y - 14, lw, 27, 13.5), { fill: zc });
+      p.text(label, z.x + 10 + (lw - labelW) / 2, z.y - 0.5, { px: 12.5, weight: 700, fill: z.color ? '#fff' : theme.accentInk, w: labelW });
+    });
+  };
+
+  // 메모·이미지 플로트 하나 그리기 — 종류에 따라 그리는 **시점**이 달라 닫힌
+  // 함수로 뽑았다(맵의 이미지는 영역 아래, 메모는 위 — 에디터 z와 동일).
+  const paintFloat = (f: Float): void => {
+    const m = fBoxes.get(f.id);
+    if (!m) return;
+    if (f.img) {
+      // 이미지 플로트: 라운드 클립 안에 이미지를 채운다 (비율은 w/h에 이미 반영).
+      // 이미지가 없으면(URL 미해결) 같은 자리에 패널색 자리 박스.
+      if (!p.image(`f:${f.id}`, f.x, f.y, m.w, m.h, 8)) p.path(roundRectD(f.x, f.y, m.w, m.h, 8), { fill: theme.panel });
+      p.path(roundRectD(f.x, f.y, m.w, m.h, 8), { stroke: hexA('#000000', 0.14), width: 1 });
+      return;
+    }
+    const dark = theme.appBg === '#191512';
+    p.path(roundRectD(f.x, f.y, m.w, m.h, 8), {
+      fill: f.bg || (dark ? '#3a2f22' : '#fff6cf'),
+      stroke: f.bg ? hexA('#000000', 0.14) : dark ? '#5a4a2f' : '#f0e3a0',
+      width: 1,
+    });
+    // 접기 토글 배지는 그리지 않는다 — 접기가 제거되어 화면에도 없다(요청).
+    // text — 세그 단위(굵게/색/기울임/취소선/링크). 세로는 줄 박스 중앙 기준.
+    if (f.text) {
+      const fw = f.bold ? 700 : 400;
+      const base = f.textColor || theme.text;
+      const linkColor = linkInk(base);
+      m.lines.forEach((ln, i) => {
+        const cy = f.y + 9 + i * m.lh + m.lh / 2;
+        if (cy < f.y + m.h - 4) paintRichLine(p, ln, f.x + floatPadLeft() + ln.indent, cy, m.fpx, fw, base, linkColor);
+      });
+    }
+  };
 
   p.rect(bounds.x0, bounds.y0, bounds.w, bounds.h, theme.canvasBg);
 
-  // 영역(프레임)의 **면** — 맨 아래(에디터 z 8). 테두리·라벨은 맨 위에서 따로 그린다.
+  // 맵: 이미지 플로트는 영역보다 **아래**(요청 — 에디터 z 5 < 영역 8·9). 배경
+  // 사진처럼 깔린다. board는 기존 순서 그대로(메모와 함께 아래에서 그린다).
+  if (!board) doc.floats.filter((f) => !!f.img).forEach(paintFloat);
+
+  // 영역(프레임)의 **면** — 콘텐츠 아래(에디터 z 8). 테두리·라벨은 따로 그린다.
   doc.zones.forEach((z) => {
     p.path(roundRectD(z.x, z.y, z.w, z.h, 16), { fill: hexA(z.color || theme.accent, 0.07) });
   });
+  // 맵: 경계·라벨도 콘텐츠 **아래**(요청 — 메모·주제가 점선을 덮는다, 에디터 z 9).
+  if (!board) paintZoneFrames();
 
   // tree edges — honor the live layout mode + edge style (curve/elbow/straight),
   // same geometry as `EdgeLayer`/`buildEdgePath`, so 조직도(down)/꺾은선/직선 match.
@@ -594,41 +650,8 @@ export function paintScene(p: Painter, o: PaintSceneOpts): void {
   });
 
   // memos — grown-to-fit cards (see `sceneFloatBox`), matching the editor's memo box.
-  doc.floats.forEach((f) => {
-    const m = fBoxes.get(f.id);
-    if (!m) return;
-    if (f.img) {
-      // 이미지 플로트: 라운드 클립 안에 이미지를 채운다 (비율은 w/h에 이미 반영).
-      // 이미지가 없으면(URL 미해결) 같은 자리에 패널색 자리 박스.
-      if (!p.image(`f:${f.id}`, f.x, f.y, m.w, m.h, 8)) p.path(roundRectD(f.x, f.y, m.w, m.h, 8), { fill: theme.panel });
-      p.path(roundRectD(f.x, f.y, m.w, m.h, 8), { stroke: hexA('#000000', 0.14), width: 1 });
-      return;
-    }
-    const dark = theme.appBg === '#191512';
-    p.path(roundRectD(f.x, f.y, m.w, m.h, 8), {
-      fill: f.bg || (dark ? '#3a2f22' : '#fff6cf'),
-      stroke: f.bg ? hexA('#000000', 0.14) : dark ? '#5a4a2f' : '#f0e3a0',
-      width: 1,
-    });
-    // fold toggle badge (accent circle at the card's top-left, like the editor)
-    // — board에는 접기가 없으므로 배지도 그리지 않는다.
-    const board = doc.kind === 'board';
-    if (!board) {
-      p.path(circleD(f.x + 16, f.y + 16, 10), { fill: theme.accent });
-      const glyph = m.collapsed ? '＋' : '−';
-      p.text(glyph, f.x + 16 - measure(glyph, fontStr(12, 700)) / 2, f.y + 16.5, { px: 12, weight: 700, fill: theme.accentInk });
-    }
-    // text — 세그 단위(굵게/색/기울임/취소선/링크). 세로는 줄 박스 중앙 기준.
-    if (f.text) {
-      const fw = f.bold ? 700 : 400;
-      const base = f.textColor || theme.text;
-      const linkColor = linkInk(base);
-      m.lines.forEach((ln, i) => {
-        const cy = f.y + 9 + i * m.lh + m.lh / 2;
-        if (cy < f.y + m.h - 4) paintRichLine(p, ln, f.x + floatPadLeft(board) + ln.indent, cy, m.fpx, fw, base, linkColor);
-      });
-    }
-  });
+  // 맵의 이미지 플로트는 위(영역 아래)에서 이미 그렸다.
+  doc.floats.filter((f) => board || !f.img).forEach(paintFloat);
 
   // free connector lines — drawn LAST (editor z-index 25) so an arrow landing on
   // a memo/node isn't hidden behind it.
@@ -666,25 +689,9 @@ export function paintScene(p: Painter, o: PaintSceneOpts): void {
     p.path(strokePathD(s.pts), { stroke: s.color, width: s.w, round: true, ...(isHighlighter(s) ? { alpha: HL_OPACITY, blend: 'multiply' as const } : {}) });
   });
 
-  // 영역(프레임)의 **테두리·라벨은 맨 위**(요청) — 화이트보드에서 영역은 "이
-  // 구획은 여기까지"를 긋는 표식이라 안의 스티커·잉크에 가려지면 안 된다. 면(7%)은
-  // 위에서 이미 그렸다(맨 아래) — 위로 올리면 그 안의 색을 물들인다. 에디터
-  // `ZoneLayer`와 같은 순서다(화면과 내보낸 파일이 달라 보이면 그게 버그다).
-  doc.zones.forEach((z) => {
-    const zc = z.color || theme.accent;
-    p.path(roundRectD(z.x, z.y, z.w, z.h, 16), { stroke: hexA(zc, 0.55), width: 2, dash: [7, 5] });
-    const labelFont = fontStr(12.5, 700);
-    const raw = z.label || '영역';
-    const maxPillW = Math.max(20, z.w - 20); // CSS: max-width calc(100% - 20px)
-    const innerMax = maxPillW - 26; // horizontal padding 13*2
-    let label = raw;
-    if (measure(label, labelFont) > innerMax) {
-      while (label.length > 1 && measure(label + '…', labelFont) > innerMax) label = label.slice(0, -1);
-      label += '…';
-    }
-    const labelW = measure(label, labelFont);
-    const lw = Math.min(maxPillW, labelW + 26);
-    p.path(roundRectD(z.x + 10, z.y - 14, lw, 27, 13.5), { fill: zc });
-    p.text(label, z.x + 10 + (lw - labelW) / 2, z.y - 0.5, { px: 12.5, weight: 700, fill: z.color ? '#fff' : theme.accentInk, w: labelW });
-  });
+  // 화이트보드: 영역(프레임)의 **테두리·라벨은 맨 위**(요청) — 영역은 "이 구획은
+  // 여기까지"를 긋는 표식이라 안의 스티커·잉크에 가려지면 안 된다. 맵은 위에서
+  // 이미 그렸다(콘텐츠 아래). 에디터 `ZoneLayer`와 같은 순서다(화면과 내보낸
+  // 파일이 달라 보이면 그게 버그다).
+  if (board) paintZoneFrames();
 }

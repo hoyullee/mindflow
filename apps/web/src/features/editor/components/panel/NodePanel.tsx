@@ -52,7 +52,9 @@ export function NodePanel({ controller, nodeIds, isMobile = false, short = false
   const ids = nodeIds.filter((id) => controller.doc.nodes[id]);
   const refId = ids[0];
   const n = refId ? controller.doc.nodes[refId] : undefined;
-  const [openSec, setOpenSec] = useState<string | null>(null);
+  // 열릴 때마다 **첫 구획은 펼친 채** 시작한다(요청) — 패널은 선택이 바뀔 때
+  // key로 리마운트되므로 이 초기값이 곧 "매번 열릴 때"다.
+  const [openSec, setOpenSec] = useState<string | null>('shape');
   if (!n || !refId) return null;
   const multi = ids.length > 1;
   const toggle = (k: string) => setOpenSec((cur) => (cur === k ? null : k));
@@ -66,7 +68,7 @@ export function NodePanel({ controller, nodeIds, isMobile = false, short = false
             <div style={{ fontSize: 14, fontWeight: 600, marginBottom: 14 }}>주제 {ids.length}개 선택됨</div>
           </>
         ) : (
-          <PanelTitle theme={th} kicker="선택한 주제" name={n.text} />
+          <PanelTitle theme={th} kicker="선택한 주제" name={n.text} onClose={controller.clearSelection} />
         )}
 
         <PanelSection theme={th} title="주제 스타일" open={openSec === 'shape'} onToggle={() => toggle('shape')}>

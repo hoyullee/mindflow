@@ -295,12 +295,13 @@ describe('리스트 — 메모(플로트)', () => {
     expect(card.textContent).not.toContain('- 할 일');
   });
 
-  it('접힌 메모의 첫 줄도 • 글리프로 보인다', () => {
+  it('옛 문서의 collapsed 메모도 항상 펼쳐 그린다(접기 제거 — 요청)', () => {
     localStorage.setItem('mindflow_doc_lf2', JSON.stringify(docWith({}, [{ ...FLOAT, collapsed: true }])));
     const { container } = renderEditor('/editor?map=lf2&title=x');
     const card = container.querySelector('[data-float-id="f1"]') as HTMLElement;
     expect(card.textContent).toContain('• 할 일');
-    expect(card.textContent).not.toContain('두 번째'); // 접힘: 첫 줄만
+    expect(card.textContent).toContain('두 번째'); // 접기 데이터가 남아 있어도 전부 보인다
+    expect(card.querySelector('[data-fold-toggle]')).toBeNull();
   });
 
   // 메모 편집이 노드와 같은 contentEditable + 키 규칙으로 바뀌었다(요청):

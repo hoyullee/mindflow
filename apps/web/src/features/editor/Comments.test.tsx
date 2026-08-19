@@ -153,6 +153,9 @@ describe('댓글(핀에 붙는 논의)', () => {
     renderEditor('/editor?map=cm5&title=x');
     const panel = await openPinComments();
     await waitFor(() => expect(within(panel).getByText('뿌리 댓글')).toBeTruthy());
+    // 안내 문구는 실제 동작(데스크톱 Enter = 등록)을 말한다 — "Ctrl+Enter로 등록" 아님(요청).
+    expect(within(panel).getByText('Enter로 등록')).toBeTruthy();
+    expect(within(panel).queryByText(/Ctrl \+ Enter|⌘ \+ Enter/)).toBeNull();
 
     fireEvent.click(within(panel).getByRole('button', { name: '답글' }));
     const replyBox = within(panel).getByLabelText('답글 입력');
@@ -655,8 +658,8 @@ describe('댓글 핀 다듬기(프리뷰 후속)', () => {
     localStorage.setItem('mindflow_doc_pf2', JSON.stringify(board));
     const { container } = renderEditor('/editor?map=pf2&title=보드');
     await waitFor(() => expect(container.querySelector('[data-board-toolbar]')).toBeTruthy());
-    fireEvent.click(screen.getByRole('button', { name: '스레드' }));
-    expect(screen.getByRole('button', { name: '스레드' }).getAttribute('aria-pressed')).toBe('true');
+    fireEvent.click(screen.getByRole('button', { name: '스레드 도구' }));
+    expect(screen.getByRole('button', { name: '스레드 도구' }).getAttribute('aria-pressed')).toBe('true');
 
     const layer = container.querySelector('[data-board-draw-layer]') as HTMLElement;
     firePointer(layer, 'pointerdown', { clientX: 320, clientY: 260 });
@@ -891,7 +894,7 @@ describe('댓글 핀 다듬기(프리뷰 후속)', () => {
     seedComment('pf3', PIN_ID, '이미 있는 말');
     const { container } = renderEditor('/editor?map=pf3&title=보드');
     await waitFor(() => expect(container.querySelector('[data-comment-pin]')).toBeTruthy());
-    fireEvent.click(screen.getByRole('button', { name: '스레드' }));
+    fireEvent.click(screen.getByRole('button', { name: '스레드 도구' }));
     const layer = container.querySelector('[data-board-draw-layer]') as HTMLElement;
     firePointer(layer, 'pointerdown', { clientX: 500, clientY: 380 });
     firePointer(layer, 'pointerup', { clientX: 500, clientY: 380 });
@@ -943,7 +946,7 @@ describe('댓글 도구(화이트보드)', () => {
     const { container } = renderEditor('/editor?map=bcm1&title=보드');
     await waitFor(() => expect(container.querySelector('[data-board-toolbar]')).toBeTruthy());
 
-    fireEvent.click(screen.getByRole('button', { name: '스레드' }));
+    fireEvent.click(screen.getByRole('button', { name: '스레드 도구' }));
     // 켜는 것만으로는 아무것도 만들지 않는다(예전엔 즉시 핀이 꽂혔다).
     expect(container.querySelector('[data-comment-pin]')).toBeNull();
     expect(container.querySelector('[data-comment-draft]')).toBeNull();
@@ -984,8 +987,9 @@ describe('마인드맵 스레드 진입점(요청)', () => {
     localStorage.setItem('mindflow_doc_mp2', JSON.stringify(DOC));
     const { container } = renderEditor('/editor?map=mp2&title=맵');
     await waitFor(() => expect(container.querySelector('.mf-ed-vp')).toBeTruthy());
-    // 맵에는 하단 도구 막대가 없다 — 단축키가 그 자리를 대신한다.
-    expect(container.querySelector('[data-board-toolbar]')).toBeNull();
+    // 맵에도 하단 도구 막대가 있다(마인드맵 리디자인) — 스레드 도구는 그 안의 버튼이고
+    // 단축키 C는 같은 상태를 켠다.
+    expect(container.querySelector('[data-board-toolbar]')).toBeTruthy();
 
     fireEvent.keyDown(window, { key: 'c', code: 'KeyC' });
     const layer = await waitFor(() => {
@@ -999,7 +1003,7 @@ describe('마인드맵 스레드 진입점(요청)', () => {
     // 자리를 정한 순간 손은 선택 도구로 돌아온다(보드와 같은 규칙).
     await waitFor(() => expect(container.querySelector('[data-board-draw-layer]')).toBeNull());
 
-    // 켜 두고 마음이 바뀌면 Escape — 맵에는 도구 막대가 없으므로 전역 키가 받는다.
+    // 켜 두고 마음이 바뀌면 Escape — 전역 키가 받는다.
     fireEvent.keyDown(window, { key: 'c', code: 'KeyC' });
     await waitFor(() => expect(container.querySelector('[data-board-draw-layer]')).toBeTruthy());
     fireEvent.keyDown(window, { key: 'Escape' });

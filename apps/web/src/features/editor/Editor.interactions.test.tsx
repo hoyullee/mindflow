@@ -104,7 +104,9 @@ describe('Editor interactions (M3-Editor-b)', () => {
     expect(within(screen.getByText('선택한 주제').parentElement as HTMLElement).getByText('리서치')).toBeTruthy();
   });
 
-  it('property panel sections are a collapsed-by-default one-open accordion', async () => {
+  it('property panel opens with its FIRST section expanded, then behaves as a one-open accordion', async () => {
+    // 마인드맵 리디자인(요청): 패널이 열릴 때마다 첫 구획(주제 스타일)은 펼친 채
+    // 시작한다 — 전부 접힌 패널은 "여기서 무엇을 할 수 있는가"를 말하지 않는다.
     const user = userEvent.setup();
     localStorage.setItem('mindflow_doc_t1acc', JSON.stringify(DOC));
     const { container } = renderEditor('/editor?map=t1acc&title=x');
@@ -113,13 +115,10 @@ describe('Editor interactions (M3-Editor-b)', () => {
     const shapeHdr = screen.getByRole('button', { name: /주제 스타일/ });
     const textHdr = screen.getByRole('button', { name: /텍스트 스타일/ });
     const iconHdr = screen.getByRole('button', { name: /아이콘/ });
-    // all collapsed initially
-    expect(shapeHdr.getAttribute('aria-expanded')).toBe('false');
+    // first section open, the rest collapsed
+    expect(shapeHdr.getAttribute('aria-expanded')).toBe('true');
     expect(textHdr.getAttribute('aria-expanded')).toBe('false');
     expect(iconHdr.getAttribute('aria-expanded')).toBe('false');
-
-    await user.click(shapeHdr);
-    expect(shapeHdr.getAttribute('aria-expanded')).toBe('true');
 
     // opening another collapses the first (accordion — one open at a time)
     await user.click(textHdr);
@@ -131,18 +130,85 @@ describe('Editor interactions (M3-Editor-b)', () => {
     expect(textHdr.getAttribute('aria-expanded')).toBe('false');
   });
 
-  it('property panel accordion resets to collapsed when the selection changes', async () => {
+  it('property panel accordion resets to first-section-open when the selection changes', async () => {
     const user = userEvent.setup();
     localStorage.setItem('mindflow_doc_t1acc2', JSON.stringify(DOC));
     const { container } = renderEditor('/editor?map=t1acc2&title=x');
 
     selectNodeBox(nodeBoxFor(container, '리서치'));
-    await user.click(screen.getByRole('button', { name: /주제 스타일/ }));
-    expect(screen.getByRole('button', { name: /주제 스타일/ }).getAttribute('aria-expanded')).toBe('true');
+    await user.click(screen.getByRole('button', { name: /텍스트 스타일/ }));
+    expect(screen.getByRole('button', { name: /텍스트 스타일/ }).getAttribute('aria-expanded')).toBe('true');
 
-    // select a different node → panel remounts, sections back to collapsed
+    // select a different node → panel remounts, back to the default (first open)
     selectNodeBox(nodeBoxFor(container, '디자인'));
-    expect(screen.getByRole('button', { name: /주제 스타일/ }).getAttribute('aria-expanded')).toBe('false');
+    expect(screen.getByRole('button', { name: /주제 스타일/ }).getAttribute('aria-expanded')).toBe('true');
+    expect(screen.getByRole('button', { name: /텍스트 스타일/ }).getAttribute('aria-expanded')).toBe('false');
+  });
+
+  it('첫 구획은 펼침 애니메이션 없이 열린 채 보이고, 첫 토글부터 전이가 켜진다(요청)', async () => {
+    const user = userEvent.setup();
+    localStorage.setItem('mindflow_doc_t1na', JSON.stringify(DOC));
+    const { container } = renderEditor('/editor?map=t1na&title=x');
+    selectNodeBox(nodeBoxFor(container, '리서치'));
+
+    const shapeHdr = screen.getByRole('button', { name: /주제 스타일/ });
+    const bodyOf = (hdr: HTMLElement) => hdr.nextElementSibling as HTMLElement;
+    // 마운트 직후: 열린 상태 그대로, 전이 없음 — "지금 열렸다"가 아니라 "열려 있다".
+    expect(shapeHdr.getAttribute('aria-expanded')).toBe('true');
+    expect(bodyOf(shapeHdr).style.transition).toBe('none');
+
+    // 사용자가 토글하는 순간부터 전이가 켜진다(아코디언 동작은 그대로).
+    await user.click(screen.getByRole('button', { name: /텍스트 스타일/ }));
+    expect(bodyOf(shapeHdr).style.transition).toContain('max-height');
+  });
+
+  it('작게/보통/크게는 디자인 원본의 세그 트랙 — panel2 트랙 위에서 활성 칸만 카드 면(요청)', () => {
+    localStorage.setItem('mindflow_doc_t1sz', JSON.stringify(DOC));
+    const { container } = renderEditor('/editor?map=t1sz&title=x');
+    selectNodeBox(nodeBoxFor(container, '리서치'));
+    fireEvent.click(screen.getByRole('button', { name: /텍스트 스타일/ }));
+
+    const seg = container.querySelector('[data-size-seg]') as HTMLElement;
+    expect(seg).toBeTruthy();
+    expect(seg.style.background).toBe('rgb(250, 243, 238)'); // uiTheme panel2 #faf3ee
+    const btns = Array.from(seg.querySelectorAll('button')) as HTMLButtonElement[];
+    expect(btns.map((b) => b.textContent)).toEqual(['작게', '보통', '크게']);
+    const active = btns.find((b) => b.getAttribute('aria-pressed') === 'true')!;
+    expect(active.textContent).toBe('보통'); // 기본 크기
+    expect(active.style.background).toBe('rgb(255, 255, 255)'); // 활성 = 카드 면(panel)
+    expect(active.style.boxShadow).toContain('0 2px 5px');
+    const idle = btns.find((b) => b.textContent === '작게')!;
+    expect(idle.style.background).toBe('transparent');
+    expect(idle.style.border).toBe('0px'); // 예전 테두리 상자(SegButton)가 아니다
+  });
+
+  // 마인드맵 리디자인 3건의 나머지 계약 — 패널 폭/머리/닫기, 캔버스 그라데이션.
+  it('property panel: 296px, accent header with kicker+name, and a ✕ that clears the selection', () => {
+    localStorage.setItem('mindflow_doc_t1rd', JSON.stringify(DOC));
+    const { container } = renderEditor('/editor?map=t1rd&title=x');
+    selectNodeBox(nodeBoxFor(container, '리서치'));
+
+    const panel = container.querySelector('[data-props-panel]') as HTMLElement;
+    expect(panel.style.width).toBe('296px');
+    // 머리 = 옅은 강조 면(디자인 원본 #FBEDE6 — 강조색 틴트) + [무엇을 고르고 있는가 / 이름]
+    const head = screen.getByText('선택한 주제').parentElement!.parentElement as HTMLElement;
+    expect(head.style.background).toContain('rgba(240, 102, 63'); // hexA(accent, …)
+    expect((container.querySelector('[data-panel-name]') as HTMLElement).textContent).toBe('리서치');
+    // ✕ = 선택 해제(패널은 선택을 따라 닫힌다)
+    fireEvent.click(screen.getByLabelText('속성 닫기'));
+    expect(screen.queryByText('선택한 주제')).toBeNull();
+  });
+
+  it('캔버스 배경은 도트 + 방사형 그라데이션(canvasWash) 두 겹이다 (디자인 원본)', () => {
+    localStorage.setItem('mindflow_doc_bgw', JSON.stringify(DOC));
+    const { container } = renderEditor('/editor?map=bgw&title=x');
+    const bg = container.querySelector('[data-canvas-bg]') as HTMLElement;
+    const layers = bg.style.backgroundImage.split('), radial-gradient');
+    expect(layers).toHaveLength(2);
+    // 도트가 먼저(위) — 나중에 오는 불투명 wash가 앞이면 도트가 통째로 가려진다.
+    expect(layers[0]).toContain('1.2px');
+    expect(bg.style.backgroundImage).toContain('1200px 700px at 62% 46%');
+    expect(bg.style.backgroundSize).toBe('26px 26px, 100% 100%');
   });
 
   it('clicking anywhere in a zone body (not just its label) selects the zone', () => {

@@ -158,6 +158,21 @@ export function mixHex(a: string, b: string, t: number): string {
   return `#${mix(ar, br)}${mix(ag, bg)}${mix(ab, bb)}`;
 }
 
+/**
+ * 캔버스 배경의 **은은한 방사형 그라데이션**(디자인 원본 `Geurio 마인드맵 리디자인` —
+ * `radial-gradient(1200px 700px at 62% 46%, #FFFDFB, #FDF7F2 55%, #FBF2EB)`).
+ * 값을 그대로 박지 않고 **테마의 canvasBg에서 파생**한다: 중심은 흰색 쪽으로 많이,
+ * 중간은 조금 민 색, 가장자리는 canvasBg 그대로 — 코랄에서 원본과 거의 같은 층이
+ * 나오고 여섯 벌 테마·보드의 흰 캔버스에서도 성립한다. 어두운 캔버스(다크)는
+ * 흰색을 크게 섞으면 잿빛으로 바래므로 아주 옅게만 밝힌다.
+ */
+export function canvasWash(canvasBg: string): string {
+  const c = canvasBg.replace('#', '');
+  const lum = (parseInt(c.substring(0, 2), 16) * 0.2126 + parseInt(c.substring(2, 4), 16) * 0.7152 + parseInt(c.substring(4, 6), 16) * 0.0722) / 255;
+  const [t0, t1] = lum < 0.5 ? [0.08, 0.04] : [0.8, 0.45];
+  return `radial-gradient(1200px 700px at 62% 46%, ${mixHex(canvasBg, '#ffffff', t0)} 0%, ${mixHex(canvasBg, '#ffffff', t1)} 55%, ${canvasBg} 100%)`;
+}
+
 /** Port of `Component#hexA` (MindFlow.dc.html:883). */
 export function hexA(hex: string, a: number): string {
   const c = hex.replace('#', '');
