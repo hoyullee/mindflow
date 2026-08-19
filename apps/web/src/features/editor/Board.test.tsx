@@ -1717,6 +1717,57 @@ describe('화이트보드 에디터', () => {
     });
   });
 
+  it('맵 z-순서: 영역 경계(9)는 메모(10) 아래, 이미지(5)는 영역 아래 — 영역 판 클릭이 이미지에 위임된다(요청)', async () => {
+    localStorage.setItem(
+      'mindflow_doc_mz3',
+      JSON.stringify({
+        v: 1,
+        nodes: { root: { id: 'root', text: '루트', emoji: '', parent: null, children: [], collapsed: false, color: null, x: 0, y: 0 } },
+        floats: [
+          { id: 'memo', x: -300, y: -140, w: 160, text: '메모' },
+          { id: 'img', x: -300, y: 20, w: 120, h: 90, text: '', img: 'data:image/png;base64,iVBORw0KGgo=' },
+        ],
+        lines: [],
+        zones: [{ id: 'z1', x: -400, y: -200, w: 360, h: 380, label: '구획', color: null }],
+        layoutMode: 'right',
+        themeKey: 'coral',
+      }),
+    );
+    const { container } = renderEditor('/editor?map=mz3&title=x');
+    const frame = await waitFor(() => {
+      const el = container.querySelector('[data-zone-id="z1"]') as HTMLElement;
+      expect(el).toBeTruthy();
+      return el;
+    });
+    // 경계·라벨 판은 콘텐츠 아래(9) — 메모(10)·주제(40)가 점선을 덮는다.
+    expect(frame.style.zIndex).toBe('9');
+    expect((container.querySelector('[data-float-id="memo"]') as HTMLElement).style.zIndex).toBe('10');
+    // 이미지는 영역(8·9)보다도 아래 — 배경 사진처럼 깔린다.
+    const img = container.querySelector('[data-float-id="img"]') as HTMLElement;
+    expect(img.style.zIndex).toBe('5');
+
+    // 영역 히트 판(8)이 이미지 위 클릭을 먼저 받는다 → 이미지에게 넘긴다(위임).
+    const p = strokePoint(container, -240, 60); // 이미지 박스 안의 한 점
+    const at = { clientX: p.x, clientY: p.y };
+    const hit = container.querySelector('[data-zone-hit="z1"]') as HTMLElement;
+    firePointer(hit, 'pointerdown', { pointerId: 61, ...at, button: 0 });
+    firePointer(document.body, 'pointerup', { pointerId: 61, ...at, button: 0 });
+    await screen.findByText('선택한 이미지'); // 영역이 아니라 이미지가 선택됐다
+    // 고른 동안은 위로 뜬다 — 리사이즈 핸들이 영역 판에 가리지 않게.
+    await waitFor(() => expect(img.style.zIndex).toBe('20'));
+  });
+
+  it('board(무회귀): 영역 경계·라벨 판은 잉크 위(95)다', async () => {
+    localStorage.setItem('mindflow_doc_bz9', JSON.stringify({ ...BOARD, zones: [{ id: 'bz', x: -400, y: -200, w: 360, h: 260, label: '프레임', color: null }] }));
+    const { container } = renderEditor('/editor?map=bz9&title=x');
+    const frame = await waitFor(() => {
+      const el = container.querySelector('[data-zone-id="bz"]') as HTMLElement;
+      expect(el).toBeTruthy();
+      return el;
+    });
+    expect(frame.style.zIndex).toBe('95');
+  });
+
   it('맵: 영역 복사도 사각형만 담는다 — 안의 메모가 딸려 오지 않는다(요청)', async () => {
     localStorage.setItem(
       'mindflow_doc_mz2',

@@ -145,6 +145,43 @@ describe('Editor interactions (M3-Editor-b)', () => {
     expect(screen.getByRole('button', { name: /텍스트 스타일/ }).getAttribute('aria-expanded')).toBe('false');
   });
 
+  it('첫 구획은 펼침 애니메이션 없이 열린 채 보이고, 첫 토글부터 전이가 켜진다(요청)', async () => {
+    const user = userEvent.setup();
+    localStorage.setItem('mindflow_doc_t1na', JSON.stringify(DOC));
+    const { container } = renderEditor('/editor?map=t1na&title=x');
+    selectNodeBox(nodeBoxFor(container, '리서치'));
+
+    const shapeHdr = screen.getByRole('button', { name: /주제 스타일/ });
+    const bodyOf = (hdr: HTMLElement) => hdr.nextElementSibling as HTMLElement;
+    // 마운트 직후: 열린 상태 그대로, 전이 없음 — "지금 열렸다"가 아니라 "열려 있다".
+    expect(shapeHdr.getAttribute('aria-expanded')).toBe('true');
+    expect(bodyOf(shapeHdr).style.transition).toBe('none');
+
+    // 사용자가 토글하는 순간부터 전이가 켜진다(아코디언 동작은 그대로).
+    await user.click(screen.getByRole('button', { name: /텍스트 스타일/ }));
+    expect(bodyOf(shapeHdr).style.transition).toContain('max-height');
+  });
+
+  it('작게/보통/크게는 디자인 원본의 세그 트랙 — panel2 트랙 위에서 활성 칸만 카드 면(요청)', () => {
+    localStorage.setItem('mindflow_doc_t1sz', JSON.stringify(DOC));
+    const { container } = renderEditor('/editor?map=t1sz&title=x');
+    selectNodeBox(nodeBoxFor(container, '리서치'));
+    fireEvent.click(screen.getByRole('button', { name: /텍스트 스타일/ }));
+
+    const seg = container.querySelector('[data-size-seg]') as HTMLElement;
+    expect(seg).toBeTruthy();
+    expect(seg.style.background).toBe('rgb(250, 243, 238)'); // uiTheme panel2 #faf3ee
+    const btns = Array.from(seg.querySelectorAll('button')) as HTMLButtonElement[];
+    expect(btns.map((b) => b.textContent)).toEqual(['작게', '보통', '크게']);
+    const active = btns.find((b) => b.getAttribute('aria-pressed') === 'true')!;
+    expect(active.textContent).toBe('보통'); // 기본 크기
+    expect(active.style.background).toBe('rgb(255, 255, 255)'); // 활성 = 카드 면(panel)
+    expect(active.style.boxShadow).toContain('0 2px 5px');
+    const idle = btns.find((b) => b.textContent === '작게')!;
+    expect(idle.style.background).toBe('transparent');
+    expect(idle.style.border).toBe('0px'); // 예전 테두리 상자(SegButton)가 아니다
+  });
+
   // 마인드맵 리디자인 3건의 나머지 계약 — 패널 폭/머리/닫기, 캔버스 그라데이션.
   it('property panel: 296px, accent header with kicker+name, and a ✕ that clears the selection', () => {
     localStorage.setItem('mindflow_doc_t1rd', JSON.stringify(DOC));

@@ -1,5 +1,5 @@
 import { useLayoutEffect, useRef, useState, type CSSProperties, type ReactNode } from 'react';
-import { hexA } from '../../theme';
+import { hexA, mixHex } from '../../theme';
 import type { Theme } from '../../theme';
 import { MONO_FONT, glassCard } from '../../chrome';
 
@@ -176,6 +176,16 @@ export function SectionLabel({ theme, children }: { theme: Theme; children: Reac
 export function PanelSection({ theme, title, value, open, onToggle, children }: { theme: Theme; title: string; value?: string; open: boolean; onToggle: () => void; children: ReactNode }) {
   const bodyRef = useRef<HTMLDivElement | null>(null);
   const [maxH, setMaxH] = useState(0);
+  // 첫 구획은 열린 채로 마운트된다(요청) — 그때 펼침 애니메이션이 재생되면
+  // "열려 있다"가 아니라 "지금 열렸다"로 읽힌다. 전이는 **open이 처음 바뀐
+  // 뒤**(사용자의 첫 토글)부터만 켠다. 패널은 선택이 바뀔 때 key로 리마운트되므로
+  // 매번 성립한다. (렌더 중 상태 조정 — React의 adjust-state-during-render 관용구.)
+  const [toggled, setToggled] = useState(false);
+  const prevOpenRef = useRef(open);
+  if (open !== prevOpenRef.current) {
+    prevOpenRef.current = open;
+    if (!toggled) setToggled(true);
+  }
   // Keep the expanded height in sync with the (always-rendered) body content so
   // the open transition animates to the right height even as content changes.
   useLayoutEffect(() => {
@@ -217,7 +227,7 @@ export function PanelSection({ theme, title, value, open, onToggle, children }: 
       </div>
       <div
         ref={bodyRef}
-        style={{ overflow: 'hidden', opacity: open ? 1 : 0, maxHeight: open ? maxH : 0, transition: 'max-height .3s cubic-bezier(.4,0,.2,1), opacity .24s ease' }}
+        style={{ overflow: 'hidden', opacity: open ? 1 : 0, maxHeight: open ? maxH : 0, transition: toggled ? 'max-height .3s cubic-bezier(.4,0,.2,1), opacity .24s ease' : 'none' }}
       >
         <div style={{ paddingTop: 2 }}>{children}</div>
       </div>
@@ -425,27 +435,61 @@ export function BoldSizeRow({
   onToggleItalic?: () => void;
   onToggleStrike?: () => void;
 }) {
-  const sizeButtons = SIZE_OPTIONS.map((o) => <SegButton key={o.k} label={o.label} active={(size || 'm') === o.k} theme={theme} onClick={() => onSetSize(o.k)} />);
+  // 작게/보통/크게 — 디자인 원본(마인드맵 리디자인)의 **세그먼트 트랙**: 가라앉은
+  // 면(panel2) 위에서 활성 칸만 카드 면 + 진한 강조 잉크 + 작은 그늘로 떠오른다
+  // (원본 seg(): 활성 #FFFDFB/#C9512A/그늘, 비활성 투명/#8A8078). 값은 고정 헥스가
+  // 아니라 테마에서 파생 — 다크·모노에서도 성립한다.
+  const sizeSeg = (
+    <div data-size-seg style={{ display: 'flex', gap: 3, padding: 3, borderRadius: 11, background: theme.panel2, border: `1px solid ${theme.border}`, boxSizing: 'border-box', flex: 1, minWidth: 0 }}>
+      {SIZE_OPTIONS.map((o) => {
+        const on = (size || 'm') === o.k;
+        return (
+          <button
+            key={o.k}
+            type="button"
+            aria-pressed={on}
+            onClick={() => onSetSize(o.k)}
+            style={{
+              flex: 1,
+              height: 30,
+              border: 0,
+              borderRadius: 8,
+              padding: 0,
+              background: on ? theme.panel : 'transparent',
+              fontFamily: 'inherit',
+              fontSize: 12,
+              fontWeight: 700,
+              color: on ? mixHex(theme.accent, theme.text, 0.2) : theme.subtext,
+              boxShadow: on ? '0 2px 5px -3px rgba(46,42,38,.35)' : 'none',
+              cursor: 'pointer',
+            }}
+          >
+            {o.label}
+          </button>
+        );
+      })}
+    </div>
+  );
   // I·S가 있으면(노드 패널) 한 행에 다 안 들어가 '크게'가 홀로 다음 줄로 감겼다
-  // (제보: 배치가 중구난방). 3열 그리드 두 행 — [B|I|S] / [작게|보통|크게] — 으로
-  // 나눠 열이 수직으로 정렬되게 한다. I·S가 없는 패널(메모·선)은 기존 한 행 그대로.
+  // (제보: 배치가 중구난방). [B|I|S] 그리드 아래에 크기 세그 트랙 한 줄.
+  // I·S가 없는 패널(선)은 기존 한 행 그대로(B + 트랙).
   if (onToggleItalic || onToggleStrike) {
     return (
-      <div style={{ display: 'grid', gap: 6, marginBottom: 14 }}>
+      <div style={{ display: 'grid', gap: 8, marginBottom: 14 }}>
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 6 }}>
           <SegButton label="B" title="굵게" active={bold} theme={theme} onClick={onToggleBold} />
           {onToggleItalic && <SegButton label={<span style={{ fontStyle: 'italic', fontFamily: 'Georgia, serif' }}>I</span>} title="기울임" active={!!italic} theme={theme} onClick={onToggleItalic} />}
           {onToggleStrike && <SegButton label={<span style={{ textDecoration: 'line-through' }}>S</span>} title="취소선" active={!!strike} theme={theme} onClick={onToggleStrike} />}
         </div>
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 6 }}>{sizeButtons}</div>
+        {sizeSeg}
       </div>
     );
   }
   return (
     <div style={{ display: 'flex', gap: 6, marginBottom: 14, alignItems: 'center' }}>
       <SegButton label="B" title="굵게" active={bold} theme={theme} onClick={onToggleBold} />
-      <div style={{ width: 1, height: 20, background: theme.border }} />
-      {sizeButtons}
+      <div style={{ width: 1, height: 20, background: theme.border, flexShrink: 0 }} />
+      {sizeSeg}
     </div>
   );
 }

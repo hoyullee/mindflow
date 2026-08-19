@@ -5835,6 +5835,17 @@ export function useEditorState(): EditorController {
     // 않는다) — 획은 자기 DOM 요소가 없어 배경 핸들러가 좌표로 잡아 준다. 영역의
     // 넓은 판이 그 클릭을 먼저 삼키면 프레임 안 잉크는 영영 고를 수 없다(실측).
     if (strokeAt(toCanvasPoint(e.clientX, e.clientY, viewportRef.current))) return;
+    // 맵의 이미지 플로트는 영역 **아래**에 깔린다(요청 — z 5 < 히트 판 8). 그래서
+    // 영역 판이 그 클릭을 먼저 받는데, 누른 자리가 이미지 위면 그 이미지에게
+    // 넘긴다(획 back-off와 같은 결 — 아니면 영역 안 이미지는 영영 고를 수 없다).
+    if (docRef.current.kind !== 'board') {
+      const p = toCanvasPoint(e.clientX, e.clientY, viewportRef.current);
+      const img = [...docRef.current.floats].reverse().find((f) => !!f.img && p.x >= f.x && p.x <= f.x + f.w && p.y >= f.y && p.y <= f.y + floatBoxH(f));
+      if (img) {
+        beginFloatDrag(e, img.id);
+        return;
+      }
+    }
     if (e.pointerType === 'touch' && !isSelectedSingle('zone', id)) {
       pendingTapRef.current = { kind: 'zone', id };
       return;
@@ -5846,7 +5857,7 @@ export function useEditorState(): EditorController {
     setSelectionState({ kind: 'zone', id });
     setMultiSelectionState(null);
     startObjDrag({ kind: 'zone', id, pointerId: e.pointerId, startClientX: e.clientX, startClientY: e.clientY, ox: z.x, oy: z.y, carry: frameCarry(z) });
-  }, [frameCarry]);
+  }, [frameCarry, beginFloatDrag]);
 
   const beginZoneResize = useCallback((e: ReactPointerEvent, id: string) => {
     if (isPanButton(e)) return; // 우클릭·휠클릭 = 화면 이동 (배경으로 흘려보낸다)

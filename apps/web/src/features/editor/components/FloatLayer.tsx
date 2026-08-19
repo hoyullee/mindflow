@@ -86,6 +86,11 @@ export function FloatLayer({ floats, theme: th, controller }: FloatLayerProps) {
         // 이미지 플로트: 메모 카드가 아니라 이미지 자체가 박스를 채운다 —
         // 패딩/메모 배경/텍스트 편집 전부 미적용 (Float.img 참고).
         const isImage = !!f.img;
+        // 맵에서 이미지는 영역(채움 8·경계 9)보다 **아래**(요청) — 배경 사진처럼
+        // 깔린다. 단, 고른 동안은 위로 떠야 리사이즈 핸들이 영역 히트 판에
+        // 가리지 않는다(선택 = 지금 만지는 것). 첫 클릭은 영역 판이 받아
+        // `beginZoneDrag`가 이미지에게 넘긴다(획 back-off와 같은 결).
+        if (isImage && !controller.isBoard) boxStyle.zIndex = selected || editing ? 20 : 5;
         if (isImage) {
           boxStyle.padding = 0;
           boxStyle.background = th.panel;

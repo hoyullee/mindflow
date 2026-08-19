@@ -19,14 +19,17 @@ interface ZoneLayerProps {
  * (MindFlow.dc.html:2323-2367): drag-to-move, resize handle, delete badge,
  * and double-click/F2 label editing are wired (Editor-b).
  */
-/** 영역(프레임)의 **테두리·라벨** 레이어 z — 그리기 획(90)보다 위, 편집 박스(100)
- * 아래. 요청: "영역을 최상위 레이어로". 화이트보드에서 영역은 "이 구획은 여기까지"를
- * 긋는 표식이라, 안의 스티커·잉크에 경계가 가려지면 알아볼 수 없다.
+/** 영역(프레임)의 **테두리·라벨** 레이어 z.
  *
- * 올리는 건 **테두리와 라벨뿐**이다 — 옅은 채움(7%)까지 위로 올리면 그 안의
- * 노란 스티커·잉크가 통째로 물들어 색이 달라 보인다(실브라우저 확인). 채움은
- * 예전 자리(맨 아래)에 남아 "면은 배경, 경계는 앞"이 된다. */
-const ZONE_FRAME_Z = 95;
+ * 화이트보드: 그리기 획(90)보다 위, 편집 박스(100) 아래(요청: "영역을 최상위로") —
+ * 영역은 "이 구획은 여기까지"를 긋는 표식이라 안의 스티커·잉크에 경계가 가려지면
+ * 알아볼 수 없다. 올리는 건 **테두리와 라벨뿐**이다(옅은 채움까지 올리면 안의
+ * 색이 물든다 — 실브라우저 확인).
+ *
+ * 마인드맵: 콘텐츠(메모 10 / 주제 40)보다 **아래**(요청: 경계 점선이 메모 위로
+ * 보인다) — 맵의 영역은 바닥의 표식이라 경계까지 통째로 내용 뒤에 깔린다
+ * (맵과 보드는 별개라는 같은 결). 채움(8)보다는 위라 점선은 면 위에 그려진다. */
+const zoneFrameZ = (board: boolean): number => (board ? 95 : 9);
 /** 채움 + 히트(선택·드래그) 레이어 z — 예전 그대로 **맨 아래**. 히트를 위로
  * 올리지 않는 이유: 영역이 덮은 넓은 사각이 안의 메모·주제 클릭을 통째로
  * 삼킨다(빈 영역 클릭 = 영역 선택이라는 dc 원본 규칙도 그 자리에서 깨진다). */
@@ -92,7 +95,7 @@ export function ZoneLayer({ zones, theme: th, controller }: ZoneLayerProps) {
               boxSizing: 'border-box',
               boxShadow: remotePeer ? `0 0 0 3px ${hexA(remotePeer.user.color, 0.85)}` : dropping ? `0 0 0 4px ${hexA(col, 0.18)}` : 'none',
               pointerEvents: 'none',
-              zIndex: ZONE_FRAME_Z,
+              zIndex: zoneFrameZ(controller.isBoard),
             }}
           >
             {editing ? (

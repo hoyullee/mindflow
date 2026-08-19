@@ -466,6 +466,7 @@ function buildPreview(rawDoc: string, hueFallback: string): JSX.Element | null {
   // Memo cards GROW to fit their wrapped text (min-height box) — use the editor's
   // measured height (`measureFloatHeight`) so the preview box, its line-anchor
   // ports and the bounding box all match the real card instead of a fixed 44px.
+  const board = d.kind === 'board';
   const floatH = (f: DocFloat) => measureFloatHeight(f as unknown as Float, previewMeasurer);
 
   let x0 = 1e9;
@@ -761,8 +762,12 @@ function buildPreview(rawDoc: string, hueFallback: string): JSX.Element | null {
     }
   });
 
-  const floatEls: JSX.Element[] = [];
+  // 맵에서 이미지 플로트는 영역보다 **아래**, 메모는 영역 경계보다 **위**다
+  // (에디터 z 5 < 영역 8·9 < 메모 10 — 요청). 두 갈래로 모아 종류별로 끼운다.
+  const imgEls: JSX.Element[] = [];
+  const memoEls: JSX.Element[] = [];
   floats.forEach((f, i) => {
+    const floatEls = f.img ? imgEls : memoEls;
     const fw = f.w || 160;
     const fh = floatH(f);
     // 이미지 플로트: 메모 카드가 아니라 이미지 자체 (에디터 FloatLayer와 동일).
@@ -818,11 +823,16 @@ function buildPreview(rawDoc: string, hueFallback: string): JSX.Element | null {
 
   return (
     <svg viewBox={`${x0} ${y0} ${x1 - x0} ${y1 - y0}`} width="88%" height="88%" preserveAspectRatio="xMidYMid meet" style={{ display: 'block' }}>
+      {/* 맵: 이미지는 영역 아래, 영역 경계·라벨도 콘텐츠 아래(요청 — 에디터 z와 동일).
+          board: 기존 순서 그대로(경계·라벨이 맨 위). */}
+      {board ? null : imgEls}
       {zoneFills}
+      {board ? null : zoneEls}
       {edges}
       {rects}
       {lineEls}
-      {floatEls}
+      {board ? imgEls : null}
+      {memoEls}
       {/* 그리기 획은 에디터·내보내기와 같이 잉크가 객체를 덮는다. */}
       {strokes.map((st) => (
         <path
@@ -836,8 +846,7 @@ function buildPreview(rawDoc: string, hueFallback: string): JSX.Element | null {
           {...(isHighlighter(st) ? { opacity: HL_OPACITY, style: { mixBlendMode: 'multiply' as const } } : {})}
         />
       ))}
-      {/* 영역(프레임)은 **맨 위** — 에디터·내보내기와 같은 순서(요청). */}
-      {zoneEls}
+      {board ? zoneEls : null}
     </svg>
   );
 }
