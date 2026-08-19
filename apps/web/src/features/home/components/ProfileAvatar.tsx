@@ -1,4 +1,3 @@
-import { ACCENT_GRAD } from '../chrome';
 interface Props {
   /** Fallback glyph shown when there is no (or a broken) avatar image. */
   initial: string;
@@ -27,10 +26,10 @@ export function ProfileAvatar({ initial, avatarUrl, size, radius, fontSize, boxS
         width: size,
         height: size,
         borderRadius: radius,
-        // 단색이 아니라 세로 그라디언트(디자인 원본) — 1차 버튼과 같은 결이라
-        // 아바타가 브랜드 색의 일부로 읽힌다.
-        background: ACCENT_GRAD,
-        color: 'var(--mf-accent-ink)',
+        // 디자인 개정(첨부 이미지): 강조색 그라디언트 → **잉크색 사각**에 밝은 글자.
+        // 다크에서는 토큰이 뒤집혀 밝은 면에 어두운 글자가 된다(대비 유지).
+        background: 'var(--mf-text)',
+        color: 'var(--mf-card)',
         display: 'flex',
         alignItems: 'center',
         justifyContent: 'center',
@@ -58,3 +57,13 @@ export function ProfileAvatar({ initial, avatarUrl, size, radius, fontSize, boxS
   );
 }
 
+/**
+ * 아바타에 적을 글자(디자인 개정: "이호율" → "호율"). 한글 이름은 성을 뗀
+ * **뒤 두 글자**가 이름으로 읽히고, 그 밖(영문·이메일 로컬파트)은 첫 글자
+ * 대문자 하나만 쓴다(두 글자를 욱여넣으면 좁은 사각에서 겹친다).
+ */
+export function avatarLabel(name: string): string {
+  const n = (name || '').trim();
+  if (/^[가-힣]{2,}$/.test(n)) return n.slice(-2);
+  return (n.charAt(0) || 'M').toUpperCase();
+}

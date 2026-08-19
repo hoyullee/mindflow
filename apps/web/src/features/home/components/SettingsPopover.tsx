@@ -41,19 +41,19 @@ export function SettingsPopover({ state, controller, userInitial }: Props) {
             controller.toggleSettings();
           }
         }}
-        // 디자인 원본: 32px 아바타 + [이름 / 부제] 두 줄 + 셰브론. 테두리는 투명이지만
-        // hover에서 옅은 면이 깔린다(`.nav-item:hover`).
-        style={{ display: 'flex', alignItems: 'center', gap: 10, padding: 8, borderRadius: 13, border: '1px solid transparent', cursor: 'pointer', width: '100%', textAlign: 'left' }}
+        // 디자인 개정(첨부 이미지): 36px 잉크색 아바타 + 열림에 따라 도는 셰브론.
+        // 테두리·면 없음(요청) — hover의 옅은 면(`.nav-item:hover`)만 반응한다.
+        style={{ display: 'flex', alignItems: 'center', gap: 10, padding: 8, borderRadius: 14, cursor: 'pointer', width: '100%', textAlign: 'left' }}
       >
-        <ProfileAvatar initial={userInitial} avatarUrl={state.userAvatar} size={32} radius={11} fontSize={12} />
+        <ProfileAvatar initial={userInitial} avatarUrl={state.userAvatar} size={36} radius={12} fontSize={13} />
         <span style={{ display: 'flex', flexDirection: 'column', gap: 1, minWidth: 0, flex: 1 }}>
-          <span style={{ fontSize: 13.5, fontWeight: 700, letterSpacing: '-.01em', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{state.userName}</span>
+          <span style={{ fontSize: 14, fontWeight: 700, letterSpacing: '-.01em', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{state.userName}</span>
           {/* 부제 — 디자인 원본의 "개인 워크스페이스" 자리에 **로그인한 계정**을 적는다.
               우리에겐 워크스페이스 개념이 없고(스페이스가 그 층이다), 이 자리에서
               가장 알고 싶은 것은 "지금 어떤 계정으로 들어와 있는가"다. */}
-          <span style={{ fontSize: 11, color: 'var(--mf-faint)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{state.userEmail || '내 워크스페이스'}</span>
+          <span style={{ fontSize: 11.5, color: 'var(--mf-faint)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{state.userEmail || '내 워크스페이스'}</span>
         </span>
-        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="var(--mf-faint)" strokeWidth="2.4" strokeLinecap="round" aria-hidden="true" style={{ flexShrink: 0 }}>
+        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="var(--mf-faint)" strokeWidth="2.4" strokeLinecap="round" aria-hidden="true" style={{ flexShrink: 0, transform: state.settingsOpen ? 'rotate(180deg)' : 'none', transition: 'transform .16s ease' }}>
           <path d="m6 9 6 6 6-6" />
         </svg>
       </div>
@@ -63,27 +63,28 @@ export function SettingsPopover({ state, controller, userInitial }: Props) {
         onClick={(e) => e.stopPropagation()}
         style={{
           position: 'absolute',
-          top: 'calc(100% + 6px)',
+          top: 'calc(100% + 8px)',
           left: 0,
-          width: 236,
-          background: 'var(--mf-panel)',
+          right: 0,
+          background: 'var(--mf-card)',
           border: '1px solid var(--mf-border)',
-          borderRadius: 14,
-          boxShadow: '0 12px 32px rgba(0,0,0,.16)',
+          borderRadius: 16,
+          boxShadow: '0 22px 48px -20px rgba(46,42,38,.4), 0 2px 6px rgba(46,42,38,.06)',
           padding: 0,
           zIndex: 40,
           overflow: 'hidden',
           display: state.settingsOpen ? 'block' : 'none',
         }}
       >
-        <div style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '16px 16px 14px', background: 'linear-gradient(135deg,var(--mf-accent-soft),var(--mf-panel2))', borderRadius: '14px 14px 0 0' }}>
-          <ProfileAvatar initial={userInitial} avatarUrl={state.userAvatar} size={44} radius={13} fontSize={20} boxShadow="0 4px 10px rgba(var(--mf-accent-rgb),.25)" />
+        {/* 머리 — 팝업 가장자리에서 띄운 **인셋 블록**(accent-soft, 첨부 이미지). */}
+        <div style={{ display: 'flex', alignItems: 'center', gap: 12, margin: 8, padding: 12, background: 'var(--mf-accent-soft)', borderRadius: 12 }}>
+          <ProfileAvatar initial={userInitial} avatarUrl={state.userAvatar} size={44} radius={13} fontSize={16} />
           <div style={{ minWidth: 0, flex: 1 }}>
             <div style={{ fontWeight: 700, fontSize: 15, color: 'var(--mf-text)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{state.userName}</div>
             {state.userEmail && <div style={{ fontSize: 12, color: 'var(--mf-muted)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{state.userEmail}</div>}
           </div>
         </div>
-        <div style={{ padding: 6 }}>
+        <div style={{ padding: '2px 6px 6px' }}>
           {/* profile-name rename — opens the "프로필명 변경" popup (like 스페이스 이름 변경) */}
           <div
             className="menu-row"
@@ -124,6 +125,7 @@ export function SettingsPopover({ state, controller, userInitial }: Props) {
             </svg>{' '}
             설정
           </div>
+          <div aria-hidden="true" style={{ height: 1, background: 'var(--mf-hairline)', margin: '6px 8px' }} />
           <div
             className="menu-row"
             role="button"
