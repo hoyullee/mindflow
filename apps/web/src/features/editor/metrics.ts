@@ -311,13 +311,13 @@ function countWrappedLines(text: string, maxW: number, font: string, measurer: T
 }
 
 /**
- * 메모 카드 좌측 패딩 — 맵은 접기 토글 자리를 비워 32, board는 토글이 없으므로
- * 우측(11)과 대칭이다(제보: 접기가 사라졌는데 좌측만 넓다). 렌더(FloatLayer)·
- * 측정(measureFloatHeight)·내보내기(sceneFloatBox/paintScene)·홈 썸네일이
- * 전부 이 함수 하나를 쓴다 — 흩어지면 박스 높이와 줄바꿈이 화면마다 어긋난다.
+ * 메모 카드 좌측 패딩 — 접기 토글이 맵에서도 제거되며(요청) 우측(11)과 대칭이
+ * 됐다(토글 자리였던 32는 board에서 먼저 걷었다). 렌더(FloatLayer)·측정
+ * (measureFloatHeight)·내보내기(sceneFloatBox/paintScene)·홈 썸네일이 전부
+ * 이 함수 하나를 쓴다 — 흩어지면 박스 높이와 줄바꿈이 화면마다 어긋난다.
  */
-export function floatPadLeft(board?: boolean): number {
-  return board ? 11 : 32;
+export function floatPadLeft(): number {
+  return 11;
 }
 
 /**
@@ -327,16 +327,16 @@ export function floatPadLeft(board?: boolean): number {
  * size instead of a fixed `f.h`. Port of the original's measured `_floatH`
  * (MindFlow.dc.html) — pure, via the injected `measurer` (canvas or fallback).
  */
-export function measureFloatHeight(f: Float, measurer: TextMeasurer, board?: boolean): number {
+export function measureFloatHeight(f: Float, measurer: TextMeasurer): number {
   // 이미지 플로트: 높이는 텍스트 측정이 아니라 첨부/리사이즈 때 기록된
   // 명시적 h(비율 유지)가 곧 박스 높이다.
   if (f.img) return Math.max(24, Math.round(f.h ?? (f.w || 160) * 0.75));
   const fpx = f.tsize === 's' ? 11.5 : f.tsize === 'l' ? 15.5 : 13;
   const lh = fpx * 1.55;
   const grownOf = (lineCount: number): number => 9 + Math.max(18, lineCount * lh) + 9;
-  if (f.collapsed) return Math.max(38, grownOf(1));
+  // collapsed는 더 이상 보지 않는다 — 접기가 제거되어 메모는 항상 펼쳐 그린다(요청).
   const font = `${f.bold ? 700 : 400} ${fpx}px Pretendard`;
-  const innerW = Math.max(8, (f.w || 160) - floatPadLeft(board) - 11); // left pad(맵 32=접기 토글 / board 11), right pad 11
+  const innerW = Math.max(8, (f.w || 160) - floatPadLeft() - 11); // 좌우 대칭 패딩(11/11)
   // rich(부분 서식) 메모는 굵게/기울임이 줄 폭을 바꾸므로 노드와 같은
   // rich-aware 측정(`wrapMeasure`)으로 줄 수를 센다. 평문은 기존 경로 그대로.
   const lines = f.rich && f.rich.length ? wrapMeasure({ text: f.text, rich: f.rich }, fpx, f.bold ? 700 : 400, innerW, measurer).count : f.text ? countWrappedLines(f.text, innerW, font, measurer) : 1;

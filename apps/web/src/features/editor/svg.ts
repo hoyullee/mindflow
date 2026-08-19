@@ -32,7 +32,7 @@ export function buildSvgString(doc: Doc, geom: GeomMap, theme: Theme): BuiltSvg 
   const measure: Measure = (text, font) => measurer.measure(text, font);
 
   const fBoxes = new Map<string, SceneFloatBox>();
-  doc.floats.forEach((f) => fBoxes.set(f.id, sceneFloatBox(measure, f, doc.kind === 'board')));
+  doc.floats.forEach((f) => fBoxes.set(f.id, sceneFloatBox(measure, f)));
   const bounds = computeSceneBounds(doc, geom, fBoxes);
   if (!bounds) return null;
 

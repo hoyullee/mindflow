@@ -280,7 +280,7 @@ describe('화이트보드 에디터', () => {
     expect(floatEl.style.paddingLeft).toBe(floatEl.style.paddingRight);
   });
 
-  it('맵(무회귀): 메모 좌측 패딩은 접기 토글 자리(32px)를 유지한다', async () => {
+  it('맵: 메모 접기 토글이 없고 좌측 패딩도 우측과 대칭이다(요청 — 접기 제거)', async () => {
     localStorage.setItem(
       'mindflow_doc_m3',
       JSON.stringify({
@@ -299,8 +299,9 @@ describe('화이트보드 에디터', () => {
       expect(el).toBeTruthy();
       return el;
     });
-    expect(floatEl.style.paddingLeft).toBe('32px');
-    expect(floatEl.querySelector('[data-fold-toggle]')).toBeTruthy();
+    expect(floatEl.style.paddingLeft).toBe('11px');
+    expect(floatEl.style.paddingLeft).toBe(floatEl.style.paddingRight);
+    expect(floatEl.querySelector('[data-fold-toggle]')).toBeNull();
   });
 
   // 요청: 펜/지우개가 켜져 있어도 **두 손가락 드래그는 화면 이동**이어야 한다.
@@ -1679,6 +1680,72 @@ describe('화이트보드 에디터', () => {
       expect(saved.zones[0].x).toBe(-400);
       expect(saved.floats.find((f: { id: string }) => f.id === 'inside').x).toBe(-300);
       expect(saved.strokes[0].pts.slice(0, 2)).toEqual([-350, -150]);
+    });
+  });
+
+  it('맵: 영역을 끌어도 안의 객체는 제자리 — 그릇은 화이트보드 전용이다(요청)', async () => {
+    localStorage.setItem(
+      'mindflow_doc_mz1',
+      JSON.stringify({
+        v: 1,
+        nodes: { root: { id: 'root', text: '루트', emoji: '', parent: null, children: [], collapsed: false, color: null, x: 0, y: 0 } },
+        floats: [{ id: 'inside', x: -300, y: -100, w: 160, h: 80, text: '안' }],
+        lines: [],
+        zones: [{ id: 'z1', x: -400, y: -200, w: 360, h: 260, label: '구획', color: null }],
+        layoutMode: 'right',
+        themeKey: 'coral',
+      }),
+    );
+    const { container } = renderEditor('/editor?map=mz1&title=x');
+    const zone = await waitFor(() => {
+      const found = container.querySelector('[data-zone-hit="z1"]') as HTMLElement;
+      expect(found).toBeTruthy();
+      return found;
+    });
+    const zoom = Number(/scale\(([\d.]+)\)/.exec((container.querySelector('[data-pan-layer]') as HTMLElement).style.transform || '')?.[1] ?? 1);
+
+    firePointer(zone, 'pointerdown', { pointerId: 52, clientX: 300, clientY: 300, button: 0 });
+    firePointer(document.body, 'pointermove', { pointerId: 52, clientX: 300 + 120 * zoom, clientY: 300 + 80 * zoom });
+    // 끄는 동안에도 담김 강조(data-frame-drop)가 뜨지 않는다 — 맵에는 그릇 개념이 없다.
+    expect(container.querySelector('[data-frame-drop]')).toBeNull();
+    firePointer(document.body, 'pointerup', { pointerId: 52, clientX: 300 + 120 * zoom, clientY: 300 + 80 * zoom });
+    fireEvent.keyDown(window, { key: 's', ctrlKey: true });
+    await waitFor(() => {
+      const saved = JSON.parse(localStorage.getItem('mindflow_doc_mz1') || 'null');
+      expect(saved.zones[0].x).toBe(-280); // 영역만 움직였다
+      expect(saved.floats[0]).toMatchObject({ x: -300, y: -100 }); // 안의 메모는 제자리
+    });
+  });
+
+  it('맵: 영역 복사도 사각형만 담는다 — 안의 메모가 딸려 오지 않는다(요청)', async () => {
+    localStorage.setItem(
+      'mindflow_doc_mz2',
+      JSON.stringify({
+        v: 1,
+        nodes: { root: { id: 'root', text: '루트', emoji: '', parent: null, children: [], collapsed: false, color: null, x: 0, y: 0 } },
+        floats: [{ id: 'inside', x: -300, y: -100, w: 160, h: 80, text: '안' }],
+        lines: [],
+        zones: [{ id: 'z1', x: -400, y: -200, w: 360, h: 260, label: '구획', color: null }],
+        layoutMode: 'right',
+        themeKey: 'coral',
+      }),
+    );
+    const { container } = renderEditor('/editor?map=mz2&title=x');
+    const zone = await waitFor(() => {
+      const found = container.querySelector('[data-zone-hit="z1"]') as HTMLElement;
+      expect(found).toBeTruthy();
+      return found;
+    });
+    firePointer(zone, 'pointerdown', { pointerId: 53, clientX: 300, clientY: 300, button: 0 });
+    firePointer(document.body, 'pointerup', { pointerId: 53, clientX: 300, clientY: 300, button: 0 });
+    fireEvent.keyDown(window, { key: 'c', ctrlKey: true });
+    fireEvent.keyDown(window, { key: 'v', ctrlKey: true });
+    await new Promise((r) => setTimeout(r, 250)); // paste-이벤트 폴백(120ms) 대기
+    fireEvent.keyDown(window, { key: 's', ctrlKey: true });
+    await waitFor(() => {
+      const saved = JSON.parse(localStorage.getItem('mindflow_doc_mz2') || 'null');
+      expect(saved.zones).toHaveLength(2); // 영역 사본만 늘었다
+      expect(saved.floats).toHaveLength(1); // 메모는 복제되지 않았다
     });
   });
 

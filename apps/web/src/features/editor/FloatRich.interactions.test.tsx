@@ -254,39 +254,15 @@ describe('메모 인라인 멘션 렌더', () => {
   });
 });
 
-describe('메모 접기 토글 — 회전 셰브론', () => {
-  function firePointerDown(target: Element): void {
-    const event = new MouseEvent('pointerdown', { bubbles: true, cancelable: true, button: 0 });
-    Object.defineProperty(event, 'pointerId', { value: 1, configurable: true });
-    fireEvent(target, event);
-  }
-
-  it('셰브론 SVG로 그려지고, 접힘/펼침이 회전과 aria로 드러난다', () => {
-    localStorage.setItem('mindflow_doc_fold1', JSON.stringify(docWith()));
+describe('메모 접기 — 제거됨(요청: 항상 펼쳐진 상태)', () => {
+  it('접기 토글이 그려지지 않고, 옛 collapsed 데이터도 펼쳐 그린다', () => {
+    localStorage.setItem('mindflow_doc_fold1', JSON.stringify(docWith({ text: '첫 줄\n둘째 줄', collapsed: true })));
     const { container } = renderEditor('/editor?map=fold1&title=x');
-    const toggle = floatCard(container).querySelector('[data-fold-toggle]') as HTMLElement;
-    expect(toggle).toBeTruthy();
-    expect(toggle.textContent).toBe(''); // ＋/− 텍스트 글리프가 아니다
-    const svg = toggle.querySelector('svg') as SVGElement;
-    expect(svg).toBeTruthy();
-    // 펼침 상태: 아래 방향(회전 없음)
-    expect(toggle.getAttribute('aria-expanded')).toBe('true');
-    expect(svg.style.transform).not.toContain('rotate');
-    // 접기
-    firePointerDown(toggle);
-    const toggle2 = floatCard(container).querySelector('[data-fold-toggle]') as HTMLElement;
-    const svg2 = toggle2.querySelector('svg') as SVGElement;
-    expect(toggle2.getAttribute('aria-expanded')).toBe('false');
-    expect(svg2.style.transform).toContain('rotate(-90deg)'); // 오른쪽 방향
-    // 다시 펼치기
-    firePointerDown(toggle2);
-    expect((floatCard(container).querySelector('[data-fold-toggle]') as HTMLElement).getAttribute('aria-expanded')).toBe('true');
-  });
-
-  it('접으면 저장본에도 collapsed가 반영된다 (동작 무회귀)', async () => {
-    localStorage.setItem('mindflow_doc_fold2', JSON.stringify(docWith({ text: '첫 줄\n둘째 줄' })));
-    const { container } = renderEditor('/editor?map=fold2&title=x');
-    firePointerDown(floatCard(container).querySelector('[data-fold-toggle]') as HTMLElement);
-    await waitFor(() => expect(readSavedFloat('fold2').collapsed).toBe(true), { timeout: 3000 });
+    const card = floatCard(container);
+    expect(card.querySelector('[data-fold-toggle]')).toBeNull();
+    expect(card.textContent).toContain('둘째 줄'); // 접힘 상태로 저장돼 있어도 전부 보인다
+    // 토글 자리였던 좌측 패딩도 우측과 대칭(11)으로 좁혀졌다.
+    expect(card.style.paddingLeft).toBe('11px');
+    expect(card.style.paddingLeft).toBe(card.style.paddingRight);
   });
 });

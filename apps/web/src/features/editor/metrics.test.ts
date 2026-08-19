@@ -41,9 +41,11 @@ describe('measureFloatHeight', () => {
     expect(measureFloatHeight(mkFloat({ text: '메모', h: 160 }), fakeMeasurer)).toBe(160);
   });
 
-  it('collapses to a compact single-line box when collapsed', () => {
-    const h = measureFloatHeight(mkFloat({ text: '한 줄\n두 줄\n세 줄', collapsed: true }), fakeMeasurer);
-    expect(h).toBeLessThanOrEqual(44);
+  it('ignores a legacy collapsed flag — folding was removed, memos always render expanded', () => {
+    const open = measureFloatHeight(mkFloat({ text: '한 줄\n두 줄\n세 줄' }), fakeMeasurer);
+    const legacy = measureFloatHeight(mkFloat({ text: '한 줄\n두 줄\n세 줄', collapsed: true }), fakeMeasurer);
+    expect(legacy).toBe(open);
+    expect(legacy).toBeGreaterThan(44); // 세 줄 높이 그대로
   });
 });
 

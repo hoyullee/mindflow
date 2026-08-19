@@ -1,4 +1,4 @@
-import { ROOT_ID, cardsInColumn, layout, listDisplayLine, parseListPrefix, strokeBounds, strokePathD } from '@mindflow/mindmap-core';
+import { ROOT_ID, cardsInColumn, layout, parseListPrefix, strokeBounds, strokePathD } from '@mindflow/mindmap-core';
 import type { Doc, EdgeStyle, Float, LayoutMode, Node as CoreNode } from '@mindflow/mindmap-core';
 import { buildEdgePath, edgeStrokeWidth } from '../editor/edges';
 import { linkInk } from '../editor/richSpans';
@@ -466,9 +466,7 @@ function buildPreview(rawDoc: string, hueFallback: string): JSX.Element | null {
   // Memo cards GROW to fit their wrapped text (min-height box) — use the editor's
   // measured height (`measureFloatHeight`) so the preview box, its line-anchor
   // ports and the bounding box all match the real card instead of a fixed 44px.
-  // board는 접기 토글이 없어 좌측 패딩이 좁다(floatPadLeft) — 줄바꿈 폭이 다르다.
-  const board = d.kind === 'board';
-  const floatH = (f: DocFloat) => measureFloatHeight(f as unknown as Float, previewMeasurer, board);
+  const floatH = (f: DocFloat) => measureFloatHeight(f as unknown as Float, previewMeasurer);
 
   let x0 = 1e9;
   let y0 = 1e9;
@@ -787,14 +785,12 @@ function buildPreview(rawDoc: string, hueFallback: string): JSX.Element | null {
     const ffpx = f.tsize === 's' ? 11.5 : f.tsize === 'l' ? 15.5 : 13;
     const flh = ffpx * 1.55;
     const bold = !!f.bold;
-    const innerW = Math.max(8, fw - floatPadLeft(board) - 11);
-    // 접힌 메모의 한 줄도 리스트 글리프(`- `→`• `)를 치환(에디터 FloatLayer와 동일).
+    const innerW = Math.max(8, fw - floatPadLeft() - 11);
+    // 접기는 제거됐다(요청) — 메모는 항상 펼쳐 그린다(에디터 FloatLayer와 동일).
     const floatRuns: WrapSeg[] = Array.isArray(f.rich) && f.rich.length ? (f.rich as WrapSeg[]) : [{ t: f.text || '' }];
-    const lines: WrapLine[] = f.collapsed && !board
-      ? [{ segs: [{ t: listDisplayLine((f.text || '').split('\n')[0] || '') }], indent: 0, list: false, itemW: 0, w: 0 }]
-      : wrapRuns(floatRuns, innerW, ffpx, bold ? 700 : 400, previewMeasurer);
+    const lines: WrapLine[] = wrapRuns(floatRuns, innerW, ffpx, bold ? 700 : 400, previewMeasurer);
     if (lines.some((ln) => ln.segs.some((s) => s.t.trim()))) {
-      const textX = f.x + floatPadLeft(board);
+      const textX = f.x + floatPadLeft();
       const firstY = f.y + 9 + flh / 2; // centre of the first line box (top pad 9)
       const fBase = f.textColor || '#5a4a3a';
       const fLink = linkInk(fBase);
