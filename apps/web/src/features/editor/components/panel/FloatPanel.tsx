@@ -31,7 +31,9 @@ export function FloatPanel({ controller, floatIds, isMobile = false, short = fal
   const ids = floatIds.filter((id) => controller.doc.floats.some((x) => x.id === id));
   const refId = ids[0];
   const f = refId ? controller.doc.floats.find((x) => x.id === refId) : undefined;
-  const [openSec, setOpenSec] = useState<string | null>(null);
+  // 열릴 때마다 **첫 구획은 펼친 채** 시작한다(요청) — 패널은 선택이 바뀔 때
+  // key로 리마운트되므로 이 초기값이 곧 "매번 열릴 때"다.
+  const [openSec, setOpenSec] = useState<string | null>('fbg');
   if (!f || !refId) return null;
   const multi = ids.length > 1;
   const isImage = !multi && !!f.img;
@@ -44,7 +46,7 @@ export function FloatPanel({ controller, floatIds, isMobile = false, short = fal
     return (
       <div data-props-panel style={panelWrapStyle(th, isMobile, !!controller.saveConflict, short)}>
         <div style={panelBodyStyle(isMobile)}>
-          <PanelTitle theme={th} kicker="선택한 이미지" name={(f.caption || '').trim() || '이미지'} />
+          <PanelTitle theme={th} kicker="선택한 이미지" name={(f.caption || '').trim() || '이미지'} onClose={controller.clearSelection} />
           {/* 이미지 제목(캡션) — 이미지 아래 한 줄로 그려진다(Float.caption).
               blur/Enter에 커밋(입력마다 커밋하면 타이핑마다 undo 단계가 쌓인다). */}
           <SectionLabel theme={th}>제목</SectionLabel>
@@ -94,7 +96,7 @@ export function FloatPanel({ controller, floatIds, isMobile = false, short = fal
             <div style={{ fontSize: 14, fontWeight: 600, marginBottom: 14 }}>메모 {ids.length}개 선택됨</div>
           </>
         ) : (
-          <PanelTitle theme={th} kicker="선택한 메모" name={name} swatch={f.bg || (th.appBg === '#191512' ? '#3a2f22' : '#fff6cf')} />
+          <PanelTitle theme={th} kicker="선택한 메모" name={name} swatch={f.bg || (th.appBg === '#191512' ? '#3a2f22' : '#fff6cf')} onClose={controller.clearSelection} />
         )}
 
         <PanelSection theme={th} title="메모 스타일" open={openSec === 'fbg'} onToggle={() => toggle('fbg')}>

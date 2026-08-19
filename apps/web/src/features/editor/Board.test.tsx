@@ -502,7 +502,9 @@ describe('화이트보드 에디터', () => {
       const sheet = input.closest('div[style*="position: fixed"]') as HTMLElement;
       const bar = container.querySelector('[data-board-toolbar]') as HTMLElement;
       expect(Number(sheet.style.zIndex)).toBeGreaterThan(Number(bar.style.zIndex));
-      expect(screen.queryByLabelText('속성 닫기')).toBeNull();
+      // 시트의 옛 '닫기' 손잡이 줄은 없다(기존 결정) — 대신 패널 머리의 ✕(속성 닫기)가
+      // 디자인(마인드맵 리디자인)대로 선다.
+      expect(screen.getByLabelText('속성 닫기')).toBeTruthy();
       // 제목은 20자까지
       expect(input.maxLength).toBe(20);
     } finally {
@@ -590,7 +592,7 @@ describe('화이트보드 에디터', () => {
     }
   });
 
-  it('맵(무회귀): 모바일에서도 줌·미니맵 묶음은 하단에 남는다', async () => {
+  it('맵: 모바일에서도 하단 도구 막대가 서고, 줌·미니맵 묶음이 그만큼 올라앉는다(리디자인)', async () => {
     const restore = mockMatchMedia(true);
     try {
       localStorage.setItem(
@@ -599,8 +601,9 @@ describe('화이트보드 에디터', () => {
       );
       const { container } = renderEditor('/editor?map=m4&title=x');
       await waitFor(() => expect(container.querySelector('[data-zoom-cluster]')).toBeTruthy());
+      expect(container.querySelector('[data-board-toolbar]')).toBeTruthy();
       const cluster = container.querySelector('[data-zoom-cluster]') as HTMLElement;
-      expect(cluster.style.bottom).toBe('16px');
+      expect(cluster.style.bottom).toBe('80px');
     } finally {
       restore();
     }
@@ -627,14 +630,27 @@ describe('화이트보드 에디터', () => {
     await waitFor(() => expect(floatEl.querySelector('[data-float-caption]')?.textContent).toBe('가'.repeat(20)));
   });
 
-  it('그리기 도구 막대는 board 전용 — 맵에는 없다(M4)', async () => {
+  it('맵에도 하단 도구 막대가 서되, 그리기 도구는 없다(리디자인)', async () => {
     localStorage.setItem(
       'mindflow_doc_m2',
       JSON.stringify({ v: 1, nodes: { root: { id: 'root', text: '루트', emoji: '', parent: null, children: [], collapsed: false, color: null, x: 0, y: 0 } }, floats: [], lines: [], zones: [], layoutMode: 'right', themeKey: 'coral' }),
     );
     const { container } = renderEditor('/editor?map=m2&title=x');
     await waitFor(() => expect(within(getViewport(container)).getByText('루트')).toBeTruthy());
-    expect(container.querySelector('[data-board-toolbar]')).toBeNull();
+    const bar = container.querySelector('[data-board-toolbar]') as HTMLElement;
+    expect(bar).toBeTruthy();
+    // 맵의 도구 줄 = 선택 · 하위/형제 주제 추가(디자인 원본 mmTools) — 펜·형광펜·지우개는 board 전용.
+    expect(within(bar).getByRole('button', { name: '선택' })).toBeTruthy();
+    expect(within(bar).getByRole('button', { name: '하위 주제 추가' })).toBeTruthy();
+    expect(within(bar).getByRole('button', { name: '형제 주제 추가' })).toBeTruthy();
+    expect(within(bar).queryByRole('button', { name: '펜' })).toBeNull();
+    expect(within(bar).queryByRole('button', { name: '형광펜' })).toBeNull();
+    expect(within(bar).queryByRole('button', { name: '지우개' })).toBeNull();
+    // 삽입 묶음·되돌리기도 함께 선다.
+    expect(within(bar).getByRole('button', { name: '메모 추가' })).toBeTruthy();
+    expect(within(bar).getByRole('button', { name: '실행 취소' })).toBeTruthy();
+    // 주제가 선택돼 있지 않으면 하위/형제 추가는 비활성 — 대상이 없다.
+    expect((within(bar).getByRole('button', { name: '하위 주제 추가' }) as HTMLButtonElement).disabled).toBe(true);
     expect(container.querySelector('[data-board-draw-layer]')).toBeNull();
   });
 
@@ -646,9 +662,11 @@ describe('화이트보드 에디터', () => {
     const { container } = renderEditor('/editor?map=m1&title=x');
     await waitFor(() => expect(within(getViewport(container)).getByText('루트')).toBeTruthy());
     fireEvent.click(screen.getByRole('button', { name: '삽입' }));
-    await screen.findByRole('button', { name: '주제 추가' });
-    expect(screen.getByRole('button', { name: '선 추가' })).toBeTruthy();
-    expect(screen.getByRole('button', { name: '영역 추가' })).toBeTruthy();
+    // '선 추가'·'영역 추가'는 하단 도구 막대에도 있으므로(리디자인) 드롭다운 안으로 좁혀 본다.
+    const tpl = await screen.findByRole('button', { name: '주제 추가' });
+    const menu = tpl.parentElement as HTMLElement;
+    expect(within(menu).getByRole('button', { name: '선 추가' })).toBeTruthy();
+    expect(within(menu).getByRole('button', { name: '영역 추가' })).toBeTruthy();
     fireEvent.keyDown(window, { key: 'Escape' });
     fireEvent.click(screen.getByRole('button', { name: '스타일' }));
     await waitFor(() => expect(screen.getByText('레이아웃')).toBeTruthy());

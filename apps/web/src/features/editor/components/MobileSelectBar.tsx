@@ -1,4 +1,5 @@
 import { useLayoutEffect, useRef, useState, type CSSProperties } from 'react';
+import { BOARD_BAR_LIFT } from './BoardToolbar';
 import { ROOT_ID } from '@mindflow/mindmap-core';
 import type { EditorController } from '../useEditorState';
 import type { Theme } from '../theme';
@@ -84,14 +85,15 @@ export function MobileSelectBar({ controller, theme: th }: MobileSelectBarProps)
     const below = bottomY + GAP;
     // "Below" fits only if it stays within the canvas AND clears the bottom-right
     // minimap cluster (when the bar's horizontal span reaches into that corner).
-    const withinCanvas = below + size.h <= vh - M;
+    // 바닥에는 이제 전폭 도구 막대가 산다(맵·보드 공통) — 그 위까지만 내려간다.
+    const withinCanvas = below + size.h <= vh - BOARD_BAR_LIFT;
     const hitsCorner = left + size.w > cornerLeft && below + size.h > cornerTop;
     top = withinCanvas && !hitsCorner ? below : Math.max(M, topY - GAP - size.h);
   } else {
     // No measurable box (shouldn't happen for a live selection) — fall back to
     // the old bottom-centre spot.
     left = Math.max(M, vw / 2 - size.w / 2);
-    top = Math.max(M, vh - size.h - 16);
+    top = Math.max(M, vh - size.h - BOARD_BAR_LIFT);
   }
 
   const btn: CSSProperties = {
