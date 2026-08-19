@@ -41,9 +41,9 @@ export function SettingsPopover({ state, controller, userInitial }: Props) {
             controller.toggleSettings();
           }
         }}
-        // 디자인 개정(첨부 이미지): 테두리 있는 카드 행 + 36px 잉크색 아바타 +
-        // 열림에 따라 도는 셰브론.
-        style={{ display: 'flex', alignItems: 'center', gap: 10, padding: 8, borderRadius: 14, border: '1px solid var(--mf-border)', background: 'var(--mf-card)', cursor: 'pointer', width: '100%', textAlign: 'left' }}
+        // 디자인 개정(첨부 이미지): 36px 잉크색 아바타 + 열림에 따라 도는 셰브론.
+        // 테두리·면 없음(요청) — hover의 옅은 면(`.nav-item:hover`)만 반응한다.
+        style={{ display: 'flex', alignItems: 'center', gap: 10, padding: 8, borderRadius: 14, cursor: 'pointer', width: '100%', textAlign: 'left' }}
       >
         <ProfileAvatar initial={userInitial} avatarUrl={state.userAvatar} size={36} radius={12} fontSize={13} />
         <span style={{ display: 'flex', flexDirection: 'column', gap: 1, minWidth: 0, flex: 1 }}>
