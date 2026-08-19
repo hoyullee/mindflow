@@ -165,6 +165,28 @@ export function Modals({ state, controller }: Props) {
         onCancel={controller.cancelLogout}
         onConfirm={controller.confirmLogoutYes}
       />
+
+      {/* 모든 기기에서 로그아웃(세션 정책 ①) — 다른 기기까지 끊는 동작이라 한 번 묻는다.
+          되돌릴 수 있는 일(다시 로그인하면 된다)이므로 문구도 그렇게 말한다. */}
+      <ConfirmModal
+        visible={state.confirmLogoutAll}
+        zIndex={160}
+        iconBg="var(--mf-danger-soft)"
+        icon={
+          <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="var(--mf-danger)" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round">
+            <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4" />
+            <polyline points="16 17 21 12 16 7" />
+            <line x1="21" y1="12" x2="9" y2="12" />
+          </svg>
+        }
+        heading="모든 기기에서 로그아웃할까요?"
+        body="이 기기와 다른 기기·브라우저의 로그인이 모두 해제돼요. 각 기기에서 다시 로그인하면 됩니다."
+        cancelLabel="취소"
+        confirmLabel="모두 로그아웃"
+        confirmColor="var(--mf-danger)"
+        onCancel={controller.cancelLogoutAll}
+        onConfirm={controller.confirmLogoutAllYes}
+      />
     </>
   );
 }

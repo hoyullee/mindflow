@@ -1,6 +1,7 @@
 import { useEffect, useState, type ReactNode } from 'react';
-import { BrowserRouter, Navigate, Route, Routes } from 'react-router-dom';
+import { BrowserRouter, Navigate, Route, Routes, useLocation } from 'react-router-dom';
 import { Login } from './features/auth/Login';
+import { hadSession, loginUrlWithNext, noteSessionExpired, rememberSignedIn } from './features/auth/sessionNotice';
 import { Home } from './features/home/Home';
 import { Editor } from './features/editor/Editor';
 import { PrivacyPolicy } from './features/legal/PrivacyPolicy';
@@ -16,17 +17,28 @@ import { UpdatePrompt } from './pwa/UpdatePrompt';
 // behaves exactly as before M4.
 function RequireAuth({ children }: { children: ReactNode }) {
   const backend = useBackend();
+  const location = useLocation();
   const [status, setStatus] = useState<'checking' | 'authed' | 'anon'>(backend.mode === 'local' ? 'authed' : 'checking');
 
   useEffect(() => {
     if (backend.mode === 'local') return;
     let cancelled = false;
-    backend.auth.getSession().then((session) => {
-      if (!cancelled) setStatus(session ? 'authed' : 'anon');
-    });
-    const unsubscribe = backend.auth.onAuthChange((session) => {
-      if (!cancelled) setStatus(session ? 'authed' : 'anon');
-    });
+    const apply = (session: unknown): void => {
+      if (cancelled) return;
+      if (session) {
+        // 이 기기에서 로그인한 적이 있다고 기억한다 — 나중에 세션이 사라졌을 때
+        // "처음부터 로그아웃"과 "만료"를 가르는 근거다(sessionNotice).
+        rememberSignedIn();
+        setStatus('authed');
+      } else {
+        // 세션이 없다: 이 기기에서 로그인한 적이 있으면 **만료**로 보고 안내를
+        // 남긴다(직접 로그아웃한 경우엔 그 마커가 이미 지워져 있다).
+        if (hadSession()) noteSessionExpired();
+        setStatus('anon');
+      }
+    };
+    backend.auth.getSession().then(apply);
+    const unsubscribe = backend.auth.onAuthChange(apply);
     return () => {
       cancelled = true;
       unsubscribe();
@@ -34,7 +46,8 @@ function RequireAuth({ children }: { children: ReactNode }) {
   }, [backend]);
 
   if (status === 'checking') return null; // brief flash-free wait for the session check
-  if (status === 'anon') return <Navigate to="/login" replace />;
+  // 돌아갈 자리를 `next`로 들고 간다 — 편집 중이던 맵 주소를 사용자가 다시 찾지 않게.
+  if (status === 'anon') return <Navigate to={loginUrlWithNext(location.pathname, location.search)} replace />;
   return <>{children}</>;
 }
 

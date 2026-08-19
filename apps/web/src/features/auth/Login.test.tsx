@@ -1,8 +1,9 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { act, cleanup, render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import { MemoryRouter } from 'react-router-dom';
+import { MemoryRouter, Route, Routes } from 'react-router-dom';
 import { Login } from './Login';
+import { noteSessionExpired } from './sessionNotice';
 import { mockMatchMedia } from '../../test/matchMedia';
 import { BackendProvider } from '../../adapters/BackendContext';
 import { LocalAuth } from '../../adapters/local/localAuth';
@@ -69,6 +70,20 @@ function renderLogin() {
   return render(
     <MemoryRouter>
       <Login />
+    </MemoryRouter>,
+  );
+}
+
+/** 세션 만료로 튕겨 온 상태 — `next`가 실린 /login에서 시작하고, 성공 후 어디로
+ * 가는지 보기 위해 목적지 라우트를 함께 둔다(세션 정책 ②). */
+function renderLoginAt(entry: string) {
+  return render(
+    <MemoryRouter initialEntries={[entry]}>
+      <Routes>
+        <Route path="/login" element={<Login />} />
+        <Route path="/home" element={<div>HOME_PAGE</div>} />
+        <Route path="/editor" element={<div>EDITOR_PAGE</div>} />
+      </Routes>
     </MemoryRouter>,
   );
 }
@@ -639,5 +654,47 @@ describe('가입 차단 안내는 문구 없이 남지 않는다', () => {
 
     await user.type(screen.getByPlaceholderText('비밀번호 입력'), 'x');
     expect(calloutOf()).toBeNull();
+  });
+});
+
+// 세션 정책 ②(backend.md §15) — 만료를 조용히 넘기지 않고, 돌아갈 자리를 지킨다.
+describe('세션 만료 안내와 원래 화면 복귀', () => {
+  it('만료로 튕겨 오면 안내가 뜨고, 로그인 뒤 원래 보던 맵으로 돌아간다', async () => {
+    const user = userEvent.setup();
+    noteSessionExpired(); // RequireAuth가 튕길 때 남기는 표시
+    renderLoginAt(`/login?next=${encodeURIComponent('/editor?map=m1&title=x')}`);
+
+    expect(screen.getByText('로그인이 만료되었어요. 다시 로그인해 주세요.')).toBeTruthy();
+
+    await user.type(screen.getByPlaceholderText('you@example.com'), 'a@b.co');
+    await user.type(screen.getByPlaceholderText('비밀번호 입력'), 'password123');
+    await user.click(screen.getByRole('button', { name: '로그인' }));
+
+    // 편집 중이던 맵 주소를 사용자가 다시 찾지 않는다.
+    await waitFor(() => expect(screen.getByText('EDITOR_PAGE')).toBeTruthy(), { timeout: 3000 });
+  });
+
+  it('만료 표시가 없으면 안내도 없고(그냥 문지기), next 없으면 홈으로 간다', async () => {
+    const user = userEvent.setup();
+    renderLoginAt('/login');
+
+    expect(screen.queryByText(/로그인이 만료되었어요/)).toBeNull();
+
+    await user.type(screen.getByPlaceholderText('you@example.com'), 'a@b.co');
+    await user.type(screen.getByPlaceholderText('비밀번호 입력'), 'password123');
+    await user.click(screen.getByRole('button', { name: '로그인' }));
+
+    await waitFor(() => expect(screen.getByText('HOME_PAGE')).toBeTruthy(), { timeout: 3000 });
+  });
+
+  it('앱 밖을 가리키는 next는 무시하고 홈으로 간다(오픈 리다이렉트 차단)', async () => {
+    const user = userEvent.setup();
+    renderLoginAt(`/login?next=${encodeURIComponent('https://evil.com/steal')}`);
+
+    await user.type(screen.getByPlaceholderText('you@example.com'), 'a@b.co');
+    await user.type(screen.getByPlaceholderText('비밀번호 입력'), 'password123');
+    await user.click(screen.getByRole('button', { name: '로그인' }));
+
+    await waitFor(() => expect(screen.getByText('HOME_PAGE')).toBeTruthy(), { timeout: 3000 });
   });
 });

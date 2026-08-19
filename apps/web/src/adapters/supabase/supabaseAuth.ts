@@ -5,7 +5,7 @@
 // live network calls happen just by the module being loaded).
 
 import type { Session, SupabaseClient, User } from '@supabase/supabase-js';
-import type { AuthChangeListener, AuthProvider, AuthResult, AuthSession } from '../ports';
+import type { AuthChangeListener, AuthProvider, AuthResult, AuthSession, SignOutScope } from '../ports';
 
 function mapUser(user: User | null | undefined): AuthSession['user'] | null {
   if (!user) return null;
@@ -95,8 +95,10 @@ export class SupabaseAuth implements AuthProvider {
     return { session: mapSession(data.session) };
   }
 
-  async signOut(): Promise<void> {
-    await this.client.auth.signOut();
+  // 범위는 세션 정책의 유일한 손잡이(backend.md §15): 기본은 이 기기만,
+  // 'global'은 모든 기기(분실·공용 PC 회수), 'others'는 지금 세션만 남긴다.
+  async signOut(scope: SignOutScope = 'local'): Promise<void> {
+    await this.client.auth.signOut(scope === 'local' ? undefined : { scope });
   }
 
   onAuthChange(listener: AuthChangeListener): () => void {
@@ -135,9 +137,19 @@ export class SupabaseAuth implements AuthProvider {
     return { session: mapSession(data.session) };
   }
 
+  // 비밀번호를 바꾸면 **다른 기기의 세션을 해지한다**(계정을 되찾는 흐름의 마지막
+  // 조각 — 옛 비밀번호로 들어와 있던 세션이 그대로 남으면 바꾼 의미가 없다).
+  // 지금 세션은 'others'라 살아남으므로 사용자는 계속 쓴다. 해지가 실패해도
+  // 비밀번호 변경은 이미 성공했으므로 오류로 만들지 않는다(조용히 넘어간다).
   async updatePassword(newPassword: string): Promise<{ error?: string }> {
     const { error } = await this.client.auth.updateUser({ password: newPassword });
-    return error ? { error: error.message } : {};
+    if (error) return { error: error.message };
+    try {
+      await this.client.auth.signOut({ scope: 'others' });
+    } catch {
+      /* 다른 세션 해지 실패 — 비밀번호는 이미 바뀌었다 */
+    }
+    return {};
   }
 
   // The anon/authenticated client can't touch `auth.users`, so account deletion

@@ -154,6 +154,8 @@ export interface HomeState {
   /** Draft name in that popup — committed to `userName` on 변경, discarded on 취소. */
   profileNameDraft: string;
   confirmLogout: boolean;
+  /** '모든 기기에서 로그아웃' 확인창 — 다른 기기의 세션까지 해지한다(세션 정책 ①). */
+  confirmLogoutAll: boolean;
   /** The 설정 (account settings) modal, opened from the profile popover. Hosts
    * the 회원 탈퇴 entry. */
   accountSettingsOpen: boolean;
@@ -340,6 +342,7 @@ export function initialHomeState(): HomeState {
     profileNameOpen: false,
     profileNameDraft: '',
     confirmLogout: false,
+    confirmLogoutAll: false,
     accountSettingsOpen: false,
     feedbackOpen: false,
     templateOpen: false,

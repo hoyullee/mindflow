@@ -1518,6 +1518,74 @@ describe('Home', () => {
     expect(delBtn.disabled).toBe(false);
   });
 
+  // 세션 정책 ①(backend.md §15) — 이 앱의 세션은 기기 수 제한 없이 오래 유지되므로
+  // 분실·공용 PC의 로그인을 **회수할 수단**이 필요하다.
+  it('설정 → 모든 기기에서 로그아웃: 확인 뒤 global 범위로 signOut하고 /login으로 간다', async () => {
+    const user = userEvent.setup();
+    const auth = new LocalAuth();
+    const scopes: (string | undefined)[] = [];
+    const realSignOut = auth.signOut.bind(auth);
+    auth.signOut = async (scope?: 'local' | 'global' | 'others') => {
+      scopes.push(scope);
+      await realSignOut(scope);
+    };
+    const backend: Backend = { auth, docStore: new MockDocStore([], {}), spaceStore: new LocalSpaceStore(), shareStore: new LocalShareStore(), feedbackStore: new LocalFeedbackStore(), imageStore: new LocalImageStore(), commentStore: new LocalCommentStore(), notificationStore: new LocalNotificationStore(), mode: 'local' };
+    localStorage.setItem('mf_had_session', '1'); // 로그인한 적 있는 기기
+    render(
+      <MemoryRouter initialEntries={['/home']}>
+        <BackendProvider backend={backend}>
+          <Routes>
+            <Route path="/home" element={<Home />} />
+            <Route path="/login" element={<div>LOGIN_PAGE</div>} />
+          </Routes>
+        </BackendProvider>
+      </MemoryRouter>,
+    );
+
+    await user.click(await screen.findByRole('button', { name: '계정 메뉴' }));
+    await user.click(screen.getByRole('button', { name: '설정' }));
+    const settingsDialog = screen.getByRole('dialog', { name: '설정' });
+    await user.click(within(settingsDialog).getByText('모든 기기에서 로그아웃'));
+
+    // 다른 기기까지 끊는 동작이라 한 번 묻는다.
+    expect(screen.getByText('모든 기기에서 로그아웃할까요?')).toBeTruthy();
+    await user.click(screen.getByRole('button', { name: '모두 로그아웃' }));
+
+    await waitFor(() => expect(screen.getByText('LOGIN_PAGE')).toBeTruthy(), { timeout: 2000 });
+    expect(scopes).toEqual(['global']);
+    // 직접 로그아웃했으므로 만료 판정 마커를 지운다 — 다음 방문에 "만료" 거짓말 금지.
+    expect(localStorage.getItem('mf_had_session')).toBeNull();
+  });
+
+  it('평범한 로그아웃은 이 기기만(local) — 그래도 만료 마커는 지운다', async () => {
+    const user = userEvent.setup();
+    const auth = new LocalAuth();
+    const scopes: (string | undefined)[] = [];
+    const realSignOut = auth.signOut.bind(auth);
+    auth.signOut = async (scope?: 'local' | 'global' | 'others') => {
+      scopes.push(scope);
+      await realSignOut(scope);
+    };
+    const backend: Backend = { auth, docStore: new MockDocStore([], {}), spaceStore: new LocalSpaceStore(), shareStore: new LocalShareStore(), feedbackStore: new LocalFeedbackStore(), imageStore: new LocalImageStore(), commentStore: new LocalCommentStore(), notificationStore: new LocalNotificationStore(), mode: 'local' };
+    localStorage.setItem('mf_had_session', '1');
+    render(
+      <MemoryRouter initialEntries={['/home']}>
+        <BackendProvider backend={backend}>
+          <Routes>
+            <Route path="/home" element={<Home />} />
+            <Route path="/login" element={<div>LOGIN_PAGE</div>} />
+          </Routes>
+        </BackendProvider>
+      </MemoryRouter>,
+    );
+    await user.click(await screen.findByRole('button', { name: '계정 메뉴' }));
+    await user.click(screen.getByRole('button', { name: /로그아웃/ }));
+    await user.click(screen.getByRole('button', { name: '로그아웃' }));
+    await waitFor(() => expect(screen.getByText('LOGIN_PAGE')).toBeTruthy(), { timeout: 2000 });
+    expect(scopes).toEqual(['local']);
+    expect(localStorage.getItem('mf_had_session')).toBeNull();
+  });
+
   it('설정 modal links to the legal docs (the logged-in entry point)', async () => {
     const user = userEvent.setup();
     renderHomeWithDocStore([]);

@@ -203,3 +203,47 @@ describe('SupabaseAuth emailSignInProviders (email_signin_providers RPC)', () =>
     expect(await auth.emailSignInProviders('x@example.com')).toEqual(['email', 'google']);
   });
 });
+
+// 세션 정책 ①③(backend.md §15) — 로그아웃 범위와 비밀번호 변경 시 다른 세션 해지.
+describe('SupabaseAuth 세션 정책 — signOut 범위 / 비밀번호 변경 후 다른 세션 해지', () => {
+  function clientCapturingSignOut(updateError?: string) {
+    /** 호출마다 넘어간 범위 — 옵션이 없으면(=SDK 기본, 로컬 세션만) null. */
+    const calls: (string | null)[] = [];
+    const client = {
+      auth: {
+        signOut: async (opts?: { scope?: string }) => {
+          calls.push(opts?.scope ?? null);
+          return { error: null };
+        },
+        updateUser: async () => (updateError ? { error: { message: updateError } } : { error: null }),
+      },
+    } as unknown as SupabaseClient;
+    return { client, calls };
+  }
+
+  it('기본(local)은 SDK 기본 동작 — 이 기기만, 다른 기기는 그대로', async () => {
+    const { client, calls } = clientCapturingSignOut();
+    await new SupabaseAuth(client).signOut();
+    expect(calls).toEqual([null]); // 옵션 없이 호출 = 로컬 세션만
+  });
+
+  it("'global'은 모든 기기의 세션을 해지한다(분실·공용 PC 회수)", async () => {
+    const { client, calls } = clientCapturingSignOut();
+    await new SupabaseAuth(client).signOut('global');
+    expect(calls).toEqual(['global']);
+  });
+
+  it('비밀번호를 바꾸면 다른 세션을 해지하되(others) 지금 세션은 남긴다', async () => {
+    const { client, calls } = clientCapturingSignOut();
+    const res = await new SupabaseAuth(client).updatePassword('newpw123!');
+    expect(res.error).toBeUndefined();
+    expect(calls).toEqual(['others']);
+  });
+
+  it('비밀번호 변경이 실패하면 세션을 건드리지 않는다', async () => {
+    const { client, calls } = clientCapturingSignOut('too weak');
+    const res = await new SupabaseAuth(client).updatePassword('x');
+    expect(res.error).toBe('too weak');
+    expect(calls).toEqual([]);
+  });
+});

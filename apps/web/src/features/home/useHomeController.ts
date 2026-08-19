@@ -9,6 +9,8 @@ import { exportDocSvg } from '../editor/svg';
 import { exportDocPdf } from '../editor/pdf';
 import { themeOf } from '../editor/theme';
 import { applyHomeTheme, homeThemeKeyOf, saveHomeThemeCache, type HomeThemeKey } from './theme';
+import { forgetSignedIn } from '../auth/sessionNotice';
+import type { SignOutScope } from '../../adapters/ports';
 import { useBackend } from '../../adapters/BackendContext';
 import { findBoardTemplate, findKanbanTemplate, findTemplate } from '../../templates/mapTemplates';
 import {
@@ -634,16 +636,27 @@ export function useHomeController() {
   };
   const logout = () => patch({ settingsOpen: false, confirmLogout: true });
   const cancelLogout = () => patch({ confirmLogout: false });
-  const confirmLogoutYes = () => {
-    patch({ confirmLogout: false, creatingMap: true, loaderMsg: '로그아웃하고 있어요' });
+  /** 로그아웃 실행 — 범위만 다르고 나머지(로더·이동)는 같다.
+   * `forgetSignedIn()`으로 "이 기기에서 로그인한 적 있다" 마커를 지운다: 직접
+   * 로그아웃한 사람에게 다음 방문에서 "로그인이 만료되었어요"가 뜨면 거짓말이다
+   * (세션 정책 ②의 판정 근거 — sessionNotice). */
+  const runSignOut = (scope: SignOutScope) => {
+    patch({ confirmLogout: false, confirmLogoutAll: false, creatingMap: true, loaderMsg: scope === 'global' ? '모든 기기에서 로그아웃하고 있어요' : '로그아웃하고 있어요' });
     clearTimeout(loaderTimer.current);
+    forgetSignedIn();
     // `LocalAuth.signOut()` resolves instantly (demo, no network), so this
     // still lands on /login after the same ~900ms loader beat as before.
-    void auth.signOut();
+    void auth.signOut(scope);
     // `replace` so a post-logout Forward can't return to the (now signed-out)
     // home and replay its loader/animation.
     loaderTimer.current = setTimeout(() => navigate('/login', { replace: true }), 900);
   };
+  const confirmLogoutYes = () => runSignOut('local');
+  /** 모든 기기에서 로그아웃(세션 정책 ①) — 기기 분실·공용 PC에 남겨 둔 세션을
+   * 회수하는 수단. 설정 모달의 '계정 관리'에서 들어온다. */
+  const logoutAllDevices = () => patch({ accountSettingsOpen: false, confirmLogoutAll: true });
+  const cancelLogoutAll = () => patch({ confirmLogoutAll: false });
+  const confirmLogoutAllYes = () => runSignOut('global');
 
   // ---- account settings / 회원 탈퇴 ----
   const openAccountSettings = () => patch({ settingsOpen: false, accountSettingsOpen: true });
@@ -2037,6 +2050,9 @@ export function useHomeController() {
     logout,
     cancelLogout,
     confirmLogoutYes,
+    logoutAllDevices,
+    cancelLogoutAll,
+    confirmLogoutAllYes,
     openAccountSettings,
     openFeedback,
     closeFeedback,

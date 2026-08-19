@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import type { KeyboardEvent } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useLocation, useNavigate } from 'react-router-dom';
+import { safeNextPath, takeSessionExpired } from './sessionNotice';
 import { useBackend } from '../../adapters/BackendContext';
 import { initialLoginState, type LoginState } from './types';
 
@@ -120,6 +121,18 @@ function validEmail(email: string): boolean {
 export function useLoginController() {
   const [state, setState] = useState<LoginState>(initialLoginState);
   const navigate = useNavigate();
+  const location = useLocation();
+  // 세션 만료로 튕겨 온 경우 그 사실과 **돌아갈 자리**를 들고 온다(세션 정책 ②).
+  // `next`는 튕길 때 `RequireAuth`가 실어 보낸 우리 앱 안의 경로다.
+  const nextPath = useRef<string | null>(null);
+  useEffect(() => {
+    nextPath.current = safeNextPath(new URLSearchParams(location.search).get('next'));
+    // 안내는 **한 번만** — 꺼내 오면 표시가 지워진다(같은 문구가 계속 붙어 있지 않게).
+    if (takeSessionExpired()) {
+      setState((prev) => ({ ...prev, notice: '로그인이 만료되었어요. 다시 로그인해 주세요.' }));
+    }
+    // 만료 안내는 `takeSessionExpired()`가 한 번만 돌려주므로 다시 돌아도 중복되지 않는다.
+  }, [location.search]);
   const { auth, mode } = useBackend();
   const timerRef = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
 
@@ -172,8 +185,9 @@ export function useLoginController() {
     clearTimeout(timerRef.current);
     timerRef.current = setTimeout(() => {
       // `replace` so a post-login Back can't return to the login screen and
-      // replay its loader/animation.
-      navigate('/home', { replace: true });
+      // replay its loader/animation. 만료로 튕겨 왔다면 **원래 보던 화면**으로
+      // 돌아간다(편집 중이던 맵 주소를 다시 찾지 않게 — 세션 정책 ②).
+      navigate(nextPath.current || '/home', { replace: true });
     }, 1100);
   };
 

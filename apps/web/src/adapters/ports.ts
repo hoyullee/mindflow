@@ -46,6 +46,9 @@ export interface AuthResult {
  * email/password login+signup, Google OAuth, password reset, and (for the
  * demo/local adapter) a stand-in for the original's 6-digit `demoCode` step.
  */
+/** `AuthProvider.signOut`의 범위 — 세션 정책의 유일한 손잡이. */
+export type SignOutScope = 'local' | 'global' | 'others';
+
 export interface AuthProvider {
   getSession(): Promise<AuthSession | null>;
   signInWithPassword(email: string, password: string): Promise<AuthResult>;
@@ -67,7 +70,14 @@ export interface AuthProvider {
    * protection); omit it when the token was requested without one.
    */
   signInWithIdToken(provider: 'google', token: string, nonce?: string): Promise<AuthResult>;
-  signOut(): Promise<void>;
+  /**
+   * 로그아웃 범위(세션 정책 — `server/supabase/docs/backend.md` §15):
+   * - `'local'`(기본) = 이 기기의 세션만. 다른 기기는 그대로 로그인 상태다.
+   * - `'global'` = **모든 기기**의 세션 해지(기기 분실·공용 PC 회수 수단).
+   * - `'others'` = 지금 이 세션만 남기고 나머지 해지(비밀번호 변경 뒤에 쓴다).
+   * 로컬/데모 어댑터는 세션이 하나뿐이라 범위와 무관하게 그 하나를 지운다.
+   */
+  signOut(scope?: SignOutScope): Promise<void>;
   /** Returns an unsubscribe function. */
   onAuthChange(listener: AuthChangeListener): () => void;
   sendPasswordReset(email: string): Promise<{ error?: string }>;
