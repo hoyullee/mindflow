@@ -232,7 +232,7 @@ a:hover {
 .mf-home .tpl-card:hover {
   transform: translateY(-3px);
   border-color: var(--mf-border-hover) !important;
-  box-shadow: 0 22px 40px -26px rgba(46, 42, 38, 0.45) !important;
+  box-shadow: var(--mf-card-shadow-hover) !important;
 }
 .mf-home .tpl-card:active {
   transform: translateY(-1px) scale(0.994);
@@ -329,9 +329,17 @@ a:hover {
 .mf-home .fav-btn:hover {
   transform: scale(1.12);
 }
-/* ⋯는 면 없는 점 셋(요청) — hover에서는 배경 대신 **글자색만** 짙어진다. */
+/* ⋯는 쉴 때 면 없는 점 셋(요청) — 손을 얹으면 옅은 원판이 깔리고 누르는 순간
+   눌린다(요청: 클릭 효과가 없다). 배경은 인라인 transparent를 이겨야 해서 !important. */
 .mf-home .menu-btn:hover {
   color: var(--mf-text) !important;
+  background: var(--mf-panel2) !important;
+}
+/* 카드의 reveal 규칙(.map-card:hover .menu-btn — transform !important)보다 특이도가
+   높아야 눌림이 보인다. */
+.mf-home .map-card .menu-btn:active {
+  background: var(--mf-hairline) !important;
+  transform: translateY(0) scale(0.86) !important;
 }
 .mf-home .menu-row:hover {
   background: var(--mf-panel2) !important;

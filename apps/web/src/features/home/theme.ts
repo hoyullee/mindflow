@@ -183,7 +183,9 @@ const LIGHT_INK = {
   // 홈 리디자인(디자인 원본의 그늘·hover 값). 밝은 다섯 벌이 공유한다 —
   // 그늘은 잉크색이라 면 색과 달리 테마마다 갈릴 이유가 없다.
   cardShadow: '0 16px 32px -26px rgba(46,42,38,.42)',
-  cardShadowHover: '0 24px 44px -26px rgba(46,42,38,.42)',
+  // hover는 최근 항목과 같은 처방(요청: "조금만 덜하게") — **같은 기하로 진해지기만**
+  // 한다. 예전의 24/44px 확장은 카드 사이·구획 경계에서 그림자가 과하게 번졌다.
+  cardShadowHover: '0 16px 32px -26px rgba(46,42,38,.56)',
   cardShadowSm: '0 12px 26px -22px rgba(46,42,38,.4)',
   cardShadowSmHover: '0 12px 26px -22px rgba(46,42,38,.62)',
   borderHover: '#e7dacc',
@@ -346,7 +348,7 @@ export const HOME_THEMES: Record<HomeThemeKey, HomeTheme> = {
     // 다크는 그늘을 검정으로 더 진하게 — 어두운 면 위에서 옅은 그늘은 보이지 않는다.
     // hover 경계는 반대로 **밝아진다**(어두워지면 반응이 아니라 사라지는 것처럼 보인다).
     cardShadow: '0 16px 32px -24px rgba(0,0,0,.72)',
-    cardShadowHover: '0 24px 44px -24px rgba(0,0,0,.8)',
+    cardShadowHover: '0 16px 32px -24px rgba(0,0,0,.9)',
     cardShadowSm: '0 12px 26px -20px rgba(0,0,0,.7)',
     cardShadowSmHover: '0 12px 26px -20px rgba(0,0,0,.92)',
     borderHover: '#4a4038',

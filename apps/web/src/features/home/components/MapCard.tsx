@@ -580,7 +580,7 @@ export function MapCard({ card, controller, draggableEnabled, compact = false }:
               // exposes its ⋯ menu button.
               opacity: card.menuOpen || card.selected ? 1 : 0,
               transform: card.menuOpen || card.selected ? 'translateY(0)' : 'translateY(2px)',
-              transition: 'opacity .18s ease, transform .18s ease',
+              transition: 'opacity .18s ease, transform .18s ease, background .15s ease',
             }}
           >
             {/* 가로 점 셋 — 디자인 원본. ☰(세 줄)은 "메뉴 열기"보다 "목록"으로 읽힌다. */}

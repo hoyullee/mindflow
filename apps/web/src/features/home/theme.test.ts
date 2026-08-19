@@ -55,7 +55,7 @@ describe('home theme', () => {
       '--mf-star': '#e0a53c',
       // 홈 리디자인에서 더한 카드 입체감 토큰(디자인 원본의 그늘·hover·미리보기 바탕).
       '--mf-card-shadow': '0 16px 32px -26px rgba(46,42,38,.42)',
-      '--mf-card-shadow-hover': '0 24px 44px -26px rgba(46,42,38,.42)',
+      '--mf-card-shadow-hover': '0 16px 32px -26px rgba(46,42,38,.56)',
       '--mf-card-shadow-sm': '0 12px 26px -22px rgba(46,42,38,.4)',
       // 최근 항목 hover — **같은 기하로 진해지기만** 한다(트레이 아래 여유 18px을
       // 넘는 그림자는 잘린 경계를 만든다, 제보).

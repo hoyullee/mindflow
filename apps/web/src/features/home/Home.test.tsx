@@ -4572,6 +4572,37 @@ describe('홈 리디자인 계약', () => {
 });
 
 describe('홈 디자인 후속 6건', () => {
+  it('그리드 카드 hover 그림자도 같은 기하로 진해지기만 한다 + ⋯ 버튼에 클릭 효과가 있다(요청)', () => {
+    // hover 토큰의 기하 = 기본 그늘의 기하(알파만 다르다)는 theme.test.ts 스냅샷이
+    // 고정한다. 여기서는 CSS 쪽 계약: 갤러리 카드도 같은 토큰을 쓰고, ⋯ 버튼은
+    // hover 원판 + :active 눌림을 가진다(예전엔 글자색만 바뀌어 클릭 반응이 없었다).
+    const css = readFileSync(resolve('src/features/home/home.css'), 'utf8');
+    const tpl = css.slice(css.indexOf('.mf-home .tpl-card:hover'));
+    expect(tpl).toContain('var(--mf-card-shadow-hover)');
+    const menuHover = css.slice(css.indexOf('.mf-home .menu-btn:hover'));
+    expect(menuHover).toContain('background: var(--mf-panel2) !important');
+    const menuActive = css.slice(css.indexOf('.mf-home .map-card .menu-btn:active'));
+    expect(menuActive).toContain('scale(0.86)');
+    // :active 규칙은 reveal 규칙(.map-card:hover .menu-btn)보다 **뒤에** 있어야
+    // 같은 특이도에서 이긴다 — 앞에 두면 눌림 transform이 reveal에 덮인다.
+    expect(css.indexOf('.mf-home .map-card .menu-btn:active')).toBeGreaterThan(css.indexOf('.mf-home .map-card:hover .menu-btn'));
+  });
+
+  it('칸반 종류 아이콘은 채운 세로 막대 둘이다 (가는 선 틀은 13px에서 구별이 흐렸다 — 제보)', async () => {
+    localStorage.setItem('mindflow_doc_kb1', JSON.stringify({ v: 1, kind: 'kanban', nodes: {}, floats: [], lines: [], zones: [], layoutMode: 'right', themeKey: 'coral', columns: [{ id: 'c1', title: '할 일' }], cards: [] }));
+    const user = userEvent.setup();
+    const { container } = renderHomeWithDocStore([
+      { id: 'kb1', title: '칸반 파일', version: 1, updatedAt: '2026-01-01T00:00:00.000Z', isFavorite: true, deletedAt: null },
+    ]);
+    await waitFor(() => expect(screen.getAllByText('칸반 파일').length).toBeGreaterThan(0));
+    const aside = container.querySelector('aside') as HTMLElement;
+    await user.click([...aside.querySelectorAll('.nav-item')].find((el) => el.textContent?.includes('즐겨찾기')) as HTMLElement);
+    const icon = aside.querySelector('svg[data-kind-icon="kanban"]') as SVGElement;
+    expect(icon).toBeTruthy();
+    expect(icon.getAttribute('fill')).toBe('var(--mf-doc-kanban)');
+    expect(icon.querySelectorAll('rect')).toHaveLength(2);
+  });
+
   it('최근 항목 fit — 트레이 폭을 그대로 재서 마지막 칸이 들어갈 공간이 있으면 노출한다', () => {
     const STEP = RECENT_CARD_W + 10; // 카드 158 + 간격 10
     // 5칸이 딱 맞는 폭. 예전 계산은 좌우 패딩 몫(48px)을 빼서 4를 돌려줬다(제보:

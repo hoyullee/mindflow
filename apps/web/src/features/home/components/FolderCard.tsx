@@ -139,7 +139,7 @@ export function FolderCard({ folder, controller }: Props) {
         }}
         title="메뉴"
         aria-label="메뉴"
-        style={{ flexShrink: 0, width: 28, height: 28, borderRadius: 9, background: 'transparent', border: 'none', display: selectMode ? 'none' : 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--mf-subtext)', cursor: 'pointer', opacity: folder.menuOpen ? 1 : 0, transform: folder.menuOpen ? 'translateY(0)' : 'translateY(2px)', transition: 'opacity .18s ease, transform .18s ease' }}
+        style={{ flexShrink: 0, width: 28, height: 28, borderRadius: 9, background: 'transparent', border: 'none', display: selectMode ? 'none' : 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--mf-subtext)', cursor: 'pointer', opacity: folder.menuOpen ? 1 : 0, transform: folder.menuOpen ? 'translateY(0)' : 'translateY(2px)', transition: 'opacity .18s ease, transform .18s ease, background .15s ease' }}
       >
         <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
           <circle cx="5" cy="12" r="1.6" />

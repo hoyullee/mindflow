@@ -556,10 +556,12 @@ function SharedGlyph({ size = 15 }: { size?: number }) {
  * 보드=종이에 긋는 펜, 칸반=두 열. */
 function KindMiniGlyph({ kind }: { kind: DocKindName }) {
   if (kind === 'kanban') {
+    // 두 개의 **채운 세로 막대**(왼쪽이 김) — 첨부 이미지의 문법. 예전의 "틀 안
+    // 가는 선 둘"은 13px에서 보드·맵과 구별이 흐렸다(제보).
     return (
-      <svg data-kind-icon="kanban" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="var(--mf-doc-kanban)" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" aria-hidden="true" style={{ flexShrink: 0 }}>
-        <rect x="3.5" y="4" width="17" height="16" rx="3" />
-        <path d="M9.6 8v8.5M14.4 8v5" />
+      <svg data-kind-icon="kanban" width="13" height="13" viewBox="0 0 24 24" fill="var(--mf-doc-kanban)" aria-hidden="true" style={{ flexShrink: 0 }}>
+        <rect x="4" y="3.5" width="6.8" height="17" rx="2.2" />
+        <rect x="13.2" y="3.5" width="6.8" height="11" rx="2.2" />
       </svg>
     );
   }
