@@ -4572,6 +4572,42 @@ describe('홈 리디자인 계약', () => {
 });
 
 describe('홈 디자인 후속 6건', () => {
+  it('프로필 팝업·설정 모달 디자인(첨부 이미지): 잉크 아바타(호율)·인셋 머리·로그아웃 구분선·모달 560', async () => {
+    localStorage.setItem('mf_demo_session', JSON.stringify({ user: { id: 'u1', email: 'hoyul.lee@wantedlab.com' } }));
+    localStorage.setItem('mf_profile_names', JSON.stringify({ 'hoyul.lee@wantedlab.com': '이호율' }));
+    const user = userEvent.setup();
+    const { container } = renderHomeWithDocStore([]);
+    await waitFor(() => expect(screen.getByRole('button', { name: '계정 메뉴' })).toBeTruthy());
+
+    // 아바타 글자 — 한글 이름은 성을 뗀 뒤 두 글자("이호율" → "호율").
+    const trigger = screen.getByRole('button', { name: '계정 메뉴' });
+    expect(trigger.textContent).toContain('호율');
+    expect(trigger.textContent).not.toContain('이호율호율'); // 아바타가 이름 앞에 선다
+
+    await user.click(trigger);
+    const pop = container.querySelector('.settings-pop') as HTMLElement;
+    expect(pop.style.display).not.toBe('none');
+    // 머리는 accent-soft 인셋 블록, 로그아웃 앞에는 구분선.
+    const head = pop.firstElementChild as HTMLElement;
+    expect(head.style.background).toContain('--mf-accent-soft');
+    expect(head.style.margin).toBeTruthy();
+    const rows = pop.querySelectorAll('.menu-row');
+    expect(rows).toHaveLength(3);
+    const dividerBeforeLogout = rows[1]!.nextElementSibling as HTMLElement;
+    expect(dividerBeforeLogout.getAttribute('aria-hidden')).toBe('true');
+
+    // 설정 모달 — 560 폭, 계정 행 accent-soft, 테마 스와치는 원, 탈퇴 행 문구.
+    await user.click(screen.getByRole('button', { name: '설정' }));
+    const dialog = await screen.findByRole('dialog', { name: '설정' });
+    expect(dialog.style.width).toBe('560px');
+    const accountRow = [...dialog.querySelectorAll('div')].find((d) => (d as HTMLElement).style.background.includes('--mf-accent-soft') && d.textContent?.includes('이호율')) as HTMLElement;
+    expect(accountRow).toBeTruthy();
+    const chip = within(dialog).getByRole('radio', { name: '코랄 테마' });
+    expect((chip.querySelector('span') as HTMLElement).style.borderRadius).toBe('50%');
+    expect(within(dialog).getByText('계정과 모든 보드·스페이스가 영구 삭제돼요')).toBeTruthy();
+    expect(within(dialog).getByText('개인정보처리방침').getAttribute('href')).toBe('/privacy');
+  });
+
   it('그리드 카드 hover 그림자도 같은 기하로 진해지기만 한다 + ⋯ 버튼에 클릭 효과가 있다(요청)', () => {
     // hover 토큰의 기하 = 기본 그늘의 기하(알파만 다르다)는 theme.test.ts 스냅샷이
     // 고정한다. 여기서는 CSS 쪽 계약: 갤러리 카드도 같은 토큰을 쓰고, ⋯ 버튼은

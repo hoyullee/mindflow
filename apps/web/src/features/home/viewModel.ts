@@ -1,3 +1,4 @@
+import { avatarLabel } from './components/ProfileAvatar';
 import { RECENT_RENDER_MAX, docRawForTitle, cardKeyOf, hexA, mapHref, mapId, readDocRaw } from './storage';
 import { miniBoardPreview, miniKanbanPreview, miniPreview, previewSkeleton, realPreview } from './mapPreview';
 import { docSearchText, matchesQuery } from './searchIndex';
@@ -813,7 +814,7 @@ export function deriveHomeView(state: HomeState): HomeViewModel {
     // Only render the "맵" section when there are actually maps to show — a space
     // with folders but no loose maps must not render an empty "맵" header.
     mapsSectionVisible: !loading && !searching && !showDriveConnect && allCards.length > 0,
-    userInitial: (state.userName || 'M').trim().charAt(0).toUpperCase() || 'M',
+    userInitial: avatarLabel(state.userName),
   };
 }
 
