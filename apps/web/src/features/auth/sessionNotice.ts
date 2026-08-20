@@ -9,13 +9,17 @@
 // - `mf_had_session`(localStorage, 기기에 남는다) = "이 기기에서 로그인한 적이
 //   있다". 처음부터 로그아웃 상태인 방문(그냥 문지기)과 **세션이 사라진 방문**
 //   (만료)을 가르는 유일한 단서다 — 탭을 닫아 둔 사이 만료된 경우까지 잡는다.
-// - `mf_session_expired`(sessionStorage, 이 탭 한 번만) = 방금 만료로 튕겼다.
-//   로그인 화면이 한 번 읽고 지운다(같은 안내가 계속 붙어 있지 않게).
+// - `mf_login_notice`(sessionStorage, 이 탭 한 번만) = 로그인 화면에 한 번 띄울 안내
+//   문구. 로그인 화면이 읽고 **지운다**(같은 안내가 계속 붙어 있지 않게). 세션 만료와
+//   "Google 연결 거절"(googleLink)이 같은 자리를 쓴다.
 //
 // 사용자가 **직접** 로그아웃한 경우에는 마커를 지우므로 만료 안내가 뜨지 않는다.
 
 const HAD_SESSION = 'mf_had_session';
-const EXPIRED = 'mf_session_expired';
+const NOTICE = 'mf_login_notice';
+
+/** 세션 만료 안내 문구 — 저장하는 값이 곧 화면에 보이는 말이다. */
+export const SESSION_EXPIRED_MESSAGE = '로그인이 만료되었어요. 다시 로그인해 주세요.';
 
 /** 로그인 상태를 이 기기에 기억한다(만료 판정의 근거). */
 export function rememberSignedIn(): void {
@@ -39,7 +43,16 @@ export function hadSession(): boolean {
 export function forgetSignedIn(): void {
   try {
     localStorage.removeItem(HAD_SESSION);
-    sessionStorage.removeItem(EXPIRED);
+    sessionStorage.removeItem(NOTICE);
+  } catch {
+    /* no-op */
+  }
+}
+
+/** 로그인 화면에 한 번 띄울 안내를 남긴다. */
+export function noteLoginNotice(message: string): void {
+  try {
+    sessionStorage.setItem(NOTICE, message);
   } catch {
     /* no-op */
   }
@@ -47,21 +60,17 @@ export function forgetSignedIn(): void {
 
 /** 만료로 튕긴다고 표시(로그인 화면이 한 번 읽는다). */
 export function noteSessionExpired(): void {
-  try {
-    sessionStorage.setItem(EXPIRED, '1');
-  } catch {
-    /* no-op */
-  }
+  noteLoginNotice(SESSION_EXPIRED_MESSAGE);
 }
 
-/** 만료 안내를 **꺼내 온다**(읽고 지운다 — 한 번만 보여 준다). */
-export function takeSessionExpired(): boolean {
+/** 안내를 **꺼내 온다**(읽고 지운다 — 한 번만 보여 준다). 없으면 `null`. */
+export function takeLoginNotice(): string | null {
   try {
-    const hit = sessionStorage.getItem(EXPIRED) === '1';
-    if (hit) sessionStorage.removeItem(EXPIRED);
-    return hit;
+    const msg = sessionStorage.getItem(NOTICE);
+    if (msg) sessionStorage.removeItem(NOTICE);
+    return msg || null;
   } catch {
-    return false;
+    return null;
   }
 }
 

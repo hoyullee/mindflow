@@ -14,11 +14,18 @@ function mapUser(user: User | null | undefined): AuthSession['user'] | null {
   // person's real name and photo instead of the email-derived fallback.
   const meta = (user.user_metadata ?? {}) as Record<string, unknown>;
   const str = (v: unknown): string | null => (typeof v === 'string' && v.trim() ? v : null);
+  // `app_metadata`(서버가 채우는 값)의 provider/providers — 이번 로그인 수단과
+  // 계정에 연결된 수단 전부. "이메일로 가입한 계정에 Google로 들어왔다"를 이 둘로
+  // 판정한다(`googleLinkRefused`).
+  const app = (user.app_metadata ?? {}) as Record<string, unknown>;
+  const providers = Array.isArray(app.providers) ? app.providers.filter((p): p is string => typeof p === 'string') : [];
   return {
     id: user.id,
     email: user.email ?? null,
     name: str(meta.full_name) ?? str(meta.name),
     avatarUrl: str(meta.avatar_url) ?? str(meta.picture),
+    signInProvider: str(app.provider),
+    linkedProviders: providers,
   };
 }
 

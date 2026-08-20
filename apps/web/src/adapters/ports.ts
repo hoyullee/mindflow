@@ -23,6 +23,11 @@ export interface AuthUser {
   name?: string | null;
   /** Avatar image URL from the identity provider (Google `avatar_url`/`picture`). */
   avatarUrl?: string | null;
+  /** **이번 로그인에 쓴 수단**(Supabase `app_metadata.provider`) — 'email' | 'google' …
+   * 계정에 연결된 수단이 여럿일 때 "무엇으로 들어왔는가"를 구분하는 유일한 값이다. */
+  signInProvider?: string | null;
+  /** 이 계정에 **연결된 수단 전부**(Supabase `app_metadata.providers`). */
+  linkedProviders?: string[];
 }
 
 export interface AuthSession {

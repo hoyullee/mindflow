@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it } from 'vitest';
-import { forgetSignedIn, hadSession, loginUrlWithNext, noteSessionExpired, rememberSignedIn, safeNextPath, takeSessionExpired } from './sessionNotice';
+import { SESSION_EXPIRED_MESSAGE, forgetSignedIn, hadSession, loginUrlWithNext, noteLoginNotice, noteSessionExpired, rememberSignedIn, safeNextPath, takeLoginNotice } from './sessionNotice';
 
 beforeEach(() => {
   localStorage.clear();
@@ -19,13 +19,16 @@ describe('sessionNotice', () => {
     noteSessionExpired();
     forgetSignedIn();
     expect(hadSession()).toBe(false);
-    expect(takeSessionExpired()).toBe(false);
+    expect(takeLoginNotice()).toBeNull();
   });
 
-  it('만료 안내는 한 번만 꺼내진다', () => {
+  it('안내는 한 번만 꺼내진다 — 만료와 Google 거절이 같은 자리를 쓴다', () => {
     noteSessionExpired();
-    expect(takeSessionExpired()).toBe(true);
-    expect(takeSessionExpired()).toBe(false);
+    expect(takeLoginNotice()).toBe(SESSION_EXPIRED_MESSAGE);
+    expect(takeLoginNotice()).toBeNull();
+    // 같은 채널에 다른 안내도 실린다(googleLink의 거절 문구 등).
+    noteLoginNotice('다른 안내');
+    expect(takeLoginNotice()).toBe('다른 안내');
   });
 
   it('next는 우리 앱 안의 경로만 통과한다(오픈 리다이렉트 차단)', () => {
