@@ -17,14 +17,26 @@ describe('LocalAuth 로그인 수단 (데모)', () => {
     expect(await auth.signinMethods()).toEqual({ hasPassword: false, providers: ['google'] });
   });
 
-  it('코드로 비밀번호를 설정하면 이메일 수단이 붙는다 — 코드가 틀리면 아무것도 바뀌지 않는다', async () => {
+  it('코드가 틀리면 아무것도 바뀌지 않고, 맞으면 비밀번호만 걸린다(신원은 그대로)', async () => {
     const auth = new LocalAuth();
     await auth.signInWithOAuth();
     expect(await auth.setPasswordWithCode('999999', 'pw')).toMatchObject({ wrongCode: true });
     expect(await auth.signinMethods()).toEqual({ hasPassword: false, providers: ['google'] });
 
     expect(await auth.setPasswordWithCode(DEMO_SETUP_CODE, 'pw')).toEqual({});
-    expect(await auth.signinMethods()).toEqual({ hasPassword: true, providers: ['google', 'email'] });
+    // 실제 Supabase와 같다 — `updateUser({ password })`는 identities를 건드리지 않는다.
+    expect(await auth.signinMethods()).toEqual({ hasPassword: true, providers: ['google'] });
+  });
+
+  // 그 빈자리를 메우는 것이 신원 등록이다(0030) — 이게 있어야 Google을 뗄 수 있다.
+  it('이메일 신원 등록은 비밀번호가 있을 때 한 번만 성립한다', async () => {
+    const auth = new LocalAuth();
+    await auth.signInWithOAuth();
+    expect(await auth.registerEmailIdentity()).toBe(false); // 비밀번호 없음
+    await auth.setPasswordWithCode(DEMO_SETUP_CODE, 'pw');
+    expect(await auth.registerEmailIdentity()).toBe(true);
+    expect((await auth.signinMethods())?.providers).toEqual(['google', 'email']);
+    expect(await auth.registerEmailIdentity()).toBe(false); // 이미 있다
   });
 
   it('연결·해제가 수단 목록을 늘리고 줄인다', async () => {

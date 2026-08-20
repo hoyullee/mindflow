@@ -1624,7 +1624,7 @@ describe('Home', () => {
     const unlink = container.querySelector('[data-google-link-action]') as HTMLButtonElement;
     expect(unlink.textContent).toContain('연결 해제');
     expect(unlink.disabled).toBe(true);
-    expect((container.querySelector('[data-google-link-row]') as HTMLElement).textContent).toContain('비밀번호를 설정하면');
+    expect((container.querySelector('[data-google-link-row]') as HTMLElement).textContent).toContain('유일한 로그인 수단');
 
     // 모달을 열면 곧바로 코드를 보낸다
     await user.click(row);
@@ -1632,7 +1632,13 @@ describe('Home', () => {
     await waitFor(() => expect(send).toHaveBeenCalledTimes(1));
     expect(dialog.textContent).toContain('me@gmail.com');
 
-    methods.mockResolvedValue({ hasPassword: true, providers: ['google', 'email'] });
+    // 설정이 끝나면 컨트롤러가 **이메일 신원까지 등록**한다(0030) — 그래야 Google을
+    // 뗄 수 있다(Supabase는 신원을 세고 비밀번호는 신원이 아니다).
+    const register = vi.spyOn(auth, 'registerEmailIdentity').mockImplementation(async () => {
+      methods.mockResolvedValue({ hasPassword: true, providers: ['google', 'email'] });
+      return true;
+    });
+    methods.mockResolvedValue({ hasPassword: true, providers: ['google'] });
     await user.type(within(dialog).getByLabelText('메일로 받은 인증번호'), '123456');
     await user.type(within(dialog).getByLabelText('새 비밀번호'), 'newpw');
     await user.type(within(dialog).getByLabelText('새 비밀번호 확인'), 'newpw');
@@ -1641,9 +1647,10 @@ describe('Home', () => {
     await waitFor(() => expect(setPw).toHaveBeenCalledWith('123456', 'newpw'));
     expect(dialog.querySelector('[data-set-pw-done]')).toBeTruthy();
     await user.click(within(dialog).getByRole('button', { name: '확인' }));
-    // 이제 비밀번호가 있다 — 행은 '변경'이고 Google 연결도 해제할 수 있다
+    // 이제 비밀번호가 있고 이메일 신원도 있다 — 행은 '변경'이고 해제도 열린다
     await waitFor(() => expect((container.querySelector('[data-change-pw-row]') as HTMLElement).textContent).toContain('비밀번호 변경'));
-    expect((container.querySelector('[data-google-link-action]') as HTMLButtonElement).disabled).toBe(false);
+    expect(register).toHaveBeenCalledTimes(1);
+    await waitFor(() => expect((container.querySelector('[data-google-link-action]') as HTMLButtonElement).disabled).toBe(false));
   });
 
   // 제보: 비밀번호 설정 모달에서 **새 비밀번호를 치는데 커서가 코드 칸으로 튀었다**.
@@ -1680,6 +1687,70 @@ describe('Home', () => {
     expect(document.activeElement).toBe(pw);
     expect(pw.value).toBe('newpw'); // 튀었다면 글자가 코드 칸으로 흘렀다
     expect((code as HTMLInputElement).value).toBe('');
+  });
+
+  // 제보: 비밀번호를 설정한 뒤에도 해제가 막히는데 문구가 "마지막 로그인 수단은
+  // 해제할 수 없어요. 비밀번호를 먼저 설정해 주세요."라 **두 이유가 섞여** 어느
+  // 쪽인지 알 수 없었다. 두 상황은 조건도 해법도 다르다:
+  //  ① 신원이 Google 하나뿐 → 서버가 거절한다(비밀번호를 설정해도 신원은 안 늘어난다)
+  //  ② 신원은 둘인데 비밀번호가 없다 → 우리 규칙(해제하면 들어올 길이 없다)
+  it.each([
+    [{ hasPassword: true, providers: ['google'] }, '유일한 로그인 수단', '비밀번호를 먼저'],
+    [{ hasPassword: false, providers: ['google', 'email'] }, '비밀번호를 먼저 설정', '유일한 로그인 수단'],
+  ])('Google 해제가 막히는 이유를 상황별로 말한다 (%o)', async (methods, expected, notExpected) => {
+    const user = userEvent.setup();
+    const auth = new LocalAuth();
+    vi.spyOn(auth, 'signinMethods').mockResolvedValue(methods as never);
+    const backend: Backend = { auth, docStore: new MockDocStore([], {}), spaceStore: new LocalSpaceStore(), shareStore: new LocalShareStore(), feedbackStore: new LocalFeedbackStore(), imageStore: new LocalImageStore(), commentStore: new LocalCommentStore(), notificationStore: new LocalNotificationStore(), mode: 'local' };
+    localStorage.setItem('mf_demo_session', JSON.stringify({ user: { id: 'u1', email: 'me@gmail.com' } }));
+    const { container } = render(
+      <MemoryRouter initialEntries={['/home']}>
+        <BackendProvider backend={backend}>
+          <Routes>
+            <Route path="/home" element={<Home />} />
+          </Routes>
+        </BackendProvider>
+      </MemoryRouter>,
+    );
+    await user.click(await screen.findByRole('button', { name: '계정 메뉴' }));
+    await user.click(screen.getByRole('button', { name: '설정' }));
+    const row = await waitFor(() => {
+      const el = container.querySelector('[data-google-link-row]') as HTMLElement;
+      expect(el.textContent).toContain(expected);
+      return el;
+    });
+    expect(row.textContent).not.toContain(notExpected); // 두 이유가 섞이지 않는다
+    expect((container.querySelector('[data-google-link-action]') as HTMLButtonElement).disabled).toBe(true);
+  });
+
+  // 제보자 계정처럼 **이미 비밀번호만 설정해 둔** 계정(0030 이전)은 설정을 열 때
+  // 이메일 신원을 등록해 스스로 낫는다 — 그러면 해제 버튼이 열린다.
+  it('비밀번호는 있는데 이메일 신원이 없으면 설정을 열 때 등록하고 해제가 열린다', async () => {
+    const user = userEvent.setup();
+    const auth = new LocalAuth();
+    const methods = vi.spyOn(auth, 'signinMethods');
+    methods.mockResolvedValue({ hasPassword: true, providers: ['google'] });
+    const register = vi.spyOn(auth, 'registerEmailIdentity').mockImplementation(async () => {
+      methods.mockResolvedValue({ hasPassword: true, providers: ['google', 'email'] });
+      return true;
+    });
+    const backend: Backend = { auth, docStore: new MockDocStore([], {}), spaceStore: new LocalSpaceStore(), shareStore: new LocalShareStore(), feedbackStore: new LocalFeedbackStore(), imageStore: new LocalImageStore(), commentStore: new LocalCommentStore(), notificationStore: new LocalNotificationStore(), mode: 'local' };
+    localStorage.setItem('mf_demo_session', JSON.stringify({ user: { id: 'u1', email: 'me@gmail.com' } }));
+    const { container } = render(
+      <MemoryRouter initialEntries={['/home']}>
+        <BackendProvider backend={backend}>
+          <Routes>
+            <Route path="/home" element={<Home />} />
+          </Routes>
+        </BackendProvider>
+      </MemoryRouter>,
+    );
+    await user.click(await screen.findByRole('button', { name: '계정 메뉴' }));
+    await user.click(screen.getByRole('button', { name: '설정' }));
+
+    await waitFor(() => expect(register).toHaveBeenCalledTimes(1));
+    await waitFor(() => expect((container.querySelector('[data-google-link-action]') as HTMLButtonElement).disabled).toBe(false));
+    expect((container.querySelector('[data-google-link-row]') as HTMLElement).textContent).toContain('Google 계정으로도 로그인할 수 있어요');
   });
 
   it('코드가 틀리면 그 자리에서 말한다 (설정은 되지 않는다)', async () => {

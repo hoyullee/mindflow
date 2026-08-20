@@ -414,3 +414,29 @@ describe('SupabaseAuth 비밀번호 설정 / Google 연동', () => {
     expect(calls).toEqual([]);
   });
 });
+
+// 0030 — 비밀번호를 설정한 계정에 **이메일 신원**을 등록한다. Supabase는 연결 해제 시
+// 신원을 최소 하나 요구하고 비밀번호는 신원으로 세지 않으므로, 이 등록이 없으면 Google로
+// 가입한 계정은 비밀번호를 설정해도 Google을 뗄 수 없다(라이브 제보).
+describe('SupabaseAuth registerEmailIdentity (0030)', () => {
+  function client(result: { data?: unknown; errorMsg?: string }) {
+    return {
+      rpc: async (name: string) => {
+        expect(name).toBe('register_email_identity');
+        return result.errorMsg ? { data: null, error: { message: result.errorMsg } } : { data: result.data, error: null };
+      },
+    } as unknown as SupabaseClient;
+  }
+
+  it('새로 만들었으면 true', async () => {
+    expect(await new SupabaseAuth(client({ data: true })).registerEmailIdentity()).toBe(true);
+  });
+
+  it('조건에 안 맞아 만들지 않았으면 false (이미 있음·비밀번호 없음 등은 SQL이 판단)', async () => {
+    expect(await new SupabaseAuth(client({ data: false })).registerEmailIdentity()).toBe(false);
+  });
+
+  it('RPC가 없거나 실패하면 false — 화면은 예전처럼 해제를 잠근 채 이유를 말한다', async () => {
+    expect(await new SupabaseAuth(client({ errorMsg: 'function does not exist' })).registerEmailIdentity()).toBe(false);
+  });
+});

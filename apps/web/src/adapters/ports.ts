@@ -171,6 +171,17 @@ export interface AuthProvider {
    * `updateUser({ password, nonce })`). 코드가 틀리면 `wrongCode`. */
   setPasswordWithCode(code: string, newPassword: string): Promise<{ error?: string; wrongCode?: boolean }>;
   /**
+   * 비밀번호를 설정한 계정에 **이메일 신원(identity)을 등록**한다 — 새로 만들었으면 `true`.
+   *
+   * 왜 필요한가: Supabase는 연결 해제 시 신원을 최소 하나 요구하는데
+   * `updateUser({ password })`는 `auth.identities`에 'email'을 만들지 않는다(비밀번호는
+   * 신원이 아니다). 그래서 Google로 가입한 계정은 비밀번호를 설정해도 신원이
+   * `['google']` 하나뿐이라 Google을 뗄 수 없었다(제보). 이 호출이 그 빈자리를 메운다.
+   * Supabase는 `register_email_identity()` RPC(0030) — 조건(본인·확인된 이메일·비밀번호
+   * 있음·중복 없음)은 SQL에 못박혀 있다. 만들지 않았으면(또는 못 했으면) `false`.
+   */
+  registerEmailIdentity(): Promise<boolean>;
+  /**
    * 이 계정에 Google 로그인을 **연결**한다(Supabase `auth.linkIdentity` — 리다이렉트).
    * Supabase 대시보드에서 Manual Linking을 켜 두어야 동작한다(backend.md §16).
    */

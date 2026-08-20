@@ -102,6 +102,8 @@ export function useHomeController() {
   const cardRegisterTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
   /** 검색어 적용을 미루는 타이머 — `setSearch` 참고. */
   const searchTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
+  /** 이메일 신원 자가 치유를 한 번만 시도한다(0030 미배포 서버에서 헛호출 방지). */
+  const identityHealed = useRef(false);
   // docIds whose body we've already fetched (or are fetching) for card previews,
   // so the prefetch effect never re-requests the same doc.
   const previewFetchedRef = useRef<Set<string>>(new Set());
@@ -672,7 +674,21 @@ export function useHomeController() {
     if (!force && state.signin) return;
     void auth
       .signinMethods()
-      .then((m) => setState((prev) => ({ ...prev, signin: m })))
+      .then(async (m) => {
+        // 자가 치유: 비밀번호는 있는데 이메일 **신원**이 없는 계정(0030 이전에 비밀번호를
+        // 설정했거나, 등록이 실패했던 계정)은 그 신원을 지금 등록한다. 사용자가 비밀번호를
+        // 설정한 의도가 곧 "이메일로도 로그인한다"이므로 따로 묻지 않는다. 한 번만 시도한다
+        // (RPC 미배포 서버에서 열 때마다 헛호출하지 않게).
+        if (m && m.hasPassword && !m.providers.includes('email') && !identityHealed.current) {
+          identityHealed.current = true;
+          if (await auth.registerEmailIdentity()) {
+            const healed = await auth.signinMethods();
+            setState((prev) => ({ ...prev, signin: healed ?? m }));
+            return;
+          }
+        }
+        setState((prev) => ({ ...prev, signin: m }));
+      })
       .catch(() => setState((prev) => ({ ...prev, signin: null })));
   };
 
@@ -762,7 +778,10 @@ export function useHomeController() {
         return;
       }
       setState((prev) => ({ ...prev, setPwBusy: false, setPwDone: true, setPwCode: '', setPwNew: '', setPwNew2: '' }));
-      refreshSigninMethods(true); // 이제 비밀번호가 있다 — 행이 '변경'으로 바뀐다
+      // 비밀번호를 걸었다고 **이메일 로그인 수단이 생기는 것은 아니다** — Supabase는
+      // 신원(identity)을 따로 센다. 그것까지 등록해야 "이메일 연동"이 실제로 완성되고
+      // Google을 뗄 수 있다(0030). 실패해도 비밀번호는 이미 설정됐으므로 조용히 넘어간다.
+      void auth.registerEmailIdentity().finally(() => refreshSigninMethods(true));
     });
   };
 
