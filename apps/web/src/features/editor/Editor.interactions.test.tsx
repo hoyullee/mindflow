@@ -3,6 +3,7 @@ import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-li
 import userEvent from '@testing-library/user-event';
 import { MemoryRouter, Route, Routes } from 'react-router-dom';
 import { Editor } from './Editor';
+import { dotGrid } from './canvasGrid';
 import { parseDoc } from '@mindflow/mindmap-core';
 import { BackendProvider } from '../../adapters/BackendContext';
 import { LocalAuth } from '../../adapters/local/localAuth';
@@ -199,16 +200,32 @@ describe('Editor interactions (M3-Editor-b)', () => {
     expect(screen.queryByText('선택한 주제')).toBeNull();
   });
 
-  it('캔버스 배경은 도트 + 방사형 그라데이션(canvasWash) 두 겹이다 (디자인 원본)', () => {
+  it('캔버스 배경은 두 층 — 워시는 정적, 도트는 배율·팬을 따른다 (Figma식)', () => {
     localStorage.setItem('mindflow_doc_bgw', JSON.stringify(DOC));
     const { container } = renderEditor('/editor?map=bgw&title=x');
+
+    // 워시 층: 방사형 그라데이션 하나뿐 — 팬/줌에 흔들리지 않아 **한 번만 래스터**된다
+    // (#368의 분리 효과. 도트를 여기 함께 두면 매 프레임 비싼 그라데이션까지 다시 칠한다.)
     const bg = container.querySelector('[data-canvas-bg]') as HTMLElement;
-    const layers = bg.style.backgroundImage.split('), radial-gradient');
-    expect(layers).toHaveLength(2);
-    // 도트가 먼저(위) — 나중에 오는 불투명 wash가 앞이면 도트가 통째로 가려진다.
-    expect(layers[0]).toContain('1.2px');
     expect(bg.style.backgroundImage).toContain('1200px 700px at 62% 46%');
-    expect(bg.style.backgroundSize).toBe('26px 26px, 100% 100%');
+    expect(bg.style.backgroundImage).not.toContain('26px');
+    expect(bg.style.backgroundSize).toBe('');
+
+    // 도트 층: 간격·반지름이 배율을 따르고 자리가 팬을 따른다.
+    const dots = container.querySelector('[data-canvas-dots]') as HTMLElement;
+    const pan = container.querySelector('[data-pan-layer]') as HTMLElement;
+    const m = /translate\((-?[\d.]+)px,\s*(-?[\d.]+)px\)\s*scale\(([\d.]+)\)/.exec(pan.style.transform)!;
+    const [px, py, zoom] = [Number(m[1]), Number(m[2]), Number(m[3])];
+    expect(zoom).toBeGreaterThan(0);
+    // jsdom은 '600.00px'을 '600px'로 정규화하므로 문자열이 아니라 **값**으로 견준다.
+    // 값의 규칙은 `dotGrid`(순수) 한 곳에 있고 여기서는 **그 규칙을 쓰는지**만 본다.
+    const g = dotGrid(zoom);
+    const nums = (v: string) => v.split(' ').map((t) => Number(t.replace('px', '')));
+    expect(nums(dots.style.backgroundSize)).toEqual([Number(g.cell.toFixed(2)), Number(g.cell.toFixed(2))]);
+    expect(nums(dots.style.backgroundPosition)).toEqual([px, py]);
+    expect(dots.style.backgroundImage).toContain(`${g.radius.toFixed(2)}px`);
+    // 도트는 팬 레이어 **밖**에 있다 — 안에 넣으면 합성기가 래스터를 늘려 뭉개진다(#379).
+    expect(pan.contains(dots)).toBe(false);
   });
 
   it('clicking anywhere in a zone body (not just its label) selects the zone', () => {

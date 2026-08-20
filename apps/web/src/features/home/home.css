@@ -594,3 +594,31 @@ input[type='search']::-webkit-search-results-decoration {
     animation: none;
   }
 }
+
+/* 팝업 열림·닫힘(요청) — 프로필 메뉴·알림 패널이 같은 규칙으로 펼쳐지고 접힌다.
+   닫힘은 `usePopAnim`이 마운트를 잠깐 유지해 주는 동안 그려진다(그러지 않으면
+   사라질 것이 없어 나가는 애니메이션이 보이지 않는다). 길이는 훅의 기본값과 같다. */
+@keyframes mf-pop-out {
+  from {
+    opacity: 1;
+    transform: none;
+  }
+  to {
+    opacity: 0;
+    transform: translateY(-6px) scale(0.985);
+  }
+}
+.mf-pop-anim.is-in {
+  animation: mf-pop 0.16s cubic-bezier(0.2, 0.9, 0.3, 1) both;
+}
+.mf-pop-anim.is-out {
+  animation: mf-pop-out 0.13s ease-in both;
+  pointer-events: none; /* 닫히는 중에는 눌리지 않는다 */
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .mf-pop-anim.is-in,
+  .mf-pop-anim.is-out {
+    animation: none;
+  }
+}

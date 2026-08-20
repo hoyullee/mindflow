@@ -1377,6 +1377,25 @@ describe('Home', () => {
     expect(screen.getByText('새 마인드맵을 준비하고 있어요')).toBeTruthy();
   });
 
+  it('프로필 메뉴도 펼침·접힘 애니메이션을 그린다 (요청)', async () => {
+    const user = userEvent.setup();
+    renderHome();
+
+    const trigger = await screen.findByRole('button', { name: '계정 메뉴' });
+    const pop = () => document.querySelector('.settings-pop') as HTMLElement;
+    // 첫 페인트에서는 닫힘 — 나가는 애니메이션이 괜히 돌지 않는다.
+    expect(pop().className).not.toContain('is-out');
+    expect(pop().style.display).toBe('none');
+
+    await user.click(trigger);
+    expect(pop().className).toContain('is-in');
+    expect(pop().style.display).toBe('block');
+
+    await user.click(trigger);
+    expect(pop().className).toContain('is-out'); // 접힘 애니메이션 동안 남아 있다
+    await waitFor(() => expect(pop().style.display).toBe('none'));
+  });
+
   it('logs out (via the confirm dialog) and navigates to /login', async () => {
     const user = userEvent.setup();
     renderHome();
@@ -1385,7 +1404,10 @@ describe('Home', () => {
     await user.click(screen.getByRole('button', { name: /로그아웃/ }));
     expect(screen.getByText('로그아웃하시겠습니까?')).toBeTruthy();
 
-    await user.click(screen.getByRole('button', { name: '로그아웃' }));
+    // 확인창 안의 버튼을 누른다 — 프로필 메뉴는 닫힘 애니메이션 동안 잠깐 더
+    // 마운트돼 있어(usePopAnim) 같은 이름의 행이 둘 보인다.
+    const logoutCard = screen.getByText('로그아웃하시겠습니까?').parentElement as HTMLElement;
+    await user.click(within(logoutCard).getByRole('button', { name: '로그아웃' }));
 
     await waitFor(() => expect(screen.getByText('LOGIN_PAGE')).toBeTruthy(), { timeout: 2000 });
   });
@@ -1986,7 +2008,8 @@ describe('Home', () => {
     );
     await user.click(await screen.findByRole('button', { name: '계정 메뉴' }));
     await user.click(screen.getByRole('button', { name: /로그아웃/ }));
-    await user.click(screen.getByRole('button', { name: '로그아웃' }));
+    const card = screen.getByText('로그아웃하시겠습니까?').parentElement as HTMLElement;
+    await user.click(within(card).getByRole('button', { name: '로그아웃' }));
     await waitFor(() => expect(screen.getByText('LOGIN_PAGE')).toBeTruthy(), { timeout: 2000 });
     expect(scopes).toEqual(['local']);
     expect(localStorage.getItem('mf_had_session')).toBeNull();

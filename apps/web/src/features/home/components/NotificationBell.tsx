@@ -16,6 +16,7 @@ import { useNotificationStore } from '../../../adapters/BackendContext';
 import { UNREAD_BADGE_BG, UNREAD_BADGE_INK } from '../theme';
 import { formatLastEdited } from '../timeFormat';
 import { MONO_FONT } from '../chrome';
+import { usePopAnim } from '../usePopAnim';
 
 /** 탭 복귀 시 다시 읽는 최소 간격 — 포커스가 들락거려도 요청이 몰리지 않게. */
 const REFRESH_THROTTLE_MS = 30_000;
@@ -87,6 +88,8 @@ export function NotificationBell({ isMobile = false }: { isMobile?: boolean }) {
   const navigate = useNavigate();
   const [items, setItems] = useState<AppNotification[]>([]);
   const [open, setOpen] = useState(false);
+  // 닫힘 애니메이션 — 닫힌 뒤 잠깐 마운트를 유지한다(프로필 메뉴와 같은 규칙).
+  const { render: panelRender, cls: panelCls } = usePopAnim(open);
   /** 이번에 열었을 때 "안 읽음"이었던 항목 — 읽음 처리 후에도 점 표시용. */
   const [fresh, setFresh] = useState<Set<string>>(new Set());
   const wrapRef = useRef<HTMLDivElement | null>(null);
@@ -264,8 +267,8 @@ export function NotificationBell({ isMobile = false }: { isMobile?: boolean }) {
         )}
       </button>
 
-      {open && (
-        <div style={panelStyle} data-notification-panel role="region" aria-label="알림 센터">
+      {panelRender && (
+        <div className={`mf-pop-anim ${panelCls}`} style={{ ...panelStyle, transformOrigin: 'top right' }} data-notification-panel role="region" aria-label="알림 센터">
           {/* 꼬리 — 패널의 overflow:hidden이 회전 사각의 위 절반을 잘라 위 테두리에
               박힌 캐럿이 된다(디자인 원본과 같은 마크업). 벨이 패널 오른쪽 끝에
               정렬되므로 꼬리는 오른쪽 근처에 둔다. */}
