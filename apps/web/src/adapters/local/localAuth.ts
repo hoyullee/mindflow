@@ -216,9 +216,19 @@ export class LocalAuth implements AuthProvider {
   async setPasswordWithCode(code: string, newPassword?: string): Promise<{ error?: string; wrongCode?: boolean }> {
     void newPassword;
     if (code.trim() !== DEMO_SETUP_CODE) return { wrongCode: true, error: 'invalid nonce' };
-    const m = readMethods();
-    writeMethods({ hasPassword: true, providers: m.providers.includes('email') ? m.providers : [...m.providers, 'email'] });
+    // 비밀번호만 걸고 **신원 목록은 건드리지 않는다** — 실제 Supabase도 그렇다
+    // (`updateUser({ password })`는 identities에 'email'을 만들지 않는다). 신원은
+    // `registerEmailIdentity`가 따로 등록한다.
+    writeMethods({ ...readMethods(), hasPassword: true });
     return {};
+  }
+
+  // 데모 짝 — 비밀번호가 있으면 이메일 수단을 목록에 더한다(Supabase의 신원 등록).
+  async registerEmailIdentity(): Promise<boolean> {
+    const m = readMethods();
+    if (!m.hasPassword || m.providers.includes('email')) return false;
+    writeMethods({ ...m, providers: [...m.providers, 'email'] });
+    return true;
   }
 
   async linkGoogle(): Promise<{ error?: string }> {

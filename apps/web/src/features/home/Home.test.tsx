@@ -1632,7 +1632,13 @@ describe('Home', () => {
     await waitFor(() => expect(send).toHaveBeenCalledTimes(1));
     expect(dialog.textContent).toContain('me@gmail.com');
 
-    methods.mockResolvedValue({ hasPassword: true, providers: ['google', 'email'] });
+    // 설정이 끝나면 컨트롤러가 **이메일 신원까지 등록**한다(0030) — 그래야 Google을
+    // 뗄 수 있다(Supabase는 신원을 세고 비밀번호는 신원이 아니다).
+    const register = vi.spyOn(auth, 'registerEmailIdentity').mockImplementation(async () => {
+      methods.mockResolvedValue({ hasPassword: true, providers: ['google', 'email'] });
+      return true;
+    });
+    methods.mockResolvedValue({ hasPassword: true, providers: ['google'] });
     await user.type(within(dialog).getByLabelText('메일로 받은 인증번호'), '123456');
     await user.type(within(dialog).getByLabelText('새 비밀번호'), 'newpw');
     await user.type(within(dialog).getByLabelText('새 비밀번호 확인'), 'newpw');
@@ -1641,9 +1647,10 @@ describe('Home', () => {
     await waitFor(() => expect(setPw).toHaveBeenCalledWith('123456', 'newpw'));
     expect(dialog.querySelector('[data-set-pw-done]')).toBeTruthy();
     await user.click(within(dialog).getByRole('button', { name: '확인' }));
-    // 이제 비밀번호가 있다 — 행은 '변경'이고 Google 연결도 해제할 수 있다
+    // 이제 비밀번호가 있고 이메일 신원도 있다 — 행은 '변경'이고 해제도 열린다
     await waitFor(() => expect((container.querySelector('[data-change-pw-row]') as HTMLElement).textContent).toContain('비밀번호 변경'));
-    expect((container.querySelector('[data-google-link-action]') as HTMLButtonElement).disabled).toBe(false);
+    expect(register).toHaveBeenCalledTimes(1);
+    await waitFor(() => expect((container.querySelector('[data-google-link-action]') as HTMLButtonElement).disabled).toBe(false));
   });
 
   // 제보: 비밀번호 설정 모달에서 **새 비밀번호를 치는데 커서가 코드 칸으로 튀었다**.
@@ -1714,6 +1721,36 @@ describe('Home', () => {
     });
     expect(row.textContent).not.toContain(notExpected); // 두 이유가 섞이지 않는다
     expect((container.querySelector('[data-google-link-action]') as HTMLButtonElement).disabled).toBe(true);
+  });
+
+  // 제보자 계정처럼 **이미 비밀번호만 설정해 둔** 계정(0030 이전)은 설정을 열 때
+  // 이메일 신원을 등록해 스스로 낫는다 — 그러면 해제 버튼이 열린다.
+  it('비밀번호는 있는데 이메일 신원이 없으면 설정을 열 때 등록하고 해제가 열린다', async () => {
+    const user = userEvent.setup();
+    const auth = new LocalAuth();
+    const methods = vi.spyOn(auth, 'signinMethods');
+    methods.mockResolvedValue({ hasPassword: true, providers: ['google'] });
+    const register = vi.spyOn(auth, 'registerEmailIdentity').mockImplementation(async () => {
+      methods.mockResolvedValue({ hasPassword: true, providers: ['google', 'email'] });
+      return true;
+    });
+    const backend: Backend = { auth, docStore: new MockDocStore([], {}), spaceStore: new LocalSpaceStore(), shareStore: new LocalShareStore(), feedbackStore: new LocalFeedbackStore(), imageStore: new LocalImageStore(), commentStore: new LocalCommentStore(), notificationStore: new LocalNotificationStore(), mode: 'local' };
+    localStorage.setItem('mf_demo_session', JSON.stringify({ user: { id: 'u1', email: 'me@gmail.com' } }));
+    const { container } = render(
+      <MemoryRouter initialEntries={['/home']}>
+        <BackendProvider backend={backend}>
+          <Routes>
+            <Route path="/home" element={<Home />} />
+          </Routes>
+        </BackendProvider>
+      </MemoryRouter>,
+    );
+    await user.click(await screen.findByRole('button', { name: '계정 메뉴' }));
+    await user.click(screen.getByRole('button', { name: '설정' }));
+
+    await waitFor(() => expect(register).toHaveBeenCalledTimes(1));
+    await waitFor(() => expect((container.querySelector('[data-google-link-action]') as HTMLButtonElement).disabled).toBe(false));
+    expect((container.querySelector('[data-google-link-row]') as HTMLElement).textContent).toContain('Google 계정으로도 로그인할 수 있어요');
   });
 
   it('코드가 틀리면 그 자리에서 말한다 (설정은 되지 않는다)', async () => {

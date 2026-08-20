@@ -252,6 +252,17 @@ export class SupabaseAuth implements AuthProvider {
     return this.updatePassword(newPassword);
   }
 
+  // 비밀번호를 설정한 계정에 이메일 신원을 등록한다(0030) — 이게 있어야 Google을
+  // 뗄 수 있다(Supabase는 신원 최소 1개를 요구하고 비밀번호는 신원이 아니다).
+  async registerEmailIdentity(): Promise<boolean> {
+    const { data, error } = await this.client.rpc('register_email_identity');
+    if (error) {
+      console.warn('[geurio] register_email_identity RPC 실패', error.message);
+      return false; // RPC 미배포·실패 — 화면은 예전처럼 해제를 잠근 채 이유를 말한다
+    }
+    return data === true;
+  }
+
   // 연결은 리다이렉트다(로그인의 signInWithOAuth와 같은 왕복) — 돌아오면 세션의
   // providers가 갱신돼 설정 화면이 '연결됨'으로 바뀐다. 대시보드에서 Manual
   // Linking을 켜 두어야 동작한다(꺼져 있으면 그 사실을 오류로 알려 준다).
