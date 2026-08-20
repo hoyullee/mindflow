@@ -355,7 +355,7 @@ export function initialHomeState(): HomeState {
     auth: null,
     favs: {},
     favOpen: false,
-    sharedOpen: true,
+    sharedOpen: false, // 즐겨찾기·휴지통과 같은 출발 상태(요청) — 셋이 나란한 목록이다
     ctxMenu: null,
     renameMap: null,
     shareDocId: null,

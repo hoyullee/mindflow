@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import type { Doc } from '@mindflow/mindmap-core';
 import { strokeBounds } from '@mindflow/mindmap-core';
 import type { EditorController } from '../useEditorState';
+import { dotGrid } from '../canvasGrid';
 import { canvasWash } from '../theme';
 import { NodeLayer } from './NodeLayer';
 import { EdgeLayer } from './EdgeLayer';
@@ -38,6 +39,8 @@ interface ViewportProps {
 export function Viewport({ doc, controller }: ViewportProps) {
   const { theme, geom, layoutMode, edgeStyle, pan, zoom } = controller;
   const isMobile = useIsMobile();
+  // 배경 도트 격자 — 배율에 따른 간격·반지름(순수 규칙, `canvasGrid.ts`).
+  const grid = dotGrid(zoom);
   // Show the move grip only for a true single selection that isn't being edited
   // (an active text edit owns the object; a marquee multi-selection has no single box).
   const showMoveHandle =
@@ -75,11 +78,35 @@ export function Viewport({ doc, controller }: ViewportProps) {
             pointerEvents: 'none',
             backgroundColor: theme.canvasBg,
             // 디자인 원본(마인드맵 리디자인): 캔버스 가운데가 살짝 밝은 **방사형
-            // 그라데이션** 위에 도트 격자. 도트가 먼저(위), 워시가 뒤(아래) —
-            // 순서를 바꾸면 불투명한 워시가 도트를 통째로 가린다.
-            backgroundImage: `radial-gradient(${theme.dot} 1.2px, transparent 1.2px), ${canvasWash(theme.canvasBg)}`,
-            backgroundSize: '26px 26px, 100% 100%',
+            // 그라데이션**. 이 층은 팬/줌에 흔들리지 않으므로 **한 번만 래스터**된다
+            // (#368의 분리 효과 유지 — 매 프레임 다시 칠하면 실기기에서 타일이 늦게
+            // 올라와 "깨져 보인다"는 제보가 있었다).
+            backgroundImage: canvasWash(theme.canvasBg),
             transform: 'translateZ(0)',
+          }}
+        />
+        <div
+          data-canvas-dots
+          style={{
+            position: 'absolute',
+            inset: 0,
+            zIndex: 0,
+            pointerEvents: 'none',
+            // 도트 격자만 **캔버스에 붙어 있다**(요청 — Figma와 같이): 간격·크기가
+            // 배율을 따르고 자리가 팬을 따른다. 워시와 층을 나눈 이유가 여기 있다 —
+            // 이 층은 매 프레임 다시 칠해지므로, 비싼 방사형 그라데이션을 함께
+            // 칠하지 않게 떼어 놓는다(도트 타일만 칠하면 훨씬 싸다).
+            //
+            // 레이어를 팬 레이어 **밖**에 두는 것은 그대로다 — 안에 넣으면 합성기가
+            // 래스터를 늘려 도트가 뭉개진다(#379 흐릿함 사고의 교훈). 배경 속성만
+            // 다시 계산하므로 어느 배율에서도 선명하다.
+            //
+            // 간격·반지름은 `dotGrid(zoom)` 한 곳에서 정한다(순수 — 단위 테스트 있음):
+            // 축소에서 간격이 너무 좁아지면 격자 단계를 건너뛰어 얼룩이 되지 않게 한다.
+            backgroundImage: `radial-gradient(${theme.dot} ${grid.radius.toFixed(2)}px, transparent ${grid.radius.toFixed(2)}px)`,
+            backgroundSize: `${grid.cell.toFixed(2)}px ${grid.cell.toFixed(2)}px`,
+            // 격자 원점을 캔버스 원점(0,0)에 맞춘다 — 팬하면 같이 흐른다.
+            backgroundPosition: `${pan.x.toFixed(2)}px ${pan.y.toFixed(2)}px`,
           }}
         />
         <div style={{ position: 'absolute', inset: 0, zIndex: 1 }}>

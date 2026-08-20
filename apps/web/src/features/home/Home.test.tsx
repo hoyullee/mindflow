@@ -1377,6 +1377,25 @@ describe('Home', () => {
     expect(screen.getByText('새 마인드맵을 준비하고 있어요')).toBeTruthy();
   });
 
+  it('프로필 메뉴도 펼침·접힘 애니메이션을 그린다 (요청)', async () => {
+    const user = userEvent.setup();
+    renderHome();
+
+    const trigger = await screen.findByRole('button', { name: '계정 메뉴' });
+    const pop = () => document.querySelector('.settings-pop') as HTMLElement;
+    // 첫 페인트에서는 닫힘 — 나가는 애니메이션이 괜히 돌지 않는다.
+    expect(pop().className).not.toContain('is-out');
+    expect(pop().style.display).toBe('none');
+
+    await user.click(trigger);
+    expect(pop().className).toContain('is-in');
+    expect(pop().style.display).toBe('block');
+
+    await user.click(trigger);
+    expect(pop().className).toContain('is-out'); // 접힘 애니메이션 동안 남아 있다
+    await waitFor(() => expect(pop().style.display).toBe('none'));
+  });
+
   it('logs out (via the confirm dialog) and navigates to /login', async () => {
     const user = userEvent.setup();
     renderHome();
@@ -1385,7 +1404,10 @@ describe('Home', () => {
     await user.click(screen.getByRole('button', { name: /로그아웃/ }));
     expect(screen.getByText('로그아웃하시겠습니까?')).toBeTruthy();
 
-    await user.click(screen.getByRole('button', { name: '로그아웃' }));
+    // 확인창 안의 버튼을 누른다 — 프로필 메뉴는 닫힘 애니메이션 동안 잠깐 더
+    // 마운트돼 있어(usePopAnim) 같은 이름의 행이 둘 보인다.
+    const logoutCard = screen.getByText('로그아웃하시겠습니까?').parentElement as HTMLElement;
+    await user.click(within(logoutCard).getByRole('button', { name: '로그아웃' }));
 
     await waitFor(() => expect(screen.getByText('LOGIN_PAGE')).toBeTruthy(), { timeout: 2000 });
   });
@@ -1986,7 +2008,8 @@ describe('Home', () => {
     );
     await user.click(await screen.findByRole('button', { name: '계정 메뉴' }));
     await user.click(screen.getByRole('button', { name: /로그아웃/ }));
-    await user.click(screen.getByRole('button', { name: '로그아웃' }));
+    const card = screen.getByText('로그아웃하시겠습니까?').parentElement as HTMLElement;
+    await user.click(within(card).getByRole('button', { name: '로그아웃' }));
     await waitFor(() => expect(screen.getByText('LOGIN_PAGE')).toBeTruthy(), { timeout: 2000 });
     expect(scopes).toEqual(['local']);
     expect(localStorage.getItem('mf_had_session')).toBeNull();
@@ -5055,6 +5078,55 @@ describe('홈 리디자인 계약', () => {
       // 크롬이 배경을 애니메이션으로 되돌리는 것도 막는다.
       expect(rule).toMatch(/transition: background-color \d{3,}s/);
     }
+  });
+
+  // 요청: '공유받음'을 즐겨찾기 **아래**로 옮기고, 펼친 목록도 즐겨찾기·휴지통과
+  // 같은 가라앉은 판으로. 셋이 같은 종류의 접이식 목록이므로 자리와 옷을 맞춘다.
+  it("LNB '공유받음'은 즐겨찾기 아래에 있고 펼친 목록이 같은 판을 쓴다", async () => {
+    const user = userEvent.setup();
+    localStorage.setItem('mf_demo_session', JSON.stringify({ user: { id: 'u1', email: 'me@gmail.com' } }));
+    const { container } = renderHomeWithDocStore([]);
+    const aside = await waitFor(() => container.querySelector('aside') as HTMLElement);
+    const fav = within(aside).getByText('즐겨찾기');
+    const shared = within(aside).getByText('공유받음');
+    const trash = within(aside).getByText('휴지통');
+    // 순서: 즐겨찾기 → 공유받음 → 휴지통
+    expect(fav.compareDocumentPosition(shared) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(shared.compareDocumentPosition(trash) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+
+    // 공유받음도 즐겨찾기·휴지통처럼 **접힌 채** 시작한다(요청)
+    expect(shared.closest('[aria-expanded]')?.getAttribute('aria-expanded')).toBe('false');
+    // 공유받음과 휴지통 사이에는 구분선이 있다(요청) — 성격이 다른 묶음이다
+    const sharedRow = shared.closest('.nav-item') as HTMLElement;
+    const trashRow = trash.closest('.nav-item') as HTMLElement;
+    const between = [...aside.children].filter((el) => {
+      const after = sharedRow.compareDocumentPosition(el) & Node.DOCUMENT_POSITION_FOLLOWING;
+      const before = trashRow.compareDocumentPosition(el) & Node.DOCUMENT_POSITION_PRECEDING;
+      return after && before;
+    });
+    expect(between.some((el) => (el as HTMLElement).style.height === '1px')).toBe(true);
+    // 세 구분선(스페이스↔즐겨찾기 / 공유받음↔휴지통 / 피드백 위)은 **같은 값**이다
+    // (제보: 굵기가 달라 보였다 — 원인은 flexShrink였다. 선은 눌리는 여백이 아니다).
+    const lines = [...aside.querySelectorAll('[data-lnb-divider]')] as HTMLElement[];
+    expect(lines.length).toBeGreaterThanOrEqual(2);
+    for (const el of lines) {
+      const st = el.style;
+      expect(st.height).toBe('1px');
+      expect(st.background).toContain('--mf-border-soft');
+      expect(st.flexShrink).toBe('0');
+    }
+    // 스페이스 목록은 내용 높이만 쓴다 — 하나일 때 '새 스페이스'와의 빈칸이 벌어지던 원인
+    expect(parseFloat((aside.querySelector('.lnb-scroll') as HTMLElement).style.minHeight)).toBe(0);
+
+    await user.click(shared);
+    const panel = await waitFor(() => {
+      const el = within(aside).getByText('공유받은 항목이 없습니다').parentElement as HTMLElement;
+      expect(el.style.background).toContain('--mf-bg');
+      return el;
+    });
+    // 즐겨찾기 판과 같은 값(가라앉은 면 + hairline + r12)
+    expect(panel.style.borderRadius).toBe('12px');
+    expect(panel.style.border).toContain('--mf-hairline');
   });
 
   it('마우스 오버 애니메이션 — 카드가 3px 떠오르고 그늘·경계가 바뀐다(CSS 계약)', () => {

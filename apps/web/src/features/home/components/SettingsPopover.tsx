@@ -1,5 +1,6 @@
 import type { HomeController } from '../useHomeController';
 import type { HomeState } from '../types';
+import { usePopAnim } from '../usePopAnim';
 import { ProfileAvatar } from './ProfileAvatar';
 
 interface Props {
@@ -10,6 +11,7 @@ interface Props {
 
 /** Home.dc.html:71-99 — account avatar/name button + its dropdown (rename, logout). */
 export function SettingsPopover({ state, controller, userInitial }: Props) {
+  const { render, cls } = usePopAnim(state.settingsOpen);
   // 세션이 아직 안 풀렸으면 프로필 블록은 스켈레톤 — 'mine'/'M' 플레이스홀더가
   // 실제 이름/아바타로 바뀌며 깜빡이던 것을 막는다(맵 그리드·스페이스 목록의
   // 스켈레톤과 같은 패턴). 같은 크기(아바타 30 + 이름 줄, padding 8)로 그려
@@ -59,7 +61,7 @@ export function SettingsPopover({ state, controller, userInitial }: Props) {
       </div>
 
       <div
-        className="settings-pop"
+        className={`settings-pop mf-pop-anim ${cls}`}
         onClick={(e) => e.stopPropagation()}
         style={{
           position: 'absolute',
@@ -73,7 +75,9 @@ export function SettingsPopover({ state, controller, userInitial }: Props) {
           padding: 0,
           zIndex: 40,
           overflow: 'hidden',
-          display: state.settingsOpen ? 'block' : 'none',
+          // 닫힌 뒤에도 잠깐 남아 접힘 애니메이션을 그린다(`usePopAnim`).
+          display: render ? 'block' : 'none',
+          transformOrigin: 'top center',
         }}
       >
         {/* 머리 — 팝업 가장자리에서 띄운 **인셋 블록**(accent-soft, 첨부 이미지). */}

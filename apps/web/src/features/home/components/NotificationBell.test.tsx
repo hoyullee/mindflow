@@ -55,6 +55,22 @@ beforeEach(() => {
 afterEach(() => cleanup());
 
 describe('알림 센터', () => {
+  it('패널은 펼침·접힘 애니메이션을 그린다 — 닫아도 잠깐 마운트가 남는다(요청)', async () => {
+    seed([{ id: 'n1' }]);
+    renderBell();
+    const bell = await screen.findByRole('button', { name: /알림/ });
+
+    fireEvent.click(bell);
+    const panel = () => document.querySelector('[data-notification-panel]') as HTMLElement | null;
+    expect(panel()!.className).toContain('is-in');
+
+    // 닫으면 곧바로 사라지지 않는다 — 그러지 않으면 나가는 애니메이션을 그릴 것이 없다.
+    fireEvent.click(bell);
+    expect(panel()!.className).toContain('is-out');
+    // 애니메이션이 끝나면 정리된다.
+    await waitFor(() => expect(panel()).toBeNull());
+  });
+
   it('안 읽은 개수 배지가 뜨고, 열면 목록이 보이며 전부 읽음 처리된다', async () => {
     seed([{}, { kind: 'share', preview: '', nodeId: null }, { readAt: '2026-01-01T00:00:00.000Z' }]);
     renderBell();
