@@ -740,7 +740,7 @@ export function useHomeController() {
   const submitSetPassword = () => {
     if (state.setPwBusy) return;
     if (!state.setPwCode.trim()) {
-      patch({ setPwError: '메일로 받은 코드를 입력해 주세요.' });
+      patch({ setPwError: '메일로 받은 인증번호를 입력해 주세요.' });
       return;
     }
     if ((state.setPwNew || '').length < 4) {
@@ -754,7 +754,7 @@ export function useHomeController() {
     patch({ setPwBusy: true, setPwError: '' });
     void auth.setPasswordWithCode(state.setPwCode, state.setPwNew).then((res) => {
       if (res.wrongCode) {
-        setState((prev) => ({ ...prev, setPwBusy: false, setPwError: '코드가 올바르지 않거나 만료됐어요. 다시 보내 주세요.' }));
+        setState((prev) => ({ ...prev, setPwBusy: false, setPwError: '인증번호가 올바르지 않거나 만료됐어요. 다시 보내 주세요.' }));
         return;
       }
       if (res.error) {

@@ -224,27 +224,32 @@ export class SupabaseAuth implements AuthProvider {
     };
   }
 
-  // 본인 확인 코드 메일(Supabase의 reauthentication nonce). 대시보드의
-  // Reauthentication 이메일 템플릿을 쓴다(backend.md §16).
+  // ── 비밀번호 설정(소셜 전용 계정)의 본인 확인 ────────────────────────────
+  // **복구(recovery) 코드**로 확인한다. 처음에는 `reauthenticate()`의 nonce를 썼는데
+  // 라이브에서 **아무 번호를 넣어도 통과했다**(제보): GoTrue는 nonce를 "필요할 때"만
+  // 강제한다 — Secure password change가 켜져 있고 세션이 최근(24시간) 것이 아닐 때다.
+  // 방금 로그인한 사용자는 둘 다 아니어서 nonce를 **검사하지 않고** 비밀번호를
+  // 바꿔 줬다(우리 확인 단계가 통째로 무력했다).
+  //
+  // 복구 코드는 `verifyOtp`가 **실제로 검증**하므로 틀린 번호는 반드시 실패하고,
+  // 이 프로젝트에서 이미 쓰이는 경로다(로그인 화면의 '비밀번호 찾기' — 그래서
+  // 템플릿에 코드가 들어 있는 것도 검증됐다). 대시보드 토글에 의존하지 않는다.
   async sendPasswordSetupCode(): Promise<{ error?: string }> {
-    const { error } = await this.client.auth.reauthenticate();
-    return error ? { error: error.message } : {};
+    const { data } = await this.client.auth.getUser();
+    const email = data?.user?.email;
+    if (!email) return { error: 'Auth session missing' };
+    return this.sendPasswordReset(email);
   }
 
   async setPasswordWithCode(code: string, newPassword: string): Promise<{ error?: string; wrongCode?: boolean }> {
-    const { error } = await this.client.auth.updateUser({ password: newPassword, nonce: code.trim() });
-    if (!error) {
-      // 비밀번호가 생겼다 = 새 출입구다. 다른 기기 세션은 정리한다(§15의 규칙).
-      try {
-        await this.client.auth.signOut({ scope: 'others' });
-      } catch {
-        /* 이미 설정됐다 — 해지 실패를 오류로 만들지 않는다 */
-      }
-      return {};
-    }
-    const msg = error.message || '';
-    const wrongCode = /nonce|token|code|expired|invalid/i.test(msg);
-    return { error: msg, wrongCode };
+    const { data } = await this.client.auth.getUser();
+    const email = data?.user?.email;
+    if (!email) return { error: 'Auth session missing' };
+    // 검증 실패는 곧 "번호가 틀렸다" — 여기서 막히면 비밀번호는 건드리지 않는다.
+    const verified = await this.verifyOtp(email, code.trim(), 'recovery');
+    if (verified.error) return { wrongCode: true, error: verified.error };
+    // 확인됐으면 설정하고 다른 기기 세션을 해지한다(§15의 규칙).
+    return this.updatePassword(newPassword);
   }
 
   // 연결은 리다이렉트다(로그인의 signInWithOAuth와 같은 왕복) — 돌아오면 세션의

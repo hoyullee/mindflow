@@ -174,7 +174,7 @@ export interface HomeState {
   signinBusy: boolean;
   /** 연결/해제 실패 문구(로그인 수단 구획 아래에 보인다). */
   signinError: string;
-  /** 비밀번호 **설정** 모달(Google로 가입한 계정) — 계정 이메일로 받은 코드로
+  /** 비밀번호 **설정** 모달(Google로 가입한 계정) — 계정 이메일로 받은 인증번호로
    * 본인을 확인한 뒤 비밀번호를 건다. 확인할 현재 비밀번호가 없는 경우다. */
   setPwOpen: boolean;
   setPwCode: string;
@@ -182,7 +182,7 @@ export interface HomeState {
   setPwNew2: string;
   setPwError: string;
   setPwBusy: boolean;
-  /** 코드 메일을 보냈다(모달이 입력 단계로 넘어간다). */
+  /** 인증번호 메일을 보냈다(모달이 입력 단계로 넘어간다). */
   setPwSent: boolean;
   setPwDone: boolean;
   /** 'Google 연결 해제' 확인창 — 되돌릴 수 있지만 출입구가 하나 사라진다. */

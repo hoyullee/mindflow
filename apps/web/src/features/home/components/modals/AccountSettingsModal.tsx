@@ -135,7 +135,7 @@ export function AccountSettingsModal({ state, controller }: Props) {
             <div style={{ minWidth: 0 }}>
               <div style={{ fontWeight: 700, fontSize: 14.5 }}>{hasPassword ? '비밀번호 변경' : '비밀번호 설정'}</div>
               <div style={{ fontSize: 12.5, color: 'var(--mf-muted)', marginTop: 2 }}>
-                {unknown ? '로그인 수단을 확인할 수 없어요 — 현재 비밀번호로 바꿀 수 있어요' : hasPassword ? '현재 비밀번호를 확인한 뒤 새 비밀번호로 바꿔요' : '계정 이메일로 코드를 받아 비밀번호를 설정해요'}
+                {unknown ? '로그인 수단을 확인할 수 없어요 — 현재 비밀번호로 바꿀 수 있어요' : hasPassword ? '현재 비밀번호를 확인한 뒤 새 비밀번호로 바꿔요' : '계정 이메일로 인증번호를 받아 비밀번호를 설정해요'}
               </div>
             </div>
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="var(--mf-faint)" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true" style={{ marginLeft: 'auto', flexShrink: 0 }}>

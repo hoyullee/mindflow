@@ -303,3 +303,114 @@ describe('SupabaseAuth changePassword (현재 비밀번호 확인)', () => {
     expect(calls).toEqual([]);
   });
 });
+
+// 설정 → 로그인 수단(backend.md §16). 한 계정에 수단이 여럿 붙을 수 있으므로
+// (같은 이메일의 Google 신원은 Supabase가 자동 연결한다) 화면이 "무엇으로 들어올
+// 수 있는지"를 정확히 알아야 한다 — 비밀번호 유무는 신원 목록으로 알 수 없어
+// 서버가 따로 알려 준다(0029 `my_signin_methods`).
+describe('SupabaseAuth signinMethods (0029)', () => {
+  function client(result: { data?: unknown; errorMsg?: string }) {
+    return {
+      rpc: async (name: string) => {
+        expect(name).toBe('my_signin_methods');
+        return result.errorMsg ? { data: null, error: { message: result.errorMsg } } : { data: result.data, error: null };
+      },
+    } as unknown as SupabaseClient;
+  }
+
+  it('행을 그대로 읽는다 (배열로 오는 RPC 결과도 첫 행을 쓴다)', async () => {
+    const m = await new SupabaseAuth(client({ data: [{ has_password: true, providers: ['email', 'google'] }] })).signinMethods();
+    expect(m).toEqual({ hasPassword: true, providers: ['email', 'google'] });
+  });
+
+  it('Google 전용 계정은 비밀번호가 없다고 말한다', async () => {
+    const m = await new SupabaseAuth(client({ data: { has_password: false, providers: ['google'] } })).signinMethods();
+    expect(m).toEqual({ hasPassword: false, providers: ['google'] });
+  });
+
+  it('RPC가 없거나 실패하면 null — 호출부가 잠그지 않고 "확인할 수 없어요"로 말한다', async () => {
+    expect(await new SupabaseAuth(client({ errorMsg: 'function does not exist' })).signinMethods()).toBeNull();
+    expect(await new SupabaseAuth(client({ data: [] })).signinMethods()).toBeNull();
+  });
+});
+
+describe('SupabaseAuth 비밀번호 설정 / Google 연동', () => {
+  function client(opts: { verifyError?: string; updateError?: string; identities?: { provider: string }[]; unlinkError?: string; email?: string | null } = {}) {
+    const calls: string[] = [];
+    const c = {
+      auth: {
+        getUser: async () => ({ data: { user: opts.email === null ? null : { email: opts.email ?? 'me@geurio.com' } } }),
+        resetPasswordForEmail: async (email: string) => {
+          calls.push(`reset:${email}`);
+          return { data: {}, error: null };
+        },
+        verifyOtp: async (args: { email: string; token: string; type: string }) => {
+          calls.push(`verify:${args.type}:${args.token}`);
+          return opts.verifyError ? { data: { session: null }, error: { message: opts.verifyError } } : { data: { session: { user: { id: 'u1' } } }, error: null };
+        },
+        updateUser: async (args: { password?: string }) => {
+          calls.push(`update:${args.password}`);
+          return opts.updateError ? { error: { message: opts.updateError } } : { error: null };
+        },
+        signOut: async (o?: { scope?: string }) => {
+          calls.push(`signOut:${o?.scope ?? 'local'}`);
+          return { error: null };
+        },
+        linkIdentity: async (args: { provider: string }) => {
+          calls.push(`link:${args.provider}`);
+          return { data: null, error: null };
+        },
+        getUserIdentities: async () => ({ data: { identities: opts.identities ?? [] }, error: null }),
+        unlinkIdentity: async (i: { provider: string }) => {
+          calls.push(`unlink:${i.provider}`);
+          return opts.unlinkError ? { error: { message: opts.unlinkError } } : { error: null };
+        },
+      },
+    } as unknown as SupabaseClient;
+    return { c, calls };
+  }
+
+  it('인증번호는 계정 이메일로 보내는 복구 코드다', async () => {
+    const { c, calls } = client();
+    expect(await new SupabaseAuth(c).sendPasswordSetupCode()).toEqual({});
+    expect(calls).toEqual(['reset:me@geurio.com']);
+  });
+
+  // 제보: reauthentication nonce를 쓰던 판은 **아무 번호나 통과했다** — GoTrue가
+  // nonce를 "필요할 때"(Secure password change + 오래된 세션)만 검사하기 때문이다.
+  // 복구 코드는 `verifyOtp`가 실제로 검증하므로 틀리면 반드시 실패한다.
+  it('틀린 인증번호는 검증에서 막히고 비밀번호를 건드리지 않는다', async () => {
+    const { c, calls } = client({ verifyError: 'Token has expired or is invalid' });
+    const res = await new SupabaseAuth(c).setPasswordWithCode('999999', 'new-pw');
+    expect(res.wrongCode).toBe(true);
+    expect(calls).toEqual(['verify:recovery:999999']); // update/signOut 없음
+  });
+
+  it('검증을 통과하면 비밀번호를 설정하고 다른 기기 세션을 해지한다', async () => {
+    const { c, calls } = client();
+    const res = await new SupabaseAuth(c).setPasswordWithCode(' 123456 ', 'new-pw');
+    expect(res.error).toBeUndefined();
+    expect(calls).toEqual(['verify:recovery:123456', 'update:new-pw', 'signOut:others']);
+  });
+
+  it('세션이 없으면(이메일을 못 얻으면) 아무것도 하지 않는다', async () => {
+    const { c, calls } = client({ email: null });
+    expect((await new SupabaseAuth(c).sendPasswordSetupCode()).error).toBeTruthy();
+    expect((await new SupabaseAuth(c).setPasswordWithCode('1', 'x')).error).toBeTruthy();
+    expect(calls).toEqual([]);
+  });
+
+  it('연결은 linkIdentity, 해제는 연결된 google 신원을 찾아 unlinkIdentity', async () => {
+    const { c, calls } = client({ identities: [{ provider: 'email' }, { provider: 'google' }] });
+    const auth = new SupabaseAuth(c);
+    expect(await auth.linkGoogle()).toEqual({});
+    expect(await auth.unlinkGoogle()).toEqual({});
+    expect(calls).toEqual(['link:google', 'unlink:google']);
+  });
+
+  it('이미 연결돼 있지 않으면 해제는 아무것도 하지 않는다 (결과가 같다)', async () => {
+    const { c, calls } = client({ identities: [{ provider: 'email' }] });
+    expect(await new SupabaseAuth(c).unlinkGoogle()).toEqual({});
+    expect(calls).toEqual([]);
+  });
+});

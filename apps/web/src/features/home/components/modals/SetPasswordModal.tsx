@@ -25,13 +25,14 @@ const inputStyle = {
  * 설정 → 로그인 수단 → **비밀번호 설정**(Google로 가입한 계정).
  *
  * `ChangePasswordModal`과 다른 점은 **본인 확인 방법**이다: 확인할 현재 비밀번호가
- * 없으므로 계정 이메일로 코드를 보내 "이 메일함의 주인인가"로 확인한다(Supabase
- * `reauthenticate()` → `updateUser({ password, nonce })`, backend.md §16).
+ * 없으므로 계정 이메일로 인증번호를 보내 "이 메일함의 주인인가"로 확인한다
+ * (복구 코드 → `verifyOtp` → `updateUser({ password })`, backend.md §16 — 처음 쓴
+ * reauthentication nonce는 GoTrue가 "필요할 때"만 검사해서 아무 번호나 통과했다).
  *
  * 세션만 있으면 비밀번호를 걸 수 있게 두면 공용 PC에 남은 로그인으로 남이 두 번째
- * 출입구를 만들 수 있다 — 그래서 코드 단계를 뺄 수 없다.
+ * 출입구를 만들 수 있다 — 그래서 인증번호 단계를 뺄 수 없다.
  *
- * 모달을 열면 코드를 **곧바로 보낸다**(따로 누르게 하면 한 단계가 늘 뿐이다).
+ * 모달을 열면 인증번호를 **곧바로 보낸다**(따로 누르게 하면 한 단계가 늘 뿐이다).
  */
 export function SetPasswordModal({ state, controller }: Props) {
   const busy = state.setPwBusy;
@@ -82,18 +83,18 @@ export function SetPasswordModal({ state, controller }: Props) {
           <>
             <div style={{ fontSize: 18, fontWeight: 800, marginBottom: 6 }}>비밀번호 설정</div>
             <div style={{ fontSize: 13, color: 'var(--mf-muted)', lineHeight: 1.6, marginBottom: 20 }}>
-              본인 확인을 위해 <b style={{ color: 'var(--mf-text)', fontWeight: 700 }}>{state.userEmail || '계정 이메일'}</b>로 코드를 보냈어요. 메일의 코드를 입력하고 새 비밀번호를 정해 주세요.
+              본인 확인을 위해 <b style={{ color: 'var(--mf-text)', fontWeight: 700 }}>{state.userEmail || '계정 이메일'}</b>로 인증번호를 보냈어요. 메일에서 확인해 입력하고 새 비밀번호를 정해 주세요.
             </div>
 
-            <div style={{ fontSize: 12.5, fontWeight: 600, marginBottom: 8 }}>메일로 받은 코드</div>
+            <div style={{ fontSize: 12.5, fontWeight: 600, marginBottom: 8 }}>메일로 받은 인증번호</div>
             <input
               inputMode="numeric"
               autoComplete="one-time-code"
               value={state.setPwCode}
               onInput={(e) => controller.onSetPwCode((e.target as HTMLInputElement).value)}
               onKeyDown={onKey}
-              aria-label="메일로 받은 코드"
-              placeholder="6자리 코드"
+              aria-label="메일로 받은 인증번호"
+              placeholder="인증번호 입력"
               ref={firstFieldRef}
               style={{ ...inputStyle, marginBottom: 8 }}
             />
@@ -104,7 +105,7 @@ export function SetPasswordModal({ state, controller }: Props) {
               disabled={busy}
               style={{ border: 'none', background: 'transparent', color: 'var(--mf-accent)', fontFamily: 'inherit', fontSize: 12.5, fontWeight: 700, cursor: busy ? 'default' : 'pointer', padding: 0, marginBottom: 14 }}
             >
-              코드 다시 보내기
+              인증번호 다시 보내기
             </button>
 
             <div style={{ fontSize: 12.5, fontWeight: 600, marginBottom: 8 }}>새 비밀번호</div>
