@@ -51,6 +51,14 @@ export interface AuthResult {
  * email/password login+signup, Google OAuth, password reset, and (for the
  * demo/local adapter) a stand-in for the original's 6-digit `demoCode` step.
  */
+/** 이 계정에 붙어 있는 로그인 수단(설정 → 로그인 수단). */
+export interface SigninMethods {
+  /** 비밀번호가 걸려 있는가 = 이메일·비밀번호로 들어올 수 있는가. */
+  hasPassword: boolean;
+  /** 연결된 소셜 신원 목록(`'google'` …). 이메일 가입 계정은 `'email'`도 담는다. */
+  providers: string[];
+}
+
 /** `AuthProvider.signOut`의 범위 — 세션 정책의 유일한 손잡이. */
 export type SignOutScope = 'local' | 'global' | 'others';
 
@@ -141,6 +149,35 @@ export interface AuthProvider {
   getProfileName(): Promise<string | null>;
   /** Persist the signed-in user's display name. No-op (returns `{}`) in local mode. */
   setProfileName(name: string): Promise<{ error?: string }>;
+  /**
+   * 내 계정의 **로그인 수단** — 설정 → 로그인 수단이 읽는다. 확인 불가(RPC 미배포·
+   * 네트워크 실패)면 `null`(그때 화면은 "확인할 수 없어요"로 말하고 잠그지 않는다).
+   *
+   * `hasPassword`를 신원 목록으로 대신할 수 없다: Google로 가입한 사용자가 나중에
+   * 비밀번호를 설정해도 identities에는 'email'이 생기지 않는다 — 그래서 Supabase는
+   * `my_signin_methods()` RPC(0029)가 `auth.users.encrypted_password`를 직접 본다.
+   */
+  signinMethods(): Promise<SigninMethods | null>;
+  /**
+   * 비밀번호를 **처음 설정**하기 전 본인 확인 코드를 계정 이메일로 보낸다
+   * (Supabase `auth.reauthenticate()` — 6자리 nonce 메일).
+   *
+   * 왜 코드를 거치나: Google로 가입한 계정에는 확인할 현재 비밀번호가 없다. 세션만
+   * 있으면 비밀번호를 걸 수 있게 두면 공용 PC에 남은 로그인으로 남이 두 번째 출입구를
+   * 만들 수 있다 — "이 메일함의 주인인가"가 그 자리의 본인 확인이다.
+   */
+  sendPasswordSetupCode(): Promise<{ error?: string }>;
+  /** 메일로 받은 코드로 본인을 확인하고 비밀번호를 설정한다(Supabase
+   * `updateUser({ password, nonce })`). 코드가 틀리면 `wrongCode`. */
+  setPasswordWithCode(code: string, newPassword: string): Promise<{ error?: string; wrongCode?: boolean }>;
+  /**
+   * 이 계정에 Google 로그인을 **연결**한다(Supabase `auth.linkIdentity` — 리다이렉트).
+   * Supabase 대시보드에서 Manual Linking을 켜 두어야 동작한다(backend.md §16).
+   */
+  linkGoogle(): Promise<{ error?: string }>;
+  /** 연결된 Google 로그인을 **해제**한다. 남는 수단이 없으면(비밀번호도 없다면)
+   * 계정에 들어올 길이 사라지므로 호출부가 먼저 막는다. */
+  unlinkGoogle(): Promise<{ error?: string }>;
 }
 
 // ── Documents ──────────────────────────────────────────────────────────────

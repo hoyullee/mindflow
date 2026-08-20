@@ -1,6 +1,7 @@
 /** Mirrors the data shapes threaded through Home.dc.html's `class Component extends DCLogic`. */
 
 import { loadHomeThemeCache, type HomeThemeKey } from './theme';
+import type { SigninMethods } from '../../adapters/ports';
 
 export interface MapCardData {
   title: string;
@@ -165,10 +166,27 @@ export interface HomeState {
   changePwBusy: boolean;
   /** 변경 성공 — 모달이 완료 화면으로 바뀐다(다른 기기 로그인 해제 사실까지 알린다). */
   changePwDone: boolean;
-  /** 이 계정이 비밀번호로 로그인하는가 — `null`은 아직 확인 중/확인 불가.
-   * Google로만 가입한 계정에는 바꿀 비밀번호가 없어 항목을 비활성으로 둔다
-   * (감추면 "왜 나만 없지"가 되고, 열어 두면 확인 단계에서 이유 없이 막힌다). */
-  hasPasswordLogin: boolean | null;
+  /** 이 계정의 로그인 수단(설정 → 로그인 수단). `null` = 아직 확인 중이거나
+   * 확인 불가(RPC 미배포·네트워크) — 그때 화면은 잠그지 않고 "확인할 수 없어요"로
+   * 말한다. 비밀번호 유무는 신원 목록으로 알 수 없어 서버가 따로 알려 준다(0029). */
+  signin: SigninMethods | null;
+  /** Google 연결/해제가 도는 중 — 행의 버튼을 잠근다. */
+  signinBusy: boolean;
+  /** 연결/해제 실패 문구(로그인 수단 구획 아래에 보인다). */
+  signinError: string;
+  /** 비밀번호 **설정** 모달(Google로 가입한 계정) — 계정 이메일로 받은 코드로
+   * 본인을 확인한 뒤 비밀번호를 건다. 확인할 현재 비밀번호가 없는 경우다. */
+  setPwOpen: boolean;
+  setPwCode: string;
+  setPwNew: string;
+  setPwNew2: string;
+  setPwError: string;
+  setPwBusy: boolean;
+  /** 코드 메일을 보냈다(모달이 입력 단계로 넘어간다). */
+  setPwSent: boolean;
+  setPwDone: boolean;
+  /** 'Google 연결 해제' 확인창 — 되돌릴 수 있지만 출입구가 하나 사라진다. */
+  confirmUnlinkGoogle: boolean;
   /** The 설정 (account settings) modal, opened from the profile popover. Hosts
    * the 회원 탈퇴 entry. */
   accountSettingsOpen: boolean;
@@ -363,7 +381,18 @@ export function initialHomeState(): HomeState {
     changePwError: '',
     changePwBusy: false,
     changePwDone: false,
-    hasPasswordLogin: null,
+    signin: null,
+    signinBusy: false,
+    signinError: '',
+    setPwOpen: false,
+    setPwCode: '',
+    setPwNew: '',
+    setPwNew2: '',
+    setPwError: '',
+    setPwBusy: false,
+    setPwSent: false,
+    setPwDone: false,
+    confirmUnlinkGoogle: false,
     accountSettingsOpen: false,
     feedbackOpen: false,
     templateOpen: false,

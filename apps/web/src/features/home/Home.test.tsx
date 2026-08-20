@@ -1593,10 +1593,15 @@ describe('Home', () => {
     expect(within(dialog).queryByText('비밀번호를 변경했어요')).toBeNull();
   });
 
-  it('Google로만 가입한 계정은 비밀번호 변경이 비활성 — 이유를 적는다', async () => {
+  // 요청: Google로 가입한 계정도 **비밀번호를 설정**할 수 있어야 한다(막는 대신
+  // 수단을 늘린다). 확인할 현재 비밀번호가 없으니 계정 이메일로 코드를 받는다.
+  it('Google로만 가입한 계정: 비밀번호 설정 → 코드 확인 후 설정하고 행이 변경으로 바뀐다', async () => {
     const user = userEvent.setup();
     const auth = new LocalAuth();
-    vi.spyOn(auth, 'emailSignInProviders').mockResolvedValue(['google']);
+    const methods = vi.spyOn(auth, 'signinMethods');
+    methods.mockResolvedValue({ hasPassword: false, providers: ['google'] });
+    const send = vi.spyOn(auth, 'sendPasswordSetupCode').mockResolvedValue({});
+    const setPw = vi.spyOn(auth, 'setPasswordWithCode').mockResolvedValue({});
     const backend: Backend = { auth, docStore: new MockDocStore([], {}), spaceStore: new LocalSpaceStore(), shareStore: new LocalShareStore(), feedbackStore: new LocalFeedbackStore(), imageStore: new LocalImageStore(), commentStore: new LocalCommentStore(), notificationStore: new LocalNotificationStore(), mode: 'local' };
     localStorage.setItem('mf_demo_session', JSON.stringify({ user: { id: 'u1', email: 'me@gmail.com' } }));
     const { container } = render(
@@ -1612,13 +1617,110 @@ describe('Home', () => {
     await user.click(screen.getByRole('button', { name: '설정' }));
     const row = await waitFor(() => {
       const el = container.querySelector('[data-change-pw-row]') as HTMLElement;
-      expect(el.getAttribute('aria-disabled')).toBe('true');
+      expect(el.textContent).toContain('비밀번호 설정');
       return el;
     });
-    expect(row.textContent).toContain('Google 계정으로 로그인하고 있어요');
-    // 눌러도 모달이 열리지 않는다(열려 봐야 확인 단계에서 막힌다).
+    // Google이 유일한 수단이면 연결 해제는 내주지 않는다 — 들어올 길이 사라진다.
+    const unlink = container.querySelector('[data-google-link-action]') as HTMLButtonElement;
+    expect(unlink.textContent).toContain('연결 해제');
+    expect(unlink.disabled).toBe(true);
+    expect((container.querySelector('[data-google-link-row]') as HTMLElement).textContent).toContain('비밀번호를 설정하면');
+
+    // 모달을 열면 곧바로 코드를 보낸다
     await user.click(row);
-    expect(screen.queryByRole('dialog', { name: '비밀번호 변경' })).toBeNull();
+    const dialog = await screen.findByRole('dialog', { name: '비밀번호 설정' });
+    await waitFor(() => expect(send).toHaveBeenCalledTimes(1));
+    expect(dialog.textContent).toContain('me@gmail.com');
+
+    methods.mockResolvedValue({ hasPassword: true, providers: ['google', 'email'] });
+    await user.type(within(dialog).getByLabelText('메일로 받은 코드'), '123456');
+    await user.type(within(dialog).getByLabelText('새 비밀번호'), 'newpw');
+    await user.type(within(dialog).getByLabelText('새 비밀번호 확인'), 'newpw');
+    await user.click(within(dialog).getByRole('button', { name: '비밀번호 설정' }));
+
+    await waitFor(() => expect(setPw).toHaveBeenCalledWith('123456', 'newpw'));
+    expect(dialog.querySelector('[data-set-pw-done]')).toBeTruthy();
+    await user.click(within(dialog).getByRole('button', { name: '확인' }));
+    // 이제 비밀번호가 있다 — 행은 '변경'이고 Google 연결도 해제할 수 있다
+    await waitFor(() => expect((container.querySelector('[data-change-pw-row]') as HTMLElement).textContent).toContain('비밀번호 변경'));
+    expect((container.querySelector('[data-google-link-action]') as HTMLButtonElement).disabled).toBe(false);
+  });
+
+  it('코드가 틀리면 그 자리에서 말한다 (설정은 되지 않는다)', async () => {
+    const user = userEvent.setup();
+    const auth = new LocalAuth();
+    vi.spyOn(auth, 'signinMethods').mockResolvedValue({ hasPassword: false, providers: ['google'] });
+    vi.spyOn(auth, 'sendPasswordSetupCode').mockResolvedValue({});
+    vi.spyOn(auth, 'setPasswordWithCode').mockResolvedValue({ wrongCode: true, error: 'invalid nonce' });
+    const backend: Backend = { auth, docStore: new MockDocStore([], {}), spaceStore: new LocalSpaceStore(), shareStore: new LocalShareStore(), feedbackStore: new LocalFeedbackStore(), imageStore: new LocalImageStore(), commentStore: new LocalCommentStore(), notificationStore: new LocalNotificationStore(), mode: 'local' };
+    localStorage.setItem('mf_demo_session', JSON.stringify({ user: { id: 'u1', email: 'me@gmail.com' } }));
+    render(
+      <MemoryRouter initialEntries={['/home']}>
+        <BackendProvider backend={backend}>
+          <Routes>
+            <Route path="/home" element={<Home />} />
+          </Routes>
+        </BackendProvider>
+      </MemoryRouter>,
+    );
+    await user.click(await screen.findByRole('button', { name: '계정 메뉴' }));
+    await user.click(screen.getByRole('button', { name: '설정' }));
+    await user.click(await waitFor(() => document.querySelector('[data-change-pw-row]') as HTMLElement));
+    const dialog = await screen.findByRole('dialog', { name: '비밀번호 설정' });
+    await user.type(within(dialog).getByLabelText('메일로 받은 코드'), '000000');
+    await user.type(within(dialog).getByLabelText('새 비밀번호'), 'newpw');
+    await user.type(within(dialog).getByLabelText('새 비밀번호 확인'), 'newpw');
+    await user.click(within(dialog).getByRole('button', { name: '비밀번호 설정' }));
+    await waitFor(() => expect(dialog.querySelector('[data-set-pw-error]')?.textContent).toContain('코드가 올바르지 않'));
+    expect(dialog.querySelector('[data-set-pw-done]')).toBeNull();
+  });
+
+  // 요청: 이메일로 가입한 계정에 Google을 **연결**할 수 있어야 한다(SNS 연동).
+  it('설정 → 로그인 수단: Google 연결 / 확인 뒤 연결 해제', async () => {
+    const user = userEvent.setup();
+    const auth = new LocalAuth();
+    const methods = vi.spyOn(auth, 'signinMethods');
+    methods.mockResolvedValue({ hasPassword: true, providers: ['email'] });
+    const link = vi.spyOn(auth, 'linkGoogle').mockResolvedValue({});
+    const unlink = vi.spyOn(auth, 'unlinkGoogle').mockResolvedValue({});
+    const backend: Backend = { auth, docStore: new MockDocStore([], {}), spaceStore: new LocalSpaceStore(), shareStore: new LocalShareStore(), feedbackStore: new LocalFeedbackStore(), imageStore: new LocalImageStore(), commentStore: new LocalCommentStore(), notificationStore: new LocalNotificationStore(), mode: 'local' };
+    localStorage.setItem('mf_demo_session', JSON.stringify({ user: { id: 'u1', email: 'me@gmail.com' } }));
+    const { container } = render(
+      <MemoryRouter initialEntries={['/home']}>
+        <BackendProvider backend={backend}>
+          <Routes>
+            <Route path="/home" element={<Home />} />
+          </Routes>
+        </BackendProvider>
+      </MemoryRouter>,
+    );
+    await user.click(await screen.findByRole('button', { name: '계정 메뉴' }));
+    await user.click(screen.getByRole('button', { name: '설정' }));
+    const action = await waitFor(() => {
+      const el = container.querySelector('[data-google-link-action]') as HTMLButtonElement;
+      expect(el.textContent).toContain('연결');
+      expect(el.disabled).toBe(false);
+      return el;
+    });
+
+    methods.mockResolvedValue({ hasPassword: true, providers: ['email', 'google'] });
+    await user.click(action);
+    await waitFor(() => expect(link).toHaveBeenCalledTimes(1));
+    // 연결되면 같은 버튼이 해제로 바뀐다
+    const off = await waitFor(() => {
+      const el = container.querySelector('[data-google-link-action]') as HTMLButtonElement;
+      expect(el.textContent).toContain('연결 해제');
+      return el;
+    });
+
+    methods.mockResolvedValue({ hasPassword: true, providers: ['email'] });
+    await user.click(off);
+    // 확인창을 한 번 거친다 — 출입구가 하나 사라지는 동작이다
+    expect(unlink).not.toHaveBeenCalled();
+    const card = (await screen.findByText('Google 연결을 해제할까요?')).parentElement as HTMLElement;
+    await user.click(within(card).getByRole('button', { name: '연결 해제' }));
+    await waitFor(() => expect(unlink).toHaveBeenCalledTimes(1));
+    await waitFor(() => expect((container.querySelector('[data-google-link-action]') as HTMLButtonElement).textContent).toContain('연결'));
   });
 
   // 세션 정책 ①(backend.md §15) — 이 앱의 세션은 기기 수 제한 없이 오래 유지되므로
@@ -3279,6 +3381,31 @@ describe('전역 검색 (모든 스페이스)', () => {
     expect(container.querySelector('a[data-title="업무 회고"]')).toBeNull();
   });
 
+  // 제보: 회원가입 직후 홈에 들어오면 검색창에 **가입 이메일**이 채워진 채
+  // 검색 결과 화면이 떠 있었다 — 이름·타입이 없는 단독 텍스트 입력을 브라우저가
+  // 이메일 칸으로 짐작해 채워 넣은 것이고, 그 값이 우리 검색 상태로 그대로 들어왔다.
+  it('포커스 없이 채워지는 값(브라우저 자동완성)은 검색으로 받지 않는다', async () => {
+    const user = userEvent.setup();
+    seedTwoSpaces();
+    const { container } = renderHomeWithDocStore([meta('w1', '업무 회고')]);
+    await waitFor(() => expect(container.querySelector('a[data-title="업무 회고"]')).toBeTruthy());
+
+    const input = screen.getByPlaceholderText('모든 스페이스에서 검색') as HTMLInputElement;
+    // 브라우저에도 성격을 밝혀 둔다(자동완성 대상에서 빠지게)
+    expect(input.type).toBe('search');
+    expect(input.getAttribute('autocomplete')).toBe('off');
+    expect(input.getAttribute('name')).toBeTruthy();
+
+    // 제보 재현 — 포커스 없이 값이 도착한다
+    fireEvent.change(input, { target: { value: 'ssasya2@gmail.com' } });
+    expect(input.value).toBe('');
+    expect(container.querySelector('[data-search-results]')).toBeNull();
+
+    // 사람이 직접 치는 것은 그대로
+    await user.type(input, '업무');
+    await waitFor(() => expect(input.value).toBe('업무'));
+  });
+
   it('폴더 이름도 스페이스를 가리지 않고 찾는다 (경로 이름으로)', async () => {
     const user = userEvent.setup();
     seedTwoSpaces();
@@ -4705,6 +4832,24 @@ describe('홈 리디자인 계약', () => {
     expect((importBtn as HTMLElement).style.borderRadius).toBe('999px');
     expect((folderBtn as HTMLElement).style.borderRadius).toBe('999px');
     expect((createBtn as HTMLElement).style.background).toContain('linear-gradient');
+  });
+
+  // 제보: 프리뷰의 홈 검색창 안쪽이 파랗게 칠해졌다 — 크롬이 이 칸을 계속
+  // 자동완성 대상으로 표시해 `#e8f0fe` 배경을 칠한 것이다(값은 포커스 게이트가
+  // 되돌리므로 실제로 채워지지 않는다). jsdom은 `:-webkit-autofill`을 만들 수 없어
+  // 규칙 자체를 고정한다(#391과 같은 처방).
+  it('검색창은 자동완성 배경을 지운다 (홈·에디터 같은 규칙)', () => {
+    for (const path of ['src/features/home/home.css', 'src/features/editor/editor.css']) {
+      const css = readFileSync(resolve(path), 'utf8');
+      const i = css.indexOf('.mf-search-input:-webkit-autofill');
+      expect(i).toBeGreaterThan(-1);
+      const rule = css.slice(i, css.indexOf('}', i));
+      // 배경을 글자 모양으로 잘라 사실상 보이지 않게 한다(주변 색을 몰라도 성립).
+      expect(rule).toContain('background-clip: text');
+      expect(rule).toContain('-webkit-text-fill-color');
+      // 크롬이 배경을 애니메이션으로 되돌리는 것도 막는다.
+      expect(rule).toMatch(/transition: background-color \d{3,}s/);
+    }
   });
 
   it('마우스 오버 애니메이션 — 카드가 3px 떠오르고 그늘·경계가 바뀐다(CSS 계약)', () => {

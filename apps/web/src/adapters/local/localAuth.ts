@@ -9,7 +9,7 @@
 // the app currently *enforces* auth when running in local mode (see
 // `App.tsx`'s `RequireAuth`), so this is a convenience, not a gate.
 
-import type { AuthChangeListener, AuthProvider, AuthResult, AuthSession, SignOutScope } from '../ports';
+import type { AuthChangeListener, AuthProvider, AuthResult, AuthSession, SigninMethods, SignOutScope } from '../ports';
 
 const SESSION_KEY = 'mf_demo_session';
 
@@ -40,6 +40,35 @@ function demoUserId(email: string): string {
   const s = String(email || 'demo');
   for (let i = 0; i < s.length; i++) h = (h * 31 + s.charCodeAt(i)) >>> 0;
   return 'local-' + h.toString(36);
+}
+
+// 데모 모드의 "로그인 수단" — 설정 → 로그인 수단을 실제로 눌러 볼 수 있게 이
+// 브라우저에 상태를 남긴다(서버가 없으므로 이게 정본이다). 기본값은 이메일 가입
+// 계정(비밀번호 있음)이고, 데모 Google 로그인으로 들어오면 Google 전용이 된다.
+const METHODS_KEY = 'mf_demo_signin';
+
+/** 데모 모드의 본인 확인 코드 — 보낼 메일이 없으니 고정값이다(모달이 알려 준다). */
+export const DEMO_SETUP_CODE = '000000';
+
+function readMethods(): SigninMethods {
+  try {
+    const raw = localStorage.getItem(METHODS_KEY);
+    if (raw) {
+      const v = JSON.parse(raw) as { hasPassword?: boolean; providers?: unknown };
+      return { hasPassword: !!v.hasPassword, providers: Array.isArray(v.providers) ? v.providers.map(String) : [] };
+    }
+  } catch {
+    /* storage unavailable / 깨진 값 — 기본값으로 */
+  }
+  return { hasPassword: true, providers: ['email'] };
+}
+
+function writeMethods(m: SigninMethods): void {
+  try {
+    localStorage.setItem(METHODS_KEY, JSON.stringify(m));
+  } catch {
+    /* storage unavailable — 데모라 무시 */
+  }
 }
 
 function makeSession(email: string): AuthSession {
@@ -78,6 +107,9 @@ export class LocalAuth implements AuthProvider {
 
   async signInWithOAuth(): Promise<{ error?: string }> {
     const session = makeSession('demo-google@mindflow.local');
+    // 데모에서도 "Google로 가입한 계정"이 되어야 설정 화면의 비밀번호 설정 흐름을
+    // 눌러 볼 수 있다(실제 판정은 Supabase가 서버에서 한다).
+    writeMethods({ hasPassword: false, providers: ['google'] });
     writeSession(session);
     this.emit(session);
     return {};
@@ -167,6 +199,40 @@ export class LocalAuth implements AuthProvider {
   async setProfileName(): Promise<{ error?: string }> {
     return {};
   }
+  // ── 로그인 수단(데모) ──────────────────────────────────────────────────
+  // Supabase 어댑터와 같은 규칙으로 움직이되 저장소는 이 브라우저다.
+  async signinMethods(): Promise<SigninMethods | null> {
+    return readMethods();
+  }
+
+  // 서버가 없어 메일을 보낼 수 없다 — 데모에서는 코드가 늘 `000000`이다(모달이
+  // 데모 모드임을 밝히고 그 코드를 알려 준다).
+  async sendPasswordSetupCode(): Promise<{ error?: string }> {
+    return {};
+  }
+
+  // `newPassword`는 쓰지 않는다 — 데모 계정에는 비밀번호 자체가 없고
+  // (`signInWithPassword`가 무엇이든 받아 준다) "걸렸다"는 사실만 기억한다.
+  async setPasswordWithCode(code: string, newPassword?: string): Promise<{ error?: string; wrongCode?: boolean }> {
+    void newPassword;
+    if (code.trim() !== DEMO_SETUP_CODE) return { wrongCode: true, error: 'invalid nonce' };
+    const m = readMethods();
+    writeMethods({ hasPassword: true, providers: m.providers.includes('email') ? m.providers : [...m.providers, 'email'] });
+    return {};
+  }
+
+  async linkGoogle(): Promise<{ error?: string }> {
+    const m = readMethods();
+    if (!m.providers.includes('google')) writeMethods({ ...m, providers: [...m.providers, 'google'] });
+    return {};
+  }
+
+  async unlinkGoogle(): Promise<{ error?: string }> {
+    const m = readMethods();
+    writeMethods({ ...m, providers: m.providers.filter((p) => p !== 'google') });
+    return {};
+  }
+
 
   private emit(session: AuthSession | null): void {
     this.listeners.forEach((l) => l(session));

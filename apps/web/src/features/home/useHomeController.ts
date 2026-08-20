@@ -661,18 +661,19 @@ export function useHomeController() {
 
   // ---- account settings / 회원 탈퇴 ----
   const openAccountSettings = () => {
-    patch({ settingsOpen: false, accountSettingsOpen: true });
-    // 비밀번호 로그인 계정인지 확인한다(Google 전용이면 '비밀번호 변경'을 비활성).
-    // 이미 알고 있으면 다시 묻지 않고, 확인 불가(RPC 미배포·네트워크·데모)면
-    // `null`로 남겨 두지 않고 **비밀번호 있음**으로 본다 — 진짜 게이트는 현재
-    // 비밀번호 확인 단계이므로, 모르는 채로 항목을 잠그는 쪽이 더 나쁘다.
-    if (state.hasPasswordLogin !== null || !state.userEmail) return;
+    patch({ settingsOpen: false, accountSettingsOpen: true, signinError: '' });
+    refreshSigninMethods();
+  };
+
+  /** 이 계정의 로그인 수단을 읽어 온다(설정 → 로그인 수단). 이미 알고 있으면
+   * 다시 묻지 않고(`force`면 다시 묻는다 — 방금 연결/설정을 바꾼 뒤), 확인 불가면
+   * `null`로 남긴다: 화면은 그때 "확인할 수 없어요"로 말하고 잠그지 않는다. */
+  const refreshSigninMethods = (force = false) => {
+    if (!force && state.signin) return;
     void auth
-      .emailSignInProviders(state.userEmail)
-      .then((providers) => {
-        setState((prev) => ({ ...prev, hasPasswordLogin: providers === null ? true : providers.includes('email') }));
-      })
-      .catch(() => setState((prev) => ({ ...prev, hasPasswordLogin: true })));
+      .signinMethods()
+      .then((m) => setState((prev) => ({ ...prev, signin: m })))
+      .catch(() => setState((prev) => ({ ...prev, signin: null })));
   };
 
   // ---- 비밀번호 변경(설정 → 계정 관리) ----
@@ -715,6 +716,77 @@ export function useHomeController() {
       setState((prev) => ({ ...prev, changePwBusy: false, changePwDone: true, changePwCur: '', changePwNew: '', changePwNew2: '' }));
     });
   };
+  // ---- 비밀번호 설정(Google로 가입한 계정) ----
+  /** 확인할 현재 비밀번호가 없는 계정의 흐름 — 계정 이메일로 코드를 보내
+   * "이 메일함의 주인인가"로 본인을 확인한 뒤 비밀번호를 건다(§16). 모달을 열면
+   * 곧바로 코드를 보낸다(따로 누르게 하면 한 단계가 늘 뿐이다). */
+  const openSetPassword = () => {
+    patch({ setPwOpen: true, setPwCode: '', setPwNew: '', setPwNew2: '', setPwError: '', setPwBusy: true, setPwSent: false, setPwDone: false });
+    void auth.sendPasswordSetupCode().then((res) => {
+      setState((prev) => ({ ...prev, setPwBusy: false, setPwSent: !res.error, setPwError: res.error ? localizeAuthError(res.error) : '' }));
+    });
+  };
+  const closeSetPassword = () => patch({ setPwOpen: false });
+  const onSetPwCode = (v: string) => patch({ setPwCode: v, setPwError: '' });
+  const onSetPwNew = (v: string) => patch({ setPwNew: v, setPwError: '' });
+  const onSetPwNew2 = (v: string) => patch({ setPwNew2: v, setPwError: '' });
+  const resendSetupCode = () => {
+    if (state.setPwBusy) return;
+    patch({ setPwBusy: true, setPwError: '' });
+    void auth.sendPasswordSetupCode().then((res) => {
+      setState((prev) => ({ ...prev, setPwBusy: false, setPwSent: prev.setPwSent || !res.error, setPwError: res.error ? localizeAuthError(res.error) : '' }));
+    });
+  };
+  const submitSetPassword = () => {
+    if (state.setPwBusy) return;
+    if (!state.setPwCode.trim()) {
+      patch({ setPwError: '메일로 받은 코드를 입력해 주세요.' });
+      return;
+    }
+    if ((state.setPwNew || '').length < 4) {
+      patch({ setPwError: '비밀번호는 4자 이상 입력해 주세요.' });
+      return;
+    }
+    if (state.setPwNew !== state.setPwNew2) {
+      patch({ setPwError: '비밀번호가 일치하지 않습니다.' });
+      return;
+    }
+    patch({ setPwBusy: true, setPwError: '' });
+    void auth.setPasswordWithCode(state.setPwCode, state.setPwNew).then((res) => {
+      if (res.wrongCode) {
+        setState((prev) => ({ ...prev, setPwBusy: false, setPwError: '코드가 올바르지 않거나 만료됐어요. 다시 보내 주세요.' }));
+        return;
+      }
+      if (res.error) {
+        setState((prev) => ({ ...prev, setPwBusy: false, setPwError: localizeAuthError(res.error) }));
+        return;
+      }
+      setState((prev) => ({ ...prev, setPwBusy: false, setPwDone: true, setPwCode: '', setPwNew: '', setPwNew2: '' }));
+      refreshSigninMethods(true); // 이제 비밀번호가 있다 — 행이 '변경'으로 바뀐다
+    });
+  };
+
+  // ---- SNS 연동(Google) ----
+  /** 연결은 리다이렉트다 — 돌아오면 홈이 다시 뜨고 새 신원이 반영된다. */
+  const linkGoogleAccount = () => {
+    if (state.signinBusy) return;
+    patch({ signinBusy: true, signinError: '' });
+    void auth.linkGoogle().then((res) => {
+      // 성공이면 브라우저가 이미 Google로 떠났다 — 여기로 돌아오는 것은 실패뿐이다.
+      setState((prev) => ({ ...prev, signinBusy: false, signinError: res.error ? localizeAuthError(res.error) : '' }));
+      if (!res.error) refreshSigninMethods(true); // 데모 어댑터는 리다이렉트가 없다
+    });
+  };
+  const askUnlinkGoogle = () => patch({ confirmUnlinkGoogle: true, signinError: '' });
+  const cancelUnlinkGoogle = () => patch({ confirmUnlinkGoogle: false });
+  const confirmUnlinkGoogleYes = () => {
+    patch({ confirmUnlinkGoogle: false, signinBusy: true, signinError: '' });
+    void auth.unlinkGoogle().then((res) => {
+      setState((prev) => ({ ...prev, signinBusy: false, signinError: res.error ? localizeAuthError(res.error) : '' }));
+      refreshSigninMethods(true);
+    });
+  };
+
   /** 홈 색상 테마 선택. 색은 CSS 변수라 **즉시** 반영하고(상태 반영을 기다리지 않는다
    * — 고르는 즉시 화면이 바뀌는 게 이 기능의 전부다), 이 기기 캐시에 적어 다음 부팅의
    * 첫 페인트를 맞추며, 상태 변경이 저장 효과를 태워 워크스페이스에 동기화된다. */
@@ -2110,6 +2182,18 @@ export function useHomeController() {
     confirmLogoutAllYes,
     openAccountSettings,
     openChangePassword,
+    refreshSigninMethods,
+    openSetPassword,
+    closeSetPassword,
+    onSetPwCode,
+    onSetPwNew,
+    onSetPwNew2,
+    resendSetupCode,
+    submitSetPassword,
+    linkGoogleAccount,
+    askUnlinkGoogle,
+    cancelUnlinkGoogle,
+    confirmUnlinkGoogleYes,
     closeChangePassword,
     onChangePwCur,
     onChangePwNew,

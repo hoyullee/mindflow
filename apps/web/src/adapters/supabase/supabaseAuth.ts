@@ -5,7 +5,7 @@
 // live network calls happen just by the module being loaded).
 
 import type { Session, SupabaseClient, User } from '@supabase/supabase-js';
-import type { AuthChangeListener, AuthProvider, AuthResult, AuthSession, SignOutScope } from '../ports';
+import type { AuthChangeListener, AuthProvider, AuthResult, AuthSession, SigninMethods, SignOutScope } from '../ports';
 
 function mapUser(user: User | null | undefined): AuthSession['user'] | null {
   if (!user) return null;
@@ -15,8 +15,7 @@ function mapUser(user: User | null | undefined): AuthSession['user'] | null {
   const meta = (user.user_metadata ?? {}) as Record<string, unknown>;
   const str = (v: unknown): string | null => (typeof v === 'string' && v.trim() ? v : null);
   // `app_metadata`(서버가 채우는 값)의 provider/providers — 이번 로그인 수단과
-  // 계정에 연결된 수단 전부. "이메일로 가입한 계정에 Google로 들어왔다"를 이 둘로
-  // 판정한다(`googleLinkRefused`).
+  // 계정에 연결된 수단 전부(설정 → 로그인 수단이 읽는다).
   const app = (user.app_metadata ?? {}) as Record<string, unknown>;
   const providers = Array.isArray(app.providers) ? app.providers.filter((p): p is string => typeof p === 'string') : [];
   return {
@@ -206,4 +205,67 @@ export class SupabaseAuth implements AuthProvider {
     const { error } = await this.client.from('profiles').upsert({ id: uid, display_name: name });
     return error ? { error: error.message } : {};
   }
+  // ── 로그인 수단(설정 → 로그인 수단) ─────────────────────────────────────
+  // 한 계정에 수단이 여럿 붙을 수 있다(같은 이메일의 Google 신원은 Supabase가
+  // 자동 연결한다). 화면이 "비밀번호를 바꿀 수 있나 / 새로 걸어야 하나",
+  // "Google이 연결돼 있나"를 정확히 말하려면 서버만 아는 두 값이 필요하다 — 0029.
+  async signinMethods(): Promise<SigninMethods | null> {
+    const { data, error } = await this.client.rpc('my_signin_methods');
+    if (error) {
+      console.warn('[geurio] my_signin_methods RPC 실패', error.message);
+      return null; // 확인 불가 — 호출부는 잠그지 않고 "확인할 수 없어요"로 말한다
+    }
+    const row = Array.isArray(data) ? data[0] : data;
+    if (!row) return null;
+    const r = row as { has_password?: boolean; providers?: unknown };
+    return {
+      hasPassword: !!r.has_password,
+      providers: Array.isArray(r.providers) ? r.providers.map(String) : [],
+    };
+  }
+
+  // 본인 확인 코드 메일(Supabase의 reauthentication nonce). 대시보드의
+  // Reauthentication 이메일 템플릿을 쓴다(backend.md §16).
+  async sendPasswordSetupCode(): Promise<{ error?: string }> {
+    const { error } = await this.client.auth.reauthenticate();
+    return error ? { error: error.message } : {};
+  }
+
+  async setPasswordWithCode(code: string, newPassword: string): Promise<{ error?: string; wrongCode?: boolean }> {
+    const { error } = await this.client.auth.updateUser({ password: newPassword, nonce: code.trim() });
+    if (!error) {
+      // 비밀번호가 생겼다 = 새 출입구다. 다른 기기 세션은 정리한다(§15의 규칙).
+      try {
+        await this.client.auth.signOut({ scope: 'others' });
+      } catch {
+        /* 이미 설정됐다 — 해지 실패를 오류로 만들지 않는다 */
+      }
+      return {};
+    }
+    const msg = error.message || '';
+    const wrongCode = /nonce|token|code|expired|invalid/i.test(msg);
+    return { error: msg, wrongCode };
+  }
+
+  // 연결은 리다이렉트다(로그인의 signInWithOAuth와 같은 왕복) — 돌아오면 세션의
+  // providers가 갱신돼 설정 화면이 '연결됨'으로 바뀐다. 대시보드에서 Manual
+  // Linking을 켜 두어야 동작한다(꺼져 있으면 그 사실을 오류로 알려 준다).
+  async linkGoogle(): Promise<{ error?: string }> {
+    const redirectTo = typeof window !== 'undefined' ? `${window.location.origin}/home?linked=google` : undefined;
+    const { error } = await this.client.auth.linkIdentity({
+      provider: 'google',
+      options: { redirectTo, queryParams: { prompt: 'select_account' } },
+    });
+    return error ? { error: error.message } : {};
+  }
+
+  async unlinkGoogle(): Promise<{ error?: string }> {
+    const { data, error } = await this.client.auth.getUserIdentities();
+    if (error) return { error: error.message };
+    const google = (data?.identities ?? []).find((i) => i.provider === 'google');
+    if (!google) return {}; // 이미 연결돼 있지 않다 — 결과가 같으므로 성공으로 본다
+    const res = await this.client.auth.unlinkIdentity(google);
+    return res.error ? { error: res.error.message } : {};
+  }
+
 }

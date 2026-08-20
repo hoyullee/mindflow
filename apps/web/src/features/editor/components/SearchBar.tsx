@@ -163,6 +163,7 @@ export function SearchBar({ controller }: { controller: EditorController }) {
           <line x1="10" y1="10" x2="13.6" y2="13.6" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" />
         </svg>
         <input
+          className="mf-search-input"
           ref={inputRef}
           value={query}
           onChange={(e) => setQuery(e.target.value)}
@@ -178,6 +179,14 @@ export function SearchBar({ controller }: { controller: EditorController }) {
           }}
           placeholder="맵에서 검색…"
           aria-label="맵에서 검색"
+          // 홈 검색창과 같은 이유로 브라우저 자동완성을 막는다(이름 없는 단독
+          // 텍스트 입력에 크롬이 이메일을 채워 넣는다).
+          type="search"
+          name="mf-map-search"
+          autoComplete="off"
+          autoCorrect="off"
+          autoCapitalize="off"
+          spellCheck={false}
           style={{
             flex: '1 1 auto',
             minWidth: 0,

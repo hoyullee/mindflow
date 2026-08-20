@@ -359,3 +359,34 @@
 .mf-noscrollbar::-webkit-scrollbar {
   display: none;
 }
+
+/* 검색 입력의 네이티브 지우기 버튼·장식 제거 — `type="search"`는 브라우저
+   자동완성을 막으려고 붙인 것이고(회원가입 직후 검색창에 이메일이 채워지던 제보),
+   웹킷이 그때 그려 주는 ✕는 우리가 그리는 지우기 버튼과 겹친다. */
+input[type='search']::-webkit-search-cancel-button,
+input[type='search']::-webkit-search-decoration,
+input[type='search']::-webkit-search-results-button,
+input[type='search']::-webkit-search-results-decoration {
+  -webkit-appearance: none;
+  appearance: none;
+  display: none;
+}
+
+/* 검색창에 남는 **자동완성 배경** 제거(제보: 알약 안쪽이 파랗게 칠해졌다).
+   크롬은 이 칸을 계속 "이메일/아이디 칸"으로 짐작해 자동완성 상태로 표시하고
+   그때 `#e8f0fe` 파란 배경을 칠한다 — `autocomplete="off"`는 비밀번호 관리자
+   경로에서 크롬이 의도적으로 무시한다. 값은 포커스 게이트가 되돌리므로 실제로
+   채워지지는 않는데 **배경만** 남아 빈 칸이 파랗게 보였다.
+   `background-clip: text`면 그 배경이 글자 모양으로 잘려 사실상 보이지 않는다
+   (주변 색을 몰라도 되므로 여섯 테마·다크·에디터 팔레트에서 모두 성립하고,
+   글자 자체는 `text-fill-color`가 원래 색으로 덮는다). 전이를 아주 길게 두는 것은
+   크롬이 배경을 애니메이션으로 다시 칠하는 것을 막는 관용구다. */
+.mf-search-input:-webkit-autofill,
+.mf-search-input:-webkit-autofill:hover,
+.mf-search-input:-webkit-autofill:focus,
+.mf-search-input:-webkit-autofill:active {
+  -webkit-background-clip: text;
+  background-clip: text;
+  -webkit-text-fill-color: currentColor;
+  transition: background-color 9999s ease-out 0s;
+}
