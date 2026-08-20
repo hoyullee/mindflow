@@ -1,3 +1,4 @@
+import { useEffect, useRef } from 'react';
 import type { HomeState } from '../../types';
 import type { HomeController } from '../../useHomeController';
 
@@ -36,6 +37,12 @@ const inputStyle = {
 export function ChangePasswordModal({ state, controller }: Props) {
   const busy = state.changePwBusy;
   const done = state.changePwDone;
+  // 열릴 때 한 번만 첫 칸에 포커스를 준다 — 인라인 `ref` 콜백은 렌더마다 돌아
+  // 다른 칸을 타이핑할 때 포커스를 되가져간다(비밀번호 설정 모달의 제보와 같은 함정).
+  const firstFieldRef = useRef<HTMLInputElement | null>(null);
+  useEffect(() => {
+    if (state.changePwOpen && !done) firstFieldRef.current?.focus();
+  }, [state.changePwOpen, done]);
   // 세 칸이 채워지면 **누를 수 있다** — 4자 미만·불일치 같은 이유는 누른 뒤
   // 컨트롤러가 그 자리에서 말한다(이유를 모르는 채 비활성인 버튼을 두지 않는다).
   const canSubmit = !busy && !!state.changePwCur && !!state.changePwNew && !!state.changePwNew2;
@@ -84,9 +91,7 @@ export function ChangePasswordModal({ state, controller }: Props) {
               onKeyDown={onKey}
               aria-label="현재 비밀번호"
               placeholder="현재 비밀번호"
-              ref={(el) => {
-                if (el && state.changePwOpen && !done && document.activeElement !== el && !state.changePwCur) el.focus();
-              }}
+              ref={firstFieldRef}
               style={{ ...inputStyle, marginBottom: 14 }}
             />
 
