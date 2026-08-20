@@ -1498,24 +1498,80 @@ describe('Home', () => {
     await waitFor(() => expect(setProfileName).toHaveBeenCalledWith('새닉네임'));
   });
 
-  it('opens 설정 → 회원 탈퇴 and gates the destructive button on typing "탈퇴"', async () => {
+  it('설정 → 회원 탈퇴: 문장을 입력해야 다음이 열리고, 한 번 더 확인한 뒤에야 지운다', async () => {
     const user = userEvent.setup();
-    renderHomeWithDocStore([]);
-
-    // profile popover → 설정 → account-settings modal → 회원 탈퇴 row
-    await user.click(await screen.findByRole('button', { name: '계정 메뉴' })); // 프로필 스켈레톤 해제(getSession) 대기
+    const auth = new LocalAuth();
+    const del = vi.spyOn(auth, 'deleteAccount');
+    const backend: Backend = { auth, docStore: new MockDocStore([], {}), spaceStore: new LocalSpaceStore(), shareStore: new LocalShareStore(), feedbackStore: new LocalFeedbackStore(), imageStore: new LocalImageStore(), commentStore: new LocalCommentStore(), notificationStore: new LocalNotificationStore(), mode: 'local' };
+    localStorage.setItem('mf_demo_session', JSON.stringify({ user: { id: 'u1', email: 'me@gmail.com' } }));
+    render(
+      <MemoryRouter initialEntries={['/home']}>
+        <BackendProvider backend={backend}>
+          <Routes>
+            <Route path="/home" element={<Home />} />
+          </Routes>
+        </BackendProvider>
+      </MemoryRouter>,
+    );
+    await user.click(await screen.findByRole('button', { name: '계정 메뉴' }));
     await user.click(screen.getByRole('button', { name: '설정' }));
     const settingsDialog = screen.getByRole('dialog', { name: '설정' });
+    // ① 두 구획이 '계정 설정' 하나로 묶였다(요청)
+    expect(within(settingsDialog).getByText('계정 설정')).toBeTruthy();
+    expect(within(settingsDialog).queryByText('로그인 수단')).toBeNull();
+    expect(within(settingsDialog).queryByText('계정 관리')).toBeNull();
+
     await user.click(within(settingsDialog).getByText('회원 탈퇴'));
-
-    // the confirm dialog's destructive button starts disabled…
     const confirmDialog = screen.getByRole('dialog', { name: '회원 탈퇴' });
-    const delBtn = within(confirmDialog).getByRole('button', { name: '회원 탈퇴' }) as HTMLButtonElement;
-    expect(delBtn.disabled).toBe(true);
+    const next = within(confirmDialog).getByRole('button', { name: '다음' }) as HTMLButtonElement;
+    expect(next.disabled).toBe(true);
 
-    // …and arms only once the exact phrase is typed
-    await user.type(within(confirmDialog).getByLabelText('탈퇴 확인 입력'), '탈퇴');
-    expect(delBtn.disabled).toBe(false);
+    // 짧은 '탈퇴'로는 열리지 않는다 — 문장을 정확히 쳐야 한다
+    const input = within(confirmDialog).getByLabelText('탈퇴 확인 입력');
+    await user.type(input, '탈퇴');
+    expect((within(confirmDialog).getByRole('button', { name: '다음' }) as HTMLButtonElement).disabled).toBe(true);
+    await user.clear(input);
+    await user.type(input, '회원 탈퇴에 동의합니다');
+    expect((within(confirmDialog).getByRole('button', { name: '다음' }) as HTMLButtonElement).disabled).toBe(false);
+
+    // ② 여기서 눌러도 아직 지우지 않는다 — 마지막 확인창이 한 번 더 뜬다
+    await user.click(within(confirmDialog).getByRole('button', { name: '다음' }));
+    expect(del).not.toHaveBeenCalled();
+    const last = await screen.findByText('마지막으로 확인할게요');
+    const card = last.parentElement as HTMLElement;
+
+    // 취소하면 아무것도 지워지지 않고 흐름이 닫힌다
+    await user.click(within(card).getByRole('button', { name: '취소' }));
+    expect(del).not.toHaveBeenCalled();
+    // 확인창들은 숨겨진 채 마운트돼 있으므로(display:none) 텍스트 유무가 아니라
+    // 보이는지로 판정한다.
+    expect((card.parentElement as HTMLElement).style.display).toBe('none');
+  });
+
+  it('마지막 확인창에서 영구 삭제를 누르면 그때 지운다', async () => {
+    const user = userEvent.setup();
+    const auth = new LocalAuth();
+    const del = vi.spyOn(auth, 'deleteAccount').mockResolvedValue({});
+    const backend: Backend = { auth, docStore: new MockDocStore([], {}), spaceStore: new LocalSpaceStore(), shareStore: new LocalShareStore(), feedbackStore: new LocalFeedbackStore(), imageStore: new LocalImageStore(), commentStore: new LocalCommentStore(), notificationStore: new LocalNotificationStore(), mode: 'local' };
+    localStorage.setItem('mf_demo_session', JSON.stringify({ user: { id: 'u1', email: 'me@gmail.com' } }));
+    render(
+      <MemoryRouter initialEntries={['/home']}>
+        <BackendProvider backend={backend}>
+          <Routes>
+            <Route path="/home" element={<Home />} />
+          </Routes>
+        </BackendProvider>
+      </MemoryRouter>,
+    );
+    await user.click(await screen.findByRole('button', { name: '계정 메뉴' }));
+    await user.click(screen.getByRole('button', { name: '설정' }));
+    await user.click(within(screen.getByRole('dialog', { name: '설정' })).getByText('회원 탈퇴'));
+    const confirmDialog = screen.getByRole('dialog', { name: '회원 탈퇴' });
+    await user.type(within(confirmDialog).getByLabelText('탈퇴 확인 입력'), '회원 탈퇴에 동의합니다');
+    await user.click(within(confirmDialog).getByRole('button', { name: '다음' }));
+    const card = (await screen.findByText('마지막으로 확인할게요')).parentElement as HTMLElement;
+    await user.click(within(card).getByRole('button', { name: '영구 삭제' }));
+    await waitFor(() => expect(del).toHaveBeenCalledTimes(1));
   });
 
   // 제보: 로그인 후 비밀번호를 바꿀 자리가 없어(로그아웃 → '비밀번호 찾기'뿐) 설정에
@@ -1927,8 +1983,11 @@ describe('Home', () => {
     await user.click(within(screen.getByRole('dialog', { name: '설정' })).getByText('회원 탈퇴'));
 
     const confirmDialog = screen.getByRole('dialog', { name: '회원 탈퇴' });
-    await user.type(within(confirmDialog).getByLabelText('탈퇴 확인 입력'), '탈퇴');
-    await user.click(within(confirmDialog).getByRole('button', { name: '회원 탈퇴' }));
+    await user.type(within(confirmDialog).getByLabelText('탈퇴 확인 입력'), '회원 탈퇴에 동의합니다');
+    await user.click(within(confirmDialog).getByRole('button', { name: '다음' }));
+    // 마지막 확인창을 한 번 더 지난다(요청)
+    const lastCard = (await screen.findByText('마지막으로 확인할게요')).parentElement as HTMLElement;
+    await user.click(within(lastCard).getByRole('button', { name: '영구 삭제' }));
 
     await waitFor(() => expect(screen.getByText('LOGIN_PAGE')).toBeTruthy(), { timeout: 2000 });
     // every MindFlow-namespaced key is gone

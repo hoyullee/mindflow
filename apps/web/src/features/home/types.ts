@@ -200,6 +200,9 @@ export interface HomeState {
   theme: HomeThemeKey;
   /** The 회원 탈퇴 confirmation dialog (opened from the settings modal). */
   confirmDeleteAccount: boolean;
+  /** 문구를 입력하고 누른 뒤 **한 번 더** 묻는 마지막 확인창(요청) — 비가역 동작이라
+   * 문구 입력만으로 바로 지우지 않는다. */
+  confirmDeleteAccountFinal: boolean;
   /** What the user has typed into the 회원 탈퇴 confirmation box — the destructive
    * action is gated on this matching the required phrase ("탈퇴"). */
   deleteAccountText: string;
@@ -400,6 +403,7 @@ export function initialHomeState(): HomeState {
     // 맞춘다. 부팅 때 이미 같은 캐시로 CSS 변수를 입혀 뒀으므로 첫 페인트와 일치한다.
     theme: loadHomeThemeCache(),
     confirmDeleteAccount: false,
+    confirmDeleteAccountFinal: false,
     deleteAccountText: '',
     deleteAccountError: '',
     creatingMap: false,

@@ -1,4 +1,4 @@
-import type { HomeController } from '../../useHomeController';
+import { DELETE_ACCOUNT_PHRASE, type HomeController } from '../../useHomeController';
 import type { HomeState } from '../../types';
 
 interface Props {
@@ -6,12 +6,12 @@ interface Props {
   controller: HomeController;
 }
 
-/** 회원 탈퇴 confirmation — a deliberately high-friction dialog for an
- * irreversible action: it spells out what's deleted and arms the destructive
- * button only once the user types the exact phrase ("탈퇴"). */
+/** 회원 탈퇴 1단계 — 비가역 동작을 위한 마찰 장치: 무엇이 지워지는지 밝히고,
+ * **문장**을 정확히 입력해야 파괴 버튼이 열린다(짧은 '탈퇴'는 무심코 칠 수 있어
+ * 문장으로 바꿨다 — 요청). 여기서 누르면 지우지 않고 **마지막 확인창**이 뜬다. */
 export function DeleteAccountModal({ state, controller }: Props) {
   const visible = state.confirmDeleteAccount;
-  const armed = state.deleteAccountText.trim() === '탈퇴';
+  const armed = state.deleteAccountText.trim() === DELETE_ACCOUNT_PHRASE;
 
   return (
     <div style={{ position: 'fixed', inset: 0, background: 'rgba(30,20,14,.42)', backdropFilter: 'blur(2px)', display: visible ? 'flex' : 'none', alignItems: 'center', justifyContent: 'center', zIndex: 160 }}>
@@ -31,7 +31,7 @@ export function DeleteAccountModal({ state, controller }: Props) {
         </div>
 
         <label style={{ display: 'block', fontSize: 12, color: 'var(--mf-subtext)', marginBottom: 7 }}>
-          계속하려면 아래에 <b style={{ color: 'var(--mf-danger)' }}>탈퇴</b>를 입력해 주세요.
+          계속하려면 아래에 <b style={{ color: 'var(--mf-danger)' }}>{DELETE_ACCOUNT_PHRASE}</b>를 입력해 주세요.
         </label>
         <input
           value={state.deleteAccountText}
@@ -43,7 +43,7 @@ export function DeleteAccountModal({ state, controller }: Props) {
           ref={(el) => {
             if (el && visible && document.activeElement !== el) el.focus();
           }}
-          placeholder="탈퇴"
+          placeholder={DELETE_ACCOUNT_PHRASE}
           aria-label="탈퇴 확인 입력"
           autoComplete="off"
           style={{ width: '100%', height: 42, border: `1px solid ${armed ? 'var(--mf-danger)' : 'var(--mf-border)'}`, borderRadius: 11, background: 'var(--mf-panel)', color: 'var(--mf-text)', fontFamily: 'inherit', fontSize: 14, fontWeight: 600, padding: '0 12px', outline: 'none', boxSizing: 'border-box', marginBottom: state.deleteAccountError ? 8 : 20 }}
@@ -63,7 +63,7 @@ export function DeleteAccountModal({ state, controller }: Props) {
             disabled={!armed}
             style={{ flex: 1, height: 42, border: 'none', borderRadius: 11, background: armed ? 'var(--mf-danger)' : 'var(--mf-danger-mute)', color: 'var(--mf-accent-ink)', fontFamily: 'inherit', fontSize: 14, fontWeight: 700, cursor: armed ? 'pointer' : 'not-allowed' }}
           >
-            회원 탈퇴
+            다음
           </button>
         </div>
       </div>

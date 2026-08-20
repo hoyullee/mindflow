@@ -115,11 +115,11 @@ export function AccountSettingsModal({ state, controller }: Props) {
             })}
           </div>
 
-          {/* 로그인 수단 — 이 계정에 들어오는 **문 목록**이다. 한 계정에 수단이 여럿
-              붙을 수 있다(같은 이메일의 Google 신원은 Supabase가 그 계정에 자동
-              연결한다) — 그래서 막는 대신 여기서 보여 주고 늘리고 줄인다(§16).
-              비밀번호 유무는 신원 목록으로 알 수 없어 서버가 따로 알려 준다(0029). */}
-          <div style={{ fontSize: 12, fontWeight: 700, color: 'var(--mf-faint)', letterSpacing: '.02em', marginBottom: 10 }}>로그인 수단</div>
+          {/* 계정 설정 — 로그인 수단과 세션·탈퇴를 **한 구획**으로 묶었다(요청).
+              앞쪽은 이 계정에 들어오는 문 목록이다(한 계정에 수단이 여럿 붙을 수 있고,
+              같은 이메일의 Google 신원은 Supabase가 자동 연결한다 — §16). 비밀번호
+              유무는 신원 목록으로 알 수 없어 서버가 따로 알려 준다(0029). */}
+          <div style={{ fontSize: 12, fontWeight: 700, color: 'var(--mf-faint)', letterSpacing: '.02em', marginBottom: 10 }}>계정 설정</div>
           {/* 이메일·비밀번호 — 비밀번호가 걸려 있으면 '변경'(현재 비밀번호로 본인
               확인), 없으면 '설정'(계정 이메일로 코드를 받아 확인). 확인 불가면
               **변경 쪽**으로 둔다: 진짜 게이트는 확인 단계이므로 모르는 채로 항목을
@@ -206,8 +206,8 @@ export function AccountSettingsModal({ state, controller }: Props) {
             </div>
           )}
 
-          {/* account management (session revoke + account deletion live here) */}
-          <div style={{ fontSize: 12, fontWeight: 700, color: 'var(--mf-faint)', letterSpacing: '.02em', margin: '24px 0 10px' }}>계정 관리</div>
+          {/* 아래는 세션·탈퇴 — 구획은 하나지만 성격이 달라 얇은 선으로만 가른다. */}
+          <div style={{ height: 1, background: 'var(--mf-hairline)', margin: '10px 4px 10px' }} />
           {/* 모든 기기에서 로그아웃(세션 정책 ①) — 이 앱의 세션은 기기 수 제한 없이
               오래 유지되므로(backend.md §15), 기기를 잃거나 공용 PC에 남겨 뒀을 때
               **회수할 수단**이 필요하다. 되돌릴 수 있는 동작이라 제목은 잉크색이고
