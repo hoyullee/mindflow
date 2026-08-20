@@ -256,6 +256,9 @@ export class SupabaseAuth implements AuthProvider {
       provider: 'google',
       options: { redirectTo, queryParams: { prompt: 'select_account' } },
     });
+    // 원문을 남긴다 — 화면 문구는 한글로 옮겨지므로(localizeAuthError) 콘솔이
+    // 유일한 진단 단서다(대개 대시보드에서 Manual linking이 꺼져 있는 경우).
+    if (error) console.warn('[geurio] Google 연결 실패', error.message);
     return error ? { error: error.message } : {};
   }
 
@@ -265,6 +268,7 @@ export class SupabaseAuth implements AuthProvider {
     const google = (data?.identities ?? []).find((i) => i.provider === 'google');
     if (!google) return {}; // 이미 연결돼 있지 않다 — 결과가 같으므로 성공으로 본다
     const res = await this.client.auth.unlinkIdentity(google);
+    if (res.error) console.warn('[geurio] Google 연결 해제 실패', res.error.message);
     return res.error ? { error: res.error.message } : {};
   }
 
