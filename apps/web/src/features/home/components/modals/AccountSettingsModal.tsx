@@ -356,10 +356,8 @@ export function AccountSettingsModal({ state, controller }: Props) {
               <circle cx="12" cy="8" r="3.4" />
               <path d="M5.5 20.5a6.5 6.5 0 0 1 13 0" />
             </svg>
-            <div style={{ minWidth: 0 }}>
-              <div style={{ fontWeight: 700, fontSize: 14.5 }}>계정 설정</div>
-              <div style={{ fontSize: 12.5, color: 'var(--mf-muted)', marginTop: 2 }}>로그인 수단 · 기기 로그아웃 · 회원 탈퇴</div>
-            </div>
+            {/* 부제 없이 이름만 — 무엇이 들어 있는지는 들어가면 바로 보인다(요청). */}
+            <div style={{ minWidth: 0, fontWeight: 700, fontSize: 14.5 }}>계정 설정</div>
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="var(--mf-faint)" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true" style={{ marginLeft: 'auto', flexShrink: 0 }}>
               <path d="m9 6 6 6-6 6" />
             </svg>
