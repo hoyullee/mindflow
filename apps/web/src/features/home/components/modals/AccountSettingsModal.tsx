@@ -1,3 +1,4 @@
+import { useRef, useState } from 'react';
 import type { HomeController } from '../../useHomeController';
 import { ProfileAvatar, avatarLabel } from '../ProfileAvatar';
 import type { HomeState } from '../../types';
@@ -18,6 +19,16 @@ export function AccountSettingsModal({ state, controller }: Props) {
   // 로그인 수단 — `null`은 확인 불가(RPC 미배포·네트워크·데모 초기). 그때는
   // 비밀번호가 **있다고 보고** 변경 흐름을 내준다(잠그지 않는다).
   const detail = state.accountDetail; // 같은 모달의 두 번째 화면(계정 설정)
+  // 화면 전환 방향(요청) — 들어갈 때 오른쪽에서, 뒤로 갈 때 왼쪽에서 들어온다.
+  // **처음 열 때는 애니메이션을 걸지 않는다**(카드 자체가 이미 페이드로 뜬다):
+  // `detail`이 실제로 바뀐 순간에만 방향이 정해진다.
+  const prevDetail = useRef(detail);
+  const [dir, setDir] = useState<'fwd' | 'back' | null>(null);
+  if (prevDetail.current !== detail) {
+    prevDetail.current = detail;
+    setDir(detail ? 'fwd' : 'back');
+  }
+  const viewClass = `mf-settings-view${dir ? ` is-${dir}` : ''}`;
   const unknown = state.signin === null;
   const hasPassword = state.signin ? state.signin.hasPassword : true;
   const providers = state.signin?.providers ?? [];
@@ -74,7 +85,7 @@ export function AccountSettingsModal({ state, controller }: Props) {
 
         <div style={{ padding: 24 }}>
           {detail ? (
-            <>
+            <div key="detail" className={viewClass}>
           {/* 이 화면의 부 제목(요청) — 헤더는 '설정'을 지키고 여기서 어느 화면인지 말한다.
               아래 앞쪽 두 줄은 이 계정에 들어오는 **문 목록**이다(한 계정에 수단이 여럿
               붙을 수 있고, 같은 이메일의 Google 신원은 Supabase가 자동 연결한다 — §16.
@@ -227,9 +238,9 @@ export function AccountSettingsModal({ state, controller }: Props) {
             </svg>
           </div>
 
-            </>
+            </div>
           ) : (
-            <>
+            <div key="main" className={viewClass}>
           {/* account */}
           <div style={{ fontSize: 12, fontWeight: 700, color: 'var(--mf-faint)', letterSpacing: '.02em', marginBottom: 10 }}>계정</div>
           {/* Read-only account summary — profile-name editing lives in the profile
@@ -326,7 +337,7 @@ export function AccountSettingsModal({ state, controller }: Props) {
               이용약관
             </a>
           </div>
-            </>
+            </div>
           )}
         </div>
       </div>
