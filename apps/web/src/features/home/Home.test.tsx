@@ -3279,6 +3279,31 @@ describe('전역 검색 (모든 스페이스)', () => {
     expect(container.querySelector('a[data-title="업무 회고"]')).toBeNull();
   });
 
+  // 제보: 회원가입 직후 홈에 들어오면 검색창에 **가입 이메일**이 채워진 채
+  // 검색 결과 화면이 떠 있었다 — 이름·타입이 없는 단독 텍스트 입력을 브라우저가
+  // 이메일 칸으로 짐작해 채워 넣은 것이고, 그 값이 우리 검색 상태로 그대로 들어왔다.
+  it('포커스 없이 채워지는 값(브라우저 자동완성)은 검색으로 받지 않는다', async () => {
+    const user = userEvent.setup();
+    seedTwoSpaces();
+    const { container } = renderHomeWithDocStore([meta('w1', '업무 회고')]);
+    await waitFor(() => expect(container.querySelector('a[data-title="업무 회고"]')).toBeTruthy());
+
+    const input = screen.getByPlaceholderText('모든 스페이스에서 검색') as HTMLInputElement;
+    // 브라우저에도 성격을 밝혀 둔다(자동완성 대상에서 빠지게)
+    expect(input.type).toBe('search');
+    expect(input.getAttribute('autocomplete')).toBe('off');
+    expect(input.getAttribute('name')).toBeTruthy();
+
+    // 제보 재현 — 포커스 없이 값이 도착한다
+    fireEvent.change(input, { target: { value: 'ssasya2@gmail.com' } });
+    expect(input.value).toBe('');
+    expect(container.querySelector('[data-search-results]')).toBeNull();
+
+    // 사람이 직접 치는 것은 그대로
+    await user.type(input, '업무');
+    await waitFor(() => expect(input.value).toBe('업무'));
+  });
+
   it('폴더 이름도 스페이스를 가리지 않고 찾는다 (경로 이름으로)', async () => {
     const user = userEvent.setup();
     seedTwoSpaces();

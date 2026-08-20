@@ -359,3 +359,15 @@
 .mf-noscrollbar::-webkit-scrollbar {
   display: none;
 }
+
+/* 검색 입력의 네이티브 지우기 버튼·장식 제거 — `type="search"`는 브라우저
+   자동완성을 막으려고 붙인 것이고(회원가입 직후 검색창에 이메일이 채워지던 제보),
+   웹킷이 그때 그려 주는 ✕는 우리가 그리는 지우기 버튼과 겹친다. */
+input[type='search']::-webkit-search-cancel-button,
+input[type='search']::-webkit-search-decoration,
+input[type='search']::-webkit-search-results-button,
+input[type='search']::-webkit-search-results-decoration {
+  -webkit-appearance: none;
+  appearance: none;
+  display: none;
+}

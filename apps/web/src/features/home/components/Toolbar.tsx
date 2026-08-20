@@ -261,7 +261,17 @@ export function Toolbar({ state, view, controller, isMobile = false, onOpenNav }
               // 보여 주는 값은 즉시값(`searchInput`) — 적용은 잠깐 뒤에 된다
               // (`setSearch`의 디바운스). Enter/포커스 아웃은 기다리지 않는다.
               value={state.searchInput}
-              onChange={(e) => controller.setSearch(e.target.value)}
+              onChange={(e) => {
+                // 포커스를 쥐고 있을 때만 값을 받는다 — 브라우저·비밀번호 관리자가
+                // 페이지가 뜨는 순간 채워 넣는 값은 포커스 없이 도착한다(자동완성
+                // 이벤트도 trusted라 그것으로는 가릴 수 없다). 사용자가 직접 고른
+                // 자동완성은 그 칸에 포커스가 있으므로 그대로 동작한다.
+                if (document.activeElement !== e.currentTarget) {
+                  e.currentTarget.value = state.searchInput; // 컨트롤드 값으로 되돌린다
+                  return;
+                }
+                controller.setSearch(e.target.value);
+              }}
               onKeyDown={(e) => {
                 if (e.key === 'Enter') controller.flushSearch();
                 if (e.key === 'Escape') controller.setSearch('');
@@ -271,6 +281,17 @@ export function Toolbar({ state, view, controller, isMobile = false, onOpenNav }
               // (결과 화면의 헤더와 스페이스별 묶음이 그것을 다시 확인해 준다).
               placeholder="모든 스페이스에서 검색"
               aria-label="모든 스페이스에서 검색"
+              // 브라우저 자동완성 차단(제보: 회원가입 직후 홈에 들어오면 검색창에
+              // 가입 이메일이 채워진 채 검색 결과 화면이 떠 있었다). 이름·타입·
+              // autocomplete가 하나도 없는 단독 텍스트 입력은 크롬이 "이메일 칸"
+              // 으로 짐작해 방금 쓴 주소를 넣고, 그 입력 이벤트가 우리 검색 상태로
+              // 그대로 들어온다. `type="search"`로 성격을 밝히고 이름을 붙여 준다.
+              type="search"
+              name="mf-home-search"
+              autoComplete="off"
+              autoCorrect="off"
+              autoCapitalize="off"
+              spellCheck={false}
               style={{ border: 'none', outline: 'none', background: 'transparent', fontFamily: 'inherit', fontSize: 12.5, width: '100%', minWidth: 0, color: 'var(--mf-text)' }}
             />
             {!!state.searchInput.trim() && (
