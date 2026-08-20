@@ -43,7 +43,8 @@ export function AccountSettingsModal({ state, controller }: Props) {
         onClick={(e) => e.stopPropagation()}
         style={{ width: 560, maxWidth: 'calc(100vw - 32px)', maxHeight: 'calc(100dvh - 32px)', overflowY: 'auto', background: 'var(--mf-card)', borderRadius: 22, boxShadow: '0 32px 70px -28px rgba(46,42,38,.5)', animation: 'mf-fade .2s ease' }}
       >
-        {/* header — 상세 화면에서는 뒤로 가기와 그 화면 제목을 보여 준다. */}
+        {/* header — 제목은 언제나 '설정'이고(요청), 상세 화면에서는 뒤로 가기가 붙는다.
+            지금 어느 화면인지는 본문 첫 줄의 부 제목('계정 설정')이 말한다. */}
         <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '20px 24px', borderBottom: '1px solid var(--mf-hairline)' }}>
           {detail && (
             <button
@@ -57,7 +58,7 @@ export function AccountSettingsModal({ state, controller }: Props) {
               </svg>
             </button>
           )}
-          <div style={{ fontSize: 19, fontWeight: 800, letterSpacing: '-.02em' }}>{detail ? '계정 설정' : '설정'}</div>
+          <div style={{ fontSize: 19, fontWeight: 800, letterSpacing: '-.02em' }}>설정</div>
           <button
             className="btn mf-ctl"
             aria-label="닫기"
@@ -74,10 +75,11 @@ export function AccountSettingsModal({ state, controller }: Props) {
         <div style={{ padding: 24 }}>
           {detail ? (
             <>
-          {/* 로그인 수단 — 이 계정에 들어오는 **문 목록**이다. 한 계정에 수단이 여럿
-              붙을 수 있고(같은 이메일의 Google 신원은 Supabase가 자동 연결한다 — §16),
-              비밀번호 유무는 신원 목록으로 알 수 없어 서버가 따로 알려 준다(0029). */}
-          <div style={{ fontSize: 12, fontWeight: 700, color: 'var(--mf-faint)', letterSpacing: '.02em', marginBottom: 10 }}>로그인 수단</div>
+          {/* 이 화면의 부 제목(요청) — 헤더는 '설정'을 지키고 여기서 어느 화면인지 말한다.
+              아래 앞쪽 두 줄은 이 계정에 들어오는 **문 목록**이다(한 계정에 수단이 여럿
+              붙을 수 있고, 같은 이메일의 Google 신원은 Supabase가 자동 연결한다 — §16.
+              비밀번호 유무는 신원 목록으로 알 수 없어 서버가 따로 알려 준다 — 0029). */}
+          <div style={{ fontSize: 12, fontWeight: 700, color: 'var(--mf-faint)', letterSpacing: '.02em', marginBottom: 10 }}>계정 설정</div>
           {/* 이메일·비밀번호 — 비밀번호가 걸려 있으면 '변경'(현재 비밀번호로 본인
               확인), 없으면 '설정'(계정 이메일로 코드를 받아 확인). 확인 불가면
               **변경 쪽**으로 둔다: 진짜 게이트는 확인 단계이므로 모르는 채로 항목을
@@ -164,8 +166,8 @@ export function AccountSettingsModal({ state, controller }: Props) {
             </div>
           )}
 
-          {/* 세션·탈퇴 — 로그인 수단과 성격이 다른 묶음이라 제목을 따로 둔다(첨부 이미지). */}
-          <div style={{ fontSize: 12, fontWeight: 700, color: 'var(--mf-faint)', letterSpacing: '.02em', margin: '24px 0 10px' }}>계정 관리</div>
+          {/* 세션·탈퇴 — 제목 없이 이어진다(요청). 성격이 다른 묶음이라 사이만 띄운다. */}
+          <div style={{ height: 10 }} />
           {/* 모든 기기에서 로그아웃(세션 정책 ①) — 이 앱의 세션은 기기 수 제한 없이
               오래 유지되므로(backend.md §15), 기기를 잃거나 공용 PC에 남겨 뒀을 때
               **회수할 수단**이 필요하다. 되돌릴 수 있는 동작이라 제목은 잉크색이고

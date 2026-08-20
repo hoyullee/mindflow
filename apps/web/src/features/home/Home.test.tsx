@@ -1523,6 +1523,13 @@ describe('Home', () => {
     for (const label of ['비밀번호 변경', 'Google 연동', '모든 기기에서 로그아웃', '회원 탈퇴']) {
       expect(within(settingsDialog).getByText(label)).toBeTruthy();
     }
+    // 헤더 제목은 '설정'을 지키고(요청) 어느 화면인지는 본문 부 제목이 말한다.
+    expect(settingsDialog.getAttribute('aria-label')).toBe('설정');
+    expect((settingsDialog.querySelector('div') as HTMLElement).textContent).toContain('설정');
+    expect(within(settingsDialog).getByText('계정 설정')).toBeTruthy();
+    // 묶음 제목은 지웠다(요청)
+    expect(within(settingsDialog).queryByText('로그인 수단')).toBeNull();
+    expect(within(settingsDialog).queryByText('계정 관리')).toBeNull();
 
     await user.click(within(settingsDialog).getByText('회원 탈퇴'));
     const confirmDialog = screen.getByRole('dialog', { name: '회원 탈퇴' });
