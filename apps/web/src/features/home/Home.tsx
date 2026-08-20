@@ -17,6 +17,7 @@ import { AccountSettingsModal } from './components/modals/AccountSettingsModal';
 import { DeleteAccountModal } from './components/modals/DeleteAccountModal';
 import { FeedbackModal } from '../../components/FeedbackModal';
 import { ShareModal } from '../../components/ShareModal';
+import { ChangePasswordModal } from './components/modals/ChangePasswordModal';
 import { ProfileNameModal } from './components/modals/ProfileNameModal';
 import { TemplateGallery } from './components/modals/TemplateGallery';
 import { useHomeController } from './useHomeController';
@@ -167,6 +168,7 @@ export function Home() {
       <AuthModal state={state} controller={controller} />
       <AccountSettingsModal state={state} controller={controller} />
       <ProfileNameModal state={state} controller={controller} />
+      <ChangePasswordModal state={state} controller={controller} />
       <DeleteAccountModal state={state} controller={controller} />
       {/* 피드백(사용자 의견 수집) — LNB 최하단에서 연다. */}
       <FeedbackModal open={state.feedbackOpen} onClose={controller.closeFeedback} page="home" theme={modalTheme} />

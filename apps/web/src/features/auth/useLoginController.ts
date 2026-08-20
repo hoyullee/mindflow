@@ -1,6 +1,9 @@
 import { useEffect, useRef, useState } from 'react';
 import type { KeyboardEvent } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useLocation, useNavigate } from 'react-router-dom';
+import { emailFromIdToken } from './googleIdentity';
+import { GOOGLE_LINK_REFUSED_MESSAGE, googleLinkRefused } from './googleLink';
+import { safeNextPath, takeLoginNotice } from './sessionNotice';
 import { useBackend } from '../../adapters/BackendContext';
 import { initialLoginState, type LoginState } from './types';
 
@@ -59,7 +62,7 @@ function providerLabel(provider: string): string {
  * 원문 노출 대신 일반 안내로 폴백한다. 이미 한글인 메시지(클라이언트 자체 메시지)는
  * 그대로 통과시킨다.
  */
-function localizeAuthError(raw: string | undefined | null): string {
+export function localizeAuthError(raw: string | undefined | null): string {
   const msg = (raw || '').trim();
   if (!msg) return '요청을 처리하지 못했어요. 잠시 후 다시 시도해 주세요.';
   if (/[가-힣]/.test(msg)) return msg; // 이미 한글 → 그대로
@@ -120,6 +123,18 @@ function validEmail(email: string): boolean {
 export function useLoginController() {
   const [state, setState] = useState<LoginState>(initialLoginState);
   const navigate = useNavigate();
+  const location = useLocation();
+  // 세션 만료로 튕겨 온 경우 그 사실과 **돌아갈 자리**를 들고 온다(세션 정책 ②).
+  // `next`는 튕길 때 `RequireAuth`가 실어 보낸 우리 앱 안의 경로다.
+  const nextPath = useRef<string | null>(null);
+  useEffect(() => {
+    nextPath.current = safeNextPath(new URLSearchParams(location.search).get('next'));
+    // 안내는 **한 번만** — 꺼내 오면 표시가 지워진다(같은 문구가 계속 붙어 있지 않게).
+    // 세션 만료와 "Google 연결 거절"(googleLink)이 같은 자리를 쓴다.
+    const notice = takeLoginNotice();
+    if (notice) setState((prev) => ({ ...prev, notice }));
+    // `takeLoginNotice()`가 한 번만 돌려주므로 효과가 다시 돌아도 중복되지 않는다.
+  }, [location.search]);
   const { auth, mode } = useBackend();
   const timerRef = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
 
@@ -172,8 +187,9 @@ export function useLoginController() {
     clearTimeout(timerRef.current);
     timerRef.current = setTimeout(() => {
       // `replace` so a post-login Back can't return to the login screen and
-      // replay its loader/animation.
-      navigate('/home', { replace: true });
+      // replay its loader/animation. 만료로 튕겨 왔다면 **원래 보던 화면**으로
+      // 돌아간다(편집 중이던 맵 주소를 다시 찾지 않게 — 세션 정책 ②).
+      navigate(nextPath.current || '/home', { replace: true });
     }, 1100);
   };
 
@@ -442,13 +458,41 @@ export function useLoginController() {
   const googleTokenLogin = (token: string, nonce?: string) => {
     if (state.busy) return;
     patch({ busy: true, error: '', loaderMsg: '로그인하고 있어요' });
-    void auth.signInWithIdToken('google', token, nonce).then((res) => {
+    void (async () => {
+      // 이미 **비밀번호로 가입된** 이메일이면 교환하지 않고 막는다(제보): Supabase는
+      // 같은 이메일의 Google 신원을 그 계정에 **자동 연결**하므로, 그대로 두면 한
+      // 계정에 로그인 수단이 둘 붙는다(사용자가 만들지 않은 두 번째 출입구).
+      // 이메일 가입 쪽 차단(#340)과 대칭이다 — 각 수단은 상대 방법으로 만든 계정을
+      // 거절한다. 이메일을 못 읽거나(토큰 파싱 실패) 확인 불가(RPC 미배포·네트워크)면
+      // **막지 않는다** — 모르는 채로 로그인을 잠그는 쪽이 더 나쁘다.
+      const email = emailFromIdToken(token);
+      if (email) {
+        const providers = await auth.emailSignInProviders(email);
+        if (providers && providers.includes('email') && !providers.includes('google')) {
+          patch({
+            busy: false,
+            mode: 'login',
+            step: 'form',
+            email,
+            error: '이 이메일은 비밀번호로 가입한 계정이에요. 위에서 비밀번호로 로그인해 주세요.',
+          });
+          return;
+        }
+      }
+      const res = await auth.signInWithIdToken('google', token, nonce);
       if (res.error) {
         patch({ busy: false, error: res.error });
         return;
       }
+      // 안전망: 사전 확인이 통과했더라도(RPC 미배포·확인 불가) 세션이 "이메일 계정에
+      // Google로 들어왔다"고 말하면 거절한다 — 판정 근거는 서버가 채운 app_metadata다.
+      if (googleLinkRefused(res.session?.user)) {
+        await auth.signOut();
+        patch({ busy: false, mode: 'login', step: 'form', error: GOOGLE_LINK_REFUSED_MESSAGE });
+        return;
+      }
       finishWithLoader(false);
-    });
+    })();
   };
 
   const toggleMode = () => {

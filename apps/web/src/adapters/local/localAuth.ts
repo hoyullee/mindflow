@@ -9,7 +9,7 @@
 // the app currently *enforces* auth when running in local mode (see
 // `App.tsx`'s `RequireAuth`), so this is a convenience, not a gate.
 
-import type { AuthChangeListener, AuthProvider, AuthResult, AuthSession } from '../ports';
+import type { AuthChangeListener, AuthProvider, AuthResult, AuthSession, SignOutScope } from '../ports';
 
 const SESSION_KEY = 'mf_demo_session';
 
@@ -93,7 +93,10 @@ export class LocalAuth implements AuthProvider {
     return { session };
   }
 
-  async signOut(): Promise<void> {
+  // 데모 세션은 이 기기에 하나뿐이라 범위(local/global/others)와 무관하게 그
+  // 하나를 지운다 — 포트 계약을 맞추기 위한 인자다(backend.md §15).
+  async signOut(_scope?: SignOutScope): Promise<void> {
+    void _scope;
     writeSession(null);
     this.emit(null);
   }
@@ -126,6 +129,13 @@ export class LocalAuth implements AuthProvider {
   }
 
   async updatePassword(): Promise<{ error?: string }> {
+    return {};
+  }
+
+  // 데모 계정에는 비밀번호 자체가 없다(`signInWithPassword`가 무엇이든 받아 준다) —
+  // 확인할 것이 없으므로 성공으로 넘긴다. 데모에서 설정 흐름을 눌러 볼 수 있게 하는
+  // 게 목적이고, 실제 검증은 Supabase 어댑터가 한다.
+  async changePassword(): Promise<{ error?: string; wrongCurrent?: boolean }> {
     return {};
   }
 

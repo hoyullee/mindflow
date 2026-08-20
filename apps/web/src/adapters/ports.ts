@@ -23,6 +23,11 @@ export interface AuthUser {
   name?: string | null;
   /** Avatar image URL from the identity provider (Google `avatar_url`/`picture`). */
   avatarUrl?: string | null;
+  /** **이번 로그인에 쓴 수단**(Supabase `app_metadata.provider`) — 'email' | 'google' …
+   * 계정에 연결된 수단이 여럿일 때 "무엇으로 들어왔는가"를 구분하는 유일한 값이다. */
+  signInProvider?: string | null;
+  /** 이 계정에 **연결된 수단 전부**(Supabase `app_metadata.providers`). */
+  linkedProviders?: string[];
 }
 
 export interface AuthSession {
@@ -46,6 +51,9 @@ export interface AuthResult {
  * email/password login+signup, Google OAuth, password reset, and (for the
  * demo/local adapter) a stand-in for the original's 6-digit `demoCode` step.
  */
+/** `AuthProvider.signOut`의 범위 — 세션 정책의 유일한 손잡이. */
+export type SignOutScope = 'local' | 'global' | 'others';
+
 export interface AuthProvider {
   getSession(): Promise<AuthSession | null>;
   signInWithPassword(email: string, password: string): Promise<AuthResult>;
@@ -67,7 +75,14 @@ export interface AuthProvider {
    * protection); omit it when the token was requested without one.
    */
   signInWithIdToken(provider: 'google', token: string, nonce?: string): Promise<AuthResult>;
-  signOut(): Promise<void>;
+  /**
+   * 로그아웃 범위(세션 정책 — `server/supabase/docs/backend.md` §15):
+   * - `'local'`(기본) = 이 기기의 세션만. 다른 기기는 그대로 로그인 상태다.
+   * - `'global'` = **모든 기기**의 세션 해지(기기 분실·공용 PC 회수 수단).
+   * - `'others'` = 지금 이 세션만 남기고 나머지 해지(비밀번호 변경 뒤에 쓴다).
+   * 로컬/데모 어댑터는 세션이 하나뿐이라 범위와 무관하게 그 하나를 지운다.
+   */
+  signOut(scope?: SignOutScope): Promise<void>;
   /** Returns an unsubscribe function. */
   onAuthChange(listener: AuthChangeListener): () => void;
   sendPasswordReset(email: string): Promise<{ error?: string }>;
@@ -95,6 +110,18 @@ export interface AuthProvider {
   emailSignInProviders(email: string): Promise<string[] | null>;
   verifyOtp(email: string, token: string, type: 'signup' | 'recovery'): Promise<AuthResult>;
   updatePassword(newPassword: string): Promise<{ error?: string }>;
+  /**
+   * 로그인한 사용자가 **스스로** 비밀번호를 바꾼다(설정 → 비밀번호 변경).
+   *
+   * 복구 흐름의 `updatePassword`와 다른 점은 **현재 비밀번호 확인**이다: Supabase는
+   * 세션만 있으면 비밀번호를 바꿔 주므로, 공용 PC에 남은 로그인으로 남이 비밀번호를
+   * 갈아 계정을 가져가는 것을 막으려면 본인 확인이 필요하다(업계 관례).
+   * 성공하면 `updatePassword`와 같은 규칙으로 **다른 기기의 세션을 해지**한다(§15).
+   *
+   * 오류는 원문(영문)을 그대로 돌려준다 — 문구 번역은 호출부(`localizeAuthError`)가
+   * 맡되, "현재 비밀번호가 틀렸다"는 이 어댑터가 아는 사실이라 전용 코드로 구분한다.
+   */
+  changePassword(currentPassword: string, newPassword: string): Promise<{ error?: string; wrongCurrent?: boolean }>;
   /**
    * Permanently deletes the signed-in user's account and every row they own
    * (documents, workspace, profile) and signs them out. Irreversible. Returns

@@ -99,8 +99,78 @@ export function AccountSettingsModal({ state, controller }: Props) {
             })}
           </div>
 
-          {/* account management (account deletion lives here) */}
+          {/* account management (session revoke + account deletion live here) */}
           <div style={{ fontSize: 12, fontWeight: 700, color: 'var(--mf-faint)', letterSpacing: '.02em', marginBottom: 10 }}>계정 관리</div>
+          {/* 비밀번호 변경 — 예전에는 **로그아웃하고** 로그인 화면의 '비밀번호 찾기'로
+              돌아가야 했다(제보). 현재 비밀번호로 본인을 확인한 뒤 바꾼다.
+              Google로만 가입한 계정에는 바꿀 비밀번호가 없으므로 비활성 + 이유를
+              적는다(감추면 "왜 나만 없지"가 되고, 열어 두면 확인 단계에서 막힌다). */}
+          {(() => {
+            const socialOnly = state.hasPasswordLogin === false;
+            return (
+              <div
+                className={socialOnly ? undefined : 'menu-row'}
+                data-change-pw-row
+                role="button"
+                aria-disabled={socialOnly}
+                tabIndex={socialOnly ? -1 : 0}
+                onClick={socialOnly ? undefined : controller.openChangePassword}
+                onKeyDown={(e) => {
+                  if (socialOnly) return;
+                  if (e.key === 'Enter' || e.key === ' ') {
+                    e.preventDefault();
+                    controller.openChangePassword();
+                  }
+                }}
+                style={{ display: 'flex', alignItems: 'center', gap: 13, padding: '15px 16px', borderRadius: 14, cursor: socialOnly ? 'default' : 'pointer', opacity: socialOnly ? 0.55 : 1 }}
+              >
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="var(--mf-subtext)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true" style={{ flexShrink: 0 }}>
+                  <rect x="3.5" y="10.5" width="17" height="10.5" rx="2.5" />
+                  <path d="M7.5 10.5V7a4.5 4.5 0 0 1 9 0v3.5" />
+                </svg>
+                <div style={{ minWidth: 0 }}>
+                  <div style={{ fontWeight: 700, fontSize: 14.5 }}>비밀번호 변경</div>
+                  <div style={{ fontSize: 12.5, color: 'var(--mf-muted)', marginTop: 2 }}>{socialOnly ? 'Google 계정으로 로그인하고 있어요' : '현재 비밀번호를 확인한 뒤 새 비밀번호로 바꿔요'}</div>
+                </div>
+                {!socialOnly && (
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="var(--mf-faint)" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true" style={{ marginLeft: 'auto', flexShrink: 0 }}>
+                    <path d="m9 6 6 6-6 6" />
+                  </svg>
+                )}
+              </div>
+            );
+          })()}
+
+          {/* 모든 기기에서 로그아웃(세션 정책 ①) — 이 앱의 세션은 기기 수 제한 없이
+              오래 유지되므로(backend.md §15), 기기를 잃거나 공용 PC에 남겨 뒀을 때
+              **회수할 수단**이 필요하다. 되돌릴 수 있는 동작이라 제목은 잉크색이고
+              위험 신호(빨강)는 아래 회원 탈퇴만 쓴다. */}
+          <div
+            className="menu-row"
+            role="button"
+            tabIndex={0}
+            onClick={controller.logoutAllDevices}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter' || e.key === ' ') {
+                e.preventDefault();
+                controller.logoutAllDevices();
+              }
+            }}
+            style={{ display: 'flex', alignItems: 'center', gap: 13, padding: '15px 16px', borderRadius: 14, cursor: 'pointer' }}
+          >
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="var(--mf-subtext)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true" style={{ flexShrink: 0 }}>
+              <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4" />
+              <polyline points="16 17 21 12 16 7" />
+              <line x1="21" y1="12" x2="9" y2="12" />
+            </svg>
+            <div style={{ minWidth: 0 }}>
+              <div style={{ fontWeight: 700, fontSize: 14.5 }}>모든 기기에서 로그아웃</div>
+              <div style={{ fontSize: 12.5, color: 'var(--mf-muted)', marginTop: 2 }}>다른 기기·브라우저의 로그인도 모두 해제돼요</div>
+            </div>
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="var(--mf-faint)" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true" style={{ marginLeft: 'auto', flexShrink: 0 }}>
+              <path d="m9 6 6 6-6 6" />
+            </svg>
+          </div>
           <div
             className="menu-row"
             role="button"

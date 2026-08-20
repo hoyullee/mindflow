@@ -5,7 +5,7 @@
 // live network calls happen just by the module being loaded).
 
 import type { Session, SupabaseClient, User } from '@supabase/supabase-js';
-import type { AuthChangeListener, AuthProvider, AuthResult, AuthSession } from '../ports';
+import type { AuthChangeListener, AuthProvider, AuthResult, AuthSession, SignOutScope } from '../ports';
 
 function mapUser(user: User | null | undefined): AuthSession['user'] | null {
   if (!user) return null;
@@ -14,11 +14,18 @@ function mapUser(user: User | null | undefined): AuthSession['user'] | null {
   // person's real name and photo instead of the email-derived fallback.
   const meta = (user.user_metadata ?? {}) as Record<string, unknown>;
   const str = (v: unknown): string | null => (typeof v === 'string' && v.trim() ? v : null);
+  // `app_metadata`(서버가 채우는 값)의 provider/providers — 이번 로그인 수단과
+  // 계정에 연결된 수단 전부. "이메일로 가입한 계정에 Google로 들어왔다"를 이 둘로
+  // 판정한다(`googleLinkRefused`).
+  const app = (user.app_metadata ?? {}) as Record<string, unknown>;
+  const providers = Array.isArray(app.providers) ? app.providers.filter((p): p is string => typeof p === 'string') : [];
   return {
     id: user.id,
     email: user.email ?? null,
     name: str(meta.full_name) ?? str(meta.name),
     avatarUrl: str(meta.avatar_url) ?? str(meta.picture),
+    signInProvider: str(app.provider),
+    linkedProviders: providers,
   };
 }
 
@@ -95,8 +102,10 @@ export class SupabaseAuth implements AuthProvider {
     return { session: mapSession(data.session) };
   }
 
-  async signOut(): Promise<void> {
-    await this.client.auth.signOut();
+  // 범위는 세션 정책의 유일한 손잡이(backend.md §15): 기본은 이 기기만,
+  // 'global'은 모든 기기(분실·공용 PC 회수), 'others'는 지금 세션만 남긴다.
+  async signOut(scope: SignOutScope = 'local'): Promise<void> {
+    await this.client.auth.signOut(scope === 'local' ? undefined : { scope });
   }
 
   onAuthChange(listener: AuthChangeListener): () => void {
@@ -135,9 +144,34 @@ export class SupabaseAuth implements AuthProvider {
     return { session: mapSession(data.session) };
   }
 
+  // 비밀번호를 바꾸면 **다른 기기의 세션을 해지한다**(계정을 되찾는 흐름의 마지막
+  // 조각 — 옛 비밀번호로 들어와 있던 세션이 그대로 남으면 바꾼 의미가 없다).
+  // 지금 세션은 'others'라 살아남으므로 사용자는 계속 쓴다. 해지가 실패해도
+  // 비밀번호 변경은 이미 성공했으므로 오류로 만들지 않는다(조용히 넘어간다).
   async updatePassword(newPassword: string): Promise<{ error?: string }> {
     const { error } = await this.client.auth.updateUser({ password: newPassword });
-    return error ? { error: error.message } : {};
+    if (error) return { error: error.message };
+    try {
+      await this.client.auth.signOut({ scope: 'others' });
+    } catch {
+      /* 다른 세션 해지 실패 — 비밀번호는 이미 바뀌었다 */
+    }
+    return {};
+  }
+
+  // 설정 → 비밀번호 변경: **현재 비밀번호로 본인을 확인한 뒤** 바꾼다.
+  //
+  // 확인은 같은 계정으로 `signInWithPassword`를 한 번 더 하는 방식이다(성공하면
+  // 같은 사용자의 새 세션이 되므로 사용자에게는 아무 일도 일어나지 않고, 실패하면
+  // 지금 세션은 그대로 남는다). Supabase에 "비밀번호만 검증" API가 없어서다.
+  // 성공 뒤는 `updatePassword`에 위임 — 다른 기기 세션 해지 규칙(§15)이 한 곳에 있다.
+  async changePassword(currentPassword: string, newPassword: string): Promise<{ error?: string; wrongCurrent?: boolean }> {
+    const { data } = await this.client.auth.getUser();
+    const email = data?.user?.email;
+    if (!email) return { error: 'Auth session missing' };
+    const { error: signInError } = await this.client.auth.signInWithPassword({ email, password: currentPassword });
+    if (signInError) return { wrongCurrent: true, error: signInError.message };
+    return this.updatePassword(newPassword);
   }
 
   // The anon/authenticated client can't touch `auth.users`, so account deletion

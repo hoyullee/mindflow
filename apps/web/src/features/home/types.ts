@@ -154,6 +154,21 @@ export interface HomeState {
   /** Draft name in that popup — committed to `userName` on 변경, discarded on 취소. */
   profileNameDraft: string;
   confirmLogout: boolean;
+  /** '모든 기기에서 로그아웃' 확인창 — 다른 기기의 세션까지 해지한다(세션 정책 ①). */
+  confirmLogoutAll: boolean;
+  /** 비밀번호 변경 모달(설정 → 계정 관리). 현재 비밀번호로 본인을 확인한 뒤 바꾼다. */
+  changePwOpen: boolean;
+  changePwCur: string;
+  changePwNew: string;
+  changePwNew2: string;
+  changePwError: string;
+  changePwBusy: boolean;
+  /** 변경 성공 — 모달이 완료 화면으로 바뀐다(다른 기기 로그인 해제 사실까지 알린다). */
+  changePwDone: boolean;
+  /** 이 계정이 비밀번호로 로그인하는가 — `null`은 아직 확인 중/확인 불가.
+   * Google로만 가입한 계정에는 바꿀 비밀번호가 없어 항목을 비활성으로 둔다
+   * (감추면 "왜 나만 없지"가 되고, 열어 두면 확인 단계에서 이유 없이 막힌다). */
+  hasPasswordLogin: boolean | null;
   /** The 설정 (account settings) modal, opened from the profile popover. Hosts
    * the 회원 탈퇴 entry. */
   accountSettingsOpen: boolean;
@@ -340,6 +355,15 @@ export function initialHomeState(): HomeState {
     profileNameOpen: false,
     profileNameDraft: '',
     confirmLogout: false,
+    confirmLogoutAll: false,
+    changePwOpen: false,
+    changePwCur: '',
+    changePwNew: '',
+    changePwNew2: '',
+    changePwError: '',
+    changePwBusy: false,
+    changePwDone: false,
+    hasPasswordLogin: null,
     accountSettingsOpen: false,
     feedbackOpen: false,
     templateOpen: false,
