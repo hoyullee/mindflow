@@ -20,6 +20,12 @@ const DRAWER_EXIT_MS = 280;
  */
 const SHOW_DRIVE_LNB = false;
 
+/** LNB 구획 구분선 — 세 줄(스페이스↔즐겨찾기 / 공유받음↔휴지통 / 피드백 위)이
+ * **같은 값**을 쓴다. 굵기가 달라 보인다는 제보의 원인은 `flexShrink`였다: 기본값
+ * 1이면 세로 공간이 빠듯할 때 1px 선이 0.x px로 눌려 더 옅게 그려진다(사이드바는
+ * flex 열이다). 눌리지 않게 0으로 못박는다 — 선은 줄어들 수 있는 여백이 아니다. */
+const LNB_DIVIDER = { height: 1, background: 'var(--mf-border-soft)', flexShrink: 0 } as const;
+
 interface Props {
   state: HomeState;
   view: HomeViewModel;
@@ -205,7 +211,7 @@ export function Sidebar({ state, view, controller, isMobile = false, isOpen = fa
         </div>
       )}
 
-      <div style={{ height: 1, background: 'var(--mf-border-soft)', margin: '12px 4px' }} />
+      <div data-lnb-divider style={{ ...LNB_DIVIDER, margin: '12px 4px' }} />
 
       <div
         className="nav-item"
@@ -396,7 +402,7 @@ export function Sidebar({ state, view, controller, isMobile = false, isOpen = fa
 
 
       {/* 공유받음(남의 문서)과 휴지통(지운 내 문서)은 성격이 다른 묶음이라 선으로 가른다(요청). */}
-      <div style={{ height: 1, background: 'var(--mf-border-soft)', margin: '12px 4px', flexShrink: 0 }} />
+      <div data-lnb-divider style={{ ...LNB_DIVIDER, margin: '12px 4px' }} />
 
       <div
         className="nav-item mf-trash-head"
@@ -508,7 +514,7 @@ export function Sidebar({ state, view, controller, isMobile = false, isOpen = fa
           모자라면 휴지통 아래로 자연히 이어진다). 색상 테마는 여기 있다가
           사용자 요청으로 설정 모달(`AccountSettingsModal`)로 옮겼다. */}
       <div style={{ marginTop: 'auto', flexShrink: 0, paddingTop: 8 }}>
-        <div style={{ height: 1, background: 'var(--mf-border-soft)', margin: '0 4px 8px' }} />
+        <div data-lnb-divider style={{ ...LNB_DIVIDER, margin: '0 4px 8px' }} />
 
         <div
           className="nav-item"

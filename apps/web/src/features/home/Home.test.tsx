@@ -5082,6 +5082,16 @@ describe('홈 리디자인 계약', () => {
       return after && before;
     });
     expect(between.some((el) => (el as HTMLElement).style.height === '1px')).toBe(true);
+    // 세 구분선(스페이스↔즐겨찾기 / 공유받음↔휴지통 / 피드백 위)은 **같은 값**이다
+    // (제보: 굵기가 달라 보였다 — 원인은 flexShrink였다. 선은 눌리는 여백이 아니다).
+    const lines = [...aside.querySelectorAll('[data-lnb-divider]')] as HTMLElement[];
+    expect(lines.length).toBeGreaterThanOrEqual(2);
+    for (const el of lines) {
+      const st = el.style;
+      expect(st.height).toBe('1px');
+      expect(st.background).toContain('--mf-border-soft');
+      expect(st.flexShrink).toBe('0');
+    }
     // 스페이스 목록은 내용 높이만 쓴다 — 하나일 때 '새 스페이스'와의 빈칸이 벌어지던 원인
     expect(parseFloat((aside.querySelector('.lnb-scroll') as HTMLElement).style.minHeight)).toBe(0);
 
