@@ -258,6 +258,7 @@ export function Toolbar({ state, view, controller, isMobile = false, onOpenNav }
               </svg>
             </span>
             <input
+              className="mf-search-input"
               // 보여 주는 값은 즉시값(`searchInput`) — 적용은 잠깐 뒤에 된다
               // (`setSearch`의 디바운스). Enter/포커스 아웃은 기다리지 않는다.
               value={state.searchInput}

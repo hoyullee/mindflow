@@ -163,6 +163,7 @@ export function SearchBar({ controller }: { controller: EditorController }) {
           <line x1="10" y1="10" x2="13.6" y2="13.6" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" />
         </svg>
         <input
+          className="mf-search-input"
           ref={inputRef}
           value={query}
           onChange={(e) => setQuery(e.target.value)}

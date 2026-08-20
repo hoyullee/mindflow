@@ -4834,6 +4834,24 @@ describe('홈 리디자인 계약', () => {
     expect((createBtn as HTMLElement).style.background).toContain('linear-gradient');
   });
 
+  // 제보: 프리뷰의 홈 검색창 안쪽이 파랗게 칠해졌다 — 크롬이 이 칸을 계속
+  // 자동완성 대상으로 표시해 `#e8f0fe` 배경을 칠한 것이다(값은 포커스 게이트가
+  // 되돌리므로 실제로 채워지지 않는다). jsdom은 `:-webkit-autofill`을 만들 수 없어
+  // 규칙 자체를 고정한다(#391과 같은 처방).
+  it('검색창은 자동완성 배경을 지운다 (홈·에디터 같은 규칙)', () => {
+    for (const path of ['src/features/home/home.css', 'src/features/editor/editor.css']) {
+      const css = readFileSync(resolve(path), 'utf8');
+      const i = css.indexOf('.mf-search-input:-webkit-autofill');
+      expect(i).toBeGreaterThan(-1);
+      const rule = css.slice(i, css.indexOf('}', i));
+      // 배경을 글자 모양으로 잘라 사실상 보이지 않게 한다(주변 색을 몰라도 성립).
+      expect(rule).toContain('background-clip: text');
+      expect(rule).toContain('-webkit-text-fill-color');
+      // 크롬이 배경을 애니메이션으로 되돌리는 것도 막는다.
+      expect(rule).toMatch(/transition: background-color \d{3,}s/);
+    }
+  });
+
   it('마우스 오버 애니메이션 — 카드가 3px 떠오르고 그늘·경계가 바뀐다(CSS 계약)', () => {
     // jsdom은 :hover를 렌더하지 않으므로 규칙 자체를 읽어 고정한다(#391과 같은 처방).
     const css = readFileSync(resolve('src/features/home/home.css'), 'utf8');
