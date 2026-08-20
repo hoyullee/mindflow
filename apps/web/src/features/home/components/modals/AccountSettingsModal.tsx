@@ -1,4 +1,4 @@
-import { useRef, useState } from 'react';
+import { useLayoutEffect, useRef, useState } from 'react';
 import type { HomeController } from '../../useHomeController';
 import { ProfileAvatar, avatarLabel } from '../ProfileAvatar';
 import type { HomeState } from '../../types';
@@ -22,13 +22,46 @@ export function AccountSettingsModal({ state, controller }: Props) {
   // 화면 전환 방향(요청) — 들어갈 때 오른쪽에서, 뒤로 갈 때 왼쪽에서 들어온다.
   // **처음 열 때는 애니메이션을 걸지 않는다**(카드 자체가 이미 페이드로 뜬다):
   // `detail`이 실제로 바뀐 순간에만 방향이 정해진다.
+  const bodyRef = useRef<HTMLDivElement | null>(null);
+  const fromH = useRef<number | null>(null);
   const prevDetail = useRef(detail);
   const [dir, setDir] = useState<'fwd' | 'back' | null>(null);
   if (prevDetail.current !== detail) {
     prevDetail.current = detail;
+    // 아직 커밋 전 — 여기서 잰 높이가 '바뀌기 전' 높이다(아래 layout effect가 쓴다).
+    const box = bodyRef.current?.getBoundingClientRect();
+    fromH.current = box ? Math.round(box.height) : null;
     setDir(detail ? 'fwd' : 'back');
   }
   const viewClass = `mf-settings-view${dir ? ` is-${dir}` : ''}`;
+  // 높이 잇기 — 바뀌기 **전** 높이는 렌더 단계에서 잡는다(그때 DOM은 아직 이전
+  // 화면이다). 커밋 뒤에 재면 이미 새 화면이라 시작값이 목표값과 같아져 아무 일도
+  // 일어나지 않는다(뒤로 갈 때 높이가 툭 튀던 원인). 진행 중 반전도 자연스럽게
+  // 이어지도록 콘텐츠 높이가 아니라 **지금 보이는 상자 높이**를 잡는다.
+  useLayoutEffect(() => {
+    const el = bodyRef.current;
+    const from = fromH.current;
+    fromH.current = null;
+    if (!el || !visible || from === null) return;
+    const next = el.scrollHeight;
+    const reduce = typeof window !== 'undefined' && window.matchMedia?.('(prefers-reduced-motion: reduce)').matches;
+    if (from === next || reduce) return;
+    el.style.overflow = 'hidden';
+    el.style.height = `${from}px`;
+    void el.offsetHeight; // 강제 리플로우 — 시작 값을 확정한 뒤 목표로 보낸다
+    el.style.transition = 'height .24s cubic-bezier(.4,0,.2,1)';
+    el.style.height = `${next}px`;
+    const release = () => {
+      el.style.height = '';
+      el.style.transition = '';
+      el.style.overflow = '';
+    };
+    const timer = setTimeout(release, 280);
+    return () => {
+      clearTimeout(timer);
+      release();
+    };
+  }, [detail, visible]);
   const unknown = state.signin === null;
   const hasPassword = state.signin ? state.signin.hasPassword : true;
   const providers = state.signin?.providers ?? [];
@@ -83,7 +116,12 @@ export function AccountSettingsModal({ state, controller }: Props) {
           </button>
         </div>
 
-        <div style={{ padding: 24 }}>
+        {/* 본문 — 두 화면의 높이가 크게 달라서(첫 화면엔 테마 격자까지) 전환 때
+            카드가 툭 줄었다 늘었다 한다. 그 높이도 부드럽게 잇는다(요청):
+            바뀌기 전 높이로 고정 → 새 높이로 트랜지션 → 끝나면 auto로 되돌린다
+            (`auto`는 전이되지 않으므로 실제 값을 재서 잇는 수밖에 없고, 끝나고
+            풀어 줘야 안쪽에서 오류 문구가 늘어나는 것 같은 변화가 다시 살아난다). */}
+        <div ref={bodyRef} data-settings-body style={{ padding: 24 }}>
           {detail ? (
             <div key="detail" className={viewClass}>
           {/* 이 화면의 부 제목(요청) — 헤더는 '설정'을 지키고 여기서 어느 화면인지 말한다.

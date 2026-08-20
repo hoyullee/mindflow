@@ -1539,8 +1539,14 @@ describe('Home', () => {
     // 묶음 제목은 지웠다(요청)
     expect(within(settingsDialog).queryByText('로그인 수단')).toBeNull();
     expect(within(settingsDialog).queryByText('계정 관리')).toBeNull();
+    // 카드 높이도 이어 준다(요청) — 실제 전이는 실브라우저에서 재고, 여기서는
+    // 본문 래퍼가 있고 전환 뒤 인라인 높이가 **남지 않는지**를 지킨다(남으면 안쪽
+    // 오류 문구가 늘어나도 상자가 안 늘어난다).
+    const body = settingsDialog.querySelector('[data-settings-body]') as HTMLElement;
+    expect(body).toBeTruthy();
     await user.click(within(settingsDialog).getByRole('button', { name: '뒤로' }));
     expect(view().className).toContain('is-back');
+    expect(body.style.height).toBe('');
     await user.click(settingsDialog.querySelector('[data-account-detail-row]') as HTMLElement); // 흐름 계속
 
     await user.click(within(settingsDialog).getByText('회원 탈퇴'));
