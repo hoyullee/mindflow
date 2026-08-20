@@ -19,7 +19,17 @@ export function AccountSettingsModal({ state, controller }: Props) {
   // 비밀번호가 **있다고 보고** 변경 흐름을 내준다(잠그지 않는다).
   const unknown = state.signin === null;
   const hasPassword = state.signin ? state.signin.hasPassword : true;
-  const googleLinked = !!state.signin?.providers.includes('google');
+  const providers = state.signin?.providers ?? [];
+  const googleLinked = providers.includes('google');
+  // 해제를 막는 이유는 **둘이고 서로 다르다**(제보: 한 문장에 두 이유가 섞여 어느
+  // 쪽인지 알 수 없었다).
+  //  ① 서버 규칙 — Supabase는 신원(identity)을 최소 하나 요구한다. Google이 유일한
+  //     신원이면 `single_identity_not_deletable`로 거절한다. **비밀번호를 설정해도
+  //     신원은 늘지 않는다**(비밀번호는 신원이 아니다) → 그때는 해제 자체가 불가.
+  //  ② 우리 규칙 — 다른 신원은 있지만 비밀번호가 없다면 해제해도 들어올 길이 없다
+  //     (이 앱에는 메일 코드 로그인이 없다) → 비밀번호를 먼저 설정하게 한다.
+  const otherIdentity = providers.some((p) => p !== 'google');
+  const unlinkBlock: 'lastIdentity' | 'noPassword' | null = !googleLinked ? null : !otherIdentity ? 'lastIdentity' : !hasPassword ? 'noPassword' : null;
 
   return (
     <div
@@ -142,8 +152,8 @@ export function AccountSettingsModal({ state, controller }: Props) {
               <path d="m9 6 6 6-6 6" />
             </svg>
           </div>
-          {/* Google — 연결/해제. 해제는 **비밀번호가 있을 때만** 내준다: 유일한
-              수단을 떼면 계정에 들어올 길이 사라진다(그때는 부제가 그 이유를 말한다). */}
+          {/* Google — 연결/해제. 해제가 막히는 두 이유(`unlinkBlock`)를 부제가
+              **각각** 말한다 — 무엇을 해야 풀리는지가 이유마다 다르다. */}
           <div
             data-google-link-row
             style={{ display: 'flex', alignItems: 'center', gap: 13, padding: '15px 16px', borderRadius: 14 }}
@@ -156,18 +166,20 @@ export function AccountSettingsModal({ state, controller }: Props) {
               <div style={{ fontSize: 12.5, color: 'var(--mf-muted)', marginTop: 2 }}>
                 {unknown
                   ? '연결 상태를 확인할 수 없어요'
-                  : googleLinked
-                    ? hasPassword
-                      ? 'Google 계정으로도 로그인할 수 있어요'
-                      : '비밀번호를 설정하면 연결을 해제할 수 있어요'
-                    : '연결하면 Google 계정으로도 로그인할 수 있어요'}
+                  : !googleLinked
+                    ? '연결하면 Google 계정으로도 로그인할 수 있어요'
+                    : unlinkBlock === 'lastIdentity'
+                      ? 'Google이 이 계정의 유일한 로그인 수단이라 해제할 수 없어요'
+                      : unlinkBlock === 'noPassword'
+                        ? '비밀번호를 먼저 설정해 주세요'
+                        : 'Google 계정으로도 로그인할 수 있어요'}
               </div>
             </div>
             <button
               type="button"
               className="btn mf-ctl"
               data-google-link-action
-              disabled={unknown || state.signinBusy || (googleLinked && !hasPassword)}
+              disabled={unknown || state.signinBusy || unlinkBlock !== null}
               onClick={googleLinked ? controller.askUnlinkGoogle : controller.linkGoogleAccount}
               style={{
                 marginLeft: 'auto',
@@ -181,8 +193,8 @@ export function AccountSettingsModal({ state, controller }: Props) {
                 fontFamily: 'inherit',
                 fontSize: 13,
                 fontWeight: 700,
-                cursor: unknown || state.signinBusy || (googleLinked && !hasPassword) ? 'default' : 'pointer',
-                opacity: unknown || state.signinBusy || (googleLinked && !hasPassword) ? 0.5 : 1,
+                cursor: unknown || state.signinBusy || unlinkBlock !== null ? 'default' : 'pointer',
+                opacity: unknown || state.signinBusy || unlinkBlock !== null ? 0.5 : 1,
               }}
             >
               {googleLinked ? '연결 해제' : '연결'}

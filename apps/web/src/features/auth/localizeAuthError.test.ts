@@ -15,10 +15,13 @@ describe('localizeAuthError — 로그인 수단 연동(backend.md §16)', () =>
     expect(localizeAuthError('Identity is already linked to another user')).toContain('이미 다른 계정');
   });
 
-  it('마지막 수단은 해제할 수 없다는 것도 이유까지 말한다', () => {
+  it('마지막 수단은 해제할 수 없다 — 비밀번호를 권하지 않는다(신원이 늘지 않는다)', () => {
     const msg = localizeAuthError('User must have at least 1 identity after unlinking');
     expect(msg).toContain('마지막 로그인 수단');
-    expect(msg).toContain('비밀번호');
+    // 서버는 신원(identity) 개수를 센다 — 비밀번호 설정은 이 거절을 풀지 못하므로
+    // 그 조언을 여기 담으면 사용자를 헛수고하게 만든다(제보: 두 이유가 섞였다).
+    expect(msg).not.toContain('비밀번호');
+    expect(msg).toContain('다른 로그인 수단');
   });
 
   it('모르는 오류는 여전히 일반 안내로 덮는다(영문 노출 방지)', () => {

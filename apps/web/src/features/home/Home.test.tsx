@@ -1624,7 +1624,7 @@ describe('Home', () => {
     const unlink = container.querySelector('[data-google-link-action]') as HTMLButtonElement;
     expect(unlink.textContent).toContain('연결 해제');
     expect(unlink.disabled).toBe(true);
-    expect((container.querySelector('[data-google-link-row]') as HTMLElement).textContent).toContain('비밀번호를 설정하면');
+    expect((container.querySelector('[data-google-link-row]') as HTMLElement).textContent).toContain('유일한 로그인 수단');
 
     // 모달을 열면 곧바로 코드를 보낸다
     await user.click(row);
@@ -1680,6 +1680,40 @@ describe('Home', () => {
     expect(document.activeElement).toBe(pw);
     expect(pw.value).toBe('newpw'); // 튀었다면 글자가 코드 칸으로 흘렀다
     expect((code as HTMLInputElement).value).toBe('');
+  });
+
+  // 제보: 비밀번호를 설정한 뒤에도 해제가 막히는데 문구가 "마지막 로그인 수단은
+  // 해제할 수 없어요. 비밀번호를 먼저 설정해 주세요."라 **두 이유가 섞여** 어느
+  // 쪽인지 알 수 없었다. 두 상황은 조건도 해법도 다르다:
+  //  ① 신원이 Google 하나뿐 → 서버가 거절한다(비밀번호를 설정해도 신원은 안 늘어난다)
+  //  ② 신원은 둘인데 비밀번호가 없다 → 우리 규칙(해제하면 들어올 길이 없다)
+  it.each([
+    [{ hasPassword: true, providers: ['google'] }, '유일한 로그인 수단', '비밀번호를 먼저'],
+    [{ hasPassword: false, providers: ['google', 'email'] }, '비밀번호를 먼저 설정', '유일한 로그인 수단'],
+  ])('Google 해제가 막히는 이유를 상황별로 말한다 (%o)', async (methods, expected, notExpected) => {
+    const user = userEvent.setup();
+    const auth = new LocalAuth();
+    vi.spyOn(auth, 'signinMethods').mockResolvedValue(methods as never);
+    const backend: Backend = { auth, docStore: new MockDocStore([], {}), spaceStore: new LocalSpaceStore(), shareStore: new LocalShareStore(), feedbackStore: new LocalFeedbackStore(), imageStore: new LocalImageStore(), commentStore: new LocalCommentStore(), notificationStore: new LocalNotificationStore(), mode: 'local' };
+    localStorage.setItem('mf_demo_session', JSON.stringify({ user: { id: 'u1', email: 'me@gmail.com' } }));
+    const { container } = render(
+      <MemoryRouter initialEntries={['/home']}>
+        <BackendProvider backend={backend}>
+          <Routes>
+            <Route path="/home" element={<Home />} />
+          </Routes>
+        </BackendProvider>
+      </MemoryRouter>,
+    );
+    await user.click(await screen.findByRole('button', { name: '계정 메뉴' }));
+    await user.click(screen.getByRole('button', { name: '설정' }));
+    const row = await waitFor(() => {
+      const el = container.querySelector('[data-google-link-row]') as HTMLElement;
+      expect(el.textContent).toContain(expected);
+      return el;
+    });
+    expect(row.textContent).not.toContain(notExpected); // 두 이유가 섞이지 않는다
+    expect((container.querySelector('[data-google-link-action]') as HTMLButtonElement).disabled).toBe(true);
   });
 
   it('코드가 틀리면 그 자리에서 말한다 (설정은 되지 않는다)', async () => {

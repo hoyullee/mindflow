@@ -106,7 +106,10 @@ export function localizeAuthError(raw: string | undefined | null): string {
     return '이미 다른 계정에 연결된 Google 계정이에요. 다른 계정을 골라 주세요.';
   }
   if (low.includes('single_identity_not_deletable') || low.includes('at least 1 identity')) {
-    return '마지막 로그인 수단은 해제할 수 없어요. 비밀번호를 먼저 설정해 주세요.';
+    // 서버는 **신원(identity)** 개수를 센다 — 비밀번호를 설정해도 신원은 늘지 않으므로
+    // "비밀번호를 먼저 설정하라"는 조언은 이 거절을 풀지 못한다(그 조언은 화면의
+    // 다른 경우, 즉 신원은 둘인데 비밀번호가 없을 때만 맞다).
+    return '마지막 로그인 수단은 해제할 수 없어요. 다른 로그인 수단을 먼저 연결해 주세요.';
   }
 
   // 그 외: 영문 노출 방지용 일반 안내
