@@ -5071,6 +5071,20 @@ describe('홈 리디자인 계약', () => {
     expect(fav.compareDocumentPosition(shared) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
     expect(shared.compareDocumentPosition(trash) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
 
+    // 공유받음도 즐겨찾기·휴지통처럼 **접힌 채** 시작한다(요청)
+    expect(shared.closest('[aria-expanded]')?.getAttribute('aria-expanded')).toBe('false');
+    // 공유받음과 휴지통 사이에는 구분선이 있다(요청) — 성격이 다른 묶음이다
+    const sharedRow = shared.closest('.nav-item') as HTMLElement;
+    const trashRow = trash.closest('.nav-item') as HTMLElement;
+    const between = [...aside.children].filter((el) => {
+      const after = sharedRow.compareDocumentPosition(el) & Node.DOCUMENT_POSITION_FOLLOWING;
+      const before = trashRow.compareDocumentPosition(el) & Node.DOCUMENT_POSITION_PRECEDING;
+      return after && before;
+    });
+    expect(between.some((el) => (el as HTMLElement).style.height === '1px')).toBe(true);
+    // 스페이스 목록은 내용 높이만 쓴다 — 하나일 때 '새 스페이스'와의 빈칸이 벌어지던 원인
+    expect(parseFloat((aside.querySelector('.lnb-scroll') as HTMLElement).style.minHeight)).toBe(0);
+
     await user.click(shared);
     const panel = await waitFor(() => {
       const el = within(aside).getByText('공유받은 항목이 없습니다').parentElement as HTMLElement;

@@ -137,7 +137,10 @@ export function Sidebar({ state, view, controller, isMobile = false, isOpen = fa
 
       <div style={{ ...SECTION_LABEL, padding: '14px 9px 7px' }}>스페이스</div>
 
-      <div className="lnb-scroll" style={{ flex: '0 1 auto', minHeight: 60, overflowY: 'auto', overflowX: 'hidden', margin: '0 -4px', padding: '0 4px' }}>
+      {/* 목록 높이는 **내용이 정한다** — 예전에는 `minHeight: 60`이라 스페이스가
+          하나일 때(행 ~40px) 남는 20px이 '새 스페이스'와의 빈칸으로 보였다(제보:
+          둘일 때보다 간격이 넓다). 넘칠 때 스크롤되는 것은 그대로다. */}
+      <div className="lnb-scroll" style={{ flex: '0 1 auto', minHeight: 0, overflowY: 'auto', overflowX: 'hidden', margin: '0 -4px', padding: '0 4px' }}>
         {/* Until the workspace loads (`state.loaded`), show skeleton rows instead
             of the seed spaces — otherwise the default 일반 스페이스 flashes before the
             user's real space list arrives (matches the map grid's skeleton). */}
@@ -391,6 +394,9 @@ export function Sidebar({ state, view, controller, isMobile = false, isOpen = fa
         </>
       )}
 
+
+      {/* 공유받음(남의 문서)과 휴지통(지운 내 문서)은 성격이 다른 묶음이라 선으로 가른다(요청). */}
+      <div style={{ height: 1, background: 'var(--mf-border-soft)', margin: '12px 4px', flexShrink: 0 }} />
 
       <div
         className="nav-item mf-trash-head"
