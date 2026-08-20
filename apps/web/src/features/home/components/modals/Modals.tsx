@@ -187,6 +187,29 @@ export function Modals({ state, controller }: Props) {
         onCancel={controller.cancelLogoutAll}
         onConfirm={controller.confirmLogoutAllYes}
       />
+
+      {/* Google 연결 해제 — 되돌릴 수 있지만(다시 연결하면 된다) 출입구가 하나
+          사라지므로 한 번 묻는다. 비밀번호가 없으면 행 자체가 눌리지 않으니
+          여기까지 오지 않는다(그 경우 계정에 들어올 길이 없어진다). */}
+      <ConfirmModal
+        visible={state.confirmUnlinkGoogle}
+        zIndex={160}
+        iconBg="var(--mf-danger-soft)"
+        icon={
+          <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="var(--mf-danger)" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round">
+            <path d="M9.5 14.5 5.7 18.3a3.5 3.5 0 0 1-4.9-5l3.8-3.8" />
+            <path d="M14.5 9.5l3.8-3.8a3.5 3.5 0 0 1 4.9 5l-3.8 3.8" />
+            <line x1="9" y1="15" x2="15" y2="9" />
+          </svg>
+        }
+        heading="Google 연결을 해제할까요?"
+        body="앞으로 Google 계정으로는 로그인할 수 없어요. 이메일과 비밀번호로 로그인하면 되고, 언제든 다시 연결할 수 있어요."
+        cancelLabel="취소"
+        confirmLabel="연결 해제"
+        confirmColor="var(--mf-danger)"
+        onCancel={controller.cancelUnlinkGoogle}
+        onConfirm={controller.confirmUnlinkGoogleYes}
+      />
     </>
   );
 }

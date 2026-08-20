@@ -1,8 +1,7 @@
 import { useEffect, useState, type ReactNode } from 'react';
 import { BrowserRouter, Navigate, Route, Routes, useLocation } from 'react-router-dom';
 import { Login } from './features/auth/Login';
-import { forgetSignedIn, hadSession, loginUrlWithNext, noteLoginNotice, noteSessionExpired, rememberSignedIn } from './features/auth/sessionNotice';
-import { GOOGLE_LINK_REFUSED_MESSAGE, googleLinkRefused } from './features/auth/googleLink';
+import { hadSession, loginUrlWithNext, noteSessionExpired, rememberSignedIn } from './features/auth/sessionNotice';
 import type { AuthSession } from './adapters/ports';
 import { Home } from './features/home/Home';
 import { Editor } from './features/editor/Editor';
@@ -17,8 +16,8 @@ import { UpdatePrompt } from './pwa/UpdatePrompt';
 // real backend (Supabase) is configured. In local/demo mode (no env vars,
 // the default for a plain checkout/CI) the guard is a no-op, so the app
 // behaves exactly as before M4.
-/** 인증 문지기 — 테스트에서 직접 렌더할 수 있게 export한다(Google 연결 거절 경로는
- * supabase 모드에서만 도는데, `App`은 자기 `BackendProvider`를 들고 있어 주입이 안 된다). */
+/** 인증 문지기 — 테스트에서 직접 렌더할 수 있게 export한다(supabase 모드에서만
+ * 도는 경로가 있고, `App`은 자기 `BackendProvider`를 들고 있어 주입이 안 된다). */
 export function RequireAuth({ children }: { children: ReactNode }) {
   const backend = useBackend();
   const location = useLocation();
@@ -29,19 +28,6 @@ export function RequireAuth({ children }: { children: ReactNode }) {
     let cancelled = false;
     const apply = (session: AuthSession | null): void => {
       if (cancelled) return;
-      // 리다이렉트 방식 Google 로그인(`signInWithOAuth`)은 돌아온 시점에 이미 세션이
-      // 있으므로 **사전 확인이 불가능하다** — 여기가 그 경로를 볼 수 있는 유일한
-      // 자리다. "이메일로 가입한 계정에 Google로 들어왔다"면 로그아웃시키고 로그인
-      // 화면으로 돌려보낸다(규칙·문구는 GIS 경로와 같은 `googleLink`).
-      if (session && googleLinkRefused(session.user)) {
-        // 순서 주의: `forgetSignedIn()`이 안내 채널까지 비우므로(같은 저장소) 마커를
-        // 먼저 지우고 안내를 남긴다 — 반대로 하면 방금 남긴 문구가 사라진다.
-        forgetSignedIn(); // 의도적 로그아웃 — 다음 방문에 "만료" 안내가 뜨지 않게
-        noteLoginNotice(GOOGLE_LINK_REFUSED_MESSAGE);
-        void backend.auth.signOut();
-        setStatus('anon');
-        return;
-      }
       if (session) {
         // 이 기기에서 로그인한 적이 있다고 기억한다 — 나중에 세션이 사라졌을 때
         // "처음부터 로그아웃"과 "만료"를 가르는 근거다(sessionNotice).

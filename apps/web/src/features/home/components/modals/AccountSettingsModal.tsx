@@ -2,6 +2,7 @@ import type { HomeController } from '../../useHomeController';
 import { ProfileAvatar, avatarLabel } from '../ProfileAvatar';
 import type { HomeState } from '../../types';
 import { HOME_THEMES, HOME_THEME_KEYS } from '../../theme';
+import { GoogleIcon } from '../../../auth/GoogleIcon';
 
 interface Props {
   state: HomeState;
@@ -14,6 +15,11 @@ interface Props {
 export function AccountSettingsModal({ state, controller }: Props) {
   const visible = state.accountSettingsOpen;
   const initial = avatarLabel(state.userName);
+  // 로그인 수단 — `null`은 확인 불가(RPC 미배포·네트워크·데모 초기). 그때는
+  // 비밀번호가 **있다고 보고** 변경 흐름을 내준다(잠그지 않는다).
+  const unknown = state.signin === null;
+  const hasPassword = state.signin ? state.signin.hasPassword : true;
+  const googleLinked = !!state.signin?.providers.includes('google');
 
   return (
     <div
@@ -99,48 +105,97 @@ export function AccountSettingsModal({ state, controller }: Props) {
             })}
           </div>
 
-          {/* account management (session revoke + account deletion live here) */}
-          <div style={{ fontSize: 12, fontWeight: 700, color: 'var(--mf-faint)', letterSpacing: '.02em', marginBottom: 10 }}>계정 관리</div>
-          {/* 비밀번호 변경 — 예전에는 **로그아웃하고** 로그인 화면의 '비밀번호 찾기'로
-              돌아가야 했다(제보). 현재 비밀번호로 본인을 확인한 뒤 바꾼다.
-              Google로만 가입한 계정에는 바꿀 비밀번호가 없으므로 비활성 + 이유를
-              적는다(감추면 "왜 나만 없지"가 되고, 열어 두면 확인 단계에서 막힌다). */}
-          {(() => {
-            const socialOnly = state.hasPasswordLogin === false;
-            return (
-              <div
-                className={socialOnly ? undefined : 'menu-row'}
-                data-change-pw-row
-                role="button"
-                aria-disabled={socialOnly}
-                tabIndex={socialOnly ? -1 : 0}
-                onClick={socialOnly ? undefined : controller.openChangePassword}
-                onKeyDown={(e) => {
-                  if (socialOnly) return;
-                  if (e.key === 'Enter' || e.key === ' ') {
-                    e.preventDefault();
-                    controller.openChangePassword();
-                  }
-                }}
-                style={{ display: 'flex', alignItems: 'center', gap: 13, padding: '15px 16px', borderRadius: 14, cursor: socialOnly ? 'default' : 'pointer', opacity: socialOnly ? 0.55 : 1 }}
-              >
-                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="var(--mf-subtext)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true" style={{ flexShrink: 0 }}>
-                  <rect x="3.5" y="10.5" width="17" height="10.5" rx="2.5" />
-                  <path d="M7.5 10.5V7a4.5 4.5 0 0 1 9 0v3.5" />
-                </svg>
-                <div style={{ minWidth: 0 }}>
-                  <div style={{ fontWeight: 700, fontSize: 14.5 }}>비밀번호 변경</div>
-                  <div style={{ fontSize: 12.5, color: 'var(--mf-muted)', marginTop: 2 }}>{socialOnly ? 'Google 계정으로 로그인하고 있어요' : '현재 비밀번호를 확인한 뒤 새 비밀번호로 바꿔요'}</div>
-                </div>
-                {!socialOnly && (
-                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="var(--mf-faint)" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true" style={{ marginLeft: 'auto', flexShrink: 0 }}>
-                    <path d="m9 6 6 6-6 6" />
-                  </svg>
-                )}
+          {/* 로그인 수단 — 이 계정에 들어오는 **문 목록**이다. 한 계정에 수단이 여럿
+              붙을 수 있다(같은 이메일의 Google 신원은 Supabase가 그 계정에 자동
+              연결한다) — 그래서 막는 대신 여기서 보여 주고 늘리고 줄인다(§16).
+              비밀번호 유무는 신원 목록으로 알 수 없어 서버가 따로 알려 준다(0029). */}
+          <div style={{ fontSize: 12, fontWeight: 700, color: 'var(--mf-faint)', letterSpacing: '.02em', marginBottom: 10 }}>로그인 수단</div>
+          {/* 이메일·비밀번호 — 비밀번호가 걸려 있으면 '변경'(현재 비밀번호로 본인
+              확인), 없으면 '설정'(계정 이메일로 코드를 받아 확인). 확인 불가면
+              **변경 쪽**으로 둔다: 진짜 게이트는 확인 단계이므로 모르는 채로 항목을
+              잠그는 쪽이 더 나쁘다. */}
+          <div
+            className="menu-row"
+            data-change-pw-row
+            role="button"
+            tabIndex={0}
+            onClick={hasPassword ? controller.openChangePassword : controller.openSetPassword}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter' || e.key === ' ') {
+                e.preventDefault();
+                (hasPassword ? controller.openChangePassword : controller.openSetPassword)();
+              }
+            }}
+            style={{ display: 'flex', alignItems: 'center', gap: 13, padding: '15px 16px', borderRadius: 14, cursor: 'pointer' }}
+          >
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="var(--mf-subtext)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true" style={{ flexShrink: 0 }}>
+              <rect x="3.5" y="10.5" width="17" height="10.5" rx="2.5" />
+              <path d="M7.5 10.5V7a4.5 4.5 0 0 1 9 0v3.5" />
+            </svg>
+            <div style={{ minWidth: 0 }}>
+              <div style={{ fontWeight: 700, fontSize: 14.5 }}>{hasPassword ? '비밀번호 변경' : '비밀번호 설정'}</div>
+              <div style={{ fontSize: 12.5, color: 'var(--mf-muted)', marginTop: 2 }}>
+                {unknown ? '로그인 수단을 확인할 수 없어요 — 현재 비밀번호로 바꿀 수 있어요' : hasPassword ? '현재 비밀번호를 확인한 뒤 새 비밀번호로 바꿔요' : '계정 이메일로 코드를 받아 비밀번호를 설정해요'}
               </div>
-            );
-          })()}
+            </div>
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="var(--mf-faint)" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true" style={{ marginLeft: 'auto', flexShrink: 0 }}>
+              <path d="m9 6 6 6-6 6" />
+            </svg>
+          </div>
+          {/* Google — 연결/해제. 해제는 **비밀번호가 있을 때만** 내준다: 유일한
+              수단을 떼면 계정에 들어올 길이 사라진다(그때는 부제가 그 이유를 말한다). */}
+          <div
+            data-google-link-row
+            style={{ display: 'flex', alignItems: 'center', gap: 13, padding: '15px 16px', borderRadius: 14 }}
+          >
+            <span style={{ display: 'flex', flexShrink: 0, width: 18, justifyContent: 'center' }}>
+              <GoogleIcon />
+            </span>
+            <div style={{ minWidth: 0 }}>
+              <div style={{ fontWeight: 700, fontSize: 14.5 }}>Google 연동</div>
+              <div style={{ fontSize: 12.5, color: 'var(--mf-muted)', marginTop: 2 }}>
+                {unknown
+                  ? '연결 상태를 확인할 수 없어요'
+                  : googleLinked
+                    ? hasPassword
+                      ? 'Google 계정으로도 로그인할 수 있어요'
+                      : '비밀번호를 설정하면 연결을 해제할 수 있어요'
+                    : '연결하면 Google 계정으로도 로그인할 수 있어요'}
+              </div>
+            </div>
+            <button
+              type="button"
+              className="btn mf-ctl"
+              data-google-link-action
+              disabled={unknown || state.signinBusy || (googleLinked && !hasPassword)}
+              onClick={googleLinked ? controller.askUnlinkGoogle : controller.linkGoogleAccount}
+              style={{
+                marginLeft: 'auto',
+                flexShrink: 0,
+                height: 34,
+                padding: '0 14px',
+                border: '1px solid var(--mf-border)',
+                borderRadius: 999,
+                background: 'var(--mf-panel2)',
+                color: 'var(--mf-text)',
+                fontFamily: 'inherit',
+                fontSize: 13,
+                fontWeight: 700,
+                cursor: unknown || state.signinBusy || (googleLinked && !hasPassword) ? 'default' : 'pointer',
+                opacity: unknown || state.signinBusy || (googleLinked && !hasPassword) ? 0.5 : 1,
+              }}
+            >
+              {googleLinked ? '연결 해제' : '연결'}
+            </button>
+          </div>
+          {!!state.signinError && (
+            <div data-signin-error style={{ fontSize: 12.5, color: 'var(--mf-danger)', padding: '0 16px 8px' }}>
+              {state.signinError}
+            </div>
+          )}
 
+          {/* account management (session revoke + account deletion live here) */}
+          <div style={{ fontSize: 12, fontWeight: 700, color: 'var(--mf-faint)', letterSpacing: '.02em', margin: '24px 0 10px' }}>계정 관리</div>
           {/* 모든 기기에서 로그아웃(세션 정책 ①) — 이 앱의 세션은 기기 수 제한 없이
               오래 유지되므로(backend.md §15), 기기를 잃거나 공용 PC에 남겨 뒀을 때
               **회수할 수단**이 필요하다. 되돌릴 수 있는 동작이라 제목은 잉크색이고

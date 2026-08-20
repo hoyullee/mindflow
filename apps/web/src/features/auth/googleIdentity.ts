@@ -110,30 +110,3 @@ export async function createNoncePair(): Promise<{ nonce: string; hashedNonce: s
     return null;
   }
 }
-
-/**
- * ID 토큰의 `email` 클레임 — **검증 없이** 페이로드만 읽는다.
- *
- * 쓰임은 하나뿐이다: 토큰을 Supabase와 교환하기 **전에** "이 이메일이 이미
- * 비밀번호로 가입된 계정인가"를 물어보고, 그렇다면 교환을 **하지 않는 것**
- * (제보: 이메일로 가입한 계정에 Google 로그인을 하면 Supabase가 같은 이메일을
- * 자동 연결해 한 계정에 두 수단이 붙는다).
- *
- * 검증하지 않아도 안전한 이유: 이 값으로 하는 일은 **거절**뿐이다. 서명이 위조된
- * 토큰이면 어차피 교환 단계에서 Supabase가 거부하고, 여기서 이메일을 못 읽으면
- * (`null`) 예전처럼 그대로 교환을 진행한다 — 모르는 채로 로그인을 막지 않는다.
- */
-export function emailFromIdToken(token: string): string | null {
-  try {
-    const payload = token.split('.')[1];
-    if (!payload) return null;
-    // base64url → 바이트 → UTF-8 (이메일에 비ASCII가 들어와도 깨지지 않게)
-    const raw = atob(payload.replace(/-/g, '+').replace(/_/g, '/'));
-    const bytes = Uint8Array.from(raw, (ch) => ch.charCodeAt(0));
-    const claims = JSON.parse(new TextDecoder().decode(bytes)) as { email?: unknown };
-    const email = typeof claims.email === 'string' ? claims.email.trim() : '';
-    return email || null;
-  } catch {
-    return null;
-  }
-}
