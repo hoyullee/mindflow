@@ -202,121 +202,6 @@ export function Sidebar({ state, view, controller, isMobile = false, isOpen = fa
         </div>
       )}
 
-      {/* 공유받음 — 스페이스와 같은 "출처" 층에 둔다(즐겨찾기·휴지통은 내 문서를
-          다르게 보는 관점이고, 이건 아예 다른 사람의 문서다). 항상 보이는 고정
-          항목(사용자 결정) — 비어 있으면 즐겨찾기처럼 빈 안내를 편다. 이름을
-          "공유받은 맵"이 아니라 "공유받음"으로 두는 이유: 앞으로 맵이 아닌 파일을
-          공유받아도 어색하지 않게(범용 명칭, 사용자 결정). */}
-      {view.sharedVisible && (
-        <>
-          <div
-            className="nav-item"
-            role="button"
-            tabIndex={0}
-            aria-expanded={state.sharedOpen}
-            onClick={controller.toggleSharedList}
-            onKeyDown={(e) => {
-              if (e.key === 'Enter' || e.key === ' ') {
-                e.preventDefault();
-                controller.toggleSharedList();
-              }
-            }}
-            style={{
-              // 디자인 원본의 사이드바 행 — 8/9 패딩 · r10 · 13px.
-              display: 'flex',
-              alignItems: 'center',
-              gap: 9,
-              padding: '8px 9px',
-              minHeight: isMobile ? 44 : undefined,
-              borderRadius: 10,
-              cursor: 'pointer',
-              fontSize: 13,
-              fontWeight: 500,
-              color: 'var(--mf-subtext)',
-              flexShrink: 0,
-            }}
-          >
-            <SharedGlyph size={15} /> 공유받음
-            {/* 아직 확인하지 않은 초대가 있으면 **알림 배지**(강조색 알약), 없으면
-                지금까지처럼 총 개수. 숫자를 두 개 보여 주면 무엇이 새것인지 흐려진다. */}
-            {view.sharedUnread > 0 ? (
-              <span
-                aria-label={`확인하지 않은 공유 ${view.sharedUnread}개`}
-                style={{
-                  marginLeft: 'auto',
-                  minWidth: 18,
-                  padding: '1px 6px',
-                  borderRadius: 999,
-                  background: UNREAD_BADGE_BG,
-                  color: UNREAD_BADGE_INK,
-                  fontSize: 10.5,
-                  fontWeight: 800,
-                  textAlign: 'center',
-                }}
-              >
-                {view.sharedUnread}
-              </span>
-            ) : (
-              <span style={{ ...META_MONO, marginLeft: 'auto' }}>{view.sharedItems.length ? String(view.sharedItems.length) : ''}</span>
-            )}
-          </div>
-          <div
-            style={{
-              overflow: 'hidden',
-              flexShrink: 0,
-              // 행 높이 × 개수 + 여유. 모바일은 터치 타겟 44px(M6)이라 행이 더 높다 —
-              // 같은 수를 쓰면 마지막 행이 잘린다.
-              maxHeight: state.sharedOpen ? `${Math.max(1, view.sharedItems.length) * (isMobile ? 46 : 34) + 12}px` : '0px',
-              opacity: state.sharedOpen ? 1 : 0,
-              transition: 'max-height .32s cubic-bezier(.4,0,.2,1), opacity .24s ease',
-            }}
-          >
-            <div style={{ overflow: 'hidden', minHeight: 0 }}>
-              {view.sharedItems.map((m) => (
-                <div
-                  key={m.docId}
-                  className="drive-file"
-                  role="button"
-                  tabIndex={0}
-                  onClick={() => controller.openSharedMap(m.href, m.title, m.docId)}
-                  onKeyDown={(e) => {
-                    if (e.key === 'Enter' || e.key === ' ') {
-                      e.preventDefault();
-                      controller.openSharedMap(m.href, m.title, m.docId);
-                    }
-                  }}
-                  title={m.role === 'view' ? `'${m.title}' 열기 (보기 전용)` : `'${m.title}' 열기 (함께 편집)`}
-                  style={{
-                    display: 'flex',
-                    alignItems: 'center',
-                    gap: 7,
-                    padding: '6px 10px 6px 26px',
-                    minHeight: isMobile ? 44 : undefined,
-                    borderRadius: 8,
-                    cursor: 'pointer',
-                    fontSize: 12.5,
-                    color: 'var(--mf-subtext)',
-                  }}
-                >
-                  <KindMiniGlyph kind={m.kind} />
-                  <span style={{ flex: '1 1 auto', minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', fontWeight: m.isNew ? 700 : undefined, color: m.isNew ? 'var(--mf-text)' : undefined }}>{m.title}</span>
-                  {/* 아직 안 열어 본 초대 — 어느 것이 새것인지 점으로 짚어 준다
-                      (헤더 배지는 개수만 말한다). 열면 사라진다. */}
-                  {m.isNew && <span aria-label="새로 공유됨" title="아직 열어 보지 않은 공유" style={{ flexShrink: 0, width: 6, height: 6, borderRadius: '50%', background: UNREAD_BADGE_BG }} />}
-                  {/* 편집 권한은 기본값이라 표시하지 않는다 — 예외인 '보기'만 알린다. */}
-                  {m.role === 'view' && (
-                    <span style={{ flexShrink: 0, padding: '1px 6px', borderRadius: 999, fontSize: 9.5, fontWeight: 700, background: 'rgba(63,143,208,.12)', color: 'var(--mf-info)' }}>보기</span>
-                  )}
-                </div>
-              ))}
-              {!view.loading && view.sharedItems.length === 0 && (
-                <div style={{ padding: '7px 10px 7px 30px', fontSize: 11.5, color: 'var(--mf-faint2)' }}>공유받은 항목이 없습니다</div>
-              )}
-            </div>
-          </div>
-        </>
-      )}
-
       <div style={{ height: 1, background: 'var(--mf-border-soft)', margin: '12px 4px' }} />
 
       <div
@@ -388,6 +273,124 @@ export function Sidebar({ state, view, controller, isMobile = false, isOpen = fa
           {!view.loading && view.favItems.length === 0 && <div style={{ padding: '6px 7px', fontSize: 11.5, color: 'var(--mf-faint2)' }}>즐겨찾기한 항목이 없습니다</div>}
         </div>
       </div>
+
+      {/* 공유받음 — **즐겨찾기 아래**에 둔다(요청). 셋(즐겨찾기·공유받음·휴지통)이
+          같은 꼴의 접이식 목록이라 한자리에 모이는 편이 읽기 쉽다. 이름을 "공유받은
+          맵"이 아니라 "공유받음"으로 두는 이유: 앞으로 맵이 아닌 파일을 공유받아도
+          어색하지 않게(범용 명칭, 사용자 결정). */}
+      {view.sharedVisible && (
+        <>
+          <div
+            className="nav-item"
+            role="button"
+            tabIndex={0}
+            aria-expanded={state.sharedOpen}
+            onClick={controller.toggleSharedList}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter' || e.key === ' ') {
+                e.preventDefault();
+                controller.toggleSharedList();
+              }
+            }}
+            style={{
+              // 디자인 원본의 사이드바 행 — 8/9 패딩 · r10 · 13px.
+              display: 'flex',
+              alignItems: 'center',
+              gap: 9,
+              padding: '8px 9px',
+              minHeight: isMobile ? 44 : undefined,
+              borderRadius: 10,
+              cursor: 'pointer',
+              fontSize: 13,
+              fontWeight: 500,
+              color: 'var(--mf-subtext)',
+              flexShrink: 0,
+            }}
+          >
+            <SharedGlyph size={15} /> 공유받음
+            {/* 아직 확인하지 않은 초대가 있으면 **알림 배지**(강조색 알약), 없으면
+                지금까지처럼 총 개수. 숫자를 두 개 보여 주면 무엇이 새것인지 흐려진다. */}
+            {view.sharedUnread > 0 ? (
+              <span
+                aria-label={`확인하지 않은 공유 ${view.sharedUnread}개`}
+                style={{
+                  marginLeft: 'auto',
+                  minWidth: 18,
+                  padding: '1px 6px',
+                  borderRadius: 999,
+                  background: UNREAD_BADGE_BG,
+                  color: UNREAD_BADGE_INK,
+                  fontSize: 10.5,
+                  fontWeight: 800,
+                  textAlign: 'center',
+                }}
+              >
+                {view.sharedUnread}
+              </span>
+            ) : (
+              <span style={{ ...META_MONO, marginLeft: 'auto' }}>{view.sharedItems.length ? String(view.sharedItems.length) : ''}</span>
+            )}
+            <ChevronGlyph open={state.sharedOpen} />
+          </div>
+          <div
+            style={{
+              overflow: 'hidden',
+              flexShrink: 0,
+              // 행 높이 × 개수 + 판 여백. 모바일은 터치 타겟 44px(M6)이라 행이 더 높다 —
+              // 같은 수를 쓰면 마지막 행이 잘린다.
+              maxHeight: state.sharedOpen ? `${Math.max(1, view.sharedItems.length) * (isMobile ? 46 : 38) + 30}px` : '0px',
+              opacity: state.sharedOpen ? 1 : 0,
+              transition: 'max-height .32s cubic-bezier(.4,0,.2,1), opacity .24s ease',
+            }}
+          >
+            {/* 즐겨찾기·휴지통과 같은 가라앉은 판(요청) — 같은 종류의 목록이므로
+                같은 옷을 입힌다. */}
+            <div style={{ overflow: 'hidden', minHeight: 0, margin: '2px 2px 4px', padding: '6px 6px 5px', borderRadius: 12, background: 'var(--mf-bg)', border: '1px solid var(--mf-hairline)' }}>
+              {view.sharedItems.map((m) => (
+                <div
+                  key={m.docId}
+                  className="drive-file mf-trash-row"
+                  role="button"
+                  tabIndex={0}
+                  onClick={() => controller.openSharedMap(m.href, m.title, m.docId)}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter' || e.key === ' ') {
+                      e.preventDefault();
+                      controller.openSharedMap(m.href, m.title, m.docId);
+                    }
+                  }}
+                  title={m.role === 'view' ? `'${m.title}' 열기 (보기 전용)` : `'${m.title}' 열기 (함께 편집)`}
+                  style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: 8,
+                    padding: '5px 7px',
+                    minHeight: isMobile ? 44 : undefined,
+                    borderRadius: 9,
+                    cursor: 'pointer',
+                    fontSize: 12.5,
+                    color: 'var(--mf-subtext)',
+                  }}
+                >
+                  <KindMiniGlyph kind={m.kind} />
+                  <span style={{ flex: '1 1 auto', minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', fontWeight: m.isNew ? 700 : undefined, color: m.isNew ? 'var(--mf-text)' : undefined }}>{m.title}</span>
+                  {/* 아직 안 열어 본 초대 — 어느 것이 새것인지 점으로 짚어 준다
+                      (헤더 배지는 개수만 말한다). 열면 사라진다. */}
+                  {m.isNew && <span aria-label="새로 공유됨" title="아직 열어 보지 않은 공유" style={{ flexShrink: 0, width: 6, height: 6, borderRadius: '50%', background: UNREAD_BADGE_BG }} />}
+                  {/* 편집 권한은 기본값이라 표시하지 않는다 — 예외인 '보기'만 알린다. */}
+                  {m.role === 'view' && (
+                    <span style={{ flexShrink: 0, padding: '1px 6px', borderRadius: 999, fontSize: 9.5, fontWeight: 700, background: 'rgba(63,143,208,.12)', color: 'var(--mf-info)' }}>보기</span>
+                  )}
+                </div>
+              ))}
+              {!view.loading && view.sharedItems.length === 0 && (
+                <div style={{ padding: '6px 7px', fontSize: 11.5, color: 'var(--mf-faint2)' }}>공유받은 항목이 없습니다</div>
+              )}
+            </div>
+          </div>
+        </>
+      )}
+
 
       <div
         className="nav-item mf-trash-head"

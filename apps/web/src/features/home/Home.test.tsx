@@ -5057,6 +5057,31 @@ describe('홈 리디자인 계약', () => {
     }
   });
 
+  // 요청: '공유받음'을 즐겨찾기 **아래**로 옮기고, 펼친 목록도 즐겨찾기·휴지통과
+  // 같은 가라앉은 판으로. 셋이 같은 종류의 접이식 목록이므로 자리와 옷을 맞춘다.
+  it("LNB '공유받음'은 즐겨찾기 아래에 있고 펼친 목록이 같은 판을 쓴다", async () => {
+    const user = userEvent.setup();
+    localStorage.setItem('mf_demo_session', JSON.stringify({ user: { id: 'u1', email: 'me@gmail.com' } }));
+    const { container } = renderHomeWithDocStore([]);
+    const aside = await waitFor(() => container.querySelector('aside') as HTMLElement);
+    const fav = within(aside).getByText('즐겨찾기');
+    const shared = within(aside).getByText('공유받음');
+    const trash = within(aside).getByText('휴지통');
+    // 순서: 즐겨찾기 → 공유받음 → 휴지통
+    expect(fav.compareDocumentPosition(shared) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(shared.compareDocumentPosition(trash) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+
+    await user.click(shared);
+    const panel = await waitFor(() => {
+      const el = within(aside).getByText('공유받은 항목이 없습니다').parentElement as HTMLElement;
+      expect(el.style.background).toContain('--mf-bg');
+      return el;
+    });
+    // 즐겨찾기 판과 같은 값(가라앉은 면 + hairline + r12)
+    expect(panel.style.borderRadius).toBe('12px');
+    expect(panel.style.border).toContain('--mf-hairline');
+  });
+
   it('마우스 오버 애니메이션 — 카드가 3px 떠오르고 그늘·경계가 바뀐다(CSS 계약)', () => {
     // jsdom은 :hover를 렌더하지 않으므로 규칙 자체를 읽어 고정한다(#391과 같은 처방).
     const css = readFileSync(resolve('src/features/home/home.css'), 'utf8');
