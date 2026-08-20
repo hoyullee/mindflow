@@ -1,3 +1,4 @@
+import { useEffect, useRef } from 'react';
 import type { HomeState } from '../../types';
 import type { HomeController } from '../../useHomeController';
 
@@ -35,6 +36,14 @@ const inputStyle = {
 export function SetPasswordModal({ state, controller }: Props) {
   const busy = state.setPwBusy;
   const done = state.setPwDone;
+  // 첫 칸에 포커스를 주는 것은 **열릴 때 한 번**이다(제보: 새 비밀번호를 치는데
+  // 커서가 코드 칸으로 계속 튀었다). 인라인 `ref` 콜백은 렌더마다 새 함수라
+  // 매 렌더 실행되고, 코드 칸이 비어 있는 동안에는 그 조건이 계속 참이어서
+  // 다른 칸을 타이핑할 때마다(=리렌더) 포커스를 되가져갔다.
+  const firstFieldRef = useRef<HTMLInputElement | null>(null);
+  useEffect(() => {
+    if (state.setPwOpen && !done) firstFieldRef.current?.focus();
+  }, [state.setPwOpen, done]);
   // 세 칸이 채워지면 누를 수 있다 — 4자 미만·불일치는 누른 뒤 그 자리에서 말한다
   // (비밀번호 변경 모달과 같은 규칙).
   const canSubmit = !busy && !!state.setPwCode && !!state.setPwNew && !!state.setPwNew2;
@@ -85,9 +94,7 @@ export function SetPasswordModal({ state, controller }: Props) {
               onKeyDown={onKey}
               aria-label="메일로 받은 코드"
               placeholder="6자리 코드"
-              ref={(el) => {
-                if (el && state.setPwOpen && !done && document.activeElement !== el && !state.setPwCode) el.focus();
-              }}
+              ref={firstFieldRef}
               style={{ ...inputStyle, marginBottom: 8 }}
             />
             <button

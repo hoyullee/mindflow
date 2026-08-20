@@ -1646,6 +1646,42 @@ describe('Home', () => {
     expect((container.querySelector('[data-google-link-action]') as HTMLButtonElement).disabled).toBe(false);
   });
 
+  // 제보: 비밀번호 설정 모달에서 **새 비밀번호를 치는데 커서가 코드 칸으로 튀었다**.
+  // 인라인 `ref` 콜백이 렌더마다 돌면서 "코드 칸이 비어 있으면 포커스"를 계속
+  // 실행한 것 — 다른 칸의 타이핑이 곧 리렌더라 한 글자마다 되가져갔다.
+  it('첫 칸 포커스는 열릴 때 한 번 — 다른 칸을 타이핑해도 커서가 튀지 않는다', async () => {
+    const user = userEvent.setup();
+    const auth = new LocalAuth();
+    vi.spyOn(auth, 'signinMethods').mockResolvedValue({ hasPassword: false, providers: ['google'] });
+    vi.spyOn(auth, 'sendPasswordSetupCode').mockResolvedValue({});
+    const backend: Backend = { auth, docStore: new MockDocStore([], {}), spaceStore: new LocalSpaceStore(), shareStore: new LocalShareStore(), feedbackStore: new LocalFeedbackStore(), imageStore: new LocalImageStore(), commentStore: new LocalCommentStore(), notificationStore: new LocalNotificationStore(), mode: 'local' };
+    localStorage.setItem('mf_demo_session', JSON.stringify({ user: { id: 'u1', email: 'me@gmail.com' } }));
+    render(
+      <MemoryRouter initialEntries={['/home']}>
+        <BackendProvider backend={backend}>
+          <Routes>
+            <Route path="/home" element={<Home />} />
+          </Routes>
+        </BackendProvider>
+      </MemoryRouter>,
+    );
+    await user.click(await screen.findByRole('button', { name: '계정 메뉴' }));
+    await user.click(screen.getByRole('button', { name: '설정' }));
+    await user.click(await waitFor(() => document.querySelector('[data-change-pw-row]') as HTMLElement));
+    const dialog = await screen.findByRole('dialog', { name: '비밀번호 설정' });
+    const code = within(dialog).getByLabelText('메일로 받은 코드');
+    // 열릴 때는 첫 칸(코드)에 포커스가 간다
+    await waitFor(() => expect(document.activeElement).toBe(code));
+
+    // 새 비밀번호로 옮겨 한 글자씩 치는 동안 포커스가 그 칸에 머문다
+    const pw = within(dialog).getByLabelText('새 비밀번호') as HTMLInputElement;
+    await user.click(pw);
+    await user.type(pw, 'newpw');
+    expect(document.activeElement).toBe(pw);
+    expect(pw.value).toBe('newpw'); // 튀었다면 글자가 코드 칸으로 흘렀다
+    expect((code as HTMLInputElement).value).toBe('');
+  });
+
   it('코드가 틀리면 그 자리에서 말한다 (설정은 되지 않는다)', async () => {
     const user = userEvent.setup();
     const auth = new LocalAuth();
