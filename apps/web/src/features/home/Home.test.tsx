@@ -1633,7 +1633,7 @@ describe('Home', () => {
     expect(dialog.textContent).toContain('me@gmail.com');
 
     methods.mockResolvedValue({ hasPassword: true, providers: ['google', 'email'] });
-    await user.type(within(dialog).getByLabelText('메일로 받은 코드'), '123456');
+    await user.type(within(dialog).getByLabelText('메일로 받은 인증번호'), '123456');
     await user.type(within(dialog).getByLabelText('새 비밀번호'), 'newpw');
     await user.type(within(dialog).getByLabelText('새 비밀번호 확인'), 'newpw');
     await user.click(within(dialog).getByRole('button', { name: '비밀번호 설정' }));
@@ -1669,7 +1669,7 @@ describe('Home', () => {
     await user.click(screen.getByRole('button', { name: '설정' }));
     await user.click(await waitFor(() => document.querySelector('[data-change-pw-row]') as HTMLElement));
     const dialog = await screen.findByRole('dialog', { name: '비밀번호 설정' });
-    const code = within(dialog).getByLabelText('메일로 받은 코드');
+    const code = within(dialog).getByLabelText('메일로 받은 인증번호');
     // 열릴 때는 첫 칸(코드)에 포커스가 간다
     await waitFor(() => expect(document.activeElement).toBe(code));
 
@@ -1703,11 +1703,11 @@ describe('Home', () => {
     await user.click(screen.getByRole('button', { name: '설정' }));
     await user.click(await waitFor(() => document.querySelector('[data-change-pw-row]') as HTMLElement));
     const dialog = await screen.findByRole('dialog', { name: '비밀번호 설정' });
-    await user.type(within(dialog).getByLabelText('메일로 받은 코드'), '000000');
+    await user.type(within(dialog).getByLabelText('메일로 받은 인증번호'), '000000');
     await user.type(within(dialog).getByLabelText('새 비밀번호'), 'newpw');
     await user.type(within(dialog).getByLabelText('새 비밀번호 확인'), 'newpw');
     await user.click(within(dialog).getByRole('button', { name: '비밀번호 설정' }));
-    await waitFor(() => expect(dialog.querySelector('[data-set-pw-error]')?.textContent).toContain('코드가 올바르지 않'));
+    await waitFor(() => expect(dialog.querySelector('[data-set-pw-error]')?.textContent).toContain('인증번호가 올바르지 않'));
     expect(dialog.querySelector('[data-set-pw-done]')).toBeNull();
   });
 
