@@ -96,6 +96,19 @@ export function localizeAuthError(raw: string | undefined | null): string {
   }
   if (low.includes('unable to validate email') || low.includes('invalid email')) return '올바른 이메일 주소를 입력해 주세요.';
 
+  // 로그인 수단 연동(설정 → 로그인 수단, backend.md §16). 이 자리의 실패는 대개
+  // **설정 문제**라 일반 안내로 덮으면 원인을 알 길이 없다(제보: 라이브에서 연결을
+  // 누르면 "요청을 처리하지 못했어요"만 떴다 — 실제 원인은 Manual linking 꺼짐).
+  if (low.includes('manual linking') || low.includes('manual_linking_disabled')) {
+    return '아직 Google 연동이 켜져 있지 않아요. 서비스 설정에서 연동을 켠 뒤 다시 시도해 주세요.';
+  }
+  if (low.includes('identity is already linked') || low.includes('identity_already_exists')) {
+    return '이미 다른 계정에 연결된 Google 계정이에요. 다른 계정을 골라 주세요.';
+  }
+  if (low.includes('single_identity_not_deletable') || low.includes('at least 1 identity')) {
+    return '마지막 로그인 수단은 해제할 수 없어요. 비밀번호를 먼저 설정해 주세요.';
+  }
+
   // 그 외: 영문 노출 방지용 일반 안내
   return '요청을 처리하지 못했어요. 잠시 후 다시 시도해 주세요.';
 }

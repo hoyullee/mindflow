@@ -1133,9 +1133,14 @@ RPC가 미배포면 어댑터가 `null`을 돌려주고 화면은 **잠그지 �
 
 `auth.linkIdentity({ provider: 'google' })` · `auth.unlinkIdentity(identity)`.
 
-- **대시보드 → Authentication → Providers/Settings에서 "Manual linking"을 켜야 한다.**
-  꺼져 있으면 두 호출이 오류를 돌려주고, 앱은 그 문구를 행 아래에 보여 준다(조용히
-  실패하지 않는다).
+- **대시보드에서 "Manual linking"을 켜야 한다** (Authentication 설정에서 `manual`로
+  검색 — GoTrue의 `SECURITY_MANUAL_LINKING_ENABLED`). 꺼져 있으면 두 호출이
+  `Manual linking is disabled`(422)를 돌려준다.
+  - 실제로 이 상태에서 라이브 제보가 왔다(연결 버튼 → "요청을 처리하지 못했어요").
+    원인이 감춰졌던 이유는 `localizeAuthError`에 매핑이 없어 **일반 안내로 덮였기**
+    때문 — 지금은 세 가지 연동 오류(연동 꺼짐 / 이미 다른 계정에 연결된 신원 /
+    마지막 수단 해제 불가)를 이유까지 말하고, 어댑터가 원문을 콘솔에 남긴다
+    (`[geurio] Google 연결 실패 …`).
 - **해제는 비밀번호가 있을 때만** 내준다(버튼 비활성 + 이유). 유일한 수단을 떼면 계정에
   들어올 길이 사라진다. Supabase도 마지막 신원의 해제를 거부하지만, 그 전에 화면이
   막고 이유를 말한다.
