@@ -17,6 +17,7 @@ export function AccountSettingsModal({ state, controller }: Props) {
   const initial = avatarLabel(state.userName);
   // 로그인 수단 — `null`은 확인 불가(RPC 미배포·네트워크·데모 초기). 그때는
   // 비밀번호가 **있다고 보고** 변경 흐름을 내준다(잠그지 않는다).
+  const detail = state.accountDetail; // 같은 모달의 두 번째 화면(계정 설정)
   const unknown = state.signin === null;
   const hasPassword = state.signin ? state.signin.hasPassword : true;
   const providers = state.signin?.providers ?? [];
@@ -42,9 +43,21 @@ export function AccountSettingsModal({ state, controller }: Props) {
         onClick={(e) => e.stopPropagation()}
         style={{ width: 560, maxWidth: 'calc(100vw - 32px)', maxHeight: 'calc(100dvh - 32px)', overflowY: 'auto', background: 'var(--mf-card)', borderRadius: 22, boxShadow: '0 32px 70px -28px rgba(46,42,38,.5)', animation: 'mf-fade .2s ease' }}
       >
-        {/* header */}
-        <div style={{ display: 'flex', alignItems: 'center', padding: '20px 24px', borderBottom: '1px solid var(--mf-hairline)' }}>
-          <div style={{ fontSize: 19, fontWeight: 800, letterSpacing: '-.02em' }}>설정</div>
+        {/* header — 상세 화면에서는 뒤로 가기와 그 화면 제목을 보여 준다. */}
+        <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '20px 24px', borderBottom: '1px solid var(--mf-hairline)' }}>
+          {detail && (
+            <button
+              className="btn mf-ctl"
+              aria-label="뒤로"
+              onClick={controller.closeAccountDetail}
+              style={{ width: 32, height: 32, border: '1px solid var(--mf-border)', borderRadius: 999, background: 'var(--mf-panel2)', color: 'var(--mf-subtext)', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 0, flexShrink: 0, marginLeft: -4 }}
+            >
+              <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
+                <path d="m15 6-6 6 6 6" />
+              </svg>
+            </button>
+          )}
+          <div style={{ fontSize: 19, fontWeight: 800, letterSpacing: '-.02em' }}>{detail ? '계정 설정' : '설정'}</div>
           <button
             className="btn mf-ctl"
             aria-label="닫기"
@@ -59,67 +72,12 @@ export function AccountSettingsModal({ state, controller }: Props) {
         </div>
 
         <div style={{ padding: 24 }}>
-          {/* account */}
-          <div style={{ fontSize: 12, fontWeight: 700, color: 'var(--mf-faint)', letterSpacing: '.02em', marginBottom: 10 }}>계정</div>
-          {/* Read-only account summary — profile-name editing lives in the profile
-              popover's "프로필명 변경" button, not here. */}
-          <div style={{ display: 'flex', alignItems: 'center', gap: 16, padding: 16, borderRadius: 16, background: 'var(--mf-accent-soft)', marginBottom: 24 }}>
-            <ProfileAvatar initial={initial} avatarUrl={state.userAvatar} size={56} radius={16} fontSize={17} />
-            <div style={{ minWidth: 0, flex: 1 }}>
-              <div style={{ fontWeight: 800, fontSize: 16.5, letterSpacing: '-.01em', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{state.userName}</div>
-              {state.userEmail && <div style={{ fontSize: 13, color: 'var(--mf-muted)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', marginTop: 3 }}>{state.userEmail}</div>}
-            </div>
-          </div>
-
-          {/* 색상 테마 — LNB 최하단에 있다가 사용자 요청으로 이리 왔다(설정에 모으는 게
-              자연스럽다). 적용 버튼 없이 **누르는 즉시** 뒤 화면까지 색이 바뀐다 —
-              모달이 열린 채로 고르므로 고르는 것이 곧 미리보기다. */}
-          <div style={{ fontSize: 12, fontWeight: 700, color: 'var(--mf-faint)', letterSpacing: '.02em', marginBottom: 10 }}>색상 테마</div>
-          <div role="radiogroup" aria-label="색상 테마 선택" style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 10, marginBottom: 24 }}>
-            {HOME_THEME_KEYS.map((key) => {
-              const t = HOME_THEMES[key];
-              const on = state.theme === key;
-              return (
-                <button
-                  key={key}
-                  type="button"
-                  role="radio"
-                  aria-checked={on}
-                  aria-label={`${t.label} 테마`}
-                  onClick={() => controller.setTheme(key)}
-                  style={{
-                    display: 'flex',
-                    alignItems: 'center',
-                    gap: 10,
-                    minHeight: 52,
-                    padding: '0 14px',
-                    borderRadius: 13,
-                    // 선택된 칸만 강조색 테두리 + 옅은 강조 면(첨부 이미지의 코랄 칸).
-                    border: `1.5px solid ${on ? t.accent : 'var(--mf-border)'}`,
-                    background: on ? 'var(--mf-accent-soft)' : 'var(--mf-card)',
-                    color: on ? 'var(--mf-text)' : 'var(--mf-subtext)',
-                    fontFamily: 'inherit',
-                    fontSize: 13.5,
-                    fontWeight: on ? 700 : 600,
-                    cursor: 'pointer',
-                  }}
-                >
-                  {/* 미리보기 스와치 — 그 테마의 **면 원** 안에 강조색 점(첨부 이미지).
-                      이름만으로는 "모노"·"다크"가 얼마나 다른지 알 수 없다. */}
-                  <span style={{ width: 24, height: 24, borderRadius: '50%', flexShrink: 0, background: t.bg, border: `1px solid ${t.border}`, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                    <span style={{ width: 11, height: 11, borderRadius: '50%', background: t.accent, display: 'block' }} />
-                  </span>
-                  {t.label}
-                </button>
-              );
-            })}
-          </div>
-
-          {/* 계정 설정 — 로그인 수단과 세션·탈퇴를 **한 구획**으로 묶었다(요청).
-              앞쪽은 이 계정에 들어오는 문 목록이다(한 계정에 수단이 여럿 붙을 수 있고,
-              같은 이메일의 Google 신원은 Supabase가 자동 연결한다 — §16). 비밀번호
-              유무는 신원 목록으로 알 수 없어 서버가 따로 알려 준다(0029). */}
-          <div style={{ fontSize: 12, fontWeight: 700, color: 'var(--mf-faint)', letterSpacing: '.02em', marginBottom: 10 }}>계정 설정</div>
+          {detail ? (
+            <>
+          {/* 로그인 수단 — 이 계정에 들어오는 **문 목록**이다. 한 계정에 수단이 여럿
+              붙을 수 있고(같은 이메일의 Google 신원은 Supabase가 자동 연결한다 — §16),
+              비밀번호 유무는 신원 목록으로 알 수 없어 서버가 따로 알려 준다(0029). */}
+          <div style={{ fontSize: 12, fontWeight: 700, color: 'var(--mf-faint)', letterSpacing: '.02em', marginBottom: 10 }}>로그인 수단</div>
           {/* 이메일·비밀번호 — 비밀번호가 걸려 있으면 '변경'(현재 비밀번호로 본인
               확인), 없으면 '설정'(계정 이메일로 코드를 받아 확인). 확인 불가면
               **변경 쪽**으로 둔다: 진짜 게이트는 확인 단계이므로 모르는 채로 항목을
@@ -206,8 +164,8 @@ export function AccountSettingsModal({ state, controller }: Props) {
             </div>
           )}
 
-          {/* 아래는 세션·탈퇴 — 구획은 하나지만 성격이 달라 얇은 선으로만 가른다. */}
-          <div style={{ height: 1, background: 'var(--mf-hairline)', margin: '10px 4px 10px' }} />
+          {/* 세션·탈퇴 — 로그인 수단과 성격이 다른 묶음이라 제목을 따로 둔다(첨부 이미지). */}
+          <div style={{ fontSize: 12, fontWeight: 700, color: 'var(--mf-faint)', letterSpacing: '.02em', margin: '24px 0 10px' }}>계정 관리</div>
           {/* 모든 기기에서 로그아웃(세션 정책 ①) — 이 앱의 세션은 기기 수 제한 없이
               오래 유지되므로(backend.md §15), 기기를 잃거나 공용 PC에 남겨 뒀을 때
               **회수할 수단**이 필요하다. 되돌릴 수 있는 동작이라 제목은 잉크색이고
@@ -267,6 +225,95 @@ export function AccountSettingsModal({ state, controller }: Props) {
             </svg>
           </div>
 
+            </>
+          ) : (
+            <>
+          {/* account */}
+          <div style={{ fontSize: 12, fontWeight: 700, color: 'var(--mf-faint)', letterSpacing: '.02em', marginBottom: 10 }}>계정</div>
+          {/* Read-only account summary — profile-name editing lives in the profile
+              popover's "프로필명 변경" button, not here. */}
+          <div style={{ display: 'flex', alignItems: 'center', gap: 16, padding: 16, borderRadius: 16, background: 'var(--mf-accent-soft)', marginBottom: 24 }}>
+            <ProfileAvatar initial={initial} avatarUrl={state.userAvatar} size={56} radius={16} fontSize={17} />
+            <div style={{ minWidth: 0, flex: 1 }}>
+              <div style={{ fontWeight: 800, fontSize: 16.5, letterSpacing: '-.01em', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{state.userName}</div>
+              {state.userEmail && <div style={{ fontSize: 13, color: 'var(--mf-muted)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', marginTop: 3 }}>{state.userEmail}</div>}
+            </div>
+          </div>
+
+          {/* 색상 테마 — LNB 최하단에 있다가 사용자 요청으로 이리 왔다(설정에 모으는 게
+              자연스럽다). 적용 버튼 없이 **누르는 즉시** 뒤 화면까지 색이 바뀐다 —
+              모달이 열린 채로 고르므로 고르는 것이 곧 미리보기다. */}
+          <div style={{ fontSize: 12, fontWeight: 700, color: 'var(--mf-faint)', letterSpacing: '.02em', marginBottom: 10 }}>색상 테마</div>
+          <div role="radiogroup" aria-label="색상 테마 선택" style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 10, marginBottom: 24 }}>
+            {HOME_THEME_KEYS.map((key) => {
+              const t = HOME_THEMES[key];
+              const on = state.theme === key;
+              return (
+                <button
+                  key={key}
+                  type="button"
+                  role="radio"
+                  aria-checked={on}
+                  aria-label={`${t.label} 테마`}
+                  onClick={() => controller.setTheme(key)}
+                  style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: 10,
+                    minHeight: 52,
+                    padding: '0 14px',
+                    borderRadius: 13,
+                    // 선택된 칸만 강조색 테두리 + 옅은 강조 면(첨부 이미지의 코랄 칸).
+                    border: `1.5px solid ${on ? t.accent : 'var(--mf-border)'}`,
+                    background: on ? 'var(--mf-accent-soft)' : 'var(--mf-card)',
+                    color: on ? 'var(--mf-text)' : 'var(--mf-subtext)',
+                    fontFamily: 'inherit',
+                    fontSize: 13.5,
+                    fontWeight: on ? 700 : 600,
+                    cursor: 'pointer',
+                  }}
+                >
+                  {/* 미리보기 스와치 — 그 테마의 **면 원** 안에 강조색 점(첨부 이미지).
+                      이름만으로는 "모노"·"다크"가 얼마나 다른지 알 수 없다. */}
+                  <span style={{ width: 24, height: 24, borderRadius: '50%', flexShrink: 0, background: t.bg, border: `1px solid ${t.border}`, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                    <span style={{ width: 11, height: 11, borderRadius: '50%', background: t.accent, display: 'block' }} />
+                  </span>
+                  {t.label}
+                </button>
+              );
+            })}
+          </div>
+
+          {/* '계정 설정' 한 줄 — 누르면 같은 모달이 상세 화면으로 바뀐다(요청).
+              로그인 수단·세션·탈퇴는 자주 쓰는 것이 아니라 한 겹 안에 두는 편이
+              첫 화면을 가볍게 한다(iOS 설정과 같은 문법: 행 → 뒤로 가기 있는 화면). */}
+          <div
+            className="menu-row"
+            data-account-detail-row
+            role="button"
+            tabIndex={0}
+            onClick={controller.openAccountDetail}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter' || e.key === ' ') {
+                e.preventDefault();
+                controller.openAccountDetail();
+              }
+            }}
+            style={{ display: 'flex', alignItems: 'center', gap: 13, padding: '15px 16px', borderRadius: 14, cursor: 'pointer' }}
+          >
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="var(--mf-subtext)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true" style={{ flexShrink: 0 }}>
+              <circle cx="12" cy="8" r="3.4" />
+              <path d="M5.5 20.5a6.5 6.5 0 0 1 13 0" />
+            </svg>
+            <div style={{ minWidth: 0 }}>
+              <div style={{ fontWeight: 700, fontSize: 14.5 }}>계정 설정</div>
+              <div style={{ fontSize: 12.5, color: 'var(--mf-muted)', marginTop: 2 }}>로그인 수단 · 기기 로그아웃 · 회원 탈퇴</div>
+            </div>
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="var(--mf-faint)" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true" style={{ marginLeft: 'auto', flexShrink: 0 }}>
+              <path d="m9 6 6 6-6 6" />
+            </svg>
+          </div>
+
           {/* legal docs — the only logged-in entry point (the other lives on the
               login page footer). New tab so the modal/home state isn't lost. */}
           <div style={{ marginTop: 18, paddingTop: 14, borderTop: '1px solid var(--mf-hairline)', display: 'flex', justifyContent: 'center', gap: 18, fontSize: 12.5 }}>
@@ -277,6 +324,8 @@ export function AccountSettingsModal({ state, controller }: Props) {
               이용약관
             </a>
           </div>
+            </>
+          )}
         </div>
       </div>
     </div>

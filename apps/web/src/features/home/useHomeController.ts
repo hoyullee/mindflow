@@ -668,7 +668,7 @@ export function useHomeController() {
 
   // ---- account settings / 회원 탈퇴 ----
   const openAccountSettings = () => {
-    patch({ settingsOpen: false, accountSettingsOpen: true, signinError: '' });
+    patch({ settingsOpen: false, accountSettingsOpen: true, accountDetail: false, signinError: '' });
     refreshSigninMethods();
   };
 
@@ -823,6 +823,9 @@ export function useHomeController() {
   const openFeedback = () => patch({ settingsOpen: false, feedbackOpen: true });
   const closeFeedback = () => patch({ feedbackOpen: false });
   const closeAccountSettings = () => patch({ accountSettingsOpen: false });
+  /** '계정 설정' 상세 화면(같은 모달의 두 번째 화면) 열기·뒤로. */
+  const openAccountDetail = () => patch({ accountDetail: true, signinError: '' });
+  const closeAccountDetail = () => patch({ accountDetail: false });
   const askDeleteAccount = () => patch({ accountSettingsOpen: false, confirmDeleteAccount: true, confirmDeleteAccountFinal: false, deleteAccountText: '', deleteAccountError: '' });
   const cancelDeleteAccount = () => patch({ confirmDeleteAccount: false, confirmDeleteAccountFinal: false, deleteAccountText: '', deleteAccountError: '' });
   const onDeleteAccountInput = (v: string) => patch({ deleteAccountText: v });
@@ -2230,6 +2233,8 @@ export function useHomeController() {
     closeFeedback,
     setTheme,
     closeAccountSettings,
+    openAccountDetail,
+    closeAccountDetail,
     askDeleteAccount,
     cancelDeleteAccount,
     onDeleteAccountInput,

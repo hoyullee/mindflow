@@ -1516,10 +1516,13 @@ describe('Home', () => {
     await user.click(await screen.findByRole('button', { name: '계정 메뉴' }));
     await user.click(screen.getByRole('button', { name: '설정' }));
     const settingsDialog = screen.getByRole('dialog', { name: '설정' });
-    // ① 두 구획이 '계정 설정' 하나로 묶였다(요청)
+    // ① 첫 화면에는 '계정 설정' 한 줄만 있고, 그 안에 네 항목이 있다(요청)
     expect(within(settingsDialog).getByText('계정 설정')).toBeTruthy();
-    expect(within(settingsDialog).queryByText('로그인 수단')).toBeNull();
-    expect(within(settingsDialog).queryByText('계정 관리')).toBeNull();
+    expect(within(settingsDialog).queryByText('회원 탈퇴')).toBeNull();
+    await user.click(settingsDialog.querySelector('[data-account-detail-row]') as HTMLElement);
+    for (const label of ['비밀번호 변경', 'Google 연동', '모든 기기에서 로그아웃', '회원 탈퇴']) {
+      expect(within(settingsDialog).getByText(label)).toBeTruthy();
+    }
 
     await user.click(within(settingsDialog).getByText('회원 탈퇴'));
     const confirmDialog = screen.getByRole('dialog', { name: '회원 탈퇴' });
@@ -1565,6 +1568,7 @@ describe('Home', () => {
     );
     await user.click(await screen.findByRole('button', { name: '계정 메뉴' }));
     await user.click(screen.getByRole('button', { name: '설정' }));
+    await user.click(screen.getByRole('dialog', { name: '설정' }).querySelector('[data-account-detail-row]') as HTMLElement);
     await user.click(within(screen.getByRole('dialog', { name: '설정' })).getByText('회원 탈퇴'));
     const confirmDialog = screen.getByRole('dialog', { name: '회원 탈퇴' });
     await user.type(within(confirmDialog).getByLabelText('탈퇴 확인 입력'), '회원 탈퇴에 동의합니다');
@@ -1601,6 +1605,7 @@ describe('Home', () => {
     await user.click(await screen.findByRole('button', { name: '계정 메뉴' }));
     await user.click(screen.getByRole('button', { name: '설정' }));
     const settingsDialog = screen.getByRole('dialog', { name: '설정' });
+    await user.click(settingsDialog.querySelector('[data-account-detail-row]') as HTMLElement);
     await user.click(within(settingsDialog).getByText('비밀번호 변경'));
 
     const dialog = screen.getByRole('dialog', { name: '비밀번호 변경' });
@@ -1639,6 +1644,7 @@ describe('Home', () => {
     );
     await user.click(await screen.findByRole('button', { name: '계정 메뉴' }));
     await user.click(screen.getByRole('button', { name: '설정' }));
+    await user.click(screen.getByRole('dialog', { name: '설정' }).querySelector('[data-account-detail-row]') as HTMLElement);
     await user.click(within(screen.getByRole('dialog', { name: '설정' })).getByText('비밀번호 변경'));
     const dialog = screen.getByRole('dialog', { name: '비밀번호 변경' });
     await user.type(within(dialog).getByLabelText('현재 비밀번호'), 'nope');
@@ -1671,6 +1677,7 @@ describe('Home', () => {
     );
     await user.click(await screen.findByRole('button', { name: '계정 메뉴' }));
     await user.click(screen.getByRole('button', { name: '설정' }));
+    await user.click(await waitFor(() => document.querySelector('[data-account-detail-row]') as HTMLElement));
     const row = await waitFor(() => {
       const el = container.querySelector('[data-change-pw-row]') as HTMLElement;
       expect(el.textContent).toContain('비밀번호 설정');
@@ -1730,6 +1737,7 @@ describe('Home', () => {
     );
     await user.click(await screen.findByRole('button', { name: '계정 메뉴' }));
     await user.click(screen.getByRole('button', { name: '설정' }));
+    await user.click(await waitFor(() => document.querySelector('[data-account-detail-row]') as HTMLElement));
     await user.click(await waitFor(() => document.querySelector('[data-change-pw-row]') as HTMLElement));
     const dialog = await screen.findByRole('dialog', { name: '비밀번호 설정' });
     const code = within(dialog).getByLabelText('메일로 받은 인증번호');
@@ -1770,6 +1778,7 @@ describe('Home', () => {
     );
     await user.click(await screen.findByRole('button', { name: '계정 메뉴' }));
     await user.click(screen.getByRole('button', { name: '설정' }));
+    await user.click(await waitFor(() => document.querySelector('[data-account-detail-row]') as HTMLElement));
     const row = await waitFor(() => {
       const el = container.querySelector('[data-google-link-row]') as HTMLElement;
       expect(el.textContent).toContain(expected);
@@ -1803,6 +1812,7 @@ describe('Home', () => {
     );
     await user.click(await screen.findByRole('button', { name: '계정 메뉴' }));
     await user.click(screen.getByRole('button', { name: '설정' }));
+    await user.click(await waitFor(() => document.querySelector('[data-account-detail-row]') as HTMLElement));
 
     await waitFor(() => expect(register).toHaveBeenCalledTimes(1));
     await waitFor(() => expect((container.querySelector('[data-google-link-action]') as HTMLButtonElement).disabled).toBe(false));
@@ -1828,6 +1838,7 @@ describe('Home', () => {
     );
     await user.click(await screen.findByRole('button', { name: '계정 메뉴' }));
     await user.click(screen.getByRole('button', { name: '설정' }));
+    await user.click(await waitFor(() => document.querySelector('[data-account-detail-row]') as HTMLElement));
     await user.click(await waitFor(() => document.querySelector('[data-change-pw-row]') as HTMLElement));
     const dialog = await screen.findByRole('dialog', { name: '비밀번호 설정' });
     await user.type(within(dialog).getByLabelText('메일로 받은 인증번호'), '000000');
@@ -1859,6 +1870,7 @@ describe('Home', () => {
     );
     await user.click(await screen.findByRole('button', { name: '계정 메뉴' }));
     await user.click(screen.getByRole('button', { name: '설정' }));
+    await user.click(await waitFor(() => document.querySelector('[data-account-detail-row]') as HTMLElement));
     const action = await waitFor(() => {
       const el = container.querySelector('[data-google-link-action]') as HTMLButtonElement;
       expect(el.textContent).toContain('연결');
@@ -1913,6 +1925,7 @@ describe('Home', () => {
     await user.click(await screen.findByRole('button', { name: '계정 메뉴' }));
     await user.click(screen.getByRole('button', { name: '설정' }));
     const settingsDialog = screen.getByRole('dialog', { name: '설정' });
+    await user.click(settingsDialog.querySelector('[data-account-detail-row]') as HTMLElement);
     await user.click(within(settingsDialog).getByText('모든 기기에서 로그아웃'));
 
     // 다른 기기까지 끊는 동작이라 한 번 묻는다.
@@ -1980,6 +1993,7 @@ describe('Home', () => {
 
     await user.click(await screen.findByRole('button', { name: '계정 메뉴' })); // 프로필 스켈레톤 해제(getSession) 대기
     await user.click(screen.getByRole('button', { name: '설정' }));
+    await user.click(screen.getByRole('dialog', { name: '설정' }).querySelector('[data-account-detail-row]') as HTMLElement);
     await user.click(within(screen.getByRole('dialog', { name: '설정' })).getByText('회원 탈퇴'));
 
     const confirmDialog = screen.getByRole('dialog', { name: '회원 탈퇴' });
@@ -5086,8 +5100,10 @@ describe('홈 디자인 후속 6건', () => {
     expect(accountRow).toBeTruthy();
     const chip = within(dialog).getByRole('radio', { name: '코랄 테마' });
     expect((chip.querySelector('span') as HTMLElement).style.borderRadius).toBe('50%');
-    expect(within(dialog).getByText('계정과 모든 보드·스페이스가 영구 삭제돼요')).toBeTruthy();
     expect(within(dialog).getByText('개인정보처리방침').getAttribute('href')).toBe('/privacy');
+    // 탈퇴 행은 '계정 설정' 안(두 번째 화면)에 있다
+    await user.click(dialog.querySelector('[data-account-detail-row]') as HTMLElement);
+    expect(within(dialog).getByText('계정과 모든 보드·스페이스가 영구 삭제돼요')).toBeTruthy();
   });
 
   it('그리드 카드 hover 그림자도 같은 기하로 진해지기만 한다 + ⋯ 버튼에 클릭 효과가 있다(요청)', () => {
