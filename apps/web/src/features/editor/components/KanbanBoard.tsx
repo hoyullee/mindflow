@@ -1358,8 +1358,14 @@ function CalendarGlyph() {
 function cardBase(card: KanbanCard, th: Theme, selected: boolean): CSSProperties {
   const base: CSSProperties = {
     background: card.bg || th.panel,
-    border: `1px solid ${selected ? th.accent : th.border}`,
-    boxShadow: selected ? `0 0 0 2px ${hexA(th.accent, 0.2)}` : '0 1px 2px rgba(0,0,0,.05)',
+    border: `1px solid ${th.border}`,
+    boxShadow: '0 1px 2px rgba(0,0,0,.05)',
+    // 선택 표시는 **outline 링**이다 — 홈 카드와 같은 문법(요청). 예전처럼 테두리·
+    // 그늘을 갈아 끼우면 고른 카드에서 그늘이 사라져 "호버가 풀린 것"처럼 보였다
+    // (제보). 링은 레이아웃 밖이라 자리도 흔들지 않고 hover 떠오름도 그대로 산다.
+    // 투명 링을 **항상** 두는 이유: 색만 전이돼야 켜짐/꺼짐이 끊기지 않는다.
+    outline: `2px solid ${selected ? th.accent : 'transparent'}`,
+    outlineOffset: 2,
     borderRadius: 12,
     padding: '12px 12px 11px',
     color: th.text,

@@ -269,6 +269,30 @@ describe('칸반 에디터', () => {
     });
   });
 
+  // 제보: 카드를 고르면 그늘이 사라져 "호버가 풀린 것"처럼 보였다 — 선택 표시가
+  // 테두리·그늘을 갈아 끼웠기 때문. 홈 카드처럼 **outline 링**으로 얹는다.
+  it('카드 선택 표시는 홈 카드와 같은 outline 링 — 그늘은 그대로 남는다', async () => {
+    localStorage.setItem('mindflow_doc_kbsel', JSON.stringify(KANBAN));
+    const { container } = renderEditor('/editor?map=kbsel&title=x');
+    await waitFor(() => expect(container.querySelectorAll('[data-kanban-card]')).toHaveLength(2));
+
+    const card = () => container.querySelector('[data-kanban-card="k1"]') as HTMLElement;
+    const shadowBefore = card().style.boxShadow;
+    expect(card().style.outlineColor || card().style.outline).toContain('transparent'); // 링은 항상 있고 색만 바뀐다
+    fireEvent.pointerDown(card(), { clientX: 150, clientY: 70, button: 0 });
+
+    expect(card().getAttribute('data-selected')).toBe('1');
+    expect(card().style.boxShadow).toBe(shadowBefore); // 그늘 불변
+    expect(card().style.outline).toContain('2px solid');
+    expect(card().style.outline).not.toContain('transparent');
+    expect(card().style.outlineOffset).toBe('2px');
+
+    // 고른 카드도 hover에서 떠오른다 — 예전 규칙은 `:not([data-selected])`로 뺐다.
+    const css = readFileSync(resolve('src/features/editor/editor.css'), 'utf8');
+    expect(css).toContain('.mf-kb-card:hover');
+    expect(css).not.toContain('.mf-kb-card:not([data-selected]):hover');
+  });
+
   it('tpl=kanban으로 열면 열 셋짜리 새 보드가 시드된다', async () => {
     const { container } = renderEditor('/editor?map=kb6&title=%EC%B9%B8%EB%B0%98&tpl=kanban&new=1');
     await waitFor(() => expect(container.querySelectorAll('[data-kanban-column]')).toHaveLength(3));
