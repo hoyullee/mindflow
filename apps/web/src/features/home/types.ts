@@ -190,6 +190,9 @@ export interface HomeState {
   /** The 설정 (account settings) modal, opened from the profile popover. Hosts
    * the 회원 탈퇴 entry. */
   accountSettingsOpen: boolean;
+  /** 그 모달의 **두 번째 화면**('계정 설정' — 로그인 수단·기기 로그아웃·회원 탈퇴).
+   * 첫 화면을 가볍게 두려고 한 겹 안에 넣었다(요청). 모달을 열면 항상 첫 화면부터. */
+  accountDetail: boolean;
   /** 피드백 보내기 모달(LNB 최하단에서 연다). */
   feedbackOpen: boolean;
   /** 템플릿 갤러리 — "새로 만들기"의 세 진입점(툴바·빈 자리 우클릭·빈 상태 CTA)이
@@ -200,6 +203,9 @@ export interface HomeState {
   theme: HomeThemeKey;
   /** The 회원 탈퇴 confirmation dialog (opened from the settings modal). */
   confirmDeleteAccount: boolean;
+  /** 문구를 입력하고 누른 뒤 **한 번 더** 묻는 마지막 확인창(요청) — 비가역 동작이라
+   * 문구 입력만으로 바로 지우지 않는다. */
+  confirmDeleteAccountFinal: boolean;
   /** What the user has typed into the 회원 탈퇴 confirmation box — the destructive
    * action is gated on this matching the required phrase ("탈퇴"). */
   deleteAccountText: string;
@@ -394,12 +400,14 @@ export function initialHomeState(): HomeState {
     setPwDone: false,
     confirmUnlinkGoogle: false,
     accountSettingsOpen: false,
+    accountDetail: false,
     feedbackOpen: false,
     templateOpen: false,
     // 이 기기의 마지막 선택으로 시작한다 — 워크스페이스(정본)가 도착하면 그 값으로
     // 맞춘다. 부팅 때 이미 같은 캐시로 CSS 변수를 입혀 뒀으므로 첫 페인트와 일치한다.
     theme: loadHomeThemeCache(),
     confirmDeleteAccount: false,
+    confirmDeleteAccountFinal: false,
     deleteAccountText: '',
     deleteAccountError: '',
     creatingMap: false,

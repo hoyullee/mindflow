@@ -210,6 +210,29 @@ export function Modals({ state, controller }: Props) {
         onCancel={controller.cancelUnlinkGoogle}
         onConfirm={controller.confirmUnlinkGoogleYes}
       />
+
+      {/* 회원 탈퇴 2단계(요청) — 문구를 입력하고 누르면 **한 번 더** 묻는다. 비가역
+          동작이라 "문구를 쳤다"만으로 지우지 않고, 마지막 순간에 되돌릴 기회를 준다.
+          1단계 창(z 160)보다 위에 뜬다. */}
+      <ConfirmModal
+        visible={state.confirmDeleteAccountFinal}
+        zIndex={170}
+        iconBg="var(--mf-danger-soft)"
+        icon={
+          <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="var(--mf-danger)" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round">
+            <path d="M10.29 3.86 1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z" />
+            <line x1="12" y1="9" x2="12" y2="13" />
+            <line x1="12" y1="17" x2="12.01" y2="17" />
+          </svg>
+        }
+        heading="마지막으로 확인할게요"
+        body="확인을 누르면 계정과 모든 맵·스페이스·폴더가 즉시 삭제되고, 되돌릴 수 없어요."
+        cancelLabel="취소"
+        confirmLabel="영구 삭제"
+        confirmColor="var(--mf-danger)"
+        onCancel={controller.cancelDeleteAccountFinal}
+        onConfirm={controller.confirmDeleteAccountFinalYes}
+      />
     </>
   );
 }

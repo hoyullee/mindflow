@@ -22,6 +22,11 @@ import {
   type HomeState,
 } from './types';
 
+/** 회원 탈퇴에서 정확히 입력해야 하는 문구 — 판정(컨트롤러)과 표시(모달)가 **같은
+ * 값**을 쓰도록 여기서 한 번만 정한다. 짧은 '탈퇴'는 무심코 칠 수 있어 문장으로
+ * 바꿨다(요청). */
+export const DELETE_ACCOUNT_PHRASE = '회원 탈퇴에 동의합니다';
+
 /** 같은 대상인지 비교하려고 쓰는 납작한 키(☰ 토글 판정). */
 export function ctxTargetKey(t: HomeCtxTarget): string {
   return t.kind === 'bg' ? 'bg' : `${t.kind}:${t.kind === 'map' ? t.key : t.id}`;
@@ -663,7 +668,7 @@ export function useHomeController() {
 
   // ---- account settings / 회원 탈퇴 ----
   const openAccountSettings = () => {
-    patch({ settingsOpen: false, accountSettingsOpen: true, signinError: '' });
+    patch({ settingsOpen: false, accountSettingsOpen: true, accountDetail: false, signinError: '' });
     refreshSigninMethods();
   };
 
@@ -818,17 +823,23 @@ export function useHomeController() {
   const openFeedback = () => patch({ settingsOpen: false, feedbackOpen: true });
   const closeFeedback = () => patch({ feedbackOpen: false });
   const closeAccountSettings = () => patch({ accountSettingsOpen: false });
-  const askDeleteAccount = () => patch({ accountSettingsOpen: false, confirmDeleteAccount: true, deleteAccountText: '', deleteAccountError: '' });
-  const cancelDeleteAccount = () => patch({ confirmDeleteAccount: false, deleteAccountText: '', deleteAccountError: '' });
+  /** '계정 설정' 상세 화면(같은 모달의 두 번째 화면) 열기·뒤로. */
+  const openAccountDetail = () => patch({ accountDetail: true, signinError: '' });
+  const closeAccountDetail = () => patch({ accountDetail: false });
+  const askDeleteAccount = () => patch({ accountSettingsOpen: false, confirmDeleteAccount: true, confirmDeleteAccountFinal: false, deleteAccountText: '', deleteAccountError: '' });
+  const cancelDeleteAccount = () => patch({ confirmDeleteAccount: false, confirmDeleteAccountFinal: false, deleteAccountText: '', deleteAccountError: '' });
   const onDeleteAccountInput = (v: string) => patch({ deleteAccountText: v });
-  /** The user must type this exact phrase to arm the destructive button — a
-   * deliberate friction step for an irreversible action. */
-  const DELETE_ACCOUNT_PHRASE = '탈퇴';
+  /** 1단계: 문구가 맞으면 **한 번 더** 묻는다(요청) — 여기서는 지우지 않는다. */
   const confirmDeleteAccountYes = () => {
-    // Double-guard: the button is disabled unless the phrase matches, but never
-    // trust the UI alone for a destructive, irreversible call.
     if (state.deleteAccountText.trim() !== DELETE_ACCOUNT_PHRASE) return;
-    patch({ confirmDeleteAccount: false, creatingMap: true, loaderMsg: '회원 탈퇴를 처리하고 있어요' });
+    patch({ confirmDeleteAccount: false, confirmDeleteAccountFinal: true, deleteAccountError: '' });
+  };
+  const cancelDeleteAccountFinal = () => patch({ confirmDeleteAccountFinal: false, confirmDeleteAccount: false, deleteAccountText: '', deleteAccountError: '' });
+  /** 2단계: 실제로 지운다. 문구를 여기서 **다시** 확인한다 — 파괴 호출은 UI 상태만
+   * 믿지 않는다(마지막 확인창만 열려도 지워지면 안 된다). */
+  const confirmDeleteAccountFinalYes = () => {
+    if (state.deleteAccountText.trim() !== DELETE_ACCOUNT_PHRASE) return;
+    patch({ confirmDeleteAccountFinal: false, creatingMap: true, loaderMsg: '회원 탈퇴를 처리하고 있어요' });
     clearTimeout(loaderTimer.current);
     void (async () => {
       const res = await auth.deleteAccount();
@@ -836,7 +847,7 @@ export function useHomeController() {
         // Re-open the dialog with an error and let the user retry — half-deleted
         // is worse than not-deleted, so we surface the failure rather than
         // navigating away.
-        patch({ creatingMap: false, confirmDeleteAccount: true, deleteAccountError: '탈퇴 처리 중 문제가 발생했어요. 잠시 후 다시 시도해 주세요.' });
+        patch({ creatingMap: false, confirmDeleteAccount: true, confirmDeleteAccountFinal: false, deleteAccountError: '탈퇴 처리 중 문제가 발생했어요. 잠시 후 다시 시도해 주세요.' });
         return;
       }
       // Clear this browser's MindFlow caches too — in Supabase mode the server
@@ -2222,10 +2233,14 @@ export function useHomeController() {
     closeFeedback,
     setTheme,
     closeAccountSettings,
+    openAccountDetail,
+    closeAccountDetail,
     askDeleteAccount,
     cancelDeleteAccount,
     onDeleteAccountInput,
     confirmDeleteAccountYes,
+    cancelDeleteAccountFinal,
+    confirmDeleteAccountFinalYes,
     openNewSpace,
     closeNewSpace,
     onNewSpaceName,

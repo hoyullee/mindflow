@@ -557,3 +557,40 @@ input[type='search']::-webkit-search-results-decoration {
   -webkit-text-fill-color: currentColor;
   transition: background-color 9999s ease-out 0s;
 }
+
+/* 설정 모달의 두 화면 전환(요청) — 들어갈 때는 오른쪽에서, 뒤로 갈 때는 왼쪽에서
+   들어온다. 한 번에 한 화면만 그리므로(나가는 층을 두지 않는다) 카드 높이가
+   화면마다 크게 다른 이 모달에서 높이가 튀지 않는다. 방향은 컴포넌트가 정한다. */
+@keyframes mf-view-in-fwd {
+  from {
+    opacity: 0;
+    transform: translateX(16px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+@keyframes mf-view-in-back {
+  from {
+    opacity: 0;
+    transform: translateX(-16px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+.mf-settings-view.is-fwd {
+  animation: mf-view-in-fwd 0.2s ease;
+}
+.mf-settings-view.is-back {
+  animation: mf-view-in-back 0.2s ease;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .mf-settings-view.is-fwd,
+  .mf-settings-view.is-back {
+    animation: none;
+  }
+}
