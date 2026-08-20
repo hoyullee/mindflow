@@ -12,7 +12,7 @@
 // 표로 들고 있던 값(분류 색·담당 명단)은 규칙으로 바꿨다(`kanbanMeta.ts` 머리말).
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import type { CSSProperties, KeyboardEvent as ReactKeyboardEvent, PointerEvent as ReactPointerEvent } from 'react';
+import type { CSSProperties, KeyboardEvent as ReactKeyboardEvent, MouseEvent as ReactMouseEvent, PointerEvent as ReactPointerEvent } from 'react';
 import { cardsInColumn } from '@mindflow/mindmap-core';
 import type { KanbanCard, KanbanColumn, KanbanTag } from '@mindflow/mindmap-core';
 import type { EditorController } from '../useEditorState';
@@ -28,6 +28,7 @@ import { CARD_LABELS } from '../kanbanLabels';
 import type { CardFilter, KanbanView } from '../kanbanMeta';
 import { colorForSeed } from '../../../collab/identity';
 import { CardDetail } from './CardDetail';
+import { CardMenu, QuickComment } from './KanbanCardMenu';
 import { KanbanList, KanbanTimeline } from './KanbanViews';
 
 const COL_W = 308;
@@ -154,6 +155,9 @@ export function KanbanBoard({ controller, theme: th }: { controller: EditorContr
   const [query, setQuery] = useState('');
   /** 필터(담당·분류·긴급) — 검색어와 같은 성격이라 함께 화면에서만 거른다. */
   const [filter, setFilter] = useState<CardFilter>(EMPTY_FILTER);
+  /** 카드 우클릭 메뉴 · 그 메뉴에서 여는 빠른 댓글 — 누른 자리(화면 좌표)에 뜬다. */
+  const [cardMenu, setCardMenu] = useState<{ id: string; x: number; y: number } | null>(null);
+  const [quickComment, setQuickComment] = useState<{ id: string; x: number; y: number } | null>(null);
   // 보기 모드는 컨트롤러가 들고 있다 — 보드 머리의 탭과 GNB 보기 메뉴가 같은 값을
   // 본다(문서가 아니라 보는 사람의 상태라는 점은 그대로).
   const view = controller.kanbanView;
@@ -244,11 +248,28 @@ export function KanbanBoard({ controller, theme: th }: { controller: EditorContr
     [columnHits, controller],
   );
 
+  /** 카드 우클릭 — 브라우저 기본 메뉴 대신 우리 메뉴를 그 자리에 띄운다.
+   *  보기 전용에서도 열린다(카드 열기·댓글 달기는 뷰어도 하는 일이다). */
+  const openCardMenu = useCallback(
+    (e: ReactMouseEvent, card: KanbanCard) => {
+      e.preventDefault();
+      e.stopPropagation();
+      controller.selectCard(card.id);
+      setQuickComment(null);
+      setCardMenu({ id: card.id, x: e.clientX, y: e.clientY });
+    },
+    [controller],
+  );
+
   // 놓일 자리 — 아직 어디에도 겨누지 않았으면 **원래 자리**에 빈칸을 남긴다
   // (그래야 끄는 동안 열들이 들썩이지 않는다).
   const dropAt: DropTarget | null = drag ? (drag.target ?? { colId: drag.fromCol, index: drag.fromIndex }) : null;
   const progress = useMemo(() => boardProgress(columns, cards, th.palette), [columns, cards, th.palette]);
   const detailCard = controller.detailCardId ? cards.find((c) => c.id === controller.detailCardId) : undefined;
+  // 메뉴·빠른 댓글의 대상은 **id로** 들고 있다 — 카드가 지워지거나 상대가 옮기면
+  // 찾지 못해 저절로 닫힌다(사라진 카드에 대한 메뉴가 떠 있지 않게).
+  const menuCard = cardMenu ? cards.find((c) => c.id === cardMenu.id) : undefined;
+  const quickCard = quickComment ? cards.find((c) => c.id === quickComment.id) : undefined;
   const dragCard = drag ? cards.find((c) => c.id === drag.id) : undefined;
   const dragCol = colDrag ? columns.find((c) => c.id === colDrag.id) : undefined;
 
@@ -335,6 +356,7 @@ export function KanbanBoard({ controller, theme: th }: { controller: EditorContr
               theme={th}
               isMobile={isMobile}
               onCardPointerDown={beginCardDrag}
+              onCardContextMenu={openCardMenu}
               onHeaderPointerDown={beginColumnDrag}
               draggingId={drag?.id ?? null}
               dropTarget={drag?.target?.colId === item.col.id}
@@ -458,6 +480,53 @@ export function KanbanBoard({ controller, theme: th }: { controller: EditorContr
             done={columns.length > 0 && dragCard.col === (columns[columns.length - 1] as KanbanColumn).id}
           />
         </div>
+      )}
+      {menuCard && cardMenu && (
+        <CardMenu
+          card={menuCard}
+          columns={columns}
+          theme={th}
+          at={{ x: cardMenu.x, y: cardMenu.y }}
+          isMobile={isMobile}
+          canComment={controller.canComment}
+          readOnly={readOnly}
+          onOpen={() => {
+            setCardMenu(null);
+            controller.openCardDetail(menuCard.id);
+          }}
+          onComment={() => {
+            setCardMenu(null);
+            setQuickComment({ id: menuCard.id, x: cardMenu.x, y: cardMenu.y });
+          }}
+          onMove={(colId) => {
+            setCardMenu(null);
+            // 상태를 바꾸면 그 열의 **맨 위**로 — 상세의 상태 칩과 같은 규칙.
+            if (colId !== menuCard.col) controller.moveCardTo(menuCard.id, colId, 0);
+          }}
+          onToggleFlag={() => {
+            setCardMenu(null);
+            controller.setCardMeta(menuCard.id, { flagged: !menuCard.flagged });
+          }}
+          onDuplicate={() => {
+            setCardMenu(null);
+            controller.duplicateCard(menuCard.id);
+          }}
+          onDelete={() => {
+            setCardMenu(null);
+            controller.deleteCard(menuCard.id);
+          }}
+          onClose={() => setCardMenu(null)}
+        />
+      )}
+      {quickCard && quickComment && (
+        <QuickComment
+          card={quickCard}
+          theme={th}
+          at={{ x: quickComment.x, y: quickComment.y }}
+          isMobile={isMobile}
+          onSubmit={(body) => controller.addComment(quickCard.id, body)}
+          onClose={() => setQuickComment(null)}
+        />
       )}
       {detailCard && <CardDetail card={detailCard} controller={controller} theme={th} isMobile={isMobile} />}
     </div>
@@ -716,7 +785,8 @@ function FilterPanel({
       data-kanban-filter-panel
       role="dialog"
       aria-label="필터"
-      style={{ position: 'absolute', right: 0, top: 'calc(100% + 8px)', width: 268, boxSizing: 'border-box', padding: 14, background: th.panel, border: `1px solid ${th.border}`, borderRadius: 14, boxShadow: '0 14px 34px rgba(0,0,0,.16)', zIndex: 320, textAlign: 'left' }}
+      className="mf-kb-pop"
+      style={{ transformOrigin: 'top right', position: 'absolute', right: 0, top: 'calc(100% + 8px)', width: 268, boxSizing: 'border-box', padding: 14, background: th.panel, border: `1px solid ${th.border}`, borderRadius: 14, boxShadow: '0 14px 34px rgba(0,0,0,.16)', zIndex: 320, textAlign: 'left' }}
     >
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 10 }}>
         <strong style={{ fontSize: 13.5, color: th.text }}>필터</strong>
@@ -803,6 +873,7 @@ function Column({
   theme: th,
   isMobile,
   onCardPointerDown,
+  onCardContextMenu,
   onHeaderPointerDown,
   draggingId,
   dropTarget,
@@ -819,6 +890,7 @@ function Column({
   theme: Theme;
   isMobile: boolean;
   onCardPointerDown: (e: ReactPointerEvent, card: KanbanCard) => void;
+  onCardContextMenu: (e: ReactMouseEvent, card: KanbanCard) => void;
   onHeaderPointerDown: (e: ReactPointerEvent, col: KanbanColumn) => void;
   draggingId: string | null;
   /** 이 열이 지금 드롭 대상인가 — 비어 있어도 "여기 들어간다"를 보여 준다. */
@@ -947,7 +1019,7 @@ function Column({
               style={{ flex: '0 0 auto', height: dropHeight || 44, borderRadius: 12, border: `1.5px dashed ${hexA(th.accent, 0.75)}`, background: hexA(th.accent, 0.08), boxSizing: 'border-box' }}
             />
           ) : (
-            <Card key={item.card.id} card={item.card} controller={controller} theme={th} onPointerDown={onCardPointerDown} dragging={false} done={done} />
+            <Card key={item.card.id} card={item.card} controller={controller} theme={th} onPointerDown={onCardPointerDown} onContextMenu={onCardContextMenu} dragging={false} done={done} />
           ),
         )}
 
@@ -1088,13 +1160,14 @@ function ConfirmDeleteColumn({
       onPointerDown={(e) => {
         if (e.target === e.currentTarget) onCancel();
       }}
-      style={{ position: 'fixed', inset: 0, zIndex: 350, background: hexA('#2e2a26', 0.34), display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 24 }}
+      style={{ animation: 'mf-dim-in .18s ease-out both', position: 'fixed', inset: 0, zIndex: 350, background: hexA('#2e2a26', 0.34), display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 24 }}
     >
       <div
         data-confirm-delete-column={col.id}
         role="dialog"
         aria-modal="true"
         aria-label="열 삭제 확인"
+        className="mf-kb-modal"
         style={{ width: 'min(380px, 100%)', boxSizing: 'border-box', padding: 20, borderRadius: 16, background: th.panel, border: `1px solid ${th.border}`, boxShadow: '0 40px 90px -40px rgba(0,0,0,.6)' }}
       >
         <strong style={{ display: 'block', fontSize: 15.5, color: th.text, marginBottom: 8 }}>‘{col.title}’ 열을 삭제할까요?</strong>
@@ -1216,17 +1289,20 @@ export function CardFace({ card, theme: th, comments, tags, done }: { card: Kanb
   const tone = card.due && !done ? dueTone(card.due) : 'normal';
   return (
     <>
-      {(card.tag || card.flagged) && (
+      {/* 긴급 — 배지가 아니라 **카드 좌측의 붉은 선**이다(시안 ②). 배지는 분류와
+          같은 자리를 다투며 한 줄을 더 쓰는데, 이 선은 자리를 차지하지 않고도
+          목록을 훑을 때 눈에 먼저 걸린다. 절대 배치라 글자 자리도 밀지 않는다. */}
+      {card.flagged && (
+        <span
+          data-card-urgent={card.id}
+          aria-label="긴급"
+          title="긴급"
+          style={{ position: 'absolute', left: -1, top: 8, bottom: 8, width: 3.5, borderRadius: 999, background: URGENT }}
+        />
+      )}
+      {card.tag && (
         <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 8, flexWrap: 'wrap' }}>
-          {card.tag && <TagBadge name={card.tag} theme={th} tags={tags} />}
-          {card.flagged && (
-            <span
-              data-card-urgent={card.id}
-              style={{ height: 20, padding: '0 7px', borderRadius: 6, background: hexA(URGENT, 0.14), color: URGENT, display: 'inline-flex', alignItems: 'center', fontSize: 10.5, fontWeight: 700 }}
-            >
-              긴급
-            </span>
-          )}
+          <TagBadge name={card.tag} theme={th} tags={tags} />
         </div>
       )}
 
@@ -1294,7 +1370,7 @@ function cardBase(card: KanbanCard, th: Theme, selected: boolean): CSSProperties
   return base;
 }
 
-function Card({ card, controller, theme: th, onPointerDown, dragging, done }: { card: KanbanCard; controller: EditorController; theme: Theme; onPointerDown: (e: ReactPointerEvent, card: KanbanCard) => void; dragging: boolean; done?: boolean }) {
+function Card({ card, controller, theme: th, onPointerDown, onContextMenu, dragging, done }: { card: KanbanCard; controller: EditorController; theme: Theme; onPointerDown: (e: ReactPointerEvent, card: KanbanCard) => void; onContextMenu: (e: ReactMouseEvent, card: KanbanCard) => void; dragging: boolean; done?: boolean }) {
   const selected = controller.selectedCardId === card.id;
   const comments = controller.canComment ? (controller.commentCounts[card.id] ?? 0) : 0;
   return (
@@ -1310,6 +1386,8 @@ function Card({ card, controller, theme: th, onPointerDown, dragging, done }: { 
       // 한자리에서 고친다(디자인 원본의 `card.onOpen`, 다른 칸반 앱들과 같은 관례).
       // 카드 위 빠른 동작(‹ › ✕)은 없앴다(요청) — 그 셋 다 상세에 있다.
       onDoubleClick={() => controller.openCardDetail(card.id)}
+      // 우클릭 = 카드 메뉴(시안 ①) — 상세를 열지 않고 상태·긴급·복제·삭제를 한다.
+      onContextMenu={(e) => onContextMenu(e, card)}
       style={{
         ...cardBase(card, th, selected),
         position: 'relative',
@@ -1485,7 +1563,8 @@ function ColumnMenu({
       data-column-menu-pop={col.id}
       role="menu"
       aria-label={`${col.title} 열 메뉴`}
-      style={{ position: 'fixed', left, top: at.y, width: W, boxSizing: 'border-box', padding: 5, background: th.panel, border: `1px solid ${th.border}`, borderRadius: 12, boxShadow: '0 12px 32px rgba(0,0,0,.16)', zIndex: 320 }}
+      className="mf-kb-pop"
+      style={{ transformOrigin: 'top right', position: 'fixed', left, top: at.y, width: W, boxSizing: 'border-box', padding: 5, background: th.panel, border: `1px solid ${th.border}`, borderRadius: 12, boxShadow: '0 12px 32px rgba(0,0,0,.16)', zIndex: 320 }}
     >
       <button type="button" className="mf-ed-btn" role="menuitem" data-column-rename onClick={onRename} style={row}>
         <span style={glyph(th.subtext)}>

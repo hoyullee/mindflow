@@ -1,6 +1,8 @@
 // 칸반 — 세 번째 문서 종류(`kind: 'kanban'`). 캔버스가 아니라 열·카드 화면이고,
 // 저장·공유·협업은 문서 기반이라 기존 경로를 그대로 탄다.
 
+import { readFileSync } from 'node:fs';
+import { resolve } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { MemoryRouter, Route, Routes } from 'react-router-dom';
@@ -8,6 +10,7 @@ import { Editor } from './Editor';
 import { mockMatchMedia } from '../../test/matchMedia';
 import { UI_THEME, hexA, mixHex } from './theme';
 import { boardSurface, dueLabel, tagColor, tagInk } from './kanbanMeta';
+import { CardMenu } from './components/KanbanCardMenu';
 
 /** 내려받은 파일 내용을 가로챈다 — jsdom에는 createObjectURL이 없다(다른 내보내기 테스트와 같은 처방). */
 const dl = vi.hoisted(() => ({ files: [] as { name: string; data: string }[] }));
@@ -1576,5 +1579,223 @@ describe('칸반 — 후속 6건(열 배경·메뉴·리스트·타임라인)', 
     const spaced = (v: string): string => v.replace(/,/g, ', ');
     expect(bar.style.background).toBe(spaced(hexA('#8fb257', 0.16)));
     expect(bar.style.border).toContain(spaced(hexA('#8fb257', 0.45)));
+  });
+});
+
+// ─── 시안 4장(카드 우클릭 메뉴 · 긴급 선 · 상세 재디자인 · 빠른 댓글) ──────────
+describe('칸반 — 카드 우클릭 메뉴와 빠른 댓글', () => {
+  beforeEach(() => {
+    localStorage.clear();
+    mockMatchMedia(false);
+    localStorage.setItem('mf_demo_session', JSON.stringify({ user: { id: 'u', email: 'me@example.com' } }));
+  });
+  afterEach(cleanup);
+
+  const openMenu = async (container: HTMLElement, id = 'k1') => {
+    // 복제 뒤에도 쓰므로 개수를 못박지 않는다 — 그 카드가 그려졌는지만 본다.
+    await waitFor(() => expect(container.querySelector(`[data-kanban-card="${id}"]`)).toBeTruthy());
+    fireEvent.contextMenu(container.querySelector(`[data-kanban-card="${id}"]`)!, { clientX: 200, clientY: 200 });
+    return waitFor(() => container.querySelector(`[data-card-menu="${id}"]`) as HTMLElement);
+  };
+
+  it('우클릭하면 그 자리에 카드 메뉴가 뜬다 — 항목과 등장 애니메이션', async () => {
+    localStorage.setItem('mindflow_doc_cm1', JSON.stringify(KANBAN));
+    const { container } = renderEditor('/editor?map=cm1&title=x');
+    const menu = await openMenu(container);
+
+    // 브라우저 기본 메뉴가 아니라 우리 메뉴다.
+    expect(menu.className).toContain('mf-kb-pop'); // 등장 애니메이션(요청)
+    expect(menu.querySelector('[data-card-menu-title]')?.textContent).toBe('첫 카드');
+    for (const q of ['open', 'comment', 'move', 'flag', 'duplicate', 'delete']) {
+      expect(menu.querySelector(`[data-card-menu-${q}]`)).toBeTruthy();
+    }
+    // 카드 열기 → 상세
+    fireEvent.click(menu.querySelector('[data-card-menu-open]')!);
+    await waitFor(() => expect(container.querySelector('[data-card-detail="k1"]')).toBeTruthy());
+    expect(container.querySelector('[data-card-menu="k1"]')).toBeNull();
+  });
+
+  it('상태 이동 플라이아웃 — 지금 열이 표시되고, 다른 열을 고르면 그 열의 맨 위로', async () => {
+    localStorage.setItem('mindflow_doc_cm2', JSON.stringify(KANBAN));
+    const { container } = renderEditor('/editor?map=cm2&title=x');
+    const menu = await openMenu(container, 'k2');
+
+    fireEvent.mouseEnter(menu.querySelector('[data-card-menu-move]')!.parentElement!);
+    const sub = await waitFor(() => menu.querySelector('[data-card-menu-move-sub]') as HTMLElement);
+    expect(sub.className).toContain('mf-kb-fly');
+    expect(sub.querySelector('[data-card-menu-col="c1"]')?.getAttribute('data-current')).toBe('1');
+
+    fireEvent.click(sub.querySelector('[data-card-menu-col="c2"]')!);
+    fireEvent.keyDown(window, { key: 's', ctrlKey: true }); // 자동저장 디바운스 우회
+    await waitFor(() => {
+      const cards = saved('cm2').cards as { id: string; col: string }[];
+      expect(cards.find((c) => c.id === 'k2')?.col).toBe('c2');
+    });
+  });
+
+  it('긴급 토글 · 복제 · 삭제가 메뉴에서 바로 된다', async () => {
+    localStorage.setItem('mindflow_doc_cm3', JSON.stringify(KANBAN));
+    const { container } = renderEditor('/editor?map=cm3&title=x');
+
+    // 긴급 — 카드 좌측에 붉은 선이 생긴다(배지가 아니다, 시안 ②)
+    let menu = await openMenu(container);
+    expect(menu.querySelector('[data-card-menu-flag]')?.textContent).toBe('긴급으로 표시');
+    fireEvent.click(menu.querySelector('[data-card-menu-flag]')!);
+    const bar = await waitFor(() => container.querySelector('[data-card-urgent="k1"]') as HTMLElement);
+    expect(bar.style.position).toBe('absolute');
+    expect(bar.style.background).toBe('rgb(217, 83, 79)');
+    expect(bar.textContent).toBe(''); // '긴급' 배지 글자는 없다
+    // 다시 열면 해제 라벨
+    menu = await openMenu(container);
+    expect(menu.querySelector('[data-card-menu-flag]')?.textContent).toBe('긴급 해제');
+
+    // 복제 — 사본이 바로 아래에, 곁정보까지 그대로
+    fireEvent.click(menu.querySelector('[data-card-menu-duplicate]')!);
+    await waitFor(() => expect(container.querySelectorAll('[data-kanban-card]')).toHaveLength(3));
+    fireEvent.keyDown(window, { key: 's', ctrlKey: true });
+    await waitFor(() => {
+      const cards = saved('cm3').cards as { id: string; col: string; text: string; flagged?: boolean }[];
+      const copies = cards.filter((c) => c.text === '첫 카드');
+      expect(copies).toHaveLength(2);
+      expect(copies.every((c) => c.col === 'c1' && c.flagged)).toBe(true);
+    });
+
+    // 삭제
+    menu = await openMenu(container);
+    fireEvent.click(menu.querySelector('[data-card-menu-delete]')!);
+    await waitFor(() => expect(container.querySelector('[data-kanban-card="k1"]')).toBeNull());
+  });
+
+  it('보기 전용에서는 변이 항목이 없다 — 열기·댓글만(메뉴 계약)', () => {
+    // 보기 전용은 문서 소유자 판정이 필요해 로컬 데모로는 만들 수 없다 — 메뉴
+    // 컴포넌트에 직접 물어 계약을 못박는다(진짜 게이트는 `commitDoc`이다).
+    const card = { id: 'k1', col: 'c1', pos: 0, text: '첫 카드' };
+    const { container } = render(
+      <CardMenu
+        card={card}
+        columns={[{ id: 'c1', title: '할 일' }]}
+        theme={UI_THEME}
+        at={{ x: 10, y: 10 }}
+        isMobile={false}
+        canComment
+        readOnly
+        onOpen={() => {}}
+        onComment={() => {}}
+        onMove={() => {}}
+        onToggleFlag={() => {}}
+        onDuplicate={() => {}}
+        onDelete={() => {}}
+        onClose={() => {}}
+      />,
+    );
+    const menu = container.querySelector('[data-card-menu="k1"]') as HTMLElement;
+    expect(menu.querySelector('[data-card-menu-open]')).toBeTruthy();
+    expect(menu.querySelector('[data-card-menu-comment]')).toBeTruthy();
+    for (const q of ['move', 'flag', 'duplicate', 'delete']) {
+      expect(menu.querySelector(`[data-card-menu-${q}]`)).toBeNull();
+    }
+  });
+
+  it('메뉴의 댓글 달기 → 빠른 댓글 팝업 → 등록하면 그 카드의 댓글이 된다', async () => {
+    localStorage.setItem('mindflow_doc_cm5', JSON.stringify(KANBAN));
+    const { container } = renderEditor('/editor?map=cm5&title=x');
+    const menu = await openMenu(container);
+
+    fireEvent.click(menu.querySelector('[data-card-menu-comment]')!);
+    const pop = await waitFor(() => container.querySelector('[data-quick-comment="k1"]') as HTMLElement);
+    expect(pop.className).toContain('mf-kb-pop');
+    expect(pop.querySelector('[data-quick-comment-title]')?.textContent).toBe('첫 카드');
+    // 빈 입력으로는 등록되지 않는다
+    expect((pop.querySelector('[data-quick-comment-submit]') as HTMLButtonElement).disabled).toBe(true);
+
+    fireEvent.change(pop.querySelector('[data-quick-comment-input]')!, { target: { value: '여기서 한 마디' } });
+    fireEvent.click(pop.querySelector('[data-quick-comment-submit]')!);
+
+    // 저장은 카드 상세와 **같은 곳**(0020의 댓글 표, 대상 = 카드 id)
+    await waitFor(() => {
+      const rows = JSON.parse(localStorage.getItem('mf_comments') || '[]') as { nodeId: string; body: string }[];
+      expect(rows.some((r) => r.nodeId === 'k1' && r.body === '여기서 한 마디')).toBe(true);
+    });
+    await waitFor(() => expect(container.querySelector('[data-quick-comment="k1"]')).toBeNull());
+    await waitFor(() => expect(container.querySelector('[data-card-comment-count="k1"]')?.textContent).toContain('1'));
+    // 상세에서도 같은 글이 보인다
+    fireEvent.doubleClick(container.querySelector('[data-kanban-card="k1"]')!);
+    const detail = await waitFor(() => container.querySelector('[data-card-detail="k1"]') as HTMLElement);
+    expect(within(detail).getByText('여기서 한 마디')).toBeTruthy();
+  });
+
+  it('메뉴 행의 hover 규칙은 인라인 스타일을 이긴다 — 안 그러면 반응이 보이지 않는다', () => {
+    // 행의 색은 테마에서 오므로 인라인으로 칠한다. 인라인은 클래스를 이기므로
+    // hover 규칙에 `!important`가 없으면 **한 번도 보이지 않는다**(실브라우저 실측).
+    const css = readFileSync(resolve('src/features/editor/editor.css'), 'utf8');
+    const rule = css.slice(css.indexOf('.mf-kb-menu-row:hover'));
+    expect(rule).toContain('background: var(--mf-kb-hover) !important');
+    expect(rule).toContain('color: var(--mf-kb-hover-ink) !important');
+  });
+
+  it('Esc로 메뉴가 닫히고, 카드 메뉴는 상세를 열지 않는다(선택만)', async () => {
+    localStorage.setItem('mindflow_doc_cm6', JSON.stringify(KANBAN));
+    const { container } = renderEditor('/editor?map=cm6&title=x');
+    await openMenu(container);
+    expect(container.querySelector('[data-card-detail="k1"]')).toBeNull();
+    fireEvent.keyDown(window, { key: 'Escape' });
+    await waitFor(() => expect(container.querySelector('[data-card-menu="k1"]')).toBeNull());
+  });
+});
+
+describe('칸반 — 카드 상세 재디자인(시안 ③)', () => {
+  beforeEach(() => {
+    localStorage.clear();
+    mockMatchMedia(false);
+    localStorage.setItem('mf_demo_session', JSON.stringify({ user: { id: 'u', email: 'me@example.com' } }));
+  });
+  afterEach(cleanup);
+
+  it('두 단(값 / 논의)으로 갈리고, 머리에 저장 상태·바닥에 완료가 있다', async () => {
+    localStorage.setItem('mindflow_doc_cd1', JSON.stringify(KANBAN));
+    const { container } = renderEditor('/editor?map=cd1&title=x');
+    await waitFor(() => expect(container.querySelectorAll('[data-kanban-card]')).toHaveLength(2));
+
+    fireEvent.doubleClick(container.querySelector('[data-kanban-card="k1"]')!);
+    const detail = await waitFor(() => container.querySelector('[data-card-detail="k1"]') as HTMLElement);
+    // 등장 애니메이션(요청) — 데스크톱은 떠오르고, dim은 제자리 페이드
+    expect(detail.className).toContain('mf-kb-modal');
+    expect((container.querySelector('[data-card-detail-veil]') as HTMLElement).style.animation).toContain('mf-dim-in');
+
+    // 왼쪽 = 값, 오른쪽 = 논의 (같은 줄에 나란히)
+    const main = detail.querySelector('[data-detail-main]') as HTMLElement;
+    const side = detail.querySelector('[data-detail-comments]') as HTMLElement;
+    expect(main).toBeTruthy();
+    expect(side).toBeTruthy();
+    expect(main.parentElement).toBe(side.parentElement);
+    expect((main.parentElement as HTMLElement).style.flexDirection).toBe('row');
+
+    // 머리의 저장 상태 칩 · 긴급 문구 · 바닥
+    expect(detail.querySelector('[data-detail-save]')?.textContent).toMatch(/저장|변경/);
+    expect(detail.querySelector('[data-detail-flag-hint]')?.textContent).toBe('카드 테두리가 붉게 표시돼요');
+    expect(detail.querySelector('[data-detail-footnote]')?.textContent).toBe('변경한 내용은 자동으로 저장돼요');
+
+    // 완료 = 닫기(값은 이미 저장돼 있고 제목만 여기서 커밋된다)
+    fireEvent.change(detail.querySelector('[data-detail-title]')!, { target: { value: '고친 제목' } });
+    fireEvent.click(detail.querySelector('[data-detail-done]')!);
+    await waitFor(() => expect(container.querySelector('[data-card-detail="k1"]')).toBeNull());
+    fireEvent.keyDown(window, { key: 's', ctrlKey: true });
+    await waitFor(() => {
+      const cards = saved('cd1').cards as { id: string; text: string }[];
+      expect(cards.find((c) => c.id === 'k1')?.text).toBe('고친 제목');
+    });
+  });
+
+  it('폰에서는 한 단으로 접히고 아래에서 올라온다', async () => {
+    mockMatchMedia(true);
+    localStorage.setItem('mindflow_doc_cd2', JSON.stringify(KANBAN));
+    const { container } = renderEditor('/editor?map=cd2&title=x');
+    await waitFor(() => expect(container.querySelectorAll('[data-kanban-card]')).toHaveLength(2));
+
+    fireEvent.doubleClick(container.querySelector('[data-kanban-card="k1"]')!);
+    const detail = await waitFor(() => container.querySelector('[data-card-detail="k1"]') as HTMLElement);
+    expect(detail.className).toContain('mf-kb-sheet');
+    const main = detail.querySelector('[data-detail-main]') as HTMLElement;
+    expect((main.parentElement as HTMLElement).style.flexDirection).toBe('column');
   });
 });
