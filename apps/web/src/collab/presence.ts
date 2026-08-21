@@ -11,6 +11,10 @@ export interface PresenceUser {
    * guest identity — see `identity.ts`. Not currently rendered differently,
    * but kept on the wire in case the UI wants to distinguish later. */
   authed?: boolean;
+  /** 프로필 이미지 주소(0031) — 있으면 접속자 아바타가 이 사진을 그린다. 없으면
+   * 이름 첫 글자. **awareness로 실어 보낸다**: 상대의 사진을 서버에 다시 물으면
+   * 접속자 수만큼 왕복이 늘고, 어차피 지금 붙어 있는 사람의 정보다. */
+  avatar?: string | null;
 }
 
 export interface PresenceCursor {

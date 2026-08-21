@@ -91,6 +91,9 @@ export class SupabaseCommentStore implements CommentStore {
       nodeId: r.node_id ?? '',
       parentId: r.parent_id ?? null,
       authorName: (r.author_name || '').trim(),
+      // 이름은 스냅샷이지만 **사진은 조인**이다(0031) — 이 id로 참가자 목록에서
+      // 지금 아바타를 찾으므로, 사진을 바꾸면 옛 댓글에도 반영된다.
+      authorId: r.author ?? null,
       mine: !!uid && r.author === uid,
       body: r.body ?? '',
       createdAt: r.created_at ?? '',

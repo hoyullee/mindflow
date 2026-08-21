@@ -13,6 +13,7 @@ import type { PointerEvent as ReactPointerEvent } from 'react';
 import { useRef } from 'react';
 import type { EditorController } from '../useEditorState';
 import { Avatar, CommentPinCount, CommentPinResolved, commentPinBoxStyle } from './commentPinShape';
+import { useParticipantAvatars } from '../useParticipantAvatars';
 
 /** 이보다 적게 움직인 포인터는 "클릭"으로 본다 — 끌어 옮긴 뒤에는 팝업을 열지 않는다
  * (제보 ③: 핀을 움직일 때마다 댓글 목록을 다시 불러왔다). */
@@ -21,6 +22,9 @@ const CLICK_SLOP = 4;
 export function CommentPinLayer({ controller }: { controller: EditorController }) {
   const th = controller.uiTheme;
   const pins = controller.doc.commentPins ?? [];
+  // 핀 얼굴은 **첫 글을 쓴 사람**이므로 그 사람의 프로필 이미지를 쓴다(0031).
+  // 내 얼굴은 참가자 목록에 없다(멘션 후보에서 나를 뺀다) — 세션에서 직접 온다.
+  const avatars = useParticipantAvatars(controller.docId);
   /** 마지막 포인터 조작이 드래그였는가 — 그 뒤에 오는 click을 삼킨다. */
   const draggedRef = useRef(false);
   if (!pins.length) return null;
@@ -33,6 +37,7 @@ export function CommentPinLayer({ controller }: { controller: EditorController }
         const msgs = controller.comments.filter((c) => c.nodeId === pin.id);
         const root = msgs.find((c) => !c.parentId) ?? msgs[0];
         const author = root?.authorName || '?';
+        const authorAvatar = root?.mine ? controller.myAvatar : root?.authorId ? (avatars.byUserId[root.authorId] ?? null) : null;
         const resolved = !!root?.resolved;
         const count = msgs.length;
         const selected = controller.selection?.kind === 'commentPin' && controller.selection.id === pin.id;
@@ -97,7 +102,7 @@ export function CommentPinLayer({ controller }: { controller: EditorController }
           >
             {/* 얼굴이 핀을 거의 채운다(시안 ① 실측 비율 0.81) — 예전 24는 흰 여백이
                 넓어 얼굴이 작은 점처럼 보였다. 고른 핀은 반투명 흰 얼굴(시안 ②). */}
-            <Avatar name={author} size={28} onAccent={selected} />
+            <Avatar name={author} size={28} onAccent={selected} src={authorAvatar} />
             {resolved ? <CommentPinResolved th={th} /> : <CommentPinCount count={count} th={th} onAccent={selected} />}
           </div>
         );

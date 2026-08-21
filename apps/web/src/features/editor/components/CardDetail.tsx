@@ -298,7 +298,7 @@ export function CardDetail({ card, controller, theme: th, isMobile }: { card: Ka
                     onClick={() => controller.setCardMeta(card.id, { owner: { email: p.email, name } })}
                     style={{ border: 0, background: 'transparent', padding: 0, cursor: 'pointer', lineHeight: 0, opacity: p.joined ? 1 : 0.6 }}
                   >
-                    <Avatar name={name} email={p.email} size={30} ring={on ? th.accent : 'transparent'} />
+                    <Avatar name={name} email={p.email} size={30} ring={on ? th.accent : 'transparent'} src={p.avatarUrl ?? null} />
                   </button>
                 );
               })}

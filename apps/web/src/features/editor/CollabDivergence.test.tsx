@@ -67,6 +67,7 @@ function shareStore(rows: { email: string; role: 'edit' | 'view' }[]): ShareStor
     add: async () => undefined,
     remove: async () => undefined,
     participants: async () => null,
+    listParticipants: async () => null,
     listSharedWithMe: async () => [],
   } as unknown as ShareStore;
 }

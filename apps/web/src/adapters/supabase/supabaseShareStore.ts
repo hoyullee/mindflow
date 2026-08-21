@@ -104,12 +104,16 @@ export class SupabaseShareStore implements ShareStore {
     try {
       const { data, error } = await this.client.rpc('share_participants', { doc_id: documentId });
       if (error) return null;
-      return ((data ?? []) as { kind: string; email: string; display_name: string | null; joined: boolean; role?: string | null }[]).map((r) => ({
+      return ((data ?? []) as { kind: string; email: string; display_name: string | null; joined: boolean; role?: string | null; avatar_url?: string | null; user_id?: string | null }[]).map((r) => ({
         kind: r.kind === 'owner' ? 'owner' : 'invitee',
         email: r.email,
         displayName: r.display_name && r.display_name.trim() ? r.display_name : null,
         joined: !!r.joined,
         role: toRole(r.role ?? 'edit'),
+        // 0031 — 구 서버(칸이 없는 함수)에서는 undefined로 오고, 화면은 이름 첫
+        // 글자 아바타로 그대로 동작한다(배포 순서 안전).
+        avatarUrl: r.avatar_url ?? null,
+        userId: r.user_id ?? null,
       }));
     } catch {
       return null;

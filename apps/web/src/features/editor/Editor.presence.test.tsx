@@ -92,4 +92,34 @@ describe('Editor presence (multi-user awareness)', () => {
     remoteProvider.disconnect();
     await waitFor(() => expect(screen.queryByLabelText(/명 접속 중/)).toBeNull());
   });
+
+  it('상대의 프로필 이미지가 접속자 얼굴에 그려진다(0031) — 없으면 이름 첫 글자', async () => {
+    const docId = `presence-avatar-${Math.random()}`;
+    localStorage.setItem(`mindflow_doc_${docId}`, JSON.stringify(DOC));
+    const { container } = renderEditor(`/editor?map=${docId}&title=x`);
+    await waitFor(() => expect(within(getViewport(container)).getByText('리서치')).toBeTruthy());
+
+    const remoteProvider = new BroadcastChannelProvider();
+    remoteProvider.connect(docId, docToYDoc(DOC));
+    const remoteAwareness = remoteProvider.getAwareness()!;
+    remoteAwareness.setLocalState({
+      // 사진 주소는 awareness로 함께 온다(서버에 다시 묻지 않는다).
+      user: { name: '호율', color: '#3f8fd0', authed: true, avatar: 'https://cdn.example.com/me.webp' },
+      cursor: null,
+      selection: { nodes: [], floats: [], lines: [], zones: [] },
+    });
+
+    const bar = await waitFor(() => screen.getByLabelText('1명 접속 중'));
+    await waitFor(() => expect(bar.querySelector('img[src="https://cdn.example.com/me.webp"]')).toBeTruthy());
+    // 첫 글자는 **아래에 남아 있다** — 주소가 죽으면 깜빡임 없이 그대로 폴백한다.
+    expect(bar.textContent).toContain('호');
+
+    remoteAwareness.setLocalState({
+      user: { name: '민호', color: '#8a6bd1' },
+      cursor: null,
+      selection: { nodes: [], floats: [], lines: [], zones: [] },
+    });
+    await waitFor(() => expect(screen.getByLabelText('1명 접속 중').querySelector('img')).toBeNull());
+    remoteProvider.disconnect();
+  });
 });

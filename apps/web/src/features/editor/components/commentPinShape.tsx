@@ -79,7 +79,7 @@ export function authorTint(name: string): { bg: string; ink: string } {
  * `onAccent`: 강조색 몸통 **위**에 얹을 때. 이때는 이름 색을 쓰지 않고 **반투명 흰
  * 원 + 흰 글자**가 된다(시안 ②) — 파스텔 얼굴을 그대로 두면 코럴 몸통·흰 링과
  * 겹쳐 과녁처럼 보인다. */
-export function Avatar({ name, size = 24, ring, onAccent = false }: { name: string; size?: number; ring?: string; onAccent?: boolean }) {
+export function Avatar({ name, size = 24, ring, onAccent = false, src }: { name: string; size?: number; ring?: string; onAccent?: boolean; src?: string | null }) {
   const tint = authorTint(name || '?');
   return (
     <span
@@ -100,9 +100,24 @@ export function Avatar({ name, size = 24, ring, onAccent = false }: { name: stri
         fontSize: Math.round(size * 0.42),
         fontWeight: 700,
         lineHeight: 1,
+        position: 'relative',
+        overflow: 'hidden',
       }}
     >
       {(name || '?').slice(0, 1)}
+      {/* 프로필 이미지(0031) — 첫 글자를 아래에 남겨 둔다(주소가 죽으면 그대로 폴백). */}
+      {src && (
+        <img
+          src={src}
+          alt=""
+          aria-hidden="true"
+          referrerPolicy="no-referrer"
+          onError={(e) => {
+            e.currentTarget.style.display = 'none';
+          }}
+          style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', objectFit: 'cover' }}
+        />
+      )}
     </span>
   );
 }

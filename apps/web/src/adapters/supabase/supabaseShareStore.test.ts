@@ -190,7 +190,7 @@ describe('SupabaseShareStore', () => {
   it('참가자: 0011 RPC의 행을 포트 모양으로 바꾼다', async () => {
     const rpc = vi.fn(async () => ({
       data: [
-        { kind: 'owner', email: 'me@example.com', display_name: '호율', joined: true, role: 'edit' },
+        { kind: 'owner', email: 'me@example.com', display_name: '호율', joined: true, role: 'edit', avatar_url: 'https://cdn/me.webp', user_id: 'u-me' },
         { kind: 'invitee', email: 'friend@example.com', display_name: '  ', joined: true, role: 'view' }, // 공백 이름은 null 취급
         { kind: 'invitee', email: 'ghost@example.com', display_name: null, joined: false, role: null }, // role 없으면 edit
       ],
@@ -202,9 +202,10 @@ describe('SupabaseShareStore', () => {
 
     expect(rpc).toHaveBeenCalledWith('share_participants', { doc_id: 'd1' });
     expect(people).toEqual([
-      { kind: 'owner', email: 'me@example.com', displayName: '호율', joined: true, role: 'edit' },
-      { kind: 'invitee', email: 'friend@example.com', displayName: null, joined: true, role: 'view' },
-      { kind: 'invitee', email: 'ghost@example.com', displayName: null, joined: false, role: 'edit' },
+      // 0031 — 사진·계정 id가 함께 온다. 구 서버(칸이 없는 함수)에서는 null.
+      { kind: 'owner', email: 'me@example.com', displayName: '호율', joined: true, role: 'edit', avatarUrl: 'https://cdn/me.webp', userId: 'u-me' },
+      { kind: 'invitee', email: 'friend@example.com', displayName: null, joined: true, role: 'view', avatarUrl: null, userId: null },
+      { kind: 'invitee', email: 'ghost@example.com', displayName: null, joined: false, role: 'edit', avatarUrl: null, userId: null },
     ]);
   });
 

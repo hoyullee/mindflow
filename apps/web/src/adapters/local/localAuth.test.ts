@@ -49,3 +49,27 @@ describe('LocalAuth 로그인 수단 (데모)', () => {
     expect((await auth.signinMethods())?.providers).toEqual(['email']);
   });
 });
+
+describe('프로필 이미지(데모)', () => {
+  it('올리면 세션의 avatarUrl이 되고, 지우면 사라진다', async () => {
+    const auth = new LocalAuth();
+    await auth.signInWithPassword('me@example.com');
+    const blob = new Blob(['fake-image-bytes'], { type: 'image/webp' });
+
+    const up = await auth.updateAvatar(blob);
+    expect(up.error).toBeUndefined();
+    expect(up.url).toMatch(/^data:/);
+    expect((await auth.getSession())?.user.avatarUrl).toBe(up.url);
+
+    const off = await auth.updateAvatar(null);
+    expect(off.url).toBeNull();
+    expect((await auth.getSession())?.user.avatarUrl).toBeNull();
+  });
+
+  it('로그인 전에는 올릴 수 없다', async () => {
+    localStorage.clear(); // 앞 테스트가 남긴 세션을 지운다
+    const auth = new LocalAuth();
+    const res = await auth.updateAvatar(new Blob(['x'], { type: 'image/webp' }));
+    expect(res.error).toBeTruthy();
+  });
+});

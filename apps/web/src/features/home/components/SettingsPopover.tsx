@@ -89,27 +89,6 @@ export function SettingsPopover({ state, controller, userInitial }: Props) {
           </div>
         </div>
         <div style={{ padding: '2px 6px 6px' }}>
-          {/* profile-name rename — opens the "프로필명 변경" popup (like 스페이스 이름 변경) */}
-          <div
-            className="menu-row"
-            role="button"
-            tabIndex={0}
-            aria-label="프로필명 변경"
-            onClick={controller.openProfileNameEdit}
-            onKeyDown={(e) => {
-              if (e.key === 'Enter' || e.key === ' ') {
-                e.preventDefault();
-                controller.openProfileNameEdit();
-              }
-            }}
-            style={{ display: 'flex', alignItems: 'center', gap: 9, padding: '10px 12px', borderRadius: 9, fontSize: 13, fontWeight: 600, cursor: 'pointer', color: 'var(--mf-text)' }}
-          >
-            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-              <path d="M12 20h9" />
-              <path d="M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4z" />
-            </svg>{' '}
-            프로필명 변경
-          </div>
           <div
             className="menu-row"
             role="button"

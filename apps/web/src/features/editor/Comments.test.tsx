@@ -462,7 +462,9 @@ describe('링크로 연 맵', () => {
       }),
     } as unknown as DocStore;
     // 링크로 들어온 사람에게는 초대 행이 하나도 보이지 않는다(RLS의 결).
-    const shareStore = { ...new LocalShareStore(), list: async () => [] } as unknown as ShareStore;
+    // 클래스 인스턴스를 스프레드하면 프로토타입 메서드가 통째로 빠진다
+    // (`listParticipants` 등) — 덮어쓸 것만 얹는다.
+    const shareStore = Object.assign(new LocalShareStore(), { list: async () => [] }) as unknown as ShareStore;
     return { auth: new LocalAuth(), docStore, spaceStore: new LocalSpaceStore(), shareStore, feedbackStore: new LocalFeedbackStore(), imageStore: new LocalImageStore(), commentStore: new LocalCommentStore(), notificationStore: new LocalNotificationStore(), mode: 'supabase' };
   }
 

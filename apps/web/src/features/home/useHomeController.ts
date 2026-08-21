@@ -1,3 +1,4 @@
+import { prepareAvatar } from './avatarImage';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import type { ChangeEvent, KeyboardEvent } from 'react';
 import { useNavigate } from 'react-router-dom';
@@ -53,12 +54,14 @@ import {
   applyImportBinding,
   readDocRaw,
   RECENT_CAP,
+  readSavedAvatar,
   readSavedProfileName,
   rootTextOf,
   safeFileName,
   saveRecent,
   seedFavAndTrashFromMetas,
   sourceOf,
+  writeSavedAvatar,
   writeSavedProfileName,
 } from './storage';
 import { FOLDER_CARD_PREFIX, recentTrayDocIds } from './viewModel';
@@ -451,7 +454,7 @@ export function useHomeController() {
       // email local part. The provider avatar rides along (null for email/demo
       // accounts — the UI falls back to the initial circle).
       const name0 = readSavedProfileName(email) || session?.user?.name || email.split('@')[0] || email;
-      setState((prev) => ({ ...prev, userEmail: email, userName: name0, userAvatar: session?.user?.avatarUrl || null, profileLoaded: true }));
+      setState((prev) => ({ ...prev, userEmail: email, userName: name0, userAvatar: session?.user?.avatarUrl || readSavedAvatar(email) || null, profileLoaded: true }));
       // …then reconcile with the backend (Supabase `profiles.display_name`), which
       // survives a browser-cache clear and syncs across devices. Local mode returns
       // null here, so it just keeps the cached value.
@@ -622,7 +625,9 @@ export function useHomeController() {
   const toggleSettings = () => patch({ settingsOpen: !state.settingsOpen });
   // Profile-name rename — a popup (like "스페이스 이름 변경"), driven by a draft so
   // 취소 discards and 변경 commits. Opening it closes the profile popover.
-  const openProfileNameEdit = () => patch({ profileNameOpen: true, profileNameDraft: state.userName, settingsOpen: false });
+  // 진입점이 프로필 팝오버 → **설정 모달**로 옮겨졌다(요청). 설정은 열어 둔다 —
+  // 이름을 고친 뒤 돌아갈 자리가 그 화면이다.
+  const openProfileNameEdit = () => patch({ profileNameOpen: true, profileNameDraft: state.userName, settingsOpen: false, accountSettingsOpen: true });
   const onProfileNameInput = (v: string) => patch({ profileNameDraft: (v || '').slice(0, 20) });
   const submitProfileName = () => {
     const fallback = state.userEmail ? state.userEmail.split('@')[0] || 'mine' : 'mine';
@@ -634,6 +639,42 @@ export function useHomeController() {
     void auth.setProfileName(name);
   };
   const cancelProfileName = () => patch({ profileNameOpen: false });
+
+  /**
+   * 프로필 이미지 — 고른 파일을 정사각 256px로 다듬어(`prepareAvatar`) 올리고,
+   * 돌아온 주소를 **화면과 저장소에 함께** 반영한다.
+   *
+   * 로컬 캐시(`mf_home_avatar`)를 두는 이유는 이름과 같다: 다음 방문의 첫 페인트에
+   * 아바타가 이미 떠 있어야 한다(세션 해석은 비동기다).
+   */
+  const changeAvatar = async (file: File | null) => {
+    patch({ avatarError: null });
+    if (!file) return;
+    patch({ avatarBusy: true });
+    const prepared = await prepareAvatar(file);
+    if (!prepared.blob) {
+      patch({ avatarBusy: false, avatarError: prepared.error ?? '이미지를 처리하지 못했어요.' });
+      return;
+    }
+    const res = await auth.updateAvatar(prepared.blob);
+    if (res.error) {
+      patch({ avatarBusy: false, avatarError: '이미지를 올리지 못했어요. 잠시 후 다시 시도해 주세요.' });
+      return;
+    }
+    if (state.userEmail) writeSavedAvatar(state.userEmail, res.url ?? null);
+    patch({ avatarBusy: false, userAvatar: res.url ?? null });
+  };
+
+  const removeAvatar = async () => {
+    patch({ avatarBusy: true, avatarError: null });
+    const res = await auth.updateAvatar(null);
+    if (res.error) {
+      patch({ avatarBusy: false, avatarError: '이미지를 지우지 못했어요. 잠시 후 다시 시도해 주세요.' });
+      return;
+    }
+    if (state.userEmail) writeSavedAvatar(state.userEmail, null);
+    patch({ avatarBusy: false, userAvatar: null });
+  };
   const onProfileNameKey = (e: KeyboardEvent<HTMLInputElement>) => {
     if (e.key === 'Enter') {
       e.preventDefault();
@@ -2200,6 +2241,8 @@ export function useHomeController() {
     disconnectDrive,
     toggleSettings,
     openProfileNameEdit,
+    changeAvatar,
+    removeAvatar,
     onProfileNameInput,
     onProfileNameKey,
     submitProfileName,

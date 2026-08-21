@@ -99,7 +99,7 @@ export function CommentDraftBubble({ controller }: { controller: EditorControlle
       >
         {/* 머리 — 내 얼굴과 "새 스레드"(시안 ②). 누가 남기는 말인지 먼저 말한다. */}
         <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 9 }}>
-          <Avatar name={me} size={24} />
+          <Avatar name={me} size={24} src={controller.myAvatar} />
           <span style={{ fontSize: 12.5, color: th.subtext, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
             <b style={{ color: th.text, fontWeight: 700 }}>{me}</b> · 새 스레드
           </span>

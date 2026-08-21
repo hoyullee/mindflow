@@ -24,7 +24,7 @@ export function PresenceAvatars({ controller, isMobile = false }: { controller: 
   const faces = peers.slice(0, MAX_FACES);
   const rest = peers.length - faces.length;
 
-  const circle = (key: string, bg: string, ink: string, label: string, title: string, i: number) => (
+  const circle = (key: string, bg: string, ink: string, label: string, title: string, i: number, src?: string | null) => (
     <span
       key={key}
       title={title}
@@ -44,9 +44,25 @@ export function PresenceAvatars({ controller, isMobile = false }: { controller: 
         fontWeight: 700,
         flexShrink: 0,
         boxSizing: 'border-box',
+        position: 'relative',
+        overflow: 'hidden',
       }}
     >
       {label}
+      {/* 프로필 이미지(0031) — 글자를 **아래에 남겨 둔다**: 주소가 죽었거나 막혔을 때
+          깜빡임 없이 첫 글자로 되돌아간다(홈 `ProfileAvatar`와 같은 처방). */}
+      {src && (
+        <img
+          src={src}
+          alt=""
+          aria-hidden="true"
+          referrerPolicy="no-referrer"
+          onError={(e) => {
+            e.currentTarget.style.display = 'none';
+          }}
+          style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', objectFit: 'cover' }}
+        />
+      )}
     </span>
   );
 
@@ -57,7 +73,7 @@ export function PresenceAvatars({ controller, isMobile = false }: { controller: 
       title={peers.map((p) => p.user.name).join(', ')}
       style={{ display: 'flex', alignItems: 'center', marginRight: 2, flexShrink: 0 }}
     >
-      {faces.map((p, i) => circle(String(p.clientId), mixHex(p.user.color, '#ffffff', 0.55), mixHex(p.user.color, '#000000', 0.45), p.user.name.slice(0, 1), p.user.name, i))}
+      {faces.map((p, i) => circle(String(p.clientId), mixHex(p.user.color, '#ffffff', 0.55), mixHex(p.user.color, '#000000', 0.45), p.user.name.slice(0, 1), p.user.name, i, p.user.avatar))}
       {rest > 0 && circle('rest', th.panel2, th.subtext, `+${rest}`, `외 ${rest}명`, faces.length)}
     </div>
   );

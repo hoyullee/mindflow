@@ -398,6 +398,8 @@ export interface EditorController {
   commentDraft: { x: number; y: number } | null;
   /** 내 표시 이름 — 초안 말풍선 머리와 아바타가 쓴다(저장될 작성자명과 같은 값). */
   myName: string;
+  /** 내 프로필 이미지 주소(0031) — 댓글 작성창의 내 얼굴에 그린다. */
+  myAvatar: string | null;
   /** 초안을 접는다 — 문서 변경 없음. */
   cancelCommentDraft: () => void;
   /** 초안에 첫 댓글을 남긴다 — 저장에 성공해야 핀이 문서에 들어간다. */
@@ -1339,7 +1341,7 @@ export function useEditorState(): EditorController {
   // 커서 이름표는 이메일이 아니라 **프로필명**(홈에서 바꾼 이름)을 쓴다. ----
   const authUser = useAuthUser();
   const profileName = useProfileName(authUser?.email ?? null, authUser?.name ?? null);
-  const presence = usePresence(awareness, authUser?.email, profileName);
+  const presence = usePresence(awareness, authUser?.email, profileName, authUser?.avatarUrl ?? null);
   const peerCount = presence.peers.length;
   if (peerCount > 0) collabSessionRef.current = true;
 
@@ -6573,6 +6575,7 @@ export function useEditorState(): EditorController {
     startCommentDraftAtClient,
     commentDraft,
     myName: meName,
+    myAvatar: authUser?.avatarUrl ?? null,
     cancelCommentDraft,
     submitCommentDraft,
     moveCommentPin,

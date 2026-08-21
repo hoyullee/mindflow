@@ -150,6 +150,13 @@ export interface AuthProvider {
   /** Persist the signed-in user's display name. No-op (returns `{}`) in local mode. */
   setProfileName(name: string): Promise<{ error?: string }>;
   /**
+   * 프로필 이미지를 바꾼다(요청). `blob`이 있으면 올리고, `null`이면 지운다.
+   *
+   * 성공하면 새 주소(또는 지웠으면 `null`)를 돌려준다 — 화면은 그 값을 바로 쓰고,
+   * 다음 세션부터는 `AuthUser.avatarUrl`이 같은 값을 준다(같은 칸을 쓴다).
+   */
+  updateAvatar(blob: Blob | null): Promise<{ url?: string | null; error?: string }>;
+  /**
    * 내 계정의 **로그인 수단** — 설정 → 로그인 수단이 읽는다. 확인 불가(RPC 미배포·
    * 네트워크 실패)면 `null`(그때 화면은 "확인할 수 없어요"로 말하고 잠그지 않는다).
    *
@@ -326,6 +333,10 @@ export interface ShareParticipant {
   joined: boolean;
   /** 권한. 소유자 행은 항상 'edit'. */
   role: ShareRole;
+  /** 프로필 이미지 주소(0031) — 없으면 null(화면은 이름 첫 글자로 그린다). */
+  avatarUrl?: string | null;
+  /** 그 사람의 계정 id(0031). 댓글 작성자(`DocComment.authorId`)를 잇는 열쇠다. */
+  userId?: string | null;
 }
 
 /**
@@ -505,6 +516,9 @@ export interface DocComment {
   parentId: string | null;
   /** 작성 시점의 표시 이름 스냅샷(0020) — 조인 없이 목록 하나로 끝내기 위해. */
   authorName: string;
+  /** 작성자 계정 id(탈퇴하면 null). 참가자 목록의 `userId`와 이어 **지금** 프로필
+   * 이미지를 찾는다 — 이름은 스냅샷이지만 사진은 바꾸면 옛 댓글에도 반영된다. */
+  authorId?: string | null;
   /** 내가 쓴 댓글인가 — 지우기 버튼을 내줄지 가른다(진짜 게이트는 RLS). */
   mine: boolean;
   body: string;

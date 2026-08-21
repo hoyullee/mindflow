@@ -58,8 +58,10 @@ export interface UsePresenceResult {
  * @param displayName 표시용 프로필명(`useProfileName`). 있으면 커서 이름표에 이메일
  * 대신 이것을 쓴다 — 색은 계속 **이메일**로 시드해서, 이름을 바꿔도 상대 화면에서
  * 내 색이 튀지 않는다. 비동기로 늦게 와도 된다(아래 `setLocalStateField` 효과가
- * 이미 identity 지연 해석을 처리한다). */
-export function usePresence(awareness: Awareness | null, authedEmail?: string | null, displayName?: string | null): UsePresenceResult {
+ * 이미 identity 지연 해석을 처리한다).
+ * @param avatarUrl 내 프로필 이미지 주소(있으면 상대 화면의 접속자 아바타에 그려진다).
+ *   이름과 같은 이유로 늦게 와도 된다. */
+export function usePresence(awareness: Awareness | null, authedEmail?: string | null, displayName?: string | null, avatarUrl?: string | null): UsePresenceResult {
   // Seeded off the CLIENT (not a fresh Math.random() per render): an
   // authenticated email is stable across tabs/reconnects of the same
   // account; lacking that, the underlying Yjs doc's clientID is stable for
@@ -69,9 +71,9 @@ export function usePresence(awareness: Awareness | null, authedEmail?: string | 
   // through `localStorage`, which is out of scope for this task).
   const seed = authedEmail || (awareness ? String(awareness.clientID) : 'solo');
   const localUser = useMemo<PresenceUser>(() => {
-    if (authedEmail) return { name: displayName?.trim() || authedEmail, color: colorForSeed(authedEmail), authed: true };
+    if (authedEmail) return { name: displayName?.trim() || authedEmail, color: colorForSeed(authedEmail), authed: true, avatar: avatarUrl || null };
     return { name: nameForSeed(seed), color: colorForSeed(seed) };
-  }, [authedEmail, displayName, seed]);
+  }, [authedEmail, displayName, avatarUrl, seed]);
 
   const localUserRef = useRef(localUser);
   localUserRef.current = localUser;

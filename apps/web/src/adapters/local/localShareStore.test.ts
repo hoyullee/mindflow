@@ -71,10 +71,25 @@ describe('LocalShareStore', () => {
     const people = await store.listParticipants('d1');
 
     expect(people).toEqual([
-      { kind: 'owner', email: 'me@example.com', displayName: '나야나', joined: true, role: 'edit' },
-      { kind: 'invitee', email: 'known@example.com', displayName: '아는 사람', joined: true, role: 'edit' },
-      { kind: 'invitee', email: 'stranger@example.com', displayName: null, joined: false, role: 'edit' },
+      { kind: 'owner', email: 'me@example.com', displayName: '나야나', joined: true, role: 'edit', avatarUrl: null },
+      { kind: 'invitee', email: 'known@example.com', displayName: '아는 사람', joined: true, role: 'edit', avatarUrl: null },
+      { kind: 'invitee', email: 'stranger@example.com', displayName: null, joined: false, role: 'edit', avatarUrl: null },
     ]);
+  });
+
+  // 프로필 이미지(0031)의 데모 짝 — Supabase는 RPC 조인으로 오지만, 데모에는
+  // "다른 사용자"가 없으므로 이 브라우저의 캐시에서 읽는다(프로필명과 같은 규칙).
+  // 그래야 에디터(칸반 담당·댓글 얼굴)에서도 같은 길을 탄다.
+  it('참가자: 프로필 이미지 캐시가 있으면 그 주소를 함께 싣는다', async () => {
+    localStorage.setItem('mf_demo_session', JSON.stringify({ user: { id: 'u1', email: 'me@example.com' } }));
+    localStorage.setItem('mf_profile_avatars', JSON.stringify({ 'me@example.com': 'data:image/webp;base64,AA', 'known@example.com': 'https://cdn.example.com/k.webp' }));
+    const store = new LocalShareStore();
+    await store.add('d1', 'known@example.com');
+    await store.add('d1', 'stranger@example.com');
+
+    const people = await store.listParticipants('d1');
+
+    expect(people?.map((p) => p.avatarUrl)).toEqual(['data:image/webp;base64,AA', 'https://cdn.example.com/k.webp', null]);
   });
 });
 

@@ -23,6 +23,8 @@ export function AccountSettingsModal({ state, controller }: Props) {
   // **처음 열 때는 애니메이션을 걸지 않는다**(카드 자체가 이미 페이드로 뜬다):
   // `detail`이 실제로 바뀐 순간에만 방향이 정해진다.
   const bodyRef = useRef<HTMLDivElement | null>(null);
+  /** 숨은 파일 입력 — 아바타 버튼과 '프로필 이미지 변경' 행이 같은 것을 쓴다. */
+  const fileRef = useRef<HTMLInputElement | null>(null);
   const fromH = useRef<number | null>(null);
   const prevDetail = useRef(detail);
   const [dir, setDir] = useState<'fwd' | 'back' | null>(null);
@@ -281,14 +283,116 @@ export function AccountSettingsModal({ state, controller }: Props) {
             <div key="main" className={viewClass}>
           {/* account */}
           <div style={{ fontSize: 12, fontWeight: 700, color: 'var(--mf-faint)', letterSpacing: '.02em', marginBottom: 10 }}>계정</div>
-          {/* Read-only account summary — profile-name editing lives in the profile
-              popover's "프로필명 변경" button, not here. */}
-          <div style={{ display: 'flex', alignItems: 'center', gap: 16, padding: 16, borderRadius: 16, background: 'var(--mf-accent-soft)', marginBottom: 24 }}>
-            <ProfileAvatar initial={initial} avatarUrl={state.userAvatar} size={56} radius={16} fontSize={17} />
+          {/* 계정 요약 — 아바타를 누르면 곧바로 이미지를 고른다(요청: 프로필 이미지
+              변경). 프로필명 변경도 프로필 팝오버에서 이 화면으로 옮겨 왔다 — 프로필을
+              손보는 일이 설정 한 자리에 모인다. */}
+          <div style={{ display: 'flex', alignItems: 'center', gap: 16, padding: 16, borderRadius: 16, background: 'var(--mf-accent-soft)', marginBottom: 14 }}>
+            <button
+              type="button"
+              data-avatar-pick
+              aria-label="프로필 이미지 변경"
+              title="프로필 이미지 변경"
+              disabled={state.avatarBusy}
+              onClick={() => fileRef.current?.click()}
+              style={{ position: 'relative', border: 0, background: 'transparent', padding: 0, cursor: state.avatarBusy ? 'default' : 'pointer', lineHeight: 0, borderRadius: 16, flexShrink: 0 }}
+            >
+              <ProfileAvatar initial={initial} avatarUrl={state.userAvatar} size={56} radius={16} fontSize={17} />
+              {/* 카메라 배지 — 아바타 자체가 버튼이라는 것을 알려 준다(관례). */}
+              <span
+                aria-hidden="true"
+                style={{ position: 'absolute', right: -3, bottom: -3, width: 22, height: 22, borderRadius: 999, background: 'var(--mf-card)', border: '1px solid var(--mf-border)', display: 'flex', alignItems: 'center', justifyContent: 'center', boxShadow: '0 2px 6px rgba(46,42,38,.18)' }}
+              >
+                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="var(--mf-subtext)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                  <path d="M4 8.5A2 2 0 0 1 6 6.5h1.6l1-1.6h4.8l1 1.6H18a2 2 0 0 1 2 2V17a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2z" />
+                  <circle cx="12" cy="12.6" r="3" />
+                </svg>
+              </span>
+            </button>
             <div style={{ minWidth: 0, flex: 1 }}>
               <div style={{ fontWeight: 800, fontSize: 16.5, letterSpacing: '-.01em', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{state.userName}</div>
               {state.userEmail && <div style={{ fontSize: 13, color: 'var(--mf-muted)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', marginTop: 3 }}>{state.userEmail}</div>}
             </div>
+          </div>
+
+          {/* 파일 고르기는 숨은 input 하나로 — 아바타 버튼과 아래 행이 같은 것을 쓴다. */}
+          <input
+            ref={fileRef}
+            type="file"
+            accept="image/*"
+            data-avatar-input
+            style={{ display: 'none' }}
+            onChange={(e) => {
+              const f = e.target.files?.[0] ?? null;
+              e.target.value = ''; // 같은 파일을 다시 골라도 change가 오게
+              void controller.changeAvatar(f);
+            }}
+          />
+
+          <div style={{ fontSize: 12, fontWeight: 700, color: 'var(--mf-faint)', letterSpacing: '.02em', marginBottom: 10 }}>프로필</div>
+          <div
+            className="menu-row"
+            data-avatar-row
+            role="button"
+            tabIndex={0}
+            aria-disabled={state.avatarBusy}
+            onClick={() => !state.avatarBusy && fileRef.current?.click()}
+            onKeyDown={(e) => {
+              if ((e.key === 'Enter' || e.key === ' ') && !state.avatarBusy) {
+                e.preventDefault();
+                fileRef.current?.click();
+              }
+            }}
+            style={{ display: 'flex', alignItems: 'center', gap: 13, padding: '15px 16px', borderRadius: 14, cursor: state.avatarBusy ? 'default' : 'pointer' }}
+          >
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="var(--mf-subtext)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true" style={{ flexShrink: 0 }}>
+              <rect x="3" y="5" width="18" height="14" rx="2.5" />
+              <circle cx="8.5" cy="10" r="1.4" />
+              <path d="m5 17 5-4.5 4 3.5 3-2.5 3 3" />
+            </svg>
+            <div style={{ minWidth: 0 }}>
+              <div style={{ fontWeight: 700, fontSize: 14.5 }}>프로필 이미지 변경</div>
+              <div data-avatar-hint style={{ fontSize: 12.5, color: state.avatarError ? 'var(--mf-danger)' : 'var(--mf-muted)', marginTop: 2 }}>
+                {state.avatarBusy ? '올리는 중이에요…' : (state.avatarError ?? '정사각형으로 잘려 함께 쓰는 화면에도 보여요')}
+              </div>
+            </div>
+            {/* 지우기는 사진이 있을 때만 — 없으면 눌러도 아무 일이 없다. */}
+            {state.userAvatar && !state.avatarBusy && (
+              <button
+                type="button"
+                data-avatar-remove
+                onClick={(e) => {
+                  e.stopPropagation();
+                  void controller.removeAvatar();
+                }}
+                style={{ marginLeft: 'auto', flexShrink: 0, height: 32, padding: '0 12px', borderRadius: 9, border: '1px solid var(--mf-border)', background: 'var(--mf-card)', color: 'var(--mf-subtext)', fontFamily: 'inherit', fontSize: 12.5, fontWeight: 700, cursor: 'pointer' }}
+              >
+                기본으로
+              </button>
+            )}
+          </div>
+
+          <div
+            className="menu-row"
+            data-profile-name-row
+            role="button"
+            tabIndex={0}
+            onClick={controller.openProfileNameEdit}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter' || e.key === ' ') {
+                e.preventDefault();
+                controller.openProfileNameEdit();
+              }
+            }}
+            style={{ display: 'flex', alignItems: 'center', gap: 13, padding: '15px 16px', borderRadius: 14, cursor: 'pointer', marginBottom: 10 }}
+          >
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="var(--mf-subtext)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true" style={{ flexShrink: 0 }}>
+              <path d="M12 20h9" />
+              <path d="M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4z" />
+            </svg>
+            <div style={{ minWidth: 0, fontWeight: 700, fontSize: 14.5 }}>프로필명 변경</div>
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="var(--mf-faint)" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true" style={{ marginLeft: 'auto', flexShrink: 0 }}>
+              <path d="m9 6 6 6-6 6" />
+            </svg>
           </div>
 
           {/* 색상 테마 — LNB 최하단에 있다가 사용자 요청으로 이리 왔다(설정에 모으는 게
