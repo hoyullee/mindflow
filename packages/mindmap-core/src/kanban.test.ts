@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { KanbanCard, KanbanColumn } from './model';
-import { cardsInColumn, moveCard, moveColumn, needsRenumber, posForIndex, removeColumn, renumberColumn } from './kanban';
+import { cardsInColumn, moveCard, moveColumn, needsRenumber, posForIndex, removeColumn, renumberColumn, sortColumnsByDue } from './kanban';
 import { parseDoc, serializeDoc } from './serialize';
 import * as Y from 'yjs';
 import { applyDocToYDoc, applyUpdate, docToYDoc, encodeStateAsUpdate, yDocToDoc } from './crdt';
@@ -150,5 +150,35 @@ describe('칸반 — 협업(CRDT)', () => {
     expect(yDocToDoc(B)).toEqual(merged); // 수렴
     expect(cardsInColumn(merged.cards!, 'c2').map((c) => c.id).sort()).toEqual(['a', 'b']); // 둘 다 옮겨졌다
     expect(cardsInColumn(merged.cards!, 'c1')).toHaveLength(0);
+  });
+});
+
+describe('sortColumnsByDue — 전체 기한순 정렬(요청)', () => {
+  const cards: KanbanCard[] = [
+    { id: 'a', col: 'c1', pos: 0, text: 'A', due: '2026-09-02' },
+    { id: 'b', col: 'c1', pos: 1024, text: 'B' },
+    { id: 'c', col: 'c1', pos: 2048, text: 'C', due: '2026-08-30' },
+    { id: 'd', col: 'c1', pos: 3072, text: 'D' },
+    { id: 'e', col: 'c2', pos: 0, text: 'E', due: '2026-12-01' },
+    { id: 'f', col: 'c2', pos: 1024, text: 'F', due: '2026-08-01' },
+  ];
+
+  it('빠른 기한이 위로, 기한 없는 카드는 뒤로 — 같은 값끼리는 지금 순서를 지킨다', () => {
+    const next = sortColumnsByDue(cards, ['c1', 'c2']);
+    expect(cardsInColumn(next, 'c1').map((c) => c.id)).toEqual(['c', 'a', 'b', 'd']);
+    expect(cardsInColumn(next, 'c2').map((c) => c.id)).toEqual(['f', 'e']);
+  });
+
+  it('열 소속·내용은 그대로다 — pos만 바뀐다', () => {
+    const next = sortColumnsByDue(cards, ['c1', 'c2']);
+    for (const before of cards) {
+      const after = next.find((c) => c.id === before.id) as KanbanCard;
+      expect({ ...after, pos: 0 }).toEqual({ ...before, pos: 0 });
+    }
+  });
+
+  it('목록에 없는 열의 카드는 손대지 않는다', () => {
+    const next = sortColumnsByDue(cards, ['c1']);
+    expect(next.filter((c) => c.col === 'c2')).toEqual(cards.filter((c) => c.col === 'c2'));
   });
 });

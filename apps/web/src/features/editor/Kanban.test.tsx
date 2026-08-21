@@ -1710,6 +1710,8 @@ describe('칸반 — 카드 우클릭 메뉴와 빠른 댓글', () => {
         onComment={() => {}}
         onMove={() => {}}
         onToggleFlag={() => {}}
+        onCopy={() => {}}
+        onCut={() => {}}
         onDuplicate={() => {}}
         onDelete={() => {}}
         onClose={() => {}}
@@ -1833,5 +1835,165 @@ describe('칸반 — 카드 상세 재디자인(시안 ③)', () => {
     expect(detail.className).toContain('mf-kb-sheet');
     const main = detail.querySelector('[data-detail-main]') as HTMLElement;
     expect((main.parentElement as HTMLElement).style.flexDirection).toBe('column');
+  });
+});
+
+describe('칸반 — 배경 우클릭 메뉴(시안)', () => {
+  beforeEach(() => {
+    localStorage.clear();
+    mockMatchMedia(false);
+    localStorage.setItem('mf_demo_session', JSON.stringify({ user: { id: 'u', email: 'me@example.com' } }));
+  });
+  afterEach(cleanup);
+
+  /** 카드·열이 없는 자리 = 보드 루트의 아래쪽 여백. */
+  function openBoardMenu(container: HTMLElement): HTMLElement {
+    const root = container.querySelector('[data-kanban-root]') as HTMLElement;
+    fireEvent.contextMenu(root, { clientX: 40, clientY: 700 });
+    return document.querySelector('[data-board-menu]') as HTMLElement;
+  }
+
+  it('머리는 "보드 · N개 열"이고, 열 추가·기한순 정렬·긴급만 보기·완료 비우기가 있다', async () => {
+    localStorage.setItem('mindflow_doc_bm1', JSON.stringify(KANBAN));
+    const { container } = renderEditor('/editor?map=bm1&title=x');
+    await waitFor(() => expect(container.querySelectorAll('[data-kanban-column]')).toHaveLength(2));
+
+    const menu = openBoardMenu(container);
+    expect(menu).toBeTruthy();
+    expect((menu.querySelector('[data-board-menu-title]') as HTMLElement).textContent).toBe('보드 · 2개 열');
+    expect(menu.querySelector('[data-board-add-column]')).toBeTruthy();
+    expect(menu.querySelector('[data-board-sort-due]')).toBeTruthy();
+    expect(menu.querySelector('[data-board-urgent-only]')).toBeTruthy();
+    expect(menu.querySelector('[data-board-clear-done]')).toBeTruthy();
+    // 담아 둔 카드가 없으면 붙여넣기는 아예 없다(죽은 항목 금지)
+    expect(menu.querySelector('[data-board-paste]')).toBeNull();
+    // 단축키 표기 — 데스크톱은 적고, 한 메뉴 안에서 겹치지 않는다
+    const keys = Array.from(menu.querySelectorAll('span')).map((el) => el.textContent).filter((t) => t === 'N' || t === 'Ctrl+V' || t === '⌘V');
+    expect(keys).toContain('N');
+  });
+
+  it('열 추가는 N 키로도 되고, 카드를 안 골라도 듣는다', async () => {
+    localStorage.setItem('mindflow_doc_bm2', JSON.stringify(KANBAN));
+    const { container } = renderEditor('/editor?map=bm2&title=x');
+    await waitFor(() => expect(container.querySelectorAll('[data-kanban-column]')).toHaveLength(2));
+
+    fireEvent.keyDown(window, { key: 'n' });
+    await waitFor(() => expect(container.querySelectorAll('[data-kanban-column]')).toHaveLength(3));
+    fireEvent.keyDown(window, { key: 's', ctrlKey: true });
+    await waitFor(() => expect(saved('bm2').columns).toHaveLength(3));
+  });
+
+  it('전체 기한순 정렬 — 빠른 기한이 위로, 기한 없는 카드는 뒤로', async () => {
+    localStorage.setItem(
+      'mindflow_doc_bm3',
+      JSON.stringify({
+        ...KANBAN,
+        cards: [
+          { id: 'k1', col: 'c1', pos: 0, text: '나중', due: '2026-09-20' },
+          { id: 'k2', col: 'c1', pos: 1024, text: '없음' },
+          { id: 'k3', col: 'c1', pos: 2048, text: '먼저', due: '2026-08-05' },
+        ],
+      }),
+    );
+    const { container } = renderEditor('/editor?map=bm3&title=x');
+    await waitFor(() => expect(container.querySelectorAll('[data-kanban-card]')).toHaveLength(3));
+
+    fireEvent.click(openBoardMenu(container).querySelector('[data-board-sort-due]') as HTMLElement);
+    await waitFor(() => {
+      const order = Array.from(container.querySelectorAll('[data-kanban-card]')).map((el) => el.getAttribute('data-kanban-card'));
+      expect(order).toEqual(['k3', 'k1', 'k2']);
+    });
+  });
+
+  it('긴급만 보기 — 필터를 켜면 긴급 카드만 남고, 다시 열면 체크가 보인다', async () => {
+    localStorage.setItem(
+      'mindflow_doc_bm4',
+      JSON.stringify({
+        ...KANBAN,
+        cards: [
+          { id: 'k1', col: 'c1', pos: 0, text: '보통' },
+          { id: 'k2', col: 'c1', pos: 1024, text: '급함', flagged: true },
+        ],
+      }),
+    );
+    const { container } = renderEditor('/editor?map=bm4&title=x');
+    await waitFor(() => expect(container.querySelectorAll('[data-kanban-card]')).toHaveLength(2));
+
+    fireEvent.click(openBoardMenu(container).querySelector('[data-board-urgent-only]') as HTMLElement);
+    await waitFor(() => expect(container.querySelectorAll('[data-kanban-card]')).toHaveLength(1));
+    expect(container.querySelector('[data-kanban-card="k2"]')).toBeTruthy();
+    // 문서는 그대로다 — 필터는 보는 사람의 상태다
+    fireEvent.keyDown(window, { key: 's', ctrlKey: true });
+    await waitFor(() => expect(saved('bm4').cards).toHaveLength(2));
+    expect((openBoardMenu(container).querySelector('[data-board-urgent-only]') as HTMLElement).getAttribute('data-on')).toBe('1');
+  });
+
+  it('완료 카드 모두 비우기 — 확인창을 거쳐 마지막 열만 비고, undo로 돌아온다', async () => {
+    localStorage.setItem(
+      'mindflow_doc_bm5',
+      JSON.stringify({
+        ...KANBAN,
+        cards: [
+          { id: 'k1', col: 'c1', pos: 0, text: '남는다' },
+          { id: 'k2', col: 'c2', pos: 0, text: '완료1' },
+          { id: 'k3', col: 'c2', pos: 1024, text: '완료2' },
+        ],
+      }),
+    );
+    const { container } = renderEditor('/editor?map=bm5&title=x');
+    await waitFor(() => expect(container.querySelectorAll('[data-kanban-card]')).toHaveLength(3));
+
+    fireEvent.click(openBoardMenu(container).querySelector('[data-board-clear-done]') as HTMLElement);
+    const dialog = await waitFor(() => document.querySelector('[data-confirm-clear-done]') as HTMLElement);
+    expect(dialog.textContent).toContain('2장');
+    // 취소하면 아무것도 바뀌지 않는다
+    fireEvent.click(dialog.querySelector('[data-confirm-cancel]') as HTMLElement);
+    expect(container.querySelectorAll('[data-kanban-card]')).toHaveLength(3);
+
+    fireEvent.click(openBoardMenu(container).querySelector('[data-board-clear-done]') as HTMLElement);
+    const again = await waitFor(() => document.querySelector('[data-confirm-clear-done]') as HTMLElement);
+    fireEvent.click(again.querySelector('[data-confirm-delete]') as HTMLElement);
+    await waitFor(() => expect(container.querySelectorAll('[data-kanban-card]')).toHaveLength(1));
+    expect(container.querySelector('[data-kanban-card="k1"]')).toBeTruthy();
+
+    fireEvent.keyDown(window, { key: 'z', ctrlKey: true });
+    await waitFor(() => expect(container.querySelectorAll('[data-kanban-card]')).toHaveLength(3));
+  });
+
+  it('카드 복사 → 배경 메뉴 붙여넣기 — 첫 열 끝에 사본이 선다', async () => {
+    localStorage.setItem('mindflow_doc_bm6', JSON.stringify(KANBAN));
+    const { container } = renderEditor('/editor?map=bm6&title=x');
+    await waitFor(() => expect(container.querySelectorAll('[data-kanban-card]')).toHaveLength(2));
+
+    // 카드 메뉴의 '복사'
+    fireEvent.contextMenu(container.querySelector('[data-kanban-card="k1"]') as HTMLElement, { clientX: 100, clientY: 100 });
+    fireEvent.click(document.querySelector('[data-card-menu-copy]') as HTMLElement);
+
+    const menu = openBoardMenu(container);
+    const paste = menu.querySelector('[data-board-paste]') as HTMLElement;
+    expect(paste).toBeTruthy();
+    fireEvent.click(paste);
+    await waitFor(() => expect(container.querySelectorAll('[data-kanban-card]')).toHaveLength(3));
+    fireEvent.keyDown(window, { key: 's', ctrlKey: true });
+    await waitFor(() => {
+      const cards = saved('bm6').cards as { id: string; col: string; text: string }[];
+      const copies = cards.filter((c) => c.text === '첫 카드');
+      expect(copies).toHaveLength(2);
+      expect(copies.every((c) => c.col === 'c1')).toBe(true);
+    });
+  });
+
+  it('카드·열 위에서는 배경 메뉴가 열리지 않는다(각자 자기 메뉴가 있다)', async () => {
+    localStorage.setItem('mindflow_doc_bm7', JSON.stringify(KANBAN));
+    const { container } = renderEditor('/editor?map=bm7&title=x');
+    await waitFor(() => expect(container.querySelectorAll('[data-kanban-card]')).toHaveLength(2));
+
+    fireEvent.contextMenu(container.querySelector('[data-kanban-card="k1"]') as HTMLElement, { clientX: 100, clientY: 100 });
+    expect(document.querySelector('[data-board-menu]')).toBeNull();
+    expect(document.querySelector('[data-card-menu="k1"]')).toBeTruthy();
+
+    fireEvent.keyDown(window, { key: 'Escape' });
+    fireEvent.contextMenu(container.querySelector('[data-kanban-column="c1"]') as HTMLElement, { clientX: 100, clientY: 300 });
+    expect(document.querySelector('[data-board-menu]')).toBeNull();
   });
 });

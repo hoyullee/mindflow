@@ -43,6 +43,8 @@ export function CardMenu({
   onComment,
   onMove,
   onToggleFlag,
+  onCopy,
+  onCut,
   onDuplicate,
   onDelete,
   onClose,
@@ -58,6 +60,8 @@ export function CardMenu({
   onComment: () => void;
   onMove: (colId: string) => void;
   onToggleFlag: () => void;
+  onCopy: () => void;
+  onCut: () => void;
   onDuplicate: () => void;
   onDelete: () => void;
   onClose: () => void;
@@ -248,9 +252,26 @@ export function CardMenu({
           </button>
 
           <MenuDivider theme={th} />
-          <button type="button" role="menuitem" className="mf-kb-menu-row" data-card-menu-duplicate onClick={onDuplicate} style={row}>
+          {/* 복사·잘라내기 — 배경 메뉴의 '붙여넣기'가 쓸 **원천**이다(요청 시안의
+              배경 메뉴에 붙여넣기가 있는데, 담을 방법이 없으면 그 행은 죽은 항목이
+              된다). 클립보드는 캔버스와 따로인 **카드 전용**이다. */}
+          <button type="button" role="menuitem" className="mf-kb-menu-row" data-card-menu-copy onClick={onCopy} style={row}>
             <span style={glyph}>
               <CopyGlyph />
+            </span>
+            <span style={{ flex: '1 1 auto' }}>복사</span>
+            <span style={key}>{mac ? '⌘C' : 'Ctrl+C'}</span>
+          </button>
+          <button type="button" role="menuitem" className="mf-kb-menu-row" data-card-menu-cut onClick={onCut} style={row}>
+            <span style={glyph}>
+              <CutGlyph />
+            </span>
+            <span style={{ flex: '1 1 auto' }}>잘라내기</span>
+            <span style={key}>{mac ? '⌘X' : 'Ctrl+X'}</span>
+          </button>
+          <button type="button" role="menuitem" className="mf-kb-menu-row" data-card-menu-duplicate onClick={onDuplicate} style={row}>
+            <span style={glyph}>
+              <DupeGlyph />
             </span>
             <span style={{ flex: '1 1 auto' }}>복제</span>
             <span style={key}>{mac ? '⌘D' : 'Ctrl+D'}</span>
@@ -510,6 +531,263 @@ function TrashGlyph() {
   return (
     <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
       <path d="M3 6h18M8 6V4h8v2M6 6l1 14h10l1-14" />
+    </svg>
+  );
+}
+
+function CutGlyph() {
+  return (
+    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+      <circle cx="6" cy="18" r="2.5" />
+      <circle cx="18" cy="18" r="2.5" />
+      <path d="M8 16 18 4M16 16 6 4" />
+    </svg>
+  );
+}
+
+/** 복제 — 겹쳐 놓인 같은 모양 둘("그 자리에 하나 더"). 복사와 갈라 보이게. */
+function DupeGlyph() {
+  return (
+    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+      <rect x="4" y="4" width="12" height="12" rx="2.5" />
+      <path d="M8 20h10a2 2 0 0 0 2-2V8" />
+    </svg>
+  );
+}
+
+/** 배경 메뉴 — 카드도 열도 없는 자리에서 여는 **보드 전체**에 대한 메뉴(시안).
+ *
+ * 카드 메뉴와 같은 카드·행·단축키 문법을 쓴다(같은 보드에서 두 메뉴가 다른 물건처럼
+ * 보이지 않게). 단축키 표기는 세 환경 규칙을 그대로 따른다 — Mac은 기호, Windows는
+ * 낱말, **모바일은 적지 않는다**(누를 수 없는 키가 자리만 차지한다).
+ */
+export function BoardMenu({
+  theme: th,
+  at,
+  isMobile,
+  readOnly,
+  columnCount,
+  clipboardCount,
+  doneCount,
+  urgentOnly,
+  onAddColumn,
+  onPaste,
+  onSortByDue,
+  onToggleUrgent,
+  onClearDone,
+  onClose,
+}: {
+  theme: Theme;
+  at: { x: number; y: number };
+  isMobile: boolean;
+  readOnly: boolean;
+  columnCount: number;
+  clipboardCount: number;
+  /** 마지막(완료) 열의 카드 수 — 0이면 '모두 비우기'는 비활성이다. */
+  doneCount: number;
+  urgentOnly: boolean;
+  onAddColumn: () => void;
+  onPaste: () => void;
+  onSortByDue: () => void;
+  onToggleUrgent: () => void;
+  onClearDone: () => void;
+  onClose: () => void;
+}) {
+  const ref = useRef<HTMLDivElement | null>(null);
+  const [pos, setPos] = useState(() => clampPos(at.x, at.y, MENU_W, 280));
+  useLayoutEffect(() => {
+    const h = ref.current?.offsetHeight ?? 280;
+    setPos(clampPos(at.x, at.y, MENU_W, h));
+  }, [at.x, at.y]);
+
+  useEffect(() => {
+    const onDown = (e: PointerEvent): void => {
+      if (!ref.current?.contains(e.target as Node)) onClose();
+    };
+    const onKey = (e: KeyboardEvent): void => {
+      if (e.key !== 'Escape') return;
+      e.stopPropagation();
+      onClose();
+    };
+    window.addEventListener('pointerdown', onDown, true);
+    window.addEventListener('keydown', onKey, true);
+    return () => {
+      window.removeEventListener('pointerdown', onDown, true);
+      window.removeEventListener('keydown', onKey, true);
+    };
+  }, [onClose]);
+
+  const mac = typeof navigator !== 'undefined' && /Mac|iPhone|iPad/.test(navigator.platform || navigator.userAgent);
+  const row: CSSProperties = {
+    display: 'flex',
+    alignItems: 'center',
+    gap: 11,
+    width: '100%',
+    minHeight: isMobile ? 44 : 38,
+    padding: '0 11px',
+    border: 0,
+    borderRadius: 9,
+    background: 'transparent',
+    color: th.text,
+    fontSize: 13.5,
+    fontWeight: 500,
+    fontFamily: 'inherit',
+    cursor: 'pointer',
+    textAlign: 'left',
+    boxSizing: 'border-box',
+  };
+  const glyph: CSSProperties = { display: 'flex', width: 17, justifyContent: 'center', flex: '0 0 auto', color: 'inherit' };
+  const key: CSSProperties = { flex: '0 0 auto', fontSize: 11.5, color: hexA(th.subtext, 0.85), fontFamily: 'ui-monospace, SFMono-Regular, Menlo, monospace' };
+
+  return (
+    <div
+      ref={ref}
+      data-board-menu
+      role="menu"
+      aria-label="보드 메뉴"
+      className="mf-kb-pop"
+      style={{
+        position: 'fixed',
+        left: pos.left,
+        top: pos.top,
+        width: MENU_W,
+        boxSizing: 'border-box',
+        padding: 6,
+        background: th.panel,
+        border: `1px solid ${th.border}`,
+        borderRadius: 14,
+        boxShadow: '0 24px 54px -22px rgba(46,42,38,.5), 0 2px 6px rgba(46,42,38,.06)',
+        zIndex: 330,
+        transformOrigin: 'top left',
+        ['--mf-kb-hover' as string]: hexA(th.accent, 0.1),
+        ['--mf-kb-hover-ink' as string]: th.accent,
+        ['--mf-kb-danger-soft' as string]: hexA(URGENT, 0.1),
+        ['--mf-kb-danger' as string]: URGENT,
+      } as CSSProperties}
+    >
+      {/* 머리 — 무엇에 대한 메뉴인지(시안: `보드 · 4개 열`). */}
+      <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '7px 10px 9px', minWidth: 0 }}>
+        <span aria-hidden="true" style={{ flex: '0 0 auto', width: 7, height: 7, borderRadius: 999, background: th.border }} />
+        <span data-board-menu-title style={{ fontSize: 12.5, fontWeight: 700, color: th.text, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+          보드 · {columnCount}개 열
+        </span>
+      </div>
+
+      {!readOnly && (
+        <>
+          <button type="button" role="menuitem" className="mf-kb-menu-row" data-board-add-column onClick={onAddColumn} style={row}>
+            <span style={glyph}>
+              <PlusGlyph />
+            </span>
+            <span style={{ flex: '1 1 auto' }}>열 추가</span>
+            {!isMobile && <span style={key}>N</span>}
+          </button>
+
+          {/* 붙여넣기 — 담아 둔 카드가 없으면 아예 내지 않는다(눌러도 아무 일 없는
+              항목을 두지 않는다는 기존 규칙). */}
+          {clipboardCount > 0 && (
+            <button type="button" role="menuitem" className="mf-kb-menu-row" data-board-paste onClick={onPaste} style={row}>
+              <span style={glyph}>
+                <PasteGlyph />
+              </span>
+              <span style={{ flex: '1 1 auto' }}>{clipboardCount > 1 ? `붙여넣기 (${clipboardCount}장)` : '붙여넣기'}</span>
+              {!isMobile && <span style={key}>{mac ? '⌘V' : 'Ctrl+V'}</span>}
+            </button>
+          )}
+
+          <MenuDivider theme={th} />
+          <button type="button" role="menuitem" className="mf-kb-menu-row" data-board-sort-due onClick={onSortByDue} style={row}>
+            <span style={glyph}>
+              <SortGlyph />
+            </span>
+            <span style={{ flex: '1 1 auto' }}>전체 기한순 정렬</span>
+          </button>
+        </>
+      )}
+
+      {/* 긴급만 보기 — 필터는 **보는 사람의 상태**라 보기 전용에서도 쓸 수 있다
+          (문서를 바꾸지 않는다). 켜져 있으면 체크로 알린다. */}
+      <button type="button" role="menuitem" className="mf-kb-menu-row" data-board-urgent-only data-on={urgentOnly ? '1' : undefined} aria-pressed={urgentOnly} onClick={onToggleUrgent} style={{ ...row, color: urgentOnly ? th.accent : th.text }}>
+        <span style={glyph}>
+          <FlagGlyph />
+        </span>
+        <span style={{ flex: '1 1 auto' }}>긴급만 보기</span>
+        {urgentOnly && (
+          <span style={{ ...glyph, width: 14, color: th.accent }}>
+            <CheckGlyph />
+          </span>
+        )}
+      </button>
+
+      {!readOnly && (
+        <>
+          <MenuDivider theme={th} />
+          {/* 완료 카드 비우기 — 마지막 열이 '완료'다(진행률·기한 톤도 그 규칙을 쓴다).
+              비어 있으면 비활성으로 남긴다: 항목이 사라지면 메뉴 높이가 들썩인다. */}
+          <button
+            type="button"
+            role="menuitem"
+            className="mf-kb-menu-row is-danger"
+            data-board-clear-done
+            disabled={doneCount === 0}
+            title={doneCount === 0 ? '완료 열에 카드가 없어요' : `카드 ${doneCount}장을 지웁니다`}
+            onClick={onClearDone}
+            style={{ ...row, color: URGENT, opacity: doneCount === 0 ? 0.45 : 1, cursor: doneCount === 0 ? 'default' : 'pointer' }}
+          >
+            <span style={glyph}>
+              <ClearGlyph />
+            </span>
+            <span style={{ flex: '1 1 auto' }}>완료 카드 모두 비우기</span>
+            {doneCount > 0 && <span style={{ ...key, color: hexA(URGENT, 0.75) }}>{doneCount}장</span>}
+          </button>
+        </>
+      )}
+    </div>
+  );
+}
+
+function PlusGlyph() {
+  return (
+    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" aria-hidden="true">
+      <path d="M12 5v14M5 12h14" />
+    </svg>
+  );
+}
+
+function PasteGlyph() {
+  return (
+    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+      <rect x="7" y="4" width="10" height="16" rx="2" />
+      <path d="M10 4h4v2h-4z" />
+    </svg>
+  );
+}
+
+/** 기한순 정렬 — 위아래 화살표 + 짧아지는 줄(정렬의 관용 기호). */
+function SortGlyph() {
+  return (
+    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+      <path d="M6 4v16M6 20l-3-3M6 20l3-3" />
+      <path d="M12 6h9M12 12h6M12 18h3" />
+    </svg>
+  );
+}
+
+function CheckGlyph() {
+  return (
+    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+      <polyline points="20 6 9 17 4 12" />
+    </svg>
+  );
+}
+
+/** 비우기 — 쓸어 내는 붓(시안). 삭제(휴지통)와 갈라 보이게 다른 그림을 쓴다. */
+function ClearGlyph() {
+  return (
+    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+      <path d="M19 4 9 14" />
+      <path d="M13 8l3 3" />
+      <path d="M9 14l-4 6h6l2-3z" />
     </svg>
   );
 }

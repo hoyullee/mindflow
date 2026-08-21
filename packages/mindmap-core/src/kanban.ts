@@ -79,3 +79,35 @@ export function moveColumn(columns: KanbanColumn[], colId: string, to: number): 
 
 /** 빈 칸반 문서의 열 셋 — 새 보드가 열자마자 쓸 수 있게. */
 export const DEFAULT_KANBAN_COLUMNS: readonly string[] = ['할 일', '진행 중', '완료'];
+
+/**
+ * 모든 열의 카드를 **기한순**으로 다시 놓는다(요청: 배경 메뉴 '전체 기한순 정렬').
+ *
+ * 기한이 없는 카드는 **뒤로** 모은다 — 날짜가 빠른 일부터 보이는 게 목적이고,
+ * 정하지 않은 카드가 위로 올라오면 그 목적이 깨진다. 같은 기한(또는 둘 다 없음)
+ * 끼리는 **지금 순서를 지킨다**(안정 정렬) — 손으로 잡아 둔 순서를 이유 없이
+ * 흔들지 않는다.
+ *
+ * 열 소속은 건드리지 않고 `pos`만 다시 매긴다. 카드를 옮기는 것과 같은 규칙이라
+ * 협업·undo·저장이 기존 경로 그대로다.
+ */
+export function sortColumnsByDue(cards: KanbanCard[], colIds: readonly string[]): KanbanCard[] {
+  const pos = new Map<string, number>();
+  for (const colId of colIds) {
+    cardsInColumn(cards, colId)
+      // `cardsInColumn`이 이미 현재 순서로 준다 → 그 위에서 안정 정렬.
+      .map((c, i) => ({ c, i }))
+      .sort((a, b) => {
+        const da = a.c.due ?? '';
+        const db = b.c.due ?? '';
+        if (da !== db) {
+          if (!da) return 1; // 기한 없음은 뒤로
+          if (!db) return -1;
+          return da < db ? -1 : 1; // YYYY-MM-DD는 문자열 비교가 곧 날짜 비교
+        }
+        return a.i - b.i;
+      })
+      .forEach(({ c }, i) => pos.set(c.id, i * POS_STEP));
+  }
+  return cards.map((c) => (pos.has(c.id) ? { ...c, pos: pos.get(c.id) as number } : c));
+}
