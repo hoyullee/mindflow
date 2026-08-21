@@ -1794,6 +1794,15 @@ describe('칸반 — 카드 상세 재디자인(시안 ③)', () => {
     expect(main.parentElement).toBe(side.parentElement);
     expect((main.parentElement as HTMLElement).style.flexDirection).toBe('row');
 
+    // 값 줄의 차례(요청) — 상태 → 시작일·기한 → 담당. 담당은 아바타가 여러 개라
+    // 한 줄을 통째로 쓰고 아래로 내려간다.
+    const order = Array.from(main.querySelectorAll('[data-detail-status], [data-detail-start], [data-detail-due], [data-detail-owner="none"]')).map((el) =>
+      el.hasAttribute('data-detail-status') ? 'status' : el.hasAttribute('data-detail-start') ? 'start' : el.hasAttribute('data-detail-due') ? 'due' : 'owner',
+    );
+    expect(order.indexOf('start')).toBeGreaterThan(order.lastIndexOf('status'));
+    expect(order.indexOf('due')).toBeGreaterThan(order.indexOf('start'));
+    expect(order.indexOf('owner')).toBeGreaterThan(order.indexOf('due'));
+
     // 머리의 저장 상태 칩 · 긴급 문구 · 바닥
     expect(detail.querySelector('[data-detail-save]')?.textContent).toMatch(/저장|변경/);
     expect(detail.querySelector('[data-detail-flag-hint]')?.textContent).toBe('카드 테두리가 붉게 표시돼요');

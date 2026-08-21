@@ -241,70 +241,69 @@ export function CardDetail({ card, controller, theme: th, isMobile }: { card: Ka
               })}
             </Section>
 
-            {/* 담당 · 시작일 · 기한 — 시안처럼 담당과 날짜를 한 줄에 나눈다. 아바타는
-                여러 개라 왼쪽을 통째로 쓰고, 날짜 둘은 오른쪽에서 반씩 나눈다. */}
-            <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : 'minmax(0, 1fr) minmax(0, 1.15fr)', gap: 16 }}>
-              <Section label="담당" style={label}>
-                <button
-                  type="button"
-                  data-detail-owner="none"
-                  disabled={readOnly}
-                  aria-label="담당 없음"
-                  title="담당 없음"
-                  onClick={() => controller.setCardMeta(card.id, { owner: null })}
-                  style={{ width: 30, height: 30, borderRadius: 999, border: card.owner ? `1px solid ${th.border}` : `2px solid ${th.accent}`, background: th.panel, color: th.subtext, cursor: 'pointer', fontSize: 12, padding: 0 }}
-                >
-                  －
-                </button>
-                {participants.map((p) => {
-                  const name = p.displayName?.trim() || (p.email.split('@')[0] as string);
-                  const on = (card.owner ?? '') === p.email;
-                  return (
-                    <button
-                      key={p.email}
-                      type="button"
-                      data-detail-owner={p.email}
-                      disabled={readOnly}
-                      aria-label={name}
-                      title={`${name}${p.joined ? '' : ' (가입 대기)'}`}
-                      onClick={() => controller.setCardMeta(card.id, { owner: { email: p.email, name } })}
-                      style={{ border: 0, background: 'transparent', padding: 0, cursor: 'pointer', lineHeight: 0, opacity: p.joined ? 1 : 0.6 }}
-                    >
-                      <Avatar name={name} email={p.email} size={30} ring={on ? th.accent : 'transparent'} />
-                    </button>
-                  );
-                })}
-                {!participants.length && <span style={{ fontSize: 12.5, color: th.subtext }}>공유한 사람이 없어요</span>}
-              </Section>
-
-              {/* 시작일 · 기한 — 타임라인 막대가 이 둘 사이를 그린다(시작일이 없으면
-                  오늘부터). 지우기는 **항상 자리를 지킨다** — 값이 없으면 비활성:
-                  버튼이 떴다 사라지면 그 줄의 폭이 들썩인다. */}
-              <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : '1fr 1fr', gap: 14, minWidth: 0 }}>
-                <DateField
-                  label="시작일"
-                  value={card.start ?? ''}
-                  attr="start"
-                  theme={th}
-                  isMobile={isMobile}
-                  readOnly={readOnly}
-                  labelStyle={label}
-                  chipStyle={chip(false)}
-                  onChange={(v) => controller.setCardMeta(card.id, { start: v })}
-                />
-                <DateField
-                  label="기한"
-                  value={card.due ?? ''}
-                  attr="due"
-                  theme={th}
-                  isMobile={isMobile}
-                  readOnly={readOnly}
-                  labelStyle={label}
-                  chipStyle={chip(false)}
-                  onChange={(v) => controller.setCardMeta(card.id, { due: v })}
-                />
-              </div>
+            {/* 시작일 · 기한 — 상태 바로 아래다(요청): "언제 하는 일인가"가
+                상태 다음으로 먼저 읽히고, 담당은 그 아래로 내려간다. 타임라인
+                막대가 이 둘 사이를 그린다(시작일이 없으면 오늘부터). 지우기는
+                **항상 자리를 지킨다** — 값이 없으면 비활성: 버튼이 떴다 사라지면
+                그 줄의 폭이 들썩인다. */}
+            <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : '1fr 1fr', gap: 14, minWidth: 0 }}>
+              <DateField
+                label="시작일"
+                value={card.start ?? ''}
+                attr="start"
+                theme={th}
+                isMobile={isMobile}
+                readOnly={readOnly}
+                labelStyle={label}
+                chipStyle={chip(false)}
+                onChange={(v) => controller.setCardMeta(card.id, { start: v })}
+              />
+              <DateField
+                label="기한"
+                value={card.due ?? ''}
+                attr="due"
+                theme={th}
+                isMobile={isMobile}
+                readOnly={readOnly}
+                labelStyle={label}
+                chipStyle={chip(false)}
+                onChange={(v) => controller.setCardMeta(card.id, { due: v })}
+              />
             </div>
+
+            {/* 담당 — 아바타가 여러 개라 한 줄을 통째로 쓴다(요청: 하단으로). */}
+            <Section label="담당" style={label}>
+              <button
+                type="button"
+                data-detail-owner="none"
+                disabled={readOnly}
+                aria-label="담당 없음"
+                title="담당 없음"
+                onClick={() => controller.setCardMeta(card.id, { owner: null })}
+                style={{ width: 30, height: 30, borderRadius: 999, border: card.owner ? `1px solid ${th.border}` : `2px solid ${th.accent}`, background: th.panel, color: th.subtext, cursor: 'pointer', fontSize: 12, padding: 0 }}
+              >
+                －
+              </button>
+              {participants.map((p) => {
+                const name = p.displayName?.trim() || (p.email.split('@')[0] as string);
+                const on = (card.owner ?? '') === p.email;
+                return (
+                  <button
+                    key={p.email}
+                    type="button"
+                    data-detail-owner={p.email}
+                    disabled={readOnly}
+                    aria-label={name}
+                    title={`${name}${p.joined ? '' : ' (가입 대기)'}`}
+                    onClick={() => controller.setCardMeta(card.id, { owner: { email: p.email, name } })}
+                    style={{ border: 0, background: 'transparent', padding: 0, cursor: 'pointer', lineHeight: 0, opacity: p.joined ? 1 : 0.6 }}
+                  >
+                    <Avatar name={name} email={p.email} size={30} ring={on ? th.accent : 'transparent'} />
+                  </button>
+                );
+              })}
+              {!participants.length && <span style={{ fontSize: 12.5, color: th.subtext }}>공유한 사람이 없어요</span>}
+            </Section>
 
             {/* 분류 — 문서가 목록을 들고 있다. 기본은 **없음**뿐이고, 직접 적어
                 추가하면 목록에 남는다. 색은 이름에서 자동으로 붙되, 고른 분류의
