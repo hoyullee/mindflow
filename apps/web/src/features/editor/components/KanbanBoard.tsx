@@ -28,7 +28,7 @@ import { CARD_LABELS } from '../kanbanLabels';
 import type { CardFilter, KanbanView } from '../kanbanMeta';
 import { colorForSeed } from '../../../collab/identity';
 import { CardDetail } from './CardDetail';
-import { CardMenu, QuickComment } from './KanbanCardMenu';
+import { BoardMenu, CardMenu, QuickComment } from './KanbanCardMenu';
 import { KanbanList, KanbanTimeline } from './KanbanViews';
 
 const COL_W = 308;
@@ -175,10 +175,54 @@ export function KanbanBoard({ controller, theme: th }: { controller: EditorContr
   /** 카드 우클릭 메뉴 · 그 메뉴에서 여는 빠른 댓글 — 누른 자리(화면 좌표)에 뜬다. */
   const [cardMenu, setCardMenu] = useState<{ id: string; x: number; y: number } | null>(null);
   const [quickComment, setQuickComment] = useState<{ id: string; x: number; y: number } | null>(null);
+  /** 배경(카드·열이 없는 자리) 우클릭 메뉴 — 보드 전체에 대한 동작(시안). */
+  const [boardMenu, setBoardMenu] = useState<{ x: number; y: number } | null>(null);
+  /** '완료 카드 모두 비우기' 확인창 — 여러 장이 한 번에 사라지므로 한 번 묻는다. */
+  const [askClearDone, setAskClearDone] = useState(false);
   // 보기 모드는 컨트롤러가 들고 있다 — 보드 머리의 탭과 GNB 보기 메뉴가 같은 값을
   // 본다(문서가 아니라 보는 사람의 상태라는 점은 그대로).
   const view = controller.kanbanView;
   const setView = controller.setKanbanView;
+
+  /** 배경에서 열린 메뉴인가 — 카드·열·조작 요소 위에서는 열지 않는다(시안: "카드와
+   *  열이 없는 배경"). 카드는 자기 메뉴가 있고, 열은 머리의 ⋯ 메뉴가 있다. */
+  const openBoardMenu = useCallback((x: number, y: number, target: EventTarget | null): boolean => {
+    const el = target as HTMLElement | null;
+    if (el?.closest('[data-kanban-card]') || el?.closest('[data-kanban-column]')) return false;
+    // 보드 머리(검색·탭·필터)와 떠 있는 카드(메뉴·모달) 위도 아니다.
+    if (el?.closest('button, input, select, textarea, [role="menu"], [role="dialog"]')) return false;
+    setCardMenu(null);
+    setQuickComment(null);
+    setBoardMenu({ x, y });
+    return true;
+  }, []);
+
+  /** 터치: 길게 누르면 같은 메뉴(폰에는 우클릭이 없다). 손가락이 흔들리면 스크롤 의도. */
+  const boardTouchStart = useCallback(
+    (e: ReactPointerEvent) => {
+      if (e.pointerType !== 'touch') return;
+      const { clientX: x0, clientY: y0 } = e;
+      const target = e.target;
+      let timer: ReturnType<typeof setTimeout> | null = setTimeout(() => {
+        timer = null;
+        if (openBoardMenu(x0, y0, target)) navigator.vibrate?.(12);
+      }, 500);
+      const cancel = (): void => {
+        if (timer) clearTimeout(timer);
+        timer = null;
+        window.removeEventListener('pointermove', onMove);
+        window.removeEventListener('pointerup', cancel);
+        window.removeEventListener('pointercancel', cancel);
+      };
+      const onMove = (ev: PointerEvent): void => {
+        if (Math.hypot(ev.clientX - x0, ev.clientY - y0) > 10) cancel();
+      };
+      window.addEventListener('pointermove', onMove);
+      window.addEventListener('pointerup', cancel);
+      window.addEventListener('pointercancel', cancel);
+    },
+    [openBoardMenu],
+  );
 
   /** 지금 화면에 그려진 열·카드의 사각형 — 드롭 자리 계산의 입력(순수 부분은 `kanbanDrag.ts`). */
   const columnHits = useCallback((): ColumnHit[] => {
@@ -304,6 +348,10 @@ export function KanbanBoard({ controller, theme: th }: { controller: EditorContr
   return (
     <div
       data-kanban-root
+      onContextMenu={(e) => {
+        if (openBoardMenu(e.clientX, e.clientY, e.target)) e.preventDefault();
+      }}
+      onPointerDown={boardTouchStart}
       style={{
         position: 'absolute',
         inset: 0,
@@ -524,6 +572,14 @@ export function KanbanBoard({ controller, theme: th }: { controller: EditorContr
             setCardMenu(null);
             controller.setCardMeta(menuCard.id, { flagged: !menuCard.flagged });
           }}
+          onCopy={() => {
+            setCardMenu(null);
+            controller.copyCard(menuCard.id);
+          }}
+          onCut={() => {
+            setCardMenu(null);
+            controller.cutCard(menuCard.id);
+          }}
           onDuplicate={() => {
             setCardMenu(null);
             controller.duplicateCard(menuCard.id);
@@ -535,6 +591,57 @@ export function KanbanBoard({ controller, theme: th }: { controller: EditorContr
           onClose={() => setCardMenu(null)}
         />
       )}
+      {boardMenu && (
+        <BoardMenu
+          theme={th}
+          at={{ x: boardMenu.x, y: boardMenu.y }}
+          isMobile={isMobile}
+          readOnly={readOnly}
+          columnCount={columns.length}
+          clipboardCount={controller.cardClipboardSize}
+          doneCount={columns.length ? cards.filter((c) => c.col === (columns[columns.length - 1] as KanbanColumn).id).length : 0}
+          urgentOnly={filter.urgentOnly}
+          onAddColumn={() => {
+            setBoardMenu(null);
+            controller.addColumn();
+          }}
+          onPaste={() => {
+            setBoardMenu(null);
+            controller.pasteCards();
+          }}
+          onSortByDue={() => {
+            setBoardMenu(null);
+            controller.sortCardsByDue();
+          }}
+          onToggleUrgent={() => {
+            setBoardMenu(null);
+            setFilter((f) => ({ ...f, urgentOnly: !f.urgentOnly }));
+          }}
+          onClearDone={() => {
+            setBoardMenu(null);
+            setAskClearDone(true);
+          }}
+          onClose={() => setBoardMenu(null)}
+        />
+      )}
+
+      {askClearDone && columns.length > 0 && (
+        <ConfirmDialog
+          label="완료 카드 비우기 확인"
+          attr="confirm-clear-done"
+          title={`‘${(columns[columns.length - 1] as KanbanColumn).title}’ 열을 비울까요?`}
+          body={`카드 ${cards.filter((c) => c.col === (columns[columns.length - 1] as KanbanColumn).id).length}장이 삭제돼요. 실행 취소(Ctrl+Z)로 되돌릴 수 있어요.`}
+          confirmLabel="모두 비우기"
+          theme={th}
+          isMobile={isMobile}
+          onCancel={() => setAskClearDone(false)}
+          onConfirm={() => {
+            setAskClearDone(false);
+            controller.clearDoneCards();
+          }}
+        />
+      )}
+
       {quickCard && quickComment && (
         <QuickComment
           card={quickCard}
@@ -1150,9 +1257,58 @@ function ConfirmDeleteColumn({
   onCancel: () => void;
   onConfirm: () => void;
 }) {
+  return (
+    <ConfirmDialog
+      label="열 삭제 확인"
+      attr="confirm-delete-column"
+      attrValue={col.id}
+      title={`‘${col.title}’ 열을 삭제할까요?`}
+      body={`${count > 0 ? `이 열에 있는 카드 ${count}장도 함께 삭제돼요.` : '이 열에는 카드가 없어요.'} 실행 취소(Ctrl+Z)로 되돌릴 수 있어요.`}
+      confirmLabel="삭제"
+      theme={th}
+      isMobile={isMobile}
+      onCancel={onCancel}
+      onConfirm={onConfirm}
+    />
+  );
+}
+
+/**
+ * 확인창 — 여러 장이 한 번에 사라지는 동작(열 삭제·완료 비우기) 앞에 한 번 묻는다.
+ *
+ * 무엇이 몇 장 사라지는지 문장으로 밝히고, 되돌릴 수 있다는 것도 함께 말한다(홈의
+ * 폴더 삭제 확인창과 같은 결). 파괴적 버튼에 처음부터 초점이 가지 않게 **취소에
+ * 초점**을 둔다 — Enter를 눌러 지워지는 일이 없다.
+ */
+function ConfirmDialog({
+  label,
+  attr,
+  attrValue,
+  title,
+  body,
+  confirmLabel,
+  theme: th,
+  isMobile,
+  onCancel,
+  onConfirm,
+}: {
+  label: string;
+  /** 테스트·프로브가 잡는 표식(`data-<attr>`). */
+  attr: string;
+  attrValue?: string;
+  title: string;
+  body: string;
+  confirmLabel: string;
+  theme: Theme;
+  isMobile: boolean;
+  onCancel: () => void;
+  onConfirm: () => void;
+}) {
   const cancelRef = useRef<HTMLButtonElement | null>(null);
   useEffect(() => {
     cancelRef.current?.focus();
+  }, []);
+  useEffect(() => {
     const onKey = (e: KeyboardEvent): void => {
       if (e.key !== 'Escape') return;
       e.stopPropagation();
@@ -1173,30 +1329,28 @@ function ConfirmDeleteColumn({
   };
   return (
     <div
-      data-confirm-delete-column-veil
+      data-confirm-veil
       onPointerDown={(e) => {
         if (e.target === e.currentTarget) onCancel();
       }}
       style={{ animation: 'mf-dim-in .18s ease-out both', position: 'fixed', inset: 0, zIndex: 350, background: hexA('#2e2a26', 0.34), display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 24 }}
     >
       <div
-        data-confirm-delete-column={col.id}
+        {...{ [`data-${attr}`]: attrValue ?? '1' }}
         role="dialog"
         aria-modal="true"
-        aria-label="열 삭제 확인"
+        aria-label={label}
         className="mf-kb-modal"
         style={{ width: 'min(380px, 100%)', boxSizing: 'border-box', padding: 20, borderRadius: 16, background: th.panel, border: `1px solid ${th.border}`, boxShadow: '0 40px 90px -40px rgba(0,0,0,.6)' }}
       >
-        <strong style={{ display: 'block', fontSize: 15.5, color: th.text, marginBottom: 8 }}>‘{col.title}’ 열을 삭제할까요?</strong>
-        <p data-confirm-body style={{ margin: 0, fontSize: 13, lineHeight: 1.6, color: th.subtext }}>
-          {count > 0 ? `이 열에 있는 카드 ${count}장도 함께 삭제돼요.` : '이 열에는 카드가 없어요.'} 실행 취소(Ctrl+Z)로 되돌릴 수 있어요.
-        </p>
+        <strong style={{ display: 'block', fontSize: 15.5, color: th.text, marginBottom: 8 }}>{title}</strong>
+        <p data-confirm-body style={{ margin: 0, fontSize: 13, lineHeight: 1.6, color: th.subtext }}>{body}</p>
         <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8, marginTop: 18 }}>
           <button ref={cancelRef} type="button" className="mf-ed-btn" data-confirm-cancel onClick={onCancel} style={{ ...btn, border: `1px solid ${th.border}`, background: th.panel, color: th.text }}>
             취소
           </button>
           <button type="button" className="mf-ed-btn" data-confirm-delete onClick={onConfirm} style={{ ...btn, border: `1px solid ${URGENT}`, background: URGENT, color: '#fff' }}>
-            삭제
+            {confirmLabel}
           </button>
         </div>
       </div>

@@ -2,7 +2,7 @@ import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } fr
 import type { MouseEvent as ReactMouseEvent, PointerEvent as ReactPointerEvent } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import type { Box, Doc, Float, KanbanCard, KanbanColumn, KanbanTag, Line, LineAnchor, LayoutMode, ListOp, Node, NodeMap, Reaction, ReactionGroup, RichRun, SizeOf, SnapCandidate, Stroke, TextEdit, Zone, CommentPin } from '@mindflow/mindmap-core';
-import { HistoryStack, ROOT_ID, collectImageRefs, collectInlineImages, isImageRef, replaceImageValues, applyListOp as applyListOpToText, applyAutoLinks, applyMarkdownShortcuts, applyPartialStyle, insertMention, charsToRuns, cubicAt, isStyledRuns, findLineSnap, layout, resolveLineEndpoints, resolveLineGeometry, runsToChars, serializeDoc, shiftOffset, strokeBounds, strokeHit, translateStrokePts, reactionGroups, toggleReaction as toggleReactionList, pruneReactions, toMarkdown, cardsInColumn, posForIndex, removeColumn, moveCard, moveColumn } from '@mindflow/mindmap-core';
+import { HistoryStack, ROOT_ID, collectImageRefs, collectInlineImages, isImageRef, replaceImageValues, applyListOp as applyListOpToText, applyAutoLinks, applyMarkdownShortcuts, applyPartialStyle, insertMention, charsToRuns, cubicAt, isStyledRuns, findLineSnap, layout, resolveLineEndpoints, resolveLineGeometry, runsToChars, serializeDoc, shiftOffset, strokeBounds, strokeHit, translateStrokePts, reactionGroups, toggleReaction as toggleReactionList, pruneReactions, toMarkdown, cardsInColumn, posForIndex, removeColumn, moveCard, moveColumn, sortColumnsByDue } from '@mindflow/mindmap-core';
 import { domToRuns, linearize, liveEditValue } from './richtextDom';
 import { HL_COLORS, HL_WIDTHS } from './boardTools';
 import type { BoardTool } from './boardTools';
@@ -783,6 +783,18 @@ export interface EditorController {
   deleteCard: (id: string) => void;
   /** 카드를 그 자리에서 복제한다(우클릭 메뉴·⌘D) — 사본은 바로 아래에 선다. */
   duplicateCard: (id: string) => void;
+  /** 카드 클립보드 — 캔버스 클립보드와 **따로** 둔다(칸반에는 주제·메모가 없고,
+   * 캔버스에는 카드가 없다. 한 칸을 나눠 쓰면 다른 종류의 문서 사이에서 붙여넣기가
+   * 뜻을 잃는다). 담은 장수는 메뉴 라벨에 쓴다. */
+  cardClipboardSize: number;
+  copyCard: (id: string) => void;
+  cutCard: (id: string) => void;
+  /** 클립보드의 카드를 그 열 **끝에** 붙여넣는다(열을 안 주면 첫 열). */
+  pasteCards: (colId?: string) => void;
+  /** 모든 열의 카드를 기한순으로 다시 놓는다(배경 메뉴) — 한 번의 커밋. */
+  sortCardsByDue: () => void;
+  /** 마지막 열(완료)의 카드를 모두 지운다(배경 메뉴 — 확인창을 거친다). */
+  clearDoneCards: () => void;
   /** 칸반 보기 모드(보드·리스트·타임라인) — 보는 사람의 상태(문서 아님). */
   kanbanView: 'board' | 'list' | 'timeline';
   setKanbanView: (v: 'board' | 'list' | 'timeline') => void;
@@ -5571,6 +5583,69 @@ export function useEditorState(): EditorController {
     [commitDoc, idFactory],
   );
 
+  /** 카드 클립보드 — 상태로 들어야 메뉴의 '붙여넣기' 노출이 함께 갱신된다. */
+  const [cardClipboard, setCardClipboard] = useState<KanbanCard[]>([]);
+
+  const copyCard = useCallback(
+    (id: string) => {
+      const src = (docRef.current.cards ?? []).find((c) => c.id === id);
+      if (src) setCardClipboard([src]);
+    },
+    [],
+  );
+
+  const cutCard = useCallback(
+    (id: string) => {
+      const src = (docRef.current.cards ?? []).find((c) => c.id === id);
+      if (!src) return;
+      setCardClipboard([src]);
+      deleteCard(id);
+    },
+    [deleteCard],
+  );
+
+  const pasteCards = useCallback(
+    (colId?: string) => {
+      if (readOnlyRef.current || !cardClipboard.length) return;
+      const target = colId ?? (docRef.current.columns ?? [])[0]?.id;
+      if (!target) return;
+      const ids = cardClipboard.map(() => idFactory('card'));
+      commitDoc((d) => {
+        const list = d.cards ?? [];
+        // 붙여넣은 카드는 그 열 **끝**에 차례로 선다(끼워 넣는 자리를 고를 수 없는
+        // 메뉴에서 온 동작이므로, 예측되는 자리 하나로 정한다).
+        const base = posForIndex(list, target, cardsInColumn(list, target).length);
+        const added = cardClipboard.map((src, i) => ({ ...src, id: ids[i] as string, col: target, pos: base + i * 1024 }));
+        return { ...d, cards: [...list, ...added] };
+      });
+      setSelectedCardId(ids[ids.length - 1] as string);
+    },
+    [cardClipboard, commitDoc, idFactory],
+  );
+
+  const sortCardsByDue = useCallback(() => {
+    if (readOnlyRef.current) return;
+    commitDoc((d) => {
+      const list = d.cards ?? [];
+      if (!list.length) return d;
+      return { ...d, cards: sortColumnsByDue(list, (d.columns ?? []).map((c) => c.id)) };
+    });
+  }, [commitDoc]);
+
+  const clearDoneCards = useCallback(() => {
+    if (readOnlyRef.current) return;
+    commitDoc((d) => {
+      const cols = d.columns ?? [];
+      const done = cols[cols.length - 1];
+      if (!done) return d;
+      const list = d.cards ?? [];
+      const left = list.filter((c) => c.col !== done.id);
+      if (left.length === list.length) return d;
+      return { ...d, cards: left };
+    });
+    setSelectedCardId(null);
+  }, [commitDoc]);
+
   const openCardDetail = useCallback((id: string | null) => {
     setDetailCardId(id);
     if (id) setSelectedCardId(id);
@@ -6010,8 +6085,32 @@ export function useEditorState(): EditorController {
           return;
         }
         if (inEditable) return;
+        // 보드 전체에 대한 키 — 고른 카드가 없어도 듣는다(배경 메뉴가 적어 둔 것들).
+        // 수정 키 없는 `N`은 칸반에서 다른 뜻이 없다(캔버스의 도구 단축키 V·P·H·E·C는
+        // `!isKanban` 가드 뒤에 있다) — 겹치지 않는다.
+        if (!e.metaKey && !e.ctrlKey && !e.altKey && !e.shiftKey && (e.key === 'n' || e.key === 'N' || e.code === 'KeyN')) {
+          e.preventDefault();
+          addColumn();
+          return;
+        }
+        if ((e.metaKey || e.ctrlKey) && !e.shiftKey && (e.key === 'v' || e.key === 'V' || e.code === 'KeyV')) {
+          e.preventDefault();
+          pasteCards();
+          return;
+        }
         const cardId = selectedCardId;
         if (!cardId) return;
+        // 카드 클립보드 — 배경 메뉴의 '붙여넣기'가 쓸 원천(카드 메뉴에도 같은 항목).
+        if ((e.metaKey || e.ctrlKey) && !e.shiftKey && (e.key === 'c' || e.key === 'C' || e.code === 'KeyC')) {
+          e.preventDefault();
+          copyCard(cardId);
+          return;
+        }
+        if ((e.metaKey || e.ctrlKey) && !e.shiftKey && (e.key === 'x' || e.key === 'X' || e.code === 'KeyX')) {
+          e.preventDefault();
+          cutCard(cardId);
+          return;
+        }
         if (e.key === 'Delete' || e.key === 'Backspace') {
           e.preventDefault();
           deleteCard(cardId);
@@ -6377,6 +6476,12 @@ export function useEditorState(): EditorController {
     docTitle,
     isBoard,
     isKanban,
+    cardClipboardSize: cardClipboard.length,
+    copyCard,
+    cutCard,
+    pasteCards,
+    sortCardsByDue,
+    clearDoneCards,
     columns,
     cards,
     addColumn,
