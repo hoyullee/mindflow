@@ -1,6 +1,7 @@
 import { useEffect, useRef } from 'react';
 import type { HomeState } from '../../types';
 import type { HomeController } from '../../useHomeController';
+import { DoneCheck } from './DoneCheck';
 
 interface Props {
   state: HomeState;
@@ -65,11 +66,7 @@ export function SetPasswordModal({ state, controller }: Props) {
         {done ? (
           <>
             <div data-set-pw-done style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 14 }}>
-              <span style={{ width: 40, height: 40, borderRadius: 999, background: 'var(--mf-success-soft)', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
-                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="var(--mf-success)" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-                  <path d="m5 13 4 4L19 7" />
-                </svg>
-              </span>
+              <DoneCheck />
               <div style={{ fontSize: 17, fontWeight: 800 }}>비밀번호를 설정했어요</div>
             </div>
             <div style={{ fontSize: 13, color: 'var(--mf-muted)', lineHeight: 1.6, marginBottom: 22 }}>

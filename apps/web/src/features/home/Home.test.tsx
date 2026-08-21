@@ -1670,8 +1670,11 @@ describe('Home', () => {
     await user.click(within(dialog).getByRole('button', { name: '비밀번호 변경' }));
     await waitFor(() => expect(within(dialog).getByText('비밀번호를 변경했어요')).toBeTruthy());
     expect(calls).toEqual([['old-pw', 'new-pw']]);
-    // 어댑터가 실제로 하는 일(다른 기기 세션 해지)을 사용자에게 알린다.
+    // 어댑터가 실제로 하는 일(다른 기기 세션 해지)을 한 줄로 알린다.
+    expect(within(dialog).getByText(/현재 기기를 제외한/)).toBeTruthy();
     expect(within(dialog).getByText(/다른 기기의 로그인/)).toBeTruthy();
+    // 체크는 원·체크가 한 그림인 SVG 아이콘이다(요청) — CSS 원 + 획 조합이 아니다.
+    expect(dialog.querySelector('svg[data-done-check]')).toBeTruthy();
   });
 
   it('현재 비밀번호가 틀리면 그 사실만 알리고 모달에 머문다', async () => {
