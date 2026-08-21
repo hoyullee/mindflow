@@ -464,3 +464,63 @@ describe('Context menu — closing', () => {
     expect(screen.queryByText('삭제')).toBeNull();
   });
 });
+
+describe('Context menu — 디자인 이식(요청)', () => {
+  it('머리 줄·폭·행 높이·단축키·셰브론이 디자인 원본 값이다', async () => {
+    localStorage.setItem('mindflow_doc_cmd1', JSON.stringify(DOC));
+    const { container } = renderEditor('/editor?map=cmd1&title=x');
+    const vp = getViewport(container);
+    const { pan, zoom, geom } = computeViewport(DOC as Doc);
+    const c1 = geom.c1!;
+    const { clientX, clientY } = toClient(pan, zoom, c1.x, c1.y);
+    rightClickAt(vp, clientX, clientY);
+
+    const menu = await waitFor(() => document.querySelector('.mf-ctx') as HTMLElement);
+    expect(menu.style.width).toBe('226px');
+    expect(menu.style.borderRadius).toBe('15px');
+    expect(menu.style.animation).toContain('mf-ctx-pop'); // 열림 애니메이션(요청)
+
+    // 머리 = [색 점 · 대상 이름]
+    const head = menu.querySelector('[data-ctx-head]') as HTMLElement;
+    expect(head.textContent).toBe('노드A');
+    expect((head.firstElementChild as HTMLElement).style.background).toBeTruthy();
+
+    // 행 높이 34 + 단축키 표기 — 같은 메뉴 안에서 겹치지 않는다(요청)
+    const rows = Array.from(menu.querySelectorAll('button'));
+    const addChild = rows.find((b) => b.textContent?.startsWith('하위 주제 추가')) as HTMLElement;
+    expect(addChild.style.height).toBe('34px');
+    const keys = Array.from(menu.querySelectorAll('[data-ctx-keys]')).map((k) => k.textContent ?? '');
+    expect(keys).toContain('Tab');
+    expect(keys.some((k) => k === 'Ctrl+C' || k === '\u2318C')).toBe(true);
+    expect(keys.some((k) => k === 'Del' || k === '\u232b')).toBe(true);
+    expect(new Set(keys).size).toBe(keys.length);
+
+    // 플라이아웃 행은 글자 화살표가 아니라 셰브론 SVG
+    const alignRow = rows.find((b) => b.textContent?.startsWith('텍스트 정렬')) as HTMLElement;
+    expect(alignRow.textContent).not.toContain('\u25b8');
+    expect(alignRow.querySelector('svg path[d="m10 6 6 6-6 6"]')).toBeTruthy();
+  });
+
+  it('배경 메뉴 머리는 캔버스, 플라이아웃은 172px 카드다', async () => {
+    localStorage.setItem('mindflow_doc_cmd2', JSON.stringify(DOC));
+    const { container } = renderEditor('/editor?map=cmd2&title=x');
+    const vp = getViewport(container);
+    const { pan, zoom, geom } = computeViewport(DOC as Doc);
+    const c1 = geom.c1!;
+    rightClickAt(vp, ...([toClient(pan, zoom, 5000, 5000).clientX, toClient(pan, zoom, 5000, 5000).clientY] as [number, number]));
+    let menu = await waitFor(() => document.querySelector('.mf-ctx') as HTMLElement);
+    expect((menu.querySelector('[data-ctx-head]') as HTMLElement).textContent).toBe('캔버스');
+
+    // 주제 메뉴의 '텍스트 정렬'을 열면 172px 플라이아웃이 뜬다
+    fireEvent.keyDown(window, { key: 'Escape' });
+    const p2 = toClient(pan, zoom, c1.x, c1.y);
+    rightClickAt(vp, p2.clientX, p2.clientY);
+    menu = await waitFor(() => document.querySelector('.mf-ctx') as HTMLElement);
+    clickMenuItem(Array.from(menu.querySelectorAll('button')).find((b) => b.textContent?.startsWith('텍스트 정렬')) as Element);
+    const fly = await waitFor(() => Array.from(document.querySelectorAll('.mf-ctx')).find((el) => el !== menu) as HTMLElement);
+    expect(fly.style.width).toBe('172px');
+    expect(fly.style.borderRadius).toBe('14px');
+    const flyRow = fly.querySelector('button') as HTMLElement;
+    expect(flyRow.style.height).toBe('32px');
+  });
+});

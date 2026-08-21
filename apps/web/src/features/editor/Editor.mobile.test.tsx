@@ -242,8 +242,8 @@ describe('Editor (mobile, M6)', () => {
       fireEvent.click(within(screen.getByRole('toolbar', { name: '선택 동작' })).getByRole('button', { name: '객체 메뉴' }));
 
       const menu = container.querySelector('.mf-ctx') as HTMLElement;
-      // 첫 자식은 꼬리(span), 그다음은 반드시 버튼이어야 한다(구분선이 아니라)
-      const kids = Array.from(menu.children);
+      // 첫 자식은 꼬리(span)와 머리 줄(대상 이름), 그다음은 반드시 버튼이어야 한다(구분선이 아니라)
+      const kids = Array.from(menu.children).filter((el) => !el.hasAttribute('data-ctx-head'));
       const firstRow = kids.find((el) => el.tagName === 'BUTTON' || (el.tagName === 'DIV' && !el.getAttribute('aria-hidden')));
       expect(firstRow?.tagName).toBe('BUTTON');
     } finally {

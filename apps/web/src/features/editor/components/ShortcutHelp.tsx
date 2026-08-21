@@ -2,6 +2,7 @@ import type { CSSProperties, ReactNode } from 'react';
 import { useEffect } from 'react';
 import type { EditorController } from '../useEditorState';
 import { useIsMobile } from '../../../hooks/useMediaQuery';
+import { deleteKeyLabel, modLabel } from '../shortcutLabels';
 
 /**
  * 키보드 단축키 도움말 — `?` 키(편집 중이 아닐 때) 또는 보기/☰ 메뉴의
@@ -27,7 +28,10 @@ export function ShortcutHelp({ controller }: { controller: EditorController }) {
 
   if (!open) return null;
 
-  const mod = typeof navigator !== 'undefined' && /Mac|iPhone|iPad/.test(navigator.platform || navigator.userAgent || '') ? '⌘' : 'Ctrl';
+  // 표기는 우클릭 메뉴와 **같은 헬퍼**를 쓴다 — 화면마다 다르게 적으면 사용자는
+  // 둘이 다른 기능인지 의심한다(`shortcutLabels` 머리말).
+  const mod = modLabel();
+  const del = deleteKeyLabel();
 
   const kbd = (k: string): JSX.Element => (
     <kbd
@@ -121,7 +125,7 @@ export function ShortcutHelp({ controller }: { controller: EditorController }) {
                 {row(['클릭'], '카드 선택')}
                 {row(['더블클릭'], '카드 편집 (열 제목도 같다)')}
                 {row(['Enter', 'F2'], '고른 카드 편집')}
-                {row(['Delete'], '고른 카드 삭제')}
+                {row([del], '고른 카드 삭제')}
                 {row(['Enter'], '편집 확정')}
                 {row(['Shift+Enter'], '줄바꿈')}
                 {row(['Esc'], '편집 취소 · 선택 해제')}
@@ -167,7 +171,7 @@ export function ShortcutHelp({ controller }: { controller: EditorController }) {
               {row(['Tab'], '하위 추가')}
               {row(['Enter'], '형제 추가')}
               {row(['Alt+드래그'], '맞춤(안내선·격자) 잠시 끄기')}
-              {row(['Delete'], '선택 삭제')}
+              {row([del], '선택 삭제')}
               {row(['Esc'], '선택 해제 · 닫기')}
               {row(['휠', '핀치'], '확대/축소 (두 손가락 스크롤 = 이동)')}
               {row(['우클릭', '길게 누르기'], '상황 메뉴')}

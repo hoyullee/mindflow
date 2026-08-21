@@ -7,9 +7,23 @@ import type { EditorController } from '../useEditorState';
 import type { ContextMenuState } from '../types';
 import type { ArrangeOp } from '../arrange';
 import { useIsMobile } from '../../../hooks/useMediaQuery';
+import { MONO_FONT } from '../chrome';
+import { colorOf } from '../tree';
+import { panelTitleLine } from './panel/panelPrimitives';
+import { comboLabel, deleteKeyLabel, enterKeyLabel, renameKeyLabel } from '../shortcutLabels';
 // 이미지/영역 아이콘은 상단 툴바 '삽입' 메뉴와 같은 SVG를 공유 — 두 진입점이
 // 같은 동작이므로 같은 그림이어야 한다.
 import { CommentIcon, ImageIcon, ZoneIcon } from './ToolbarMenus';
+
+/** 디자인 원본(`Geurio 마인드맵 리디자인.dc.html`)의 우클릭 메뉴 값 — 폭·행 높이·
+ * 그림자·플라이아웃. 값을 행마다 적어 두면 한 곳을 손볼 때 나머지가 어긋난다. */
+const MENU_W = 226;
+const ROW_HEIGHT = 34;
+const SUB_W = 172;
+const GAP = 12;
+/** 두 겹 그림자 — 얇게 닿는 윗면 + 아래로 길게 깔리는 그늘(원본 값 그대로). */
+const MENU_SHADOW = '0 2px 5px -3px rgba(46,42,38,.2), 0 28px 56px -28px rgba(46,42,38,.6)';
+const SUB_SHADOW = '0 2px 5px -3px rgba(46,42,38,.2), 0 24px 48px -24px rgba(46,42,38,.55)';
 
 interface ContextMenuProps {
   controller: EditorController;
@@ -18,7 +32,10 @@ interface ContextMenuProps {
 interface MenuItem {
   icon: ReactNode;
   label: string;
-  arrow?: string;
+  /** 플라이아웃이 딸린 행 — 오른쪽에 셰브론이 붙는다(디자인 원본). */
+  sub?: boolean;
+  /** 오른쪽에 등폭으로 적는 단축키. 터치 기기에서는 그리지 않는다(`shortcutLabels`). */
+  keys?: string;
   danger?: boolean;
   /** Highlights the row accent-colored (the "텍스트 정렬 ▸" parent while its flyout is open,
    * or the currently-active alignment inside the flyout) — port of the original's
@@ -72,11 +89,18 @@ export function ContextMenu({ controller }: ContextMenuProps) {
   const vw = controller.vw || 600;
   const vh = controller.vh || 400;
   const anchor = ctxMenu.anchor;
+  // 머리 줄 — [무엇을 겨누고 있는가]를 그 대상의 색 점과 함께 적는다(디자인 원본의
+  // `ctxTitle`/`ctxDot`). 이름이 있는 대상은 그 이름을, 없으면 종류 이름을 쓴다.
+  const head = menuHead(controller, ctxMenu);
+  const title = head?.label ?? '';
 
   // 모바일 선택 바의 '메뉴(⋯)'에서 열린 경우: 클릭 지점에 뜨는 우클릭 메뉴가 아니라
   // **바에서 뻗어 나온 팝오버**로 그린다 — 바와 같은 패널/테두리/라운드(16)에
   // 손가락에 맞는 행 높이, 그리고 ⋯ 버튼을 가리키는 꼬리(caret)를 붙인다.
-  const MW = isMobile ? 190 : 150;
+  // 디자인 원본(`Geurio 마인드맵 리디자인`)의 메뉴 폭·행 높이. 모바일은 손가락에
+  // 맞춰 행을 키우고(44) 폭은 좁은 화면에 들어가게 조금 줄인다.
+  const MW = isMobile ? 208 : MENU_W;
+  const ROW_H = isMobile ? 44 : ROW_HEIGHT;
   let left: number;
   let top: number;
   let flipped = false;
@@ -85,7 +109,7 @@ export function ContextMenu({ controller }: ContextMenuProps) {
     // 메뉴 높이는 행 수로 추정(행 44 + 구분선 11 + 패딩 12) — 아래 공간이 부족하면
     // 바 위로 뒤집는다. 렌더 후 재측정 없이도 화면 밖으로 나가지 않게 하는 보수적 추정.
     const rows = buildItems(controller, ctxMenu, () => {}, null, isMobile);
-    const estH = rows.reduce((h, it) => h + (it === 'divider' ? 11 : 44), 12);
+    const estH = rows.reduce((h, it) => h + (it === 'divider' ? 13 : ROW_H), 14);
     left = Math.min(Math.max(anchor.x - MW / 2, M), Math.max(M, vw - MW - M));
     const below = anchor.bottom + 10;
     flipped = below + estH > vh - M && anchor.top - 10 - estH > M;
@@ -93,8 +117,12 @@ export function ContextMenu({ controller }: ContextMenuProps) {
   } else {
     // port of `ctxMenuStyle` (MindFlow.dc.html:3101-3104): clamped to the viewport so the
     // menu never overflows past the right/bottom edge (pushes it left/up as it nears one).
-    left = Math.min(ctxMenu.sx, vw - 160);
-    top = Math.min(ctxMenu.sy, vh - 150);
+    // 화면 밖으로 나가지 않게 당긴다 — 높이는 행 수로 어림한다(디자인 원본의
+    // `ctxPos`와 같은 계산: 행 34 + 구분선 13 + 패딩 14 + 제목 줄 27).
+    const rows = buildItems(controller, ctxMenu, () => {}, null, isMobile);
+    const estH = rows.reduce((h, it) => h + (it === 'divider' ? 13 : ROW_H), 14) + (title ? 27 : 0);
+    left = Math.max(GAP, Math.min(ctxMenu.sx, vw - MW - GAP));
+    top = Math.max(GAP, Math.min(ctxMenu.sy, vh - estH - GAP));
   }
 
   const menuStyle: CSSProperties = {
@@ -102,13 +130,15 @@ export function ContextMenu({ controller }: ContextMenuProps) {
     left,
     top,
     width: MW,
+    boxSizing: 'border-box',
     background: th.panel,
     border: `1px solid ${th.border}`,
-    borderRadius: anchor ? 16 : 11,
-    boxShadow: anchor ? '0 8px 26px rgba(0,0,0,.18)' : '0 10px 30px rgba(0,0,0,.18)',
-    padding: anchor ? 6 : 5,
+    borderRadius: 15,
+    boxShadow: MENU_SHADOW,
+    padding: 7,
     zIndex: 60,
-    ...(anchor ? { animation: 'mf-ctx-pop .13s ease-out' } : {}),
+    // 열릴 때 살짝 떠오른다(요청: 메뉴가 뜨는 것도 애니메이션) — 디자인 원본의 `mmPop`.
+    animation: 'mf-ctx-pop .14s cubic-bezier(.2,.9,.3,1) both',
   };
 
   const subKind = ctxSub?.kind ?? 'text';
@@ -148,14 +178,22 @@ export function ContextMenu({ controller }: ContextMenuProps) {
           }}
         />
       )}
+      {/* 머리 — 색 점 + 대상 이름(디자인 원본). 어느 것을 겨눠서 열린 메뉴인지
+          한 줄로 알려 준다. 이름이 길면 말줄임. */}
+      {head && (
+        <div data-ctx-head style={{ display: 'flex', alignItems: 'center', gap: 7, padding: '5px 10px 8px', minWidth: 0 }}>
+          <span aria-hidden="true" style={{ width: 6, height: 6, flex: '0 0 auto', borderRadius: 999, background: head.dot, display: 'block' }} />
+          <span style={{ fontSize: 11, fontWeight: 700, color: th.subtext, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{head.label}</span>
+        </div>
+      )}
       {items.map((it, i) =>
         it === 'divider' ? (
-          <div key={i} style={{ height: 1, background: th.border, margin: anchor ? '5px 8px' : '5px 4px' }} />
+          <div key={i} style={{ height: 1, background: hexA(th.border, 0.85), margin: '6px 5px' }} />
         ) : (
           <button
             key={i}
             type="button"
-            className="mf-ed-btn"
+            className={`mf-ed-btn${it.danger ? ' mf-ed-danger' : ''}`}
             onMouseDown={(e) => {
               e.preventDefault();
               e.stopPropagation();
@@ -164,8 +202,13 @@ export function ContextMenu({ controller }: ContextMenuProps) {
             style={itemStyle(th, it.danger, it.active, isMobile)}
           >
             <span style={iconStyle(th, it.danger, it.active)}>{it.icon}</span>
-            <span style={{ flex: '1 1 auto', textAlign: 'left' }}>{it.label}</span>
-            {it.arrow && <span style={{ fontSize: 11, color: it.active ? th.accent : th.subtext, flexShrink: 0 }}>{it.arrow}</span>}
+            <span style={{ flex: '1 1 auto', textAlign: 'left', minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{it.label}</span>
+            {/* 단축키 — 등폭으로 오른쪽 끝에(원본). 터치 기기에는 물리 키보드가 없어
+                아예 적지 않는다(`shortcutLabels` 머리말). */}
+            {it.keys && !isMobile && (
+              <span data-ctx-keys style={{ fontFamily: MONO_FONT, fontSize: 10, color: hexA(th.subtext, 0.75), flex: '0 0 auto' }}>{it.keys}</span>
+            )}
+            {it.sub && <ChevronRight />}
           </button>
         ),
       )}
@@ -180,29 +223,44 @@ function itemStyle(th: Theme, danger?: boolean, active?: boolean, touch?: boolea
   return {
     display: 'flex',
     alignItems: 'center',
-    gap: touch ? 11 : 9,
+    gap: 10,
     width: '100%',
-    padding: touch ? '0 12px' : '8px 11px',
-    ...(touch ? { height: 44 } : {}),
+    padding: '0 10px',
+    height: touch ? 44 : ROW_HEIGHT,
     border: 'none',
-    borderRadius: touch ? 11 : 7,
-    fontSize: touch ? 14 : 13,
+    borderRadius: 10,
+    fontSize: touch ? 14 : 12.5,
     fontWeight: 600,
     cursor: 'pointer',
-    color: danger ? '#d64545' : active ? th.accent : th.text,
-    background: active ? hexA(th.accent, 0.08) : 'transparent',
+    color: danger ? DANGER : active ? th.accent : th.text,
+    // 플라이아웃이 열린 부모 행은 옅은 강조 면 위에 강조색 글자(원본).
+    background: active ? hexA(th.accent, 0.12) : 'transparent',
     fontFamily: 'inherit',
     textAlign: 'left',
+    boxSizing: 'border-box',
   };
+}
+
+/** 위험(삭제) 행의 글자·아이콘 색 — 원본 `#C9512A`는 코랄 계열이라 강조색과
+ * 헷갈린다. 이 앱이 쓰는 경고색을 그대로 쓴다. */
+const DANGER = '#d64545';
+
+/** 플라이아웃이 있는 행의 셰브론 — 원본은 12px 화살표에 opacity .6. */
+function ChevronRight() {
+  return (
+    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" aria-hidden="true" style={{ flex: '0 0 auto', opacity: 0.6 }}>
+      <path d="m10 6 6 6-6 6" />
+    </svg>
+  );
 }
 
 function iconStyle(th: Theme, danger?: boolean, active?: boolean): CSSProperties {
   return {
-    width: 16,
+    width: 15,
     textAlign: 'center',
     fontSize: 13,
     flexShrink: 0,
-    color: danger ? '#d64545' : active ? th.accent : th.subtext,
+    color: danger ? DANGER : active ? th.accent : th.subtext,
     display: 'inline-flex',
     alignItems: 'center',
     justifyContent: 'center',
@@ -318,6 +376,7 @@ function buildItems(
       {
         icon: <CopyIcon />,
         label: '복사',
+        keys: comboLabel('C'),
         onSelect: () => {
           close();
           controller.copySelection();
@@ -328,6 +387,7 @@ function buildItems(
       out.push({
         icon: <CutIcon />,
         label: '잘라내기',
+        keys: comboLabel('X'),
         onSelect: () => {
           close();
           controller.cutSelection();
@@ -338,6 +398,7 @@ function buildItems(
     out.push({
       icon: <DuplicateIcon />,
       label: '복제',
+      keys: comboLabel('D'),
       onSelect: () => {
         close();
         controller.duplicateSelection();
@@ -353,6 +414,7 @@ function buildItems(
           {
             icon: <PasteIcon />,
             label: controller.clipboardSize > 1 ? `붙여넣기 (${controller.clipboardSize}개)` : '붙여넣기',
+            keys: comboLabel('V'),
             onSelect: () => {
               close();
               controller.pasteClipboardAt(at);
@@ -377,8 +439,9 @@ function buildItems(
     // 없으므로 그대로 유지.
     if (!touch) {
       items.push({
-        icon: '＋',
+        icon: <Ico d={ICO.plus} />,
         label: '하위 주제 추가',
+        keys: 'Tab',
         onSelect: () => {
           close();
           controller.addChild();
@@ -386,8 +449,9 @@ function buildItems(
       });
       if (!isRoot) {
         items.push({
-          icon: '＋',
+          icon: <Ico d={ICO.plus} />,
           label: '형제 주제 추가',
+          keys: enterKeyLabel(),
           onSelect: () => {
             close();
             controller.addSibling();
@@ -407,7 +471,7 @@ function buildItems(
     });
     if (hasImg) {
       items.push({
-        icon: '✕',
+        icon: <Ico d={ICO.close} />,
         label: '이미지 제거',
         onSelect: () => {
           close();
@@ -416,9 +480,9 @@ function buildItems(
       });
     }
     items.push({
-      icon: '≡',
+      icon: <Ico d={ICO.align} />,
       label: '텍스트 정렬',
-      arrow: '▸',
+      sub: true,
       active: subOpen === 'text',
       // does NOT close the menu — toggles the flyout submenu instead, port of
       // `alignParent`'s `onClick` (MindFlow.dc.html:3120).
@@ -437,6 +501,7 @@ function buildItems(
         icon: <TrashIcon />,
         label: '삭제',
         danger: true,
+        keys: deleteKeyLabel(),
         onSelect: () => {
           close();
           controller.deleteSelection();
@@ -456,8 +521,9 @@ function buildItems(
     if (!controller.isBoard) {
       return [
         {
-          icon: '✎',
+          icon: <Ico d={ICO.rename} />,
           label: '이름 편집',
+          keys: renameKeyLabel(),
           onSelect: () => {
             close();
             controller.startEditZoneLabel(zoneId);
@@ -473,6 +539,7 @@ function buildItems(
                 icon: <TrashIcon />,
                 label: '삭제',
                 danger: true,
+                keys: deleteKeyLabel(),
                 onSelect: () => {
                   close();
                   controller.deleteZone(zoneId);
@@ -483,8 +550,9 @@ function buildItems(
     }
     return [
       {
-        icon: '✎',
+        icon: <Ico d={ICO.rename} />,
         label: '이름 편집',
+        keys: renameKeyLabel(),
         onSelect: () => {
           close();
           controller.startEditZoneLabel(zoneId);
@@ -511,6 +579,7 @@ function buildItems(
               icon: <TrashIcon />,
               label: '프레임만 삭제',
               danger: true,
+              keys: deleteKeyLabel(),
               onSelect: () => {
                 close();
                 controller.deleteZone(zoneId);
@@ -542,6 +611,7 @@ function buildItems(
               icon: <TrashIcon />,
               label: '삭제',
               danger: true,
+              keys: deleteKeyLabel(),
               onSelect: () => {
                 close();
                 controller.deleteFloat(floatId);
@@ -564,6 +634,7 @@ function buildItems(
               icon: <TrashIcon />,
               label: '삭제',
               danger: true,
+              keys: deleteKeyLabel(),
               onSelect: () => {
                 close();
                 controller.deleteLine(lineId);
@@ -586,6 +657,7 @@ function buildItems(
         icon: <TrashIcon />,
         label: '삭제',
         danger: true,
+        keys: deleteKeyLabel(),
         onSelect: () => {
           close();
           controller.deleteStrokes([strokeId]);
@@ -605,7 +677,7 @@ function buildItems(
             {
               icon: <ArrangeGlyph kind="left" />,
               label: '정렬',
-              arrow: '▸',
+              sub: true,
               active: subOpen === 'arrange',
               onSelect: (e) => toggleSub(e.currentTarget.offsetTop, 'arrange'),
             },
@@ -617,6 +689,7 @@ function buildItems(
         icon: <TrashIcon />,
         label: `삭제 (${count}개)`,
         danger: true,
+        keys: deleteKeyLabel(),
         onSelect: () => {
           close();
           controller.deleteSelection();
@@ -634,7 +707,7 @@ function buildItems(
       ? []
       : [
           {
-            icon: '▢',
+            icon: <Ico d={ICO.topic} />,
             label: '주제 추가',
             onSelect: () => {
               close();
@@ -694,6 +767,62 @@ function buildItems(
   ];
 }
 
+/**
+ * 메뉴 머리 — [색 점 · 이름]. 디자인 원본의 `ctxTitle`/`ctxDot`을 우리 문서에 맞게:
+ * 원본은 종류 이름을 고정 표로 들고 있지만, 우리는 **그 대상의 실제 이름**을 쓴다
+ * (이름이 비어 있으면 종류 이름으로 떨어진다 — 속성 패널 머리와 같은 규칙).
+ * 점 색도 그 대상의 색이라 "지금 무엇을 겨눴는지"가 색으로도 읽힌다.
+ */
+function menuHead(controller: EditorController, ctxMenu: ContextMenuState): { label: string; dot: string } | null {
+  const th = controller.uiTheme;
+  const kind = ctxMenu.kind;
+  const sel = controller.selection;
+  if (kind === 'bg') return { label: controller.isBoard ? '화이트보드' : '캔버스', dot: th.border };
+  if (kind === 'multi') {
+    const ms = controller.multiSelection;
+    const n = ms ? ms.nodes.length + ms.lines.length + ms.floats.length + ms.strokes.length : 0;
+    return { label: `${n}개 선택`, dot: th.accent };
+  }
+  if (kind === 'node' && sel?.kind === 'node') {
+    const node = controller.doc.nodes[sel.id];
+    return { label: panelTitleLine(node?.text ?? '') || '주제', dot: colorOf(sel.id, controller.doc.nodes, th) };
+  }
+  if (kind === 'float' && sel?.kind === 'float') {
+    const f = controller.doc.floats.find((x) => x.id === sel.id);
+    if (f?.img) return { label: '이미지', dot: f.bg || th.accent };
+    return { label: panelTitleLine(f?.text ?? '') || '메모', dot: f?.bg || th.accent };
+  }
+  if (kind === 'line' && sel?.kind === 'line') {
+    const l = controller.doc.lines.find((x) => x.id === sel.id);
+    return { label: panelTitleLine(l?.label ?? '') || '연결선', dot: l?.color || th.accent };
+  }
+  if (kind === 'zone' && sel?.kind === 'zone') {
+    const z = controller.doc.zones.find((x) => x.id === sel.id);
+    return { label: panelTitleLine(z?.label ?? '') || (controller.isBoard ? '프레임' : '영역'), dot: z?.color || th.accent };
+  }
+  if (kind === 'stroke' && sel?.kind === 'stroke') {
+    const st = controller.doc.strokes?.find((x) => x.id === sel.id);
+    return { label: '그리기', dot: st?.color || th.accent };
+  }
+  return null;
+}
+
+/** 디자인 원본 `ICO`의 아이콘들 — 15px·stroke 1.9의 같은 선 언어. */
+function Ico({ d, dash }: { d: string; dash?: string }) {
+  return (
+    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round" strokeDasharray={dash} aria-hidden="true">
+      <path d={d} />
+    </svg>
+  );
+}
+const ICO = {
+  plus: 'M12 5v14M5 12h14',
+  align: 'M4 6h16M4 12h11M4 18h16',
+  rename: 'M12 20h9 M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4Z',
+  close: 'M18 6 6 18M6 6l12 12',
+  topic: 'M7 6h10a3 3 0 0 1 3 3v6a3 3 0 0 1-3 3H7a3 3 0 0 1-3-3V9a3 3 0 0 1 3-3Z',
+} as const;
+
 interface AlignFlyoutProps {
   controller: EditorController;
   ctxMenu: ContextMenuState;
@@ -709,19 +838,22 @@ interface AlignFlyoutProps {
 function ArrangeFlyout({ controller, ctxMenu, top }: AlignFlyoutProps) {
   const th = controller.uiTheme;
   const vw = controller.vw || 600;
-  const menuLeft = Math.min(ctxMenu.sx, vw - 160);
-  const flip = menuLeft + 150 + 150 > vw;
+  const menuLeft = Math.max(GAP, Math.min(ctxMenu.sx, vw - MENU_W - GAP));
+  // 오른쪽에 자리가 없으면 메뉴 왼쪽으로 뒤집는다(원본 `ctxSubLeft`와 같은 계산).
+  const flip = menuLeft + MENU_W - 8 + SUB_W + GAP > vw;
   const style: CSSProperties = {
     position: 'absolute',
-    left: flip ? -146 : 144,
-    top: top - 5,
-    width: 142,
+    left: flip ? -SUB_W - 4 : MENU_W - 8,
+    top: top - 7,
+    width: SUB_W,
+    boxSizing: 'border-box',
     background: th.panel,
     border: `1px solid ${th.border}`,
-    borderRadius: 11,
-    boxShadow: '0 10px 30px rgba(0,0,0,.14)',
-    padding: 5,
+    borderRadius: 14,
+    boxShadow: SUB_SHADOW,
+    padding: 7,
     zIndex: 41,
+    animation: 'mf-ctx-pop .13s cubic-bezier(.2,.9,.3,1) both',
   };
   const rows: ({ op: ArrangeOp; label: string; icon: JSX.Element } | 'divider')[] = [
     { op: 'left', label: '왼쪽 맞춤', icon: <ArrangeGlyph kind="left" /> },
@@ -739,7 +871,7 @@ function ArrangeFlyout({ controller, ctxMenu, top }: AlignFlyoutProps) {
     <div className="mf-ctx" data-arrange-flyout style={style}>
       {rows.map((r, i) =>
         r === 'divider' ? (
-          <div key={`d${i}`} style={{ height: 1, background: th.border, margin: '4px 6px' }} />
+          <div key={`d${i}`} style={{ height: 1, background: hexA(th.border, 0.85), margin: '5px 5px' }} />
         ) : (
           <button
             key={r.op}
@@ -752,7 +884,7 @@ function ArrangeFlyout({ controller, ctxMenu, top }: AlignFlyoutProps) {
               controller.arrangeSelection(r.op);
               controller.closeCtxMenu();
             }}
-            style={itemStyle(th)}
+            style={{ ...itemStyle(th), height: 32, borderRadius: 9, gap: 9 }}
           >
             <span style={iconStyle(th)}>{r.icon}</span>
             <span style={{ textAlign: 'left' }}>{r.label}</span>
@@ -806,26 +938,30 @@ function ArrangeGlyph({ kind }: { kind: ArrangeOp }) {
 function AlignFlyout({ controller, ctxMenu, top }: AlignFlyoutProps) {
   const th = controller.uiTheme;
   const vw = controller.vw || 600;
-  const menuLeft = Math.min(ctxMenu.sx, vw - 160);
-  const flip = menuLeft + 150 + 140 > vw;
+  const menuLeft = Math.max(GAP, Math.min(ctxMenu.sx, vw - MENU_W - GAP));
+  // 오른쪽에 자리가 없으면 메뉴 왼쪽으로 뒤집는다(원본 `ctxSubLeft`와 같은 계산).
+  const flip = menuLeft + MENU_W - 8 + SUB_W + GAP > vw;
   const style: CSSProperties = {
     position: 'absolute',
-    left: flip ? -136 : 144,
-    top: top - 5,
-    width: 132,
+    left: flip ? -SUB_W - 4 : MENU_W - 8,
+    top: top - 7,
+    width: SUB_W,
+    boxSizing: 'border-box',
     background: th.panel,
     border: `1px solid ${th.border}`,
-    borderRadius: 11,
-    boxShadow: '0 10px 30px rgba(0,0,0,.14)',
-    padding: 5,
+    borderRadius: 14,
+    boxShadow: SUB_SHADOW,
+    padding: 7,
     zIndex: 41,
+    animation: 'mf-ctx-pop .13s cubic-bezier(.2,.9,.3,1) both',
   };
   const nodeId = controller.selection?.kind === 'node' ? controller.selection.id : null;
   const align = (nodeId && controller.doc.nodes[nodeId]?.align) || 'center';
-  const opts: { icon: string; label: string; v: 'left' | 'center' | 'right' }[] = [
-    { icon: '◧', label: '좌측 정렬', v: 'left' },
-    { icon: '◪', label: '중앙 정렬', v: 'center' },
-    { icon: '◨', label: '우측 정렬', v: 'right' },
+  // 아이콘도 원본의 `alignL/C/R` — 기준선 하나에 길이가 다른 두 줄.
+  const opts: { icon: JSX.Element; label: string; v: 'left' | 'center' | 'right' }[] = [
+    { icon: <Ico d="M4 5v14 M8 9h9M8 15h5" />, label: '좌측 정렬', v: 'left' },
+    { icon: <Ico d="M12 4v16 M7 9h10M9 15h6" />, label: '중앙 정렬', v: 'center' },
+    { icon: <Ico d="M20 5v14 M7 9h9M11 15h5" />, label: '우측 정렬', v: 'right' },
   ];
   return (
     <div className="mf-ctx" style={style}>
@@ -840,7 +976,7 @@ function AlignFlyout({ controller, ctxMenu, top }: AlignFlyoutProps) {
             controller.setTextAlign(o.v);
             controller.closeCtxMenu();
           }}
-          style={itemStyle(th, false, align === o.v)}
+          style={{ ...itemStyle(th, false, align === o.v), height: 32, borderRadius: 9, gap: 9 }}
         >
           <span style={iconStyle(th, false, align === o.v)}>{o.icon}</span>
           <span style={{ textAlign: 'left' }}>{o.label}</span>
