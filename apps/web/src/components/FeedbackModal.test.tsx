@@ -65,12 +65,26 @@ describe('FeedbackModal', () => {
     expect(screen.getByText(/데모 모드예요/)).toBeTruthy();
   });
 
-  it('Esc·배경 클릭으로 닫힌다', () => {
+  it('Esc·배경 클릭으로 닫힌다', async () => {
     const { backend } = backendWith('supabase');
-    const { onClose, container } = renderModal(backend);
-    fireEvent.keyDown(window, { key: 'Escape' });
+    const { onClose } = renderModal(backend);
+    // 모달은 Radix Dialog가 body로 포털한다 — 키는 document에서 듣고, 막(dim)은
+    // 오버레이 요소다(예전에는 dim div가 곧 컨테이너의 자식이었다).
+    fireEvent.keyDown(document, { key: 'Escape' });
     expect(onClose).toHaveBeenCalledTimes(1);
-    fireEvent.click(container.querySelector('[data-feedback-modal]') as HTMLElement);
-    expect(onClose).toHaveBeenCalledTimes(2);
+
+    // 바깥 클릭 판정은 pointerdown 뒤의 **click**에서 확정된다(끌다가 밖에서 손을
+    // 떼는 것을 닫힘으로 읽지 않으려는 규칙). 리스너 등록도 한 틱 뒤다.
+    const overlay = await waitFor(() => {
+      const el = document.querySelector('[data-modal-overlay]') as HTMLElement;
+      expect(el).toBeTruthy();
+      return el;
+    });
+    await new Promise((r) => setTimeout(r, 0));
+    const down = new MouseEvent('pointerdown', { bubbles: true, cancelable: true, button: 0 });
+    Object.defineProperty(down, 'pointerId', { value: 1, configurable: true });
+    fireEvent(overlay, down);
+    fireEvent.click(overlay);
+    await waitFor(() => expect(onClose).toHaveBeenCalledTimes(2));
   });
 });

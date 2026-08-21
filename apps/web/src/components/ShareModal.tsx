@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState, type CSSProperties } from 'react';
+import { Modal } from './Modal';
 import type { DocumentShare, ShareParticipant, ShareRole } from '../adapters/ports';
 import { useAuthUser } from '../adapters/useAuthUser';
 import { useBackend, useShareStore } from '../adapters/BackendContext';
@@ -241,16 +242,7 @@ export function ShareModal({ open: shareOpen, docId, onClose: closeShare, readOn
     inputRef.current?.focus();
   }, [shareOpen, refresh]);
 
-  // Esc로 닫기 — 다른 모달들과 같은 규칙.
-  useEffect(() => {
-    if (!shareOpen) return;
-    const onKey = (e: KeyboardEvent): void => {
-      if (e.key === 'Escape') closeShare();
-    };
-    window.addEventListener('keydown', onKey);
-    return () => window.removeEventListener('keydown', onKey);
-  }, [shareOpen, closeShare]);
-
+  // Esc·바깥 클릭·초점 트랩은 `Modal`(Radix Dialog)이 맡는다.
   if (!shareOpen) return null;
 
   const owner = participants?.find((p) => p.kind === 'owner') ?? null;
@@ -376,19 +368,17 @@ export function ShareModal({ open: shareOpen, docId, onClose: closeShare, readOn
   };
 
   return (
-    <div
+    <Modal
+      open={shareOpen}
+      onClose={closeShare}
+      label="공유"
       // dim 배경은 제자리 페이드만(mf-dim-in) — translateY가 있는 mf-fade를 쓰면
       // 배경 레이어가 통째로 슬라이드해 화면 상단에 빈 띠가 차오르는 게 보인다(제보).
-      style={{ position: 'fixed', inset: 0, background: 'rgba(46,42,38,.34)', backdropFilter: 'blur(3px)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 240, animation: 'mf-dim-in .18s ease-out' }}
-      onClick={closeShare}
+      dim={{ background: 'rgba(46,42,38,.34)', backdropFilter: 'blur(3px)', zIndex: 240, animation: 'mf-dim-in .18s ease-out' }}
+      // 디자인 원본의 모달: 452폭 · 라운드 22 · 아래로 길게 깔리는 그늘.
+      card={{ width: 452, maxWidth: 'calc(100vw - 32px)', background: th.panel, borderRadius: 22, border: `1px solid ${th.border}`, boxShadow: '0 40px 90px -40px rgba(46,42,38,.7)', padding: '22px 22px 18px', boxSizing: 'border-box', color: th.text }}
     >
-      <div
-        role="dialog"
-        aria-label="공유"
-        onClick={(e) => e.stopPropagation()}
-        // 디자인 원본의 모달: 452폭 · 라운드 22 · 아래로 길게 깔리는 그늘.
-        style={{ width: 452, maxWidth: 'calc(100vw - 32px)', background: th.panel, borderRadius: 22, border: `1px solid ${th.border}`, boxShadow: '0 40px 90px -40px rgba(46,42,38,.7)', padding: '22px 22px 18px', boxSizing: 'border-box', color: th.text }}
-      >
+      <>
         {/* 권한 설명은 상시 문단이 아니라 "?"에 넣는다(요청) — 팝업을 여는 사람 대부분은
             이미 알고 있고, 두 줄이 매번 자리를 차지했다. */}
         <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 14, position: 'relative' }}>
@@ -581,8 +571,8 @@ export function ShareModal({ open: shareOpen, docId, onClose: closeShare, readOn
         >
           닫기
         </button>
-      </div>
-    </div>
+      </>
+    </Modal>
   );
 }
 

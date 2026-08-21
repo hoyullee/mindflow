@@ -1,4 +1,5 @@
 import type { ReactNode } from 'react';
+import { Modal, MODAL_DIM, modalCard } from '../../../../components/Modal';
 
 interface Props {
   visible: boolean;
@@ -18,10 +19,17 @@ interface Props {
  * (delete map, restore map, delete folder, delete space, logout). */
 export function ConfirmModal({ visible, zIndex, iconBg, icon, heading, body, cancelLabel, confirmLabel, confirmColor, onCancel, onConfirm }: Props) {
   return (
-    <div
-      style={{ position: 'fixed', inset: 0, background: 'rgba(30,20,14,.42)', backdropFilter: 'blur(2px)', display: visible ? 'flex' : 'none', alignItems: 'center', justifyContent: 'center', zIndex }}
+    // 확인창은 **Escape로 닫히고 막 클릭으로는 닫히지 않는다**: 취소는 명시적으로
+    // 누르는 것이고, 파괴적 동작 위에서 막을 잘못 눌러 사라지면 다시 찾아와야 한다.
+    <Modal
+      open={visible}
+      onClose={onCancel}
+      label={heading}
+      dim={{ ...MODAL_DIM, zIndex }}
+      card={modalCard(360)}
+      dismissOnBackdrop={false}
     >
-      <div onClick={(e) => e.stopPropagation()} style={{ width: 360, background: 'var(--mf-panel)', borderRadius: 16, boxShadow: '0 24px 60px rgba(0,0,0,.28)', padding: 26, animation: 'mf-fade .2s ease' }}>
+      <>
         <div style={{ width: 52, height: 52, borderRadius: 14, background: iconBg, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 26, marginBottom: 16 }}>{icon}</div>
         <div style={{ fontSize: 17, fontWeight: 700, marginBottom: 8 }}>{heading}</div>
         <div style={{ fontSize: 13, color: 'var(--mf-subtext)', lineHeight: 1.6, marginBottom: 22 }}>{body}</div>
@@ -33,7 +41,7 @@ export function ConfirmModal({ visible, zIndex, iconBg, icon, heading, body, can
             {confirmLabel}
           </button>
         </div>
-      </div>
-    </div>
+      </>
+    </Modal>
   );
 }

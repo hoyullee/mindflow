@@ -4,6 +4,7 @@ import { ProfileAvatar, avatarLabel } from '../ProfileAvatar';
 import type { HomeState } from '../../types';
 import { HOME_THEMES, HOME_THEME_KEYS } from '../../theme';
 import { GoogleIcon } from '../../../auth/GoogleIcon';
+import { Modal, MODAL_DIM } from '../../../../components/Modal';
 
 interface Props {
   state: HomeState;
@@ -84,16 +85,17 @@ export function AccountSettingsModal({ state, controller }: Props) {
   const unlinkBlock: 'lastIdentity' | 'noPassword' | null = !googleLinked ? null : !otherIdentity ? 'lastIdentity' : !hasPassword ? 'noPassword' : null;
 
   return (
-    <div
-      onClick={controller.closeAccountSettings}
-      style={{ position: 'fixed', inset: 0, background: 'rgba(30,20,14,.42)', backdropFilter: 'blur(2px)', display: visible ? 'flex' : 'none', alignItems: 'center', justifyContent: 'center', zIndex: 150 }}
+    <Modal
+      open={visible}
+      onClose={controller.closeAccountSettings}
+      label="설정"
+      // 이 모달은 프로필 팝오버의 '설정' 행으로 열리고, 그 팝오버는 모달이 열리면
+      // 닫힌다 — 돌아갈 자리가 사라지므로 팝오버의 트리거(계정 메뉴)로 되돌린다.
+      restoreFocusSelector="[data-account-trigger]"
+      dim={{ ...MODAL_DIM, zIndex: 150 }}
+      card={{ width: 560, maxWidth: 'calc(100vw - 32px)', maxHeight: 'calc(100dvh - 32px)', overflowY: 'auto', background: 'var(--mf-card)', borderRadius: 22, boxShadow: '0 32px 70px -28px rgba(46,42,38,.5)', animation: 'mf-fade .2s ease' }}
     >
-      <div
-        role="dialog"
-        aria-label="설정"
-        onClick={(e) => e.stopPropagation()}
-        style={{ width: 560, maxWidth: 'calc(100vw - 32px)', maxHeight: 'calc(100dvh - 32px)', overflowY: 'auto', background: 'var(--mf-card)', borderRadius: 22, boxShadow: '0 32px 70px -28px rgba(46,42,38,.5)', animation: 'mf-fade .2s ease' }}
-      >
+      <>
         {/* header — 제목은 언제나 '설정'이고(요청), 상세 화면에서는 뒤로 가기가 붙는다.
             지금 어느 화면인지는 본문 첫 줄의 부 제목('계정 설정')이 말한다. */}
         <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '20px 24px', borderBottom: '1px solid var(--mf-hairline)' }}>
@@ -523,7 +525,7 @@ export function AccountSettingsModal({ state, controller }: Props) {
             </div>
           )}
         </div>
-      </div>
-    </div>
+      </>
+    </Modal>
   );
 }

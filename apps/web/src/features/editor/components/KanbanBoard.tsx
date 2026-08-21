@@ -12,6 +12,7 @@
 // 표로 들고 있던 값(분류 색·담당 명단)은 규칙으로 바꿨다(`kanbanMeta.ts` 머리말).
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { Modal } from '../../../components/Modal';
 import type { CSSProperties, KeyboardEvent as ReactKeyboardEvent, MouseEvent as ReactMouseEvent, PointerEvent as ReactPointerEvent } from 'react';
 import { cardsInColumn } from '@mindflow/mindmap-core';
 import type { KanbanCard, KanbanColumn, KanbanTag } from '@mindflow/mindmap-core';
@@ -1342,21 +1343,17 @@ function ConfirmDialog({
     cursor: 'pointer',
   };
   return (
-    <div
-      data-confirm-veil
-      onPointerDown={(e) => {
-        if (e.target === e.currentTarget) onCancel();
-      }}
-      style={{ animation: 'mf-dim-in .18s ease-out both', position: 'fixed', inset: 0, zIndex: 350, background: hexA('#2e2a26', 0.34), display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 24 }}
+    <Modal
+      open
+      onClose={onCancel}
+      label={label}
+      dim={{ animation: 'mf-dim-in .18s ease-out both', zIndex: 350, background: hexA('#2e2a26', 0.34), padding: 24 }}
+      dimAttrs={{ 'data-confirm-veil': '' }}
+      cardAttrs={{ [`data-${attr}`]: attrValue ?? '1' }}
+      cardClass="mf-kb-modal"
+      card={{ width: 'min(380px, 100%)', boxSizing: 'border-box', padding: 20, borderRadius: 16, background: th.panel, border: `1px solid ${th.border}`, boxShadow: '0 40px 90px -40px rgba(0,0,0,.6)' }}
     >
-      <div
-        {...{ [`data-${attr}`]: attrValue ?? '1' }}
-        role="dialog"
-        aria-modal="true"
-        aria-label={label}
-        className="mf-kb-modal"
-        style={{ width: 'min(380px, 100%)', boxSizing: 'border-box', padding: 20, borderRadius: 16, background: th.panel, border: `1px solid ${th.border}`, boxShadow: '0 40px 90px -40px rgba(0,0,0,.6)' }}
-      >
+      <>
         <strong style={{ display: 'block', fontSize: 15.5, color: th.text, marginBottom: 8 }}>{title}</strong>
         <p data-confirm-body style={{ margin: 0, fontSize: 13, lineHeight: 1.6, color: th.subtext }}>{body}</p>
         <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8, marginTop: 18 }}>
@@ -1367,8 +1364,8 @@ function ConfirmDialog({
             {confirmLabel}
           </button>
         </div>
-      </div>
-    </div>
+      </>
+    </Modal>
   );
 }
 

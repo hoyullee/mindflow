@@ -153,10 +153,10 @@ describe('칸반 에디터', () => {
     const card = await waitFor(() => container.querySelector('[data-kanban-card="k1"]') as HTMLElement);
 
     fireEvent.doubleClick(card);
-    const edit = await waitFor(() => container.querySelector('[data-detail-title]') as HTMLTextAreaElement);
+    const edit = await waitFor(() => document.querySelector('[data-detail-title]') as HTMLTextAreaElement);
     fireEvent.change(edit, { target: { value: '고친 카드' } });
     fireEvent.keyDown(edit, { key: 'Enter' }); // 저장하고 닫힌다
-    await waitFor(() => expect(container.querySelector('[data-card-detail]')).toBeNull());
+    await waitFor(() => expect(document.querySelector('[data-card-detail]')).toBeNull());
 
     fireEvent.doubleClick(container.querySelector('[data-column-title="c1"]')!);
     const titleEdit = await waitFor(() => container.querySelector('[data-column-title-edit]') as HTMLInputElement);
@@ -182,7 +182,7 @@ describe('칸반 에디터', () => {
     fireEvent.click(container.querySelector('[data-column-menu="c1"]')!);
     fireEvent.click(await waitFor(() => container.querySelector('[data-delete-column="c1"]') as HTMLElement));
     // 열 삭제는 확인창을 한 번 지난다(요청) — 안의 카드가 함께 사라지기 때문.
-    fireEvent.click(await waitFor(() => container.querySelector('[data-confirm-delete]') as HTMLElement));
+    fireEvent.click(await waitFor(() => document.querySelector('[data-confirm-delete]') as HTMLElement));
     fireEvent.keyDown(window, { key: 's', ctrlKey: true });
     await waitFor(() => {
       const d = saved('kb5');
@@ -327,7 +327,7 @@ describe('칸반 — 카드 삭제(제보: 지울 방법이 없다)', () => {
     expect(container.querySelectorAll('[data-card-next]')).toHaveLength(0);
 
     fireEvent.doubleClick(container.querySelector('[data-kanban-card="k1"]')!);
-    const detail = await waitFor(() => container.querySelector('[data-card-detail="k1"]') as HTMLElement);
+    const detail = await waitFor(() => document.querySelector('[data-card-detail="k1"]') as HTMLElement);
     fireEvent.click(detail.querySelector('[data-detail-delete]')!);
 
     await waitFor(() => expect(container.querySelectorAll('[data-kanban-card]')).toHaveLength(1));
@@ -453,7 +453,7 @@ describe('칸반 — 카드 댓글(M3)', () => {
 
     // 댓글은 **상세 안에서** 읽고 쓴다(요청) — 패널로 넘기지 않는다.
     fireEvent.doubleClick(container.querySelector('[data-kanban-card="k2"]')!);
-    const detail = await waitFor(() => container.querySelector('[data-card-detail="k2"]') as HTMLElement);
+    const detail = await waitFor(() => document.querySelector('[data-card-detail="k2"]') as HTMLElement);
     expect(within(detail).getByText('이 문구 확인 부탁')).toBeTruthy();
   });
 });
@@ -607,7 +607,7 @@ describe('칸반 — 카드 색 라벨', () => {
     // 색은 카드 위가 아니라 **상세**에 있다(카드 위 빠른 동작은 ‹ › ✕ 셋뿐).
     expect(container.querySelector('[data-card-label="k1"]')).toBeNull();
     fireEvent.doubleClick(container.querySelector('[data-kanban-card="k1"]')!);
-    const detail = await waitFor(() => container.querySelector('[data-card-detail="k1"]') as HTMLElement);
+    const detail = await waitFor(() => document.querySelector('[data-card-detail="k1"]') as HTMLElement);
 
     fireEvent.click(within(detail).getByRole('button', { name: '색 파랑' }));
     await waitFor(() => expect((container.querySelector('[data-kanban-card="k1"]') as HTMLElement).style.background).toBeTruthy());
@@ -633,10 +633,10 @@ describe('칸반 — 카드 서식(마크다운 단축·자동 링크)', () => {
 
   const editCard = async (container: HTMLElement, id: string, value: string): Promise<void> => {
     fireEvent.doubleClick(container.querySelector(`[data-kanban-card="${id}"]`)!);
-    const box = await waitFor(() => container.querySelector('[data-detail-title]') as HTMLTextAreaElement);
+    const box = await waitFor(() => document.querySelector('[data-detail-title]') as HTMLTextAreaElement);
     fireEvent.change(box, { target: { value } });
     fireEvent.keyDown(box, { key: 'Enter' });
-    await waitFor(() => expect(container.querySelector('[data-card-detail]')).toBeNull());
+    await waitFor(() => expect(document.querySelector('[data-card-detail]')).toBeNull());
   };
 
   it('확정하면 마커가 서식이 되고, URL은 링크가 된다', async () => {
@@ -667,7 +667,7 @@ describe('칸반 — 카드 서식(마크다운 단축·자동 링크)', () => {
     await editCard(container, 'k1', '~~취소~~ 그리고 *기울임*');
 
     fireEvent.doubleClick(container.querySelector('[data-kanban-card="k1"]')!);
-    const box = await waitFor(() => container.querySelector('[data-detail-title]') as HTMLTextAreaElement);
+    const box = await waitFor(() => document.querySelector('[data-detail-title]') as HTMLTextAreaElement);
     expect(box.value).toBe('~~취소~~ 그리고 *기울임*');
     fireEvent.keyDown(box, { key: 'Enter' });
 
@@ -742,7 +742,7 @@ describe('칸반 — 카드 상세(분류·기한·담당·긴급)', () => {
     await waitFor(() => expect(container.querySelectorAll('[data-kanban-card]')).toHaveLength(2));
 
     fireEvent.doubleClick(container.querySelector('[data-kanban-card="k1"]')!);
-    const detail = await waitFor(() => container.querySelector('[data-card-detail="k1"]') as HTMLElement);
+    const detail = await waitFor(() => document.querySelector('[data-card-detail="k1"]') as HTMLElement);
 
     // 기한은 **오늘 기준 30일 뒤**를 계산해 심는다 — 고정 날짜('2026-08-20')를
     // 쓰면 그날이 다가와 표기가 '내일'/'오늘'(상대 표기)로 바뀌는 순간 테스트가
@@ -771,7 +771,7 @@ describe('칸반 — 카드 상세(분류·기한·담당·긴급)', () => {
 
     // 없애면 **키가 사라진다**(빈 필드를 CRDT로 흘리지 않게).
     fireEvent.doubleClick(container.querySelector('[data-kanban-card="k1"]')!);
-    const again = await waitFor(() => container.querySelector('[data-card-detail="k1"]') as HTMLElement);
+    const again = await waitFor(() => document.querySelector('[data-card-detail="k1"]') as HTMLElement);
     fireEvent.click(again.querySelector('[data-detail-tag="none"]')!);
     fireEvent.click(again.querySelector('[data-detail-due-clear]')!);
     fireEvent.click(again.querySelector('[data-detail-flag]')!);
@@ -790,7 +790,7 @@ describe('칸반 — 카드 상세(분류·기한·담당·긴급)', () => {
     await waitFor(() => expect(container.querySelectorAll('[data-kanban-card]')).toHaveLength(2));
 
     fireEvent.doubleClick(container.querySelector('[data-kanban-card="k2"]')!);
-    const detail = await waitFor(() => container.querySelector('[data-card-detail="k2"]') as HTMLElement);
+    const detail = await waitFor(() => document.querySelector('[data-card-detail="k2"]') as HTMLElement);
     fireEvent.click(detail.querySelector('[data-detail-status="c2"]')!);
     fireEvent.click(detail.querySelector('[data-detail-close]')!);
 
@@ -835,7 +835,7 @@ describe('칸반 — 보드 머리(검색·진행률)', () => {
 
     // k1을 마지막 열(c2)로 옮기면 완료가 하나 는다.
     fireEvent.doubleClick(container.querySelector('[data-kanban-card="k1"]')!);
-    const detail = await waitFor(() => container.querySelector('[data-card-detail="k1"]') as HTMLElement);
+    const detail = await waitFor(() => document.querySelector('[data-card-detail="k1"]') as HTMLElement);
     fireEvent.click(detail.querySelector('[data-detail-status="c2"]')!);
     fireEvent.click(detail.querySelector('[data-detail-close]')!);
     await waitFor(() => expect(container.querySelector('[data-kanban-bar]')?.textContent).toContain('완료 1/2'));
@@ -903,7 +903,7 @@ describe('칸반 — 리스트·타임라인 보기', () => {
     expect(list.querySelector('[data-list-row="k1"]')?.textContent).toContain('첫 카드');
 
     fireEvent.click(list.querySelector('[data-list-row="k1"]')!);
-    await waitFor(() => expect(container.querySelector('[data-card-detail="k1"]')).toBeTruthy());
+    await waitFor(() => expect(document.querySelector('[data-card-detail="k1"]')).toBeTruthy());
   });
 
   it('타임라인 보기 — 기한이 있는 카드만 막대로, 없는 카드 수는 밝힌다', async () => {
@@ -926,7 +926,7 @@ describe('칸반 — 리스트·타임라인 보기', () => {
     expect(bar.style.border).not.toContain('217, 83, 79');
 
     fireEvent.click(tl.querySelector('[data-timeline-row="k1"]')!);
-    await waitFor(() => expect(container.querySelector('[data-card-detail="k1"]')).toBeTruthy());
+    await waitFor(() => expect(document.querySelector('[data-card-detail="k1"]')).toBeTruthy());
   });
 
   it('검색은 세 보기에 함께 걸린다', async () => {
@@ -1009,7 +1009,7 @@ describe('칸반 — 후속 요청', () => {
     await waitFor(() => expect(container.querySelectorAll('[data-kanban-card]')).toHaveLength(2));
 
     fireEvent.doubleClick(container.querySelector('[data-kanban-card="k1"]')!);
-    const detail = await waitFor(() => container.querySelector('[data-card-detail="k1"]') as HTMLElement);
+    const detail = await waitFor(() => document.querySelector('[data-card-detail="k1"]') as HTMLElement);
     // 기본 분류는 없다(요청) — '없음'과 직접 입력뿐.
     expect(detail.querySelectorAll('[data-detail-tag-wrap]')).toHaveLength(0);
 
@@ -1076,7 +1076,7 @@ describe('칸반 — 후속 7건', () => {
     await waitFor(() => expect(container.querySelectorAll('[data-kanban-card]')).toHaveLength(2));
 
     fireEvent.doubleClick(container.querySelector('[data-kanban-card="k1"]')!);
-    const detail = await waitFor(() => container.querySelector('[data-card-detail="k1"]') as HTMLElement);
+    const detail = await waitFor(() => document.querySelector('[data-card-detail="k1"]') as HTMLElement);
     const box = within(detail).getByPlaceholderText('댓글 남기기 · @로 멘션');
     fireEvent.change(box, { target: { value: '여기서 바로 남긴다' } });
     fireEvent.click(within(detail).getByRole('button', { name: '남기기' }));
@@ -1097,7 +1097,7 @@ describe('칸반 — 후속 7건', () => {
     await waitFor(() => expect(container.querySelectorAll('[data-kanban-card]')).toHaveLength(2));
 
     fireEvent.doubleClick(container.querySelector('[data-kanban-card="k1"]')!);
-    const detail = await waitFor(() => container.querySelector('[data-card-detail="k1"]') as HTMLElement);
+    const detail = await waitFor(() => document.querySelector('[data-card-detail="k1"]') as HTMLElement);
     const clear = detail.querySelector('[data-detail-due-clear]') as HTMLButtonElement;
     expect(clear).toBeTruthy();
     expect(clear.disabled).toBe(true);
@@ -1136,7 +1136,7 @@ describe('칸반 — 후속 7건', () => {
 
     // 마지막 열로 옮기면 그 열의 색으로 왼쪽부터 찬다.
     fireEvent.doubleClick(container.querySelector('[data-kanban-card="k1"]')!);
-    const detail = await waitFor(() => container.querySelector('[data-card-detail="k1"]') as HTMLElement);
+    const detail = await waitFor(() => document.querySelector('[data-card-detail="k1"]') as HTMLElement);
     fireEvent.click(detail.querySelector('[data-detail-status="c2"]')!);
     fireEvent.click(detail.querySelector('[data-detail-close]')!);
     const segs = await waitFor(() => {
@@ -1335,7 +1335,7 @@ describe('칸반 — 후속(열 색·열 추가 길이·호버·시작일)', () 
 
     // 상세 팝업의 삭제·닫기
     fireEvent.doubleClick(container.querySelector('[data-kanban-card="k1"]')!);
-    const detail = await waitFor(() => container.querySelector('[data-card-detail="k1"]') as HTMLElement);
+    const detail = await waitFor(() => document.querySelector('[data-card-detail="k1"]') as HTMLElement);
     expect((detail.querySelector('[data-detail-delete]') as HTMLElement).classList.contains('mf-ed-danger')).toBe(true);
     expect((detail.querySelector('[data-detail-close]') as HTMLElement).classList.contains('mf-ed-btn')).toBe(true);
     fireEvent.click(detail.querySelector('[data-detail-close]')!);
@@ -1351,7 +1351,7 @@ describe('칸반 — 후속(열 색·열 추가 길이·호버·시작일)', () 
     await waitFor(() => expect(container.querySelectorAll('[data-kanban-card]')).toHaveLength(2));
 
     fireEvent.doubleClick(container.querySelector('[data-kanban-card="k1"]')!);
-    const detail = await waitFor(() => container.querySelector('[data-card-detail="k1"]') as HTMLElement);
+    const detail = await waitFor(() => document.querySelector('[data-card-detail="k1"]') as HTMLElement);
     const start = detail.querySelector('[data-detail-start]') as HTMLInputElement;
     expect((detail.querySelector('[data-detail-start-clear]') as HTMLButtonElement).disabled).toBe(true);
 
@@ -1423,7 +1423,7 @@ describe('칸반 — 열 삭제 확인(요청)', () => {
   const openConfirm = async (container: HTMLElement, colId: string): Promise<HTMLElement> => {
     fireEvent.click(container.querySelector(`[data-column-menu="${colId}"]`)!);
     fireEvent.click(await waitFor(() => container.querySelector(`[data-delete-column="${colId}"]`) as HTMLElement));
-    return await waitFor(() => container.querySelector(`[data-confirm-delete-column="${colId}"]`) as HTMLElement);
+    return await waitFor(() => document.querySelector(`[data-confirm-delete-column="${colId}"]`) as HTMLElement);
   };
 
   it('메뉴에서 삭제를 눌러도 바로 지우지 않고 묻는다 — 취소하면 그대로', async () => {
@@ -1438,7 +1438,7 @@ describe('칸반 — 열 삭제 확인(요청)', () => {
     expect(dialog.querySelector('[data-confirm-body]')?.textContent).toContain('카드 2장');
 
     fireEvent.click(dialog.querySelector('[data-confirm-cancel]')!);
-    await waitFor(() => expect(container.querySelector('[data-confirm-delete-column="c1"]')).toBeNull());
+    await waitFor(() => expect(document.querySelector('[data-confirm-delete-column="c1"]')).toBeNull());
     expect(container.querySelectorAll('[data-kanban-column]')).toHaveLength(2);
     expect(container.querySelectorAll('[data-kanban-card]')).toHaveLength(2);
   });
@@ -1466,8 +1466,8 @@ describe('칸반 — 열 삭제 확인(요청)', () => {
     const dialog = await openConfirm(container, 'c2');
     expect(dialog.querySelector('[data-confirm-body]')?.textContent).toContain('카드가 없어요');
 
-    fireEvent.keyDown(window, { key: 'Escape' });
-    await waitFor(() => expect(container.querySelector('[data-confirm-delete-column="c2"]')).toBeNull());
+    fireEvent.keyDown(document, { key: 'Escape' });
+    await waitFor(() => expect(document.querySelector('[data-confirm-delete-column="c2"]')).toBeNull());
     expect(container.querySelectorAll('[data-kanban-column]')).toHaveLength(2);
   });
 });
@@ -1563,7 +1563,7 @@ describe('칸반 — 후속 6건(열 배경·메뉴·리스트·타임라인)', 
     expect(pop.querySelector('[data-delete-column-count]')?.textContent).toBe('2개');
     // 색을 지정하지 않은 열은 '기본 색' 칸이 활성(대각선 칸이라 체크 대신 테두리로).
     expect((pop.querySelector('[data-column-color="default"]') as HTMLElement).style.border).toContain('2px');
-    fireEvent.keyDown(window, { key: 'Escape' });
+    fireEvent.keyDown(document, { key: 'Escape' });
 
     // 색을 지정한 열은 그 칸에 체크.
     fireEvent.click(container.querySelector('[data-column-menu="c2"]')!);
@@ -1635,7 +1635,7 @@ describe('칸반 — 카드 우클릭 메뉴와 빠른 댓글', () => {
     }
     // 카드 열기 → 상세
     fireEvent.click(menu.querySelector('[data-card-menu-open]')!);
-    await waitFor(() => expect(container.querySelector('[data-card-detail="k1"]')).toBeTruthy());
+    await waitFor(() => expect(document.querySelector('[data-card-detail="k1"]')).toBeTruthy());
     expect(container.querySelector('[data-card-menu="k1"]')).toBeNull();
   });
 
@@ -1749,7 +1749,7 @@ describe('칸반 — 카드 우클릭 메뉴와 빠른 댓글', () => {
     await waitFor(() => expect(container.querySelector('[data-card-comment-count="k1"]')?.textContent).toContain('1'));
     // 상세에서도 같은 글이 보인다
     fireEvent.doubleClick(container.querySelector('[data-kanban-card="k1"]')!);
-    const detail = await waitFor(() => container.querySelector('[data-card-detail="k1"]') as HTMLElement);
+    const detail = await waitFor(() => document.querySelector('[data-card-detail="k1"]') as HTMLElement);
     expect(within(detail).getByText('여기서 한 마디')).toBeTruthy();
   });
 
@@ -1766,8 +1766,8 @@ describe('칸반 — 카드 우클릭 메뉴와 빠른 댓글', () => {
     localStorage.setItem('mindflow_doc_cm6', JSON.stringify(KANBAN));
     const { container } = renderEditor('/editor?map=cm6&title=x');
     await openMenu(container);
-    expect(container.querySelector('[data-card-detail="k1"]')).toBeNull();
-    fireEvent.keyDown(window, { key: 'Escape' });
+    expect(document.querySelector('[data-card-detail="k1"]')).toBeNull();
+    fireEvent.keyDown(document, { key: 'Escape' });
     await waitFor(() => expect(container.querySelector('[data-card-menu="k1"]')).toBeNull());
   });
 });
@@ -1786,10 +1786,10 @@ describe('칸반 — 카드 상세 재디자인(시안 ③)', () => {
     await waitFor(() => expect(container.querySelectorAll('[data-kanban-card]')).toHaveLength(2));
 
     fireEvent.doubleClick(container.querySelector('[data-kanban-card="k1"]')!);
-    const detail = await waitFor(() => container.querySelector('[data-card-detail="k1"]') as HTMLElement);
+    const detail = await waitFor(() => document.querySelector('[data-card-detail="k1"]') as HTMLElement);
     // 등장 애니메이션(요청) — 데스크톱은 떠오르고, dim은 제자리 페이드
     expect(detail.className).toContain('mf-kb-modal');
-    expect((container.querySelector('[data-card-detail-veil]') as HTMLElement).style.animation).toContain('mf-dim-in');
+    expect((document.querySelector('[data-card-detail-veil]') as HTMLElement).style.animation).toContain('mf-dim-in');
 
     // 왼쪽 = 값, 오른쪽 = 논의 (같은 줄에 나란히)
     const main = detail.querySelector('[data-detail-main]') as HTMLElement;
@@ -1816,7 +1816,7 @@ describe('칸반 — 카드 상세 재디자인(시안 ③)', () => {
     // 완료 = 닫기(값은 이미 저장돼 있고 제목만 여기서 커밋된다)
     fireEvent.change(detail.querySelector('[data-detail-title]')!, { target: { value: '고친 제목' } });
     fireEvent.click(detail.querySelector('[data-detail-done]')!);
-    await waitFor(() => expect(container.querySelector('[data-card-detail="k1"]')).toBeNull());
+    await waitFor(() => expect(document.querySelector('[data-card-detail="k1"]')).toBeNull());
     fireEvent.keyDown(window, { key: 's', ctrlKey: true });
     await waitFor(() => {
       const cards = saved('cd1').cards as { id: string; text: string }[];
@@ -1831,7 +1831,7 @@ describe('칸반 — 카드 상세 재디자인(시안 ③)', () => {
     await waitFor(() => expect(container.querySelectorAll('[data-kanban-card]')).toHaveLength(2));
 
     fireEvent.doubleClick(container.querySelector('[data-kanban-card="k1"]')!);
-    const detail = await waitFor(() => container.querySelector('[data-card-detail="k1"]') as HTMLElement);
+    const detail = await waitFor(() => document.querySelector('[data-card-detail="k1"]') as HTMLElement);
     expect(detail.className).toContain('mf-kb-sheet');
     const main = detail.querySelector('[data-detail-main]') as HTMLElement;
     expect((main.parentElement as HTMLElement).style.flexDirection).toBe('column');
@@ -1992,7 +1992,7 @@ describe('칸반 — 배경 우클릭 메뉴(시안)', () => {
     expect(document.querySelector('[data-board-menu]')).toBeNull();
     expect(document.querySelector('[data-card-menu="k1"]')).toBeTruthy();
 
-    fireEvent.keyDown(window, { key: 'Escape' });
+    fireEvent.keyDown(document, { key: 'Escape' });
     fireEvent.contextMenu(container.querySelector('[data-kanban-column="c1"]') as HTMLElement, { clientX: 100, clientY: 300 });
     expect(document.querySelector('[data-board-menu]')).toBeNull();
   });

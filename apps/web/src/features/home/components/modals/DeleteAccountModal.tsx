@@ -1,5 +1,6 @@
 import { DELETE_ACCOUNT_PHRASE, type HomeController } from '../../useHomeController';
 import type { HomeState } from '../../types';
+import { Modal, MODAL_DIM, modalCard } from '../../../../components/Modal';
 
 interface Props {
   state: HomeState;
@@ -14,8 +15,15 @@ export function DeleteAccountModal({ state, controller }: Props) {
   const armed = state.deleteAccountText.trim() === DELETE_ACCOUNT_PHRASE;
 
   return (
-    <div style={{ position: 'fixed', inset: 0, background: 'rgba(30,20,14,.42)', backdropFilter: 'blur(2px)', display: visible ? 'flex' : 'none', alignItems: 'center', justifyContent: 'center', zIndex: 160 }}>
-      <div role="dialog" aria-label="회원 탈퇴" onClick={(e) => e.stopPropagation()} style={{ width: 380, maxWidth: 'calc(100vw - 32px)', background: 'var(--mf-panel)', borderRadius: 16, boxShadow: '0 24px 60px rgba(0,0,0,.28)', padding: 26, animation: 'mf-fade .2s ease' }}>
+    <Modal
+      open={visible}
+      onClose={controller.cancelDeleteAccount}
+      label="회원 탈퇴"
+      dim={{ ...MODAL_DIM, zIndex: 160 }}
+      card={modalCard(380)}
+      dismissOnBackdrop={false}
+    >
+      <>
         <div style={{ width: 52, height: 52, borderRadius: 14, background: 'var(--mf-danger-soft)', display: 'flex', alignItems: 'center', justifyContent: 'center', marginBottom: 16, color: 'var(--mf-danger)' }}>
           <svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round">
             <path d="M10.29 3.86 1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z" />
@@ -66,7 +74,7 @@ export function DeleteAccountModal({ state, controller }: Props) {
             다음
           </button>
         </div>
-      </div>
-    </div>
+      </>
+    </Modal>
   );
 }

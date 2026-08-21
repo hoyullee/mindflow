@@ -1654,9 +1654,10 @@ describe('Home', () => {
     // 취소하면 아무것도 지워지지 않고 흐름이 닫힌다
     await user.click(within(card).getByRole('button', { name: '취소' }));
     expect(del).not.toHaveBeenCalled();
-    // 확인창들은 숨겨진 채 마운트돼 있으므로(display:none) 텍스트 유무가 아니라
-    // 보이는지로 판정한다.
-    expect((card.parentElement as HTMLElement).style.display).toBe('none');
+    // 닫힌 모달은 이제 **DOM에서 사라진다**(Radix Dialog) — 예전에는 `display: none`
+    // 으로 계속 떠 있어 "보이는지"로 판정해야 했다.
+    expect(screen.queryByText('마지막으로 확인할게요')).toBeNull();
+    expect(card.isConnected).toBe(false);
   });
 
   it('마지막 확인창에서 영구 삭제를 누르면 그때 지운다', async () => {
@@ -1777,7 +1778,7 @@ describe('Home', () => {
     const setPw = vi.spyOn(auth, 'setPasswordWithCode').mockResolvedValue({});
     const backend: Backend = { auth, docStore: new MockDocStore([], {}), spaceStore: new LocalSpaceStore(), shareStore: new LocalShareStore(), feedbackStore: new LocalFeedbackStore(), imageStore: new LocalImageStore(), commentStore: new LocalCommentStore(), notificationStore: new LocalNotificationStore(), mode: 'local' };
     localStorage.setItem('mf_demo_session', JSON.stringify({ user: { id: 'u1', email: 'me@gmail.com' } }));
-    const { container } = render(
+    render(
       <MemoryRouter initialEntries={['/home']}>
         <BackendProvider backend={backend}>
           <Routes>
@@ -1790,15 +1791,15 @@ describe('Home', () => {
     await user.click(screen.getByRole('button', { name: '설정' }));
     await user.click(await waitFor(() => document.querySelector('[data-account-detail-row]') as HTMLElement));
     const row = await waitFor(() => {
-      const el = container.querySelector('[data-change-pw-row]') as HTMLElement;
+      const el = document.querySelector('[data-change-pw-row]') as HTMLElement;
       expect(el.textContent).toContain('비밀번호 설정');
       return el;
     });
     // Google이 유일한 수단이면 연결 해제는 내주지 않는다 — 들어올 길이 사라진다.
-    const unlink = container.querySelector('[data-google-link-action]') as HTMLButtonElement;
+    const unlink = document.querySelector('[data-google-link-action]') as HTMLButtonElement;
     expect(unlink.textContent).toContain('연결 해제');
     expect(unlink.disabled).toBe(true);
-    expect((container.querySelector('[data-google-link-row]') as HTMLElement).textContent).toContain('유일한 로그인 수단');
+    expect((document.querySelector('[data-google-link-row]') as HTMLElement).textContent).toContain('유일한 로그인 수단');
 
     // 모달을 열면 곧바로 코드를 보낸다
     await user.click(row);
@@ -1822,9 +1823,9 @@ describe('Home', () => {
     expect(dialog.querySelector('[data-set-pw-done]')).toBeTruthy();
     await user.click(within(dialog).getByRole('button', { name: '확인' }));
     // 이제 비밀번호가 있고 이메일 신원도 있다 — 행은 '변경'이고 해제도 열린다
-    await waitFor(() => expect((container.querySelector('[data-change-pw-row]') as HTMLElement).textContent).toContain('비밀번호 변경'));
+    await waitFor(() => expect((document.querySelector('[data-change-pw-row]') as HTMLElement).textContent).toContain('비밀번호 변경'));
     expect(register).toHaveBeenCalledTimes(1);
-    await waitFor(() => expect((container.querySelector('[data-google-link-action]') as HTMLButtonElement).disabled).toBe(false));
+    await waitFor(() => expect((document.querySelector('[data-google-link-action]') as HTMLButtonElement).disabled).toBe(false));
   });
 
   // 제보: 비밀번호 설정 모달에서 **새 비밀번호를 치는데 커서가 코드 칸으로 튀었다**.
@@ -1878,7 +1879,7 @@ describe('Home', () => {
     vi.spyOn(auth, 'signinMethods').mockResolvedValue(methods as never);
     const backend: Backend = { auth, docStore: new MockDocStore([], {}), spaceStore: new LocalSpaceStore(), shareStore: new LocalShareStore(), feedbackStore: new LocalFeedbackStore(), imageStore: new LocalImageStore(), commentStore: new LocalCommentStore(), notificationStore: new LocalNotificationStore(), mode: 'local' };
     localStorage.setItem('mf_demo_session', JSON.stringify({ user: { id: 'u1', email: 'me@gmail.com' } }));
-    const { container } = render(
+    render(
       <MemoryRouter initialEntries={['/home']}>
         <BackendProvider backend={backend}>
           <Routes>
@@ -1891,12 +1892,12 @@ describe('Home', () => {
     await user.click(screen.getByRole('button', { name: '설정' }));
     await user.click(await waitFor(() => document.querySelector('[data-account-detail-row]') as HTMLElement));
     const row = await waitFor(() => {
-      const el = container.querySelector('[data-google-link-row]') as HTMLElement;
+      const el = document.querySelector('[data-google-link-row]') as HTMLElement;
       expect(el.textContent).toContain(expected);
       return el;
     });
     expect(row.textContent).not.toContain(notExpected); // 두 이유가 섞이지 않는다
-    expect((container.querySelector('[data-google-link-action]') as HTMLButtonElement).disabled).toBe(true);
+    expect((document.querySelector('[data-google-link-action]') as HTMLButtonElement).disabled).toBe(true);
   });
 
   // 제보자 계정처럼 **이미 비밀번호만 설정해 둔** 계정(0030 이전)은 설정을 열 때
@@ -1912,7 +1913,7 @@ describe('Home', () => {
     });
     const backend: Backend = { auth, docStore: new MockDocStore([], {}), spaceStore: new LocalSpaceStore(), shareStore: new LocalShareStore(), feedbackStore: new LocalFeedbackStore(), imageStore: new LocalImageStore(), commentStore: new LocalCommentStore(), notificationStore: new LocalNotificationStore(), mode: 'local' };
     localStorage.setItem('mf_demo_session', JSON.stringify({ user: { id: 'u1', email: 'me@gmail.com' } }));
-    const { container } = render(
+    render(
       <MemoryRouter initialEntries={['/home']}>
         <BackendProvider backend={backend}>
           <Routes>
@@ -1926,8 +1927,8 @@ describe('Home', () => {
     await user.click(await waitFor(() => document.querySelector('[data-account-detail-row]') as HTMLElement));
 
     await waitFor(() => expect(register).toHaveBeenCalledTimes(1));
-    await waitFor(() => expect((container.querySelector('[data-google-link-action]') as HTMLButtonElement).disabled).toBe(false));
-    expect((container.querySelector('[data-google-link-row]') as HTMLElement).textContent).toContain('Google 계정으로도 로그인할 수 있어요');
+    await waitFor(() => expect((document.querySelector('[data-google-link-action]') as HTMLButtonElement).disabled).toBe(false));
+    expect((document.querySelector('[data-google-link-row]') as HTMLElement).textContent).toContain('Google 계정으로도 로그인할 수 있어요');
   });
 
   it('코드가 틀리면 그 자리에서 말한다 (설정은 되지 않는다)', async () => {
@@ -1970,7 +1971,7 @@ describe('Home', () => {
     const unlink = vi.spyOn(auth, 'unlinkGoogle').mockResolvedValue({});
     const backend: Backend = { auth, docStore: new MockDocStore([], {}), spaceStore: new LocalSpaceStore(), shareStore: new LocalShareStore(), feedbackStore: new LocalFeedbackStore(), imageStore: new LocalImageStore(), commentStore: new LocalCommentStore(), notificationStore: new LocalNotificationStore(), mode: 'local' };
     localStorage.setItem('mf_demo_session', JSON.stringify({ user: { id: 'u1', email: 'me@gmail.com' } }));
-    const { container } = render(
+    render(
       <MemoryRouter initialEntries={['/home']}>
         <BackendProvider backend={backend}>
           <Routes>
@@ -1983,7 +1984,7 @@ describe('Home', () => {
     await user.click(screen.getByRole('button', { name: '설정' }));
     await user.click(await waitFor(() => document.querySelector('[data-account-detail-row]') as HTMLElement));
     const action = await waitFor(() => {
-      const el = container.querySelector('[data-google-link-action]') as HTMLButtonElement;
+      const el = document.querySelector('[data-google-link-action]') as HTMLButtonElement;
       expect(el.textContent).toContain('연결');
       expect(el.disabled).toBe(false);
       return el;
@@ -1994,7 +1995,7 @@ describe('Home', () => {
     await waitFor(() => expect(link).toHaveBeenCalledTimes(1));
     // 연결되면 같은 버튼이 해제로 바뀐다
     const off = await waitFor(() => {
-      const el = container.querySelector('[data-google-link-action]') as HTMLButtonElement;
+      const el = document.querySelector('[data-google-link-action]') as HTMLButtonElement;
       expect(el.textContent).toContain('연결 해제');
       return el;
     });
@@ -2006,7 +2007,7 @@ describe('Home', () => {
     const card = (await screen.findByText('Google 연결을 해제할까요?')).parentElement as HTMLElement;
     await user.click(within(card).getByRole('button', { name: '연결 해제' }));
     await waitFor(() => expect(unlink).toHaveBeenCalledTimes(1));
-    await waitFor(() => expect((container.querySelector('[data-google-link-action]') as HTMLButtonElement).textContent).toContain('연결'));
+    await waitFor(() => expect((document.querySelector('[data-google-link-action]') as HTMLButtonElement).textContent).toContain('연결'));
   });
 
   // 세션 정책 ①(backend.md §15) — 이 앱의 세션은 기기 수 제한 없이 오래 유지되므로

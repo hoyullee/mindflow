@@ -9,6 +9,7 @@
 // 아니라 이 문서의 **공유 참가자**(0011)다.
 
 import { useCallback, useEffect, useRef, useState } from 'react';
+import { Modal } from '../../../components/Modal';
 import type { CSSProperties, KeyboardEvent as ReactKeyboardEvent } from 'react';
 import { richToMarkdown } from '@mindflow/mindmap-core';
 import type { KanbanCard } from '@mindflow/mindmap-core';
@@ -67,15 +68,8 @@ export function CardDetail({ card, controller, theme: th, isMobile }: { card: Ka
     };
   }, [shareStore, controller.docId]);
 
-  useEffect(() => {
-    const onKey = (e: KeyboardEvent): void => {
-      if (e.key !== 'Escape') return;
-      e.stopPropagation();
-      close();
-    };
-    window.addEventListener('keydown', onKey, true);
-    return () => window.removeEventListener('keydown', onKey, true);
-  }, [close]);
+  // Esc·바깥 클릭·초점 트랩은 `Modal`(Radix Dialog)이 맡는다 — 예전에는 캔반 단축키로
+  // 새지 않게 capture 리스너를 직접 달았다.
 
   const label: CSSProperties = { fontSize: 11.5, fontWeight: 700, color: th.subtext };
   const chip = (on: boolean): CSSProperties => ({
@@ -111,29 +105,21 @@ export function CardDetail({ card, controller, theme: th, isMobile }: { card: Ka
   const saveLabel = readOnly ? '보기 전용' : saveState === 'saved' ? '저장됨' : saveState === 'saving' ? '저장 중…' : saveState === 'unsaved' ? '저장 전' : '변경됨';
 
   return (
-    <div
-      data-card-detail-veil
-      onPointerDown={(e) => {
-        if (e.target === e.currentTarget) close();
-      }}
-      style={{
+    <Modal
+      open
+      onClose={close}
+      label="카드 상세"
+      dim={{
         animation: 'mf-dim-in .18s ease-out both',
-        position: 'fixed',
-        inset: 0,
         zIndex: 340,
         background: hexA('#2e2a26', 0.4),
-        display: 'flex',
         alignItems: isMobile ? 'flex-end' : 'center',
-        justifyContent: 'center',
         padding: isMobile ? 0 : 28,
       }}
-    >
-      <div
-        data-card-detail={card.id}
-        role="dialog"
-        aria-label="카드 상세"
-        className={isMobile ? 'mf-kb-sheet' : 'mf-kb-modal'}
-        style={{
+      dimAttrs={{ 'data-card-detail-veil': '' }}
+      cardAttrs={{ 'data-card-detail': card.id }}
+      cardClass={isMobile ? 'mf-kb-sheet' : 'mf-kb-modal'}
+      card={{
           // 두 단이므로 넓다 — 좁은 화면에서는 한 단으로 접힌다.
           width: isMobile ? '100%' : 'min(1080px, 100%)',
           maxHeight: isMobile ? '88vh' : '86vh',
@@ -145,9 +131,10 @@ export function CardDetail({ card, controller, theme: th, isMobile }: { card: Ka
           border: `1px solid ${th.border}`,
           boxShadow: '0 40px 90px -40px rgba(0,0,0,.6)',
           boxSizing: 'border-box',
-          overflow: 'hidden',
-        }}
-      >
+        overflow: 'hidden',
+      }}
+    >
+      <>
         {/* 머리 — [열 · 저장 상태] / [삭제 · 닫기] */}
         <div style={{ flex: '0 0 auto', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, padding: isMobile ? '13px 15px' : '14px 18px', borderBottom: `1px solid ${th.border}` }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: 9, minWidth: 0 }}>
@@ -514,8 +501,8 @@ export function CardDetail({ card, controller, theme: th, isMobile }: { card: Ka
             완료
           </button>
         </div>
-      </div>
-    </div>
+      </>
+    </Modal>
   );
 }
 
