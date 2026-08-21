@@ -33,6 +33,22 @@ function mapSession(session: Session | null | undefined): AuthSession | null {
   return user ? { user } : null;
 }
 
+/** Storage 오류를 **사람이 읽을 문장**으로. 원문(`Bucket not found` 등)은 콘솔에
+ * 남기고, 화면에는 무엇이 잘못됐고 무엇을 하면 되는지를 말한다.
+ *
+ * `NoSuchBucket`은 배포 순서 문제다 — 0031이 아직 그 프로젝트에 적용되지 않았다는
+ * 뜻이므로 사용자에게 "잠시 뒤" 라고 말하는 것이 정확하다(운영자는 콘솔 원문과
+ * `backend.md` §17을 본다).
+ */
+export function avatarUploadError(raw: string): string {
+  const m = raw.toLowerCase();
+  if (m.includes('bucket not found') || m.includes('nosuchbucket')) return '프로필 이미지 저장소가 아직 준비되지 않았어요. 잠시 뒤 다시 시도해 주세요.';
+  if (m.includes('exceeded the maximum allowed size') || m.includes('payload too large') || m.includes('413')) return '이미지가 너무 커요. 조금 더 작은 사진으로 시도해 주세요.';
+  if (m.includes('mime type') || m.includes('not supported')) return '이 형식의 이미지는 올릴 수 없어요. JPG·PNG·WebP를 써 주세요.';
+  if (m.includes('row-level security') || m.includes('unauthorized') || m.includes('jwt')) return '로그인이 만료됐어요. 다시 로그인한 뒤 시도해 주세요.';
+  return '프로필 이미지를 올리지 못했어요. 잠시 뒤 다시 시도해 주세요.';
+}
+
 export class SupabaseAuth implements AuthProvider {
   constructor(private readonly client: SupabaseClient) {}
 
@@ -224,7 +240,10 @@ export class SupabaseAuth implements AuthProvider {
       const ext = blob.type === 'image/png' ? 'png' : blob.type === 'image/jpeg' ? 'jpg' : 'webp';
       const path = `${uid}/${Date.now()}.${ext}`;
       const up = await this.client.storage.from('avatars').upload(path, blob, { contentType: blob.type || 'image/webp', upsert: true, cacheControl: '31536000' });
-      if (up.error) return { error: up.error.message };
+      if (up.error) {
+        console.warn('[geurio] 아바타 업로드 실패', up.error.message);
+        return { error: avatarUploadError(up.error.message) };
+      }
       url = this.client.storage.from('avatars').getPublicUrl(path).data.publicUrl;
     }
 
@@ -232,8 +251,12 @@ export class SupabaseAuth implements AuthProvider {
     // 일어나지 않은 것으로 보인다(반대로 주소만 바뀌면 깨진 이미지가 보인다).
     const meta = await this.client.auth.updateUser({ data: { avatar_url: url } });
     if (meta.error) return { error: meta.error.message };
+    // `profiles`는 **남이 읽는 주소**다(내 화면은 위 메타데이터로 이미 바뀌었다).
+    // 0031이 아직 안 간 서버에서는 `avatar_url` 칼럼이 없어 여기서 실패하는데,
+    // 그걸 오류로 돌려주면 사진이 실제로 바뀐 사용자에게 "실패했다"고 말하는 셈이다
+    // — 경고만 남기고 성공으로 둔다(배포 순서 안전. 남에게 보이는 것만 늦어진다).
     const prof = await this.client.from('profiles').upsert({ id: uid, avatar_url: url });
-    if (prof.error) return { error: prof.error.message };
+    if (prof.error) console.warn('[geurio] profiles.avatar_url 갱신 실패(다른 사람 화면에는 늦게 반영된다)', prof.error.message);
 
     // 옛 파일 정리 — 실패해도 사용자에게는 성공이다(사진은 이미 바뀌었다).
     try {

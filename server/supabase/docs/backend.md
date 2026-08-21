@@ -1247,6 +1247,29 @@ auth 스키마에 써야 한다. SECURITY DEFINER 함수면 키를 어디에도 
 바꾼 뒤 올린다 — 원본을 그대로 올리면 사진 한 장이 수 MB가 되고 모든 화면이 그것을
 내려받는다. webp를 못 만드는 브라우저는 png로 폴백.
 
+### 적용 확인 · 수동 적용 (⚠️ 배포 전에는 업로드가 반드시 실패한다)
+
+0031은 GitHub 연동으로 **`main` 머지 시점에** 적용된다 — 그전에는 버킷이 없어 업로드가
+`400 / NoSuchBucket / "Bucket not found"`로 떨어진다(프리뷰 프런트엔드도 **프로덕션**
+Supabase를 보므로 프리뷰에서 먼저 확인할 수 없다). 화면에는 원문 대신
+"프로필 이미지 저장소가 아직 준비되지 않았어요"가 뜨고, 원문은 콘솔에 남는다.
+
+적용됐는지 확인(SQL Editor):
+
+```sql
+select id, public, file_size_limit, allowed_mime_types from storage.buckets where id = 'avatars';
+select policyname from pg_policies where schemaname='storage' and tablename='objects' and policyname like 'avatars%';
+select column_name from information_schema.columns
+ where table_schema='public' and table_name='profiles' and column_name='avatar_url';
+```
+
+세 질의가 각각 1행 / 4행 / 1행이면 적용된 것이다. 하나라도 비면 대시보드 →
+**Database → Migrations**(또는 GitHub 연동 배포 이력)에서 0031이 실패로 남아 있는지
+본다 — 파일 하나가 트랜잭션이므로 **한 문장이 실패하면 파일 전체가 롤백**된다(0023의
+교훈). 급하면 `supabase/migrations/0031_profile_avatar.sql`을 SQL Editor에 그대로
+붙여 넣어도 된다(전 문장이 재실행 가능하게 쓰여 있다 — `add column if not exists`,
+`on conflict do update`, `drop policy if exists`, `drop function if exists`).
+
 ### 배포 순서 안전
 
 `avatar_url` 칼럼·버킷이 없는 서버에서도 앱은 깨지지 않는다 — 어댑터가 실패를 문구로

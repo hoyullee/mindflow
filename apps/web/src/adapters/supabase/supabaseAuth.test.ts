@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { SupabaseClient } from '@supabase/supabase-js';
-import { SupabaseAuth } from './supabaseAuth';
+import { SupabaseAuth, avatarUploadError } from './supabaseAuth';
 
 // Fake client exposing only what getSession() touches — no network, no real SDK.
 function clientWithUser(user: Record<string, unknown> | null): SupabaseClient {
@@ -438,5 +438,28 @@ describe('SupabaseAuth registerEmailIdentity (0030)', () => {
 
   it('RPC가 없거나 실패하면 false — 화면은 예전처럼 해제를 잠근 채 이유를 말한다', async () => {
     expect(await new SupabaseAuth(client({ errorMsg: 'function does not exist' })).registerEmailIdentity()).toBe(false);
+  });
+});
+
+// 프로필 이미지 업로드 실패(0031) — 화면에는 원문(`Bucket not found`)이 아니라
+// 무엇이 잘못됐는지가 보여야 한다. 배포 순서 문제(버킷 없음)가 가장 흔하다.
+describe('아바타 업로드 오류 문구', () => {
+  it('버킷이 없으면(0031 미적용) 저장소가 준비되지 않았다고 말한다', () => {
+    expect(avatarUploadError('Bucket not found')).toContain('저장소가 아직 준비되지 않았어요');
+    expect(avatarUploadError('NoSuchBucket')).toContain('저장소가 아직 준비되지 않았어요');
+    // 원문이 그대로 새어 나가지 않는다
+    expect(avatarUploadError('Bucket not found')).not.toContain('Bucket');
+  });
+
+  it('크기·형식·인증은 각각 다른 문장으로 갈린다', () => {
+    expect(avatarUploadError('The object exceeded the maximum allowed size')).toContain('너무 커요');
+    expect(avatarUploadError('mime type image/gif is not supported')).toContain('형식');
+    expect(avatarUploadError('new row violates row-level security policy')).toContain('로그인');
+  });
+
+  it('모르는 오류도 사람이 읽을 문장으로 떨어진다', () => {
+    const msg = avatarUploadError('kaboom 500');
+    expect(msg).toContain('올리지 못했어요');
+    expect(msg).not.toContain('kaboom');
   });
 });

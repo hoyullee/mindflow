@@ -26,9 +26,15 @@
 alter table public.profiles add column if not exists avatar_url text;
 
 -- ── Storage 버킷 ─────────────────────────────────────────────────────────
-insert into storage.buckets (id, name, public)
-values ('avatars', 'avatars', true)
-on conflict (id) do update set public = true;
+-- 크기·형식 상한을 **서버에도** 둔다: 클라이언트가 256px webp(수십 KB)로 줄여
+-- 올리지만, 세션만 있으면 자기 폴더에 무엇이든 넣을 수 있으므로 서버가 마지막
+-- 문을 잠근다(0016과 같은 처방).
+insert into storage.buckets (id, name, public, file_size_limit, allowed_mime_types)
+values ('avatars', 'avatars', true, 2 * 1024 * 1024, array['image/webp', 'image/png', 'image/jpeg'])
+on conflict (id) do update set
+  public = true,
+  file_size_limit = excluded.file_size_limit,
+  allowed_mime_types = excluded.allowed_mime_types;
 
 -- 읽기: 누구나(공개 버킷의 뜻 그대로). 쓰기·지우기: **자기 폴더**(`<uid>/…`)만.
 drop policy if exists "avatars_read" on storage.objects;
