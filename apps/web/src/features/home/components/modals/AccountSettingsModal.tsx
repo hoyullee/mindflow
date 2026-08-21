@@ -18,7 +18,11 @@ export function AccountSettingsModal({ state, controller }: Props) {
   const initial = avatarLabel(state.userName);
   // 로그인 수단 — `null`은 확인 불가(RPC 미배포·네트워크·데모 초기). 그때는
   // 비밀번호가 **있다고 보고** 변경 흐름을 내준다(잠그지 않는다).
-  const detail = state.accountDetail; // 같은 모달의 두 번째 화면(계정 설정)
+  // 같은 모달의 세 화면(요청) — 첫 화면은 계정 요약 + 두 진입 행 + 색상 테마이고,
+  // 손보는 일은 한 겹 안이다: '프로필 설정'(사진·이름) / '계정 설정'(로그인 수단·
+  // 기기 로그아웃·탈퇴). 뒤로 가기는 하나뿐이라 두 화면 모두 첫 화면으로 돌아온다.
+  const view = state.settingsView;
+  const detail = view !== 'main'; // 뒤로 가기·전환 애니메이션은 "첫 화면인가"만 본다
   // 화면 전환 방향(요청) — 들어갈 때 오른쪽에서, 뒤로 갈 때 왼쪽에서 들어온다.
   // **처음 열 때는 애니메이션을 걸지 않는다**(카드 자체가 이미 페이드로 뜬다):
   // `detail`이 실제로 바뀐 순간에만 방향이 정해진다.
@@ -26,10 +30,10 @@ export function AccountSettingsModal({ state, controller }: Props) {
   /** 숨은 파일 입력 — 아바타 버튼과 '프로필 이미지 변경' 행이 같은 것을 쓴다. */
   const fileRef = useRef<HTMLInputElement | null>(null);
   const fromH = useRef<number | null>(null);
-  const prevDetail = useRef(detail);
+  const prevDetail = useRef(view);
   const [dir, setDir] = useState<'fwd' | 'back' | null>(null);
-  if (prevDetail.current !== detail) {
-    prevDetail.current = detail;
+  if (prevDetail.current !== view) {
+    prevDetail.current = view;
     // 아직 커밋 전 — 여기서 잰 높이가 '바뀌기 전' 높이다(아래 layout effect가 쓴다).
     const box = bodyRef.current?.getBoundingClientRect();
     fromH.current = box ? Math.round(box.height) : null;
@@ -63,7 +67,7 @@ export function AccountSettingsModal({ state, controller }: Props) {
       clearTimeout(timer);
       release();
     };
-  }, [detail, visible]);
+  }, [view, visible]);
   const unknown = state.signin === null;
   const hasPassword = state.signin ? state.signin.hasPassword : true;
   const providers = state.signin?.providers ?? [];
@@ -96,7 +100,7 @@ export function AccountSettingsModal({ state, controller }: Props) {
             <button
               className="btn mf-ctl"
               aria-label="뒤로"
-              onClick={controller.closeAccountDetail}
+              onClick={controller.closeSettingsDetail}
               style={{ width: 32, height: 32, border: '1px solid var(--mf-border)', borderRadius: 999, background: 'var(--mf-panel2)', color: 'var(--mf-subtext)', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 0, flexShrink: 0, marginLeft: -4 }}
             >
               <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
@@ -124,7 +128,7 @@ export function AccountSettingsModal({ state, controller }: Props) {
             (`auto`는 전이되지 않으므로 실제 값을 재서 잇는 수밖에 없고, 끝나고
             풀어 줘야 안쪽에서 오류 문구가 늘어나는 것 같은 변화가 다시 살아난다). */}
         <div ref={bodyRef} data-settings-body style={{ padding: 24 }}>
-          {detail ? (
+          {view === 'account' ? (
             <div key="detail" className={viewClass}>
           {/* 이 화면의 부 제목(요청) — 헤더는 '설정'을 지키고 여기서 어느 화면인지 말한다.
               아래 앞쪽 두 줄은 이 계정에 들어오는 **문 목록**이다(한 계정에 수단이 여럿
@@ -279,13 +283,11 @@ export function AccountSettingsModal({ state, controller }: Props) {
           </div>
 
             </div>
-          ) : (
-            <div key="main" className={viewClass}>
-          {/* account */}
-          <div style={{ fontSize: 12, fontWeight: 700, color: 'var(--mf-faint)', letterSpacing: '.02em', marginBottom: 10 }}>계정</div>
-          {/* 계정 요약 — 아바타를 누르면 곧바로 이미지를 고른다(요청: 프로필 이미지
-              변경). 프로필명 변경도 프로필 팝오버에서 이 화면으로 옮겨 왔다 — 프로필을
-              손보는 일이 설정 한 자리에 모인다. */}
+          ) : view === 'profile' ? (
+            <div key="profile" className={viewClass}>
+          {/* 이 화면의 부 제목 — 헤더는 '설정'을 지킨다(계정 설정과 같은 문법). */}
+          <div style={{ fontSize: 12, fontWeight: 700, color: 'var(--mf-faint)', letterSpacing: '.02em', marginBottom: 10 }}>프로필 설정</div>
+          {/* 아바타를 누르면 곧바로 파일을 고른다 — 아래 행과 같은 입력을 쓴다. */}
           <div style={{ display: 'flex', alignItems: 'center', gap: 16, padding: 16, borderRadius: 16, background: 'var(--mf-accent-soft)', marginBottom: 14 }}>
             <button
               type="button"
@@ -328,7 +330,6 @@ export function AccountSettingsModal({ state, controller }: Props) {
             }}
           />
 
-          <div style={{ fontSize: 12, fontWeight: 700, color: 'var(--mf-faint)', letterSpacing: '.02em', marginBottom: 10 }}>프로필</div>
           <div
             className="menu-row"
             data-avatar-row
@@ -394,11 +395,81 @@ export function AccountSettingsModal({ state, controller }: Props) {
               <path d="m9 6 6 6-6 6" />
             </svg>
           </div>
+            </div>
+          ) : (
+            <div key="main" className={viewClass}>
+          {/* 계정 요약 — 여기서는 **보여 주기만** 한다. 사진·이름을 손보는 일은
+              한 겹 안의 '프로필 설정'으로 모았다(요청) — 같은 동작의 진입점이
+              한 화면에 둘 있으면 어느 쪽이 진짜인지 흐려진다. */}
+          <div style={{ fontSize: 12, fontWeight: 700, color: 'var(--mf-faint)', letterSpacing: '.02em', marginBottom: 10 }}>계정</div>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 16, padding: 16, borderRadius: 16, background: 'var(--mf-accent-soft)', marginBottom: 14 }}>
+            <ProfileAvatar initial={initial} avatarUrl={state.userAvatar} size={56} radius={16} fontSize={17} />
+            <div style={{ minWidth: 0, flex: 1 }}>
+              <div style={{ fontWeight: 800, fontSize: 16.5, letterSpacing: '-.01em', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{state.userName}</div>
+              {state.userEmail && <div style={{ fontSize: 13, color: 'var(--mf-muted)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', marginTop: 3 }}>{state.userEmail}</div>}
+            </div>
+          </div>
+
+          {/* 손보는 일은 두 줄 뒤에 — 첫 화면은 "무엇이 있는지"만 말한다. 이 묶음에는
+              구획 라벨을 두지 않는다: 모달 제목이 이미 '설정'이라 한 번 더 쓰면
+              '설정 > 설정'으로 읽힌다. 행 이름이 스스로를 말한다. */}
+          <div
+            className="menu-row"
+            data-profile-detail-row
+            role="button"
+            tabIndex={0}
+            onClick={controller.openProfileDetail}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter' || e.key === ' ') {
+                e.preventDefault();
+                controller.openProfileDetail();
+              }
+            }}
+            style={{ display: 'flex', alignItems: 'center', gap: 13, padding: '15px 16px', borderRadius: 14, cursor: 'pointer' }}
+          >
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="var(--mf-subtext)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true" style={{ flexShrink: 0 }}>
+              <rect x="3" y="5" width="18" height="14" rx="2.5" />
+              <circle cx="8.5" cy="10" r="1.4" />
+              <path d="m5 17 5-4.5 4 3.5 3-2.5 3 3" />
+            </svg>
+            <div style={{ minWidth: 0, fontWeight: 700, fontSize: 14.5 }}>프로필 설정</div>
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="var(--mf-faint)" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true" style={{ marginLeft: 'auto', flexShrink: 0 }}>
+              <path d="m9 6 6 6-6 6" />
+            </svg>
+          </div>
+
+          {/* '계정 설정' 한 줄 — 누르면 같은 모달이 상세 화면으로 바뀐다(요청).
+              로그인 수단·세션·탈퇴는 자주 쓰는 것이 아니라 한 겹 안에 두는 편이
+              첫 화면을 가볍게 한다(iOS 설정과 같은 문법: 행 → 뒤로 가기 있는 화면). */}
+          <div
+            className="menu-row"
+            data-account-detail-row
+            role="button"
+            tabIndex={0}
+            onClick={controller.openAccountDetail}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter' || e.key === ' ') {
+                e.preventDefault();
+                controller.openAccountDetail();
+              }
+            }}
+            style={{ display: 'flex', alignItems: 'center', gap: 13, padding: '15px 16px', borderRadius: 14, cursor: 'pointer' }}
+          >
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="var(--mf-subtext)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true" style={{ flexShrink: 0 }}>
+              <circle cx="12" cy="8" r="3.4" />
+              <path d="M5.5 20.5a6.5 6.5 0 0 1 13 0" />
+            </svg>
+            {/* 부제 없이 이름만 — 무엇이 들어 있는지는 들어가면 바로 보인다(요청). */}
+            <div style={{ minWidth: 0, fontWeight: 700, fontSize: 14.5 }}>계정 설정</div>
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="var(--mf-faint)" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true" style={{ marginLeft: 'auto', flexShrink: 0 }}>
+              <path d="m9 6 6 6-6 6" />
+            </svg>
+          </div>
 
           {/* 색상 테마 — LNB 최하단에 있다가 사용자 요청으로 이리 왔다(설정에 모으는 게
               자연스럽다). 적용 버튼 없이 **누르는 즉시** 뒤 화면까지 색이 바뀐다 —
               모달이 열린 채로 고르므로 고르는 것이 곧 미리보기다. */}
-          <div style={{ fontSize: 12, fontWeight: 700, color: 'var(--mf-faint)', letterSpacing: '.02em', marginBottom: 10 }}>색상 테마</div>
+          <div style={{ fontSize: 12, fontWeight: 700, color: 'var(--mf-faint)', letterSpacing: '.02em', marginTop: 18, marginBottom: 10 }}>색상 테마</div>
           <div role="radiogroup" aria-label="색상 테마 선택" style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 10, marginBottom: 24 }}>
             {HOME_THEME_KEYS.map((key) => {
               const t = HOME_THEMES[key];
@@ -438,35 +509,6 @@ export function AccountSettingsModal({ state, controller }: Props) {
               );
             })}
           </div>
-
-          {/* '계정 설정' 한 줄 — 누르면 같은 모달이 상세 화면으로 바뀐다(요청).
-              로그인 수단·세션·탈퇴는 자주 쓰는 것이 아니라 한 겹 안에 두는 편이
-              첫 화면을 가볍게 한다(iOS 설정과 같은 문법: 행 → 뒤로 가기 있는 화면). */}
-          <div
-            className="menu-row"
-            data-account-detail-row
-            role="button"
-            tabIndex={0}
-            onClick={controller.openAccountDetail}
-            onKeyDown={(e) => {
-              if (e.key === 'Enter' || e.key === ' ') {
-                e.preventDefault();
-                controller.openAccountDetail();
-              }
-            }}
-            style={{ display: 'flex', alignItems: 'center', gap: 13, padding: '15px 16px', borderRadius: 14, cursor: 'pointer' }}
-          >
-            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="var(--mf-subtext)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true" style={{ flexShrink: 0 }}>
-              <circle cx="12" cy="8" r="3.4" />
-              <path d="M5.5 20.5a6.5 6.5 0 0 1 13 0" />
-            </svg>
-            {/* 부제 없이 이름만 — 무엇이 들어 있는지는 들어가면 바로 보인다(요청). */}
-            <div style={{ minWidth: 0, fontWeight: 700, fontSize: 14.5 }}>계정 설정</div>
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="var(--mf-faint)" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true" style={{ marginLeft: 'auto', flexShrink: 0 }}>
-              <path d="m9 6 6 6-6 6" />
-            </svg>
-          </div>
-
           {/* legal docs — the only logged-in entry point (the other lives on the
               login page footer). New tab so the modal/home state isn't lost. */}
           <div style={{ marginTop: 18, paddingTop: 14, borderTop: '1px solid var(--mf-hairline)', display: 'flex', justifyContent: 'center', gap: 18, fontSize: 12.5 }}>

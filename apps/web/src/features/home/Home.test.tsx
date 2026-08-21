@@ -98,6 +98,7 @@ function renderHomeWithDocStore(metas: DocMeta[] = [], bodies: Record<string, Lo
 async function openProfileNameEdit(user: ReturnType<typeof userEvent.setup>) {
   await user.click(screen.getByRole('button', { name: '설정' }));
   const settings = screen.getByRole('dialog', { name: '설정' });
+  await user.click(settings.querySelector('[data-profile-detail-row]') as HTMLElement);
   await user.click(within(settings).getByRole('button', { name: '프로필명 변경' }));
 }
 
@@ -1412,6 +1413,14 @@ describe('Home', () => {
     expect(screen.queryByRole('button', { name: '프로필명 변경' })).toBeNull();
     await user.click(screen.getByRole('button', { name: '설정' }));
     const dialog = screen.getByRole('dialog', { name: '설정' });
+    // 첫 화면은 진입 행 둘 + 색상 테마이고, 테마가 **가장 아래**다(요청).
+    const rows = [...dialog.querySelectorAll('[data-profile-detail-row], [data-account-detail-row]')];
+    expect(rows).toHaveLength(2);
+    const themeGroup = within(dialog).getByRole('radiogroup', { name: '색상 테마 선택' });
+    expect(rows[1]!.compareDocumentPosition(themeGroup) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+
+    // 사진·이름은 한 겹 안('프로필 설정')에 모여 있다.
+    await user.click(rows[0] as HTMLElement);
     expect(within(dialog).getByText('프로필 이미지 변경')).toBeTruthy();
     expect(within(dialog).getByText('프로필명 변경')).toBeTruthy();
 
