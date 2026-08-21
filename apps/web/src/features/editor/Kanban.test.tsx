@@ -1669,6 +1669,9 @@ describe('칸반 — 카드 우클릭 메뉴와 빠른 댓글', () => {
     expect(bar.style.position).toBe('absolute');
     expect(bar.style.background).toBe('rgb(217, 83, 79)');
     expect(bar.textContent).toBe(''); // '긴급' 배지 글자는 없다
+    // 시안 ②: 카드 높이를 꽉 채우고 왼쪽 변에 붙는다(위아래 들여 넣은 알약이 아니다)
+    expect([bar.style.top, bar.style.bottom, bar.style.left]).toEqual(['-1px', '-1px', '-1px']);
+    expect(bar.style.borderRadius).toBe('12px 0 0 12px');
     // 다시 열면 해제 라벨
     menu = await openMenu(container);
     expect(menu.querySelector('[data-card-menu-flag]')?.textContent).toBe('긴급 해제');

@@ -1291,13 +1291,17 @@ export function CardFace({ card, theme: th, comments, tags, done }: { card: Kanb
     <>
       {/* 긴급 — 배지가 아니라 **카드 좌측의 붉은 선**이다(시안 ②). 배지는 분류와
           같은 자리를 다투며 한 줄을 더 쓰는데, 이 선은 자리를 차지하지 않고도
-          목록을 훑을 때 눈에 먼저 걸린다. 절대 배치라 글자 자리도 밀지 않는다. */}
+          목록을 훑을 때 눈에 먼저 걸린다. 절대 배치라 글자 자리도 밀지 않는다.
+          시안대로 **카드 높이를 꽉 채우고 왼쪽 변에 딱 붙는다**(제보: 처음엔 위아래
+          8px 들여 넣은 알약이라 달라 보였다) — 테두리(1px)까지 덮게 -1로 빼서 카드의
+          왼쪽 모서리 곡선을 그대로 잇는다(라운드는 카드와 같은 값. 브라우저가 폭에
+          맞춰 비율대로 줄이므로 모서리가 어긋나지 않는다). */}
       {card.flagged && (
         <span
           data-card-urgent={card.id}
           aria-label="긴급"
           title="긴급"
-          style={{ position: 'absolute', left: -1, top: 8, bottom: 8, width: 3.5, borderRadius: 999, background: URGENT }}
+          style={{ position: 'absolute', left: -1, top: -1, bottom: -1, width: 4, borderRadius: '12px 0 0 12px', background: URGENT, pointerEvents: 'none' }}
         />
       )}
       {card.tag && (
