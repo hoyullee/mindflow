@@ -56,6 +56,13 @@ async function openSettings(user: ReturnType<typeof userEvent.setup>): Promise<H
   return screen.getByRole('dialog', { name: '설정' });
 }
 
+/** 사진·이름은 설정 모달의 **한 겹 안** '프로필 설정' 화면에 있다(요청). */
+async function openProfileSettings(user: ReturnType<typeof userEvent.setup>): Promise<HTMLElement> {
+  const dialog = await openSettings(user);
+  await user.click(dialog.querySelector('[data-profile-detail-row]') as HTMLElement);
+  return dialog;
+}
+
 describe('프로필 이미지 변경', () => {
   beforeEach(() => {
     localStorage.clear();
@@ -74,7 +81,7 @@ describe('프로필 이미지 변경', () => {
       return { url: blob ? 'https://cdn.example.com/a.webp' : null };
     });
     renderHome(auth);
-    const dialog = await openSettings(user);
+    const dialog = await openProfileSettings(user);
 
     await user.upload(dialog.querySelector('[data-avatar-input]') as HTMLInputElement, new File(['x'], 'me.png', { type: 'image/png' }));
 
@@ -92,7 +99,7 @@ describe('프로필 이미지 변경', () => {
     const auth = new LocalAuth();
     vi.spyOn(auth, 'updateAvatar').mockResolvedValue({ error: 'boom' });
     renderHome(auth);
-    const dialog = await openSettings(user);
+    const dialog = await openProfileSettings(user);
 
     await user.upload(dialog.querySelector('[data-avatar-input]') as HTMLInputElement, new File(['x'], 'me.png', { type: 'image/png' }));
     await waitFor(() => expect((dialog.querySelector('[data-avatar-hint]') as HTMLElement).textContent).toContain('올리지 못했어요'));
@@ -108,7 +115,7 @@ describe('프로필 이미지 변경', () => {
       return { url: blob ? 'https://cdn.example.com/a.webp' : null };
     });
     renderHome(auth);
-    let dialog = await openSettings(user);
+    let dialog = await openProfileSettings(user);
     expect(dialog.querySelector('[data-avatar-remove]')).toBeNull(); // 사진 없음
 
     await user.upload(dialog.querySelector('[data-avatar-input]') as HTMLInputElement, new File(['x'], 'me.png', { type: 'image/png' }));
@@ -121,13 +128,18 @@ describe('프로필 이미지 변경', () => {
     expect(JSON.parse(localStorage.getItem('mf_profile_avatars') || '{}')['me@example.com']).toBeUndefined();
   });
 
-  it('프로필명 변경 진입점은 설정 모달이다 — 프로필 팝오버에는 없다(요청)', async () => {
+  it("프로필명 변경 진입점은 설정 → '프로필 설정'이다 — 팝오버·첫 화면에는 없다(요청)", async () => {
     const user = userEvent.setup();
     renderHome(new LocalAuth());
     await user.click(await screen.findByRole('button', { name: '계정 메뉴' }));
     expect(screen.queryByRole('button', { name: '프로필명 변경' })).toBeNull();
     await user.click(screen.getByRole('button', { name: '설정' }));
     const dialog = screen.getByRole('dialog', { name: '설정' });
+    // 첫 화면은 진입 행만 — 손보는 항목은 한 겹 안에 있다.
+    expect(within(dialog).queryByText('프로필명 변경')).toBeNull();
+    expect(within(dialog).queryByText('프로필 이미지 변경')).toBeNull();
+    await user.click(dialog.querySelector('[data-profile-detail-row]') as HTMLElement);
+    expect(within(dialog).getByText('프로필 이미지 변경')).toBeTruthy();
     await user.click(within(dialog).getByText('프로필명 변경'));
     // 이름 바꾸기 팝업이 열린다(기존 흐름 재사용).
     expect(await screen.findByRole('dialog', { name: '프로필명 변경' })).toBeTruthy();

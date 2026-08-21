@@ -627,7 +627,7 @@ export function useHomeController() {
   // 취소 discards and 변경 commits. Opening it closes the profile popover.
   // 진입점이 프로필 팝오버 → **설정 모달**로 옮겨졌다(요청). 설정은 열어 둔다 —
   // 이름을 고친 뒤 돌아갈 자리가 그 화면이다.
-  const openProfileNameEdit = () => patch({ profileNameOpen: true, profileNameDraft: state.userName, settingsOpen: false, accountSettingsOpen: true });
+  const openProfileNameEdit = () => patch({ profileNameOpen: true, profileNameDraft: state.userName, settingsOpen: false, accountSettingsOpen: true, settingsView: 'profile' });
   const onProfileNameInput = (v: string) => patch({ profileNameDraft: (v || '').slice(0, 20) });
   const submitProfileName = () => {
     const fallback = state.userEmail ? state.userEmail.split('@')[0] || 'mine' : 'mine';
@@ -709,7 +709,7 @@ export function useHomeController() {
 
   // ---- account settings / 회원 탈퇴 ----
   const openAccountSettings = () => {
-    patch({ settingsOpen: false, accountSettingsOpen: true, accountDetail: false, signinError: '' });
+    patch({ settingsOpen: false, accountSettingsOpen: true, settingsView: 'main', signinError: '' });
     refreshSigninMethods();
   };
 
@@ -864,9 +864,11 @@ export function useHomeController() {
   const openFeedback = () => patch({ settingsOpen: false, feedbackOpen: true });
   const closeFeedback = () => patch({ feedbackOpen: false });
   const closeAccountSettings = () => patch({ accountSettingsOpen: false });
-  /** '계정 설정' 상세 화면(같은 모달의 두 번째 화면) 열기·뒤로. */
-  const openAccountDetail = () => patch({ accountDetail: true, signinError: '' });
-  const closeAccountDetail = () => patch({ accountDetail: false });
+  /** 설정 모달의 한 겹 안 화면 — '프로필 설정'·'계정 설정' 열기와 뒤로(공용).
+   * 뒤로 가기가 하나인 이유: 두 화면 모두 첫 화면에서만 들어온다. */
+  const openAccountDetail = () => patch({ settingsView: 'account', signinError: '' });
+  const openProfileDetail = () => patch({ settingsView: 'profile', avatarError: null });
+  const closeSettingsDetail = () => patch({ settingsView: 'main' });
   const askDeleteAccount = () => patch({ accountSettingsOpen: false, confirmDeleteAccount: true, confirmDeleteAccountFinal: false, deleteAccountText: '', deleteAccountError: '' });
   const cancelDeleteAccount = () => patch({ confirmDeleteAccount: false, confirmDeleteAccountFinal: false, deleteAccountText: '', deleteAccountError: '' });
   const onDeleteAccountInput = (v: string) => patch({ deleteAccountText: v });
@@ -2277,7 +2279,8 @@ export function useHomeController() {
     setTheme,
     closeAccountSettings,
     openAccountDetail,
-    closeAccountDetail,
+    openProfileDetail,
+    closeSettingsDetail,
     askDeleteAccount,
     cancelDeleteAccount,
     onDeleteAccountInput,

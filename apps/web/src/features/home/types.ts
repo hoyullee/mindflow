@@ -194,9 +194,11 @@ export interface HomeState {
   /** The 설정 (account settings) modal, opened from the profile popover. Hosts
    * the 회원 탈퇴 entry. */
   accountSettingsOpen: boolean;
-  /** 그 모달의 **두 번째 화면**('계정 설정' — 로그인 수단·기기 로그아웃·회원 탈퇴).
-   * 첫 화면을 가볍게 두려고 한 겹 안에 넣었다(요청). 모달을 열면 항상 첫 화면부터. */
-  accountDetail: boolean;
+  /** 그 모달의 **어느 화면인가** — 첫 화면(`'main'`)은 계정 요약 + 두 진입 행 +
+   * 색상 테마이고, 손보는 일은 한 겹 안에 있다: `'profile'`(프로필 이미지·이름),
+   * `'account'`(로그인 수단·기기 로그아웃·회원 탈퇴). 불리언 둘로 두면 "둘 다 열림"
+   * 같은 없는 상태가 생기므로 한 칸으로 둔다. 모달을 열면 항상 첫 화면부터. */
+  settingsView: 'main' | 'profile' | 'account';
   /** 피드백 보내기 모달(LNB 최하단에서 연다). */
   feedbackOpen: boolean;
   /** 템플릿 갤러리 — "새로 만들기"의 세 진입점(툴바·빈 자리 우클릭·빈 상태 CTA)이
@@ -406,7 +408,7 @@ export function initialHomeState(): HomeState {
     setPwDone: false,
     confirmUnlinkGoogle: false,
     accountSettingsOpen: false,
-    accountDetail: false,
+    settingsView: 'main',
     feedbackOpen: false,
     templateOpen: false,
     // 이 기기의 마지막 선택으로 시작한다 — 워크스페이스(정본)가 도착하면 그 값으로
