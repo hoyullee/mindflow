@@ -25,7 +25,7 @@ function groups(columns: KanbanColumn[], cards: KanbanCard[], query: string, fil
 
 const GRID = 'minmax(200px, 1fr) 104px 116px 108px 56px';
 
-export function KanbanList({ controller, theme: th, query, filter = EMPTY_FILTER, isMobile }: { controller: EditorController; theme: Theme; query: string; filter?: CardFilter; isMobile: boolean }) {
+export function KanbanList({ controller, theme: th, query, filter = EMPTY_FILTER, isMobile, avatars }: { controller: EditorController; theme: Theme; query: string; filter?: CardFilter; isMobile: boolean; avatars?: Record<string, string> }) {
   const rows = groups(controller.columns, controller.cards, query, filter);
   const head: CSSProperties = { fontSize: 11.5, fontWeight: 700, color: th.subtext, letterSpacing: '.02em' };
   return (
@@ -47,7 +47,7 @@ export function KanbanList({ controller, theme: th, query, filter = EMPTY_FILTER
               <span style={{ fontSize: 11, color: th.subtext }}>{cards.length}</span>
             </div>
             {cards.map((card) => (
-              <ListRow key={card.id} card={card} col={col} index={index} done={index === controller.columns.length - 1} controller={controller} theme={th} isMobile={isMobile} />
+              <ListRow key={card.id} card={card} col={col} index={index} done={index === controller.columns.length - 1} controller={controller} theme={th} isMobile={isMobile} avatars={avatars} />
             ))}
             {!cards.length && (
               <div data-list-empty={col.id} style={{ padding: '14px 16px', borderBottom: `1px solid ${innerLine(th)}`, fontSize: 12.5, color: th.subtext }}>
@@ -61,7 +61,7 @@ export function KanbanList({ controller, theme: th, query, filter = EMPTY_FILTER
   );
 }
 
-function ListRow({ card, col, index, done, controller, theme: th, isMobile }: { card: KanbanCard; col: KanbanColumn; index: number; done: boolean; controller: EditorController; theme: Theme; isMobile: boolean }) {
+function ListRow({ card, col, index, done, controller, theme: th, isMobile, avatars }: { card: KanbanCard; col: KanbanColumn; index: number; done: boolean; controller: EditorController; theme: Theme; isMobile: boolean; avatars?: Record<string, string> }) {
   const comments = controller.canComment ? (controller.commentCounts[card.id] ?? 0) : 0;
   const owner = ownerLabel(card);
   // 마지막 열(완료)의 카드는 기한이 지났어도 붉게 쓰지 않는다 — 끝난 일이다(타임라인과 같은 규칙).
@@ -94,7 +94,7 @@ function ListRow({ card, col, index, done, controller, theme: th, isMobile }: { 
       </span>
       {!isMobile && (
         <span style={{ display: 'flex', alignItems: 'center', gap: 6, minWidth: 0 }}>
-          {owner && <Avatar name={owner} email={card.owner ?? owner} size={22} />}
+          {owner && <Avatar name={owner} email={card.owner ?? owner} size={22} src={card.owner ? (avatars?.[card.owner.toLowerCase()] ?? null) : null} />}
           <span style={{ fontSize: 12, color: th.subtext, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{owner}</span>
         </span>
       )}
@@ -108,7 +108,7 @@ function ListRow({ card, col, index, done, controller, theme: th, isMobile }: { 
   );
 }
 
-export function KanbanTimeline({ controller, theme: th, query, filter = EMPTY_FILTER, isMobile }: { controller: EditorController; theme: Theme; query: string; filter?: CardFilter; isMobile: boolean }) {
+export function KanbanTimeline({ controller, theme: th, query, filter = EMPTY_FILTER, isMobile, avatars }: { controller: EditorController; theme: Theme; query: string; filter?: CardFilter; isMobile: boolean; avatars?: Record<string, string> }) {
   const days = timelineRange();
   const rows = groups(controller.columns, controller.cards, query, filter);
   const withDue = rows.flatMap(({ col, index, cards }) => cards.filter((c) => c.due).map((card) => ({ card, col, index })));
@@ -190,7 +190,7 @@ export function KanbanTimeline({ controller, theme: th, query, filter = EMPTY_FI
                     boxSizing: 'border-box',
                   }}
                 >
-                  {owner && <Avatar name={owner} email={card.owner ?? owner} size={16} />}
+                  {owner && <Avatar name={owner} email={card.owner ?? owner} size={16} src={card.owner ? (avatars?.[card.owner.toLowerCase()] ?? null) : null} />}
                   <span style={{ fontSize: 10.5, fontWeight: 700, color: ink, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
                     {card.tag || dueLabel(card.due as string)}
                   </span>

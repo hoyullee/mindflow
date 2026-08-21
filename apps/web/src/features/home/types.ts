@@ -149,6 +149,10 @@ export interface HomeState {
   /** Avatar image URL from the identity provider (Google photo), or null for
    * email/demo accounts — the profile UI falls back to the initial circle. */
   userAvatar: string | null;
+  /** 프로필 이미지 올리는 중 — 설정 행이 잠기고 "올리는 중…"으로 바뀐다. */
+  avatarBusy: boolean;
+  /** 프로필 이미지 오류 문구(용량·형식·업로드 실패) — 성공하면 비운다. */
+  avatarError: string | null;
   settingsOpen: boolean;
   /** The "프로필명 변경" popup (opened from the profile popover). */
   profileNameOpen: boolean;
@@ -375,6 +379,8 @@ export function initialHomeState(): HomeState {
     profileLoaded: false,
     userEmail: '',
     userAvatar: null,
+    avatarBusy: false,
+    avatarError: null,
     settingsOpen: false,
     profileNameOpen: false,
     profileNameDraft: '',

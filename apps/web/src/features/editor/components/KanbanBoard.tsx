@@ -28,6 +28,7 @@ import { CARD_LABELS } from '../kanbanLabels';
 import type { CardFilter, KanbanView } from '../kanbanMeta';
 import { colorForSeed } from '../../../collab/identity';
 import { CardDetail } from './CardDetail';
+import { useParticipantAvatars } from '../useParticipantAvatars';
 import { BoardMenu, CardMenu, QuickComment } from './KanbanCardMenu';
 import { KanbanList, KanbanTimeline } from './KanbanViews';
 
@@ -179,6 +180,8 @@ export function KanbanBoard({ controller, theme: th }: { controller: EditorContr
   const [boardMenu, setBoardMenu] = useState<{ x: number; y: number } | null>(null);
   /** '완료 카드 모두 비우기' 확인창 — 여러 장이 한 번에 사라지므로 한 번 묻는다. */
   const [askClearDone, setAskClearDone] = useState(false);
+  /** 참가자 아바타(이메일 → 사진) — 담당 얼굴에 그 사람의 프로필 이미지를 그린다. */
+  const avatars = useParticipantAvatars(controller.docId);
   // 보기 모드는 컨트롤러가 들고 있다 — 보드 머리의 탭과 GNB 보기 메뉴가 같은 값을
   // 본다(문서가 아니라 보는 사람의 상태라는 점은 그대로).
   const view = controller.kanbanView;
@@ -378,10 +381,11 @@ export function KanbanBoard({ controller, theme: th }: { controller: EditorContr
         tags={controller.tags}
         shown={shown}
         total={cards.length}
+        avatars={avatars.byEmail}
       />
 
-      {view === 'list' && <KanbanList controller={controller} theme={th} query={query} filter={filter} isMobile={isMobile} />}
-      {view === 'timeline' && <KanbanTimeline controller={controller} theme={th} query={query} filter={filter} isMobile={isMobile} />}
+      {view === 'list' && <KanbanList controller={controller} theme={th} query={query} filter={filter} isMobile={isMobile} avatars={avatars.byEmail} />}
+      {view === 'timeline' && <KanbanTimeline controller={controller} theme={th} query={query} filter={filter} isMobile={isMobile} avatars={avatars.byEmail} />}
 
       <div
         ref={boardRef}
@@ -428,6 +432,7 @@ export function KanbanBoard({ controller, theme: th }: { controller: EditorContr
               dropIndex={dropAt?.colId === item.col.id ? dropAt.index : null}
               dropHeight={drag?.h ?? 0}
               done={item.index === columns.length - 1}
+              avatars={avatars.byEmail}
             />
           ),
         )}
@@ -509,7 +514,7 @@ export function KanbanBoard({ controller, theme: th }: { controller: EditorContr
               .slice(0, 4)
               .map((c) => (
                 <div key={c.id} style={cardBase(c, th, false)}>
-                  <CardFace card={c} theme={th} comments={controller.canComment ? (controller.commentCounts[c.id] ?? 0) : 0} tags={controller.tags} done={colDrag.index === columns.length - 1} />
+                  <CardFace card={c} theme={th} comments={controller.canComment ? (controller.commentCounts[c.id] ?? 0) : 0} tags={controller.tags} done={colDrag.index === columns.length - 1} avatars={avatars.byEmail} />
                 </div>
               ))}
           </div>
@@ -543,6 +548,7 @@ export function KanbanBoard({ controller, theme: th }: { controller: EditorContr
             comments={controller.canComment ? (controller.commentCounts[dragCard.id] ?? 0) : 0}
             tags={controller.tags}
             done={columns.length > 0 && dragCard.col === (columns[columns.length - 1] as KanbanColumn).id}
+            avatars={avatars.byEmail}
           />
         </div>
       )}
@@ -678,6 +684,7 @@ function BoardBar({
   tags,
   shown,
   total,
+  avatars,
 }: {
   theme: Theme;
   isMobile: boolean;
@@ -692,6 +699,7 @@ function BoardBar({
   tags: KanbanTag[];
   shown: number;
   total: number;
+  avatars?: Record<string, string>;
 }) {
   const [filterOpen, setFilterOpen] = useState(false);
   const tab = (v: KanbanView, label: string) => {
@@ -799,6 +807,7 @@ function BoardBar({
               tags={tags}
               shown={shown}
               total={total}
+              avatars={avatars}
               onClose={() => setFilterOpen(false)}
             />
           )}
@@ -853,6 +862,7 @@ function FilterPanel({
   tags,
   shown,
   total,
+  avatars,
   onClose,
 }: {
   theme: Theme;
@@ -863,6 +873,7 @@ function FilterPanel({
   tags: KanbanTag[];
   shown: number;
   total: number;
+  avatars?: Record<string, string>;
   onClose: () => void;
 }) {
   const ref = useRef<HTMLDivElement | null>(null);
@@ -933,7 +944,7 @@ function FilterPanel({
               const on = filter.owners.includes(o.key);
               return (
                 <button key={o.key} type="button" data-filter-owner={o.key} aria-pressed={on} onClick={() => onFilter({ ...filter, owners: toggle(filter.owners, o.key) })} style={chip(on)}>
-                  <Avatar name={o.name} email={o.key} size={20} />
+                  <Avatar name={o.name} email={o.key} size={20} src={avatars?.[o.key.toLowerCase()] ?? null} />
                   {o.name}
                 </button>
               );
@@ -1004,6 +1015,7 @@ function Column({
   dropIndex,
   dropHeight,
   done,
+  avatars,
 }: {
   col: KanbanColumn;
   index: number;
@@ -1025,6 +1037,8 @@ function Column({
   dropHeight: number;
   /** 마지막 열(완료)인가 — 지난 기한을 경고로 쓰지 않는다. */
   done: boolean;
+  /** 참가자 아바타(이메일 → 사진) — 담당 얼굴에 그린다. */
+  avatars?: Record<string, string>;
 }) {
   const [renaming, setRenaming] = useState(false);
   const [composing, setComposing] = useState(false);
@@ -1143,7 +1157,7 @@ function Column({
               style={{ flex: '0 0 auto', height: dropHeight || 44, borderRadius: 12, border: `1.5px dashed ${hexA(th.accent, 0.75)}`, background: hexA(th.accent, 0.08), boxSizing: 'border-box' }}
             />
           ) : (
-            <Card key={item.card.id} card={item.card} controller={controller} theme={th} onPointerDown={onCardPointerDown} onContextMenu={onCardContextMenu} dragging={false} done={done} />
+            <Card key={item.card.id} card={item.card} controller={controller} theme={th} onPointerDown={onCardPointerDown} onContextMenu={onCardContextMenu} dragging={false} done={done} avatars={avatars} />
           ),
         )}
 
@@ -1453,7 +1467,7 @@ function CardComposer({ theme: th, onSubmit, onCancel }: { theme: Theme; onSubmi
  * 없으면 "날짜 없음"·0·점선 아바타로 그려서(요청·디자인 원본) 카드마다 높이가
  * 들쭉날쭉하지 않고, 무엇을 아직 안 정했는지도 보인다.
  */
-export function CardFace({ card, theme: th, comments, tags, done }: { card: KanbanCard; theme: Theme; comments: number; tags: KanbanTag[]; done?: boolean }) {
+export function CardFace({ card, theme: th, comments, tags, done, avatars }: { card: KanbanCard; theme: Theme; comments: number; tags: KanbanTag[]; done?: boolean; avatars?: Record<string, string> }) {
   const owner = ownerLabel(card);
   // 마지막 열(완료)의 카드는 기한이 지나도 붉게 쓰지 않는다 — 끝난 일이다
   // (리스트·타임라인과 같은 규칙).
@@ -1481,7 +1495,7 @@ export function CardFace({ card, theme: th, comments, tags, done }: { card: Kanb
             {comments}
           </span>
         </div>
-        {owner ? <Avatar name={owner} email={card.owner ?? owner} size={24} /> : <NoOwnerGlyph theme={th} />}
+        {owner ? <Avatar name={owner} email={card.owner ?? owner} size={24} src={card.owner ? avatars?.[card.owner.toLowerCase()] : null} /> : <NoOwnerGlyph theme={th} />}
       </div>
     </>
   );
@@ -1543,7 +1557,7 @@ function cardBase(card: KanbanCard, th: Theme, selected: boolean): CSSProperties
   return base;
 }
 
-function Card({ card, controller, theme: th, onPointerDown, onContextMenu, dragging, done }: { card: KanbanCard; controller: EditorController; theme: Theme; onPointerDown: (e: ReactPointerEvent, card: KanbanCard) => void; onContextMenu: (e: ReactMouseEvent, card: KanbanCard) => void; dragging: boolean; done?: boolean }) {
+function Card({ card, controller, theme: th, onPointerDown, onContextMenu, dragging, done, avatars }: { card: KanbanCard; controller: EditorController; theme: Theme; onPointerDown: (e: ReactPointerEvent, card: KanbanCard) => void; onContextMenu: (e: ReactMouseEvent, card: KanbanCard) => void; dragging: boolean; done?: boolean; avatars?: Record<string, string> }) {
   const selected = controller.selectedCardId === card.id;
   const comments = controller.canComment ? (controller.commentCounts[card.id] ?? 0) : 0;
   return (
@@ -1574,7 +1588,7 @@ function Card({ card, controller, theme: th, onPointerDown, onContextMenu, dragg
         touchAction: 'pan-y',
       }}
     >
-      <CardFace card={card} theme={th} comments={comments} tags={controller.tags} done={done} />
+      <CardFace card={card} theme={th} comments={comments} tags={controller.tags} done={done} avatars={avatars} />
     </div>
   );
 }
@@ -1592,7 +1606,7 @@ export function TagBadge({ name, theme: th, tags = [] }: { name: string; theme: 
 }
 
 /** 담당 아바타 — 색은 **접속자 커서와 같은 시드**라 같은 사람이 같은 색이다. */
-export function Avatar({ name, email, size = 24, ring }: { name: string; email: string; size?: number; ring?: string }) {
+export function Avatar({ name, email, size = 24, ring, src }: { name: string; email: string; size?: number; ring?: string; src?: string | null }) {
   const bg = colorForSeed(email || name);
   return (
     <span
@@ -1612,9 +1626,24 @@ export function Avatar({ name, email, size = 24, ring }: { name: string; email: 
         flexShrink: 0,
         boxSizing: 'border-box',
         border: ring ? `2px solid ${ring}` : undefined,
+        position: 'relative',
+        overflow: 'hidden',
       }}
     >
       {initialOf(name)}
+      {/* 프로필 이미지(0031) — 첫 글자를 아래에 남겨 둔다(주소가 죽으면 그대로 폴백). */}
+      {src && (
+        <img
+          src={src}
+          alt=""
+          aria-hidden="true"
+          referrerPolicy="no-referrer"
+          onError={(e) => {
+            e.currentTarget.style.display = 'none';
+          }}
+          style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', objectFit: 'cover' }}
+        />
+      )}
     </span>
   );
 }

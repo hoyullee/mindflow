@@ -15,6 +15,7 @@
 // 눈에 들어오게(배지도 미해결 스레드만 센다).
 
 import { useEffect, useLayoutEffect, useMemo, useRef, useState, type CSSProperties, type KeyboardEvent, type ReactNode } from 'react';
+import { participantAvatars } from '../useParticipantAvatars';
 import { createPortal } from 'react-dom';
 import { ROOT_ID } from '@mindflow/mindmap-core';
 import type { EditorController } from '../useEditorState';
@@ -501,7 +502,7 @@ export function CommentThreads({ controller, nodeId, scroll = false, thread = fa
           inputLabel={thread ? '스레드 입력' : '댓글 입력'}
           submitLabel="남기기"
           autoFocus={false}
-          footer={{ hint: true, avatar: controller.myName }}
+          footer={{ hint: true, avatar: controller.myName, avatarSrc: controller.myAvatar }}
           onSubmit={(body, mentions) => submitThread(body, mentions)}
         />
       </div>
@@ -619,6 +620,12 @@ function ThreadView({
 }) {
   const th = controller.uiTheme;
   const { root, replies } = thread;
+  // 작성자 아바타 — **이미 받아 둔 참가자 목록**에서 찾는다(추가 왕복 없음).
+  // 이름은 스냅샷(0020)이지만 사진은 조인이라, 사진을 바꾸면 옛 글에도 반영된다.
+  const avatars = useMemo(() => participantAvatars(participants), [participants]);
+  // 내 글은 내 사진을 그대로 쓴다 — 참가자 목록은 **나를 빼고** 온다(멘션 후보용,
+  // `useCommentParticipants`). 남의 글은 그 목록에서 계정 id로 찾는다.
+  const avatarOf = (c: DocComment): string | null => (c.mine ? controller.myAvatar : c.authorId ? (avatars.byUserId[c.authorId] ?? null) : null);
   // 답글 칸이 열리면 **그 자리로 목록을 옮긴다**(요청 ①) — 스레드가 길어 스크롤이
   // 생기면 칸이 아래에 반쯤 가려 어디에 쓰는지 보이지 않았다. `block: 'nearest'`라
   // 이미 다 보이면 아무것도 움직이지 않는다(필요한 만큼만 민다).
@@ -630,10 +637,10 @@ function ThreadView({
 
   return (
     <section data-comment-thread={root.id} style={{ padding: '9px 0', borderBottom: `1px solid ${th.border}`, opacity: dimmed ? 0.66 : 1 }}>
-      <CommentRow comment={root} controller={controller} isMobile={isMobile} deletable pinMode={pinMode} deleteTitle={replies.length ? '스레드 삭제 (답글 포함)' : '삭제'} actions={onReplyToggle ? { onReply: onReplyToggle, replyOpen } : { replyOpen: false }} />
+      <CommentRow comment={root} controller={controller} isMobile={isMobile} deletable pinMode={pinMode} deleteTitle={replies.length ? '스레드 삭제 (답글 포함)' : '삭제'} actions={onReplyToggle ? { onReply: onReplyToggle, replyOpen } : { replyOpen: false }} avatarSrc={avatarOf(root)} />
       {replies.map((r) => (
         <div key={r.id} style={{ marginLeft: 34, paddingLeft: 0 }}>
-          <CommentRow comment={r} controller={controller} isMobile={isMobile} deletable pinMode={pinMode} deleteTitle="삭제" actions={{ replyOpen: false }} />
+          <CommentRow comment={r} controller={controller} isMobile={isMobile} deletable pinMode={pinMode} deleteTitle="삭제" actions={{ replyOpen: false }} avatarSrc={avatarOf(r)} />
         </div>
       ))}
       {replyOpen && (
@@ -664,6 +671,7 @@ function CommentRow({
   deleteTitle,
   pinMode = false,
   actions,
+  avatarSrc,
 }: {
   comment: DocComment;
   controller: EditorController;
@@ -674,6 +682,8 @@ function CommentRow({
   pinMode?: boolean;
   /** 아래 동작 줄 — 답글은 스레드 뿌리에만, 좋아요는 모든 줄에. */
   actions: { onReply?: () => void; replyOpen: boolean };
+  /** 작성자의 지금 프로필 이미지(0031) — 없으면 이름 첫 글자. */
+  avatarSrc?: string | null;
 }) {
   const th = controller.uiTheme;
   const name = c.authorName || '알 수 없음';
@@ -696,7 +706,7 @@ function CommentRow({
     <article data-comment-item={c.id} style={{ display: 'flex', gap: 9, alignItems: 'flex-start', padding: '5px 0' }}>
       {/* 작성자 얼굴 — 핀에 박히는 얼굴과 **같은 색 규칙**(commentPinShape). */}
       <span data-comment-avatar style={{ display: 'inline-flex' }}>
-        <Avatar name={name} size={26} />
+        <Avatar name={name} size={26} src={avatarSrc} />
       </span>
       <div style={{ display: 'flex', flexDirection: 'column', gap: 4, minWidth: 0, flex: 1 }}>
         <div style={{ display: 'flex', alignItems: 'baseline', gap: 7 }}>
@@ -827,7 +837,7 @@ export function CommentComposer({
   autoFocus: boolean;
   compact?: boolean;
   /** 시안 ①의 아래 줄 — 내 얼굴 + "Enter로 등록". 없으면 버튼만. */
-  footer?: { hint?: boolean; avatar?: string };
+  footer?: { hint?: boolean; avatar?: string; avatarSrc?: string | null };
   /** 있으면 [취소] 버튼이 함께 선다(시안 ②의 초안 말풍선). */
   onCancel?: () => void;
   onSubmit: (body: string, mentions: CommentMention[]) => Promise<boolean>;
@@ -1096,7 +1106,7 @@ export function CommentComposer({
         );
       })()}
       <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: compact ? 6 : 8 }}>
-        {footer?.avatar && <Avatar name={footer.avatar} size={22} />}
+        {footer?.avatar && <Avatar name={footer.avatar} size={22} src={footer.avatarSrc} />}
         {footer?.hint && (
           <span style={{ fontFamily: MONO_FONT, fontSize: 10.5, color: th.subtext }}>{softKeyboard ? '등록 버튼으로 남겨요' : 'Enter로 등록'}</span>
         )}

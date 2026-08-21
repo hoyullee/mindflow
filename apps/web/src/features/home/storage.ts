@@ -33,6 +33,36 @@ export function writeSavedProfileName(email: string, name: string): void {
   }
 }
 
+/** 계정별 프로필 이미지 주소 캐시 — 이름(`mf_profile_names`)과 같은 이유로 둔다:
+ * 다음 방문의 **첫 페인트**에 아바타가 이미 떠 있어야 한다(세션 해석은 비동기라
+ * 잠깐 이름 첫 글자로 보였다가 사진으로 바뀌면 깜빡인다). 정본은 서버다. */
+const PROFILE_AVATARS_KEY = 'mf_profile_avatars';
+
+export function readSavedAvatar(email: string): string | null {
+  try {
+    const raw = localStorage.getItem(PROFILE_AVATARS_KEY);
+    if (!raw) return null;
+    const map = JSON.parse(raw) as Record<string, unknown>;
+    const v = map?.[email];
+    return typeof v === 'string' && v.trim() ? v : null;
+  } catch {
+    return null;
+  }
+}
+
+/** `null`이면 그 계정의 캐시를 지운다(기본 아바타로 돌아간 상태). */
+export function writeSavedAvatar(email: string, url: string | null): void {
+  try {
+    const raw = localStorage.getItem(PROFILE_AVATARS_KEY);
+    const map = raw ? (JSON.parse(raw) as Record<string, string>) : {};
+    if (url) map[email] = url;
+    else delete map[email];
+    localStorage.setItem(PROFILE_AVATARS_KEY, JSON.stringify(map));
+  } catch {
+    /* storage unavailable (private mode, quota, …) — non-fatal */
+  }
+}
+
 /** Home.dc.html:813 `mapHref` / MindFlow editor `mindflow_doc_<id>` storage convention. */
 export function docKey(id: string): string {
   return `mindflow_doc_${id}`;

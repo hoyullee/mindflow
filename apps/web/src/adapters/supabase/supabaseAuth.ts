@@ -205,6 +205,47 @@ export class SupabaseAuth implements AuthProvider {
     const { error } = await this.client.from('profiles').upsert({ id: uid, display_name: name });
     return error ? { error: error.message } : {};
   }
+  /**
+   * 프로필 이미지 — 파일은 공개 버킷 `avatars/<uid>/…`, 주소는 두 곳에 적는다
+   * (`profiles.avatar_url` + `auth` 메타데이터). 메타데이터에 적는 이유: 앱은 이미
+   * 세션에서 `avatar_url`을 읽어 왔다(구글 사진) — 같은 칸을 쓰면 화면에 새 읽기
+   * 경로를 만들지 않아도 되고, 다른 기기에서도 로그인만 하면 따라온다.
+   *
+   * 올린 뒤 **옛 파일은 지운다** — 아바타는 한 장이면 되고, 남겨 두면 바꿀 때마다
+   * 저장량이 쌓인다(무료 티어에서 이유 없는 비용).
+   */
+  async updateAvatar(blob: Blob | null): Promise<{ url?: string | null; error?: string }> {
+    const { data: u } = await this.client.auth.getUser();
+    const uid = u?.user?.id;
+    if (!uid) return { error: 'not authenticated' };
+
+    let url: string | null = null;
+    if (blob) {
+      const ext = blob.type === 'image/png' ? 'png' : blob.type === 'image/jpeg' ? 'jpg' : 'webp';
+      const path = `${uid}/${Date.now()}.${ext}`;
+      const up = await this.client.storage.from('avatars').upload(path, blob, { contentType: blob.type || 'image/webp', upsert: true, cacheControl: '31536000' });
+      if (up.error) return { error: up.error.message };
+      url = this.client.storage.from('avatars').getPublicUrl(path).data.publicUrl;
+    }
+
+    // 주소를 먼저 확정한다 — 파일만 올라가고 주소가 안 바뀌면 사용자에겐 아무 일도
+    // 일어나지 않은 것으로 보인다(반대로 주소만 바뀌면 깨진 이미지가 보인다).
+    const meta = await this.client.auth.updateUser({ data: { avatar_url: url } });
+    if (meta.error) return { error: meta.error.message };
+    const prof = await this.client.from('profiles').upsert({ id: uid, avatar_url: url });
+    if (prof.error) return { error: prof.error.message };
+
+    // 옛 파일 정리 — 실패해도 사용자에게는 성공이다(사진은 이미 바뀌었다).
+    try {
+      const listed = await this.client.storage.from('avatars').list(uid);
+      const stale = (listed.data ?? []).map((f) => `${uid}/${f.name}`).filter((p) => !url || !url.endsWith(p));
+      if (stale.length) await this.client.storage.from('avatars').remove(stale);
+    } catch (e) {
+      console.warn('[geurio] 옛 아바타 정리 실패', e);
+    }
+    return { url };
+  }
+
   // ── 로그인 수단(설정 → 로그인 수단) ─────────────────────────────────────
   // 한 계정에 수단이 여럿 붙을 수 있다(같은 이메일의 Google 신원은 Supabase가
   // 자동 연결한다). 화면이 "비밀번호를 바꿀 수 있나 / 새로 걸어야 하나",

@@ -199,6 +199,29 @@ export class LocalAuth implements AuthProvider {
   async setProfileName(): Promise<{ error?: string }> {
     return {};
   }
+
+  /**
+   * 프로필 이미지(데모) — 파일을 올릴 곳이 없으므로 **데이터 URL을 세션에** 담는다
+   * (Supabase 짝과 같은 칸: `user.avatarUrl`). 로컬 모드에서도 설정 화면과 에디터
+   * 아바타가 실제로 바뀌는 것을 확인할 수 있다.
+   */
+  async updateAvatar(blob: Blob | null): Promise<{ url?: string | null; error?: string }> {
+    const session = readSession();
+    if (!session) return { error: 'not authenticated' };
+    let url: string | null = null;
+    if (blob) {
+      url = await new Promise<string | null>((resolve) => {
+        const fr = new FileReader();
+        fr.onload = () => resolve(typeof fr.result === 'string' ? fr.result : null);
+        fr.onerror = () => resolve(null);
+        fr.readAsDataURL(blob);
+      });
+      if (!url) return { error: '이미지를 읽지 못했어요.' };
+    }
+    writeSession({ ...session, user: { ...session.user, avatarUrl: url } });
+    this.emit(readSession());
+    return { url };
+  }
   // ── 로그인 수단(데모) ──────────────────────────────────────────────────
   // Supabase 어댑터와 같은 규칙으로 움직이되 저장소는 이 브라우저다.
   async signinMethods(): Promise<SigninMethods | null> {

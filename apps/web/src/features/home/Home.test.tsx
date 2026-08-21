@@ -92,6 +92,16 @@ function renderHomeWithDocStore(metas: DocMeta[] = [], bodies: Record<string, Lo
 }
 
 /**
+ * 프로필명 변경은 프로필 팝오버에서 **설정 모달**로 옮겨졌다(요청: 프로필 이미지
+ * 변경과 한자리에). 팝오버가 열린 상태에서 부른다.
+ */
+async function openProfileNameEdit(user: ReturnType<typeof userEvent.setup>) {
+  await user.click(screen.getByRole('button', { name: '설정' }));
+  const settings = screen.getByRole('dialog', { name: '설정' });
+  await user.click(within(settings).getByRole('button', { name: '프로필명 변경' }));
+}
+
+/**
  * "새로 만들기"는 이제 **템플릿 갤러리**를 연다 — 빈 맵 칸까지 눌러야 예전과 같은
  * 결과(로더 → 카드 등록 → /editor)가 된다. 세 진입점(툴바·빈 상태 CTA·빈 자리
  * 우클릭)이 전부 같은 갤러리를 열므로 여는 버튼은 인자로 받는다.
@@ -1377,6 +1387,43 @@ describe('Home', () => {
     expect(screen.getByText('새 마인드맵을 준비하고 있어요')).toBeTruthy();
   });
 
+  it('설정 모달에서 프로필 이미지를 바꾸면 아바타에 반영되고, 프로필명 변경도 여기 있다(요청)', async () => {
+    const user = userEvent.setup();
+    const auth = new LocalAuth();
+    const calls: (Blob | null)[] = [];
+    vi.spyOn(auth, 'updateAvatar').mockImplementation(async (blob) => {
+      calls.push(blob);
+      return { url: blob ? 'https://cdn.example.com/a.webp' : null };
+    });
+    const backend: Backend = { auth, docStore: new MockDocStore([], {}), spaceStore: new LocalSpaceStore(), shareStore: new LocalShareStore(), feedbackStore: new LocalFeedbackStore(), imageStore: new LocalImageStore(), commentStore: new LocalCommentStore(), notificationStore: new LocalNotificationStore(), mode: 'local' };
+    render(
+      <MemoryRouter initialEntries={['/home']}>
+        <BackendProvider backend={backend}>
+          <Routes>
+            <Route path="/home" element={<Home />} />
+            <Route path="/login" element={<div>LOGIN_PAGE</div>} />
+          </Routes>
+        </BackendProvider>
+      </MemoryRouter>,
+    );
+
+    await user.click(await screen.findByRole('button', { name: '계정 메뉴' }));
+    // 프로필명 변경은 팝오버에서 사라지고(요청) 설정 모달로 옮겨졌다.
+    expect(screen.queryByRole('button', { name: '프로필명 변경' })).toBeNull();
+    await user.click(screen.getByRole('button', { name: '설정' }));
+    const dialog = screen.getByRole('dialog', { name: '설정' });
+    expect(within(dialog).getByText('프로필 이미지 변경')).toBeTruthy();
+    expect(within(dialog).getByText('프로필명 변경')).toBeTruthy();
+
+    // 파일 고르기가 실제로 연결돼 있다(이미지만 받는다). 올리는 흐름 전체는
+    // 캔버스가 필요해 별도 파일에서 검증한다(`AvatarChange.test.tsx`).
+    const input = dialog.querySelector('[data-avatar-input]') as HTMLInputElement;
+    expect(input.getAttribute('accept')).toBe('image/*');
+    // 아바타 자체도 버튼이다(카메라 배지) — 같은 파일 고르기를 연다.
+    expect(dialog.querySelector('[data-avatar-pick]')).toBeTruthy();
+    expect(calls).toEqual([]); // 아직 아무것도 올리지 않았다
+  });
+
   it('프로필 메뉴도 펼침·접힘 애니메이션을 그린다 (요청)', async () => {
     const user = userEvent.setup();
     renderHome();
@@ -1419,7 +1466,7 @@ describe('Home', () => {
 
     // profile popover → 프로필명 변경 opens a popup (like 공간 이름 변경)
     await user.click(await screen.findByRole('button', { name: '계정 메뉴' })); // 프로필 스켈레톤 해제(getSession) 대기
-    await user.click(screen.getByRole('button', { name: '프로필명 변경' }));
+    await openProfileNameEdit(user);
 
     const dialog = screen.getByRole('dialog', { name: '프로필명 변경' });
     const input = within(dialog).getByLabelText('프로필명') as HTMLInputElement;
@@ -1439,7 +1486,7 @@ describe('Home', () => {
     renderHomeWithDocStore([]);
 
     await user.click(await screen.findByRole('button', { name: '계정 메뉴' })); // 프로필 스켈레톤 해제(getSession) 대기
-    await user.click(screen.getByRole('button', { name: '프로필명 변경' }));
+    await openProfileNameEdit(user);
     const dialog = screen.getByRole('dialog', { name: '프로필명 변경' });
     await user.clear(within(dialog).getByLabelText('프로필명'));
     await user.type(within(dialog).getByLabelText('프로필명'), '버릴이름');
@@ -1456,7 +1503,7 @@ describe('Home', () => {
     renderHomeWithDocStore([]);
 
     await user.click(await screen.findByRole('button', { name: '계정 메뉴' })); // 프로필 스켈레톤 해제(getSession) 대기
-    await user.click(screen.getByRole('button', { name: '프로필명 변경' }));
+    await openProfileNameEdit(user);
     const dialog = screen.getByRole('dialog', { name: '프로필명 변경' });
 
     // click the dim overlay (the dialog's backdrop parent) — must NOT dismiss
@@ -1470,7 +1517,7 @@ describe('Home', () => {
     const { unmount } = renderHomeWithDocStore([]);
 
     await user.click(await screen.findByRole('button', { name: '계정 메뉴' })); // 프로필 스켈레톤 해제(getSession) 대기
-    await user.click(screen.getByRole('button', { name: '프로필명 변경' }));
+    await openProfileNameEdit(user);
     const dialog = screen.getByRole('dialog', { name: '프로필명 변경' });
     await user.clear(within(dialog).getByLabelText('프로필명'));
     await user.type(within(dialog).getByLabelText('프로필명'), '홍길동');
@@ -1511,7 +1558,7 @@ describe('Home', () => {
 
     // renaming writes through to the backend
     await user.click(await screen.findByRole('button', { name: '계정 메뉴' })); // 프로필 스켈레톤 해제(getSession) 대기
-    await user.click(screen.getByRole('button', { name: '프로필명 변경' }));
+    await openProfileNameEdit(user);
     const dialog = screen.getByRole('dialog', { name: '프로필명 변경' });
     await user.clear(within(dialog).getByLabelText('프로필명'));
     await user.type(within(dialog).getByLabelText('프로필명'), '새닉네임');
@@ -3474,7 +3521,7 @@ describe('피드백 보내기 (홈 진입점)', () => {
     renderHome();
     // 프로필 메뉴에서는 빠졌다 — 진입점은 LNB 하나.
     await user.click(await screen.findByRole('button', { name: '계정 메뉴' }));
-    const popover = screen.getByRole('button', { name: '프로필명 변경' }).parentElement as HTMLElement;
+    const popover = screen.getByRole('button', { name: '설정' }).parentElement as HTMLElement;
     expect(within(popover).queryByRole('button', { name: '피드백 보내기' })).toBeNull();
     await user.click(screen.getByRole('button', { name: '피드백 보내기' })); // LNB 최하단
     const dialog = await screen.findByRole('dialog', { name: '피드백 보내기' });
@@ -5187,9 +5234,10 @@ describe('홈 디자인 후속 6건', () => {
     const head = pop.firstElementChild as HTMLElement;
     expect(head.style.background).toContain('--mf-accent-soft');
     expect(head.style.margin).toBeTruthy();
+    // 프로필명 변경이 설정 모달로 옮겨져(요청) 팝오버는 [설정][로그아웃] 두 행이다.
     const rows = pop.querySelectorAll('.menu-row');
-    expect(rows).toHaveLength(3);
-    const dividerBeforeLogout = rows[1]!.nextElementSibling as HTMLElement;
+    expect(rows).toHaveLength(2);
+    const dividerBeforeLogout = rows[0]!.nextElementSibling as HTMLElement;
     expect(dividerBeforeLogout.getAttribute('aria-hidden')).toBe('true');
 
     // 설정 모달 — 560 폭, 계정 행 accent-soft, 테마 스와치는 원, 탈퇴 행 문구.
