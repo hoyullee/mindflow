@@ -14,6 +14,7 @@ import { comboLabel, deleteKeyLabel, enterKeyLabel, renameKeyLabel } from '../sh
 // 이미지/영역 아이콘은 상단 툴바 '삽입' 메뉴와 같은 SVG를 공유 — 두 진입점이
 // 같은 동작이므로 같은 그림이어야 한다.
 import { CommentIcon, ImageIcon, ZoneIcon } from './ToolbarMenus';
+import { BOARD_BAR_LIFT } from './BoardToolbar';
 
 /** 디자인 원본(`Geurio 마인드맵 리디자인.dc.html`)의 우클릭 메뉴 값 — 폭·행 높이·
  * 그림자·플라이아웃. 값을 행마다 적어 두면 한 곳을 손볼 때 나머지가 어긋난다. */
@@ -121,8 +122,11 @@ export function ContextMenu({ controller }: ContextMenuProps) {
     // `ctxPos`와 같은 계산: 행 34 + 구분선 13 + 패딩 14 + 제목 줄 27).
     const rows = buildItems(controller, ctxMenu, () => {}, null, isMobile);
     const estH = rows.reduce((h, it) => h + (it === 'divider' ? 13 : ROW_H), 14) + (title ? 27 : 0);
+    // 아래 여유 — 화이트보드·맵에는 하단 도구 막대가 떠 있고 그쪽 z가 더 높다.
+    // 막대 높이를 비워 두지 않으면 마지막 행이 막대 뒤로 숨는다(실브라우저에서 확인).
+    const bottomInset = controller.readOnly ? GAP : BOARD_BAR_LIFT + GAP;
     left = Math.max(GAP, Math.min(ctxMenu.sx, vw - MW - GAP));
-    top = Math.max(GAP, Math.min(ctxMenu.sy, vh - estH - GAP));
+    top = Math.max(GAP, Math.min(ctxMenu.sy, vh - estH - bottomInset));
   }
 
   const menuStyle: CSSProperties = {
@@ -569,6 +573,7 @@ function buildItems(
       },
       'divider',
       ...copyItems({ cut: true }),
+      'divider',
       // 삭제는 둘로 나뉜다: 평범한 삭제는 **비파괴**(프레임만 사라지고 내용은 제자리),
       // 내용째 삭제는 열 하나를 통째로 버릴 때. 모바일은 선택 바에 삭제가 있어
       // 프레임만 삭제는 중복이라 빼고, 내용째 삭제는 그 바에 없으므로 남긴다.
@@ -604,9 +609,10 @@ function buildItems(
     if (controller.readOnly) return []; // 보기 전용 — 변이 항목뿐이라 열 것이 없다
     return [
       ...copyItems({ cut: true }),
+      // 삭제는 성격이 다른 묶음이라 구분선으로 가른다(디자인 원본 — 맵·보드 공통).
       ...(touch
         ? []
-        : ([
+        : (['divider',
             {
               icon: <TrashIcon />,
               label: '삭제',
@@ -617,7 +623,7 @@ function buildItems(
                 controller.deleteFloat(floatId);
               },
             },
-          ] as MenuItem[])),
+          ] as (MenuItem | 'divider')[])),
     ];
   }
 
@@ -627,9 +633,10 @@ function buildItems(
     if (controller.readOnly) return []; // 보기 전용 — 변이 항목뿐이라 열 것이 없다
     return [
       ...copyItems({ cut: true }),
+      // 삭제는 성격이 다른 묶음이라 구분선으로 가른다(디자인 원본 — 맵·보드 공통).
       ...(touch
         ? []
-        : ([
+        : (['divider',
             {
               icon: <TrashIcon />,
               label: '삭제',
@@ -640,7 +647,7 @@ function buildItems(
                 controller.deleteLine(lineId);
               },
             },
-          ] as MenuItem[])),
+          ] as (MenuItem | 'divider')[])),
     ];
   }
 
@@ -740,7 +747,7 @@ function buildItems(
       },
     },
     {
-      icon: <ZoneIcon />,
+      icon: controller.isBoard ? <Ico d={ICO.frame} /> : <ZoneIcon />,
       label: '영역 추가',
       onSelect: () => {
         close();
@@ -817,6 +824,10 @@ function Ico({ d, dash }: { d: string; dash?: string }) {
 }
 const ICO = {
   plus: 'M12 5v14M5 12h14',
+  /** 화이트보드 디자인의 프레임 — 네 모서리 괄호. 맵의 '영역'은 표식이라 점선
+   * 사각(`ZoneIcon`)을 그대로 쓴다: 두 디자인이 서로 다른 그림을 쓰고, 개념도 다르다
+   * (보드의 프레임은 **그릇**이라 안에 든 것을 함께 옮긴다). */
+  frame: 'M4 8V6a2 2 0 0 1 2-2h2M16 4h2a2 2 0 0 1 2 2v2M20 16v2a2 2 0 0 1-2 2h-2M8 20H6a2 2 0 0 1-2-2v-2',
   align: 'M4 6h16M4 12h11M4 18h16',
   rename: 'M12 20h9 M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4Z',
   close: 'M18 6 6 18M6 6l12 12',

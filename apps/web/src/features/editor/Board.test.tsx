@@ -2051,4 +2051,29 @@ describe('화이트보드 디자인 이식', () => {
     expect(screen.queryByLabelText('메모 삭제')).toBeNull();
     expect(screen.queryByLabelText('메모 복제')).toBeNull();
   });
+
+  // 화이트보드 디자인(`84bcfc62`)의 우클릭 메뉴 — 카드 꼴은 마인드맵과 같은 값이고,
+  // 항목 묶음(구분선)과 프레임 아이콘이 이 디자인의 것이다.
+  it('보드 우클릭 메뉴 — 226px 카드·머리 줄·구분선으로 갈린 묶음·단축키 표기', async () => {
+    localStorage.setItem('mindflow_doc_bctx', JSON.stringify(BOARD));
+    const { container } = renderEditor('/editor?map=bctx&title=x');
+    await waitFor(() => expect(container.querySelector('[data-float-id="bf1"]')).toBeTruthy());
+
+    // 메모 메뉴 = 복사·잘라내기·복제 ── 삭제(⌫/Del)
+    // 우클릭 지점은 메모 **안쪽**의 캔버스 좌표로 잡는다 — 좌표가 빗나가면 배경
+    // 메뉴가 열린다(`hitTestAll`은 요소가 아니라 지점을 본다).
+    const at = strokePoint(container, 80, 90);
+    fireEvent.contextMenu(container.querySelector('[data-float-id="bf1"]') as HTMLElement, { clientX: at.x, clientY: at.y });
+    const menu = await waitFor(() => document.querySelector('.mf-ctx') as HTMLElement);
+    expect(menu.style.width).toBe('226px');
+    expect((menu.querySelector('[data-ctx-head]') as HTMLElement).textContent).toBeTruthy();
+    const kids = Array.from(menu.children).filter((el) => !el.hasAttribute('data-ctx-head'));
+    const lastRow = kids[kids.length - 1] as HTMLElement;
+    expect(lastRow.textContent).toContain('삭제');
+    // 삭제 앞은 구분선이다(디자인 원본 — 성격이 다른 묶음)
+    expect((kids[kids.length - 2] as HTMLElement).tagName).toBe('DIV');
+    const keys = Array.from(menu.querySelectorAll('[data-ctx-keys]')).map((k) => k.textContent ?? '');
+    expect(keys.some((k) => k === 'Del' || k === '\u232b')).toBe(true);
+    expect(new Set(keys).size).toBe(keys.length); // 겹치는 표기 없음
+  });
 });
