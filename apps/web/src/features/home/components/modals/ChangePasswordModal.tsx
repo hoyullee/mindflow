@@ -1,6 +1,7 @@
 import { useEffect, useRef } from 'react';
 import type { HomeState } from '../../types';
 import type { HomeController } from '../../useHomeController';
+import { DoneCheck } from './DoneCheck';
 
 interface Props {
   state: HomeState;
@@ -63,15 +64,11 @@ export function ChangePasswordModal({ state, controller }: Props) {
         {done ? (
           <>
             <div data-change-pw-done style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 14 }}>
-              <span style={{ width: 40, height: 40, borderRadius: 999, background: 'var(--mf-success-soft)', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
-                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="var(--mf-success)" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-                  <path d="m5 13 4 4L19 7" />
-                </svg>
-              </span>
+              <DoneCheck />
               <div style={{ fontSize: 17, fontWeight: 800 }}>비밀번호를 변경했어요</div>
             </div>
             <div style={{ fontSize: 13, color: 'var(--mf-muted)', lineHeight: 1.6, marginBottom: 22 }}>
-              다음 로그인부터 새 비밀번호를 쓰세요. 안전을 위해 <b style={{ color: 'var(--mf-text)', fontWeight: 700 }}>다른 기기의 로그인은 해제</b>했어요 — 이 기기는 그대로 쓸 수 있어요.
+              현재 기기를 제외한 <b style={{ color: 'var(--mf-text)', fontWeight: 700 }}>다른 기기의 로그인은 해제</b>되었습니다.
             </div>
             <button className="btn" onClick={controller.closeChangePassword} style={{ width: '100%', height: 44, border: 'none', borderRadius: 11, background: 'var(--mf-accent)', color: 'var(--mf-accent-ink)', fontFamily: 'inherit', fontSize: 14, fontWeight: 700, cursor: 'pointer' }}>
               확인

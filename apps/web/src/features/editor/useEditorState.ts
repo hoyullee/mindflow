@@ -2,7 +2,7 @@ import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } fr
 import type { MouseEvent as ReactMouseEvent, PointerEvent as ReactPointerEvent } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import type { Box, Doc, Float, KanbanCard, KanbanColumn, KanbanTag, Line, LineAnchor, LayoutMode, ListOp, Node, NodeMap, Reaction, ReactionGroup, RichRun, SizeOf, SnapCandidate, Stroke, TextEdit, Zone, CommentPin } from '@mindflow/mindmap-core';
-import { HistoryStack, ROOT_ID, collectImageRefs, collectInlineImages, isImageRef, replaceImageValues, applyListOp as applyListOpToText, applyAutoLinks, applyMarkdownShortcuts, applyPartialStyle, insertMention, charsToRuns, cubicAt, isStyledRuns, findLineSnap, layout, resolveLineEndpoints, resolveLineGeometry, runsToChars, serializeDoc, shiftOffset, strokeBounds, strokeHit, translateStrokePts, reactionGroups, toggleReaction as toggleReactionList, pruneReactions, toMarkdown, posForIndex, removeColumn, moveCard, moveColumn } from '@mindflow/mindmap-core';
+import { HistoryStack, ROOT_ID, collectImageRefs, collectInlineImages, isImageRef, replaceImageValues, applyListOp as applyListOpToText, applyAutoLinks, applyMarkdownShortcuts, applyPartialStyle, insertMention, charsToRuns, cubicAt, isStyledRuns, findLineSnap, layout, resolveLineEndpoints, resolveLineGeometry, runsToChars, serializeDoc, shiftOffset, strokeBounds, strokeHit, translateStrokePts, reactionGroups, toggleReaction as toggleReactionList, pruneReactions, toMarkdown, cardsInColumn, posForIndex, removeColumn, moveCard, moveColumn } from '@mindflow/mindmap-core';
 import { domToRuns, linearize, liveEditValue } from './richtextDom';
 import { HL_COLORS, HL_WIDTHS } from './boardTools';
 import type { BoardTool } from './boardTools';
@@ -781,6 +781,8 @@ export interface EditorController {
   /** 카드 글을 확정한다(빈 값이면 카드를 지운다 — 빈 카드를 남기지 않는다). */
   commitCardText: (id: string, text: string) => void;
   deleteCard: (id: string) => void;
+  /** 카드를 그 자리에서 복제한다(우클릭 메뉴·⌘D) — 사본은 바로 아래에 선다. */
+  duplicateCard: (id: string) => void;
   /** 칸반 보기 모드(보드·리스트·타임라인) — 보는 사람의 상태(문서 아님). */
   kanbanView: 'board' | 'list' | 'timeline';
   setKanbanView: (v: 'board' | 'list' | 'timeline') => void;
@@ -5544,6 +5546,31 @@ export function useEditorState(): EditorController {
     [commitDoc],
   );
 
+  /**
+   * 카드 복제 — 같은 열의 **바로 아래**에 사본을 놓는다(요청·우클릭 메뉴 `복제`).
+   *
+   * 곁정보(분류·기한·시작일·담당·배경·긴급)와 서식까지 그대로 옮긴다: 비슷한 카드를
+   * 여럿 만드는 것이 이 동작의 쓰임이고, 무엇이 빠졌는지 눈으로 찾게 하면 안 된다.
+   * 새 id를 받으므로 **댓글은 따라오지 않는다** — 댓글은 카드 id를 대상으로 별도
+   * 테이블에 살고(0020), 남의 논의가 복제되는 것은 뜻이 어긋난다.
+   */
+  const duplicateCard = useCallback(
+    (id: string) => {
+      if (readOnlyRef.current) return;
+      const newId = idFactory('card');
+      commitDoc((d) => {
+        const list = d.cards ?? [];
+        const src = list.find((c) => c.id === id);
+        if (!src) return d;
+        const index = cardsInColumn(list, src.col).findIndex((c) => c.id === id);
+        const copy: KanbanCard = { ...src, id: newId, pos: posForIndex(list, src.col, index + 1) };
+        return { ...d, cards: [...list, copy] };
+      });
+      setSelectedCardId(newId);
+    },
+    [commitDoc, idFactory],
+  );
+
   const openCardDetail = useCallback((id: string | null) => {
     setDetailCardId(id);
     if (id) setSelectedCardId(id);
@@ -5995,6 +6022,13 @@ export function useEditorState(): EditorController {
           openCardDetail(cardId);
           return;
         }
+        // 복제 — 우클릭 메뉴의 `복제`와 같은 동작(메뉴가 적어 둔 단축키가 실제로
+        // 듣게. 디자인 툴의 관례이기도 하다).
+        if ((e.metaKey || e.ctrlKey) && !e.shiftKey && (e.key === 'd' || e.key === 'D')) {
+          e.preventDefault();
+          duplicateCard(cardId);
+          return;
+        }
         if (e.key === 'Escape') {
           e.preventDefault();
           selectCard(null);
@@ -6351,6 +6385,7 @@ export function useEditorState(): EditorController {
     addCard,
     commitCardText,
     deleteCard,
+    duplicateCard,
     kanbanView,
     setKanbanView,
     detailCardId,

@@ -318,13 +318,28 @@
   transition:
     transform 0.16s ease,
     box-shadow 0.16s ease,
-    border-color 0.16s ease;
+    border-color 0.16s ease,
+    outline-color 0.14s ease;
 }
+/* 고른 카드도 함께 떠오른다 — 선택 표시가 outline 링으로 바뀌어(요청, 홈 카드와
+   같은 문법) hover 그늘과 다투지 않는다. 예전에는 선택 시 그늘을 링으로 갈아
+   끼웠기 때문에 `:not([data-selected])`로 hover를 빼야 했다. */
 .mf-kb-card:hover {
   transform: translateY(-2px);
-}
-.mf-kb-card:not([data-selected]):hover {
   box-shadow: 0 12px 24px -18px rgba(46, 42, 38, 0.55) !important;
+}
+/* 누르는 순간 살짝 눌린다(홈 카드의 `:active`와 같은 값·같은 길이). */
+.mf-kb-card:active {
+  transform: translateY(-1px) scale(0.993);
+  transition: transform 0.07s ease;
+}
+@media (prefers-reduced-motion: reduce) {
+  .mf-kb-card,
+  .mf-kb-card:hover,
+  .mf-kb-card:active {
+    transform: none;
+    transition: box-shadow 0.16s ease, border-color 0.16s ease, outline-color 0.14s ease;
+  }
 }
 
 /* 리스트·타임라인의 행 — 배경을 인라인으로 주지 않으므로 평범한 규칙으로 충분하다. */
@@ -389,4 +404,100 @@ input[type='search']::-webkit-search-results-decoration {
   background-clip: text;
   -webkit-text-fill-color: currentColor;
   transition: background-color 9999s ease-out 0s;
+}
+
+/* ─── 칸반 메뉴·팝업의 등장/전환(요청) ────────────────────────────────────────
+   메뉴가 뜨는 자리에서 살짝 솟아오르고, 플라이아웃은 옆에서 밀려 들어온다.
+   모달은 조금 더 크게 떠오른다(dim은 제자리 페이드 `mf-dim-in` — transform이 있는
+   키프레임을 fixed inset:0 배경에 걸면 레이어째 슬라이드한다, #331의 교훈). */
+@keyframes mf-kb-pop {
+  from {
+    opacity: 0;
+    transform: translateY(-5px) scale(0.97);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+.mf-kb-pop {
+  animation: mf-kb-pop 0.14s cubic-bezier(0.2, 0.9, 0.3, 1) both;
+}
+@keyframes mf-kb-fly {
+  from {
+    opacity: 0;
+    transform: translateX(-7px) scale(0.98);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+.mf-kb-fly {
+  animation: mf-kb-fly 0.13s ease-out both;
+}
+@keyframes mf-kb-modal {
+  from {
+    opacity: 0;
+    transform: translateY(12px) scale(0.985);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+.mf-kb-modal {
+  animation: mf-kb-modal 0.2s cubic-bezier(0.2, 0.9, 0.25, 1) both;
+}
+/* 모바일 바텀 시트는 **아래에서 올라온다**(그 자리에서 떠오르면 어디서 왔는지
+   읽히지 않는다). */
+@keyframes mf-kb-sheet {
+  from {
+    opacity: 0;
+    transform: translateY(24px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+.mf-kb-sheet {
+  animation: mf-kb-sheet 0.22s cubic-bezier(0.2, 0.9, 0.25, 1) both;
+}
+
+/* 메뉴 행의 hover — 색은 테마에서 오므로 값만 인라인 변수로 내려받는다(인라인
+   `background`는 클래스 규칙을 이기므로 칠하기를 CSS에 맡겨야 반응이 산다). */
+.mf-kb-menu-row {
+  transition:
+    background 0.12s ease,
+    color 0.12s ease;
+}
+/* ⚠ `!important`가 필요하다 — 행의 색은 테마에서 오므로 인라인 스타일로 칠하는데,
+   인라인은 클래스 규칙을 이긴다(홈 `.mf-ctl:hover`와 같은 처방). 이걸 빼면 hover가
+   **한 번도 보이지 않는다**(실브라우저 계측으로 확인). */
+.mf-kb-menu-row:hover,
+.mf-kb-menu-row[data-active='1'] {
+  background: var(--mf-kb-hover) !important;
+  color: var(--mf-kb-hover-ink) !important;
+}
+.mf-kb-menu-row.is-danger:hover {
+  background: var(--mf-kb-danger-soft) !important;
+  color: var(--mf-kb-danger) !important;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .mf-kb-pop,
+  .mf-kb-fly,
+  .mf-kb-modal,
+  .mf-kb-sheet {
+    animation-duration: 0.01ms;
+  }
+}
+
+/* 카드 상세의 제목 — 시안처럼 평소엔 **테두리 없는 큰 글자**이고, 포커스에서만
+   상자가 보인다(고칠 수 있다는 신호는 손이 갔을 때 필요하다). */
+.mf-kb-title:focus {
+  /* 면을 채우지 않는다 — 상세를 열면 제목에 포커스가 가는데(바로 이름을 고칠 수
+     있게), 그때 큰 상자가 칠해지면 시안의 담담한 제목과 다른 인상이 된다. */
+  border-color: var(--mf-kb-title-line, rgba(0, 0, 0, 0.12)) !important;
 }
