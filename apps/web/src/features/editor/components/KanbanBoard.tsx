@@ -16,7 +16,7 @@ import type { CSSProperties, KeyboardEvent as ReactKeyboardEvent, MouseEvent as 
 import { cardsInColumn } from '@mindflow/mindmap-core';
 import type { KanbanCard, KanbanColumn, KanbanTag } from '@mindflow/mindmap-core';
 import type { EditorController } from '../useEditorState';
-import { hexA } from '../theme';
+import { hexA, mixHex } from '../theme';
 import type { Theme } from '../theme';
 import { useIsMobile } from '../../../hooks/useMediaQuery';
 import { CommentIcon, MenuDivider, MenuSectionLabel } from './ToolbarMenus';
@@ -45,10 +45,23 @@ const CHIP_CLEARANCE = 78;
 const COL_SHADOW = '0 18px 40px -34px rgba(46,42,38,.4)';
 /** 긴급 배지 — 테마와 무관한 경고색(어느 팔레트에서나 "위험"으로 읽혀야 한다). */
 const URGENT = '#d9534f';
-/** 카드 왼쪽의 긴급 선만 **더 순한 빨강**이다(시안 ②). 3.5px짜리 얇은 획은 같은
- * 색이라도 채도가 죽어 갈색처럼 읽힌다 — 글자·배지는 면적이 있어 `URGENT`로도
- * "빨강"으로 읽히지만 이 선은 그렇지 않다. */
-const URGENT_EDGE = '#e53935';
+/** 긴급 카드의 **왼쪽 테두리** 색 — 디자인 원본(`kb-card`의 `accentColor`) 값 그대로.
+ * 글자·배지는 면적이 있어 `URGENT`로도 "빨강"으로 읽히므로 그대로 둔다. */
+const URGENT_EDGE = '#e0492b';
+/** 긴급 카드의 나머지 테두리 — 디자인 원본 값 그대로(#F5D9CD). 왼쪽만 붉으면
+ * 카드가 어긋나 보이므로 사방을 한 톤 붉게 두른다. */
+const URGENT_BORDER = '#f5d9cd';
+
+/** 어두운 카드에서는 원본 값을 그 배경 쪽으로 섞는다 — 짙은 면에 크림색 1px이
+ * 그대로 놓이면 테두리만 도드라져 카드가 액자처럼 보인다. 밝은 카드(기본·라벨 색)는
+ * **원본 값 그대로**라 디자인과 픽셀이 같다. */
+function urgentBorderOn(bg: string): string {
+  const c = bg.trim().replace('#', '');
+  const full = c.length === 3 ? c.split('').map((x) => x + x).join('') : c;
+  if (!/^[0-9a-f]{6}$/i.test(full)) return URGENT_BORDER;
+  const avg = [0, 2, 4].reduce((sum, i) => sum + parseInt(full.substring(i, i + 2), 16), 0) / 3;
+  return avg > 150 ? URGENT_BORDER : mixHex(URGENT_BORDER, `#${full}`, 0.55);
+}
 
 /** 마우스가 이만큼 움직여야 "끄는 것"으로 친다(클릭·더블클릭과 구분). */
 const DRAG_THRESHOLD = 4;
@@ -1293,22 +1306,6 @@ export function CardFace({ card, theme: th, comments, tags, done }: { card: Kanb
   const tone = card.due && !done ? dueTone(card.due) : 'normal';
   return (
     <>
-      {/* 긴급 — 배지가 아니라 **카드 좌측의 붉은 선**이다(시안 ②). 배지는 분류와
-          같은 자리를 다투며 한 줄을 더 쓰는데, 이 선은 자리를 차지하지 않고도
-          목록을 훑을 때 눈에 먼저 걸린다. 절대 배치라 글자 자리도 밀지 않는다.
-          시안대로 **카드 높이를 꽉 채우는 곧은 획**이다(제보 2회): 처음엔 위아래
-          8px 들여 넣은 알약이었고, 그다음엔 카드 모서리를 따라 라운드를 줘서 끝이
-          뾰족해졌다. 시안의 선은 끝이 **네모난 직선**이라 위아래 끝까지 같은 굵기로
-          이어진다 — 모서리 곡선 구간(12px)을 살짝 넘어서지만 그 덕에 목록을 훑을 때
-          "이 카드는 긴급"이 한 줄로 또렷하게 읽힌다. 테두리(1px)까지 덮게 -1로 뺀다. */}
-      {card.flagged && (
-        <span
-          data-card-urgent={card.id}
-          aria-label="긴급"
-          title="긴급"
-          style={{ position: 'absolute', left: -1, top: -1, bottom: -1, width: 3.5, borderRadius: 0, background: URGENT_EDGE, pointerEvents: 'none' }}
-        />
-      )}
       {card.tag && (
         <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 8, flexWrap: 'wrap' }}>
           <TagBadge name={card.tag} theme={th} tags={tags} />
@@ -1365,9 +1362,16 @@ function CalendarGlyph() {
 
 /** 카드 배경 계열 — 카드와 고스트가 같은 값을 쓰도록 한 곳에. */
 function cardBase(card: KanbanCard, th: Theme, selected: boolean): CSSProperties {
+  const bg = card.bg || th.panel;
+  // 긴급은 얹은 획이 아니라 **카드의 왼쪽 테두리 자체**다(디자인 원본 `kb-card`:
+  // `border: 1px solid cardBorder` + `border-left: 3px solid accentColor`). 그래서
+  // 위아래 끝이 카드 모서리 곡선과 정확히 이어지고, 별도 요소가 없으니 클릭·드래그
+  // 경로도 건드리지 않는다. 3px 테두리만큼 글자가 2px 밀리는 것도 원본과 같다.
+  const urgent = !!card.flagged;
   const base: CSSProperties = {
-    background: card.bg || th.panel,
-    border: `1px solid ${th.border}`,
+    background: bg,
+    border: `1px solid ${urgent ? urgentBorderOn(bg) : th.border}`,
+    borderLeft: urgent ? `3px solid ${URGENT_EDGE}` : `1px solid ${th.border}`,
     boxShadow: '0 1px 2px rgba(0,0,0,.05)',
     // 선택 표시는 **outline 링**이다 — 홈 카드와 같은 문법(요청). 예전처럼 테두리·
     // 그늘을 갈아 끼우면 고른 카드에서 그늘이 사라져 "호버가 풀린 것"처럼 보였다
@@ -1393,6 +1397,8 @@ function Card({ card, controller, theme: th, onPointerDown, onContextMenu, dragg
       className="mf-kb-card"
       data-kanban-card={card.id}
       data-selected={selected ? '1' : undefined}
+      data-card-urgent={card.flagged ? card.id : undefined}
+      aria-label={card.flagged ? '긴급 카드' : undefined}
       onPointerDown={(e) => {
         controller.selectCard(card.id);
         onPointerDown(e, card);

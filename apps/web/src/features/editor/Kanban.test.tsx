@@ -760,7 +760,7 @@ describe('칸반 — 카드 상세(분류·기한·담당·긴급)', () => {
     // 카드 앞면 — 분류 배지·긴급 배지·기한
     const card = await waitFor(() => container.querySelector('[data-kanban-card="k1"]') as HTMLElement);
     expect(card.querySelector('[data-card-tag="개발"]')).toBeTruthy();
-    expect(card.querySelector('[data-card-urgent="k1"]')).toBeTruthy();
+    expect(card.getAttribute('data-card-urgent')).toBe('k1'); // 긴급 = 카드 왼쪽 테두리
     expect(card.querySelector('[data-card-due="k1"]')?.textContent).toContain(dueLabel(dueValue));
 
     fireEvent.keyDown(window, { key: 's', ctrlKey: true });
@@ -1665,13 +1665,13 @@ describe('칸반 — 카드 우클릭 메뉴와 빠른 댓글', () => {
     let menu = await openMenu(container);
     expect(menu.querySelector('[data-card-menu-flag]')?.textContent).toBe('긴급으로 표시');
     fireEvent.click(menu.querySelector('[data-card-menu-flag]')!);
-    const bar = await waitFor(() => container.querySelector('[data-card-urgent="k1"]') as HTMLElement);
-    expect(bar.style.position).toBe('absolute');
-    expect(bar.style.background).toBe('rgb(229, 57, 53)'); // 얇은 획은 더 순한 빨강
-    expect(bar.textContent).toBe(''); // '긴급' 배지 글자는 없다
-    // 시안 ②: 카드 높이를 꽉 채우는 **곧은 직선**(들여 넣은 알약도, 끝이 둥근 것도 아니다)
-    expect([bar.style.top, bar.style.bottom, bar.style.left]).toEqual(['-1px', '-1px', '-1px']);
-    expect(bar.style.borderRadius === '0px' || bar.style.borderRadius === '0').toBe(true);
+    // 디자인 원본대로 **카드의 왼쪽 테두리 자체**가 굵고 붉어진다(얹은 획이 아니다).
+    const flagged = await waitFor(() => container.querySelector('[data-card-urgent="k1"]') as HTMLElement);
+    expect(flagged.getAttribute('data-kanban-card')).toBe('k1'); // 카드 자신이 표식을 든다
+    expect(flagged.style.borderLeft).toBe('3px solid rgb(224, 73, 43)');
+    expect(flagged.style.border).toContain('1px solid'); // 나머지 테두리는 한 톤 붉게
+    expect(flagged.style.border).not.toContain('rgb(224, 73, 43)');
+    expect(flagged.querySelector('span[aria-label="긴급"]')).toBeNull(); // 배지·덧그린 획 없음
     // 다시 열면 해제 라벨
     menu = await openMenu(container);
     expect(menu.querySelector('[data-card-menu-flag]')?.textContent).toBe('긴급 해제');
