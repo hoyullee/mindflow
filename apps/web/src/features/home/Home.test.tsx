@@ -1601,14 +1601,19 @@ describe('Home', () => {
     for (const label of ['비밀번호 변경', 'Google 연동', '모든 기기에서 로그아웃', '회원 탈퇴']) {
       expect(within(settingsDialog).getByText(label)).toBeTruthy();
     }
-    // 화면 전환 애니메이션(요청) — 들어갈 때 앞으로, 뒤로 갈 때 반대 방향.
+    // 화면 전환 애니메이션 — **좌우 이동 없이 제자리 페이드**(제보: 글자가 가로로
+    // 지나가는데 상자는 세로로 줄어 어긋나 보였다). 높이 전이와 같은 길이·곡선.
     // 처음 열 때는 걸리지 않는다(카드 자체가 페이드로 뜬다).
     const view = () => settingsDialog.querySelector('.mf-settings-view') as HTMLElement;
-    expect(view().className).toContain('is-fwd');
+    expect(view().className).toContain('is-swap');
     const css = readFileSync(resolve('src/features/home/home.css'), 'utf8');
-    expect(css).toContain('@keyframes mf-view-in-fwd');
-    expect(css).toContain('@keyframes mf-view-in-back');
-    expect(css.slice(css.indexOf('.mf-settings-view.is-fwd'))).toContain('mf-view-in-fwd');
+    expect(css).toContain('@keyframes mf-view-fade');
+    const fade = css.slice(css.indexOf('@keyframes mf-view-fade'), css.indexOf('.mf-settings-view.is-swap'));
+    expect(fade).not.toContain('translateX'); // 가로 이동은 없다
+    const rule = css.slice(css.indexOf('.mf-settings-view.is-swap'));
+    expect(rule).toContain('mf-view-fade');
+    expect(rule).toContain('cubic-bezier(0.4, 0, 0.2, 1)'); // 높이 전이와 같은 곡선
+    expect(css).not.toContain('mf-view-in-fwd'); // 좌우 슬라이드는 걷어냈다
 
     // 헤더 제목은 '설정'을 지키고(요청) 어느 화면인지는 본문 부 제목이 말한다.
     expect(settingsDialog.getAttribute('aria-label')).toBe('설정');
@@ -1623,7 +1628,7 @@ describe('Home', () => {
     const body = settingsDialog.querySelector('[data-settings-body]') as HTMLElement;
     expect(body).toBeTruthy();
     await user.click(within(settingsDialog).getByRole('button', { name: '뒤로' }));
-    expect(view().className).toContain('is-back');
+    expect(view().className).toContain('is-swap'); // 뒤로 갈 때도 같은 페이드(요청)
     expect(body.style.height).toBe('');
     await user.click(settingsDialog.querySelector('[data-account-detail-row]') as HTMLElement); // 흐름 계속
 

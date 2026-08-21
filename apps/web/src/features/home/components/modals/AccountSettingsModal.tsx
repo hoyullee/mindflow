@@ -23,23 +23,24 @@ export function AccountSettingsModal({ state, controller }: Props) {
   // 기기 로그아웃·탈퇴). 뒤로 가기는 하나뿐이라 두 화면 모두 첫 화면으로 돌아온다.
   const view = state.settingsView;
   const detail = view !== 'main'; // 뒤로 가기·전환 애니메이션은 "첫 화면인가"만 본다
-  // 화면 전환 방향(요청) — 들어갈 때 오른쪽에서, 뒤로 갈 때 왼쪽에서 들어온다.
-  // **처음 열 때는 애니메이션을 걸지 않는다**(카드 자체가 이미 페이드로 뜬다):
-  // `detail`이 실제로 바뀐 순간에만 방향이 정해진다.
+  // 화면 전환 — 좌우로 밀지 않고 **제자리에서 드러난다**(제보: 글자가 가로로
+  // 지나가는데 상자는 세로로 줄어 두 움직임이 어긋나 보였다). 그래서 방향을
+  // 기억할 이유가 없어졌다 — "바뀌었는가"만 알면 된다. **처음 열 때는 걸지
+  // 않는다**(카드 자체가 이미 페이드로 뜬다).
   const bodyRef = useRef<HTMLDivElement | null>(null);
   /** 숨은 파일 입력 — 아바타 버튼과 '프로필 이미지 변경' 행이 같은 것을 쓴다. */
   const fileRef = useRef<HTMLInputElement | null>(null);
   const fromH = useRef<number | null>(null);
   const prevDetail = useRef(view);
-  const [dir, setDir] = useState<'fwd' | 'back' | null>(null);
+  const [swapped, setSwapped] = useState(false);
   if (prevDetail.current !== view) {
     prevDetail.current = view;
     // 아직 커밋 전 — 여기서 잰 높이가 '바뀌기 전' 높이다(아래 layout effect가 쓴다).
     const box = bodyRef.current?.getBoundingClientRect();
     fromH.current = box ? Math.round(box.height) : null;
-    setDir(detail ? 'fwd' : 'back');
+    setSwapped(true);
   }
-  const viewClass = `mf-settings-view${dir ? ` is-${dir}` : ''}`;
+  const viewClass = `mf-settings-view${swapped ? ' is-swap' : ''}`;
   // 높이 잇기 — 바뀌기 **전** 높이는 렌더 단계에서 잡는다(그때 DOM은 아직 이전
   // 화면이다). 커밋 뒤에 재면 이미 새 화면이라 시작값이 목표값과 같아져 아무 일도
   // 일어나지 않는다(뒤로 갈 때 높이가 툭 튀던 원인). 진행 중 반전도 자연스럽게

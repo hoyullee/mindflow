@@ -558,39 +558,27 @@ input[type='search']::-webkit-search-results-decoration {
   transition: background-color 9999s ease-out 0s;
 }
 
-/* 설정 모달의 두 화면 전환(요청) — 들어갈 때는 오른쪽에서, 뒤로 갈 때는 왼쪽에서
-   들어온다. 한 번에 한 화면만 그리므로(나가는 층을 두지 않는다) 카드 높이가
-   화면마다 크게 다른 이 모달에서 높이가 튀지 않는다. 방향은 컴포넌트가 정한다. */
-@keyframes mf-view-in-fwd {
+/* 설정 모달의 화면 전환(요청) — **좌우 이동 없이 제자리 페이드**다. 예전에는
+   들어갈 때 오른쪽에서, 뒤로 갈 때 왼쪽에서 밀려 들어왔는데, 이 모달은 화면마다
+   높이가 크게 달라 상자가 동시에 줄었다 늘어난다: 글자가 가로로 지나가는 동안
+   상자는 세로로 움직여 두 움직임이 서로 어긋나 보였다(제보). 지금은 글자가
+   **상자가 자리를 잡는 그 시간 그 곡선으로** 드러난다(높이 전이와 같은 0.24s
+   `cubic-bezier(.4,0,.2,1)`) — 방향과 무관하므로 들어갈 때와 뒤로 갈 때가 같다.
+   한 번에 한 화면만 그리므로(나가는 층을 두지 않는다) 높이가 튀지 않는다. */
+@keyframes mf-view-fade {
   from {
     opacity: 0;
-    transform: translateX(16px);
   }
   to {
     opacity: 1;
-    transform: none;
   }
 }
-@keyframes mf-view-in-back {
-  from {
-    opacity: 0;
-    transform: translateX(-16px);
-  }
-  to {
-    opacity: 1;
-    transform: none;
-  }
-}
-.mf-settings-view.is-fwd {
-  animation: mf-view-in-fwd 0.2s ease;
-}
-.mf-settings-view.is-back {
-  animation: mf-view-in-back 0.2s ease;
+.mf-settings-view.is-swap {
+  animation: mf-view-fade 0.24s cubic-bezier(0.4, 0, 0.2, 1);
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .mf-settings-view.is-fwd,
-  .mf-settings-view.is-back {
+  .mf-settings-view.is-swap {
     animation: none;
   }
 }
