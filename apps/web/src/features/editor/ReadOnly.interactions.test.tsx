@@ -244,8 +244,8 @@ describe('보기 전용 사용자의 공유 팝업', () => {
     fireEvent.click(screen.getByRole('button', { name: '공유' }));
     const dialog = await screen.findByRole('dialog', { name: '공유' });
 
-    const toggle = (await within(dialog).findByLabelText('링크가 있는 사람은 열람')) as HTMLInputElement;
-    expect(toggle.disabled).toBe(true);
+    const toggle = await within(dialog).findByRole('switch', { name: '링크가 있는 사람은 열람' });
+    expect(toggle.getAttribute('data-disabled')).not.toBeNull();
     expect((within(dialog).getByRole('button', { name: '링크 복사' }) as HTMLButtonElement).disabled).toBe(true);
     expect(within(dialog).queryByLabelText('초대할 이메일')).toBeNull();
     expect(within(dialog).getByText(/공유 설정은 소유자만 바꿀 수 있어요/)).toBeTruthy();
@@ -274,7 +274,7 @@ describe('보기 전용 사용자의 공유 팝업', () => {
 
     fireEvent.click(screen.getByRole('button', { name: '공유' }));
     const dialog = await screen.findByRole('dialog', { name: '공유' });
-    expect(((await within(dialog).findByLabelText('링크가 있는 사람은 열람')) as HTMLInputElement).disabled).toBe(true);
+    expect((await within(dialog).findByRole('switch', { name: '링크가 있는 사람은 열람' })).getAttribute('data-disabled')).not.toBeNull();
     expect(within(dialog).queryByLabelText('초대할 이메일')).toBeNull();
   });
 });

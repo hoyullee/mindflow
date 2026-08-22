@@ -1,6 +1,7 @@
 import type { CSSProperties } from 'react';
 import { LAYOUT_MODES, EDGE_MODES } from '../tree';
 import { THEME_KEYS, THEMES, hexA } from '../theme';
+import { Segmented } from '../../../components/Segmented';
 import type { EditorController } from '../useEditorState';
 
 interface StyleMenuProps {
@@ -40,22 +41,25 @@ export function StyleMenu({ controller }: StyleMenuProps) {
       {!controller.isBoard && (
         <>
           <div style={{ fontSize: 11, fontWeight: 700, letterSpacing: '.04em', textTransform: 'uppercase', color: controller.uiTheme.subtext, marginBottom: 8 }}>레이아웃</div>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 0, padding: 3, background: controller.uiTheme.panel2, border: `1px solid ${controller.uiTheme.border}`, borderRadius: 10, marginBottom: 14 }}>
-            {LAYOUT_MODES.map((m) => (
-              <button key={m.k} type="button" className="mf-ed-btn" onClick={() => controller.setLayoutMode(m.k)} style={segStyle(controller.layoutMode === m.k)} aria-pressed={controller.layoutMode === m.k}>
-                {m.label}
-              </button>
-            ))}
-          </div>
+          {/* 하나만 고르는 묶음 — `Segmented`(Radix ToggleGroup)라 ←/→로 옮겨 다닌다. */}
+          <Segmented
+            value={controller.layoutMode}
+            onChange={controller.setLayoutMode}
+            label="레이아웃"
+            track={{ display: 'flex', alignItems: 'center', gap: 0, padding: 3, background: controller.uiTheme.panel2, border: `1px solid ${controller.uiTheme.border}`, borderRadius: 10, marginBottom: 14 }}
+            itemClass="mf-ed-btn"
+            items={LAYOUT_MODES.map((m) => ({ value: m.k, label: m.label, style: segStyle }))}
+          />
 
           <div style={{ fontSize: 11, fontWeight: 700, letterSpacing: '.04em', textTransform: 'uppercase', color: controller.uiTheme.subtext, marginBottom: 8 }}>연결선</div>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 0, padding: 3, background: controller.uiTheme.panel2, border: `1px solid ${controller.uiTheme.border}`, borderRadius: 10, marginBottom: 14 }}>
-            {EDGE_MODES.map((m) => (
-              <button key={m.k} type="button" className="mf-ed-btn" onClick={() => controller.setEdgeStyle(m.k)} style={segStyle(controller.edgeStyle === m.k)} aria-pressed={controller.edgeStyle === m.k}>
-                {m.label}
-              </button>
-            ))}
-          </div>
+          <Segmented
+            value={controller.edgeStyle}
+            onChange={controller.setEdgeStyle}
+            label="연결선"
+            track={{ display: 'flex', alignItems: 'center', gap: 0, padding: 3, background: controller.uiTheme.panel2, border: `1px solid ${controller.uiTheme.border}`, borderRadius: 10, marginBottom: 14 }}
+            itemClass="mf-ed-btn"
+            items={EDGE_MODES.map((m) => ({ value: m.k, label: m.label, style: segStyle }))}
+          />
         </>
       )}
 

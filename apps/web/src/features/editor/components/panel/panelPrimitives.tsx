@@ -1,4 +1,5 @@
 import { useLayoutEffect, useRef, useState, type CSSProperties, type ReactNode } from 'react';
+import { Segmented } from '../../../../components/Segmented';
 import { hexA, mixHex } from '../../theme';
 import type { Theme } from '../../theme';
 import { MONO_FONT, glassCard } from '../../chrome';
@@ -439,36 +440,34 @@ export function BoldSizeRow({
   // 면(panel2) 위에서 활성 칸만 카드 면 + 진한 강조 잉크 + 작은 그늘로 떠오른다
   // (원본 seg(): 활성 #FFFDFB/#C9512A/그늘, 비활성 투명/#8A8078). 값은 고정 헥스가
   // 아니라 테마에서 파생 — 다크·모노에서도 성립한다.
+  // 하나만 고르는 묶음이므로 `Segmented`(Radix ToggleGroup) — 묶음 안에서 ←/→로
+  // 옮겨 다닌다(예전에는 `aria-pressed` 버튼 셋이라 Tab이 칸마다 멈췄다).
   const sizeSeg = (
-    <div data-size-seg style={{ display: 'flex', gap: 3, padding: 3, borderRadius: 11, background: theme.panel2, border: `1px solid ${theme.border}`, boxSizing: 'border-box', flex: 1, minWidth: 0 }}>
-      {SIZE_OPTIONS.map((o) => {
-        const on = (size || 'm') === o.k;
-        return (
-          <button
-            key={o.k}
-            type="button"
-            aria-pressed={on}
-            onClick={() => onSetSize(o.k)}
-            style={{
-              flex: 1,
-              height: 30,
-              border: 0,
-              borderRadius: 8,
-              padding: 0,
-              background: on ? theme.panel : 'transparent',
-              fontFamily: 'inherit',
-              fontSize: 12,
-              fontWeight: 700,
-              color: on ? mixHex(theme.accent, theme.text, 0.2) : theme.subtext,
-              boxShadow: on ? '0 2px 5px -3px rgba(46,42,38,.35)' : 'none',
-              cursor: 'pointer',
-            }}
-          >
-            {o.label}
-          </button>
-        );
-      })}
-    </div>
+    <Segmented
+      value={size || 'm'}
+      onChange={onSetSize}
+      label="글자 크기"
+      trackAttrs={{ 'data-size-seg': '' }}
+      track={{ display: 'flex', gap: 3, padding: 3, borderRadius: 11, background: theme.panel2, border: `1px solid ${theme.border}`, boxSizing: 'border-box', flex: 1, minWidth: 0 }}
+      items={SIZE_OPTIONS.map((o) => ({
+        value: o.k,
+        label: o.label,
+        style: (on: boolean) => ({
+          flex: 1,
+          height: 30,
+          border: 0,
+          borderRadius: 8,
+          padding: 0,
+          background: on ? theme.panel : 'transparent',
+          fontFamily: 'inherit',
+          fontSize: 12,
+          fontWeight: 700,
+          color: on ? mixHex(theme.accent, theme.text, 0.2) : theme.subtext,
+          boxShadow: on ? '0 2px 5px -3px rgba(46,42,38,.35)' : 'none',
+          cursor: 'pointer',
+        }),
+      }))}
+    />
   );
   // I·S가 있으면(노드 패널) 한 행에 다 안 들어가 '크게'가 홀로 다음 줄로 감겼다
   // (제보: 배치가 중구난방). [B|I|S] 그리드 아래에 크기 세그 트랙 한 줄.
