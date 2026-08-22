@@ -1,239 +1,204 @@
-/* 랜딩 히어로 데모 인핸서 — 정적 landing.html의 head에서 블로킹 로드된다
- * (defer 없음 — 이유는 아래 [1]).
+/*
+ * 정적 랜딩(public/landing.html)의 히어로 창을 인터랙티브하게 올려 주는
+ * 프로그레시브 인핸서. 계약은 "모든 내용이 JS 없이 원문 HTML에 보인다"이므로
+ * 원문에는 **마인드맵 장면이 그대로** 들어 있고, 이 파일은 그 창을 세 보기로
+ * 번갈아 보여 주고 탭으로 고정할 수 있게 만든다(React 쌍둥이 Landing.tsx의
+ * HeroWindow와 같은 동작·같은 데이터).
  *
- * 원칙(프로그레시브 인핸스먼트): 이 파일이 실행되지 않아도(크롤러·JS 꺼짐)
- * 랜딩은 완성 상태의 폴백 SVG 한 장으로 온전히 보인다. 실행되면 그 자리를
- * React 쌍둥이(src/features/landing/Landing.tsx의 DemoMap)와 같은 인터랙티브
- * 데모로 교체한다 — 등장 애니메이션(480ms, rev 1→7)·가지 토글·"처음부터"·
- * 축소 스케일. 지오메트리·색·타이밍을 DemoMap과 동기화할 것.
- * 외부 요청 없음(순수 DOM 조작만). */
-(() => {
+ * 첫 화면이 폴백과 동일하므로 예전 버전에 있던 가림막(veil)이 필요하지 않다.
+ * 실패하거나 JS가 꺼져 있으면 원문 그대로 — 마인드맵 장면 한 장이 남는다.
+ *
+ * ⚠️ 장면 데이터는 src/features/landing/landingData.ts와 동기화할 것.
+ */
+(function () {
   'use strict';
 
-  // [1] head 실행 시점(=body 파싱 전)에 폴백 SVG를 가리는 스타일을 심는다 —
-  // 첫 페인트에 완성 맵이 그려졌다가 걷히는 깜빡임 방지. JS가 없으면 이
-  // 스타일 자체가 없으므로 폴백이 그대로 보인다(별도 noscript 불필요).
-  // 직계 자식 svg만 — 아래에서 만드는 인터랙티브 svg는 래퍼 div 안이라 무관.
-  const veil = document.createElement('style');
-  veil.textContent = '.demo-canvas > svg { visibility: hidden }';
-  document.head.appendChild(veil);
+  var CORAL = '#EE6B45';
+  var ROTATE_MS = 6200;
+  var HOLD_MS = 14000;
 
-  const init = () => {
-  const canvas = document.querySelector('#demo .demo-canvas');
-  const bar = document.querySelector('#demo .demo-bar');
-  if (!canvas || !bar) {
-    veil.remove(); // 마크업이 예상과 다르면 손대지 않고 폴백 복원
-    return;
+  var BASE = {
+    align: 'center', justify: 'flex-start', pad: '0 10px', r: '10px', bg: '#FFFDFB',
+    border: '1px solid #EADFD4', shadow: '0 8px 18px -14px rgba(46,42,38,.5)',
+    color: '#3A352F', fs: '11.5px', fw: 600, text: '',
+  };
+
+  function box(l, t, w, h, o) {
+    var d = {};
+    for (var k in BASE) d[k] = BASE[k];
+    d.l = l + '%'; d.t = t + '%'; d.w = w + '%'; d.h = h + '%';
+    for (var j in o || {}) d[j] = o[j];
+    return d;
   }
 
-  const RX = 320;
-  const RY = 210;
-  const BRANCHES = [
-    { id: 'a1', side: -1, y: 66, color: '#EF8F30', label: '메시지', children: ['핵심 한 줄', '타깃별 문구'] },
-    { id: 'a2', side: -1, y: 210, color: '#7CA84A', label: '채널', children: ['블로그', '뉴스레터'] },
-    { id: 'a3', side: -1, y: 354, color: '#E0447E', label: '리스크', children: ['재고', '문의 대응'] },
-    { id: 'a4', side: 1, y: 66, color: '#EE6146', label: '일정', children: ['프리뷰 주간', 'D-Day'] },
-    { id: 'a5', side: 1, y: 210, color: '#E3B93C', label: '채널별 예산', children: ['광고', '콘텐츠'] },
-    { id: 'a6', side: 1, y: 354, color: '#2FAF9A', label: '성과 지표', children: ['가입 수', '유지율'] },
-  ];
-
-  // 폴백 SVG를 걷어내고 640×420 고정 좌표계 박스를 세운다
-  const fallback = canvas.querySelector('svg');
-  if (fallback) fallback.remove();
-  const box = document.createElement('div');
-  box.style.cssText = 'position:absolute;left:50%;top:50%;width:640px;height:420px;transform:translate(-50%,-50%);transform-origin:center center';
-  const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
-  svg.setAttribute('viewBox', '0 0 640 420');
-  svg.setAttribute('aria-hidden', 'true');
-  svg.style.cssText = 'position:absolute;inset:0;width:640px;height:420px';
-  box.appendChild(svg);
-  canvas.insertBefore(box, canvas.firstChild);
-
-  let rev = 1; // 등장 단계: 1=중심만 → 7=가지 6개 전부
-  const exp = {}; // 가지별 펼침 상태
-  const items = []; // render()가 상태를 다시 칠할 대상들
-
-  const baseCss = (x, y) =>
-    'position:absolute;left:' + x + 'px;top:' + y + 'px;' +
-    'transition:opacity .45s ease, transform .45s cubic-bezier(.2,.9,.3,1.3);' +
-    'white-space:nowrap;font-family:inherit;letter-spacing:-.01em;cursor:default;';
-
-  // ⚠️ 생성 직후 apply()로 초기 상태(숨김)까지 박아 넣는다 — opacity 기본값
-  // 1로 두면, 아래 measure()의 clientWidth 읽기가 강제한 스타일 계산이
-  // "전부 보임"을 트랜지션 기준점으로 잡아 첫 프레임에 전체 맵이 유령처럼
-  // 나타났다 사라진다(1→0 페이드가 재생됨 — 실기기 리로드 깜빡임의 원인).
-  const mkNode = (x, y, css, visible, onClick) => {
-    const b = document.createElement('button');
-    b.type = 'button';
-    b.style.cssText = baseCss(x, y) + css;
-    if (onClick) {
-      b.style.cursor = 'pointer';
-      b.addEventListener('click', onClick);
-    }
-    box.appendChild(b);
-    const item = {
-      apply() {
-        const v = visible();
-        b.style.opacity = v ? '1' : '0';
-        b.style.transform = 'translate(-50%,-50%) scale(' + (v ? 1 : 0.72) + ')';
-        b.style.pointerEvents = v ? 'auto' : 'none';
-        b.tabIndex = v && onClick ? 0 : -1;
-        b.setAttribute('aria-hidden', String(!v));
-      },
-    };
-    items.push(item);
-    item.apply();
-    return b;
-  };
-
-  const mkLine = (d, color, width, maxOpacity, visible) => {
-    const p = document.createElementNS('http://www.w3.org/2000/svg', 'path');
-    p.setAttribute('d', d);
-    p.setAttribute('fill', 'none');
-    p.style.cssText = 'stroke:' + color + ';stroke-width:' + width + ';stroke-linecap:round;transition:opacity .5s ease';
-    svg.appendChild(p);
-    const item = {
-      apply() {
-        p.style.opacity = visible() ? String(maxOpacity) : '0';
-      },
-    };
-    items.push(item);
-    item.apply();
-  };
-
-  const render = () => items.forEach((it) => it.apply());
-
-  const root = mkNode(
-    RX,
-    RY,
-    'padding:14px 26px;font-size:17px;font-weight:700;color:#fff;border-radius:14px;border:1px solid #E85E33;background:linear-gradient(180deg,#F2764C,#E85E33);box-shadow:0 12px 26px -12px rgba(232,94,51,.65)',
-    () => rev >= 1,
-    null,
-  );
-  root.textContent = '신제품 런치 플랜';
-
-  BRANCHES.forEach((b, i) => {
-    const bx = RX + b.side * 158;
-    const by = b.y;
-    const vis = () => rev >= i + 2;
-    const open = () => !!exp[b.id];
-    const toggle = () => {
-      exp[b.id] = !exp[b.id];
-      render();
-    };
-
-    const node = mkNode(
-      bx,
-      by,
-      'padding:9px 16px;font-size:14px;font-weight:600;color:#3A352F;min-width:104px;text-align:center;box-sizing:border-box;border-radius:10px;background:#FFFDFB;border:1.5px solid ' + b.color + ';box-shadow:0 4px 12px -8px rgba(46,42,38,.45)',
-      vis,
-      toggle,
-    );
-    node.textContent = b.label;
-
-    const t = mkNode(
-      bx + b.side * 52,
-      by,
-      'width:19px;height:19px;padding:0;display:flex;align-items:center;justify-content:center;line-height:1;font-size:12px;font-weight:700;color:' + b.color + ';border-radius:999px;background:#FFFDFB;border:1.5px solid ' + b.color,
-      vis,
-      toggle,
-    );
-    const tLabel = {
-      apply() {
-        t.textContent = open() ? '−' : '+';
-      },
-    };
-    items.push(tLabel);
-    tLabel.apply();
-
-    const sx = RX + b.side * 62;
-    mkLine('M' + sx + ' ' + RY + ' C ' + (sx + b.side * 60) + ' ' + RY + ', ' + (bx - b.side * 70) + ' ' + by + ', ' + bx + ' ' + by, b.color, 3, 1, vis);
-
-    b.children.forEach((label, j) => {
-      const cx = bx + b.side * 128;
-      const cy = by + (j === 0 ? -38 : 38);
-      const cvis = () => vis() && open();
-      const c = mkNode(
-        cx,
-        cy,
-        'padding:7px 13px;font-size:12.5px;font-weight:500;color:#5C564E;border-radius:8px;background:#FFFDFB;border:1.5px solid ' + b.color + '66',
-        cvis,
-        null,
-      );
-      c.textContent = label;
-      const cs = bx + b.side * 62;
-      mkLine('M' + cs + ' ' + by + ' C ' + (cs + b.side * 46) + ' ' + by + ', ' + (cx - b.side * 58) + ' ' + cy + ', ' + cx + ' ' + cy, b.color, 2.2, 0.9, cvis);
+  var TONE = { y: ['#FCF4C9', '#EEDD8F'], p: ['#FBDCD5', '#F0BEB1'], g: ['#E4F1E8', '#C2DCBE'], w: ['#FFFDFB', '#EADFD4'] };
+  function note(l, t, w, h, text, tone) {
+    return box(l, t, w, h, {
+      text: text, align: 'flex-start', pad: '9px 10px', r: '11px', fs: '11px',
+      bg: TONE[tone][0], border: '1px solid ' + TONE[tone][1], shadow: '0 10px 20px -14px rgba(46,42,38,.5)',
     });
-  });
-
-  let timer;
-  const play = () => {
-    clearInterval(timer);
-    timer = setInterval(() => {
-      if (rev >= 7) {
-        clearInterval(timer);
-        return;
-      }
-      rev += 1;
-      render();
-    }, 480);
-  };
-
-  // 데모 바의 자리표시 스페이서 → "처음부터" 버튼(무JS에선 버튼이 없어야 하므로 여기서 주입)
-  const reset = document.createElement('button');
-  reset.type = 'button';
-  reset.className = 'demo-reset';
-  reset.textContent = '처음부터';
-  reset.addEventListener('click', () => {
-    rev = 1;
-    for (const k of Object.keys(exp)) delete exp[k];
-    render();
-    play();
-  });
-  const spacer = bar.lastElementChild;
-  if (spacer && !spacer.classList.contains('demo-url')) spacer.replaceWith(reset);
-  else bar.appendChild(reset);
-
-  // 캔버스가 664×436(여백 12px 포함)보다 좁으면 통째로 축소
-  const measure = () => {
-    const s = Math.min(1, canvas.clientWidth / 664, canvas.clientHeight / 436);
-    box.style.transform = 'translate(-50%,-50%) scale(' + s + ')';
-  };
-  measure();
-  if (typeof ResizeObserver !== 'undefined') new ResizeObserver(measure).observe(canvas);
-
-  const hint = canvas.querySelector('.demo-hint');
-  if (hint) hint.textContent = '노드를 눌러 가지를 펼쳐 보세요';
-
-  render();
-  play();
-  };
-
-  const boot = () => {
-    try {
-      init();
-    } catch (e) {
-      veil.remove(); // 어떤 이유로든 실패하면 폴백 SVG를 되살린다
-      throw e;
-    }
-  };
-  if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', boot);
-  else boot();
-
-  /* 새 버전 확인 — 랜딩은 **정적 페이지**라 앱 번들(SW 등록·주기 확인·토스트)이
-   * 실행되지 않는다. 게다가 이 페이지 자체가 서비스 워커의 precache 대상이라,
-   * 랜딩만 열어 두면 배포가 나가도 옛 화면이 계속 뜨고 아무도 확인하지 않는다
-   * (제보: "Vercel엔 배포됐는데 크롬에선 업데이트가 안 뜬다").
-   *
-   * 여기서 하는 일은 **확인 요청 한 번**뿐이다: 새 SW가 있으면 설치되고, 다음
-   * 방문(또는 앱 화면 진입)에서 최신이 뜬다. 랜딩을 저절로 리로드하지는 않는다
-   * — 읽고 있는 페이지가 예고 없이 새로 고쳐지면 그게 더 이상하다.
-   * 실패해도 데모에는 영향이 없다(등록이 없으면 조용히 끝난다). */
-  try {
-    if (navigator.serviceWorker) {
-      navigator.serviceWorker.getRegistration().then((reg) => reg && reg.update()).catch(() => {});
-    }
-  } catch {
-    /* 구형 브라우저·차단 환경 — 랜딩 표시에는 영향 없음 */
   }
+
+  function column(l, title, cards) {
+    var out = [
+      box(l, 6, 27, 88, { text: '', bg: '#FDFAF7', border: '1px solid #EFE4DA', shadow: 'none', r: '13px' }),
+      box(l + 2, 10, 23, 9, { text: title, bg: 'transparent', border: '0', shadow: 'none', fs: '10.5px', fw: 800, color: '#8A8078', pad: '0 4px' }),
+    ];
+    cards.forEach(function (c, i) {
+      out.push(box(l + 2, 22 + i * 20, 23, 17, {
+        text: c[0], align: 'flex-start', pad: '8px 9px', fs: '10.5px', r: '9px',
+        border: '1px solid ' + (c[1] ? '#F5D9CD' : '#F1E7DE'), shadow: '0 8px 16px -13px rgba(46,42,38,.5)',
+      }));
+    });
+    return out;
+  }
+
+  var SCENES = {
+    mind: {
+      file: '신제품 런치 플랜', caption: 'Tab 한 번이면 하위 주제가 붙어요', hint: 'Tab · Enter',
+      pin: ['5%', '84%'], pinText: '채널은 3개까지만',
+      edges: [
+        ['M31 49 C37 49, 37 18, 43 18', '#E9A98F', '.05s'],
+        ['M31 49 C37 49, 37 46, 43 46', '#E9A98F', '.12s'],
+        ['M31 49 C37 49, 37 74, 43 74', '#E9A98F', '.19s'],
+        ['M67 18 C71 18, 71 12, 74 12', '#DFCDA0', '.3s'],
+        ['M67 18 C71 18, 71 28, 74 28', '#DFCDA0', '.36s'],
+        ['M67 74 C71 74, 71 68, 74 68', '#B9D3BB', '.42s'],
+      ],
+      items: [
+        box(6, 42, 25, 15, { text: '신제품 런치', bg: CORAL, border: '1px solid ' + CORAL, color: '#fff', fw: 800, fs: '12.5px', r: '99px', justify: 'center', pad: '0 8px' }),
+        box(43, 12, 24, 13, { text: '메시지 정리' }),
+        box(43, 40, 24, 13, { text: '채널 선정' }),
+        box(43, 68, 24, 13, { text: '출시 일정' }),
+        box(74, 6, 21, 12, { text: '핵심 문구', bg: '#FCF4C9', border: '1px solid #EEDD8F', fs: '11px' }),
+        box(74, 22, 21, 12, { text: '경쟁 비교', bg: '#FCF4C9', border: '1px solid #EEDD8F', fs: '11px' }),
+        box(74, 62, 21, 12, { text: 'D-14 티저', bg: '#E4F1E8', border: '1px solid #C2DCBE', fs: '11px' }),
+      ],
+    },
+    board: {
+      file: '문제 정의 워크숍', caption: '메모를 붙이고 영역으로 묶어요', hint: 'drag · frame',
+      pin: ['50%', '84%'], pinText: '여기 투표할까요?', edges: [],
+      items: [
+        box(5, 8, 40, 84, { text: '', bg: 'rgba(74,143,224,.05)', border: '1.5px dashed #A9C4EA', shadow: 'none', r: '13px' }),
+        note(9, 16, 15, 24, '지금 막히는 지점', 'y'),
+        note(27, 14, 15, 22, '고객 문의 3건', 'y'),
+        note(9, 46, 15, 22, '온보딩 이탈', 'p'),
+        note(27, 42, 15, 26, '가격표 혼동', 'p'),
+        note(15, 72, 22, 16, '다음 액션 2개', 'g'),
+        note(52, 12, 20, 30, '아이디어 스티커', 'w'),
+        note(76, 20, 19, 26, '스케치 첨부', 'w'),
+        note(56, 56, 24, 22, '투표로 좁히기', 'y'),
+      ],
+    },
+    kanban: {
+      file: '8월 스프린트', caption: '카드를 옮기면 상태가 바뀌어요', hint: 'drag · ⌘D',
+      pin: ['37%', '72%'], pinText: '이건 다음 주로', edges: [],
+      items: column(5, '할 일', [['랜딩 카피 정리'], ['가격 실험 설계', true], ['FAQ 보강']])
+        .concat(column(37, '진행 중', [['온보딩 재설계'], ['리텐션 지표']]))
+        .concat(column(69, '완료', [['공유 링크 개선'], ['버그 12건 정리'], ['8월 회고']])),
+    },
+  };
+
+  var ORDER = ['mind', 'board', 'kanban'];
+
+  function start() {
+    var root = document.querySelector('[data-hero-demo]');
+    if (!root) return;
+    var canvas = root.querySelector('[data-canvas]');
+    var edgeSvg = root.querySelector('[data-edges]');
+    var fileEl = root.querySelector('[data-file]');
+    var capEl = root.querySelector('[data-caption]');
+    var hintEl = root.querySelector('[data-hint]');
+    var pinEl = root.querySelector('[data-pin]');
+    var pinTextEl = root.querySelector('[data-pin-text]');
+    var tabs = [].slice.call(root.querySelectorAll('[data-mode]'));
+    if (!canvas || !edgeSvg || !fileEl || !tabs.length) return;
+
+    var tick = 0;
+    var flip = 0;
+    var pinned = null;
+    var holdT = null;
+    var rotT = null;
+
+    function draw(key) {
+      var s = SCENES[key];
+      if (!s) return;
+      var anim = flip ? 'lp-in-a' : 'lp-in-b';
+
+      // 도형: 이전 장면을 걷어내고 새로 그린다(핀·커서·엣지는 그대로 둔다).
+      [].slice.call(canvas.querySelectorAll('.lp-shape')).forEach(function (el) { el.remove(); });
+      s.items.forEach(function (b, i) {
+        var d = document.createElement('div');
+        d.className = 'lp-shape';
+        d.style.cssText =
+          'left:' + b.l + ';top:' + b.t + ';width:' + b.w + ';height:' + b.h +
+          ';align-items:' + b.align + ';justify-content:' + b.justify + ';padding:' + b.pad +
+          ';border-radius:' + b.r + ';background:' + b.bg + ';border:' + b.border +
+          ';box-shadow:' + b.shadow + ';color:' + b.color + ';font-size:' + b.fs +
+          ';font-weight:' + b.fw + ';animation:' + anim + ' .5s cubic-bezier(.2,.8,.3,1) ' + (0.04 * i).toFixed(2) + 's both';
+        d.textContent = b.text;
+        canvas.insertBefore(d, pinEl);
+      });
+
+      edgeSvg.innerHTML = '';
+      s.edges.forEach(function (e) {
+        var p = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+        p.setAttribute('d', e[0]);
+        p.setAttribute('fill', 'none');
+        p.setAttribute('stroke', e[1]);
+        p.setAttribute('stroke-width', '0.5');
+        p.setAttribute('stroke-linecap', 'round');
+        p.setAttribute('vector-effect', 'non-scaling-stroke');
+        p.style.strokeDasharray = '220';
+        p.style.animation = 'lp-draw .7s cubic-bezier(.3,.8,.3,1) ' + e[2] + ' both';
+        edgeSvg.appendChild(p);
+      });
+
+      fileEl.textContent = 'geurio.com — ' + s.file;
+      if (capEl) capEl.textContent = s.caption;
+      if (hintEl) hintEl.textContent = s.hint;
+      if (pinEl) { pinEl.style.left = s.pin[0]; pinEl.style.top = s.pin[1]; }
+      if (pinTextEl) pinTextEl.textContent = s.pinText;
+
+      tabs.forEach(function (t) {
+        var on = t.getAttribute('data-mode') === key;
+        t.className = 'lp-tab' + (on ? ' is-on' : '');
+      });
+    }
+
+    function current() {
+      return pinned || ORDER[tick % ORDER.length];
+    }
+
+    function rotate() {
+      if (pinned) return;
+      tick += 1;
+      flip = 1 - flip;
+      draw(current());
+    }
+
+    tabs.forEach(function (t) {
+      t.addEventListener('click', function () {
+        var key = t.getAttribute('data-mode');
+        if (holdT) clearTimeout(holdT);
+        holdT = setTimeout(function () { pinned = null; }, HOLD_MS);
+        if (key !== current()) flip = 1 - flip;
+        pinned = key;
+        draw(key);
+      });
+    });
+
+    rotT = setInterval(rotate, ROTATE_MS);
+    // 탭이 백그라운드로 가면 회전을 멈춘다(보이지 않는 애니메이션은 낭비다).
+    document.addEventListener('visibilitychange', function () {
+      if (document.hidden) {
+        if (rotT) { clearInterval(rotT); rotT = null; }
+      } else if (!rotT) {
+        rotT = setInterval(rotate, ROTATE_MS);
+      }
+    });
+  }
+
+  if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', start);
+  else start();
 })();

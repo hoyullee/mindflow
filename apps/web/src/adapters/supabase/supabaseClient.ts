@@ -3,6 +3,7 @@
 // call site needing to know `createClient`'s options shape.
 
 import { createClient, type SupabaseClient } from '@supabase/supabase-js';
+import { authSessionStorage } from '../../features/auth/rememberSession';
 
 let cached: { url: string; key: string; client: SupabaseClient } | null = null;
 
@@ -16,6 +17,9 @@ export function getSupabaseClient(url: string, anonKey: string): SupabaseClient 
   const client = createClient(url, anonKey, {
     auth: {
       persistSession: true,
+      // "이 브라우저에서 로그인 유지"를 끄면 세션이 탭 저장소로 간다(창을 닫으면
+      // 사라짐). 켜져 있으면 지금까지처럼 localStorage — rememberSession.ts 참고.
+      storage: authSessionStorage,
       autoRefreshToken: true,
       detectSessionInUrl: true,
     },

@@ -1,98 +1,43 @@
-import type { ChangeEvent } from 'react';
+import { AUTH } from './tokens';
+import { BackRow, CodeInput, ErrorLine, Field, IntroBlock, NoticeLine } from './AuthFields';
+import { demoHintStyle, spinnerStyle, submitButtonStyle } from './styles';
 import type { LoginController } from './useLoginController';
 import type { LoginViewModel } from './viewModel';
-import { codeInputStyle, errorMsgStyle, fieldLabelStyle, noticeMsgStyle, spinnerStyle, submitButtonStyle } from './styles';
-import { MailIcon } from './AuthIcons';
 
 interface VerifyStepProps {
   controller: LoginController;
   view: LoginViewModel;
 }
 
-/** Ports the `verifyStepStyle` block (6-digit demo code entry) from Login.dc.html. */
+/** 이메일 인증 단계 — 메일로 받은 코드를 넣는다. */
 export function VerifyStep({ controller, view }: VerifyStepProps) {
   const { state } = controller;
 
   return (
-    <div>
-      <div
-        style={{
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'center',
-          width: 56,
-          height: 56,
-          borderRadius: 16,
-          background: '#fdeee7',
-          marginBottom: 20,
-        }}
-      >
-        <MailIcon />
-      </div>
-      <div style={{ fontSize: 13.5, color: '#33281f', lineHeight: 1.65, marginBottom: 6 }}>
-        <b style={{ fontWeight: 700 }}>{state.email}</b> 로 인증 코드를 보냈어요.
-      </div>
-      <div style={{ fontSize: 12.5, color: '#9c8b7e', marginBottom: 20 }}>
-        메일함에서 인증 코드를 확인해 입력해 주세요.
-      </div>
+    <>
+      <IntroBlock kind="mail">
+        <b style={{ fontWeight: 700, color: AUTH.ink }}>{state.email}</b> 로 인증 코드를 보냈어요. 메일함에서 코드를 확인해 주세요.
+      </IntroBlock>
 
       {/* 데모 코드 힌트는 로컬/데모 모드에서만 — 실제 Supabase 인증에선
-          `demoCode`가 비어 있어 이 박스가 노출되지 않는다(메일의 6자리 코드 사용). */}
+          `demoCode`가 비어 있어 이 박스가 노출되지 않는다(메일의 코드 사용). */}
       {state.demoCode && (
-        <div
-          style={{
-            fontSize: 12,
-            color: '#b6a596',
-            background: '#faf3ee',
-            border: '1px dashed #e4d2c5',
-            borderRadius: 9,
-            padding: '9px 12px',
-            marginBottom: 18,
-          }}
-        >
-          데모 코드: <b style={{ color: '#d9542f', letterSpacing: 2 }}>{state.demoCode}</b>
+        <div style={demoHintStyle}>
+          데모 코드: <b style={{ color: AUTH.accentIcon, letterSpacing: 2, fontFamily: AUTH.mono }}>{state.demoCode}</b>
         </div>
       )}
 
-      <div style={fieldLabelStyle}>인증 코드</div>
-      <input
-        className="lg-input"
-        inputMode="numeric"
-        // OTP 필드임을 브라우저에 명시 — 엉뚱한 값(예: "23")이 자동완성돼 코드칸에
-        // 미리 채워지던 문제 방지. Supabase 이메일 OTP는 6~10자리라 길이도 고정 안 함.
-        autoComplete="one-time-code"
-        maxLength={10}
-        value={state.code}
-        onChange={(e: ChangeEvent<HTMLInputElement>) => controller.onCode(e.target.value)}
-        onKeyDown={controller.onCodeKey}
-        placeholder="인증 코드 입력"
-        style={codeInputStyle(8)}
-      />
+      <Field label="인증 코드">{(id) => <CodeInput id={id} value={state.code} onChange={controller.onCode} onKeyDown={controller.onCodeKey} />}</Field>
 
-      {state.notice && <div style={noticeMsgStyle}>{state.notice}</div>}
-      {state.error && <div style={errorMsgStyle}>{state.error}</div>}
+      {state.notice ? <NoticeLine>{state.notice}</NoticeLine> : <NoticeLine>메일함으로 코드를 보냈어요. 스팸함도 한 번 확인해 주세요.</NoticeLine>}
+      {state.error && <ErrorLine>{state.error}</ErrorLine>}
 
-      <button type="button" className="btn" onClick={controller.verifyCode} style={submitButtonStyle(state.busy)}>
+      <button type="button" className="lg-submit" onClick={controller.verifyCode} disabled={!view.submitReady && !state.busy} style={submitButtonStyle(state.busy, view.submitReady)}>
         <span style={spinnerStyle(state.busy)} />
-        <span>{view.submitLabel}</span>
+        {view.submitLabel}
       </button>
 
-      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginTop: 20, fontSize: 13, color: '#9c8b7e' }}>
-        <span className="link-tab" onClick={controller.backToForm} style={{ fontWeight: 600 }}>
-          ← 뒤로
-        </span>
-        <span>
-          코드가 안 왔나요?{' '}
-          {state.cooldown > 0 ? (
-            // 재전송 쿨다운 카운트다운 — 남은 시간을 항상 노출하고 재전송은 잠금.
-            <span style={{ color: '#b6a596', fontWeight: 600 }}>{state.cooldown}초 후 다시 보내기</span>
-          ) : (
-            <span className="link-tab" onClick={controller.resendCode} style={{ color: '#f0663f', fontWeight: 700 }}>
-              다시 보내기
-            </span>
-          )}
-        </span>
-      </div>
-    </div>
+      <BackRow backLabel="뒤로" onBack={controller.backToForm} resend={{ cooldown: state.cooldown, onResend: controller.resendCode }} />
+    </>
   );
 }

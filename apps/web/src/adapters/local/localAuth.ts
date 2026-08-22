@@ -9,13 +9,16 @@
 // the app currently *enforces* auth when running in local mode (see
 // `App.tsx`'s `RequireAuth`), so this is a convenience, not a gate.
 
+import { authSessionStorage } from '../../features/auth/rememberSession';
 import type { AuthChangeListener, AuthProvider, AuthResult, AuthSession, SigninMethods, SignOutScope } from '../ports';
 
 const SESSION_KEY = 'mf_demo_session';
 
 function readSession(): AuthSession | null {
   try {
-    const raw = localStorage.getItem(SESSION_KEY);
+    // "이 브라우저에서 로그인 유지"를 끈 경우 세션은 탭 저장소에 있다 —
+    // Supabase 모드와 같은 저장소 규칙(rememberSession.ts)을 쓴다.
+    const raw = authSessionStorage.getItem(SESSION_KEY);
     if (!raw) return null;
     const parsed = JSON.parse(raw) as AuthSession;
     if (!parsed || !parsed.user || typeof parsed.user.id !== 'string') return null;
@@ -27,8 +30,8 @@ function readSession(): AuthSession | null {
 
 function writeSession(session: AuthSession | null): void {
   try {
-    if (session) localStorage.setItem(SESSION_KEY, JSON.stringify(session));
-    else localStorage.removeItem(SESSION_KEY);
+    if (session) authSessionStorage.setItem(SESSION_KEY, JSON.stringify(session));
+    else authSessionStorage.removeItem(SESSION_KEY);
   } catch {
     /* storage unavailable (private mode, quota, ...) — non-fatal, matches the
      * rest of the app's storage try/catch convention */
