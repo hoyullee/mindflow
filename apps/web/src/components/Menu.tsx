@@ -65,6 +65,9 @@ export function Menu({ open, onOpenChange, trigger, panel, align = 'start', side
     <DropdownMenu.Root open={open} onOpenChange={onOpenChange} modal={false}>
       <DropdownMenu.Trigger
         asChild
+        // 트리거임을 표식으로 남긴다 — 아래 `onFocusOutside`가 "다른 메뉴가 닫히며
+        // 자기 트리거로 초점을 돌려준 것"을 알아보는 데 쓴다.
+        data-menu-trigger=""
         onPointerDown={(e) => {
           if (e.button === 0 && !e.ctrlKey) lastPointerToggle.current = Date.now();
         }}
@@ -82,6 +85,17 @@ export function Menu({ open, onOpenChange, trigger, panel, align = 'start', side
           align={align}
           sideOffset={sideOffset}
           collisionPadding={collisionPadding}
+          // ⚠️ 제보: A 메뉴가 열린 채 B를 누르면 B가 잠깐 열렸다 바로 닫혔다.
+          // 원인은 **닫히는 A가 자기 트리거로 초점을 돌려주는 것**이다(Radix
+          // DropdownMenu의 기본 동작 — Escape로 닫았을 때 초점이 돌아오는 그
+          // 배려다). 그 초점 이동이 방금 마운트된 B에게는 "초점이 바깥으로
+          // 나갔다"로 읽혀 B가 스스로 닫혔다(실측 로그: `삽입:true` → `삽입:false`).
+          // 초점이 **메뉴 트리거**에 떨어진 경우만 닫힘에서 빼 준다 — Tab으로
+          // 메뉴 밖으로 나가면 여전히 닫힌다.
+          onFocusOutside={(e) => {
+            const t = e.detail.originalEvent.target as HTMLElement | null;
+            if (t?.closest?.('[data-menu-trigger]')) e.preventDefault();
+          }}
           style={{ zIndex: 200, ...panel }}
         >
           {children}
