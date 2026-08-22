@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState, type CSSProperties } from 'react';
 import { Modal } from './Modal';
 import { Popover } from './Popover';
+import { Switch } from './Switch';
 import type { DocumentShare, ShareParticipant, ShareRole } from '../adapters/ports';
 import { useAuthUser } from '../adapters/useAuthUser';
 import { useBackend, useShareStore } from '../adapters/BackendContext';
@@ -407,11 +408,13 @@ export function ShareModal({ open: shareOpen, docId, onClose: closeShare, readOn
             유출돼도 피해가 "봤다"에서 멈추지만 편집은 내용을 되돌릴 수 없게 만든다. */}
         {(canManage || (viewerOnly && !!linkRole)) && (
           <div aria-label="링크 공유" style={{ border: `1px solid ${th.border}`, borderRadius: 11, background: th.canvasBg, padding: '10px 11px', marginBottom: 12, opacity: canManage ? 1 : 0.6 }}>
-            <label style={{ display: 'flex', alignItems: 'center', gap: 9, cursor: canManage && !busy ? 'pointer' : 'default' }}>
-              <input type="checkbox" checked={!!linkRole} disabled={busy || !canManage} onChange={() => void toggleLink()} aria-label="링크가 있는 사람은 열람" style={{ width: 15, height: 15, accentColor: th.accent, cursor: 'inherit' }} />
+            {/* 체크박스가 아니라 **스위치**다 — 목록에서 항목을 고르는 게 아니라
+                기능을 켜고 끈다(`role="switch"`로 "켜짐/꺼짐"으로 읽힌다). */}
+            <div style={{ display: 'flex', alignItems: 'center', gap: 9 }}>
+              <Switch checked={!!linkRole} onCheckedChange={() => void toggleLink()} disabled={busy || !canManage} label="링크가 있는 사람은 열람" accent={th.accent} track={th.border} knob={th.panel} />
               <span style={{ flex: '1 1 auto', minWidth: 0, fontSize: 13, fontWeight: 700 }}>링크가 있는 사람은 열람</span>
               <span style={{ flexShrink: 0, fontSize: 11.5, color: th.subtext }}>보기 전용</span>
-            </label>
+            </div>
             {linkRole && (
               <div style={{ display: 'flex', gap: 8, marginTop: 9 }}>
                 <input

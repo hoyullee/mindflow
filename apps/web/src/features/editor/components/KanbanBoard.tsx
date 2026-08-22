@@ -14,6 +14,7 @@
 import { forwardRef, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Modal } from '../../../components/Modal';
 import { Popover } from '../../../components/Popover';
+import { Segmented } from '../../../components/Segmented';
 import type { CSSProperties, KeyboardEvent as ReactKeyboardEvent, MouseEvent as ReactMouseEvent, PointerEvent as ReactPointerEvent, ReactElement } from 'react';
 import { cardsInColumn } from '@mindflow/mindmap-core';
 import type { KanbanCard, KanbanColumn, KanbanTag } from '@mindflow/mindmap-core';
@@ -704,32 +705,27 @@ function BoardBar({
   avatars?: Record<string, string>;
 }) {
   const [filterOpen, setFilterOpen] = useState(false);
-  const tab = (v: KanbanView, label: string) => {
-    const on = view === v;
-    return (
-      <button
-        key={v}
-        type="button"
-        data-kanban-tab={v}
-        aria-pressed={on}
-        onClick={() => onView(v)}
-        style={{
-          padding: isMobile ? '8px 14px' : '5px 13px',
-          borderRadius: 999,
-          border: 0,
-          fontSize: 12.5,
-          fontWeight: 700,
-          fontFamily: 'inherit',
-          cursor: 'pointer',
-          background: on ? th.panel : 'transparent',
-          color: on ? th.text : th.subtext,
-          boxShadow: on ? '0 2px 6px -4px rgba(0,0,0,.4)' : 'none',
-        }}
-      >
-        {label}
-      </button>
-    );
-  };
+  // 보기 셋은 **세그먼트**다(하나만 고른다) — `Segmented`(Radix ToggleGroup)로
+  // 묶어 묶음 안에서 ←/→로 옮겨 다닌다. 예전에는 `aria-pressed` 버튼 셋이라
+  // Tab이 칸마다 멈추고 화살표는 통하지 않았다.
+  const tabItem = (v: KanbanView, label: string) => ({
+    value: v,
+    label,
+    attrs: { 'data-kanban-tab': v },
+    style: (on: boolean): CSSProperties => ({
+      padding: isMobile ? '8px 14px' : '5px 13px',
+      borderRadius: 999,
+      border: 0,
+      fontSize: 12.5,
+      fontWeight: 700,
+      fontFamily: 'inherit',
+      cursor: 'pointer',
+      background: on ? th.panel : 'transparent',
+      color: on ? th.text : th.subtext,
+      boxShadow: on ? '0 2px 6px -4px rgba(0,0,0,.4)' : 'none',
+    }),
+  });
+
   return (
     <div data-kanban-bar style={{ flex: '0 0 auto', display: 'flex', flexDirection: 'column', gap: 10, padding: isMobile ? '0 12px 12px' : '0 20px 14px' }}>
       {/* 데스크톱에서는 좌상단 문서 칩과 **같은 선**에 선다(요청) — 칩은 떠 있는
@@ -766,11 +762,13 @@ function BoardBar({
             style={{ border: 0, outline: 'none', background: 'transparent', fontSize: 13, color: th.text, width: '100%', minWidth: 0, fontFamily: 'inherit' }}
           />
         </div>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 2, padding: 3, borderRadius: 999, border: `1px solid ${th.border}`, background: th.panel2 }}>
-          {tab('board', '보드')}
-          {tab('list', '리스트')}
-          {tab('timeline', '타임라인')}
-        </div>
+        <Segmented
+          value={view}
+          onChange={onView}
+          label="보기"
+          track={{ display: 'flex', alignItems: 'center', gap: 2, padding: 3, borderRadius: 999, border: `1px solid ${th.border}`, background: th.panel2 }}
+          items={[tabItem('board', '보드'), tabItem('list', '리스트'), tabItem('timeline', '타임라인')]}
+        />
         {/* 필터 — 디자인 원본의 자리. 원본에는 동작이 없던 버튼이라 그동안 두지
             않았는데, 이제 담당·분류·긴급으로 실제로 좁힌다(요청). */}
         <Popover

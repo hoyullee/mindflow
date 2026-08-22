@@ -88,15 +88,15 @@ describe('Editor', () => {
     expect(vp.getByText('제품 로드맵')).toBeTruthy();
 
     await user.click(screen.getByRole('button', { name: '스타일' })); // open the 스타일 menu
-    await user.click(screen.getByRole('button', { name: '조직도' }));
+    await user.click(screen.getByRole('radio', { name: '조직도' }));
 
     // still renders the same document after the layout switch
     expect(vp.getByText('제품 로드맵')).toBeTruthy();
     expect(vp.getByText('와이어프레임')).toBeTruthy();
-    expect(screen.getByRole('button', { name: '조직도' }).getAttribute('aria-pressed')).toBe('true');
+    expect(screen.getByRole('radio', { name: '조직도' }).getAttribute('aria-checked')).toBe('true');
 
     // edge-style + theme switches also re-render without crashing
-    await user.click(screen.getByRole('button', { name: '꺾은선' }));
+    await user.click(screen.getByRole('radio', { name: '꺾은선' }));
     await user.click(screen.getByTitle('오션'));
     expect(vp.getByText('제품 로드맵')).toBeTruthy();
   });

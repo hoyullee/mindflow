@@ -172,9 +172,13 @@ describe('Editor interactions (M3-Editor-b)', () => {
     const seg = container.querySelector('[data-size-seg]') as HTMLElement;
     expect(seg).toBeTruthy();
     expect(seg.style.background).toBe('rgb(250, 243, 238)'); // uiTheme panel2 #faf3ee
-    const btns = Array.from(seg.querySelectorAll('button')) as HTMLButtonElement[];
+    // 세그먼트는 `role="radiogroup"`/`role="radio"`다(Radix ToggleGroup single) —
+    // `aria-pressed`("눌린 버튼")보다 "고른 값"에 맞는 의미이고, 묶음 안에서
+    // ←/→로 옮겨 다닌다(예전에는 Tab이 칸마다 멈췄다).
+    expect(seg.getAttribute('role')).toBe('radiogroup');
+    const btns = Array.from(seg.querySelectorAll('[role="radio"]')) as HTMLButtonElement[];
     expect(btns.map((b) => b.textContent)).toEqual(['작게', '보통', '크게']);
-    const active = btns.find((b) => b.getAttribute('aria-pressed') === 'true')!;
+    const active = btns.find((b) => b.getAttribute('aria-checked') === 'true')!;
     expect(active.textContent).toBe('보통'); // 기본 크기
     expect(active.style.background).toBe('rgb(255, 255, 255)'); // 활성 = 카드 면(panel)
     expect(active.style.boxShadow).toContain('0 2px 5px');
@@ -389,7 +393,7 @@ describe('Editor interactions (M3-Editor-b)', () => {
 
     // open the Style menu and pick 꺾은선 (elbow) under 연결선
     await user.click(screen.getByRole('button', { name: '스타일' })); // open the 스타일 menu
-    await user.click(screen.getByRole('button', { name: '꺾은선' }));
+    await user.click(screen.getByRole('radio', { name: '꺾은선' }));
     fireEvent.keyDown(window, { key: 's', ctrlKey: true });
 
     await waitFor(
@@ -664,8 +668,9 @@ describe('Editor interactions (M3-Editor-b)', () => {
       await user.click(screen.getByRole('button', { name: '공유' }));
       const dialog = await screen.findByRole('dialog', { name: '공유' });
 
-      const toggle = within(dialog).getByLabelText('링크가 있는 사람은 열람') as HTMLInputElement;
-      expect(toggle.checked).toBe(false);
+      // 체크박스가 아니라 스위치다 — 상태는 `aria-checked`로 읽는다(`role="switch"`).
+      const toggle = within(dialog).getByRole('switch', { name: '링크가 있는 사람은 열람' });
+      expect(toggle.getAttribute('aria-checked')).toBe('false');
       expect(within(dialog).queryByLabelText('공유 링크')).toBeNull();
 
       await user.click(toggle);
@@ -673,7 +678,7 @@ describe('Editor interactions (M3-Editor-b)', () => {
       const url = (await within(dialog).findByLabelText('공유 링크')) as HTMLInputElement;
       expect(url.value).toContain('/editor?map=shlink');
 
-      await user.click(within(dialog).getByLabelText('링크가 있는 사람은 열람'));
+      await user.click(within(dialog).getByRole('switch', { name: '링크가 있는 사람은 열람' }));
       await waitFor(() => expect(shareStore.setLink).toHaveBeenCalledWith('shlink', null));
       await waitFor(() => expect(within(dialog).queryByLabelText('공유 링크')).toBeNull());
     });
@@ -688,7 +693,7 @@ describe('Editor interactions (M3-Editor-b)', () => {
 
       await user.click(screen.getByRole('button', { name: '공유' }));
       const dialog = await screen.findByRole('dialog', { name: '공유' });
-      await user.click(within(dialog).getByLabelText('링크가 있는 사람은 열람'));
+      await user.click(within(dialog).getByRole('switch', { name: '링크가 있는 사람은 열람' }));
       await user.click(await within(dialog).findByRole('button', { name: '링크 복사' }));
 
       expect(writeText).toHaveBeenCalledWith(expect.stringContaining('/editor?map=shcopy'));

@@ -3,6 +3,7 @@ import type { HomeController } from '../../useHomeController';
 import { ProfileAvatar, avatarLabel } from '../ProfileAvatar';
 import type { HomeState } from '../../types';
 import { HOME_THEMES, HOME_THEME_KEYS } from '../../theme';
+import { RadioCards } from '../../../../components/Segmented';
 import { GoogleIcon } from '../../../auth/GoogleIcon';
 import { Modal, MODAL_DIM } from '../../../../components/Modal';
 
@@ -473,45 +474,49 @@ export function AccountSettingsModal({ state, controller }: Props) {
               자연스럽다). 적용 버튼 없이 **누르는 즉시** 뒤 화면까지 색이 바뀐다 —
               모달이 열린 채로 고르므로 고르는 것이 곧 미리보기다. */}
           <div style={{ fontSize: 12, fontWeight: 700, color: 'var(--mf-faint)', letterSpacing: '.02em', marginTop: 18, marginBottom: 10 }}>색상 테마</div>
-          <div role="radiogroup" aria-label="색상 테마 선택" style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 10, marginBottom: 24 }}>
-            {HOME_THEME_KEYS.map((key) => {
+          {/* 카드 격자로 고르는 라디오 — 손으로 짠 `role="radio"`까지는 있었지만
+              **화살표 이동이 없었다**(Tab이 칸 여섯 개마다 멈췄다). `RadioCards`
+              (Radix RadioGroup)가 로빙 tabindex와 ←/→/↑/↓를 준다. */}
+          <RadioCards
+            value={state.theme}
+            onChange={controller.setTheme}
+            label="색상 테마 선택"
+            grid={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 10, marginBottom: 24 }}
+            items={HOME_THEME_KEYS.map((key) => {
               const t = HOME_THEMES[key];
-              const on = state.theme === key;
-              return (
-                <button
-                  key={key}
-                  type="button"
-                  role="radio"
-                  aria-checked={on}
-                  aria-label={`${t.label} 테마`}
-                  onClick={() => controller.setTheme(key)}
-                  style={{
-                    display: 'flex',
-                    alignItems: 'center',
-                    gap: 10,
-                    minHeight: 52,
-                    padding: '0 14px',
-                    borderRadius: 13,
-                    // 선택된 칸만 강조색 테두리 + 옅은 강조 면(첨부 이미지의 코랄 칸).
-                    border: `1.5px solid ${on ? t.accent : 'var(--mf-border)'}`,
-                    background: on ? 'var(--mf-accent-soft)' : 'var(--mf-card)',
-                    color: on ? 'var(--mf-text)' : 'var(--mf-subtext)',
-                    fontFamily: 'inherit',
-                    fontSize: 13.5,
-                    fontWeight: on ? 700 : 600,
-                    cursor: 'pointer',
-                  }}
-                >
-                  {/* 미리보기 스와치 — 그 테마의 **면 원** 안에 강조색 점(첨부 이미지).
-                      이름만으로는 "모노"·"다크"가 얼마나 다른지 알 수 없다. */}
-                  <span style={{ width: 24, height: 24, borderRadius: '50%', flexShrink: 0, background: t.bg, border: `1px solid ${t.border}`, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                    <span style={{ width: 11, height: 11, borderRadius: '50%', background: t.accent, display: 'block' }} />
-                  </span>
-                  {t.label}
-                </button>
-              );
+              return {
+                value: key,
+                label: t.label,
+                ariaLabel: `${t.label} 테마`,
+                style: (on: boolean) => ({
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: 10,
+                  minHeight: 52,
+                  padding: '0 14px',
+                  borderRadius: 13,
+                  // 선택된 칸만 강조색 테두리 + 옅은 강조 면(첨부 이미지의 코랄 칸).
+                  border: `1.5px solid ${on ? t.accent : 'var(--mf-border)'}`,
+                  background: on ? 'var(--mf-accent-soft)' : 'var(--mf-card)',
+                  color: on ? 'var(--mf-text)' : 'var(--mf-subtext)',
+                  fontFamily: 'inherit',
+                  fontSize: 13.5,
+                  fontWeight: on ? 700 : 600,
+                  cursor: 'pointer',
+                }),
+                children: (
+                  <>
+                    {/* 미리보기 스와치 — 그 테마의 **면 원** 안에 강조색 점(첨부 이미지).
+                        이름만으로는 "모노"·"다크"가 얼마나 다른지 알 수 없다. */}
+                    <span style={{ width: 24, height: 24, borderRadius: '50%', flexShrink: 0, background: t.bg, border: `1px solid ${t.border}`, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                      <span style={{ width: 11, height: 11, borderRadius: '50%', background: t.accent, display: 'block' }} />
+                    </span>
+                    {t.label}
+                  </>
+                ),
+              };
             })}
-          </div>
+          />
           {/* legal docs — the only logged-in entry point (the other lives on the
               login page footer). New tab so the modal/home state isn't lost. */}
           <div style={{ marginTop: 18, paddingTop: 14, borderTop: '1px solid var(--mf-hairline)', display: 'flex', justifyContent: 'center', gap: 18, fontSize: 12.5 }}>
