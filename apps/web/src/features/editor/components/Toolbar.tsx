@@ -1,9 +1,9 @@
-import { useEffect, useRef, useState, type CSSProperties, type ReactNode, type RefObject } from 'react';
+import { useState, type CSSProperties, type ReactNode } from 'react';
 import type { EditorController } from '../useEditorState';
 import { PresenceAvatars } from './PresenceAvatars';
 import { StyleMenu } from './StyleMenu';
 import { ExportMenu } from './ExportMenu';
-import { AnchoredMenu } from './AnchoredMenu';
+import { Menu, menuPanelStyle } from '../../../components/Menu';
 import { EditMenu, InsertMenu, ViewMenu, HelpMenu, MoreMenu, ShareGlyph } from './ToolbarMenus';
 import { useIsMobile } from '../../../hooks/useMediaQuery';
 import { BrandMark } from '../../../components/BrandMark';
@@ -28,25 +28,9 @@ export function Toolbar({ controller }: ToolbarProps) {
   const isMobile = useIsMobile();
   const [openMenu, setOpenMenu] = useState<MenuKey | null>(null);
 
-  const editRef = useRef<HTMLDivElement>(null);
-  const insertRef = useRef<HTMLDivElement>(null);
-  const viewRef = useRef<HTMLDivElement>(null);
-  const styleRef = useRef<HTMLDivElement>(null);
-  const exportRef = useRef<HTMLDivElement>(null);
-  const moreRef = useRef<HTMLDivElement>(null);
-  const helpRef = useRef<HTMLDivElement>(null);
-  const refs: Record<MenuKey, RefObject<HTMLDivElement>> = { edit: editRef, insert: insertRef, view: viewRef, style: styleRef, export: exportRef, help: helpRef, more: moreRef };
-
-  useEffect(() => {
-    if (!openMenu) return;
-    const onDown = (e: MouseEvent): void => {
-      const wrap = refs[openMenu].current;
-      if (wrap && !wrap.contains(e.target as Node)) setOpenMenu(null);
-    };
-    window.addEventListener('mousedown', onDown);
-    return () => window.removeEventListener('mousedown', onDown);
-  }, [openMenu]);
-
+  // 위치 계산(clamp·resize·scroll 리스너)·바깥 클릭 닫기·키보드 이동은 이제
+  // `Menu`(Radix DropdownMenu)가 맡는다 — 예전에는 앵커 ref 일곱 개와 window
+  // mousedown 리스너를 여기서 손으로 관리했다.
   const close = (): void => setOpenMenu(null);
   const toggle = (k: MenuKey): void => setOpenMenu((cur) => (cur === k ? null : k));
 
@@ -128,7 +112,7 @@ export function Toolbar({ controller }: ToolbarProps) {
       )}
       {!controller.readOnly && (
         <>
-          <MenuBarButton label="편집" wrapRef={editRef} open={openMenu === 'edit'} onToggle={() => toggle('edit')} th={th} isMobile={isMobile} width={230} align="left">
+          <MenuBarButton label="편집" open={openMenu === 'edit'} onToggle={() => toggle('edit')} th={th} isMobile={isMobile} width={230} align="left">
             <EditMenu controller={controller} onDone={close} isMobile={isMobile} />
           </MenuBarButton>
           {/* 화이트보드는 삽입할 것이 메모·이미지 둘뿐이고 그 둘이 하단 도구
@@ -137,7 +121,7 @@ export function Toolbar({ controller }: ToolbarProps) {
               (그건 "누른 자리에 만든다"는 다른 동작이다). */}
           {/* 칸반은 삽입할 것이 열·카드뿐이고 그 둘이 화면의 ＋ 버튼에 있다. */}
           {!controller.isBoard && !controller.isKanban && (
-            <MenuBarButton label="삽입" wrapRef={insertRef} open={openMenu === 'insert'} onToggle={() => toggle('insert')} th={th} isMobile={isMobile} width={200} align="left">
+            <MenuBarButton label="삽입" open={openMenu === 'insert'} onToggle={() => toggle('insert')} th={th} isMobile={isMobile} width={200} align="left">
               <InsertMenu controller={controller} onDone={close} isMobile={isMobile} />
             </MenuBarButton>
           )}
@@ -146,14 +130,14 @@ export function Toolbar({ controller }: ToolbarProps) {
       {/* 보기 is a top-level trigger on desktop; on mobile it folds into the ☰ menu
           on the right (with 내보내기) so the narrow bar doesn't scroll. */}
       {!isMobile && (
-        <MenuBarButton label="보기" wrapRef={viewRef} open={openMenu === 'view'} onToggle={() => toggle('view')} th={th} isMobile={isMobile} width={190} align="left">
+        <MenuBarButton label="보기" open={openMenu === 'view'} onToggle={() => toggle('view')} th={th} isMobile={isMobile} width={190} align="left">
           <ViewMenu controller={controller} onDone={close} isMobile={isMobile} />
         </MenuBarButton>
       )}
       {/* 도움말 — 디자인 원본의 헤더가 편집·보기·도움말 셋이다(요청). 단축키
           도움말은 여기로 모으고 보기 메뉴에서는 뺐다(진입점은 화면당 하나). */}
       {!isMobile && (
-        <MenuBarButton label="도움말" wrapRef={helpRef} open={openMenu === 'help'} onToggle={() => toggle('help')} th={th} isMobile={isMobile} width={200} align="left">
+        <MenuBarButton label="도움말" open={openMenu === 'help'} onToggle={() => toggle('help')} th={th} isMobile={isMobile} width={200} align="left">
           <HelpMenu controller={controller} onDone={close} isMobile={isMobile} />
         </MenuBarButton>
       )}
@@ -161,7 +145,6 @@ export function Toolbar({ controller }: ToolbarProps) {
       {!controller.readOnly && !controller.isKanban && (
       <MenuBarButton
         label="스타일"
-        wrapRef={styleRef}
         open={openMenu === 'style'}
         onToggle={() => toggle('style')}
         th={th}
@@ -262,7 +245,7 @@ export function Toolbar({ controller }: ToolbarProps) {
       {isMobile ? (
         /* Mobile: one ☰ button on the right holds 보기 + 내보내기 (see `MoreMenu`),
            so the bar fits without a horizontal scroll. */
-        <MenuBarButton label="" ariaLabel="더보기" wrapRef={moreRef} open={openMenu === 'more'} onToggle={() => toggle('more')} th={th} isMobile={isMobile} width={210} align="right" leading={<HamburgerIcon />} noCaret>
+        <MenuBarButton label="" ariaLabel="더보기" open={openMenu === 'more'} onToggle={() => toggle('more')} th={th} isMobile={isMobile} width={210} align="right" leading={<HamburgerIcon />} noCaret>
           <MoreMenu controller={controller} onDone={close} isMobile={isMobile} />
         </MenuBarButton>
       ) : (
@@ -271,7 +254,7 @@ export function Toolbar({ controller }: ToolbarProps) {
            다만 이건 **보안 경계가 아니다**: 화면을 볼 수 있는 사람은 캡처할 수
            있다. 정책·마찰 장치로 이해할 것. */
         !controller.readOnly && (
-          <MenuBarButton label="내보내기" wrapRef={exportRef} open={openMenu === 'export'} onToggle={() => toggle('export')} th={th} isMobile={isMobile} width={200} align="right" leading={<ExportGlyph />} primary>
+          <MenuBarButton label="내보내기" open={openMenu === 'export'} onToggle={() => toggle('export')} th={th} isMobile={isMobile} width={200} align="right" leading={<ExportGlyph />} primary>
             <ExportMenu controller={controller} onDone={close} />
           </MenuBarButton>
         )
@@ -286,7 +269,6 @@ function MenuBarButton({
   label,
   ariaLabel,
   leading,
-  wrapRef,
   open,
   onToggle,
   th,
@@ -300,7 +282,6 @@ function MenuBarButton({
   label: string;
   ariaLabel?: string;
   leading?: ReactNode;
-  wrapRef: RefObject<HTMLDivElement>;
   open: boolean;
   onToggle: () => void;
   th: EditorController['theme'];
@@ -352,18 +333,24 @@ function MenuBarButton({
         flexShrink: 0,
       };
   return (
-    <div ref={wrapRef} style={{ position: 'relative', flexShrink: 0 }}>
-      <button type="button" className="mf-ed-btn" onClick={onToggle} aria-expanded={open} aria-haspopup="menu" aria-label={ariaLabel} style={triggerStyle}>
-        {leading}
-        {label}
-        {!noCaret && <Caret open={open} color={primary ? th.accentInk : th.subtext} />}
-      </button>
-      {open && (
-        <AnchoredMenu anchorRef={wrapRef} width={width} align={align}>
-          {children}
-        </AnchoredMenu>
-      )}
-    </div>
+    <Menu
+      open={open}
+      onOpenChange={(next) => {
+        // 트리거를 다시 눌러 닫는 것까지 호출부의 한 칸(`openMenu`)으로 흐르게 한다.
+        if (next !== open) onToggle();
+      }}
+      align={align === 'left' ? 'start' : 'end'}
+      panel={{ ...menuPanelStyle(th, width), width }}
+      trigger={
+        <button type="button" className="mf-ed-btn" aria-label={ariaLabel} style={triggerStyle}>
+          {leading}
+          {label}
+          {!noCaret && <Caret open={open} color={primary ? th.accentInk : th.subtext} />}
+        </button>
+      }
+    >
+      {children}
+    </Menu>
   );
 }
 

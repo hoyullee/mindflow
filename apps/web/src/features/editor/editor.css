@@ -49,6 +49,12 @@
 .mf-ed-btn:hover:not(:disabled)::after {
   opacity: 0.075;
 }
+/* 키보드로 옮겨 다니는 메뉴 행 — Radix가 지금 행에 `data-highlighted`를 붙인다.
+   호버와 **같은 덧칠**을 써서 마우스로 얹은 것과 키보드로 옮긴 것이 같아 보인다
+   (예전에는 메뉴에 키보드 이동 자체가 없어 표시할 것도 없었다). */
+.mf-ed-btn[data-highlighted]::after {
+  opacity: 0.075;
+}
 /* 파괴적 동작(카드 삭제 등) — 호버에서 경고색으로 바뀐다(디자인 원본과 같은 결).
    인라인 색을 이겨야 하므로 여기만 !important를 쓴다. */
 .mf-ed-danger:hover:not(:disabled) {

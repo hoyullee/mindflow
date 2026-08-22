@@ -412,7 +412,7 @@ describe('칸반 — 카드 댓글(M3)', () => {
   const openViaMenu = async (): Promise<HTMLElement> => {
     fireEvent.click(screen.getByRole('button', { name: '보기' }));
     const menu = await waitFor(() => document.querySelector('[data-anchored-menu]') as HTMLElement);
-    fireEvent.click(within(menu).getByRole('button', { name: '보드 전체 댓글' }));
+    fireEvent.click(within(menu).getByRole('menuitem', { name: '보드 전체 댓글' }));
     return await screen.findByLabelText('댓글');
   };
 
@@ -1047,16 +1047,16 @@ describe('칸반 — 후속 요청', () => {
     // 캔버스의 항목(맵·아웃라인·격자)은 칸반에서 뜻이 없다 — 세 보기만 남는다.
     // (보드 머리의 탭에도 같은 이름의 버튼이 있으므로 드롭다운 안에서 찾는다.)
     const menu = await waitFor(() => document.querySelector('[data-anchored-menu]') as HTMLElement);
-    const labels = Array.from(menu.querySelectorAll('button')).map((el) => (el.textContent || '').trim());
+    const labels = Array.from(menu.querySelectorAll('[role="menuitem"]')).map((el) => (el.textContent || '').trim());
     // 보기 **모드**는 셋뿐이고, 보드 전체 댓글은 구분선 뒤에 따로 선다.
     expect(labels).toEqual(['보드', '리스트', '타임라인', '보드 전체 댓글']);
 
     // 탭과 같은 상태를 쓴다 — 메뉴로 고르면 화면도 바뀐다.
-    fireEvent.click(within(menu).getByRole('button', { name: '리스트' }));
+    fireEvent.click(within(menu).getByRole('menuitem', { name: '리스트' }));
     await waitFor(() => expect(container.querySelector('[data-kanban-list-view]')).toBeTruthy());
 
     fireEvent.click(screen.getByRole('button', { name: '도움말' }));
-    fireEvent.click(await screen.findByRole('button', { name: /단축키 도움말/ }));
+    fireEvent.click(await screen.findByRole('menuitem', { name: /단축키 도움말/ }));
     expect(await screen.findByLabelText('키보드 단축키')).toBeTruthy();
   });
 });

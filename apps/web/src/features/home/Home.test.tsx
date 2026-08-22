@@ -1250,7 +1250,11 @@ describe('Home', () => {
     // 하위 항목도 드릴다운이 아니라 옆으로 뻗는 플라이아웃이다.
     await user.click(within(card).getByLabelText('메뉴'));
     await user.click(await screen.findByRole('menuitem', { name: /스페이스로 이동/ }));
-    await user.click(await screen.findByRole('menuitem', { name: '공간비이' }));
+    // ⚠️ 플라이아웃 안 항목은 `fireEvent.click`으로 누른다 — jsdom에는 레이아웃이
+    // 없어 모든 사각형이 0이고, Radix가 "포인터가 하위 메뉴로 향하는가"를 그 사각형
+    // 으로 판단하므로 userEvent가 함께 쏘는 pointermove가 하위 메뉴를 닫아 버린다
+    // (실브라우저에서는 정상이다 — 마우스 경로는 실브라우저 프로브로 확인한다).
+    fireEvent.click(await screen.findByRole('menuitem', { name: '공간비이' }));
 
     // the move toast labels itself "이동 완료" (not the old hardcoded "복원 완료")
     await waitFor(() => expect(screen.getByText('이동 완료')).toBeTruthy());
@@ -2429,7 +2433,7 @@ describe('Home', () => {
       const card = container.querySelector('a[data-title="개요 맵"]') as HTMLElement;
       await user.click(within(card).getByRole('button', { name: '메뉴' }));
       await user.click(await screen.findByRole('menuitem', { name: /내보내기/ }));
-      await user.click(await screen.findByRole('menuitem', { name: 'Markdown 개요 (.md)' }));
+      fireEvent.click(await screen.findByRole('menuitem', { name: 'Markdown 개요 (.md)' }));
 
       expect(names[0]).toBe('개요 맵.md');
       const md = await new Promise<string>((resolve, reject) => {
@@ -2464,7 +2468,7 @@ describe('Home', () => {
       const card = container.querySelector('a[data-title="개요 맵"]') as HTMLElement;
       await user.click(within(card).getByRole('button', { name: '메뉴' }));
       await user.click(await screen.findByRole('menuitem', { name: /내보내기/ }));
-      await user.click(await screen.findByRole('menuitem', { name: 'SVG 이미지 (.svg)' }));
+      fireEvent.click(await screen.findByRole('menuitem', { name: 'SVG 이미지 (.svg)' }));
 
       await waitFor(() => expect(created.length).toBe(1));
       expect(names[0]).toBe('개요 맵.svg');
@@ -2590,7 +2594,7 @@ describe('Home', () => {
       const card = container.querySelector('a[data-title="사진 맵"]') as HTMLElement;
       await user.click(within(card).getByRole('button', { name: '메뉴' }));
       await user.click(await screen.findByRole('menuitem', { name: /내보내기/ }));
-      await user.click(await screen.findByRole('menuitem', { name: 'JSON 파일 (.json)' }));
+      fireEvent.click(await screen.findByRole('menuitem', { name: 'JSON 파일 (.json)' }));
 
       await waitFor(() => expect(created).toHaveLength(1));
       const json = await new Promise<string>((resolve, reject) => {
@@ -3943,9 +3947,12 @@ describe('홈 우클릭 메뉴', () => {
     [/즐겨찾기/, '이름 변경', /내보내기/, '삭제하기'].forEach((label) => {
       expect(within(menu).getByRole('menuitem', { name: label })).toBeTruthy();
     });
-    // 커서 자리에 뜬다
-    expect(menu.style.left).toBe('240px');
-    expect(menu.style.top).toBe('180px');
+    // 커서 자리에 뜬다 — 메뉴는 **클릭 지점에 놓인 0×0 자리표시자**(Radix 트리거)를
+    // 기준으로 서므로, 자리는 그 자리표시자가 들고 있다(예전엔 메뉴가 직접 clamp한
+    // left/top을 들었다).
+    const anchor = document.querySelector('[aria-haspopup="menu"][aria-hidden="true"]') as HTMLElement;
+    expect(anchor.style.left).toBe('240px');
+    expect(anchor.style.top).toBe('180px');
   });
 
   it('하위 메뉴는 화면을 갈아 끼우지 않고 옆으로 뻗는다 (부모 항목이 그대로 보인다)', async () => {
@@ -4466,7 +4473,8 @@ describe('홈 우클릭 메뉴', () => {
     await waitFor(() => expect(screen.getByText('아직 만든 맵이 없어요')).toBeTruthy());
     fireEvent.contextMenu(container.querySelector('main') as HTMLElement, { clientX: 20, clientY: 20 });
     expect(await screen.findByRole('menu')).toBeTruthy();
-    fireEvent.keyDown(window, { key: 'Escape' });
+    // Radix는 Escape를 `document`에서 듣는다(window 이벤트는 document로 내려가지 않는다).
+    fireEvent.keyDown(document, { key: 'Escape' });
     await waitFor(() => expect(screen.queryByRole('menu')).toBeNull());
   });
 
@@ -4817,7 +4825,7 @@ describe('홈 카드 다중 선택', () => {
     fireEvent.click(card(k2!), { ctrlKey: true });
     fireEvent.contextMenu(card(k2!), { clientX: 200, clientY: 200 });
     const menu = await screen.findByRole('menu');
-    fireEvent.mouseEnter(within(menu).getByText('폴더로 이동'));
+    fireEvent.click(within(menu).getByText('폴더로 이동'));
     const sub = await waitFor(() => menu.querySelector('[data-home-ctx-sub]') as HTMLElement);
     fireEvent.click(within(sub).getByText('보관함'));
 
@@ -5066,7 +5074,7 @@ describe('모바일 홈 다중 선택', () => {
       fireEvent.click(screen.getByRole('button', { name: '선택한 맵 메뉴' }));
       const menu = await screen.findByRole('menu');
       expect(within(menu).getByText('삭제하기 (2개)')).toBeTruthy();
-      fireEvent.mouseEnter(within(menu).getByText('폴더로 이동'));
+      fireEvent.click(within(menu).getByText('폴더로 이동'));
       const sub = await waitFor(() => menu.querySelector('[data-home-ctx-sub]') as HTMLElement);
       fireEvent.click(within(sub).getByText('보관함'));
 

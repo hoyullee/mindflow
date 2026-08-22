@@ -1,5 +1,6 @@
 import type { CSSProperties, ReactNode } from 'react';
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useState } from 'react';
+import * as DropdownMenu from '@radix-ui/react-dropdown-menu';
 import type { HomeState, SpaceData } from '../types';
 import type { HomeController } from '../useHomeController';
 import type { CardViewData, FolderCardViewData, HomeViewModel } from '../viewModel';
@@ -14,7 +15,15 @@ import { useIsMobile } from '../../../hooks/useMediaQuery';
  * 아예 메뉴를 열 데가 없었다. 지금은 에디터 우클릭 메뉴와 같은 문법이다:
  * 커서 자리에 뜨고, 하위 메뉴는 **옆으로 뻗는 플라이아웃**이다.
  *
- * 위치는 뷰포트 좌표(`position: fixed`)라 카드의 transform·스크롤과 무관하게 선다.
+ * 자리·닫기·키보드는 **Radix DropdownMenu**가 맡는다(`components/Menu.tsx`와 같은
+ * 판단): 예전에는 클릭 지점에서 화면 밖으로 나가지 않게 높이를 행 수로 **어림해**
+ * 당겼고(그래서 힌트가 붙은 행이 있으면 어림이 틀렸다), 바깥 클릭·Escape 리스너를
+ * 손으로 달았고, **키보드로는 아무것도 할 수 없었다**. 트리거는 클릭 지점에 놓인
+ * 0×0 자리표시자이고 메뉴는 그 자리를 기준으로 실제 크기를 재서 선다.
+ *
+ * 좁은 화면(폰)만 예외다 — 플라이아웃이 양옆 어디에도 못 뻗으므로 부모 **아래로**
+ * 펼친다(모바일 메뉴의 흔한 꼴). 그건 `Sub`로 표현할 수 없어 같은 패널 안에 항목을
+ * 이어 그린다(그래도 항목이라 화살표 이동에 함께 걸린다).
  */
 
 export interface HomeMenuItem {
@@ -31,15 +40,9 @@ export interface HomeMenuItem {
 
 const MENU_W = 184;
 const SUB_W = 196;
-const ROW_H = 34;
 /** 손가락용 행 높이 — 앱 전체가 지켜 온 44px 터치 타깃 규칙. */
 const TOUCH_ROW_H = 44;
 const MARGIN = 8;
-
-/** 행 수로 높이를 어림해 화면 밖으로 나가지 않게 당긴다(에디터 메뉴와 같은 방식). */
-function estimateHeight(items: HomeMenuItem[], rowH: number): number {
-  return items.reduce((h, it) => h + (it.key.startsWith('sep') ? 9 : rowH) + (it.hint ? 26 : 0), 10);
-}
 
 const rowStyle = (item: HomeMenuItem, isMobile: boolean): CSSProperties => ({
   display: 'flex',
@@ -58,37 +61,32 @@ const rowStyle = (item: HomeMenuItem, isMobile: boolean): CSSProperties => ({
   color: item.disabled ? 'var(--mf-faint2)' : item.danger ? 'var(--mf-danger)' : 'var(--mf-text)',
 });
 
-function Row({ item, open, isMobile, onOpenSub, onRun }: { item: HomeMenuItem; open: boolean; isMobile: boolean; onOpenSub: (key: string | null) => void; onRun: (item: HomeMenuItem) => void }) {
+/** 행 내용 — 항목과 플라이아웃 부모가 같은 모양을 쓴다. */
+function RowBody({ item }: { item: HomeMenuItem }) {
   return (
-    <button
-      type="button"
-      className="menu-row"
-      role="menuitem"
-      aria-haspopup={item.submenu ? 'menu' : undefined}
-      aria-expanded={item.submenu ? open : undefined}
-      // 하위 메뉴는 마우스를 얹기만 해도 열린다(데스크톱 메뉴 관례). 클릭으로도
-      // 열리게 두는 이유는 터치 — 터치에는 hover가 없다.
-      onMouseEnter={() => onOpenSub(item.submenu ? item.key : null)}
-      onClick={(e) => {
-        e.preventDefault();
-        e.stopPropagation();
-        if (item.disabled) return;
-        // 하위 메뉴 부모는 클릭해도 **열기만** 한다. hover로 이미 열린 뒤의 클릭이
-        // 토글로 다시 닫아 버리면(마우스는 얹은 채인데) 아무것도 안 되는 것처럼 보인다.
-        if (item.submenu) {
-          onOpenSub(item.key);
-          return;
-        }
-        onRun(item);
-      }}
-      style={{ ...rowStyle(item, isMobile), background: open ? 'var(--mf-accent-soft)' : 'transparent' }}
-    >
+    <>
       {item.icon && <span style={{ display: 'flex', flexShrink: 0, color: item.danger ? 'inherit' : 'var(--mf-subtext)' }}>{item.icon}</span>}
       <span style={{ flex: 1, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{item.label}</span>
       {item.submenu && <span style={{ color: 'var(--mf-faint)', flexShrink: 0 }}>›</span>}
-    </button>
+    </>
   );
 }
+
+const SEP_STYLE: CSSProperties = { height: 1, background: 'var(--mf-border-soft)', margin: '4px 0' };
+
+/** 플라이아웃(하위 메뉴) 패널 — 본 메뉴와 같은 면·라운드·그늘. */
+const SUB_PANEL: CSSProperties = {
+  width: SUB_W,
+  maxHeight: 'calc(100dvh - 24px)',
+  overflowY: 'auto',
+  boxSizing: 'border-box',
+  background: 'var(--mf-panel)',
+  border: '1px solid var(--mf-border)',
+  borderRadius: 11,
+  boxShadow: '0 12px 32px rgba(0,0,0,.18)',
+  padding: '5px 0',
+  zIndex: 141,
+};
 
 interface Props {
   state: HomeState;
@@ -99,7 +97,6 @@ interface Props {
 export function HomeContextMenu({ state, view, controller }: Props) {
   const ctx = state.ctxMenu;
   const isMobile = useIsMobile();
-  const rootRef = useRef<HTMLDivElement | null>(null);
   const [openSub, setOpenSub] = useState<string | null>(null);
 
   // 대상이 바뀌면(다른 카드를 우클릭) 열려 있던 플라이아웃은 접는다.
@@ -108,38 +105,13 @@ export function HomeContextMenu({ state, view, controller }: Props) {
     setOpenSub(null);
   }, [targetKey]);
 
-  useEffect(() => {
-    if (!ctx) return;
-    function onDown(e: MouseEvent): void {
-      if (rootRef.current && !rootRef.current.contains(e.target as Node)) controller.closeMenu();
-    }
-    function onKey(e: KeyboardEvent): void {
-      if (e.key === 'Escape') controller.closeMenu();
-    }
-    // 캡처 단계 — 카드가 mousedown을 멈춰 세워도 메뉴는 닫힌다.
-    window.addEventListener('mousedown', onDown, true);
-    window.addEventListener('keydown', onKey, true);
-    return () => {
-      window.removeEventListener('mousedown', onDown, true);
-      window.removeEventListener('keydown', onKey, true);
-    };
-  }, [ctx, controller]);
-
   if (!ctx) return null;
   const items = buildItems(ctx.target, state, view, controller);
   if (!items.length) return null;
 
   const vw = typeof window !== 'undefined' ? window.innerWidth : 1280;
-  const vh = typeof window !== 'undefined' ? window.innerHeight : 800;
-  const left = Math.max(MARGIN, Math.min(ctx.x, vw - MENU_W - MARGIN));
-  const rowH = isMobile ? TOUCH_ROW_H : ROW_H;
-  const estH = estimateHeight(items, rowH);
-  // 아래로 안 들어가면 클릭 지점 **위**로 뒤집는다(그래도 안 되면 위쪽 여백에 붙인다).
-  const top = ctx.y + estH + MARGIN <= vh ? ctx.y : Math.max(MARGIN, Math.min(ctx.y - estH, vh - estH - MARGIN));
-  // 플라이아웃은 기본 오른쪽. 오른쪽 공간이 모자라면 왼쪽으로 뒤집는다.
-  const subOnLeft = left + MENU_W + SUB_W + MARGIN > vw;
-  // 좁은 화면(폰)에서는 양옆 어디에도 못 뻗는다 — 그때는 부모 **아래로 펼친다**
-  // (모바일 메뉴의 흔한 꼴). 안 그러면 하위 목록이 화면 밖으로 나간다.
+  // 좁은 화면(폰)에서는 플라이아웃이 양옆 어디에도 못 뻗는다 — 그때는 부모 **아래로
+  // 펼친다**(모바일 메뉴의 흔한 꼴). 안 그러면 하위 목록이 화면 밖으로 나간다.
   const subInline = MENU_W + SUB_W + MARGIN * 2 > vw;
 
   const run = (item: HomeMenuItem) => {
@@ -147,69 +119,114 @@ export function HomeContextMenu({ state, view, controller }: Props) {
     controller.closeMenu();
   };
 
-  return (
-    <div
-      ref={rootRef}
-      className="mf-home-ctx"
-      role="menu"
-      data-home-ctx={ctx.target.kind}
-      onContextMenu={(e) => e.preventDefault()}
-      style={{
-        position: 'fixed',
-        left,
-        top,
-        width: MENU_W,
-        background: 'var(--mf-panel)',
-        border: '1px solid var(--mf-border)',
-        borderRadius: 11,
-        boxShadow: '0 12px 32px rgba(0,0,0,.18)',
-        padding: '5px 0',
-        zIndex: 140,
-      }}
+  /** 잎 항목 — 고르면 실행하고 메뉴는 Radix가 닫는다. */
+  const leaf = (item: HomeMenuItem) => (
+    <DropdownMenu.Item
+      key={item.key}
+      className="menu-row"
+      disabled={item.disabled}
+      onSelect={() => run(item)}
+      style={rowStyle(item, isMobile)}
     >
-      {items.map((item, i) =>
-        item.key.startsWith('sep') ? (
-          <div key={item.key} style={{ height: 1, background: 'var(--mf-border-soft)', margin: '4px 0' }} />
-        ) : (
-          <div key={item.key} style={{ position: 'relative' }}>
-            <Row item={item} open={openSub === item.key} isMobile={isMobile} onOpenSub={setOpenSub} onRun={run} />
-            {item.hint && <div style={{ padding: '0 12px 7px', fontSize: 11, color: 'var(--mf-faint2)', lineHeight: 1.4 }}>{item.hint}</div>}
-            {item.submenu && openSub === item.key && (
-              <div
-                role="menu"
-                data-home-ctx-sub={item.key}
-                data-inline={subInline ? 'true' : undefined}
-                style={
-                  subInline
-                    ? { background: 'var(--mf-sunken)', borderTop: '1px solid var(--mf-border-soft)', borderBottom: '1px solid var(--mf-border-soft)', padding: '4px 0 4px 14px', maxHeight: 220, overflowY: 'auto' }
-                    : {
-                        position: 'absolute',
-                        top: -5,
-                        ...(subOnLeft ? { right: MENU_W - 4 } : { left: MENU_W - 4 }),
-                        width: SUB_W,
-                        maxHeight: Math.max(160, vh - top - i * rowH - MARGIN * 2),
-                        overflowY: 'auto',
-                        background: 'var(--mf-panel)',
-                        border: '1px solid var(--mf-border)',
-                        borderRadius: 11,
-                        boxShadow: '0 12px 32px rgba(0,0,0,.18)',
-                        padding: '5px 0',
-                      }
-                }
-              >
-                {item.submenu.map((sub) =>
-                  sub.key.startsWith('sep') ? (
-                    <div key={sub.key} style={{ height: 1, background: 'var(--mf-border-soft)', margin: '4px 0' }} />
-                  ) : (
-                    <Row key={sub.key} item={sub} open={false} isMobile={isMobile} onOpenSub={() => undefined} onRun={run} />
-                  ),
-                )}
-              </div>
-            )}
-          </div>
-        ),
-      )}
-    </div>
+      <RowBody item={item} />
+    </DropdownMenu.Item>
+  );
+
+  return (
+    <DropdownMenu.Root
+      open
+      onOpenChange={(next) => {
+        if (!next) controller.closeMenu();
+      }}
+      modal={false}
+    >
+      {/* 트리거는 **클릭 지점에 놓인 0×0 자리표시자**다 — 메뉴가 그 자리를 기준으로
+          자기 실제 크기를 재서 서므로, 예전처럼 높이를 행 수로 어림할 필요가 없다.
+          포인터를 받지 않으므로 이 자리표시자가 클릭을 가로채지도 않는다. */}
+      <DropdownMenu.Trigger
+        aria-hidden="true"
+        tabIndex={-1}
+        style={{ position: 'fixed', left: ctx.x, top: ctx.y, width: 0, height: 0, padding: 0, border: 'none', background: 'none', pointerEvents: 'none' }}
+      />
+      <DropdownMenu.Portal>
+        <DropdownMenu.Content
+          // `.mf-home-ctx`는 계속 붙인다 — 마퀴 시작 가드와 "카드 밖 클릭이면 선택
+          // 해제" 가드가 이 이름으로 메뉴 안을 알아본다(포털로 나가도 `closest`는
+          // DOM 조상을 보므로 그 판단은 그대로 성립한다).
+          className="mf-home-ctx"
+          data-home-ctx={ctx.target.kind}
+          align="start"
+          side="bottom"
+          sideOffset={0}
+          collisionPadding={MARGIN}
+          onContextMenu={(e) => e.preventDefault()}
+          onCloseAutoFocus={(e) => e.preventDefault()}
+          style={{
+            width: MENU_W,
+            boxSizing: 'border-box',
+            maxHeight: 'calc(100dvh - 16px)',
+            overflowY: 'auto',
+            background: 'var(--mf-panel)',
+            border: '1px solid var(--mf-border)',
+            borderRadius: 11,
+            boxShadow: '0 12px 32px rgba(0,0,0,.18)',
+            padding: '5px 0',
+            zIndex: 140,
+          }}
+        >
+          {items.map((item) => {
+            if (item.key.startsWith('sep')) return <DropdownMenu.Separator key={item.key} style={SEP_STYLE} />;
+            if (!item.submenu) {
+              return (
+                <div key={item.key}>
+                  {leaf(item)}
+                  {/* 비활성 사유 — 행 아래 작은 글씨. 항목이 아니므로 화살표 이동에서 건너뛴다. */}
+                  {item.hint && <div style={{ padding: '0 12px 7px', fontSize: 11, color: 'var(--mf-faint2)', lineHeight: 1.4 }}>{item.hint}</div>}
+                </div>
+              );
+            }
+            if (subInline) {
+              const open = openSub === item.key;
+              return (
+                <div key={item.key}>
+                  <DropdownMenu.Item
+                    className="menu-row"
+                    aria-haspopup="menu"
+                    aria-expanded={open}
+                    // 부모 행은 **열기만** 한다 — 고르면 메뉴가 닫히는 기본 동작을 막는다.
+                    onSelect={(e) => {
+                      e.preventDefault();
+                      setOpenSub(open ? null : item.key);
+                    }}
+                    style={{ ...rowStyle(item, isMobile), background: open ? 'var(--mf-accent-soft)' : 'transparent' }}
+                  >
+                    <RowBody item={item} />
+                  </DropdownMenu.Item>
+                  {open && (
+                    <div role="group" data-home-ctx-sub={item.key} data-inline="true" style={{ background: 'var(--mf-sunken)', borderTop: '1px solid var(--mf-border-soft)', borderBottom: '1px solid var(--mf-border-soft)', padding: '4px 0 4px 14px', maxHeight: 220, overflowY: 'auto' }}>
+                      {item.submenu.map((sub) => (sub.key.startsWith('sep') ? <DropdownMenu.Separator key={sub.key} style={SEP_STYLE} /> : leaf(sub)))}
+                    </div>
+                  )}
+                </div>
+              );
+            }
+            return (
+              <DropdownMenu.Sub key={item.key} open={openSub === item.key} onOpenChange={(next) => setOpenSub(next ? item.key : null)}>
+                <DropdownMenu.SubTrigger className="menu-row" style={{ ...rowStyle(item, isMobile), background: openSub === item.key ? 'var(--mf-accent-soft)' : 'transparent' }}>
+                  <RowBody item={item} />
+                </DropdownMenu.SubTrigger>
+                {/* 포털을 쓰지 않는다 — 하위 메뉴가 본 메뉴 안(`.mf-home-ctx`)에 남아야
+                    위 두 가드와 기존 조회(`menu.querySelector('[data-home-ctx-sub]')`)가
+                    그대로 성립한다. 자리는 팝퍼가 잡으므로 잘리지 않는다. */}
+                <DropdownMenu.SubContent data-home-ctx-sub={item.key} sideOffset={-4} alignOffset={-5} collisionPadding={MARGIN} style={SUB_PANEL}>
+                  {item.submenu.map((sub) => (sub.key.startsWith('sep') ? <DropdownMenu.Separator key={sub.key} style={SEP_STYLE} /> : leaf(sub)))}
+                </DropdownMenu.SubContent>
+              </DropdownMenu.Sub>
+            );
+          })}
+        </DropdownMenu.Content>
+      </DropdownMenu.Portal>
+    </DropdownMenu.Root>
   );
 }
 

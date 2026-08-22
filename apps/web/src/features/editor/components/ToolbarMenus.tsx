@@ -1,36 +1,22 @@
-import type { CSSProperties, ReactNode } from 'react';
+import type { ReactNode } from 'react';
 import type { EditorController } from '../useEditorState';
 import type { Theme } from '../theme';
+import { MenuRow } from '../../../components/Menu';
 
 /**
  * Dropdown menu bodies for the editor's top menu bar (GNB) — 편집 / 삽입 / 보기.
  * (스타일 and 내보내기 keep their own bodies in `StyleMenu`/`ExportMenu`.) Each
- * is a plain list of `MenuItem` rows inside a `MenuShell`; positioning/stacking
- * is handled by the `AnchoredMenu` portal wrapper the toolbar puts around them.
+ * is a plain list of `MenuItem` rows; **면·위치·키보드 이동은 `Menu`**(Radix
+ * DropdownMenu)가 맡는다 — 예전에는 `MenuShell`이 면을 그리고 `AnchoredMenu`가
+ * 위치를 손으로 계산했다.
  */
 
 /** Bordered dropdown container — shared chrome for the list menus. */
-export function MenuShell({ theme: th, children, minWidth = 200 }: { theme: Theme; children: ReactNode; minWidth?: number }) {
-  return (
-    <div
-      style={{
-        width: '100%',
-        minWidth,
-        boxSizing: 'border-box',
-        background: th.panel,
-        border: `1px solid ${th.border}`,
-        borderRadius: 10,
-        boxShadow: '0 12px 32px rgba(0,0,0,.16)',
-        padding: 5,
-        // 가로로 돌린 폰(높이 350~430px)에서는 항목이 많은 메뉴가 화면을 넘는다 —
-        // 넘치는 만큼만 스크롤한다(세로 화면에서는 걸리지 않는다).
-        maxHeight: 'calc(100dvh - 64px)',
-        overflowY: 'auto',
-      }}
-    >
-      {children}
-    </div>
-  );
+/** 메뉴 내용 묶음 — **면·그늘·스크롤은 이제 `Menu`(Radix Content)가 들고 있다**.
+ * 여기서는 항목을 담기만 하므로 껍데기가 비어 있다(패널이 둘로 겹치면 그늘이
+ * 두 번 깔린다). 툴바 밖에서 이 컴포넌트를 쓰는 곳이 남아 있어 형태는 유지한다. */
+export function MenuShell({ children }: { theme?: Theme; children: ReactNode; minWidth?: number }) {
+  return <>{children}</>;
 }
 
 /** A single menu row: leading icon, label, optional trailing check (for a
@@ -54,37 +40,9 @@ export function MenuItem({
   isMobile?: boolean;
   onClick: () => void;
 }) {
-  const row: CSSProperties = {
-    display: 'flex',
-    alignItems: 'center',
-    gap: 10,
-    width: '100%',
-    height: isMobile ? 44 : 38,
-    padding: '0 10px',
-    border: 'none',
-    borderRadius: 8,
-    background: active ? th.panel2 : 'transparent',
-    color: disabled ? `${th.subtext}73` : th.text,
-    fontFamily: 'inherit',
-    fontSize: 13,
-    fontWeight: active ? 700 : 500,
-    cursor: disabled ? 'default' : 'pointer',
-    textAlign: 'left',
-  };
-  return (
-    <button type="button" className={disabled ? undefined : 'mf-ed-btn'} disabled={disabled} onClick={onClick} style={row}>
-      {icon != null && <span style={{ display: 'flex', width: 18, justifyContent: 'center', color: disabled ? `${th.subtext}73` : active ? th.accent : th.subtext }}>{icon}</span>}
-      <span style={{ flex: '1 1 auto', minWidth: 0, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{label}</span>
-      {active && (
-        <span style={{ display: 'flex', color: th.accent }} aria-hidden="true">
-          <svg width={15} height={15} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2.4} strokeLinecap="round" strokeLinejoin="round">
-            <polyline points="20 6 9 17 4 12" />
-          </svg>
-        </span>
-      )}
-      {hint && !active && <span style={{ fontSize: 11, color: `${th.subtext}b0`, whiteSpace: 'nowrap' }}>{hint}</span>}
-    </button>
-  );
+  // 시각은 그대로, 몸통은 `MenuRow`(Radix `DropdownMenu.Item`)에 넘긴다 — 그래야
+  // ↑/↓·Home/End·글자 타이핑이 통하고 고르면 메뉴가 스스로 닫힌다.
+  return <MenuRow theme={th} icon={icon} label={label} hint={hint} active={active} disabled={disabled} isMobile={isMobile} onSelect={onClick} />;
 }
 
 export function EditMenu({ controller, onDone, isMobile }: { controller: EditorController; onDone: () => void; isMobile?: boolean }) {
