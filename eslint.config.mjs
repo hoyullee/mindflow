@@ -81,6 +81,8 @@ export default tseslint.config(
         window: 'readonly',
         setInterval: 'readonly',
         clearInterval: 'readonly',
+        setTimeout: 'readonly',
+        clearTimeout: 'readonly',
         ResizeObserver: 'readonly',
         navigator: 'readonly',
       },

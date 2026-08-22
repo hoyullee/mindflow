@@ -21,8 +21,9 @@ describe('Landing', () => {
         <Landing />
       </MemoryRouter>,
     );
-    expect(screen.getByText('Geurio')).toBeTruthy();
-    expect(screen.getByText('마인드맵 서비스')).toBeTruthy();
+    // 앱 이름은 헤더·푸터 두 곳에 있다(둘 다 브랜드 표기).
+    expect(screen.getAllByText('Geurio').length).toBeGreaterThanOrEqual(1);
+    expect(screen.getByText('마인드맵 · 화이트보드 · 칸반 보드를 한곳에서')).toBeTruthy();
     expect(screen.getByRole('link', { name: '개인정보처리방침' }).getAttribute('href')).toBe('/privacy');
     expect(screen.getByRole('link', { name: '이용약관' }).getAttribute('href')).toBe('/terms');
   });
@@ -33,10 +34,11 @@ describe('Landing', () => {
         <Landing />
       </MemoryRouter>,
     );
-    // 히어로 + 마무리 배너 두 곳의 CTA — 둘 다 같은 곳을 가리켜야 한다
+    // 헤더 · 히어로 · 마무리 배너 세 곳의 CTA — 모두 같은 곳을 가리켜야 한다
     const ctas = screen.getAllByRole('link', { name: '무료로 시작하기' });
-    expect(ctas.length).toBeGreaterThanOrEqual(2);
+    expect(ctas.length).toBeGreaterThanOrEqual(3);
     for (const cta of ctas) expect(cta.getAttribute('href')).toBe('/login');
+    // 돌아온 사람이 곧장 들어갈 자리도 남긴다
     expect(screen.getByRole('link', { name: '로그인' }).getAttribute('href')).toBe('/login');
   });
 
@@ -47,8 +49,10 @@ describe('Landing', () => {
         <Landing />
       </MemoryRouter>,
     );
-    await waitFor(() => expect(screen.getByRole('link', { name: '내 문서로' })).toBeTruthy());
-    for (const cta of screen.getAllByRole('link', { name: '무료로 시작하기' })) expect(cta.getAttribute('href')).toBe('/home');
+    await waitFor(() => expect(screen.getAllByRole('link', { name: '내 문서로' }).length).toBeGreaterThanOrEqual(3));
+    for (const cta of screen.getAllByRole('link', { name: '내 문서로' })) expect(cta.getAttribute('href')).toBe('/home');
+    // 이미 로그인했으면 '로그인' 링크는 뜻이 없다
+    expect(screen.queryByRole('link', { name: '로그인' })).toBeNull();
   });
 
   it('serves the landing (not a redirect to /login) at the root route', () => {
@@ -57,40 +61,63 @@ describe('Landing', () => {
     expect(screen.getAllByRole('link', { name: '무료로 시작하기' }).length).toBeGreaterThan(0);
   });
 
-  it('carries the expanded content: use cases, steps, FAQ, and the feature chips', () => {
+  it('carries the v2 content: three modes, collaboration, features, and FAQ', () => {
     render(
       <MemoryRouter>
         <Landing />
       </MemoryRouter>,
     );
-    // 새로 추가한 섹션들이 렌더된다(landing.html 쌍둥이와 동기화 확인은 아래 정적 테스트에서)
-    expect(screen.getByText('브레인스토밍')).toBeTruthy();
-    expect(screen.getByText('3단계면 충분해요')).toBeTruthy();
+    // 세 보기 소개 카드(제목은 h3) — 히어로 탭과 문구가 겹치므로 역할로 좁힌다
+    for (const name of ['마인드맵', '화이트보드', '칸반 보드']) {
+      expect(screen.getByRole('heading', { name, level: 3 })).toBeTruthy();
+    }
+    expect(screen.getByText('스레드 2')).toBeTruthy();
+    expect(screen.getByText('쓰다 보면 알게 되는 것들')).toBeTruthy();
     expect(screen.getByText('정말 무료인가요?')).toBeTruthy();
-    expect(screen.getByText('이미지 첨부')).toBeTruthy();
-    // 히어로 데모(리뉴얼 디자인의 핵심 비주얼) — 정적 쌍둥이와 같은 예시 문서
-    expect(screen.getByText('신제품 런치 플랜')).toBeTruthy();
+    expect(screen.getByText('빈 화면 대신 템플릿')).toBeTruthy();
+    // 히어로 창의 첫 장면(마인드맵) — 정적 쌍둥이와 같은 예시 문서
+    expect(screen.getByText(/신제품 런치 플랜/)).toBeTruthy();
   });
 
-  it('plays the demo reveal and toggles branch children on click', () => {
-    // rev 1→7, 480ms 간격 — 가짜 타이머로 끝까지 감고 가지 토글을 확인한다
+  it('히어로 창의 보기 탭을 누르면 그 장면으로 고정된다', () => {
+    render(
+      <MemoryRouter>
+        <Landing />
+      </MemoryRouter>,
+    );
+    // 처음은 마인드맵 장면
+    expect(screen.getByText(/신제품 런치 플랜/)).toBeTruthy();
+    fireEvent.click(screen.getByRole('button', { name: /화이트보드/ }));
+    expect(screen.getByText(/문제 정의 워크숍/)).toBeTruthy();
+    fireEvent.click(screen.getByRole('button', { name: /칸반 보드/ }));
+    expect(screen.getByText(/8월 스프린트/)).toBeTruthy();
+  });
+
+  it('히어로 창은 6.2초마다 다음 보기로 넘어간다', () => {
     vi.useFakeTimers();
     render(
       <MemoryRouter>
         <Landing />
       </MemoryRouter>,
     );
+    expect(screen.getByText(/신제품 런치 플랜/)).toBeTruthy();
     act(() => {
-      vi.advanceTimersByTime(480 * 7);
+      vi.advanceTimersByTime(6200);
     });
-    // 가지("메시지")는 보이고, 자식("핵심 한 줄")은 아직 접혀 있다
-    expect(screen.getByText('메시지').getAttribute('aria-hidden')).toBe('false');
-    expect(screen.getByText('핵심 한 줄').getAttribute('aria-hidden')).toBe('true');
-    fireEvent.click(screen.getByText('메시지'));
-    expect(screen.getByText('핵심 한 줄').getAttribute('aria-hidden')).toBe('false');
-    // "처음부터"는 등장 애니메이션을 되감는다(가지가 다시 숨음)
-    fireEvent.click(screen.getByText('처음부터'));
-    expect(screen.getByText('메시지').getAttribute('aria-hidden')).toBe('true');
+    expect(screen.getByText(/문제 정의 워크숍/)).toBeTruthy();
+  });
+
+  it('FAQ는 하나만 열린다 — 첫 항목이 열린 채 시작하고 다른 항목을 누르면 바뀐다', () => {
+    render(
+      <MemoryRouter>
+        <Landing />
+      </MemoryRouter>,
+    );
+    const first = screen.getByRole('button', { name: /세 가지 보기를 한 보드에서/ });
+    expect(first.getAttribute('aria-expanded')).toBe('true');
+    fireEvent.click(screen.getByRole('button', { name: /정말 무료인가요/ }));
+    expect(first.getAttribute('aria-expanded')).toBe('false');
+    expect(screen.getByText(/지금은 모든 기능을 무료로/)).toBeTruthy();
   });
 });
 
@@ -103,40 +130,51 @@ describe('static landing.html (the crawler-visible twin)', () => {
   it('contains the app name, purpose, and legal links as plain HTML', () => {
     const html = readFileSync(path.join(publicDir, 'landing.html'), 'utf8');
     expect(html).toContain('Geurio');
-    expect(html).toContain('마인드맵 서비스');
+    expect(html).toContain('마인드맵 · 화이트보드 · 칸반 보드를 한곳에서');
     expect(html).toContain('href="/privacy"');
     expect(html).toContain('href="/terms"');
     expect(html).toContain('href="/login"');
     // 계약은 "모든 내용이 JS 없이 원문 HTML에 보인다"다(크롤러는 JS를 실행하지
-    // 않으므로). 허용되는 스크립트는 둘뿐: JSON-LD 데이터 블록과, 폴백 SVG를
-    // 인터랙티브 데모로 교체하는 프로그레시브 인핸서(landing-demo.js — 같은
+    // 않으므로). 허용되는 스크립트는 둘뿐: JSON-LD 데이터 블록과, 히어로 창을
+    // 세 보기로 번갈아 보여 주는 프로그레시브 인핸서(landing-demo.js — 같은
     // 출처, 없어도 페이지는 온전). 그 외 스크립트가 생기면 실패시켜
     // "SPA처럼 JS에 기대는 랜딩"으로의 회귀를 막는다.
     const scripts = html.match(/<script[^>]*/g) ?? [];
     for (const tag of scripts) {
       expect(tag.includes('application/ld+json') || tag.includes('src="/landing-demo.js"')).toBe(true);
     }
-    // 인핸서가 걷어낼 폴백 SVG가 원문에 실존해야 무JS에서도 데모가 보인다.
-    // 원문 스타일시트가 폴백을 숨기면 안 된다 — 깜빡임 방지용 가림막은
-    // 인핸서가 실행 시점에 주입한다(JS 없으면 가림막도 없어 폴백이 보인다).
+    // 히어로 창의 첫 장면(마인드맵)이 **원문에 그대로** 있어야 무JS에서도 보인다.
     expect(html).toContain('마인드맵 예시');
-    expect(html).not.toMatch(/\.demo-canvas\s*>\s*svg\s*\{\s*visibility:\s*hidden/);
-    // 인핸서 파일: 같은 예시 문서를 그리고(쌍둥이 동기화), 첫 페인트 전
-    // 가림막 주입 + 실패 시 폴백 복원을 갖춘다(새로고침 깜빡임 회귀 가드)
+    expect(html).toContain('신제품 런치');
+    // 인핸서: 같은 장면 데이터를 들고(쌍둥이 동기화) 세 보기를 회전시킨다.
+    // 예전 버전의 가림막(veil)은 필요하지 않다 — 첫 화면이 폴백과 동일하므로
+    // "완성 맵 → 걷어냄" 깜빡임이 애초에 없다.
     const demoJs = readFileSync(path.join(publicDir, 'landing-demo.js'), 'utf8');
-    expect(demoJs).toContain('신제품 런치 플랜');
-    expect(demoJs).toContain('visibility: hidden');
-    expect(demoJs).toContain('veil.remove()');
+    for (const s of ['신제품 런치 플랜', '문제 정의 워크숍', '8월 스프린트', 'data-hero-demo']) {
+      expect(demoJs).toContain(s);
+    }
   });
 
-  it('mirrors the expanded content of the React twin (use cases, steps, FAQ, chips)', () => {
+  it('mirrors the v2 content of the React twin (modes, collaboration, features, FAQ)', () => {
     const html = readFileSync(path.join(publicDir, 'landing.html'), 'utf8');
-    // 사용 사례 · 3단계 · FAQ · 기능 칩 — Landing.tsx와 동기화되어야 크롤러도 본다
-    for (const s of ['브레인스토밍', '학습 노트', '의사결정', '3단계면 충분해요', '정말 무료인가요?', '이미지 첨부', '자주 묻는 질문', '신제품 런치 플랜']) {
+    for (const s of [
+      '정리하는 방법은',
+      '세 가지 보기',
+      '마인드맵',
+      '화이트보드',
+      '칸반 보드',
+      '떨어져 있어도',
+      '스레드 2',
+      '쓰다 보면 알게 되는 것들',
+      '빈 화면 대신 템플릿',
+      '자주 묻는 질문',
+      '정말 무료인가요?',
+      '첫 보드는 30초면 만들어요.',
+    ]) {
       expect(html).toContain(s);
     }
     // FAQ는 JS 없는 <details>로 — 크롤러 가시성 유지
-    expect(html).toContain('<details>');
+    expect(html).toContain('<details');
   });
 
   it('carries the share/SEO contract: canonical + OG card + JSON-LD', () => {
