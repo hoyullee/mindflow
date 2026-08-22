@@ -1043,6 +1043,39 @@ describe('Editor interactions (M3-Editor-b)', () => {
     });
   });
 
+  // 제보: A 메뉴가 열린 채 B 메뉴를 누르면 B가 잠깐 열렸다 바로 닫혔다.
+  // 한 번의 pointerdown에서 통지가 둘 온다 — 먼저 `B:열림`(B 트리거), 이어서
+  // `A:닫힘`(A의 바깥 클릭 감지). 상태를 블라인드 토글로 뒤집으면 뒤에 온 A의
+  // 닫힘이 이미 B를 가리키는 칸을 다시 뒤집는다.
+  describe('GNB 메뉴 전환', () => {
+    it('A 메뉴가 열린 채 B를 누르면 B가 열린 채로 남는다', async () => {
+      const user = userEvent.setup();
+      localStorage.setItem('mindflow_doc_ab1', JSON.stringify(DOC));
+      renderEditor('/editor?map=ab1&title=x');
+
+      await user.click(screen.getByRole('button', { name: '편집' }));
+      expect(await screen.findByRole('menuitem', { name: /실행 취소/ })).toBeTruthy();
+
+      await user.click(screen.getByRole('button', { name: '삽입' }));
+      // 삽입 메뉴가 열린 채로 남고(잠깐 떴다 닫히지 않는다) 편집 메뉴는 닫힌다.
+      expect(await screen.findByRole('menuitem', { name: '주제 추가' })).toBeTruthy();
+      await waitFor(() => expect(screen.queryByRole('menuitem', { name: /실행 취소/ })).toBeNull());
+      // 열린 메뉴는 언제나 하나다.
+      expect(document.querySelectorAll('[data-anchored-menu]')).toHaveLength(1);
+    });
+
+    it('같은 트리거를 다시 누르면 닫힌다(무회귀)', async () => {
+      const user = userEvent.setup();
+      localStorage.setItem('mindflow_doc_ab2', JSON.stringify(DOC));
+      renderEditor('/editor?map=ab2&title=x');
+
+      await user.click(screen.getByRole('button', { name: '편집' }));
+      expect(await screen.findByRole('menuitem', { name: /실행 취소/ })).toBeTruthy();
+      await user.click(screen.getByRole('button', { name: '편집' }));
+      await waitFor(() => expect(document.querySelectorAll('[data-anchored-menu]')).toHaveLength(0));
+    });
+  });
+
   describe('duplicate map names are allowed (XMind-style)', () => {
     // The title chip's non-editing title element (`div[title=...]`), excluding
     // the on-canvas root node box which also shows the title text.
