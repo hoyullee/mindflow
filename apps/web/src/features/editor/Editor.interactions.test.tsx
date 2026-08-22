@@ -637,16 +637,20 @@ describe('Editor interactions (M3-Editor-b)', () => {
       expect(tip.textContent).toContain('보기 전용 권한은 저장된 최신 맵을 열람만 할 수 있습니다.');
 
       // 문장이 중간에서 접히면 굵게 강조한 권한 이름과 설명이 갈라져 읽기 힘들다(제보)
-      // — 폭은 가장 긴 문장에 맞추고(max-content), 툴팁은 "?" 버튼이 아니라 **제목
-      // 행**(모달 본문 왼쪽 끝)에 걸어 그 폭을 확보한다.
+      // — 폭은 가장 긴 문장에 맞추고(max-content) 아주 좁은 화면에서만 접힌다.
+      // 자리는 팝오버(Radix)가 잡는다: 예전에는 한 줄 폭을 얻으려고 래퍼의
+      // `position`을 static으로 두어 제목 행에 걸치게 하는 우회가 필요했다.
       expect(tip.style.width).toBe('max-content');
-      expect(tip.style.left).toBe('0px');
-      const anchor = within(dialog).getByRole('button', { name: '권한 안내' }).parentElement as HTMLElement;
-      expect(anchor.style.position).not.toBe('relative');
+      expect(tip.style.maxWidth).toBe('calc(100vw - 48px)');
+      expect(tip.style.left).toBe(''); // 우리가 좌표를 적지 않는다
+
+      // 툴팁 안을 눌러도 공유 모달은 닫히지 않는다(팝오버가 모달 위의 층이다).
+      await user.click(within(tip).getByText(/편집 가능/));
+      expect(screen.getByRole('dialog', { name: '공유' })).toBeTruthy();
 
       // 다시 누르면 닫힌다.
       await user.click(within(dialog).getByRole('button', { name: '권한 안내' }));
-      expect(screen.queryByRole('tooltip')).toBeNull();
+      await waitFor(() => expect(screen.queryByRole('tooltip')).toBeNull());
     });
 
     // 링크 공유(0017) — 이메일을 모르는 상대에게 "이거 봐 줘" 하는 가장 짧은 길.

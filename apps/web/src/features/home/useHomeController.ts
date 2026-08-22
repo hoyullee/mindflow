@@ -355,7 +355,8 @@ export function useHomeController() {
         if ((prev.selectedCard || prev.selectedCards.length) && !closest('.map-card') && !closest('.mf-home-ctx') && !closest('.mf-sel-bar')) {
           next = { ...next, selectedCard: null, selectAnchor: null, selectedCards: [], selectMode: false };
         }
-        if (prev.settingsOpen && !closest('.settings-pop,.settings-btn')) next = { ...next, settingsOpen: false };
+        // 프로필 팝오버는 자기 바깥 클릭·Escape에 스스로 닫힌다(Radix Popover) —
+        // 예전에는 여기서 `.settings-pop,.settings-btn`을 걸러 냈다.
         return next;
       });
     };

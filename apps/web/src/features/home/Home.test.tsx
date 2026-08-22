@@ -1442,18 +1442,21 @@ describe('Home', () => {
     renderHome();
 
     const trigger = await screen.findByRole('button', { name: '계정 메뉴' });
-    const pop = () => document.querySelector('.settings-pop') as HTMLElement;
-    // 첫 페인트에서는 닫힘 — 나가는 애니메이션이 괜히 돌지 않는다.
-    expect(pop().className).not.toContain('is-out');
-    expect(pop().style.display).toBe('none');
+    const pop = () => document.querySelector('.settings-pop') as HTMLElement | null;
+    // 첫 페인트에서는 아예 그리지 않는다 — 나가는 애니메이션이 괜히 돌 일이 없다
+    // (예전에는 `display: none`으로 마운트된 채였다).
+    expect(pop()).toBeNull();
+    expect(trigger.getAttribute('aria-expanded')).toBe('false');
 
     await user.click(trigger);
-    expect(pop().className).toContain('is-in');
-    expect(pop().style.display).toBe('block');
+    // 상태는 클래스가 아니라 **자기 속성**으로 알린다 — 애니메이션은 CSS가
+    // `[data-state]`에 걸고, 닫히는 동안 Radix가 노드를 붙잡아 둔다.
+    await waitFor(() => expect(pop()?.getAttribute('data-state')).toBe('open'));
+    expect(pop()?.className).toContain('mf-pop-anim');
+    expect(trigger.getAttribute('aria-expanded')).toBe('true');
 
     await user.click(trigger);
-    expect(pop().className).toContain('is-out'); // 접힘 애니메이션 동안 남아 있다
-    await waitFor(() => expect(pop().style.display).toBe('none'));
+    await waitFor(() => expect(document.querySelector('.settings-pop')).toBeNull());
   });
 
   it('logs out (via the confirm dialog) and navigates to /login', async () => {
@@ -5242,7 +5245,7 @@ describe('홈 디자인 후속 6건', () => {
     localStorage.setItem('mf_demo_session', JSON.stringify({ user: { id: 'u1', email: 'hoyul.lee@wantedlab.com' } }));
     localStorage.setItem('mf_profile_names', JSON.stringify({ 'hoyul.lee@wantedlab.com': '이호율' }));
     const user = userEvent.setup();
-    const { container } = renderHomeWithDocStore([]);
+    renderHomeWithDocStore([]);
     await waitFor(() => expect(screen.getByRole('button', { name: '계정 메뉴' })).toBeTruthy());
 
     // 아바타 글자 — 한글 이름은 성을 뗀 뒤 두 글자("이호율" → "호율").
@@ -5251,8 +5254,12 @@ describe('홈 디자인 후속 6건', () => {
     expect(trigger.textContent).not.toContain('이호율호율'); // 아바타가 이름 앞에 선다
 
     await user.click(trigger);
-    const pop = container.querySelector('.settings-pop') as HTMLElement;
-    expect(pop.style.display).not.toBe('none');
+    // 팝오버는 포털로 body 밑에 그려진다(Radix) — 컨테이너 안이 아니다.
+    const pop = (await waitFor(() => {
+      const el = document.querySelector('.settings-pop');
+      expect(el).toBeTruthy();
+      return el;
+    })) as HTMLElement;
     // 머리는 accent-soft 인셋 블록, 로그아웃 앞에는 구분선.
     const head = pop.firstElementChild as HTMLElement;
     expect(head.style.background).toContain('--mf-accent-soft');
