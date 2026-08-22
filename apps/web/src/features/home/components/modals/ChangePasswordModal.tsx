@@ -1,6 +1,7 @@
 import { useEffect, useRef } from 'react';
 import type { HomeState } from '../../types';
 import type { HomeController } from '../../useHomeController';
+import { Modal, MODAL_DIM, modalCard } from '../../../../components/Modal';
 import { DoneCheck } from './DoneCheck';
 
 interface Props {
@@ -56,11 +57,15 @@ export function ChangePasswordModal({ state, controller }: Props) {
     }
   };
   return (
-    <div
-      // 배경 클릭으로 닫지 않는다 — 입력하던 값이 사라지면 안 된다(다른 입력 모달과 같은 규칙).
-      style={{ position: 'fixed', inset: 0, background: 'rgba(30,20,14,.42)', backdropFilter: 'blur(2px)', display: state.changePwOpen ? 'flex' : 'none', alignItems: 'center', justifyContent: 'center', zIndex: 170 }}
+    <Modal
+      open={state.changePwOpen}
+      onClose={controller.closeChangePassword}
+      label="비밀번호 변경"
+      dim={{ ...MODAL_DIM, zIndex: 170 }}
+      card={modalCard(400)}
+      dismissOnBackdrop={false}
     >
-      <div role="dialog" aria-label="비밀번호 변경" onClick={(e) => e.stopPropagation()} style={{ width: 400, maxWidth: 'calc(100vw - 32px)', background: 'var(--mf-panel)', borderRadius: 16, boxShadow: '0 24px 60px rgba(0,0,0,.28)', padding: 26, animation: 'mf-fade .2s ease' }}>
+      <>
         {done ? (
           <>
             <div data-change-pw-done style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 14 }}>
@@ -137,7 +142,7 @@ export function ChangePasswordModal({ state, controller }: Props) {
             </div>
           </>
         )}
-      </div>
-    </div>
+      </>
+    </Modal>
   );
 }

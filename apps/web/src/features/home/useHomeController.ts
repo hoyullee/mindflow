@@ -368,9 +368,11 @@ export function useHomeController() {
       if (e.key !== 'a' && e.key !== 'A' && e.code !== 'KeyA') return;
       const t = e.target as HTMLElement | null;
       if (t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.isContentEditable)) return;
-      // 모달이 떠 있으면 그 안의 일이다(설정·공유·갤러리…). 확인창들은 닫혀 있어도
-      // `display: none`으로 **마운트된 채**라 존재만 보면 Ctrl+A가 영영 막힌다
-      // (실브라우저에서 확인: 늘 3개가 붙어 있다) — 실제로 보이는 것만 센다.
+      // 모달이 떠 있으면 그 안의 일이다(설정·공유·갤러리…). 예전에는 닫힌 모달도
+      // `display: none`으로 마운트된 채라 존재만 보면 Ctrl+A가 영영 막혔고(늘 3개가
+      // 붙어 있었다) 그래서 "보이는 것만" 셌다. 지금은 닫히면 언마운트되므로(Radix
+      // Dialog) 존재가 곧 열림이다 — 그래도 보이는지 검사는 남긴다: 캔버스 쪽 비모달
+      // 패널(`role="dialog"`인 댓글 패널 등)이 같은 이름을 쓰고, 검사가 싸다.
       const dialogOpen = Array.from(document.querySelectorAll('[role="dialog"]')).some((el) => el.getClientRects().length > 0);
       if (dialogOpen) return;
       const keys = Array.from(document.querySelectorAll<HTMLElement>('[data-card-key]'))

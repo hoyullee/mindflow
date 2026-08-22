@@ -44,7 +44,7 @@ describe('단축키 도움말', () => {
     expect(dialog).toBeTruthy();
     expect(dialog.textContent).toContain('맵에서 검색');
     expect(dialog.textContent).toContain('Shift+Enter');
-    fireEvent.keyDown(window, { key: 'Escape' });
+    fireEvent.keyDown(document, { key: 'Escape' });
     expect(screen.queryByRole('dialog', { name: '키보드 단축키' })).toBeNull();
   });
 
@@ -77,7 +77,7 @@ describe('피드백 보내기 (에디터 진입점)', () => {
     // 버튼 하나뿐이다. (제스처 범례도 이 자리를 내주고 사라졌다.)
     fireEvent.click(screen.getByRole('button', { name: '보기' }));
     expect(screen.getAllByText('피드백 보내기')).toHaveLength(1);
-    fireEvent.keyDown(window, { key: 'Escape' });
+    fireEvent.keyDown(document, { key: 'Escape' });
     expect(screen.queryByText(/좌드래그/)).toBeNull();
     // 좌측 하단 상시 버튼으로 연다.
     fireEvent.click(screen.getByRole('button', { name: '피드백 보내기' }));

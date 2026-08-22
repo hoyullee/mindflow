@@ -1,4 +1,5 @@
 import type { CSSProperties } from 'react';
+import { Modal } from '../../../components/Modal';
 import { useEffect, useMemo, useState } from 'react';
 import type { EditorController } from '../useEditorState';
 import { listVersions, versionBody } from '../versionHistory';
@@ -26,14 +27,7 @@ export function VersionHistory({ controller }: { controller: EditorController })
       return;
     }
     setSelectedAt(versions[0]?.at ?? null);
-    const onKey = (e: KeyboardEvent): void => {
-      if (e.key === 'Escape') {
-        e.stopPropagation();
-        controller.setHistoryOpen(false);
-      }
-    };
-    window.addEventListener('keydown', onKey, true);
-    return () => window.removeEventListener('keydown', onKey, true);
+    // Esc·바깥 클릭·초점 트랩은 `Modal`(Radix Dialog)이 맡는다.
     // versions는 open에서 파생 — open 전환 시 한 번이면 충분하다.
   }, [open]);
 
@@ -69,26 +63,14 @@ export function VersionHistory({ controller }: { controller: EditorController })
   };
 
   return (
-    <div
-      role="dialog"
-      aria-modal="true"
-      aria-label="버전 기록"
-      onPointerDown={(e) => e.stopPropagation()}
-      onClick={(e) => {
-        if (e.target === e.currentTarget) controller.setHistoryOpen(false);
-      }}
-      style={{
-        position: 'fixed',
-        inset: 0,
-        zIndex: 400,
-        background: 'rgba(0,0,0,.34)',
-        display: 'flex',
-        alignItems: isMobile ? 'flex-end' : 'center',
-        justifyContent: 'center',
-        padding: isMobile ? 0 : 24,
-      }}
+    <Modal
+      open={open}
+      onClose={() => controller.setHistoryOpen(false)}
+      label="버전 기록"
+      dim={{ zIndex: 400, background: 'rgba(0,0,0,.34)', alignItems: isMobile ? 'flex-end' : 'center', padding: isMobile ? 0 : 24 }}
+      card={panel}
     >
-      <div style={panel}>
+      <>
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: isMobile ? '16px 16px 10px' : '18px 22px 12px' }}>
           <div>
             <div style={{ fontSize: 16, fontWeight: 700, color: th.text }}>버전 기록</div>
@@ -169,7 +151,7 @@ export function VersionHistory({ controller }: { controller: EditorController })
             </div>
           </div>
         )}
-      </div>
-    </div>
+      </>
+    </Modal>
   );
 }

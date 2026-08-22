@@ -1,5 +1,5 @@
 import type { CSSProperties, ReactNode } from 'react';
-import { useEffect } from 'react';
+import { Modal } from '../../../components/Modal';
 import type { EditorController } from '../useEditorState';
 import { useIsMobile } from '../../../hooks/useMediaQuery';
 import { deleteKeyLabel, modLabel } from '../shortcutLabels';
@@ -14,18 +14,8 @@ export function ShortcutHelp({ controller }: { controller: EditorController }) {
   const th = controller.uiTheme;
   const open = controller.helpOpen;
 
-  useEffect(() => {
-    if (!open) return;
-    const onKey = (e: KeyboardEvent): void => {
-      if (e.key === 'Escape') {
-        e.stopPropagation();
-        controller.setHelpOpen(false);
-      }
-    };
-    window.addEventListener('keydown', onKey, true);
-    return () => window.removeEventListener('keydown', onKey, true);
-  }, [open, controller]);
-
+  // Esc·바깥 클릭·초점 트랩은 `Modal`(Radix Dialog)이 맡는다 — 예전에는 캔버스
+  // 단축키로 새지 않게 capture 리스너를 직접 달았다.
   if (!open) return null;
 
   // 표기는 우클릭 메뉴와 **같은 헬퍼**를 쓴다 — 화면마다 다르게 적으면 사용자는
@@ -83,26 +73,19 @@ export function ShortcutHelp({ controller }: { controller: EditorController }) {
   };
 
   return (
-    <div
-      role="dialog"
-      aria-modal="true"
-      aria-label="키보드 단축키"
-      onPointerDown={(e) => e.stopPropagation()}
-      onClick={(e) => {
-        if (e.target === e.currentTarget) controller.setHelpOpen(false);
-      }}
-      style={{
-        position: 'fixed',
-        inset: 0,
+    <Modal
+      open={open}
+      onClose={() => controller.setHelpOpen(false)}
+      label="키보드 단축키"
+      dim={{
         zIndex: 400,
         background: 'rgba(0,0,0,.34)',
-        display: 'flex',
         alignItems: isMobile ? 'flex-end' : 'center',
-        justifyContent: 'center',
         padding: isMobile ? 0 : 24,
       }}
+      card={panel}
     >
-      <div style={panel}>
+      <>
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 14 }}>
           <div style={{ fontSize: 16, fontWeight: 700, color: th.text }}>키보드 단축키</div>
           <button
@@ -207,7 +190,7 @@ export function ShortcutHelp({ controller }: { controller: EditorController }) {
             </>,
           )}
         </div>
-      </div>
-    </div>
+      </>
+    </Modal>
   );
 }

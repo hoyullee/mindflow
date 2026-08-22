@@ -1,5 +1,6 @@
 import type { HomeState } from '../../types';
 import type { HomeController } from '../../useHomeController';
+import { Modal, MODAL_DIM, modalCard } from '../../../../components/Modal';
 
 interface Props {
   state: HomeState;
@@ -11,12 +12,17 @@ interface Props {
 export function ProfileNameModal({ state, controller }: Props) {
   const canSubmit = state.profileNameDraft.trim().length > 0;
   return (
-    <div
-      // No backdrop-click-to-close: a dim click must not discard the edit (matches
-      // the "공간 이름 변경" popup). Use 취소 or 변경 to dismiss.
-      style={{ position: 'fixed', inset: 0, background: 'rgba(30,20,14,.42)', backdropFilter: 'blur(2px)', display: state.profileNameOpen ? 'flex' : 'none', alignItems: 'center', justifyContent: 'center', zIndex: 160 }}
+    // 막을 눌러도 닫히지 않는다: 편집 중인 이름이 실수로 버려지면 안 된다("공간
+    // 이름 변경" 팝업과 같은 규칙). 취소·변경으로만 닫는다.
+    <Modal
+      open={state.profileNameOpen}
+      onClose={controller.cancelProfileName}
+      label="프로필명 변경"
+      dim={{ ...MODAL_DIM, zIndex: 160 }}
+      card={modalCard(380)}
+      dismissOnBackdrop={false}
     >
-      <div role="dialog" aria-label="프로필명 변경" onClick={(e) => e.stopPropagation()} style={{ width: 380, maxWidth: 'calc(100vw - 32px)', background: 'var(--mf-panel)', borderRadius: 16, boxShadow: '0 24px 60px rgba(0,0,0,.28)', padding: 26, animation: 'mf-fade .2s ease' }}>
+      <>
         <div style={{ fontSize: 18, fontWeight: 800, marginBottom: 6 }}>프로필명 변경</div>
         <div style={{ fontSize: 13, color: 'var(--mf-muted)', lineHeight: 1.6, marginBottom: 20 }}>프로필에 표시될 이름을 변경해요.</div>
 
@@ -51,7 +57,7 @@ export function ProfileNameModal({ state, controller }: Props) {
             변경
           </button>
         </div>
-      </div>
-    </div>
+      </>
+    </Modal>
   );
 }

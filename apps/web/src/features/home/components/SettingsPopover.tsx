@@ -36,6 +36,7 @@ export function SettingsPopover({ state, controller, userInitial }: Props) {
         role="button"
         tabIndex={0}
         aria-label="계정 메뉴"
+        data-account-trigger
         onClick={controller.toggleSettings}
         onKeyDown={(e) => {
           if (e.key === 'Enter' || e.key === ' ') {

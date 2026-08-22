@@ -1,3 +1,4 @@
+import type { CSSProperties } from 'react';
 import { useEffect, useMemo, useState } from 'react';
 import type { HomeState } from '../../types';
 import type { HomeController } from '../../useHomeController';
@@ -5,6 +6,7 @@ import { BOARD_TEMPLATES, KANBAN_TEMPLATES, MAP_TEMPLATES, buildTemplateDoc } fr
 import { realPreview } from '../../mapPreview';
 import { HOME_THEMES } from '../../theme';
 import { MONO_FONT, dotGridStyle } from '../../chrome';
+import { Modal } from '../../../../components/Modal';
 
 interface Props {
   state: HomeState;
@@ -45,6 +47,21 @@ type TabName = '전체' | '마인드맵' | '화이트보드' | '칸반 보드';
  * 각 구획의 첫 칸은 **빈 문서**다 — 갤러리를 거치게 만든 이상 예전의 "바로 빈 맵"이
  * 사라지면 안 되고, 첫 칸에 두면 습관적으로 누르는 손이 크게 달라지지 않는다.
  */
+/** 갤러리 카드 — 화면 높이를 넘기지 않고 본문만 스크롤한다(폰·가로 모드에서도
+ * 헤더와 닫기 버튼이 늘 보인다). */
+const GALLERY_CARD: CSSProperties = {
+  width: 1000,
+  maxWidth: '100%',
+  maxHeight: 'calc(100dvh - 32px)',
+  display: 'flex',
+  flexDirection: 'column',
+  background: 'var(--mf-card)',
+  border: '1px solid var(--mf-border)',
+  borderRadius: 24,
+  boxShadow: '0 44px 90px -40px rgba(46,42,38,.6)',
+  overflow: 'hidden',
+};
+
 export function TemplateGallery({ state, controller }: Props) {
   const open = state.templateOpen;
   const [tab, setTab] = useState<TabName>('전체');
@@ -92,15 +109,8 @@ export function TemplateGallery({ state, controller }: Props) {
     };
   }, [hue]);
 
-  useEffect(() => {
-    if (!open) return;
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') controller.closeTemplates();
-    };
-    window.addEventListener('keydown', onKey);
-    return () => window.removeEventListener('keydown', onKey);
-  }, [open, controller]);
-
+  // Escape·바깥 클릭·초점 트랩은 `Modal`(Radix Dialog)이 맡는다 — 예전에는 창마다
+  // window 리스너를 하나씩 달았다.
   if (!open) return null;
 
   // 종류 점 색은 카드 배지와 같은 토큰(--mf-doc-*) — 갤러리·카드·배지가 같은 색으로
@@ -117,32 +127,17 @@ export function TemplateGallery({ state, controller }: Props) {
   const showKanban = tab === '전체' || tab === '칸반 보드';
 
   return (
-    <div
-      onClick={controller.closeTemplates}
+    <Modal
+      open={open}
+      onClose={controller.closeTemplates}
+      label="새로 만들기"
       // dim도 **함께 페이드**한다 — 애니메이션이 없으면 어두운 막이 한 프레임에
       // 툭 깔린 뒤 내용만 0.2초에 걸쳐 떠서, 둘이 어긋나는 것이 깜빡임으로 보였다.
-      style={{ position: 'fixed', inset: 0, background: 'rgba(58,52,46,.34)', backdropFilter: 'blur(5px)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 140, padding: 16, animation: 'mf-dim-in .16s ease-out' }}
+      dim={{ background: 'rgba(58,52,46,.34)', backdropFilter: 'blur(5px)', zIndex: 140, padding: 16, animation: 'mf-dim-in .16s ease-out' }}
+      cardClass="mf-gallery-pop"
+      card={GALLERY_CARD}
     >
-      <div
-        role="dialog"
-        aria-label="새로 만들기"
-        onClick={(e) => e.stopPropagation()}
-        className="mf-gallery-pop"
-        style={{
-          width: 1000,
-          maxWidth: '100%',
-          // 화면 높이를 넘기지 않고 본문만 스크롤한다 — 폰·가로 모드에서도 헤더와
-          // 닫기 버튼이 늘 보인다.
-          maxHeight: 'calc(100dvh - 32px)',
-          display: 'flex',
-          flexDirection: 'column',
-          background: 'var(--mf-card)',
-          border: '1px solid var(--mf-border)',
-          borderRadius: 24,
-          boxShadow: '0 44px 90px -40px rgba(46,42,38,.6)',
-          overflow: 'hidden',
-        }}
-      >
+      <>
         <div style={{ display: 'flex', alignItems: 'flex-start', gap: 16, padding: '22px 24px 16px', flexShrink: 0 }}>
           <div style={{ display: 'flex', flexDirection: 'column', gap: 5, minWidth: 0, flex: 1 }}>
             <div style={{ fontSize: 19, fontWeight: 800, letterSpacing: '-.03em' }}>새로 만들기</div>
@@ -235,8 +230,8 @@ export function TemplateGallery({ state, controller }: Props) {
             </section>
           )}
         </div>
-      </div>
-    </div>
+      </>
+    </Modal>
   );
 }
 

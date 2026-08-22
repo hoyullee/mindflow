@@ -5,6 +5,7 @@
 // 안내한다(ShareModal의 데모 안내와 같은 태도). 화면 맥락(page)·빌드 스탬프·
 // userAgent를 함께 실어 재현 조사를 돕는다.
 
+import { Modal } from './Modal';
 import { useEffect, useRef, useState, type CSSProperties } from 'react';
 import { useBackend, useFeedbackStore } from '../adapters/BackendContext';
 import type { FeedbackCategory } from '../adapters/ports';
@@ -108,18 +109,8 @@ export function FeedbackModal({ open, onClose, page, theme }: { open: boolean; o
     areaRef.current?.focus();
   }, [open]);
 
-  useEffect(() => {
-    if (!open) return;
-    const onKey = (e: KeyboardEvent): void => {
-      if (e.key === 'Escape') {
-        e.stopPropagation();
-        onClose();
-      }
-    };
-    window.addEventListener('keydown', onKey, true);
-    return () => window.removeEventListener('keydown', onKey, true);
-  }, [open, onClose]);
-
+  // Esc·바깥 클릭·초점 트랩은 `Modal`(Radix Dialog)이 맡는다 — 에디터 위에서 열려도
+  // 캔버스 단축키로 새지 않는다(예전에는 capture 리스너로 직접 막았다).
   if (!open) return null;
 
   const submit = async (): Promise<void> => {
@@ -195,12 +186,15 @@ export function FeedbackModal({ open, onClose, page, theme }: { open: boolean; o
   };
 
   return (
-    <div
-      data-feedback-modal
-      style={{ position: 'fixed', inset: 0, background: 'rgba(30,20,14,.42)', backdropFilter: 'blur(2px)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 260, animation: 'mf-dim-in .18s ease-out' }}
-      onClick={onClose}
+    <Modal
+      open={open}
+      onClose={onClose}
+      label="피드백 보내기"
+      dim={{ background: 'rgba(30,20,14,.42)', backdropFilter: 'blur(2px)', zIndex: 260, animation: 'mf-dim-in .18s ease-out' }}
+      card={cardStyle}
+      cardAttrs={{ 'data-feedback-modal': '' }}
     >
-      <div role="dialog" aria-label="피드백 보내기" onClick={(e) => e.stopPropagation()} style={cardStyle}>
+      <>
         {done ? (
           <div style={{ textAlign: 'center', padding: '18px 0 10px' }}>
             {/* SVG 배지(요청 — 이모지는 플랫폼마다 다르게 그려진다): 테마 accent를
@@ -302,8 +296,8 @@ export function FeedbackModal({ open, onClose, page, theme }: { open: boolean; o
             </div>
           </>
         )}
-      </div>
-    </div>
+      </>
+    </Modal>
   );
 }
 

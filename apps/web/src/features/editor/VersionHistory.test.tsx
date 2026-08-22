@@ -57,7 +57,7 @@ describe('버전 기록 모달', () => {
     const items = dialog.querySelectorAll('div[style*="overflow-y"] button, div[style*="overflowY"] button');
     expect(dialog.textContent).toContain('주제 1개');
     expect(items.length).toBeGreaterThanOrEqual(2);
-    fireEvent.keyDown(window, { key: 'Escape' });
+    fireEvent.keyDown(document, { key: 'Escape' });
     expect(screen.queryByRole('dialog', { name: '버전 기록' })).toBeNull();
   });
 
