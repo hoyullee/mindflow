@@ -29,20 +29,12 @@ export function StyleMenu({ controller }: StyleMenuProps) {
     boxShadow: active ? '0 1px 4px rgba(0,0,0,.10)' : 'none',
   });
 
+  // 면·그늘·위치는 `Menu`(Radix Content)가 그린다 — 여기서 또 그리면 패널이 겹친다.
+  // 이 메뉴는 항목 목록이 아니라 **설정 패널**(세그먼트·스와치)이라 Radix 항목으로
+  // 감싸지 않는다: 화살표 이동이 뜻을 갖지 않고 Tab으로 옮겨 다니는 게 맞다.
+  // (성격상 Popover이므로 다음 단계에서 Popover로 옮기는 것이 정확하다.)
   return (
-    <div
-      className="mf-ed-stylemenu"
-      style={{
-        // Positioning/stacking is handled by the `AnchoredMenu` portal wrapper.
-        width: '100%',
-        boxSizing: 'border-box',
-        background: controller.uiTheme.panel,
-        border: `1px solid ${controller.uiTheme.border}`,
-        borderRadius: 12,
-        boxShadow: '0 12px 32px rgba(0,0,0,.16)',
-        padding: 14,
-      }}
-    >
+    <div className="mf-ed-stylemenu" style={{ width: '100%', boxSizing: 'border-box', padding: 9 }}>
       {/* 화이트보드에는 트리가 없다 — 레이아웃(트리 배치)과 연결선(트리 간선)
           구획은 누를 대상이 없으므로 감춘다("할 수 없는 것은 보이지 않는다"). */}
       {!controller.isBoard && (

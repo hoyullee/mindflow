@@ -976,7 +976,7 @@ describe('마인드맵 스레드 진입점(요청)', () => {
     localStorage.setItem('mindflow_doc_mp1', JSON.stringify(DOC));
     renderEditor('/editor?map=mp1&title=맵');
     fireEvent.click(await screen.findByRole('button', { name: '삽입' }));
-    fireEvent.click(await screen.findByRole('button', { name: '스레드 추가' }));
+    fireEvent.click(await screen.findByRole('menuitem', { name: '스레드 추가' }));
     const bubble = await screen.findByLabelText('첫 스레드 남기기');
     // 다른 삽입과 달리 **문서에는 아직 아무것도 들어가지 않는다**(요청 ⑤).
     expect(JSON.parse(localStorage.getItem('mindflow_doc_mp1') as string).commentPins ?? []).toHaveLength(0);

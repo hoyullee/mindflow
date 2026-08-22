@@ -114,7 +114,7 @@ describe('Editor', () => {
     const { container } = renderEditor('/editor?map=golden&title=x');
 
     await user.click(screen.getByRole('button', { name: /보기/ })); // open the 보기 menu
-    await user.click(screen.getByRole('button', { name: /아웃라인/ }));
+    await user.click(screen.getByRole('menuitem', { name: /아웃라인/ }));
 
     const outline = container.querySelector('.mf-ed-outline') as HTMLElement;
     expect(outline).toBeTruthy();

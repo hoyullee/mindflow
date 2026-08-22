@@ -131,7 +131,9 @@ describe('화이트보드 에디터', () => {
     expect(within(bar).getByRole('button', { name: '이미지 추가' })).toBeTruthy();
     expect(within(bar).getByRole('button', { name: '연결선 추가' })).toBeTruthy();
     expect(within(bar).getByRole('button', { name: '영역 추가' })).toBeTruthy();
-    expect(screen.queryByRole('button', { name: '주제 추가' })).toBeNull();
+    // 메뉴 행은 이제 `menuitem`이다(Radix DropdownMenu) — 버튼으로 찾으면 없는 게
+    // 당연해져 가드가 무의미해지므로 역할을 맞춰 본다.
+    expect(screen.queryByRole('menuitem', { name: '주제 추가' })).toBeNull();
 
     // 스타일 메뉴: 레이아웃/연결선 구획이 없고 테마는 남는다.
     fireEvent.click(screen.getByRole('button', { name: '스타일' }));
@@ -142,8 +144,8 @@ describe('화이트보드 에디터', () => {
 
     // 보기 메뉴: 아웃라인(트리 목차)이 없다.
     fireEvent.click(screen.getByRole('button', { name: '보기' }));
-    await screen.findByRole('button', { name: '맵' });
-    expect(screen.queryByRole('button', { name: '아웃라인' })).toBeNull();
+    await screen.findByRole('menuitem', { name: '맵' });
+    expect(screen.queryByRole('menuitem', { name: '아웃라인' })).toBeNull();
     fireEvent.keyDown(window, { key: 'Escape' });
 
     // 배경 우클릭: 보드 어휘 넷. 주제만 없다.
@@ -664,16 +666,16 @@ describe('화이트보드 에디터', () => {
     await waitFor(() => expect(within(getViewport(container)).getByText('루트')).toBeTruthy());
     fireEvent.click(screen.getByRole('button', { name: '삽입' }));
     // '선 추가'·'영역 추가'는 하단 도구 막대에도 있으므로(리디자인) 드롭다운 안으로 좁혀 본다.
-    const tpl = await screen.findByRole('button', { name: '주제 추가' });
-    const menu = tpl.parentElement as HTMLElement;
-    expect(within(menu).getByRole('button', { name: '선 추가' })).toBeTruthy();
-    expect(within(menu).getByRole('button', { name: '영역 추가' })).toBeTruthy();
+    const tpl = await screen.findByRole('menuitem', { name: '주제 추가' });
+    const menu = tpl.closest('[data-anchored-menu]') as HTMLElement;
+    expect(within(menu).getByRole('menuitem', { name: '선 추가' })).toBeTruthy();
+    expect(within(menu).getByRole('menuitem', { name: '영역 추가' })).toBeTruthy();
     fireEvent.keyDown(window, { key: 'Escape' });
     fireEvent.click(screen.getByRole('button', { name: '스타일' }));
     await waitFor(() => expect(screen.getByText('레이아웃')).toBeTruthy());
     fireEvent.keyDown(window, { key: 'Escape' });
     fireEvent.click(screen.getByRole('button', { name: '보기' }));
-    await screen.findByRole('button', { name: '아웃라인' });
+    await screen.findByRole('menuitem', { name: '아웃라인' });
   });
   // ── 하이라이터 + 획 선택·이동 ─────────────────────────────────────────────
 
@@ -1330,7 +1332,7 @@ describe('화이트보드 에디터', () => {
 
     // 보기 메뉴에서 끄면 끌린 그대로 남는다.
     fireEvent.click(screen.getByRole('button', { name: '보기' }));
-    fireEvent.click(await screen.findByRole('button', { name: '안내선·격자에 맞추기' }));
+    fireEvent.click(await screen.findByRole('menuitem', { name: '안내선·격자에 맞추기' }));
     firePointer(el, 'pointerdown', { pointerId: 42, clientX: 100, clientY: 100, button: 0 });
     firePointer(document.body, 'pointermove', { pointerId: 42, clientX: 100 + 3 * zoom, clientY: 100 + 2 * zoom });
     firePointer(document.body, 'pointerup', { pointerId: 42, clientX: 100 + 3 * zoom, clientY: 100 + 2 * zoom });

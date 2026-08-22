@@ -582,7 +582,7 @@ describe('Editor (mobile, M6)', () => {
       expect(screen.queryByRole('button', { name: '공유' })).toBeNull();
 
       fireEvent.click(screen.getByRole('button', { name: '더보기' }));
-      const share = screen.getByRole('button', { name: '공유' });
+      const share = screen.getByRole('menuitem', { name: '공유' });
       fireEvent.click(share);
       expect(screen.getByRole('dialog', { name: '공유' })).toBeTruthy();
     } finally {
