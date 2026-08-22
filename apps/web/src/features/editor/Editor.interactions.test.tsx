@@ -931,9 +931,10 @@ describe('Editor interactions (M3-Editor-b)', () => {
     expect(menu).toBeTruthy();
     // Portaled out of the (overflow-clipping, low-stacked) top bar...
     expect(menu.closest('.mf-ed-topbar')).toBeNull();
-    // ...into the menu panel(Radix Content): 위치는 Radix가 잡고(fixed), z는 우리가
+    // ...into the panel(Radix Content): 위치는 Radix가 잡고(fixed), z는 우리가
     // 준다. 예전에는 우리가 만든 `AnchoredMenu` div가 그 둘을 다 들고 있었다.
-    const panel = menu.closest('[data-anchored-menu]') as HTMLElement;
+    // 스타일은 **목록이 아니라 설정 패널**이라 메뉴가 아니라 팝오버로 뜬다.
+    const panel = menu.parentElement as HTMLElement;
     expect(panel).toBeTruthy();
     expect(Number(panel.style.zIndex)).toBeGreaterThan(80);
     // Radix는 위치를 감싼 래퍼에 준다 — 그 래퍼가 fixed다.
@@ -964,8 +965,8 @@ describe('Editor interactions (M3-Editor-b)', () => {
     await waitFor(() => expect(vp.style.backgroundColor).toBe('rgb(32, 27, 22)')); // dark canvasBg #201b16
     // …but the GNB (and the style menu itself) hasn't budged
     expect(topbar.style.background).toBe(chromeBgBefore);
-    // 패널 면은 `Menu`(Radix Content)가 그린다 — 그 면이 고정 uiTheme이어야 한다.
-    const menu = (document.querySelector('.mf-ed-stylemenu') as HTMLElement).closest('[data-anchored-menu]') as HTMLElement;
+    // 패널 면은 `Popover`(Radix Content)가 그린다 — 그 면이 고정 uiTheme이어야 한다.
+    const menu = (document.querySelector('.mf-ed-stylemenu') as HTMLElement).parentElement as HTMLElement;
     expect(menu.style.background).toBe('rgb(255, 255, 255)'); // fixed uiTheme panel
   });
 

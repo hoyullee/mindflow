@@ -74,6 +74,14 @@ export function Popover({
           onOpenAutoFocus={(e) => {
             if (keepTriggerFocus) e.preventDefault();
           }}
+          // ⚠️ 메뉴 트리거로 초점이 돌아오는 것을 닫힘으로 읽지 않는다 — GNB에서
+          // 메뉴가 열린 채 팝오버 트리거(스타일)를 누르면, 닫히는 메뉴가 자기
+          // 트리거로 초점을 돌려주고(Radix 기본) 방금 열린 팝오버가 그걸 "초점이
+          // 바깥으로 나갔다"로 읽어 스스로 닫혔다(`Menu`에서 같은 사고를 잡았다).
+          onFocusOutside={(e) => {
+            const t = e.detail.originalEvent.target as HTMLElement | null;
+            if (t?.closest?.('[data-menu-trigger]')) e.preventDefault();
+          }}
           style={panel}
         >
           {children}

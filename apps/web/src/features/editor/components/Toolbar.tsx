@@ -4,6 +4,7 @@ import { PresenceAvatars } from './PresenceAvatars';
 import { StyleMenu } from './StyleMenu';
 import { ExportMenu } from './ExportMenu';
 import { Menu, menuPanelStyle } from '../../../components/Menu';
+import { Popover } from '../../../components/Popover';
 import { EditMenu, InsertMenu, ViewMenu, HelpMenu, MoreMenu, ShareGlyph } from './ToolbarMenus';
 import { useIsMobile } from '../../../hooks/useMediaQuery';
 import { BrandMark } from '../../../components/BrandMark';
@@ -151,16 +152,17 @@ export function Toolbar({ controller }: ToolbarProps) {
           <HelpMenu controller={controller} onDone={close} isMobile={isMobile} />
         </MenuBarButton>
       )}
-      {/* 칸반에는 캔버스가 없어 테마·레이아웃·연결선 스타일이 뜻을 갖지 않는다. */}
+      {/* 칸반에는 캔버스가 없어 테마·레이아웃·연결선 스타일이 뜻을 갖지 않는다.
+          스타일은 **목록이 아니라 설정 패널**이다(세그먼트·스와치) — 화살표로 훑을
+          항목이 없으므로 메뉴가 아니라 팝오버로 연다(Tab으로 다니는 게 맞다). */}
       {!controller.readOnly && !controller.isKanban && (
-      <MenuBarButton
+      <PanelBarButton
         label="스타일"
         open={openMenu === 'style'}
         onOpenChange={menuOpen('style')}
         th={th}
         isMobile={isMobile}
         width={250}
-        align="left"
         leading={
           <span
             aria-hidden="true"
@@ -176,7 +178,7 @@ export function Toolbar({ controller }: ToolbarProps) {
         }
       >
         <StyleMenu controller={controller} />
-      </MenuBarButton>
+      </PanelBarButton>
       )}
 
       <div style={{ flex: '1 1 auto' }} />
@@ -275,6 +277,96 @@ export function Toolbar({ controller }: ToolbarProps) {
 
 /** One top-level menu-bar entry: a text trigger (optional leading glyph) + a
  * ▾ caret, with its dropdown portaled via `AnchoredMenu` when open. */
+/** 설정 패널을 여는 GNB 버튼 — 메뉴 버튼과 트리거 모양은 같고 안이 목록이
+ * 아니다(팝오버). `data-menu-trigger`를 붙여, 다른 메뉴가 닫히며 자기 트리거로
+ * 초점을 돌려줘도 이 패널이 스스로 닫히지 않게 한다(`Popover` 머리말). */
+function PanelBarButton({
+  label,
+  leading,
+  open,
+  onOpenChange,
+  th,
+  isMobile,
+  width,
+  children,
+}: {
+  label: string;
+  leading?: ReactNode;
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
+  th: EditorController['theme'];
+  isMobile: boolean;
+  width: number;
+  children: ReactNode;
+}) {
+  return (
+    <Popover
+      open={open}
+      onOpenChange={onOpenChange}
+      align="start"
+      sideOffset={8}
+      // z는 우리가 준다(메뉴 패널과 같은 층) — 캔버스·독칩 위에 서야 한다.
+      panel={{ ...menuPanelStyle(th, width), width, zIndex: 200 }}
+      trigger={
+        <button type="button" className="mf-ed-btn" data-menu-trigger="" style={barTriggerStyle(th, { isMobile, open, hasLabel: !!label })}>
+          {leading}
+          {label}
+          <Caret open={open} color={th.subtext} />
+        </button>
+      }
+    >
+      {children}
+    </Popover>
+  );
+}
+
+/** GNB 트리거의 모양 — 메뉴 버튼과 팝오버 버튼(스타일)이 **같은 함수**를 쓴다.
+ * 값을 두 벌로 두면 한쪽만 손볼 때 바에서 두 버튼이 달라 보인다. */
+function barTriggerStyle(
+  th: EditorController['theme'],
+  { isMobile, primary, open, hasLabel }: { isMobile: boolean; primary?: boolean; open: boolean; hasLabel: boolean },
+): CSSProperties {
+  // 메뉴 트리거는 **테두리 없는 텍스트**다(디자인 원본) — 열렸을 때만 옅은 배경이
+  // 깔린다. 예전엔 열림 표시로 강조색 테두리를 둘렀는데, 항목이 여럿이면 바가
+  // 상자로 가득 차 보였다.
+  return primary
+    ? {
+        display: 'flex',
+        alignItems: 'center',
+        gap: 6,
+        height: isMobile ? 44 : 34,
+        padding: '0 14px',
+        border: `1px solid ${th.accent}`,
+        borderRadius: 999,
+        background: th.accent,
+        color: th.accentInk,
+        fontSize: 13,
+        fontWeight: 700,
+        cursor: 'pointer',
+        fontFamily: 'inherit',
+        whiteSpace: 'nowrap',
+        flexShrink: 0,
+        boxShadow: `0 8px 18px -10px ${th.accent}`,
+      }
+    : {
+        display: 'flex',
+        alignItems: 'center',
+        gap: 6,
+        height: isMobile ? 44 : 34,
+        padding: hasLabel ? '0 11px' : '0 9px',
+        border: '1px solid transparent',
+        borderRadius: 9,
+        background: open ? th.panel2 : 'transparent',
+        color: open ? th.text : th.subtext,
+        fontSize: 13.5,
+        fontWeight: 600,
+        cursor: 'pointer',
+        fontFamily: 'inherit',
+        whiteSpace: 'nowrap',
+        flexShrink: 0,
+      };
+}
+
 function MenuBarButton({
   label,
   ariaLabel,
@@ -303,45 +395,7 @@ function MenuBarButton({
   primary?: boolean;
   children: ReactNode;
 }) {
-  // 메뉴 트리거는 **테두리 없는 텍스트**다(디자인 원본) — 열렸을 때만 옅은 배경이
-  // 깔린다. 예전엔 열림 표시로 강조색 테두리를 둘렀는데, 항목이 여럿이면 바가
-  // 상자로 가득 차 보였다.
-  const triggerStyle: CSSProperties = primary
-    ? {
-        display: 'flex',
-        alignItems: 'center',
-        gap: 6,
-        height: isMobile ? 44 : 34,
-        padding: '0 14px',
-        border: `1px solid ${th.accent}`,
-        borderRadius: 999,
-        background: th.accent,
-        color: th.accentInk,
-        fontSize: 13,
-        fontWeight: 700,
-        cursor: 'pointer',
-        fontFamily: 'inherit',
-        whiteSpace: 'nowrap',
-        flexShrink: 0,
-        boxShadow: `0 8px 18px -10px ${th.accent}`,
-      }
-    : {
-        display: 'flex',
-        alignItems: 'center',
-        gap: 6,
-        height: isMobile ? 44 : 34,
-        padding: label ? '0 11px' : '0 9px',
-        border: '1px solid transparent',
-        borderRadius: 9,
-        background: open ? th.panel2 : 'transparent',
-        color: open ? th.text : th.subtext,
-        fontSize: 13.5,
-        fontWeight: 600,
-        cursor: 'pointer',
-        fontFamily: 'inherit',
-        whiteSpace: 'nowrap',
-        flexShrink: 0,
-      };
+  const triggerStyle = barTriggerStyle(th, { isMobile, primary, open, hasLabel: !!label });
   return (
     <Menu
       open={open}
