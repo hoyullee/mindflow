@@ -92,7 +92,7 @@ describe('Login', () => {
   it('renders the welcome heading and login submit button on initial render', () => {
     renderLogin();
 
-    expect(screen.getByText('Geurio에 오신 것을 환영해요')).toBeTruthy();
+    expect(screen.getByText('다시 만나서 반가워요.')).toBeTruthy();
     expect(screen.getByRole('button', { name: '로그인' })).toBeTruthy();
   });
 
@@ -102,9 +102,9 @@ describe('Login', () => {
 
     await user.click(screen.getByText('가입하기'));
 
-    // 가입 모드에선 제목도 '가입하기'(제출 버튼과 동일 문구) — 제목 div + 버튼 둘 다 존재.
-    expect(screen.getAllByText('가입하기').length).toBeGreaterThanOrEqual(2);
-    expect(screen.getByPlaceholderText('비밀번호 재입력')).toBeTruthy();
+    // 가입 모드의 제목은 제출 버튼과 다른 문구다(디자인 이식 후) — 둘 다 있는지 본다.
+    expect(screen.getByText('몇 초면 시작해요.')).toBeTruthy();
+    expect(screen.getByPlaceholderText('한 번 더 입력')).toBeTruthy();
     expect(screen.getByRole('button', { name: '가입하기' })).toBeTruthy();
   });
 
@@ -112,8 +112,8 @@ describe('Login', () => {
     const user = userEvent.setup();
     renderLogin();
 
-    await user.type(screen.getByPlaceholderText('you@example.com'), 'not-an-email');
-    await user.type(screen.getByPlaceholderText('비밀번호 입력'), 'password123');
+    await user.type(screen.getByPlaceholderText('name@example.com'), 'not-an-email');
+    await user.type(screen.getByPlaceholderText('비밀번호'), 'password123');
     await user.click(screen.getByRole('button', { name: '로그인' }));
 
     expect(screen.getByText('올바른 이메일 주소를 입력해 주세요.')).toBeTruthy();
@@ -124,14 +124,14 @@ describe('Login', () => {
     renderLogin();
 
     await user.click(screen.getByText('가입하기'));
-    await user.type(screen.getByPlaceholderText('you@example.com'), 'demo@example.com');
-    await user.type(screen.getByPlaceholderText('비밀번호 입력'), 'password123');
-    await user.type(screen.getByPlaceholderText('비밀번호 재입력'), 'password123');
+    await user.type(screen.getByPlaceholderText('name@example.com'), 'demo@example.com');
+    await user.type(screen.getByPlaceholderText('비밀번호'), 'password123');
+    await user.type(screen.getByPlaceholderText('한 번 더 입력'), 'password123');
     await user.click(screen.getByRole('button', { name: '가입하기' }));
 
-    expect(screen.getByText('이메일 인증')).toBeTruthy();
+    expect(screen.getByText('거의 다 왔어요!')).toBeTruthy();
     expect(screen.getByText(/데모 코드:/)).toBeTruthy();
-    expect(screen.getByPlaceholderText('인증 코드 입력')).toBeTruthy();
+    expect(screen.getByPlaceholderText('메일로 받은 코드')).toBeTruthy();
   });
 
   it('supabase mode: the verify step hides the demo code and opens with the resend countdown locked', async () => {
@@ -140,13 +140,13 @@ describe('Login', () => {
     renderSupa(auth);
 
     await user.click(screen.getByText('가입하기'));
-    await user.type(screen.getByPlaceholderText('you@example.com'), 'real@example.com');
-    await user.type(screen.getByPlaceholderText('비밀번호 입력'), 'password123');
-    await user.type(screen.getByPlaceholderText('비밀번호 재입력'), 'password123');
+    await user.type(screen.getByPlaceholderText('name@example.com'), 'real@example.com');
+    await user.type(screen.getByPlaceholderText('비밀번호'), 'password123');
+    await user.type(screen.getByPlaceholderText('한 번 더 입력'), 'password123');
     await user.click(screen.getByRole('button', { name: '가입하기' }));
 
     // reached the verify step, but with NO demo-code hint (real email has the code)
-    expect(await screen.findByPlaceholderText('인증 코드 입력')).toBeTruthy();
+    expect(await screen.findByPlaceholderText('메일로 받은 코드')).toBeTruthy();
     expect(screen.queryByText(/데모 코드:/)).toBeNull();
     // the resend countdown is showing and "다시 보내기" is locked (not yet a link)
     expect(screen.getByText(/초 후 다시 보내기/)).toBeTruthy();
@@ -162,23 +162,23 @@ describe('Login', () => {
       renderSupa(auth);
 
       await user.click(screen.getByText('가입하기'));
-      await user.type(screen.getByPlaceholderText('you@example.com'), 'cd@example.com');
-      await user.type(screen.getByPlaceholderText('비밀번호 입력'), 'password123');
-      await user.type(screen.getByPlaceholderText('비밀번호 재입력'), 'password123');
+      await user.type(screen.getByPlaceholderText('name@example.com'), 'cd@example.com');
+      await user.type(screen.getByPlaceholderText('비밀번호'), 'password123');
+      await user.type(screen.getByPlaceholderText('한 번 더 입력'), 'password123');
       await user.click(screen.getByRole('button', { name: '가입하기' }));
 
       // countdown visible + resend locked
       expect(await screen.findByText(/초 후 다시 보내기/)).toBeTruthy();
-      expect(screen.queryByText('다시 보내기')).toBeNull();
+      expect(screen.queryByText('코드 다시 보내기')).toBeNull();
 
       // let the 60s cooldown elapse → "다시 보내기" becomes an active link
       await act(async () => {
         vi.advanceTimersByTime(60_000);
       });
-      await waitFor(() => expect(screen.getByText('다시 보내기')).toBeTruthy());
+      await waitFor(() => expect(screen.getByText('코드 다시 보내기')).toBeTruthy());
 
       // clicking re-sends for real; a rate-limit reply is localized + syncs the countdown to 21s
-      await user.click(screen.getByText('다시 보내기'));
+      await user.click(screen.getByText('코드 다시 보내기'));
       await waitFor(() => expect(resendSpy).toHaveBeenCalledWith('cd@example.com'));
       await waitFor(() => expect(screen.getByText(/약 21초 후에 다시 시도해 주세요/)).toBeTruthy());
       expect(screen.getByText(/21초 후 다시 보내기/)).toBeTruthy();
@@ -204,12 +204,12 @@ describe('Login', () => {
     );
 
     await user.click(screen.getByText('가입하기'));
-    await user.type(screen.getByPlaceholderText('you@example.com'), 'eight@example.com');
-    await user.type(screen.getByPlaceholderText('비밀번호 입력'), 'password123');
-    await user.type(screen.getByPlaceholderText('비밀번호 재입력'), 'password123');
+    await user.type(screen.getByPlaceholderText('name@example.com'), 'eight@example.com');
+    await user.type(screen.getByPlaceholderText('비밀번호'), 'password123');
+    await user.type(screen.getByPlaceholderText('한 번 더 입력'), 'password123');
     await user.click(screen.getByRole('button', { name: '가입하기' }));
 
-    const codeInput = (await screen.findByPlaceholderText('인증 코드 입력')) as HTMLInputElement;
+    const codeInput = (await screen.findByPlaceholderText('메일로 받은 코드')) as HTMLInputElement;
     await user.type(codeInput, '12345678'); // 8 digits
     expect(codeInput.value).toBe('12345678'); // not truncated to 6
 
@@ -231,19 +231,19 @@ describe('Login', () => {
 
     // form → 비밀번호 찾기 → enter email → 재설정 코드 보내기
     await user.click(screen.getByText('비밀번호 찾기'));
-    await user.type(screen.getByPlaceholderText('you@example.com'), 'reset@example.com');
+    await user.type(screen.getByPlaceholderText('name@example.com'), 'reset@example.com');
     await user.click(screen.getByRole('button', { name: '재설정 코드 보내기' }));
     await waitFor(() => expect(resetSpy).toHaveBeenCalledWith('reset@example.com'));
 
     // reset-verify step: NO demo code in production mode
-    expect(await screen.findByPlaceholderText('인증 코드 입력')).toBeTruthy();
+    expect(await screen.findByPlaceholderText('메일로 받은 코드')).toBeTruthy();
     expect(screen.queryByText(/데모 코드:/)).toBeNull();
 
     // enter the emailed 6-digit code + a new password → real recovery
-    await user.type(screen.getByPlaceholderText('인증 코드 입력'), '123456');
-    await user.type(screen.getByPlaceholderText('새 비밀번호 입력'), 'newpass123');
-    await user.type(screen.getByPlaceholderText('새 비밀번호 재입력'), 'newpass123');
-    await user.click(screen.getByRole('button', { name: '비밀번호 재설정' }));
+    await user.type(screen.getByPlaceholderText('메일로 받은 코드'), '123456');
+    await user.type(screen.getByPlaceholderText('새 비밀번호'), 'newpass123');
+    await user.type(screen.getByPlaceholderText('한 번 더 입력'), 'newpass123');
+    await user.click(screen.getByRole('button', { name: '비밀번호 바꾸기' }));
 
     // verifyOtp('recovery') was called with the code, then updatePassword with the new pw
     await waitFor(() => expect(verifySpy).toHaveBeenCalledWith('reset@example.com', '123456', 'recovery'));
@@ -263,14 +263,14 @@ describe('Login', () => {
     );
 
     await user.click(screen.getByText('비밀번호 찾기'));
-    await user.type(screen.getByPlaceholderText('you@example.com'), 'reset@example.com');
+    await user.type(screen.getByPlaceholderText('name@example.com'), 'reset@example.com');
     await user.click(screen.getByRole('button', { name: '재설정 코드 보내기' }));
-    await screen.findByPlaceholderText('인증 코드 입력');
+    await screen.findByPlaceholderText('메일로 받은 코드');
 
-    await user.type(screen.getByPlaceholderText('인증 코드 입력'), '000000'); // rejected by RecoveryAuth
-    await user.type(screen.getByPlaceholderText('새 비밀번호 입력'), 'newpass123');
-    await user.type(screen.getByPlaceholderText('새 비밀번호 재입력'), 'newpass123');
-    await user.click(screen.getByRole('button', { name: '비밀번호 재설정' }));
+    await user.type(screen.getByPlaceholderText('메일로 받은 코드'), '000000'); // rejected by RecoveryAuth
+    await user.type(screen.getByPlaceholderText('새 비밀번호'), 'newpass123');
+    await user.type(screen.getByPlaceholderText('한 번 더 입력'), 'newpass123');
+    await user.click(screen.getByRole('button', { name: '비밀번호 바꾸기' }));
 
     await waitFor(() => expect(screen.getByText(/인증 코드가 올바르지 않아요/)).toBeTruthy());
     expect(updateSpy).not.toHaveBeenCalled(); // password never changed on a bad code
@@ -299,7 +299,7 @@ describe('Login', () => {
 
       // 1) 코드 전송 → 쿨다운(60) 시작, forgotVerify 진입
       await user.click(screen.getByText('비밀번호 찾기'));
-      await user.type(screen.getByPlaceholderText('you@example.com'), 'reset@example.com');
+      await user.type(screen.getByPlaceholderText('name@example.com'), 'reset@example.com');
       await user.click(screen.getByRole('button', { name: '재설정 코드 보내기' }));
       await waitFor(() => expect(resetSpy).toHaveBeenCalledTimes(1));
       expect(await screen.findByText(/초 후 다시 보내기/)).toBeTruthy();
@@ -310,13 +310,13 @@ describe('Login', () => {
       });
       await waitFor(() => expect(readCountdown()).toBeLessThan(60));
 
-      // 3) "← 뒤로"로 이메일 단계 복귀
-      await user.click(screen.getByText('← 뒤로'));
+      // 3) "← 이메일 다시 입력"으로 이메일 단계 복귀
+      await user.click(screen.getByText('← 이메일 다시 입력'));
       expect(await screen.findByRole('button', { name: '재설정 코드 보내기' })).toBeTruthy();
 
       // 4) 재실행 — 서버 재전송 없이 남은 카운트다운 유지(60으로 초기화 X)
       await user.click(screen.getByRole('button', { name: '재설정 코드 보내기' }));
-      expect(await screen.findByPlaceholderText('인증 코드 입력')).toBeTruthy();
+      expect(await screen.findByPlaceholderText('메일로 받은 코드')).toBeTruthy();
       expect(resetSpy).toHaveBeenCalledTimes(1); // 두 번째 전송 없음
       expect(screen.queryByText(/60초 후 다시 보내기/)).toBeNull(); // 초기화되지 않음
       expect(readCountdown()).toBeLessThan(60); // 계속 진행 중
@@ -340,16 +340,16 @@ describe('Login', () => {
     );
 
     await user.click(screen.getByText('비밀번호 찾기'));
-    await user.type(screen.getByPlaceholderText('you@example.com'), 'ghost@example.com');
+    await user.type(screen.getByPlaceholderText('name@example.com'), 'ghost@example.com');
     await user.click(screen.getByRole('button', { name: '재설정 코드 보내기' }));
 
     // 안내 노출 + 실제 전송 없음 + 코드 단계로 넘어가지 않음
     await waitFor(() => expect(screen.getByText(/가입되지 않은 이메일/)).toBeTruthy());
     expect(resetSpy).not.toHaveBeenCalled();
-    expect(screen.queryByPlaceholderText('인증 코드 입력')).toBeNull();
+    expect(screen.queryByPlaceholderText('메일로 받은 코드')).toBeNull();
 
     // 이메일을 수정하면 안내가 사라진다
-    await user.type(screen.getByPlaceholderText('you@example.com'), 'x');
+    await user.type(screen.getByPlaceholderText('name@example.com'), 'x');
     await waitFor(() => expect(screen.queryByText(/가입되지 않은 이메일/)).toBeNull());
   });
 
@@ -359,8 +359,8 @@ describe('Login', () => {
     vi.spyOn(auth, 'signInWithPassword').mockResolvedValue({ session: null, error: 'Invalid login credentials' });
     renderSupa(auth);
 
-    await user.type(screen.getByPlaceholderText('you@example.com'), 'a@b.com');
-    await user.type(screen.getByPlaceholderText('비밀번호 입력'), 'wrongpass');
+    await user.type(screen.getByPlaceholderText('name@example.com'), 'a@b.com');
+    await user.type(screen.getByPlaceholderText('비밀번호'), 'wrongpass');
     await user.click(screen.getByRole('button', { name: '로그인' }));
 
     await waitFor(() => expect(screen.getByText('이메일 또는 비밀번호가 올바르지 않아요.')).toBeTruthy());
@@ -376,12 +376,12 @@ describe('Login', () => {
     const resendSpy = vi.spyOn(auth, 'resendSignup').mockResolvedValue({});
     renderSupa(auth);
 
-    await user.type(screen.getByPlaceholderText('you@example.com'), 'pending@example.com');
-    await user.type(screen.getByPlaceholderText('비밀번호 입력'), 'password123');
+    await user.type(screen.getByPlaceholderText('name@example.com'), 'pending@example.com');
+    await user.type(screen.getByPlaceholderText('비밀번호'), 'password123');
     await user.click(screen.getByRole('button', { name: '로그인' }));
 
     // verify 단계로 이동 + 인증 코드 재발송 + 안내 노출, 막다른 문구는 안 뜬다
-    expect(await screen.findByPlaceholderText('인증 코드 입력')).toBeTruthy();
+    expect(await screen.findByPlaceholderText('메일로 받은 코드')).toBeTruthy();
     await waitFor(() => expect(resendSpy).toHaveBeenCalledWith('pending@example.com'));
     expect(screen.getByText(/아직 가입이 완료되지 않았어요/)).toBeTruthy();
     expect(screen.queryByText(/이메일 인증이 아직 완료되지 않았어요/)).toBeNull();
@@ -398,9 +398,9 @@ describe('Login', () => {
     renderSupa(auth);
 
     await user.click(screen.getByText('가입하기'));
-    await user.type(screen.getByPlaceholderText('you@example.com'), 'new@example.com');
-    await user.type(screen.getByPlaceholderText('비밀번호 입력'), 'abcd12'); // passes client 4-char gate
-    await user.type(screen.getByPlaceholderText('비밀번호 재입력'), 'abcd12');
+    await user.type(screen.getByPlaceholderText('name@example.com'), 'new@example.com');
+    await user.type(screen.getByPlaceholderText('비밀번호'), 'abcd12'); // passes client 4-char gate
+    await user.type(screen.getByPlaceholderText('한 번 더 입력'), 'abcd12');
     await user.click(screen.getByRole('button', { name: '가입하기' }));
 
     await waitFor(() => expect(screen.getByText(/비밀번호는 8자 이상.*소문자·대문자·숫자·특수문자/)).toBeTruthy());
@@ -418,9 +418,9 @@ describe('Login', () => {
     renderSupa(auth);
 
     await user.click(screen.getByText('가입하기'));
-    await user.type(screen.getByPlaceholderText('you@example.com'), 'nl@example.com');
-    await user.type(screen.getByPlaceholderText('비밀번호 입력'), 'password123');
-    await user.type(screen.getByPlaceholderText('비밀번호 재입력'), 'password123');
+    await user.type(screen.getByPlaceholderText('name@example.com'), 'nl@example.com');
+    await user.type(screen.getByPlaceholderText('비밀번호'), 'password123');
+    await user.type(screen.getByPlaceholderText('한 번 더 입력'), 'password123');
     await user.click(screen.getByRole('button', { name: '가입하기' }));
 
     // While signUp is in flight: no full-screen overlay (that message is only for
@@ -432,7 +432,7 @@ describe('Login', () => {
       resolveSignup({ session: null, needsVerification: true });
       await gate;
     });
-    expect(await screen.findByPlaceholderText('인증 코드 입력')).toBeTruthy();
+    expect(await screen.findByPlaceholderText('메일로 받은 코드')).toBeTruthy();
   });
 
   it('hides "비밀번호 찾기" in signup mode (login-only)', async () => {
@@ -450,11 +450,11 @@ describe('Login', () => {
     renderSupa(auth);
 
     await user.click(screen.getByText('비밀번호 찾기'));
-    await user.type(screen.getByPlaceholderText('you@example.com'), 'reset@example.com');
+    await user.type(screen.getByPlaceholderText('name@example.com'), 'reset@example.com');
     await user.click(screen.getByRole('button', { name: '재설정 코드 보내기' }));
 
     await waitFor(() => expect(screen.getByText(/약 30초 후에 다시 시도해 주세요/)).toBeTruthy());
-    expect(screen.queryByPlaceholderText('인증 코드 입력')).toBeNull(); // did NOT advance to the code step
+    expect(screen.queryByPlaceholderText('메일로 받은 코드')).toBeNull(); // did NOT advance to the code step
   });
 
   it('supabase mode: a successful reset advances to the code step with a Korean notice', async () => {
@@ -464,22 +464,22 @@ describe('Login', () => {
     renderSupa(auth);
 
     await user.click(screen.getByText('비밀번호 찾기'));
-    await user.type(screen.getByPlaceholderText('you@example.com'), 'reset@example.com');
+    await user.type(screen.getByPlaceholderText('name@example.com'), 'reset@example.com');
     await user.click(screen.getByRole('button', { name: '재설정 코드 보내기' }));
 
-    expect(await screen.findByPlaceholderText('인증 코드 입력')).toBeTruthy();
+    expect(await screen.findByPlaceholderText('메일로 받은 코드')).toBeTruthy();
     expect(screen.getByText(/이메일로 인증 코드를 보냈어요/)).toBeTruthy();
     expect(resetSpy).toHaveBeenCalledWith('reset@example.com');
   });
 
-  it('shows a plain "Google 계정으로 로그인" button (no GIS personalization) on both login and signup', async () => {
+  it('shows a plain "Google 계정으로 계속하기" button (no GIS personalization) on both login and signup', async () => {
     const user = userEvent.setup();
     renderLogin();
     // login mode
-    expect(screen.getByRole('button', { name: /Google 계정으로 로그인/ })).toBeTruthy();
+    expect(screen.getByRole('button', { name: /Google 계정으로 계속하기/ })).toBeTruthy();
     // signup mode too
     await user.click(screen.getByText('가입하기'));
-    expect(screen.getByRole('button', { name: /Google 계정으로 로그인/ })).toBeTruthy();
+    expect(screen.getByRole('button', { name: /Google 계정으로 계속하기/ })).toBeTruthy();
   });
 
   it('links the legal docs from the form footer, opening in a new tab', () => {
@@ -493,19 +493,22 @@ describe('Login', () => {
     expect(terms.getAttribute('target')).toBe('_blank');
   });
 
-  it('renders the desktop brand panel by default (matchMedia unavailable in jsdom → desktop)', () => {
+  it('넓은 화면에서는 오른쪽 미리보기가 함께 뜬다(jsdom은 matchMedia가 없어 데스크톱)', () => {
     renderLogin();
     expect(screen.getByText('© 2026 Geurio')).toBeTruthy();
+    // 미리보기는 세 보기 칩으로 알아본다 — 폼에는 없는 문구다.
+    expect(screen.getByText('마인드맵')).toBeTruthy();
   });
 
-  describe('mobile (M6)', () => {
-    it('hides the brand panel and still renders the form full-width, crash-free', () => {
+  describe('좁은 화면', () => {
+    it('미리보기만 감추고 폼은 그대로 — 저작권·법적 링크도 남는다', () => {
       const restore = mockMatchMedia(true);
       try {
         renderLogin();
-        expect(screen.queryByText('© 2026 Geurio')).toBeNull();
-        expect(screen.getByText('Geurio에 오신 것을 환영해요')).toBeTruthy();
+        expect(screen.queryByText('마인드맵')).toBeNull();
+        expect(screen.getByText('다시 만나서 반가워요.')).toBeTruthy();
         expect(screen.getByRole('button', { name: '로그인' })).toBeTruthy();
+        expect(screen.getByText('© 2026 Geurio')).toBeTruthy();
       } finally {
         restore();
       }
@@ -530,14 +533,14 @@ describe('이미 가입된 이메일로 회원가입 시도 — 차단 + 안내'
     renderSupa(auth);
 
     await gotoSignup(user);
-    await user.type(screen.getByPlaceholderText('you@example.com'), 'g@example.com');
-    await user.type(screen.getByPlaceholderText('비밀번호 입력'), 'pw1234');
-    await user.type(screen.getByPlaceholderText('비밀번호 재입력'), 'pw1234');
+    await user.type(screen.getByPlaceholderText('name@example.com'), 'g@example.com');
+    await user.type(screen.getByPlaceholderText('비밀번호'), 'pw1234');
+    await user.type(screen.getByPlaceholderText('한 번 더 입력'), 'pw1234');
     await user.click(screen.getByRole('button', { name: /가입하기/ }));
 
     await waitFor(() => expect(screen.getByText(/Google 계정으로 가입한 이메일/)).toBeTruthy());
     expect(signUpSpy).not.toHaveBeenCalled(); // 실제 가입 시도 없음
-    expect(screen.queryByPlaceholderText('인증 코드 입력')).toBeNull(); // 인증 화면으로 넘어가지 않음
+    expect(screen.queryByPlaceholderText('메일로 받은 코드')).toBeNull(); // 인증 화면으로 넘어가지 않음
   });
 
   it('이미 이메일로 가입된 주소면 로그인으로 유도한다', async () => {
@@ -548,9 +551,9 @@ describe('이미 가입된 이메일로 회원가입 시도 — 차단 + 안내'
     renderSupa(auth);
 
     await gotoSignup(user);
-    await user.type(screen.getByPlaceholderText('you@example.com'), 'dup@example.com');
-    await user.type(screen.getByPlaceholderText('비밀번호 입력'), 'pw1234');
-    await user.type(screen.getByPlaceholderText('비밀번호 재입력'), 'pw1234');
+    await user.type(screen.getByPlaceholderText('name@example.com'), 'dup@example.com');
+    await user.type(screen.getByPlaceholderText('비밀번호'), 'pw1234');
+    await user.type(screen.getByPlaceholderText('한 번 더 입력'), 'pw1234');
     await user.click(screen.getByRole('button', { name: /가입하기/ }));
 
     await waitFor(() => expect(screen.getByText(/이미 가입된 이메일/)).toBeTruthy());
@@ -565,13 +568,13 @@ describe('이미 가입된 이메일로 회원가입 시도 — 차단 + 안내'
     renderSupa(auth);
 
     await gotoSignup(user);
-    await user.type(screen.getByPlaceholderText('you@example.com'), 'g@example.com');
-    await user.type(screen.getByPlaceholderText('비밀번호 입력'), 'pw1234');
-    await user.type(screen.getByPlaceholderText('비밀번호 재입력'), 'pw1234');
+    await user.type(screen.getByPlaceholderText('name@example.com'), 'g@example.com');
+    await user.type(screen.getByPlaceholderText('비밀번호'), 'pw1234');
+    await user.type(screen.getByPlaceholderText('한 번 더 입력'), 'pw1234');
     await user.click(screen.getByRole('button', { name: /가입하기/ }));
     await waitFor(() => expect(screen.getByText(/Google 계정으로 가입한 이메일/)).toBeTruthy());
 
-    await user.type(screen.getByPlaceholderText('you@example.com'), 'x');
+    await user.type(screen.getByPlaceholderText('name@example.com'), 'x');
     expect(screen.queryByText(/Google 계정으로 가입한 이메일/)).toBeNull();
   });
 
@@ -582,12 +585,12 @@ describe('이미 가입된 이메일로 회원가입 시도 — 차단 + 안내'
     renderSupa(auth);
 
     await gotoSignup(user);
-    await user.type(screen.getByPlaceholderText('you@example.com'), 'new@example.com');
-    await user.type(screen.getByPlaceholderText('비밀번호 입력'), 'pw1234');
-    await user.type(screen.getByPlaceholderText('비밀번호 재입력'), 'pw1234');
+    await user.type(screen.getByPlaceholderText('name@example.com'), 'new@example.com');
+    await user.type(screen.getByPlaceholderText('비밀번호'), 'pw1234');
+    await user.type(screen.getByPlaceholderText('한 번 더 입력'), 'pw1234');
     await user.click(screen.getByRole('button', { name: /가입하기/ }));
 
-    expect(await screen.findByPlaceholderText('인증 코드 입력')).toBeTruthy();
+    expect(await screen.findByPlaceholderText('메일로 받은 코드')).toBeTruthy();
   });
 
   it('공급자 확인이 불가해도(RPC 미배포) 어댑터의 "이미 가입됨" 오류를 안내로 바꿔 막는다', async () => {
@@ -598,17 +601,17 @@ describe('이미 가입된 이메일로 회원가입 시도 — 차단 + 안내'
     renderSupa(auth);
 
     await gotoSignup(user);
-    await user.type(screen.getByPlaceholderText('you@example.com'), 'dup@example.com');
-    await user.type(screen.getByPlaceholderText('비밀번호 입력'), 'pw1234');
-    await user.type(screen.getByPlaceholderText('비밀번호 재입력'), 'pw1234');
+    await user.type(screen.getByPlaceholderText('name@example.com'), 'dup@example.com');
+    await user.type(screen.getByPlaceholderText('비밀번호'), 'pw1234');
+    await user.type(screen.getByPlaceholderText('한 번 더 입력'), 'pw1234');
     await user.click(screen.getByRole('button', { name: /가입하기/ }));
 
     await waitFor(() => expect(screen.getByText(/이미 가입된 이메일/)).toBeTruthy());
-    expect(screen.queryByPlaceholderText('인증 코드 입력')).toBeNull();
+    expect(screen.queryByPlaceholderText('메일로 받은 코드')).toBeNull();
   });
 });
 
-// 제보: 가입 차단 안내가 뜬 화면에서 'Google 계정으로 로그인'을 누르면 문구만
+// 제보: 가입 차단 안내가 뜬 화면에서 'Google 계정으로 계속하기'을 누르면 문구만
 // 공백이 되고 빈 콜아웃(아이콘만)이 남는다. 콜아웃 본문이 `error`인데 그 흐름이
 // 에러만 비우고 `signupBlocked` 플래그는 남겼기 때문.
 describe('가입 차단 안내는 문구 없이 남지 않는다', () => {
@@ -616,9 +619,9 @@ describe('가입 차단 안내는 문구 없이 남지 않는다', () => {
     vi.spyOn(auth, 'emailSignInProviders').mockResolvedValue(['google']);
     renderSupa(auth);
     await user.click(screen.getByText('가입하기'));
-    await user.type(screen.getByPlaceholderText('you@example.com'), 'g@example.com');
-    await user.type(screen.getByPlaceholderText('비밀번호 입력'), 'pw1234');
-    await user.type(screen.getByPlaceholderText('비밀번호 재입력'), 'pw1234');
+    await user.type(screen.getByPlaceholderText('name@example.com'), 'g@example.com');
+    await user.type(screen.getByPlaceholderText('비밀번호'), 'pw1234');
+    await user.type(screen.getByPlaceholderText('한 번 더 입력'), 'pw1234');
     await user.click(screen.getByRole('button', { name: /가입하기/ }));
     await waitFor(() => expect(screen.getByText(/Google 계정으로 가입한 이메일/)).toBeTruthy());
   }
@@ -626,14 +629,14 @@ describe('가입 차단 안내는 문구 없이 남지 않는다', () => {
   /** 화면에 떠 있는 안내 콜아웃(있으면) — 빈 상자가 남았는지 확인용. */
   const calloutOf = () => document.querySelector('[role="alert"]');
 
-  it("'Google 계정으로 로그인'을 누르면 콜아웃이 통째로 사라진다 (빈 상자 없음)", async () => {
+  it("'Google 계정으로 계속하기'을 누르면 콜아웃이 통째로 사라진다 (빈 상자 없음)", async () => {
     const user = userEvent.setup();
     const auth = new LocalAuth();
     vi.spyOn(auth, 'signInWithOAuth').mockResolvedValue({});
     await blockSignup(user, auth);
     expect(calloutOf()).toBeTruthy();
 
-    await user.click(screen.getByText(/Google 계정으로 로그인/));
+    await user.click(screen.getByText(/Google 계정으로 계속하기/));
 
     await waitFor(() => expect(calloutOf()).toBeNull());
   });
@@ -652,7 +655,7 @@ describe('가입 차단 안내는 문구 없이 남지 않는다', () => {
     const auth = new LocalAuth();
     await blockSignup(user, auth);
 
-    await user.type(screen.getByPlaceholderText('비밀번호 입력'), 'x');
+    await user.type(screen.getByPlaceholderText('비밀번호'), 'x');
     expect(calloutOf()).toBeNull();
   });
 });
@@ -666,8 +669,8 @@ describe('세션 만료 안내와 원래 화면 복귀', () => {
 
     expect(screen.getByText('로그인이 만료되었어요. 다시 로그인해 주세요.')).toBeTruthy();
 
-    await user.type(screen.getByPlaceholderText('you@example.com'), 'a@b.co');
-    await user.type(screen.getByPlaceholderText('비밀번호 입력'), 'password123');
+    await user.type(screen.getByPlaceholderText('name@example.com'), 'a@b.co');
+    await user.type(screen.getByPlaceholderText('비밀번호'), 'password123');
     await user.click(screen.getByRole('button', { name: '로그인' }));
 
     // 편집 중이던 맵 주소를 사용자가 다시 찾지 않는다.
@@ -680,8 +683,8 @@ describe('세션 만료 안내와 원래 화면 복귀', () => {
 
     expect(screen.queryByText(/로그인이 만료되었어요/)).toBeNull();
 
-    await user.type(screen.getByPlaceholderText('you@example.com'), 'a@b.co');
-    await user.type(screen.getByPlaceholderText('비밀번호 입력'), 'password123');
+    await user.type(screen.getByPlaceholderText('name@example.com'), 'a@b.co');
+    await user.type(screen.getByPlaceholderText('비밀번호'), 'password123');
     await user.click(screen.getByRole('button', { name: '로그인' }));
 
     await waitFor(() => expect(screen.getByText('HOME_PAGE')).toBeTruthy(), { timeout: 3000 });
@@ -691,8 +694,8 @@ describe('세션 만료 안내와 원래 화면 복귀', () => {
     const user = userEvent.setup();
     renderLoginAt(`/login?next=${encodeURIComponent('https://evil.com/steal')}`);
 
-    await user.type(screen.getByPlaceholderText('you@example.com'), 'a@b.co');
-    await user.type(screen.getByPlaceholderText('비밀번호 입력'), 'password123');
+    await user.type(screen.getByPlaceholderText('name@example.com'), 'a@b.co');
+    await user.type(screen.getByPlaceholderText('비밀번호'), 'password123');
     await user.click(screen.getByRole('button', { name: '로그인' }));
 
     await waitFor(() => expect(screen.getByText('HOME_PAGE')).toBeTruthy(), { timeout: 3000 });

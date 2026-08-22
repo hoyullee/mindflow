@@ -1,114 +1,64 @@
-import type { ChangeEvent } from 'react';
+import { AUTH } from './tokens';
+import { BackRow, CodeInput, ErrorLine, Field, IntroBlock, NoticeLine, PasswordInput } from './AuthFields';
+import { demoHintStyle, spinnerStyle, submitButtonStyle } from './styles';
 import type { LoginController } from './useLoginController';
-import { codeInputStyle, errorMsgStyle, fieldLabelStyle, noticeMsgStyle, spinnerStyle, submitButtonStyle, textInputStyle } from './styles';
-import { MailIcon } from './AuthIcons';
+import type { LoginViewModel } from './viewModel';
 
 interface ForgotVerifyStepProps {
   controller: LoginController;
+  view: LoginViewModel;
 }
 
-/** Ports the `forgotVerifyStepStyle` block (reset code + new password) from Login.dc.html. */
-export function ForgotVerifyStep({ controller }: ForgotVerifyStepProps) {
+/** 비밀번호 재설정 — 메일로 받은 코드 + 새 비밀번호. */
+export function ForgotVerifyStep({ controller, view }: ForgotVerifyStepProps) {
   const { state } = controller;
+  const mismatch = state.newPw2.length > 0 && state.newPw !== state.newPw2;
 
   return (
-    <div>
-      <div
-        style={{
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'center',
-          width: 56,
-          height: 56,
-          borderRadius: 16,
-          background: '#fdeee7',
-          marginBottom: 20,
-        }}
-      >
-        <MailIcon />
-      </div>
-      <div style={{ fontSize: 13.5, color: '#33281f', lineHeight: 1.65, marginBottom: 6 }}>
-        <b style={{ fontWeight: 700 }}>{state.email}</b> 로 재설정 코드를 보냈어요.
-      </div>
-      <div style={{ fontSize: 12.5, color: '#9c8b7e', margin: '0 0 18px' }}>메일함에서 인증 코드를 확인해 입력해 주세요.</div>
-      {/* 데모 코드 힌트는 로컬/데모 모드에서만 — 실제 Supabase 복구에선 비어 있어
-          이 박스가 노출되지 않는다(메일의 인증 코드를 입력). */}
+    <>
+      <IntroBlock kind="mail">
+        <b style={{ fontWeight: 700, color: AUTH.ink }}>{state.email}</b> 로 재설정 코드를 보냈어요. 메일함에서 코드를 확인해 주세요.
+      </IntroBlock>
+
+      {/* 데모 코드 힌트는 로컬/데모 모드에서만 — 실제 복구에선 비어 있다. */}
       {state.demoCode && (
-        <div
-          style={{
-            fontSize: 12,
-            color: '#b6a596',
-            background: '#faf3ee',
-            border: '1px dashed #e4d2c5',
-            borderRadius: 9,
-            padding: '9px 12px',
-            margin: '0 0 18px',
-          }}
-        >
-          데모 코드: <b style={{ color: '#d9542f', letterSpacing: 2 }}>{state.demoCode}</b>
+        <div style={demoHintStyle}>
+          데모 코드: <b style={{ color: AUTH.accentIcon, letterSpacing: 2, fontFamily: AUTH.mono }}>{state.demoCode}</b>
         </div>
       )}
-      <div style={fieldLabelStyle}>인증 코드</div>
-      <input
-        className="lg-input"
-        inputMode="numeric"
-        // OTP 필드임을 브라우저에 명시 — 엉뚱한 값 자동완성 방지. 길이도 6~10 유연.
-        autoComplete="one-time-code"
-        maxLength={10}
-        value={state.code}
-        onChange={(e: ChangeEvent<HTMLInputElement>) => controller.onCode(e.target.value)}
-        placeholder="인증 코드 입력"
-        style={codeInputStyle(16)}
-      />
-      <div style={fieldLabelStyle}>새 비밀번호</div>
-      <input
-        className="lg-input"
-        type="password"
-        value={state.newPw}
-        onChange={(e: ChangeEvent<HTMLInputElement>) => controller.onNewPw(e.target.value)}
-        placeholder="새 비밀번호 입력"
-        style={textInputStyle(16)}
-      />
-      <div style={fieldLabelStyle}>새 비밀번호 확인</div>
-      <input
-        className="lg-input"
-        type="password"
-        value={state.newPw2}
-        onChange={(e: ChangeEvent<HTMLInputElement>) => controller.onNewPw2(e.target.value)}
-        onKeyDown={controller.onResetKey}
-        placeholder="새 비밀번호 재입력"
-        style={textInputStyle(8)}
-      />
-      {state.notice && <div style={noticeMsgStyle}>{state.notice}</div>}
-      {state.error && <div style={errorMsgStyle}>{state.error}</div>}
-      <button type="button" className="btn" onClick={controller.resetPw} style={submitButtonStyle(state.busy)}>
+
+      <Field label="인증 코드">{(id) => <CodeInput id={id} value={state.code} onChange={controller.onCode} />}</Field>
+
+      <Field label="새 비밀번호">
+        {(id) => <PasswordInput id={id} value={state.newPw} onChange={controller.onNewPw} placeholder="새 비밀번호" autoComplete="new-password" />}
+      </Field>
+
+      <Field label="새 비밀번호 확인">
+        {(id) => (
+          <>
+            <PasswordInput
+              id={id}
+              value={state.newPw2}
+              onChange={controller.onNewPw2}
+              onKeyDown={controller.onResetKey}
+              placeholder="한 번 더 입력"
+              autoComplete="new-password"
+              invalid={mismatch}
+            />
+            {mismatch && <span style={{ fontSize: 11.5, color: AUTH.accentDeep, marginTop: 7 }}>비밀번호가 서로 달라요.</span>}
+          </>
+        )}
+      </Field>
+
+      {state.notice ? <NoticeLine>{state.notice}</NoticeLine> : <NoticeLine>메일함으로 코드를 보냈어요. 스팸함도 한 번 확인해 주세요.</NoticeLine>}
+      {state.error && <ErrorLine>{state.error}</ErrorLine>}
+
+      <button type="button" className="lg-submit" onClick={controller.resetPw} disabled={!view.submitReady && !state.busy} style={submitButtonStyle(state.busy, view.submitReady)}>
         <span style={spinnerStyle(state.busy)} />
-        <span>비밀번호 재설정</span>
+        {view.submitLabel}
       </button>
-      <div
-        style={{
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'space-between',
-          marginTop: 20,
-          fontSize: 13,
-          color: '#9c8b7e',
-        }}
-      >
-        <span className="link-tab" onClick={controller.startForgot} style={{ fontWeight: 600 }}>
-          ← 뒤로
-        </span>
-        <span>
-          코드가 안 왔나요?{' '}
-          {state.cooldown > 0 ? (
-            <span style={{ color: '#b6a596', fontWeight: 600 }}>{state.cooldown}초 후 다시 보내기</span>
-          ) : (
-            <span className="link-tab" onClick={controller.resendCode} style={{ color: '#f0663f', fontWeight: 700 }}>
-              다시 보내기
-            </span>
-          )}
-        </span>
-      </div>
-    </div>
+
+      <BackRow backLabel="이메일 다시 입력" onBack={controller.startForgot} resend={{ cooldown: state.cooldown, onResend: controller.resendCode }} />
+    </>
   );
 }
