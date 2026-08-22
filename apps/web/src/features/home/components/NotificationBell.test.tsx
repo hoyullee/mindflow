@@ -62,12 +62,12 @@ describe('알림 센터', () => {
 
     fireEvent.click(bell);
     const panel = () => document.querySelector('[data-notification-panel]') as HTMLElement | null;
-    expect(panel()!.className).toContain('is-in');
+    // 상태는 클래스가 아니라 **자기 속성**으로 알린다(Radix Popover) — 애니메이션은
+    // CSS가 `[data-state]`에 걸고, 닫히는 동안 Radix가 노드를 붙잡아 둔다.
+    await waitFor(() => expect(panel()?.getAttribute('data-state')).toBe('open'));
+    expect(panel()!.className).toContain('mf-pop-anim');
 
-    // 닫으면 곧바로 사라지지 않는다 — 그러지 않으면 나가는 애니메이션을 그릴 것이 없다.
     fireEvent.click(bell);
-    expect(panel()!.className).toContain('is-out');
-    // 애니메이션이 끝나면 정리된다.
     await waitFor(() => expect(panel()).toBeNull());
   });
 

@@ -10,13 +10,13 @@
 // 그 주제의 댓글 패널을 바로 연다(딥링크).
 
 import { useCallback, useEffect, useRef, useState, type CSSProperties, type ReactNode } from 'react';
+import { Popover } from '../../../components/Popover';
 import { useNavigate } from 'react-router-dom';
 import type { AppNotification } from '../../../adapters/ports';
 import { useNotificationStore } from '../../../adapters/BackendContext';
 import { UNREAD_BADGE_BG, UNREAD_BADGE_INK } from '../theme';
 import { formatLastEdited } from '../timeFormat';
 import { MONO_FONT } from '../chrome';
-import { usePopAnim } from '../usePopAnim';
 
 /** 탭 복귀 시 다시 읽는 최소 간격 — 포커스가 들락거려도 요청이 몰리지 않게. */
 const REFRESH_THROTTLE_MS = 30_000;
@@ -89,10 +89,8 @@ export function NotificationBell({ isMobile = false }: { isMobile?: boolean }) {
   const [items, setItems] = useState<AppNotification[]>([]);
   const [open, setOpen] = useState(false);
   // 닫힘 애니메이션 — 닫힌 뒤 잠깐 마운트를 유지한다(프로필 메뉴와 같은 규칙).
-  const { render: panelRender, cls: panelCls } = usePopAnim(open);
   /** 이번에 열었을 때 "안 읽음"이었던 항목 — 읽음 처리 후에도 점 표시용. */
   const [fresh, setFresh] = useState<Set<string>>(new Set());
-  const wrapRef = useRef<HTMLDivElement | null>(null);
   const lastLoadRef = useRef(0);
 
   const reload = useCallback(async () => {
@@ -143,22 +141,8 @@ export function NotificationBell({ isMobile = false }: { isMobile?: boolean }) {
     return () => window.clearInterval(t);
   }, [reload, open]);
 
-  // 바깥 클릭/Esc로 닫기.
-  useEffect(() => {
-    if (!open) return;
-    const onDown = (e: MouseEvent) => {
-      if (wrapRef.current && !wrapRef.current.contains(e.target as Node)) setOpen(false);
-    };
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') setOpen(false);
-    };
-    document.addEventListener('mousedown', onDown);
-    document.addEventListener('keydown', onKey);
-    return () => {
-      document.removeEventListener('mousedown', onDown);
-      document.removeEventListener('keydown', onKey);
-    };
-  }, [open]);
+  // 바깥 클릭·Escape로 닫기, 자리, 닫힘 애니메이션은 `Popover`(Radix)가 맡는다 —
+  // 예전에는 document 리스너 둘과 `usePopAnim`을 여기서 손으로 관리했다.
 
   const unread = items.filter((i) => !i.read).length;
 
@@ -191,9 +175,6 @@ export function NotificationBell({ isMobile = false }: { isMobile?: boolean }) {
   // 디자인 원본의 알림 팝업 — 352 폭·라운드 18·긴 그늘, 위 테두리에 **꼬리**(벨을
   // 가리키는 회전 사각)가 박힌다. 패널 자체는 overflow hidden이고 **목록만** 스크롤.
   const panelStyle: CSSProperties = {
-    position: 'absolute',
-    right: 0,
-    top: 'calc(100% + 12px)',
     width: 352,
     maxWidth: 'calc(100vw - 32px)',
     background: 'var(--mf-card)',
@@ -204,16 +185,13 @@ export function NotificationBell({ isMobile = false }: { isMobile?: boolean }) {
     overflow: 'hidden',
   };
 
-  return (
-    <div ref={wrapRef} style={{ position: 'relative', flexShrink: 0 }} data-notification-bell>
-      <button
-        type="button"
-        className={isMobile ? 'btn' : 'btn mf-ctl'}
-        onClick={() => (open ? setOpen(false) : void openCenter())}
-        aria-label={unread > 0 ? `알림 ${unread}개` : '알림'}
-        title="알림"
-        aria-expanded={open}
-        style={{
+  const bell = (
+    <button
+      type="button"
+      className={isMobile ? 'btn' : 'btn mf-ctl'}
+      aria-label={unread > 0 ? `알림 ${unread}개` : '알림'}
+      title="알림"
+      style={{
           position: 'relative',
           display: 'flex',
           alignItems: 'center',
@@ -266,9 +244,26 @@ export function NotificationBell({ isMobile = false }: { isMobile?: boolean }) {
           </span>
         )}
       </button>
+  );
 
-      {panelRender && (
-        <div className={`mf-pop-anim ${panelCls}`} style={{ ...panelStyle, transformOrigin: 'top right' }} data-notification-panel role="region" aria-label="알림 센터">
+  return (
+    <div style={{ flexShrink: 0 }} data-notification-bell>
+      <Popover
+        open={open}
+        // 열 때 목록을 다시 읽는다(열었으면 본 것 — 배지를 지운다). 닫기는 상태만.
+        onOpenChange={(next) => {
+          if (next) void openCenter();
+          else setOpen(false);
+        }}
+        trigger={bell}
+        align="end"
+        sideOffset={12}
+        panelClass="mf-pop-anim"
+        panelAttrs={{ 'data-notification-panel': '', role: 'region' }}
+        label="알림 센터"
+        panel={{ ...panelStyle, transformOrigin: 'top right' }}
+      >
+        <>
           {/* 꼬리 — 패널의 overflow:hidden이 회전 사각의 위 절반을 잘라 위 테두리에
               박힌 캐럿이 된다(디자인 원본과 같은 마크업). 벨이 패널 오른쪽 끝에
               정렬되므로 꼬리는 오른쪽 근처에 둔다. */}
@@ -372,8 +367,8 @@ export function NotificationBell({ isMobile = false }: { isMobile?: boolean }) {
           </div>
           {/* 디자인 원본의 "모든 알림 보기" 푸터는 두지 않는다 — 그 목록으로 가는
               화면이 없다(눌러도 아무 일 없는 버튼은 없느니만 못하다). */}
-        </div>
-      )}
+        </>
+      </Popover>
     </div>
   );
 }

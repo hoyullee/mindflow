@@ -1,6 +1,6 @@
 import type { HomeController } from '../useHomeController';
 import type { HomeState } from '../types';
-import { usePopAnim } from '../usePopAnim';
+import { Popover, TRIGGER_WIDTH } from '../../../components/Popover';
 import { ProfileAvatar } from './ProfileAvatar';
 
 interface Props {
@@ -11,7 +11,6 @@ interface Props {
 
 /** Home.dc.html:71-99 — account avatar/name button + its dropdown (rename, logout). */
 export function SettingsPopover({ state, controller, userInitial }: Props) {
-  const { render, cls } = usePopAnim(state.settingsOpen);
   // 세션이 아직 안 풀렸으면 프로필 블록은 스켈레톤 — 'mine'/'M' 플레이스홀더가
   // 실제 이름/아바타로 바뀌며 깜빡이던 것을 막는다(맵 그리드·스페이스 목록의
   // 스켈레톤과 같은 패턴). 같은 크기(아바타 30 + 이름 줄, padding 8)로 그려
@@ -29,25 +28,18 @@ export function SettingsPopover({ state, controller, userInitial }: Props) {
       </div>
     );
   }
-  return (
-    <div style={{ position: 'relative', marginBottom: 10 }}>
-      <div
-        className="nav-item settings-btn"
-        role="button"
-        tabIndex={0}
-        aria-label="계정 메뉴"
-        data-account-trigger
-        onClick={controller.toggleSettings}
-        onKeyDown={(e) => {
-          if (e.key === 'Enter' || e.key === ' ') {
-            e.preventDefault();
-            controller.toggleSettings();
-          }
-        }}
-        // 디자인 개정(첨부 이미지): 36px 잉크색 아바타 + 열림에 따라 도는 셰브론.
-        // 테두리·면 없음(요청) — hover의 옅은 면(`.nav-item:hover`)만 반응한다.
-        style={{ display: 'flex', alignItems: 'center', gap: 10, padding: 8, borderRadius: 14, cursor: 'pointer', width: '100%', textAlign: 'left' }}
-      >
+  // 트리거는 **진짜 버튼**이다 — 예전에는 `div role="button"`에 tabIndex와
+  // Enter/Space 핸들러를 손으로 달았다(초점·키보드는 버튼이 공짜로 준다).
+  const trigger = (
+    <button
+      type="button"
+      className="nav-item settings-btn"
+      aria-label="계정 메뉴"
+      data-account-trigger
+      // 디자인 개정(첨부 이미지): 36px 잉크색 아바타 + 열림에 따라 도는 셰브론.
+      // 테두리·면 없음(요청) — hover의 옅은 면(`.nav-item:hover`)만 반응한다.
+      style={{ display: 'flex', alignItems: 'center', gap: 10, padding: 8, borderRadius: 14, cursor: 'pointer', width: '100%', textAlign: 'left', border: 'none', background: 'none', font: 'inherit', color: 'inherit' }}
+    >
         <ProfileAvatar initial={userInitial} avatarUrl={state.userAvatar} size={36} radius={12} fontSize={13} />
         <span style={{ display: 'flex', flexDirection: 'column', gap: 1, minWidth: 0, flex: 1 }}>
           <span style={{ fontSize: 14, fontWeight: 700, letterSpacing: '-.01em', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{state.userName}</span>
@@ -59,16 +51,23 @@ export function SettingsPopover({ state, controller, userInitial }: Props) {
         <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="var(--mf-faint)" strokeWidth="2.4" strokeLinecap="round" aria-hidden="true" style={{ flexShrink: 0, transform: state.settingsOpen ? 'rotate(180deg)' : 'none', transition: 'transform .16s ease' }}>
           <path d="m6 9 6 6 6-6" />
         </svg>
-      </div>
+    </button>
+  );
 
-      <div
-        className={`settings-pop mf-pop-anim ${cls}`}
-        onClick={(e) => e.stopPropagation()}
-        style={{
-          position: 'absolute',
-          top: 'calc(100% + 8px)',
-          left: 0,
-          right: 0,
+  return (
+    <div style={{ marginBottom: 10 }}>
+      <Popover
+        open={state.settingsOpen}
+        onOpenChange={(next) => {
+          if (next !== state.settingsOpen) controller.toggleSettings();
+        }}
+        trigger={trigger}
+        panelClass="settings-pop mf-pop-anim"
+        panel={{
+          // 폭은 트리거(프로필 행)에 맞춘다 — 예전에는 `left:0; right:0`으로
+          // 부모에 맞췄다(부모가 곧 트리거일 때만 성립하던 방식).
+          width: TRIGGER_WIDTH,
+          boxSizing: 'border-box',
           background: 'var(--mf-card)',
           border: '1px solid var(--mf-border)',
           borderRadius: 16,
@@ -76,8 +75,6 @@ export function SettingsPopover({ state, controller, userInitial }: Props) {
           padding: 0,
           zIndex: 40,
           overflow: 'hidden',
-          // 닫힌 뒤에도 잠깐 남아 접힘 애니메이션을 그린다(`usePopAnim`).
-          display: render ? 'block' : 'none',
           transformOrigin: 'top center',
         }}
       >
@@ -131,7 +128,7 @@ export function SettingsPopover({ state, controller, userInitial }: Props) {
             로그아웃
           </div>
         </div>
-      </div>
+      </Popover>
     </div>
   );
 }

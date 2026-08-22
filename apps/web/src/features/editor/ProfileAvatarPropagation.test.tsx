@@ -193,7 +193,8 @@ describe('프로필 이미지 반영(에디터)', () => {
 
     // 필터 패널의 담당 칩
     fireEvent.click(screen.getByRole('button', { name: /필터/ }));
-    const chip = await waitFor(() => container.querySelector('[data-filter-owner] [data-avatar]') as HTMLElement);
+    // 필터 패널은 포털로 body 밑에 그려진다(Radix Popover).
+    const chip = await waitFor(() => document.querySelector('[data-filter-owner] [data-avatar]') as HTMLElement);
     await waitFor(() => expect(chip.querySelector(`img[src="${PHOTO}"]`)).toBeTruthy());
     fireEvent.click(screen.getByRole('button', { name: /필터/ }));
 

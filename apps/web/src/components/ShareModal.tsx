@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState, type CSSProperties } from 'react';
 import { Modal } from './Modal';
+import { Popover } from './Popover';
 import type { DocumentShare, ShareParticipant, ShareRole } from '../adapters/ports';
 import { useAuthUser } from '../adapters/useAuthUser';
 import { useBackend, useShareStore } from '../adapters/BackendContext';
@@ -92,26 +93,15 @@ function PersonDot({ email, name, dimmed = false }: { email: string; name: strin
  * 터치다: 손가락에는 호버가 없어서 호버 전용 툴팁은 폰에서 아예 못 본다.
  */
 function HelpTip({ theme: th, open, onToggle, onClose }: { theme: ShareTheme; open: boolean; onToggle: () => void; onClose: () => void }) {
-  const ref = useRef<HTMLDivElement | null>(null);
-  useEffect(() => {
-    if (!open) return;
-    const onDown = (e: MouseEvent): void => {
-      if (ref.current && !ref.current.contains(e.target as Node)) onClose();
-    };
-    window.addEventListener('mousedown', onDown, true);
-    return () => window.removeEventListener('mousedown', onDown, true);
-  }, [open, onClose]);
-
-  return (
-    // 일부러 `position: static` — 툴팁을 이 작은 래퍼가 아니라 **제목 행**(부모가
-    // 이미 relative)에 걸어 모달 본문 왼쪽 끝에서 시작하게 한다. "?" 버튼에 걸면
-    // 제목 폭만큼 오른쪽에서 시작해 한 줄에 들어갈 폭이 그만큼 모자란다.
-    <div ref={ref} style={{ display: 'flex' }}>
+  // 자리·바깥 클릭 닫기는 `Popover`(Radix)가 맡는다 — 예전에는 window mousedown
+  // 리스너를 손으로 달았고, 툴팁이 한 줄에 들어갈 폭을 얻으려고 래퍼의
+  // `position`을 static으로 두어 **제목 행**에 걸치게 하는 우회가 필요했다
+  // (부모가 relative일 때만 성립하는 방식). 지금은 "?" 버튼을 기준으로 서고
+  // 화면 밖으로 나가면 Radix가 안쪽으로 당긴다.
+  const trigger = (
       <button
         type="button"
-        onClick={onToggle}
         aria-label="권한 안내"
-        aria-expanded={open}
         style={{
           width: 18,
           height: 18,
@@ -132,30 +122,39 @@ function HelpTip({ theme: th, open, onToggle, onClose }: { theme: ShareTheme; op
       >
         ?
       </button>
-      {open && (
-        <div
-          role="tooltip"
-          style={{
-            position: 'absolute',
-            top: 26,
-            left: 0,
-            // 세 문장을 **한 줄씩** 보여 준다(요청) — 문장 중간에서 접히면 굵게
-            // 강조한 권한 이름과 설명이 갈라져 읽기 힘들다. 폭은 가장 긴 문장에
-            // 맞추고(`max-content`), 아주 좁은 화면에서만 접히도록 상한을 둔다.
-            width: 'max-content',
-            maxWidth: 'calc(100vw - 48px)',
-            zIndex: 5,
-            background: th.panel,
-            border: `1px solid ${th.border}`,
-            borderRadius: 10,
-            boxShadow: '0 10px 28px rgba(0,0,0,.18)',
-            padding: '10px 12px',
-            fontSize: 12.5,
-            fontWeight: 400,
-            color: th.subtext,
-            lineHeight: 1.6,
-          }}
-        >
+  );
+
+  return (
+    <Popover
+      open={open}
+      onOpenChange={(next) => (next === open ? undefined : next ? onToggle() : onClose())}
+      trigger={trigger}
+      // 읽기만 하는 패널이라 초점은 "?" 버튼에 남긴다 — 한 번 더 누르면 닫힌다.
+      keepTriggerFocus
+      align="start"
+      side="bottom"
+      sideOffset={8}
+      collisionPadding={16}
+      panelAttrs={{ role: 'tooltip' }}
+      panel={{
+        // 세 문장을 **한 줄씩** 보여 준다(요청) — 문장 중간에서 접히면 굵게
+        // 강조한 권한 이름과 설명이 갈라져 읽기 힘들다. 폭은 가장 긴 문장에
+        // 맞추고(`max-content`), 아주 좁은 화면에서만 접히도록 상한을 둔다.
+        width: 'max-content',
+        maxWidth: 'calc(100vw - 48px)',
+        zIndex: 260,
+        background: th.panel,
+        border: `1px solid ${th.border}`,
+        borderRadius: 10,
+        boxShadow: '0 10px 28px rgba(0,0,0,.18)',
+        padding: '10px 12px',
+        fontSize: 12.5,
+        fontWeight: 400,
+        color: th.subtext,
+        lineHeight: 1.6,
+      }}
+    >
+        <>
           <div>
             <strong style={{ color: th.text }}>편집 가능</strong> 권한은 서로의 커서와 편집이 실시간으로 보여요.
           </div>
@@ -165,9 +164,8 @@ function HelpTip({ theme: th, open, onToggle, onClose }: { theme: ShareTheme; op
           <div style={{ marginTop: 4 }}>
             <strong style={{ color: th.text }}>링크 공유</strong>는 링크를 아는 사람이 <strong style={{ color: th.text }}>로그인 후 열람</strong>만 할 수 있어요.
           </div>
-        </div>
-      )}
-    </div>
+        </>
+    </Popover>
   );
 }
 

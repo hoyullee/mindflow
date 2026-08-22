@@ -11,9 +11,10 @@
 // 화면 구성은 디자인 원본(`Geurio 칸반보드.dc.html`)을 옮긴 것이다. 원본이 고정
 // 표로 들고 있던 값(분류 색·담당 명단)은 규칙으로 바꿨다(`kanbanMeta.ts` 머리말).
 
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { forwardRef, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Modal } from '../../../components/Modal';
-import type { CSSProperties, KeyboardEvent as ReactKeyboardEvent, MouseEvent as ReactMouseEvent, PointerEvent as ReactPointerEvent } from 'react';
+import { Popover } from '../../../components/Popover';
+import type { CSSProperties, KeyboardEvent as ReactKeyboardEvent, MouseEvent as ReactMouseEvent, PointerEvent as ReactPointerEvent, ReactElement } from 'react';
 import { cardsInColumn } from '@mindflow/mindmap-core';
 import type { KanbanCard, KanbanColumn, KanbanTag } from '@mindflow/mindmap-core';
 import type { EditorController } from '../useEditorState';
@@ -772,13 +773,20 @@ function BoardBar({
         </div>
         {/* 필터 — 디자인 원본의 자리. 원본에는 동작이 없던 버튼이라 그동안 두지
             않았는데, 이제 담당·분류·긴급으로 실제로 좁힌다(요청). */}
-        <div style={{ position: 'relative', flexShrink: 0 }}>
+        <Popover
+          open={filterOpen}
+          onOpenChange={setFilterOpen}
+          align="end"
+          sideOffset={8}
+          panelClass="mf-kb-pop"
+          panelAttrs={{ 'data-kanban-filter-panel': '', role: 'dialog' }}
+          label="필터"
+          panel={{ transformOrigin: 'top right', width: 268, boxSizing: 'border-box', padding: 14, background: th.panel, border: `1px solid ${th.border}`, borderRadius: 14, boxShadow: '0 14px 34px rgba(0,0,0,.16)', zIndex: 320, textAlign: 'left' }}
+          trigger={
           <button
             type="button"
             className="mf-ed-btn"
             data-kanban-filter
-            aria-expanded={filterOpen}
-            onClick={() => setFilterOpen((v) => !v)}
             style={{
               display: 'inline-flex',
               alignItems: 'center',
@@ -798,21 +806,10 @@ function BoardBar({
             <FilterGlyph />
             필터
           </button>
-          {filterOpen && (
-            <FilterPanel
-              theme={th}
-              isMobile={isMobile}
-              filter={filter}
-              onFilter={onFilter}
-              owners={owners}
-              tags={tags}
-              shown={shown}
-              total={total}
-              avatars={avatars}
-              onClose={() => setFilterOpen(false)}
-            />
-          )}
-        </div>
+          }
+        >
+          <FilterBody theme={th} isMobile={isMobile} filter={filter} onFilter={onFilter} owners={owners} tags={tags} shown={shown} total={total} avatars={avatars} />
+        </Popover>
       </div>
       {/* 진행률 — **마지막 열을 완료로 본다**(카드는 왼→오로 흐른다는 관례). */}
       <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
@@ -851,10 +848,10 @@ function FilterGlyph() {
  * 분류는 문서의 분류 목록. 고를 것이 없으면 그 구획을 아예 그리지 않는다 —
  * 눌러도 결과가 없는 칩은 없느니만 못하다.
  *
- * `position: absolute`인 이유는 열 메뉴·색 판과 같다(스크롤되는 상자 밖으로
- * 벗어나야 한다). 바깥을 누르거나 Esc로 닫힌다.
+ * 자리·바깥 클릭·Escape는 `Popover`(Radix)가 맡는다 — 예전에는 스크롤되는 상자를
+ * 벗어나려고 `position: absolute`를 쓰고 window 리스너 둘을 손으로 달았다.
  */
-function FilterPanel({
+function FilterBody({
   theme: th,
   isMobile,
   filter,
@@ -864,7 +861,6 @@ function FilterPanel({
   shown,
   total,
   avatars,
-  onClose,
 }: {
   theme: Theme;
   isMobile: boolean;
@@ -875,28 +871,7 @@ function FilterPanel({
   shown: number;
   total: number;
   avatars?: Record<string, string>;
-  onClose: () => void;
 }) {
-  const ref = useRef<HTMLDivElement | null>(null);
-  useEffect(() => {
-    const onDown = (e: PointerEvent): void => {
-      const t = e.target as HTMLElement;
-      if (!ref.current?.contains(t) && !t.closest('[data-kanban-filter]')) onClose();
-    };
-    const onKey = (e: KeyboardEvent): void => {
-      if (e.key === 'Escape') {
-        e.stopPropagation();
-        onClose();
-      }
-    };
-    window.addEventListener('pointerdown', onDown, true);
-    window.addEventListener('keydown', onKey, true);
-    return () => {
-      window.removeEventListener('pointerdown', onDown, true);
-      window.removeEventListener('keydown', onKey, true);
-    };
-  }, [onClose]);
-
   const toggle = (list: string[], v: string): string[] => (list.includes(v) ? list.filter((x) => x !== v) : [...list, v]);
   const label: CSSProperties = { fontSize: 11.5, fontWeight: 700, color: th.subtext, margin: '2px 0 7px' };
   const chip = (on: boolean): CSSProperties => ({
@@ -916,14 +891,7 @@ function FilterPanel({
   });
 
   return (
-    <div
-      ref={ref}
-      data-kanban-filter-panel
-      role="dialog"
-      aria-label="필터"
-      className="mf-kb-pop"
-      style={{ transformOrigin: 'top right', position: 'absolute', right: 0, top: 'calc(100% + 8px)', width: 268, boxSizing: 'border-box', padding: 14, background: th.panel, border: `1px solid ${th.border}`, borderRadius: 14, boxShadow: '0 14px 34px rgba(0,0,0,.16)', zIndex: 320, textAlign: 'left' }}
-    >
+    <>
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 10 }}>
         <strong style={{ fontSize: 13.5, color: th.text }}>필터</strong>
         <button
@@ -987,7 +955,7 @@ function FilterPanel({
       <p data-filter-count style={{ margin: '10px 0 0', fontSize: 11.5, color: th.subtext }}>
         {shown} / {total}개 카드 표시 중
       </p>
-    </div>
+    </>
   );
 }
 
@@ -1043,7 +1011,9 @@ function Column({
 }) {
   const [renaming, setRenaming] = useState(false);
   const [composing, setComposing] = useState(false);
-  const [menuAt, setMenuAt] = useState<{ x: number; y: number } | null>(null);
+  // 열 메뉴는 ⋯ 버튼을 앵커로 서는 팝오버다 — 예전에는 버튼 사각형을 재서
+  // 좌표를 상태에 담고(`{x,y}`) 패널이 그 자리에 clamp했다.
+  const [menuOpen, setMenuOpen] = useState(false);
   /** 열 삭제 확인(요청) — 열을 지우면 **안의 카드도 함께** 사라지므로 한 번 묻는다. */
   const [confirming, setConfirming] = useState(false);
   const readOnly = controller.readOnly;
@@ -1125,22 +1095,39 @@ function Column({
             <ColumnIconButton label="카드 추가" theme={th} isMobile={isMobile} data-add-card={col.id} onClick={startCompose}>
               <PlusIcon size={15} />
             </ColumnIconButton>
-            <ColumnIconButton
-              label={`${col.title} 열 메뉴`}
+            <ColumnMenu
+              col={col}
               theme={th}
+              open={menuOpen}
+              onOpenChange={setMenuOpen}
               isMobile={isMobile}
-              data-column-menu={col.id}
-              onClick={(e) => {
-                const r = (e.currentTarget as HTMLElement).getBoundingClientRect();
-                setMenuAt((prev) => (prev ? null : { x: r.right, y: r.bottom + 6 }));
+              count={cards.length}
+              onRename={() => {
+                setMenuOpen(false);
+                setRenaming(true);
               }}
-            >
-              <svg width="15" height="15" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
-                <circle cx="5" cy="12" r="1.6" />
-                <circle cx="12" cy="12" r="1.6" />
-                <circle cx="19" cy="12" r="1.6" />
-              </svg>
-            </ColumnIconButton>
+              onColor={(c) => {
+                setMenuOpen(false);
+                controller.setColumnColor(col.id, c);
+              }}
+              onBg={(c) => {
+                setMenuOpen(false);
+                controller.setColumnBg(col.id, c);
+              }}
+              onDelete={() => {
+                setMenuOpen(false);
+                setConfirming(true);
+              }}
+              trigger={
+                <ColumnIconButton label={`${col.title} 열 메뉴`} theme={th} isMobile={isMobile} data-column-menu={col.id}>
+                  <svg width="15" height="15" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+                    <circle cx="5" cy="12" r="1.6" />
+                    <circle cx="12" cy="12" r="1.6" />
+                    <circle cx="19" cy="12" r="1.6" />
+                  </svg>
+                </ColumnIconButton>
+              }
+            />
           </>
         )}
       </header>
@@ -1200,33 +1187,6 @@ function Column({
           <PlusIcon />
           카드 추가
         </button>
-      )}
-
-      {menuAt && (
-        <ColumnMenu
-          col={col}
-          theme={th}
-          at={menuAt}
-          isMobile={isMobile}
-          onRename={() => {
-            setMenuAt(null);
-            setRenaming(true);
-          }}
-          count={cards.length}
-          onColor={(c) => {
-            setMenuAt(null);
-            controller.setColumnColor(col.id, c);
-          }}
-          onBg={(c) => {
-            setMenuAt(null);
-            controller.setColumnBg(col.id, c);
-          }}
-          onDelete={() => {
-            setMenuAt(null);
-            setConfirming(true);
-          }}
-          onClose={() => setMenuAt(null)}
-        />
       )}
 
       {confirming && (
@@ -1369,22 +1329,22 @@ function ConfirmDialog({
   );
 }
 
-function ColumnIconButton({
-  label,
-  theme: th,
-  isMobile,
-  onClick,
-  children,
-  ...rest
-}: {
-  label: string;
-  theme: Theme;
-  isMobile: boolean;
-  onClick: (e: React.MouseEvent<HTMLButtonElement>) => void;
-  children: React.ReactNode;
-} & Record<`data-${string}`, string>) {
+/** ⚠️ `forwardRef`인 이유: 열 메뉴가 이 버튼을 **팝오버 앵커**로 쓴다(Radix
+ * `asChild`는 자식의 ref로 그 자리를 잡는다). ref를 넘기지 않으면 메뉴가 어디에
+ * 서야 할지 모른다. */
+const ColumnIconButton = forwardRef<
+  HTMLButtonElement,
+  {
+    label: string;
+    theme: Theme;
+    isMobile: boolean;
+    onClick?: (e: React.MouseEvent<HTMLButtonElement>) => void;
+    children: React.ReactNode;
+  } & Record<`data-${string}`, string>
+>(function ColumnIconButton({ label, theme: th, isMobile, onClick, children, ...rest }, ref) {
   return (
     <button
+      ref={ref}
       type="button"
       className="mf-ed-btn"
       data-column-btn
@@ -1397,7 +1357,7 @@ function ColumnIconButton({
       {children}
     </button>
   );
-}
+});
 
 /**
  * 카드 만들기 — 열 안에 곧바로 뜨는 입력칸(디자인 원본의 composer).
@@ -1691,18 +1651,21 @@ function ColumnTitleEdit({ title, theme: th, onCommit, onCancel }: { title: stri
 function ColumnMenu({
   col,
   theme: th,
-  at,
+  open,
+  onOpenChange,
+  trigger,
   isMobile,
   count,
   onRename,
   onColor,
   onBg,
   onDelete,
-  onClose,
 }: {
   col: KanbanColumn;
   theme: Theme;
-  at: { x: number; y: number };
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
+  trigger: ReactElement;
   isMobile: boolean;
   /** 이 열의 카드 수 — 삭제 행에 "N개"로 함께 밝힌다(요청). */
   count: number;
@@ -1710,29 +1673,8 @@ function ColumnMenu({
   onColor: (c: string | null) => void;
   onBg: (c: string | null) => void;
   onDelete: () => void;
-  onClose: () => void;
 }) {
-  const ref = useRef<HTMLDivElement | null>(null);
-  useEffect(() => {
-    const onDown = (e: PointerEvent): void => {
-      if (!ref.current?.contains(e.target as Node)) onClose();
-    };
-    const onKey = (e: KeyboardEvent): void => {
-      if (e.key === 'Escape') {
-        e.stopPropagation();
-        onClose();
-      }
-    };
-    window.addEventListener('pointerdown', onDown, true);
-    window.addEventListener('keydown', onKey, true);
-    return () => {
-      window.removeEventListener('pointerdown', onDown, true);
-      window.removeEventListener('keydown', onKey, true);
-    };
-  }, [onClose]);
-
   const W = 268;
-  const left = Math.max(8, Math.min(at.x - W, window.innerWidth - W - 8));
   const row: CSSProperties = {
     display: 'flex',
     alignItems: 'center',
@@ -1759,13 +1701,16 @@ function ColumnMenu({
   const grid: CSSProperties = { display: 'grid', gridTemplateColumns: 'repeat(5, 28px)', gap: 9, padding: '2px 10px 10px' };
 
   return (
-    <div
-      ref={ref}
-      data-column-menu-pop={col.id}
-      role="menu"
-      aria-label={`${col.title} 열 메뉴`}
-      className="mf-kb-pop"
-      style={{ transformOrigin: 'top right', position: 'fixed', left, top: at.y, width: W, boxSizing: 'border-box', padding: 5, background: th.panel, border: `1px solid ${th.border}`, borderRadius: 12, boxShadow: '0 12px 32px rgba(0,0,0,.16)', zIndex: 320 }}
+    <Popover
+      open={open}
+      onOpenChange={onOpenChange}
+      trigger={trigger}
+      align="end"
+      sideOffset={6}
+      panelClass="mf-kb-pop"
+      panelAttrs={{ 'data-column-menu-pop': col.id, role: 'menu' }}
+      label={`${col.title} 열 메뉴`}
+      panel={{ transformOrigin: 'top right', width: W, boxSizing: 'border-box', padding: 5, background: th.panel, border: `1px solid ${th.border}`, borderRadius: 12, boxShadow: '0 12px 32px rgba(0,0,0,.16)', zIndex: 320 }}
     >
       <button type="button" className="mf-ed-btn" role="menuitem" data-column-rename onClick={onRename} style={row}>
         <span style={glyph(th.subtext)}>
@@ -1853,7 +1798,7 @@ function ColumnMenu({
           <span data-delete-column-count style={{ flex: '0 0 auto', fontSize: 11.5, color: hexA(URGENT, 0.75) }}>{count}개</span>
         )}
       </button>
-    </div>
+    </Popover>
   );
 }
 

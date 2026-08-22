@@ -180,7 +180,7 @@ describe('칸반 에디터', () => {
     await waitFor(() => expect(container.querySelectorAll('[data-kanban-column]')).toHaveLength(3));
 
     fireEvent.click(container.querySelector('[data-column-menu="c1"]')!);
-    fireEvent.click(await waitFor(() => container.querySelector('[data-delete-column="c1"]') as HTMLElement));
+    fireEvent.click(await waitFor(() => document.querySelector('[data-delete-column="c1"]') as HTMLElement));
     // 열 삭제는 확인창을 한 번 지난다(요청) — 안의 카드가 함께 사라지기 때문.
     fireEvent.click(await waitFor(() => document.querySelector('[data-confirm-delete]') as HTMLElement));
     fireEvent.keyDown(window, { key: 's', ctrlKey: true });
@@ -1249,13 +1249,14 @@ describe('칸반 — 후속 6건', () => {
     expect(container.querySelector('[data-kanban-comments]')).toBeNull();
 
     fireEvent.click(container.querySelector('[data-kanban-filter]')!);
-    const panel = await waitFor(() => container.querySelector('[data-kanban-filter-panel]') as HTMLElement);
+    // 필터 패널은 포털로 body 밑에 그려진다(Radix Popover) — 컨테이너 안이 아니다.
+    const panel = await waitFor(() => document.querySelector('[data-kanban-filter-panel]') as HTMLElement);
     expect(panel.textContent).toContain('4 / 4개 카드 표시 중');
 
     // 담당 — 지수의 카드 둘만.
     fireEvent.click(panel.querySelector('[data-filter-owner="a@x.com"]')!);
     await waitFor(() => expect(container.querySelectorAll('[data-kanban-card]')).toHaveLength(2));
-    expect(container.querySelector('[data-filter-count]')?.textContent).toContain('2 / 4');
+    expect(document.querySelector('[data-filter-count]')?.textContent).toContain('2 / 4');
 
     // 분류를 함께 걸면 교집합(지수 + 개발) 하나.
     fireEvent.click(panel.querySelector('[data-filter-tag="개발"]')!);
@@ -1281,7 +1282,8 @@ describe('칸반 — 후속 6건', () => {
     await waitFor(() => expect(container.querySelectorAll('[data-kanban-card]')).toHaveLength(4));
 
     fireEvent.click(container.querySelector('[data-kanban-filter]')!);
-    const panel = await waitFor(() => container.querySelector('[data-kanban-filter-panel]') as HTMLElement);
+    // 필터 패널은 포털로 body 밑에 그려진다(Radix Popover) — 컨테이너 안이 아니다.
+    const panel = await waitFor(() => document.querySelector('[data-kanban-filter-panel]') as HTMLElement);
     fireEvent.click(panel.querySelector('[data-filter-owner="b@x.com"]')!);
 
     fireEvent.click(container.querySelector('[data-kanban-tab="list"]')!);
@@ -1388,7 +1390,7 @@ describe('칸반 — 열 메뉴 구분(제보)', () => {
     await waitFor(() => expect(container.querySelectorAll('[data-kanban-column]')).toHaveLength(2));
 
     fireEvent.click(container.querySelector('[data-column-menu="c1"]')!);
-    const pop = await waitFor(() => container.querySelector('[data-column-menu-pop="c1"]') as HTMLElement);
+    const pop = await waitFor(() => document.querySelector('[data-column-menu-pop="c1"]') as HTMLElement);
 
     // 구획 이름과 구분선 — [이름 변경] ── [열 색상] ── [배경색] ── [열 삭제]
     expect(pop.textContent).toContain('열 색상');
@@ -1422,7 +1424,7 @@ describe('칸반 — 열 삭제 확인(요청)', () => {
 
   const openConfirm = async (container: HTMLElement, colId: string): Promise<HTMLElement> => {
     fireEvent.click(container.querySelector(`[data-column-menu="${colId}"]`)!);
-    fireEvent.click(await waitFor(() => container.querySelector(`[data-delete-column="${colId}"]`) as HTMLElement));
+    fireEvent.click(await waitFor(() => document.querySelector(`[data-delete-column="${colId}"]`) as HTMLElement));
     return await waitFor(() => document.querySelector(`[data-confirm-delete-column="${colId}"]`) as HTMLElement);
   };
 
@@ -1541,13 +1543,13 @@ describe('칸반 — 후속 6건(열 배경·메뉴·리스트·타임라인)', 
     await waitFor(() => expect(container.querySelectorAll('[data-kanban-column]')).toHaveLength(2));
 
     fireEvent.click(container.querySelector('[data-column-menu="c1"]')!);
-    fireEvent.click(await waitFor(() => container.querySelector('[data-column-bg="#edf4fc"]') as HTMLElement));
+    fireEvent.click(await waitFor(() => document.querySelector('[data-column-bg="#edf4fc"]') as HTMLElement));
     await waitFor(() => expect((container.querySelector('[data-kanban-column="c1"]') as HTMLElement).style.background).toBe('rgb(237, 244, 252)'));
     fireEvent.keyDown(window, { key: 's', ctrlKey: true });
     await waitFor(() => expect(saved('kn2').columns[0].bg).toBe('#edf4fc'));
 
     fireEvent.click(container.querySelector('[data-column-menu="c1"]')!);
-    fireEvent.click(await waitFor(() => container.querySelector('[data-column-bg="default"]') as HTMLElement));
+    fireEvent.click(await waitFor(() => document.querySelector('[data-column-bg="default"]') as HTMLElement));
     fireEvent.keyDown(window, { key: 's', ctrlKey: true });
     await waitFor(() => expect('bg' in saved('kn2').columns[0]).toBe(false));
   });
@@ -1558,7 +1560,7 @@ describe('칸반 — 후속 6건(열 배경·메뉴·리스트·타임라인)', 
     await waitFor(() => expect(container.querySelectorAll('[data-kanban-column]')).toHaveLength(2));
 
     fireEvent.click(container.querySelector('[data-column-menu="c1"]')!);
-    const pop = await waitFor(() => container.querySelector('[data-column-menu-pop="c1"]') as HTMLElement);
+    const pop = await waitFor(() => document.querySelector('[data-column-menu-pop="c1"]') as HTMLElement);
     // c1에는 카드 둘.
     expect(pop.querySelector('[data-delete-column-count]')?.textContent).toBe('2개');
     // 색을 지정하지 않은 열은 '기본 색' 칸이 활성(대각선 칸이라 체크 대신 테두리로).
@@ -1567,7 +1569,7 @@ describe('칸반 — 후속 6건(열 배경·메뉴·리스트·타임라인)', 
 
     // 색을 지정한 열은 그 칸에 체크.
     fireEvent.click(container.querySelector('[data-column-menu="c2"]')!);
-    const pop2 = await waitFor(() => container.querySelector('[data-column-menu-pop="c2"]') as HTMLElement);
+    const pop2 = await waitFor(() => document.querySelector('[data-column-menu-pop="c2"]') as HTMLElement);
     expect(pop2.querySelector('[data-column-color="#8fb257"] svg')).toBeTruthy();
     expect(pop2.querySelector('[data-column-color="default"] svg')).toBeNull();
     // 카드가 하나뿐인 열도 수를 밝힌다.
