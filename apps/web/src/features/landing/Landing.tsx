@@ -395,9 +395,13 @@ export function Landing() {
 
       <section id="features" className="lp-features">
         <h2 className="lp-rv">쓰다 보면 알게 되는 것들</h2>
-        <div className="grid">
+        {/* 등장 단위는 **격자 전체**다(칸 하나하나가 아니다). 이 격자는 1px `gap` 위로
+            컨테이너 배경(`#EFE5DB`)이 비쳐 칸 사이 실선을 만드는 구조라, 칸만 숨기면
+            내용 없는 베이지 사각형이 먼저 나타난다(제보: "배경이 먼저 보이고 컨텐츠가
+            하나씩"). 배경과 칸이 함께 떠오르게 두면 빈 배경이 보이는 순간이 없다. */}
+        <div className="grid lp-rv">
           {FEATURES.map((f) => (
-            <div key={f.title} className="cell lp-rv">
+            <div key={f.title} className="cell">
               <span className="ico">
                 <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.9} strokeLinecap="round" strokeLinejoin="round" aria-hidden="true" dangerouslySetInnerHTML={{ __html: f.icon }} />
               </span>
