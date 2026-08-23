@@ -79,6 +79,20 @@ describe('Landing', () => {
     expect(screen.getByText(/신제품 런치 플랜/)).toBeTruthy();
   });
 
+  it('기능 격자는 칸이 아니라 격자 전체가 등장 단위다(빈 배경이 먼저 보이지 않게)', () => {
+    const { container } = render(
+      <MemoryRouter>
+        <Landing />
+      </MemoryRouter>,
+    );
+    const grid = container.querySelector('.lp-features .grid');
+    expect(grid?.classList.contains('lp-rv')).toBe(true);
+    // 칸은 개별 등장 대상이 아니다 — 1px gap 위로 컨테이너 배경이 비치는 구조라
+    // 칸만 숨기면 내용 없는 베이지 사각형이 먼저 나타난다(제보).
+    expect(container.querySelectorAll('.lp-features .cell.lp-rv').length).toBe(0);
+    expect(container.querySelectorAll('.lp-features .cell').length).toBe(6);
+  });
+
   it('히어로 창의 보기 탭을 누르면 그 장면으로 고정된다', () => {
     render(
       <MemoryRouter>
@@ -203,6 +217,16 @@ describe('static landing.html (the crawler-visible twin)', () => {
     expect(demoJs).not.toMatch(/new IntersectionObserver/);
     // head에서 블로킹 로드(defer면 한 번 보였다 숨는 깜빡임이 생긴다)
     expect(html).toContain('<script src="/landing-demo.js"></script>');
+  });
+
+  // 제보: 기능 격자("쓰다 보면 알게 되는 것들")가 라이브에서 **배경만 먼저** 보이고
+  // 내용이 하나씩 떴다. 이 격자는 1px `gap` 위로 컨테이너 배경이 비쳐 칸 사이 실선을
+  // 만드는 구조라, 칸만 등장 대상으로 두면 내용 없는 베이지 사각형이 먼저 나타난다
+  // (실측: 컨테이너 opacity 1.00인데 칸 6개가 0.0으로 680ms). 등장 단위는 격자 전체다.
+  it('reveals the feature grid as one unit (never a bare background)', () => {
+    const html = readFileSync(path.join(publicDir, 'landing.html'), 'utf8');
+    expect(html).toContain('<div class="grid lp-rv">');
+    expect(html).not.toContain('class="cell lp-rv"');
   });
 
   it('carries the share/SEO contract: canonical + OG card + JSON-LD', () => {
