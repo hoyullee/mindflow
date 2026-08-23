@@ -177,6 +177,34 @@ describe('static landing.html (the crawler-visible twin)', () => {
     expect(html).toContain('<details');
   });
 
+  // 제보: 라이브(정적 쌍둥이)에서는 첫 화면 아래 내용이 **스크롤 전에 이미** 등장을
+  // 끝낸 상태였다 — 정적 CSS가 `.lp-rv`에 즉시 재생되는 애니메이션을 걸었기 때문.
+  // 프로덕션 "/"가 이 파일이라 실제 방문자 전원이 그 화면을 봤다. 계약을 고정한다:
+  // 숨기는 규칙은 `lp-js`(인핸서가 첫 페인트 전에 심는다) 아래에만 있어야 하고,
+  // 인핸서는 그 클래스와 공개 장치를 모두 갖춰야 한다.
+  it('scroll-reveals the below-the-fold sections, and stays visible with JS off', () => {
+    const html = readFileSync(path.join(publicDir, 'landing.html'), 'utf8');
+    const demoJs = readFileSync(path.join(publicDir, 'landing-demo.js'), 'utf8');
+
+    // 아래 섹션들이 등장 대상으로 표시돼 있다
+    expect((html.match(/class="[^"]*lp-rv/g) ?? []).length).toBeGreaterThanOrEqual(8);
+    // 숨기는 규칙은 반드시 lp-js 아래 — 무JS에서 내용이 사라지면 안 된다
+    for (const m of html.match(/[^\n]*\.lp-rv\s*\{[^}]*\}/g) ?? []) {
+      if (/opacity:\s*0/.test(m)) expect(m).toContain('lp-js');
+    }
+    // 즉시 재생되는 등장(스크롤과 무관하게 끝나 버리는 것)이 남아 있지 않다
+    expect(html).not.toMatch(/\.lp-rv\s*\{\s*animation:/);
+    // 인핸서: 첫 페인트 전에 클래스를 심고, 접힘선을 넘은 것을 공개한다.
+    // 관측(IntersectionObserver)이 아니라 **위치를 직접 재는** 이유는 앵커로
+    // 건너뛴 섹션이 영영 투명하게 남는 것을 막기 위해서다(아래 테스트 참고).
+    expect(demoJs).toContain("classList.add('lp-js')");
+    expect(demoJs).toContain("classList.add('lp-on')");
+    expect(demoJs).toContain('getBoundingClientRect');
+    expect(demoJs).not.toMatch(/new IntersectionObserver/);
+    // head에서 블로킹 로드(defer면 한 번 보였다 숨는 깜빡임이 생긴다)
+    expect(html).toContain('<script src="/landing-demo.js"></script>');
+  });
+
   it('carries the share/SEO contract: canonical + OG card + JSON-LD', () => {
     const html = readFileSync(path.join(publicDir, 'landing.html'), 'utf8');
     expect(html).toContain('<link rel="canonical" href="https://geurio.com/"');

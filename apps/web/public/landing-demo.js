@@ -13,6 +13,12 @@
 (function () {
   'use strict';
 
+  // 첫 페인트 전에(=이 스크립트는 head에서 블로킹 로드된다) 스크롤 등장을 켠다.
+  // 숨기는 CSS 규칙이 `html.lp-js` 아래에만 있으므로, JS가 없으면 아래 섹션이
+  // 그대로 보이고(크롤러 계약) 있으면 화면에 들어올 때 하나씩 올라온다.
+  var docEl = document.documentElement;
+  docEl.classList.add('lp-js');
+
   var CORAL = '#EE6B45';
   var ROTATE_MS = 6200;
   var HOLD_MS = 14000;
@@ -199,6 +205,52 @@
     });
   }
 
-  if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', start);
-  else start();
+  /**
+   * 화면에 들어온 요소를 하나씩 올려 준다 — React 쌍둥이의 useScrollReveal과 같은 규칙.
+   *
+   * 관측(IntersectionObserver)을 쓰지 않는 이유: 관측은 **교차 상태가 바뀔 때만** 알려
+   * 주는데, 앵커를 눌러 훌쩍 건너뛴 섹션은 "아래에 있어 안 보임 → 위로 지나가
+   * 안 보임"으로 0 → 0이라 콜백이 오지 않는다. 그러면 그 섹션은 되돌아와도
+   * **영영 투명한 채로 남는다**(헤더의 #faq 앵커로 실브라우저 재현). 그래서
+   * "접힘선을 넘었는가"를 직접 재고, 이미 지나간 것도 함께 공개한다.
+   */
+  function reveal() {
+    var pending = [].slice.call(document.querySelectorAll('.lp-rv'));
+    if (!pending.length) return;
+    pending.forEach(function (el, i) {
+      el.style.transitionDelay = (i % 6) * 55 + 'ms';
+    });
+
+    var queued = false;
+    function pass() {
+      queued = false;
+      var line = window.innerHeight * 0.88;
+      pending = pending.filter(function (el) {
+        if (el.getBoundingClientRect().top >= line) return true;
+        el.classList.add('lp-on');
+        return false;
+      });
+      if (!pending.length) {
+        window.removeEventListener('scroll', onMove);
+        window.removeEventListener('resize', onMove);
+      }
+    }
+    function onMove() {
+      if (queued) return;
+      queued = true;
+      requestAnimationFrame(pass);
+    }
+
+    window.addEventListener('scroll', onMove, { passive: true });
+    window.addEventListener('resize', onMove);
+    pass();
+  }
+
+  function boot() {
+    reveal();
+    start();
+  }
+
+  if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', boot);
+  else boot();
 })();
