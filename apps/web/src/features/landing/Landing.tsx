@@ -40,26 +40,48 @@ const ROTATE_MS = 6200;
 /** 탭을 눌러 고정한 뒤 자동 회전이 다시 도는 데 걸리는 시간(ms). */
 const HOLD_MS = 14000;
 
-/** 스크롤하며 하나씩 올라오는 등장 효과 — 화면에 들어온 요소에 `lp-on`을 붙인다. */
+/**
+ * 스크롤하며 하나씩 올라오는 등장 효과 — 접힘선을 넘은 요소에 `lp-on`을 붙인다.
+ *
+ * 관측(IntersectionObserver)을 쓰지 않는 이유: 관측은 **교차 상태가 바뀔 때만** 알려
+ * 주는데, 앵커를 눌러 훌쩍 건너뛴 섹션은 "아래에 있어 안 보임 → 위로 지나가
+ * 안 보임"으로 0 → 0이라 콜백이 오지 않는다. 그러면 되돌아와도 영영 투명한
+ * 채로 남는다(정적 쌍둥이에서 헤더 #faq 앵커로 재현). 그래서 위치를 직접 재고
+ * 이미 지나간 것도 함께 공개한다 — 정적 쪽 인핸서와 같은 규칙이다.
+ */
 function useScrollReveal() {
   useEffect(() => {
-    if (typeof IntersectionObserver !== 'function') return;
-    const io = new IntersectionObserver(
-      (entries) => {
-        entries.forEach((en) => {
-          if (en.isIntersecting) {
-            en.target.classList.add('lp-on');
-            io.unobserve(en.target);
-          }
-        });
-      },
-      { rootMargin: '0px 0px -12% 0px', threshold: 0.12 },
-    );
-    document.querySelectorAll('.lp-rv').forEach((el, i) => {
-      (el as HTMLElement).style.transitionDelay = `${(i % 6) * 55}ms`;
-      io.observe(el);
+    let pending = Array.from(document.querySelectorAll<HTMLElement>('.lp-rv'));
+    if (!pending.length) return;
+    pending.forEach((el, i) => {
+      el.style.transitionDelay = `${(i % 6) * 55}ms`;
     });
-    return () => io.disconnect();
+
+    let queued = false;
+    const pass = () => {
+      queued = false;
+      const line = window.innerHeight * 0.88;
+      pending = pending.filter((el) => {
+        if (el.getBoundingClientRect().top >= line) return true;
+        el.classList.add('lp-on');
+        return false;
+      });
+      if (!pending.length) detach();
+    };
+    const onMove = () => {
+      if (queued) return;
+      queued = true;
+      requestAnimationFrame(pass);
+    };
+    const detach = () => {
+      window.removeEventListener('scroll', onMove);
+      window.removeEventListener('resize', onMove);
+    };
+
+    window.addEventListener('scroll', onMove, { passive: true });
+    window.addEventListener('resize', onMove);
+    pass();
+    return detach;
   }, []);
 }
 
