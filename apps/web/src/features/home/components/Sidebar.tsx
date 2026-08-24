@@ -4,6 +4,7 @@ import type { HomeState } from '../types';
 import type { DocKindName, HomeViewModel } from '../viewModel';
 import { UNREAD_BADGE_BG, UNREAD_BADGE_INK } from '../theme';
 import { SettingsPopover } from './SettingsPopover';
+import { DashboardSection, ReorderToggle } from './DashboardSection';
 import { SpaceRow } from './SpaceRow';
 import { META_MONO, SECTION_LABEL } from '../chrome';
 
@@ -141,7 +142,17 @@ export function Sidebar({ state, view, controller, isMobile = false, isOpen = fa
       >
         <SettingsPopover state={state} controller={controller} userInitial={view.userInitial} />
 
-      <div style={{ ...SECTION_LABEL, padding: '14px 9px 7px' }}>스페이스</div>
+      {/* 대시보드 구획 — 스페이스 위(디자인 원본의 순서). 요청 범위: 기존 홈 디자인에
+          더하는 것은 이 구획과 스페이스 정렬 토글뿐이다. */}
+      <DashboardSection state={state} controller={controller} isMobile={isMobile} />
+
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '14px 9px 7px' }}>
+        <span style={SECTION_LABEL}>스페이스</span>
+        <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6, minWidth: 0 }}>
+          {state.spaceReorder && <span style={{ fontSize: 10, fontWeight: 600, color: 'var(--mf-accent-strong)', whiteSpace: 'nowrap' }}>끌어서 이동</span>}
+          <ReorderToggle on={state.spaceReorder} label="스페이스 순서 바꾸기" onClick={controller.toggleSpaceReorder} />
+        </span>
+      </div>
 
       {/* 목록 높이는 **내용이 정한다** — 예전에는 `minHeight: 60`이라 스페이스가
           하나일 때(행 ~40px) 남는 20px이 '새 스페이스'와의 빈칸으로 보였다(제보:
@@ -151,7 +162,7 @@ export function Sidebar({ state, view, controller, isMobile = false, isOpen = fa
             of the seed spaces — otherwise the default 일반 스페이스 flashes before the
             user's real space list arrives (matches the map grid's skeleton). */}
         {state.loaded ? (
-          state.spaces.map((sp) => <SpaceRow key={sp.id} space={sp} state={state} controller={controller} />)
+          state.spaces.map((sp, idx) => <SpaceRow key={sp.id} space={sp} state={state} controller={controller} index={idx} total={state.spaces.length} />)
         ) : (
           <div aria-busy="true" aria-label="스페이스를 불러오는 중">
             {[62, 48, 70].map((w, i) => (

@@ -1,16 +1,24 @@
-import type { MouseEvent } from 'react';
+import type { DragEvent, MouseEvent } from 'react';
 import type { HomeController } from '../useHomeController';
 import type { HomeState, SpaceData } from '../types';
+import { ArrowPair } from './DashboardSection';
 
 interface Props {
   space: SpaceData;
   state: HomeState;
   controller: HomeController;
+  /** 순서 바꾸기(끌기·↑/↓)용 위치 — 목록에서의 내 자리와 전체 수. */
+  index: number;
+  total: number;
 }
 
+/** 스페이스 행 드래그의 출발 인덱스 — 행들이 하나의 목록을 이루므로 모듈 공유로 충분하다. */
+const spaceDragFrom: { current: number | null } = { current: null };
+
 /** Home.dc.html:104-127 `<sc-for list="{{ spaceList }}">` — one row in the sidebar space list. */
-export function SpaceRow({ space, state, controller }: Props) {
-  const active = space.id === state.activeSpace;
+export function SpaceRow({ space, state, controller, index, total }: Props) {
+  const active = space.id === state.activeSpace && !state.activeDash;
+  const reorder = state.spaceReorder;
   const menuOpen = state.ctxMenu?.target.kind === 'space' && state.ctxMenu.target.id === space.id;
 
   // ⋮ 버튼과 우클릭이 같은 메뉴를 연다 — 홈의 카드·폴더와 같은 규칙(공용
@@ -28,7 +36,27 @@ export function SpaceRow({ space, state, controller }: Props) {
   };
 
   return (
-    <div className="space-row" onContextMenu={onContextMenu} style={{ position: 'relative' }}>
+    <div
+      className="space-row"
+      onContextMenu={onContextMenu}
+      style={{ position: 'relative' }}
+      draggable={reorder}
+      onDragStart={(e: DragEvent) => {
+        spaceDragFrom.current = index;
+        if (e.dataTransfer) e.dataTransfer.effectAllowed = 'move';
+      }}
+      onDragEnd={() => {
+        spaceDragFrom.current = null;
+      }}
+      onDragOver={(e: DragEvent) => {
+        if (reorder && spaceDragFrom.current !== null) e.preventDefault();
+      }}
+      onDrop={(e: DragEvent) => {
+        e.preventDefault();
+        if (spaceDragFrom.current !== null && spaceDragFrom.current !== index) controller.reorderSpace(spaceDragFrom.current, index);
+        spaceDragFrom.current = null;
+      }}
+    >
       <div
         className="nav-item"
         role="button"
@@ -63,6 +91,22 @@ export function SpaceRow({ space, state, controller }: Props) {
             사각과 같은 꼴이라 "지금 이 스페이스"가 두 자리에서 같은 표식으로 읽힌다. */}
         <span style={{ width: 9, height: 9, borderRadius: 3, flexShrink: 0, background: space.color || '#f0663f', display: 'block' }} />
         <span style={{ flex: 1, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{space.name}</span>
+        {reorder && (
+          <span style={{ display: 'inline-flex', alignItems: 'center', gap: 1, marginLeft: 'auto', flexShrink: 0 }}>
+            <ArrowPair
+              upDisabled={index === 0}
+              downDisabled={index === total - 1}
+              onUp={(e) => {
+                e.stopPropagation();
+                controller.reorderSpace(index, index - 1);
+              }}
+              onDown={(e) => {
+                e.stopPropagation();
+                controller.reorderSpace(index, index + 1);
+              }}
+            />
+          </span>
+        )}
         <span
           className="space-dot"
           role="button"

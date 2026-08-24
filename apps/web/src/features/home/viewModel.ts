@@ -147,6 +147,14 @@ export interface HomeViewModel {
    * 구획이 아니라 사이드바의 출처 하나로 두는 게 정보 구조에도 맞는다.
    */
   sharedItems: { docId: string; title: string; href: string; role: 'edit' | 'view'; isNew: boolean; kind: DocKindName }[];
+  /** docId → 제목·소속 스페이스 이름 — 대시보드 위젯 머리가 읽는다(내 문서 전체 +
+   * 공유받은 문서. 공유 문서의 "스페이스"는 '공유받음'으로 말한다). */
+  dashDocTitles: Record<string, string>;
+  dashDocSpaces: Record<string, string>;
+  /** "보드 올리기" 피커의 후보 목록 — 내 문서 전체(휴지통 제외, docId 있는 것만.
+   * docId 없는 옛 카드·Drive 데모는 위젯이 가리킬 서버 문서가 없어 내주지 않는다 —
+   * 이름 변경·공유와 같은 가드) + 공유받은 문서. */
+  dashPickCatalog: { docId: string; title: string; spaceId: string; spaceName: string; kind: DocKindName; hue: string; updatedAt?: string; shared: boolean }[];
   /** 아직 확인하지 않은 초대 수 — LNB "공유받음"의 알림 배지. 0이면 배지 없음. */
   sharedUnread: number;
   /** LNB에 "공유받음" 구획을 그릴지. 처음엔 공유받은 게 없으면 숨겼는데, 항상
@@ -265,12 +273,12 @@ function cardRaw(title: string, docId: string | undefined, previewDocs: Record<s
 /** LNB 리스트 행(공유받음·즐겨찾기·휴지통)의 종류 아이콘용. 본문을 아직 못 받은
  * 문서(예: 열어 본 적 없는 공유 문서)는 'map'으로 둔다 — 배지와 같은 판별 규칙. */
 export type DocKindName = 'map' | 'board' | 'kanban';
-function docKindOf(title: string, docId: string | undefined, previewDocs: Record<string, string>): DocKindName {
+export function docKindOf(title: string, docId: string | undefined, previewDocs: Record<string, string>): DocKindName {
   const raw = cardRaw(title, docId, previewDocs);
   return isKanbanRaw(raw) ? 'kanban' : isBoardRaw(raw) ? 'board' : 'map';
 }
 
-function cardSketch(title: string, hue: string, docId: string | undefined, previewDocs: Record<string, string>, previewResolved: Record<string, boolean>): JSX.Element {
+export function cardSketch(title: string, hue: string, docId: string | undefined, previewDocs: Record<string, string>, previewResolved: Record<string, boolean>): JSX.Element {
   // A docId-backed card's body is keyed by that id alone: the prefetched
   // DocStore body (covers backend-stored maps), then the localStorage copy.
   // NEVER fall through to a title match — a brand-new, never-saved map (the
@@ -761,6 +769,31 @@ export function deriveHomeView(state: HomeState): HomeViewModel {
     .map((m) => ({ docId: m.docId, title: m.title, href: mapHref(m.title, m.docId), role: m.role, isNew: m.isNew, kind: docKindOf(m.title, m.docId, state.previewDocs) }));
   const sharedUnread = sharedItems.filter((m) => m.isNew).length;
 
+  // 대시보드 위젯 머리의 제목·소속 — 어느 스페이스의 문서든 올라올 수 있으므로
+  // 전 스페이스를 한 번 돌아 docId 색인을 만든다(카드 수에 선형 — 홈 파생 계산의
+  // 다른 색인들과 같은 규모).
+  const dashDocTitles: Record<string, string> = {};
+  const dashDocSpaces: Record<string, string> = {};
+  const dashPickCatalog: HomeViewModel['dashPickCatalog'] = [];
+  state.spaces.forEach((sp) => {
+    (Array.isArray(sp.maps) ? sp.maps : []).forEach((m) => {
+      if (m.docId) {
+        dashDocTitles[m.docId] = m.title;
+        dashDocSpaces[m.docId] = sp.name;
+        if (!isTrashedCard(m.title, m.docId)) {
+          dashPickCatalog.push({ docId: m.docId, title: m.title, spaceId: sp.id, spaceName: sp.name, kind: docKindOf(m.title, m.docId, state.previewDocs), hue: m.hue, updatedAt: state.docTimes[m.docId], shared: false });
+        }
+      }
+    });
+  });
+  state.sharedMaps.forEach((m) => {
+    dashDocTitles[m.docId] = m.title;
+    dashDocSpaces[m.docId] = '공유받음';
+    if (!isTrashedCard(m.title, m.docId)) {
+      dashPickCatalog.push({ docId: m.docId, title: m.title, spaceId: 'shared', spaceName: '공유받음', kind: docKindOf(m.title, m.docId, state.previewDocs), hue: '#f0663f', updatedAt: m.updatedAt, shared: true });
+    }
+  });
+
   return {
     connected,
     isDriveSpace,
@@ -778,6 +811,9 @@ export function deriveHomeView(state: HomeState): HomeViewModel {
     recentCards,
     sharedItems,
     sharedUnread,
+    dashDocTitles,
+    dashDocSpaces,
+    dashPickCatalog,
     // LNB 항목이므로 폴더/검색 화면에서도 그대로 있다 — 사이드바는 "지금 보고 있는
     // 목록"이 아니라 어디로든 가는 길이다.
     sharedVisible: !loading,

@@ -12,7 +12,7 @@ import type { SpaceStore, WorkspaceData } from '../ports';
 const TABLE = 'workspaces';
 
 interface WorkspaceRow {
-  data: { spaces?: unknown; mapFolders?: unknown; recent?: unknown; theme?: unknown } | null;
+  data: { spaces?: unknown; mapFolders?: unknown; recent?: unknown; theme?: unknown; dashboards?: unknown } | null;
 }
 
 export class SupabaseSpaceStore implements SpaceStore {
@@ -29,7 +29,8 @@ export class SupabaseSpaceStore implements SpaceStore {
     const mapFolders = body.mapFolders && typeof body.mapFolders === 'object' ? (body.mapFolders as Record<string, string>) : {};
     const recent = Array.isArray(body.recent) ? body.recent.filter((t): t is string => typeof t === 'string') : undefined;
     const theme = typeof body.theme === 'string' ? body.theme : undefined;
-    return { spaces: body.spaces, mapFolders, recent, theme };
+    const dashboards = Array.isArray(body.dashboards) ? body.dashboards : undefined;
+    return { spaces: body.spaces, mapFolders, recent, theme, dashboards };
   }
 
   async save(data: WorkspaceData): Promise<void> {
@@ -38,7 +39,7 @@ export class SupabaseSpaceStore implements SpaceStore {
     // saves (mirrors `documents.owner`'s default — migration 0004/RLS enforce it).
     const { error } = await this.client
       .from(TABLE)
-      .upsert({ data: { spaces: data.spaces, mapFolders: data.mapFolders, recent: data.recent ?? [], theme: data.theme }, updated_at: new Date().toISOString() }, { onConflict: 'owner' });
+      .upsert({ data: { spaces: data.spaces, mapFolders: data.mapFolders, recent: data.recent ?? [], theme: data.theme, dashboards: data.dashboards ?? [] }, updated_at: new Date().toISOString() }, { onConflict: 'owner' });
     if (error) throw new Error(error.message);
   }
 }

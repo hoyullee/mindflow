@@ -633,3 +633,40 @@ input[type='search']::-webkit-search-results-decoration {
     animation: none;
   }
 }
+
+/* ── 대시보드 위젯 ──────────────────────────────────────────────────────────
+   hover의 "열기" 알약(디자인 원본 wOpen) — 클릭 전체가 열기이지만, 무엇이
+   일어날지 미리 말해 준다. 터치(hover 없음)에서는 늘 보인다. */
+.mf-dash-widget .mf-dash-open {
+  opacity: 0;
+  transform: translateY(3px);
+  transition:
+    opacity 0.15s ease,
+    transform 0.15s ease;
+  pointer-events: none;
+}
+.mf-dash-widget:hover .mf-dash-open,
+.mf-dash-widget:focus-within .mf-dash-open {
+  opacity: 1;
+  transform: none;
+  pointer-events: auto;
+}
+@media (hover: none) {
+  .mf-dash-widget .mf-dash-open {
+    opacity: 1;
+    transform: none;
+    pointer-events: auto;
+  }
+}
+.mf-dash-widget {
+  transition: border-color 0.15s ease;
+}
+.mf-dash-widget:hover {
+  border-color: var(--mf-border-hover);
+}
+@media (prefers-reduced-motion: reduce) {
+  .mf-dash-widget .mf-dash-open {
+    transition: none;
+    transform: none;
+  }
+}

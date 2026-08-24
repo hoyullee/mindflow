@@ -32,6 +32,7 @@ export function Modals({ state, controller }: Props) {
   // 폴더 삭제 확인창 — 폴더는 이름표라 지워도 안의 것은 남는다. 무엇이 몇 개
   // 어디로 올라가는지 문장으로 밝힌다(내용이 있어도 삭제할 수 있게 되면서 필요해진
   // 안내 — 예전에는 빈 폴더만 지울 수 있었다).
+  const deleteDashName = state.dashboards.find((d) => d.id === state.confirmDeleteDash)?.name || '';
   const del = state.confirmDeleteFolder ? controller.folderDeleteSummary(state.confirmDeleteFolder) : null;
   const deleteFolderBody = del
     ? del.maps || del.folders
@@ -130,6 +131,22 @@ export function Modals({ state, controller }: Props) {
         confirmColor="var(--mf-danger)"
         onCancel={controller.cancelDeleteFolder}
         onConfirm={controller.confirmDeleteFolderYes}
+      />
+
+      {/* 대시보드 삭제 — 대시보드는 문서가 아니라 **배치**다. 사라지는 것이 배치뿐이고
+          문서는 스페이스에 그대로라는 것을 문구가 말한다(폴더 삭제와 같은 태도). */}
+      <ConfirmModal
+        visible={!!state.confirmDeleteDash}
+        zIndex={140}
+        iconBg="var(--mf-danger-soft)"
+        icon={TRASH_ICON}
+        heading="대시보드를 삭제할까요?"
+        body={`'${deleteDashName}' 대시보드를 삭제합니다. 배치만 사라지고, 올려 둔 문서는 스페이스에 그대로 있어요.`}
+        cancelLabel="취소"
+        confirmLabel="삭제"
+        confirmColor="var(--mf-danger)"
+        onCancel={controller.cancelDeleteDash}
+        onConfirm={controller.confirmDeleteDashYes}
       />
 
       <ConfirmModal
