@@ -10,6 +10,7 @@ import { exportDocSvg } from '../editor/svg';
 import { exportDocPdf } from '../editor/pdf';
 import { themeOf } from '../editor/theme';
 import { applyHomeTheme, homeThemeKeyOf, saveHomeThemeCache, type HomeThemeKey } from './theme';
+import { DASH_CAP, DASH_DEFAULT_SIZE, coerceDashboards, moveInList, nextDashName, type DashboardData } from './dashboard/model';
 import { forgetSignedIn } from '../auth/sessionNotice';
 import { localizeAuthError } from '../auth/useLoginController';
 import type { SignOutScope } from '../../adapters/ports';
@@ -187,6 +188,10 @@ export function useHomeController() {
     // 홈 색상 테마의 정본은 이 블롭이다(기기 간 동기화). 저장된 값이 있으면 곧바로
     // 입히고 이 기기 캐시도 맞춰 둔다 — 다음 부팅의 첫 페인트가 바로 이 색이 되도록.
     const wsTheme = ws && ws.theme !== undefined ? homeThemeKeyOf(ws.theme) : null;
+    // 대시보드 — 스페이스와 같은 블롭에 실려 온다. 저장을 못 읽었으면 빈 목록으로
+    // 두되(canPersistWorkspaceRef가 저장을 막으므로 덮어쓸 위험은 없다) 읽었으면
+    // 모양을 검증해 들인다.
+    const wsDashboards = ws ? coerceDashboards(ws.dashboards) : null;
     if (wsTheme) {
       applyHomeTheme(wsTheme);
       saveHomeThemeCache(wsTheme);
@@ -286,11 +291,13 @@ export function useHomeController() {
       // 그러면 업로드가 성공한 다음 진입에서는 백엔드에 행이 있어 묶기 조건이 깨지고,
       // 카드는 영원히 docId 없는 상태로 남는다.)
       const theme = wsTheme ?? prev.theme;
+      const dashboards = wsDashboards ?? prev.dashboards;
       savedWorkspaceSigRef.current = JSON.stringify({
         spaces: binding.length ? merged : spaces,
         mapFolders: mfMigration.changed ? mfBeforeMigration : mapFolders,
         recent: recentMigration.changed ? recentBeforeMigration : recent,
         theme,
+        dashboards,
       });
       // Always flip `loaded` so the grid drops its loading skeleton and
       // renders the real (possibly empty) state.
@@ -300,7 +307,7 @@ export function useHomeController() {
       // 카드의 "공유 중" 표식 원천 — 내가 걸어 둔 초대/링크의 일괄 요약. 조회
       // 실패는 빈 객체(표식만 빠지고 홈은 그대로).
       const sharedByMe = res[3].status === 'fulfilled' ? res[3].value : prev.sharedByMe;
-      return { ...prev, theme, spaces, activeSpace, curFolder, mapFolders, favs, deleted, trash, recent, docTimes, sharedByMe, sharedMaps: sharedMetas.map((m) => ({ docId: m.id, title: m.title, updatedAt: m.updatedAt, role: m.sharedRole ?? 'edit', isNew: unseen.has(m.id) })), loaded: true };
+      return { ...prev, theme, dashboards, spaces, activeSpace, curFolder, mapFolders, favs, deleted, trash, recent, docTimes, sharedByMe, sharedMaps: sharedMetas.map((m) => ({ docId: m.id, title: m.title, updatedAt: m.updatedAt, role: m.sharedRole ?? 'edit', isNew: unseen.has(m.id) })), loaded: true };
     });
     // 마지막 저장자가 **내가 아닌** 문서들만 이름을 물어본다(0015). 혼자 쓰는
     // 사람은 대상이 하나도 없어 요청 자체가 나가지 않는다. 실패해도 조용히 넘어간다 —
@@ -510,6 +517,10 @@ export function useHomeController() {
     if (!state.loaded) return;
     const active = state.spaces.find((s) => s.id === state.activeSpace);
     const wanted = new Set((Array.isArray(active?.maps) ? active!.maps : []).map((m) => m.docId).filter((id): id is string => !!id));
+    // 대시보드 위젯이 그릴 문서들 — 어느 스페이스 소속이든 관계없이 함께 받는다
+    // (위젯은 활성 스페이스 밖의 문서도 올릴 수 있다). 상한이 대시보드당 10이라
+    // 유한한 배치다.
+    state.dashboards.forEach((d) => d.items.forEach((it) => wanted.add(it.docId)));
     if (state.recent.length) {
       // 트레이가 **실제로 그릴** 카드들의 docId — 반드시 트레이와 같은 파이프라인으로
       // 골라야 한다. 원시 recent의 앞 N개를 자르던 예전 방식은 휴지통·별칭·사라진
@@ -598,7 +609,7 @@ export function useHomeController() {
   // can't race a pending timer — space/folder edits are deliberate and infrequent.
   useEffect(() => {
     if (!state.loaded || !canPersistWorkspaceRef.current) return;
-    const sig = JSON.stringify({ spaces: state.spaces, mapFolders: state.mapFolders, recent: state.recent, theme: state.theme });
+    const sig = JSON.stringify({ spaces: state.spaces, mapFolders: state.mapFolders, recent: state.recent, theme: state.theme, dashboards: state.dashboards });
     if (sig === savedWorkspaceSigRef.current) return;
     savedWorkspaceSigRef.current = sig;
     // A genuine user change is being persisted — from here on the auth-confirmed
@@ -606,10 +617,10 @@ export function useHomeController() {
     workspaceMutatedRef.current = true;
     // `recent` rides along in the same per-user blob (opening a map bumps it), so
     // the recent-items list syncs across devices just like spaces/folders do.
-    void spaceStore.save({ spaces: state.spaces, mapFolders: state.mapFolders, recent: state.recent, theme: state.theme }).catch(() => {
+    void spaceStore.save({ spaces: state.spaces, mapFolders: state.mapFolders, recent: state.recent, theme: state.theme, dashboards: state.dashboards }).catch(() => {
       /* save failed (offline, RLS, ...) — non-fatal; the next change retries */
     });
-  }, [state.loaded, state.spaces, state.mapFolders, state.recent, state.theme, spaceStore]);
+  }, [state.loaded, state.spaces, state.mapFolders, state.recent, state.theme, state.dashboards, spaceStore]);
 
   // ---- drive (fake OAuth demo) ----
   const onDriveClick = () => patch({ activeSpace: 'drive', curFolder: null, driveFolder: null });
@@ -946,7 +957,121 @@ export function useHomeController() {
     if (e.key === 'Enter') submitSpace();
   };
   const pickSpaceColor = (c: string) => patch({ newSpaceColor: c });
-  const setActiveSpace = (id: string) => patch({ activeSpace: id, curFolder: null, driveFolder: null });
+  const setActiveSpace = (id: string) => patch({ activeSpace: id, curFolder: null, driveFolder: null, activeDash: null });
+
+  // ---- dashboards (위젯 배치) — 디자인 원본 `Geurio 홈 대시보드.dc.html` ----
+  const selectDash = (id: string) => {
+    if (!state.dashboards.some((d) => d.id === id)) return;
+    patch({ activeDash: id, dashReorder: false, curFolder: null, search: '', searchInput: '' });
+  };
+  const createDash = () => {
+    const d: DashboardData = { id: `d${Date.now().toString(36)}${Math.random().toString(36).slice(2, 6)}`, name: nextDashName(state.dashboards), items: [] };
+    patch({ dashboards: [...state.dashboards, d], activeDash: d.id, dashReorder: false });
+  };
+  const toggleDashReorder = () => patch({ dashReorder: !state.dashReorder, spaceReorder: false });
+  const toggleSpaceReorder = () => patch({ spaceReorder: !state.spaceReorder, dashReorder: false });
+  /** 순서 바꾸기 — 위/아래 버튼과 드래그가 같은 이동을 쓴다(디자인). 맨 위가 기본. */
+  const reorderDash = (from: number, to: number) => patch({ dashboards: moveInList(state.dashboards, from, to) });
+  const reorderSpace = (from: number, to: number) => patch({ spaces: moveInList(state.spaces, from, to) });
+
+  const activeDashData = state.activeDash ? state.dashboards.find((d) => d.id === state.activeDash) ?? null : null;
+  const patchActiveDash = (fn: (d: DashboardData) => DashboardData) => {
+    if (!state.activeDash) return;
+    patch({ dashboards: state.dashboards.map((d) => (d.id === state.activeDash ? fn(d) : d)) });
+  };
+
+  const openDashPicker = () => {
+    if ((activeDashData?.items.length ?? 0) >= DASH_CAP) {
+      patch({ toastTitle: '대시보드가 가득 찼어요', toast: `한 대시보드에는 ${DASH_CAP}개까지 올릴 수 있어요. 먼저 하나를 내려 주세요.` });
+      return;
+    }
+    patch({ dashPicker: { space: 'all', query: '', sel: null } });
+  };
+  const closeDashPicker = () => patch({ dashPicker: null });
+  const setDashPickSpace = (space: string) => state.dashPicker && patch({ dashPicker: { ...state.dashPicker, space, sel: null } });
+  const setDashPickQuery = (query: string) => state.dashPicker && patch({ dashPicker: { ...state.dashPicker, query } });
+  /** 보드를 고른다(아직 올리기 전) — 기본 크기는 종류별(칸반 3×2 …).
+   * 디자인 원본의 세 갈래를 그대로: 이미 올라간 카드를 누르면 **내리고**("올림"
+   * 배지가 그 뜻을 미리 말한다), 고른 카드를 다시 누르면 선택을 푼다. */
+  const pickDashBoard = (docId: string, kind: 'map' | 'board' | 'kanban') => {
+    if (!state.dashPicker) return;
+    const already = activeDashData?.items.find((it) => it.docId === docId);
+    if (already) {
+      patchActiveDash((d) => ({ ...d, items: d.items.filter((it) => it.docId !== docId) }));
+      return;
+    }
+    if (state.dashPicker.sel?.docId === docId) {
+      patch({ dashPicker: { ...state.dashPicker, sel: null } });
+      return;
+    }
+    if ((activeDashData?.items.length ?? 0) >= DASH_CAP) return; // 가득 참 — 카드가 흐려져 있다
+    patch({ dashPicker: { ...state.dashPicker, sel: { docId, size: DASH_DEFAULT_SIZE[kind] } } });
+  };
+  const setDashPickSize = (size: string) => {
+    if (!state.dashPicker?.sel) return;
+    patch({ dashPicker: { ...state.dashPicker, sel: { ...state.dashPicker.sel, size } } });
+  };
+  /** 고른 보드를 올린다. 피커는 열어 둔다 — 여러 개를 이어서 올리는 흐름이 자연스럽다. */
+  const confirmDashPick = () => {
+    const sel = state.dashPicker?.sel;
+    if (!sel || !state.activeDash) return;
+    const dash = state.dashboards.find((d) => d.id === state.activeDash);
+    if (!dash || dash.items.length >= DASH_CAP) return;
+    if (dash.items.some((it) => it.docId === sel.docId)) return;
+    const item = { id: `w${Date.now().toString(36)}${Math.random().toString(36).slice(2, 6)}`, docId: sel.docId, size: sel.size };
+    patch({
+      dashboards: state.dashboards.map((d) => (d.id === state.activeDash ? { ...d, items: [...d.items, item] } : d)),
+      dashPicker: state.dashPicker ? { ...state.dashPicker, sel: null } : null,
+    });
+  };
+  const removeDashItem = (itemId: string) => patchActiveDash((d) => ({ ...d, items: d.items.filter((it) => it.id !== itemId) }));
+  const setDashItemSize = (itemId: string, size: string) => patchActiveDash((d) => ({ ...d, items: d.items.map((it) => (it.id === itemId ? { ...it, size } : it)) }));
+  /** 맨 앞으로 — dense 배치라 앞에 둘수록 좌상단에 가깝게 놓인다. */
+  const dashItemToFront = (itemId: string) =>
+    patchActiveDash((d) => {
+      const it = d.items.find((x) => x.id === itemId);
+      return it ? { ...d, items: [it, ...d.items.filter((x) => x.id !== itemId)] } : d;
+    });
+  /** "최신 내용 불러오기" — 캐시된 썸네일 본문을 버리고 다시 받는다. */
+  const refreshDashItem = (docId: string) => {
+    previewFetchedRef.current.add(docId); // 프리페치 효과와의 중복 요청 방지(이미 있음)
+    void docStore
+      .loadPreview(docId)
+      .then((raw) => {
+        if (!mountedRef.current) return;
+        setState((prev) => ({
+          ...prev,
+          previewDocs: raw ? { ...prev.previewDocs, [docId]: raw } : prev.previewDocs,
+          previewResolved: { ...prev.previewResolved, [docId]: true },
+        }));
+      })
+      .catch(() => {
+        /* 조회 실패 — 이전 내용 그대로 둔다 */
+      });
+  };
+
+  const openDashRename = (id: string) => {
+    const d = state.dashboards.find((x) => x.id === id);
+    if (d) patch({ dashRename: { id, name: d.name }, ctxMenu: null });
+  };
+  const onDashRenameInput = (name: string) => state.dashRename && patch({ dashRename: { ...state.dashRename, name: name.slice(0, 30) } });
+  const submitDashRename = () => {
+    const r = state.dashRename;
+    if (!r) return;
+    const name = r.name.trim();
+    if (!name) return;
+    patch({ dashboards: state.dashboards.map((d) => (d.id === r.id ? { ...d, name } : d)), dashRename: null });
+  };
+  const cancelDashRename = () => patch({ dashRename: null });
+  const askDeleteDash = (id: string) => patch({ confirmDeleteDash: id, ctxMenu: null });
+  const cancelDeleteDash = () => patch({ confirmDeleteDash: null });
+  /** 대시보드 삭제 — **배치만** 사라진다(문서는 스페이스에 그대로). 확인창이 그 말을 한다. */
+  const confirmDeleteDashYes = () => {
+    const id = state.confirmDeleteDash;
+    if (!id) return;
+    patch({ dashboards: state.dashboards.filter((d) => d.id !== id), confirmDeleteDash: null, activeDash: state.activeDash === id ? null : state.activeDash });
+  };
+
   /** Rename now opens the shared "새 스페이스 만들기" popup in EDIT mode (name + color),
    * pre-filled from the space — instead of an inline sidebar input. */
   const startRenameSpace = (id: string) => {
@@ -2297,6 +2422,30 @@ export function useHomeController() {
     submitSpace,
     pickSpaceColor,
     setActiveSpace,
+    selectDash,
+    createDash,
+    toggleDashReorder,
+    toggleSpaceReorder,
+    reorderDash,
+    reorderSpace,
+    openDashPicker,
+    closeDashPicker,
+    setDashPickSpace,
+    setDashPickQuery,
+    pickDashBoard,
+    setDashPickSize,
+    confirmDashPick,
+    removeDashItem,
+    setDashItemSize,
+    dashItemToFront,
+    refreshDashItem,
+    openDashRename,
+    onDashRenameInput,
+    submitDashRename,
+    cancelDashRename,
+    askDeleteDash,
+    cancelDeleteDash,
+    confirmDeleteDashYes,
     startRenameSpace,
     askDeleteSpace,
     cancelDeleteSpace,

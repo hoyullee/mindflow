@@ -1,0 +1,291 @@
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
+import userEvent from '@testing-library/user-event';
+import { MemoryRouter, Route, Routes } from 'react-router-dom';
+import { Home } from './Home';
+import { BackendProvider } from '../../adapters/BackendContext';
+import { LocalAuth } from '../../adapters/local/localAuth';
+import { LocalSpaceStore } from '../../adapters/local/localSpaceStore';
+import { LocalShareStore } from '../../adapters/local/localShareStore';
+import { LocalFeedbackStore } from '../../adapters/local/localFeedbackStore';
+import { LocalCommentStore } from '../../adapters/local/localCommentStore';
+import { LocalNotificationStore } from '../../adapters/local/localNotificationStore';
+import { LocalImageStore } from '../../adapters/local/localImageStore';
+import type { Backend, DocMeta, DocStore, LoadedDoc, SaveResult } from '../../adapters/ports';
+
+/**
+ * 대시보드 ①(모델 + LNB + 보기 전용 위젯 + 피커) 통합 테스트 — 홈이 실제로
+ * 하는 흐름 그대로: LNB에서 만들고, 피커로 올리고, 우클릭으로 다듬고, 워크스페이스
+ * 블롭에 남는지까지.
+ */
+
+afterEach(() => {
+  cleanup();
+});
+
+beforeEach(() => {
+  localStorage.clear();
+  sessionStorage.clear();
+});
+
+class MockDocStore implements DocStore {
+  listEditorNames = vi.fn(async (): Promise<Record<string, string>> => ({}));
+  setFavorite = vi.fn(async (): Promise<void> => undefined);
+  remove = vi.fn(async (): Promise<void> => undefined);
+  restore = vi.fn(async (): Promise<void> => undefined);
+  purge = vi.fn(async (): Promise<void> => undefined);
+  rename = vi.fn(async (): Promise<void> => undefined);
+  save = vi.fn(async (): Promise<SaveResult> => ({ ok: true, version: 1 }));
+  load = vi.fn(async (id: string): Promise<LoadedDoc | null> => this.bodies[id] ?? null);
+  loadPreview = vi.fn(async (id: string): Promise<string | null> => {
+    const b = this.bodies[id];
+    return b ? JSON.stringify(b.doc) : null;
+  });
+
+  constructor(
+    private metas: DocMeta[] = [],
+    private bodies: Record<string, LoadedDoc> = {},
+  ) {}
+
+  async list(): Promise<DocMeta[]> {
+    return this.metas;
+  }
+}
+
+function renderHome(metas: DocMeta[] = [], bodies: Record<string, LoadedDoc> = {}) {
+  const docStore = new MockDocStore(metas, bodies);
+  const backend: Backend = { auth: new LocalAuth(), docStore, spaceStore: new LocalSpaceStore(), shareStore: new LocalShareStore(), feedbackStore: new LocalFeedbackStore(), imageStore: new LocalImageStore(), commentStore: new LocalCommentStore(), notificationStore: new LocalNotificationStore(), mode: 'local' };
+  const utils = render(
+    <MemoryRouter initialEntries={['/home']}>
+      <BackendProvider backend={backend}>
+        <Routes>
+          <Route path="/home" element={<Home />} />
+          <Route path="/editor" element={<div>EDITOR_PLACEHOLDER</div>} />
+          <Route path="/login" element={<div>LOGIN_PAGE</div>} />
+        </Routes>
+      </BackendProvider>
+    </MemoryRouter>,
+  );
+  return { ...utils, docStore };
+}
+
+const META = (id: string, title: string): DocMeta => ({ id, title, version: 1, updatedAt: '2026-01-01T00:00:00.000Z', isFavorite: false, deletedAt: null });
+
+const MAP_BODY = {
+  doc: {
+    v: 1,
+    nodes: {
+      root: { id: 'root', text: '기획맵', emoji: '', parent: null, children: ['a'], collapsed: false, color: null, x: 0, y: 0 },
+      a: { id: 'a', text: '가지 A', emoji: '', parent: 'root', children: [], collapsed: false, color: null, x: 100, y: 0 },
+    },
+    floats: [],
+    lines: [],
+    zones: [],
+    layoutMode: 'radial',
+    themeKey: 'coral',
+  } as unknown as LoadedDoc['doc'],
+  version: 1,
+  title: '기획맵',
+};
+
+function seedSpaces(withMap = false) {
+  localStorage.setItem(
+    'mf_spaces',
+    JSON.stringify({
+      spaces: [{ id: 's1', name: '일반 공간', home: true, color: '#f0663f', maps: withMap ? [{ title: '기획맵', when: '방금', hue: '#f0663f', docId: 'doc-a' }] : [], folders: [] }],
+      mapFolders: {},
+    }),
+  );
+}
+
+/** 워크스페이스 블롭에 남은 dashboards. */
+function savedDashboards(): { id: string; name: string; items: { docId: string; size: string }[] }[] {
+  const ws = JSON.parse(localStorage.getItem('mf_spaces') || '{}') as { dashboards?: { id: string; name: string; items: { docId: string; size: string }[] }[] };
+  return ws.dashboards ?? [];
+}
+
+async function sidebarOf(container: HTMLElement) {
+  const aside = container.querySelector('aside') as HTMLElement;
+  await waitFor(() => expect(within(aside).getByText('일반 공간')).toBeTruthy());
+  return aside;
+}
+
+describe('대시보드 ① — LNB·보기·피커', () => {
+  it('LNB에 대시보드 구획이 있고, "새 대시보드"가 만들고 곧바로 연다(블롭에도 남는다)', async () => {
+    seedSpaces();
+    const user = userEvent.setup();
+    const { container } = renderHome();
+    const aside = await sidebarOf(container);
+
+    expect(within(aside).getByText('대시보드')).toBeTruthy();
+    await user.click(within(aside).getByText('새 대시보드'));
+
+    // 대시보드 화면으로 전환 — 스페이스의 툴바·그리드는 접힌다
+    const dashView = container.querySelector('[data-dashboard-view]') as HTMLElement;
+    expect(dashView).toBeTruthy();
+    expect(within(dashView).getByText('아직 올려둔 보드가 없어요')).toBeTruthy();
+    expect(screen.queryByPlaceholderText('모든 스페이스에서 검색')).toBeNull();
+
+    // LNB 행 + 맨 위 = 기본 배지, 그리고 워크스페이스 블롭에 저장
+    expect(within(aside).getByText('기본')).toBeTruthy();
+    await waitFor(() => expect(savedDashboards().map((d) => d.name)).toEqual(['대시보드']));
+
+    // 행을 다시 눌러도 그대로, 스페이스를 누르면 스페이스 보기로 복귀
+    await user.click(within(aside).getByText('일반 공간'));
+    expect(container.querySelector('[data-dashboard-view]')).toBeNull();
+    expect(screen.getByPlaceholderText('모든 스페이스에서 검색')).toBeTruthy();
+  });
+
+  it('피커: 보드를 골라 크기를 정해 올리면 위젯이 서고, 피커는 열린 채 "올림" 배지가 붙는다', async () => {
+    seedSpaces(true);
+    const user = userEvent.setup();
+    const { container } = renderHome([META('doc-a', '기획맵')], { 'doc-a': MAP_BODY });
+    const aside = await sidebarOf(container);
+
+    await user.click(within(aside).getByText('새 대시보드'));
+    await user.click(screen.getAllByRole('button', { name: '보드 추가' })[0]!);
+
+    const picker = await screen.findByRole('dialog', { name: '보드 올리기' });
+    const card = picker.querySelector('[data-dash-pick-card="doc-a"]') as HTMLElement;
+    expect(card).toBeTruthy();
+    await user.click(card);
+
+    // 발치에 크기 선택지(맵 기본 2×2) — 칸반 전용 크기가 아니라 여덟 전부
+    const sizeBtn = within(picker).getByRole('button', { name: '3×2' });
+    expect((within(picker).getByRole('button', { name: '2×2' }) as HTMLElement).getAttribute('aria-pressed')).toBe('true');
+    await user.click(sizeBtn);
+    await user.click(within(picker).getByRole('button', { name: '올리기' }));
+
+    // 피커는 열린 채(여러 개를 이어 올린다) 카드가 "올림"으로 바뀐다
+    expect(screen.getByRole('dialog', { name: '보드 올리기' })).toBeTruthy();
+    await waitFor(() => expect(picker.querySelector('[data-dash-pick-on]')).toBeTruthy());
+
+    // 닫으면 위젯이 그 크기로 서 있고, 블롭에도 남았다
+    await user.click(within(picker).getByRole('button', { name: '닫기' }));
+    const widget = container.querySelector('[data-dash-widget]') as HTMLElement;
+    expect(widget).toBeTruthy();
+    // 제목(머리)과 미니 트리의 루트 알약이 같은 글자를 그린다 — 둘 다 실제 문서에서 왔다
+    expect(within(widget).getAllByText('기획맵').length).toBeGreaterThan(0);
+    await waitFor(() => expect(savedDashboards()[0]?.items).toEqual([expect.objectContaining({ docId: 'doc-a', size: '3x2' })]));
+  });
+
+  it('가득 찬 대시보드에서 "보드 추가"는 피커 대신 안내를 띄운다(CAP 10)', async () => {
+    seedSpaces();
+    localStorage.setItem(
+      'mf_spaces',
+      JSON.stringify({
+        spaces: [{ id: 's1', name: '일반 공간', home: true, color: '#f0663f', maps: [], folders: [] }],
+        mapFolders: {},
+        dashboards: [{ id: 'd1', name: '꽉 찬 보드', items: Array.from({ length: 10 }, (_, i) => ({ id: `w${i}`, docId: `doc${i}`, size: '1x1' })) }],
+      }),
+    );
+    const user = userEvent.setup();
+    const { container } = renderHome();
+    const aside = await sidebarOf(container);
+
+    await user.click(within(aside).getByText('꽉 찬 보드'));
+    await user.click(screen.getAllByRole('button', { name: '보드 추가' })[0]!);
+
+    expect(screen.queryByRole('dialog', { name: '보드 올리기' })).toBeNull();
+    expect(await screen.findByText('대시보드가 가득 찼어요')).toBeTruthy();
+  });
+
+  it('스페이스 정렬: ⠿ 토글 → ↓ 한 칸 이동이 화면과 블롭에 함께 남는다', async () => {
+    localStorage.setItem(
+      'mf_spaces',
+      JSON.stringify({ spaces: [{ id: 'sa', name: '첫 공간', color: '#f0663f', maps: [] }, { id: 'sb', name: '둘째 공간', color: '#3f8fd0', maps: [] }], mapFolders: {} }),
+    );
+    const user = userEvent.setup();
+    const { container } = renderHome();
+    const aside = container.querySelector('aside') as HTMLElement;
+    await waitFor(() => expect(within(aside).getByText('첫 공간')).toBeTruthy());
+
+    await user.click(within(aside).getByRole('button', { name: '스페이스 순서 바꾸기' }));
+    const firstRow = within(aside).getByText('첫 공간').closest('.space-row') as HTMLElement;
+    await user.click(within(firstRow).getByRole('button', { name: '아래로' }));
+
+    const rows = Array.from(aside.querySelectorAll('.space-row')).map((r) => r.textContent || '');
+    expect(rows.findIndex((t) => t.includes('둘째 공간'))).toBeLessThan(rows.findIndex((t) => t.includes('첫 공간')));
+    await waitFor(() => {
+      const ws = JSON.parse(localStorage.getItem('mf_spaces') || '{}') as { spaces?: { id: string }[] };
+      expect((ws.spaces ?? []).map((s) => s.id)).toEqual(['sb', 'sa']);
+    });
+  });
+
+  it('행 우클릭 → 이름 변경·삭제(삭제는 배치만 사라진다는 확인창을 거친다)', async () => {
+    seedSpaces();
+    localStorage.setItem(
+      'mf_spaces',
+      JSON.stringify({ spaces: [{ id: 's1', name: '일반 공간', home: true, color: '#f0663f', maps: [], folders: [] }], mapFolders: {}, dashboards: [{ id: 'd1', name: '옛 이름', items: [] }] }),
+    );
+    const user = userEvent.setup();
+    const { container } = renderHome();
+    const aside = await sidebarOf(container);
+    await waitFor(() => expect(within(aside).getByText('옛 이름')).toBeTruthy());
+
+    // 이름 변경
+    fireEvent.contextMenu(within(aside).getByText('옛 이름'), { clientX: 80, clientY: 200 });
+    const menu = await screen.findByRole('menu');
+    expect(menu.getAttribute('data-home-ctx')).toBe('dash');
+    fireEvent.click(within(menu).getByRole('menuitem', { name: '이름 변경' }));
+    const rename = await screen.findByRole('dialog', { name: '대시보드 이름 변경' });
+    const input = within(rename).getByLabelText('대시보드 이름') as HTMLInputElement;
+    await user.clear(input);
+    await user.type(input, '이번 주');
+    await user.click(within(rename).getByRole('button', { name: '변경' }));
+    await waitFor(() => expect(within(aside).getByText('이번 주')).toBeTruthy());
+
+    // 삭제 — 확인창 문구가 "배치만 사라진다"를 말한다
+    fireEvent.contextMenu(within(aside).getByText('이번 주'), { clientX: 80, clientY: 200 });
+    fireEvent.click(within(await screen.findByRole('menu')).getByRole('menuitem', { name: '대시보드 삭제' }));
+    const confirm = await screen.findByRole('dialog', { name: '대시보드를 삭제할까요?' });
+    expect(confirm.textContent).toContain('배치만 사라지고');
+    await user.click(within(confirm).getByRole('button', { name: '삭제' }));
+    await waitFor(() => expect(within(aside).queryByText('이번 주')).toBeNull());
+    await waitFor(() => expect(savedDashboards()).toEqual([]));
+  });
+
+  it('위젯 우클릭 메뉴 — 열기·새로 불러오기·맨 앞으로·크기·내리기(내리면 위젯이 사라진다)', async () => {
+    seedSpaces(true);
+    localStorage.setItem(
+      'mf_spaces',
+      JSON.stringify({
+        spaces: [{ id: 's1', name: '일반 공간', home: true, color: '#f0663f', maps: [{ title: '기획맵', when: '방금', hue: '#f0663f', docId: 'doc-a' }], folders: [] }],
+        mapFolders: {},
+        dashboards: [{ id: 'd1', name: '대시보드', items: [{ id: 'w1', docId: 'doc-a', size: '2x2' }] }],
+      }),
+    );
+    const { container } = renderHome([META('doc-a', '기획맵')], { 'doc-a': MAP_BODY });
+    const aside = await sidebarOf(container);
+
+    // 행을 눌러 대시보드를 연다(구획 라벨과 이름이 같아 nav-item 행으로 짚는다)
+    await waitFor(() => {
+      const row = within(aside)
+        .getAllByRole('button')
+        .find((el) => el.classList.contains('nav-item') && (el.textContent || '').includes('대시보드') && !(el.textContent || '').includes('새 대시보드'));
+      expect(row).toBeTruthy();
+    });
+    const dashRow = within(aside)
+      .getAllByRole('button')
+      .find((el) => el.classList.contains('nav-item') && (el.textContent || '').includes('대시보드') && !(el.textContent || '').includes('새 대시보드')) as HTMLElement;
+    fireEvent.click(dashRow);
+
+    const widget = await waitFor(() => {
+      const w = container.querySelector('[data-dash-widget]') as HTMLElement;
+      expect(w).toBeTruthy();
+      return w;
+    });
+    fireEvent.contextMenu(widget, { clientX: 300, clientY: 300 });
+    const menu = await screen.findByRole('menu');
+    expect(menu.getAttribute('data-home-ctx')).toBe('widget');
+    for (const label of ['에디터에서 열기', '최신 내용 불러오기', '맨 앞으로 옮기기', '대시보드에서 내리기']) {
+      expect(within(menu).getByRole('menuitem', { name: label })).toBeTruthy();
+    }
+    // 크기 하위 목록 — 맵이라 1×1부터 열려 있다
+    expect(within(menu).getByText('크기')).toBeTruthy();
+
+    fireEvent.click(within(menu).getByRole('menuitem', { name: '대시보드에서 내리기' }));
+    await waitFor(() => expect(container.querySelector('[data-dash-widget]')).toBeNull());
+    await waitFor(() => expect(savedDashboards()[0]?.items).toEqual([]));
+  });
+});

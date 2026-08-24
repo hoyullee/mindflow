@@ -2,6 +2,7 @@
 
 import { loadHomeThemeCache, type HomeThemeKey } from './theme';
 import type { SigninMethods } from '../../adapters/ports';
+import type { DashboardData } from './dashboard/model';
 
 export interface MapCardData {
   title: string;
@@ -72,6 +73,10 @@ export type HomeCtxTarget =
   | { kind: 'folder'; id: string }
   /** LNB의 스페이스 행 — ⋮ 버튼과 우클릭이 같은 메뉴를 연다(카드와 같은 규칙). */
   | { kind: 'space'; id: string }
+  /** LNB의 대시보드 행 — 이름 변경·삭제(스페이스 행과 같은 문법). */
+  | { kind: 'dash'; id: string }
+  /** 대시보드 위젯 — 열기·새로 불러오기·맨 앞으로·크기·내리기(디자인 원본). */
+  | { kind: 'widget'; id: string }
   /** 카드가 없는 빈 자리 — "새로 만들기 · 새 폴더 · 가져오기 · 설정". */
   | { kind: 'bg' };
 
@@ -223,6 +228,27 @@ export interface HomeState {
 
   spaces: SpaceData[];
   activeSpace: string;
+  /** 대시보드(위젯 배치) 목록 — 워크스페이스 블롭에 스페이스와 나란히 실린다. */
+  dashboards: DashboardData[];
+  /** 지금 보고 있는 대시보드 id. `null`이면 평소의 스페이스 보기다 — 화면은
+   * 언제나 한쪽만 그린다(대시보드 ↔ 스페이스). */
+  activeDash: string | null;
+  /** LNB 대시보드 구획의 순서 바꾸기 모드(디자인의 ⠿ 토글). */
+  dashReorder: boolean;
+  /** LNB 스페이스 구획의 순서 바꾸기 모드 — 대시보드와 같은 문법(요청). */
+  spaceReorder: boolean;
+  /** "보드 올리기" 피커. `null`이면 닫힘. */
+  dashPicker: {
+    /** 왼쪽 필터 — 'all' | 스페이스 id | 'shared'. */
+    space: string;
+    query: string;
+    /** 고른 보드(아직 올리기 전). */
+    sel: { docId: string; size: string } | null;
+  } | null;
+  /** 대시보드 이름 변경 팝업(행 우클릭 → 이름 변경). `null`이면 닫힘. */
+  dashRename: { id: string; name: string } | null;
+  /** 대시보드 삭제 확인 대상 id — 배치만 사라지고 문서는 그대로라는 걸 문구가 말한다. */
+  confirmDeleteDash: string | null;
   newSpaceOpen: boolean;
   newSpaceName: string;
   newSpaceColor: string;
@@ -423,6 +449,13 @@ export function initialHomeState(): HomeState {
 
     spaces: [{ id: 'general', name: '일반 스페이스', home: true, color: '#f0663f', maps: DEFAULT_MAPS }],
     activeSpace: 'general',
+    dashboards: [],
+    activeDash: null,
+    dashReorder: false,
+    spaceReorder: false,
+    dashPicker: null,
+    dashRename: null,
+    confirmDeleteDash: null,
     newSpaceOpen: false,
     newSpaceName: '',
     newSpaceColor: '#f0663f',

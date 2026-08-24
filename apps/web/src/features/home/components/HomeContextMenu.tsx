@@ -5,6 +5,9 @@ import type { HomeState, SpaceData } from '../types';
 import type { HomeController } from '../useHomeController';
 import type { CardViewData, FolderCardViewData, HomeViewModel } from '../viewModel';
 import { useIsMobile } from '../../../hooks/useMediaQuery';
+import { docKindOf } from '../viewModel';
+import { sizesFor } from '../dashboard/model';
+import { mapHref } from '../storage';
 
 /**
  * 홈의 **단 하나뿐인** 메뉴 — 맵 카드·폴더·빈 배경이 모두 이걸 쓴다.
@@ -348,6 +351,43 @@ const PdfIcon = (
   </svg>
 );
 
+// ── 대시보드 위젯 메뉴 아이콘(디자인 원본 CTX_ICON 계열) ──────────────────
+const OpenIcon = (
+  <svg width="14" height="14" viewBox="0 0 24 24" {...stroke}>
+    <path d="M14 4h6v6" />
+    <path d="M20 4 11 13" />
+    <path d="M18 14v5a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1V7a1 1 0 0 1 1-1h5" />
+  </svg>
+);
+const RefreshIcon = (
+  <svg width="14" height="14" viewBox="0 0 24 24" {...stroke}>
+    <path d="M3 12a9 9 0 1 0 2.6-6.3L3 8" />
+    <path d="M3 3v5h5" />
+  </svg>
+);
+const FrontIcon = (
+  <svg width="14" height="14" viewBox="0 0 24 24" {...stroke}>
+    <path d="m5 11 7-7 7 7" />
+    <path d="M12 4v16" />
+  </svg>
+);
+const SizeIcon = (
+  <svg width="14" height="14" viewBox="0 0 24 24" {...stroke}>
+    <path d="M15 3h6v6M9 21H3v-6" />
+    <path d="M21 3 3 21" />
+  </svg>
+);
+const CheckIcon = (
+  <svg width="14" height="14" viewBox="0 0 24 24" {...stroke}>
+    <path d="m5 13 4.5 4.5L19 7" />
+  </svg>
+);
+const DotIcon = (
+  <svg width="14" height="14" viewBox="0 0 24 24" aria-hidden="true">
+    <circle cx="12" cy="12" r="2" fill="currentColor" />
+  </svg>
+);
+
 /**
  * 스페이스 표식 — LNB의 스페이스 행과 **같은 색 사각 점**이다. 예전엔 어느 스페이스든
  * 똑같은 격자 글리프였는데, 이 앱에서 스페이스를 알아보는 표식은 색이다(제보).
@@ -376,6 +416,12 @@ function buildItems(target: NonNullable<HomeState['ctxMenu']>['target'], state: 
   if (target.kind === 'space') {
     const space = state.spaces.find((sp) => sp.id === target.id);
     return space ? spaceItems(space, state, controller) : [];
+  }
+  if (target.kind === 'dash') {
+    return dashItems(target.id, controller);
+  }
+  if (target.kind === 'widget') {
+    return widgetItems(target.id, state, view, controller);
   }
   return bgItems(controller);
 }
@@ -544,6 +590,55 @@ function spaceItems(space: SpaceData, state: HomeState, controller: HomeControll
       onSelect: () => controller.askDeleteSpace(space.id),
     },
   ];
+}
+
+/** LNB 대시보드 행 — 스페이스 행과 같은 문법(이름 변경·삭제). 삭제는 **배치만**
+ * 지우므로(문서는 스페이스에 그대로) 스페이스처럼 "비어야만" 잠그지 않는다. */
+function dashItems(id: string, controller: HomeController): HomeMenuItem[] {
+  return [
+    { key: 'rename', icon: PencilIcon, label: '이름 변경', onSelect: () => controller.openDashRename(id) },
+    { key: 'sep-1', label: '' },
+    { key: 'delete', icon: TrashIcon, label: '대시보드 삭제', danger: true, onSelect: () => controller.askDeleteDash(id) },
+  ];
+}
+
+/**
+ * 대시보드 위젯 메뉴 — 디자인 원본의 넷(열기·새로 불러오기·맨 앞으로·내리기) +
+ * 크기 하위 목록. 크기는 종류별 최소(칸반 3×2) 아래를 잠근다.
+ */
+function widgetItems(itemId: string, state: HomeState, view: HomeViewModel, controller: HomeController): HomeMenuItem[] {
+  const dash = state.dashboards.find((d) => d.id === state.activeDash);
+  const item = dash?.items.find((it) => it.id === itemId);
+  if (!item) return [];
+  const kind = docKindOf('', item.docId, state.previewDocs);
+  const allowed = sizesFor(kind);
+  const items: HomeMenuItem[] = [
+    {
+      key: 'open',
+      icon: OpenIcon,
+      label: '에디터에서 열기',
+      onSelect: () => {
+        const title = view.dashDocTitles[item.docId] ?? '';
+        controller.openWithLoader(mapHref(title, item.docId), title, item.docId);
+      },
+    },
+    { key: 'refresh', icon: RefreshIcon, label: '최신 내용 불러오기', onSelect: () => controller.refreshDashItem(item.docId) },
+    { key: 'front', icon: FrontIcon, label: '맨 앞으로 옮기기', onSelect: () => controller.dashItemToFront(item.id) },
+    {
+      key: 'size',
+      icon: SizeIcon,
+      label: '크기',
+      submenu: allowed.map((sz) => ({
+        key: `size-${sz}`,
+        icon: item.size === sz ? CheckIcon : DotIcon,
+        label: sz.replace('x', '×'),
+        onSelect: () => controller.setDashItemSize(item.id, sz),
+      })),
+    },
+    { key: 'sep-1', label: '' },
+    { key: 'remove', icon: TrashIcon, label: '대시보드에서 내리기', danger: true, onSelect: () => controller.removeDashItem(item.id) },
+  ];
+  return items;
 }
 
 /**

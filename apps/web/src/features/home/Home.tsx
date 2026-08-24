@@ -6,6 +6,9 @@ import { Toolbar } from './components/Toolbar';
 import { MapGrid } from './components/MapGrid';
 import { SearchResults } from './components/SearchResults';
 import { RecentStrip, RecentStripSkeleton } from './components/RecentStrip';
+import { DashboardView } from './components/DashboardView';
+import { DashboardPicker } from './components/modals/DashboardPicker';
+import { DashRenameModal } from './components/modals/DashRenameModal';
 import { AuthModal } from './components/modals/AuthModal';
 import { ToastModal } from './components/modals/ToastModal';
 import { NewSpaceModal } from './components/modals/NewSpaceModal';
@@ -137,13 +140,21 @@ export function Home() {
             깔아, 로드 완료 시 트레이가 끼어들며 툴바가 아래로 튀는 점프를 막는다. */}
         {/* 검색 중에는 최근 항목을 감춘다 — 질의로 걸러지지 않는 목록이 결과 위에
             남아 있으면 무엇이 결과인지 흐려진다. */}
-        {view.loading && state.recent.length > 0 && !view.searchQuery && <RecentStripSkeleton count={state.recent.length} />}
-        {view.recentSectionVisible && <RecentStrip cards={view.recentCards} controller={controller} />}
-        {/* 툴바(검색창이 그 안에 있다)는 검색 중에도 남는다 — 검색창이 사라지면
-            글자를 고칠 수도, 지울 수도 없다. 스페이스 제목은 "지금 어디에 있는가",
-            즉 검색을 지웠을 때 돌아갈 자리를 계속 가리킨다. */}
-        <Toolbar state={state} view={view} controller={controller} isMobile={isMobile} onOpenNav={() => setNavOpen(true)} />
-        {view.searchQuery ? <SearchResults view={view} controller={controller} /> : <MapGrid view={view} controller={controller} />}
+        {/* 대시보드 보기 — 화면은 언제나 한쪽만 그린다(대시보드 ↔ 스페이스). 최근
+            항목·툴바·그리드는 스페이스의 것이라 함께 접는다. */}
+        {state.activeDash ? (
+          <DashboardView state={state} view={view} controller={controller} isMobile={isMobile} />
+        ) : (
+          <>
+            {view.loading && state.recent.length > 0 && !view.searchQuery && <RecentStripSkeleton count={state.recent.length} />}
+            {view.recentSectionVisible && <RecentStrip cards={view.recentCards} controller={controller} />}
+            {/* 툴바(검색창이 그 안에 있다)는 검색 중에도 남는다 — 검색창이 사라지면
+                글자를 고칠 수도, 지울 수도 없다. 스페이스 제목은 "지금 어디에 있는가",
+                즉 검색을 지웠을 때 돌아갈 자리를 계속 가리킨다. */}
+            <Toolbar state={state} view={view} controller={controller} isMobile={isMobile} onOpenNav={() => setNavOpen(true)} />
+            {view.searchQuery ? <SearchResults view={view} controller={controller} /> : <MapGrid view={view} controller={controller} />}
+          </>
+        )}
       </main>
 
       {/* 마퀴 — 화면 좌표라 `position: fixed`. 포인터를 가로채면 그 아래 카드가
@@ -178,6 +189,8 @@ export function Home() {
           그리드의 카드는 언제나 내 맵이라 보기 전용이 아니다(공유받은 맵은 LNB에만). */}
       <ShareModal open={!!state.shareDocId} docId={state.shareDocId ?? ''} onClose={controller.closeShare} theme={modalTheme} />
       <TemplateGallery state={state} controller={controller} />
+      <DashboardPicker state={state} view={view} controller={controller} isMobile={isMobile} />
+      <DashRenameModal state={state} controller={controller} />
       <Modals state={state} controller={controller} />
       <NewSpaceModal state={state} controller={controller} />
       <FolderModal state={state} controller={controller} />
