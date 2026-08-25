@@ -35,10 +35,23 @@ export interface DashboardData {
 /** 한 대시보드에 올릴 수 있는 위젯 수 — 디자인 원본의 CAP. 넘치면 피커가 막는다. */
 export const DASH_CAP = 10;
 
-/** 격자: 4열 × 행 152px(디자인 원본). 크기 선택지도 원본 그대로. */
+/** 격자: 4열 × 행 152px(디자인 원본). */
 export const DASH_COLS = 4;
 export const DASH_ROW_PX = 152;
-export const DASH_SIZES = ['1x1', '2x1', '1x2', '2x2', '3x2', '4x2', '3x3', '4x3'] as const;
+/** 세로 최대 행 수 — 원본은 3행까지였고 요청으로 4행을 열었다(N×4). */
+export const DASH_ROWS_MAX = 4;
+/** 고르기 쉬운 **선택지**(피커·크기 순환·메뉴). 자유 리사이즈는 이 목록에 없는
+ *  조합도 만들 수 있으므로 저장값 검증은 `isValidSize`가 맡는다. */
+export const DASH_SIZES = ['1x1', '2x1', '1x2', '2x2', '3x2', '4x2', '3x3', '4x3', '2x4', '3x4', '4x4'] as const;
+
+/** 격자에 들어가는 크기인가 — 모서리 드래그가 만든 임의 조합(예: `2x3`)도 그대로
+ *  저장·복원되어야 한다(예전엔 선택지 목록에 없으면 다음 로드에서 `2x2`로
+ *  되돌아갔다). */
+export function isValidSize(size: unknown): size is string {
+  if (typeof size !== 'string') return false;
+  const m = /^([1-9])x([1-9])$/.exec(size);
+  return !!m && Number(m[1]) <= DASH_COLS && Number(m[2]) <= DASH_ROWS_MAX;
+}
 
 /** 크기 선택지 옆의 한 줄 힌트(피커) — 디자인 원본 문구. */
 export const DASH_SIZE_NOTE: Record<string, string> = {
@@ -49,7 +62,10 @@ export const DASH_SIZE_NOTE: Record<string, string> = {
   '3x2': '열 4개가 다 보여요',
   '4x2': '넓게, 날짜까지',
   '3x3': '열마다 카드를 더 많이',
-  '4x3': '가장 크게, 실제 보드처럼',
+  '4x3': '넓고 높게, 실제 보드처럼',
+  '2x4': '세로로 아주 길게',
+  '3x4': '높이까지 넉넉히',
+  '4x4': '가장 크게, 화면을 채워요',
 };
 
 /** 종류별 최소 크기 — 실제 콘텐츠가 제대로 보이는 최소 단위(디자인 원본).
@@ -69,7 +85,7 @@ export const DASH_DEFAULT_SIZE: Record<DocKindName, string> = {
 export function parseSize(size: string): [number, number] {
   const m = /^([1-9])x([1-9])$/.exec(size);
   if (!m) return [2, 2];
-  return [Math.min(DASH_COLS, Number(m[1])), Math.min(3, Number(m[2]))];
+  return [Math.min(DASH_COLS, Number(m[1])), Math.min(DASH_ROWS_MAX, Number(m[2]))];
 }
 
 /** 이 종류가 놓일 수 있는 크기 목록(최소 크기 이상). */
@@ -96,7 +112,7 @@ export function coerceDashboards(raw: unknown): DashboardData[] {
         if (!it || typeof it !== 'object') continue;
         const w = it as { id?: unknown; docId?: unknown; size?: unknown };
         if (typeof w.id !== 'string' || !w.id || typeof w.docId !== 'string' || !w.docId) continue;
-        const size = typeof w.size === 'string' && DASH_SIZES.includes(w.size as (typeof DASH_SIZES)[number]) ? w.size : '2x2';
+        const size = isValidSize(w.size) ? w.size : '2x2';
         items.push({ id: w.id, docId: w.docId, size });
       }
     }

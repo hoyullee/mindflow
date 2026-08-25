@@ -63,10 +63,13 @@ export function Home() {
   const isMobile = useIsMobile();
   // 빈 자리에서 끌어 카드를 한 번에 고른다(요청) — 마우스에서만. 터치에는 길게
   // 누르기(선택 모드)가 이미 있고, 손가락 드래그는 목록 스크롤이다.
+  // **대시보드 화면에서는 걸지 않는다**(제보: 위젯 우측 하단으로 끌면 영역 지정
+  // 사각형이 떴다) — 마퀴가 고르는 것은 맵·폴더 카드이고 대시보드에는 그런 카드가
+  // 없다. 게다가 그 자리는 편집 모드의 리사이즈 손잡이라 조작이 겹친다.
   const marquee = useMarqueeSelect({
     onSelect: controller.marqueeSelect,
     currentSelection: () => controller.state.selectedCards,
-    disabled: isMobile,
+    disabled: isMobile || !!state.activeDash,
   });
   const installHint = useInstallHint(isMobile);
   // 예상은 **마운트 때 한 번** 잡는다 — 착지하면서 힌트가 갱신되므로 매 렌더 읽으면

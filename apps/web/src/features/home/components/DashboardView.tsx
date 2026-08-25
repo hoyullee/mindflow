@@ -10,7 +10,7 @@ import type { HomeController } from '../useHomeController';
 import type { HomeState } from '../types';
 import type { HomeViewModel, DocKindName } from '../viewModel';
 import { docKindOf } from '../viewModel';
-import { DASH_CAP, DASH_COLS, DASH_MIN_SIZE, DASH_ROW_PX, parseSize, sizesFor } from '../dashboard/model';
+import { DASH_CAP, DASH_COLS, DASH_MIN_SIZE, DASH_ROW_PX, DASH_ROWS_MAX, parseSize, sizesFor } from '../dashboard/model';
 import { widgetDataOf, type WidgetData, type WidgetKanban } from '../dashboard/widgetData';
 import { realPreview } from '../mapPreview';
 import { mapHref, readDocRaw } from '../storage';
@@ -143,7 +143,7 @@ export function DashboardView({ state, view, controller, isMobile = false, onOpe
       const w = ev.clientX - start.left;
       const h = ev.clientY - start.top;
       const cNew = Math.max(minC, Math.min(cols, Math.round((w + GAP) / (cellW + GAP))));
-      const rNew = Math.max(minR, Math.min(3, Math.round((h + GAP) / (DASH_ROW_PX + GAP))));
+      const rNew = Math.max(minR, Math.min(DASH_ROWS_MAX, Math.round((h + GAP) / (DASH_ROW_PX + GAP))));
       const size = `${cNew}x${rNew}`;
       if (resizeRef.current?.size !== size) {
         resizeRef.current = { itemId, size };
@@ -310,7 +310,7 @@ export function DashboardView({ state, view, controller, isMobile = false, onOpe
             <span style={{ fontSize: 12, color: 'var(--mf-subtext)' }}>
               {isMobile
                 ? '크기 버튼(2×2)으로 카드 크기를 바꾸고 ✕로 내려요. 카드를 길게 누르면 맨 앞으로 옮길 수 있어요.'
-                : '카드를 끌어 순서를 바꾸고, 오른쪽 아래 모서리를 끌어 크기를 조절해요. 칸반 보드는 3×2부터, 마인드맵과 화이트보드는 1×1부터 놓을 수 있어요.'}
+                : '카드를 끌어 순서를 바꾸고, 오른쪽 아래 모서리를 끌어 크기를 조절해요. 칸반 보드는 3×2부터, 마인드맵과 화이트보드는 1×1부터 — 최대 4×4까지 놓을 수 있어요.'}
             </span>
           </div>
         )}
