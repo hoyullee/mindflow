@@ -6,6 +6,10 @@ import { toastShellStyle } from '../pwa/toastShell';
  *
  * 설치 안내(`InstallHint`)와 같은 자리를 쓰지만 이쪽이 위(zIndex 295)다. 실제로는
  * 겹치지 않는다: 오프라인이면 설치 안내를 띄우지 않는다(Home).
+ *
+ * 예전엔 양옆 고정(left/right 12)이라 데스크톱에서 **브라우저 전체 폭**을 차지했다
+ * (제보). 문구가 한 줄짜리라 토스트 기본형(하단 중앙, 내용만큼의 폭)으로 충분하다 —
+ * `mf-toast-in` 키프레임도 가운데 정렬(translateX(-50%))을 전제로 만들어져 있다.
  */
 interface OfflineBarProps {
   visible: boolean;
@@ -19,13 +23,9 @@ export function OfflineBar({ visible }: OfflineBarProps) {
       aria-live="polite"
       style={{
         ...toastShellStyle,
-        left: 12,
-        right: 12,
-        transform: 'none',
-        maxWidth: 'none',
         zIndex: 295,
         gap: 10,
-        padding: '11px 14px',
+        padding: '11px 16px',
         alignItems: 'center',
         fontSize: 13,
       }}

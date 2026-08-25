@@ -1,13 +1,24 @@
 /**
  * 위젯 본문 데이터 — 문서의 직렬화 본문(썸네일 프리페치와 같은 `previewDocs`
- * 문자열)에서 위젯이 그릴 만큼만 뽑아낸다. 디자인 원본은 목업 데이터를 그렸지만
- * 여기서는 **실제 문서**가 그 틀에 들어간다.
+ * 문자열)에서 위젯이 그릴 만큼만 뽑아낸다.
+ *
+ * 칸반은 **에디터의 시각 규칙을 그대로** 계산해 넘긴다(제보: 위젯이 실제 칸반
+ * 보드처럼 보여야 한다) — 면 층·열 색·분류 색·기한 문구·아바타 색이 전부
+ * `kanbanMeta`/`identity`의 **같은 함수**에서 나오므로 위젯과 에디터가 어긋날
+ * 길이 없다. 색의 기준은 그 문서의 테마(`themeOf(d.themeKey)`) — 에디터가 그
+ * 문서를 그릴 때 쓰는 바로 그 팔레트다.
+ *
+ * 맵·화이트보드는 여기서 지표(노드/메모 수)만 만들고, 화면은 홈 카드와 같은
+ * 실렌더(`realPreview`)가 그린다 — 위젯이 실제 문서와 다르게 보이면 안 된다(제보).
  *
  * 화면(DOM)을 모른다 — DashboardView가 이 값들을 디자인의 위젯 템플릿에 붓는다.
  */
 
-import type { Doc, Float, KanbanCard, KanbanColumn, Node as CoreNode } from '@mindflow/mindmap-core';
+import type { Doc, Float, KanbanCard, KanbanColumn, KanbanTag, Node as CoreNode } from '@mindflow/mindmap-core';
 import { ROOT_ID, cardsInColumn } from '@mindflow/mindmap-core';
+import { hexA, themeOf } from '../../editor/theme';
+import { boardProgress, boardSurface, columnBg, columnColor, dueLabel, dueTone, innerLine, tagColor, tagInk } from '../../editor/kanbanMeta';
+import { colorForSeed } from '../../../collab/identity';
 
 export type WidgetKind = 'kanban' | 'mind' | 'board';
 
@@ -15,16 +26,27 @@ export interface WidgetKanbanCard {
   id: string;
   title: string;
   tag: string | null;
+  /** 분류 배지 색 — 에디터와 같은 `tagColor`/`tagInk` 규칙. */
+  tagBg: string | null;
+  tagFg: string | null;
+  /** 기한 표시 문구(에디터의 `dueLabel` — "오늘"/"내일"/"9월 1일"). */
+  due: string | null;
+  /** 기한 톤 — 완료(마지막) 열의 카드는 지나도 붉지 않다(#448). */
+  dueTone: 'over' | 'soon' | 'normal';
   /** 담당 표시(이름 뒤 두 글자) — 없으면 null. */
   who: string | null;
-  due: string | null;
-  comments: number;
+  /** 담당 아바타 색 — 접속자 커서와 같은 시드(`colorForSeed`). */
+  whoColor: string | null;
 }
 
 export interface WidgetKanbanColumn {
   id: string;
   name: string;
   count: number;
+  /** 열 머리의 점 색 — 지정이 없으면 열 순서대로 팔레트(에디터 규칙). */
+  dot: string;
+  /** 열 배경 — 사용자가 고른 색이 있으면 그것(에디터 `columnBg`). */
+  bg: string;
   cards: WidgetKanbanCard[];
   /** 접힌 수("+N개 더") — 0이면 전부 보이는 중. */
   more: number;
@@ -33,33 +55,27 @@ export interface WidgetKanbanColumn {
 export interface WidgetKanban {
   kind: 'kanban';
   columns: WidgetKanbanColumn[];
-  /** 진행 바 구간(왼쪽부터) — 열 순서 그대로, 카드 수 비율. */
-  bar: { pct: number; colIndex: number }[];
-  owners: string[];
+  /** 진행 바 구간 — 에디터 보드 머리의 그 줄(완료부터 왼쪽에서, 열 색 그대로.
+   * 첫 열은 빈 트랙 — `boardProgress` 규칙 그대로). */
+  segments: { pct: number; color: string }[];
+  /** 진행 바의 빈 트랙 색. */
+  track: string;
+  /** 발치 아바타 — 카드에 적힌 담당들(중복 없이, 최대 4). */
+  avatars: { label: string; color: string }[];
   done: { done: number; total: number } | null;
+  /** 위젯 몸통의 면 층·글자색 — 에디터 보드 화면과 같은 계산(`boardSurface`/
+   * `innerLine` + 그 테마의 잉크). 홈 다크 테마의 CSS 변수를 쓰면 밝은 열 위에
+   * 밝은 글자가 얹히므로, 색은 전부 **문서 테마**에서 온다. */
+  surface: { board: string; line: string; card: string; ink: string; subInk: string };
 }
 
 export interface WidgetMind {
   kind: 'mind';
-  root: string;
-  branches: string[];
-  /** 가지 총수(표시보다 많으면 위젯이 "+N"을 말할 수 있게). */
-  branchTotal: number;
   nodeCount: number;
-}
-
-export interface WidgetBoardNote {
-  text: string;
-  /** 문서 좌표를 0..1로 정규화한 위치/폭 — 위젯이 %로 편다. */
-  l: number;
-  t: number;
-  w: number;
-  bg: string | null;
 }
 
 export interface WidgetBoard {
   kind: 'board';
-  notes: WidgetBoardNote[];
   noteTotal: number;
 }
 
@@ -71,8 +87,8 @@ function firstLine(text: string): string {
 }
 
 /** 직렬화 본문 → 위젯 데이터. 파싱 실패·빈 문서는 null(위젯이 폴백 문구를 그린다).
- *  `maxCards`/`maxBranches`/`maxNotes`는 크기(행 수)에 따라 위젯이 정해 넘긴다. */
-export function widgetDataOf(raw: string | null | undefined, opts: { maxCards: number; maxBranches: number; maxNotes: number }): WidgetData | null {
+ *  `maxCards`는 크기(행 수)에 따라 위젯이 정해 넘긴다. */
+export function widgetDataOf(raw: string | null | undefined, opts: { maxCards: number }): WidgetData | null {
   if (!raw) return null;
   let d: Partial<Doc> & { kind?: string };
   try {
@@ -86,6 +102,9 @@ export function widgetDataOf(raw: string | null | undefined, opts: { maxCards: n
     const columns = Array.isArray(d.columns) ? (d.columns as KanbanColumn[]) : [];
     const cards = Array.isArray(d.cards) ? (d.cards as KanbanCard[]) : [];
     if (!columns.length) return null;
+    const th = themeOf((d as { themeKey?: string }).themeKey ?? 'coral');
+    const tags = Array.isArray(d.tags) ? (d.tags as KanbanTag[]) : [];
+    const lastId = columns[columns.length - 1]?.id;
     const cols = columns.map((c, i) => {
       const mine = cardsInColumn(cards, c.id);
       const visible = mine.slice(0, opts.maxCards);
@@ -93,68 +112,52 @@ export function widgetDataOf(raw: string | null | undefined, opts: { maxCards: n
         id: c.id,
         name: c.title,
         count: mine.length,
+        dot: columnColor(c, i, th.palette),
+        bg: columnBg(c, th),
         more: Math.max(0, mine.length - visible.length),
-        colIndex: i,
-        cards: visible.map((k) => ({
-          id: k.id,
-          title: firstLine(k.text),
-          tag: k.tag || null,
-          who: k.ownerName ? k.ownerName.slice(-2) : null,
-          due: k.due || null,
-          comments: 0,
-        })),
+        cards: visible.map((k) => {
+          const tc = k.tag ? tagColor(k.tag, th.palette, tags) : null;
+          return {
+            id: k.id,
+            title: firstLine(k.text),
+            tag: k.tag || null,
+            tagBg: tc ? hexA(tc, 0.16) : null,
+            tagFg: tc ? tagInk(tc, th.text) : null,
+            due: k.due ? dueLabel(k.due) : null,
+            dueTone: k.due && c.id !== lastId ? dueTone(k.due) : ('normal' as const),
+            who: k.ownerName ? k.ownerName.slice(-2) : null,
+            whoColor: k.ownerName || k.owner ? colorForSeed(k.owner || k.ownerName || '') : null,
+          };
+        }),
       };
     });
-    const total = cards.length || 1;
-    const owners = Array.from(new Set(cards.map((k) => k.ownerName).filter((n): n is string => !!n))).slice(0, 4);
-    // 마지막 열 = 완료(에디터 진행률과 같은 규칙, #448) — "N/M done" 표기용.
-    const lastCol = columns[columns.length - 1];
-    const doneCount = lastCol ? cardsInColumn(cards, lastCol.id).length : 0;
+    const progress = boardProgress(columns, cards, th.palette);
+    const owners = new Map<string, { label: string; color: string }>();
+    cards.forEach((k) => {
+      const key = k.owner || k.ownerName;
+      if (!key || !k.ownerName || owners.has(key)) return;
+      owners.set(key, { label: k.ownerName.slice(-2), color: colorForSeed(key) });
+    });
     return {
       kind: 'kanban',
       columns: cols,
-      bar: columns.map((c, i) => ({ pct: (cardsInColumn(cards, c.id).length / total) * 100, colIndex: i })),
-      owners,
-      done: cards.length ? { done: doneCount, total: cards.length } : null,
+      segments: progress.segments.map((s) => ({ pct: s.pct, color: s.color })),
+      track: innerLine(th),
+      avatars: Array.from(owners.values()).slice(0, 4),
+      done: cards.length ? { done: progress.done, total: progress.total } : null,
+      surface: { board: boardSurface(th), line: innerLine(th), card: th.panel, ink: th.text, subInk: th.subtext },
     };
   }
 
   const nodes = (d.nodes || {}) as Record<string, CoreNode>;
-  const root = nodes[ROOT_ID];
-  if (root) {
-    const branches = (root.children || [])
-      .map((id) => nodes[id])
-      .filter((n): n is CoreNode => !!n)
-      .map((n) => firstLine(n.text || ''));
-    return {
-      kind: 'mind',
-      root: firstLine(root.text || '') || '마인드맵',
-      branches: branches.slice(0, opts.maxBranches),
-      branchTotal: branches.length,
-      nodeCount: Object.keys(nodes).length,
-    };
+  if (nodes[ROOT_ID]) {
+    return { kind: 'mind', nodeCount: Object.keys(nodes).length };
   }
 
-  // 루트 없는 문서 = 화이트보드. 메모(이미지 제외)를 문서 좌표 그대로 정규화한다.
+  // 루트 없는 문서 = 화이트보드. 메모(이미지 제외)가 하나라도 있어야 그릴 게 있다.
   const floats = Array.isArray(d.floats) ? (d.floats as Float[]) : [];
   const memos = floats.filter((f) => !f.img);
-  if (!memos.length) return null;
-  const W = 200; // 폭 어림값(측정 없이) — 경계 계산용
-  const minX = Math.min(...memos.map((f) => f.x));
-  const maxX = Math.max(...memos.map((f) => f.x + (f.w || W)));
-  const minY = Math.min(...memos.map((f) => f.y));
-  const maxY = Math.max(...memos.map((f) => f.y + 90));
-  const spanX = Math.max(1, maxX - minX);
-  const spanY = Math.max(1, maxY - minY);
-  return {
-    kind: 'board',
-    notes: memos.slice(0, opts.maxNotes).map((f) => ({
-      text: firstLine(f.text || ''),
-      l: (f.x - minX) / spanX,
-      t: (f.y - minY) / spanY,
-      w: Math.min(0.48, Math.max(0.16, (f.w || W) / spanX)),
-      bg: f.bg || null,
-    })),
-    noteTotal: memos.length,
-  };
+  const strokes = Array.isArray((d as { strokes?: unknown[] }).strokes) ? ((d as { strokes?: unknown[] }).strokes as unknown[]) : [];
+  if (!memos.length && !floats.length && !strokes.length) return null;
+  return { kind: 'board', noteTotal: memos.length };
 }
