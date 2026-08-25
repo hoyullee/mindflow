@@ -92,13 +92,21 @@ function setOnline(value: boolean): void {
   Object.defineProperty(navigator, 'onLine', { value, configurable: true });
 }
 
+/** 연결 확인 요청(`useOnline`의 `/__net-check`)의 답을 정한다 — 브라우저 플래그가
+ *  오프라인이라고 할 때 **진짜로** 못 나가는지 확인하는 그 요청이다. */
+function setReachable(ok: boolean): void {
+  vi.stubGlobal('fetch', vi.fn(() => (ok ? Promise.resolve(new Response(null, { status: 200 })) : Promise.reject(new Error('offline')))));
+}
+
 beforeEach(() => {
   localStorage.clear();
   setOnline(true);
+  setReachable(false); // 기본: 플래그가 오프라인이면 실제로도 못 나간다
 });
 afterEach(() => {
   cleanup();
   setOnline(true);
+  vi.unstubAllGlobals();
 });
 
 describe('오프라인', () => {
@@ -111,7 +119,8 @@ describe('오프라인', () => {
       setOnline(false);
       window.dispatchEvent(new Event('offline'));
     });
-    expect(screen.getByText('오프라인')).toBeTruthy();
+    // 확인 요청이 실패해야 비로소 "오프라인"이라고 말한다(플래그만으로는 말하지 않는다)
+    await waitFor(() => expect(screen.getByText('오프라인')).toBeTruthy());
 
     act(() => {
       setOnline(true);
@@ -131,6 +140,23 @@ describe('오프라인', () => {
 
     await waitFor(() => expect(hasPendingDoc('off2')).toBe(true), { timeout: 5000 });
     expect(localStorage.getItem('mindflow_doc_off2')).toContain('리서치');
+  });
+
+  it('브라우저 플래그가 거짓말이면(오프라인이라는데 요청은 나간다) 오프라인이라 하지 않는다', async () => {
+    // 제보: 라이브에서 로그인·문서 로드가 다 되는데 홈·에디터가 "오프라인"이라고 했다.
+    // VPN·가상 어댑터가 있는 환경에서 `navigator.onLine`이 false로 굳는 경우다.
+    const { backend } = makeBackend();
+    setOnline(false);
+    setReachable(true);
+    renderEditor(backend, 'off-lie');
+    await waitFor(() => expect(screen.getByText('저장됨')).toBeTruthy(), { timeout: 5000 });
+
+    act(() => {
+      window.dispatchEvent(new Event('offline'));
+    });
+    await waitFor(() => expect((fetch as unknown as { mock: { calls: unknown[] } }).mock.calls.length).toBeGreaterThan(0));
+    expect(screen.queryByText('오프라인')).toBeNull();
+    expect(screen.getByText('저장됨')).toBeTruthy();
   });
 
   it('다시 연결되면 못 올린 편집을 바로 올린다(다음 편집을 기다리지 않는다)', async () => {
