@@ -45,6 +45,7 @@ import {
   loadActiveView,
   loadRecent,
   saveActiveView,
+  saveLandingHint,
   mapId,
   mapHref as buildMapHref,
   mergeDocMetasIntoSpaces,
@@ -326,6 +327,9 @@ export function useHomeController() {
       if (!landedRef.current && canDecideLanding) {
         landedRef.current = true;
         activeDash = rememberedDash ? (dashboards.some((d) => d.id === rememberedDash) ? rememberedDash : defaultDash) : restore ? null : defaultDash;
+        // 다음 진입의 **첫 프레임**이 맞는 모양으로 시작하도록 이 기기에 적어 둔다
+        // (스켈레톤은 하이드레이션 전에 그려진다 — `predictLanding`).
+        saveLandingHint(activeDash ? 'dash' : 'space');
       }
       savedWorkspaceSigRef.current = JSON.stringify({
         spaces: binding.length ? merged : spaces,

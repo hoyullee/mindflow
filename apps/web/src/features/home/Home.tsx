@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import './home.css';
 import { LoadingOverlay } from '../auth/LoadingOverlay';
 import { Sidebar } from './components/Sidebar';
@@ -7,6 +7,7 @@ import { MapGrid } from './components/MapGrid';
 import { SearchResults } from './components/SearchResults';
 import { RecentStrip, RecentStripSkeleton } from './components/RecentStrip';
 import { DashboardView } from './components/DashboardView';
+import { DashboardSkeleton } from './components/DashboardSkeleton';
 import { DashboardPicker } from './components/modals/DashboardPicker';
 import { DashboardModal } from './components/modals/DashboardModal';
 import { AuthModal } from './components/modals/AuthModal';
@@ -26,6 +27,7 @@ import { ProfileNameModal } from './components/modals/ProfileNameModal';
 import { TemplateGallery } from './components/modals/TemplateGallery';
 import { useHomeController } from './useHomeController';
 import { deriveHomeView } from './viewModel';
+import { predictLanding } from './storage';
 import { homeModalTheme } from './theme';
 import { homeUpdateRisk } from './updateRisk';
 import { useIsMobile } from '../../hooks/useMediaQuery';
@@ -67,8 +69,15 @@ export function Home() {
     disabled: isMobile,
   });
   const installHint = useInstallHint(isMobile);
+  // 예상은 **마운트 때 한 번** 잡는다 — 착지하면서 힌트가 갱신되므로 매 렌더 읽으면
+  // 로딩 중에 모양이 바뀔 수 있다.
+  const landingGuess = useRef<'dash' | 'space'>(predictLanding());
   const online = useOnline();
   const [navOpen, setNavOpen] = useState(false);
+  // 로딩 스켈레톤의 모양 — 아직 착지 화면을 모르는 첫 프레임에 쓴다(`predictLanding`:
+  // 이 탭이 기억한 화면 → 이 기기의 힌트). 대시보드로 갈 예정이면 대시보드 껍데기를
+  // 그린다(제보: 스페이스 스켈레톤이 떴다가 통째로 갈아 끼워졌다).
+  const dashSkeleton = view.loading && landingGuess.current === 'dash';
   // 새 배포 자동 적용 게이트: 목록은 리로드해도 그대로 다시 그려지니 기본은 조용히
   // 적용하고, 입력 중인 팝업·확인 다이얼로그·검색어가 있을 때만 물어본다.
   useUpdateGuard(homeUpdateRisk(state));
@@ -144,6 +153,10 @@ export function Home() {
             항목·툴바·그리드는 스페이스의 것이라 함께 접는다. */}
         {state.activeDash ? (
           <DashboardView state={state} view={view} controller={controller} isMobile={isMobile} onOpenNav={() => setNavOpen(true)} />
+        ) : dashSkeleton ? (
+          /* 로딩 중이고 이번 진입이 대시보드로 착지할 예정 — 스페이스 스켈레톤(최근
+             항목 띠 + 카드 격자)을 띄우면 곧 통째로 갈아 끼워진다(제보). */
+          <DashboardSkeleton isMobile={isMobile} />
         ) : (
           <>
             {view.loading && state.recent.length > 0 && !view.searchQuery && <RecentStripSkeleton count={state.recent.length} />}

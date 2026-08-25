@@ -46,7 +46,7 @@ function SkeletonCard() {
 export function MapGrid({ view, controller }: Props) {
   if (view.loading) {
     return (
-      <div className="mf-map-grid" style={GRID_STYLE} aria-busy="true" aria-label="맵을 불러오는 중">
+      <div className="mf-map-grid" data-map-grid-skeleton style={GRID_STYLE} aria-busy="true" aria-label="맵을 불러오는 중">
         {Array.from({ length: 6 }, (_, i) => (
           <SkeletonCard key={i} />
         ))}

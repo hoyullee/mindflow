@@ -475,6 +475,36 @@ export function clearActiveView(): void {
   }
 }
 
+/**
+ * 로딩 스켈레톤의 모양을 정하는 힌트 — 첫 화면이 **대시보드인지 스페이스인지**.
+ *
+ * 스켈레톤은 하이드레이션 **전에** 그려야 하는데, 그때는 대시보드 목록이 아직 없어
+ * 어느 화면으로 착지할지 모른다. 그래서 예전엔 늘 스페이스 스켈레톤(최근 항목 띠 +
+ * 카드 격자)이 떴다가 대시보드로 갈아 끼워졌다(제보). 착지할 때마다 결과를 이 기기에
+ * 적어 두고, 다음 진입의 첫 프레임이 그 모양으로 시작한다 — 홈 테마 캐시(`mf_home_theme`)
+ * 와 같은 "첫 페인트용 힌트"다. 이 탭이 기억한 화면이 있으면 그게 더 정확하다.
+ */
+export const LANDING_HINT_KEY = 'mf_home_landing';
+
+export function saveLandingHint(kind: 'dash' | 'space'): void {
+  try {
+    localStorage.setItem(LANDING_HINT_KEY, kind);
+  } catch {
+    /* storage unavailable — 힌트가 없으면 예전처럼 스페이스 모양으로 그린다 */
+  }
+}
+
+/** 이번 진입의 첫 화면 예상. 탭이 기억한 화면 → 이 기기의 힌트 → 스페이스. */
+export function predictLanding(): 'dash' | 'space' {
+  const view = loadActiveView();
+  if (view) return view.activeDash ? 'dash' : 'space';
+  try {
+    return localStorage.getItem(LANDING_HINT_KEY) === 'dash' ? 'dash' : 'space';
+  } catch {
+    return 'space';
+  }
+}
+
 export function loadActiveView(): ActiveView | null {
   try {
     const raw = sessionStorage.getItem(ACTIVE_VIEW_KEY);
