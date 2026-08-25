@@ -17,7 +17,7 @@
 
 import type { Doc, Float, KanbanCard, KanbanColumn, KanbanTag, Node as CoreNode } from '@mindflow/mindmap-core';
 import { ROOT_ID } from '@mindflow/mindmap-core';
-import { themeOf } from '../../editor/theme';
+import { UI_THEME } from '../../editor/theme';
 import { boardProgress } from '../../editor/kanbanMeta';
 import { colorForSeed } from '../../../collab/identity';
 
@@ -25,13 +25,14 @@ export type WidgetKind = 'kanban' | 'mind' | 'board';
 
 export interface WidgetKanban {
   kind: 'kanban';
-  /** 에디터가 그리는 실물 그대로 — 위젯은 이 값을 에디터의 카드·열 부품에 붓는다. */
+  /** 에디터가 그리는 실물 그대로 — 위젯은 이 값을 에디터의 카드·열 부품에 붓는다.
+   * 색은 `doc.themeKey`가 아니라 **UI_THEME 고정**이다(제보): 칸반 에디터는 스타일
+   * 메뉴가 없어 doc.themeKey를 쓰지 않고 항상 UI_THEME으로 그린다 — 문서에 실린
+   * themeKey는 템플릿이 관성적으로 넣은 BOARD_THEME_KEY('white')라, 그걸 읽으면
+   * 위젯만 파란 팔레트가 된다(홈 썸네일 `kanbanPreview`도 같은 이유로 UI_THEME). */
   columns: KanbanColumn[];
   cards: KanbanCard[];
   tags: KanbanTag[];
-  /** 문서의 테마 키 — 색은 전부 이 테마에서 온다(에디터가 그 문서를 그릴 때 쓰는
-   * 바로 그 팔레트). 홈 다크 테마의 CSS 변수를 쓰면 밝은 열 위에 밝은 글자가 얹힌다. */
-  themeKey: string;
   /** 진행 바 구간 — 에디터 보드 머리의 그 줄(완료부터 왼쪽에서, 열 색 그대로.
    * 첫 열은 빈 트랙 — `boardProgress` 규칙 그대로). */
   segments: { pct: number; color: string }[];
@@ -67,10 +68,8 @@ export function widgetDataOf(raw: string | null | undefined): WidgetData | null 
     const columns = Array.isArray(d.columns) ? (d.columns as KanbanColumn[]) : [];
     const cards = Array.isArray(d.cards) ? (d.cards as KanbanCard[]) : [];
     if (!columns.length) return null;
-    const themeKey = (d as { themeKey?: string }).themeKey ?? 'coral';
-    const th = themeOf(themeKey);
     const tags = Array.isArray(d.tags) ? (d.tags as KanbanTag[]) : [];
-    const progress = boardProgress(columns, cards, th.palette);
+    const progress = boardProgress(columns, cards, UI_THEME.palette);
     const owners = new Map<string, { label: string; color: string }>();
     cards.forEach((k) => {
       const key = k.owner || k.ownerName;
@@ -82,7 +81,6 @@ export function widgetDataOf(raw: string | null | undefined): WidgetData | null 
       columns,
       cards,
       tags,
-      themeKey,
       segments: progress.segments.map((s) => ({ pct: s.pct, color: s.color })),
       avatars: Array.from(owners.values()).slice(0, 4),
       done: cards.length ? { done: progress.done, total: progress.total } : null,
