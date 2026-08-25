@@ -101,8 +101,8 @@ function seedSpaces(withMap = false) {
 }
 
 /** 워크스페이스 블롭에 남은 dashboards. */
-function savedDashboards(): { id: string; name: string; items: { id: string; docId: string; size: string }[] }[] {
-  const ws = JSON.parse(localStorage.getItem('mf_spaces') || '{}') as { dashboards?: { id: string; name: string; items: { id: string; docId: string; size: string }[] }[] };
+function savedDashboards(): { id: string; name: string; color?: string; items: { id: string; docId: string; size: string }[] }[] {
+  const ws = JSON.parse(localStorage.getItem('mf_spaces') || '{}') as { dashboards?: { id: string; name: string; color?: string; items: { id: string; docId: string; size: string }[] }[] };
   return ws.dashboards ?? [];
 }
 
