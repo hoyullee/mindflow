@@ -136,6 +136,10 @@ export function useHomeController() {
   // (`workspaceMutatedRef`) and only if the mount load didn't already succeed
   // (`workspaceLoadedRef`), so the resync can never clobber real edits.
   const mountedRef = useRef(true);
+  // 홈의 첫 화면을 한 번만 정하기 위한 표식 — 하이드레이션은 두 번 돌 수 있어서
+  // (마운트 + 인증 확인 뒤 재동기화) 매번 화면을 정하면, 그 사이 사용자가 고른
+  // 스페이스가 대시보드로 되돌아가 버린다.
+  const landedRef = useRef(false);
   const workspaceLoadedRef = useRef(false);
   const workspaceResyncedRef = useRef(false);
   const workspaceMutatedRef = useRef(false);
@@ -146,9 +150,10 @@ export function useHomeController() {
   // both in ONE setState. Extracted so both the mount and the auth-confirmed
   // resync (see below) share identical hydration logic.
   const hydrateFromBackend = useCallback(async () => {
-    // Restore the space/folder the user was last viewing in THIS tab (set before
-    // they opened a map in the editor), so returning to Home lands back on that
-    // space instead of the default 일반 공간.
+    // Restore the screen the user was last viewing in THIS tab (set before they
+    // opened a map in the editor), so returning to Home lands back on that space
+    // — or dashboard — instead of the default 일반 공간. 아무것도 없으면 첫 진입이라
+    // 기본 대시보드를 연다(아래 landedRef 블록).
     const restore = loadActiveView();
     const res = await Promise.allSettled([spaceStore.load(), docStore.list(), shareStore.listSharedWithMe(), shareStore.listSharedByMe()]);
     if (!mountedRef.current) return;
@@ -292,6 +297,20 @@ export function useHomeController() {
       // 카드는 영원히 docId 없는 상태로 남는다.)
       const theme = wsTheme ?? prev.theme;
       const dashboards = wsDashboards ?? prev.dashboards;
+      // ---- 홈의 첫 화면(요청: 진입하면 기본 대시보드) ----
+      // 이 탭에 남은 화면이 없으면 = **첫 진입**이므로 기본 대시보드(목록 맨 위 =
+      // LNB의 '기본')를 연다. 대시보드에서 맵을 열고 돌아왔으면 그 대시보드로,
+      // 스페이스에서 나갔으면 예전처럼 그 스페이스로 돌아온다(`activeDash: null`).
+      // 기억한 대시보드가 사라졌으면(다른 기기에서 삭제) 기본 대시보드로 물러선다 —
+      // 없는 화면을 열지 않는다. 대시보드가 하나도 없는 사용자는 지금 그대로
+      // 스페이스 그리드가 첫 화면이다(빈 대시보드를 지어내지 않는다).
+      const defaultDash = dashboards[0]?.id ?? null;
+      const rememberedDash = restore?.activeDash ?? null;
+      let activeDash = prev.activeDash;
+      if (!landedRef.current) {
+        landedRef.current = true;
+        activeDash = rememberedDash ? (dashboards.some((d) => d.id === rememberedDash) ? rememberedDash : defaultDash) : restore ? null : defaultDash;
+      }
       savedWorkspaceSigRef.current = JSON.stringify({
         spaces: binding.length ? merged : spaces,
         mapFolders: mfMigration.changed ? mfBeforeMigration : mapFolders,
@@ -307,7 +326,7 @@ export function useHomeController() {
       // 카드의 "공유 중" 표식 원천 — 내가 걸어 둔 초대/링크의 일괄 요약. 조회
       // 실패는 빈 객체(표식만 빠지고 홈은 그대로).
       const sharedByMe = res[3].status === 'fulfilled' ? res[3].value : prev.sharedByMe;
-      return { ...prev, theme, dashboards, spaces, activeSpace, curFolder, mapFolders, favs, deleted, trash, recent, docTimes, sharedByMe, sharedMaps: sharedMetas.map((m) => ({ docId: m.id, title: m.title, updatedAt: m.updatedAt, role: m.sharedRole ?? 'edit', isNew: unseen.has(m.id) })), loaded: true };
+      return { ...prev, theme, dashboards, activeDash, spaces, activeSpace, curFolder, mapFolders, favs, deleted, trash, recent, docTimes, sharedByMe, sharedMaps: sharedMetas.map((m) => ({ docId: m.id, title: m.title, updatedAt: m.updatedAt, role: m.sharedRole ?? 'edit', isNew: unseen.has(m.id) })), loaded: true };
     });
     // 마지막 저장자가 **내가 아닌** 문서들만 이름을 물어본다(0015). 혼자 쓰는
     // 사람은 대상이 하나도 없어 요청 자체가 나가지 않는다. 실패해도 조용히 넘어간다 —
@@ -485,15 +504,16 @@ export function useHomeController() {
     };
   }, [auth]);
 
-  // Remember the space/folder currently being viewed (tab-scoped) so that
-  // opening a map in the editor and returning to Home restores it. Gated on
+  // Remember the screen currently being viewed — space/folder, and (요청) which
+  // dashboard, if any — tab-scoped, so opening a map in the editor and returning
+  // to Home restores it. Gated on
   // `loaded` so the transient initial 'general' can't overwrite a real value
   // before the mount restore above has applied it. Drive is a pseudo-space with
   // no local folder, so it persists with `curFolder: null`.
   useEffect(() => {
     if (!state.loaded) return;
-    saveActiveView({ activeSpace: state.activeSpace, curFolder: state.activeSpace === 'drive' ? null : state.curFolder });
-  }, [state.loaded, state.activeSpace, state.curFolder]);
+    saveActiveView({ activeSpace: state.activeSpace, curFolder: state.activeSpace === 'drive' ? null : state.curFolder, activeDash: state.activeDash });
+  }, [state.loaded, state.activeSpace, state.curFolder, state.activeDash]);
 
   // Prefetch document BODIES for the map cards' thumbnails. `DocStore.list()`
   // above only returns metadata, and `realPreview` reads localStorage — so a

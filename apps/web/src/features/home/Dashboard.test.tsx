@@ -601,3 +601,81 @@ describe('대시보드 ④ — 모바일 편집', () => {
     }
   });
 });
+
+// ── 홈의 첫 화면 — 기본 대시보드(요청) ────────────────────────────────────
+
+/** 대시보드 둘이 실린 워크스페이스(첫 번째가 '기본'). */
+function seedTwoDashboards() {
+  localStorage.setItem(
+    'mf_spaces',
+    JSON.stringify({
+      spaces: [{ id: 's1', name: '일반 공간', home: true, color: '#f0663f', maps: [], folders: [] }],
+      mapFolders: {},
+      dashboards: [
+        { id: 'd1', name: '기본 보드', items: [] },
+        { id: 'd2', name: '둘째 보드', items: [] },
+      ],
+    }),
+  );
+}
+
+describe('홈의 첫 화면', () => {
+  it('첫 진입이면 기본 대시보드(맨 위)가 열린다', async () => {
+    seedTwoDashboards();
+    const { container } = renderHome();
+    await waitFor(() => expect(container.querySelector('[data-dashboard-view]')).toBeTruthy());
+    const dashView = container.querySelector('[data-dashboard-view]') as HTMLElement;
+    expect(within(dashView).getByText('기본 보드')).toBeTruthy();
+    // 스페이스 화면의 툴바(검색창)는 접혀 있다
+    expect(screen.queryByPlaceholderText('모든 스페이스에서 검색')).toBeNull();
+  });
+
+  it('대시보드가 하나도 없으면 지금처럼 스페이스 그리드가 첫 화면(무회귀)', async () => {
+    seedSpaces();
+    const { container } = renderHome();
+    await waitFor(() => expect(screen.getByPlaceholderText('모든 스페이스에서 검색')).toBeTruthy());
+    expect(container.querySelector('[data-dashboard-view]')).toBeNull();
+  });
+
+  it('스페이스를 보다 나갔으면 그 스페이스로 돌아온다(대시보드로 가로채지 않는다)', async () => {
+    seedTwoDashboards();
+    // 이 탭이 기억한 마지막 화면 = 스페이스(대시보드 아님)
+    sessionStorage.setItem('mf_active_view', JSON.stringify({ activeSpace: 's1', curFolder: null, activeDash: null }));
+    const { container } = renderHome();
+    await waitFor(() => expect(screen.getByPlaceholderText('모든 스페이스에서 검색')).toBeTruthy());
+    expect(container.querySelector('[data-dashboard-view]')).toBeNull();
+  });
+
+  it('대시보드를 보다 나갔으면 **그** 대시보드로 돌아온다', async () => {
+    seedTwoDashboards();
+    sessionStorage.setItem('mf_active_view', JSON.stringify({ activeSpace: 's1', curFolder: null, activeDash: 'd2' }));
+    const { container } = renderHome();
+    await waitFor(() => expect(container.querySelector('[data-dashboard-view]')).toBeTruthy());
+    expect(within(container.querySelector('[data-dashboard-view]') as HTMLElement).getByText('둘째 보드')).toBeTruthy();
+  });
+
+  it('기억한 대시보드가 사라졌으면 기본 대시보드로 물러선다(없는 화면을 열지 않는다)', async () => {
+    seedTwoDashboards();
+    sessionStorage.setItem('mf_active_view', JSON.stringify({ activeSpace: 's1', curFolder: null, activeDash: 'gone' }));
+    const { container } = renderHome();
+    await waitFor(() => expect(container.querySelector('[data-dashboard-view]')).toBeTruthy());
+    expect(within(container.querySelector('[data-dashboard-view]') as HTMLElement).getByText('기본 보드')).toBeTruthy();
+  });
+
+  it('폰: 대시보드 히어로에도 ≡가 있어 서랍을 열 수 있다(첫 화면이 대시보드이므로)', async () => {
+    const restore = mockMatchMedia(true);
+    try {
+      seedTwoDashboards();
+      const user = userEvent.setup();
+      const { container } = renderHome();
+      await waitFor(() => expect(container.querySelector('[data-dashboard-view]')).toBeTruthy());
+      const hamburger = screen.getByRole('button', { name: /메뉴 열기/ });
+      expect((container.querySelector('[data-dashboard-view]') as HTMLElement).contains(hamburger)).toBe(true);
+      await user.click(hamburger);
+      const aside = container.querySelector('aside') as HTMLElement;
+      await waitFor(() => expect(within(aside).getByText('일반 공간')).toBeTruthy());
+    } finally {
+      restore();
+    }
+  });
+});

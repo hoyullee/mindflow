@@ -16,6 +16,7 @@ import { realPreview } from '../mapPreview';
 import { mapHref, readDocRaw } from '../storage';
 import { formatLastEdited } from '../timeFormat';
 import { META_MONO } from '../chrome';
+import { UNREAD_BADGE_BG } from '../theme';
 
 /**
  * 대시보드 보기 — 디자인 원본 `Geurio 홈 대시보드.dc.html`의 isDash 화면.
@@ -79,6 +80,9 @@ interface Props {
   view: HomeViewModel;
   controller: HomeController;
   isMobile?: boolean;
+  /** 폰의 LNB 서랍 열기 — 대시보드가 홈의 첫 화면이 되면서(요청) 이 화면에도
+   * ≡가 있어야 한다. 없으면 스페이스·검색·알림으로 갈 길이 사라진다. */
+  onOpenNav?: () => void;
 }
 
 /** 위젯을 여는 런치 전환의 재료 — 그 위젯의 화면 사각형에서 화면 전체로 펼쳐진다. */
@@ -92,7 +96,7 @@ interface LaunchState {
   space: string;
 }
 
-export function DashboardView({ state, view, controller, isMobile = false }: Props) {
+export function DashboardView({ state, view, controller, isMobile = false, onOpenNav }: Props) {
   // 편집 모드는 모바일에서도 열린다(PR④) — 다만 **탭으로 되는 것만** 내준다:
   // 크기 순환·내리기 버튼. HTML5 드래그(재배치)와 모서리 리사이즈는 터치에서
   // 발화하지 않는 마우스 제스처라 데스크톱 전용이고, 순서는 길게 눌러 여는
@@ -173,7 +177,28 @@ export function DashboardView({ state, view, controller, isMobile = false }: Pro
       <div style={{ position: 'relative', background: '#332E29', padding: isMobile ? '20px 16px 18px' : '26px 32px 24px', display: 'flex', alignItems: 'flex-end', flexWrap: 'wrap', gap: 14, overflow: 'hidden' }}>
         <div aria-hidden style={{ position: 'absolute', inset: 0, backgroundImage: 'radial-gradient(rgba(247,239,232,.07) 1px, transparent 1px)', backgroundSize: '18px 18px' }} />
         <div style={{ position: 'relative', display: 'flex', flexDirection: 'column', gap: 9, minWidth: 0, flex: '1 1 auto' }}>
-          <span style={{ display: 'flex', alignItems: 'baseline', gap: 10, minWidth: 0 }}>
+          <span style={{ display: 'flex', alignItems: isMobile ? 'center' : 'baseline', gap: 10, minWidth: 0 }}>
+            {/* 폰의 앱 바 ≡ — 홈의 첫 화면이 대시보드라(요청) 여기에도 서랍 손잡이가
+                있어야 한다. 툴바의 그것과 같은 고스트 버튼(44px)이고, 색만 다크 히어로에
+                맞춘다. 확인하지 않은 공유가 있으면 문에도 점을 찍는다(닫힌 문 뒤의
+                배지는 알림이 아니다 — 툴바와 같은 규칙). */}
+            {isMobile && onOpenNav && (
+              <button
+                type="button"
+                className="btn"
+                onClick={onOpenNav}
+                title={view.sharedUnread > 0 ? `메뉴 열기 (새 공유 ${view.sharedUnread}개)` : '메뉴 열기'}
+                aria-label={view.sharedUnread > 0 ? `메뉴 열기, 확인하지 않은 공유 ${view.sharedUnread}개` : '메뉴 열기'}
+                style={{ position: 'relative', display: 'flex', alignItems: 'center', justifyContent: 'center', width: 44, height: 44, marginLeft: -12, marginRight: -8, marginTop: -6, marginBottom: -6, border: 'none', borderRadius: 10, background: 'transparent', color: '#F7EFE8', cursor: 'pointer', padding: 0, flexShrink: 0 }}
+              >
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                  <line x1="4" y1="7" x2="20" y2="7" />
+                  <line x1="4" y1="12" x2="20" y2="12" />
+                  <line x1="4" y1="17" x2="20" y2="17" />
+                </svg>
+                {view.sharedUnread > 0 && <span data-unread-dot aria-hidden="true" style={{ position: 'absolute', top: 9, right: 9, width: 8, height: 8, borderRadius: '50%', background: UNREAD_BADGE_BG, border: '2px solid #332E29' }} />}
+              </button>
+            )}
             <span style={{ fontSize: 12, fontWeight: 700, color: '#B7A995', whiteSpace: 'nowrap' }}>
               {greeting}, {state.userName} 님
             </span>
