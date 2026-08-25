@@ -3,7 +3,7 @@ import { createPortal } from 'react-dom';
 import { cardsInColumn } from '@mindflow/mindmap-core';
 import { useCommentStore } from '../../../adapters/BackendContext';
 import { CardFace, cardBase, COL_W, COL_SHADOW } from '../../editor/components/KanbanBoard';
-import { hexA, themeOf } from '../../editor/theme';
+import { UI_THEME, hexA } from '../../editor/theme';
 import { boardSurface, columnBg, columnColor, innerLine } from '../../editor/kanbanMeta';
 import { useParticipantAvatars } from '../../editor/useParticipantAvatars';
 import type { HomeController } from '../useHomeController';
@@ -692,14 +692,16 @@ function useDocCommentCounts(docId: string): Record<string, number> {
  * 에디터와 달라 보이면 안 된다). 카드는 에디터의 `CardFace`/`cardBase`를 그대로
  * 재사용하고(분류 배지·본문 rich·기한 톤·댓글 수·담당 얼굴·긴급 왼 테두리까지
  * 한 코드), 열도 에디터의 스펙(폭 308/264·머리 구성·그림자)을 같은 값으로 그린다.
- * 색은 전부 문서 테마(`themeOf`)에서 — 홈 다크 테마와 무관하게 실제 보드의 인상.
+ * 색도 에디터와 같은 **UI_THEME 고정**(제보) — 칸반 에디터는 스타일 메뉴가 없어
+ * doc.themeKey를 쓰지 않는다(문서에 실린 'white'는 템플릿의 관성값). 위젯이 그걸
+ * 읽으면 에디터는 코랄인데 위젯만 파란 팔레트가 된다.
  *
  * 상호작용은 **카드의 열 이동 하나**다: `onMoveCard`가 오면 카드를 다른 열로 끌 수
  * 있고(놓일 자리는 에디터와 같은 점선 상자 — 이 경로는 열 끝에 붙이므로 맨 뒤에
  * 선다), 편집 진입(더블클릭 상세·우클릭 메뉴·추가/삭제)은 내주지 않는다 —
  * 그건 열어서 한다. 배치 편집 모드·보기 전용 공유·터치에서는 드래그 자체가 없다. */
 function KanbanBody({ data, isMobile, comments, avatars, onMoveCard }: { data: WidgetKanban; isMobile: boolean; comments: Record<string, number>; avatars: Record<string, string>; onMoveCard?: (cardId: string, toColId: string) => void }) {
-  const th = themeOf(data.themeKey);
+  const th = UI_THEME;
   const track = innerLine(th);
   const colW = isMobile ? 264 : COL_W; // 에디터 Column과 같은 폭
   const lastIdx = data.columns.length - 1;

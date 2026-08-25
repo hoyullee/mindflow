@@ -425,7 +425,9 @@ const KANBAN_BODY: LoadedDoc = {
     lines: [],
     zones: [],
     layoutMode: 'right',
-    themeKey: 'coral',
+    // 실제 칸반 문서가 싣는 값 — 템플릿이 BOARD_THEME_KEY('white')를 관성적으로
+    // 넣는다. 칸반 에디터는 이 값을 쓰지 않고 항상 UI_THEME으로 그린다.
+    themeKey: 'white',
     columns: [
       { id: 'c1', title: '할 일' },
       { id: 'c2', title: '완료' },
@@ -561,6 +563,12 @@ describe('대시보드 ③ — 칸반 카드 열 이동', () => {
     expect(within(card).getByText('날짜 없음')).toBeTruthy();
     expect(card.querySelector('[data-card-comment-count="k1"]')?.textContent).toContain('0');
     expect(card.querySelector('[data-card-no-owner]')).toBeTruthy();
+
+    // 색도 에디터 그대로(제보) — 칸반 에디터는 doc.themeKey('white')를 쓰지 않고
+    // 항상 UI_THEME으로 그린다(스타일 메뉴가 없는 이유). 위젯이 themeKey를 읽으면
+    // 열 점이 화이트 팔레트의 파랑(#2f7fd6)으로 갈라진다.
+    const dot = col.querySelector('header span') as HTMLElement;
+    expect(getComputedStyle(dot).backgroundColor).toBe('rgb(240, 102, 63)'); // UI_THEME.palette[0] = #f0663f
   });
 });
 
