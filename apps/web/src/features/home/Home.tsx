@@ -8,7 +8,7 @@ import { SearchResults } from './components/SearchResults';
 import { RecentStrip, RecentStripSkeleton } from './components/RecentStrip';
 import { DashboardView } from './components/DashboardView';
 import { DashboardPicker } from './components/modals/DashboardPicker';
-import { DashRenameModal } from './components/modals/DashRenameModal';
+import { DashboardModal } from './components/modals/DashboardModal';
 import { AuthModal } from './components/modals/AuthModal';
 import { ToastModal } from './components/modals/ToastModal';
 import { NewSpaceModal } from './components/modals/NewSpaceModal';
@@ -190,7 +190,7 @@ export function Home() {
       <ShareModal open={!!state.shareDocId} docId={state.shareDocId ?? ''} onClose={controller.closeShare} theme={modalTheme} />
       <TemplateGallery state={state} controller={controller} />
       <DashboardPicker state={state} view={view} controller={controller} isMobile={isMobile} />
-      <DashRenameModal state={state} controller={controller} />
+      <DashboardModal state={state} controller={controller} />
       <Modals state={state} controller={controller} />
       <NewSpaceModal state={state} controller={controller} />
       <FolderModal state={state} controller={controller} />

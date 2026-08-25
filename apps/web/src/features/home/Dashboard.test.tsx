@@ -106,6 +106,16 @@ function savedDashboards(): { id: string; name: string; items: { id: string; doc
   return ws.dashboards ?? [];
 }
 
+/** LNB `새 대시보드` → 만들기 팝업(첨부 디자인)에서 이름·색을 정해 만든다. */
+async function createDashViaDialog(user: ReturnType<typeof userEvent.setup>, aside: HTMLElement, name: string, colorIdx = 0) {
+  await user.click(within(aside).getByText('새 대시보드'));
+  const dlg = await screen.findByRole('dialog', { name: '새 대시보드 만들기' });
+  if (colorIdx > 0) fireEvent.click(dlg.querySelectorAll('[data-dialog-color]')[colorIdx] as HTMLElement);
+  await user.type(within(dlg).getByLabelText('대시보드 이름'), name);
+  await user.click(within(dlg).getByRole('button', { name: '만들기' }));
+  return dlg;
+}
+
 async function sidebarOf(container: HTMLElement) {
   const aside = container.querySelector('aside') as HTMLElement;
   await waitFor(() => expect(within(aside).getByText('일반 공간')).toBeTruthy());
@@ -120,7 +130,23 @@ describe('대시보드 ① — LNB·보기·피커', () => {
     const aside = await sidebarOf(container);
 
     expect(within(aside).getByText('대시보드')).toBeTruthy();
+
+    // "새 대시보드"는 곧바로 만들지 않고 **이름·색을 받는 팝업**을 연다(첨부 디자인)
     await user.click(within(aside).getByText('새 대시보드'));
+    const dlg = await screen.findByRole('dialog', { name: '새 대시보드 만들기' });
+    expect(within(dlg).getByText('보드를 모아 한눈에 볼 화면을 만들어요')).toBeTruthy();
+    expect(dlg.querySelector('[data-dialog-icon]')).toBeTruthy();
+    expect(dlg.querySelector('[data-dialog-count]')?.textContent).toBe('0/10');
+    // 이름이 비어 있으면 만들 수 없다
+    expect((within(dlg).getByRole('button', { name: '만들기' }) as HTMLButtonElement).disabled).toBe(true);
+    // 색 여섯, 첫 칸이 선택된 채로 시작
+    expect(dlg.querySelectorAll('[data-dialog-color]').length).toBe(6);
+    expect((dlg.querySelectorAll('[data-dialog-color]')[0] as HTMLElement).getAttribute('aria-pressed')).toBe('true');
+
+    fireEvent.click(dlg.querySelectorAll('[data-dialog-color]')[3] as HTMLElement); // 파랑
+    await user.type(within(dlg).getByLabelText('대시보드 이름'), '주간 현황');
+    expect(dlg.querySelector('[data-dialog-count]')?.textContent).toBe('5/10');
+    await user.click(within(dlg).getByRole('button', { name: '만들기' }));
 
     // 대시보드 화면으로 전환 — 스페이스의 툴바·그리드는 접힌다
     const dashView = container.querySelector('[data-dashboard-view]') as HTMLElement;
@@ -128,9 +154,14 @@ describe('대시보드 ① — LNB·보기·피커', () => {
     expect(within(dashView).getByText('아직 올려둔 보드가 없어요')).toBeTruthy();
     expect(screen.queryByPlaceholderText('모든 스페이스에서 검색')).toBeNull();
 
-    // LNB 행 + 맨 위 = 기본 배지, 그리고 워크스페이스 블롭에 저장
+    // LNB 행 + 맨 위 = 기본 배지, 그리고 이름·색이 워크스페이스 블롭에 저장
     expect(within(aside).getByText('기본')).toBeTruthy();
-    await waitFor(() => expect(savedDashboards().map((d) => d.name)).toEqual(['대시보드']));
+    expect(within(aside).getByText('주간 현황')).toBeTruthy();
+    await waitFor(() => expect(savedDashboards().map((d) => d.name)).toEqual(['주간 현황']));
+    expect(savedDashboards()[0]?.color).toBe('#3f8fd0');
+    // 고른 색은 LNB 행 글리프와 히어로 점에 나타난다(고르면 보이는 곳이 있다)
+    expect((aside.querySelector('[data-dash-glyph]') as HTMLElement).getAttribute('stroke')).toBe('#3f8fd0');
+    expect((dashView.querySelector('[data-dash-hero-dot]') as HTMLElement).style.background).toBe('rgb(63, 143, 208)');
 
     // 행을 다시 눌러도 그대로, 스페이스를 누르면 스페이스 보기로 복귀
     await user.click(within(aside).getByText('일반 공간'));
@@ -144,7 +175,7 @@ describe('대시보드 ① — LNB·보기·피커', () => {
     const { container } = renderHome([META('doc-a', '기획맵')], { 'doc-a': MAP_BODY });
     const aside = await sidebarOf(container);
 
-    await user.click(within(aside).getByText('새 대시보드'));
+    await createDashViaDialog(user, aside, '내 보드');
     await user.click(screen.getAllByRole('button', { name: '보드 추가' })[0]!);
 
     const picker = await screen.findByRole('dialog', { name: '보드 올리기' });

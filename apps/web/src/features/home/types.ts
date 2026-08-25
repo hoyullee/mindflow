@@ -249,7 +249,9 @@ export interface HomeState {
     sel: { docId: string; size: string } | null;
   } | null;
   /** 대시보드 이름 변경 팝업(행 우클릭 → 이름 변경). `null`이면 닫힘. */
-  dashRename: { id: string; name: string } | null;
+  /** 대시보드 만들기·이름 변경 팝업(첨부 디자인) — `id`가 있으면 이름 변경, 없으면
+   *  새로 만들기. 색은 스페이스와 같은 여섯(`SPACE_COLORS`) 중 하나. */
+  dashDialog: { id: string | null; name: string; color: string } | null;
   /** 대시보드 삭제 확인 대상 id — 배치만 사라지고 문서는 그대로라는 걸 문구가 말한다. */
   confirmDeleteDash: string | null;
   newSpaceOpen: boolean;
@@ -458,7 +460,7 @@ export function initialHomeState(): HomeState {
     dashEdit: false,
     spaceReorder: false,
     dashPicker: null,
-    dashRename: null,
+    dashDialog: null,
     confirmDeleteDash: null,
     newSpaceOpen: false,
     newSpaceName: '',

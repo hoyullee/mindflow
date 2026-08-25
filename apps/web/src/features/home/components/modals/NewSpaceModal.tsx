@@ -1,65 +1,35 @@
 import { SPACE_COLORS, type HomeState } from '../../types';
 import type { HomeController } from '../../useHomeController';
+import { CreateDialog, FolderChipIcon } from './CreateDialog';
 
 interface Props {
   state: HomeState;
   controller: HomeController;
 }
 
-/** Home.dc.html:393-413 — "새 스페이스 만들기" modal (name + accent color). Doubles as
- * the space RENAME dialog when `state.editingSpace` is set (title/button swap to
- * "스페이스 이름 변경"/"변경", fields pre-filled). */
+/** "새 스페이스 만들기"(첨부 디자인) — 공용 만들기 껍데기(`CreateDialog`)에 스페이스의
+ * 글자만 부었다. `state.editingSpace`가 있으면 **이름 변경** 팝업이 된다(제목·버튼
+ * 글자만 바뀌고 색까지 그대로 고칠 수 있다 — 잘못 고른 색이 영구가 되지 않게). */
 export function NewSpaceModal({ state, controller }: Props) {
-  const canSubmit = state.newSpaceName.trim().length > 0;
   const editing = !!state.editingSpace;
   return (
-    <div style={{ position: 'fixed', inset: 0, background: 'rgba(30,20,14,.42)', backdropFilter: 'blur(2px)', display: state.newSpaceOpen ? 'flex' : 'none', alignItems: 'center', justifyContent: 'center', zIndex: 130 }}>
-      <div onClick={(e) => e.stopPropagation()} style={{ width: 380, background: 'var(--mf-panel)', borderRadius: 16, boxShadow: '0 24px 60px rgba(0,0,0,.28)', padding: 26, animation: 'mf-fade .2s ease' }}>
-        <div style={{ fontSize: 18, fontWeight: 800, marginBottom: 6 }}>{editing ? '스페이스 이름 변경' : '새 스페이스 만들기'}</div>
-        <div style={{ fontSize: 13, color: 'var(--mf-muted)', lineHeight: 1.6, marginBottom: 20 }}>{editing ? '스페이스의 이름과 색상을 변경해요.' : '주제별로 맵을 정리할 새로운 스페이스를 만들어요.'}</div>
-
-        <div style={{ fontSize: 12.5, fontWeight: 600, marginBottom: 8 }}>스페이스 이름</div>
-        <input
-          className="ns-input"
-          value={state.newSpaceName}
-          onInput={(e) => controller.onNewSpaceName((e.target as HTMLInputElement).value)}
-          onKeyDown={controller.onNewSpaceKey}
-          onMouseDown={(e) => e.stopPropagation()}
-          maxLength={10}
-          placeholder="예: 팀 프로젝트 (최대 10자)"
-          aria-label="스페이스 이름"
-          style={{ width: '100%', height: 44, border: '1px solid var(--mf-border)', borderRadius: 11, background: 'var(--mf-panel2)', color: 'var(--mf-text)', fontFamily: 'inherit', fontSize: 14, padding: '0 13px', outline: 'none', boxSizing: 'border-box', marginBottom: 16 }}
-        />
-
-        <div style={{ fontSize: 12.5, fontWeight: 600, marginBottom: 8 }}>색상</div>
-        <div style={{ display: 'flex', gap: 9, marginBottom: 24 }}>
-          {SPACE_COLORS.map((c) => {
-            const sel = state.newSpaceColor === c;
-            return (
-              <button
-                key={c}
-                onClick={() => controller.pickSpaceColor(c)}
-                aria-label={`색상 ${c}`}
-                aria-pressed={sel}
-                style={{ width: 30, height: 30, borderRadius: '50%', background: c, border: sel ? '2px solid #33281f' : '2px solid var(--mf-panel)', boxShadow: sel ? `0 0 0 2px ${c}` : '0 0 0 1px var(--mf-border)', cursor: 'pointer', padding: 0 }}
-              />
-            );
-          })}
-        </div>
-
-        <div style={{ display: 'flex', gap: 10 }}>
-          <button className="btn" onClick={controller.closeNewSpace} style={{ flex: 1, height: 44, border: '1px solid var(--mf-border)', borderRadius: 11, background: 'var(--mf-panel)', color: 'var(--mf-text)', fontFamily: 'inherit', fontSize: 14, fontWeight: 600, cursor: 'pointer' }}>
-            취소
-          </button>
-          <button
-            className="btn"
-            onClick={controller.submitSpace}
-            style={{ flex: 1, height: 44, border: 'none', borderRadius: 11, background: canSubmit ? 'var(--mf-accent)' : 'var(--mf-accent-mute)', color: 'var(--mf-accent-ink)', fontFamily: 'inherit', fontSize: 14, fontWeight: 700, cursor: canSubmit ? 'pointer' : 'default' }}
-          >
-            {editing ? '변경' : '만들기'}
-          </button>
-        </div>
-      </div>
-    </div>
+    <CreateDialog
+      open={state.newSpaceOpen}
+      onClose={controller.closeNewSpace}
+      title={editing ? '스페이스 이름 변경' : '새 스페이스 만들기'}
+      subtitle={editing ? '이름과 색상을 바꿔요' : '주제별로 보드를 정리할 공간을 만들어요'}
+      icon={<FolderChipIcon />}
+      fieldLabel="스페이스 이름"
+      value={state.newSpaceName}
+      onChange={controller.onNewSpaceName}
+      maxLen={10}
+      placeholder="예: 팀 프로젝트"
+      colors={SPACE_COLORS}
+      color={state.newSpaceColor}
+      onColor={controller.pickSpaceColor}
+      submitLabel={editing ? '변경' : '만들기'}
+      onSubmit={controller.submitSpace}
+      cardAttrs={{ 'data-space-dialog': '' }}
+    />
   );
 }

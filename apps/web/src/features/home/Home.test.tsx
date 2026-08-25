@@ -1269,6 +1269,25 @@ describe('Home', () => {
     await waitFor(() => expect(container.querySelector('a[data-title="내 맵"]')).toBeTruthy());
   });
 
+  it('새 스페이스 팝업이 첨부 디자인 그대로 — 아이콘 칩·부제·0/10·색 여섯·빈 이름은 못 만든다', async () => {
+    const user = userEvent.setup();
+    renderHomeWithDocStore([]);
+    await waitFor(() => expect(screen.getByRole('button', { name: /새 스페이스/ })).toBeTruthy());
+    await user.click(screen.getByRole('button', { name: /새 스페이스/ }));
+
+    const dlg = await screen.findByRole('dialog', { name: '새 스페이스 만들기' });
+    expect(within(dlg).getByText('주제별로 보드를 정리할 공간을 만들어요')).toBeTruthy();
+    expect(dlg.querySelector('[data-dialog-icon]')).toBeTruthy();
+    expect(dlg.querySelector('[data-dialog-count]')?.textContent).toBe('0/10');
+    expect((within(dlg).getByRole('button', { name: '만들기' }) as HTMLButtonElement).disabled).toBe(true);
+    expect(dlg.querySelectorAll('[data-dialog-color]').length).toBe(6);
+    expect(within(dlg).getByPlaceholderText('예: 팀 프로젝트')).toBeTruthy();
+
+    await user.type(within(dlg).getByLabelText('스페이스 이름'), '팀');
+    expect(dlg.querySelector('[data-dialog-count]')?.textContent).toBe('1/10');
+    expect((within(dlg).getByRole('button', { name: '만들기' }) as HTMLButtonElement).disabled).toBe(false);
+  });
+
   it('a user-created space persists across a reload (localStorage)', async () => {
     const user = userEvent.setup();
     const { unmount } = renderHomeWithDocStore([]);

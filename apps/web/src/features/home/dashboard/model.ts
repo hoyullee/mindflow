@@ -26,6 +26,9 @@ export interface DashboardItemData {
 export interface DashboardData {
   id: string;
   name: string;
+  /** 사용자가 고른 색(만들기 팝업의 여섯 중 하나) — LNB 행 글리프·히어로 점·다른
+   *  대시보드 알약에 나타난다. 없으면 강조색(예전에 만든 대시보드). */
+  color?: string;
   items: DashboardItemData[];
 }
 
@@ -85,7 +88,7 @@ export function coerceDashboards(raw: unknown): DashboardData[] {
   const out: DashboardData[] = [];
   for (const d of raw) {
     if (!d || typeof d !== 'object') continue;
-    const o = d as { id?: unknown; name?: unknown; items?: unknown };
+    const o = d as { id?: unknown; name?: unknown; color?: unknown; items?: unknown };
     if (typeof o.id !== 'string' || !o.id || typeof o.name !== 'string') continue;
     const items: DashboardItemData[] = [];
     if (Array.isArray(o.items)) {
@@ -97,19 +100,9 @@ export function coerceDashboards(raw: unknown): DashboardData[] {
         items.push({ id: w.id, docId: w.docId, size });
       }
     }
-    out.push({ id: o.id, name: o.name, items: items.slice(0, DASH_CAP) });
+    out.push({ id: o.id, name: o.name, ...(typeof o.color === 'string' && o.color ? { color: o.color } : {}), items: items.slice(0, DASH_CAP) });
   }
   return out;
-}
-
-/** 새 대시보드 이름 — "대시보드", "대시보드 2", … 겹치지 않는 첫 번호. */
-export function nextDashName(existing: DashboardData[]): string {
-  const names = new Set(existing.map((d) => d.name));
-  if (!names.has('대시보드')) return '대시보드';
-  for (let i = 2; ; i++) {
-    const name = `대시보드 ${i}`;
-    if (!names.has(name)) return name;
-  }
 }
 
 /** 목록 안에서 한 칸 이동(위/아래·드래그 공용). 범위를 벗어나면 그대로. */

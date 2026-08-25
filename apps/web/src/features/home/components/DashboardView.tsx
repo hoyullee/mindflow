@@ -208,9 +208,9 @@ export function DashboardView({ state, view, controller, isMobile = false, onOpe
           </span>
           <span style={{ display: 'flex', alignItems: 'center', gap: 12, minWidth: 0, flexWrap: 'wrap' }}>
             <h2 style={{ margin: 0, display: 'flex', alignItems: 'center', gap: 9, fontSize: 25, fontWeight: 800, letterSpacing: '-.035em', color: '#F7EFE8', whiteSpace: 'nowrap' }}>
-              {/* 히어로는 고정 다크 면이라 accent가 어두운 테마(모노 #2b2b2b)에서는 점이
-                  사라진다 — 옅은 빛 테두리가 어느 강조색에서도 점을 살린다. */}
-              <span style={{ width: 10, height: 10, borderRadius: 3.5, background: 'var(--mf-accent)', boxShadow: '0 0 0 1px rgba(247,239,232,.3)', display: 'block', flexShrink: 0 }} />
+              {/* 색은 만들기 팝업에서 고른 그 색(없으면 강조색). 히어로는 고정 다크 면이라
+                  어두운 색은 묻히므로 옅은 빛 테두리를 둘러 어느 색에서도 점이 산다. */}
+              <span data-dash-hero-dot style={{ width: 10, height: 10, borderRadius: 3.5, background: dash.color ?? 'var(--mf-accent)', boxShadow: '0 0 0 1px rgba(247,239,232,.3)', display: 'block', flexShrink: 0 }} />
               {dash.name}
             </h2>
             <span style={{ ...META_MONO, color: dash.items.length >= DASH_CAP ? '#E8A08A' : '#8C7E6B', whiteSpace: 'nowrap', paddingTop: 6 }}>
@@ -224,8 +224,10 @@ export function DashboardView({ state, view, controller, isMobile = false, onOpe
                     type="button"
                     className="btn"
                     onClick={() => controller.selectDash(d.id)}
-                    style={{ height: 24, padding: '0 11px', borderRadius: 999, border: '1px solid rgba(247,239,232,.16)', background: 'transparent', color: '#8C7E6B', font: 'inherit', fontSize: 11, fontWeight: 700, cursor: 'pointer', whiteSpace: 'nowrap' }}
+                    style={{ display: 'inline-flex', alignItems: 'center', gap: 6, height: 24, padding: '0 11px', borderRadius: 999, border: '1px solid rgba(247,239,232,.16)', background: 'transparent', color: '#8C7E6B', font: 'inherit', fontSize: 11, fontWeight: 700, cursor: 'pointer', whiteSpace: 'nowrap' }}
                   >
+                    {/* 그 대시보드의 색 — 이름을 읽지 않고도 어느 것인지 알아본다(LNB와 같은 색). */}
+                    <span aria-hidden style={{ width: 6, height: 6, borderRadius: 2, background: d.color ?? 'var(--mf-accent)', display: 'block', flexShrink: 0 }} />
                     {d.name}
                   </button>
                 ))}

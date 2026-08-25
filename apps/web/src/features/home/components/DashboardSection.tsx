@@ -79,8 +79,9 @@ export function DashboardSection({ state, controller, isMobile = false }: { stat
               transition: 'background .14s ease',
             }}
           >
-            {/* 격자 글리프(디자인 원본) — 스페이스의 색 점과 구별되는 이 구획의 표식. */}
-            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke={active ? 'var(--mf-accent)' : 'currentColor'} strokeWidth="1.9" strokeLinejoin="round" aria-hidden="true" style={{ flexShrink: 0 }}>
+            {/* 격자 글리프(디자인 원본) — 스페이스의 색 점과 구별되는 이 구획의 표식.
+                색은 만들기 팝업에서 고른 그 색이다(없으면 예전처럼 강조색/현재색). */}
+            <svg data-dash-glyph={d.id} width="15" height="15" viewBox="0 0 24 24" fill="none" stroke={d.color ?? (active ? 'var(--mf-accent)' : 'currentColor')} strokeWidth="1.9" strokeLinejoin="round" aria-hidden="true" style={{ flexShrink: 0 }}>
               <rect x="3.5" y="3.5" width="7.5" height="9.5" rx="1.6" />
               <rect x="13" y="3.5" width="7.5" height="5.5" rx="1.6" />
               <rect x="3.5" y="15" width="7.5" height="5.5" rx="1.6" />
@@ -117,9 +118,9 @@ export function DashboardSection({ state, controller, isMobile = false }: { stat
         className="nav-item"
         role="button"
         tabIndex={0}
-        onClick={controller.createDash}
+        onClick={controller.openNewDash}
         onKeyDown={(e) => {
-          if (e.key === 'Enter' || e.key === ' ') controller.createDash();
+          if (e.key === 'Enter' || e.key === ' ') controller.openNewDash();
         }}
         style={{ display: 'flex', alignItems: 'center', gap: 9, padding: '8px 9px', marginTop: 2, minHeight: isMobile ? 44 : undefined, borderRadius: 10, cursor: 'pointer', fontSize: 13, fontWeight: 500, color: 'var(--mf-muted)' }}
       >
