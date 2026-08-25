@@ -635,8 +635,8 @@ input[type='search']::-webkit-search-results-decoration {
 }
 
 /* ── 대시보드 위젯 ──────────────────────────────────────────────────────────
-   hover의 "열기" 알약(디자인 원본 wOpen) — 클릭 전체가 열기이지만, 무엇이
-   일어날지 미리 말해 준다. 터치(hover 없음)에서는 늘 보인다. */
+   hover의 "열기" 알약(디자인 원본 wOpen) — 에디터로 가는 **유일한 문**이다(요청:
+   카드 전체 클릭은 막았다). 터치(hover 없음)에서는 늘 보인다. */
 .mf-dash-widget .mf-dash-open {
   opacity: 0;
   transform: translateY(3px);

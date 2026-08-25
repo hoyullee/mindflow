@@ -21,8 +21,10 @@ import { UNREAD_BADGE_BG } from '../theme';
 /**
  * 대시보드 보기 — 디자인 원본 `Geurio 홈 대시보드.dc.html`의 isDash 화면.
  *
- * 위젯은 전부 **보기 전용**이다(1단계): 내용은 썸네일 프리페치와 같은 본문
- * (`previewDocs`)에서 실제 문서를 읽고, 편집은 hover의 "열기"가 에디터로 보낸다.
+ * 위젯은 전부 **보기 전용**이다: 내용은 썸네일 프리페치와 같은 본문(`previewDocs`)
+ * 에서 실제 문서를 읽고, 에디터로 가는 길은 **"열기" 버튼 하나뿐**이다(요청) —
+ * 카드 아무 데나 눌러도 열리면, 칸반 카드를 옮기거나 내용을 읽다 실수로 화면이
+ * 통째로 바뀐다.
  * 배치 편집(드래그·리사이즈)은 다음 단계 — 지금은 우클릭 메뉴의 크기·내리기·
  * 맨 앞으로가 그 몫을 맡는다.
  *
@@ -480,6 +482,9 @@ function DashWidget({ itemId, docId, size, committedSize, maxCols, edit, isMobil
   const sharedRole = state.sharedMaps.find((m) => m.docId === docId)?.role;
   const canMoveCards = kind === 'kanban' && !!title && !missing && sharedRole !== 'view' && !isMobile;
 
+  /** 에디터로 여는 **유일한 길**(요청) — 카드 어디를 눌러도 열리던 것을 "열기"
+   *  버튼 하나로 좁혔다. 위젯 안에서 카드를 옮기거나 글을 읽다 실수로 화면이
+   *  통째로 바뀌는 일이 없다. */
   const open = (e: MouseEvent) => {
     e.stopPropagation();
     if (!title || edit) return; // 편집 중의 클릭은 배치 조작이지 열기가 아니다(디자인 openBoard)
@@ -508,7 +513,6 @@ function DashWidget({ itemId, docId, size, committedSize, maxCols, edit, isMobil
     <div
       data-dash-widget={itemId}
       onContextMenu={onCtx}
-      onClick={open}
       className="mf-dash-widget"
       draggable={edit && !isMobile}
       onDragStart={(e) => {
@@ -532,7 +536,9 @@ function DashWidget({ itemId, docId, size, committedSize, maxCols, edit, isMobil
         overflow: 'hidden',
         boxShadow: '0 2px 5px -3px rgba(46,42,38,.14), 0 20px 36px -30px rgba(46,42,38,.5)',
         opacity: dragging ? 0.45 : 1,
-        cursor: edit ? (isMobile ? 'default' : 'grab') : title ? 'pointer' : 'default',
+        // 카드 전체는 더 이상 열기 대상이 아니다(요청: "열기" 버튼으로만) — 손가락
+        // 커서를 띄우면 아무 데나 눌러도 열린다는 거짓 약속이 된다.
+        cursor: edit && !isMobile ? 'grab' : 'default',
         transition: 'border-color .14s ease, opacity .14s ease',
       }}
     >
@@ -565,8 +571,10 @@ function DashWidget({ itemId, docId, size, committedSize, maxCols, edit, isMobil
         </span>
       )}
 
-      {/* hover 열기 알약(디자인) — 클릭 전체가 열기이지만, 무엇이 일어날지 미리 말해 준다.
-          편집 중에는 감춘다(그 시간의 클릭은 열기가 아니다 — showOpen: !editMode). */}
+      {/* hover 열기 알약(디자인) — **에디터로 가는 유일한 문**이다(요청: 카드 어디를
+          눌러도 열리던 것을 이 버튼 하나로 좁혔다). 데스크톱은 카드에 손을 얹으면
+          드러나고, 터치에는 hover가 없어 늘 보인다(home.css).
+          편집 중에는 감춘다(그 시간의 클릭은 배치 조작이다 — showOpen: !editMode). */}
       {title && !edit && (
         <button
           type="button"
