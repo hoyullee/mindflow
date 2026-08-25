@@ -136,6 +136,10 @@ export function useHomeController() {
   // (`workspaceMutatedRef`) and only if the mount load didn't already succeed
   // (`workspaceLoadedRef`), so the resync can never clobber real edits.
   const mountedRef = useRef(true);
+  // 하이드레이션 세대 — 마운트와 인증 확인 재동기화가 **겹칠 수** 있고(둘 다 비동기),
+  // 그때 먼저 시작한 쪽(인증 전 빈 조회)이 나중에 끝나면 새 결과를 덮어쓴다. 마지막에
+  // 시작한 요청만 적용한다(버려진 응답이 최신 상태를 되돌리지 않게 — #335와 같은 결).
+  const hydrateSeqRef = useRef(0);
   // 홈의 첫 화면을 한 번만 정하기 위한 표식 — 하이드레이션은 두 번 돌 수 있어서
   // (마운트 + 인증 확인 뒤 재동기화) 매번 화면을 정하면, 그 사이 사용자가 고른
   // 스페이스가 대시보드로 되돌아가 버린다.
@@ -150,6 +154,8 @@ export function useHomeController() {
   // both in ONE setState. Extracted so both the mount and the auth-confirmed
   // resync (see below) share identical hydration logic.
   const hydrateFromBackend = useCallback(async () => {
+    hydrateSeqRef.current += 1;
+    const seq = hydrateSeqRef.current;
     // Restore the screen the user was last viewing in THIS tab (set before they
     // opened a map in the editor), so returning to Home lands back on that space
     // — or dashboard — instead of the default 일반 공간. 아무것도 없으면 첫 진입이라
@@ -157,6 +163,8 @@ export function useHomeController() {
     const restore = loadActiveView();
     const res = await Promise.allSettled([spaceStore.load(), docStore.list(), shareStore.listSharedWithMe(), shareStore.listSharedByMe()]);
     if (!mountedRef.current) return;
+    // 더 나중에 시작한 하이드레이션이 있으면 이 결과는 버린다(위 hydrateSeqRef).
+    if (seq < hydrateSeqRef.current) return;
     // Only allow persisting the workspace once the load actually SUCCEEDED. If
     // it rejected (network/RLS/transient), we must not save — otherwise the
     // default-seed fallback below would clobber the user's stored spaces.
@@ -307,7 +315,14 @@ export function useHomeController() {
       const defaultDash = dashboards[0]?.id ?? null;
       const rememberedDash = restore?.activeDash ?? null;
       let activeDash = prev.activeDash;
-      if (!landedRef.current) {
+      // **판단할 근거가 있을 때만** 정한다(제보: 로그인 직후 첫 진입에서 대시보드가
+      // 아니라 스페이스 그리드가 떴다). 갓 로그인한 탭에서는 마운트 하이드레이션이
+      // 인증 토큰 적용 **전에** 돌아 워크스페이스를 못 읽고(`ws === null`) 대시보드
+      // 목록이 비어 있다 — 그때 결정을 끝내 버리면(landedRef) 곧 도착하는 인증 확인
+      // 재동기화가 손을 쓸 수 없다. 기억한 화면이 있거나 블롭을 실제로 읽었을 때만
+      // 결정하고, 아니면 다음 하이드레이션으로 넘긴다.
+      const canDecideLanding = !!restore || wsDashboards !== null;
+      if (!landedRef.current && canDecideLanding) {
         landedRef.current = true;
         activeDash = rememberedDash ? (dashboards.some((d) => d.id === rememberedDash) ? rememberedDash : defaultDash) : restore ? null : defaultDash;
       }
@@ -511,7 +526,10 @@ export function useHomeController() {
   // before the mount restore above has applied it. Drive is a pseudo-space with
   // no local folder, so it persists with `curFolder: null`.
   useEffect(() => {
-    if (!state.loaded) return;
+    // 첫 화면을 아직 **정하지 못했으면**(워크스페이스를 못 읽은 로그인 직후) 기억하지
+    // 않는다 — 그때의 `activeDash: null`을 남기면, 곧 도착하는 재동기화가 그것을
+    // "사용자가 스페이스를 보고 있었다"로 읽어 기본 대시보드를 열지 못한다(제보).
+    if (!state.loaded || !landedRef.current) return;
     saveActiveView({ activeSpace: state.activeSpace, curFolder: state.activeSpace === 'drive' ? null : state.curFolder, activeDash: state.activeDash });
   }, [state.loaded, state.activeSpace, state.curFolder, state.activeDash]);
 
