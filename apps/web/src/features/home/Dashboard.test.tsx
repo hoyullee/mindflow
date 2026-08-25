@@ -761,3 +761,42 @@ describe('로그인 직후 홈 첫 진입', () => {
     expect(within(container.querySelector('[data-dashboard-view]') as HTMLElement).getByText('기본 보드')).toBeTruthy();
   });
 });
+
+// ── 로딩 스켈레톤 모양(제보) ────────────────────────────────────────────────
+
+describe('로딩 스켈레톤', () => {
+  it('대시보드로 착지할 진입은 **대시보드 껍데기**로 로딩한다(스페이스 스켈레톤이 아니다)', async () => {
+    seedTwoDashboards();
+    // 이 탭이 대시보드를 보고 있었다 = 이번에도 대시보드로 착지한다
+    sessionStorage.setItem('mf_active_view', JSON.stringify({ activeSpace: 's1', curFolder: null, activeDash: 'd1' }));
+    const { container } = renderHome();
+
+    // 첫 프레임 — 대시보드 껍데기, 스페이스의 카드 격자 스켈레톤은 없다
+    expect(container.querySelector('[data-dashboard-skeleton]')).toBeTruthy();
+    expect(container.querySelector('[data-map-grid-skeleton]')).toBeNull();
+    // 로딩이 끝나면 진짜 대시보드로 바뀐다(껍데기는 사라진다)
+    await waitFor(() => expect(container.querySelector('[data-dashboard-view]')).toBeTruthy());
+    expect(container.querySelector('[data-dashboard-skeleton]')).toBeNull();
+  });
+
+  it('스페이스로 착지할 진입은 예전처럼 스페이스 스켈레톤(무회귀)', async () => {
+    seedTwoDashboards();
+    sessionStorage.setItem('mf_active_view', JSON.stringify({ activeSpace: 's1', curFolder: null, activeDash: null }));
+    const { container } = renderHome();
+    expect(container.querySelector('[data-dashboard-skeleton]')).toBeNull();
+    await waitFor(() => expect(screen.getByPlaceholderText('모든 스페이스에서 검색')).toBeTruthy());
+  });
+
+  it('착지하면 이 기기에 힌트를 남긴다 — 다음 진입의 첫 프레임이 맞는 모양으로 시작한다', async () => {
+    seedTwoDashboards();
+    const { container } = renderHome();
+    await waitFor(() => expect(container.querySelector('[data-dashboard-view]')).toBeTruthy());
+    expect(localStorage.getItem('mf_home_landing')).toBe('dash');
+
+    // 새 탭(세션 기억 없음)으로 다시 들어오면 힌트만으로 대시보드 껍데기가 뜬다
+    cleanup();
+    sessionStorage.clear();
+    const again = renderHome();
+    expect(again.container.querySelector('[data-dashboard-skeleton]')).toBeTruthy();
+  });
+});
