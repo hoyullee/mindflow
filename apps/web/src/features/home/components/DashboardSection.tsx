@@ -37,10 +37,9 @@ export function DashboardSection({ state, controller, isMobile = false }: { stat
     <div style={{ flexShrink: 0 }}>
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '14px 9px 7px' }}>
         <span style={SECTION_LABEL}>대시보드</span>
-        <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6, minWidth: 0 }}>
-          {reorder && <span style={{ fontSize: 10, fontWeight: 600, color: 'var(--mf-accent-strong)', whiteSpace: 'nowrap' }}>끌어서 이동 · 맨 위가 기본</span>}
-          <ReorderToggle on={reorder} label="대시보드 순서 바꾸기" onClick={controller.toggleDashReorder} />
-        </span>
+        {/* 정렬 모드 힌트 문구는 두지 않는다(제보: 시끄럽다) — ↑/↓ 버튼과 grab 커서가
+            이미 "옮길 수 있다"를 말하고, 맨 위 행의 '기본' 배지가 순서의 뜻을 말한다. */}
+        <ReorderToggle on={reorder} label="대시보드 순서 바꾸기" onClick={controller.toggleDashReorder} />
       </div>
 
       {state.dashboards.map((d, idx) => {

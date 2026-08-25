@@ -148,10 +148,8 @@ export function Sidebar({ state, view, controller, isMobile = false, isOpen = fa
 
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '14px 9px 7px' }}>
         <span style={SECTION_LABEL}>스페이스</span>
-        <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6, minWidth: 0 }}>
-          {state.spaceReorder && <span style={{ fontSize: 10, fontWeight: 600, color: 'var(--mf-accent-strong)', whiteSpace: 'nowrap' }}>끌어서 이동</span>}
-          <ReorderToggle on={state.spaceReorder} label="스페이스 순서 바꾸기" onClick={controller.toggleSpaceReorder} />
-        </span>
+        {/* 힌트 문구 없음 — 대시보드 구획과 같은 이유(제보). */}
+        <ReorderToggle on={state.spaceReorder} label="스페이스 순서 바꾸기" onClick={controller.toggleSpaceReorder} />
       </div>
 
       {/* 목록 높이는 **내용이 정한다** — 예전에는 `minHeight: 60`이라 스페이스가
