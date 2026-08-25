@@ -800,3 +800,82 @@ describe('로딩 스켈레톤', () => {
     expect(again.container.querySelector('[data-dashboard-skeleton]')).toBeTruthy();
   });
 });
+
+// ── 영역 지정(마퀴)·크기 N×4 (제보·요청) ─────────────────────────────────────
+
+function firePointer(target: Element | Window, type: 'pointerdown' | 'pointermove' | 'pointerup', init: { clientX?: number; clientY?: number } = {}): void {
+  const ev = new MouseEvent(type, { bubbles: true, cancelable: true, clientX: init.clientX ?? 0, clientY: init.clientY ?? 0 });
+  Object.defineProperty(ev, 'pointerType', { value: 'mouse', configurable: true });
+  Object.defineProperty(ev, 'pointerId', { value: 1, configurable: true });
+  fireEvent(target as Element, ev);
+}
+
+describe('대시보드에서는 영역 지정을 하지 않는다(제보)', () => {
+  /** 마퀴가 고르는 것은 맵·폴더 카드다 — 대시보드에는 그런 카드가 없고, 위젯 우측
+   *  하단은 편집 모드의 리사이즈 손잡이라 조작이 겹친다. */
+  const seedWidget = () => {
+    localStorage.setItem(
+      'mf_spaces',
+      JSON.stringify({
+        spaces: [{ id: 's1', name: '일반 공간', home: true, color: '#f0663f', maps: [{ title: '기획맵', when: '방금', hue: '#f0663f', docId: 'doc-a' }], folders: [] }],
+        mapFolders: {},
+        dashboards: [{ id: 'd1', name: '대시보드', items: [{ id: 'w1', docId: 'doc-a', size: '2x2' }] }],
+      }),
+    );
+  };
+
+  it('보기 상태에서 위젯 위를 끌어도 사각형이 뜨지 않는다', async () => {
+    seedWidget();
+    const { container } = renderHome([META('doc-a', '기획맵')], { 'doc-a': MAP_BODY });
+    await waitFor(() => expect(container.querySelector('[data-dashboard-view]')).toBeTruthy());
+
+    const main = container.querySelector('main') as HTMLElement;
+    firePointer(main, 'pointerdown', { clientX: 400, clientY: 400 });
+    firePointer(window, 'pointermove', { clientX: 700, clientY: 620 });
+    expect(container.querySelector('[data-marquee]')).toBeNull();
+    // 글자 선택 잠금도 걸지 않는다(마퀴를 시작하지 않았으므로)
+    expect(document.body.classList.contains('mf-noselect')).toBe(false);
+    firePointer(window, 'pointerup', {});
+  });
+
+  it('편집 모드(리사이즈 손잡이 자리)에서도 뜨지 않는다', async () => {
+    seedWidget();
+    const user = userEvent.setup();
+    const { container } = renderHome([META('doc-a', '기획맵')], { 'doc-a': MAP_BODY });
+    await waitFor(() => expect(container.querySelector('[data-dashboard-view]')).toBeTruthy());
+    await user.click(screen.getByRole('button', { name: '편집' }));
+
+    const main = container.querySelector('main') as HTMLElement;
+    firePointer(main, 'pointerdown', { clientX: 900, clientY: 500 });
+    firePointer(window, 'pointermove', { clientX: 1200, clientY: 760 });
+    expect(container.querySelector('[data-marquee]')).toBeNull();
+    firePointer(window, 'pointerup', {});
+  });
+});
+
+describe('위젯 크기 N×4(요청)', () => {
+  it('크기 순환·메뉴 선택지에 4행이 있고, 고르면 그대로 저장된다', async () => {
+    localStorage.setItem(
+      'mf_spaces',
+      JSON.stringify({
+        spaces: [{ id: 's1', name: '일반 공간', home: true, color: '#f0663f', maps: [{ title: '기획맵', when: '방금', hue: '#f0663f', docId: 'doc-a' }], folders: [] }],
+        mapFolders: {},
+        dashboards: [{ id: 'd1', name: '대시보드', items: [{ id: 'w1', docId: 'doc-a', size: '2x2' }] }],
+      }),
+    );
+    const { container } = renderHome([META('doc-a', '기획맵')], { 'doc-a': MAP_BODY });
+    await waitFor(() => expect(container.querySelector('[data-dashboard-view]')).toBeTruthy());
+
+    // 우클릭 메뉴의 크기 목록에 4행이 있다
+    const widget = container.querySelector('[data-dash-widget]') as HTMLElement;
+    fireEvent.contextMenu(widget, { clientX: 200, clientY: 200 });
+    const menu = await screen.findByRole('menu');
+    fireEvent.click(within(menu).getByText('크기'));
+    const item = await screen.findByRole('menuitem', { name: '4×4' });
+    fireEvent.click(item);
+
+    await waitFor(() => expect(savedDashboards()[0]!.items[0]!.size).toBe('4x4'));
+    // 저장값이 그대로 다시 읽힌다(선택지 목록에 없다고 2x2로 되돌아가지 않는다)
+    expect(container.querySelector('[data-dash-widget]')).toBeTruthy();
+  });
+});
