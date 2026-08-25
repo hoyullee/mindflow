@@ -87,9 +87,11 @@ interface LaunchState {
 }
 
 export function DashboardView({ state, view, controller, isMobile = false }: Props) {
-  // 편집 모드는 데스크톱 전용(1단계 합의 — 모바일 다듬기는 PR④). HTML5 드래그가
-  // 터치에서 발화하지 않고, 모서리 리사이즈도 마우스 전제다.
-  const edit = state.dashEdit && !isMobile;
+  // 편집 모드는 모바일에서도 열린다(PR④) — 다만 **탭으로 되는 것만** 내준다:
+  // 크기 순환·내리기 버튼. HTML5 드래그(재배치)와 모서리 리사이즈는 터치에서
+  // 발화하지 않는 마우스 제스처라 데스크톱 전용이고, 순서는 길게 눌러 여는
+  // 메뉴의 "맨 앞으로 옮기기"가 맡는다(안내 띠가 기기별로 그렇게 말한다).
+  const edit = state.dashEdit;
   const gridRef = useRef<HTMLDivElement | null>(null);
   const [dragIdx, setDragIdx] = useState<number | null>(null);
   // 리사이즈 중의 라이브 크기 — 커밋은 손을 뗄 때 한 번(undo·저장이 한 단계).
@@ -173,7 +175,9 @@ export function DashboardView({ state, view, controller, isMobile = false }: Pro
           </span>
           <span style={{ display: 'flex', alignItems: 'center', gap: 12, minWidth: 0, flexWrap: 'wrap' }}>
             <h2 style={{ margin: 0, display: 'flex', alignItems: 'center', gap: 9, fontSize: 25, fontWeight: 800, letterSpacing: '-.035em', color: '#F7EFE8', whiteSpace: 'nowrap' }}>
-              <span style={{ width: 10, height: 10, borderRadius: 3.5, background: 'var(--mf-accent)', display: 'block', flexShrink: 0 }} />
+              {/* 히어로는 고정 다크 면이라 accent가 어두운 테마(모노 #2b2b2b)에서는 점이
+                  사라진다 — 옅은 빛 테두리가 어느 강조색에서도 점을 살린다. */}
+              <span style={{ width: 10, height: 10, borderRadius: 3.5, background: 'var(--mf-accent)', boxShadow: '0 0 0 1px rgba(247,239,232,.3)', display: 'block', flexShrink: 0 }} />
               {dash.name}
             </h2>
             <span style={{ ...META_MONO, color: dash.items.length >= DASH_CAP ? '#E8A08A' : '#8C7E6B', whiteSpace: 'nowrap', paddingTop: 6 }}>
@@ -199,37 +203,35 @@ export function DashboardView({ state, view, controller, isMobile = false }: Pro
         <div style={{ position: 'relative', display: 'flex', alignItems: 'center', gap: 8, flexShrink: 0, paddingBottom: 2 }}>
           {/* 편집 토글(디자인) — 켜면 위젯 드래그 재배치·모서리 리사이즈·인라인
               크기/제거가 열린다. 히어로가 고정 다크 면이라 색도 디자인 값 그대로. */}
-          {!isMobile && (
-            <button
-              type="button"
-              className="btn"
-              data-dash-edit-toggle
-              aria-pressed={edit}
-              onClick={controller.toggleDashEdit}
-              style={{
-                display: 'inline-flex',
-                alignItems: 'center',
-                gap: 7,
-                height: 32,
-                padding: '0 13px',
-                borderRadius: 999,
-                border: `1px solid ${edit ? '#F2A184' : 'rgba(247,239,232,.28)'}`,
-                background: edit ? '#F2A184' : 'rgba(247,239,232,.07)',
-                color: edit ? '#332E29' : '#F7EFE8',
-                fontSize: 12.5,
-                fontWeight: 700,
-                cursor: 'pointer',
-                whiteSpace: 'nowrap',
-                transition: 'background .14s ease, color .14s ease',
-              }}
-            >
-              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-                <path d="M12 20h9" />
-                <path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4Z" />
-              </svg>
-              {edit ? '편집 끝내기' : '편집'}
-            </button>
-          )}
+          <button
+            type="button"
+            className="btn"
+            data-dash-edit-toggle
+            aria-pressed={edit}
+            onClick={controller.toggleDashEdit}
+            style={{
+              display: 'inline-flex',
+              alignItems: 'center',
+              gap: 7,
+              height: 32,
+              padding: '0 13px',
+              borderRadius: 999,
+              border: `1px solid ${edit ? '#F2A184' : 'rgba(247,239,232,.28)'}`,
+              background: edit ? '#F2A184' : 'rgba(247,239,232,.07)',
+              color: edit ? '#332E29' : '#F7EFE8',
+              fontSize: 12.5,
+              fontWeight: 700,
+              cursor: 'pointer',
+              whiteSpace: 'nowrap',
+              transition: 'background .14s ease, color .14s ease',
+            }}
+          >
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+              <path d="M12 20h9" />
+              <path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4Z" />
+            </svg>
+            {edit ? '편집 끝내기' : '편집'}
+          </button>
           <button
             type="button"
             className="btn"
@@ -261,14 +263,20 @@ export function DashboardView({ state, view, controller, isMobile = false }: Pro
 
       {/* 격자 바닥 — 캔버스 같은 점 격자(디자인). */}
       <div style={{ padding: isMobile ? '14px 14px 32px' : '18px 32px 44px', display: 'flex', flexDirection: 'column', gap: 14, backgroundImage: 'radial-gradient(var(--mf-dot-grid) 1px, transparent 1px)', backgroundSize: '17px 17px', minHeight: 420, flex: 1 }}>
-        {/* 편집 안내 띠(디자인) — 무엇을 할 수 있는지와 종류별 최소 크기를 말한다. */}
+        {/* 편집 안내 띠(디자인) — 무엇을 할 수 있는지와 종류별 최소 크기를 말한다.
+            모바일은 드래그·모서리 리사이즈가 없으므로(터치에서 발화하지 않는 마우스
+            제스처) 실제로 되는 조작만 말한다 — 안내가 안 되는 것을 약속하면 안 된다. */}
         {edit && (
           <div data-dash-edit-banner style={{ display: 'flex', alignItems: 'center', gap: 9, padding: '10px 14px', borderRadius: 13, background: 'var(--mf-accent-soft)', border: '1px solid rgba(var(--mf-accent-rgb), .25)', animation: 'mf-dim-in .2s ease both' }}>
             <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="var(--mf-accent-strong)" strokeWidth="2" strokeLinecap="round" aria-hidden="true" style={{ flexShrink: 0 }}>
               <circle cx="12" cy="12" r="9" />
               <path d="M12 11v5M12 8h.01" />
             </svg>
-            <span style={{ fontSize: 12, color: 'var(--mf-subtext)' }}>카드를 끌어 순서를 바꾸고, 오른쪽 아래 모서리를 끌어 크기를 조절해요. 칸반 보드는 3×2부터, 마인드맵과 화이트보드는 1×1부터 놓을 수 있어요.</span>
+            <span style={{ fontSize: 12, color: 'var(--mf-subtext)' }}>
+              {isMobile
+                ? '크기 버튼(2×2)으로 카드 크기를 바꾸고 ✕로 내려요. 카드를 길게 누르면 맨 앞으로 옮길 수 있어요.'
+                : '카드를 끌어 순서를 바꾸고, 오른쪽 아래 모서리를 끌어 크기를 조절해요. 칸반 보드는 3×2부터, 마인드맵과 화이트보드는 1×1부터 놓을 수 있어요.'}
+            </span>
           </div>
         )}
         {dash.items.length === 0 ? (
@@ -312,6 +320,7 @@ export function DashboardView({ state, view, controller, isMobile = false }: Pro
                 committedSize={it.size}
                 maxCols={cols}
                 edit={edit}
+                isMobile={isMobile}
                 dragging={dragIdx === idx}
                 resizing={resize?.itemId === it.id ? resize.size : null}
                 state={state}
@@ -397,6 +406,9 @@ interface DashWidgetProps {
   committedSize: string;
   maxCols: number;
   edit: boolean;
+  /** 터치 화면 — 드래그·모서리 리사이즈·카드 열 이동은 마우스 제스처라 내주지
+   * 않는다(죽은 어포던스 방지). 편집은 탭으로 되는 것(크기 순환·내리기)만. */
+  isMobile: boolean;
   dragging: boolean;
   /** 이 위젯이 리사이즈 중이면 그 라이브 크기(`"3x2"`), 아니면 null. */
   resizing: string | null;
@@ -411,7 +423,7 @@ interface DashWidgetProps {
   onLaunch: (rect: DOMRect, docId: string, title: string, kindName: string, space: string) => void;
 }
 
-function DashWidget({ itemId, docId, size, committedSize, maxCols, edit, dragging, resizing, state, view, controller, onDragStartW, onDragEndW, onDragOverW, onDropW, onResizeStart, onLaunch }: DashWidgetProps) {
+function DashWidget({ itemId, docId, size, committedSize, maxCols, edit, isMobile, dragging, resizing, state, view, controller, onDragStartW, onDragEndW, onDragOverW, onDropW, onResizeStart, onLaunch }: DashWidgetProps) {
   const raw = state.previewDocs[docId] || readDocRaw(docId) || null;
   const resolved = !!raw || !!state.previewResolved[docId];
   const kind = docKindOf('', docId, state.previewDocs);
@@ -428,8 +440,9 @@ function DashWidget({ itemId, docId, size, committedSize, maxCols, edit, draggin
   const hue = view.dashPickCatalog.find((b) => b.docId === docId)?.hue ?? '#f0663f';
   // 칸반 카드 열 이동 — 대시보드에서 유일하게 허용된 편집(디자인 "열 이동 가능").
   // 보기 전용으로 공유받은 보드는 어포던스도 내주지 않는다(진짜 게이트는 서버 RLS).
+  // 터치에서도 내주지 않는다 — HTML5 드래그가 발화하지 않아 배지가 거짓 약속이 된다.
   const sharedRole = state.sharedMaps.find((m) => m.docId === docId)?.role;
-  const canMoveCards = kind === 'kanban' && !!title && !missing && sharedRole !== 'view';
+  const canMoveCards = kind === 'kanban' && !!title && !missing && sharedRole !== 'view' && !isMobile;
 
   const open = (e: MouseEvent) => {
     e.stopPropagation();
@@ -461,9 +474,9 @@ function DashWidget({ itemId, docId, size, committedSize, maxCols, edit, draggin
       onContextMenu={onCtx}
       onClick={open}
       className="mf-dash-widget"
-      draggable={edit}
+      draggable={edit && !isMobile}
       onDragStart={(e) => {
-        if (!edit) return;
+        if (!edit || isMobile) return;
         onDragStartW();
         if (e.dataTransfer) e.dataTransfer.effectAllowed = 'move';
       }}
@@ -483,12 +496,13 @@ function DashWidget({ itemId, docId, size, committedSize, maxCols, edit, draggin
         overflow: 'hidden',
         boxShadow: '0 2px 5px -3px rgba(46,42,38,.14), 0 20px 36px -30px rgba(46,42,38,.5)',
         opacity: dragging ? 0.45 : 1,
-        cursor: edit ? 'grab' : title ? 'pointer' : 'default',
+        cursor: edit ? (isMobile ? 'default' : 'grab') : title ? 'pointer' : 'default',
         transition: 'border-color .14s ease, opacity .14s ease',
       }}
     >
-      {/* 리사이즈 손잡이(편집 모드) — 오른쪽 아래 모서리를 끌어 칸 수를 바꾼다. */}
-      {edit && (
+      {/* 리사이즈 손잡이(편집 모드, 데스크톱) — 오른쪽 아래 모서리를 끌어 칸 수를
+          바꾼다. 터치에는 내주지 않는다(마우스 제스처 — 크기는 순환 버튼이 맡는다). */}
+      {edit && !isMobile && (
         <span
           data-dash-resize
           title="모서리를 끌어 크기 조절"
@@ -506,11 +520,12 @@ function DashWidget({ itemId, docId, size, committedSize, maxCols, edit, draggin
           <span style={{ padding: '5px 11px', borderRadius: 999, background: '#332E29', color: '#FBEDE6', ...META_MONO, fontSize: 12, fontWeight: 700 }}>{sizeLabel}</span>
         </span>
       )}
-      {/* 1×1의 편집 컨트롤 — 머리에 자리가 없어 아래 구석에 띄운다(디자인 overlayControls). */}
+      {/* 1×1의 편집 컨트롤 — 머리에 자리가 없어 아래 구석에 띄운다(디자인 overlayControls).
+          모바일은 리사이즈 손잡이가 없어 구석까지 붙는다. */}
       {edit && c === 1 && (
-        <span style={{ position: 'absolute', right: 22, bottom: 7, zIndex: 3, display: 'flex', alignItems: 'center', gap: 4 }}>
-          <EditSizeButton label={sizeLabel} onClick={cycleSize} overlay />
-          <EditRemoveButton onClick={removeSelf} overlay />
+        <span style={{ position: 'absolute', right: isMobile ? 7 : 22, bottom: 7, zIndex: 3, display: 'flex', alignItems: 'center', gap: 4 }}>
+          <EditSizeButton label={sizeLabel} onClick={cycleSize} overlay big={isMobile} />
+          <EditRemoveButton onClick={removeSelf} overlay big={isMobile} />
         </span>
       )}
 
@@ -592,8 +607,8 @@ function DashWidget({ itemId, docId, size, committedSize, maxCols, edit, draggin
         {/* 편집 컨트롤(디자인 inlineControls) — 크기 순환 + 내리기. 배지 자리를 이어받는다. */}
         {edit && c >= 2 && (
           <span style={{ display: 'flex', alignItems: 'center', gap: 3, flexShrink: 0 }}>
-            <EditSizeButton label={sizeLabel} onClick={cycleSize} />
-            <EditRemoveButton onClick={removeSelf} />
+            <EditSizeButton label={sizeLabel} onClick={cycleSize} big={isMobile} />
+            <EditRemoveButton onClick={removeSelf} big={isMobile} />
           </span>
         )}
       </div>
@@ -746,8 +761,9 @@ function SceneBody({ raw, hue }: { raw: string; hue: string }) {
 }
 
 /** 편집 모드의 크기 순환 버튼 — 누를 때마다 그 종류가 놓일 수 있는 다음 크기로
- * (디자인 onCycle). 정밀한 조절은 모서리 드래그가 맡는다. */
-function EditSizeButton({ label, onClick, overlay = false }: { label: string; onClick: (e: MouseEvent) => void; overlay?: boolean }) {
+ * (디자인 onCycle). 정밀한 조절은 모서리 드래그가 맡는다(데스크톱).
+ * `big` = 터치 타깃(30px — 칸반 카드 ✕·색 라벨 버튼과 같은 폰 크기 규칙). */
+function EditSizeButton({ label, onClick, overlay = false, big = false }: { label: string; onClick: (e: MouseEvent) => void; overlay?: boolean; big?: boolean }) {
   return (
     <button
       type="button"
@@ -756,8 +772,8 @@ function EditSizeButton({ label, onClick, overlay = false }: { label: string; on
       data-dash-cycle
       onClick={onClick}
       style={{
-        height: 22,
-        minWidth: 24,
+        height: big ? 30 : 22,
+        minWidth: big ? 34 : 24,
         padding: '0 6px',
         borderRadius: 7,
         border: '1px solid var(--mf-border)',
@@ -779,7 +795,7 @@ function EditSizeButton({ label, onClick, overlay = false }: { label: string; on
 }
 
 /** 편집 모드의 내리기 ✕ — 우클릭 메뉴의 "대시보드에서 내리기"와 같은 동작. */
-function EditRemoveButton({ onClick, overlay = false }: { onClick: (e: MouseEvent) => void; overlay?: boolean }) {
+function EditRemoveButton({ onClick, overlay = false, big = false }: { onClick: (e: MouseEvent) => void; overlay?: boolean; big?: boolean }) {
   return (
     <button
       type="button"
@@ -789,8 +805,8 @@ function EditRemoveButton({ onClick, overlay = false }: { onClick: (e: MouseEven
       data-dash-remove
       onClick={onClick}
       style={{
-        width: 22,
-        height: 22,
+        width: big ? 30 : 22,
+        height: big ? 30 : 22,
         borderRadius: 7,
         border: '1px solid var(--mf-border)',
         background: overlay ? 'rgba(255,253,251,.94)' : 'var(--mf-bg)',
