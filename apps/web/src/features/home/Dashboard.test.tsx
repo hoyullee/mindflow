@@ -875,6 +875,42 @@ describe('대시보드에서는 영역 지정을 하지 않는다(제보)', () =
 });
 
 describe('위젯 hover 떠오름(요청)', () => {
+  it('칸반 카드도 에디터와 같은 클래스로 반응한다(인라인 transition으로 덮지 않는다)', async () => {
+    localStorage.setItem(
+      'mf_spaces',
+      JSON.stringify({
+        spaces: [{ id: 's1', name: '일반 공간', home: true, color: '#f0663f', maps: [{ title: '칸반', when: '방금', hue: '#f0663f', docId: 'doc-k' }], folders: [] }],
+        mapFolders: {},
+        dashboards: [{ id: 'd1', name: '대시보드', items: [{ id: 'w1', docId: 'doc-k', size: '3x2' }] }],
+      }),
+    );
+    const { container } = renderHome([META('doc-k', '칸반')], { 'doc-k': KANBAN_BODY });
+    await waitFor(() => expect(container.querySelector('[data-dash-widget]')).toBeTruthy());
+    const card = await waitFor(() => {
+      const el = container.querySelector('[data-dash-widget] .mf-kb-card');
+      expect(el).toBeTruthy();
+      return el as HTMLElement;
+    });
+    // 에디터 카드와 같은 클래스 = 같은 규칙(떠오름·누름)이 걸린다
+    expect(card.className).toContain('mf-kb-card');
+    // 인라인 transition이 있으면 그 규칙의 transform 전이가 덮인다(홈 카드·위젯의 함정)
+    expect(card.style.transition).toBe('');
+  });
+
+  it('칸반 카드 hover 규칙은 컴포넌트 곁 CSS에 있다 — editor.css에 두면 홈에서 죽는다', () => {
+    const css = readFileSync(resolve('src/features/editor/components/kanbanCard.css'), 'utf8');
+    const hover = css.slice(css.indexOf('.mf-kb-card:hover {'));
+    expect(hover.slice(0, hover.indexOf('}'))).toContain('transform: translateY(-2px)');
+    const base = css.slice(css.indexOf('.mf-kb-card {'));
+    expect(base.slice(0, base.indexOf('}'))).toContain('transform 0.16s ease');
+    // 그 규칙을 데려오는 곳 — 카드를 그리는 화면이면 어디서든 함께 온다
+    const board = readFileSync(resolve('src/features/editor/components/KanbanBoard.tsx'), 'utf8');
+    expect(board).toContain("import './kanbanCard.css'");
+    // editor.css에는 남아 있지 않다(중복은 곧 드리프트)
+    const editorCss = readFileSync(resolve('src/features/editor/editor.css'), 'utf8');
+    expect(editorCss).not.toContain('.mf-kb-card:hover');
+  });
+
   it('home.css가 홈 카드와 같은 문법으로 3px 떠오름을 정한다', () => {
     const css = readFileSync(resolve('src/features/home/home.css'), 'utf8');
     const hover = css.slice(css.indexOf('.mf-dash-widget:hover {'));

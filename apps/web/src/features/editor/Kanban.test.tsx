@@ -288,7 +288,9 @@ describe('칸반 에디터', () => {
     expect(card().style.outlineOffset).toBe('2px');
 
     // 고른 카드도 hover에서 떠오른다 — 예전 규칙은 `:not([data-selected])`로 뺐다.
-    const css = readFileSync(resolve('src/features/editor/editor.css'), 'utf8');
+    // 규칙은 컴포넌트 곁(`kanbanCard.css`)에 있다 — 대시보드 위젯도 그 카드를 쓰므로
+    // `editor.css`(에디터 화면만 불러온다)에 두면 홈에서 호버가 죽는다.
+    const css = readFileSync(resolve('src/features/editor/components/kanbanCard.css'), 'utf8');
     expect(css).toContain('.mf-kb-card:hover');
     expect(css).not.toContain('.mf-kb-card:not([data-selected]):hover');
   });

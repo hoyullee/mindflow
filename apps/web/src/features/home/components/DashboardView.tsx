@@ -753,6 +753,10 @@ function KanbanBody({ data, isMobile, comments, avatars, onMoveCard }: { data: W
                       setDragCard(null);
                       setOverCol(null);
                     }}
+                    // 에디터의 카드와 **같은 클래스** — 호버 떠오름·누름 반응이 같다
+                    // (규칙은 `kanbanCard.css`, 인라인 transition은 두지 않는다: 그걸
+                    // 얹으면 transform 전이가 덮여 툭 바뀐다).
+                    className="mf-kb-card"
                     style={{
                       ...cardBase(k, th, false),
                       position: 'relative',
@@ -760,7 +764,6 @@ function KanbanBody({ data, isMobile, comments, avatars, onMoveCard }: { data: W
                       // 끌리는 원본은 자리를 지키되 흐리게(에디터와 같은 신호).
                       opacity: dragCard?.id === k.id ? 0.35 : 1,
                       cursor: onMoveCard ? 'grab' : 'default',
-                      transition: 'opacity .12s ease',
                     }}
                   >
                     <CardFace card={k} theme={th} comments={comments[k.id] ?? 0} tags={data.tags} done={i === lastIdx} avatars={avatars} />
