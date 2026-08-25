@@ -429,40 +429,30 @@ describe('대시보드 ② — 배치 편집 모드·런치 전환', () => {
     expect(savedDashboards()[0]?.items.find((it) => it.id === 'w1')?.size).toBe('2x2');
   });
 
-  it('"열기" 버튼만 런치 전환을 연다 — 카드의 다른 곳·편집 중에는 열리지 않는다(요청)', async () => {
+  it('"열기" 버튼만 에디터로 연다 — 카드의 다른 곳·편집 중에는 열리지 않는다(요청)', async () => {
     const user = userEvent.setup();
     const { container } = await openSeededDash();
     const widget = container.querySelector('[data-dash-widget="w1"]') as HTMLElement;
+    const loader = () => document.querySelector('[role="status"] [data-loader-spinner]');
 
     // 편집 중에는 "열기" 버튼 자체가 없다(그 시간의 클릭은 배치 조작이다)
     await user.click(screen.getByRole('button', { name: '편집' }));
     fireEvent.click(widget);
-    // 포털(body)로 그려지므로 document에서 찾는다
-    expect(document.querySelector('[data-dash-launch]')).toBeNull();
+    expect(loader()).toBeNull();
     expect(within(widget).queryByRole('button', { name: '열기' })).toBeNull();
     await user.click(screen.getByRole('button', { name: '편집 끝내기' }));
 
     // 카드 어디를 눌러도(머리·몸통) 열리지 않는다
     fireEvent.click(widget);
     fireEvent.click(within(widget).getAllByText('기획맵')[0]!);
-    expect(document.querySelector('[data-dash-launch]')).toBeNull();
+    expect(loader()).toBeNull();
 
-    // "열기" 버튼만이 연다 — 그리고 펼침은 **그 버튼 자리**에서 시작한다(요청)
-    const pill = within(widget).getByRole('button', { name: '열기' });
-    // jsdom은 레이아웃을 재지 않는다 — 위젯과 버튼에 서로 다른 사각형을 심어
-    // 어느 쪽에서 자라는지 구별한다.
-    widget.getBoundingClientRect = () => ({ left: 100, top: 200, width: 600, height: 400, right: 700, bottom: 600, x: 100, y: 200, toJSON: () => ({}) }) as DOMRect;
-    pill.getBoundingClientRect = () => ({ left: 620, top: 214, width: 52, height: 26, right: 672, bottom: 240, x: 620, y: 214, toJSON: () => ({}) }) as DOMRect;
-    fireEvent.click(pill);
-    const overlay = document.querySelector('[data-dash-launch]') as HTMLElement;
-    expect(overlay).toBeTruthy();
-    expect(overlay.textContent).toContain('기획맵');
-    expect(overlay.textContent).toContain('여는 중');
-    const card = overlay.querySelector('[data-launch-copy]')!.parentElement as HTMLElement;
-    expect(card.style.getPropertyValue('--lx')).toBe('620px');
-    expect(card.style.getPropertyValue('--ly')).toBe('214px');
-    expect(card.style.getPropertyValue('--lw')).toBe('52px');
-    expect(card.style.getPropertyValue('--lh')).toBe('26px');
+    // "열기" 버튼만이 연다 — 스페이스의 카드와 **같은 길**(전체 화면 로더 → 이동).
+    // 펼침 전환은 과하다는 판단으로 걷어냈다(요청) — 그 자국이 남지 않았는지도 본다.
+    fireEvent.click(within(widget).getByRole('button', { name: '열기' }));
+    expect(loader()).toBeTruthy();
+    expect(screen.getByText('맵을 불러오고 있어요')).toBeTruthy();
+    expect(document.querySelector('[data-dash-launch]')).toBeNull();
   });
 
   it('스켈레톤 → 실제 데이터 전환에 등장 애니메이션이 없다(제보: 깜빡이는 느낌)', async () => {
@@ -483,22 +473,6 @@ describe('대시보드 ② — 배치 편집 모드·런치 전환', () => {
     expect(widget.className).toContain('mf-dash-widget');
   });
 
-  it('펼치는 동안 배경은 그대로다 — 전체 화면 로더도, 덮는 베일도 없다(제보)', async () => {
-    const { container } = await openSeededDash();
-    const widget = container.querySelector('[data-dash-widget="w1"]') as HTMLElement;
-    fireEvent.click(within(widget).getByRole('button', { name: '열기' }));
-
-    const overlay = document.querySelector('[data-dash-launch]') as HTMLElement;
-    expect(overlay).toBeTruthy();
-    // 홈의 전체 화면 로더(LoadingOverlay)는 뜨지 않는다 — 로딩은 카드 안 스피너가 말한다
-    expect(document.querySelector('[role="status"] [data-loader-spinner]')).toBeNull();
-    // 오버레이 안에는 자라는 카드 하나뿐(예전엔 배경을 덮는 불투명 베일이 함께 있었다)
-    expect(overlay.children).toHaveLength(1);
-    expect(overlay.querySelector('[data-launch-copy] [aria-hidden]')).toBeTruthy();
-    // 대시보드 내용은 그대로 남아 있다(카드가 다 자라면 화면을 덮는다)
-    expect(container.querySelector('[data-dashboard-view]')).toBeTruthy();
-    expect(within(widget).getAllByText('기획맵').length).toBeGreaterThan(0);
-  });
 });
 
 // ── 대시보드 ③ — 칸반 위젯 인라인 열 이동 ──────────────────────────────────
