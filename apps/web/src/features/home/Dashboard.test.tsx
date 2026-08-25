@@ -412,3 +412,130 @@ describe('대시보드 ② — 배치 편집 모드·런치 전환', () => {
     expect(overlay.textContent).toContain('여는 중');
   });
 });
+
+// ── 대시보드 ③ — 칸반 위젯 인라인 열 이동 ──────────────────────────────────
+
+const KANBAN_BODY: LoadedDoc = {
+  doc: {
+    v: 1,
+    kind: 'kanban',
+    nodes: {},
+    floats: [],
+    lines: [],
+    zones: [],
+    layoutMode: 'right',
+    themeKey: 'coral',
+    columns: [
+      { id: 'c1', title: '할 일' },
+      { id: 'c2', title: '완료' },
+    ],
+    cards: [
+      { id: 'k1', col: 'c1', pos: 1, text: '첫 카드' },
+      { id: 'k2', col: 'c2', pos: 1, text: '둘째 카드' },
+    ],
+  } as unknown as LoadedDoc['doc'],
+  version: 3,
+  title: '스프린트',
+};
+
+/** 칸반 위젯 하나가 올라간 대시보드를 연 상태로 시작한다. */
+async function openKanbanDash(meta: DocMeta = META('doc-k', '스프린트')) {
+  localStorage.setItem(
+    'mf_spaces',
+    JSON.stringify({
+      spaces: [{ id: 's1', name: '일반 공간', home: true, color: '#f0663f', maps: meta.ownedByMe === false ? [] : [{ title: '스프린트', when: '방금', hue: '#8a63d2', docId: 'doc-k' }], folders: [] }],
+      mapFolders: {},
+      dashboards: [{ id: 'd1', name: '대시보드', items: [{ id: 'w1', docId: 'doc-k', size: '3x2' }] }],
+    }),
+  );
+  const utils = renderHome([meta], { 'doc-k': KANBAN_BODY });
+  const aside = await sidebarOf(utils.container);
+  const dashRow = within(aside)
+    .getAllByRole('button')
+    .find((el) => el.classList.contains('nav-item') && (el.textContent || '').includes('대시보드') && !(el.textContent || '').includes('새 대시보드')) as HTMLElement;
+  fireEvent.click(dashRow);
+  await waitFor(() => expect(utils.container.querySelector('[data-dash-card="k1"]')).toBeTruthy());
+  return utils;
+}
+
+/** 카드를 다른 열로 끄는 세 이벤트 — 실사용자 드래그의 축약. */
+function dragCardTo(container: HTMLElement, cardId: string, colId: string) {
+  fireEvent.dragStart(container.querySelector(`[data-dash-card="${cardId}"]`) as HTMLElement);
+  const col = container.querySelector(`[data-dash-col="${colId}"]`) as HTMLElement;
+  fireEvent.dragOver(col);
+  fireEvent.drop(col);
+}
+
+describe('대시보드 ③ — 칸반 카드 열 이동', () => {
+  it('칸반 위젯은 "열 이동 가능" 배지, 맵 위젯은 "보기 전용" 그대로', async () => {
+    const { container } = await openSeededDash(); // 맵 위젯 둘
+    expect(container.querySelector('[data-dash-perm="view"]')).toBeTruthy();
+    expect(container.querySelector('[data-dash-perm="move"]')).toBeNull();
+    cleanup();
+    localStorage.clear();
+
+    const { container: c2 } = await openKanbanDash();
+    const badge = c2.querySelector('[data-dash-perm="move"]') as HTMLElement;
+    expect(badge?.textContent).toContain('열 이동 가능');
+    expect(badge?.getAttribute('title')).toContain('카드의 열만 옮길 수 있어요');
+  });
+
+  it('카드를 다른 열에 놓으면 문서가 저장되고 위젯이 그 자리로 다시 그린다', async () => {
+    const { container, docStore } = await openKanbanDash();
+
+    // 드롭 대상 열 하이라이트
+    fireEvent.dragStart(container.querySelector('[data-dash-card="k1"]') as HTMLElement);
+    const colB = container.querySelector('[data-dash-col="c2"]') as HTMLElement;
+    fireEvent.dragOver(colB);
+    expect(colB.getAttribute('data-drop-hot')).toBe('true');
+    fireEvent.drop(colB);
+
+    // 낙관 반영 — 카드가 곧바로 완료 열 안에 그려진다
+    await waitFor(() => {
+      const col = container.querySelector('[data-dash-col="c2"]') as HTMLElement;
+      expect(within(col).getByText('첫 카드')).toBeTruthy();
+    });
+    // 저장 — prevVersion 잠금 + 옮겨진 카드
+    await waitFor(() => expect(docStore.save).toHaveBeenCalled());
+    const [id, doc, opts] = docStore.save.mock.calls[0] as unknown as [string, { cards: { id: string; col: string }[] }, { prevVersion?: number }];
+    expect(id).toBe('doc-k');
+    expect(doc.cards.find((c) => c.id === 'k1')?.col).toBe('c2');
+    expect(opts.prevVersion).toBe(3);
+  });
+
+  it('저장이 실패하면 카드를 되돌리고 안내한다(보기 전용 공유·연결 문제)', async () => {
+    const { container, docStore } = await openKanbanDash();
+    docStore.save.mockResolvedValueOnce({ ok: false, reason: 'error', message: 'nope' });
+
+    dragCardTo(container, 'k1', 'c2');
+
+    await waitFor(() => expect(screen.getByText('카드를 옮기지 못했어요')).toBeTruthy());
+    // 되돌림 — 카드가 다시 원래 열에
+    const colA = container.querySelector('[data-dash-col="c1"]') as HTMLElement;
+    expect(within(colA).getByText('첫 카드')).toBeTruthy();
+  });
+
+  it('충돌은 최신 판으로 한 번 다시 시도한다', async () => {
+    const { container, docStore } = await openKanbanDash();
+    docStore.save.mockResolvedValueOnce({ ok: false, reason: 'conflict', currentVersion: 4 });
+
+    dragCardTo(container, 'k1', 'c2');
+
+    await waitFor(() => expect(docStore.save).toHaveBeenCalledTimes(2));
+    expect(screen.queryByText('카드를 옮기지 못했어요')).toBeNull();
+  });
+
+  it('보기 전용으로 공유받은 칸반은 배지도 드래그도 보기 전용', async () => {
+    const { container } = await openKanbanDash({ ...META('doc-k', '스프린트'), ownedByMe: false, sharedRole: 'view' });
+    expect(container.querySelector('[data-dash-perm="view"]')).toBeTruthy();
+    expect(container.querySelector('[data-dash-perm="move"]')).toBeNull();
+    expect((container.querySelector('[data-dash-card="k1"]') as HTMLElement).getAttribute('draggable')).toBe('false');
+  });
+
+  it('배치 편집 모드에서는 카드 드래그가 꺼진다(그 시간의 드래그는 위젯 재배치)', async () => {
+    const user = userEvent.setup();
+    const { container } = await openKanbanDash();
+    await user.click(screen.getByRole('button', { name: /^편집$/ }));
+    expect((container.querySelector('[data-dash-card="k1"]') as HTMLElement).getAttribute('draggable')).toBe('false');
+  });
+});

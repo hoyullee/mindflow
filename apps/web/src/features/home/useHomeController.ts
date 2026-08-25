@@ -3,7 +3,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import type { ChangeEvent, KeyboardEvent } from 'react';
 import { useNavigate } from 'react-router-dom';
 import type { Doc } from '@mindflow/mindmap-core';
-import { ROOT_ID, collectImageRefs, parseDoc, serializeDoc, toMarkdown } from '@mindflow/mindmap-core';
+import { ROOT_ID, collectImageRefs, moveCard, parseDoc, serializeDoc, toMarkdown } from '@mindflow/mindmap-core';
 import { inlineImagesForExport } from '../editor/imageExport';
 import { exportDocPng } from '../editor/png';
 import { exportDocSvg } from '../editor/svg';
@@ -1053,6 +1053,71 @@ export function useHomeController() {
       .catch(() => {
         /* 조회 실패 — 이전 내용 그대로 둔다 */
       });
+  };
+
+  /**
+   * 칸반 위젯의 카드 열 이동(대시보드에서 유일하게 허용된 편집 — 디자인의
+   * "열 이동 가능"). 문서를 열지 않고 그 자리에서: `applyMapTitle`과 같은 결로
+   * load → 코어 `moveCard`(대상 열 맨 뒤) → `prevVersion` 저장, 충돌은 최신 판으로
+   * 한 번 재시도. **낙관 반영**: 위젯이 읽는 previewDocs를 먼저 옮겨 그리고,
+   * 저장이 실패하면 되돌리며 안내한다(성공 시엔 저장된 실제 본문으로 다시 덮는다 —
+   * 충돌 재시도로 다른 편집이 섞였어도 최종 화면이 진실이 된다).
+   */
+  const moveDashCard = async (docId: string, cardId: string, toColId: string): Promise<boolean> => {
+    const prevRaw = state.previewDocs[docId];
+    if (prevRaw) {
+      try {
+        const d = JSON.parse(prevRaw) as { kind?: string; cards?: Parameters<typeof moveCard>[0] };
+        if (d?.kind === 'kanban' && Array.isArray(d.cards)) {
+          const idx = d.cards.filter((c) => c.col === toColId).length;
+          d.cards = moveCard(d.cards, cardId, toColId, idx);
+          patch({ previewDocs: { ...state.previewDocs, [docId]: JSON.stringify(d) } });
+        }
+      } catch {
+        /* 미리보기 본문을 못 읽어도 저장 경로는 그대로 간다 */
+      }
+    }
+    const write = async (attempt: number): Promise<boolean> => {
+      const loaded = await docStore.load(docId);
+      if (!loaded || loaded.doc.kind !== 'kanban') return false;
+      const cards = loaded.doc.cards ?? [];
+      const card = cards.find((c) => c.id === cardId);
+      if (!card || !(loaded.doc.columns ?? []).some((c) => c.id === toColId)) return false;
+      if (card.col === toColId) return true; // 이미 그 열(충돌 재시도에서 겹친 경우 포함)
+      const index = cards.filter((c) => c.col === toColId).length; // 대상 열 맨 뒤에 붙인다
+      const next: Doc = { ...loaded.doc, cards: moveCard(cards, cardId, toColId, index) };
+      const res = await docStore.save(docId, next, { prevVersion: loaded.version, title: loaded.title });
+      if (res.ok) {
+        const raw = JSON.stringify(serializeDoc(next));
+        try {
+          localStorage.setItem(docKey(docId), raw); // 에디터가 쓰는 로컬 복구본도 같은 판으로
+        } catch {
+          /* storage unavailable */
+        }
+        if (mountedRef.current) {
+          setState((prev) => ({ ...prev, previewDocs: { ...prev.previewDocs, [docId]: raw }, previewResolved: { ...prev.previewResolved, [docId]: true } }));
+        }
+        return true;
+      }
+      if (res.reason === 'conflict' && attempt === 0) return write(1);
+      return false;
+    };
+    let ok = false;
+    try {
+      ok = await write(0);
+    } catch {
+      ok = false;
+    }
+    if (!ok && mountedRef.current) {
+      // 낙관 반영을 되돌리고 이유를 말한다(보기 전용 공유·연결 문제 등 — 진짜 게이트는 서버).
+      setState((prev) => ({
+        ...prev,
+        previewDocs: prevRaw ? { ...prev.previewDocs, [docId]: prevRaw } : prev.previewDocs,
+        toastTitle: '카드를 옮기지 못했어요',
+        toast: '연결 상태를 확인하고 다시 시도해 주세요. 보기 전용으로 공유받은 보드는 옮길 수 없어요.',
+      }));
+    }
+    return ok;
   };
 
   const openDashRename = (id: string) => {
@@ -2443,6 +2508,7 @@ export function useHomeController() {
     removeDashItem,
     toggleDashEdit,
     moveDashItem,
+    moveDashCard,
     setDashItemSize,
     dashItemToFront,
     refreshDashItem,
