@@ -426,6 +426,10 @@ function DashWidget({ itemId, docId, size, committedSize, maxCols, edit, draggin
   const shared = space === '공유받음';
   // 실렌더의 가지 색 폴백 — 홈 카드가 쓰는 그 hue(카탈로그에 실려 있다).
   const hue = view.dashPickCatalog.find((b) => b.docId === docId)?.hue ?? '#f0663f';
+  // 칸반 카드 열 이동 — 대시보드에서 유일하게 허용된 편집(디자인 "열 이동 가능").
+  // 보기 전용으로 공유받은 보드는 어포던스도 내주지 않는다(진짜 게이트는 서버 RLS).
+  const sharedRole = state.sharedMaps.find((m) => m.docId === docId)?.role;
+  const canMoveCards = kind === 'kanban' && !!title && !missing && sharedRole !== 'view';
 
   const open = (e: MouseEvent) => {
     e.stopPropagation();
@@ -565,16 +569,26 @@ function DashWidget({ itemId, docId, size, committedSize, maxCols, edit, draggin
           </span>
           <span style={{ fontSize: 10.5, color: 'var(--mf-muted)', minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{[space, when].filter(Boolean).join(' · ')}</span>
         </span>
-        {/* 1단계는 전부 보기 전용 — 대시보드에서 고치는 것은 다음 단계(칸반 열 이동)에서 열린다. */}
-        {c >= 2 && !edit && (
-          <span title="대시보드에서는 볼 수만 있어요. 편집은 열어서 하세요" style={{ display: 'inline-flex', alignItems: 'center', gap: 4, height: 19, padding: '0 7px', flexShrink: 0, borderRadius: 999, background: 'var(--mf-bg)', color: 'var(--mf-muted)', fontSize: 9.5, fontWeight: 700, whiteSpace: 'nowrap' }}>
-            <svg width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-              <path d="M2 12s3.6-6 10-6 10 6 10 6-3.6 6-10 6-10-6-10-6z" />
-              <circle cx="12" cy="12" r="2.4" />
-            </svg>
-            보기 전용
-          </span>
-        )}
+        {/* 권한 배지(디자인) — 칸반은 카드의 열만 옮길 수 있고, 나머지는 보기 전용.
+            보기 전용으로 공유받은 칸반은 그대로 보기 전용을 단다. */}
+        {c >= 2 &&
+          !edit &&
+          (canMoveCards ? (
+            <span title="대시보드에서 카드의 열만 옮길 수 있어요" data-dash-perm="move" style={{ display: 'inline-flex', alignItems: 'center', gap: 4, height: 19, padding: '0 7px', flexShrink: 0, borderRadius: 999, background: 'var(--mf-success-soft)', color: 'var(--mf-success-ink)', fontSize: 9.5, fontWeight: 700, whiteSpace: 'nowrap' }}>
+              <svg width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                <path d="M8 6 4 12l4 6M16 6l4 6-4 6" />
+              </svg>
+              열 이동 가능
+            </span>
+          ) : (
+            <span title="대시보드에서는 볼 수만 있어요. 편집은 열어서 하세요" data-dash-perm="view" style={{ display: 'inline-flex', alignItems: 'center', gap: 4, height: 19, padding: '0 7px', flexShrink: 0, borderRadius: 999, background: 'var(--mf-bg)', color: 'var(--mf-muted)', fontSize: 9.5, fontWeight: 700, whiteSpace: 'nowrap' }}>
+              <svg width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                <path d="M2 12s3.6-6 10-6 10 6 10 6-3.6 6-10 6-10-6-10-6z" />
+                <circle cx="12" cy="12" r="2.4" />
+              </svg>
+              보기 전용
+            </span>
+          ))}
         {/* 편집 컨트롤(디자인 inlineControls) — 크기 순환 + 내리기. 배지 자리를 이어받는다. */}
         {edit && c >= 2 && (
           <span style={{ display: 'flex', alignItems: 'center', gap: 3, flexShrink: 0 }}>
@@ -590,7 +604,7 @@ function DashWidget({ itemId, docId, size, committedSize, maxCols, edit, draggin
       ) : !data ? (
         <div aria-busy={!resolved} style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>{!resolved ? <span className="mf-skel" style={{ width: '60%', height: 10, borderRadius: 6 }} /> : <span style={{ fontSize: 11.5, color: 'var(--mf-faint)' }}>내용이 아직 없어요</span>}</div>
       ) : data.kind === 'kanban' ? (
-        <KanbanBody data={data} cols={c} />
+        <KanbanBody data={data} cols={c} onMoveCard={canMoveCards && !edit ? (cardId, toColId) => void controller.moveDashCard(docId, cardId, toColId) : undefined} />
       ) : (
         <SceneBody raw={raw!} hue={hue} />
       )}
@@ -619,10 +633,17 @@ function DashWidget({ itemId, docId, size, committedSize, maxCols, edit, draggin
 
 /** 칸반 몸통 — 디자인 원본의 위젯 틀에 **에디터의 시각 규칙**을 부었다: 면 층·열 색·
  * 분류 색·기한 문구·아바타 색이 전부 `widgetData`(=`kanbanMeta`)에서 온다.
- * 색이 문서 테마의 hex라 홈 다크 테마와 무관하게 실제 보드의 인상이 유지된다. */
-function KanbanBody({ data, cols }: { data: WidgetKanban; cols: number }) {
+ * 색이 문서 테마의 hex라 홈 다크 테마와 무관하게 실제 보드의 인상이 유지된다.
+ *
+ * `onMoveCard`가 오면 카드가 열 사이를 드래그로 오간다(디자인 "열 이동 가능" —
+ * 대시보드에서 유일하게 허용된 편집). 배치 편집 모드·보기 전용 공유에서는
+ * 오지 않아 드래그 자체가 없다. */
+function KanbanBody({ data, cols, onMoveCard }: { data: WidgetKanban; cols: number; onMoveCard?: (cardId: string, toColId: string) => void }) {
   const shown = data.columns.slice(0, 4);
   const s = data.surface;
+  // 끄는 카드·드롭 대상 열 — 위젯 안의 화면 상태(디자인 dragCard/overCol).
+  const [dragCard, setDragCard] = useState<{ id: string; fromCol: string } | null>(null);
+  const [overCol, setOverCol] = useState<string | null>(null);
   return (
     <div style={{ flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column', background: s.board }}>
       {/* 진행 바 — 에디터 보드 머리의 그 줄(완료부터 왼쪽에서, 열 색 그대로.
@@ -633,8 +654,30 @@ function KanbanBody({ data, cols }: { data: WidgetKanban; cols: number }) {
         ))}
       </div>
       <div style={{ flex: 1, minHeight: 0, display: 'grid', gridTemplateColumns: `repeat(${shown.length}, minmax(0, 1fr))`, gap: 7, padding: '9px 10px' }}>
-        {shown.map((col) => (
-          <div key={col.id} style={{ display: 'flex', flexDirection: 'column', gap: 5, minWidth: 0, minHeight: 0, borderRadius: 10, background: col.bg, border: `1px solid ${s.line}`, padding: '6px 5px' }}>
+        {shown.map((col) => {
+          const hot = overCol === col.id && !!dragCard && dragCard.fromCol !== col.id;
+          return (
+          <div
+            key={col.id}
+            data-dash-col={col.id}
+            data-drop-hot={hot || undefined}
+            onDragOver={(e) => {
+              if (!dragCard || dragCard.fromCol === col.id) return;
+              e.preventDefault(); // 놓을 수 있는 열임을 브라우저에 알린다
+              if (overCol !== col.id) setOverCol(col.id);
+            }}
+            onDragLeave={() => {
+              if (overCol === col.id) setOverCol(null);
+            }}
+            onDrop={(e) => {
+              e.preventDefault();
+              e.stopPropagation();
+              if (dragCard && dragCard.fromCol !== col.id && onMoveCard) onMoveCard(dragCard.id, col.id);
+              setDragCard(null);
+              setOverCol(null);
+            }}
+            style={{ display: 'flex', flexDirection: 'column', gap: 5, minWidth: 0, minHeight: 0, borderRadius: 10, background: col.bg, border: hot ? '1px dashed var(--mf-accent)' : `1px solid ${s.line}`, boxShadow: hot ? 'inset 0 0 0 99px rgba(var(--mf-accent-rgb), .05)' : undefined, padding: '6px 5px', transition: 'border-color .12s ease' }}
+          >
             <div style={{ display: 'flex', alignItems: 'center', gap: 5, padding: '0 3px', flexShrink: 0 }}>
               <span style={{ width: 5, height: 5, borderRadius: 99, background: col.dot, display: 'block', flexShrink: 0 }} />
               <span style={{ fontSize: 9.5, fontWeight: 800, color: s.subInk, letterSpacing: '-.01em', minWidth: 0, flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{col.name}</span>
@@ -642,7 +685,22 @@ function KanbanBody({ data, cols }: { data: WidgetKanban; cols: number }) {
             </div>
             <div style={{ display: 'flex', flexDirection: 'column', gap: 5, minHeight: 0, overflow: 'hidden' }}>
               {col.cards.map((k) => (
-                <div key={k.id} style={{ display: 'flex', flexDirection: 'column', gap: 4, padding: '6px 7px', borderRadius: 9, background: s.card, border: `1px solid ${s.line}`, boxShadow: '0 5px 12px -9px rgba(46,42,38,.35)' }}>
+                <div
+                  key={k.id}
+                  data-dash-card={k.id}
+                  draggable={!!onMoveCard}
+                  onDragStart={(e) => {
+                    if (!onMoveCard) return;
+                    e.stopPropagation(); // 위젯 자체의 드래그(편집 모드 재배치)와 갈라 둔다
+                    setDragCard({ id: k.id, fromCol: col.id });
+                    if (e.dataTransfer) e.dataTransfer.effectAllowed = 'move';
+                  }}
+                  onDragEnd={() => {
+                    setDragCard(null);
+                    setOverCol(null);
+                  }}
+                  style={{ display: 'flex', flexDirection: 'column', gap: 4, padding: '6px 7px', borderRadius: 9, background: s.card, border: `1px solid ${s.line}`, boxShadow: '0 5px 12px -9px rgba(46,42,38,.35)', opacity: dragCard?.id === k.id ? 0.45 : 1, cursor: onMoveCard ? 'grab' : undefined, transition: 'opacity .12s ease' }}
+                >
                   {k.tag && k.tagBg && (
                     <span style={{ alignSelf: 'flex-start', maxWidth: '100%', height: 14, padding: '0 5px', borderRadius: 5, background: k.tagBg, color: k.tagFg ?? s.ink, fontSize: 8, fontWeight: 800, letterSpacing: '-.01em', display: 'inline-flex', alignItems: 'center', overflow: 'hidden', whiteSpace: 'nowrap' }}>{k.tag}</span>
                   )}
@@ -667,7 +725,8 @@ function KanbanBody({ data, cols }: { data: WidgetKanban; cols: number }) {
               {col.more > 0 && <span style={{ fontSize: 8.5, color: s.subInk, padding: '0 3px' }}>+{col.more}개 더</span>}
             </div>
           </div>
-        ))}
+          );
+        })}
       </div>
     </div>
   );
