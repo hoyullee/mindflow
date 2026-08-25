@@ -21,7 +21,7 @@ export function DashboardSkeleton({ isMobile = false }: { isMobile?: boolean }) 
   // 모르므로 너무 많이 그리면 로딩이 끝날 때 크게 줄어든다.
   const cells = isMobile ? [2, 2] : [2, 1, 1];
   return (
-    <div data-dashboard-skeleton aria-busy="true" style={{ display: 'flex', flexDirection: 'column', animation: 'mf-fade .3s ease both', margin: isMobile ? '-16px -14px -32px' : '-24px -32px -44px' }}>
+    <div data-dashboard-skeleton aria-busy="true" style={{ display: 'flex', flexDirection: 'column', margin: isMobile ? '-16px -14px -32px' : '-24px -32px -44px' }}>
       {/* 다크 히어로 — 실제 화면과 같은 면·패딩·점 격자 */}
       <div style={{ position: 'relative', background: '#332E29', padding: isMobile ? '20px 16px 18px' : '26px 32px 24px', display: 'flex', alignItems: 'flex-end', gap: 14, overflow: 'hidden' }}>
         <div aria-hidden style={{ position: 'absolute', inset: 0, backgroundImage: 'radial-gradient(rgba(247,239,232,.07) 1px, transparent 1px)', backgroundSize: '18px 18px' }} />
