@@ -439,7 +439,7 @@ export function useHomeController() {
     const onPageShow = (e: PageTransitionEvent) => {
       if (!e.persisted) return;
       clearTimeout(loaderTimer.current);
-      setState((prev) => (prev.creatingMap || prev.launch ? { ...prev, creatingMap: false, loaderMsg: '', launch: null } : prev));
+      setState((prev) => (prev.creatingMap ? { ...prev, creatingMap: false, loaderMsg: '' } : prev));
     };
     window.addEventListener('pageshow', onPageShow);
 
@@ -1527,42 +1527,20 @@ export function useHomeController() {
   // nothing to uniquify against.
   const newMapHref = () => buildNewMapHref('새 마인드맵');
 
-  /** @param overlay 전체 화면 로더를 띄울지 — 대시보드의 "열기"는 **자기 전환**
-   *  (버튼에서 펼쳐지는 카드 + 그 안의 스피너)이 로딩을 말하므로 띄우지 않는다.
-   *  그때도 `loaderMsg`는 남겨 PWA 자동 적용이 이동 중에 끼어들지 않게 한다
-   *  (`homeUpdateRisk`가 그 값을 본다). */
-  const navigateAfterLoader = (href: string, msg: string, overlay = true) => {
-    patch({ creatingMap: overlay, loaderMsg: msg });
+  const navigateAfterLoader = (href: string, msg: string) => {
+    patch({ creatingMap: true, loaderMsg: msg });
     clearTimeout(loaderTimer.current);
     loaderTimer.current = setTimeout(() => navigate(href), 900);
   };
 
   /** Home.dc.html `openWithLoader(e, title)` — records recent, shows the loader, then navigates.
-   *  `ownLoader`면 전체 화면 로더를 생략한다(호출부가 자기 전환으로 로딩을 말한다). */
-  const openWithLoader = (href: string, title: string, docId?: string, opts?: { ownLoader?: boolean }) => {
+   *
+   *  열기는 **화면 하나로 통일**돼 있다(요청): 카드·위젯 어디서 열든 전체 화면 로더가
+   *  덮고 0.9초 뒤 이동한다. 예전에 대시보드 위젯만 "누른 자리에서 펼쳐지는" 전환을
+   *  썼는데, 과하다는 판단으로 걷어냈다 — 같은 동작이 같은 모양이어야 한다. */
+  const openWithLoader = (href: string, title: string, docId?: string) => {
     recordRecent(title, docId);
-    navigateAfterLoader(href, '맵을 불러오고 있어요', !opts?.ownLoader);
-  };
-
-  /**
-   * 원점이 있는 열기 — 누른 카드·버튼 자리에서 펼쳐지며 에디터로 간다(사용자와
-   * 합의한 규칙: 원점이 있으면 펼침, 없으면 전체 화면 로더). 전환 자체가 로딩을
-   * 말하므로 `ownLoader`로 전체 화면 로더는 띄우지 않는다.
-   */
-  const launchOpen = (
-    rect: { x: number; y: number; width: number; height: number },
-    opts: { href: string; title: string; docId?: string; kindName: string; space: string },
-  ) => {
-    let already = false;
-    setState((prev) => {
-      if (prev.launch) {
-        already = true; // 이미 여는 중 — 두 번째 클릭은 무시
-        return prev;
-      }
-      return { ...prev, launch: { x: rect.x, y: rect.y, w: rect.width, h: rect.height, name: opts.title, kindName: opts.kindName, space: opts.space } };
-    });
-    if (already) return;
-    openWithLoader(opts.href, opts.title, opts.docId, { ownLoader: true });
+    navigateAfterLoader(href, '맵을 불러오고 있어요');
   };
 
   /**
@@ -2630,7 +2608,6 @@ export function useHomeController() {
     closeTemplates,
     createFromTemplate,
     openWithLoader,
-    launchOpen,
     openSharedMap,
     onNewMapClick,
     openImport,

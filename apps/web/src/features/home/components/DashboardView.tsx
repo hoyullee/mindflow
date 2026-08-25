@@ -106,12 +106,6 @@ export function DashboardView({ state, view, controller, isMobile = false, onOpe
   const cols = isMobile ? 2 : DASH_COLS;
   const atCap = dash.items.length >= DASH_CAP;
 
-  /** 위젯의 "열기" → 그 버튼 자리에서 화면 전체로 펼쳐지며 에디터로. 전환은
-   * 스페이스·최근·검색 결과의 카드와 **같은 것**을 쓴다(컨트롤러가 상태를 들고
-   * `Home`이 오버레이를 한 번 그린다) — 같은 동작이 같은 모양이다. */
-  const launchOpen = (rect: DOMRect, docId: string, title: string, kindName: string, space: string) => {
-    controller.launchOpen(rect, { href: mapHref(title, docId), title, docId, kindName, space });
-  };
 
   /** 모서리 리사이즈(디자인 startResize) — 시작 사각형 기준으로 픽셀 → 칸 수 환산,
    * 움직이는 동안은 라이브 상태만 갱신하고 손을 뗄 때 커밋한다. */
@@ -358,7 +352,7 @@ export function DashboardView({ state, view, controller, isMobile = false, onOpe
                   setDragIdx(null);
                 }}
                 onResizeStart={startResize}
-                onLaunch={launchOpen}
+                onOpen={(docId, title) => controller.openWithLoader(mapHref(title, docId), title, docId)}
               />
             ))}
             {/* 편집 중 여유 드롭 공간 — 맨 아래로 끌어낼 자리(디자인 editBottomRow). */}
@@ -396,10 +390,11 @@ interface DashWidgetProps {
   onDragOverW: (e: ReactDragEvent) => void;
   onDropW: (e: ReactDragEvent) => void;
   onResizeStart: (e: MouseEvent, itemId: string, kind: DocKindName, startSize: string) => void;
-  onLaunch: (rect: DOMRect, docId: string, title: string, kindName: string, space: string) => void;
+  /** 에디터로 열기 — 스페이스의 카드와 같은 길(전체 화면 로더 → 이동). */
+  onOpen: (docId: string, title: string) => void;
 }
 
-function DashWidget({ itemId, docId, size, committedSize, maxCols, edit, isMobile, dragging, resizing, state, view, controller, onDragStartW, onDragEndW, onDragOverW, onDropW, onResizeStart, onLaunch }: DashWidgetProps) {
+function DashWidget({ itemId, docId, size, committedSize, maxCols, edit, isMobile, dragging, resizing, state, view, controller, onDragStartW, onDragEndW, onDragOverW, onDropW, onResizeStart, onOpen }: DashWidgetProps) {
   const raw = state.previewDocs[docId] || readDocRaw(docId) || null;
   const resolved = !!raw || !!state.previewResolved[docId];
   const kind = docKindOf('', docId, state.previewDocs);
@@ -431,9 +426,7 @@ function DashWidget({ itemId, docId, size, committedSize, maxCols, edit, isMobil
   const open = (e: MouseEvent) => {
     e.stopPropagation();
     if (!title || edit) return; // 편집 중의 클릭은 배치 조작이지 열기가 아니다(디자인 openBoard)
-    // 펼침의 시작점은 **누른 그 버튼**이다(요청) — 위젯 사각형에서 시작하면 손끝과
-    // 무관한 자리에서 화면이 자라 손이 한 일과 화면이 어긋난다.
-    onLaunch((e.currentTarget as HTMLElement).getBoundingClientRect(), docId, title, meta.name, space || '');
+    onOpen(docId, title);
   };
   const onCtx = (e: MouseEvent) => {
     e.preventDefault();
