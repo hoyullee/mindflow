@@ -462,6 +462,23 @@ describe('대시보드 ② — 배치 편집 모드·런치 전환', () => {
     expect(card.style.getPropertyValue('--lw')).toBe('52px');
     expect(card.style.getPropertyValue('--lh')).toBe('26px');
   });
+
+  it('펼치는 동안 배경은 그대로다 — 전체 화면 로더도, 덮는 베일도 없다(제보)', async () => {
+    const { container } = await openSeededDash();
+    const widget = container.querySelector('[data-dash-widget="w1"]') as HTMLElement;
+    fireEvent.click(within(widget).getByRole('button', { name: '열기' }));
+
+    const overlay = document.querySelector('[data-dash-launch]') as HTMLElement;
+    expect(overlay).toBeTruthy();
+    // 홈의 전체 화면 로더(LoadingOverlay)는 뜨지 않는다 — 로딩은 카드 안 스피너가 말한다
+    expect(document.querySelector('[role="status"] [data-loader-spinner]')).toBeNull();
+    // 오버레이 안에는 자라는 카드 하나뿐(예전엔 배경을 덮는 불투명 베일이 함께 있었다)
+    expect(overlay.children).toHaveLength(1);
+    expect(overlay.querySelector('[data-launch-copy] [aria-hidden]')).toBeTruthy();
+    // 대시보드 내용은 그대로 남아 있다(카드가 다 자라면 화면을 덮는다)
+    expect(container.querySelector('[data-dashboard-view]')).toBeTruthy();
+    expect(within(widget).getAllByText('기획맵').length).toBeGreaterThan(0);
+  });
 });
 
 // ── 대시보드 ③ — 칸반 위젯 인라인 열 이동 ──────────────────────────────────
