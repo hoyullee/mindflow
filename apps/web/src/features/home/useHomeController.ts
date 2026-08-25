@@ -1527,16 +1527,21 @@ export function useHomeController() {
   // nothing to uniquify against.
   const newMapHref = () => buildNewMapHref('새 마인드맵');
 
-  const navigateAfterLoader = (href: string, msg: string) => {
-    patch({ creatingMap: true, loaderMsg: msg });
+  /** @param overlay 전체 화면 로더를 띄울지 — 대시보드의 "열기"는 **자기 전환**
+   *  (버튼에서 펼쳐지는 카드 + 그 안의 스피너)이 로딩을 말하므로 띄우지 않는다.
+   *  그때도 `loaderMsg`는 남겨 PWA 자동 적용이 이동 중에 끼어들지 않게 한다
+   *  (`homeUpdateRisk`가 그 값을 본다). */
+  const navigateAfterLoader = (href: string, msg: string, overlay = true) => {
+    patch({ creatingMap: overlay, loaderMsg: msg });
     clearTimeout(loaderTimer.current);
     loaderTimer.current = setTimeout(() => navigate(href), 900);
   };
 
-  /** Home.dc.html `openWithLoader(e, title)` — records recent, shows the loader, then navigates. */
-  const openWithLoader = (href: string, title: string, docId?: string) => {
+  /** Home.dc.html `openWithLoader(e, title)` — records recent, shows the loader, then navigates.
+   *  `ownLoader`면 전체 화면 로더를 생략한다(호출부가 자기 전환으로 로딩을 말한다). */
+  const openWithLoader = (href: string, title: string, docId?: string, opts?: { ownLoader?: boolean }) => {
     recordRecent(title, docId);
-    navigateAfterLoader(href, '맵을 불러오고 있어요');
+    navigateAfterLoader(href, '맵을 불러오고 있어요', !opts?.ownLoader);
   };
 
   /**

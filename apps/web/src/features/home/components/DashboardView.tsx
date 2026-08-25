@@ -124,7 +124,9 @@ export function DashboardView({ state, view, controller, isMobile = false, onOpe
   const launchOpen = (rect: DOMRect, docId: string, title: string, kindName: string, space: string) => {
     if (launch) return; // 이미 여는 중 — 두 번째 클릭은 무시
     setLaunch({ x: rect.left, y: rect.top, w: rect.width, h: rect.height, name: title, kindName, space });
-    controller.openWithLoader(mapHref(title, docId), title, docId);
+    // `ownLoader` — 전체 화면 로더를 띄우지 않는다(제보: 누르자마자 배경 내용이
+    // 통째로 사라지고 로딩만 남았다). 로딩은 펼쳐지는 카드 **안**의 스피너가 말한다.
+    controller.openWithLoader(mapHref(title, docId), title, docId, { ownLoader: true });
   };
 
   /** 모서리 리사이즈(디자인 startResize) — 시작 사각형 기준으로 픽셀 → 칸 수 환산,
@@ -381,10 +383,14 @@ export function DashboardView({ state, view, controller, isMobile = false, onOpe
         )}
       </div>
 
-      {/* 런치 전환(디자인 ghLaunch) — 위젯이 제자리에서 화면 전체로 펼쳐지며 열린다.
+      {/* 런치 전환(디자인 ghLaunch) — 누른 "열기" 버튼에서 화면 전체로 펼쳐지며 열린다.
           카드의 기본 스타일이 곧 도착 상태라, 움직임을 줄인 사용자에게는(애니메이션
           off) 전체 화면 로딩 카드로 조용히 축퇴한다. 이동(900ms)과 함께 홈째
           언마운트되므로 뒷정리가 필요 없다.
+          **배경을 덮지 않는다**(제보): 예전에는 여기 불투명 베일이 함께 페이드되고
+          홈의 전체 화면 로더까지 떠서, 누른 순간 대시보드 내용이 통째로 사라지고
+          로딩만 남았다 — 지금은 대시보드가 그대로 보이는 위로 카드가 자라고, 로딩은
+          그 카드 **안**의 스피너가 말한다(카드가 다 자라면 어차피 화면을 덮는다).
           **body 포털인 이유**: 이 화면의 루트가 mf-fade(fill both)를 달고 있어
           스태킹 컨텍스트가 영구로 남는다 — 그 안의 fixed는 z 260이어도 컨텍스트째
           z auto로 깔려 LoadingOverlay(z 200)가 위에 그려졌다(실브라우저에서 확인,
@@ -392,7 +398,6 @@ export function DashboardView({ state, view, controller, isMobile = false, onOpe
       {launch &&
         createPortal(
         <div data-dash-launch style={{ position: 'fixed', inset: 0, zIndex: 260, pointerEvents: 'none' }}>
-          <div style={{ position: 'absolute', inset: 0, background: 'var(--mf-bg)', animation: 'mf-dim-in .5s cubic-bezier(.4,0,.2,1) both' }} />
           <div
             style={{
               position: 'absolute',
