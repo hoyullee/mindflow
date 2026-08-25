@@ -149,51 +149,6 @@ a:hover {
     opacity: 1;
   }
 }
-@keyframes mf-core {
-  0%,
-  100% {
-    transform: scale(1);
-  }
-  50% {
-    transform: scale(1.18);
-  }
-}
-@keyframes mf-branch {
-  0% {
-    transform: scale(0);
-    opacity: 0;
-  }
-  45% {
-    transform: scale(1);
-    opacity: 1;
-  }
-  80% {
-    transform: scale(1);
-    opacity: 1;
-  }
-  100% {
-    transform: scale(0);
-    opacity: 0;
-  }
-}
-@keyframes mf-stem {
-  0% {
-    transform: scaleX(0);
-    opacity: 0;
-  }
-  45% {
-    transform: scaleX(1);
-    opacity: 1;
-  }
-  80% {
-    transform: scaleX(1);
-    opacity: 1;
-  }
-  100% {
-    transform: scaleX(0);
-    opacity: 0;
-  }
-}
 
 /* Loading skeletons — shown while the first DocStore.list() is in flight so the
    map grid doesn't flash its empty state before content arrives. */

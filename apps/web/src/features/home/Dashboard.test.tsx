@@ -445,12 +445,22 @@ describe('대시보드 ② — 배치 편집 모드·런치 전환', () => {
     fireEvent.click(within(widget).getAllByText('기획맵')[0]!);
     expect(document.querySelector('[data-dash-launch]')).toBeNull();
 
-    // "열기" 버튼만이 연다
-    fireEvent.click(within(widget).getByRole('button', { name: '열기' }));
+    // "열기" 버튼만이 연다 — 그리고 펼침은 **그 버튼 자리**에서 시작한다(요청)
+    const pill = within(widget).getByRole('button', { name: '열기' });
+    // jsdom은 레이아웃을 재지 않는다 — 위젯과 버튼에 서로 다른 사각형을 심어
+    // 어느 쪽에서 자라는지 구별한다.
+    widget.getBoundingClientRect = () => ({ left: 100, top: 200, width: 600, height: 400, right: 700, bottom: 600, x: 100, y: 200, toJSON: () => ({}) }) as DOMRect;
+    pill.getBoundingClientRect = () => ({ left: 620, top: 214, width: 52, height: 26, right: 672, bottom: 240, x: 620, y: 214, toJSON: () => ({}) }) as DOMRect;
+    fireEvent.click(pill);
     const overlay = document.querySelector('[data-dash-launch]') as HTMLElement;
     expect(overlay).toBeTruthy();
     expect(overlay.textContent).toContain('기획맵');
     expect(overlay.textContent).toContain('여는 중');
+    const card = overlay.querySelector('[data-launch-copy]')!.parentElement as HTMLElement;
+    expect(card.style.getPropertyValue('--lx')).toBe('620px');
+    expect(card.style.getPropertyValue('--ly')).toBe('214px');
+    expect(card.style.getPropertyValue('--lw')).toBe('52px');
+    expect(card.style.getPropertyValue('--lh')).toBe('26px');
   });
 });
 
