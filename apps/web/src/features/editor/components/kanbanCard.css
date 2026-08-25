@@ -1,0 +1,41 @@
+/* 칸반 카드의 호버·누름(디자인 원본 `Geurio 칸반보드.dc.html`).
+ *
+ * **컴포넌트 곁에 두는 이유**: 이 카드는 에디터와 대시보드 위젯이 함께 쓴다
+ * (`cardBase`/`CardFace`를 공유한다 — 같은 물건이면 같이 반응해야 한다). 규칙을
+ * `editor.css`에 두면 그 파일은 에디터 화면만 불러오므로 홈의 위젯에서는 호버가
+ * 죽는다. `KanbanBoard.tsx`가 이 파일을 import하니, 카드를 그리는 화면이면 규칙도
+ * 함께 온다.
+ *
+ * 카드의 그림자·테두리는 인라인이라 클래스가 이기지 못하므로, 겹치지 않는
+ * 속성(`transform`)으로 들어 올리고 그림자만 좁게 !important로 덮는다.
+ * ⚠️ transition은 여기 한 곳에서만 정한다 — 컴포넌트가 인라인 transition을 얹으면
+ * 이 규칙(transform 포함)이 덮여 전이 없이 툭 바뀐다(홈 카드·위젯에서 겪은 함정).
+ */
+.mf-kb-card {
+  transition:
+    transform 0.16s ease,
+    box-shadow 0.16s ease,
+    border-color 0.16s ease,
+    outline-color 0.14s ease,
+    opacity 0.12s ease;
+}
+/* 고른 카드도 함께 떠오른다 — 선택 표시가 outline 링으로 바뀌어(요청, 홈 카드와
+   같은 문법) hover 그늘과 다투지 않는다. 예전에는 선택 시 그늘을 링으로 갈아
+   끼웠기 때문에 `:not([data-selected])`로 hover를 빼야 했다. */
+.mf-kb-card:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 12px 24px -18px rgba(46, 42, 38, 0.55) !important;
+}
+/* 누르는 순간 살짝 눌린다(홈 카드의 `:active`와 같은 값·같은 길이). */
+.mf-kb-card:active {
+  transform: translateY(-1px) scale(0.993);
+  transition: transform 0.07s ease;
+}
+@media (prefers-reduced-motion: reduce) {
+  .mf-kb-card,
+  .mf-kb-card:hover,
+  .mf-kb-card:active {
+    transform: none;
+    transition: box-shadow 0.16s ease, border-color 0.16s ease, outline-color 0.14s ease, opacity 0.12s ease;
+  }
+}

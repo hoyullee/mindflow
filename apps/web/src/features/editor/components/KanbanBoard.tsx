@@ -12,6 +12,7 @@
 // 표로 들고 있던 값(분류 색·담당 명단)은 규칙으로 바꿨다(`kanbanMeta.ts` 머리말).
 
 import { forwardRef, useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import './kanbanCard.css';
 import { Modal } from '../../../components/Modal';
 import { Popover } from '../../../components/Popover';
 import { Segmented } from '../../../components/Segmented';
