@@ -4,6 +4,7 @@ import userEvent from '@testing-library/user-event';
 import { MemoryRouter, Route, Routes } from 'react-router-dom';
 import { Home } from './Home';
 import { BackendProvider } from '../../adapters/BackendContext';
+import { mockMatchMedia } from '../../test/matchMedia';
 import { LocalAuth } from '../../adapters/local/localAuth';
 import { LocalSpaceStore } from '../../adapters/local/localSpaceStore';
 import { LocalShareStore } from '../../adapters/local/localShareStore';
@@ -438,8 +439,9 @@ const KANBAN_BODY: LoadedDoc = {
   title: '스프린트',
 };
 
-/** 칸반 위젯 하나가 올라간 대시보드를 연 상태로 시작한다. */
-async function openKanbanDash(meta: DocMeta = META('doc-k', '스프린트')) {
+/** 칸반 위젯 하나가 올라간 대시보드를 연 상태로 시작한다.
+ * `mobile`이면 LNB가 서랍이라 햄버거로 먼저 연다. */
+async function openKanbanDash(meta: DocMeta = META('doc-k', '스프린트'), mobile = false) {
   localStorage.setItem(
     'mf_spaces',
     JSON.stringify({
@@ -449,6 +451,11 @@ async function openKanbanDash(meta: DocMeta = META('doc-k', '스프린트')) {
     }),
   );
   const utils = renderHome([meta], { 'doc-k': KANBAN_BODY });
+  if (mobile) {
+    const user = userEvent.setup();
+    await waitFor(() => expect(screen.getByRole('button', { name: /메뉴 열기/ })).toBeTruthy());
+    await user.click(screen.getByRole('button', { name: /메뉴 열기/ }));
+  }
   const aside = await sidebarOf(utils.container);
   const dashRow = within(aside)
     .getAllByRole('button')
@@ -537,5 +544,35 @@ describe('대시보드 ③ — 칸반 카드 열 이동', () => {
     const { container } = await openKanbanDash();
     await user.click(screen.getByRole('button', { name: /^편집$/ }));
     expect((container.querySelector('[data-dash-card="k1"]') as HTMLElement).getAttribute('draggable')).toBe('false');
+  });
+});
+
+// ── 대시보드 ④ — 모바일 다듬기 ────────────────────────────────────────────
+
+describe('대시보드 ④ — 모바일 편집', () => {
+  it('모바일: 편집은 탭으로 되는 것만 — 크기·내리기 버튼은 열리고 드래그·리사이즈·카드 이동은 없다', async () => {
+    const restore = mockMatchMedia(true);
+    try {
+      const user = userEvent.setup();
+      const { container } = await openKanbanDash(META('doc-k', '스프린트'), true);
+
+      // 칸반이어도 모바일은 보기 전용 배지 — HTML5 드래그가 터치에서 발화하지
+      // 않으므로 '열 이동 가능'은 거짓 약속이 된다
+      expect(container.querySelector('[data-dash-perm="move"]')).toBeNull();
+      expect(container.querySelector('[data-dash-perm="view"]')).toBeTruthy();
+      expect((container.querySelector('[data-dash-card="k1"]') as HTMLElement).getAttribute('draggable')).toBe('false');
+
+      await user.click(screen.getByRole('button', { name: /^편집$/ }));
+      // 안내 띠도 실제로 되는 조작만 말한다
+      expect(screen.getByText(/길게 누르면 맨 앞으로/)).toBeTruthy();
+      const widget = container.querySelector('[data-dash-widget="w1"]') as HTMLElement;
+      expect(widget.getAttribute('draggable')).toBe('false');
+      expect(widget.querySelector('[data-dash-resize]')).toBeNull();
+      // 탭 기반 컨트롤은 열린다(30px 터치 타깃)
+      expect(widget.querySelector('[data-dash-cycle]')).toBeTruthy();
+      expect((widget.querySelector('[data-dash-remove]') as HTMLElement).style.width).toBe('30px');
+    } finally {
+      restore();
+    }
   });
 });
