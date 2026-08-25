@@ -438,15 +438,21 @@ export function mergeRecent(primary: string[], secondary: string[] | undefined, 
   return out;
 }
 
-/** The currently-viewed space/folder, persisted per TAB (sessionStorage) so
- * opening a map in the editor and coming back to Home returns to the space you
- * left from, instead of resetting to the default 일반 공간. Tab-scoped on purpose:
- * it's transient view state, not a synced preference. */
+/** The currently-viewed space/folder/dashboard, persisted per TAB (sessionStorage)
+ * so opening a map in the editor and coming back to Home returns to the screen you
+ * left from, instead of resetting. Tab-scoped on purpose: it's transient view
+ * state, not a synced preference.
+ *
+ * `activeDash`도 함께 싣는다(요청: 홈 첫 화면은 기본 대시보드) — 대시보드에서 맵을
+ * 열고 돌아오면 그 대시보드로 돌아오고, **저장된 화면이 아예 없는 첫 진입**에서는
+ * 컨트롤러가 기본 대시보드(맨 위)를 연다. */
 export const ACTIVE_VIEW_KEY = 'mf_active_view';
 
 export interface ActiveView {
   activeSpace: string;
   curFolder: string | null;
+  /** 대시보드를 보고 있었다면 그 id. 스페이스 화면이었으면 null. */
+  activeDash?: string | null;
 }
 
 export function saveActiveView(view: ActiveView): void {
@@ -463,7 +469,11 @@ export function loadActiveView(): ActiveView | null {
     if (!raw) return null;
     const v = JSON.parse(raw) as Partial<ActiveView>;
     if (v && typeof v.activeSpace === 'string') {
-      return { activeSpace: v.activeSpace, curFolder: typeof v.curFolder === 'string' ? v.curFolder : null };
+      return {
+        activeSpace: v.activeSpace,
+        curFolder: typeof v.curFolder === 'string' ? v.curFolder : null,
+        activeDash: typeof v.activeDash === 'string' ? v.activeDash : null,
+      };
     }
     return null;
   } catch {

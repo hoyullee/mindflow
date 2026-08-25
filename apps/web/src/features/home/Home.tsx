@@ -143,7 +143,7 @@ export function Home() {
         {/* 대시보드 보기 — 화면은 언제나 한쪽만 그린다(대시보드 ↔ 스페이스). 최근
             항목·툴바·그리드는 스페이스의 것이라 함께 접는다. */}
         {state.activeDash ? (
-          <DashboardView state={state} view={view} controller={controller} isMobile={isMobile} />
+          <DashboardView state={state} view={view} controller={controller} isMobile={isMobile} onOpenNav={() => setNavOpen(true)} />
         ) : (
           <>
             {view.loading && state.recent.length > 0 && !view.searchQuery && <RecentStripSkeleton count={state.recent.length} />}
