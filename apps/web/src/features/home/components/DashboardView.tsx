@@ -87,7 +87,7 @@ interface Props {
   onOpenNav?: () => void;
 }
 
-/** 위젯을 여는 런치 전환의 재료 — 그 위젯의 화면 사각형에서 화면 전체로 펼쳐진다. */
+/** 위젯을 여는 런치 전환의 재료 — 누른 "열기" 버튼의 사각형에서 화면 전체로 펼쳐진다. */
 interface LaunchState {
   x: number;
   y: number;
@@ -490,9 +490,9 @@ function DashWidget({ itemId, docId, size, committedSize, maxCols, edit, isMobil
   const open = (e: MouseEvent) => {
     e.stopPropagation();
     if (!title || edit) return; // 편집 중의 클릭은 배치 조작이지 열기가 아니다(디자인 openBoard)
-    const el = (e.currentTarget as HTMLElement).closest('[data-dash-widget]');
-    if (!el) return;
-    onLaunch(el.getBoundingClientRect(), docId, title, meta.name, space || '');
+    // 펼침의 시작점은 **누른 그 버튼**이다(요청) — 위젯 사각형에서 시작하면 손끝과
+    // 무관한 자리에서 화면이 자라 손이 한 일과 화면이 어긋난다.
+    onLaunch((e.currentTarget as HTMLElement).getBoundingClientRect(), docId, title, meta.name, space || '');
   };
   const onCtx = (e: MouseEvent) => {
     e.preventDefault();

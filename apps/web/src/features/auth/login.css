@@ -35,51 +35,6 @@
     opacity: 1;
   }
 }
-@keyframes mf-core {
-  0%,
-  100% {
-    transform: scale(1);
-  }
-  50% {
-    transform: scale(1.18);
-  }
-}
-@keyframes mf-branch {
-  0% {
-    transform: scale(0);
-    opacity: 0;
-  }
-  45% {
-    transform: scale(1);
-    opacity: 1;
-  }
-  80% {
-    transform: scale(1);
-    opacity: 1;
-  }
-  100% {
-    transform: scale(0);
-    opacity: 0;
-  }
-}
-@keyframes mf-stem {
-  0% {
-    transform: scaleX(0);
-    opacity: 0;
-  }
-  45% {
-    transform: scaleX(1);
-    opacity: 1;
-  }
-  80% {
-    transform: scaleX(1);
-    opacity: 1;
-  }
-  100% {
-    transform: scaleX(0);
-    opacity: 0;
-  }
-}
 
 /* 디자인 원본의 등장/미리보기 애니메이션 */
 @keyframes mf-lg-rise {
