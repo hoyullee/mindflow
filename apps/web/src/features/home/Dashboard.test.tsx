@@ -13,6 +13,7 @@ import { LocalCommentStore } from '../../adapters/local/localCommentStore';
 import { LocalNotificationStore } from '../../adapters/local/localNotificationStore';
 import { LocalImageStore } from '../../adapters/local/localImageStore';
 import type { Backend, DocMeta, DocStore, LoadedDoc, SaveResult } from '../../adapters/ports';
+import { clearActiveView } from './storage';
 
 /**
  * 대시보드 ①(모델 + LNB + 보기 전용 위젯 + 피커) 통합 테스트 — 홈이 실제로
@@ -53,9 +54,9 @@ class MockDocStore implements DocStore {
   }
 }
 
-function renderHome(metas: DocMeta[] = [], bodies: Record<string, LoadedDoc> = {}) {
+function renderHome(metas: DocMeta[] = [], bodies: Record<string, LoadedDoc> = {}, override: Partial<Backend> = {}) {
   const docStore = new MockDocStore(metas, bodies);
-  const backend: Backend = { auth: new LocalAuth(), docStore, spaceStore: new LocalSpaceStore(), shareStore: new LocalShareStore(), feedbackStore: new LocalFeedbackStore(), imageStore: new LocalImageStore(), commentStore: new LocalCommentStore(), notificationStore: new LocalNotificationStore(), mode: 'local' };
+  const backend: Backend = { auth: new LocalAuth(), docStore, spaceStore: new LocalSpaceStore(), shareStore: new LocalShareStore(), feedbackStore: new LocalFeedbackStore(), imageStore: new LocalImageStore(), commentStore: new LocalCommentStore(), notificationStore: new LocalNotificationStore(), mode: 'local', ...override };
   const utils = render(
     <MemoryRouter initialEntries={['/home']}>
       <BackendProvider backend={backend}>
@@ -685,5 +686,47 @@ describe('홈의 첫 화면', () => {
     } finally {
       restore();
     }
+  });
+});
+
+// ── 로그인 직후 첫 진입(제보) ──────────────────────────────────────────────
+
+/** 갓 로그인한 탭 재현 — 마운트 하이드레이션은 인증 토큰 적용 **전에** 돌아
+ *  워크스페이스를 못 읽고(null), 인증이 확인된 뒤의 재동기화가 실제 블롭을 준다. */
+class RaceSpaceStore extends LocalSpaceStore {
+  calls = 0;
+  override async load() {
+    this.calls += 1;
+    if (this.calls === 1) return null; // RLS 스코프 조회가 빈손으로 돌아온 그 순간
+    return super.load();
+  }
+}
+/** 마운트 직후 세션을 확인해 주는 인증(재동기화 트리거). */
+class SignedInAuth extends LocalAuth {
+  override onAuthChange(listener: (session: { user: { id: string; email: string } } | null) => void): () => void {
+    const t = setTimeout(() => listener({ user: { id: 'u1', email: 'demo@mindflow.local' } }), 0);
+    return () => clearTimeout(t);
+  }
+}
+
+describe('로그인 직후 홈 첫 진입', () => {
+  it('마운트 때 워크스페이스를 못 읽었어도 인증 확인 재동기화에서 기본 대시보드를 연다', async () => {
+    seedTwoDashboards();
+    const { container } = renderHome([], {}, { spaceStore: new RaceSpaceStore(), auth: new SignedInAuth() as unknown as LocalAuth });
+
+    await waitFor(() => expect(container.querySelector('[data-dashboard-view]')).toBeTruthy(), { timeout: 3000 });
+    expect(within(container.querySelector('[data-dashboard-view]') as HTMLElement).getByText('기본 보드')).toBeTruthy();
+  });
+
+  it('로그인은 이 탭이 기억한 화면을 잊는다 — 만료 후 재로그인도 기본 대시보드', async () => {
+    seedTwoDashboards();
+    // 지난 세션에 스페이스를 보고 있었다(만료로 튕겨 나간 탭)
+    sessionStorage.setItem('mf_active_view', JSON.stringify({ activeSpace: 's1', curFolder: null, activeDash: null }));
+    clearActiveView(); // 로그인 성공 시 컨트롤러가 부르는 그 함수
+    expect(sessionStorage.getItem('mf_active_view')).toBeNull();
+
+    const { container } = renderHome();
+    await waitFor(() => expect(container.querySelector('[data-dashboard-view]')).toBeTruthy());
+    expect(within(container.querySelector('[data-dashboard-view]') as HTMLElement).getByText('기본 보드')).toBeTruthy();
   });
 });

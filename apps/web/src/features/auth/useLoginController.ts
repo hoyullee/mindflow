@@ -2,6 +2,8 @@ import { useEffect, useRef, useState } from 'react';
 import type { KeyboardEvent } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
 import { safeNextPath, takeLoginNotice } from './sessionNotice';
+// 홈의 탭 세션 화면 기억(스페이스·대시보드)을 로그인 시 비운다 — 아래 finishWithLoader.
+import { clearActiveView } from '../home/storage';
 import { useBackend } from '../../adapters/BackendContext';
 import { initialLoginState, type LoginState } from './types';
 
@@ -197,6 +199,10 @@ export function useLoginController() {
   /** Shows the full-screen loader (Login.dc.html `finish()`'s UI half) then
    * navigates — called once the actual auth call (if any) already succeeded. */
   const finishWithLoader = (signup: boolean) => {
+    // 로그인은 **새 시작**이다 — 이 탭이 기억하던 화면(지난 세션에 보던 스페이스)을
+    // 잊어야 홈 첫 진입이 '기본' 대시보드가 된다(요청). `?next=`로 돌아갈 주소는
+    // 이 값과 무관하다.
+    clearActiveView();
     patch({ busy: true, error: '', loaderMsg: signup ? '계정을 만들고 있어요' : '로그인하고 있어요' });
     clearTimeout(timerRef.current);
     timerRef.current = setTimeout(() => {

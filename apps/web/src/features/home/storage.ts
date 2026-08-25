@@ -463,6 +463,18 @@ export function saveActiveView(view: ActiveView): void {
   }
 }
 
+/** 이 탭이 기억한 화면을 잊는다 — **로그인 직후**에 부른다(요청: 로그인 후 첫
+ *  진입은 '기본' 대시보드). 만료로 튕겨 나갔다 돌아온 탭에는 지난 세션에 보던
+ *  스페이스가 남아 있어, 그걸 그대로 복원하면 로그인 후 첫 화면이 대시보드가 아니게
+ *  된다. `?next=`로 돌아가는 **주소**는 이 값과 무관하므로 그대로 동작한다. */
+export function clearActiveView(): void {
+  try {
+    sessionStorage.removeItem(ACTIVE_VIEW_KEY);
+  } catch {
+    /* storage unavailable — non-fatal */
+  }
+}
+
 export function loadActiveView(): ActiveView | null {
   try {
     const raw = sessionStorage.getItem(ACTIVE_VIEW_KEY);
