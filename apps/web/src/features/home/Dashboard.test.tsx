@@ -14,6 +14,8 @@ import { LocalNotificationStore } from '../../adapters/local/localNotificationSt
 import { LocalImageStore } from '../../adapters/local/localImageStore';
 import type { Backend, DocMeta, DocStore, LoadedDoc, SaveResult } from '../../adapters/ports';
 import { clearActiveView } from './storage';
+import { readFileSync } from 'node:fs';
+import { resolve } from 'node:path';
 
 /**
  * 대시보드 ①(모델 + LNB + 보기 전용 위젯 + 피커) 통합 테스트 — 홈이 실제로
@@ -463,6 +465,24 @@ describe('대시보드 ② — 배치 편집 모드·런치 전환', () => {
     expect(card.style.getPropertyValue('--lh')).toBe('26px');
   });
 
+  it('스켈레톤 → 실제 데이터 전환에 등장 애니메이션이 없다(제보: 깜빡이는 느낌)', async () => {
+    seedTwoDashboards();
+    sessionStorage.setItem('mf_active_view', JSON.stringify({ activeSpace: 's1', curFolder: null, activeDash: 'd1' }));
+    const { container } = renderHome();
+    const skel = container.querySelector('[data-dashboard-skeleton]') as HTMLElement;
+    expect(skel.style.animation).toBe('');
+    await waitFor(() => expect(container.querySelector('[data-dashboard-view]')).toBeTruthy());
+    expect((container.querySelector('[data-dashboard-view]') as HTMLElement).style.animation).toBe('');
+  });
+
+  it('위젯에 hover 떠오름을 막을 인라인 transition이 없다(CSS 한 곳에서 정한다)', async () => {
+    const { container } = await openSeededDash();
+    const widget = container.querySelector('[data-dash-widget="w1"]') as HTMLElement;
+    // 인라인 transition이 있으면 `.mf-dash-widget`의 transform 전이가 덮인다(홈 카드의 함정)
+    expect(widget.style.transition).toBe('');
+    expect(widget.className).toContain('mf-dash-widget');
+  });
+
   it('펼치는 동안 배경은 그대로다 — 전체 화면 로더도, 덮는 베일도 없다(제보)', async () => {
     const { container } = await openSeededDash();
     const widget = container.querySelector('[data-dash-widget="w1"]') as HTMLElement;
@@ -877,6 +897,22 @@ describe('대시보드에서는 영역 지정을 하지 않는다(제보)', () =
     firePointer(window, 'pointermove', { clientX: 1200, clientY: 760 });
     expect(container.querySelector('[data-marquee]')).toBeNull();
     firePointer(window, 'pointerup', {});
+  });
+});
+
+describe('위젯 hover 떠오름(요청)', () => {
+  it('home.css가 홈 카드와 같은 문법으로 3px 떠오름을 정한다', () => {
+    const css = readFileSync(resolve('src/features/home/home.css'), 'utf8');
+    const hover = css.slice(css.indexOf('.mf-dash-widget:hover {'));
+    const rule = hover.slice(0, hover.indexOf('}'));
+    expect(rule).toContain('transform: translateY(-3px)');
+    expect(rule).toContain('var(--mf-card-shadow-hover)');
+    expect(rule).toContain('var(--mf-border-hover)');
+    // transition은 규칙 쪽에 있어야 한다(없으면 A→B로 툭 바뀐다)
+    const base = css.slice(css.indexOf('.mf-dash-widget {'));
+    expect(base.slice(0, base.indexOf('}'))).toContain('transform 0.18s ease');
+    // 움직임을 줄인 사용자에게는 떠오르지 않는다
+    expect(css).toMatch(/prefers-reduced-motion[\s\S]*\.mf-dash-widget/);
   });
 });
 

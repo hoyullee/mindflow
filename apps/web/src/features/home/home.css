@@ -613,13 +613,36 @@ input[type='search']::-webkit-search-results-decoration {
     pointer-events: auto;
   }
 }
+/* 위젯도 홈 카드처럼 **3px 떠오른다**(요청) — 같은 문법이라 홈 안에서 "누를 수
+   있는 카드"의 반응이 한 가지다. 면·경계·그늘 값이 인라인이라 !important가
+   필요하다(홈 카드의 그 규칙과 같은 이유). ⚠️ transition은 여기 한 곳에서만
+   정한다: 컴포넌트가 인라인 transition을 얹으면 transform이 덮여 전이 없이
+   툭 바뀐다(제보로 이미 겪은 함정). */
 .mf-dash-widget {
-  transition: border-color 0.15s ease;
+  transition:
+    transform 0.18s ease,
+    box-shadow 0.18s ease,
+    border-color 0.18s ease,
+    opacity 0.14s ease;
 }
 .mf-dash-widget:hover {
-  border-color: var(--mf-border-hover);
+  transform: translateY(-3px);
+  border-color: var(--mf-border-hover) !important;
+  box-shadow: var(--mf-card-shadow-hover) !important;
+}
+/* 누르는 순간 살짝 눌린다 — 홈 카드와 짝을 맞춘다. 다만 "열기" 버튼을 누르는
+   동작이 대부분이라 카드 자체는 아주 조금만 반응한다. */
+.mf-dash-widget:active {
+  transform: translateY(-1px) scale(0.997);
+  transition: transform 0.07s ease;
 }
 @media (prefers-reduced-motion: reduce) {
+  .mf-dash-widget,
+  .mf-dash-widget:hover,
+  .mf-dash-widget:active {
+    transform: none;
+    transition: box-shadow 0.18s ease, border-color 0.18s ease, opacity 0.14s ease;
+  }
   .mf-dash-widget .mf-dash-open {
     transition: none;
     transform: none;

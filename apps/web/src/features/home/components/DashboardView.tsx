@@ -175,7 +175,7 @@ export function DashboardView({ state, view, controller, isMobile = false, onOpe
   const ghostRows = Math.max(2, Math.ceil(cellArea / cols)) + 3;
 
   return (
-    <div data-dashboard-view style={{ display: 'flex', flexDirection: 'column', animation: 'mf-fade .3s ease both', margin: isMobile ? '-16px -14px -32px' : '-24px -32px -44px' }}>
+    <div data-dashboard-view style={{ display: 'flex', flexDirection: 'column', margin: isMobile ? '-16px -14px -32px' : '-24px -32px -44px' }}>
       {/* 다크 히어로 — 대시보드 화면임을 한눈에 가르는 띠(디자인 원본 #332E29 고정:
           어두운 면이라 다크 테마에서도 그대로 성립한다). */}
       <div style={{ position: 'relative', background: '#332E29', padding: isMobile ? '20px 16px 18px' : '26px 32px 24px', display: 'flex', alignItems: 'flex-end', flexWrap: 'wrap', gap: 14, overflow: 'hidden' }}>
@@ -391,10 +391,11 @@ export function DashboardView({ state, view, controller, isMobile = false, onOpe
           홈의 전체 화면 로더까지 떠서, 누른 순간 대시보드 내용이 통째로 사라지고
           로딩만 남았다 — 지금은 대시보드가 그대로 보이는 위로 카드가 자라고, 로딩은
           그 카드 **안**의 스피너가 말한다(카드가 다 자라면 어차피 화면을 덮는다).
-          **body 포털인 이유**: 이 화면의 루트가 mf-fade(fill both)를 달고 있어
-          스태킹 컨텍스트가 영구로 남는다 — 그 안의 fixed는 z 260이어도 컨텍스트째
-          z auto로 깔려 LoadingOverlay(z 200)가 위에 그려졌다(실브라우저에서 확인,
-          #488 확인창과 같은 계열). */}
+          **body 포털인 이유**: 예전에 이 화면의 루트가 mf-fade(fill both)를 달고
+          있어 스태킹 컨텍스트가 영구로 남았다 — 그 안의 fixed는 z 260이어도
+          컨텍스트째 z auto로 깔려 LoadingOverlay(z 200)가 위에 그려졌다(실브라우저
+          확인, #488 확인창과 같은 계열). 그 애니메이션은 이제 없지만, 위젯 hover
+          떠오름(transform)도 같은 컨텍스트를 만들 수 있으므로 포털은 그대로 둔다. */}
       {launch &&
         createPortal(
         <div data-dash-launch style={{ position: 'fixed', inset: 0, zIndex: 260, pointerEvents: 'none' }}>
@@ -546,7 +547,8 @@ function DashWidget({ itemId, docId, size, committedSize, maxCols, edit, isMobil
         // 카드 전체는 더 이상 열기 대상이 아니다(요청: "열기" 버튼으로만) — 손가락
         // 커서를 띄우면 아무 데나 눌러도 열린다는 거짓 약속이 된다.
         cursor: edit && !isMobile ? 'grab' : 'default',
-        transition: 'border-color .14s ease, opacity .14s ease',
+        // transition은 여기서 주지 않는다 — 인라인이 `.mf-dash-widget`의 규칙(transform
+        // 포함)을 덮어 hover 떠오름이 전이 없이 툭 바뀐다(홈 카드에서 겪은 함정).
       }}
     >
       {/* 리사이즈 손잡이(편집 모드, 데스크톱) — 오른쪽 아래 모서리를 끌어 칸 수를
