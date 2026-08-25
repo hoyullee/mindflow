@@ -235,6 +235,9 @@ export interface HomeState {
   activeDash: string | null;
   /** LNB 대시보드 구획의 순서 바꾸기 모드(디자인의 ⠿ 토글). */
   dashReorder: boolean;
+  /** 대시보드 배치 편집 모드(히어로의 "편집" 토글) — 위젯 드래그 재배치·모서리
+   * 리사이즈·인라인 크기/제거가 열린다. 화면 상태라 저장되지 않는다. */
+  dashEdit: boolean;
   /** LNB 스페이스 구획의 순서 바꾸기 모드 — 대시보드와 같은 문법(요청). */
   spaceReorder: boolean;
   /** "보드 올리기" 피커. `null`이면 닫힘. */
@@ -452,6 +455,7 @@ export function initialHomeState(): HomeState {
     dashboards: [],
     activeDash: null,
     dashReorder: false,
+    dashEdit: false,
     spaceReorder: false,
     dashPicker: null,
     dashRename: null,
