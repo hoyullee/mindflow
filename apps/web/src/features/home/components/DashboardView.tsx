@@ -1,9 +1,10 @@
-import type { MouseEvent } from 'react';
+import { useRef, useState, type DragEvent as ReactDragEvent, type MouseEvent } from 'react';
+import { createPortal } from 'react-dom';
 import type { HomeController } from '../useHomeController';
 import type { HomeState } from '../types';
 import type { HomeViewModel, DocKindName } from '../viewModel';
 import { docKindOf } from '../viewModel';
-import { DASH_CAP, DASH_COLS, DASH_ROW_PX, parseSize } from '../dashboard/model';
+import { DASH_CAP, DASH_COLS, DASH_MIN_SIZE, DASH_ROW_PX, parseSize, sizesFor } from '../dashboard/model';
 import { widgetDataOf, type WidgetData, type WidgetKanban } from '../dashboard/widgetData';
 import { realPreview } from '../mapPreview';
 import { mapHref, readDocRaw } from '../storage';
@@ -74,12 +75,88 @@ interface Props {
   isMobile?: boolean;
 }
 
+/** 위젯을 여는 런치 전환의 재료 — 그 위젯의 화면 사각형에서 화면 전체로 펼쳐진다. */
+interface LaunchState {
+  x: number;
+  y: number;
+  w: number;
+  h: number;
+  name: string;
+  kindName: string;
+  space: string;
+}
+
 export function DashboardView({ state, view, controller, isMobile = false }: Props) {
+  // 편집 모드는 데스크톱 전용(1단계 합의 — 모바일 다듬기는 PR④). HTML5 드래그가
+  // 터치에서 발화하지 않고, 모서리 리사이즈도 마우스 전제다.
+  const edit = state.dashEdit && !isMobile;
+  const gridRef = useRef<HTMLDivElement | null>(null);
+  const [dragIdx, setDragIdx] = useState<number | null>(null);
+  // 리사이즈 중의 라이브 크기 — 커밋은 손을 뗄 때 한 번(undo·저장이 한 단계).
+  const [resize, setResize] = useState<{ itemId: string; size: string } | null>(null);
+  const resizeRef = useRef<{ itemId: string; size: string } | null>(null);
+  const [launch, setLaunch] = useState<LaunchState | null>(null);
+
   const dash = state.dashboards.find((d) => d.id === state.activeDash);
   if (!dash) return null;
   const { greeting, dateLine } = greetingNow();
   const others = state.dashboards.filter((d) => d.id !== dash.id);
   const cols = isMobile ? 2 : DASH_COLS;
+  const atCap = dash.items.length >= DASH_CAP;
+
+  /** 위젯 클릭 → 그 자리에서 화면 전체로 펼쳐지며 에디터로(디자인의 ghLaunch).
+   * 실제 이동은 `openWithLoader`의 타이머(900ms)가 하고, 이 오버레이는 그동안
+   * 로더 위(z 260)를 덮는다 — 이동하면 홈째 언마운트되며 스스로 사라진다. */
+  const launchOpen = (rect: DOMRect, docId: string, title: string, kindName: string, space: string) => {
+    if (launch) return; // 이미 여는 중 — 두 번째 클릭은 무시
+    setLaunch({ x: rect.left, y: rect.top, w: rect.width, h: rect.height, name: title, kindName, space });
+    controller.openWithLoader(mapHref(title, docId), title, docId);
+  };
+
+  /** 모서리 리사이즈(디자인 startResize) — 시작 사각형 기준으로 픽셀 → 칸 수 환산,
+   * 움직이는 동안은 라이브 상태만 갱신하고 손을 뗄 때 커밋한다. */
+  const startResize = (e: MouseEvent, itemId: string, kind: DocKindName, startSize: string) => {
+    e.preventDefault();
+    e.stopPropagation();
+    const el = (e.currentTarget as HTMLElement).closest('[data-dash-widget]');
+    const grid = gridRef.current;
+    if (!el || !grid) return;
+    const GAP = 14;
+    const cellW = (grid.getBoundingClientRect().width - GAP * (cols - 1)) / cols;
+    const start = el.getBoundingClientRect();
+    const [minC, minR] = DASH_MIN_SIZE[kind];
+    const move = (ev: globalThis.MouseEvent) => {
+      const w = ev.clientX - start.left;
+      const h = ev.clientY - start.top;
+      const cNew = Math.max(minC, Math.min(cols, Math.round((w + GAP) / (cellW + GAP))));
+      const rNew = Math.max(minR, Math.min(3, Math.round((h + GAP) / (DASH_ROW_PX + GAP))));
+      const size = `${cNew}x${rNew}`;
+      if (resizeRef.current?.size !== size) {
+        resizeRef.current = { itemId, size };
+        setResize({ itemId, size });
+      }
+    };
+    const up = () => {
+      window.removeEventListener('mousemove', move);
+      window.removeEventListener('mouseup', up);
+      const fin = resizeRef.current;
+      resizeRef.current = null;
+      setResize(null);
+      if (fin && fin.size !== startSize) controller.setDashItemSize(itemId, fin.size);
+    };
+    resizeRef.current = { itemId, size: startSize };
+    setResize({ itemId, size: startSize });
+    window.addEventListener('mousemove', move);
+    window.addEventListener('mouseup', up);
+  };
+
+  // 편집 모드의 고스트 격자 — 지금 배치가 차지하는 넓이에서 여유 행을 더해
+  // "놓을 수 있는 자리"를 보여 준다(디자인 editCells).
+  const cellArea = dash.items.reduce((a, it) => {
+    const [ic, ir] = parseSize(resize?.itemId === it.id ? resize.size : it.size);
+    return a + Math.min(ic, cols) * ir;
+  }, 0);
+  const ghostRows = Math.max(2, Math.ceil(cellArea / cols)) + 3;
 
   return (
     <div data-dashboard-view style={{ display: 'flex', flexDirection: 'column', animation: 'mf-fade .3s ease both', margin: isMobile ? '-16px -14px -32px' : '-24px -32px -44px' }}>
@@ -120,8 +197,39 @@ export function DashboardView({ state, view, controller, isMobile = false }: Pro
           </span>
         </div>
         <div style={{ position: 'relative', display: 'flex', alignItems: 'center', gap: 8, flexShrink: 0, paddingBottom: 2 }}>
-          {/* 배치 편집 모드(드래그·리사이즈)는 다음 단계 — 죽은 버튼을 두지 않는다.
-              크기·내리기·맨 앞으로는 위젯 우클릭 메뉴가 맡는다. */}
+          {/* 편집 토글(디자인) — 켜면 위젯 드래그 재배치·모서리 리사이즈·인라인
+              크기/제거가 열린다. 히어로가 고정 다크 면이라 색도 디자인 값 그대로. */}
+          {!isMobile && (
+            <button
+              type="button"
+              className="btn"
+              data-dash-edit-toggle
+              aria-pressed={edit}
+              onClick={controller.toggleDashEdit}
+              style={{
+                display: 'inline-flex',
+                alignItems: 'center',
+                gap: 7,
+                height: 32,
+                padding: '0 13px',
+                borderRadius: 999,
+                border: `1px solid ${edit ? '#F2A184' : 'rgba(247,239,232,.28)'}`,
+                background: edit ? '#F2A184' : 'rgba(247,239,232,.07)',
+                color: edit ? '#332E29' : '#F7EFE8',
+                fontSize: 12.5,
+                fontWeight: 700,
+                cursor: 'pointer',
+                whiteSpace: 'nowrap',
+                transition: 'background .14s ease, color .14s ease',
+              }}
+            >
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                <path d="M12 20h9" />
+                <path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4Z" />
+              </svg>
+              {edit ? '편집 끝내기' : '편집'}
+            </button>
+          )}
           <button
             type="button"
             className="btn"
@@ -153,6 +261,16 @@ export function DashboardView({ state, view, controller, isMobile = false }: Pro
 
       {/* 격자 바닥 — 캔버스 같은 점 격자(디자인). */}
       <div style={{ padding: isMobile ? '14px 14px 32px' : '18px 32px 44px', display: 'flex', flexDirection: 'column', gap: 14, backgroundImage: 'radial-gradient(var(--mf-dot-grid) 1px, transparent 1px)', backgroundSize: '17px 17px', minHeight: 420, flex: 1 }}>
+        {/* 편집 안내 띠(디자인) — 무엇을 할 수 있는지와 종류별 최소 크기를 말한다. */}
+        {edit && (
+          <div data-dash-edit-banner style={{ display: 'flex', alignItems: 'center', gap: 9, padding: '10px 14px', borderRadius: 13, background: 'var(--mf-accent-soft)', border: '1px solid rgba(var(--mf-accent-rgb), .25)', animation: 'mf-dim-in .2s ease both' }}>
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="var(--mf-accent-strong)" strokeWidth="2" strokeLinecap="round" aria-hidden="true" style={{ flexShrink: 0 }}>
+              <circle cx="12" cy="12" r="9" />
+              <path d="M12 11v5M12 8h.01" />
+            </svg>
+            <span style={{ fontSize: 12, color: 'var(--mf-subtext)' }}>카드를 끌어 순서를 바꾸고, 오른쪽 아래 모서리를 끌어 크기를 조절해요. 칸반 보드는 3×2부터, 마인드맵과 화이트보드는 1×1부터 놓을 수 있어요.</span>
+          </div>
+        )}
         {dash.items.length === 0 ? (
           <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 12, padding: '70px 24px', borderRadius: 20, border: '1.5px dashed var(--mf-border)', background: 'var(--mf-card)' }}>
             <span style={{ width: 46, height: 46, borderRadius: 15, background: 'var(--mf-accent-soft)', color: 'var(--mf-accent-strong)', display: 'inline-flex', alignItems: 'center', justifyContent: 'center' }}>
@@ -175,20 +293,125 @@ export function DashboardView({ state, view, controller, isMobile = false }: Pro
             </button>
           </div>
         ) : (
-          <div style={{ position: 'relative', display: 'grid', gridTemplateColumns: `repeat(${cols}, minmax(0, 1fr))`, gridAutoRows: DASH_ROW_PX, gridAutoFlow: 'row dense', gap: 14 }}>
-            {dash.items.map((it) => (
-              <DashWidget key={it.id} itemId={it.id} docId={it.docId} size={it.size} maxCols={cols} state={state} view={view} controller={controller} />
+          <div ref={gridRef} data-dash-grid style={{ position: 'relative', display: 'grid', gridTemplateColumns: `repeat(${cols}, minmax(0, 1fr))`, gridAutoRows: DASH_ROW_PX, gridAutoFlow: 'row dense', gap: 14 }}>
+            {/* 고스트 격자(디자인 editCells) — 놓을 수 있는 자리를 점선 칸으로 보여 준다.
+                포인터를 받지 않아 드래그·리사이즈를 방해하지 않는다. */}
+            {edit && (
+              <div data-dash-ghost-cells aria-hidden style={{ position: 'absolute', inset: 0, display: 'grid', gridTemplateColumns: `repeat(${cols}, minmax(0, 1fr))`, gridAutoRows: DASH_ROW_PX, gap: 14, pointerEvents: 'none', overflow: 'hidden' }}>
+                {Array.from({ length: ghostRows * cols }, (_, i) => (
+                  <span key={i} style={{ border: '1.5px dashed var(--mf-border)', borderRadius: 16, background: 'rgba(var(--mf-accent-rgb), .04)' }} />
+                ))}
+              </div>
+            )}
+            {dash.items.map((it, idx) => (
+              <DashWidget
+                key={it.id}
+                itemId={it.id}
+                docId={it.docId}
+                size={resize?.itemId === it.id ? resize.size : it.size}
+                committedSize={it.size}
+                maxCols={cols}
+                edit={edit}
+                dragging={dragIdx === idx}
+                resizing={resize?.itemId === it.id ? resize.size : null}
+                state={state}
+                view={view}
+                controller={controller}
+                onDragStartW={() => setDragIdx(idx)}
+                onDragEndW={() => setDragIdx(null)}
+                onDragOverW={(e) => {
+                  if (dragIdx !== null && dragIdx !== idx) e.preventDefault();
+                }}
+                onDropW={(e) => {
+                  e.preventDefault();
+                  if (dragIdx !== null && dragIdx !== idx) controller.moveDashItem(dragIdx, idx);
+                  setDragIdx(null);
+                }}
+                onResizeStart={startResize}
+                onLaunch={launchOpen}
+              />
             ))}
+            {/* 편집 중 여유 드롭 공간 — 맨 아래로 끌어낼 자리(디자인 editBottomRow). */}
+            {edit && !atCap && <span aria-hidden style={{ gridColumn: '1 / -1', gridRow: 'span 1', visibility: 'hidden', pointerEvents: 'none' }} />}
           </div>
         )}
       </div>
+
+      {/* 런치 전환(디자인 ghLaunch) — 위젯이 제자리에서 화면 전체로 펼쳐지며 열린다.
+          카드의 기본 스타일이 곧 도착 상태라, 움직임을 줄인 사용자에게는(애니메이션
+          off) 전체 화면 로딩 카드로 조용히 축퇴한다. 이동(900ms)과 함께 홈째
+          언마운트되므로 뒷정리가 필요 없다.
+          **body 포털인 이유**: 이 화면의 루트가 mf-fade(fill both)를 달고 있어
+          스태킹 컨텍스트가 영구로 남는다 — 그 안의 fixed는 z 260이어도 컨텍스트째
+          z auto로 깔려 LoadingOverlay(z 200)가 위에 그려졌다(실브라우저에서 확인,
+          #488 확인창과 같은 계열). */}
+      {launch &&
+        createPortal(
+        <div data-dash-launch style={{ position: 'fixed', inset: 0, zIndex: 260, pointerEvents: 'none' }}>
+          <div style={{ position: 'absolute', inset: 0, background: 'var(--mf-bg)', animation: 'mf-dim-in .5s cubic-bezier(.4,0,.2,1) both' }} />
+          <div
+            style={{
+              position: 'absolute',
+              left: 0,
+              top: 0,
+              width: '100vw',
+              height: '100vh',
+              borderRadius: 0,
+              background: 'var(--mf-card)',
+              border: '1px solid var(--mf-border)',
+              boxShadow: '0 40px 90px -40px rgba(46,42,38,.6)',
+              overflow: 'hidden',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              animation: 'mf-dash-launch .56s cubic-bezier(.32,.72,0,1) both',
+              ['--lx' as never]: `${launch.x}px`,
+              ['--ly' as never]: `${launch.y}px`,
+              ['--lw' as never]: `${launch.w}px`,
+              ['--lh' as never]: `${launch.h}px`,
+            }}
+          >
+            <div data-launch-copy style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 10, animation: 'mf-dim-in .3s ease .26s both' }}>
+              <span aria-hidden style={{ width: 34, height: 34, borderRadius: 999, border: '2.5px solid var(--mf-accent-soft)', borderTopColor: 'var(--mf-accent)', animation: 'mf-spin .7s linear infinite', display: 'block' }} />
+              <span style={{ fontSize: 14, fontWeight: 800, letterSpacing: '-.02em', color: 'var(--mf-text)' }}>{launch.name}</span>
+              <span style={{ fontSize: 11.5, color: 'var(--mf-muted)' }}>
+                {launch.kindName} · {launch.space} 여는 중
+              </span>
+            </div>
+          </div>
+        </div>,
+        document.body,
+      )}
     </div>
   );
 }
 
 // ── 위젯 ─────────────────────────────────────────────────────────────────
 
-function DashWidget({ itemId, docId, size, maxCols, state, view, controller }: { itemId: string; docId: string; size: string; maxCols: number; state: HomeState; view: HomeViewModel; controller: HomeController }) {
+interface DashWidgetProps {
+  itemId: string;
+  docId: string;
+  /** 지금 그릴 크기 — 리사이즈 중에는 라이브 값이 들어온다. */
+  size: string;
+  /** 저장된 크기 — 리사이즈 시작점·크기 순환 버튼의 기준. */
+  committedSize: string;
+  maxCols: number;
+  edit: boolean;
+  dragging: boolean;
+  /** 이 위젯이 리사이즈 중이면 그 라이브 크기(`"3x2"`), 아니면 null. */
+  resizing: string | null;
+  state: HomeState;
+  view: HomeViewModel;
+  controller: HomeController;
+  onDragStartW: () => void;
+  onDragEndW: () => void;
+  onDragOverW: (e: ReactDragEvent) => void;
+  onDropW: (e: ReactDragEvent) => void;
+  onResizeStart: (e: MouseEvent, itemId: string, kind: DocKindName, startSize: string) => void;
+  onLaunch: (rect: DOMRect, docId: string, title: string, kindName: string, space: string) => void;
+}
+
+function DashWidget({ itemId, docId, size, committedSize, maxCols, edit, dragging, resizing, state, view, controller, onDragStartW, onDragEndW, onDragOverW, onDropW, onResizeStart, onLaunch }: DashWidgetProps) {
   const raw = state.previewDocs[docId] || readDocRaw(docId) || null;
   const resolved = !!raw || !!state.previewResolved[docId];
   const kind = docKindOf('', docId, state.previewDocs);
@@ -206,14 +429,27 @@ function DashWidget({ itemId, docId, size, maxCols, state, view, controller }: {
 
   const open = (e: MouseEvent) => {
     e.stopPropagation();
-    if (!title) return;
-    controller.openWithLoader(mapHref(title, docId), title, docId);
+    if (!title || edit) return; // 편집 중의 클릭은 배치 조작이지 열기가 아니다(디자인 openBoard)
+    const el = (e.currentTarget as HTMLElement).closest('[data-dash-widget]');
+    if (!el) return;
+    onLaunch(el.getBoundingClientRect(), docId, title, meta.name, space || '');
   };
   const onCtx = (e: MouseEvent) => {
     e.preventDefault();
     e.stopPropagation();
     controller.openCtxMenuAt(e.clientX, e.clientY, { kind: 'widget', id: itemId });
   };
+  const presets = sizesFor(kind);
+  const cycleSize = (e: MouseEvent) => {
+    e.stopPropagation();
+    const next = presets[(presets.indexOf(committedSize) + 1) % presets.length]!;
+    controller.setDashItemSize(itemId, next);
+  };
+  const removeSelf = (e: MouseEvent) => {
+    e.stopPropagation();
+    controller.removeDashItem(itemId);
+  };
+  const sizeLabel = (resizing ?? committedSize).replace('x', '×');
 
   return (
     <div
@@ -221,6 +457,15 @@ function DashWidget({ itemId, docId, size, maxCols, state, view, controller }: {
       onContextMenu={onCtx}
       onClick={open}
       className="mf-dash-widget"
+      draggable={edit}
+      onDragStart={(e) => {
+        if (!edit) return;
+        onDragStartW();
+        if (e.dataTransfer) e.dataTransfer.effectAllowed = 'move';
+      }}
+      onDragEnd={onDragEndW}
+      onDragOver={onDragOverW}
+      onDrop={onDropW}
       style={{
         gridColumn: `span ${c}`,
         gridRow: `span ${rows}`,
@@ -229,15 +474,45 @@ function DashWidget({ itemId, docId, size, maxCols, state, view, controller }: {
         minWidth: 0,
         position: 'relative',
         borderRadius: 16,
-        border: '1px solid var(--mf-border)',
+        border: `1px solid ${dragging || resizing ? 'var(--mf-accent)' : 'var(--mf-border)'}`,
         background: 'var(--mf-card)',
         overflow: 'hidden',
         boxShadow: '0 2px 5px -3px rgba(46,42,38,.14), 0 20px 36px -30px rgba(46,42,38,.5)',
-        cursor: title ? 'pointer' : 'default',
+        opacity: dragging ? 0.45 : 1,
+        cursor: edit ? 'grab' : title ? 'pointer' : 'default',
+        transition: 'border-color .14s ease, opacity .14s ease',
       }}
     >
-      {/* hover 열기 알약(디자인) — 클릭 전체가 열기이지만, 무엇이 일어날지 미리 말해 준다. */}
-      {title && (
+      {/* 리사이즈 손잡이(편집 모드) — 오른쪽 아래 모서리를 끌어 칸 수를 바꾼다. */}
+      {edit && (
+        <span
+          data-dash-resize
+          title="모서리를 끌어 크기 조절"
+          onMouseDown={(e) => onResizeStart(e, itemId, kind, committedSize)}
+          style={{ position: 'absolute', right: 0, bottom: 0, zIndex: 5, width: 22, height: 22, cursor: 'nwse-resize', display: 'flex', alignItems: 'flex-end', justifyContent: 'flex-end', padding: 4 }}
+        >
+          <svg width="11" height="11" viewBox="0 0 12 12" fill="none" stroke="var(--mf-faint2)" strokeWidth="1.6" strokeLinecap="round" aria-hidden="true">
+            <path d="M11 5 5 11M11 9l-2 2" />
+          </svg>
+        </span>
+      )}
+      {/* 리사이즈 중 — 점선 테두리 + 라이브 크기 라벨(디자인). 커밋은 손을 뗄 때. */}
+      {resizing && (
+        <span data-dash-resizing style={{ position: 'absolute', inset: 0, zIndex: 4, borderRadius: 15, border: '1.5px dashed var(--mf-accent)', background: 'rgba(var(--mf-accent-rgb), .08)', display: 'flex', alignItems: 'center', justifyContent: 'center', pointerEvents: 'none' }}>
+          <span style={{ padding: '5px 11px', borderRadius: 999, background: '#332E29', color: '#FBEDE6', ...META_MONO, fontSize: 12, fontWeight: 700 }}>{sizeLabel}</span>
+        </span>
+      )}
+      {/* 1×1의 편집 컨트롤 — 머리에 자리가 없어 아래 구석에 띄운다(디자인 overlayControls). */}
+      {edit && c === 1 && (
+        <span style={{ position: 'absolute', right: 22, bottom: 7, zIndex: 3, display: 'flex', alignItems: 'center', gap: 4 }}>
+          <EditSizeButton label={sizeLabel} onClick={cycleSize} overlay />
+          <EditRemoveButton onClick={removeSelf} overlay />
+        </span>
+      )}
+
+      {/* hover 열기 알약(디자인) — 클릭 전체가 열기이지만, 무엇이 일어날지 미리 말해 준다.
+          편집 중에는 감춘다(그 시간의 클릭은 열기가 아니다 — showOpen: !editMode). */}
+      {title && !edit && (
         <button
           type="button"
           className="btn mf-dash-open"
@@ -291,13 +566,20 @@ function DashWidget({ itemId, docId, size, maxCols, state, view, controller }: {
           <span style={{ fontSize: 10.5, color: 'var(--mf-muted)', minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{[space, when].filter(Boolean).join(' · ')}</span>
         </span>
         {/* 1단계는 전부 보기 전용 — 대시보드에서 고치는 것은 다음 단계(칸반 열 이동)에서 열린다. */}
-        {c >= 2 && (
+        {c >= 2 && !edit && (
           <span title="대시보드에서는 볼 수만 있어요. 편집은 열어서 하세요" style={{ display: 'inline-flex', alignItems: 'center', gap: 4, height: 19, padding: '0 7px', flexShrink: 0, borderRadius: 999, background: 'var(--mf-bg)', color: 'var(--mf-muted)', fontSize: 9.5, fontWeight: 700, whiteSpace: 'nowrap' }}>
             <svg width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
               <path d="M2 12s3.6-6 10-6 10 6 10 6-3.6 6-10 6-10-6-10-6z" />
               <circle cx="12" cy="12" r="2.4" />
             </svg>
             보기 전용
+          </span>
+        )}
+        {/* 편집 컨트롤(디자인 inlineControls) — 크기 순환 + 내리기. 배지 자리를 이어받는다. */}
+        {edit && c >= 2 && (
+          <span style={{ display: 'flex', alignItems: 'center', gap: 3, flexShrink: 0 }}>
+            <EditSizeButton label={sizeLabel} onClick={cycleSize} />
+            <EditRemoveButton onClick={removeSelf} />
           </span>
         )}
       </div>
@@ -401,6 +683,70 @@ function SceneBody({ raw, hue }: { raw: string; hue: string }) {
       <div aria-hidden style={{ position: 'absolute', inset: 0, backgroundImage: 'radial-gradient(var(--mf-dot-grid) 1px, transparent 1px)', backgroundSize: '16px 16px' }} />
       <span data-dash-scene style={{ position: 'absolute', inset: 0, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>{scene ?? <span style={{ fontSize: 11.5, color: 'var(--mf-faint)' }}>내용이 아직 없어요</span>}</span>
     </div>
+  );
+}
+
+/** 편집 모드의 크기 순환 버튼 — 누를 때마다 그 종류가 놓일 수 있는 다음 크기로
+ * (디자인 onCycle). 정밀한 조절은 모서리 드래그가 맡는다. */
+function EditSizeButton({ label, onClick, overlay = false }: { label: string; onClick: (e: MouseEvent) => void; overlay?: boolean }) {
+  return (
+    <button
+      type="button"
+      className="btn"
+      title="크기 바꾸기"
+      data-dash-cycle
+      onClick={onClick}
+      style={{
+        height: 22,
+        minWidth: 24,
+        padding: '0 6px',
+        borderRadius: 7,
+        border: '1px solid var(--mf-border)',
+        background: overlay ? 'rgba(255,253,251,.94)' : 'var(--mf-bg)',
+        color: 'var(--mf-subtext)',
+        display: 'inline-flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+        cursor: 'pointer',
+        ...META_MONO,
+        fontSize: 8.5,
+        fontWeight: 800,
+        ...(overlay ? { backdropFilter: 'blur(6px)' } : null),
+      }}
+    >
+      {label}
+    </button>
+  );
+}
+
+/** 편집 모드의 내리기 ✕ — 우클릭 메뉴의 "대시보드에서 내리기"와 같은 동작. */
+function EditRemoveButton({ onClick, overlay = false }: { onClick: (e: MouseEvent) => void; overlay?: boolean }) {
+  return (
+    <button
+      type="button"
+      className="btn"
+      title="대시보드에서 내리기"
+      aria-label="대시보드에서 내리기"
+      data-dash-remove
+      onClick={onClick}
+      style={{
+        width: 22,
+        height: 22,
+        borderRadius: 7,
+        border: '1px solid var(--mf-border)',
+        background: overlay ? 'rgba(255,253,251,.94)' : 'var(--mf-bg)',
+        color: 'var(--mf-faint)',
+        display: 'inline-flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+        cursor: 'pointer',
+        ...(overlay ? { backdropFilter: 'blur(6px)' } : null),
+      }}
+    >
+      <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" aria-hidden="true">
+        <path d="M6 6l12 12M18 6 6 18" />
+      </svg>
+    </button>
   );
 }
 

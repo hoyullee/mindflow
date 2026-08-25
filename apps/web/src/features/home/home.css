@@ -670,3 +670,30 @@ input[type='search']::-webkit-search-results-decoration {
     transform: none;
   }
 }
+
+/* 대시보드 런치 전환(디자인 ghLaunch) — 위젯이 제자리 사각형(--lx/--ly/--lw/--lh)
+   에서 화면 전체로 펼쳐진다. 카드의 인라인 기본 스타일이 곧 도착 상태라, 아래
+   reduced-motion 규칙이 애니메이션을 끄면 전체 화면 로딩 카드로 조용히 축퇴한다. */
+@keyframes mf-dash-launch {
+  from {
+    left: var(--lx);
+    top: var(--ly);
+    width: var(--lw);
+    height: var(--lh);
+    border-radius: 16px;
+  }
+  to {
+    left: 0;
+    top: 0;
+    width: 100vw;
+    height: 100vh;
+    border-radius: 0;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  /* 스피너(로딩 표시)는 남긴다 — 끄는 것은 펼침·페이드뿐. */
+  [data-dash-launch] > div,
+  [data-dash-launch] [data-launch-copy] {
+    animation: none !important;
+  }
+}

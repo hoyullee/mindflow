@@ -99,8 +99,8 @@ function seedSpaces(withMap = false) {
 }
 
 /** 워크스페이스 블롭에 남은 dashboards. */
-function savedDashboards(): { id: string; name: string; items: { docId: string; size: string }[] }[] {
-  const ws = JSON.parse(localStorage.getItem('mf_spaces') || '{}') as { dashboards?: { id: string; name: string; items: { docId: string; size: string }[] }[] };
+function savedDashboards(): { id: string; name: string; items: { id: string; docId: string; size: string }[] }[] {
+  const ws = JSON.parse(localStorage.getItem('mf_spaces') || '{}') as { dashboards?: { id: string; name: string; items: { id: string; docId: string; size: string }[] }[] };
   return ws.dashboards ?? [];
 }
 
@@ -287,5 +287,128 @@ describe('대시보드 ① — LNB·보기·피커', () => {
     fireEvent.click(within(menu).getByRole('menuitem', { name: '대시보드에서 내리기' }));
     await waitFor(() => expect(container.querySelector('[data-dash-widget]')).toBeNull());
     await waitFor(() => expect(savedDashboards()[0]?.items).toEqual([]));
+  });
+});
+
+// ── 대시보드 ② — 배치 편집 모드 + 런치 전환 ────────────────────────────────
+
+/** 위젯 두 개가 올라간 대시보드를 연 상태로 시작한다. */
+async function openSeededDash() {
+  localStorage.setItem(
+    'mf_spaces',
+    JSON.stringify({
+      spaces: [
+        {
+          id: 's1',
+          name: '일반 공간',
+          home: true,
+          color: '#f0663f',
+          maps: [
+            { title: '기획맵', when: '방금', hue: '#f0663f', docId: 'doc-a' },
+            { title: '둘째맵', when: '방금', hue: '#3f8fd0', docId: 'doc-b' },
+          ],
+          folders: [],
+        },
+      ],
+      mapFolders: {},
+      dashboards: [{ id: 'd1', name: '대시보드', items: [{ id: 'w1', docId: 'doc-a', size: '2x2' }, { id: 'w2', docId: 'doc-b', size: '2x2' }] }],
+    }),
+  );
+  const utils = renderHome([META('doc-a', '기획맵'), META('doc-b', '둘째맵')], { 'doc-a': MAP_BODY, 'doc-b': { ...MAP_BODY, title: '둘째맵' } });
+  const aside = await sidebarOf(utils.container);
+  const dashRow = within(aside)
+    .getAllByRole('button')
+    .find((el) => el.classList.contains('nav-item') && (el.textContent || '').includes('대시보드') && !(el.textContent || '').includes('새 대시보드')) as HTMLElement;
+  fireEvent.click(dashRow);
+  await waitFor(() => expect(utils.container.querySelectorAll('[data-dash-widget]').length).toBe(2));
+  return utils;
+}
+
+describe('대시보드 ② — 배치 편집 모드·런치 전환', () => {
+  it('편집 토글: 안내 띠·고스트 격자·드래그 가능·인라인 컨트롤이 열리고, 열기 알약은 감춘다', async () => {
+    const user = userEvent.setup();
+    const { container } = await openSeededDash();
+
+    // 평소: 열기 알약 있음, 편집 장치 없음
+    expect(container.querySelector('.mf-dash-open')).toBeTruthy();
+    expect(container.querySelector('[data-dash-ghost-cells]')).toBeNull();
+
+    await user.click(screen.getByRole('button', { name: '편집' }));
+    expect(screen.getByText(/카드를 끌어 순서를 바꾸고/)).toBeTruthy();
+    expect(container.querySelector('[data-dash-ghost-cells]')).toBeTruthy();
+    const widget = container.querySelector('[data-dash-widget]') as HTMLElement;
+    expect(widget.getAttribute('draggable')).toBe('true');
+    expect(container.querySelector('.mf-dash-open')).toBeNull();
+    expect(widget.querySelector('[data-dash-resize]')).toBeTruthy();
+    expect(widget.querySelector('[data-dash-cycle]')?.textContent).toBe('2×2');
+    expect(widget.querySelector('[data-dash-remove]')).toBeTruthy();
+
+    // 끝내면 원상 복귀
+    await user.click(screen.getByRole('button', { name: '편집 끝내기' }));
+    expect(container.querySelector('[data-dash-ghost-cells]')).toBeNull();
+    expect(container.querySelector('.mf-dash-open')).toBeTruthy();
+  });
+
+  it('드래그 재배치: 첫 위젯을 둘째 자리에 놓으면 순서가 바뀌어 저장된다', async () => {
+    const user = userEvent.setup();
+    const { container } = await openSeededDash();
+    await user.click(screen.getByRole('button', { name: '편집' }));
+
+    const [w1, w2] = Array.from(container.querySelectorAll('[data-dash-widget]')) as HTMLElement[];
+    fireEvent.dragStart(w1!);
+    fireEvent.dragOver(w2!);
+    fireEvent.drop(w2!);
+
+    await waitFor(() => {
+      const order = Array.from(container.querySelectorAll('[data-dash-widget]')).map((el) => el.getAttribute('data-dash-widget'));
+      expect(order).toEqual(['w2', 'w1']);
+    });
+    await waitFor(() => expect(savedDashboards()[0]?.items.map((it) => it.docId)).toEqual(['doc-b', 'doc-a']));
+  });
+
+  it('크기 순환·내리기: 인라인 버튼이 다음 크기로 저장하고, ✕는 위젯을 내린다', async () => {
+    const user = userEvent.setup();
+    const { container } = await openSeededDash();
+    await user.click(screen.getByRole('button', { name: '편집' }));
+
+    const widget = container.querySelector('[data-dash-widget="w1"]') as HTMLElement;
+    await user.click(widget.querySelector('[data-dash-cycle]') as HTMLElement);
+    // 맵의 크기 목록에서 2x2 다음은 3x2
+    await waitFor(() => expect(savedDashboards()[0]?.items.find((it) => it.id === 'w1')?.size).toBe('3x2'));
+
+    await user.click(widget.querySelector('[data-dash-remove]') as HTMLElement);
+    await waitFor(() => expect(container.querySelectorAll('[data-dash-widget]').length).toBe(1));
+    await waitFor(() => expect(savedDashboards()[0]?.items.map((it) => it.id)).toEqual(['w2']));
+  });
+
+  it('리사이즈 손잡이: 누르면 라이브 오버레이(크기 라벨)가 뜨고, 그대로 떼면 크기가 바뀌지 않는다', async () => {
+    const user = userEvent.setup();
+    const { container } = await openSeededDash();
+    await user.click(screen.getByRole('button', { name: '편집' }));
+
+    const widget = container.querySelector('[data-dash-widget="w1"]') as HTMLElement;
+    fireEvent.mouseDown(widget.querySelector('[data-dash-resize]') as HTMLElement);
+    expect(widget.querySelector('[data-dash-resizing]')?.textContent).toBe('2×2');
+    fireEvent.mouseUp(window);
+    expect(widget.querySelector('[data-dash-resizing]')).toBeNull();
+    expect(savedDashboards()[0]?.items.find((it) => it.id === 'w1')?.size).toBe('2x2');
+  });
+
+  it('위젯 클릭 = 런치 전환(이름·"여는 중") — 편집 중에는 열리지 않는다', async () => {
+    const user = userEvent.setup();
+    const { container } = await openSeededDash();
+
+    // 편집 중 클릭은 열지 않는다
+    await user.click(screen.getByRole('button', { name: '편집' }));
+    fireEvent.click(container.querySelector('[data-dash-widget="w1"]') as HTMLElement);
+    // 포털(body)로 그려지므로 document에서 찾는다
+    expect(document.querySelector('[data-dash-launch]')).toBeNull();
+    await user.click(screen.getByRole('button', { name: '편집 끝내기' }));
+
+    fireEvent.click(container.querySelector('[data-dash-widget="w1"]') as HTMLElement);
+    const overlay = document.querySelector('[data-dash-launch]') as HTMLElement;
+    expect(overlay).toBeTruthy();
+    expect(overlay.textContent).toContain('기획맵');
+    expect(overlay.textContent).toContain('여는 중');
   });
 });

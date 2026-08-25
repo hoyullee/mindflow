@@ -962,12 +962,14 @@ export function useHomeController() {
   // ---- dashboards (위젯 배치) — 디자인 원본 `Geurio 홈 대시보드.dc.html` ----
   const selectDash = (id: string) => {
     if (!state.dashboards.some((d) => d.id === id)) return;
-    patch({ activeDash: id, dashReorder: false, curFolder: null, search: '', searchInput: '' });
+    patch({ activeDash: id, dashReorder: false, dashEdit: false, curFolder: null, search: '', searchInput: '' });
   };
   const createDash = () => {
     const d: DashboardData = { id: `d${Date.now().toString(36)}${Math.random().toString(36).slice(2, 6)}`, name: nextDashName(state.dashboards), items: [] };
-    patch({ dashboards: [...state.dashboards, d], activeDash: d.id, dashReorder: false });
+    patch({ dashboards: [...state.dashboards, d], activeDash: d.id, dashReorder: false, dashEdit: false });
   };
+  /** 배치 편집 모드(히어로 "편집") — 드래그 재배치·리사이즈·인라인 크기/제거가 열린다. */
+  const toggleDashEdit = () => patch({ dashEdit: !state.dashEdit, ctxMenu: null });
   const toggleDashReorder = () => patch({ dashReorder: !state.dashReorder, spaceReorder: false });
   const toggleSpaceReorder = () => patch({ spaceReorder: !state.spaceReorder, dashReorder: false });
   /** 순서 바꾸기 — 위/아래 버튼과 드래그가 같은 이동을 쓴다(디자인). 맨 위가 기본. */
@@ -1025,6 +1027,9 @@ export function useHomeController() {
     });
   };
   const removeDashItem = (itemId: string) => patchActiveDash((d) => ({ ...d, items: d.items.filter((it) => it.id !== itemId) }));
+  /** 위젯 드래그 재배치 — 잡은 위젯을 놓은 자리에 끼운다(디자인의 splice, dense 격자가
+   * 나머지를 다시 흘린다). */
+  const moveDashItem = (from: number, to: number) => patchActiveDash((d) => ({ ...d, items: moveInList(d.items, from, to) }));
   const setDashItemSize = (itemId: string, size: string) => patchActiveDash((d) => ({ ...d, items: d.items.map((it) => (it.id === itemId ? { ...it, size } : it)) }));
   /** 맨 앞으로 — dense 배치라 앞에 둘수록 좌상단에 가깝게 놓인다. */
   const dashItemToFront = (itemId: string) =>
@@ -2436,6 +2441,8 @@ export function useHomeController() {
     setDashPickSize,
     confirmDashPick,
     removeDashItem,
+    toggleDashEdit,
+    moveDashItem,
     setDashItemSize,
     dashItemToFront,
     refreshDashItem,
