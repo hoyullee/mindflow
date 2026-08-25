@@ -545,6 +545,23 @@ describe('대시보드 ③ — 칸반 카드 열 이동', () => {
     await user.click(screen.getByRole('button', { name: /^편집$/ }));
     expect((container.querySelector('[data-dash-card="k1"]') as HTMLElement).getAttribute('draggable')).toBe('false');
   });
+
+  it('위젯의 열·카드는 에디터 디자인 그대로 — 열 폭 308·CardFace 곁정보(기한·댓글·담당) 자리 유지(제보)', async () => {
+    const { container } = await openKanbanDash();
+
+    // 열 = 에디터 Column과 같은 스펙(실제 폭 + 그림자 + 머리의 점·제목·카드 수)
+    const col = container.querySelector('[data-dash-col="c1"]') as HTMLElement;
+    expect(col.style.width).toBe('308px');
+    expect(col.style.boxShadow).toContain('40px'); // COL_SHADOW
+    expect(within(col).getByText('할 일')).toBeTruthy();
+
+    // 카드 = 에디터 CardFace 그대로 — 곁정보는 비어 있어도 자리를 지킨다(#448):
+    // 기한 없음 → "날짜 없음", 댓글 0, 담당 없음 → 점선 원
+    const card = container.querySelector('[data-dash-card="k1"]') as HTMLElement;
+    expect(within(card).getByText('날짜 없음')).toBeTruthy();
+    expect(card.querySelector('[data-card-comment-count="k1"]')?.textContent).toContain('0');
+    expect(card.querySelector('[data-card-no-owner]')).toBeTruthy();
+  });
 });
 
 // ── 대시보드 ④ — 모바일 다듬기 ────────────────────────────────────────────

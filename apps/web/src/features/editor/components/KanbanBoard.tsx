@@ -35,7 +35,9 @@ import { useParticipantAvatars } from '../useParticipantAvatars';
 import { BoardMenu, CardMenu, QuickComment } from './KanbanCardMenu';
 import { KanbanList, KanbanTimeline } from './KanbanViews';
 
-const COL_W = 308;
+// 홈 대시보드의 칸반 위젯이 같은 값을 그대로 그린다(제보: 위젯이 실제 에디터와
+// 달라 보이면 안 된다) — 열 폭·그림자·카드 면(cardBase)이 여기서만 정의된다.
+export const COL_W = 308;
 const COL_GAP = 16;
 /** 좌상단 문서 칩(DocChip)이 차지하는 띠 — `left:16, top:16`에 높이 약 54px. */
 const CHIP_TOP = 16;
@@ -46,7 +48,7 @@ const CHIP_RESERVE = 236 + CHIP_TOP + 16;
 /** 모바일에서 칩 아래로 내려설 때의 위 여백. */
 const CHIP_CLEARANCE = 78;
 /** 열 상자의 그림자 — 배경에서 또렷이 갈리게(디자인 원본). 열 추가 타일도 같은 값. */
-const COL_SHADOW = '0 18px 40px -34px rgba(46,42,38,.4)';
+export const COL_SHADOW = '0 18px 40px -34px rgba(46,42,38,.4)';
 /** 긴급 배지 — 테마와 무관한 경고색(어느 팔레트에서나 "위험"으로 읽혀야 한다). */
 const URGENT = '#d9534f';
 /** 긴급 카드의 **왼쪽 테두리** 색 — 디자인 원본(`kb-card`의 `accentColor`) 값 그대로.
@@ -1483,8 +1485,8 @@ function CalendarGlyph() {
   );
 }
 
-/** 카드 배경 계열 — 카드와 고스트가 같은 값을 쓰도록 한 곳에. */
-function cardBase(card: KanbanCard, th: Theme, selected: boolean): CSSProperties {
+/** 카드 배경 계열 — 카드와 고스트(그리고 대시보드 위젯)가 같은 값을 쓰도록 한 곳에. */
+export function cardBase(card: KanbanCard, th: Theme, selected: boolean): CSSProperties {
   const bg = card.bg || th.panel;
   // 긴급은 얹은 획이 아니라 **카드의 왼쪽 테두리 자체**다(디자인 원본 `kb-card`:
   // `border: 1px solid cardBorder` + `border-left: 3px solid accentColor`). 그래서

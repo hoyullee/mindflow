@@ -1,5 +1,11 @@
-import { useRef, useState, type DragEvent as ReactDragEvent, type MouseEvent } from 'react';
+import { useEffect, useRef, useState, type DragEvent as ReactDragEvent, type MouseEvent } from 'react';
 import { createPortal } from 'react-dom';
+import { cardsInColumn } from '@mindflow/mindmap-core';
+import { useCommentStore } from '../../../adapters/BackendContext';
+import { CardFace, cardBase, COL_W, COL_SHADOW } from '../../editor/components/KanbanBoard';
+import { hexA, themeOf } from '../../editor/theme';
+import { boardSurface, columnBg, columnColor, innerLine } from '../../editor/kanbanMeta';
+import { useParticipantAvatars } from '../../editor/useParticipantAvatars';
 import type { HomeController } from '../useHomeController';
 import type { HomeState } from '../types';
 import type { HomeViewModel, DocKindName } from '../viewModel';
@@ -434,8 +440,13 @@ function DashWidget({ itemId, docId, size, committedSize, maxCols, edit, isMobil
   const space = view.dashDocSpaces[docId];
   const when = formatLastEdited(state.docTimes[docId]);
   const missing = resolved && !raw && !title;
-  const data: WidgetData | null = raw ? widgetDataOf(raw, { maxCards: rows >= 3 ? 4 : 2 }) : null;
+  const data: WidgetData | null = raw ? widgetDataOf(raw) : null;
   const shared = space === '공유받음';
+  // 곁정보도 에디터와 같은 출처 — 담당 사진(share_participants)·댓글 수(comments).
+  // 칸반 위젯일 때만 읽는다(문서당 한 번, 다른 종류는 왕복 0).
+  const isKanbanWidget = kind === 'kanban' && !!raw;
+  const participantAvatars = useParticipantAvatars(docId, isKanbanWidget);
+  const commentCounts = useDocCommentCounts(isKanbanWidget ? docId : '');
   // 실렌더의 가지 색 폴백 — 홈 카드가 쓰는 그 hue(카탈로그에 실려 있다).
   const hue = view.dashPickCatalog.find((b) => b.docId === docId)?.hue ?? '#f0663f';
   // 칸반 카드 열 이동 — 대시보드에서 유일하게 허용된 편집(디자인 "열 이동 가능").
@@ -619,7 +630,7 @@ function DashWidget({ itemId, docId, size, committedSize, maxCols, edit, isMobil
       ) : !data ? (
         <div aria-busy={!resolved} style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>{!resolved ? <span className="mf-skel" style={{ width: '60%', height: 10, borderRadius: 6 }} /> : <span style={{ fontSize: 11.5, color: 'var(--mf-faint)' }}>내용이 아직 없어요</span>}</div>
       ) : data.kind === 'kanban' ? (
-        <KanbanBody data={data} cols={c} onMoveCard={canMoveCards && !edit ? (cardId, toColId) => void controller.moveDashCard(docId, cardId, toColId) : undefined} />
+        <KanbanBody data={data} isMobile={isMobile} comments={commentCounts} avatars={participantAvatars.byEmail} onMoveCard={canMoveCards && !edit ? (cardId, toColId) => void controller.moveDashCard(docId, cardId, toColId) : undefined} />
       ) : (
         <SceneBody raw={raw!} hue={hue} />
       )}
@@ -646,100 +657,155 @@ function DashWidget({ itemId, docId, size, committedSize, maxCols, edit, isMobil
   );
 }
 
-/** 칸반 몸통 — 디자인 원본의 위젯 틀에 **에디터의 시각 규칙**을 부었다: 면 층·열 색·
- * 분류 색·기한 문구·아바타 색이 전부 `widgetData`(=`kanbanMeta`)에서 온다.
- * 색이 문서 테마의 hex라 홈 다크 테마와 무관하게 실제 보드의 인상이 유지된다.
+/** 그 문서의 댓글 수 — 에디터 카드 곁정보와 **같은 규칙**(미해결 스레드 수, 답글
+ * 제외). 위젯이 0을 지어내면 안 되므로 실제 목록을 한 번 읽는다(칸반 위젯당 1회,
+ * 못 읽으면 빈 표 — 카드에는 0이 그려진다). */
+function useDocCommentCounts(docId: string): Record<string, number> {
+  const store = useCommentStore();
+  const [counts, setCounts] = useState<Record<string, number>>({});
+  useEffect(() => {
+    if (!docId) {
+      setCounts({});
+      return;
+    }
+    let alive = true;
+    store
+      .list(docId)
+      .then((rows) => {
+        if (!alive) return;
+        const m: Record<string, number> = {};
+        rows.forEach((cm) => {
+          if (cm.parentId || cm.resolved) return;
+          m[cm.nodeId] = (m[cm.nodeId] ?? 0) + 1;
+        });
+        setCounts(m);
+      })
+      .catch(() => {});
+    return () => {
+      alive = false;
+    };
+  }, [store, docId]);
+  return counts;
+}
+
+/** 칸반 몸통 — **에디터의 칸반 보드 그대로**다(제보: 열 크기·카드 디자인이 실제
+ * 에디터와 달라 보이면 안 된다). 카드는 에디터의 `CardFace`/`cardBase`를 그대로
+ * 재사용하고(분류 배지·본문 rich·기한 톤·댓글 수·담당 얼굴·긴급 왼 테두리까지
+ * 한 코드), 열도 에디터의 스펙(폭 308/264·머리 구성·그림자)을 같은 값으로 그린다.
+ * 색은 전부 문서 테마(`themeOf`)에서 — 홈 다크 테마와 무관하게 실제 보드의 인상.
  *
- * `onMoveCard`가 오면 카드가 열 사이를 드래그로 오간다(디자인 "열 이동 가능" —
- * 대시보드에서 유일하게 허용된 편집). 배치 편집 모드·보기 전용 공유에서는
- * 오지 않아 드래그 자체가 없다. */
-function KanbanBody({ data, cols, onMoveCard }: { data: WidgetKanban; cols: number; onMoveCard?: (cardId: string, toColId: string) => void }) {
-  const shown = data.columns.slice(0, 4);
-  const s = data.surface;
-  // 끄는 카드·드롭 대상 열 — 위젯 안의 화면 상태(디자인 dragCard/overCol).
-  const [dragCard, setDragCard] = useState<{ id: string; fromCol: string } | null>(null);
+ * 상호작용은 **카드의 열 이동 하나**다: `onMoveCard`가 오면 카드를 다른 열로 끌 수
+ * 있고(놓일 자리는 에디터와 같은 점선 상자 — 이 경로는 열 끝에 붙이므로 맨 뒤에
+ * 선다), 편집 진입(더블클릭 상세·우클릭 메뉴·추가/삭제)은 내주지 않는다 —
+ * 그건 열어서 한다. 배치 편집 모드·보기 전용 공유·터치에서는 드래그 자체가 없다. */
+function KanbanBody({ data, isMobile, comments, avatars, onMoveCard }: { data: WidgetKanban; isMobile: boolean; comments: Record<string, number>; avatars: Record<string, string>; onMoveCard?: (cardId: string, toColId: string) => void }) {
+  const th = themeOf(data.themeKey);
+  const track = innerLine(th);
+  const colW = isMobile ? 264 : COL_W; // 에디터 Column과 같은 폭
+  const lastIdx = data.columns.length - 1;
+  // 끄는 카드·드롭 대상 열 — 위젯 안의 화면 상태(에디터의 drag/dropTarget).
+  const [dragCard, setDragCard] = useState<{ id: string; fromCol: string; h: number } | null>(null);
   const [overCol, setOverCol] = useState<string | null>(null);
   return (
-    <div style={{ flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column', background: s.board }}>
+    <div style={{ flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column', background: boardSurface(th) }}>
       {/* 진행 바 — 에디터 보드 머리의 그 줄(완료부터 왼쪽에서, 열 색 그대로.
           남는 자리는 빈 트랙 = 아직 시작하지 않은 일). */}
-      <div style={{ display: 'flex', height: 3, flexShrink: 0, overflow: 'hidden', background: data.track }} aria-hidden>
+      <div style={{ display: 'flex', height: 3, flexShrink: 0, overflow: 'hidden', background: track }} aria-hidden>
         {data.segments.map((seg, i) => (
           <span key={i} style={{ width: `${seg.pct}%`, background: seg.color, display: 'block' }} />
         ))}
       </div>
-      <div style={{ flex: 1, minHeight: 0, display: 'grid', gridTemplateColumns: `repeat(${shown.length}, minmax(0, 1fr))`, gap: 7, padding: '9px 10px' }}>
-        {shown.map((col) => {
+      {/* 열 줄 — 에디터 보드와 같은 배치(실제 폭의 열이 옆으로 늘어서고 넘치면
+          가로 스크롤). 위젯이라고 열을 오그리면 그 순간 에디터와 다른 물건이 된다. */}
+      <div data-dash-kanban-board style={{ flex: 1, minHeight: 0, display: 'flex', alignItems: 'stretch', gap: 16, padding: '12px 14px 14px', overflowX: 'auto', overflowY: 'hidden', boxSizing: 'border-box' }}>
+        {data.columns.map((col, i) => {
+          const mine = cardsInColumn(data.cards, col.id);
           const hot = overCol === col.id && !!dragCard && dragCard.fromCol !== col.id;
+          const divider = innerLine(th);
           return (
-          <div
-            key={col.id}
-            data-dash-col={col.id}
-            data-drop-hot={hot || undefined}
-            onDragOver={(e) => {
-              if (!dragCard || dragCard.fromCol === col.id) return;
-              e.preventDefault(); // 놓을 수 있는 열임을 브라우저에 알린다
-              if (overCol !== col.id) setOverCol(col.id);
-            }}
-            onDragLeave={() => {
-              if (overCol === col.id) setOverCol(null);
-            }}
-            onDrop={(e) => {
-              e.preventDefault();
-              e.stopPropagation();
-              if (dragCard && dragCard.fromCol !== col.id && onMoveCard) onMoveCard(dragCard.id, col.id);
-              setDragCard(null);
-              setOverCol(null);
-            }}
-            style={{ display: 'flex', flexDirection: 'column', gap: 5, minWidth: 0, minHeight: 0, borderRadius: 10, background: col.bg, border: hot ? '1px dashed var(--mf-accent)' : `1px solid ${s.line}`, boxShadow: hot ? 'inset 0 0 0 99px rgba(var(--mf-accent-rgb), .05)' : undefined, padding: '6px 5px', transition: 'border-color .12s ease' }}
-          >
-            <div style={{ display: 'flex', alignItems: 'center', gap: 5, padding: '0 3px', flexShrink: 0 }}>
-              <span style={{ width: 5, height: 5, borderRadius: 99, background: col.dot, display: 'block', flexShrink: 0 }} />
-              <span style={{ fontSize: 9.5, fontWeight: 800, color: s.subInk, letterSpacing: '-.01em', minWidth: 0, flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{col.name}</span>
-              <span style={{ ...META_MONO, fontSize: 8.5, color: s.subInk, background: s.line, borderRadius: 999, padding: '1px 5px', flexShrink: 0 }}>{col.more > 0 ? `${col.cards.length}/${col.count}` : col.count}</span>
-            </div>
-            <div style={{ display: 'flex', flexDirection: 'column', gap: 5, minHeight: 0, overflow: 'hidden' }}>
-              {col.cards.map((k) => (
-                <div
-                  key={k.id}
-                  data-dash-card={k.id}
-                  draggable={!!onMoveCard}
-                  onDragStart={(e) => {
-                    if (!onMoveCard) return;
-                    e.stopPropagation(); // 위젯 자체의 드래그(편집 모드 재배치)와 갈라 둔다
-                    setDragCard({ id: k.id, fromCol: col.id });
-                    if (e.dataTransfer) e.dataTransfer.effectAllowed = 'move';
-                  }}
-                  onDragEnd={() => {
-                    setDragCard(null);
-                    setOverCol(null);
-                  }}
-                  style={{ display: 'flex', flexDirection: 'column', gap: 4, padding: '6px 7px', borderRadius: 9, background: s.card, border: `1px solid ${s.line}`, boxShadow: '0 5px 12px -9px rgba(46,42,38,.35)', opacity: dragCard?.id === k.id ? 0.45 : 1, cursor: onMoveCard ? 'grab' : undefined, transition: 'opacity .12s ease' }}
-                >
-                  {k.tag && k.tagBg && (
-                    <span style={{ alignSelf: 'flex-start', maxWidth: '100%', height: 14, padding: '0 5px', borderRadius: 5, background: k.tagBg, color: k.tagFg ?? s.ink, fontSize: 8, fontWeight: 800, letterSpacing: '-.01em', display: 'inline-flex', alignItems: 'center', overflow: 'hidden', whiteSpace: 'nowrap' }}>{k.tag}</span>
-                  )}
-                  <span style={{ fontSize: 9.5, fontWeight: 700, color: s.ink, letterSpacing: '-.015em', lineHeight: 1.35, display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical', overflow: 'hidden' }}>{k.title || '(빈 카드)'}</span>
-                  {(k.due || k.who) && (
-                    <span style={{ display: 'flex', alignItems: 'center', gap: 4, minWidth: 0 }}>
-                      {k.due && cols >= 3 && (
-                        <span style={{ display: 'inline-flex', alignItems: 'center', gap: 3, minWidth: 0, color: k.dueTone === 'over' ? '#c05a2e' : s.subInk }}>
-                          <svg width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" aria-hidden style={{ flexShrink: 0 }}>
-                            <rect x="3.5" y="5" width="17" height="16" rx="2.5" />
-                            <path d="M8 3v4M16 3v4M3.5 10h17" />
-                          </svg>
-                          <span style={{ fontSize: 8, fontWeight: k.dueTone === 'over' ? 700 : 500, whiteSpace: 'nowrap', minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis' }}>{k.due}</span>
-                        </span>
-                      )}
-                      <span style={{ flex: 1 }} />
-                      {k.who && <span style={{ width: 15, height: 15, flexShrink: 0, borderRadius: 99, background: k.whoColor ?? 'var(--mf-accent)', color: '#fff', fontSize: 7.5, fontWeight: 800, display: 'inline-flex', alignItems: 'center', justifyContent: 'center' }}>{k.who}</span>}
-                    </span>
-                  )}
-                </div>
-              ))}
-              {col.more > 0 && <span style={{ fontSize: 8.5, color: s.subInk, padding: '0 3px' }}>+{col.more}개 더</span>}
-            </div>
-          </div>
+            <section
+              key={col.id}
+              data-dash-col={col.id}
+              data-drop-hot={hot || undefined}
+              onDragOver={(e) => {
+                if (!dragCard || dragCard.fromCol === col.id) return;
+                e.preventDefault(); // 놓을 수 있는 열임을 브라우저에 알린다
+                if (overCol !== col.id) setOverCol(col.id);
+              }}
+              onDragLeave={() => {
+                if (overCol === col.id) setOverCol(null);
+              }}
+              onDrop={(e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                if (dragCard && dragCard.fromCol !== col.id && onMoveCard) onMoveCard(dragCard.id, col.id);
+                setDragCard(null);
+                setOverCol(null);
+              }}
+              style={{
+                flex: '0 0 auto',
+                width: colW,
+                display: 'flex',
+                flexDirection: 'column',
+                minHeight: 0,
+                alignSelf: 'flex-start',
+                maxHeight: '100%',
+                background: columnBg(col, th),
+                border: `1px solid ${hot ? hexA(th.accent, 0.55) : th.border}`,
+                borderRadius: 16,
+                boxShadow: COL_SHADOW,
+                boxSizing: 'border-box',
+              }}
+            >
+              {/* 열 머리 — 에디터와 같은 구성(점·제목·카드 수). ＋/⋯은 편집 동작이라
+                  위젯에는 없다(에디터의 읽기 전용 모드와 같은 얼굴). */}
+              <header style={{ display: 'flex', alignItems: 'center', gap: 9, padding: '13px 13px 11px', borderBottom: `1px solid ${divider}` }}>
+                <span style={{ flex: '0 0 auto', width: 8, height: 8, borderRadius: 999, background: columnColor(col, i, th.palette), display: 'block' }} />
+                <span style={{ flex: '1 1 auto', minWidth: 0, fontSize: 13.5, fontWeight: 700, color: th.text, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{col.title}</span>
+                <span style={{ flex: '0 0 auto', minWidth: 22, height: 22, padding: '0 7px', borderRadius: 999, background: th.panel, color: th.subtext, display: 'inline-flex', alignItems: 'center', justifyContent: 'center', fontSize: 11, fontWeight: 600 }}>{mine.length}</span>
+              </header>
+              <div style={{ flex: '0 1 auto', minHeight: 44, overflowY: 'auto', padding: 11, display: 'flex', flexDirection: 'column', gap: 9 }}>
+                {mine.map((k) => (
+                  <div
+                    key={k.id}
+                    data-dash-card={k.id}
+                    data-card-urgent={k.flagged ? k.id : undefined}
+                    draggable={!!onMoveCard}
+                    onDragStart={(e) => {
+                      if (!onMoveCard) return;
+                      e.stopPropagation(); // 위젯 자체의 드래그(편집 모드 재배치)와 갈라 둔다
+                      setDragCard({ id: k.id, fromCol: col.id, h: (e.currentTarget as HTMLElement).getBoundingClientRect().height });
+                      if (e.dataTransfer) e.dataTransfer.effectAllowed = 'move';
+                    }}
+                    onDragEnd={() => {
+                      setDragCard(null);
+                      setOverCol(null);
+                    }}
+                    style={{
+                      ...cardBase(k, th, false),
+                      position: 'relative',
+                      userSelect: 'none',
+                      // 끌리는 원본은 자리를 지키되 흐리게(에디터와 같은 신호).
+                      opacity: dragCard?.id === k.id ? 0.35 : 1,
+                      cursor: onMoveCard ? 'grab' : 'default',
+                      transition: 'opacity .12s ease',
+                    }}
+                  >
+                    <CardFace card={k} theme={th} comments={comments[k.id] ?? 0} tags={data.tags} done={i === lastIdx} avatars={avatars} />
+                  </div>
+                ))}
+                {/* 놓일 자리 — 에디터와 같은 점선 상자(높이 = 끌고 있는 카드).
+                    이 경로는 열 끝에 붙이므로 상자도 맨 뒤에 선다. */}
+                {hot && <div data-dash-drop-slot style={{ flex: '0 0 auto', height: dragCard?.h || 44, borderRadius: 12, border: `1.5px dashed ${hexA(th.accent, 0.75)}`, background: hexA(th.accent, 0.08), boxSizing: 'border-box' }} />}
+                {mine.length === 0 && !hot && (
+                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '22px 14px', borderRadius: 12, border: `1.5px dashed ${th.border}`, textAlign: 'center' }}>
+                    {/* 에디터의 빈 열 상자와 같은 꼴 — 문구만 위젯의 것("추가해 보세요"는
+                        여기서 할 수 없는 일이라 약속하지 않는다). */}
+                    <span style={{ fontSize: 12.5, color: th.subtext }}>이 단계에 카드가 없어요.</span>
+                  </div>
+                )}
+              </div>
+            </section>
           );
         })}
       </div>
