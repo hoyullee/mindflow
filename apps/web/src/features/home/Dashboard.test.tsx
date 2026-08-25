@@ -395,18 +395,26 @@ describe('대시보드 ② — 배치 편집 모드·런치 전환', () => {
     expect(savedDashboards()[0]?.items.find((it) => it.id === 'w1')?.size).toBe('2x2');
   });
 
-  it('위젯 클릭 = 런치 전환(이름·"여는 중") — 편집 중에는 열리지 않는다', async () => {
+  it('"열기" 버튼만 런치 전환을 연다 — 카드의 다른 곳·편집 중에는 열리지 않는다(요청)', async () => {
     const user = userEvent.setup();
     const { container } = await openSeededDash();
+    const widget = container.querySelector('[data-dash-widget="w1"]') as HTMLElement;
 
-    // 편집 중 클릭은 열지 않는다
+    // 편집 중에는 "열기" 버튼 자체가 없다(그 시간의 클릭은 배치 조작이다)
     await user.click(screen.getByRole('button', { name: '편집' }));
-    fireEvent.click(container.querySelector('[data-dash-widget="w1"]') as HTMLElement);
+    fireEvent.click(widget);
     // 포털(body)로 그려지므로 document에서 찾는다
     expect(document.querySelector('[data-dash-launch]')).toBeNull();
+    expect(within(widget).queryByRole('button', { name: '열기' })).toBeNull();
     await user.click(screen.getByRole('button', { name: '편집 끝내기' }));
 
-    fireEvent.click(container.querySelector('[data-dash-widget="w1"]') as HTMLElement);
+    // 카드 어디를 눌러도(머리·몸통) 열리지 않는다
+    fireEvent.click(widget);
+    fireEvent.click(within(widget).getAllByText('기획맵')[0]!);
+    expect(document.querySelector('[data-dash-launch]')).toBeNull();
+
+    // "열기" 버튼만이 연다
+    fireEvent.click(within(widget).getByRole('button', { name: '열기' }));
     const overlay = document.querySelector('[data-dash-launch]') as HTMLElement;
     expect(overlay).toBeTruthy();
     expect(overlay.textContent).toContain('기획맵');
