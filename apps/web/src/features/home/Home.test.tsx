@@ -2348,15 +2348,15 @@ describe('Home', () => {
     // 클릭에 dblclick까지 얹어 준다(폴더 카드가 있던 자리에 맵 카드가 그려졌으므로).
     fireEvent.click(card);
     fireEvent.doubleClick(card);
-    // 열기는 로더를 거쳐 0.9초 뒤에 이동하므로, "안 열렸다"는 URL이 아니라 **로더가
-    // 뜨지 않았다**로 본다(즉시 판정 + 대기 시간에 기대지 않는다).
-    expect(screen.queryByText('맵을 불러오고 있어요')).toBeNull();
+    // 열기는 펼침 전환을 거쳐 0.9초 뒤에 이동하므로, "안 열렸다"는 URL이 아니라
+    // **전환이 시작되지 않았다**로 본다(즉시 판정 + 대기 시간에 기대지 않는다).
+    expect(document.querySelector('[data-dash-launch]')).toBeNull();
 
     // 사용자가 진짜로 이 카드를 두 번 누르면 열린다.
     fireEvent.click(card);
     fireEvent.click(card);
     fireEvent.doubleClick(card);
-    expect(screen.getByText('맵을 불러오고 있어요')).toBeTruthy();
+    expect(document.querySelector('[data-dash-launch]')).toBeTruthy();
     await waitFor(() => expect(screen.getByText('EDITOR_PLACEHOLDER')).toBeTruthy(), { timeout: 3000 });
   });
 
@@ -5411,3 +5411,67 @@ describe('홈 디자인 후속 6건', () => {
   });
 });
 
+
+// ── 열기 전환 통일(요청) ────────────────────────────────────────────────────
+
+/**
+ * 규칙: **누른 원점이 있으면 그 자리에서 펼친다.** 대시보드 위젯의 "열기"와
+ * 스페이스 그리드·최근·검색 결과의 카드가 같은 전환을 쓴다. 원점이 없거나 배경
+ * 자체가 바뀌는 동작(새로 만들기·로그아웃)은 그대로 전체 화면 로더.
+ */
+describe('카드 열기 전환', () => {
+  const seedOne = () => {
+    localStorage.setItem(
+      'mf_spaces',
+      JSON.stringify({
+        spaces: [{ id: 's1', name: '일반 스페이스', home: true, color: '#f0663f', maps: [{ title: 'A맵', when: '방금', hue: '#f0663f', docId: 'da' }], folders: [] }],
+        mapFolders: {},
+        recent: [],
+      }),
+    );
+  };
+
+  it('그리드 카드를 두 번 누르면 **그 카드 자리에서** 펼쳐진다(전체 화면 로더는 뜨지 않는다)', async () => {
+    seedOne();
+    const { container } = renderHomeWithDocStore([{ id: 'da', title: 'A맵', version: 1, updatedAt: '2026-01-01T00:00:00.000Z', isFavorite: false, deletedAt: null }]);
+    await waitFor(() => expect(container.querySelector('.mf-map-grid [data-card-key]')).toBeTruthy());
+    const card = container.querySelector('.mf-map-grid [data-card-key]') as HTMLElement;
+    // jsdom은 레이아웃을 재지 않는다 — 카드 사각형을 심어 원점을 확인한다.
+    card.getBoundingClientRect = () => ({ left: 240, top: 320, width: 286, height: 220, right: 526, bottom: 540, x: 240, y: 320, toJSON: () => ({}) }) as DOMRect;
+
+    fireEvent.click(card);
+    fireEvent.click(card);
+    fireEvent.doubleClick(card);
+
+    const overlay = document.querySelector('[data-dash-launch]') as HTMLElement;
+    expect(overlay).toBeTruthy();
+    const box = overlay.querySelector('[data-launch-copy]')!.parentElement as HTMLElement;
+    expect(box.style.getPropertyValue('--lx')).toBe('240px');
+    expect(box.style.getPropertyValue('--ly')).toBe('320px');
+    expect(box.style.getPropertyValue('--lw')).toBe('286px');
+    expect(box.style.getPropertyValue('--lh')).toBe('220px');
+    // 문구는 무엇을 여는지 말한다 — 종류 · 스페이스
+    expect(overlay.textContent).toContain('A맵');
+    expect(overlay.textContent).toContain('마인드맵 · 일반 스페이스');
+    // 배경을 덮는 전체 화면 로더는 없다(대시보드와 같은 규칙)
+    expect(document.querySelector('[role="status"] [data-loader-spinner]')).toBeNull();
+    // 배경은 그대로 — 그리드가 살아 있다
+    expect(container.querySelector('.mf-map-grid')).toBeTruthy();
+    await waitFor(() => expect(screen.getByText('EDITOR_PLACEHOLDER')).toBeTruthy(), { timeout: 3000 });
+  });
+
+  it('원점이 없는 동작(새로 만들기)은 그대로 전체 화면 로더다', async () => {
+    const user = userEvent.setup();
+    seedOne();
+    const { container } = renderHomeWithDocStore([{ id: 'da', title: 'A맵', version: 1, updatedAt: '2026-01-01T00:00:00.000Z', isFavorite: false, deletedAt: null }]);
+    await waitFor(() => expect(container.querySelector('.mf-map-grid [data-card-key]')).toBeTruthy());
+
+    await user.click(screen.getByRole('button', { name: '새로 만들기' }));
+    const gallery = await screen.findByRole('dialog', { name: '새로 만들기' });
+    await user.click(within(gallery).getByText('빈 맵'));
+
+    // 새 카드가 배경에 꽂히는 동작이라 화면을 덮는 쪽이 맞다(펼침이 아니다)
+    expect(document.querySelector('[role="status"] [data-loader-spinner]')).toBeTruthy();
+    expect(document.querySelector('[data-dash-launch]')).toBeNull();
+  });
+});

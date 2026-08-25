@@ -8,6 +8,7 @@ import { SearchResults } from './components/SearchResults';
 import { RecentStrip, RecentStripSkeleton } from './components/RecentStrip';
 import { DashboardView } from './components/DashboardView';
 import { DashboardSkeleton } from './components/DashboardSkeleton';
+import { LaunchOverlay } from './components/LaunchOverlay';
 import { DashboardPicker } from './components/modals/DashboardPicker';
 import { DashboardModal } from './components/modals/DashboardModal';
 import { AuthModal } from './components/modals/AuthModal';
@@ -110,6 +111,9 @@ export function Home() {
           로그아웃/탈퇴=목록 정리)에 쓰이므로, 페이드인 중 반투명 구간으로 그 변화가
           비쳐 깜빡이지 않도록 첫 프레임부터 화면을 덮는다. */}
       {state.creatingMap && <LoadingOverlay message={state.loaderMsg || '새 마인드맵을 준비하고 있어요'} instant veil="var(--mf-overlay-veil)" ink="var(--mf-text)" subInk="var(--mf-muted)" accent="var(--mf-accent)" accentSoft="var(--mf-accent-soft)" />}
+
+      {/* 문서 열기 펼침 전환 — 카드·위젯 어디서 열든 같은 오버레이(body 포털). */}
+      <LaunchOverlay launch={state.launch} />
 
       <Sidebar state={state} view={view} controller={controller} isMobile={isMobile} isOpen={navOpen} onClose={() => setNavOpen(false)} />
 

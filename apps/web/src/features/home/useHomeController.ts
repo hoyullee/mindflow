@@ -439,7 +439,7 @@ export function useHomeController() {
     const onPageShow = (e: PageTransitionEvent) => {
       if (!e.persisted) return;
       clearTimeout(loaderTimer.current);
-      setState((prev) => (prev.creatingMap ? { ...prev, creatingMap: false, loaderMsg: '' } : prev));
+      setState((prev) => (prev.creatingMap || prev.launch ? { ...prev, creatingMap: false, loaderMsg: '', launch: null } : prev));
     };
     window.addEventListener('pageshow', onPageShow);
 
@@ -1545,6 +1545,27 @@ export function useHomeController() {
   };
 
   /**
+   * 원점이 있는 열기 — 누른 카드·버튼 자리에서 펼쳐지며 에디터로 간다(사용자와
+   * 합의한 규칙: 원점이 있으면 펼침, 없으면 전체 화면 로더). 전환 자체가 로딩을
+   * 말하므로 `ownLoader`로 전체 화면 로더는 띄우지 않는다.
+   */
+  const launchOpen = (
+    rect: { x: number; y: number; width: number; height: number },
+    opts: { href: string; title: string; docId?: string; kindName: string; space: string },
+  ) => {
+    let already = false;
+    setState((prev) => {
+      if (prev.launch) {
+        already = true; // 이미 여는 중 — 두 번째 클릭은 무시
+        return prev;
+      }
+      return { ...prev, launch: { x: rect.x, y: rect.y, w: rect.width, h: rect.height, name: opts.title, kindName: opts.kindName, space: opts.space } };
+    });
+    if (already) return;
+    openWithLoader(opts.href, opts.title, opts.docId, { ownLoader: true });
+  };
+
+  /**
    * 공유받은 맵을 연다 — 여는 순간 그 초대를 "봤다"로 표시해 배지에서 뺀다.
    *
    * 목록을 펼치기만 해도 지우지 않는 이유: 배지는 **아직 안 본 초대**를 세는
@@ -2609,6 +2630,7 @@ export function useHomeController() {
     closeTemplates,
     createFromTemplate,
     openWithLoader,
+    launchOpen,
     openSharedMap,
     onNewMapClick,
     openImport,
