@@ -39,6 +39,15 @@ const LONG_PRESS_MS = 500;
 /** 누르는 동안 허용하는 흔들림(px, 직선 거리) — 이보다 크면 스크롤 의도로 본다. */
 const LONG_PRESS_SLOP = 10;
 
+/** 카드가 여는 전환의 재료 — 원점은 **그 카드**이고, 문구는 카드가 이미 아는 것으로
+ *  채운다(종류 이름은 대시보드 위젯과 같은 표기). 스페이스 이름을 모르는 카드는
+ *  지금 보고 있는 스페이스로 적는다(그리드 카드가 그 경우다). */
+function launchFromCard(el: HTMLElement, card: CardViewData, controller: HomeController): void {
+  const kindName = card.isKanban ? '칸반보드' : card.isBoard ? '화이트보드' : '마인드맵';
+  const space = card.spaceName || controller.state.spaces.find((sp) => sp.id === controller.state.activeSpace)?.name || '';
+  controller.launchOpen(el.getBoundingClientRect(), { href: card.href, title: card.title, docId: card.docId, kindName, space });
+}
+
 /** Home.dc.html:251-303 `<sc-for list="{{ allCards }}">` — a single map/Drive-file card. */
 export function MapCard({ card, controller, draggableEnabled, compact = false }: Props) {
   // 한 번 = 선택 / 두 번 = 열기. 규칙과 그 함정들은 `useCardActivation`에.
@@ -121,7 +130,7 @@ export function MapCard({ card, controller, draggableEnabled, compact = false }:
       return;
     }
     if (activation.click() === 'activate') {
-      controller.openWithLoader(card.href, card.title, card.docId);
+      launchFromCard(e.currentTarget, card, controller);
       return;
     }
     controller.selectCard(card.key); // 선택 → ☰/☆가 이 카드의 것으로 드러난다
@@ -143,7 +152,7 @@ export function MapCard({ card, controller, draggableEnabled, compact = false }:
     }
     e.preventDefault();
     if (!activation.acceptDoubleClick()) return;
-    controller.openWithLoader(card.href, card.title, card.docId);
+    launchFromCard(e.currentTarget, card, controller);
   };
 
   // 우클릭 = ☰과 같은 메뉴, 커서 자리에(요청). 카드 안에서 처리하고 전파를 끊어

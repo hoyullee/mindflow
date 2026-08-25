@@ -3,6 +3,7 @@
 import { loadHomeThemeCache, type HomeThemeKey } from './theme';
 import type { SigninMethods } from '../../adapters/ports';
 import type { DashboardData } from './dashboard/model';
+import type { LaunchState } from './components/LaunchOverlay';
 
 export interface MapCardData {
   title: string;
@@ -224,6 +225,10 @@ export interface HomeState {
    * user stays on the page and can retry instead of being half-deleted. */
   deleteAccountError: string;
   creatingMap: boolean;
+  /** 문서를 여는 펼침 전환 — 누른 카드·버튼의 화면 사각형에서 자란다. 원점이
+   *  있는 열기는 전부 이 전환을 쓰고(스페이스 그리드·최근·검색 결과·대시보드 위젯),
+   *  원점이 없거나 배경이 바뀌는 동작(새로 만들기·로그아웃·탈퇴)은 전체 화면 로더다. */
+  launch: LaunchState | null;
   loaderMsg: string;
 
   spaces: SpaceData[];
@@ -450,6 +455,7 @@ export function initialHomeState(): HomeState {
     deleteAccountText: '',
     deleteAccountError: '',
     creatingMap: false,
+    launch: null,
     loaderMsg: '',
 
     spaces: [{ id: 'general', name: '일반 스페이스', home: true, color: '#f0663f', maps: DEFAULT_MAPS }],
