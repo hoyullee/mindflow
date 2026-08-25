@@ -10,7 +10,7 @@ import { exportDocSvg } from '../editor/svg';
 import { exportDocPdf } from '../editor/pdf';
 import { themeOf } from '../editor/theme';
 import { applyHomeTheme, homeThemeKeyOf, saveHomeThemeCache, type HomeThemeKey } from './theme';
-import { DASH_CAP, DASH_DEFAULT_SIZE, coerceDashboards, moveInList, nextDashName, type DashboardData } from './dashboard/model';
+import { DASH_CAP, DASH_DEFAULT_SIZE, coerceDashboards, moveInList, type DashboardData } from './dashboard/model';
 import { forgetSignedIn } from '../auth/sessionNotice';
 import { localizeAuthError } from '../auth/useLoginController';
 import type { SignOutScope } from '../../adapters/ports';
@@ -18,6 +18,7 @@ import { useBackend } from '../../adapters/BackendContext';
 import { findBoardTemplate, findKanbanTemplate, findTemplate } from '../../templates/mapTemplates';
 import {
   DRIVE_FILES,
+  SPACE_COLORS,
   initialHomeState,
   type FolderModalState,
   type HomeCtxTarget,
@@ -1002,10 +1003,9 @@ export function useHomeController() {
     if (!state.dashboards.some((d) => d.id === id)) return;
     patch({ activeDash: id, dashReorder: false, dashEdit: false, curFolder: null, search: '', searchInput: '' });
   };
-  const createDash = () => {
-    const d: DashboardData = { id: `d${Date.now().toString(36)}${Math.random().toString(36).slice(2, 6)}`, name: nextDashName(state.dashboards), items: [] };
-    patch({ dashboards: [...state.dashboards, d], activeDash: d.id, dashReorder: false, dashEdit: false });
-  };
+  /** LNB `새 대시보드` — 예전에는 이름을 자동으로 붙여 곧바로 만들었다. 이제는
+   *  이름·색을 받는 팝업을 연다(첨부 디자인). 실제 생성은 `submitDashDialog`. */
+  const openNewDash = () => patch({ dashDialog: { id: null, name: '', color: SPACE_COLORS[0]! }, ctxMenu: null });
   /** 배치 편집 모드(히어로 "편집") — 드래그 재배치·리사이즈·인라인 크기/제거가 열린다. */
   const toggleDashEdit = () => patch({ dashEdit: !state.dashEdit, ctxMenu: null });
   const toggleDashReorder = () => patch({ dashReorder: !state.dashReorder, spaceReorder: false });
@@ -1158,19 +1158,27 @@ export function useHomeController() {
     return ok;
   };
 
+  /** 행 우클릭 → 이름 변경 — 만들기와 **같은 팝업**이다(제목·버튼 글자만 다르다).
+   *  색도 함께 고칠 수 있다: 잘못 고른 색을 되돌릴 길이 없으면 안 된다. */
   const openDashRename = (id: string) => {
     const d = state.dashboards.find((x) => x.id === id);
-    if (d) patch({ dashRename: { id, name: d.name }, ctxMenu: null });
+    if (d) patch({ dashDialog: { id, name: d.name, color: d.color ?? SPACE_COLORS[0]! }, ctxMenu: null });
   };
-  const onDashRenameInput = (name: string) => state.dashRename && patch({ dashRename: { ...state.dashRename, name: name.slice(0, 30) } });
-  const submitDashRename = () => {
-    const r = state.dashRename;
-    if (!r) return;
-    const name = r.name.trim();
+  const onDashDialogName = (name: string) => state.dashDialog && patch({ dashDialog: { ...state.dashDialog, name: (name || '').slice(0, 10) } });
+  const pickDashColor = (color: string) => state.dashDialog && patch({ dashDialog: { ...state.dashDialog, color } });
+  const submitDashDialog = () => {
+    const d = state.dashDialog;
+    if (!d) return;
+    const name = d.name.trim();
     if (!name) return;
-    patch({ dashboards: state.dashboards.map((d) => (d.id === r.id ? { ...d, name } : d)), dashRename: null });
+    if (d.id) {
+      patch({ dashboards: state.dashboards.map((x) => (x.id === d.id ? { ...x, name, color: d.color } : x)), dashDialog: null });
+      return;
+    }
+    const created: DashboardData = { id: `d${Date.now().toString(36)}${Math.random().toString(36).slice(2, 6)}`, name, color: d.color, items: [] };
+    patch({ dashboards: [...state.dashboards, created], activeDash: created.id, dashDialog: null, dashReorder: false, dashEdit: false });
   };
-  const cancelDashRename = () => patch({ dashRename: null });
+  const closeDashDialog = () => patch({ dashDialog: null });
   const askDeleteDash = (id: string) => patch({ confirmDeleteDash: id, ctxMenu: null });
   const cancelDeleteDash = () => patch({ confirmDeleteDash: null });
   /** 대시보드 삭제 — **배치만** 사라진다(문서는 스페이스에 그대로). 확인창이 그 말을 한다. */
@@ -2531,7 +2539,7 @@ export function useHomeController() {
     pickSpaceColor,
     setActiveSpace,
     selectDash,
-    createDash,
+    openNewDash,
     toggleDashReorder,
     toggleSpaceReorder,
     reorderDash,
@@ -2551,9 +2559,10 @@ export function useHomeController() {
     dashItemToFront,
     refreshDashItem,
     openDashRename,
-    onDashRenameInput,
-    submitDashRename,
-    cancelDashRename,
+    onDashDialogName,
+    pickDashColor,
+    submitDashDialog,
+    closeDashDialog,
     askDeleteDash,
     cancelDeleteDash,
     confirmDeleteDashYes,

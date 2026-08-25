@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { DASH_CAP, DASH_SIZES, coerceDashboards, moveInList, nextDashName, parseSize, sizesFor } from './model';
+import { DASH_CAP, DASH_SIZES, coerceDashboards, moveInList, parseSize, sizesFor } from './model';
 
 describe('dashboard model', () => {
   it('coerceDashboards: 배열이 아니면/모양이 어긋난 항목은 조용히 버린다', () => {
@@ -23,16 +23,6 @@ describe('dashboard model', () => {
     expect(d!.items[1]!.size).toBe('1x1');
   });
 
-  it('nextDashName: "대시보드" → "대시보드 2" → 겹치지 않는 첫 번호', () => {
-    expect(nextDashName([])).toBe('대시보드');
-    expect(nextDashName([{ id: 'a', name: '대시보드', items: [] }])).toBe('대시보드 2');
-    expect(
-      nextDashName([
-        { id: 'a', name: '대시보드', items: [] },
-        { id: 'b', name: '대시보드 2', items: [] },
-      ]),
-    ).toBe('대시보드 3');
-  });
 
   it('moveInList: 한 칸 이동, 범위를 벗어나면 같은 참조 그대로', () => {
     const list = ['a', 'b', 'c'];
