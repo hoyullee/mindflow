@@ -5,6 +5,9 @@ import type { EditorController } from '../useEditorState';
 import { listVersions, versionBody } from '../versionHistory';
 import { realPreview } from '../../home/mapPreview';
 import { useIsMobile } from '../../../hooks/useMediaQuery';
+import { useImageStore } from '../../../adapters/BackendContext';
+import { cachedImageUrls, rememberImageUrls } from '../../../adapters/imageUrlCache';
+import type { ImageUrlMap } from '../useImageUrls';
 
 /**
  * 버전 기록 모달 — 편집 메뉴(또는 모바일 ☰)의 "버전 기록"으로 연다.
@@ -20,6 +23,49 @@ export function VersionHistory({ controller }: { controller: EditorController })
   const [selectedAt, setSelectedAt] = useState<number | null>(null);
 
   const versions = useMemo(() => (open ? listVersions(controller.historyDocId) : []), [open, controller.historyDocId]);
+
+  /**
+   * 옛 판의 첨부 이미지 — 참조(`mfimg:…`)를 서명 URL로 바꿔야 사진이 보인다.
+   *
+   * 에디터가 이미 들고 있는 `controller.imageUrls`는 **지금 문서**의 참조만 담는다.
+   * 그 사이 지운 이미지는 옛 판에만 남아 있으므로(그게 옛 판을 보는 이유다) 모자란
+   * 것만 여기서 더 받는다 — 기기 캐시(`imageUrlCache`)를 지나므로 지금 문서와 겹치는
+   * 참조는 왕복 0회다.
+   */
+  const [extraUrls, setExtraUrls] = useState<ImageUrlMap>({});
+  const imageStore = useImageStore();
+  // 고른 판의 본문은 저장소에서 읽어 파싱한다 — 렌더마다 두 번 읽지 않게 한 번만.
+  const selectedBody = useMemo(
+    () => (selectedAt != null ? versionBody(controller.historyDocId, selectedAt) : null),
+    [controller.historyDocId, selectedAt],
+  );
+  const refsKey = useMemo(
+    () => (selectedBody?.includes('mfimg:') ? [...new Set([...selectedBody.matchAll(/mfimg:[^"\\]+/g)].map((m) => m[0]))].sort().join(' ') : ''),
+    [selectedBody],
+  );
+  useEffect(() => {
+    if (!refsKey) return;
+    let alive = true;
+    const wanted = refsKey.split(' ');
+    const missing = wanted.filter((r) => !controller.imageUrls[r]);
+    if (!missing.length) return;
+    const hit = cachedImageUrls(missing);
+    if (Object.keys(hit).length) setExtraUrls((prev) => ({ ...prev, ...hit }));
+    const need = missing.filter((r) => !hit[r]);
+    if (!need.length) return;
+    void imageStore
+      .resolve(need)
+      .then((got) => {
+        if (!alive || !Object.keys(got).length) return;
+        rememberImageUrls(got);
+        setExtraUrls((prev) => ({ ...prev, ...got }));
+      })
+      .catch(() => undefined);
+    return () => {
+      alive = false;
+    };
+    // `controller.imageUrls`는 렌더마다 새 객체일 수 있어 참조 목록으로만 비교한다.
+  }, [refsKey, imageStore]);
 
   useEffect(() => {
     if (!open) {
@@ -42,8 +88,7 @@ export function VersionHistory({ controller }: { controller: EditorController })
     return `${d.getMonth() + 1}/${d.getDate()} ${hh}:${mm} · ${rel}`;
   };
 
-  const selectedBody = selectedAt != null ? versionBody(controller.historyDocId, selectedAt) : null;
-  const preview = selectedBody ? realPreview(selectedBody, th.accent) : null;
+  const preview = selectedBody ? realPreview(selectedBody, th.accent, { ...controller.imageUrls, ...extraUrls }) : null;
 
   const panel: CSSProperties = {
     position: 'relative',
