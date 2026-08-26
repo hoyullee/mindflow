@@ -214,17 +214,16 @@ export function DashboardPicker({ state, view, controller, isMobile = false }: P
           {filtered.length === 0 && <span style={{ gridColumn: '1/-1', padding: '38px 0', textAlign: 'center', fontSize: 12, color: 'var(--mf-faint)' }}>찾는 보드가 없어요</span>}
         </div>
 
-        <div style={{ flex: '0 0 auto', borderTop: '1px solid var(--mf-hairline)', background: 'var(--mf-bg)', padding: '12px 18px', display: 'flex', alignItems: 'center', gap: 12, minHeight: 34, flexWrap: isMobile ? 'wrap' : 'nowrap' }}>
+        {/* 발치는 **명시적 2행**이다(제보: 크기 선택지가 늘며 한 줄이 팝업을 넘어
+            "올리기" 버튼이 잘렸다). 한 줄에 몰면 칩 묶음이 줄지 않아(`flexShrink: 0`)
+            버튼을 밀어낸다 — 위는 크기 칩(넘치면 접힌다), 아래는 요약 + 올리기.
+            어떤 폭에서도 버튼이 제자리에 있고 줄바꿈 지점이 예측된다(에디터 서식
+            툴바에서 같은 이유로 이미 한 번 겪었다). */}
+        <div style={{ flex: '0 0 auto', borderTop: '1px solid var(--mf-hairline)', background: 'var(--mf-bg)', padding: '12px 18px', display: 'flex', flexDirection: 'column', gap: 10, minHeight: 34 }}>
           {selEntry && sel ? (
             <>
-              <span style={{ display: 'flex', flexDirection: 'column', gap: 2, minWidth: 0, flex: '0 1 auto' }}>
-                <span style={{ fontSize: 11.5, fontWeight: 800, letterSpacing: '-.01em', color: 'var(--mf-text)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{selEntry.title}</span>
-                <span style={{ fontSize: 10, color: 'var(--mf-muted)', whiteSpace: 'nowrap' }}>
-                  {KIND_META[selEntry.kind].name} · {DASH_SIZE_NOTE[sel.size] ?? ''}
-                </span>
-              </span>
-              <span style={{ flex: 1 }} />
-              <span style={{ display: 'flex', alignItems: 'center', gap: 5, flexShrink: 0, flexWrap: 'wrap' }}>
+              {/* 크기 칩 — 넘치면 접힌다(선택지가 더 늘어도 팝업을 넘지 않는다). */}
+              <span data-pick-sizes style={{ display: 'flex', alignItems: 'center', gap: 5, flexWrap: 'wrap', width: '100%' }}>
                 {selSizes.map((s) => {
                   const chosen = s === sel.size;
                   return (
@@ -253,14 +252,23 @@ export function DashboardPicker({ state, view, controller, isMobile = false }: P
                   );
                 })}
               </span>
-              <button
-                type="button"
-                className="btn"
-                onClick={controller.confirmDashPick}
-                style={{ height: 30, padding: '0 14px', flexShrink: 0, borderRadius: 999, border: '1px solid var(--mf-accent)', background: 'linear-gradient(180deg, var(--mf-accent), var(--mf-accent-strong))', color: 'var(--mf-accent-ink)', font: 'inherit', fontSize: 12, fontWeight: 700, cursor: 'pointer', whiteSpace: 'nowrap', boxShadow: '0 9px 20px -12px rgba(var(--mf-accent-rgb),.9)' }}
-              >
-                올리기
-              </button>
+              {/* 아래 행 — 무엇을 고른 상태인지 + 올리기. 버튼은 언제나 오른쪽 끝. */}
+              <span data-pick-confirm-row style={{ display: 'flex', alignItems: 'center', gap: 12, width: '100%', minWidth: 0 }}>
+                <span style={{ display: 'flex', flexDirection: 'column', gap: 2, minWidth: 0, flex: '1 1 auto' }}>
+                  <span style={{ fontSize: 11.5, fontWeight: 800, letterSpacing: '-.01em', color: 'var(--mf-text)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{selEntry.title}</span>
+                  <span style={{ fontSize: 10, color: 'var(--mf-muted)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                    {KIND_META[selEntry.kind].name} · {DASH_SIZE_NOTE[sel.size] ?? ''}
+                  </span>
+                </span>
+                <button
+                  type="button"
+                  className="btn"
+                  onClick={controller.confirmDashPick}
+                  style={{ height: 30, padding: '0 14px', flexShrink: 0, borderRadius: 999, border: '1px solid var(--mf-accent)', background: 'linear-gradient(180deg, var(--mf-accent), var(--mf-accent-strong))', color: 'var(--mf-accent-ink)', font: 'inherit', fontSize: 12, fontWeight: 700, cursor: 'pointer', whiteSpace: 'nowrap', boxShadow: '0 9px 20px -12px rgba(var(--mf-accent-rgb),.9)' }}
+                >
+                  올리기
+                </button>
+              </span>
             </>
           ) : (
             <span style={{ fontSize: 11, color: 'var(--mf-faint)' }}>보드를 고르면 여기서 크기를 정해요 · 올린 뒤에도 우클릭으로 크기를 바꿀 수 있어요</span>
