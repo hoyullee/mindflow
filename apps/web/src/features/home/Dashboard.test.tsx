@@ -956,6 +956,34 @@ describe('대시보드에서는 영역 지정을 하지 않는다(제보)', () =
   });
 });
 
+describe('보드 올리기 팝업 발치(제보: 크기 선택지가 늘며 버튼이 잘렸다)', () => {
+  it('크기 칩과 "올리기"가 **다른 행**이라 선택지가 늘어도 넘치지 않는다', async () => {
+    const user = userEvent.setup();
+    const { container } = await openSeededDash();
+    const aside = await sidebarOf(container);
+    await createDashViaDialog(user, aside, '빈 보드'); // 아무것도 올리지 않은 대시보드
+    await user.click(screen.getAllByRole('button', { name: '보드 추가' })[0]!);
+    const dlg = await screen.findByRole('dialog', { name: '보드 올리기' });
+    // 카드를 골라야 발치에 크기 칩이 뜬다
+    await user.click(dlg.querySelector('[data-dash-pick-card="doc-a"]') as HTMLElement);
+
+    const sizes = dlg.querySelector('[data-pick-sizes]') as HTMLElement;
+    const row = dlg.querySelector('[data-pick-confirm-row]') as HTMLElement;
+    expect(sizes).toBeTruthy();
+    expect(row).toBeTruthy();
+    // 칩 줄은 접히고(넘치면 다음 줄로), 버튼은 그 아래 행의 오른쪽 끝에 있다
+    expect(sizes.style.flexWrap).toBe('wrap');
+    expect(sizes.contains(row)).toBe(false);
+    expect(within(row).getByRole('button', { name: '올리기' })).toBeTruthy();
+    // 발치 자체가 세로 2행 — 한 줄에 몰면 칩 묶음이 버튼을 밀어낸다
+    const footer = sizes.parentElement as HTMLElement;
+    expect(footer.style.flexDirection).toBe('column');
+    // 마인드맵은 11종이 모두 나온다(4행까지)
+    expect(within(sizes).getAllByRole('button').length).toBeGreaterThanOrEqual(11);
+    expect(within(sizes).getByRole('button', { name: '4×4' })).toBeTruthy();
+  });
+});
+
 describe('위젯 hover 떠오름(요청)', () => {
   it('칸반 카드도 에디터와 같은 클래스로 반응한다(인라인 transition으로 덮지 않는다)', async () => {
     localStorage.setItem(
