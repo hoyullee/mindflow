@@ -1,8 +1,10 @@
-import { useEffect, useRef, useState, type DragEvent as ReactDragEvent, type MouseEvent } from 'react';
-import { cardsInColumn } from '@mindflow/mindmap-core';
+import { Fragment, useEffect, useRef, useState, type DragEvent as ReactDragEvent, type MouseEvent, type PointerEvent as ReactPointerEvent } from 'react';
+import { createPortal } from 'react-dom';
+import { cardsInColumn, type KanbanCard, type KanbanColumn } from '@mindflow/mindmap-core';
 import { useCommentStore } from '../../../adapters/BackendContext';
-import { CardFace, cardBase, COL_W, COL_SHADOW } from '../../editor/components/KanbanBoard';
-import { UI_THEME, hexA } from '../../editor/theme';
+import { CardFace, cardBase, beginPointerDrag, COL_W, COL_SHADOW } from '../../editor/components/KanbanBoard';
+import { dropTargetAt, edgeScroll, type ColumnHit } from '../../editor/kanbanDrag';
+import { UI_THEME, hexA, type Theme } from '../../editor/theme';
 import { boardSurface, columnBg, columnColor, innerLine } from '../../editor/kanbanMeta';
 import { useParticipantAvatars } from '../../editor/useParticipantAvatars';
 import type { HomeController } from '../useHomeController';
@@ -414,11 +416,12 @@ function DashWidget({ itemId, docId, size, committedSize, maxCols, edit, isMobil
   const commentCounts = useDocCommentCounts(isKanbanWidget ? docId : '');
   // 실렌더의 가지 색 폴백 — 홈 카드가 쓰는 그 hue(카탈로그에 실려 있다).
   const hue = view.dashPickCatalog.find((b) => b.docId === docId)?.hue ?? '#f0663f';
-  // 칸반 카드 열 이동 — 대시보드에서 유일하게 허용된 편집(디자인 "열 이동 가능").
+  // 칸반 카드 이동 — 대시보드에서 유일하게 허용된 편집(디자인 "열 이동 가능").
   // 보기 전용으로 공유받은 보드는 어포던스도 내주지 않는다(진짜 게이트는 서버 RLS).
-  // 터치에서도 내주지 않는다 — HTML5 드래그가 발화하지 않아 배지가 거짓 약속이 된다.
+  // **터치에서도 된다**: 드래그가 에디터와 같은 포인터 제스처(길게 누르기)로 바뀌어
+  // HTML5 드래그처럼 손가락에서 죽지 않는다 — 그래서 배지도 더 이상 거짓이 아니다.
   const sharedRole = state.sharedMaps.find((m) => m.docId === docId)?.role;
-  const canMoveCards = kind === 'kanban' && !!title && !missing && sharedRole !== 'view' && !isMobile;
+  const canMoveCards = kind === 'kanban' && !!title && !missing && sharedRole !== 'view';
 
   /** 에디터로 여는 **유일한 길**(요청) — 카드 어디를 눌러도 열리던 것을 "열기"
    *  버튼 하나로 좁혔다. 위젯 안에서 카드를 옮기거나 글을 읽다 실수로 화면이
@@ -570,11 +573,11 @@ function DashWidget({ itemId, docId, size, committedSize, maxCols, edit, isMobil
         {c >= 2 &&
           !edit &&
           (canMoveCards ? (
-            <span title="대시보드에서 카드의 열만 옮길 수 있어요" data-dash-perm="move" style={{ display: 'inline-flex', alignItems: 'center', gap: 4, height: 19, padding: '0 7px', flexShrink: 0, borderRadius: 999, background: 'var(--mf-success-soft)', color: 'var(--mf-success-ink)', fontSize: 9.5, fontWeight: 700, whiteSpace: 'nowrap' }}>
+            <span title="대시보드에서 카드를 옮길 수 있어요(다른 열·같은 열 안 순서)" data-dash-perm="move" style={{ display: 'inline-flex', alignItems: 'center', gap: 4, height: 19, padding: '0 7px', flexShrink: 0, borderRadius: 999, background: 'var(--mf-success-soft)', color: 'var(--mf-success-ink)', fontSize: 9.5, fontWeight: 700, whiteSpace: 'nowrap' }}>
               <svg width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
                 <path d="M8 6 4 12l4 6M16 6l4 6-4 6" />
               </svg>
-              열 이동 가능
+              카드 이동 가능
             </span>
           ) : (
             <span title="대시보드에서는 볼 수만 있어요. 편집은 열어서 하세요" data-dash-perm="view" style={{ display: 'inline-flex', alignItems: 'center', gap: 4, height: 19, padding: '0 7px', flexShrink: 0, borderRadius: 999, background: 'var(--mf-bg)', color: 'var(--mf-muted)', fontSize: 9.5, fontWeight: 700, whiteSpace: 'nowrap' }}>
@@ -600,7 +603,7 @@ function DashWidget({ itemId, docId, size, committedSize, maxCols, edit, isMobil
       ) : !data ? (
         <div aria-busy={!resolved} style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>{!resolved ? <span className="mf-skel" style={{ width: '60%', height: 10, borderRadius: 6 }} /> : <span style={{ fontSize: 11.5, color: 'var(--mf-faint)' }}>내용이 아직 없어요</span>}</div>
       ) : data.kind === 'kanban' ? (
-        <KanbanBody data={data} isMobile={isMobile} comments={commentCounts} avatars={participantAvatars.byEmail} onMoveCard={canMoveCards && !edit ? (cardId, toColId) => void controller.moveDashCard(docId, cardId, toColId) : undefined} />
+        <KanbanBody data={data} isMobile={isMobile} comments={commentCounts} avatars={participantAvatars.byEmail} onMoveCard={canMoveCards && !edit ? (cardId, toColId, index) => void controller.moveDashCard(docId, cardId, toColId, index) : undefined} />
       ) : (
         <SceneBody raw={raw!} hue={hue} />
       )}
@@ -666,18 +669,78 @@ function useDocCommentCounts(docId: string): Record<string, number> {
  * doc.themeKey를 쓰지 않는다(문서에 실린 'white'는 템플릿의 관성값). 위젯이 그걸
  * 읽으면 에디터는 코랄인데 위젯만 파란 팔레트가 된다.
  *
- * 상호작용은 **카드의 열 이동 하나**다: `onMoveCard`가 오면 카드를 다른 열로 끌 수
- * 있고(놓일 자리는 에디터와 같은 점선 상자 — 이 경로는 열 끝에 붙이므로 맨 뒤에
- * 선다), 편집 진입(더블클릭 상세·우클릭 메뉴·추가/삭제)은 내주지 않는다 —
- * 그건 열어서 한다. 배치 편집 모드·보기 전용 공유·터치에서는 드래그 자체가 없다. */
-function KanbanBody({ data, isMobile, comments, avatars, onMoveCard }: { data: WidgetKanban; isMobile: boolean; comments: Record<string, number>; avatars: Record<string, string>; onMoveCard?: (cardId: string, toColId: string) => void }) {
+ * 상호작용은 **카드 이동 하나**다: `onMoveCard`가 오면 카드를 끌어 다른 열로,
+ * 또는 같은 열 안의 다른 자리로 옮길 수 있다. 드래그도 에디터의 그 기계를 그대로
+ * 쓴다(`beginPointerDrag` — 마우스 4px 문턱 / 터치 320ms 길게 누르기, 취소는 이동이
+ * 아니다) — 끌고 있는 카드는 목록에서 빠지고 그 자리에 점선 상자가 서며, 손끝에는
+ * 같은 얼굴의 고스트가 살짝 기울어 따라온다. 편집 진입(더블클릭 상세·우클릭 메뉴·
+ * 추가/삭제)은 내주지 않는다 — 그건 열어서 한다. 배치 편집 모드·보기 전용 공유에서는
+ * 드래그 자체가 없다. */
+interface CardDragState {
+  id: string;
+  fromCol: string;
+  /** 화면 좌표(포인터) + 카드 안에서 잡은 지점 — 고스트가 손끝을 따라오는 데 쓴다. */
+  x: number;
+  y: number;
+  offX: number;
+  offY: number;
+  w: number;
+  h: number;
+  target: { colId: string; index: number } | null;
+}
+
+function KanbanBody({ data, isMobile, comments, avatars, onMoveCard }: { data: WidgetKanban; isMobile: boolean; comments: Record<string, number>; avatars: Record<string, string>; onMoveCard?: (cardId: string, toColId: string, index: number) => void }) {
   const th = UI_THEME;
   const track = innerLine(th);
   const colW = isMobile ? 264 : COL_W; // 에디터 Column과 같은 폭
   const lastIdx = data.columns.length - 1;
-  // 끄는 카드·드롭 대상 열 — 위젯 안의 화면 상태(에디터의 drag/dropTarget).
-  const [dragCard, setDragCard] = useState<{ id: string; fromCol: string; h: number } | null>(null);
-  const [overCol, setOverCol] = useState<string | null>(null);
+  const boardRef = useRef<HTMLDivElement | null>(null);
+  const [drag, setDrag] = useState<CardDragState | null>(null);
+  const cardById = (id: string): KanbanCard | undefined => data.cards.find((c) => c.id === id);
+
+  /** 지금 화면에 그려진 열·카드 사각형 — 순수 계산(`dropTargetAt`)에 넘길 재료다. */
+  const columnHits = (): ColumnHit[] => {
+    const board = boardRef.current;
+    if (!board) return [];
+    return Array.from(board.querySelectorAll<HTMLElement>('[data-dash-col]')).map((el) => ({
+      id: el.getAttribute('data-dash-col') || '',
+      rect: el.getBoundingClientRect(),
+      cards: Array.from(el.querySelectorAll<HTMLElement>('[data-dash-card]')).map((c) => ({ id: c.getAttribute('data-dash-card') || '', rect: c.getBoundingClientRect() })),
+    }));
+  };
+
+  const beginCardDrag = (e: ReactPointerEvent, card: KanbanCard) => {
+    if (!onMoveCard) return;
+    const rect = (e.currentTarget as HTMLElement).getBoundingClientRect();
+    const startX = e.clientX;
+    const startY = e.clientY;
+    beginPointerDrag(e, {
+      onStart: () => setDrag({ id: card.id, fromCol: card.col, x: startX, y: startY, offX: startX - rect.left, offY: startY - rect.top, w: rect.width, h: rect.height, target: null }),
+      onMove: (ev) => {
+        const target = dropTargetAt(columnHits(), ev.clientX, ev.clientY, card.id);
+        setDrag((prev) => (prev ? { ...prev, x: ev.clientX, y: ev.clientY, target } : prev));
+        // 화면 밖 열·카드로도 끌고 갈 수 있게 가장자리에서 스크롤한다(에디터와 같은 규칙).
+        const board = boardRef.current;
+        if (!board) return;
+        const br = board.getBoundingClientRect();
+        const dx = edgeScroll(ev.clientX, br.left, br.right);
+        if (dx) board.scrollLeft += dx;
+        const listEl = target ? board.querySelector<HTMLElement>(`[data-dash-col="${target.colId}"] [data-dash-list]`) : null;
+        if (listEl) {
+          const cr = listEl.getBoundingClientRect();
+          const dy = edgeScroll(ev.clientY, cr.top, cr.bottom, 44, 12);
+          if (dy) listEl.scrollTop += dy;
+        }
+      },
+      onDrop: (ev) => {
+        const target = dropTargetAt(columnHits(), ev.clientX, ev.clientY, card.id);
+        if (target) onMoveCard(card.id, target.colId, target.index);
+      },
+      onEnd: () => setDrag(null),
+    });
+  };
+
+  const dragged = drag ? cardById(drag.id) : undefined;
   return (
     <div style={{ flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column', background: boardSurface(th) }}>
       {/* 진행 바 — 에디터 보드 머리의 그 줄(완료부터 왼쪽에서, 열 색 그대로.
@@ -689,31 +752,20 @@ function KanbanBody({ data, isMobile, comments, avatars, onMoveCard }: { data: W
       </div>
       {/* 열 줄 — 에디터 보드와 같은 배치(실제 폭의 열이 옆으로 늘어서고 넘치면
           가로 스크롤). 위젯이라고 열을 오그리면 그 순간 에디터와 다른 물건이 된다. */}
-      <div data-dash-kanban-board style={{ flex: 1, minHeight: 0, display: 'flex', alignItems: 'stretch', gap: 16, padding: '12px 14px 14px', overflowX: 'auto', overflowY: 'hidden', boxSizing: 'border-box' }}>
+      <div ref={boardRef} data-dash-kanban-board style={{ flex: 1, minHeight: 0, display: 'flex', alignItems: 'stretch', gap: 16, padding: '12px 14px 14px', overflowX: 'auto', overflowY: 'hidden', boxSizing: 'border-box' }}>
         {data.columns.map((col, i) => {
-          const mine = cardsInColumn(data.cards, col.id);
-          const hot = overCol === col.id && !!dragCard && dragCard.fromCol !== col.id;
+          // 끌고 있는 카드는 목록에서 빠지고, 놓일 자리에 같은 높이의 점선 상자가
+          // 선다(에디터와 같은 모델) — 열이 그만큼 늘고 줄어 "여기 들어간다"가
+          // 레이아웃으로 보인다.
+          const mine = cardsInColumn(data.cards, col.id).filter((c) => c.id !== drag?.id);
+          const slotAt = drag?.target?.colId === col.id ? Math.max(0, Math.min(drag.target.index, mine.length)) : null;
+          const hot = slotAt !== null;
           const divider = innerLine(th);
           return (
             <section
               key={col.id}
               data-dash-col={col.id}
               data-drop-hot={hot || undefined}
-              onDragOver={(e) => {
-                if (!dragCard || dragCard.fromCol === col.id) return;
-                e.preventDefault(); // 놓을 수 있는 열임을 브라우저에 알린다
-                if (overCol !== col.id) setOverCol(col.id);
-              }}
-              onDragLeave={() => {
-                if (overCol === col.id) setOverCol(null);
-              }}
-              onDrop={(e) => {
-                e.preventDefault();
-                e.stopPropagation();
-                if (dragCard && dragCard.fromCol !== col.id && onMoveCard) onMoveCard(dragCard.id, col.id);
-                setDragCard(null);
-                setOverCol(null);
-              }}
               style={{
                 flex: '0 0 auto',
                 width: colW,
@@ -736,42 +788,35 @@ function KanbanBody({ data, isMobile, comments, avatars, onMoveCard }: { data: W
                 <span style={{ flex: '1 1 auto', minWidth: 0, fontSize: 13.5, fontWeight: 700, color: th.text, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{col.title}</span>
                 <span style={{ flex: '0 0 auto', minWidth: 22, height: 22, padding: '0 7px', borderRadius: 999, background: th.panel, color: th.subtext, display: 'inline-flex', alignItems: 'center', justifyContent: 'center', fontSize: 11, fontWeight: 600 }}>{mine.length}</span>
               </header>
-              <div style={{ flex: '0 1 auto', minHeight: 44, overflowY: 'auto', padding: 11, display: 'flex', flexDirection: 'column', gap: 9 }}>
-                {mine.map((k) => (
-                  <div
-                    key={k.id}
-                    data-dash-card={k.id}
-                    data-card-urgent={k.flagged ? k.id : undefined}
-                    draggable={!!onMoveCard}
-                    onDragStart={(e) => {
-                      if (!onMoveCard) return;
-                      e.stopPropagation(); // 위젯 자체의 드래그(편집 모드 재배치)와 갈라 둔다
-                      setDragCard({ id: k.id, fromCol: col.id, h: (e.currentTarget as HTMLElement).getBoundingClientRect().height });
-                      if (e.dataTransfer) e.dataTransfer.effectAllowed = 'move';
-                    }}
-                    onDragEnd={() => {
-                      setDragCard(null);
-                      setOverCol(null);
-                    }}
-                    // 에디터의 카드와 **같은 클래스** — 호버 떠오름·누름 반응이 같다
-                    // (규칙은 `kanbanCard.css`, 인라인 transition은 두지 않는다: 그걸
-                    // 얹으면 transform 전이가 덮여 툭 바뀐다).
-                    className="mf-kb-card"
-                    style={{
-                      ...cardBase(k, th, false),
-                      position: 'relative',
-                      userSelect: 'none',
-                      // 끌리는 원본은 자리를 지키되 흐리게(에디터와 같은 신호).
-                      opacity: dragCard?.id === k.id ? 0.35 : 1,
-                      cursor: onMoveCard ? 'grab' : 'default',
-                    }}
-                  >
-                    <CardFace card={k} theme={th} comments={comments[k.id] ?? 0} tags={data.tags} done={i === lastIdx} avatars={avatars} />
-                  </div>
+              <div data-dash-list style={{ flex: '0 1 auto', minHeight: 44, overflowY: 'auto', padding: 11, display: 'flex', flexDirection: 'column', gap: 9 }}>
+                {mine.map((k, ci) => (
+                  <Fragment key={k.id}>
+                    {slotAt === ci && <DropSlot h={drag?.h} th={th} />}
+                    <div
+                      data-dash-card={k.id}
+                      data-card-urgent={k.flagged ? k.id : undefined}
+                      onPointerDown={(e) => {
+                        if (!onMoveCard) return;
+                        e.stopPropagation(); // 위젯 자체의 드래그(편집 모드 재배치)와 갈라 둔다
+                        beginCardDrag(e, k);
+                      }}
+                      // 에디터의 카드와 **같은 클래스** — 호버 떠오름·누름 반응이 같다
+                      // (규칙은 `kanbanCard.css`, 인라인 transition은 두지 않는다: 그걸
+                      // 얹으면 transform 전이가 덮여 툭 바뀐다).
+                      className="mf-kb-card"
+                      style={{
+                        ...cardBase(k, th, false),
+                        position: 'relative',
+                        userSelect: 'none',
+                        touchAction: onMoveCard ? 'pan-y' : undefined, // 길게 누르기 전에는 손가락 스크롤이 산다
+                        cursor: onMoveCard ? 'grab' : 'default',
+                      }}
+                    >
+                      <CardFace card={k} theme={th} comments={comments[k.id] ?? 0} tags={data.tags} done={i === lastIdx} avatars={avatars} />
+                    </div>
+                  </Fragment>
                 ))}
-                {/* 놓일 자리 — 에디터와 같은 점선 상자(높이 = 끌고 있는 카드).
-                    이 경로는 열 끝에 붙이므로 상자도 맨 뒤에 선다. */}
-                {hot && <div data-dash-drop-slot style={{ flex: '0 0 auto', height: dragCard?.h || 44, borderRadius: 12, border: `1.5px dashed ${hexA(th.accent, 0.75)}`, background: hexA(th.accent, 0.08), boxSizing: 'border-box' }} />}
+                {slotAt !== null && slotAt >= mine.length && <DropSlot h={drag?.h} th={th} />}
                 {mine.length === 0 && !hot && (
                   <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '22px 14px', borderRadius: 12, border: `1.5px dashed ${th.border}`, textAlign: 'center' }}>
                     {/* 에디터의 빈 열 상자와 같은 꼴 — 문구만 위젯의 것("추가해 보세요"는
@@ -784,8 +829,40 @@ function KanbanBody({ data, isMobile, comments, avatars, onMoveCard }: { data: W
           );
         })}
       </div>
+      {/* 손끝을 따라오는 고스트 — 에디터와 같은 얼굴·같은 기울기.
+          **body 포털인 이유**: 위젯은 hover에서 `transform`으로 떠오르는데, 변형된
+          조상은 `position: fixed`의 기준 상자가 된다 — 그대로 두면 고스트가 위젯 안에
+          갇혀 손끝과 어긋난다. */}
+      {drag && dragged &&
+        createPortal(
+          <div
+            data-dash-card-ghost
+            style={{
+              ...cardBase(dragged, th, false),
+              position: 'fixed',
+              left: drag.x - drag.offX,
+              top: drag.y - drag.offY,
+              width: drag.w,
+              border: `1px solid ${th.accent}`,
+              boxShadow: '0 8px 24px rgba(0,0,0,.18)',
+              boxSizing: 'border-box',
+              pointerEvents: 'none',
+              opacity: 0.95,
+              zIndex: 300,
+              transform: 'rotate(1.5deg)',
+            }}
+          >
+            <CardFace card={dragged} theme={th} comments={comments[dragged.id] ?? 0} tags={data.tags} done={data.columns.length > 0 && dragged.col === (data.columns[data.columns.length - 1] as KanbanColumn).id} avatars={avatars} />
+          </div>,
+          document.body,
+        )}
     </div>
   );
+}
+
+/** 놓일 자리 — 에디터와 같은 점선 상자(높이 = 끌고 있는 카드). */
+function DropSlot({ h, th }: { h?: number; th: Theme }) {
+  return <div data-dash-drop-slot style={{ flex: '0 0 auto', height: h || 44, borderRadius: 12, border: `1.5px dashed ${hexA(th.accent, 0.75)}`, background: hexA(th.accent, 0.08), boxSizing: 'border-box' }} />;
 }
 
 /** 마인드맵·화이트보드 몸통 — 홈 카드와 같은 **실렌더**(`realPreview`). 실제 문서의

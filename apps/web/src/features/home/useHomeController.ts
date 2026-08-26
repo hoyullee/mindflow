@@ -1105,13 +1105,13 @@ export function useHomeController() {
    * 저장이 실패하면 되돌리며 안내한다(성공 시엔 저장된 실제 본문으로 다시 덮는다 —
    * 충돌 재시도로 다른 편집이 섞였어도 최종 화면이 진실이 된다).
    */
-  const moveDashCard = async (docId: string, cardId: string, toColId: string): Promise<boolean> => {
+  const moveDashCard = async (docId: string, cardId: string, toColId: string, atIndex?: number): Promise<boolean> => {
     const prevRaw = state.previewDocs[docId];
     if (prevRaw) {
       try {
         const d = JSON.parse(prevRaw) as { kind?: string; cards?: Parameters<typeof moveCard>[0] };
         if (d?.kind === 'kanban' && Array.isArray(d.cards)) {
-          const idx = d.cards.filter((c) => c.col === toColId).length;
+          const idx = atIndex ?? d.cards.filter((c) => c.col === toColId).length;
           d.cards = moveCard(d.cards, cardId, toColId, idx);
           patch({ previewDocs: { ...state.previewDocs, [docId]: JSON.stringify(d) } });
         }
@@ -1125,9 +1125,12 @@ export function useHomeController() {
       const cards = loaded.doc.cards ?? [];
       const card = cards.find((c) => c.id === cardId);
       if (!card || !(loaded.doc.columns ?? []).some((c) => c.id === toColId)) return false;
-      if (card.col === toColId) return true; // 이미 그 열(충돌 재시도에서 겹친 경우 포함)
-      const index = cards.filter((c) => c.col === toColId).length; // 대상 열 맨 뒤에 붙인다
-      const next: Doc = { ...loaded.doc, cards: moveCard(cards, cardId, toColId, index) };
+      const index = atIndex ?? cards.filter((c) => c.col === toColId).length; // 자리를 모르면 맨 뒤
+      const moved = moveCard(cards, cardId, toColId, index);
+      // 바뀐 게 없으면 저장하지 않는다 — 제자리에 놓았거나, 충돌 재시도에서 이미
+      // 반영된 경우다(같은 열 안 순서 변경도 이 비교로 가려진다).
+      if (JSON.stringify(moved) === JSON.stringify(cards)) return true;
+      const next: Doc = { ...loaded.doc, cards: moved };
       const res = await docStore.save(docId, next, { prevVersion: loaded.version, title: loaded.title });
       if (res.ok) {
         const raw = JSON.stringify(serializeDoc(next));

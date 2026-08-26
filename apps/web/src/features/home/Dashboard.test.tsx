@@ -529,15 +529,51 @@ async function openKanbanDash(meta: DocMeta = META('doc-k', '스프린트'), mob
 }
 
 /** 카드를 다른 열로 끄는 세 이벤트 — 실사용자 드래그의 축약. */
-function dragCardTo(container: HTMLElement, cardId: string, colId: string) {
-  fireEvent.dragStart(container.querySelector(`[data-dash-card="${cardId}"]`) as HTMLElement);
-  const col = container.querySelector(`[data-dash-col="${colId}"]`) as HTMLElement;
-  fireEvent.dragOver(col);
-  fireEvent.drop(col);
+/** jsdom엔 PointerEvent가 없다 — MouseEvent를 pointer 이름으로 던진다(에디터 테스트와 같은 처방). */
+function firePointer(target: Element | Window, type: 'pointerdown' | 'pointermove' | 'pointerup' | 'pointercancel', init: { clientX?: number; clientY?: number; pointerType?: string } = {}): void {
+  const ev = new MouseEvent(type, { bubbles: true, cancelable: true, clientX: init.clientX ?? 0, clientY: init.clientY ?? 0 });
+  Object.defineProperty(ev, 'pointerType', { value: init.pointerType ?? 'mouse', configurable: true });
+  Object.defineProperty(ev, 'pointerId', { value: 1, configurable: true });
+  fireEvent(target as Element, ev);
 }
 
-describe('대시보드 ③ — 칸반 카드 열 이동', () => {
-  it('칸반 위젯은 "열 이동 가능" 배지, 맵 위젯은 "보기 전용" 그대로', async () => {
+/** jsdom은 레이아웃을 재지 않는다 — 위젯 안 열·카드 사각형을 심어 규칙을 검증한다.
+ *  열 0: x 0~300 / 열 1: x 320~620, 카드는 y 50부터 48px 간격. */
+function stubWidgetRects(container: HTMLElement): void {
+  const put = (el: Element, r: { left: number; top: number; right: number; bottom: number }): void => {
+    (el as HTMLElement).getBoundingClientRect = () => ({ ...r, x: r.left, y: r.top, width: r.right - r.left, height: r.bottom - r.top, toJSON: () => r }) as DOMRect;
+  };
+  const board = container.querySelector('[data-dash-kanban-board]');
+  if (board) put(board, { left: 0, top: 0, right: 900, bottom: 600 });
+  Array.from(container.querySelectorAll('[data-dash-col]')).forEach((colEl, i) => {
+    const left = i * 320;
+    put(colEl, { left, top: 0, right: left + 300, bottom: 600 });
+    const list = colEl.querySelector('[data-dash-list]');
+    if (list) put(list, { left, top: 40, right: left + 300, bottom: 600 });
+    Array.from(colEl.querySelectorAll('[data-dash-card]')).forEach((cardEl, j) => {
+      const top = 50 + j * 48;
+      put(cardEl, { left: left + 10, top, right: left + 290, bottom: top + 40 });
+    });
+  });
+}
+
+/** 카드를 끌어 (x, y)에 놓는다 — 에디터와 같은 포인터 제스처. */
+function dragCardToPoint(container: HTMLElement, cardId: string, x: number, y: number) {
+  const card = container.querySelector(`[data-dash-card="${cardId}"]`) as HTMLElement;
+  stubWidgetRects(container);
+  firePointer(card, 'pointerdown', { clientX: 150, clientY: 70 });
+  firePointer(window, 'pointermove', { clientX: 160, clientY: 80 }); // 4px 문턱을 넘겨 시작
+  firePointer(window, 'pointermove', { clientX: x, clientY: y });
+  firePointer(window, 'pointerup', { clientX: x, clientY: y });
+}
+
+/** 둘째 열(x 320~620)의 맨 위로 옮긴다. */
+function dragCardTo(container: HTMLElement, cardId: string, colIndex = 1) {
+  dragCardToPoint(container, cardId, colIndex * 320 + 150, 45);
+}
+
+describe('대시보드 ③ — 칸반 카드 이동', () => {
+  it('칸반 위젯은 "카드 이동 가능" 배지, 맵 위젯은 "보기 전용" 그대로', async () => {
     const { container } = await openSeededDash(); // 맵 위젯 둘
     expect(container.querySelector('[data-dash-perm="view"]')).toBeTruthy();
     expect(container.querySelector('[data-dash-perm="move"]')).toBeNull();
@@ -546,19 +582,28 @@ describe('대시보드 ③ — 칸반 카드 열 이동', () => {
 
     const { container: c2 } = await openKanbanDash();
     const badge = c2.querySelector('[data-dash-perm="move"]') as HTMLElement;
-    expect(badge?.textContent).toContain('열 이동 가능');
-    expect(badge?.getAttribute('title')).toContain('카드의 열만 옮길 수 있어요');
+    expect(badge?.textContent).toContain('카드 이동 가능');
+    expect(badge?.getAttribute('title')).toContain('카드를 옮길 수 있어요');
   });
 
   it('카드를 다른 열에 놓으면 문서가 저장되고 위젯이 그 자리로 다시 그린다', async () => {
     const { container, docStore } = await openKanbanDash();
+    stubWidgetRects(container);
 
-    // 드롭 대상 열 하이라이트
-    fireEvent.dragStart(container.querySelector('[data-dash-card="k1"]') as HTMLElement);
+    // 에디터와 같은 제스처 — 문턱을 넘으면 고스트가 뜨고, 놓일 자리에 점선 상자가 선다
+    const card = container.querySelector('[data-dash-card="k1"]') as HTMLElement;
+    firePointer(card, 'pointerdown', { clientX: 150, clientY: 70 });
+    firePointer(window, 'pointermove', { clientX: 160, clientY: 80 });
+    await waitFor(() => expect(document.querySelector('[data-dash-card-ghost]')).toBeTruthy());
+    firePointer(window, 'pointermove', { clientX: 470, clientY: 45 });
     const colB = container.querySelector('[data-dash-col="c2"]') as HTMLElement;
-    fireEvent.dragOver(colB);
+    await waitFor(() => expect(colB.querySelector('[data-dash-drop-slot]')).toBeTruthy());
     expect(colB.getAttribute('data-drop-hot')).toBe('true');
-    fireEvent.drop(colB);
+    // 끌고 있는 카드는 원래 목록에서 빠진다(에디터와 같은 모델)
+    expect(container.querySelector('[data-dash-col="c1"] [data-dash-card="k1"]')).toBeNull();
+    firePointer(window, 'pointerup', { clientX: 470, clientY: 45 });
+    // 손을 떼면 고스트·놓일 자리는 사라진다
+    await waitFor(() => expect(document.querySelector('[data-dash-card-ghost]')).toBeNull());
 
     // 낙관 반영 — 카드가 곧바로 완료 열 안에 그려진다
     await waitFor(() => {
@@ -577,7 +622,7 @@ describe('대시보드 ③ — 칸반 카드 열 이동', () => {
     const { container, docStore } = await openKanbanDash();
     docStore.save.mockResolvedValueOnce({ ok: false, reason: 'error', message: 'nope' });
 
-    dragCardTo(container, 'k1', 'c2');
+    dragCardTo(container, 'k1');
 
     await waitFor(() => expect(screen.getByText('카드를 옮기지 못했어요')).toBeTruthy());
     // 되돌림 — 카드가 다시 원래 열에
@@ -589,24 +634,64 @@ describe('대시보드 ③ — 칸반 카드 열 이동', () => {
     const { container, docStore } = await openKanbanDash();
     docStore.save.mockResolvedValueOnce({ ok: false, reason: 'conflict', currentVersion: 4 });
 
-    dragCardTo(container, 'k1', 'c2');
+    dragCardTo(container, 'k1');
 
     await waitFor(() => expect(docStore.save).toHaveBeenCalledTimes(2));
     expect(screen.queryByText('카드를 옮기지 못했어요')).toBeNull();
+  });
+
+  it('터치는 길게 눌러야 잡힌다 — 그 전에 밀면 스크롤 의도(에디터와 같은 제스처)', async () => {
+    {
+      const { container, docStore } = await openKanbanDash();
+      stubWidgetRects(container);
+      const card = container.querySelector('[data-dash-card="k1"]') as HTMLElement;
+
+      // ① 길게 누르기 전에 밀면 드래그가 아니다(목록 스크롤)
+      firePointer(card, 'pointerdown', { clientX: 150, clientY: 70, pointerType: 'touch' });
+      firePointer(window, 'pointermove', { clientX: 150, clientY: 110, pointerType: 'touch' });
+      firePointer(window, 'pointerup', { clientX: 150, clientY: 110, pointerType: 'touch' });
+      expect(document.querySelector('[data-dash-card-ghost]')).toBeNull();
+
+      // ② 320ms 누르고 있으면 잡힌다 → 다른 열에 놓으면 저장된다
+      firePointer(card, 'pointerdown', { clientX: 150, clientY: 70, pointerType: 'touch' });
+      await new Promise((r) => setTimeout(r, 380)); // 길게 누르기(320ms)를 실제로 기다린다 — fake timer는 렌더 대기와 얽힌다
+      firePointer(window, 'pointermove', { clientX: 470, clientY: 45, pointerType: 'touch' });
+      expect(document.querySelector('[data-dash-card-ghost]')).toBeTruthy();
+      firePointer(window, 'pointerup', { clientX: 470, clientY: 45, pointerType: 'touch' });
+      await waitFor(() => expect(docStore.save).toHaveBeenCalled());
+    }
   });
 
   it('보기 전용으로 공유받은 칸반은 배지도 드래그도 보기 전용', async () => {
     const { container } = await openKanbanDash({ ...META('doc-k', '스프린트'), ownedByMe: false, sharedRole: 'view' });
     expect(container.querySelector('[data-dash-perm="view"]')).toBeTruthy();
     expect(container.querySelector('[data-dash-perm="move"]')).toBeNull();
-    expect((container.querySelector('[data-dash-card="k1"]') as HTMLElement).getAttribute('draggable')).toBe('false');
+    dragCardTo(container, 'k1');
+    expect(document.querySelector('[data-dash-card-ghost]')).toBeNull(); // 드래그 자체가 시작되지 않는다
   });
 
   it('배치 편집 모드에서는 카드 드래그가 꺼진다(그 시간의 드래그는 위젯 재배치)', async () => {
     const user = userEvent.setup();
     const { container } = await openKanbanDash();
     await user.click(screen.getByRole('button', { name: /^편집$/ }));
-    expect((container.querySelector('[data-dash-card="k1"]') as HTMLElement).getAttribute('draggable')).toBe('false');
+    dragCardTo(container, 'k1');
+    expect(document.querySelector('[data-dash-card-ghost]')).toBeNull();
+  });
+
+  it('같은 열 안에서도 순서를 바꾼다 — 놓은 자리의 index가 그대로 저장된다(에디터와 같은 규칙)', async () => {
+    const { container, docStore } = await openKanbanDash();
+    stubWidgetRects(container);
+    // 첫 열의 둘째 카드(k2)를 맨 위로
+    const card = container.querySelector('[data-dash-card="k2"]') as HTMLElement;
+    firePointer(card, 'pointerdown', { clientX: 150, clientY: 110 });
+    firePointer(window, 'pointermove', { clientX: 150, clientY: 100 });
+    firePointer(window, 'pointermove', { clientX: 150, clientY: 45 });
+    firePointer(window, 'pointerup', { clientX: 150, clientY: 45 });
+
+    await waitFor(() => expect(docStore.save).toHaveBeenCalled());
+    const [, doc] = docStore.save.mock.calls[0] as unknown as [string, { cards: { id: string; col: string; pos: number }[] }];
+    const first = doc.cards.filter((c) => c.col === 'c1').sort((a, b) => a.pos - b.pos);
+    expect(first[0]?.id).toBe('k2');
   });
 
   it('위젯의 열·카드는 에디터 디자인 그대로 — 열 폭 308·CardFace 곁정보(기한·댓글·담당) 자리 유지(제보)', async () => {
@@ -642,11 +727,10 @@ describe('대시보드 ④ — 모바일 편집', () => {
       const user = userEvent.setup();
       const { container } = await openKanbanDash(META('doc-k', '스프린트'), true);
 
-      // 칸반이어도 모바일은 보기 전용 배지 — HTML5 드래그가 터치에서 발화하지
-      // 않으므로 '열 이동 가능'은 거짓 약속이 된다
-      expect(container.querySelector('[data-dash-perm="move"]')).toBeNull();
-      expect(container.querySelector('[data-dash-perm="view"]')).toBeTruthy();
-      expect((container.querySelector('[data-dash-card="k1"]') as HTMLElement).getAttribute('draggable')).toBe('false');
+      // 드래그가 에디터와 같은 포인터 제스처(길게 누르기)로 바뀌어 **터치에서도
+      // 카드를 옮길 수 있다** — 그래서 배지도 '카드 이동 가능'이 정직하다.
+      expect(container.querySelector('[data-dash-perm="move"]')).toBeTruthy();
+      expect(container.querySelector('[data-dash-perm="view"]')).toBeNull();
 
       await user.click(screen.getByRole('button', { name: /^편집$/ }));
       // 안내 띠도 실제로 되는 조작만 말한다
@@ -823,13 +907,6 @@ describe('로딩 스켈레톤', () => {
 });
 
 // ── 영역 지정(마퀴)·크기 N×4 (제보·요청) ─────────────────────────────────────
-
-function firePointer(target: Element | Window, type: 'pointerdown' | 'pointermove' | 'pointerup', init: { clientX?: number; clientY?: number } = {}): void {
-  const ev = new MouseEvent(type, { bubbles: true, cancelable: true, clientX: init.clientX ?? 0, clientY: init.clientY ?? 0 });
-  Object.defineProperty(ev, 'pointerType', { value: 'mouse', configurable: true });
-  Object.defineProperty(ev, 'pointerId', { value: 1, configurable: true });
-  fireEvent(target as Element, ev);
-}
 
 describe('대시보드에서는 영역 지정을 하지 않는다(제보)', () => {
   /** 마퀴가 고르는 것은 맵·폴더 카드다 — 대시보드에는 그런 카드가 없고, 위젯 우측
