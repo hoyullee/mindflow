@@ -115,7 +115,10 @@ interface DragState {
  * (`pointermove`의 preventDefault로는 밑에 깔린 터치 동작을 취소하지 못한다).
  * **취소는 이동이 아니다** — `onDrop`은 실제로 놓았을 때만 부른다.
  */
-function beginPointerDrag(
+/** 공용 제스처 골격 — 에디터와 **대시보드 위젯**이 함께 쓴다(같은 카드면 같은 손맛).
+ *  마우스는 4px 문턱, 터치는 320ms 길게 누르기(그래야 평범한 손가락 스크롤이 산다),
+ *  잡은 뒤에는 비-passive touchmove를 막고, **취소는 이동이 아니다**(제보 #436). */
+export function beginPointerDrag(
   e: ReactPointerEvent,
   handlers: { onStart: () => void; onMove: (ev: PointerEvent) => void; onDrop: (ev: PointerEvent) => void; onEnd: () => void },
 ): void {
