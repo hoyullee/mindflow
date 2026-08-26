@@ -106,11 +106,13 @@ export const META_MONO: CSSProperties = {
 
 /** 미리보기 바탕에 깔리는 도트 격자 — 캔버스의 점을 축소해 옮긴 것.
  * `step`은 카드 크기에 따라 다르다(그리드 18px / 최근 항목 13px). */
-export function dotGridStyle(step: number): CSSProperties {
+export function dotGridStyle(step: number, color?: string): CSSProperties {
+  // `color`를 넘기면 그 색(문서 테마의 캔버스 도트) — 미리보기가 에디터와 같은
+  // 격자를 그린다. 안 넘기면 홈 테마의 도트 색(대시보드 바닥 등 크롬 자리).
   return {
     position: 'absolute',
     inset: 0,
-    backgroundImage: 'radial-gradient(var(--mf-dot-grid) 1px, transparent 1px)',
+    backgroundImage: `radial-gradient(${color ?? 'var(--mf-dot-grid)'} 1px, transparent 1px)`,
     backgroundSize: `${step}px ${step}px`,
     pointerEvents: 'none',
   };

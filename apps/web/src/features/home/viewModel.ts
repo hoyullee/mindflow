@@ -1,6 +1,7 @@
 import { avatarLabel } from './components/ProfileAvatar';
 import { RECENT_RENDER_MAX, docRawForTitle, cardKeyOf, hexA, mapHref, mapId, readDocRaw } from './storage';
-import { miniBoardPreview, miniKanbanPreview, miniPreview, previewSkeleton, realPreview } from './mapPreview';
+import { miniBoardPreview, miniKanbanPreview, miniPreview, previewSkeleton, previewSurface, realPreview } from './mapPreview';
+import type { PreviewSurface } from './mapPreview';
 import { docSearchText, matchesQuery } from './searchIndex';
 import type { DriveFolderData, FolderData, HomeState, MapCardData, SpaceData } from './types';
 import { DRIVE_FILES } from './types';
@@ -26,6 +27,9 @@ export interface CardViewData {
   isBoard: boolean;
   /** 칸반 보드인가 — 배지·썸네일 바탕이 갈린다(화이트보드와 같은 규칙). */
   isKanban: boolean;
+  /** 썸네일 바탕 — **그 문서의 캔버스 배경**(`previewSurface`). 본문을 아직 못
+   * 받았으면 `null`이고, 그때는 카드가 지금까지의 기본 바탕을 쓴다. */
+  surface: PreviewSurface | null;
   hue: string;
   docId?: string;
   href: string;
@@ -278,7 +282,7 @@ export function docKindOf(title: string, docId: string | undefined, previewDocs:
   return isKanbanRaw(raw) ? 'kanban' : isBoardRaw(raw) ? 'board' : 'map';
 }
 
-export function cardSketch(title: string, hue: string, docId: string | undefined, previewDocs: Record<string, string>, previewResolved: Record<string, boolean>): JSX.Element {
+export function cardSketch(title: string, hue: string, docId: string | undefined, previewDocs: Record<string, string>, previewResolved: Record<string, boolean>, imageUrls?: Record<string, string>): JSX.Element {
   // A docId-backed card's body is keyed by that id alone: the prefetched
   // DocStore body (covers backend-stored maps), then the localStorage copy.
   // NEVER fall through to a title match — a brand-new, never-saved map (the
@@ -292,7 +296,7 @@ export function cardSketch(title: string, hue: string, docId: string | undefined
   // 종류를 알 수 있는 건 본문이 있을 때뿐이고, 본문이 아예 없으면 배지도 안 뜨므로
   // 그때는 예전처럼 마인드맵 삽화다.
   const fallback = (): JSX.Element => (isKanbanRaw(raw) ? miniKanbanPreview(hue) : isBoardRaw(raw) ? miniBoardPreview(hue) : miniPreview(hue, title));
-  if (raw) return realPreview(raw, hue) || fallback();
+  if (raw) return realPreview(raw, hue, imageUrls) || fallback();
   // No body available yet: if this card's backend body is still being fetched
   // (docId not yet resolved), show a neutral skeleton instead of the generic
   // sketch — this is what removes the "old preview flashes, then real nodes"
@@ -439,9 +443,10 @@ export function deriveHomeView(state: HomeState): HomeViewModel {
       hue: c.hue,
       docId: c.docId,
       href: mapHref(c.title, c.docId),
-      sketch: cardSketch(c.title, c.hue, c.docId, state.previewDocs, state.previewResolved),
+      sketch: cardSketch(c.title, c.hue, c.docId, state.previewDocs, state.previewResolved, state.previewImageUrls),
       isBoard: isBoardRaw(cardRaw(c.title, c.docId, state.previewDocs)),
       isKanban: isKanbanRaw(cardRaw(c.title, c.docId, state.previewDocs)),
+      surface: previewSurface(cardRaw(c.title, c.docId, state.previewDocs)),
       badge: isDriveSpace ? 'Drive' : '',
       openable: c.openable,
       isFav: !!favs[key],
@@ -560,9 +565,10 @@ export function deriveHomeView(state: HomeState): HomeViewModel {
             hue: m.hue,
             docId: m.docId,
             href: mapHref(m.title, m.docId),
-            sketch: cardSketch(m.title, m.hue, m.docId, state.previewDocs, state.previewResolved),
+            sketch: cardSketch(m.title, m.hue, m.docId, state.previewDocs, state.previewResolved, state.previewImageUrls),
             isBoard: isBoardRaw(cardRaw(m.title, m.docId, state.previewDocs)),
             isKanban: isKanbanRaw(cardRaw(m.title, m.docId, state.previewDocs)),
+            surface: previewSurface(cardRaw(m.title, m.docId, state.previewDocs)),
             badge: '',
             openable: true,
             isFav: !!state.favs[key],
@@ -698,9 +704,10 @@ export function deriveHomeView(state: HomeState): HomeViewModel {
         hue: base.hue,
         docId: base.docId,
         href: mapHref(base.title, base.docId),
-        sketch: cardSketch(base.title, base.hue, base.docId, state.previewDocs, state.previewResolved),
+        sketch: cardSketch(base.title, base.hue, base.docId, state.previewDocs, state.previewResolved, state.previewImageUrls),
         isBoard: isBoardRaw(cardRaw(base.title, base.docId, state.previewDocs)),
         isKanban: isKanbanRaw(cardRaw(base.title, base.docId, state.previewDocs)),
+        surface: previewSurface(cardRaw(base.title, base.docId, state.previewDocs)),
         badge: '',
         openable: true,
         isFav: !!favs[key],

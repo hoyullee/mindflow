@@ -7,6 +7,7 @@ import { MemoryRouter, Route, Routes } from 'react-router-dom';
 import { BOARD_TEMPLATES, KANBAN_TEMPLATES, MAP_TEMPLATES } from '../../templates/mapTemplates';
 import { Home } from './Home';
 import { mockMatchMedia } from '../../test/matchMedia';
+import { themeOf } from '../editor/theme';
 import { BackendProvider } from '../../adapters/BackendContext';
 import { LocalAuth } from '../../adapters/local/localAuth';
 import { LocalSpaceStore } from '../../adapters/local/localSpaceStore';
@@ -74,9 +75,9 @@ class MockDocStore implements DocStore {
 
 /** `mode`는 기본 'local'(기존 테스트 그대로). 백엔드 모드에서만 갈리는 동작
  *  (예: ②의 "이미 있는 문서엔 손대지 않는다")을 볼 때 'supabase'를 넘긴다. */
-function renderHomeWithDocStore(metas: DocMeta[] = [], bodies: Record<string, LoadedDoc> = {}, mode: Backend['mode'] = 'local') {
+function renderHomeWithDocStore(metas: DocMeta[] = [], bodies: Record<string, LoadedDoc> = {}, mode: Backend['mode'] = 'local', imageStore: Backend['imageStore'] = new LocalImageStore()) {
   const docStore = new MockDocStore(metas, bodies);
-  const backend: Backend = { auth: new LocalAuth(), docStore, spaceStore: new LocalSpaceStore(), shareStore: new LocalShareStore(), feedbackStore: new LocalFeedbackStore(), imageStore: new LocalImageStore(), commentStore: new LocalCommentStore(), notificationStore: new LocalNotificationStore(), mode };
+  const backend: Backend = { auth: new LocalAuth(), docStore, spaceStore: new LocalSpaceStore(), shareStore: new LocalShareStore(), feedbackStore: new LocalFeedbackStore(), imageStore, commentStore: new LocalCommentStore(), notificationStore: new LocalNotificationStore(), mode };
   const utils = render(
     <MemoryRouter initialEntries={['/home']}>
       <BackendProvider backend={backend}>
@@ -88,7 +89,7 @@ function renderHomeWithDocStore(metas: DocMeta[] = [], bodies: Record<string, Lo
       </BackendProvider>
     </MemoryRouter>,
   );
-  return { ...utils, docStore };
+  return { ...utils, docStore, imageStore };
 }
 
 /**
@@ -4072,7 +4073,7 @@ describe('홈 우클릭 메뉴', () => {
       expect(weekly.querySelector('svg[viewBox]')).toBeTruthy();
     });
 
-    it('화이트보드 카드는 맵 카드와 다르게 보인다 — 종류 배지 + 흰 종이 썸네일(제보)', async () => {
+    it('화이트보드 카드는 맵 카드와 다르게 보인다 — 종류 배지(제보)', async () => {
       // 본문이 board면 카드가 스스로 갈린다(썸네일 본문 하나로 판별 — isBoardRaw).
       const boardDoc = { v: 1, kind: 'board', nodes: {}, floats: [{ id: 'f1', x: 10, y: 20, w: 180, text: '보드 메모' }], lines: [], zones: [], layoutMode: 'right', themeKey: 'coral' };
       const mapDoc = { v: 1, nodes: { root: { id: 'root', text: '루트', emoji: '', parent: null, children: [], collapsed: false, color: null, x: 0, y: 0 } }, floats: [], lines: [], zones: [], layoutMode: 'right', themeKey: 'coral' };
@@ -4097,10 +4098,13 @@ describe('홈 우클릭 메뉴', () => {
       // 종류 배지는 **모든 카드**에 붙는다(홈 리디자인) — 종류 이름이 다르다.
       await waitFor(() => expect(boardCard.querySelector('[data-board-badge]')?.textContent).toContain('화이트보드'));
       expect(mapCard.querySelector('[data-board-badge]')?.textContent).toContain('마인드맵');
-      // 썸네일 바탕: 보드는 흰 종이, 맵은 옅은 wash(둘 다 도트 격자가 깔린다).
+      // 썸네일 바탕은 이제 **그 문서의 캔버스 배경**이다(제보: 에디터 배경색 미반영).
+      // 그래서 종류를 알리는 일은 배지가 맡는다 — 화이트보드의 캔버스도 에디터에서는
+      // 같은 따뜻한 wash라(테마 'white'의 canvasWash) 바탕만으로는 갈리지 않는다.
       const thumbBg = (card: HTMLElement) => ((card.querySelector('.map-thumb') as HTMLElement).style.background || '');
-      expect(thumbBg(boardCard)).toContain('rgb(255, 255, 255)');
-      expect(thumbBg(mapCard)).toContain('--mf-wash');
+      expect(thumbBg(boardCard)).toContain('radial-gradient');
+      expect(thumbBg(mapCard)).toContain('radial-gradient');
+      expect(thumbBg(mapCard)).not.toContain('--mf-wash');
       expect(boardCard.querySelector('[data-dot-grid]')).toBeTruthy();
       expect(mapCard.querySelector('[data-dot-grid]')).toBeTruthy();
       // 종류 색은 배지의 점이 말한다(홈 리디자인) — 테두리는 둘 다 같은 경계선.
@@ -5408,5 +5412,100 @@ describe('홈 디자인 후속 6건', () => {
     expect(tile.style.outline).toBe(''); // 선택 효과 없음
     expect(tile.style.transition).toBe(''); // transition은 home.css의 .map-card가 정한다
     void container;
+  });
+});
+
+// ── 미리보기 2건(제보) ──────────────────────────────────────────────────────
+//
+// ① 카드·위젯의 첨부 이미지가 늘 회색 자리표시자였다.
+// ② 미리보기 바탕이 에디터의 캔버스 배경을 따르지 않았다.
+describe('미리보기 — 이미지와 배경', () => {
+  const REF = 'mfimg:d1/pic.webp';
+  const docWith = (extra: Record<string, unknown>) => ({
+    v: 1,
+    nodes: { root: { id: 'root', text: '루트', emoji: '', parent: null, children: [], collapsed: false, color: null, x: 0, y: 0 } },
+    floats: [], lines: [], zones: [], layoutMode: 'radial', themeKey: 'coral',
+    ...extra,
+  });
+  const meta = (id: string, title: string): DocMeta => ({ id, title, version: 1, updatedAt: '2026-01-01T00:00:00.000Z', isFavorite: false, deletedAt: null });
+
+  function seedCard(docId: string, title: string) {
+    localStorage.setItem(
+      'mf_spaces',
+      JSON.stringify({
+        spaces: [{ id: 's1', name: '업무', color: '#f0663f', home: true, maps: [{ title, when: '방금', hue: '#f0663f', docId }], folders: [] }],
+        activeSpace: 's1',
+      }),
+    );
+  }
+
+  it('본문에 남은 이미지 참조를 발급받아 카드에 실제 이미지를 그린다', async () => {
+    seedCard('d1', '사진 맵');
+    const resolveRefs = vi.fn(async (refs: string[]) => Object.fromEntries(refs.map((r) => [r, `https://signed.example/${encodeURIComponent(r)}?token=t`])));
+    const imageStore = { upload: async () => null, resolve: resolveRefs, removeForDoc: async () => undefined };
+    const { container } = renderHomeWithDocStore(
+      [meta('d1', '사진 맵')],
+      { d1: { doc: docWith({ floats: [{ id: 'f1', x: 30, y: 30, w: 120, h: 90, img: REF, text: '' }] }) as never, version: 1, title: '사진 맵' } },
+      'supabase',
+      imageStore,
+    );
+    // 참조는 한 번에 묶어 발급받는다(왕복 1회).
+    await waitFor(() => expect(resolveRefs).toHaveBeenCalledWith([REF]));
+    await waitFor(() => {
+      const img = container.querySelector('a[data-title="사진 맵"] image');
+      expect(img?.getAttribute('href')).toContain('https://signed.example/');
+    });
+  });
+
+  // 전송량: 스페이스 안의 모든 카드가 한꺼번에 사진을 받으면 안 된다. `content-visibility`
+  // 가 막아 줄 거라 생각했지만 실측으로 틀렸다(화면 밖 카드의 이미지도 전부 요청됐다) —
+  // 그래서 **화면에 닿은 카드**의 문서만 발급받는다.
+  it('화면에 닿지 않은 카드의 이미지는 발급받지 않는다', async () => {
+    seedCard('d1', '사진 맵');
+    const observed: Element[] = [];
+    let fire: (() => void) | null = null;
+    class FakeIO {
+      constructor(private cb: (entries: { isIntersecting: boolean }[]) => void) {}
+      observe(el: Element) {
+        observed.push(el);
+        fire = () => this.cb([{ isIntersecting: true }]);
+      }
+      disconnect() {}
+    }
+    vi.stubGlobal('IntersectionObserver', FakeIO as unknown as typeof IntersectionObserver);
+    try {
+      const resolveRefs = vi.fn(async (refs: string[]) => Object.fromEntries(refs.map((r) => [r, `https://signed.example/x?ref=${encodeURIComponent(r)}`])));
+      const imageStore = { upload: async () => null, resolve: resolveRefs, removeForDoc: async () => undefined };
+      const { container } = renderHomeWithDocStore(
+        [meta('d1', '사진 맵')],
+        { d1: { doc: docWith({ floats: [{ id: 'f1', x: 30, y: 30, w: 120, h: 90, img: REF, text: '' }] }) as never, version: 1, title: '사진 맵' } },
+        'supabase',
+        imageStore,
+      );
+      await waitFor(() => expect(container.querySelector('a[data-title="사진 맵"]')).toBeTruthy());
+      await waitFor(() => expect(observed.length).toBeGreaterThan(0));
+      // 아직 화면에 닿지 않았다 — 발급 요청이 나가지 않는다.
+      expect(resolveRefs).not.toHaveBeenCalled();
+      // 스크롤해서 카드가 보이면 그때 받는다.
+      await act(async () => { fire?.(); });
+      await waitFor(() => expect(resolveRefs).toHaveBeenCalledWith([REF]));
+    } finally {
+      vi.unstubAllGlobals();
+    }
+  });
+
+  it('썸네일 바탕이 그 문서의 캔버스 배경을 따른다(에디터와 같은 색)', async () => {
+    seedCard('d2', '다크 맵');
+    const { container } = renderHomeWithDocStore([meta('d2', '다크 맵')], {
+      d2: { doc: docWith({ themeKey: 'dark' }) as never, version: 1, title: '다크 맵' },
+    });
+    await waitFor(() => expect(container.querySelector('a[data-title="다크 맵"] .map-thumb')).toBeTruthy());
+    const thumb = container.querySelector('a[data-title="다크 맵"] .map-thumb') as HTMLElement;
+    // 예전엔 어느 문서든 홈 테마의 wash 한 값이었다.
+    expect(thumb.style.background).toContain(themeOf('dark').canvasBg);
+    expect(thumb.style.background).not.toContain('--mf-wash');
+    // 도트도 캔버스와 같은 색.
+    const dots = container.querySelector('a[data-title="다크 맵"] [data-dot-grid]') as HTMLElement;
+    expect(dots.style.backgroundImage).toContain(themeOf('dark').dot);
   });
 });

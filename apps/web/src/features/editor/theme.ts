@@ -170,16 +170,21 @@ export function mixHex(a: string, b: string, t: number): string {
  * 나머지 테마는 기존 파생 그대로 — 오션·포레스트에 원본의 따뜻한 색을 그대로
  * 얹으면 팔레트와 부딪히고, 어두운 캔버스(다크)는 흰색을 크게 섞으면 잿빛으로
  * 바래므로 아주 옅게만 밝힌다.
+ *
+ * @param radii 그라데이션 반지름. 기본값은 원본의 **px 고정**(에디터 캔버스 — 화면
+ *   크기가 바뀌어도 빛 덩어리 크기가 그대로여야 한다). 홈 썸네일처럼 아주 작은
+ *   상자는 백분율(`'85% 82%'`)을 넘긴다 — px 그대로면 상자 전체가 첫 스톱 안에
+ *   들어와 그라데이션이 아예 보이지 않는다(=단색).
  */
-export function canvasWash(canvasBg: string): string {
+export function canvasWash(canvasBg: string, radii = '1200px 700px'): string {
   const key = canvasBg.toLowerCase();
   if (key === '#f5ece5' || key === '#ffffff') {
-    return 'radial-gradient(1200px 700px at 62% 46%, #fffdfb 0%, #fdf7f2 55%, #fbf2eb 100%)';
+    return `radial-gradient(${radii} at 62% 46%, #fffdfb 0%, #fdf7f2 55%, #fbf2eb 100%)`;
   }
   const c = canvasBg.replace('#', '');
   const lum = (parseInt(c.substring(0, 2), 16) * 0.2126 + parseInt(c.substring(2, 4), 16) * 0.7152 + parseInt(c.substring(4, 6), 16) * 0.0722) / 255;
   const [t0, t1] = lum < 0.5 ? [0.08, 0.04] : [0.8, 0.45];
-  return `radial-gradient(1200px 700px at 62% 46%, ${mixHex(canvasBg, '#ffffff', t0)} 0%, ${mixHex(canvasBg, '#ffffff', t1)} 55%, ${canvasBg} 100%)`;
+  return `radial-gradient(${radii} at 62% 46%, ${mixHex(canvasBg, '#ffffff', t0)} 0%, ${mixHex(canvasBg, '#ffffff', t1)} 55%, ${canvasBg} 100%)`;
 }
 
 /** Port of `Component#hexA` (MindFlow.dc.html:883). */

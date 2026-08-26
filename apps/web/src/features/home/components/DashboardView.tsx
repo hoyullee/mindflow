@@ -13,7 +13,8 @@ import type { HomeViewModel, DocKindName } from '../viewModel';
 import { docKindOf } from '../viewModel';
 import { DASH_CAP, DASH_COLS, DASH_MIN_SIZE, DASH_ROW_PX, DASH_ROWS_MAX, parseSize, sizesFor } from '../dashboard/model';
 import { widgetDataOf, type WidgetData, type WidgetKanban } from '../dashboard/widgetData';
-import { realPreview } from '../mapPreview';
+import { previewSurface, realPreview } from '../mapPreview';
+import { useVisibleOnce } from '../useVisibleOnce';
 import { mapHref, readDocRaw } from '../storage';
 import { formatLastEdited } from '../timeFormat';
 import { META_MONO } from '../chrome';
@@ -412,6 +413,10 @@ function DashWidget({ itemId, docId, size, committedSize, maxCols, edit, isMobil
   // 곁정보도 에디터와 같은 출처 — 담당 사진(share_participants)·댓글 수(comments).
   // 칸반 위젯일 때만 읽는다(문서당 한 번, 다른 종류는 왕복 0).
   const isKanbanWidget = kind === 'kanban' && !!raw;
+  // 첨부 이미지 URL은 이 위젯이 화면에 닿을 때 발급받는다(홈 카드와 같은 규칙).
+  const rootRef = useRef<HTMLDivElement | null>(null);
+  const noteVisible = controller.notePreviewVisible;
+  useVisibleOnce(rootRef, () => noteVisible(docId));
   const participantAvatars = useParticipantAvatars(docId, isKanbanWidget);
   const commentCounts = useDocCommentCounts(isKanbanWidget ? docId : '');
   // 실렌더의 가지 색 폴백 — 홈 카드가 쓰는 그 hue(카탈로그에 실려 있다).
@@ -450,6 +455,7 @@ function DashWidget({ itemId, docId, size, committedSize, maxCols, edit, isMobil
 
   return (
     <div
+      ref={rootRef}
       data-dash-widget={itemId}
       onContextMenu={onCtx}
       className="mf-dash-widget"
@@ -605,7 +611,7 @@ function DashWidget({ itemId, docId, size, committedSize, maxCols, edit, isMobil
       ) : data.kind === 'kanban' ? (
         <KanbanBody data={data} isMobile={isMobile} comments={commentCounts} avatars={participantAvatars.byEmail} onMoveCard={canMoveCards && !edit ? (cardId, toColId, index) => void controller.moveDashCard(docId, cardId, toColId, index) : undefined} />
       ) : (
-        <SceneBody raw={raw!} hue={hue} />
+        <SceneBody raw={raw!} hue={hue} imageUrls={state.previewImageUrls} />
       )}
 
       {/* 발치 — 아바타(칸반 담당) + 지표 한 줄(디자인). 1행 크기에서는 접는다. */}
@@ -872,12 +878,13 @@ function DropSlot({ h, th }: { h?: number; th: Theme }) {
 
 /** 마인드맵·화이트보드 몸통 — 홈 카드와 같은 **실렌더**(`realPreview`). 실제 문서의
  * 좌표·도형·색·잉크가 그대로 축소되어, 위젯이 문서와 다르게 보일 길이 없다(제보).
- * 바탕은 카드 wash + 점 격자(디자인의 위젯 바닥). */
-function SceneBody({ raw, hue }: { raw: string; hue: string }) {
-  const scene = realPreview(raw, hue);
+ * 바탕도 같은 규칙 — **그 문서의 캔버스 배경**(`previewSurface`, 홈 카드와 한 함수). */
+function SceneBody({ raw, hue, imageUrls }: { raw: string; hue: string; imageUrls?: Record<string, string> }) {
+  const scene = realPreview(raw, hue, imageUrls);
+  const surface = previewSurface(raw);
   return (
-    <div style={{ position: 'relative', flex: 1, minHeight: 0, background: 'var(--mf-wash, var(--mf-bg))', overflow: 'hidden' }}>
-      <div aria-hidden style={{ position: 'absolute', inset: 0, backgroundImage: 'radial-gradient(var(--mf-dot-grid) 1px, transparent 1px)', backgroundSize: '16px 16px' }} />
+    <div style={{ position: 'relative', flex: 1, minHeight: 0, background: surface?.bg ?? 'var(--mf-wash, var(--mf-bg))', overflow: 'hidden' }}>
+      <div aria-hidden style={{ position: 'absolute', inset: 0, backgroundImage: `radial-gradient(${surface?.dot ?? 'var(--mf-dot-grid)'} 1px, transparent 1px)`, backgroundSize: '16px 16px' }} />
       <span data-dash-scene style={{ position: 'absolute', inset: 0, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>{scene ?? <span style={{ fontSize: 11.5, color: 'var(--mf-faint)' }}>내용이 아직 없어요</span>}</span>
     </div>
   );

@@ -6,6 +6,7 @@ import type { CardViewData } from '../viewModel';
 import { useIsMobile } from '../../../hooks/useMediaQuery';
 import { useCardActivation } from './useCardActivation';
 import { dotGridStyle } from '../chrome';
+import { useVisibleOnce } from '../useVisibleOnce';
 
 interface Props {
   card: CardViewData;
@@ -43,6 +44,13 @@ const LONG_PRESS_SLOP = 10;
 export function MapCard({ card, controller, draggableEnabled, compact = false }: Props) {
   // 한 번 = 선택 / 두 번 = 열기. 규칙과 그 함정들은 `useCardActivation`에.
   const activation = useCardActivation();
+  // 첨부 이미지 URL은 이 카드가 **화면에 닿을 때** 발급받는다 — 스페이스 안의 모든
+  // 카드가 한꺼번에 사진을 내려받지 않게(전송량). URL이 오기 전에는 미리보기가
+  // 자리표시자를 그리고, 표시 크기는 문서에 있어 도착해도 레이아웃이 밀리지 않는다.
+  const rootRef = useRef<HTMLAnchorElement | null>(null);
+  const docId = card.docId;
+  const noteVisible = controller.notePreviewVisible;
+  useVisibleOnce(rootRef, () => { if (docId) noteVisible(docId); });
   // 선택 모드는 **모바일 레이아웃에서만** 켠다 — 선택 바가 모바일 툴바 자리를 쓰기
   // 때문이다(터치 화면이 달린 데스크톱에서 길게 눌러 들어가면 나갈 길이 없다).
   const isMobile = useIsMobile();
@@ -229,6 +237,7 @@ export function MapCard({ card, controller, draggableEnabled, compact = false }:
 
   return (
     <a
+      ref={rootRef}
       href={card.href}
       onClick={onOpen}
       onDoubleClick={onDblOpen}
@@ -417,14 +426,12 @@ export function MapCard({ card, controller, draggableEnabled, compact = false }:
           // 디자인 원본의 미리보기 높이(최근 74 / 그리드 150).
           height: compact ? 74 : 150,
           position: 'relative',
-          // 바탕은 **옅은 wash**이고 그 위에 캔버스의 점 격자가 깔린다(디자인 원본) —
-          // 미리보기가 "캔버스의 축소판"으로 읽힌다. 화이트보드·칸반만 **흰 종이**로
-          // 남긴다: 그 바탕 자체가 종류를 알리는 표식이다(배지·테두리와 세 겹).
-          background: grey
-            ? 'var(--mf-panel2)'
-            : card.isBoard || card.isKanban
-              ? '#ffffff'
-              : 'var(--mf-wash)',
+          // 바탕은 **그 문서의 캔버스 배경**이고 그 위에 같은 도트 격자가 깔린다 —
+          // 미리보기가 진짜 "캔버스의 축소판"으로 읽힌다(제보: 에디터 배경색이
+          // 반영되지 않는다). 본문을 아직 못 받아 무엇을 그릴지 모르면 지금까지의
+          // 기본 바탕(wash)을 그대로 쓴다. 칸반은 캔버스가 아니라 크롬이라
+          // `previewSurface`가 에디터 보드 바닥을 돌려준다.
+          background: grey ? 'var(--mf-panel2)' : card.surface?.bg ?? 'var(--mf-wash)',
           borderBottom: '1px solid var(--mf-border-soft)',
           display: 'flex',
           alignItems: 'center',
@@ -436,9 +443,10 @@ export function MapCard({ card, controller, draggableEnabled, compact = false }:
           overflow: 'hidden',
         }}
       >
-        {/* 도트 격자 — 내용(썸네일) **뒤**에 깔린다. 회색 카드(열 수 없는 파일)에는
-            그리지 않는다: 그 카드는 캔버스가 아니다. */}
-        {!grey && <span aria-hidden="true" data-dot-grid style={dotGridStyle(compact ? 13 : 18)} />}
+        {/* 도트 격자 — 내용(썸네일) **뒤**에 깔린다. 색은 그 문서 테마의 도트 색
+            (에디터 캔버스와 같은 값). 회색 카드(열 수 없는 파일)에는 그리지 않고,
+            칸반도 격자가 없다(`surface.dot === null`). */}
+        {!grey && card.surface?.dot !== null && <span aria-hidden="true" data-dot-grid style={dotGridStyle(compact ? 13 : 18, card.surface?.dot ?? undefined)} />}
         {/* 실제 문서를 그린 썸네일 — 디자인 원본은 목업이라 추상 도형을 그렸지만,
             우리는 에디터와 같은 렌더러로 실제 내용을 그린다(`mapPreview`). 틀(wash·
             점 격자·배지)만 디자인을 따르고 내용은 진짜다. */}
