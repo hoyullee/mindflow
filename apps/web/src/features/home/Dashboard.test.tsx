@@ -595,6 +595,11 @@ describe('대시보드 ③ — 칸반 카드 이동', () => {
     firePointer(card, 'pointerdown', { clientX: 150, clientY: 70 });
     firePointer(window, 'pointermove', { clientX: 160, clientY: 80 });
     await waitFor(() => expect(document.querySelector('[data-dash-card-ghost]')).toBeTruthy());
+    // 고스트의 **네 변이 모두** 강조색이다 — 예전엔 스프레드 키 순서 탓에 왼쪽만
+    // 기본 테두리로 남아 "좌측 경계선이 잘려" 보였다(제보).
+    const ghostEl = document.querySelector('[data-dash-card-ghost]') as HTMLElement;
+    expect(ghostEl.style.borderTopColor).toBe('rgb(240, 102, 63)');
+    expect(ghostEl.style.borderLeftColor).toBe('rgb(240, 102, 63)');
     firePointer(window, 'pointermove', { clientX: 470, clientY: 45 });
     const colB = container.querySelector('[data-dash-col="c2"]') as HTMLElement;
     await waitFor(() => expect(colB.querySelector('[data-dash-drop-slot]')).toBeTruthy());

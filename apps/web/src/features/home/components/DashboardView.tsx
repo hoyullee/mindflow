@@ -844,6 +844,11 @@ function KanbanBody({ data, isMobile, comments, avatars, onMoveCard }: { data: W
               top: drag.y - drag.offY,
               width: drag.w,
               border: `1px solid ${th.accent}`,
+              // ⚠️ `borderLeft`를 따로 준다 — 스프레드로 들어온 `cardBase`의 `borderLeft`가
+              // **`border`보다 뒤에** 적용돼(객체 키 순서) 왼쪽 변만 기본 테두리로 남았다
+              // (제보: 카드 이동 중 좌측 경계선이 잘려 보인다). 긴급 카드의 붉은 3px는
+              // 그 카드의 정체라 그대로 둔다.
+              ...(dragged.flagged ? null : { borderLeft: `1px solid ${th.accent}` }),
               boxShadow: '0 8px 24px rgba(0,0,0,.18)',
               boxSizing: 'border-box',
               pointerEvents: 'none',

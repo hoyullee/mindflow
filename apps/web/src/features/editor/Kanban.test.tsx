@@ -210,6 +210,9 @@ describe('칸반 에디터', () => {
     // 문턱을 넘어야 드래그가 시작된다.
     firePointer(window, 'pointermove', { clientX: 160, clientY: 80 });
     await waitFor(() => expect(container.querySelector('[data-kanban-ghost]')).toBeTruthy());
+    // 고스트의 네 변이 모두 강조색 — 왼쪽만 기본 테두리로 남으면 프레임이 잘려 보인다(제보).
+    const ghostEl = container.querySelector('[data-kanban-ghost]') as HTMLElement;
+    expect(ghostEl.style.borderLeftColor).toBe(ghostEl.style.borderTopColor);
     // 두 번째 열(320~620)의 위쪽으로.
     firePointer(window, 'pointermove', { clientX: 470, clientY: 60 });
     await waitFor(() => expect(container.querySelector('[data-kanban-column="c2"] [data-kanban-drop-slot]')).toBeTruthy());
