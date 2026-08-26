@@ -31,6 +31,7 @@ import { useIsMobile } from '../../../hooks/useMediaQuery';
 import { HL_COLORS, HL_WIDTHS, PEN_COLORS, PEN_WIDTHS } from '../boardTools';
 import type { BoardTool } from '../boardTools';
 import { CommentPinGlyph } from './commentPinShape';
+import { SwatchGroup } from '../../../components/Swatch';
 
 /** 폰에서 도구 막대가 차지하는 높이 + 여백 — 줌·미니맵 묶음(`ZoomControls`)과
  * 실행취소 알약이 이만큼 위로 올라가 막대와 겹치지 않는다. 버튼 44 + 패딩 10 +
@@ -315,27 +316,30 @@ export function BoardToolbar({ controller }: { controller: EditorController }) {
   const setWidth = drawing === 'hl' ? controller.setHlWidth : controller.setPenWidth;
   const colorLabel = drawing === 'hl' ? '형광펜' : '펜';
 
-  const colorBtns = (drawing === 'hl' ? HL_COLORS : PEN_COLORS).map((c) => (
-    <button
-      key={c}
-      type="button"
-      aria-label={`${colorLabel} 색 ${c}`}
-      aria-pressed={curColor === c}
-      onClick={() => setColor(c)}
-      style={{
+  // 색 묶음은 **하나를 고르는 묶음**이다 — 이름(`SwatchGroup`이 hex에서 계산)과
+  // 화살표 이동을 준다. 예전엔 접근 이름이 hex라 "샵 이 비 이 비 이 비"로 읽혔다.
+  const colorSwatches = (extra?: CSSProperties, gridClass?: string) => (
+    <SwatchGroup
+      label={`${colorLabel} 색`}
+      gridClass={gridClass}
+      value={curColor}
+      colors={drawing === 'hl' ? HL_COLORS : PEN_COLORS}
+      onPick={setColor}
+      grid={{ ...rowStyle, ...extra }}
+      style={(c, on) => ({
         width: isMobile ? 26 : 20,
         height: isMobile ? 26 : 20,
         borderRadius: '50%',
         background: c,
-        border: `2px solid ${curColor === c ? th.accent : 'transparent'}`,
+        border: `2px solid ${on ? th.accent : 'transparent'}`,
         boxShadow: 'inset 0 0 0 1px rgba(46,42,38,.1)',
         cursor: 'pointer',
         padding: 0,
         margin: '0 2px',
         flexShrink: 0,
-      }}
+      })}
     />
-  ));
+  );
 
   const widthBtns = (drawing === 'hl' ? HL_WIDTHS : PEN_WIDTHS).map((w) => (
     <button
@@ -422,9 +426,7 @@ export function BoardToolbar({ controller }: { controller: EditorController }) {
           색 묶음만 **가로로 스크롤**한다. 굵기와 ‹는 자리를 지켜 늘 눌린다.
           `.mf-ed-vp`가 `touch-action: none`이라 그대로 두면 손가락 스크롤이
           먹지 않는다 — 이 묶음에서만 `pan-x`로 되살린다. */}
-      <div className="mf-noscrollbar" style={{ ...rowStyle, flex: '1 1 auto', minWidth: 0, overflowX: 'auto', touchAction: 'pan-x' }}>
-        {colorBtns}
-      </div>
+      {colorSwatches({ flex: '1 1 auto', minWidth: 0, overflowX: 'auto', touchAction: 'pan-x' }, 'mf-noscrollbar')}
       <div style={{ ...rowStyle, gap: 2, padding: 2, borderRadius: 10, background: th.panel2, flexShrink: 0 }}>{widthBtns}</div>
     </>
   );
@@ -524,7 +526,7 @@ export function BoardToolbar({ controller }: { controller: EditorController }) {
               display: 'block',
             }}
           />
-          <div style={rowStyle}>{colorBtns}</div>
+          {colorSwatches()}
           <div style={{ width: 1, height: 20, background: th.border }} />
           <div style={rowStyle}>{widthBtns}</div>
         </div>

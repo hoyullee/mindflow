@@ -1325,7 +1325,8 @@ describe('Home', () => {
     // change the name, pick a different tag color, then 변경
     await user.clear(input);
     await user.type(input, '새이름');
-    await user.click(screen.getByRole('button', { name: '색상 #d0568f' }));
+    // 색 칸은 이름을 가진 라디오다(hex를 읽지 않는다).
+    await user.click(screen.getByRole('radio', { name: '분홍' }));
     await user.click(screen.getByRole('button', { name: '변경' }));
 
     await waitFor(() => expect(aside.getByText('새이름')).toBeTruthy());

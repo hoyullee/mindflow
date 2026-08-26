@@ -106,6 +106,8 @@ export interface RadioCardItem<T extends string> {
   ariaLabel?: string;
   style: (on: boolean) => CSSProperties;
   children: ReactNode;
+  /** 테스트·프로브가 잡는 표식(`data-*`). */
+  attrs?: Record<string, string>;
 }
 
 export function RadioCards<T extends string>({
@@ -114,12 +116,18 @@ export function RadioCards<T extends string>({
   items,
   label,
   grid,
+  gridClass,
+  disabled,
 }: {
   value: T;
   onChange: (v: T) => void;
   items: RadioCardItem<T>[];
   label: string;
   grid?: CSSProperties;
+  /** 전체 비활성(보기 전용 화면) — 묶음째 끈다. */
+  disabled?: boolean;
+  /** 묶음 상자의 클래스 — 스크롤바 숨김처럼 CSS로만 되는 것에 쓴다. */
+  gridClass?: string;
 }) {
   const arrowSelect = useArrowSelect(
     items.map((i) => i.value),
@@ -127,9 +135,9 @@ export function RadioCards<T extends string>({
     onChange,
   );
   return (
-    <RadioGroup.Root value={value} onValueChange={(v) => onChange(v as T)} aria-label={label} onKeyDown={arrowSelect} style={grid}>
+    <RadioGroup.Root value={value} onValueChange={(v) => onChange(v as T)} aria-label={label} onKeyDown={arrowSelect} disabled={disabled} className={gridClass} style={grid}>
       {items.map((it) => (
-        <RadioGroup.Item key={it.value} value={it.value} aria-label={it.ariaLabel ?? it.label} data-seg-value={it.value} style={it.style(it.value === value)}>
+        <RadioGroup.Item key={it.value} value={it.value} aria-label={it.ariaLabel ?? it.label} data-seg-value={it.value} {...it.attrs} style={it.style(it.value === value)}>
           {it.children}
         </RadioGroup.Item>
       ))}

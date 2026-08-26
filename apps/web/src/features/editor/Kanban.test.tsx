@@ -614,7 +614,8 @@ describe('칸반 — 카드 색 라벨', () => {
     fireEvent.doubleClick(container.querySelector('[data-kanban-card="k1"]')!);
     const detail = await waitFor(() => document.querySelector('[data-card-detail="k1"]') as HTMLElement);
 
-    fireEvent.click(within(detail).getByRole('button', { name: '색 파랑' }));
+    // 색 칸은 라디오다(접근성) — 이름은 팔레트가 든 톤 이름 그대로.
+    fireEvent.click(within(detail).getByRole('radio', { name: '파랑' }));
     await waitFor(() => expect((container.querySelector('[data-kanban-card="k1"]') as HTMLElement).style.background).toBeTruthy());
     fireEvent.keyDown(window, { key: 's', ctrlKey: true });
     await waitFor(() => expect(saved('kl1').cards.find((c: { id: string }) => c.id === 'k1').bg).toBe('#edf4fc'));
@@ -622,7 +623,7 @@ describe('칸반 — 카드 색 라벨', () => {
     expect(saved('kl1').cards.find((c: { id: string }) => c.id === 'k2').bg).toBeUndefined();
 
     // 없애면 **키가 사라진다**(빈 필드를 CRDT로 계속 흘리지 않게).
-    fireEvent.click(within(detail).getByRole('button', { name: '색 없음' }));
+    fireEvent.click(within(detail).getByRole('radio', { name: '색 없음' }));
     fireEvent.keyDown(window, { key: 's', ctrlKey: true });
     await waitFor(() => expect('bg' in saved('kl1').cards.find((c: { id: string }) => c.id === 'k1')).toBe(false));
   });

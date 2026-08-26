@@ -107,15 +107,12 @@ export function NodePanel({ controller, nodeIds, isMobile = false, short = false
             })}
           </div>
 
-          <SectionLabel theme={th}>가지 색상</SectionLabel>
-          <SwatchRow theme={th} palette={th.palette} current={n.color} onPick={(hex) => controller.setColor(hex)} />
+          <SwatchRow label="가지 색상" theme={th} palette={th.palette} current={n.color} onPick={(hex) => controller.setColor(hex)} />
 
-          <SectionLabel theme={th}>배경색</SectionLabel>
-          <SwatchRow theme={th} palette={[th.panel, th.text, ...th.palette]} current={n.fill} onPick={(hex) => controller.setFill(hex)} onReset={() => controller.setFill(null)} />
+          <SwatchRow label="배경색" theme={th} palette={[th.panel, th.text, ...th.palette]} current={n.fill} onPick={(hex) => controller.setFill(hex)} onReset={() => controller.setFill(null)} />
           <AlphaSlider theme={th} value={n.fillA == null ? 1 : n.fillA} onChange={(a) => controller.setFillAlpha(a)} />
 
-          <SectionLabel theme={th}>선 색상</SectionLabel>
-          <SwatchRow theme={th} palette={[th.panel, th.text, ...th.palette]} current={n.stroke} onPick={(hex) => controller.setStroke(hex)} onReset={() => controller.setStroke(null)} />
+          <SwatchRow label="선 색상" theme={th} palette={[th.panel, th.text, ...th.palette]} current={n.stroke} onPick={(hex) => controller.setStroke(hex)} onReset={() => controller.setStroke(null)} />
           <AlphaSlider theme={th} value={n.strokeA == null ? 1 : n.strokeA} onChange={(a) => controller.setStrokeAlpha(a)} />
         </PanelSection>
 
@@ -135,8 +132,7 @@ export function NodePanel({ controller, nodeIds, isMobile = false, short = false
             onToggleItalic={() => controller.toggleNodeRichStyle('i')}
             onToggleStrike={() => controller.toggleNodeRichStyle('s')}
           />
-          <SectionLabel theme={th}>글자 색상</SectionLabel>
-          <SwatchRow theme={th} palette={[th.panel, th.text, ...th.palette]} current={n.textColor} onPick={(hex) => controller.setTextColor(hex)} onReset={() => controller.setTextColor(null)} />
+          <SwatchRow label="글자 색상" theme={th} palette={[th.panel, th.text, ...th.palette]} current={n.textColor} onPick={(hex) => controller.setTextColor(hex)} onReset={() => controller.setTextColor(null)} />
         </PanelSection>
 
         <Divider theme={th} />

@@ -1,5 +1,6 @@
 import { useLayoutEffect, useRef, useState, type CSSProperties, type ReactNode } from 'react';
 import { Segmented } from '../../../../components/Segmented';
+import { SwatchGroup } from '../../../../components/Swatch';
 import { hexA, mixHex } from '../../theme';
 import type { Theme } from '../../theme';
 import { MONO_FONT, glassCard } from '../../chrome';
@@ -292,57 +293,48 @@ export function Divider({ theme }: { theme: Theme }) {
   return <div style={{ height: 0, borderTop: `1px solid ${theme.border}`, margin: '0 0 7px' }} />;
 }
 
-export function ColorSwatch({ hex, active, theme, onClick, title, size = 22 }: { hex: string; active: boolean; theme: Theme; onClick: () => void; title?: string; size?: number }) {
-  return (
-    <button
-      type="button"
-      title={title}
-      onClick={onClick}
-      style={{
-        width: size,
-        height: size,
-        borderRadius: '50%',
-        background: hex,
-        border: active ? `2px solid ${theme.text}` : `2px solid ${theme.panel}`,
-        boxShadow: active ? `0 0 0 2px ${hex}` : `0 0 0 1px ${theme.border}`,
-        cursor: 'pointer',
-        padding: 0,
-        flexShrink: 0,
-      }}
-    />
-  );
+/** 색 칸 한 개의 시각 — 라디오 칸(`SwatchGroup`)이 이 스타일로 그린다.
+ *  예전엔 `ColorSwatch` 버튼 컴포넌트였는데, **접근 이름이 없는 맨 버튼**이라
+ *  스크린리더가 "버튼"이라고만 읽었고 화살표 이동도 없었다. */
+export function swatchStyle(theme: Theme, hex: string, active: boolean, size = 22): CSSProperties {
+  return {
+    width: size,
+    height: size,
+    borderRadius: '50%',
+    background: hex,
+    border: active ? `2px solid ${theme.text}` : `2px solid ${theme.panel}`,
+    boxShadow: active ? `0 0 0 2px ${hex}` : `0 0 0 1px ${theme.border}`,
+    cursor: 'pointer',
+    padding: 0,
+    flexShrink: 0,
+  };
 }
 
-/** "자동(테마 기본)" 리셋 — 색상 스와치와 **같은 원형/크기**로 그린다(대각선 =
+/** "자동(테마 기본)" 리셋 칸 — 색상 스와치와 **같은 원형/크기**로 그린다(대각선 =
  * '색 없음' 관례). 예전엔 알약형 '자동' 칩이라 원형 스와치 행에 홀로 섞여
  * 줄 정렬이 들쭉날쭉해 보이는 원인 중 하나였다(제보: 배치가 중구난방). */
-export function ResetChip({ active, theme, onClick, size = 22 }: { active: boolean; theme: Theme; onClick: () => void; size?: number }) {
+export function resetChipStyle(theme: Theme, active: boolean, size = 22): CSSProperties {
+  return {
+    width: size,
+    height: size,
+    borderRadius: '50%',
+    background: theme.panel,
+    border: active ? `2px solid ${theme.text}` : `2px solid ${theme.panel}`,
+    boxShadow: active ? `0 0 0 2px ${theme.subtext}` : `0 0 0 1px ${theme.border}`,
+    cursor: 'pointer',
+    padding: 0,
+    flexShrink: 0,
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'center',
+  };
+}
+
+export function ResetGlyph({ size = 22 }: { size?: number }) {
   return (
-    <button
-      type="button"
-      className="mf-ed-btn"
-      title="자동 (테마 기본)"
-      aria-label="자동 (테마 기본)"
-      onClick={onClick}
-      style={{
-        width: size,
-        height: size,
-        borderRadius: '50%',
-        background: theme.panel,
-        border: active ? `2px solid ${theme.text}` : `2px solid ${theme.panel}`,
-        boxShadow: active ? `0 0 0 2px ${theme.subtext}` : `0 0 0 1px ${theme.border}`,
-        cursor: 'pointer',
-        padding: 0,
-        flexShrink: 0,
-        display: 'flex',
-        alignItems: 'center',
-        justifyContent: 'center',
-      }}
-    >
-      <svg width={size - 8} height={size - 8} viewBox="0 0 14 14" aria-hidden style={{ display: 'block' }}>
-        <line x1={2.5} y1={11.5} x2={11.5} y2={2.5} stroke="#d64545" strokeWidth={1.8} strokeLinecap="round" />
-      </svg>
-    </button>
+    <svg width={size - 8} height={size - 8} viewBox="0 0 14 14" aria-hidden style={{ display: 'block' }}>
+      <line x1={2.5} y1={11.5} x2={11.5} y2={2.5} stroke="#d64545" strokeWidth={1.8} strokeLinecap="round" />
+    </svg>
   );
 }
 
@@ -352,17 +344,26 @@ export function ResetChip({ active, theme, onClick, size = 22 }: { active: boole
  * 열 수는 개수에 맞춰 직사각형이 되게: ≤9개는 한 줄, 그 외 7열(이 앱의
  * 팔레트 조합 — 리셋+13색 = 14 = 7×2 — 가 정확히 떨어진다).
  */
-export function SwatchRow({ theme, palette, current, onPick, onReset }: { theme: Theme; palette: string[]; current: string | null | undefined; onPick: (hex: string) => void; onReset?: () => void }) {
+export function SwatchRow({ theme, label, palette, current, onPick, onReset }: { theme: Theme; label: string; palette: string[]; current: string | null | undefined; onPick: (hex: string) => void; onReset?: () => void }) {
   const total = palette.length + (onReset ? 1 : 0);
   const cols = total <= 9 ? total : 7;
   const size = cols > 8 ? 20 : 22;
   return (
-    <div style={{ display: 'grid', gridTemplateColumns: `repeat(${cols}, 1fr)`, rowGap: 9, justifyItems: 'center', marginBottom: onReset ? 10 : 16 }}>
-      {onReset && <ResetChip active={!current} theme={theme} onClick={onReset} size={size} />}
-      {palette.map((hex) => (
-        <ColorSwatch key={hex} hex={hex} active={current === hex} theme={theme} onClick={() => onPick(hex)} size={size} />
-      ))}
-    </div>
+    <>
+      {/* 구획 이름을 이 컴포넌트가 그린다 — 보이는 글자와 묶음의 **접근 이름**이
+          한 문자열이라 둘이 어긋날 수 없다(예전엔 호출부가 `SectionLabel`을 따로
+          두어, 접근 이름을 붙이려면 같은 말을 두 번 적어야 했다). */}
+      <SectionLabel theme={theme}>{label}</SectionLabel>
+      <SwatchGroup
+        label={label}
+        value={current}
+        colors={palette}
+        onPick={onPick}
+        grid={{ display: 'grid', gridTemplateColumns: `repeat(${cols}, 1fr)`, rowGap: 9, justifyItems: 'center', marginBottom: onReset ? 10 : 16 }}
+        {...(onReset ? { extra: { ariaLabel: '자동 (테마 기본)', onSelect: onReset, style: (on: boolean) => resetChipStyle(theme, on, size), children: <ResetGlyph size={size} /> } } : {})}
+        style={(hex, on) => swatchStyle(theme, hex, on, size)}
+      />
+    </>
   );
 }
 

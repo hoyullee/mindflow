@@ -143,7 +143,8 @@ describe('대시보드 ① — LNB·보기·피커', () => {
     expect((within(dlg).getByRole('button', { name: '만들기' }) as HTMLButtonElement).disabled).toBe(true);
     // 색 여섯, 첫 칸이 선택된 채로 시작
     expect(dlg.querySelectorAll('[data-dialog-color]').length).toBe(6);
-    expect((dlg.querySelectorAll('[data-dialog-color]')[0] as HTMLElement).getAttribute('aria-pressed')).toBe('true');
+    // 라디오 묶음이라 고른 칸은 `aria-checked`로 알린다(`aria-pressed`는 "눌린 버튼").
+    expect((dlg.querySelectorAll('[data-dialog-color]')[0] as HTMLElement).getAttribute('aria-checked')).toBe('true');
 
     fireEvent.click(dlg.querySelectorAll('[data-dialog-color]')[3] as HTMLElement); // 파랑
     await user.type(within(dlg).getByLabelText('대시보드 이름'), '주간 현황');
