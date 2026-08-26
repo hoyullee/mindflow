@@ -1,6 +1,8 @@
 import { afterEach, describe, expect, it } from 'vitest';
 import { cleanup, render } from '@testing-library/react';
-import { realPreview } from './mapPreview';
+import { previewSurface, realPreview } from './mapPreview';
+import { UI_THEME, themeOf } from '../editor/theme';
+import { boardSurface } from '../editor/kanbanMeta';
 import { LINK_INK_ON_LIGHT } from '../editor/richSpans';
 
 afterEach(cleanup);
@@ -499,5 +501,80 @@ describe('realPreview — 칸반(열·카드)', () => {
   it('열이 하나도 없으면 null — 카드가 폴백 삽화로 떨어진다', () => {
     const raw = JSON.stringify({ v: 1, nodes: {}, floats: [], lines: [], zones: [], layoutMode: 'right', themeKey: 'white', kind: 'kanban', columns: [], cards: [] });
     expect(realPreview(raw, '#f0663f')).toBeNull();
+  });
+});
+
+// ── 미리보기 바탕 = 그 문서의 캔버스 배경 ───────────────────────────────────
+//
+// 제보: "미리보기에서 에디터의 배경색이 반영이 안 된다." 예전엔 카드·위젯 바탕이
+// 홈 테마의 `--mf-wash` 한 값이라, 다크 맵도 오션 맵도 썸네일에서는 같은 베이지였다.
+describe('previewSurface', () => {
+  const docOf = (themeKey: string) => JSON.stringify({ v: 1, themeKey, nodes: { root: { id: 'root', text: 'x' } } });
+
+  it('문서 테마의 캔버스 색·도트 색을 쓴다(에디터와 같은 값)', () => {
+    const dark = previewSurface(docOf('dark'));
+    expect(dark).not.toBeNull();
+    // 마지막 스톱이 그 테마의 캔버스 색 — 에디터 캔버스와 같은 값.
+    expect(dark!.bg).toContain(themeOf('dark').canvasBg);
+    expect(dark!.dot).toBe(themeOf('dark').dot);
+
+    const ocean = previewSurface(docOf('ocean'));
+    expect(ocean!.bg).toContain(themeOf('ocean').canvasBg);
+    // 테마가 다르면 바탕도 다르다 — 예전엔 둘 다 같은 wash였다.
+    expect(ocean!.bg).not.toBe(dark!.bg);
+  });
+
+  it('반지름은 백분율 — px 고정이면 150px 썸네일이 단색이 된다', () => {
+    const s = previewSurface(docOf('coral'));
+    expect(s!.bg).toContain('%');
+    expect(s!.bg).not.toContain('1200px');
+  });
+
+  it('칸반은 캔버스가 아니라 크롬 — 에디터 보드 바닥 + 격자 없음', () => {
+    const s = previewSurface(JSON.stringify({ v: 1, kind: 'kanban', columns: [{ id: 'c1', title: '할 일' }], cards: [] }));
+    expect(s).not.toBeNull();
+    expect(s!.dot).toBeNull();
+    expect(s!.bg).toBe(boardSurface(UI_THEME));
+  });
+
+  it('본문이 없으면 null — 무엇을 그릴지 모르는데 배경만 칠하지 않는다', () => {
+    expect(previewSurface(null)).toBeNull();
+    expect(previewSurface('')).toBeNull();
+  });
+});
+
+// ── 첨부 이미지 — 참조를 발급받은 URL로 그린다 ──────────────────────────────
+//
+// 제보: 카드·위젯의 이미지가 늘 회색 자리표시자였다. 본문에는 `mfimg:` 참조만
+// 있는데 렌더러가 참조를 몰라서였다(그리고 그 참조마저 preview_doc RPC가 지웠다 —
+// 0032에서 인라인만 떼도록 고쳤다).
+describe('realPreview 이미지', () => {
+  const REF = 'mfimg:doc-1/pic.webp';
+  const withImage = JSON.stringify({
+    v: 1,
+    themeKey: 'coral',
+    nodes: { root: { id: 'root', text: '루트', parent: null, children: [], x: 0, y: 0 } },
+    floats: [{ id: 'f1', x: 40, y: 40, w: 120, h: 90, img: REF, text: '' }],
+    lines: [],
+    zones: [],
+  });
+
+  it('발급받은 URL이 있으면 그 이미지를 그린다', () => {
+    const el = realPreview(withImage, '#f0663f', { [REF]: 'https://signed.example/pic.webp?token=abc' });
+    const { container } = render(<svg>{el}</svg>);
+    const img = container.querySelector('image');
+    expect(img?.getAttribute('href')).toBe('https://signed.example/pic.webp?token=abc');
+  });
+
+  it('아직 못 받았으면 자리표시자 — 박스 크기는 그대로라 레이아웃이 밀리지 않는다', () => {
+    const el = realPreview(withImage, '#f0663f');
+    const { container } = render(<svg>{el}</svg>);
+    expect(container.querySelector('image')).toBeNull();
+  });
+
+  it('참조가 늦게 발급돼도 다시 그린다(캐시 키에 URL이 들어간다)', () => {
+    const before = realPreview(withImage, '#f0663f');
+    const after = realPreview(withImage, '#f0663f', { [REF]: 'https://signed.example/pic.webp?token=abc' });
+    expect(after).not.toBe(before);
   });
 });

@@ -360,6 +360,12 @@ export interface HomeState {
    * card show a neutral skeleton WHILE its real preview is still loading instead
    * of flashing the generic sketch first, then swapping to the real nodes. */
   previewResolved: Record<string, boolean>;
+
+  /** 이미지 참조(`mfimg:…`) → 그릴 수 있는 서명 URL. 썸네일 본문에 남은 참조를
+   * 모아 한 번에 발급받는다(에디터 `useImageUrls`의 홈 짝). 아직 못 받은 참조는
+   * 빠져 있고, 그 자리는 예전처럼 회색 자리표시자가 그려진다 — 표시 크기는
+   * 문서에 있어서 늦게 온 이미지가 레이아웃을 밀지 않는다. */
+  previewImageUrls: Record<string, string>;
 }
 
 export const SPACE_COLORS = ['#f0663f', '#e0a53c', '#3fae9e', '#3f8fd0', '#8a6bd1', '#d0568f'];
@@ -504,5 +510,6 @@ export function initialHomeState(): HomeState {
     loaded: false,
     previewDocs: {},
     previewResolved: {},
+    previewImageUrls: {},
   };
 }

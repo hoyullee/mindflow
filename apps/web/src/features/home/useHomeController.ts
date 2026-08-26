@@ -15,6 +15,7 @@ import { forgetSignedIn } from '../auth/sessionNotice';
 import { localizeAuthError } from '../auth/useLoginController';
 import type { SignOutScope } from '../../adapters/ports';
 import { useBackend } from '../../adapters/BackendContext';
+import { cachedImageUrls, rememberImageUrls } from '../../adapters/imageUrlCache';
 import { findBoardTemplate, findKanbanTemplate, findTemplate } from '../../templates/mapTemplates';
 import {
   DRIVE_FILES,
@@ -600,6 +601,61 @@ export function useHomeController() {
       setState((prev) => ({ ...prev, previewDocs: { ...prev.previewDocs, ...add }, previewResolved: { ...prev.previewResolved, ...resolved } }));
     });
   }, [state.loaded, state.spaces, state.activeSpace, state.recent, state.trash, state.deleted, docStore]);
+
+  /**
+   * 썸네일 본문에 남은 이미지 **참조**(`mfimg:…`)를 그릴 수 있는 URL로 바꾼다 —
+   * 에디터 `useImageUrls`의 홈 짝.
+   *
+   * 예전엔 카드·위젯의 이미지가 언제나 회색 자리표시자였다(제보). 이유는 썸네일
+   * 본문 RPC(0012)가 값이 문자열이기만 하면 전부 'stripped'로 지웠기 때문인데,
+   * 이미지가 Storage로 나간 뒤로는 본문에 **50바이트짜리 참조**만 남으므로 지워서
+   * 아끼는 전송량이 없다. 0032가 인라인 데이터만 떼도록 고쳤고, 여기서 그 참조를
+   * 발급받아 렌더러에 넘긴다.
+   *
+   * 전송량은 두 겹으로 묶는다.
+   *  - **본 것만 받는다**: 카드·위젯이 화면에 닿을 때 `notePreviewVisible`로 알리고
+   *    그 문서의 참조만 발급한다. (`content-visibility: auto`가 대신 막아 줄 거라
+   *    생각했는데 **실측으로 틀렸다** — 1000×620 화면에서 카드 12장 중 6장만 보이는데
+   *    12장의 이미지가 전부 요청됐다. 렌더를 건너뛰어도 리소스는 받는다.)
+   *  - **같은 URL을 다시 쓴다**: 서명 URL은 부를 때마다 토큰이 달라져 브라우저 캐시가
+   *    통째로 빗나가므로, 만료 전까지 기기에 캐시한다(`imageUrlCache.ts`).
+   * 발급 자체는 참조들을 묶어 왕복 1회다.
+   */
+  const imageRefsWantedRef = useRef<Set<string>>(new Set());
+  /** 화면에 닿은 카드·위젯의 문서 id — 그 문서의 이미지만 발급받는다. */
+  const seenDocsRef = useRef<Set<string>>(new Set());
+  const [seenTick, setSeenTick] = useState(0);
+  const notePreviewVisible = useCallback((docId: string) => {
+    if (!docId || seenDocsRef.current.has(docId)) return;
+    seenDocsRef.current.add(docId);
+    setSeenTick((n) => n + 1);
+  }, []);
+  useEffect(() => {
+    const refs = new Set<string>();
+    for (const [docId, raw] of Object.entries(state.previewDocs)) {
+      // 아직 화면에 닿지 않은 카드는 건너뛴다 — 스크롤해서 실제로 본 것만 받는다.
+      if (!seenDocsRef.current.has(docId)) continue;
+      for (const m of raw.matchAll(/mfimg:[^"\\]+/g)) refs.add(m[0]);
+    }
+    const missing = [...refs].filter((r) => !imageRefsWantedRef.current.has(r));
+    if (!missing.length) return;
+    missing.forEach((r) => imageRefsWantedRef.current.add(r));
+    // 이 기기가 이미 받아 둔 URL은 그대로 쓴다(발급 왕복 0 + 브라우저 캐시 적중).
+    const hit = cachedImageUrls(missing);
+    if (Object.keys(hit).length) setState((prev) => ({ ...prev, previewImageUrls: { ...prev.previewImageUrls, ...hit } }));
+    const need = missing.filter((r) => !hit[r]);
+    if (!need.length) return;
+    void imageStore
+      .resolve(need)
+      .then((got) => {
+        if (!mountedRef.current) return;
+        if (!Object.keys(got).length) return;
+        rememberImageUrls(got);
+        setState((prev) => ({ ...prev, previewImageUrls: { ...prev.previewImageUrls, ...got } }));
+      })
+      .catch(() => undefined);
+    // 본문이 늘거나(`previewDocs`) 새 카드가 화면에 닿을 때(`seenTick`) 다시 돈다.
+  }, [seenTick, state.previewDocs, imageStore]);
 
   /**
    * 첫 검색이 시작되면 **나머지 스페이스의 본문**을 마저 받아 온다.
@@ -2566,6 +2622,7 @@ export function useHomeController() {
     toggleDashEdit,
     moveDashItem,
     moveDashCard,
+    notePreviewVisible,
     setDashItemSize,
     dashItemToFront,
     refreshDashItem,

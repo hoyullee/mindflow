@@ -6,20 +6,69 @@ import { HL_OPACITY, isHighlighter } from '../editor/boardTools';
 import { CanvasTextMeasurer, computeMetrics, floatPadLeft, measureFloatHeight } from '../editor/metrics';
 import type { TextMeasurer } from '../editor/metrics';
 import { hexA } from './storage';
-import { UI_THEME } from '../editor/theme';
-import { boardProgress, columnBg, columnColor, tagColor, tagInk } from '../editor/kanbanMeta';
+import { UI_THEME, canvasWash, themeOf } from '../editor/theme';
+import { boardProgress, boardSurface, columnBg, columnColor, tagColor, tagInk } from '../editor/kanbanMeta';
 
 // Match the editor EXACTLY: size preview node boxes with the same canvas text
 // measurement (`computeMetrics` + `CanvasTextMeasurer`) the editor uses, instead
 // of a character-count guess. A shared measurer (caches its canvas 2d context).
 const previewMeasurer = new CanvasTextMeasurer();
 
-/** 그릴 수 있는 이미지 소스인가. Supabase 썸네일 본문(preview_doc RPC, 0012)은
- * egress 절감을 위해 이미지 **데이터**를 자리표시 문자열('stripped')로 바꿔
- * 보낸다 — 크기 필드는 유지되므로 박스는 그대로 두고 이미지 자리만 회색
- * 자리표시자로 그린다. */
-function drawableImg(src: string | undefined): string | null {
-  return src && /^(data:|https?:|blob:)/.test(src) ? src : null;
+/**
+ * 미리보기 바탕 — **그 문서의 캔버스 배경**(에디터가 그리는 그 색).
+ *
+ * 예전엔 카드·위젯 바탕이 홈 테마의 `--mf-wash` 한 값이었다. 그러면 다크 맵도
+ * 오션 맵도 썸네일에서는 같은 베이지로 보여서, "미리보기가 캔버스의 축소판"이라는
+ * 약속이 배경에서만 깨졌다(제보). 이제 문서의 `themeKey`에서 캔버스 색을 얻어
+ * 에디터와 같은 방사형 wash + 같은 도트 색을 쓴다.
+ *
+ * **칸반만 예외**다 — 칸반 화면은 캔버스가 아니라 크롬이라 에디터도 고정 팔레트
+ * (`UI_THEME`)로 그린다(#509). 그래서 바탕도 에디터 보드의 바닥(`boardSurface`)을
+ * 그대로 쓴다.
+ *
+ * 본문이 아직 없으면 `null` — 호출부가 지금까지의 기본 바탕을 유지한다(무엇을 그릴지
+ * 모르는데 배경만 문서 색으로 칠할 수는 없다).
+ */
+export interface PreviewSurface {
+  /** `background` 값 — 방사형 wash(또는 칸반의 단색 면). */
+  bg: string;
+  /** 도트 격자 색. 칸반은 격자가 없어 `null`. */
+  dot: string | null;
+}
+
+export function previewSurface(raw: string | null | undefined): PreviewSurface | null {
+  if (!raw) return null;
+  if (isKanbanRawBody(raw)) return { bg: boardSurface(UI_THEME), dot: null };
+  const th = themeOf(themeKeyOf(raw));
+  // 반지름은 **백분율**이다 — 에디터의 px 고정값(1200×700)을 150px짜리 썸네일에
+  // 그대로 쓰면 상자 전체가 첫 스톱 안에 들어와 단색으로 보인다. 85%/82%는 에디터
+  // 뷰포트에서 그 px가 차지하던 비율이라 축소판에서도 같은 모양이 남는다.
+  return { bg: canvasWash(th.canvasBg, '85% 82%'), dot: th.dot };
+}
+
+/** 본문 문자열에서 테마 키만 집어낸다 — 카드마다·렌더마다 도는 자리라 본문을
+ * 통째로 파싱하지 않는다(종류 판별 `isBoardRaw`와 같은 규칙). */
+function themeKeyOf(raw: string): string {
+  return /"themeKey"\s*:\s*"([a-z]+)"/.exec(raw)?.[1] ?? 'coral';
+}
+
+/** `viewModel.isKanbanRaw`와 같은 판별 — 순환 import를 만들지 않으려고 여기 둔다. */
+function isKanbanRawBody(raw: string): boolean {
+  return /"kind"\s*:\s*"kanban"/.test(raw);
+}
+
+/**
+ * 그릴 수 있는 이미지 소스인가 — 에디터 `displaySrc`와 같은 한 줄 규칙.
+ *
+ * 참조(`mfimg:…`)면 발급받은 URL을 쓴다(아직 못 받았으면 자리표시자). 참조가
+ * 아니면 값 그 자체(옛 문서의 데이터 URL). 그 밖의 값은 그리지 않는다 — 인라인
+ * 이미지가 든 옛 문서의 썸네일 본문은 여전히 자리표시 문자열('stripped')로 오고
+ * (0032: 인라인만 뗀다), 크기 필드는 남아 있어 박스는 그대로다.
+ */
+function drawableImg(src: string | undefined, urls?: Record<string, string>): string | null {
+  if (!src) return null;
+  if (src.startsWith('mfimg:')) return urls?.[src] ?? null;
+  return /^(data:|https?:|blob:)/.test(src) ? src : null;
 }
 
 /** 스트립된 이미지 자리표시자 — 연회색 면 + 작은 산 모양 글리프. */
@@ -355,9 +404,13 @@ function applyLayoutPositions(d: PreviewDoc, sizeOf: (node: CoreNode, depth: num
 const previewCache = new Map<string, JSX.Element | null>();
 const PREVIEW_CACHE_MAX = 400;
 
-export function realPreview(rawDoc: string | null, hueFallback: string): JSX.Element | null {
+export function realPreview(rawDoc: string | null, hueFallback: string, imageUrls?: Record<string, string>): JSX.Element | null {
   if (!rawDoc) return null;
-  const key = `${hueFallback} ${rawDoc}`;
+  // 캐시 키에 **이 문서가 쓰는 참조의 URL**까지 넣는다 — 그러지 않으면 이미지가
+  // 늦게 발급됐을 때 옛 결과(자리표시자)가 계속 나온다. 참조가 없는 문서는 키가
+  // 예전과 같다(대부분의 문서 — 캐시 적중률 그대로).
+  const urlKey = rawDoc.includes('mfimg:') ? [...rawDoc.matchAll(/mfimg:[^"\\]+/g)].map((m) => imageUrls?.[m[0]] ?? '').join(' ') : '';
+  const key = `${hueFallback} ${urlKey} ${rawDoc}`;
   const hit = previewCache.get(key);
   if (hit !== undefined) {
     // touch → most-recently-used (Map preserves insertion order)
@@ -365,7 +418,7 @@ export function realPreview(rawDoc: string | null, hueFallback: string): JSX.Ele
     previewCache.set(key, hit);
     return hit;
   }
-  const el = buildPreview(rawDoc, hueFallback);
+  const el = buildPreview(rawDoc, hueFallback, imageUrls);
   previewCache.set(key, el);
   if (previewCache.size > PREVIEW_CACHE_MAX) {
     const oldest = previewCache.keys().next().value;
@@ -374,7 +427,7 @@ export function realPreview(rawDoc: string | null, hueFallback: string): JSX.Ele
   return el;
 }
 
-function buildPreview(rawDoc: string, hueFallback: string): JSX.Element | null {
+function buildPreview(rawDoc: string, hueFallback: string, imageUrls?: Record<string, string>): JSX.Element | null {
   let d: PreviewDoc;
   try {
     d = JSON.parse(rawDoc) as PreviewDoc;
@@ -652,7 +705,7 @@ function buildPreview(rawDoc: string, hueFallback: string): JSX.Element | null {
     const textBlockH = wrapped.length * lineHN;
     const imgShift = hasNodeImg ? (n.imgH! + 8) / 2 : 0;
     if (hasNodeImg) {
-      const src = drawableImg(n.img);
+      const src = drawableImg(n.img, imageUrls);
       const ix = cx - n.imgW! / 2;
       const iy = cy - (textBlockH + 8) / 2 - n.imgH! / 2;
       if (src) rects.push(<image key={`img${id}`} href={src} x={ix} y={iy} width={n.imgW} height={n.imgH} preserveAspectRatio="xMidYMid slice" />);
@@ -772,7 +825,7 @@ function buildPreview(rawDoc: string, hueFallback: string): JSX.Element | null {
     const fh = floatH(f);
     // 이미지 플로트: 메모 카드가 아니라 이미지 자체 (에디터 FloatLayer와 동일).
     if (f.img) {
-      const src = drawableImg(f.img);
+      const src = drawableImg(f.img, imageUrls);
       if (src) {
         floatEls.push(<image key={`fi${i}`} href={src} x={f.x} y={f.y} width={fw} height={fh} preserveAspectRatio="xMidYMid slice" />);
         floatEls.push(<rect key={`fr${i}`} x={f.x} y={f.y} width={fw} height={fh} rx={8} fill="none" stroke={hexA('#000000', 0.14)} strokeWidth={1.4} />);
