@@ -115,8 +115,7 @@ export function LinePanel({ controller, lineIds, isMobile = false, short = false
         <Divider theme={th} />
         <PanelSection theme={th} title="텍스트 스타일" open={openSec === 'ltext'} onToggle={() => toggle('ltext')}>
           <BoldSizeRow theme={th} bold={!!l.lbold} size={l.lsize} onToggleBold={controller.toggleLineBold} onSetSize={controller.setLineTsize} />
-          <SectionLabel theme={th}>글자 색상</SectionLabel>
-          <SwatchRow
+          <SwatchRow label="글자 색상"
             theme={th}
             palette={[th.panel, th.text, ...th.palette]}
             current={l.ltextColor}

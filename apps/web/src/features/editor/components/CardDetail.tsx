@@ -20,6 +20,7 @@ import { useShareStore } from '../../../adapters/BackendContext';
 import type { ShareParticipant } from '../../../adapters/ports';
 import { CARD_LABELS, cardLabelName } from '../kanbanLabels';
 import { boardSurface, columnColor, tagColor } from '../kanbanMeta';
+import { SwatchGroup } from '../../../components/Swatch';
 import { Avatar } from './KanbanBoard';
 import { CommentIcon } from './ToolbarMenus';
 import { CommentThreads } from './CommentPanel';
@@ -358,70 +359,77 @@ export function CardDetail({ card, controller, theme: th, isMobile }: { card: Ka
                 이름에서 정하는 기본색으로 되돌린다. */}
             {card.tag && !readOnly && activeTag && (
               <Section label={`'${card.tag}' 색`} style={label}>
-                <button
-                  type="button"
-                  data-tag-color="auto"
-                  aria-label="자동 색"
-                  title="자동(이름에서 정한 색)"
-                  onClick={() => controller.setTagColor(activeTag.id, null)}
-                  style={{
-                    width: isMobile ? 30 : 24,
-                    height: isMobile ? 30 : 24,
-                    borderRadius: 999,
-                    background: 'transparent',
-                    backgroundImage: `linear-gradient(to top right, transparent calc(50% - 1px), ${th.subtext} calc(50% - 1px), ${th.subtext} calc(50% + 1px), transparent calc(50% + 1px))`,
-                    border: activeTag.color ? `1px solid ${th.border}` : `2px solid ${th.accent}`,
-                    cursor: 'pointer',
-                    padding: 0,
-                  }}
-                />
-                {th.palette.map((c) => (
-                  <button
-                    key={c}
-                    type="button"
-                    data-tag-color={c}
-                    aria-label={`색 ${c}`}
-                    title={c}
-                    onClick={() => controller.setTagColor(activeTag.id, c)}
-                    style={{
+                <SwatchGroup
+                  label={`'${card.tag}' 색`}
+                  value={activeTag.color}
+                  colors={th.palette}
+                  onPick={(c) => controller.setTagColor(activeTag.id, c)}
+                  attrName="data-tag-color"
+                  grid={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}
+                  extra={{
+                    ariaLabel: '자동 색 (이름에서 정한 색)',
+                    onSelect: () => controller.setTagColor(activeTag.id, null),
+                    style: (on) => ({
                       width: isMobile ? 30 : 24,
                       height: isMobile ? 30 : 24,
                       borderRadius: 999,
-                      background: c,
-                      border: activeTag.color === c ? `2px solid ${th.text}` : `1px solid ${hexA(th.text, 0.15)}`,
+                      background: 'transparent',
+                      backgroundImage: `linear-gradient(to top right, transparent calc(50% - 1px), ${th.subtext} calc(50% - 1px), ${th.subtext} calc(50% + 1px), transparent calc(50% + 1px))`,
+                      border: on ? `2px solid ${th.accent}` : `1px solid ${th.border}`,
                       cursor: 'pointer',
                       padding: 0,
-                    }}
-                  />
-                ))}
+                    }),
+                  }}
+                  style={(c, on) => ({
+                    width: isMobile ? 30 : 24,
+                    height: isMobile ? 30 : 24,
+                    borderRadius: 999,
+                    background: c,
+                    border: on ? `2px solid ${th.text}` : `1px solid ${hexA(th.text, 0.15)}`,
+                    cursor: 'pointer',
+                    padding: 0,
+                  })}
+                />
               </Section>
             )}
 
             <Section label="카드 배경색" style={label}>
-              {CARD_LABELS.map((l) => {
-                const on = (card.bg ?? null) === l.bg;
-                return (
-                  <button
-                    key={l.name}
-                    type="button"
-                    data-detail-color={l.name}
-                    disabled={readOnly}
-                    aria-label={l.bg ? `색 ${l.name}` : '색 없음'}
-                    title={l.name}
-                    onClick={() => controller.setCardBg(card.id, l.bg)}
-                    style={{
-                      width: isMobile ? 32 : 26,
-                      height: isMobile ? 32 : 26,
-                      borderRadius: 999,
-                      background: l.bg || 'transparent',
-                      backgroundImage: l.bg ? undefined : `linear-gradient(to top right, transparent calc(50% - 1px), ${th.subtext} calc(50% - 1px), ${th.subtext} calc(50% + 1px), transparent calc(50% + 1px))`,
-                      border: on ? `2px solid ${th.accent}` : `1px solid ${th.border}`,
-                      cursor: 'pointer',
-                      padding: 0,
-                    }}
-                  />
-                );
-              })}
+              {/* 이름은 팔레트가 이미 들고 있다(`CARD_LABELS.name`) — 손으로 고른
+                  톤 이름('빨강')이 hex에서 유도한 이름('연한 빨강')보다 정확하다. */}
+              <SwatchGroup
+                label="카드 배경색"
+                value={card.bg}
+                colors={CARD_LABELS.filter((l) => l.bg).map((l) => l.bg!)}
+                names={CARD_LABELS.filter((l) => l.bg).map((l) => l.name)}
+                onPick={(c) => controller.setCardBg(card.id, c)}
+                disabled={readOnly}
+                attrName="data-detail-color"
+                extraAttrValue="없음"
+                grid={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}
+                extra={{
+                  ariaLabel: '색 없음',
+                  onSelect: () => controller.setCardBg(card.id, null),
+                  style: (on) => ({
+                    width: isMobile ? 32 : 26,
+                    height: isMobile ? 32 : 26,
+                    borderRadius: 999,
+                    background: 'transparent',
+                    backgroundImage: `linear-gradient(to top right, transparent calc(50% - 1px), ${th.subtext} calc(50% - 1px), ${th.subtext} calc(50% + 1px), transparent calc(50% + 1px))`,
+                    border: on ? `2px solid ${th.accent}` : `1px solid ${th.border}`,
+                    cursor: 'pointer',
+                    padding: 0,
+                  }),
+                }}
+                style={(c, on) => ({
+                  width: isMobile ? 32 : 26,
+                  height: isMobile ? 32 : 26,
+                  borderRadius: 999,
+                  background: c,
+                  border: on ? `2px solid ${th.accent}` : `1px solid ${th.border}`,
+                  cursor: 'pointer',
+                  padding: 0,
+                })}
+              />
               <span style={{ fontSize: 12, color: th.subtext, alignSelf: 'center' }}>{cardLabelName(card.bg)}</span>
             </Section>
 

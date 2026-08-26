@@ -3,6 +3,7 @@
 // 공유·협업·저장·undo는 문서(Doc) 기반이라 기존 경로 그대로다.
 
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { swatchNames } from '../../components/colorNames';
 import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { MemoryRouter, Route, Routes } from 'react-router-dom';
 import { Editor } from './Editor';
@@ -576,7 +577,8 @@ describe('화이트보드 에디터', () => {
       expect(bar.querySelector('.mf-board-in-right')).toBeTruthy();
       expect(bar.querySelector('.mf-board-out-left')).toBeTruthy();
       expect(within(bar).getByRole('button', { name: '도구 목록으로' })).toBeTruthy();
-      expect(within(bar).getByRole('button', { name: '펜 색 #d92626' })).toBeTruthy();
+      // 색 칸은 이제 이름을 가진 라디오다(접근성 — hex를 읽지 않는다).
+      expect(within(bar).getByRole('radio', { name: '빨강' })).toBeTruthy();
       expect(within(bar).getByRole('button', { name: '펜 굵기 8' })).toBeTruthy();
       expect(within(bar).queryByRole('button', { name: '지우개' })).toBeNull();
 
@@ -734,13 +736,14 @@ describe('화이트보드 에디터', () => {
 
     fireEvent.keyDown(window, { key: 'h', code: 'KeyH' });
     await waitFor(() => expect(screen.getByRole('button', { name: '형광펜' }).getAttribute('aria-pressed')).toBe('true'));
-    expect(screen.getByRole('button', { name: `형광펜 색 ${HL_COLORS[0]}` })).toBeTruthy();
+    expect(screen.getByRole('radiogroup', { name: '형광펜 색' })).toBeTruthy();
+    expect(screen.getByRole('radio', { name: swatchNames(HL_COLORS)[0]! })).toBeTruthy();
     expect(container.querySelector('[data-board-draw-layer]')).toBeTruthy();
 
     fireEvent.keyDown(window, { key: 'p', code: 'KeyP' });
     await waitFor(() => expect(screen.getByRole('button', { name: '펜' }).getAttribute('aria-pressed')).toBe('true'));
-    expect(screen.getByRole('button', { name: `펜 색 ${PEN_COLORS[0]}` })).toBeTruthy();
-    expect(screen.queryByRole('button', { name: `형광펜 색 ${HL_COLORS[0]}` })).toBeNull();
+    expect(screen.getByRole('radiogroup', { name: '펜 색' })).toBeTruthy();
+    expect(screen.queryByRole('radiogroup', { name: '형광펜 색' })).toBeNull();
   });
 
   it('선택 도구로 획을 집으면 선택 상자·속성 패널이 뜨고, 끌면 그 획만 움직인다', async () => {
@@ -2021,7 +2024,7 @@ describe('화이트보드 디자인 이식', () => {
     });
     // 막대 **밖 위쪽**에 뜬다 — 알약 안에 줄이 하나 더 생기는 게 아니다.
     expect(pop.style.bottom).toBe('100%');
-    expect(within(pop).getByLabelText(`펜 색 ${PEN_COLORS[0]}`)).toBeTruthy();
+    expect(within(pop).getByRole('radio', { name: swatchNames(PEN_COLORS)[0]! })).toBeTruthy();
   });
 
   it('펜·형광펜 팔레트가 여덟 색이고, 폰에서는 색 묶음이 가로로 스크롤된다(요청)', async () => {
@@ -2037,7 +2040,7 @@ describe('화이트보드 디자인 이식', () => {
       return el;
     });
     // 여덟 개가 다 들어 있고, 넘치면 스크롤한다(`.mf-ed-vp`의 touch-action: none을 되살린다).
-    expect(within(strip).getAllByLabelText(/^펜 색 /)).toHaveLength(8);
+    expect(within(strip).getAllByRole('radio')).toHaveLength(8);
     expect(strip.style.overflowX).toBe('auto');
     expect(strip.style.touchAction).toBe('pan-x');
     mockMatchMedia(false);

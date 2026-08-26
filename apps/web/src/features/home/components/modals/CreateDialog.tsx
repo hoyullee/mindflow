@@ -1,6 +1,7 @@
 import type { ReactNode } from 'react';
 import { Modal, MODAL_DIM, modalCard } from '../../../../components/Modal';
 import { META_MONO } from '../../chrome';
+import { SwatchGroup } from '../../../../components/Swatch';
 
 /**
  * "만들기" 팝업 공용 껍데기 — 새 스페이스·새 대시보드(첨부 디자인)가 같은 꼴이다.
@@ -93,28 +94,36 @@ export function CreateDialog({ open, onClose, title, subtitle, icon, fieldLabel,
 
       {/* 색상 — 고른 칸에 흰 체크 + 같은 색 링(디자인). 색은 스페이스·대시보드가 같은 여섯. */}
       <div style={{ fontSize: 13, fontWeight: 700, marginBottom: 11 }}>색상</div>
-      <div style={{ display: 'flex', gap: 12, marginBottom: 24 }}>
-        {colors.map((c) => {
-          const sel = color === c;
-          return (
-            <button
-              key={c}
-              type="button"
-              onClick={() => onColor(c)}
-              aria-label={`색상 ${c}`}
-              aria-pressed={sel}
-              data-dialog-color={c}
-              style={{ width: 38, height: 38, borderRadius: '50%', background: c, border: 'none', boxShadow: sel ? `0 0 0 2.5px var(--mf-card), 0 0 0 4.5px ${c}` : 'none', color: '#fff', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', padding: 0, transition: 'box-shadow .12s ease' }}
-            >
-              {sel && (
-                <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-                  <path d="M5 13l4.5 4.5L19 7.5" />
-                </svg>
-              )}
-            </button>
-          );
+      <SwatchGroup
+        label="색상"
+        value={color}
+        colors={colors}
+        onPick={onColor}
+        attrName="data-dialog-color"
+        grid={{ display: 'flex', gap: 12, marginBottom: 24 }}
+        style={(c, on) => ({
+          width: 38,
+          height: 38,
+          borderRadius: '50%',
+          background: c,
+          border: 'none',
+          boxShadow: on ? `0 0 0 2.5px var(--mf-card), 0 0 0 4.5px ${c}` : 'none',
+          color: '#fff',
+          display: 'inline-flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          cursor: 'pointer',
+          padding: 0,
+          transition: 'box-shadow .12s ease',
         })}
-      </div>
+        children={(_c, on) =>
+          on ? (
+            <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+              <path d="M5 13l4.5 4.5L19 7.5" />
+            </svg>
+          ) : null
+        }
+      />
 
       {/* 푸터 — 우측 정렬(디자인). 비활성 '만들기'는 강조색 죽인 톤(누를 수 없음). */}
       <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 12 }}>

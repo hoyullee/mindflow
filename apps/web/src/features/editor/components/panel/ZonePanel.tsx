@@ -1,5 +1,5 @@
 import type { EditorController } from '../../useEditorState';
-import { PanelTitle, RenameButton, SectionLabel, SwatchRow, panelBodyStyle, panelWrapStyle } from './panelPrimitives';
+import { PanelTitle, RenameButton, SwatchRow, panelBodyStyle, panelWrapStyle } from './panelPrimitives';
 
 interface ZonePanelProps {
   controller: EditorController;
@@ -25,8 +25,7 @@ export function ZonePanel({ controller, zoneId, isMobile = false, short = false 
     <div data-props-panel style={panelWrapStyle(th, isMobile, !!controller.saveConflict, short)}>
       <div style={panelBodyStyle(isMobile)}>
         <PanelTitle theme={th} kicker="선택한 영역" name={z.label || '영역'} swatch={z.color || th.subtext} onClose={controller.clearSelection} />
-        <SectionLabel theme={th}>영역 색상</SectionLabel>
-        <SwatchRow theme={th} palette={th.palette} current={z.color} onPick={(hex) => controller.setZoneColor(zoneId, hex)} onReset={() => controller.setZoneColor(zoneId, null)} />
+        <SwatchRow label="영역 색상" theme={th} palette={th.palette} current={z.color} onPick={(hex) => controller.setZoneColor(zoneId, hex)} onReset={() => controller.setZoneColor(zoneId, null)} />
         <RenameButton theme={th} onClick={() => controller.startEditZoneLabel(zoneId)} />
       </div>
     </div>

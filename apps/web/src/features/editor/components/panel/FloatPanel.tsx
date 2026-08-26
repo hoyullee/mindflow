@@ -100,7 +100,7 @@ export function FloatPanel({ controller, floatIds, isMobile = false, short = fal
         )}
 
         <PanelSection theme={th} title="메모 스타일" open={openSec === 'fbg'} onToggle={() => toggle('fbg')}>
-          <SwatchRow theme={th} palette={[th.panel, th.text, ...th.palette]} current={f.bg} onPick={(hex) => controller.setFloatBg(hex)} onReset={() => controller.setFloatBg(null)} />
+          <SwatchRow label="배경색" theme={th} palette={[th.panel, th.text, ...th.palette]} current={f.bg} onPick={(hex) => controller.setFloatBg(hex)} onReset={() => controller.setFloatBg(null)} />
         </PanelSection>
 
         <Divider theme={th} />
@@ -118,8 +118,7 @@ export function FloatPanel({ controller, floatIds, isMobile = false, short = fal
             onToggleItalic={() => controller.toggleFloatRichStyle('i')}
             onToggleStrike={() => controller.toggleFloatRichStyle('s')}
           />
-          <SectionLabel theme={th}>글자 색상</SectionLabel>
-          <SwatchRow
+          <SwatchRow label="글자 색상"
             theme={th}
             palette={[th.panel, th.text, ...th.palette]}
             current={f.textColor}

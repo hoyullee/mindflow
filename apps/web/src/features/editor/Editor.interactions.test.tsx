@@ -105,6 +105,32 @@ describe('Editor interactions (M3-Editor-b)', () => {
     expect(within(screen.getByText('선택한 주제').parentElement as HTMLElement).getByText('리서치')).toBeTruthy();
   });
 
+  // 색 고르기 칸은 글자 없는 동그라미였고, 예전엔 **접근 이름이 없는 맨 버튼**이라
+  // 스크린리더가 "버튼"이라고만 읽었다. 화살표 이동도 없어 Tab이 칸마다 멈췄다.
+  it('색 스와치가 이름 있는 라디오 묶음이고, 화살표로 색이 바뀐다', async () => {
+    const user = userEvent.setup();
+    localStorage.setItem('mindflow_doc_tsw', JSON.stringify(DOC));
+    const { container } = renderEditor('/editor?map=tsw&title=x');
+    selectNodeBox(nodeBoxFor(container, '리서치'));
+
+    // 묶음은 무엇의 색인지 말한다(보이는 구획 이름과 같은 문자열 하나에서 나온다).
+    const group = screen.getByRole('radiogroup', { name: '가지 색상' });
+    const swatches = within(group).getAllByRole('radio');
+    expect(swatches.length).toBe(9);
+    // 칸마다 색 이름이 붙고, 같은 묶음에서 이름이 겹치지 않는다.
+    const names = swatches.map((el) => el.getAttribute('aria-label'));
+    expect(new Set(names).size).toBe(names.length);
+    expect(names).toContain('빨강');
+
+    // 화살표로 **값이 바뀐다**(초점만 옮기는 게 아니다) — `role="radio"`로 알린 이상
+    // 그래야 한다.
+    swatches[1]!.focus();
+    await user.keyboard('{ArrowRight}');
+    // 세 번째 칸이 **선택까지** 됐다 — 초점만 옮기는 게 아니다.
+    await waitFor(() => expect(swatches[2]!.getAttribute('aria-checked')).toBe('true'));
+    expect(swatches[1]!.getAttribute('aria-checked')).toBe('false');
+  });
+
   it('property panel opens with its FIRST section expanded, then behaves as a one-open accordion', async () => {
     // 마인드맵 리디자인(요청): 패널이 열릴 때마다 첫 구획(주제 스타일)은 펼친 채
     // 시작한다 — 전부 접힌 패널은 "여기서 무엇을 할 수 있는가"를 말하지 않는다.

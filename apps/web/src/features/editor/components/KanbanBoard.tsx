@@ -29,6 +29,7 @@ import { columnDropIndex, dropTargetAt, edgeScroll } from '../kanbanDrag';
 import type { ColumnHit, DropTarget } from '../kanbanDrag';
 import { EMPTY_FILTER, boardProgress, boardSurface, cardPasses, columnBg, columnColor, dueLabel, dueTone, filterActive, initialOf, innerLine, ownerLabel, ownerOptions, tagColor, tagInk } from '../kanbanMeta';
 import { CARD_LABELS } from '../kanbanLabels';
+import { swatchNames } from '../../../components/colorNames';
 import type { CardFilter, KanbanView } from '../kanbanMeta';
 import { colorForSeed } from '../../../collab/identity';
 import { CardDetail } from './CardDetail';
@@ -1683,6 +1684,7 @@ function ColumnMenu({
   onDelete: () => void;
 }) {
   const W = 268;
+  const paletteNames = swatchNames(th.palette);
   const row: CSSProperties = {
     display: 'flex',
     alignItems: 'center',
@@ -1746,14 +1748,17 @@ function ColumnMenu({
             backgroundImage: `linear-gradient(to top right, transparent calc(50% - 1px), ${th.subtext} calc(50% - 1px), ${th.subtext} calc(50% + 1px), transparent calc(50% + 1px))`,
           }}
         />
-        {th.palette.map((c) => (
+        {/* 이 칸들은 **메뉴 항목**이다 — 화살표 이동은 메뉴가 이미 준다(라디오 묶음으로
+            바꾸면 메뉴 의미가 깨진다). 그래서 여기서 고칠 것은 **이름**뿐이다:
+            예전엔 `색 #f0663f`라 스크린리더가 hex를 한 글자씩 읽었다. */}
+        {th.palette.map((c, i) => (
           <button
             key={c}
             type="button"
             role="menuitem"
             data-column-color={c}
-            aria-label={`색 ${c}`}
-            title={`색 ${c}`}
+            aria-label={paletteNames[i]}
+            title={paletteNames[i]}
             onClick={() => onColor(c)}
             style={{ ...swatch, background: c, border: col.color === c ? `2px solid ${th.text}` : `1px solid ${hexA(th.text, 0.15)}`, color: '#fff' }}
           >
