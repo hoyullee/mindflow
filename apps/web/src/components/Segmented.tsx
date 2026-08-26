@@ -104,6 +104,8 @@ export interface RadioCardItem<T extends string> {
   label: string;
   /** 접근 이름 — 보이는 글자와 다르게 읽어야 할 때(예: "코랄 테마"). */
   ariaLabel?: string;
+  /** 호버 툴팁 — 글자 없는 칸(색 스와치)은 눈으로 보는 사람도 이름이 필요하다. */
+  title?: string;
   style: (on: boolean) => CSSProperties;
   children: ReactNode;
   /** 테스트·프로브가 잡는 표식(`data-*`). */
@@ -137,7 +139,7 @@ export function RadioCards<T extends string>({
   return (
     <RadioGroup.Root value={value} onValueChange={(v) => onChange(v as T)} aria-label={label} onKeyDown={arrowSelect} disabled={disabled} className={gridClass} style={grid}>
       {items.map((it) => (
-        <RadioGroup.Item key={it.value} value={it.value} aria-label={it.ariaLabel ?? it.label} data-seg-value={it.value} {...it.attrs} style={it.style(it.value === value)}>
+        <RadioGroup.Item key={it.value} value={it.value} aria-label={it.ariaLabel ?? it.label} title={it.title} data-seg-value={it.value} {...it.attrs} style={it.style(it.value === value)}>
           {it.children}
         </RadioGroup.Item>
       ))}

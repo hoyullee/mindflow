@@ -90,6 +90,7 @@ export function SwatchGroup({
                 value: SWATCH_AUTO,
                 label: extra.ariaLabel,
                 ariaLabel: extra.ariaLabel,
+                title: extra.ariaLabel,
                 style: extra.style,
                 children: extra.children ?? null,
                 ...(attrName ? { attrs: { [attrName]: extraAttrValue } } : {}),
@@ -100,6 +101,9 @@ export function SwatchGroup({
           value: hex,
           label: derived[i]!,
           ariaLabel: suffix ? `${derived[i]!} ${suffix}` : derived[i]!,
+          // 마우스로 쓰는 사람도 이름이 필요하다 — 글자 없는 동그라미라 색을
+          // 눈으로 봐도 "이게 무슨 색이라 불리는지"는 알 수 없다.
+          title: derived[i]!,
           style: (on: boolean) => style(hex, on),
           children: children ? ((on: boolean) => children(hex, on))(hex === selected) : (null as ReactNode),
           ...(attrName ? { attrs: { [attrName]: hex } } : {}),

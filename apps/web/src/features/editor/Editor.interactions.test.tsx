@@ -121,6 +121,9 @@ describe('Editor interactions (M3-Editor-b)', () => {
     const names = swatches.map((el) => el.getAttribute('aria-label'));
     expect(new Set(names).size).toBe(names.length);
     expect(names).toContain('빨강');
+    // 눈으로 쓰는 사람도 이름을 볼 수 있다(호버 툴팁) — 색 이름이 스크린리더
+    // 전용이 되지 않게.
+    expect(swatches.map((el) => el.getAttribute('title'))).toEqual(names);
 
     // 화살표로 **값이 바뀐다**(초점만 옮기는 게 아니다) — `role="radio"`로 알린 이상
     // 그래야 한다.
