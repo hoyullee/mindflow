@@ -1,4 +1,4 @@
-import { readFileSync } from 'node:fs';
+import { existsSync, readFileSync } from 'node:fs';
 import path from 'node:path';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
@@ -234,13 +234,34 @@ describe('static landing.html (the crawler-visible twin)', () => {
     expect(html).toContain('<link rel="canonical" href="https://geurio.com/"');
     expect(html).toContain('property="og:title"');
     // 한글 브랜드 신호 — "그리오" 검색이 이 사이트와 연결되려면 제목과
-    // 구조화 데이터(alternateName)에 한글 표기가 있어야 한다
-    expect(html).toContain('<title>그리오 Geurio — 마인드맵 서비스</title>');
+    // 구조화 데이터(alternateName)에 한글 표기가 있어야 한다. 마케팅 문구는
+    // 바뀌므로(제품이 셋으로 늘며 한 번 바꿨다) **계약만** 단정한다.
+    const title = /<title>([^<]*)<\/title>/.exec(html)?.[1] ?? '';
+    expect(title).toContain('그리오');
+    expect(title).toContain('Geurio');
     expect(html).toContain('"alternateName"');
     // og:image는 절대 URL이어야 카톡/슬랙 미리보기가 뜬다
-    expect(html).toContain('content="https://geurio.com/og/og-image.png"');
+    expect(html).toContain('content="https://geurio.com/og/og-card-v2.png"');
     expect(html).toContain('name="twitter:card"');
     expect(html).toContain('application/ld+json');
+  });
+
+  // 공유 카드는 **쌍둥이 둘**(정적 랜딩 + 앱 셸)이 같은 그림을 가리켜야 하고, 그
+  // 파일이 실제로 있어야 한다. 카드를 갈아 끼울 때 파일 이름을 바꾸는 것이 규칙이라
+  // (스크래퍼가 URL로 캐시한다) 한쪽만 고치면 조용히 깨진다 — 그걸 여기서 막는다.
+  it('both twins point at the same OG card, and the file exists', () => {
+    const landing = readFileSync(path.join(publicDir, 'landing.html'), 'utf8');
+    const shell = readFileSync(path.join(publicDir, '..', 'index.html'), 'utf8');
+    const ogOf = (html: string) => /property="og:image" content="([^"]+)"/.exec(html)?.[1] ?? '';
+    const url = ogOf(landing);
+    expect(url).toMatch(/^https:\/\/geurio\.com\/og\/.+\.png$/);
+    expect(ogOf(shell)).toBe(url);
+    // 트위터 카드도 같은 그림
+    expect(landing).toContain(`name="twitter:image" content="${url}"`);
+    expect(shell).toContain(`name="twitter:image" content="${url}"`);
+    // 그 파일이 public/에 실제로 있다(빌드가 그대로 복사한다)
+    const file = url.replace('https://geurio.com/', '');
+    expect(existsSync(path.join(publicDir, file))).toBe(true);
   });
 
   it('ships robots.txt (app routes disallowed) and a sitemap of the public routes', () => {
