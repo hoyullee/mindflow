@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
-import { cleanup, fireEvent, render, screen } from '@testing-library/react';
+import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { MemoryRouter, Route, Routes } from 'react-router-dom';
 import { Editor } from './Editor';
 import { listVersions } from './versionHistory';
@@ -90,5 +90,26 @@ describe('버전 기록 모달', () => {
     // undo 한 번이면 복원 전으로 돌아간다
     fireEvent.keyDown(window, { key: 'z', ctrlKey: true });
     expect(container.querySelector('[data-node-id="root"]')!.textContent).toContain('현재 상태');
+  });
+
+  // 옛 판의 첨부 이미지 — 본문에는 참조(`mfimg:…`)만 있으므로 서명 URL로 바꿔야
+  // 보인다. 예전에는 미리보기에 URL을 넘기지 않아 사진 자리가 늘 회색이었다.
+  // 여기서는 이 기기의 URL 캐시가 채워진 경우(홈에서 이미 본 사진 = 왕복 0회)를 쓴다.
+  it('옛 판의 첨부 이미지를 미리보기에 그린다', async () => {
+    const REF = 'mfimg:vh4/pic.webp';
+    const URL_ = 'https://signed.example/vh4-pic.webp?token=t';
+    localStorage.setItem('mf_img_urls', JSON.stringify({ [REF]: { url: URL_, at: Date.now() } }));
+    localStorage.setItem('mindflow_doc_vh4', JSON.stringify(DOC));
+    const body = JSON.stringify({ ...DOC, floats: [{ id: 'f1', x: 40, y: 40, w: 120, h: 90, img: REF, text: '' }] });
+    localStorage.setItem('mindflow_hist_vh4', JSON.stringify([{ at: 1_700_000_000_000, body, nodes: 1 }]));
+
+    renderEditor('/editor?map=vh4&title=x');
+    fireEvent.click(screen.getByRole('button', { name: '편집' }));
+    fireEvent.click(screen.getByText('버전 기록'));
+    const dialog = screen.getByRole('dialog', { name: '버전 기록' });
+    await waitFor(() => {
+      const img = dialog.querySelector('image');
+      expect(img?.getAttribute('href')).toBe(URL_);
+    });
   });
 });
