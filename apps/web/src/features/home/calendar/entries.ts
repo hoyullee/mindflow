@@ -13,6 +13,7 @@
 // 쓰는 것 그대로 = **마지막 열**(`boardProgress`·`dueTone`이 쓰는 규칙).
 
 import type { KanbanCard, KanbanColumn, KanbanTag } from '@mindflow/mindmap-core';
+import type { CalendarEvent } from '../../../adapters/ports';
 
 /** 일정 화면·위젯이 그리는 한 항목. 색은 그리는 쪽이 테마로 정하므로 여기엔 이름만 담는다. */
 export interface CalendarEntry {
@@ -44,6 +45,16 @@ export interface CalendarEntry {
   spaceName: string;
   /** 보기 전용으로 공유받은 보드인가 — 참이면 고칠 수 없다(진짜 게이트는 서버 RLS). */
   readOnly?: boolean;
+
+  // ── Geurio 일정(0033)일 때만 ──
+  /**
+   * 이 항목이 **캘린더 전용 일정**인가(칸반 카드가 아니라). 참이면 `cardId`는 그
+   * 일정의 id이고 `docId`는 빈 문자열이다 — 가리킬 문서가 없다.
+   */
+  event?: CalendarEvent;
+  /** 시각 있는 일정의 `HH:MM`(종일이면 없다) — 시간표가 이 값으로 놓는다. */
+  startTime?: string;
+  endTime?: string;
 }
 
 interface Parsed {
@@ -144,6 +155,32 @@ export interface CalendarSource {
   spaceName: string;
   /** 보기 전용으로 공유받은 보드(`sharedMaps`의 role='view') — 항목에 그대로 실린다. */
   readOnly?: boolean;
+}
+
+/**
+ * Geurio 일정(0033) → 달력 항목. 칸반 카드와 **같은 모양**으로 만들어 월 격자·통계·
+ * 사이드 목록이 종류를 가리지 않고 그린다(그 셋은 `CalendarEntry`만 안다).
+ *
+ * `due`는 마지막 날이고 `start`는 여러 날 일정일 때만 채운다 — 칸반 카드의 기간 규칙과
+ * 같아서 기간 바·드래그 계산이 그대로 성립한다.
+ */
+export function eventEntries(events: readonly CalendarEvent[]): CalendarEntry[] {
+  return events.map((e) => ({
+    docId: '',
+    cardId: e.id,
+    title: e.title || '(제목 없음)',
+    due: e.endDate,
+    ...(e.endDate > e.startDate ? { start: e.startDate } : {}),
+    colId: '',
+    colName: 'Geurio 캘린더',
+    colIndex: 0,
+    ...(e.color ? { colColor: e.color } : {}),
+    tag: '',
+    boardName: 'Geurio 캘린더',
+    spaceName: '내 일정',
+    event: e,
+    ...(e.allDay ? {} : { ...(e.startTime ? { startTime: e.startTime } : {}), ...(e.endTime ? { endTime: e.endTime } : {}) }),
+  }));
 }
 
 /**

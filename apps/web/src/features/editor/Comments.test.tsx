@@ -9,6 +9,7 @@ import { LocalShareStore } from '../../adapters/local/localShareStore';
 import { LocalFeedbackStore } from '../../adapters/local/localFeedbackStore';
 import { LocalCommentStore } from '../../adapters/local/localCommentStore';
 import { LocalNotificationStore } from '../../adapters/local/localNotificationStore';
+import { LocalEventStore } from '../../adapters/local/localEventStore';
 import { LocalImageStore } from '../../adapters/local/localImageStore';
 import { LocalDocStore } from '../../adapters/local/localDocStore';
 import type { Backend, DocStore, ShareStore } from '../../adapters/ports';
@@ -465,7 +466,7 @@ describe('링크로 연 맵', () => {
     // 클래스 인스턴스를 스프레드하면 프로토타입 메서드가 통째로 빠진다
     // (`listParticipants` 등) — 덮어쓸 것만 얹는다.
     const shareStore = Object.assign(new LocalShareStore(), { list: async () => [] }) as unknown as ShareStore;
-    return { auth: new LocalAuth(), docStore, spaceStore: new LocalSpaceStore(), shareStore, feedbackStore: new LocalFeedbackStore(), imageStore: new LocalImageStore(), commentStore: new LocalCommentStore(), notificationStore: new LocalNotificationStore(), mode: 'supabase' };
+    return { auth: new LocalAuth(), docStore, spaceStore: new LocalSpaceStore(), shareStore, feedbackStore: new LocalFeedbackStore(), imageStore: new LocalImageStore(), commentStore: new LocalCommentStore(), notificationStore: new LocalNotificationStore(), eventStore: new LocalEventStore(), mode: 'supabase' };
   }
 
   it('꽂혀 있는 핀의 댓글도, 배경 메뉴의 댓글 추가도 없다', async () => {
@@ -543,7 +544,7 @@ describe('댓글 핀(캔버스 객체)', () => {
       feedbackStore: new LocalFeedbackStore(),
       imageStore: new LocalImageStore(),
       commentStore,
-      notificationStore: new LocalNotificationStore(),
+      notificationStore: new LocalNotificationStore(), eventStore: new LocalEventStore(),
       mode: 'local',
     };
     const { container } = render(

@@ -252,6 +252,10 @@ export interface HomeState {
   calDay: string | null;
   /** 열린 일정 상세 — 그 칸반 카드를 가리킨다. `null`이면 닫힘. */
   calDetail: { docId: string; cardId: string } | null;
+  /** 새 일정 팝업(0033) — 처음 놓일 날짜와 종일 여부. null이면 닫혀 있다. */
+  calNewEvent: { date: string; allDay: boolean } | null;
+  /** 열려 있는 Geurio 일정 상세(달력 항목이 아니라 그 일정 id). */
+  calEventDetail: string | null;
   /** LNB 대시보드 구획의 순서 바꾸기 모드(디자인의 ⠿ 토글). */
   dashReorder: boolean;
   /** 대시보드 배치 편집 모드(히어로의 "편집" 토글) — 위젯 드래그 재배치·모서리
@@ -489,6 +493,8 @@ export function initialHomeState(): HomeState {
     calSide: 'list',
     calDay: null,
     calDetail: null,
+    calNewEvent: null,
+    calEventDetail: null,
     dashReorder: false,
     dashEdit: false,
     spaceReorder: false,

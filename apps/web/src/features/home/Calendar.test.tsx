@@ -10,6 +10,7 @@ import { LocalShareStore } from '../../adapters/local/localShareStore';
 import { LocalFeedbackStore } from '../../adapters/local/localFeedbackStore';
 import { LocalCommentStore } from '../../adapters/local/localCommentStore';
 import { LocalNotificationStore } from '../../adapters/local/localNotificationStore';
+import { LocalEventStore } from '../../adapters/local/localEventStore';
 import { LocalImageStore } from '../../adapters/local/localImageStore';
 import type { Backend, DocMeta, DocStore, LoadedDoc } from '../../adapters/ports';
 import { ACTIVE_VIEW_KEY } from './storage';
@@ -66,7 +67,7 @@ function renderHome(metas: DocMeta[], bodies: Record<string, LoadedDoc>) {
     feedbackStore: new LocalFeedbackStore(),
     imageStore: new LocalImageStore(),
     commentStore: new LocalCommentStore(),
-    notificationStore: new LocalNotificationStore(),
+    notificationStore: new LocalNotificationStore(), eventStore: new LocalEventStore(),
     mode: 'local',
   };
   const utils = render(
@@ -612,4 +613,214 @@ describe('일정 화면', () => {
       await waitFor(() => expect(document.querySelector('[data-cal-ghost]')).toBeNull());
     });
   });
+  /**
+   * Geurio 일정(0033) — 칸반 마감과 나란한 두 번째 원천. 로컬 어댑터가 실제로 쓰고
+   * 읽으므로(`mf_events`) 저장까지 이어지는 흐름을 그대로 본다.
+   */
+  describe('Geurio 일정', () => {
+    const events = (): Array<Record<string, unknown>> => JSON.parse(localStorage.getItem('mf_events') ?? '[]') as Array<Record<string, unknown>>;
+    const newEv = (): HTMLElement => document.querySelector('[data-new-event]') as HTMLElement;
+    const evDetail = (): HTMLElement => document.querySelector('[data-event-detail]') as HTMLElement;
+
+    it('`새 일정`으로 종일 일정을 만들면 그 날 칸에 뜨고 우리 표에 저장된다', async () => {
+      renderHome([META('d1', '스프린트 보드'), META('d2', '이슈 트리아지')], BODIES());
+      await openCalendar();
+      fireEvent.click(document.querySelector('[data-cal-new]')!);
+      await waitFor(() => expect(newEv()).toBeTruthy());
+      // 종일이 기본 — 저장할 곳이 하나뿐이므로 고르기 대신 배지로 알린다.
+      expect(document.querySelector('[data-new-allday]')!.getAttribute('aria-pressed')).toBe('true');
+      expect(within(newEv()).getByText('Geurio 캘린더')).toBeTruthy();
+      // 제목이 없으면 저장 버튼이 눌리지 않는다.
+      expect((document.querySelector('[data-new-submit]') as HTMLButtonElement).disabled).toBe(true);
+      fireEvent.change(document.querySelector('[data-new-title]')!, { target: { value: '팀 워크숍' } });
+      fireEvent.change(document.querySelector('[data-new-loc]')!, { target: { value: '3층 회의실' } });
+      fireEvent.click(document.querySelector('[data-new-submit]')!);
+
+      await waitFor(() => expect(document.querySelector('[data-new-event]')).toBeNull());
+      expect(events()).toHaveLength(1);
+      expect(events()[0]).toMatchObject({ title: '팀 워크숍', allDay: true, location: '3층 회의실', source: 'geurio', startDate: todayISO() });
+      // 칸반 마감과 같은 칩으로 격자에 그려진다(원천을 가리지 않는다).
+      await waitFor(() => expect(chipTexts()).toContain('팀 워크숍'));
+    });
+
+    it('종일을 끄면 시각을 고르고, 빠른 칩이 종료 시각을 정한다', async () => {
+      renderHome([META('d1', '스프린트 보드')], BODIES());
+      await openCalendar();
+      fireEvent.click(document.querySelector('[data-cal-new]')!);
+      await waitFor(() => expect(newEv()).toBeTruthy());
+      fireEvent.click(document.querySelector('[data-new-allday]')!);
+      await waitFor(() => expect(document.querySelector('[data-new-start]')).toBeTruthy());
+      // 기본 09:00–10:00 = 1시간
+      expect(document.querySelector('[data-new-dur]')!.textContent).toBe('1시간');
+      fireEvent.click(document.querySelector('[data-new-quick="90"]')!);
+      await waitFor(() => expect(document.querySelector('[data-new-dur]')!.textContent).toBe('1시간 30분'));
+      fireEvent.change(document.querySelector('[data-new-title]')!, { target: { value: '설계 회의' } });
+      fireEvent.click(document.querySelector('[data-new-submit]')!);
+      await waitFor(() => expect(events()).toHaveLength(1));
+      expect(events()[0]).toMatchObject({ title: '설계 회의', allDay: false, startTime: '09:00', endTime: '10:30' });
+    });
+
+    it('시작 날짜를 앞으로 당기면 종료 날짜도 따라온다(하루짜리가 기간 일정이 되지 않는다)', async () => {
+      // 클램프만 있던 판에서는 시작을 당기는 순간 그 사이만큼 긴 기간 일정이 됐다
+      // (실브라우저 프로브가 잡은 자리 — 하루가 24일짜리 바로 그려졌다).
+      renderHome([META('d1', '스프린트 보드')], BODIES());
+      await openCalendar();
+      fireEvent.click(document.querySelector('[data-cal-new]')!);
+      await waitFor(() => expect(newEv()).toBeTruthy());
+      fireEvent.change(document.querySelector('[data-new-title]')!, { target: { value: '앞으로 당긴 일정' } });
+      const back = shiftDays(-3);
+      await pickDate('[data-new-date]', back);
+      await waitFor(() => expect(events().length + 1).toBeGreaterThan(0));
+      fireEvent.click(document.querySelector('[data-new-submit]')!);
+      await waitFor(() => expect(events()).toHaveLength(1));
+      // 하루짜리 그대로 — 시작과 끝이 같다.
+      expect(events()[0]).toMatchObject({ startDate: back, endDate: back });
+    });
+
+    it('상세에서도 시작 날짜를 옮기면 기간 길이가 유지된다', async () => {
+      renderHome([META('d1', '스프린트 보드')], BODIES());
+      const from = todayISO();
+      localStorage.setItem('mf_events', JSON.stringify([{ id: 'e1', title: '3일 휴가', startDate: from, endDate: shiftDays(2), allDay: true, source: 'geurio' }]));
+      await openCalendar();
+      await waitFor(() => expect(barFor('3일 휴가')).toBeTruthy());
+      fireEvent.click(barFor('3일 휴가'));
+      await waitFor(() => expect(evDetail()).toBeTruthy());
+      const back = shiftDays(-4);
+      await pickDate('[data-event-date]', back);
+      // 3일간이 그대로 — 시작만 옮겨진다.
+      await waitFor(() => expect(events()[0]).toMatchObject({ startDate: back, endDate: shiftDays(-2) }));
+    });
+
+    it('시작 시각을 옮기면 길이를 지킨 채 종료 시각도 따라온다', async () => {
+      // 그러지 않으면 늦은 시각을 고르는 순간 종료가 시작보다 앞서고 저장이 막힌다
+      // (실브라우저 프로브가 잡은 자리 — 90분 칩 뒤에 시작을 오후로 옮긴 흐름).
+      renderHome([META('d1', '스프린트 보드')], BODIES());
+      await openCalendar();
+      fireEvent.click(document.querySelector('[data-cal-new]')!);
+      await waitFor(() => expect(newEv()).toBeTruthy());
+      fireEvent.change(document.querySelector('[data-new-title]')!, { target: { value: '오후 회의' } });
+      fireEvent.click(document.querySelector('[data-new-allday]')!);
+      await waitFor(() => expect(document.querySelector('[data-new-start]')).toBeTruthy());
+      fireEvent.click(document.querySelector('[data-new-quick="90"]')!); // 09:00–10:30
+      // 시각 팝오버에서 오후 2시를 고른다
+      fireEvent.click(document.querySelector('[data-new-start]')!);
+      await waitFor(() => expect(document.querySelector('[data-timepop-time="14:00"]')).toBeTruthy());
+      fireEvent.click(document.querySelector('[data-timepop-time="14:00"]')!);
+      // 길이(90분)가 그대로라 저장이 막히지 않는다
+      await waitFor(() => expect(document.querySelector('[data-new-dur]')!.textContent).toBe('1시간 30분'));
+      expect((document.querySelector('[data-new-submit]') as HTMLButtonElement).disabled).toBe(false);
+      fireEvent.click(document.querySelector('[data-new-submit]')!);
+      await waitFor(() => expect(events()).toHaveLength(1));
+      expect(events()[0]).toMatchObject({ startTime: '14:00', endTime: '15:30' });
+    });
+
+    it('상세에서도 시작 시각을 옮기면 종료가 따라온다(시각이 사라지지 않는다)', async () => {
+      renderHome([META('d1', '스프린트 보드')], BODIES());
+      localStorage.setItem('mf_events', JSON.stringify([{ id: 'e1', title: '회의', startDate: todayISO(), endDate: todayISO(), allDay: false, startTime: '09:00', endTime: '10:00', source: 'geurio' }]));
+      await openCalendar();
+      await waitFor(() => expect(chipTexts()).toContain('회의'));
+      fireEvent.click(chipFor('회의'));
+      await waitFor(() => expect(evDetail()).toBeTruthy());
+      fireEvent.click(document.querySelector('[data-event-start]')!);
+      await waitFor(() => expect(document.querySelector('[data-timepop-time="16:00"]')).toBeTruthy());
+      fireEvent.click(document.querySelector('[data-timepop-time="16:00"]')!);
+      // 종료가 앞섰다면 정규화가 종일로 되돌려 시각이 통째로 사라진다.
+      await waitFor(() => expect(events()[0]).toMatchObject({ allDay: false, startTime: '16:00', endTime: '17:00' }));
+    });
+
+    it('일정을 누르면 **칸반과 다른 팝업**이 뜨고, 고치면 곧바로 저장된다', async () => {
+      renderHome([META('d1', '스프린트 보드')], BODIES());
+      localStorage.setItem('mf_events', JSON.stringify([{ id: 'e1', title: '주간 회의', startDate: todayISO(), endDate: todayISO(), allDay: true, source: 'geurio' }]));
+      await openCalendar();
+      await waitFor(() => expect(chipTexts()).toContain('주간 회의'));
+      fireEvent.click(chipFor('주간 회의'));
+      await waitFor(() => expect(evDetail()).toBeTruthy());
+      // 칸반 상세가 아니다 — 상태·담당·분류가 없고 종일 토글·위치·메모가 있다.
+      expect(document.querySelector('[data-cal-detail]')).toBeNull();
+      expect(within(evDetail()).queryByText('이 칸반 열기')).toBeNull();
+      expect(document.querySelector('[data-event-allday]')).toBeTruthy();
+
+      // 위치는 blur에 한 번 커밋한다(타이핑마다 저장하지 않는다).
+      const loc = document.querySelector('[data-event-loc]') as HTMLInputElement;
+      fireEvent.change(loc, { target: { value: '2층 라운지' } });
+      expect(events()[0]!.location).toBeUndefined();
+      fireEvent.blur(loc);
+      await waitFor(() => expect(events()[0]!.location).toBe('2층 라운지'));
+
+      // 종일을 끄면 시각이 붙는다(표의 제약대로 쌍으로).
+      fireEvent.click(document.querySelector('[data-event-allday]')!);
+      await waitFor(() => expect(events()[0]).toMatchObject({ allDay: false, startTime: '09:00', endTime: '10:00' }));
+    });
+
+    it('상세에서 삭제하면 표에서 사라지고 팝업이 닫힌다', async () => {
+      renderHome([META('d1', '스프린트 보드')], BODIES());
+      localStorage.setItem('mf_events', JSON.stringify([{ id: 'e1', title: '지울 일정', startDate: todayISO(), endDate: todayISO(), allDay: true, source: 'geurio' }]));
+      await openCalendar();
+      await waitFor(() => expect(chipTexts()).toContain('지울 일정'));
+      fireEvent.click(chipFor('지울 일정'));
+      await waitFor(() => expect(evDetail()).toBeTruthy());
+      fireEvent.click(document.querySelector('[data-event-delete]')!);
+      await waitFor(() => expect(document.querySelector('[data-event-detail]')).toBeNull());
+      expect(events()).toEqual([]);
+      await waitFor(() => expect(chipTexts()).not.toContain('지울 일정'));
+    });
+
+    it('날짜별 보기의 시간표에 시각 일정을 놓고, 겹치면 열을 나눈다', async () => {
+      renderHome([META('d1', '스프린트 보드')], BODIES());
+      const t = todayISO();
+      localStorage.setItem(
+        'mf_events',
+        JSON.stringify([
+          { id: 'e1', title: '아침 회의', startDate: t, endDate: t, allDay: false, startTime: '09:00', endTime: '11:00', source: 'geurio' },
+          { id: 'e2', title: '겹친 회의', startDate: t, endDate: t, allDay: false, startTime: '10:00', endTime: '12:00', source: 'geurio' },
+        ]),
+      );
+      await openCalendar();
+      fireEvent.click(document.querySelector('[aria-label="날짜별 보기"]')!);
+      await waitFor(() => expect(document.querySelector('[data-cal-timeline]')).toBeTruthy());
+      const blocks = [...document.querySelectorAll('[data-cal-block]')] as HTMLElement[];
+      expect(blocks.map((b) => b.getAttribute('data-cal-block'))).toEqual(['e1', 'e2']);
+      // 09:00 = 9 * 36px, 두 시간 = 72 - 2
+      expect(blocks[0]!.style.top).toBe(`${9 * 36}px`);
+      expect(blocks[0]!.style.height).toBe('70px');
+      // 겹치므로 두 열로 갈라 나란히(jsdom이 calc를 정규화하므로 계수로 본다)
+      expect(blocks[0]!.style.width).toContain('0.5');
+      expect(blocks[1]!.style.left).toContain('0.5');
+      expect(blocks[0]!.style.left).not.toBe(blocks[1]!.style.left);
+      // 오늘이면 현재 시각 선도 그린다
+      expect(document.querySelector('[data-cal-now]')).toBeTruthy();
+      // 종일 항목(칸반 마감)은 시간표가 아니라 위의 납작한 행으로 남는다
+      expect([...document.querySelectorAll('[data-cal-day-chip]')].map((c) => c.textContent)).not.toContain('아침 회의');
+    });
+
+    it('시각 일정이 없는 날은 빈 상태가 그 날짜로 일정 만들기를 권한다', async () => {
+      renderHome([META('d1', '스프린트 보드')], BODIES());
+      await openCalendar();
+      fireEvent.click(document.querySelector('[aria-label="날짜별 보기"]')!);
+      await waitFor(() => expect(document.querySelector('[data-cal-timeline-empty]')).toBeTruthy());
+      expect(document.querySelector('[data-cal-timeline]')).toBeNull();
+      // 고른 날짜가 곧 기본값 — 며칠 뒤 칸을 고르고 만들면 그 날에 놓인다.
+      const target = shiftDays(2);
+      fireEvent.click(document.querySelector(`[data-mini-day="${target}"]`)!);
+      await waitFor(() => expect(document.querySelector('[data-cal-day-new]')).toBeTruthy());
+      fireEvent.click(document.querySelector('[data-cal-day-new]')!);
+      await waitFor(() => expect(newEv()).toBeTruthy());
+      fireEvent.change(document.querySelector('[data-new-title]')!, { target: { value: '이틀 뒤 일정' } });
+      fireEvent.click(document.querySelector('[data-new-submit]')!);
+      await waitFor(() => expect(events()).toHaveLength(1));
+      expect(events()[0]!.startDate).toBe(target);
+    });
+
+    it('여러 날 일정은 칩이 아니라 기간 바로 그려지고, 상세가 남은 날을 말한다', async () => {
+      renderHome([META('d1', '스프린트 보드')], BODIES());
+      localStorage.setItem('mf_events', JSON.stringify([{ id: 'e1', title: '휴가', startDate: todayISO(), endDate: shiftDays(2), allDay: true, source: 'geurio' }]));
+      await openCalendar();
+      await waitFor(() => expect(barFor('휴가')).toBeTruthy());
+      fireEvent.click(barFor('휴가'));
+      await waitFor(() => expect(evDetail()).toBeTruthy());
+      expect(document.querySelector('[data-event-when]')!.textContent).toBe('3일간');
+      expect(document.querySelector('[data-event-span]')!.textContent).toContain('3일간');
+    });
+  });
+
 });

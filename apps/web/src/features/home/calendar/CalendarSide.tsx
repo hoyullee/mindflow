@@ -1,13 +1,14 @@
+import { useEffect, useRef } from 'react';
 import type { CalendarEntry } from './entries';
 import { entryChip, type ChipSurface } from './chips';
-import { DOW, dateLabel, dayProgress, dueBadge, entriesOn, isSpan, monthCells, overdueEntries, upcomingEntries } from './model';
+import { DOW, HOUR_ROW, dateLabel, dayProgress, dayTimeline, dueBadge, entriesOn, hourLabel, isSpan, monthCells, overdueEntries, timeLabel, upcomingEntries } from './model';
+import type { DayTimeline } from './model';
 
 /**
- * 일정 화면 오른쪽 — 미니 달력 + (마감 목록 | 고른 날짜).
+ * 일정 화면 오른쪽 — 미니 달력 + (마감 목록 | 고른 날짜 + 시간표).
  *
- * 디자인 원본은 이 자리에 **시간표**(12AM~11PM)도 두는데, 지금 우리 항목은 전부
- * 종일이라(칸반 마감은 시각을 갖지 않는다 — 결정) 시간표를 그리면 텅 빈 24줄이
- * 남는다. 시각이 있는 Geurio 일정이 들어오는 단계에서 함께 붙인다.
+ * 날짜별 보기는 디자인 원본의 agenda다: 종일 항목의 납작한 행 + 24시간 시간표.
+ * 시각이 있는 항목은 Geurio 일정(0033)뿐이다 — 칸반 마감은 종일이다(결정).
  */
 export function CalendarSide({
   entries,
@@ -20,6 +21,7 @@ export function CalendarSide({
   onPickDay,
   onPickEntry,
   onSetMonth,
+  onNewEvent,
 }: {
   entries: readonly CalendarEntry[];
   todayIso: string;
@@ -31,11 +33,14 @@ export function CalendarSide({
   onPickDay: (iso: string) => void;
   onPickEntry: (e: CalendarEntry) => void;
   onSetMonth: (y: number, m: number) => void;
+  /** 이 날짜에 새 일정(원본 `agendaNew` — 머리의 `＋`와 빈 상태의 버튼). */
+  onNewEvent: (iso: string) => void;
 }) {
   // 미니 달력은 본문과 **같은 달**을 보여 준다 — 두 달력이 어긋나면 어느 쪽이
   // 기준인지 흐려진다(디자인 원본은 따로 넘길 수 있지만 그건 다음 단계).
   const cells = monthCells(y, m, entries, todayIso, 0);
   const dayList = entriesOn(entries, selectedDay);
+  const timeline = dayTimeline(entries, selectedDay);
   const upcoming = upcomingEntries(entries, todayIso);
   const overdue = overdueEntries(entries, todayIso);
 
@@ -105,15 +110,20 @@ export function CalendarSide({
 
       {/* 목록 */}
       {side === 'day' ? (
-        /* 날짜별 보기 — 디자인 원본의 agenda: 종일 항목은 **왼쪽 색 바가 붙은 납작한 행**
-           (마감 목록의 두 줄 카드와 다른 물건이다). 우측 메모는 열 이름, 기간이면 `N/M일째`.
-           원본은 이 아래에 **시간표**(12AM~11PM)를 두는데, 지금 우리 항목은 전부 종일이라
-           (칸반 마감은 시각을 갖지 않는다 — 결정) 그리면 빈 24줄만 남는다. 시각이 있는
-           Geurio 일정이 들어오는 단계에서 원본의 빈 상태(`이 날에는 시간 일정이 없어요`)와
-           함께 붙인다. */
-        <Section title={dateLabel(selectedDay)} sub={`일정 ${dayList.length}개`}>
-          {dayList.length ? dayList.map((e) => <DayChip key={`${e.docId}-${e.cardId}`} entry={e} iso={selectedDay} surface={surface} onPick={onPickEntry} />) : <Empty text="이 날에는 일정이 없어요" />}
-        </Section>
+        /* 날짜별 보기 — 디자인 원본의 agenda: 종일 항목은 **왼쪽 색 바가 붙은 납작한
+           행**(마감 목록의 두 줄 카드와 다른 물건이다), 그 아래가 **시간표**다.
+           시각이 있는 항목은 Geurio 일정(0033)뿐이고 칸반 마감은 종일이므로(결정)
+           시간표에는 일정이 있을 때만 블록이 놓인다. */
+        <>
+          <Section title={dateLabel(selectedDay)} sub={`일정 ${dayList.length}개`} action={{ label: '이 날짜에 일정 추가', onClick: () => onNewEvent(selectedDay) }}>
+            {timeline.allDay.length ? (
+              timeline.allDay.map((e) => <DayChip key={`${e.docId}-${e.cardId}`} entry={e} iso={selectedDay} surface={surface} onPick={onPickEntry} />)
+            ) : timeline.blocks.length ? null : (
+              <Empty text="이 날에는 일정이 없어요" />
+            )}
+          </Section>
+          <DayTimelineView timeline={timeline} iso={selectedDay} todayIso={todayIso} surface={surface} onPickEntry={onPickEntry} onNewEvent={onNewEvent} />
+        </>
       ) : (
         <>
           <Section title="다가오는 마감" sub={`${upcoming.length}건`}>
@@ -149,14 +159,136 @@ function MiniNav({ label, onClick, d }: { label: string; onClick: () => void; d:
   );
 }
 
-function Section({ title, sub, children }: { title: string; sub: string; children: React.ReactNode }) {
+function Section({ title, sub, action, children }: { title: string; sub: string; action?: { label: string; onClick: () => void }; children: React.ReactNode }) {
   return (
     <div style={{ flexShrink: 0, display: 'flex', flexDirection: 'column', gap: 6 }}>
       <div style={{ display: 'flex', alignItems: 'baseline', gap: 7, padding: '0 2px' }}>
         <span style={{ fontSize: 13, fontWeight: 800, letterSpacing: '-.02em', color: 'var(--mf-text)' }}>{title}</span>
-        <span style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 10.5, color: 'var(--mf-faint)' }}>{sub}</span>
+        <span style={{ flex: 1, minWidth: 0, fontFamily: "'JetBrains Mono', monospace", fontSize: 10.5, color: 'var(--mf-faint)' }}>{sub}</span>
+        {/* 원본 `agendaNew` — 그 날짜에 바로 일정을 만든다(고른 날이 곧 기본값). */}
+        {action && (
+          <button type="button" data-cal-day-new title={action.label} aria-label={action.label} onClick={action.onClick} className="mf-ctl" style={{ width: 22, height: 22, flex: '0 0 auto', border: 0, borderRadius: 999, background: 'transparent', color: 'var(--mf-muted)', cursor: 'pointer', display: 'inline-flex', alignItems: 'center', justifyContent: 'center' }}>
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.6" strokeLinecap="round" aria-hidden="true">
+              <path d="M12 5v14M5 12h14" />
+            </svg>
+          </button>
+        )}
       </div>
       <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>{children}</div>
+    </div>
+  );
+}
+
+/**
+ * 시간표 — 디자인 원본의 `agendaHours`/`agendaTimed`. 24행(행 36px)에 시각 있는 일정을
+ * 절대 위치로 놓고, 겹치는 일정은 열을 나눠 나란히 둔다(계산은 순수 `dayTimeline`).
+ * 오늘이면 현재 시각 선도 그린다(원본 `agendaNowOn`).
+ */
+function DayTimelineView({
+  timeline,
+  iso,
+  todayIso,
+  surface,
+  onPickEntry,
+  onNewEvent,
+}: {
+  timeline: DayTimeline;
+  iso: string;
+  todayIso: string;
+  surface: ChipSurface;
+  onPickEntry: (e: CalendarEntry) => void;
+  onNewEvent: (iso: string) => void;
+}) {
+  const bodyRef = useRef<HTMLDivElement | null>(null);
+  // 첫 일정이 보이도록 맞춘다 — 자정부터 훑게 두지 않는다(원본 `syncAgendaScroll`).
+  useEffect(() => {
+    if (bodyRef.current) bodyRef.current.scrollTop = timeline.focusTop;
+  }, [timeline.focusTop, iso]);
+
+  if (!timeline.blocks.length) {
+    // 원본의 빈 상태 — 시계 글리프 + 안내 + `일정 추가`.
+    return (
+      <div data-cal-timeline-empty style={{ flex: '1 1 0', minHeight: 120, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 9, padding: 16 }}>
+        <svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="var(--mf-border)" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+          <circle cx="12" cy="12" r="8.5" />
+          <path d="M12 7.5V12l3 2" />
+        </svg>
+        <span style={{ fontSize: 11.5, color: 'var(--mf-faint)', textAlign: 'center' }}>이 날에는 시간 일정이 없어요</span>
+        <button type="button" data-cal-timeline-new onClick={() => onNewEvent(iso)} className="mf-ctl" style={{ height: 27, padding: '0 13px', borderRadius: 999, border: '1px solid var(--mf-border)', background: 'var(--mf-card)', color: 'var(--mf-muted)', font: 'inherit', fontSize: 11, fontWeight: 700, cursor: 'pointer' }}>
+          일정 추가
+        </button>
+      </div>
+    );
+  }
+
+  const nowMin = (() => {
+    if (iso !== todayIso) return null;
+    const d = new Date();
+    return d.getHours() * 60 + d.getMinutes();
+  })();
+
+  return (
+    <div ref={bodyRef} className="lnb-scroll" data-cal-timeline style={{ flex: '1 1 0', minHeight: 160, overflowY: 'auto', padding: '0 2px 8px' }}>
+      <div style={{ position: 'relative', height: HOUR_ROW * 24, display: 'flex', flexDirection: 'column' }}>
+        {Array.from({ length: 24 }, (_, h) => (
+          <span key={h} style={{ display: 'flex', alignItems: 'flex-start', gap: 8, height: HOUR_ROW, flex: '0 0 auto' }}>
+            <span style={{ flex: '0 0 34px', textAlign: 'right', fontFamily: "'JetBrains Mono', monospace", fontSize: 9, color: 'var(--mf-faint2)', transform: 'translateY(-4px)', whiteSpace: 'nowrap' }}>{hourLabel(h)}</span>
+            <span style={{ flex: 1, minWidth: 0, borderTop: '1px solid var(--mf-border-soft)', display: 'block' }} />
+          </span>
+        ))}
+
+        {nowMin !== null && (
+          <span data-cal-now style={{ position: 'absolute', left: 38, right: 0, top: (nowMin / 60) * HOUR_ROW, display: 'flex', alignItems: 'center', pointerEvents: 'none' }}>
+            <span style={{ width: 6, height: 6, borderRadius: 999, background: 'var(--mf-accent)', display: 'block', flex: '0 0 auto', marginLeft: -3 }} />
+            <span style={{ flex: 1, height: 1.5, background: 'var(--mf-accent)', display: 'block' }} />
+          </span>
+        )}
+
+        {timeline.blocks.map((b) => {
+          const chip = entryChip(b.entry, surface);
+          const n = b.lanes;
+          return (
+            <button
+              key={`${b.entry.docId}-${b.entry.cardId}`}
+              type="button"
+              data-cal-block={b.entry.cardId}
+              title={`${b.entry.title} · ${timeLabel(b.from)}`}
+              onClick={() => onPickEntry(b.entry)}
+              className="mf-ctl"
+              style={{
+                position: 'absolute',
+                left: `calc(46px + (100% - 48px) * ${b.lane} / ${n})`,
+                width: `calc((100% - 48px) / ${n} - ${n > 1 ? 3 : 0}px)`,
+                top: (b.from / 60) * HOUR_ROW,
+                height: Math.max(34, ((b.to - b.from) / 60) * HOUR_ROW - 2),
+                boxSizing: 'border-box',
+                display: 'flex',
+                flexDirection: 'column',
+                gap: 1,
+                justifyContent: 'center',
+                padding: `4px ${n > 2 ? 5 : 9}px`,
+                border: 0,
+                borderLeft: `3px solid ${chip.dot}`,
+                borderRadius: '4px 9px 9px 4px',
+                background: chip.bg,
+                // 겹칠 때 카드 경계를 갈라 준다(원본 `ring`).
+                boxShadow: n > 1 ? '0 0 0 1.5px var(--mf-card)' : 'none',
+                cursor: 'pointer',
+                font: 'inherit',
+                textAlign: 'left',
+                overflow: 'hidden',
+              }}
+            >
+              <span style={{ fontSize: n > 2 ? 10 : 11, fontWeight: 800, letterSpacing: '-.015em', color: 'var(--mf-text)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{b.entry.title}</span>
+              {n <= 2 && (
+                <span style={{ fontSize: 9.5, color: 'var(--mf-muted)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                  {timeLabel(b.from)} – {timeLabel(b.to)}
+                </span>
+              )}
+            </button>
+          );
+        })}
+      </div>
     </div>
   );
 }

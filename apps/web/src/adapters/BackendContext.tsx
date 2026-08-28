@@ -57,3 +57,7 @@ export function useCommentStore() {
 export function useNotificationStore() {
   return useBackend().notificationStore;
 }
+
+export function useEventStore() {
+  return useBackend().eventStore;
+}

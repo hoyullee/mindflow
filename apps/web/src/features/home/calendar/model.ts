@@ -44,6 +44,17 @@ export function daysBetween(a: string, b: string): number {
   return Math.round(ms / 86400000);
 }
 
+/**
+ * `iso`에서 `n`일 뒤(음수면 앞). `daysBetween`의 짝 — 정오 기준이라 서머타임에도
+ * 한 날 어긋나지 않는다.
+ */
+export function addDays(iso: string, n: number): string {
+  const p = partsOf(iso);
+  if (!p) return iso;
+  const d = new Date(p.y, p.m - 1, p.d + n, 12);
+  return isoOf(d.getFullYear(), d.getMonth() + 1, d.getDate());
+}
+
 /** 그 날이 속한 주의 일요일. */
 export function weekStartISO(iso: string): string {
   const p = partsOf(iso);
@@ -246,3 +257,120 @@ export function dateLabel(iso: string): string {
 }
 
 export { DOW };
+
+// ── 시간표(날짜별 보기) — 디자인 원본의 `agenda*` ──────────────────────────────
+//
+// 하루 24행(행 높이 `HOUR_ROW`)에 시각 있는 일정을 절대 위치로 놓고, **시간이 겹치는
+// 일정은 나란히** 둔다(겹치는 묶음 안에서 열(lane)을 나눠 폭을 쪼갠다 — 원본의 `layout`).
+// 순수 계산이라 DOM도 테마도 모른다.
+
+/**
+ * 월 격자가 실제로 보여 주는 구간(6주 = 42일). 일정 조회는 이 구간과 겹치는 것을
+ * 받아야 한다 — 격자가 그리는 것과 목록이 세는 것이 같아야 하고, 달 경계를 넘는
+ * 이웃 달 칸에도 일정이 뜬다.
+ */
+export function gridRange(y: number, m: number, weeks = 6): { from: string; to: string } {
+  const first = new Date(y, m - 1, 1);
+  const start = new Date(first);
+  start.setDate(1 - first.getDay());
+  const end = new Date(start);
+  end.setDate(start.getDate() + weeks * 7 - 1);
+  return { from: isoOf(start.getFullYear(), start.getMonth() + 1, start.getDate()), to: isoOf(end.getFullYear(), end.getMonth() + 1, end.getDate()) };
+}
+
+/** 시간표 한 행의 높이(px) — 원본 `ROW = 36`. */
+export const HOUR_ROW = 36;
+
+/** `HH:MM` → 자정부터의 분. 꼴이 아니면 null. */
+export function minutesOf(hhmm: string | undefined): number | null {
+  const m = /^([01]?\d|2[0-3]):([0-5]\d)$/.exec(hhmm ?? '');
+  return m ? +m[1]! * 60 + +m[2]! : null;
+}
+
+/** 분 → `오전 9:30` 꼴(사이드 목록·블록 안 표기). */
+export function timeLabel(mins: number): string {
+  const h = Math.floor(mins / 60);
+  const mm = `${mins % 60}`.padStart(2, '0');
+  const ampm = h < 12 ? '오전' : '오후';
+  const h12 = h % 12 === 0 ? 12 : h % 12;
+  return `${ampm} ${h12}:${mm}`;
+}
+
+/** 시간표 블록 한 칸 — 위치·크기는 비율(0~1)로 돌려주고 px 환산은 그리는 쪽이 한다. */
+export interface TimelineBlock {
+  entry: CalendarEntry;
+  /** 시작 분·끝 분(자정 기준). */
+  from: number;
+  to: number;
+  /** 몇 번째 열인가 / 그 묶음의 열 수 — 겹칠 때 폭을 쪼갠다. */
+  lane: number;
+  lanes: number;
+}
+
+export interface DayTimeline {
+  /** 종일(시각 없는) 항목 — 시간표 위의 띠. */
+  allDay: CalendarEntry[];
+  /** 시각 있는 항목의 블록. */
+  blocks: TimelineBlock[];
+  /** 첫 일정이 보이도록 맞출 스크롤 위치(px). */
+  focusTop: number;
+}
+
+/**
+ * 그 날의 시간표. 시각이 없는 항목은 `allDay`로, 있는 항목은 겹침을 푼 블록으로.
+ * 끝 시각이 없거나 시작보다 앞이면 **1시간**으로 본다(원본과 같은 규칙).
+ */
+export function dayTimeline(entries: readonly CalendarEntry[], iso: string): DayTimeline {
+  const onDay = entries.filter((e) => coversDay(e, iso));
+  const allDay: CalendarEntry[] = [];
+  const raw: TimelineBlock[] = [];
+  for (const e of onDay) {
+    const from = minutesOf(e.startTime);
+    if (from === null) {
+      allDay.push(e);
+      continue;
+    }
+    const end = minutesOf(e.endTime);
+    const to = end !== null && end > from ? end : from + 60;
+    raw.push({ entry: e, from, to: Math.max(to, from + 20), lane: 0, lanes: 1 });
+  }
+  raw.sort((a, b) => a.from - b.from || a.to - b.to);
+
+  // 겹치는 묶음 단위로 열을 나눈다 — 한 묶음이 끝나면(다음 블록이 묶음 끝 이후에
+  // 시작하면) 열 수를 확정하고 다음 묶음을 시작한다.
+  const assign = (group: TimelineBlock[]): void => {
+    const laneEnd: number[] = [];
+    for (const b of group) {
+      let i = laneEnd.findIndex((endAt) => endAt <= b.from);
+      if (i < 0) {
+        i = laneEnd.length;
+        laneEnd.push(0);
+      }
+      laneEnd[i] = b.to;
+      b.lane = i;
+    }
+    const n = Math.max(1, laneEnd.length);
+    for (const b of group) b.lanes = n;
+  };
+  let group: TimelineBlock[] = [];
+  let groupEnd = -1;
+  for (const b of raw) {
+    if (group.length && b.from >= groupEnd) {
+      assign(group);
+      group = [];
+      groupEnd = -1;
+    }
+    group.push(b);
+    groupEnd = Math.max(groupEnd, b.to);
+  }
+  if (group.length) assign(group);
+
+  const first = raw.length ? Math.min(...raw.map((b) => b.from)) : 0;
+  const focusTop = raw.length ? Math.max(0, (first / 60) * HOUR_ROW - 28) : 0;
+  return { allDay, blocks: raw, focusTop };
+}
+
+/** 시간표 행 라벨 — 원본은 `12AM`·`3PM` 꼴(등폭). */
+export function hourLabel(h: number): string {
+  return `${h % 12 === 0 ? 12 : h % 12}${h < 12 ? 'AM' : 'PM'}`;
+}

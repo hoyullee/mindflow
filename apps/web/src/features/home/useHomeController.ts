@@ -10,7 +10,7 @@ import { exportDocSvg } from '../editor/svg';
 import { exportDocPdf } from '../editor/pdf';
 import { themeOf } from '../editor/theme';
 import { applyHomeTheme, homeThemeKeyOf, saveHomeThemeCache, type HomeThemeKey } from './theme';
-import { addMonth } from './calendar/model';
+import { addMonth, todayISO } from './calendar/model';
 import { DASH_CAP, DASH_DEFAULT_SIZE, coerceDashboards, moveInList, type DashboardData } from './dashboard/model';
 import { forgetSignedIn } from '../auth/sessionNotice';
 import { localizeAuthError } from '../auth/useLoginController';
@@ -1103,6 +1103,12 @@ export function useHomeController() {
   /** 항목 클릭 → 상세 팝업. 대상은 그 칸반 카드다(정본은 그 문서). */
   const openCalendarCard = (docId: string, cardId: string) => patch({ calDetail: { docId, cardId } });
   const closeCalendarCard = () => patch({ calDetail: null });
+  /** `새 일정`·시간표의 `＋` — 처음 놓일 날짜는 고른 날(없으면 오늘). */
+  const openNewEvent = (date?: string, allDay = true) => patch({ calNewEvent: { date: date || state.calDay || todayISO(), allDay } });
+  const closeNewEvent = () => patch({ calNewEvent: null });
+  /** Geurio 일정을 눌렀다 — 칸반 카드 상세와 다른 팝업이다(고칠 것이 다르다). */
+  const openCalendarEvent = (id: string) => patch({ calEventDetail: id });
+  const closeCalendarEvent = () => patch({ calEventDetail: null });
   /** LNB `새 대시보드` — 예전에는 이름을 자동으로 붙여 곧바로 만들었다. 이제는
    *  이름·색을 받는 팝업을 연다(첨부 디자인). 실제 생성은 `submitDashDialog`. */
   const openNewDash = () => patch({ dashDialog: { id: null, name: '', color: SPACE_COLORS[0]! }, ctxMenu: null });
@@ -2765,6 +2771,10 @@ export function useHomeController() {
     selectCalDay,
     openCalendarCard,
     closeCalendarCard,
+    openNewEvent,
+    closeNewEvent,
+    openCalendarEvent,
+    closeCalendarEvent,
     openNewDash,
     toggleDashReorder,
     toggleSpaceReorder,

@@ -238,7 +238,9 @@ export function pillStyle(on: boolean, dashed = false): CSSProperties {
 
 export function PillButton({ on, dot, children, onClick, attrs, dashed }: { on: boolean; dot?: string; children: ReactNode; onClick: () => void; attrs?: Record<string, string>; dashed?: boolean }) {
   return (
-    <button type="button" className="mf-ctl" onClick={onClick} {...attrs} style={pillStyle(on, dashed)}>
+    // 켜짐을 `aria-pressed`로 알린다 — 종일 토글은 두 상태 버튼이고, 분류 알약은
+    // 통계 칩과 같은 "지금 이것"이다(보이는 테두리만으로는 보조기술이 알 수 없다).
+    <button type="button" className="mf-ctl" aria-pressed={on} onClick={onClick} {...attrs} style={pillStyle(on, dashed)}>
       {dot && <span style={{ width: 7, height: 7, borderRadius: 999, background: dot, display: 'block', flex: '0 0 auto' }} />}
       {children}
     </button>

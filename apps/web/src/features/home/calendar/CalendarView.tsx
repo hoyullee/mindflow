@@ -1,4 +1,4 @@
-import { useMemo } from 'react';
+import { useMemo, useState } from 'react';
 import type { HomeState } from '../types';
 import type { HomeController } from '../useHomeController';
 import { calendarEntries, type CalendarEntry, type CalendarSource } from './entries';
@@ -7,22 +7,28 @@ import { calendarStats, filterByStat, monthCells, monthLabel, todayISO } from '.
 import { MonthGrid } from './MonthGrid';
 import { CalendarSide } from './CalendarSide';
 import { CalendarDetailHost } from './CalendarDetail';
+import { NewEventModal } from './NewEventModal';
+import { EventDetail } from './EventDetail';
+import { useCalendarEvents } from './useCalendarEvents';
+import { eventEntries } from './entries';
 
 /**
  * 일정 화면 — 디자인 원본 `Geurio 일정 캘린더.dc.html`의 `isCal` 화면.
  *
- * 대시보드·스페이스와 나란한 세 번째 화면이다. 지금 그리는 항목은 **전 스페이스의
- * 칸반 마감**(`calendarIndex`)이고, 본문은 썸네일이 이미 받아 둔 것을 그대로 읽으므로
- * 이 화면을 여는 것만으로 새로 내려받는 것이 없다(모자란 스페이스는 컨트롤러가
- * 검색과 같은 경로로 마저 받는다).
+ * 대시보드·스페이스와 나란한 세 번째 화면이고, 그리는 항목의 **원천이 둘**이다:
+ * ① 전 스페이스의 **칸반 마감** — 본문은 썸네일이 이미 받아 둔 것을 그대로 읽으므로
+ *    이 화면을 여는 것만으로 새로 내려받는 것이 없다(모자란 스페이스는 컨트롤러가
+ *    검색과 같은 경로로 마저 받는다). 정본은 그 칸반 문서다.
+ * ② **Geurio 일정**(`calendar_events`, 0033) — 칸반에 없는 일정(회의·휴가·약속)을
+ *    적는 자리. 정본이 우리 표라 여기서 고치면 곧바로 저장된다.
  *
- * 항목을 누르면 **상세 팝업**이 뜨고(상태·시작일·기한을 그 칸반에 곧바로 쓴다),
- * 칩·바를 다른 칸에 끌어 놓으면 날짜가 움직인다. 정본은 언제나 그 칸반 문서다 —
- * 일정 화면은 사본을 들지 않는다.
+ * 둘을 같은 `CalendarEntry` 모양으로 만들어 격자·통계·목록·시간표가 종류를 가리지
+ * 않고 그린다. 항목을 누르면 상세 팝업이 뜨는데 **고칠 것이 달라 팝업이 갈린다**
+ * (칸반=상태·시작일·기한 / 일정=종일·시각·위치·메모). 칩·바를 다른 칸에 끌어 놓으면
+ * 날짜가 움직인다(칸반 카드만 — 일정은 팝업에서 고친다).
  *
- * 이번 단계에 **없는 것**(다음 PR): Geurio 일정 만들기(시간 일정) · 구글 겹치기·공휴일 ·
- * 대시보드 위젯. 눌러도 아무 일이 없는 버튼은 두지 않는다 — 그래서 `새 일정`·
- * `구글 연결` 버튼은 아직 없다.
+ * 이번 단계에 **없는 것**(다음 PR): 구글 겹치기·공휴일 · 대시보드 캘린더 위젯.
+ * 눌러도 아무 일이 없는 버튼은 두지 않는다 — 그래서 `구글 연결` 버튼은 아직 없다.
  */
 export function CalendarView({
   state,
@@ -36,7 +42,16 @@ export function CalendarView({
   onOpenNav: () => void;
 }) {
   const today = todayISO();
-  const entries = useCalendarEntries(state);
+  const cardEntries = useCalendarEntries(state);
+  // Geurio 일정(0033) — 칸반 마감과 나란한 두 번째 원천. 같은 `CalendarEntry` 모양으로
+  // 만들어 격자·통계·목록·시간표가 종류를 가리지 않고 그린다.
+  const eventsApi = useCalendarEvents(state.calY, state.calM);
+  const [saving, setSaving] = useState(false);
+  const [saveError, setSaveError] = useState<string | null>(null);
+  const entries = useMemo(() => {
+    const evs = eventEntries(eventsApi.events);
+    return [...cardEntries, ...evs].sort((a, b) => (a.due < b.due ? -1 : a.due > b.due ? 1 : (a.startTime ?? '') < (b.startTime ?? '') ? -1 : a.title < b.title ? -1 : 1));
+  }, [cardEntries, eventsApi.events]);
   const shown = useMemo(() => filterByStat(entries, state.calFilter, today), [entries, state.calFilter, today]);
   const stats = useMemo(() => calendarStats(entries, today), [entries, today]);
   // 모바일은 칸이 좁아 칩 하나 + 접힌 개수만 — 사이드는 아예 접는다(공간이 없다).
@@ -52,7 +67,11 @@ export function CalendarView({
 
   // 항목 클릭 = **상세 팝업**. 그 칸반으로 가는 길은 팝업 발치의 `이 칸반 열기`다 —
   // 클릭이 곧바로 화면을 떠나면 "날짜만 하루 미루기"에도 맵을 열어야 한다.
-  const openEntry = (e: CalendarEntry): void => controller.openCalendarCard(e.docId, e.cardId);
+  const openEntry = (e: CalendarEntry): void => {
+    // Geurio 일정과 칸반 카드는 고칠 것이 달라 팝업이 갈린다.
+    if (e.event) controller.openCalendarEvent(e.event.id);
+    else controller.openCalendarCard(e.docId, e.cardId);
+  };
 
   return (
     <div data-calendar-view style={{ flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
@@ -100,6 +119,18 @@ export function CalendarView({
               <span data-cal-month style={{ minWidth: 92, textAlign: 'center', fontSize: 12.5, fontWeight: 800, letterSpacing: '-.02em', color: 'var(--mf-text)' }}>{monthLabel(state.calY, state.calM)}</span>
               <MonthNav label="다음 달" d="m9 6 6 6-6 6" onClick={() => controller.calShiftMonth(1)} />
             </span>
+            <button
+              type="button"
+              data-cal-new
+              onClick={() => controller.openNewEvent(state.calDay ?? today, true)}
+              className="mf-ctl"
+              style={{ display: 'inline-flex', alignItems: 'center', gap: 6, height: 32, padding: '0 14px', borderRadius: 999, border: 0, background: 'linear-gradient(180deg, var(--mf-accent), var(--mf-accent-strong))', color: 'var(--mf-accent-ink)', font: 'inherit', fontSize: 12.5, fontWeight: 800, cursor: 'pointer', whiteSpace: 'nowrap', boxShadow: '0 8px 18px -12px rgba(var(--mf-accent-rgb), .9)' }}
+            >
+              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.6" strokeLinecap="round" aria-hidden="true">
+                <path d="M12 5v14M5 12h14" />
+              </svg>
+              새 일정
+            </button>
             {notNow && (
               <button type="button" onClick={controller.calGoToday} className="mf-ctl" style={{ height: 28, padding: '0 13px', borderRadius: 999, border: '1px solid var(--mf-accent-mute)', background: 'var(--mf-accent-soft)', color: 'var(--mf-accent-strong)', font: 'inherit', fontSize: 11.5, fontWeight: 800, cursor: 'pointer', whiteSpace: 'nowrap' }}>
                 오늘로
@@ -195,12 +226,48 @@ export function CalendarView({
             onPickDay={controller.selectCalDay}
             onPickEntry={openEntry}
             onSetMonth={controller.setCalMonth}
+            onNewEvent={(iso) => controller.openNewEvent(iso, true)}
           />
         )}
       </div>
 
       {/* 항목 상세 — 열려 있으면 그 항목을 찾아 그린다(사라졌으면 조용히 닫힌다). */}
       <CalendarDetailHost state={state} controller={controller} entries={entries} isMobile={isMobile} />
+
+      {/* Geurio 일정: 새로 만들기 · 상세 */}
+      {state.calNewEvent && (
+        <NewEventModal
+          draft={state.calNewEvent}
+          isMobile={isMobile}
+          saving={saving}
+          error={saveError}
+          onClose={() => {
+            setSaveError(null);
+            controller.closeNewEvent();
+          }}
+          onSubmit={(input) => {
+            setSaving(true);
+            void eventsApi.create(input).then((err) => {
+              setSaving(false);
+              setSaveError(err);
+              if (!err) controller.closeNewEvent();
+            });
+          }}
+        />
+      )}
+      {(() => {
+        const ev = state.calEventDetail ? eventsApi.events.find((e) => e.id === state.calEventDetail) : null;
+        if (!ev) return null;
+        return (
+          <EventDetail
+            event={ev}
+            isMobile={isMobile}
+            onClose={controller.closeCalendarEvent}
+            onPatch={(patch) => eventsApi.update(ev.id, patch)}
+            onDelete={() => eventsApi.remove(ev.id)}
+          />
+        );
+      })()}
     </div>
   );
 }

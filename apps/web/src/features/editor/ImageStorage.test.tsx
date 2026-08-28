@@ -24,6 +24,7 @@ import { LocalShareStore } from '../../adapters/local/localShareStore';
 import { LocalFeedbackStore } from '../../adapters/local/localFeedbackStore';
 import { LocalCommentStore } from '../../adapters/local/localCommentStore';
 import { LocalNotificationStore } from '../../adapters/local/localNotificationStore';
+import { LocalEventStore } from '../../adapters/local/localEventStore';
 import { LocalImageStore } from '../../adapters/local/localImageStore';
 import type { Backend, DocStore, ImageStore } from '../../adapters/ports';
 
@@ -97,7 +98,7 @@ function makeBackend(imageStore: ImageStore, doc: Doc) {
     shareStore: new LocalShareStore(),
     feedbackStore: new LocalFeedbackStore(),
     imageStore,
-    commentStore: new LocalCommentStore(), notificationStore: new LocalNotificationStore(),
+    commentStore: new LocalCommentStore(), notificationStore: new LocalNotificationStore(), eventStore: new LocalEventStore(),
     mode: 'supabase',
   };
   return backend;
