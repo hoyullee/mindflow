@@ -1,5 +1,5 @@
 import type { CalendarEntry } from './entries';
-import { entryChip } from './chips';
+import { entryChip, type ChipSurface } from './chips';
 import { DOW, dateLabel, dueBadge, entriesOn, isSpan, monthCells, overdueEntries, upcomingEntries } from './model';
 
 /**
@@ -15,6 +15,7 @@ export function CalendarSide({
   y,
   m,
   side,
+  surface,
   selectedDay,
   onPickDay,
   onPickEntry,
@@ -25,6 +26,7 @@ export function CalendarSide({
   y: number;
   m: number;
   side: 'list' | 'day';
+  surface: ChipSurface;
   selectedDay: string;
   onPickDay: (iso: string) => void;
   onPickEntry: (e: CalendarEntry) => void;
@@ -104,17 +106,17 @@ export function CalendarSide({
       {/* 목록 */}
       {side === 'day' ? (
         <Section title={dateLabel(selectedDay)} sub={`일정 ${dayList.length}개`}>
-          {dayList.length ? dayList.map((e) => <Row key={`${e.docId}-${e.cardId}`} entry={e} todayIso={todayIso} onPick={onPickEntry} />) : <Empty text="이 날에는 일정이 없어요" />}
+          {dayList.length ? dayList.map((e) => <Row key={`${e.docId}-${e.cardId}`} entry={e} todayIso={todayIso} surface={surface} onPick={onPickEntry} />) : <Empty text="이 날에는 일정이 없어요" />}
         </Section>
       ) : (
         <>
           <Section title="다가오는 마감" sub={`${upcoming.length}건`}>
-            {upcoming.length ? upcoming.slice(0, 20).map((e) => <Row key={`${e.docId}-${e.cardId}`} entry={e} todayIso={todayIso} onPick={onPickEntry} />) : <Empty text="다가오는 마감이 없어요" />}
+            {upcoming.length ? upcoming.slice(0, 20).map((e) => <Row key={`${e.docId}-${e.cardId}`} entry={e} todayIso={todayIso} surface={surface} onPick={onPickEntry} />) : <Empty text="다가오는 마감이 없어요" />}
           </Section>
           {overdue.length > 0 && (
             <Section title="지난 마감" sub={`${overdue.length}건`}>
               {overdue.slice(0, 20).map((e) => (
-                <Row key={`${e.docId}-${e.cardId}`} entry={e} todayIso={todayIso} onPick={onPickEntry} />
+                <Row key={`${e.docId}-${e.cardId}`} entry={e} todayIso={todayIso} surface={surface} onPick={onPickEntry} />
               ))}
             </Section>
           )}
@@ -157,8 +159,8 @@ function Empty({ text }: { text: string }) {
   return <span style={{ padding: '10px 4px', fontSize: 12, color: 'var(--mf-faint)' }}>{text}</span>;
 }
 
-function Row({ entry, todayIso, onPick }: { entry: CalendarEntry; todayIso: string; onPick: (e: CalendarEntry) => void }) {
-  const chip = entryChip(entry);
+function Row({ entry, todayIso, surface, onPick }: { entry: CalendarEntry; todayIso: string; surface: ChipSurface; onPick: (e: CalendarEntry) => void }) {
+  const chip = entryChip(entry, surface);
   const badge = dueBadge(entry.due, todayIso);
   const over = entry.due < todayIso;
   return (

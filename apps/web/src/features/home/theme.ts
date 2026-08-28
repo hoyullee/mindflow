@@ -16,7 +16,7 @@
  *   배경만 어두워지고 흰 패널에 검은 글씨가 그대로 남는다.
  */
 
-import { hexA, THEMES } from '../editor/theme';
+import { hexA, mixHex, THEMES } from '../editor/theme';
 
 export type HomeThemeKey = 'coral' | 'ocean' | 'forest' | 'grape' | 'mono' | 'dark';
 
@@ -387,6 +387,18 @@ export function homeModalTheme(key: HomeThemeKey): {
   return { panel: t.panel, text: t.text, subtext: t.subtext, border: t.border, accent: t.accent, accentInk: t.accentInk, canvasBg: t.sunken };
 }
 
+/**
+ * 일정 화면의 칩이 얹히는 면 — 칩 색을 **이 면 위로** 섞는다.
+ *
+ * 분류색(hue)은 칸반과 같은 고정 팔레트에서 오지만(그게 카드의 정체다 — #513),
+ * **밝기는 놓이는 면이 정해야 한다**: 늘 흰 면에 섞으면 다크 홈에서 옅은 알약이
+ * 어두운 격자 위에 홀로 빛난다.
+ */
+export function homeChipSurface(key: HomeThemeKey): { card: string; text: string } {
+  const t = HOME_THEMES[homeThemeKeyOf(key)];
+  return { card: t.card, text: t.text };
+}
+
 /** 테마 → CSS 변수 이름/값 쌍. 순수 함수(테스트·SSR 안전). */
 export function homeThemeVars(key: HomeThemeKey): Record<string, string> {
   const t = HOME_THEMES[homeThemeKeyOf(key)];
@@ -432,6 +444,19 @@ export function homeThemeVars(key: HomeThemeKey): Record<string, string> {
     '--mf-border-hover': t.borderHover,
     '--mf-wash': t.wash,
     '--mf-dot-grid': t.dotGrid,
+    // 달력 칸의 세 색 — 표에 적지 않고 **강조색에서 파생**한다(여섯 테마 × 다크에
+    // 값을 따로 정할 필요가 없다). 디자인 원본의 세 값과 같은 관계다:
+    // 선택(#FCF6ED, 아주 옅게) < 오늘(#FFF3EC) < 오늘+선택(#FDEFE4).
+    // 예전에는 `--mf-accent-soft`(오늘)·`--mf-accent-mute`(선택)를 그대로 써서
+    // 칸이 통째로 진하게 칠해졌다(제보: 부자연스럽다).
+    '--mf-cal-today': mixHex(t.card, t.accent, 0.08),
+    '--mf-cal-sel': mixHex(t.card, t.accent, 0.05),
+    '--mf-cal-sel-today': mixHex(t.card, t.accent, 0.14),
+    /** 고른 칸의 테두리 — 강조색을 그대로 두르면 튄다. */
+    '--mf-cal-ring': hexA(t.accent, 0.55),
+    /** 켜진 칩(통계 필터)의 면 — 면 없는 칩과 갈리도록 `accentSoft`보다 한 단계 진하게.
+     *  `accentSoft`는 주말 칸 틴트와 거의 같은 값이라 켜졌는지 알 수 없었다. */
+    '--mf-chip-on': mixHex(t.card, t.accent, 0.13),
     '--mf-hover-bright': t.hoverBright,
     '--mf-success': t.success,
     '--mf-success-soft': t.successSoft,

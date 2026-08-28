@@ -2,7 +2,7 @@ import type { CSSProperties } from 'react';
 import type { CalendarEntry } from './entries';
 import type { MonthCell } from './model';
 import { DOW } from './model';
-import { entryChip } from './chips';
+import { entryChip, type ChipSurface } from './chips';
 
 /**
  * 월 달력 격자 — 디자인 원본 `Geurio 일정 캘린더.dc.html`의 calGrid.
@@ -18,6 +18,7 @@ export function MonthGrid({
   onPickEntry,
   onMore,
   selected,
+  surface,
   compact = false,
 }: {
   cells: readonly MonthCell[];
@@ -25,6 +26,7 @@ export function MonthGrid({
   onPickEntry: (e: CalendarEntry) => void;
   onMore: (iso: string) => void;
   selected: string | null;
+  surface: ChipSurface;
   compact?: boolean;
 }) {
   return (
@@ -63,7 +65,7 @@ export function MonthGrid({
 
       <div style={{ flex: 1, minHeight: 0, display: 'grid', gridTemplateColumns: 'repeat(7, 1fr)', gridAutoRows: '1fr' }}>
         {cells.map((c) => (
-          <DayCell key={c.iso} cell={c} selected={selected === c.iso} compact={compact} onPickDay={onPickDay} onPickEntry={onPickEntry} onMore={onMore} />
+          <DayCell key={c.iso} cell={c} selected={selected === c.iso} compact={compact} surface={surface} onPickDay={onPickDay} onPickEntry={onPickEntry} onMore={onMore} />
         ))}
       </div>
     </div>
@@ -74,6 +76,7 @@ function DayCell({
   cell,
   selected,
   compact,
+  surface,
   onPickDay,
   onPickEntry,
   onMore,
@@ -81,18 +84,24 @@ function DayCell({
   cell: MonthCell;
   selected: boolean;
   compact: boolean;
+  surface: ChipSurface;
   onPickDay: (iso: string) => void;
   onPickEntry: (e: CalendarEntry) => void;
   onMore: (iso: string) => void;
 }) {
   const { inMonth, isToday, dim, dow } = cell;
+  // 칸 색은 아주 옅은 파생 토큰이다(디자인 원본의 관계 그대로):
+  //   선택 < 오늘 < 오늘+선택. 예전에는 강조색 면(soft/mute)을 그대로 써서 칸이
+  //   통째로 진하게 칠해졌다(제보: 부자연스럽다).
   // 이웃 달 칸은 숫자만 흐리게 + 배경 한 톤 진하게(디자인 원본).
   const bg = !inMonth
     ? 'var(--mf-sunken)'
     : selected
-      ? 'var(--mf-accent-mute)'
+      ? isToday
+        ? 'var(--mf-cal-sel-today)'
+        : 'var(--mf-cal-sel)'
       : isToday
-        ? 'var(--mf-accent-soft)'
+        ? 'var(--mf-cal-today)'
         : dow === 0 || dow === 6
           ? // 주말은 한 톤 가라앉힌 면 하나로 묶는다. 디자인 원본은 일요일을 따뜻하게
             // (#FEF8F5) 토요일을 차갑게(#F9FBFD) 갈랐지만 우리 토큰에는 그만큼 옅은
@@ -121,6 +130,8 @@ function DayCell({
     borderRight: '1px solid var(--mf-border-soft)',
     borderBottom: '1px solid var(--mf-border-soft)',
     background: bg,
+    // 고른 칸의 표시는 **안쪽 링**이다 — 테두리를 굵히면 격자가 1px 밀린다.
+    ...(selected ? { boxShadow: 'inset 0 0 0 1.5px var(--mf-cal-ring)' } : {}),
     opacity: inMonth ? 1 : 0.7,
     cursor: inMonth ? 'pointer' : 'default',
     // 칸이 내용보다 좁아도 격자가 밀리지 않게 — 넘치는 칩은 접힌다(moreN).
@@ -170,7 +181,7 @@ function DayCell({
 
       {/* 기간 바 → 하루짜리 칩 → 접힌 개수 */}
       {cell.bars.map((b) => {
-        const chip = entryChip(b.entry);
+        const chip = entryChip(b.entry, surface);
         return (
           <button
             key={`bar-${b.entry.docId}-${b.entry.cardId}`}
@@ -210,7 +221,7 @@ function DayCell({
       })}
 
       {cell.entries.map((e) => {
-        const chip = entryChip(e);
+        const chip = entryChip(e, surface);
         return (
           <button
             key={`${e.docId}-${e.cardId}`}

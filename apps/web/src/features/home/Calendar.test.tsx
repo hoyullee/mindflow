@@ -239,4 +239,45 @@ describe('일정 화면', () => {
     expect(document.querySelector('[data-cal-side]')).toBeNull();
     expect(document.querySelectorAll('[data-day-cell]').length).toBe(42);
   });
+
+  // ── 제보 3건(프리뷰 확인) ────────────────────────────────────────────────
+  //
+  // ① 캘린더가 화면을 다 채우지 않고 "90% 배율"처럼 보였다 — `main`의 패딩
+  //    (24/32/44) 안에 들어 있어 사방이 밀리고 격자가 높이까지 자라지 못했다.
+  // ② 통계(태그) 칩이 테두리 있는 알약이라 태그 무리처럼 보였다 — 디자인 원본의
+  //    칩은 면도 테두리도 없다.
+  // ③ 오늘 칸과 고른 칸의 색이 부자연스러웠다 — 강조색 면(soft/mute)을 그대로 써서
+  //    칸이 통째로 진하게 칠해졌다.
+  it('일정 화면은 본문 패딩 없이 화면을 채운다(제보 ①)', async () => {
+    renderHome([META('d1', '스프린트 보드'), META('d2', '이슈 트리아지')], BODIES());
+    const main = document.querySelector('main')!;
+    // 스페이스 화면에서는 예전 패딩 그대로
+    expect(main.style.padding).not.toBe('0px');
+    await openCalendar();
+    expect(main.style.padding === '0' || main.style.padding === '0px').toBe(true);
+    // 안쪽 두 영역이 각자 스크롤하므로 본문은 스크롤을 넘긴다
+    expect(main.style.overflowY).toBe('hidden');
+  });
+
+  it('통계 칩은 면도 테두리도 없고, 켜짐은 CSS 클래스가 정한다(제보 ②)', async () => {
+    renderHome([META('d1', '스프린트 보드'), META('d2', '이슈 트리아지')], BODIES());
+    await openCalendar();
+    const chip = document.querySelector('[data-cal-stat="today"]') as HTMLElement;
+    expect(chip.style.border).toBe('0px');
+    // 인라인 배경을 두지 않는다 — 두면 hover 규칙(`.mf-cal-chip:hover`)과 싸운다.
+    expect(chip.style.background).toBe('');
+    expect(chip.className).toContain('mf-cal-chip');
+    expect(chip.className).not.toContain('mf-ctl');
+  });
+
+  it('오늘 칸과 고른 칸은 아주 옅은 파생 토큰을 쓴다(제보 ③)', async () => {
+    renderHome([META('d1', '스프린트 보드'), META('d2', '이슈 트리아지')], BODIES());
+    await openCalendar();
+    const today = document.querySelector('[data-day-cell][data-today="1"]') as HTMLElement;
+    expect(today.style.background).toBe('var(--mf-cal-today)');
+    fireEvent.click(document.querySelector(`[data-mini-day="${todayISO()}"]`)!);
+    await waitFor(() => expect((document.querySelector('[data-day-cell][data-today="1"]') as HTMLElement).style.background).toBe('var(--mf-cal-sel-today)'));
+    // 고른 칸은 안쪽 링으로 알린다 — 테두리를 굵히면 격자가 밀린다.
+    expect((document.querySelector('[data-day-cell][data-today="1"]') as HTMLElement).style.boxShadow).toContain('inset');
+  });
 });

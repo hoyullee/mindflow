@@ -153,7 +153,14 @@ export function Home() {
         // 돌고, 움직임을 줄이라고 한 사용자에게는 home.css가 끈다.
         className="mf-home-main"
         // 본문 패딩은 디자인 원본(24/32/44). 모바일은 좁은 폭에 맞춰 줄인다.
-        style={{ flex: '1 1 auto', display: 'flex', flexDirection: 'column', overflowY: 'auto', scrollbarGutter: 'stable', padding: isMobile ? '16px 14px 32px' : '24px 32px 44px', minWidth: 0 }}
+        //
+        // **일정 화면은 예외**로 패딩을 0으로 두고 스크롤도 넘긴다(제보: 캔버스가
+        // 화면을 다 채우지 않고 90% 배율처럼 보인다). 그 화면은 헤더 + [달력 | 사이드]
+        // 구조라 자기 높이를 스스로 채워야 하는데, 여기 패딩 안에 들어 있으면 사방이
+        // 24~44px 안쪽으로 밀리고 격자가 뷰포트 높이까지 자라지 못한다. 대시보드는
+        // 같은 문제를 음수 마진으로 상쇄하지만(그 화면은 세로로 흐른다), 일정은 안쪽
+        // 두 영역이 각자 스크롤하므로 **패딩을 아예 걷는 편**이 정확하다.
+        style={{ flex: '1 1 auto', display: 'flex', flexDirection: 'column', overflowY: state.activeCal ? 'hidden' : 'auto', scrollbarGutter: 'stable', padding: state.activeCal ? 0 : isMobile ? '16px 14px 32px' : '24px 32px 44px', minWidth: 0 }}
       >
         {/* Cross-space "최근 항목" strip sits ABOVE the space toolbar so it reads as a
             global "recently opened" bar, not part of the current space's maps.

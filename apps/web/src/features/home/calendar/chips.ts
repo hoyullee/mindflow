@@ -17,13 +17,21 @@ export interface EntryChip {
   dot: string;
 }
 
-export function entryChip(e: CalendarEntry): EntryChip {
-  const th = UI_THEME;
+/**
+ * `surface`는 칩이 놓이는 면(홈 테마의 카드 면·글자색)이다. hue는 고정 팔레트에서,
+ * **밝기는 면에서** — 그래서 다크 홈에서도 칩이 격자 위에 홀로 빛나지 않는다.
+ */
+export function entryChip(e: CalendarEntry, surface: ChipSurface): EntryChip {
   // 분류가 없는 카드도 알약이어야 하니 이름 없는 값으로 색을 뽑는다(결정적).
-  const base = e.tagColor ?? tagColor(e.tag, th.palette);
+  const base = e.tagColor ?? tagColor(e.tag, UI_THEME.palette);
   return {
-    bg: mixHex(th.panel, base, 0.16),
-    fg: tagInk(base, th.text),
-    dot: columnColor({ id: e.colId, title: e.colName, ...(e.colColor ? { color: e.colColor } : {}) }, e.colIndex, th.palette),
+    bg: mixHex(surface.card, base, 0.16),
+    fg: tagInk(base, surface.text),
+    dot: columnColor({ id: e.colId, title: e.colName, ...(e.colColor ? { color: e.colColor } : {}) }, e.colIndex, UI_THEME.palette),
   };
+}
+
+export interface ChipSurface {
+  card: string;
+  text: string;
 }

@@ -320,6 +320,21 @@ a:hover {
   background: var(--mf-panel2) !important;
   color: var(--mf-text) !important;
 }
+/* 일정 화면의 통계 칩 — 면 없는 칩이라 `.mf-ctl`의 hover(`--mf-panel2` !important)를
+   쓸 수 없다: 켜진 칩의 틴트보다 그 hover가 **더 옅어서** 손을 얹으면 꺼진 것처럼
+   보였다. 그래서 hover도 켜짐도 여기서 정한다(인라인 배경을 두지 않으므로
+   `!important`가 필요 없다). */
+.mf-home .mf-cal-chip {
+  background: transparent;
+  transition: background 0.13s ease;
+}
+.mf-home .mf-cal-chip:hover {
+  background: var(--mf-panel2);
+}
+.mf-home .mf-cal-chip[aria-pressed='true'],
+.mf-home .mf-cal-chip[aria-pressed='true']:hover {
+  background: var(--mf-chip-on);
+}
 /* 1차 버튼(새로 만들기) — 그라디언트 위라 면을 못 갈아끼우고 살짝 밝아진다(원본). */
 .mf-home .mf-ctl-primary:hover {
   filter: brightness(1.05);

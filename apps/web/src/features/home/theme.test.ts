@@ -67,6 +67,13 @@ describe('home theme', () => {
       '--mf-success': '#2f9e63',
       '--mf-success-soft': '#e9f4ee',
       '--mf-success-ink': '#1e7a3a',
+      // 일정 화면의 파생 토큰 — 강조색을 카드 면에 아주 옅게 섞은 값(표에 적지 않는다).
+      // 디자인 원본의 세 값과 같은 관계다: 선택 < 오늘 < 오늘+선택.
+      '--mf-cal-today': '#fef1ec',
+      '--mf-cal-sel': '#fef5f2',
+      '--mf-cal-sel-today': '#fde8e1',
+      '--mf-cal-ring': 'rgba(240,102,63,0.55)',
+      '--mf-chip-on': '#fde9e3',
     });
   });
 
