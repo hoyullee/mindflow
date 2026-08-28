@@ -6,7 +6,8 @@
 // 카드 자신의 필드라 서로 다른 카드를 옮기면 둘 다 살아남고, 같은 카드를 옮기면
 // 한 값만 남는다(그건 어느 방식이든 마찬가지다).
 
-import type { KanbanCard, KanbanColumn } from './model';
+import type { KanbanCard, KanbanColumn, RichRun } from './model';
+import { applyAutoLinks, applyMarkdownShortcuts } from './richtext';
 
 /** 새 카드를 맨 아래에 놓을 때의 간격 — 값 자체에 뜻은 없다(순서만 본다). */
 const POS_STEP = 1024;
@@ -180,4 +181,34 @@ export function shiftCardDates(card: Pick<KanbanCard, 'due' | 'start'>, days: nu
   const due = move(card.due);
   const start = move(card.start);
   return { ...(due ? { due } : {}), ...(start ? { start } : {}) };
+}
+
+/**
+ * 카드 글자를 확정할 때의 규칙 — 마크다운 단축(`**굵게**`·`*기울임*`·`~~취소선~~`)을
+ * 걷어 서식으로 바꾸고, 타이핑한 URL을 링크로 만든다.
+ *
+ * 카드 편집기는 평범한 textarea라 **입력은 늘 평문**이다. 그래서 이전 `rich`는 버리고
+ * 이 글자에서 다시 만든다 — 화면에 보이던 글자가 곧 값이라는 계약이 지켜진다(보이지
+ * 않는 옛 서식이 유령처럼 남지 않는다).
+ *
+ * 에디터의 카드 상세와 홈 일정 화면의 상세 팝업이 **같은 규칙**을 쓴다.
+ */
+export function cardTextValue(text: string): { text: string; rich: RichRun[] | null } {
+  const trimmed = text.trim();
+  const md = applyMarkdownShortcuts({ text: trimmed, rich: null });
+  const base = md ?? { text: trimmed, rich: null };
+  return applyAutoLinks(base) ?? base;
+}
+
+/** 카드 글자를 바꾼 **새 배열**. 빈 글자는 무시한다(카드를 지우는 것은 별도 동작이다). */
+export function patchCardText(cards: readonly KanbanCard[], id: string, text: string): KanbanCard[] {
+  const out = cardTextValue(text);
+  if (!out.text) return cards.slice();
+  return cards.map((c) => {
+    if (c.id !== id) return c;
+    const next: KanbanCard = { ...c, text: out.text };
+    if (out.rich) next.rich = out.rich;
+    else delete next.rich; // 평문이면 키를 지운다(빈 서식을 흘리지 않게)
+    return next;
+  });
 }

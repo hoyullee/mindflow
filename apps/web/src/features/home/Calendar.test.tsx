@@ -80,7 +80,7 @@ function renderHome(metas: DocMeta[], bodies: Record<string, LoadedDoc>) {
       </BackendProvider>
     </MemoryRouter>,
   );
-  return { ...utils, docStore };
+  return { ...utils, docStore, commentStore: backend.commentStore };
 }
 
 const META = (id: string, title: string): DocMeta => ({ id, title, version: 1, updatedAt: '2026-01-01T00:00:00.000Z', isFavorite: false, deletedAt: null });
@@ -151,6 +151,13 @@ const chipTexts = (): string[] => [...document.querySelectorAll('[data-cal-chip]
 const chipFor = (title: string): HTMLElement => [...document.querySelectorAll('[data-cal-chip]')].find((c) => c.textContent!.trim() === title) as HTMLElement;
 const barFor = (title: string): HTMLElement => [...document.querySelectorAll('[data-cal-bar]')].find((c) => c.textContent!.trim() === title) as HTMLElement;
 const detail = (): HTMLElement => document.querySelector('[role="dialog"][aria-label="일정 상세"]') as HTMLElement;
+
+/** 날짜 팝오버를 열어 그 날을 고른다 — 디자인 원본의 `pk` 달력(native input이 아니다). */
+async function pickDate(triggerSel: string, iso: string): Promise<void> {
+  fireEvent.click(document.querySelector(triggerSel)!);
+  await waitFor(() => expect(document.querySelector(`[data-datepop-day="${iso}"]`)).toBeTruthy());
+  fireEvent.click(document.querySelector(`[data-datepop-day="${iso}"]`)!);
+}
 
 /** jsdom엔 PointerEvent가 없다 — MouseEvent를 pointer 이름으로 던진다(에디터 테스트와 같은 처방). */
 function firePointer(target: Element | Window, type: 'pointerdown' | 'pointermove' | 'pointerup' | 'pointercancel', init: { clientX?: number; clientY?: number; pointerType?: string } = {}): void {
@@ -356,8 +363,9 @@ describe('일정 화면', () => {
       fireEvent.click(chipFor('오늘 마감 카드'));
       await waitFor(() => expect(detail()).toBeTruthy());
 
-      // 열 셋 모두 고를 수 있고 지금 열이 켜져 있다(라디오 의미 — Radix ToggleGroup).
-      const seg = document.querySelector('[data-cal-state]')!;
+      // 열 셋 모두 고를 수 있고 지금 열이 켜져 있다(라디오 의미 — Radix RadioGroup).
+      const seg = document.querySelector('.mf-cal-state')!;
+      expect(seg.getAttribute('role')).toBe('radiogroup');
       expect([...seg.querySelectorAll('[data-cal-state-item]')].map((b) => b.textContent)).toEqual(['할 일', '진행 중', '완료']);
       expect(seg.querySelector('[data-cal-state-item="c2"]')!.getAttribute('aria-checked')).toBe('true');
 
@@ -383,13 +391,8 @@ describe('일정 화면', () => {
       fireEvent.click(chipFor('오늘 마감 카드'));
       await waitFor(() => expect(detail()).toBeTruthy());
 
-      // 기한에는 `지우기`가 없다 — 지우면 달력에서 사라지므로 그 동작은 칸반에 남긴다
-      // (눌러도 아무 일 없는 버튼을 두지 않는다). 시작일에는 있다.
-      const clears = [...detail().querySelectorAll('button')].filter((b) => b.textContent === '지우기');
-      expect(clears.length).toBe(0); // 이 카드는 시작일이 비어 있어 둘 다 없다
-
       const target = shiftDays(2);
-      fireEvent.change(within(detail()).getByLabelText('기한'), { target: { value: target } });
+      await pickDate('[data-cal-due]', target);
       await waitFor(() => expect(docStore.save).toHaveBeenCalled());
       const [, next] = docStore.save.mock.calls[0]!;
       expect((next.cards ?? []).find((c) => c.id === 'k1')!.due).toBe(target);
@@ -418,6 +421,66 @@ describe('일정 화면', () => {
       expect(detail()).toBeNull();
     });
 
+// ── 디자인 원본(`evOpen`) 이식분 ──────────────────────────────────────────
+    it('제목·담당·분류를 고치면 그 칸반에 저장되고, 삭제는 카드를 없앤다', async () => {
+      localStorage.setItem('mf_demo_session', JSON.stringify({ user: { id: 'u', email: 'me@example.com' } }));
+      localStorage.setItem('mf_doc_shares', JSON.stringify([{ documentId: 'd1', email: 'mate@example.com', role: 'edit', createdAt: '2026-01-01T00:00:00.000Z', seenAt: null }]));
+      const { docStore } = renderHome([META('d1', '스프린트 보드'), META('d2', '이슈 트리아지')], BODIES());
+      await openCalendar();
+      await waitFor(() => expect(chipTexts()).toContain('오늘 마감 카드'));
+      fireEvent.click(chipFor('오늘 마감 카드'));
+      await waitFor(() => expect(detail()).toBeTruthy());
+
+      // 제목 — 확정(blur)에 한 번만 저장한다.
+      const titleBox = within(detail()).getByLabelText('카드 제목');
+      fireEvent.change(titleBox, { target: { value: '고친 제목' } });
+      expect(docStore.save).not.toHaveBeenCalled();
+      fireEvent.blur(titleBox);
+      await waitFor(() => expect(docStore.save).toHaveBeenCalled());
+      expect((docStore.save.mock.calls[0]![1].cards ?? []).find((c) => c.id === 'k1')!.text).toBe('고친 제목');
+
+      // 담당 — 공유 참가자에서 고른다(소유자 + 초대받은 사람).
+      await waitFor(() => expect(document.querySelector('[data-cal-owner-item="mate@example.com"]')).toBeTruthy());
+      docStore.save.mockClear();
+      fireEvent.click(document.querySelector('[data-cal-owner-item="mate@example.com"]')!);
+      await waitFor(() => expect(docStore.save).toHaveBeenCalled());
+      expect((docStore.save.mock.calls[0]![1].cards ?? []).find((c) => c.id === 'k1')!.owner).toBe('mate@example.com');
+
+      // 분류 — 문서의 분류 목록 + `직접 입력`.
+      docStore.save.mockClear();
+      fireEvent.click(document.querySelector('[data-cal-tag-custom]')!);
+      const tagInput = within(detail()).getByLabelText('분류 직접 입력');
+      fireEvent.change(tagInput, { target: { value: '기획' } });
+      fireEvent.keyDown(tagInput, { key: 'Enter' });
+      await waitFor(() => expect(docStore.save).toHaveBeenCalled());
+      expect((docStore.save.mock.calls[0]![1].cards ?? []).find((c) => c.id === 'k1')!.tag).toBe('기획');
+
+      // 삭제 — 카드가 사라지고 팝업도 닫힌다.
+      docStore.save.mockClear();
+      fireEvent.click(document.querySelector('[data-cal-detail-delete]')!);
+      await waitFor(() => expect(docStore.save).toHaveBeenCalled());
+      expect((docStore.save.mock.calls[0]![1].cards ?? []).some((c) => c.id === 'k1')).toBe(false);
+      await waitFor(() => expect(detail()).toBeNull());
+      expect(chipTexts()).not.toContain('고친 제목');
+    });
+
+    it('오른쪽 열은 우리 댓글 표를 그대로 쓴다 — 남긴 글이 그 카드에 저장된다', async () => {
+      const backend = renderHome([META('d1', '스프린트 보드'), META('d2', '이슈 트리아지')], BODIES());
+      await openCalendar();
+      await waitFor(() => expect(chipTexts()).toContain('오늘 마감 카드'));
+      fireEvent.click(chipFor('오늘 마감 카드'));
+      await waitFor(() => expect(detail()).toBeTruthy());
+      expect(document.querySelector('[data-cal-comments]')).toBeTruthy();
+
+      const box = within(detail()).getByLabelText('댓글 입력');
+      fireEvent.change(box, { target: { value: '이 카드 오늘까지죠?' } });
+      fireEvent.keyDown(box, { key: 'Enter', ctrlKey: true });
+      await waitFor(() => expect(within(detail()).getByText('이 카드 오늘까지죠?')).toBeTruthy());
+      // 대상은 그 카드다(문서 전체가 아니다).
+      const saved = await backend.commentStore.list('d1');
+      expect(saved.map((c) => c.nodeId)).toEqual(['k1']);
+    });
+
     it('제자리에 놓으면 아무것도 저장되지 않고, 그 클릭으로 팝업이 뜨지도 않는다', async () => {
       const { docStore } = renderHome([META('d1', '스프린트 보드'), META('d2', '이슈 트리아지')], BODIES());
       await openCalendar();
@@ -442,13 +505,22 @@ describe('일정 화면', () => {
       await openCalendar();
       await waitFor(() => expect(barFor('기간 카드')).toBeTruthy());
 
-      // 시작일이 있는 항목은 그 자리에만 `지우기`가 있다(기한에는 없다 — 위 주석).
+      // 기간 항목은 상세에 진행 바가 뜨고(원본 `evHasSpan`), 시작일 팝오버에는
+      // `지우기`가 있지만 기한 팝오버에는 없다 — 기한을 지우면 달력에서 사라진다.
       fireEvent.click(barFor('기간 카드'));
       await waitFor(() => expect(detail()).toBeTruthy());
-      const clears = [...detail().querySelectorAll('button')].filter((b) => b.textContent === '지우기');
-      expect(clears.length).toBe(1);
-      expect(clears[0]!.closest('div')!.textContent).toContain('시작일');
+      expect(document.querySelector('[data-cal-span]')!.textContent).toMatch(/일 중 .*일째/);
+      fireEvent.click(document.querySelector('[data-cal-start]')!);
+      await waitFor(() => expect(document.querySelector('[data-datepop-month]')).toBeTruthy());
+      expect([...document.querySelectorAll('button')].some((b) => b.textContent === '지우기')).toBe(true);
       fireEvent.keyDown(document, { key: 'Escape' });
+      fireEvent.click(document.querySelector('[data-cal-due]')!);
+      await waitFor(() => expect(document.querySelector('[data-datepop-month]')).toBeTruthy());
+      expect([...document.querySelectorAll('button')].some((b) => b.textContent === '지우기')).toBe(false);
+      fireEvent.keyDown(document, { key: 'Escape' });
+      // 팝오버가 닫힌 뒤 팝업을 닫는다(발치 `완료`).
+      await waitFor(() => expect(document.querySelector('[data-datepop-month]')).toBeNull());
+      fireEvent.click(document.querySelector('[data-cal-detail-done]')!);
       await waitFor(() => expect(detail()).toBeNull());
 
       // 막을 눌러도 닫힌다 — 아직 저장되지 않은 입력이 없으므로 잃을 것이 없다
@@ -501,8 +573,13 @@ describe('일정 화면', () => {
       await waitFor(() => expect(detail()).toBeTruthy());
       expect(within(detail()).getByText('보기 전용')).toBeTruthy();
       expect(document.querySelector('[data-cal-detail-ro]')).toBeTruthy();
-      expect(document.querySelector('[data-cal-state]')).toBeNull();
-      expect((within(detail()).getByLabelText('기한') as HTMLInputElement).disabled).toBe(true);
+      // 고칠 수 있는 것이 아무것도 없다 — 상태·날짜·담당·분류·삭제 전부.
+      expect(document.querySelector('.mf-cal-state')).toBeNull();
+      expect(document.querySelector('[data-cal-due]')).toBeNull();
+      expect(document.querySelector('[data-cal-owner]')).toBeNull();
+      expect(document.querySelector('[data-cal-tag]')).toBeNull();
+      expect(document.querySelector('[data-cal-detail-delete]')).toBeNull();
+      expect((within(detail()).getByLabelText('카드 제목') as HTMLTextAreaElement).readOnly).toBe(true);
     });
 
     it('끌고 있는 동안 고스트가 손끝을 따라오고 놓일 칸이 강조된다', async () => {

@@ -2,7 +2,7 @@ import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } fr
 import type { MouseEvent as ReactMouseEvent, PointerEvent as ReactPointerEvent } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import type { Box, CardMetaPatch, Doc, Float, KanbanCard, KanbanColumn, KanbanTag, Line, LineAnchor, LayoutMode, ListOp, Node, NodeMap, Reaction, ReactionGroup, RichRun, SizeOf, SnapCandidate, Stroke, TextEdit, Zone, CommentPin } from '@mindflow/mindmap-core';
-import { HistoryStack, ROOT_ID, collectImageRefs, collectInlineImages, isImageRef, replaceImageValues, applyListOp as applyListOpToText, applyAutoLinks, applyMarkdownShortcuts, applyPartialStyle, insertMention, charsToRuns, cubicAt, isStyledRuns, findLineSnap, layout, resolveLineEndpoints, resolveLineGeometry, runsToChars, serializeDoc, shiftOffset, strokeBounds, strokeHit, translateStrokePts, reactionGroups, toggleReaction as toggleReactionList, pruneReactions, toMarkdown, cardsInColumn, posForIndex, removeColumn, moveCard, moveColumn, patchCardMeta, sortColumnsByDue } from '@mindflow/mindmap-core';
+import { HistoryStack, ROOT_ID, collectImageRefs, collectInlineImages, isImageRef, replaceImageValues, applyListOp as applyListOpToText, applyAutoLinks, applyMarkdownShortcuts, applyPartialStyle, insertMention, charsToRuns, cubicAt, isStyledRuns, findLineSnap, layout, resolveLineEndpoints, resolveLineGeometry, runsToChars, serializeDoc, shiftOffset, strokeBounds, strokeHit, translateStrokePts, reactionGroups, toggleReaction as toggleReactionList, pruneReactions, toMarkdown, cardsInColumn, posForIndex, removeColumn, moveCard, moveColumn, patchCardMeta, cardTextValue as cardTextValueOf, sortColumnsByDue } from '@mindflow/mindmap-core';
 import { domToRuns, linearize, liveEditValue } from './richtextDom';
 import { HL_COLORS, HL_WIDTHS } from './boardTools';
 import type { BoardTool } from './boardTools';
@@ -5488,12 +5488,9 @@ export function useEditorState(): EditorController {
    * 링크로 만든다. 편집 중 실시간으로 걸지 않는 이유도 같다: 반쯤 친 주소가 링크가
    * 됐다 풀렸다 하며 캐럿·IME가 흔들린다.
    */
-  const cardTextValue = useCallback((text: string): { text: string; rich: RichRun[] | null } => {
-    const trimmed = text.trim();
-    const md = applyMarkdownShortcuts({ text: trimmed, rich: null });
-    const base = md ?? { text: trimmed, rich: null };
-    return applyAutoLinks(base) ?? base;
-  }, []);
+  // 규칙은 **코어 한 곳**(`cardTextValue`) — 홈 일정 화면의 상세 팝업도 카드 제목을
+  // 같은 규칙으로 확정한다(마크다운 단축 → 자동 링크 → 평문이면 rich 키 삭제).
+  const cardTextValue = useCallback((text: string): { text: string; rich: RichRun[] | null } => cardTextValueOf(text), []);
 
   const addCard = useCallback(
     (colId: string, text?: string) => {

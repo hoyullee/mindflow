@@ -3,7 +3,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import type { ChangeEvent, KeyboardEvent } from 'react';
 import { useNavigate } from 'react-router-dom';
 import type { CardMetaPatch, Doc, KanbanCard } from '@mindflow/mindmap-core';
-import { ROOT_ID, collectImageRefs, moveCard, parseDoc, patchCardMeta, serializeDoc, shiftCardDates, toMarkdown } from '@mindflow/mindmap-core';
+import { ROOT_ID, collectImageRefs, moveCard, parseDoc, patchCardMeta, patchCardText, serializeDoc, shiftCardDates, toMarkdown } from '@mindflow/mindmap-core';
 import { inlineImagesForExport } from '../editor/imageExport';
 import { exportDocPng } from '../editor/png';
 import { exportDocSvg } from '../editor/svg';
@@ -1262,23 +1262,23 @@ export function useHomeController() {
   };
 
   /**
-   * 일정 화면에서 **칸반 카드를 고친다** — 문서를 열지 않고 그 문서에 쓴다.
+   * 일정 화면에서 **칸반 문서를 고친다** — 문서를 열지 않고 그 문서에 쓴다.
    *
    * `moveDashCard`(대시보드 위젯의 열 이동)와 **같은 몸통**이다: 낙관 반영 → 전문
    * 로드 → 코어 변이 → `prevVersion` 저장 → 충돌이면 최신 판으로 한 번 재시도 →
-   * 실패하면 되돌리고 안내. 변이만 다르다(`patchCardMeta`).
+   * 실패하면 되돌리고 안내. 변이만 호출부가 넘긴다.
    *
    * 정본은 **그 칸반 문서**다 — 일정 화면은 사본을 들지 않는다. 그래서 "칸반을
    * 고치면 일정에 반영"은 동기화가 아니라 같은 값을 다시 읽는 것이고, 반대 방향도
    * 원본을 고치는 것이다.
    */
-  const patchCalendarCard = async (docId: string, cardId: string, patch2: CardMetaPatch): Promise<boolean> => {
+  const writeCalendarDoc = async (docId: string, mutate: (cards: KanbanCard[], doc: Doc) => KanbanCard[], failTitle: string): Promise<boolean> => {
     const prevRaw = state.previewDocs[docId];
     if (prevRaw) {
       try {
         const d = JSON.parse(prevRaw) as { kind?: string; cards?: KanbanCard[] };
         if (d?.kind === 'kanban' && Array.isArray(d.cards)) {
-          d.cards = patchCardMeta(d.cards, cardId, patch2);
+          d.cards = mutate(d.cards, d as unknown as Doc);
           patch({ previewDocs: { ...state.previewDocs, [docId]: JSON.stringify(d) } });
         }
       } catch {
@@ -1289,8 +1289,7 @@ export function useHomeController() {
       const loaded = await docStore.load(docId);
       if (!loaded || loaded.doc.kind !== 'kanban') return false;
       const cards = loaded.doc.cards ?? [];
-      if (!cards.some((c) => c.id === cardId)) return false; // 사라진 카드
-      const nextCards = patchCardMeta(cards, cardId, patch2);
+      const nextCards = mutate(cards, loaded.doc);
       // 바뀐 게 없으면 저장하지 않는다(충돌 재시도에서 이미 반영된 경우도 여기서 걸린다).
       if (JSON.stringify(nextCards) === JSON.stringify(cards)) return true;
       const next: Doc = { ...loaded.doc, cards: nextCards };
@@ -1320,15 +1319,38 @@ export function useHomeController() {
       setState((prev) => ({
         ...prev,
         previewDocs: prevRaw ? { ...prev.previewDocs, [docId]: prevRaw } : prev.previewDocs,
-        toastTitle: '일정을 고치지 못했어요',
+        toastTitle: failTitle,
         toast: '연결 상태를 확인하고 다시 시도해 주세요. 보기 전용으로 공유받은 보드는 고칠 수 없어요.',
       }));
     }
     return ok;
   };
 
+  /** 카드 곁정보(분류·시작일·기한·담당·긴급) — 규칙은 코어 `patchCardMeta`. */
+  const patchCalendarCard = async (docId: string, cardId: string, patch2: CardMetaPatch): Promise<boolean> =>
+    writeCalendarDoc(docId, (cards) => (cards.some((c) => c.id === cardId) ? patchCardMeta(cards, cardId, patch2) : cards), '일정을 고치지 못했어요');
+
+  /** 카드 제목 — 확정 규칙(마크다운 단축·자동 링크)은 코어 `patchCardText`. */
+  const renameCalendarCard = async (docId: string, cardId: string, text: string): Promise<boolean> =>
+    writeCalendarDoc(docId, (cards) => (cards.some((c) => c.id === cardId) ? patchCardText(cards, cardId, text) : cards), '제목을 바꾸지 못했어요');
+
+  /** 카드 삭제 — 디자인 원본의 상세 팝업 `삭제`. 열 이동과 같은 경로로 그 문서에 쓴다. */
+  const deleteCalendarCard = async (docId: string, cardId: string): Promise<boolean> =>
+    writeCalendarDoc(docId, (cards) => cards.filter((c) => c.id !== cardId), '카드를 삭제하지 못했어요');
+
+  /** 열 이동 — 코어 `moveCard`(맨 뒤). 상세 팝업의 `상태` 칩이 쓴다. */
+  const moveCalendarCard = async (docId: string, cardId: string, toColId: string): Promise<boolean> =>
+    writeCalendarDoc(
+      docId,
+      (cards, doc) => {
+        if (!cards.some((c) => c.id === cardId) || !(doc.columns ?? []).some((c) => c.id === toColId)) return cards;
+        return moveCard(cards, cardId, toColId, cards.filter((c) => c.col === toColId).length);
+      },
+      '카드를 옮기지 못했어요',
+    );
+
   /**
-   * 기간 일정을 며칠 옮긴다 — 시작일·기한을 **함께**(코어 `shiftCardDates`).
+   * 기간(시작일~기한)을 **통째로 며칠 옮긴다** — 코어 `shiftCardDates`.
    * 옮길 값은 **저장된 원본 기준**으로 다시 계산하므로 여러 번 끌어도 누적 오차가 없다.
    */
   const shiftCalendarCard = async (docId: string, cardId: string, days: number): Promise<boolean> => {
@@ -1347,6 +1369,7 @@ export function useHomeController() {
     if (!moved.due) return false;
     return patchCalendarCard(docId, cardId, { due: moved.due, ...(card.start ? { start: moved.start ?? null } : {}) });
   };
+
 
   /** 행 우클릭 → 이름 변경 — 만들기와 **같은 팝업**이다(제목·버튼 글자만 다르다).
    *  색도 함께 고칠 수 있다: 잘못 고른 색을 되돌릴 길이 없으면 안 된다. */
@@ -2759,6 +2782,9 @@ export function useHomeController() {
     moveDashItem,
     moveDashCard,
     patchCalendarCard,
+    renameCalendarCard,
+    deleteCalendarCard,
+    moveCalendarCard,
     shiftCalendarCard,
     notePreviewVisible,
     setDashItemSize,

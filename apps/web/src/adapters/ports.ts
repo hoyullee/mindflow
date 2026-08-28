@@ -646,6 +646,40 @@ export interface ImageStore {
 
 // ── Backend bundle ───────────────────────────────────────────────────────
 
+// ── Calendar events (Geurio 일정 — 0033) ───────────────────────────────────
+
+/**
+ * 캘린더 전용 일정. **칸반 카드가 아닌 일정**(회의·휴가·개인 약속)이 사는 자리다.
+ *
+ * 날짜는 로컬 날짜 문자열(`YYYY-MM-DD`), 시각은 `HH:MM`(24시간). 종일이면 시각은 없다.
+ * 여러 날 일정은 `endDate`가 마지막 날(포함)이다.
+ */
+export interface CalendarEvent {
+  id: string;
+  title: string;
+  startDate: string;
+  endDate: string;
+  allDay: boolean;
+  startTime?: string;
+  endTime?: string;
+  location?: string;
+  note?: string;
+  color?: string;
+  /** 'geurio' = 우리 표가 정본, 'google' = 미러(다음 단계). */
+  source: 'geurio' | 'google';
+}
+
+/** 새 일정/수정에 넘기는 값 — id·source는 저장소가 정한다. */
+export type CalendarEventInput = Omit<CalendarEvent, 'id' | 'source'>;
+
+export interface EventStore {
+  /** 그 구간과 **겹치는** 일정(월 격자가 6주라 달 경계를 넘는다). */
+  list(fromIso: string, toIso: string): Promise<CalendarEvent[]>;
+  create(input: CalendarEventInput): Promise<{ event?: CalendarEvent; error?: string }>;
+  update(id: string, patch: Partial<CalendarEventInput>): Promise<{ error?: string }>;
+  remove(id: string): Promise<{ error?: string }>;
+}
+
 export interface Backend {
   auth: AuthProvider;
   docStore: DocStore;
@@ -661,6 +695,8 @@ export interface Backend {
   commentStore: CommentStore;
   /** 알림 우편함(0022) — 홈 알림 센터. */
   notificationStore: NotificationStore;
+  /** 캘린더 전용 일정(0033) — 칸반 카드가 아닌 일정. */
+  eventStore: EventStore;
   /** `'local'` = demo/localStorage fallback (no env configured); `'supabase'`
    * = real Postgres + Auth. Used to decide whether auth routes are gated. */
   mode: 'local' | 'supabase';

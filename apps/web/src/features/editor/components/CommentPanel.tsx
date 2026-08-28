@@ -22,6 +22,7 @@ import type { EditorController } from '../useEditorState';
 import type { CommentMention, DocComment, ShareParticipant } from '../../../adapters/ports';
 import { panelTitleLine } from './panel/panelPrimitives';
 import { hexA } from '../theme';
+import type { Theme } from '../theme';
 import { useIsTouchDevice } from '../../../hooks/useMediaQuery';
 import { useSoftKeyboardOpen } from '../../../hooks/useKeyboardInset';
 import { CARD_SHADOW, MONO_FONT, glassCard } from '../chrome';
@@ -46,6 +47,32 @@ interface Thread {
  * 정체라 부제로 할 말이 없다. 예전에는 그런 대상에 "사라진 대상"이라고 적었는데,
  * 멀쩡한 핀을 열어 놓고 사라졌다고 말하는 꼴이었다(제보 ⑥).
  */
+
+/**
+ * 댓글 열이 실제로 쓰는 것 — **에디터 컨트롤러 전체가 아니라 이 열 가지**다.
+ *
+ * 왜 좁혔나: 이 열을 **홈의 일정 상세 팝업**도 쓴다(디자인 원본의 오른쪽 열). 홈에는
+ * 에디터 컨트롤러가 없고, 같은 목록·작성·좋아요·멘션을 두 벌로 만들면 한쪽에만
+ * 기능이 붙는다(`ShareModal`·`FeedbackModal`에서 이미 쓴 구조적 프롭 방식).
+ *
+ * `EditorController`가 이 멤버를 모두 가지고 있으므로 **에디터 호출부는 그대로**다
+ * (구조적 타이핑) — 홈은 댓글 포트로 같은 모양을 만들어 넘긴다.
+ */
+export interface CommentHost {
+  uiTheme: Theme;
+  docId: string;
+  comments: DocComment[];
+  commentsLoading: boolean;
+  myName: string;
+  myAvatar: string | null;
+  addComment: (nodeId: string, body: string, opts?: { parentId?: string; mentions?: CommentMention[] }) => Promise<{ error?: string }>;
+  removeComment: (commentId: string) => Promise<{ error?: string }>;
+  likeComment: (commentId: string, liked: boolean) => Promise<{ error?: string }>;
+  /** 입력창에서 Escape — 에디터는 패널을 닫는다. 없으면 아무것도 하지 않는다(홈의
+   *  상세 팝업은 모달 자신이 Escape를 받아 닫히므로 여기서 가로채면 두 번 닫는 셈). */
+  closeComments?: () => void;
+}
+
 export function commentTargetLabel(doc: EditorController['doc'], id: string): string | null {
   // 칸반 — 대상은 카드다. 문서 전체 댓글은 마인드맵과 같은 자리(ROOT_ID)를 쓰는데,
   // 칸반에는 루트 주제가 없으므로 "보드 전체"라고 말한다.
@@ -385,7 +412,7 @@ function revealComment(list: HTMLElement, id: string, scroll: boolean): void {
   list.scrollTop = Math.max(0, Math.min(target, Math.max(0, list.scrollHeight - view)));
 }
 
-export function CommentThreads({ controller, nodeId, scroll = false, thread = false }: { controller: EditorController; nodeId: string; scroll?: boolean; thread?: boolean }) {
+export function CommentThreads({ controller, nodeId, scroll = false, thread = false }: { controller: CommentHost; nodeId: string; scroll?: boolean; thread?: boolean }) {
   const th = controller.uiTheme;
   const isMobile = useIsMobile();
   const [replyTo, setReplyTo] = useState<string | null>(null);
@@ -540,7 +567,7 @@ export function useCommentParticipants(docId: string, enabled = true): SharePart
 /** 머리의 ⋯ — 지금은 "스레드 삭제" 하나다(각 글의 '삭제'는 그 글만 지운다).
  * 항목이 하나뿐이라도 메뉴로 두는 이유: 파괴적 동작이 머리에 버튼으로 상시 노출되면
  * 닫기(✕) 옆에서 잘못 눌리기 쉽다. */
-function ThreadMenu({ th, isMobile, onDelete }: { th: EditorController['uiTheme']; isMobile: boolean; onDelete: () => void }) {
+function ThreadMenu({ th, isMobile, onDelete }: { th: Theme; isMobile: boolean; onDelete: () => void }) {
   const [open, setOpen] = useState(false);
   // Esc로도 닫힌다 — 열어 둔 메뉴가 뒤의 버튼(해결·닫기)을 삼키면 갇힌 것처럼 느껴진다.
   useEffect(() => {
@@ -607,7 +634,7 @@ function ThreadView({
   onReplySubmit,
 }: {
   thread: Thread;
-  controller: EditorController;
+  controller: CommentHost;
   isMobile: boolean;
   participants: ShareParticipant[];
   dimmed?: boolean;
@@ -674,7 +701,7 @@ function CommentRow({
   avatarSrc,
 }: {
   comment: DocComment;
-  controller: EditorController;
+  controller: CommentHost;
   isMobile: boolean;
   deletable: boolean;
   deleteTitle: string;
@@ -827,7 +854,7 @@ export function CommentComposer({
   onCancel,
   onSubmit,
 }: {
-  controller: EditorController;
+  controller: CommentHost;
   isMobile: boolean;
   participants: ShareParticipant[];
   placeholder: string;
@@ -958,6 +985,7 @@ export function CommentComposer({
         setToken(null);
         return;
       }
+      if (!controller.closeComments) return; // 모달 안이면 그 Escape는 모달의 것이다
       e.preventDefault();
       controller.closeComments();
       return;

@@ -399,6 +399,46 @@ export function homeChipSurface(key: HomeThemeKey): { card: string; text: string
   return { card: t.card, text: t.text };
 }
 
+/**
+ * 홈 테마 → **에디터 `Theme` 모양**. 에디터에서 온 부품(지금은 일정 상세 팝업의 댓글
+ * 열 `CommentThreads`)이 색을 그 꼴로 받으므로, 홈이 자기 테마를 그 모양으로 옮겨
+ * 넘긴다 — 다크 홈 안에 밝은 열이 홀로 뜨는 것을 막는다(로더·공유 모달과 같은 규칙:
+ * 두 화면이 함께 쓰는 부품은 색을 프롭으로 받는다).
+ *
+ * **`palette`만은 칸반 고정 팔레트다** — 분류·열 색은 문서의 정체이고 홈 테마를 따라
+ * 바뀌면 같은 카드가 화면마다 다른 색이 된다(#513의 교훈).
+ */
+export function homeEditorTheme(key: HomeThemeKey, palette: string[]): {
+  label: string;
+  appBg: string;
+  canvasBg: string;
+  panel: string;
+  panel2: string;
+  border: string;
+  dot: string;
+  text: string;
+  subtext: string;
+  accent: string;
+  accentInk: string;
+  palette: string[];
+} {
+  const t = HOME_THEMES[homeThemeKeyOf(key)];
+  return {
+    label: t.label,
+    appBg: t.bg,
+    canvasBg: t.sunken,
+    panel: t.card,
+    panel2: t.panel2,
+    border: t.border,
+    dot: t.borderSoft,
+    text: t.text,
+    subtext: t.muted,
+    accent: t.accent,
+    accentInk: t.accentInk,
+    palette,
+  };
+}
+
 /** 테마 → CSS 변수 이름/값 쌍. 순수 함수(테스트·SSR 안전). */
 export function homeThemeVars(key: HomeThemeKey): Record<string, string> {
   const t = HOME_THEMES[homeThemeKeyOf(key)];
