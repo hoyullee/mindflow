@@ -203,6 +203,15 @@ describe('일정 화면', () => {
     fireEvent.click(document.querySelector(`[data-mini-day="${todayISO()}"]`)!);
     await waitFor(() => expect(side().textContent).toContain('일정 '));
     expect(within(side() as HTMLElement).getByText('오늘 마감 카드')).toBeTruthy();
+    // 날짜별 항목은 **왼쪽 색 바가 붙은 납작한 행**이다(디자인 원본) — 마감 목록의
+    // 두 줄 카드와 다른 물건. 우측 메모는 열 이름, 기간이면 `N/M일째`.
+    const chips = [...document.querySelectorAll('[data-cal-day-chip]')] as HTMLElement[];
+    expect(chips.length).toBeGreaterThan(0);
+    expect(chips[0]!.style.borderLeft).toMatch(/^3px solid/);
+    expect(chips[0]!.style.borderRadius).toBe('4px 9px 9px 4px');
+    expect(chips[0]!.textContent).toContain('진행 중');
+    // 오늘은 기간 카드(시작 -1일 · 기한 +3일)의 2일째다
+    expect(side().textContent).toContain('2/5일째');
     expect(document.querySelector('[aria-label="날짜별 보기"]')!.getAttribute('aria-pressed')).toBe('true');
     fireEvent.click(document.querySelector('[aria-label="마감 목록"]')!);
     await waitFor(() => expect(side().textContent).toContain('다가오는 마감'));

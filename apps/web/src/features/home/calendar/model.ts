@@ -194,6 +194,23 @@ export function entriesOn(entries: readonly CalendarEntry[], iso: string): Calen
   return entries.filter((e) => coversDay(e, iso));
 }
 
+/**
+ * 그 날 이 항목이 며칠째인가 — 기간 일정의 `3/7일째`(디자인 원본의 note).
+ * 하루짜리는 진행이라는 개념이 없어 `null`.
+ */
+export function dayProgress(e: CalendarEntry, iso: string): string | null {
+  if (!isSpan(e)) return null;
+  const from = partsOf(e.start!);
+  const to = partsOf(e.due);
+  const at = partsOf(iso);
+  if (!from || !to || !at) return null;
+  const day = (p: { y: number; m: number; d: number }) => new Date(p.y, p.m - 1, p.d).getTime();
+  const total = Math.round((day(to) - day(from)) / 86_400_000) + 1;
+  const nth = Math.round((day(at) - day(from)) / 86_400_000) + 1;
+  if (total < 2 || nth < 1 || nth > total) return null;
+  return `${nth}/${total}일째`;
+}
+
 /** `오늘` / `지남` / `D-3` — 목록의 날짜 배지. */
 export function dueBadge(iso: string, todayIso: string): string {
   if (iso === todayIso) return '오늘';

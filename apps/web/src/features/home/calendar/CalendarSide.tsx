@@ -1,6 +1,6 @@
 import type { CalendarEntry } from './entries';
 import { entryChip, type ChipSurface } from './chips';
-import { DOW, dateLabel, dueBadge, entriesOn, isSpan, monthCells, overdueEntries, upcomingEntries } from './model';
+import { DOW, dateLabel, dayProgress, dueBadge, entriesOn, isSpan, monthCells, overdueEntries, upcomingEntries } from './model';
 
 /**
  * 일정 화면 오른쪽 — 미니 달력 + (마감 목록 | 고른 날짜).
@@ -105,8 +105,14 @@ export function CalendarSide({
 
       {/* 목록 */}
       {side === 'day' ? (
+        /* 날짜별 보기 — 디자인 원본의 agenda: 종일 항목은 **왼쪽 색 바가 붙은 납작한 행**
+           (마감 목록의 두 줄 카드와 다른 물건이다). 우측 메모는 열 이름, 기간이면 `N/M일째`.
+           원본은 이 아래에 **시간표**(12AM~11PM)를 두는데, 지금 우리 항목은 전부 종일이라
+           (칸반 마감은 시각을 갖지 않는다 — 결정) 그리면 빈 24줄만 남는다. 시각이 있는
+           Geurio 일정이 들어오는 단계에서 원본의 빈 상태(`이 날에는 시간 일정이 없어요`)와
+           함께 붙인다. */
         <Section title={dateLabel(selectedDay)} sub={`일정 ${dayList.length}개`}>
-          {dayList.length ? dayList.map((e) => <Row key={`${e.docId}-${e.cardId}`} entry={e} todayIso={todayIso} surface={surface} onPick={onPickEntry} />) : <Empty text="이 날에는 일정이 없어요" />}
+          {dayList.length ? dayList.map((e) => <DayChip key={`${e.docId}-${e.cardId}`} entry={e} iso={selectedDay} surface={surface} onPick={onPickEntry} />) : <Empty text="이 날에는 일정이 없어요" />}
         </Section>
       ) : (
         <>
@@ -157,6 +163,41 @@ function Section({ title, sub, children }: { title: string; sub: string; childre
 
 function Empty({ text }: { text: string }) {
   return <span style={{ padding: '10px 4px', fontSize: 12, color: 'var(--mf-faint)' }}>{text}</span>;
+}
+
+/**
+ * 날짜별 보기의 한 행 — `padding: 6px 9px` · 왼쪽 3px 색 바 · `radius 4/9/9/4`
+ * (디자인 원본 그대로). 색 바는 그 카드가 있는 **열 색**이다.
+ */
+function DayChip({ entry, iso, surface, onPick }: { entry: CalendarEntry; iso: string; surface: ChipSurface; onPick: (e: CalendarEntry) => void }) {
+  const chip = entryChip(entry, surface);
+  const note = dayProgress(entry, iso) ?? entry.colName ?? '마감';
+  return (
+    <button
+      type="button"
+      data-cal-day-chip={`${entry.docId}:${entry.cardId}`}
+      onClick={() => onPick(entry)}
+      className="mf-ctl"
+      style={{
+        display: 'flex',
+        alignItems: 'center',
+        gap: 8,
+        width: '100%',
+        boxSizing: 'border-box',
+        padding: '6px 9px',
+        border: 0,
+        borderLeft: `3px solid ${chip.dot}`,
+        borderRadius: '4px 9px 9px 4px',
+        background: 'var(--mf-panel2)',
+        font: 'inherit',
+        textAlign: 'left',
+        cursor: 'pointer',
+      }}
+    >
+      <span style={{ flex: 1, minWidth: 0, fontSize: 11.5, fontWeight: 700, color: 'var(--mf-text)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{entry.title || '제목 없음'}</span>
+      <span style={{ flexShrink: 0, fontSize: 10, color: 'var(--mf-muted)', whiteSpace: 'nowrap' }}>{note}</span>
+    </button>
+  );
 }
 
 function Row({ entry, todayIso, surface, onPick }: { entry: CalendarEntry; todayIso: string; surface: ChipSurface; onPick: (e: CalendarEntry) => void }) {

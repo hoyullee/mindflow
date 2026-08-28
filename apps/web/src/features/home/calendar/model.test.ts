@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import type { CalendarEntry } from './entries';
 import { calendarEntries, datedCards } from './entries';
-import { addMonth, calendarStats, coversDay, dateLabel, dueBadge, entriesOn, filterByStat, isSpan, monthCells, monthLabel, overdueEntries, todayISO, upcomingEntries, weekEndISO, weekStartISO } from './model';
+import { addMonth, calendarStats, dayProgress, coversDay, dateLabel, dueBadge, entriesOn, filterByStat, isSpan, monthCells, monthLabel, overdueEntries, todayISO, upcomingEntries, weekEndISO, weekStartISO } from './model';
 
 // 일정 화면의 데이터 계층 — 순수 함수라 날짜를 고정해 검증한다.
 
@@ -125,6 +125,15 @@ describe('일정 모델(model)', () => {
     expect(entriesOn([span, one], '2026-08-26').map((e) => e.title)).toEqual(['기간', '하루']);
     expect(isSpan(span)).toBe(true);
     expect(coversDay(one, '2026-08-27')).toBe(false);
+  });
+
+  it('기간 일정은 며칠째인지 센다(하루짜리는 없음)', () => {
+    const span = E('2026-08-30', { start: '2026-08-26' }); // 26~30 = 5일
+    expect(dayProgress(span, '2026-08-26')).toBe('1/5일째');
+    expect(dayProgress(span, '2026-08-28')).toBe('3/5일째');
+    expect(dayProgress(span, '2026-08-30')).toBe('5/5일째');
+    expect(dayProgress(span, '2026-09-01')).toBeNull(); // 창 밖
+    expect(dayProgress(E('2026-08-26'), '2026-08-26')).toBeNull();
   });
 
   it('배지·날짜 표기', () => {
