@@ -453,6 +453,8 @@ export interface ActiveView {
   curFolder: string | null;
   /** 대시보드를 보고 있었다면 그 id. 스페이스 화면이었으면 null. */
   activeDash?: string | null;
+  /** 일정 화면을 보고 있었다면 true(대시보드·스페이스와 나란한 세 번째 화면). */
+  activeCal?: boolean;
 }
 
 export function saveActiveView(view: ActiveView): void {
@@ -486,7 +488,7 @@ export function clearActiveView(): void {
  */
 export const LANDING_HINT_KEY = 'mf_home_landing';
 
-export function saveLandingHint(kind: 'dash' | 'space'): void {
+export function saveLandingHint(kind: 'dash' | 'space' | 'cal'): void {
   try {
     localStorage.setItem(LANDING_HINT_KEY, kind);
   } catch {
@@ -495,11 +497,12 @@ export function saveLandingHint(kind: 'dash' | 'space'): void {
 }
 
 /** 이번 진입의 첫 화면 예상. 탭이 기억한 화면 → 이 기기의 힌트 → 스페이스. */
-export function predictLanding(): 'dash' | 'space' {
+export function predictLanding(): 'dash' | 'space' | 'cal' {
   const view = loadActiveView();
-  if (view) return view.activeDash ? 'dash' : 'space';
+  if (view) return view.activeCal ? 'cal' : view.activeDash ? 'dash' : 'space';
   try {
-    return localStorage.getItem(LANDING_HINT_KEY) === 'dash' ? 'dash' : 'space';
+    const hint = localStorage.getItem(LANDING_HINT_KEY);
+    return hint === 'dash' ? 'dash' : hint === 'cal' ? 'cal' : 'space';
   } catch {
     return 'space';
   }
@@ -515,6 +518,7 @@ export function loadActiveView(): ActiveView | null {
         activeSpace: v.activeSpace,
         curFolder: typeof v.curFolder === 'string' ? v.curFolder : null,
         activeDash: typeof v.activeDash === 'string' ? v.activeDash : null,
+        activeCal: v.activeCal === true,
       };
     }
     return null;

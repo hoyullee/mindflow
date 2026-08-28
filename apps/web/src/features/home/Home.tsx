@@ -7,6 +7,7 @@ import { MapGrid } from './components/MapGrid';
 import { SearchResults } from './components/SearchResults';
 import { RecentStrip, RecentStripSkeleton } from './components/RecentStrip';
 import { DashboardView } from './components/DashboardView';
+import { CalendarView } from './calendar/CalendarView';
 import { DashboardSkeleton } from './components/DashboardSkeleton';
 import { DashboardPicker } from './components/modals/DashboardPicker';
 import { DashboardModal } from './components/modals/DashboardModal';
@@ -69,12 +70,12 @@ export function Home() {
   const marquee = useMarqueeSelect({
     onSelect: controller.marqueeSelect,
     currentSelection: () => controller.state.selectedCards,
-    disabled: isMobile || !!state.activeDash,
+    disabled: isMobile || !!state.activeDash || state.activeCal,
   });
   const installHint = useInstallHint(isMobile);
   // 예상은 **마운트 때 한 번** 잡는다 — 착지하면서 힌트가 갱신되므로 매 렌더 읽으면
   // 로딩 중에 모양이 바뀔 수 있다.
-  const landingGuess = useRef<'dash' | 'space'>(predictLanding());
+  const landingGuess = useRef<'dash' | 'space' | 'cal'>(predictLanding());
   const online = useOnline();
   const [navOpen, setNavOpen] = useState(false);
   // 로딩 스켈레톤의 모양 — 아직 착지 화면을 모르는 첫 프레임에 쓴다(`predictLanding`:
@@ -90,6 +91,14 @@ export function Home() {
   useEffect(() => {
     if (!isMobile) setNavOpen(false);
   }, [isMobile]);
+
+  // 폰에서 **화면이 바뀌면** 서랍을 닫는다 — 스페이스·대시보드·일정을 골랐는데 서랍이
+  // 그대로 남아 고른 화면을 가리고 있었다(배경을 한 번 더 눌러야 했다). 여기서 한 번에
+  // 다루는 이유: 행마다 닫기를 챙기면 새 행이 생길 때마다 빠뜨리기 쉽고, 접이식
+  // 구획(즐겨찾기·휴지통·공유받음)은 화면을 바꾸지 않으므로 저절로 열린 채 남는다.
+  useEffect(() => {
+    if (isMobile) setNavOpen(false);
+  }, [isMobile, state.activeSpace, state.activeDash, state.activeCal]);
 
   // One-thumb drawer gestures: left-edge swipe-right opens, swipe-left (while
   // open) closes — the hamburger stays as the visible affordance.
@@ -154,7 +163,10 @@ export function Home() {
             남아 있으면 무엇이 결과인지 흐려진다. */}
         {/* 대시보드 보기 — 화면은 언제나 한쪽만 그린다(대시보드 ↔ 스페이스). 최근
             항목·툴바·그리드는 스페이스의 것이라 함께 접는다. */}
-        {state.activeDash ? (
+        {state.activeCal ? (
+          /* 일정 보기 — 대시보드·스페이스와 나란한 세 번째 화면. */
+          <CalendarView state={state} controller={controller} isMobile={isMobile} onOpenNav={() => setNavOpen(true)} />
+        ) : state.activeDash ? (
           <DashboardView state={state} view={view} controller={controller} isMobile={isMobile} onOpenNav={() => setNavOpen(true)} />
         ) : dashSkeleton ? (
           /* 로딩 중이고 이번 진입이 대시보드로 착지할 예정 — 스페이스 스켈레톤(최근

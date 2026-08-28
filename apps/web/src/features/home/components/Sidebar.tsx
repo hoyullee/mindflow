@@ -7,6 +7,7 @@ import { SettingsPopover } from './SettingsPopover';
 import { DashboardSection, ReorderToggle } from './DashboardSection';
 import { SpaceRow } from './SpaceRow';
 import { META_MONO, SECTION_LABEL } from '../chrome';
+import { CalendarGlyph } from '../calendar/CalendarView';
 
 /** How long the drawer's exit slide runs before the aside unmounts. Slightly
  * longer than the CSS transition (260ms, home.css `.mf-drawer`) so the last
@@ -145,6 +146,10 @@ export function Sidebar({ state, view, controller, isMobile = false, isOpen = fa
       {/* 대시보드 구획 — 스페이스 위(디자인 원본의 순서). 요청 범위: 기존 홈 디자인에
           더하는 것은 이 구획과 스페이스 정렬 토글뿐이다. */}
       <DashboardSection state={state} controller={controller} isMobile={isMobile} />
+
+      {/* 일정 — 대시보드 구획과 스페이스 구획 **사이**의 홀로 선 행(디자인 원본).
+          개수는 "다가오는 마감" 수. 대시보드·스페이스와 나란한 세 번째 화면이다. */}
+      <CalendarNavRow state={state} controller={controller} isMobile={isMobile} count={view.calendarCount} />
 
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '14px 9px 7px' }}>
         <span style={SECTION_LABEL}>스페이스</span>
@@ -639,5 +644,56 @@ function TrashGlyph({ size = 15 }: { size?: number }) {
       <line x1="10" y1="11" x2="10" y2="17" />
       <line x1="14" y1="11" x2="14" y2="17" />
     </svg>
+  );
+}
+
+/**
+ * LNB `일정` 행 — 대시보드 구획과 스페이스 구획 사이에 홀로 선다(디자인 원본).
+ *
+ * 대시보드 행과 같은 문법(34px·radius 10·활성 강조색 면)이되 순서 바꾸기·우클릭
+ * 메뉴는 없다 — 일정은 여럿이 아니라 하나뿐인 화면이다.
+ */
+function CalendarNavRow({ state, controller, isMobile, count }: { state: HomeState; controller: HomeController; isMobile: boolean; count: number }) {
+  const active = state.activeCal;
+  return (
+    <div style={{ flexShrink: 0, paddingTop: 8 }}>
+      <div
+        className="nav-item"
+        role="button"
+        tabIndex={0}
+        data-cal-nav
+        aria-current={active ? 'page' : undefined}
+        onClick={controller.openCalendar}
+        onKeyDown={(e) => {
+          if (e.key === 'Enter' || e.key === ' ') {
+            e.preventDefault();
+            controller.openCalendar();
+          }
+        }}
+        style={{
+          display: 'flex',
+          alignItems: 'center',
+          gap: 9,
+          padding: '8px 9px',
+          minHeight: isMobile ? 44 : 34,
+          borderRadius: 10,
+          cursor: 'pointer',
+          fontSize: 13,
+          fontWeight: active ? 700 : 500,
+          letterSpacing: '-.01em',
+          background: active ? 'var(--mf-accent-soft)' : 'transparent',
+          color: active ? 'var(--mf-text)' : 'var(--mf-subtext)',
+          transition: 'background .14s ease',
+        }}
+      >
+        <span style={{ display: 'inline-flex', color: active ? 'var(--mf-accent)' : 'currentColor', flexShrink: 0 }}>
+          <CalendarGlyph />
+        </span>
+        <span style={{ flex: 1, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>일정</span>
+        <span style={{ flexShrink: 0, minWidth: 38, display: 'inline-flex', alignItems: 'center', justifyContent: 'flex-end' }}>
+          <span style={META_MONO}>{count || ''}</span>
+        </span>
+      </div>
+    </div>
   );
 }
