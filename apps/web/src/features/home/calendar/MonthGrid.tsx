@@ -1,8 +1,29 @@
-import type { CSSProperties } from 'react';
+import { useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
+import type { CSSProperties, PointerEvent as ReactPointerEvent } from 'react';
 import type { CalendarEntry } from './entries';
 import type { MonthCell } from './model';
-import { DOW } from './model';
+import { DOW, daysBetween } from './model';
+import { beginPointerDrag } from '../../editor/components/KanbanBoard';
 import { entryChip, type ChipSurface } from './chips';
+
+/** 끄는 동안의 상태 — 손끝의 고스트와 놓일 칸. */
+interface CalDragState {
+  entry: CalendarEntry;
+  /** 잡은 칸 — 기간 일정은 이 칸을 기준으로 평행이동한다(바 가운데를 잡아도 자연스럽게). */
+  fromIso: string;
+  x: number;
+  y: number;
+  /** 지금 포인터 아래의 날짜 칸(없으면 격자 밖). */
+  overIso: string | null;
+}
+
+/** 포인터 아래의 날짜 칸을 좌표로 찾는다 — 칸은 격자 자식이라 히트테스트가 가장 단순하다. */
+function cellAt(x: number, y: number): string | null {
+  const el = document.elementFromPoint(x, y);
+  const cell = el?.closest?.('[data-day-cell]') as HTMLElement | null;
+  return cell?.dataset.dayCell ?? null;
+}
 
 /**
  * 월 달력 격자 — 디자인 원본 `Geurio 일정 캘린더.dc.html`의 calGrid.
@@ -17,6 +38,7 @@ export function MonthGrid({
   onPickDay,
   onPickEntry,
   onMore,
+  onShift,
   selected,
   surface,
   compact = false,
@@ -25,10 +47,51 @@ export function MonthGrid({
   onPickDay: (iso: string) => void;
   onPickEntry: (e: CalendarEntry) => void;
   onMore: (iso: string) => void;
+  /** 항목을 다른 칸에 놓았다 — 며칠 옮길지(기간이면 시작일·기한이 함께 움직인다). */
+  onShift: (e: CalendarEntry, days: number) => void;
   selected: string | null;
   surface: ChipSurface;
   compact?: boolean;
 }) {
+  const [drag, setDrag] = useState<CalDragState | null>(null);
+  const dragRef = useRef<CalDragState | null>(null);
+  dragRef.current = drag;
+  /** 끌었는가 — 드래그 끝의 `click`이 상세 팝업을 열지 않게 삼킨다(다음 누름에서 리셋). */
+  const draggedRef = useRef(false);
+
+  /** 칩·바를 잡았다 — 마우스는 4px 문턱, 터치는 길게 누르기(`beginPointerDrag`). */
+  const grab = (ev: ReactPointerEvent, entry: CalendarEntry, fromIso: string): void => {
+    // 새 누름이 시작됐다 — 앞선 드래그의 표식은 여기서 씻는다(어떤 칩을 누르든).
+    draggedRef.current = false;
+    // 보기 전용으로 공유받은 보드는 끌리지 않는다 — 옮겨 봐야 서버가 막는다.
+    if (entry.readOnly) return;
+    const seed: CalDragState = { entry, fromIso, x: ev.clientX, y: ev.clientY, overIso: fromIso };
+    beginPointerDrag(ev, {
+      onStart: () => {
+        draggedRef.current = true;
+        setDrag(seed);
+      },
+      onMove: (e) => setDrag((prev) => (prev ? { ...prev, x: e.clientX, y: e.clientY, overIso: cellAt(e.clientX, e.clientY) } : prev)),
+      onDrop: (e) => {
+        const cur = dragRef.current;
+        const to = cellAt(e.clientX, e.clientY);
+        // 격자 밖이나 제자리에 놓았으면 아무 일도 없다(취소도 이동이 아니다).
+        if (cur && to && to !== cur.fromIso) onShift(cur.entry, daysBetween(cur.fromIso, to));
+      },
+      onEnd: () => setDrag(null),
+    });
+  };
+
+  /** 클릭 = 상세 팝업. 다만 **끌고 난 뒤의 클릭은 아니다**(놓은 자리에서 팝업이 뜨면 안 된다). */
+  const clickEntry = (e: CalendarEntry): void => {
+    // **한 번만** 삼킨다 — 표식이 남으면 다음 평범한 클릭까지 먹는다.
+    if (draggedRef.current) {
+      draggedRef.current = false;
+      return;
+    }
+    onPickEntry(e);
+  };
+
   return (
     <div
       data-month-grid
@@ -65,10 +128,72 @@ export function MonthGrid({
 
       <div style={{ flex: 1, minHeight: 0, display: 'grid', gridTemplateColumns: 'repeat(7, 1fr)', gridAutoRows: '1fr' }}>
         {cells.map((c) => (
-          <DayCell key={c.iso} cell={c} selected={selected === c.iso} compact={compact} surface={surface} onPickDay={onPickDay} onPickEntry={onPickEntry} onMore={onMore} />
+          <DayCell
+            key={c.iso}
+            cell={c}
+            selected={selected === c.iso}
+            compact={compact}
+            surface={surface}
+            onPickDay={onPickDay}
+            onPickEntry={clickEntry}
+            onMore={onMore}
+            onGrab={grab}
+            dragging={drag?.entry}
+            dropHot={!!drag && drag.overIso === c.iso && drag.overIso !== drag.fromIso}
+          />
         ))}
       </div>
+
+      {drag && <DragGhost drag={drag} surface={surface} />}
     </div>
+  );
+}
+
+/**
+ * 손끝을 따라오는 고스트 — 칸반 카드 드래그와 같은 모델(원본은 자리에서 흐려지고,
+ * 옮기는 것은 이 알약이 대신 말한다). **body 포털**이다: 격자·칸에 걸린 변형이나
+ * `overflow: hidden`이 `position: fixed`를 가둔다(위젯 고스트에서 겪은 그 함정).
+ */
+function DragGhost({ drag, surface }: { drag: CalDragState; surface: ChipSurface }) {
+  const chip = entryChip(drag.entry, surface);
+  const to = drag.overIso && drag.overIso !== drag.fromIso ? daysBetween(drag.fromIso, drag.overIso) : 0;
+  return createPortal(
+    <div
+      data-cal-ghost
+      aria-hidden="true"
+      style={{
+        position: 'fixed',
+        left: drag.x + 10,
+        top: drag.y + 10,
+        zIndex: 400,
+        display: 'inline-flex',
+        alignItems: 'center',
+        gap: 5,
+        maxWidth: 220,
+        height: 22,
+        padding: '0 9px',
+        borderRadius: 999,
+        background: chip.bg,
+        color: chip.fg,
+        border: '1px solid var(--mf-accent)',
+        boxShadow: '0 10px 22px -14px rgba(0,0,0,.5)',
+        font: 'inherit',
+        fontSize: 10.5,
+        fontWeight: 800,
+        whiteSpace: 'nowrap',
+        pointerEvents: 'none',
+        transform: 'rotate(1.5deg)',
+      }}
+    >
+      <span style={{ width: 5, height: 5, borderRadius: 999, background: chip.dot, flexShrink: 0 }} />
+      <span style={{ minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis' }}>{drag.entry.title || '제목 없음'}</span>
+      {to !== 0 && (
+        <span style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 9.5, opacity: 0.8 }}>
+          {to > 0 ? `+${to}` : to}일
+        </span>
+      )}
+    </div>,
+    document.body,
   );
 }
 
@@ -80,6 +205,9 @@ function DayCell({
   onPickDay,
   onPickEntry,
   onMore,
+  onGrab,
+  dragging,
+  dropHot,
 }: {
   cell: MonthCell;
   selected: boolean;
@@ -88,6 +216,11 @@ function DayCell({
   onPickDay: (iso: string) => void;
   onPickEntry: (e: CalendarEntry) => void;
   onMore: (iso: string) => void;
+  onGrab: (ev: ReactPointerEvent, e: CalendarEntry, fromIso: string) => void;
+  /** 지금 끌고 있는 항목(그 칩은 자리에서 흐려진다). */
+  dragging: CalendarEntry | undefined;
+  /** 이 칸에 놓이려는 중인가 — 놓일 자리를 강조색 링으로 알린다. */
+  dropHot: boolean;
 }) {
   const { inMonth, isToday, dim, dow } = cell;
   // 칸 색은 아주 옅은 파생 토큰이다(디자인 원본의 관계 그대로):
@@ -129,9 +262,10 @@ function DayCell({
     padding: compact ? '3px 3px 4px' : '5px 5px 6px',
     borderRight: '1px solid var(--mf-border-soft)',
     borderBottom: '1px solid var(--mf-border-soft)',
-    background: bg,
+    background: dropHot ? 'var(--mf-accent-soft)' : bg,
     // 고른 칸의 표시는 **안쪽 링**이다 — 테두리를 굵히면 격자가 1px 밀린다.
-    ...(selected ? { boxShadow: 'inset 0 0 0 1.5px var(--mf-cal-ring)' } : {}),
+    // 놓일 칸은 그보다 진한 링 + 옅은 면으로(지금 무엇이 일어나려는가가 먼저다).
+    ...(dropHot ? { boxShadow: 'inset 0 0 0 2px var(--mf-accent)' } : selected ? { boxShadow: 'inset 0 0 0 1.5px var(--mf-cal-ring)' } : {}),
     opacity: inMonth ? 1 : 0.7,
     cursor: inMonth ? 'pointer' : 'default',
     // 칸이 내용보다 좁아도 격자가 밀리지 않게 — 넘치는 칩은 접힌다(moreN).
@@ -186,7 +320,12 @@ function DayCell({
           <button
             key={`bar-${b.entry.docId}-${b.entry.cardId}`}
             type="button"
+            data-cal-bar
             title={`${b.entry.title} · ${b.entry.boardName}`}
+            onPointerDown={(e) => {
+              e.stopPropagation();
+              onGrab(e, b.entry, cell.iso);
+            }}
             onClick={(e) => {
               e.stopPropagation();
               onPickEntry(b.entry);
@@ -210,9 +349,10 @@ function DayCell({
               whiteSpace: 'nowrap',
               overflow: 'hidden',
               textOverflow: 'ellipsis',
-              cursor: 'pointer',
+              cursor: b.entry.readOnly ? 'pointer' : 'grab',
               flexShrink: 0,
-              opacity: cell.dim ? 0.6 : 1,
+              opacity: isDragged(dragging, b.entry) ? 0.4 : cell.dim ? 0.6 : 1,
+              touchAction: 'none',
             }}
           >
             {b.label ? b.entry.title : ''}
@@ -228,6 +368,10 @@ function DayCell({
             type="button"
             data-cal-chip
             title={`${e.title} · ${e.boardName} · ${e.colName}`}
+            onPointerDown={(ev) => {
+              ev.stopPropagation();
+              onGrab(ev, e, cell.iso);
+            }}
             onClick={(ev) => {
               ev.stopPropagation();
               onPickEntry(e);
@@ -247,9 +391,10 @@ function DayCell({
               fontSize: compact ? 8.5 : 10,
               fontWeight: 700,
               letterSpacing: '-.01em',
-              cursor: 'pointer',
+              cursor: e.readOnly ? 'pointer' : 'grab',
               flexShrink: 0,
-              opacity: cell.dim ? 0.6 : 1,
+              opacity: isDragged(dragging, e) ? 0.4 : cell.dim ? 0.6 : 1,
+              touchAction: 'none',
             }}
           >
             <span style={{ width: 4, height: 4, borderRadius: 999, background: chip.dot, flexShrink: 0 }} />
@@ -273,4 +418,9 @@ function DayCell({
       )}
     </div>
   );
+}
+
+/** 지금 끌고 있는 그 항목인가 — 원본은 자리에서 흐려진다(옮기는 것은 고스트가 말한다). */
+function isDragged(dragging: CalendarEntry | undefined, e: CalendarEntry): boolean {
+  return !!dragging && dragging.docId === e.docId && dragging.cardId === e.cardId;
 }

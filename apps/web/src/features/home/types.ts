@@ -250,6 +250,8 @@ export interface HomeState {
   calSide: 'list' | 'day';
   /** 사이드에서 고른 날(`YYYY-MM-DD`). 없으면 오늘. */
   calDay: string | null;
+  /** 열린 일정 상세 — 그 칸반 카드를 가리킨다. `null`이면 닫힘. */
+  calDetail: { docId: string; cardId: string } | null;
   /** LNB 대시보드 구획의 순서 바꾸기 모드(디자인의 ⠿ 토글). */
   dashReorder: boolean;
   /** 대시보드 배치 편집 모드(히어로의 "편집" 토글) — 위젯 드래그 재배치·모서리
@@ -486,6 +488,7 @@ export function initialHomeState(): HomeState {
     calFilter: null,
     calSide: 'list',
     calDay: null,
+    calDetail: null,
     dashReorder: false,
     dashEdit: false,
     spaceReorder: false,

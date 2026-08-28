@@ -1,8 +1,8 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import type { MouseEvent as ReactMouseEvent, PointerEvent as ReactPointerEvent } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
-import type { Box, Doc, Float, KanbanCard, KanbanColumn, KanbanTag, Line, LineAnchor, LayoutMode, ListOp, Node, NodeMap, Reaction, ReactionGroup, RichRun, SizeOf, SnapCandidate, Stroke, TextEdit, Zone, CommentPin } from '@mindflow/mindmap-core';
-import { HistoryStack, ROOT_ID, collectImageRefs, collectInlineImages, isImageRef, replaceImageValues, applyListOp as applyListOpToText, applyAutoLinks, applyMarkdownShortcuts, applyPartialStyle, insertMention, charsToRuns, cubicAt, isStyledRuns, findLineSnap, layout, resolveLineEndpoints, resolveLineGeometry, runsToChars, serializeDoc, shiftOffset, strokeBounds, strokeHit, translateStrokePts, reactionGroups, toggleReaction as toggleReactionList, pruneReactions, toMarkdown, cardsInColumn, posForIndex, removeColumn, moveCard, moveColumn, sortColumnsByDue } from '@mindflow/mindmap-core';
+import type { Box, CardMetaPatch, Doc, Float, KanbanCard, KanbanColumn, KanbanTag, Line, LineAnchor, LayoutMode, ListOp, Node, NodeMap, Reaction, ReactionGroup, RichRun, SizeOf, SnapCandidate, Stroke, TextEdit, Zone, CommentPin } from '@mindflow/mindmap-core';
+import { HistoryStack, ROOT_ID, collectImageRefs, collectInlineImages, isImageRef, replaceImageValues, applyListOp as applyListOpToText, applyAutoLinks, applyMarkdownShortcuts, applyPartialStyle, insertMention, charsToRuns, cubicAt, isStyledRuns, findLineSnap, layout, resolveLineEndpoints, resolveLineGeometry, runsToChars, serializeDoc, shiftOffset, strokeBounds, strokeHit, translateStrokePts, reactionGroups, toggleReaction as toggleReactionList, pruneReactions, toMarkdown, cardsInColumn, posForIndex, removeColumn, moveCard, moveColumn, patchCardMeta, sortColumnsByDue } from '@mindflow/mindmap-core';
 import { domToRuns, linearize, liveEditValue } from './richtextDom';
 import { HL_COLORS, HL_WIDTHS } from './boardTools';
 import type { BoardTool } from './boardTools';
@@ -818,7 +818,7 @@ export interface EditorController {
   removeTag: (id: string) => void;
   setTagColor: (id: string, color: string | null) => void;
   /** 카드 곁정보(분류·기한·담당·긴급) — 빈 값은 키를 지운다. */
-  setCardMeta: (id: string, patch: { tag?: string | null; start?: string | null; due?: string | null; owner?: { email: string; name: string } | null; flagged?: boolean }) => void;
+  setCardMeta: (id: string, patch: CardMetaPatch) => void;
   /** 열 머리 색 — `null`이면 순서 기반 기본색으로 돌아간다. */
   setColumnColor: (id: string, color: string | null) => void;
   /** 열 **배경**(요청) — 머리 점 색(`setColumnColor`)과 따로 고른다. */
@@ -5697,49 +5697,13 @@ export function useEditorState(): EditorController {
     [commitDoc],
   );
 
-  /**
-   * 카드의 곁정보(분류·기한·담당·긴급)를 한 번에 고친다.
-   *
-   * **값이 비면 키를 지운다** — 빈 필드가 CRDT로 계속 오가지 않게(`setCardBg`와
-   * 같은 규칙). 담당은 이메일과 이름 스냅샷이 늘 함께 움직인다(둘이 갈라지면
-   * "이름만 남은 담당자"가 생긴다).
-   */
+  /** 카드의 곁정보(분류·기한·담당·긴급)를 한 번에 고친다 — 규칙은 코어 `patchCardMeta`. */
   const setCardMeta = useCallback(
-    (id: string, patch: { tag?: string | null; start?: string | null; due?: string | null; owner?: { email: string; name: string } | null; flagged?: boolean }) => {
+    (id: string, patch: CardMetaPatch) => {
       if (readOnlyRef.current) return;
-      commitDoc((d) => ({
-        ...d,
-        cards: (d.cards ?? []).map((c) => {
-          if (c.id !== id) return c;
-          const next = { ...c };
-          if ('tag' in patch) {
-            if (patch.tag) next.tag = patch.tag.slice(0, 24);
-            else delete next.tag;
-          }
-          if ('start' in patch) {
-            if (patch.start) next.start = patch.start;
-            else delete next.start;
-          }
-          if ('due' in patch) {
-            if (patch.due) next.due = patch.due;
-            else delete next.due;
-          }
-          if ('owner' in patch) {
-            if (patch.owner) {
-              next.owner = patch.owner.email;
-              next.ownerName = patch.owner.name;
-            } else {
-              delete next.owner;
-              delete next.ownerName;
-            }
-          }
-          if ('flagged' in patch) {
-            if (patch.flagged) next.flagged = true;
-            else delete next.flagged;
-          }
-          return next;
-        }),
-      }));
+      // 규칙(빈 값이면 키 삭제·담당 쌍 이동·분류 24자)은 **코어 한 곳**에 있다 —
+      // 홈의 일정 화면도 문서를 열지 않고 같은 편집을 하므로(`patchCalendarCard`).
+      commitDoc((d) => ({ ...d, cards: patchCardMeta(d.cards ?? [], id, patch) }));
     },
     [commitDoc],
   );

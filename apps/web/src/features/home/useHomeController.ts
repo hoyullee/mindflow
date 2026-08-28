@@ -2,8 +2,8 @@ import { prepareAvatar } from './avatarImage';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import type { ChangeEvent, KeyboardEvent } from 'react';
 import { useNavigate } from 'react-router-dom';
-import type { Doc } from '@mindflow/mindmap-core';
-import { ROOT_ID, collectImageRefs, moveCard, parseDoc, serializeDoc, toMarkdown } from '@mindflow/mindmap-core';
+import type { CardMetaPatch, Doc, KanbanCard } from '@mindflow/mindmap-core';
+import { ROOT_ID, collectImageRefs, moveCard, parseDoc, patchCardMeta, serializeDoc, shiftCardDates, toMarkdown } from '@mindflow/mindmap-core';
 import { inlineImagesForExport } from '../editor/imageExport';
 import { exportDocPng } from '../editor/png';
 import { exportDocSvg } from '../editor/svg';
@@ -680,6 +680,14 @@ export function useHomeController() {
     state.spaces.forEach((sp) => (Array.isArray(sp.maps) ? sp.maps : []).forEach((m) => {
       if (m.docId && !previewFetchedRef.current.has(m.docId)) wanted.push(m.docId);
     }));
+    // 공유받은 문서도 **일정 화면에서는** 함께 받는다 — 그 보드의 마감도 내 일정인데
+    // 스페이스 목록에는 없으므로 위 순회가 닿지 않는다(그러면 `공유받음` 항목이
+    // 영영 뜨지 않는다). 검색은 원래 내 스페이스만 훑으므로 이 화면에서만 더한다.
+    if (state.activeCal) {
+      state.sharedMaps.forEach((sm) => {
+        if (sm.docId && !previewFetchedRef.current.has(sm.docId)) wanted.push(sm.docId);
+      });
+    }
     if (!wanted.length) return;
     wanted.forEach((id) => previewFetchedRef.current.add(id));
     setState((prev) => ({ ...prev, searchBodiesLoading: true }));
@@ -699,7 +707,7 @@ export function useHomeController() {
         searchBodiesLoading: false,
       }));
     });
-  }, [state.loaded, state.search, state.activeCal, state.spaces, docStore]);
+  }, [state.loaded, state.search, state.activeCal, state.spaces, state.sharedMaps, docStore]);
 
   // Persist spaces (+ map→folder) via the `SpaceStore` port whenever they
   // actually change, so user-created spaces/folders survive a refresh AND (in
@@ -1092,6 +1100,9 @@ export function useHomeController() {
   const setCalSide = (side: 'list' | 'day') => patch({ calSide: side });
   /** 달력 칸 클릭 — 그 날을 골라 사이드에 펼친다(디자인 원본의 daySel). */
   const selectCalDay = (iso: string) => patch({ calDay: iso, calSide: 'day' });
+  /** 항목 클릭 → 상세 팝업. 대상은 그 칸반 카드다(정본은 그 문서). */
+  const openCalendarCard = (docId: string, cardId: string) => patch({ calDetail: { docId, cardId } });
+  const closeCalendarCard = () => patch({ calDetail: null });
   /** LNB `새 대시보드` — 예전에는 이름을 자동으로 붙여 곧바로 만들었다. 이제는
    *  이름·색을 받는 팝업을 연다(첨부 디자인). 실제 생성은 `submitDashDialog`. */
   const openNewDash = () => patch({ dashDialog: { id: null, name: '', color: SPACE_COLORS[0]! }, ctxMenu: null });
@@ -1248,6 +1259,93 @@ export function useHomeController() {
       }));
     }
     return ok;
+  };
+
+  /**
+   * 일정 화면에서 **칸반 카드를 고친다** — 문서를 열지 않고 그 문서에 쓴다.
+   *
+   * `moveDashCard`(대시보드 위젯의 열 이동)와 **같은 몸통**이다: 낙관 반영 → 전문
+   * 로드 → 코어 변이 → `prevVersion` 저장 → 충돌이면 최신 판으로 한 번 재시도 →
+   * 실패하면 되돌리고 안내. 변이만 다르다(`patchCardMeta`).
+   *
+   * 정본은 **그 칸반 문서**다 — 일정 화면은 사본을 들지 않는다. 그래서 "칸반을
+   * 고치면 일정에 반영"은 동기화가 아니라 같은 값을 다시 읽는 것이고, 반대 방향도
+   * 원본을 고치는 것이다.
+   */
+  const patchCalendarCard = async (docId: string, cardId: string, patch2: CardMetaPatch): Promise<boolean> => {
+    const prevRaw = state.previewDocs[docId];
+    if (prevRaw) {
+      try {
+        const d = JSON.parse(prevRaw) as { kind?: string; cards?: KanbanCard[] };
+        if (d?.kind === 'kanban' && Array.isArray(d.cards)) {
+          d.cards = patchCardMeta(d.cards, cardId, patch2);
+          patch({ previewDocs: { ...state.previewDocs, [docId]: JSON.stringify(d) } });
+        }
+      } catch {
+        /* 미리보기 본문을 못 읽어도 저장 경로는 그대로 간다 */
+      }
+    }
+    const write = async (attempt: number): Promise<boolean> => {
+      const loaded = await docStore.load(docId);
+      if (!loaded || loaded.doc.kind !== 'kanban') return false;
+      const cards = loaded.doc.cards ?? [];
+      if (!cards.some((c) => c.id === cardId)) return false; // 사라진 카드
+      const nextCards = patchCardMeta(cards, cardId, patch2);
+      // 바뀐 게 없으면 저장하지 않는다(충돌 재시도에서 이미 반영된 경우도 여기서 걸린다).
+      if (JSON.stringify(nextCards) === JSON.stringify(cards)) return true;
+      const next: Doc = { ...loaded.doc, cards: nextCards };
+      const res = await docStore.save(docId, next, { prevVersion: loaded.version, title: loaded.title });
+      if (res.ok) {
+        const raw = JSON.stringify(serializeDoc(next));
+        try {
+          localStorage.setItem(docKey(docId), raw); // 에디터가 쓰는 로컬 복구본도 같은 판으로
+        } catch {
+          /* storage unavailable */
+        }
+        if (mountedRef.current) {
+          setState((prev) => ({ ...prev, previewDocs: { ...prev.previewDocs, [docId]: raw }, previewResolved: { ...prev.previewResolved, [docId]: true } }));
+        }
+        return true;
+      }
+      if (res.reason === 'conflict' && attempt === 0) return write(1);
+      return false;
+    };
+    let ok = false;
+    try {
+      ok = await write(0);
+    } catch {
+      ok = false;
+    }
+    if (!ok && mountedRef.current) {
+      setState((prev) => ({
+        ...prev,
+        previewDocs: prevRaw ? { ...prev.previewDocs, [docId]: prevRaw } : prev.previewDocs,
+        toastTitle: '일정을 고치지 못했어요',
+        toast: '연결 상태를 확인하고 다시 시도해 주세요. 보기 전용으로 공유받은 보드는 고칠 수 없어요.',
+      }));
+    }
+    return ok;
+  };
+
+  /**
+   * 기간 일정을 며칠 옮긴다 — 시작일·기한을 **함께**(코어 `shiftCardDates`).
+   * 옮길 값은 **저장된 원본 기준**으로 다시 계산하므로 여러 번 끌어도 누적 오차가 없다.
+   */
+  const shiftCalendarCard = async (docId: string, cardId: string, days: number): Promise<boolean> => {
+    if (!days) return true;
+    const raw = state.previewDocs[docId];
+    if (!raw) return false;
+    let card: KanbanCard | undefined;
+    try {
+      const d = JSON.parse(raw) as { cards?: KanbanCard[] };
+      card = (d.cards ?? []).find((c) => c.id === cardId);
+    } catch {
+      return false;
+    }
+    if (!card?.due) return false;
+    const moved = shiftCardDates(card, days);
+    if (!moved.due) return false;
+    return patchCalendarCard(docId, cardId, { due: moved.due, ...(card.start ? { start: moved.start ?? null } : {}) });
   };
 
   /** 행 우클릭 → 이름 변경 — 만들기와 **같은 팝업**이다(제목·버튼 글자만 다르다).
@@ -2642,6 +2740,8 @@ export function useHomeController() {
     toggleCalFilter,
     setCalSide,
     selectCalDay,
+    openCalendarCard,
+    closeCalendarCard,
     openNewDash,
     toggleDashReorder,
     toggleSpaceReorder,
@@ -2658,6 +2758,8 @@ export function useHomeController() {
     toggleDashEdit,
     moveDashItem,
     moveDashCard,
+    patchCalendarCard,
+    shiftCalendarCard,
     notePreviewVisible,
     setDashItemSize,
     dashItemToFront,

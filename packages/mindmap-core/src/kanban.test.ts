@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { KanbanCard, KanbanColumn } from './model';
-import { cardsInColumn, moveCard, moveColumn, needsRenumber, posForIndex, removeColumn, renumberColumn, sortColumnsByDue } from './kanban';
+import { cardsInColumn, moveCard, moveColumn, needsRenumber, patchCardMeta, posForIndex, removeColumn, renumberColumn, shiftCardDates, sortColumnsByDue } from './kanban';
 import { parseDoc, serializeDoc } from './serialize';
 import * as Y from 'yjs';
 import { applyDocToYDoc, applyUpdate, docToYDoc, encodeStateAsUpdate, yDocToDoc } from './crdt';
@@ -180,5 +180,46 @@ describe('sortColumnsByDue — 전체 기한순 정렬(요청)', () => {
   it('목록에 없는 열의 카드는 손대지 않는다', () => {
     const next = sortColumnsByDue(cards, ['c1']);
     expect(next.filter((c) => c.col === 'c2')).toEqual(cards.filter((c) => c.col === 'c2'));
+  });
+});
+
+// 카드 곁정보 편집·기간 이동 — 에디터 카드 상세와 홈 일정 화면이 **같은 규칙**을 쓴다
+// (일정 화면은 문서를 열지 않고 저장까지 하므로, 규칙이 두 벌이면 언젠가 어긋난다).
+describe('patchCardMeta / shiftCardDates', () => {
+  const c1 = (over: Partial<KanbanCard> = {}): KanbanCard => ({ id: 'k1', col: 'c1', pos: 1, text: '카드', ...over });
+
+  it('값이 비면 그 필드를 지운다(빈 필드가 CRDT로 오가지 않게)', () => {
+    const before = [c1({ tag: '개발', due: '2026-08-20', start: '2026-08-18', owner: 'a@b.c', ownerName: '민', flagged: true })];
+    const after = patchCardMeta(before, 'k1', { tag: null, due: null, start: null, owner: null, flagged: false });
+    expect(after[0]).toEqual({ id: 'k1', col: 'c1', pos: 1, text: '카드' });
+  });
+
+  it('담당은 이메일과 이름이 늘 함께 움직인다', () => {
+    const after = patchCardMeta([c1()], 'k1', { owner: { email: 'a@b.c', name: '민' } });
+    expect(after[0]).toMatchObject({ owner: 'a@b.c', ownerName: '민' });
+    const cleared = patchCardMeta(after, 'k1', { owner: null });
+    expect('owner' in cleared[0]!).toBe(false);
+    expect('ownerName' in cleared[0]!).toBe(false);
+  });
+
+  it('건드리지 않은 필드와 다른 카드는 그대로(원본 불변)', () => {
+    const before = [c1({ tag: '개발', due: '2026-08-20' }), c1({ id: 'k2', tag: '기획' })];
+    const after = patchCardMeta(before, 'k1', { due: '2026-08-25' });
+    expect(after[0]).toMatchObject({ tag: '개발', due: '2026-08-25' });
+    expect(after[1]).toBe(before[1]);
+    expect(before[0]!.due).toBe('2026-08-20');
+  });
+
+  it('분류 이름은 24자로 자른다', () => {
+    const after = patchCardMeta([c1()], 'k1', { tag: 'x'.repeat(40) });
+    expect(after[0]!.tag!.length).toBe(24);
+  });
+
+  it('기간은 시작일·기한을 함께 옮긴다(하루짜리는 기한만)', () => {
+    expect(shiftCardDates({ due: '2026-08-20', start: '2026-08-18' }, 3)).toEqual({ due: '2026-08-23', start: '2026-08-21' });
+    expect(shiftCardDates({ due: '2026-08-20' }, -5)).toEqual({ due: '2026-08-15' });
+    // 달·해를 넘어도 로컬 날짜로 정확히
+    expect(shiftCardDates({ due: '2026-12-30' }, 3)).toEqual({ due: '2027-01-02' });
+    expect(shiftCardDates({ due: 'bad' }, 1)).toEqual({});
   });
 });

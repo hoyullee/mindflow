@@ -42,6 +42,8 @@ export interface CalendarEntry {
   /** 카드가 든 보드의 이름·스페이스 — "스프린트 보드 · 진행 중" 표기용. */
   boardName: string;
   spaceName: string;
+  /** 보기 전용으로 공유받은 보드인가 — 참이면 고칠 수 없다(진짜 게이트는 서버 RLS). */
+  readOnly?: boolean;
 }
 
 interface Parsed {
@@ -140,6 +142,8 @@ export interface CalendarSource {
   docId: string;
   boardName: string;
   spaceName: string;
+  /** 보기 전용으로 공유받은 보드(`sharedMaps`의 role='view') — 항목에 그대로 실린다. */
+  readOnly?: boolean;
 }
 
 /**
@@ -153,7 +157,7 @@ export function calendarEntries(sources: readonly CalendarSource[], bodies: Reco
     if (!s.docId || seen.has(s.docId)) continue;
     seen.add(s.docId);
     for (const c of datedCards(s.docId, bodies[s.docId])) {
-      out.push({ ...c, docId: s.docId, boardName: s.boardName, spaceName: s.spaceName });
+      out.push({ ...c, docId: s.docId, boardName: s.boardName, spaceName: s.spaceName, ...(s.readOnly ? { readOnly: true } : {}) });
     }
   }
   out.sort((a, b) => (a.due < b.due ? -1 : a.due > b.due ? 1 : a.title < b.title ? -1 : a.title > b.title ? 1 : 0));

@@ -29,6 +29,21 @@ export function addMonth(y: number, m: number, delta: number): { y: number; m: n
   return { y: Math.floor(t / 12), m: (t % 12) + 1 };
 }
 
+/**
+ * 두 날 사이의 날 수(`b - a`). 드래그로 날짜를 옮길 때 "몇 날 움직였나"가 된다.
+ *
+ * 정오를 기준으로 계산한다 — 자정으로 계산하면 서머타임이 있는 지역에서 하루가
+ * 23·25시간이 되어 나눗셈이 한 날 어긋난다(우리 앱은 종일 날짜만 다루므로 정오
+ * 기준이면 그 흔들림 안쪽이다).
+ */
+export function daysBetween(a: string, b: string): number {
+  const pa = partsOf(a);
+  const pb = partsOf(b);
+  if (!pa || !pb) return 0;
+  const ms = new Date(pb.y, pb.m - 1, pb.d, 12).getTime() - new Date(pa.y, pa.m - 1, pa.d, 12).getTime();
+  return Math.round(ms / 86400000);
+}
+
 /** 그 날이 속한 주의 일요일. */
 export function weekStartISO(iso: string): string {
   const p = partsOf(iso);

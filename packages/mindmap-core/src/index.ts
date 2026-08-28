@@ -79,4 +79,5 @@ export type { ReactionGroup } from './reactions';
 export { reactionGroups, findReaction, toggleReaction, pruneReactions } from './reactions';
 
 // 칸반(문서 종류 'kanban') — 열·카드의 순수 규칙.
-export { cardsInColumn, posForIndex, needsRenumber, renumberColumn, moveCard, moveColumn, removeColumn, sortColumnsByDue, DEFAULT_KANBAN_COLUMNS } from './kanban';
+export { cardsInColumn, posForIndex, needsRenumber, renumberColumn, moveCard, moveColumn, removeColumn, sortColumnsByDue, patchCardMeta, shiftCardDates, DEFAULT_KANBAN_COLUMNS } from './kanban';
+export type { CardMetaPatch } from './kanban';

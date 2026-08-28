@@ -6,6 +6,7 @@ import { homeChipSurface } from '../theme';
 import { calendarStats, filterByStat, monthCells, monthLabel, todayISO } from './model';
 import { MonthGrid } from './MonthGrid';
 import { CalendarSide } from './CalendarSide';
+import { CalendarDetailHost } from './CalendarDetail';
 
 /**
  * 일정 화면 — 디자인 원본 `Geurio 일정 캘린더.dc.html`의 `isCal` 화면.
@@ -15,9 +16,13 @@ import { CalendarSide } from './CalendarSide';
  * 이 화면을 여는 것만으로 새로 내려받는 것이 없다(모자란 스페이스는 컨트롤러가
  * 검색과 같은 경로로 마저 받는다).
  *
- * 이번 단계에 **없는 것**(다음 PR): 항목 상세 팝업과 날짜 변경(지금은 그 칸반을
- * 연다) · Geurio 일정 만들기 · 구글 겹치기·공휴일 · 대시보드 위젯. 눌러도 아무 일이
- * 없는 버튼은 두지 않는다 — 그래서 `새 일정`·`구글 연결` 버튼은 아직 없다.
+ * 항목을 누르면 **상세 팝업**이 뜨고(상태·시작일·기한을 그 칸반에 곧바로 쓴다),
+ * 칩·바를 다른 칸에 끌어 놓으면 날짜가 움직인다. 정본은 언제나 그 칸반 문서다 —
+ * 일정 화면은 사본을 들지 않는다.
+ *
+ * 이번 단계에 **없는 것**(다음 PR): Geurio 일정 만들기(시간 일정) · 구글 겹치기·공휴일 ·
+ * 대시보드 위젯. 눌러도 아무 일이 없는 버튼은 두지 않는다 — 그래서 `새 일정`·
+ * `구글 연결` 버튼은 아직 없다.
  */
 export function CalendarView({
   state,
@@ -45,11 +50,9 @@ export function CalendarView({
     return state.calY !== now.getFullYear() || state.calM !== now.getMonth() + 1;
   })();
 
-  // 항목 클릭 = 그 칸반 열기. 상세 팝업(다음 PR)이 오기 전에도 "이 카드가 어디 있나"에
-  // 답할 수 있어야 한다 — 카드 열기와 같은 전체 화면 로더를 쓴다.
-  const openEntry = (e: CalendarEntry): void => {
-    controller.openWithLoader(`/editor?map=${encodeURIComponent(e.docId)}&title=${encodeURIComponent(e.title || e.boardName)}&docId=${encodeURIComponent(e.docId)}`, e.boardName, e.docId);
-  };
+  // 항목 클릭 = **상세 팝업**. 그 칸반으로 가는 길은 팝업 발치의 `이 칸반 열기`다 —
+  // 클릭이 곧바로 화면을 떠나면 "날짜만 하루 미루기"에도 맵을 열어야 한다.
+  const openEntry = (e: CalendarEntry): void => controller.openCalendarCard(e.docId, e.cardId);
 
   return (
     <div data-calendar-view style={{ flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
@@ -168,7 +171,16 @@ export function CalendarView({
             })}
           </div>
 
-          <MonthGrid cells={cells} selected={state.calDay} surface={surface} compact={isMobile} onPickDay={controller.selectCalDay} onPickEntry={openEntry} onMore={controller.selectCalDay} />
+          <MonthGrid
+            cells={cells}
+            selected={state.calDay}
+            surface={surface}
+            compact={isMobile}
+            onPickDay={controller.selectCalDay}
+            onPickEntry={openEntry}
+            onMore={controller.selectCalDay}
+            onShift={(e, days) => void controller.shiftCalendarCard(e.docId, e.cardId, days)}
+          />
         </div>
 
         {!isMobile && (
@@ -186,6 +198,9 @@ export function CalendarView({
           />
         )}
       </div>
+
+      {/* 항목 상세 — 열려 있으면 그 항목을 찾아 그린다(사라졌으면 조용히 닫힌다). */}
+      <CalendarDetailHost state={state} controller={controller} entries={entries} isMobile={isMobile} />
     </div>
   );
 }
@@ -201,7 +216,8 @@ function useCalendarEntries(state: HomeState): CalendarEntry[] {
       }
     }
     // 공유받은 맵도 내 일정이다 — 다만 스페이스가 없으므로 구획 이름으로 표기한다.
-    for (const sm of state.sharedMaps) sources.push({ docId: sm.docId, boardName: sm.title, spaceName: '공유받음' });
+    // 보기 전용(role='view')이면 그대로 실어 보낸다: 끌리지도, 고쳐지지도 않는다.
+    for (const sm of state.sharedMaps) sources.push({ docId: sm.docId, boardName: sm.title, spaceName: '공유받음', ...(sm.role === 'view' ? { readOnly: true } : {}) });
     return calendarEntries(sources, state.previewDocs);
   }, [state.spaces, state.sharedMaps, state.previewDocs]);
 }

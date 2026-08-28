@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import type { CalendarEntry } from './entries';
 import { calendarEntries, datedCards } from './entries';
-import { addMonth, calendarStats, dayProgress, coversDay, dateLabel, dueBadge, entriesOn, filterByStat, isSpan, monthCells, monthLabel, overdueEntries, todayISO, upcomingEntries, weekEndISO, weekStartISO } from './model';
+import { daysBetween, addMonth, calendarStats, dayProgress, coversDay, dateLabel, dueBadge, entriesOn, filterByStat, isSpan, monthCells, monthLabel, overdueEntries, todayISO, upcomingEntries, weekEndISO, weekStartISO } from './model';
 
 // 일정 화면의 데이터 계층 — 순수 함수라 날짜를 고정해 검증한다.
 
@@ -141,5 +141,17 @@ describe('일정 모델(model)', () => {
     expect(dueBadge('2026-08-20', TODAY)).toBe('지남');
     expect(dueBadge('2026-08-29', TODAY)).toBe('D-3');
     expect(dateLabel('2026-08-26')).toBe('8월 26일 (수)');
+  });
+
+  it('daysBetween은 두 날 사이의 날 수다 — 달·해를 넘고 서머타임에도 흔들리지 않는다', () => {
+    expect(daysBetween('2026-08-26', '2026-08-30')).toBe(4);
+    expect(daysBetween('2026-08-30', '2026-08-26')).toBe(-4);
+    expect(daysBetween('2026-08-31', '2026-09-01')).toBe(1); // 달 넘김
+    expect(daysBetween('2026-12-31', '2027-01-01')).toBe(1); // 해 넘김
+    expect(daysBetween('2024-02-28', '2024-03-01')).toBe(2); // 윤년
+    expect(daysBetween('2026-08-26', '2026-08-26')).toBe(0);
+    // 서머타임 전환일(미국 3월 둘째 일요일 전후) — 정오 기준이라 한 날 어긋나지 않는다
+    expect(daysBetween('2026-03-07', '2026-03-09')).toBe(2);
+    expect(daysBetween('bad', '2026-08-26')).toBe(0); // 꼴이 아니면 움직이지 않는다
   });
 });
