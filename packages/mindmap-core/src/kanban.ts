@@ -6,7 +6,8 @@
 // 카드 자신의 필드라 서로 다른 카드를 옮기면 둘 다 살아남고, 같은 카드를 옮기면
 // 한 값만 남는다(그건 어느 방식이든 마찬가지다).
 
-import type { KanbanCard, KanbanColumn } from './model';
+import type { KanbanCard, KanbanColumn, RichRun } from './model';
+import { applyAutoLinks, applyMarkdownShortcuts } from './richtext';
 
 /** 새 카드를 맨 아래에 놓을 때의 간격 — 값 자체에 뜻은 없다(순서만 본다). */
 const POS_STEP = 1024;
@@ -110,4 +111,104 @@ export function sortColumnsByDue(cards: KanbanCard[], colIds: readonly string[])
       .forEach(({ c }, i) => pos.set(c.id, i * POS_STEP));
   }
   return cards.map((c) => (pos.has(c.id) ? { ...c, pos: pos.get(c.id) as number } : c));
+}
+
+/** 카드 곁정보의 부분 수정 — 값이 `null`/빈 값이면 **그 필드를 지운다**. */
+export interface CardMetaPatch {
+  tag?: string | null;
+  start?: string | null;
+  due?: string | null;
+  owner?: { email: string; name: string } | null;
+  flagged?: boolean;
+}
+
+/**
+ * 카드의 곁정보(분류·시작일·기한·담당·긴급)를 고친 **새 배열**을 돌려준다.
+ *
+ * 규칙이 하나뿐이어야 하는 이유: 이 편집은 에디터의 카드 상세와 홈의 일정 화면
+ * 두 곳에서 일어난다(일정 화면은 문서를 열지 않고 저장까지 한다). 예전에는 에디터
+ * 컨트롤러 안에 인라인으로 있었고, 그대로 두면 두 벌이 되어 언젠가 어긋난다.
+ *
+ * - **값이 비면 키를 지운다** — 빈 필드가 CRDT로 계속 오가지 않게.
+ * - 담당은 이메일과 이름 스냅샷이 **늘 함께** 움직인다(갈라지면 "이름만 남은 담당자").
+ * - 분류 이름은 24자로 자른다(에디터의 기존 상한).
+ */
+export function patchCardMeta(cards: readonly KanbanCard[], id: string, patch: CardMetaPatch): KanbanCard[] {
+  return cards.map((c) => {
+    if (c.id !== id) return c;
+    const next: KanbanCard = { ...c };
+    if ('tag' in patch) {
+      if (patch.tag) next.tag = patch.tag.slice(0, 24);
+      else delete next.tag;
+    }
+    if ('start' in patch) {
+      if (patch.start) next.start = patch.start;
+      else delete next.start;
+    }
+    if ('due' in patch) {
+      if (patch.due) next.due = patch.due;
+      else delete next.due;
+    }
+    if ('owner' in patch) {
+      if (patch.owner) {
+        next.owner = patch.owner.email;
+        next.ownerName = patch.owner.name;
+      } else {
+        delete next.owner;
+        delete next.ownerName;
+      }
+    }
+    if ('flagged' in patch) {
+      if (patch.flagged) next.flagged = true;
+      else delete next.flagged;
+    }
+    return next;
+  });
+}
+
+/**
+ * 기간(시작일~기한)을 **통째로 며칠 옮긴다** — 일정 화면에서 기간 바를 끌 때.
+ * 시작일이 없으면 기한만 옮긴다(하루짜리). 날짜는 로컬 `YYYY-MM-DD` 문자열.
+ */
+export function shiftCardDates(card: Pick<KanbanCard, 'due' | 'start'>, days: number): { due?: string; start?: string } {
+  const move = (iso: string | undefined): string | undefined => {
+    if (!iso) return undefined;
+    const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(iso);
+    if (!m) return undefined;
+    const d = new Date(+m[1]!, +m[2]! - 1, +m[3]! + days);
+    return `${d.getFullYear()}-${`${d.getMonth() + 1}`.padStart(2, '0')}-${`${d.getDate()}`.padStart(2, '0')}`;
+  };
+  const due = move(card.due);
+  const start = move(card.start);
+  return { ...(due ? { due } : {}), ...(start ? { start } : {}) };
+}
+
+/**
+ * 카드 글자를 확정할 때의 규칙 — 마크다운 단축(`**굵게**`·`*기울임*`·`~~취소선~~`)을
+ * 걷어 서식으로 바꾸고, 타이핑한 URL을 링크로 만든다.
+ *
+ * 카드 편집기는 평범한 textarea라 **입력은 늘 평문**이다. 그래서 이전 `rich`는 버리고
+ * 이 글자에서 다시 만든다 — 화면에 보이던 글자가 곧 값이라는 계약이 지켜진다(보이지
+ * 않는 옛 서식이 유령처럼 남지 않는다).
+ *
+ * 에디터의 카드 상세와 홈 일정 화면의 상세 팝업이 **같은 규칙**을 쓴다.
+ */
+export function cardTextValue(text: string): { text: string; rich: RichRun[] | null } {
+  const trimmed = text.trim();
+  const md = applyMarkdownShortcuts({ text: trimmed, rich: null });
+  const base = md ?? { text: trimmed, rich: null };
+  return applyAutoLinks(base) ?? base;
+}
+
+/** 카드 글자를 바꾼 **새 배열**. 빈 글자는 무시한다(카드를 지우는 것은 별도 동작이다). */
+export function patchCardText(cards: readonly KanbanCard[], id: string, text: string): KanbanCard[] {
+  const out = cardTextValue(text);
+  if (!out.text) return cards.slice();
+  return cards.map((c) => {
+    if (c.id !== id) return c;
+    const next: KanbanCard = { ...c, text: out.text };
+    if (out.rich) next.rich = out.rich;
+    else delete next.rich; // 평문이면 키를 지운다(빈 서식을 흘리지 않게)
+    return next;
+  });
 }

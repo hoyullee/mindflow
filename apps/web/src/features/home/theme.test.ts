@@ -67,6 +67,26 @@ describe('home theme', () => {
       '--mf-success': '#2f9e63',
       '--mf-success-soft': '#e9f4ee',
       '--mf-success-ink': '#1e7a3a',
+      // 일정 화면의 파생 토큰 — 표에 적지 않고 그 테마의 면·상태색에서 만든다.
+      // 고른 칸은 강조색이 아니라 **가라앉은 면** 쪽이다(오늘 칸에는 배경이 없다).
+      '--mf-cal-sel': '#fbf6f1',
+      // 주말 — 일요일은 따뜻하게, 토요일은 차갑게(디자인 원본 #FEF8F5 / #F9FBFD와 같은 결).
+      '--mf-cal-sun': '#fef7f6',
+      '--mf-cal-sat': '#f9fafa',
+      // 상세 팝업의 댓글 열 — 카드와 가라앉은 면 사이(원본 #FDFBF8).
+      '--mf-cal-cmt': '#fdfaf6',
+      // 달력 격자선 — 기본 테마는 요청받은 값 그대로(나머지는 같은 관계를 파생한다).
+      '--mf-cal-grid': '#d6c3b5',
+      '--mf-chip-on': '#fde9e3',
+      // 통계 칩 — 한 색에서 **밝은 점 / 짙은 숫자** 두 값을 만든다(원본의 색쌍).
+      '--mf-stat-over': '#b53f3d',
+      '--mf-stat-over-dot': '#dd6666',
+      '--mf-stat-today': '#d9542f',
+      '--mf-stat-today-dot': '#f0663f',
+      '--mf-stat-week': '#a97d33',
+      '--mf-stat-week-dot': '#e0a53c',
+      '--mf-stat-span': '#9c8b7e',
+      '--mf-stat-span-dot': '#c9b8a9',
     });
   });
 

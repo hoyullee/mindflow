@@ -1,0 +1,40 @@
+/* 댓글 부품(`CommentPanel`·`CommentThreads`)의 CSS.
+ *
+ * ⚠️ **`editor.css`에 두지 않는다** — 이 부품은 에디터와 **홈(일정 상세 팝업)**이
+ * 함께 쓰는데 홈은 `editor.css`를 불러오지 않는다. 그래서 규칙을 컴포넌트 곁에 두고
+ * `CommentPanel.tsx`가 직접 import한다(칸반 카드 `kanbanCard.css`와 같은 처방).
+ * 색은 화면마다 다르므로 여기서 정하지 않는다 — 인라인 스타일(테마)이 정한다. */
+
+/* 보내기 버튼 — 강조색으로 채운 버튼이라 면을 갈아 끼우지 않고 밝기만 움직인다
+   (`mf-ctl-primary`와 같은 처방). 비활성일 때는 반응하지 않는다. */
+.mf-cmt-send {
+  transition: filter 0.13s ease;
+}
+.mf-cmt-send:hover:not(:disabled) {
+  filter: brightness(1.06);
+}
+.mf-cmt-send:active:not(:disabled) {
+  filter: brightness(0.96);
+}
+
+/* 목록을 읽어 오는 동안의 자리표시자 — 면 색은 인라인(테마)이 주고 여기서는
+   지나가는 빛과 움직임만 정한다. */
+@keyframes mf-cmt-skel {
+  0% {
+    background-position: -320px 0;
+  }
+  100% {
+    background-position: 320px 0;
+  }
+}
+.mf-cmt-skel {
+  background-image: linear-gradient(90deg, rgba(255, 255, 255, 0) 0%, var(--mf-cmt-sheen, rgba(255, 255, 255, 0.5)) 50%, rgba(255, 255, 255, 0) 100%);
+  background-size: 320px 100%;
+  background-repeat: no-repeat;
+  animation: mf-cmt-skel 1.15s ease-in-out infinite;
+}
+@media (prefers-reduced-motion: reduce) {
+  .mf-cmt-skel {
+    animation: none;
+  }
+}

@@ -233,6 +233,30 @@ export interface HomeState {
   /** 지금 보고 있는 대시보드 id. `null`이면 평소의 스페이스 보기다 — 화면은
    * 언제나 한쪽만 그린다(대시보드 ↔ 스페이스). */
   activeDash: string | null;
+  /**
+   * 일정 화면을 보고 있는가 — 대시보드·스페이스와 나란한 **세 번째 화면**이다.
+   *
+   * 라우트가 아니라 상태인 이유: 대시보드도 그렇고(홈은 `/home` 한 라우트),
+   * 화면은 언제나 하나만 그린다(`activeCal` → 일정 / `activeDash` → 대시보드 /
+   * 둘 다 아니면 스페이스).
+   */
+  activeCal: boolean;
+  /** 일정 화면이 보고 있는 연·월. 오늘이 든 달로 시작한다. */
+  calY: number;
+  calM: number;
+  /** 오른쪽 사이드가 보여 주는 것 — 마감 목록 / 고른 날짜. */
+  /** 날짜별 보기(RNB) — `null`이면 접힘(달력이 그만큼 넓어진다). */
+  calSide: 'day' | null;
+  /** 마감 목록 — 달력 위에 겹치는 판(디자인 원본 `dlOpen`). 날짜별 보기와 별개다. */
+  calDeadline: boolean;
+  /** 사이드에서 고른 날(`YYYY-MM-DD`). 없으면 오늘. */
+  calDay: string | null;
+  /** 열린 일정 상세 — 그 칸반 카드를 가리킨다. `null`이면 닫힘. */
+  calDetail: { docId: string; cardId: string } | null;
+  /** 새 일정 팝업(0033) — 처음 놓일 날짜와 종일 여부. null이면 닫혀 있다. */
+  calNewEvent: { date: string; allDay: boolean } | null;
+  /** 열려 있는 Geurio 일정 상세(달력 항목이 아니라 그 일정 id). */
+  calEventDetail: string | null;
   /** LNB 대시보드 구획의 순서 바꾸기 모드(디자인의 ⠿ 토글). */
   dashReorder: boolean;
   /** 대시보드 배치 편집 모드(히어로의 "편집" 토글) — 위젯 드래그 재배치·모서리
@@ -462,6 +486,16 @@ export function initialHomeState(): HomeState {
     activeSpace: 'general',
     dashboards: [],
     activeDash: null,
+    activeCal: false,
+    // 초기값은 오늘이 든 달 — 화면을 열면 이번 달이 보인다.
+    calY: new Date().getFullYear(),
+    calM: new Date().getMonth() + 1,
+    calSide: 'day',
+    calDeadline: false,
+    calDay: null,
+    calDetail: null,
+    calNewEvent: null,
+    calEventDetail: null,
     dashReorder: false,
     dashEdit: false,
     spaceReorder: false,

@@ -2,14 +2,15 @@ import { prepareAvatar } from './avatarImage';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import type { ChangeEvent, KeyboardEvent } from 'react';
 import { useNavigate } from 'react-router-dom';
-import type { Doc } from '@mindflow/mindmap-core';
-import { ROOT_ID, collectImageRefs, moveCard, parseDoc, serializeDoc, toMarkdown } from '@mindflow/mindmap-core';
+import type { CardMetaPatch, Doc, KanbanCard } from '@mindflow/mindmap-core';
+import { ROOT_ID, collectImageRefs, moveCard, parseDoc, patchCardMeta, patchCardText, serializeDoc, shiftCardDates, toMarkdown } from '@mindflow/mindmap-core';
 import { inlineImagesForExport } from '../editor/imageExport';
 import { exportDocPng } from '../editor/png';
 import { exportDocSvg } from '../editor/svg';
 import { exportDocPdf } from '../editor/pdf';
 import { themeOf } from '../editor/theme';
 import { applyHomeTheme, homeThemeKeyOf, saveHomeThemeCache, type HomeThemeKey } from './theme';
+import { addMonth, todayISO } from './calendar/model';
 import { DASH_CAP, DASH_DEFAULT_SIZE, coerceDashboards, moveInList, type DashboardData } from './dashboard/model';
 import { forgetSignedIn } from '../auth/sessionNotice';
 import { localizeAuthError } from '../auth/useLoginController';
@@ -325,12 +326,15 @@ export function useHomeController() {
       // 재동기화가 손을 쓸 수 없다. 기억한 화면이 있거나 블롭을 실제로 읽었을 때만
       // 결정하고, 아니면 다음 하이드레이션으로 넘긴다.
       const canDecideLanding = !!restore || wsDashboards !== null;
+      // 일정 화면도 같은 규칙으로 복원한다 — 일정에서 맵을 열고 돌아오면 일정으로.
+      let activeCal = prev.activeCal;
       if (!landedRef.current && canDecideLanding) {
         landedRef.current = true;
-        activeDash = rememberedDash ? (dashboards.some((d) => d.id === rememberedDash) ? rememberedDash : defaultDash) : restore ? null : defaultDash;
+        activeCal = !!restore?.activeCal;
+        activeDash = activeCal ? null : rememberedDash ? (dashboards.some((d) => d.id === rememberedDash) ? rememberedDash : defaultDash) : restore ? null : defaultDash;
         // 다음 진입의 **첫 프레임**이 맞는 모양으로 시작하도록 이 기기에 적어 둔다
         // (스켈레톤은 하이드레이션 전에 그려진다 — `predictLanding`).
-        saveLandingHint(activeDash ? 'dash' : 'space');
+        saveLandingHint(activeCal ? 'cal' : activeDash ? 'dash' : 'space');
       }
       savedWorkspaceSigRef.current = JSON.stringify({
         spaces: binding.length ? merged : spaces,
@@ -347,7 +351,7 @@ export function useHomeController() {
       // 카드의 "공유 중" 표식 원천 — 내가 걸어 둔 초대/링크의 일괄 요약. 조회
       // 실패는 빈 객체(표식만 빠지고 홈은 그대로).
       const sharedByMe = res[3].status === 'fulfilled' ? res[3].value : prev.sharedByMe;
-      return { ...prev, theme, dashboards, activeDash, spaces, activeSpace, curFolder, mapFolders, favs, deleted, trash, recent, docTimes, sharedByMe, sharedMaps: sharedMetas.map((m) => ({ docId: m.id, title: m.title, updatedAt: m.updatedAt, role: m.sharedRole ?? 'edit', isNew: unseen.has(m.id) })), loaded: true };
+      return { ...prev, theme, dashboards, activeDash, activeCal, spaces, activeSpace, curFolder, mapFolders, favs, deleted, trash, recent, docTimes, sharedByMe, sharedMaps: sharedMetas.map((m) => ({ docId: m.id, title: m.title, updatedAt: m.updatedAt, role: m.sharedRole ?? 'edit', isNew: unseen.has(m.id) })), loaded: true };
     });
     // 마지막 저장자가 **내가 아닌** 문서들만 이름을 물어본다(0015). 혼자 쓰는
     // 사람은 대상이 하나도 없어 요청 자체가 나가지 않는다. 실패해도 조용히 넘어간다 —
@@ -536,8 +540,8 @@ export function useHomeController() {
     // 않는다 — 그때의 `activeDash: null`을 남기면, 곧 도착하는 재동기화가 그것을
     // "사용자가 스페이스를 보고 있었다"로 읽어 기본 대시보드를 열지 못한다(제보).
     if (!state.loaded || !landedRef.current) return;
-    saveActiveView({ activeSpace: state.activeSpace, curFolder: state.activeSpace === 'drive' ? null : state.curFolder, activeDash: state.activeDash });
-  }, [state.loaded, state.activeSpace, state.curFolder, state.activeDash]);
+    saveActiveView({ activeSpace: state.activeSpace, curFolder: state.activeSpace === 'drive' ? null : state.curFolder, activeDash: state.activeDash, activeCal: state.activeCal });
+  }, [state.loaded, state.activeSpace, state.curFolder, state.activeDash, state.activeCal]);
 
   // Prefetch document BODIES for the map cards' thumbnails. `DocStore.list()`
   // above only returns metadata, and `realPreview` reads localStorage — so a
@@ -658,22 +662,32 @@ export function useHomeController() {
   }, [seenTick, state.previewDocs, imageStore]);
 
   /**
-   * 첫 검색이 시작되면 **나머지 스페이스의 본문**을 마저 받아 온다.
+   * 첫 검색(또는 일정 화면 진입)에 **나머지 스페이스의 본문**을 마저 받아 온다.
    *
    * 썸네일 프리페치는 활성 스페이스(+최근 항목)만 받으므로, 검색이 전역이 된 지금은
    * 다른 스페이스가 제목으로만 걸린다. 검색은 의도적인 행동이라 그때 한 번 값을
    * 치르는 게 맞고, `loadPreview`가 (id, version, updatedAt) 키로 캐시하므로 사실상
    * **기기당 한 번**이다(홈에 들어오기만 해도 미리 받아 두면 검색하지 않는 사용자도
-   * 전송량을 치른다 — 그래서 검색을 시작할 때로 미룬다).
+   * 전송량을 치른다 — 그래서 검색을 시작할 때로 미룬다). 일정 화면도 의도적인 진입이고
+   * 전 스페이스의 칸반 마감을 모으므로 같은 값을 같은 시점에 치른다.
    *
    * `previewFetchedRef`가 썸네일 경로와 같은 dedupe를 하므로 이미 받은 것은 건너뛴다.
    */
   useEffect(() => {
-    if (!state.loaded || !state.search.trim()) return;
+    // 일정 화면도 같은 값을 쓴다 — 전 스페이스의 칸반 마감을 모으므로 본문이 필요하다.
+    if (!state.loaded || (!state.search.trim() && !state.activeCal)) return;
     const wanted: string[] = [];
     state.spaces.forEach((sp) => (Array.isArray(sp.maps) ? sp.maps : []).forEach((m) => {
       if (m.docId && !previewFetchedRef.current.has(m.docId)) wanted.push(m.docId);
     }));
+    // 공유받은 문서도 **일정 화면에서는** 함께 받는다 — 그 보드의 마감도 내 일정인데
+    // 스페이스 목록에는 없으므로 위 순회가 닿지 않는다(그러면 `공유받음` 항목이
+    // 영영 뜨지 않는다). 검색은 원래 내 스페이스만 훑으므로 이 화면에서만 더한다.
+    if (state.activeCal) {
+      state.sharedMaps.forEach((sm) => {
+        if (sm.docId && !previewFetchedRef.current.has(sm.docId)) wanted.push(sm.docId);
+      });
+    }
     if (!wanted.length) return;
     wanted.forEach((id) => previewFetchedRef.current.add(id));
     setState((prev) => ({ ...prev, searchBodiesLoading: true }));
@@ -693,7 +707,7 @@ export function useHomeController() {
         searchBodiesLoading: false,
       }));
     });
-  }, [state.loaded, state.search, state.spaces, docStore]);
+  }, [state.loaded, state.search, state.activeCal, state.spaces, state.sharedMaps, docStore]);
 
   // Persist spaces (+ map→folder) via the `SpaceStore` port whenever they
   // actually change, so user-created spaces/folders survive a refresh AND (in
@@ -1056,13 +1070,46 @@ export function useHomeController() {
     if (e.key === 'Enter') submitSpace();
   };
   const pickSpaceColor = (c: string) => patch({ newSpaceColor: c });
-  const setActiveSpace = (id: string) => patch({ activeSpace: id, curFolder: null, driveFolder: null, activeDash: null });
+  const setActiveSpace = (id: string) => patch({ activeSpace: id, curFolder: null, driveFolder: null, activeDash: null, activeCal: false });
 
   // ---- dashboards (위젯 배치) — 디자인 원본 `Geurio 홈 대시보드.dc.html` ----
   const selectDash = (id: string) => {
     if (!state.dashboards.some((d) => d.id === id)) return;
-    patch({ activeDash: id, dashReorder: false, dashEdit: false, curFolder: null, search: '', searchInput: '' });
+    patch({ activeDash: id, activeCal: false, dashReorder: false, dashEdit: false, curFolder: null, search: '', searchInput: '' });
   };
+
+  // ── 일정 화면 ─────────────────────────────────────────────────────────────
+  //
+  // 대시보드·스페이스와 나란한 세 번째 화면(`activeCal`). 여는 순간 이번 달로
+  // 되돌리지 **않는다** — 다른 달을 보다 맵을 열고 돌아오면 그 달이 그대로인 편이
+  // 자연스럽다(달을 되돌리는 것은 '오늘' 버튼의 일이다).
+  /** LNB `일정` — 대시보드를 닫고 일정 화면을 연다. 검색 중이었다면 함께 비운다. */
+  const openCalendar = () => patch({ activeCal: true, activeDash: null, dashReorder: false, dashEdit: false, search: '', searchInput: '' });
+  const calShiftMonth = (delta: number) => {
+    const { y, m } = addMonth(state.calY, state.calM, delta);
+    patch({ calY: y, calM: m });
+  };
+  /** '오늘' — 이번 달로 돌아오고 고른 날도 오늘로 되돌린다. */
+  const calGoToday = () => {
+    const now = new Date();
+    patch({ calY: now.getFullYear(), calM: now.getMonth() + 1, calDay: null });
+  };
+  const setCalMonth = (y: number, m: number) => patch({ calY: y, calM: m });
+  /** 통계 칩 = 필터. 켜진 칩을 다시 누르면 꺼진다(전부 보기). */
+  // 같은 버튼을 다시 누르면 접는다(디자인 원본의 ✕와 같은 자리).
+  const setCalSide = (side: 'day' | null) => patch({ calSide: state.calSide === side ? null : side });
+  const toggleCalDeadline = () => patch({ calDeadline: !state.calDeadline });
+  /** 달력 칸 클릭 — 그 날을 골라 사이드에 펼친다(디자인 원본의 daySel). */
+  const selectCalDay = (iso: string) => patch({ calDay: iso, calSide: 'day' });
+  /** 항목 클릭 → 상세 팝업. 대상은 그 칸반 카드다(정본은 그 문서). */
+  const openCalendarCard = (docId: string, cardId: string) => patch({ calDetail: { docId, cardId } });
+  const closeCalendarCard = () => patch({ calDetail: null });
+  /** `새 일정`·시간표의 `＋` — 처음 놓일 날짜는 고른 날(없으면 오늘). */
+  const openNewEvent = (date?: string, allDay = true) => patch({ calNewEvent: { date: date || state.calDay || todayISO(), allDay } });
+  const closeNewEvent = () => patch({ calNewEvent: null });
+  /** Geurio 일정을 눌렀다 — 칸반 카드 상세와 다른 팝업이다(고칠 것이 다르다). */
+  const openCalendarEvent = (id: string) => patch({ calEventDetail: id });
+  const closeCalendarEvent = () => patch({ calEventDetail: null });
   /** LNB `새 대시보드` — 예전에는 이름을 자동으로 붙여 곧바로 만들었다. 이제는
    *  이름·색을 받는 팝업을 연다(첨부 디자인). 실제 생성은 `submitDashDialog`. */
   const openNewDash = () => patch({ dashDialog: { id: null, name: '', color: SPACE_COLORS[0]! }, ctxMenu: null });
@@ -1220,6 +1267,116 @@ export function useHomeController() {
     }
     return ok;
   };
+
+  /**
+   * 일정 화면에서 **칸반 문서를 고친다** — 문서를 열지 않고 그 문서에 쓴다.
+   *
+   * `moveDashCard`(대시보드 위젯의 열 이동)와 **같은 몸통**이다: 낙관 반영 → 전문
+   * 로드 → 코어 변이 → `prevVersion` 저장 → 충돌이면 최신 판으로 한 번 재시도 →
+   * 실패하면 되돌리고 안내. 변이만 호출부가 넘긴다.
+   *
+   * 정본은 **그 칸반 문서**다 — 일정 화면은 사본을 들지 않는다. 그래서 "칸반을
+   * 고치면 일정에 반영"은 동기화가 아니라 같은 값을 다시 읽는 것이고, 반대 방향도
+   * 원본을 고치는 것이다.
+   */
+  const writeCalendarDoc = async (docId: string, mutate: (cards: KanbanCard[], doc: Doc) => KanbanCard[], failTitle: string): Promise<boolean> => {
+    const prevRaw = state.previewDocs[docId];
+    if (prevRaw) {
+      try {
+        const d = JSON.parse(prevRaw) as { kind?: string; cards?: KanbanCard[] };
+        if (d?.kind === 'kanban' && Array.isArray(d.cards)) {
+          d.cards = mutate(d.cards, d as unknown as Doc);
+          patch({ previewDocs: { ...state.previewDocs, [docId]: JSON.stringify(d) } });
+        }
+      } catch {
+        /* 미리보기 본문을 못 읽어도 저장 경로는 그대로 간다 */
+      }
+    }
+    const write = async (attempt: number): Promise<boolean> => {
+      const loaded = await docStore.load(docId);
+      if (!loaded || loaded.doc.kind !== 'kanban') return false;
+      const cards = loaded.doc.cards ?? [];
+      const nextCards = mutate(cards, loaded.doc);
+      // 바뀐 게 없으면 저장하지 않는다(충돌 재시도에서 이미 반영된 경우도 여기서 걸린다).
+      if (JSON.stringify(nextCards) === JSON.stringify(cards)) return true;
+      const next: Doc = { ...loaded.doc, cards: nextCards };
+      const res = await docStore.save(docId, next, { prevVersion: loaded.version, title: loaded.title });
+      if (res.ok) {
+        const raw = JSON.stringify(serializeDoc(next));
+        try {
+          localStorage.setItem(docKey(docId), raw); // 에디터가 쓰는 로컬 복구본도 같은 판으로
+        } catch {
+          /* storage unavailable */
+        }
+        if (mountedRef.current) {
+          setState((prev) => ({ ...prev, previewDocs: { ...prev.previewDocs, [docId]: raw }, previewResolved: { ...prev.previewResolved, [docId]: true } }));
+        }
+        return true;
+      }
+      if (res.reason === 'conflict' && attempt === 0) return write(1);
+      return false;
+    };
+    let ok = false;
+    try {
+      ok = await write(0);
+    } catch {
+      ok = false;
+    }
+    if (!ok && mountedRef.current) {
+      setState((prev) => ({
+        ...prev,
+        previewDocs: prevRaw ? { ...prev.previewDocs, [docId]: prevRaw } : prev.previewDocs,
+        toastTitle: failTitle,
+        toast: '연결 상태를 확인하고 다시 시도해 주세요. 보기 전용으로 공유받은 보드는 고칠 수 없어요.',
+      }));
+    }
+    return ok;
+  };
+
+  /** 카드 곁정보(분류·시작일·기한·담당·긴급) — 규칙은 코어 `patchCardMeta`. */
+  const patchCalendarCard = async (docId: string, cardId: string, patch2: CardMetaPatch): Promise<boolean> =>
+    writeCalendarDoc(docId, (cards) => (cards.some((c) => c.id === cardId) ? patchCardMeta(cards, cardId, patch2) : cards), '일정을 고치지 못했어요');
+
+  /** 카드 제목 — 확정 규칙(마크다운 단축·자동 링크)은 코어 `patchCardText`. */
+  const renameCalendarCard = async (docId: string, cardId: string, text: string): Promise<boolean> =>
+    writeCalendarDoc(docId, (cards) => (cards.some((c) => c.id === cardId) ? patchCardText(cards, cardId, text) : cards), '제목을 바꾸지 못했어요');
+
+  /** 카드 삭제 — 디자인 원본의 상세 팝업 `삭제`. 열 이동과 같은 경로로 그 문서에 쓴다. */
+  const deleteCalendarCard = async (docId: string, cardId: string): Promise<boolean> =>
+    writeCalendarDoc(docId, (cards) => cards.filter((c) => c.id !== cardId), '카드를 삭제하지 못했어요');
+
+  /** 열 이동 — 코어 `moveCard`(맨 뒤). 상세 팝업의 `상태` 칩이 쓴다. */
+  const moveCalendarCard = async (docId: string, cardId: string, toColId: string): Promise<boolean> =>
+    writeCalendarDoc(
+      docId,
+      (cards, doc) => {
+        if (!cards.some((c) => c.id === cardId) || !(doc.columns ?? []).some((c) => c.id === toColId)) return cards;
+        return moveCard(cards, cardId, toColId, cards.filter((c) => c.col === toColId).length);
+      },
+      '카드를 옮기지 못했어요',
+    );
+
+  /**
+   * 기간(시작일~기한)을 **통째로 며칠 옮긴다** — 코어 `shiftCardDates`.
+   * 옮길 값은 **저장된 원본 기준**으로 다시 계산하므로 여러 번 끌어도 누적 오차가 없다.
+   */
+  const shiftCalendarCard = async (docId: string, cardId: string, days: number): Promise<boolean> => {
+    if (!days) return true;
+    const raw = state.previewDocs[docId];
+    if (!raw) return false;
+    let card: KanbanCard | undefined;
+    try {
+      const d = JSON.parse(raw) as { cards?: KanbanCard[] };
+      card = (d.cards ?? []).find((c) => c.id === cardId);
+    } catch {
+      return false;
+    }
+    if (!card?.due) return false;
+    const moved = shiftCardDates(card, days);
+    if (!moved.due) return false;
+    return patchCalendarCard(docId, cardId, { due: moved.due, ...(card.start ? { start: moved.start ?? null } : {}) });
+  };
+
 
   /** 행 우클릭 → 이름 변경 — 만들기와 **같은 팝업**이다(제목·버튼 글자만 다르다).
    *  색도 함께 고칠 수 있다: 잘못 고른 색을 되돌릴 길이 없으면 안 된다. */
@@ -2606,6 +2763,19 @@ export function useHomeController() {
     pickSpaceColor,
     setActiveSpace,
     selectDash,
+    openCalendar,
+    calShiftMonth,
+    calGoToday,
+    setCalMonth,
+    setCalSide,
+    toggleCalDeadline,
+    selectCalDay,
+    openCalendarCard,
+    closeCalendarCard,
+    openNewEvent,
+    closeNewEvent,
+    openCalendarEvent,
+    closeCalendarEvent,
     openNewDash,
     toggleDashReorder,
     toggleSpaceReorder,
@@ -2622,6 +2792,11 @@ export function useHomeController() {
     toggleDashEdit,
     moveDashItem,
     moveDashCard,
+    patchCalendarCard,
+    renameCalendarCard,
+    deleteCalendarCard,
+    moveCalendarCard,
+    shiftCalendarCard,
     notePreviewVisible,
     setDashItemSize,
     dashItemToFront,

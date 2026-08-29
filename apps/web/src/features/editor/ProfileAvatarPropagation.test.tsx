@@ -16,6 +16,7 @@ import { LocalShareStore } from '../../adapters/local/localShareStore';
 import { LocalFeedbackStore } from '../../adapters/local/localFeedbackStore';
 import { LocalCommentStore } from '../../adapters/local/localCommentStore';
 import { LocalNotificationStore } from '../../adapters/local/localNotificationStore';
+import { LocalEventStore } from '../../adapters/local/localEventStore';
 import { LocalImageStore } from '../../adapters/local/localImageStore';
 import { LocalDocStore } from '../../adapters/local/localDocStore';
 import type { Backend, ShareParticipant } from '../../adapters/ports';
@@ -40,7 +41,7 @@ function backendWith(participants: ShareParticipant[]): Backend {
     feedbackStore: new LocalFeedbackStore(),
     imageStore: new LocalImageStore(),
     commentStore: new LocalCommentStore(),
-    notificationStore: new LocalNotificationStore(),
+    notificationStore: new LocalNotificationStore(), eventStore: new LocalEventStore(),
     mode: 'local',
   };
 }

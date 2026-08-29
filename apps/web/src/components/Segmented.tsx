@@ -110,6 +110,8 @@ export interface RadioCardItem<T extends string> {
   children: ReactNode;
   /** 테스트·프로브가 잡는 표식(`data-*`). */
   attrs?: Record<string, string>;
+  /** hover 같은 CSS로만 되는 것 — 예: `mf-ctl`(옅은 면이 깔린다). */
+  className?: string;
 }
 
 export function RadioCards<T extends string>({
@@ -139,7 +141,7 @@ export function RadioCards<T extends string>({
   return (
     <RadioGroup.Root value={value} onValueChange={(v) => onChange(v as T)} aria-label={label} onKeyDown={arrowSelect} disabled={disabled} className={gridClass} style={grid}>
       {items.map((it) => (
-        <RadioGroup.Item key={it.value} value={it.value} aria-label={it.ariaLabel ?? it.label} title={it.title} data-seg-value={it.value} {...it.attrs} style={it.style(it.value === value)}>
+        <RadioGroup.Item key={it.value} value={it.value} aria-label={it.ariaLabel ?? it.label} title={it.title} className={it.className} data-seg-value={it.value} {...it.attrs} style={it.style(it.value === value)}>
           {it.children}
         </RadioGroup.Item>
       ))}

@@ -23,6 +23,7 @@ import { LocalFeedbackStore } from '../../adapters/local/localFeedbackStore';
 import { LocalImageStore } from '../../adapters/local/localImageStore';
 import { LocalCommentStore } from '../../adapters/local/localCommentStore';
 import { LocalNotificationStore } from '../../adapters/local/localNotificationStore';
+import { LocalEventStore } from '../../adapters/local/localEventStore';
 import { LocalDocStore } from '../../adapters/local/localDocStore';
 import { mockMatchMedia } from '../../test/matchMedia';
 
@@ -35,7 +36,7 @@ function renderHome(auth: LocalAuth) {
     feedbackStore: new LocalFeedbackStore(),
     imageStore: new LocalImageStore(),
     commentStore: new LocalCommentStore(),
-    notificationStore: new LocalNotificationStore(),
+    notificationStore: new LocalNotificationStore(), eventStore: new LocalEventStore(),
     mode: 'local',
   };
   return render(

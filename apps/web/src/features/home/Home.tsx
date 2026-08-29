@@ -7,6 +7,7 @@ import { MapGrid } from './components/MapGrid';
 import { SearchResults } from './components/SearchResults';
 import { RecentStrip, RecentStripSkeleton } from './components/RecentStrip';
 import { DashboardView } from './components/DashboardView';
+import { CalendarView } from './calendar/CalendarView';
 import { DashboardSkeleton } from './components/DashboardSkeleton';
 import { DashboardPicker } from './components/modals/DashboardPicker';
 import { DashboardModal } from './components/modals/DashboardModal';
@@ -26,7 +27,7 @@ import { SetPasswordModal } from './components/modals/SetPasswordModal';
 import { ProfileNameModal } from './components/modals/ProfileNameModal';
 import { TemplateGallery } from './components/modals/TemplateGallery';
 import { useHomeController } from './useHomeController';
-import { deriveHomeView } from './viewModel';
+import { deriveHomeView, isSpaceView } from './viewModel';
 import { predictLanding } from './storage';
 import { homeModalTheme } from './theme';
 import { homeUpdateRisk } from './updateRisk';
@@ -69,12 +70,12 @@ export function Home() {
   const marquee = useMarqueeSelect({
     onSelect: controller.marqueeSelect,
     currentSelection: () => controller.state.selectedCards,
-    disabled: isMobile || !!state.activeDash,
+    disabled: isMobile || !isSpaceView(state),
   });
   const installHint = useInstallHint(isMobile);
   // 예상은 **마운트 때 한 번** 잡는다 — 착지하면서 힌트가 갱신되므로 매 렌더 읽으면
   // 로딩 중에 모양이 바뀔 수 있다.
-  const landingGuess = useRef<'dash' | 'space'>(predictLanding());
+  const landingGuess = useRef<'dash' | 'space' | 'cal'>(predictLanding());
   const online = useOnline();
   const [navOpen, setNavOpen] = useState(false);
   // 로딩 스켈레톤의 모양 — 아직 착지 화면을 모르는 첫 프레임에 쓴다(`predictLanding`:
@@ -90,6 +91,14 @@ export function Home() {
   useEffect(() => {
     if (!isMobile) setNavOpen(false);
   }, [isMobile]);
+
+  // 폰에서 **화면이 바뀌면** 서랍을 닫는다 — 스페이스·대시보드·일정을 골랐는데 서랍이
+  // 그대로 남아 고른 화면을 가리고 있었다(배경을 한 번 더 눌러야 했다). 여기서 한 번에
+  // 다루는 이유: 행마다 닫기를 챙기면 새 행이 생길 때마다 빠뜨리기 쉽고, 접이식
+  // 구획(즐겨찾기·휴지통·공유받음)은 화면을 바꾸지 않으므로 저절로 열린 채 남는다.
+  useEffect(() => {
+    if (isMobile) setNavOpen(false);
+  }, [isMobile, state.activeSpace, state.activeDash, state.activeCal]);
 
   // One-thumb drawer gestures: left-edge swipe-right opens, swipe-left (while
   // open) closes — the hamburger stays as the visible affordance.
@@ -144,7 +153,14 @@ export function Home() {
         // 돌고, 움직임을 줄이라고 한 사용자에게는 home.css가 끈다.
         className="mf-home-main"
         // 본문 패딩은 디자인 원본(24/32/44). 모바일은 좁은 폭에 맞춰 줄인다.
-        style={{ flex: '1 1 auto', display: 'flex', flexDirection: 'column', overflowY: 'auto', scrollbarGutter: 'stable', padding: isMobile ? '16px 14px 32px' : '24px 32px 44px', minWidth: 0 }}
+        //
+        // **일정 화면은 예외**로 패딩을 0으로 두고 스크롤도 넘긴다(제보: 캔버스가
+        // 화면을 다 채우지 않고 90% 배율처럼 보인다). 그 화면은 헤더 + [달력 | 사이드]
+        // 구조라 자기 높이를 스스로 채워야 하는데, 여기 패딩 안에 들어 있으면 사방이
+        // 24~44px 안쪽으로 밀리고 격자가 뷰포트 높이까지 자라지 못한다. 대시보드는
+        // 같은 문제를 음수 마진으로 상쇄하지만(그 화면은 세로로 흐른다), 일정은 안쪽
+        // 두 영역이 각자 스크롤하므로 **패딩을 아예 걷는 편**이 정확하다.
+        style={{ flex: '1 1 auto', display: 'flex', flexDirection: 'column', overflowY: state.activeCal ? 'hidden' : 'auto', scrollbarGutter: 'stable', padding: state.activeCal ? 0 : isMobile ? '16px 14px 32px' : '24px 32px 44px', minWidth: 0 }}
       >
         {/* Cross-space "최근 항목" strip sits ABOVE the space toolbar so it reads as a
             global "recently opened" bar, not part of the current space's maps.
@@ -154,7 +170,10 @@ export function Home() {
             남아 있으면 무엇이 결과인지 흐려진다. */}
         {/* 대시보드 보기 — 화면은 언제나 한쪽만 그린다(대시보드 ↔ 스페이스). 최근
             항목·툴바·그리드는 스페이스의 것이라 함께 접는다. */}
-        {state.activeDash ? (
+        {state.activeCal ? (
+          /* 일정 보기 — 대시보드·스페이스와 나란한 세 번째 화면. */
+          <CalendarView state={state} controller={controller} isMobile={isMobile} onOpenNav={() => setNavOpen(true)} />
+        ) : state.activeDash ? (
           <DashboardView state={state} view={view} controller={controller} isMobile={isMobile} onOpenNav={() => setNavOpen(true)} />
         ) : dashSkeleton ? (
           /* 로딩 중이고 이번 진입이 대시보드로 착지할 예정 — 스페이스 스켈레톤(최근
