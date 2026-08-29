@@ -79,9 +79,12 @@ export function DateButton({
           disabled={disabled}
           {...attrs}
           style={{
-            flex: 1,
+            // ⚠️ `flex: 1`을 쓰지 않는다 — 이 버튼의 부모는 **세로 flex**(라벨 위, 버튼
+            // 아래)라 `flex-basis: 0`이 **높이**에 걸려 `height`가 통째로 무시된다
+            // (실측 40 → 16px. 시각 버튼은 부모가 가로라 같은 값이 살아 있었다).
+            width: '100%',
             minWidth: 0,
-            height: 40,
+            height: 38,
             padding: '0 12px',
             display: 'inline-flex',
             alignItems: 'center',

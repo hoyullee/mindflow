@@ -494,6 +494,12 @@ export function homeThemeVars(key: HomeThemeKey): Record<string, string> {
     '--mf-cal-sel-today': mixHex(t.card, t.accent, 0.14),
     /** 고른 칸의 테두리 — 강조색을 그대로 두르면 튄다. */
     '--mf-cal-ring': hexA(t.accent, 0.55),
+    // 주말 칸 — 일요일·공휴일은 따뜻하게(#FEF8F5), 토요일은 차갑게(#F9FBFD).
+    // 디자인 원본의 고정 헥스 대신 **그 칸의 숫자 색에서 파생**한다(일=danger,
+    // 토=info): 값이 한 벌이면 여섯 테마 × 다크에 전부 새로 정해야 하고, 파생하면
+    // 숫자와 배경이 언제나 같은 색조를 쓴다. 밝은 테마에서 실측이 원본과 1~2 차.
+    '--mf-cal-sun': mixHex(t.card, t.danger, 0.05),
+    '--mf-cal-sat': mixHex(t.card, t.info, 0.05),
     /** 켜진 칩(통계 필터)의 면 — 면 없는 칩과 갈리도록 `accentSoft`보다 한 단계 진하게.
      *  `accentSoft`는 주말 칸 틴트와 거의 같은 값이라 켜졌는지 알 수 없었다. */
     '--mf-chip-on': mixHex(t.card, t.accent, 0.13),

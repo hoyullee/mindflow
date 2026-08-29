@@ -103,7 +103,7 @@ export function MonthGrid({
         borderRadius: 16,
         border: '1px solid var(--mf-border)',
         background: 'var(--mf-card)',
-        boxShadow: 'var(--mf-card-shadow-sm)',
+        boxShadow: 'var(--mf-card-shadow)',
         overflow: 'hidden',
       }}
     >
@@ -112,13 +112,14 @@ export function MonthGrid({
         {DOW.map((d, i) => (
           <span
             key={d}
+            // 디자인 원본의 요일 머리 — 작고 굵고 자간을 넓게(달력 표의 머리다운 꼴).
             style={{
-              padding: '7px 0',
+              padding: '9px 0 8px',
               textAlign: 'center',
-              fontSize: 11,
-              fontWeight: 700,
-              letterSpacing: '.02em',
-              color: i === 0 ? 'var(--mf-danger)' : i === 6 ? 'var(--mf-info)' : 'var(--mf-muted)',
+              fontSize: 10,
+              fontWeight: 800,
+              letterSpacing: '.08em',
+              color: i === 0 ? 'var(--mf-danger)' : i === 6 ? 'var(--mf-info)' : 'var(--mf-faint)',
             }}
           >
             {d}
@@ -235,18 +236,20 @@ function DayCell({
         : 'var(--mf-cal-sel)'
       : isToday
         ? 'var(--mf-cal-today)'
-        : dow === 0 || dow === 6
-          ? // 주말은 한 톤 가라앉힌 면 하나로 묶는다. 디자인 원본은 일요일을 따뜻하게
-            // (#FEF8F5) 토요일을 차갑게(#F9FBFD) 갈랐지만 우리 토큰에는 그만큼 옅은
-            // 두 색이 없고, 두 색을 새로 만들면 여섯 테마 × 다크에 전부 값을 정해야
-            // 한다. 요일 구분은 **숫자 색**(일=danger / 토=info)이 이미 말한다.
-            'var(--mf-panel2)'
-          : 'var(--mf-card)';
+        : // 주말은 디자인 원본대로 두 색으로 갈린다 — 일요일·공휴일은 파스텔 분홍
+          // (#FEF8F5), 토요일은 파스텔 하늘색(#F9FBFD). 값은 표에 적지 않고 그 칸의
+          // 숫자 색에서 파생한다(`--mf-cal-sun`/`-sat`) — 숫자와 배경이 언제나 같은
+          // 색조를 쓰고, 여섯 테마 × 다크에 값을 새로 정할 필요가 없다.
+          dow === 0 || cell.holiday
+          ? 'var(--mf-cal-sun)'
+          : dow === 6
+            ? 'var(--mf-cal-sat)'
+            : 'var(--mf-card)';
   const numFg = !inMonth
     ? 'var(--mf-faint)'
     : isToday
       ? 'var(--mf-accent-ink)'
-      : dow === 0
+      : dow === 0 || cell.holiday
         ? 'var(--mf-danger)'
         : dow === 6
           ? 'var(--mf-info)'
@@ -276,6 +279,7 @@ function DayCell({
     <div
       data-day-cell={cell.iso}
       data-today={isToday ? '1' : undefined}
+      data-out-month={inMonth ? undefined : '1'}
       role={inMonth ? 'button' : undefined}
       tabIndex={inMonth ? 0 : undefined}
       aria-label={inMonth ? `${cell.n}일` : undefined}

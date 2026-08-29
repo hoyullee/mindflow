@@ -22,6 +22,7 @@ export function CalendarSide({
   onPickEntry,
   onSetMonth,
   onNewEvent,
+  onClose,
 }: {
   entries: readonly CalendarEntry[];
   todayIso: string;
@@ -35,6 +36,8 @@ export function CalendarSide({
   onSetMonth: (y: number, m: number) => void;
   /** 이 날짜에 새 일정(원본 `agendaNew` — 머리의 `＋`와 빈 상태의 버튼). */
   onNewEvent: (iso: string) => void;
+  /** 사이드 접기 — 머리의 ✕(디자인 원본). 위 토글을 다시 누르는 것과 같다. */
+  onClose: () => void;
 }) {
   // 미니 달력은 본문과 **같은 달**을 보여 준다 — 두 달력이 어긋나면 어느 쪽이
   // 기준인지 흐려진다(디자인 원본은 따로 넘길 수 있지만 그건 다음 단계).
@@ -47,27 +50,28 @@ export function CalendarSide({
   return (
     <aside
       data-cal-side
+      // 디자인 원본의 사이드는 **자기 면을 가진 판**이다(카드가 떠 있는 열이 아니라).
+      // 달력 영역과 왼쪽 경계선으로 갈리고, 안쪽 구획은 가로선으로 나뉜다.
       style={{
-        flex: '0 0 auto',
+        flex: '0 0 300px',
         width: 300,
         minWidth: 0,
+        boxSizing: 'border-box',
         display: 'flex',
         flexDirection: 'column',
-        gap: 12,
-        padding: '16px 20px 20px 6px',
-        overflowY: 'auto',
-        overflowX: 'hidden',
+        minHeight: 0,
+        overflow: 'hidden',
+        background: 'var(--mf-card)',
+        borderLeft: '1px solid var(--mf-border-soft)',
       }}
-      className="lnb-scroll"
     >
       {/* 미니 달력 */}
-      <div style={{ flexShrink: 0, borderRadius: 14, border: '1px solid var(--mf-border)', background: 'var(--mf-card)', boxShadow: 'var(--mf-card-shadow-sm)', padding: '12px 12px 10px' }}>
-        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8 }}>
-          <span style={{ fontSize: 12.5, fontWeight: 800, letterSpacing: '-.02em', color: 'var(--mf-text)' }}>{`${y}년 ${m}월`}</span>
-          <span style={{ display: 'inline-flex', gap: 2 }}>
-            <MiniNav label="이전 달" onClick={() => onSetMonth(m === 1 ? y - 1 : y, m === 1 ? 12 : m - 1)} d="m15 6-6 6 6 6" />
-            <MiniNav label="다음 달" onClick={() => onSetMonth(m === 12 ? y + 1 : y, m === 12 ? 1 : m + 1)} d="m9 6 6 6-6 6" />
-          </span>
+      <div style={{ flexShrink: 0, padding: '14px 14px 12px', borderBottom: '1px solid var(--mf-border-soft)' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 4, padding: '0 2px 9px' }}>
+          <span style={{ flex: 1, minWidth: 0, fontSize: 12.5, fontWeight: 800, letterSpacing: '-.02em', color: 'var(--mf-text)', whiteSpace: 'nowrap' }}>{`${y}년 ${m}월`}</span>
+          <MiniNav label="이전 달" onClick={() => onSetMonth(m === 1 ? y - 1 : y, m === 1 ? 12 : m - 1)} d="m18 15-6-6-6 6" />
+          <MiniNav label="다음 달" onClick={() => onSetMonth(m === 12 ? y + 1 : y, m === 12 ? 1 : m + 1)} d="m6 9 6 6 6-6" />
+          <MiniNav label="사이드 닫기" onClick={onClose} d="M6 6l12 12M18 6 6 18" />
         </div>
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(7, 1fr)', gap: 1 }}>
           {DOW.map((d, i) => (
@@ -108,7 +112,7 @@ export function CalendarSide({
         </div>
       </div>
 
-      {/* 목록 */}
+      {/* 목록 — 미니 달력은 붙박이고 아래만 스크롤한다. */}
       {side === 'day' ? (
         /* 날짜별 보기 — 디자인 원본의 agenda: 종일 항목은 **왼쪽 색 바가 붙은 납작한
            행**(마감 목록의 두 줄 카드와 다른 물건이다), 그 아래가 **시간표**다.
@@ -125,7 +129,7 @@ export function CalendarSide({
           <DayTimelineView timeline={timeline} iso={selectedDay} todayIso={todayIso} surface={surface} onPickEntry={onPickEntry} onNewEvent={onNewEvent} />
         </>
       ) : (
-        <>
+        <div className="lnb-scroll" style={{ flex: '1 1 0', minHeight: 0, overflowY: 'auto', padding: '13px 0 18px', display: 'flex', flexDirection: 'column', gap: 12 }}>
           <Section title="다가오는 마감" sub={`${upcoming.length}건`}>
             {upcoming.length ? upcoming.slice(0, 20).map((e) => <Row key={`${e.docId}-${e.cardId}`} entry={e} todayIso={todayIso} surface={surface} onPick={onPickEntry} />) : <Empty text="다가오는 마감이 없어요" />}
           </Section>
@@ -136,7 +140,7 @@ export function CalendarSide({
               ))}
             </Section>
           )}
-        </>
+        </div>
       )}
     </aside>
   );
@@ -161,7 +165,7 @@ function MiniNav({ label, onClick, d }: { label: string; onClick: () => void; d:
 
 function Section({ title, sub, action, children }: { title: string; sub: string; action?: { label: string; onClick: () => void }; children: React.ReactNode }) {
   return (
-    <div style={{ flexShrink: 0, display: 'flex', flexDirection: 'column', gap: 6 }}>
+    <div style={{ flexShrink: 0, display: 'flex', flexDirection: 'column', gap: 6, padding: '0 15px' }}>
       <div style={{ display: 'flex', alignItems: 'baseline', gap: 7, padding: '0 2px' }}>
         <span style={{ fontSize: 13, fontWeight: 800, letterSpacing: '-.02em', color: 'var(--mf-text)' }}>{title}</span>
         <span style={{ flex: 1, minWidth: 0, fontFamily: "'JetBrains Mono', monospace", fontSize: 10.5, color: 'var(--mf-faint)' }}>{sub}</span>

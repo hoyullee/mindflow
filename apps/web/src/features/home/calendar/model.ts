@@ -102,6 +102,11 @@ export interface MonthCell {
   dim: boolean;
   /** 0=일 … 6=토. */
   dow: number;
+  /**
+   * 공휴일 이름 — 있으면 일요일과 같은 색으로 그린다. 지금은 공휴일 원천이 없어
+   * 언제나 비어 있고(달력 연동 단계에서 채운다) 자리만 열어 둔다.
+   */
+  holiday?: string;
   /** 그 날 하루짜리 항목(기간은 제외 — 바로 그린다). */
   entries: CalendarEntry[];
   bars: MonthBar[];
@@ -168,42 +173,34 @@ export interface CalendarStat {
   label: string;
   unit: string;
   count: number;
+  /** 그 통계에 든 항목들 — 칩을 누르면 뜨는 팝오버가 이 목록을 그린다. */
+  items: CalendarEntry[];
 }
 
 /** 지난 마감 · 오늘 마감 · 이번 주 · 기간 일정. 기간은 **기한** 기준으로 센다. */
 export function calendarStats(entries: readonly CalendarEntry[], todayIso: string): CalendarStat[] {
   const ws = weekStartISO(todayIso);
   const we = weekEndISO(todayIso);
-  let over = 0;
-  let today = 0;
-  let week = 0;
-  let span = 0;
+  const over: CalendarEntry[] = [];
+  const today: CalendarEntry[] = [];
+  const week: CalendarEntry[] = [];
+  const span: CalendarEntry[] = [];
   for (const e of entries) {
-    if (isSpan(e)) span += 1;
-    if (e.due < todayIso) over += 1;
-    if (e.due === todayIso) today += 1;
-    if (e.due >= ws && e.due <= we) week += 1;
+    if (isSpan(e)) span.push(e);
+    if (e.due < todayIso) over.push(e);
+    if (e.due === todayIso) today.push(e);
+    if (e.due >= ws && e.due <= we) week.push(e);
   }
+  // 지난 마감은 **가까운 것부터**(어제 놓친 일이 한 달 전 일보다 급하다).
+  over.sort((a, b) => (a.due < b.due ? 1 : a.due > b.due ? -1 : 0));
   return [
-    { key: 'over', label: '지난 마감', unit: '건', count: over },
-    { key: 'today', label: '오늘 마감', unit: '건', count: today },
-    { key: 'week', label: '이번 주', unit: '건', count: week },
-    { key: 'span', label: '기간 일정', unit: '개', count: span },
+    { key: 'over', label: '지난 마감', unit: '건', count: over.length, items: over },
+    { key: 'today', label: '오늘 마감', unit: '건', count: today.length, items: today },
+    { key: 'week', label: '이번 주', unit: '건', count: week.length, items: week },
+    { key: 'span', label: '기간 일정', unit: '개', count: span.length, items: span },
   ];
 }
 
-/** 통계 칩으로 거른 목록 — 칩을 누르면 그 갈래만 남는다(디자인 원본의 필터). */
-export function filterByStat(entries: readonly CalendarEntry[], key: CalendarStat['key'] | null, todayIso: string): CalendarEntry[] {
-  if (!key) return [...entries];
-  const ws = weekStartISO(todayIso);
-  const we = weekEndISO(todayIso);
-  return entries.filter((e) => {
-    if (key === 'span') return isSpan(e);
-    if (key === 'over') return e.due < todayIso;
-    if (key === 'today') return e.due === todayIso;
-    return e.due >= ws && e.due <= we;
-  });
-}
 
 /** 다가오는 마감(오늘 포함, 이른 것 먼저). */
 export function upcomingEntries(entries: readonly CalendarEntry[], todayIso: string): CalendarEntry[] {
@@ -246,6 +243,16 @@ export function dueBadge(iso: string, todayIso: string): string {
   if (!a || !b) return '';
   const days = Math.round((new Date(b.y, b.m - 1, b.d).getTime() - new Date(a.y, a.m - 1, a.d).getTime()) / 86_400_000);
   return `D-${days}`;
+}
+
+/**
+ * 통계 팝오버 줄의 배지 — 지난 마감은 **며칠 지났는지**(`-4일`)까지 말한다.
+ * 격자·사이드의 `dueBadge`가 `지남` 한 마디로 끝내는 것과 다른 이유는, 이 목록이
+ * 놓친 일을 훑어 고르는 자리라 어제 것과 한 달 전 것이 구별돼야 하기 때문이다.
+ */
+export function statBadge(iso: string, todayIso: string): string {
+  const n = daysBetween(todayIso, iso);
+  return n === 0 ? '오늘' : n < 0 ? `${n}일` : `D-${n}`;
 }
 
 /** `8월 26일 (수)` — 팝업·목록의 날짜 표기. */

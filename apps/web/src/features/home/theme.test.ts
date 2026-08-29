@@ -73,6 +73,9 @@ describe('home theme', () => {
       '--mf-cal-sel': '#fef5f2',
       '--mf-cal-sel-today': '#fde8e1',
       '--mf-cal-ring': 'rgba(240,102,63,0.55)',
+      // 주말 — 일요일은 따뜻하게, 토요일은 차갑게(디자인 원본 #FEF8F5 / #F9FBFD와 같은 결).
+      '--mf-cal-sun': '#fdf4f2',
+      '--mf-cal-sat': '#f5f8f9',
       '--mf-chip-on': '#fde9e3',
     });
   });

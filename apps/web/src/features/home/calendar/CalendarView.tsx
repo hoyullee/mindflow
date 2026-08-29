@@ -3,9 +3,11 @@ import type { HomeState } from '../types';
 import type { HomeController } from '../useHomeController';
 import { calendarEntries, type CalendarEntry, type CalendarSource } from './entries';
 import { homeChipSurface } from '../theme';
-import { calendarStats, filterByStat, monthCells, monthLabel, todayISO } from './model';
+import { calendarStats, monthCells, monthLabel, todayISO } from './model';
 import { MonthGrid } from './MonthGrid';
 import { CalendarSide } from './CalendarSide';
+import { StatChips } from './StatChips';
+import { MonthPicker } from './MonthPicker';
 import { CalendarDetailHost } from './CalendarDetail';
 import { NewEventModal } from './NewEventModal';
 import { EventDetail } from './EventDetail';
@@ -52,14 +54,18 @@ export function CalendarView({
     const evs = eventEntries(eventsApi.events);
     return [...cardEntries, ...evs].sort((a, b) => (a.due < b.due ? -1 : a.due > b.due ? 1 : (a.startTime ?? '') < (b.startTime ?? '') ? -1 : a.title < b.title ? -1 : 1));
   }, [cardEntries, eventsApi.events]);
-  const shown = useMemo(() => filterByStat(entries, state.calFilter, today), [entries, state.calFilter, today]);
   const stats = useMemo(() => calendarStats(entries, today), [entries, today]);
   // 모바일은 칸이 좁아 칩 하나 + 접힌 개수만 — 사이드는 아예 접는다(공간이 없다).
   const perCell = isMobile ? 1 : 2;
-  const cells = useMemo(() => monthCells(state.calY, state.calM, shown, today, perCell), [state.calY, state.calM, shown, today, perCell]);
+  const cells = useMemo(() => monthCells(state.calY, state.calM, entries, today, perCell), [state.calY, state.calM, entries, today, perCell]);
   const selectedDay = state.calDay ?? today;
   // 칩이 얹히는 면 — hue는 칸반 팔레트, 밝기는 지금 홈 테마의 면에서(다크 대응).
   const surface = useMemo(() => homeChipSurface(state.theme), [state.theme]);
+  // 연/월 피커가 "이번 달"을 알아보는 기준.
+  const nowYM = (() => {
+    const n = new Date();
+    return { y: n.getFullYear(), m: n.getMonth() + 1 };
+  })();
   const notNow = (() => {
     const now = new Date();
     return state.calY !== now.getFullYear() || state.calM !== now.getMonth() + 1;
@@ -113,35 +119,38 @@ export function CalendarView({
               일정
             </h2>
             <span aria-hidden="true" style={{ width: 1, height: 20, background: 'var(--mf-border)', flexShrink: 0 }} />
-            {/* 월 이동 */}
+            {/* 월 이동 — 가운데 글자를 누르면 연/월을 바로 고른다(달을 여러 번 넘기지 않게). */}
             <span style={{ display: 'inline-flex', alignItems: 'center', gap: 2, height: 32, padding: '0 3px', borderRadius: 999, border: '1px solid var(--mf-border)', background: 'var(--mf-card)' }}>
               <MonthNav label="이전 달" d="m15 6-6 6 6 6" onClick={() => controller.calShiftMonth(-1)} />
-              <span data-cal-month style={{ minWidth: 92, textAlign: 'center', fontSize: 12.5, fontWeight: 800, letterSpacing: '-.02em', color: 'var(--mf-text)' }}>{monthLabel(state.calY, state.calM)}</span>
+              <MonthPicker y={state.calY} m={state.calM} now={nowYM} label={monthLabel(state.calY, state.calM)} onPick={controller.setCalMonth} />
               <MonthNav label="다음 달" d="m9 6 6 6-6 6" onClick={() => controller.calShiftMonth(1)} />
             </span>
-            <button
-              type="button"
-              data-cal-new
-              onClick={() => controller.openNewEvent(state.calDay ?? today, true)}
-              className="mf-ctl"
-              style={{ display: 'inline-flex', alignItems: 'center', gap: 6, height: 32, padding: '0 14px', borderRadius: 999, border: 0, background: 'linear-gradient(180deg, var(--mf-accent), var(--mf-accent-strong))', color: 'var(--mf-accent-ink)', font: 'inherit', fontSize: 12.5, fontWeight: 800, cursor: 'pointer', whiteSpace: 'nowrap', boxShadow: '0 8px 18px -12px rgba(var(--mf-accent-rgb), .9)' }}
-            >
-              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.6" strokeLinecap="round" aria-hidden="true">
-                <path d="M12 5v14M5 12h14" />
-              </svg>
-              새 일정
-            </button>
             {notNow && (
-              <button type="button" onClick={controller.calGoToday} className="mf-ctl" style={{ height: 28, padding: '0 13px', borderRadius: 999, border: '1px solid var(--mf-accent-mute)', background: 'var(--mf-accent-soft)', color: 'var(--mf-accent-strong)', font: 'inherit', fontSize: 11.5, fontWeight: 800, cursor: 'pointer', whiteSpace: 'nowrap' }}>
-                오늘로
+              <button type="button" data-cal-today onClick={controller.calGoToday} className="mf-ctl" style={{ height: 28, padding: '0 13px', borderRadius: 999, border: '1px solid var(--mf-accent-mute)', background: 'var(--mf-accent-soft)', color: 'var(--mf-accent-strong)', font: 'inherit', fontSize: 11.5, fontWeight: 800, cursor: 'pointer', whiteSpace: 'nowrap' }}>
+                오늘
               </button>
             )}
           </span>
         </div>
 
-        {/* 우측: 사이드가 보여 줄 것 고르기(데스크톱 전용 — 모바일엔 사이드가 없다) */}
-        {!isMobile && (
-          <div style={{ position: 'relative', display: 'flex', alignItems: 'center', gap: 8, flexShrink: 0, paddingBottom: 2 }}>
+        {/* 우측: 만들기 + 사이드가 보여 줄 것 고르기(디자인 원본의 자리).
+            `새 일정`은 이 묶음의 맨 앞이다 — 왼쪽은 "지금 어디를 보고 있는가"이고
+            오른쪽은 "무엇을 할 수 있는가"라 성격이 다르다. */}
+        <div style={{ position: 'relative', display: 'flex', alignItems: 'center', gap: 8, flexShrink: 0, paddingBottom: 2 }}>
+          <button
+            type="button"
+            data-cal-new
+            onClick={() => controller.openNewEvent(state.calDay ?? today, true)}
+            className="mf-ctl"
+            style={{ display: 'inline-flex', alignItems: 'center', gap: 7, height: 34, padding: '0 17px', borderRadius: 999, border: 0, background: 'linear-gradient(180deg, var(--mf-accent), var(--mf-accent-strong))', color: 'var(--mf-accent-ink)', font: 'inherit', fontSize: 12.5, fontWeight: 800, letterSpacing: '-.015em', cursor: 'pointer', whiteSpace: 'nowrap', flex: '0 0 auto', boxShadow: '0 10px 20px -12px rgba(var(--mf-accent-rgb), .95)' }}
+          >
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.6" strokeLinecap="round" aria-hidden="true">
+              <path d="M12 5v14M5 12h14" />
+            </svg>
+            새 일정
+          </button>
+          {!isMobile && (
+            <>
             <SideToggle on={state.calSide === 'list'} label="마감 목록" onClick={() => controller.setCalSide('list')}>
               <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
                 <path d="M8 6h13M8 12h13M8 18h13" />
@@ -153,54 +162,33 @@ export function CalendarView({
             <SideToggle on={state.calSide === 'day'} label="날짜별 보기" onClick={() => controller.setCalSide('day')}>
               <CalendarGlyph size={14} />
             </SideToggle>
-          </div>
-        )}
+            </>
+          )}
+        </div>
       </div>
 
       {/* 본문 */}
       <div style={{ flex: 1, minHeight: 0, display: 'flex', alignItems: 'stretch', minWidth: 0, background: 'var(--mf-bg)' }}>
-        <div className="lnb-scroll" style={{ flex: '1 1 0', minWidth: 0, minHeight: 0, padding: isMobile ? '12px 14px 18px' : '16px 8px 20px 20px', overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: 10 }}>
-          {/* 통계 = 필터.
-              디자인 원본의 칩은 **면도 테두리도 없다**(`chipBg: 'transparent'`, hover에서만
-              옅은 면) — 점 + 라벨 + 등폭 숫자만으로 읽힌다. 예전 판은 테두리 있는 알약이라
-              태그 무리처럼 보였다(제보). 켜진 칩만 옅은 강조 면으로 알린다(원본에는 없는
-              상태 — 우리 칩은 필터이므로 켜짐이 보여야 한다). */}
-          <div data-cal-stats style={{ display: 'flex', alignItems: 'center', gap: 2, flexWrap: 'wrap', flexShrink: 0 }}>
-            {stats.map((s) => {
-              const on = state.calFilter === s.key;
-              const zero = s.count === 0;
-              return (
-                <button
-                  key={s.key}
-                  type="button"
-                  data-cal-stat={s.key}
-                  aria-pressed={on}
-                  onClick={() => controller.toggleCalFilter(s.key)}
-                  // 면(꺼짐·hover·켜짐)은 `home.css`의 `.mf-cal-chip`이 정한다 —
-                  // 인라인으로 두면 hover 규칙과 싸운다(그래서 `.mf-ctl`을 쓰지 않는다).
-                  className="mf-cal-chip"
-                  style={{
-                    display: 'inline-flex',
-                    alignItems: 'center',
-                    gap: 7,
-                    height: 30,
-                    padding: '0 10px',
-                    borderRadius: 999,
-                    border: 0,
-                    font: 'inherit',
-                    cursor: 'pointer',
-                  }}
-                >
-                  <span style={{ width: 6, height: 6, borderRadius: 999, background: zero ? 'var(--mf-border)' : STAT_DOT[s.key], flexShrink: 0 }} />
-                  <span style={{ fontSize: 11, fontWeight: 700, color: 'var(--mf-muted)', whiteSpace: 'nowrap' }}>{s.label}</span>
-                  <span style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 11.5, fontWeight: zero ? 600 : s.key === 'over' || s.key === 'today' ? 800 : 700, color: zero ? 'var(--mf-faint)' : STAT_FG[s.key], whiteSpace: 'nowrap' }}>
-                    {s.count}
-                    {s.unit}
-                  </span>
-                </button>
-              );
-            })}
-          </div>
+        {/* 달력 영역 — 디자인 원본처럼 캔버스의 점 격자를 축소해 깐다(일정도 우리 화면). */}
+        <div
+          className="lnb-scroll"
+          style={{
+            flex: '1 1 0',
+            minWidth: 0,
+            minHeight: 0,
+            padding: isMobile ? '12px 14px 18px' : '16px 24px 24px',
+            overflowY: 'auto',
+            display: 'flex',
+            flexDirection: 'column',
+            gap: 12,
+            backgroundImage: 'radial-gradient(var(--mf-dot-grid) 1px, transparent 1px)',
+            backgroundSize: '17px 17px',
+          }}
+        >
+          {/* 통계 칩 — **필터가 아니라 목록**이다(디자인 원본). 누르면 그 통계에 든
+              항목이 팝오버로 뜨고, 골라서 상세로 간다. 예전에는 칩이 달력을 걸러
+              나머지를 통째로 감췄다(제보: 캘린더가 변한다). */}
+          <StatChips stats={stats} todayIso={today} onPickEntry={openEntry} />
 
           <MonthGrid
             cells={cells}
@@ -214,9 +202,9 @@ export function CalendarView({
           />
         </div>
 
-        {!isMobile && (
+        {!isMobile && state.calSide && (
           <CalendarSide
-            entries={shown}
+            entries={entries}
             todayIso={today}
             y={state.calY}
             m={state.calM}
@@ -227,6 +215,7 @@ export function CalendarView({
             onPickEntry={openEntry}
             onSetMonth={controller.setCalMonth}
             onNewEvent={(iso) => controller.openNewEvent(iso, true)}
+            onClose={() => controller.setCalSide(null)}
           />
         )}
       </div>
@@ -288,10 +277,6 @@ function useCalendarEntries(state: HomeState): CalendarEntry[] {
     return calendarEntries(sources, state.previewDocs);
   }, [state.spaces, state.sharedMaps, state.previewDocs]);
 }
-
-// 중요도 순서(디자인 원본의 TONE): 지난 마감(놓친 것) > 오늘 > 이번 주 > 기간.
-const STAT_DOT: Record<string, string> = { over: 'var(--mf-danger)', today: 'var(--mf-accent)', week: 'var(--mf-star)', span: 'var(--mf-faint2)' };
-const STAT_FG: Record<string, string> = { over: 'var(--mf-danger)', today: 'var(--mf-accent-strong)', week: 'var(--mf-star)', span: 'var(--mf-muted)' };
 
 /** `8월 26일 수요일` — 헤더의 오늘 표기. */
 function dateLine(iso: string): string {

@@ -230,18 +230,93 @@ describe('일정 화면', () => {
     expect([...document.querySelectorAll('[data-day-cell] button')].some((b) => b.textContent === '기간 카드')).toBe(true);
   });
 
-  it('통계 칩은 필터다 — `지난 마감`을 누르면 그 항목만 남는다', async () => {
+  it('통계 칩은 **필터가 아니라 목록**이다 — 누르면 그 항목이 팝오버로 뜨고 골라서 상세로 간다', async () => {
     renderHome([META('d1', '스프린트 보드'), META('d2', '이슈 트리아지')], BODIES());
     await openCalendar();
     await waitFor(() => expect(chipTexts().length).toBeGreaterThan(1));
+    const before = chipTexts().length;
     const over = document.querySelector('[data-cal-stat="over"]')!;
     expect(over.textContent).toContain('1건');
     fireEvent.click(over);
-    await waitFor(() => expect(chipTexts()).toEqual(['지난 마감 카드']));
-    expect(over.getAttribute('aria-pressed')).toBe('true');
-    // 다시 누르면 전부
+    // 팝오버가 뜨고 **달력은 그대로다**(예전에는 나머지가 통째로 사라졌다).
+    await waitFor(() => expect(document.querySelector('[data-cal-stat-item]')).toBeTruthy());
+    expect(chipTexts().length).toBe(before);
+    const row = document.querySelector('[data-cal-stat-item]') as HTMLElement;
+    expect(row.textContent).toContain('지난 마감 카드');
+    expect(row.textContent).toContain('-5일'); // 며칠 지났는지까지 말한다
+    // 목록에서 고르면 그 항목의 상세
+    fireEvent.click(row);
+    await waitFor(() => expect(detail()).toBeTruthy());
+    expect(document.querySelector('[data-cal-detail-title]')!.textContent).toBe('지난 마감 카드');
+  });
+
+  it('항목이 없는 통계 칩은 빈 안내를 보여 준다(눌러도 아무 일 없는 칩이 아니다)', async () => {
+    // 앞으로 올 마감 하나뿐 — `지난 마감`은 0건이다.
+    renderHome([META('d1', '스프린트 보드')], { d1: kanbanBody([{ id: 'k1', col: 'c2', pos: 1, text: '앞날 카드', due: shiftDays(2) }]) });
+    await openCalendar();
+    const over = document.querySelector('[data-cal-stat="over"]')!;
+    expect(over.textContent).toContain('0건');
     fireEvent.click(over);
-    await waitFor(() => expect(chipTexts().length).toBeGreaterThan(1));
+    await waitFor(() => expect(document.body.textContent).toContain('해당하는 일정이 없어요'));
+    expect(document.querySelector('[data-cal-stat-item]')).toBeNull();
+  });
+
+  it('`새 일정`은 헤더 **오른쪽 묶음**에 있다 — 왼쪽은 지금 보는 자리, 오른쪽은 할 수 있는 일', async () => {
+    renderHome([META('d1', '스프린트 보드')], BODIES());
+    await openCalendar();
+    const newBtn = document.querySelector('[data-cal-new]')!;
+    const monthBtn = document.querySelector('[data-cal-month]')!;
+    // 월 표기(왼쪽 묶음)와 다른 부모에 있고, 문서 순서상 뒤에 온다.
+    expect(newBtn.parentElement).not.toBe(monthBtn.parentElement);
+    expect(monthBtn.compareDocumentPosition(newBtn) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    // 보기 토글과 같은 묶음
+    expect(newBtn.parentElement!.querySelector('[aria-label="날짜별 보기"]')).toBeTruthy();
+  });
+
+  it('월 표기를 누르면 연/월을 고르는 팝오버가 열린다', async () => {
+    renderHome([META('d1', '스프린트 보드')], BODIES());
+    await openCalendar();
+    const now = new Date();
+    fireEvent.click(document.querySelector('[data-cal-month]')!);
+    await waitFor(() => expect(document.querySelector('[data-ym-month="1"]')).toBeTruthy());
+    // 12개월 + 연도 전환 + `이번 달`
+    expect(document.querySelectorAll('[data-ym-month]')).toHaveLength(12);
+    // 연도를 누르면 15년 목록으로 바뀐다
+    fireEvent.click(document.querySelector('[data-ym-head]')!);
+    await waitFor(() => expect(document.querySelectorAll('[data-ym-year]')).toHaveLength(15));
+    fireEvent.click(document.querySelector(`[data-ym-year="${now.getFullYear() + 1}"]`)!);
+    await waitFor(() => expect(document.querySelectorAll('[data-ym-month]')).toHaveLength(12));
+    // 달을 고르면 달력이 그 달로 간다
+    fireEvent.click(document.querySelector('[data-ym-month="3"]')!);
+    await waitFor(() => expect(document.querySelector('[data-cal-month]')!.textContent).toBe(`${now.getFullYear() + 1}년 3월`));
+    expect(document.querySelector('[data-ym-month="1"]')).toBeNull(); // 고르면 닫힌다
+  });
+
+  it('다른 달로 가면 `오늘` 버튼이 뜨고, 누르면 이번 달로 돌아온다', async () => {
+    renderHome([META('d1', '스프린트 보드')], BODIES());
+    await openCalendar();
+    expect(document.querySelector('[data-cal-today]')).toBeNull();
+    // 헤더의 것 — 사이드 미니 달력에도 같은 이름의 버튼이 있다.
+    fireEvent.click(document.querySelector('[data-cal-month]')!.parentElement!.querySelector('[aria-label="다음 달"]')!);
+    // 문구는 `오늘로`가 아니라 `오늘`(디자인 원본)
+    await waitFor(() => expect(document.querySelector('[data-cal-today]')).toBeTruthy());
+    expect(document.querySelector('[data-cal-today]')!.textContent).toBe('오늘');
+    expect(screen.queryByText('오늘로')).toBeNull();
+    fireEvent.click(document.querySelector('[data-cal-today]')!);
+    await waitFor(() => expect(document.querySelector('[data-cal-today]')).toBeNull());
+  });
+
+  it('토요일은 하늘색, 일요일은 분홍색 면을 쓴다(이번 달 칸만)', async () => {
+    renderHome([META('d1', '스프린트 보드')], BODIES());
+    await openCalendar();
+    const cells = [...document.querySelectorAll('[data-day-cell]')] as HTMLElement[];
+    const inMonth = cells.filter((c) => !c.dataset.outMonth);
+    const sun = inMonth.find((c) => new Date(c.dataset.dayCell!).getDay() === 0)!;
+    const sat = inMonth.find((c) => new Date(c.dataset.dayCell!).getDay() === 6)!;
+    const wed = inMonth.find((c) => new Date(c.dataset.dayCell!).getDay() === 3 && !c.style.background.includes('cal-today'))!;
+    expect(sun.style.background).toContain('--mf-cal-sun');
+    expect(sat.style.background).toContain('--mf-cal-sat');
+    expect(wed.style.background).toContain('--mf-card');
   });
 
   it('사이드는 마감 목록 ↔ 고른 날짜를 갈아 보여 준다', async () => {
@@ -652,12 +727,12 @@ describe('일정 화면', () => {
       await waitFor(() => expect(document.querySelector('[data-new-start]')).toBeTruthy());
       // 기본 09:00–10:00 = 1시간
       expect(document.querySelector('[data-new-dur]')!.textContent).toBe('1시간');
-      fireEvent.click(document.querySelector('[data-new-quick="90"]')!);
-      await waitFor(() => expect(document.querySelector('[data-new-dur]')!.textContent).toBe('1시간 30분'));
+      fireEvent.click(document.querySelector('[data-new-quick="120"]')!);
+      await waitFor(() => expect(document.querySelector('[data-new-dur]')!.textContent).toBe('2시간'));
       fireEvent.change(document.querySelector('[data-new-title]')!, { target: { value: '설계 회의' } });
       fireEvent.click(document.querySelector('[data-new-submit]')!);
       await waitFor(() => expect(events()).toHaveLength(1));
-      expect(events()[0]).toMatchObject({ title: '설계 회의', allDay: false, startTime: '09:00', endTime: '10:30' });
+      expect(events()[0]).toMatchObject({ title: '설계 회의', allDay: false, startTime: '09:00', endTime: '11:00' });
     });
 
     it('시작 날짜를 앞으로 당기면 종료 날짜도 따라온다(하루짜리가 기간 일정이 되지 않는다)', async () => {
@@ -701,17 +776,17 @@ describe('일정 화면', () => {
       fireEvent.change(document.querySelector('[data-new-title]')!, { target: { value: '오후 회의' } });
       fireEvent.click(document.querySelector('[data-new-allday]')!);
       await waitFor(() => expect(document.querySelector('[data-new-start]')).toBeTruthy());
-      fireEvent.click(document.querySelector('[data-new-quick="90"]')!); // 09:00–10:30
+      fireEvent.click(document.querySelector('[data-new-quick="120"]')!); // 09:00–11:00
       // 시각 팝오버에서 오후 2시를 고른다
       fireEvent.click(document.querySelector('[data-new-start]')!);
       await waitFor(() => expect(document.querySelector('[data-timepop-time="14:00"]')).toBeTruthy());
       fireEvent.click(document.querySelector('[data-timepop-time="14:00"]')!);
-      // 길이(90분)가 그대로라 저장이 막히지 않는다
-      await waitFor(() => expect(document.querySelector('[data-new-dur]')!.textContent).toBe('1시간 30분'));
+      // 길이(2시간)가 그대로라 저장이 막히지 않는다
+      await waitFor(() => expect(document.querySelector('[data-new-dur]')!.textContent).toBe('2시간'));
       expect((document.querySelector('[data-new-submit]') as HTMLButtonElement).disabled).toBe(false);
       fireEvent.click(document.querySelector('[data-new-submit]')!);
       await waitFor(() => expect(events()).toHaveLength(1));
-      expect(events()[0]).toMatchObject({ startTime: '14:00', endTime: '15:30' });
+      expect(events()[0]).toMatchObject({ startTime: '14:00', endTime: '16:00' });
     });
 
     it('상세에서도 시작 시각을 옮기면 종료가 따라온다(시각이 사라지지 않는다)', async () => {

@@ -13,11 +13,11 @@ import type { CSSProperties, ReactNode } from 'react';
 import { Modal } from '../../../components/Modal';
 import { DateButton, PillButton } from './DatePop';
 import { TimeButton } from './TimePop';
-import { addDays, daysBetween, minutesOf, timeLabel, todayISO } from './model';
+import { addDays, daysBetween, minutesOf, todayISO } from './model';
 import type { CalendarEventInput } from '../../../adapters/ports';
 
-/** 시각 있는 일정의 기본 길이(분) — 원본의 빠른 칩과 같은 값들. */
-const QUICK_MINUTES = [30, 60, 90];
+/** 회의 길이 빠른 선택(분) — 30분·1시간·2시간·3시간. */
+const QUICK_MINUTES = [30, 60, 120, 180];
 
 /** 자정부터의 분 → `HH:MM`. */
 function hhmm(mins: number): string {
@@ -90,8 +90,11 @@ export function NewEventModal({
     const b = minutesOf(endTime);
     return a !== null && b !== null ? b - a : null;
   }, [startTime, endTime]);
-  const spanDays = daysBetween(startDate, endDate) + 1;
   const canSave = !!title.trim() && (allDay || (durMin !== null && durMin > 0));
+
+  // 발치 문구 — 저장 실패가 가장 급하고, 그다음이 "왜 등록이 안 눌리는가"다.
+  const footMsg = error ?? (saving ? '저장 중…' : !title.trim() ? '' : !allDay && durMin !== null && durMin <= 0 ? '종료 시각이 시작보다 앞서요' : '');
+  const footTone = error || (!allDay && durMin !== null && durMin <= 0) ? 'var(--mf-danger)' : 'var(--mf-faint2)';
 
   const submit = (): void => {
     if (!canSave || saving) return;
@@ -113,7 +116,8 @@ export function NewEventModal({
       label="새 일정"
       // 적는 중이므로 막 클릭으로 닫지 않는다(잃을 입력이 있다 — 상세 팝업과 반대).
       dismissOnBackdrop={false}
-      dim={{ zIndex: 322, alignItems: isMobile ? 'flex-end' : 'center', padding: isMobile ? 0 : 32 }}
+      // 디자인 원본과 같은 막 — 팝업이 떠 있는 동안 뒤 화면을 가린다.
+      dim={{ background: 'rgba(46,42,38,.32)', backdropFilter: 'blur(3px)', animation: 'mf-dim-in .16s ease-out', zIndex: 322, alignItems: isMobile ? 'flex-end' : 'center', padding: isMobile ? 0 : 32 }}
       card={{
         // 원본: 640 높이. 구글 열이 없으니 폭은 한 열(원본 `newEvW`의 좁은 쪽).
         width: isMobile ? '100%' : 560,
@@ -138,9 +142,6 @@ export function NewEventModal({
           </span>
           <span style={{ height: 24, padding: '0 10px', borderRadius: 999, background: 'var(--mf-accent-soft)', color: 'var(--mf-accent-strong)', fontSize: 11, fontWeight: 700, display: 'inline-flex', alignItems: 'center', whiteSpace: 'nowrap', flex: '0 0 auto' }}>Geurio 캘린더</span>
           <span style={{ flex: 1, minWidth: 0 }} />
-          <span data-new-when style={{ height: 24, padding: '0 10px', borderRadius: 999, background: 'var(--mf-panel2)', color: 'var(--mf-muted)', fontSize: 11, fontWeight: 700, display: 'inline-flex', alignItems: 'center', whiteSpace: 'nowrap', flex: '0 0 auto' }}>
-            {allDay ? (spanDays > 1 ? `${spanDays}일간` : '종일') : `${timeLabel(minutesOf(startTime) ?? 0)}`}
-          </span>
           <button type="button" aria-label="닫기" title="닫기" onClick={onClose} className="mf-ctl" style={{ width: 30, height: 30, flex: '0 0 auto', border: '1px solid var(--mf-border)', borderRadius: 999, background: 'var(--mf-card)', color: 'var(--mf-muted)', cursor: 'pointer', display: 'inline-flex', alignItems: 'center', justifyContent: 'center' }}>
             <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" aria-hidden="true">
               <path d="M6 6l12 12M18 6 6 18" />
@@ -228,11 +229,12 @@ export function NewEventModal({
             <textarea aria-label="메모" data-new-note value={note} onChange={(e) => setNote(e.target.value)} placeholder="자유롭게 적어 두세요" maxLength={2000} style={{ ...fieldStyle, height: 78, padding: '11px 12px', resize: 'vertical', lineHeight: 1.6 }} />
           </div>
 
-          {error && <span style={{ fontSize: 12, color: 'var(--mf-danger)' }}>{error}</span>}
         </div>
 
+        {/* 발치 왼쪽은 **상황 문구 자리**다 — 늘 같은 안내를 걸어 두면 정작 알려야 할
+            때(저장 실패·시각이 거꾸로) 눈에 띌 자리가 없다. */}
         <div style={{ flex: '0 0 auto', display: 'flex', alignItems: 'center', gap: 10, padding: '14px 20px', borderTop: '1px solid var(--mf-border-soft)' }}>
-          <span style={{ flex: 1, minWidth: 0, fontSize: 12, color: 'var(--mf-faint2)' }}>Geurio 캘린더에만 저장돼요</span>
+          <span data-new-foot style={{ flex: 1, minWidth: 0, fontSize: 12, color: footTone, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{footMsg}</span>
           <button type="button" onClick={onClose} className="mf-ctl" style={{ flex: '0 0 auto', whiteSpace: 'nowrap', height: isMobile ? 44 : 36, padding: '0 16px', borderRadius: 999, border: '1px solid var(--mf-border)', background: 'var(--mf-card)', color: 'var(--mf-muted)', font: 'inherit', fontSize: 12.5, fontWeight: 700, cursor: 'pointer' }}>
             취소
           </button>

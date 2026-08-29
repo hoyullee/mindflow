@@ -244,10 +244,9 @@ export interface HomeState {
   /** 일정 화면이 보고 있는 연·월. 오늘이 든 달로 시작한다. */
   calY: number;
   calM: number;
-  /** 통계 칩 필터 — 누른 갈래만 남긴다. `null`이면 전부. */
-  calFilter: 'over' | 'today' | 'week' | 'span' | null;
   /** 오른쪽 사이드가 보여 주는 것 — 마감 목록 / 고른 날짜. */
-  calSide: 'list' | 'day';
+  /** 사이드가 보여 주는 것 — `null`이면 접힘(달력이 화면을 다 쓴다). */
+  calSide: 'list' | 'day' | null;
   /** 사이드에서 고른 날(`YYYY-MM-DD`). 없으면 오늘. */
   calDay: string | null;
   /** 열린 일정 상세 — 그 칸반 카드를 가리킨다. `null`이면 닫힘. */
@@ -489,7 +488,6 @@ export function initialHomeState(): HomeState {
     // 초기값은 오늘이 든 달 — 화면을 열면 이번 달이 보인다.
     calY: new Date().getFullYear(),
     calM: new Date().getMonth() + 1,
-    calFilter: null,
     calSide: 'list',
     calDay: null,
     calDetail: null,
