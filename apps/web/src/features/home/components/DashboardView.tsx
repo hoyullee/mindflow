@@ -1,4 +1,4 @@
-import { Fragment, useEffect, useMemo, useRef, useState, type CSSProperties, type DragEvent as ReactDragEvent, type MouseEvent, type PointerEvent as ReactPointerEvent } from 'react';
+import { Fragment, useEffect, useMemo, useRef, useState, type CSSProperties, type DragEvent as ReactDragEvent, type MouseEvent, type PointerEvent as ReactPointerEvent, type ReactNode } from 'react';
 import { createPortal } from 'react-dom';
 import { cardsInColumn, type KanbanCard, type KanbanColumn } from '@mindflow/mindmap-core';
 import { useCommentStore } from '../../../adapters/BackendContext';
@@ -12,13 +12,16 @@ import type { HomeState } from '../types';
 import type { HomeViewModel, DocKindName } from '../viewModel';
 import { docKindOf } from '../viewModel';
 import { DASH_CAP, DASH_COLS, DASH_MIN_SIZE, DASH_ROW_PX, DASH_ROWS_MAX, calWidgetMode, parseSize, sizesFor, type DashWidgetKind } from '../dashboard/model';
-import { CalWidgetBody } from '../dashboard/CalendarWidget';
+import { CalWidgetBody, type CalWidgetSide } from '../dashboard/CalendarWidget';
 import { useCalendarEntries } from '../calendar/useCalendarEntries';
-import { useCalendarEvents } from '../calendar/useCalendarEvents';
-import { eventEntries } from '../calendar/entries';
-import { addMonth, partsOf, todayISO, upcomingEntries } from '../calendar/model';
+import { useCalendarEvents, type CalendarEventsApi } from '../calendar/useCalendarEvents';
+import { eventEntries, type CalendarEntry } from '../calendar/entries';
+import { addDays, addMonth, partsOf, todayISO, weekStartISO } from '../calendar/model';
 import { homeChipSurface } from '../theme';
 import { CalendarGlyph } from '../calendar/CalendarView';
+import { CalendarDetailHost } from '../calendar/CalendarDetail';
+import { NewEventModal } from '../calendar/NewEventModal';
+import { EventDetail } from '../calendar/EventDetail';
 import { widgetDataOf, type WidgetData, type WidgetKanban } from '../dashboard/widgetData';
 import { previewSurface, realPreview } from '../mapPreview';
 import { useVisibleOnce } from '../useVisibleOnce';
@@ -63,6 +66,41 @@ function NavBtn({ label, d, onClick }: { label: string; d: string; onClick: () =
     >
       <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.6" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
         <path d={d} />
+      </svg>
+    </button>
+  );
+}
+
+/** 옆 패널 토글(원본 `wSideDlPick`/`wSideDayPick`) — 켜지면 강조색 알약. */
+function SideBtn({ label, on, onClick, children }: { label: string; on: boolean; onClick: () => void; children: ReactNode }) {
+  return (
+    <button
+      type="button"
+      data-cal-widget-side-btn={label}
+      title={label}
+      aria-label={label}
+      aria-pressed={on}
+      className="mf-ctl"
+      onClick={(e) => {
+        e.stopPropagation();
+        onClick();
+      }}
+      style={{
+        width: 20,
+        height: 20,
+        flex: '0 0 auto',
+        borderRadius: 7,
+        border: `1px solid ${on ? 'var(--mf-accent)' : 'var(--mf-border)'}`,
+        background: on ? 'var(--mf-accent-soft)' : 'var(--mf-card)',
+        color: on ? 'var(--mf-accent-strong)' : 'var(--mf-faint)',
+        cursor: 'pointer',
+        display: 'inline-flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+      }}
+    >
+      <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+        {children}
       </svg>
     </button>
   );
@@ -474,6 +512,8 @@ function DashWidget({ itemId, docId, itemKind, size, committedSize, maxCols, edi
     e.stopPropagation();
     if (!title || edit) return; // 편집 중의 클릭은 배치 조작이지 열기가 아니다(디자인 openBoard)
     if (cal) {
+      // "크게 보기"가 말 그대로이게 — 위젯에서 고른 날이 있으면 그 날로 연다.
+      if (calSide === 'day') controller.selectCalDay(calDay);
       controller.openCalendar();
       return;
     }
@@ -505,33 +545,87 @@ function DashWidget({ itemId, docId, itemKind, size, committedSize, maxCols, edi
     const p = partsOf(todayIso)!;
     return { y: p.y, m: p.m };
   });
+  const [weekOffset, setWeekOffset] = useState(0);
+  /** 옆 패널이 무엇을 보여 주는가(원본 `wcalSide`) — 다가오는 마감 / 고른 날. */
+  const [calSide, setCalSide] = useState<CalWidgetSide>('dl');
+  /** 옆 패널이 보여 주는 날(원본 `wcalSel`) — 기본은 오늘. */
+  const [calDay, setCalDay] = useState(todayIso);
+  const calMode = calWidgetMode(c, rows);
+  // 주간·목록에서는 보이는 주가 든 달을 받는다 — 조회 구간이 그 달 격자 6주라
+  // 멀리 넘긴 주도 함께 덮인다(달마다 한 번, 전송량은 유한하다).
+  const weekStart = addDays(weekStartISO(todayIso), weekOffset * 7);
+  const evYm = calMode === 'month' ? ym : { y: partsOf(weekStart)!.y, m: partsOf(weekStart)!.m };
   const cardEntries = useCalendarEntries(state, cal);
-  const eventsApi = useCalendarEvents(ym.y, ym.m, cal);
+  const eventsApi = useCalendarEvents(evYm.y, evYm.m, cal);
   const calEntries = useMemo(() => [...cardEntries, ...eventEntries(eventsApi.events)], [cardEntries, eventsApi.events]);
   const chipSurface = useMemo(() => homeChipSurface(state.theme), [state.theme]);
-  const calMode = calWidgetMode(c, rows);
-  const calSub = cal ? `다가오는 마감 ${upcomingEntries(calEntries, todayIso).length}건` : '';
-  /** 항목·칸을 누르면 그 날짜의 일정 화면으로 — 위젯은 보기 전용이다(#518). */
-  const pickCalDay = (iso: string) => {
-    controller.selectCalDay(iso);
-    controller.openCalendar();
+  /** 항목을 누르면 상세 팝업 — 일정 화면과 **같은 컴포넌트**를 그대로 쓴다. */
+  const pickCalEntry = (e: CalendarEntry) => {
+    if (e.event) controller.openCalendarEvent(e.event.id);
+    else controller.openCalendarCard(e.docId, e.cardId);
   };
   const thisMonth = (() => {
     const p = partsOf(todayIso)!;
     return ym.y === p.y && ym.m === p.m;
   })();
-  const calNav =
-    calMode === 'month' ? (
-      <span style={{ display: 'flex', alignItems: 'center', gap: 3, flexShrink: 0 }}>
-        {!thisMonth && (
-          <button type="button" data-cal-widget-today className="mf-ctl" onClick={(e) => { e.stopPropagation(); setYm(() => { const p = partsOf(todayIso)!; return { y: p.y, m: p.m }; }); }} style={navPill}>
-            오늘
-          </button>
-        )}
-        <NavBtn label="이전 달" d="m15 6-6 6 6 6" onClick={() => setYm((p) => addMonth(p.y, p.m, -1))} />
-        <NavBtn label="다음 달" d="m9 6 6 6-6 6" onClick={() => setYm((p) => addMonth(p.y, p.m, 1))} />
-      </span>
-    ) : null;
+  const calNotNow = calMode === 'month' ? !thisMonth : weekOffset !== 0;
+  const calStep = (delta: number) => {
+    if (calMode === 'month') setYm((p) => addMonth(p.y, p.m, delta));
+    else setWeekOffset((w) => w + delta);
+  };
+  const calToday = () => {
+    if (calMode === 'month') {
+      const p = partsOf(todayIso)!;
+      setYm({ y: p.y, m: p.m });
+    } else setWeekOffset(0);
+  };
+  /** 머리의 조작 묶음(원본 `calNav`) — 새 일정 · 오늘 · ‹ › · 옆 패널 토글.
+   *  주간은 본문이 이미 날짜별이라 토글이 없다(원본 `calSideToggles`).
+   *  1열 위젯은 머리가 좁아 **‹ › 만** 남긴다 — 그마저 없으면 이번 주에 갇힌다. */
+  const calNav = (
+    <span style={{ display: 'flex', alignItems: 'center', gap: 3, flexShrink: 0 }}>
+      {c >= 2 && (
+        <button
+          type="button"
+          data-cal-widget-new
+          title="새 일정"
+          aria-label="새 일정"
+          className="mf-ctl"
+          onClick={(e) => {
+            e.stopPropagation();
+            controller.openNewEvent(calSide === 'day' ? calDay : todayIso, true);
+          }}
+          style={{ ...navPill, width: 20, height: 20, padding: 0, borderRadius: 7, display: 'inline-flex', alignItems: 'center', justifyContent: 'center' }}
+        >
+          <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.8" strokeLinecap="round" aria-hidden="true">
+            <path d="M12 5v14M5 12h14" />
+          </svg>
+        </button>
+      )}
+      {c >= 2 && calNotNow && (
+        <button type="button" data-cal-widget-today className="mf-ctl" onClick={(e) => { e.stopPropagation(); calToday(); }} style={navPill}>
+          오늘
+        </button>
+      )}
+      <NavBtn label={calMode === 'month' ? '이전 달' : '이전 주'} d="m15 6-6 6 6 6" onClick={() => calStep(-1)} />
+      <NavBtn label={calMode === 'month' ? '다음 달' : '다음 주'} d="m9 6 6 6-6 6" onClick={() => calStep(1)} />
+      {c >= 2 && calMode !== 'week' && (
+        <>
+          <SideBtn label="마감 목록" on={calSide === 'dl'} onClick={() => setCalSide('dl')}>
+            <path d="M8 6h13M8 12h13M8 18h13" />
+            <circle cx="3.5" cy="6" r="1.2" fill="currentColor" stroke="none" />
+            <circle cx="3.5" cy="12" r="1.2" fill="currentColor" stroke="none" />
+            <circle cx="3.5" cy="18" r="1.2" fill="currentColor" stroke="none" />
+          </SideBtn>
+          <SideBtn label="날짜별 보기" on={calSide === 'day'} onClick={() => setCalSide('day')}>
+            <rect x="3.5" y="5" width="17" height="16" rx="2.5" />
+            <path d="M8 3v4M16 3v4M3.5 10h17" />
+            <rect x="7" y="13" width="5" height="4.5" rx="1" fill="currentColor" stroke="none" />
+          </SideBtn>
+        </>
+      )}
+    </span>
+  );
 
 
   return (
@@ -606,7 +700,7 @@ function DashWidget({ itemId, docId, itemKind, size, committedSize, maxCols, edi
         <button
           type="button"
           className="btn mf-dash-open"
-          title={cal ? '일정 화면 열기' : '에디터에서 열기'}
+          title={cal ? '일정 화면에서 크게 보기' : '에디터에서 열기'}
           onClick={open}
           style={{
             position: 'absolute',
@@ -636,7 +730,7 @@ function DashWidget({ itemId, docId, itemKind, size, committedSize, maxCols, edi
             <path d="M20 4 11 13" />
             <path d="M18 14v5a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1V7a1 1 0 0 1 1-1h5" />
           </svg>
-          {cal ? '일정 열기' : '열기'}
+          열기
         </button>
       )}
 
@@ -653,11 +747,11 @@ function DashWidget({ itemId, docId, itemKind, size, committedSize, maxCols, edi
               </svg>
             )}
           </span>
-          <span style={{ fontSize: 10.5, color: 'var(--mf-muted)', minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{cal ? calSub : [space, when].filter(Boolean).join(' · ')}</span>
+          <span style={{ fontSize: 10.5, color: 'var(--mf-muted)', minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{cal ? '내 칸반 전체 · 자동 갱신' : [space, when].filter(Boolean).join(' · ')}</span>
         </span>
         {/* 권한 배지(디자인) — 칸반은 카드의 열만 옮길 수 있고, 나머지는 보기 전용.
             보기 전용으로 공유받은 칸반은 그대로 보기 전용을 단다. */}
-        {cal && c >= 2 && !edit && calNav}
+        {cal && !edit && calNav}
         {!cal &&
           c >= 2 &&
           !edit &&
@@ -688,7 +782,24 @@ function DashWidget({ itemId, docId, itemKind, size, committedSize, maxCols, edi
 
       {/* 몸통 */}
       {cal ? (
-        <CalWidgetBody entries={calEntries} todayIso={todayIso} mode={calMode} cols={c} rows={rows} surface={chipSurface} ym={ym} weekOffset={0} onPick={pickCalDay} />
+        <CalWidgetBody
+          entries={calEntries}
+          todayIso={todayIso}
+          mode={calMode}
+          cols={c}
+          rows={rows}
+          surface={chipSurface}
+          ym={ym}
+          weekOffset={weekOffset}
+          side={calSide}
+          selDay={calDay}
+          onPickDay={(iso) => {
+            setCalSide('day');
+            setCalDay(iso);
+          }}
+          onPickEntry={pickCalEntry}
+          onNewEvent={(iso) => controller.openNewEvent(iso, true)}
+        />
       ) : missing ? (
         <div style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16, fontSize: 11.5, color: 'var(--mf-faint)', textAlign: 'center' }}>휴지통에 있거나 삭제된 문서예요. 우클릭으로 내릴 수 있어요.</div>
       ) : !data ? (
@@ -717,7 +828,60 @@ function DashWidget({ itemId, docId, itemKind, size, committedSize, maxCols, edi
           </span>
         </div>
       )}
+
+      {/* 일정 위젯의 팝업 — 일정 화면과 **같은 컴포넌트**를 그대로 쓴다(둘이 갈리면
+          한쪽에만 기능이 붙는다). 대상 상태(`calDetail`·`calNewEvent`·`calEventDetail`)도
+          같은 칸이라 화면이 하나만 그려지는 지금 구조에서 부딪히지 않는다. */}
+      {cal && !edit && <CalWidgetDialogs state={state} controller={controller} entries={calEntries} events={eventsApi} isMobile={isMobile} />}
     </div>
+  );
+}
+
+/**
+ * 일정 위젯이 여는 팝업 셋 — 항목 상세(칸반 카드 / Geurio 일정)와 새 일정.
+ * 저장 흐름도 일정 화면과 같다(`eventsApi`가 곧 그 표).
+ */
+function CalWidgetDialogs({
+  state,
+  controller,
+  entries,
+  events,
+  isMobile,
+}: {
+  state: HomeState;
+  controller: HomeController;
+  entries: readonly CalendarEntry[];
+  events: CalendarEventsApi;
+  isMobile: boolean;
+}) {
+  const [saving, setSaving] = useState(false);
+  const [saveError, setSaveError] = useState<string | null>(null);
+  const ev = state.calEventDetail ? events.events.find((e) => e.id === state.calEventDetail) : null;
+  return (
+    <>
+      <CalendarDetailHost state={state} controller={controller} entries={entries} isMobile={isMobile} />
+      {state.calNewEvent && (
+        <NewEventModal
+          draft={state.calNewEvent}
+          isMobile={isMobile}
+          saving={saving}
+          error={saveError}
+          onClose={() => {
+            setSaveError(null);
+            controller.closeNewEvent();
+          }}
+          onSubmit={(input) => {
+            setSaving(true);
+            void events.create(input).then((err) => {
+              setSaving(false);
+              setSaveError(err);
+              if (!err) controller.closeNewEvent();
+            });
+          }}
+        />
+      )}
+      {ev && <EventDetail event={ev} isMobile={isMobile} onClose={controller.closeCalendarEvent} onPatch={(patch) => events.update(ev.id, patch)} onDelete={() => events.remove(ev.id)} />}
+    </>
   );
 }
 

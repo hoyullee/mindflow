@@ -1103,10 +1103,10 @@ describe('대시보드 캘린더 위젯(PR4) — 크기가 보기를 정한다',
 
   const META = (id: string, title: string): DocMeta => ({ id, title, version: 1, updatedAt: '2026-01-01T00:00:00.000Z', isFavorite: false, deletedAt: null });
 
-  it('작은 위젯은 다가오는 마감 목록 — 다른 스페이스의 마감도 함께 모은다', async () => {
+  it('작은 위젯은 이번 주 마감 목록 — 다른 스페이스의 마감도 함께 모은다', async () => {
     seedWithCalWidget('2x1');
     const { container } = renderHome([META('doc-k', '스프린트')], {
-      'doc-k': KANBAN([{ id: 'k1', col: 'c2', pos: 1, text: '릴리스 준비', due: shift(2) }]),
+      'doc-k': KANBAN([{ id: 'k1', col: 'c2', pos: 1, text: '릴리스 준비', due: shift(0) }]),
     });
     const aside = await sidebarOf(container);
     await userEvent.setup().click(within(aside).getByText('이번 주'));
@@ -1133,11 +1133,13 @@ describe('대시보드 캘린더 위젯(PR4) — 크기가 보기를 정한다',
     await waitFor(() => expect(second.container.querySelector('[data-cal-widget-month]')).toBeTruthy());
     // 월간에는 달 이동이 붙는다(보는 사람의 상태 — 문서에 저장하지 않는다)
     expect(second.container.querySelector('[aria-label="다음 달"]')).toBeTruthy();
+    // 주간에는 옆 패널 토글이 없다(본문이 이미 날짜별 — 원본 calSideToggles)
+    expect(container.querySelector('[data-cal-widget-side-btn="날짜별 보기"]')).toBeNull();
   });
 
-  it('위젯은 보기 전용 — 항목을 누르면 그 날짜의 일정 화면으로 간다', async () => {
+  it('항목을 누르면 상세 팝업 — 대시보드에 머문다', async () => {
     seedWithCalWidget('2x1');
-    const { container } = renderHome([META('doc-k', '스프린트')], { 'doc-k': KANBAN([{ id: 'k1', col: 'c2', pos: 1, text: '릴리스 준비', due: shift(2) }]) });
+    const { container } = renderHome([META('doc-k', '스프린트')], { 'doc-k': KANBAN([{ id: 'k1', col: 'c2', pos: 1, text: '릴리스 준비', due: shift(0) }]) });
     const user = userEvent.setup();
     const aside = await sidebarOf(container);
     await user.click(within(aside).getByText('이번 주'));
@@ -1145,7 +1147,48 @@ describe('대시보드 캘린더 위젯(PR4) — 크기가 보기를 정한다',
     await waitFor(() => expect(within(widget).getByText('릴리스 준비')).toBeTruthy());
 
     await user.click(widget.querySelector('[data-cal-widget-row]') as HTMLElement);
-    await waitFor(() => expect(container.querySelector('[data-calendar-view]')).toBeTruthy());
+    // 일정 화면과 **같은 상세 팝업**이 뜨고, 화면은 대시보드 그대로다.
+    await screen.findByRole('dialog', { name: '일정 상세' });
+    expect(container.querySelector('[data-calendar-view]')).toBeNull();
+    expect(container.querySelector('[data-dashboard-view]')).toBeTruthy();
+  });
+
+  it('날짜 칸을 눌러도 화면이 바뀌지 않는다 — 옆 패널이 그 날로 바뀐다(제보)', async () => {
+    seedWithCalWidget('4x3');
+    const { container } = renderHome([META('doc-k', '스프린트')], { 'doc-k': KANBAN([{ id: 'k1', col: 'c2', pos: 1, text: '릴리스 준비', due: shift(0) }]) });
+    const user = userEvent.setup();
+    const aside = await sidebarOf(container);
+    await user.click(within(aside).getByText('이번 주'));
+    const widget = await waitFor(() => container.querySelector('[data-cal-widget-month]') as HTMLElement);
+    // 처음에는 다가오는 마감
+    expect(widget.querySelector('[data-cal-widget-side="dl"]')).toBeTruthy();
+
+    const iso = shift(0);
+    await user.click(widget.querySelector(`[data-cal-widget-cell="${iso}"]`) as HTMLElement);
+    // 옆 패널이 그 날로 — 일정 화면으로 떠나지 않는다
+    await waitFor(() => expect(container.querySelector('[data-cal-widget-side="day"]')).toBeTruthy());
+    expect(container.querySelector('[data-calendar-view]')).toBeNull();
+    const p = /^(\d{4})-(\d{2})-(\d{2})$/.exec(iso)!;
+    expect(within(container.querySelector('[data-cal-widget-side="day"]') as HTMLElement).getByText(`${+p[2]!}월 ${+p[3]!}일`)).toBeTruthy();
+  });
+
+  it('머리의 조작 묶음 — 새 일정·달 이동·옆 패널 토글(원본 calNav)', async () => {
+    seedWithCalWidget('4x3');
+    const { container } = renderHome([META('doc-k', '스프린트')], { 'doc-k': KANBAN([]) });
+    const user = userEvent.setup();
+    const aside = await sidebarOf(container);
+    await user.click(within(aside).getByText('이번 주'));
+    const widget = await waitFor(() => container.querySelector('[data-dash-widget]') as HTMLElement);
+    expect(widget.querySelector('[data-cal-widget-new]')).toBeTruthy();
+    expect(widget.querySelector('[aria-label="다음 달"]')).toBeTruthy();
+    // 주간은 본문이 이미 날짜별이라 토글이 없다 — 월간에는 둘 다 있다
+    expect(widget.querySelector('[data-cal-widget-side-btn="마감 목록"]')).toBeTruthy();
+
+    await user.click(widget.querySelector('[data-cal-widget-side-btn="날짜별 보기"]') as HTMLElement);
+    await waitFor(() => expect(container.querySelector('[data-cal-widget-side="day"]')).toBeTruthy());
+    // 새 일정은 일정 화면과 같은 팝업
+    await user.click(widget.querySelector('[data-cal-widget-new]') as HTMLElement);
+    await screen.findByRole('dialog', { name: '새 일정' });
   });
 
   it('피커 첫 칸이 일정 — 올리면 블롭에 `kind: cal`로 남고, 다시 누르면 내려간다', async () => {

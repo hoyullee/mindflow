@@ -687,3 +687,8 @@ input[type='search']::-webkit-search-results-decoration {
     transform: none;
   }
 }
+
+/* 대시보드 캘린더 위젯의 항목 칩 — 원본 `style-hover="filter:brightness(.96)"`.
+   면 색이 분류색에서 오므로(인라인) 배경을 갈아 끼우지 않고 밝기만 움직인다. */
+.mf-home .mf-cal-chip-btn { transition: filter .12s ease; }
+.mf-home .mf-cal-chip-btn:hover { filter: brightness(.96); }
