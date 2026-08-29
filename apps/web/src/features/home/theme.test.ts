@@ -75,6 +75,8 @@ describe('home theme', () => {
       '--mf-cal-sat': '#f9fafa',
       // 상세 팝업의 댓글 열 — 카드와 가라앉은 면 사이(원본 #FDFBF8).
       '--mf-cal-cmt': '#fdfaf6',
+      // 달력 격자선 — 기본 테마는 요청받은 값 그대로(나머지는 같은 관계를 파생한다).
+      '--mf-cal-grid': '#d6c3b5',
       '--mf-chip-on': '#fde9e3',
       // 통계 칩 — 한 색에서 **밝은 점 / 짙은 숫자** 두 값을 만든다(원본의 색쌍).
       '--mf-stat-over': '#b53f3d',

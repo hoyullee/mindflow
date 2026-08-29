@@ -441,7 +441,8 @@ export function homeEditorTheme(key: HomeThemeKey, palette: string[]): {
 
 /** 테마 → CSS 변수 이름/값 쌍. 순수 함수(테스트·SSR 안전). */
 export function homeThemeVars(key: HomeThemeKey): Record<string, string> {
-  const t = HOME_THEMES[homeThemeKeyOf(key)];
+  const k = homeThemeKeyOf(key);
+  const t = HOME_THEMES[k];
   return {
     '--mf-accent': t.accent,
     '--mf-accent-rgb': t.accentRgb,
@@ -502,6 +503,11 @@ export function homeThemeVars(key: HomeThemeKey): Record<string, string> {
     '--mf-cal-sat': mixHex(t.card, t.info, 0.03),
     /** 일정 상세의 댓글 열 — 카드와 가라앉은 면 사이(디자인 원본 #FDFBF8). */
     '--mf-cal-cmt': mixHex(t.card, t.panel2, 0.35),
+    /** 달력 격자선 — 일반 경계선(`--mf-border`)보다 한 단계 또렷해야 칸이 갈린다(요청).
+     *  기본(코랄)은 **받은 값 그대로**이고 나머지는 같은 관계를 자기 경계선에 적용한다
+     *  (캔버스 그라데이션과 같은 방식 — 밝은 테마는 눌리고 다크는 저절로 밝아진다:
+     *  다크의 `faint2`가 경계선보다 밝기 때문이다). */
+    '--mf-cal-grid': k === 'coral' ? '#d6c3b5' : mixHex(t.border, t.faint2, 0.72),
     /** 켜진 칩(통계 필터)의 면 — 면 없는 칩과 갈리도록 `accentSoft`보다 한 단계 진하게.
      *  `accentSoft`는 주말 칸 틴트와 거의 같은 값이라 켜졌는지 알 수 없었다. */
     '--mf-chip-on': mixHex(t.card, t.accent, 0.13),

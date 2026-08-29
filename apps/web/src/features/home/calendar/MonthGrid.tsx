@@ -101,14 +101,14 @@ export function MonthGrid({
         display: 'flex',
         flexDirection: 'column',
         borderRadius: 16,
-        border: '1px solid var(--mf-border)',
+        border: '1px solid var(--mf-cal-grid)',
         background: 'var(--mf-card)',
         boxShadow: 'var(--mf-card-shadow)',
         overflow: 'hidden',
       }}
     >
       {/* 요일 머리 */}
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(7, 1fr)', borderBottom: '1px solid var(--mf-border)', background: 'var(--mf-panel2)', flexShrink: 0 }}>
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(7, 1fr)', borderBottom: '1px solid var(--mf-cal-grid)', background: 'var(--mf-panel2)', flexShrink: 0 }}>
         {DOW.map((d, i) => (
           <span
             key={d}
@@ -263,10 +263,10 @@ function DayCell({
     flexDirection: 'column',
     gap: 2,
     padding: compact ? '3px 3px 4px' : '5px 5px 6px',
-    // 구분선은 `--mf-border-soft`보다 한 단계 진하게 — 이웃 달 칸(가라앉은 면) 위에서
-    // 옅은 선이 면에 묻혀 날짜 경계가 보이지 않았다(제보).
-    borderRight: '1px solid var(--mf-border)',
-    borderBottom: '1px solid var(--mf-border)',
+    // 격자선은 일반 경계선보다 한 단계 또렷하다(`--mf-cal-grid`) — 이웃 달 칸(가라앉은
+    // 면) 위에서 옅은 선이 면에 묻혀 날짜 경계가 보이지 않았다(제보).
+    borderRight: '1px solid var(--mf-cal-grid)',
+    borderBottom: '1px solid var(--mf-cal-grid)',
     background: dropHot ? 'var(--mf-accent-soft)' : bg,
     // 고른 칸의 표시는 **안쪽 링**이다 — 테두리를 굵히면 격자가 1px 밀린다.
     // 놓일 칸은 그보다 진한 링 + 옅은 면으로(지금 무엇이 일어나려는가가 먼저다).
@@ -302,14 +302,16 @@ function DayCell({
       <span style={{ display: 'flex', alignItems: 'center', gap: 4, flexShrink: 0 }}>
         <span
           style={{
-            minWidth: 18,
-            height: 18,
-            padding: '0 4px',
+            // 오늘은 채운 원이라 숫자가 커진 만큼 칸도 커진다(폰은 그대로).
+            minWidth: compact ? 18 : 21,
+            height: compact ? 18 : 21,
+            padding: '0 5px',
             borderRadius: 999,
             background: isToday ? 'var(--mf-accent)' : 'transparent',
             color: numFg,
             fontFamily: "'JetBrains Mono', monospace",
-            fontSize: compact ? 9.5 : 11,
+            // 날짜가 작아 읽기 힘들다는 요청 — 데스크톱 13px(폰은 칸이 좁아 11).
+            fontSize: compact ? 11 : 13,
             fontWeight: isToday ? 800 : 600,
             display: 'inline-flex',
             alignItems: 'center',
