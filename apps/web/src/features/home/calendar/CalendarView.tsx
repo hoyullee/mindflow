@@ -6,6 +6,7 @@ import { homeChipSurface } from '../theme';
 import { calendarStats, monthCells, monthLabel, todayISO } from './model';
 import { MonthGrid } from './MonthGrid';
 import { CalendarSide } from './CalendarSide';
+import { DeadlinePanel } from './DeadlinePanel';
 import { StatChips } from './StatChips';
 import { MonthPicker } from './MonthPicker';
 import { CalendarDetailHost } from './CalendarDetail';
@@ -141,7 +142,9 @@ export function CalendarView({
             type="button"
             data-cal-new
             onClick={() => controller.openNewEvent(state.calDay ?? today, true)}
-            className="mf-ctl"
+            // 그라디언트 버튼은 `mf-ctl`을 쓰지 않는다 — 그 hover가 면을 갈아 끼워
+            // 그라디언트를 지운다(제보). `mf-ctl-primary`는 밝기만 올린다(원본).
+            className="mf-ctl-primary"
             style={{ display: 'inline-flex', alignItems: 'center', gap: 7, height: 34, padding: '0 17px', borderRadius: 999, border: 0, background: 'linear-gradient(180deg, var(--mf-accent), var(--mf-accent-strong))', color: 'var(--mf-accent-ink)', font: 'inherit', fontSize: 12.5, fontWeight: 800, letterSpacing: '-.015em', cursor: 'pointer', whiteSpace: 'nowrap', flex: '0 0 auto', boxShadow: '0 10px 20px -12px rgba(var(--mf-accent-rgb), .95)' }}
           >
             <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.6" strokeLinecap="round" aria-hidden="true">
@@ -151,7 +154,9 @@ export function CalendarView({
           </button>
           {!isMobile && (
             <>
-            <SideToggle on={state.calSide === 'list'} label="마감 목록" onClick={() => controller.setCalSide('list')}>
+            {/* 마감 목록은 날짜별 보기와 **별개**다(원본 `dlOpen`) — 달력 위에 겹치는
+                판으로 뜨고, 둘 다 켜면 날짜별 보기 왼쪽에 나란히 선다. */}
+            <SideToggle on={state.calDeadline} label="마감 목록" onClick={controller.toggleCalDeadline}>
               <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
                 <path d="M8 6h13M8 12h13M8 18h13" />
                 <circle cx="3.5" cy="6" r="1.2" fill="currentColor" stroke="none" />
@@ -168,7 +173,7 @@ export function CalendarView({
       </div>
 
       {/* 본문 */}
-      <div style={{ flex: 1, minHeight: 0, display: 'flex', alignItems: 'stretch', minWidth: 0, background: 'var(--mf-bg)' }}>
+      <div style={{ position: 'relative', flex: 1, minHeight: 0, display: 'flex', alignItems: 'stretch', minWidth: 0, background: 'var(--mf-bg)' }}>
         {/* 달력 영역 — 디자인 원본처럼 캔버스의 점 격자를 축소해 깐다(일정도 우리 화면). */}
         <div
           className="lnb-scroll"
@@ -202,13 +207,23 @@ export function CalendarView({
           />
         </div>
 
+        {!isMobile && state.calDeadline && (
+          <DeadlinePanel
+            entries={entries}
+            todayIso={today}
+            surface={surface}
+            offsetRight={state.calSide ? 300 : 0}
+            onPickEntry={openEntry}
+            onClose={controller.toggleCalDeadline}
+          />
+        )}
+
         {!isMobile && state.calSide && (
           <CalendarSide
             entries={entries}
             todayIso={today}
             y={state.calY}
             m={state.calM}
-            side={state.calSide}
             surface={surface}
             selectedDay={selectedDay}
             onPickDay={controller.selectCalDay}

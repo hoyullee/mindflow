@@ -108,7 +108,7 @@ export function MonthGrid({
       }}
     >
       {/* 요일 머리 */}
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(7, 1fr)', borderBottom: '1px solid var(--mf-border-soft)', background: 'var(--mf-panel2)', flexShrink: 0 }}>
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(7, 1fr)', borderBottom: '1px solid var(--mf-border)', background: 'var(--mf-panel2)', flexShrink: 0 }}>
         {DOW.map((d, i) => (
           <span
             key={d}
@@ -231,12 +231,10 @@ function DayCell({
   const bg = !inMonth
     ? 'var(--mf-sunken)'
     : selected
-      ? isToday
-        ? 'var(--mf-cal-sel-today)'
-        : 'var(--mf-cal-sel)'
-      : isToday
-        ? 'var(--mf-cal-today)'
-        : // 주말은 디자인 원본대로 두 색으로 갈린다 — 일요일·공휴일은 파스텔 분홍
+      ? 'var(--mf-cal-sel)'
+      : // **오늘 칸에는 배경을 주지 않는다**(요청) — 숫자가 이미 채운 원으로 표시되므로
+        // 배경까지 바꾸면 "고른 칸"과 혼동된다.
+        // 주말은 디자인 원본대로 두 색으로 갈린다 — 일요일·공휴일은 파스텔 분홍
           // (#FEF8F5), 토요일은 파스텔 하늘색(#F9FBFD). 값은 표에 적지 않고 그 칸의
           // 숫자 색에서 파생한다(`--mf-cal-sun`/`-sat`) — 숫자와 배경이 언제나 같은
           // 색조를 쓰고, 여섯 테마 × 다크에 값을 새로 정할 필요가 없다.
@@ -263,12 +261,15 @@ function DayCell({
     flexDirection: 'column',
     gap: 2,
     padding: compact ? '3px 3px 4px' : '5px 5px 6px',
-    borderRight: '1px solid var(--mf-border-soft)',
-    borderBottom: '1px solid var(--mf-border-soft)',
+    // 구분선은 `--mf-border-soft`보다 한 단계 진하게 — 이웃 달 칸(가라앉은 면) 위에서
+    // 옅은 선이 면에 묻혀 날짜 경계가 보이지 않았다(제보).
+    borderRight: '1px solid var(--mf-border)',
+    borderBottom: '1px solid var(--mf-border)',
     background: dropHot ? 'var(--mf-accent-soft)' : bg,
     // 고른 칸의 표시는 **안쪽 링**이다 — 테두리를 굵히면 격자가 1px 밀린다.
     // 놓일 칸은 그보다 진한 링 + 옅은 면으로(지금 무엇이 일어나려는가가 먼저다).
-    ...(dropHot ? { boxShadow: 'inset 0 0 0 2px var(--mf-accent)' } : selected ? { boxShadow: 'inset 0 0 0 1.5px var(--mf-cal-ring)' } : {}),
+    // 놓일 자리만 링으로 알린다 — 고른 칸은 **면만**(디자인 원본 `selRing: 'none'`).
+    ...(dropHot ? { boxShadow: 'inset 0 0 0 2px var(--mf-accent)' } : {}),
     opacity: inMonth ? 1 : 0.7,
     cursor: inMonth ? 'pointer' : 'default',
     // 칸이 내용보다 좁아도 격자가 밀리지 않게 — 넘치는 칩은 접힌다(moreN).

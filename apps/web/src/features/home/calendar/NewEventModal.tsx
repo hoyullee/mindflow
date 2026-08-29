@@ -10,7 +10,7 @@
 
 import { useEffect, useMemo, useState } from 'react';
 import type { CSSProperties, ReactNode } from 'react';
-import { Modal } from '../../../components/Modal';
+import { Modal, MODAL_DIM } from '../../../components/Modal';
 import { DateButton, PillButton } from './DatePop';
 import { TimeButton } from './TimePop';
 import { addDays, daysBetween, minutesOf, todayISO } from './model';
@@ -116,8 +116,9 @@ export function NewEventModal({
       label="새 일정"
       // 적는 중이므로 막 클릭으로 닫지 않는다(잃을 입력이 있다 — 상세 팝업과 반대).
       dismissOnBackdrop={false}
-      // 디자인 원본과 같은 막 — 팝업이 떠 있는 동안 뒤 화면을 가린다.
-      dim={{ background: 'rgba(46,42,38,.32)', backdropFilter: 'blur(3px)', animation: 'mf-dim-in .16s ease-out', zIndex: 322, alignItems: isMobile ? 'flex-end' : 'center', padding: isMobile ? 0 : 32 }}
+      // 막·등장 효과는 **설정 팝업과 같은 것**을 쓴다(요청) — 홈의 팝업이 저마다 다른
+      // 방식으로 뜨면 그 자체가 산만하다.
+      dim={{ ...MODAL_DIM, animation: 'mf-dim-in .18s ease-out', zIndex: 322, alignItems: isMobile ? 'flex-end' : 'center', padding: isMobile ? 0 : 32 }}
       card={{
         // 원본: 640 높이. 구글 열이 없으니 폭은 한 열(원본 `newEvW`의 좁은 쪽).
         width: isMobile ? '100%' : 560,
@@ -131,6 +132,7 @@ export function NewEventModal({
         display: 'flex',
         flexDirection: 'column',
         overflow: 'hidden',
+        animation: 'mf-fade .2s ease',
       }}
       cardAttrs={{ 'data-new-event': '1' }}
     >
@@ -140,7 +142,6 @@ export function NewEventModal({
             <span style={{ width: 8, height: 8, borderRadius: 999, background: 'var(--mf-accent)', display: 'block' }} />
             <span style={{ fontSize: 13.5, fontWeight: 800, letterSpacing: '-.02em', color: 'var(--mf-text)', whiteSpace: 'nowrap' }}>새 일정</span>
           </span>
-          <span style={{ height: 24, padding: '0 10px', borderRadius: 999, background: 'var(--mf-accent-soft)', color: 'var(--mf-accent-strong)', fontSize: 11, fontWeight: 700, display: 'inline-flex', alignItems: 'center', whiteSpace: 'nowrap', flex: '0 0 auto' }}>Geurio 캘린더</span>
           <span style={{ flex: 1, minWidth: 0 }} />
           <button type="button" aria-label="닫기" title="닫기" onClick={onClose} className="mf-ctl" style={{ width: 30, height: 30, flex: '0 0 auto', border: '1px solid var(--mf-border)', borderRadius: 999, background: 'var(--mf-card)', color: 'var(--mf-muted)', cursor: 'pointer', display: 'inline-flex', alignItems: 'center', justifyContent: 'center' }}>
             <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" aria-hidden="true">
@@ -163,6 +164,21 @@ export function NewEventModal({
             maxLength={200}
             style={{ width: '100%', boxSizing: 'border-box', height: 52, padding: '0 15px', borderRadius: 14, border: '1px solid var(--mf-border)', background: 'var(--mf-card)', font: 'inherit', fontSize: 18, fontWeight: 800, letterSpacing: '-.03em', color: 'var(--mf-text)', outline: 'none' }}
           />
+
+          {/* 저장할 캘린더 — 지금은 Geurio 하나뿐이고 구글은 **선택적 거울**이라 다음
+              단계에서 붙는다. 고를 것이 하나여도 어디에 저장되는지는 보여야 한다(요청). */}
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 7 }}>
+            <Label>저장할 캘린더</Label>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 7, flexWrap: 'wrap' }}>
+              <span
+                data-new-cal
+                style={{ display: 'inline-flex', alignItems: 'center', gap: 7, height: 34, padding: '0 14px', borderRadius: 999, border: '1.5px solid var(--mf-accent-mute)', background: 'var(--mf-accent-soft)', color: 'var(--mf-accent-strong)', fontSize: 12.5, fontWeight: 800, whiteSpace: 'nowrap', flex: '0 0 auto' }}
+              >
+                <span style={{ width: 7, height: 7, borderRadius: 999, background: 'var(--mf-accent)', display: 'block', flex: '0 0 auto' }} />
+                Geurio 캘린더
+              </span>
+            </div>
+          </div>
 
           <div style={{ display: 'flex', flexDirection: 'column', gap: 9 }}>
             <span style={{ display: 'flex', alignItems: 'center', gap: 9 }}>
@@ -206,6 +222,7 @@ export function NewEventModal({
                       setEndTime(hhmm(Math.min(23 * 60 + 59, from + m)));
                     }}
                     className="mf-ctl"
+                    aria-pressed={durMin === m}
                     style={{ height: 24, padding: '0 10px', borderRadius: 999, border: `1px solid ${durMin === m ? 'var(--mf-accent-mute)' : 'var(--mf-border)'}`, background: durMin === m ? 'var(--mf-accent-soft)' : 'var(--mf-card)', color: durMin === m ? 'var(--mf-accent-strong)' : 'var(--mf-muted)', font: 'inherit', fontSize: 11, fontWeight: 700, cursor: 'pointer', whiteSpace: 'nowrap', flex: '0 0 auto' }}
                   >
                     {m >= 60 ? `${m / 60}시간` : `${m}분`}
@@ -243,7 +260,8 @@ export function NewEventModal({
             data-new-submit
             disabled={!canSave || saving}
             onClick={submit}
-            className="mf-ctl"
+            // 등록도 그라디언트 버튼 — 면을 갈아 끼우면 색이 사라진다(헤더의 새 일정과 같다).
+            className="mf-ctl-primary"
             style={{
               flex: '0 0 auto',
               whiteSpace: 'nowrap',

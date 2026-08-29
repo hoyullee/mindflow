@@ -1,4 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { readFileSync } from 'node:fs';
+import { resolve } from 'node:path';
 import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { MemoryRouter, Route, Routes } from 'react-router-dom';
 import { Home } from './Home';
@@ -319,12 +321,12 @@ describe('일정 화면', () => {
     expect(wed.style.background).toContain('--mf-card');
   });
 
-  it('사이드는 마감 목록 ↔ 고른 날짜를 갈아 보여 준다', async () => {
+  it('날짜별 보기(RNB)와 마감 목록은 각자 켜고 끈다 — 마감 목록은 달력 위에 겹친다', async () => {
     renderHome([META('d1', '스프린트 보드'), META('d2', '이슈 트리아지')], BODIES());
     await openCalendar();
     const side = () => document.querySelector('[data-cal-side]')!;
-    await waitFor(() => expect(side().textContent).toContain('다가오는 마감'));
-    // 미니 달력에서 오늘을 고르면 그 날 목록으로
+    // 날짜별 보기는 기본으로 열려 있고, 미니 달력에서 오늘을 고르면 그 날 목록이 된다.
+    await waitFor(() => expect(side()).toBeTruthy());
     fireEvent.click(document.querySelector(`[data-mini-day="${todayISO()}"]`)!);
     await waitFor(() => expect(side().textContent).toContain('일정 '));
     expect(within(side() as HTMLElement).getByText('오늘 마감 카드')).toBeTruthy();
@@ -338,8 +340,20 @@ describe('일정 화면', () => {
     // 오늘은 기간 카드(시작 -1일 · 기한 +3일)의 2일째다
     expect(side().textContent).toContain('2/5일째');
     expect(document.querySelector('[aria-label="날짜별 보기"]')!.getAttribute('aria-pressed')).toBe('true');
+
+    // 마감 목록은 **다른 물건**이다(원본 `dlOpen`) — 날짜별 보기를 갈아 끼우지 않고
+    // 달력 위에 겹치는 판으로 뜬다. 둘 다 켜지면 나란히 선다.
     fireEvent.click(document.querySelector('[aria-label="마감 목록"]')!);
-    await waitFor(() => expect(side().textContent).toContain('다가오는 마감'));
+    const dl = () => document.querySelector('[data-cal-deadline]') as HTMLElement | null;
+    await waitFor(() => expect(dl()).toBeTruthy());
+    expect(dl()!.textContent).toContain('다가오는 마감');
+    expect(side()).toBeTruthy();
+    // 겹치는 판이라 날짜별 보기가 열려 있으면 그 폭만큼 왼쪽으로 비켜선다.
+    expect(dl()!.style.right).toBe('300px');
+    // 다시 누르면 접힌다(날짜별 보기는 그대로).
+    fireEvent.click(document.querySelector('[aria-label="마감 목록"]')!);
+    await waitFor(() => expect(dl()).toBeNull());
+    expect(document.querySelector('[data-cal-side]')).toBeTruthy();
   });
 
   it('항목을 누르면 상세 팝업이 뜨고, 그 칸반으로 가는 길은 발치 버튼이다', async () => {
@@ -411,15 +425,16 @@ describe('일정 화면', () => {
     expect(chip.className).not.toContain('mf-ctl');
   });
 
-  it('오늘 칸과 고른 칸은 아주 옅은 파생 토큰을 쓴다(제보 ③)', async () => {
+  it('오늘 칸에는 배경이 없고(요청), 고른 칸은 가라앉은 면 쪽 파생 토큰만 쓴다', async () => {
     renderHome([META('d1', '스프린트 보드'), META('d2', '이슈 트리아지')], BODIES());
     await openCalendar();
-    const today = document.querySelector('[data-day-cell][data-today="1"]') as HTMLElement;
-    expect(today.style.background).toBe('var(--mf-cal-today)');
+    const cell = () => document.querySelector('[data-day-cell][data-today="1"]') as HTMLElement;
+    // 오늘은 숫자가 이미 채운 원으로 말한다 — 배경까지 바꾸면 "고른 칸"과 헷갈린다.
+    expect(cell().style.background).not.toContain('cal-today');
     fireEvent.click(document.querySelector(`[data-mini-day="${todayISO()}"]`)!);
-    await waitFor(() => expect((document.querySelector('[data-day-cell][data-today="1"]') as HTMLElement).style.background).toBe('var(--mf-cal-sel-today)'));
-    // 고른 칸은 안쪽 링으로 알린다 — 테두리를 굵히면 격자가 밀린다.
-    expect((document.querySelector('[data-day-cell][data-today="1"]') as HTMLElement).style.boxShadow).toContain('inset');
+    await waitFor(() => expect(cell().style.background).toBe('var(--mf-cal-sel)'));
+    // 고른 칸에는 링을 두르지 않는다(원본 `selRing: 'none'`) — 면만으로 알린다.
+    expect(cell().style.boxShadow).not.toContain('inset');
   });
 
   // ── PR2: 상세 팝업(칸반 write-back) + 드래그로 날짜 변경 ────────────────────
@@ -851,7 +866,6 @@ describe('일정 화면', () => {
         ]),
       );
       await openCalendar();
-      fireEvent.click(document.querySelector('[aria-label="날짜별 보기"]')!);
       await waitFor(() => expect(document.querySelector('[data-cal-timeline]')).toBeTruthy());
       const blocks = [...document.querySelectorAll('[data-cal-block]')] as HTMLElement[];
       expect(blocks.map((b) => b.getAttribute('data-cal-block'))).toEqual(['e1', 'e2']);
@@ -871,7 +885,6 @@ describe('일정 화면', () => {
     it('시각 일정이 없는 날은 빈 상태가 그 날짜로 일정 만들기를 권한다', async () => {
       renderHome([META('d1', '스프린트 보드')], BODIES());
       await openCalendar();
-      fireEvent.click(document.querySelector('[aria-label="날짜별 보기"]')!);
       await waitFor(() => expect(document.querySelector('[data-cal-timeline-empty]')).toBeTruthy());
       expect(document.querySelector('[data-cal-timeline]')).toBeNull();
       // 고른 날짜가 곧 기본값 — 며칠 뒤 칸을 고르고 만들면 그 날에 놓인다.
@@ -898,4 +911,23 @@ describe('일정 화면', () => {
     });
   });
 
+});
+
+describe('팝업·팝오버 안의 버튼 hover(제보)', () => {
+  // 모달·팝오버는 **포털로 body 밑에** 그려진다(Radix) — `.mf-home` 안이 아니라서
+  // 홈의 hover 규칙이 닿지 않았고, 팝업 안 버튼에는 반응이 아예 없었다.
+  // 그리고 **켜진 것**(`aria-pressed`)은 면을 갈아 끼우면 꺼진 것처럼 보인다
+  // (제보: 고른 날짜가 주황이 아니다) — 밝기만 움직인다.
+  it('home.css가 포털에도 hover를 걸고, 켜진 것은 자기 틴트를 지킨다', () => {
+    const css = readFileSync(resolve('src/features/home/home.css'), 'utf8');
+    expect(css).toContain("[data-modal-overlay] .mf-ctl:hover:not([aria-pressed='true'])");
+    expect(css).toContain("[data-radix-popper-content-wrapper] .mf-ctl:hover:not([aria-pressed='true'])");
+    // 면을 갈아 끼우는 규칙은 셋 다 `:not([aria-pressed='true'])`가 붙어 있다.
+    for (const m of css.matchAll(/^(.*\.mf-ctl:hover.*)$/gm)) expect(m[1]).toContain("aria-pressed='true'");
+    // 켜진 것에는 밝기만 — `background`를 다시 칠하지 않는다.
+    const on = css.slice(css.indexOf(".mf-home .mf-ctl[aria-pressed='true']:hover {"));
+    expect(on.slice(0, on.indexOf('}'))).toContain('brightness(var(--mf-hover-bright))');
+    // 그라디언트 1차 버튼(새 일정·새로 만들기)도 포털 안에서 밝기만 움직인다.
+    expect(css).toContain('[data-modal-overlay] .mf-ctl-primary:hover');
+  });
 });

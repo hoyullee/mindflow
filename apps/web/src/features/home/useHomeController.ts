@@ -1097,7 +1097,8 @@ export function useHomeController() {
   const setCalMonth = (y: number, m: number) => patch({ calY: y, calM: m });
   /** 통계 칩 = 필터. 켜진 칩을 다시 누르면 꺼진다(전부 보기). */
   // 같은 버튼을 다시 누르면 접는다(디자인 원본의 ✕와 같은 자리).
-  const setCalSide = (side: 'list' | 'day' | null) => patch({ calSide: state.calSide === side ? null : side });
+  const setCalSide = (side: 'day' | null) => patch({ calSide: state.calSide === side ? null : side });
+  const toggleCalDeadline = () => patch({ calDeadline: !state.calDeadline });
   /** 달력 칸 클릭 — 그 날을 골라 사이드에 펼친다(디자인 원본의 daySel). */
   const selectCalDay = (iso: string) => patch({ calDay: iso, calSide: 'day' });
   /** 항목 클릭 → 상세 팝업. 대상은 그 칸반 카드다(정본은 그 문서). */
@@ -2767,6 +2768,7 @@ export function useHomeController() {
     calGoToday,
     setCalMonth,
     setCalSide,
+    toggleCalDeadline,
     selectCalDay,
     openCalendarCard,
     closeCalendarCard,

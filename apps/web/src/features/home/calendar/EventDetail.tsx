@@ -9,7 +9,7 @@
 
 import { useEffect, useRef, useState } from 'react';
 import type { ReactNode } from 'react';
-import { Modal } from '../../../components/Modal';
+import { Modal, MODAL_DIM } from '../../../components/Modal';
 import { DateButton, PillButton } from './DatePop';
 import { TimeButton } from './TimePop';
 import { addDays, daysBetween, minutesOf, timeLabel, todayISO } from './model';
@@ -65,7 +65,8 @@ export function EventDetail({
       onClose={close}
       label="일정 상세"
       dismissOnBackdrop
-      dim={{ zIndex: 321, alignItems: isMobile ? 'flex-end' : 'center', padding: isMobile ? 0 : 32 }}
+      // 막·등장 효과는 설정 팝업과 같은 것(요청) — 예전에는 배경이 그대로 보였다(제보).
+      dim={{ ...MODAL_DIM, animation: 'mf-dim-in .18s ease-out', zIndex: 321, alignItems: isMobile ? 'flex-end' : 'center', padding: isMobile ? 0 : 32 }}
       card={{
         width: isMobile ? '100%' : 560,
         maxWidth: '100%',
@@ -78,6 +79,7 @@ export function EventDetail({
         display: 'flex',
         flexDirection: 'column',
         overflow: 'hidden',
+        animation: 'mf-fade .2s ease',
       }}
       cardAttrs={{ 'data-event-detail': '1' }}
     >

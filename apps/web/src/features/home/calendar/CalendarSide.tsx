@@ -1,7 +1,7 @@
 import { useEffect, useRef } from 'react';
 import type { CalendarEntry } from './entries';
 import { entryChip, type ChipSurface } from './chips';
-import { DOW, HOUR_ROW, dateLabel, dayProgress, dayTimeline, dueBadge, entriesOn, hourLabel, isSpan, monthCells, overdueEntries, timeLabel, upcomingEntries } from './model';
+import { DOW, HOUR_ROW, dateLabel, dayProgress, dayTimeline, entriesOn, hourLabel, monthCells, timeLabel } from './model';
 import type { DayTimeline } from './model';
 
 /**
@@ -15,7 +15,6 @@ export function CalendarSide({
   todayIso,
   y,
   m,
-  side,
   surface,
   selectedDay,
   onPickDay,
@@ -28,7 +27,6 @@ export function CalendarSide({
   todayIso: string;
   y: number;
   m: number;
-  side: 'list' | 'day';
   surface: ChipSurface;
   selectedDay: string;
   onPickDay: (iso: string) => void;
@@ -44,8 +42,6 @@ export function CalendarSide({
   const cells = monthCells(y, m, entries, todayIso, 0);
   const dayList = entriesOn(entries, selectedDay);
   const timeline = dayTimeline(entries, selectedDay);
-  const upcoming = upcomingEntries(entries, todayIso);
-  const overdue = overdueEntries(entries, todayIso);
 
   return (
     <aside
@@ -94,13 +90,26 @@ export function CalendarSide({
                   position: 'relative',
                   height: 26,
                   border: 0,
-                  borderRadius: 8,
+                  borderRadius: 999,
                   background: on ? 'var(--mf-accent)' : 'transparent',
-                  color: on ? 'var(--mf-accent-ink)' : !c.inMonth ? 'var(--mf-faint2)' : c.isToday ? 'var(--mf-accent-strong)' : 'var(--mf-subtext)',
+                  // 숫자를 디자인 원본만큼 또렷하게(제보) — 평일은 본문 글자색·600,
+                  // 주말은 큰 달력과 같은 색(일=danger / 토=info). 예전에는 `subtext`
+                  // 500이라 미니 달력의 날짜가 바탕에 묻혔다.
+                  color: on
+                    ? 'var(--mf-accent-ink)'
+                    : !c.inMonth
+                      ? 'var(--mf-faint2)'
+                      : c.isToday
+                        ? 'var(--mf-accent-strong)'
+                        : c.dow === 0 || c.holiday
+                          ? 'var(--mf-danger)'
+                          : c.dow === 6
+                            ? 'var(--mf-info)'
+                            : 'var(--mf-text)',
                   font: 'inherit',
                   fontFamily: "'JetBrains Mono', monospace",
                   fontSize: 11,
-                  fontWeight: c.isToday || on ? 800 : has ? 700 : 500,
+                  fontWeight: c.isToday || on ? 800 : 600,
                   cursor: c.inMonth ? 'pointer' : 'default',
                 }}
               >
@@ -112,36 +121,18 @@ export function CalendarSide({
         </div>
       </div>
 
-      {/* 목록 — 미니 달력은 붙박이고 아래만 스크롤한다. */}
-      {side === 'day' ? (
-        /* 날짜별 보기 — 디자인 원본의 agenda: 종일 항목은 **왼쪽 색 바가 붙은 납작한
-           행**(마감 목록의 두 줄 카드와 다른 물건이다), 그 아래가 **시간표**다.
-           시각이 있는 항목은 Geurio 일정(0033)뿐이고 칸반 마감은 종일이므로(결정)
-           시간표에는 일정이 있을 때만 블록이 놓인다. */
-        <>
-          <Section title={dateLabel(selectedDay)} sub={`일정 ${dayList.length}개`} action={{ label: '이 날짜에 일정 추가', onClick: () => onNewEvent(selectedDay) }}>
-            {timeline.allDay.length ? (
-              timeline.allDay.map((e) => <DayChip key={`${e.docId}-${e.cardId}`} entry={e} iso={selectedDay} surface={surface} onPick={onPickEntry} />)
-            ) : timeline.blocks.length ? null : (
-              <Empty text="이 날에는 일정이 없어요" />
-            )}
-          </Section>
-          <DayTimelineView timeline={timeline} iso={selectedDay} todayIso={todayIso} surface={surface} onPickEntry={onPickEntry} onNewEvent={onNewEvent} />
-        </>
-      ) : (
-        <div className="lnb-scroll" style={{ flex: '1 1 0', minHeight: 0, overflowY: 'auto', padding: '13px 0 18px', display: 'flex', flexDirection: 'column', gap: 12 }}>
-          <Section title="다가오는 마감" sub={`${upcoming.length}건`}>
-            {upcoming.length ? upcoming.slice(0, 20).map((e) => <Row key={`${e.docId}-${e.cardId}`} entry={e} todayIso={todayIso} surface={surface} onPick={onPickEntry} />) : <Empty text="다가오는 마감이 없어요" />}
-          </Section>
-          {overdue.length > 0 && (
-            <Section title="지난 마감" sub={`${overdue.length}건`}>
-              {overdue.slice(0, 20).map((e) => (
-                <Row key={`${e.docId}-${e.cardId}`} entry={e} todayIso={todayIso} surface={surface} onPick={onPickEntry} />
-              ))}
-            </Section>
-          )}
-        </div>
-      )}
+      {/* 날짜별 보기 — 디자인 원본의 agenda: 종일 항목은 **왼쪽 색 바가 붙은 납작한
+          행**(마감 목록의 두 줄 카드와 다른 물건이다), 그 아래가 **시간표**다.
+          시각이 있는 항목은 Geurio 일정(0033)뿐이고 칸반 마감은 종일이므로(결정)
+          시간표에는 일정이 있을 때만 블록이 놓인다. 미니 달력은 붙박이고 아래만 스크롤. */}
+      <Section title={dateLabel(selectedDay)} sub={`일정 ${dayList.length}개`} action={{ label: '이 날짜에 일정 추가', onClick: () => onNewEvent(selectedDay) }}>
+        {timeline.allDay.length ? (
+          timeline.allDay.map((e) => <DayChip key={`${e.docId}-${e.cardId}`} entry={e} iso={selectedDay} surface={surface} onPick={onPickEntry} />)
+        ) : timeline.blocks.length ? null : (
+          <Empty text="이 날에는 일정이 없어요" />
+        )}
+      </Section>
+      <DayTimelineView timeline={timeline} iso={selectedDay} todayIso={todayIso} surface={surface} onPickEntry={onPickEntry} onNewEvent={onNewEvent} />
     </aside>
   );
 }
@@ -336,55 +327,3 @@ function DayChip({ entry, iso, surface, onPick }: { entry: CalendarEntry; iso: s
   );
 }
 
-function Row({ entry, todayIso, surface, onPick }: { entry: CalendarEntry; todayIso: string; surface: ChipSurface; onPick: (e: CalendarEntry) => void }) {
-  const chip = entryChip(entry, surface);
-  const badge = dueBadge(entry.due, todayIso);
-  const over = entry.due < todayIso;
-  return (
-    <button
-      type="button"
-      data-cal-row={`${entry.docId}:${entry.cardId}`}
-      onClick={() => onPick(entry)}
-      className="mf-ctl"
-      style={{
-        display: 'flex',
-        alignItems: 'center',
-        gap: 8,
-        width: '100%',
-        padding: '7px 9px',
-        borderRadius: 10,
-        border: '1px solid var(--mf-border-soft)',
-        background: 'var(--mf-card)',
-        font: 'inherit',
-        textAlign: 'left',
-        cursor: 'pointer',
-      }}
-    >
-      <span style={{ width: 5, height: 5, borderRadius: 999, background: chip.dot, flexShrink: 0 }} />
-      <span style={{ flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column', gap: 1 }}>
-        <span style={{ fontSize: 12.5, fontWeight: 700, letterSpacing: '-.01em', color: 'var(--mf-text)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{entry.title || '제목 없음'}</span>
-        <span style={{ fontSize: 11, color: 'var(--mf-faint)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-          {entry.boardName} · {entry.colName}
-          {isSpan(entry) ? ` · ${entry.start!.slice(5).replace('-', '.')} – ${entry.due.slice(5).replace('-', '.')}` : ''}
-        </span>
-      </span>
-      <span
-        style={{
-          flexShrink: 0,
-          height: 18,
-          padding: '0 7px',
-          borderRadius: 999,
-          background: over ? 'var(--mf-danger-bg)' : 'var(--mf-accent-soft)',
-          color: over ? 'var(--mf-danger)' : 'var(--mf-accent-strong)',
-          fontFamily: "'JetBrains Mono', monospace",
-          fontSize: 9.5,
-          fontWeight: 800,
-          display: 'inline-flex',
-          alignItems: 'center',
-        }}
-      >
-        {badge}
-      </span>
-    </button>
-  );
-}

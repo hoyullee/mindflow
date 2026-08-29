@@ -489,20 +489,35 @@ export function homeThemeVars(key: HomeThemeKey): Record<string, string> {
     // 선택(#FCF6ED, 아주 옅게) < 오늘(#FFF3EC) < 오늘+선택(#FDEFE4).
     // 예전에는 `--mf-accent-soft`(오늘)·`--mf-accent-mute`(선택)를 그대로 써서
     // 칸이 통째로 진하게 칠해졌다(제보: 부자연스럽다).
-    '--mf-cal-today': mixHex(t.card, t.accent, 0.08),
-    '--mf-cal-sel': mixHex(t.card, t.accent, 0.05),
-    '--mf-cal-sel-today': mixHex(t.card, t.accent, 0.14),
-    /** 고른 칸의 테두리 — 강조색을 그대로 두르면 튄다. */
-    '--mf-cal-ring': hexA(t.accent, 0.55),
+    // **고른 칸**(디자인 원본 #FCF6ED) — 강조색이 아니라 그 테마의 **가라앉은 면**
+    // 쪽으로 간다. 예전에는 accent를 섞어 주황빛이 돌았고 안쪽 링까지 둘러 튀었다
+    // (제보). 오늘 칸에는 배경을 주지 않는다(요청): 숫자가 이미 채운 원으로
+    // 표시되므로 배경까지 바꾸면 "고른 칸"과 혼동된다.
+    '--mf-cal-sel': mixHex(t.card, t.panel2, 0.75),
     // 주말 칸 — 일요일·공휴일은 따뜻하게(#FEF8F5), 토요일은 차갑게(#F9FBFD).
     // 디자인 원본의 고정 헥스 대신 **그 칸의 숫자 색에서 파생**한다(일=danger,
     // 토=info): 값이 한 벌이면 여섯 테마 × 다크에 전부 새로 정해야 하고, 파생하면
-    // 숫자와 배경이 언제나 같은 색조를 쓴다. 밝은 테마에서 실측이 원본과 1~2 차.
-    '--mf-cal-sun': mixHex(t.card, t.danger, 0.05),
-    '--mf-cal-sat': mixHex(t.card, t.info, 0.05),
+    // 숫자와 배경이 언제나 같은 색조를 쓴다. 섞는 양은 0.05 → **0.03**(제보: 진하다).
+    '--mf-cal-sun': mixHex(t.card, t.danger, 0.03),
+    '--mf-cal-sat': mixHex(t.card, t.info, 0.03),
+    /** 일정 상세의 댓글 열 — 카드와 가라앉은 면 사이(디자인 원본 #FDFBF8). */
+    '--mf-cal-cmt': mixHex(t.card, t.panel2, 0.35),
     /** 켜진 칩(통계 필터)의 면 — 면 없는 칩과 갈리도록 `accentSoft`보다 한 단계 진하게.
      *  `accentSoft`는 주말 칸 틴트와 거의 같은 값이라 켜졌는지 알 수 없었다. */
     '--mf-chip-on': mixHex(t.card, t.accent, 0.13),
+    /** 통계 칩의 색쌍 — 디자인 원본은 순위마다 `{fg, dot}` 두 값을 손으로 골랐는데
+     *  **점은 밝고 숫자는 짙다**(#D9694A / #C0563A). 우리 토큰을 그대로 쓰면 그 관계가
+     *  사라져 점이 숫자만큼 강해지고, 특히 `--mf-star`(#e0a53c)를 숫자에 쓰면 흰 면에서
+     *  읽히지 않았다(제보). 그래서 **한 색에서 두 값을 파생**한다: 점은 면 쪽으로,
+     *  숫자는 글자 쪽으로 한 걸음. 여섯 테마 × 다크에 값을 새로 정할 필요가 없다. */
+    '--mf-stat-over': mixHex(t.danger, t.text, 0.2),
+    '--mf-stat-over-dot': mixHex(t.danger, t.card, 0.18),
+    '--mf-stat-today': t.accentStrong,
+    '--mf-stat-today-dot': t.accent,
+    '--mf-stat-week': mixHex(t.star, t.text, 0.32),
+    '--mf-stat-week-dot': t.star,
+    '--mf-stat-span': t.muted,
+    '--mf-stat-span-dot': t.faint2,
     '--mf-hover-bright': t.hoverBright,
     '--mf-success': t.success,
     '--mf-success-soft': t.successSoft,

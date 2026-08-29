@@ -75,6 +75,8 @@ export function DateButton({
       trigger={
         <button
           type="button"
+          // 팝오버 트리거도 손을 얹으면 반응한다(디자인 원본의 `style-hover`).
+          className="mf-ctl"
           aria-label={label}
           disabled={disabled}
           {...attrs}

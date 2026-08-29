@@ -245,8 +245,10 @@ export interface HomeState {
   calY: number;
   calM: number;
   /** 오른쪽 사이드가 보여 주는 것 — 마감 목록 / 고른 날짜. */
-  /** 사이드가 보여 주는 것 — `null`이면 접힘(달력이 화면을 다 쓴다). */
-  calSide: 'list' | 'day' | null;
+  /** 날짜별 보기(RNB) — `null`이면 접힘(달력이 그만큼 넓어진다). */
+  calSide: 'day' | null;
+  /** 마감 목록 — 달력 위에 겹치는 판(디자인 원본 `dlOpen`). 날짜별 보기와 별개다. */
+  calDeadline: boolean;
   /** 사이드에서 고른 날(`YYYY-MM-DD`). 없으면 오늘. */
   calDay: string | null;
   /** 열린 일정 상세 — 그 칸반 카드를 가리킨다. `null`이면 닫힘. */
@@ -488,7 +490,8 @@ export function initialHomeState(): HomeState {
     // 초기값은 오늘이 든 달 — 화면을 열면 이번 달이 보인다.
     calY: new Date().getFullYear(),
     calM: new Date().getMonth() + 1,
-    calSide: 'list',
+    calSide: 'day',
+    calDeadline: false,
     calDay: null,
     calDetail: null,
     calNewEvent: null,

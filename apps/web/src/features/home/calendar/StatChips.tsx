@@ -15,8 +15,9 @@ import { statBadge } from './model';
 const MAX_ROWS = 5;
 
 /** 중요도 순서(디자인 원본의 TONE): 지난 마감 > 오늘 > 이번 주 > 기간. */
-const DOT: Record<CalendarStat['key'], string> = { over: 'var(--mf-danger)', today: 'var(--mf-accent)', week: 'var(--mf-star)', span: 'var(--mf-faint2)' };
-const FG: Record<CalendarStat['key'], string> = { over: 'var(--mf-danger)', today: 'var(--mf-accent-strong)', week: 'var(--mf-star)', span: 'var(--mf-muted)' };
+// 값은 `theme.ts`가 한 색에서 파생한다 — **점은 밝고 숫자는 짙다**(원본의 관계).
+const DOT: Record<CalendarStat['key'], string> = { over: 'var(--mf-stat-over-dot)', today: 'var(--mf-stat-today-dot)', week: 'var(--mf-stat-week-dot)', span: 'var(--mf-stat-span-dot)' };
+const FG: Record<CalendarStat['key'], string> = { over: 'var(--mf-stat-over)', today: 'var(--mf-stat-today)', week: 'var(--mf-stat-week)', span: 'var(--mf-stat-span)' };
 
 export function StatChips({ stats, todayIso, onPickEntry }: { stats: readonly CalendarStat[]; todayIso: string; onPickEntry: (e: CalendarEntry) => void }) {
   return (

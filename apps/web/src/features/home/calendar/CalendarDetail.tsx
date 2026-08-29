@@ -16,7 +16,7 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import type { ReactNode } from 'react';
 import { richToMarkdown } from '@mindflow/mindmap-core';
 import type { KanbanCard, KanbanColumn, KanbanTag } from '@mindflow/mindmap-core';
-import { Modal } from '../../../components/Modal';
+import { Modal, MODAL_DIM } from '../../../components/Modal';
 import { useShareStore } from '../../../adapters/BackendContext';
 import type { ShareParticipant } from '../../../adapters/ports';
 import { Avatar } from '../../editor/components/KanbanBoard';
@@ -108,7 +108,8 @@ export function CalendarDetail({ state, controller, entry, isMobile }: { state: 
       // 막을 눌러 닫힌다 — 고르는 즉시 그 칸반에 쓰므로 잃을 입력이 없다(제목만 닫을
       // 때 저장하고, `close`가 그 커밋을 태운다). 달력 항목을 흘깃 보는 팝업의 관례.
       dismissOnBackdrop
-      dim={{ zIndex: 320, alignItems: isMobile ? 'flex-end' : 'center', padding: isMobile ? 0 : 32 }}
+      // 막·등장 효과는 설정 팝업과 같은 것(요청) — 예전에는 배경이 그대로 보였다(제보).
+      dim={{ ...MODAL_DIM, animation: 'mf-dim-in .18s ease-out', zIndex: 320, alignItems: isMobile ? 'flex-end' : 'center', padding: isMobile ? 0 : 32 }}
       card={{
         // 원본: 900×640. 폰은 바텀 시트(우리 모달 관례).
         width: isMobile ? '100%' : 900,
@@ -123,6 +124,7 @@ export function CalendarDetail({ state, controller, entry, isMobile }: { state: 
         display: 'flex',
         flexDirection: 'column',
         overflow: 'hidden',
+        animation: 'mf-fade .2s ease',
       }}
       cardAttrs={{ 'data-cal-detail': '1' }}
     >
@@ -384,7 +386,7 @@ export function CalendarDetail({ state, controller, entry, isMobile }: { state: 
           </div>
 
           {/* 오른쪽 — 댓글. 우리 댓글 표(스레드·답글·멘션·좋아요·실시간)를 그대로 쓴다. */}
-          <div data-cal-comments style={{ flex: isMobile ? '0 0 auto' : '1 1 240px', minWidth: isMobile ? 0 : 230, minHeight: isMobile ? 240 : 0, borderLeft: isMobile ? undefined : '1px solid var(--mf-border-soft)', borderTop: isMobile ? '1px solid var(--mf-border-soft)' : undefined, background: 'var(--mf-panel2)', display: 'flex', flexDirection: 'column' }}>
+          <div data-cal-comments style={{ flex: isMobile ? '0 0 auto' : '1 1 240px', minWidth: isMobile ? 0 : 230, minHeight: isMobile ? 240 : 0, borderLeft: isMobile ? undefined : '1px solid var(--mf-border-soft)', borderTop: isMobile ? '1px solid var(--mf-border-soft)' : undefined, background: 'var(--mf-cal-cmt)', display: 'flex', flexDirection: 'column' }}>
             <div style={{ flex: '0 0 auto', display: 'flex', alignItems: 'center', gap: 9, padding: '17px 18px 13px' }}>
               <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="var(--mf-muted)" strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round" style={{ flex: '0 0 auto' }} aria-hidden="true">
                 <path d="M20 15.5A2.5 2.5 0 0 1 17.5 18H8l-4 3V6.5A2.5 2.5 0 0 1 6.5 4h11A2.5 2.5 0 0 1 20 6.5v9Z" />
