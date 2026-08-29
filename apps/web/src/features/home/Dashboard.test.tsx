@@ -1064,3 +1064,115 @@ describe('위젯 크기 N×4(요청)', () => {
     expect(container.querySelector('[data-dash-widget]')).toBeTruthy();
   });
 });
+
+describe('대시보드 캘린더 위젯(PR4) — 크기가 보기를 정한다', () => {
+  /** 오늘을 기준으로 만든 날짜 — 하드코딩하면 언젠가 과거가 되어 테스트가 흔들린다. */
+  const shift = (n: number): string => {
+    const d = new Date();
+    d.setDate(d.getDate() + n);
+    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+  };
+
+  const KANBAN = (cards: Record<string, unknown>[]): LoadedDoc => ({
+    doc: {
+      v: 1,
+      kind: 'kanban',
+      nodes: {},
+      floats: [],
+      lines: [],
+      zones: [],
+      layoutMode: 'right',
+      themeKey: 'coral',
+      columns: [{ id: 'c1', title: '할 일' }, { id: 'c2', title: '진행 중' }, { id: 'c3', title: '완료' }],
+      cards,
+    } as unknown as LoadedDoc['doc'],
+    version: 1,
+    title: '스프린트',
+  });
+
+  function seedWithCalWidget(size: string) {
+    localStorage.setItem(
+      'mf_spaces',
+      JSON.stringify({
+        spaces: [{ id: 's1', name: '일반 공간', home: true, color: '#f0663f', maps: [{ title: '스프린트', when: '방금', hue: '#f0663f', docId: 'doc-k' }], folders: [] }],
+        mapFolders: {},
+        dashboards: [{ id: 'd1', name: '이번 주', items: [{ id: 'w-cal', kind: 'cal', size }] }],
+      }),
+    );
+  }
+
+  const META = (id: string, title: string): DocMeta => ({ id, title, version: 1, updatedAt: '2026-01-01T00:00:00.000Z', isFavorite: false, deletedAt: null });
+
+  it('작은 위젯은 다가오는 마감 목록 — 다른 스페이스의 마감도 함께 모은다', async () => {
+    seedWithCalWidget('2x1');
+    const { container } = renderHome([META('doc-k', '스프린트')], {
+      'doc-k': KANBAN([{ id: 'k1', col: 'c2', pos: 1, text: '릴리스 준비', due: shift(2) }]),
+    });
+    const aside = await sidebarOf(container);
+    await userEvent.setup().click(within(aside).getByText('이번 주'));
+    const widget = await waitFor(() => container.querySelector('[data-dash-widget]') as HTMLElement);
+    // 머리는 '일정'이고 몸통은 목록 보기(작은 크기)
+    expect(within(widget).getByText('일정')).toBeTruthy();
+    await waitFor(() => expect(widget.querySelector('[data-cal-widget-list]')).toBeTruthy());
+    expect(widget.querySelector('[data-cal-widget-week]')).toBeNull();
+    await waitFor(() => expect(within(widget).getByText('릴리스 준비')).toBeTruthy());
+  });
+
+  it('2×2는 주간, 4×3은 월간 — 같은 위젯이 크기만으로 보기를 바꾼다', async () => {
+    seedWithCalWidget('2x2');
+    const { container, unmount } = renderHome([META('doc-k', '스프린트')], { 'doc-k': KANBAN([{ id: 'k1', col: 'c2', pos: 1, text: '릴리스 준비', due: shift(1) }]) });
+    let aside = await sidebarOf(container);
+    await userEvent.setup().click(within(aside).getByText('이번 주'));
+    await waitFor(() => expect(container.querySelector('[data-cal-widget-week]')).toBeTruthy());
+    unmount();
+
+    seedWithCalWidget('4x3');
+    const second = renderHome([META('doc-k', '스프린트')], { 'doc-k': KANBAN([{ id: 'k1', col: 'c2', pos: 1, text: '릴리스 준비', due: shift(1) }]) });
+    aside = await sidebarOf(second.container);
+    await userEvent.setup().click(within(aside).getByText('이번 주'));
+    await waitFor(() => expect(second.container.querySelector('[data-cal-widget-month]')).toBeTruthy());
+    // 월간에는 달 이동이 붙는다(보는 사람의 상태 — 문서에 저장하지 않는다)
+    expect(second.container.querySelector('[aria-label="다음 달"]')).toBeTruthy();
+  });
+
+  it('위젯은 보기 전용 — 항목을 누르면 그 날짜의 일정 화면으로 간다', async () => {
+    seedWithCalWidget('2x1');
+    const { container } = renderHome([META('doc-k', '스프린트')], { 'doc-k': KANBAN([{ id: 'k1', col: 'c2', pos: 1, text: '릴리스 준비', due: shift(2) }]) });
+    const user = userEvent.setup();
+    const aside = await sidebarOf(container);
+    await user.click(within(aside).getByText('이번 주'));
+    const widget = await waitFor(() => container.querySelector('[data-dash-widget]') as HTMLElement);
+    await waitFor(() => expect(within(widget).getByText('릴리스 준비')).toBeTruthy());
+
+    await user.click(widget.querySelector('[data-cal-widget-row]') as HTMLElement);
+    await waitFor(() => expect(container.querySelector('[data-calendar-view]')).toBeTruthy());
+  });
+
+  it('피커 첫 칸이 일정 — 올리면 블롭에 `kind: cal`로 남고, 다시 누르면 내려간다', async () => {
+    seedSpaces();
+    localStorage.setItem(
+      'mf_spaces',
+      JSON.stringify({
+        spaces: [{ id: 's1', name: '일반 공간', home: true, color: '#f0663f', maps: [], folders: [] }],
+        mapFolders: {},
+        dashboards: [{ id: 'd1', name: '이번 주', items: [] }],
+      }),
+    );
+    const user = userEvent.setup();
+    const { container } = renderHome();
+    const aside = await sidebarOf(container);
+    await user.click(within(aside).getByText('이번 주'));
+    await user.click(screen.getAllByRole('button', { name: '보드 추가' })[0]!);
+    const picker = await screen.findByRole('dialog', { name: '보드 올리기' });
+
+    const calCard = picker.querySelector('[data-dash-pick-cal]') as HTMLElement;
+    expect(calCard).toBeTruthy();
+    await user.click(calCard);
+    await user.click(within(picker).getByRole('button', { name: '올리기' }));
+    await waitFor(() => expect(savedDashboards()[0]?.items).toEqual([expect.objectContaining({ kind: 'cal', size: '2x2' })]));
+    // 올라간 뒤에는 "올림" 배지가 뜨고, 다시 누르면 내려간다(문서 카드와 같은 규칙)
+    expect(calCard.querySelector('[data-dash-pick-on]')).toBeTruthy();
+    await user.click(calCard);
+    await waitFor(() => expect(savedDashboards()[0]?.items).toEqual([]));
+  });
+});

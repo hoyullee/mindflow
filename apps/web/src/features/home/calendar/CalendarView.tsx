@@ -1,7 +1,8 @@
 import { useMemo, useState } from 'react';
 import type { HomeState } from '../types';
 import type { HomeController } from '../useHomeController';
-import { calendarEntries, type CalendarEntry, type CalendarSource } from './entries';
+import type { CalendarEntry } from './entries';
+import { useCalendarEntries } from './useCalendarEntries';
 import { homeChipSurface } from '../theme';
 import { calendarStats, monthCells, monthLabel, todayISO } from './model';
 import { MonthGrid } from './MonthGrid';
@@ -274,23 +275,6 @@ export function CalendarView({
       })()}
     </div>
   );
-}
-
-/** 전 스페이스 + 공유받은 맵의 칸반 마감. 본문은 `previewDocs`(썸네일이 받아 둔 것). */
-function useCalendarEntries(state: HomeState): CalendarEntry[] {
-  return useMemo(() => {
-    const sources: CalendarSource[] = [];
-    for (const sp of state.spaces) {
-      if (sp.id === 'drive') continue; // Drive 데모에는 우리 문서가 없다
-      for (const mp of Array.isArray(sp.maps) ? sp.maps : []) {
-        if (mp.docId) sources.push({ docId: mp.docId, boardName: mp.title, spaceName: sp.name });
-      }
-    }
-    // 공유받은 맵도 내 일정이다 — 다만 스페이스가 없으므로 구획 이름으로 표기한다.
-    // 보기 전용(role='view')이면 그대로 실어 보낸다: 끌리지도, 고쳐지지도 않는다.
-    for (const sm of state.sharedMaps) sources.push({ docId: sm.docId, boardName: sm.title, spaceName: '공유받음', ...(sm.role === 'view' ? { readOnly: true } : {}) });
-    return calendarEntries(sources, state.previewDocs);
-  }, [state.spaces, state.sharedMaps, state.previewDocs]);
 }
 
 /** `8월 26일 수요일` — 헤더의 오늘 표기. */

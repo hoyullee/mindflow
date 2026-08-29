@@ -17,10 +17,21 @@ import type { DocKindName } from '../viewModel';
 export interface DashboardItemData {
   /** 위젯 인스턴스 id — 같은 문서를 두 대시보드에 올려도 서로 구별된다. */
   id: string;
-  /** 대상 문서 id. */
-  docId: string;
+  /** 대상 문서 id — **문서 위젯에만** 있다(캘린더 위젯은 가리킬 문서가 없다). */
+  docId?: string;
+  /** 문서가 아닌 위젯의 종류. 없으면 문서 위젯이다(옛 블롭 호환 — 그때는 모든
+   *  위젯이 문서였다). */
+  kind?: 'cal';
   /** 격자 크기 `"CxR"` (SIZES 중 하나). */
   size: string;
+}
+
+/** 위젯이 그리는 것 — 문서 세 종류 + 일정(문서가 아니다). */
+export type DashWidgetKind = DocKindName | 'cal';
+
+/** 이 위젯이 일정인가 — `kind`가 없으면 문서다(옛 블롭). */
+export function isCalItem(it: Pick<DashboardItemData, 'kind'>): boolean {
+  return it.kind === 'cal';
 }
 
 export interface DashboardData {
@@ -70,17 +81,34 @@ export const DASH_SIZE_NOTE: Record<string, string> = {
 
 /** 종류별 최소 크기 — 실제 콘텐츠가 제대로 보이는 최소 단위(디자인 원본).
  * 칸반은 열 4개가 눕는 3×2 아래로는 내용이 읽히지 않는다. */
-export const DASH_MIN_SIZE: Record<DocKindName, [number, number]> = {
+export const DASH_MIN_SIZE: Record<DashWidgetKind, [number, number]> = {
   kanban: [3, 2],
   map: [1, 1],
   board: [1, 1],
+  // 일정은 1×1에서도 다가오는 마감 목록으로 뜻이 통한다(크기가 보기를 정한다).
+  cal: [1, 1],
 };
 
-export const DASH_DEFAULT_SIZE: Record<DocKindName, string> = {
+export const DASH_DEFAULT_SIZE: Record<DashWidgetKind, string> = {
   kanban: '3x2',
   map: '2x2',
   board: '2x2',
+  // 기본은 주간 — 목록보다 정보가 많고 월간(4×3)만큼 자리를 차지하지 않는다.
+  cal: '2x2',
 };
+
+/**
+ * **크기가 보기를 정한다**(디자인 원본의 그 규칙) — 위젯 하나에 보기 셋.
+ *
+ * `4×3` 이상 = 월간(작은 달력 + 옆 목록), `2×2` 이상 = 주간(요일 일곱 줄),
+ * 그보다 작으면 목록(다가오는 마감). 고를 것을 따로 두지 않는 이유는 크기가 이미
+ * "얼마나 보여 줄까"를 말하기 때문이다.
+ */
+export function calWidgetMode(cols: number, rows: number): 'month' | 'week' | 'list' {
+  if (cols >= 4 && rows >= 3) return 'month';
+  if (cols >= 2 && rows >= 2) return 'week';
+  return 'list';
+}
 
 export function parseSize(size: string): [number, number] {
   const m = /^([1-9])x([1-9])$/.exec(size);
@@ -89,7 +117,7 @@ export function parseSize(size: string): [number, number] {
 }
 
 /** 이 종류가 놓일 수 있는 크기 목록(최소 크기 이상). */
-export function sizesFor(kind: DocKindName): string[] {
+export function sizesFor(kind: DashWidgetKind): string[] {
   const [minC, minR] = DASH_MIN_SIZE[kind];
   return DASH_SIZES.filter((s) => {
     const [c, r] = parseSize(s);
@@ -110,9 +138,15 @@ export function coerceDashboards(raw: unknown): DashboardData[] {
     if (Array.isArray(o.items)) {
       for (const it of o.items) {
         if (!it || typeof it !== 'object') continue;
-        const w = it as { id?: unknown; docId?: unknown; size?: unknown };
-        if (typeof w.id !== 'string' || !w.id || typeof w.docId !== 'string' || !w.docId) continue;
+        const w = it as { id?: unknown; docId?: unknown; kind?: unknown; size?: unknown };
+        if (typeof w.id !== 'string' || !w.id) continue;
         const size = isValidSize(w.size) ? w.size : '2x2';
+        if (w.kind === 'cal') {
+          items.push({ id: w.id, kind: 'cal', size });
+          continue;
+        }
+        // `kind`가 없으면 문서 위젯 — 가리킬 문서가 없으면 버린다.
+        if (typeof w.docId !== 'string' || !w.docId) continue;
         items.push({ id: w.id, docId: w.docId, size });
       }
     }

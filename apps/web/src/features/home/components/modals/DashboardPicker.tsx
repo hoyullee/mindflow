@@ -4,7 +4,8 @@ import type { HomeState } from '../../types';
 import type { HomeController } from '../../useHomeController';
 import type { HomeViewModel } from '../../viewModel';
 import { cardSketch } from '../../viewModel';
-import { DASH_CAP, DASH_SIZE_NOTE, sizesFor } from '../../dashboard/model';
+import { DASH_CAP, DASH_SIZE_NOTE, calWidgetMode, isCalItem, parseSize, sizesFor } from '../../dashboard/model';
+import { CalendarGlyph } from '../../calendar/CalendarView';
 import { KIND_META } from '../DashboardView';
 import { META_MONO } from '../../chrome';
 
@@ -43,8 +44,11 @@ export function DashboardPicker({ state, view, controller, isMobile = false }: P
   });
 
   const sel = pk?.sel ?? null;
-  const selEntry = sel ? view.dashPickCatalog.find((b) => b.docId === sel.docId) ?? null : null;
-  const selSizes = selEntry ? sizesFor(selEntry.kind) : [];
+  const selEntry = sel?.docId ? view.dashPickCatalog.find((b) => b.docId === sel.docId) ?? null : null;
+  /** 일정 위젯을 고른 상태 — 가리킬 문서가 없다(카탈로그에도 없다). */
+  const selCal = !!sel && !sel.docId;
+  const selSizes = selEntry ? sizesFor(selEntry.kind) : selCal ? sizesFor('cal') : [];
+  const calOn = items.some(isCalItem);
 
   const rail: { key: string; label: string; icon: ReactNode; count: number; divider?: boolean }[] = [
     { key: 'all', label: '전체', count: view.dashPickCatalog.length, icon: <GridGlyph /> },
@@ -155,6 +159,59 @@ export function DashboardPicker({ state, view, controller, isMobile = false }: P
         </div>
 
         <div className="notif-scroll" style={{ flex: 1, minHeight: 0, overflowY: 'auto', padding: '14px 18px', display: 'grid', gridTemplateColumns: isMobile ? '1fr' : '1fr 1fr', gridAutoRows: 132, gap: 10, alignContent: 'start' }}>
+          {/* **일정**은 문서가 아니라 화면이라 카탈로그(스페이스·검색) 밖에 있다 —
+              첫 칸에 붙박이로 둔다(대시보드당 하나). 검색어를 치면 이름이 걸릴
+              때만 남는다: 목록을 걸러 놓고 이것만 계속 뜨면 검색이 거짓말이 된다. */}
+          {'일정'.includes((pk?.query ?? '').trim()) && (
+            <button
+              type="button"
+              className="btn"
+              data-dash-pick-cal
+              aria-pressed={selCal}
+              onClick={() => !(!calOn && !selCal && atCap) && controller.pickDashCalendar()}
+              style={{
+                display: 'flex',
+                flexDirection: 'column',
+                padding: 0,
+                borderRadius: 13,
+                border: `1.5px solid ${selCal ? 'var(--mf-accent)' : calOn ? 'var(--mf-success)' : 'var(--mf-border)'}`,
+                background: 'var(--mf-card)',
+                cursor: !calOn && !selCal && atCap ? 'not-allowed' : 'pointer',
+                textAlign: 'left',
+                font: 'inherit',
+                overflow: 'hidden',
+                opacity: !calOn && !selCal && atCap ? 0.45 : 1,
+                boxShadow: selCal ? '0 12px 26px -16px rgba(var(--mf-accent-rgb),.55)' : '0 10px 22px -20px rgba(46,42,38,.4)',
+              }}
+            >
+              <span style={{ position: 'relative', display: 'block', width: '100%', flex: '0 0 82px', background: 'var(--mf-wash, var(--mf-bg))', borderBottom: '1px solid var(--mf-hairline)', overflow: 'hidden' }}>
+                <span aria-hidden style={{ position: 'absolute', inset: 0, backgroundImage: 'radial-gradient(var(--mf-dot-grid) 1px, transparent 1px)', backgroundSize: '12px 12px' }} />
+                <span style={{ position: 'absolute', inset: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--mf-accent)' }}>
+                  <CalendarGlyph size={30} />
+                </span>
+                {calOn && (
+                  <span data-dash-pick-on style={{ position: 'absolute', right: 6, top: 6, display: 'inline-flex', alignItems: 'center', gap: 4, height: 19, padding: '0 8px', borderRadius: 999, background: 'var(--mf-success)', color: '#fff', fontSize: 9, fontWeight: 800 }}>
+                    <CheckGlyph size={9} />
+                    올림
+                  </span>
+                )}
+                {selCal && (
+                  <span style={{ position: 'absolute', right: 6, top: 6, width: 19, height: 19, borderRadius: 999, background: 'var(--mf-accent)', color: 'var(--mf-accent-ink)', display: 'inline-flex', alignItems: 'center', justifyContent: 'center' }}>
+                    <CheckGlyph size={10} />
+                  </span>
+                )}
+              </span>
+              <span style={{ display: 'flex', alignItems: 'center', gap: 7, padding: '9px 11px 10px', minWidth: 0, width: '100%', boxSizing: 'border-box', flex: 1, minHeight: 0 }}>
+                <span style={{ color: 'var(--mf-accent)', display: 'inline-flex', flexShrink: 0 }}>
+                  <CalendarGlyph size={14} />
+                </span>
+                <span style={{ display: 'flex', flexDirection: 'column', gap: 1, minWidth: 0, flex: 1 }}>
+                  <span style={{ fontSize: 12, fontWeight: 700, letterSpacing: '-.015em', color: 'var(--mf-text)' }}>일정</span>
+                  <span style={{ fontSize: 10, color: 'var(--mf-muted)', minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>모든 스페이스의 마감 · 보기 전용</span>
+                </span>
+              </span>
+            </button>
+          )}
           {filtered.map((b) => {
             const on = usedDocIds.has(b.docId);
             const selected = sel?.docId === b.docId;
@@ -220,7 +277,7 @@ export function DashboardPicker({ state, view, controller, isMobile = false }: P
             어떤 폭에서도 버튼이 제자리에 있고 줄바꿈 지점이 예측된다(에디터 서식
             툴바에서 같은 이유로 이미 한 번 겪었다). */}
         <div style={{ flex: '0 0 auto', borderTop: '1px solid var(--mf-hairline)', background: 'var(--mf-bg)', padding: '12px 18px', display: 'flex', flexDirection: 'column', gap: 10, minHeight: 34 }}>
-          {selEntry && sel ? (
+          {sel && (selEntry || selCal) ? (
             <>
               {/* 크기 칩 — 넘치면 접힌다(선택지가 더 늘어도 팝업을 넘지 않는다). */}
               <span data-pick-sizes style={{ display: 'flex', alignItems: 'center', gap: 5, flexWrap: 'wrap', width: '100%' }}>
@@ -255,9 +312,9 @@ export function DashboardPicker({ state, view, controller, isMobile = false }: P
               {/* 아래 행 — 무엇을 고른 상태인지 + 올리기. 버튼은 언제나 오른쪽 끝. */}
               <span data-pick-confirm-row style={{ display: 'flex', alignItems: 'center', gap: 12, width: '100%', minWidth: 0 }}>
                 <span style={{ display: 'flex', flexDirection: 'column', gap: 2, minWidth: 0, flex: '1 1 auto' }}>
-                  <span style={{ fontSize: 11.5, fontWeight: 800, letterSpacing: '-.01em', color: 'var(--mf-text)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{selEntry.title}</span>
+                  <span style={{ fontSize: 11.5, fontWeight: 800, letterSpacing: '-.01em', color: 'var(--mf-text)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{selEntry ? selEntry.title : '일정'}</span>
                   <span style={{ fontSize: 10, color: 'var(--mf-muted)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                    {KIND_META[selEntry.kind].name} · {DASH_SIZE_NOTE[sel.size] ?? ''}
+                    {(selEntry ? KIND_META[selEntry.kind].name : calSizeNote(sel.size)) + ' · ' + (DASH_SIZE_NOTE[sel.size] ?? '')}
                   </span>
                 </span>
                 <button
@@ -305,4 +362,11 @@ function CheckGlyph({ size }: { size: number }) {
       <path d="m5 13 4.5 4.5L19 7" />
     </svg>
   );
+}
+
+/** 일정 위젯의 크기 설명 — **크기가 보기를 정한다**는 규칙을 여기서 미리 말한다. */
+function calSizeNote(size: string): string {
+  const [c, r] = parseSize(size);
+  const mode = calWidgetMode(c, r);
+  return mode === 'month' ? '월간 보기' : mode === 'week' ? '주간 보기' : '다가오는 마감';
 }

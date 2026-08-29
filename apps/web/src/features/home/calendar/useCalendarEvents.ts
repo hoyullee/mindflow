@@ -18,7 +18,11 @@ export interface CalendarEventsApi {
   reload: () => void;
 }
 
-export function useCalendarEvents(y: number, m: number): CalendarEventsApi {
+/**
+ * @param enabled 이 화면이 실제로 일정을 그리는가 — 대시보드는 위젯마다 이 훅을
+ *   지나므로(문서 위젯이 대부분) 끄지 않으면 위젯 수만큼 조회가 나간다.
+ */
+export function useCalendarEvents(y: number, m: number, enabled = true): CalendarEventsApi {
   const eventStore = useEventStore();
   const [events, setEvents] = useState<CalendarEvent[]>([]);
   const [loading, setLoading] = useState(true);
@@ -32,6 +36,11 @@ export function useCalendarEvents(y: number, m: number): CalendarEventsApi {
 
   const { from, to } = gridRange(y, m);
   const reload = useCallback(() => {
+    if (!enabled) {
+      setEvents([]);
+      setLoading(false);
+      return;
+    }
     setLoading(true);
     void eventStore
       .list(from, to)
@@ -42,7 +51,7 @@ export function useCalendarEvents(y: number, m: number): CalendarEventsApi {
       .finally(() => {
         if (aliveRef.current) setLoading(false);
       });
-  }, [eventStore, from, to]);
+  }, [eventStore, from, to, enabled]);
 
   useEffect(() => reload(), [reload]);
 

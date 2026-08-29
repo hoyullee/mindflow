@@ -6,7 +6,7 @@ import type { HomeController } from '../useHomeController';
 import type { CardViewData, FolderCardViewData, HomeViewModel } from '../viewModel';
 import { useIsMobile } from '../../../hooks/useMediaQuery';
 import { docKindOf } from '../viewModel';
-import { sizesFor } from '../dashboard/model';
+import { isCalItem, sizesFor } from '../dashboard/model';
 import { mapHref } from '../storage';
 
 /**
@@ -610,19 +610,24 @@ function widgetItems(itemId: string, state: HomeState, view: HomeViewModel, cont
   const dash = state.dashboards.find((d) => d.id === state.activeDash);
   const item = dash?.items.find((it) => it.id === itemId);
   if (!item) return [];
-  const kind = docKindOf('', item.docId, state.previewDocs);
+  // 일정 위젯에는 가리킬 문서가 없다 — 여는 곳도 새로 불러올 것도 다르다.
+  const cal = isCalItem(item);
+  const docId = item.docId ?? '';
+  const kind = cal ? 'cal' : docKindOf('', docId, state.previewDocs);
   const allowed = sizesFor(kind);
   const items: HomeMenuItem[] = [
-    {
-      key: 'open',
-      icon: OpenIcon,
-      label: '에디터에서 열기',
-      onSelect: () => {
-        const title = view.dashDocTitles[item.docId] ?? '';
-        controller.openWithLoader(mapHref(title, item.docId), title, item.docId);
-      },
-    },
-    { key: 'refresh', icon: RefreshIcon, label: '최신 내용 불러오기', onSelect: () => controller.refreshDashItem(item.docId) },
+    cal
+      ? { key: 'open', icon: OpenIcon, label: '일정 화면 열기', onSelect: controller.openCalendar }
+      : {
+          key: 'open',
+          icon: OpenIcon,
+          label: '에디터에서 열기',
+          onSelect: () => {
+            const title = view.dashDocTitles[docId] ?? '';
+            controller.openWithLoader(mapHref(title, docId), title, docId);
+          },
+        },
+    ...(cal ? [] : [{ key: 'refresh', icon: RefreshIcon, label: '최신 내용 불러오기', onSelect: () => controller.refreshDashItem(docId) } as HomeMenuItem]),
     { key: 'front', icon: FrontIcon, label: '맨 앞으로 옮기기', onSelect: () => controller.dashItemToFront(item.id) },
     {
       key: 'size',

@@ -1,4 +1,4 @@
-import { Fragment, useEffect, useRef, useState, type DragEvent as ReactDragEvent, type MouseEvent, type PointerEvent as ReactPointerEvent } from 'react';
+import { Fragment, useEffect, useMemo, useRef, useState, type CSSProperties, type DragEvent as ReactDragEvent, type MouseEvent, type PointerEvent as ReactPointerEvent } from 'react';
 import { createPortal } from 'react-dom';
 import { cardsInColumn, type KanbanCard, type KanbanColumn } from '@mindflow/mindmap-core';
 import { useCommentStore } from '../../../adapters/BackendContext';
@@ -11,7 +11,14 @@ import type { HomeController } from '../useHomeController';
 import type { HomeState } from '../types';
 import type { HomeViewModel, DocKindName } from '../viewModel';
 import { docKindOf } from '../viewModel';
-import { DASH_CAP, DASH_COLS, DASH_MIN_SIZE, DASH_ROW_PX, DASH_ROWS_MAX, parseSize, sizesFor } from '../dashboard/model';
+import { DASH_CAP, DASH_COLS, DASH_MIN_SIZE, DASH_ROW_PX, DASH_ROWS_MAX, calWidgetMode, parseSize, sizesFor, type DashWidgetKind } from '../dashboard/model';
+import { CalWidgetBody } from '../dashboard/CalendarWidget';
+import { useCalendarEntries } from '../calendar/useCalendarEntries';
+import { useCalendarEvents } from '../calendar/useCalendarEvents';
+import { eventEntries } from '../calendar/entries';
+import { addMonth, partsOf, todayISO, upcomingEntries } from '../calendar/model';
+import { homeChipSurface } from '../theme';
+import { CalendarGlyph } from '../calendar/CalendarView';
 import { widgetDataOf, type WidgetData, type WidgetKanban } from '../dashboard/widgetData';
 import { previewSurface, realPreview } from '../mapPreview';
 import { useVisibleOnce } from '../useVisibleOnce';
@@ -35,6 +42,32 @@ import { UNREAD_BADGE_BG } from '../theme';
  * (`widgetData`가 `kanbanMeta`로 계산)을 디자인의 위젯 틀에 부어 실제 보드처럼
  * 보인다.
  */
+/** 일정 위젯의 표식 — LNB `일정` 행·헤더 칩과 같은 글리프(같은 것은 같게 보인다). */
+const CAL_META = { name: '일정', color: 'var(--mf-accent)', icon: <CalendarGlyph size={14} /> };
+
+/** 위젯 머리의 작은 알약(달 이동의 `오늘`) — 디자인 원본의 그 크기. */
+const navPill: CSSProperties = { height: 20, padding: '0 8px', borderRadius: 999, border: '1px solid var(--mf-accent-mute)', background: 'var(--mf-accent-soft)', color: 'var(--mf-accent-strong)', font: 'inherit', fontSize: 9, fontWeight: 800, cursor: 'pointer', whiteSpace: 'nowrap' };
+
+function NavBtn({ label, d, onClick }: { label: string; d: string; onClick: () => void }) {
+  return (
+    <button
+      type="button"
+      title={label}
+      aria-label={label}
+      className="mf-ctl"
+      onClick={(e) => {
+        e.stopPropagation();
+        onClick();
+      }}
+      style={{ width: 20, height: 20, borderRadius: 7, border: '1px solid var(--mf-border)', background: 'var(--mf-card)', color: 'var(--mf-muted)', cursor: 'pointer', display: 'inline-flex', alignItems: 'center', justifyContent: 'center' }}
+    >
+      <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.6" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+        <path d={d} />
+      </svg>
+    </button>
+  );
+}
+
 const KIND_META: Record<DocKindName, { name: string; color: string; icon: JSX.Element }> = {
   map: {
     name: '마인드맵',
@@ -112,7 +145,7 @@ export function DashboardView({ state, view, controller, isMobile = false, onOpe
 
   /** 모서리 리사이즈(디자인 startResize) — 시작 사각형 기준으로 픽셀 → 칸 수 환산,
    * 움직이는 동안은 라이브 상태만 갱신하고 손을 뗄 때 커밋한다. */
-  const startResize = (e: MouseEvent, itemId: string, kind: DocKindName, startSize: string) => {
+  const startResize = (e: MouseEvent, itemId: string, kind: DashWidgetKind, startSize: string) => {
     e.preventDefault();
     e.stopPropagation();
     const el = (e.currentTarget as HTMLElement).closest('[data-dash-widget]');
@@ -333,7 +366,8 @@ export function DashboardView({ state, view, controller, isMobile = false, onOpe
               <DashWidget
                 key={it.id}
                 itemId={it.id}
-                docId={it.docId}
+                docId={it.docId ?? ''}
+                itemKind={it.kind}
                 size={resize?.itemId === it.id ? resize.size : it.size}
                 committedSize={it.size}
                 maxCols={cols}
@@ -372,7 +406,10 @@ export function DashboardView({ state, view, controller, isMobile = false, onOpe
 
 interface DashWidgetProps {
   itemId: string;
+  /** 문서 위젯의 대상 — 일정 위젯에서는 빈 문자열이다(가리킬 문서가 없다). */
   docId: string;
+  /** 문서가 아닌 위젯의 종류(지금은 일정 하나). */
+  itemKind?: 'cal';
   /** 지금 그릴 크기 — 리사이즈 중에는 라이브 값이 들어온다. */
   size: string;
   /** 저장된 크기 — 리사이즈 시작점·크기 순환 버튼의 기준. */
@@ -392,22 +429,24 @@ interface DashWidgetProps {
   onDragEndW: () => void;
   onDragOverW: (e: ReactDragEvent) => void;
   onDropW: (e: ReactDragEvent) => void;
-  onResizeStart: (e: MouseEvent, itemId: string, kind: DocKindName, startSize: string) => void;
+  onResizeStart: (e: MouseEvent, itemId: string, kind: DashWidgetKind, startSize: string) => void;
   /** 에디터로 열기 — 스페이스의 카드와 같은 길(전체 화면 로더 → 이동). */
   onOpen: (docId: string, title: string) => void;
 }
 
-function DashWidget({ itemId, docId, size, committedSize, maxCols, edit, isMobile, dragging, resizing, state, view, controller, onDragStartW, onDragEndW, onDragOverW, onDropW, onResizeStart, onOpen }: DashWidgetProps) {
+function DashWidget({ itemId, docId, itemKind, size, committedSize, maxCols, edit, isMobile, dragging, resizing, state, view, controller, onDragStartW, onDragEndW, onDragOverW, onDropW, onResizeStart, onOpen }: DashWidgetProps) {
+  // 일정 위젯은 문서를 가리키지 않는다 — 아래 문서 조회는 전부 빈 값으로 지나간다.
+  const cal = itemKind === 'cal';
   const raw = state.previewDocs[docId] || readDocRaw(docId) || null;
   const resolved = !!raw || !!state.previewResolved[docId];
-  const kind = docKindOf('', docId, state.previewDocs);
-  const meta = KIND_META[kind];
+  const kind = cal ? 'cal' : docKindOf('', docId, state.previewDocs);
+  const meta = cal ? CAL_META : KIND_META[kind as DocKindName];
   const [c0, rows] = parseSize(size);
   const c = Math.min(c0, maxCols); // 모바일(2열)에서는 넓은 위젯을 접는다
-  const title = view.dashDocTitles[docId];
-  const space = view.dashDocSpaces[docId];
-  const when = formatLastEdited(state.docTimes[docId]);
-  const missing = resolved && !raw && !title;
+  const title = cal ? '일정' : view.dashDocTitles[docId];
+  const space = cal ? undefined : view.dashDocSpaces[docId];
+  const when = cal ? undefined : formatLastEdited(state.docTimes[docId]);
+  const missing = !cal && resolved && !raw && !title;
   const data: WidgetData | null = raw ? widgetDataOf(raw) : null;
   const shared = space === '공유받음';
   // 곁정보도 에디터와 같은 출처 — 담당 사진(share_participants)·댓글 수(comments).
@@ -434,6 +473,10 @@ function DashWidget({ itemId, docId, size, committedSize, maxCols, edit, isMobil
   const open = (e: MouseEvent) => {
     e.stopPropagation();
     if (!title || edit) return; // 편집 중의 클릭은 배치 조작이지 열기가 아니다(디자인 openBoard)
+    if (cal) {
+      controller.openCalendar();
+      return;
+    }
     onOpen(docId, title);
   };
   const onCtx = (e: MouseEvent) => {
@@ -452,6 +495,44 @@ function DashWidget({ itemId, docId, size, committedSize, maxCols, edit, isMobil
     controller.removeDashItem(itemId);
   };
   const sizeLabel = (resizing ?? committedSize).replace('x', '×');
+
+  // ── 일정 위젯 ──────────────────────────────────────────────────────────
+  // 항목의 원천은 일정 화면과 **같다**(칸반 마감 + Geurio 일정) — 여기서 다시 모으지
+  // 않고 같은 훅을 쓴다. 달 이동은 문서가 아니라 **보는 사람의 상태**라 위젯 안에
+  // 둔다(대시보드에 캘린더 위젯은 하나뿐이라 저장할 이유도 없다).
+  const todayIso = todayISO();
+  const [ym, setYm] = useState(() => {
+    const p = partsOf(todayIso)!;
+    return { y: p.y, m: p.m };
+  });
+  const cardEntries = useCalendarEntries(state, cal);
+  const eventsApi = useCalendarEvents(ym.y, ym.m, cal);
+  const calEntries = useMemo(() => [...cardEntries, ...eventEntries(eventsApi.events)], [cardEntries, eventsApi.events]);
+  const chipSurface = useMemo(() => homeChipSurface(state.theme), [state.theme]);
+  const calMode = calWidgetMode(c, rows);
+  const calSub = cal ? `다가오는 마감 ${upcomingEntries(calEntries, todayIso).length}건` : '';
+  /** 항목·칸을 누르면 그 날짜의 일정 화면으로 — 위젯은 보기 전용이다(#518). */
+  const pickCalDay = (iso: string) => {
+    controller.selectCalDay(iso);
+    controller.openCalendar();
+  };
+  const thisMonth = (() => {
+    const p = partsOf(todayIso)!;
+    return ym.y === p.y && ym.m === p.m;
+  })();
+  const calNav =
+    calMode === 'month' ? (
+      <span style={{ display: 'flex', alignItems: 'center', gap: 3, flexShrink: 0 }}>
+        {!thisMonth && (
+          <button type="button" data-cal-widget-today className="mf-ctl" onClick={(e) => { e.stopPropagation(); setYm(() => { const p = partsOf(todayIso)!; return { y: p.y, m: p.m }; }); }} style={navPill}>
+            오늘
+          </button>
+        )}
+        <NavBtn label="이전 달" d="m15 6-6 6 6 6" onClick={() => setYm((p) => addMonth(p.y, p.m, -1))} />
+        <NavBtn label="다음 달" d="m9 6 6 6-6 6" onClick={() => setYm((p) => addMonth(p.y, p.m, 1))} />
+      </span>
+    ) : null;
+
 
   return (
     <div
@@ -525,7 +606,7 @@ function DashWidget({ itemId, docId, size, committedSize, maxCols, edit, isMobil
         <button
           type="button"
           className="btn mf-dash-open"
-          title="에디터에서 열기"
+          title={cal ? '일정 화면 열기' : '에디터에서 열기'}
           onClick={open}
           style={{
             position: 'absolute',
@@ -555,7 +636,7 @@ function DashWidget({ itemId, docId, size, committedSize, maxCols, edit, isMobil
             <path d="M20 4 11 13" />
             <path d="M18 14v5a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1V7a1 1 0 0 1 1-1h5" />
           </svg>
-          열기
+          {cal ? '일정 열기' : '열기'}
         </button>
       )}
 
@@ -572,11 +653,13 @@ function DashWidget({ itemId, docId, size, committedSize, maxCols, edit, isMobil
               </svg>
             )}
           </span>
-          <span style={{ fontSize: 10.5, color: 'var(--mf-muted)', minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{[space, when].filter(Boolean).join(' · ')}</span>
+          <span style={{ fontSize: 10.5, color: 'var(--mf-muted)', minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{cal ? calSub : [space, when].filter(Boolean).join(' · ')}</span>
         </span>
         {/* 권한 배지(디자인) — 칸반은 카드의 열만 옮길 수 있고, 나머지는 보기 전용.
             보기 전용으로 공유받은 칸반은 그대로 보기 전용을 단다. */}
-        {c >= 2 &&
+        {cal && c >= 2 && !edit && calNav}
+        {!cal &&
+          c >= 2 &&
           !edit &&
           (canMoveCards ? (
             <span title="대시보드에서 카드를 옮길 수 있어요(다른 열·같은 열 안 순서)" data-dash-perm="move" style={{ display: 'inline-flex', alignItems: 'center', gap: 4, height: 19, padding: '0 7px', flexShrink: 0, borderRadius: 999, background: 'var(--mf-success-soft)', color: 'var(--mf-success-ink)', fontSize: 9.5, fontWeight: 700, whiteSpace: 'nowrap' }}>
@@ -604,7 +687,9 @@ function DashWidget({ itemId, docId, size, committedSize, maxCols, edit, isMobil
       </div>
 
       {/* 몸통 */}
-      {missing ? (
+      {cal ? (
+        <CalWidgetBody entries={calEntries} todayIso={todayIso} mode={calMode} cols={c} rows={rows} surface={chipSurface} ym={ym} weekOffset={0} onPick={pickCalDay} />
+      ) : missing ? (
         <div style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16, fontSize: 11.5, color: 'var(--mf-faint)', textAlign: 'center' }}>휴지통에 있거나 삭제된 문서예요. 우클릭으로 내릴 수 있어요.</div>
       ) : !data ? (
         <div aria-busy={!resolved} style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>{!resolved ? <span className="mf-skel" style={{ width: '60%', height: 10, borderRadius: 6 }} /> : <span style={{ fontSize: 11.5, color: 'var(--mf-faint)' }}>내용이 아직 없어요</span>}</div>
@@ -615,7 +700,7 @@ function DashWidget({ itemId, docId, size, committedSize, maxCols, edit, isMobil
       )}
 
       {/* 발치 — 아바타(칸반 담당) + 지표 한 줄(디자인). 1행 크기에서는 접는다. */}
-      {rows >= 2 && data && (
+      {!cal && rows >= 2 && data && (
         <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '7px 11px 9px', borderTop: '1px solid var(--mf-hairline)', flexShrink: 0 }}>
           {data.kind === 'kanban' && data.avatars.length > 0 && (
             <span style={{ display: 'flex', alignItems: 'center' }} aria-hidden>
