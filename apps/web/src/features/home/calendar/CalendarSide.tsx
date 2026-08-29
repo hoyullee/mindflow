@@ -274,9 +274,9 @@ function DayTimelineView({
                 overflow: 'hidden',
               }}
             >
-              <span style={{ fontSize: n > 2 ? 10 : 11, fontWeight: 800, letterSpacing: '-.015em', color: 'var(--mf-text)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{b.entry.title}</span>
+              <span style={{ fontSize: n > 2 ? 11 : 12.5, fontWeight: 800, letterSpacing: '-.015em', color: 'var(--mf-text)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{b.entry.title}</span>
               {n <= 2 && (
-                <span style={{ fontSize: 9.5, color: 'var(--mf-muted)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                <span style={{ fontSize: 10.5, color: 'var(--mf-muted)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                   {timeLabel(b.from)} – {timeLabel(b.to)}
                 </span>
               )}
@@ -311,18 +311,19 @@ function DayChip({ entry, iso, surface, onPick }: { entry: CalendarEntry; iso: s
         gap: 8,
         width: '100%',
         boxSizing: 'border-box',
-        padding: '6px 9px',
+        // 글자가 작아 읽기 힘들다는 제보 — 행 높이와 글자를 함께 키웠다.
+        padding: '9px 11px',
         border: 0,
         borderLeft: `3px solid ${chip.dot}`,
-        borderRadius: '4px 9px 9px 4px',
+        borderRadius: '4px 10px 10px 4px',
         background: 'var(--mf-panel2)',
         font: 'inherit',
         textAlign: 'left',
         cursor: 'pointer',
       }}
     >
-      <span style={{ flex: 1, minWidth: 0, fontSize: 11.5, fontWeight: 700, color: 'var(--mf-text)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{entry.title || '제목 없음'}</span>
-      <span style={{ flexShrink: 0, fontSize: 10, color: 'var(--mf-muted)', whiteSpace: 'nowrap' }}>{note}</span>
+      <span style={{ flex: 1, minWidth: 0, fontSize: 13, fontWeight: 700, color: 'var(--mf-text)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{entry.title || '제목 없음'}</span>
+      <span style={{ flexShrink: 0, fontSize: 11, color: 'var(--mf-muted)', whiteSpace: 'nowrap' }}>{note}</span>
     </button>
   );
 }

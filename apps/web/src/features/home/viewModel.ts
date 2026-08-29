@@ -215,6 +215,18 @@ export interface HomeViewModel {
  * Drive 데모 항목은 여기 해석 지도에 없어 슬롯을 세지 않는다 — 트레이보다 한두 개
  * **더** 프리페치할 수는 있어도(무해) 덜 하지는 않는다.
  */
+/**
+ * 지금 **스페이스 화면**을 보고 있는가 — LNB의 스페이스 행 활성 표시와 마퀴가 함께 쓴다.
+ *
+ * 화면은 셋(스페이스·대시보드·일정)이고 언제나 하나만 그린다. 예전에는 각자
+ * `!activeDash`처럼 손으로 열거해서 **일정 화면을 더할 때 한쪽만 빠졌다**(제보: 일정을
+ * 고르고 있는데 스페이스 행에 계속 포커스가 남는다). 네 번째 화면이 생겨도 여기만
+ * 고치면 된다.
+ */
+export function isSpaceView(state: { activeDash: string | null; activeCal: boolean }): boolean {
+  return !state.activeDash && !state.activeCal;
+}
+
 export function recentTrayDocIds(spaces: SpaceData[], recent: string[], trash: { docId?: string }[], deleted: Record<string, boolean>): string[] {
   const trashedIds = new Set(trash.map((t) => t.docId).filter((id): id is string => !!id));
   const resolve = new Map<string, { title: string; docId?: string }>();

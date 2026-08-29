@@ -2,6 +2,7 @@ import type { DragEvent, MouseEvent } from 'react';
 import type { HomeController } from '../useHomeController';
 import type { HomeState, SpaceData } from '../types';
 import { ArrowPair } from './DashboardSection';
+import { isSpaceView } from '../viewModel';
 
 interface Props {
   space: SpaceData;
@@ -17,7 +18,9 @@ const spaceDragFrom: { current: number | null } = { current: null };
 
 /** Home.dc.html:104-127 `<sc-for list="{{ spaceList }}">` — one row in the sidebar space list. */
 export function SpaceRow({ space, state, controller, index, total }: Props) {
-  const active = space.id === state.activeSpace && !state.activeDash;
+  // 활성 표시는 **지금 스페이스 화면일 때만** — 일정·대시보드를 보고 있으면
+  // 어느 스페이스도 켜지지 않는다(고른 항목 하나에만 포커스가 있어야 한다).
+  const active = space.id === state.activeSpace && isSpaceView(state);
   const reorder = state.spaceReorder;
   const menuOpen = state.ctxMenu?.target.kind === 'space' && state.ctxMenu.target.id === space.id;
 

@@ -24,6 +24,7 @@ import { panelTitleLine } from './panel/panelPrimitives';
 import { hexA } from '../theme';
 import type { Theme } from '../theme';
 import { useIsTouchDevice } from '../../../hooks/useMediaQuery';
+import './comments.css';
 import { useSoftKeyboardOpen } from '../../../hooks/useKeyboardInset';
 import { CARD_SHADOW, MONO_FONT, glassCard } from '../chrome';
 import { anchoredBoxPos } from './commentAnchor';
@@ -495,7 +496,7 @@ export function CommentThreads({ controller, nodeId, scroll = false, thread = fa
         data-comment-list
       >
         {controller.commentsLoading && !threads.length ? (
-          <div style={{ fontSize: 12, color: th.subtext, padding: '12px 0' }}>불러오는 중…</div>
+          <CommentSkeleton th={th} />
         ) : threads.length ? (
           <>
             {/* 해결 표시는 걷어냈다(요청) — 논의를 접는 대신 **좋아요**로 공감을 남긴다.
@@ -1151,6 +1152,7 @@ export function CommentComposer({
         )}
         <button
           type="button"
+          className="mf-cmt-send"
           onClick={() => void submit()}
           disabled={!draft.trim() || busy}
           title={softKeyboard ? '등록' : 'Enter'}
@@ -1170,6 +1172,36 @@ export function CommentComposer({
           {submitLabel}
         </button>
       </div>
+    </div>
+  );
+}
+
+/**
+ * 목록을 읽어 오는 동안의 자리표시자 — 예전에는 "불러오는 중…" 한 줄이었다(제보).
+ *
+ * 모양을 **실제 스레드와 같은 뼈대**로 둔다(얼굴 원 + 이름 줄 + 본문 두 줄): 글이
+ * 도착했을 때 자리가 크게 바뀌지 않아 목록이 튀지 않는다. 면 색은 테마가 주고
+ * 지나가는 빛과 움직임은 `comments.css`가 맡는다.
+ */
+function CommentSkeleton({ th }: { th: Theme }) {
+  const bar = (w: number | string, h: number): CSSProperties => ({
+    width: w,
+    height: h,
+    borderRadius: 999,
+    backgroundColor: hexA(th.text, 0.07),
+  });
+  return (
+    <div data-comment-skeleton aria-hidden="true" style={{ display: 'flex', flexDirection: 'column', gap: 16, padding: '12px 0' }}>
+      {[0, 1].map((i) => (
+        <div key={i} style={{ display: 'flex', gap: 9, alignItems: 'flex-start' }}>
+          <span className="mf-cmt-skel" style={{ width: 26, height: 26, borderRadius: 999, flex: '0 0 auto', backgroundColor: hexA(th.text, 0.07) }} />
+          <span style={{ flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column', gap: 7, paddingTop: 3 }}>
+            <span className="mf-cmt-skel" style={bar(i ? 72 : 92, 9)} />
+            <span className="mf-cmt-skel" style={bar('100%', 9)} />
+            <span className="mf-cmt-skel" style={bar(i ? '58%' : '76%', 9)} />
+          </span>
+        </div>
+      ))}
     </div>
   );
 }

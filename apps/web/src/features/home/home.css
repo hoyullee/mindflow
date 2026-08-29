@@ -315,15 +315,16 @@ a:hover {
 }
 /* 툴바의 2차 컨트롤(알림·가져오기·새 폴더·검색 옆 알약) — 디자인 원본은 어둡히는
    필터가 아니라 **옅은 면**이 깔리고 글자가 짙어진다. 배경이 인라인이라 !important. */
-.mf-home .mf-ctl:hover:not([aria-pressed='true']) {
+.mf-home .mf-ctl:hover:not([aria-pressed='true']):not([aria-checked='true']) {
   filter: none;
   background: var(--mf-panel2) !important;
   color: var(--mf-text) !important;
 }
-/* 켜져 있는 것(`aria-pressed`)은 **자기 틴트를 지킨다** — 면을 갈아 끼우면 손을
+/* 켜져 있는 것(`aria-pressed`, 라디오 묶음은 `aria-checked`)은 **자기 틴트를 지킨다** — 면을 갈아 끼우면 손을
    얹은 순간 꺼진 것처럼 보인다(제보: 날짜 선택이 주황이 아니다). 대신 살짝
    밝기만 움직인다(다크에서는 반대 방향 — `--mf-hover-bright`). */
-.mf-home .mf-ctl[aria-pressed='true']:hover {
+.mf-home .mf-ctl[aria-pressed='true']:hover,
+.mf-home .mf-ctl[aria-checked='true']:hover {
   filter: brightness(var(--mf-hover-bright));
 }
 /* 일정 화면의 통계 칩 — 면 없는 칩이라 `.mf-ctl`의 hover(`--mf-panel2` !important)를
@@ -349,15 +350,17 @@ a:hover {
 /* 모달·팝오버는 **포털로 body 밑에** 그려진다(Radix) — `.mf-home` 안이 아니므로 위
    규칙들이 닿지 않아 팝업 안 버튼에는 hover가 아예 없었다(제보). 우클릭 메뉴가
    `.mf-home-ctx`로 같은 문제를 푼 것과 같은 처방이다. */
-[data-modal-overlay] .mf-ctl:hover:not([aria-pressed='true']),
-[data-radix-popper-content-wrapper] .mf-ctl:hover:not([aria-pressed='true']) {
+[data-modal-overlay] .mf-ctl:hover:not([aria-pressed='true']):not([aria-checked='true']),
+[data-radix-popper-content-wrapper] .mf-ctl:hover:not([aria-pressed='true']):not([aria-checked='true']) {
   filter: none;
   background: var(--mf-panel2) !important;
   color: var(--mf-text) !important;
 }
 /* 팝업·팝오버 안의 켜짐(종일·저장할 캘린더·빠른 길이·고른 날짜)도 같은 규칙. */
 [data-modal-overlay] .mf-ctl[aria-pressed='true']:hover,
-[data-radix-popper-content-wrapper] .mf-ctl[aria-pressed='true']:hover {
+[data-modal-overlay] .mf-ctl[aria-checked='true']:hover,
+[data-radix-popper-content-wrapper] .mf-ctl[aria-pressed='true']:hover,
+[data-radix-popper-content-wrapper] .mf-ctl[aria-checked='true']:hover {
   filter: brightness(var(--mf-hover-bright));
 }
 .mf-home .drive-file:hover {

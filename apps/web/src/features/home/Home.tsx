@@ -27,7 +27,7 @@ import { SetPasswordModal } from './components/modals/SetPasswordModal';
 import { ProfileNameModal } from './components/modals/ProfileNameModal';
 import { TemplateGallery } from './components/modals/TemplateGallery';
 import { useHomeController } from './useHomeController';
-import { deriveHomeView } from './viewModel';
+import { deriveHomeView, isSpaceView } from './viewModel';
 import { predictLanding } from './storage';
 import { homeModalTheme } from './theme';
 import { homeUpdateRisk } from './updateRisk';
@@ -70,7 +70,7 @@ export function Home() {
   const marquee = useMarqueeSelect({
     onSelect: controller.marqueeSelect,
     currentSelection: () => controller.state.selectedCards,
-    disabled: isMobile || !!state.activeDash || state.activeCal,
+    disabled: isMobile || !isSpaceView(state),
   });
   const installHint = useInstallHint(isMobile);
   // 예상은 **마운트 때 한 번** 잡는다 — 착지하면서 힌트가 갱신되므로 매 렌더 읽으면

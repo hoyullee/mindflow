@@ -335,7 +335,7 @@ describe('일정 화면', () => {
     const chips = [...document.querySelectorAll('[data-cal-day-chip]')] as HTMLElement[];
     expect(chips.length).toBeGreaterThan(0);
     expect(chips[0]!.style.borderLeft).toMatch(/^3px solid/);
-    expect(chips[0]!.style.borderRadius).toBe('4px 9px 9px 4px');
+    expect(chips[0]!.style.borderRadius).toBe('4px 10px 10px 4px');
     expect(chips[0]!.textContent).toContain('진행 중');
     // 오늘은 기간 카드(시작 -1일 · 기한 +3일)의 2일째다
     expect(side().textContent).toContain('2/5일째');
@@ -913,6 +913,81 @@ describe('일정 화면', () => {
 
 });
 
+describe('일정 화면 후속(제보 6건)', () => {
+  beforeEach(() => {
+    mockMatchMedia(false);
+    seedSpaces();
+  });
+
+  it('LNB 활성 표시는 지금 보고 있는 화면 하나에만 — 일정을 열면 스페이스 행이 꺼진다', async () => {
+    renderHome([META('d1', '스프린트 보드'), META('d2', '이슈 트리아지')], BODIES());
+    const spaceRow = () => [...document.querySelectorAll('aside [role="button"], aside button')].find((e) => e.textContent?.trim().startsWith('업무')) as HTMLElement;
+    await waitFor(() => expect(spaceRow()).toBeTruthy());
+    // 스페이스 화면일 때는 켜져 있다
+    fireEvent.click(spaceRow());
+    await waitFor(() => expect(spaceRow().style.background).toBe('var(--mf-accent-soft)'));
+    await openCalendar();
+    // 일정 화면에서는 어느 스페이스도 켜지지 않는다(제보: 이전 스페이스에 포커스가 남는다)
+    expect(spaceRow().style.background).toBe('transparent');
+    expect(document.querySelector('[data-cal-nav]')!.getAttribute('aria-current')).toBe('page');
+  });
+
+  it('상세 팝업: 제목은 늘릴 수 없고, 상태·완료 버튼이 손을 얹으면 반응한다', async () => {
+    renderHome([META('d1', '스프린트 보드'), META('d2', '이슈 트리아지')], BODIES());
+    await openCalendar();
+    await waitFor(() => expect(chipTexts()).toContain('오늘 마감 카드'));
+    fireEvent.click(chipFor('오늘 마감 카드'));
+    await waitFor(() => expect(detail()).toBeTruthy());
+    // ③ 손잡이로 늘리지 않는다 — 고정 높이 두 열이라 아래 필드가 밀린다
+    expect((document.querySelector('[data-cal-detail-title]') as HTMLElement).style.resize).toBe('none');
+    // ② 상태 알약은 hover 규칙이 닿는 클래스를 단다(고른 칸은 `aria-checked`라 틴트를 지킨다)
+    const on = document.querySelector('[data-cal-state-item="c2"]') as HTMLElement;
+    expect(on.className).toContain('mf-ctl');
+    expect(on.getAttribute('aria-checked')).toBe('true');
+    // ② `완료`는 그라디언트라 `mf-ctl`이면 hover에서 면이 갈린다 — 밝기만 움직이는 쪽
+    const done = document.querySelector('[data-cal-detail-done]') as HTMLElement;
+    expect(done.className).toBe('mf-ctl-primary');
+    expect(done.style.background).toContain('linear-gradient');
+  });
+
+  it('댓글은 읽어 오는 동안 스켈레톤을 보여 준다(제보: 빈 화면이었다)', async () => {
+    const { commentStore } = renderHome([META('d1', '스프린트 보드'), META('d2', '이슈 트리아지')], BODIES());
+    let release: (() => void) | null = null;
+    const slow = new Promise<void>((r) => {
+      release = r;
+    });
+    const orig = commentStore.list.bind(commentStore);
+    vi.spyOn(commentStore, 'list').mockImplementation(async (docId: string) => {
+      await slow;
+      return orig(docId);
+    });
+    await openCalendar();
+    await waitFor(() => expect(chipTexts()).toContain('오늘 마감 카드'));
+    fireEvent.click(chipFor('오늘 마감 카드'));
+    await waitFor(() => expect(document.querySelector('[data-comment-skeleton]')).toBeTruthy());
+    expect(document.body.textContent).not.toContain('불러오는 중');
+    release!();
+    await waitFor(() => expect(document.querySelector('[data-comment-skeleton]')).toBeNull());
+  });
+
+  it('달력 칩과 날짜별 항목의 글자를 키웠다(제보: 너무 작아 읽기 힘들다)', async () => {
+    renderHome([META('d1', '스프린트 보드'), META('d2', '이슈 트리아지')], BODIES());
+    await openCalendar();
+    await waitFor(() => expect(chipTexts()).toContain('오늘 마감 카드'));
+    const chip = chipFor('오늘 마감 카드');
+    expect(parseFloat(chip.style.fontSize)).toBeGreaterThanOrEqual(11);
+    expect(parseFloat(chip.style.height)).toBeGreaterThanOrEqual(20);
+    const bar = document.querySelector('[data-cal-bar]') as HTMLElement;
+    expect(parseFloat(bar.style.fontSize)).toBeGreaterThanOrEqual(11);
+    // RNB(날짜별 보기)의 항목
+    fireEvent.click(document.querySelector(`[data-mini-day="${todayISO()}"]`)!);
+    await waitFor(() => expect(document.querySelector('[data-cal-day-chip]')).toBeTruthy());
+    const row = document.querySelector('[data-cal-day-chip]') as HTMLElement;
+    const title = row.querySelector('span') as HTMLElement;
+    expect(parseFloat(title.style.fontSize)).toBeGreaterThanOrEqual(13);
+  });
+});
+
 describe('팝업·팝오버 안의 버튼 hover(제보)', () => {
   // 모달·팝오버는 **포털로 body 밑에** 그려진다(Radix) — `.mf-home` 안이 아니라서
   // 홈의 hover 규칙이 닿지 않았고, 팝업 안 버튼에는 반응이 아예 없었다.
@@ -924,8 +999,10 @@ describe('팝업·팝오버 안의 버튼 hover(제보)', () => {
     expect(css).toContain("[data-radix-popper-content-wrapper] .mf-ctl:hover:not([aria-pressed='true'])");
     // 면을 갈아 끼우는 규칙은 셋 다 `:not([aria-pressed='true'])`가 붙어 있다.
     for (const m of css.matchAll(/^(.*\.mf-ctl:hover.*)$/gm)) expect(m[1]).toContain("aria-pressed='true'");
+    // 라디오 묶음은 `aria-checked`를 쓴다(상태 알약) — 둘 다 지켜져야 한다.
+    expect(css).toContain("[data-modal-overlay] .mf-ctl[aria-checked='true']:hover");
     // 켜진 것에는 밝기만 — `background`를 다시 칠하지 않는다.
-    const on = css.slice(css.indexOf(".mf-home .mf-ctl[aria-pressed='true']:hover {"));
+    const on = css.slice(css.indexOf(".mf-home .mf-ctl[aria-pressed='true']:hover"));
     expect(on.slice(0, on.indexOf('}'))).toContain('brightness(var(--mf-hover-bright))');
     // 그라디언트 1차 버튼(새 일정·새로 만들기)도 포털 안에서 밝기만 움직인다.
     expect(css).toContain('[data-modal-overlay] .mf-ctl-primary:hover');

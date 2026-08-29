@@ -226,7 +226,9 @@ export function CalendarDetail({ state, controller, entry, isMobile }: { state: 
                 width: '100%',
                 boxSizing: 'border-box',
                 minHeight: 88,
-                resize: 'vertical',
+                // 손잡이로 늘리지 않는다(요청) — 팝업이 고정 높이 두 열이라 늘리면
+                // 아래 필드가 밀리고, 제목은 두세 줄이면 충분하다.
+                resize: 'none',
                 padding: '15px 16px',
                 borderRadius: 14,
                 border: '1px solid var(--mf-border)',
@@ -270,6 +272,9 @@ export function CalendarDetail({ state, controller, entry, isMobile }: { state: 
                         value: c.id,
                         label: c.title || '이름 없음',
                         attrs: { 'data-cal-state-item': c.id },
+                        // 손을 얹으면 반응한다 — 고른 칸은 `aria-checked`라 hover 규칙이
+                        // 면을 갈아 끼우지 않고 밝기만 움직인다(home.css).
+                        className: 'mf-ctl',
                         style: (on: boolean) => pillStyle(on),
                         children: (
                           <>
@@ -421,7 +426,7 @@ export function CalendarDetail({ state, controller, entry, isMobile }: { state: 
             </svg>
             이 칸반 열기
           </button>
-          <button type="button" data-cal-detail-done onClick={close} className="mf-ctl" style={{ flex: '0 0 auto', whiteSpace: 'nowrap', height: isMobile ? 44 : 40, padding: isMobile ? '0 20px' : '0 26px', borderRadius: 999, border: 0, background: 'linear-gradient(180deg, var(--mf-accent), var(--mf-accent-strong))', color: 'var(--mf-accent-ink)', font: 'inherit', fontSize: 13.5, fontWeight: 800, cursor: 'pointer', boxShadow: '0 8px 18px -10px rgba(var(--mf-accent-rgb), .9)' }}>
+          <button type="button" data-cal-detail-done onClick={close} className="mf-ctl-primary" style={{ flex: '0 0 auto', whiteSpace: 'nowrap', height: isMobile ? 44 : 40, padding: isMobile ? '0 20px' : '0 26px', borderRadius: 999, border: 0, background: 'linear-gradient(180deg, var(--mf-accent), var(--mf-accent-strong))', color: 'var(--mf-accent-ink)', font: 'inherit', fontSize: 13.5, fontWeight: 800, cursor: 'pointer', boxShadow: '0 8px 18px -10px rgba(var(--mf-accent-rgb), .9)' }}>
             완료
           </button>
         </div>

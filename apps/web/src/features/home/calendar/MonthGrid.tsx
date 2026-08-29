@@ -256,7 +256,9 @@ function DayCell({
             : 'var(--mf-subtext)';
   const cellStyle: CSSProperties = {
     minWidth: 0,
-    minHeight: compact ? 44 : 78,
+    // 칩이 커진 만큼 칸도(번호 18 + 칩 21 × 2 + 여백) — 격자가 화면을 채우면
+    // 실제로는 더 커지지만, 창이 낮아도 두 줄이 접히지 않는다.
+    minHeight: compact ? 48 : 86,
     display: 'flex',
     flexDirection: 'column',
     gap: 2,
@@ -336,10 +338,11 @@ function DayCell({
               onPickEntry(b.entry);
             }}
             style={{
-              height: compact ? 12 : 16,
+              // 글자가 너무 작아 읽기 힘들다는 제보 — 칩·바를 함께 키웠다(폰도).
+              height: compact ? 15 : 20,
               minWidth: 0,
               border: 0,
-              padding: b.label ? '0 5px' : 0,
+              padding: b.label ? '0 6px' : 0,
               borderRadius: 2,
               borderTopLeftRadius: b.head ? 5 : 2,
               borderBottomLeftRadius: b.head ? 5 : 2,
@@ -348,7 +351,7 @@ function DayCell({
               background: chip.bg,
               color: chip.fg,
               font: 'inherit',
-              fontSize: compact ? 8.5 : 10,
+              fontSize: compact ? 10 : 11.5,
               fontWeight: 700,
               textAlign: 'left',
               whiteSpace: 'nowrap',
@@ -386,14 +389,14 @@ function DayCell({
               alignItems: 'center',
               gap: 4,
               minWidth: 0,
-              height: compact ? 13 : 17,
-              padding: '0 6px',
+              height: compact ? 16 : 21,
+              padding: '0 7px',
               border: 0,
               borderRadius: 999,
               background: chip.bg,
               color: chip.fg,
               font: 'inherit',
-              fontSize: compact ? 8.5 : 10,
+              fontSize: compact ? 10 : 11.5,
               fontWeight: 700,
               letterSpacing: '-.01em',
               cursor: e.readOnly ? 'pointer' : 'grab',
@@ -402,7 +405,7 @@ function DayCell({
               touchAction: 'none',
             }}
           >
-            <span style={{ width: 4, height: 4, borderRadius: 999, background: chip.dot, flexShrink: 0 }} />
+            <span style={{ width: 5, height: 5, borderRadius: 999, background: chip.dot, flexShrink: 0 }} />
             <span style={{ minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{e.title}</span>
           </button>
         );
@@ -416,7 +419,7 @@ function DayCell({
             e.stopPropagation();
             onMore(cell.iso);
           }}
-          style={{ border: 0, background: 'transparent', padding: '0 4px', textAlign: 'left', font: 'inherit', fontSize: compact ? 8.5 : 10, fontWeight: 700, color: 'var(--mf-faint)', cursor: 'pointer', flexShrink: 0 }}
+          style={{ border: 0, background: 'transparent', padding: '0 5px', textAlign: 'left', font: 'inherit', fontSize: compact ? 9.5 : 11, fontWeight: 700, color: 'var(--mf-faint)', cursor: 'pointer', flexShrink: 0 }}
         >
           +{cell.moreN}개 더
         </button>
