@@ -950,15 +950,18 @@ describe('일정 화면 후속(제보 6건)', () => {
     expect(done.style.background).toContain('linear-gradient');
   });
 
-  it('날짜 숫자는 13px이고 격자선은 전용 토큰을 쓴다(요청)', async () => {
+  it('날짜 숫자는 12px이고 격자선·이웃 달 칸은 전용 토큰을 쓴다(요청)', async () => {
     renderHome([META('d1', '스프린트 보드'), META('d2', '이슈 트리아지')], BODIES());
     await openCalendar();
     const cell = document.querySelector('[data-day-cell]') as HTMLElement;
     // 격자선은 일반 경계선보다 한 단계 또렷한 전용 토큰(기본 테마는 #d6c3b5)
     expect(cell.style.borderRight).toBe('1px solid var(--mf-cal-grid)');
     expect(cell.style.borderBottom).toBe('1px solid var(--mf-cal-grid)');
+    // 이웃 달 칸은 전용 토큰(디자인 원본 #F5EFE7)
+    const out = document.querySelector('[data-day-cell][data-out-month="1"]') as HTMLElement;
+    expect(out.style.background).toBe('var(--mf-cal-out)');
     const num = cell.querySelector('span > span') as HTMLElement;
-    expect(num.style.fontSize).toBe('13px');
+    expect(num.style.fontSize).toBe('12px');
   });
 
   it('댓글은 읽어 오는 동안 스켈레톤을 보여 준다(제보: 빈 화면이었다)', async () => {

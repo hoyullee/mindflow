@@ -229,7 +229,7 @@ function DayCell({
   //   통째로 진하게 칠해졌다(제보: 부자연스럽다).
   // 이웃 달 칸은 숫자만 흐리게 + 배경 한 톤 진하게(디자인 원본).
   const bg = !inMonth
-    ? 'var(--mf-sunken)'
+    ? 'var(--mf-cal-out)'
     : selected
       ? 'var(--mf-cal-sel)'
       : // **오늘 칸에는 배경을 주지 않는다**(요청) — 숫자가 이미 채운 원으로 표시되므로
@@ -302,16 +302,16 @@ function DayCell({
       <span style={{ display: 'flex', alignItems: 'center', gap: 4, flexShrink: 0 }}>
         <span
           style={{
-            // 오늘은 채운 원이라 숫자가 커진 만큼 칸도 커진다(폰은 그대로).
-            minWidth: compact ? 18 : 21,
-            height: compact ? 18 : 21,
+            // 오늘은 채운 원이라 숫자 크기를 따라간다(폰은 그대로).
+            minWidth: compact ? 18 : 20,
+            height: compact ? 18 : 20,
             padding: '0 5px',
             borderRadius: 999,
             background: isToday ? 'var(--mf-accent)' : 'transparent',
             color: numFg,
             fontFamily: "'JetBrains Mono', monospace",
-            // 날짜가 작아 읽기 힘들다는 요청 — 데스크톱 13px(폰은 칸이 좁아 11).
-            fontSize: compact ? 11 : 13,
+            // 데스크톱 12px(폰은 칸이 좁아 11) — 13은 너무 컸다(요청).
+            fontSize: compact ? 11 : 12,
             fontWeight: isToday ? 800 : 600,
             display: 'inline-flex',
             alignItems: 'center',
