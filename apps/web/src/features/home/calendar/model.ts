@@ -72,6 +72,19 @@ export function weekEndISO(iso: string): string {
   return isoOf(d.getFullYear(), d.getMonth() + 1, d.getDate());
 }
 
+/**
+ * `8월 3주` — 그 날이 든 주(일요일 시작)의 이름표.
+ *
+ * 달은 **그 주의 일요일**이 속한 달이다(주가 달을 걸치면 시작한 달로 읽는다 —
+ * 8/30(일)~9/5은 `8월 5주`). 번호는 그 달의 몇 번째 일요일인가이고, 일요일은
+ * 7일 간격이라 그 달 1일의 요일과 무관하게 `floor((일-1)/7)+1`이 맞는다.
+ */
+export function weekLabel(iso: string): string {
+  const p = partsOf(weekStartISO(iso));
+  if (!p) return '';
+  return `${p.m}월 ${Math.floor((p.d - 1) / 7) + 1}주`;
+}
+
 /** 기간 일정인가 — 시작일이 있고 기한보다 앞선다. 기간은 **바**로만 그린다(칩 중복 방지). */
 export function isSpan(e: CalendarEntry): boolean {
   return !!e.start && e.start < e.due;

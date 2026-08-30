@@ -11,7 +11,7 @@ import { exportDocPdf } from '../editor/pdf';
 import { themeOf } from '../editor/theme';
 import { applyHomeTheme, homeThemeKeyOf, saveHomeThemeCache, type HomeThemeKey } from './theme';
 import { addMonth, todayISO } from './calendar/model';
-import { DASH_CAP, DASH_DEFAULT_SIZE, coerceDashboards, moveInList, type DashboardData } from './dashboard/model';
+import { DASH_CAP, DASH_DEFAULT_SIZE, coerceDashboards, isCalItem, moveInList, type DashboardData, type DashboardItemData } from './dashboard/model';
 import { forgetSignedIn } from '../auth/sessionNotice';
 import { localizeAuthError } from '../auth/useLoginController';
 import type { SignOutScope } from '../../adapters/ports';
@@ -568,7 +568,7 @@ export function useHomeController() {
     // 대시보드 위젯이 그릴 문서들 — 어느 스페이스 소속이든 관계없이 함께 받는다
     // (위젯은 활성 스페이스 밖의 문서도 올릴 수 있다). 상한이 대시보드당 10이라
     // 유한한 배치다.
-    state.dashboards.forEach((d) => d.items.forEach((it) => wanted.add(it.docId)));
+    state.dashboards.forEach((d) => d.items.forEach((it) => it.docId && wanted.add(it.docId)));
     if (state.recent.length) {
       // 트레이가 **실제로 그릴** 카드들의 docId — 반드시 트레이와 같은 파이프라인으로
       // 골라야 한다. 원시 recent의 앞 N개를 자르던 예전 방식은 휴지통·별칭·사라진
@@ -675,7 +675,12 @@ export function useHomeController() {
    */
   useEffect(() => {
     // 일정 화면도 같은 값을 쓴다 — 전 스페이스의 칸반 마감을 모으므로 본문이 필요하다.
-    if (!state.loaded || (!state.search.trim() && !state.activeCal)) return;
+    // **대시보드에 캘린더 위젯이 올라가 있으면** 그 화면도 마찬가지다: 활성 스페이스만
+    // 받으면 다른 스페이스의 마감이 조용히 빠진 목록이 된다(위젯이 거짓말을 한다).
+    // 값을 치르는 계기는 "사용자가 그 화면을 골랐다"는 사실이다(검색과 같은 판단).
+    const calWidget = state.dashboards.some((d) => d.id === state.activeDash && d.items.some(isCalItem));
+    const wantAll = state.activeCal || calWidget;
+    if (!state.loaded || (!state.search.trim() && !wantAll)) return;
     const wanted: string[] = [];
     state.spaces.forEach((sp) => (Array.isArray(sp.maps) ? sp.maps : []).forEach((m) => {
       if (m.docId && !previewFetchedRef.current.has(m.docId)) wanted.push(m.docId);
@@ -683,7 +688,7 @@ export function useHomeController() {
     // 공유받은 문서도 **일정 화면에서는** 함께 받는다 — 그 보드의 마감도 내 일정인데
     // 스페이스 목록에는 없으므로 위 순회가 닿지 않는다(그러면 `공유받음` 항목이
     // 영영 뜨지 않는다). 검색은 원래 내 스페이스만 훑으므로 이 화면에서만 더한다.
-    if (state.activeCal) {
+    if (wantAll) {
       state.sharedMaps.forEach((sm) => {
         if (sm.docId && !previewFetchedRef.current.has(sm.docId)) wanted.push(sm.docId);
       });
@@ -707,7 +712,7 @@ export function useHomeController() {
         searchBodiesLoading: false,
       }));
     });
-  }, [state.loaded, state.search, state.activeCal, state.spaces, state.sharedMaps, docStore]);
+  }, [state.loaded, state.search, state.activeCal, state.activeDash, state.dashboards, state.spaces, state.sharedMaps, docStore]);
 
   // Persist spaces (+ map→folder) via the `SpaceStore` port whenever they
   // actually change, so user-created spaces/folders survive a refresh AND (in
@@ -1152,7 +1157,23 @@ export function useHomeController() {
       return;
     }
     if ((activeDashData?.items.length ?? 0) >= DASH_CAP) return; // 가득 참 — 카드가 흐려져 있다
-    patch({ dashPicker: { ...state.dashPicker, sel: { docId, size: DASH_DEFAULT_SIZE[kind] } } });
+    patch({ dashPicker: { ...state.dashPicker, sel: { docId, kind, size: DASH_DEFAULT_SIZE[kind] } } });
+  };
+  /** 일정 위젯 고르기 — 문서가 아니라 **화면**이라 대시보드당 하나면 충분하다
+   * (둘을 올리면 같은 것이 두 번 그려진다). 이미 올라가 있으면 내린다(문서 카드와
+   * 같은 규칙 — "올림" 배지가 그 뜻을 미리 말한다). */
+  const pickDashCalendar = () => {
+    if (!state.dashPicker) return;
+    if (activeDashData?.items.some(isCalItem)) {
+      patchActiveDash((d) => ({ ...d, items: d.items.filter((it) => !isCalItem(it)) }));
+      return;
+    }
+    if (state.dashPicker.sel && !state.dashPicker.sel.docId) {
+      patch({ dashPicker: { ...state.dashPicker, sel: null } });
+      return;
+    }
+    if ((activeDashData?.items.length ?? 0) >= DASH_CAP) return;
+    patch({ dashPicker: { ...state.dashPicker, sel: { kind: 'cal', size: DASH_DEFAULT_SIZE.cal } } });
   };
   const setDashPickSize = (size: string) => {
     if (!state.dashPicker?.sel) return;
@@ -1164,8 +1185,9 @@ export function useHomeController() {
     if (!sel || !state.activeDash) return;
     const dash = state.dashboards.find((d) => d.id === state.activeDash);
     if (!dash || dash.items.length >= DASH_CAP) return;
-    if (dash.items.some((it) => it.docId === sel.docId)) return;
-    const item = { id: `w${Date.now().toString(36)}${Math.random().toString(36).slice(2, 6)}`, docId: sel.docId, size: sel.size };
+    if (sel.docId ? dash.items.some((it) => it.docId === sel.docId) : dash.items.some(isCalItem)) return;
+    const id = `w${Date.now().toString(36)}${Math.random().toString(36).slice(2, 6)}`;
+    const item: DashboardItemData = sel.docId ? { id, docId: sel.docId, size: sel.size } : { id, kind: 'cal', size: sel.size };
     patch({
       dashboards: state.dashboards.map((d) => (d.id === state.activeDash ? { ...d, items: [...d.items, item] } : d)),
       dashPicker: state.dashPicker ? { ...state.dashPicker, sel: null } : null,
@@ -2786,6 +2808,7 @@ export function useHomeController() {
     setDashPickSpace,
     setDashPickQuery,
     pickDashBoard,
+    pickDashCalendar,
     setDashPickSize,
     confirmDashPick,
     removeDashItem,

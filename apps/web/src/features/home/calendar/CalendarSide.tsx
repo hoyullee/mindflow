@@ -1,7 +1,8 @@
 import { useEffect, useRef } from 'react';
 import type { CalendarEntry } from './entries';
 import { entryChip, type ChipSurface } from './chips';
-import { DOW, HOUR_ROW, dateLabel, dayProgress, dayTimeline, entriesOn, hourLabel, monthCells, timeLabel } from './model';
+import { HOUR_ROW, dateLabel, dayProgress, dayTimeline, entriesOn, hourLabel, timeLabel } from './model';
+import { MiniCalendar, MiniNav } from './MiniCalendar';
 import type { DayTimeline } from './model';
 
 /**
@@ -37,9 +38,6 @@ export function CalendarSide({
   /** 사이드 접기 — 머리의 ✕(디자인 원본). 위 토글을 다시 누르는 것과 같다. */
   onClose: () => void;
 }) {
-  // 미니 달력은 본문과 **같은 달**을 보여 준다 — 두 달력이 어긋나면 어느 쪽이
-  // 기준인지 흐려진다(디자인 원본은 따로 넘길 수 있지만 그건 다음 단계).
-  const cells = monthCells(y, m, entries, todayIso, 0);
   const dayList = entriesOn(entries, selectedDay);
   const timeline = dayTimeline(entries, selectedDay);
 
@@ -61,64 +59,18 @@ export function CalendarSide({
         borderLeft: '1px solid var(--mf-border-soft)',
       }}
     >
-      {/* 미니 달력 */}
+      {/* 미니 달력 — 대시보드 캘린더 위젯(1열)과 **같은 컴포넌트**를 쓴다. */}
       <div style={{ flexShrink: 0, padding: '14px 14px 12px', borderBottom: '1px solid var(--mf-border-soft)' }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 4, padding: '0 2px 9px' }}>
-          <span style={{ flex: 1, minWidth: 0, fontSize: 12.5, fontWeight: 800, letterSpacing: '-.02em', color: 'var(--mf-text)', whiteSpace: 'nowrap' }}>{`${y}년 ${m}월`}</span>
-          <MiniNav label="이전 달" onClick={() => onSetMonth(m === 1 ? y - 1 : y, m === 1 ? 12 : m - 1)} d="m18 15-6-6-6 6" />
-          <MiniNav label="다음 달" onClick={() => onSetMonth(m === 12 ? y + 1 : y, m === 12 ? 1 : m + 1)} d="m6 9 6 6 6-6" />
-          <MiniNav label="사이드 닫기" onClick={onClose} d="M6 6l12 12M18 6 6 18" />
-        </div>
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(7, 1fr)', gap: 1 }}>
-          {DOW.map((d, i) => (
-            <span key={d} style={{ textAlign: 'center', fontSize: 9.5, fontWeight: 700, color: i === 0 ? 'var(--mf-danger)' : i === 6 ? 'var(--mf-info)' : 'var(--mf-faint)', paddingBottom: 3 }}>
-              {d}
-            </span>
-          ))}
-          {cells.map((c) => {
-            const has = c.inMonth && entriesOn(entries, c.iso).length > 0;
-            const on = c.iso === selectedDay;
-            return (
-              <button
-                key={c.iso}
-                type="button"
-                data-mini-day={c.iso}
-                disabled={!c.inMonth}
-                onClick={() => onPickDay(c.iso)}
-                aria-label={c.inMonth ? `${c.n}일` : undefined}
-                style={{
-                  position: 'relative',
-                  height: 26,
-                  border: 0,
-                  borderRadius: 999,
-                  background: on ? 'var(--mf-accent)' : 'transparent',
-                  // 숫자를 디자인 원본만큼 또렷하게(제보) — 평일은 본문 글자색·600,
-                  // 주말은 큰 달력과 같은 색(일=danger / 토=info). 예전에는 `subtext`
-                  // 500이라 미니 달력의 날짜가 바탕에 묻혔다.
-                  color: on
-                    ? 'var(--mf-accent-ink)'
-                    : !c.inMonth
-                      ? 'var(--mf-faint2)'
-                      : c.isToday
-                        ? 'var(--mf-accent-strong)'
-                        : c.dow === 0 || c.holiday
-                          ? 'var(--mf-danger)'
-                          : c.dow === 6
-                            ? 'var(--mf-info)'
-                            : 'var(--mf-text)',
-                  font: 'inherit',
-                  fontFamily: "'JetBrains Mono', monospace",
-                  fontSize: 11,
-                  fontWeight: c.isToday || on ? 800 : 600,
-                  cursor: c.inMonth ? 'pointer' : 'default',
-                }}
-              >
-                {c.n}
-                {has && !on && <span style={{ position: 'absolute', bottom: 3, left: '50%', transform: 'translateX(-50%)', width: 3, height: 3, borderRadius: 999, background: 'var(--mf-accent)' }} />}
-              </button>
-            );
-          })}
-        </div>
+        <MiniCalendar
+          entries={entries}
+          todayIso={todayIso}
+          y={y}
+          m={m}
+          selectedDay={selectedDay}
+          onPickDay={onPickDay}
+          onSetMonth={onSetMonth}
+          extraNav={<MiniNav label="사이드 닫기" onClick={onClose} d="M6 6l12 12M18 6 6 18" />}
+        />
       </div>
 
       {/* 날짜별 보기 — 디자인 원본의 agenda: 종일 항목은 **왼쪽 색 바가 붙은 납작한
@@ -137,22 +89,6 @@ export function CalendarSide({
   );
 }
 
-function MiniNav({ label, onClick, d }: { label: string; onClick: () => void; d: string }) {
-  return (
-    <button
-      type="button"
-      title={label}
-      aria-label={label}
-      onClick={onClick}
-      className="mf-ctl"
-      style={{ width: 24, height: 24, borderRadius: 999, border: 0, background: 'transparent', color: 'var(--mf-muted)', cursor: 'pointer', display: 'inline-flex', alignItems: 'center', justifyContent: 'center' }}
-    >
-      <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-        <path d={d} />
-      </svg>
-    </button>
-  );
-}
 
 function Section({ title, sub, action, children }: { title: string; sub: string; action?: { label: string; onClick: () => void }; children: React.ReactNode }) {
   return (

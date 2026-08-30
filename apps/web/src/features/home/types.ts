@@ -2,7 +2,7 @@
 
 import { loadHomeThemeCache, type HomeThemeKey } from './theme';
 import type { SigninMethods } from '../../adapters/ports';
-import type { DashboardData } from './dashboard/model';
+import type { DashboardData, DashWidgetKind } from './dashboard/model';
 
 export interface MapCardData {
   title: string;
@@ -269,8 +269,8 @@ export interface HomeState {
     /** 왼쪽 필터 — 'all' | 스페이스 id | 'shared'. */
     space: string;
     query: string;
-    /** 고른 보드(아직 올리기 전). */
-    sel: { docId: string; size: string } | null;
+    /** 고른 것(아직 올리기 전) — 문서면 `docId`가 있고, 일정 위젯이면 없다. */
+    sel: { docId?: string; kind: DashWidgetKind; size: string } | null;
   } | null;
   /** 대시보드 이름 변경 팝업(행 우클릭 → 이름 변경). `null`이면 닫힘. */
   /** 대시보드 만들기·이름 변경 팝업(첨부 디자인) — `id`가 있으면 이름 변경, 없으면
