@@ -12,7 +12,7 @@ import type { SpaceStore, WorkspaceData } from '../ports';
 const TABLE = 'workspaces';
 
 interface WorkspaceRow {
-  data: { spaces?: unknown; mapFolders?: unknown; recent?: unknown; theme?: unknown; dashboards?: unknown } | null;
+  data: { spaces?: unknown; mapFolders?: unknown; recent?: unknown; theme?: unknown; dashboards?: unknown; google?: unknown } | null;
 }
 
 export class SupabaseSpaceStore implements SpaceStore {
@@ -30,7 +30,10 @@ export class SupabaseSpaceStore implements SpaceStore {
     const recent = Array.isArray(body.recent) ? body.recent.filter((t): t is string => typeof t === 'string') : undefined;
     const theme = typeof body.theme === 'string' ? body.theme : undefined;
     const dashboards = Array.isArray(body.dashboards) ? body.dashboards : undefined;
-    return { spaces: body.spaces, mapFolders, recent, theme, dashboards };
+    // 구글 캘린더 겹치기 설정(PR5) — 모양이 어긋나면 없는 것으로 본다.
+    const g = body.google as { calendars?: unknown } | undefined;
+    const google = g && Array.isArray(g.calendars) ? { calendars: g.calendars.filter((c): c is string => typeof c === 'string') } : undefined;
+    return { spaces: body.spaces, mapFolders, recent, theme, dashboards, google };
   }
 
   async save(data: WorkspaceData): Promise<void> {
@@ -39,7 +42,7 @@ export class SupabaseSpaceStore implements SpaceStore {
     // saves (mirrors `documents.owner`'s default — migration 0004/RLS enforce it).
     const { error } = await this.client
       .from(TABLE)
-      .upsert({ data: { spaces: data.spaces, mapFolders: data.mapFolders, recent: data.recent ?? [], theme: data.theme, dashboards: data.dashboards ?? [] }, updated_at: new Date().toISOString() }, { onConflict: 'owner' });
+      .upsert({ data: { spaces: data.spaces, mapFolders: data.mapFolders, recent: data.recent ?? [], theme: data.theme, dashboards: data.dashboards ?? [], ...(data.google ? { google: data.google } : {}) }, updated_at: new Date().toISOString() }, { onConflict: 'owner' });
     if (error) throw new Error(error.message);
   }
 }

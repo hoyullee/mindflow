@@ -13,8 +13,10 @@ import { MonthPicker } from './MonthPicker';
 import { CalendarDetailHost } from './CalendarDetail';
 import { NewEventModal } from './NewEventModal';
 import { EventDetail } from './EventDetail';
+import { GoogleEventDetail } from './GoogleEventDetail';
 import { useCalendarEvents } from './useCalendarEvents';
-import { eventEntries } from './entries';
+import { eventEntries, googleEntries, holidayMap } from './entries';
+import { useGoogleCalendar } from './useGoogleCalendar';
 
 /**
  * 일정 화면 — 디자인 원본 `Geurio 일정 캘린더.dc.html`의 `isCal` 화면.
@@ -50,16 +52,22 @@ export function CalendarView({
   // Geurio 일정(0033) — 칸반 마감과 나란한 두 번째 원천. 같은 `CalendarEntry` 모양으로
   // 만들어 격자·통계·목록·시간표가 종류를 가리지 않고 그린다.
   const eventsApi = useCalendarEvents(state.calY, state.calM);
+  // 구글 캘린더(PR5) — **읽기 전용 겹치기**. 연동하지 않았으면 빈 배열이라
+  // 아래 계산이 예전과 한 글자도 다르지 않다.
+  const google = useGoogleCalendar(state.calY, state.calM, { enabled: !!state.google, calendars: state.google?.calendars ?? [] }, controller.setGoogleCalendars);
   const [saving, setSaving] = useState(false);
   const [saveError, setSaveError] = useState<string | null>(null);
   const entries = useMemo(() => {
     const evs = eventEntries(eventsApi.events);
-    return [...cardEntries, ...evs].sort((a, b) => (a.due < b.due ? -1 : a.due > b.due ? 1 : (a.startTime ?? '') < (b.startTime ?? '') ? -1 : a.title < b.title ? -1 : 1));
-  }, [cardEntries, eventsApi.events]);
+    const gs = googleEntries(google.events);
+    return [...cardEntries, ...evs, ...gs].sort((a, b) => (a.due < b.due ? -1 : a.due > b.due ? 1 : (a.startTime ?? '') < (b.startTime ?? '') ? -1 : a.title < b.title ? -1 : 1));
+  }, [cardEntries, eventsApi.events, google.events]);
+  // 공휴일은 칩이 아니라 **날짜 색**이다(PR1부터 비워 둔 `MonthCell.holiday` 자리).
+  const holidays = useMemo(() => holidayMap(google.events), [google.events]);
   const stats = useMemo(() => calendarStats(entries, today), [entries, today]);
   // 모바일은 칸이 좁아 칩 하나 + 접힌 개수만 — 사이드는 아예 접는다(공간이 없다).
   const perCell = isMobile ? 1 : 2;
-  const cells = useMemo(() => monthCells(state.calY, state.calM, entries, today, perCell), [state.calY, state.calM, entries, today, perCell]);
+  const cells = useMemo(() => monthCells(state.calY, state.calM, entries, today, perCell, 6, holidays), [state.calY, state.calM, entries, today, perCell, holidays]);
   const selectedDay = state.calDay ?? today;
   // 칩이 얹히는 면 — hue는 칸반 팔레트, 밝기는 지금 홈 테마의 면에서(다크 대응).
   const surface = useMemo(() => homeChipSurface(state.theme), [state.theme]);
@@ -77,7 +85,9 @@ export function CalendarView({
   // 클릭이 곧바로 화면을 떠나면 "날짜만 하루 미루기"에도 맵을 열어야 한다.
   const openEntry = (e: CalendarEntry): void => {
     // Geurio 일정과 칸반 카드는 고칠 것이 달라 팝업이 갈린다.
-    if (e.event) controller.openCalendarEvent(e.event.id);
+    // 구글 일정은 **읽기 전용 팝업**으로 — 우리 상세는 고칠 수 있는 척한다.
+    if (e.google) controller.openCalendarGoogle(e.google.id);
+    else if (e.event) controller.openCalendarEvent(e.event.id);
     else controller.openCalendarCard(e.docId, e.cardId);
   };
 
@@ -221,6 +231,7 @@ export function CalendarView({
 
         {!isMobile && state.calSide && (
           <CalendarSide
+            holidays={holidays}
             entries={entries}
             todayIso={today}
             y={state.calY}
@@ -238,6 +249,11 @@ export function CalendarView({
 
       {/* 항목 상세 — 열려 있으면 그 항목을 찾아 그린다(사라졌으면 조용히 닫힌다). */}
       <CalendarDetailHost state={state} controller={controller} entries={entries} isMobile={isMobile} />
+      {(() => {
+        const g = state.calGoogleDetail ? google.events.find((e) => e.id === state.calGoogleDetail) : null;
+        if (!g) return null;
+        return <GoogleEventDetail event={g} isMobile={isMobile} onClose={controller.closeCalendarGoogle} />;
+      })()}
 
       {/* Geurio 일정: 새로 만들기 · 상세 */}
       {state.calNewEvent && (

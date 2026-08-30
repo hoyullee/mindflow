@@ -14,6 +14,7 @@
 
 import type { KanbanCard, KanbanColumn, KanbanTag } from '@mindflow/mindmap-core';
 import type { CalendarEvent } from '../../../adapters/ports';
+import type { GoogleEvent } from './googleCalendar';
 
 /** 일정 화면·위젯이 그리는 한 항목. 색은 그리는 쪽이 테마로 정하므로 여기엔 이름만 담는다. */
 export interface CalendarEntry {
@@ -55,6 +56,13 @@ export interface CalendarEntry {
   /** 시각 있는 일정의 `HH:MM`(종일이면 없다) — 시간표가 이 값으로 놓는다. */
   startTime?: string;
   endTime?: string;
+
+  // ── 구글 캘린더(PR5)일 때만 ──
+  /**
+   * 구글에서 받아 온 일정인가. 참이면 **읽기 전용**이다 — 우리 것이 아니라 겹쳐
+   * 보여 주는 것뿐이라 고치거나 옮길 수 없다(구글이 정본).
+   */
+  google?: GoogleEvent;
 }
 
 interface Parsed {
@@ -181,6 +189,54 @@ export function eventEntries(events: readonly CalendarEvent[]): CalendarEntry[] 
     event: e,
     ...(e.allDay ? {} : { ...(e.startTime ? { startTime: e.startTime } : {}), ...(e.endTime ? { endTime: e.endTime } : {}) }),
   }));
+}
+
+/**
+ * 구글 일정 → 화면 항목. **공휴일 캘린더는 빼낸다** — 그건 칩이 아니라 날짜 색으로
+ * 그린다(`holidayMap`). 공휴일까지 칩으로 늘어놓으면 달력이 빨간 알약으로 덮인다.
+ */
+export function googleEntries(events: readonly GoogleEvent[]): CalendarEntry[] {
+  return events
+    .filter((e) => !e.holiday)
+    .map((e) => ({
+      docId: '',
+      cardId: e.id,
+      title: e.title,
+      due: e.endDate,
+      ...(e.endDate > e.startDate ? { start: e.startDate } : {}),
+      colId: '',
+      colName: e.calendarName,
+      colIndex: 0,
+      ...(e.color ? { colColor: e.color } : {}),
+      tag: '',
+      boardName: e.calendarName,
+      spaceName: 'Google 캘린더',
+      readOnly: true,
+      google: e,
+      ...(e.allDay ? {} : { ...(e.startTime ? { startTime: e.startTime } : {}), ...(e.endTime ? { endTime: e.endTime } : {}) }),
+    }));
+}
+
+/**
+ * 공휴일 캘린더의 종일 일정 → `날짜 → 이름`. 달력이 그 날 숫자를 일요일 색으로
+ * 그리는 데 쓴다(`MonthCell.holiday` — PR1부터 비워 둔 자리).
+ */
+export function holidayMap(events: readonly GoogleEvent[]): Record<string, string> {
+  const out: Record<string, string> = {};
+  for (const e of events) {
+    if (!e.holiday) continue;
+    // 여러 날짜에 걸친 공휴일(연휴)도 하루씩 채운다.
+    let d = e.startDate;
+    for (let i = 0; i < 32 && d <= e.endDate; i += 1) {
+      if (!out[d]) out[d] = e.title;
+      const [y, m, day] = d.split('-').map(Number);
+      if (!y || !m || !day) break;
+      const nx = new Date(y, m - 1, day + 1);
+      const p = (n: number) => String(n).padStart(2, '0');
+      d = `${nx.getFullYear()}-${p(nx.getMonth() + 1)}-${p(nx.getDate())}`;
+    }
+  }
+  return out;
 }
 
 /**

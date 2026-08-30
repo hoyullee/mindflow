@@ -15,7 +15,8 @@ import { DASH_CAP, DASH_COLS, DASH_MIN_SIZE, DASH_ROW_PX, DASH_ROWS_MAX, calWidg
 import { CalWidgetBody, type CalWidgetSide } from '../dashboard/CalendarWidget';
 import { useCalendarEntries } from '../calendar/useCalendarEntries';
 import { useCalendarEvents, type CalendarEventsApi } from '../calendar/useCalendarEvents';
-import { eventEntries, type CalendarEntry } from '../calendar/entries';
+import { eventEntries, googleEntries, holidayMap, type CalendarEntry } from '../calendar/entries';
+import { useGoogleCalendar } from '../calendar/useGoogleCalendar';
 import { addDays, addMonth, daysBetween, isoOf, partsOf, todayISO, weekStartISO } from '../calendar/model';
 import { homeChipSurface } from '../theme';
 import { CalendarGlyph } from '../calendar/CalendarView';
@@ -568,7 +569,10 @@ function DashWidget({ itemId, docId, itemKind, size, committedSize, maxCols, edi
   const evYm = calByMonth ? ym : { y: partsOf(weekStart)!.y, m: partsOf(weekStart)!.m };
   const cardEntries = useCalendarEntries(state, cal);
   const eventsApi = useCalendarEvents(evYm.y, evYm.m, cal);
-  const calEntries = useMemo(() => [...cardEntries, ...eventEntries(eventsApi.events)], [cardEntries, eventsApi.events]);
+  // 구글 겹치기 — 일정 화면과 **같은 훅**이다(두 벌로 두면 한쪽만 고쳐진다).
+  const googleApi = useGoogleCalendar(evYm.y, evYm.m, { enabled: !!state.google, calendars: state.google?.calendars ?? [] }, controller.setGoogleCalendars, cal ? 'events' : 'off');
+  const calEntries = useMemo(() => [...cardEntries, ...eventEntries(eventsApi.events), ...googleEntries(googleApi.events)], [cardEntries, eventsApi.events, googleApi.events]);
+  const calHolidays = useMemo(() => holidayMap(googleApi.events), [googleApi.events]);
   const chipSurface = useMemo(() => homeChipSurface(state.theme), [state.theme]);
   // 날짜를 고를 수단이 없는 보기(목록)에서는 **날짜별을 유지하지 않는다** — 크기를
   // N×1로 줄이면 달력도 미니 달력도 사라지므로, 예전에 고른 날의 일정이 남은 채
@@ -579,7 +583,9 @@ function DashWidget({ itemId, docId, itemKind, size, committedSize, maxCols, edi
 
   /** 항목을 누르면 상세 팝업 — 일정 화면과 **같은 컴포넌트**를 그대로 쓴다. */
   const pickCalEntry = (e: CalendarEntry) => {
-    if (e.event) controller.openCalendarEvent(e.event.id);
+    // 구글 일정은 읽기 전용 팝업(일정 화면과 같은 규칙).
+    if (e.google) controller.openCalendarGoogle(e.google.id);
+    else if (e.event) controller.openCalendarEvent(e.event.id);
     else controller.openCalendarCard(e.docId, e.cardId);
   };
   const thisMonth = (() => {
@@ -857,6 +863,7 @@ function DashWidget({ itemId, docId, itemKind, size, committedSize, maxCols, edi
           }}
           onPickEntry={pickCalEntry}
           onSetMonth={calSetMonth}
+          holidays={calHolidays}
         />
       ) : missing ? (
         <div style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16, fontSize: 11.5, color: 'var(--mf-faint)', textAlign: 'center' }}>휴지통에 있거나 삭제된 문서예요. 우클릭으로 내릴 수 있어요.</div>

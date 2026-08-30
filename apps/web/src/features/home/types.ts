@@ -212,6 +212,13 @@ export interface HomeState {
   /** 홈 색상 테마(LNB 최하단에서 고른다). 정본은 워크스페이스 블롭이라 기기 간에
    * 따라오고, 첫 페인트용 캐시는 `theme.ts`의 localStorage에 둔다. */
   theme: HomeThemeKey;
+  /** 구글 캘린더 겹치기 설정(PR5) — 켜지 않았으면 `null`. 워크스페이스 블롭에
+   * 실려 기기 간에 따라온다(토큰은 따라오지 않는다 — 탭마다 새로 받는다). */
+  google: { calendars: string[] } | null;
+  /** 열려 있는 **구글 일정** 상세의 id(`<calId>::<eventId>`) — 읽기 전용 팝업.
+   * 칸반 카드(`calDetail`)·Geurio 일정(`calEventDetail`)과 칸을 나눈 이유는
+   * 셋이 고칠 수 있는 것이 서로 다르기 때문이다(구글은 아무것도 못 고친다). */
+  calGoogleDetail: string | null;
   /** The 회원 탈퇴 confirmation dialog (opened from the settings modal). */
   confirmDeleteAccount: boolean;
   /** 문구를 입력하고 누른 뒤 **한 번 더** 묻는 마지막 확인창(요청) — 비가역 동작이라
@@ -475,6 +482,8 @@ export function initialHomeState(): HomeState {
     // 이 기기의 마지막 선택으로 시작한다 — 워크스페이스(정본)가 도착하면 그 값으로
     // 맞춘다. 부팅 때 이미 같은 캐시로 CSS 변수를 입혀 뒀으므로 첫 페인트와 일치한다.
     theme: loadHomeThemeCache(),
+    google: null,
+    calGoogleDetail: null,
     confirmDeleteAccount: false,
     confirmDeleteAccountFinal: false,
     deleteAccountText: '',
