@@ -1420,7 +1420,16 @@ describe('대시보드 캘린더 위젯(PR4) — 크기가 보기를 정한다',
     await waitFor(() => expect(container.querySelector('[data-cal-widget-week]')).toBeTruthy());
     const side = container.querySelector('[data-cal-widget-side="mini"]') as HTMLElement;
     expect(side).toBeTruthy();
-    expect(side.querySelector('[data-mini-cal]')).toBeTruthy();
+    const mini = side.querySelector('[data-mini-cal]') as HTMLElement;
+    expect(mini).toBeTruthy();
+    // 옆 패널을 **꽉 채운다**(제보: 아래에 빈 여백이 남는다) — 여섯 줄이 남은 높이를
+    // 나눠 갖고(1fr), 달력은 가로도 늘어난다.
+    expect(mini.style.height).toBe('100%');
+    expect(mini.style.flex).toContain('1');
+    const grid = mini.querySelector('[data-mini-day]')!.parentElement as HTMLElement;
+    expect(grid.style.gridTemplateRows).toContain('repeat(6, 1fr)');
+    // 칸이 정사각에 가깝도록 배경(칸)이 아니라 **안쪽 원**이 오늘·고른 날을 진다
+    expect(mini.querySelector('[data-mini-num]')).toBeTruthy();
 
     // 다음 주의 어느 날을 고르면 주간 본문이 그 주로 옮겨 간다
     const target = addDays(weekStartISO(shift(0)), 8);

@@ -19,6 +19,7 @@ export function MiniCalendar({
   onSetMonth,
   extraNav,
   cellH = 26,
+  fill = false,
 }: {
   entries: readonly CalendarEntry[];
   todayIso: string;
@@ -30,17 +31,24 @@ export function MiniCalendar({
   /** 머리 오른쪽에 덧붙일 버튼(일정 화면의 사이드 닫기 ✕). */
   extraNav?: React.ReactNode;
   cellH?: number;
+  /**
+   * 주어진 높이를 **꽉 채운다**(제보: 아래에 빈 여백이 남는다). 여섯 줄이 남은
+   * 높이를 나눠 가지므로 칸이 정사각이 아니게 되고, 그러면 `borderRadius: 999`가
+   * 타원이 된다 — 그래서 이 모드에서는 배경(오늘·고른 날 표시)을 **칸이 아니라
+   * 안쪽 원**이 진다.
+   */
+  fill?: boolean;
 }) {
   const cells = monthCells(y, m, entries, todayIso, 0);
   return (
-    <div data-mini-cal>
-      <div style={{ display: 'flex', alignItems: 'center', gap: 4, padding: '0 2px 9px' }}>
+    <div data-mini-cal style={fill ? { flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column', height: '100%', minHeight: 0 } : undefined}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 4, padding: '0 2px 9px', flexShrink: 0 }}>
         <span style={{ flex: 1, minWidth: 0, fontSize: 12.5, fontWeight: 800, letterSpacing: '-.02em', color: 'var(--mf-text)', whiteSpace: 'nowrap' }}>{`${y}년 ${m}월`}</span>
         <MiniNav label="이전 달" onClick={() => onSetMonth(m === 1 ? y - 1 : y, m === 1 ? 12 : m - 1)} d="m18 15-6-6-6 6" />
         <MiniNav label="다음 달" onClick={() => onSetMonth(m === 12 ? y + 1 : y, m === 12 ? 1 : m + 1)} d="m6 9 6 6 6-6" />
         {extraNav}
       </div>
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(7, 1fr)', gap: 1 }}>
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(7, 1fr)', gap: 1, ...(fill ? { flex: 1, minHeight: 0, gridTemplateRows: 'auto repeat(6, 1fr)' } : null) }}>
         {DOW.map((d, i) => (
           <span key={d} style={{ textAlign: 'center', fontSize: 9.5, fontWeight: 700, color: i === 0 ? 'var(--mf-danger)' : i === 6 ? 'var(--mf-info)' : 'var(--mf-faint)', paddingBottom: 3 }}>
             {d}
@@ -62,10 +70,12 @@ export function MiniCalendar({
               aria-label={c.inMonth ? `${c.n}일` : undefined}
               style={{
                 position: 'relative',
-                height: cellH,
+                height: fill ? undefined : cellH,
+                minHeight: 0,
+                padding: 0,
                 border: 0,
                 borderRadius: 999,
-                background: on ? 'var(--mf-accent)' : 'transparent',
+                background: !fill && on ? 'var(--mf-accent)' : 'transparent',
                 // 숫자를 디자인 원본만큼 또렷하게(제보) — 평일은 본문 글자색·600,
                 // 주말은 큰 달력과 같은 색(일=danger / 토=info).
                 color: on
@@ -81,13 +91,33 @@ export function MiniCalendar({
                           : 'var(--mf-text)',
                 font: 'inherit',
                 fontFamily: "'JetBrains Mono', monospace",
-                fontSize: 11,
+                fontSize: fill ? 12.5 : 11,
                 fontWeight: c.isToday || on ? 800 : 600,
                 cursor: c.inMonth ? 'pointer' : 'default',
+                display: fill ? 'flex' : undefined,
+                alignItems: fill ? 'center' : undefined,
+                justifyContent: fill ? 'center' : undefined,
               }}
             >
-              {c.n}
-              {has && !on && <span style={{ position: 'absolute', bottom: 3, left: '50%', transform: 'translateX(-50%)', width: 3, height: 3, borderRadius: 999, background: 'var(--mf-accent)' }} />}
+              {fill ? (
+                <span
+                  data-mini-num
+                  style={{
+                    width: 26,
+                    height: 26,
+                    borderRadius: 999,
+                    background: on ? 'var(--mf-accent)' : 'transparent',
+                    display: 'inline-flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                  }}
+                >
+                  {c.n}
+                </span>
+              ) : (
+                c.n
+              )}
+              {has && !on && <span style={{ position: 'absolute', bottom: fill ? 4 : 3, left: '50%', transform: 'translateX(-50%)', width: 3, height: 3, borderRadius: 999, background: 'var(--mf-accent)' }} />}
             </button>
           );
         })}

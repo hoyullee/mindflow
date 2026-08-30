@@ -36,6 +36,9 @@ import {
 
 const MONO = { fontFamily: "'JetBrains Mono', monospace" } as const;
 
+/** 주간 보기(3열 이상)의 미니 달력 옆 패널 폭 — 2행 위젯 높이에서 칸이 정사각에 가깝다. */
+const MINI_SIDE_W = 244;
+
 /** 위젯 시간표 한 행(px) — 원본 `this.dayTimeline(sel, evs, 26)`. */
 const ROW = 30;
 
@@ -205,8 +208,10 @@ function WeekBody({ entries, todayIso, cols, rows, surface, ym, weekOffset, selD
   return (
     <div style={{ flex: 1, minHeight: 0, display: 'flex', minWidth: 0, overflow: 'hidden' }}>
       <div style={{ flex: '1 1 auto', minWidth: 0, display: 'flex', borderRight: '1px solid var(--mf-hairline)' }}>{body}</div>
-      <div data-cal-widget-side="mini" style={{ flex: '0 0 196px', minWidth: 0, padding: '10px 12px', overflow: 'hidden' }}>
-        <MiniCalendar entries={entries} todayIso={todayIso} y={ym.y} m={ym.m} selectedDay={selDay} onPickDay={onPickDay} onSetMonth={onSetMonth} cellH={22} />
+      <div data-cal-widget-side="mini" style={{ flex: `0 0 ${MINI_SIDE_W}px`, minWidth: 0, padding: 8, display: 'flex', overflow: 'hidden' }}>
+        {/* 옆 패널을 **꽉 채운다**(제보: 아래에 빈 여백이 남는다) — 여섯 줄이 남은
+            높이를 나눠 갖고, 폭도 칸이 정사각에 가깝도록 잡았다(2행 위젯 높이 기준). */}
+        <MiniCalendar entries={entries} todayIso={todayIso} y={ym.y} m={ym.m} selectedDay={selDay} onPickDay={onPickDay} onSetMonth={onSetMonth} fill />
       </div>
     </div>
   );
