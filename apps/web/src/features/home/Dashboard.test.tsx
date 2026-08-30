@@ -1067,6 +1067,21 @@ describe('위젯 크기 N×4(요청)', () => {
 
 describe('대시보드 캘린더 위젯(PR4) — 크기가 보기를 정한다', () => {
   /** 오늘을 기준으로 만든 날짜 — 하드코딩하면 언젠가 과거가 되어 테스트가 흔들린다. */
+  const dayLabel = (iso: string): string => {
+    const p = /^(\d{4})-(\d{2})-(\d{2})$/.exec(iso)!;
+    return `${+p[2]!}월 ${+p[3]!}일`;
+  };
+  /** 이 달 안에 머무는 날 — 미니 달력·격자는 이웃 달 칸을 누를 수 없다(월말 대비). */
+  const shiftInMonth = (n: number): string => {
+    const now = new Date();
+    const fwd = new Date(now);
+    fwd.setDate(fwd.getDate() + n);
+    if (fwd.getMonth() === now.getMonth()) return isoOfLocal(fwd);
+    const back = new Date(now);
+    back.setDate(back.getDate() - n);
+    return isoOfLocal(back);
+  };
+  const isoOfLocal = (d: Date): string => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
   const shift = (n: number): string => {
     const d = new Date();
     d.setDate(d.getDate() + n);
@@ -1189,6 +1204,83 @@ describe('대시보드 캘린더 위젯(PR4) — 크기가 보기를 정한다',
     // 새 일정은 일정 화면과 같은 팝업
     await user.click(widget.querySelector('[data-cal-widget-new]') as HTMLElement);
     await screen.findByRole('dialog', { name: '새 일정' });
+  });
+
+  it('3열은 달력만 — 옆 패널도 토글도 없다(요청)', async () => {
+    seedWithCalWidget('3x4');
+    const { container } = renderHome([META('doc-k', '스프린트')], { 'doc-k': KANBAN([{ id: 'k1', col: 'c2', pos: 1, text: '릴리스 준비', due: shift(0) }]) });
+    const user = userEvent.setup();
+    const aside = await sidebarOf(container);
+    await user.click(within(aside).getByText('이번 주'));
+    const widget = await waitFor(() => container.querySelector('[data-cal-widget-month]') as HTMLElement);
+    expect(widget.querySelector('[data-cal-widget-side]')).toBeNull();
+    expect(container.querySelector('[data-cal-widget-side-btn="날짜별 보기"]')).toBeNull();
+    // 보여 줄 자리가 없으므로 날짜 칸은 누를 대상이 아니다(죽은 어포던스 방지)
+    expect(widget.querySelector(`button[data-cal-widget-cell="${shift(0)}"]`)).toBeNull();
+    expect(widget.querySelector(`[data-cal-widget-cell="${shift(0)}"]`)).toBeTruthy();
+  });
+
+  it('1×4는 이번 주 마감 + 미니 달력 — 미니 달력이 목록의 날을 고른다(요청)', async () => {
+    seedWithCalWidget('1x4');
+    const { container } = renderHome([META('doc-k', '스프린트')], { 'doc-k': KANBAN([{ id: 'k1', col: 'c2', pos: 1, text: '릴리스 준비', due: shift(0) }]) });
+    const user = userEvent.setup();
+    const aside = await sidebarOf(container);
+    await user.click(within(aside).getByText('이번 주'));
+    const widget = await waitFor(() => container.querySelector('[data-cal-widget-listmini]') as HTMLElement);
+    // 위는 마감 목록, 아래는 일정 화면과 **같은** 미니 달력
+    await waitFor(() => expect(within(widget).getByText('릴리스 준비')).toBeTruthy());
+    expect(widget.querySelector('[data-mini-cal]')).toBeTruthy();
+
+    // 미니 달력에서 다른 날을 고르면 위 목록이 그 날로 바뀐다
+    const other = shiftInMonth(2);
+    await user.click(widget.querySelector(`[data-mini-day="${other}"]`) as HTMLElement);
+    await waitFor(() => expect(within(widget).getByText(dayLabel(other))).toBeTruthy());
+    expect(container.querySelector('[data-calendar-view]')).toBeNull();
+  });
+
+  it('날짜 칸에 테두리가 있고, 고른 날은 배경만 바뀐다(제보)', async () => {
+    seedWithCalWidget('4x3');
+    const { container } = renderHome([META('doc-k', '스프린트')], { 'doc-k': KANBAN([]) });
+    const user = userEvent.setup();
+    const aside = await sidebarOf(container);
+    await user.click(within(aside).getByText('이번 주'));
+    const widget = await waitFor(() => container.querySelector('[data-cal-widget-month]') as HTMLElement);
+    // 이 달의 칸은 격자선을 가진다(예전엔 투명이라 격자가 사라져 보였다)
+    const iso = shift(0);
+    const cell = widget.querySelector(`[data-cal-widget-cell="${iso}"]`) as HTMLElement;
+    const anyCell = [...widget.querySelectorAll('[data-cal-widget-cell]')].find((el) => (el as HTMLElement).style.border.includes('--mf-cal-grid'));
+    expect(anyCell).toBeTruthy();
+    // 고른 날: 면은 --mf-cal-sel, 숫자 알약에는 강조색 배경이 붙지 않는다
+    await user.click(cell);
+    await waitFor(() => expect(cell.getAttribute('data-on')).toBe('1'));
+    expect(cell.style.background).toContain('--mf-cal-sel');
+    const pill = cell.querySelector('span span') as HTMLElement;
+    expect(pill.style.background === 'transparent' || pill.style.background.includes('--mf-accent')).toBe(true);
+  });
+
+  it('빈 날에는 안내만 — `일정 추가` 버튼을 두지 않는다(요청)', async () => {
+    seedWithCalWidget('4x3');
+    const { container } = renderHome([META('doc-k', '스프린트')], { 'doc-k': KANBAN([]) });
+    const user = userEvent.setup();
+    const aside = await sidebarOf(container);
+    await user.click(within(aside).getByText('이번 주'));
+    const widget = await waitFor(() => container.querySelector('[data-cal-widget-month]') as HTMLElement);
+    await user.click(widget.querySelector(`[data-cal-widget-cell="${shift(0)}"]`) as HTMLElement);
+    await waitFor(() => expect(container.querySelector('[data-cal-widget-side="day"]')).toBeTruthy());
+    expect(within(container.querySelector('[data-cal-widget-side="day"]') as HTMLElement).getByText('이 날에는 일정이 없어요')).toBeTruthy();
+    expect(container.querySelector('[data-cal-widget-daynew]')).toBeNull();
+  });
+
+  it('머리 버튼이 28px — 20px은 누르기 힘들다(제보)', async () => {
+    seedWithCalWidget('4x3');
+    const { container } = renderHome([META('doc-k', '스프린트')], { 'doc-k': KANBAN([]) });
+    const user = userEvent.setup();
+    const aside = await sidebarOf(container);
+    await user.click(within(aside).getByText('이번 주'));
+    const widget = await waitFor(() => container.querySelector('[data-dash-widget]') as HTMLElement);
+    const add = widget.querySelector('[data-cal-widget-new]') as HTMLElement;
+    expect(add.style.width).toBe('28px');
+    expect((widget.querySelector('[aria-label="다음 달"]') as HTMLElement).style.height).toBe('28px');
   });
 
   it('피커 첫 칸이 일정 — 올리면 블롭에 `kind: cal`로 남고, 다시 누르면 내려간다', async () => {

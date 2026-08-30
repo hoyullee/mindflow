@@ -48,14 +48,21 @@ describe('dashboard model', () => {
     expect(isCalItem(out[0]!.items[0]!)).toBe(false);
   });
 
-  it('크기가 보기를 정한다 — 4×3부터 월간, 2×2부터 주간, 그보다 작으면 목록', () => {
+  it('크기가 보기를 정한다 — 4×3 월간, 3×3 달력만, 1×3 목록+미니, 2×2 주간, 그보다 작으면 목록', () => {
     expect(calWidgetMode(4, 3)).toBe('month');
     expect(calWidgetMode(4, 4)).toBe('month');
-    expect(calWidgetMode(3, 3)).toBe('week'); // 열이 모자라면 월간이 아니다
+    // 3열은 옆 패널을 넣을 폭이 없다 — 달력만(요청)
+    expect(calWidgetMode(3, 3)).toBe('month-only');
+    expect(calWidgetMode(3, 4)).toBe('month-only');
+    // 한 열 + 높이 = 이번 주 마감 + 미니 달력(요청)
+    expect(calWidgetMode(1, 4)).toBe('list-mini');
+    expect(calWidgetMode(1, 3)).toBe('list-mini');
     expect(calWidgetMode(4, 2)).toBe('week');
     expect(calWidgetMode(2, 2)).toBe('week');
+    expect(calWidgetMode(3, 2)).toBe('week');
     expect(calWidgetMode(2, 1)).toBe('list');
     expect(calWidgetMode(1, 1)).toBe('list');
+    expect(calWidgetMode(1, 2)).toBe('list');
     // 일정은 1×1부터 놓을 수 있다(목록으로도 뜻이 통한다)
     expect(sizesFor('cal')).toEqual([...DASH_SIZES]);
   });

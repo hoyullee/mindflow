@@ -1,21 +1,22 @@
 /**
  * 대시보드 캘린더 위젯 — 디자인 원본 `Geurio 일정 캘린더.dc.html`의 `isCal` 위젯.
  *
- * **크기가 보기를 정한다**(`calWidgetMode`): 작으면 목록, 2×2부터 주간 일곱 줄,
- * 4×3부터 월간(달력 + 옆 패널). 고를 것을 따로 두지 않는 이유는 크기가 이미
- * "얼마나 보여 줄까"를 말하기 때문이다.
+ * **크기가 보기를 정한다**(`calWidgetMode`): 4×3+ 월간(달력 + 옆 패널), 3×3+ 달력만,
+ * 1열+높이 마감 목록 + 미니 달력, 2×2+ 주간 일곱 줄, 그보다 작으면 목록. 고를 것을
+ * 따로 두지 않는 이유는 크기가 이미 "얼마나 보여 줄까"를 말하기 때문이다.
  *
- * **위젯 안에서 끝난다**(원본 `onDay`) — 날짜 칸을 누르면 그 자리에서 옆 패널이
- * 그 날로 바뀌고, 항목을 누르면 상세 팝업이 뜬다. 예전에는 어느 자리를 눌러도
- * 일정 화면으로 떠났는데, 날짜 칸이 몸통을 통째로 덮으므로 사실상 "아무 데나
- * 클릭하면 화면이 바뀐다"였다(제보). 화면을 옮기는 문은 "일정 열기" 하나다.
+ * **위젯 안에서 끝난다**(원본 `onDay`) — 날짜 칸을 누르면 그 자리에서 옆 패널이 그
+ * 날로 바뀌고, 항목을 누르면 상세 팝업이 뜬다. 화면을 옮기는 문은 "열기" 하나다.
  *
- * 항목의 원천은 일정 화면과 **같다**(칸반 마감 + Geurio 일정) — 여기서 다시 모으지
- * 않고 `entries`를 받는다.
+ * 글자 크기는 **일정 화면과 같은 값**을 쓴다(제보: 너무 작다) — 칩 11.5·목록 13·
+ * 날짜 12는 그 화면이 여러 차례 제보를 거쳐 정착한 값이라, 위젯이 그걸 줄여 그리면
+ * 같은 것이 화면마다 달라 보인다.
  */
 
 import { useEffect, useMemo, useRef } from 'react';
 import type { CalendarEntry } from '../calendar/entries';
+import { MiniCalendar } from '../calendar/MiniCalendar';
+import type { CalWidgetMode } from './model';
 import { entryChip, type ChipSurface } from '../calendar/chips';
 import {
   DOW,
@@ -35,7 +36,7 @@ import {
 const MONO = { fontFamily: "'JetBrains Mono', monospace" } as const;
 
 /** 위젯 시간표 한 행(px) — 원본 `this.dayTimeline(sel, evs, 26)`. */
-const ROW = 26;
+const ROW = 30;
 
 /** 옆 패널이 무엇을 보여 주는가 — 다가오는 마감 / 고른 날짜(원본 `wcalSide`). */
 export type CalWidgetSide = 'dl' | 'day';
@@ -43,11 +44,11 @@ export type CalWidgetSide = 'dl' | 'day';
 export interface CalWidgetProps {
   entries: readonly CalendarEntry[];
   todayIso: string;
-  mode: 'month' | 'week' | 'list';
+  mode: CalWidgetMode;
   cols: number;
   rows: number;
   surface: ChipSurface;
-  /** 지금 보고 있는 달(월간) — 위젯 머리의 ‹ › 가 옮긴다. */
+  /** 지금 보고 있는 달(월간·미니 달력) — 위젯 머리의 ‹ › 가 옮긴다. */
   ym: { y: number; m: number };
   /** 주간 보기의 기준 주(0 = 이번 주). */
   weekOffset: number;
@@ -58,42 +59,83 @@ export interface CalWidgetProps {
   onPickDay: (iso: string) => void;
   /** 항목을 누르면 상세 팝업. */
   onPickEntry: (e: CalendarEntry) => void;
-  /** 빈 날의 `일정 추가`. */
-  onNewEvent: (iso: string) => void;
+  /** 미니 달력의 달 이동(1열 보기). */
+  onSetMonth: (y: number, m: number) => void;
 }
 
 export function CalWidgetBody(props: CalWidgetProps) {
-  if (props.mode === 'month') return <MonthBody {...props} />;
+  if (props.mode === 'month' || props.mode === 'month-only') return <MonthBody {...props} />;
   if (props.mode === 'week') return <WeekBody {...props} />;
+  if (props.mode === 'list-mini') return <ListMiniBody {...props} />;
   return <ListBody {...props} />;
+}
+
+/** 이 보기가 목록에 담을 것 — 원본 `listSrc`: 목록 보기는 **이번 주**를 센다. */
+function listSource(entries: readonly CalendarEntry[], todayIso: string, weekOffset: number, side: CalWidgetSide, selDay: string): CalendarEntry[] {
+  if (side === 'day') return entriesOn(entries, selDay);
+  const from = addDays(weekStartISO(todayIso), weekOffset * 7);
+  const to = addDays(from, 6);
+  return entries.filter((e) => e.due >= from && e.due <= to).sort((a, b) => (a.due < b.due ? -1 : a.due > b.due ? 1 : 0));
+}
+
+function listTitle(side: CalWidgetSide, selDay: string, weekOffset: number): string {
+  return side === 'day' ? dayTitle(selDay) : `${weekOffset === 0 ? '이번 주' : '주간'} 마감`;
 }
 
 /** 목록 — 가장 작은 보기. 이번 주 마감(또는 고른 날)을 크기만큼 보여 준다. */
 function ListBody({ entries, todayIso, cols, rows, surface, weekOffset, side, selDay, onPickEntry }: CalWidgetProps) {
-  const cap = rows >= 2 ? 8 : cols >= 2 ? 4 : 3;
-  const day = side === 'day';
-  // 원본 `listSrc`: 목록 보기는 **이번 주**를 센다(월간·주간의 "다가오는 마감"과 다르다).
-  const src = useMemo(() => {
-    if (day) return entriesOn(entries, selDay);
-    const from = addDays(weekStartISO(todayIso), weekOffset * 7);
-    const to = addDays(from, 6);
-    return entries.filter((e) => e.due >= from && e.due <= to).sort((a, b) => (a.due < b.due ? -1 : a.due > b.due ? 1 : 0));
-  }, [entries, day, selDay, todayIso, weekOffset]);
-  const shown = src.slice(0, cap);
-  const title = day ? dayTitle(selDay) : `${weekOffset === 0 ? '이번 주' : '주간'} 마감`;
+  const cap = rows >= 2 ? 7 : cols >= 2 ? 3 : 2;
+  const src = useMemo(() => listSource(entries, todayIso, weekOffset, side, selDay), [entries, todayIso, weekOffset, side, selDay]);
   return (
-    <div data-cal-widget-list style={{ flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column', padding: '7px 6px 6px', overflow: 'hidden' }}>
-      <SectionLabel>{title}</SectionLabel>
-      {shown.length === 0 ? (
-        <Empty>{day ? '이 날에는 일정이 없어요' : '이번 주 마감이 없어요'}</Empty>
-      ) : (
-        <div style={{ flex: 1, minHeight: 0, overflow: 'hidden', display: 'flex', flexDirection: 'column', gap: 1 }}>
-          {shown.map((e) => (
-            <Row key={rowKey(e)} entry={e} todayIso={todayIso} surface={surface} showTime={day} onPick={onPickEntry} />
-          ))}
-          {src.length > shown.length && <span style={{ fontSize: 8.5, color: 'var(--mf-faint2)', padding: '1px 6px' }}>+{src.length - shown.length}개 더</span>}
-        </div>
-      )}
+    <div data-cal-widget-list style={{ flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column', padding: '8px 7px 7px', overflow: 'hidden' }}>
+      <SectionLabel>{listTitle(side, selDay, weekOffset)}</SectionLabel>
+      <DeadlineList src={src} cap={cap} todayIso={todayIso} surface={surface} showTime={side === 'day'} empty={side === 'day' ? '이 날에는 일정이 없어요' : '이번 주 마감이 없어요'} onPickEntry={onPickEntry} />
+    </div>
+  );
+}
+
+/** 1열 + 높이 — 위는 이번 주 마감, 아래는 일정 화면과 **같은 미니 달력**(요청). */
+function ListMiniBody({ entries, todayIso, rows, surface, ym, weekOffset, side, selDay, onPickDay, onPickEntry, onSetMonth }: CalWidgetProps) {
+  const src = useMemo(() => listSource(entries, todayIso, weekOffset, side, selDay), [entries, todayIso, weekOffset, side, selDay]);
+  return (
+    <div data-cal-widget-listmini style={{ flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
+      <div style={{ flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column', padding: '8px 7px 7px', overflow: 'hidden' }}>
+        <SectionLabel>{listTitle(side, selDay, weekOffset)}</SectionLabel>
+        <DeadlineList src={src} cap={rows >= 4 ? 6 : 3} todayIso={todayIso} surface={surface} showTime={side === 'day'} empty={side === 'day' ? '이 날에는 일정이 없어요' : '이번 주 마감이 없어요'} onPickEntry={onPickEntry} />
+      </div>
+      <div style={{ flexShrink: 0, padding: '10px 12px 12px', borderTop: '1px solid var(--mf-hairline)' }}>
+        <MiniCalendar entries={entries} todayIso={todayIso} y={ym.y} m={ym.m} selectedDay={side === 'day' ? selDay : ''} onPickDay={onPickDay} onSetMonth={onSetMonth} cellH={24} />
+      </div>
+    </div>
+  );
+}
+
+/** 마감 목록 — 세 보기가 함께 쓴다(같은 것을 두 벌로 두지 않는다). */
+function DeadlineList({
+  src,
+  cap,
+  todayIso,
+  surface,
+  showTime,
+  empty,
+  onPickEntry,
+}: {
+  src: readonly CalendarEntry[];
+  cap: number;
+  todayIso: string;
+  surface: ChipSurface;
+  showTime?: boolean;
+  empty: string;
+  onPickEntry: (e: CalendarEntry) => void;
+}) {
+  const shown = src.slice(0, cap);
+  if (shown.length === 0) return <Empty>{empty}</Empty>;
+  return (
+    <div style={{ flex: 1, minHeight: 0, overflow: 'hidden', display: 'flex', flexDirection: 'column', gap: 1 }}>
+      {shown.map((e) => (
+        <Row key={rowKey(e)} entry={e} todayIso={todayIso} surface={surface} showTime={showTime} onPick={onPickEntry} />
+      ))}
+      {src.length > shown.length && <span style={{ fontSize: 10.5, color: 'var(--mf-faint2)', padding: '2px 7px' }}>+{src.length - shown.length}개 더</span>}
     </div>
   );
 }
@@ -107,8 +149,8 @@ function WeekBody({ entries, todayIso, cols, rows, surface, weekOffset, onPickEn
   const b = partsOf(addDays(start, 6));
   const range = a && b ? `${a.m}.${a.d} – ${b.m}.${b.d}` : '';
   return (
-    <div data-cal-widget-week style={{ flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column', padding: '8px 8px 6px', overflow: 'hidden' }}>
-      <SectionLabel pad="0 4px 5px">
+    <div data-cal-widget-week style={{ flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column', padding: '8px 9px 7px', overflow: 'hidden' }}>
+      <SectionLabel pad="0 4px 6px">
         {weekOffset === 0 ? '이번 주' : '주간'} · {range}
       </SectionLabel>
       {/* 일곱 줄이 높이를 나눠 갖는다 — 위에 몰리고 아래가 비면 위젯이 반쯤 빈 것처럼
@@ -123,19 +165,19 @@ function WeekBody({ entries, todayIso, cols, rows, surface, weekOffset, onPickEn
           const isToday = iso === todayIso;
           const n = partsOf(iso)?.d ?? '';
           return (
-            <div key={iso} style={{ flex: '1 1 0', minHeight: 0, overflow: 'hidden', display: 'flex', alignItems: 'flex-start', gap: 7, padding: '3px 4px', borderRadius: 8, background: isToday ? 'var(--mf-cal-sel)' : 'transparent', minWidth: 0 }}>
-              <span style={{ flex: '0 0 38px', display: 'flex', alignItems: 'center', gap: 4, paddingTop: 1 }}>
-                <span style={{ width: 12, fontSize: 8.5, fontWeight: 700, textAlign: 'center', color: i === 0 ? 'var(--mf-danger)' : i === 6 ? 'var(--mf-info)' : 'var(--mf-faint)' }}>{DOW[i]}</span>
-                <span style={{ width: 16, height: 16, borderRadius: 999, background: isToday ? 'var(--mf-accent)' : 'transparent', color: isToday ? 'var(--mf-accent-ink)' : list.length ? 'var(--mf-text)' : 'var(--mf-faint2)', fontSize: 8.5, fontWeight: 800, ...MONO, display: 'inline-flex', alignItems: 'center', justifyContent: 'center' }}>{n}</span>
+            <div key={iso} style={{ flex: '1 1 0', minHeight: 0, overflow: 'hidden', display: 'flex', alignItems: 'flex-start', gap: 8, padding: '3px 5px', borderRadius: 9, background: isToday ? 'var(--mf-cal-sel)' : 'transparent', minWidth: 0 }}>
+              <span style={{ flex: '0 0 44px', display: 'flex', alignItems: 'center', gap: 5, paddingTop: 1 }}>
+                <span style={{ width: 13, fontSize: 11, fontWeight: 700, textAlign: 'center', color: i === 0 ? 'var(--mf-danger)' : i === 6 ? 'var(--mf-info)' : 'var(--mf-faint)' }}>{DOW[i]}</span>
+                <span style={{ width: 20, height: 20, borderRadius: 999, background: isToday ? 'var(--mf-accent)' : 'transparent', color: isToday ? 'var(--mf-accent-ink)' : list.length ? 'var(--mf-text)' : 'var(--mf-faint2)', fontSize: 12, fontWeight: 800, ...MONO, display: 'inline-flex', alignItems: 'center', justifyContent: 'center' }}>{n}</span>
               </span>
               <span style={{ flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column', gap: 2 }}>
                 {bars.map((e) => (
-                  <Bar key={`bar-${rowKey(e)}`} entry={e} iso={iso} dow={i} surface={surface} h={13} onPick={onPickEntry} />
+                  <Bar key={`bar-${rowKey(e)}`} entry={e} iso={iso} dow={i} surface={surface} h={17} onPick={onPickEntry} />
                 ))}
                 {shown.map((e) => (
                   <Chip key={rowKey(e)} entry={e} todayIso={todayIso} surface={surface} compact={cols < 3} onPick={onPickEntry} />
                 ))}
-                {moreN > 0 && <span style={{ fontSize: 8, color: 'var(--mf-faint2)', padding: '0 6px' }}>+{moreN}개 더</span>}
+                {moreN > 0 && <span style={{ fontSize: 10.5, color: 'var(--mf-faint2)', padding: '0 6px' }}>+{moreN}개 더</span>}
               </span>
             </div>
           );
@@ -145,24 +187,101 @@ function WeekBody({ entries, todayIso, cols, rows, surface, weekOffset, onPickEn
   );
 }
 
-/** 월간 — 달력(75%) + 옆 패널(25%). 원본 `calModeMonth`. */
-function MonthBody({ entries, todayIso, cols, rows, surface, ym, side, selDay, onPickDay, onPickEntry, onNewEvent }: CalWidgetProps) {
+/** 월간 — 달력(+ 옆 패널). 3열은 달력만 그린다(요청 — 옆 패널까지 넣으면 칸이 좁다). */
+function MonthBody({ entries, todayIso, mode, cols, rows, surface, ym, side, selDay, onPickDay, onPickEntry }: CalWidgetProps) {
+  const withSide = mode === 'month';
   const perCell = rows >= 4 ? 2 : 1;
   const cells = useMemo(() => monthCells(ym.y, ym.m, entries, todayIso, perCell), [ym.y, ym.m, entries, todayIso, perCell]);
   return (
     <div data-cal-widget-month style={{ flex: 1, minHeight: 0, display: 'flex', minWidth: 0, overflow: 'hidden' }}>
-      <div style={{ flex: '1 1 75%', minWidth: 0, display: 'flex', flexDirection: 'column', gap: 4, padding: '8px 10px 9px', borderRight: '1px solid var(--mf-hairline)' }}>
-        <span style={{ fontSize: 9.5, fontWeight: 800, color: 'var(--mf-subtext)', letterSpacing: '-.01em', paddingBottom: 1 }}>{monthLabel(ym.y, ym.m)}</span>
+      <div style={{ flex: withSide ? '1 1 75%' : '1 1 auto', minWidth: 0, display: 'flex', flexDirection: 'column', gap: 5, padding: '9px 11px 10px', borderRight: withSide ? '1px solid var(--mf-hairline)' : 0 }}>
+        <span style={{ fontSize: 11.5, fontWeight: 800, color: 'var(--mf-subtext)', letterSpacing: '-.01em', paddingBottom: 1 }}>{monthLabel(ym.y, ym.m)}</span>
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(7, 1fr)', gap: 3, flexShrink: 0 }}>
-          {DOW.map((d) => (
-            <span key={d} style={{ fontSize: 8, fontWeight: 800, letterSpacing: '.04em', color: 'var(--mf-faint2)', textAlign: 'center' }}>
+          {DOW.map((d, i) => (
+            <span key={d} style={{ fontSize: 10, fontWeight: 800, letterSpacing: '.04em', color: i === 0 ? 'var(--mf-danger)' : i === 6 ? 'var(--mf-info)' : 'var(--mf-faint2)', textAlign: 'center' }}>
               {d}
             </span>
           ))}
         </div>
         <div style={{ flex: 1, minHeight: 0, display: 'grid', gridTemplateColumns: 'repeat(7, 1fr)', gridAutoRows: '1fr', gap: 3 }}>
           {cells.map((c) => {
-            const on = c.inMonth && c.iso === selDay;
+            const on = withSide && c.inMonth && c.iso === selDay;
+            // 칸 배경 — 큰 달력과 같은 규칙(주말·공휴일 톤, 고른 날은 면만 바뀐다).
+            const bg = !c.inMonth
+              ? 'var(--mf-cal-out)'
+              : on
+                ? 'var(--mf-cal-sel)'
+                : c.holiday || c.dow === 0
+                  ? 'var(--mf-cal-sun)'
+                  : c.dow === 6
+                    ? 'var(--mf-cal-sat)'
+                    : 'var(--mf-card)';
+            const cellInner = (
+              <>
+                <span style={{ display: 'flex', alignItems: 'center', gap: 3, minWidth: 0, flex: '0 0 auto' }}>
+                  <span
+                    style={{
+                      width: 19,
+                      height: 19,
+                      flex: '0 0 auto',
+                      borderRadius: 999,
+                      // 고른 날은 **면만** 바뀐다(요청) — 숫자에까지 주황을 칠하면
+                      // 오늘 표시와 구별되지 않는다.
+                      background: c.isToday ? 'var(--mf-accent)' : 'transparent',
+                      color: c.isToday
+                        ? 'var(--mf-accent-ink)'
+                        : !c.inMonth
+                          ? 'var(--mf-faint2)'
+                          : c.holiday || c.dow === 0
+                            ? 'var(--mf-danger)'
+                            : c.dow === 6
+                              ? 'var(--mf-info)'
+                              : 'var(--mf-subtext)',
+                      fontSize: 12,
+                      fontWeight: c.isToday ? 800 : 600,
+                      ...MONO,
+                      display: 'inline-flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                    }}
+                  >
+                    {c.n}
+                  </span>
+                  {c.holiday && <span style={{ fontSize: 9.5, fontWeight: 700, color: 'var(--mf-danger)', minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{c.holiday}</span>}
+                </span>
+                {c.bars.map((b) => (
+                  <Bar key={`bar-${rowKey(b.entry)}`} entry={b.entry} label={b.label} head={b.head} tail={b.tail} surface={surface} h={15} onPick={onPickEntry} />
+                ))}
+                {c.entries.map((e) => (
+                  <Chip key={rowKey(e)} entry={e} todayIso={todayIso} surface={surface} compact={cols < 4} small onPick={onPickEntry} />
+                ))}
+                {c.moreN > 0 && <span style={{ fontSize: 10, color: 'var(--mf-faint2)', padding: '0 3px' }}>+{c.moreN}</span>}
+              </>
+            );
+            const cellStyle = {
+              borderRadius: 8,
+              // 칸 테두리 — 디자인 원본의 `bd`(오늘만 강조색). 예전에는 투명이라
+              // 격자가 통째로 사라져 보였다(제보).
+              border: `1px solid ${c.isToday ? 'var(--mf-accent-mute)' : c.inMonth ? 'var(--mf-cal-grid)' : 'transparent'}`,
+              background: bg,
+              padding: '3px 3px 2px',
+              display: 'flex',
+              flexDirection: 'column' as const,
+              gap: 2,
+              minWidth: 0,
+              minHeight: 0,
+              overflow: 'hidden',
+              font: 'inherit',
+            };
+            // 옆 패널이 없는 보기(3열)에서는 날짜 칸이 **누를 대상이 아니다** —
+            // 고른 날을 보여 줄 자리가 없으므로 손가락 커서를 내주지 않는다.
+            if (!withSide) {
+              return (
+                <div key={c.iso} data-cal-widget-cell={c.iso} style={{ ...cellStyle, cursor: 'default' }}>
+                  {cellInner}
+                </div>
+              );
+            }
             return (
               <button
                 key={c.iso}
@@ -175,55 +294,15 @@ function MonthBody({ entries, todayIso, cols, rows, surface, ym, side, selDay, o
                   e.stopPropagation();
                   onPickDay(c.iso);
                 }}
-                style={{
-                  borderRadius: 8,
-                  border: `1px solid ${c.isToday ? 'var(--mf-accent-mute)' : 'transparent'}`,
-                  background: on ? 'var(--mf-cal-sel)' : c.inMonth ? 'var(--mf-card)' : 'var(--mf-cal-out)',
-                  padding: '3px 3px 2px',
-                  display: 'flex',
-                  flexDirection: 'column',
-                  gap: 2,
-                  minWidth: 0,
-                  minHeight: 0,
-                  overflow: 'hidden',
-                  font: 'inherit',
-                  cursor: c.inMonth ? 'pointer' : 'default',
-                }}
+                style={{ ...cellStyle, cursor: c.inMonth ? 'pointer' : 'default' }}
               >
-                <span style={{ display: 'flex', alignItems: 'center', gap: 3, minWidth: 0, flex: '0 0 auto' }}>
-                  <span
-                    style={{
-                      width: 15,
-                      height: 15,
-                      flex: '0 0 auto',
-                      borderRadius: 999,
-                      background: on || c.isToday ? 'var(--mf-accent)' : 'transparent',
-                      color: on || c.isToday ? 'var(--mf-accent-ink)' : c.inMonth ? 'var(--mf-subtext)' : 'var(--mf-faint2)',
-                      fontSize: 8,
-                      fontWeight: c.isToday || on ? 800 : 600,
-                      ...MONO,
-                      display: 'inline-flex',
-                      alignItems: 'center',
-                      justifyContent: 'center',
-                    }}
-                  >
-                    {c.n}
-                  </span>
-                  {c.holiday && <span style={{ fontSize: 7, fontWeight: 700, color: 'var(--mf-danger)', minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{c.holiday}</span>}
-                </span>
-                {c.bars.map((b) => (
-                  <Bar key={`bar-${rowKey(b.entry)}`} entry={b.entry} label={b.label} head={b.head} tail={b.tail} surface={surface} h={10} onPick={onPickEntry} />
-                ))}
-                {c.entries.map((e) => (
-                  <Chip key={rowKey(e)} entry={e} todayIso={todayIso} surface={surface} compact={cols < 3} small onPick={onPickEntry} />
-                ))}
-                {c.moreN > 0 && <span style={{ fontSize: 7.5, color: 'var(--mf-faint2)', padding: '0 3px' }}>+{c.moreN}</span>}
+                {cellInner}
               </button>
             );
           })}
         </div>
       </div>
-      <MonthSide entries={entries} todayIso={todayIso} rows={rows} surface={surface} side={side} selDay={selDay} onPickEntry={onPickEntry} onNewEvent={onNewEvent} />
+      {withSide && <MonthSide entries={entries} todayIso={todayIso} rows={rows} surface={surface} side={side} selDay={selDay} onPickEntry={onPickEntry} />}
     </div>
   );
 }
@@ -237,23 +316,16 @@ function MonthSide({
   side,
   selDay,
   onPickEntry,
-  onNewEvent,
-}: Pick<CalWidgetProps, 'entries' | 'todayIso' | 'rows' | 'surface' | 'side' | 'selDay' | 'onPickEntry' | 'onNewEvent'>) {
+}: Pick<CalWidgetProps, 'entries' | 'todayIso' | 'rows' | 'surface' | 'side' | 'selDay' | 'onPickEntry'>) {
   const day = side === 'day';
-  const list = useMemo(() => upcomingEntries(entries, todayIso).slice(0, rows >= 3 ? 10 : 5), [entries, todayIso, rows]);
+  const list = useMemo(() => upcomingEntries(entries, todayIso), [entries, todayIso]);
   return (
-    <div data-cal-widget-side={side} style={{ flex: '1 1 25%', minWidth: 0, display: 'flex', flexDirection: 'column', padding: '8px 6px 6px', overflow: 'hidden' }}>
+    <div data-cal-widget-side={side} style={{ flex: '1 1 25%', minWidth: 0, display: 'flex', flexDirection: 'column', padding: '9px 7px 7px', overflow: 'hidden' }}>
       <SectionLabel>{day ? dayTitle(selDay) : '다가오는 마감'}</SectionLabel>
       {day ? (
-        <DaySide entries={entries} todayIso={todayIso} iso={selDay} surface={surface} onPickEntry={onPickEntry} onNewEvent={onNewEvent} />
-      ) : list.length === 0 ? (
-        <Empty>다가오는 마감이 없어요</Empty>
+        <DaySide entries={entries} todayIso={todayIso} iso={selDay} surface={surface} onPickEntry={onPickEntry} />
       ) : (
-        <div style={{ flex: 1, minHeight: 0, overflow: 'hidden', display: 'flex', flexDirection: 'column', gap: 1 }}>
-          {list.map((e) => (
-            <Row key={rowKey(e)} entry={e} todayIso={todayIso} surface={surface} onPick={onPickEntry} />
-          ))}
-        </div>
+        <DeadlineList src={list} cap={rows >= 4 ? 8 : 5} todayIso={todayIso} surface={surface} empty="다가오는 마감이 없어요" onPickEntry={onPickEntry} />
       )}
     </div>
   );
@@ -266,14 +338,12 @@ function DaySide({
   iso,
   surface,
   onPickEntry,
-  onNewEvent,
 }: {
   entries: readonly CalendarEntry[];
   todayIso: string;
   iso: string;
   surface: ChipSurface;
   onPickEntry: (e: CalendarEntry) => void;
-  onNewEvent: (iso: string) => void;
 }) {
   const timeline = useMemo(() => dayTimeline(entries, iso), [entries, iso]);
   const bodyRef = useRef<HTMLDivElement | null>(null);
@@ -294,7 +364,7 @@ function DaySide({
   return (
     <>
       {timeline.allDay.length > 0 && (
-        <div style={{ flex: '0 0 auto', display: 'flex', flexDirection: 'column', gap: 2, padding: '0 4px 5px' }}>
+        <div style={{ flex: '0 0 auto', display: 'flex', flexDirection: 'column', gap: 2, padding: '0 4px 6px' }}>
           {timeline.allDay.map((e) => {
             const chip = entryChip(e, surface);
             return (
@@ -307,43 +377,28 @@ function DaySide({
                   ev.stopPropagation();
                   onPickEntry(e);
                 }}
-                style={{ display: 'flex', alignItems: 'center', gap: 5, width: '100%', boxSizing: 'border-box', padding: '3px 6px', border: 0, borderLeft: `2.5px solid ${chip.dot}`, borderRadius: '3px 6px 6px 3px', background: chip.bg, cursor: 'pointer', font: 'inherit', textAlign: 'left', minWidth: 0 }}
+                style={{ display: 'flex', alignItems: 'center', gap: 6, width: '100%', boxSizing: 'border-box', padding: '5px 8px', border: 0, borderLeft: `3px solid ${chip.dot}`, borderRadius: '3px 8px 8px 3px', background: chip.bg, cursor: 'pointer', font: 'inherit', textAlign: 'left', minWidth: 0 }}
               >
-                <span style={{ flex: 1, minWidth: 0, fontSize: 8.5, fontWeight: 700, color: 'var(--mf-text)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{e.title || '제목 없음'}</span>
-                <span style={{ flex: '0 0 auto', fontSize: 7.5, color: 'var(--mf-muted)', whiteSpace: 'nowrap' }}>{e.colName}</span>
+                <span style={{ flex: 1, minWidth: 0, fontSize: 12, fontWeight: 700, color: 'var(--mf-text)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{e.title || '제목 없음'}</span>
+                <span style={{ flex: '0 0 auto', fontSize: 10.5, color: 'var(--mf-muted)', whiteSpace: 'nowrap' }}>{e.colName}</span>
               </button>
             );
           })}
         </div>
       )}
-      {empty && (
-        <span style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-start', gap: 5, padding: '6px 6px' }}>
-          <span style={{ fontSize: 9, color: 'var(--mf-faint)' }}>이 날에는 일정이 없어요</span>
-          <button
-            type="button"
-            data-cal-widget-daynew
-            className="mf-ctl"
-            onClick={(e) => {
-              e.stopPropagation();
-              onNewEvent(iso);
-            }}
-            style={{ height: 22, padding: '0 9px', borderRadius: 999, border: '1px solid var(--mf-border)', background: 'var(--mf-card)', color: 'var(--mf-muted)', font: 'inherit', fontSize: 9, fontWeight: 700, cursor: 'pointer' }}
-          >
-            일정 추가
-          </button>
-        </span>
-      )}
+      {/* 빈 날 — 안내만 둔다(요청: `일정 추가` 버튼 제거). 새 일정은 머리의 ＋가 맡는다. */}
+      {empty && <Empty>이 날에는 일정이 없어요</Empty>}
       <div ref={bodyRef} className="lnb-scroll" data-cal-widget-timeline style={{ flex: 1, minHeight: 0, overflowY: 'auto', padding: '0 4px 4px' }}>
         <div style={{ position: 'relative', height: ROW * 24, display: 'flex', flexDirection: 'column' }}>
           {Array.from({ length: 24 }, (_, h) => (
-            <span key={h} style={{ display: 'flex', alignItems: 'flex-start', gap: 5, height: ROW, flex: '0 0 auto' }}>
-              <span style={{ flex: '0 0 20px', textAlign: 'right', ...MONO, fontSize: 7, color: 'var(--mf-faint2)', transform: 'translateY(-3px)', whiteSpace: 'nowrap' }}>{hourLabel(h)}</span>
+            <span key={h} style={{ display: 'flex', alignItems: 'flex-start', gap: 6, height: ROW, flex: '0 0 auto' }}>
+              <span style={{ flex: '0 0 26px', textAlign: 'right', ...MONO, fontSize: 9.5, color: 'var(--mf-faint2)', transform: 'translateY(-4px)', whiteSpace: 'nowrap' }}>{hourLabel(h)}</span>
               <span style={{ flex: 1, minWidth: 0, borderTop: '1px solid var(--mf-border-soft)', display: 'block' }} />
             </span>
           ))}
           {nowMin !== null && (
-            <span data-cal-widget-now style={{ position: 'absolute', left: 24, right: 0, top: (nowMin / 60) * ROW, display: 'flex', alignItems: 'center', pointerEvents: 'none' }}>
-              <span style={{ width: 5, height: 5, borderRadius: 999, background: 'var(--mf-accent)', display: 'block', flex: '0 0 auto', marginLeft: -2.5 }} />
+            <span data-cal-widget-now style={{ position: 'absolute', left: 30, right: 0, top: (nowMin / 60) * ROW, display: 'flex', alignItems: 'center', pointerEvents: 'none' }}>
+              <span style={{ width: 6, height: 6, borderRadius: 999, background: 'var(--mf-accent)', display: 'block', flex: '0 0 auto', marginLeft: -3 }} />
               <span style={{ flex: 1, height: 1.5, background: 'var(--mf-accent)', display: 'block' }} />
             </span>
           )}
@@ -362,18 +417,18 @@ function DaySide({
                 }}
                 style={{
                   position: 'absolute',
-                  left: `calc(28px + (100% - 30px) * ${b.lane} / ${n})`,
-                  width: `calc((100% - 30px) / ${n} - ${n > 1 ? 2 : 0}px)`,
+                  left: `calc(34px + (100% - 36px) * ${b.lane} / ${n})`,
+                  width: `calc((100% - 36px) / ${n} - ${n > 1 ? 2 : 0}px)`,
                   top: (b.from / 60) * ROW,
-                  height: Math.max(18, ((b.to - b.from) / 60) * ROW - 2),
+                  height: Math.max(22, ((b.to - b.from) / 60) * ROW - 2),
                   boxSizing: 'border-box',
                   display: 'flex',
                   flexDirection: 'column',
                   justifyContent: 'center',
-                  padding: '2px 5px',
+                  padding: '2px 6px',
                   border: 0,
-                  borderLeft: `2.5px solid ${chip.dot}`,
-                  borderRadius: '3px 6px 6px 3px',
+                  borderLeft: `3px solid ${chip.dot}`,
+                  borderRadius: '3px 7px 7px 3px',
                   background: chip.bg,
                   boxShadow: n > 1 ? '0 0 0 1.5px var(--mf-card)' : 'none',
                   cursor: 'pointer',
@@ -382,7 +437,7 @@ function DaySide({
                   overflow: 'hidden',
                 }}
               >
-                <span style={{ fontSize: 8.5, fontWeight: 800, letterSpacing: '-.015em', color: 'var(--mf-text)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{b.entry.title || '제목 없음'}</span>
+                <span style={{ fontSize: 11.5, fontWeight: 800, letterSpacing: '-.015em', color: 'var(--mf-text)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{b.entry.title || '제목 없음'}</span>
               </button>
             );
           })}
@@ -409,11 +464,11 @@ function Row({ entry, todayIso, surface, showTime, onPick }: { entry: CalendarEn
         e.stopPropagation();
         onPick(entry);
       }}
-      style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '4px 5px', border: 0, borderRadius: 7, background: 'transparent', font: 'inherit', textAlign: 'left', minWidth: 0, cursor: 'pointer', flexShrink: 0 }}
+      style={{ display: 'flex', alignItems: 'center', gap: 7, padding: '5px 6px', border: 0, borderRadius: 8, background: 'transparent', font: 'inherit', textAlign: 'left', minWidth: 0, cursor: 'pointer', flexShrink: 0 }}
     >
-      <span style={{ flex: '0 0 auto', minWidth: 30, height: 15, padding: '0 4px', borderRadius: 5, background: today ? 'var(--mf-accent-soft)' : over ? 'var(--mf-danger-bg)' : 'var(--mf-panel2)', color: today ? 'var(--mf-accent-strong)' : over ? 'var(--mf-danger)' : 'var(--mf-muted)', fontSize: 8, fontWeight: 800, display: 'inline-flex', alignItems: 'center', justifyContent: 'center', whiteSpace: 'nowrap' }}>{badge}</span>
-      <span style={{ flex: 1, minWidth: 0, fontSize: 9.5, fontWeight: 600, color: 'var(--mf-text)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{entry.title || '제목 없음'}</span>
-      <span style={{ width: 4, height: 4, borderRadius: 999, background: chip.dot, flex: '0 0 auto', display: 'block' }} />
+      <span style={{ flex: '0 0 auto', minWidth: 38, height: 19, padding: '0 6px', borderRadius: 6, background: today ? 'var(--mf-accent-soft)' : over ? 'var(--mf-danger-bg)' : 'var(--mf-panel2)', color: today ? 'var(--mf-accent-strong)' : over ? 'var(--mf-danger)' : 'var(--mf-muted)', fontSize: 10.5, fontWeight: 800, display: 'inline-flex', alignItems: 'center', justifyContent: 'center', whiteSpace: 'nowrap' }}>{badge}</span>
+      <span style={{ flex: 1, minWidth: 0, fontSize: 13, fontWeight: 600, color: 'var(--mf-text)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{entry.title || '제목 없음'}</span>
+      <span style={{ width: 5, height: 5, borderRadius: 999, background: chip.dot, flex: '0 0 auto', display: 'block' }} />
     </button>
   );
 }
@@ -438,10 +493,10 @@ function Chip({ entry, todayIso, surface, compact, small, onPick }: { entry: Cal
       style={{
         display: 'flex',
         alignItems: 'center',
-        gap: small ? 3 : 5,
+        gap: small ? 4 : 5,
         width: '100%',
         boxSizing: 'border-box',
-        padding: small ? '1px 5px' : '2px 7px',
+        padding: small ? '1px 6px' : '3px 8px',
         borderRadius: 999,
         border: 0,
         background: chip.bg,
@@ -453,8 +508,8 @@ function Chip({ entry, todayIso, surface, compact, small, onPick }: { entry: Cal
         opacity: entry.due < todayIso ? 0.6 : 1,
       }}
     >
-      <span style={{ width: small ? 3 : 4, height: small ? 3 : 4, borderRadius: 999, background: chip.dot, flex: '0 0 auto', display: 'block' }} />
-      <span style={{ flex: 1, minWidth: 0, fontSize: small ? 8 : 9, fontWeight: 700, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+      <span style={{ width: 4, height: 4, borderRadius: 999, background: chip.dot, flex: '0 0 auto', display: 'block' }} />
+      <span style={{ flex: 1, minWidth: 0, fontSize: small ? 11.5 : 12, fontWeight: 700, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
         {time}
         {entry.title || '제목 없음'}
       </span>
@@ -504,12 +559,12 @@ function Bar({
         height: h,
         lineHeight: `${h}px`,
         border: 0,
-        padding: showLabel ? `0 ${h > 11 ? 5 : 4}px` : 0,
+        padding: showLabel ? '0 6px' : 0,
         background: chip.bg,
         color: chip.fg,
-        borderRadius: `${isHead ? 5 : 2}px ${isTail ? 5 : 2}px ${isTail ? 5 : 2}px ${isHead ? 5 : 2}px`,
+        borderRadius: `${isHead ? 6 : 2}px ${isTail ? 6 : 2}px ${isTail ? 6 : 2}px ${isHead ? 6 : 2}px`,
         font: 'inherit',
-        fontSize: h > 11 ? 8 : 7,
+        fontSize: h > 15 ? 12 : 11,
         fontWeight: 800,
         textAlign: 'left',
         cursor: 'pointer',
@@ -523,12 +578,12 @@ function Bar({
   );
 }
 
-function SectionLabel({ children, pad = '1px 5px 4px' }: { children: React.ReactNode; pad?: string }) {
-  return <span style={{ flexShrink: 0, fontSize: 9.5, fontWeight: 800, letterSpacing: '.05em', color: 'var(--mf-faint2)', padding: pad }}>{children}</span>;
+function SectionLabel({ children, pad = '1px 6px 5px' }: { children: React.ReactNode; pad?: string }) {
+  return <span style={{ flexShrink: 0, fontSize: 11.5, fontWeight: 800, letterSpacing: '.04em', color: 'var(--mf-faint2)', padding: pad }}>{children}</span>;
 }
 
 function Empty({ children }: { children: React.ReactNode }) {
-  return <span style={{ padding: '6px 6px', fontSize: 9.5, color: 'var(--mf-faint)' }}>{children}</span>;
+  return <span style={{ padding: '7px 7px', fontSize: 11.5, color: 'var(--mf-faint)' }}>{children}</span>;
 }
 
 function rowKey(e: CalendarEntry): string {

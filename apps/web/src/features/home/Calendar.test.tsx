@@ -95,6 +95,21 @@ function shiftDays(n: number): string {
   return isoOf(d.getFullYear(), d.getMonth() + 1, d.getDate());
 }
 
+/**
+ * 이 달 안에 머무는 날 — 달력 격자·미니 달력은 **이웃 달 칸을 누를 수 없으므로**
+ * 월말에 테스트를 돌리면 `shiftDays(2)`가 다음 달로 넘어가 그 칸이 비활성이 된다
+ * (실제로 8월 30일에 두 건이 그렇게 깨졌다). 넘어가면 반대 방향으로 잡는다.
+ */
+function shiftInMonth(n: number): string {
+  const now = new Date();
+  const fwd = new Date(now);
+  fwd.setDate(fwd.getDate() + n);
+  if (fwd.getMonth() === now.getMonth()) return isoOf(fwd.getFullYear(), fwd.getMonth() + 1, fwd.getDate());
+  const back = new Date(now);
+  back.setDate(back.getDate() - n);
+  return isoOf(back.getFullYear(), back.getMonth() + 1, back.getDate());
+}
+
 function kanbanBody(cards: Record<string, unknown>[]): LoadedDoc {
   return {
     doc: {
@@ -482,7 +497,7 @@ describe('일정 화면', () => {
       fireEvent.click(chipFor('오늘 마감 카드'));
       await waitFor(() => expect(detail()).toBeTruthy());
 
-      const target = shiftDays(2);
+      const target = shiftInMonth(2);
       await pickDate('[data-cal-due]', target);
       await waitFor(() => expect(docStore.save).toHaveBeenCalled());
       const [, next] = docStore.save.mock.calls[0]!;
@@ -888,7 +903,7 @@ describe('일정 화면', () => {
       await waitFor(() => expect(document.querySelector('[data-cal-timeline-empty]')).toBeTruthy());
       expect(document.querySelector('[data-cal-timeline]')).toBeNull();
       // 고른 날짜가 곧 기본값 — 며칠 뒤 칸을 고르고 만들면 그 날에 놓인다.
-      const target = shiftDays(2);
+      const target = shiftInMonth(2);
       fireEvent.click(document.querySelector(`[data-mini-day="${target}"]`)!);
       await waitFor(() => expect(document.querySelector('[data-cal-day-new]')).toBeTruthy());
       fireEvent.click(document.querySelector('[data-cal-day-new]')!);

@@ -49,7 +49,12 @@ import { UNREAD_BADGE_BG } from '../theme';
 const CAL_META = { name: '일정', color: 'var(--mf-accent)', icon: <CalendarGlyph size={14} /> };
 
 /** 위젯 머리의 작은 알약(달 이동의 `오늘`) — 디자인 원본의 그 크기. */
-const navPill: CSSProperties = { height: 20, padding: '0 8px', borderRadius: 999, border: '1px solid var(--mf-accent-mute)', background: 'var(--mf-accent-soft)', color: 'var(--mf-accent-strong)', font: 'inherit', fontSize: 9, fontWeight: 800, cursor: 'pointer', whiteSpace: 'nowrap' };
+/** 위젯 머리 조작 버튼의 크기 — 20px은 누르기 힘들다는 제보로 28px(머리 높이 약
+ *  34px 안에서 여백을 남기는 가장 큰 값). 아래 알약·세그먼트가 같은 값을 쓴다. */
+const NAV_H = 28;
+
+/** 위젯 머리의 작은 알약(달 이동의 `오늘`). */
+const navPill: CSSProperties = { height: NAV_H, padding: '0 10px', borderRadius: 999, border: '1px solid var(--mf-accent-mute)', background: 'var(--mf-accent-soft)', color: 'var(--mf-accent-strong)', font: 'inherit', fontSize: 11, fontWeight: 800, cursor: 'pointer', whiteSpace: 'nowrap' };
 
 function NavBtn({ label, d, onClick }: { label: string; d: string; onClick: () => void }) {
   return (
@@ -62,7 +67,7 @@ function NavBtn({ label, d, onClick }: { label: string; d: string; onClick: () =
         e.stopPropagation();
         onClick();
       }}
-      style={{ width: 20, height: 20, borderRadius: 7, border: '1px solid var(--mf-border)', background: 'var(--mf-card)', color: 'var(--mf-muted)', cursor: 'pointer', display: 'inline-flex', alignItems: 'center', justifyContent: 'center' }}
+      style={{ width: NAV_H, height: NAV_H, borderRadius: 9, border: '1px solid var(--mf-border)', background: 'var(--mf-card)', color: 'var(--mf-muted)', cursor: 'pointer', display: 'inline-flex', alignItems: 'center', justifyContent: 'center' }}
     >
       <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.6" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
         <path d={d} />
@@ -71,7 +76,8 @@ function NavBtn({ label, d, onClick }: { label: string; d: string; onClick: () =
   );
 }
 
-/** 옆 패널 토글(원본 `wSideDlPick`/`wSideDayPick`) — 켜지면 강조색 알약. */
+/** 옆 패널 토글(원본 `wSideDlPick`/`wSideDayPick`) — 세그먼트 트랙 안의 한 칸.
+ *  켜진 칸만 카드 면 + 그늘 + 강조색 잉크(속성 패널의 크기 세그먼트와 같은 문법). */
 function SideBtn({ label, on, onClick, children }: { label: string; on: boolean; onClick: () => void; children: ReactNode }) {
   return (
     <button
@@ -86,12 +92,13 @@ function SideBtn({ label, on, onClick, children }: { label: string; on: boolean;
         onClick();
       }}
       style={{
-        width: 20,
-        height: 20,
+        width: NAV_H - 6,
+        height: NAV_H - 4,
         flex: '0 0 auto',
-        borderRadius: 7,
-        border: `1px solid ${on ? 'var(--mf-accent)' : 'var(--mf-border)'}`,
-        background: on ? 'var(--mf-accent-soft)' : 'var(--mf-card)',
+        borderRadius: 8,
+        border: 0,
+        background: on ? 'var(--mf-card)' : 'transparent',
+        boxShadow: on ? '0 1px 3px -1px rgba(46,42,38,.28)' : 'none',
         color: on ? 'var(--mf-accent-strong)' : 'var(--mf-faint)',
         cursor: 'pointer',
         display: 'inline-flex',
@@ -99,7 +106,7 @@ function SideBtn({ label, on, onClick, children }: { label: string; on: boolean;
         justifyContent: 'center',
       }}
     >
-      <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+      <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
         {children}
       </svg>
     </button>
@@ -580,10 +587,14 @@ function DashWidget({ itemId, docId, itemKind, size, committedSize, maxCols, edi
     } else setWeekOffset(0);
   };
   /** 머리의 조작 묶음(원본 `calNav`) — 새 일정 · 오늘 · ‹ › · 옆 패널 토글.
-   *  주간은 본문이 이미 날짜별이라 토글이 없다(원본 `calSideToggles`).
+   *  버튼은 26px(제보: 20px는 누르기 힘들다) — 위젯 머리 높이(약 40px) 안에서
+   *  가장 큰 값이고, 옆 패널 토글은 낱개 버튼 둘 대신 **세그먼트 트랙**으로 묶어
+   *  "둘 중 하나"임이 모양으로 보이게 했다(속성 패널의 크기 세그먼트와 같은 문법).
+   *  주간·달력만 보기는 옆 패널이 없어 토글을 그리지 않는다(원본 `calSideToggles`).
    *  1열 위젯은 머리가 좁아 **‹ › 만** 남긴다 — 그마저 없으면 이번 주에 갇힌다. */
+  const calSideToggles = calMode === 'month' || calMode === 'list' || calMode === 'list-mini';
   const calNav = (
-    <span style={{ display: 'flex', alignItems: 'center', gap: 3, flexShrink: 0 }}>
+    <span style={{ display: 'flex', alignItems: 'center', gap: 5, flexShrink: 0 }}>
       {c >= 2 && (
         <button
           type="button"
@@ -595,9 +606,9 @@ function DashWidget({ itemId, docId, itemKind, size, committedSize, maxCols, edi
             e.stopPropagation();
             controller.openNewEvent(calSide === 'day' ? calDay : todayIso, true);
           }}
-          style={{ ...navPill, width: 20, height: 20, padding: 0, borderRadius: 7, display: 'inline-flex', alignItems: 'center', justifyContent: 'center' }}
+          style={{ width: NAV_H, height: NAV_H, padding: 0, borderRadius: 9, border: '1px solid var(--mf-accent-mute)', background: 'var(--mf-accent-soft)', color: 'var(--mf-accent-strong)', cursor: 'pointer', display: 'inline-flex', alignItems: 'center', justifyContent: 'center' }}
         >
-          <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.8" strokeLinecap="round" aria-hidden="true">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.6" strokeLinecap="round" aria-hidden="true">
             <path d="M12 5v14M5 12h14" />
           </svg>
         </button>
@@ -607,10 +618,12 @@ function DashWidget({ itemId, docId, itemKind, size, committedSize, maxCols, edi
           오늘
         </button>
       )}
-      <NavBtn label={calMode === 'month' ? '이전 달' : '이전 주'} d="m15 6-6 6 6 6" onClick={() => calStep(-1)} />
-      <NavBtn label={calMode === 'month' ? '다음 달' : '다음 주'} d="m9 6 6 6-6 6" onClick={() => calStep(1)} />
-      {c >= 2 && calMode !== 'week' && (
-        <>
+      <span style={{ display: 'inline-flex', alignItems: 'center', gap: 2 }}>
+        <NavBtn label={calMode === 'month' || calMode === 'month-only' ? '이전 달' : '이전 주'} d="m15 6-6 6 6 6" onClick={() => calStep(-1)} />
+        <NavBtn label={calMode === 'month' || calMode === 'month-only' ? '다음 달' : '다음 주'} d="m9 6 6 6-6 6" onClick={() => calStep(1)} />
+      </span>
+      {c >= 2 && calSideToggles && (
+        <span style={{ display: 'inline-flex', alignItems: 'center', gap: 2, height: NAV_H, padding: 2, boxSizing: 'border-box', borderRadius: 10, background: 'var(--mf-panel2)' }}>
           <SideBtn label="마감 목록" on={calSide === 'dl'} onClick={() => setCalSide('dl')}>
             <path d="M8 6h13M8 12h13M8 18h13" />
             <circle cx="3.5" cy="6" r="1.2" fill="currentColor" stroke="none" />
@@ -622,10 +635,11 @@ function DashWidget({ itemId, docId, itemKind, size, committedSize, maxCols, edi
             <path d="M8 3v4M16 3v4M3.5 10h17" />
             <rect x="7" y="13" width="5" height="4.5" rx="1" fill="currentColor" stroke="none" />
           </SideBtn>
-        </>
+        </span>
       )}
     </span>
   );
+
 
 
   return (
@@ -794,11 +808,17 @@ function DashWidget({ itemId, docId, itemKind, size, committedSize, maxCols, edi
           side={calSide}
           selDay={calDay}
           onPickDay={(iso) => {
+            // 1열 위젯에는 머리에 토글을 둘 자리가 없다 — 고른 날을 **한 번 더**
+            // 누르면 마감 목록으로 돌아온다(그러지 않으면 돌아올 길이 없다).
+            if (c < 2 && calSide === 'day' && iso === calDay) {
+              setCalSide('dl');
+              return;
+            }
             setCalSide('day');
             setCalDay(iso);
           }}
           onPickEntry={pickCalEntry}
-          onNewEvent={(iso) => controller.openNewEvent(iso, true)}
+          onSetMonth={(y, m) => setYm({ y, m })}
         />
       ) : missing ? (
         <div style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16, fontSize: 11.5, color: 'var(--mf-faint)', textAlign: 'center' }}>휴지통에 있거나 삭제된 문서예요. 우클릭으로 내릴 수 있어요.</div>

@@ -53,7 +53,7 @@ export const DASH_ROW_PX = 152;
 export const DASH_ROWS_MAX = 4;
 /** 고르기 쉬운 **선택지**(피커·크기 순환·메뉴). 자유 리사이즈는 이 목록에 없는
  *  조합도 만들 수 있으므로 저장값 검증은 `isValidSize`가 맡는다. */
-export const DASH_SIZES = ['1x1', '2x1', '1x2', '2x2', '3x2', '4x2', '3x3', '4x3', '2x4', '3x4', '4x4'] as const;
+export const DASH_SIZES = ['1x1', '2x1', '1x2', '2x2', '3x2', '4x2', '1x4', '3x3', '4x3', '2x4', '3x4', '4x4'] as const;
 
 /** 격자에 들어가는 크기인가 — 모서리 드래그가 만든 임의 조합(예: `2x3`)도 그대로
  *  저장·복원되어야 한다(예전엔 선택지 목록에 없으면 다음 로드에서 `2x2`로
@@ -69,6 +69,7 @@ export const DASH_SIZE_NOTE: Record<string, string> = {
   '1x1': '이름과 요약만',
   '2x1': '가로로 넓게',
   '1x2': '세로로 길게',
+  '1x4': '한 열로 아주 길게',
   '2x2': '내용까지 넉넉히',
   '3x2': '열 4개가 다 보여요',
   '4x2': '넓게, 날짜까지',
@@ -100,12 +101,18 @@ export const DASH_DEFAULT_SIZE: Record<DashWidgetKind, string> = {
 /**
  * **크기가 보기를 정한다**(디자인 원본의 그 규칙) — 위젯 하나에 보기 셋.
  *
- * `4×3` 이상 = 월간(작은 달력 + 옆 목록), `2×2` 이상 = 주간(요일 일곱 줄),
- * 그보다 작으면 목록(다가오는 마감). 고를 것을 따로 두지 않는 이유는 크기가 이미
- * "얼마나 보여 줄까"를 말하기 때문이다.
+ * `4×3`+ = 월간(달력 + 옆 패널), `3×3`+ = 달력만, `1×3`+ = 마감 목록 + 미니 달력,
+ * `2×2`+ = 주간(요일 일곱 줄), 그보다 작으면 목록. 고를 것을 따로 두지 않는 이유는
+ * 크기가 이미 "얼마나 보여 줄까"를 말하기 때문이다.
  */
-export function calWidgetMode(cols: number, rows: number): 'month' | 'week' | 'list' {
+export type CalWidgetMode = 'month' | 'month-only' | 'week' | 'list' | 'list-mini';
+
+export function calWidgetMode(cols: number, rows: number): CalWidgetMode {
   if (cols >= 4 && rows >= 3) return 'month';
+  // 3열은 달력만 — 옆 패널까지 넣으면 달력 칸이 글자도 못 담을 만큼 좁아진다(요청).
+  if (cols >= 3 && rows >= 3) return 'month-only';
+  // 한 열 + 높이 — 위는 이번 주 마감, 아래는 일정 화면과 같은 미니 달력(요청).
+  if (cols === 1 && rows >= 3) return 'list-mini';
   if (cols >= 2 && rows >= 2) return 'week';
   return 'list';
 }
