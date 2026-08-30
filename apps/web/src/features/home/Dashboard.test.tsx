@@ -1283,6 +1283,71 @@ describe('대시보드 캘린더 위젯(PR4) — 크기가 보기를 정한다',
     expect((widget.querySelector('[aria-label="다음 달"]') as HTMLElement).style.height).toBe('28px');
   });
 
+  it('날짜별 보기의 글자도 목록 줄과 같은 13px(제보: 일관되지 못하다)', async () => {
+    seedWithCalWidget('4x4');
+    const { container } = renderHome([META('doc-k', '스프린트')], {
+      'doc-k': KANBAN([{ id: 'k1', col: 'c2', pos: 1, text: '릴리스 준비', due: shift(0) }]),
+    });
+    const user = userEvent.setup();
+    const aside = await sidebarOf(container);
+    await user.click(within(aside).getByText('이번 주'));
+    await waitFor(() => expect(container.querySelector('[data-cal-widget-month]')).toBeTruthy());
+    await user.click(container.querySelector('[data-cal-widget-side-btn="날짜별 보기"]') as HTMLElement);
+    const row = await waitFor(() => container.querySelector('[data-cal-widget-allday]') as HTMLElement);
+    const title = row.querySelector('[data-cal-widget-allday-title]') as HTMLElement;
+    expect(title.style.fontSize).toBe('13px');
+  });
+
+  it('날짜별 시간표의 스크롤 썸은 늘 그려진다 — 호버 노출은 크롬에서 다시 칠해지지 않는다(제보)', () => {
+    const css = readFileSync(resolve('src/features/home/home.css'), 'utf8');
+    const thumb = css.slice(css.indexOf('.mf-cal-scroll::-webkit-scrollbar-thumb {'));
+    expect(thumb.slice(0, thumb.indexOf('}'))).toContain('background: var(--mf-scroll)');
+    // 호버로 드러내는 규칙은 두지 않는다 — 동작하지 않는 약속을 남기면 다음 사람이 그걸 믿는다
+    expect(css).not.toContain('.mf-cal-scroll:hover::-webkit-scrollbar-thumb');
+    // 표준 속성은 Firefox 전용 블록 안에만(크롬 121+는 그게 있으면 웹킷 커스텀을 무시한다)
+    const std = css.indexOf('.mf-cal-scroll {\n    scrollbar-width');
+    expect(std).toBeGreaterThan(css.indexOf('@supports not selector(::-webkit-scrollbar) {\n  .mf-cal-scroll'));
+  });
+
+  it('N×1로 줄이면 날짜별이 풀린다 — 고른 날에 갇히지 않는다(제보)', async () => {
+    seedWithCalWidget('4x3');
+    const { container } = renderHome([META('doc-k', '스프린트')], { 'doc-k': KANBAN([{ id: 'k1', col: 'c2', pos: 1, text: '릴리스 준비', due: shift(0) }]) });
+    const user = userEvent.setup();
+    const aside = await sidebarOf(container);
+    await user.click(within(aside).getByText('이번 주'));
+    const widget = await waitFor(() => container.querySelector('[data-cal-widget-month]') as HTMLElement);
+
+    // 다른 날을 고른 뒤
+    const other = shiftInMonth(2);
+    await user.click(widget.querySelector(`[data-cal-widget-cell="${other}"]`) as HTMLElement);
+    await waitFor(() => expect(container.querySelector('[data-cal-widget-side="day"]')).toBeTruthy());
+
+    // 크기를 2×1로 줄이면 — 달력이 사라지므로 날짜별도 풀린다
+    await user.click(container.querySelector('[data-dash-edit-toggle]') as HTMLElement);
+    const cycle = () => container.querySelector('[data-dash-cycle]') as HTMLElement;
+    for (let i = 0; i < 12 && !/2×1/.test(cycle().textContent ?? ''); i += 1) await user.click(cycle());
+    await waitFor(() => expect(container.querySelector('[data-cal-widget-list]')).toBeTruthy());
+    expect(within(container.querySelector('[data-cal-widget-list]') as HTMLElement).getByText('이번 주 마감')).toBeTruthy();
+  });
+
+  it('고른 날이 오늘이 아니면 `오늘`로 돌아갈 수 있다(제보)', async () => {
+    seedWithCalWidget('4x3');
+    const { container } = renderHome([META('doc-k', '스프린트')], { 'doc-k': KANBAN([]) });
+    const user = userEvent.setup();
+    const aside = await sidebarOf(container);
+    await user.click(within(aside).getByText('이번 주'));
+    const widget = await waitFor(() => container.querySelector('[data-cal-widget-month]') as HTMLElement);
+    const other = shiftInMonth(2);
+    await user.click(widget.querySelector(`[data-cal-widget-cell="${other}"]`) as HTMLElement);
+    await waitFor(() => expect(within(container.querySelector('[data-cal-widget-side="day"]') as HTMLElement).getByText(dayLabel(other))).toBeTruthy());
+
+    // 달은 그대로여도 `오늘` 버튼이 뜨고, 누르면 오늘로 돌아온다
+    const today = container.querySelector('[data-cal-widget-today]') as HTMLElement;
+    expect(today).toBeTruthy();
+    await user.click(today);
+    await waitFor(() => expect(within(container.querySelector('[data-cal-widget-side="day"]') as HTMLElement).getByText(dayLabel(shift(0)))).toBeTruthy());
+  });
+
   it('피커 첫 칸이 일정 — 올리면 블롭에 `kind: cal`로 남고, 다시 누르면 내려간다', async () => {
     seedSpaces();
     localStorage.setItem(

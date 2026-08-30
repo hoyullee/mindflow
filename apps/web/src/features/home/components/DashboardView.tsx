@@ -566,6 +566,13 @@ function DashWidget({ itemId, docId, itemKind, size, committedSize, maxCols, edi
   const eventsApi = useCalendarEvents(evYm.y, evYm.m, cal);
   const calEntries = useMemo(() => [...cardEntries, ...eventEntries(eventsApi.events)], [cardEntries, eventsApi.events]);
   const chipSurface = useMemo(() => homeChipSurface(state.theme), [state.theme]);
+  // 날짜를 고를 수단이 없는 보기(목록)에서는 **날짜별을 유지하지 않는다** — 크기를
+  // N×1로 줄이면 달력도 미니 달력도 사라지므로, 예전에 고른 날의 일정이 남은 채
+  // 오늘로 돌아갈 길이 없었다(제보).
+  useEffect(() => {
+    if (cal && calMode === 'list' && calSide === 'day') setCalSide('dl');
+  }, [cal, calMode, calSide]);
+
   /** 항목을 누르면 상세 팝업 — 일정 화면과 **같은 컴포넌트**를 그대로 쓴다. */
   const pickCalEntry = (e: CalendarEntry) => {
     if (e.event) controller.openCalendarEvent(e.event.id);
@@ -575,16 +582,21 @@ function DashWidget({ itemId, docId, itemKind, size, committedSize, maxCols, edi
     const p = partsOf(todayIso)!;
     return ym.y === p.y && ym.m === p.m;
   })();
-  const calNotNow = calMode === 'month' ? !thisMonth : weekOffset !== 0;
+  // 달을 넘기는 보기(달력 + 달력만)와 주를 넘기는 보기(주간·목록)를 가른다 —
+  // `month-only`가 주 이동에 걸려 ‹ ›를 눌러도 달력이 꿈쩍하지 않았다.
+  const calByMonth = calMode === 'month' || calMode === 'month-only';
+  /** 고른 날이 오늘이 아니다 — 어느 보기에서든 `오늘`로 돌아갈 길을 연다(제보). */
+  const calDayOffToday = calSide === 'day' && calDay !== todayIso;
+  const calNotNow = (calByMonth ? !thisMonth : weekOffset !== 0) || calDayOffToday;
   const calStep = (delta: number) => {
-    if (calMode === 'month') setYm((p) => addMonth(p.y, p.m, delta));
+    if (calByMonth) setYm((p) => addMonth(p.y, p.m, delta));
     else setWeekOffset((w) => w + delta);
   };
   const calToday = () => {
-    if (calMode === 'month') {
-      const p = partsOf(todayIso)!;
-      setYm({ y: p.y, m: p.m });
-    } else setWeekOffset(0);
+    const p = partsOf(todayIso)!;
+    if (calByMonth) setYm({ y: p.y, m: p.m });
+    else setWeekOffset(0);
+    setCalDay(todayIso);
   };
   /** 머리의 조작 묶음(원본 `calNav`) — 새 일정 · 오늘 · ‹ › · 옆 패널 토글.
    *  버튼은 26px(제보: 20px는 누르기 힘들다) — 위젯 머리 높이(약 40px) 안에서
@@ -619,8 +631,8 @@ function DashWidget({ itemId, docId, itemKind, size, committedSize, maxCols, edi
         </button>
       )}
       <span style={{ display: 'inline-flex', alignItems: 'center', gap: 2 }}>
-        <NavBtn label={calMode === 'month' || calMode === 'month-only' ? '이전 달' : '이전 주'} d="m15 6-6 6 6 6" onClick={() => calStep(-1)} />
-        <NavBtn label={calMode === 'month' || calMode === 'month-only' ? '다음 달' : '다음 주'} d="m9 6 6 6-6 6" onClick={() => calStep(1)} />
+        <NavBtn label={calByMonth ? '이전 달' : '이전 주'} d="m15 6-6 6 6 6" onClick={() => calStep(-1)} />
+        <NavBtn label={calByMonth ? '다음 달' : '다음 주'} d="m9 6 6 6-6 6" onClick={() => calStep(1)} />
       </span>
       {c >= 2 && calSideToggles && (
         <span style={{ display: 'inline-flex', alignItems: 'center', gap: 2, height: NAV_H, padding: 2, boxSizing: 'border-box', borderRadius: 10, background: 'var(--mf-panel2)' }}>

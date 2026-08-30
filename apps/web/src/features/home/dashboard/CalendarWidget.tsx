@@ -379,8 +379,8 @@ function DaySide({
                 }}
                 style={{ display: 'flex', alignItems: 'center', gap: 6, width: '100%', boxSizing: 'border-box', padding: '5px 8px', border: 0, borderLeft: `3px solid ${chip.dot}`, borderRadius: '3px 8px 8px 3px', background: chip.bg, cursor: 'pointer', font: 'inherit', textAlign: 'left', minWidth: 0 }}
               >
-                <span style={{ flex: 1, minWidth: 0, fontSize: 12, fontWeight: 700, color: 'var(--mf-text)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{e.title || '제목 없음'}</span>
-                <span style={{ flex: '0 0 auto', fontSize: 10.5, color: 'var(--mf-muted)', whiteSpace: 'nowrap' }}>{e.colName}</span>
+                <span data-cal-widget-allday-title style={{ flex: 1, minWidth: 0, fontSize: 13, fontWeight: 700, color: 'var(--mf-text)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{e.title || '제목 없음'}</span>
+                <span style={{ flex: '0 0 auto', fontSize: 11, color: 'var(--mf-muted)', whiteSpace: 'nowrap' }}>{e.colName}</span>
               </button>
             );
           })}
@@ -388,7 +388,7 @@ function DaySide({
       )}
       {/* 빈 날 — 안내만 둔다(요청: `일정 추가` 버튼 제거). 새 일정은 머리의 ＋가 맡는다. */}
       {empty && <Empty>이 날에는 일정이 없어요</Empty>}
-      <div ref={bodyRef} className="lnb-scroll" data-cal-widget-timeline style={{ flex: 1, minHeight: 0, overflowY: 'auto', padding: '0 4px 4px' }}>
+      <div ref={bodyRef} className="mf-cal-scroll" data-cal-widget-timeline style={{ flex: 1, minHeight: 0, overflowY: 'auto', padding: '0 4px 4px' }}>
         <div style={{ position: 'relative', height: ROW * 24, display: 'flex', flexDirection: 'column' }}>
           {Array.from({ length: 24 }, (_, h) => (
             <span key={h} style={{ display: 'flex', alignItems: 'flex-start', gap: 6, height: ROW, flex: '0 0 auto' }}>
@@ -437,7 +437,7 @@ function DaySide({
                   overflow: 'hidden',
                 }}
               >
-                <span style={{ fontSize: 11.5, fontWeight: 800, letterSpacing: '-.015em', color: 'var(--mf-text)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{b.entry.title || '제목 없음'}</span>
+                <span style={{ fontSize: 13, fontWeight: 800, letterSpacing: '-.015em', color: 'var(--mf-text)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{b.entry.title || '제목 없음'}</span>
               </button>
             );
           })}

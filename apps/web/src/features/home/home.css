@@ -692,3 +692,27 @@ input[type='search']::-webkit-search-results-decoration {
    면 색이 분류색에서 오므로(인라인) 배경을 갈아 끼우지 않고 밝기만 움직인다. */
 .mf-home .mf-cal-chip-btn { transition: filter .12s ease; }
 .mf-home .mf-cal-chip-btn:hover { filter: brightness(.96); }
+
+/* 대시보드 캘린더 위젯의 날짜별 시간표 — 스크롤이 있다는 것 자체가 보여야 한다
+   (제보: 위아래로 무엇이 더 있는지 알 수 없다). 그래서 썸을 **늘 그린다**:
+   호버로 드러내는 방식(.lnb-scroll)은 크롬에서 스크롤바 의사 요소를 다시 칠하지
+   않아 실제로는 아무것도 나타나지 않는다(헤디드 크로뮴 실측 — 컨테이너 :hover도
+   ::-webkit-scrollbar-thumb:hover도 색이 그대로다). 표준 속성은 Firefox 전용
+   블록에만 둔다 — 크롬 121+는 `scrollbar-width`가 있으면 웹킷 커스텀을 통째로
+   무시한다. */
+.mf-cal-scroll::-webkit-scrollbar {
+  width: 6px;
+}
+.mf-cal-scroll::-webkit-scrollbar-track {
+  background: transparent;
+}
+.mf-cal-scroll::-webkit-scrollbar-thumb {
+  background: var(--mf-scroll);
+  border-radius: 6px;
+}
+@supports not selector(::-webkit-scrollbar) {
+  .mf-cal-scroll {
+    scrollbar-width: thin;
+    scrollbar-color: var(--mf-scroll) transparent;
+  }
+}
