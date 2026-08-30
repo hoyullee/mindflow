@@ -16,7 +16,7 @@ import { CalWidgetBody, type CalWidgetSide } from '../dashboard/CalendarWidget';
 import { useCalendarEntries } from '../calendar/useCalendarEntries';
 import { useCalendarEvents, type CalendarEventsApi } from '../calendar/useCalendarEvents';
 import { eventEntries, type CalendarEntry } from '../calendar/entries';
-import { addDays, addMonth, partsOf, todayISO, weekStartISO } from '../calendar/model';
+import { addDays, addMonth, daysBetween, isoOf, partsOf, todayISO, weekStartISO } from '../calendar/model';
 import { homeChipSurface } from '../theme';
 import { CalendarGlyph } from '../calendar/CalendarView';
 import { CalendarDetailHost } from '../calendar/CalendarDetail';
@@ -558,10 +558,14 @@ function DashWidget({ itemId, docId, itemKind, size, committedSize, maxCols, edi
   /** 옆 패널이 보여 주는 날(원본 `wcalSel`) — 기본은 오늘. */
   const [calDay, setCalDay] = useState(todayIso);
   const calMode = calWidgetMode(c, rows);
+  // 달을 넘기는 보기(달력 + 달력만)와 주를 넘기는 보기(주간·목록)를 가른다 —
+  // `month-only`가 주 이동에 걸려 ‹ ›를 눌러도 달력이 꿈쩍하지 않았다.
+  const calByMonth = calMode === 'month' || calMode === 'month-only';
   // 주간·목록에서는 보이는 주가 든 달을 받는다 — 조회 구간이 그 달 격자 6주라
-  // 멀리 넘긴 주도 함께 덮인다(달마다 한 번, 전송량은 유한하다).
+  // 멀리 넘긴 주도 함께 덮인다(달마다 한 번, 전송량은 유한하다). 미니 달력이 그리는
+  // 달도 이 값이라 **보이는 것과 조회한 것이 언제나 같다**.
   const weekStart = addDays(weekStartISO(todayIso), weekOffset * 7);
-  const evYm = calMode === 'month' ? ym : { y: partsOf(weekStart)!.y, m: partsOf(weekStart)!.m };
+  const evYm = calByMonth ? ym : { y: partsOf(weekStart)!.y, m: partsOf(weekStart)!.m };
   const cardEntries = useCalendarEntries(state, cal);
   const eventsApi = useCalendarEvents(evYm.y, evYm.m, cal);
   const calEntries = useMemo(() => [...cardEntries, ...eventEntries(eventsApi.events)], [cardEntries, eventsApi.events]);
@@ -582,9 +586,6 @@ function DashWidget({ itemId, docId, itemKind, size, committedSize, maxCols, edi
     const p = partsOf(todayIso)!;
     return ym.y === p.y && ym.m === p.m;
   })();
-  // 달을 넘기는 보기(달력 + 달력만)와 주를 넘기는 보기(주간·목록)를 가른다 —
-  // `month-only`가 주 이동에 걸려 ‹ ›를 눌러도 달력이 꿈쩍하지 않았다.
-  const calByMonth = calMode === 'month' || calMode === 'month-only';
   /** 고른 날이 오늘이 아니다 — 어느 보기에서든 `오늘`로 돌아갈 길을 연다(제보). */
   const calDayOffToday = calSide === 'day' && calDay !== todayIso;
   const calNotNow = (calByMonth ? !thisMonth : weekOffset !== 0) || calDayOffToday;
@@ -597,6 +598,23 @@ function DashWidget({ itemId, docId, itemKind, size, committedSize, maxCols, edi
     if (calByMonth) setYm({ y: p.y, m: p.m });
     else setWeekOffset(0);
     setCalDay(todayIso);
+  };
+  /** 그 날이 든 주로 옮긴다 — 주 단위 보기의 미니 달력이 쓰는 유일한 이동. */
+  const calGoWeek = (iso: string) => setWeekOffset(Math.round(daysBetween(weekStartISO(todayIso), weekStartISO(iso)) / 7));
+  /**
+   * 미니 달력의 달 이동. 달 단위 보기는 그 달을 그리면 되지만, 주 단위 보기에서는
+   * 그릴 달이 **보이는 주**에서 나오므로(evYm) 주를 그 달 1일로 옮겨야 한다 —
+   * 그러지 않으면 화살표를 눌러도 아무 일도 일어나지 않는다.
+   */
+  const calSetMonth = (y: number, m: number) => {
+    if (calByMonth) {
+      setYm({ y, m });
+      return;
+    }
+    // 그 달의 **1주**로 간다 — 1일이 든 주가 아니다. 6/1이 월요일이면 그 주는
+    // 5/31에 시작해 이름이 `5월 5주`가 되고, 6월을 눌렀는데 5월이 보인다.
+    const ws = weekStartISO(isoOf(y, m, 1));
+    calGoWeek(partsOf(ws)!.m === m ? ws : addDays(ws, 7));
   };
   /** 머리의 조작 묶음(원본 `calNav`) — 새 일정 · 오늘 · ‹ › · 옆 패널 토글.
    *  버튼은 26px(제보: 20px는 누르기 힘들다) — 위젯 머리 높이(약 40px) 안에서
@@ -625,8 +643,10 @@ function DashWidget({ itemId, docId, itemKind, size, committedSize, maxCols, edi
           </svg>
         </button>
       )}
-      {c >= 2 && calNotNow && (
-        <button type="button" data-cal-widget-today className="mf-ctl" onClick={(e) => { e.stopPropagation(); calToday(); }} style={navPill}>
+      {/* `오늘`은 **크기와 무관하게** 뜬다(제보: 1×1에서 날짜를 바꾸면 돌아올 길이
+          없다). 1열은 머리가 좁아 좌우 여백만 줄인다. */}
+      {calNotNow && (
+        <button type="button" data-cal-widget-today className="mf-ctl" onClick={(e) => { e.stopPropagation(); calToday(); }} style={c >= 2 ? navPill : { ...navPill, padding: '0 8px' }}>
           오늘
         </button>
       )}
@@ -815,11 +835,18 @@ function DashWidget({ itemId, docId, itemKind, size, committedSize, maxCols, edi
           cols={c}
           rows={rows}
           surface={chipSurface}
-          ym={ym}
+          ym={evYm}
           weekOffset={weekOffset}
           side={calSide}
           selDay={calDay}
           onPickDay={(iso) => {
+            setCalDay(iso);
+            // 주간 보기의 미니 달력 — 옆 패널이 날짜별이 아니므로 **그 날이 든 주로
+            // 옮긴다**(고른 날은 미니 달력에 표시로 남는다).
+            if (calMode === 'week') {
+              calGoWeek(iso);
+              return;
+            }
             // 1열 위젯에는 머리에 토글을 둘 자리가 없다 — 고른 날을 **한 번 더**
             // 누르면 마감 목록으로 돌아온다(그러지 않으면 돌아올 길이 없다).
             if (c < 2 && calSide === 'day' && iso === calDay) {
@@ -827,10 +854,9 @@ function DashWidget({ itemId, docId, itemKind, size, committedSize, maxCols, edi
               return;
             }
             setCalSide('day');
-            setCalDay(iso);
           }}
           onPickEntry={pickCalEntry}
-          onSetMonth={(y, m) => setYm({ y, m })}
+          onSetMonth={calSetMonth}
         />
       ) : missing ? (
         <div style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16, fontSize: 11.5, color: 'var(--mf-faint)', textAlign: 'center' }}>휴지통에 있거나 삭제된 문서예요. 우클릭으로 내릴 수 있어요.</div>

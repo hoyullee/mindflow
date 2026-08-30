@@ -15,6 +15,7 @@ import { LocalEventStore } from '../../adapters/local/localEventStore';
 import { LocalImageStore } from '../../adapters/local/localImageStore';
 import type { Backend, DocMeta, DocStore, LoadedDoc, SaveResult } from '../../adapters/ports';
 import { clearActiveView } from './storage';
+import { addDays, weekLabel, weekStartISO } from './calendar/model';
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 
@@ -1298,6 +1299,35 @@ describe('대시보드 캘린더 위젯(PR4) — 크기가 보기를 정한다',
     expect(title.style.fontSize).toBe('13px');
   });
 
+  it('스크롤 썸은 네 곳 모두 늘 그려진다 — 호버 노출은 크롬에서 다시 칠해지지 않는다(제보)', () => {
+    const css = readFileSync(resolve('src/features/home/home.css'), 'utf8');
+    const thumb = css.slice(css.indexOf('.lnb-scroll::-webkit-scrollbar-thumb,'));
+    const rule = thumb.slice(0, thumb.indexOf('}'));
+    for (const cls of ['.notif-scroll', '.mf-recent-scroll', '.mf-cal-scroll']) expect(rule).toContain(`${cls}::-webkit-scrollbar-thumb`);
+    expect(rule).toContain('background: var(--mf-scroll)');
+    // 호버로 드러내는 규칙은 두지 않는다 — 동작하지 않는 약속을 남기면 다음 사람이 그걸 믿는다
+    expect(css).not.toContain(':hover::-webkit-scrollbar-thumb');
+    // 표준 속성은 Firefox 전용 블록 안에만(크롬 121+는 그게 있으면 웹킷 커스텀을 무시한다)
+    expect(css).not.toMatch(/^\s{0,2}scrollbar-width:/m);
+    const supports = css.slice(css.indexOf('@supports not selector(::-webkit-scrollbar) {'));
+    expect(supports.slice(0, supports.indexOf('\n}'))).toContain('scrollbar-color: var(--mf-scroll) transparent');
+  });
+
+  it('날짜별 보기의 글자도 목록 줄과 같은 13px(제보: 일관되지 못하다)', async () => {
+    seedWithCalWidget('4x4');
+    const { container } = renderHome([META('doc-k', '스프린트')], {
+      'doc-k': KANBAN([{ id: 'k1', col: 'c2', pos: 1, text: '릴리스 준비', due: shift(0) }]),
+    });
+    const user = userEvent.setup();
+    const aside = await sidebarOf(container);
+    await user.click(within(aside).getByText('이번 주'));
+    await waitFor(() => expect(container.querySelector('[data-cal-widget-month]')).toBeTruthy());
+    await user.click(container.querySelector('[data-cal-widget-side-btn="날짜별 보기"]') as HTMLElement);
+    const row = await waitFor(() => container.querySelector('[data-cal-widget-allday]') as HTMLElement);
+    const title = row.querySelector('[data-cal-widget-allday-title]') as HTMLElement;
+    expect(title.style.fontSize).toBe('13px');
+  });
+
   it('날짜별 시간표의 스크롤 썸은 늘 그려진다 — 호버 노출은 크롬에서 다시 칠해지지 않는다(제보)', () => {
     const css = readFileSync(resolve('src/features/home/home.css'), 'utf8');
     const thumb = css.slice(css.indexOf('.mf-cal-scroll::-webkit-scrollbar-thumb {'));
@@ -1346,6 +1376,59 @@ describe('대시보드 캘린더 위젯(PR4) — 크기가 보기를 정한다',
     expect(today).toBeTruthy();
     await user.click(today);
     await waitFor(() => expect(within(container.querySelector('[data-cal-widget-side="day"]') as HTMLElement).getByText(dayLabel(shift(0)))).toBeTruthy());
+  });
+
+  it('1×1에서도 주를 넘기면 `오늘`이 뜬다 — 돌아올 길을 남긴다(제보)', async () => {
+    seedWithCalWidget('1x1');
+    const { container } = renderHome([META('doc-k', '스프린트')], { 'doc-k': KANBAN([]) });
+    const user = userEvent.setup();
+    const aside = await sidebarOf(container);
+    await user.click(within(aside).getByText('이번 주'));
+    await waitFor(() => expect(container.querySelector('[data-cal-widget-list]')).toBeTruthy());
+    // 지금은 이번 주라 `오늘`이 없다
+    expect(container.querySelector('[data-cal-widget-today]')).toBeNull();
+
+    // 주를 넘기면 뜬다 — 예전엔 2열 미만이면 통째로 감춰 돌아올 길이 없었다
+    await user.click(container.querySelector('[aria-label="다음 주"]') as HTMLElement);
+    const today = await waitFor(() => container.querySelector('[data-cal-widget-today]') as HTMLElement);
+    expect(today.textContent).toBe('오늘');
+    await user.click(today);
+    await waitFor(() => expect(container.querySelector('[data-cal-widget-today]')).toBeNull());
+  });
+
+  it('다른 주 목록은 `M월 N주 마감`으로 이름이 붙는다(요청)', async () => {
+    seedWithCalWidget('2x1');
+    const { container } = renderHome([META('doc-k', '스프린트')], { 'doc-k': KANBAN([]) });
+    const user = userEvent.setup();
+    const aside = await sidebarOf(container);
+    await user.click(within(aside).getByText('이번 주'));
+    const list = await waitFor(() => container.querySelector('[data-cal-widget-list]') as HTMLElement);
+    expect(within(list).getByText('이번 주 마감')).toBeTruthy();
+
+    // 다음 주로 넘기면 그 주의 이름 — `weekLabel`이 한 곳에서 만든다
+    await user.click(container.querySelector('[aria-label="다음 주"]') as HTMLElement);
+    const next = addDays(weekStartISO(shift(0)), 7);
+    await waitFor(() => expect(within(container.querySelector('[data-cal-widget-list]') as HTMLElement).getByText(`${weekLabel(next)} 마감`)).toBeTruthy());
+  });
+
+  it('3×2·4×2에는 미니 달력 옆 패널이 붙고, 날을 고르면 그 주로 옮긴다(요청)', async () => {
+    seedWithCalWidget('4x2');
+    const { container } = renderHome([META('doc-k', '스프린트')], { 'doc-k': KANBAN([]) });
+    const user = userEvent.setup();
+    const aside = await sidebarOf(container);
+    await user.click(within(aside).getByText('이번 주'));
+    await waitFor(() => expect(container.querySelector('[data-cal-widget-week]')).toBeTruthy());
+    const side = container.querySelector('[data-cal-widget-side="mini"]') as HTMLElement;
+    expect(side).toBeTruthy();
+    expect(side.querySelector('[data-mini-cal]')).toBeTruthy();
+
+    // 다음 주의 어느 날을 고르면 주간 본문이 그 주로 옮겨 간다
+    const target = addDays(weekStartISO(shift(0)), 8);
+    const btn = side.querySelector(`[data-mini-day="${target}"]`) as HTMLElement | null;
+    if (btn) {
+      await user.click(btn);
+      await waitFor(() => expect(within(container.querySelector('[data-cal-widget-week]') as HTMLElement).getByText(new RegExp(weekLabel(target)))).toBeTruthy());
+    }
   });
 
   it('피커 첫 칸이 일정 — 올리면 블롭에 `kind: cal`로 남고, 다시 누르면 내려간다', async () => {

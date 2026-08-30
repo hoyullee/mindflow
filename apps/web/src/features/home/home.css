@@ -61,58 +61,57 @@ a:hover {
    (Firefox) 전용으로 격리한다 — 크롬 121+는 표준 속성이 지정된 요소에서
    ::-webkit-scrollbar 커스텀을 **통째로 무시**한다. 예전엔 둘을 같이 걸어서
    4px 폭·버튼 숨김이 전혀 적용되지 않았고, Windows의 Fluent 스크롤바
-   화살표가 그대로 남았다(제보: 새 빌드에서도 화살표가 안 사라짐). */
-@supports not selector(::-webkit-scrollbar) {
-  .lnb-scroll,
-  .notif-scroll,
-  .mf-recent-scroll {
-    scrollbar-width: thin;
-    scrollbar-color: transparent transparent;
-  }
-  .lnb-scroll:hover,
-  .notif-scroll:hover,
-  .mf-recent-scroll:hover {
-    scrollbar-color: var(--mf-scroll) transparent;
-  }
+   화살표가 그대로 남았다(제보: 새 빌드에서도 화살표가 안 사라짐).
+
+   그리고 썸은 **늘 그린다**(제보). 예전엔 평소 투명하다 손을 얹으면 드러나는
+   처리였는데, 그 방식은 크롬에서 스크롤바 의사 요소를 다시 칠하지 않아 실제로는
+   아무것도 나타나지 않았다(헤디드 크로뮴 실측 — 컨테이너 :hover도
+   ::-webkit-scrollbar-thumb:hover도 색이 그대로다). 지킬 수 없는 약속이라
+   걷어내고, 스크롤이 있다는 사실 자체가 보이게 했다. 네 곳(LNB·알림·최근 트레이·
+   위젯 시간표)이 **같은 규칙 하나**를 쓴다 — 두 벌로 두면 값이 갈린다. */
+.lnb-scroll::-webkit-scrollbar,
+.notif-scroll::-webkit-scrollbar,
+.mf-recent-scroll::-webkit-scrollbar,
+.mf-cal-scroll::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
 }
-.lnb-scroll::-webkit-scrollbar {
-  width: 4px;
-}
-.lnb-scroll::-webkit-scrollbar-thumb {
+.lnb-scroll::-webkit-scrollbar-track,
+.notif-scroll::-webkit-scrollbar-track,
+.mf-recent-scroll::-webkit-scrollbar-track,
+.mf-cal-scroll::-webkit-scrollbar-track {
   background: transparent;
-  border-radius: 4px;
 }
-.lnb-scroll:hover::-webkit-scrollbar-thumb {
+.lnb-scroll::-webkit-scrollbar-thumb,
+.notif-scroll::-webkit-scrollbar-thumb,
+.mf-recent-scroll::-webkit-scrollbar-thumb,
+.mf-cal-scroll::-webkit-scrollbar-thumb {
   background: var(--mf-scroll);
-}
-.lnb-scroll::-webkit-scrollbar-track {
-  background: transparent;
-}
-/* 알림 센터 드롭다운 — .lnb-scroll과 같은 처리(평소엔 안 보이고 호버에서만
-   얇은 썸). 목록이 길어지면 기본 10px 스크롤바가 패널 오른쪽을 가려
-   디자인을 해쳤다(제보). */
-.notif-scroll::-webkit-scrollbar {
-  width: 4px;
-}
-.notif-scroll::-webkit-scrollbar-thumb {
-  background: transparent;
-  border-radius: 4px;
-}
-.notif-scroll:hover::-webkit-scrollbar-thumb {
-  background: var(--mf-scroll);
+  border-radius: 6px;
 }
 /* 위/아래 화살표 버튼 제거 — Windows 크롬은 스크롤바를 커스텀하면 버튼 자리가
    빈 조각으로 남아 패널의 둥근 모서리에 잘린 것처럼 보인다(제보). */
-.notif-scroll::-webkit-scrollbar-button {
+.lnb-scroll::-webkit-scrollbar-button,
+.notif-scroll::-webkit-scrollbar-button,
+.mf-recent-scroll::-webkit-scrollbar-button,
+.mf-cal-scroll::-webkit-scrollbar-button {
   display: none;
   width: 0;
   height: 0;
 }
+/* 알림 센터만 — 썸의 이동 구간을 둥근 모서리(반지름 14px) 안쪽으로 들여놓는다.
+   썸이 모서리 곡선에 걸치지 않는다. */
 .notif-scroll::-webkit-scrollbar-track {
-  background: transparent;
-  /* 썸의 이동 구간을 둥근 모서리(반지름 14px) 안쪽으로 들여놓는다 — 썸이
-     모서리 곡선에 걸치지 않는다. */
   margin: 12px 0;
+}
+@supports not selector(::-webkit-scrollbar) {
+  .lnb-scroll,
+  .notif-scroll,
+  .mf-recent-scroll,
+  .mf-cal-scroll {
+    scrollbar-width: thin;
+    scrollbar-color: var(--mf-scroll) transparent;
+  }
 }
 
 @keyframes mf-spin {
@@ -481,21 +480,6 @@ a:hover {
     margin-bottom: 18px;
   }
 }
-/* Thin, hover-revealed horizontal scrollbar (same treatment as .lnb-scroll) so
-   the tray doesn't grow a chunky 10px global scrollbar under the cards. */
-.mf-recent-scroll::-webkit-scrollbar {
-  height: 5px;
-}
-.mf-recent-scroll::-webkit-scrollbar-thumb {
-  background: transparent;
-  border-radius: 4px;
-}
-.mf-recent-scroll:hover::-webkit-scrollbar-thumb {
-  background: var(--mf-scroll);
-}
-.mf-recent-scroll::-webkit-scrollbar-track {
-  background: transparent;
-}
 
 /* Map-card thumbnails keep the PC card's aspect-ratio (≈304:150) instead of a
    fixed pixel height, so a full-width mobile card holds the same proportions as
@@ -693,26 +677,3 @@ input[type='search']::-webkit-search-results-decoration {
 .mf-home .mf-cal-chip-btn { transition: filter .12s ease; }
 .mf-home .mf-cal-chip-btn:hover { filter: brightness(.96); }
 
-/* 대시보드 캘린더 위젯의 날짜별 시간표 — 스크롤이 있다는 것 자체가 보여야 한다
-   (제보: 위아래로 무엇이 더 있는지 알 수 없다). 그래서 썸을 **늘 그린다**:
-   호버로 드러내는 방식(.lnb-scroll)은 크롬에서 스크롤바 의사 요소를 다시 칠하지
-   않아 실제로는 아무것도 나타나지 않는다(헤디드 크로뮴 실측 — 컨테이너 :hover도
-   ::-webkit-scrollbar-thumb:hover도 색이 그대로다). 표준 속성은 Firefox 전용
-   블록에만 둔다 — 크롬 121+는 `scrollbar-width`가 있으면 웹킷 커스텀을 통째로
-   무시한다. */
-.mf-cal-scroll::-webkit-scrollbar {
-  width: 6px;
-}
-.mf-cal-scroll::-webkit-scrollbar-track {
-  background: transparent;
-}
-.mf-cal-scroll::-webkit-scrollbar-thumb {
-  background: var(--mf-scroll);
-  border-radius: 6px;
-}
-@supports not selector(::-webkit-scrollbar) {
-  .mf-cal-scroll {
-    scrollbar-width: thin;
-    scrollbar-color: var(--mf-scroll) transparent;
-  }
-}

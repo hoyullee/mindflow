@@ -2,7 +2,7 @@
  * 대시보드 캘린더 위젯 — 디자인 원본 `Geurio 일정 캘린더.dc.html`의 `isCal` 위젯.
  *
  * **크기가 보기를 정한다**(`calWidgetMode`): 4×3+ 월간(달력 + 옆 패널), 3×3+ 달력만,
- * 1열+높이 마감 목록 + 미니 달력, 2×2+ 주간 일곱 줄, 그보다 작으면 목록. 고를 것을
+ * 1열+높이 마감 목록 + 미니 달력, 3×2+ 주간 일곱 줄 + 미니 달력, 2×2 주간, 그보다 작으면 목록. 고를 것을
  * 따로 두지 않는 이유는 크기가 이미 "얼마나 보여 줄까"를 말하기 때문이다.
  *
  * **위젯 안에서 끝난다**(원본 `onDay`) — 날짜 칸을 누르면 그 자리에서 옆 패널이 그
@@ -30,6 +30,7 @@ import {
   monthLabel,
   partsOf,
   upcomingEntries,
+  weekLabel,
   weekStartISO,
 } from '../calendar/model';
 
@@ -78,8 +79,18 @@ function listSource(entries: readonly CalendarEntry[], todayIso: string, weekOff
   return entries.filter((e) => e.due >= from && e.due <= to).sort((a, b) => (a.due < b.due ? -1 : a.due > b.due ? 1 : 0));
 }
 
-function listTitle(side: CalWidgetSide, selDay: string, weekOffset: number): string {
-  return side === 'day' ? dayTitle(selDay) : `${weekOffset === 0 ? '이번 주' : '주간'} 마감`;
+/**
+ * 목록의 이름표(요청) — 이번 주는 `이번 주 마감`, 다른 주는 **`8월 3주 마감`**.
+ * 주 이름은 `weekLabel` 한 곳에서 나오므로 주간 보기의 머리와 문구가 갈리지 않는다.
+ */
+function listTitle(side: CalWidgetSide, selDay: string, todayIso: string, weekOffset: number): string {
+  if (side === 'day') return dayTitle(selDay);
+  return `${weekName(todayIso, weekOffset)} 마감`;
+}
+
+/** 보이는 주의 이름 — 이번 주면 `이번 주`, 아니면 `8월 3주`. */
+function weekName(todayIso: string, weekOffset: number): string {
+  return weekOffset === 0 ? '이번 주' : weekLabel(addDays(weekStartISO(todayIso), weekOffset * 7));
 }
 
 /** 목록 — 가장 작은 보기. 이번 주 마감(또는 고른 날)을 크기만큼 보여 준다. */
@@ -88,8 +99,8 @@ function ListBody({ entries, todayIso, cols, rows, surface, weekOffset, side, se
   const src = useMemo(() => listSource(entries, todayIso, weekOffset, side, selDay), [entries, todayIso, weekOffset, side, selDay]);
   return (
     <div data-cal-widget-list style={{ flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column', padding: '8px 7px 7px', overflow: 'hidden' }}>
-      <SectionLabel>{listTitle(side, selDay, weekOffset)}</SectionLabel>
-      <DeadlineList src={src} cap={cap} todayIso={todayIso} surface={surface} showTime={side === 'day'} empty={side === 'day' ? '이 날에는 일정이 없어요' : '이번 주 마감이 없어요'} onPickEntry={onPickEntry} />
+      <SectionLabel>{listTitle(side, selDay, todayIso, weekOffset)}</SectionLabel>
+      <DeadlineList src={src} cap={cap} todayIso={todayIso} surface={surface} showTime={side === 'day'} empty={side === 'day' ? '이 날에는 일정이 없어요' : `${weekName(todayIso, weekOffset)} 마감이 없어요`} onPickEntry={onPickEntry} />
     </div>
   );
 }
@@ -100,8 +111,8 @@ function ListMiniBody({ entries, todayIso, rows, surface, ym, weekOffset, side, 
   return (
     <div data-cal-widget-listmini style={{ flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
       <div style={{ flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column', padding: '8px 7px 7px', overflow: 'hidden' }}>
-        <SectionLabel>{listTitle(side, selDay, weekOffset)}</SectionLabel>
-        <DeadlineList src={src} cap={rows >= 4 ? 6 : 3} todayIso={todayIso} surface={surface} showTime={side === 'day'} empty={side === 'day' ? '이 날에는 일정이 없어요' : '이번 주 마감이 없어요'} onPickEntry={onPickEntry} />
+        <SectionLabel>{listTitle(side, selDay, todayIso, weekOffset)}</SectionLabel>
+        <DeadlineList src={src} cap={rows >= 4 ? 6 : 3} todayIso={todayIso} surface={surface} showTime={side === 'day'} empty={side === 'day' ? '이 날에는 일정이 없어요' : `${weekName(todayIso, weekOffset)} 마감이 없어요`} onPickEntry={onPickEntry} />
       </div>
       <div style={{ flexShrink: 0, padding: '10px 12px 12px', borderTop: '1px solid var(--mf-hairline)' }}>
         <MiniCalendar entries={entries} todayIso={todayIso} y={ym.y} m={ym.m} selectedDay={side === 'day' ? selDay : ''} onPickDay={onPickDay} onSetMonth={onSetMonth} cellH={24} />
@@ -140,18 +151,23 @@ function DeadlineList({
   );
 }
 
-/** 주간 — 요일 일곱 줄(원본 `calWeek`). 본문이 이미 날짜별이라 옆 패널이 없다. */
-function WeekBody({ entries, todayIso, cols, rows, surface, weekOffset, onPickEntry }: CalWidgetProps) {
+/**
+ * 주간 — 요일 일곱 줄(원본 `calWeek`). 본문이 이미 날짜별이라 마감/날짜별 토글은
+ * 없지만, **3열 이상**(3×2·4×2)에는 일정 화면 오른쪽 위의 그 미니 달력을 옆 패널로
+ * 둔다(요청) — 주간만 보면 "지금 이 주가 달의 어디쯤인가"를 알 수 없다.
+ */
+function WeekBody({ entries, todayIso, cols, rows, surface, ym, weekOffset, selDay, onPickDay, onPickEntry, onSetMonth }: CalWidgetProps) {
   const start = addDays(weekStartISO(todayIso), weekOffset * 7);
   const days = useMemo(() => Array.from({ length: 7 }, (_, i) => addDays(start, i)), [start]);
+  const withSide = cols >= 3;
   const maxPer = rows >= 3 ? 3 : cols >= 3 ? 2 : 1;
   const a = partsOf(start);
   const b = partsOf(addDays(start, 6));
   const range = a && b ? `${a.m}.${a.d} – ${b.m}.${b.d}` : '';
-  return (
+  const body = (
     <div data-cal-widget-week style={{ flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column', padding: '8px 9px 7px', overflow: 'hidden' }}>
       <SectionLabel pad="0 4px 6px">
-        {weekOffset === 0 ? '이번 주' : '주간'} · {range}
+        {weekName(todayIso, weekOffset)} · {range}
       </SectionLabel>
       {/* 일곱 줄이 높이를 나눠 갖는다 — 위에 몰리고 아래가 비면 위젯이 반쯤 빈 것처럼
           보인다(2×2에서는 한 줄이 30px 남짓이라 칩 하나가 딱 들어간다). */}
@@ -182,6 +198,15 @@ function WeekBody({ entries, todayIso, cols, rows, surface, weekOffset, onPickEn
             </div>
           );
         })}
+      </div>
+    </div>
+  );
+  if (!withSide) return body;
+  return (
+    <div style={{ flex: 1, minHeight: 0, display: 'flex', minWidth: 0, overflow: 'hidden' }}>
+      <div style={{ flex: '1 1 auto', minWidth: 0, display: 'flex', borderRight: '1px solid var(--mf-hairline)' }}>{body}</div>
+      <div data-cal-widget-side="mini" style={{ flex: '0 0 196px', minWidth: 0, padding: '10px 12px', overflow: 'hidden' }}>
+        <MiniCalendar entries={entries} todayIso={todayIso} y={ym.y} m={ym.m} selectedDay={selDay} onPickDay={onPickDay} onSetMonth={onSetMonth} cellH={22} />
       </div>
     </div>
   );

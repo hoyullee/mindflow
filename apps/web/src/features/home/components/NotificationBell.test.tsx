@@ -135,7 +135,12 @@ describe('알림 센터', () => {
     // (apps/web에서 실행 / 루트에서 실행 둘 다).
     const cssPath = ['src/features/home/home.css', 'apps/web/src/features/home/home.css'].find((f) => existsSync(f))!;
     const css = readFileSync(cssPath, 'utf8');
-    expect(css).toMatch(/\.notif-scroll::-webkit-scrollbar-button\s*\{[^}]*display:\s*none/);
+    // 버튼 숨김은 네 스크롤 영역이 함께 쓰는 규칙 하나에 있다(LNB·알림·최근·위젯).
+    const btn = css.slice(css.indexOf('.lnb-scroll::-webkit-scrollbar-button,'));
+    const btnRule = btn.slice(0, btn.indexOf('}'));
+    expect(btnRule).toContain('.notif-scroll::-webkit-scrollbar-button');
+    expect(btnRule).toContain('display: none');
+    // 트랙 여백은 알림 센터만의 것(둥근 모서리 안쪽으로 썸을 들여놓는다)
     expect(css).toMatch(/\.notif-scroll::-webkit-scrollbar-track\s*\{[^}]*margin:\s*12px 0/);
     // 표준 속성(scrollbar-width/color)은 ::-webkit-scrollbar 미지원 브라우저
     // 전용 블록에만 있어야 한다 — 크롬 121+는 표준 속성이 있는 요소에서

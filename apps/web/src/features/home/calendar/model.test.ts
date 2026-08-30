@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import type { CalendarEntry } from './entries';
 import { calendarEntries, datedCards, eventEntries } from './entries';
 import type { CalendarEvent } from '../../../adapters/ports';
-import { addDays, daysBetween, addMonth, calendarStats, statBadge, dayProgress, coversDay, dateLabel, dayTimeline, dueBadge, entriesOn, gridRange, hourLabel, isSpan, minutesOf, monthCells, monthLabel, overdueEntries, timeLabel, todayISO, upcomingEntries, weekEndISO, weekStartISO, HOUR_ROW } from './model';
+import { addDays, daysBetween, addMonth, calendarStats, statBadge, dayProgress, coversDay, dateLabel, dayTimeline, dueBadge, entriesOn, gridRange, hourLabel, isSpan, minutesOf, monthCells, monthLabel, overdueEntries, timeLabel, todayISO, upcomingEntries, weekEndISO, weekLabel, weekStartISO, HOUR_ROW } from './model';
 
 // 일정 화면의 데이터 계층 — 순수 함수라 날짜를 고정해 검증한다.
 
@@ -71,6 +71,18 @@ describe('일정 모델(model)', () => {
   it('주는 일요일에 시작한다', () => {
     expect(weekStartISO('2026-08-26')).toBe('2026-08-23');
     expect(weekEndISO('2026-08-26')).toBe('2026-08-29');
+  });
+
+  it('주 이름은 그 주 일요일의 달과 몇 번째 일요일인가로 정한다', () => {
+    // 2026-08: 1일이 토요일 → 첫 일요일은 8/2
+    expect(weekLabel('2026-08-02')).toBe('8월 1주');
+    expect(weekLabel('2026-08-08')).toBe('8월 1주'); // 같은 주(8/2~8/8)
+    expect(weekLabel('2026-08-26')).toBe('8월 4주'); // 그 주 일요일 = 8/23
+    // 달을 걸치는 주는 **시작한 달**로 읽는다(8/30(일)~9/5)
+    expect(weekLabel('2026-09-03')).toBe('8월 5주');
+    // 1일이 일요일인 달 — 그 날이 곧 1주
+    expect(weekLabel('2026-11-01')).toBe('11월 1주');
+    expect(weekLabel('2026-11-30')).toBe('11월 5주');
   });
 
   it('격자는 항상 6주(42칸)이고 이웃 달 칸은 inMonth=false', () => {
