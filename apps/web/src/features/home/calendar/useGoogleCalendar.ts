@@ -297,8 +297,10 @@ export function useGoogleCalendar(
       const got = await withToken((t) => fetchRooms(t)).catch(() => null);
       if (!aliveRef.current) return;
       // `null`은 "물어볼 수 없다"(403·관리자 동의 필요) — 그 구획을 접는다.
-      if (got === null) setRoomsDenied(true);
-      else setRooms(got);
+      if (got === null) {
+        console.warn('[geurio] 회의실 목록을 받지 못했어요 — Admin SDK API 사용 설정 또는 Workspace 관리자 승인이 필요할 수 있어요(backend.md §19)');
+        setRoomsDenied(true);
+      } else setRooms(got);
     })();
   }, [granted, withToken]);
 
