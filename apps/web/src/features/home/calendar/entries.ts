@@ -211,7 +211,10 @@ export function googleEntries(events: readonly GoogleEvent[]): CalendarEntry[] {
       tag: '',
       boardName: e.calendarName,
       spaceName: 'Google 캘린더',
-      readOnly: true,
+      // 쓸 수 있는 캘린더의 일정은 **끌어서 날짜를 옮길 수 있다**(PR6). 공휴일과
+      // 보기 전용으로 공유된 캘린더는 그대로 읽기 전용이다 — 진짜 게이트는 구글의
+      // 권한이고, 이 값은 "고쳐지는 척하는" 화면을 막는 어포던스다.
+      ...(e.writable ? {} : { readOnly: true }),
       google: e,
       ...(e.allDay ? {} : { ...(e.startTime ? { startTime: e.startTime } : {}), ...(e.endTime ? { endTime: e.endTime } : {}) }),
     }));

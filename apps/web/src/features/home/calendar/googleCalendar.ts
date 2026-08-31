@@ -29,8 +29,29 @@
 
 import { loadGisScript, readGoogleClientId } from '../../auth/googleIdentity';
 
-/** 이 앱이 구글에 요구하는 전부 — 읽기 하나뿐이다(쓰기 스코프는 요구하지 않는다). */
-export const GOOGLE_CALENDAR_SCOPE = 'https://www.googleapis.com/auth/calendar.readonly';
+/**
+ * 이 앱이 구글에 요구하는 전부 — **딱 두 가지**다.
+ *
+ * - `calendar.events` 일정 읽기·쓰기. 그리오에서 만들고 고치려면 필요하다(PR6).
+ * - `calendar.calendarlist.readonly` "어느 캘린더를 겹칠까"를 고르게 하는 목록.
+ *   `calendar.events`는 일정만 주고 캘린더 **목록**은 주지 않는다.
+ *
+ * 전체 권한(`calendar`)을 받지 않은 이유: 캘린더 자체를 만들거나 지우지 않으므로
+ * 요구할 근거가 없다 — 검수도 스코프마다 "왜 필요한가"를 묻는다.
+ */
+export const GOOGLE_CALENDAR_SCOPES = ['https://www.googleapis.com/auth/calendar.events', 'https://www.googleapis.com/auth/calendar.calendarlist.readonly'];
+export const GOOGLE_CALENDAR_SCOPE = GOOGLE_CALENDAR_SCOPES.join(' ');
+
+/**
+ * 받아 둔 토큰이 지금 필요한 권한을 **다 담고 있는가.** 스코프를 넓힌 뒤에도 옛
+ * 토큰이 남아 있으면 쓰기 요청만 403으로 죽는다 — 그럴 바엔 없는 것으로 보고
+ * 다시 받게 한다(사용자에겐 "다시 연결" 한 번).
+ */
+export function scopeCovers(granted: string | undefined): boolean {
+  if (!granted) return false;
+  const have = new Set(granted.split(/\s+/).filter(Boolean));
+  return GOOGLE_CALENDAR_SCOPES.every((s) => have.has(s));
+}
 
 /** 토큰을 담아 두는 자리 — 탭이 닫히면 사라진다(위 주석의 이유). */
 const TOKEN_KEY = 'mf_gcal_token';
@@ -44,7 +65,7 @@ export interface GsiTokenApi {
     scope: string;
     prompt?: '' | 'none' | 'consent' | 'select_account';
     hint?: string;
-    callback: (res: { access_token?: string; expires_in?: number; error?: string; error_description?: string }) => void;
+    callback: (res: { access_token?: string; expires_in?: number; scope?: string; error?: string; error_description?: string }) => void;
     error_callback?: (err: { type?: string; message?: string }) => void;
   }): { requestAccessToken(overrides?: { prompt?: string; hint?: string }): void };
   revoke(token: string, done?: () => void): void;
@@ -54,6 +75,8 @@ export interface GoogleToken {
   accessToken: string;
   /** epoch ms — 이 시각이 지나면 다시 받아야 한다. */
   expiresAt: number;
+  /** 구글이 실제로 승인한 스코프(공백으로 이어진 문자열) — `scopeCovers`가 본다. */
+  scope?: string;
 }
 
 /** 구글이 돌려준 캘린더 하나(목록 화면이 쓰는 것만). */
@@ -65,6 +88,12 @@ export interface GoogleCalendarMeta {
   primary?: boolean;
   /** 공휴일 캘린더인가 — 일정 칩이 아니라 **날짜 색**으로 그린다. */
   holiday?: boolean;
+  /**
+   * 이 캘린더에 **쓸 수 있는가**(`accessRole`이 owner/writer). 공휴일 캘린더나 남이
+   * 보기 전용으로 공유한 캘린더는 거짓이다 — 그런 곳은 목적지로 내주지 않고,
+   * 그 일정도 고칠 수 없다고 화면이 말한다.
+   */
+  writable?: boolean;
 }
 
 /** 받아 온 일정 하나(그리는 데 필요한 것만 — 원문은 들고 있지 않는다). */
@@ -87,6 +116,14 @@ export interface GoogleEvent {
   holiday?: boolean;
   /** 공휴일 중에서도 **실제로 쉬는 날**인가(`isDayOffHoliday`) — 달력을 칠하는 기준. */
   dayOff?: boolean;
+  /** 구글 쪽 일정 id(우리 `id`는 캘린더까지 붙인 값이라 요청에 못 쓴다). */
+  eventId: string;
+  /** 그 캘린더에 쓸 수 있는가 — 고칠 수 있는지 화면이 이 값으로 판단한다. */
+  writable?: boolean;
+  /** 남이 덮어쓴 것을 모르고 다시 덮지 않게 — 수정 요청의 `If-Match`에 싣는다. */
+  etag?: string;
+  /** 반복 일정의 **회차**면 원본 일정 id — 있으면 "이 회차만" 고친다. */
+  recurringEventId?: string;
 }
 
 // ── 토큰 ────────────────────────────────────────────────────────────────────
@@ -101,7 +138,9 @@ export function readStoredToken(now = Date.now()): GoogleToken | null {
     const t = JSON.parse(raw) as Partial<GoogleToken>;
     if (typeof t.accessToken !== 'string' || typeof t.expiresAt !== 'number') return null;
     if (t.expiresAt - SKEW_MS <= now) return null;
-    return { accessToken: t.accessToken, expiresAt: t.expiresAt };
+    // 스코프를 넓힌 배포 뒤 남아 있는 옛 토큰은 **없는 것으로 본다**(위 `scopeCovers`).
+    if (!scopeCovers(t.scope)) return null;
+    return { accessToken: t.accessToken, expiresAt: t.expiresAt, ...(t.scope ? { scope: t.scope } : {}) };
   } catch {
     return null;
   }
@@ -159,8 +198,15 @@ export async function requestGoogleToken(interactive: boolean, hint?: string): P
         ...(hint ? { hint } : {}),
         callback: (res) => {
           if (res.access_token && res.expires_in) {
-            const token = { accessToken: res.access_token, expiresAt: Date.now() + res.expires_in * 1000 };
+            // 구글이 **실제로 승인한** 스코프를 그대로 적어 둔다 — 사용자가 동의
+            // 화면에서 일부만 체크할 수 있어서, 요구한 값이 아니라 받은 값을 믿는다.
+            const granted = typeof res.scope === 'string' ? res.scope : GOOGLE_CALENDAR_SCOPE;
+            const token = { accessToken: res.access_token, expiresAt: Date.now() + res.expires_in * 1000, scope: granted };
             storeToken(token);
+            if (!scopeCovers(granted)) {
+              done({ error: '캘린더 읽기·쓰기 권한을 모두 허용해야 일정을 만들 수 있어요.' });
+              return;
+            }
             done({ token });
             return;
           }
@@ -251,6 +297,7 @@ export function parseCalendarList(json: unknown): GoogleCalendarMeta[] {
       ...(color ? { color } : {}),
       ...(it.primary === true ? { primary: true } : {}),
       ...(isHolidayCalendarId(id) ? { holiday: true } : {}),
+      ...(it.accessRole === 'owner' || it.accessRole === 'writer' ? { writable: true } : {}),
     });
   }
   // 기본 캘린더 먼저, 그 다음 이름순 — 목록 순서가 매번 흔들리지 않게.
@@ -271,6 +318,15 @@ export function splitGoogleDateTime(v: { date?: string; dateTime?: string } | un
   if (Number.isNaN(d.getTime())) return null;
   const p = (n: number) => String(n).padStart(2, '0');
   return { date: `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}`, time: `${p(d.getHours())}:${p(d.getMinutes())}` };
+}
+
+/** 종일 일정의 `end.date`는 **다음 날**이다(배타적) — 우리 모델로 넣을 땐 하루를 더한다. */
+function nextDay(iso: string): string {
+  const [y, m, d] = iso.split('-').map(Number);
+  if (!y || !m || !d) return iso;
+  const dt = new Date(y, m - 1, d + 1);
+  const p = (n: number) => String(n).padStart(2, '0');
+  return `${dt.getFullYear()}-${p(dt.getMonth() + 1)}-${p(dt.getDate())}`;
 }
 
 /** 종일 일정의 `end.date`는 **다음 날**이다(배타적) — 하루 빼야 우리 모델과 맞는다. */
@@ -299,6 +355,7 @@ export function parseEvents(json: unknown, cal: GoogleCalendarMeta): GoogleEvent
     const endDate = e ? (allDay ? prevDay(e.date) : e.date) : s.date;
     out.push({
       id: `${cal.id}::${id}`,
+      eventId: id,
       calendarId: cal.id,
       calendarName: cal.summary,
       title: typeof it.summary === 'string' && it.summary ? it.summary : '(제목 없음)',
@@ -311,6 +368,9 @@ export function parseEvents(json: unknown, cal: GoogleCalendarMeta): GoogleEvent
       ...(typeof it.description === 'string' && it.description ? { description: it.description } : {}),
       ...(typeof it.htmlLink === 'string' ? { htmlLink: it.htmlLink } : {}),
       ...(cal.color ? { color: cal.color } : {}),
+      ...(cal.writable ? { writable: true } : {}),
+      ...(typeof it.etag === 'string' ? { etag: it.etag } : {}),
+      ...(typeof it.recurringEventId === 'string' ? { recurringEventId: it.recurringEventId } : {}),
       ...(cal.holiday ? { holiday: true } : {}),
       ...(cal.holiday && isDayOffHoliday(typeof it.description === 'string' ? it.description : undefined) ? { dayOff: true } : {}),
     });
@@ -333,4 +393,96 @@ export async function fetchEvents(token: string, cal: GoogleCalendarMeta, from: 
     showDeleted: 'false',
   });
   return parseEvents(json, cal);
+}
+
+// ── 쓰기(PR6) ───────────────────────────────────────────────────────────────
+//
+// 만든 일정은 **구글에만** 남는다 — 우리 DB에 사본을 두지 않는다(위 머리말의 그
+// 이유 그대로: 사본을 두면 두 곳의 진실이 갈린다). 그래서 저장이 끝나면 화면은
+// 보이는 달을 다시 받아 **구글이 돌려준 것**을 그린다.
+
+/** 화면이 만들거나 고치는 값 — 구글 스키마가 아니라 우리 말로 받는다. */
+export interface GoogleEventDraft {
+  title: string;
+  allDay: boolean;
+  /** 포함 구간(끝날까지) — 구글의 배타적 `end.date`는 아래에서 맞춘다. */
+  startDate: string;
+  endDate: string;
+  startTime?: string;
+  endTime?: string;
+  location?: string;
+  description?: string;
+}
+
+/** 이 브라우저의 시간대 — 시각 일정은 이걸 함께 보내야 구글이 같은 시각에 놓는다. */
+function localTimeZone(): string {
+  try {
+    return Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC';
+  } catch {
+    return 'UTC';
+  }
+}
+
+export function draftToBody(d: GoogleEventDraft): Record<string, unknown> {
+  const tz = localTimeZone();
+  const when = d.allDay
+    ? { start: { date: d.startDate }, end: { date: nextDay(d.endDate) } }
+    : {
+        start: { dateTime: `${d.startDate}T${d.startTime || '00:00'}:00`, timeZone: tz },
+        end: { dateTime: `${d.endDate}T${d.endTime || d.startTime || '00:00'}:00`, timeZone: tz },
+      };
+  return {
+    summary: d.title,
+    ...when,
+    // 빈 값은 **빈 문자열로 보낸다** — 키를 빼면 구글은 "안 바꾼다"로 읽어서,
+    // 위치나 메모를 지운 것이 저장되지 않는다(PATCH의 결).
+    location: d.location ?? '',
+    description: d.description ?? '',
+  };
+}
+
+async function send(path: string, token: string, method: 'POST' | 'PATCH' | 'DELETE', body?: unknown, etag?: string): Promise<unknown> {
+  const res = await fetch(`${API}${path}`, {
+    method,
+    headers: {
+      Authorization: `Bearer ${token}`,
+      ...(body ? { 'Content-Type': 'application/json' } : {}),
+      // 내가 본 판이 최신일 때만 쓴다 — 그 사이 구글에서 바뀌었으면 412로 막힌다.
+      ...(etag ? { 'If-Match': etag } : {}),
+    },
+    ...(body ? { body: JSON.stringify(body) } : {}),
+  });
+  if (!res.ok) {
+    const err = new Error(`google ${res.status}`) as Error & { status?: number };
+    err.status = res.status;
+    throw err;
+  }
+  return res.status === 204 ? null : res.json();
+}
+
+export async function createGoogleEvent(token: string, calendarId: string, draft: GoogleEventDraft): Promise<void> {
+  await send(`/calendars/${encodeURIComponent(calendarId)}/events`, token, 'POST', draftToBody(draft));
+}
+
+/**
+ * 하나를 고친다. **반복 일정이면 이 회차만** 바뀐다 — `singleEvents`로 펼쳐 받은
+ * 회차 id에 그대로 쓰기 때문이다. 반복 규칙 자체를 바꾸는 일은 구글에 맡긴다
+ * (그 UI를 우리가 다시 만들 이유가 없고, 잘못 만들면 남의 달력을 망가뜨린다).
+ */
+export async function updateGoogleEvent(token: string, ev: GoogleEvent, draft: GoogleEventDraft): Promise<void> {
+  await send(`/calendars/${encodeURIComponent(ev.calendarId)}/events/${encodeURIComponent(ev.eventId)}`, token, 'PATCH', draftToBody(draft), ev.etag);
+}
+
+export async function deleteGoogleEvent(token: string, ev: GoogleEvent): Promise<void> {
+  await send(`/calendars/${encodeURIComponent(ev.calendarId)}/events/${encodeURIComponent(ev.eventId)}`, token, 'DELETE');
+}
+
+/** 구글이 돌려준 상태 코드 → 사람이 읽을 문장. */
+export function googleWriteError(e: unknown): string {
+  const status = (e as { status?: number }).status;
+  if (status === 412) return '그 사이 구글에서 바뀌었어요. 새로 받은 내용을 보고 다시 시도해 주세요.';
+  if (status === 403) return '이 캘린더에 쓸 권한이 없어요.';
+  if (status === 404) return '구글에서 이미 사라진 일정이에요.';
+  if (status === 401) return '구글 권한이 만료됐어요. 설정에서 다시 연결해 주세요.';
+  return '구글에 저장하지 못했어요. 잠시 후 다시 시도해 주세요.';
 }

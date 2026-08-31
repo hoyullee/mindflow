@@ -16,13 +16,15 @@ import { CalWidgetBody, type CalWidgetSide } from '../dashboard/CalendarWidget';
 import { useCalendarEntries } from '../calendar/useCalendarEntries';
 import { useCalendarEvents, type CalendarEventsApi } from '../calendar/useCalendarEvents';
 import { eventEntries, googleEntries, holidayMap, type CalendarEntry } from '../calendar/entries';
-import { useGoogleCalendar } from '../calendar/useGoogleCalendar';
+import { useGoogleCalendar, type GoogleCalendarApi } from '../calendar/useGoogleCalendar';
 import { GoogleConnectButton } from '../calendar/GoogleConnectButton';
 import { addDays, addMonth, daysBetween, isoOf, partsOf, todayISO, weekStartISO } from '../calendar/model';
 import { homeChipSurface } from '../theme';
 import { CalendarGlyph } from '../calendar/CalendarView';
 import { CalendarDetailHost } from '../calendar/CalendarDetail';
 import { NewEventModal } from '../calendar/NewEventModal';
+import { submitNewEvent } from '../calendar/newEventSubmit';
+import { GoogleDetailHost } from '../calendar/GoogleEventDetail';
 import { EventDetail } from '../calendar/EventDetail';
 import { widgetDataOf, type WidgetData, type WidgetKanban } from '../dashboard/widgetData';
 import { previewSurface, realPreview } from '../mapPreview';
@@ -902,7 +904,7 @@ function DashWidget({ itemId, docId, itemKind, size, committedSize, maxCols, edi
       {/* 일정 위젯의 팝업 — 일정 화면과 **같은 컴포넌트**를 그대로 쓴다(둘이 갈리면
           한쪽에만 기능이 붙는다). 대상 상태(`calDetail`·`calNewEvent`·`calEventDetail`)도
           같은 칸이라 화면이 하나만 그려지는 지금 구조에서 부딪히지 않는다. */}
-      {cal && !edit && <CalWidgetDialogs state={state} controller={controller} entries={calEntries} events={eventsApi} isMobile={isMobile} />}
+      {cal && !edit && <CalWidgetDialogs state={state} controller={controller} entries={calEntries} events={eventsApi} google={googleApi} isMobile={isMobile} />}
     </div>
   );
 }
@@ -916,12 +918,14 @@ function CalWidgetDialogs({
   controller,
   entries,
   events,
+  google,
   isMobile,
 }: {
   state: HomeState;
   controller: HomeController;
   entries: readonly CalendarEntry[];
   events: CalendarEventsApi;
+  google: GoogleCalendarApi;
   isMobile: boolean;
 }) {
   const [saving, setSaving] = useState(false);
@@ -930,6 +934,14 @@ function CalWidgetDialogs({
   return (
     <>
       <CalendarDetailHost state={state} controller={controller} entries={entries} isMobile={isMobile} />
+      <GoogleDetailHost
+        openId={state.calGoogleDetail ?? null}
+        events={google.events}
+        isMobile={isMobile}
+        onClose={controller.closeCalendarGoogle}
+        onPatch={google.updateEvent}
+        onDelete={google.deleteEvent}
+      />
       {state.calNewEvent && (
         <NewEventModal
           draft={state.calNewEvent}
@@ -940,9 +952,10 @@ function CalWidgetDialogs({
             setSaveError(null);
             controller.closeNewEvent();
           }}
-          onSubmit={(input) => {
+          googleTargets={google.writableCalendars.map((c) => ({ id: c.id, name: c.summary, ...(c.color ? { color: c.color } : {}) }))}
+          onSubmit={(input, target) => {
             setSaving(true);
-            void events.create(input).then((err) => {
+            void submitNewEvent(input, target, { createGeurio: events.create, createGoogle: google.createEvent }).then((err) => {
               setSaving(false);
               setSaveError(err);
               if (!err) controller.closeNewEvent();

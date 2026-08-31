@@ -5,7 +5,10 @@
 //     버튼을 두지 않는다(이 프로젝트의 정직한 어포던스 규칙).
 //  ② 켜는 것은 사용자가 **직접 누를 때만**이다(동의 창이 그때 뜬다). 화면을 여는
 //     것만으로 팝업이 뜨면 브라우저가 막고, 사용자도 놀란다.
-//  ③ 읽기 전용임을 문구가 말한다 — 우리는 구글에 쓰지 않는다.
+//  ③ 무엇을 할 수 있는지 문구가 말한다 — 겹쳐 보고(읽기) 그리오에서 만들고 고칠
+//     수 있다(쓰기, PR6). 쓸 수 없는 캘린더(공휴일·보기 전용 공유)는 그렇게 표시한다.
+//  ④ 스코프를 넓힌 뒤 옛 토큰이 남으면 **다시 연결**을 권한다 — 켜져 있는데 저장이
+//     안 되는 상태를 조용히 두지 않는다.
 
 import type { GoogleCalendarApi } from '../../calendar/useGoogleCalendar';
 
@@ -20,10 +23,18 @@ export function GoogleCalendarSection({ api }: { api: GoogleCalendarApi }) {
           <div style={{ minWidth: 0, flex: 1 }}>
             <div style={{ fontWeight: 700, fontSize: 14.5 }}>Google 캘린더</div>
             <div style={{ fontSize: 12.5, color: 'var(--mf-muted)', marginTop: 2 }}>
-              {api.enabled ? '내 일정 화면에 겹쳐 보여요. 읽기만 해요' : '내 구글 일정을 일정 화면에 겹쳐 볼 수 있어요'}
+              {api.needsReauth
+                ? '권한을 다시 허용해야 일정을 읽고 쓸 수 있어요'
+                : api.enabled
+                  ? '일정 화면에 겹쳐 보고, 여기서 만들고 고칠 수 있어요'
+                  : '내 구글 일정을 겹쳐 보고 그리오에서 만들고 고칠 수 있어요'}
             </div>
           </div>
-          {api.enabled ? (
+          {api.enabled && api.needsReauth ? (
+            <button type="button" className="mf-ctl mf-ctl-primary" data-google-reconnect onClick={() => void api.connect()} style={btn(true)}>
+              다시 연결
+            </button>
+          ) : api.enabled ? (
             <button type="button" className="mf-ctl" data-google-disconnect onClick={() => void api.disconnect()} style={btn(false)}>
               연결 해제
             </button>
@@ -59,7 +70,14 @@ export function GoogleCalendarSection({ api }: { api: GoogleCalendarApi }) {
                       <input type="checkbox" checked={on} onChange={() => api.toggleCalendar(c.id)} style={{ width: 15, height: 15, accentColor: 'var(--mf-accent)', cursor: 'pointer', flexShrink: 0 }} />
                       <span style={{ width: 9, height: 9, borderRadius: 999, background: c.color ?? 'var(--mf-accent)', flexShrink: 0 }} />
                       <span style={{ minWidth: 0, flex: 1, fontSize: 13.5, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{c.summary}</span>
-                      {c.holiday && <span style={{ flexShrink: 0, fontSize: 11, color: 'var(--mf-muted)' }}>공휴일</span>}
+                      {c.holiday ? (
+                        <span style={{ flexShrink: 0, fontSize: 11, color: 'var(--mf-muted)' }}>공휴일</span>
+                      ) : (
+                        // 쓸 수 없는 캘린더는 그렇게 말한다 — 새 일정 목적지에도 오르지 않는다.
+                        !c.writable && (
+                          <span data-google-readonly style={{ flexShrink: 0, fontSize: 11, color: 'var(--mf-muted)' }}>보기 전용</span>
+                        )
+                      )}
                     </label>
                   );
                 })}
@@ -67,7 +85,7 @@ export function GoogleCalendarSection({ api }: { api: GoogleCalendarApi }) {
             )}
             {/* 공휴일 캘린더는 칩이 아니라 **날짜 색**으로 그린다 — 고를 때 그걸 알려 준다. */}
             <div style={{ fontSize: 11.5, color: 'var(--mf-faint)', marginTop: 8, lineHeight: 1.5 }}>
-              공휴일 캘린더는 일정 칩 대신 날짜를 빨갛게 표시해요. 구글 일정은 <b style={{ fontWeight: 700 }}>고칠 수 없어요</b> — 겹쳐 보여 주기만 해요.
+              공휴일 캘린더는 일정 칩 대신 날짜를 빨갛게 표시해요. 여기서 만든 일정은 <b style={{ fontWeight: 700 }}>구글에만</b> 남아요 — 연동을 끄면 화면에서 사라집니다(구글에는 그대로 있어요).
             </div>
           </div>
         )}

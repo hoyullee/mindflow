@@ -1369,6 +1369,15 @@ export function useHomeController() {
     return ok;
   };
 
+  /**
+   * 화면 아무 데서나 쓰는 안내 창 — 드래그처럼 **머무를 팝업이 없는 조작**의 실패를
+   * 알린다(구글 일정 날짜 옮기기 등). 팝업 안의 실패는 그 팝업이 문장으로 말한다.
+   */
+  const showCalendarToast = (title: string, body: string): void => {
+    if (!mountedRef.current) return;
+    setState((prev) => ({ ...prev, toastTitle: title, toast: body }));
+  };
+
   /** 카드 곁정보(분류·시작일·기한·담당·긴급) — 규칙은 코어 `patchCardMeta`. */
   const patchCalendarCard = async (docId: string, cardId: string, patch2: CardMetaPatch): Promise<boolean> =>
     writeCalendarDoc(docId, (cards) => (cards.some((c) => c.id === cardId) ? patchCardMeta(cards, cardId, patch2) : cards), '일정을 고치지 못했어요');
@@ -2837,6 +2846,7 @@ export function useHomeController() {
     deleteCalendarCard,
     moveCalendarCard,
     shiftCalendarCard,
+    showCalendarToast,
     notePreviewVisible,
     setDashItemSize,
     dashItemToFront,

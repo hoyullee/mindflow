@@ -61,6 +61,8 @@ class MockDocStore implements DocStore {
 }
 
 const HOLIDAY_ID = 'ko.south_korea#holiday@group.v.calendar.google.com';
+/** 남이 **보기 전용**으로 공유한 캘린더 — 그 일정은 고칠 수 없다(PR6). */
+const SHARED_ID = 'shared@example.com';
 
 /** 종일 일정의 end.date는 배타적 — 하루짜리 공휴일이면 다음 날을 적는다. */
 function nextDay(iso: string): string {
@@ -98,8 +100,13 @@ function weekdayInMonth(nth = 0): string {
   return isoOf(now.getFullYear(), now.getMonth() + 1, now.getDate());
 }
 
-/** GIS 토큰 클라이언트 흉내 — 누르면 곧바로 토큰을 준다. */
-function stubGis(): { requested: string[] } {
+/**
+ * GIS 토큰 클라이언트 흉내 — 누르면 곧바로 토큰을 준다.
+ *
+ * @param grantedScope 구글이 **실제로 승인한** 스코프. 기본은 우리가 요구한 전부이고,
+ *   좁게 주면 동의 화면에서 일부만 체크한 경우(또는 옛 승인이 남은 경우)가 된다.
+ */
+function stubGis(grantedScope?: string): { requested: string[] } {
   const requested: string[] = [];
   (window as unknown as { google: unknown }).google = {
     accounts: {
@@ -107,7 +114,7 @@ function stubGis(): { requested: string[] } {
         initTokenClient: (cfg: { scope: string; prompt?: string; callback: (r: unknown) => void }) => ({
           requestAccessToken: () => {
             requested.push(cfg.prompt ?? '');
-            cfg.callback({ access_token: 'tok', expires_in: 3600 });
+            cfg.callback({ access_token: 'tok', expires_in: 3600, ...(grantedScope ? { scope: grantedScope } : {}) });
           },
         }),
         revoke: () => undefined,
@@ -128,10 +135,14 @@ function stubFetch(): ReturnType<typeof vi.fn> {
     if (url.includes('/users/me/calendarList')) {
       return ok({
         items: [
-          { id: 'me@example.com', summary: '내 캘린더', primary: true, backgroundColor: '#4285f4' },
+          { id: 'me@example.com', summary: '내 캘린더', primary: true, backgroundColor: '#4285f4', accessRole: 'owner' },
+          { id: SHARED_ID, summary: '남의 캘린더', accessRole: 'reader' },
           { id: HOLIDAY_ID, summary: '대한민국의 휴일' },
         ],
       });
+    }
+    if (url.includes(encodeURIComponent(SHARED_ID))) {
+      return ok({ items: [{ id: 's1', summary: '남의 회의', start: { dateTime: `${meeting}T14:00:00+09:00` }, end: { dateTime: `${meeting}T15:00:00+09:00` }, htmlLink: 'https://calendar.google.com/s' }] });
     }
     if (url.includes(encodeURIComponent(HOLIDAY_ID))) {
       return ok({
@@ -226,11 +237,14 @@ describe('구글 캘린더 겹치기(PR5)', () => {
       return el as HTMLElement;
     });
     await user.click(within(section).getByText('연결'));
-    // 목록이 뜨고 둘 다 켜져 있다(기본 + 공휴일)
+    // 목록이 뜨고 **기본 + 공휴일만** 켜져 있다 — 캘린더가 스무 개인 사람에게 전부
+    // 켜 주면 첫 화면이 남의 일정으로 뒤덮인다(남이 공유한 것은 꺼진 채).
     await waitFor(() => expect(document.querySelector('[data-google-cal="me@example.com"]')).toBeTruthy());
     const boxes = document.querySelectorAll<HTMLInputElement>('[data-google-cal] input');
-    expect(boxes.length).toBe(2);
-    expect([...boxes].every((b) => b.checked)).toBe(true);
+    expect(boxes.length).toBe(3);
+    expect([...boxes].filter((b) => b.checked).length).toBe(2);
+    // 쓸 수 없는 캘린더는 그렇게 표시된다(새 일정 목적지에도 오르지 않는다)
+    expect(document.querySelector(`[data-google-cal="${SHARED_ID}"] [data-google-readonly]`)).toBeTruthy();
     // 워크스페이스 블롭에 남는다(기기 간 동기화 — 토큰은 남지 않는다)
     await waitFor(() => {
       const ws = JSON.parse(localStorage.getItem('mf_spaces') ?? '{}') as { google?: { calendars: string[] } };
@@ -266,28 +280,62 @@ describe('구글 캘린더 겹치기(PR5)', () => {
     expect(seasonCell!.style.background).toBe('var(--mf-card)');
   });
 
-  it('구글 일정을 누르면 읽기 전용 팝업 — 고칠 수 없다고 말하고 구글로 보낸다', async () => {
+  /** 그 칩을 눌러 구글 상세 팝업을 연다. */
+  async function openGoogleChip(container: HTMLElement, user: ReturnType<typeof userEvent.setup>, text: RegExp): Promise<HTMLElement> {
+    await openCalendar(container, user);
+    const chip = await waitFor(() => {
+      const el = screen.getAllByText(text)[0];
+      expect(el).toBeTruthy();
+      return el as HTMLElement;
+    });
+    await user.click(chip);
+    return waitFor(() => {
+      const el = document.querySelector('[data-google-detail]');
+      expect(el).toBeTruthy();
+      return el as HTMLElement;
+    });
+  }
+
+  it('쓸 수 있는 캘린더의 구글 일정은 그 자리에서 고친다 — 제목을 바꾸면 구글에 PATCH', async () => {
     seed({ calendars: ['me@example.com'] });
+    stubGis();
+    const f = stubFetch();
+    clientId = 'test-client.apps.googleusercontent.com';
+    const user = userEvent.setup();
+    const { container } = renderHome();
+    const pop = await openGoogleChip(container, user, /구글 회의/);
+    // 읽기 전용 안내가 아니라 **입력**이 있다
+    expect(pop.querySelector('[data-event-notice]')).toBeNull();
+    const title = pop.querySelector<HTMLTextAreaElement>('[data-event-title]');
+    expect(title).toBeTruthy();
+    expect(title!.readOnly).toBe(false);
+    await user.clear(title!);
+    await user.type(title!, '이름 바꿈');
+    title!.blur();
+    await waitFor(() => {
+      const patch = f.mock.calls.find((c) => (c[1] as { method?: string } | undefined)?.method === 'PATCH');
+      expect(patch).toBeTruthy();
+      expect(String(patch![0])).toContain('/events/g1');
+      expect(JSON.parse((patch![1] as { body: string }).body)).toMatchObject({ summary: '이름 바꿈' });
+    });
+    // 삭제도 그 자리에서(구글로 보내는 링크는 그대로 남는다)
+    expect(pop.querySelector('[data-event-delete]')).toBeTruthy();
+    expect(pop.querySelector('[data-google-open]')?.getAttribute('href')).toBe('https://calendar.google.com/x');
+  });
+
+  it('보기 전용으로 공유된 캘린더의 일정은 고칠 수 없다고 말한다', async () => {
+    seed({ calendars: [SHARED_ID] });
     stubGis();
     stubFetch();
     clientId = 'test-client.apps.googleusercontent.com';
     const user = userEvent.setup();
     const { container } = renderHome();
-    await openCalendar(container, user);
-    const chip = await waitFor(() => {
-      const el = screen.getAllByText(/구글 회의/)[0];
-      expect(el).toBeTruthy();
-      return el as HTMLElement;
-    });
-    await user.click(chip);
-    const pop = await waitFor(() => {
-      const el = document.querySelector('[data-google-detail]');
-      expect(el).toBeTruthy();
-      return el as HTMLElement;
-    });
-    expect(within(pop).getByText(/고칠 수 없어요/)).toBeTruthy();
-    expect(pop.querySelector('[data-google-open]')?.getAttribute('href')).toBe('https://calendar.google.com/x');
-    // 우리 편집 팝업(칸반 카드·Geurio 일정)은 열리지 않는다
+    const pop = await openGoogleChip(container, user, /남의 회의/);
+    expect(within(pop).getByText(/쓸 권한이 없어요/)).toBeTruthy();
+    expect(pop.querySelector('[data-event-delete]')).toBeNull();
+    expect(pop.querySelector<HTMLTextAreaElement>('[data-event-title]')?.readOnly).toBe(true);
+    expect(pop.querySelector('[data-google-open]')?.getAttribute('href')).toBe('https://calendar.google.com/s');
+    // 우리 편집 팝업(칸반 카드)은 열리지 않는다
     expect(document.querySelector('[data-cal-detail]')).toBeNull();
   });
 
@@ -368,5 +416,66 @@ describe('구글 캘린더 겹치기(PR5)', () => {
       expect(ws.google).toBeUndefined();
     });
     expect(sessionStorage.getItem('mf_gcal_token')).toBeNull();
+  });
+
+  it('새 일정을 구글에 저장한다 — 목적지를 고르면 그 캘린더에 POST', async () => {
+    seed({ calendars: ['me@example.com'] });
+    stubGis();
+    const f = stubFetch();
+    clientId = 'test-client.apps.googleusercontent.com';
+    const user = userEvent.setup();
+    const { container } = renderHome();
+    await openCalendar(container, user);
+    // 목록이 도착해야 목적지가 생긴다(쓸 수 있는 캘린더만 오른다)
+    await waitFor(() => expect(screen.getAllByText(/구글 회의/).length).toBeGreaterThan(0));
+    await user.click(screen.getByText('새 일정'));
+    const dlg = await waitFor(() => {
+      const el = document.querySelector('[data-new-event]') ?? document.querySelector('[role="dialog"]');
+      expect(el).toBeTruthy();
+      return el as HTMLElement;
+    });
+    await user.type(within(dlg).getByLabelText('일정 제목'), '팀 회의');
+    // 보기 전용 캘린더는 목적지에 없다 — 고를 수 있는 것은 Geurio와 내 캘린더뿐
+    expect(dlg.querySelector(`[data-new-cal="${SHARED_ID}"]`)).toBeNull();
+    const target = dlg.querySelector<HTMLElement>('[data-new-cal="me@example.com"]');
+    expect(target).toBeTruthy();
+    await user.click(target!);
+    await user.click(within(dlg).getByText('등록'));
+    await waitFor(() => {
+      const post = f.mock.calls.find((c) => (c[1] as { method?: string } | undefined)?.method === 'POST');
+      expect(post).toBeTruthy();
+      expect(String(post![0])).toContain(`/calendars/${encodeURIComponent('me@example.com')}/events`);
+      expect(JSON.parse((post![1] as { body: string }).body)).toMatchObject({ summary: '팀 회의' });
+    });
+    // 우리 표에는 남지 않는다 — 구글이 정본이다
+    expect(localStorage.getItem('mf_events')).toBeNull();
+  });
+
+  it('구글 목적지가 없으면 고르기를 그리지 않는다 — 배지 하나만', async () => {
+    seed();
+    clientId = 'test-client.apps.googleusercontent.com';
+    const user = userEvent.setup();
+    const { container } = renderHome();
+    await openCalendar(container, user);
+    await user.click(screen.getByText('새 일정'));
+    await waitFor(() => expect(document.querySelector('[data-new-cal]')).toBeTruthy());
+    expect(document.querySelectorAll('[data-new-cal]').length).toBe(1);
+    expect(document.querySelector('[data-new-cal="geurio"]')).toBeNull();
+  });
+
+  it('읽기 권한만 승인돼 있으면 "다시 연결"을 권한다 — 쓰기가 조용히 죽지 않게', async () => {
+    seed({ calendars: ['me@example.com'] });
+    // 구글이 **읽기만** 승인한다(PR5의 옛 승인이 남은 상태·동의 화면에서 일부만 체크)
+    stubGis('https://www.googleapis.com/auth/calendar.readonly');
+    stubFetch();
+    clientId = 'test-client.apps.googleusercontent.com';
+    const user = userEvent.setup();
+    const { container } = renderHome();
+    await openCalendar(container, user);
+    // 머리의 연동 아이콘이 다시 뜬다(정상 연동이면 사라져 있다)
+    await waitFor(() => {
+      const btn = container.querySelector('[data-google-connect-cal]');
+      expect(btn?.getAttribute('aria-label')).toBe('Google 캘린더 다시 연결');
+    });
   });
 });
