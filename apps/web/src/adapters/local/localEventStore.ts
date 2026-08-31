@@ -48,14 +48,18 @@ export function normalizeEventInput(input: CalendarEventInput): CalendarEventInp
     ...(input.location ? { location: input.location.slice(0, 200) } : {}),
     ...(input.note ? { note: input.note.slice(0, 2000) } : {}),
     ...(input.color ? { color: input.color } : {}),
+    // 우리가 만든 RRULE만 담는다 — 모르는 문자열은 버린다(읽을 때 반복 없음이 된다).
+    ...(input.recurrence && /^RRULE:/i.test(input.recurrence) ? { recurrence: input.recurrence } : {}),
   };
 }
 
 export class LocalEventStore implements EventStore {
   async list(fromIso: string, toIso: string): Promise<CalendarEvent[]> {
     // 겹침: 시작이 구간 끝보다 앞이고, 끝이 구간 시작보다 뒤.
+    // **반복 일정은 끝 조건을 보지 않는다** — 첫 회차가 몇 달 전이어도 이번 구간에
+    // 회차가 있을 수 있다(펼치는 일은 `expandRecurrence`가 한다).
     return readAll()
-      .filter((e) => e.startDate <= toIso && e.endDate >= fromIso)
+      .filter((e) => e.startDate <= toIso && (!!e.recurrence || e.endDate >= fromIso))
       .sort((a, b) => (a.startDate < b.startDate ? -1 : a.startDate > b.startDate ? 1 : (a.startTime ?? '') < (b.startTime ?? '') ? -1 : 1));
   }
 

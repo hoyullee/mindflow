@@ -519,6 +519,12 @@ export interface RecurrenceSpec {
   endMode: 'none' | 'date' | 'count';
   until?: string;
   count?: number;
+  /**
+   * 사용자가 `맞춤` 칸을 골랐는가 — **화면 상태**다(RRULE에는 나가지 않는다).
+   * `매주`와 "1주마다·종료 없음"은 같은 규칙이지만 고른 칸은 다르므로, 이 값이 없으면
+   * 맞춤으로 정해 둔 상세 행이 다음 렌더에서 접힌다.
+   */
+  custom?: boolean;
 }
 
 export const RECURRENCE_OFF: RecurrenceSpec = { on: false, unit: 'week', interval: 1, endMode: 'none' };

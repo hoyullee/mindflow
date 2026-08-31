@@ -20,6 +20,7 @@ interface Row {
   location: string | null;
   note: string | null;
   color: string | null;
+  recurrence?: string | null;
   source: string | null;
 }
 
@@ -35,6 +36,7 @@ function toEvent(r: Row): CalendarEvent {
     ...(r.location ? { location: r.location } : {}),
     ...(r.note ? { note: r.note } : {}),
     ...(r.color ? { color: r.color } : {}),
+    ...(r.recurrence ? { recurrence: r.recurrence } : {}),
     source: r.source === 'google' ? 'google' : 'geurio',
   };
 }
@@ -50,31 +52,50 @@ function toRow(v: CalendarEventInput): Record<string, unknown> {
     location: v.location ?? '',
     note: v.note ?? '',
     color: v.color ?? null,
+    recurrence: v.recurrence ?? null,
   };
+}
+
+/** 반복 칼럼이 없는 서버(0034 미적용)에 다시 보낼 행. */
+function withoutRecurrence(row: Record<string, unknown>): Record<string, unknown> {
+  const copy = { ...row };
+  delete copy.recurrence;
+  return copy;
 }
 
 export class SupabaseEventStore implements EventStore {
   constructor(private readonly client: SupabaseClient) {}
 
   async list(fromIso: string, toIso: string): Promise<CalendarEvent[]> {
-    // 겹침 조회 — 월 격자가 6주라 구간이 달 경계를 넘는다.
-    const { data, error } = await this.client.from('calendar_events').select('*').lte('start_date', toIso).gte('end_date', fromIso).order('start_date', { ascending: true });
-    if (error) {
-      console.warn('[geurio] calendar_events 조회 실패(마이그레이션 0033 확인)', error.message);
+    // 겹침 조회 — 월 격자가 6주라 구간이 달 경계를 넘는다. **반복 일정은 끝 조건을
+    // 보지 않는다**(첫 회차가 몇 달 전이어도 이번 구간에 회차가 있을 수 있다).
+    const base = () => this.client.from('calendar_events').select('*').lte('start_date', toIso);
+    const { data, error } = await base().or(`end_date.gte.${fromIso},recurrence.not.is.null`).order('start_date', { ascending: true });
+    if (!error) return ((data ?? []) as Row[]).map(toEvent);
+    // `recurrence` 칼럼이 없는 서버(0034 미적용) — 예전 조회로 물러난다(반복만 빠진다).
+    console.warn('[geurio] calendar_events 반복 조회 실패 — 기본 조회로 물러납니다(0034 확인)', error.message);
+    const plain = await base().gte('end_date', fromIso).order('start_date', { ascending: true });
+    if (plain.error) {
+      console.warn('[geurio] calendar_events 조회 실패(마이그레이션 0033 확인)', plain.error.message);
       return [];
     }
-    return ((data ?? []) as Row[]).map(toEvent);
+    return ((plain.data ?? []) as Row[]).map(toEvent);
   }
 
   async create(input: CalendarEventInput): Promise<{ event?: CalendarEvent; error?: string }> {
     const v = normalizeEventInput(input);
     if (!v.title.trim()) return { error: '제목을 입력해 주세요.' };
-    const { data, error } = await this.client.from('calendar_events').insert(toRow(v)).select('*').single();
-    if (error) {
+    const row = toRow(v);
+    const { data, error } = await this.client.from('calendar_events').insert(row).select('*').single();
+    if (!error) return { event: toEvent(data as Row) };
+    // 0034 미적용 서버 — 반복만 빼고 다시 저장한다(일정 자체는 남아야 한다).
+    const retry = await this.client.from('calendar_events').insert(withoutRecurrence(row)).select('*').single();
+    if (retry.error) {
       console.warn('[geurio] 일정 저장 실패', error.message);
       return { error: '일정을 저장하지 못했어요. 잠시 후 다시 시도해 주세요.' };
     }
-    return { event: toEvent(data as Row) };
+    console.warn('[geurio] 반복 규칙 없이 저장했어요(마이그레이션 0034 확인)', error.message);
+    return { event: toEvent(retry.data as Row) };
   }
 
   async update(id: string, patch: Partial<CalendarEventInput>): Promise<{ error?: string }> {
@@ -82,11 +103,15 @@ export class SupabaseEventStore implements EventStore {
     const { data: cur, error: readErr } = await this.client.from('calendar_events').select('*').eq('id', id).single();
     if (readErr || !cur) return { error: '일정을 찾을 수 없어요.' };
     const merged = normalizeEventInput({ ...toEvent(cur as Row), ...patch });
-    const { error } = await this.client.from('calendar_events').update(toRow(merged)).eq('id', id);
-    if (error) {
+    const row = toRow(merged);
+    const { error } = await this.client.from('calendar_events').update(row).eq('id', id);
+    if (!error) return {};
+    const retry = await this.client.from('calendar_events').update(withoutRecurrence(row)).eq('id', id);
+    if (retry.error) {
       console.warn('[geurio] 일정 수정 실패', error.message);
       return { error: '일정을 고치지 못했어요.' };
     }
+    console.warn('[geurio] 반복 규칙 없이 수정했어요(마이그레이션 0034 확인)', error.message);
     return {};
   }
 

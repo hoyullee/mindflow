@@ -1,5 +1,8 @@
 // 구글 일정 전용 필드 — 디자인 원본 `Geurio 일정 캘린더.dc.html`의 `nIsGoogle` 블록.
 //
+// **반복은 이 묶음에 없다** — Geurio 일정도 반복하므로 왼쪽 열의 `RecurrenceField`가
+// 두 목적지에 함께 뜬다. 여기 남은 것은 구글만 할 수 있는 일이다.
+//
 // **왜 구글일 때만 뜨나**: 여기 있는 것들은 구글이 **실제로 처리해 주는 일**이다 —
 // 초대 메일 발송(참석자), 알림, 바쁨/한가함(다른 사람이 내 시간을 볼 때), Meet 링크.
 // 우리 표(0033)에는 그걸 보낼 장치가 없으므로, 목적지가 Geurio면 대신 한 줄로 알린다
@@ -12,10 +15,9 @@
 // 남고 회의실 구획은 **그리지 않는다** — 결과가 영영 비는 상자를 두지 않는다.
 
 import { useEffect, useRef, useState } from 'react';
-import type { CSSProperties, ReactNode } from 'react';
-import { DateButton, PillButton } from './DatePop';
-import { RadioCards } from '../../../components/Segmented';
-import { recurrenceSummary, type GoogleTransparency, type GoogleVisibility, type RecurrenceSpec } from './googleCalendar';
+import { PillButton } from './DatePop';
+import { Field, Segments, SubText } from './fieldBits';
+import type { GoogleTransparency, GoogleVisibility, RecurrenceSpec } from './googleCalendar';
 import { filterRooms, type DirectoryPerson, type MeetingRoom } from './googleDirectory';
 
 /** 이 묶음이 다루는 값 — 새 일정은 지역 상태, 상세는 구글에서 읽은 값이다. */
@@ -66,24 +68,12 @@ const REMIND_OPTS: { key: string; label: string; minutes: number | null | undefi
   { key: '1440', label: '1일 전', minutes: 1440 },
 ];
 
-const UNITS: { u: RecurrenceSpec['unit']; label: string }[] = [
-  { u: 'day', label: '일' },
-  { u: 'week', label: '주' },
-  { u: 'month', label: '개월' },
-];
-
-const END_MODES: { m: RecurrenceSpec['endMode']; label: string }[] = [
-  { m: 'none', label: '없음' },
-  { m: 'date', label: '날짜' },
-  { m: 'count', label: '횟수' },
-];
-
 export function GoogleEventFields({
   value,
   onChange,
   /**
-   * `create` 새 일정 — 반복·Meet를 고를 수 있다.
-   * `edit` 이미 있는 일정 — 반복 규칙과 Meet 생성은 **구글에서** 한다(회차 하나에
+   * `create` 새 일정 — Meet 링크를 함께 만들 수 있다.
+   * `edit` 이미 있는 일정 — Meet 생성과 반복 규칙 변경은 **구글에서** 한다(회차 하나에
    * 규칙을 씌우면 남의 달력이 망가진다). 대신 있는 것을 보여 준다.
    */
   mode,
@@ -108,47 +98,9 @@ export function GoogleEventFields({
 
   return (
     <div data-google-fields style={{ display: 'flex', flexDirection: 'column', gap: 19 }}>
-      {mode === 'create' ? (
-        <Field label="반복" trailing={<PillButton on={value.recurrence.on} attrs={{ 'data-gf-repeat': '1' }} onClick={() => onChange({ recurrence: { ...value.recurrence, on: !value.recurrence.on } })}>반복</PillButton>}>
-          {value.recurrence.on ? (
-            <div style={{ display: 'flex', flexDirection: 'column', gap: 10, padding: '12px 13px', borderRadius: 12, background: 'var(--mf-bg)', border: '1px solid var(--mf-border)' }}>
-              <Row label="반복 주기">
-                <Stepper value={value.recurrence.interval} min={1} max={30} onChange={(n) => onChange({ recurrence: { ...value.recurrence, interval: n } })} />
-                <Segments
-                  aria="반복 단위"
-                  items={UNITS.map((u) => ({ value: u.u, label: u.label }))}
-                  value={value.recurrence.unit}
-                  onChange={(u) => onChange({ recurrence: { ...value.recurrence, unit: u as RecurrenceSpec['unit'] } })}
-                  attr="data-gf-unit"
-                />
-                <SubText>마다</SubText>
-              </Row>
-              <Row label="반복 종료">
-                <Segments
-                  aria="반복 종료"
-                  items={END_MODES.map((e) => ({ value: e.m, label: e.label }))}
-                  value={value.recurrence.endMode}
-                  onChange={(m) => onChange({ recurrence: { ...value.recurrence, endMode: m as RecurrenceSpec['endMode'] } })}
-                  attr="data-gf-endmode"
-                />
-                {value.recurrence.endMode === 'date' && (
-                  <>
-                    <DateButton label="반복 종료 날짜" value={value.recurrence.until ?? ''} clearable={false} attrs={{ 'data-gf-until': '1' }} onPick={(iso) => iso && onChange({ recurrence: { ...value.recurrence, until: iso } })} />
-                    <SubText>종료</SubText>
-                  </>
-                )}
-                {value.recurrence.endMode === 'count' && (
-                  <>
-                    <Stepper value={value.recurrence.count ?? 5} min={1} max={365} onChange={(n) => onChange({ recurrence: { ...value.recurrence, count: n } })} />
-                    <SubText>회 반복 후 종료</SubText>
-                  </>
-                )}
-              </Row>
-              <span data-gf-repeat-summary style={{ fontSize: 11.5, color: 'var(--mf-faint2)' }}>{recurrenceSummary(value.recurrence)}</span>
-            </div>
-          ) : null}
-        </Field>
-      ) : recurring ? (
+      {/* 반복은 이 묶음 밖(왼쪽 열의 `RecurrenceField`)에 있다 — 목적지가 Geurio든
+          구글이든 같은 자리에서 고른다. 여기서는 **이미 있는 반복**만 알린다. */}
+      {mode === 'edit' && recurring ? (
         <span data-gf-repeat-note style={{ fontSize: 11.5, color: 'var(--mf-faint2)', lineHeight: 1.6 }}>
           반복 일정이에요 — 여기서 고치면 <b style={{ fontWeight: 700 }}>이 회차만</b> 바뀝니다. 반복 규칙 자체는 구글에서 바꿔 주세요.
         </span>
@@ -398,77 +350,4 @@ function RoomGlyph() {
       <path d="M4 21V5a1 1 0 0 1 1-1h9a1 1 0 0 1 1 1v16M15 9h4a1 1 0 0 1 1 1v11M3 21h18M11 12h.01" />
     </svg>
   );
-}
-
-function Stepper({ value, min, max, onChange }: { value: number; min: number; max: number; onChange: (n: number) => void }) {
-  const btn: CSSProperties = { width: 24, height: 24, borderRadius: 8, border: '1px solid var(--mf-border)', background: 'var(--mf-card)', color: 'var(--mf-subtext)', font: 'inherit', fontSize: 13, fontWeight: 800, cursor: 'pointer', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', flex: '0 0 auto' };
-  return (
-    <span style={{ display: 'inline-flex', alignItems: 'center', gap: 5, flex: '0 0 auto' }}>
-      <button type="button" className="mf-ctl" aria-label="줄이기" onClick={() => onChange(Math.max(min, value - 1))} style={btn}>
-        −
-      </button>
-      <span style={{ minWidth: 22, textAlign: 'center', fontFamily: "'JetBrains Mono', monospace", fontSize: 12.5, fontWeight: 700, color: 'var(--mf-text)' }}>{value}</span>
-      <button type="button" className="mf-ctl" aria-label="늘리기" onClick={() => onChange(Math.min(max, value + 1))} style={btn}>
-        +
-      </button>
-    </span>
-  );
-}
-
-/** 하나만 고르는 알약 묶음 — 화살표로도 옮겨 다닌다(이 앱의 규칙). */
-function Segments({ aria, items, value, onChange, attr, wide }: { aria: string; items: { value: string; label: string }[]; value: string; onChange: (v: string) => void; attr: string; wide?: boolean }) {
-  return (
-    <RadioCards
-      label={aria}
-      value={value}
-      onChange={onChange}
-      grid={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap', ...(wide ? {} : { flex: '0 0 auto' }) }}
-      items={items.map((it) => ({
-        value: it.value,
-        label: it.label,
-        className: 'mf-ctl',
-        attrs: { [attr]: it.value },
-        style: (on: boolean) => ({
-          height: 30,
-          padding: '0 12px',
-          borderRadius: 999,
-          border: on ? '1.5px solid var(--mf-accent-mute)' : '1px solid var(--mf-border)',
-          background: on ? 'var(--mf-accent-soft)' : 'var(--mf-card)',
-          color: on ? 'var(--mf-accent-strong)' : 'var(--mf-subtext)',
-          font: 'inherit',
-          fontSize: 12,
-          fontWeight: on ? 800 : 600,
-          cursor: 'pointer',
-          whiteSpace: 'nowrap' as const,
-        }),
-        children: it.label,
-      }))}
-    />
-  );
-}
-
-function Field({ label, trailing, children }: { label: string; trailing?: ReactNode; children?: ReactNode }) {
-  return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: 8, minWidth: 0 }}>
-      <span style={{ display: 'flex', alignItems: 'center', gap: 9 }}>
-        <span style={{ fontSize: 12, fontWeight: 800, letterSpacing: '-.01em', color: 'var(--mf-subtext)' }}>{label}</span>
-        <span style={{ flex: 1, minWidth: 0 }} />
-        {trailing}
-      </span>
-      {children}
-    </div>
-  );
-}
-
-function Row({ label, children }: { label: string; children: ReactNode }) {
-  return (
-    <span style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap', minWidth: 0 }}>
-      <span style={{ flex: '0 0 auto', fontSize: 11, fontWeight: 700, color: 'var(--mf-faint2)', minWidth: 56 }}>{label}</span>
-      {children}
-    </span>
-  );
-}
-
-function SubText({ children }: { children: ReactNode }) {
-  return <span style={{ fontSize: 11.5, color: 'var(--mf-faint2)', lineHeight: 1.55 }}>{children}</span>;
 }

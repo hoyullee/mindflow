@@ -27,11 +27,26 @@ const ROW = (over: Record<string, unknown> = {}) => ({
 
 type Row = Record<string, unknown>;
 
-function clientWith({ rows = [ROW()] as Row[], selectError = null as { message: string } | null, writeError = null as { message: string } | null, single = undefined as Row | null | undefined }) {
+function clientWith({
+  rows = [ROW()] as Row[],
+  selectError = null as { message: string } | null,
+  /** `or(...)`만 실패하는 서버 = 0034 미적용(반복 칼럼 없음) — 기본 조회로 물러나야 한다. */
+  recurrenceError = null as { message: string } | null,
+  writeError = null as { message: string } | null,
+  /** 첫 insert만 실패(반복 칼럼 없음) — 반복을 빼고 다시 저장해야 한다. */
+  insertRecurrenceError = null as { message: string } | null,
+  single = undefined as Row | null | undefined,
+}) {
   const order = vi.fn(async () => ({ data: rows, error: selectError }));
+  const orOrder = vi.fn(async () => ({ data: rows, error: recurrenceError ?? selectError }));
   const gte = vi.fn(() => ({ order }));
-  const lte = vi.fn(() => ({ gte }));
-  const insertSingle = vi.fn(async () => ({ data: single ?? rows[0], error: writeError }));
+  const or = vi.fn(() => ({ order: orOrder }));
+  const lte = vi.fn(() => ({ gte, or }));
+  let inserts = 0;
+  const insertSingle = vi.fn(async () => {
+    inserts += 1;
+    return { data: single ?? rows[0], error: inserts === 1 ? (insertRecurrenceError ?? writeError) : writeError };
+  });
   // 인자를 타입으로만 선언한다(`mock.calls`를 읽으려면 필요하고, 몸통에서는 쓰지 않는다).
   const insert = vi.fn<(row: Row) => { select: () => { single: typeof insertSingle } }>(() => ({ select: () => ({ single: insertSingle }) }));
   const readSingle = vi.fn(async () => ({ data: single === undefined ? rows[0] : single, error: single === null ? { message: 'no row' } : null }));
@@ -46,16 +61,42 @@ function clientWith({ rows = [ROW()] as Row[], selectError = null as { message: 
       delete: vi.fn(() => ({ eq: deleteEq })),
     })),
   } as unknown as SupabaseClient;
-  return { client, lte, gte, order, insert, update, updateEq, deleteEq, readSingle };
+  return { client, lte, gte, or, order, insert, update, updateEq, deleteEq, readSingle };
 }
 
 describe('SupabaseEventStore', () => {
-  it('조회는 구간과 겹치는 행을 묻는다(시작 ≤ 끝날 · 끝 ≥ 첫날)', async () => {
-    const { client, lte, gte } = clientWith({});
+  it('조회는 구간과 겹치는 행 + 반복 일정을 묻는다(반복은 끝 조건을 보지 않는다)', async () => {
+    const { client, lte, or } = clientWith({});
     const got = await new SupabaseEventStore(client).list('2026-07-26', '2026-09-05');
     expect(lte).toHaveBeenCalledWith('start_date', '2026-09-05');
+    // 반복 일정은 첫 회차가 몇 달 전이어도 이번 구간에 회차가 있을 수 있다.
+    expect(or).toHaveBeenCalledWith('end_date.gte.2026-07-26,recurrence.not.is.null');
+    expect(got).toHaveLength(1);
+  });
+
+  it('0034 미적용 서버에서는 기본 조회로 물러난다 — 일정은 그대로 뜨고 반복만 빠진다', async () => {
+    const { client, gte } = clientWith({ recurrenceError: { message: 'column calendar_events.recurrence does not exist' } });
+    const got = await new SupabaseEventStore(client).list('2026-07-26', '2026-09-05');
     expect(gte).toHaveBeenCalledWith('end_date', '2026-07-26');
     expect(got).toHaveLength(1);
+  });
+
+  it('반복 규칙은 RRULE 한 줄로 왕복한다 — 칼럼이 없으면 규칙만 빼고 저장한다', async () => {
+    const rule = 'RRULE:FREQ=WEEKLY;INTERVAL=2';
+    const withRule = clientWith({ rows: [ROW({ recurrence: rule })] });
+    const [e] = await new SupabaseEventStore(withRule.client).list('2026-08-01', '2026-08-31');
+    expect(e!.recurrence).toBe(rule);
+
+    const ok = clientWith({});
+    await new SupabaseEventStore(ok.client).create({ title: '격주 회의', startDate: '2026-08-26', endDate: '2026-08-26', allDay: true, recurrence: rule });
+    expect(ok.insert.mock.calls[0]![0]).toMatchObject({ recurrence: rule });
+
+    // 0034 미적용 — 첫 insert가 실패하면 규칙을 빼고 다시 저장한다(일정은 남아야 한다).
+    const old = clientWith({ insertRecurrenceError: { message: 'column "recurrence" of relation "calendar_events" does not exist' } });
+    const res = await new SupabaseEventStore(old.client).create({ title: '격주 회의', startDate: '2026-08-26', endDate: '2026-08-26', allDay: true, recurrence: rule });
+    expect(res.error).toBeUndefined();
+    expect(old.insert).toHaveBeenCalledTimes(2);
+    expect('recurrence' in old.insert.mock.calls[1]![0]).toBe(false);
   });
 
   it('행을 일정으로 옮길 때 시각의 초를 잘라내고, 시각 쌍이 온전할 때만 시간 일정으로 본다', async () => {
