@@ -14,6 +14,7 @@
  */
 
 import { useEffect, useMemo, useRef } from 'react';
+import type { MouseEvent as ReactMouseEvent } from 'react';
 import type { CalendarEntry } from '../calendar/entries';
 import { MiniCalendar } from '../calendar/MiniCalendar';
 import type { CalWidgetMode } from './model';
@@ -67,6 +68,8 @@ export interface CalWidgetProps {
   onSetMonth: (y: number, m: number) => void;
   /** 공휴일(구글 연동) — `날짜 → 이름`. 연동 안 했으면 빈 객체다. */
   holidays?: Record<string, string>;
+  /** 빈 자리를 **더블클릭** — 그 날짜로 새 일정(요청). */
+  onNewOnDay?: (iso: string) => void;
 }
 
 export function CalWidgetBody(props: CalWidgetProps) {
@@ -220,7 +223,7 @@ function WeekBody({ entries, todayIso, cols, rows, surface, ym, weekOffset, selD
 }
 
 /** 월간 — 달력(+ 옆 패널). 3열은 달력만 그린다(요청 — 옆 패널까지 넣으면 칸이 좁다). */
-function MonthBody({ entries, todayIso, mode, cols, rows, surface, ym, side, selDay, onPickDay, onPickEntry, holidays }: CalWidgetProps) {
+function MonthBody({ entries, todayIso, mode, cols, rows, surface, ym, side, selDay, onPickDay, onPickEntry, holidays, onNewOnDay }: CalWidgetProps) {
   const withSide = mode === 'month';
   const perCell = rows >= 4 ? 2 : 1;
   const cells = useMemo(() => monthCells(ym.y, ym.m, entries, todayIso, perCell, 6, holidays), [ym.y, ym.m, entries, todayIso, perCell, holidays]);
@@ -307,9 +310,20 @@ function MonthBody({ entries, todayIso, mode, cols, rows, surface, ym, side, sel
             };
             // 옆 패널이 없는 보기(3열)에서는 날짜 칸이 **누를 대상이 아니다** —
             // 고른 날을 보여 줄 자리가 없으므로 손가락 커서를 내주지 않는다.
+            // 빈 자리 더블클릭 = 그 날짜로 새 일정(요청). 칩 위에서 온 것은 그
+            // 항목의 일이라 손대지 않는다(일정 화면의 `MonthGrid`와 같은 규칙).
+            const dbl =
+              c.inMonth && onNewOnDay
+                ? (e: ReactMouseEvent) => {
+                    if ((e.target as HTMLElement).closest('[data-cal-widget-chip],[data-cal-widget-bar]')) return;
+                    e.stopPropagation();
+                    e.preventDefault();
+                    onNewOnDay(c.iso);
+                  }
+                : undefined;
             if (!withSide) {
               return (
-                <div key={c.iso} data-cal-widget-cell={c.iso} style={{ ...cellStyle, cursor: 'default' }}>
+                <div key={c.iso} data-cal-widget-cell={c.iso} onDoubleClick={dbl} style={{ ...cellStyle, cursor: 'default' }}>
                   {cellInner}
                 </div>
               );
@@ -326,6 +340,7 @@ function MonthBody({ entries, todayIso, mode, cols, rows, surface, ym, side, sel
                   e.stopPropagation();
                   onPickDay(c.iso);
                 }}
+                onDoubleClick={dbl}
                 style={{ ...cellStyle, cursor: c.inMonth ? 'pointer' : 'default' }}
               >
                 {cellInner}

@@ -36,6 +36,7 @@ function cellAt(x: number, y: number): string | null {
 export function MonthGrid({
   cells,
   onPickDay,
+  onNewOnDay,
   onPickEntry,
   onMore,
   onShift,
@@ -45,6 +46,8 @@ export function MonthGrid({
 }: {
   cells: readonly MonthCell[];
   onPickDay: (iso: string) => void;
+  /** 빈 자리를 **더블클릭** — 그 날짜로 새 일정(요청). 없으면 그 동작이 없다. */
+  onNewOnDay?: (iso: string) => void;
   onPickEntry: (e: CalendarEntry) => void;
   onMore: (iso: string) => void;
   /** 항목을 다른 칸에 놓았다 — 며칠 옮길지(기간이면 시작일·기한이 함께 움직인다). */
@@ -136,6 +139,7 @@ export function MonthGrid({
             compact={compact}
             surface={surface}
             onPickDay={onPickDay}
+            onNewOnDay={onNewOnDay}
             onPickEntry={clickEntry}
             onMore={onMore}
             onGrab={grab}
@@ -204,6 +208,7 @@ function DayCell({
   compact,
   surface,
   onPickDay,
+  onNewOnDay,
   onPickEntry,
   onMore,
   onGrab,
@@ -215,6 +220,7 @@ function DayCell({
   compact: boolean;
   surface: ChipSurface;
   onPickDay: (iso: string) => void;
+  onNewOnDay?: (iso: string) => void;
   onPickEntry: (e: CalendarEntry) => void;
   onMore: (iso: string) => void;
   onGrab: (ev: ReactPointerEvent, e: CalendarEntry, fromIso: string) => void;
@@ -287,6 +293,18 @@ function DayCell({
       tabIndex={inMonth ? 0 : undefined}
       aria-label={inMonth ? `${cell.n}일` : undefined}
       onClick={inMonth ? () => onPickDay(cell.iso) : undefined}
+      // 빈 자리를 더블클릭하면 **그 날짜로 새 일정**(요청 — 달력 앱의 관례).
+      // 칩·바·`+N` 위에서 온 더블클릭은 그 항목의 일이라 손대지 않는다: 두 번째
+      // 클릭이 칩을 열어 둔 상태에서 팝업까지 겹쳐 뜨면 무엇을 하려던 건지 흐려진다.
+      onDoubleClick={
+        inMonth && onNewOnDay
+          ? (e) => {
+              if ((e.target as HTMLElement).closest('[data-cal-chip],[data-cal-bar],[data-cal-more]')) return;
+              e.preventDefault();
+              onNewOnDay(cell.iso);
+            }
+          : undefined
+      }
       onKeyDown={
         inMonth
           ? (e) => {

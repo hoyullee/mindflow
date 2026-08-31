@@ -17,6 +17,7 @@ import { useCalendarEntries } from '../calendar/useCalendarEntries';
 import { useCalendarEvents, type CalendarEventsApi } from '../calendar/useCalendarEvents';
 import { eventEntries, googleEntries, holidayMap, type CalendarEntry } from '../calendar/entries';
 import { useGoogleCalendar } from '../calendar/useGoogleCalendar';
+import { GoogleConnectButton } from '../calendar/GoogleConnectButton';
 import { addDays, addMonth, daysBetween, isoOf, partsOf, todayISO, weekStartISO } from '../calendar/model';
 import { homeChipSurface } from '../theme';
 import { CalendarGlyph } from '../calendar/CalendarView';
@@ -649,6 +650,9 @@ function DashWidget({ itemId, docId, itemKind, size, committedSize, maxCols, edi
           </svg>
         </button>
       )}
+      {/* 구글 캘린더 연동(요청) — 아직 켜지 않았을 때만. 1열 머리는 좁아 ‹ ›만
+          남기므로 여기서도 생략한다(설정에서 켤 수 있다). */}
+      {c >= 2 && <GoogleConnectButton api={googleApi} size={NAV_H} />}
       {/* `오늘`은 **크기와 무관하게** 뜬다(제보: 1×1에서 날짜를 바꾸면 돌아올 길이
           없다). 1열은 머리가 좁아 좌우 여백만 줄인다. */}
       {calNotNow && (
@@ -864,6 +868,7 @@ function DashWidget({ itemId, docId, itemKind, size, committedSize, maxCols, edi
           onPickEntry={pickCalEntry}
           onSetMonth={calSetMonth}
           holidays={calHolidays}
+          onNewOnDay={(iso) => controller.openNewEvent(iso, true)}
         />
       ) : missing ? (
         <div style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16, fontSize: 11.5, color: 'var(--mf-faint)', textAlign: 'center' }}>휴지통에 있거나 삭제된 문서예요. 우클릭으로 내릴 수 있어요.</div>

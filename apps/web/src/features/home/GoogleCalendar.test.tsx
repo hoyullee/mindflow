@@ -307,6 +307,33 @@ describe('구글 캘린더 겹치기(PR5)', () => {
     });
   });
 
+  it('연동 전에는 일정 화면 머리에 연동 아이콘이 뜨고, 누르면 곧바로 동의 창이다(요청)', async () => {
+    seed();
+    const gis = stubGis();
+    stubFetch();
+    clientId = 'test-client.apps.googleusercontent.com';
+    const user = userEvent.setup();
+    const { container } = renderHome();
+    await openCalendar(container, user);
+    const btn = await waitFor(() => {
+      const el = document.querySelector('[data-google-connect-cal]');
+      expect(el).toBeTruthy();
+      return el as HTMLElement;
+    });
+    await user.click(btn);
+    expect(gis.requested).toEqual(['consent']);
+    // 켜고 나면 할 일이 끝났으므로 아이콘은 사라진다(세부 조정은 설정이 맡는다)
+    await waitFor(() => expect(document.querySelector('[data-google-connect-cal]')).toBeNull());
+  });
+
+  it('클라이언트 ID가 없으면 연동 아이콘도 없다 — 눌러도 아무 일 없는 버튼을 두지 않는다', async () => {
+    seed();
+    const user = userEvent.setup();
+    const { container } = renderHome();
+    await openCalendar(container, user);
+    expect(document.querySelector('[data-google-connect-cal]')).toBeNull();
+  });
+
   it('연결을 해제하면 설정이 지워지고 토큰도 버린다', async () => {
     seed({ calendars: ['me@example.com'] });
     stubGis();

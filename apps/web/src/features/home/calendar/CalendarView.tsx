@@ -14,6 +14,7 @@ import { CalendarDetailHost } from './CalendarDetail';
 import { NewEventModal } from './NewEventModal';
 import { EventDetail } from './EventDetail';
 import { GoogleEventDetail } from './GoogleEventDetail';
+import { GoogleConnectButton } from './GoogleConnectButton';
 import { useCalendarEvents } from './useCalendarEvents';
 import { eventEntries, googleEntries, holidayMap } from './entries';
 import { useGoogleCalendar } from './useGoogleCalendar';
@@ -163,6 +164,8 @@ export function CalendarView({
             </svg>
             새 일정
           </button>
+          {/* 구글 캘린더 연동(요청) — 아직 켜지 않았을 때만 뜬다. */}
+          <GoogleConnectButton api={google} />
           {!isMobile && (
             <>
             {/* 마감 목록은 날짜별 보기와 **별개**다(원본 `dlOpen`) — 달력 위에 겹치는
@@ -212,6 +215,7 @@ export function CalendarView({
             surface={surface}
             compact={isMobile}
             onPickDay={controller.selectCalDay}
+            onNewOnDay={(iso) => controller.openNewEvent(iso, true)}
             onPickEntry={openEntry}
             onMore={controller.selectCalDay}
             onShift={(e, days) => void controller.shiftCalendarCard(e.docId, e.cardId, days)}
