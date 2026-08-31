@@ -205,6 +205,8 @@ export function useHomeController() {
     // 홈 색상 테마의 정본은 이 블롭이다(기기 간 동기화). 저장된 값이 있으면 곧바로
     // 입히고 이 기기 캐시도 맞춰 둔다 — 다음 부팅의 첫 페인트가 바로 이 색이 되도록.
     const wsTheme = ws && ws.theme !== undefined ? homeThemeKeyOf(ws.theme) : null;
+    // 구글 겹치기 설정 — 모양이 어긋난 값은 조용히 버린다(옛/손상 블롭 방어).
+    const wsGoogle = ws && ws.google && Array.isArray(ws.google.calendars) ? { calendars: ws.google.calendars.filter((c): c is string => typeof c === 'string') } : null;
     // 대시보드 — 스페이스와 같은 블롭에 실려 온다. 저장을 못 읽었으면 빈 목록으로
     // 두되(canPersistWorkspaceRef가 저장을 막으므로 덮어쓸 위험은 없다) 읽었으면
     // 모양을 검증해 들인다.
@@ -308,6 +310,7 @@ export function useHomeController() {
       // 그러면 업로드가 성공한 다음 진입에서는 백엔드에 행이 있어 묶기 조건이 깨지고,
       // 카드는 영원히 docId 없는 상태로 남는다.)
       const theme = wsTheme ?? prev.theme;
+      const google = ws ? wsGoogle : prev.google;
       const dashboards = wsDashboards ?? prev.dashboards;
       // ---- 홈의 첫 화면(요청: 진입하면 기본 대시보드) ----
       // 이 탭에 남은 화면이 없으면 = **첫 진입**이므로 기본 대시보드(목록 맨 위 =
@@ -342,6 +345,7 @@ export function useHomeController() {
         recent: recentMigration.changed ? recentBeforeMigration : recent,
         theme,
         dashboards,
+        google,
       });
       // Always flip `loaded` so the grid drops its loading skeleton and
       // renders the real (possibly empty) state.
@@ -351,7 +355,7 @@ export function useHomeController() {
       // 카드의 "공유 중" 표식 원천 — 내가 걸어 둔 초대/링크의 일괄 요약. 조회
       // 실패는 빈 객체(표식만 빠지고 홈은 그대로).
       const sharedByMe = res[3].status === 'fulfilled' ? res[3].value : prev.sharedByMe;
-      return { ...prev, theme, dashboards, activeDash, activeCal, spaces, activeSpace, curFolder, mapFolders, favs, deleted, trash, recent, docTimes, sharedByMe, sharedMaps: sharedMetas.map((m) => ({ docId: m.id, title: m.title, updatedAt: m.updatedAt, role: m.sharedRole ?? 'edit', isNew: unseen.has(m.id) })), loaded: true };
+      return { ...prev, theme, google, dashboards, activeDash, activeCal, spaces, activeSpace, curFolder, mapFolders, favs, deleted, trash, recent, docTimes, sharedByMe, sharedMaps: sharedMetas.map((m) => ({ docId: m.id, title: m.title, updatedAt: m.updatedAt, role: m.sharedRole ?? 'edit', isNew: unseen.has(m.id) })), loaded: true };
     });
     // 마지막 저장자가 **내가 아닌** 문서들만 이름을 물어본다(0015). 혼자 쓰는
     // 사람은 대상이 하나도 없어 요청 자체가 나가지 않는다. 실패해도 조용히 넘어간다 —
@@ -727,7 +731,7 @@ export function useHomeController() {
   // can't race a pending timer — space/folder edits are deliberate and infrequent.
   useEffect(() => {
     if (!state.loaded || !canPersistWorkspaceRef.current) return;
-    const sig = JSON.stringify({ spaces: state.spaces, mapFolders: state.mapFolders, recent: state.recent, theme: state.theme, dashboards: state.dashboards });
+    const sig = JSON.stringify({ spaces: state.spaces, mapFolders: state.mapFolders, recent: state.recent, theme: state.theme, dashboards: state.dashboards, google: state.google });
     if (sig === savedWorkspaceSigRef.current) return;
     savedWorkspaceSigRef.current = sig;
     // A genuine user change is being persisted — from here on the auth-confirmed
@@ -735,10 +739,10 @@ export function useHomeController() {
     workspaceMutatedRef.current = true;
     // `recent` rides along in the same per-user blob (opening a map bumps it), so
     // the recent-items list syncs across devices just like spaces/folders do.
-    void spaceStore.save({ spaces: state.spaces, mapFolders: state.mapFolders, recent: state.recent, theme: state.theme, dashboards: state.dashboards }).catch(() => {
+    void spaceStore.save({ spaces: state.spaces, mapFolders: state.mapFolders, recent: state.recent, theme: state.theme, dashboards: state.dashboards, ...(state.google ? { google: state.google } : {}) }).catch(() => {
       /* save failed (offline, RLS, ...) — non-fatal; the next change retries */
     });
-  }, [state.loaded, state.spaces, state.mapFolders, state.recent, state.theme, state.dashboards, spaceStore]);
+  }, [state.loaded, state.spaces, state.mapFolders, state.recent, state.theme, state.dashboards, state.google, spaceStore]);
 
   // ---- drive (fake OAuth demo) ----
   const onDriveClick = () => patch({ activeSpace: 'drive', curFolder: null, driveFolder: null });
@@ -993,6 +997,13 @@ export function useHomeController() {
     patch({ theme: key });
   };
 
+  /**
+   * 구글 캘린더 겹치기 설정 — 저장은 기존 워크스페이스 자동저장이 한다(테마와 같은 길).
+   * 블롭에는 **고른 캘린더만** 남긴다: "켰는가"는 이 키가 있는가로 이미 말해진다
+   * (플래그를 따로 두면 둘이 어긋날 수 있다).
+   */
+  const setGoogleCalendars = (next: { calendars: string[] } | null) => patch({ google: next ? { calendars: next.calendars } : null });
+
   const openFeedback = () => patch({ settingsOpen: false, feedbackOpen: true });
   const closeFeedback = () => patch({ feedbackOpen: false });
   const closeAccountSettings = () => patch({ accountSettingsOpen: false });
@@ -1114,6 +1125,9 @@ export function useHomeController() {
   const closeNewEvent = () => patch({ calNewEvent: null });
   /** Geurio 일정을 눌렀다 — 칸반 카드 상세와 다른 팝업이다(고칠 것이 다르다). */
   const openCalendarEvent = (id: string) => patch({ calEventDetail: id });
+  /** 구글 일정 상세(읽기 전용) — 고칠 것이 없어 여는 것과 닫는 것뿐이다. */
+  const openCalendarGoogle = (id: string) => patch({ calGoogleDetail: id });
+  const closeCalendarGoogle = () => patch({ calGoogleDetail: null });
   const closeCalendarEvent = () => patch({ calEventDetail: null });
   /** LNB `새 대시보드` — 예전에는 이름을 자동으로 붙여 곧바로 만들었다. 이제는
    *  이름·색을 받는 팝업을 연다(첨부 디자인). 실제 생성은 `submitDashDialog`. */
@@ -2767,6 +2781,7 @@ export function useHomeController() {
     openFeedback,
     closeFeedback,
     setTheme,
+    setGoogleCalendars,
     closeAccountSettings,
     openAccountDetail,
     openProfileDetail,
@@ -2797,6 +2812,8 @@ export function useHomeController() {
     openNewEvent,
     closeNewEvent,
     openCalendarEvent,
+    openCalendarGoogle,
+    closeCalendarGoogle,
     closeCalendarEvent,
     openNewDash,
     toggleDashReorder,

@@ -6,6 +6,8 @@ import { HOME_THEMES, HOME_THEME_KEYS } from '../../theme';
 import { RadioCards } from '../../../../components/Segmented';
 import { GoogleIcon } from '../../../auth/GoogleIcon';
 import { Modal, MODAL_DIM } from '../../../../components/Modal';
+import { useGoogleCalendar } from '../../calendar/useGoogleCalendar';
+import { GoogleCalendarSection } from './GoogleCalendarSection';
 
 interface Props {
   state: HomeState;
@@ -16,6 +18,10 @@ interface Props {
  * Shows the signed-in account and hosts the destructive "회원 탈퇴" entry, kept
  * in its own bottom "계정 관리" section so it never sits next to routine actions. */
 export function AccountSettingsModal({ state, controller }: Props) {
+  // 연동 구획 — 구글 캘린더는 **설정에서만** 켜고 끈다(일정 화면은 결과만 그린다).
+  // 여기서는 그릴 달이 없으므로 `list` 모드다(목록만), 그리고 **모달이 열려 있을 때만**
+  // — 홈을 켤 때마다 캘린더 목록을 받아 오지 않는다(`accountSettingsOpen`).
+  const googleApi = useGoogleCalendar(1970, 1, { enabled: !!state.google, calendars: state.google?.calendars ?? [] }, controller.setGoogleCalendars, state.accountSettingsOpen ? 'list' : 'off');
   const visible = state.accountSettingsOpen;
   const initial = avatarLabel(state.userName);
   // 로그인 수단 — `null`은 확인 불가(RPC 미배포·네트워크·데모 초기). 그때는
@@ -469,6 +475,10 @@ export function AccountSettingsModal({ state, controller }: Props) {
               <path d="m9 6 6 6-6 6" />
             </svg>
           </div>
+
+          {/* 연동 — 구글 캘린더 겹치기(PR5). 배포에 클라이언트 ID가 없으면 이 구획은
+              통째로 그려지지 않는다(눌러도 아무 일 없는 버튼을 두지 않는다). */}
+          <GoogleCalendarSection api={googleApi} />
 
           {/* 색상 테마 — LNB 최하단에 있다가 사용자 요청으로 이리 왔다(설정에 모으는 게
               자연스럽다). 적용 버튼 없이 **누르는 즉시** 뒤 화면까지 색이 바뀐다 —

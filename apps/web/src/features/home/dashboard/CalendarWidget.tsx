@@ -14,6 +14,7 @@
  */
 
 import { useEffect, useMemo, useRef } from 'react';
+import type { MouseEvent as ReactMouseEvent } from 'react';
 import type { CalendarEntry } from '../calendar/entries';
 import { MiniCalendar } from '../calendar/MiniCalendar';
 import type { CalWidgetMode } from './model';
@@ -65,6 +66,10 @@ export interface CalWidgetProps {
   onPickEntry: (e: CalendarEntry) => void;
   /** 미니 달력의 달 이동(1열 보기). */
   onSetMonth: (y: number, m: number) => void;
+  /** 공휴일(구글 연동) — `날짜 → 이름`. 연동 안 했으면 빈 객체다. */
+  holidays?: Record<string, string>;
+  /** 빈 자리를 **더블클릭** — 그 날짜로 새 일정(요청). */
+  onNewOnDay?: (iso: string) => void;
 }
 
 export function CalWidgetBody(props: CalWidgetProps) {
@@ -109,7 +114,7 @@ function ListBody({ entries, todayIso, cols, rows, surface, weekOffset, side, se
 }
 
 /** 1열 + 높이 — 위는 이번 주 마감, 아래는 일정 화면과 **같은 미니 달력**(요청). */
-function ListMiniBody({ entries, todayIso, rows, surface, ym, weekOffset, side, selDay, onPickDay, onPickEntry, onSetMonth }: CalWidgetProps) {
+function ListMiniBody({ entries, todayIso, rows, surface, ym, weekOffset, side, selDay, onPickDay, onPickEntry, onSetMonth, holidays }: CalWidgetProps) {
   const src = useMemo(() => listSource(entries, todayIso, weekOffset, side, selDay), [entries, todayIso, weekOffset, side, selDay]);
   return (
     <div data-cal-widget-listmini style={{ flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
@@ -118,7 +123,7 @@ function ListMiniBody({ entries, todayIso, rows, surface, ym, weekOffset, side, 
         <DeadlineList src={src} cap={rows >= 4 ? 6 : 3} todayIso={todayIso} surface={surface} showTime={side === 'day'} empty={side === 'day' ? '이 날에는 일정이 없어요' : `${weekName(todayIso, weekOffset)} 마감이 없어요`} onPickEntry={onPickEntry} />
       </div>
       <div style={{ flexShrink: 0, padding: '10px 12px 12px', borderTop: '1px solid var(--mf-hairline)' }}>
-        <MiniCalendar entries={entries} todayIso={todayIso} y={ym.y} m={ym.m} selectedDay={side === 'day' ? selDay : ''} onPickDay={onPickDay} onSetMonth={onSetMonth} cellH={24} />
+        <MiniCalendar entries={entries} todayIso={todayIso} y={ym.y} m={ym.m} selectedDay={side === 'day' ? selDay : ''} onPickDay={onPickDay} onSetMonth={onSetMonth} holidays={holidays} cellH={24} />
       </div>
     </div>
   );
@@ -159,7 +164,7 @@ function DeadlineList({
  * 없지만, **3열 이상**(3×2·4×2)에는 일정 화면 오른쪽 위의 그 미니 달력을 옆 패널로
  * 둔다(요청) — 주간만 보면 "지금 이 주가 달의 어디쯤인가"를 알 수 없다.
  */
-function WeekBody({ entries, todayIso, cols, rows, surface, ym, weekOffset, selDay, onPickDay, onPickEntry, onSetMonth }: CalWidgetProps) {
+function WeekBody({ entries, todayIso, cols, rows, surface, ym, weekOffset, selDay, onPickDay, onPickEntry, onSetMonth, holidays }: CalWidgetProps) {
   const start = addDays(weekStartISO(todayIso), weekOffset * 7);
   const days = useMemo(() => Array.from({ length: 7 }, (_, i) => addDays(start, i)), [start]);
   const withSide = cols >= 3;
@@ -211,17 +216,17 @@ function WeekBody({ entries, todayIso, cols, rows, surface, ym, weekOffset, selD
       <div data-cal-widget-side="mini" style={{ flex: `0 0 ${MINI_SIDE_W}px`, minWidth: 0, padding: 8, display: 'flex', overflow: 'hidden' }}>
         {/* 옆 패널을 **꽉 채운다**(제보: 아래에 빈 여백이 남는다) — 여섯 줄이 남은
             높이를 나눠 갖고, 폭도 칸이 정사각에 가깝도록 잡았다(2행 위젯 높이 기준). */}
-        <MiniCalendar entries={entries} todayIso={todayIso} y={ym.y} m={ym.m} selectedDay={selDay} onPickDay={onPickDay} onSetMonth={onSetMonth} fill />
+        <MiniCalendar entries={entries} todayIso={todayIso} y={ym.y} m={ym.m} selectedDay={selDay} onPickDay={onPickDay} onSetMonth={onSetMonth} holidays={holidays} fill />
       </div>
     </div>
   );
 }
 
 /** 월간 — 달력(+ 옆 패널). 3열은 달력만 그린다(요청 — 옆 패널까지 넣으면 칸이 좁다). */
-function MonthBody({ entries, todayIso, mode, cols, rows, surface, ym, side, selDay, onPickDay, onPickEntry }: CalWidgetProps) {
+function MonthBody({ entries, todayIso, mode, cols, rows, surface, ym, side, selDay, onPickDay, onPickEntry, holidays, onNewOnDay }: CalWidgetProps) {
   const withSide = mode === 'month';
   const perCell = rows >= 4 ? 2 : 1;
-  const cells = useMemo(() => monthCells(ym.y, ym.m, entries, todayIso, perCell), [ym.y, ym.m, entries, todayIso, perCell]);
+  const cells = useMemo(() => monthCells(ym.y, ym.m, entries, todayIso, perCell, 6, holidays), [ym.y, ym.m, entries, todayIso, perCell, holidays]);
   return (
     <div data-cal-widget-month style={{ flex: 1, minHeight: 0, display: 'flex', minWidth: 0, overflow: 'hidden' }}>
       <div style={{ flex: withSide ? '1 1 75%' : '1 1 auto', minWidth: 0, display: 'flex', flexDirection: 'column', gap: 5, padding: '9px 11px 10px', borderRight: withSide ? '1px solid var(--mf-hairline)' : 0 }}>
@@ -305,9 +310,20 @@ function MonthBody({ entries, todayIso, mode, cols, rows, surface, ym, side, sel
             };
             // 옆 패널이 없는 보기(3열)에서는 날짜 칸이 **누를 대상이 아니다** —
             // 고른 날을 보여 줄 자리가 없으므로 손가락 커서를 내주지 않는다.
+            // 빈 자리 더블클릭 = 그 날짜로 새 일정(요청). 칩 위에서 온 것은 그
+            // 항목의 일이라 손대지 않는다(일정 화면의 `MonthGrid`와 같은 규칙).
+            const dbl =
+              c.inMonth && onNewOnDay
+                ? (e: ReactMouseEvent) => {
+                    if ((e.target as HTMLElement).closest('[data-cal-widget-chip],[data-cal-widget-bar]')) return;
+                    e.stopPropagation();
+                    e.preventDefault();
+                    onNewOnDay(c.iso);
+                  }
+                : undefined;
             if (!withSide) {
               return (
-                <div key={c.iso} data-cal-widget-cell={c.iso} style={{ ...cellStyle, cursor: 'default' }}>
+                <div key={c.iso} data-cal-widget-cell={c.iso} onDoubleClick={dbl} style={{ ...cellStyle, cursor: 'default' }}>
                   {cellInner}
                 </div>
               );
@@ -324,6 +340,7 @@ function MonthBody({ entries, todayIso, mode, cols, rows, surface, ym, side, sel
                   e.stopPropagation();
                   onPickDay(c.iso);
                 }}
+                onDoubleClick={dbl}
                 style={{ ...cellStyle, cursor: c.inMonth ? 'pointer' : 'default' }}
               >
                 {cellInner}

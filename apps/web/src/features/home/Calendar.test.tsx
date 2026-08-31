@@ -238,7 +238,16 @@ describe('일정 화면', () => {
     await openCalendar();
     // 항상 6주 = 42칸
     expect(document.querySelectorAll('[data-day-cell]').length).toBe(42);
-    await waitFor(() => expect(chipTexts()).toContain('다른 스페이스 카드'));
+    // 다른 스페이스 카드는 D+1이라 **월말에는 다음 달 칸**이고, 격자는 이웃 달 칸에
+    // 칩을 놓지 않는다(설계) — 그때는 그 달로 넘겨서 확인한다. 이 단정의 요지는
+    // "전 스페이스를 함께 모으는가"이지 그 카드가 이 달에 있는가가 아니다.
+    await waitFor(() => expect(chipTexts().length).toBeGreaterThan(0));
+    if (!chipTexts().includes('다른 스페이스 카드')) {
+      fireEvent.click(document.querySelector('[aria-label="다음 달"]')!);
+      await waitFor(() => expect(chipTexts()).toContain('다른 스페이스 카드'));
+      fireEvent.click(document.querySelector('[aria-label="이전 달"]')!);
+      await waitFor(() => expect(chipTexts()).toContain('오늘 마감 카드'));
+    }
     expect(chipTexts()).toContain('오늘 마감 카드');
     // 완료 열 카드는 어디에도 없다
     expect(document.body.textContent).not.toContain('완료된 카드');
@@ -926,6 +935,32 @@ describe('일정 화면', () => {
     });
   });
 
+
+  it('날의 빈 자리를 더블클릭하면 그 날짜로 새 일정 팝업이 열린다(요청)', async () => {
+    renderHome([META('d1', '스프린트 보드'), META('d2', '이슈 트리아지')], BODIES());
+    await openCalendar();
+    const day = shiftInMonth(2);
+    const cell = document.querySelector(`[data-day-cell="${day}"]`) as HTMLElement;
+    expect(cell).toBeTruthy();
+    fireEvent.doubleClick(cell);
+    const dialog = await screen.findByRole('dialog', { name: '새 일정' });
+    // 누른 칸이 곧 기본 날짜다 — 팝업의 날짜 버튼이 그 날을 가리킨다
+    const want = `${Number(day.slice(5, 7))}월 ${Number(day.slice(8, 10))}일`;
+    const dateBtns = [...dialog.querySelectorAll('button')].filter((b) => b.textContent?.includes(want));
+    expect(dateBtns.length).toBeGreaterThan(0);
+  });
+
+  it('칩 위에서 온 더블클릭은 새 일정이 아니다 — 그 항목의 일이다', async () => {
+    renderHome([META('d1', '스프린트 보드'), META('d2', '이슈 트리아지')], BODIES());
+    await openCalendar();
+    const chip = await waitFor(() => {
+      const el = document.querySelector('[data-cal-chip]');
+      expect(el).toBeTruthy();
+      return el as HTMLElement;
+    });
+    fireEvent.doubleClick(chip);
+    expect(screen.queryByRole('dialog', { name: '새 일정' })).toBeNull();
+  });
 });
 
 describe('일정 화면 후속(제보 6건)', () => {
@@ -1036,4 +1071,5 @@ describe('팝업·팝오버 안의 버튼 hover(제보)', () => {
     // 그라디언트 1차 버튼(새 일정·새로 만들기)도 포털 안에서 밝기만 움직인다.
     expect(css).toContain('[data-modal-overlay] .mf-ctl-primary:hover');
   });
+
 });

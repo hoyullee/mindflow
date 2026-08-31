@@ -23,6 +23,7 @@ export function CalendarSide({
   onSetMonth,
   onNewEvent,
   onClose,
+  holidays,
 }: {
   entries: readonly CalendarEntry[];
   todayIso: string;
@@ -37,6 +38,8 @@ export function CalendarSide({
   onNewEvent: (iso: string) => void;
   /** 사이드 접기 — 머리의 ✕(디자인 원본). 위 토글을 다시 누르는 것과 같다. */
   onClose: () => void;
+  /** 공휴일(구글 연동) — 미니 달력이 큰 달력과 같은 색으로 그린다. */
+  holidays?: Record<string, string>;
 }) {
   const dayList = entriesOn(entries, selectedDay);
   const timeline = dayTimeline(entries, selectedDay);
@@ -62,6 +65,7 @@ export function CalendarSide({
       {/* 미니 달력 — 대시보드 캘린더 위젯(1열)과 **같은 컴포넌트**를 쓴다. */}
       <div style={{ flexShrink: 0, padding: '14px 14px 12px', borderBottom: '1px solid var(--mf-border-soft)' }}>
         <MiniCalendar
+          holidays={holidays}
           entries={entries}
           todayIso={todayIso}
           y={y}

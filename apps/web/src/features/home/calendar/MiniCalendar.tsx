@@ -20,6 +20,7 @@ export function MiniCalendar({
   extraNav,
   cellH = 26,
   fill = false,
+  holidays,
 }: {
   entries: readonly CalendarEntry[];
   todayIso: string;
@@ -38,8 +39,10 @@ export function MiniCalendar({
    * 안쪽 원**이 진다.
    */
   fill?: boolean;
+  /** 공휴일(구글 연동) — 큰 달력과 같은 규칙으로 숫자를 일요일 색으로 그린다. */
+  holidays?: Record<string, string>;
 }) {
-  const cells = monthCells(y, m, entries, todayIso, 0);
+  const cells = monthCells(y, m, entries, todayIso, 0, 6, holidays);
   return (
     <div data-mini-cal style={fill ? { flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column', height: '100%', minHeight: 0 } : undefined}>
       <div style={{ display: 'flex', alignItems: 'center', gap: 4, padding: '0 2px 9px', flexShrink: 0 }}>

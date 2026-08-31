@@ -116,8 +116,9 @@ export interface MonthCell {
   /** 0=일 … 6=토. */
   dow: number;
   /**
-   * 공휴일 이름 — 있으면 일요일과 같은 색으로 그린다. 지금은 공휴일 원천이 없어
-   * 언제나 비어 있고(달력 연동 단계에서 채운다) 자리만 열어 둔다.
+   * 공휴일 이름 — 있으면 일요일과 같은 색으로 그린다. 원천은 사용자가 구독한
+   * **구글 공휴일 캘린더**다(PR5 — `entries.holidayMap`). 연동하지 않았으면 비어
+   * 있고, 달력은 예전 그대로 그린다.
    */
   holiday?: string;
   /** 그 날 하루짜리 항목(기간은 제외 — 바로 그린다). */
@@ -131,7 +132,7 @@ export interface MonthCell {
  * 달력 격자. 월마다 표 높이가 달라지지 않게 **항상 6주(42칸)**로 채운다(디자인 원본).
  * `perCell`은 한 칸에 보이는 칩 수 — 넘치면 `moreN`으로 접는다.
  */
-export function monthCells(y: number, m: number, entries: readonly CalendarEntry[], todayIso: string, perCell = 2, weeks = 6): MonthCell[] {
+export function monthCells(y: number, m: number, entries: readonly CalendarEntry[], todayIso: string, perCell = 2, weeks = 6, holidays: Record<string, string> = {}): MonthCell[] {
   const first = new Date(y, m - 1, 1);
   const firstDow = first.getDay();
   const days = new Date(y, m, 0).getDate();
@@ -161,6 +162,7 @@ export function monthCells(y: number, m: number, entries: readonly CalendarEntry
       isToday: inMonth && iso === todayIso,
       dim: inMonth ? iso < todayIso : false,
       dow,
+      ...(inMonth && holidays[iso] ? { holiday: holidays[iso] } : {}),
       entries: list.slice(0, perCell),
       bars,
       moreN: Math.max(0, list.length - perCell),

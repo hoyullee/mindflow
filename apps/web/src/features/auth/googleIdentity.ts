@@ -54,42 +54,55 @@ function currentGsiApi(): GsiIdApi | null {
   return w.google?.accounts?.id ?? null;
 }
 
-let gisLoadPromise: Promise<GsiIdApi | null> | null = null;
+let gisLoadPromise: Promise<void> | null = null;
 
 /**
- * Resolves the GIS `accounts.id` API, injecting the script tag on first call
- * (memoized — repeated mounts share one load). Resolves `null` on load
- * failure or timeout so callers can fall back; NEVER rejects.
+ * Injects the GIS script once and resolves when it has loaded (or the attempt
+ * gave up). Memoized — the sign-in button and the Calendar token client
+ * (`features/home/calendar/googleCalendar.ts`) share ONE injection; two script
+ * tags would define `window.google` twice. NEVER rejects: callers check for
+ * the API they need afterwards and fall back when it isn't there.
  */
-export function loadGoogleIdApi(): Promise<GsiIdApi | null> {
-  const existing = currentGsiApi();
-  if (existing) return Promise.resolve(existing);
+export function loadGisScript(): Promise<void> {
+  if (currentGsiApi()) return Promise.resolve();
   if (gisLoadPromise) return gisLoadPromise;
 
-  gisLoadPromise = new Promise<GsiIdApi | null>((resolve) => {
+  gisLoadPromise = new Promise<void>((resolve) => {
     let settled = false;
-    const settle = (api: GsiIdApi | null) => {
+    const settle = (loaded: boolean) => {
       if (settled) return;
       settled = true;
       clearTimeout(timer);
       // A failed load shouldn't poison future attempts (e.g. the user comes
       // back online and re-navigates to /login without a full reload).
-      if (!api) gisLoadPromise = null;
-      resolve(api);
+      if (!loaded) gisLoadPromise = null;
+      resolve();
     };
-    const timer = setTimeout(() => settle(currentGsiApi()), LOAD_TIMEOUT_MS);
+    const timer = setTimeout(() => settle(!!currentGsiApi()), LOAD_TIMEOUT_MS);
     try {
       const script = document.createElement('script');
       script.src = GIS_SRC;
       script.async = true;
-      script.onload = () => settle(currentGsiApi());
-      script.onerror = () => settle(null);
+      script.onload = () => settle(true);
+      script.onerror = () => settle(false);
       document.head.appendChild(script);
     } catch {
-      settle(null);
+      settle(false);
     }
   });
   return gisLoadPromise;
+}
+
+/**
+ * Resolves the GIS `accounts.id` API, injecting the script on first call.
+ * Resolves `null` on load failure or timeout so callers can fall back to the
+ * redirect flow; NEVER rejects.
+ */
+export async function loadGoogleIdApi(): Promise<GsiIdApi | null> {
+  const existing = currentGsiApi();
+  if (existing) return existing;
+  await loadGisScript();
+  return currentGsiApi();
 }
 
 /**

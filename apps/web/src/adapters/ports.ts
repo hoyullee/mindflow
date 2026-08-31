@@ -468,6 +468,13 @@ export interface WorkspaceData {
    * (`features/home/dashboard/model.ts`)라 여기서는 불투명 JSON이다. 예전 블롭에는
    * 없으므로 선택("대시보드 없음"). */
   dashboards?: unknown[];
+  /**
+   * 구글 캘린더 겹치기 설정(PR5) — **켰는가 + 어느 캘린더를 보는가**뿐이다.
+   * 받아 온 일정은 저장하지 않는다(구글이 정본 — `calendar/googleCalendar.ts`).
+   * 액세스 토큰은 이 블롭에 오지 않는다: 기기·탭마다 다르고 한 시간짜리라
+   * `sessionStorage`에 산다. 예전 블롭에는 없으므로 선택("연동 안 함").
+   */
+  google?: { calendars: string[] };
 }
 
 /**
