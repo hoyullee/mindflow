@@ -7,21 +7,19 @@
 import type { CSSProperties, ReactNode } from 'react';
 import { RadioCards } from '../../../components/Segmented';
 
-export function Field({ label, trailing, children }: { label: string; trailing?: ReactNode; children?: ReactNode }) {
+export function Field({ label, sub, trailing, children }: { label: string; sub?: string; trailing?: ReactNode; children?: ReactNode }) {
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 8, minWidth: 0 }}>
-      <span style={{ display: 'flex', alignItems: 'center', gap: 9 }}>
-        <span
-          style={{
-            fontSize: 12,
-            fontWeight: 800,
-            letterSpacing: '-.01em',
-            color: 'var(--mf-subtext)',
-          }}
-        >
-          {label}
-        </span>
-        <span style={{ flex: 1, minWidth: 0 }} />
+      <span style={{ display: 'flex', alignItems: 'baseline', gap: 7 }}>
+        <span style={{ flex: '0 0 auto', whiteSpace: 'nowrap', fontSize: 12, fontWeight: 800, letterSpacing: '-.01em', color: 'var(--mf-subtext)' }}>{label}</span>
+        {/* 라벨 옆 한 줄 요약(원본 `nGuestSummary`·`nRoomSummary`) — 없으면 자리만 채운다. */}
+        {sub ? (
+          <span data-field-sub style={{ flex: 1, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', fontSize: 10.5, color: 'var(--mf-faint2)' }}>
+            {sub}
+          </span>
+        ) : (
+          <span style={{ flex: 1, minWidth: 0 }} />
+        )}
         {trailing}
       </span>
       {children}
