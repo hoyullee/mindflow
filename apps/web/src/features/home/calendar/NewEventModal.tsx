@@ -1,9 +1,12 @@
 // 새 일정 — 디자인 원본 `Geurio 일정 캘린더.dc.html`의 `newEvOpen` 블록 이식.
 //
-// 칸반 카드가 아닌 일정(회의·휴가·개인 약속)을 적는 자리다. 저장은 우리 표
-// (`calendar_events`, 0033) — 구글은 **선택적 거울**이라는 설계 결정에 따라 다음
-// 단계에서 붙는다. 그래서 원본의 `저장할 캘린더 [Geurio | Google]` 고르기는 지금
-// **머리의 배지 하나**로 대신한다(고를 것이 하나뿐인 라디오는 UI가 아니라 장식이다).
+// 칸반 카드가 아닌 일정(회의·휴가·개인 약속)을 적는 자리다. 저장할 곳은 둘이다
+// (PR6 — 원본의 `저장할 캘린더 [Geurio | Google]`): 우리 표(`calendar_events`, 0033)
+// 또는 사용자의 **구글 캘린더**. 구글에 만들면 그 일정은 구글에만 남는다(사본을 두면
+// 두 곳의 진실이 갈린다) — 발치 문구가 그 경계를 말한다.
+//
+// 구글에 **쓸 수 있는 캘린더가 없으면**(연동 안 함·보기 전용) 고르기를 그리지 않고
+// 예전처럼 배지 하나만 둔다 — 고를 것이 하나뿐인 라디오는 UI가 아니라 장식이다.
 //
 // 원본에 있지만 두지 않은 것: 반복(v1 제외 — 사용자 결정) · 알림(보낼 장치가 없다) ·
 // 참석자·Meet·회의실(구글 연동 단계). 눌러도 아무 일이 없는 버튼은 두지 않는다.
@@ -14,7 +17,18 @@ import { Modal, MODAL_DIM } from '../../../components/Modal';
 import { DateButton, PillButton } from './DatePop';
 import { TimeButton } from './TimePop';
 import { addDays, daysBetween, minutesOf, todayISO } from './model';
+import { RadioCards } from '../../../components/Segmented';
 import type { CalendarEventInput } from '../../../adapters/ports';
+
+/** 어디에 저장할까 — `google`이면 그 캘린더 id가 함께 온다. */
+export type NewEventTarget = { kind: 'geurio' } | { kind: 'google'; calendarId: string };
+
+/** 목적지로 내놓을 구글 캘린더(쓸 수 있는 것만). */
+export interface GoogleTarget {
+  id: string;
+  name: string;
+  color?: string;
+}
 
 /** 회의 길이 빠른 선택(분) — 30분·1시간·2시간·3시간. */
 const QUICK_MINUTES = [30, 60, 120, 180];
@@ -37,13 +51,16 @@ export function NewEventModal({
   error,
   onClose,
   onSubmit,
+  googleTargets = [],
 }: {
   draft: NewEventDraft;
   isMobile: boolean;
   saving: boolean;
   error: string | null;
   onClose: () => void;
-  onSubmit: (input: CalendarEventInput) => void;
+  onSubmit: (input: CalendarEventInput, target: NewEventTarget) => void;
+  /** 쓸 수 있는 구글 캘린더 — 비어 있으면 고르기를 그리지 않는다. */
+  googleTargets?: GoogleTarget[];
 }) {
   const [title, setTitle] = useState('');
   const [allDay, setAllDay] = useState(draft.allDay);
@@ -53,6 +70,11 @@ export function NewEventModal({
   const [endTime, setEndTime] = useState('10:00');
   const [location, setLocation] = useState('');
   const [note, setNote] = useState('');
+  // 기본값은 **우리 표**다 — 남의 서비스에 쓰는 일은 사용자가 골라야 한다.
+  const [dest, setDest] = useState<string>('geurio');
+  // 고른 캘린더가 사라지면(연동 해제·권한 변경) 조용히 우리 표로 되돌린다.
+  const destValid = dest === 'geurio' || googleTargets.some((t) => t.id === dest);
+  const target: NewEventTarget = destValid && dest !== 'geurio' ? { kind: 'google', calendarId: dest } : { kind: 'geurio' };
 
   // 안전망 — 어떤 경로로든 종료일이 시작일보다 앞서지 않게(표의 제약과 같은 규칙).
   useEffect(() => {
@@ -93,20 +115,34 @@ export function NewEventModal({
   const canSave = !!title.trim() && (allDay || (durMin !== null && durMin > 0));
 
   // 발치 문구 — 저장 실패가 가장 급하고, 그다음이 "왜 등록이 안 눌리는가"다.
-  const footMsg = error ?? (saving ? '저장 중…' : !title.trim() ? '' : !allDay && durMin !== null && durMin <= 0 ? '종료 시각이 시작보다 앞서요' : '');
+  const footMsg =
+    error ??
+    (saving
+      ? '저장 중…'
+      : !title.trim()
+        ? ''
+        : !allDay && durMin !== null && durMin <= 0
+          ? '종료 시각이 시작보다 앞서요'
+          : // 어디에 남는지 한 줄로 — 구글에 만든 일정은 그리오에 사본을 두지 않는다.
+            target.kind === 'google'
+            ? 'Google 캘린더에 저장돼요'
+            : '');
   const footTone = error || (!allDay && durMin !== null && durMin <= 0) ? 'var(--mf-danger)' : 'var(--mf-faint2)';
 
   const submit = (): void => {
     if (!canSave || saving) return;
-    onSubmit({
-      title: title.trim(),
-      startDate,
-      endDate: allDay ? endDate : startDate,
-      allDay,
-      ...(allDay ? {} : { startTime, endTime }),
-      ...(location.trim() ? { location: location.trim() } : {}),
-      ...(note.trim() ? { note: note.trim() } : {}),
-    });
+    onSubmit(
+      {
+        title: title.trim(),
+        startDate,
+        endDate: allDay ? endDate : startDate,
+        allDay,
+        ...(allDay ? {} : { startTime, endTime }),
+        ...(location.trim() ? { location: location.trim() } : {}),
+        ...(note.trim() ? { note: note.trim() } : {}),
+      },
+      target,
+    );
   };
 
   return (
@@ -165,19 +201,53 @@ export function NewEventModal({
             style={{ width: '100%', boxSizing: 'border-box', height: 52, padding: '0 15px', borderRadius: 14, border: '1px solid var(--mf-border)', background: 'var(--mf-card)', font: 'inherit', fontSize: 18, fontWeight: 800, letterSpacing: '-.03em', color: 'var(--mf-text)', outline: 'none' }}
           />
 
-          {/* 저장할 캘린더 — 지금은 Geurio 하나뿐이고 구글은 **선택적 거울**이라 다음
-              단계에서 붙는다. 고를 것이 하나여도 어디에 저장되는지는 보여야 한다(요청). */}
+          {/* 저장할 캘린더(디자인 원본) — 고를 것이 하나면 배지, 둘 이상이면 라디오
+              묶음이다(←/→로도 옮겨 다닌다 — 이 앱의 "하나만 고르는 묶음" 규칙). */}
           <div style={{ display: 'flex', flexDirection: 'column', gap: 7 }}>
             <Label>저장할 캘린더</Label>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 7, flexWrap: 'wrap' }}>
-              <span
-                data-new-cal
-                style={{ display: 'inline-flex', alignItems: 'center', gap: 7, height: 34, padding: '0 14px', borderRadius: 999, border: '1.5px solid var(--mf-accent-mute)', background: 'var(--mf-accent-soft)', color: 'var(--mf-accent-strong)', fontSize: 12.5, fontWeight: 800, whiteSpace: 'nowrap', flex: '0 0 auto' }}
-              >
-                <span style={{ width: 7, height: 7, borderRadius: 999, background: 'var(--mf-accent)', display: 'block', flex: '0 0 auto' }} />
-                Geurio 캘린더
-              </span>
-            </div>
+            {googleTargets.length === 0 ? (
+              <div style={{ display: 'flex', alignItems: 'center', gap: 7, flexWrap: 'wrap' }}>
+                <span data-new-cal style={destChipStyle(true, 'var(--mf-accent)')}>
+                  <span style={destDotStyle('var(--mf-accent)')} />
+                  Geurio 캘린더
+                </span>
+              </div>
+            ) : (
+              <RadioCards
+                label="저장할 캘린더"
+                value={destValid ? dest : 'geurio'}
+                onChange={setDest}
+                grid={{ display: 'flex', alignItems: 'center', gap: 7, flexWrap: 'wrap' }}
+                items={[
+                  {
+                    value: 'geurio',
+                    label: 'Geurio 캘린더',
+                    className: 'mf-ctl',
+                    attrs: { 'data-new-cal': 'geurio' },
+                    style: (on) => destChipStyle(on, 'var(--mf-accent)'),
+                    children: (
+                      <>
+                        <span style={destDotStyle('var(--mf-accent)')} />
+                        Geurio 캘린더
+                      </>
+                    ),
+                  },
+                  ...googleTargets.map((t) => ({
+                    value: t.id,
+                    label: `${t.name} (Google)`,
+                    className: 'mf-ctl',
+                    attrs: { 'data-new-cal': t.id },
+                    style: (on: boolean) => destChipStyle(on, t.color ?? 'var(--mf-info)'),
+                    children: (
+                      <>
+                        <span style={destDotStyle(t.color ?? 'var(--mf-info)')} />
+                        {t.name}
+                      </>
+                    ),
+                  })),
+                ]}
+              />
+            )}
           </div>
 
           <div style={{ display: 'flex', flexDirection: 'column', gap: 9 }}>
@@ -306,4 +376,33 @@ function Label({ children }: { children: ReactNode }) {
 
 function SubLabel({ children }: { children: ReactNode }) {
   return <span style={{ fontSize: 11, fontWeight: 700, color: 'var(--mf-faint2)' }}>{children}</span>;
+}
+
+/** 목적지 칩 — 고른 것만 강조색 테두리·면(색 점은 그 캘린더의 색). */
+function destChipStyle(on: boolean, dot: string): CSSProperties {
+  return {
+    display: 'inline-flex',
+    alignItems: 'center',
+    gap: 7,
+    height: 34,
+    padding: '0 14px',
+    borderRadius: 999,
+    border: on ? '1.5px solid var(--mf-accent-mute)' : '1px solid var(--mf-border)',
+    background: on ? 'var(--mf-accent-soft)' : 'var(--mf-card)',
+    color: on ? 'var(--mf-accent-strong)' : 'var(--mf-subtext)',
+    font: 'inherit',
+    fontSize: 12.5,
+    fontWeight: 800,
+    whiteSpace: 'nowrap',
+    flex: '0 0 auto',
+    maxWidth: 240,
+    overflow: 'hidden',
+    textOverflow: 'ellipsis',
+    cursor: 'pointer',
+    ...(dot ? {} : {}),
+  };
+}
+
+function destDotStyle(color: string): CSSProperties {
+  return { width: 7, height: 7, borderRadius: 999, background: color, display: 'block', flex: '0 0 auto' };
 }

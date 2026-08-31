@@ -6,7 +6,7 @@
  * 아래 점 하나. 고른 날은 강조색 원.
  */
 
-import type { CalendarEntry } from './entries';
+import type { CalendarEntry, HolidayInfo } from './entries';
 import { DOW, entriesOn, monthCells } from './model';
 
 export function MiniCalendar({
@@ -40,7 +40,7 @@ export function MiniCalendar({
    */
   fill?: boolean;
   /** 공휴일(구글 연동) — 큰 달력과 같은 규칙으로 숫자를 일요일 색으로 그린다. */
-  holidays?: Record<string, string>;
+  holidays?: Record<string, HolidayInfo>;
 }) {
   const cells = monthCells(y, m, entries, todayIso, 0, 6, holidays);
   return (
@@ -87,7 +87,7 @@ export function MiniCalendar({
                     ? 'var(--mf-faint2)'
                     : c.isToday
                       ? 'var(--mf-accent-strong)'
-                      : c.dow === 0 || c.holiday
+                      : c.dow === 0 || c.dayOff
                         ? 'var(--mf-danger)'
                         : c.dow === 6
                           ? 'var(--mf-info)'

@@ -211,24 +211,41 @@ export function googleEntries(events: readonly GoogleEvent[]): CalendarEntry[] {
       tag: '',
       boardName: e.calendarName,
       spaceName: 'Google 캘린더',
-      readOnly: true,
+      // 쓸 수 있는 캘린더의 일정은 **끌어서 날짜를 옮길 수 있다**(PR6). 공휴일과
+      // 보기 전용으로 공유된 캘린더는 그대로 읽기 전용이다 — 진짜 게이트는 구글의
+      // 권한이고, 이 값은 "고쳐지는 척하는" 화면을 막는 어포던스다.
+      ...(e.writable ? {} : { readOnly: true }),
       google: e,
       ...(e.allDay ? {} : { ...(e.startTime ? { startTime: e.startTime } : {}), ...(e.endTime ? { endTime: e.endTime } : {}) }),
     }));
 }
 
+/** 그 날의 공휴일 — 이름은 늘 보여 주고, **칠하는 것은 쉬는 날뿐**이다. */
+export interface HolidayInfo {
+  name: string;
+  /** 실제로 쉬는 날(`isDayOffHoliday`) — 달력이 그 칸을 일요일 색으로 그린다. */
+  dayOff: boolean;
+}
+
 /**
- * 공휴일 캘린더의 종일 일정 → `날짜 → 이름`. 달력이 그 날 숫자를 일요일 색으로
- * 그리는 데 쓴다(`MonthCell.holiday` — PR1부터 비워 둔 자리).
+ * 공휴일 캘린더의 종일 일정 → `날짜 → 공휴일`. 달력이 그 날 이름을 숫자 옆에 적고
+ * (디자인 원본), **쉬는 날이면** 숫자·칸을 일요일 색으로 그린다.
+ *
+ * 이름과 색을 가른 이유: 구글의 공휴일 캘린더에는 24절기·기념일까지 들어 있어
+ * 전부 칠하면 달이 통째로 분홍이 된다(제보). 이름은 정보이므로 그대로 두고,
+ * 색은 **확실히 쉬는 날일 때만** 쓴다.
  */
-export function holidayMap(events: readonly GoogleEvent[]): Record<string, string> {
-  const out: Record<string, string> = {};
+export function holidayMap(events: readonly GoogleEvent[]): Record<string, HolidayInfo> {
+  const out: Record<string, HolidayInfo> = {};
   for (const e of events) {
     if (!e.holiday) continue;
     // 여러 날짜에 걸친 공휴일(연휴)도 하루씩 채운다.
     let d = e.startDate;
     for (let i = 0; i < 32 && d <= e.endDate; i += 1) {
-      if (!out[d]) out[d] = e.title;
+      const prev = out[d];
+      // 같은 날에 여럿이면 이름은 먼저 온 것을, 쉬는 날 여부는 **하나라도 참이면** 참.
+      if (!prev) out[d] = { name: e.title, dayOff: !!e.dayOff };
+      else if (e.dayOff && !prev.dayOff) out[d] = { name: prev.name, dayOff: true };
       const [y, m, day] = d.split('-').map(Number);
       if (!y || !m || !day) break;
       const nx = new Date(y, m - 1, day + 1);

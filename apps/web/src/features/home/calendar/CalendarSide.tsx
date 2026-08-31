@@ -1,5 +1,5 @@
 import { useEffect, useRef } from 'react';
-import type { CalendarEntry } from './entries';
+import type { CalendarEntry, HolidayInfo } from './entries';
 import { entryChip, type ChipSurface } from './chips';
 import { HOUR_ROW, dateLabel, dayProgress, dayTimeline, entriesOn, hourLabel, timeLabel } from './model';
 import { MiniCalendar, MiniNav } from './MiniCalendar';
@@ -39,7 +39,7 @@ export function CalendarSide({
   /** 사이드 접기 — 머리의 ✕(디자인 원본). 위 토글을 다시 누르는 것과 같다. */
   onClose: () => void;
   /** 공휴일(구글 연동) — 미니 달력이 큰 달력과 같은 색으로 그린다. */
-  holidays?: Record<string, string>;
+  holidays?: Record<string, HolidayInfo>;
 }) {
   const dayList = entriesOn(entries, selectedDay);
   const timeline = dayTimeline(entries, selectedDay);

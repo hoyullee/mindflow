@@ -4,8 +4,11 @@
 // 없고, 대신 종일 토글·시각·위치·메모가 있다). 우리 표(0033)가 정본이라 여기서 고치면
 // 곧바로 저장된다.
 //
-// 원본에 있지만 두지 않은 것: 알림·반복(v1 제외) · 참석자·Meet(구글 연동 단계) ·
-// `저장된 캘린더` 고르기(고를 것이 하나뿐 — 머리의 배지가 대신한다).
+// 원본에 있지만 두지 않은 것: 알림·반복(v1 제외) · 참석자·Meet.
+//
+// **구글 일정도 이 팝업을 쓴다**(PR6 — `GoogleEventDetail`이 값만 옮겨 준다). 둘로
+// 갈라 두면 한쪽에만 기능이 붙는다 — 그래서 원천마다 다른 것(머리 배지·발치 문구·
+// 고칠 수 있는가·안내)만 프롭으로 받고 나머지는 한 코드다.
 
 import { useEffect, useRef, useState } from 'react';
 import type { ReactNode } from 'react';
@@ -21,12 +24,29 @@ export function EventDetail({
   onClose,
   onPatch,
   onDelete,
+  readOnly = false,
+  badge = 'Geurio 캘린더',
+  footerHint = 'Geurio 캘린더에만 저장되는 일정이에요 · 변경한 내용은 자동으로 저장돼요',
+  notice,
+  extra,
+  cardAttrs,
 }: {
   event: CalendarEvent;
   isMobile: boolean;
   onClose: () => void;
   onPatch: (patch: Partial<CalendarEventInput>) => Promise<string | null>;
   onDelete: () => Promise<string | null>;
+  /** 고칠 수 없는 일정(공휴일·남이 보기 전용으로 공유한 캘린더) — 입력을 잠근다. */
+  readOnly?: boolean;
+  /** 머리의 원천 이름 — 어느 캘린더의 일정인지. */
+  badge?: string;
+  footerHint?: string;
+  /** 읽기 전용일 때 대신 보여 줄 안내(왜 못 고치는가). */
+  notice?: string;
+  /** 원천이 더 얹는 것 — 구글은 반복 회차 안내와 "구글에서 열기" 링크를 넣는다. */
+  extra?: ReactNode;
+  /** 원천을 가리키는 표식 — 두 팝업이 한 코드라도 화면에서는 구별돼야 한다. */
+  cardAttrs?: Record<string, string>;
 }) {
   const [title, setTitle] = useState(event.title);
   const titleRef = useRef(title);
@@ -34,7 +54,6 @@ export function EventDetail({
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const today = todayISO();
-  const readOnly = event.source === 'google'; // 구글에서 온 일정은 읽기 전용(다음 단계)
 
   const run = async (fn: () => Promise<string | null>): Promise<void> => {
     setSaving(true);
@@ -81,13 +100,13 @@ export function EventDetail({
         overflow: 'hidden',
         animation: 'mf-fade .2s ease',
       }}
-      cardAttrs={{ 'data-event-detail': '1' }}
+      cardAttrs={{ 'data-event-detail': '1', ...cardAttrs }}
     >
       <>
         <div style={{ flex: '0 0 auto', display: 'flex', alignItems: 'center', gap: 10, padding: '16px 18px', borderBottom: '1px solid var(--mf-border-soft)' }}>
           <span style={{ display: 'inline-flex', alignItems: 'center', gap: 7, flex: '0 0 auto' }}>
             <span style={{ width: 8, height: 8, borderRadius: 999, background: event.color ?? 'var(--mf-accent)', display: 'block' }} />
-            <span style={{ fontSize: 13.5, fontWeight: 800, letterSpacing: '-.02em', color: 'var(--mf-text)', whiteSpace: 'nowrap' }}>Geurio 캘린더</span>
+            <span data-event-badge style={{ fontSize: 13.5, fontWeight: 800, letterSpacing: '-.02em', color: 'var(--mf-text)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{badge}</span>
           </span>
           <span style={{ flex: 1, minWidth: 0 }} />
           <span data-event-when style={{ height: 24, padding: '0 10px', borderRadius: 999, background: 'var(--mf-panel2)', color: 'var(--mf-muted)', fontSize: 11, fontWeight: 700, display: 'inline-flex', alignItems: 'center', whiteSpace: 'nowrap', flex: '0 0 auto' }}>
@@ -137,8 +156,8 @@ export function EventDetail({
           />
 
           {readOnly ? (
-            <span style={{ fontSize: 12.5, color: 'var(--mf-muted)', background: 'var(--mf-panel2)', border: '1px solid var(--mf-border)', borderRadius: 12, padding: '11px 13px', lineHeight: 1.65 }}>
-              구글 캘린더에서 가져온 일정이에요. 시간·참석자 변경은 구글 캘린더에서 해 주세요.
+            <span data-event-notice style={{ fontSize: 12.5, color: 'var(--mf-muted)', background: 'var(--mf-panel2)', border: '1px solid var(--mf-border)', borderRadius: 12, padding: '11px 13px', lineHeight: 1.65 }}>
+              {notice ?? '이 일정은 여기서 고칠 수 없어요.'}
             </span>
           ) : (
             <>
@@ -198,11 +217,12 @@ export function EventDetail({
             </>
           )}
 
-          {error && <span style={{ fontSize: 12, color: 'var(--mf-danger)' }}>{error}</span>}
+          {extra}
+          {error && <span data-event-error style={{ fontSize: 12, color: 'var(--mf-danger)' }}>{error}</span>}
         </div>
 
         <div style={{ flex: '0 0 auto', display: 'flex', alignItems: 'center', gap: 12, padding: '14px 20px', borderTop: '1px solid var(--mf-border-soft)' }}>
-          <span style={{ flex: 1, minWidth: 0, fontSize: 12, color: 'var(--mf-faint2)' }}>{saving ? '저장 중…' : 'Geurio 캘린더에만 저장되는 일정이에요 · 변경한 내용은 자동으로 저장돼요'}</span>
+          <span style={{ flex: 1, minWidth: 0, fontSize: 12, color: 'var(--mf-faint2)' }}>{saving ? '저장 중…' : footerHint}</span>
           <button type="button" data-event-done onClick={close} className="mf-ctl" style={{ flex: '0 0 auto', whiteSpace: 'nowrap', height: isMobile ? 44 : 40, padding: isMobile ? '0 20px' : '0 26px', borderRadius: 999, border: 0, background: 'linear-gradient(180deg, var(--mf-accent), var(--mf-accent-strong))', color: 'var(--mf-accent-ink)', font: 'inherit', fontSize: 13.5, fontWeight: 800, cursor: 'pointer', boxShadow: '0 8px 18px -10px rgba(var(--mf-accent-rgb), .9)' }}>
             완료
           </button>

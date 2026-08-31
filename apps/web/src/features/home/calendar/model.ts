@@ -4,7 +4,7 @@
 // 꼴이고, 여기에 시각·타임존을 끌어들이면 규칙이 둘로 갈린다(시각이 필요한 일정은
 // Geurio 일정이 맡는다 — 그때 변환을 한 곳에 모은다).
 
-import type { CalendarEntry } from './entries';
+import type { CalendarEntry, HolidayInfo } from './entries';
 
 export function isoOf(y: number, m: number, d: number): string {
   return `${y}-${`${m}`.padStart(2, '0')}-${`${d}`.padStart(2, '0')}`;
@@ -116,11 +116,17 @@ export interface MonthCell {
   /** 0=일 … 6=토. */
   dow: number;
   /**
-   * 공휴일 이름 — 있으면 일요일과 같은 색으로 그린다. 원천은 사용자가 구독한
-   * **구글 공휴일 캘린더**다(PR5 — `entries.holidayMap`). 연동하지 않았으면 비어
-   * 있고, 달력은 예전 그대로 그린다.
+   * 공휴일 이름 — 숫자 옆에 적는다(디자인 원본). 원천은 사용자가 구독한 **구글
+   * 공휴일 캘린더**다(PR5 — `entries.holidayMap`). 연동하지 않았으면 비어 있고,
+   * 달력은 예전 그대로 그린다.
    */
   holiday?: string;
+  /**
+   * 그중 **실제로 쉬는 날**인가 — 이때만 숫자·칸을 일요일 색으로 그린다. 구글의
+   * 공휴일 캘린더에는 절기·기념일도 들어 있어, 이름이 있다고 다 칠하면 달이
+   * 통째로 분홍이 된다(제보).
+   */
+  dayOff?: boolean;
   /** 그 날 하루짜리 항목(기간은 제외 — 바로 그린다). */
   entries: CalendarEntry[];
   bars: MonthBar[];
@@ -132,7 +138,7 @@ export interface MonthCell {
  * 달력 격자. 월마다 표 높이가 달라지지 않게 **항상 6주(42칸)**로 채운다(디자인 원본).
  * `perCell`은 한 칸에 보이는 칩 수 — 넘치면 `moreN`으로 접는다.
  */
-export function monthCells(y: number, m: number, entries: readonly CalendarEntry[], todayIso: string, perCell = 2, weeks = 6, holidays: Record<string, string> = {}): MonthCell[] {
+export function monthCells(y: number, m: number, entries: readonly CalendarEntry[], todayIso: string, perCell = 2, weeks = 6, holidays: Record<string, HolidayInfo> = {}): MonthCell[] {
   const first = new Date(y, m - 1, 1);
   const firstDow = first.getDay();
   const days = new Date(y, m, 0).getDate();
@@ -162,7 +168,7 @@ export function monthCells(y: number, m: number, entries: readonly CalendarEntry
       isToday: inMonth && iso === todayIso,
       dim: inMonth ? iso < todayIso : false,
       dow,
-      ...(inMonth && holidays[iso] ? { holiday: holidays[iso] } : {}),
+      ...(inMonth && holidays[iso] ? { holiday: holidays[iso].name, ...(holidays[iso].dayOff ? { dayOff: true } : {}) } : {}),
       entries: list.slice(0, perCell),
       bars,
       moreN: Math.max(0, list.length - perCell),

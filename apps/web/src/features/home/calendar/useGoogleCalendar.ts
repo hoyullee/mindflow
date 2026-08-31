@@ -10,14 +10,19 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { gridRange } from './model';
 import {
+  createGoogleEvent,
+  deleteGoogleEvent,
   ensureGoogleToken,
   fetchCalendarList,
   fetchEvents,
+  googleWriteError,
   readStoredToken,
   requestGoogleToken,
   revokeGoogleToken,
+  updateGoogleEvent,
   type GoogleCalendarMeta,
   type GoogleEvent,
+  type GoogleEventDraft,
 } from './googleCalendar';
 import { readGoogleClientId } from '../../auth/googleIdentity';
 
@@ -41,6 +46,18 @@ export interface GoogleCalendarApi {
   disconnect: () => Promise<void>;
   /** 그 캘린더를 보이기/감추기. */
   toggleCalendar: (id: string) => void;
+  /**
+   * 권한을 다시 받아야 하는가 — 스코프를 넓힌 뒤 옛 토큰이 남은 경우다. 켜져
+   * 있는데 쓸 수 없는 상태를 **화면이 말해야** 한다(조용히 죽으면 "저장이 안 되는데
+   * 이유를 모르는" 상태가 된다).
+   */
+  needsReauth: boolean;
+  /** 쓸 수 있는 캘린더만 — 새 일정의 목적지로 내놓는 목록. */
+  writableCalendars: GoogleCalendarMeta[];
+  /** 구글에 새 일정. 성공하면 `null`, 실패하면 사람이 읽을 문장. */
+  createEvent: (calendarId: string, draft: GoogleEventDraft) => Promise<string | null>;
+  updateEvent: (ev: GoogleEvent, draft: GoogleEventDraft) => Promise<string | null>;
+  deleteEvent: (ev: GoogleEvent) => Promise<string | null>;
 }
 
 export interface GoogleCalendarPrefs {
@@ -76,6 +93,10 @@ export function useGoogleCalendar(
   const [events, setEvents] = useState<GoogleEvent[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [needsReauth, setNeedsReauth] = useState(false);
+  // 쓰기가 끝나면 이 값을 올려 보이는 달을 다시 받는다 — 화면에 남는 것은 언제나
+  // **구글이 돌려준 것**이지 우리가 보낸 것이 아니다(구글이 정본).
+  const [reloadTick, setReloadTick] = useState(0);
   const aliveRef = useRef(true);
   useEffect(() => {
     aliveRef.current = true;
@@ -95,6 +116,7 @@ export function useGoogleCalendar(
     if ('error' in first) {
       if (aliveRef.current) {
         setConnected(false);
+        setNeedsReauth(true);
         setError(first.error);
       }
       return null;
@@ -108,6 +130,7 @@ export function useGoogleCalendar(
       if ('error' in again) {
         if (aliveRef.current) {
           setConnected(false);
+          setNeedsReauth(true);
           setError(again.error);
         }
         return null;
@@ -130,6 +153,7 @@ export function useGoogleCalendar(
       if (list) {
         setCalendars(list);
         setConnected(true);
+        setNeedsReauth(false);
         setError(null);
       }
     })();
@@ -165,7 +189,7 @@ export function useGoogleCalendar(
     return () => {
       cancelled = true;
     };
-  }, [available, enabled, mode, picked, calendars, from, to, withToken]);
+  }, [available, enabled, mode, picked, calendars, from, to, reloadTick, withToken]);
 
   const connect = useCallback(async () => {
     setError(null);
@@ -175,6 +199,7 @@ export function useGoogleCalendar(
       return;
     }
     setConnected(true);
+    setNeedsReauth(false);
     // 켜는 순간에는 **기본 캘린더 + 공휴일**만 고른다 — 캘린더가 스무 개인 사람에게
     // 전부 켜 주면 첫 화면이 남의 일정으로 뒤덮인다(직접 고르는 편이 낫다).
     try {
@@ -198,6 +223,30 @@ export function useGoogleCalendar(
     onPrefs(null);
   }, [onPrefs]);
 
+  /** 쓰기 하나 — 성공하면 보이는 달을 다시 받고 `null`, 실패하면 문장을 돌려준다. */
+  const write = useCallback(
+    async (run: (token: string) => Promise<void>): Promise<string | null> => {
+      try {
+        const done = await withToken(async (t) => {
+          await run(t);
+          return true as const;
+        });
+        if (!done) return '구글 권한이 없어요. 설정에서 다시 연결해 주세요.';
+        if (aliveRef.current) setReloadTick((n) => n + 1);
+        return null;
+      } catch (e) {
+        return googleWriteError(e);
+      }
+    },
+    [withToken],
+  );
+
+  const createEvent = useCallback((calendarId: string, draft: GoogleEventDraft) => write((t) => createGoogleEvent(t, calendarId, draft)), [write]);
+  const updateEvent = useCallback((ev: GoogleEvent, draft: GoogleEventDraft) => write((t) => updateGoogleEvent(t, ev, draft)), [write]);
+  const deleteEvent = useCallback((ev: GoogleEvent) => write((t) => deleteGoogleEvent(t, ev)), [write]);
+
+  const writableCalendars = useMemo(() => calendars.filter((c) => c.writable), [calendars]);
+
   const toggleCalendar = useCallback(
     (id: string) => {
       const has = prefs.calendars.includes(id);
@@ -206,5 +255,22 @@ export function useGoogleCalendar(
     [prefs.calendars, onPrefs],
   );
 
-  return { available, enabled, connected, calendars, pickedIds: prefs.calendars, events, loading, error, connect, disconnect, toggleCalendar };
+  return {
+    available,
+    enabled,
+    connected,
+    calendars,
+    pickedIds: prefs.calendars,
+    events,
+    loading,
+    error,
+    connect,
+    disconnect,
+    toggleCalendar,
+    needsReauth,
+    writableCalendars,
+    createEvent,
+    updateEvent,
+    deleteEvent,
+  };
 }

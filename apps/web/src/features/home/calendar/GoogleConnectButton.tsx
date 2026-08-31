@@ -3,22 +3,24 @@
 // 규칙 셋:
 //  ① 배포에 클라이언트 ID가 없으면 **그리지 않는다**(눌러도 아무 일 없는 버튼을
 //     두지 않는다 — 이 프로젝트의 정직한 어포던스 규칙).
-//  ② **연동하지 않았을 때만** 뜬다. 켜고 나면 할 일이 끝났으므로 사라지고, 세부
-//     조정(어느 캘린더를 볼지)은 설정의 `연동` 구획이 맡는다.
+//  ② **연동하지 않았을 때**, 또는 **권한을 다시 받아야 할 때**만 뜬다(스코프를 넓힌
+//     뒤 옛 토큰이 남은 경우 — 그때는 켜져 있는데도 저장이 안 되므로 알려야 한다).
+//     정상 연동이면 사라지고, 세부 조정(어느 캘린더를 볼지)은 설정의 `연동` 구획이 맡는다.
 //  ③ 누르면 곧바로 동의 창이다 — 사용자가 **직접 누른** 것이라 브라우저가 막지
 //     않고, 켜는 순간 기본 캘린더 + 공휴일이 잡혀 바로 화면에 뜬다.
 
 import type { GoogleCalendarApi } from './useGoogleCalendar';
 
 export function GoogleConnectButton({ api, size = 34 }: { api: GoogleCalendarApi; size?: number }) {
-  if (!api.available || api.enabled) return null;
+  if (!api.available || (api.enabled && !api.needsReauth)) return null;
+  const label = api.needsReauth ? 'Google 캘린더 다시 연결' : 'Google 캘린더 연동';
   return (
     <button
       type="button"
       data-google-connect-cal
       className="mf-ctl"
-      title="Google 캘린더 연동"
-      aria-label="Google 캘린더 연동"
+      title={label}
+      aria-label={label}
       onClick={(e) => {
         e.stopPropagation();
         void api.connect();
