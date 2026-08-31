@@ -26,6 +26,7 @@ export function inputToGoogleDraft(input: CalendarEventInput, fields?: GoogleFie
     ...(fields
       ? {
           attendees: fields.attendees,
+          rooms: fields.rooms,
           visibility: fields.visibility,
           transparency: fields.transparency,
           reminderMinutes: fields.reminderMinutes,

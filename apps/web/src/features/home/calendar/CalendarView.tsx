@@ -69,6 +69,11 @@ export function CalendarView({
   const stats = useMemo(() => calendarStats(entries, today), [entries, today]);
   // 새 일정의 목적지 — **쓸 수 있는** 구글 캘린더만(공휴일·보기 전용은 뺀다).
   const googleTargets = useMemo(() => google.writableCalendars.map((c) => ({ id: c.id, name: c.summary, ...(c.color ? { color: c.color } : {}) })), [google.writableCalendars]);
+  // 선택 스코프로 열리는 것들(이름 검색·회의실) — 두 팝업이 같은 것을 쓴다.
+  const googleDirectory = useMemo(
+    () => ({ canSearchPeople: google.canSearchPeople, searchPeople: google.searchPeople, canPickRooms: google.canPickRooms, rooms: google.rooms, loadRooms: google.loadRooms }),
+    [google.canSearchPeople, google.searchPeople, google.canPickRooms, google.rooms, google.loadRooms],
+  );
   // 모바일은 칸이 좁아 칩 하나 + 접힌 개수만 — 사이드는 아예 접는다(공간이 없다).
   const perCell = isMobile ? 1 : 2;
   const cells = useMemo(() => monthCells(state.calY, state.calM, entries, today, perCell, 6, holidays), [state.calY, state.calM, entries, today, perCell, holidays]);
@@ -285,6 +290,7 @@ export function CalendarView({
         onClose={controller.closeCalendarGoogle}
         onPatch={google.updateEvent}
         onDelete={google.deleteEvent}
+        directory={googleDirectory}
       />
 
       {/* Geurio 일정: 새로 만들기 · 상세 */}
@@ -299,6 +305,7 @@ export function CalendarView({
             controller.closeNewEvent();
           }}
           googleTargets={googleTargets}
+          directory={googleDirectory}
           onSubmit={(input, target) => {
             setSaving(true);
             void submitNewEvent(input, target, { createGeurio: eventsApi.create, createGoogle: google.createEvent }).then((err) => {

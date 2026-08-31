@@ -8,7 +8,8 @@ import { LegalPage, LegalSection, legalListStyle } from './LegalPage';
  * **구글 심사가 이 URL(`/privacy`)을 직접 열어 확인한다.** 브랜드 인증(이름·목적
  * 설명·이 링크)뿐 아니라, 민감 스코프(`calendar.events`) 검수는 아래 §4가 요구
  * 사항이다 — 구글 사용자 데이터를 **무엇을·왜·어디에 보관하고 누구에게 주는지**와
- * **Limited Use** 준수가 적혀 있어야 한다. 스코프를 늘리면 §4도 같이 늘릴 것.
+ * **Limited Use** 준수가 적혀 있어야 한다. **스코프를 늘리면 §4도 같이 늘릴 것**
+ * (2026-08-31에 이름 검색·회의실 선택 스코프를 더하며 실제로 함께 고쳤다).
  */
 export function PrivacyPolicy() {
   return (
@@ -63,26 +64,34 @@ export function PrivacyPolicy() {
 
       <LegalSection heading="4. Google 캘린더 연동 (선택)">
         <p>
-          이용자가 설정에서 <strong>직접 연결한 경우에만</strong> 서비스가 이용자의 Google 캘린더에 접근합니다. 연결하지
+          이용자가 설정에서 <strong>직접 연결한 경우에만</strong> 서비스가 이용자의 Google 데이터에 접근합니다. 연결하지
           않으면 아래 어떤 정보도 요청하지 않습니다.
         </p>
         <ul style={legalListStyle}>
           <li>
-            <strong>받는 권한</strong> — 일정 읽기·쓰기(<code>calendar.events</code>)와 캘린더 목록 조회
+            <strong>받는 권한(필수)</strong> — 일정 읽기·쓰기(<code>calendar.events</code>)와 캘린더 목록 조회
             (<code>calendar.calendarlist.readonly</code>). 캘린더 자체를 만들거나 삭제하거나 다른 사람에게 공유하는
             권한은 요청하지 않습니다.
           </li>
           <li>
-            <strong>받는 정보</strong> — 이용자가 보기로 고른 캘린더의 일정(제목·날짜·시각·위치·설명)과 캘린더 목록
-            (이름·색). 화면에 보이는 기간(6주)의 일정만 그때그때 조회합니다.
+            <strong>받는 권한(선택)</strong> — 참석자를 <strong>이름으로 찾기</strong> 위한 조직 디렉터리·연락처 조회
+            (<code>directory.readonly</code>, <code>contacts.other.readonly</code>)와 <strong>회의실 목록</strong> 조회
+            (<code>admin.directory.resource.calendar.readonly</code>). 이 셋은 허용하지 않아도 연동이 동작하며, 그때는
+            참석자를 이메일로 직접 적고 회의실 선택은 화면에 나타나지 않습니다.
+          </li>
+          <li>
+            <strong>받는 정보</strong> — 이용자가 보기로 고른 캘린더의 일정(제목·날짜·시각·위치·설명·참석자)과 캘린더
+            목록(이름·색). 화면에 보이는 기간(6주)의 일정만 그때그때 조회합니다. 선택 권한을 허용한 경우 참석자를
+            검색할 때 <strong>입력한 검색어에 해당하는</strong> 이름·이메일과 조직의 회의실 이름·정원을 함께 조회합니다.
           </li>
           <li>
             <strong>사용 목적</strong> — 일정 화면과 대시보드 위젯에 이용자의 일정을 표시하고, 이용자가 서비스 안에서
-            만들거나 수정·삭제한 일정을 Google 캘린더에 반영하기 위해서입니다.
+            만들거나 수정·삭제한 일정을 Google 캘린더에 반영하며, 일정에 참석자와 회의실을 넣기 위해서입니다.
+            참석자에게 보내는 초대 메일과 알림은 <strong>Google이</strong> 발송합니다.
           </li>
           <li>
-            <strong>보관하지 않습니다</strong> — 조회한 일정은 브라우저에서 화면에 그리는 데만 쓰이며 서비스 서버나
-            데이터베이스에 <strong>저장하지 않습니다</strong>. 서버에 남는 것은 &ldquo;어떤 캘린더를 보기로 골랐는지&rdquo;
+            <strong>보관하지 않습니다</strong> — 조회한 일정과 검색한 이름·회의실 목록은 브라우저에서 화면에 그리는 데만
+            쓰이며 서비스 서버나 데이터베이스에 <strong>저장하지 않습니다</strong>. 서버에 남는 것은 &ldquo;어떤 캘린더를 보기로 골랐는지&rdquo;
             (캘린더 식별자 목록)뿐이고, 이는 기기 간에 같은 설정을 유지하기 위한 값입니다.
           </li>
           <li>

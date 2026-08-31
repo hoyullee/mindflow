@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { cleanup, render, screen, waitFor, within } from '@testing-library/react';
+import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { MemoryRouter, Route, Routes } from 'react-router-dom';
 import { Home } from './Home';
@@ -132,6 +132,14 @@ function stubFetch(): ReturnType<typeof vi.fn> {
   const season = weekdayInMonth(1);
   const f = vi.fn(async (url: string) => {
     const ok = (body: unknown) => ({ ok: true, status: 200, json: async () => body }) as unknown as Response;
+    // People API — 이름 검색(선택 스코프 `directory.readonly`)
+    if (url.includes('people.googleapis.com')) {
+      return ok({ people: [{ names: [{ displayName: '여은진' }], emailAddresses: [{ value: 'eunjin@example.com' }] }] });
+    }
+    // Admin SDK — 회의실 목록(선택 스코프)
+    if (url.includes('admin.googleapis.com')) {
+      return ok({ items: [{ resourceEmail: 'room-35-01@resource.calendar.google.com', generatedResourceName: '회의실-35-01', resourceCategory: 'CONFERENCE_ROOM', capacity: 23 }] });
+    }
     if (url.includes('/users/me/calendarList')) {
       return ok({
         items: [
@@ -502,12 +510,100 @@ describe('구글 캘린더 겹치기(PR5)', () => {
       return el as HTMLElement;
     });
     expect(document.querySelector('[data-new-geurio-note]')).toBeNull();
-    // 디자인 원본의 nIsGoogle 블록 — 반복·Meet·참석자·공개·참여·알림
-    for (const sel of ['[data-gf-repeat]', '[data-gf-meet]', '[data-gf-guest-input]', '[data-gf-vis]', '[data-gf-busy]', '[data-gf-remind]']) {
+    // 디자인 원본의 nIsGoogle 블록 — 반복·Meet·참석자·회의실·공개·참여·알림
+    for (const sel of ['[data-gf-repeat]', '[data-gf-meet]', '[data-gf-guest-input]', '[data-gf-room-input]', '[data-gf-vis]', '[data-gf-busy]', '[data-gf-remind]']) {
       expect(fields.querySelector(sel)).toBeTruthy();
     }
-    // 회의실은 목록 원천이 없어 두지 않는다
-    expect(fields.textContent).not.toContain('회의실');
+  });
+
+  it('이름으로 사람을 찾아 참석자로 넣는다(선택 스코프)', async () => {
+    seed({ calendars: ['me@example.com'] });
+    stubGis();
+    stubFetch();
+    clientId = 'test-client.apps.googleusercontent.com';
+    const user = userEvent.setup();
+    const { container } = renderHome();
+    await openCalendar(container, user);
+    await waitFor(() => expect(screen.getAllByText(/구글 회의/).length).toBeGreaterThan(0));
+    await user.click(screen.getByText('새 일정'));
+    await waitFor(() => expect(document.querySelector('[data-new-cal="me@example.com"]')).toBeTruthy());
+    await user.click(document.querySelector<HTMLElement>('[data-new-cal="me@example.com"]')!);
+    await waitFor(() => expect(document.querySelector('[data-gf-guest-input]')).toBeTruthy());
+
+    // 이름 검색이 열려 있으면 라벨이 이메일 전용이 아니다
+    expect(screen.getByLabelText('참석자 이름 또는 이메일')).toBeTruthy();
+    await user.type(screen.getByLabelText('참석자 이름 또는 이메일'), '여은');
+    const hit = await waitFor(() => {
+      const el = document.querySelector('[data-gf-guest-hit="eunjin@example.com"]');
+      expect(el).toBeTruthy();
+      return el as HTMLElement;
+    });
+    // 후보에 **이름과 이메일이 함께** 보인다(스크린샷의 그 모습)
+    expect(hit.textContent).toContain('여은진');
+    expect(hit.textContent).toContain('eunjin@example.com');
+    fireEvent.mouseDown(hit);
+    await waitFor(() => expect(document.querySelector('[data-gf-guest="eunjin@example.com"]')).toBeTruthy());
+  });
+
+  it('회의실을 검색해 예약한다 — 구글에서는 참석자(resource)로 저장된다', async () => {
+    seed({ calendars: ['me@example.com'] });
+    stubGis();
+    const f = stubFetch();
+    clientId = 'test-client.apps.googleusercontent.com';
+    const user = userEvent.setup();
+    const { container } = renderHome();
+    await openCalendar(container, user);
+    await waitFor(() => expect(screen.getAllByText(/구글 회의/).length).toBeGreaterThan(0));
+    await user.click(screen.getByText('새 일정'));
+    await waitFor(() => expect(document.querySelector('[data-new-cal="me@example.com"]')).toBeTruthy());
+    await user.type(screen.getByLabelText('일정 제목'), '주간 회의');
+    await user.click(document.querySelector<HTMLElement>('[data-new-cal="me@example.com"]')!);
+    await waitFor(() => expect(document.querySelector('[data-gf-room-input]')).toBeTruthy());
+
+    await user.type(screen.getByLabelText('회의실 검색'), '35');
+    const room = await waitFor(() => {
+      const el = document.querySelector('[data-gf-room-hit]');
+      expect(el).toBeTruthy();
+      return el as HTMLElement;
+    });
+    expect(room.textContent).toContain('회의실-35-01');
+    fireEvent.mouseDown(room);
+    await waitFor(() => expect(document.querySelector('[data-gf-room]')).toBeTruthy());
+
+    await user.click(screen.getByText('등록', { exact: true }));
+    await waitFor(() => {
+      const post = f.mock.calls.find((c) => (c[1] as { method?: string } | undefined)?.method === 'POST');
+      expect(post).toBeTruthy();
+      const body = JSON.parse((post![1] as { body: string }).body) as { attendees: { email: string; resource?: boolean }[] };
+      // 회의실은 `resource: true`인 참석자다 — 사람과 같은 배열에 실린다
+      expect(body.attendees).toEqual([{ email: 'room-35-01@resource.calendar.google.com', resource: true }]);
+    });
+  });
+
+  it('선택 스코프가 없으면 이름 검색·회의실이 빠진다 — 이메일 입력으로 남는다', async () => {
+    seed({ calendars: ['me@example.com'] });
+    // 구글이 **필수 스코프만** 승인한다(개인 계정·조직이 막은 경우)
+    stubGis('https://www.googleapis.com/auth/calendar.events https://www.googleapis.com/auth/calendar.calendarlist.readonly');
+    stubFetch();
+    clientId = 'test-client.apps.googleusercontent.com';
+    const user = userEvent.setup();
+    const { container } = renderHome();
+    await openCalendar(container, user);
+    await waitFor(() => expect(screen.getAllByText(/구글 회의/).length).toBeGreaterThan(0));
+    await user.click(screen.getByText('새 일정'));
+    await waitFor(() => expect(document.querySelector('[data-new-cal="me@example.com"]')).toBeTruthy());
+    await user.click(document.querySelector<HTMLElement>('[data-new-cal="me@example.com"]')!);
+    const fields = await waitFor(() => {
+      const el = document.querySelector('[data-google-fields]');
+      expect(el).toBeTruthy();
+      return el as HTMLElement;
+    });
+    // 연동 자체는 그대로 살아 있다(필수만 있어도 만들고 고칠 수 있다)
+    expect(fields.querySelector('[data-gf-guest-input]')).toBeTruthy();
+    // 이름 검색은 없다 — 라벨이 이메일 전용이다
+    expect(screen.getByLabelText('참석자 이메일')).toBeTruthy();
+    // 회의실 구획은 그리지 않는다(결과가 영영 비는 상자를 두지 않는다)
+    expect(fields.querySelector('[data-gf-room-input]')).toBeNull();
   });
 
   it('구글 목적지의 참석자·반복·알림이 POST 본문에 실린다', async () => {
@@ -525,7 +621,7 @@ describe('구글 캘린더 겹치기(PR5)', () => {
     await user.click(document.querySelector<HTMLElement>('[data-new-cal="me@example.com"]')!);
     await waitFor(() => expect(document.querySelector('[data-gf-guest-input]')).toBeTruthy());
 
-    await user.type(screen.getByLabelText('참석자 이메일'), 'a@b.com{Enter}');
+    await user.type(screen.getByLabelText('참석자 이름 또는 이메일'), 'a@b.com{Enter}');
     await user.click(document.querySelector<HTMLElement>('[data-gf-remind="10"]')!);
     await user.click(document.querySelector<HTMLElement>('[data-gf-vis="private"]')!);
     await user.click(document.querySelector<HTMLElement>('[data-gf-repeat]')!);

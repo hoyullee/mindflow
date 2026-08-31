@@ -10,7 +10,7 @@
 
 import { useState } from 'react';
 import { EventDetail } from './EventDetail';
-import { GoogleEventFields, type GoogleFieldsChange, type GoogleFieldsValue } from './GoogleEventFields';
+import { GoogleEventFields, type GoogleDirectoryApi, type GoogleFieldsChange, type GoogleFieldsValue } from './GoogleEventFields';
 import { RECURRENCE_OFF } from './googleCalendar';
 import type { CalendarEvent, CalendarEventInput } from '../../../adapters/ports';
 import type { GoogleEvent, GoogleEventDraft } from './googleCalendar';
@@ -46,6 +46,7 @@ export function draftFrom(g: GoogleEvent, patch: Partial<CalendarEventInput>, fi
     // 바꾸지 않은 구글 전용 필드도 **그대로 실어** 보낸다 — PATCH에서 빠지면
     // 참석자·알림이 조용히 지워진다(위치·메모와 같은 이유).
     attendees: g.attendees ?? [],
+    rooms: g.rooms ?? [],
     visibility: g.visibility ?? 'default',
     transparency: g.transparency ?? 'opaque',
     ...(g.reminderMinutes !== undefined ? { reminderMinutes: g.reminderMinutes } : {}),
@@ -75,6 +76,7 @@ export function draftFrom(g: GoogleEvent, patch: Partial<CalendarEventInput>, fi
   }
   if (fields) {
     if (fields.attendees) next.attendees = fields.attendees;
+    if (fields.rooms) next.rooms = fields.rooms;
     if (fields.visibility) next.visibility = fields.visibility;
     if (fields.transparency) next.transparency = fields.transparency;
     // 알림은 `undefined`(캘린더 기본)도 뜻이 있으므로 **키가 왔는지**로 판단한다.
@@ -90,6 +92,7 @@ export function draftFrom(g: GoogleEvent, patch: Partial<CalendarEventInput>, fi
 export function fieldsOf(g: GoogleEvent): GoogleFieldsValue {
   return {
     attendees: g.attendees ?? [],
+    rooms: g.rooms ?? [],
     visibility: g.visibility ?? 'default',
     transparency: g.transparency ?? 'opaque',
     reminderMinutes: g.reminderMinutes,
@@ -104,6 +107,7 @@ export function GoogleEventDetail({
   onClose,
   onPatch,
   onDelete,
+  directory,
 }: {
   event: GoogleEvent;
   isMobile: boolean;
@@ -111,6 +115,7 @@ export function GoogleEventDetail({
   /** 쓸 수 없는 캘린더(공휴일·보기 전용 공유)면 넘기지 않는다 — 그때는 읽기 전용. */
   onPatch?: (draft: GoogleEventDraft) => Promise<string | null>;
   onDelete?: () => Promise<string | null>;
+  directory?: GoogleDirectoryApi;
 }) {
   const [pending, setPending] = useState<Partial<CalendarEventInput>>({});
   const [pendingFields, setPendingFields] = useState<GoogleFieldsChange>({});
@@ -149,6 +154,7 @@ export function GoogleEventDetail({
               value={{ ...fieldsOf(event), ...pendingFields }}
               mode="edit"
               recurring={!!event.recurringEventId}
+              {...(directory ? { directory } : {})}
               {...(event.meetLink ? { meetLink: event.meetLink } : {})}
               onChange={(patch) => {
                 setPendingFields((p) => ({ ...p, ...patch }));
@@ -192,6 +198,7 @@ export function GoogleDetailHost({
   onClose,
   onPatch,
   onDelete,
+  directory,
 }: {
   openId: string | null;
   events: readonly GoogleEvent[];
@@ -199,6 +206,7 @@ export function GoogleDetailHost({
   onClose: () => void;
   onPatch: (ev: GoogleEvent, draft: GoogleEventDraft) => Promise<string | null>;
   onDelete: (ev: GoogleEvent) => Promise<string | null>;
+  directory?: GoogleDirectoryApi;
 }) {
   const g = openId ? events.find((e) => e.id === openId) : null;
   if (!g) return null;
@@ -207,6 +215,7 @@ export function GoogleDetailHost({
       event={g}
       isMobile={isMobile}
       onClose={onClose}
+      {...(directory ? { directory } : {})}
       {...(g.writable
         ? {
             onPatch: (draft: GoogleEventDraft) => onPatch(g, draft),

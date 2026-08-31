@@ -30,27 +30,54 @@
 import { loadGisScript, readGoogleClientId } from '../../auth/googleIdentity';
 
 /**
- * 이 앱이 구글에 요구하는 전부 — **딱 두 가지**다.
+ * 이 앱이 구글에 요구하는 것 — **필수 둘 + 선택 셋.**
  *
- * - `calendar.events` 일정 읽기·쓰기. 그리오에서 만들고 고치려면 필요하다(PR6).
+ * ## 필수 — 없으면 기능이 성립하지 않는다
+ * - `calendar.events` 일정 읽기·쓰기. 그리오에서 만들고 고치려면 필요하다.
  * - `calendar.calendarlist.readonly` "어느 캘린더를 겹칠까"를 고르게 하는 목록.
  *   `calendar.events`는 일정만 주고 캘린더 **목록**은 주지 않는다.
+ *
+ * ## 선택 — 있으면 더 편하고, 없으면 그만큼만 줄어든다
+ * - `directory.readonly` 조직 구성원을 **이름으로** 찾아 참석자로 넣는다(People API).
+ * - `contacts.other.readonly` 주고받은 적 있는 사람도 후보에(개인 계정에서 특히).
+ * - `admin.directory.resource.calendar.readonly` **회의실** 목록(Admin SDK).
+ *
+ * **왜 필수와 선택을 가르나**: 개인 구글 계정에는 조직 디렉터리가 없고, 회의실
+ * 스코프는 조직 설정에 따라 관리자 동의를 요구할 수 있다. 그걸 필수로 묶으면
+ * **받지 못한 사람은 캘린더 연동 자체가 막힌다** — 그럴 바엔 그 기능만 접고
+ * 이메일 입력으로 돌아가는 편이 낫다(정직한 어포던스: 안 되는 것은 안 보인다).
  *
  * 전체 권한(`calendar`)을 받지 않은 이유: 캘린더 자체를 만들거나 지우지 않으므로
  * 요구할 근거가 없다 — 검수도 스코프마다 "왜 필요한가"를 묻는다.
  */
-export const GOOGLE_CALENDAR_SCOPES = ['https://www.googleapis.com/auth/calendar.events', 'https://www.googleapis.com/auth/calendar.calendarlist.readonly'];
+export const GOOGLE_SCOPE_REQUIRED = ['https://www.googleapis.com/auth/calendar.events', 'https://www.googleapis.com/auth/calendar.calendarlist.readonly'];
+
+export const GOOGLE_SCOPE_DIRECTORY = 'https://www.googleapis.com/auth/directory.readonly';
+export const GOOGLE_SCOPE_OTHER_CONTACTS = 'https://www.googleapis.com/auth/contacts.other.readonly';
+export const GOOGLE_SCOPE_ROOMS = 'https://www.googleapis.com/auth/admin.directory.resource.calendar.readonly';
+
+export const GOOGLE_SCOPE_OPTIONAL = [GOOGLE_SCOPE_DIRECTORY, GOOGLE_SCOPE_OTHER_CONTACTS, GOOGLE_SCOPE_ROOMS];
+
+/** 동의 창에서 함께 묻는 전부(필수 + 선택). */
+export const GOOGLE_CALENDAR_SCOPES = [...GOOGLE_SCOPE_REQUIRED, ...GOOGLE_SCOPE_OPTIONAL];
 export const GOOGLE_CALENDAR_SCOPE = GOOGLE_CALENDAR_SCOPES.join(' ');
 
+/** 승인된 스코프 문자열 → 집합. */
+export function scopeSet(granted: string | undefined): Set<string> {
+  return new Set((granted ?? '').split(/\s+/).filter(Boolean));
+}
+
 /**
- * 받아 둔 토큰이 지금 필요한 권한을 **다 담고 있는가.** 스코프를 넓힌 뒤에도 옛
- * 토큰이 남아 있으면 쓰기 요청만 403으로 죽는다 — 그럴 바엔 없는 것으로 보고
- * 다시 받게 한다(사용자에겐 "다시 연결" 한 번).
+ * 받아 둔 토큰이 **필수** 권한을 다 담고 있는가. 스코프를 넓힌 뒤에도 옛 토큰이
+ * 남아 있으면 쓰기 요청만 403으로 죽는다 — 그럴 바엔 없는 것으로 보고 다시 받게
+ * 한다(사용자에겐 "다시 연결" 한 번).
+ *
+ * **선택 스코프는 보지 않는다** — 하나라도 거절당하면 연동이 통째로 막히기 때문이다.
  */
 export function scopeCovers(granted: string | undefined): boolean {
   if (!granted) return false;
-  const have = new Set(granted.split(/\s+/).filter(Boolean));
-  return GOOGLE_CALENDAR_SCOPES.every((s) => have.has(s));
+  const have = scopeSet(granted);
+  return GOOGLE_SCOPE_REQUIRED.every((s) => have.has(s));
 }
 
 /** 토큰을 담아 두는 자리 — 탭이 닫히면 사라진다(위 주석의 이유). */
@@ -126,6 +153,8 @@ export interface GoogleEvent {
   recurringEventId?: string;
   /** 초대한 사람들의 이메일 — 구글이 초대 메일을 보낸다(우리는 못 보낸다). */
   attendees?: string[];
+  /** 예약한 회의실의 리소스 주소 — 구글에서는 이것도 참석자다(`resource: true`). */
+  rooms?: string[];
   /** 공개 설정 — 기본/공개/비공개. */
   visibility?: GoogleVisibility;
   /** 참여 가능 여부 — 바쁨(opaque)/한가함(transparent). */
@@ -354,11 +383,21 @@ function prevDay(iso: string): string {
   return `${dt.getFullYear()}-${p(dt.getMonth() + 1)}-${p(dt.getDate())}`;
 }
 
-/** 참석자 이메일만 — 응답·역할은 우리 화면이 쓰지 않는다(구글에서 본다). */
-function parseAttendees(raw: unknown): { attendees?: string[] } {
+/**
+ * 참석자 이메일만 — 응답·역할은 우리 화면이 쓰지 않는다(구글에서 본다).
+ * **회의실은 갈라낸다**: 구글은 회의실도 참석자로 싣지만(`resource: true`) 사람과
+ * 같은 줄에 늘어놓으면 "누구를 초대했나"가 흐려진다.
+ */
+function parseAttendees(raw: unknown): { attendees?: string[]; rooms?: string[] } {
   if (!Array.isArray(raw)) return {};
-  const list = raw.map((a) => (a as { email?: unknown }).email).filter((e): e is string => typeof e === 'string' && !!e);
-  return list.length ? { attendees: list } : {};
+  const people: string[] = [];
+  const rooms: string[] = [];
+  for (const a of raw as Record<string, unknown>[]) {
+    const email = typeof a.email === 'string' ? a.email : '';
+    if (!email) continue;
+    (a.resource === true ? rooms : people).push(email);
+  }
+  return { ...(people.length ? { attendees: people } : {}), ...(rooms.length ? { rooms } : {}) };
 }
 
 /**
@@ -459,6 +498,8 @@ export interface GoogleEventDraft {
    * 그걸 보낼 장치가 없다 — 그래서 목적지가 구글일 때만 화면에 뜬다.
    */
   attendees?: string[];
+  /** 예약할 회의실의 리소스 주소 — 본문에서는 참석자로 합쳐진다. */
+  rooms?: string[];
   visibility?: GoogleVisibility;
   transparency?: GoogleTransparency;
   /** `null`=없음, 숫자=N분 전, 없으면 캘린더 기본 알림. */
@@ -530,7 +571,8 @@ export function draftToBody(d: GoogleEventDraft): Record<string, unknown> {
     location: d.location ?? '',
     description: d.description ?? '',
     // 같은 이유로 참석자도 **빈 배열까지** 보낸다(전원 초대 취소가 저장되게).
-    attendees: (d.attendees ?? []).map((email) => ({ email })),
+    // 회의실은 구글에서 `resource: true`인 참석자다 — 사람 뒤에 붙인다.
+    attendees: [...(d.attendees ?? []).map((email) => ({ email })), ...(d.rooms ?? []).map((email) => ({ email, resource: true }))],
     visibility: d.visibility ?? 'default',
     transparency: d.transparency ?? 'opaque',
     reminders:

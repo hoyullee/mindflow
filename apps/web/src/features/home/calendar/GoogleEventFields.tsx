@@ -5,19 +5,24 @@
 // 우리 표(0033)에는 그걸 보낼 장치가 없으므로, 목적지가 Geurio면 대신 한 줄로 알린다
 // (디자인 원본의 `evCalNote`도 "참석자·Meet는 구글 일정에서 쓸 수 있어요"라고 적는다).
 //
-// **포트하지 않은 것: 회의실.** 디자인 원본은 회의실 검색 상자를 두지만 그 목록은
-// 조직 캘린더(Admin SDK + Workspace 관리자 승인)에서 와야 한다 — 우리에겐 원천이
-// 없다. 검색 결과가 영영 비는 상자를 두지 않는다(정직한 어포던스 규칙).
+// **참석자·회의실은 선택 스코프에 달려 있다.** 이름 검색은 People API
+// (`directory.readonly`·`contacts.other.readonly`), 회의실은 Admin SDK
+// (`admin.directory.resource.calendar.readonly`)다. 받지 못했으면(개인 계정에는
+// 디렉터리가 없고, 회의실은 조직이 막을 수 있다) **이름 검색 없이 이메일 입력**으로
+// 남고 회의실 구획은 **그리지 않는다** — 결과가 영영 비는 상자를 두지 않는다.
 
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import type { CSSProperties, ReactNode } from 'react';
 import { DateButton, PillButton } from './DatePop';
 import { RadioCards } from '../../../components/Segmented';
 import { recurrenceSummary, type GoogleTransparency, type GoogleVisibility, type RecurrenceSpec } from './googleCalendar';
+import { filterRooms, type DirectoryPerson, type MeetingRoom } from './googleDirectory';
 
 /** 이 묶음이 다루는 값 — 새 일정은 지역 상태, 상세는 구글에서 읽은 값이다. */
 export interface GoogleFieldsValue {
   attendees: string[];
+  /** 예약한 회의실의 리소스 주소. */
+  rooms: string[];
   visibility: GoogleVisibility;
   transparency: GoogleTransparency;
   /** `undefined`=캘린더 기본, `null`=없음, 숫자=N분 전. */
@@ -27,8 +32,18 @@ export interface GoogleFieldsValue {
   addMeet: boolean;
 }
 
+/** 선택 스코프로 열리는 것들 — `useGoogleCalendar`가 이 모양으로 내준다. */
+export interface GoogleDirectoryApi {
+  canSearchPeople: boolean;
+  searchPeople: (query: string) => Promise<DirectoryPerson[] | null>;
+  canPickRooms: boolean;
+  rooms: readonly MeetingRoom[];
+  loadRooms: () => void;
+}
+
 export interface GoogleFieldsChange {
   attendees?: string[];
+  rooms?: string[];
   visibility?: GoogleVisibility;
   transparency?: GoogleTransparency;
   reminderMinutes?: number | null | undefined;
@@ -74,13 +89,20 @@ export function GoogleEventFields({
   mode,
   meetLink,
   recurring,
+  directory,
 }: {
   value: GoogleFieldsValue;
   onChange: (patch: GoogleFieldsChange) => void;
   mode: 'create' | 'edit';
   meetLink?: string;
   recurring?: boolean;
+  /** 선택 스코프로 열리는 것들 — 없으면 이름 검색·회의실이 빠진다. */
+  directory?: GoogleDirectoryApi;
 }) {
+  // 회의실 목록은 이 묶음이 처음 열릴 때 한 번 받는다(왕복 1회).
+  useEffect(() => {
+    if (directory?.canPickRooms) directory.loadRooms();
+  }, [directory]);
   const remindKey = REMIND_OPTS.find((o) => o.minutes === value.reminderMinutes)?.key ?? 'default';
   const visNote = VIS_OPTS.find((o) => o.v === value.visibility)?.note ?? '';
 
@@ -149,8 +171,19 @@ export function GoogleEventFields({
       ) : null}
 
       <Field label="참석자">
-        <Attendees list={value.attendees} onChange={(next) => onChange({ attendees: next })} />
+        <Attendees
+          list={value.attendees}
+          onChange={(next) => onChange({ attendees: next })}
+          {...(directory?.canSearchPeople ? { search: directory.searchPeople } : {})}
+        />
       </Field>
+
+      {/* 회의실 — 목록을 받을 수 있을 때만 그린다(디자인 원본의 그 자리). */}
+      {directory?.canPickRooms && (
+        <Field label="회의실">
+          <Rooms all={directory.rooms} picked={value.rooms} onChange={(next) => onChange({ rooms: next })} />
+        </Field>
+      )}
 
       <Field label="공개 설정">
         <Segments aria="공개 설정" items={VIS_OPTS.map((o) => ({ value: o.v, label: o.label }))} value={value.visibility} onChange={(v) => onChange({ visibility: v as GoogleVisibility })} attr="data-gf-vis" wide />
@@ -182,31 +215,99 @@ export function GoogleEventFields({
  * 참석자 — 디자인 원본은 조직 디렉터리를 검색하지만 우리는 그 목록을 가져올 수 없다
  * (Admin SDK + 관리자 승인). 그래서 **이메일을 직접 적는다.** 초대 메일은 구글이 보낸다.
  */
-function Attendees({ list, onChange }: { list: string[]; onChange: (next: string[]) => void }) {
+function Attendees({ list, onChange, search }: { list: string[]; onChange: (next: string[]) => void; search?: (q: string) => Promise<DirectoryPerson[] | null> }) {
   const [draft, setDraft] = useState('');
-  const add = (): void => {
-    const email = draft.trim().toLowerCase();
+  const [hits, setHits] = useState<DirectoryPerson[]>([]);
+  const [active, setActive] = useState(0);
+  // 이름 검색은 **입력마다 왕복**이므로 220ms 디바운스 — 사람이 치는 속도로는
+  // 한 낱말에 한 번이면 충분하다(홈 검색과 같은 판단).
+  const seqRef = useRef(0);
+  useEffect(() => {
+    if (!search) return;
+    const q = draft.trim();
+    if (q.length < 2) {
+      setHits([]);
+      return;
+    }
+    const mine = ++seqRef.current;
+    const t = setTimeout(() => {
+      void search(q).then((r) => {
+        // 늦게 온 옛 응답이 새 결과를 덮지 않게(마지막 요청만 적용).
+        if (mine !== seqRef.current) return;
+        setHits((r ?? []).filter((p) => !list.includes(p.email)));
+        setActive(0);
+      });
+    }, 220);
+    return () => clearTimeout(t);
+  }, [draft, search, list]);
+
+  const addEmail = (email: string): void => {
+    const e = email.trim().toLowerCase();
     setDraft('');
-    if (!email || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email) || list.includes(email)) return;
-    onChange([...list, email]);
+    setHits([]);
+    if (!e || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(e) || list.includes(e)) return;
+    onChange([...list, e]);
   };
+  const add = (): void => addEmail(draft);
+
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: 8, minWidth: 0 }}>
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 8, minWidth: 0, position: 'relative' }}>
       <input
-        aria-label="참석자 이메일"
+        aria-label={search ? '참석자 이름 또는 이메일' : '참석자 이메일'}
         data-gf-guest-input
         value={draft}
-        placeholder="이메일을 적고 Enter"
+        placeholder={search ? '이름 또는 이메일 검색' : '이메일을 적고 Enter'}
+        autoComplete="off"
         onChange={(e) => setDraft(e.target.value)}
-        onBlur={add}
+        onBlur={() => {
+          // 후보를 고르려는 클릭이 blur보다 먼저 오게 — 그래서 커밋은 미룬다.
+          setTimeout(() => {
+            setHits([]);
+            if (draft.trim()) add();
+          }, 120);
+        }}
         onKeyDown={(e) => {
+          if (hits.length > 0 && (e.key === 'ArrowDown' || e.key === 'ArrowUp')) {
+            e.preventDefault();
+            setActive((i) => (i + (e.key === 'ArrowDown' ? 1 : hits.length - 1)) % hits.length);
+            return;
+          }
+          if (e.key === 'Escape' && hits.length > 0) {
+            e.preventDefault();
+            setHits([]);
+            return;
+          }
           if (e.key === 'Enter' || e.key === ',') {
             e.preventDefault();
-            add();
+            // 후보가 떠 있으면 그것을, 아니면 적은 값을 그대로 이메일로 본다.
+            if (hits.length > 0) addEmail(hits[active]?.email ?? draft);
+            else add();
           }
         }}
         style={{ width: '100%', boxSizing: 'border-box', height: 40, padding: '0 12px', borderRadius: 12, border: '1px solid var(--mf-border)', background: 'var(--mf-card)', font: 'inherit', fontSize: 13, color: 'var(--mf-text)', outline: 'none' }}
       />
+      {hits.length > 0 && (
+        <div data-gf-guest-hits style={{ display: 'flex', flexDirection: 'column', gap: 1, padding: 4, borderRadius: 12, background: 'var(--mf-card)', border: '1px solid var(--mf-border)', boxShadow: 'var(--mf-card-shadow-sm)', maxHeight: 190, overflowY: 'auto' }} className="lnb-scroll">
+          {hits.map((p, i) => (
+            <button
+              key={p.email}
+              type="button"
+              data-gf-guest-hit={p.email}
+              data-active={i === active ? '1' : undefined}
+              // mousedown으로 처리한다 — blur가 클릭을 삼키는 함정(서식 툴바에서 겪은 것).
+              onMouseDown={(e) => {
+                e.preventDefault();
+                addEmail(p.email);
+              }}
+              onMouseEnter={() => setActive(i)}
+              style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-start', gap: 1, padding: '7px 9px', borderRadius: 9, border: 0, background: i === active ? 'var(--mf-panel2)' : 'transparent', font: 'inherit', textAlign: 'left', cursor: 'pointer', minWidth: 0, width: '100%' }}
+            >
+              <span style={{ fontSize: 12.5, fontWeight: 700, color: 'var(--mf-text)', maxWidth: '100%', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{p.name}</span>
+              <span style={{ fontSize: 11, color: 'var(--mf-faint)', maxWidth: '100%', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{p.email}</span>
+            </button>
+          ))}
+        </div>
+      )}
       {list.length > 0 && (
         <span style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
           {list.map((email) => (
@@ -223,6 +324,79 @@ function Attendees({ list, onChange }: { list: string[]; onChange: (next: string
       )}
       <SubText>{list.length ? `${list.length}명을 초대해요 · 초대 메일은 구글이 보냅니다` : '아직 초대한 사람이 없어요'}</SubText>
     </div>
+  );
+}
+
+/**
+ * 회의실 — 목록은 한 번 받아 두고(왕복 1회) 화면에서 좁힌다. 고른 회의실은 구글에서
+ * `resource: true` 참석자로 저장되므로 **실제로 예약된다**.
+ */
+function Rooms({ all, picked, onChange }: { all: readonly MeetingRoom[]; picked: string[]; onChange: (next: string[]) => void }) {
+  const [q, setQ] = useState('');
+  const hits = q.trim() ? filterRooms(all, q).filter((r) => !picked.includes(r.email)) : [];
+  const byEmail = (email: string) => all.find((r) => r.email === email);
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 8, minWidth: 0 }}>
+      <input
+        aria-label="회의실 검색"
+        data-gf-room-input
+        value={q}
+        placeholder="회의실 이름 또는 층 검색"
+        autoComplete="off"
+        onChange={(e) => setQ(e.target.value)}
+        style={{ width: '100%', boxSizing: 'border-box', height: 40, padding: '0 12px', borderRadius: 12, border: '1px solid var(--mf-border)', background: 'var(--mf-card)', font: 'inherit', fontSize: 13, color: 'var(--mf-text)', outline: 'none' }}
+      />
+      {q.trim() && hits.length === 0 && <SubText>검색 결과가 없어요</SubText>}
+      {hits.length > 0 && (
+        <div data-gf-room-hits style={{ display: 'flex', flexDirection: 'column', gap: 1, padding: 4, borderRadius: 12, background: 'var(--mf-card)', border: '1px solid var(--mf-border)', boxShadow: 'var(--mf-card-shadow-sm)', maxHeight: 190, overflowY: 'auto' }} className="lnb-scroll">
+          {hits.map((r) => (
+            <button
+              key={r.email}
+              type="button"
+              data-gf-room-hit={r.email}
+              onMouseDown={(e) => {
+                e.preventDefault();
+                setQ('');
+                onChange([...picked, r.email]);
+              }}
+              style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '7px 9px', borderRadius: 9, border: 0, background: 'transparent', font: 'inherit', textAlign: 'left', cursor: 'pointer', minWidth: 0, width: '100%' }}
+              className="menu-row"
+            >
+              <RoomGlyph />
+              <span style={{ flex: 1, minWidth: 0, fontSize: 12.5, fontWeight: 700, color: 'var(--mf-text)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{r.name}</span>
+              {r.capacity ? <span style={{ flex: '0 0 auto', fontSize: 11, color: 'var(--mf-faint)' }}>{r.capacity}인</span> : null}
+            </button>
+          ))}
+        </div>
+      )}
+      {picked.length > 0 && (
+        <span style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
+          {picked.map((email) => {
+            const r = byEmail(email);
+            return (
+              <span key={email} data-gf-room={email} style={{ display: 'inline-flex', alignItems: 'center', gap: 6, height: 28, padding: '0 6px 0 9px', borderRadius: 999, background: 'var(--mf-panel2)', border: '1px solid var(--mf-border)', fontSize: 12, color: 'var(--mf-subtext)', maxWidth: '100%' }}>
+                <RoomGlyph />
+                <span style={{ minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{r?.name ?? email}</span>
+                <button type="button" aria-label={`${r?.name ?? email} 예약 취소`} className="mf-ctl" onMouseDown={(e) => e.preventDefault()} onClick={() => onChange(picked.filter((p) => p !== email))} style={{ flex: '0 0 auto', width: 18, height: 18, borderRadius: 999, border: 0, background: 'transparent', color: 'var(--mf-faint)', cursor: 'pointer', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', padding: 0 }}>
+                  <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.6" strokeLinecap="round" aria-hidden="true">
+                    <path d="M6 6l12 12M18 6 6 18" />
+                  </svg>
+                </button>
+              </span>
+            );
+          })}
+        </span>
+      )}
+      <SubText>{picked.length ? '선택한 시간에 예약돼요 · 구글이 회의실 일정에 함께 넣습니다' : '조직 캘린더의 회의실을 검색해 예약할 수 있어요'}</SubText>
+    </div>
+  );
+}
+
+function RoomGlyph() {
+  return (
+    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="var(--mf-faint)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ flex: '0 0 auto' }} aria-hidden="true">
+      <path d="M4 21V5a1 1 0 0 1 1-1h9a1 1 0 0 1 1 1v16M15 9h4a1 1 0 0 1 1 1v11M3 21h18M11 12h.01" />
+    </svg>
   );
 }
 

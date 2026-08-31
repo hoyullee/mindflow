@@ -241,7 +241,7 @@ describe('새 일정 목적지(PR6)', () => {
   it('구글을 고르면 그 캘린더에만 만든다(메모는 description으로)', async () => {
     const createGeurio = vi.fn(async () => null);
     const createGoogle = vi.fn(async () => null);
-    await submitNewEvent(input, { kind: 'google', calendarId: 'me@example.com', fields: { attendees: ['a@b.com'], visibility: 'private', transparency: 'transparent', reminderMinutes: 10, recurrence: { on: true, unit: 'week', interval: 2, endMode: 'count', count: 5 }, addMeet: true } }, { createGeurio, createGoogle });
+    await submitNewEvent(input, { kind: 'google', calendarId: 'me@example.com', fields: { attendees: ['a@b.com'], rooms: [], visibility: 'private', transparency: 'transparent', reminderMinutes: 10, recurrence: { on: true, unit: 'week', interval: 2, endMode: 'count', count: 5 }, addMeet: true } }, { createGeurio, createGoogle });
     expect(createGeurio).not.toHaveBeenCalled();
     expect(createGoogle).toHaveBeenCalledWith(
       'me@example.com',

@@ -14,6 +14,10 @@ import {
   deleteGoogleEvent,
   ensureGoogleToken,
   fetchCalendarList,
+  GOOGLE_SCOPE_DIRECTORY,
+  GOOGLE_SCOPE_OTHER_CONTACTS,
+  GOOGLE_SCOPE_ROOMS,
+  scopeSet,
   fetchEvents,
   googleWriteError,
   readStoredToken,
@@ -24,6 +28,7 @@ import {
   type GoogleEvent,
   type GoogleEventDraft,
 } from './googleCalendar';
+import { fetchRooms, searchPeople as searchPeopleApi, type DirectoryPerson, type MeetingRoom } from './googleDirectory';
 import { readGoogleClientId } from '../../auth/googleIdentity';
 
 export interface GoogleCalendarApi {
@@ -58,6 +63,22 @@ export interface GoogleCalendarApi {
   createEvent: (calendarId: string, draft: GoogleEventDraft) => Promise<string | null>;
   updateEvent: (ev: GoogleEvent, draft: GoogleEventDraft) => Promise<string | null>;
   deleteEvent: (ev: GoogleEvent) => Promise<string | null>;
+  /**
+   * 사람을 **이름으로** 찾을 수 있는가 — 선택 스코프(`directory.readonly` /
+   * `contacts.other.readonly`)를 받았을 때만 참이다. 거짓이면 화면은 검색을 걸지
+   * 않고 이메일 직접 입력으로 남는다.
+   */
+  canSearchPeople: boolean;
+  searchPeople: (query: string) => Promise<DirectoryPerson[] | null>;
+  /**
+   * 회의실을 불러올 수 있는가 — Admin SDK 스코프를 받았고 조직이 허용할 때만.
+   * 거짓이면 회의실 구획을 **그리지 않는다**(눌러도 결과가 없는 상자를 두지 않는다).
+   */
+  canPickRooms: boolean;
+  /** 조직 회의실 — 한 번 받아 두고 화면에서 좁힌다. */
+  rooms: MeetingRoom[];
+  /** 회의실 목록을 아직 안 받았으면 지금 받는다(필드가 열릴 때 부른다). */
+  loadRooms: () => void;
 }
 
 export interface GoogleCalendarPrefs {
@@ -97,6 +118,12 @@ export function useGoogleCalendar(
   // 쓰기가 끝나면 이 값을 올려 보이는 달을 다시 받는다 — 화면에 남는 것은 언제나
   // **구글이 돌려준 것**이지 우리가 보낸 것이 아니다(구글이 정본).
   const [reloadTick, setReloadTick] = useState(0);
+  // 승인된 선택 스코프 — 사용자가 동의 화면에서 일부만 체크했을 수도 있다.
+  const [granted, setGranted] = useState<Set<string>>(() => scopeSet(readStoredToken()?.scope));
+  const [rooms, setRooms] = useState<MeetingRoom[]>([]);
+  // 회의실은 **한 번만** 받는다. `null`=아직, `false`=못 받았다(조직이 막았다).
+  const roomsLoadedRef = useRef(false);
+  const [roomsDenied, setRoomsDenied] = useState(false);
   const aliveRef = useRef(true);
   useEffect(() => {
     aliveRef.current = true;
@@ -121,6 +148,7 @@ export function useGoogleCalendar(
       }
       return null;
     }
+    if (aliveRef.current) setGranted(scopeSet(first.token.scope));
     try {
       return await run(first.token.accessToken);
     } catch (e) {
@@ -135,6 +163,7 @@ export function useGoogleCalendar(
         }
         return null;
       }
+      if (aliveRef.current) setGranted(scopeSet(again.token.scope));
       return run(again.token.accessToken);
     }
   }, []);
@@ -200,6 +229,7 @@ export function useGoogleCalendar(
     }
     setConnected(true);
     setNeedsReauth(false);
+    setGranted(scopeSet(res.token.scope));
     // 켜는 순간에는 **기본 캘린더 + 공휴일**만 고른다 — 캘린더가 스무 개인 사람에게
     // 전부 켜 주면 첫 화면이 남의 일정으로 뒤덮인다(직접 고르는 편이 낫다).
     try {
@@ -247,6 +277,31 @@ export function useGoogleCalendar(
 
   const writableCalendars = useMemo(() => calendars.filter((c) => c.writable), [calendars]);
 
+  // ── 선택 스코프로 열리는 두 기능 ─────────────────────────────────────────
+  const canDirectory = granted.has(GOOGLE_SCOPE_DIRECTORY);
+  const canOtherContacts = granted.has(GOOGLE_SCOPE_OTHER_CONTACTS);
+  const canSearchPeople = canDirectory || canOtherContacts;
+
+  const searchPeople = useCallback(
+    async (query: string): Promise<DirectoryPerson[] | null> => {
+      if (!canSearchPeople) return null;
+      return withToken((t) => searchPeopleApi(t, query, { directory: canDirectory, otherContacts: canOtherContacts })).catch(() => null);
+    },
+    [canSearchPeople, canDirectory, canOtherContacts, withToken],
+  );
+
+  const loadRooms = useCallback(() => {
+    if (roomsLoadedRef.current || !granted.has(GOOGLE_SCOPE_ROOMS)) return;
+    roomsLoadedRef.current = true;
+    void (async () => {
+      const got = await withToken((t) => fetchRooms(t)).catch(() => null);
+      if (!aliveRef.current) return;
+      // `null`은 "물어볼 수 없다"(403·관리자 동의 필요) — 그 구획을 접는다.
+      if (got === null) setRoomsDenied(true);
+      else setRooms(got);
+    })();
+  }, [granted, withToken]);
+
   const toggleCalendar = useCallback(
     (id: string) => {
       const has = prefs.calendars.includes(id);
@@ -272,5 +327,10 @@ export function useGoogleCalendar(
     createEvent,
     updateEvent,
     deleteEvent,
+    canSearchPeople,
+    searchPeople,
+    canPickRooms: granted.has(GOOGLE_SCOPE_ROOMS) && !roomsDenied,
+    rooms,
+    loadRooms,
   };
 }

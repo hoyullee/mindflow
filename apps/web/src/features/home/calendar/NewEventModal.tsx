@@ -22,7 +22,7 @@ import { DateButton, PillButton } from './DatePop';
 import { TimeButton } from './TimePop';
 import { addDays, daysBetween, minutesOf, todayISO } from './model';
 import { RadioCards } from '../../../components/Segmented';
-import { GoogleEventFields, type GoogleFieldsValue } from './GoogleEventFields';
+import { GoogleEventFields, type GoogleDirectoryApi, type GoogleFieldsValue } from './GoogleEventFields';
 import { RECURRENCE_OFF } from './googleCalendar';
 import type { CalendarEventInput } from '../../../adapters/ports';
 
@@ -58,6 +58,7 @@ export function NewEventModal({
   onClose,
   onSubmit,
   googleTargets = [],
+  directory,
 }: {
   draft: NewEventDraft;
   isMobile: boolean;
@@ -67,6 +68,8 @@ export function NewEventModal({
   onSubmit: (input: CalendarEventInput, target: NewEventTarget) => void;
   /** 쓸 수 있는 구글 캘린더 — 비어 있으면 고르기를 그리지 않는다. */
   googleTargets?: GoogleTarget[];
+  /** 선택 스코프로 열리는 것들(이름 검색·회의실) — 없으면 그만큼만 줄어든다. */
+  directory?: GoogleDirectoryApi;
 }) {
   const [title, setTitle] = useState('');
   const [allDay, setAllDay] = useState(draft.allDay);
@@ -79,7 +82,7 @@ export function NewEventModal({
   // 기본값은 **우리 표**다 — 남의 서비스에 쓰는 일은 사용자가 골라야 한다.
   const [dest, setDest] = useState<string>('geurio');
   // 구글 전용 필드 — 목적지를 Geurio로 되돌려도 값은 남는다(다시 고르면 그대로).
-  const [gf, setGf] = useState<GoogleFieldsValue>({ attendees: [], visibility: 'default', transparency: 'opaque', reminderMinutes: undefined, recurrence: RECURRENCE_OFF, addMeet: false });
+  const [gf, setGf] = useState<GoogleFieldsValue>({ attendees: [], rooms: [], visibility: 'default', transparency: 'opaque', reminderMinutes: undefined, recurrence: RECURRENCE_OFF, addMeet: false });
   // 고른 캘린더가 사라지면(연동 해제·권한 변경) 조용히 우리 표로 되돌린다.
   const destValid = dest === 'geurio' || googleTargets.some((t) => t.id === dest);
   const target: NewEventTarget = destValid && dest !== 'geurio' ? { kind: 'google', calendarId: dest, fields: gf } : { kind: 'geurio' };
@@ -321,7 +324,7 @@ export function NewEventModal({
 
           {/* 구글 전용 필드(디자인 원본 `nIsGoogle`) — Geurio면 그 사실을 한 줄로 알린다. */}
           {target.kind === 'google' ? (
-            <GoogleEventFields value={gf} mode="create" onChange={(patch) => setGf((v) => ({ ...v, ...patch }))} />
+            <GoogleEventFields value={gf} mode="create" onChange={(patch) => setGf((v) => ({ ...v, ...patch }))} {...(directory ? { directory } : {})} />
           ) : (
             <span data-new-geurio-note style={{ fontSize: 11.5, color: 'var(--mf-faint2)', lineHeight: 1.6 }}>
               Geurio에만 저장되는 일정이에요 · 참석자·Meet·반복은 <b style={{ fontWeight: 700 }}>구글 캘린더</b>를 고르면 쓸 수 있어요
