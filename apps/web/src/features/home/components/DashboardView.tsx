@@ -941,6 +941,7 @@ function CalWidgetDialogs({
         onClose={controller.closeCalendarGoogle}
         onPatch={google.updateEvent}
         onDelete={google.deleteEvent}
+        directory={{ canSearchPeople: google.canSearchPeople, searchPeople: google.searchPeople, canPickRooms: google.canPickRooms, rooms: google.rooms, loadRooms: google.loadRooms }}
       />
       {state.calNewEvent && (
         <NewEventModal
@@ -953,6 +954,7 @@ function CalWidgetDialogs({
             controller.closeNewEvent();
           }}
           googleTargets={google.writableCalendars.map((c) => ({ id: c.id, name: c.summary, ...(c.color ? { color: c.color } : {}) }))}
+          directory={{ canSearchPeople: google.canSearchPeople, searchPeople: google.searchPeople, canPickRooms: google.canPickRooms, rooms: google.rooms, loadRooms: google.loadRooms }}
           onSubmit={(input, target) => {
             setSaving(true);
             void submitNewEvent(input, target, { createGeurio: events.create, createGoogle: google.createEvent }).then((err) => {

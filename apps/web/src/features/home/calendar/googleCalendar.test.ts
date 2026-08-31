@@ -1,5 +1,5 @@
 import { describe, expect, it, beforeEach, vi } from 'vitest';
-import { GOOGLE_CALENDAR_SCOPE, draftToBody, googleWriteError, isDayOffHoliday, isHolidayCalendarId, scopeCovers, parseCalendarList, parseEvents, readStoredToken, splitGoogleDateTime, storeToken, type GoogleCalendarMeta } from './googleCalendar';
+import { GOOGLE_CALENDAR_SCOPE, RECURRENCE_OFF, buildRecurrence, draftToBody, googleWriteError, recurrenceSummary, isDayOffHoliday, isHolidayCalendarId, scopeCovers, parseCalendarList, parseEvents, readStoredToken, splitGoogleDateTime, storeToken, type GoogleCalendarMeta } from './googleCalendar';
 import { googleEntries, holidayMap } from './entries';
 import { draftFrom } from './GoogleEventDetail';
 import { submitNewEvent } from './newEventSubmit';
@@ -241,8 +241,94 @@ describe('새 일정 목적지(PR6)', () => {
   it('구글을 고르면 그 캘린더에만 만든다(메모는 description으로)', async () => {
     const createGeurio = vi.fn(async () => null);
     const createGoogle = vi.fn(async () => null);
-    await submitNewEvent(input, { kind: 'google', calendarId: 'me@example.com' }, { createGeurio, createGoogle });
+    await submitNewEvent(input, { kind: 'google', calendarId: 'me@example.com', fields: { attendees: ['a@b.com'], rooms: [], visibility: 'private', transparency: 'transparent', reminderMinutes: 10, recurrence: { on: true, unit: 'week', interval: 2, endMode: 'count', count: 5 }, addMeet: true } }, { createGeurio, createGoogle });
     expect(createGeurio).not.toHaveBeenCalled();
-    expect(createGoogle).toHaveBeenCalledWith('me@example.com', expect.objectContaining({ title: '회의', description: '준비물' }));
+    expect(createGoogle).toHaveBeenCalledWith(
+      'me@example.com',
+      expect.objectContaining({
+        title: '회의',
+        description: '준비물',
+        attendees: ['a@b.com'],
+        visibility: 'private',
+        transparency: 'transparent',
+        reminderMinutes: 10,
+        recurrence: ['RRULE:FREQ=WEEKLY;INTERVAL=2;COUNT=5'],
+        addMeet: true,
+      }),
+    );
+  });
+});
+
+describe('구글 전용 필드(PR6 후속 — 디자인 원본 nIsGoogle)', () => {
+  it('반복 설정 → RRULE. 꺼져 있으면 아무것도 보내지 않는다', () => {
+    expect(buildRecurrence(RECURRENCE_OFF)).toBeUndefined();
+    expect(buildRecurrence({ on: true, unit: 'day', interval: 1, endMode: 'none' })).toEqual(['RRULE:FREQ=DAILY']);
+    expect(buildRecurrence({ on: true, unit: 'week', interval: 3, endMode: 'none' })).toEqual(['RRULE:FREQ=WEEKLY;INTERVAL=3']);
+    expect(buildRecurrence({ on: true, unit: 'month', interval: 1, endMode: 'count', count: 6 })).toEqual(['RRULE:FREQ=MONTHLY;COUNT=6']);
+    expect(buildRecurrence({ on: true, unit: 'week', interval: 1, endMode: 'date', until: '2026-12-31' })).toEqual(['RRULE:FREQ=WEEKLY;UNTIL=20261231T235959Z']);
+  });
+
+  it('반복 요약은 지금 설정을 한 줄로(디자인 원본 nRepSummary)', () => {
+    expect(recurrenceSummary(RECURRENCE_OFF)).toBe('반복하지 않아요');
+    expect(recurrenceSummary({ on: true, unit: 'week', interval: 2, endMode: 'count', count: 5 })).toBe('2주마다 · 5회 반복 후 종료');
+    expect(recurrenceSummary({ on: true, unit: 'day', interval: 1, endMode: 'none' })).toBe('일마다 · 종료 없음');
+  });
+
+  it('알림 셋을 가른다 — 기본 알림 / 없음 / N분 전', () => {
+    const one = (reminders: unknown) => parseEvents({ items: [{ id: 'r', summary: 'x', start: { date: '2026-08-10' }, end: { date: '2026-08-11' }, reminders }] }, CAL)[0]!;
+    // useDefault면 키가 없다 — "캘린더 기본"이라는 뜻이다.
+    expect('reminderMinutes' in one({ useDefault: true })).toBe(false);
+    expect(one({ useDefault: false, overrides: [] }).reminderMinutes).toBeNull();
+    expect(one({ useDefault: false, overrides: [{ method: 'popup', minutes: 30 }] }).reminderMinutes).toBe(30);
+  });
+
+  it('참석자·공개·참여·Meet 링크를 읽는다', () => {
+    const e = parseEvents(
+      {
+        items: [
+          {
+            id: 'g',
+            summary: '회의',
+            start: { date: '2026-08-10' },
+            end: { date: '2026-08-11' },
+            attendees: [{ email: 'a@b.com' }, { email: 'c@d.com' }, { displayName: '이메일 없음' }],
+            visibility: 'private',
+            transparency: 'transparent',
+            hangoutLink: 'https://meet.google.com/abc',
+          },
+        ],
+      },
+      CAL,
+    )[0]!;
+    expect(e.attendees).toEqual(['a@b.com', 'c@d.com']);
+    expect(e.visibility).toBe('private');
+    expect(e.transparency).toBe('transparent');
+    expect(e.meetLink).toBe('https://meet.google.com/abc');
+  });
+
+  it('본문에 구글 전용 필드를 싣는다 — 빈 참석자도 보낸다(전원 취소가 저장되게)', () => {
+    const body = draftToBody({ title: 'x', allDay: true, startDate: '2026-08-10', endDate: '2026-08-10', attendees: [], visibility: 'private', transparency: 'transparent', reminderMinutes: 10 });
+    expect(body).toMatchObject({
+      attendees: [],
+      visibility: 'private',
+      transparency: 'transparent',
+      reminders: { useDefault: false, overrides: [{ method: 'popup', minutes: 10 }] },
+    });
+    // 알림을 안 정하면 캘린더 기본을 쓴다
+    expect(draftToBody({ title: 'x', allDay: true, startDate: '2026-08-10', endDate: '2026-08-10' })).toMatchObject({ reminders: { useDefault: true } });
+    // Meet은 켰을 때만 요청한다
+    expect(draftToBody({ title: 'x', allDay: true, startDate: '2026-08-10', endDate: '2026-08-10', addMeet: true })).toHaveProperty('conferenceData');
+  });
+
+  it('상세의 부분 수정은 바꾸지 않은 구글 필드도 그대로 실어 보낸다', () => {
+    const g = parseEvents(
+      { items: [{ id: 'e1', summary: '회의', start: { date: '2026-08-10' }, end: { date: '2026-08-11' }, attendees: [{ email: 'a@b.com' }], visibility: 'private', reminders: { useDefault: false, overrides: [{ method: 'popup', minutes: 60 }] } }] },
+      { ...CAL, writable: true },
+    )[0]!;
+    // 제목만 바꿔도 참석자·공개·알림이 유지된다(PATCH에서 빠지면 조용히 지워진다)
+    expect(draftFrom(g, { title: '새 제목' })).toMatchObject({ title: '새 제목', attendees: ['a@b.com'], visibility: 'private', reminderMinutes: 60 });
+    // 필드 묶음이 바꾼 값은 이긴다
+    expect(draftFrom(g, {}, { attendees: [], reminderMinutes: undefined })).toMatchObject({ attendees: [] });
+    expect('reminderMinutes' in draftFrom(g, {}, { reminderMinutes: undefined })).toBe(false);
   });
 });
