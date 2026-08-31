@@ -18,7 +18,13 @@ describe('legal pages', () => {
     );
     expect(screen.getByRole('heading', { name: '개인정보처리방침' })).toBeTruthy();
     expect(screen.getByText('1. 수집하는 개인정보')).toBeTruthy();
-    expect(screen.getByText('4. 보유 기간 및 파기')).toBeTruthy();
+    // 구글 민감 스코프(`calendar.events`) 검수가 이 페이지에서 찾는 것 — 무엇을 받고
+    // 어디에 보관하며 어떻게 쓰는지, 그리고 **Limited Use** 준수 진술.
+    expect(screen.getByText('4. Google 캘린더 연동 (선택)')).toBeTruthy();
+    expect(screen.getByText(/제한적 사용\(Limited Use\)/)).toBeTruthy();
+    expect(screen.getAllByText(/보관하지 않습니다/).length).toBeGreaterThan(0);
+    expect(screen.getByRole('link', { name: /타사 앱 권한/ }).getAttribute('href')).toBe('https://myaccount.google.com/permissions');
+    expect(screen.getByText('5. 보유 기간 및 파기')).toBeTruthy();
     expect(screen.getAllByText('info@geurio.com').length).toBeGreaterThan(0);
   });
 
