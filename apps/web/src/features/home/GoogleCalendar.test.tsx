@@ -84,12 +84,16 @@ function inMonth(n: number): string {
  * 이 달 안의 **평일** — 공휴일 표시를 검증할 날. 일·토를 고르면 그 칸은 원래
  * 주말 색이라 "공휴일이라서 빨간가"를 구분할 수 없다(가짜 통과).
  */
-function weekdayInMonth(): string {
+function weekdayInMonth(nth = 0): string {
   const now = new Date();
+  let seen = 0;
   for (const step of [2, 3, 4, 5, -2, -3, -4, -5, 1, -1]) {
     const d = new Date(now);
     d.setDate(d.getDate() + step);
-    if (d.getMonth() === now.getMonth() && d.getDay() !== 0 && d.getDay() !== 6) return isoOf(d.getFullYear(), d.getMonth() + 1, d.getDate());
+    if (d.getMonth() === now.getMonth() && d.getDay() !== 0 && d.getDay() !== 6) {
+      if (seen === nth) return isoOf(d.getFullYear(), d.getMonth() + 1, d.getDate());
+      seen += 1;
+    }
   }
   return isoOf(now.getFullYear(), now.getMonth() + 1, now.getDate());
 }
@@ -117,6 +121,8 @@ function stubGis(): { requested: string[] } {
 function stubFetch(): ReturnType<typeof vi.fn> {
   const meeting = inMonth(1);
   const holiday = weekdayInMonth();
+  // 구글의 공휴일 캘린더에는 절기·기념일도 섞여 온다 — 그건 칠하지 않는다(제보).
+  const season = weekdayInMonth(1);
   const f = vi.fn(async (url: string) => {
     const ok = (body: unknown) => ({ ok: true, status: 200, json: async () => body }) as unknown as Response;
     if (url.includes('/users/me/calendarList')) {
@@ -128,7 +134,12 @@ function stubFetch(): ReturnType<typeof vi.fn> {
       });
     }
     if (url.includes(encodeURIComponent(HOLIDAY_ID))) {
-      return ok({ items: [{ id: 'h1', summary: '테스트 공휴일', start: { date: holiday }, end: { date: nextDay(holiday) } }] });
+      return ok({
+        items: [
+          { id: 'h1', summary: '테스트 공휴일', description: 'Public holiday', start: { date: holiday }, end: { date: nextDay(holiday) } },
+          { id: 'h2', summary: '테스트 절기', description: 'Season', start: { date: season }, end: { date: nextDay(season) } },
+        ],
+      });
     }
     return ok({
       items: [{ id: 'g1', summary: '구글 회의', start: { dateTime: `${meeting}T09:00:00+09:00` }, end: { dateTime: `${meeting}T10:00:00+09:00` }, htmlLink: 'https://calendar.google.com/x' }],
@@ -229,7 +240,7 @@ describe('구글 캘린더 겹치기(PR5)', () => {
     expect(sessionStorage.getItem('mf_gcal_token')).toContain('tok');
   });
 
-  it('연동을 켜 두면 일정 화면에 구글 일정이 겹치고, 공휴일은 칩이 아니라 날짜 색이 된다', async () => {
+  it('연동을 켜 두면 일정 화면에 구글 일정이 겹치고, 공휴일은 칩이 아니라 날짜 색·이름이 된다', async () => {
     seed({ calendars: ['me@example.com', HOLIDAY_ID] });
     stubGis();
     stubFetch();
@@ -239,18 +250,20 @@ describe('구글 캘린더 겹치기(PR5)', () => {
     await openCalendar(container, user);
     // 구글 일정은 칩으로
     await waitFor(() => expect(screen.getAllByText(/구글 회의/).length).toBeGreaterThan(0));
-    // 공휴일은 칩이 아니다 — 이름이 달력에 글자로 나오지 않는다
-    expect(screen.queryByText('테스트 공휴일')).toBeNull();
-    // 그 날 칸은 공휴일로 표시된다(일요일과 같은 색 규칙)
-    // 공휴일 칸은 **일요일과 같은 색**이 된다(칩이 아니라 날짜 색 — PR1이 비워 둔 자리)
+    // 공휴일은 칩이 아니다 — 숫자 옆 **이름표**로만 나온다(디자인 원본)
     const holidayCell = container.querySelector<HTMLElement>(`[data-day-cell="${weekdayInMonth()}"]`);
     expect(holidayCell).toBeTruthy();
+    expect(holidayCell!.querySelector('[data-holiday-name]')?.textContent).toBe('테스트 공휴일');
+    expect(holidayCell!.querySelector('[data-cal-chip]')).toBeNull();
+    // 쉬는 날이라 칸은 **일요일과 같은 색**
     expect(holidayCell!.style.background).toBe('var(--mf-cal-sun)');
-    // 연동 전에는 그 칸이 평일 색이었다 — 대조군은 공휴일이 아닌 다른 평일 칸
-    const plain = [...container.querySelectorAll<HTMLElement>('[data-day-cell]')].find(
-      (el) => el.style.background === 'var(--mf-card)',
-    );
-    expect(plain).toBeTruthy();
+
+    // 절기는 이름만 남고 칸은 평일 색 그대로다 — 구글의 공휴일 캘린더에 섞여 오는
+    // 절기·기념일까지 칠하면 달이 통째로 분홍이 된다(제보).
+    const seasonCell = container.querySelector<HTMLElement>(`[data-day-cell="${weekdayInMonth(1)}"]`);
+    expect(seasonCell).toBeTruthy();
+    expect(seasonCell!.querySelector('[data-holiday-name]')?.textContent).toBe('테스트 절기');
+    expect(seasonCell!.style.background).toBe('var(--mf-card)');
   });
 
   it('구글 일정을 누르면 읽기 전용 팝업 — 고칠 수 없다고 말하고 구글로 보낸다', async () => {

@@ -244,7 +244,7 @@ function DayCell({
           // (#FEF8F5), 토요일은 파스텔 하늘색(#F9FBFD). 값은 표에 적지 않고 그 칸의
           // 숫자 색에서 파생한다(`--mf-cal-sun`/`-sat`) — 숫자와 배경이 언제나 같은
           // 색조를 쓰고, 여섯 테마 × 다크에 값을 새로 정할 필요가 없다.
-          dow === 0 || cell.holiday
+          dow === 0 || cell.dayOff
           ? 'var(--mf-cal-sun)'
           : dow === 6
             ? 'var(--mf-cal-sat)'
@@ -253,7 +253,7 @@ function DayCell({
     ? 'var(--mf-faint)'
     : isToday
       ? 'var(--mf-accent-ink)'
-      : dow === 0 || cell.holiday
+      : dow === 0 || cell.dayOff
         ? 'var(--mf-danger)'
         : dow === 6
           ? 'var(--mf-info)'
@@ -338,6 +338,25 @@ function DayCell({
         >
           {cell.n}
         </span>
+        {/* 공휴일 이름 — 디자인 원본은 숫자 옆에 적는다. 쉬는 날이면 붉게, 절기·
+            기념일이면 옅게: 색은 "쉬는가"를, 이름은 "무슨 날인가"를 말한다. */}
+        {cell.holiday ? (
+          <span
+            data-holiday-name
+            title={cell.holiday}
+            style={{
+              minWidth: 0,
+              overflow: 'hidden',
+              textOverflow: 'ellipsis',
+              whiteSpace: 'nowrap',
+              fontSize: compact ? 8.5 : 9.5,
+              fontWeight: 700,
+              color: cell.dayOff ? 'var(--mf-danger)' : 'var(--mf-faint)',
+            }}
+          >
+            {cell.holiday}
+          </span>
+        ) : null}
       </span>
 
       {/* 기간 바 → 하루짜리 칩 → 접힌 개수 */}

@@ -85,6 +85,8 @@ export interface GoogleEvent {
   htmlLink?: string;
   color?: string;
   holiday?: boolean;
+  /** 공휴일 중에서도 **실제로 쉬는 날**인가(`isDayOffHoliday`) — 달력을 칠하는 기준. */
+  dayOff?: boolean;
 }
 
 // ── 토큰 ────────────────────────────────────────────────────────────────────
@@ -212,6 +214,25 @@ export function isHolidayCalendarId(id: string): boolean {
   return id.includes('#holiday@group.v.calendar.google.com');
 }
 
+// 구글의 공휴일 캘린더에는 **쉬는 날이 아닌 것도 잔뜩** 들어 있다 — 24절기·기념일·
+// 종교 절기까지. 그걸 전부 공휴일로 보면 달력이 통째로 분홍으로 물든다(제보).
+// 구글은 종류를 `description`에 적어 준다("Public holiday" / "Observance" /
+// "Season" …, 한국어 로케일이면 "공휴일" / "기념일"). 아래는 그 표기를 읽는다.
+const OBSERVANCE_TOKENS = ['observance', 'season', 'sporting', 'clock change', 'daylight', 'working day', 'christian', 'muslim', 'hindu', 'jewish', 'hebrew', 'orthodox', '기념일', '절기', '잡절'];
+const DAY_OFF_TOKENS = ['public holiday', 'national holiday', 'bank holiday', 'common local holiday', 'federal holiday', '공휴일', '국경일'];
+
+/**
+ * 그 공휴일이 **실제로 쉬는 날인가.** 확실할 때만 참이다 — 표기가 없거나 모르는
+ * 값이면 거짓이다(이름은 그대로 보여 주되 달력을 칠하지는 않는다). 칠하는 쪽으로
+ * 기울면 표기를 못 읽는 로케일에서 다시 온 달이 분홍이 된다.
+ */
+export function isDayOffHoliday(description?: string): boolean {
+  const d = (description || '').toLowerCase();
+  if (!d) return false;
+  if (OBSERVANCE_TOKENS.some((t) => d.includes(t))) return false;
+  return DAY_OFF_TOKENS.some((t) => d.includes(t));
+}
+
 export function parseCalendarList(json: unknown): GoogleCalendarMeta[] {
   const items = (json as { items?: unknown })?.items;
   if (!Array.isArray(items)) return [];
@@ -291,6 +312,7 @@ export function parseEvents(json: unknown, cal: GoogleCalendarMeta): GoogleEvent
       ...(typeof it.htmlLink === 'string' ? { htmlLink: it.htmlLink } : {}),
       ...(cal.color ? { color: cal.color } : {}),
       ...(cal.holiday ? { holiday: true } : {}),
+      ...(cal.holiday && isDayOffHoliday(typeof it.description === 'string' ? it.description : undefined) ? { dayOff: true } : {}),
     });
   }
   return out;

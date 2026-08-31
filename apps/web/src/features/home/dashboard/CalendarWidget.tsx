@@ -15,7 +15,7 @@
 
 import { useEffect, useMemo, useRef } from 'react';
 import type { MouseEvent as ReactMouseEvent } from 'react';
-import type { CalendarEntry } from '../calendar/entries';
+import type { CalendarEntry, HolidayInfo } from '../calendar/entries';
 import { MiniCalendar } from '../calendar/MiniCalendar';
 import type { CalWidgetMode } from './model';
 import { entryChip, type ChipSurface } from '../calendar/chips';
@@ -67,7 +67,7 @@ export interface CalWidgetProps {
   /** 미니 달력의 달 이동(1열 보기). */
   onSetMonth: (y: number, m: number) => void;
   /** 공휴일(구글 연동) — `날짜 → 이름`. 연동 안 했으면 빈 객체다. */
-  holidays?: Record<string, string>;
+  holidays?: Record<string, HolidayInfo>;
   /** 빈 자리를 **더블클릭** — 그 날짜로 새 일정(요청). */
   onNewOnDay?: (iso: string) => void;
 }

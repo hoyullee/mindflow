@@ -1,5 +1,5 @@
 import { describe, expect, it, beforeEach } from 'vitest';
-import { isHolidayCalendarId, parseCalendarList, parseEvents, readStoredToken, splitGoogleDateTime, storeToken, type GoogleCalendarMeta } from './googleCalendar';
+import { isDayOffHoliday, isHolidayCalendarId, parseCalendarList, parseEvents, readStoredToken, splitGoogleDateTime, storeToken, type GoogleCalendarMeta } from './googleCalendar';
 import { googleEntries, holidayMap } from './entries';
 
 // 구글 응답 → 우리 모델. 네트워크·GIS는 붙이지 않는다(순수 변환만 검증).
@@ -64,8 +64,42 @@ describe('구글 캘린더 — 화면 항목', () => {
   });
 
   it('공휴일 맵은 연휴를 하루씩 채운다', () => {
-    const long = parseEvents({ items: [{ id: 'h2', summary: '설 연휴', start: { date: '2026-02-16' }, end: { date: '2026-02-19' } }] }, HOL);
-    expect(holidayMap(long)).toEqual({ '2026-02-16': '설 연휴', '2026-02-17': '설 연휴', '2026-02-18': '설 연휴' });
+    const long = parseEvents({ items: [{ id: 'h2', summary: '설 연휴', description: 'Public holiday', start: { date: '2026-02-16' }, end: { date: '2026-02-19' } }] }, HOL);
+    expect(holidayMap(long)).toEqual({
+      '2026-02-16': { name: '설 연휴', dayOff: true },
+      '2026-02-17': { name: '설 연휴', dayOff: true },
+      '2026-02-18': { name: '설 연휴', dayOff: true },
+    });
+  });
+
+  // 구글의 공휴일 캘린더에는 24절기·기념일까지 들어 있다 — 그걸 다 칠하면 달이
+  // 통째로 분홍이 된다(제보). 이름은 남기고 **쉬는 날일 때만** 칠한다.
+  it('쉬는 날이 아닌 절기·기념일은 이름만 남고 칠하지 않는다', () => {
+    const mixed = parseEvents(
+      {
+        items: [
+          { id: 'h3', summary: '광복절', description: 'Public holiday', start: { date: '2026-08-15' }, end: { date: '2026-08-16' } },
+          { id: 'h4', summary: '입추', description: 'Season', start: { date: '2026-08-07' }, end: { date: '2026-08-08' } },
+          { id: 'h5', summary: '칠석', description: 'Observance', start: { date: '2026-08-19' }, end: { date: '2026-08-20' } },
+          // 표기가 없으면 **칠하지 않는다** — 모르는 로케일에서 달이 분홍이 되는 쪽보다 낫다.
+          { id: 'h6', summary: '알 수 없는 날', start: { date: '2026-08-21' }, end: { date: '2026-08-22' } },
+        ],
+      },
+      HOL,
+    );
+    expect(holidayMap(mixed)).toEqual({
+      '2026-08-15': { name: '광복절', dayOff: true },
+      '2026-08-07': { name: '입추', dayOff: false },
+      '2026-08-19': { name: '칠석', dayOff: false },
+      '2026-08-21': { name: '알 수 없는 날', dayOff: false },
+    });
+  });
+
+  it('한국어 표기도 읽는다 — 공휴일은 칠하고 기념일은 아니다', () => {
+    expect(isDayOffHoliday('대한민국의 공휴일')).toBe(true);
+    expect(isDayOffHoliday('기념일')).toBe(false);
+    expect(isDayOffHoliday('Observance')).toBe(false);
+    expect(isDayOffHoliday(undefined)).toBe(false);
   });
 
   it('구글 항목은 읽기 전용 — 달력의 드래그 가드가 보는 값이 참이다', () => {
