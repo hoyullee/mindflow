@@ -672,6 +672,13 @@ export interface CalendarEvent {
   location?: string;
   note?: string;
   color?: string;
+  /**
+   * 반복 규칙 — **RRULE 한 줄**(`RRULE:FREQ=WEEKLY;INTERVAL=2`). 없으면 한 번만 있는
+   * 일정이다. 구글에 만드는 일정이 이미 같은 형식을 쓰므로(`buildRecurrence`) 규칙을
+   * 두 벌로 두지 않는다. 한 행이 곧 **하나의 반복**이라, 회차마다 예외를 두지는 않는다
+   * (고치면 전체 반복에 적용된다 — 화면이 그렇게 말한다).
+   */
+  recurrence?: string;
   /** 'geurio' = 우리 표가 정본, 'google' = 미러(다음 단계). */
   source: 'geurio' | 'google';
 }

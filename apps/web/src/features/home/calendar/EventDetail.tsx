@@ -4,7 +4,10 @@
 // 없고, 대신 종일 토글·시각·위치·메모가 있다). 우리 표(0033)가 정본이라 여기서 고치면
 // 곧바로 저장된다.
 //
-// 원본에 있지만 두지 않은 것: 알림·반복(v1 제외) · 참석자·Meet.
+// 원본에 있지만 두지 않은 것: 알림 · 참석자·Meet(구글 일정에서 쓴다).
+//
+// **반복 일정**은 규칙 요약을 한 줄로 알린다 — 한 행이 곧 하나의 반복이라 고치면 전체에
+// 적용된다(회차별 예외는 담지 않는다 — 0034 주석). 규칙 자체를 바꾸는 것은 범위 밖이다.
 //
 // **구글 일정도 이 팝업을 쓴다**(PR6 — `GoogleEventDetail`이 값만 옮겨 준다). 둘로
 // 갈라 두면 한쪽에만 기능이 붙는다 — 그래서 원천마다 다른 것(머리 배지·발치 문구·
@@ -17,6 +20,7 @@ import { DateButton, PillButton } from './DatePop';
 import { TimeButton } from './TimePop';
 import { addDays, daysBetween, minutesOf, timeLabel, todayISO } from './model';
 import type { CalendarEvent, CalendarEventInput } from '../../../adapters/ports';
+import { parseRecurrence, recurrenceLabel } from './recurrence';
 
 export function EventDetail({
   event,
@@ -154,6 +158,16 @@ export function EventDetail({
             placeholder="일정 제목"
             style={{ width: '100%', boxSizing: 'border-box', minHeight: 80, resize: 'vertical', padding: '15px 16px', borderRadius: 14, border: '1px solid var(--mf-border)', background: 'var(--mf-card)', font: 'inherit', fontSize: 19, fontWeight: 800, letterSpacing: '-.03em', lineHeight: 1.45, color: 'var(--mf-text)', outline: 'none' }}
           />
+
+          {/* 반복 일정 — 고치면 전체 반복에 적용된다는 사실을 숨기지 않는다. */}
+          {event.recurrence ? (
+            <span data-event-repeat style={{ display: 'inline-flex', alignItems: 'center', gap: 7, fontSize: 11.5, color: 'var(--mf-faint2)', lineHeight: 1.6 }}>
+              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true" style={{ flex: '0 0 auto' }}>
+                <path d="M3 12a9 9 0 0 1 15-6.7L21 8M21 4v4h-4M21 12a9 9 0 0 1-15 6.7L3 16M3 20v-4h4" />
+              </svg>
+              {repeatLine(event.recurrence, event.startDate)}
+            </span>
+          ) : null}
 
           {readOnly ? (
             <span data-event-notice style={{ fontSize: 12.5, color: 'var(--mf-muted)', background: 'var(--mf-panel2)', border: '1px solid var(--mf-border)', borderRadius: 12, padding: '11px 13px', lineHeight: 1.65 }}>
@@ -312,4 +326,10 @@ function Field({ label, children }: { label: string; children: ReactNode }) {
       {children}
     </div>
   );
+}
+
+/** `2주마다 반복 · 종료 없음 — 고치거나 삭제하면 전체 반복에 적용돼요`. */
+function repeatLine(rule: string, baseDate: string): string {
+  const spec = parseRecurrence(rule);
+  return `${spec ? recurrenceLabel(spec, baseDate) : '반복 일정'} — 고치거나 삭제하면 전체 반복에 적용돼요`;
 }

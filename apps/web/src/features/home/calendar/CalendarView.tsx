@@ -4,7 +4,7 @@ import type { HomeController } from '../useHomeController';
 import type { CalendarEntry } from './entries';
 import { useCalendarEntries } from './useCalendarEntries';
 import { homeChipSurface } from '../theme';
-import { addDays, calendarStats, monthCells, monthLabel, todayISO } from './model';
+import { addDays, calendarStats, gridRange, monthCells, monthLabel, todayISO } from './model';
 import { MonthGrid } from './MonthGrid';
 import { CalendarSide } from './CalendarSide';
 import { DeadlinePanel } from './DeadlinePanel';
@@ -60,10 +60,11 @@ export function CalendarView({
   const [saving, setSaving] = useState(false);
   const [saveError, setSaveError] = useState<string | null>(null);
   const entries = useMemo(() => {
-    const evs = eventEntries(eventsApi.events);
+    // 반복 일정은 보이는 구간에서 회차로 펼쳐진다 — 격자가 그리는 그 6주다.
+    const evs = eventEntries(eventsApi.events, gridRange(state.calY, state.calM));
     const gs = googleEntries(google.events);
     return [...cardEntries, ...evs, ...gs].sort((a, b) => (a.due < b.due ? -1 : a.due > b.due ? 1 : (a.startTime ?? '') < (b.startTime ?? '') ? -1 : a.title < b.title ? -1 : 1));
-  }, [cardEntries, eventsApi.events, google.events]);
+  }, [cardEntries, eventsApi.events, google.events, state.calY, state.calM]);
   // 공휴일은 칩이 아니라 **날짜 색**이다(PR1부터 비워 둔 `MonthCell.holiday` 자리).
   const holidays = useMemo(() => holidayMap(google.events), [google.events]);
   const stats = useMemo(() => calendarStats(entries, today), [entries, today]);

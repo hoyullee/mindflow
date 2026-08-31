@@ -1351,6 +1351,29 @@ select conname from pg_constraint where conrelid='public.calendar_events'::regcl
 화면이 달라지지 않는다. 정규화(`normalizeEventInput`)는 두 어댑터가 같은 함수를 쓴다 —
 표의 제약을 클라이언트에서도 지키는 단일 소스다.
 
+### 반복 일정 (0034 `recurrence`)
+
+`calendar_events.recurrence`에 **RRULE 한 줄**을 담는다(`RRULE:FREQ=WEEKLY;INTERVAL=2`).
+구글에 만드는 일정이 이미 같은 형식을 쓰므로(`buildRecurrence`) 규칙을 두 벌로 두지 않는다.
+
+- **한 행 = 하나의 반복.** 회차별 예외(그 날만 시간 변경·그 날만 삭제)는 두지 않는다 —
+  담으려면 별도 표와 "이 회차만/전체" 분기가 필요하다. 그래서 화면은 회차를 **끌어서
+  옮기지 못하게** 하고, 상세 팝업이 "고치거나 삭제하면 전체 반복에 적용돼요"라고 적는다.
+- **펼치는 일은 클라이언트가 한다**(`expandRecurrence`) — 서버가 펼치면 같은 규칙을 두
+  곳에서 해석하게 되고, 달력이 그리는 것과 목록이 세는 것이 어긋날 수 있다.
+- **조회는 반복 행의 `end_date`를 보지 않는다**(첫 회차가 몇 달 전이어도 이번 달에 회차가
+  있다): `start_date <= 끝날 and (end_date >= 첫날 or recurrence is not null)`.
+  그 행만 빠르게 고르도록 부분 인덱스(`calendar_events_recurring_idx`)를 둔다.
+- **0034 미적용 서버**에서도 깨지지 않는다: 조회는 예전 질의로 물러나고(반복만 빠진다),
+  저장은 규칙을 뺀 채 한 번 더 시도한다(일정 자체는 남는다). 둘 다 콘솔 경고를 남긴다.
+
+적용 확인:
+
+```sql
+select column_name from information_schema.columns
+ where table_schema='public' and table_name='calendar_events' and column_name='recurrence';
+```
+
 ---
 
 ## 19. 구글 캘린더 연동 (PR5 겹치기 + PR6 쓰기) — 서버 없는 연동

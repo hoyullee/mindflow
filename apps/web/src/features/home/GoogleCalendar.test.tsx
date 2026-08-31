@@ -487,7 +487,7 @@ describe('구글 캘린더 겹치기(PR5)', () => {
     });
   });
 
-  it('목적지가 구글이면 참석자·반복·알림 필드가 함께 뜬다 — Geurio면 안내만', async () => {
+  it('목적지가 구글이면 참석자·회의실·알림 필드가 오른쪽 열로 뜬다 — 반복은 두 목적지 공통', async () => {
     seed({ calendars: ['me@example.com'] });
     stubGis();
     stubFetch();
@@ -499,9 +499,10 @@ describe('구글 캘린더 겹치기(PR5)', () => {
     await user.click(screen.getByText('새 일정'));
     await waitFor(() => expect(document.querySelector('[data-new-cal="me@example.com"]')).toBeTruthy());
 
-    // 기본 목적지는 우리 표 — 구글 전용 필드는 뜨지 않고 그 사실을 한 줄로 알린다
+    // 기본 목적지는 우리 표 — 구글 전용 필드는 뜨지 않지만 **반복은 뜬다**(둘 다 저장한다).
     expect(document.querySelector('[data-google-fields]')).toBeNull();
-    expect(document.querySelector('[data-new-geurio-note]')).toBeTruthy();
+    expect(document.querySelector('[data-new-google-col]')).toBeNull();
+    expect(document.querySelector('[data-recurrence]')).toBeTruthy();
 
     await user.click(document.querySelector<HTMLElement>('[data-new-cal="me@example.com"]')!);
     const fields = await waitFor(() => {
@@ -509,9 +510,15 @@ describe('구글 캘린더 겹치기(PR5)', () => {
       expect(el).toBeTruthy();
       return el as HTMLElement;
     });
-    expect(document.querySelector('[data-new-geurio-note]')).toBeNull();
-    // 디자인 원본의 nIsGoogle 블록 — 반복·Meet·참석자·회의실·공개·참여·알림
-    for (const sel of ['[data-gf-repeat]', '[data-gf-meet]', '[data-gf-guest-input]', '[data-gf-room-input]', '[data-gf-vis]', '[data-gf-busy]', '[data-gf-remind]']) {
+    // 구글 전용 필드는 **오른쪽 열** 안에 있다(원본의 두 열 구조 — 아래가 아니다).
+    const col = document.querySelector('[data-new-google-col]');
+    expect(col).toBeTruthy();
+    expect(col!.contains(fields)).toBe(true);
+    // 반복은 오른쪽 열이 아니라 **왼쪽 열**(일정 자체를 다루는 자리)에 남는다.
+    expect(col!.querySelector('[data-recurrence]')).toBeNull();
+    expect(document.querySelector('[data-new-main]')!.querySelector('[data-recurrence]')).toBeTruthy();
+    // 디자인 원본의 nIsGoogle 블록 — Meet·참석자·회의실·공개·참여·알림
+    for (const sel of ['[data-gf-meet]', '[data-gf-guest-input]', '[data-gf-room-input]', '[data-gf-vis]', '[data-gf-busy]', '[data-gf-remind]']) {
       expect(fields.querySelector(sel)).toBeTruthy();
     }
   });
@@ -624,8 +631,9 @@ describe('구글 캘린더 겹치기(PR5)', () => {
     await user.type(screen.getByLabelText('참석자 이름 또는 이메일'), 'a@b.com{Enter}');
     await user.click(document.querySelector<HTMLElement>('[data-gf-remind="10"]')!);
     await user.click(document.querySelector<HTMLElement>('[data-gf-vis="private"]')!);
-    await user.click(document.querySelector<HTMLElement>('[data-gf-repeat]')!);
-    await waitFor(() => expect(document.querySelector('[data-gf-unit="week"]')).toBeTruthy());
+    // 반복은 왼쪽 열의 프리셋 다섯 칸에서 고른다(`매주` = FREQ=WEEKLY).
+    await user.click(document.querySelector<HTMLElement>('[data-rep-preset="weekly"]')!);
+    await waitFor(() => expect(document.querySelector('[data-rep-summary]')).toBeTruthy());
 
     await user.click(screen.getByText('등록', { exact: true }));
     await waitFor(() => {

@@ -222,6 +222,28 @@ describe('Geurio 일정(eventEntries)', () => {
   it('제목이 비면 자리표시자를 쓴다(빈 줄만 있는 칩을 만들지 않는다)', () => {
     expect(eventEntries([EV({ title: '' })])[0]!.title).toBe('(제목 없음)');
   });
+
+  it('반복 일정은 구간 안에서 **회차마다** 항목이 된다 — 키가 겹치지 않고 끌 수 없다', () => {
+    const list = eventEntries([EV({ allDay: true, recurrence: 'RRULE:FREQ=WEEKLY' })], { from: '2026-08-01', to: '2026-08-31' });
+    expect(list.map((e) => e.due)).toEqual(['2026-08-26']);
+
+    // 첫 회차가 구간 앞이어도 이번 구간의 회차가 모두 나온다.
+    const many = eventEntries([EV({ startDate: '2026-07-29', endDate: '2026-07-29', allDay: true, recurrence: 'RRULE:FREQ=WEEKLY' })], { from: '2026-08-01', to: '2026-08-31' });
+    expect(many.map((e) => e.due)).toEqual(['2026-08-05', '2026-08-12', '2026-08-19', '2026-08-26']);
+    // 회차마다 다른 키(목록 키가 겹치면 첫 회차만 잡힌다) — 같은 일정을 가리킨다.
+    expect(new Set(many.map((e) => e.cardId)).size).toBe(4);
+    expect(many.every((e) => e.event!.id === 'e1')).toBe(true);
+    // 회차는 끌어서 옮기지 않는다(이 회차만 옮기는 예외를 담을 자리가 없다).
+    expect(many.every((e) => e.readOnly)).toBe(true);
+
+    // 기간 일정의 회차는 길이를 지킨다(2일짜리 격주).
+    const span = eventEntries([EV({ startDate: '2026-08-03', endDate: '2026-08-04', allDay: true, recurrence: 'RRULE:FREQ=WEEKLY;INTERVAL=2' })], { from: '2026-08-01', to: '2026-08-31' });
+    expect(span.map((e) => [e.start, e.due])).toEqual([
+      ['2026-08-03', '2026-08-04'],
+      ['2026-08-17', '2026-08-18'],
+      ['2026-08-31', '2026-09-01'],
+    ]);
+  });
 });
 
 describe('시간표(dayTimeline)', () => {

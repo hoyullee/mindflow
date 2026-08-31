@@ -757,6 +757,52 @@ describe('일정 화면', () => {
       await waitFor(() => expect(chipTexts()).toContain('팀 워크숍'));
     });
 
+    it('반복을 걸면 RRULE로 저장되고 달력에 회차가 여러 개 뜬다 — Geurio 일정도 반복한다', async () => {
+      renderHome([META('d1', '스프린트 보드')], BODIES());
+      await openCalendar();
+      fireEvent.click(document.querySelector('[data-cal-new]')!);
+      await waitFor(() => expect(newEv()).toBeTruthy());
+      // 반복 구획은 목적지와 무관하게 뜬다(구글 전용이 아니다).
+      expect(document.querySelector('[data-recurrence]')).toBeTruthy();
+      fireEvent.change(document.querySelector('[data-new-title]')!, { target: { value: '주간 스탠드업' } });
+      // 시작을 이 달 5일로 — 오늘이 월말이면 회차가 다음 달로 넘어가 이 격자의 '이 달'
+      // 칸에는 하나만 들어온다(달 밖 칸에는 칩을 그리지 않는다).
+      await pickDate('[data-new-date]', `${todayISO().slice(0, 8)}05`);
+      // 매일로 걸면 이번 달 격자에 회차가 여러 번 그려진다.
+      fireEvent.click(document.querySelector('[data-rep-preset="daily"]')!);
+      await waitFor(() => expect(document.querySelector('[data-rep-summary]')!.textContent).toContain('매일'));
+      fireEvent.click(document.querySelector('[data-new-submit]')!);
+
+      await waitFor(() => expect(document.querySelector('[data-new-event]')).toBeNull());
+      expect(events()[0]).toMatchObject({ title: '주간 스탠드업', recurrence: 'RRULE:FREQ=DAILY' });
+      // 이번 달 격자에 회차가 여러 번 그려진다(한 행이 여러 날에 뜬다).
+      await waitFor(() => expect(chipTexts().filter((t) => t === '주간 스탠드업').length).toBeGreaterThan(1));
+    });
+
+    it('맞춤 반복은 간격·종료를 고른다 — 횟수만큼만 회차가 나온다', async () => {
+      renderHome([META('d1', '스프린트 보드')], BODIES());
+      await openCalendar();
+      fireEvent.click(document.querySelector('[data-cal-new]')!);
+      await waitFor(() => expect(newEv()).toBeTruthy());
+      fireEvent.change(document.querySelector('[data-new-title]')!, { target: { value: '격주 회고' } });
+      fireEvent.click(document.querySelector('[data-rep-preset="custom"]')!);
+      await waitFor(() => expect(document.querySelector('[data-rep-custom]')).toBeTruthy());
+      // 2주마다 · 2회 반복 후 종료
+      fireEvent.click(within(document.querySelector('[data-rep-custom]') as HTMLElement).getAllByLabelText('늘리기')[0]!);
+      fireEvent.click(document.querySelector('[data-rep-unit="week"]')!);
+      fireEvent.click(document.querySelector('[data-rep-endmode="count"]')!);
+      await waitFor(() => expect(document.querySelector('[data-rep-summary]')!.textContent).toContain('2주마다'));
+      fireEvent.click(document.querySelector('[data-new-submit]')!);
+
+      await waitFor(() => expect(document.querySelector('[data-new-event]')).toBeNull());
+      // `횟수`를 고르면 기본 횟수가 함께 정해진다 — COUNT 없이 "횟수"라 적히면 거짓말이다.
+      expect(events()[0]!.recurrence).toBe('RRULE:FREQ=WEEKLY;INTERVAL=2;COUNT=5');
+      // 상세 팝업은 "고치면 전체 반복에 적용된다"를 숨기지 않는다.
+      await waitFor(() => expect(chipTexts()).toContain('격주 회고'));
+      fireEvent.click(screen.getAllByText('격주 회고')[0]!.closest('[data-cal-chip]')!);
+      await waitFor(() => expect(document.querySelector('[data-event-repeat]')!.textContent).toContain('전체 반복'));
+    });
+
     it('종일을 끄면 시각을 고르고, 빠른 칩이 종료 시각을 정한다', async () => {
       renderHome([META('d1', '스프린트 보드')], BODIES());
       await openCalendar();

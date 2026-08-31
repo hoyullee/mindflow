@@ -15,6 +15,8 @@
 import type { KanbanCard, KanbanColumn, KanbanTag } from '@mindflow/mindmap-core';
 import type { CalendarEvent } from '../../../adapters/ports';
 import type { GoogleEvent } from './googleCalendar';
+import { addDays, daysBetween } from './model';
+import { expandRecurrence } from './recurrence';
 
 /** 일정 화면·위젯이 그리는 한 항목. 색은 그리는 쪽이 테마로 정하므로 여기엔 이름만 담는다. */
 export interface CalendarEntry {
@@ -172,23 +174,38 @@ export interface CalendarSource {
  * `due`는 마지막 날이고 `start`는 여러 날 일정일 때만 채운다 — 칸반 카드의 기간 규칙과
  * 같아서 기간 바·드래그 계산이 그대로 성립한다.
  */
-export function eventEntries(events: readonly CalendarEvent[]): CalendarEntry[] {
-  return events.map((e) => ({
-    docId: '',
-    cardId: e.id,
-    title: e.title || '(제목 없음)',
-    due: e.endDate,
-    ...(e.endDate > e.startDate ? { start: e.startDate } : {}),
-    colId: '',
-    colName: 'Geurio 캘린더',
-    colIndex: 0,
-    ...(e.color ? { colColor: e.color } : {}),
-    tag: '',
-    boardName: 'Geurio 캘린더',
-    spaceName: '내 일정',
-    event: e,
-    ...(e.allDay ? {} : { ...(e.startTime ? { startTime: e.startTime } : {}), ...(e.endTime ? { endTime: e.endTime } : {}) }),
-  }));
+export function eventEntries(events: readonly CalendarEvent[], range?: { from: string; to: string }): CalendarEntry[] {
+  const out: CalendarEntry[] = [];
+  for (const e of events) {
+    const span = Math.max(0, daysBetween(e.startDate, e.endDate));
+    // 반복 규칙이 있으면 **회차마다** 항목을 만든다. 규칙이 없거나 읽을 수 없으면
+    // `expandRecurrence`가 원래 하루 하나를 돌려주므로 갈라 다룰 필요가 없다.
+    const starts = range ? expandRecurrence(e.recurrence, e.startDate, range.from, range.to, span) : [e.startDate];
+    for (const start of starts) {
+      const end = addDays(start, span);
+      out.push({
+        docId: '',
+        // 회차마다 다른 키가 필요하다(같으면 목록 키가 겹치고 첫 회차만 잡힌다).
+        cardId: e.recurrence ? `${e.id}#${start}` : e.id,
+        title: e.title || '(제목 없음)',
+        due: end,
+        ...(end > start ? { start } : {}),
+        colId: '',
+        colName: 'Geurio 캘린더',
+        colIndex: 0,
+        ...(e.color ? { colColor: e.color } : {}),
+        tag: '',
+        boardName: 'Geurio 캘린더',
+        spaceName: '내 일정',
+        event: e,
+        // 반복 회차는 **끌어서 옮기지 않는다** — 이 회차만 옮기는 예외를 담을 자리가
+        // 없어서(0034 주석), 끌면 전체 반복이 움직인다. 고치는 길은 상세 팝업이다.
+        ...(e.recurrence ? { readOnly: true } : {}),
+        ...(e.allDay ? {} : { ...(e.startTime ? { startTime: e.startTime } : {}), ...(e.endTime ? { endTime: e.endTime } : {}) }),
+      });
+    }
+  }
+  return out;
 }
 
 /**

@@ -8,22 +8,23 @@
 // 구글에 **쓸 수 있는 캘린더가 없으면**(연동 안 함·보기 전용) 고르기를 그리지 않고
 // 예전처럼 배지 하나만 둔다 — 고를 것이 하나뿐인 라디오는 UI가 아니라 장식이다.
 //
-// 목적지가 **구글이면** 원본의 `nIsGoogle` 블록(반복·Meet·참석자·공개 설정·참여 가능
-// 여부·알림)이 함께 뜬다 — 구글이 실제로 처리해 주는 것들이다(`GoogleEventFields`).
-// Geurio면 대신 원본의 `evCalNote` 문구로 그 사실을 알린다.
+// **반복은 두 목적지 모두** 왼쪽 열에서 고른다(`RecurrenceField`) — 우리 표(0033)도
+// 규칙(RRULE)을 담으므로 Geurio 일정도 반복한다.
 //
-// 원본에 있지만 두지 않은 것: **회의실** — 목록이 조직 캘린더(Admin SDK)에서 와야
-// 하는데 우리에겐 원천이 없다. 검색 결과가 영영 비는 상자를 두지 않는다.
+// 목적지가 **구글이면** 원본의 `nIsGoogle` 블록(Meet·참석자·회의실·공개 설정·참여 가능
+// 여부·알림)이 **오른쪽 열**로 뜬다(원본 `newEvW` — 900px 두 열). 좁은 화면은 열을
+// 나눌 폭이 없어 한 열에 이어 붙인다.
 
 import { useEffect, useMemo, useState } from 'react';
 import type { CSSProperties, ReactNode } from 'react';
 import { Modal, MODAL_DIM } from '../../../components/Modal';
 import { DateButton, PillButton } from './DatePop';
 import { TimeButton } from './TimePop';
-import { addDays, daysBetween, minutesOf, todayISO } from './model';
+import { addDays, daysBetween, minutesOf, timeLabel, todayISO } from './model';
 import { RadioCards } from '../../../components/Segmented';
 import { GoogleEventFields, type GoogleDirectoryApi, type GoogleFieldsValue } from './GoogleEventFields';
-import { RECURRENCE_OFF } from './googleCalendar';
+import { RecurrenceField } from './RecurrenceField';
+import { buildRecurrence, RECURRENCE_OFF, type RecurrenceSpec } from './googleCalendar';
 import type { CalendarEventInput } from '../../../adapters/ports';
 
 /** 어디에 저장할까 — `google`이면 그 캘린더 id가 함께 온다. */
@@ -83,9 +84,13 @@ export function NewEventModal({
   const [dest, setDest] = useState<string>('geurio');
   // 구글 전용 필드 — 목적지를 Geurio로 되돌려도 값은 남는다(다시 고르면 그대로).
   const [gf, setGf] = useState<GoogleFieldsValue>({ attendees: [], rooms: [], visibility: 'default', transparency: 'opaque', reminderMinutes: undefined, recurrence: RECURRENCE_OFF, addMeet: false });
+  // 반복은 **목적지와 무관**하다(둘 다 규칙을 저장한다) — 그래서 gf 밖의 자기 상태다.
+  const [rep, setRep] = useState<RecurrenceSpec>(RECURRENCE_OFF);
   // 고른 캘린더가 사라지면(연동 해제·권한 변경) 조용히 우리 표로 되돌린다.
   const destValid = dest === 'geurio' || googleTargets.some((t) => t.id === dest);
-  const target: NewEventTarget = destValid && dest !== 'geurio' ? { kind: 'google', calendarId: dest, fields: gf } : { kind: 'geurio' };
+  const target: NewEventTarget = destValid && dest !== 'geurio' ? { kind: 'google', calendarId: dest, fields: { ...gf, recurrence: rep } } : { kind: 'geurio' };
+  /** 오른쪽 열로 갈라 놓을 수 있는가 — 좁은 화면은 폭이 없어 한 열에 이어 붙인다. */
+  const twoCol = target.kind === 'google' && !isMobile;
 
   // 안전망 — 어떤 경로로든 종료일이 시작일보다 앞서지 않게(표의 제약과 같은 규칙).
   useEffect(() => {
@@ -125,6 +130,15 @@ export function NewEventModal({
   }, [startTime, endTime]);
   const canSave = !!title.trim() && (allDay || (durMin !== null && durMin > 0));
 
+  /** 머리의 `8월 26일 · 오전 10:00 – 오전 11:00`(원본 `nWhenPill`). */
+  const whenPill = (() => {
+    const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(startDate);
+    const day = m ? `${+m[2]!}월 ${+m[3]!}일` : '날짜 미정';
+    const span = daysBetween(startDate, endDate);
+    const when = allDay ? (span > 0 ? `${span + 1}일간` : '종일') : `${timeLabel(minutesOf(startTime) ?? 0)} – ${timeLabel(minutesOf(endTime) ?? 0)}`;
+    return `${day} · ${when}`;
+  })();
+
   // 발치 문구 — 저장 실패가 가장 급하고, 그다음이 "왜 등록이 안 눌리는가"다.
   const footMsg =
     error ??
@@ -142,6 +156,7 @@ export function NewEventModal({
 
   const submit = (): void => {
     if (!canSave || saving) return;
+    const rule = buildRecurrence(rep)?.[0];
     onSubmit(
       {
         title: title.trim(),
@@ -151,6 +166,8 @@ export function NewEventModal({
         ...(allDay ? {} : { startTime, endTime }),
         ...(location.trim() ? { location: location.trim() } : {}),
         ...(note.trim() ? { note: note.trim() } : {}),
+        // 반복 규칙은 **RRULE 한 줄**로 담는다(구글에 보내는 것과 같은 형식).
+        ...(rule ? { recurrence: rule } : {}),
       },
       target,
     );
@@ -167,8 +184,8 @@ export function NewEventModal({
       // 방식으로 뜨면 그 자체가 산만하다.
       dim={{ ...MODAL_DIM, animation: 'mf-dim-in .18s ease-out', zIndex: 322, alignItems: isMobile ? 'flex-end' : 'center', padding: isMobile ? 0 : 32 }}
       card={{
-        // 원본: 640 높이. 구글 열이 없으니 폭은 한 열(원본 `newEvW`의 좁은 쪽).
-        width: isMobile ? '100%' : 560,
+        // 원본 `newEvW` — 구글 열이 붙으면 900, 아니면 540(우리는 560).
+        width: isMobile ? '100%' : twoCol ? 900 : 560,
         maxWidth: '100%',
         maxHeight: isMobile ? '92dvh' : '100%',
         boxSizing: 'border-box',
@@ -189,7 +206,17 @@ export function NewEventModal({
             <span style={{ width: 8, height: 8, borderRadius: 999, background: 'var(--mf-accent)', display: 'block' }} />
             <span style={{ fontSize: 13.5, fontWeight: 800, letterSpacing: '-.02em', color: 'var(--mf-text)', whiteSpace: 'nowrap' }}>새 일정</span>
           </span>
+          {/* 어디에 저장되는지 머리에서 한 번 더(원본 `nCalPill`). **고를 것이 하나면
+              그리지 않는다** — 아래 배지와 같은 말을 두 번 하는 셈이다. */}
+          {googleTargets.length > 0 && (
+            <span data-new-cal-pill style={{ height: 24, padding: '0 10px', borderRadius: 999, background: 'var(--mf-accent-soft)', color: 'var(--mf-accent-strong)', fontSize: 11, fontWeight: 700, display: 'inline-flex', alignItems: 'center', whiteSpace: 'nowrap', flex: '0 0 auto', maxWidth: 200, overflow: 'hidden', textOverflow: 'ellipsis' }}>
+              {target.kind === 'google' ? (googleTargets.find((t) => t.id === dest)?.name ?? '구글 캘린더') : 'Geurio 캘린더'}
+            </span>
+          )}
           <span style={{ flex: 1, minWidth: 0 }} />
+          <span data-new-when style={{ height: 24, padding: '0 10px', borderRadius: 999, background: 'var(--mf-panel2)', color: 'var(--mf-muted)', fontSize: 11, fontWeight: 700, display: 'inline-flex', alignItems: 'center', whiteSpace: 'nowrap', flex: '0 0 auto' }}>
+            {whenPill}
+          </span>
           <button type="button" aria-label="닫기" title="닫기" onClick={onClose} className="mf-ctl" style={{ width: 30, height: 30, flex: '0 0 auto', border: '1px solid var(--mf-border)', borderRadius: 999, background: 'var(--mf-card)', color: 'var(--mf-muted)', cursor: 'pointer', display: 'inline-flex', alignItems: 'center', justifyContent: 'center' }}>
             <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" aria-hidden="true">
               <path d="M6 6l12 12M18 6 6 18" />
@@ -197,7 +224,10 @@ export function NewEventModal({
           </button>
         </div>
 
-        <div className="lnb-scroll" style={{ flex: 1, minHeight: 0, overflowY: 'auto', padding: '20px 22px 24px', display: 'flex', flexDirection: 'column', gap: 19 }}>
+        {/* 본문 — 목적지가 구글이면 **두 열**(원본과 같은 구조: 왼쪽은 일정 자체,
+            오른쪽은 구글이 처리해 주는 것들). 각 열이 자기 스크롤을 갖는다. */}
+        <div style={{ flex: 1, minHeight: 0, display: 'flex', alignItems: 'stretch', minWidth: 0 }}>
+        <div className="lnb-scroll" data-new-main style={{ flex: '1 1 340px', minWidth: 0, boxSizing: 'border-box', overflowY: 'auto', padding: '20px 22px 24px', display: 'flex', flexDirection: 'column', gap: 19 }}>
           <input
             autoFocus
             aria-label="일정 제목"
@@ -322,20 +352,27 @@ export function NewEventModal({
             <input aria-label="위치" data-new-loc value={location} onChange={(e) => setLocation(e.target.value)} placeholder="주소 또는 장소 이름" maxLength={200} style={fieldStyle} />
           </div>
 
-          {/* 구글 전용 필드(디자인 원본 `nIsGoogle`) — Geurio면 그 사실을 한 줄로 알린다. */}
-          {target.kind === 'google' ? (
-            <GoogleEventFields value={gf} mode="create" onChange={(patch) => setGf((v) => ({ ...v, ...patch }))} {...(directory ? { directory } : {})} />
-          ) : (
-            <span data-new-geurio-note style={{ fontSize: 11.5, color: 'var(--mf-faint2)', lineHeight: 1.6 }}>
-              Geurio에만 저장되는 일정이에요 · 참석자·Meet·반복은 <b style={{ fontWeight: 700 }}>구글 캘린더</b>를 고르면 쓸 수 있어요
-            </span>
-          )}
+          {/* 반복 — 목적지와 무관하게 여기서 고른다(둘 다 규칙을 저장한다). */}
+          <RecurrenceField value={rep} onChange={setRep} baseDate={startDate} />
 
           <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
             <Label>메모</Label>
             <textarea aria-label="메모" data-new-note value={note} onChange={(e) => setNote(e.target.value)} placeholder="자유롭게 적어 두세요" maxLength={2000} style={{ ...fieldStyle, height: 78, padding: '11px 12px', resize: 'vertical', lineHeight: 1.6 }} />
           </div>
 
+          {/* 좁은 화면 — 열을 나눌 폭이 없어 같은 열에 이어 붙인다. */}
+          {target.kind === 'google' && isMobile && <GoogleEventFields value={gf} mode="create" onChange={(patch) => setGf((v) => ({ ...v, ...patch }))} {...(directory ? { directory } : {})} />}
+        </div>
+
+        {twoCol && (
+          <div className="lnb-scroll" data-new-google-col style={{ flex: '1 1 260px', minWidth: 240, maxWidth: 380, boxSizing: 'border-box', overflowY: 'auto', borderLeft: '1px solid var(--mf-border-soft)', background: 'var(--mf-cal-cmt)', padding: '18px 16px 22px' }}>
+            {/* 원본은 이 열의 내용을 흰 카드 하나에 담는다 — 왼쪽 열과 성격이 다름을
+                면으로 말한다("여기는 구글이 해 주는 것들"). */}
+            <div style={{ borderRadius: 16, border: '1px solid var(--mf-border-soft)', background: 'var(--mf-card)', padding: 15, boxSizing: 'border-box' }}>
+              <GoogleEventFields value={gf} mode="create" onChange={(patch) => setGf((v) => ({ ...v, ...patch }))} {...(directory ? { directory } : {})} />
+            </div>
+          </div>
+        )}
         </div>
 
         {/* 발치 왼쪽은 **상황 문구 자리**다 — 늘 같은 안내를 걸어 두면 정작 알려야 할
