@@ -478,4 +478,68 @@ describe('구글 캘린더 겹치기(PR5)', () => {
       expect(btn?.getAttribute('aria-label')).toBe('Google 캘린더 다시 연결');
     });
   });
+
+  it('목적지가 구글이면 참석자·반복·알림 필드가 함께 뜬다 — Geurio면 안내만', async () => {
+    seed({ calendars: ['me@example.com'] });
+    stubGis();
+    stubFetch();
+    clientId = 'test-client.apps.googleusercontent.com';
+    const user = userEvent.setup();
+    const { container } = renderHome();
+    await openCalendar(container, user);
+    await waitFor(() => expect(screen.getAllByText(/구글 회의/).length).toBeGreaterThan(0));
+    await user.click(screen.getByText('새 일정'));
+    await waitFor(() => expect(document.querySelector('[data-new-cal="me@example.com"]')).toBeTruthy());
+
+    // 기본 목적지는 우리 표 — 구글 전용 필드는 뜨지 않고 그 사실을 한 줄로 알린다
+    expect(document.querySelector('[data-google-fields]')).toBeNull();
+    expect(document.querySelector('[data-new-geurio-note]')).toBeTruthy();
+
+    await user.click(document.querySelector<HTMLElement>('[data-new-cal="me@example.com"]')!);
+    const fields = await waitFor(() => {
+      const el = document.querySelector('[data-google-fields]');
+      expect(el).toBeTruthy();
+      return el as HTMLElement;
+    });
+    expect(document.querySelector('[data-new-geurio-note]')).toBeNull();
+    // 디자인 원본의 nIsGoogle 블록 — 반복·Meet·참석자·공개·참여·알림
+    for (const sel of ['[data-gf-repeat]', '[data-gf-meet]', '[data-gf-guest-input]', '[data-gf-vis]', '[data-gf-busy]', '[data-gf-remind]']) {
+      expect(fields.querySelector(sel)).toBeTruthy();
+    }
+    // 회의실은 목록 원천이 없어 두지 않는다
+    expect(fields.textContent).not.toContain('회의실');
+  });
+
+  it('구글 목적지의 참석자·반복·알림이 POST 본문에 실린다', async () => {
+    seed({ calendars: ['me@example.com'] });
+    stubGis();
+    const f = stubFetch();
+    clientId = 'test-client.apps.googleusercontent.com';
+    const user = userEvent.setup();
+    const { container } = renderHome();
+    await openCalendar(container, user);
+    await waitFor(() => expect(screen.getAllByText(/구글 회의/).length).toBeGreaterThan(0));
+    await user.click(screen.getByText('새 일정'));
+    await waitFor(() => expect(document.querySelector('[data-new-cal="me@example.com"]')).toBeTruthy());
+    await user.type(screen.getByLabelText('일정 제목'), '팀 회의');
+    await user.click(document.querySelector<HTMLElement>('[data-new-cal="me@example.com"]')!);
+    await waitFor(() => expect(document.querySelector('[data-gf-guest-input]')).toBeTruthy());
+
+    await user.type(screen.getByLabelText('참석자 이메일'), 'a@b.com{Enter}');
+    await user.click(document.querySelector<HTMLElement>('[data-gf-remind="10"]')!);
+    await user.click(document.querySelector<HTMLElement>('[data-gf-vis="private"]')!);
+    await user.click(document.querySelector<HTMLElement>('[data-gf-repeat]')!);
+    await waitFor(() => expect(document.querySelector('[data-gf-unit="week"]')).toBeTruthy());
+
+    await user.click(screen.getByText('등록', { exact: true }));
+    await waitFor(() => {
+      const post = f.mock.calls.find((c) => (c[1] as { method?: string } | undefined)?.method === 'POST');
+      expect(post).toBeTruthy();
+      const body = JSON.parse((post![1] as { body: string }).body) as Record<string, unknown>;
+      expect(body.attendees).toEqual([{ email: 'a@b.com' }]);
+      expect(body.visibility).toBe('private');
+      expect(body.reminders).toMatchObject({ useDefault: false, overrides: [{ minutes: 10 }] });
+      expect(body.recurrence).toEqual(['RRULE:FREQ=WEEKLY']);
+    });
+  });
 });

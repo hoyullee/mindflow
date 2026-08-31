@@ -10,6 +10,8 @@
 
 import { useState } from 'react';
 import { EventDetail } from './EventDetail';
+import { GoogleEventFields, type GoogleFieldsChange, type GoogleFieldsValue } from './GoogleEventFields';
+import { RECURRENCE_OFF } from './googleCalendar';
 import type { CalendarEvent, CalendarEventInput } from '../../../adapters/ports';
 import type { GoogleEvent, GoogleEventDraft } from './googleCalendar';
 
@@ -31,7 +33,7 @@ export function googleAsEvent(g: GoogleEvent): CalendarEvent {
 }
 
 /** 팝업이 돌려준 부분 수정 → 구글에 보낼 온전한 값. */
-export function draftFrom(g: GoogleEvent, patch: Partial<CalendarEventInput>): GoogleEventDraft {
+export function draftFrom(g: GoogleEvent, patch: Partial<CalendarEventInput>, fields?: GoogleFieldsChange): GoogleEventDraft {
   const base: GoogleEventDraft = {
     title: g.title,
     allDay: g.allDay,
@@ -41,6 +43,12 @@ export function draftFrom(g: GoogleEvent, patch: Partial<CalendarEventInput>): G
     ...(g.endTime ? { endTime: g.endTime } : {}),
     location: g.location ?? '',
     description: g.description ?? '',
+    // 바꾸지 않은 구글 전용 필드도 **그대로 실어** 보낸다 — PATCH에서 빠지면
+    // 참석자·알림이 조용히 지워진다(위치·메모와 같은 이유).
+    attendees: g.attendees ?? [],
+    visibility: g.visibility ?? 'default',
+    transparency: g.transparency ?? 'opaque',
+    ...(g.reminderMinutes !== undefined ? { reminderMinutes: g.reminderMinutes } : {}),
   };
   const next: GoogleEventDraft = {
     ...base,
@@ -65,7 +73,29 @@ export function draftFrom(g: GoogleEvent, patch: Partial<CalendarEventInput>): G
     delete next.startTime;
     delete next.endTime;
   }
+  if (fields) {
+    if (fields.attendees) next.attendees = fields.attendees;
+    if (fields.visibility) next.visibility = fields.visibility;
+    if (fields.transparency) next.transparency = fields.transparency;
+    // 알림은 `undefined`(캘린더 기본)도 뜻이 있으므로 **키가 왔는지**로 판단한다.
+    if ('reminderMinutes' in fields) {
+      if (fields.reminderMinutes === undefined) delete next.reminderMinutes;
+      else next.reminderMinutes = fields.reminderMinutes;
+    }
+  }
   return next;
+}
+
+/** 구글 일정 → 필드 묶음이 읽는 값. 반복·Meet는 상세에서 고치지 않는다(구글에서). */
+export function fieldsOf(g: GoogleEvent): GoogleFieldsValue {
+  return {
+    attendees: g.attendees ?? [],
+    visibility: g.visibility ?? 'default',
+    transparency: g.transparency ?? 'opaque',
+    reminderMinutes: g.reminderMinutes,
+    recurrence: RECURRENCE_OFF,
+    addMeet: false,
+  };
 }
 
 export function GoogleEventDetail({
@@ -83,6 +113,7 @@ export function GoogleEventDetail({
   onDelete?: () => Promise<string | null>;
 }) {
   const [pending, setPending] = useState<Partial<CalendarEventInput>>({});
+  const [pendingFields, setPendingFields] = useState<GoogleFieldsChange>({});
   const writable = !!onPatch && !!onDelete;
   // 저장이 끝나면 훅이 달을 다시 받지만 그 왕복이 끝나기 전까지는 방금 고친 값을
   // 보여 준다 — 아니면 눌렀는데 아무 일도 없는 것처럼 보인다.
@@ -105,18 +136,28 @@ export function GoogleEventDetail({
       onPatch={async (patch) => {
         if (!onPatch) return null;
         setPending((p) => ({ ...p, ...patch }));
-        const err = await onPatch(draftFrom(event, { ...pending, ...patch }));
+        const err = await onPatch(draftFrom(event, { ...pending, ...patch }, pendingFields));
         if (err) setPending({});
         return err;
       }}
       onDelete={async () => (onDelete ? onDelete() : null)}
       extra={
-        <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
-          {event.recurringEventId && (
-            <span data-google-recurring style={{ flex: '1 1 220px', minWidth: 0, fontSize: 11.5, color: 'var(--mf-faint2)', lineHeight: 1.6 }}>
-              반복 일정이에요 — 여기서 고치면 <b style={{ fontWeight: 700 }}>이 회차만</b> 바뀝니다. 반복 규칙 자체는 구글에서 바꿔 주세요.
-            </span>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 19, minWidth: 0 }}>
+          {/* 구글 전용 필드(디자인 원본 `nIsGoogle`) — 쓸 수 있는 일정에서만 고친다. */}
+          {writable && (
+            <GoogleEventFields
+              value={{ ...fieldsOf(event), ...pendingFields }}
+              mode="edit"
+              recurring={!!event.recurringEventId}
+              {...(event.meetLink ? { meetLink: event.meetLink } : {})}
+              onChange={(patch) => {
+                setPendingFields((p) => ({ ...p, ...patch }));
+                // 필드 하나만 바뀐 저장 — 본문은 지금 값 그대로 다시 싣는다.
+                void onPatch?.(draftFrom(event, pending, { ...pendingFields, ...patch }));
+              }}
+            />
           )}
+        <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
           {event.htmlLink && (
             <a
               href={event.htmlLink}
@@ -132,6 +173,7 @@ export function GoogleEventDetail({
               Google에서 열기
             </a>
           )}
+        </div>
         </div>
       }
     />

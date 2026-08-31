@@ -124,7 +124,23 @@ export interface GoogleEvent {
   etag?: string;
   /** 반복 일정의 **회차**면 원본 일정 id — 있으면 "이 회차만" 고친다. */
   recurringEventId?: string;
+  /** 초대한 사람들의 이메일 — 구글이 초대 메일을 보낸다(우리는 못 보낸다). */
+  attendees?: string[];
+  /** 공개 설정 — 기본/공개/비공개. */
+  visibility?: GoogleVisibility;
+  /** 참여 가능 여부 — 바쁨(opaque)/한가함(transparent). */
+  transparency?: GoogleTransparency;
+  /**
+   * 알림 — `null`은 "없음", 숫자는 "N분 전", `undefined`는 **캘린더 기본 알림**이다.
+   * 구글의 `reminders.useDefault`가 그 셋을 가른다.
+   */
+  reminderMinutes?: number | null;
+  /** Google Meet 링크(있으면). */
+  meetLink?: string;
 }
+
+export type GoogleVisibility = 'default' | 'public' | 'private';
+export type GoogleTransparency = 'opaque' | 'transparent';
 
 // ── 토큰 ────────────────────────────────────────────────────────────────────
 
@@ -338,6 +354,26 @@ function prevDay(iso: string): string {
   return `${dt.getFullYear()}-${p(dt.getMonth() + 1)}-${p(dt.getDate())}`;
 }
 
+/** 참석자 이메일만 — 응답·역할은 우리 화면이 쓰지 않는다(구글에서 본다). */
+function parseAttendees(raw: unknown): { attendees?: string[] } {
+  if (!Array.isArray(raw)) return {};
+  const list = raw.map((a) => (a as { email?: unknown }).email).filter((e): e is string => typeof e === 'string' && !!e);
+  return list.length ? { attendees: list } : {};
+}
+
+/**
+ * 알림 셋을 가른다: `useDefault`면 **캘린더 기본**(키 없음), 재정의가 비어 있으면
+ * **없음**(`null`), 있으면 첫 팝업 알림의 분(`number`).
+ */
+function parseReminders(raw: unknown): { reminderMinutes?: number | null } {
+  const r = raw as { useDefault?: unknown; overrides?: unknown } | undefined;
+  if (!r || typeof r !== 'object') return {};
+  if (r.useDefault === true) return {};
+  const ov = Array.isArray(r.overrides) ? r.overrides : [];
+  const first = ov.map((o) => (o as { minutes?: unknown }).minutes).find((m): m is number => typeof m === 'number');
+  return { reminderMinutes: first ?? null };
+}
+
 export function parseEvents(json: unknown, cal: GoogleCalendarMeta): GoogleEvent[] {
   const items = (json as { items?: unknown })?.items;
   if (!Array.isArray(items)) return [];
@@ -371,6 +407,11 @@ export function parseEvents(json: unknown, cal: GoogleCalendarMeta): GoogleEvent
       ...(cal.writable ? { writable: true } : {}),
       ...(typeof it.etag === 'string' ? { etag: it.etag } : {}),
       ...(typeof it.recurringEventId === 'string' ? { recurringEventId: it.recurringEventId } : {}),
+      ...parseAttendees(it.attendees),
+      ...(it.visibility === 'public' || it.visibility === 'private' ? { visibility: it.visibility } : {}),
+      ...(it.transparency === 'transparent' ? { transparency: 'transparent' as const } : {}),
+      ...parseReminders(it.reminders),
+      ...(typeof it.hangoutLink === 'string' && it.hangoutLink ? { meetLink: it.hangoutLink } : {}),
       ...(cal.holiday ? { holiday: true } : {}),
       ...(cal.holiday && isDayOffHoliday(typeof it.description === 'string' ? it.description : undefined) ? { dayOff: true } : {}),
     });
@@ -412,6 +453,56 @@ export interface GoogleEventDraft {
   endTime?: string;
   location?: string;
   description?: string;
+  /**
+   * 아래 다섯은 **구글 일정에만** 뜻이 있다(디자인 원본도 `nIsGoogle`로 감싼다).
+   * 초대 메일·알림·바쁨 표시는 **구글이 실제로 처리해 주는 것**이고, 우리 표에는
+   * 그걸 보낼 장치가 없다 — 그래서 목적지가 구글일 때만 화면에 뜬다.
+   */
+  attendees?: string[];
+  visibility?: GoogleVisibility;
+  transparency?: GoogleTransparency;
+  /** `null`=없음, 숫자=N분 전, 없으면 캘린더 기본 알림. */
+  reminderMinutes?: number | null;
+  /** 반복 규칙(RRULE) — **만들 때만** 싣는다(회차 수정은 구글에서). */
+  recurrence?: string[];
+  /** Google Meet 링크를 함께 만들까 — 만들 때만. */
+  addMeet?: boolean;
+}
+
+/** 반복 설정 — 디자인 원본의 `nRep*`(일/주/개월 × N마다 × 종료 없음/날짜/횟수). */
+export interface RecurrenceSpec {
+  on: boolean;
+  unit: 'day' | 'week' | 'month';
+  /** N마다 — 1 이상. */
+  interval: number;
+  endMode: 'none' | 'date' | 'count';
+  until?: string;
+  count?: number;
+}
+
+export const RECURRENCE_OFF: RecurrenceSpec = { on: false, unit: 'week', interval: 1, endMode: 'none' };
+
+/** 설정 → RRULE. 꺼져 있으면 `undefined`(구글에 아무것도 보내지 않는다). */
+export function buildRecurrence(r: RecurrenceSpec): string[] | undefined {
+  if (!r.on) return undefined;
+  const freq = r.unit === 'day' ? 'DAILY' : r.unit === 'week' ? 'WEEKLY' : 'MONTHLY';
+  const parts = [`FREQ=${freq}`];
+  if (r.interval > 1) parts.push(`INTERVAL=${Math.floor(r.interval)}`);
+  // UNTIL은 포함(그 날까지) — 종일이든 시각이든 그 날 끝까지로 잡는다.
+  if (r.endMode === 'date' && r.until) parts.push(`UNTIL=${r.until.replace(/-/g, '')}T235959Z`);
+  if (r.endMode === 'count' && r.count && r.count > 0) parts.push(`COUNT=${Math.floor(r.count)}`);
+  return [`RRULE:${parts.join(';')}`];
+}
+
+const UNIT_LABEL: Record<RecurrenceSpec['unit'], string> = { day: '일', week: '주', month: '개월' };
+
+/** 디자인 원본의 `nRepSummary` — 지금 설정을 한 줄로. */
+export function recurrenceSummary(r: RecurrenceSpec): string {
+  if (!r.on) return '반복하지 않아요';
+  const every = `${r.interval > 1 ? `${r.interval}` : ''}${UNIT_LABEL[r.unit]}마다`;
+  if (r.endMode === 'date' && r.until) return `${every} · ${r.until}까지`;
+  if (r.endMode === 'count' && r.count) return `${every} · ${r.count}회 반복 후 종료`;
+  return `${every} · 종료 없음`;
 }
 
 /** 이 브라우저의 시간대 — 시각 일정은 이걸 함께 보내야 구글이 같은 시각에 놓는다. */
@@ -438,6 +529,16 @@ export function draftToBody(d: GoogleEventDraft): Record<string, unknown> {
     // 위치나 메모를 지운 것이 저장되지 않는다(PATCH의 결).
     location: d.location ?? '',
     description: d.description ?? '',
+    // 같은 이유로 참석자도 **빈 배열까지** 보낸다(전원 초대 취소가 저장되게).
+    attendees: (d.attendees ?? []).map((email) => ({ email })),
+    visibility: d.visibility ?? 'default',
+    transparency: d.transparency ?? 'opaque',
+    reminders:
+      d.reminderMinutes === undefined
+        ? { useDefault: true }
+        : { useDefault: false, overrides: d.reminderMinutes === null ? [] : [{ method: 'popup', minutes: d.reminderMinutes }] },
+    ...(d.recurrence ? { recurrence: d.recurrence } : {}),
+    ...(d.addMeet ? { conferenceData: { createRequest: { requestId: `mf-${Date.now()}-${Math.random().toString(36).slice(2, 8)}` } } } : {}),
   };
 }
 
@@ -461,7 +562,9 @@ async function send(path: string, token: string, method: 'POST' | 'PATCH' | 'DEL
 }
 
 export async function createGoogleEvent(token: string, calendarId: string, draft: GoogleEventDraft): Promise<void> {
-  await send(`/calendars/${encodeURIComponent(calendarId)}/events`, token, 'POST', draftToBody(draft));
+  // Meet 링크를 요청할 때는 `conferenceDataVersion=1`이 있어야 구글이 만들어 준다.
+  const qs = draft.addMeet ? '?conferenceDataVersion=1' : '';
+  await send(`/calendars/${encodeURIComponent(calendarId)}/events${qs}`, token, 'POST', draftToBody(draft));
 }
 
 /**

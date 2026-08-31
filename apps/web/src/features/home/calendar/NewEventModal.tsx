@@ -8,8 +8,12 @@
 // 구글에 **쓸 수 있는 캘린더가 없으면**(연동 안 함·보기 전용) 고르기를 그리지 않고
 // 예전처럼 배지 하나만 둔다 — 고를 것이 하나뿐인 라디오는 UI가 아니라 장식이다.
 //
-// 원본에 있지만 두지 않은 것: 반복(v1 제외 — 사용자 결정) · 알림(보낼 장치가 없다) ·
-// 참석자·Meet·회의실(구글 연동 단계). 눌러도 아무 일이 없는 버튼은 두지 않는다.
+// 목적지가 **구글이면** 원본의 `nIsGoogle` 블록(반복·Meet·참석자·공개 설정·참여 가능
+// 여부·알림)이 함께 뜬다 — 구글이 실제로 처리해 주는 것들이다(`GoogleEventFields`).
+// Geurio면 대신 원본의 `evCalNote` 문구로 그 사실을 알린다.
+//
+// 원본에 있지만 두지 않은 것: **회의실** — 목록이 조직 캘린더(Admin SDK)에서 와야
+// 하는데 우리에겐 원천이 없다. 검색 결과가 영영 비는 상자를 두지 않는다.
 
 import { useEffect, useMemo, useState } from 'react';
 import type { CSSProperties, ReactNode } from 'react';
@@ -18,10 +22,12 @@ import { DateButton, PillButton } from './DatePop';
 import { TimeButton } from './TimePop';
 import { addDays, daysBetween, minutesOf, todayISO } from './model';
 import { RadioCards } from '../../../components/Segmented';
+import { GoogleEventFields, type GoogleFieldsValue } from './GoogleEventFields';
+import { RECURRENCE_OFF } from './googleCalendar';
 import type { CalendarEventInput } from '../../../adapters/ports';
 
 /** 어디에 저장할까 — `google`이면 그 캘린더 id가 함께 온다. */
-export type NewEventTarget = { kind: 'geurio' } | { kind: 'google'; calendarId: string };
+export type NewEventTarget = { kind: 'geurio' } | { kind: 'google'; calendarId: string; fields: GoogleFieldsValue };
 
 /** 목적지로 내놓을 구글 캘린더(쓸 수 있는 것만). */
 export interface GoogleTarget {
@@ -72,9 +78,11 @@ export function NewEventModal({
   const [note, setNote] = useState('');
   // 기본값은 **우리 표**다 — 남의 서비스에 쓰는 일은 사용자가 골라야 한다.
   const [dest, setDest] = useState<string>('geurio');
+  // 구글 전용 필드 — 목적지를 Geurio로 되돌려도 값은 남는다(다시 고르면 그대로).
+  const [gf, setGf] = useState<GoogleFieldsValue>({ attendees: [], visibility: 'default', transparency: 'opaque', reminderMinutes: undefined, recurrence: RECURRENCE_OFF, addMeet: false });
   // 고른 캘린더가 사라지면(연동 해제·권한 변경) 조용히 우리 표로 되돌린다.
   const destValid = dest === 'geurio' || googleTargets.some((t) => t.id === dest);
-  const target: NewEventTarget = destValid && dest !== 'geurio' ? { kind: 'google', calendarId: dest } : { kind: 'geurio' };
+  const target: NewEventTarget = destValid && dest !== 'geurio' ? { kind: 'google', calendarId: dest, fields: gf } : { kind: 'geurio' };
 
   // 안전망 — 어떤 경로로든 종료일이 시작일보다 앞서지 않게(표의 제약과 같은 규칙).
   useEffect(() => {
@@ -310,6 +318,15 @@ export function NewEventModal({
             <Label>위치</Label>
             <input aria-label="위치" data-new-loc value={location} onChange={(e) => setLocation(e.target.value)} placeholder="주소 또는 장소 이름" maxLength={200} style={fieldStyle} />
           </div>
+
+          {/* 구글 전용 필드(디자인 원본 `nIsGoogle`) — Geurio면 그 사실을 한 줄로 알린다. */}
+          {target.kind === 'google' ? (
+            <GoogleEventFields value={gf} mode="create" onChange={(patch) => setGf((v) => ({ ...v, ...patch }))} />
+          ) : (
+            <span data-new-geurio-note style={{ fontSize: 11.5, color: 'var(--mf-faint2)', lineHeight: 1.6 }}>
+              Geurio에만 저장되는 일정이에요 · 참석자·Meet·반복은 <b style={{ fontWeight: 700 }}>구글 캘린더</b>를 고르면 쓸 수 있어요
+            </span>
+          )}
 
           <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
             <Label>메모</Label>
