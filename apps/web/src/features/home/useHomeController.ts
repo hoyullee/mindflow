@@ -1123,8 +1123,10 @@ export function useHomeController() {
   /** `새 일정`·시간표의 `＋` — 처음 놓일 날짜는 고른 날(없으면 오늘). */
   const openNewEvent = (date?: string, allDay = true) => patch({ calNewEvent: { date: date || state.calDay || todayISO(), allDay } });
   const closeNewEvent = () => patch({ calNewEvent: null });
-  /** Geurio 일정을 눌렀다 — 칸반 카드 상세와 다른 팝업이다(고칠 것이 다르다). */
-  const openCalendarEvent = (id: string) => patch({ calEventDetail: id });
+  /** Geurio 일정을 눌렀다 — 칸반 카드 상세와 다른 팝업이다(고칠 것이 다르다).
+   *  반복 일정은 **어느 회차를 눌렀는가**(occ = 그 회차의 시작일)까지 담는다 —
+   *  삭제 범위(이 일정만/이후)의 기준이 된다. id는 uuid/난수라 `#`이 들어올 수 없다. */
+  const openCalendarEvent = (id: string, occ?: string) => patch({ calEventDetail: occ ? `${id}#${occ}` : id });
   /** 구글 일정 상세(읽기 전용) — 고칠 것이 없어 여는 것과 닫는 것뿐이다. */
   const openCalendarGoogle = (id: string) => patch({ calGoogleDetail: id });
   const closeCalendarGoogle = () => patch({ calGoogleDetail: null });

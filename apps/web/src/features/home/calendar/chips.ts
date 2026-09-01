@@ -15,6 +15,13 @@ export interface EntryChip {
   bg: string;
   fg: string;
   dot: string;
+  /**
+   * 상태 점(`dot`)의 **옅은 면** — 날짜별 보기의 행·시간표 블록이 쓴다(제보: 블록의
+   * 배경이 왼쪽 색 바와 다른 색이었다 — bg는 분류 hue에서 오는데 바는 열 색이라
+   * 서로 어긋났다. 디자인 원본의 시간표 톤은 언제나 **바 색의 옅은 면**이다:
+   * `#E8845C` 바에 `#FDF3ED` 면).
+   */
+  tint: string;
 }
 
 /**
@@ -24,10 +31,12 @@ export interface EntryChip {
 export function entryChip(e: CalendarEntry, surface: ChipSurface): EntryChip {
   // 분류가 없는 카드도 알약이어야 하니 이름 없는 값으로 색을 뽑는다(결정적).
   const base = e.tagColor ?? tagColor(e.tag, UI_THEME.palette);
+  const dot = columnColor({ id: e.colId, title: e.colName, ...(e.colColor ? { color: e.colColor } : {}) }, e.colIndex, UI_THEME.palette);
   return {
     bg: mixHex(surface.card, base, 0.16),
     fg: tagInk(base, surface.text),
-    dot: columnColor({ id: e.colId, title: e.colName, ...(e.colColor ? { color: e.colColor } : {}) }, e.colIndex, UI_THEME.palette),
+    dot,
+    tint: mixHex(surface.card, dot, 0.12),
   };
 }
 

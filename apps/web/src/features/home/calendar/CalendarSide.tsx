@@ -205,7 +205,9 @@ function DayTimelineView({
                 border: 0,
                 borderLeft: `3px solid ${chip.dot}`,
                 borderRadius: '4px 9px 9px 4px',
-                background: chip.bg,
+                // 배경은 **바 색의 옅은 면**(디자인 원본의 시간표 톤 — 제보: 분류 hue의
+                // bg를 쓰던 예전 판은 바와 배경 색이 서로 어긋났다).
+                background: chip.tint,
                 // 겹칠 때 카드 경계를 갈라 준다(원본 `ring`).
                 boxShadow: n > 1 ? '0 0 0 1.5px var(--mf-card)' : 'none',
                 cursor: 'pointer',
@@ -256,7 +258,8 @@ function DayChip({ entry, iso, surface, onPick }: { entry: CalendarEntry; iso: s
         border: 0,
         borderLeft: `3px solid ${chip.dot}`,
         borderRadius: '4px 10px 10px 4px',
-        background: 'var(--mf-panel2)',
+        // 중립 면(panel2)이 아니라 **바 색의 옅은 면** — 시간표 블록과 같은 톤(제보 이미지).
+        background: chip.tint,
         font: 'inherit',
         textAlign: 'left',
         cursor: 'pointer',

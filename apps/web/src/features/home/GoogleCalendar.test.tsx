@@ -15,6 +15,7 @@ import { LocalEventStore } from '../../adapters/local/localEventStore';
 import { LocalImageStore } from '../../adapters/local/localImageStore';
 import type { Backend, DocMeta, DocStore } from '../../adapters/ports';
 import { isoOf } from './calendar/model';
+import { GOOGLE_CALENDAR_SCOPE, GOOGLE_SCOPE_REQUIRED } from './calendar/googleCalendar';
 
 /**
  * 클라이언트 ID는 `import.meta.env`에서 오는데 Vite가 그 값을 **변환 시점에 굳혀**
@@ -181,6 +182,15 @@ function seed(google?: { calendars: string[] }): void {
   localStorage.setItem('mf_demo_session', JSON.stringify({ user: { email: 'me@example.com' }, email: 'me@example.com', name: '나' }));
 }
 
+/**
+ * 연동된 탭의 실제 상태 — 토큰은 sessionStorage에 산다. 화면은 이제 토큰을 스스로
+ * 요청하지 않으므로(**GIS 요청은 조용한 갱신도 팝업을 연다** — 제보의 재로그인 팝업),
+ * "이미 연동돼 있다"로 시작하는 테스트는 진짜 탭처럼 토큰을 직접 심는다.
+ */
+function seedToken(scope: string = GOOGLE_CALENDAR_SCOPE): void {
+  sessionStorage.setItem('mf_gcal_token', JSON.stringify({ accessToken: 'tok', expiresAt: Date.now() + 3_600_000, scope }));
+}
+
 function renderHome() {
   const backend: Backend = {
     auth: new LocalAuth(),
@@ -264,6 +274,7 @@ describe('구글 캘린더 겹치기(PR5)', () => {
 
   it('연동을 켜 두면 일정 화면에 구글 일정이 겹치고, 공휴일은 칩이 아니라 날짜 색·이름이 된다', async () => {
     seed({ calendars: ['me@example.com', HOLIDAY_ID] });
+    seedToken();
     stubGis();
     stubFetch();
     clientId = 'test-client.apps.googleusercontent.com';
@@ -304,8 +315,9 @@ describe('구글 캘린더 겹치기(PR5)', () => {
     });
   }
 
-  it('쓸 수 있는 캘린더의 구글 일정은 그 자리에서 고친다 — 제목을 바꾸면 구글에 PATCH', async () => {
+  it('쓸 수 있는 캘린더의 구글 일정은 그 자리에서 고친다 — 완료를 누르면 구글에 PATCH 한 번', async () => {
     seed({ calendars: ['me@example.com'] });
+    seedToken();
     stubGis();
     const f = stubFetch();
     clientId = 'test-client.apps.googleusercontent.com';
@@ -317,22 +329,28 @@ describe('구글 캘린더 겹치기(PR5)', () => {
     const title = pop.querySelector<HTMLTextAreaElement>('[data-event-title]');
     expect(title).toBeTruthy();
     expect(title!.readOnly).toBe(false);
+    // 삭제도 그 자리에서(구글로 보내는 링크는 그대로 남는다)
+    expect(pop.querySelector('[data-event-delete]')).toBeTruthy();
+    expect(pop.querySelector('[data-google-open]')?.getAttribute('href')).toBe('https://calendar.google.com/x');
     await user.clear(title!);
     await user.type(title!, '이름 바꿈');
+    // 저장은 완료 버튼에서 한 번(요청) — 타이핑·blur만으로는 아무것도 보내지 않는다.
     title!.blur();
+    expect(f.mock.calls.find((c) => (c[1] as { method?: string } | undefined)?.method === 'PATCH')).toBeUndefined();
+    await user.click(pop.querySelector('[data-event-done]')!);
     await waitFor(() => {
       const patch = f.mock.calls.find((c) => (c[1] as { method?: string } | undefined)?.method === 'PATCH');
       expect(patch).toBeTruthy();
       expect(String(patch![0])).toContain('/events/g1');
       expect(JSON.parse((patch![1] as { body: string }).body)).toMatchObject({ summary: '이름 바꿈' });
     });
-    // 삭제도 그 자리에서(구글로 보내는 링크는 그대로 남는다)
-    expect(pop.querySelector('[data-event-delete]')).toBeTruthy();
-    expect(pop.querySelector('[data-google-open]')?.getAttribute('href')).toBe('https://calendar.google.com/x');
+    // 저장이 끝나면 팝업이 닫힌다 — 구글이 돌려준 값은 달을 다시 받아 그린다.
+    await waitFor(() => expect(document.querySelector('[data-google-detail]')).toBeNull());
   });
 
   it('보기 전용으로 공유된 캘린더의 일정은 고칠 수 없다고 말한다', async () => {
     seed({ calendars: [SHARED_ID] });
+    seedToken();
     stubGis();
     stubFetch();
     clientId = 'test-client.apps.googleusercontent.com';
@@ -349,6 +367,7 @@ describe('구글 캘린더 겹치기(PR5)', () => {
 
   it('연동을 켜 두어도 설정을 열기 전에는 아무 요청도 하지 않는다 — 조회는 공짜가 아니다', async () => {
     seed({ calendars: ['me@example.com'] });
+    seedToken();
     stubGis();
     const f = stubFetch();
     clientId = 'test-client.apps.googleusercontent.com';
@@ -405,6 +424,7 @@ describe('구글 캘린더 겹치기(PR5)', () => {
 
   it('연결을 해제하면 설정이 지워지고 토큰도 버린다', async () => {
     seed({ calendars: ['me@example.com'] });
+    seedToken();
     stubGis();
     stubFetch();
     clientId = 'test-client.apps.googleusercontent.com';
@@ -428,6 +448,7 @@ describe('구글 캘린더 겹치기(PR5)', () => {
 
   it('새 일정을 구글에 저장한다 — 목적지를 고르면 그 캘린더에 POST', async () => {
     seed({ calendars: ['me@example.com'] });
+    seedToken();
     stubGis();
     const f = stubFetch();
     clientId = 'test-client.apps.googleusercontent.com';
@@ -473,7 +494,9 @@ describe('구글 캘린더 겹치기(PR5)', () => {
 
   it('읽기 권한만 승인돼 있으면 "다시 연결"을 권한다 — 쓰기가 조용히 죽지 않게', async () => {
     seed({ calendars: ['me@example.com'] });
-    // 구글이 **읽기만** 승인한다(PR5의 옛 승인이 남은 상태·동의 화면에서 일부만 체크)
+    // 옛 배포의 **읽기 전용** 토큰이 남아 있다 — `readStoredToken`이 없는 것으로 보고,
+    // 화면은 새로 요청하는 대신(팝업 금지) "다시 연결"을 권한다.
+    seedToken('https://www.googleapis.com/auth/calendar.readonly');
     stubGis('https://www.googleapis.com/auth/calendar.readonly');
     stubFetch();
     clientId = 'test-client.apps.googleusercontent.com';
@@ -489,6 +512,7 @@ describe('구글 캘린더 겹치기(PR5)', () => {
 
   it('목적지가 구글이면 참석자·회의실·알림 필드가 오른쪽 열로 뜬다 — 반복은 두 목적지 공통', async () => {
     seed({ calendars: ['me@example.com'] });
+    seedToken();
     stubGis();
     stubFetch();
     clientId = 'test-client.apps.googleusercontent.com';
@@ -531,6 +555,7 @@ describe('구글 캘린더 겹치기(PR5)', () => {
 
   it('이름으로 사람을 찾아 참석자로 넣는다(선택 스코프)', async () => {
     seed({ calendars: ['me@example.com'] });
+    seedToken();
     stubGis();
     stubFetch();
     clientId = 'test-client.apps.googleusercontent.com';
@@ -561,6 +586,7 @@ describe('구글 캘린더 겹치기(PR5)', () => {
 
   it('회의실을 검색해 예약한다 — 구글에서는 참석자(resource)로 저장된다', async () => {
     seed({ calendars: ['me@example.com'] });
+    seedToken();
     stubGis();
     const f = stubFetch();
     clientId = 'test-client.apps.googleusercontent.com';
@@ -594,8 +620,9 @@ describe('구글 캘린더 겹치기(PR5)', () => {
     });
   });
 
-  it('회의실 목록을 못 받으면(403) 구획이 아예 그려지지 않는다 — 잠깐 나타났다 사라지지 않는다(제보)', async () => {
+  it('회의실 목록을 못 받으면(403) 구획은 남고 안내 한 줄이 된다 — 검색 상자만 없다(요청: 상시 노출)', async () => {
     seed({ calendars: ['me@example.com'] });
+    seedToken();
     stubGis();
     stubFetch();
     // Admin SDK만 거절하는 서버(API 미사용·관리자 승인 필요) — 나머지는 그대로.
@@ -614,9 +641,11 @@ describe('구글 캘린더 겹치기(PR5)', () => {
     await user.click(document.querySelector<HTMLElement>('[data-new-cal="me@example.com"]')!);
     await waitFor(() => expect(document.querySelector('[data-gf-guest-input]')).toBeTruthy());
 
-    // 목록 요청이 끝날 시간을 주고 — 구획은 **한 번도** 서지 않는다(도착해야 그린다).
-    await new Promise((r) => setTimeout(r, 60));
+    // 목록 요청이 끝날 시간을 주고 — 구획은 남되 **안내 한 줄**이 되고(요청: 굳이
+    // 비노출할 필요 없다), 결과가 영영 비는 검색 상자는 두지 않는다.
+    await waitFor(() => expect(document.querySelector('[data-gf-room-note]')?.textContent).toContain('조직 캘린더에서 불러와요'));
     expect(document.querySelector('[data-gf-room-input]')).toBeNull();
+    expect(screen.getByText('회의실')).toBeTruthy();
     // 나머지 구글 필드는 그대로다(이름 검색 포함 — 사람 검색 스코프는 살아 있다).
     expect(document.querySelector('[data-gf-meet]')).toBeTruthy();
     expect(screen.getByLabelText('참석자 이름 또는 이메일')).toBeTruthy();
@@ -624,8 +653,9 @@ describe('구글 캘린더 겹치기(PR5)', () => {
 
   it('선택 스코프가 없으면 이름 검색·회의실이 빠진다 — 이메일 입력으로 남는다', async () => {
     seed({ calendars: ['me@example.com'] });
-    // 구글이 **필수 스코프만** 승인한다(개인 계정·조직이 막은 경우)
-    stubGis('https://www.googleapis.com/auth/calendar.events https://www.googleapis.com/auth/calendar.calendarlist.readonly');
+    // 구글이 **필수 스코프만** 승인한 토큰(개인 계정·조직이 막은 경우)
+    seedToken(GOOGLE_SCOPE_REQUIRED.join(' '));
+    stubGis(GOOGLE_SCOPE_REQUIRED.join(' '));
     stubFetch();
     clientId = 'test-client.apps.googleusercontent.com';
     const user = userEvent.setup();
@@ -644,12 +674,14 @@ describe('구글 캘린더 겹치기(PR5)', () => {
     expect(fields.querySelector('[data-gf-guest-input]')).toBeTruthy();
     // 이름 검색은 없다 — 라벨이 이메일 전용이다
     expect(screen.getByLabelText('참석자 이메일')).toBeTruthy();
-    // 회의실 구획은 그리지 않는다(결과가 영영 비는 상자를 두지 않는다)
+    // 회의실은 안내 한 줄로 남는다 — 검색 상자는 없다(결과가 영영 비는 상자 금지)
     expect(fields.querySelector('[data-gf-room-input]')).toBeNull();
+    expect(fields.querySelector('[data-gf-room-note]')?.textContent).toContain('조직 캘린더에서 불러와요');
   });
 
   it('구글 목적지의 참석자·반복·알림이 POST 본문에 실린다', async () => {
     seed({ calendars: ['me@example.com'] });
+    seedToken();
     stubGis();
     const f = stubFetch();
     clientId = 'test-client.apps.googleusercontent.com';
@@ -680,5 +712,76 @@ describe('구글 캘린더 겹치기(PR5)', () => {
       expect(body.reminders).toMatchObject({ useDefault: false, overrides: [{ minutes: 10 }] });
       expect(body.recurrence).toEqual(['RRULE:FREQ=WEEKLY']);
     });
+  });
+
+  it('연동이 켜져 있는데 토큰이 없으면(재로그인 뒤) 구글 팝업을 열지 않고 "다시 연결"을 권한다(제보)', async () => {
+    // 재로그인한 탭의 상태 그대로 — 블롭에는 연동이 켜져 있지만 sessionStorage 토큰이 없다.
+    seed({ calendars: ['me@example.com'] });
+    const gis = stubGis();
+    stubFetch();
+    clientId = 'test-client.apps.googleusercontent.com';
+    const user = userEvent.setup();
+    const { container } = renderHome();
+    await openCalendar(container, user);
+    // 다시 연결 버튼이 뜬다 — 화면을 여는 것만으로는 GIS 요청이 **한 번도** 나가지 않는다
+    // (조용한 갱신도 팝업 창을 연다 — 그게 제보의 "로그인 팝업"이었다).
+    await waitFor(() => {
+      const btn = container.querySelector('[data-google-connect-cal]');
+      expect(btn?.getAttribute('aria-label')).toBe('Google 캘린더 다시 연결');
+    });
+    expect(gis.requested).toEqual([]);
+    // 누르는 것은 사용자 제스처다 — 그때만 동의 창이 뜨고 달력이 채워진다.
+    await user.click(container.querySelector('[data-google-connect-cal]') as HTMLElement);
+    expect(gis.requested).toEqual(['consent']);
+    await waitFor(() => expect(screen.getAllByText(/구글 회의/).length).toBeGreaterThan(0));
+  });
+
+  it('연결을 끊고 다른 계정으로 다시 연결하면 이전 계정의 회의실이 남지 않는다(제보)', async () => {
+    seed({ calendars: ['me@example.com'] });
+    seedToken();
+    stubGis();
+    stubFetch();
+    clientId = 'test-client.apps.googleusercontent.com';
+    const user = userEvent.setup();
+    const { container } = renderHome();
+    await openCalendar(container, user);
+    await waitFor(() => expect(screen.getAllByText(/구글 회의/).length).toBeGreaterThan(0));
+    // A 계정: 새 일정에서 구글 목적지를 고르면 회의실 목록이 뜬다.
+    await user.click(screen.getByText('새 일정'));
+    await waitFor(() => expect(document.querySelector('[data-new-cal="me@example.com"]')).toBeTruthy());
+    await user.click(document.querySelector<HTMLElement>('[data-new-cal="me@example.com"]')!);
+    await waitFor(() => expect(document.querySelector('[data-gf-room-hit="room-35-01@resource.calendar.google.com"]')).toBeTruthy());
+    fireEvent.keyDown(document, { key: 'Escape' });
+    await waitFor(() => expect(document.querySelector('[data-new-event],[data-google-fields]')).toBeNull());
+
+    // 연동 해제 — 계정에 딸린 캐시(회의실·스코프)도 함께 버려진다.
+    await user.click(await screen.findByRole('button', { name: '계정 메뉴' }));
+    await user.click(await screen.findByText('설정'));
+    const off = await waitFor(() => {
+      const el = document.querySelector('[data-google-disconnect]');
+      expect(el).toBeTruthy();
+      return el as HTMLElement;
+    });
+    await user.click(off);
+    await waitFor(() => expect(document.querySelector('[data-google-connect]')).toBeTruthy());
+
+    // B 계정(회의실이 없는 조직)으로 다시 연결 — Admin SDK가 빈 목록을 준다.
+    const inner = global.fetch;
+    vi.stubGlobal('fetch', async (url: string, init?: RequestInit) => {
+      if (String(url).includes('admin.googleapis.com')) return { ok: true, status: 200, json: async () => ({ items: [] }) } as unknown as Response;
+      return (inner as (u: string, i?: RequestInit) => Promise<Response>)(url, init);
+    });
+    await user.click(document.querySelector('[data-google-connect]') as HTMLElement);
+    await waitFor(() => expect(document.querySelector('[data-google-cal="me@example.com"]')).toBeTruthy());
+    fireEvent.keyDown(document, { key: 'Escape' });
+
+    // 새 일정의 회의실 구획에 A의 회의실이 **남아 있지 않다** — 안내 한 줄뿐.
+    await user.click(screen.getByText('새 일정'));
+    await waitFor(() => expect(document.querySelector('[data-new-cal="me@example.com"]')).toBeTruthy());
+    await user.click(document.querySelector<HTMLElement>('[data-new-cal="me@example.com"]')!);
+    await waitFor(() => expect(document.querySelector('[data-google-fields]')).toBeTruthy());
+    await waitFor(() => expect(document.querySelector('[data-gf-room-note]')).toBeTruthy());
+    expect(document.querySelector('[data-gf-room-hit="room-35-01@resource.calendar.google.com"]')).toBeNull();
+    expect(document.querySelector('[data-gf-room-input]')).toBeNull();
   });
 });

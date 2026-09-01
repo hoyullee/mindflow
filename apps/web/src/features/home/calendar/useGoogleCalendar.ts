@@ -14,6 +14,7 @@ import {
   deleteGoogleEvent,
   ensureGoogleToken,
   fetchCalendarList,
+  GOOGLE_RECONNECT_MSG,
   GOOGLE_SCOPE_DIRECTORY,
   GOOGLE_SCOPE_OTHER_CONTACTS,
   GOOGLE_SCOPE_ROOMS,
@@ -23,6 +24,7 @@ import {
   readStoredToken,
   requestGoogleToken,
   revokeGoogleToken,
+  storeToken,
   updateGoogleEvent,
   type GoogleCalendarMeta,
   type GoogleEvent,
@@ -72,11 +74,14 @@ export interface GoogleCalendarApi {
   searchPeople: (query: string) => Promise<DirectoryPerson[] | null>;
   /**
    * 회의실을 불러올 수 있는가 — Admin SDK 스코프를 받았고 조직이 허용할 때만.
-   * 거짓이면 회의실 구획을 **그리지 않는다**(눌러도 결과가 없는 상자를 두지 않는다).
+   * 거짓이면 회의실 구획은 검색 상자 대신 **안내 한 줄**로 남는다(결과가 영영 비는
+   * 상자를 두지 않는다 — 구획 자체는 늘 보인다, 요청).
    */
   canPickRooms: boolean;
   /** 조직 회의실 — 한 번 받아 두고 화면에서 좁힌다. */
   rooms: MeetingRoom[];
+  /** 회의실 조회가 끝났는가(성공·거절 불문) — 거짓이면 "불러오는 중"이다. */
+  roomsReady: boolean;
   /** 회의실 목록을 아직 안 받았으면 지금 받는다(필드가 열릴 때 부른다). */
   loadRooms: () => void;
 }
@@ -124,6 +129,22 @@ export function useGoogleCalendar(
   // 회의실은 **한 번만** 받는다. `null`=아직, `false`=못 받았다(조직이 막았다).
   const roomsLoadedRef = useRef(false);
   const [roomsDenied, setRoomsDenied] = useState(false);
+  // 회의실 조회가 **끝났는가**(성공·거절 불문) — 회의실 구획이 "불러오는 중"을 가른다.
+  const [roomsReady, setRoomsReady] = useState(false);
+
+  /**
+   * 계정에 딸린 캐시를 버린다 — 연결을 끊거나 **다른 계정으로 새로 연결**할 때.
+   * 예전에는 회의실·스코프가 훅 상태에 남아, A 계정을 끊고 B를 연결해도 새 일정
+   * 팝업에 **A의 회의실**이 계속 떴다(제보). 회의실 목록·승인 스코프는 토큰(계정)의
+   * 부속이므로 토큰과 수명이 같아야 한다.
+   */
+  const resetAccountCache = useCallback(() => {
+    roomsLoadedRef.current = false;
+    setRooms([]);
+    setRoomsDenied(false);
+    setRoomsReady(false);
+    setGranted(new Set());
+  }, []);
   const aliveRef = useRef(true);
   useEffect(() => {
     aliveRef.current = true;
@@ -137,9 +158,14 @@ export function useGoogleCalendar(
   // 고른 캘린더 id를 문자열로 굳혀 둔다 — 배열은 렌더마다 새 참조라 effect가 매번 돈다.
   const picked = prefs.calendars.join(',');
 
-  /** 토큰을 얻어 한 번 호출한다. 401이면 **한 번만** 다시 받아 재시도. */
+  /**
+   * 토큰을 꺼내 한 번 호출한다. 토큰이 없거나 401로 죽었으면 **새로 받지 않는다** —
+   * GIS 토큰 요청은 조용한 갱신이라도 팝업을 열어서(googleCalendar.ts 머리 주석),
+   * 화면을 여는 것만으로 구글 창이 뜨는 사고가 된다(제보: 재로그인 뒤 로그인 팝업).
+   * 대신 `needsReauth`를 세워 화면이 "다시 연결" 버튼으로 말하게 한다.
+   */
   const withToken = useCallback(async <T,>(run: (token: string) => Promise<T>): Promise<T | null> => {
-    const first = await ensureGoogleToken();
+    const first = ensureGoogleToken();
     if ('error' in first) {
       if (aliveRef.current) {
         setConnected(false);
@@ -152,19 +178,16 @@ export function useGoogleCalendar(
     try {
       return await run(first.token.accessToken);
     } catch (e) {
-      const status = (e as { status?: number }).status;
-      if (status !== 401 && status !== 403) throw e;
-      const again = await requestGoogleToken(false);
-      if ('error' in again) {
-        if (aliveRef.current) {
-          setConnected(false);
-          setNeedsReauth(true);
-          setError(again.error);
-        }
-        return null;
+      // 401만 "토큰이 죽었다"다(만료·회수). 403은 **그 요청의 권한 문제**(그 캘린더에
+      // 못 쓴다 등)라 연결을 끊을 이유가 없다 — 호출부가 문장으로 알린다.
+      if ((e as { status?: number }).status !== 401) throw e;
+      storeToken(null);
+      if (aliveRef.current) {
+        setConnected(false);
+        setNeedsReauth(true);
+        setError(GOOGLE_RECONNECT_MSG);
       }
-      if (aliveRef.current) setGranted(scopeSet(again.token.scope));
-      return run(again.token.accessToken);
+      return null;
     }
   }, []);
 
@@ -173,6 +196,9 @@ export function useGoogleCalendar(
     if (!available || !enabled || mode === 'off') {
       setCalendars([]);
       setConnected(false);
+      // 연동이 꺼졌다(다른 인스턴스의 disconnect 포함 — prefs는 블롭으로 공유된다).
+      // 이 인스턴스가 들고 있던 계정 캐시(회의실·스코프)도 여기서 함께 버린다.
+      resetAccountCache();
       return;
     }
     let cancelled = false;
@@ -189,7 +215,7 @@ export function useGoogleCalendar(
     return () => {
       cancelled = true;
     };
-  }, [available, enabled, mode, withToken]);
+  }, [available, enabled, mode, withToken, resetAccountCache]);
 
   // ── 보이는 달의 일정 ────────────────────────────────────────────────────
   useEffect(() => {
@@ -227,6 +253,9 @@ export function useGoogleCalendar(
       setError(res.error);
       return;
     }
+    // 새 연결은 **다른 계정일 수 있다** — 이전 계정의 회의실·스코프 캐시를 버리고
+    // 이 토큰의 것으로 다시 시작한다(회의실은 다음에 필드가 열릴 때 다시 받는다).
+    resetAccountCache();
     setConnected(true);
     setNeedsReauth(false);
     setGranted(scopeSet(res.token.scope));
@@ -241,7 +270,7 @@ export function useGoogleCalendar(
     } catch {
       if (aliveRef.current) onPrefs({ enabled: true, calendars: [] });
     }
-  }, [onPrefs]);
+  }, [onPrefs, resetAccountCache]);
 
   const disconnect = useCallback(async () => {
     await revokeGoogleToken();
@@ -250,8 +279,10 @@ export function useGoogleCalendar(
     setCalendars([]);
     setEvents([]);
     setError(null);
+    // 이 계정의 회의실·스코프 캐시도 함께 — 다음 연결이 다른 계정일 수 있다(제보).
+    resetAccountCache();
     onPrefs(null);
-  }, [onPrefs]);
+  }, [onPrefs, resetAccountCache]);
 
   /** 쓰기 하나 — 성공하면 보이는 달을 다시 받고 `null`, 실패하면 문장을 돌려준다. */
   const write = useCallback(
@@ -291,16 +322,23 @@ export function useGoogleCalendar(
   );
 
   const loadRooms = useCallback(() => {
-    if (roomsLoadedRef.current || !granted.has(GOOGLE_SCOPE_ROOMS)) return;
+    if (roomsLoadedRef.current) return;
+    if (!granted.has(GOOGLE_SCOPE_ROOMS)) {
+      // 스코프가 없으면 기다릴 것도 없다 — 구획이 "불러오는 중"에 갇히지 않게 끝났다고 말한다.
+      setRoomsReady(true);
+      return;
+    }
     roomsLoadedRef.current = true;
+    setRoomsReady(false);
     void (async () => {
       const got = await withToken((t) => fetchRooms(t)).catch(() => null);
       if (!aliveRef.current) return;
-      // `null`은 "물어볼 수 없다"(403·관리자 동의 필요) — 그 구획을 접는다.
+      // `null`은 "물어볼 수 없다"(403·관리자 동의 필요) — 목록 없이 안내만 남는다.
       if (got === null) {
         console.warn('[geurio] 회의실 목록을 받지 못했어요 — Admin SDK API 사용 설정 또는 Workspace 관리자 승인이 필요할 수 있어요(backend.md §19)');
         setRoomsDenied(true);
       } else setRooms(got);
+      setRoomsReady(true);
     })();
   }, [granted, withToken]);
 
@@ -333,6 +371,7 @@ export function useGoogleCalendar(
     searchPeople,
     canPickRooms: granted.has(GOOGLE_SCOPE_ROOMS) && !roomsDenied,
     rooms,
+    roomsReady,
     loadRooms,
   };
 }

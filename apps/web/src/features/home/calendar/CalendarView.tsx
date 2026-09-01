@@ -6,6 +6,7 @@ import { useCalendarEntries } from './useCalendarEntries';
 import { homeChipSurface } from '../theme';
 import { addDays, calendarStats, gridRange, monthCells, monthLabel, todayISO } from './model';
 import { MonthGrid } from './MonthGrid';
+import { DayListPopup } from './DayListPopup';
 import { CalendarSide } from './CalendarSide';
 import { DeadlinePanel } from './DeadlinePanel';
 import { StatChips } from './StatChips';
@@ -59,6 +60,9 @@ export function CalendarView({
   const google = useGoogleCalendar(state.calY, state.calM, { enabled: !!state.google, calendars: state.google?.calendars ?? [] }, controller.setGoogleCalendars);
   const [saving, setSaving] = useState(false);
   const [saveError, setSaveError] = useState<string | null>(null);
+  // 날짜 칸 더블클릭·`+N개 더`가 여는 "그 날의 일정 전부"(디자인 원본 `dayList`).
+  // 툴팁이라 누른 지점(화면 좌표)까지 함께 든다 — 그 곁에 선다.
+  const [dayList, setDayList] = useState<{ iso: string; at: { x: number; y: number } } | null>(null);
   const entries = useMemo(() => {
     // 반복 일정은 보이는 구간에서 회차로 펼쳐진다 — 격자가 그리는 그 6주다.
     const evs = eventEntries(eventsApi.events, gridRange(state.calY, state.calM));
@@ -72,8 +76,8 @@ export function CalendarView({
   const googleTargets = useMemo(() => google.writableCalendars.map((c) => ({ id: c.id, name: c.summary, ...(c.color ? { color: c.color } : {}) })), [google.writableCalendars]);
   // 선택 스코프로 열리는 것들(이름 검색·회의실) — 두 팝업이 같은 것을 쓴다.
   const googleDirectory = useMemo(
-    () => ({ canSearchPeople: google.canSearchPeople, searchPeople: google.searchPeople, canPickRooms: google.canPickRooms, rooms: google.rooms, loadRooms: google.loadRooms }),
-    [google.canSearchPeople, google.searchPeople, google.canPickRooms, google.rooms, google.loadRooms],
+    () => ({ canSearchPeople: google.canSearchPeople, searchPeople: google.searchPeople, canPickRooms: google.canPickRooms, rooms: google.rooms, roomsReady: google.roomsReady, loadRooms: google.loadRooms }),
+    [google.canSearchPeople, google.searchPeople, google.canPickRooms, google.rooms, google.roomsReady, google.loadRooms],
   );
   // 모바일은 칸이 좁아 칩 하나 + 접힌 개수만 — 사이드는 아예 접는다(공간이 없다).
   const perCell = isMobile ? 1 : 2;
@@ -119,7 +123,8 @@ export function CalendarView({
     // Geurio 일정과 칸반 카드는 고칠 것이 달라 팝업이 갈린다.
     // 구글 일정은 **읽기 전용 팝업**으로 — 우리 상세는 고칠 수 있는 척한다.
     if (e.google) controller.openCalendarGoogle(e.google.id);
-    else if (e.event) controller.openCalendarEvent(e.event.id);
+    // 반복 일정은 눌린 **회차**(그 회차의 시작일)까지 — 삭제 범위의 기준이 된다.
+    else if (e.event) controller.openCalendarEvent(e.event.id, e.event.recurrence ? (e.start ?? e.due) : undefined);
     else controller.openCalendarCard(e.docId, e.cardId);
   };
 
@@ -132,9 +137,9 @@ export function CalendarView({
           position: 'relative',
           background: 'var(--mf-panel2)',
           borderBottom: '1px solid var(--mf-border)',
-          padding: isMobile ? '16px 16px 14px' : '24px 28px 20px',
+          padding: isMobile ? '14px 16px' : '18px 28px',
           display: 'flex',
-          alignItems: 'flex-end',
+          alignItems: 'center',
           flexWrap: 'wrap',
           gap: 12,
         }}
@@ -142,20 +147,17 @@ export function CalendarView({
         {/* 캔버스의 점 격자를 축소한 바탕(디자인 원본) — 일정도 우리 화면임을 말한다. */}
         <div aria-hidden="true" style={{ position: 'absolute', inset: 0, backgroundImage: 'radial-gradient(var(--mf-dot-grid) 1px, transparent 1px)', backgroundSize: '18px 18px', pointerEvents: 'none' }} />
 
-        <div style={{ position: 'relative', flex: '1 1 auto', minWidth: 0, display: 'flex', flexDirection: 'column', gap: 8 }}>
-          <span style={{ display: 'flex', alignItems: 'baseline', gap: 9, minWidth: 0 }}>
+        {/* 킥커("마감을 한 달 단위로")와 날짜 줄은 없앴다(요청) — 타이틀 한 줄만 남기고
+            양쪽 묶음을 가운데 정렬한다(대시보드 히어로와 같은 정리). */}
+        <div style={{ position: 'relative', flex: '1 1 auto', minWidth: 0 }}>
+          <span style={{ display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap', minWidth: 0 }}>
             {isMobile && (
-              <button type="button" aria-label="메뉴 열기" onClick={onOpenNav} className="mf-ctl" style={{ width: 30, height: 30, marginRight: 2, border: 0, background: 'transparent', color: 'var(--mf-muted)', cursor: 'pointer', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+              <button type="button" aria-label="메뉴 열기" onClick={onOpenNav} className="mf-ctl" style={{ width: 30, height: 30, marginRight: -4, border: 0, background: 'transparent', color: 'var(--mf-muted)', cursor: 'pointer', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
                 <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" aria-hidden="true">
                   <path d="M4 7h16M4 12h16M4 17h16" />
                 </svg>
               </button>
             )}
-            <span style={{ fontSize: 12, fontWeight: 700, color: 'var(--mf-accent-strong)', whiteSpace: 'nowrap' }}>마감을 한 달 단위로</span>
-            <span style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 10.5, color: 'var(--mf-faint)', whiteSpace: 'nowrap' }}>{dateLine(today)}</span>
-          </span>
-
-          <span style={{ display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap', minWidth: 0 }}>
             <h2 style={{ margin: 0, display: 'flex', alignItems: 'center', gap: 9, fontSize: isMobile ? 21 : 25, fontWeight: 800, letterSpacing: '-.035em', color: 'var(--mf-text)', whiteSpace: 'nowrap' }}>
               <span style={{ width: 30, height: 30, flexShrink: 0, borderRadius: 10, background: 'var(--mf-accent-soft)', color: 'var(--mf-accent-strong)', display: 'inline-flex', alignItems: 'center', justifyContent: 'center' }}>
                 <CalendarGlyph size={16} />
@@ -180,7 +182,7 @@ export function CalendarView({
         {/* 우측: 만들기 + 사이드가 보여 줄 것 고르기(디자인 원본의 자리).
             `새 일정`은 이 묶음의 맨 앞이다 — 왼쪽은 "지금 어디를 보고 있는가"이고
             오른쪽은 "무엇을 할 수 있는가"라 성격이 다르다. */}
-        <div style={{ position: 'relative', display: 'flex', alignItems: 'center', gap: 8, flexShrink: 0, paddingBottom: 2 }}>
+        <div style={{ position: 'relative', display: 'flex', alignItems: 'center', gap: 8, flexShrink: 0 }}>
           <button
             type="button"
             data-cal-new
@@ -246,9 +248,11 @@ export function CalendarView({
             surface={surface}
             compact={isMobile}
             onPickDay={controller.selectCalDay}
-            onNewOnDay={(iso) => controller.openNewEvent(iso, true)}
+            onOpenDayList={(iso, at) => setDayList({ iso, at })}
             onPickEntry={openEntry}
-            onMore={controller.selectCalDay}
+            // `+N개 더`도 같은 팝업이다 — 접힌 것을 보려는 클릭이니 전부를 보여 준다
+            // (디자인 원본 `onMore`도 dayList를 연다).
+            onMore={(iso, at) => setDayList({ iso, at })}
             onShift={(e, days) => void shiftEntry(e, days)}
           />
         </div>
@@ -281,6 +285,26 @@ export function CalendarView({
           />
         )}
       </div>
+
+      {/* 그 날의 일정 전부 — 행을 고르면 닫고 그 항목의 상세로 잇는다. */}
+      {dayList && (
+        <DayListPopup
+          iso={dayList.iso}
+          at={dayList.at}
+          entries={entries}
+          {...(holidays[dayList.iso] ? { holiday: holidays[dayList.iso] } : {})}
+          surface={surface}
+          onClose={() => setDayList(null)}
+          onPickEntry={(e) => {
+            setDayList(null);
+            openEntry(e);
+          }}
+          onNew={(iso) => {
+            setDayList(null);
+            controller.openNewEvent(iso, true);
+          }}
+        />
+      )}
 
       {/* 항목 상세 — 열려 있으면 그 항목을 찾아 그린다(사라졌으면 조용히 닫힌다). */}
       <CalendarDetailHost state={state} controller={controller} entries={entries} isMobile={isMobile} />
@@ -318,12 +342,16 @@ export function CalendarView({
         />
       )}
       {(() => {
-        const ev = state.calEventDetail ? eventsApi.events.find((e) => e.id === state.calEventDetail) : null;
+        // `id#회차시작일` — 반복 일정은 눌린 회차가 삭제 범위(이 일정만/이후)의 기준이다.
+        const [evId, evOcc] = (state.calEventDetail ?? '').split('#');
+        const ev = evId ? eventsApi.events.find((e) => e.id === evId) : null;
         if (!ev) return null;
         return (
           <EventDetail
+            key={ev.id}
             event={ev}
             isMobile={isMobile}
+            {...(evOcc ? { occurrence: evOcc } : {})}
             onClose={controller.closeCalendarEvent}
             onPatch={(patch) => eventsApi.update(ev.id, patch)}
             onDelete={() => eventsApi.remove(ev.id)}
@@ -332,14 +360,6 @@ export function CalendarView({
       })()}
     </div>
   );
-}
-
-/** `8월 26일 수요일` — 헤더의 오늘 표기. */
-function dateLine(iso: string): string {
-  const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(iso);
-  if (!m) return '';
-  const d = new Date(+m[1]!, +m[2]! - 1, +m[3]!);
-  return `${+m[2]!}월 ${+m[3]!}일 ${['일', '월', '화', '수', '목', '금', '토'][d.getDay()]}요일`;
 }
 
 function MonthNav({ label, d, onClick }: { label: string; d: string; onClick: () => void }) {

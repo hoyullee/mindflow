@@ -31,7 +31,7 @@ export function GoogleCalendarSection({ api }: { api: GoogleCalendarApi }) {
             </div>
           </div>
           {api.enabled && api.needsReauth ? (
-            <button type="button" className="mf-ctl mf-ctl-primary" data-google-reconnect onClick={() => void api.connect()} style={btn(true)}>
+            <button type="button" className="mf-ctl-primary" data-google-reconnect onClick={() => void api.connect()} style={btn(true)}>
               다시 연결
             </button>
           ) : api.enabled ? (
@@ -39,7 +39,7 @@ export function GoogleCalendarSection({ api }: { api: GoogleCalendarApi }) {
               연결 해제
             </button>
           ) : (
-            <button type="button" className="mf-ctl mf-ctl-primary" data-google-connect onClick={() => void api.connect()} style={btn(true)}>
+            <button type="button" className="mf-ctl-primary" data-google-connect onClick={() => void api.connect()} style={btn(true)}>
               연결
             </button>
           )}

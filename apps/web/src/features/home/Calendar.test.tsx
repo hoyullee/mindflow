@@ -16,7 +16,7 @@ import { LocalEventStore } from '../../adapters/local/localEventStore';
 import { LocalImageStore } from '../../adapters/local/localImageStore';
 import type { Backend, DocMeta, DocStore, LoadedDoc } from '../../adapters/ports';
 import { ACTIVE_VIEW_KEY } from './storage';
-import { isoOf, todayISO } from './calendar/model';
+import { addDays, daysBetween, isoOf, todayISO } from './calendar/model';
 
 /**
  * 일정 화면(캘린더 PR1) 통합 테스트 — 디자인 원본 `Geurio 일정 캘린더.dc.html` 이식.
@@ -110,6 +110,20 @@ function shiftInMonth(n: number): string {
   return isoOf(back.getFullYear(), back.getMonth() + 1, back.getDate());
 }
 
+/**
+ * 이 달 안에 온전히 드는 닷새짜리 기간(시작~기한) — **오늘을 품는다.** 시작을 그냥
+ * `오늘-1`로 두면 월초에 시작 칸이 이웃 달로 넘어가 라벨 조각이 사라지고(격자는
+ * 이웃 달 칸에 칩·바를 놓지 않는다 — 9월 1일에 실제로 깨졌다), 월말에는 기한이
+ * 다음 달로 넘어가 같은 문제가 된다. 그래서 달 안쪽으로 클램프한다.
+ */
+const SPAN = (() => {
+  const now = new Date();
+  const last = new Date(now.getFullYear(), now.getMonth() + 1, 0).getDate();
+  const day = Math.min(Math.max(now.getDate() - 1, 1), Math.min(now.getDate(), last - 4));
+  const start = isoOf(now.getFullYear(), now.getMonth() + 1, day);
+  return { start, due: addDays(start, 4) };
+})();
+
 function kanbanBody(cards: Record<string, unknown>[]): LoadedDoc {
   return {
     doc: {
@@ -152,7 +166,7 @@ const BODIES = () => ({
     { id: 'k1', col: 'c2', pos: 1, text: '오늘 마감 카드', due: todayISO() },
     { id: 'k2', col: 'c1', pos: 2, text: '지난 마감 카드', due: shiftDays(-5) },
     { id: 'k3', col: 'c3', pos: 3, text: '완료된 카드', due: todayISO() },
-    { id: 'k4', col: 'c2', pos: 4, text: '기간 카드', due: shiftDays(3), start: shiftDays(-1) },
+    { id: 'k4', col: 'c2', pos: 4, text: '기간 카드', due: SPAN.due, start: SPAN.start },
   ]),
   d2: kanbanBody([{ id: 'x1', col: 'c1', pos: 1, text: '다른 스페이스 카드', due: shiftDays(1) }]),
 });
@@ -173,6 +187,14 @@ const detail = (): HTMLElement => document.querySelector('[role="dialog"][aria-l
 /** 날짜 팝오버를 열어 그 날을 고른다 — 디자인 원본의 `pk` 달력(native input이 아니다). */
 async function pickDate(triggerSel: string, iso: string): Promise<void> {
   fireEvent.click(document.querySelector(triggerSel)!);
+  await waitFor(() => expect(document.querySelector('[data-datepop-month]')).toBeTruthy());
+  // 목표 날이 이 달 격자에 없으면(월 경계 — 9월 1일에 실제로 깨졌다) 팝오버 안의
+  // 이전/다음 달 화살표로 넘긴다. 방향은 오늘과의 비교로 충분하다(테스트는 몇 달씩
+  // 떨어진 날을 고르지 않는다).
+  for (let i = 0; i < 3 && !document.querySelector(`[data-datepop-day="${iso}"]`); i += 1) {
+    const pop = document.querySelector('[data-datepop-month]')!.parentElement as HTMLElement;
+    fireEvent.click(pop.querySelector(`[aria-label="${iso < todayISO() ? '이전 달' : '다음 달'}"]`)!);
+  }
   await waitFor(() => expect(document.querySelector(`[data-datepop-day="${iso}"]`)).toBeTruthy());
   fireEvent.click(document.querySelector(`[data-datepop-day="${iso}"]`)!);
 }
@@ -223,7 +245,7 @@ describe('일정 화면', () => {
   it('LNB `일정` 행은 대시보드 구획과 스페이스 구획 사이에 있고 다가오는 마감 수를 센다', async () => {
     renderHome([META('d1', '스프린트 보드'), META('d2', '이슈 트리아지')], BODIES());
     await openCalendar();
-    // 다가오는 마감 = 오늘(1) + D+1(1) + 기간 카드 기한 D+3(1) = 3. 완료 열은 빠진다.
+    // 다가오는 마감 = 오늘(1) + D+1(1) + 기간 카드 기한(1) = 3. 완료 열은 빠진다.
     expect(document.querySelector('[data-cal-nav]')!.textContent).toBe('일정3');
     // 순서: 대시보드 구획 → 일정 → 스페이스 구획
     const nav = document.querySelector('[data-cal-nav]')!;
@@ -361,8 +383,8 @@ describe('일정 화면', () => {
     expect(chips[0]!.style.borderLeft).toMatch(/^3px solid/);
     expect(chips[0]!.style.borderRadius).toBe('4px 10px 10px 4px');
     expect(chips[0]!.textContent).toContain('진행 중');
-    // 오늘은 기간 카드(시작 -1일 · 기한 +3일)의 2일째다
-    expect(side().textContent).toContain('2/5일째');
+    // 오늘은 기간 카드(닷새짜리)의 며칠째다 — 시작이 월초·월말 클램프로 움직이므로 계산해 단정한다
+    expect(side().textContent).toContain(`${daysBetween(SPAN.start, todayISO()) + 1}/5일째`);
     expect(document.querySelector('[aria-label="날짜별 보기"]')!.getAttribute('aria-pressed')).toBe('true');
 
     // 마감 목록은 **다른 물건**이다(원본 `dlOpen`) — 날짜별 보기를 갈아 끼우지 않고
@@ -645,9 +667,9 @@ describe('일정 화면', () => {
       fireEvent.pointerDown(detail().parentElement!, { bubbles: true });
       await waitFor(() => expect(detail()).toBeNull());
 
-      // 기간 카드: 시작 D-1 · 기한 D+3. 시작 칸(제목이 붙는 칸)을 잡아 D+1 칸으로 → +2일.
-      const grab = shiftDays(-1);
-      const drop = shiftDays(1);
+      // 기간 카드: 시작 칸(제목이 붙는 칸)을 잡아 두 칸 뒤로 → 시작·기한이 +2일씩.
+      const grab = SPAN.start;
+      const drop = addDays(SPAN.start, 2);
       const restore = stubCellHitTest([grab, drop]);
       try {
         dragTo(barFor('기간 카드'), 10, 150);
@@ -657,8 +679,8 @@ describe('일정 화면', () => {
       await waitFor(() => expect(docStore.save).toHaveBeenCalled());
       const [, next] = docStore.save.mock.calls[0]!;
       const card = (next.cards ?? []).find((c) => c.id === 'k4')!;
-      expect(card.start).toBe(shiftDays(1));
-      expect(card.due).toBe(shiftDays(5));
+      expect(card.start).toBe(addDays(SPAN.start, 2));
+      expect(card.due).toBe(addDays(SPAN.due, 2));
     });
 
     it('보기 전용으로 공유받은 보드는 끌리지도 고쳐지지도 않는다', async () => {
@@ -847,6 +869,9 @@ describe('일정 화면', () => {
       await waitFor(() => expect(evDetail()).toBeTruthy());
       const back = shiftDays(-4);
       await pickDate('[data-event-date]', back);
+      // 저장은 완료 버튼에서 한 번(요청) — 고르기만 한 시점에는 표가 그대로다.
+      expect(events()[0]).toMatchObject({ startDate: from });
+      fireEvent.click(document.querySelector('[data-event-done]')!);
       // 3일간이 그대로 — 시작만 옮겨진다.
       await waitFor(() => expect(events()[0]).toMatchObject({ startDate: back, endDate: shiftDays(-2) }));
     });
@@ -884,11 +909,12 @@ describe('일정 화면', () => {
       fireEvent.click(document.querySelector('[data-event-start]')!);
       await waitFor(() => expect(document.querySelector('[data-timepop-time="16:00"]')).toBeTruthy());
       fireEvent.click(document.querySelector('[data-timepop-time="16:00"]')!);
+      fireEvent.click(document.querySelector('[data-event-done]')!);
       // 종료가 앞섰다면 정규화가 종일로 되돌려 시각이 통째로 사라진다.
       await waitFor(() => expect(events()[0]).toMatchObject({ allDay: false, startTime: '16:00', endTime: '17:00' }));
     });
 
-    it('일정을 누르면 **칸반과 다른 팝업**이 뜨고, 고치면 곧바로 저장된다', async () => {
+    it('일정을 누르면 **칸반과 다른 팝업**이 뜨고, 저장은 완료 버튼에서 한 번이다', async () => {
       renderHome([META('d1', '스프린트 보드')], BODIES());
       localStorage.setItem('mf_events', JSON.stringify([{ id: 'e1', title: '주간 회의', startDate: todayISO(), endDate: todayISO(), allDay: true, source: 'geurio' }]));
       await openCalendar();
@@ -899,17 +925,93 @@ describe('일정 화면', () => {
       expect(document.querySelector('[data-cal-detail]')).toBeNull();
       expect(within(evDetail()).queryByText('이 칸반 열기')).toBeNull();
       expect(document.querySelector('[data-event-allday]')).toBeTruthy();
+      // "자동으로 저장" 문구는 이제 거짓말이라 없다(요청 — 저장은 완료가 한다).
+      expect(evDetail().textContent).not.toContain('자동으로 저장');
 
-      // 위치는 blur에 한 번 커밋한다(타이핑마다 저장하지 않는다).
-      const loc = document.querySelector('[data-event-loc]') as HTMLInputElement;
-      fireEvent.change(loc, { target: { value: '2층 라운지' } });
-      expect(events()[0]!.location).toBeUndefined();
-      fireEvent.blur(loc);
-      await waitFor(() => expect(events()[0]!.location).toBe('2층 라운지'));
-
-      // 종일을 끄면 시각이 붙는다(표의 제약대로 쌍으로).
+      // 위치를 적고 종일을 꺼도 **완료 전에는 저장되지 않는다**(요청 — 초안 모델).
+      fireEvent.change(document.querySelector('[data-event-loc]')!, { target: { value: '2층 라운지' } });
       fireEvent.click(document.querySelector('[data-event-allday]')!);
-      await waitFor(() => expect(events()[0]).toMatchObject({ allDay: false, startTime: '09:00', endTime: '10:00' }));
+      expect(events()[0]).toMatchObject({ allDay: true });
+      expect(events()[0]!.location).toBeUndefined();
+
+      // 완료 한 번이 바뀐 것을 모아 저장하고 팝업을 닫는다.
+      fireEvent.click(document.querySelector('[data-event-done]')!);
+      await waitFor(() => expect(events()[0]).toMatchObject({ allDay: false, startTime: '09:00', endTime: '10:00', location: '2층 라운지' }));
+      await waitFor(() => expect(document.querySelector('[data-event-detail]')).toBeNull());
+    });
+
+    it('✕로 닫으면 초안이 버려진다 — 적던 위치가 저장되지 않는다', async () => {
+      renderHome([META('d1', '스프린트 보드')], BODIES());
+      localStorage.setItem('mf_events', JSON.stringify([{ id: 'e1', title: '주간 회의', startDate: todayISO(), endDate: todayISO(), allDay: true, source: 'geurio' }]));
+      await openCalendar();
+      await waitFor(() => expect(chipTexts()).toContain('주간 회의'));
+      fireEvent.click(chipFor('주간 회의'));
+      await waitFor(() => expect(evDetail()).toBeTruthy());
+      fireEvent.change(document.querySelector('[data-event-loc]')!, { target: { value: '버려질 입력' } });
+      fireEvent.click(within(evDetail()).getByLabelText('닫기'));
+      await waitFor(() => expect(document.querySelector('[data-event-detail]')).toBeNull());
+      expect(events()[0]!.location).toBeUndefined();
+    });
+
+    it('반복 일정 삭제는 범위를 묻는다 — 이 일정만(EXDATE) / 이후(UNTIL) / 모든 일정', async () => {
+      renderHome([META('d1', '스프린트 보드')], BODIES());
+      // 날짜를 달 안쪽에 고정한다 — 오늘 기준 +1/+2는 월말에 6주 격자 밖으로 나갈
+      // 수 있다(오늘이 9/1이라 통과하다 월말에 깨지는 종류의 함정).
+      const now = new Date();
+      const dayN = (n: number): string => isoOf(now.getFullYear(), now.getMonth() + 1, n);
+      const from = dayN(1);
+      localStorage.setItem('mf_events', JSON.stringify([{ id: 'e1', title: '데일리', startDate: from, endDate: from, allDay: true, recurrence: 'RRULE:FREQ=DAILY', source: 'geurio' }]));
+      await openCalendar();
+      await waitFor(() => expect(chipTexts()).toContain('데일리'));
+      // 2일 회차를 눌렀다 — 삭제 범위의 기준은 눌린 회차다.
+      const tomorrow = dayN(2);
+      const chips = [...document.querySelectorAll('[data-cal-chip]')] as HTMLElement[];
+      const chip = chips.find((c) => c.textContent!.includes('데일리') && c.closest('[data-day-cell]')?.getAttribute('data-day-cell') === tomorrow)!;
+      fireEvent.click(chip);
+      await waitFor(() => expect(evDetail()).toBeTruthy());
+
+      // 삭제 → 곧바로 지우지 않고 범위를 묻는다. 초점은 취소에 — 파괴적 갈래가
+      // 기본 초점이면 Enter 한 번에 지워진다(열 삭제 확인창의 규칙).
+      fireEvent.click(document.querySelector('[data-event-delete]')!);
+      await waitFor(() => expect(document.querySelector('[data-event-scope]')).toBeTruthy());
+      await waitFor(() => expect(document.activeElement?.hasAttribute('data-event-scope-cancel')).toBe(true));
+      expect(events()).toHaveLength(1);
+
+      // 취소는 아무것도 바꾸지 않는다.
+      fireEvent.click(document.querySelector('[data-event-scope-cancel]')!);
+      await waitFor(() => expect(document.querySelector('[data-event-scope]')).toBeNull());
+      expect(events()[0]!.recurrence).toBe('RRULE:FREQ=DAILY');
+
+      // "이 일정만" — 그 회차가 EXDATE로 빠지고 달력에서 사라진다(다른 회차는 남는다).
+      fireEvent.click(document.querySelector('[data-event-delete]')!);
+      await waitFor(() => expect(document.querySelector('[data-event-scope]')).toBeTruthy());
+      fireEvent.click(document.querySelector('[data-event-scope-one]')!);
+      await waitFor(() => expect(events()[0]!.recurrence).toBe(`RRULE:FREQ=DAILY\nEXDATE:${tomorrow.replaceAll('-', '')}`));
+      await waitFor(() => expect(document.querySelector('[data-event-detail]')).toBeNull());
+      await waitFor(() => {
+        const cell = document.querySelector(`[data-day-cell="${tomorrow}"]`)!;
+        expect(cell.textContent).not.toContain('데일리');
+      });
+      // 1일 회차는 그대로다.
+      expect(document.querySelector(`[data-day-cell="${from}"]`)!.textContent).toContain('데일리');
+
+      // "이 일정과 이후 일정" — 3일 회차부터 규칙이 끝난다(UNTIL = 전날).
+      const dayAfter = dayN(3);
+      const chips2 = [...document.querySelectorAll('[data-cal-chip]')] as HTMLElement[];
+      fireEvent.click(chips2.find((c) => c.textContent!.includes('데일리') && c.closest('[data-day-cell]')?.getAttribute('data-day-cell') === dayAfter)!);
+      await waitFor(() => expect(evDetail()).toBeTruthy());
+      fireEvent.click(document.querySelector('[data-event-delete]')!);
+      await waitFor(() => expect(document.querySelector('[data-event-scope]')).toBeTruthy());
+      fireEvent.click(document.querySelector('[data-event-scope-following]')!);
+      await waitFor(() => expect(events()[0]!.recurrence).toBe(`RRULE:FREQ=DAILY;UNTIL=${tomorrow.replaceAll('-', '')}\nEXDATE:${tomorrow.replaceAll('-', '')}`));
+
+      // "모든 일정" — 행이 통째로 사라진다.
+      fireEvent.click(chipFor('데일리'));
+      await waitFor(() => expect(evDetail()).toBeTruthy());
+      fireEvent.click(document.querySelector('[data-event-delete]')!);
+      await waitFor(() => expect(document.querySelector('[data-event-scope]')).toBeTruthy());
+      fireEvent.click(document.querySelector('[data-event-scope-all]')!);
+      await waitFor(() => expect(events()).toEqual([]));
     });
 
     it('상세에서 삭제하면 표에서 사라지고 팝업이 닫힌다', async () => {
@@ -982,21 +1084,91 @@ describe('일정 화면', () => {
   });
 
 
-  it('날의 빈 자리를 더블클릭하면 그 날짜로 새 일정 팝업이 열린다(요청)', async () => {
+  it('날짜 칸을 더블클릭하면 그 날의 일정 팝업이 뜨고, 행을 고르면 상세로 이어진다(제보 — 디자인 원본 dayList)', async () => {
     renderHome([META('d1', '스프린트 보드'), META('d2', '이슈 트리아지')], BODIES());
     await openCalendar();
-    const day = shiftInMonth(2);
-    const cell = document.querySelector(`[data-day-cell="${day}"]`) as HTMLElement;
-    expect(cell).toBeTruthy();
+    await waitFor(() => expect(chipTexts()).toContain('오늘 마감 카드'));
+    const cell = document.querySelector(`[data-day-cell="${todayISO()}"]`) as HTMLElement;
+    // 더블클릭의 뜻을 hover 툴팁이 미리 말한다(디자인 원본 `dayTitle`)
+    expect(cell.getAttribute('title')).toContain('더블 클릭하면 일정을 모두 봐요');
     fireEvent.doubleClick(cell);
-    const dialog = await screen.findByRole('dialog', { name: '새 일정' });
-    // 누른 칸이 곧 기본 날짜다 — 팝업의 날짜 버튼이 그 날을 가리킨다
-    const want = `${Number(day.slice(5, 7))}월 ${Number(day.slice(8, 10))}일`;
-    const dateBtns = [...dialog.querySelectorAll('button')].filter((b) => b.textContent?.includes(want));
-    expect(dateBtns.length).toBeGreaterThan(0);
+    const pop = await waitFor(() => {
+      const el = document.querySelector('[data-day-list]');
+      expect(el).toBeTruthy();
+      return el as HTMLElement;
+    });
+    // **툴팁 리스트**다(요청 — 첨부 시안): 막(dim) 없이 누른 칸 곁에 fixed로 선다.
+    expect(pop.style.position).toBe('fixed');
+    expect(document.querySelector('[data-modal-overlay]')).toBeNull();
+    // 머리 = 날짜 + `일정 N개`, 행 = 그 날을 덮는 항목 **전부**(칸에서 바로만 그리던
+    // 기간 카드도 여기서는 한 행이다 — `8.24–8.30 · N일째` 꼴의 부제와 함께)
+    expect(pop.querySelector('[data-day-list-sub]')!.textContent).toMatch(/일정 \d+개/);
+    // 행의 오른쪽에는 **상태 점**이 선다(태그 알약이 아니라 — 시안).
+    expect(pop.querySelector('[data-day-list-item]')).toBeTruthy();
+    expect(within(pop).getByText('오늘 마감 카드')).toBeTruthy();
+    expect(within(pop).getByText('기간 카드')).toBeTruthy();
+    expect(pop.textContent).toContain('일째');
+    // 행을 고르면 팝업이 닫히고 그 항목의 상세가 뜬다
+    fireEvent.click(within(pop).getByText('오늘 마감 카드'));
+    await waitFor(() => expect(document.querySelector('[data-day-list]')).toBeNull());
+    await waitFor(() => expect(document.querySelector('[data-cal-detail]')).toBeTruthy());
   });
 
-  it('칩 위에서 온 더블클릭은 새 일정이 아니다 — 그 항목의 일이다', async () => {
+  it('일별 팝업: 빈 날은 안내가 뜨고, 발치 `이 날에 새 일정`이 그 날짜로 새 일정을 연다', async () => {
+    renderHome([META('d1', '스프린트 보드'), META('d2', '이슈 트리아지')], BODIES());
+    await openCalendar();
+    // 확실히 빈 날 — 오늘·기간에서 멀리 떨어진 이 달 안의 날을 하나 찾는다.
+    const empty = (() => {
+      for (const cand of [10, 20, 6, 24].map((n) => {
+        const now = new Date();
+        return isoOf(now.getFullYear(), now.getMonth() + 1, n);
+      })) {
+        const cell = document.querySelector(`[data-day-cell="${cand}"]`);
+        if (cell && !cell.querySelector('[data-cal-chip],[data-cal-bar]')) return cand;
+      }
+      throw new Error('빈 칸을 찾지 못했다');
+    })();
+    fireEvent.doubleClick(document.querySelector(`[data-day-cell="${empty}"]`)!);
+    const pop = await waitFor(() => {
+      const el = document.querySelector('[data-day-list]');
+      expect(el).toBeTruthy();
+      return el as HTMLElement;
+    });
+    expect(within(pop).getByText('이 날에는 일정이 없어요')).toBeTruthy();
+    fireEvent.click(pop.querySelector('[data-day-list-new]')!);
+    await waitFor(() => expect(document.querySelector('[data-day-list]')).toBeNull());
+    const dialog = await screen.findByRole('dialog', { name: '새 일정' });
+    // 누른 날이 곧 기본 날짜다
+    const want = `${Number(empty.slice(5, 7))}월 ${Number(empty.slice(8, 10))}일`;
+    expect([...dialog.querySelectorAll('button')].some((b) => b.textContent?.includes(want))).toBe(true);
+  });
+
+  it('`+N개 더`도 같은 팝업이다 — 접힌 항목까지 전부 나열한다', async () => {
+    const bodies = {
+      d1: kanbanBody([
+        { id: 'm1', col: 'c1', pos: 1, text: '겹친 카드 하나', due: todayISO() },
+        { id: 'm2', col: 'c1', pos: 2, text: '겹친 카드 둘', due: todayISO() },
+        { id: 'm3', col: 'c1', pos: 3, text: '겹친 카드 셋', due: todayISO() },
+        { id: 'm4', col: 'c1', pos: 4, text: '겹친 카드 넷', due: todayISO() },
+      ]),
+    };
+    renderHome([META('d1', '스프린트 보드')], bodies);
+    await openCalendar();
+    const more = await waitFor(() => {
+      const el = document.querySelector('[data-cal-more]');
+      expect(el).toBeTruthy();
+      return el as HTMLElement;
+    });
+    fireEvent.click(more);
+    const pop = await waitFor(() => {
+      const el = document.querySelector('[data-day-list]');
+      expect(el).toBeTruthy();
+      return el as HTMLElement;
+    });
+    for (const t of ['겹친 카드 하나', '겹친 카드 둘', '겹친 카드 셋', '겹친 카드 넷']) expect(within(pop).getByText(t)).toBeTruthy();
+  });
+
+  it('칩·바 위에서 온 더블클릭은 일별 팝업이 아니다 — 그 항목의 일이다', async () => {
     renderHome([META('d1', '스프린트 보드'), META('d2', '이슈 트리아지')], BODIES());
     await openCalendar();
     const chip = await waitFor(() => {
@@ -1005,7 +1177,29 @@ describe('일정 화면', () => {
       return el as HTMLElement;
     });
     fireEvent.doubleClick(chip);
-    expect(screen.queryByRole('dialog', { name: '새 일정' })).toBeNull();
+    expect(document.querySelector('[data-day-list]')).toBeNull();
+  });
+
+  it('하루짜리 칩은 배경 없는 점 + 글자다 — 색 알약은 기간 바만(제보)', async () => {
+    renderHome([META('d1', '스프린트 보드'), META('d2', '이슈 트리아지')], BODIES());
+    await openCalendar();
+    await waitFor(() => expect(chipTexts()).toContain('오늘 마감 카드'));
+    expect(chipFor('오늘 마감 카드').style.background).toBe('transparent');
+    // 기간 바는 이어진 띠로 읽혀야 하므로 면을 유지한다
+    const bar = document.querySelector('[data-cal-bar]') as HTMLElement;
+    expect(bar.style.background).not.toBe('transparent');
+    expect(bar.style.background).not.toBe('');
+  });
+
+  it('일정 화면의 우클릭은 스페이스 메뉴를 열지 않는다(제보) — 기본 메뉴만 막는다', async () => {
+    renderHome([META('d1', '스프린트 보드'), META('d2', '이슈 트리아지')], BODIES());
+    await openCalendar();
+    const view = document.querySelector('[data-calendar-view]') as HTMLElement;
+    const notPrevented = fireEvent.contextMenu(view);
+    expect(notPrevented).toBe(false); // 브라우저 기본 메뉴는 막는다(본문의 우클릭 규칙 유지)
+    // 스페이스의 빈 자리 메뉴(새로 만들기·새 폴더·가져오기)는 뜨지 않는다 — 그 항목들은
+    // 지금 보이지 않는 스페이스에 폴더를 만든다.
+    expect(document.querySelector('.mf-home-ctx')).toBeNull();
   });
 });
 

@@ -16,8 +16,9 @@
  *
  * **토큰은 이 탭에만 산다.** 브라우저 흐름에는 refresh token이 없고 액세스 토큰은
  * 한 시간짜리다. `sessionStorage`에 두는 이유는 localStorage와 달리 **탭을 닫으면
- * 사라지기** 때문이다(유출 표면이 작다). 만료되면 `prompt: ''`로 조용히 다시
- * 받는다 — 구글 세션이 살아 있으면 사용자는 아무것도 보지 못한다.
+ * 사라지기** 때문이다(유출 표면이 작다). 만료되면 새로 받아야 하는데, GIS 토큰
+ * 요청은 조용한 갱신(`prompt: ''`)이라도 **팝업 창을 연다** — 그래서 자동으로
+ * 다시 받지 않고 화면의 "다시 연결" 버튼(사용자 제스처)에서만 받는다.
  *
  * ## 배포 전 필요한 것(코드 밖)
  *
@@ -238,7 +239,9 @@ export async function requestGoogleToken(interactive: boolean, hint?: string): P
       const client = api.initTokenClient({
         client_id: clientId,
         scope: GOOGLE_CALENDAR_SCOPE,
-        // 조용한 갱신은 `''`(이미 승인했으면 창 없이 준다), 첫 연결은 계정 선택.
+        // 첫 연결·다시 연결은 동의 화면(`consent`). `''`는 "이미 승인했으면 바로" —
+        // 그래도 팝업 창 자체는 뜬다(GIS에 창 없는 갱신이 없다). 그래서 이 함수는
+        // 어느 모드든 **사용자 제스처에서만** 불려야 한다.
         prompt: interactive ? 'consent' : '',
         ...(hint ? { hint } : {}),
         callback: (res) => {
@@ -266,11 +269,22 @@ export async function requestGoogleToken(interactive: boolean, hint?: string): P
   });
 }
 
-/** 저장된 토큰이 살아 있으면 그대로, 아니면 **조용히** 다시 받는다. */
-export async function ensureGoogleToken(hint?: string): Promise<TokenRequestResult> {
+/** 토큰이 없어 다시 연결이 필요할 때의 안내 — 화면(설정·달력 머리 버튼)이 보여 준다. */
+export const GOOGLE_RECONNECT_MSG = '구글 연결이 만료됐어요. 달력의 다시 연결 버튼으로 이어 주세요.';
+
+/**
+ * 저장된 토큰이 살아 있으면 그대로 쓴다. 없으면 **요청하지 않고** 실패를 돌려준다.
+ *
+ * 예전에는 여기서 `requestGoogleToken(false)`로 조용히 다시 받았는데, GIS 토큰
+ * 요청은 `prompt: ''`여도 **팝업 창을 연다**(이 API에는 iframe 갱신이 없다 —
+ * 구글 세션 상태에 따라 로그인 창까지 뜬다). 그래서 재로그인 뒤 달력을 여는
+ * 것만으로 구글 팝업이 떴다(제보). 토큰이 없다는 사실은 화면이 "다시 연결"
+ * 버튼으로 말하고, 새 요청은 **사용자가 직접 누른 곳**에서만 나간다.
+ */
+export function ensureGoogleToken(): TokenRequestResult {
   const stored = readStoredToken();
   if (stored) return { token: stored };
-  return requestGoogleToken(false, hint);
+  return { error: GOOGLE_RECONNECT_MSG };
 }
 
 /** 연결 해제 — 이 기기의 토큰을 버리고 구글 쪽 승인도 취소한다. */

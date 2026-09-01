@@ -153,14 +153,6 @@ const KIND_META: Record<DocKindName, { name: string; color: string; icon: JSX.El
   },
 };
 
-function greetingNow(): { greeting: string; dateLine: string } {
-  const now = new Date();
-  const h = now.getHours();
-  const greeting = h < 6 ? '늦은 밤이에요' : h < 12 ? '좋은 아침이에요' : h < 18 ? '좋은 오후예요' : '좋은 저녁이에요';
-  const dateLine = `${now.getMonth() + 1}월 ${now.getDate()}일 ${['일', '월', '화', '수', '목', '금', '토'][now.getDay()]}요일`;
-  return { greeting, dateLine };
-}
-
 interface Props {
   state: HomeState;
   view: HomeViewModel;
@@ -186,7 +178,6 @@ export function DashboardView({ state, view, controller, isMobile = false, onOpe
 
   const dash = state.dashboards.find((d) => d.id === state.activeDash);
   if (!dash) return null;
-  const { greeting, dateLine } = greetingNow();
   const others = state.dashboards.filter((d) => d.id !== dash.id);
   const cols = isMobile ? 2 : DASH_COLS;
   const atCap = dash.items.length >= DASH_CAP;
@@ -241,10 +232,11 @@ export function DashboardView({ state, view, controller, isMobile = false, onOpe
     <div data-dashboard-view style={{ display: 'flex', flexDirection: 'column', margin: isMobile ? '-16px -14px -32px' : '-24px -32px -44px' }}>
       {/* 다크 히어로 — 대시보드 화면임을 한눈에 가르는 띠(디자인 원본 #332E29 고정:
           어두운 면이라 다크 테마에서도 그대로 성립한다). */}
-      <div style={{ position: 'relative', background: '#332E29', padding: isMobile ? '20px 16px 18px' : '26px 32px 24px', display: 'flex', alignItems: 'flex-end', flexWrap: 'wrap', gap: 14, overflow: 'hidden' }}>
+      {/* 인사말·날짜 줄은 없앴다(요청) — 타이틀 한 줄만 남기고 양쪽 묶음을 가운데 정렬한다. */}
+      <div style={{ position: 'relative', background: '#332E29', padding: isMobile ? '18px 16px' : '22px 32px', display: 'flex', alignItems: 'center', flexWrap: 'wrap', gap: 14, overflow: 'hidden' }}>
         <div aria-hidden style={{ position: 'absolute', inset: 0, backgroundImage: 'radial-gradient(rgba(247,239,232,.07) 1px, transparent 1px)', backgroundSize: '18px 18px' }} />
-        <div style={{ position: 'relative', display: 'flex', flexDirection: 'column', gap: 9, minWidth: 0, flex: '1 1 auto' }}>
-          <span style={{ display: 'flex', alignItems: isMobile ? 'center' : 'baseline', gap: 10, minWidth: 0 }}>
+        <div style={{ position: 'relative', minWidth: 0, flex: '1 1 auto' }}>
+          <span style={{ display: 'flex', alignItems: 'center', gap: 12, minWidth: 0, flexWrap: 'wrap' }}>
             {/* 폰의 앱 바 ≡ — 홈의 첫 화면이 대시보드라(요청) 여기에도 서랍 손잡이가
                 있어야 한다. 툴바의 그것과 같은 고스트 버튼(44px)이고, 색만 다크 히어로에
                 맞춘다. 확인하지 않은 공유가 있으면 문에도 점을 찍는다(닫힌 문 뒤의
@@ -256,7 +248,7 @@ export function DashboardView({ state, view, controller, isMobile = false, onOpe
                 onClick={onOpenNav}
                 title={view.sharedUnread > 0 ? `메뉴 열기 (새 공유 ${view.sharedUnread}개)` : '메뉴 열기'}
                 aria-label={view.sharedUnread > 0 ? `메뉴 열기, 확인하지 않은 공유 ${view.sharedUnread}개` : '메뉴 열기'}
-                style={{ position: 'relative', display: 'flex', alignItems: 'center', justifyContent: 'center', width: 44, height: 44, marginLeft: -12, marginRight: -8, marginTop: -6, marginBottom: -6, border: 'none', borderRadius: 10, background: 'transparent', color: '#F7EFE8', cursor: 'pointer', padding: 0, flexShrink: 0 }}
+                style={{ position: 'relative', display: 'flex', alignItems: 'center', justifyContent: 'center', width: 44, height: 44, marginLeft: -12, marginRight: -6, marginTop: -6, marginBottom: -6, border: 'none', borderRadius: 10, background: 'transparent', color: '#F7EFE8', cursor: 'pointer', padding: 0, flexShrink: 0 }}
               >
                 <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
                   <line x1="4" y1="7" x2="20" y2="7" />
@@ -266,12 +258,6 @@ export function DashboardView({ state, view, controller, isMobile = false, onOpe
                 {view.sharedUnread > 0 && <span data-unread-dot aria-hidden="true" style={{ position: 'absolute', top: 9, right: 9, width: 8, height: 8, borderRadius: '50%', background: UNREAD_BADGE_BG, border: '2px solid #332E29' }} />}
               </button>
             )}
-            <span style={{ fontSize: 12, fontWeight: 700, color: '#B7A995', whiteSpace: 'nowrap' }}>
-              {greeting}, {state.userName} 님
-            </span>
-            <span style={{ ...META_MONO, color: '#8C7E6B', whiteSpace: 'nowrap' }}>{dateLine}</span>
-          </span>
-          <span style={{ display: 'flex', alignItems: 'center', gap: 12, minWidth: 0, flexWrap: 'wrap' }}>
             <h2 style={{ margin: 0, display: 'flex', alignItems: 'center', gap: 9, fontSize: 25, fontWeight: 800, letterSpacing: '-.035em', color: '#F7EFE8', whiteSpace: 'nowrap' }}>
               {/* 색은 만들기 팝업에서 고른 그 색(없으면 강조색). 히어로는 고정 다크 면이라
                   어두운 색은 묻히므로 옅은 빛 테두리를 둘러 어느 색에서도 점이 산다. */}
@@ -300,7 +286,7 @@ export function DashboardView({ state, view, controller, isMobile = false, onOpe
             )}
           </span>
         </div>
-        <div style={{ position: 'relative', display: 'flex', alignItems: 'center', gap: 8, flexShrink: 0, paddingBottom: 2 }}>
+        <div style={{ position: 'relative', display: 'flex', alignItems: 'center', gap: 8, flexShrink: 0 }}>
           {/* 편집 토글(디자인) — 켜면 위젯 드래그 재배치·모서리 리사이즈·인라인
               크기/제거가 열린다. 히어로가 고정 다크 면이라 색도 디자인 값 그대로. */}
           <button
@@ -568,8 +554,13 @@ function DashWidget({ itemId, docId, itemKind, size, committedSize, maxCols, edi
   // 주간·목록에서는 보이는 주가 든 달을 받는다 — 조회 구간이 그 달 격자 6주라
   // 멀리 넘긴 주도 함께 덮인다(달마다 한 번, 전송량은 유한하다). 미니 달력이 그리는
   // 달도 이 값이라 **보이는 것과 조회한 것이 언제나 같다**.
+  //
+  // 다만 **이번 주(offset 0)는 오늘의 달**이다 — 주 시작(일요일)의 달을 쓰면 달을
+  // 걸치는 주에서 미니 달력이 지난달을 그리고, 오늘 칸이 이웃 달 칸이라 **눌리지도
+  // 표시되지도 않는다**(9월 1일에 실제로 그랬다 — 그 주의 일요일은 8월 30일).
   const weekStart = addDays(weekStartISO(todayIso), weekOffset * 7);
-  const evYm = calByMonth ? ym : { y: partsOf(weekStart)!.y, m: partsOf(weekStart)!.m };
+  const weekAnchor = weekOffset === 0 ? todayIso : weekStart;
+  const evYm = calByMonth ? ym : { y: partsOf(weekAnchor)!.y, m: partsOf(weekAnchor)!.m };
   const cardEntries = useCalendarEntries(state, cal);
   const eventsApi = useCalendarEvents(evYm.y, evYm.m, cal);
   // 구글 겹치기 — 일정 화면과 **같은 훅**이다(두 벌로 두면 한쪽만 고쳐진다).
@@ -592,7 +583,8 @@ function DashWidget({ itemId, docId, itemKind, size, committedSize, maxCols, edi
   const pickCalEntry = (e: CalendarEntry) => {
     // 구글 일정은 읽기 전용 팝업(일정 화면과 같은 규칙).
     if (e.google) controller.openCalendarGoogle(e.google.id);
-    else if (e.event) controller.openCalendarEvent(e.event.id);
+    // 반복 일정은 눌린 **회차**(그 회차의 시작일)까지 — 삭제 범위의 기준이 된다.
+    else if (e.event) controller.openCalendarEvent(e.event.id, e.event.recurrence ? (e.start ?? e.due) : undefined);
     else controller.openCalendarCard(e.docId, e.cardId);
   };
   const thisMonth = (() => {
@@ -934,7 +926,9 @@ function CalWidgetDialogs({
 }) {
   const [saving, setSaving] = useState(false);
   const [saveError, setSaveError] = useState<string | null>(null);
-  const ev = state.calEventDetail ? events.events.find((e) => e.id === state.calEventDetail) : null;
+  // `id#회차시작일` — 반복 일정은 눌린 회차가 삭제 범위(이 일정만/이후)의 기준이다.
+  const [evId, evOcc] = (state.calEventDetail ?? '').split('#');
+  const ev = evId ? events.events.find((e) => e.id === evId) : null;
   return (
     <>
       <CalendarDetailHost state={state} controller={controller} entries={entries} isMobile={isMobile} />
@@ -945,7 +939,7 @@ function CalWidgetDialogs({
         onClose={controller.closeCalendarGoogle}
         onPatch={google.updateEvent}
         onDelete={google.deleteEvent}
-        directory={{ canSearchPeople: google.canSearchPeople, searchPeople: google.searchPeople, canPickRooms: google.canPickRooms, rooms: google.rooms, loadRooms: google.loadRooms }}
+        directory={{ canSearchPeople: google.canSearchPeople, searchPeople: google.searchPeople, canPickRooms: google.canPickRooms, rooms: google.rooms, roomsReady: google.roomsReady, loadRooms: google.loadRooms }}
       />
       {state.calNewEvent && (
         <NewEventModal
@@ -958,7 +952,7 @@ function CalWidgetDialogs({
             controller.closeNewEvent();
           }}
           googleTargets={google.writableCalendars.map((c) => ({ id: c.id, name: c.summary, ...(c.color ? { color: c.color } : {}) }))}
-          directory={{ canSearchPeople: google.canSearchPeople, searchPeople: google.searchPeople, canPickRooms: google.canPickRooms, rooms: google.rooms, loadRooms: google.loadRooms }}
+          directory={{ canSearchPeople: google.canSearchPeople, searchPeople: google.searchPeople, canPickRooms: google.canPickRooms, rooms: google.rooms, roomsReady: google.roomsReady, loadRooms: google.loadRooms }}
           onSubmit={(input, target) => {
             setSaving(true);
             void submitNewEvent(input, target, { createGeurio: events.create, createGoogle: google.createEvent }).then((err) => {
@@ -969,7 +963,7 @@ function CalWidgetDialogs({
           }}
         />
       )}
-      {ev && <EventDetail event={ev} isMobile={isMobile} onClose={controller.closeCalendarEvent} onPatch={(patch) => events.update(ev.id, patch)} onDelete={() => events.remove(ev.id)} />}
+      {ev && <EventDetail key={ev.id} event={ev} isMobile={isMobile} {...(evOcc ? { occurrence: evOcc } : {})} onClose={controller.closeCalendarEvent} onPatch={(patch) => events.update(ev.id, patch)} onDelete={() => events.remove(ev.id)} />}
     </>
   );
 }

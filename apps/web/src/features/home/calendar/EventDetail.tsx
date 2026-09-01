@@ -1,26 +1,58 @@
 // Geurio 일정 상세 — 디자인 원본 `evOpen` 블록의 **`evIsSimple` 분기** 이식.
 //
 // 칸반 카드 상세(`CalendarDetail`)와 다른 팝업이다: 고칠 것이 다르다(상태·담당·분류가
-// 없고, 대신 종일 토글·시각·위치·메모가 있다). 우리 표(0033)가 정본이라 여기서 고치면
-// 곧바로 저장된다.
+// 없고, 대신 종일 토글·시각·위치·메모가 있다).
+//
+// **저장은 완료 버튼에서 한 번**이다(요청 — 예전에는 필드마다 자동 저장이었다):
+// 필드들은 팝업 안의 초안(draft)만 고치고, `완료`가 바뀐 것만 모아 `onPatch` 한 번으로
+// 보낸 뒤 닫는다. ✕·Escape는 초안을 버린다 — 그래서 적는 중에 막 클릭으로 닫히면
+// 입력을 잃으므로, 고칠 수 있는 팝업은 막 클릭으로 닫지 않는다(새 일정 팝업과 같은
+// 규칙). 읽기 전용은 잃을 것이 없어 예전처럼 막 클릭으로도 닫힌다.
 //
 // 원본에 있지만 두지 않은 것: 알림 · 참석자·Meet(구글 일정에서 쓴다).
 //
-// **반복 일정**은 규칙 요약을 한 줄로 알린다 — 한 행이 곧 하나의 반복이라 고치면 전체에
-// 적용된다(회차별 예외는 담지 않는다 — 0034 주석). 규칙 자체를 바꾸는 것은 범위 밖이다.
+// **반복 일정**은 규칙 요약을 한 줄로 알린다 — 고치면 전체 반복에 적용된다(회차별
+// 예외는 담지 않는다 — 0034 주석). 다만 **삭제는 범위를 묻는다**(요청): 이 일정만
+// (EXDATE) / 이 일정과 이후 일정(UNTIL) / 모든 일정(행 삭제). 규칙 자체를 바꾸는
+// 것은 범위 밖이다.
 //
 // **구글 일정도 이 팝업을 쓴다**(PR6 — `GoogleEventDetail`이 값만 옮겨 준다). 둘로
 // 갈라 두면 한쪽에만 기능이 붙는다 — 그래서 원천마다 다른 것(머리 배지·발치 문구·
 // 고칠 수 있는가·안내)만 프롭으로 받고 나머지는 한 코드다.
 
-import { useEffect, useRef, useState } from 'react';
+import { useState } from 'react';
 import type { ReactNode } from 'react';
-import { Modal, MODAL_DIM } from '../../../components/Modal';
+import { Modal, MODAL_DIM, useCardMorph } from '../../../components/Modal';
 import { DateButton, PillButton } from './DatePop';
 import { TimeButton } from './TimePop';
 import { addDays, daysBetween, minutesOf, timeLabel, todayISO } from './model';
 import type { CalendarEvent, CalendarEventInput } from '../../../adapters/ports';
-import { parseRecurrence, recurrenceLabel } from './recurrence';
+import { endRuleBefore, excludeOccurrence, parseRecurrence, recurrenceLabel } from './recurrence';
+
+/** 팝업이 들고 고치는 초안 — 저장은 `완료`가 바뀐 것만 모아 한 번에 보낸다. */
+interface Draft {
+  title: string;
+  allDay: boolean;
+  startDate: string;
+  endDate: string;
+  startTime: string;
+  endTime: string;
+  location: string;
+  note: string;
+}
+
+function draftOf(e: CalendarEvent): Draft {
+  return {
+    title: e.title,
+    allDay: e.allDay,
+    startDate: e.startDate,
+    endDate: e.endDate,
+    startTime: e.startTime ?? '09:00',
+    endTime: e.endTime ?? '10:00',
+    location: e.location ?? '',
+    note: e.note ?? '',
+  };
+}
 
 export function EventDetail({
   event,
@@ -30,9 +62,11 @@ export function EventDetail({
   onDelete,
   readOnly = false,
   badge = 'Geurio 캘린더',
-  footerHint = 'Geurio 캘린더에만 저장되는 일정이에요 · 변경한 내용은 자동으로 저장돼요',
+  footerHint = '',
   notice,
   extra,
+  extraDirty = false,
+  occurrence,
   cardAttrs,
 }: {
   event: CalendarEvent;
@@ -47,49 +81,146 @@ export function EventDetail({
   footerHint?: string;
   /** 읽기 전용일 때 대신 보여 줄 안내(왜 못 고치는가). */
   notice?: string;
-  /** 원천이 더 얹는 것 — 구글은 반복 회차 안내와 "구글에서 열기" 링크를 넣는다. */
+  /** 원천이 더 얹는 것 — 구글은 전용 필드 묶음과 "구글에서 열기" 링크를 넣는다. */
   extra?: ReactNode;
+  /** `extra` 쪽에 저장할 변경이 있는가 — 이 팝업의 필드가 그대로여도 완료가 저장한다. */
+  extraDirty?: boolean;
+  /** 반복 일정에서 **어느 회차를 눌러 열었는가**(그 회차의 시작일) — 삭제 범위의 기준. */
+  occurrence?: string;
   /** 원천을 가리키는 표식 — 두 팝업이 한 코드라도 화면에서는 구별돼야 한다. */
   cardAttrs?: Record<string, string>;
 }) {
-  const [title, setTitle] = useState(event.title);
-  const titleRef = useRef(title);
-  titleRef.current = title;
+  const [draft, setDraft] = useState(() => draftOf(event));
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  // 반복 일정 삭제 — 범위를 묻는 확인 팝업(요청). 회차를 모르는 반복은 물을 수 없다.
+  const [scopeOpen, setScopeOpen] = useState(false);
+  const canScope = !readOnly && !!event.recurrence && !!occurrence;
   const today = todayISO();
+  // 크기 애니메이션(요청) — 종일 토글 등으로 내용이 늘고 줄 때 카드가 이어진다.
+  const morphRef = useCardMorph();
 
-  const run = async (fn: () => Promise<string | null>): Promise<void> => {
-    setSaving(true);
-    const err = await fn();
-    setSaving(false);
-    setError(err);
+  const run = (fn: () => Promise<string | null>, closeAfter = false): void => {
+    void (async () => {
+      setSaving(true);
+      const err = await fn();
+      setSaving(false);
+      setError(err);
+      if (!err && closeAfter) onClose();
+    })();
   };
 
-  const commitTitle = (): void => {
-    const next = titleRef.current.trim();
-    if (readOnly || !next || next === event.title.trim()) return;
-    void run(() => onPatch({ title: next }));
+  const set = (patch: Partial<Draft>): void => setDraft((d) => ({ ...d, ...patch }));
+
+  /** 시작 날짜를 옮기면 **기간 길이를 지킨 채** 종료 날짜도 따라온다(시각과 같은 규칙). */
+  const pickStartDate = (iso: string): void => {
+    const keep = Math.max(0, daysBetween(draft.startDate, draft.endDate));
+    set({ startDate: iso, endDate: addDays(iso, keep) });
   };
 
-  const close = (): void => {
-    commitTitle();
-    onClose();
+  /**
+   * 시작 시각을 옮기면 **길이를 지킨 채** 종료 시각도 따라온다(달력 앱의 관례).
+   * 그러지 않으면 늦은 시각을 고르는 순간 종료가 시작보다 앞서 저장이 막힌다.
+   */
+  const pickStart = (v: string): void => {
+    const from = minutesOf(draft.startTime);
+    const to = minutesOf(draft.endTime);
+    const next = minutesOf(v);
+    if (from === null || to === null || next === null) {
+      set({ startTime: v });
+      return;
+    }
+    const keep = Math.max(15, to - from);
+    const end = Math.min(23 * 60 + 59, next + keep);
+    set({ startTime: v, endTime: `${`${Math.floor(end / 60)}`.padStart(2, '0')}:${`${end % 60}`.padStart(2, '0')}` });
   };
 
-  useEffect(() => setTitle(event.title), [event.title]);
+  const durMin = (() => {
+    const a = minutesOf(draft.startTime);
+    const b = minutesOf(draft.endTime);
+    return a !== null && b !== null ? b - a : null;
+  })();
+  const invalidTime = !draft.allDay && durMin !== null && durMin <= 0;
 
-  const spanDays = daysBetween(event.startDate, event.endDate) + 1;
-  const whenPill = event.allDay ? (spanDays > 1 ? `${spanDays}일간` : '종일') : `${timeLabel(minutesOf(event.startTime) ?? 0)} – ${timeLabel(minutesOf(event.endTime) ?? 0)}`;
+  /** 바뀐 것만 모은다 — 값이 그대로인 필드는 싣지 않는다(고치지 않은 것을 고쳤다고 말하지 않는다). */
+  const buildPatch = (): Partial<CalendarEventInput> => {
+    const p: Partial<CalendarEventInput> = {};
+    const title = draft.title.trim();
+    if (title && title !== event.title.trim()) p.title = title;
+    if (draft.allDay !== event.allDay) p.allDay = draft.allDay;
+    const endDate = draft.allDay ? (draft.endDate < draft.startDate ? draft.startDate : draft.endDate) : draft.startDate;
+    if (draft.startDate !== event.startDate) p.startDate = draft.startDate;
+    if (endDate !== event.endDate) p.endDate = endDate;
+    if (draft.allDay) {
+      // 종일로 바뀌면 시각은 뜻을 잃는다 — 키를 실어 **지운다**(빼면 "안 바꾼다"로 읽힌다).
+      if (event.startTime) p.startTime = undefined;
+      if (event.endTime) p.endTime = undefined;
+    } else {
+      if (draft.startTime !== event.startTime) p.startTime = draft.startTime;
+      if (draft.endTime !== event.endTime) p.endTime = draft.endTime;
+    }
+    if (draft.location.trim() !== (event.location ?? '').trim()) p.location = draft.location.trim();
+    if (draft.note.trim() !== (event.note ?? '').trim()) p.note = draft.note.trim();
+    return p;
+  };
+
+  /** 완료 — 바뀐 게 없으면 그냥 닫고, 있으면 한 번에 저장한 뒤 닫는다(실패면 남아서 말한다). */
+  const submit = (): void => {
+    if (saving) return;
+    if (readOnly) {
+      onClose();
+      return;
+    }
+    if (invalidTime) {
+      setError('종료 시각이 시작보다 앞서요');
+      return;
+    }
+    const patch = buildPatch();
+    if (Object.keys(patch).length === 0 && !extraDirty) {
+      onClose();
+      return;
+    }
+    run(() => onPatch(patch), true);
+  };
+
+  const removeAll = (): void => run(() => onDelete(), true);
+
+  /**
+   * 반복 일정의 범위 삭제 — 이 일정만은 그 회차를 규칙에서 빼고(EXDATE), 이후 일정은
+   * 규칙의 끝을 그 회차 전날로 당긴다(UNTIL). 첫 회차부터 "이후"면 남는 게 없으므로
+   * 행을 지운다. 초안과 무관한 **즉시 동작**이다(삭제는 미뤄 둘 일이 아니다).
+   */
+  const deleteScoped = (scope: 'one' | 'following' | 'all'): void => {
+    setScopeOpen(false);
+    const rule = event.recurrence;
+    if (scope === 'all' || !rule || !occurrence) {
+      removeAll();
+      return;
+    }
+    if (scope === 'following' && occurrence <= event.startDate) {
+      removeAll();
+      return;
+    }
+    const next = scope === 'one' ? excludeOccurrence(rule, occurrence) : endRuleBefore(rule, addDays(occurrence, -1));
+    run(() => onPatch({ recurrence: next }), true);
+  };
+
+  const spanDays = daysBetween(draft.startDate, draft.allDay ? (draft.endDate < draft.startDate ? draft.startDate : draft.endDate) : draft.startDate) + 1;
+  const whenPill = draft.allDay ? (spanDays > 1 ? `${spanDays}일간` : '종일') : `${timeLabel(minutesOf(draft.startTime) ?? 0)} – ${timeLabel(minutesOf(draft.endTime) ?? 0)}`;
+
+  const footMsg = error ?? (saving ? '저장 중…' : invalidTime ? '종료 시각이 시작보다 앞서요' : footerHint);
+  const footTone = error || invalidTime ? 'var(--mf-danger)' : 'var(--mf-faint2)';
 
   return (
     <Modal
       open
-      onClose={close}
+      onClose={onClose}
       label="일정 상세"
-      dismissOnBackdrop
+      // 고칠 수 있는 팝업은 초안을 들고 있다 — 막 클릭 한 번에 버려지면 안 된다.
+      dismissOnBackdrop={readOnly}
       // 막·등장 효과는 설정 팝업과 같은 것(요청) — 예전에는 배경이 그대로 보였다(제보).
       dim={{ ...MODAL_DIM, animation: 'mf-dim-in .18s ease-out', zIndex: 321, alignItems: isMobile ? 'flex-end' : 'center', padding: isMobile ? 0 : 32 }}
+      cardRef={morphRef}
       card={{
         width: isMobile ? '100%' : 560,
         maxWidth: '100%',
@@ -120,20 +251,14 @@ export function EventDetail({
             <button
               type="button"
               data-event-delete
-              onClick={() =>
-                void run(async () => {
-                  const err = await onDelete();
-                  if (!err) onClose();
-                  return err;
-                })
-              }
+              onClick={() => (canScope ? setScopeOpen(true) : removeAll())}
               className="mf-ctl"
               style={{ flex: '0 0 auto', whiteSpace: 'nowrap', height: 30, padding: '0 15px', borderRadius: 999, border: '1px solid var(--mf-border)', background: 'var(--mf-card)', color: 'var(--mf-muted)', font: 'inherit', fontSize: 12, fontWeight: 700, cursor: 'pointer' }}
             >
               삭제
             </button>
           )}
-          <button type="button" aria-label="닫기" title="닫기" onClick={close} className="mf-ctl" style={{ width: 30, height: 30, flex: '0 0 auto', border: '1px solid var(--mf-border)', borderRadius: 999, background: 'var(--mf-card)', color: 'var(--mf-muted)', cursor: 'pointer', display: 'inline-flex', alignItems: 'center', justifyContent: 'center' }}>
+          <button type="button" aria-label="닫기" title="닫기" onClick={onClose} className="mf-ctl" style={{ width: 30, height: 30, flex: '0 0 auto', border: '1px solid var(--mf-border)', borderRadius: 999, background: 'var(--mf-card)', color: 'var(--mf-muted)', cursor: 'pointer', display: 'inline-flex', alignItems: 'center', justifyContent: 'center' }}>
             <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" aria-hidden="true">
               <path d="M6 6l12 12M18 6 6 18" />
             </svg>
@@ -144,22 +269,20 @@ export function EventDetail({
           <textarea
             aria-label="일정 제목"
             data-event-title
-            value={title}
+            value={draft.title}
             readOnly={readOnly}
-            onChange={(e) => setTitle(e.target.value)}
-            onBlur={commitTitle}
+            onChange={(e) => set({ title: e.target.value })}
             onKeyDown={(e) => {
               if (e.key === 'Enter' && !e.shiftKey) {
                 e.preventDefault();
                 (e.target as HTMLTextAreaElement).blur();
               }
-              if (e.key === 'Escape') setTitle(event.title);
             }}
             placeholder="일정 제목"
             style={{ width: '100%', boxSizing: 'border-box', minHeight: 80, resize: 'vertical', padding: '15px 16px', borderRadius: 14, border: '1px solid var(--mf-border)', background: 'var(--mf-card)', font: 'inherit', fontSize: 19, fontWeight: 800, letterSpacing: '-.03em', lineHeight: 1.45, color: 'var(--mf-text)', outline: 'none' }}
           />
 
-          {/* 반복 일정 — 고치면 전체 반복에 적용된다는 사실을 숨기지 않는다. */}
+          {/* 반복 일정 — 고치면 전체 반복에 적용된다는 사실을 숨기지 않는다(삭제는 범위를 묻는다). */}
           {event.recurrence ? (
             <span data-event-repeat style={{ display: 'inline-flex', alignItems: 'center', gap: 7, fontSize: 11.5, color: 'var(--mf-faint2)', lineHeight: 1.6 }}>
               <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true" style={{ flex: '0 0 auto' }}>
@@ -179,54 +302,44 @@ export function EventDetail({
                 <span style={{ display: 'flex', alignItems: 'center', gap: 9 }}>
                   <Label>날짜와 시간</Label>
                   <span style={{ flex: 1, minWidth: 0 }} />
-                  <PillButton
-                    on={event.allDay}
-                    attrs={{ 'data-event-allday': '1' }}
-                    onClick={() =>
-                      void run(() =>
-                        event.allDay
-                          ? onPatch({ allDay: false, startTime: '09:00', endTime: '10:00', endDate: event.startDate })
-                          : onPatch({ allDay: true, startTime: undefined, endTime: undefined }),
-                      )
-                    }
-                  >
+                  <PillButton on={draft.allDay} attrs={{ 'data-event-allday': '1' }} onClick={() => set({ allDay: !draft.allDay })}>
                     종일
                   </PillButton>
                 </span>
 
                 <div style={{ display: 'flex', gap: 9, flexWrap: 'wrap', alignItems: 'flex-end' }}>
                   <span style={{ flex: '1 1 170px', minWidth: 150, display: 'flex', flexDirection: 'column', gap: 6 }}>
-                    <SubLabel>{event.allDay ? '시작 날짜' : '날짜'}</SubLabel>
-                    <DateButton label={event.allDay ? '시작 날짜' : '날짜'} value={event.startDate} clearable={false} attrs={{ 'data-event-date': '1' }} onPick={(iso) => iso && void run(() => onPatch({ startDate: iso, endDate: shiftedEndDate(event, iso) }))} />
+                    <SubLabel>{draft.allDay ? '시작 날짜' : '날짜'}</SubLabel>
+                    <DateButton label={draft.allDay ? '시작 날짜' : '날짜'} value={draft.startDate} clearable={false} attrs={{ 'data-event-date': '1' }} onPick={(iso) => iso && pickStartDate(iso)} />
                   </span>
-                  {event.allDay && (
+                  {draft.allDay && (
                     <span style={{ flex: '1 1 170px', minWidth: 150, display: 'flex', flexDirection: 'column', gap: 6 }}>
                       <SubLabel>종료 날짜</SubLabel>
-                      <DateButton label="종료 날짜" value={event.endDate} min={event.startDate} clearable={false} attrs={{ 'data-event-enddate': '1' }} onPick={(iso) => iso && void run(() => onPatch({ endDate: iso }))} />
+                      <DateButton label="종료 날짜" value={draft.endDate < draft.startDate ? draft.startDate : draft.endDate} min={draft.startDate} clearable={false} attrs={{ 'data-event-enddate': '1' }} onPick={(iso) => iso && set({ endDate: iso })} />
                     </span>
                   )}
-                  {!event.allDay && (
+                  {!draft.allDay && (
                     <span style={{ display: 'flex', alignItems: 'center', gap: 7, flex: '1 1 100%', minWidth: 0 }}>
-                      <TimeButton label="시작 시각" value={event.startTime ?? '09:00'} attrs={{ 'data-event-start': '1' }} onPick={(v) => void run(() => onPatch({ startTime: v, endTime: shiftedEnd(event, v) }))} />
+                      <TimeButton label="시작 시각" value={draft.startTime} attrs={{ 'data-event-start': '1' }} onPick={pickStart} />
                       <span style={{ flex: '0 0 auto', fontSize: 12, color: 'var(--mf-faint2)' }}>–</span>
-                      <TimeButton label="종료 시각" value={event.endTime ?? '10:00'} min={event.startTime} attrs={{ 'data-event-end': '1' }} onPick={(v) => void run(() => onPatch({ endTime: v }))} />
+                      <TimeButton label="종료 시각" value={draft.endTime} min={draft.startTime} attrs={{ 'data-event-end': '1' }} onPick={(v) => set({ endTime: v })} />
                     </span>
                   )}
                 </div>
 
-                {event.allDay && spanDays > 1 && (
+                {draft.allDay && spanDays > 1 && (
                   <span data-event-span style={{ fontSize: 11.5, color: 'var(--mf-faint2)' }}>
-                    {spanDays}일간 · {today < event.startDate ? `${daysBetween(today, event.startDate)}일 뒤 시작` : today > event.endDate ? '종료' : `${daysBetween(today, event.endDate)}일 남음`}
+                    {spanDays}일간 · {today < draft.startDate ? `${daysBetween(today, draft.startDate)}일 뒤 시작` : today > draft.endDate ? '종료' : `${daysBetween(today, draft.endDate)}일 남음`}
                   </span>
                 )}
               </div>
 
               <Field label="위치">
-                <TextField value={event.location ?? ''} placeholder="주소 또는 장소 이름" label="위치" attrs={{ 'data-event-loc': '1' }} onCommit={(v) => void run(() => onPatch({ location: v }))} />
+                <input aria-label="위치" data-event-loc value={draft.location} placeholder="주소 또는 장소 이름" maxLength={200} onChange={(e) => set({ location: e.target.value })} style={fieldStyle(false)} />
               </Field>
 
               <Field label="메모">
-                <TextField multiline value={event.note ?? ''} placeholder="자유롭게 적어 두세요" label="메모" attrs={{ 'data-event-note': '1' }} onCommit={(v) => void run(() => onPatch({ note: v }))} />
+                <textarea aria-label="메모" data-event-note value={draft.note} placeholder="자유롭게 적어 두세요" maxLength={2000} onChange={(e) => set({ note: e.target.value })} style={fieldStyle(true)} />
               </Field>
             </>
           )}
@@ -236,45 +349,49 @@ export function EventDetail({
         </div>
 
         <div style={{ flex: '0 0 auto', display: 'flex', alignItems: 'center', gap: 12, padding: '14px 20px', borderTop: '1px solid var(--mf-border-soft)' }}>
-          <span style={{ flex: 1, minWidth: 0, fontSize: 12, color: 'var(--mf-faint2)' }}>{saving ? '저장 중…' : footerHint}</span>
-          <button type="button" data-event-done onClick={close} className="mf-ctl" style={{ flex: '0 0 auto', whiteSpace: 'nowrap', height: isMobile ? 44 : 40, padding: isMobile ? '0 20px' : '0 26px', borderRadius: 999, border: 0, background: 'linear-gradient(180deg, var(--mf-accent), var(--mf-accent-strong))', color: 'var(--mf-accent-ink)', font: 'inherit', fontSize: 13.5, fontWeight: 800, cursor: 'pointer', boxShadow: '0 8px 18px -10px rgba(var(--mf-accent-rgb), .9)' }}>
+          <span data-event-foot style={{ flex: 1, minWidth: 0, fontSize: 12, color: footTone, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{footMsg}</span>
+          <button type="button" data-event-done disabled={saving} onClick={submit} className="mf-ctl-primary" style={{ flex: '0 0 auto', whiteSpace: 'nowrap', height: isMobile ? 44 : 40, padding: isMobile ? '0 20px' : '0 26px', borderRadius: 999, border: 0, background: 'linear-gradient(180deg, var(--mf-accent), var(--mf-accent-strong))', color: 'var(--mf-accent-ink)', font: 'inherit', fontSize: 13.5, fontWeight: 800, cursor: 'pointer', boxShadow: '0 8px 18px -10px rgba(var(--mf-accent-rgb), .9)' }}>
             완료
           </button>
         </div>
+
+        {/* 반복 일정 삭제 — 어디까지 지울지 먼저 묻는다(요청). 초점은 취소에 —
+            파괴적 버튼이 기본 초점이면 Enter 한 번에 지워진다(열 삭제 확인창의 규칙). */}
+        {scopeOpen && (
+          <Modal open onClose={() => setScopeOpen(false)} label="반복 일정 삭제" dismissOnBackdrop={false} initialFocusSelector="[data-event-scope-cancel]" dim={{ ...MODAL_DIM, animation: 'mf-dim-in .18s ease-out', zIndex: 340 }} card={{ width: 340, maxWidth: 'calc(100vw - 32px)', boxSizing: 'border-box', borderRadius: 18, background: 'var(--mf-card)', border: '1px solid var(--mf-border)', boxShadow: 'var(--mf-card-shadow)', padding: '20px 20px 16px', animation: 'mf-fade .2s ease' }} cardAttrs={{ 'data-event-scope': '1' }}>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+              <span style={{ fontSize: 15, fontWeight: 800, letterSpacing: '-.02em', color: 'var(--mf-text)' }}>반복 일정 삭제</span>
+              <span style={{ fontSize: 12.5, color: 'var(--mf-muted)', lineHeight: 1.6 }}>반복되는 일정이에요. 어디까지 삭제할까요?</span>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 7, marginTop: 10 }}>
+                <ScopeButton attrs={{ 'data-event-scope-one': '1' }} onClick={() => deleteScoped('one')} title="이 일정만" sub="다른 회차는 그대로 남아요" />
+                <ScopeButton attrs={{ 'data-event-scope-following': '1' }} onClick={() => deleteScoped('following')} title="이 일정과 이후 일정" sub="이 회차부터의 반복이 끝나요" />
+                <ScopeButton attrs={{ 'data-event-scope-all': '1' }} onClick={() => deleteScoped('all')} title="모든 일정" sub="반복 전체가 사라져요" danger />
+              </div>
+              <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: 10 }}>
+                <button type="button" data-event-scope-cancel onClick={() => setScopeOpen(false)} className="mf-ctl" style={{ height: isMobile ? 44 : 34, padding: '0 16px', borderRadius: 999, border: '1px solid var(--mf-border)', background: 'var(--mf-card)', color: 'var(--mf-muted)', font: 'inherit', fontSize: 12.5, fontWeight: 700, cursor: 'pointer' }}>
+                  취소
+                </button>
+              </div>
+            </div>
+          </Modal>
+        )}
       </>
     </Modal>
   );
 }
 
-/**
- * 시작 날짜를 옮겼을 때의 종료 날짜 — **기간 길이를 지킨 채** 따라온다. 클램프만
- * 두면 시작을 앞으로 당기는 순간 하루짜리 일정이 긴 기간 일정으로 바뀐다.
- */
-function shiftedEndDate(event: CalendarEvent, nextStart: string): string {
-  const keep = Math.max(0, daysBetween(event.startDate, event.endDate));
-  return addDays(nextStart, keep);
+/** 범위 삭제의 한 갈래 — 제목 + 무엇이 남는지 한 줄. */
+function ScopeButton({ title, sub, danger, attrs, onClick }: { title: string; sub: string; danger?: boolean; attrs: Record<string, string>; onClick: () => void }) {
+  return (
+    <button type="button" {...attrs} onClick={onClick} className="mf-ctl" style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-start', gap: 2, width: '100%', boxSizing: 'border-box', padding: '10px 13px', borderRadius: 12, border: '1px solid var(--mf-border)', background: 'var(--mf-card)', font: 'inherit', textAlign: 'left', cursor: 'pointer' }}>
+      <span style={{ fontSize: 13, fontWeight: 800, letterSpacing: '-.015em', color: danger ? 'var(--mf-danger)' : 'var(--mf-text)' }}>{title}</span>
+      <span style={{ fontSize: 11.5, color: 'var(--mf-faint2)' }}>{sub}</span>
+    </button>
+  );
 }
 
-/**
- * 시작 시각을 옮겼을 때의 종료 시각 — **길이를 지킨 채** 따라온다(달력 앱의 관례).
- * 그러지 않으면 늦은 시각을 고르는 순간 종료가 시작보다 앞서고, 그 값은 표의 제약을
- * 어기므로 정규화가 종일로 되돌려 버린다(시각이 통째로 사라진다).
- */
-function shiftedEnd(event: CalendarEvent, nextStart: string): string {
-  const from = minutesOf(event.startTime ?? '09:00');
-  const to = minutesOf(event.endTime ?? '10:00');
-  const next = minutesOf(nextStart);
-  if (from === null || to === null || next === null) return event.endTime ?? '10:00';
-  const keep = Math.max(15, to - from);
-  const end = Math.min(23 * 60 + 59, next + keep);
-  return `${`${Math.floor(end / 60)}`.padStart(2, '0')}:${`${end % 60}`.padStart(2, '0')}`;
-}
-
-/** 값이 있는 입력 — 타이핑마다 저장하지 않고 **blur·Enter에 한 번** 커밋한다. */
-function TextField({ value, placeholder, label, multiline, attrs, onCommit }: { value: string; placeholder: string; label: string; multiline?: boolean; attrs?: Record<string, string>; onCommit: (v: string) => void }) {
-  const [draft, setDraft] = useState(value);
-  useEffect(() => setDraft(value), [value]);
-  const style = {
+function fieldStyle(multiline: boolean) {
+  return {
     width: '100%',
     boxSizing: 'border-box' as const,
     height: multiline ? 78 : 40,
@@ -289,26 +406,6 @@ function TextField({ value, placeholder, label, multiline, attrs, onCommit }: { 
     outline: 'none',
     resize: multiline ? ('vertical' as const) : undefined,
   };
-  const commit = (): void => {
-    if (draft.trim() !== value.trim()) onCommit(draft.trim());
-  };
-  return multiline ? (
-    <textarea aria-label={label} {...attrs} value={draft} placeholder={placeholder} maxLength={2000} onChange={(e) => setDraft(e.target.value)} onBlur={commit} style={style} />
-  ) : (
-    <input
-      aria-label={label}
-      {...attrs}
-      value={draft}
-      placeholder={placeholder}
-      maxLength={200}
-      onChange={(e) => setDraft(e.target.value)}
-      onBlur={commit}
-      onKeyDown={(e) => {
-        if (e.key === 'Enter') (e.target as HTMLInputElement).blur();
-      }}
-      style={style}
-    />
-  );
 }
 
 function Label({ children }: { children: ReactNode }) {
@@ -328,8 +425,8 @@ function Field({ label, children }: { label: string; children: ReactNode }) {
   );
 }
 
-/** `2주마다 반복 · 종료 없음 — 고치거나 삭제하면 전체 반복에 적용돼요`. */
+/** `2주마다 반복 · 종료 없음 — 고치면 전체 반복에 적용돼요`. */
 function repeatLine(rule: string, baseDate: string): string {
   const spec = parseRecurrence(rule);
-  return `${spec ? recurrenceLabel(spec, baseDate) : '반복 일정'} — 고치거나 삭제하면 전체 반복에 적용돼요`;
+  return `${spec ? recurrenceLabel(spec, baseDate) : '반복 일정'} — 고치면 전체 반복에 적용돼요`;
 }

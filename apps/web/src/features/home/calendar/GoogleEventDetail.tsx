@@ -117,33 +117,30 @@ export function GoogleEventDetail({
   onDelete?: () => Promise<string | null>;
   directory?: GoogleDirectoryApi;
 }) {
-  const [pending, setPending] = useState<Partial<CalendarEventInput>>({});
+  // 구글 전용 필드의 초안 — 본문 초안(제목·날짜·시각…)은 `EventDetail`이 든다.
+  // **저장은 완료 버튼에서 한 번**(요청): 팝업이 모아 준 본문 diff와 이 필드 초안을
+  // `draftFrom`이 온전한 값 하나로 합쳐 PATCH 한 번으로 보낸다.
   const [pendingFields, setPendingFields] = useState<GoogleFieldsChange>({});
   const writable = !!onPatch && !!onDelete;
-  // 저장이 끝나면 훅이 달을 다시 받지만 그 왕복이 끝나기 전까지는 방금 고친 값을
-  // 보여 준다 — 아니면 눌렀는데 아무 일도 없는 것처럼 보인다.
-  const shown = { ...googleAsEvent(event), ...pending };
 
   return (
     <EventDetail
-      event={shown}
+      event={googleAsEvent(event)}
       isMobile={isMobile}
       onClose={onClose}
       cardAttrs={{ 'data-google-detail': '1' }}
       readOnly={!writable}
       badge={`${event.calendarName} · Google`}
-      footerHint={writable ? 'Google 캘린더에 저장돼요 · 변경한 내용은 자동으로 저장돼요' : 'Google 캘린더에서 가져온 일정이에요'}
+      footerHint={writable ? 'Google 캘린더에 저장돼요' : 'Google 캘린더에서 가져온 일정이에요'}
       notice={
         event.holiday
           ? '공휴일 캘린더의 일정이라 고칠 수 없어요.'
           : '이 캘린더에 쓸 권한이 없어요. 구글에서 열어 확인해 주세요.'
       }
+      extraDirty={Object.keys(pendingFields).length > 0}
       onPatch={async (patch) => {
         if (!onPatch) return null;
-        setPending((p) => ({ ...p, ...patch }));
-        const err = await onPatch(draftFrom(event, { ...pending, ...patch }, pendingFields));
-        if (err) setPending({});
-        return err;
+        return onPatch(draftFrom(event, patch, pendingFields));
       }}
       onDelete={async () => (onDelete ? onDelete() : null)}
       extra={
@@ -156,11 +153,7 @@ export function GoogleEventDetail({
               recurring={!!event.recurringEventId}
               {...(directory ? { directory } : {})}
               {...(event.meetLink ? { meetLink: event.meetLink } : {})}
-              onChange={(patch) => {
-                setPendingFields((p) => ({ ...p, ...patch }));
-                // 필드 하나만 바뀐 저장 — 본문은 지금 값 그대로 다시 싣는다.
-                void onPatch?.(draftFrom(event, pending, { ...pendingFields, ...patch }));
-              }}
+              onChange={(patch) => setPendingFields((p) => ({ ...p, ...patch }))}
             />
           )}
         <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
