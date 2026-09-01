@@ -568,8 +568,13 @@ function DashWidget({ itemId, docId, itemKind, size, committedSize, maxCols, edi
   // 주간·목록에서는 보이는 주가 든 달을 받는다 — 조회 구간이 그 달 격자 6주라
   // 멀리 넘긴 주도 함께 덮인다(달마다 한 번, 전송량은 유한하다). 미니 달력이 그리는
   // 달도 이 값이라 **보이는 것과 조회한 것이 언제나 같다**.
+  //
+  // 다만 **이번 주(offset 0)는 오늘의 달**이다 — 주 시작(일요일)의 달을 쓰면 달을
+  // 걸치는 주에서 미니 달력이 지난달을 그리고, 오늘 칸이 이웃 달 칸이라 **눌리지도
+  // 표시되지도 않는다**(9월 1일에 실제로 그랬다 — 그 주의 일요일은 8월 30일).
   const weekStart = addDays(weekStartISO(todayIso), weekOffset * 7);
-  const evYm = calByMonth ? ym : { y: partsOf(weekStart)!.y, m: partsOf(weekStart)!.m };
+  const weekAnchor = weekOffset === 0 ? todayIso : weekStart;
+  const evYm = calByMonth ? ym : { y: partsOf(weekAnchor)!.y, m: partsOf(weekAnchor)!.m };
   const cardEntries = useCalendarEntries(state, cal);
   const eventsApi = useCalendarEvents(evYm.y, evYm.m, cal);
   // 구글 겹치기 — 일정 화면과 **같은 훅**이다(두 벌로 두면 한쪽만 고쳐진다).
@@ -945,7 +950,7 @@ function CalWidgetDialogs({
         onClose={controller.closeCalendarGoogle}
         onPatch={google.updateEvent}
         onDelete={google.deleteEvent}
-        directory={{ canSearchPeople: google.canSearchPeople, searchPeople: google.searchPeople, canPickRooms: google.canPickRooms, rooms: google.rooms, loadRooms: google.loadRooms }}
+        directory={{ canSearchPeople: google.canSearchPeople, searchPeople: google.searchPeople, canPickRooms: google.canPickRooms, rooms: google.rooms, roomsReady: google.roomsReady, loadRooms: google.loadRooms }}
       />
       {state.calNewEvent && (
         <NewEventModal
@@ -958,7 +963,7 @@ function CalWidgetDialogs({
             controller.closeNewEvent();
           }}
           googleTargets={google.writableCalendars.map((c) => ({ id: c.id, name: c.summary, ...(c.color ? { color: c.color } : {}) }))}
-          directory={{ canSearchPeople: google.canSearchPeople, searchPeople: google.searchPeople, canPickRooms: google.canPickRooms, rooms: google.rooms, loadRooms: google.loadRooms }}
+          directory={{ canSearchPeople: google.canSearchPeople, searchPeople: google.searchPeople, canPickRooms: google.canPickRooms, rooms: google.rooms, roomsReady: google.roomsReady, loadRooms: google.loadRooms }}
           onSubmit={(input, target) => {
             setSaving(true);
             void submitNewEvent(input, target, { createGeurio: events.create, createGoogle: google.createEvent }).then((err) => {

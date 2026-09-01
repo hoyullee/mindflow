@@ -36,7 +36,7 @@ function cellAt(x: number, y: number): string | null {
 export function MonthGrid({
   cells,
   onPickDay,
-  onNewOnDay,
+  onOpenDayList,
   onPickEntry,
   onMore,
   onShift,
@@ -46,8 +46,8 @@ export function MonthGrid({
 }: {
   cells: readonly MonthCell[];
   onPickDay: (iso: string) => void;
-  /** 빈 자리를 **더블클릭** — 그 날짜로 새 일정(요청). 없으면 그 동작이 없다. */
-  onNewOnDay?: (iso: string) => void;
+  /** 빈 자리를 **더블클릭** — 그 날의 일정 전부(`DayListPopup`, 디자인 원본 `onDayDouble`). */
+  onOpenDayList?: (iso: string) => void;
   onPickEntry: (e: CalendarEntry) => void;
   onMore: (iso: string) => void;
   /** 항목을 다른 칸에 놓았다 — 며칠 옮길지(기간이면 시작일·기한이 함께 움직인다). */
@@ -139,7 +139,7 @@ export function MonthGrid({
             compact={compact}
             surface={surface}
             onPickDay={onPickDay}
-            onNewOnDay={onNewOnDay}
+            onOpenDayList={onOpenDayList}
             onPickEntry={clickEntry}
             onMore={onMore}
             onGrab={grab}
@@ -208,7 +208,7 @@ function DayCell({
   compact,
   surface,
   onPickDay,
-  onNewOnDay,
+  onOpenDayList,
   onPickEntry,
   onMore,
   onGrab,
@@ -220,7 +220,7 @@ function DayCell({
   compact: boolean;
   surface: ChipSurface;
   onPickDay: (iso: string) => void;
-  onNewOnDay?: (iso: string) => void;
+  onOpenDayList?: (iso: string) => void;
   onPickEntry: (e: CalendarEntry) => void;
   onMore: (iso: string) => void;
   onGrab: (ev: ReactPointerEvent, e: CalendarEntry, fromIso: string) => void;
@@ -292,16 +292,19 @@ function DayCell({
       role={inMonth ? 'button' : undefined}
       tabIndex={inMonth ? 0 : undefined}
       aria-label={inMonth ? `${cell.n}일` : undefined}
+      // 더블클릭의 뜻을 hover 툴팁이 미리 말한다(디자인 원본 `dayTitle`).
+      title={inMonth && onOpenDayList ? `${monthOf(cell.iso)}월 ${cell.n}일 · 더블 클릭하면 일정을 모두 봐요` : undefined}
       onClick={inMonth ? () => onPickDay(cell.iso) : undefined}
-      // 빈 자리를 더블클릭하면 **그 날짜로 새 일정**(요청 — 달력 앱의 관례).
+      // 빈 자리를 더블클릭하면 **그 날의 일정 전부**(디자인 원본 `onDayDouble` —
+      // 제보 4: 리스트 팝업). 새 일정은 그 팝업 발치·헤더 ＋·사이드가 맡는다.
       // 칩·바·`+N` 위에서 온 더블클릭은 그 항목의 일이라 손대지 않는다: 두 번째
       // 클릭이 칩을 열어 둔 상태에서 팝업까지 겹쳐 뜨면 무엇을 하려던 건지 흐려진다.
       onDoubleClick={
-        inMonth && onNewOnDay
+        inMonth && onOpenDayList
           ? (e) => {
               if ((e.target as HTMLElement).closest('[data-cal-chip],[data-cal-bar],[data-cal-more]')) return;
               e.preventDefault();
-              onNewOnDay(cell.iso);
+              onOpenDayList(cell.iso);
             }
           : undefined
       }
@@ -429,10 +432,13 @@ function DayCell({
               gap: 4,
               minWidth: 0,
               height: compact ? 16 : 21,
-              padding: '0 7px',
+              padding: '0 5px',
               border: 0,
-              borderRadius: 999,
-              background: chip.bg,
+              borderRadius: 6,
+              // 하루짜리는 **점 + 글자**로만(요청: 배경 없는 쪽이 깔끔하다 — 구글
+              // 캘린더의 관례이기도 하다: 시각/단일 일정은 점+글자, 종일·기간은 채운 바).
+              // 색 알약(배경)은 기간 바만 쓴다 — 바는 이어진 띠로 읽혀야 해서 면이 필요하다.
+              background: 'transparent',
               color: chip.fg,
               font: 'inherit',
               fontSize: compact ? 10 : 11.5,
@@ -470,4 +476,9 @@ function DayCell({
 /** 지금 끌고 있는 그 항목인가 — 원본은 자리에서 흐려진다(옮기는 것은 고스트가 말한다). */
 function isDragged(dragging: CalendarEntry | undefined, e: CalendarEntry): boolean {
   return !!dragging && dragging.docId === e.docId && dragging.cardId === e.cardId;
+}
+
+/** 툴팁용 월 — 칸은 이웃 달까지 담으므로 표시 달이 아니라 그 칸의 iso에서 읽는다. */
+function monthOf(iso: string): number {
+  return +iso.slice(5, 7);
 }

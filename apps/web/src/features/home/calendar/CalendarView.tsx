@@ -6,6 +6,7 @@ import { useCalendarEntries } from './useCalendarEntries';
 import { homeChipSurface } from '../theme';
 import { addDays, calendarStats, gridRange, monthCells, monthLabel, todayISO } from './model';
 import { MonthGrid } from './MonthGrid';
+import { DayListPopup } from './DayListPopup';
 import { CalendarSide } from './CalendarSide';
 import { DeadlinePanel } from './DeadlinePanel';
 import { StatChips } from './StatChips';
@@ -59,6 +60,8 @@ export function CalendarView({
   const google = useGoogleCalendar(state.calY, state.calM, { enabled: !!state.google, calendars: state.google?.calendars ?? [] }, controller.setGoogleCalendars);
   const [saving, setSaving] = useState(false);
   const [saveError, setSaveError] = useState<string | null>(null);
+  // 날짜 칸 더블클릭·`+N개 더`가 여는 "그 날의 일정 전부"(디자인 원본 `dayList`).
+  const [dayList, setDayList] = useState<string | null>(null);
   const entries = useMemo(() => {
     // 반복 일정은 보이는 구간에서 회차로 펼쳐진다 — 격자가 그리는 그 6주다.
     const evs = eventEntries(eventsApi.events, gridRange(state.calY, state.calM));
@@ -72,8 +75,8 @@ export function CalendarView({
   const googleTargets = useMemo(() => google.writableCalendars.map((c) => ({ id: c.id, name: c.summary, ...(c.color ? { color: c.color } : {}) })), [google.writableCalendars]);
   // 선택 스코프로 열리는 것들(이름 검색·회의실) — 두 팝업이 같은 것을 쓴다.
   const googleDirectory = useMemo(
-    () => ({ canSearchPeople: google.canSearchPeople, searchPeople: google.searchPeople, canPickRooms: google.canPickRooms, rooms: google.rooms, loadRooms: google.loadRooms }),
-    [google.canSearchPeople, google.searchPeople, google.canPickRooms, google.rooms, google.loadRooms],
+    () => ({ canSearchPeople: google.canSearchPeople, searchPeople: google.searchPeople, canPickRooms: google.canPickRooms, rooms: google.rooms, roomsReady: google.roomsReady, loadRooms: google.loadRooms }),
+    [google.canSearchPeople, google.searchPeople, google.canPickRooms, google.rooms, google.roomsReady, google.loadRooms],
   );
   // 모바일은 칸이 좁아 칩 하나 + 접힌 개수만 — 사이드는 아예 접는다(공간이 없다).
   const perCell = isMobile ? 1 : 2;
@@ -246,9 +249,11 @@ export function CalendarView({
             surface={surface}
             compact={isMobile}
             onPickDay={controller.selectCalDay}
-            onNewOnDay={(iso) => controller.openNewEvent(iso, true)}
+            onOpenDayList={setDayList}
             onPickEntry={openEntry}
-            onMore={controller.selectCalDay}
+            // `+N개 더`도 같은 팝업이다 — 접힌 것을 보려는 클릭이니 전부를 보여 준다
+            // (디자인 원본 `onMore`도 dayList를 연다).
+            onMore={setDayList}
             onShift={(e, days) => void shiftEntry(e, days)}
           />
         </div>
@@ -281,6 +286,25 @@ export function CalendarView({
           />
         )}
       </div>
+
+      {/* 그 날의 일정 전부 — 행을 고르면 닫고 그 항목의 상세로 잇는다. */}
+      {dayList && (
+        <DayListPopup
+          iso={dayList}
+          entries={entries}
+          {...(holidays[dayList] ? { holiday: holidays[dayList] } : {})}
+          surface={surface}
+          onClose={() => setDayList(null)}
+          onPickEntry={(e) => {
+            setDayList(null);
+            openEntry(e);
+          }}
+          onNew={(iso) => {
+            setDayList(null);
+            controller.openNewEvent(iso, true);
+          }}
+        />
+      )}
 
       {/* 항목 상세 — 열려 있으면 그 항목을 찾아 그린다(사라졌으면 조용히 닫힌다). */}
       <CalendarDetailHost state={state} controller={controller} entries={entries} isMobile={isMobile} />

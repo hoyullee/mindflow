@@ -11,10 +11,10 @@
 // (`directory.readonly`·`contacts.other.readonly`), 회의실은 Admin SDK
 // (`admin.directory.resource.calendar.readonly`)다. 받지 못했으면(개인 계정에는
 // 디렉터리가 없고, 회의실은 조직이 막을 수 있다) **이름 검색 없이 이메일 입력**으로
-// 남고 회의실 구획은 **그리지 않는다** — 결과가 영영 비는 상자를 두지 않는다.
-// 회의실 구획은 목록이 **실제로 도착한 뒤에야** 그린다: 스코프만 보고 먼저 그리면
-// 목록 요청이 403으로 끝나는 순간 구획이 사라져 "잠깐 나타났다 사라지는" 깜빡임이
-// 된다(라이브 제보).
+// 남는다. 회의실 구획은 **항상 보인다**(요청: 굳이 비노출할 필요 없다) — 다만 검색
+// 상자·목록은 회의실이 실제로 있을 때만 그리고, 없으면 디자인 원본의 안내 한 줄
+// (`회의실 목록은 조직 캘린더에서 불러와요`)이 그 자리를 지킨다. 그래서 목록 요청이
+// 403으로 끝나도 구획이 사라지지 않는다(예전의 "잠깐 나타났다 사라지는" 깜빡임).
 //
 // 디자인 원본과 일부러 다르게 둔 것: 회의실의 `사용 가능/사용 중` 배지와 "선택한
 // 시간에 비어 있는 회의실만" 문구 — 그 정보는 freebusy 조회(별도 스코프)에서 오는데
@@ -47,6 +47,8 @@ export interface GoogleDirectoryApi {
   searchPeople: (query: string) => Promise<DirectoryPerson[] | null>;
   canPickRooms: boolean;
   rooms: readonly MeetingRoom[];
+  /** 회의실 조회가 끝났는가 — 거짓인 동안은 "불러오는 중"이다. */
+  roomsReady: boolean;
   loadRooms: () => void;
 }
 
@@ -96,14 +98,17 @@ export function GoogleEventFields({
   /** 선택 스코프로 열리는 것들 — 없으면 이름 검색·회의실이 빠진다. */
   directory?: GoogleDirectoryApi;
 }) {
-  // 회의실 목록은 이 묶음이 처음 열릴 때 한 번 받는다(왕복 1회).
+  // 회의실 목록은 이 묶음이 처음 열릴 때 한 번 받는다(왕복 1회). 스코프가 없으면
+  // `loadRooms`가 스스로 "받을 것 없음"으로 끝낸다 — 조건은 그쪽 한 곳에 둔다.
   useEffect(() => {
-    if (directory?.canPickRooms) directory.loadRooms();
+    directory?.loadRooms();
   }, [directory]);
   const remindKey = REMIND_OPTS.find((o) => o.minutes === value.reminderMinutes)?.key ?? 'default';
   const visNote = VIS_OPTS.find((o) => o.v === value.visibility)?.note ?? '';
   const rooms = directory?.canPickRooms ? directory.rooms : [];
   const roomName = (email: string): string => rooms.find((r) => r.email === email)?.name ?? email;
+  // 구획은 늘 보이고 **상태만 갈린다**: 목록 / 불러오는 중 / 안내(스코프 없음·거절·빈 목록).
+  const roomsLoading = !!directory?.canPickRooms && !directory.roomsReady;
 
   return (
     <div data-google-fields style={{ display: 'flex', flexDirection: 'column', gap: 19 }}>
@@ -170,12 +175,17 @@ export function GoogleEventFields({
         <Attendees list={value.attendees} onChange={(next) => onChange({ attendees: next })} {...(directory?.canSearchPeople ? { search: directory.searchPeople } : {})} />
       </Field>
 
-      {/* 회의실 — 목록이 **도착했을 때만** 그린다(위 머리 주석의 깜빡임). */}
-      {rooms.length > 0 && (
-        <Field label="회의실" sub={value.rooms.length ? `${value.rooms.map(roomName).join(' · ')} 예약됨` : '조직 캘린더의 회의실을 골라 예약할 수 있어요'}>
+      {/* 회의실 — 구획은 **항상 보인다**(요청). 목록이 있으면 검색 + 목록, 아직이면
+          "불러오는 중", 없으면(스코프 없음·조직 거절·등록 0) 디자인 원본의 안내 한 줄. */}
+      <Field label="회의실" {...(value.rooms.length ? { sub: `${value.rooms.map(roomName).join(' · ')} 예약됨` } : rooms.length > 0 ? { sub: '조직 캘린더의 회의실을 골라 예약할 수 있어요' } : {})}>
+        {rooms.length > 0 ? (
           <Rooms all={rooms} picked={value.rooms} onChange={(next) => onChange({ rooms: next })} />
-        </Field>
-      )}
+        ) : (
+          <span data-gf-room-note style={{ padding: '10px 12px', borderRadius: 12, background: 'var(--mf-card)', border: '1px solid var(--mf-border-soft)', fontSize: 11.5, color: 'var(--mf-faint)', lineHeight: 1.6 }}>
+            {roomsLoading ? '회의실 목록을 불러오는 중…' : '회의실 목록은 조직 캘린더에서 불러와요 — 이 계정에서는 불러올 회의실이 없어요.'}
+          </span>
+        )}
+      </Field>
 
       <Field label="공개 설정">
         <Segments aria="공개 설정" items={VIS_OPTS.map((o) => ({ value: o.v, label: o.label }))} value={value.visibility} onChange={(v) => onChange({ visibility: v as GoogleVisibility })} attr="data-gf-vis" wide />

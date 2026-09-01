@@ -147,6 +147,11 @@ export function Home() {
           const t = e.target as HTMLElement;
           if (t.closest && t.closest('input, textarea, [contenteditable="true"], .mf-home-ctx')) return;
           e.preventDefault();
+          // 이 메뉴의 항목(새로 만들기·새 폴더·가져오기)은 **스페이스 화면의 일**이다 —
+          // 일정·대시보드 화면에서 뜨면 보이지 않는 스페이스에 폴더가 생긴다(제보:
+          // 일정 화면 우클릭에 스페이스 메뉴). 그 화면들에서는 기본 메뉴만 막는다
+          // (마퀴 가드와 같은 `isSpaceView` 판정 — 네 번째 화면이 생겨도 그 함수만).
+          if (!isSpaceView(state)) return;
           controller.openCtxMenuAt(e.clientX, e.clientY, { kind: 'bg' });
         }}
         // 첫 진입에 살짝 떠오르며 나타난다(디자인 원본의 `ghFade`) — 마운트 때 한 번만
