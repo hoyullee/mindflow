@@ -940,6 +940,31 @@ describe('일정 화면', () => {
       await waitFor(() => expect(document.querySelector('[data-event-detail]')).toBeNull());
     });
 
+    it('상세 팝업은 새 일정 팝업과 같은 얼굴이다 — 저장할 캘린더는 소속만 켜진다(제보 #10·#11)', async () => {
+      renderHome([META('d1', '스프린트 보드')], BODIES());
+      localStorage.setItem('mf_events', JSON.stringify([{ id: 'e1', title: '주간 회의', startDate: todayISO(), endDate: todayISO(), allDay: true, source: 'geurio' }]));
+      await openCalendar();
+      await waitFor(() => expect(chipTexts()).toContain('주간 회의'));
+
+      // 칸의 칩은 글자 폭만큼만 눌린다 — 칸 전체로 늘어나면 빈 옆자리 클릭이
+      // 팝업을 열었다(제보 #1. jsdom엔 히트 영역이 없어 스타일 계약으로 지킨다).
+      const chip = chipFor('주간 회의');
+      expect(chip.style.alignSelf).toBe('flex-start');
+
+      fireEvent.click(chip);
+      await waitFor(() => expect(evDetail()).toBeTruthy());
+      // 제목은 새 일정과 같은 한 줄 입력이고, 발치에 취소가 있다(#10 파리티).
+      const title = document.querySelector('[data-event-title]') as HTMLInputElement;
+      expect(title.tagName).toBe('INPUT');
+      expect(title.value).toBe('주간 회의');
+      expect(document.querySelector('[data-event-cancel]')).toBeTruthy();
+      // 메모는 새 일정 팝업과 같은 높이(#9).
+      expect((document.querySelector('[data-event-note]') as HTMLElement).style.height).toBe('110px');
+      // 저장할 캘린더(#11) — Geurio 일정이니 Geurio 칩이 켜진다(구글 미연결이라 칩 하나뿐).
+      expect(evDetail().textContent).toContain('저장할 캘린더');
+      expect(document.querySelector('[data-event-cal="geurio"]')?.getAttribute('aria-disabled')).toBe('false');
+    });
+
     it('✕로 닫으면 초안이 버려진다 — 적던 위치가 저장되지 않는다', async () => {
       renderHome([META('d1', '스프린트 보드')], BODIES());
       localStorage.setItem('mf_events', JSON.stringify([{ id: 'e1', title: '주간 회의', startDate: todayISO(), endDate: todayISO(), allDay: true, source: 'geurio' }]));

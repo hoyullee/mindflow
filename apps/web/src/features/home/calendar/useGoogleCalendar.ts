@@ -21,6 +21,7 @@ import {
   scopeSet,
   fetchEvents,
   googleWriteError,
+  onTokenChange,
   readStoredToken,
   requestGoogleToken,
   revokeGoogleToken,
@@ -131,6 +132,17 @@ export function useGoogleCalendar(
   const [roomsDenied, setRoomsDenied] = useState(false);
   // 회의실 조회가 **끝났는가**(성공·거절 불문) — 회의실 구획이 "불러오는 중"을 가른다.
   const [roomsReady, setRoomsReady] = useState(false);
+  // 토큰이 바뀌면(다른 인스턴스의 연결·재연결 포함) 다시 조회한다 — 토큰은 탭
+  // sessionStorage에 살아서, 설정 모달에서 다시 연결해도 이 인스턴스는 계기가 없어
+  // **새로고침해야 보였다**(제보). 아래 목록 effect의 의존성에 실린다.
+  const [tokenTick, setTokenTick] = useState(0);
+  useEffect(
+    () =>
+      onTokenChange(() => {
+        if (aliveRef.current) setTokenTick((n) => n + 1);
+      }),
+    [],
+  );
 
   /**
    * 계정에 딸린 캐시를 버린다 — 연결을 끊거나 **다른 계정으로 새로 연결**할 때.
@@ -215,7 +227,7 @@ export function useGoogleCalendar(
     return () => {
       cancelled = true;
     };
-  }, [available, enabled, mode, withToken, resetAccountCache]);
+  }, [available, enabled, mode, withToken, resetAccountCache, tokenTick]);
 
   // ── 보이는 달의 일정 ────────────────────────────────────────────────────
   useEffect(() => {

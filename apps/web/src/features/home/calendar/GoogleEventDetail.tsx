@@ -9,7 +9,7 @@
 // 저장이 끝나면 훅이 보이는 달을 다시 받아 구글이 돌려준 것을 그린다.
 
 import { useState } from 'react';
-import { EventDetail } from './EventDetail';
+import { EventDetail, type CalendarChip } from './EventDetail';
 import { GoogleEventFields, type GoogleDirectoryApi, type GoogleFieldsChange, type GoogleFieldsValue } from './GoogleEventFields';
 import { RECURRENCE_OFF } from './googleCalendar';
 import type { CalendarEvent, CalendarEventInput } from '../../../adapters/ports';
@@ -123,6 +123,13 @@ export function GoogleEventDetail({
   const [pendingFields, setPendingFields] = useState<GoogleFieldsChange>({});
   const writable = !!onPatch && !!onDelete;
 
+  // "저장할 캘린더"(#11) — 구글 일정이니 소속 캘린더가 켜지고 Geurio는 비활성이다
+  // (Geurio 일정은 반대 — `geurioCalendarChips`). 일정을 옮기는 기능이 아니라 표식이다.
+  const chips: CalendarChip[] = [
+    { key: 'geurio', name: 'Geurio 캘린더', color: 'var(--mf-accent)', on: false },
+    { key: event.calendarId, name: event.calendarName, color: event.color ?? 'var(--mf-info)', on: true },
+  ];
+
   return (
     <EventDetail
       event={googleAsEvent(event)}
@@ -131,6 +138,7 @@ export function GoogleEventDetail({
       cardAttrs={{ 'data-google-detail': '1' }}
       readOnly={!writable}
       badge={`${event.calendarName} · Google`}
+      calendarChips={chips}
       footerHint={writable ? 'Google 캘린더에 저장돼요' : 'Google 캘린더에서 가져온 일정이에요'}
       notice={
         event.holiday

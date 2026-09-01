@@ -432,6 +432,10 @@ function DayCell({
               alignItems: 'center',
               gap: 4,
               minWidth: 0,
+              // 칸은 세로 flex라 기본(stretch)이면 버튼이 칸 폭을 다 차지해 **글자
+              // 없는 빈 오른쪽을 눌러도** 상세가 열렸다(제보). 클릭 영역 = 점 + 글자.
+              alignSelf: 'flex-start',
+              maxWidth: '100%',
               height: compact ? 16 : 21,
               padding: '0 5px',
               border: 0,
@@ -465,7 +469,7 @@ function DayCell({
             e.stopPropagation();
             onMore(cell.iso, { x: e.clientX, y: e.clientY });
           }}
-          style={{ border: 0, background: 'transparent', padding: '0 5px', textAlign: 'left', font: 'inherit', fontSize: compact ? 9.5 : 11, fontWeight: 700, color: 'var(--mf-faint)', cursor: 'pointer', flexShrink: 0 }}
+          style={{ border: 0, background: 'transparent', padding: '0 5px', textAlign: 'left', font: 'inherit', fontSize: compact ? 9.5 : 11, fontWeight: 700, color: 'var(--mf-faint)', cursor: 'pointer', flexShrink: 0, alignSelf: 'flex-start', maxWidth: '100%' }}
         >
           +{cell.moreN}개 더
         </button>

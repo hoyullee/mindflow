@@ -135,13 +135,18 @@ export const MODAL_DIM: CSSProperties = { background: 'rgba(30,20,14,.42)', back
  * 카드 크기 애니메이션 — 메뉴 선택으로 내용이 늘고 줄 때 카드가 **이전 크기에서
  * 새 크기로 이어지게** 한다(요청 — 설정 팝업의 화면 전환과 같은 0.24s 곡선).
  *
- * 높이는 내용이 정하는 값이라 CSS `transition`이 붙을 곳이 없다 — 그래서 카드를
- * ResizeObserver로 지켜보다 자연 높이가 바뀌면 이전 높이를 고정해 두고 새 높이로
+ * 크기는 내용이 정하는 값이라 CSS `transition`이 붙을 곳이 없다 — 그래서 카드를
+ * ResizeObserver로 지켜보다 자연 크기가 바뀌면 이전 크기를 고정해 두고 새 크기로
  * 전이시킨 뒤 풀어 준다(설정 모달의 높이 잇기와 같은 기계 — 다만 그쪽은 화면 전환
  * 이라는 한 가지 계기를 렌더 단계에서 재고, 여기는 계기가 여럿이라(목적지·반복·종일
- * ·Meet…) 실측으로 받는다). 폭은 스타일에 명시된 값이라 카드 쪽 CSS transition이
- * 맡고, 전이 중에는 이 훅이 width까지 함께 싣는다(transition을 갈아 끼우는 동안
- * 폭 전이가 끊기지 않게). reduced-motion이면 걸지 않는다.
+ * ·Meet…) 실측으로 받는다). reduced-motion이면 걸지 않는다.
+ *
+ * **폭도 이 훅이 함께 잇는다** — 예전에는 폭을 카드의 CSS `transition`에 맡겼는데,
+ * 그러면 폭이 아직 옛 값일 때 ResizeObserver가 도착해 **좁게 짜부라진 상태의 높이**를
+ * 목표로 잡는다(새 일정 팝업 560→900: 두 열이 560에 눌려 아주 길어진 높이까지 자랐다가
+ * 릴리스에서 실제 높이로 툭 줄었다 — 제보: "100까지 늘었다 90으로 리사이즈"). 폭을
+ * 훅이 소유하면 React가 새 폭을 **즉시** 적용해 레이아웃이 최종 기하가 되고, RO는
+ * 그 참값을 목표로 받는다.
  *
  * `Modal`의 `cardRef`에 그대로 꽂는 ref 콜백을 돌려준다.
  */
@@ -151,7 +156,7 @@ export function useCardMorph(): RefCallback<HTMLDivElement> {
     cleanup.current?.();
     cleanup.current = null;
     if (!el || typeof ResizeObserver === 'undefined') return;
-    let last: number | null = null;
+    let last: { w: number; h: number } | null = null;
     let animating = false;
     let timer: ReturnType<typeof setTimeout> | undefined;
     // React가 style prop으로 준 값을 되살릴 수 있게 — 임의로 ''로 지우면 카드가
@@ -159,27 +164,40 @@ export function useCardMorph(): RefCallback<HTMLDivElement> {
     const base = { overflow: el.style.overflow, transition: el.style.transition };
     const ro = new ResizeObserver(() => {
       if (animating) return; // 전이 중의 중간 크기들 — 새 애니메이션의 계기가 아니다
+      const w = el.offsetWidth;
       const h = el.offsetHeight;
-      if (last === null || h === last) {
-        last = h;
+      if (!last || (w === last.w && h === last.h)) {
+        last = { w, h };
         return;
       }
       const from = last;
-      last = h;
+      last = { w, h };
       if (window.matchMedia?.('(prefers-reduced-motion: reduce)').matches) return;
       animating = true;
-      el.style.height = `${from}px`;
+      // 폭은 React가 style prop으로 소유하는 값이다(560/900/'100%') — 릴리스에서 ''로
+      // 지우면 React의 인라인 폭이 DOM에서 사라져 카드가 내용 폭으로 주저앉는다
+      // (실측: 900 목표가 릴리스 순간 804로 툭 — 제보의 "커졌다 줄어드는" 그 모양).
+      // 이 순간의 값(= React가 방금 커밋한 목표)을 들고 있다가 그대로 되살린다.
+      const baseW = el.style.width;
+      const baseH = el.style.height;
+      el.style.width = `${from.w}px`;
+      el.style.height = `${from.h}px`;
       el.style.overflow = 'hidden';
       void el.offsetHeight; // 강제 리플로우 — 시작 값을 확정한 뒤 목표로 보낸다
-      el.style.transition = 'height .24s cubic-bezier(.4,0,.2,1), width .24s cubic-bezier(.4,0,.2,1)';
+      el.style.transition = 'width .24s cubic-bezier(.4,0,.2,1), height .24s cubic-bezier(.4,0,.2,1)';
+      el.style.width = `${w}px`;
       el.style.height = `${h}px`;
       clearTimeout(timer);
       timer = setTimeout(() => {
-        el.style.height = '';
+        // 전이 중 React가 폭·높이를 새로 썼다면(연타 전환 등) 그 값을 지킨다 —
+        // 우리가 심은 목표 그대로일 때만 원래 값으로 되돌린다.
+        if (el.style.width === `${w}px`) el.style.width = baseW;
+        if (el.style.height === `${h}px`) el.style.height = baseH;
         el.style.overflow = base.overflow;
         el.style.transition = base.transition;
         animating = false;
-        last = el.offsetHeight; // 전이 중 또 바뀌었을 수 있다 — 지금 값으로 재동기화
+        // 전이 중 또 바뀌었을 수 있다(async 목록 도착 등) — 지금 값으로 재동기화.
+        last = { w: el.offsetWidth, h: el.offsetHeight };
       }, 280);
     });
     ro.observe(el);

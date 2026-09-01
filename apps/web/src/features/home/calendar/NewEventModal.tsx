@@ -37,11 +37,11 @@ export interface GoogleTarget {
   color?: string;
 }
 
-/** 회의 길이 빠른 선택(분) — 30분·1시간·2시간·3시간. */
-const QUICK_MINUTES = [30, 60, 120, 180];
+/** 회의 길이 빠른 선택(분) — 30분·1시간·2시간·3시간. 상세 팝업도 같은 줄을 쓴다. */
+export const QUICK_MINUTES = [30, 60, 120, 180];
 
 /** 자정부터의 분 → `HH:MM`. */
-function hhmm(mins: number): string {
+export function hhmm(mins: number): string {
   return `${`${Math.floor(mins / 60)}`.padStart(2, '0')}:${`${mins % 60}`.padStart(2, '0')}`;
 }
 
@@ -189,9 +189,9 @@ export function NewEventModal({
       cardRef={morphRef}
       card={{
         // 원본 `newEvW` — 구글 열이 붙으면 900, 아니면 540(우리는 560).
+        // 폭 전이도 `useCardMorph`가 잇는다 — CSS transition을 여기 걸면 폭이 아직
+        // 옛 값일 때 RO가 짜부라진 높이를 목표로 잡는다(훅 주석 참고).
         width: isMobile ? '100%' : twoCol ? 900 : 560,
-        // 폭은 명시된 값이라 CSS 전이가 맡는다(높이는 `useCardMorph`가 실측으로 잇는다).
-        transition: 'width .24s cubic-bezier(.4,0,.2,1)',
         maxWidth: '100%',
         maxHeight: isMobile ? '92dvh' : '100%',
         boxSizing: 'border-box',
@@ -233,7 +233,7 @@ export function NewEventModal({
         {/* 본문 — 목적지가 구글이면 **두 열**(원본과 같은 구조: 왼쪽은 일정 자체,
             오른쪽은 구글이 처리해 주는 것들). 각 열이 자기 스크롤을 갖는다. */}
         <div style={{ flex: 1, minHeight: 0, display: 'flex', alignItems: 'stretch', minWidth: 0 }}>
-        <div className="lnb-scroll" data-new-main style={{ flex: '1 1 340px', minWidth: 0, boxSizing: 'border-box', overflowY: 'auto', padding: '20px 22px 24px', display: 'flex', flexDirection: 'column', gap: 19 }}>
+        <div className="lnb-scroll" data-new-main style={{ flex: '1 1 340px', minWidth: 0, boxSizing: 'border-box', overflowY: 'auto', overflowAnchor: 'none', padding: '20px 22px 24px', display: 'flex', flexDirection: 'column', gap: 19 }}>
           <input
             autoFocus
             aria-label="일정 제목"
@@ -363,7 +363,7 @@ export function NewEventModal({
 
           <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
             <Label>메모</Label>
-            <textarea aria-label="메모" data-new-note value={note} onChange={(e) => setNote(e.target.value)} placeholder="자유롭게 적어 두세요" maxLength={2000} style={{ ...fieldStyle, height: 78, padding: '11px 12px', resize: 'vertical', lineHeight: 1.6 }} />
+            <textarea aria-label="메모" data-new-note value={note} onChange={(e) => setNote(e.target.value)} placeholder="자유롭게 적어 두세요" maxLength={2000} style={{ ...fieldStyle, height: 110, padding: '11px 12px', resize: 'vertical', lineHeight: 1.6 }} />
           </div>
 
           {/* 좁은 화면 — 열을 나눌 폭이 없어 같은 열에 이어 붙인다. */}
@@ -371,7 +371,7 @@ export function NewEventModal({
         </div>
 
         {twoCol && (
-          <div className="lnb-scroll" data-new-google-col style={{ flex: '1 1 260px', minWidth: 240, maxWidth: 380, boxSizing: 'border-box', overflowY: 'auto', borderLeft: '1px solid var(--mf-border-soft)', background: 'var(--mf-cal-cmt)', padding: '18px 16px 22px' }}>
+          <div className="lnb-scroll" data-new-google-col style={{ flex: '1 1 260px', minWidth: 240, maxWidth: 380, boxSizing: 'border-box', overflowY: 'auto', overflowAnchor: 'none', borderLeft: '1px solid var(--mf-border-soft)', background: 'var(--mf-cal-cmt)', padding: '18px 16px 22px' }}>
             {/* 원본은 이 열의 내용을 흰 카드 하나에 담는다 — 왼쪽 열과 성격이 다름을
                 면으로 말한다("여기는 구글이 해 주는 것들"). */}
             <div style={{ borderRadius: 16, border: '1px solid var(--mf-border-soft)', background: 'var(--mf-card)', padding: 15, boxSizing: 'border-box' }}>
@@ -441,8 +441,8 @@ function SubLabel({ children }: { children: ReactNode }) {
   return <span style={{ fontSize: 11, fontWeight: 700, color: 'var(--mf-faint2)' }}>{children}</span>;
 }
 
-/** 목적지 칩 — 고른 것만 강조색 테두리·면(색 점은 그 캘린더의 색). */
-function destChipStyle(on: boolean, dot: string): CSSProperties {
+/** 목적지 칩 — 고른 것만 강조색 테두리·면(색 점은 그 캘린더의 색). 상세 팝업(#11)도 같은 칩이다. */
+export function destChipStyle(on: boolean, dot: string): CSSProperties {
   return {
     display: 'inline-flex',
     alignItems: 'center',
@@ -466,6 +466,6 @@ function destChipStyle(on: boolean, dot: string): CSSProperties {
   };
 }
 
-function destDotStyle(color: string): CSSProperties {
+export function destDotStyle(color: string): CSSProperties {
   return { width: 7, height: 7, borderRadius: 999, background: color, display: 'block', flex: '0 0 auto' };
 }

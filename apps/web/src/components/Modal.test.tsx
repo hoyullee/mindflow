@@ -7,7 +7,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import { useState } from 'react';
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import { Modal } from './Modal';
+import { Modal, useCardMorph } from './Modal';
 
 afterEach(cleanup);
 
@@ -118,5 +118,38 @@ describe('Modal (Radix Dialog)', () => {
 
     fireEvent.keyDown(document, { key: 'Escape' });
     await waitFor(() => expect(onClose).toHaveBeenCalledTimes(1));
+  });
+
+  // 제보(#6) — 새 일정 팝업이 "커졌다가 줄어드는" 리사이즈: 릴리스가 인라인 폭을 ''로
+  // 지워 React가 준 폭(560/900/'100%')이 DOM에서 사라지고 카드가 내용 폭으로
+  // 주저앉았다(실측 900 → 804). 릴리스는 React의 값을 **되살려야** 한다.
+  it('useCardMorph — 전이가 끝나면 React의 인라인 폭을 되살린다(빈 값으로 지우지 않는다)', () => {
+    vi.useFakeTimers();
+    let notify: (() => void) | null = null;
+    vi.stubGlobal('ResizeObserver', class {
+      constructor(cb: () => void) { notify = cb; }
+      observe() {}
+      disconnect() {}
+    });
+    function Probe() {
+      const ref = useCardMorph();
+      return <div ref={ref} data-morph style={{ width: 900 }} />;
+    }
+    const { container } = render(<Probe />);
+    const el = container.querySelector('[data-morph]') as HTMLElement;
+    // jsdom엔 레이아웃이 없어 실측을 흉내낸다 — 첫 관측 560, 목적지 전환 후 900.
+    const size = { w: 560, h: 400 };
+    Object.defineProperty(el, 'offsetWidth', { get: () => size.w });
+    Object.defineProperty(el, 'offsetHeight', { get: () => size.h });
+    notify!(); // 첫 관측 — 기준 크기만 기억한다
+    size.w = 900;
+    size.h = 500;
+    notify!(); // 크기 변화 — 이전 크기에서 새 크기로 전이
+    expect(el.style.width).toBe('900px'); // 목표로 가는 중
+    vi.advanceTimersByTime(300); // 릴리스(280ms) 뒤
+    expect(el.style.width).toBe('900px'); // ''가 아니다 — React의 폭이 살아 있다
+    expect(el.style.transition).toBe('');
+    vi.unstubAllGlobals();
+    vi.useRealTimers();
   });
 });

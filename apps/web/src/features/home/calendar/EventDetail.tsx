@@ -1,20 +1,22 @@
 // Geurio 일정 상세 — 디자인 원본 `evOpen` 블록의 **`evIsSimple` 분기** 이식.
 //
-// 칸반 카드 상세(`CalendarDetail`)와 다른 팝업이다: 고칠 것이 다르다(상태·담당·분류가
+// **새 일정 팝업과 같은 얼굴이다**(요청 #10) — 제목 입력·라벨·필드·발치(취소/완료)의
+// 꼴을 `NewEventModal`과 맞추고, 목적지 칩·빠른 길이 칩도 같은 것을 가져다 쓴다.
+// 칸반 카드 상세(`CalendarDetail`)와는 다른 팝업이다: 고칠 것이 다르다(상태·담당·분류가
 // 없고, 대신 종일 토글·시각·위치·메모가 있다).
 //
-// **저장은 완료 버튼에서 한 번**이다(요청 — 예전에는 필드마다 자동 저장이었다):
-// 필드들은 팝업 안의 초안(draft)만 고치고, `완료`가 바뀐 것만 모아 `onPatch` 한 번으로
-// 보낸 뒤 닫는다. ✕·Escape는 초안을 버린다 — 그래서 적는 중에 막 클릭으로 닫히면
-// 입력을 잃으므로, 고칠 수 있는 팝업은 막 클릭으로 닫지 않는다(새 일정 팝업과 같은
-// 규칙). 읽기 전용은 잃을 것이 없어 예전처럼 막 클릭으로도 닫힌다.
+// **저장할 캘린더**(요청 #11)는 이 일정이 어디 것인지 **보여 주기만** 한다 — 소속
+// 캘린더만 켜진 칩이고 나머지는 비활성이다(일정을 캘린더 사이로 옮기는 기능은 없다 —
+// 눌리는 척하는 칩이 더 나쁘다).
 //
-// 원본에 있지만 두지 않은 것: 알림 · 참석자·Meet(구글 일정에서 쓴다).
+// **저장은 완료 버튼에서 한 번**이다: 필드들은 팝업 안의 초안(draft)만 고치고, `완료`가
+// 바뀐 것만 모아 `onPatch` 한 번으로 보낸 뒤 닫는다. ✕·Escape·취소는 초안을 버린다 —
+// 그래서 적는 중에 막 클릭으로 닫히면 입력을 잃으므로, 고칠 수 있는 팝업은 막 클릭으로
+// 닫지 않는다(새 일정 팝업과 같은 규칙). 읽기 전용은 잃을 것이 없어 예전처럼 닫힌다.
 //
 // **반복 일정**은 규칙 요약을 한 줄로 알린다 — 고치면 전체 반복에 적용된다(회차별
-// 예외는 담지 않는다 — 0034 주석). 다만 **삭제는 범위를 묻는다**(요청): 이 일정만
-// (EXDATE) / 이 일정과 이후 일정(UNTIL) / 모든 일정(행 삭제). 규칙 자체를 바꾸는
-// 것은 범위 밖이다.
+// 예외는 담지 않는다 — 0034 주석). 다만 **삭제는 범위를 묻는다**: 이 일정만(EXDATE) /
+// 이 일정과 이후 일정(UNTIL) / 모든 일정(행 삭제). 규칙 자체를 바꾸는 것은 범위 밖이다.
 //
 // **구글 일정도 이 팝업을 쓴다**(PR6 — `GoogleEventDetail`이 값만 옮겨 준다). 둘로
 // 갈라 두면 한쪽에만 기능이 붙는다 — 그래서 원천마다 다른 것(머리 배지·발치 문구·
@@ -26,6 +28,7 @@ import { Modal, MODAL_DIM, useCardMorph } from '../../../components/Modal';
 import { DateButton, PillButton } from './DatePop';
 import { TimeButton } from './TimePop';
 import { addDays, daysBetween, minutesOf, timeLabel, todayISO } from './model';
+import { destChipStyle, destDotStyle, hhmm, QUICK_MINUTES } from './NewEventModal';
 import type { CalendarEvent, CalendarEventInput } from '../../../adapters/ports';
 import { endRuleBefore, excludeOccurrence, parseRecurrence, recurrenceLabel } from './recurrence';
 
@@ -54,6 +57,27 @@ function draftOf(e: CalendarEvent): Draft {
   };
 }
 
+/** "저장할 캘린더" 줄의 칩 하나 — 소속(on)만 켜지고 나머지는 비활성이다(#11). */
+export interface CalendarChip {
+  key: string;
+  name: string;
+  color: string;
+  on: boolean;
+}
+
+/**
+ * Geurio 일정의 "저장할 캘린더" 줄 — Geurio가 소속이고, 연결된 구글 캘린더들은
+ * 비활성으로 보인다(예: 구글 일정을 열면 반대로 Geurio 칩이 비활성 —
+ * `GoogleEventDetail`이 그 쌍을 만든다). 두 호스트(일정 화면·대시보드 위젯)가
+ * 같은 줄을 그리도록 여기 한 곳에 둔다.
+ */
+export function geurioCalendarChips(googleTargets: readonly { id: string; name: string; color?: string }[]): CalendarChip[] {
+  return [
+    { key: 'geurio', name: 'Geurio 캘린더', color: 'var(--mf-accent)', on: true },
+    ...googleTargets.map((c) => ({ key: c.id, name: c.name, color: c.color ?? 'var(--mf-info)', on: false })),
+  ];
+}
+
 export function EventDetail({
   event,
   isMobile,
@@ -67,6 +91,7 @@ export function EventDetail({
   extra,
   extraDirty = false,
   occurrence,
+  calendarChips,
   cardAttrs,
 }: {
   event: CalendarEvent;
@@ -87,6 +112,8 @@ export function EventDetail({
   extraDirty?: boolean;
   /** 반복 일정에서 **어느 회차를 눌러 열었는가**(그 회차의 시작일) — 삭제 범위의 기준. */
   occurrence?: string;
+  /** "저장할 캘린더" 줄 — 소속 칩만 켜지고 나머지는 비활성(#11). 없으면 줄을 그리지 않는다. */
+  calendarChips?: CalendarChip[];
   /** 원천을 가리키는 표식 — 두 팝업이 한 코드라도 화면에서는 구별돼야 한다. */
   cardAttrs?: Record<string, string>;
 }) {
@@ -132,7 +159,7 @@ export function EventDetail({
     }
     const keep = Math.max(15, to - from);
     const end = Math.min(23 * 60 + 59, next + keep);
-    set({ startTime: v, endTime: `${`${Math.floor(end / 60)}`.padStart(2, '0')}:${`${end % 60}`.padStart(2, '0')}` });
+    set({ startTime: v, endTime: hhmm(end) });
   };
 
   const durMin = (() => {
@@ -238,9 +265,10 @@ export function EventDetail({
       cardAttrs={{ 'data-event-detail': '1', ...cardAttrs }}
     >
       <>
+        {/* 머리 — 새 일정 팝업과 같은 문법(점 + 이름 · 시각 알약 · 동작 · ✕). */}
         <div style={{ flex: '0 0 auto', display: 'flex', alignItems: 'center', gap: 10, padding: '16px 18px', borderBottom: '1px solid var(--mf-border-soft)' }}>
-          <span style={{ display: 'inline-flex', alignItems: 'center', gap: 7, flex: '0 0 auto' }}>
-            <span style={{ width: 8, height: 8, borderRadius: 999, background: event.color ?? 'var(--mf-accent)', display: 'block' }} />
+          <span style={{ display: 'inline-flex', alignItems: 'center', gap: 7, flex: '0 0 auto', minWidth: 0 }}>
+            <span style={{ width: 8, height: 8, borderRadius: 999, background: event.color ?? 'var(--mf-accent)', display: 'block', flex: '0 0 auto' }} />
             <span data-event-badge style={{ fontSize: 13.5, fontWeight: 800, letterSpacing: '-.02em', color: 'var(--mf-text)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{badge}</span>
           </span>
           <span style={{ flex: 1, minWidth: 0 }} />
@@ -265,31 +293,51 @@ export function EventDetail({
           </button>
         </div>
 
-        <div className="lnb-scroll" style={{ flex: 1, minHeight: 0, overflowY: 'auto', padding: '20px 22px 24px', display: 'flex', flexDirection: 'column', gap: 19 }}>
-          <textarea
+        {/* 본문 — 새 일정 팝업의 왼쪽 열과 같은 여백·간격·필드 꼴. `overflow-anchor`를
+            끄는 이유: 내용이 자라는 순간 브라우저 스크롤 앵커링이 scrollTop을 보정해
+            보이는 내용이 위로 튄다(제보 — "컨텐츠가 잘려서 올라간 뒤 늘어난다"). */}
+        <div className="lnb-scroll" style={{ flex: 1, minHeight: 0, overflowY: 'auto', overflowAnchor: 'none', padding: '20px 22px 24px', display: 'flex', flexDirection: 'column', gap: 19 }}>
+          <input
             aria-label="일정 제목"
             data-event-title
             value={draft.title}
             readOnly={readOnly}
             onChange={(e) => set({ title: e.target.value })}
             onKeyDown={(e) => {
-              if (e.key === 'Enter' && !e.shiftKey) {
-                e.preventDefault();
-                (e.target as HTMLTextAreaElement).blur();
-              }
+              if (e.key === 'Enter') (e.target as HTMLInputElement).blur();
             }}
             placeholder="일정 제목"
-            style={{ width: '100%', boxSizing: 'border-box', minHeight: 80, resize: 'vertical', padding: '15px 16px', borderRadius: 14, border: '1px solid var(--mf-border)', background: 'var(--mf-card)', font: 'inherit', fontSize: 19, fontWeight: 800, letterSpacing: '-.03em', lineHeight: 1.45, color: 'var(--mf-text)', outline: 'none' }}
+            maxLength={200}
+            style={{ width: '100%', boxSizing: 'border-box', height: 52, padding: '0 15px', borderRadius: 14, border: '1px solid var(--mf-border)', background: 'var(--mf-card)', font: 'inherit', fontSize: 18, fontWeight: 800, letterSpacing: '-.03em', color: 'var(--mf-text)', outline: 'none' }}
           />
 
-          {/* 반복 일정 — 고치면 전체 반복에 적용된다는 사실을 숨기지 않는다(삭제는 범위를 묻는다). */}
+          {/* 저장할 캘린더(#11) — 이 일정이 어디 것인지. 소속만 켜지고 나머지는 비활성
+              (일정을 캘린더 사이로 옮기는 기능은 없다 — 눌리는 척하는 칩이 더 나쁘다). */}
+          {calendarChips && calendarChips.length > 0 && (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 7 }}>
+              <Label>저장할 캘린더</Label>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 7, flexWrap: 'wrap' }}>
+                {calendarChips.map((c) => (
+                  <span key={c.key} data-event-cal={c.key} aria-disabled={!c.on} style={{ ...destChipStyle(c.on, c.color), cursor: 'default', ...(c.on ? {} : { opacity: 0.5 }) }}>
+                    <span style={destDotStyle(c.color)} />
+                    {c.name}
+                  </span>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {/* 반복 — 고치면 전체 반복에 적용된다는 사실을 숨기지 않는다(삭제는 범위를 묻는다). */}
           {event.recurrence ? (
-            <span data-event-repeat style={{ display: 'inline-flex', alignItems: 'center', gap: 7, fontSize: 11.5, color: 'var(--mf-faint2)', lineHeight: 1.6 }}>
-              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true" style={{ flex: '0 0 auto' }}>
-                <path d="M3 12a9 9 0 0 1 15-6.7L21 8M21 4v4h-4M21 12a9 9 0 0 1-15 6.7L3 16M3 20v-4h4" />
-              </svg>
-              {repeatLine(event.recurrence, event.startDate)}
-            </span>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 7 }}>
+              <Label>반복</Label>
+              <span data-event-repeat style={{ display: 'inline-flex', alignItems: 'center', gap: 7, fontSize: 11.5, color: 'var(--mf-faint2)', lineHeight: 1.6 }}>
+                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true" style={{ flex: '0 0 auto' }}>
+                  <path d="M3 12a9 9 0 0 1 15-6.7L21 8M21 4v4h-4M21 12a9 9 0 0 1-15 6.7L3 16M3 20v-4h4" />
+                </svg>
+                {repeatLine(event.recurrence, event.startDate)}
+              </span>
+            </div>
           ) : null}
 
           {readOnly ? (
@@ -327,6 +375,33 @@ export function EventDetail({
                   )}
                 </div>
 
+                {/* 빠른 길이 칩 — 새 일정 팝업의 그 줄(#10 파리티). */}
+                {!draft.allDay && (
+                  <span style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+                    {QUICK_MINUTES.map((m) => (
+                      <button
+                        key={m}
+                        type="button"
+                        data-event-quick={m}
+                        onClick={() => {
+                          const from = minutesOf(draft.startTime);
+                          if (from === null) return;
+                          set({ endTime: hhmm(Math.min(23 * 60 + 59, from + m)) });
+                        }}
+                        className="mf-ctl"
+                        aria-pressed={durMin === m}
+                        style={{ height: 24, padding: '0 10px', borderRadius: 999, border: `1px solid ${durMin === m ? 'var(--mf-accent-mute)' : 'var(--mf-border)'}`, background: durMin === m ? 'var(--mf-accent-soft)' : 'var(--mf-card)', color: durMin === m ? 'var(--mf-accent-strong)' : 'var(--mf-muted)', font: 'inherit', fontSize: 11, fontWeight: 700, cursor: 'pointer', whiteSpace: 'nowrap', flex: '0 0 auto' }}
+                      >
+                        {m >= 60 ? `${m / 60}시간` : `${m}분`}
+                      </button>
+                    ))}
+                    <span style={{ flex: 1, minWidth: 0 }} />
+                    <span data-event-dur style={{ fontSize: 11, color: durMin !== null && durMin > 0 ? 'var(--mf-muted)' : 'var(--mf-danger)', whiteSpace: 'nowrap', flex: '0 0 auto' }}>
+                      {durMin === null || durMin <= 0 ? '종료 시각이 시작보다 앞서요' : durMin >= 60 ? `${Math.floor(durMin / 60)}시간${durMin % 60 ? ` ${durMin % 60}분` : ''}` : `${durMin}분`}
+                    </span>
+                  </span>
+                )}
+
                 {draft.allDay && spanDays > 1 && (
                   <span data-event-span style={{ fontSize: 11.5, color: 'var(--mf-faint2)' }}>
                     {spanDays}일간 · {today < draft.startDate ? `${daysBetween(today, draft.startDate)}일 뒤 시작` : today > draft.endDate ? '종료' : `${daysBetween(today, draft.endDate)}일 남음`}
@@ -348,8 +423,14 @@ export function EventDetail({
           {error && <span data-event-error style={{ fontSize: 12, color: 'var(--mf-danger)' }}>{error}</span>}
         </div>
 
-        <div style={{ flex: '0 0 auto', display: 'flex', alignItems: 'center', gap: 12, padding: '14px 20px', borderTop: '1px solid var(--mf-border-soft)' }}>
+        {/* 발치 — 새 일정 팝업과 같은 [상황 문구][취소][완료] 배치. */}
+        <div style={{ flex: '0 0 auto', display: 'flex', alignItems: 'center', gap: 10, padding: '14px 20px', borderTop: '1px solid var(--mf-border-soft)' }}>
           <span data-event-foot style={{ flex: 1, minWidth: 0, fontSize: 12, color: footTone, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{footMsg}</span>
+          {!readOnly && (
+            <button type="button" data-event-cancel onClick={onClose} className="mf-ctl" style={{ flex: '0 0 auto', whiteSpace: 'nowrap', height: isMobile ? 44 : 36, padding: '0 16px', borderRadius: 999, border: '1px solid var(--mf-border)', background: 'var(--mf-card)', color: 'var(--mf-muted)', font: 'inherit', fontSize: 12.5, fontWeight: 700, cursor: 'pointer' }}>
+              취소
+            </button>
+          )}
           <button type="button" data-event-done disabled={saving} onClick={submit} className="mf-ctl-primary" style={{ flex: '0 0 auto', whiteSpace: 'nowrap', height: isMobile ? 44 : 40, padding: isMobile ? '0 20px' : '0 26px', borderRadius: 999, border: 0, background: 'linear-gradient(180deg, var(--mf-accent), var(--mf-accent-strong))', color: 'var(--mf-accent-ink)', font: 'inherit', fontSize: 13.5, fontWeight: 800, cursor: 'pointer', boxShadow: '0 8px 18px -10px rgba(var(--mf-accent-rgb), .9)' }}>
             완료
           </button>
@@ -390,11 +471,12 @@ function ScopeButton({ title, sub, danger, attrs, onClick }: { title: string; su
   );
 }
 
+/** 새 일정 팝업의 그 필드 꼴(#10 파리티) — 값이 있는 입력·메모. */
 function fieldStyle(multiline: boolean) {
   return {
     width: '100%',
     boxSizing: 'border-box' as const,
-    height: multiline ? 78 : 40,
+    height: multiline ? 110 : 40,
     padding: multiline ? '11px 12px' : '0 12px',
     borderRadius: 12,
     border: '1px solid var(--mf-border)',
@@ -408,8 +490,9 @@ function fieldStyle(multiline: boolean) {
   };
 }
 
+/** 새 일정 팝업과 같은 라벨 꼴(11.5/800). */
 function Label({ children }: { children: ReactNode }) {
-  return <span style={{ fontSize: 12, fontWeight: 800, letterSpacing: '-.01em', color: 'var(--mf-subtext)' }}>{children}</span>;
+  return <span style={{ fontSize: 11.5, fontWeight: 800, color: 'var(--mf-subtext)' }}>{children}</span>;
 }
 
 function SubLabel({ children }: { children: ReactNode }) {

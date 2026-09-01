@@ -155,12 +155,14 @@ export function monthCells(y: number, m: number, entries: readonly CalendarEntry
   }
   const cells: MonthCell[] = [];
   const push = (iso: string, n: number, inMonth: boolean, dow: number): void => {
-    const list = inMonth ? (byDay.get(iso) ?? []) : [];
-    const bars: MonthBar[] = inMonth
-      ? spans
-          .filter((e) => coversDay(e, iso))
-          .map((e) => ({ entry: e, head: e.start === iso, tail: e.due === iso, label: e.start === iso || dow === 0 }))
-      : [];
+    // 이웃 달 칸에도 항목을 그린다(제보: 이전 달에서 시작해 이번 달로 이어지거나
+    // 다음 달까지 이어지는 일정이 그 칸에서 뚝 끊겨 보였다). 격자는 날짜가 이어지는
+    // 6주라 기간 바가 자연스럽게 이어지고, 하루짜리도 구글 캘린더처럼 흐리게 보인다.
+    // 격자 첫 칸은 언제나 일요일이므로 격자 앞에서 시작한 기간도 첫 칸에서 제목을 얻는다.
+    const list = byDay.get(iso) ?? [];
+    const bars: MonthBar[] = spans
+      .filter((e) => coversDay(e, iso))
+      .map((e) => ({ entry: e, head: e.start === iso, tail: e.due === iso, label: e.start === iso || dow === 0 }));
     cells.push({
       iso,
       n,
