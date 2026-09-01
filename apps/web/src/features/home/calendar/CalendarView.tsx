@@ -14,7 +14,7 @@ import { MonthPicker } from './MonthPicker';
 import { CalendarDetailHost } from './CalendarDetail';
 import { NewEventModal } from './NewEventModal';
 import { submitNewEvent } from './newEventSubmit';
-import { EventDetail } from './EventDetail';
+import { EventDetail, geurioCalendarChips } from './EventDetail';
 import { GoogleDetailHost, draftFrom } from './GoogleEventDetail';
 import { GoogleConnectButton } from './GoogleConnectButton';
 import { useCalendarEvents } from './useCalendarEvents';
@@ -352,6 +352,7 @@ export function CalendarView({
             event={ev}
             isMobile={isMobile}
             {...(evOcc ? { occurrence: evOcc } : {})}
+            calendarChips={geurioCalendarChips(googleTargets)}
             onClose={controller.closeCalendarEvent}
             onPatch={(patch) => eventsApi.update(ev.id, patch)}
             onDelete={() => eventsApi.remove(ev.id)}

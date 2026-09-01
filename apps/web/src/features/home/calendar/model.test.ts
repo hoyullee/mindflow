@@ -107,6 +107,22 @@ describe('일정 모델(model)', () => {
     expect(at('2026-08-21').bars.length).toBe(0);
   });
 
+  it('이웃 달 칸에도 항목·기간 바가 그려진다(제보 — 월 경계를 걸치는 일정이 뚝 끊겼다)', () => {
+    // 2026-08 격자: 앞은 7/26(일)~7/31, 뒤는 9/1~9/5.
+    const sept = E('2026-09-02', { title: '다음 달' });
+    const cross = E('2026-09-03', { start: '2026-08-30', title: '걸침' });
+    const july = E('2026-07-28', { start: '2026-07-24', title: '지난 달' }); // 격자보다 먼저 시작
+    const cells = monthCells(2026, 8, [sept, cross, july], TODAY);
+    const at = (iso: string) => cells.find((c) => c.iso === iso)!;
+    expect(at('2026-09-02').inMonth).toBe(false);
+    expect(at('2026-09-02').entries.map((e) => e.title)).toEqual(['다음 달']);
+    expect(at('2026-09-01').bars[0]).toMatchObject({ head: false, tail: false }); // 걸침의 가운데
+    expect(at('2026-09-03').bars[0]).toMatchObject({ tail: true });
+    // 격자 앞에서 시작한 기간도 첫 칸(일요일)에서 제목을 얻는다
+    expect(at('2026-07-26').bars[0]).toMatchObject({ label: true, head: false });
+    expect(at('2026-07-28').bars[0]).toMatchObject({ tail: true });
+  });
+
   it('칸에 못 담은 칩은 개수로 접는다', () => {
     const cells = monthCells(2026, 8, [E('2026-08-20'), E('2026-08-20', { cardId: 'x' }), E('2026-08-20', { cardId: 'y' })], TODAY, 2);
     const c = cells.find((x) => x.iso === '2026-08-20')!;

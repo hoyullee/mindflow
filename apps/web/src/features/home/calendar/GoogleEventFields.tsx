@@ -21,8 +21,9 @@
 // 우리는 아직 받지 않으므로, 모르는 것을 아는 척 칠하지 않는다. 참석자의 필수/선택
 // 전환도 아직 모델에 없어 두지 않았다.
 
-import { useEffect, useRef, useState } from 'react';
-import type { CSSProperties, KeyboardEvent } from 'react';
+import { useEffect, useLayoutEffect, useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
+import type { CSSProperties, KeyboardEvent, ReactNode } from 'react';
 import { Field, Segments, SubText } from './fieldBits';
 import type { GoogleTransparency, GoogleVisibility, RecurrenceSpec } from './googleCalendar';
 import { filterRooms, type DirectoryPerson, type MeetingRoom } from './googleDirectory';
@@ -242,6 +243,58 @@ const listCard: CSSProperties = { display: 'flex', flexDirection: 'column', bord
 const rowDivider = (i: number): CSSProperties => (i === 0 ? {} : { borderTop: '1px solid var(--mf-border-soft)' });
 
 /**
+ * 검색 상자 곁에 뜨는 **툴팁 리스트**(요청 — 참석자 후보가 팝업 안에서 자리를 차지해
+ * 새 일정 팝업이 길어졌다). 일별 리스트 팝업과 같은 결: body 포털 + fixed, 실측해
+ * 화면 안으로 당기고 아래가 모자라면 상자 위로 뒤집는다. 스크롤·리사이즈에 따라온다.
+ */
+function AnchoredList({ anchor, attrs, children }: { anchor: HTMLElement | null; attrs: Record<string, string>; children: ReactNode }) {
+  const ref = useRef<HTMLDivElement | null>(null);
+  const [pos, setPos] = useState<{ left: number; top: number; width: number } | null>(null);
+  useLayoutEffect(() => {
+    const update = (): void => {
+      const r = anchor?.getBoundingClientRect();
+      const el = ref.current;
+      if (!r || !el) return;
+      const h = el.offsetHeight;
+      const below = r.bottom + 6;
+      const top = below + h + 8 > window.innerHeight ? Math.max(8, r.top - 6 - h) : below;
+      setPos({ left: r.left, top, width: r.width });
+    };
+    update();
+    window.addEventListener('resize', update);
+    // 팝업 본문이 스크롤돼도 상자를 따라간다(캡처 — 스크롤러가 어느 층이든).
+    document.addEventListener('scroll', update, true);
+    return () => {
+      window.removeEventListener('resize', update);
+      document.removeEventListener('scroll', update, true);
+    };
+  }, [anchor, children]);
+  return createPortal(
+    <div
+      ref={ref}
+      {...attrs}
+      className="lnb-scroll"
+      style={{
+        position: 'fixed',
+        left: pos?.left ?? 0,
+        top: pos?.top ?? 0,
+        width: pos?.width ?? 240,
+        // 첫 커밋(실측 전)의 프레임이 화면에 나가지 않게 — 자리가 서면 보인다.
+        visibility: pos ? 'visible' : 'hidden',
+        zIndex: 400,
+        boxSizing: 'border-box',
+        maxHeight: 186,
+        ...listCard,
+        boxShadow: '0 18px 40px -18px rgba(46,42,38,.45), 0 2px 8px rgba(46,42,38,.08)',
+      }}
+    >
+      {children}
+    </div>,
+    document.body,
+  );
+}
+
+/**
  * 참석자 — 원본의 검색 상자 + 후보 리스트(아바타·이름·이메일·`초대`) + 초대된 사람
  * 카드 행. 이름 검색이 없으면(선택 스코프 미승인) 이메일 직접 입력으로 남는다.
  * 초대 메일은 구글이 보낸다.
@@ -250,6 +303,8 @@ function Attendees({ list, onChange, search }: { list: string[]; onChange: (next
   const [draft, setDraft] = useState('');
   const [hits, setHits] = useState<DirectoryPerson[]>([]);
   const [active, setActive] = useState(0);
+  // 후보 툴팁이 붙을 자리(검색 상자) — 상자를 감싸는 span의 실측 사각형을 쓴다.
+  const [anchor, setAnchor] = useState<HTMLElement | null>(null);
   // 마지막 검색이 **끝난** 질의 — "일치하는 사람이 없어요"가 검색 중에 깜빡이지 않게.
   const [settled, setSettled] = useState('');
   // 고른 후보의 이름 — 초대된 행이 이메일 대신 이름을 보여 준다(직접 적은 주소는 주소 그대로).
@@ -304,6 +359,7 @@ function Attendees({ list, onChange, search }: { list: string[]; onChange: (next
         </span>
       ))}
 
+      <span ref={setAnchor} style={{ display: 'block', minWidth: 0 }}>
       <SearchBox
         label={search ? '참석자 이름 또는 이메일' : '참석자 이메일'}
         attrs={{ 'data-gf-guest-input': '1' }}
@@ -339,8 +395,12 @@ function Attendees({ list, onChange, search }: { list: string[]; onChange: (next
         }}
       />
 
+      </span>
+
+      {/* 후보는 팝업 안의 상자가 아니라 **검색 상자 곁에 뜨는 툴팁**이다(요청 —
+          상자로 두면 후보 수만큼 새 일정 팝업이 길어졌다). */}
       {(hits.length > 0 || noHit) && (
-        <div data-gf-guest-hits className="lnb-scroll" style={{ ...listCard, maxHeight: 186 }}>
+        <AnchoredList anchor={anchor} attrs={{ 'data-gf-guest-hits': '1' }}>
           {hits.map((p, i) => {
             const added = list.includes(p.email);
             return (
@@ -368,7 +428,7 @@ function Attendees({ list, onChange, search }: { list: string[]; onChange: (next
             );
           })}
           {noHit && <span style={{ padding: 10, fontSize: 11.5, color: 'var(--mf-faint)', ...rowDivider(hits.length) }}>일치하는 사람이 없어요 · Enter로 이메일 직접 초대</span>}
-        </div>
+        </AnchoredList>
       )}
     </div>
   );
@@ -382,10 +442,14 @@ function Attendees({ list, onChange, search }: { list: string[]; onChange: (next
 function Rooms({ all, picked, onChange }: { all: readonly MeetingRoom[]; picked: string[]; onChange: (next: string[]) => void }) {
   const [q, setQ] = useState('');
   const rows = q.trim() ? filterRooms(all, q) : [...all];
+  // 박스 높이는 **전체 목록 기준으로 고정**한다(요청) — 검색으로 행이 줄어도 박스가
+  // 오르내리지 않고, 결과는 그 안에서 스크롤·빈 안내로만 갈린다(팝업 높이도 흔들리지
+  // 않아 크기 애니메이션이 검색마다 돌지 않는다). 행 높이 ≈ 42px(패딩 9×2 + 내용 24).
+  const boxH = Math.min(196, all.length * 42 + 2);
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 8, minWidth: 0 }}>
       <SearchBox label="회의실 검색" attrs={{ 'data-gf-room-input': '1' }} value={q} placeholder="회의실 이름 또는 층 검색" onChange={setQ} />
-      <div data-gf-room-list className="lnb-scroll" style={{ ...listCard, maxHeight: 196 }}>
+      <div data-gf-room-list className="lnb-scroll" style={{ ...listCard, height: boxH }}>
         {rows.map((r, i) => {
           const on = picked.includes(r.email);
           const sub = [r.where, r.capacity ? `${r.capacity}인` : null].filter(Boolean).join(' · ');

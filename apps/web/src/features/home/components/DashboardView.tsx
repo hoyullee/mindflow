@@ -25,7 +25,7 @@ import { CalendarDetailHost } from '../calendar/CalendarDetail';
 import { NewEventModal } from '../calendar/NewEventModal';
 import { submitNewEvent } from '../calendar/newEventSubmit';
 import { GoogleDetailHost } from '../calendar/GoogleEventDetail';
-import { EventDetail } from '../calendar/EventDetail';
+import { EventDetail, geurioCalendarChips } from '../calendar/EventDetail';
 import { widgetDataOf, type WidgetData, type WidgetKanban } from '../dashboard/widgetData';
 import { previewSurface, realPreview } from '../mapPreview';
 import { useVisibleOnce } from '../useVisibleOnce';
@@ -929,6 +929,7 @@ function CalWidgetDialogs({
   // `id#회차시작일` — 반복 일정은 눌린 회차가 삭제 범위(이 일정만/이후)의 기준이다.
   const [evId, evOcc] = (state.calEventDetail ?? '').split('#');
   const ev = evId ? events.events.find((e) => e.id === evId) : null;
+  const googleTargets = google.writableCalendars.map((c) => ({ id: c.id, name: c.summary, ...(c.color ? { color: c.color } : {}) }));
   return (
     <>
       <CalendarDetailHost state={state} controller={controller} entries={entries} isMobile={isMobile} />
@@ -951,7 +952,7 @@ function CalWidgetDialogs({
             setSaveError(null);
             controller.closeNewEvent();
           }}
-          googleTargets={google.writableCalendars.map((c) => ({ id: c.id, name: c.summary, ...(c.color ? { color: c.color } : {}) }))}
+          googleTargets={googleTargets}
           directory={{ canSearchPeople: google.canSearchPeople, searchPeople: google.searchPeople, canPickRooms: google.canPickRooms, rooms: google.rooms, roomsReady: google.roomsReady, loadRooms: google.loadRooms }}
           onSubmit={(input, target) => {
             setSaving(true);
@@ -963,7 +964,7 @@ function CalWidgetDialogs({
           }}
         />
       )}
-      {ev && <EventDetail key={ev.id} event={ev} isMobile={isMobile} {...(evOcc ? { occurrence: evOcc } : {})} onClose={controller.closeCalendarEvent} onPatch={(patch) => events.update(ev.id, patch)} onDelete={() => events.remove(ev.id)} />}
+      {ev && <EventDetail key={ev.id} event={ev} isMobile={isMobile} {...(evOcc ? { occurrence: evOcc } : {})} calendarChips={geurioCalendarChips(googleTargets)} onClose={controller.closeCalendarEvent} onPatch={(patch) => events.update(ev.id, patch)} onDelete={() => events.remove(ev.id)} />}
     </>
   );
 }

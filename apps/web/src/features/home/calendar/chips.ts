@@ -16,10 +16,11 @@ export interface EntryChip {
   fg: string;
   dot: string;
   /**
-   * 상태 점(`dot`)의 **옅은 면** — 날짜별 보기의 행·시간표 블록이 쓴다(제보: 블록의
-   * 배경이 왼쪽 색 바와 다른 색이었다 — bg는 분류 hue에서 오는데 바는 열 색이라
-   * 서로 어긋났다. 디자인 원본의 시간표 톤은 언제나 **바 색의 옅은 면**이다:
-   * `#E8845C` 바에 `#FDF3ED` 면).
+   * 시간표 블록·날짜별 행의 **면** — 디자인 시안의 두 값(제보: 우리 것은 색이 너무
+   * 진했다): Geurio·칸반은 따뜻한 중립 `rgb(247,243,238)`, 구글 일정은 옅은 파랑
+   * `rgb(241,245,252)`. 값을 그대로 박지 않고 **카드 면에서 파생**한다(라이트에서
+   * 그 값이 정확히 나오는 앵커·비율 — 다크 홈에서도 어두운 면 위에서 성립).
+   * 왼쪽 색 바(`dot`)는 그대로라, 면은 물러나고 바가 출처·상태를 말한다.
    */
   tint: string;
 }
@@ -36,7 +37,10 @@ export function entryChip(e: CalendarEntry, surface: ChipSurface): EntryChip {
     bg: mixHex(surface.card, base, 0.16),
     fg: tagInk(base, surface.text),
     dot,
-    tint: mixHex(surface.card, dot, 0.12),
+    // 라이트 카드(#FFFDFB) 실측: 그 밖 rgb(247,243,238)은 시안 값 그대로, 구글은
+    // rgb(241,245,251) — 시안(252)과 파랑 1/255 차이(카드 파랑이 251이라 한 비율로는
+    // 못 올린다). 육안 구분 불가라 파생 규칙을 지키는 쪽을 골랐다.
+    tint: e.google ? mixHex(surface.card, '#63a4ff', 0.09) : mixHex(surface.card, '#9b8059', 0.08),
   };
 }
 

@@ -1,5 +1,5 @@
 import { describe, expect, it, beforeEach, vi } from 'vitest';
-import { GOOGLE_CALENDAR_SCOPE, RECURRENCE_OFF, buildRecurrence, draftToBody, googleWriteError, recurrenceSummary, isDayOffHoliday, isHolidayCalendarId, scopeCovers, parseCalendarList, parseEvents, readStoredToken, splitGoogleDateTime, storeToken, type GoogleCalendarMeta } from './googleCalendar';
+import { GOOGLE_CALENDAR_SCOPE, RECURRENCE_OFF, buildRecurrence, draftToBody, googleWriteError, recurrenceSummary, isDayOffHoliday, isHolidayCalendarId, onTokenChange, scopeCovers, parseCalendarList, parseEvents, readStoredToken, splitGoogleDateTime, storeToken, type GoogleCalendarMeta } from './googleCalendar';
 import { googleEntries, holidayMap } from './entries';
 import { draftFrom } from './GoogleEventDetail';
 import { submitNewEvent } from './newEventSubmit';
@@ -147,6 +147,22 @@ describe('구글 캘린더 — 토큰 보관', () => {
     // 스코프를 아예 모르는 값(더 옛 판이 심은 것)도 마찬가지
     storeToken({ accessToken: 't', expiresAt: now + 600_000 });
     expect(readStoredToken(now)).toBeNull();
+  });
+
+  // 제보 — 설정 모달에서 연결해도 뒤의 일정 화면은 새로고침해야 떴다: 토큰은 탭
+  // sessionStorage에만 살고 훅 인스턴스가 화면마다 따로라, 한쪽의 연결을 다른 쪽이
+  // 알 길이 없었다. storeToken이 구독자에게 알리는 것이 그 다리다(tokenTick).
+  it('토큰이 바뀌면 구독자에게 알린다 — 연결·해제 모두(해지한 구독자는 조용하다)', () => {
+    const now = Date.now();
+    const seen: number[] = [];
+    const off = onTokenChange(() => seen.push(1));
+    storeToken({ accessToken: 't', expiresAt: now + 600_000, scope: GOOGLE_CALENDAR_SCOPE });
+    expect(seen.length).toBe(1);
+    storeToken(null); // 해제도 같은 신호다 — 화면이 "다시 연결"로 바뀌어야 한다
+    expect(seen.length).toBe(2);
+    off();
+    storeToken({ accessToken: 't2', expiresAt: now + 600_000, scope: GOOGLE_CALENDAR_SCOPE });
+    expect(seen.length).toBe(2);
   });
 
   it('필요한 스코프를 다 담았는지 본다', () => {

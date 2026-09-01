@@ -192,6 +192,19 @@ export function readStoredToken(now = Date.now()): GoogleToken | null {
   }
 }
 
+/**
+ * 토큰이 바뀌었음을 **같은 탭의 다른 훅 인스턴스**에 알린다. 토큰은 탭 sessionStorage에
+ * 살아서, 설정 모달에서 "다시 연결"해도 일정 화면의 훅 인스턴스는 다시 조회할 계기가
+ * 없었다 — prefs가 이미 켜져 있으면 아무 의존성도 바뀌지 않아 **새로고침해야 보였다**(제보).
+ */
+const tokenListeners = new Set<() => void>();
+export function onTokenChange(cb: () => void): () => void {
+  tokenListeners.add(cb);
+  return () => {
+    tokenListeners.delete(cb);
+  };
+}
+
 export function storeToken(t: GoogleToken | null): void {
   try {
     if (t) sessionStorage.setItem(TOKEN_KEY, JSON.stringify(t));
@@ -199,6 +212,7 @@ export function storeToken(t: GoogleToken | null): void {
   } catch {
     /* 사생활 보호 모드 등 — 저장 못 해도 이번 탭은 메모리로 굴러간다 */
   }
+  for (const cb of [...tokenListeners]) cb();
 }
 
 function currentTokenApi(): GsiTokenApi | null {

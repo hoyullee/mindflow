@@ -348,6 +348,47 @@ describe('구글 캘린더 겹치기(PR5)', () => {
     await waitFor(() => expect(document.querySelector('[data-google-detail]')).toBeNull());
   });
 
+  it('상세 팝업이 저장할 캘린더를 보여 준다 — 소속(구글)만 켜지고 Geurio는 비활성(제보 #11)', async () => {
+    seed({ calendars: ['me@example.com'] });
+    seedToken();
+    stubGis();
+    stubFetch();
+    clientId = 'test-client.apps.googleusercontent.com';
+    const user = userEvent.setup();
+    const { container } = renderHome();
+    const pop = await openGoogleChip(container, user, /구글 회의/);
+    expect(within(pop).getByText('저장할 캘린더')).toBeTruthy();
+    // 소속(내 캘린더)만 켜진다 — 일정을 캘린더 사이로 옮기는 기능이 아니라 표식이다.
+    const own = pop.querySelector('[data-event-cal="me@example.com"]');
+    expect(own?.getAttribute('aria-disabled')).toBe('false');
+    expect(own?.textContent).toContain('내 캘린더');
+    expect(pop.querySelector('[data-event-cal="geurio"]')?.getAttribute('aria-disabled')).toBe('true');
+  });
+
+  it('설정에서 다시 연결하면 열려 있는 일정 화면에 곧바로 구글 일정이 뜬다(제보 — 새로고침 불필요)', async () => {
+    seed({ calendars: ['me@example.com'] });
+    // 토큰 없음(재로그인 뒤의 탭) — 화면은 스스로 GIS 팝업을 열지 않는다(#66의 규칙).
+    stubGis();
+    stubFetch();
+    clientId = 'test-client.apps.googleusercontent.com';
+    const user = userEvent.setup();
+    const { container } = renderHome();
+    await openCalendar(container, user);
+    expect(screen.queryAllByText(/구글 회의/).length).toBe(0);
+    // 설정 모달의 "다시 연결"은 일정 화면과 **다른 훅 인스턴스**다 — 토큰은 탭
+    // 저장소에만 살아, storeToken의 신호(onTokenChange)가 없으면 저쪽 화면은
+    // 새로고침해야 알았다(제보의 뿌리).
+    await user.click(await screen.findByRole('button', { name: '계정 메뉴' }));
+    await user.click(await screen.findByText('설정'));
+    const btn = await waitFor(() => {
+      const el = document.querySelector('[data-google-reconnect]');
+      expect(el).toBeTruthy();
+      return el as HTMLElement;
+    });
+    await user.click(btn);
+    await waitFor(() => expect(screen.getAllByText(/구글 회의/).length).toBeGreaterThan(0));
+  });
+
   it('보기 전용으로 공유된 캘린더의 일정은 고칠 수 없다고 말한다', async () => {
     seed({ calendars: [SHARED_ID] });
     seedToken();
@@ -618,6 +659,69 @@ describe('구글 캘린더 겹치기(PR5)', () => {
       // 회의실은 `resource: true`인 참석자다 — 사람과 같은 배열에 실린다
       expect(body.attendees).toEqual([{ email: 'room-35-01@resource.calendar.google.com', resource: true }]);
     });
+  });
+
+  it('참석자 후보는 팝업 안 상자가 아니라 입력 곁의 툴팁이다 — 팝업이 길어지지 않는다(제보 #7)', async () => {
+    seed({ calendars: ['me@example.com'] });
+    seedToken();
+    stubGis();
+    stubFetch();
+    clientId = 'test-client.apps.googleusercontent.com';
+    const user = userEvent.setup();
+    const { container } = renderHome();
+    await openCalendar(container, user);
+    await waitFor(() => expect(screen.getAllByText(/구글 회의/).length).toBeGreaterThan(0));
+    await user.click(screen.getByText('새 일정'));
+    await waitFor(() => expect(document.querySelector('[data-new-cal="me@example.com"]')).toBeTruthy());
+    await user.click(document.querySelector<HTMLElement>('[data-new-cal="me@example.com"]')!);
+    await waitFor(() => expect(document.querySelector('[data-gf-guest-input]')).toBeTruthy());
+    await user.type(screen.getByLabelText('참석자 이름 또는 이메일'), '여은');
+    const hits = await waitFor(() => {
+      const el = document.querySelector('[data-gf-guest-hits]');
+      expect(el).toBeTruthy();
+      return el as HTMLElement;
+    });
+    // body 포털의 fixed 층 — 카드 흐름 안에 있으면 후보가 뜰 때마다 팝업이 자랐다.
+    expect(hits.style.position).toBe('fixed');
+    expect(document.querySelector('[data-new-event]')!.contains(hits)).toBe(false);
+  });
+
+  it('회의실 상자는 높이가 고정이다 — 검색으로 목록이 줄어도 상자가 오르내리지 않는다(제보 #8)', async () => {
+    seed({ calendars: ['me@example.com'] });
+    seedToken();
+    stubGis();
+    stubFetch();
+    clientId = 'test-client.apps.googleusercontent.com';
+    const user = userEvent.setup();
+    const { container } = renderHome();
+    await openCalendar(container, user);
+    await waitFor(() => expect(screen.getAllByText(/구글 회의/).length).toBeGreaterThan(0));
+    await user.click(screen.getByText('새 일정'));
+    await waitFor(() => expect(document.querySelector('[data-new-cal="me@example.com"]')).toBeTruthy());
+    await user.click(document.querySelector<HTMLElement>('[data-new-cal="me@example.com"]')!);
+    await waitFor(() => expect(document.querySelector('[data-gf-room-list]')).toBeTruthy());
+    const h = (document.querySelector('[data-gf-room-list]') as HTMLElement).style.height;
+    expect(h).not.toBe(''); // maxHeight가 아니라 **height** — 결과 수와 무관하게 같은 상자
+    await user.type(screen.getByLabelText('회의실 검색'), '없는회의실');
+    expect((document.querySelector('[data-gf-room-list]') as HTMLElement).style.height).toBe(h);
+  });
+
+  it('새 일정 카드에 인라인 width transition을 두지 않는다 — 폭·높이 전이는 morph 훅의 실측이 맡는다(제보 #6)', async () => {
+    // CSS transition이 폭을 맡으면 목적지를 구글로 바꾸는 순간 ResizeObserver가
+    // **아직 좁은(두 열이 짜부라진) 상태의 높이**를 목표로 재서, 크게 늘었다가
+    // 줄어드는 리사이즈로 보였다(제보: "100까지 늘어났다가 90으로").
+    seed();
+    clientId = 'test-client.apps.googleusercontent.com';
+    const user = userEvent.setup();
+    const { container } = renderHome();
+    await openCalendar(container, user);
+    await user.click(screen.getByText('새 일정'));
+    const card = await waitFor(() => {
+      const el = document.querySelector('[data-new-event]');
+      expect(el).toBeTruthy();
+      return el as HTMLElement;
+    });
+    expect(card.style.transition).toBe('');
   });
 
   it('회의실 목록을 못 받으면(403) 구획은 남고 안내 한 줄이 된다 — 검색 상자만 없다(요청: 상시 노출)', async () => {
