@@ -424,7 +424,7 @@ function DaySide({
                   ev.stopPropagation();
                   onPickEntry(e);
                 }}
-                style={{ display: 'flex', alignItems: 'center', gap: 6, width: '100%', boxSizing: 'border-box', padding: '5px 8px', border: 0, borderLeft: `3px solid ${chip.dot}`, borderRadius: '3px 8px 8px 3px', background: chip.bg, cursor: 'pointer', font: 'inherit', textAlign: 'left', minWidth: 0 }}
+                style={{ display: 'flex', alignItems: 'center', gap: 6, width: '100%', boxSizing: 'border-box', padding: '5px 8px', border: 0, borderLeft: `3px solid ${chip.dot}`, borderRadius: '3px 8px 8px 3px', background: chip.tint, cursor: 'pointer', font: 'inherit', textAlign: 'left', minWidth: 0 }}
               >
                 <span data-cal-widget-allday-title style={{ flex: 1, minWidth: 0, fontSize: 13, fontWeight: 700, color: 'var(--mf-text)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{e.title || '제목 없음'}</span>
                 <span style={{ flex: '0 0 auto', fontSize: 11, color: 'var(--mf-muted)', whiteSpace: 'nowrap' }}>{e.colName}</span>
@@ -476,7 +476,8 @@ function DaySide({
                   border: 0,
                   borderLeft: `3px solid ${chip.dot}`,
                   borderRadius: '3px 7px 7px 3px',
-                  background: chip.bg,
+                  // 바 색의 옅은 면 — 일정 화면 시간표와 같은 톤(제보: 배경이 바와 어긋났다).
+                  background: chip.tint,
                   boxShadow: n > 1 ? '0 0 0 1.5px var(--mf-card)' : 'none',
                   cursor: 'pointer',
                   font: 'inherit',

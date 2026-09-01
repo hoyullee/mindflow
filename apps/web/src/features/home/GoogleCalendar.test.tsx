@@ -315,7 +315,7 @@ describe('구글 캘린더 겹치기(PR5)', () => {
     });
   }
 
-  it('쓸 수 있는 캘린더의 구글 일정은 그 자리에서 고친다 — 제목을 바꾸면 구글에 PATCH', async () => {
+  it('쓸 수 있는 캘린더의 구글 일정은 그 자리에서 고친다 — 완료를 누르면 구글에 PATCH 한 번', async () => {
     seed({ calendars: ['me@example.com'] });
     seedToken();
     stubGis();
@@ -329,18 +329,23 @@ describe('구글 캘린더 겹치기(PR5)', () => {
     const title = pop.querySelector<HTMLTextAreaElement>('[data-event-title]');
     expect(title).toBeTruthy();
     expect(title!.readOnly).toBe(false);
+    // 삭제도 그 자리에서(구글로 보내는 링크는 그대로 남는다)
+    expect(pop.querySelector('[data-event-delete]')).toBeTruthy();
+    expect(pop.querySelector('[data-google-open]')?.getAttribute('href')).toBe('https://calendar.google.com/x');
     await user.clear(title!);
     await user.type(title!, '이름 바꿈');
+    // 저장은 완료 버튼에서 한 번(요청) — 타이핑·blur만으로는 아무것도 보내지 않는다.
     title!.blur();
+    expect(f.mock.calls.find((c) => (c[1] as { method?: string } | undefined)?.method === 'PATCH')).toBeUndefined();
+    await user.click(pop.querySelector('[data-event-done]')!);
     await waitFor(() => {
       const patch = f.mock.calls.find((c) => (c[1] as { method?: string } | undefined)?.method === 'PATCH');
       expect(patch).toBeTruthy();
       expect(String(patch![0])).toContain('/events/g1');
       expect(JSON.parse((patch![1] as { body: string }).body)).toMatchObject({ summary: '이름 바꿈' });
     });
-    // 삭제도 그 자리에서(구글로 보내는 링크는 그대로 남는다)
-    expect(pop.querySelector('[data-event-delete]')).toBeTruthy();
-    expect(pop.querySelector('[data-google-open]')?.getAttribute('href')).toBe('https://calendar.google.com/x');
+    // 저장이 끝나면 팝업이 닫힌다 — 구글이 돌려준 값은 달을 다시 받아 그린다.
+    await waitFor(() => expect(document.querySelector('[data-google-detail]')).toBeNull());
   });
 
   it('보기 전용으로 공유된 캘린더의 일정은 고칠 수 없다고 말한다', async () => {

@@ -17,7 +17,7 @@
 
 import { useEffect, useMemo, useState } from 'react';
 import type { CSSProperties, ReactNode } from 'react';
-import { Modal, MODAL_DIM } from '../../../components/Modal';
+import { Modal, MODAL_DIM, useCardMorph } from '../../../components/Modal';
 import { DateButton, PillButton } from './DatePop';
 import { TimeButton } from './TimePop';
 import { addDays, daysBetween, minutesOf, timeLabel, todayISO } from './model';
@@ -91,6 +91,9 @@ export function NewEventModal({
   const target: NewEventTarget = destValid && dest !== 'geurio' ? { kind: 'google', calendarId: dest, fields: { ...gf, recurrence: rep } } : { kind: 'geurio' };
   /** 오른쪽 열로 갈라 놓을 수 있는가 — 좁은 화면은 폭이 없어 한 열에 이어 붙인다. */
   const twoCol = target.kind === 'google' && !isMobile;
+  // 크기 애니메이션(요청) — 목적지·반복·종일 같은 선택으로 카드가 늘고 줄 때
+  // 이전 크기에서 새 크기로 잇는다(설정 팝업의 화면 전환과 같은 곡선).
+  const morphRef = useCardMorph();
 
   // 안전망 — 어떤 경로로든 종료일이 시작일보다 앞서지 않게(표의 제약과 같은 규칙).
   useEffect(() => {
@@ -183,9 +186,12 @@ export function NewEventModal({
       // 막·등장 효과는 **설정 팝업과 같은 것**을 쓴다(요청) — 홈의 팝업이 저마다 다른
       // 방식으로 뜨면 그 자체가 산만하다.
       dim={{ ...MODAL_DIM, animation: 'mf-dim-in .18s ease-out', zIndex: 322, alignItems: isMobile ? 'flex-end' : 'center', padding: isMobile ? 0 : 32 }}
+      cardRef={morphRef}
       card={{
         // 원본 `newEvW` — 구글 열이 붙으면 900, 아니면 540(우리는 560).
         width: isMobile ? '100%' : twoCol ? 900 : 560,
+        // 폭은 명시된 값이라 CSS 전이가 맡는다(높이는 `useCardMorph`가 실측으로 잇는다).
+        transition: 'width .24s cubic-bezier(.4,0,.2,1)',
         maxWidth: '100%',
         maxHeight: isMobile ? '92dvh' : '100%',
         boxSizing: 'border-box',

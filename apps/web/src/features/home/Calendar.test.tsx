@@ -869,6 +869,9 @@ describe('일정 화면', () => {
       await waitFor(() => expect(evDetail()).toBeTruthy());
       const back = shiftDays(-4);
       await pickDate('[data-event-date]', back);
+      // 저장은 완료 버튼에서 한 번(요청) — 고르기만 한 시점에는 표가 그대로다.
+      expect(events()[0]).toMatchObject({ startDate: from });
+      fireEvent.click(document.querySelector('[data-event-done]')!);
       // 3일간이 그대로 — 시작만 옮겨진다.
       await waitFor(() => expect(events()[0]).toMatchObject({ startDate: back, endDate: shiftDays(-2) }));
     });
@@ -906,11 +909,12 @@ describe('일정 화면', () => {
       fireEvent.click(document.querySelector('[data-event-start]')!);
       await waitFor(() => expect(document.querySelector('[data-timepop-time="16:00"]')).toBeTruthy());
       fireEvent.click(document.querySelector('[data-timepop-time="16:00"]')!);
+      fireEvent.click(document.querySelector('[data-event-done]')!);
       // 종료가 앞섰다면 정규화가 종일로 되돌려 시각이 통째로 사라진다.
       await waitFor(() => expect(events()[0]).toMatchObject({ allDay: false, startTime: '16:00', endTime: '17:00' }));
     });
 
-    it('일정을 누르면 **칸반과 다른 팝업**이 뜨고, 고치면 곧바로 저장된다', async () => {
+    it('일정을 누르면 **칸반과 다른 팝업**이 뜨고, 저장은 완료 버튼에서 한 번이다', async () => {
       renderHome([META('d1', '스프린트 보드')], BODIES());
       localStorage.setItem('mf_events', JSON.stringify([{ id: 'e1', title: '주간 회의', startDate: todayISO(), endDate: todayISO(), allDay: true, source: 'geurio' }]));
       await openCalendar();
@@ -921,17 +925,93 @@ describe('일정 화면', () => {
       expect(document.querySelector('[data-cal-detail]')).toBeNull();
       expect(within(evDetail()).queryByText('이 칸반 열기')).toBeNull();
       expect(document.querySelector('[data-event-allday]')).toBeTruthy();
+      // "자동으로 저장" 문구는 이제 거짓말이라 없다(요청 — 저장은 완료가 한다).
+      expect(evDetail().textContent).not.toContain('자동으로 저장');
 
-      // 위치는 blur에 한 번 커밋한다(타이핑마다 저장하지 않는다).
-      const loc = document.querySelector('[data-event-loc]') as HTMLInputElement;
-      fireEvent.change(loc, { target: { value: '2층 라운지' } });
-      expect(events()[0]!.location).toBeUndefined();
-      fireEvent.blur(loc);
-      await waitFor(() => expect(events()[0]!.location).toBe('2층 라운지'));
-
-      // 종일을 끄면 시각이 붙는다(표의 제약대로 쌍으로).
+      // 위치를 적고 종일을 꺼도 **완료 전에는 저장되지 않는다**(요청 — 초안 모델).
+      fireEvent.change(document.querySelector('[data-event-loc]')!, { target: { value: '2층 라운지' } });
       fireEvent.click(document.querySelector('[data-event-allday]')!);
-      await waitFor(() => expect(events()[0]).toMatchObject({ allDay: false, startTime: '09:00', endTime: '10:00' }));
+      expect(events()[0]).toMatchObject({ allDay: true });
+      expect(events()[0]!.location).toBeUndefined();
+
+      // 완료 한 번이 바뀐 것을 모아 저장하고 팝업을 닫는다.
+      fireEvent.click(document.querySelector('[data-event-done]')!);
+      await waitFor(() => expect(events()[0]).toMatchObject({ allDay: false, startTime: '09:00', endTime: '10:00', location: '2층 라운지' }));
+      await waitFor(() => expect(document.querySelector('[data-event-detail]')).toBeNull());
+    });
+
+    it('✕로 닫으면 초안이 버려진다 — 적던 위치가 저장되지 않는다', async () => {
+      renderHome([META('d1', '스프린트 보드')], BODIES());
+      localStorage.setItem('mf_events', JSON.stringify([{ id: 'e1', title: '주간 회의', startDate: todayISO(), endDate: todayISO(), allDay: true, source: 'geurio' }]));
+      await openCalendar();
+      await waitFor(() => expect(chipTexts()).toContain('주간 회의'));
+      fireEvent.click(chipFor('주간 회의'));
+      await waitFor(() => expect(evDetail()).toBeTruthy());
+      fireEvent.change(document.querySelector('[data-event-loc]')!, { target: { value: '버려질 입력' } });
+      fireEvent.click(within(evDetail()).getByLabelText('닫기'));
+      await waitFor(() => expect(document.querySelector('[data-event-detail]')).toBeNull());
+      expect(events()[0]!.location).toBeUndefined();
+    });
+
+    it('반복 일정 삭제는 범위를 묻는다 — 이 일정만(EXDATE) / 이후(UNTIL) / 모든 일정', async () => {
+      renderHome([META('d1', '스프린트 보드')], BODIES());
+      // 날짜를 달 안쪽에 고정한다 — 오늘 기준 +1/+2는 월말에 6주 격자 밖으로 나갈
+      // 수 있다(오늘이 9/1이라 통과하다 월말에 깨지는 종류의 함정).
+      const now = new Date();
+      const dayN = (n: number): string => isoOf(now.getFullYear(), now.getMonth() + 1, n);
+      const from = dayN(1);
+      localStorage.setItem('mf_events', JSON.stringify([{ id: 'e1', title: '데일리', startDate: from, endDate: from, allDay: true, recurrence: 'RRULE:FREQ=DAILY', source: 'geurio' }]));
+      await openCalendar();
+      await waitFor(() => expect(chipTexts()).toContain('데일리'));
+      // 2일 회차를 눌렀다 — 삭제 범위의 기준은 눌린 회차다.
+      const tomorrow = dayN(2);
+      const chips = [...document.querySelectorAll('[data-cal-chip]')] as HTMLElement[];
+      const chip = chips.find((c) => c.textContent!.includes('데일리') && c.closest('[data-day-cell]')?.getAttribute('data-day-cell') === tomorrow)!;
+      fireEvent.click(chip);
+      await waitFor(() => expect(evDetail()).toBeTruthy());
+
+      // 삭제 → 곧바로 지우지 않고 범위를 묻는다. 초점은 취소에 — 파괴적 갈래가
+      // 기본 초점이면 Enter 한 번에 지워진다(열 삭제 확인창의 규칙).
+      fireEvent.click(document.querySelector('[data-event-delete]')!);
+      await waitFor(() => expect(document.querySelector('[data-event-scope]')).toBeTruthy());
+      await waitFor(() => expect(document.activeElement?.hasAttribute('data-event-scope-cancel')).toBe(true));
+      expect(events()).toHaveLength(1);
+
+      // 취소는 아무것도 바꾸지 않는다.
+      fireEvent.click(document.querySelector('[data-event-scope-cancel]')!);
+      await waitFor(() => expect(document.querySelector('[data-event-scope]')).toBeNull());
+      expect(events()[0]!.recurrence).toBe('RRULE:FREQ=DAILY');
+
+      // "이 일정만" — 그 회차가 EXDATE로 빠지고 달력에서 사라진다(다른 회차는 남는다).
+      fireEvent.click(document.querySelector('[data-event-delete]')!);
+      await waitFor(() => expect(document.querySelector('[data-event-scope]')).toBeTruthy());
+      fireEvent.click(document.querySelector('[data-event-scope-one]')!);
+      await waitFor(() => expect(events()[0]!.recurrence).toBe(`RRULE:FREQ=DAILY\nEXDATE:${tomorrow.replaceAll('-', '')}`));
+      await waitFor(() => expect(document.querySelector('[data-event-detail]')).toBeNull());
+      await waitFor(() => {
+        const cell = document.querySelector(`[data-day-cell="${tomorrow}"]`)!;
+        expect(cell.textContent).not.toContain('데일리');
+      });
+      // 1일 회차는 그대로다.
+      expect(document.querySelector(`[data-day-cell="${from}"]`)!.textContent).toContain('데일리');
+
+      // "이 일정과 이후 일정" — 3일 회차부터 규칙이 끝난다(UNTIL = 전날).
+      const dayAfter = dayN(3);
+      const chips2 = [...document.querySelectorAll('[data-cal-chip]')] as HTMLElement[];
+      fireEvent.click(chips2.find((c) => c.textContent!.includes('데일리') && c.closest('[data-day-cell]')?.getAttribute('data-day-cell') === dayAfter)!);
+      await waitFor(() => expect(evDetail()).toBeTruthy());
+      fireEvent.click(document.querySelector('[data-event-delete]')!);
+      await waitFor(() => expect(document.querySelector('[data-event-scope]')).toBeTruthy());
+      fireEvent.click(document.querySelector('[data-event-scope-following]')!);
+      await waitFor(() => expect(events()[0]!.recurrence).toBe(`RRULE:FREQ=DAILY;UNTIL=${tomorrow.replaceAll('-', '')}\nEXDATE:${tomorrow.replaceAll('-', '')}`));
+
+      // "모든 일정" — 행이 통째로 사라진다.
+      fireEvent.click(chipFor('데일리'));
+      await waitFor(() => expect(evDetail()).toBeTruthy());
+      fireEvent.click(document.querySelector('[data-event-delete]')!);
+      await waitFor(() => expect(document.querySelector('[data-event-scope]')).toBeTruthy());
+      fireEvent.click(document.querySelector('[data-event-scope-all]')!);
+      await waitFor(() => expect(events()).toEqual([]));
     });
 
     it('상세에서 삭제하면 표에서 사라지고 팝업이 닫힌다', async () => {
@@ -1017,9 +1097,14 @@ describe('일정 화면', () => {
       expect(el).toBeTruthy();
       return el as HTMLElement;
     });
+    // **툴팁 리스트**다(요청 — 첨부 시안): 막(dim) 없이 누른 칸 곁에 fixed로 선다.
+    expect(pop.style.position).toBe('fixed');
+    expect(document.querySelector('[data-modal-overlay]')).toBeNull();
     // 머리 = 날짜 + `일정 N개`, 행 = 그 날을 덮는 항목 **전부**(칸에서 바로만 그리던
     // 기간 카드도 여기서는 한 행이다 — `8.24–8.30 · N일째` 꼴의 부제와 함께)
     expect(pop.querySelector('[data-day-list-sub]')!.textContent).toMatch(/일정 \d+개/);
+    // 행의 오른쪽에는 **상태 점**이 선다(태그 알약이 아니라 — 시안).
+    expect(pop.querySelector('[data-day-list-item]')).toBeTruthy();
     expect(within(pop).getByText('오늘 마감 카드')).toBeTruthy();
     expect(within(pop).getByText('기간 카드')).toBeTruthy();
     expect(pop.textContent).toContain('일째');

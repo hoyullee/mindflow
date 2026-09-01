@@ -12,8 +12,8 @@
 // **닫히면 언마운트된다**(예전에는 `display: none`으로 계속 떠 있었다): 그래서
 // "닫힌 모달이 DOM에 남아 접근성 트리·테스트 조회에 걸리던" 문제가 사라진다.
 
-import type { CSSProperties, ReactNode } from 'react';
-import { useRef } from 'react';
+import type { CSSProperties, ReactNode, Ref, RefCallback } from 'react';
+import { useCallback, useRef } from 'react';
 import * as Dialog from '@radix-ui/react-dialog';
 
 export interface ModalProps {
@@ -40,10 +40,15 @@ export interface ModalProps {
    * 메뉴 항목으로 여는 모달은 그 항목이 모달과 함께 사라지므로(팝오버가 닫힌다)
    * 돌아갈 자리가 없어진다 — 그때 그 메뉴의 트리거를 가리킨다. */
   restoreFocusSelector?: string;
+  /** 열릴 때 초점을 줄 곳(CSS 셀렉터) — 기본은 첫 포커스 가능 요소인데, 파괴적
+   * 선택지가 앞에 선 확인창은 그게 위험하다(Enter 한 번에 실행된다) → 취소를 가리킨다. */
+  initialFocusSelector?: string;
+  /** 카드 요소 ref — 크기 애니메이션(`useCardMorph`) 등 실측이 필요한 화면이 쓴다. */
+  cardRef?: Ref<HTMLDivElement>;
   children: ReactNode;
 }
 
-export function Modal({ open, onClose, label, dim, card, cardAttrs, cardClass, dimAttrs, dismissOnBackdrop = true, dismissOnEscape = true, restoreFocusSelector, children }: ModalProps) {
+export function Modal({ open, onClose, label, dim, card, cardAttrs, cardClass, dimAttrs, dismissOnBackdrop = true, dismissOnEscape = true, restoreFocusSelector, initialFocusSelector, cardRef, children }: ModalProps) {
   // 닫은 뒤 초점을 **열기 전 그 자리로** 되돌린다. Radix는 `Dialog.Trigger`로 연
   // 모달의 트리거에 초점을 주는데, 우리 모달은 메뉴·행·단축키 등 온갖 곳에서 열려
   // 트리거가 없다 — 그래서 열리는 순간의 활성 요소를 직접 기억한다.
@@ -71,12 +76,23 @@ export function Modal({ open, onClose, label, dim, card, cardAttrs, cardClass, d
             그대로 유지해 카드 위치가 한 픽셀도 움직이지 않는다. */}
         <Dialog.Overlay data-modal-overlay {...dimAttrs} style={{ position: 'fixed', inset: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', ...dim }}>
           <Dialog.Content
+            ref={cardRef}
             aria-label={label}
             aria-modal="true"
             className={cardClass}
             {...cardAttrs}
             style={card}
-            onOpenAutoFocus={() => rememberFocus()}
+            onOpenAutoFocus={(e) => {
+              rememberFocus();
+              // 기본은 Radix의 첫 포커스 가능 요소 — 지정이 있으면 그리로(위 주석).
+              if (initialFocusSelector) {
+                const el = document.querySelector<HTMLElement>(initialFocusSelector);
+                if (el) {
+                  e.preventDefault();
+                  el.focus();
+                }
+              }
+            }}
             onEscapeKeyDown={(e) => {
               if (!dismissOnEscape) e.preventDefault();
             }}
@@ -114,6 +130,65 @@ export function Modal({ open, onClose, label, dim, card, cardAttrs, cardClass, d
 
 /** 모달 막의 기본값 — 홈·에디터가 함께 쓰는 값(색·블러). z는 화면이 정한다. */
 export const MODAL_DIM: CSSProperties = { background: 'rgba(30,20,14,.42)', backdropFilter: 'blur(2px)' };
+
+/**
+ * 카드 크기 애니메이션 — 메뉴 선택으로 내용이 늘고 줄 때 카드가 **이전 크기에서
+ * 새 크기로 이어지게** 한다(요청 — 설정 팝업의 화면 전환과 같은 0.24s 곡선).
+ *
+ * 높이는 내용이 정하는 값이라 CSS `transition`이 붙을 곳이 없다 — 그래서 카드를
+ * ResizeObserver로 지켜보다 자연 높이가 바뀌면 이전 높이를 고정해 두고 새 높이로
+ * 전이시킨 뒤 풀어 준다(설정 모달의 높이 잇기와 같은 기계 — 다만 그쪽은 화면 전환
+ * 이라는 한 가지 계기를 렌더 단계에서 재고, 여기는 계기가 여럿이라(목적지·반복·종일
+ * ·Meet…) 실측으로 받는다). 폭은 스타일에 명시된 값이라 카드 쪽 CSS transition이
+ * 맡고, 전이 중에는 이 훅이 width까지 함께 싣는다(transition을 갈아 끼우는 동안
+ * 폭 전이가 끊기지 않게). reduced-motion이면 걸지 않는다.
+ *
+ * `Modal`의 `cardRef`에 그대로 꽂는 ref 콜백을 돌려준다.
+ */
+export function useCardMorph(): RefCallback<HTMLDivElement> {
+  const cleanup = useRef<(() => void) | null>(null);
+  return useCallback((el: HTMLDivElement | null) => {
+    cleanup.current?.();
+    cleanup.current = null;
+    if (!el || typeof ResizeObserver === 'undefined') return;
+    let last: number | null = null;
+    let animating = false;
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    // React가 style prop으로 준 값을 되살릴 수 있게 — 임의로 ''로 지우면 카드가
+    // 원래 갖고 있던 overflow/transition까지 함께 사라진다.
+    const base = { overflow: el.style.overflow, transition: el.style.transition };
+    const ro = new ResizeObserver(() => {
+      if (animating) return; // 전이 중의 중간 크기들 — 새 애니메이션의 계기가 아니다
+      const h = el.offsetHeight;
+      if (last === null || h === last) {
+        last = h;
+        return;
+      }
+      const from = last;
+      last = h;
+      if (window.matchMedia?.('(prefers-reduced-motion: reduce)').matches) return;
+      animating = true;
+      el.style.height = `${from}px`;
+      el.style.overflow = 'hidden';
+      void el.offsetHeight; // 강제 리플로우 — 시작 값을 확정한 뒤 목표로 보낸다
+      el.style.transition = 'height .24s cubic-bezier(.4,0,.2,1), width .24s cubic-bezier(.4,0,.2,1)';
+      el.style.height = `${h}px`;
+      clearTimeout(timer);
+      timer = setTimeout(() => {
+        el.style.height = '';
+        el.style.overflow = base.overflow;
+        el.style.transition = base.transition;
+        animating = false;
+        last = el.offsetHeight; // 전이 중 또 바뀌었을 수 있다 — 지금 값으로 재동기화
+      }, 280);
+    });
+    ro.observe(el);
+    cleanup.current = () => {
+      ro.disconnect();
+      clearTimeout(timer);
+    };
+  }, []);
+}
 
 /** 카드 기본값 — 폭만 다르고 나머지(면·라운드·그늘·패딩·페이드)는 같다. */
 export function modalCard(width: number, extra?: CSSProperties): CSSProperties {

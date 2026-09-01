@@ -62,10 +62,62 @@ export function recurrenceLabel(r: RecurrenceSpec, baseDate?: string): string {
   return `${every} · 종료 없음`;
 }
 
+/**
+ * 저장된 규칙 문자열 → RRULE 줄과 **제외한 회차들**(이 일정만 삭제 — EXDATE).
+ *
+ * 회차 하나를 지우는 일은 별도 칼럼이 아니라 **같은 문자열의 줄**로 담는다
+ * (`RRULE:...\nEXDATE:20260901,20260908`) — iCalendar가 쓰는 그 이름이고, 저장이
+ * 한 칸이라 마이그레이션도 어댑터 변경도 없다(검증 `/^RRULE:/`은 줄 시작이 그대로다).
+ */
+export function ruleParts(rule: string): { rrule: string; exdates: string[] } {
+  const lines = rule.split(/\r?\n/).map((l) => l.trim()).filter(Boolean);
+  const rrule = lines.find((l) => /^RRULE:/i.test(l)) ?? '';
+  const exdates: string[] = [];
+  for (const line of lines) {
+    const m = /^EXDATE:(.+)$/i.exec(line);
+    if (!m) continue;
+    for (const tok of m[1]!.split(',')) {
+      const d = /^(\d{4})(\d{2})(\d{2})$/.exec(tok.trim());
+      if (d) exdates.push(`${d[1]}-${d[2]}-${d[3]}`);
+    }
+  }
+  return { rrule, exdates };
+}
+
+/** ISO → RRULE의 날짜 표기(`YYYYMMDD`). */
+function compact(iso: string): string {
+  return iso.replaceAll('-', '');
+}
+
+/** "이 일정만 삭제" — 그 회차를 제외 목록에 더한 규칙 문자열. */
+export function excludeOccurrence(rule: string, occurrenceIso: string): string {
+  const { rrule, exdates } = ruleParts(rule);
+  const set = [...new Set([...exdates, occurrenceIso])].sort();
+  return `${rrule}\nEXDATE:${set.map(compact).join(',')}`;
+}
+
+/**
+ * "이 일정과 이후 일정 삭제" — 규칙의 끝을 `lastIso`로 당긴다(UNTIL). COUNT는 함께
+ * 버린다: 끝이 당겨진 만큼 회차는 언제나 예전보다 적으므로 남겨 둘 뜻이 없다.
+ * 이미 제외한 회차(EXDATE)는 그대로 남는다 — 남는 구간의 구멍은 유효하다.
+ */
+export function endRuleBefore(rule: string, lastIso: string): string {
+  const { rrule, exdates } = ruleParts(rule);
+  const body = rrule
+    .replace(/^RRULE:/i, '')
+    .split(';')
+    .filter((p) => p && !/^(UNTIL|COUNT)=/i.test(p));
+  body.push(`UNTIL=${compact(lastIso)}`);
+  const head = `RRULE:${body.join(';')}`;
+  return exdates.length ? `${head}\nEXDATE:${exdates.map(compact).join(',')}` : head;
+}
+
 /** RRULE 한 줄 → 설정. 우리가 만든 것만 읽는다(모르는 규칙은 null → 반복 없음으로 본다). */
 export function parseRecurrence(rule: string | undefined): RecurrenceSpec | null {
   if (!rule) return null;
-  const body = rule.replace(/^RRULE:/i, '');
+  // EXDATE 줄이 붙은 문자열일 수 있다 — 규칙은 RRULE 줄에서만 읽는다.
+  const line = ruleParts(rule).rrule || rule.split(/\r?\n/)[0] || '';
+  const body = line.replace(/^RRULE:/i, '');
   const kv = new Map<string, string>();
   for (const part of body.split(';')) {
     const i = part.indexOf('=');
@@ -119,6 +171,9 @@ export function expandRecurrence(rule: string | undefined, startDate: string, fr
   const spec = parseRecurrence(rule);
   const within = (d: string): boolean => addDays(d, spanDays) >= from && d <= to;
   if (!spec) return within(startDate) ? [startDate] : [];
+  // "이 일정만 삭제"로 제외한 회차 — 만들고 나서 거른다(RFC 5545의 순서: COUNT가
+  // 회차를 만들고 EXDATE가 뺀다. 반대로 하면 제외한 만큼 뒤 회차가 늘어난다).
+  const { exdates } = ruleParts(rule ?? '');
   const step = (d: string, i: number): string => (spec.unit === 'month' ? addMonths(startDate, spec.interval * i) : addDays(d, spec.interval * (spec.unit === 'week' ? 7 : 1)));
   const limit = spec.endMode === 'count' ? Math.min(spec.count ?? 1, MAX_OCCURRENCES) : MAX_OCCURRENCES;
   const out: string[] = [];
@@ -127,7 +182,7 @@ export function expandRecurrence(rule: string | undefined, startDate: string, fr
     if (i > 0) cur = step(cur, i);
     if (spec.endMode === 'date' && spec.until && cur > spec.until) break;
     if (cur > to) break;
-    if (within(cur)) out.push(cur);
+    if (within(cur) && !exdates.includes(cur)) out.push(cur);
   }
   return out;
 }

@@ -46,10 +46,11 @@ export function MonthGrid({
 }: {
   cells: readonly MonthCell[];
   onPickDay: (iso: string) => void;
-  /** 빈 자리를 **더블클릭** — 그 날의 일정 전부(`DayListPopup`, 디자인 원본 `onDayDouble`). */
-  onOpenDayList?: (iso: string) => void;
+  /** 빈 자리를 **더블클릭** — 그 날의 일정 전부(`DayListPopup`, 디자인 원본 `onDayDouble`).
+   * 팝업이 툴팁이라 **누른 지점**도 함께 넘긴다(그 곁에 선다). */
+  onOpenDayList?: (iso: string, at: { x: number; y: number }) => void;
   onPickEntry: (e: CalendarEntry) => void;
-  onMore: (iso: string) => void;
+  onMore: (iso: string, at: { x: number; y: number }) => void;
   /** 항목을 다른 칸에 놓았다 — 며칠 옮길지(기간이면 시작일·기한이 함께 움직인다). */
   onShift: (e: CalendarEntry, days: number) => void;
   selected: string | null;
@@ -220,9 +221,9 @@ function DayCell({
   compact: boolean;
   surface: ChipSurface;
   onPickDay: (iso: string) => void;
-  onOpenDayList?: (iso: string) => void;
+  onOpenDayList?: (iso: string, at: { x: number; y: number }) => void;
   onPickEntry: (e: CalendarEntry) => void;
-  onMore: (iso: string) => void;
+  onMore: (iso: string, at: { x: number; y: number }) => void;
   onGrab: (ev: ReactPointerEvent, e: CalendarEntry, fromIso: string) => void;
   /** 지금 끌고 있는 항목(그 칩은 자리에서 흐려진다). */
   dragging: CalendarEntry | undefined;
@@ -304,7 +305,7 @@ function DayCell({
           ? (e) => {
               if ((e.target as HTMLElement).closest('[data-cal-chip],[data-cal-bar],[data-cal-more]')) return;
               e.preventDefault();
-              onOpenDayList(cell.iso);
+              onOpenDayList(cell.iso, { x: e.clientX, y: e.clientY });
             }
           : undefined
       }
@@ -462,7 +463,7 @@ function DayCell({
           data-cal-more
           onClick={(e) => {
             e.stopPropagation();
-            onMore(cell.iso);
+            onMore(cell.iso, { x: e.clientX, y: e.clientY });
           }}
           style={{ border: 0, background: 'transparent', padding: '0 5px', textAlign: 'left', font: 'inherit', fontSize: compact ? 9.5 : 11, fontWeight: 700, color: 'var(--mf-faint)', cursor: 'pointer', flexShrink: 0 }}
         >

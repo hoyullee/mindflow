@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { applyPreset, expandRecurrence, parseRecurrence, presetOf, recurrenceLabel } from './recurrence';
+import { applyPreset, endRuleBefore, excludeOccurrence, expandRecurrence, parseRecurrence, presetOf, recurrenceLabel, ruleParts } from './recurrence';
 import { buildRecurrence, RECURRENCE_OFF, type RecurrenceSpec } from './googleCalendar';
 
 /**
@@ -76,5 +76,36 @@ describe('회차 펼치기', () => {
     expect(exp('RRULE:FREQ=DAILY;COUNT=2', '2026-08-01')).toEqual(['2026-08-01', '2026-08-02']);
     // 종료 없는 규칙도 구간에서 멈춘다(무한 루프가 아니다).
     expect(exp('RRULE:FREQ=DAILY', '2026-08-01')).toHaveLength(31);
+  });
+});
+
+describe('범위 삭제(요청 — 이 일정만/이후/모든 일정)', () => {
+  it('이 일정만: 그 회차가 EXDATE 줄로 빠지고, 펼치기에서 그 날만 사라진다', () => {
+    const rule = excludeOccurrence('RRULE:FREQ=DAILY', '2026-09-02');
+    expect(rule).toBe('RRULE:FREQ=DAILY\nEXDATE:20260902');
+    // 같은 회차를 두 번 빼도 목록은 하나다.
+    expect(excludeOccurrence(rule, '2026-09-02')).toBe(rule);
+    // 다른 회차를 더 빼면 목록이 늘어난다(정렬 유지).
+    expect(excludeOccurrence(rule, '2026-09-01')).toBe('RRULE:FREQ=DAILY\nEXDATE:20260901,20260902');
+    expect(expandRecurrence(rule, '2026-09-01', '2026-09-01', '2026-09-04')).toEqual(['2026-09-01', '2026-09-03', '2026-09-04']);
+  });
+
+  it('이후 일정: 규칙의 끝이 그 회차 전날로 당겨지고 COUNT는 버려진다(EXDATE는 남는다)', () => {
+    expect(endRuleBefore('RRULE:FREQ=DAILY;COUNT=10', '2026-09-02')).toBe('RRULE:FREQ=DAILY;UNTIL=20260902');
+    const withEx = endRuleBefore('RRULE:FREQ=DAILY\nEXDATE:20260902', '2026-09-04');
+    expect(withEx).toBe('RRULE:FREQ=DAILY;UNTIL=20260904\nEXDATE:20260902');
+    // 남는 구간: 1일~4일 중 2일은 여전히 빠져 있다.
+    expect(expandRecurrence(withEx, '2026-09-01', '2026-09-01', '2026-09-30')).toEqual(['2026-09-01', '2026-09-03', '2026-09-04']);
+  });
+
+  it('EXDATE 줄이 붙어도 규칙 해석은 그대로다 — parseRecurrence는 RRULE 줄만 읽는다', () => {
+    const spec = parseRecurrence('RRULE:FREQ=WEEKLY;INTERVAL=2\nEXDATE:20260902');
+    expect(spec).toMatchObject({ on: true, unit: 'week', interval: 2 });
+    expect(ruleParts('RRULE:FREQ=WEEKLY;INTERVAL=2\nEXDATE:20260902,20260916')).toEqual({ rrule: 'RRULE:FREQ=WEEKLY;INTERVAL=2', exdates: ['2026-09-02', '2026-09-16'] });
+  });
+
+  it('COUNT 규칙에서 회차를 빼도 뒤 회차가 늘어나지 않는다(RFC 5545 — COUNT가 만들고 EXDATE가 뺀다)', () => {
+    const rule = excludeOccurrence('RRULE:FREQ=DAILY;COUNT=3', '2026-09-02');
+    expect(expandRecurrence(rule, '2026-09-01', '2026-09-01', '2026-09-30')).toEqual(['2026-09-01', '2026-09-03']);
   });
 });
