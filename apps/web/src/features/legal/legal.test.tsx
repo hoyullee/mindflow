@@ -24,7 +24,13 @@ describe('legal pages', () => {
     expect(screen.getByText(/제한적 사용\(Limited Use\)/)).toBeTruthy();
     expect(screen.getAllByText(/보관하지 않습니다/).length).toBeGreaterThan(0);
     expect(screen.getByRole('link', { name: /타사 앱 권한/ }).getAttribute('href')).toBe('https://myaccount.google.com/permissions');
-    expect(screen.getByText('5. 보유 기간 및 파기')).toBeTruthy();
+    // 2026-09-01 검수 반려가 요구한 것 — Google 사용자 데이터를 **누구에게**
+    // 공유·전송·공개하는지, 세 낱말을 제목으로 단 눈에 띄는 구획과 예외 열거.
+    expect(screen.getByText('5. Google 사용자 데이터의 공유·전송·공개')).toBeTruthy();
+    expect(screen.getByText(/공유·전송·공개하지 않습니다/)).toBeTruthy();
+    expect(screen.getByText('서비스 운영을 위한 처리 위탁')).toBeTruthy();
+    expect(screen.getByText('법령상 의무')).toBeTruthy();
+    expect(screen.getByText('6. 보유 기간 및 파기')).toBeTruthy();
     expect(screen.getAllByText('info@geurio.com').length).toBeGreaterThan(0);
   });
 

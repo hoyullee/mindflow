@@ -6,14 +6,20 @@ import { LegalPage, LegalSection, legalListStyle } from './LegalPage';
  * 코드와 어긋나게 되는 변경(수집 항목 추가 등)을 할 때는 이 문서도 함께 갱신할 것.
  *
  * **구글 심사가 이 URL(`/privacy`)을 직접 열어 확인한다.** 브랜드 인증(이름·목적
- * 설명·이 링크)뿐 아니라, 민감 스코프(`calendar.events`) 검수는 아래 §4가 요구
+ * 설명·이 링크)뿐 아니라, 민감 스코프(`calendar.events`) 검수는 아래 §4·§5가 요구
  * 사항이다 — 구글 사용자 데이터를 **무엇을·왜·어디에 보관하고 누구에게 주는지**와
  * **Limited Use** 준수가 적혀 있어야 한다. **스코프를 늘리면 §4도 같이 늘릴 것**
  * (2026-08-31에 이름 검색·회의실 선택 스코프를 더하며 실제로 함께 고쳤다).
+ *
+ * §5(공유·전송·공개)는 2026-09-01 검수 반려가 만든 구획이다 — "Google 사용자
+ * 데이터를 **누구에게** 공유·전송·공개하는지 명시되어 있지 않다"는 지적. §4의
+ * "제3자 제공하지 않음" 한 줄로는 부족했다: 검수는 세 낱말(공유·전송·공개)을
+ * 제목으로 단 **눈에 띄는 구획**과, 예외(위탁·법령·동의·사업 이전)의 명시적 열거,
+ * 그리고 **로그인 프로필 정보까지 포함한** Google 사용자 데이터 전체를 본다.
  */
 export function PrivacyPolicy() {
   return (
-    <LegalPage title="개인정보처리방침" updated="2026년 8월 31일">
+    <LegalPage title="개인정보처리방침" updated="2026년 9월 1일">
       <p>
         Geurio(이하 &ldquo;서비스&rdquo;)는 이용자의 개인정보를 소중하게 생각하며, 아래와 같이 최소한의 정보만을
         수집·이용합니다. 본 방침은 서비스가 어떤 정보를 왜 수집하고, 어디에 보관하며, 언제 삭제하는지를 설명합니다.
@@ -99,9 +105,9 @@ export function PrivacyPolicy() {
             사라집니다</strong>. 서버로 전송하거나 저장하지 않습니다.
           </li>
           <li>
-            <strong>제3자 제공·광고·학습에 사용하지 않습니다</strong> — Google에서 받은 정보를 판매하거나 제3자에게
-            제공하지 않으며, 광고나 인공지능 모델 학습에 사용하지 않습니다. 서비스는 Google API 서비스 이용자 데이터
-            정책의 <strong>제한적 사용(Limited Use)</strong> 요건을 준수합니다.
+            <strong>광고·학습에 사용하지 않습니다</strong> — Google에서 받은 정보를 광고 목적이나 인공지능 모델 학습에
+            사용하지 않습니다. 누구에게 공유·전송·공개하는지는 아래 5항에서 별도로 명시합니다. 서비스는 Google API
+            서비스 이용자 데이터 정책의 <strong>제한적 사용(Limited Use)</strong> 요건을 준수합니다.
           </li>
           <li>
             <strong>연결 해제</strong> — 설정 → 연동에서 &ldquo;연결 해제&rdquo;를 누르면 이 기기의 토큰이 폐기되고
@@ -114,14 +120,47 @@ export function PrivacyPolicy() {
         </ul>
       </LegalSection>
 
-      <LegalSection heading="5. 보유 기간 및 파기">
+      <LegalSection heading="5. Google 사용자 데이터의 공유·전송·공개">
+        <p>
+          서비스는 Google에서 받은 이용자 데이터(로그인 시 받는 이메일·이름·프로필 사진 URL, 캘린더 연동 시 조회하는
+          일정·캘린더 목록·디렉터리 검색 결과 전부)를 <strong>판매하지 않으며, 아래 경우를 제외하고 누구에게도
+          공유·전송·공개하지 않습니다.</strong>
+        </p>
+        <ul style={legalListStyle}>
+          <li>
+            <strong>서비스 운영을 위한 처리 위탁</strong> — Google 로그인으로 받는 프로필 정보(이메일·이름·프로필 사진
+            URL)는 계정 식별을 위해 3항의 수탁사(데이터베이스·인증: Supabase, 웹 호스팅: Vercel)의 인프라에서
+            저장·처리됩니다. 수탁사는 서비스 제공 목적 외에 이 정보를 사용할 수 없습니다.{' '}
+            <strong>Google 캘린더 데이터(일정·캘린더 목록·검색 결과)는 이용자의 브라우저가 Google 서버와 직접
+            통신하므로 서비스 서버나 수탁사를 거치지도, 저장되지도 않습니다</strong> — 유일한 예외는 4항에 적은
+            &ldquo;보기로 고른 캘린더의 식별자 목록&rdquo;으로, 기기 간 설정 유지를 위해 Supabase에 저장됩니다.
+          </li>
+          <li>
+            <strong>법령상 의무</strong> — 법령에 따라 또는 적법한 절차에 의한 수사기관·법원의 요구가 있는 경우, 요구된
+            최소한의 범위에서 제공될 수 있습니다.
+          </li>
+          <li>
+            <strong>이용자의 명시적 동의</strong> — 이용자가 별도로 명시적으로 동의한 경우 그 범위에서만 제공합니다.
+          </li>
+          <li>
+            <strong>사업의 이전</strong> — 합병·인수 등으로 서비스의 운영 주체가 바뀌는 경우, 사전에 눈에 띄게 고지하며
+            새 운영 주체에게 본 방침과 같은 수준의 보호 의무를 적용합니다.
+          </li>
+        </ul>
+        <p>
+          위 경우를 포함한 어떤 경우에도 Google 사용자 데이터를 광고 목적으로 제3자에게 제공하거나, 신용 평가·대출 심사
+          등 데이터 중개 목적으로 이전하지 않습니다.
+        </p>
+      </LegalSection>
+
+      <LegalSection heading="6. 보유 기간 및 파기">
         <p>
           개인정보는 회원 자격이 유지되는 동안 보관됩니다. <strong>회원 탈퇴 시 계정 정보와 작성한 모든 문서·워크스페이스
           데이터가 즉시, 복구 불가능하게 삭제됩니다.</strong> 별도의 백업 보존 기간을 두지 않습니다.
         </p>
       </LegalSection>
 
-      <LegalSection heading="6. 이용자의 권리">
+      <LegalSection heading="7. 이용자의 권리">
         <ul style={legalListStyle}>
           <li>계정 설정에서 언제든지 프로필 정보를 확인·수정할 수 있습니다.</li>
           <li>작성한 문서는 언제든지 직접 삭제(휴지통 → 영구 삭제)할 수 있습니다.</li>
@@ -130,13 +169,13 @@ export function PrivacyPolicy() {
         </ul>
       </LegalSection>
 
-      <LegalSection heading="7. 문의처">
+      <LegalSection heading="8. 문의처">
         <p>
           개인정보 관련 문의: <a href="mailto:info@geurio.com" style={{ color: '#f0663f', fontWeight: 600 }}>info@geurio.com</a>
         </p>
       </LegalSection>
 
-      <LegalSection heading="8. 방침의 변경">
+      <LegalSection heading="9. 방침의 변경">
         <p>
           본 방침이 변경되는 경우 이 페이지를 통해 변경 사항과 시행일을 공지합니다. 중요한 변경(수집 항목 추가 등)이 있는
           경우 서비스 내에서 별도로 안내합니다.
