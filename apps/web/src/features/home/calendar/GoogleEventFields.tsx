@@ -544,30 +544,40 @@ function Attendees({ list, onChange, search, seedNames }: { list: string[]; onCh
   const listKey = list.join(',');
   // 배열·객체는 렌더마다 새 참조라 효과의 계기가 될 수 없다 — 문자열 키로 되짚는다.
   const seedKey = Object.keys(seedNames ?? {}).join(',');
+  // **답은 마운트되어 있는 동안 받는다**(제보 — 기존 일정의 참석자 일부가 영영 로컬파트).
+  // 예전에는 효과별 `cancelled` 플래그였는데, 첫 사람의 이름이 도착해 상태가 바뀌는 순간
+  // 효과가 다시 돌아 **진행 중인 루프를 취소**했고, 남은 사람들은 이미 "물어봤다"로
+  // 적혀 다시 묻지도 않았다(회의실 배지에서 겪은 것과 같은 함정). 효과가 다시 돌아도
+  // 이미 나간 조회는 끝까지 받아 적는다.
+  const mountedRef = useRef(true);
+  useEffect(() => {
+    mountedRef.current = true;
+    return () => {
+      mountedRef.current = false;
+    };
+  }, []);
   useEffect(() => {
     if (!search) return;
     // `list`가 아니라 문자열 키에서 되짚는다 — 배열은 렌더마다 새 참조라 이 효과의
     // 계기가 될 수 없고, 키가 바뀌는 순간이 곧 "초대가 늘거나 줄었다"다.
     // 구글이 이미 이름을 알려 준 사람은 묻지 않는다(왕복을 아끼고, 그 이름이 더 정확하다).
-    const missing = (listKey ? listKey.split(',') : []).filter((e) => !names[e] && !seedKey.includes(e) && !knownName(e) && !askedRef.current.has(e));
+    const missing = (listKey ? listKey.split(',') : []).filter((e) => !seedKey.includes(e) && !knownName(e) && !askedRef.current.has(e));
     if (missing.length === 0) return;
     for (const e of missing) askedRef.current.add(e);
-    let cancelled = false;
     void (async () => {
       for (const email of missing) {
         const found = await search(email).catch(() => null);
-        if (cancelled) return;
-        const hit = found?.find((p) => p.email.toLowerCase() === email.toLowerCase());
+        if (!mountedRef.current) return;
+        // 디렉터리는 별칭으로 물어도 **기본 주소**로 답한다 — 그 사람의 모든 주소와 맞춰 본다.
+        const want = email.toLowerCase();
+        const hit = found?.find((p) => p.email.toLowerCase() === want || (p.emails ?? []).includes(want));
         if (hit?.name) {
           setNames((m) => ({ ...m, [email]: hit.name }));
           rememberName(email, hit.name);
         }
       }
     })();
-    return () => {
-      cancelled = true;
-    };
-  }, [listKey, names, search, seedKey]);
+  }, [listKey, search, seedKey]);
 
   // 접힌 목록은 바깥을 누르거나 Escape로 닫는다(팝오버의 관례 — 모달 위의 층이라
   // Radix가 대신 닫아 주지 않는다).

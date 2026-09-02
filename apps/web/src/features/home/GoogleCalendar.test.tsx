@@ -1745,4 +1745,60 @@ describe('구글 캘린더 겹치기(PR5)', () => {
     expect(guest.textContent).not.toMatch(/eunjin\.yeo(?!@)/);
     expect(pop.textContent).toContain('1명 초대');
   });
+
+  it('기존 일정의 참석자 이름을 **전부** 채운다 — 첫 답이 와도 남은 조회가 취소되지 않고, 별칭 주소도 그 사람으로 맞춘다(라이브 제보)', async () => {
+    seed({ calendars: ['me@example.com'] });
+    seedToken();
+    stubGis();
+    const day = inMonth(1);
+    // 라이브 로그 그대로: 디렉터리는 질의가 별칭(`johan.kim@mail.…`)이어도 **기본 주소가
+    // 첫 번째**인 사람 하나를 돌려준다. 참석자 셋 모두 이름이 없다(구글이 비워 보냄).
+    const people: Record<string, { name: string; emails: string[] }> = {
+      'sungkwang@example.com': { name: '김성광', emails: ['sungkwang@example.com', 'sungkwang@mail.example.com'] },
+      'myeongyun.seong@example.com': { name: '성명윤', emails: ['myeongyun.seong@example.com', 'myeongyun.seong@mail.example.com'] },
+      'johan.kim@mail.example.com': { name: '김요한 (Johan Kim)', emails: ['johan.kim@example.com', 'johan.kim@mail.example.com'] },
+    };
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (url: string) => {
+        const ok = (body: unknown) => ({ ok: true, status: 200, json: async () => body }) as unknown as Response;
+        if (url.includes('searchDirectoryPeople')) {
+          const q = decodeURIComponent(/query=([^&]+)/.exec(url)?.[1] ?? '');
+          const hit = people[q];
+          return ok(hit ? { people: [{ names: [{ displayName: hit.name }], emailAddresses: hit.emails.map((v, i) => ({ value: v, ...(i === 0 ? { metadata: { primary: true } } : {}) })) }] } : { people: [] });
+        }
+        if (url.includes('people.googleapis.com') || url.includes('admin.googleapis.com')) return ok({ items: [], results: [] });
+        if (url.includes('/colors')) return ok({ event: {} });
+        if (url.includes('/users/me/calendarList')) return ok({ items: [{ id: 'me@example.com', summary: '내 캘린더', primary: true, accessRole: 'owner' }] });
+        return ok({
+          items: [
+            {
+              id: 'x',
+              summary: '주간 회의',
+              start: { dateTime: `${day}T09:00:00+09:00` },
+              end: { dateTime: `${day}T10:00:00+09:00` },
+              organizer: { email: 'me@example.com', self: true },
+              attendees: [
+                { email: 'me@example.com', self: true, organizer: true, responseStatus: 'accepted' },
+                { email: 'sungkwang@example.com', responseStatus: 'accepted' },
+                { email: 'myeongyun.seong@example.com', responseStatus: 'needsAction' },
+                { email: 'johan.kim@mail.example.com', responseStatus: 'accepted' },
+              ],
+            },
+          ],
+        });
+      }),
+    );
+    clientId = 'test-client.apps.googleusercontent.com';
+    const user = userEvent.setup();
+    const { container } = renderHome();
+    const pop = await openGoogleChip(container, user, /주간 회의/);
+    const nameOf = (email: string) => pop.querySelector(`[data-gf-guest="${email}"]`)?.textContent ?? '';
+    // 셋 다 이름으로 — 예전에는 첫 사람만 이름이고 나머지는 `myeongyun.seong`·`johan.kim`으로 남았다.
+    await waitFor(() => expect(nameOf('sungkwang@example.com')).toContain('김성광'), { timeout: 4000 });
+    await waitFor(() => expect(nameOf('myeongyun.seong@example.com')).toContain('성명윤'), { timeout: 4000 });
+    await waitFor(() => expect(nameOf('johan.kim@mail.example.com')).toContain('김요한'), { timeout: 4000 });
+    // 이름 검색 상자 라벨이 열려 있음을 말한다(디렉터리 스코프가 있다)
+    expect(within(pop).getByLabelText('참석자 이름 또는 이메일')).toBeTruthy();
+  });
 });

@@ -22,8 +22,15 @@ const ADMIN = 'https://admin.googleapis.com/admin/directory/v1';
 
 /** 참석자 후보 한 명. */
 export interface DirectoryPerson {
+  /** 기본(primary) 주소 — 화면에 보이는 값. */
   email: string;
   name: string;
+  /**
+   * 그 사람의 **모든** 주소(별칭 포함, 소문자). 디렉터리는 `johan@mail.example.com`으로
+   * 물어도 기본 주소 `johan@example.com`으로 답하므로, 질의와 맞춰 볼 때는 이 목록을
+   * 봐야 한다(제보 — 별칭으로 초대된 사람이 영영 로컬파트로 남았다).
+   */
+  emails: string[];
 }
 
 /** 회의실 하나 — 구글에는 `resourceEmail`이 곧 참석자 주소다. */
@@ -55,15 +62,19 @@ function personsFrom(raw: unknown, key: 'people' | 'results'): DirectoryPerson[]
     // otherContacts:search는 `{ person: {...} }`로 한 겹 감싼다.
     const p = (key === 'results' ? (item as { person?: unknown }).person : item) as Record<string, unknown> | undefined;
     if (!p) continue;
-    const emails = Array.isArray(p.emailAddresses) ? p.emailAddresses : [];
-    const email = emails.map((e) => (e as { value?: unknown }).value).find((v): v is string => typeof v === 'string' && !!v);
-    if (!email) continue;
+    const raws = Array.isArray(p.emailAddresses) ? (p.emailAddresses as { value?: unknown; metadata?: { primary?: unknown } }[]) : [];
+    const all = raws.map((e) => e.value).filter((v): v is string => typeof v === 'string' && !!v);
+    if (all.length === 0) continue;
+    // 기본 주소가 먼저 — 구글은 `metadata.primary`로 표시한다(없으면 첫 것).
+    const primary = raws.find((e) => e.metadata?.primary === true && typeof e.value === 'string')?.value as string | undefined;
+    const email = (primary ?? all[0]!).toLowerCase();
+    const emails = [...new Set(all.map((v) => v.toLowerCase()))];
     const names = Array.isArray(p.names) ? p.names : [];
     const name = names.map((n) => (n as { displayName?: unknown }).displayName).find((v): v is string => typeof v === 'string' && !!v);
-    // 디렉터리가 알려 준 이름은 장부에도 적는다 — 다른 팝업·다른 자리에서 같은 사람이
-    // 같은 이름으로 보이게(`nameBook`).
-    if (name) rememberName(email, name);
-    out.push({ email: email.toLowerCase(), name: name ?? email });
+    // 디렉터리가 알려 준 이름은 **모든 주소**로 장부에 적는다 — 별칭으로 초대된 자리에서도
+    // 같은 사람이 같은 이름으로 보이게(`nameBook`).
+    if (name) for (const e of emails) rememberName(e, name);
+    out.push({ email, name: name ?? email, emails });
   }
   return out;
 }
