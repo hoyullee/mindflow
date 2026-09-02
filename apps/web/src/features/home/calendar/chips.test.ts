@@ -59,3 +59,17 @@ describe('표식 — 우리 일정은 점, 구글은 둥근 막대(요청)', () 
     expect(markStyle(chip).width).toBe(markStyle(chip).height);
   });
 });
+
+describe('구글 일정의 글자색(요청 ⑥)', () => {
+  it('구글 일정은 제목이 언제나 본문 색이다 — 색으로 말하는 것은 표식 하나면 된다', () => {
+    const g = entryChip(E({ google: GOOGLE, colColor: '#f6bf26' }), SURFACE);
+    expect(g.fg).toBe(SURFACE.text);
+    // 표식(아이콘)은 그대로 그 일정의 색이다
+    expect(g.dot).toBe('#f6bf26');
+  });
+
+  it('우리 일정·카드는 예전처럼 분류색에서 뽑은 잉크를 쓴다(무회귀)', () => {
+    const ours = entryChip(E({ tag: '개발' }), SURFACE);
+    expect(ours.fg).not.toBe(SURFACE.text);
+  });
+});

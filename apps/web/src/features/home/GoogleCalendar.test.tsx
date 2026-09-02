@@ -798,7 +798,7 @@ describe('구글 캘린더 겹치기(PR5)', () => {
             end: { dateTime: `${day}T10:00:00+09:00` },
             organizer: { email: 'boss@example.com', displayName: '팀장' },
             attendees: [
-              { email: 'boss@example.com', responseStatus: 'accepted' },
+              { email: 'boss@example.com', displayName: '팀장', responseStatus: 'accepted' },
               { email: 'me@example.com', self: true, responseStatus: 'needsAction' },
               { email: 'mate@example.com', responseStatus: 'declined' },
             ],
@@ -818,6 +818,10 @@ describe('구글 캘린더 겹치기(PR5)', () => {
     const org = pop.querySelector('[data-gf-organizer]')!;
     expect(org.textContent).toContain('팀장');
     expect(org.textContent).toContain('boss@example.com');
+    // 제보 ⑤ — 구글이 준 이름을 쓴다(이메일 앞부분 `boss`로 떨어지지 않는다)
+    expect(org.textContent).not.toContain('boss\n');
+    const guest = pop.querySelector('[data-gf-guest="boss@example.com"]')!;
+    expect(guest.textContent).toContain('팀장');
     // 아직 답하지 않았으면 **아무 칸도 켜지지 않는다** — 라벨 옆이 그렇게 말한다
     const rsvp = [...pop.querySelectorAll<HTMLElement>('[data-gf-rsvp]')];
     expect(rsvp.map((b) => b.textContent)).toEqual(['참석', '미정', '불참']);
@@ -863,6 +867,43 @@ describe('구글 캘린더 겹치기(PR5)', () => {
     expect(pop.querySelector('[data-gf-rsvp]')).toBeNull();
     // 나머지 구글 필드는 그대로 있다(참석자·공개 설정 등)
     expect(pop.querySelector('[data-google-fields]')).toBeTruthy();
+  });
+
+  it('구글 일정 팝업에서 안내 문구를 두지 않는다(요청 ②)', async () => {
+    seed({ calendars: ['me@example.com'] });
+    seedToken();
+    stubGis();
+    stubFetch();
+    clientId = 'test-client.apps.googleusercontent.com';
+    const user = userEvent.setup();
+    const { container } = renderHome();
+    const pop = await openGoogleChip(container, user, /구글 회의/);
+    // 늘 같은 말을 걸어 두면 정작 알려야 할 때 눈에 띌 자리가 없다(발치는 상황 문구용).
+    for (const phrase of ['내 응답만 바뀌어요', '초대 메일은 구글이 보내요', '캘린더 기본 공개 설정을 따라요', 'Google 캘린더에 저장돼요', '반복 일정이에요']) {
+      expect(pop.textContent).not.toContain(phrase);
+    }
+    expect(pop.querySelector('[data-gf-repeat-note]')).toBeNull();
+  });
+
+  it('위치에 적어 둔 주소는 지도에서 열 수 있다(요청 ④ — 자동완성은 Places API 몫)', async () => {
+    seed({ calendars: ['me@example.com'] });
+    seedToken();
+    stubGis();
+    stubFetch();
+    clientId = 'test-client.apps.googleusercontent.com';
+    const user = userEvent.setup();
+    const { container } = renderHome();
+    const pop = await openGoogleChip(container, user, /구글 회의/);
+    // 비어 있으면 그리지 않는다 — 눌러도 아무 데도 못 가는 버튼을 두지 않는다.
+    expect(pop.querySelector('[data-map-link]')).toBeNull();
+    await user.type(pop.querySelector('[data-event-loc]') as HTMLInputElement, '서울시청');
+    const link = await waitFor(() => {
+      const el = pop.querySelector('[data-map-link]');
+      expect(el).toBeTruthy();
+      return el as HTMLAnchorElement;
+    });
+    expect(link.getAttribute('href')).toBe(`https://www.google.com/maps/search/?api=1&query=${encodeURIComponent('서울시청')}`);
+    expect(link.getAttribute('target')).toBe('_blank');
   });
 
   it('구글에서 일정에 지정한 색을 그대로 쓴다 — 시간 일정·종일·기간 모두(요청 ⑤)', async () => {
@@ -966,6 +1007,59 @@ describe('구글 캘린더 겹치기(PR5)', () => {
     await user.click(within(aside).getByText('이번 주'));
     await waitFor(() => expect(container.querySelector('[data-cal-widget-month]')).toBeTruthy());
     expect(screen.getAllByText(/구글 회의/).length).toBeGreaterThan(0);
+  });
+
+  it('회의실 행이 그 시간에 비어 있는지 말한다 — 모르는 것은 칠하지 않는다(요청 ③)', async () => {
+    seed({ calendars: ['me@example.com'] });
+    seedToken();
+    stubGis();
+    // 35-01은 그 시간에 이미 잡혀 있고, 42-07은 비어 있고, 세 번째는 조직이 그
+    // 캘린더를 공개하지 않는다(403) — 그 방은 아무 배지도 붙지 않아야 한다.
+    const busyRoom = 'room-35-01@resource.calendar.google.com';
+    const freeRoom = 'room-42-07@resource.calendar.google.com';
+    const hiddenRoom = 'room-99-99@resource.calendar.google.com';
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (url: string) => {
+        const ok = (body: unknown) => ({ ok: true, status: 200, json: async () => body }) as unknown as Response;
+        if (url.includes('people.googleapis.com')) return ok({ people: [] });
+        if (url.includes('admin.googleapis.com')) {
+          return ok({
+            items: [
+              { resourceEmail: busyRoom, generatedResourceName: '회의실-35-01', resourceCategory: 'CONFERENCE_ROOM', capacity: 23 },
+              { resourceEmail: freeRoom, generatedResourceName: '회의실-42-07', resourceCategory: 'CONFERENCE_ROOM', capacity: 8 },
+              { resourceEmail: hiddenRoom, generatedResourceName: '회의실-99-99', resourceCategory: 'CONFERENCE_ROOM' },
+            ],
+          });
+        }
+        if (url.includes('/colors')) return ok({ event: {} });
+        if (url.includes('/users/me/calendarList')) return ok({ items: [{ id: 'me@example.com', summary: '내 캘린더', primary: true, accessRole: 'owner' }] });
+        // 회의실 캘린더의 그 구간 조회 — 새 스코프 없이 `events.list`로 묻는다.
+        if (url.includes(encodeURIComponent(busyRoom))) return ok({ items: [{ id: 'other', summary: '선점된 회의' }] });
+        if (url.includes(encodeURIComponent(freeRoom))) return ok({ items: [] });
+        if (url.includes(encodeURIComponent(hiddenRoom))) return { ok: false, status: 403, json: async () => ({}) } as unknown as Response;
+        return ok({ items: [] });
+      }),
+    );
+    clientId = 'test-client.apps.googleusercontent.com';
+    const user = userEvent.setup();
+    const { container } = renderHome();
+    await openCalendar(container, user);
+    await user.click(screen.getByText('새 일정'));
+    await waitFor(() => expect(document.querySelector('[data-new-cal="me@example.com"]')).toBeTruthy());
+    await user.click(document.querySelector<HTMLElement>('[data-new-cal="me@example.com"]')!);
+    await waitFor(() => expect(document.querySelector('[data-gf-room-hit]')).toBeTruthy());
+
+    const stateOf = (email: string) => document.querySelector(`[data-gf-room-hit="${email}"] [data-gf-room-state]`)?.getAttribute('data-gf-room-state') ?? null;
+    await waitFor(() => expect(stateOf(busyRoom)).toBe('busy'), { timeout: 3000 });
+    expect(document.querySelector(`[data-gf-room-hit="${busyRoom}"]`)!.textContent).toContain('사용 중');
+    expect(stateOf(freeRoom)).toBe('free');
+    // 물어볼 수 없는 방은 **아무 말도 하지 않는다** — "사용 가능"이라 잘못 말하지 않는다.
+    expect(stateOf(hiddenRoom)).toBeNull();
+
+    // 잡아 두면 그 행은 `예약됨`이 된다(비어 있던 방)
+    fireEvent.mouseDown(document.querySelector(`[data-gf-room-hit="${freeRoom}"]`)!);
+    await waitFor(() => expect(stateOf(freeRoom)).toBe('booked'));
   });
 
   it('회의실을 검색해 예약한다 — 구글에서는 참석자(resource)로 저장된다', async () => {

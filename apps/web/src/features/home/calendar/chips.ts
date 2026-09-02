@@ -51,7 +51,10 @@ export function entryChip(e: CalendarEntry, surface: ChipSurface): EntryChip {
   const dot = e.google ? base : columnColor({ id: e.colId, title: e.colName, ...(e.colColor ? { color: e.colColor } : {}) }, e.colIndex, UI_THEME.palette);
   return {
     bg: mixHex(surface.card, base, 0.16),
-    fg: tagInk(base, surface.text),
+    // **구글 일정의 글자는 언제나 본문 색**(요청) — 색으로 말하는 것은 표식(막대)
+    // 하나면 충분하고, 제목까지 그 색을 따르면 옅은 색에서 읽기 힘들다.
+    // 우리 일정·카드는 예전처럼 분류색에서 눌러 뽑은 잉크를 쓴다.
+    fg: e.google ? surface.text : tagInk(base, surface.text),
     dot,
     mark: e.google ? 'bar' : 'dot',
     // 라이트 카드(#FFFDFB) 실측: 그 밖 rgb(247,243,238)은 시안 값 그대로, 구글은

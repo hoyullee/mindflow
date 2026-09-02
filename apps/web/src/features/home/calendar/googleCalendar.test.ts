@@ -1,5 +1,5 @@
 import { describe, expect, it, beforeEach, vi } from 'vitest';
-import { GOOGLE_CALENDAR_SCOPE, GOOGLE_EVENT_COLORS, myRsvpOf, attendeesBody, RECURRENCE_OFF, buildRecurrence, draftToBody, eventColorOf, fetchEventColors, googleWriteError, managedFieldsDiffer, updateGoogleEvent, recurrenceSummary, isDayOffHoliday, isHolidayCalendarId, onTokenChange, scopeCovers, parseCalendarList, parseEvents, readStoredToken, splitGoogleDateTime, storeToken, type GoogleCalendarMeta } from './googleCalendar';
+import { GOOGLE_CALENDAR_SCOPE, GOOGLE_EVENT_COLORS, myRsvpOf, attendeesBody, eventWindowIso, RECURRENCE_OFF, buildRecurrence, draftToBody, eventColorOf, fetchEventColors, googleWriteError, managedFieldsDiffer, updateGoogleEvent, recurrenceSummary, isDayOffHoliday, isHolidayCalendarId, onTokenChange, scopeCovers, parseCalendarList, parseEvents, readStoredToken, splitGoogleDateTime, storeToken, type GoogleCalendarMeta } from './googleCalendar';
 import { googleEntries, holidayMap } from './entries';
 import { draftFrom, patchFrom } from './GoogleEventDetail';
 import { submitNewEvent } from './newEventSubmit';
@@ -567,5 +567,49 @@ describe('초대받은 일정 — 참석 여부·주최자(요청 ③)', () => {
     expect(managedFieldsDiffer(a!, b!, ['attendees'])).toBe(true);
     // 다른 필드만 쓰는 저장은 여전히 통과한다(범위를 좁히는 것이 이 함수의 핵심)
     expect(managedFieldsDiffer(a!, b!, ['title'])).toBe(false);
+  });
+});
+
+describe('구간 계산 — 회의실이 그 시간에 비어 있는가(요청 ③)', () => {
+  it('시간 일정은 시작~종료, 종일은 시작 0시 ~ 종료 다음 0시', () => {
+    const timed = eventWindowIso({ allDay: false, startDate: '2026-08-20', endDate: '2026-08-20', startTime: '09:00', endTime: '10:30' });
+    expect(new Date(timed.fromIso).getHours()).toBe(9);
+    expect(new Date(timed.toIso).getHours()).toBe(10);
+    expect(new Date(timed.toIso).getMinutes()).toBe(30);
+    const day = eventWindowIso({ allDay: true, startDate: '2026-08-20', endDate: '2026-08-21' });
+    expect(new Date(day.fromIso).getDate()).toBe(20);
+    // 종료일 **다음** 0시 — 구글의 종일 경계와 같다
+    expect(new Date(day.toIso).getDate()).toBe(22);
+    expect(new Date(day.toIso).getHours()).toBe(0);
+  });
+
+  it('종료가 시작보다 앞서도(입력 중) 구간이 뒤집히지 않는다', () => {
+    const w = eventWindowIso({ allDay: false, startDate: '2026-08-20', endDate: '2026-08-20', startTime: '14:00', endTime: '09:00' });
+    expect(new Date(w.toIso).getTime()).toBeGreaterThan(new Date(w.fromIso).getTime());
+  });
+});
+
+describe('참석자 이름 — 구글이 준 표시 이름을 버리지 않는다(제보 ⑤)', () => {
+  it('참석자·주최자의 displayName 을 읽는다', () => {
+    const [ev] = parseEvents(
+      {
+        items: [
+          {
+            id: 'x',
+            summary: '회의',
+            start: { date: '2026-08-20' },
+            end: { date: '2026-08-21' },
+            organizer: { email: 'boss@example.com', displayName: '김팀장' },
+            attendees: [
+              { email: 'boss@example.com', displayName: '김팀장' },
+              { email: 'nobody@example.com' },
+            ],
+          },
+        ],
+      },
+      CAL,
+    );
+    expect(ev!.names).toEqual({ 'boss@example.com': '김팀장' });
+    expect(ev!.organizer?.name).toBe('김팀장');
   });
 });

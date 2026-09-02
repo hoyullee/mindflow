@@ -24,7 +24,8 @@ import { addDays, daysBetween, minutesOf, timeLabel, todayISO } from './model';
 import { RadioCards } from '../../../components/Segmented';
 import { GoogleEventFields, ReminderField, type GoogleDirectoryApi, type GoogleFieldsValue } from './GoogleEventFields';
 import { RecurrenceField } from './RecurrenceField';
-import { buildRecurrence, RECURRENCE_OFF, type RecurrenceSpec } from './googleCalendar';
+import { buildRecurrence, eventWindowIso, RECURRENCE_OFF, type RecurrenceSpec } from './googleCalendar';
+import { MapLink } from './fieldBits';
 import type { CalendarEventInput } from '../../../adapters/ports';
 
 /** 어디에 저장할까 — `google`이면 그 캘린더 id가 함께 온다. */
@@ -97,6 +98,8 @@ export function NewEventModal({
   const target: NewEventTarget = destValid && dest !== 'geurio' ? { kind: 'google', calendarId: dest, fields: { ...gf, recurrence: rep } } : { kind: 'geurio' };
   /** 오른쪽 열로 갈라 놓을 수 있는가 — 좁은 화면은 폭이 없어 한 열에 이어 붙인다. */
   const twoCol = target.kind === 'google' && !isMobile;
+  // 회의실이 그 시간에 비어 있는가(요청 ③) — 초안이 바뀌면 이 구간도 함께 바뀐다.
+  const roomWindow = eventWindowIso({ allDay, startDate, endDate, ...(allDay ? {} : { startTime, endTime }) });
   // 크기 애니메이션(요청) — 목적지·반복·종일 같은 선택으로 카드가 늘고 줄 때
   // 이전 크기에서 새 크기로 잇는다(설정 팝업의 화면 전환과 같은 곡선).
   const morphRef = useCardMorph();
@@ -157,10 +160,9 @@ export function NewEventModal({
         ? ''
         : !allDay && durMin !== null && durMin <= 0
           ? '종료 시각이 시작보다 앞서요'
-          : // 어디에 남는지 한 줄로 — 구글에 만든 일정은 그리오에 사본을 두지 않는다.
-            target.kind === 'google'
-            ? 'Google 캘린더에 저장돼요'
-            : '');
+          : // 어디에 남는지는 위 "저장할 캘린더" 줄이 말한다 — 발치는 알릴 일이
+            // 있을 때만 쓴다(요청: 늘 같은 안내를 걸어 두지 않는다).
+            '');
   const footTone = error || (!allDay && durMin !== null && durMin <= 0) ? 'var(--mf-danger)' : 'var(--mf-faint2)';
 
   const submit = (): void => {
@@ -363,7 +365,12 @@ export function NewEventModal({
           </div>
 
           <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-            <Label>위치</Label>
+            <span style={{ display: 'flex', alignItems: 'center', gap: 8, minWidth: 0 }}>
+              <Label>위치</Label>
+              <span style={{ flex: 1 }} />
+              {/* 적어 둔 주소를 지도에서 연다(요청 ④ — 자동완성은 Places API 몫). */}
+              <MapLink query={location} />
+            </span>
             <input aria-label="위치" data-new-loc value={location} onChange={(e) => setLocation(e.target.value)} placeholder="주소 또는 장소 이름" maxLength={200} style={fieldStyle} />
           </div>
 
@@ -380,7 +387,7 @@ export function NewEventModal({
           </div>
 
           {/* 좁은 화면 — 열을 나눌 폭이 없어 같은 열에 이어 붙인다. */}
-          {target.kind === 'google' && isMobile && <GoogleEventFields value={gf} mode="create" onChange={(patch) => setGf((v) => ({ ...v, ...patch }))} {...(directory ? { directory } : {})} />}
+          {target.kind === 'google' && isMobile && <GoogleEventFields value={gf} mode="create" onChange={(patch) => setGf((v) => ({ ...v, ...patch }))} when={roomWindow} {...(directory ? { directory } : {})} />}
         </div>
 
         {twoCol && (
@@ -388,7 +395,7 @@ export function NewEventModal({
             {/* 원본은 이 열의 내용을 흰 카드 하나에 담는다 — 왼쪽 열과 성격이 다름을
                 면으로 말한다("여기는 구글이 해 주는 것들"). */}
             <div style={{ borderRadius: 16, border: '1px solid var(--mf-border-soft)', background: 'var(--mf-card)', padding: 15, boxSizing: 'border-box' }}>
-              <GoogleEventFields value={gf} mode="create" onChange={(patch) => setGf((v) => ({ ...v, ...patch }))} {...(directory ? { directory } : {})} />
+              <GoogleEventFields value={gf} mode="create" onChange={(patch) => setGf((v) => ({ ...v, ...patch }))} when={roomWindow} {...(directory ? { directory } : {})} />
             </div>
           </div>
         )}

@@ -8,10 +8,10 @@
 // 여기서 고친 것은 **구글에만** 남는다. 우리 표에 사본을 두지 않으므로(구글이 정본)
 // 저장이 끝나면 훅이 보이는 달을 다시 받아 구글이 돌려준 것을 그린다.
 
-import { useState } from 'react';
+import { useCallback, useState } from 'react';
 import { EventDetail, type CalendarChip } from './EventDetail';
 import { GoogleEventFields, type GoogleDirectoryApi, type GoogleFieldsChange, type GoogleFieldsValue } from './GoogleEventFields';
-import { attendeesBody, myRsvpOf, remindersBody, whenBody, RECURRENCE_OFF } from './googleCalendar';
+import { attendeesBody, eventWindowIso, myRsvpOf, remindersBody, whenBody, RECURRENCE_OFF } from './googleCalendar';
 import type { CalendarEvent, CalendarEventInput } from '../../../adapters/ports';
 import type { GoogleEvent, GoogleEventDraft, GoogleEventPatch, GoogleWriteField } from './googleCalendar';
 
@@ -164,6 +164,8 @@ export function fieldsOf(g: GoogleEvent): GoogleFieldsValue {
     addMeet: false,
     // 초대받은 일정에만 값이 있다 — 없으면 참석 여부 구획을 그리지 않는다.
     ...(myRsvpOf(g) !== undefined ? { rsvp: myRsvpOf(g) } : {}),
+    // 구글이 알려 준 표시 이름 — 참석자·주최자 행이 이메일 앞부분으로 떨어지지 않게(제보).
+    ...(g.names ? { names: g.names } : {}),
   };
 }
 
@@ -188,6 +190,13 @@ export function GoogleEventDetail({
   // `patchFrom`이 **바뀐 것만** 담은 PATCH 하나로 합친다.
   const [pendingFields, setPendingFields] = useState<GoogleFieldsChange>({});
   const writable = !!onPatch && !!onDelete;
+  /**
+   * 팝업이 든 **초안의 구간** — 회의실이 그 시간에 비어 있는지 물을 근거다(요청 ③).
+   * 저장된 값만 보면 시간을 고치는 동안 어긋난 답을 보여 주므로 초안을 받아 온다.
+   */
+  const [whenDraft, setWhenDraft] = useState(() => ({ allDay: event.allDay, startDate: event.startDate, endDate: event.endDate, ...(event.startTime ? { startTime: event.startTime } : {}), ...(event.endTime ? { endTime: event.endTime } : {}) }));
+  const onWhen = useCallback((w: typeof whenDraft) => setWhenDraft(w), []);
+  const roomWindow = { ...eventWindowIso(whenDraft), skipEventId: event.eventId };
 
   // "저장할 캘린더"(#11) — 구글 일정이니 소속 캘린더가 켜지고 Geurio는 비활성이다
   // (Geurio 일정은 반대 — `geurioCalendarChips`). 일정을 옮기는 기능이 아니라 표식이다.
@@ -202,6 +211,7 @@ export function GoogleEventDetail({
       isMobile={isMobile}
       onClose={onClose}
       cardAttrs={{ 'data-google-detail': '1' }}
+      onWhen={onWhen}
       readOnly={!writable}
       // 머리에는 **`Google`**만(제보 #22) — 기본 캘린더의 이름은 계정 이메일이라
       // 제목 자리에 주소가 박힌다. 어느 캘린더인지는 아래 "저장할 캘린더" 줄이 말한다.
@@ -216,7 +226,7 @@ export function GoogleEventDetail({
             },
           }
         : {})}
-      footerHint={writable ? 'Google 캘린더에 저장돼요' : 'Google 캘린더에서 가져온 일정이에요'}
+      {...(writable ? {} : { footerHint: 'Google 캘린더에서 가져온 일정이에요' })}
       notice={
         event.holiday
           ? '공휴일 캘린더의 일정이라 고칠 수 없어요.'
@@ -236,9 +246,9 @@ export function GoogleEventDetail({
               <GoogleEventFields
                 value={{ ...fieldsOf(event), ...pendingFields }}
                 mode="edit"
-                recurring={!!event.recurringEventId}
                 {...(event.organizer && !event.organizer.self ? { organizer: event.organizer } : {})}
                 {...(directory ? { directory } : {})}
+                when={roomWindow}
                 {...(event.meetLink ? { meetLink: event.meetLink } : {})}
                 onChange={(patch) => setPendingFields((p) => ({ ...p, ...patch }))}
               />

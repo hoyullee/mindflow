@@ -22,7 +22,7 @@
 // 갈라 두면 한쪽에만 기능이 붙는다 — 그래서 원천마다 다른 것(머리 배지·발치 문구·
 // 고칠 수 있는가·안내)만 프롭으로 받고 나머지는 한 코드다.
 
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import type { ReactNode } from 'react';
 import { Modal, MODAL_DIM, useCardMorph } from '../../../components/Modal';
 import { DateButton, PillButton } from './DatePop';
@@ -30,6 +30,7 @@ import { TimeButton } from './TimePop';
 import { addDays, daysBetween, minutesOf, timeLabel, todayISO } from './model';
 import { destChipStyle, destDotStyle, hhmm, QUICK_MINUTES } from './NewEventModal';
 import { ReminderField } from './GoogleEventFields';
+import { MapLink } from './fieldBits';
 import type { CalendarEvent, CalendarEventInput } from '../../../adapters/ports';
 import { endRuleBefore, excludeOccurrence, parseRecurrence, recurrenceLabel } from './recurrence';
 
@@ -96,6 +97,7 @@ export function EventDetail({
   calendarChips,
   reminder,
   cardAttrs,
+  onWhen,
 }: {
   event: CalendarEvent;
   isMobile: boolean;
@@ -118,6 +120,12 @@ export function EventDetail({
    * 좁은 화면은 열을 나눌 폭이 없어 본문 열에 이어 붙인다.
    */
   side?: ReactNode;
+  /**
+   * 초안의 **구간**이 바뀔 때 알린다 — 원천이 그 시간대로 무언가를 물어봐야 할 때
+   * 쓴다(구글: 회의실이 그 시간에 비어 있는가). 팝업은 초안을 자기가 들고 있으므로,
+   * 밖에서 그 값을 보려면 이 길뿐이다(저장된 값만 보면 시간을 고치는 동안 어긋난다).
+   */
+  onWhen?: (w: { allDay: boolean; startDate: string; endDate: string; startTime?: string; endTime?: string }) => void;
   /** 오른쪽 열 쪽에 저장할 변경이 있는가 — 이 팝업의 필드가 그대로여도 완료가 저장한다. */
   extraDirty?: boolean;
   /** 반복 일정에서 **어느 회차를 눌러 열었는가**(그 회차의 시작일) — 삭제 범위의 기준. */
@@ -185,6 +193,11 @@ export function EventDetail({
     return a !== null && b !== null ? b - a : null;
   })();
   const invalidTime = !draft.allDay && durMin !== null && durMin <= 0;
+  // 초안의 구간을 원천에 알린다(구글 회의실 확인) — 다섯 값이 바뀔 때만 부른다.
+  const { allDay, startDate, endDate, startTime, endTime } = draft;
+  useEffect(() => {
+    onWhen?.({ allDay, startDate, endDate, ...(startTime ? { startTime } : {}), ...(endTime ? { endTime } : {}) });
+  }, [onWhen, allDay, startDate, endDate, startTime, endTime]);
 
   /** 바뀐 것만 모은다 — 값이 그대로인 필드는 싣지 않는다(고치지 않은 것을 고쳤다고 말하지 않는다). */
   const buildPatch = (): Partial<CalendarEventInput> => {
@@ -430,7 +443,7 @@ export function EventDetail({
                 )}
               </div>
 
-              <Field label="위치">
+              <Field label="위치" trailing={<MapLink query={draft.location} />}>
                 <input aria-label="위치" data-event-loc value={draft.location} placeholder="주소 또는 장소 이름" maxLength={200} onChange={(e) => set({ location: e.target.value })} style={fieldStyle(false)} />
               </Field>
 
@@ -535,10 +548,19 @@ function SubLabel({ children }: { children: ReactNode }) {
   return <span style={{ fontSize: 11, fontWeight: 700, color: 'var(--mf-faint2)' }}>{children}</span>;
 }
 
-function Field({ label, children }: { label: string; children: ReactNode }) {
+function Field({ label, children, trailing }: { label: string; children: ReactNode; trailing?: ReactNode }) {
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 8, minWidth: 0 }}>
-      <Label>{label}</Label>
+      {/* 라벨 오른쪽에 그 필드에 딸린 것 하나(위치의 `지도에서 보기`) — 없으면 라벨만. */}
+      {trailing ? (
+        <span style={{ display: 'flex', alignItems: 'center', gap: 8, minWidth: 0 }}>
+          <Label>{label}</Label>
+          <span style={{ flex: 1 }} />
+          {trailing}
+        </span>
+      ) : (
+        <Label>{label}</Label>
+      )}
       {children}
     </div>
   );
