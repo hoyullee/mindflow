@@ -13,7 +13,9 @@ import {
   createGoogleEvent,
   deleteGoogleEvent,
   ensureGoogleToken,
+  eventColorOf,
   fetchCalendarList,
+  fetchEventColors,
   GOOGLE_RECONNECT_MSG,
   GOOGLE_SCOPE_DIRECTORY,
   GOOGLE_SCOPE_OTHER_CONTACTS,
@@ -107,6 +109,11 @@ export interface GoogleCalendarPrefs {
  */
 let listCache: GoogleCalendarMeta[] | null = null;
 const eventCache = new Map<string, GoogleEvent[]>();
+/**
+ * 이벤트 색 팔레트(`/colors`) — 계정마다 같은 값이고 거의 바뀌지 않으므로 탭에서
+ * **한 번만** 받는다. 못 받아도 화면은 하드코딩 폴백 표로 색을 그린다.
+ */
+let colorsCache: Record<string, string> | null = null;
 
 /**
  * 계정이 바뀌거나 연동을 끄면 기억도 버린다 — 남의 계정 일정이 비칠 자리를 없앤다.
@@ -115,6 +122,7 @@ const eventCache = new Map<string, GoogleEvent[]>();
 export function clearGoogleSessionCache(): void {
   listCache = null;
   eventCache.clear();
+  colorsCache = null;
 }
 
 /**
@@ -149,6 +157,8 @@ export function useGoogleCalendar(
   // 기억이 있으면 **첫 렌더부터** 그것을 그린다 — 빈 달력이 한 프레임도 나가지 않는다.
   const [calendars, setCalendars] = useState<GoogleCalendarMeta[]>(() => listCache ?? []);
   const [events, setEvents] = useState<GoogleEvent[]>(() => eventCache.get(cacheKey) ?? []);
+  // 이벤트 색 팔레트 — 첫 렌더부터 기억한 것을 쓴다(없으면 폴백 표).
+  const [colors, setColors] = useState<Record<string, string>>(() => colorsCache ?? {});
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [needsReauth, setNeedsReauth] = useState(false);
@@ -231,15 +241,26 @@ export function useGoogleCalendar(
   }, []);
 
   // ── 캘린더 목록 — 연동이 켜져 있으면 조용히 채운다(설정 화면이 바로 쓴다) ──
+  // **연동이 꺼진 것과 아직 안 켜진 것은 다르다**(제보: 대시보드 재진입마다 구글
+  // 일정이 깜빡였다). 예전에는 위 분기에서 곧바로 `resetAccountCache()`를 불러
+  // **탭의 세션 캐시를 통째로** 비웠다 — 그런데 그 분기는 홈이 하이드레이션되기 전
+  // (prefs가 아직 비었을 때)이나 **문서 위젯(mode 'off')에서도** 지나간다. 즉
+  // 대시보드에 위젯이 하나만 있어도 캐시가 날아가 매번 처음부터 다시 받았다.
+  // 그래서 캐시는 **켜져 있던 것이 꺼질 때만** 버린다(진짜 연동 해제).
+  const wasEnabledRef = useRef(false);
   useEffect(() => {
     if (!available || !enabled || mode === 'off') {
       setCalendars([]);
       setConnected(false);
-      // 연동이 꺼졌다(다른 인스턴스의 disconnect 포함 — prefs는 블롭으로 공유된다).
-      // 이 인스턴스가 들고 있던 계정 캐시(회의실·스코프)도 여기서 함께 버린다.
-      resetAccountCache();
+      // 켜져 있다가 꺼진 순간(다른 인스턴스의 disconnect 포함 — prefs는 블롭으로
+      // 공유된다)에만 계정 캐시를 버린다. 그 밖은 "아직 모른다"이지 "끊겼다"가 아니다.
+      if (wasEnabledRef.current && !enabled) {
+        wasEnabledRef.current = false;
+        resetAccountCache();
+      }
       return;
     }
+    wasEnabledRef.current = true;
     let cancelled = false;
     void (async () => {
       const list = await withToken((t) => fetchCalendarList(t)).catch(() => null);
@@ -302,6 +323,39 @@ export function useGoogleCalendar(
    * 그것까지 60초마다 물으면 조회가 배로 는다(설정을 열면 그때 다시 받는다).
    */
   useLiveRefresh(available && enabled && mode === 'events', () => setReloadTick((n) => n + 1));
+
+  /**
+   * 이벤트 색 팔레트를 한 번 받는다(요청 ⑤) — 사용자가 그 일정에 지정한 색을
+   * 그대로 보여 주려면 번호(`colorId`)를 hex로 풀어야 한다. 실패해도 폴백 표가
+   * 있으니 조용히 넘어간다.
+   */
+  useEffect(() => {
+    if (!available || !enabled || mode === 'off' || colorsCache) return;
+    let cancelled = false;
+    void (async () => {
+      const got = await withToken((t) => fetchEventColors(t)).catch(() => null);
+      if (cancelled || !aliveRef.current || !got) return;
+      colorsCache = got;
+      setColors(got);
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [available, enabled, mode, withToken, tokenTick]);
+
+  /**
+   * 화면이 쓰는 색을 **여기서 한 번** 풀어 준다 — 일정에 지정한 색이 있으면 그것,
+   * 없으면 캘린더 색(`color`). 소비처가 넷(월 격자·시간표·마감 목록·위젯)이라
+   * 각자 풀면 어느 화면에서만 캘린더 색으로 남는다.
+   */
+  const colored = useMemo(
+    () =>
+      events.map((e) => {
+        const hex = eventColorOf(e, colors);
+        return hex && hex !== e.color ? { ...e, color: hex } : e;
+      }),
+    [events, colors],
+  );
 
   const connect = useCallback(async () => {
     setError(null);
@@ -413,7 +467,7 @@ export function useGoogleCalendar(
     connected,
     calendars,
     pickedIds: prefs.calendars,
-    events,
+    events: colored,
     loading,
     error,
     connect,

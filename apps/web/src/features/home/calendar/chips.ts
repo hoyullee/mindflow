@@ -16,7 +16,7 @@ import type { CalendarEntry } from './entries';
  * 구글에서 온 일정의 표식 색(요청) — 캘린더마다 다른 색 대신 **구글 파랑 하나**로
  * 통일한다: 이 표식이 말하는 것은 "어느 캘린더"가 아니라 "구글에서 온 일정"이다.
  */
-export const GOOGLE_MARK = 'rgb(74, 120, 208)';
+export const GOOGLE_MARK = '#4a78d0';
 
 export interface EntryChip {
   bg: string;
@@ -42,10 +42,13 @@ export interface EntryChip {
  * **밝기는 면에서** — 그래서 다크 홈에서도 칩이 격자 위에 홀로 빛나지 않는다.
  */
 export function entryChip(e: CalendarEntry, surface: ChipSurface): EntryChip {
-  // 분류가 없는 카드도 알약이어야 하니 이름 없는 값으로 색을 뽑는다(결정적).
-  const base = e.tagColor ?? tagColor(e.tag, UI_THEME.palette);
-  // 구글 일정은 캘린더 색이 아니라 **구글 파랑 막대**로 표시한다(요청).
-  const dot = e.google ? GOOGLE_MARK : columnColor({ id: e.colId, title: e.colName, ...(e.colColor ? { color: e.colColor } : {}) }, e.colIndex, UI_THEME.palette);
+  // 구글 일정은 **그 일정의 색**을 쓴다(요청 ⑤) — 사용자가 구글에서 지정한 이벤트
+  // 색이고, 지정하지 않았으면 캘린더 색이다(`useGoogleCalendar`가 풀어 `colColor`에
+  // 실어 준다). "구글에서 왔다"는 신호는 **색이 아니라 막대 모양**이 맡는다 — 그래야
+  // 사용자가 고른 색을 지키면서 출처도 눈에 들어온다.
+  // 우리 일정·카드는 분류색(분류가 없어도 이름 없는 값으로 결정적으로 뽑는다).
+  const base = e.google ? (e.colColor ?? GOOGLE_MARK) : (e.tagColor ?? tagColor(e.tag, UI_THEME.palette));
+  const dot = e.google ? base : columnColor({ id: e.colId, title: e.colName, ...(e.colColor ? { color: e.colColor } : {}) }, e.colIndex, UI_THEME.palette);
   return {
     bg: mixHex(surface.card, base, 0.16),
     fg: tagInk(base, surface.text),
@@ -61,6 +64,29 @@ export function entryChip(e: CalendarEntry, surface: ChipSurface): EntryChip {
 export interface ChipSurface {
   card: string;
   text: string;
+}
+
+/**
+ * **종일 일정인가**(요청 ①②). 시각이 있으면 시간 일정이고, 없으면 종일이다 —
+ * 칸반 마감도 여기 든다(마감은 종일로 다룬다는 기존 결정).
+ *
+ * 화면 규칙(구글 캘린더 관례): 종일은 **면을 채운 칩**, 시간 일정은 **표식 + 시작
+ * 시각 + 제목**. 그래서 칸을 훑을 때 "하루를 통째로 쓰는 일"과 "몇 시의 일"이 갈린다.
+ */
+export function isAllDayEntry(e: CalendarEntry): boolean {
+  return !e.startTime;
+}
+
+/**
+ * 칩에 붙는 시작 시각(요청 ②) — 칸이 좁아 정시는 `오전 9시`로 줄인다(구글 캘린더도
+ * 같은 방식). 분이 있으면 `오후 2:30`.
+ */
+export function chipTimeLabel(hhmm: string): string {
+  const [h, m] = hhmm.split(':').map(Number);
+  if (h === undefined || Number.isNaN(h)) return hhmm;
+  const ampm = h < 12 ? '오전' : '오후';
+  const h12 = h % 12 === 0 ? 12 : h % 12;
+  return m ? `${ampm} ${h12}:${String(m).padStart(2, '0')}` : `${ampm} ${h12}시`;
 }
 
 /**

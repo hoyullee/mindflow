@@ -774,6 +774,114 @@ describe('구글 캘린더 겹치기(PR5)', () => {
     await waitFor(() => expect(screen.getAllByText(/구글에서 방금 추가/).length).toBeGreaterThan(0));
   });
 
+  // 제보 ⑦ — 화면을 다시 열 때마다 구글 일정이 깜빡였다. 뿌리는 **세션 캐시를 지우는
+  // 지점**이었다: 예전에는 "연동이 꺼졌다" 분기에서 곧바로 캐시를 비웠는데, 그 분기는
+  // 홈이 늘 마운트해 두는 **설정 모달 인스턴스**(mode 'off')와 문서 위젯도 지나간다.
+  // 즉 캐시가 계속 지워져 매번 처음부터 다시 받았다. 이제 **켜져 있던 것이 꺼질 때만**
+  // 버린다 — 그래서 화면을 떠났다 돌아오면 기억한 일정이 **곧바로** 그려진다.
+  it('구글에서 일정에 지정한 색을 그대로 쓴다 — 시간 일정·종일·기간 모두(요청 ⑤)', async () => {
+    seed({ calendars: ['me@example.com'] });
+    seedToken();
+    stubGis();
+    const day = inMonth(1);
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (url: string) => {
+        const ok = (body: unknown) => ({ ok: true, status: 200, json: async () => body }) as unknown as Response;
+        if (url.includes('people.googleapis.com') || url.includes('admin.googleapis.com')) return ok({ items: [] });
+        // 팔레트는 `/colors`에서 온다 — 번호(colorId)를 hex로 풀어야 한다.
+        if (url.includes('/colors')) return ok({ event: { '11': { background: '#d50000' }, '5': { background: '#f6bf26' } } });
+        if (url.includes('/users/me/calendarList')) return ok({ items: [{ id: 'me@example.com', summary: '내 캘린더', primary: true, backgroundColor: '#4285f4', accessRole: 'owner' }] });
+        return ok({
+          items: [
+            { id: 'g1', summary: '빨간 회의', colorId: '11', start: { dateTime: `${day}T09:00:00+09:00` }, end: { dateTime: `${day}T10:00:00+09:00` } },
+            { id: 'g2', summary: '노란 종일', colorId: '5', start: { date: day }, end: { date: nextDay(day) } },
+            { id: 'g3', summary: '색 없는 회의', start: { dateTime: `${day}T13:00:00+09:00` }, end: { dateTime: `${day}T14:00:00+09:00` } },
+          ],
+        });
+      }),
+    );
+    clientId = 'test-client.apps.googleusercontent.com';
+    const user = userEvent.setup();
+    const { container } = renderHome();
+    await openCalendar(container, user);
+    const cell = await waitFor(() => {
+      const el = container.querySelector<HTMLElement>(`[data-day-cell="${day}"]`);
+      expect(el?.textContent).toContain('빨간 회의');
+      return el as HTMLElement;
+    });
+    const markOf = (title: string) => {
+      const chip = [...cell.querySelectorAll<HTMLElement>('[data-cal-chip]')].find((c) => c.textContent?.includes(title))!;
+      return chip.querySelector<HTMLElement>('span[style*="border-radius"]')?.style.background ?? '';
+    };
+    // 시간 일정 — 그 일정에 지정한 색(막대)
+    expect(markOf('빨간 회의')).toBe('rgb(213, 0, 0)');
+    // 종일 일정 — 칩 면이 그 색에서 나온다(칩은 채운 면이라 표식이 없다)
+    const allDay = [...cell.querySelectorAll<HTMLElement>('[data-cal-chip]')].find((c) => c.textContent?.includes('노란 종일'))!;
+    expect(allDay.style.background).not.toBe('transparent');
+    expect(allDay.querySelector('span[style*="border-radius"]')).toBeNull();
+    // 색을 지정하지 않은 일정은 그 캘린더 색으로 남는다
+    expect(markOf('색 없는 회의')).toBe('rgb(66, 133, 244)');
+  });
+
+  it('대시보드를 떠났다 돌아오면 구글 일정이 곧바로 그려진다 — 문서 위젯이 세션 캐시를 비우지 않는다(제보 ⑦)', async () => {
+    // 제보: 대시보드 재진입마다 구글 일정이 깜빡였다. 원인은 **연동이 꺼진 것과
+    // 아직 안 켜진 것을 같게 본 것** — 조회하지 않는 소비처(문서 위젯 `mode: 'off'`,
+    // 닫힌 설정 모달)가 마운트할 때마다 탭의 세션 캐시를 통째로 비웠다. 그래서
+    // 캘린더 위젯은 매번 처음부터 받아야 했고 그 사이 달력이 비었다.
+    localStorage.setItem(
+      'mf_spaces',
+      JSON.stringify({
+        spaces: [{ id: 's1', name: '업무', home: true, color: '#f0663f', maps: [], folders: [] }],
+        activeSpace: 's1',
+        mapFolders: {},
+        google: { calendars: ['me@example.com'] },
+        // 문서 위젯이 **먼저** 온다 — 그 인스턴스의 mode는 'off'다.
+        dashboards: [{ id: 'd1', name: '이번 주', items: [{ id: 'w-doc', docId: 'doc-a', size: '1x1' }, { id: 'w-cal', kind: 'cal', size: '4x3' }] }],
+      }),
+    );
+    localStorage.setItem('mf_demo_session', JSON.stringify({ user: { email: 'me@example.com' }, email: 'me@example.com', name: '나' }));
+    seedToken();
+    stubGis();
+    const meeting = inMonth(1);
+    let slow = false;
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (url: string) => {
+        const ok = (body: unknown) => ({ ok: true, status: 200, json: async () => body }) as unknown as Response;
+        if (url.includes('people.googleapis.com') || url.includes('admin.googleapis.com')) return ok({ items: [] });
+        if (url.includes('/colors')) return ok({ event: {} });
+        if (url.includes('/users/me/calendarList')) {
+          if (slow) return new Promise<Response>(() => {});
+          return ok({ items: [{ id: 'me@example.com', summary: '내 캘린더', primary: true, accessRole: 'owner' }] });
+        }
+        // 두 번째 방문부터는 조회가 **영원히 응답하지 않는다** — 그래도 화면에 일정이
+        // 보이면 그건 기억(캐시)에서 온 것이다.
+        if (slow) return new Promise<Response>(() => {});
+        return ok({ items: [{ id: 'g1', summary: '구글 회의', start: { dateTime: `${meeting}T09:00:00+09:00` }, end: { dateTime: `${meeting}T10:00:00+09:00` }, htmlLink: 'https://calendar.google.com/x' }] });
+      }),
+    );
+    clientId = 'test-client.apps.googleusercontent.com';
+    const user = userEvent.setup();
+    const { container } = renderHome();
+    const aside = await waitFor(() => {
+      const el = container.querySelector('aside');
+      expect(el).toBeTruthy();
+      return el as HTMLElement;
+    });
+    await user.click(within(aside).getByText('이번 주'));
+    await waitFor(() => expect(container.querySelector('[data-cal-widget-month]')).toBeTruthy());
+    await waitFor(() => expect(screen.getAllByText(/구글 회의/).length).toBeGreaterThan(0));
+
+    // 스페이스로 나갔다가 다시 대시보드로 — 이제 조회는 응답하지 않는다.
+    slow = true;
+    await user.click(within(aside).getByText('업무'));
+    await waitFor(() => expect(container.querySelector('[data-dashboard-view]')).toBeNull());
+    await user.click(within(aside).getByText('이번 주'));
+    await waitFor(() => expect(container.querySelector('[data-cal-widget-month]')).toBeTruthy());
+    expect(screen.getAllByText(/구글 회의/).length).toBeGreaterThan(0);
+  });
+
   it('회의실을 검색해 예약한다 — 구글에서는 참석자(resource)로 저장된다', async () => {
     seed({ calendars: ['me@example.com'] });
     seedToken();

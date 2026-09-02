@@ -1,5 +1,5 @@
 import { describe, expect, it, beforeEach, vi } from 'vitest';
-import { GOOGLE_CALENDAR_SCOPE, RECURRENCE_OFF, buildRecurrence, draftToBody, googleWriteError, managedFieldsDiffer, updateGoogleEvent, recurrenceSummary, isDayOffHoliday, isHolidayCalendarId, onTokenChange, scopeCovers, parseCalendarList, parseEvents, readStoredToken, splitGoogleDateTime, storeToken, type GoogleCalendarMeta } from './googleCalendar';
+import { GOOGLE_CALENDAR_SCOPE, GOOGLE_EVENT_COLORS, RECURRENCE_OFF, buildRecurrence, draftToBody, eventColorOf, fetchEventColors, googleWriteError, managedFieldsDiffer, updateGoogleEvent, recurrenceSummary, isDayOffHoliday, isHolidayCalendarId, onTokenChange, scopeCovers, parseCalendarList, parseEvents, readStoredToken, splitGoogleDateTime, storeToken, type GoogleCalendarMeta } from './googleCalendar';
 import { googleEntries, holidayMap } from './entries';
 import { draftFrom, patchFrom } from './GoogleEventDetail';
 import { submitNewEvent } from './newEventSubmit';
@@ -468,5 +468,30 @@ describe('구글 전용 필드(PR6 후속 — 디자인 원본 nIsGoogle)', () =
       await expect(updateGoogleEvent('tok', base, { body: { summary: '회의' }, touched: ['title'] })).rejects.toMatchObject({ status: 412 });
       vi.unstubAllGlobals();
     });
+  });
+});
+
+describe('구글 일정 색(요청 ⑤ — 그 일정에 지정한 색을 그대로)', () => {
+  it('일정에 지정한 색이 있으면 그 색, 없으면 캘린더 색', () => {
+    const [ev] = parseEvents({ items: [{ id: 'x', summary: '회의', colorId: '11', start: { date: '2026-08-10' }, end: { date: '2026-08-11' } }] }, CAL);
+    expect(ev!.colorId).toBe('11');
+    // `/colors`로 받은 팔레트가 먼저
+    expect(eventColorOf(ev!, { '11': '#ff0000' })).toBe('#ff0000');
+    // 못 받았으면 하드코딩 폴백 표(색이 통째로 사라지지 않는다)
+    expect(eventColorOf(ev!, {})).toBe(GOOGLE_EVENT_COLORS['11']);
+    // 색을 지정하지 않은 일정은 그 캘린더의 색
+    const [plain] = parseEvents({ items: [{ id: 'y', summary: '회의', start: { date: '2026-08-10' }, end: { date: '2026-08-11' } }] }, CAL);
+    expect(plain!.colorId).toBeUndefined();
+    expect(eventColorOf(plain!, { '11': '#ff0000' })).toBe(CAL.color);
+  });
+
+  it('`/colors`는 배경 hex만 걸러 읽고, 비었으면 null이다(폴백 표를 쓴다)', async () => {
+    vi.stubGlobal('fetch', async () => ({ ok: true, status: 200, json: async () => ({ event: { '1': { background: '#7986cb', foreground: '#1d1d1d' }, '2': { background: 3 } } }) }) as unknown as Response);
+    expect(await fetchEventColors('tok')).toEqual({ '1': '#7986cb' });
+    vi.stubGlobal('fetch', async () => ({ ok: true, status: 200, json: async () => ({}) }) as unknown as Response);
+    expect(await fetchEventColors('tok')).toBeNull();
+    vi.stubGlobal('fetch', async () => ({ ok: false, status: 403, json: async () => ({}) }) as unknown as Response);
+    expect(await fetchEventColors('tok')).toBeNull();
+    vi.unstubAllGlobals();
   });
 });

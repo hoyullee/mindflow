@@ -140,7 +140,13 @@ export interface GoogleEvent {
   description?: string;
   /** 구글에서 열기 링크. */
   htmlLink?: string;
+  /** 그 캘린더의 색(캘린더 목록에서). */
   color?: string;
+  /**
+   * 사용자가 **그 일정에** 지정한 색(요청) — 구글의 이벤트 색 번호(1~11)다.
+   * 캘린더 색과 다른 값이고, 지정하지 않으면 없다(그때는 캘린더 색을 쓴다).
+   */
+  colorId?: string;
   holiday?: boolean;
   /** 공휴일 중에서도 **실제로 쉬는 날**인가(`isDayOffHoliday`) — 달력을 칠하는 기준. */
   dayOff?: boolean;
@@ -328,6 +334,50 @@ async function get(path: string, token: string, params: Record<string, string>):
   return res.json();
 }
 
+/**
+ * 구글의 **이벤트 색 팔레트**(요청 — 일정에 지정한 색을 그대로 가져온다).
+ *
+ * 색은 번호(`colorId` 1~11)로 오므로 실제 hex는 `/colors`에서 받아야 한다. 다만
+ * 그 조회가 실패해도(스코프·네트워크) 색이 통째로 사라지면 안 되니, 구글이 오래
+ * 유지해 온 값을 **폴백 표**로 함께 둔다. 표가 먼저 그려지고, 조회가 도착하면
+ * 그 값으로 갈아 끼운다(사용자에게는 늘 색이 보인다).
+ */
+export const GOOGLE_EVENT_COLORS: Record<string, string> = {
+  '1': '#7986cb', // Lavender
+  '2': '#33b679', // Sage
+  '3': '#8e24aa', // Grape
+  '4': '#e67c73', // Flamingo
+  '5': '#f6bf26', // Banana
+  '6': '#f4511e', // Tangerine
+  '7': '#039be5', // Peacock
+  '8': '#616161', // Graphite
+  '9': '#3f51b5', // Blueberry
+  '10': '#0b8043', // Basil
+  '11': '#d50000', // Tomato
+};
+
+/** `/colors`의 이벤트 팔레트 — 번호 → 배경 hex. 실패하면 `null`(폴백 표를 쓴다). */
+export async function fetchEventColors(token: string): Promise<Record<string, string> | null> {
+  try {
+    const json = (await get('/colors', token, {})) as { event?: Record<string, { background?: unknown }> };
+    const src = json?.event;
+    if (!src || typeof src !== 'object') return null;
+    const out: Record<string, string> = {};
+    for (const [id, v] of Object.entries(src)) {
+      if (typeof v?.background === 'string') out[id] = v.background;
+    }
+    return Object.keys(out).length > 0 ? out : null;
+  } catch {
+    return null;
+  }
+}
+
+/** 그 일정이 화면에서 쓸 색 — 일정에 지정한 색이 있으면 그것, 없으면 캘린더 색. */
+export function eventColorOf(ev: GoogleEvent, palette: Record<string, string>): string | undefined {
+  if (ev.colorId) return palette[ev.colorId] ?? GOOGLE_EVENT_COLORS[ev.colorId] ?? ev.color;
+  return ev.color;
+}
+
 /** 공휴일 캘린더 판별 — 구글의 공용 공휴일 캘린더 id가 이 꼴이다. */
 export function isHolidayCalendarId(id: string): boolean {
   return id.includes('#holiday@group.v.calendar.google.com');
@@ -471,6 +521,7 @@ export function parseEvents(json: unknown, cal: GoogleCalendarMeta): GoogleEvent
       ...(typeof it.description === 'string' && it.description ? { description: it.description } : {}),
       ...(typeof it.htmlLink === 'string' ? { htmlLink: it.htmlLink } : {}),
       ...(cal.color ? { color: cal.color } : {}),
+      ...(typeof it.colorId === 'string' && it.colorId ? { colorId: it.colorId } : {}),
       ...(cal.writable ? { writable: true } : {}),
       ...(typeof it.etag === 'string' ? { etag: it.etag } : {}),
       ...(typeof it.recurringEventId === 'string' ? { recurringEventId: it.recurringEventId } : {}),
