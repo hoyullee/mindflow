@@ -1062,6 +1062,48 @@ describe('구글 캘린더 겹치기(PR5)', () => {
     await waitFor(() => expect(stateOf(freeRoom)).toBe('booked'));
   });
 
+  it('회의실 **전부**의 사용 여부를 확인한다 — 스크롤해야 보이는 방도 배지가 붙어 있다(제보)', async () => {
+    seed({ calendars: ['me@example.com'] });
+    seedToken();
+    stubGis();
+    // 여섯 개 — 예전에는 앞의 세 줄만 물어서, 스크롤한 방은 검색해야 배지가 붙었다.
+    const rooms = Array.from({ length: 6 }, (_, i) => `room-${i}@resource.calendar.google.com`);
+    const asked: string[] = [];
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (url: string) => {
+        const ok = (body: unknown) => ({ ok: true, status: 200, json: async () => body }) as unknown as Response;
+        if (url.includes('people.googleapis.com')) return ok({ people: [] });
+        if (url.includes('admin.googleapis.com')) {
+          return ok({ items: rooms.map((email, i) => ({ resourceEmail: email, generatedResourceName: `회의실-${i}`, resourceCategory: 'CONFERENCE_ROOM', capacity: 4 })) });
+        }
+        if (url.includes('/colors')) return ok({ event: {} });
+        if (url.includes('/users/me/calendarList')) return ok({ items: [{ id: 'me@example.com', summary: '내 캘린더', primary: true, accessRole: 'owner' }] });
+        const hit = rooms.find((email) => url.includes(encodeURIComponent(email)));
+        if (hit) {
+          asked.push(hit);
+          // 마지막 방만 잡혀 있다 — 목록 끝까지 물어야 이 배지가 뜬다.
+          return ok({ items: hit === rooms[5] ? [{ id: 'other', summary: '선점' }] : [] });
+        }
+        return ok({ items: [] });
+      }),
+    );
+    clientId = 'test-client.apps.googleusercontent.com';
+    const user = userEvent.setup();
+    const { container } = renderHome();
+    await openCalendar(container, user);
+    await user.click(screen.getByText('새 일정'));
+    await waitFor(() => expect(document.querySelector('[data-new-cal="me@example.com"]')).toBeTruthy());
+    await user.click(document.querySelector<HTMLElement>('[data-new-cal="me@example.com"]')!);
+    await waitFor(() => expect(document.querySelector('[data-gf-room-hit]')).toBeTruthy());
+
+    const stateOf = (email: string) => document.querySelector(`[data-gf-room-hit="${email}"] [data-gf-room-state]`)?.getAttribute('data-gf-room-state') ?? null;
+    // 검색하지 않았는데도 마지막 방까지 배지가 붙는다.
+    await waitFor(() => expect(stateOf(rooms[5]!)).toBe('busy'), { timeout: 5000 });
+    await waitFor(() => expect(new Set(asked).size).toBe(6), { timeout: 5000 });
+    expect(stateOf(rooms[0]!)).toBe('free');
+  });
+
   it('회의실을 검색해 예약한다 — 구글에서는 참석자(resource)로 저장된다', async () => {
     seed({ calendars: ['me@example.com'] });
     seedToken();

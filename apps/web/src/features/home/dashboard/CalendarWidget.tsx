@@ -241,39 +241,44 @@ function MonthBody({ entries, todayIso, mode, cols, rows, surface, ym, side, sel
         <div style={{ flex: 1, minHeight: 0, display: 'grid', gridTemplateColumns: 'repeat(7, 1fr)', gridAutoRows: '1fr', gap: 3 }}>
           {cells.map((c) => {
             const on = withSide && c.inMonth && c.iso === selDay;
-            // 칸 배경 — 큰 달력과 같은 규칙(주말·공휴일 톤, 고른 날은 면만 바뀐다).
+            // 칸 배경 — 큰 달력과 같은 규칙: **요일·이번 달 여부만** 말한다.
+            // 고른 날은 배경이 아니라 **숫자**가 진다(제보 — 배경으로 표시하면 이웃 달
+            // 면·주말 톤·드롭 대기와 뜻이 겹친다). 쉬는 날 판정도 큰 달력과 같이
+            // `dayOff`를 본다 — 이름만 있는 절기·기념일까지 칠하면 달이 분홍이 된다.
             const bg = !c.inMonth
               ? 'var(--mf-cal-out)'
-              : on
-                ? 'var(--mf-cal-sel)'
-                : c.holiday || c.dow === 0
-                  ? 'var(--mf-cal-sun)'
-                  : c.dow === 6
-                    ? 'var(--mf-cal-sat)'
-                    : 'var(--mf-card)';
+              : c.dayOff || c.dow === 0
+                ? 'var(--mf-cal-sun)'
+                : c.dow === 6
+                  ? 'var(--mf-cal-sat)'
+                  : 'var(--mf-card)';
             const cellInner = (
               <>
                 <span style={{ display: 'flex', alignItems: 'center', gap: 3, minWidth: 0, flex: '0 0 auto' }}>
                   <span
+                    data-cal-widget-num
+                    data-selected={on ? '1' : undefined}
                     style={{
                       width: 19,
                       height: 19,
                       flex: '0 0 auto',
                       borderRadius: 999,
-                      // 고른 날은 **면만** 바뀐다(요청) — 숫자에까지 주황을 칠하면
-                      // 오늘 표시와 구별되지 않는다.
                       background: c.isToday ? 'var(--mf-accent)' : 'transparent',
+                      // 숫자 색은 그 날이 무슨 날인가만 말한다 — 이웃 달 칸도 토·일·
+                      // 공휴일이면 같은 색이다(요청). 이웃 달임은 가라앉은 면이 말한다.
                       color: c.isToday
                         ? 'var(--mf-accent-ink)'
-                        : !c.inMonth
-                          ? 'var(--mf-faint2)'
-                          : c.holiday || c.dow === 0
-                            ? 'var(--mf-danger)'
-                            : c.dow === 6
-                              ? 'var(--mf-info)'
+                        : c.dayOff || c.dow === 0
+                          ? 'var(--mf-danger)'
+                          : c.dow === 6
+                            ? 'var(--mf-info)'
+                            : !c.inMonth
+                              ? 'var(--mf-faint2)'
                               : 'var(--mf-subtext)',
+                      // 고른 날은 강조색 링(오늘은 채운 원이라 바깥 후광) — 큰 달력과 같다.
+                      ...(on ? { boxShadow: c.isToday ? '0 0 0 3px var(--mf-cal-ring)' : 'inset 0 0 0 2px var(--mf-accent)' } : {}),
                       fontSize: 12,
-                      fontWeight: c.isToday ? 800 : 600,
+                      fontWeight: c.isToday || on ? 800 : 600,
                       ...MONO,
                       display: 'inline-flex',
                       alignItems: 'center',
@@ -282,7 +287,7 @@ function MonthBody({ entries, todayIso, mode, cols, rows, surface, ym, side, sel
                   >
                     {c.n}
                   </span>
-                  {c.holiday && <span style={{ fontSize: 9.5, fontWeight: 700, color: 'var(--mf-danger)', minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{c.holiday}</span>}
+                  {c.holiday && <span style={{ fontSize: 9.5, fontWeight: 700, color: c.dayOff ? 'var(--mf-danger)' : 'var(--mf-faint)', minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{c.holiday}</span>}
                 </span>
                 {c.bars.map((b) => (
                   <Bar key={`bar-${rowKey(b.entry)}`} entry={b.entry} label={b.label} head={b.head} tail={b.tail} surface={surface} h={15} onPick={onPickEntry} />

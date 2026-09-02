@@ -30,6 +30,7 @@ import { RadioCards } from '../../../components/Segmented';
 import { DateButton, PillButton, pillStyle } from './DatePop';
 import { useCalendarComments } from './useCalendarComments';
 import { daysBetween, dueBadge, partsOf, todayISO } from './model';
+import { DeleteConfirm } from './DeleteConfirm';
 import type { CalendarEntry } from './entries';
 
 export function CalendarDetail({ state, controller, entry, isMobile }: { state: HomeState; controller: HomeController; entry: CalendarEntry; isMobile: boolean }) {
@@ -38,6 +39,10 @@ export function CalendarDetail({ state, controller, entry, isMobile }: { state: 
   const [participants, setParticipants] = useState<ShareParticipant[]>([]);
   const [saving, setSaving] = useState(false);
   const [tagDraft, setTagDraft] = useState<string | null>(null);
+  // 삭제는 한 번 묻는다(요청) — 일정 상세와 **같은 팝업**을 쓴다(끝날 때까지 남아
+  // 스피너로 진행을 보여 준다).
+  const [confirmOpen, setConfirmOpen] = useState(false);
+  const [deleting, setDeleting] = useState(false);
   // 댓글 열은 에디터의 그 부품이라 색을 `Theme` 꼴로 받는다 — 홈 테마를 그 모양으로
   // 옮겨 넘긴다(다크 홈 안에 밝은 열이 홀로 뜨지 않게).
   const commentTheme = useMemo(() => homeEditorTheme(state.theme, UI_THEME.palette), [state.theme]);
@@ -184,13 +189,7 @@ export function CalendarDetail({ state, controller, entry, isMobile }: { state: 
             <button
               type="button"
               data-cal-detail-delete
-              onClick={() => {
-                void run(async () => {
-                  const ok = await controller.deleteCalendarCard(entry.docId, entry.cardId);
-                  if (ok) controller.closeCalendarCard();
-                  return ok;
-                });
-              }}
+              onClick={() => setConfirmOpen(true)}
               className="mf-ctl mf-ctl-danger"
               style={{ flex: '0 0 auto', whiteSpace: 'nowrap', height: 30, padding: '0 15px', borderRadius: 999, border: '1px solid var(--mf-border)', background: 'var(--mf-card)', color: 'var(--mf-muted)', font: 'inherit', fontSize: 12, fontWeight: 700, cursor: 'pointer' }}
             >
@@ -203,6 +202,25 @@ export function CalendarDetail({ state, controller, entry, isMobile }: { state: 
             </svg>
           </button>
         </div>
+
+        {confirmOpen && (
+          <DeleteConfirm
+            title="카드를 삭제할까요?"
+            body={`${title.trim() ? `'${title.trim()}' 카드가 사라져요.` : '이 카드가 사라져요.'} ${entry.boardName} 보드에서 지워지고, 되돌릴 수 없어요.`}
+            isMobile={isMobile}
+            deleting={deleting}
+            onCancel={() => setConfirmOpen(false)}
+            onConfirm={() => {
+              void (async () => {
+                setDeleting(true);
+                const ok = await controller.deleteCalendarCard(entry.docId, entry.cardId);
+                setDeleting(false);
+                if (ok) controller.closeCalendarCard();
+                else setConfirmOpen(false);
+              })();
+            }}
+          />
+        )}
 
         <div style={{ flex: 1, minHeight: 0, display: 'flex', alignItems: 'stretch', minWidth: 0, flexDirection: isMobile ? 'column' : 'row' }}>
           {/* 왼쪽 — 카드 자체 */}

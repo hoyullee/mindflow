@@ -708,6 +708,11 @@ function Attendees({ list, onChange, search, seedNames }: { list: string[]; onCh
   );
 }
 
+/** 한 번에 확인할 회의실 수 — 구글의 속도 제한을 넘지 않게 이어 달린다. */
+const ROOM_ASK_LIMIT = 4;
+/** 확인할 회의실 상한 — 아주 많은 조직에서는 보이는·검색된 앞쪽부터 채운다. */
+const ROOM_ASK_MAX = 60;
+
 /**
  * 회의실 — 원본의 검색 상자 + **늘 보이는 목록**(검색은 좁히기만 한다). 고른 회의실은
  * 그 행이 강조되고 `예약됨` 배지가 붙는다(원본의 그 상태) — 다시 누르면 취소.
@@ -746,8 +751,12 @@ function Rooms({
   // 않아 크기 애니메이션이 검색마다 돌지 않는다). 행 높이 ≈ 42px(패딩 9×2 + 내용 24).
   // **세 줄까지**(제보 #4) — 넷을 보여 주면 팝업이 그만큼 길어진다.
   const boxH = Math.min(3 * 42 + 2, all.length * 42 + 2);
-  // 보이는 세 줄 + 예약한 회의실만 확인한다(목록이 수십 개인 조직에서 전부 묻지 않게).
-  const askKey = when ? [...new Set([...rows.slice(0, 3).map((r) => r.email), ...picked])].join(',') : '';
+  // **목록 전부**를 확인한다(제보 — 첫 세 줄만 배지가 붙어, 스크롤한 회의실은 비어
+  // 있는지 알 수 없었고 검색해야 그때 붙었다). 왕복은 두 가지로 묶는다: 한 번에 네
+  // 개까지만 날리고(`ROOM_ASK_LIMIT`), 회의실이 아주 많은 조직에서는 `rows` 순서로
+  // 앞의 60개까지(검색하면 그 결과가 곧 앞이라 찾는 회의실은 언제나 들어온다).
+  const askOrder = when ? [...new Set([...picked, ...rows.map((r) => r.email)])].slice(0, ROOM_ASK_MAX) : [];
+  const askKey = askOrder.join(',');
   const from = when?.fromIso ?? '';
   const to = when?.toIso ?? '';
   const skip = when?.skipEventId;
@@ -769,17 +778,35 @@ function Rooms({
   useEffect(() => {
     if (!check || !askKey || !from || !to) return;
     const emails = askKey.split(',').filter(Boolean);
+    let stop = false;
     const t = setTimeout(() => {
-      for (const email of emails) {
+      // 네 개씩 **이어 달린다** — 수십 개를 한꺼번에 날리면 구글이 속도 제한으로
+      // 되돌려 보내 배지가 통째로 빈다. 앞의 것부터라 보이는 줄이 먼저 채워지고,
+      // 답이 오는 대로 그 자리에 붙는다.
+      let i = 0;
+      const next = (): void => {
+        if (stop) return;
+        const email = emails[i];
+        i += 1;
+        if (email === undefined) return;
         const key = `${email}|${from}|${to}`;
-        if (askedRef.current.has(key)) continue;
+        // 이미 물어본 조합은 건너뛴다(검색을 치면 순서가 바뀌어 효과가 다시 돈다).
+        if (askedRef.current.has(key)) {
+          next();
+          return;
+        }
         askedRef.current.add(key);
         void check(email, from, to, skip).then((r) => {
           if (mountedRef.current) setBusy((m) => ({ ...m, [key]: r }));
+          next();
         });
-      }
+      };
+      for (let k = 0; k < ROOM_ASK_LIMIT; k += 1) next();
     }, 250);
-    return () => clearTimeout(t);
+    return () => {
+      stop = true;
+      clearTimeout(t);
+    };
   }, [askKey, check, from, to, skip]);
   const busyOf = (email: string): boolean | null | undefined => (when ? busy[`${email}|${from}|${to}`] : undefined);
   return (
