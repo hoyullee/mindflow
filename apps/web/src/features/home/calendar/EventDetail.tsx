@@ -31,6 +31,7 @@ import { addDays, daysBetween, minutesOf, timeLabel, todayISO } from './model';
 import { destChipStyle, destDotStyle, hhmm, QUICK_MINUTES } from './NewEventModal';
 import { ReminderField } from './GoogleEventFields';
 import { MapLink } from './fieldBits';
+import { DeleteConfirm, DeletingNote } from './DeleteConfirm';
 import type { CalendarEvent, CalendarEventInput } from '../../../adapters/ports';
 import { endRuleBefore, excludeOccurrence, parseRecurrence, recurrenceLabel } from './recurrence';
 
@@ -145,6 +146,11 @@ export function EventDetail({
   const [error, setError] = useState<string | null>(null);
   // 반복 일정 삭제 — 범위를 묻는 확인 팝업(요청). 회차를 모르는 반복은 물을 수 없다.
   const [scopeOpen, setScopeOpen] = useState(false);
+  // 반복이 아닌 일정도 **한 번 묻는다**(요청) — 삭제는 되돌릴 수 없고(버전 기록에
+  // 남지 않는다) 머리의 버튼 하나가 곧 실행이면 잘못 눌린다.
+  const [confirmOpen, setConfirmOpen] = useState(false);
+  /** 지우는 중 — 확인 팝업이 스피너를 띄우고 두 버튼을 잠근다(요청). */
+  const [deleting, setDeleting] = useState(false);
   const canScope = !readOnly && !!event.recurrence && !!occurrence;
   /** 오른쪽 열로 갈라 놓을 수 있는가 — 좁은 화면은 폭이 없어 한 열에 이어 붙인다. */
   const twoCol = !!side && !isMobile;
@@ -240,7 +246,27 @@ export function EventDetail({
     run(() => onPatch(patch), true);
   };
 
-  const removeAll = (): void => run(() => onDelete(), true);
+  /**
+   * 삭제는 **끝날 때까지 확인 팝업이 남는다**(요청) — 그 자리에 스피너를 띄우고
+   * 두 버튼을 잠근다. 실패하면 팝업을 닫고 발치 한 곳에서 사유를 말한다(오류 문구는
+   * 한 자리라는 규칙). 성공하면 상세째 닫히므로 되돌릴 상태가 없다.
+   */
+  const runDelete = (fn: () => Promise<string | null>): void => {
+    void (async () => {
+      setDeleting(true);
+      const err = await fn();
+      setDeleting(false);
+      if (err) {
+        setConfirmOpen(false);
+        setScopeOpen(false);
+        setError(err);
+        return;
+      }
+      onClose();
+    })();
+  };
+
+  const removeAll = (): void => runDelete(() => onDelete());
 
   /**
    * 반복 일정의 범위 삭제 — 이 일정만은 그 회차를 규칙에서 빼고(EXDATE), 이후 일정은
@@ -248,7 +274,7 @@ export function EventDetail({
    * 행을 지운다. 초안과 무관한 **즉시 동작**이다(삭제는 미뤄 둘 일이 아니다).
    */
   const deleteScoped = (scope: 'one' | 'following' | 'all'): void => {
-    setScopeOpen(false);
+    // 팝업은 닫지 않는다 — 끝날 때까지 그 자리에서 진행을 보여 준다(요청).
     const rule = event.recurrence;
     if (scope === 'all' || !rule || !occurrence) {
       removeAll();
@@ -259,7 +285,7 @@ export function EventDetail({
       return;
     }
     const next = scope === 'one' ? excludeOccurrence(rule, occurrence) : endRuleBefore(rule, addDays(occurrence, -1));
-    run(() => onPatch({ recurrence: next }), true);
+    runDelete(() => onPatch({ recurrence: next }));
   };
 
   const spanDays = daysBetween(draft.startDate, draft.allDay ? (draft.endDate < draft.startDate ? draft.startDate : draft.endDate) : draft.startDate) + 1;
@@ -311,7 +337,7 @@ export function EventDetail({
             <button
               type="button"
               data-event-delete
-              onClick={() => (canScope ? setScopeOpen(true) : removeAll())}
+              onClick={() => (canScope ? setScopeOpen(true) : setConfirmOpen(true))}
               className="mf-ctl"
               style={{ flex: '0 0 auto', whiteSpace: 'nowrap', height: 30, padding: '0 15px', borderRadius: 999, border: '1px solid var(--mf-border)', background: 'var(--mf-card)', color: 'var(--mf-muted)', font: 'inherit', fontSize: 12, fontWeight: 700, cursor: 'pointer' }}
             >
@@ -493,27 +519,41 @@ export function EventDetail({
               <span style={{ fontSize: 15, fontWeight: 800, letterSpacing: '-.02em', color: 'var(--mf-text)' }}>반복 일정 삭제</span>
               <span style={{ fontSize: 12.5, color: 'var(--mf-muted)', lineHeight: 1.6 }}>반복되는 일정이에요. 어디까지 삭제할까요?</span>
               <div style={{ display: 'flex', flexDirection: 'column', gap: 7, marginTop: 10 }}>
-                <ScopeButton attrs={{ 'data-event-scope-one': '1' }} onClick={() => deleteScoped('one')} title="이 일정만" sub="다른 회차는 그대로 남아요" />
-                <ScopeButton attrs={{ 'data-event-scope-following': '1' }} onClick={() => deleteScoped('following')} title="이 일정과 이후 일정" sub="이 회차부터의 반복이 끝나요" />
-                <ScopeButton attrs={{ 'data-event-scope-all': '1' }} onClick={() => deleteScoped('all')} title="모든 일정" sub="반복 전체가 사라져요" danger />
+                <ScopeButton attrs={{ 'data-event-scope-one': '1' }} disabled={deleting} onClick={() => deleteScoped('one')} title="이 일정만" sub="다른 회차는 그대로 남아요" />
+                <ScopeButton attrs={{ 'data-event-scope-following': '1' }} disabled={deleting} onClick={() => deleteScoped('following')} title="이 일정과 이후 일정" sub="이 회차부터의 반복이 끝나요" />
+                <ScopeButton attrs={{ 'data-event-scope-all': '1' }} disabled={deleting} onClick={() => deleteScoped('all')} title="모든 일정" sub="반복 전체가 사라져요" danger />
               </div>
-              <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: 10 }}>
-                <button type="button" data-event-scope-cancel onClick={() => setScopeOpen(false)} className="mf-ctl" style={{ height: isMobile ? 44 : 34, padding: '0 16px', borderRadius: 999, border: '1px solid var(--mf-border)', background: 'var(--mf-card)', color: 'var(--mf-muted)', font: 'inherit', fontSize: 12.5, fontWeight: 700, cursor: 'pointer' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8, justifyContent: 'flex-end', marginTop: 10 }}>
+                {deleting && <DeletingNote />}
+                <button type="button" data-event-scope-cancel disabled={deleting} onClick={() => setScopeOpen(false)} className="mf-ctl" style={{ height: isMobile ? 44 : 34, padding: '0 16px', borderRadius: 999, border: '1px solid var(--mf-border)', background: 'var(--mf-card)', color: 'var(--mf-muted)', font: 'inherit', fontSize: 12.5, fontWeight: 700, cursor: deleting ? 'default' : 'pointer', opacity: deleting ? 0.6 : 1 }}>
                   취소
                 </button>
               </div>
             </div>
           </Modal>
         )}
+
+        {/* 반복이 아닌 일정의 삭제 확인(요청) — 칸반 카드 상세와 같은 팝업을 쓴다. */}
+        {confirmOpen && (
+          <DeleteConfirm
+            title="일정을 삭제할까요?"
+            body={`${draft.title.trim() ? `'${draft.title.trim()}' 일정이 사라져요.` : '이 일정이 사라져요.'} 되돌릴 수 없어요.`}
+            isMobile={isMobile}
+            deleting={deleting}
+            onCancel={() => setConfirmOpen(false)}
+            onConfirm={removeAll}
+          />
+        )}
       </>
     </Modal>
   );
 }
 
+
 /** 범위 삭제의 한 갈래 — 제목 + 무엇이 남는지 한 줄. */
-function ScopeButton({ title, sub, danger, attrs, onClick }: { title: string; sub: string; danger?: boolean; attrs: Record<string, string>; onClick: () => void }) {
+function ScopeButton({ title, sub, danger, attrs, disabled, onClick }: { title: string; sub: string; danger?: boolean; attrs: Record<string, string>; disabled?: boolean; onClick: () => void }) {
   return (
-    <button type="button" {...attrs} onClick={onClick} className="mf-ctl" style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-start', gap: 2, width: '100%', boxSizing: 'border-box', padding: '10px 13px', borderRadius: 12, border: '1px solid var(--mf-border)', background: 'var(--mf-card)', font: 'inherit', textAlign: 'left', cursor: 'pointer' }}>
+    <button type="button" {...attrs} disabled={disabled} onClick={onClick} className="mf-ctl" style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-start', gap: 2, width: '100%', boxSizing: 'border-box', padding: '10px 13px', borderRadius: 12, border: '1px solid var(--mf-border)', background: 'var(--mf-card)', font: 'inherit', textAlign: 'left', cursor: disabled ? 'default' : 'pointer', opacity: disabled ? 0.6 : 1 }}>
       <span style={{ fontSize: 13, fontWeight: 800, letterSpacing: '-.015em', color: danger ? 'var(--mf-danger)' : 'var(--mf-text)' }}>{title}</span>
       <span style={{ fontSize: 11.5, color: 'var(--mf-faint2)' }}>{sub}</span>
     </button>

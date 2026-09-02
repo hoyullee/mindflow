@@ -171,7 +171,10 @@ export function monthCells(y: number, m: number, entries: readonly CalendarEntry
       isToday: inMonth && iso === todayIso,
       dim: inMonth ? iso < todayIso : false,
       dow,
-      ...(inMonth && holidays[iso] ? { holiday: holidays[iso].name, ...(holidays[iso].dayOff ? { dayOff: true } : {}) } : {}),
+      // 공휴일은 **이웃 달 칸에도** 싣는다(요청) — 그 칸의 숫자도 토·일과 같은
+      // 규칙으로 색이 정해져야 하고(쉬는 날은 붉게), 이름을 함께 두면 왜 붉은지도
+      // 읽힌다. 이웃 달임은 흐린 숫자·가라앉은 면이 이미 말한다.
+      ...(holidays[iso] ? { holiday: holidays[iso].name, ...(holidays[iso].dayOff ? { dayOff: true } : {}) } : {}),
       entries: list.slice(0, perCell),
       bars,
       moreN: Math.max(0, list.length - perCell),

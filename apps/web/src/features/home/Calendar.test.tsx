@@ -472,14 +472,35 @@ describe('일정 화면', () => {
     expect(out.getAttribute('role')).toBe('button');
     expect(out.style.background).toBe('var(--mf-cal-out)');
     fireEvent.click(out);
-    // 고른 뒤에는 **가라앉은 면이 아니다**(요청 ④ — 예전에는 이웃 달 칸의 면이
-    // 선택보다 우선해서 눌렀는지 알 수 없었다). 가라앉은 면 위에서는 선택 면
-    // 한 단계로는 옅어서, 이웃 달 칸의 선택은 **카드 면**까지 올라온다.
-    await waitFor(() => expect(out.style.background).toBe('var(--mf-card)'));
+    // 고른 표시는 **날짜 숫자의 링**이다(제보 — 배경으로 표시하니 이웃 달의 가라앉은
+    // 면·주말 톤·드롭 대기와 뜻이 겹쳐 계속 문제가 났다). 칸 배경은 그대로다.
+    await waitFor(() => expect(out.querySelector('[data-day-num][data-selected]')).toBeTruthy());
+    expect(out.style.background).toBe('var(--mf-cal-out)');
+    expect((out.querySelector('[data-day-num]') as HTMLElement).style.boxShadow).toContain('inset 0 0 0 2px var(--mf-accent)');
     // 사이드가 그 날을 보여 준다 — 이번 달이 아니어도 고를 수 있다.
     const iso = out.getAttribute('data-day-cell')!;
     const [, m, d] = /(\d{2})-(\d{2})$/.exec(iso)!.map(Number) as unknown as number[];
     await waitFor(() => expect(document.querySelector('[data-cal-side]')!.textContent).toContain(`${+m!}월 ${+d!}일`));
+  });
+
+  it('이웃 달 칸의 날짜도 토·일 색을 쓴다(요청 ④) — 이번 달이 아님은 면과 흐림이 말한다', async () => {
+    renderHome([META('d1', '스프린트 보드')], BODIES());
+    await openCalendar();
+    const cells = await waitFor(() => {
+      const list = [...document.querySelectorAll('[data-day-cell]')] as HTMLElement[];
+      expect(list).toHaveLength(42);
+      return list;
+    });
+    const numOf = (el: HTMLElement) => (el.querySelector('[data-day-num]') as HTMLElement).style.color;
+    const out = cells.filter((c) => c.dataset.outMonth === '1');
+    expect(out.length).toBeGreaterThan(0);
+    for (const cell of out) {
+      const dow = cells.indexOf(cell) % 7;
+      // 이웃 달 칸의 일요일은 붉게, 토요일은 파랗게 — 평일만 흐린 회색이다.
+      if (dow === 0) expect(numOf(cell)).toBe('var(--mf-danger)');
+      else if (dow === 6) expect(numOf(cell)).toBe('var(--mf-info)');
+      else expect(numOf(cell)).toBe('var(--mf-faint)');
+    }
   });
 
   it('항목을 누르면 상세 팝업이 뜨고, 그 칸반으로 가는 길은 발치 버튼이다', async () => {
@@ -551,16 +572,21 @@ describe('일정 화면', () => {
     expect(chip.className).not.toContain('mf-ctl');
   });
 
-  it('오늘 칸에는 배경이 없고(요청), 고른 칸은 가라앉은 면 쪽 파생 토큰만 쓴다', async () => {
+  it('칸 배경은 요일만 말하고, 고른 날은 **숫자 링**이 진다(제보 — 배경 표시가 계속 문제였다)', async () => {
     renderHome([META('d1', '스프린트 보드'), META('d2', '이슈 트리아지')], BODIES());
     await openCalendar();
     const cell = () => document.querySelector('[data-day-cell][data-today="1"]') as HTMLElement;
+    const num = () => cell().querySelector('[data-day-num]') as HTMLElement;
     // 오늘은 숫자가 이미 채운 원으로 말한다 — 배경까지 바꾸면 "고른 칸"과 헷갈린다.
     expect(cell().style.background).not.toContain('cal-today');
+    const before = cell().style.background;
     fireEvent.click(document.querySelector(`[data-mini-day="${todayISO()}"]`)!);
-    await waitFor(() => expect(cell().style.background).toBe('var(--mf-cal-sel)'));
-    // 고른 칸에는 링을 두르지 않는다(원본 `selRing: 'none'`) — 면만으로 알린다.
+    // 고르면 **칸 배경은 그대로**이고 숫자만 표시된다 — 오늘은 이미 채운 원이라
+    // 안쪽 링이 보이지 않으므로 바깥 후광으로 두른다.
+    await waitFor(() => expect(num().dataset.selected).toBe('1'));
+    expect(cell().style.background).toBe(before);
     expect(cell().style.boxShadow).not.toContain('inset');
+    expect(num().style.boxShadow).toBe('0 0 0 3px var(--mf-cal-ring)');
   });
 
   // ── PR2: 상세 팝업(칸반 write-back) + 드래그로 날짜 변경 ────────────────────
@@ -672,9 +698,12 @@ describe('일정 화면', () => {
       await waitFor(() => expect(docStore.save).toHaveBeenCalled());
       expect((docStore.save.mock.calls[0]![1].cards ?? []).find((c) => c.id === 'k1')!.tag).toBe('기획');
 
-      // 삭제 — 카드가 사라지고 팝업도 닫힌다.
+      // 삭제 — **한 번 묻는다**(요청). 확인 팝업에서 지워야 카드가 사라지고 팝업이 닫힌다.
       docStore.save.mockClear();
       fireEvent.click(document.querySelector('[data-cal-detail-delete]')!);
+      await waitFor(() => expect(document.querySelector('[data-delete-confirm]')).toBeTruthy());
+      expect(docStore.save).not.toHaveBeenCalled();
+      fireEvent.click(document.querySelector('[data-confirm-delete]')!);
       await waitFor(() => expect(docStore.save).toHaveBeenCalled());
       expect((docStore.save.mock.calls[0]![1].cards ?? []).some((c) => c.id === 'k1')).toBe(false);
       await waitFor(() => expect(detail()).toBeNull());
@@ -1141,14 +1170,35 @@ describe('일정 화면', () => {
       await waitFor(() => expect(events()).toEqual([]));
     });
 
-    it('상세에서 삭제하면 표에서 사라지고 팝업이 닫힌다', async () => {
+    it('삭제는 한 번 묻고(요청), 확인하면 표에서 사라지고 팝업이 닫힌다', async () => {
       renderHome([META('d1', '스프린트 보드')], BODIES());
       localStorage.setItem('mf_events', JSON.stringify([{ id: 'e1', title: '지울 일정', startDate: todayISO(), endDate: todayISO(), allDay: true, source: 'geurio' }]));
       await openCalendar();
       await waitFor(() => expect(chipTexts()).toContain('지울 일정'));
       fireEvent.click(chipFor('지울 일정'));
       await waitFor(() => expect(evDetail()).toBeTruthy());
+
+      // 삭제 버튼은 **묻기만** 한다 — 되돌릴 수 없는 일이라 한 번 눌린 것으로는 실행하지 않는다.
       fireEvent.click(document.querySelector('[data-event-delete]')!);
+      const confirm = await waitFor(() => {
+        const el = document.querySelector('[data-delete-confirm]');
+        expect(el).toBeTruthy();
+        return el as HTMLElement;
+      });
+      expect(confirm.textContent).toContain("'지울 일정' 일정이 사라져요.");
+      expect(confirm.textContent).toContain('되돌릴 수 없어요');
+      expect(events()).toHaveLength(1);
+
+      // 취소하면 아무 일도 없다.
+      fireEvent.click(document.querySelector('[data-confirm-cancel]')!);
+      await waitFor(() => expect(document.querySelector('[data-delete-confirm]')).toBeNull());
+      expect(events()).toHaveLength(1);
+      expect(evDetail()).toBeTruthy();
+
+      // 확인하면 지워지고 상세째 닫힌다.
+      fireEvent.click(document.querySelector('[data-event-delete]')!);
+      await waitFor(() => expect(document.querySelector('[data-delete-confirm]')).toBeTruthy());
+      fireEvent.click(document.querySelector('[data-confirm-delete]')!);
       await waitFor(() => expect(document.querySelector('[data-event-detail]')).toBeNull());
       expect(events()).toEqual([]);
       await waitFor(() => expect(chipTexts()).not.toContain('지울 일정'));

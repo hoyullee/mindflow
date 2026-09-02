@@ -276,42 +276,39 @@ function DayCell({
   const fits = cell.moreN === 0 && cell.entries.length <= room;
   const shownEntries = fits ? cell.entries : cell.entries.slice(0, Math.max(0, room - 1));
   const moreN = cell.entries.length - shownEntries.length + cell.moreN;
-  // 칸 색은 아주 옅은 파생 토큰이다 — 예전에는 강조색 면(soft/mute)을 그대로 써서
-  // 칸이 통째로 진하게 칠해졌다(제보: 부자연스럽다).
-  // 이웃 달 칸은 숫자만 흐리게 + 배경 한 톤 진하게(디자인 원본). 그 칸도 **고를 수
-  // 있는데** 예전에는 그 가라앉은 면이 선택보다 우선해서 눌렀는지 알 수 없었다
-  // (제보 ④). 이제 **선택이 이긴다**: 규칙은 "선택한 칸은 제 면에서 한 단계
-  // 밝아진다"이고, 이번 달 칸은 카드보다 살짝 가라앉은 선택 면, 이웃 달 칸은
-  // **카드 면**까지 올라온다(가라앉은 면 위에서 한 단계 올려도 옅어서 구분이
-  // 안 됐다 — 실브라우저로 확인). 이웃 달임은 흐린 숫자가 여전히 말한다.
-  const bg = selected
-    ? !inMonth
-      ? 'var(--mf-card)'
-      : 'var(--mf-cal-sel)'
-    : !inMonth
-      ? 'var(--mf-cal-out)'
-      : // **오늘 칸에는 배경을 주지 않는다**(요청) — 숫자가 이미 채운 원으로 표시되므로
-        // 배경까지 바꾸면 "고른 칸"과 혼동된다.
-        // 주말은 디자인 원본대로 두 색으로 갈린다 — 일요일·공휴일은 파스텔 분홍
-          // (#FEF8F5), 토요일은 파스텔 하늘색(#F9FBFD). 값은 표에 적지 않고 그 칸의
-          // 숫자 색에서 파생한다(`--mf-cal-sun`/`-sat`) — 숫자와 배경이 언제나 같은
-          // 색조를 쓰고, 여섯 테마 × 다크에 값을 새로 정할 필요가 없다.
-          dow === 0 || cell.dayOff
-          ? 'var(--mf-cal-sun)'
-          : dow === 6
-            ? 'var(--mf-cal-sat)'
-            : 'var(--mf-card)';
-  const numFg = !inMonth
-    ? 'var(--mf-faint)'
-    : isToday
-      ? 'var(--mf-accent-ink)'
-      : dow === 0 || cell.dayOff
-        ? 'var(--mf-danger)'
-        : dow === 6
-          ? 'var(--mf-info)'
-          : dim
-            ? 'var(--mf-faint)'
-            : 'var(--mf-subtext)';
+  // 칸 색은 **요일·이번 달 여부만** 말한다(제보 — 고른 칸을 배경으로 표시하니
+  // 계속 문제가 났다: 이 자리는 이미 세 가지를 겸하고 있다(이웃 달의 가라앉은 면 /
+  // 주말·공휴일 톤 / 드롭 대기). 넷째 뜻을 얹으면 어느 하나가 반드시 가려진다).
+  // 그래서 **선택은 배경이 아니라 날짜 숫자**가 진다(아래 `selRing`) — 오늘 표시가
+  // 이미 쓰는 그 한 자리를 나눠 쓰므로 칸 안에 새 글리프가 늘지 않는다.
+  //
+  // 주말은 디자인 원본대로 두 색으로 갈린다 — 일요일·공휴일은 파스텔 분홍
+  // (#FEF8F5), 토요일은 파스텔 하늘색(#F9FBFD). 값은 표에 적지 않고 그 칸의 숫자
+  // 색에서 파생한다(`--mf-cal-sun`/`-sat`) — 숫자와 배경이 언제나 같은 색조를 쓰고,
+  // 여섯 테마 × 다크에 값을 새로 정할 필요가 없다.
+  // **오늘 칸에도 배경을 주지 않는다**(요청) — 숫자가 이미 채운 원으로 말한다.
+  const bg = !inMonth
+    ? 'var(--mf-cal-out)'
+    : dow === 0 || cell.dayOff
+      ? 'var(--mf-cal-sun)'
+      : dow === 6
+        ? 'var(--mf-cal-sat)'
+        : 'var(--mf-card)';
+  // 숫자 색은 **그 날이 무슨 날인가**만 말한다 — 이웃 달 칸도 토·일·공휴일이면 같은
+  // 색을 쓴다(요청). 이웃 달임은 칸의 가라앉은 면과 `opacity`가 이미 말하므로 색까지
+  // 흐릴 필요가 없다(그러면 이웃 달의 일요일이 평일과 구별되지 않는다).
+  const numFg = isToday
+    ? 'var(--mf-accent-ink)'
+    : dow === 0 || cell.dayOff
+      ? 'var(--mf-danger)'
+      : dow === 6
+        ? 'var(--mf-info)'
+        : dim || !inMonth
+          ? 'var(--mf-faint)'
+          : 'var(--mf-subtext)';
+  // 고른 칸의 표시 — 숫자를 강조색 링으로 감싼다. 오늘은 이미 채운 원이라 안쪽 링이
+  // 보이지 않으므로 **바깥 후광**으로 두른다(그래서 오늘+선택도 구별된다).
+  const selRing = selected ? (isToday ? '0 0 0 3px var(--mf-cal-ring)' : 'inset 0 0 0 2px var(--mf-accent)') : undefined;
   const cellStyle: CSSProperties = {
     minWidth: 0,
     // 칩이 커진 만큼 칸도(번호 18 + 칩 21 × 2 + 여백) — 격자가 화면을 채우면
@@ -326,9 +323,8 @@ function DayCell({
     borderRight: '1px solid var(--mf-cal-grid)',
     borderBottom: '1px solid var(--mf-cal-grid)',
     background: dropHot ? 'var(--mf-accent-soft)' : bg,
-    // 고른 칸의 표시는 **안쪽 링**이다 — 테두리를 굵히면 격자가 1px 밀린다.
-    // 놓일 칸은 그보다 진한 링 + 옅은 면으로(지금 무엇이 일어나려는가가 먼저다).
-    // 놓일 자리만 링으로 알린다 — 고른 칸은 **면만**(디자인 원본 `selRing: 'none'`).
+    // 칸에 링을 두르는 것은 **놓일 자리**뿐이다(지금 무엇이 일어나려는가가 먼저다).
+    // 테두리가 아니라 안쪽 링인 이유는 굵히면 격자가 1px 밀리기 때문이다.
     ...(dropHot ? { boxShadow: 'inset 0 0 0 2px var(--mf-accent)' } : {}),
     opacity: inMonth ? 1 : 0.7,
     // 이웃 달 칸도 **평범한 칸처럼 동작한다**(제보 #3) — 격자가 담고 있는 날이면
@@ -373,6 +369,8 @@ function DayCell({
     >
       <span style={{ display: 'flex', alignItems: 'center', gap: 4, flexShrink: 0 }}>
         <span
+          data-day-num
+          data-selected={selected ? '1' : undefined}
           style={{
             // 오늘은 채운 원이라 숫자 크기를 따라간다(폰은 그대로).
             minWidth: compact ? 18 : 20,
@@ -381,10 +379,11 @@ function DayCell({
             borderRadius: 999,
             background: isToday ? 'var(--mf-accent)' : 'transparent',
             color: numFg,
+            ...(selRing ? { boxShadow: selRing } : {}),
             fontFamily: "'JetBrains Mono', monospace",
             // 데스크톱 12px(폰은 칸이 좁아 11) — 13은 너무 컸다(요청).
             fontSize: compact ? 11 : 12,
-            fontWeight: isToday ? 800 : 600,
+            fontWeight: isToday || selected ? 800 : 600,
             display: 'inline-flex',
             alignItems: 'center',
             justifyContent: 'center',

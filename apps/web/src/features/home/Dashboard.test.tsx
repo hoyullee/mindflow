@@ -1251,12 +1251,15 @@ describe('대시보드 캘린더 위젯(PR4) — 크기가 보기를 정한다',
     const cell = widget.querySelector(`[data-cal-widget-cell="${iso}"]`) as HTMLElement;
     const anyCell = [...widget.querySelectorAll('[data-cal-widget-cell]')].find((el) => (el as HTMLElement).style.border.includes('--mf-cal-grid'));
     expect(anyCell).toBeTruthy();
-    // 고른 날: 면은 --mf-cal-sel, 숫자 알약에는 강조색 배경이 붙지 않는다
+    // 고른 날은 **숫자 링**이 진다(큰 달력과 같은 규칙) — 칸 배경은 그대로다.
+    const before = cell.style.background;
     await user.click(cell);
     await waitFor(() => expect(cell.getAttribute('data-on')).toBe('1'));
-    expect(cell.style.background).toContain('--mf-cal-sel');
-    const pill = cell.querySelector('span span') as HTMLElement;
-    expect(pill.style.background === 'transparent' || pill.style.background.includes('--mf-accent')).toBe(true);
+    expect(cell.style.background).toBe(before);
+    const num = cell.querySelector('[data-cal-widget-num]') as HTMLElement;
+    expect(num.dataset.selected).toBe('1');
+    // 오늘은 채운 원이라 바깥 후광, 그 밖은 안쪽 링.
+    expect(num.style.boxShadow).toContain('var(--mf-cal-ring)');
   });
 
   it('빈 날에는 안내만 — `일정 추가` 버튼을 두지 않는다(요청)', async () => {
