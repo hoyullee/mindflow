@@ -99,18 +99,40 @@ interface Props {
 
 export function HomeContextMenu({ state, view, controller }: Props) {
   const ctx = state.ctxMenu;
-  const isMobile = useIsMobile();
-  const [openSub, setOpenSub] = useState<string | null>(null);
-
-  // 대상이 바뀌면(다른 카드를 우클릭) 열려 있던 플라이아웃은 접는다.
-  const targetKey = ctx ? JSON.stringify(ctx.target) : '';
-  useEffect(() => {
-    setOpenSub(null);
-  }, [targetKey]);
-
   if (!ctx) return null;
   const items = buildItems(ctx.target, state, view, controller);
   if (!items.length) return null;
+  return <HomeMenuPanel x={ctx.x} y={ctx.y} items={items} kind={ctx.target.kind} resetKey={JSON.stringify(ctx.target)} onClose={controller.closeMenu} />;
+}
+
+/**
+ * 메뉴의 **껍데기** — 자리·닫기·키보드·플라이아웃을 맡는다. 홈의 우클릭 메뉴와
+ * 일정 화면의 메뉴가 이 하나를 함께 쓴다: 항목은 화면마다 다르지만 메뉴가 서는
+ * 방식·모양·조작은 앱 안에서 하나여야 한다(둘로 갈라 두면 한쪽만 고쳐진다).
+ */
+export function HomeMenuPanel({
+  x,
+  y,
+  items,
+  kind,
+  resetKey,
+  onClose,
+}: {
+  x: number;
+  y: number;
+  items: readonly HomeMenuItem[];
+  /** `data-home-ctx` 값 — 테스트·가드가 "무엇의 메뉴인가"로 읽는다. */
+  kind: string;
+  /** 대상이 바뀌면 열려 있던 플라이아웃을 접는다(다른 카드를 우클릭). */
+  resetKey: string;
+  onClose: () => void;
+}) {
+  const isMobile = useIsMobile();
+  const [openSub, setOpenSub] = useState<string | null>(null);
+
+  useEffect(() => {
+    setOpenSub(null);
+  }, [resetKey]);
 
   const vw = typeof window !== 'undefined' ? window.innerWidth : 1280;
   // 좁은 화면(폰)에서는 플라이아웃이 양옆 어디에도 못 뻗는다 — 그때는 부모 **아래로
@@ -119,7 +141,7 @@ export function HomeContextMenu({ state, view, controller }: Props) {
 
   const run = (item: HomeMenuItem) => {
     item.onSelect?.();
-    controller.closeMenu();
+    onClose();
   };
 
   /** 잎 항목 — 고르면 실행하고 메뉴는 Radix가 닫는다. */
@@ -139,7 +161,7 @@ export function HomeContextMenu({ state, view, controller }: Props) {
     <DropdownMenu.Root
       open
       onOpenChange={(next) => {
-        if (!next) controller.closeMenu();
+        if (!next) onClose();
       }}
       modal={false}
     >
@@ -149,7 +171,7 @@ export function HomeContextMenu({ state, view, controller }: Props) {
       <DropdownMenu.Trigger
         aria-hidden="true"
         tabIndex={-1}
-        style={{ position: 'fixed', left: ctx.x, top: ctx.y, width: 0, height: 0, padding: 0, border: 'none', background: 'none', pointerEvents: 'none' }}
+        style={{ position: 'fixed', left: x, top: y, width: 0, height: 0, padding: 0, border: 'none', background: 'none', pointerEvents: 'none' }}
       />
       <DropdownMenu.Portal>
         <DropdownMenu.Content
@@ -157,7 +179,7 @@ export function HomeContextMenu({ state, view, controller }: Props) {
           // 해제" 가드가 이 이름으로 메뉴 안을 알아본다(포털로 나가도 `closest`는
           // DOM 조상을 보므로 그 판단은 그대로 성립한다).
           className="mf-home-ctx"
-          data-home-ctx={ctx.target.kind}
+          data-home-ctx={kind}
           align="start"
           side="bottom"
           sideOffset={0}

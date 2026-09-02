@@ -18,7 +18,7 @@ import type { MouseEvent as ReactMouseEvent } from 'react';
 import type { CalendarEntry, HolidayInfo } from '../calendar/entries';
 import { MiniCalendar } from '../calendar/MiniCalendar';
 import type { CalWidgetMode } from './model';
-import { chipTimeLabel, entryChip, isAllDayEntry, markStyle, type ChipSurface } from '../calendar/chips';
+import { chipTimeLabel, dayNumTone, entryChip, isAllDayEntry, markStyle, type ChipSurface } from '../calendar/chips';
 import {
   DOW,
   addDays,
@@ -263,22 +263,14 @@ function MonthBody({ entries, todayIso, mode, cols, rows, surface, ym, side, sel
                       height: 19,
                       flex: '0 0 auto',
                       borderRadius: 999,
-                      background: c.isToday ? 'var(--mf-accent)' : 'transparent',
+                      background: 'transparent',
                       // 숫자 색은 그 날이 무슨 날인가만 말한다 — 이웃 달 칸도 토·일·
                       // 공휴일이면 같은 색이다(요청). 이웃 달임은 가라앉은 면이 말한다.
-                      color: c.isToday
-                        ? 'var(--mf-accent-ink)'
-                        : c.dayOff || c.dow === 0
-                          ? 'var(--mf-danger)'
-                          : c.dow === 6
-                            ? 'var(--mf-info)'
-                            : !c.inMonth
-                              ? 'var(--mf-faint2)'
-                              : 'var(--mf-subtext)',
-                      // 고른 날은 강조색 링(오늘은 채운 원이라 바깥 후광) — 큰 달력과 같다.
-                      ...(on ? { boxShadow: c.isToday ? '0 0 0 3px var(--mf-cal-ring)' : 'inset 0 0 0 2px var(--mf-accent)' } : {}),
+                      color: c.dayOff || c.dow === 0 ? 'var(--mf-danger)' : c.dow === 6 ? 'var(--mf-info)' : !c.inMonth ? 'var(--mf-faint2)' : 'var(--mf-subtext)',
                       fontSize: 12,
-                      fontWeight: c.isToday || on ? 800 : 600,
+                      fontWeight: 600,
+                      // 오늘·고른 날의 옷은 큰 달력과 **같은 함수**가 정한다.
+                      ...dayNumTone(on, c.isToday),
                       ...MONO,
                       display: 'inline-flex',
                       alignItems: 'center',

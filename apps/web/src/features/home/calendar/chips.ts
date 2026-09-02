@@ -102,3 +102,23 @@ export function markStyle(chip: EntryChip): CSSProperties {
     ? { width: 3, height: 11, borderRadius: 999, background: chip.dot, flex: '0 0 auto', display: 'block' }
     : { width: 5, height: 5, borderRadius: 999, background: chip.dot, flex: '0 0 auto', display: 'block' };
 }
+
+/**
+ * 날짜 숫자의 옷 — **오늘**과 **고른 날**을 한 곳에서 정한다(월 격자·대시보드 위젯이
+ * 같은 함수를 쓴다. 값을 흩어 두면 한 화면에서만 표시가 달라진다).
+ *
+ * 예전에는 고른 날을 **속 빈 링**으로 둘렀는데 튀어 보였고(제보: 마음에 안 든다),
+ * 오늘+선택은 지워진 토큰(`--mf-cal-ring`)을 가리켜 **아무 표시도 나오지 않았다**.
+ * 지금은 애플 캘린더의 관례를 따른다 — **고른 날은 채운 원**(잉크 면 + 카드 잉크,
+ * 어느 요일 틴트 위에서도 또렷하고 다크에서는 토큰이 뒤집혀 그대로 성립한다),
+ * **오늘은 강조색 원**, 오늘을 고르면 그 원에 **옅은 후광**을 두른다(딱딱한 링이
+ * 아니라 강조색을 물 탄 `accentMute`라 부드럽다).
+ *
+ * 칸 배경은 여전히 손대지 않는다 — 그 자리는 이미 세 가지(이웃 달·주말·드롭 대기)를
+ * 겸하고 있어 넷째 뜻을 얹으면 어느 하나가 가려진다.
+ */
+export function dayNumTone(selected: boolean, isToday: boolean): CSSProperties {
+  if (isToday) return { background: 'var(--mf-accent)', color: 'var(--mf-accent-ink)', fontWeight: 800, ...(selected ? { boxShadow: '0 0 0 3px var(--mf-accent-mute)' } : {}) };
+  if (selected) return { background: 'var(--mf-text)', color: 'var(--mf-card)', fontWeight: 800 };
+  return {};
+}

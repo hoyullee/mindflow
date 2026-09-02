@@ -17,6 +17,8 @@ import { submitNewEvent } from './newEventSubmit';
 import { EventDetail, geurioCalendarChips } from './EventDetail';
 import { GoogleDetailHost, patchFrom } from './GoogleEventDetail';
 import { GoogleConnectButton } from './GoogleConnectButton';
+import { CalendarContextMenu, type CalMenuState } from './CalendarContextMenu';
+import { DeleteConfirm } from './DeleteConfirm';
 import { useCalendarEvents } from './useCalendarEvents';
 import { eventEntries, googleEntries, holidayMap, workMap } from './entries';
 import { useGoogleCalendar } from './useGoogleCalendar';
@@ -66,6 +68,12 @@ export function CalendarView({
   // 날짜 칸 더블클릭·`+N개 더`가 여는 "그 날의 일정 전부"(디자인 원본 `dayList`).
   // 툴팁이라 누른 지점(화면 좌표)까지 함께 든다 — 그 곁에 선다.
   const [dayList, setDayList] = useState<{ iso: string; at: { x: number; y: number } } | null>(null);
+  // 우클릭 메뉴(요청 ④) — 대상은 우클릭한 자리가 정한다(항목·날짜·화면).
+  const [menu, setMenu] = useState<CalMenuState | null>(null);
+  // 메뉴에서 고른 삭제는 **한 번 묻는다** — 파괴적 동작이 메뉴 클릭 하나로 끝나지
+  // 않게(상세 팝업의 삭제와 같은 확인창을 쓴다).
+  const [confirmDel, setConfirmDel] = useState<CalendarEntry | null>(null);
+  const [deleting, setDeleting] = useState(false);
   const entries = useMemo(() => {
     // 반복 일정은 보이는 구간에서 회차로 펼쳐진다 — 격자가 그리는 그 6주다.
     const evs = eventEntries(eventsApi.events, gridRange(state.calY, state.calM));
@@ -142,6 +150,24 @@ export function CalendarView({
     // 반복 일정은 눌린 **회차**(그 회차의 시작일)까지 — 삭제 범위의 기준이 된다.
     else if (e.event) controller.openCalendarEvent(e.event.id, e.event.recurrence ? (e.start ?? e.due) : undefined);
     else controller.openCalendarCard(e.docId, e.cardId);
+  };
+
+  /** 그 항목의 원천으로 — 칸반이면 그 보드, 구글이면 구글 캘린더(새 탭). */
+  const openSource = (e: CalendarEntry): void => {
+    if (e.google) {
+      if (e.google.htmlLink) window.open(e.google.htmlLink, '_blank', 'noopener,noreferrer');
+      return;
+    }
+    if (e.event) return;
+    controller.openWithLoader(`/editor?map=${encodeURIComponent(e.docId)}&title=${encodeURIComponent(e.boardName)}&docId=${encodeURIComponent(e.docId)}`, e.boardName, e.docId);
+  };
+
+  /** 메뉴에서 고른 삭제 — 원천마다 지우는 곳이 다르다(옮기기와 같은 갈림). */
+  const removeEntry = async (e: CalendarEntry): Promise<string | null> => {
+    if (e.google) return e.google.writable ? google.deleteEvent(e.google) : '이 캘린더에는 쓸 수 없어요';
+    if (e.event) return eventsApi.remove(e.event.id);
+    const ok = await controller.deleteCalendarCard(e.docId, e.cardId);
+    return ok ? null : '카드를 지우지 못했어요';
   };
 
   return (
@@ -240,6 +266,14 @@ export function CalendarView({
         {/* 달력 영역 — 디자인 원본처럼 캔버스의 점 격자를 축소해 깐다(일정도 우리 화면). */}
         <div
           className="lnb-scroll"
+          // 칸·칩이 아닌 자리의 우클릭 = **화면 메뉴**(새 일정 · 오늘로 · 사이드 토글).
+          // 칸·칩은 자기 메뉴를 열고 전파를 끊으므로 여기까지 오지 않는다.
+          onContextMenu={(e) => {
+            const t = e.target as HTMLElement;
+            if (t.closest?.('input, textarea, [contenteditable="true"], .mf-home-ctx')) return;
+            e.preventDefault();
+            setMenu({ target: { view: true }, x: e.clientX, y: e.clientY });
+          }}
           style={{
             flex: '1 1 0',
             minWidth: 0,
@@ -270,6 +304,7 @@ export function CalendarView({
             // (디자인 원본 `onMore`도 dayList를 연다).
             onMore={(iso, at) => setDayList({ iso, at })}
             onShift={(e, days) => void shiftEntry(e, days)}
+            onCtxMenu={(target, at) => setMenu({ target, x: at.x, y: at.y })}
           />
         </div>
 
@@ -358,6 +393,59 @@ export function CalendarView({
           }}
         />
       )}
+      {/* 우클릭 메뉴 — 껍데기는 홈의 그 메뉴이고 항목만 이 화면의 것이다. */}
+      <CalendarContextMenu
+        menu={menu}
+        ctx={{
+          todayIso: today,
+          selectedDay,
+          y: state.calY,
+          m: state.calM,
+          dayCount: (iso) => entries.filter((e) => (e.start ?? e.due) <= iso && iso <= e.due).length,
+          sideOpen: state.calSide === 'day',
+          deadlineOpen: state.calDeadline,
+          isMobile,
+        }}
+        actions={{
+          onClose: () => setMenu(null),
+          openEntry,
+          openSource,
+          shiftEntry: (e, days) => void shiftEntry(e, days),
+          askDelete: (e) => setConfirmDel(e),
+          newEvent: (iso) => controller.openNewEvent(iso, true),
+          openDayList: (iso, at) => setDayList({ iso, at }),
+          openDaySide: (iso) => {
+            controller.selectCalDay(iso);
+            controller.setCalSide('day');
+          },
+          goToday: () => {
+            controller.calGoToday();
+            controller.selectCalDay(today);
+          },
+          toggleDeadline: controller.toggleCalDeadline,
+        }}
+      />
+
+      {confirmDel && (
+        <DeleteConfirm
+          title={confirmDel.google || confirmDel.event ? '일정을 삭제할까요?' : '카드를 삭제할까요?'}
+          body={`${confirmDel.title.trim() ? `'${confirmDel.title.trim()}'` : '이 항목'}이 사라지고, 되돌릴 수 없어요.`}
+          isMobile={isMobile}
+          deleting={deleting}
+          onCancel={() => setConfirmDel(null)}
+          onConfirm={() => {
+            const target = confirmDel;
+            void (async () => {
+              setDeleting(true);
+              const err = await removeEntry(target);
+              setDeleting(false);
+              setConfirmDel(null);
+              if (err) controller.showCalendarToast('삭제하지 못했어요', err);
+            })();
+          }}
+        />
+      )}
+
       {(() => {
         // `id#회차시작일` — 반복 일정은 눌린 회차가 삭제 범위(이 일정만/이후)의 기준이다.
         const [evId, evOcc] = (state.calEventDetail ?? '').split('#');
