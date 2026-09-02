@@ -89,7 +89,7 @@ export function EventDetail({
   badge = 'Geurio 캘린더',
   footerHint = '',
   notice,
-  extra,
+  footerLeft,
   side,
   extraDirty = false,
   occurrence,
@@ -110,14 +110,15 @@ export function EventDetail({
   /** 읽기 전용일 때 대신 보여 줄 안내(왜 못 고치는가). */
   notice?: string;
   /** 원천이 더 얹는 것 — 본문 열 아래에 이어 붙는다(구글의 "Google에서 열기" 링크). */
-  extra?: ReactNode;
+  /** 발치의 **취소 왼쪽**에 붙는 원천 전용 버튼(구글의 `Google에서 열기`). */
+  footerLeft?: ReactNode;
   /**
    * **오른쪽 열**(제보 #16) — 새 일정 팝업과 같은 구조: 왼쪽은 일정 자체, 오른쪽은
    * 원천이 처리해 주는 것들(구글 전용 필드). 있으면 카드가 900px로 넓어진다.
    * 좁은 화면은 열을 나눌 폭이 없어 본문 열에 이어 붙인다.
    */
   side?: ReactNode;
-  /** `extra` 쪽에 저장할 변경이 있는가 — 이 팝업의 필드가 그대로여도 완료가 저장한다. */
+  /** 오른쪽 열 쪽에 저장할 변경이 있는가 — 이 팝업의 필드가 그대로여도 완료가 저장한다. */
   extraDirty?: boolean;
   /** 반복 일정에서 **어느 회차를 눌러 열었는가**(그 회차의 시작일) — 삭제 범위의 기준. */
   occurrence?: string;
@@ -444,7 +445,6 @@ export function EventDetail({
 
           {/* 좁은 화면 — 열을 나눌 폭이 없어 같은 열에 이어 붙인다. */}
           {side && isMobile && side}
-          {extra}
         </div>
 
         {twoCol && (
@@ -459,6 +459,9 @@ export function EventDetail({
             곳**에서만 말한다(제보: 본문 끝과 발치에 같은 문장이 두 번 떴다). */}
         <div style={{ flex: '0 0 auto', display: 'flex', alignItems: 'center', gap: 10, padding: '14px 20px', borderTop: '1px solid var(--mf-border-soft)' }}>
           <span data-event-foot style={{ flex: 1, minWidth: 0, fontSize: 12, color: footTone, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{footMsg}</span>
+          {/* 원천 전용 버튼 — 취소 **왼쪽**(요청). 본문 끝에 두면 스크롤을 내려야
+              보인다: 이 일정을 어디서 여는지는 늘 같은 자리에 있어야 한다. */}
+          {footerLeft}
           {!readOnly && (
             <button type="button" data-event-cancel onClick={onClose} className="mf-ctl" style={{ flex: '0 0 auto', whiteSpace: 'nowrap', height: isMobile ? 44 : 36, padding: '0 16px', borderRadius: 999, border: '1px solid var(--mf-border)', background: 'var(--mf-card)', color: 'var(--mf-muted)', font: 'inherit', fontSize: 12.5, fontWeight: 700, cursor: 'pointer' }}>
               취소

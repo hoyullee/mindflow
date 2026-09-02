@@ -1439,4 +1439,14 @@ describe('팝업·팝오버 안의 버튼 hover(제보)', () => {
     const rule = css.slice(css.indexOf('[data-modal-overlay] .lnb-scroll'));
     expect(rule.slice(0, rule.indexOf('}'))).toContain('scrollbar-gutter: stable');
   });
+
+  // 제보 — 종일을 끄면 "일정 제목" 박스가 짧아졌다 돌아온다: 세로 flex 스크롤 열
+  // 안에서 내용이 넘치면 flex-shrink가 먼저 일해 고정 높이 입력까지 눌린다(실측
+  // 52px → 23px). 스크롤러는 눌리는 게 아니라 스크롤해야 한다. jsdom엔 레이아웃이
+  // 없어(모든 크기가 0) 눌림을 재현할 수 없으므로 규칙 자체를 고정한다.
+  it('팝업 안 스크롤러의 자식은 줄어들지 않는다', () => {
+    const css = readFileSync(resolve('src/features/home/home.css'), 'utf8');
+    const rule = css.slice(css.indexOf('[data-modal-overlay] .lnb-scroll > *'));
+    expect(rule.slice(0, rule.indexOf('}'))).toContain('flex-shrink: 0');
+  });
 });
