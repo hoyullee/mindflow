@@ -7,6 +7,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { useEventStore } from '../../../adapters/BackendContext';
 import type { CalendarEvent, CalendarEventInput } from '../../../adapters/ports';
 import { gridRange } from './model';
+import { useLiveRefresh } from './useLiveRefresh';
 
 export interface CalendarEventsApi {
   events: CalendarEvent[];
@@ -35,25 +36,36 @@ export function useCalendarEvents(y: number, m: number, enabled = true): Calenda
   }, []);
 
   const { from, to } = gridRange(y, m);
-  const reload = useCallback(() => {
-    if (!enabled) {
-      setEvents([]);
-      setLoading(false);
-      return;
-    }
-    setLoading(true);
-    void eventStore
-      .list(from, to)
-      .then((list) => {
-        if (aliveRef.current) setEvents(list);
-      })
-      .catch(() => undefined)
-      .finally(() => {
-        if (aliveRef.current) setLoading(false);
-      });
-  }, [eventStore, from, to, enabled]);
+  /**
+   * @param quiet 보고 있는 중의 갱신인가 — 그러면 로딩 표시를 켜지 않는다(화면이
+   *   깜빡이지 않게). 조회가 실패해도 들고 있던 것을 그대로 둔다.
+   */
+  const run = useCallback(
+    (quiet: boolean) => {
+      if (!enabled) {
+        setEvents([]);
+        setLoading(false);
+        return;
+      }
+      if (!quiet) setLoading(true);
+      void eventStore
+        .list(from, to)
+        .then((list) => {
+          if (aliveRef.current) setEvents(list);
+        })
+        .catch(() => undefined)
+        .finally(() => {
+          if (aliveRef.current && !quiet) setLoading(false);
+        });
+    },
+    [eventStore, from, to, enabled],
+  );
+  const reload = useCallback(() => run(false), [run]);
 
   useEffect(() => reload(), [reload]);
+
+  // 열어 둔 채 **다른 기기에서** 바뀐 일정도 잡는다(제보) — 탭 복귀·주기 갱신.
+  useLiveRefresh(enabled, () => run(true));
 
   return {
     events,
