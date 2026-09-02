@@ -695,6 +695,82 @@ describe('일정 화면', () => {
     });
   });
 
+  // ── 제보 ⑦⑧: 기간 일정의 진행 바 · 주 단위 줄 고정 ─────────────────────────
+  describe('다일 일정(제보 ⑦⑧)', () => {
+    beforeEach(() => {
+      mockMatchMedia(false);
+      seedSpaces();
+    });
+
+    it('기간 일정의 줄은 주 내내 고정이다 — 짧은 것이 끝나도 빈 자리가 남는다(제보 ⑧)', async () => {
+      // 같은 주에 시작해 종료일이 다른 둘. 예전에는 짧은 것이 끝난 칸부터 남은
+      // 바가 한 줄 위로 올라와 **계단처럼** 보였다.
+      const iso = (n: number) => addDays(SPAN.start, n);
+      renderHome([META('d1', '스프린트 보드')], {
+        d1: kanbanBody([
+          { id: 'a', col: 'c2', pos: 1, text: '짧은 기간', due: iso(1), start: SPAN.start },
+          { id: 'b', col: 'c2', pos: 2, text: '긴 기간', due: iso(3), start: SPAN.start },
+        ]),
+      });
+      await openCalendar();
+      await waitFor(() => expect(barFor('긴 기간')).toBeTruthy());
+      const rowsOf = (day: string) =>
+        [...(document.querySelector(`[data-day-cell="${day}"]`) as HTMLElement).children]
+          .filter((el) => el.hasAttribute('data-cal-bar') || el.hasAttribute('data-cal-bar-gap'))
+          .map((el) => (el.hasAttribute('data-cal-bar-gap') ? '_' : el.textContent!.trim() || '·'));
+      // 첫 칸: 긴 것이 위(같이 시작하면 긴 것 먼저), 짧은 것이 아래.
+      expect(rowsOf(SPAN.start)).toEqual(['긴 기간', '짧은 기간']);
+      // 짧은 것이 끝난 뒤에도 긴 것은 **첫 줄 그대로**다(예전에는 아래 것이 올라왔다).
+      expect(rowsOf(iso(2))).toEqual(['·']);
+    });
+
+    it('위쪽 줄이 빈 칸에는 **빈 자리**가 들어간다 — 그래야 아래 바가 제 높이에 남는다', async () => {
+      // 먼저 시작한 짧은 것(lane 0)과 늦게 시작해 더 가는 것(lane 1).
+      const iso = (n: number) => addDays(SPAN.start, n);
+      renderHome([META('d1', '스프린트 보드')], {
+        d1: kanbanBody([
+          { id: 'x', col: 'c2', pos: 1, text: '먼저 끝', due: iso(1), start: SPAN.start },
+          { id: 'y', col: 'c2', pos: 2, text: '늦게 시작', due: iso(4), start: iso(1) },
+        ]),
+      });
+      await openCalendar();
+      await waitFor(() => expect(barFor('늦게 시작')).toBeTruthy());
+      const rowsOf = (day: string) =>
+        [...(document.querySelector(`[data-day-cell="${day}"]`) as HTMLElement).children]
+          .filter((el) => el.hasAttribute('data-cal-bar') || el.hasAttribute('data-cal-bar-gap'))
+          .map((el) => (el.hasAttribute('data-cal-bar-gap') ? '_' : el.textContent!.trim() || '·'));
+      // 이어지는 칸에는 제목을 쓰지 않으므로(시작 칸·주 첫 칸만) 첫 줄은 글자 없는 바다.
+      expect(rowsOf(iso(1))).toEqual(['·', '늦게 시작']);
+      // lane 0이 비었으니 빈 자리를 두고 둘째 줄에 그린다.
+      expect(rowsOf(iso(2))).toEqual(['_', '·']);
+    });
+
+    it('구글 다일 일정 상세에도 진행 바가 뜬다(제보 ⑦)', async () => {
+      // Geurio 일정과 구글 일정은 **같은 상세 팝업**을 쓴다 — 우리 표의 다일 일정으로
+      // 그 팝업의 바를 확인한다(구글 경로는 라이브 계정이 필요하다).
+      renderHome([META('d1', '스프린트 보드')], BODIES());
+      localStorage.setItem('mf_events', JSON.stringify([{ id: 'e1', title: '3일 휴가', startDate: shiftInMonth(0), endDate: addDays(shiftInMonth(0), 2), allDay: true, source: 'geurio' }]));
+      await openCalendar();
+      await waitFor(() => expect(barFor('3일 휴가')).toBeTruthy());
+      fireEvent.click(barFor('3일 휴가'));
+      await waitFor(() => expect(document.querySelector('[data-event-detail]')).toBeTruthy());
+      const span = document.querySelector('[data-event-detail] [data-cal-span]') as HTMLElement;
+      expect(span).toBeTruthy();
+      expect(span.textContent).toContain('3일 중 1일째');
+      expect(span.textContent).toContain('2일 남음');
+    });
+
+    it('하루짜리 일정에는 진행 바가 없다(그릴 기간이 없다)', async () => {
+      renderHome([META('d1', '스프린트 보드')], BODIES());
+      localStorage.setItem('mf_events', JSON.stringify([{ id: 'e1', title: '하루 일정', startDate: shiftInMonth(0), endDate: shiftInMonth(0), allDay: true, source: 'geurio' }]));
+      await openCalendar();
+      await waitFor(() => expect(chipFor('하루 일정')).toBeTruthy());
+      fireEvent.click(chipFor('하루 일정'));
+      await waitFor(() => expect(document.querySelector('[data-event-detail]')).toBeTruthy());
+      expect(document.querySelector('[data-event-detail] [data-cal-span]')).toBeNull();
+    });
+  });
+
   // ── PR2: 상세 팝업(칸반 write-back) + 드래그로 날짜 변경 ────────────────────
   //
   // 정본은 **그 칸반 문서**다. 여기서 고치면 `patchCardMeta`/`moveCard`로 그 문서에
@@ -1373,7 +1449,9 @@ describe('일정 화면', () => {
       fireEvent.click(barFor('휴가'));
       await waitFor(() => expect(evDetail()).toBeTruthy());
       expect(document.querySelector('[data-event-when]')!.textContent).toBe('3일간');
-      expect(document.querySelector('[data-event-span]')!.textContent).toContain('3일간');
+      // 예전의 `3일간 · 1일 남음` 한 줄은 **진행 바**가 대신한다(제보 ⑦ — 날짜 아래).
+      expect(document.querySelector('[data-cal-span]')!.textContent).toContain('3일 중 1일째');
+      expect(document.querySelector('[data-cal-span]')!.textContent).toContain('2일 남음');
     });
   });
 

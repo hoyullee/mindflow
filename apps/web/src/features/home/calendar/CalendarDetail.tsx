@@ -29,8 +29,9 @@ import type { HomeController } from '../useHomeController';
 import { RadioCards } from '../../../components/Segmented';
 import { DateButton, PillButton, pillStyle } from './DatePop';
 import { useCalendarComments } from './useCalendarComments';
-import { daysBetween, dueBadge, partsOf, todayISO } from './model';
+import { dueBadge, todayISO } from './model';
 import { DeleteConfirm } from './DeleteConfirm';
+import { SpanBar } from './SpanBar';
 import type { CalendarEntry } from './entries';
 
 export function CalendarDetail({ state, controller, entry, isMobile }: { state: HomeState; controller: HomeController; entry: CalendarEntry; isMobile: boolean }) {
@@ -333,7 +334,7 @@ export function CalendarDetail({ state, controller, entry, isMobile }: { state: 
                   </div>
                 </div>
 
-                <SpanBar entry={entry} today={today} />
+                <SpanBar start={entry.start} due={entry.due} today={today} />
 
                 <Field label="담당">
                   <div data-cal-owner style={{ display: 'flex', alignItems: 'center', gap: 9, flexWrap: 'wrap' }}>
@@ -450,43 +451,6 @@ export function CalendarDetail({ state, controller, entry, isMobile }: { state: 
         </div>
       </>
     </Modal>
-  );
-}
-
-/**
- * 기간 진행 바 — 원본 `evHasSpan`(`N일 중 M일째` + 남은 날 + 하루 한 칸 pip).
- * 시작일이 있고 기한보다 앞설 때만 뜬다.
- */
-function SpanBar({ entry, today }: { entry: CalendarEntry; today: string }) {
-  if (!entry.start || !partsOf(entry.start) || entry.start >= entry.due) return null;
-  const total = daysBetween(entry.start, entry.due) + 1;
-  if (total < 2 || total > 200) return null; // 지나치게 긴 기간은 pip으로 그릴 뜻이 없다
-  const done = Math.max(0, Math.min(total, daysBetween(entry.start, today) + 1));
-  const main = done > 0 && done <= total ? `${total}일 중 ${done}일째` : `${total}일간`;
-  const rest = today < entry.start ? `${daysBetween(today, entry.start)}일 뒤 시작` : today > entry.due ? '종료' : `${daysBetween(today, entry.due)}일 남음`;
-  return (
-    <div data-cal-span style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-      <span style={{ display: 'flex', alignItems: 'baseline', gap: 9, minWidth: 0 }}>
-        <span style={{ fontSize: 12.5, fontWeight: 800, letterSpacing: '-.02em', color: 'var(--mf-text)', whiteSpace: 'nowrap' }}>{main}</span>
-        <span style={{ flex: 1, minWidth: 0 }} />
-        <span style={{ flex: '0 0 auto', fontSize: 11.5, color: 'var(--mf-faint2)', whiteSpace: 'nowrap' }}>{rest}</span>
-      </span>
-      <span style={{ display: 'flex', alignItems: 'stretch', gap: 2, height: 5 }}>
-        {Array.from({ length: total }, (_, i) => (
-          <span
-            key={i}
-            style={{
-              flex: '1 1 0',
-              minWidth: 0,
-              borderRadius: 999,
-              // 지난 날은 옅은 강조색, **오늘 칸만** 진하게(원본과 같은 규칙).
-              background: i < done ? (i === done - 1 ? 'var(--mf-accent-strong)' : 'var(--mf-accent-mute)') : 'var(--mf-border-soft)',
-              display: 'block',
-            }}
-          />
-        ))}
-      </span>
-    </div>
   );
 }
 

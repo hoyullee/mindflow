@@ -278,7 +278,7 @@ function DayCell({
   const { inMonth, isToday, dim, dow } = cell;
   // 칸에 실제로 들어가는 만큼 그린다(제보 #1) — 넘칠 때만 마지막 줄을 `+N개 더`에
   // 내준다. 모델이 이미 접어 준 몫(`moreN`)이 있으면 거기에 더한다.
-  const room = Math.max(1, capacity - cell.bars.length);
+  const room = Math.max(1, capacity - cell.barRows);
   const fits = cell.moreN === 0 && cell.entries.length <= room;
   const shownEntries = fits ? cell.entries : cell.entries.slice(0, Math.max(0, room - 1));
   const moreN = cell.entries.length - shownEntries.length + cell.moreN;
@@ -462,8 +462,14 @@ function DayCell({
         ) : null}
       </span>
 
-      {/* 기간 바 → 하루짜리 칩 → 접힌 개수 */}
-      {cell.bars.map((b) => {
+      {/* 기간 바 → 하루짜리 칩 → 접힌 개수.
+          **줄(lane)은 그 주에서 고정**이라(제보 ⑧) 바가 없는 줄도 자리를 비운다 —
+          그래서 한 주 안에서 같은 일정이 언제나 같은 높이에 이어진다. */}
+      {Array.from({ length: cell.barRows }, (_, lane) => cell.bars.find((b) => b.lane === lane) ?? lane).map((b) => {
+        if (typeof b === 'number') {
+          // 그 줄을 쓰는 일정이 이 칸에는 없다 — 같은 높이의 빈 자리로 남긴다.
+          return <span key={`gap-${b}`} data-cal-bar-gap style={{ height: compact ? 15 : 20, flexShrink: 0, display: 'block' }} />;
+        }
         const chip = entryChip(b.entry, surface);
         return (
           <button

@@ -281,9 +281,14 @@ function MonthBody({ entries, todayIso, mode, cols, rows, surface, ym, side, sel
                   </span>
                   {c.holiday && <span style={{ fontSize: 9.5, fontWeight: 700, color: c.dayOff ? 'var(--mf-danger)' : 'var(--mf-faint)', minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{c.holiday}</span>}
                 </span>
-                {c.bars.map((b) => (
-                  <Bar key={`bar-${rowKey(b.entry)}`} entry={b.entry} label={b.label} head={b.head} tail={b.tail} surface={surface} h={15} onPick={onPickEntry} />
-                ))}
+                {/* 기간 바의 줄은 그 주에서 고정이라(제보 ⑧) 빈 줄도 자리를 비운다 — 큰 달력과 같은 규칙. */}
+                {Array.from({ length: c.barRows }, (_, lane) => c.bars.find((b) => b.lane === lane) ?? lane).map((b) =>
+                  typeof b === 'number' ? (
+                    <span key={`gap-${b}`} style={{ height: 15, flexShrink: 0, display: 'block' }} />
+                  ) : (
+                    <Bar key={`bar-${rowKey(b.entry)}`} entry={b.entry} label={b.label} head={b.head} tail={b.tail} surface={surface} h={15} onPick={onPickEntry} />
+                  ),
+                )}
                 {c.entries.map((e) => (
                   <Chip key={rowKey(e)} entry={e} todayIso={todayIso} surface={surface} compact={cols < 4} small onPick={onPickEntry} />
                 ))}
