@@ -29,6 +29,7 @@ import { DateButton, PillButton } from './DatePop';
 import { TimeButton } from './TimePop';
 import { addDays, daysBetween, minutesOf, timeLabel, todayISO } from './model';
 import { destChipStyle, destDotStyle, hhmm, QUICK_MINUTES } from './NewEventModal';
+import { ReminderField } from './GoogleEventFields';
 import type { CalendarEvent, CalendarEventInput } from '../../../adapters/ports';
 import { endRuleBefore, excludeOccurrence, parseRecurrence, recurrenceLabel } from './recurrence';
 
@@ -89,9 +90,11 @@ export function EventDetail({
   footerHint = '',
   notice,
   extra,
+  side,
   extraDirty = false,
   occurrence,
   calendarChips,
+  reminder,
   cardAttrs,
 }: {
   event: CalendarEvent;
@@ -106,14 +109,25 @@ export function EventDetail({
   footerHint?: string;
   /** 읽기 전용일 때 대신 보여 줄 안내(왜 못 고치는가). */
   notice?: string;
-  /** 원천이 더 얹는 것 — 구글은 전용 필드 묶음과 "구글에서 열기" 링크를 넣는다. */
+  /** 원천이 더 얹는 것 — 본문 열 아래에 이어 붙는다(구글의 "Google에서 열기" 링크). */
   extra?: ReactNode;
+  /**
+   * **오른쪽 열**(제보 #16) — 새 일정 팝업과 같은 구조: 왼쪽은 일정 자체, 오른쪽은
+   * 원천이 처리해 주는 것들(구글 전용 필드). 있으면 카드가 900px로 넓어진다.
+   * 좁은 화면은 열을 나눌 폭이 없어 본문 열에 이어 붙인다.
+   */
+  side?: ReactNode;
   /** `extra` 쪽에 저장할 변경이 있는가 — 이 팝업의 필드가 그대로여도 완료가 저장한다. */
   extraDirty?: boolean;
   /** 반복 일정에서 **어느 회차를 눌러 열었는가**(그 회차의 시작일) — 삭제 범위의 기준. */
   occurrence?: string;
   /** "저장할 캘린더" 줄 — 소속 칩만 켜지고 나머지는 비활성(#11). 없으면 줄을 그리지 않는다. */
   calendarChips?: CalendarChip[];
+  /**
+   * 알림 — **늘 보이는 자리**(요청 #5). 값을 주면 고칠 수 있고, 없으면 비활성 표식이
+   * 뜬다(우리 표에는 알림을 띄울 장치가 없다 — `ReminderField` 주석).
+   */
+  reminder?: { value: number | null | undefined; onChange: (minutes: number | null | undefined) => void };
   /** 원천을 가리키는 표식 — 두 팝업이 한 코드라도 화면에서는 구별돼야 한다. */
   cardAttrs?: Record<string, string>;
 }) {
@@ -123,6 +137,8 @@ export function EventDetail({
   // 반복 일정 삭제 — 범위를 묻는 확인 팝업(요청). 회차를 모르는 반복은 물을 수 없다.
   const [scopeOpen, setScopeOpen] = useState(false);
   const canScope = !readOnly && !!event.recurrence && !!occurrence;
+  /** 오른쪽 열로 갈라 놓을 수 있는가 — 좁은 화면은 폭이 없어 한 열에 이어 붙인다. */
+  const twoCol = !!side && !isMobile;
   const today = todayISO();
   // 크기 애니메이션(요청) — 종일 토글 등으로 내용이 늘고 줄 때 카드가 이어진다.
   const morphRef = useCardMorph();
@@ -249,7 +265,9 @@ export function EventDetail({
       dim={{ ...MODAL_DIM, animation: 'mf-dim-in .18s ease-out', zIndex: 321, alignItems: isMobile ? 'flex-end' : 'center', padding: isMobile ? 0 : 32 }}
       cardRef={morphRef}
       card={{
-        width: isMobile ? '100%' : 560,
+        // 오른쪽 열이 붙으면 새 일정 팝업과 같은 900px(원본 `newEvW`) — 폭 전이도
+        // `useCardMorph`가 잇는다(CSS transition을 걸면 RO가 옛 폭으로 높이를 잰다).
+        width: isMobile ? '100%' : twoCol ? 900 : 560,
         maxWidth: '100%',
         maxHeight: isMobile ? '92dvh' : '100%',
         boxSizing: 'border-box',
@@ -293,10 +311,12 @@ export function EventDetail({
           </button>
         </div>
 
-        {/* 본문 — 새 일정 팝업의 왼쪽 열과 같은 여백·간격·필드 꼴. `overflow-anchor`를
-            끄는 이유: 내용이 자라는 순간 브라우저 스크롤 앵커링이 scrollTop을 보정해
-            보이는 내용이 위로 튄다(제보 — "컨텐츠가 잘려서 올라간 뒤 늘어난다"). */}
-        <div className="lnb-scroll" style={{ flex: 1, minHeight: 0, overflowY: 'auto', overflowAnchor: 'none', padding: '20px 22px 24px', display: 'flex', flexDirection: 'column', gap: 19 }}>
+        {/* 본문 — 새 일정 팝업과 같은 구조다(제보 #16): 원천이 오른쪽 열을 주면 두 열로
+            갈라지고, 각 열이 자기 스크롤을 갖는다. `overflow-anchor`를 끄는 이유:
+            내용이 자라는 순간 브라우저 스크롤 앵커링이 scrollTop을 보정해 보이는
+            내용이 위로 튄다(제보 — "컨텐츠가 잘려서 올라간 뒤 늘어난다"). */}
+        <div style={{ flex: 1, minHeight: 0, display: 'flex', alignItems: 'stretch', minWidth: 0 }}>
+        <div className="lnb-scroll" data-event-main style={{ flex: '1 1 340px', minWidth: 0, boxSizing: 'border-box', overflowY: 'auto', overflowAnchor: 'none', padding: '20px 22px 24px', display: 'flex', flexDirection: 'column', gap: 19 }}>
           <input
             aria-label="일정 제목"
             data-event-title
@@ -416,11 +436,24 @@ export function EventDetail({
               <Field label="메모">
                 <textarea aria-label="메모" data-event-note value={draft.note} placeholder="자유롭게 적어 두세요" maxLength={2000} onChange={(e) => set({ note: e.target.value })} style={fieldStyle(true)} />
               </Field>
+
+              {/* 알림 — 늘 보이는 자리(요청 #5). 원천이 값을 주지 않으면 비활성 표식. */}
+              <ReminderField value={reminder?.value} onChange={(m) => reminder?.onChange(m)} disabled={!reminder} />
             </>
           )}
 
+          {/* 좁은 화면 — 열을 나눌 폭이 없어 같은 열에 이어 붙인다. */}
+          {side && isMobile && side}
           {extra}
           {error && <span data-event-error style={{ fontSize: 12, color: 'var(--mf-danger)' }}>{error}</span>}
+        </div>
+
+        {twoCol && (
+          <div className="lnb-scroll" data-event-side style={{ flex: '1 1 260px', minWidth: 240, maxWidth: 380, boxSizing: 'border-box', overflowY: 'auto', overflowAnchor: 'none', borderLeft: '1px solid var(--mf-border-soft)', background: 'var(--mf-cal-cmt)', padding: '18px 16px 22px' }}>
+            {/* 새 일정 팝업과 같은 흰 카드 — 왼쪽 열과 성격이 다름을 면으로 말한다. */}
+            <div style={{ borderRadius: 16, border: '1px solid var(--mf-border-soft)', background: 'var(--mf-card)', padding: 15, boxSizing: 'border-box' }}>{side}</div>
+          </div>
+        )}
         </div>
 
         {/* 발치 — 새 일정 팝업과 같은 [상황 문구][취소][완료] 배치. */}

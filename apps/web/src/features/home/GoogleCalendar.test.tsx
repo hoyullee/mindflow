@@ -139,7 +139,12 @@ function stubFetch(): ReturnType<typeof vi.fn> {
     }
     // Admin SDK — 회의실 목록(선택 스코프)
     if (url.includes('admin.googleapis.com')) {
-      return ok({ items: [{ resourceEmail: 'room-35-01@resource.calendar.google.com', generatedResourceName: '회의실-35-01', resourceCategory: 'CONFERENCE_ROOM', capacity: 23 }] });
+      return ok({
+        items: [
+          { resourceEmail: 'room-35-01@resource.calendar.google.com', generatedResourceName: '회의실-35-01', resourceCategory: 'CONFERENCE_ROOM', capacity: 23 },
+          { resourceEmail: 'room-42-07@resource.calendar.google.com', generatedResourceName: '회의실-42-07', resourceCategory: 'CONFERENCE_ROOM', capacity: 8 },
+        ],
+      });
     }
     if (url.includes('/users/me/calendarList')) {
       return ok({
@@ -568,6 +573,9 @@ describe('구글 캘린더 겹치기(PR5)', () => {
     expect(document.querySelector('[data-google-fields]')).toBeNull();
     expect(document.querySelector('[data-new-google-col]')).toBeNull();
     expect(document.querySelector('[data-recurrence]')).toBeTruthy();
+    // 알림도 늘 보인다(요청 #5) — 다만 Geurio에는 알림을 띄울 장치가 없어 비활성 표식이다.
+    expect(document.querySelector('[data-gf-remind-off]')).toBeTruthy();
+    expect(document.querySelector('[data-gf-remind]')).toBeNull();
 
     await user.click(document.querySelector<HTMLElement>('[data-new-cal="me@example.com"]')!);
     const fields = await waitFor(() => {
@@ -582,10 +590,14 @@ describe('구글 캘린더 겹치기(PR5)', () => {
     // 반복은 오른쪽 열이 아니라 **왼쪽 열**(일정 자체를 다루는 자리)에 남는다.
     expect(col!.querySelector('[data-recurrence]')).toBeNull();
     expect(document.querySelector('[data-new-main]')!.querySelector('[data-recurrence]')).toBeTruthy();
-    // 디자인 원본의 nIsGoogle 블록 — Meet·참석자·회의실·공개·참여·알림
-    for (const sel of ['[data-gf-meet]', '[data-gf-guest-input]', '[data-gf-vis]', '[data-gf-busy]', '[data-gf-remind]']) {
+    // 디자인 원본의 nIsGoogle 블록 — Meet·참석자·회의실·공개·참여
+    for (const sel of ['[data-gf-meet]', '[data-gf-guest-input]', '[data-gf-vis]', '[data-gf-busy]']) {
       expect(fields.querySelector(sel)).toBeTruthy();
     }
+    // 알림은 **왼쪽 열**에 남아 고칠 수 있게 된다(요청 #5) — 오른쪽 열이 아니다.
+    expect(col!.querySelector('[data-gf-remind]')).toBeNull();
+    expect(document.querySelector('[data-new-main]')!.querySelector('[data-gf-remind]')).toBeTruthy();
+    expect(document.querySelector('[data-gf-remind-off]')).toBeNull();
     // 회의실 구획은 목록이 **도착한 뒤에야** 그려진다(깜빡임 방지) — 그래서 기다린다.
     await waitFor(() => expect(fields.querySelector('[data-gf-room-input]')).toBeTruthy());
     // Meet는 원본의 토글 카드다 — 상태 문구와 스위치(aria-pressed)로 말한다.
@@ -887,5 +899,119 @@ describe('구글 캘린더 겹치기(PR5)', () => {
     await waitFor(() => expect(document.querySelector('[data-gf-room-note]')).toBeTruthy());
     expect(document.querySelector('[data-gf-room-hit="room-35-01@resource.calendar.google.com"]')).toBeNull();
     expect(document.querySelector('[data-gf-room-input]')).toBeNull();
+  });
+
+  /** 새 일정을 열고 목적지를 구글로 바꿔 구글 전용 필드를 띄운다(여러 테스트의 앞머리). */
+  async function openGoogleDraft(user: ReturnType<typeof userEvent.setup>, container: HTMLElement): Promise<void> {
+    await openCalendar(container, user);
+    await waitFor(() => expect(screen.getAllByText(/구글 회의/).length).toBeGreaterThan(0));
+    await user.click(screen.getByText('새 일정'));
+    await waitFor(() => expect(document.querySelector('[data-new-cal="me@example.com"]')).toBeTruthy());
+    await user.click(document.querySelector<HTMLElement>('[data-new-cal="me@example.com"]')!);
+    await waitFor(() => expect(document.querySelector('[data-google-fields]')).toBeTruthy());
+  }
+
+  it('초대가 셋이면 두 줄만 보이고 나머지는 `외 N명` 툴팁에서 지운다(제보 #6)', async () => {
+    seed({ calendars: ['me@example.com'] });
+    seedToken();
+    stubGis();
+    stubFetch();
+    clientId = 'test-client.apps.googleusercontent.com';
+    const user = userEvent.setup();
+    const { container } = renderHome();
+    await openGoogleDraft(user, container);
+
+    const input = screen.getByLabelText('참석자 이름 또는 이메일');
+    for (const email of ['a@example.com', 'b@example.com', 'c@example.com']) {
+      await user.type(input, `${email}{Enter}`);
+    }
+    // 두 줄 + `외 1명` — 초대가 늘어도 팝업이 그만큼 길어지지 않는다.
+    await waitFor(() => expect(document.querySelectorAll('[data-gf-guest]').length).toBe(2));
+    const more = document.querySelector('[data-gf-guest-more]') as HTMLElement;
+    expect(more).toBeTruthy();
+    expect(more.textContent).toContain('외 1명');
+
+    // 접힌 목록은 툴팁으로 뜨고 **거기서 지울 수 있다**.
+    await user.click(more);
+    await waitFor(() => expect(document.querySelector('[data-gf-guest-list]')).toBeTruthy());
+    expect(document.querySelectorAll('[data-gf-guest-item]').length).toBe(3);
+    await user.click(screen.getByLabelText('c@example.com 초대 취소'));
+    // 둘만 남으면 접을 것이 없다 — 접힌 줄도 툴팁도 사라진다.
+    await waitFor(() => expect(document.querySelector('[data-gf-guest-more]')).toBeNull());
+    expect(document.querySelectorAll('[data-gf-guest]').length).toBe(2);
+    expect(document.querySelector('[data-gf-guest-list]')).toBeNull();
+  });
+
+  it('회의실은 세 줄까지 보이고 안내 문구를 두지 않는다 · 예약한 것이 맨 위로 온다(제보 #4·#17)', async () => {
+    seed({ calendars: ['me@example.com'] });
+    seedToken();
+    stubGis();
+    stubFetch();
+    clientId = 'test-client.apps.googleusercontent.com';
+    const user = userEvent.setup();
+    const { container } = renderHome();
+    await openGoogleDraft(user, container);
+    await waitFor(() => expect(document.querySelector('[data-gf-room-input]')).toBeTruthy());
+
+    // 목록이 있으면 라벨 옆 안내 문구를 두지 않는다 — 검색 상자와 목록이 이미 말한다.
+    const roomField = document.querySelector('[data-gf-room-input]')!.closest('div')!.parentElement!;
+    expect(roomField.textContent).not.toContain('조직 캘린더의 회의실을 골라');
+
+    const order = (): string[] => [...document.querySelectorAll('[data-gf-room-hit]')].map((el) => el.getAttribute('data-gf-room-hit') ?? '');
+    expect(order()[0]).toBe('room-35-01@resource.calendar.google.com');
+    // 둘째 회의실을 예약하면 그 줄이 맨 위로 — 목록이 길어도 잡아 둔 것이 보인다.
+    fireEvent.mouseDown(document.querySelector('[data-gf-room-hit="room-42-07@resource.calendar.google.com"]') as HTMLElement);
+    await waitFor(() => expect(order()[0]).toBe('room-42-07@resource.calendar.google.com'));
+  });
+
+  it('머리 배지는 캘린더 이름이 아니라 `Google`이다 — 기본 캘린더 이름은 계정 이메일이다(제보 #11·#22)', async () => {
+    seed({ calendars: ['me@example.com'] });
+    seedToken();
+    stubGis();
+    stubFetch();
+    clientId = 'test-client.apps.googleusercontent.com';
+    const user = userEvent.setup();
+    const { container } = renderHome();
+    await openGoogleDraft(user, container);
+    expect(document.querySelector('[data-new-cal-pill]')!.textContent).toBe('Google');
+    fireEvent.keyDown(document, { key: 'Escape' });
+    await waitFor(() => expect(document.querySelector('[data-new-event]')).toBeNull());
+
+    // 이미 등록된 구글 일정도 같다 — 어느 캘린더인지는 "저장할 캘린더" 줄이 말한다.
+    await user.click(screen.getAllByText(/구글 회의/)[0]!);
+    const badge = await waitFor(() => {
+      const el = document.querySelector('[data-event-badge]');
+      expect(el).toBeTruthy();
+      return el as HTMLElement;
+    });
+    expect(badge.textContent).toBe('Google');
+    expect(document.querySelector('[data-event-cal="me@example.com"]')!.textContent).toContain('내 캘린더');
+  });
+
+  it('구글 일정 상세도 구글 필드를 오른쪽 열에 놓는다 — 아래로 길어지지 않는다(제보 #16)', async () => {
+    seed({ calendars: ['me@example.com'] });
+    seedToken();
+    stubGis();
+    stubFetch();
+    clientId = 'test-client.apps.googleusercontent.com';
+    const user = userEvent.setup();
+    const { container } = renderHome();
+    await openCalendar(container, user);
+    await waitFor(() => expect(screen.getAllByText(/구글 회의/).length).toBeGreaterThan(0));
+    await user.click(screen.getAllByText(/구글 회의/)[0]!);
+
+    const side = await waitFor(() => {
+      const el = document.querySelector('[data-event-side]');
+      expect(el).toBeTruthy();
+      return el as HTMLElement;
+    });
+    // 구글 전용 필드는 오른쪽 열 안이고, 본문 열에는 없다.
+    expect(side.querySelector('[data-google-fields]')).toBeTruthy();
+    expect(document.querySelector('[data-event-main]')!.querySelector('[data-google-fields]')).toBeNull();
+    // 알림은 반대다 — 왼쪽 열의 늘 보이는 자리(요청 #5).
+    expect(document.querySelector('[data-event-main]')!.querySelector('[data-gf-remind]')).toBeTruthy();
+    expect(side.querySelector('[data-gf-remind]')).toBeNull();
+    // 열이 붙으면 카드가 넓어진다(새 일정 팝업과 같은 900px).
+    expect((document.querySelector('[data-event-detail]') as HTMLElement).style.width).toBe('900px');
   });
 });

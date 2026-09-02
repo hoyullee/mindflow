@@ -79,6 +79,8 @@ describe('home theme', () => {
       '--mf-cal-grid': '#ede1d3',
       '--mf-cal-out': '#f5efe7',
       '--mf-chip-on': '#fde9e3',
+      // 마감 배지 — 사흘 안(`soon`)의 면. 급함 3단계가 색으로 갈린다.
+      '--mf-due-soon-bg': '#faefdc',
       // 통계 칩 — 한 색에서 **밝은 점 / 짙은 숫자** 두 값을 만든다(원본의 색쌍).
       '--mf-stat-over': '#b53f3d',
       '--mf-stat-over-dot': '#dd6666',

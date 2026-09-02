@@ -137,8 +137,19 @@ export function GoogleEventDetail({
       onClose={onClose}
       cardAttrs={{ 'data-google-detail': '1' }}
       readOnly={!writable}
-      badge={`${event.calendarName} · Google`}
+      // 머리에는 **`Google`**만(제보 #22) — 기본 캘린더의 이름은 계정 이메일이라
+      // 제목 자리에 주소가 박힌다. 어느 캘린더인지는 아래 "저장할 캘린더" 줄이 말한다.
+      badge="Google"
       calendarChips={chips}
+      // 알림은 왼쪽 열의 늘 보이는 자리에서 고친다(요청 #5) — 값은 구글 전용 초안에 담긴다.
+      {...(writable
+        ? {
+            reminder: {
+              value: 'reminderMinutes' in pendingFields ? pendingFields.reminderMinutes : event.reminderMinutes,
+              onChange: (m: number | null | undefined) => setPendingFields((p) => ({ ...p, reminderMinutes: m })),
+            },
+          }
+        : {})}
       footerHint={writable ? 'Google 캘린더에 저장돼요' : 'Google 캘린더에서 가져온 일정이에요'}
       notice={
         event.holiday
@@ -151,19 +162,24 @@ export function GoogleEventDetail({
         return onPatch(draftFrom(event, patch, pendingFields));
       }}
       onDelete={async () => (onDelete ? onDelete() : null)}
+      // 구글 전용 필드는 **오른쪽 열**이다(제보 #16 — 새 일정 팝업과 같은 구조).
+      // 쓸 수 있는 일정에서만 — 읽기 전용이면 열 자체가 없고 카드도 560px로 남는다.
+      {...(writable
+        ? {
+            side: (
+              <GoogleEventFields
+                value={{ ...fieldsOf(event), ...pendingFields }}
+                mode="edit"
+                recurring={!!event.recurringEventId}
+                {...(directory ? { directory } : {})}
+                {...(event.meetLink ? { meetLink: event.meetLink } : {})}
+                onChange={(patch) => setPendingFields((p) => ({ ...p, ...patch }))}
+              />
+            ),
+          }
+        : {})}
       extra={
         <div style={{ display: 'flex', flexDirection: 'column', gap: 19, minWidth: 0 }}>
-          {/* 구글 전용 필드(디자인 원본 `nIsGoogle`) — 쓸 수 있는 일정에서만 고친다. */}
-          {writable && (
-            <GoogleEventFields
-              value={{ ...fieldsOf(event), ...pendingFields }}
-              mode="edit"
-              recurring={!!event.recurringEventId}
-              {...(directory ? { directory } : {})}
-              {...(event.meetLink ? { meetLink: event.meetLink } : {})}
-              onChange={(patch) => setPendingFields((p) => ({ ...p, ...patch }))}
-            />
-          )}
         <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
           {event.htmlLink && (
             <a

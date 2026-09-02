@@ -22,7 +22,7 @@ import { DateButton, PillButton } from './DatePop';
 import { TimeButton } from './TimePop';
 import { addDays, daysBetween, minutesOf, timeLabel, todayISO } from './model';
 import { RadioCards } from '../../../components/Segmented';
-import { GoogleEventFields, type GoogleDirectoryApi, type GoogleFieldsValue } from './GoogleEventFields';
+import { GoogleEventFields, ReminderField, type GoogleDirectoryApi, type GoogleFieldsValue } from './GoogleEventFields';
 import { RecurrenceField } from './RecurrenceField';
 import { buildRecurrence, RECURRENCE_OFF, type RecurrenceSpec } from './googleCalendar';
 import type { CalendarEventInput } from '../../../adapters/ports';
@@ -219,10 +219,13 @@ export function NewEventModal({
             <span style={{ fontSize: 13.5, fontWeight: 800, letterSpacing: '-.02em', color: 'var(--mf-text)', whiteSpace: 'nowrap' }}>새 일정</span>
           </span>
           {/* 어디에 저장되는지 머리에서 한 번 더(원본 `nCalPill`). **고를 것이 하나면
-              그리지 않는다** — 아래 배지와 같은 말을 두 번 하는 셈이다. */}
+              그리지 않는다** — 아래 배지와 같은 말을 두 번 하는 셈이다.
+              구글이면 **`Google`**이라고만 적는다(제보 #11) — 기본 캘린더의 이름은
+              계정 이메일이라 머리에 주소가 박히고, 어느 캘린더인지는 아래
+              "저장할 캘린더" 줄이 이미 말한다. */}
           {googleTargets.length > 0 && (
             <span data-new-cal-pill style={{ height: 24, padding: '0 10px', borderRadius: 999, background: 'var(--mf-accent-soft)', color: 'var(--mf-accent-strong)', fontSize: 11, fontWeight: 700, display: 'inline-flex', alignItems: 'center', whiteSpace: 'nowrap', flex: '0 0 auto', maxWidth: 200, overflow: 'hidden', textOverflow: 'ellipsis' }}>
-              {target.kind === 'google' ? (googleTargets.find((t) => t.id === dest)?.name ?? '구글 캘린더') : 'Geurio 캘린더'}
+              {target.kind === 'google' ? 'Google' : 'Geurio 캘린더'}
             </span>
           )}
           <span style={{ flex: 1, minWidth: 0 }} />
@@ -366,6 +369,10 @@ export function NewEventModal({
 
           {/* 반복 — 목적지와 무관하게 여기서 고른다(둘 다 규칙을 저장한다). */}
           <RecurrenceField value={rep} onChange={setRep} baseDate={startDate} />
+
+          {/* 알림 — **늘 보인다**(요청 #5). 보내는 것은 구글이므로 목적지가 Geurio면
+              비활성 표식으로 남는다(자리가 통째로 사라지지 않게). */}
+          <ReminderField value={gf.reminderMinutes} onChange={(m) => setGf((v) => ({ ...v, reminderMinutes: m }))} disabled={target.kind !== 'google'} />
 
           <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
             <Label>메모</Label>

@@ -1,7 +1,8 @@
 // 구글 일정 전용 필드 — 디자인 원본 `Geurio 일정 캘린더.dc.html`의 `nIsGoogle` 블록.
 //
-// **반복은 이 묶음에 없다** — Geurio 일정도 반복하므로 왼쪽 열의 `RecurrenceField`가
-// 두 목적지에 함께 뜬다. 여기 남은 것은 구글만 할 수 있는 일이다.
+// **반복과 알림은 이 묶음에 없다** — 반복은 Geurio 일정도 하므로 왼쪽 열의
+// `RecurrenceField`가 두 목적지에 함께 뜨고, 알림은 아래 `ReminderField`가 왼쪽 열에서
+// 늘 보인다(요청 #5 — 목적지가 Geurio면 비활성 표식). 여기 남은 것은 구글만 할 수 있는 일이다.
 //
 // **왜 구글일 때만 뜨나**: 여기 있는 것들은 구글이 **실제로 처리해 주는 일**이다 —
 // 초대 메일 발송(참석자), 알림, 바쁨/한가함(다른 사람이 내 시간을 볼 때), Meet 링크.
@@ -104,7 +105,6 @@ export function GoogleEventFields({
   useEffect(() => {
     directory?.loadRooms();
   }, [directory]);
-  const remindKey = REMIND_OPTS.find((o) => o.minutes === value.reminderMinutes)?.key ?? 'default';
   const visNote = VIS_OPTS.find((o) => o.v === value.visibility)?.note ?? '';
   const rooms = directory?.canPickRooms ? directory.rooms : [];
   const roomName = (email: string): string => rooms.find((r) => r.email === email)?.name ?? email;
@@ -177,8 +177,10 @@ export function GoogleEventFields({
       </Field>
 
       {/* 회의실 — 구획은 **항상 보인다**(요청). 목록이 있으면 검색 + 목록, 아직이면
-          "불러오는 중", 없으면(스코프 없음·조직 거절·등록 0) 디자인 원본의 안내 한 줄. */}
-      <Field label="회의실" {...(value.rooms.length ? { sub: `${value.rooms.map(roomName).join(' · ')} 예약됨` } : rooms.length > 0 ? { sub: '조직 캘린더의 회의실을 골라 예약할 수 있어요' } : {})}>
+          "불러오는 중", 없으면(스코프 없음·조직 거절·등록 0) 디자인 원본의 안내 한 줄.
+          목록이 있을 때의 안내 문구는 두지 않는다(제보 #4) — 검색 상자와 목록이
+          이미 무엇을 하는 자리인지 말한다. 라벨 옆 요약은 **예약한 것**만 알린다. */}
+      <Field label="회의실" {...(value.rooms.length ? { sub: `${value.rooms.map(roomName).join(' · ')} 예약됨` } : {})}>
         {rooms.length > 0 ? (
           <Rooms all={rooms} picked={value.rooms} onChange={(next) => onChange({ rooms: next })} />
         ) : (
@@ -206,11 +208,38 @@ export function GoogleEventFields({
           wide
         />
       </Field>
-
-      <Field label="알림">
-        <Segments aria="알림" items={REMIND_OPTS.map((o) => ({ value: o.key, label: o.label }))} value={remindKey} onChange={(k) => onChange({ reminderMinutes: REMIND_OPTS.find((o) => o.key === k)?.minutes })} attr="data-gf-remind" wide />
-      </Field>
     </div>
+  );
+}
+
+/**
+ * 알림 — **목적지와 무관하게 왼쪽 열에 늘 보인다**(요청 #5). 예전에는 구글 전용
+ * 묶음 안에 있어 Geurio를 고르면 통째로 사라졌다: 알림은 일정의 기본 속성으로
+ * 읽히므로 "고를 수 있는 자리"가 사라지는 편이 더 혼란스럽다.
+ *
+ * 다만 **보내는 것은 구글이다** — 우리 표(0033)에는 알림을 띄울 장치가 없다. 그래서
+ * 목적지가 Geurio면 같은 칩을 그리되 **비활성 표식**으로 두고 왜 그런지 한 줄로
+ * 말한다(저장할 캘린더 줄의 비활성 칩과 같은 문법 — 눌리는 척하지 않는다).
+ */
+export function ReminderField({ value, onChange, disabled }: { value: number | null | undefined; onChange: (minutes: number | null | undefined) => void; disabled?: boolean }) {
+  const key = REMIND_OPTS.find((o) => o.minutes === value)?.key ?? 'default';
+  return (
+    <Field label="알림">
+      {disabled ? (
+        <>
+          <span data-gf-remind-off style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap', opacity: 0.5 }}>
+            {REMIND_OPTS.map((o) => (
+              <span key={o.key} aria-disabled style={{ height: 30, padding: '0 12px', borderRadius: 999, border: '1px solid var(--mf-border)', background: 'var(--mf-card)', color: 'var(--mf-subtext)', fontSize: 12, fontWeight: o.key === 'default' ? 800 : 600, display: 'inline-flex', alignItems: 'center', whiteSpace: 'nowrap' }}>
+                {o.label}
+              </span>
+            ))}
+          </span>
+          <SubText>Google 캘린더에 저장하면 알림을 함께 등록할 수 있어요</SubText>
+        </>
+      ) : (
+        <Segments aria="알림" items={REMIND_OPTS.map((o) => ({ value: o.key, label: o.label }))} value={key} onChange={(k) => onChange(REMIND_OPTS.find((o) => o.key === k)?.minutes)} attr="data-gf-remind" wide />
+      )}
+    </Field>
   );
 }
 
@@ -281,6 +310,11 @@ function AnchoredList({ anchor, attrs, children }: { anchor: HTMLElement | null;
         width: pos?.width ?? 240,
         // 첫 커밋(실측 전)의 프레임이 화면에 나가지 않게 — 자리가 서면 보인다.
         visibility: pos ? 'visible' : 'hidden',
+        // **모달 위의 포털은 포인터를 되찾아야 한다**(제보 #9: hover도 스크롤도 초대도
+        // 안 됐다). Radix Dialog가 열려 있는 동안 `document.body`는 `pointer-events:
+        // none`이고, body 포털인 이 층은 그것을 상속한다(실측: `pointerEvents: 'none'`,
+        // `elementFromPoint`가 후보 행을 집지 못함).
+        pointerEvents: 'auto',
         zIndex: 400,
         boxSizing: 'border-box',
         maxHeight: 186,
@@ -294,10 +328,28 @@ function AnchoredList({ anchor, attrs, children }: { anchor: HTMLElement | null;
   );
 }
 
+/** 초대된 사람을 몇 줄까지 펼쳐 보일까 — 그 뒤는 `외 N명`으로 접힌다(제보 #6). */
+const SHOWN_MAX = 2;
+
+/** 초대된 한 사람 — 아바타 + 이름(없으면 주소) + 제외. */
+function GuestRow({ email, name, i, onRemove }: { email: string; name?: string; i: number; onRemove: () => void }) {
+  return (
+    <span data-gf-guest={email} style={{ display: 'flex', alignItems: 'center', gap: 9, padding: '7px 9px', borderRadius: 11, background: 'var(--mf-card)', border: '1px solid var(--mf-border-soft)', minWidth: 0 }}>
+      <Avatar label={name ?? email} i={i} />
+      <span style={{ flex: 1, minWidth: 0, fontSize: 12, fontWeight: 700, color: 'var(--mf-text)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{name ?? email}</span>
+      <button type="button" aria-label={`${email} 초대 취소`} title="제외" className="mf-ctl" onClick={onRemove} style={{ flex: '0 0 auto', width: 22, height: 22, border: 0, borderRadius: 999, background: 'transparent', color: 'var(--mf-faint)', cursor: 'pointer', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', padding: 0 }}>
+        <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" aria-hidden="true">
+          <path d="M6 6l12 12M18 6 6 18" />
+        </svg>
+      </button>
+    </span>
+  );
+}
+
 /**
  * 참석자 — 원본의 검색 상자 + 후보 리스트(아바타·이름·이메일·`초대`) + 초대된 사람
- * 카드 행. 이름 검색이 없으면(선택 스코프 미승인) 이메일 직접 입력으로 남는다.
- * 초대 메일은 구글이 보낸다.
+ * 카드 행(두 줄까지, 나머지는 `외 N명` 툴팁). 이름 검색이 없으면(선택 스코프 미승인)
+ * 이메일 직접 입력으로 남는다. 초대 메일은 구글이 보낸다.
  */
 function Attendees({ list, onChange, search }: { list: string[]; onChange: (next: string[]) => void; search?: (q: string) => Promise<DirectoryPerson[] | null> }) {
   const [draft, setDraft] = useState('');
@@ -309,6 +361,12 @@ function Attendees({ list, onChange, search }: { list: string[]; onChange: (next
   const [settled, setSettled] = useState('');
   // 고른 후보의 이름 — 초대된 행이 이메일 대신 이름을 보여 준다(직접 적은 주소는 주소 그대로).
   const [names, setNames] = useState<Record<string, string>>({});
+  // 접힌 사람들(`외 N명`) 툴팁 — 여기서 지울 수 있어야 한다(요청).
+  const [moreOpen, setMoreOpen] = useState(false);
+  const [moreAnchor, setMoreAnchor] = useState<HTMLElement | null>(null);
+  // 셋 이상이면 둘만 보이고 나머지는 접힌다(제보 #6 — "2명까지 노출, 3번째 칸은 외 N명").
+  const shown = list.length > SHOWN_MAX ? list.slice(0, SHOWN_MAX) : list;
+  const rest = list.slice(shown.length);
   // 이름 검색은 **입력마다 왕복**이므로 220ms 디바운스 — 사람이 치는 속도로는
   // 한 낱말에 한 번이면 충분하다(홈 검색과 같은 판단).
   const seqRef = useRef(0);
@@ -333,6 +391,27 @@ function Attendees({ list, onChange, search }: { list: string[]; onChange: (next
     return () => clearTimeout(t);
   }, [draft, search]);
 
+  // 접힌 목록은 바깥을 누르거나 Escape로 닫는다(팝오버의 관례 — 모달 위의 층이라
+  // Radix가 대신 닫아 주지 않는다).
+  useEffect(() => {
+    if (!moreOpen) return;
+    const close = (e: Event): void => {
+      const t = e.target as Node | null;
+      if (t && (moreAnchor?.contains(t) || (t as HTMLElement).closest?.('[data-gf-guest-list]'))) return;
+      setMoreOpen(false);
+    };
+    // `KeyboardEvent`는 이 파일에서 리액트 타입으로 가려져 있다 — DOM 이벤트로 읽는다.
+    const key = (e: Event): void => {
+      if ((e as globalThis.KeyboardEvent).key === 'Escape') setMoreOpen(false);
+    };
+    document.addEventListener('pointerdown', close, true);
+    document.addEventListener('keydown', key);
+    return () => {
+      document.removeEventListener('pointerdown', close, true);
+      document.removeEventListener('keydown', key);
+    };
+  }, [moreOpen, moreAnchor]);
+
   const addEmail = (email: string, name?: string): void => {
     const e = email.trim().toLowerCase();
     setDraft('');
@@ -346,18 +425,65 @@ function Attendees({ list, onChange, search }: { list: string[]; onChange: (next
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 8, minWidth: 0 }}>
-      {/* 초대된 사람 — 원본의 카드 행(아바타 + 이름 + 제외). */}
-      {list.map((email, i) => (
-        <span key={email} data-gf-guest={email} style={{ display: 'flex', alignItems: 'center', gap: 9, padding: '7px 9px', borderRadius: 11, background: 'var(--mf-card)', border: '1px solid var(--mf-border-soft)', minWidth: 0 }}>
-          <Avatar label={names[email] ?? email} i={i} />
-          <span style={{ flex: 1, minWidth: 0, fontSize: 12, fontWeight: 700, color: 'var(--mf-text)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{names[email] ?? email}</span>
-          <button type="button" aria-label={`${email} 초대 취소`} title="제외" className="mf-ctl" onClick={() => onChange(list.filter((e) => e !== email))} style={{ flex: '0 0 auto', width: 22, height: 22, border: 0, borderRadius: 999, background: 'transparent', color: 'var(--mf-faint)', cursor: 'pointer', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', padding: 0 }}>
-            <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" aria-hidden="true">
-              <path d="M6 6l12 12M18 6 6 18" />
+      {/* 초대된 사람 — 원본의 카드 행(아바타 + 이름 + 제외). **두 줄까지만** 보이고
+          그 뒤는 `외 N명` 한 줄로 접힌다(제보 #6): 초대가 늘수록 팝업이 그만큼 길어져
+          아래 필드가 밀린다. 접힌 사람은 그 줄을 눌러 뜨는 툴팁에서 보고 지운다. */}
+      {shown.map((email, i) => (
+        <GuestRow key={email} email={email} name={names[email]} i={i} onRemove={() => onChange(list.filter((e) => e !== email))} />
+      ))}
+      {rest.length > 0 && (
+        <>
+          <button
+            type="button"
+            ref={setMoreAnchor}
+            data-gf-guest-more
+            aria-expanded={moreOpen}
+            className="mf-ctl"
+            onClick={() => setMoreOpen((v) => !v)}
+            style={{ display: 'flex', alignItems: 'center', gap: 9, padding: '7px 9px', borderRadius: 11, background: 'var(--mf-card)', border: '1px solid var(--mf-border-soft)', minWidth: 0, font: 'inherit', cursor: 'pointer', textAlign: 'left' }}
+          >
+            {/* 접힌 사람들의 얼굴을 겹쳐 보여 준다 — 몇 명인지 숫자로도 함께. */}
+            <span aria-hidden style={{ display: 'inline-flex', flex: '0 0 auto', paddingRight: Math.min(rest.length, 3) > 1 ? 7 : 0 }}>
+              {rest.slice(0, 3).map((email, i) => (
+                <span key={email} style={{ marginLeft: i === 0 ? 0 : -7, borderRadius: 999, boxShadow: '0 0 0 2px var(--mf-card)', display: 'inline-flex' }}>
+                  <Avatar label={names[email] ?? email} i={shown.length + i} />
+                </span>
+              ))}
+            </span>
+            <span style={{ flex: 1, minWidth: 0, fontSize: 12, fontWeight: 700, color: 'var(--mf-subtext)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>외 {rest.length}명</span>
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="var(--mf-faint)" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true" style={{ flex: '0 0 auto', transform: moreOpen ? 'rotate(180deg)' : 'none', transition: 'transform .14s ease' }}>
+              <path d="m6 9 6 6 6-6" />
             </svg>
           </button>
-        </span>
-      ))}
+          {moreOpen && (
+            <AnchoredList anchor={moreAnchor} attrs={{ 'data-gf-guest-list': '1' }}>
+              {list.map((email, i) => (
+                <span key={email} data-gf-guest-item={email} style={{ display: 'flex', alignItems: 'center', gap: 9, padding: '8px 10px', minWidth: 0, ...rowDivider(i) }}>
+                  <Avatar label={names[email] ?? email} i={i} />
+                  <span style={{ flex: 1, minWidth: 0, fontSize: 12, fontWeight: 700, color: 'var(--mf-text)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{names[email] ?? email}</span>
+                  <button
+                    type="button"
+                    aria-label={`${email} 초대 취소`}
+                    title="제외"
+                    className="mf-ctl"
+                    onClick={() => {
+                      const next = list.filter((e) => e !== email);
+                      onChange(next);
+                      // 마지막 한 명까지 지우면 접을 것이 없다 — 툴팁도 함께 닫는다.
+                      if (next.length <= SHOWN_MAX) setMoreOpen(false);
+                    }}
+                    style={{ flex: '0 0 auto', width: 22, height: 22, border: 0, borderRadius: 999, background: 'transparent', color: 'var(--mf-faint)', cursor: 'pointer', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', padding: 0 }}
+                  >
+                    <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" aria-hidden="true">
+                      <path d="M6 6l12 12M18 6 6 18" />
+                    </svg>
+                  </button>
+                </span>
+              ))}
+            </AnchoredList>
+          )}
+        </>
+      )}
 
       <span ref={setAnchor} style={{ display: 'block', minWidth: 0 }}>
       <SearchBox
@@ -441,11 +567,14 @@ function Attendees({ list, onChange, search }: { list: string[]; onChange: (next
  */
 function Rooms({ all, picked, onChange }: { all: readonly MeetingRoom[]; picked: string[]; onChange: (next: string[]) => void }) {
   const [q, setQ] = useState('');
-  const rows = q.trim() ? filterRooms(all, q) : [...all];
+  // 예약한 회의실이 **맨 위**로 온다(제보 #17) — 목록이 길면 고른 것이 스크롤 아래로
+  // 숨어 무엇을 잡아 뒀는지 보이지 않는다. 안에서는 원래 순서를 지킨다(안정 정렬).
+  const rows = (q.trim() ? filterRooms(all, q) : [...all]).slice().sort((a, b) => Number(picked.includes(b.email)) - Number(picked.includes(a.email)));
   // 박스 높이는 **전체 목록 기준으로 고정**한다(요청) — 검색으로 행이 줄어도 박스가
   // 오르내리지 않고, 결과는 그 안에서 스크롤·빈 안내로만 갈린다(팝업 높이도 흔들리지
   // 않아 크기 애니메이션이 검색마다 돌지 않는다). 행 높이 ≈ 42px(패딩 9×2 + 내용 24).
-  const boxH = Math.min(196, all.length * 42 + 2);
+  // **세 줄까지**(제보 #4) — 넷을 보여 주면 팝업이 그만큼 길어진다.
+  const boxH = Math.min(3 * 42 + 2, all.length * 42 + 2);
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 8, minWidth: 0 }}>
       <SearchBox label="회의실 검색" attrs={{ 'data-gf-room-input': '1' }} value={q} placeholder="회의실 이름 또는 층 검색" onChange={setQ} />
