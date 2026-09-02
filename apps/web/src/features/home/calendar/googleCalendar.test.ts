@@ -1,5 +1,5 @@
 import { describe, expect, it, beforeEach, vi } from 'vitest';
-import { GOOGLE_CALENDAR_SCOPE, GOOGLE_EVENT_COLORS, RECURRENCE_OFF, buildRecurrence, draftToBody, eventColorOf, fetchEventColors, googleWriteError, managedFieldsDiffer, updateGoogleEvent, recurrenceSummary, isDayOffHoliday, isHolidayCalendarId, onTokenChange, scopeCovers, parseCalendarList, parseEvents, readStoredToken, splitGoogleDateTime, storeToken, type GoogleCalendarMeta } from './googleCalendar';
+import { GOOGLE_CALENDAR_SCOPE, GOOGLE_EVENT_COLORS, myRsvpOf, attendeesBody, RECURRENCE_OFF, buildRecurrence, draftToBody, eventColorOf, fetchEventColors, googleWriteError, managedFieldsDiffer, updateGoogleEvent, recurrenceSummary, isDayOffHoliday, isHolidayCalendarId, onTokenChange, scopeCovers, parseCalendarList, parseEvents, readStoredToken, splitGoogleDateTime, storeToken, type GoogleCalendarMeta } from './googleCalendar';
 import { googleEntries, holidayMap } from './entries';
 import { draftFrom, patchFrom } from './GoogleEventDetail';
 import { submitNewEvent } from './newEventSubmit';
@@ -414,11 +414,14 @@ describe('구글 전용 필드(PR6 후속 — 디자인 원본 nIsGoogle)', () =
   describe('412 — 그 사이 바뀐 것이 무엇인가', () => {
     const base = parseEvents({ items: [{ id: 'e1', etag: '"v1"', summary: '회의', start: { date: '2026-08-10' }, end: { date: '2026-08-11' }, attendees: [{ email: 'a@b.com' }] }] }, { ...CAL, writable: true })[0]!;
 
-    it('응답 상태만 바뀐 판은 같은 것으로 본다 — 사람이 고친 값은 다르다', () => {
+    it('응답 상태만 바뀐 판은 내가 쓰려는 값이 아니면 막지 않는다 — 사람이 고친 값은 다르다', () => {
       const same = parseEvents({ items: [{ id: 'e1', etag: '"v2"', summary: '회의', start: { date: '2026-08-10' }, end: { date: '2026-08-11' }, attendees: [{ email: 'a@b.com', responseStatus: 'accepted' }] }] }, CAL)[0]!;
       const changed = parseEvents({ items: [{ id: 'e1', etag: '"v2"', summary: '남이 고친 제목', start: { date: '2026-08-10' }, end: { date: '2026-08-11' }, attendees: [{ email: 'a@b.com' }] }] }, CAL)[0]!;
-      expect(managedFieldsDiffer(base, same)).toBe(false);
-      expect(managedFieldsDiffer(base, changed)).toBe(true);
+      // 제목만 쓰는 저장에는 곁가지 변화(회의실이 스스로 수락 등)가 걸리지 않는다.
+      expect(managedFieldsDiffer(base, same, ['title'])).toBe(false);
+      expect(managedFieldsDiffer(base, changed, ['title'])).toBe(true);
+      // **참석자 배열을 쓰는 저장**은 다르다 — 낡은 배열로 그 응답을 덮게 되므로 막는다.
+      expect(managedFieldsDiffer(base, same, ['attendees'])).toBe(true);
     });
 
     it('곁가지 변화면 새 판(etag)으로 한 번 더 쓴다', async () => {
@@ -493,5 +496,76 @@ describe('구글 일정 색(요청 ⑤ — 그 일정에 지정한 색을 그대
     vi.stubGlobal('fetch', async () => ({ ok: false, status: 403, json: async () => ({}) }) as unknown as Response);
     expect(await fetchEventColors('tok')).toBeNull();
     vi.unstubAllGlobals();
+  });
+});
+
+describe('초대받은 일정 — 참석 여부·주최자(요청 ③)', () => {
+  const INVITED = {
+    id: 'inv',
+    summary: '팀 회의',
+    start: { dateTime: '2026-08-20T09:00:00+09:00' },
+    end: { dateTime: '2026-08-20T10:00:00+09:00' },
+    organizer: { email: 'boss@example.com', displayName: '팀장' },
+    attendees: [
+      { email: 'boss@example.com', responseStatus: 'accepted' },
+      { email: 'me@example.com', self: true, responseStatus: 'needsAction' },
+      { email: 'mate@example.com', responseStatus: 'declined' },
+      { email: 'room-1@resource.calendar.google.com', resource: true, responseStatus: 'accepted' },
+    ],
+  };
+
+  it('주최자·참석자별 응답·나 자신을 읽는다', () => {
+    const [ev] = parseEvents({ items: [INVITED] }, CAL);
+    expect(ev!.organizer).toEqual({ email: 'boss@example.com', name: '팀장' });
+    expect(ev!.selfEmail).toBe('me@example.com');
+    expect(ev!.rsvps).toEqual({ 'boss@example.com': 'accepted', 'me@example.com': 'needsAction', 'mate@example.com': 'declined', 'room-1@resource.calendar.google.com': 'accepted' });
+    // 회의실은 참석자 줄에 섞이지 않는다(사람만 `attendees`)
+    expect(ev!.attendees).toEqual(['boss@example.com', 'me@example.com', 'mate@example.com']);
+    expect(ev!.rooms).toEqual(['room-1@resource.calendar.google.com']);
+    expect(myRsvpOf(ev!)).toBe('needsAction');
+  });
+
+  it('내가 만든 일정에는 내 응답이 없다 — 그때는 참석 여부를 묻지 않는다', () => {
+    const [mine] = parseEvents({ items: [{ ...INVITED, organizer: { email: 'me@example.com', self: true }, attendees: [{ email: 'mate@example.com', responseStatus: 'accepted' }] }] }, CAL);
+    expect(mine!.organizer?.self).toBe(true);
+    expect(mine!.selfEmail).toBeUndefined();
+    expect(myRsvpOf(mine!)).toBeUndefined();
+  });
+
+  it('참석자 배열을 다시 쓸 때 **남의 응답을 그대로 싣는다** — 이메일만 보내면 모두 미응답으로 되돌아간다', () => {
+    const body = attendeesBody({
+      attendees: ['boss@example.com', 'me@example.com'],
+      rooms: ['room-1@resource.calendar.google.com'],
+      rsvps: { 'boss@example.com': 'accepted', 'me@example.com': 'declined', 'room-1@resource.calendar.google.com': 'accepted' },
+    });
+    expect(body).toEqual([
+      { email: 'boss@example.com', responseStatus: 'accepted' },
+      { email: 'me@example.com', responseStatus: 'declined' },
+      { email: 'room-1@resource.calendar.google.com', resource: true, responseStatus: 'accepted' },
+    ]);
+    // 응답을 모르는 사람은 그 키를 싣지 않는다(구글이 정한 기본을 건드리지 않는다)
+    expect(attendeesBody({ attendees: ['x@y.com'] })).toEqual([{ email: 'x@y.com' }]);
+  });
+
+  it('내 응답만 바꾼 저장은 참석자 배열 하나만 간다 — 내 것만 달라지고 남의 응답은 그대로', () => {
+    const [ev] = parseEvents({ items: [INVITED] }, CAL);
+    const patch = patchFrom(ev!, {}, { rsvp: 'accepted' });
+    expect(patch.touched).toEqual(['attendees']);
+    expect(patch.body).toEqual({
+      attendees: [
+        { email: 'boss@example.com', responseStatus: 'accepted' },
+        { email: 'me@example.com', responseStatus: 'accepted' },
+        { email: 'mate@example.com', responseStatus: 'declined' },
+        { email: 'room-1@resource.calendar.google.com', resource: true, responseStatus: 'accepted' },
+      ],
+    });
+  });
+
+  it('그 사이 남이 응답했으면 참석자 저장은 충돌이다 — 낡은 배열로 그 응답을 덮지 않는다', () => {
+    const [a] = parseEvents({ items: [INVITED] }, CAL);
+    const [b] = parseEvents({ items: [{ ...INVITED, attendees: INVITED.attendees.map((x) => (x.email === 'mate@example.com' ? { ...x, responseStatus: 'accepted' } : x)) }] }, CAL);
+    expect(managedFieldsDiffer(a!, b!, ['attendees'])).toBe(true);
+    // 다른 필드만 쓰는 저장은 여전히 통과한다(범위를 좁히는 것이 이 함수의 핵심)
+    expect(managedFieldsDiffer(a!, b!, ['title'])).toBe(false);
   });
 });

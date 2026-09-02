@@ -779,6 +779,92 @@ describe('구글 캘린더 겹치기(PR5)', () => {
   // 홈이 늘 마운트해 두는 **설정 모달 인스턴스**(mode 'off')와 문서 위젯도 지나간다.
   // 즉 캐시가 계속 지워져 매번 처음부터 다시 받았다. 이제 **켜져 있던 것이 꺼질 때만**
   // 버린다 — 그래서 화면을 떠났다 돌아오면 기억한 일정이 **곧바로** 그려진다.
+  it('초대받은 일정은 주최자와 참석 여부를 보여 준다 — 내 응답만 바뀌고 남의 응답은 그대로(요청 ③)', async () => {
+    seed({ calendars: ['me@example.com'] });
+    seedToken();
+    stubGis();
+    const day = inMonth(1);
+    const call = vi.fn(async (url: string) => {
+      const ok = (body: unknown) => ({ ok: true, status: 200, json: async () => body }) as unknown as Response;
+      if (url.includes('people.googleapis.com') || url.includes('admin.googleapis.com')) return ok({ items: [] });
+      if (url.includes('/colors')) return ok({ event: {} });
+      if (url.includes('/users/me/calendarList')) return ok({ items: [{ id: 'me@example.com', summary: '내 캘린더', primary: true, accessRole: 'owner' }] });
+      return ok({
+        items: [
+          {
+            id: 'inv',
+            summary: '팀 회의',
+            start: { dateTime: `${day}T09:00:00+09:00` },
+            end: { dateTime: `${day}T10:00:00+09:00` },
+            organizer: { email: 'boss@example.com', displayName: '팀장' },
+            attendees: [
+              { email: 'boss@example.com', responseStatus: 'accepted' },
+              { email: 'me@example.com', self: true, responseStatus: 'needsAction' },
+              { email: 'mate@example.com', responseStatus: 'declined' },
+            ],
+          },
+        ],
+      });
+    });
+    // 다른 테스트의 `stubFetch`와 같은 꼴 — 기록된 호출의 `init`을 읽으려면 느슨한 mock이어야 한다.
+    const f = call as unknown as ReturnType<typeof vi.fn>;
+    vi.stubGlobal('fetch', f);
+    clientId = 'test-client.apps.googleusercontent.com';
+    const user = userEvent.setup();
+    const { container } = renderHome();
+    const pop = await openGoogleChip(container, user, /팀 회의/);
+
+    // 누가 불렀는가 — 이름과 이메일이 함께(참석자 행과 같은 꼴)
+    const org = pop.querySelector('[data-gf-organizer]')!;
+    expect(org.textContent).toContain('팀장');
+    expect(org.textContent).toContain('boss@example.com');
+    // 아직 답하지 않았으면 **아무 칸도 켜지지 않는다** — 라벨 옆이 그렇게 말한다
+    const rsvp = [...pop.querySelectorAll<HTMLElement>('[data-gf-rsvp]')];
+    expect(rsvp.map((b) => b.textContent)).toEqual(['참석', '미정', '불참']);
+    expect(rsvp.filter((b) => b.getAttribute('aria-checked') === 'true')).toHaveLength(0);
+    expect(pop.querySelector('[data-gf-invite]')!.textContent).toContain('아직 응답하지 않았어요');
+
+    await user.click(rsvp[0]!);
+    await user.click(pop.querySelector('[data-event-done]')!);
+    await waitFor(() => {
+      const patch = f.mock.calls.find((c) => (c[1] as { method?: string } | undefined)?.method === 'PATCH');
+      expect(patch).toBeTruthy();
+      const body = JSON.parse((patch![1] as { body: string }).body) as Record<string, unknown>;
+      // 참석자 배열 하나만 간다(구글은 이 배열로만 응답을 받는다)
+      expect(Object.keys(body)).toEqual(['attendees']);
+      expect(body.attendees).toEqual([
+        { email: 'boss@example.com', responseStatus: 'accepted' },
+        { email: 'me@example.com', responseStatus: 'accepted' },
+        { email: 'mate@example.com', responseStatus: 'declined' },
+      ]);
+    });
+  });
+
+  it('내가 만든 일정에는 참석 여부를 묻지 않는다 — 주최자 줄도 없다', async () => {
+    seed({ calendars: ['me@example.com'] });
+    seedToken();
+    stubGis();
+    const day = inMonth(1);
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (url: string) => {
+        const ok = (body: unknown) => ({ ok: true, status: 200, json: async () => body }) as unknown as Response;
+        if (url.includes('people.googleapis.com') || url.includes('admin.googleapis.com')) return ok({ items: [] });
+        if (url.includes('/colors')) return ok({ event: {} });
+        if (url.includes('/users/me/calendarList')) return ok({ items: [{ id: 'me@example.com', summary: '내 캘린더', primary: true, accessRole: 'owner' }] });
+        return ok({ items: [{ id: 'own', summary: '내 회의', start: { dateTime: `${day}T09:00:00+09:00` }, end: { dateTime: `${day}T10:00:00+09:00` }, organizer: { email: 'me@example.com', self: true } }] });
+      }),
+    );
+    clientId = 'test-client.apps.googleusercontent.com';
+    const user = userEvent.setup();
+    const { container } = renderHome();
+    const pop = await openGoogleChip(container, user, /내 회의/);
+    expect(pop.querySelector('[data-gf-invite]')).toBeNull();
+    expect(pop.querySelector('[data-gf-rsvp]')).toBeNull();
+    // 나머지 구글 필드는 그대로 있다(참석자·공개 설정 등)
+    expect(pop.querySelector('[data-google-fields]')).toBeTruthy();
+  });
+
   it('구글에서 일정에 지정한 색을 그대로 쓴다 — 시간 일정·종일·기간 모두(요청 ⑤)', async () => {
     seed({ calendars: ['me@example.com'] });
     seedToken();
