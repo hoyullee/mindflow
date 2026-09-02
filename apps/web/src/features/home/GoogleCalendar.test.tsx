@@ -15,7 +15,7 @@ import { LocalEventStore } from '../../adapters/local/localEventStore';
 import { LocalImageStore } from '../../adapters/local/localImageStore';
 import type { Backend, DocMeta, DocStore } from '../../adapters/ports';
 import { isoOf } from './calendar/model';
-import { GOOGLE_CALENDAR_SCOPE, GOOGLE_SCOPE_REQUIRED } from './calendar/googleCalendar';
+import { GOOGLE_CALENDAR_SCOPE, GOOGLE_SCOPE_DIRECTORY, GOOGLE_SCOPE_REQUIRED } from './calendar/googleCalendar';
 import { clearGoogleSessionCache } from './calendar/useGoogleCalendar';
 
 /**
@@ -684,6 +684,94 @@ describe('구글 캘린더 겹치기(PR5)', () => {
     await waitFor(() => expect(document.querySelector('[data-gf-guest="eunjin@example.com"]')).toBeTruthy());
   });
 
+  // 제보 — 등록·이미 등록된 참석자는 **이메일 한 줄**이라 같은 사람이 자리마다 달라
+  // 보였다(후보 리스트는 아바타 + 이름 + 이메일). 구글이 돌려주는 참석자는 이메일뿐이니
+  // 이름은 디렉터리에서 찾고, 못 찾으면 로컬파트를 이름 자리에 둔다.
+  it('이미 등록된 참석자도 후보와 같은 꼴 — 아바타 + 이름 + 이메일', async () => {
+    seed({ calendars: ['me@example.com'] });
+    seedToken(`${GOOGLE_CALENDAR_SCOPE} ${GOOGLE_SCOPE_DIRECTORY}`);
+    stubGis();
+    const meeting = inMonth(1);
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (url: string) => {
+        const ok = (body: unknown) => ({ ok: true, status: 200, json: async () => body }) as unknown as Response;
+        if (url.includes('people.googleapis.com')) {
+          // 이메일로 물으면 그 사람을 돌려준다(디렉터리에 있는 사람만).
+          const q = decodeURIComponent((url.match(/query=([^&]*)/) ?? [])[1] ?? '');
+          return ok(q.includes('eunjin') ? { people: [{ names: [{ displayName: '여은진' }], emailAddresses: [{ value: 'eunjin@example.com' }] }] } : { people: [] });
+        }
+        if (url.includes('admin.googleapis.com')) return ok({ items: [] });
+        if (url.includes('/users/me/calendarList')) return ok({ items: [{ id: 'me@example.com', summary: '내 캘린더', primary: true, accessRole: 'owner' }] });
+        return ok({
+          items: [
+            {
+              id: 'g1',
+              summary: '구글 회의',
+              htmlLink: 'https://calendar.google.com/x',
+              start: { dateTime: `${meeting}T09:00:00+09:00` },
+              end: { dateTime: `${meeting}T10:00:00+09:00` },
+              attendees: [{ email: 'eunjin@example.com' }, { email: 'nobody@example.com' }],
+            },
+          ],
+        });
+      }),
+    );
+    clientId = 'test-client.apps.googleusercontent.com';
+    const user = userEvent.setup();
+    const { container } = renderHome();
+    const pop = await openGoogleChip(container, user, /구글 회의/);
+
+    // 디렉터리에 있는 사람 — 이름을 찾아 온다
+    const known = await waitFor(() => {
+      const el = pop.querySelector('[data-gf-guest="eunjin@example.com"]');
+      expect(el?.textContent).toContain('여은진');
+      return el as HTMLElement;
+    });
+    expect(known.textContent).toContain('eunjin@example.com');
+    // 못 찾은 사람도 **같은 꼴**이다 — 이름 줄은 로컬파트, 이메일은 둘째 줄.
+    const row = pop.querySelector('[data-gf-guest="nobody@example.com"]') as HTMLElement;
+    expect([...(row.children[1] as HTMLElement).children].map((n) => n.textContent)).toEqual(['nobody', 'nobody@example.com']);
+    expect(row.querySelector('span[aria-hidden]')?.textContent).toBe('N');
+  });
+
+  // 제보 — 일정 화면을 열어 둔 채 구글 캘린더에서 일정을 더해도 우리 달력은 그대로였다.
+  // 구글이 정본이므로 다시 물어야 한다: 탭으로 **돌아오는 순간**이 그 계기다.
+  it('열어 둔 채 구글에서 일정이 늘면, 탭으로 돌아올 때 잡아 온다', async () => {
+    seed({ calendars: ['me@example.com'] });
+    seedToken();
+    stubGis();
+    const meeting = inMonth(1);
+    let extra = false;
+    const ev = (id: string, title: string, h: number) => ({
+      id,
+      summary: title,
+      htmlLink: `https://calendar.google.com/${id}`,
+      start: { dateTime: `${meeting}T${String(h).padStart(2, '0')}:00:00+09:00` },
+      end: { dateTime: `${meeting}T${String(h + 1).padStart(2, '0')}:00:00+09:00` },
+    });
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (url: string) => {
+        const ok = (body: unknown) => ({ ok: true, status: 200, json: async () => body }) as unknown as Response;
+        if (url.includes('people.googleapis.com') || url.includes('admin.googleapis.com')) return ok({ items: [] });
+        if (url.includes('/users/me/calendarList')) return ok({ items: [{ id: 'me@example.com', summary: '내 캘린더', primary: true, accessRole: 'owner' }] });
+        return ok({ items: extra ? [ev('g1', '구글 회의', 9), ev('g2', '구글에서 방금 추가', 15)] : [ev('g1', '구글 회의', 9)] });
+      }),
+    );
+    clientId = 'test-client.apps.googleusercontent.com';
+    const user = userEvent.setup();
+    const { container } = renderHome();
+    await openCalendar(container, user);
+    await waitFor(() => expect(screen.getAllByText(/구글 회의/).length).toBeGreaterThan(0));
+    expect(screen.queryByText(/구글에서 방금 추가/)).toBeNull();
+
+    // 구글 쪽에서 일정이 하나 늘었다 → 사용자가 이 탭으로 돌아온다
+    extra = true;
+    fireEvent(window, new Event('focus'));
+    await waitFor(() => expect(screen.getAllByText(/구글에서 방금 추가/).length).toBeGreaterThan(0));
+  });
+
   it('회의실을 검색해 예약한다 — 구글에서는 참석자(resource)로 저장된다', async () => {
     seed({ calendars: ['me@example.com'] });
     seedToken();
@@ -996,7 +1084,7 @@ describe('구글 캘린더 겹치기(PR5)', () => {
     expect(document.querySelector('[data-gf-guest-list]')).toBeNull();
   });
 
-  it('고른 사람은 이름과 이메일이 함께 남는다 — 직접 적은 주소는 한 줄이다(요청)', async () => {
+  it('고른 사람은 이름과 이메일이 함께 남는다', async () => {
     seed({ calendars: ['me@example.com'] });
     seedToken();
     stubGis();
@@ -1020,6 +1108,16 @@ describe('구글 캘린더 겹치기(PR5)', () => {
     });
     expect(row.textContent).toContain('여은진');
     expect(row.textContent).toContain('eunjin@example.com');
+
+    // 직접 적은 주소도 **같은 두 줄**이다(제보) — 예전에는 이메일 한 줄만 남아
+    // 같은 사람이 자리마다 달라 보였다. 이름 자리는 로컬파트가 채운다.
+    await user.type(screen.getByLabelText('참석자 이름 또는 이메일'), 'typed@example.com{Enter}');
+    const typed = await waitFor(() => {
+      const el = document.querySelector('[data-gf-guest="typed@example.com"]');
+      expect(el).toBeTruthy();
+      return el as HTMLElement;
+    });
+    expect([...(typed.children[1] as HTMLElement).children].map((n) => n.textContent)).toEqual(['typed', 'typed@example.com']);
   });
 
   it('회의실은 세 줄까지 보이고 안내 문구를 두지 않는다 · 예약한 것이 맨 위로 온다(제보 #4·#17)', async () => {

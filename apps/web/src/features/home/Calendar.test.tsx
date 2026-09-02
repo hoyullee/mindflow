@@ -984,6 +984,28 @@ describe('일정 화면', () => {
       await waitFor(() => expect(events()[0]).toMatchObject({ allDay: false, startTime: '16:00', endTime: '17:00' }));
     });
 
+    // 제보 — 화면을 열어 둔 채 **다른 곳**에서 일정이 바뀌면 잡지 못했다(구글 캘린더가
+    // 그 경우였고, 우리 일정도 다른 기기에서 바뀌면 같은 처지다). 탭으로 돌아오는
+    // 순간이 자연스러운 계기다(새 배포 감지·알림 벨과 같은 규칙).
+    it('열어 둔 채 다른 기기에서 일정이 늘면, 탭으로 돌아올 때 잡아 온다', async () => {
+      renderHome([META('d1', '스프린트 보드')], BODIES());
+      localStorage.setItem('mf_events', JSON.stringify([{ id: 'e1', title: '주간 회의', startDate: todayISO(), endDate: todayISO(), allDay: true, source: 'geurio' }]));
+      await openCalendar();
+      await waitFor(() => expect(chipTexts()).toContain('주간 회의'));
+      expect(chipTexts()).not.toContain('다른 기기에서 추가');
+
+      // 저장소가 곧 다른 기기다 — 그 사이 한 건이 늘었다.
+      localStorage.setItem(
+        'mf_events',
+        JSON.stringify([
+          { id: 'e1', title: '주간 회의', startDate: todayISO(), endDate: todayISO(), allDay: true, source: 'geurio' },
+          { id: 'e2', title: '다른 기기에서 추가', startDate: todayISO(), endDate: todayISO(), allDay: true, source: 'geurio' },
+        ]),
+      );
+      fireEvent(window, new Event('focus'));
+      await waitFor(() => expect(chipTexts()).toContain('다른 기기에서 추가'));
+    });
+
     it('일정을 누르면 **칸반과 다른 팝업**이 뜨고, 저장은 완료 버튼에서 한 번이다', async () => {
       renderHome([META('d1', '스프린트 보드')], BODIES());
       localStorage.setItem('mf_events', JSON.stringify([{ id: 'e1', title: '주간 회의', startDate: todayISO(), endDate: todayISO(), allDay: true, source: 'geurio' }]));

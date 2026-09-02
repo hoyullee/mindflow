@@ -33,6 +33,7 @@ import {
 } from './googleCalendar';
 import { fetchRooms, searchPeople as searchPeopleApi, type DirectoryPerson, type MeetingRoom } from './googleDirectory';
 import { readGoogleClientId } from '../../auth/googleIdentity';
+import { useLiveRefresh } from './useLiveRefresh';
 
 export interface GoogleCalendarApi {
   /** 이 배포에 구글 클라이언트 ID가 있는가 — 없으면 설정에 구획 자체를 그리지 않는다. */
@@ -287,6 +288,19 @@ export function useGoogleCalendar(
       cancelled = true;
     };
   }, [available, enabled, mode, picked, calendars, from, to, cacheKey, reloadTick, withToken]);
+
+  /**
+   * **구글이 정본이므로 다시 물어야 한다**(제보: 일정 화면을 열어 둔 채 구글
+   * 캘린더에서 일정을 더해도 우리 달력은 그대로였다). 구글에는 푸시(watch 채널)가
+   * 있지만 받아 줄 서버 엔드포인트가 필요하니, 서버 없이 되는 두 계기로 다시
+   * 받는다(`useLiveRefresh`: 탭 복귀·창 포커스·네트워크 복귀 + 보고 있는 동안
+   * 60초 주기). 캐시가 있어 받는 동안 화면이 비지 않고, 새 값이 오면 조용히
+   * 갈아 끼운다 — 사용자에게는 "저절로 최신"으로 보인다.
+   *
+   * 캘린더 **목록**은 다시 묻지 않는다 — 캘린더가 새로 생기는 일은 드물고,
+   * 그것까지 60초마다 물으면 조회가 배로 는다(설정을 열면 그때 다시 받는다).
+   */
+  useLiveRefresh(available && enabled && mode === 'events', () => setReloadTick((n) => n + 1));
 
   const connect = useCallback(async () => {
     setError(null);

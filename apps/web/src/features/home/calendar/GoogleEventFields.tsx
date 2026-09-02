@@ -246,6 +246,19 @@ export function ReminderField({ value, onChange, disabled }: { value: number | n
 /** 디자인 원본의 아바타 팔레트(`AV`) — 행 순서대로 돌려 쓴다. */
 const AV = ['#E8845C', '#7C9BD8', '#69B08A', '#C58AC0', '#D8A24F'];
 
+/**
+ * 초대된 사람의 **표시 이름** — 이름을 알면 그 이름, 모르면 **이메일 로컬파트**다
+ * (이 앱의 프로필명 규칙과 같다: 저장된 이름 → 공급자 이름 → 로컬파트). 이름을
+ * 모를 때도 행의 꼴이 후보 리스트와 같아진다(요청: 아바타 + 이름 + 이메일) —
+ * 예전에는 이름을 모르면 이메일 한 줄만 남아 같은 사람이 자리마다 달라 보였다.
+ */
+export function guestLabel(email: string, names: Record<string, string>): string {
+  const known = (names[email] ?? '').trim();
+  if (known) return known;
+  const at = email.indexOf('@');
+  return at > 0 ? email.slice(0, at) : email;
+}
+
 function Avatar({ label, i }: { label: string; i: number }) {
   return (
     <span aria-hidden style={{ width: 24, height: 24, flex: '0 0 auto', borderRadius: 999, background: AV[i % AV.length], color: '#FFFDFB', fontSize: 10, fontWeight: 800, display: 'inline-flex', alignItems: 'center', justifyContent: 'center' }}>
@@ -339,13 +352,13 @@ const ROWS_MAX = 3;
  * 적은 것)는 주소 한 줄이다 — 같은 값을 두 줄로 되풀이하지 않는다. 후보 목록과 같은
  * 꼴이라 "고른 그 사람"이 그대로 남은 것으로 읽힌다.
  */
-function GuestRow({ email, name, i, onRemove }: { email: string; name?: string; i: number; onRemove: () => void }) {
+function GuestRow({ email, name, i, onRemove }: { email: string; name: string; i: number; onRemove: () => void }) {
   return (
     <span data-gf-guest={email} style={{ display: 'flex', alignItems: 'center', gap: 9, padding: '7px 9px', borderRadius: 11, background: 'var(--mf-card)', border: '1px solid var(--mf-border-soft)', minWidth: 0 }}>
-      <Avatar label={name ?? email} i={i} />
+      <Avatar label={name} i={i} />
       <span style={{ display: 'flex', flexDirection: 'column', gap: 1, flex: 1, minWidth: 0 }}>
-        <span style={{ fontSize: 12, fontWeight: 700, color: 'var(--mf-text)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{name ?? email}</span>
-        {name && <span style={{ fontSize: 10.5, color: 'var(--mf-faint)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{email}</span>}
+        <span style={{ fontSize: 12, fontWeight: 700, color: 'var(--mf-text)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{name}</span>
+        <span style={{ fontSize: 10.5, color: 'var(--mf-faint)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{email}</span>
       </span>
       <button type="button" aria-label={`${email} 초대 취소`} title="제외" className="mf-ctl" onClick={onRemove} style={{ flex: '0 0 auto', width: 22, height: 22, border: 0, borderRadius: 999, background: 'transparent', color: 'var(--mf-faint)', cursor: 'pointer', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', padding: 0 }}>
         <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" aria-hidden="true">
@@ -401,6 +414,35 @@ function Attendees({ list, onChange, search }: { list: string[]; onChange: (next
     }, 220);
     return () => clearTimeout(t);
   }, [draft, search]);
+
+  /**
+   * **이미 등록된 참석자의 이름을 채운다**(요청) — 구글 일정이 돌려주는 참석자는
+   * 이메일뿐이고 직접 적은 주소도 이름이 없다. 이름 검색을 쓸 수 있으면 그 사람의
+   * 이메일로 한 번 물어 이름을 얻는다(디렉터리에 없으면 로컬파트로 남는다).
+   * 이메일 하나에 **한 번만** 묻는다 — 없는 사람을 매 렌더 다시 찾지 않는다.
+   */
+  const askedRef = useRef<Set<string>>(new Set());
+  const listKey = list.join(',');
+  useEffect(() => {
+    if (!search) return;
+    // `list`가 아니라 문자열 키에서 되짚는다 — 배열은 렌더마다 새 참조라 이 효과의
+    // 계기가 될 수 없고, 키가 바뀌는 순간이 곧 "초대가 늘거나 줄었다"다.
+    const missing = (listKey ? listKey.split(',') : []).filter((e) => !names[e] && !askedRef.current.has(e));
+    if (missing.length === 0) return;
+    for (const e of missing) askedRef.current.add(e);
+    let cancelled = false;
+    void (async () => {
+      for (const email of missing) {
+        const found = await search(email).catch(() => null);
+        if (cancelled) return;
+        const hit = found?.find((p) => p.email.toLowerCase() === email.toLowerCase());
+        if (hit?.name) setNames((m) => ({ ...m, [email]: hit.name }));
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [listKey, names, search]);
 
   // 접힌 목록은 바깥을 누르거나 Escape로 닫는다(팝오버의 관례 — 모달 위의 층이라
   // Radix가 대신 닫아 주지 않는다).
@@ -513,7 +555,7 @@ function Attendees({ list, onChange, search }: { list: string[]; onChange: (next
           넷부터 마지막 칸이 `외 N명`으로 접힌다. 접힌 사람은 그 줄을 눌러 뜨는
           툴팁에서 보고 지운다. */}
       {shown.map((email, i) => (
-        <GuestRow key={email} email={email} name={names[email]} i={i} onRemove={() => onChange(list.filter((e) => e !== email))} />
+        <GuestRow key={email} email={email} name={guestLabel(email, names)} i={i} onRemove={() => onChange(list.filter((e) => e !== email))} />
       ))}
       {rest.length > 0 && (
         <>
@@ -530,7 +572,7 @@ function Attendees({ list, onChange, search }: { list: string[]; onChange: (next
             <span aria-hidden style={{ display: 'inline-flex', flex: '0 0 auto', paddingRight: Math.min(rest.length, 3) > 1 ? 7 : 0 }}>
               {rest.slice(0, 3).map((email, i) => (
                 <span key={email} style={{ marginLeft: i === 0 ? 0 : -7, borderRadius: 999, boxShadow: '0 0 0 2px var(--mf-card)', display: 'inline-flex' }}>
-                  <Avatar label={names[email] ?? email} i={shown.length + i} />
+                  <Avatar label={guestLabel(email, names)} i={shown.length + i} />
                 </span>
               ))}
             </span>
@@ -543,10 +585,10 @@ function Attendees({ list, onChange, search }: { list: string[]; onChange: (next
             <AnchoredList anchor={moreAnchor} attrs={{ 'data-gf-guest-list': '1' }}>
               {list.map((email, i) => (
                 <span key={email} data-gf-guest-item={email} style={{ display: 'flex', alignItems: 'center', gap: 9, padding: '8px 10px', minWidth: 0, ...rowDivider(i) }}>
-                  <Avatar label={names[email] ?? email} i={i} />
+                  <Avatar label={guestLabel(email, names)} i={i} />
                   <span style={{ display: 'flex', flexDirection: 'column', gap: 1, flex: 1, minWidth: 0 }}>
-                    <span style={{ fontSize: 12, fontWeight: 700, color: 'var(--mf-text)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{names[email] ?? email}</span>
-                    {names[email] && <span style={{ fontSize: 10.5, color: 'var(--mf-faint)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{email}</span>}
+                    <span style={{ fontSize: 12, fontWeight: 700, color: 'var(--mf-text)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{guestLabel(email, names)}</span>
+                    <span style={{ fontSize: 10.5, color: 'var(--mf-faint)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{email}</span>
                   </span>
                   <button
                     type="button"
