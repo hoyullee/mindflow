@@ -143,3 +143,34 @@ export function Segments({ aria, items, value, onChange, attr, wide }: { aria: s
     />
   );
 }
+
+/**
+ * 위치 옆의 **지도에서 보기**(요청 ④) — 구글 캘린더는 주소를 입력하는 동안 장소를
+ * 자동완성해 주지만, 그건 **Places API**의 일이다: 별도 API 키와 결제 계정이 필요하고
+ * (그 키는 브라우저에 실려 나가므로 도메인 제한·사용량 관리까지 딸려 온다) 무료
+ * 한도가 없다. 그래서 지금은 자동완성 대신 **적어 둔 주소를 지도에서 여는 길**을 낸다 —
+ * 키도 비용도 필요 없고, 사용자가 실제로 하려던 일("그래서 거기가 어디야")에 닿는다.
+ *
+ * 주소가 비어 있으면 그리지 않는다(눌러도 아무 데도 못 가는 버튼을 두지 않는다).
+ */
+export function MapLink({ query }: { query: string }) {
+  const q = query.trim();
+  if (!q) return null;
+  return (
+    <a
+      href={`https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(q)}`}
+      target="_blank"
+      rel="noopener noreferrer"
+      data-map-link
+      className="mf-ctl"
+      title="지도에서 보기"
+      style={{ flex: '0 0 auto', display: 'inline-flex', alignItems: 'center', gap: 5, height: 24, padding: '0 9px', borderRadius: 999, border: '1px solid var(--mf-border)', background: 'var(--mf-card)', color: 'var(--mf-subtext)', fontSize: 10.5, fontWeight: 700, textDecoration: 'none' }}
+    >
+      <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+        <path d="M20 10c0 6-8 12-8 12s-8-6-8-12a8 8 0 0 1 16 0Z" />
+        <circle cx="12" cy="10" r="2.6" />
+      </svg>
+      지도에서 보기
+    </a>
+  );
+}

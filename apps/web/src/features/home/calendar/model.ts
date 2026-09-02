@@ -159,7 +159,8 @@ export function monthCells(y: number, m: number, entries: readonly CalendarEntry
     // 다음 달까지 이어지는 일정이 그 칸에서 뚝 끊겨 보였다). 격자는 날짜가 이어지는
     // 6주라 기간 바가 자연스럽게 이어지고, 하루짜리도 구글 캘린더처럼 흐리게 보인다.
     // 격자 첫 칸은 언제나 일요일이므로 격자 앞에서 시작한 기간도 첫 칸에서 제목을 얻는다.
-    const list = byDay.get(iso) ?? [];
+    // 종일이 위, 시간 일정이 아래(요청) — 그래서 `+N개 더`로 접히는 쪽은 시간 일정이다.
+    const list = [...(byDay.get(iso) ?? [])].sort(compareInDay);
     const bars: MonthBar[] = spans
       .filter((e) => coversDay(e, iso))
       .map((e) => ({ entry: e, head: e.start === iso, tail: e.due === iso, label: e.start === iso || dow === 0 }));
@@ -235,9 +236,26 @@ export function overdueEntries(entries: readonly CalendarEntry[], todayIso: stri
   return entries.filter((e) => e.due < todayIso).sort((a, b) => (a.due < b.due ? 1 : a.due > b.due ? -1 : 0));
 }
 
-/** 그 날의 모든 항목 — 하루짜리 + 그 날을 덮는 기간. */
+/**
+ * 한 칸 안의 순서(요청) — **종일 일정이 언제나 위**다. 구글 캘린더와 같은 규칙이고
+ * 근거도 같다: 종일은 그 날 전체에 걸린 일이라 "몇 시의 일"보다 먼저 읽혀야 하고,
+ * 칸이 좁아 뒤가 `+N개 더`로 접히므로 **접히는 쪽이 시간 일정**이어야 맞다.
+ *
+ * 종일끼리는 원래 순서(수집 순 — 칸반 마감 → Geurio → 구글), 시간 일정끼리는
+ * 시작 시각순이다. 시각이 같으면 원래 순서를 지킨다(정렬이 흔들리지 않게).
+ */
+export function compareInDay(a: CalendarEntry, b: CalendarEntry): number {
+  const at = a.startTime ?? '';
+  const bt = b.startTime ?? '';
+  if (!at && !bt) return 0;
+  if (!at) return -1;
+  if (!bt) return 1;
+  return at < bt ? -1 : at > bt ? 1 : 0;
+}
+
+/** 그 날의 모든 항목 — 하루짜리 + 그 날을 덮는 기간. 종일이 위로 온다. */
 export function entriesOn(entries: readonly CalendarEntry[], iso: string): CalendarEntry[] {
-  return entries.filter((e) => coversDay(e, iso));
+  return entries.filter((e) => coversDay(e, iso)).sort(compareInDay);
 }
 
 /**

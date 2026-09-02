@@ -361,3 +361,29 @@ describe('마감 배지의 중요도(dueTone)', () => {
     expect(dueTone('2026-08-30', TODAY)).toBe('later');
   });
 });
+
+describe('한 칸 안의 순서 — 종일이 언제나 위(요청)', () => {
+  const E = (over: Partial<CalendarEntry>): CalendarEntry => ({
+    docId: 'd', cardId: 'k', title: 't', due: '2026-08-20', colId: 'c', colName: '할 일', colIndex: 0, tag: '', boardName: 'B', spaceName: 'S', ...over,
+  });
+
+  it('격자 칸: 종일 → 시간(시작 시각순)', () => {
+    const entries = [
+      E({ cardId: 'pm', title: '오후 회의', startTime: '14:00' }),
+      E({ cardId: 'all1', title: '휴가' }),
+      E({ cardId: 'am', title: '오전 회의', startTime: '09:00' }),
+      E({ cardId: 'all2', title: '마감' }),
+    ];
+    const cell = monthCells(2026, 8, entries, '2026-08-01', 10).find((c) => c.iso === '2026-08-20')!;
+    expect(cell.entries.map((e) => e.title)).toEqual(['휴가', '마감', '오전 회의', '오후 회의']);
+  });
+
+  it('그 날 목록도 같은 규칙이다 — 접히는 쪽은 언제나 시간 일정', () => {
+    const entries = [E({ cardId: 'pm', title: '오후', startTime: '14:00' }), E({ cardId: 'all', title: '종일' })];
+    expect(entriesOn(entries, '2026-08-20').map((e) => e.title)).toEqual(['종일', '오후']);
+    // 칸이 한 칸뿐이면 남는 것은 시간 일정이다(`+N개 더`).
+    const cell = monthCells(2026, 8, entries, '2026-08-01', 1).find((c) => c.iso === '2026-08-20')!;
+    expect(cell.entries.map((e) => e.title)).toEqual(['종일']);
+    expect(cell.moreN).toBe(1);
+  });
+});

@@ -131,3 +131,38 @@ export function filterRooms(rooms: readonly MeetingRoom[], query: string): Meeti
   if (!q) return rooms.slice(0, 12);
   return rooms.filter((r) => r.name.toLowerCase().includes(q) || (r.where ?? '').toLowerCase().includes(q)).slice(0, 12);
 }
+
+/**
+ * 이 시간대에 그 회의실이 **비어 있는가**(요청) — 구글 캘린더는 달력에 겹쳐 보여
+ * 주지만 우리는 팝업이라 그럴 자리가 없다. 그래서 **회의실 행 자체가** 말한다.
+ *
+ * ## 왜 `events.list`인가(freebusy가 아니라)
+ * 구글의 `freeBusy.query`는 스코프가 따로다(`calendar.freebusy` 계열). 지금 승인된
+ * 스코프로는 못 부르고, 스코프를 늘리려면 동의 화면을 고쳐 **검수를 다시 받아야**
+ * 한다. 회의실도 결국 캘린더이므로, 이미 있는 `calendar.events`로 그 캘린더의
+ * 일정을 **그 구간만** 물어보면 같은 답을 얻는다.
+ *
+ * ## 모르는 것은 칠하지 않는다
+ * 조직이 회의실 캘린더를 "한가함/바쁨만" 또는 아무것도 공개하지 않게 두면 403·404가
+ * 온다. 그때는 `null`이고 화면은 배지를 그리지 않는다 — "사용 가능"이라 잘못 말하는
+ * 것보다 아무 말도 안 하는 편이 낫다.
+ *
+ * @param skipEventId 지금 고치고 있는 일정 — 그 일정이 이미 잡아 둔 회의실을
+ *   "사용 중"이라 말하면 자기 자신과 부딪힌다고 하는 셈이다.
+ */
+export async function isRoomBusy(token: string, roomEmail: string, fromIso: string, toIso: string, skipEventId?: string): Promise<boolean | null> {
+  const q = new URLSearchParams({ timeMin: fromIso, timeMax: toIso, singleEvents: 'true', maxResults: '5', showDeleted: 'false' });
+  const json = await get(`https://www.googleapis.com/calendar/v3/calendars/${encodeURIComponent(roomEmail)}/events?${q.toString()}`, token);
+  if (json === null) return null;
+  const items = (json as { items?: unknown }).items;
+  if (!Array.isArray(items)) return null;
+  return items.some((raw) => {
+    const it = raw as Record<string, unknown>;
+    if (it.status === 'cancelled') return false;
+    // 회의실이 스스로 거절한 초대는 그 방을 쓰지 않는다는 뜻이다.
+    const me = Array.isArray(it.attendees) ? (it.attendees as Record<string, unknown>[]).find((a) => a.email === roomEmail) : undefined;
+    if (me?.responseStatus === 'declined') return false;
+    if (skipEventId && (it.id === skipEventId || it.recurringEventId === skipEventId)) return false;
+    return true;
+  });
+}

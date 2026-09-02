@@ -940,7 +940,7 @@ function CalWidgetDialogs({
         onClose={controller.closeCalendarGoogle}
         onPatch={google.updateEvent}
         onDelete={google.deleteEvent}
-        directory={{ canSearchPeople: google.canSearchPeople, searchPeople: google.searchPeople, canPickRooms: google.canPickRooms, rooms: google.rooms, roomsReady: google.roomsReady, loadRooms: google.loadRooms }}
+        directory={{ canSearchPeople: google.canSearchPeople, searchPeople: google.searchPeople, canPickRooms: google.canPickRooms, rooms: google.rooms, roomsReady: google.roomsReady, loadRooms: google.loadRooms, checkRoomBusy: google.checkRoomBusy }}
       />
       {state.calNewEvent && (
         <NewEventModal
@@ -953,7 +953,7 @@ function CalWidgetDialogs({
             controller.closeNewEvent();
           }}
           googleTargets={googleTargets}
-          directory={{ canSearchPeople: google.canSearchPeople, searchPeople: google.searchPeople, canPickRooms: google.canPickRooms, rooms: google.rooms, roomsReady: google.roomsReady, loadRooms: google.loadRooms }}
+          directory={{ canSearchPeople: google.canSearchPeople, searchPeople: google.searchPeople, canPickRooms: google.canPickRooms, rooms: google.rooms, roomsReady: google.roomsReady, loadRooms: google.loadRooms, checkRoomBusy: google.checkRoomBusy }}
           onSubmit={(input, target) => {
             setSaving(true);
             void submitNewEvent(input, target, { createGeurio: events.create, createGoogle: google.createEvent }).then((err) => {

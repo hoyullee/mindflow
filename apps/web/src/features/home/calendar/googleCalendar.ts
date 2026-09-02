@@ -187,6 +187,12 @@ export interface GoogleEvent {
   rsvps?: Record<string, GoogleRsvp>;
   /** 참석자 목록에서 **나**인 항목의 이메일(`self: true`) — 없으면 초대받지 않았다. */
   selfEmail?: string;
+  /**
+   * 구글이 알려 준 **표시 이름**(email → 이름). 이름을 아는 사람은 구글이 참석자·
+   * 주최자에 `displayName`을 실어 준다 — 이 값을 버리면 화면이 이메일 앞부분으로
+   * 떨어진다(제보). 없는 사람은 디렉터리 검색이 채우고, 그것도 없으면 로컬파트다.
+   */
+  names?: Record<string, string>;
 }
 
 /** 참석 여부 — 구글의 `responseStatus` 그대로. */
@@ -378,25 +384,50 @@ export const GOOGLE_EVENT_COLORS: Record<string, string> = {
   '11': '#d50000', // Tomato
 };
 
-/** `/colors`의 이벤트 팔레트 — 번호 → 배경 hex. 실패하면 `null`(폴백 표를 쓴다). */
+/**
+ * `/colors`의 이벤트 팔레트 — 번호 → 배경 hex. 실패하면 `null`(폴백 표를 쓴다).
+ *
+ * **실패를 드러낸다**(제보: 구글에서 지정한 색과 표식 색이 달랐다). 이 조회가 조용히
+ * 실패하면 화면은 레거시 폴백 표로 그리고, 구글이 팔레트를 넓힌 뒤 지정한 색은 표에
+ * 없어 **캘린더 색으로 떨어진다** — 사용자에겐 "엉뚱한 색"으로 보인다. 그러니 왜
+ * 못 받았는지 콘솔에 남긴다(400 진단과 같은 결: 원인을 화면·로그가 말한다).
+ */
 export async function fetchEventColors(token: string): Promise<Record<string, string> | null> {
   try {
     const json = (await get('/colors', token, {})) as { event?: Record<string, { background?: unknown }> };
     const src = json?.event;
-    if (!src || typeof src !== 'object') return null;
+    if (!src || typeof src !== 'object') {
+      console.warn('[geurio] 구글 색 팔레트가 비어 있어요 — 폴백 표로 그립니다');
+      return null;
+    }
     const out: Record<string, string> = {};
     for (const [id, v] of Object.entries(src)) {
       if (typeof v?.background === 'string') out[id] = v.background;
     }
-    return Object.keys(out).length > 0 ? out : null;
-  } catch {
+    if (Object.keys(out).length === 0) return null;
+    return out;
+  } catch (e) {
+    console.warn('[geurio] 구글 색 팔레트를 못 받았어요 — 폴백 표로 그립니다', (e as { status?: number }).status ?? e);
     return null;
   }
 }
 
-/** 그 일정이 화면에서 쓸 색 — 일정에 지정한 색이 있으면 그것, 없으면 캘린더 색. */
+/**
+ * 그 일정이 화면에서 쓸 색 — 일정에 지정한 색이 있으면 그것, 없으면 캘린더 색.
+ *
+ * 번호를 못 풀면(팔레트를 못 받았거나 구글이 새 번호를 쓰면) 캘린더 색으로 물러서되
+ * **콘솔에 그 번호를 남긴다** — 그 상태가 곧 제보의 "색이 다르다"이고, 번호를 알면
+ * 폴백 표를 채울 수 있다(우리가 지어낼 수는 없다).
+ */
+const warnedColorIds = new Set<string>();
 export function eventColorOf(ev: GoogleEvent, palette: Record<string, string>): string | undefined {
-  if (ev.colorId) return palette[ev.colorId] ?? GOOGLE_EVENT_COLORS[ev.colorId] ?? ev.color;
+  if (!ev.colorId) return ev.color;
+  const hex = palette[ev.colorId] ?? GOOGLE_EVENT_COLORS[ev.colorId];
+  if (hex) return hex;
+  if (!warnedColorIds.has(ev.colorId)) {
+    warnedColorIds.add(ev.colorId);
+    console.warn(`[geurio] 모르는 구글 이벤트 색 번호 ${ev.colorId} — 캘린더 색으로 그립니다(팔레트 키: ${Object.keys(palette).join(',') || '없음'})`);
+  }
   return ev.color;
 }
 
@@ -494,11 +525,12 @@ const RSVPS: readonly GoogleRsvp[] = ['accepted', 'declined', 'tentative', 'need
  * 응답(`responseStatus`)은 화면에 쓰는 것이 내 것 하나뿐이지만 **전부** 담는다 —
  * 참석자 배열을 다시 쓸 때 남의 응답을 지우지 않으려면 그 값이 필요하다.
  */
-function parseAttendees(raw: unknown): { attendees?: string[]; rooms?: string[]; rsvps?: Record<string, GoogleRsvp>; selfEmail?: string } {
+function parseAttendees(raw: unknown): { attendees?: string[]; rooms?: string[]; rsvps?: Record<string, GoogleRsvp>; selfEmail?: string; names?: Record<string, string> } {
   if (!Array.isArray(raw)) return {};
   const people: string[] = [];
   const rooms: string[] = [];
   const rsvps: Record<string, GoogleRsvp> = {};
+  const names: Record<string, string> = {};
   let selfEmail = '';
   for (const a of raw as Record<string, unknown>[]) {
     const email = typeof a.email === 'string' ? a.email : '';
@@ -506,6 +538,10 @@ function parseAttendees(raw: unknown): { attendees?: string[]; rooms?: string[];
     (a.resource === true ? rooms : people).push(email);
     const st = a.responseStatus;
     if (typeof st === 'string' && (RSVPS as readonly string[]).includes(st)) rsvps[email] = st as GoogleRsvp;
+    // **이름을 버리지 않는다**(제보: 이름 대신 이메일 앞부분이 나왔다) — 구글이 아는
+    // 사람은 `displayName`을 함께 준다. 예전에는 이메일만 남겨서, 화면이 디렉터리
+    // 검색(선택 스코프)에 없는 사람을 전부 로컬파트로 그렸다.
+    if (typeof a.displayName === 'string' && a.displayName.trim()) names[email] = a.displayName.trim();
     if (a.self === true && a.resource !== true) selfEmail = email;
   }
   return {
@@ -513,6 +549,7 @@ function parseAttendees(raw: unknown): { attendees?: string[]; rooms?: string[];
     ...(rooms.length ? { rooms } : {}),
     ...(Object.keys(rsvps).length ? { rsvps } : {}),
     ...(selfEmail ? { selfEmail } : {}),
+    ...(Object.keys(names).length ? { names } : {}),
   };
 }
 
@@ -757,6 +794,25 @@ export function attendeesBody(d: Pick<GoogleEventDraft, 'attendees' | 'rooms' | 
     ...(d.attendees ?? []).map((email) => ({ email, ...rsvp(email) })),
     ...(d.rooms ?? []).map((email) => ({ email, resource: true, ...rsvp(email) })),
   ];
+}
+
+/**
+ * 그 일정이 차지하는 **구간**(요청 — 회의실이 그 시간에 비어 있는가). 구글에 물을
+ * 때 쓰는 RFC3339 문자열이라 로컬 시각을 그대로 UTC로 옮긴다(`toISOString`).
+ * 종일은 시작일 0시부터 **종료일 다음 0시**까지다(구글의 종일 규칙과 같은 경계).
+ */
+export function eventWindowIso(d: Pick<GoogleEventDraft, 'allDay' | 'startDate' | 'endDate' | 'startTime' | 'endTime'>): { fromIso: string; toIso: string } {
+  const at = (iso: string, hhmm: string, plusDay = 0): Date => {
+    const [y, m, dd] = iso.split('-').map(Number);
+    const [h, mi] = hhmm.split(':').map(Number);
+    return new Date(y ?? 1970, (m ?? 1) - 1, (dd ?? 1) + plusDay, h ?? 0, mi ?? 0);
+  };
+  const end = d.endDate < d.startDate ? d.startDate : d.endDate;
+  if (d.allDay) return { fromIso: at(d.startDate, '00:00').toISOString(), toIso: at(end, '00:00', 1).toISOString() };
+  const from = at(d.startDate, d.startTime || '00:00');
+  const to = at(d.startDate, d.endTime || d.startTime || '00:00');
+  // 종료가 시작보다 앞서면(입력 중일 수 있다) 최소 한 구간으로 본다.
+  return { fromIso: from.toISOString(), toIso: (to > from ? to : new Date(from.getTime() + 30 * 60_000)).toISOString() };
 }
 
 /** 알림 — `undefined`는 캘린더 기본, `null`은 없음, 숫자는 N분 전(세 상태). */

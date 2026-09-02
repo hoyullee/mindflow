@@ -46,6 +46,8 @@ export interface GoogleFieldsValue {
    * (내가 만든 일정·초대받지 않은 일정) 그 구획을 그리지 않는다.
    */
   rsvp?: GoogleRsvp;
+  /** 구글이 알려 준 표시 이름(email → 이름) — 없는 사람만 디렉터리에 묻는다. */
+  names?: Record<string, string>;
 }
 
 /** 선택 스코프로 열리는 것들 — `useGoogleCalendar`가 이 모양으로 내준다. */
@@ -57,6 +59,11 @@ export interface GoogleDirectoryApi {
   /** 회의실 조회가 끝났는가 — 거짓인 동안은 "불러오는 중"이다. */
   roomsReady: boolean;
   loadRooms: () => void;
+  /**
+   * 그 시간대에 그 회의실이 차 있는가(요청) — `true` 사용 중 / `false` 사용 가능 /
+   * `null` 알 수 없음(조직이 그 캘린더를 공개하지 않음). 모르는 것은 칠하지 않는다.
+   */
+  checkRoomBusy?: (roomEmail: string, fromIso: string, toIso: string, skipEventId?: string) => Promise<boolean | null>;
 }
 
 export interface GoogleFieldsChange {
@@ -71,7 +78,7 @@ export interface GoogleFieldsChange {
 }
 
 const VIS_OPTS: { v: GoogleVisibility; label: string; note: string }[] = [
-  { v: 'default', label: '기본', note: '캘린더 기본 공개 설정을 따라요' },
+  { v: 'default', label: '기본', note: '' },
   { v: 'public', label: '공개', note: '캘린더를 공유한 모두가 상세를 볼 수 있어요' },
   { v: 'private', label: '비공개', note: '참석자에게만 제목이 보여요' },
 ];
@@ -106,15 +113,14 @@ export function GoogleEventFields({
    */
   mode,
   meetLink,
-  recurring,
   organizer,
   directory,
+  when,
 }: {
   value: GoogleFieldsValue;
   onChange: (patch: GoogleFieldsChange) => void;
   mode: 'create' | 'edit';
   meetLink?: string;
-  recurring?: boolean;
   /**
    * **이 일정을 만든 사람**(요청) — 내가 만든 일정이면 넘기지 않는다(자기 이름을
    * 한 줄 더 읽을 이유가 없다). 고칠 수 없는 값이라 초안이 아니라 프롭이다.
@@ -122,6 +128,12 @@ export function GoogleEventFields({
   organizer?: { email: string; name?: string };
   /** 선택 스코프로 열리는 것들 — 없으면 이름 검색·회의실이 빠진다. */
   directory?: GoogleDirectoryApi;
+  /**
+   * 이 일정이 차지하는 구간(요청 ③) — 회의실 행이 "그 시간에 비어 있는가"를 말하는
+   * 근거다. 초안이 바뀌면 함께 바뀌어야 한다(저장된 값만 보면 시간을 고치는 동안
+   * 어긋난 답을 보여 준다).
+   */
+  when?: { fromIso: string; toIso: string; skipEventId?: string };
 }) {
   // 회의실 목록은 이 묶음이 처음 열릴 때 한 번 받는다(왕복 1회). 스코프가 없으면
   // `loadRooms`가 스스로 "받을 것 없음"으로 끝낸다 — 조건은 그쪽 한 곳에 둔다.
@@ -129,6 +141,28 @@ export function GoogleEventFields({
     directory?.loadRooms();
   }, [directory]);
   const visNote = VIS_OPTS.find((o) => o.v === value.visibility)?.note ?? '';
+  /**
+   * 주최자 이름(제보) — 구글이 `displayName`을 주지 않는 계정도 있다. 그때는
+   * **디렉터리에 그 주소로 한 번** 물어 이름을 얻는다(참석자 행과 같은 규칙).
+   * 못 찾으면 로컬파트로 남는다 — 없는 이름을 지어내지 않는다.
+   */
+  const [orgName, setOrgName] = useState('');
+  const orgEmail = organizer?.email ?? '';
+  const orgKnown = organizer?.name ?? value.names?.[orgEmail] ?? '';
+  const askOrg = directory?.canSearchPeople ? directory.searchPeople : undefined;
+  useEffect(() => {
+    setOrgName('');
+    if (!orgEmail || orgKnown || !askOrg) return;
+    let alive = true;
+    void askOrg(orgEmail).then((hits) => {
+      const hit = (hits ?? []).find((h) => h.email === orgEmail);
+      if (alive && hit?.name) setOrgName(hit.name);
+    });
+    return () => {
+      alive = false;
+    };
+  }, [orgEmail, orgKnown, askOrg]);
+  const orgLabel = orgKnown || orgName || guestLabel(orgEmail, {});
   const rooms = directory?.canPickRooms ? directory.rooms : [];
   const roomName = (email: string): string => rooms.find((r) => r.email === email)?.name ?? email;
   // 구획은 늘 보이고 **상태만 갈린다**: 목록 / 불러오는 중 / 안내(스코프 없음·거절·빈 목록).
@@ -144,9 +178,9 @@ export function GoogleEventFields({
           {organizer ? (
             <Field label="일정을 만든 사람">
               <span data-gf-organizer style={{ display: 'flex', alignItems: 'center', gap: 9, padding: '7px 9px', borderRadius: 11, background: 'var(--mf-card)', border: '1px solid var(--mf-border-soft)', minWidth: 0 }}>
-                <Avatar label={organizer.name || organizer.email} i={0} />
+                <Avatar label={orgLabel} i={0} />
                 <span style={{ display: 'flex', flexDirection: 'column', gap: 1, flex: 1, minWidth: 0 }}>
-                  <span style={{ fontSize: 12, fontWeight: 700, color: 'var(--mf-text)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{organizer.name || guestLabel(organizer.email, {})}</span>
+                  <span style={{ fontSize: 12, fontWeight: 700, color: 'var(--mf-text)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{orgLabel}</span>
                   <span style={{ fontSize: 10.5, color: 'var(--mf-faint)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{organizer.email}</span>
                 </span>
               </span>
@@ -162,18 +196,9 @@ export function GoogleEventFields({
                 attr="data-gf-rsvp"
                 wide
               />
-              <SubText>내 응답만 바뀌어요 — 구글이 주최자에게 알려 줍니다</SubText>
             </Field>
           ) : null}
         </div>
-      ) : null}
-
-      {/* 반복은 이 묶음 밖(왼쪽 열의 `RecurrenceField`)에 있다 — 목적지가 Geurio든
-          구글이든 같은 자리에서 고른다. 여기서는 **이미 있는 반복**만 알린다. */}
-      {mode === 'edit' && recurring ? (
-        <span data-gf-repeat-note style={{ fontSize: 11.5, color: 'var(--mf-faint2)', lineHeight: 1.6 }}>
-          반복 일정이에요 — 여기서 고치면 <b style={{ fontWeight: 700 }}>이 회차만</b> 바뀝니다. 반복 규칙 자체는 구글에서 바꿔 주세요.
-        </span>
       ) : null}
 
       {/* Google Meet — 디자인 원본의 **토글 카드**(아이콘 칩 + 상태 문구 + 스위치).
@@ -227,8 +252,8 @@ export function GoogleEventFields({
         </Field>
       ) : null}
 
-      <Field label="참석자" sub={value.attendees.length ? `${value.attendees.length}명 초대 · 초대 메일은 구글이 보내요` : '아직 초대한 사람이 없어요'}>
-        <Attendees list={value.attendees} onChange={(next) => onChange({ attendees: next })} {...(directory?.canSearchPeople ? { search: directory.searchPeople } : {})} />
+      <Field label="참석자" sub={value.attendees.length ? `${value.attendees.length}명 초대` : '아직 초대한 사람이 없어요'}>
+        <Attendees list={value.attendees} onChange={(next) => onChange({ attendees: next })} {...(value.names ? { seedNames: value.names } : {})} {...(directory?.canSearchPeople ? { search: directory.searchPeople } : {})} />
       </Field>
 
       {/* 회의실 — 구획은 **항상 보인다**(요청). 목록이 있으면 검색 + 목록, 아직이면
@@ -237,7 +262,12 @@ export function GoogleEventFields({
           이미 무엇을 하는 자리인지 말한다. 라벨 옆 요약은 **예약한 것**만 알린다. */}
       <Field label="회의실" {...(value.rooms.length ? { sub: `${value.rooms.map(roomName).join(' · ')} 예약됨` } : {})}>
         {rooms.length > 0 ? (
-          <Rooms all={rooms} picked={value.rooms} onChange={(next) => onChange({ rooms: next })} />
+          <Rooms
+          all={rooms}
+          picked={value.rooms}
+          onChange={(next) => onChange({ rooms: next })}
+          {...(when && directory?.checkRoomBusy ? { when, check: directory.checkRoomBusy } : {})}
+        />
         ) : (
           <span data-gf-room-note style={{ padding: '10px 12px', borderRadius: 12, background: 'var(--mf-card)', border: '1px solid var(--mf-border-soft)', fontSize: 11.5, color: 'var(--mf-faint)', lineHeight: 1.6 }}>
             {roomsLoading ? '회의실 목록을 불러오는 중…' : '회의실 목록은 조직 캘린더에서 불러와요 — 이 계정에서는 불러올 회의실이 없어요.'}
@@ -429,7 +459,7 @@ function GuestRow({ email, name, i, onRemove }: { email: string; name: string; i
  * 카드 행(두 줄까지, 나머지는 `외 N명` 툴팁). 이름 검색이 없으면(선택 스코프 미승인)
  * 이메일 직접 입력으로 남는다. 초대 메일은 구글이 보낸다.
  */
-function Attendees({ list, onChange, search }: { list: string[]; onChange: (next: string[]) => void; search?: (q: string) => Promise<DirectoryPerson[] | null> }) {
+function Attendees({ list, onChange, search, seedNames }: { list: string[]; onChange: (next: string[]) => void; search?: (q: string) => Promise<DirectoryPerson[] | null>; seedNames?: Record<string, string> }) {
   const [draft, setDraft] = useState('');
   const [hits, setHits] = useState<DirectoryPerson[]>([]);
   const [active, setActive] = useState(0);
@@ -439,6 +469,9 @@ function Attendees({ list, onChange, search }: { list: string[]; onChange: (next
   const [settled, setSettled] = useState('');
   // 고른 후보의 이름 — 초대된 행이 이메일 대신 이름을 보여 준다(직접 적은 주소는 주소 그대로).
   const [names, setNames] = useState<Record<string, string>>({});
+  // 구글이 알려 준 이름이 **먼저**다(제보: 이름 대신 이메일 앞부분이 나왔다) —
+  // 검색으로 찾은 이름은 그것이 없는 사람만 메운다.
+  const label = (email: string): string => guestLabel(email, { ...names, ...seedNames });
   // 접힌 사람들(`외 N명`) 툴팁 — 여기서 지울 수 있어야 한다(요청).
   const [moreOpen, setMoreOpen] = useState(false);
   const [moreAnchor, setMoreAnchor] = useState<HTMLElement | null>(null);
@@ -478,11 +511,14 @@ function Attendees({ list, onChange, search }: { list: string[]; onChange: (next
    */
   const askedRef = useRef<Set<string>>(new Set());
   const listKey = list.join(',');
+  // 배열·객체는 렌더마다 새 참조라 효과의 계기가 될 수 없다 — 문자열 키로 되짚는다.
+  const seedKey = Object.keys(seedNames ?? {}).join(',');
   useEffect(() => {
     if (!search) return;
     // `list`가 아니라 문자열 키에서 되짚는다 — 배열은 렌더마다 새 참조라 이 효과의
     // 계기가 될 수 없고, 키가 바뀌는 순간이 곧 "초대가 늘거나 줄었다"다.
-    const missing = (listKey ? listKey.split(',') : []).filter((e) => !names[e] && !askedRef.current.has(e));
+    // 구글이 이미 이름을 알려 준 사람은 묻지 않는다(왕복을 아끼고, 그 이름이 더 정확하다).
+    const missing = (listKey ? listKey.split(',') : []).filter((e) => !names[e] && !seedKey.includes(e) && !askedRef.current.has(e));
     if (missing.length === 0) return;
     for (const e of missing) askedRef.current.add(e);
     let cancelled = false;
@@ -497,7 +533,7 @@ function Attendees({ list, onChange, search }: { list: string[]; onChange: (next
     return () => {
       cancelled = true;
     };
-  }, [listKey, names, search]);
+  }, [listKey, names, search, seedKey]);
 
   // 접힌 목록은 바깥을 누르거나 Escape로 닫는다(팝오버의 관례 — 모달 위의 층이라
   // Radix가 대신 닫아 주지 않는다).
@@ -610,7 +646,7 @@ function Attendees({ list, onChange, search }: { list: string[]; onChange: (next
           넷부터 마지막 칸이 `외 N명`으로 접힌다. 접힌 사람은 그 줄을 눌러 뜨는
           툴팁에서 보고 지운다. */}
       {shown.map((email, i) => (
-        <GuestRow key={email} email={email} name={guestLabel(email, names)} i={i} onRemove={() => onChange(list.filter((e) => e !== email))} />
+        <GuestRow key={email} email={email} name={label(email)} i={i} onRemove={() => onChange(list.filter((e) => e !== email))} />
       ))}
       {rest.length > 0 && (
         <>
@@ -627,7 +663,7 @@ function Attendees({ list, onChange, search }: { list: string[]; onChange: (next
             <span aria-hidden style={{ display: 'inline-flex', flex: '0 0 auto', paddingRight: Math.min(rest.length, 3) > 1 ? 7 : 0 }}>
               {rest.slice(0, 3).map((email, i) => (
                 <span key={email} style={{ marginLeft: i === 0 ? 0 : -7, borderRadius: 999, boxShadow: '0 0 0 2px var(--mf-card)', display: 'inline-flex' }}>
-                  <Avatar label={guestLabel(email, names)} i={shown.length + i} />
+                  <Avatar label={label(email)} i={shown.length + i} />
                 </span>
               ))}
             </span>
@@ -640,9 +676,9 @@ function Attendees({ list, onChange, search }: { list: string[]; onChange: (next
             <AnchoredList anchor={moreAnchor} attrs={{ 'data-gf-guest-list': '1' }}>
               {list.map((email, i) => (
                 <span key={email} data-gf-guest-item={email} style={{ display: 'flex', alignItems: 'center', gap: 9, padding: '8px 10px', minWidth: 0, ...rowDivider(i) }}>
-                  <Avatar label={guestLabel(email, names)} i={i} />
+                  <Avatar label={label(email)} i={i} />
                   <span style={{ display: 'flex', flexDirection: 'column', gap: 1, flex: 1, minWidth: 0 }}>
-                    <span style={{ fontSize: 12, fontWeight: 700, color: 'var(--mf-text)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{guestLabel(email, names)}</span>
+                    <span style={{ fontSize: 12, fontWeight: 700, color: 'var(--mf-text)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{label(email)}</span>
                     <span style={{ fontSize: 10.5, color: 'var(--mf-faint)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{email}</span>
                   </span>
                   <button
@@ -677,8 +713,31 @@ function Attendees({ list, onChange, search }: { list: string[]; onChange: (next
  * 그 행이 강조되고 `예약됨` 배지가 붙는다(원본의 그 상태) — 다시 누르면 취소.
  * 구글에서는 `resource: true`인 참석자로 저장되므로 **실제로 예약된다**.
  */
-function Rooms({ all, picked, onChange }: { all: readonly MeetingRoom[]; picked: string[]; onChange: (next: string[]) => void }) {
+function Rooms({
+  all,
+  picked,
+  onChange,
+  when,
+  check,
+}: {
+  all: readonly MeetingRoom[];
+  picked: string[];
+  onChange: (next: string[]) => void;
+  when?: { fromIso: string; toIso: string; skipEventId?: string };
+  check?: (roomEmail: string, fromIso: string, toIso: string, skipEventId?: string) => Promise<boolean | null>;
+}) {
   const [q, setQ] = useState('');
+  /**
+   * **그 시간에 비어 있는가**(요청 ③) — 구글 캘린더는 달력에 겹쳐 보여 주지만 우리는
+   * 팝업이라 그럴 자리가 없다. 그래서 회의실 행 자체가 말한다.
+   *
+   * `undefined` 아직 확인 안 함 / `true` 사용 중 / `false` 사용 가능 / `null` 알 수
+   * 없음(조직이 그 캘린더를 공개하지 않음) — **모르는 것은 칠하지 않는다**.
+   *
+   * 왕복을 아끼려고 **보이는 행 + 예약한 회의실**만 묻고, `이메일|구간`으로 기억한다
+   * (시간을 고치면 구간이 바뀌므로 그때는 다시 묻는다).
+   */
+  const [busy, setBusy] = useState<Record<string, boolean | null>>({});
   // 예약한 회의실이 **맨 위**로 온다(제보 #17) — 목록이 길면 고른 것이 스크롤 아래로
   // 숨어 무엇을 잡아 뒀는지 보이지 않는다. 안에서는 원래 순서를 지킨다(안정 정렬).
   const rows = (q.trim() ? filterRooms(all, q) : [...all]).slice().sort((a, b) => Number(picked.includes(b.email)) - Number(picked.includes(a.email)));
@@ -687,6 +746,42 @@ function Rooms({ all, picked, onChange }: { all: readonly MeetingRoom[]; picked:
   // 않아 크기 애니메이션이 검색마다 돌지 않는다). 행 높이 ≈ 42px(패딩 9×2 + 내용 24).
   // **세 줄까지**(제보 #4) — 넷을 보여 주면 팝업이 그만큼 길어진다.
   const boxH = Math.min(3 * 42 + 2, all.length * 42 + 2);
+  // 보이는 세 줄 + 예약한 회의실만 확인한다(목록이 수십 개인 조직에서 전부 묻지 않게).
+  const askKey = when ? [...new Set([...rows.slice(0, 3).map((r) => r.email), ...picked])].join(',') : '';
+  const from = when?.fromIso ?? '';
+  const to = when?.toIso ?? '';
+  const skip = when?.skipEventId;
+  // 이미 물어본 조합은 다시 묻지 않는다 — 답을 상태로 들고 그 상태를 효과의 의존성에
+  // 넣으면 답이 올 때마다 효과가 다시 돌아 끝이 없다(참석자 이름 조회와 같은 처방).
+  const askedRef = useRef<Set<string>>(new Set());
+  // **답은 마운트되어 있는 동안만** 받는다 — 효과가 다시 도는 것(확인 함수의 참조가
+  // 바뀌는 것만으로도 돈다)과 언마운트는 다르다. 예전에는 효과별 `alive`로 막아서,
+  // 답이 오기 전에 효과가 한 번만 다시 돌면 **이미 물어본 조합**이라 다시 묻지도
+  // 않고 결과도 버려져 배지가 영영 뜨지 않았다(테스트가 잡았다).
+  // 답은 `이메일|구간`으로 저장하므로 늦게 와도 엉뚱한 자리에 쓰이지 않는다.
+  const mountedRef = useRef(true);
+  useEffect(() => {
+    mountedRef.current = true;
+    return () => {
+      mountedRef.current = false;
+    };
+  }, []);
+  useEffect(() => {
+    if (!check || !askKey || !from || !to) return;
+    const emails = askKey.split(',').filter(Boolean);
+    const t = setTimeout(() => {
+      for (const email of emails) {
+        const key = `${email}|${from}|${to}`;
+        if (askedRef.current.has(key)) continue;
+        askedRef.current.add(key);
+        void check(email, from, to, skip).then((r) => {
+          if (mountedRef.current) setBusy((m) => ({ ...m, [key]: r }));
+        });
+      }
+    }, 250);
+    return () => clearTimeout(t);
+  }, [askKey, check, from, to, skip]);
+  const busyOf = (email: string): boolean | null | undefined => (when ? busy[`${email}|${from}|${to}`] : undefined);
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 8, minWidth: 0 }}>
       <SearchBox label="회의실 검색" attrs={{ 'data-gf-room-input': '1' }} value={q} placeholder="회의실 이름 또는 층 검색" onChange={setQ} />
@@ -715,7 +810,7 @@ function Rooms({ all, picked, onChange }: { all: readonly MeetingRoom[]; picked:
                 <span style={{ fontSize: 12, fontWeight: on ? 800 : 600, color: on ? 'var(--mf-accent-strong)' : 'var(--mf-text)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{r.name}</span>
                 {sub && <span style={{ fontSize: 10.5, color: 'var(--mf-faint)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{sub}</span>}
               </span>
-              {on && <span style={{ flex: '0 0 auto', height: 20, padding: '0 8px', borderRadius: 999, background: 'var(--mf-success-soft)', color: 'var(--mf-success-ink)', fontSize: 10, fontWeight: 700, display: 'inline-flex', alignItems: 'center', whiteSpace: 'nowrap' }}>예약됨</span>}
+              <RoomState on={on} busy={busyOf(r.email)} />
             </button>
           );
         })}
@@ -723,6 +818,24 @@ function Rooms({ all, picked, onChange }: { all: readonly MeetingRoom[]; picked:
       </div>
     </div>
   );
+}
+
+/**
+ * 회의실 행의 오른쪽 배지 — **한 자리에 한 마디**만 쓴다. 순서는 중요도다:
+ * 사용 중(충돌) > 예약됨 > 사용 가능. 고른 행은 이미 강조색 면이 "잡아 뒀다"고
+ * 말하므로, 충돌이 있으면 그 사실을 먼저 알리는 편이 맞다.
+ * 모르는 것(`null`·아직)은 아무 말도 하지 않는다.
+ */
+function RoomState({ on, busy }: { on: boolean; busy: boolean | null | undefined }) {
+  const pill = (bg: string, fg: string, text: string, attr: string) => (
+    <span data-gf-room-state={attr} style={{ flex: '0 0 auto', height: 20, padding: '0 8px', borderRadius: 999, background: bg, color: fg, fontSize: 10, fontWeight: 700, display: 'inline-flex', alignItems: 'center', whiteSpace: 'nowrap' }}>
+      {text}
+    </span>
+  );
+  if (busy === true) return pill('var(--mf-danger-bg)', 'var(--mf-danger)', '사용 중', 'busy');
+  if (on) return pill('var(--mf-success-soft)', 'var(--mf-success-ink)', '예약됨', 'booked');
+  if (busy === false) return pill('var(--mf-success-soft)', 'var(--mf-success-ink)', '사용 가능', 'free');
+  return null;
 }
 
 /** 원본의 회의실(건물) 글리프 — 고른 행에서는 강조색으로. */
