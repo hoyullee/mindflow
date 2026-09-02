@@ -30,6 +30,7 @@ import {
   type GoogleCalendarMeta,
   type GoogleEvent,
   type GoogleEventDraft,
+  type GoogleEventPatch,
 } from './googleCalendar';
 import { fetchRooms, searchPeople as searchPeopleApi, type DirectoryPerson, type MeetingRoom } from './googleDirectory';
 import { readGoogleClientId } from '../../auth/googleIdentity';
@@ -65,7 +66,7 @@ export interface GoogleCalendarApi {
   writableCalendars: GoogleCalendarMeta[];
   /** 구글에 새 일정. 성공하면 `null`, 실패하면 사람이 읽을 문장. */
   createEvent: (calendarId: string, draft: GoogleEventDraft) => Promise<string | null>;
-  updateEvent: (ev: GoogleEvent, draft: GoogleEventDraft) => Promise<string | null>;
+  updateEvent: (ev: GoogleEvent, patch: GoogleEventPatch) => Promise<string | null>;
   deleteEvent: (ev: GoogleEvent) => Promise<string | null>;
   /**
    * 사람을 **이름으로** 찾을 수 있는가 — 선택 스코프(`directory.readonly` /
@@ -359,7 +360,7 @@ export function useGoogleCalendar(
   );
 
   const createEvent = useCallback((calendarId: string, draft: GoogleEventDraft) => write((t) => createGoogleEvent(t, calendarId, draft)), [write]);
-  const updateEvent = useCallback((ev: GoogleEvent, draft: GoogleEventDraft) => write((t) => updateGoogleEvent(t, ev, draft)), [write]);
+  const updateEvent = useCallback((ev: GoogleEvent, patch: GoogleEventPatch) => write((t) => updateGoogleEvent(t, ev, patch)), [write]);
   const deleteEvent = useCallback((ev: GoogleEvent) => write((t) => deleteGoogleEvent(t, ev)), [write]);
 
   const writableCalendars = useMemo(() => calendars.filter((c) => c.writable), [calendars]);

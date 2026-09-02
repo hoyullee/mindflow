@@ -356,7 +356,9 @@ describe('구글 캘린더 겹치기(PR5)', () => {
       const patch = f.mock.calls.find((c) => (c[1] as { method?: string } | undefined)?.method === 'PATCH');
       expect(patch).toBeTruthy();
       expect(String(patch![0])).toContain('/events/g1');
-      expect(JSON.parse((patch![1] as { body: string }).body)).toMatchObject({ summary: '이름 바꿈' });
+      // **바뀐 것만** 실린다(제보) — 제목을 고쳤는데 `start`가 따라가면, 구글이 그
+      // 시각을 거절할 때(400 `Invalid start time.`) 제목 수정까지 통째로 막힌다.
+      expect(Object.keys(JSON.parse((patch![1] as { body: string }).body))).toEqual(['summary']);
     });
     // 저장이 끝나면 팝업이 닫힌다 — 구글이 돌려준 값은 달을 다시 받아 그린다.
     await waitFor(() => expect(document.querySelector('[data-google-detail]')).toBeNull());
@@ -407,12 +409,12 @@ describe('구글 캘린더 겹치기(PR5)', () => {
 
     const foot = await waitFor(() => {
       const el = document.querySelector('[data-event-foot]') as HTMLElement;
-      expect(el.textContent).toContain('그 사이 구글에서 바뀌었어요');
+      expect(el.textContent).toContain('그 사이 구글에서 이 값이 바뀌었어요');
       return el;
     });
     // 팝업 전체를 통틀어 **한 번만** 나온다.
     const card = document.querySelector('[data-event-detail]') as HTMLElement;
-    const hits = [...card.querySelectorAll('*')].filter((el) => el.children.length === 0 && el.textContent?.includes('그 사이 구글에서 바뀌었어요'));
+    const hits = [...card.querySelectorAll('*')].filter((el) => el.children.length === 0 && el.textContent?.includes('그 사이 구글에서 이 값이 바뀌었어요'));
     expect(hits).toEqual([foot]);
     vi.unstubAllGlobals();
   });
