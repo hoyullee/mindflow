@@ -112,7 +112,10 @@ export function patchFrom(g: GoogleEvent, patch: Partial<CalendarEventInput>, fi
   }
   // 언제인가 — 이 다섯 중 하나라도 왔으면 합친 값으로 짝을 보낸다.
   if (['allDay', 'startDate', 'endDate', 'startTime', 'endTime'].some((k) => k in patch)) {
-    Object.assign(body, whenBody(merged));
+    // `forPatch` — 쓰지 않는 쪽(`date`/`dateTime`)을 `null`로 지운다. 구글의 patch는
+    // 중첩 객체까지 병합하므로, 지우지 않으면 종일 ↔ 시각 전환에서 둘이 함께 남아
+    // 거절된다(제보의 `Invalid start time.`).
+    Object.assign(body, whenBody(merged, true));
     mark('when');
   }
   // 빈 값도 **보낸다** — 키를 빼면 구글은 "안 바꾼다"로 읽어서 지운 것이 저장되지 않는다.
