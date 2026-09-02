@@ -1,3 +1,5 @@
+import { rememberName } from './nameBook';
+
 // 참석자 이름 검색 · 회의실 목록 — 캘린더 API **밖**의 두 API를 부른다.
 //
 // ## 왜 다른 API인가
@@ -58,6 +60,9 @@ function personsFrom(raw: unknown, key: 'people' | 'results'): DirectoryPerson[]
     if (!email) continue;
     const names = Array.isArray(p.names) ? p.names : [];
     const name = names.map((n) => (n as { displayName?: unknown }).displayName).find((v): v is string => typeof v === 'string' && !!v);
+    // 디렉터리가 알려 준 이름은 장부에도 적는다 — 다른 팝업·다른 자리에서 같은 사람이
+    // 같은 이름으로 보이게(`nameBook`).
+    if (name) rememberName(email, name);
     out.push({ email: email.toLowerCase(), name: name ?? email });
   }
   return out;

@@ -246,7 +246,7 @@ export function GoogleEventDetail({
               <GoogleEventFields
                 value={{ ...fieldsOf(event), ...pendingFields }}
                 mode="edit"
-                {...(event.organizer && !event.organizer.self ? { organizer: event.organizer } : {})}
+                {...(event.organizer ? { organizer: event.organizer } : {})}
                 {...(directory ? { directory } : {})}
                 when={roomWindow}
                 {...(event.meetLink ? { meetLink: event.meetLink } : {})}
