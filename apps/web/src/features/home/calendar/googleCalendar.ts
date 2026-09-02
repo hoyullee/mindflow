@@ -589,30 +589,61 @@ function localTimeZone(): string {
   }
 }
 
-export function draftToBody(d: GoogleEventDraft): Record<string, unknown> {
+/**
+ * 우리가 구글에 쓰는 값의 갈래 — PATCH에 실은 것이 무엇인지(그래서 412 때 무엇을
+ * 견줄지) 이 이름으로 말한다. `when`은 `start`/`end` 짝을 뜻한다.
+ */
+export type GoogleWriteField = 'when' | 'title' | 'location' | 'description' | 'attendees' | 'visibility' | 'transparency' | 'reminders';
+
+/**
+ * 부분 수정 — **바뀐 것만** 담는다(PATCH의 결).
+ *
+ * 예전에는 무엇을 고쳤든 전체 본문을 보냈다. 그래서 제목 한 글자를 고쳐도 `start`가
+ * 함께 실려, 구글이 그 시각을 거절하면(제보: `Invalid start time.`) **제목 수정이
+ * 시각 때문에 막혔다**. 실은 것이 곧 바꿀 것이어야 원인과 결과가 맞는다.
+ */
+export interface GoogleEventPatch {
+  body: Record<string, unknown>;
+  touched: GoogleWriteField[];
+}
+
+/**
+ * 언제인가 — `start`/`end`는 **짝으로만** 보낸다(구글은 종류가 섞이면 거절한다:
+ * 하나는 `date`, 하나는 `dateTime`).
+ */
+export function whenBody(d: Pick<GoogleEventDraft, 'allDay' | 'startDate' | 'endDate' | 'startTime' | 'endTime'>): Record<string, unknown> {
   const tz = localTimeZone();
-  const when = d.allDay
+  return d.allDay
     ? { start: { date: d.startDate }, end: { date: nextDay(d.endDate) } }
     : {
         start: { dateTime: `${d.startDate}T${d.startTime || '00:00'}:00`, timeZone: tz },
         end: { dateTime: `${d.endDate}T${d.endTime || d.startTime || '00:00'}:00`, timeZone: tz },
       };
+}
+
+/** 참석자 + 회의실 — 구글에서 회의실은 `resource: true`인 참석자다. */
+export function attendeesBody(d: Pick<GoogleEventDraft, 'attendees' | 'rooms'>): Array<Record<string, unknown>> {
+  return [...(d.attendees ?? []).map((email) => ({ email })), ...(d.rooms ?? []).map((email) => ({ email, resource: true }))];
+}
+
+/** 알림 — `undefined`는 캘린더 기본, `null`은 없음, 숫자는 N분 전(세 상태). */
+export function remindersBody(minutes: number | null | undefined): Record<string, unknown> {
+  return minutes === undefined ? { useDefault: true } : { useDefault: false, overrides: minutes === null ? [] : [{ method: 'popup', minutes }] };
+}
+
+export function draftToBody(d: GoogleEventDraft): Record<string, unknown> {
   return {
     summary: d.title,
-    ...when,
+    ...whenBody(d),
     // 빈 값은 **빈 문자열로 보낸다** — 키를 빼면 구글은 "안 바꾼다"로 읽어서,
     // 위치나 메모를 지운 것이 저장되지 않는다(PATCH의 결).
     location: d.location ?? '',
     description: d.description ?? '',
     // 같은 이유로 참석자도 **빈 배열까지** 보낸다(전원 초대 취소가 저장되게).
-    // 회의실은 구글에서 `resource: true`인 참석자다 — 사람 뒤에 붙인다.
-    attendees: [...(d.attendees ?? []).map((email) => ({ email })), ...(d.rooms ?? []).map((email) => ({ email, resource: true }))],
+    attendees: attendeesBody(d),
     visibility: d.visibility ?? 'default',
     transparency: d.transparency ?? 'opaque',
-    reminders:
-      d.reminderMinutes === undefined
-        ? { useDefault: true }
-        : { useDefault: false, overrides: d.reminderMinutes === null ? [] : [{ method: 'popup', minutes: d.reminderMinutes }] },
+    reminders: remindersBody(d.reminderMinutes),
     ...(d.recurrence ? { recurrence: d.recurrence } : {}),
     ...(d.addMeet ? { conferenceData: { createRequest: { requestId: `mf-${Date.now()}-${Math.random().toString(36).slice(2, 8)}` } } } : {}),
   };
@@ -630,8 +661,18 @@ async function send(path: string, token: string, method: 'POST' | 'PATCH' | 'DEL
     ...(body ? { body: JSON.stringify(body) } : {}),
   });
   if (!res.ok) {
-    const err = new Error(`google ${res.status}`) as Error & { status?: number };
+    const err = new Error(`google ${res.status}`) as Error & { status?: number; detail?: string };
     err.status = res.status;
+    // **구글이 왜 거절했는지 그대로 들고 온다** — 400은 우리 요청이 틀렸다는 뜻이고,
+    // 그 문장이 유일한 단서다(제보의 `Invalid start time.`이 그것이었다). 화면은
+    // 이 문장을 함께 보여 주고, 콘솔에는 보낸 본문까지 남긴다.
+    try {
+      const j = (await res.json()) as { error?: { message?: unknown } };
+      if (typeof j?.error?.message === 'string') err.detail = j.error.message;
+    } catch {
+      /* 본문이 없거나 JSON이 아니면 상태 코드만으로 말한다 */
+    }
+    if (res.status === 400) console.warn('[geurio] 구글이 요청을 거절했어요:', err.detail ?? '(사유 없음)', body);
     throw err;
   }
   return res.status === 204 ? null : res.json();
@@ -648,10 +689,11 @@ export async function createGoogleEvent(token: string, calendarId: string, draft
  * 회차 id에 그대로 쓰기 때문이다. 반복 규칙 자체를 바꾸는 일은 구글에 맡긴다
  * (그 UI를 우리가 다시 만들 이유가 없고, 잘못 만들면 남의 달력을 망가뜨린다).
  */
-export async function updateGoogleEvent(token: string, ev: GoogleEvent, draft: GoogleEventDraft): Promise<void> {
+export async function updateGoogleEvent(token: string, ev: GoogleEvent, patch: GoogleEventPatch): Promise<void> {
   const path = `/calendars/${encodeURIComponent(ev.calendarId)}/events/${encodeURIComponent(ev.eventId)}`;
+  if (Object.keys(patch.body).length === 0) return;
   try {
-    await send(path, token, 'PATCH', draftToBody(draft), ev.etag);
+    await send(path, token, 'PATCH', patch.body, ev.etag);
     return;
   } catch (e) {
     if ((e as { status?: number }).status !== 412) throw e;
@@ -665,12 +707,12 @@ export async function updateGoogleEvent(token: string, ev: GoogleEvent, draft: G
   // 바뀐 것) 새 판을 기준으로 한 번 더 쓰고, 사람이 제목·시각 같은 것을 고쳤으면
   // 덮지 않고 그대로 막는다(그게 If-Match를 쓰는 이유다).
   const fresh = await fetchGoogleEvent(token, ev);
-  if (!fresh || managedFieldsDiffer(ev, fresh)) {
+  if (!fresh || managedFieldsDiffer(ev, fresh, patch.touched)) {
     const err = new Error('google 412') as Error & { status?: number };
     err.status = 412;
     throw err;
   }
-  await send(path, token, 'PATCH', draftToBody(draft), fresh.etag);
+  await send(path, token, 'PATCH', patch.body, fresh.etag);
 }
 
 /** 그 일정 하나를 다시 받는다 — 412를 만났을 때 무엇이 달라졌는지 보려고. */
@@ -685,25 +727,28 @@ export async function fetchGoogleEvent(token: string, ev: GoogleEvent): Promise<
   }
 }
 
-/** 우리가 화면에서 다루는 값이 두 판 사이에 달라졌는가(곁가지 변화는 무시한다). */
-export function managedFieldsDiffer(a: GoogleEvent, b: GoogleEvent): boolean {
-  const key = (e: GoogleEvent): string =>
-    JSON.stringify([
-      e.title,
-      e.startDate,
-      e.endDate,
-      e.startTime ?? null,
-      e.endTime ?? null,
-      e.allDay,
-      e.location ?? '',
-      e.description ?? '',
-      [...(e.attendees ?? [])].sort(),
-      [...(e.rooms ?? [])].sort(),
-      e.visibility ?? 'default',
-      e.transparency ?? 'opaque',
-      e.reminderMinutes ?? 'default',
-    ]);
-  return key(a) !== key(b);
+/**
+ * 두 판 사이에 **우리가 쓰려는 값**이 달라졌는가 — `only`가 그 범위다.
+ *
+ * 범위를 좁히는 것이 이 함수의 핵심이다(제보): 제목만 고치는 저장이 "그 사이 날짜가
+ * 바뀌었다"는 이유로 막히면, 사용자는 되돌릴 길 없이 갇힌다. 우리가 보내지도 않는
+ * 필드는 충돌이 아니다 — PATCH는 보낸 키만 바꾸므로 남의 변경을 덮지도 않는다.
+ */
+export function managedFieldsDiffer(a: GoogleEvent, b: GoogleEvent, only?: readonly GoogleWriteField[]): boolean {
+  const of = (e: GoogleEvent): Record<GoogleWriteField, unknown> => ({
+    title: e.title,
+    when: [e.startDate, e.endDate, e.startTime ?? null, e.endTime ?? null, e.allDay],
+    location: e.location ?? '',
+    description: e.description ?? '',
+    attendees: [[...(e.attendees ?? [])].sort(), [...(e.rooms ?? [])].sort()],
+    visibility: e.visibility ?? 'default',
+    transparency: e.transparency ?? 'opaque',
+    reminders: e.reminderMinutes ?? 'default',
+  });
+  const x = of(a);
+  const y = of(b);
+  const fields = only ?? (Object.keys(x) as GoogleWriteField[]);
+  return fields.some((f) => JSON.stringify(x[f]) !== JSON.stringify(y[f]));
 }
 
 export async function deleteGoogleEvent(token: string, ev: GoogleEvent): Promise<void> {
@@ -713,9 +758,15 @@ export async function deleteGoogleEvent(token: string, ev: GoogleEvent): Promise
 /** 구글이 돌려준 상태 코드 → 사람이 읽을 문장. */
 export function googleWriteError(e: unknown): string {
   const status = (e as { status?: number }).status;
-  if (status === 412) return '그 사이 구글에서 바뀌었어요. 새로 받은 내용을 보고 다시 시도해 주세요.';
+  // 412는 이제 **내가 쓰려던 그 값**이 그 사이 바뀐 경우만 온다(범위를 좁혔다) —
+  // 그러니 "다시 시도"가 아니라 새로 받은 값을 보라고 말한다.
+  if (status === 412) return '그 사이 구글에서 이 값이 바뀌었어요. 팝업을 닫고 다시 열어 확인해 주세요.';
   if (status === 403) return '이 캘린더에 쓸 권한이 없어요.';
   if (status === 404) return '구글에서 이미 사라진 일정이에요.';
   if (status === 401) return '구글 권한이 만료됐어요. 설정에서 다시 연결해 주세요.';
+  // 400은 **우리 요청이 틀렸다**는 뜻이라 "잠시 후 다시"가 거짓말이 된다 — 구글이
+  // 준 사유를 그대로 보여 준다(사용자에게도, 제보를 받는 우리에게도 유일한 단서다).
+  const detail = (e as { detail?: string }).detail;
+  if (status === 400) return detail ? `구글이 이 요청을 거절했어요: ${detail}` : '구글이 이 요청을 거절했어요.';
   return '구글에 저장하지 못했어요. 잠시 후 다시 시도해 주세요.';
 }

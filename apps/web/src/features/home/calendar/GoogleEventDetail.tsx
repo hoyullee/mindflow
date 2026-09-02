@@ -11,9 +11,9 @@
 import { useState } from 'react';
 import { EventDetail, type CalendarChip } from './EventDetail';
 import { GoogleEventFields, type GoogleDirectoryApi, type GoogleFieldsChange, type GoogleFieldsValue } from './GoogleEventFields';
-import { RECURRENCE_OFF } from './googleCalendar';
+import { attendeesBody, remindersBody, whenBody, RECURRENCE_OFF } from './googleCalendar';
 import type { CalendarEvent, CalendarEventInput } from '../../../adapters/ports';
-import type { GoogleEvent, GoogleEventDraft } from './googleCalendar';
+import type { GoogleEvent, GoogleEventDraft, GoogleEventPatch, GoogleWriteField } from './googleCalendar';
 
 /** 구글 일정 → 팝업이 읽는 모양. 이름만 다르고 뜻은 같다(`description` ↔ `note`). */
 export function googleAsEvent(g: GoogleEvent): CalendarEvent {
@@ -88,6 +88,61 @@ export function draftFrom(g: GoogleEvent, patch: Partial<CalendarEventInput>, fi
   return next;
 }
 
+/**
+ * 팝업이 돌려준 부분 수정 → 구글에 보낼 **부분 PATCH**.
+ *
+ * 실은 것이 곧 바꿀 것이다(제보): 제목만 고치면 `summary` 하나만 간다. 예전에는
+ * 무엇을 고쳤든 전체 본문을 보내서, 구글이 그 일정의 시각을 거절하면 제목 수정까지
+ * 통째로 막혔고(400 `Invalid start time.`), 그 사이 날짜가 바뀌어 있으면 412로도
+ * 막혔다 — 둘 다 사용자가 손대지 않은 필드 때문이었다.
+ *
+ * 날짜·시각은 **짝**으로만 다룬다: 종일/날짜/시각 중 하나라도 바뀌면 `start`+`end`를
+ * 함께 보낸다(구글은 종류가 섞이면 거절한다). 참석자·회의실도 한 배열이라 짝이다.
+ */
+export function patchFrom(g: GoogleEvent, patch: Partial<CalendarEventInput>, fields?: GoogleFieldsChange): GoogleEventPatch {
+  const merged = draftFrom(g, patch, fields);
+  const body: Record<string, unknown> = {};
+  const touched: GoogleWriteField[] = [];
+  const mark = (f: GoogleWriteField): void => {
+    if (!touched.includes(f)) touched.push(f);
+  };
+  if (patch.title !== undefined) {
+    body.summary = merged.title;
+    mark('title');
+  }
+  // 언제인가 — 이 다섯 중 하나라도 왔으면 합친 값으로 짝을 보낸다.
+  if (['allDay', 'startDate', 'endDate', 'startTime', 'endTime'].some((k) => k in patch)) {
+    Object.assign(body, whenBody(merged));
+    mark('when');
+  }
+  // 빈 값도 **보낸다** — 키를 빼면 구글은 "안 바꾼다"로 읽어서 지운 것이 저장되지 않는다.
+  if (patch.location !== undefined) {
+    body.location = merged.location ?? '';
+    mark('location');
+  }
+  if (patch.note !== undefined) {
+    body.description = merged.description ?? '';
+    mark('description');
+  }
+  if (fields?.attendees || fields?.rooms) {
+    body.attendees = attendeesBody(merged);
+    mark('attendees');
+  }
+  if (fields?.visibility) {
+    body.visibility = merged.visibility ?? 'default';
+    mark('visibility');
+  }
+  if (fields?.transparency) {
+    body.transparency = merged.transparency ?? 'opaque';
+    mark('transparency');
+  }
+  if (fields && 'reminderMinutes' in fields) {
+    body.reminders = remindersBody(merged.reminderMinutes);
+    mark('reminders');
+  }
+  return { body, touched };
+}
+
 /** 구글 일정 → 필드 묶음이 읽는 값. 반복·Meet는 상세에서 고치지 않는다(구글에서). */
 export function fieldsOf(g: GoogleEvent): GoogleFieldsValue {
   return {
@@ -113,13 +168,13 @@ export function GoogleEventDetail({
   isMobile: boolean;
   onClose: () => void;
   /** 쓸 수 없는 캘린더(공휴일·보기 전용 공유)면 넘기지 않는다 — 그때는 읽기 전용. */
-  onPatch?: (draft: GoogleEventDraft) => Promise<string | null>;
+  onPatch?: (patch: GoogleEventPatch) => Promise<string | null>;
   onDelete?: () => Promise<string | null>;
   directory?: GoogleDirectoryApi;
 }) {
   // 구글 전용 필드의 초안 — 본문 초안(제목·날짜·시각…)은 `EventDetail`이 든다.
   // **저장은 완료 버튼에서 한 번**(요청): 팝업이 모아 준 본문 diff와 이 필드 초안을
-  // `draftFrom`이 온전한 값 하나로 합쳐 PATCH 한 번으로 보낸다.
+  // `patchFrom`이 **바뀐 것만** 담은 PATCH 하나로 합친다.
   const [pendingFields, setPendingFields] = useState<GoogleFieldsChange>({});
   const writable = !!onPatch && !!onDelete;
 
@@ -159,7 +214,7 @@ export function GoogleEventDetail({
       extraDirty={Object.keys(pendingFields).length > 0}
       onPatch={async (patch) => {
         if (!onPatch) return null;
-        return onPatch(draftFrom(event, patch, pendingFields));
+        return onPatch(patchFrom(event, patch, pendingFields));
       }}
       onDelete={async () => (onDelete ? onDelete() : null)}
       // 구글 전용 필드는 **오른쪽 열**이다(제보 #16 — 새 일정 팝업과 같은 구조).
@@ -219,7 +274,7 @@ export function GoogleDetailHost({
   events: readonly GoogleEvent[];
   isMobile: boolean;
   onClose: () => void;
-  onPatch: (ev: GoogleEvent, draft: GoogleEventDraft) => Promise<string | null>;
+  onPatch: (ev: GoogleEvent, patch: GoogleEventPatch) => Promise<string | null>;
   onDelete: (ev: GoogleEvent) => Promise<string | null>;
   directory?: GoogleDirectoryApi;
 }) {
@@ -233,7 +288,7 @@ export function GoogleDetailHost({
       {...(directory ? { directory } : {})}
       {...(g.writable
         ? {
-            onPatch: (draft: GoogleEventDraft) => onPatch(g, draft),
+            onPatch: (patch: GoogleEventPatch) => onPatch(g, patch),
             onDelete: async () => {
               const err = await onDelete(g);
               if (!err) onClose();

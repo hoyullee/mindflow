@@ -15,7 +15,7 @@ import { CalendarDetailHost } from './CalendarDetail';
 import { NewEventModal } from './NewEventModal';
 import { submitNewEvent } from './newEventSubmit';
 import { EventDetail, geurioCalendarChips } from './EventDetail';
-import { GoogleDetailHost, draftFrom } from './GoogleEventDetail';
+import { GoogleDetailHost, patchFrom } from './GoogleEventDetail';
 import { GoogleConnectButton } from './GoogleConnectButton';
 import { useCalendarEvents } from './useCalendarEvents';
 import { eventEntries, googleEntries, holidayMap } from './entries';
@@ -107,7 +107,8 @@ export function CalendarView({
     if (e.google) {
       const g = e.google;
       if (!g.writable) return;
-      const err = await google.updateEvent(g, draftFrom(g, { startDate: addDays(g.startDate, days), endDate: addDays(g.endDate, days) }));
+      // 옮기는 것은 날짜뿐이다 — PATCH도 그 짝만 싣는다(제목·참석자를 다시 쓰지 않는다).
+      const err = await google.updateEvent(g, patchFrom(g, { startDate: addDays(g.startDate, days), endDate: addDays(g.endDate, days) }));
       if (err) controller.showCalendarToast('구글 일정을 옮기지 못했어요', err);
       return;
     }

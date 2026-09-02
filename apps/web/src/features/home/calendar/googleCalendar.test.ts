@@ -1,7 +1,7 @@
 import { describe, expect, it, beforeEach, vi } from 'vitest';
 import { GOOGLE_CALENDAR_SCOPE, RECURRENCE_OFF, buildRecurrence, draftToBody, googleWriteError, managedFieldsDiffer, updateGoogleEvent, recurrenceSummary, isDayOffHoliday, isHolidayCalendarId, onTokenChange, scopeCovers, parseCalendarList, parseEvents, readStoredToken, splitGoogleDateTime, storeToken, type GoogleCalendarMeta } from './googleCalendar';
 import { googleEntries, holidayMap } from './entries';
-import { draftFrom } from './GoogleEventDetail';
+import { draftFrom, patchFrom } from './GoogleEventDetail';
 import { submitNewEvent } from './newEventSubmit';
 
 // 구글 응답 → 우리 모델. 네트워크·GIS는 붙이지 않는다(순수 변환만 검증).
@@ -348,6 +348,41 @@ describe('구글 전용 필드(PR6 후속 — 디자인 원본 nIsGoogle)', () =
     expect('reminderMinutes' in draftFrom(g, {}, { reminderMinutes: undefined })).toBe(false);
   });
 
+  // 제보 — 제목만 고쳐도 `start`가 함께 실려, 구글이 그 시각을 거절하면(400
+  // `Invalid start time.`) **손대지 않은 필드 때문에** 저장이 통째로 막혔다.
+  // 실은 것이 곧 바꿀 것이어야 원인과 결과가 맞는다.
+  it('PATCH는 바뀐 것만 싣는다 — 제목 수정에 날짜가 따라가지 않는다', () => {
+    const g = parseEvents(
+      { items: [{ id: 'e1', summary: '회의', start: { dateTime: '2026-08-10T09:00:00+09:00' }, end: { dateTime: '2026-08-10T10:00:00+09:00' }, attendees: [{ email: 'a@b.com' }] }] },
+      { ...CAL, writable: true },
+    )[0]!;
+
+    const titleOnly = patchFrom(g, { title: '새 제목' });
+    expect(Object.keys(titleOnly.body)).toEqual(['summary']);
+    expect(titleOnly.touched).toEqual(['title']);
+
+    // 끌어서 옮기면 날짜 짝만 — 구글은 `start`/`end`의 종류가 섞이면 거절하므로 짝이다.
+    const moved = patchFrom(g, { startDate: '2026-08-12', endDate: '2026-08-12' });
+    expect(Object.keys(moved.body).sort()).toEqual(['end', 'start']);
+    expect(moved.touched).toEqual(['when']);
+
+    // 지운 값은 **빈 문자열로** 보낸다(키를 빼면 "안 바꾼다"로 읽힌다).
+    expect(patchFrom(g, { location: '' }).body).toEqual({ location: '' });
+    // 참석자를 비우는 것도 그 배열만
+    const guests = patchFrom(g, {}, { attendees: [] });
+    expect(guests.body).toEqual({ attendees: [] });
+    expect(guests.touched).toEqual(['attendees']);
+    // 아무것도 안 바뀌면 보낼 것이 없다
+    expect(patchFrom(g, {}).body).toEqual({});
+  });
+
+  // 400은 **우리 요청이 틀렸다**는 뜻이라 "잠시 후 다시"가 거짓말이 된다(제보).
+  it('구글이 준 사유를 문장에 담는다', () => {
+    expect(googleWriteError({ status: 400, detail: 'Invalid start time.' })).toContain('Invalid start time.');
+    expect(googleWriteError({ status: 400 })).toContain('거절');
+    expect(googleWriteError({ status: 403 })).toContain('권한');
+  });
+
   // 제보 — 구글 일정을 고치면 412("그 사이 구글에서 바뀌었어요")로 막혔다. 대개는 사람이
   // 고친 게 아니라 **회의실이 스스로 초대를 수락**하는 것 같은 곁가지 변화다: 우리가 다루는
   // 값이 그대로면 새 판을 기준으로 한 번 더 쓴다.
@@ -371,8 +406,31 @@ describe('구글 전용 필드(PR6 후속 — 디자인 원본 nIsGoogle)', () =
         if (method === 'GET') return { ok: true, status: 200, json: async () => ({ id: 'e1', etag: '"v2"', summary: '회의', start: { date: '2026-08-10' }, end: { date: '2026-08-11' }, attendees: [{ email: 'a@b.com', responseStatus: 'accepted' }] }) } as unknown as Response;
         return { ok: true, status: 200, json: async () => ({}) } as unknown as Response;
       });
-      await updateGoogleEvent('tok', base, { title: '회의', allDay: true, startDate: '2026-08-10', endDate: '2026-08-10' });
+      await updateGoogleEvent('tok', base, { body: { summary: '회의' }, touched: ['title'] });
       expect(calls.map((c) => `${c.method}:${c.etag ?? '-'}`)).toEqual(['PATCH:"v1"', 'GET:-', 'PATCH:"v2"']);
+      vi.unstubAllGlobals();
+    });
+
+    // 제보의 그 흐름 — 만들고 → 끌어서 날짜를 옮기고 → **내용을 고치면** 412였다.
+    // 우리가 보내지도 않는 날짜가 달라졌다는 이유로 막혔던 것이다. PATCH는 보낸 키만
+    // 바꾸므로 남의 변경을 덮지도 않는다 — 쓰려는 필드만 견주면 된다.
+    it('보내지 않는 필드가 달라진 것은 충돌이 아니다 — 제목 수정은 새 판으로 이어 쓴다', async () => {
+      const calls: string[] = [];
+      vi.stubGlobal('fetch', async (_url: string, init?: RequestInit) => {
+        const method = (init?.method ?? 'GET') as string;
+        const etag = ((init?.headers ?? {}) as Record<string, string>)['If-Match'] ?? '-';
+        calls.push(`${method}:${etag}`);
+        if (method === 'PATCH' && etag === '"v1"') return { ok: false, status: 412, json: async () => ({}) } as unknown as Response;
+        // 그 사이 **날짜가** 옮겨져 있다(내 드래그가 만든 판일 수도, 남이 옮긴 것일 수도).
+        if (method === 'GET')
+          return { ok: true, status: 200, json: async () => ({ id: 'e1', etag: '"v2"', summary: '회의', start: { date: '2026-08-20' }, end: { date: '2026-08-21' }, attendees: [{ email: 'a@b.com' }] }) } as unknown as Response;
+        return { ok: true, status: 200, json: async () => ({}) } as unknown as Response;
+      });
+      await updateGoogleEvent('tok', base, { body: { summary: '새 제목' }, touched: ['title'] });
+      expect(calls).toEqual(['PATCH:"v1"', 'GET:-', 'PATCH:"v2"']);
+      // 반대로 **날짜를 쓰려던** 저장이라면 그건 진짜 충돌이라 막는다.
+      calls.length = 0;
+      await expect(updateGoogleEvent('tok', base, { body: { start: { date: '2026-08-11' }, end: { date: '2026-08-12' } }, touched: ['when'] })).rejects.toMatchObject({ status: 412 });
       vi.unstubAllGlobals();
     });
 
@@ -382,7 +440,7 @@ describe('구글 전용 필드(PR6 후속 — 디자인 원본 nIsGoogle)', () =
         if (method === 'PATCH') return { ok: false, status: 412, json: async () => ({}) } as unknown as Response;
         return { ok: true, status: 200, json: async () => ({ id: 'e1', etag: '"v2"', summary: '남이 고친 제목', start: { date: '2026-08-10' }, end: { date: '2026-08-11' } }) } as unknown as Response;
       });
-      await expect(updateGoogleEvent('tok', base, { title: '회의', allDay: true, startDate: '2026-08-10', endDate: '2026-08-10' })).rejects.toMatchObject({ status: 412 });
+      await expect(updateGoogleEvent('tok', base, { body: { summary: '회의' }, touched: ['title'] })).rejects.toMatchObject({ status: 412 });
       vi.unstubAllGlobals();
     });
   });
