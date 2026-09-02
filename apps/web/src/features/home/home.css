@@ -112,6 +112,14 @@ a:hover {
 [data-modal-overlay] .lnb-scroll {
   scrollbar-gutter: stable;
 }
+/* **스크롤러는 스크롤한다 — 자식을 누르지 않는다**(제보). 세로 flex 스크롤 열
+   안에서 내용이 넘치면 flex-shrink 기본값(1)이 먼저 일해서 고정 높이 입력까지
+   눌린다: 새 일정 팝업에서 종일을 끄면 제목 입력이 52px → 23px로 주저앉았다
+   (실측). 카드 높이가 전이 동안 옛 값에 묶여 있으면 그 순간 더 심해져 "짧아졌다
+   길어지면 돌아오는" 것처럼 보인다. 넘치면 눌리는 게 아니라 스크롤해야 한다. */
+[data-modal-overlay] .lnb-scroll > * {
+  flex-shrink: 0;
+}
 /* 카드 크기 전이 중에는 안쪽 스크롤러를 잠근다(`useCardMorph`가 `data-morphing`을
    세운다) — 시작 크기에 묶인 240ms 동안 스크롤바가 생겼다 사라지며 글줄 폭이
    흔들리는 것을 아예 없앤다. */

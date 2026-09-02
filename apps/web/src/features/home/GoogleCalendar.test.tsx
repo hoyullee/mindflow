@@ -339,7 +339,13 @@ describe('구글 캘린더 겹치기(PR5)', () => {
     expect(title!.readOnly).toBe(false);
     // 삭제도 그 자리에서(구글로 보내는 링크는 그대로 남는다)
     expect(pop.querySelector('[data-event-delete]')).toBeTruthy();
-    expect(pop.querySelector('[data-google-open]')?.getAttribute('href')).toBe('https://calendar.google.com/x');
+    // 요청 — 그 링크는 **발치의 취소 왼쪽**에 선다(본문 끝이 아니다: 스크롤을 내려야
+    // 보이면 "어디서 여는가"가 자리를 잃는다).
+    const open = pop.querySelector('[data-google-open]')!;
+    expect(open.getAttribute('href')).toBe('https://calendar.google.com/x');
+    const cancel = pop.querySelector('[data-event-cancel]')!;
+    expect(open.parentElement).toBe(cancel.parentElement);
+    expect(open.compareDocumentPosition(cancel) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
     await user.clear(title!);
     await user.type(title!, '이름 바꿈');
     // 저장은 완료 버튼에서 한 번(요청) — 타이핑·blur만으로는 아무것도 보내지 않는다.
