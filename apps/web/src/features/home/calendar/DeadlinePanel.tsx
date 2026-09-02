@@ -5,9 +5,25 @@
 // 원본도 둘을 각자 켜고 끄는 버튼으로 두고, 이 목록은 달력 위에 **겹치는 판**으로
 // 띄운다(둘 다 켜면 RNB 왼쪽에 나란히 선다).
 
+import { useState } from 'react';
+import type { CSSProperties } from 'react';
 import type { CalendarEntry } from './entries';
-import { entryChip, type ChipSurface } from './chips';
-import { dueBadge, isSpan, overdueEntries, upcomingEntries } from './model';
+import { entryChip, markStyle, type ChipSurface } from './chips';
+import { dueBadge, dueTone, isSpan, overdueEntries, upcomingEntries, type DueTone } from './model';
+
+/** 한 번에 보여 주는 줄 수 — 넘치면 `+N개 더 보기`로 접는다(제보 #15). */
+const PAGE = 7;
+
+/**
+ * 마감 배지의 색 — **중요도 사다리**(제보 #14: 오늘도 D-14도 같은 색이라 급한 정도가
+ * 안 보였다). 등급은 순수 함수(`dueTone`)가 정하고 여기서는 그 등급의 옷만 입힌다.
+ */
+const TONE: Record<DueTone, CSSProperties> = {
+  over: { background: 'var(--mf-danger-bg)', color: 'var(--mf-stat-over)' },
+  today: { background: 'var(--mf-accent-soft)', color: 'var(--mf-stat-today)' },
+  soon: { background: 'var(--mf-due-soon-bg)', color: 'var(--mf-stat-week)' },
+  later: { background: 'var(--mf-panel2)', color: 'var(--mf-muted)' },
+};
 
 export function DeadlinePanel({
   entries,
@@ -27,6 +43,10 @@ export function DeadlinePanel({
 }) {
   const upcoming = upcomingEntries(entries, todayIso);
   const overdue = overdueEntries(entries, todayIso);
+  // 다가오는 마감이 많으면 스크롤이 통째로 길어진다(제보) — 처음에는 앞의 것만
+  // 보여 주고 나머지는 `+N개 더 보기`로 편다(펼치면 그대로 남는다).
+  const [openAll, setOpenAll] = useState(false);
+  const [openOld, setOpenOld] = useState(false);
   return (
     <div
       data-cal-deadline
@@ -37,7 +57,8 @@ export function DeadlinePanel({
         top: 0,
         bottom: 0,
         right: offsetRight,
-        width: 272,
+        // 제목·보드 이름이 자주 잘려 조금 더 넓혔다(제보 #13).
+        width: 320,
         boxSizing: 'border-box',
         borderLeft: '1px solid var(--mf-border-soft)',
         background: 'var(--mf-card)',
@@ -61,7 +82,12 @@ export function DeadlinePanel({
 
       <SectionLabel>다가오는 마감</SectionLabel>
       {upcoming.length ? (
-        upcoming.slice(0, 30).map((e) => <Row key={`${e.docId}-${e.cardId}`} entry={e} todayIso={todayIso} surface={surface} onPick={onPickEntry} />)
+        <>
+          {(openAll ? upcoming.slice(0, 60) : upcoming.slice(0, PAGE)).map((e) => (
+            <Row key={`${e.docId}-${e.cardId}`} entry={e} todayIso={todayIso} surface={surface} onPick={onPickEntry} />
+          ))}
+          {!openAll && upcoming.length > PAGE && <MoreButton attr="data-cal-more-upcoming" n={upcoming.length - PAGE} onClick={() => setOpenAll(true)} />}
+        </>
       ) : (
         <span style={{ padding: '4px 9px 8px', fontSize: 11.5, color: 'var(--mf-faint)' }}>다가오는 마감이 없어요</span>
       )}
@@ -69,12 +95,28 @@ export function DeadlinePanel({
       {overdue.length > 0 && (
         <>
           <SectionLabel>지난 마감</SectionLabel>
-          {overdue.slice(0, 30).map((e) => (
+          {(openOld ? overdue.slice(0, 60) : overdue.slice(0, PAGE)).map((e) => (
             <Row key={`${e.docId}-${e.cardId}`} entry={e} todayIso={todayIso} surface={surface} onPick={onPickEntry} />
           ))}
+          {!openOld && overdue.length > PAGE && <MoreButton attr="data-cal-more-overdue" n={overdue.length - PAGE} onClick={() => setOpenOld(true)} />}
         </>
       )}
     </div>
+  );
+}
+
+/** 접힌 나머지를 펴는 줄 — 목록의 한 행처럼 보이되 면 없이 글자만. */
+function MoreButton({ n, attr, onClick }: { n: number; attr: string; onClick: () => void }) {
+  return (
+    <button
+      type="button"
+      {...{ [attr]: '1' }}
+      onClick={onClick}
+      className="mf-ctl"
+      style={{ flexShrink: 0, width: '100%', padding: '8px 9px', marginTop: 2, borderRadius: 10, border: '1px dashed var(--mf-border)', background: 'transparent', font: 'inherit', fontSize: 11.5, fontWeight: 700, color: 'var(--mf-muted)', cursor: 'pointer', textAlign: 'center' }}
+    >
+      +{n}개 더 보기
+    </button>
   );
 }
 
@@ -86,7 +128,7 @@ function SectionLabel({ children }: { children: React.ReactNode }) {
 function Row({ entry, todayIso, surface, onPick }: { entry: CalendarEntry; todayIso: string; surface: ChipSurface; onPick: (e: CalendarEntry) => void }) {
   const chip = entryChip(entry, surface);
   const badge = dueBadge(entry.due, todayIso);
-  const over = entry.due < todayIso;
+  const tone = dueTone(entry.due, todayIso);
   return (
     <button
       type="button"
@@ -107,7 +149,7 @@ function Row({ entry, todayIso, surface, onPick }: { entry: CalendarEntry; today
         cursor: 'pointer',
       }}
     >
-      <span style={{ width: 5, height: 5, borderRadius: 999, background: chip.dot, flexShrink: 0 }} />
+      <span style={markStyle(chip)} />
       <span style={{ flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column', gap: 1 }}>
         <span style={{ fontSize: 12.5, fontWeight: 700, letterSpacing: '-.01em', color: 'var(--mf-text)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{entry.title || '제목 없음'}</span>
         <span style={{ fontSize: 11, color: 'var(--mf-faint)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
@@ -116,13 +158,13 @@ function Row({ entry, todayIso, surface, onPick }: { entry: CalendarEntry; today
         </span>
       </span>
       <span
+        data-cal-due={tone}
         style={{
           flexShrink: 0,
           height: 18,
           padding: '0 7px',
           borderRadius: 999,
-          background: over ? 'var(--mf-danger-bg)' : 'var(--mf-accent-soft)',
-          color: over ? 'var(--mf-danger)' : 'var(--mf-accent-strong)',
+          ...TONE[tone],
           fontFamily: "'JetBrains Mono', monospace",
           fontSize: 9.5,
           fontWeight: 800,

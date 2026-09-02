@@ -523,6 +523,9 @@ export function homeThemeVars(key: HomeThemeKey): Record<string, string> {
     '--mf-stat-today-dot': t.accent,
     '--mf-stat-week': mixHex(t.star, t.text, 0.32),
     '--mf-stat-week-dot': t.star,
+    /** 사흘 안으로 다가온 마감의 면(`--mf-stat-week`가 그 위 글자) — 마감 목록의
+     *  중요도 사다리(지남 빨강 / 오늘 강조색 / 임박 앰버 / 그 뒤 중립)에서 세 번째. */
+    '--mf-due-soon-bg': mixHex(t.card, t.star, 0.16),
     '--mf-stat-span': t.muted,
     '--mf-stat-span-dot': t.faint2,
     '--mf-hover-bright': t.hoverBright,

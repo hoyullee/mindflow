@@ -1,11 +1,25 @@
-import { useRef, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import type { CSSProperties, PointerEvent as ReactPointerEvent } from 'react';
 import type { CalendarEntry } from './entries';
 import type { MonthCell } from './model';
 import { DOW, daysBetween } from './model';
 import { beginPointerDrag } from '../../editor/components/KanbanBoard';
-import { entryChip, type ChipSurface } from './chips';
+import { entryChip, markStyle, type ChipSurface } from './chips';
+
+/** 칩·바 한 줄이 차지하는 높이(칩 높이 + 줄 간격) — 칸 용량 계산의 단위. */
+const ROW_H = (compact: boolean): number => (compact ? 16 : 21) + 2;
+/** 날짜 숫자 줄 + 칸 안쪽 여백 — 칩이 쓸 수 없는 높이. */
+const CHROME_H = (compact: boolean): number => (compact ? 18 : 20) + 2 + (compact ? 7 : 11);
+
+/**
+ * 이 칸에 칩을 몇 줄 그릴 수 있는가(제보 — 여유가 많은데도 `+N개 더`가 떴다).
+ * 예전에는 고정 개수(데스크톱 2줄)라 칸이 커도 접혔다. 이제 **실측한 칸 높이**로
+ * 정하고, 넘칠 때만 마지막 줄을 `+N개 더`에 내준다.
+ */
+export function cellCapacity(cellH: number, compact: boolean): number {
+  return Math.max(1, Math.floor((cellH - CHROME_H(compact)) / ROW_H(compact)));
+}
 
 /** 끄는 동안의 상태 — 손끝의 고스트와 놓일 칸. */
 interface CalDragState {
@@ -60,6 +74,25 @@ export function MonthGrid({
   const [drag, setDrag] = useState<CalDragState | null>(null);
   const dragRef = useRef<CalDragState | null>(null);
   dragRef.current = drag;
+  // 칸 하나가 담을 수 있는 줄 수 — 격자 높이를 **실측해서** 정한다(제보: 여유가
+  // 남는데도 `+N개 더`가 떴다). 창 크기·사이드 접기에 따라 칸 높이가 달라지므로
+  // ResizeObserver로 따라간다.
+  const gridRef = useRef<HTMLDivElement | null>(null);
+  const [cellH, setCellH] = useState(0);
+  useEffect(() => {
+    const el = gridRef.current;
+    if (!el || typeof ResizeObserver === 'undefined') return;
+    const rows = Math.max(1, Math.round(cells.length / 7));
+    const read = (): void => setCellH(el.clientHeight / rows);
+    read();
+    const ro = new ResizeObserver(read);
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, [cells.length]);
+  // 아직 재지 못했으면(첫 프레임·레이아웃 없는 환경) **접지 않는다** — 모르는 채로
+  // 감추는 것보다 넘치는 편이 낫다(칸은 `overflow: hidden`이고, ResizeObserver는
+  // 페인트 전에 돌아 사용자가 넘친 프레임을 보지 못한다).
+  const capacity = cellH > 0 ? cellCapacity(cellH, compact) : Number.MAX_SAFE_INTEGER;
   /** 끌었는가 — 드래그 끝의 `click`이 상세 팝업을 열지 않게 삼킨다(다음 누름에서 리셋). */
   const draggedRef = useRef(false);
 
@@ -131,11 +164,12 @@ export function MonthGrid({
         ))}
       </div>
 
-      <div style={{ flex: 1, minHeight: 0, display: 'grid', gridTemplateColumns: 'repeat(7, 1fr)', gridAutoRows: '1fr' }}>
+      <div ref={gridRef} style={{ flex: 1, minHeight: 0, display: 'grid', gridTemplateColumns: 'repeat(7, 1fr)', gridAutoRows: '1fr' }}>
         {cells.map((c) => (
           <DayCell
             key={c.iso}
             cell={c}
+            capacity={capacity}
             selected={selected === c.iso}
             compact={compact}
             surface={surface}
@@ -191,7 +225,7 @@ function DragGhost({ drag, surface }: { drag: CalDragState; surface: ChipSurface
         transform: 'rotate(1.5deg)',
       }}
     >
-      <span style={{ width: 5, height: 5, borderRadius: 999, background: chip.dot, flexShrink: 0 }} />
+      <span style={markStyle(chip)} />
       <span style={{ minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis' }}>{drag.entry.title || '제목 없음'}</span>
       {to !== 0 && (
         <span style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 9.5, opacity: 0.8 }}>
@@ -205,6 +239,7 @@ function DragGhost({ drag, surface }: { drag: CalDragState; surface: ChipSurface
 
 function DayCell({
   cell,
+  capacity,
   selected,
   compact,
   surface,
@@ -217,6 +252,8 @@ function DayCell({
   dropHot,
 }: {
   cell: MonthCell;
+  /** 이 칸이 담을 수 있는 줄 수(실측) — 넘칠 때만 마지막 줄이 `+N개 더`가 된다. */
+  capacity: number;
   selected: boolean;
   compact: boolean;
   surface: ChipSurface;
@@ -231,6 +268,12 @@ function DayCell({
   dropHot: boolean;
 }) {
   const { inMonth, isToday, dim, dow } = cell;
+  // 칸에 실제로 들어가는 만큼 그린다(제보 #1) — 넘칠 때만 마지막 줄을 `+N개 더`에
+  // 내준다. 모델이 이미 접어 준 몫(`moreN`)이 있으면 거기에 더한다.
+  const room = Math.max(1, capacity - cell.bars.length);
+  const fits = cell.moreN === 0 && cell.entries.length <= room;
+  const shownEntries = fits ? cell.entries : cell.entries.slice(0, Math.max(0, room - 1));
+  const moreN = cell.entries.length - shownEntries.length + cell.moreN;
   // 칸 색은 아주 옅은 파생 토큰이다(디자인 원본의 관계 그대로):
   //   선택 < 오늘 < 오늘+선택. 예전에는 강조색 면(soft/mute)을 그대로 써서 칸이
   //   통째로 진하게 칠해졌다(제보: 부자연스럽다).
@@ -280,7 +323,10 @@ function DayCell({
     // 놓일 자리만 링으로 알린다 — 고른 칸은 **면만**(디자인 원본 `selRing: 'none'`).
     ...(dropHot ? { boxShadow: 'inset 0 0 0 2px var(--mf-accent)' } : {}),
     opacity: inMonth ? 1 : 0.7,
-    cursor: inMonth ? 'pointer' : 'default',
+    // 이웃 달 칸도 **평범한 칸처럼 동작한다**(제보 #3) — 격자가 담고 있는 날이면
+    // 고르고, 더블클릭으로 그 날의 일정을 보고, 항목을 끌어다 놓을 수 있다.
+    // 흐린 것은 "이번 달이 아니다"라는 표시일 뿐 못 쓰는 자리라는 뜻이 아니다.
+    cursor: 'pointer',
     // 칸이 내용보다 좁아도 격자가 밀리지 않게 — 넘치는 칩은 접힌다(moreN).
     overflow: 'hidden',
   };
@@ -290,18 +336,18 @@ function DayCell({
       data-day-cell={cell.iso}
       data-today={isToday ? '1' : undefined}
       data-out-month={inMonth ? undefined : '1'}
-      role={inMonth ? 'button' : undefined}
-      tabIndex={inMonth ? 0 : undefined}
-      aria-label={inMonth ? `${cell.n}일` : undefined}
+      role="button"
+      tabIndex={0}
+      aria-label={`${monthOf(cell.iso)}월 ${cell.n}일`}
       // 더블클릭의 뜻을 hover 툴팁이 미리 말한다(디자인 원본 `dayTitle`).
-      title={inMonth && onOpenDayList ? `${monthOf(cell.iso)}월 ${cell.n}일 · 더블 클릭하면 일정을 모두 봐요` : undefined}
-      onClick={inMonth ? () => onPickDay(cell.iso) : undefined}
+      title={onOpenDayList ? `${monthOf(cell.iso)}월 ${cell.n}일 · 더블 클릭하면 일정을 모두 봐요` : undefined}
+      onClick={() => onPickDay(cell.iso)}
       // 빈 자리를 더블클릭하면 **그 날의 일정 전부**(디자인 원본 `onDayDouble` —
       // 제보 4: 리스트 팝업). 새 일정은 그 팝업 발치·헤더 ＋·사이드가 맡는다.
       // 칩·바·`+N` 위에서 온 더블클릭은 그 항목의 일이라 손대지 않는다: 두 번째
       // 클릭이 칩을 열어 둔 상태에서 팝업까지 겹쳐 뜨면 무엇을 하려던 건지 흐려진다.
       onDoubleClick={
-        inMonth && onOpenDayList
+        onOpenDayList
           ? (e) => {
               if ((e.target as HTMLElement).closest('[data-cal-chip],[data-cal-bar],[data-cal-more]')) return;
               e.preventDefault();
@@ -309,16 +355,12 @@ function DayCell({
             }
           : undefined
       }
-      onKeyDown={
-        inMonth
-          ? (e) => {
-              if (e.key === 'Enter' || e.key === ' ') {
-                e.preventDefault();
-                onPickDay(cell.iso);
-              }
-            }
-          : undefined
-      }
+      onKeyDown={(e) => {
+        if (e.key === 'Enter' || e.key === ' ') {
+          e.preventDefault();
+          onPickDay(cell.iso);
+        }
+      }}
       style={cellStyle}
     >
       <span style={{ display: 'flex', alignItems: 'center', gap: 4, flexShrink: 0 }}>
@@ -411,7 +453,7 @@ function DayCell({
         );
       })}
 
-      {cell.entries.map((e) => {
+      {shownEntries.map((e) => {
         const chip = entryChip(e, surface);
         return (
           <button
@@ -455,13 +497,13 @@ function DayCell({
               touchAction: 'none',
             }}
           >
-            <span style={{ width: 5, height: 5, borderRadius: 999, background: chip.dot, flexShrink: 0 }} />
+            <span style={markStyle(chip)} />
             <span style={{ minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{e.title}</span>
           </button>
         );
       })}
 
-      {cell.moreN > 0 && (
+      {moreN > 0 && (
         <button
           type="button"
           data-cal-more
@@ -471,7 +513,7 @@ function DayCell({
           }}
           style={{ border: 0, background: 'transparent', padding: '0 5px', textAlign: 'left', font: 'inherit', fontSize: compact ? 9.5 : 11, fontWeight: 700, color: 'var(--mf-faint)', cursor: 'pointer', flexShrink: 0, alignSelf: 'flex-start', maxWidth: '100%' }}
         >
-          +{cell.moreN}개 더
+          +{moreN}개 더
         </button>
       )}
     </div>

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { entryChip } from './chips';
+import { entryChip, markStyle } from './chips';
 import type { CalendarEntry } from './entries';
 
 // 시간표 블록·날짜별 행의 면(tint) — 디자인 시안의 두 값(제보: 우리 것은 너무 진했다).
@@ -32,5 +32,23 @@ describe('일정 칩 면 색(tint)', () => {
   it('다크 면에서는 그 면에서 파생한다 — 라이트 값이 그대로 박혀 나오지 않는다', () => {
     const dark = entryChip(E(), { card: '#262019', text: '#f2e9df' });
     expect(dark.tint).not.toBe(entryChip(E(), SURFACE).tint);
+  });
+});
+
+describe('표식 — 우리 일정은 점, 구글은 둥근 막대(요청)', () => {
+  it('구글 일정은 구글 파랑 막대다 — 캘린더 색이 아니라 출처를 말한다', () => {
+    const chip = entryChip(E({ google: GOOGLE, colColor: '#00a000' }), SURFACE);
+    expect(chip.mark).toBe('bar');
+    expect(chip.dot).toBe('rgb(74, 120, 208)');
+    const st = markStyle(chip);
+    expect(st.width).toBe(3);
+    expect(Number(st.height)).toBeGreaterThan(Number(st.width));
+  });
+
+  it('우리 일정은 그대로 점이다 — 열 색을 그대로 쓴다', () => {
+    const chip = entryChip(E({ colColor: '#00a000' }), SURFACE);
+    expect(chip.mark).toBe('dot');
+    expect(chip.dot).toBe('#00a000');
+    expect(markStyle(chip).width).toBe(markStyle(chip).height);
   });
 });

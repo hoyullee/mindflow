@@ -34,8 +34,9 @@ export function CalendarSide({
   onPickDay: (iso: string) => void;
   onPickEntry: (e: CalendarEntry) => void;
   onSetMonth: (y: number, m: number) => void;
-  /** 이 날짜에 새 일정(원본 `agendaNew` — 머리의 `＋`와 빈 상태의 버튼). */
-  onNewEvent: (iso: string) => void;
+  /** 이 날짜에 새 일정(원본 `agendaNew` — 머리의 `＋`). 시간표의 빈 시간대를
+   *  눌렀으면 그 시각(`HH:MM`)까지 넘긴다. */
+  onNewEvent: (iso: string, at?: string) => void;
   /** 사이드 접기 — 머리의 ✕(디자인 원본). 위 토글을 다시 누르는 것과 같다. */
   onClose: () => void;
   /** 공휴일(구글 연동) — 미니 달력이 큰 달력과 같은 색으로 그린다. */
@@ -132,29 +133,14 @@ function DayTimelineView({
   todayIso: string;
   surface: ChipSurface;
   onPickEntry: (e: CalendarEntry) => void;
-  onNewEvent: (iso: string) => void;
+  /** 빈 시간대를 눌렀다 — 그 날짜·그 시각으로 새 일정. */
+  onNewEvent: (iso: string, at: string) => void;
 }) {
   const bodyRef = useRef<HTMLDivElement | null>(null);
   // 첫 일정이 보이도록 맞춘다 — 자정부터 훑게 두지 않는다(원본 `syncAgendaScroll`).
   useEffect(() => {
     if (bodyRef.current) bodyRef.current.scrollTop = timeline.focusTop;
   }, [timeline.focusTop, iso]);
-
-  if (!timeline.blocks.length) {
-    // 원본의 빈 상태 — 시계 글리프 + 안내 + `일정 추가`.
-    return (
-      <div data-cal-timeline-empty style={{ flex: '1 1 0', minHeight: 120, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 9, padding: 16 }}>
-        <svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="var(--mf-border)" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-          <circle cx="12" cy="12" r="8.5" />
-          <path d="M12 7.5V12l3 2" />
-        </svg>
-        <span style={{ fontSize: 11.5, color: 'var(--mf-faint)', textAlign: 'center' }}>이 날에는 시간 일정이 없어요</span>
-        <button type="button" data-cal-timeline-new onClick={() => onNewEvent(iso)} className="mf-ctl" style={{ height: 27, padding: '0 13px', borderRadius: 999, border: '1px solid var(--mf-border)', background: 'var(--mf-card)', color: 'var(--mf-muted)', font: 'inherit', fontSize: 11, fontWeight: 700, cursor: 'pointer' }}>
-          일정 추가
-        </button>
-      </div>
-    );
-  }
 
   const nowMin = (() => {
     if (iso !== todayIso) return null;
@@ -168,9 +154,27 @@ function DayTimelineView({
         {Array.from({ length: 24 }, (_, h) => (
           <span key={h} style={{ display: 'flex', alignItems: 'flex-start', gap: 8, height: HOUR_ROW, flex: '0 0 auto' }}>
             <span style={{ flex: '0 0 34px', textAlign: 'right', fontFamily: "'JetBrains Mono', monospace", fontSize: 9, color: 'var(--mf-faint2)', transform: 'translateY(-4px)', whiteSpace: 'nowrap' }}>{hourLabel(h)}</span>
-            <span style={{ flex: 1, minWidth: 0, borderTop: '1px solid var(--mf-border-soft)', display: 'block' }} />
+            {/* 빈 시간대를 누르면 **그 시각으로** 새 일정(구글 캘린더의 관례). 예전에는
+                시간 일정이 없는 날에만 `일정 추가` 버튼이 떴는데, 그 버튼은 시각을
+                모르고 시간표 자체도 사라졌다(제보 #20). 이제 표는 늘 있고, 누른
+                시간대가 곧 시작 시각이다. */}
+            <button
+              type="button"
+              data-cal-hour={h}
+              aria-label={`${hourLabel(h)}에 일정 추가`}
+              title={`${hourLabel(h)}에 일정 추가`}
+              onClick={() => onNewEvent(iso, `${`${h}`.padStart(2, '0')}:00`)}
+              className="mf-ctl"
+              style={{ flex: 1, minWidth: 0, height: HOUR_ROW, padding: 0, border: 0, borderTop: '1px solid var(--mf-border-soft)', background: 'transparent', cursor: 'pointer', display: 'block' }}
+            />
           </span>
         ))}
+        {/* 하루의 **끝 선**(제보 #19) — 예전에는 11PM 줄 아래가 선 없는 빈 자리라
+            그 시간대가 잘린 것처럼 보였다. 자정으로 닫으면 표가 완결된다. */}
+        <span data-cal-hour-end style={{ display: 'flex', alignItems: 'flex-start', gap: 8, flex: '0 0 auto' }}>
+          <span style={{ flex: '0 0 34px', textAlign: 'right', fontFamily: "'JetBrains Mono', monospace", fontSize: 9, color: 'var(--mf-faint2)', transform: 'translateY(-4px)', whiteSpace: 'nowrap' }}>{hourLabel(0)}</span>
+          <span style={{ flex: 1, minWidth: 0, borderTop: '1px solid var(--mf-border-soft)', display: 'block' }} />
+        </span>
 
         {nowMin !== null && (
           <span data-cal-now style={{ position: 'absolute', left: 38, right: 0, top: (nowMin / 60) * HOUR_ROW, display: 'flex', alignItems: 'center', pointerEvents: 'none' }}>

@@ -49,6 +49,8 @@ export interface NewEventDraft {
   /** 처음 놓일 날짜(달력에서 고른 날, 없으면 오늘). */
   date: string;
   allDay: boolean;
+  /** 처음 놓일 시각(`HH:MM`) — 시간표의 빈 시간대를 눌러 열었을 때 그 시각. */
+  at?: string;
 }
 
 export function NewEventModal({
@@ -76,8 +78,12 @@ export function NewEventModal({
   const [allDay, setAllDay] = useState(draft.allDay);
   const [startDate, setStartDate] = useState(draft.date || todayISO());
   const [endDate, setEndDate] = useState(draft.date || todayISO());
-  const [startTime, setStartTime] = useState('09:00');
-  const [endTime, setEndTime] = useState('10:00');
+  // 시간표의 빈 시간대를 눌러 열었으면 그 시각부터 한 시간(기본은 09:00–10:00).
+  const [startTime, setStartTime] = useState(draft.at ?? '09:00');
+  const [endTime, setEndTime] = useState(() => {
+    const from = minutesOf(draft.at ?? '09:00');
+    return from === null ? '10:00' : hhmm(Math.min(23 * 60 + 59, from + 60));
+  });
   const [location, setLocation] = useState('');
   const [note, setNote] = useState('');
   // 기본값은 **우리 표**다 — 남의 서비스에 쓰는 일은 사용자가 골라야 한다.
@@ -385,7 +391,7 @@ export function NewEventModal({
             때(저장 실패·시각이 거꾸로) 눈에 띌 자리가 없다. */}
         <div style={{ flex: '0 0 auto', display: 'flex', alignItems: 'center', gap: 10, padding: '14px 20px', borderTop: '1px solid var(--mf-border-soft)' }}>
           <span data-new-foot style={{ flex: 1, minWidth: 0, fontSize: 12, color: footTone, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{footMsg}</span>
-          <button type="button" onClick={onClose} className="mf-ctl" style={{ flex: '0 0 auto', whiteSpace: 'nowrap', height: isMobile ? 44 : 36, padding: '0 16px', borderRadius: 999, border: '1px solid var(--mf-border)', background: 'var(--mf-card)', color: 'var(--mf-muted)', font: 'inherit', fontSize: 12.5, fontWeight: 700, cursor: 'pointer' }}>
+          <button type="button" data-new-cancel onClick={onClose} className="mf-ctl" style={{ flex: '0 0 auto', whiteSpace: 'nowrap', height: isMobile ? 44 : 36, padding: '0 16px', borderRadius: 999, border: '1px solid var(--mf-border)', background: 'var(--mf-card)', color: 'var(--mf-muted)', font: 'inherit', fontSize: 12.5, fontWeight: 700, cursor: 'pointer' }}>
             취소
           </button>
           <button

@@ -269,6 +269,17 @@ export function dueBadge(iso: string, todayIso: string): string {
 }
 
 /**
+ * 마감 배지의 **중요도**(제보 — `오늘`도 `D-14`도 같은 색이라 급한 정도가 안 보였다).
+ * 네 단계로만 가른다: 지났다 / 오늘이다 / 사흘 안이다 / 그 뒤다. 색은 화면이 정하고
+ * 여기서는 등급만 — 마감 목록·팝오버가 같은 사다리를 쓰게 한다.
+ */
+export type DueTone = 'over' | 'today' | 'soon' | 'later';
+export function dueTone(iso: string, todayIso: string): DueTone {
+  const n = daysBetween(todayIso, iso);
+  return n < 0 ? 'over' : n === 0 ? 'today' : n <= 3 ? 'soon' : 'later';
+}
+
+/**
  * 통계 팝오버 줄의 배지 — 지난 마감은 **며칠 지났는지**(`-4일`)까지 말한다.
  * 격자·사이드의 `dueBadge`가 `지남` 한 마디로 끝내는 것과 다른 이유는, 이 목록이
  * 놓친 일을 훑어 고르는 자리라 어제 것과 한 달 전 것이 구별돼야 하기 때문이다.

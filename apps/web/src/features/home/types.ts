@@ -260,8 +260,9 @@ export interface HomeState {
   calDay: string | null;
   /** 열린 일정 상세 — 그 칸반 카드를 가리킨다. `null`이면 닫힘. */
   calDetail: { docId: string; cardId: string } | null;
-  /** 새 일정 팝업(0033) — 처음 놓일 날짜와 종일 여부. null이면 닫혀 있다. */
-  calNewEvent: { date: string; allDay: boolean } | null;
+  /** 새 일정 팝업(0033) — 처음 놓일 날짜와 종일 여부(+ 시간표에서 열었으면 그 시각).
+   *  null이면 닫혀 있다. */
+  calNewEvent: { date: string; allDay: boolean; at?: string } | null;
   /** 열려 있는 Geurio 일정 상세(달력 항목이 아니라 그 일정 id). */
   calEventDetail: string | null;
   /** LNB 대시보드 구획의 순서 바꾸기 모드(디자인의 ⠿ 토글). */

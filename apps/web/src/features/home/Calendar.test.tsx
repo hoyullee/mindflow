@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
-import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { MemoryRouter, Route, Routes } from 'react-router-dom';
 import { Home } from './Home';
 import { BackendProvider } from '../../adapters/BackendContext';
@@ -28,9 +28,27 @@ import { addDays, daysBetween, isoOf, todayISO } from './calendar/model';
  */
 
 afterEach(() => cleanup());
+/**
+ * 월 격자는 칸 높이를 **실측해서** 몇 줄을 그릴지 정한다(제보 #1) — jsdom에는
+ * 레이아웃도 ResizeObserver도 없으므로, 콜백을 손에 쥐고 원할 때 흘려 보내는
+ * 스텁을 둔다(재지 못한 동안은 아무것도 접지 않는 것이 기본 동작이다).
+ */
+let roCallbacks: (() => void)[] = [];
 beforeEach(() => {
   localStorage.clear();
   sessionStorage.clear();
+  roCallbacks = [];
+  vi.stubGlobal(
+    'ResizeObserver',
+    class {
+      constructor(cb: () => void) {
+        roCallbacks.push(cb);
+      }
+      observe() {}
+      unobserve() {}
+      disconnect() {}
+    },
+  );
 });
 
 class MockDocStore implements DocStore {
@@ -96,9 +114,8 @@ function shiftDays(n: number): string {
 }
 
 /**
- * 이 달 안에 머무는 날 — 달력 격자·미니 달력은 **이웃 달 칸을 누를 수 없으므로**
- * 월말에 테스트를 돌리면 `shiftDays(2)`가 다음 달로 넘어가 그 칸이 비활성이 된다
- * (실제로 8월 30일에 두 건이 그렇게 깨졌다). 넘어가면 반대 방향으로 잡는다.
+ * 이 달 안에 머무는 날 — 달력 격자는 이제 이웃 달 칸도 누를 수 있지만(제보 #3),
+ * 미니 달력·통계처럼 **이 달을 기준으로 세는** 단정이 많아 그대로 쓴다.
  */
 function shiftInMonth(n: number): string {
   const now = new Date();
@@ -400,6 +417,59 @@ describe('일정 화면', () => {
     fireEvent.click(document.querySelector('[aria-label="마감 목록"]')!);
     await waitFor(() => expect(dl()).toBeNull());
     expect(document.querySelector('[data-cal-side]')).toBeTruthy();
+  });
+
+  it('마감 목록이 열려 있을 때 날짜 칸을 고르면 목록이 닫힌다(제보 #12)', async () => {
+    renderHome([META('d1', '스프린트 보드')], BODIES());
+    await openCalendar();
+    fireEvent.click(document.querySelector('[aria-label="마감 목록"]')!);
+    await waitFor(() => expect(document.querySelector('[data-cal-deadline]')).toBeTruthy());
+    // 달력 칸을 누르는 순간 그 판은 자리를 비켜 준다(달력으로 돌아온 것이므로).
+    fireEvent.click(document.querySelector(`[data-day-cell="${shiftInMonth(1)}"]`)!);
+    await waitFor(() => expect(document.querySelector('[data-cal-deadline]')).toBeNull());
+    // 날짜별 보기는 고른 날의 짝이라 그대로 남는다.
+    expect(document.querySelector('[data-cal-side]')).toBeTruthy();
+  });
+
+  it('마감 배지는 급한 정도로 색이 갈리고, 목록이 길면 접힌다(제보 #14·#15)', async () => {
+    // 오늘 / 이틀 뒤 / 먼 뒤 — 세 등급이 한 목록에 서게 만든다.
+    const many = Array.from({ length: 9 }, (_, i) => ({ id: `n${i}`, col: 'c1', pos: i + 1, text: `일감 ${i}`, due: shiftInMonth(i === 0 ? 0 : i === 1 ? 2 : 10 + i) }));
+    renderHome([META('d1', '스프린트 보드')], { d1: kanbanBody(many) });
+    await openCalendar();
+    fireEvent.click(document.querySelector('[aria-label="마감 목록"]')!);
+    const dl = await waitFor(() => {
+      const el = document.querySelector('[data-cal-deadline]');
+      expect(el).toBeTruthy();
+      return el as HTMLElement;
+    });
+    // 중요도 사다리: 오늘 / 사흘 안 / 그 뒤가 서로 다른 색을 쓴다.
+    const tones = [...dl.querySelectorAll('[data-cal-due]')].map((b) => b.getAttribute('data-cal-due'));
+    expect(new Set(tones).size).toBeGreaterThan(1);
+    const today = dl.querySelector<HTMLElement>('[data-cal-due="today"]')!;
+    const later = dl.querySelector<HTMLElement>('[data-cal-due="later"]')!;
+    expect(today.style.color).not.toBe(later.style.color);
+    // 아홉 개는 한 번에 다 펼치지 않는다 — 나머지는 `+N개 더 보기`로.
+    const more = dl.querySelector<HTMLElement>('[data-cal-more-upcoming]')!;
+    expect(more.textContent).toBe('+2개 더 보기');
+    fireEvent.click(more);
+    await waitFor(() => expect(dl.querySelectorAll('[data-cal-row]').length).toBe(9));
+    expect(dl.querySelector('[data-cal-more-upcoming]')).toBeNull();
+  });
+
+  it('이웃 달 칸도 평범한 칸처럼 고를 수 있다(제보 #3)', async () => {
+    renderHome([META('d1', '스프린트 보드')], BODIES());
+    await openCalendar();
+    const out = await waitFor(() => {
+      const el = document.querySelector('[data-out-month]');
+      expect(el).toBeTruthy();
+      return el as HTMLElement;
+    });
+    expect(out.getAttribute('role')).toBe('button');
+    fireEvent.click(out);
+    // 사이드가 그 날을 보여 준다 — 이번 달이 아니어도 고를 수 있다.
+    const iso = out.getAttribute('data-day-cell')!;
+    const [, m, d] = /(\d{2})-(\d{2})$/.exec(iso)!.map(Number) as unknown as number[];
+    await waitFor(() => expect(document.querySelector('[data-cal-side]')!.textContent).toContain(`${+m!}월 ${+d!}일`));
   });
 
   it('항목을 누르면 상세 팝업이 뜨고, 그 칸반으로 가는 길은 발치 버튼이다', async () => {
@@ -1079,11 +1149,22 @@ describe('일정 화면', () => {
       expect([...document.querySelectorAll('[data-cal-day-chip]')].map((c) => c.textContent)).not.toContain('아침 회의');
     });
 
-    it('시각 일정이 없는 날은 빈 상태가 그 날짜로 일정 만들기를 권한다', async () => {
+    it('시각 일정이 없어도 시간표는 하루를 다 보여 준다 — 12AM에서 12AM까지(제보 #19·#20)', async () => {
       renderHome([META('d1', '스프린트 보드')], BODIES());
       await openCalendar();
-      await waitFor(() => expect(document.querySelector('[data-cal-timeline-empty]')).toBeTruthy());
-      expect(document.querySelector('[data-cal-timeline]')).toBeNull();
+      // 예전에는 시간 일정이 없으면 표가 통째로 사라지고 안내만 떴다(제보).
+      await waitFor(() => expect(document.querySelector('[data-cal-timeline]')).toBeTruthy());
+      expect(document.querySelectorAll('[data-cal-hour]').length).toBe(24);
+      // 11PM 아래가 선 없이 비어 있던 것을 자정으로 닫는다.
+      expect(document.querySelector('[data-cal-hour-end]')?.textContent).toBe('12AM');
+
+      // 빈 시간대를 누르면 **그 시각으로** 새 일정이 열린다(사라진 버튼의 자리).
+      fireEvent.click(document.querySelector('[data-cal-hour="14"]')!);
+      await waitFor(() => expect(newEv()).toBeTruthy());
+      expect(document.querySelector<HTMLElement>('[data-new-start]')?.textContent).toContain('오후 2:00');
+      fireEvent.click(document.querySelector('[data-new-cancel]')!);
+      await waitFor(() => expect(newEv()).toBeNull());
+
       // 고른 날짜가 곧 기본값 — 며칠 뒤 칸을 고르고 만들면 그 날에 놓인다.
       const target = shiftInMonth(2);
       fireEvent.click(document.querySelector(`[data-mini-day="${target}"]`)!);
@@ -1177,8 +1258,21 @@ describe('일정 화면', () => {
         { id: 'm4', col: 'c1', pos: 4, text: '겹친 카드 넷', due: todayISO() },
       ]),
     };
+    // 칸에 몇 줄이 들어가는지는 **실측**이 정한다(제보 #1) — jsdom에는 레이아웃이
+    // 없으므로 낮은 칸(한 줄만 들어가는 높이)을 흉내 내 접히는 경로를 만든다.
+    const shrinkCells = (px: number): void => {
+      const grid = document.querySelector('[data-month-grid]')!.querySelector('[data-day-cell]')!.parentElement as HTMLElement;
+      Object.defineProperty(grid, 'clientHeight', { configurable: true, value: px });
+      for (const cb of roCallbacks) cb();
+    };
     renderHome([META('d1', '스프린트 보드')], bodies);
     await openCalendar();
+    await waitFor(() => expect(document.querySelector('[data-cal-chip]')).toBeTruthy());
+    // 넓은 칸에서는 넷 다 그대로 보인다 — 여유가 있는데 접지 않는다.
+    expect(chipTexts()).toHaveLength(4);
+    expect(document.querySelector('[data-cal-more]')).toBeNull();
+
+    act(() => shrinkCells(6 * 46));
     const more = await waitFor(() => {
       const el = document.querySelector('[data-cal-more]');
       expect(el).toBeTruthy();
