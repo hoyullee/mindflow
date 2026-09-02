@@ -1532,6 +1532,12 @@ select column_name from information_schema.columns
 - `412`의 비교 범위도 **그 PATCH가 쓰는 필드**뿐이다(`managedFieldsDiffer(a, b, only)`).
   보내지 않는 필드가 달라진 것은 충돌이 아니다 — PATCH는 보낸 키만 바꾸므로 남의
   변경을 덮지도 않는다.
+- **`patch`는 중첩 객체까지 필드 단위로 병합한다** — 이것이 라이브의
+  `400 Invalid start time.`을 만든 지점이다: 저장된 `start: { date }` 위에
+  `start: { dateTime }`을 보내면 병합 결과가 `{ date, dateTime }` **둘 다 있는
+  상태**가 되어 거절된다(종일 ↔ 시각을 오갈 때마다, 양방향으로). 그래서 PATCH는
+  쓰지 않는 쪽을 **`null`로 지운다**(`whenBody(d, true)` — 구글의 patch에서 `null`은
+  "이 필드를 비워라"다). insert(POST)에는 지울 것이 없으므로 넣지 않는다.
 - `400`은 **우리 요청이 틀렸다**는 뜻이라 "잠시 후 다시"가 거짓말이 된다: 구글이 준
   `error.message`를 화면 문장에 담고(`구글이 이 요청을 거절했어요: …`) 콘솔에는 보낸
   본문까지 남긴다(`[geurio] 구글이 요청을 거절했어요:`). 다음 제보를 진단할 단서다.

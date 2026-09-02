@@ -376,6 +376,31 @@ describe('구글 전용 필드(PR6 후속 — 디자인 원본 nIsGoogle)', () =
     expect(patchFrom(g, {}).body).toEqual({});
   });
 
+  // 라이브 제보의 그 400 — 종일 일정을 상세에서 **시각 일정으로** 바꾸면 거절됐다.
+  // 구글의 patch는 중첩 객체까지 필드 단위로 병합하므로, 저장된 `start: { date }` 위에
+  // `start: { dateTime }`을 얹으면 병합 결과에 **둘이 함께 남아** 유효하지 않다.
+  // 그래서 PATCH는 쓰지 않는 쪽을 `null`로 지운다(insert에는 지울 것이 없다).
+  it('종일 ↔ 시각을 오갈 때 쓰지 않는 쪽을 null로 지운다', () => {
+    const allDayEvent = parseEvents({ items: [{ id: 'e1', summary: '종일 회의', start: { date: '2026-09-27' }, end: { date: '2026-09-28' } }] }, { ...CAL, writable: true })[0]!;
+    // 종일 → 시각: `date`를 지운다(지우지 않으면 `Invalid start time.`)
+    const toTimed = patchFrom(allDayEvent, { allDay: false, startTime: '09:00', endTime: '12:00' });
+    expect(toTimed.body.start).toMatchObject({ dateTime: '2026-09-27T09:00:00', date: null });
+    expect(toTimed.body.end).toMatchObject({ dateTime: '2026-09-27T12:00:00', date: null });
+
+    const timedEvent = parseEvents(
+      { items: [{ id: 'e2', summary: '회의', start: { dateTime: '2026-09-27T09:00:00+09:00' }, end: { dateTime: '2026-09-27T10:00:00+09:00' } }] },
+      { ...CAL, writable: true },
+    )[0]!;
+    // 시각 → 종일: `dateTime`을 지운다(반대 방향도 같은 함정이다)
+    const toAllDay = patchFrom(timedEvent, { allDay: true });
+    expect(toAllDay.body.start).toMatchObject({ date: '2026-09-27', dateTime: null });
+    expect(toAllDay.body.end).toMatchObject({ date: '2026-09-28', dateTime: null });
+
+    // 만들 때(POST)는 지울 것이 없다 — `null`을 넣지 않는다.
+    const created = draftToBody({ title: 'x', allDay: true, startDate: '2026-09-27', endDate: '2026-09-27' });
+    expect(created.start).toEqual({ date: '2026-09-27' });
+  });
+
   // 400은 **우리 요청이 틀렸다**는 뜻이라 "잠시 후 다시"가 거짓말이 된다(제보).
   it('구글이 준 사유를 문장에 담는다', () => {
     expect(googleWriteError({ status: 400, detail: 'Invalid start time.' })).toContain('Invalid start time.');

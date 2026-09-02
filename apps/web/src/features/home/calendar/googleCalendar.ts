@@ -610,14 +610,28 @@ export interface GoogleEventPatch {
 /**
  * 언제인가 — `start`/`end`는 **짝으로만** 보낸다(구글은 종류가 섞이면 거절한다:
  * 하나는 `date`, 하나는 `dateTime`).
+ *
+ * @param forPatch PATCH에 실을 것인가 — 그렇다면 **쓰지 않는 쪽을 `null`로 지운다.**
+ *
+ * 이 `null`이 제보의 400을 만든 지점이다: 구글의 `patch`는 중첩 객체까지 **필드
+ * 단위로 병합**하므로, 저장된 `start: { date }` 위에 `start: { dateTime }`을 보내면
+ * 병합 결과가 `{ date, dateTime }` **둘 다 있는 상태**가 되어 거절된다
+ * (`Invalid start time.`). 종일 ↔ 시각을 오갈 때마다 그렇다 — 그래서 보내지 않는
+ * 쪽을 명시적으로 지운다(구글의 patch에서 `null`은 "이 필드를 비워라"다).
+ * insert(POST)에는 지울 것이 없으므로 넣지 않는다.
  */
-export function whenBody(d: Pick<GoogleEventDraft, 'allDay' | 'startDate' | 'endDate' | 'startTime' | 'endTime'>): Record<string, unknown> {
+export function whenBody(
+  d: Pick<GoogleEventDraft, 'allDay' | 'startDate' | 'endDate' | 'startTime' | 'endTime'>,
+  forPatch = false,
+): Record<string, unknown> {
   const tz = localTimeZone();
+  // 종일이면 `dateTime`을, 시각이면 `date`를 지운다(PATCH일 때만).
+  const clear = forPatch ? (d.allDay ? { dateTime: null } : { date: null }) : {};
   return d.allDay
-    ? { start: { date: d.startDate }, end: { date: nextDay(d.endDate) } }
+    ? { start: { date: d.startDate, ...clear }, end: { date: nextDay(d.endDate), ...clear } }
     : {
-        start: { dateTime: `${d.startDate}T${d.startTime || '00:00'}:00`, timeZone: tz },
-        end: { dateTime: `${d.endDate}T${d.endTime || d.startTime || '00:00'}:00`, timeZone: tz },
+        start: { dateTime: `${d.startDate}T${d.startTime || '00:00'}:00`, timeZone: tz, ...clear },
+        end: { dateTime: `${d.endDate}T${d.endTime || d.startTime || '00:00'}:00`, timeZone: tz, ...clear },
       };
 }
 
