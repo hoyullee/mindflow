@@ -393,6 +393,37 @@ function DayCell({
         </span>
         {/* 공휴일 이름 — 디자인 원본은 숫자 옆에 적는다. 쉬는 날이면 붉게, 절기·
             기념일이면 옅게: 색은 "쉬는가"를, 이름은 "무슨 날인가"를 말한다. */}
+        {/* 근무 위치(구글) — 칸 **우측 상단**에 작게(제보 ⑥). 일정이 아니므로 누를
+            것도 없고, 칩 줄을 차지하지도 않는다. */}
+        {cell.work ? (
+          <span
+            data-work-loc
+            title={`근무 위치 · ${cell.work}`}
+            style={{
+              marginLeft: 'auto',
+              flexShrink: 0,
+              display: 'inline-flex',
+              alignItems: 'center',
+              gap: 3,
+              maxWidth: '58%',
+              height: compact ? 14 : 16,
+              padding: compact ? '0 4px' : '0 6px',
+              borderRadius: 999,
+              background: 'var(--mf-panel2)',
+              color: 'var(--mf-faint)',
+              fontSize: compact ? 8.5 : 9.5,
+              fontWeight: 700,
+              whiteSpace: 'nowrap',
+              overflow: 'hidden',
+            }}
+          >
+            <svg width={compact ? 8 : 9} height={compact ? 8 : 9} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true" style={{ flexShrink: 0 }}>
+              <path d="M4 11 12 4l8 7" />
+              <path d="M6.5 10.5V20h11v-9.5" />
+            </svg>
+            <span style={{ minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis' }}>{cell.work}</span>
+          </span>
+        ) : null}
         {cell.holiday ? (
           <span
             data-holiday-name

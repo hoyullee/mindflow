@@ -387,3 +387,14 @@ describe('한 칸 안의 순서 — 종일이 언제나 위(요청)', () => {
     expect(cell.moreN).toBe(1);
   });
 });
+
+
+describe('근무 위치 칸 표시(제보 ⑥)', () => {
+  it('그 날 칸에 한 마디로 실린다 — 일정 칩이 아니다', () => {
+    const cells = monthCells(2026, 8, [], '2026-08-10', 2, 6, {}, { '2026-08-11': '재택' });
+    const on = cells.find((c) => c.iso === '2026-08-11')!;
+    expect(on.work).toBe('재택');
+    expect(on.entries).toEqual([]);
+    expect(cells.find((c) => c.iso === '2026-08-12')!.work).toBeUndefined();
+  });
+});

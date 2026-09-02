@@ -461,6 +461,22 @@ function AnchoredList({ anchor, attrs, children }: { anchor: HTMLElement | null;
  */
 const ROWS_MAX = 3;
 
+/** 이름 조회를 이만큼까지 기다린다 — 넘으면 아는 만큼 드러낸다(영원한 로딩 금지). */
+const NAME_WAIT_MS = 4000;
+
+/** 이름을 채우는 중의 한 자리 — 실제 행과 같은 높이·모양(자리가 튀지 않게). */
+function GuestSkeleton() {
+  return (
+    <span data-gf-guest-loading style={{ display: 'flex', alignItems: 'center', gap: 9, padding: '7px 9px', borderRadius: 11, background: 'var(--mf-card)', border: '1px solid var(--mf-border-soft)', minWidth: 0 }}>
+      <span className="mf-skel" style={{ width: 24, height: 24, flex: '0 0 auto', borderRadius: 999 }} />
+      <span style={{ display: 'flex', flexDirection: 'column', gap: 4, minWidth: 0, flex: 1 }}>
+        <span className="mf-skel" style={{ width: '42%', height: 9, borderRadius: 5 }} />
+        <span className="mf-skel" style={{ width: '64%', height: 8, borderRadius: 5 }} />
+      </span>
+    </span>
+  );
+}
+
 /**
  * 초대된 한 사람 — 아바타 + **이름·이메일** + 제외(요청). 이름을 모르는 주소(직접
  * 적은 것)는 주소 한 줄이다 — 같은 값을 두 줄로 되풀이하지 않는다. 후보 목록과 같은
@@ -498,6 +514,13 @@ function Attendees({ list, onChange, search, seedNames }: { list: string[]; onCh
   const [settled, setSettled] = useState('');
   // 고른 후보의 이름 — 초대된 행이 이메일 대신 이름을 보여 준다(직접 적은 주소는 주소 그대로).
   const [names, setNames] = useState<Record<string, string>>({});
+  /**
+   * 아직 이름을 물어보는 중인 주소들(제보 ①) — 예전에는 이름을 모르는 사람을 **이메일
+   * 앞부분으로 먼저 그리고** 답이 오는 대로 한 명씩 이름으로 바뀌어, 팝업을 열면 글자가
+   * 차례로 갈리는 것이 보였다. 이제 **다 채워질 때까지 자리만 보여 주고**(스켈레톤)
+   * 한 번에 드러낸다 — 이름은 이 목록의 정체라 반쯤 맞는 이름을 먼저 보여 줄 이유가 없다.
+   */
+  const [resolving, setResolving] = useState<string[]>([]);
   // 구글이 알려 준 이름이 **먼저**다(제보: 이름 대신 이메일 앞부분이 나왔다) —
   // 검색으로 찾은 이름은 그것이 없는 사람만 메운다.
   // 장부(`nameBook`)가 맨 뒤 — 이 일정이 준 이름·직접 고른 이름이 먼저고, 없으면
@@ -510,6 +533,9 @@ function Attendees({ list, onChange, search, seedNames }: { list: string[]; onCh
   // 접는 이유는 자리다 — 초대가 늘수록 팝업이 그만큼 길어져 아래 필드가 밀린다.
   const shown = list.length > ROWS_MAX ? list.slice(0, ROWS_MAX - 1) : list;
   const rest = list.slice(shown.length);
+  // 목록에 있는 사람 중 아직 물어보는 중인 사람이 있으면 **전부** 자리표시자다 —
+  // 반은 이름, 반은 주소인 목록이 차례로 갈리는 것이 제보의 그 모습이었다.
+  const namesLoading = list.length > 0 && resolving.some((e) => list.includes(e));
   // 이름 검색은 **입력마다 왕복**이므로 220ms 디바운스 — 사람이 치는 속도로는
   // 한 낱말에 한 번이면 충분하다(홈 검색과 같은 판단).
   const seqRef = useRef(0);
@@ -564,6 +590,10 @@ function Attendees({ list, onChange, search, seedNames }: { list: string[]; onCh
     const missing = (listKey ? listKey.split(',') : []).filter((e) => !seedKey.includes(e) && !knownName(e) && !askedRef.current.has(e));
     if (missing.length === 0) return;
     for (const e of missing) askedRef.current.add(e);
+    setResolving((r) => [...new Set([...r, ...missing])]);
+    // 조회가 늦거나 응답이 오지 않아도 **영원히 로딩이지 않게** — 이 시간이 지나면
+    // 아는 만큼 드러낸다(모르는 사람은 예전처럼 주소로 남는다).
+    const bail = setTimeout(() => mountedRef.current && setResolving([]), NAME_WAIT_MS);
     void (async () => {
       for (const email of missing) {
         const found = await search(email).catch(() => null);
@@ -575,8 +605,11 @@ function Attendees({ list, onChange, search, seedNames }: { list: string[]; onCh
           setNames((m) => ({ ...m, [email]: hit.name }));
           rememberName(email, hit.name);
         }
+        // 답이 왔으면(이름을 얻었든 못 얻었든) 그 사람은 더 기다릴 것이 없다.
+        setResolving((r) => r.filter((e) => e !== email));
       }
     })();
+    return () => clearTimeout(bail);
   }, [listKey, search, seedKey]);
 
   // 접힌 목록은 바깥을 누르거나 Escape로 닫는다(팝오버의 관례 — 모달 위의 층이라
@@ -692,9 +725,12 @@ function Attendees({ list, onChange, search, seedNames }: { list: string[]; onCh
           원본의 카드 행(아바타 + 이름·이메일 + 제외)이고, 셋까지는 그대로 보이다
           넷부터 마지막 칸이 `외 N명`으로 접힌다. 접힌 사람은 그 줄을 눌러 뜨는
           툴팁에서 보고 지운다. */}
-      {shown.map((email, i) => (
-        <GuestRow key={email} email={email} name={label(email)} i={i} onRemove={() => onChange(list.filter((e) => e !== email))} />
-      ))}
+      {namesLoading
+        ? // 이름을 채우는 중 — 같은 크기의 자리만 둔다(글자가 하나씩 갈리는 것보다 낫다).
+          shown.map((email) => <GuestSkeleton key={email} />)
+        : shown.map((email, i) => (
+            <GuestRow key={email} email={email} name={label(email)} i={i} onRemove={() => onChange(list.filter((e) => e !== email))} />
+          ))}
       {rest.length > 0 && (
         <>
           <button

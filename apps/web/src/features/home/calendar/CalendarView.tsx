@@ -18,7 +18,7 @@ import { EventDetail, geurioCalendarChips } from './EventDetail';
 import { GoogleDetailHost, patchFrom } from './GoogleEventDetail';
 import { GoogleConnectButton } from './GoogleConnectButton';
 import { useCalendarEvents } from './useCalendarEvents';
-import { eventEntries, googleEntries, holidayMap } from './entries';
+import { eventEntries, googleEntries, holidayMap, workMap } from './entries';
 import { useGoogleCalendar } from './useGoogleCalendar';
 
 /**
@@ -74,6 +74,8 @@ export function CalendarView({
   }, [cardEntries, eventsApi.events, google.events, state.calY, state.calM]);
   // 공휴일은 칩이 아니라 **날짜 색**이다(PR1부터 비워 둔 `MonthCell.holiday` 자리).
   const holidays = useMemo(() => holidayMap(google.events), [google.events]);
+  // 근무 위치(재택·사무실)는 일정 목록이 아니라 칸 우측 상단에 그린다(제보 ⑥).
+  const works = useMemo(() => workMap(google.events), [google.events]);
   const stats = useMemo(() => calendarStats(entries, today), [entries, today]);
   // 새 일정의 목적지 — **쓸 수 있는** 구글 캘린더만(공휴일·보기 전용은 뺀다).
   const googleTargets = useMemo(() => google.writableCalendars.map((c) => ({ id: c.id, name: c.summary, ...(c.color ? { color: c.color } : {}) })), [google.writableCalendars]);
@@ -84,7 +86,7 @@ export function CalendarView({
   );
   // 칸에 몇 개를 보여 줄지는 **격자가 자기 칸 높이를 재서** 정한다(제보: 여유가
   // 남는데도 `+N개 더`가 떴다). 모델은 접지 않고 그 날의 항목을 전부 싣는다.
-  const cells = useMemo(() => monthCells(state.calY, state.calM, entries, today, MONTH_CELL_ALL, 6, holidays), [state.calY, state.calM, entries, today, holidays]);
+  const cells = useMemo(() => monthCells(state.calY, state.calM, entries, today, MONTH_CELL_ALL, 6, holidays, works), [state.calY, state.calM, entries, today, holidays, works]);
   const selectedDay = state.calDay ?? today;
   // 칩이 얹히는 면 — hue는 칸반 팔레트, 밝기는 지금 홈 테마의 면에서(다크 대응).
   const surface = useMemo(() => homeChipSurface(state.theme), [state.theme]);
@@ -212,7 +214,7 @@ export function CalendarView({
             새 일정
           </button>
           {/* 구글 캘린더 연동(요청) — 아직 켜지 않았을 때만 뜬다. */}
-          <GoogleConnectButton api={google} />
+          <GoogleConnectButton api={google} onOpen={controller.openGoogleCalendarSetup} />
           {!isMobile && (
             <>
             {/* 마감 목록은 날짜별 보기와 **별개**다(원본 `dlOpen`) — 달력 위에 겹치는

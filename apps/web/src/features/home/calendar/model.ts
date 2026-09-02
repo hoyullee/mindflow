@@ -127,6 +127,11 @@ export interface MonthCell {
    * 통째로 분홍이 된다(제보).
    */
   dayOff?: boolean;
+  /**
+   * 근무 위치(구글) — 재택·사무실 한 마디. 일정이 아니라 그 날의 상태라 칩이 아니고
+   * 칸 **우측 상단**에 작게 그린다(제보: 근무 위치까지 일정으로 잡혔다).
+   */
+  work?: string;
   /** 그 날 하루짜리 항목(기간은 제외 — 바로 그린다). */
   entries: CalendarEntry[];
   bars: MonthBar[];
@@ -138,7 +143,7 @@ export interface MonthCell {
  * 달력 격자. 월마다 표 높이가 달라지지 않게 **항상 6주(42칸)**로 채운다(디자인 원본).
  * `perCell`은 한 칸에 보이는 칩 수 — 넘치면 `moreN`으로 접는다.
  */
-export function monthCells(y: number, m: number, entries: readonly CalendarEntry[], todayIso: string, perCell = 2, weeks = 6, holidays: Record<string, HolidayInfo> = {}): MonthCell[] {
+export function monthCells(y: number, m: number, entries: readonly CalendarEntry[], todayIso: string, perCell = 2, weeks = 6, holidays: Record<string, HolidayInfo> = {}, works: Record<string, string> = {}): MonthCell[] {
   const first = new Date(y, m - 1, 1);
   const firstDow = first.getDay();
   const days = new Date(y, m, 0).getDate();
@@ -175,6 +180,7 @@ export function monthCells(y: number, m: number, entries: readonly CalendarEntry
       // 규칙으로 색이 정해져야 하고(쉬는 날은 붉게), 이름을 함께 두면 왜 붉은지도
       // 읽힌다. 이웃 달임은 흐린 숫자·가라앉은 면이 이미 말한다.
       ...(holidays[iso] ? { holiday: holidays[iso].name, ...(holidays[iso].dayOff ? { dayOff: true } : {}) } : {}),
+      ...(works[iso] ? { work: works[iso] } : {}),
       entries: list.slice(0, perCell),
       bars,
       moreN: Math.max(0, list.length - perCell),

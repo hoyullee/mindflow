@@ -1,5 +1,6 @@
 import { describe, expect, it, beforeEach, vi } from 'vitest';
-import { GOOGLE_CALENDAR_SCOPE, GOOGLE_EVENT_COLORS, myRsvpOf, attendeesBody, eventWindowIso, RECURRENCE_OFF, buildRecurrence, draftToBody, eventColorOf, fetchEventColors, googleWriteError, managedFieldsDiffer, updateGoogleEvent, recurrenceSummary, isDayOffHoliday, isHolidayCalendarId, onTokenChange, scopeCovers, parseCalendarList, parseEvents, readStoredToken, splitGoogleDateTime, storeToken, type GoogleCalendarMeta } from './googleCalendar';
+import {
+  workLocationLabel, GOOGLE_CALENDAR_SCOPE, GOOGLE_EVENT_COLORS, myRsvpOf, attendeesBody, eventWindowIso, RECURRENCE_OFF, buildRecurrence, draftToBody, eventColorOf, fetchEventColors, googleWriteError, managedFieldsDiffer, updateGoogleEvent, recurrenceSummary, isDayOffHoliday, isHolidayCalendarId, onTokenChange, scopeCovers, parseCalendarList, parseEvents, readStoredToken, splitGoogleDateTime, storeToken, type GoogleCalendarMeta } from './googleCalendar';
 import { googleEntries, holidayMap } from './entries';
 import { draftFrom, patchFrom } from './GoogleEventDetail';
 import { submitNewEvent } from './newEventSubmit';
@@ -128,7 +129,10 @@ describe('구글 캘린더 — 화면 항목', () => {
 });
 
 describe('구글 캘린더 — 토큰 보관', () => {
-  beforeEach(() => sessionStorage.clear());
+  beforeEach(() => {
+    sessionStorage.clear();
+    localStorage.clear();
+  });
 
   it('만료된 토큰은 없는 것으로 본다(요청 도중 죽지 않게 60초 여유)', () => {
     const now = Date.now();
@@ -173,14 +177,23 @@ describe('구글 캘린더 — 토큰 보관', () => {
   });
 
   it('손상된 값은 조용히 버린다', () => {
-    sessionStorage.setItem('mf_gcal_token', '{oops');
+    localStorage.setItem('mf_gcal_token', '{oops');
     expect(readStoredToken()).toBeNull();
   });
 
-  it('탭 저장소를 쓴다 — 창을 닫으면 사라진다(localStorage에 남기지 않는다)', () => {
+  it('이 **기기**에 남는다 — 새 탭·재시작에도 연동이 풀리지 않게(제보 ⑩)', () => {
     storeToken({ accessToken: 't', expiresAt: Date.now() + 600_000, scope: GOOGLE_CALENDAR_SCOPE });
-    expect(sessionStorage.getItem('mf_gcal_token')).toBeTruthy();
-    expect(localStorage.getItem('mf_gcal_token')).toBeNull();
+    expect(localStorage.getItem('mf_gcal_token')).toBeTruthy();
+    // 탭 저장소에는 남기지 않는다 — 두 곳에 있으면 어느 것이 참인지 갈린다.
+    expect(sessionStorage.getItem('mf_gcal_token')).toBeNull();
+  });
+
+  it('옛 탭 저장소에 남은 토큰은 기기 저장소로 옮겨 이어 쓴다 — 배포 순간 끊기지 않게', () => {
+    const t = { accessToken: 'old', expiresAt: Date.now() + 600_000, scope: GOOGLE_CALENDAR_SCOPE };
+    sessionStorage.setItem('mf_gcal_token', JSON.stringify(t));
+    expect(readStoredToken()?.accessToken).toBe('old');
+    expect(localStorage.getItem('mf_gcal_token')).toContain('old');
+    expect(sessionStorage.getItem('mf_gcal_token')).toBeNull();
   });
 });
 
@@ -611,5 +624,17 @@ describe('참석자 이름 — 구글이 준 표시 이름을 버리지 않는�
     );
     expect(ev!.names).toEqual({ 'boss@example.com': '김팀장' });
     expect(ev!.organizer?.name).toBe('김팀장');
+  });
+});
+
+
+describe('근무 위치(제보 ⑥)', () => {
+  it('갈래마다 사람이 읽을 한 마디 — 라벨이 없으면 갈래 이름만(지어내지 않는다)', () => {
+    expect(workLocationLabel({ type: 'homeOffice', homeOffice: {} })).toBe('재택');
+    expect(workLocationLabel({ type: 'officeLocation', officeLocation: { label: '판교 4층' } })).toBe('판교 4층');
+    expect(workLocationLabel({ type: 'officeLocation', officeLocation: { buildingId: 'HQ' } })).toBe('HQ');
+    expect(workLocationLabel({ type: 'officeLocation', officeLocation: {} })).toBe('사무실');
+    expect(workLocationLabel({ type: 'customLocation', customLocation: { label: '카페' } })).toBe('카페');
+    expect(workLocationLabel(undefined)).toBe('근무 위치');
   });
 });

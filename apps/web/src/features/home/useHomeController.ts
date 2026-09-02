@@ -1010,6 +1010,15 @@ export function useHomeController() {
   /** 설정 모달의 한 겹 안 화면 — '프로필 설정'·'계정 설정' 열기와 뒤로(공용).
    * 뒤로 가기가 하나인 이유: 두 화면 모두 첫 화면에서만 들어온다. */
   const openAccountDetail = () => patch({ settingsView: 'account', signinError: '' });
+  /**
+   * 구글 캘린더 연동을 켜는 자리로 곧바로(제보 ⑤) — 일정 화면·위젯의 연동 버튼이
+   * 부른다. 구글 동의 창을 예고 없이 띄우는 대신 **설정 › 계정 설정 › 연동**을 연다:
+   * 거기서 켜고, 어떤 캘린더를 보여 줄지도 함께 고른다.
+   */
+  const openGoogleCalendarSetup = () => {
+    patch({ settingsOpen: false, accountSettingsOpen: true, settingsView: 'account', signinError: '' });
+    refreshSigninMethods();
+  };
   const openProfileDetail = () => patch({ settingsView: 'profile', avatarError: null });
   const closeSettingsDetail = () => patch({ settingsView: 'main' });
   const askDeleteAccount = () => patch({ accountSettingsOpen: false, confirmDeleteAccount: true, confirmDeleteAccountFinal: false, deleteAccountText: '', deleteAccountError: '' });
@@ -2797,6 +2806,7 @@ export function useHomeController() {
     setGoogleCalendars,
     closeAccountSettings,
     openAccountDetail,
+    openGoogleCalendarSetup,
     openProfileDetail,
     closeSettingsDetail,
     askDeleteAccount,
