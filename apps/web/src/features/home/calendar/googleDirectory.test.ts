@@ -37,14 +37,36 @@ describe('참석자 이름 검색', () => {
     const r = await searchPeople('t', '여은', { directory: true, otherContacts: true });
     // 이메일은 소문자로 정규화하고, 디렉터리 쪽 이름을 먼저 잡는다
     expect(r).toEqual([
-      { email: 'eunjin@example.com', name: '여은진' },
-      { email: 'chulsoo@example.com', name: '김철수' },
+      { email: 'eunjin@example.com', name: '여은진', emails: ['eunjin@example.com'] },
+      { email: 'chulsoo@example.com', name: '김철수', emails: ['chulsoo@example.com'] },
     ]);
+  });
+
+  it('별칭 주소로 물어도 그 사람의 **모든 주소**를 돌려준다 — 기본 주소가 앞(라이브 제보)', async () => {
+    // 라이브 로그 그대로: `johan.kim@mail.…`로 물었는데 응답은 기본 주소가 첫 번째다.
+    stubFetch({
+      'people:searchDirectoryPeople': {
+        body: {
+          people: [
+            {
+              names: [{ displayName: '김요한 (Johan Kim)' }],
+              emailAddresses: [
+                { metadata: { primary: true }, value: 'johan.kim@example.com' },
+                { value: 'johan.kim@mail.example.com' },
+                { value: 'Johan.Kim@newsletter.example.com' },
+              ],
+            },
+          ],
+        },
+      },
+    });
+    const r = await searchPeople('t', 'johan.kim@mail.example.com', { directory: true, otherContacts: false });
+    expect(r).toEqual([{ email: 'johan.kim@example.com', name: '김요한 (Johan Kim)', emails: ['johan.kim@example.com', 'johan.kim@mail.example.com', 'johan.kim@newsletter.example.com'] }]);
   });
 
   it('이름이 없으면 이메일을 이름 자리에 쓴다', async () => {
     stubFetch({ 'people:searchDirectoryPeople': { body: { people: [{ emailAddresses: [{ value: 'x@y.com' }] }] } } });
-    expect(await searchPeople('t', 'x', { directory: true, otherContacts: false })).toEqual([{ email: 'x@y.com', name: 'x@y.com' }]);
+    expect(await searchPeople('t', 'x', { directory: true, otherContacts: false })).toEqual([{ email: 'x@y.com', name: 'x@y.com', emails: ['x@y.com'] }]);
   });
 
   it('둘 다 못 물어보면 null — 그 기능만 접는다', async () => {
