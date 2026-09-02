@@ -36,13 +36,20 @@ describe('일정 칩 면 색(tint)', () => {
 });
 
 describe('표식 — 우리 일정은 점, 구글은 둥근 막대(요청)', () => {
-  it('구글 일정은 구글 파랑 막대다 — 캘린더 색이 아니라 출처를 말한다', () => {
+  // 요청 ⑤ — 구글에서 그 일정에 지정한 색을 그대로 쓴다. 예전에는 출처를 색으로
+  // 말하려고 구글 파랑을 강제했는데, 그러면 사용자가 고른 색이 화면에서 사라진다.
+  // **출처는 색이 아니라 막대 모양이 말한다**(우리 일정은 점).
+  it('구글 일정은 그 일정의 색을 쓰고, 출처는 막대 모양이 말한다', () => {
     const chip = entryChip(E({ google: GOOGLE, colColor: '#00a000' }), SURFACE);
     expect(chip.mark).toBe('bar');
-    expect(chip.dot).toBe('rgb(74, 120, 208)');
+    expect(chip.dot).toBe('#00a000');
     const st = markStyle(chip);
     expect(st.width).toBe(3);
     expect(Number(st.height)).toBeGreaterThan(Number(st.width));
+  });
+
+  it('색이 없는 구글 일정은 구글 파랑으로 물러선다', () => {
+    expect(entryChip(E({ google: GOOGLE }), SURFACE).dot).toBe('#4a78d0');
   });
 
   it('우리 일정은 그대로 점이다 — 열 색을 그대로 쓴다', () => {

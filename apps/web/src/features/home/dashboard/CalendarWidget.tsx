@@ -18,7 +18,7 @@ import type { MouseEvent as ReactMouseEvent } from 'react';
 import type { CalendarEntry, HolidayInfo } from '../calendar/entries';
 import { MiniCalendar } from '../calendar/MiniCalendar';
 import type { CalWidgetMode } from './model';
-import { entryChip, markStyle, type ChipSurface } from '../calendar/chips';
+import { chipTimeLabel, entryChip, isAllDayEntry, markStyle, type ChipSurface } from '../calendar/chips';
 import {
   DOW,
   addDays,
@@ -527,7 +527,11 @@ function Row({ entry, todayIso, surface, showTime, onPick }: { entry: CalendarEn
  */
 function Chip({ entry, todayIso, surface, compact, small, onPick }: { entry: CalendarEntry; todayIso: string; surface: ChipSurface; compact: boolean; small?: boolean; onPick: (e: CalendarEntry) => void }) {
   const chip = entryChip(entry, surface);
-  const time = !compact && entry.startTime ? `${entry.startTime} ` : '';
+  // 일정 화면 칩과 **같은 규칙**(요청 ①②): 종일은 면을 채우고, 시간 일정은 표식 +
+  // 시작 시각 + 제목. 칸이 좁으면(`compact`) 시각을 접는다 — 자리가 모자라 제목이
+  // 통째로 잘리는 편이 더 나쁘다.
+  const allDay = isAllDayEntry(entry);
+  const time = !compact && entry.startTime ? `${chipTimeLabel(entry.startTime)} ` : '';
   return (
     <button
       type="button"
@@ -550,8 +554,7 @@ function Chip({ entry, todayIso, surface, compact, small, onPick }: { entry: Cal
         padding: small ? '1px 5px' : '3px 6px',
         borderRadius: 6,
         border: 0,
-        // 하루짜리는 점 + 글자로만 — 일정 화면의 칩과 같은 규칙(배경은 기간 바만).
-        background: 'transparent',
+        background: allDay ? chip.bg : 'transparent',
         color: chip.fg,
         font: 'inherit',
         minWidth: 0,
@@ -560,7 +563,7 @@ function Chip({ entry, todayIso, surface, compact, small, onPick }: { entry: Cal
         opacity: entry.due < todayIso ? 0.6 : 1,
       }}
     >
-      <span style={markStyle(chip)} />
+      {!allDay && <span style={markStyle(chip)} />}
       <span style={{ flex: '0 1 auto', minWidth: 0, fontSize: small ? 11.5 : 12, fontWeight: 700, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
         {time}
         {entry.title || '제목 없음'}

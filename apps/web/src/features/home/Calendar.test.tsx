@@ -196,8 +196,13 @@ async function openCalendar() {
   await waitFor(() => expect(document.querySelector('[data-calendar-view]')).toBeTruthy());
 }
 
-const chipTexts = (): string[] => [...document.querySelectorAll('[data-cal-chip]')].map((c) => c.textContent!.trim());
-const chipFor = (title: string): HTMLElement => [...document.querySelectorAll('[data-cal-chip]')].find((c) => c.textContent!.trim() === title) as HTMLElement;
+/**
+ * 칩의 **제목**만 읽는다 — 시간 일정은 제목 앞에 시작 시각이 붙으므로(요청 ②)
+ * 칩 전체 글자로 비교하면 `오전 9시회의`가 된다.
+ */
+const chipTitle = (c: Element): string => (c.querySelector('[data-cal-chip-title]') ?? c).textContent!.trim();
+const chipTexts = (): string[] => [...document.querySelectorAll('[data-cal-chip]')].map(chipTitle);
+const chipFor = (title: string): HTMLElement => [...document.querySelectorAll('[data-cal-chip]')].find((c) => chipTitle(c) === title) as HTMLElement;
 const barFor = (title: string): HTMLElement => [...document.querySelectorAll('[data-cal-bar]')].find((c) => c.textContent!.trim() === title) as HTMLElement;
 const detail = (): HTMLElement => document.querySelector('[role="dialog"][aria-label="일정 상세"]') as HTMLElement;
 
@@ -465,7 +470,12 @@ describe('일정 화면', () => {
       return el as HTMLElement;
     });
     expect(out.getAttribute('role')).toBe('button');
+    expect(out.style.background).toBe('var(--mf-cal-out)');
     fireEvent.click(out);
+    // 고른 뒤에는 **가라앉은 면이 아니다**(요청 ④ — 예전에는 이웃 달 칸의 면이
+    // 선택보다 우선해서 눌렀는지 알 수 없었다). 가라앉은 면 위에서는 선택 면
+    // 한 단계로는 옅어서, 이웃 달 칸의 선택은 **카드 면**까지 올라온다.
+    await waitFor(() => expect(out.style.background).toBe('var(--mf-card)'));
     // 사이드가 그 날을 보여 준다 — 이번 달이 아니어도 고를 수 있다.
     const iso = out.getAttribute('data-day-cell')!;
     const [, m, d] = /(\d{2})-(\d{2})$/.exec(iso)!.map(Number) as unknown as number[];
@@ -1321,11 +1331,23 @@ describe('일정 화면', () => {
     expect(document.querySelector('[data-day-list]')).toBeNull();
   });
 
-  it('하루짜리 칩은 배경 없는 점 + 글자다 — 색 알약은 기간 바만(제보)', async () => {
+  // 요청 ①② — 종일은 **채운 칩**(하루를 통째로 쓰는 일), 시간 일정은 **표식 + 시작
+  // 시각 + 제목**(구글 캘린더의 관례). 그래서 칸을 훑을 때 둘이 갈린다.
+  it('종일 항목은 채운 칩, 시간 일정은 시작 시각을 앞에 붙인 글자다', async () => {
+    localStorage.setItem(
+      'mf_events',
+      JSON.stringify([{ id: 'e1', title: '회의', startDate: todayISO(), endDate: todayISO(), allDay: false, startTime: '09:00', endTime: '10:00', source: 'geurio' }]),
+    );
     renderHome([META('d1', '스프린트 보드'), META('d2', '이슈 트리아지')], BODIES());
     await openCalendar();
     await waitFor(() => expect(chipTexts()).toContain('오늘 마감 카드'));
-    expect(chipFor('오늘 마감 카드').style.background).toBe('transparent');
+    // 칸반 마감은 종일이다 — 면을 채운다.
+    expect(chipFor('오늘 마감 카드').style.background).not.toBe('transparent');
+    // 시각이 있는 일정은 면 없이 시각을 앞에 세운다.
+    await waitFor(() => expect(chipTexts()).toContain('회의'));
+    const timed = chipFor('회의');
+    expect(timed.style.background).toBe('transparent');
+    expect(timed.querySelector('[data-cal-chip-time]')?.textContent).toBe('오전 9시');
     // 기간 바는 이어진 띠로 읽혀야 하므로 면을 유지한다
     const bar = document.querySelector('[data-cal-bar]') as HTMLElement;
     expect(bar.style.background).not.toBe('transparent');

@@ -11,7 +11,7 @@
 import { useState } from 'react';
 import { EventDetail, type CalendarChip } from './EventDetail';
 import { GoogleEventFields, type GoogleDirectoryApi, type GoogleFieldsChange, type GoogleFieldsValue } from './GoogleEventFields';
-import { attendeesBody, remindersBody, whenBody, RECURRENCE_OFF } from './googleCalendar';
+import { attendeesBody, myRsvpOf, remindersBody, whenBody, RECURRENCE_OFF } from './googleCalendar';
 import type { CalendarEvent, CalendarEventInput } from '../../../adapters/ports';
 import type { GoogleEvent, GoogleEventDraft, GoogleEventPatch, GoogleWriteField } from './googleCalendar';
 
@@ -47,6 +47,9 @@ export function draftFrom(g: GoogleEvent, patch: Partial<CalendarEventInput>, fi
     // 참석자·알림이 조용히 지워진다(위치·메모와 같은 이유).
     attendees: g.attendees ?? [],
     rooms: g.rooms ?? [],
+    // 참석자별 응답도 그대로 — 배열을 다시 쓸 때 이메일만 보내면 **모두의 참석
+    // 여부가 미응답으로 되돌아간다**(구글의 PATCH는 배열을 통째로 바꾼다).
+    ...(g.rsvps ? { rsvps: g.rsvps } : {}),
     visibility: g.visibility ?? 'default',
     transparency: g.transparency ?? 'opaque',
     ...(g.reminderMinutes !== undefined ? { reminderMinutes: g.reminderMinutes } : {}),
@@ -77,6 +80,8 @@ export function draftFrom(g: GoogleEvent, patch: Partial<CalendarEventInput>, fi
   if (fields) {
     if (fields.attendees) next.attendees = fields.attendees;
     if (fields.rooms) next.rooms = fields.rooms;
+    // 내 참석 여부 — **내 항목만** 바꿔 다시 싣는다(남의 응답은 위에서 실어 둔 그대로).
+    if (fields.rsvp && g.selfEmail) next.rsvps = { ...(g.rsvps ?? {}), [g.selfEmail]: fields.rsvp };
     if (fields.visibility) next.visibility = fields.visibility;
     if (fields.transparency) next.transparency = fields.transparency;
     // 알림은 `undefined`(캘린더 기본)도 뜻이 있으므로 **키가 왔는지**로 판단한다.
@@ -127,7 +132,8 @@ export function patchFrom(g: GoogleEvent, patch: Partial<CalendarEventInput>, fi
     body.description = merged.description ?? '';
     mark('description');
   }
-  if (fields?.attendees || fields?.rooms) {
+  // 참석자·회의실·내 응답은 **한 배열**이라 무엇이 바뀌었든 함께 간다.
+  if (fields?.attendees || fields?.rooms || fields?.rsvp) {
     body.attendees = attendeesBody(merged);
     mark('attendees');
   }
@@ -156,6 +162,8 @@ export function fieldsOf(g: GoogleEvent): GoogleFieldsValue {
     reminderMinutes: g.reminderMinutes,
     recurrence: RECURRENCE_OFF,
     addMeet: false,
+    // 초대받은 일정에만 값이 있다 — 없으면 참석 여부 구획을 그리지 않는다.
+    ...(myRsvpOf(g) !== undefined ? { rsvp: myRsvpOf(g) } : {}),
   };
 }
 
@@ -229,6 +237,7 @@ export function GoogleEventDetail({
                 value={{ ...fieldsOf(event), ...pendingFields }}
                 mode="edit"
                 recurring={!!event.recurringEventId}
+                {...(event.organizer && !event.organizer.self ? { organizer: event.organizer } : {})}
                 {...(directory ? { directory } : {})}
                 {...(event.meetLink ? { meetLink: event.meetLink } : {})}
                 onChange={(patch) => setPendingFields((p) => ({ ...p, ...patch }))}

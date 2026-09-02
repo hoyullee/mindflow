@@ -5,7 +5,7 @@ import type { CalendarEntry } from './entries';
 import type { MonthCell } from './model';
 import { DOW, daysBetween } from './model';
 import { beginPointerDrag } from '../../editor/components/KanbanBoard';
-import { entryChip, markStyle, type ChipSurface } from './chips';
+import { chipTimeLabel, entryChip, isAllDayEntry, markStyle, type ChipSurface } from './chips';
 
 /** 칩·바 한 줄이 차지하는 높이(칩 높이 + 줄 간격) — 칸 용량 계산의 단위. */
 const ROW_H = (compact: boolean): number => (compact ? 16 : 21) + 2;
@@ -140,7 +140,9 @@ export function MonthGrid({
         borderRadius: 16,
         border: '1px solid var(--mf-cal-grid)',
         background: 'var(--mf-card)',
-        boxShadow: 'var(--mf-card-shadow)',
+        // 요청 — 달력은 화면을 채우는 큰 판이라 카드 기본 그늘로는 바닥에서 떠 보이지
+        // 않는다. 같은 기하로 **알파만** 올린다(퍼짐을 키우면 아래 여백을 넘는다).
+        boxShadow: '0 16px 32px -26px rgba(46, 42, 38, .72)',
         overflow: 'hidden',
       }}
     >
@@ -274,14 +276,20 @@ function DayCell({
   const fits = cell.moreN === 0 && cell.entries.length <= room;
   const shownEntries = fits ? cell.entries : cell.entries.slice(0, Math.max(0, room - 1));
   const moreN = cell.entries.length - shownEntries.length + cell.moreN;
-  // 칸 색은 아주 옅은 파생 토큰이다(디자인 원본의 관계 그대로):
-  //   선택 < 오늘 < 오늘+선택. 예전에는 강조색 면(soft/mute)을 그대로 써서 칸이
-  //   통째로 진하게 칠해졌다(제보: 부자연스럽다).
-  // 이웃 달 칸은 숫자만 흐리게 + 배경 한 톤 진하게(디자인 원본).
-  const bg = !inMonth
-    ? 'var(--mf-cal-out)'
-    : selected
-      ? 'var(--mf-cal-sel)'
+  // 칸 색은 아주 옅은 파생 토큰이다 — 예전에는 강조색 면(soft/mute)을 그대로 써서
+  // 칸이 통째로 진하게 칠해졌다(제보: 부자연스럽다).
+  // 이웃 달 칸은 숫자만 흐리게 + 배경 한 톤 진하게(디자인 원본). 그 칸도 **고를 수
+  // 있는데** 예전에는 그 가라앉은 면이 선택보다 우선해서 눌렀는지 알 수 없었다
+  // (제보 ④). 이제 **선택이 이긴다**: 규칙은 "선택한 칸은 제 면에서 한 단계
+  // 밝아진다"이고, 이번 달 칸은 카드보다 살짝 가라앉은 선택 면, 이웃 달 칸은
+  // **카드 면**까지 올라온다(가라앉은 면 위에서 한 단계 올려도 옅어서 구분이
+  // 안 됐다 — 실브라우저로 확인). 이웃 달임은 흐린 숫자가 여전히 말한다.
+  const bg = selected
+    ? !inMonth
+      ? 'var(--mf-card)'
+      : 'var(--mf-cal-sel)'
+    : !inMonth
+      ? 'var(--mf-cal-out)'
       : // **오늘 칸에는 배경을 주지 않는다**(요청) — 숫자가 이미 채운 원으로 표시되므로
         // 배경까지 바꾸면 "고른 칸"과 혼동된다.
         // 주말은 디자인 원본대로 두 색으로 갈린다 — 일요일·공휴일은 파스텔 분홍
@@ -455,6 +463,9 @@ function DayCell({
 
       {shownEntries.map((e) => {
         const chip = entryChip(e, surface);
+        // 요청 ①② — 종일은 **채운 칩**(기간 바와 같은 꼴이라 "하루를 통째로"가 한눈에
+        // 읽힌다), 시간 일정은 **표식 + 시작 시각 + 제목**(구글 캘린더의 관례).
+        const allDay = isAllDayEntry(e);
         return (
           <button
             key={`${e.docId}-${e.cardId}`}
@@ -482,10 +493,8 @@ function DayCell({
               padding: '0 5px',
               border: 0,
               borderRadius: 6,
-              // 하루짜리는 **점 + 글자**로만(요청: 배경 없는 쪽이 깔끔하다 — 구글
-              // 캘린더의 관례이기도 하다: 시각/단일 일정은 점+글자, 종일·기간은 채운 바).
-              // 색 알약(배경)은 기간 바만 쓴다 — 바는 이어진 띠로 읽혀야 해서 면이 필요하다.
-              background: 'transparent',
+              // 종일은 면을 채우고(요청 ①), 시간 일정은 배경 없이 표식·시각·제목만.
+              background: allDay ? chip.bg : 'transparent',
               color: chip.fg,
               font: 'inherit',
               fontSize: compact ? 10 : 11.5,
@@ -497,8 +506,17 @@ function DayCell({
               touchAction: 'none',
             }}
           >
-            <span style={markStyle(chip)} />
-            <span style={{ minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{e.title}</span>
+            {/* 채운 칩에는 표식을 두지 않는다 — 면이 이미 그 색을 말하므로 점이 겹친다.
+                시간 일정만 표식(우리 점 / 구글 막대)을 앞에 세운다. */}
+            {!allDay && <span style={markStyle(chip)} />}
+            {!allDay && e.startTime ? (
+              <span data-cal-chip-time style={{ flex: '0 0 auto', fontWeight: 800, opacity: 0.75, letterSpacing: '-.02em' }}>
+                {chipTimeLabel(e.startTime)}
+              </span>
+            ) : null}
+            <span data-cal-chip-title style={{ minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+              {e.title}
+            </span>
           </button>
         );
       })}

@@ -26,7 +26,7 @@ import { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import type { CSSProperties, KeyboardEvent, ReactNode } from 'react';
 import { Field, Segments, SubText } from './fieldBits';
-import type { GoogleTransparency, GoogleVisibility, RecurrenceSpec } from './googleCalendar';
+import type { GoogleRsvp, GoogleTransparency, GoogleVisibility, RecurrenceSpec } from './googleCalendar';
 import { filterRooms, type DirectoryPerson, type MeetingRoom } from './googleDirectory';
 
 /** 이 묶음이 다루는 값 — 새 일정은 지역 상태, 상세는 구글에서 읽은 값이다. */
@@ -41,6 +41,11 @@ export interface GoogleFieldsValue {
   /** 반복은 **만들 때만** 고칠 수 있다(아래 `mode` 참고). */
   recurrence: RecurrenceSpec;
   addMeet: boolean;
+  /**
+   * **내 참석 여부**(요청) — 내가 참석자로 초대돼 있을 때만 값이 있다. 없으면
+   * (내가 만든 일정·초대받지 않은 일정) 그 구획을 그리지 않는다.
+   */
+  rsvp?: GoogleRsvp;
 }
 
 /** 선택 스코프로 열리는 것들 — `useGoogleCalendar`가 이 모양으로 내준다. */
@@ -62,12 +67,24 @@ export interface GoogleFieldsChange {
   reminderMinutes?: number | null | undefined;
   recurrence?: RecurrenceSpec;
   addMeet?: boolean;
+  rsvp?: GoogleRsvp;
 }
 
 const VIS_OPTS: { v: GoogleVisibility; label: string; note: string }[] = [
   { v: 'default', label: '기본', note: '캘린더 기본 공개 설정을 따라요' },
   { v: 'public', label: '공개', note: '캘린더를 공유한 모두가 상세를 볼 수 있어요' },
   { v: 'private', label: '비공개', note: '참석자에게만 제목이 보여요' },
+];
+
+/**
+ * 참석 여부(요청) — 구글 캘린더의 세 답(참석·미정·불참)이다. `needsAction`은
+ * **선택지가 아니라 상태**다: 아직 답하지 않았으면 아무 칸도 켜지지 않고 라벨 옆이
+ * 그렇게 말한다(없는 답을 골라 둔 척하지 않는다).
+ */
+const RSVP_OPTS: { v: GoogleRsvp; label: string }[] = [
+  { v: 'accepted', label: '참석' },
+  { v: 'tentative', label: '미정' },
+  { v: 'declined', label: '불참' },
 ];
 
 /** 디자인 원본의 `evRemindOpts` + 구글의 실제 상태인 **기본 알림**. */
@@ -90,6 +107,7 @@ export function GoogleEventFields({
   mode,
   meetLink,
   recurring,
+  organizer,
   directory,
 }: {
   value: GoogleFieldsValue;
@@ -97,6 +115,11 @@ export function GoogleEventFields({
   mode: 'create' | 'edit';
   meetLink?: string;
   recurring?: boolean;
+  /**
+   * **이 일정을 만든 사람**(요청) — 내가 만든 일정이면 넘기지 않는다(자기 이름을
+   * 한 줄 더 읽을 이유가 없다). 고칠 수 없는 값이라 초안이 아니라 프롭이다.
+   */
+  organizer?: { email: string; name?: string };
   /** 선택 스코프로 열리는 것들 — 없으면 이름 검색·회의실이 빠진다. */
   directory?: GoogleDirectoryApi;
 }) {
@@ -113,6 +136,38 @@ export function GoogleEventFields({
 
   return (
     <div data-google-fields style={{ display: 'flex', flexDirection: 'column', gap: 19 }}>
+      {/* **초대**(요청) — 구글 캘린더가 초대받은 일정에만 따로 보여 주는 둘이다:
+          누가 불렀는가(고칠 수 없다)와 내 참석 여부(고친다). 설정이 아니라 이
+          초대 자체에 대한 것이라 묶음 맨 위에 서고 아래와 선으로 갈린다. */}
+      {organizer || value.rsvp !== undefined ? (
+        <div data-gf-invite style={{ display: 'flex', flexDirection: 'column', gap: 14, paddingBottom: 17, borderBottom: '1px solid var(--mf-border-soft)' }}>
+          {organizer ? (
+            <Field label="일정을 만든 사람">
+              <span data-gf-organizer style={{ display: 'flex', alignItems: 'center', gap: 9, padding: '7px 9px', borderRadius: 11, background: 'var(--mf-card)', border: '1px solid var(--mf-border-soft)', minWidth: 0 }}>
+                <Avatar label={organizer.name || organizer.email} i={0} />
+                <span style={{ display: 'flex', flexDirection: 'column', gap: 1, flex: 1, minWidth: 0 }}>
+                  <span style={{ fontSize: 12, fontWeight: 700, color: 'var(--mf-text)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{organizer.name || guestLabel(organizer.email, {})}</span>
+                  <span style={{ fontSize: 10.5, color: 'var(--mf-faint)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{organizer.email}</span>
+                </span>
+              </span>
+            </Field>
+          ) : null}
+          {value.rsvp !== undefined ? (
+            <Field label="참석 여부" {...(value.rsvp === 'needsAction' ? { sub: '아직 응답하지 않았어요' } : {})}>
+              <Segments
+                aria="참석 여부"
+                items={RSVP_OPTS.map((o) => ({ value: o.v, label: o.label }))}
+                value={value.rsvp === 'needsAction' ? '' : value.rsvp}
+                onChange={(v) => onChange({ rsvp: v as GoogleRsvp })}
+                attr="data-gf-rsvp"
+                wide
+              />
+              <SubText>내 응답만 바뀌어요 — 구글이 주최자에게 알려 줍니다</SubText>
+            </Field>
+          ) : null}
+        </div>
+      ) : null}
+
       {/* 반복은 이 묶음 밖(왼쪽 열의 `RecurrenceField`)에 있다 — 목적지가 Geurio든
           구글이든 같은 자리에서 고른다. 여기서는 **이미 있는 반복**만 알린다. */}
       {mode === 'edit' && recurring ? (

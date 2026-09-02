@@ -140,7 +140,13 @@ export interface GoogleEvent {
   description?: string;
   /** 구글에서 열기 링크. */
   htmlLink?: string;
+  /** 그 캘린더의 색(캘린더 목록에서). */
   color?: string;
+  /**
+   * 사용자가 **그 일정에** 지정한 색(요청) — 구글의 이벤트 색 번호(1~11)다.
+   * 캘린더 색과 다른 값이고, 지정하지 않으면 없다(그때는 캘린더 색을 쓴다).
+   */
+  colorId?: string;
   holiday?: boolean;
   /** 공휴일 중에서도 **실제로 쉬는 날**인가(`isDayOffHoliday`) — 달력을 칠하는 기준. */
   dayOff?: boolean;
@@ -167,6 +173,28 @@ export interface GoogleEvent {
   reminderMinutes?: number | null;
   /** Google Meet 링크(있으면). */
   meetLink?: string;
+  /**
+   * **이 일정을 만든 사람**(요청) — 초대받은 일정이면 "누가 불렀나"가 정보다.
+   * 내가 만든 일정에는 `self`가 서므로 화면이 그때는 이 줄을 그리지 않는다.
+   */
+  organizer?: { email: string; name?: string; self?: true };
+  /**
+   * **참석자별 응답**(email → 상태). 화면이 쓰는 것은 내 응답 하나지만
+   * (`myRsvpOf`), 전부 들고 있어야 참석자 배열을 다시 쓸 때 **남의 응답을 지우지
+   * 않는다** — 구글의 PATCH는 이 배열을 통째로 바꾸므로, 이메일만 실어 보내면
+   * 모두의 참석 여부가 '미응답'으로 되돌아간다.
+   */
+  rsvps?: Record<string, GoogleRsvp>;
+  /** 참석자 목록에서 **나**인 항목의 이메일(`self: true`) — 없으면 초대받지 않았다. */
+  selfEmail?: string;
+}
+
+/** 참석 여부 — 구글의 `responseStatus` 그대로. */
+export type GoogleRsvp = 'accepted' | 'declined' | 'tentative' | 'needsAction';
+
+/** 내 응답 — 초대받지 않은 일정(내가 만든 것 포함)에는 없다. */
+export function myRsvpOf(g: Pick<GoogleEvent, 'rsvps' | 'selfEmail'>): GoogleRsvp | undefined {
+  return g.selfEmail ? (g.rsvps?.[g.selfEmail] ?? 'needsAction') : undefined;
 }
 
 export type GoogleVisibility = 'default' | 'public' | 'private';
@@ -328,6 +356,50 @@ async function get(path: string, token: string, params: Record<string, string>):
   return res.json();
 }
 
+/**
+ * 구글의 **이벤트 색 팔레트**(요청 — 일정에 지정한 색을 그대로 가져온다).
+ *
+ * 색은 번호(`colorId` 1~11)로 오므로 실제 hex는 `/colors`에서 받아야 한다. 다만
+ * 그 조회가 실패해도(스코프·네트워크) 색이 통째로 사라지면 안 되니, 구글이 오래
+ * 유지해 온 값을 **폴백 표**로 함께 둔다. 표가 먼저 그려지고, 조회가 도착하면
+ * 그 값으로 갈아 끼운다(사용자에게는 늘 색이 보인다).
+ */
+export const GOOGLE_EVENT_COLORS: Record<string, string> = {
+  '1': '#7986cb', // Lavender
+  '2': '#33b679', // Sage
+  '3': '#8e24aa', // Grape
+  '4': '#e67c73', // Flamingo
+  '5': '#f6bf26', // Banana
+  '6': '#f4511e', // Tangerine
+  '7': '#039be5', // Peacock
+  '8': '#616161', // Graphite
+  '9': '#3f51b5', // Blueberry
+  '10': '#0b8043', // Basil
+  '11': '#d50000', // Tomato
+};
+
+/** `/colors`의 이벤트 팔레트 — 번호 → 배경 hex. 실패하면 `null`(폴백 표를 쓴다). */
+export async function fetchEventColors(token: string): Promise<Record<string, string> | null> {
+  try {
+    const json = (await get('/colors', token, {})) as { event?: Record<string, { background?: unknown }> };
+    const src = json?.event;
+    if (!src || typeof src !== 'object') return null;
+    const out: Record<string, string> = {};
+    for (const [id, v] of Object.entries(src)) {
+      if (typeof v?.background === 'string') out[id] = v.background;
+    }
+    return Object.keys(out).length > 0 ? out : null;
+  } catch {
+    return null;
+  }
+}
+
+/** 그 일정이 화면에서 쓸 색 — 일정에 지정한 색이 있으면 그것, 없으면 캘린더 색. */
+export function eventColorOf(ev: GoogleEvent, palette: Record<string, string>): string | undefined {
+  if (ev.colorId) return palette[ev.colorId] ?? GOOGLE_EVENT_COLORS[ev.colorId] ?? ev.color;
+  return ev.color;
+}
+
 /** 공휴일 캘린더 판별 — 구글의 공용 공휴일 캘린더 id가 이 꼴이다. */
 export function isHolidayCalendarId(id: string): boolean {
   return id.includes('#holiday@group.v.calendar.google.com');
@@ -411,21 +483,51 @@ function prevDay(iso: string): string {
   return `${dt.getFullYear()}-${p(dt.getMonth() + 1)}-${p(dt.getDate())}`;
 }
 
+const RSVPS: readonly GoogleRsvp[] = ['accepted', 'declined', 'tentative', 'needsAction'];
+
 /**
- * 참석자 이메일만 — 응답·역할은 우리 화면이 쓰지 않는다(구글에서 본다).
+ * 참석자 — 이메일 목록(화면), 응답 표(쓰기), 그리고 **나**인 항목.
+ *
  * **회의실은 갈라낸다**: 구글은 회의실도 참석자로 싣지만(`resource: true`) 사람과
  * 같은 줄에 늘어놓으면 "누구를 초대했나"가 흐려진다.
+ *
+ * 응답(`responseStatus`)은 화면에 쓰는 것이 내 것 하나뿐이지만 **전부** 담는다 —
+ * 참석자 배열을 다시 쓸 때 남의 응답을 지우지 않으려면 그 값이 필요하다.
  */
-function parseAttendees(raw: unknown): { attendees?: string[]; rooms?: string[] } {
+function parseAttendees(raw: unknown): { attendees?: string[]; rooms?: string[]; rsvps?: Record<string, GoogleRsvp>; selfEmail?: string } {
   if (!Array.isArray(raw)) return {};
   const people: string[] = [];
   const rooms: string[] = [];
+  const rsvps: Record<string, GoogleRsvp> = {};
+  let selfEmail = '';
   for (const a of raw as Record<string, unknown>[]) {
     const email = typeof a.email === 'string' ? a.email : '';
     if (!email) continue;
     (a.resource === true ? rooms : people).push(email);
+    const st = a.responseStatus;
+    if (typeof st === 'string' && (RSVPS as readonly string[]).includes(st)) rsvps[email] = st as GoogleRsvp;
+    if (a.self === true && a.resource !== true) selfEmail = email;
   }
-  return { ...(people.length ? { attendees: people } : {}), ...(rooms.length ? { rooms } : {}) };
+  return {
+    ...(people.length ? { attendees: people } : {}),
+    ...(rooms.length ? { rooms } : {}),
+    ...(Object.keys(rsvps).length ? { rsvps } : {}),
+    ...(selfEmail ? { selfEmail } : {}),
+  };
+}
+
+/** 주최자 — 이름이 없으면 이메일만(구글이 이름을 모르는 계정도 있다). */
+function parseOrganizer(raw: unknown): { organizer?: { email: string; name?: string; self?: true } } {
+  const o = raw as Record<string, unknown> | undefined;
+  const email = o && typeof o.email === 'string' ? o.email : '';
+  if (!email) return {};
+  return {
+    organizer: {
+      email,
+      ...(typeof o?.displayName === 'string' && o.displayName ? { name: o.displayName } : {}),
+      ...(o?.self === true ? { self: true as const } : {}),
+    },
+  };
 }
 
 /**
@@ -471,10 +573,12 @@ export function parseEvents(json: unknown, cal: GoogleCalendarMeta): GoogleEvent
       ...(typeof it.description === 'string' && it.description ? { description: it.description } : {}),
       ...(typeof it.htmlLink === 'string' ? { htmlLink: it.htmlLink } : {}),
       ...(cal.color ? { color: cal.color } : {}),
+      ...(typeof it.colorId === 'string' && it.colorId ? { colorId: it.colorId } : {}),
       ...(cal.writable ? { writable: true } : {}),
       ...(typeof it.etag === 'string' ? { etag: it.etag } : {}),
       ...(typeof it.recurringEventId === 'string' ? { recurringEventId: it.recurringEventId } : {}),
       ...parseAttendees(it.attendees),
+      ...parseOrganizer(it.organizer),
       ...(it.visibility === 'public' || it.visibility === 'private' ? { visibility: it.visibility } : {}),
       ...(it.transparency === 'transparent' ? { transparency: 'transparent' as const } : {}),
       ...parseReminders(it.reminders),
@@ -528,6 +632,8 @@ export interface GoogleEventDraft {
   attendees?: string[];
   /** 예약할 회의실의 리소스 주소 — 본문에서는 참석자로 합쳐진다. */
   rooms?: string[];
+  /** 참석자별 응답 — 배열을 다시 쓸 때 그대로 실어 남의 응답을 지키려고 든다. */
+  rsvps?: Record<string, GoogleRsvp>;
   visibility?: GoogleVisibility;
   transparency?: GoogleTransparency;
   /** `null`=없음, 숫자=N분 전, 없으면 캘린더 기본 알림. */
@@ -635,9 +741,22 @@ export function whenBody(
       };
 }
 
-/** 참석자 + 회의실 — 구글에서 회의실은 `resource: true`인 참석자다. */
-export function attendeesBody(d: Pick<GoogleEventDraft, 'attendees' | 'rooms'>): Array<Record<string, unknown>> {
-  return [...(d.attendees ?? []).map((email) => ({ email })), ...(d.rooms ?? []).map((email) => ({ email, resource: true }))];
+/**
+ * 참석자 + 회의실 — 구글에서 회의실은 `resource: true`인 참석자다.
+ *
+ * **응답(`responseStatus`)을 함께 싣는다**: 구글의 PATCH는 이 배열을 통째로 바꾸므로
+ * 이메일만 보내면 이미 "참석"을 누른 사람들이 전부 '미응답'으로 되돌아간다(한 명을
+ * 더 초대하는 저장이 나머지의 응답을 지우는 셈이다).
+ */
+export function attendeesBody(d: Pick<GoogleEventDraft, 'attendees' | 'rooms' | 'rsvps'>): Array<Record<string, unknown>> {
+  const rsvp = (email: string): Record<string, unknown> => {
+    const st = d.rsvps?.[email];
+    return st ? { responseStatus: st } : {};
+  };
+  return [
+    ...(d.attendees ?? []).map((email) => ({ email, ...rsvp(email) })),
+    ...(d.rooms ?? []).map((email) => ({ email, resource: true, ...rsvp(email) })),
+  ];
 }
 
 /** 알림 — `undefined`는 캘린더 기본, `null`은 없음, 숫자는 N분 전(세 상태). */
@@ -754,7 +873,9 @@ export function managedFieldsDiffer(a: GoogleEvent, b: GoogleEvent, only?: reado
     when: [e.startDate, e.endDate, e.startTime ?? null, e.endTime ?? null, e.allDay],
     location: e.location ?? '',
     description: e.description ?? '',
-    attendees: [[...(e.attendees ?? [])].sort(), [...(e.rooms ?? [])].sort()],
+    // 응답까지 본다 — 팝업이 열려 있는 동안 누군가 "참석"을 눌렀다면, 우리가 든
+    // 낡은 배열로 그 응답을 덮어쓸 수 있다(그때는 덮지 않고 막는 편이 맞다).
+    attendees: [[...(e.attendees ?? [])].sort(), [...(e.rooms ?? [])].sort(), Object.entries(e.rsvps ?? {}).sort()],
     visibility: e.visibility ?? 'default',
     transparency: e.transparency ?? 'opaque',
     reminders: e.reminderMinutes ?? 'default',
