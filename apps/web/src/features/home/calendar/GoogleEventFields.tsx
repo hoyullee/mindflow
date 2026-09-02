@@ -23,6 +23,7 @@
 // 전환도 아직 모델에 없어 두지 않았다.
 
 import { useEffect, useLayoutEffect, useRef, useState } from 'react';
+import { knownName, knownNamesFor, rememberName } from './nameBook';
 import { createPortal } from 'react-dom';
 import type { CSSProperties, KeyboardEvent, ReactNode } from 'react';
 import { Field, Segments, SubText } from './fieldBits';
@@ -125,7 +126,11 @@ export function GoogleEventFields({
    * **이 일정을 만든 사람**(요청) — 내가 만든 일정이면 넘기지 않는다(자기 이름을
    * 한 줄 더 읽을 이유가 없다). 고칠 수 없는 값이라 초안이 아니라 프롭이다.
    */
-  organizer?: { email: string; name?: string };
+  /**
+   * 주최자 — `self`면 내가 만든 일정이라 "일정을 만든 사람" 행은 그리지 않지만,
+   * 참석자 목록에서는 여전히 **빼고 센다**(내가 나를 초대한 것이 아니다).
+   */
+  organizer?: { email: string; name?: string; self?: true };
   /** 선택 스코프로 열리는 것들 — 없으면 이름 검색·회의실이 빠진다. */
   directory?: GoogleDirectoryApi;
   /**
@@ -148,7 +153,7 @@ export function GoogleEventFields({
    */
   const [orgName, setOrgName] = useState('');
   const orgEmail = organizer?.email ?? '';
-  const orgKnown = organizer?.name ?? value.names?.[orgEmail] ?? '';
+  const orgKnown = organizer?.name ?? value.names?.[orgEmail] ?? knownName(orgEmail) ?? '';
   const askOrg = directory?.canSearchPeople ? directory.searchPeople : undefined;
   useEffect(() => {
     setOrgName('');
@@ -167,15 +172,17 @@ export function GoogleEventFields({
   const roomName = (email: string): string => rooms.find((r) => r.email === email)?.name ?? email;
   // 구획은 늘 보이고 **상태만 갈린다**: 목록 / 불러오는 중 / 안내(스코프 없음·거절·빈 목록).
   const roomsLoading = !!directory?.canPickRooms && !directory.roomsReady;
+  // 참석자 목록에 보이는 사람 — 주최자(나 자신 포함)는 뺀다.
+  const guests = orgEmail ? value.attendees.filter((e) => e.toLowerCase() !== orgEmail.toLowerCase()) : value.attendees;
 
   return (
     <div data-google-fields style={{ display: 'flex', flexDirection: 'column', gap: 19 }}>
       {/* **초대**(요청) — 구글 캘린더가 초대받은 일정에만 따로 보여 주는 둘이다:
           누가 불렀는가(고칠 수 없다)와 내 참석 여부(고친다). 설정이 아니라 이
           초대 자체에 대한 것이라 묶음 맨 위에 서고 아래와 선으로 갈린다. */}
-      {organizer || value.rsvp !== undefined ? (
+      {(organizer && !organizer.self) || value.rsvp !== undefined ? (
         <div data-gf-invite style={{ display: 'flex', flexDirection: 'column', gap: 14, paddingBottom: 17, borderBottom: '1px solid var(--mf-border-soft)' }}>
-          {organizer ? (
+          {organizer && !organizer.self ? (
             <Field label="일정을 만든 사람">
               <span data-gf-organizer style={{ display: 'flex', alignItems: 'center', gap: 9, padding: '7px 9px', borderRadius: 11, background: 'var(--mf-card)', border: '1px solid var(--mf-border-soft)', minWidth: 0 }}>
                 <Avatar label={orgLabel} i={0} />
@@ -252,8 +259,12 @@ export function GoogleEventFields({
         </Field>
       ) : null}
 
-      <Field label="참석자" sub={value.attendees.length ? `${value.attendees.length}명 초대` : '아직 초대한 사람이 없어요'}>
-        <Attendees list={value.attendees} onChange={(next) => onChange({ attendees: next })} {...(value.names ? { seedNames: value.names } : {})} {...(directory?.canSearchPeople ? { search: directory.searchPeople } : {})} />
+      {/* **일정을 만든 사람은 참석자 목록에서 뺀다**(요청) — 구글은 주최자도 참석자 배열에
+          싣지만, 초대한 사람과 초대받은 사람은 다른 자리다. 배열 자체에서는 지우지
+          않는다(PATCH가 배열을 통째로 바꾸므로 빼고 보내면 주최자가 참석자에서
+          떨어진다) — 화면에서만 가르고, 고칠 때 제자리에 되돌려 넣는다. */}
+      <Field label="참석자" sub={guestSub(guests.length, !!organizer && !organizer.self)}>
+        <Attendees list={guests} onChange={(next) => onChange({ attendees: withOrganizer(value.attendees, orgEmail, next) })} seedNames={{ ...knownNamesFor(value.attendees), ...(value.names ?? {}) }} {...(directory?.canSearchPeople ? { search: directory.searchPeople } : {})} />
       </Field>
 
       {/* 회의실 — 구획은 **항상 보인다**(요청). 목록이 있으면 검색 + 목록, 아직이면
@@ -342,6 +353,24 @@ export function guestLabel(email: string, names: Record<string, string>): string
   if (known) return known;
   const at = email.indexOf('@');
   return at > 0 ? email.slice(0, at) : email;
+}
+
+/** 참석자 구획 머리의 한 줄 — 주최자가 따로 있으면 "일정을 만든 사람 외 N명 초대"(요청). */
+export function guestSub(n: number, hasOrganizer: boolean): string {
+  if (n === 0) return hasOrganizer ? '일정을 만든 사람 외에 초대한 사람이 없어요' : '아직 초대한 사람이 없어요';
+  return hasOrganizer ? `일정을 만든 사람 외 ${n}명 초대` : `${n}명 초대`;
+}
+
+/**
+ * 화면에서 뺀 주최자를 배열의 **제자리에** 되돌려 넣는다 — 순서를 지켜야 "바뀐 것만
+ * 보낸다"는 PATCH 판정이 주최자 자리 이동을 변경으로 오해하지 않는다.
+ */
+export function withOrganizer(original: readonly string[], orgEmail: string, guests: readonly string[]): string[] {
+  if (!orgEmail) return [...guests];
+  const idx = original.findIndex((e) => e.toLowerCase() === orgEmail.toLowerCase());
+  if (idx < 0) return [...guests];
+  const at = Math.min(idx, guests.length);
+  return [...guests.slice(0, at), original[idx]!, ...guests.slice(at)];
 }
 
 function Avatar({ label, i }: { label: string; i: number }) {
@@ -471,7 +500,9 @@ function Attendees({ list, onChange, search, seedNames }: { list: string[]; onCh
   const [names, setNames] = useState<Record<string, string>>({});
   // 구글이 알려 준 이름이 **먼저**다(제보: 이름 대신 이메일 앞부분이 나왔다) —
   // 검색으로 찾은 이름은 그것이 없는 사람만 메운다.
-  const label = (email: string): string => guestLabel(email, { ...names, ...seedNames });
+  // 장부(`nameBook`)가 맨 뒤 — 이 일정이 준 이름·직접 고른 이름이 먼저고, 없으면
+  // 다른 일정·다른 자리에서 알게 된 이름으로 메운다(제보: 같은 사람이 두 이름).
+  const label = (email: string): string => guestLabel(email, { ...knownNamesFor([email]), ...names, ...seedNames });
   // 접힌 사람들(`외 N명`) 툴팁 — 여기서 지울 수 있어야 한다(요청).
   const [moreOpen, setMoreOpen] = useState(false);
   const [moreAnchor, setMoreAnchor] = useState<HTMLElement | null>(null);
@@ -518,7 +549,7 @@ function Attendees({ list, onChange, search, seedNames }: { list: string[]; onCh
     // `list`가 아니라 문자열 키에서 되짚는다 — 배열은 렌더마다 새 참조라 이 효과의
     // 계기가 될 수 없고, 키가 바뀌는 순간이 곧 "초대가 늘거나 줄었다"다.
     // 구글이 이미 이름을 알려 준 사람은 묻지 않는다(왕복을 아끼고, 그 이름이 더 정확하다).
-    const missing = (listKey ? listKey.split(',') : []).filter((e) => !names[e] && !seedKey.includes(e) && !askedRef.current.has(e));
+    const missing = (listKey ? listKey.split(',') : []).filter((e) => !names[e] && !seedKey.includes(e) && !knownName(e) && !askedRef.current.has(e));
     if (missing.length === 0) return;
     for (const e of missing) askedRef.current.add(e);
     let cancelled = false;
@@ -527,7 +558,10 @@ function Attendees({ list, onChange, search, seedNames }: { list: string[]; onCh
         const found = await search(email).catch(() => null);
         if (cancelled) return;
         const hit = found?.find((p) => p.email.toLowerCase() === email.toLowerCase());
-        if (hit?.name) setNames((m) => ({ ...m, [email]: hit.name }));
+        if (hit?.name) {
+          setNames((m) => ({ ...m, [email]: hit.name }));
+          rememberName(email, hit.name);
+        }
       }
     })();
     return () => {
@@ -561,7 +595,10 @@ function Attendees({ list, onChange, search, seedNames }: { list: string[]; onCh
     setDraft('');
     setHits([]);
     if (!e || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(e) || list.includes(e)) return;
-    if (name) setNames((m) => ({ ...m, [e]: name }));
+    if (name) {
+      setNames((m) => ({ ...m, [e]: name }));
+      rememberName(e, name);
+    }
     onChange([...list, e]);
   };
   const add = (): void => addEmail(draft);
@@ -809,11 +846,23 @@ function Rooms({
     };
   }, [askKey, check, from, to, skip]);
   const busyOf = (email: string): boolean | null | undefined => (when ? busy[`${email}|${from}|${to}`] : undefined);
+  // **사용 가능 / 사용 중을 갈라 보여 준다**(요청) — 가능한 방이 먼저다. 아직 답이 안 온
+  // 방과 물어볼 수 없는 방(403)은 그 사이 어디에도 끼우지 않고 **뒤의 제 묶음**에 둔다:
+  // "모르는 것은 칠하지 않는다"의 목록 판이다(가능하다고 올려 두면 거짓말이 된다).
+  // 묶음 안에서는 예약한 방이 위(제보 #17 — 잡아 둔 것이 스크롤 아래로 숨지 않게).
+  const groups = when ? groupRooms(rows, busyOf) : [{ key: 'all' as const, label: '', rooms: rows }];
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 8, minWidth: 0 }}>
       <SearchBox label="회의실 검색" attrs={{ 'data-gf-room-input': '1' }} value={q} placeholder="회의실 이름 또는 층 검색" onChange={setQ} />
       <div data-gf-room-list className="lnb-scroll" style={{ ...listCard, height: boxH }}>
-        {rows.map((r, i) => {
+        {groups.map((g, gi) => (
+          <div key={g.key} data-gf-room-group={g.key}>
+            {g.label && (
+              <div style={{ padding: gi === 0 ? '7px 11px 3px' : '9px 11px 3px', fontSize: 10.5, fontWeight: 800, letterSpacing: '.04em', color: g.key === 'busy' ? 'var(--mf-danger)' : g.key === 'free' ? 'var(--mf-success-ink)' : 'var(--mf-faint)', ...(gi === 0 ? {} : { borderTop: '1px solid var(--mf-border-soft)' }) }}>
+                {g.label} <span style={{ fontFamily: "'JetBrains Mono', monospace", fontWeight: 700, opacity: 0.8 }}>{g.rooms.length}</span>
+              </div>
+            )}
+        {g.rooms.map((r, i) => {
           const on = picked.includes(r.email);
           const sub = [r.where, r.capacity ? `${r.capacity}인` : null].filter(Boolean).join(' · ');
           return (
@@ -828,7 +877,7 @@ function Rooms({
                 onChange(on ? picked.filter((p) => p !== r.email) : [...picked, r.email]);
               }}
               className="mf-ctl"
-              style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '9px 11px', border: 0, ...rowDivider(i), background: on ? 'var(--mf-accent-soft)' : 'transparent', cursor: 'pointer', font: 'inherit', textAlign: 'left', minWidth: 0, width: '100%', transition: 'background .12s ease' }}
+              style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '9px 11px', border: 0, ...rowDivider(g.label ? i + 1 : i), background: on ? 'var(--mf-accent-soft)' : 'transparent', cursor: 'pointer', font: 'inherit', textAlign: 'left', minWidth: 0, width: '100%', transition: 'background .12s ease' }}
             >
               <span style={{ width: 22, height: 22, flex: '0 0 auto', borderRadius: 7, background: on ? 'var(--mf-accent-mute)' : 'var(--mf-panel2)', display: 'inline-flex', alignItems: 'center', justifyContent: 'center' }}>
                 <RoomGlyph on={on} />
@@ -841,10 +890,35 @@ function Rooms({
             </button>
           );
         })}
+          </div>
+        ))}
         {rows.length === 0 && <span style={{ padding: 10, fontSize: 11.5, color: 'var(--mf-faint)' }}>검색 결과가 없어요</span>}
       </div>
     </div>
   );
+}
+
+export type RoomGroupKey = 'free' | 'busy' | 'pending' | 'unknown' | 'all';
+
+/**
+ * 회의실을 **사용 가능 → 사용 중 → 확인 중 → 확인 불가** 순으로 묶는다(요청 — 가능한
+ * 방이 먼저). 빈 묶음은 그리지 않는다. 순수 함수라 테스트가 그대로 부른다.
+ */
+export function groupRooms<T extends { email: string }>(rows: readonly T[], busyOf: (email: string) => boolean | null | undefined): { key: RoomGroupKey; label: string; rooms: T[] }[] {
+  const free: T[] = [];
+  const busy: T[] = [];
+  const pending: T[] = [];
+  const unknown: T[] = [];
+  for (const r of rows) {
+    const b = busyOf(r.email);
+    (b === false ? free : b === true ? busy : b === null ? unknown : pending).push(r);
+  }
+  return [
+    { key: 'free' as const, label: '사용 가능', rooms: free },
+    { key: 'busy' as const, label: '사용 중', rooms: busy },
+    { key: 'pending' as const, label: '확인 중', rooms: pending },
+    { key: 'unknown' as const, label: '확인할 수 없음', rooms: unknown },
+  ].filter((g) => g.rooms.length > 0);
 }
 
 /**

@@ -21,7 +21,9 @@ export function AccountSettingsModal({ state, controller }: Props) {
   // 연동 구획 — 구글 캘린더는 **설정에서만** 켜고 끈다(일정 화면은 결과만 그린다).
   // 여기서는 그릴 달이 없으므로 `list` 모드다(목록만), 그리고 **모달이 열려 있을 때만**
   // — 홈을 켤 때마다 캘린더 목록을 받아 오지 않는다(`accountSettingsOpen`).
-  const googleApi = useGoogleCalendar(1970, 1, { enabled: !!state.google, calendars: state.google?.calendars ?? [] }, controller.setGoogleCalendars, state.accountSettingsOpen ? 'list' : 'off');
+  // 이 행은 **계정 설정 화면**에 있다(요청 — 프로필 설정에서 옮겨 `Google 연동`과 한
+  // 구획으로). 그래서 목록 조회도 그 화면이 열려 있을 때만이다.
+  const googleApi = useGoogleCalendar(1970, 1, { enabled: !!state.google, calendars: state.google?.calendars ?? [] }, controller.setGoogleCalendars, state.accountSettingsOpen && state.settingsView === 'account' ? 'list' : 'off');
   const visible = state.accountSettingsOpen;
   const initial = avatarLabel(state.userName);
   // 로그인 수단 — `null`은 확인 불가(RPC 미배포·네트워크·데모 초기). 그때는
@@ -177,6 +179,11 @@ export function AccountSettingsModal({ state, controller }: Props) {
               <path d="m9 6 6 6-6 6" />
             </svg>
           </div>
+          {/* **연동**(요청) — 구글 계정(로그인 수단)과 구글 캘린더를 한 묶음으로. 둘 다
+              "구글과 잇는 일"이라 사용자에게는 한 갈래다(프로필 설정에 있던 캘린더 행을
+              여기로 옮겼다). */}
+          <div style={{ height: 10 }} />
+          <div data-settings-link-group style={{ fontSize: 12, fontWeight: 700, color: 'var(--mf-faint)', letterSpacing: '.02em', margin: '8px 16px 6px' }}>연동</div>
           {/* Google — 연결/해제. 해제가 막히는 두 이유(`unlinkBlock`)를 부제가
               **각각** 말한다 — 무엇을 해야 풀리는지가 이유마다 다르다. */}
           <div
@@ -230,6 +237,9 @@ export function AccountSettingsModal({ state, controller }: Props) {
               {state.signinError}
             </div>
           )}
+          {/* 구글 캘린더(PR5) — 배포에 클라이언트 ID가 없으면 행이 통째로 없다(눌러도
+              아무 일 없는 버튼을 두지 않는다). */}
+          <GoogleCalendarSection api={googleApi} />
 
           {/* 세션·탈퇴 — 제목 없이 이어진다(요청). 성격이 다른 묶음이라 사이만 띄운다. */}
           <div style={{ height: 10 }} />
@@ -475,10 +485,6 @@ export function AccountSettingsModal({ state, controller }: Props) {
               <path d="m9 6 6 6-6 6" />
             </svg>
           </div>
-
-          {/* 연동 — 구글 캘린더 겹치기(PR5). 배포에 클라이언트 ID가 없으면 이 구획은
-              통째로 그려지지 않는다(눌러도 아무 일 없는 버튼을 두지 않는다). */}
-          <GoogleCalendarSection api={googleApi} />
 
           {/* 색상 테마 — LNB 최하단에 있다가 사용자 요청으로 이리 왔다(설정에 모으는 게
               자연스럽다). 적용 버튼 없이 **누르는 즉시** 뒤 화면까지 색이 바뀐다 —

@@ -244,6 +244,8 @@ describe('구글 캘린더 겹치기(PR5)', () => {
     renderHome();
     await user.click(await screen.findByRole('button', { name: '계정 메뉴' }));
     await user.click(await screen.findByText('설정'));
+    // 연동 행은 **계정 설정** 화면에 있다(요청 — 프로필 설정에서 옮겨 Google 연동과 한 구획으로).
+    await user.click(await screen.findByText('계정 설정'));
     await screen.findByRole('dialog', { name: '설정' });
     expect(document.querySelector('[data-google-section]')).toBeNull();
   });
@@ -257,6 +259,8 @@ describe('구글 캘린더 겹치기(PR5)', () => {
     renderHome();
     await user.click(await screen.findByRole('button', { name: '계정 메뉴' }));
     await user.click(await screen.findByText('설정'));
+    // 연동 행은 **계정 설정** 화면에 있다(요청 — 프로필 설정에서 옮겨 Google 연동과 한 구획으로).
+    await user.click(await screen.findByText('계정 설정'));
     const section = await waitFor(() => {
       const el = document.querySelector('[data-google-section]');
       expect(el).toBeTruthy();
@@ -434,6 +438,8 @@ describe('구글 캘린더 겹치기(PR5)', () => {
     // 새로고침해야 알았다(제보의 뿌리).
     await user.click(await screen.findByRole('button', { name: '계정 메뉴' }));
     await user.click(await screen.findByText('설정'));
+    // 연동 행은 **계정 설정** 화면에 있다(요청 — 프로필 설정에서 옮겨 Google 연동과 한 구획으로).
+    await user.click(await screen.findByText('계정 설정'));
     const btn = await waitFor(() => {
       const el = document.querySelector('[data-google-reconnect]');
       expect(el).toBeTruthy();
@@ -482,6 +488,8 @@ describe('구글 캘린더 겹치기(PR5)', () => {
     renderHome();
     await user.click(await screen.findByRole('button', { name: '계정 메뉴' }));
     await user.click(await screen.findByText('설정'));
+    // 연동 행은 **계정 설정** 화면에 있다(요청 — 프로필 설정에서 옮겨 Google 연동과 한 구획으로).
+    await user.click(await screen.findByText('계정 설정'));
     await user.click(await waitFor(() => document.querySelector('[data-google-connect]') as HTMLElement));
     await waitFor(() => {
       const ws = JSON.parse(localStorage.getItem('mf_spaces') ?? '{}') as { google?: Record<string, unknown> };
@@ -527,6 +535,8 @@ describe('구글 캘린더 겹치기(PR5)', () => {
     renderHome();
     await user.click(await screen.findByRole('button', { name: '계정 메뉴' }));
     await user.click(await screen.findByText('설정'));
+    // 연동 행은 **계정 설정** 화면에 있다(요청 — 프로필 설정에서 옮겨 Google 연동과 한 구획으로).
+    await user.click(await screen.findByText('계정 설정'));
     const btn = await waitFor(() => {
       const el = document.querySelector('[data-google-disconnect]');
       expect(el).toBeTruthy();
@@ -820,8 +830,10 @@ describe('구글 캘린더 겹치기(PR5)', () => {
     expect(org.textContent).toContain('boss@example.com');
     // 제보 ⑤ — 구글이 준 이름을 쓴다(이메일 앞부분 `boss`로 떨어지지 않는다)
     expect(org.textContent).not.toContain('boss\n');
-    const guest = pop.querySelector('[data-gf-guest="boss@example.com"]')!;
-    expect(guest.textContent).toContain('팀장');
+    // **일정을 만든 사람은 참석자 목록에 없다**(요청) — 머리가 "외 N명"으로 셈한다.
+    expect(pop.querySelector('[data-gf-guest="boss@example.com"]')).toBeNull();
+    expect(pop.querySelector('[data-gf-guest="mate@example.com"]')).toBeTruthy();
+    expect(pop.textContent).toContain('일정을 만든 사람 외 2명 초대');
     // 아직 답하지 않았으면 **아무 칸도 켜지지 않는다** — 라벨 옆이 그렇게 말한다
     const rsvp = [...pop.querySelectorAll<HTMLElement>('[data-gf-rsvp]')];
     expect(rsvp.map((b) => b.textContent)).toEqual(['참석', '미정', '불참']);
@@ -1340,6 +1352,8 @@ describe('구글 캘린더 겹치기(PR5)', () => {
     // 연동 해제 — 계정에 딸린 캐시(회의실·스코프)도 함께 버려진다.
     await user.click(await screen.findByRole('button', { name: '계정 메뉴' }));
     await user.click(await screen.findByText('설정'));
+    // 연동 행은 **계정 설정** 화면에 있다(요청 — 프로필 설정에서 옮겨 Google 연동과 한 구획으로).
+    await user.click(await screen.findByText('계정 설정'));
     const off = await waitFor(() => {
       const el = document.querySelector('[data-google-disconnect]');
       expect(el).toBeTruthy();
@@ -1556,5 +1570,179 @@ describe('구글 캘린더 겹치기(PR5)', () => {
     expect(side.querySelector('[data-gf-remind]')).toBeNull();
     // 열이 붙으면 카드가 넓어진다(새 일정 팝업과 같은 900px).
     expect((document.querySelector('[data-event-detail]') as HTMLElement).style.width).toBe('900px');
+  });
+
+  it('구글 창을 닫거나 거절하면 **아무 일도 없다** — 오류 문구도, 불러오는 중도 남지 않는다(제보)', async () => {
+    seed();
+    stubFetch();
+    // GIS가 창 닫힘을 `error_callback({ type: 'popup_closed', message: 'Popup window closed' })`로 알린다.
+    (window as unknown as { google: unknown }).google = {
+      accounts: {
+        oauth2: {
+          initTokenClient: (cfg: { error_callback?: (e: { type: string; message: string }) => void }) => ({
+            requestAccessToken: () => cfg.error_callback?.({ type: 'popup_closed', message: 'Popup window closed' }),
+          }),
+          revoke: () => undefined,
+        },
+      },
+    };
+    clientId = 'test-client.apps.googleusercontent.com';
+    const user = userEvent.setup();
+    renderHome();
+    await user.click(await screen.findByRole('button', { name: '계정 메뉴' }));
+    await user.click(await screen.findByText('설정'));
+    await user.click(await screen.findByText('계정 설정'));
+    const section = await waitFor(() => {
+      const el = document.querySelector('[data-google-section]');
+      expect(el).toBeTruthy();
+      return el as HTMLElement;
+    });
+    await user.click(within(section).getByText('연결'));
+    // 취소는 결정이다 — 누르기 전 그대로: 오류 없음, 연결 버튼 그대로, 목록 없음.
+    await new Promise((r) => setTimeout(r, 50));
+    expect(document.querySelector('[data-google-error]')).toBeNull();
+    expect(section.textContent).not.toContain('Popup');
+    expect(section.textContent).not.toContain('불러오는 중');
+    expect(document.querySelector('[data-google-connect]')).toBeTruthy();
+    expect(localStorage.getItem('mf_spaces')).not.toContain('"google"');
+  });
+
+  it('연결은 됐는데 토큰이 없으면 "불러오는 중"이 아니라 다시 연결을 권한다(제보 — 창을 닫아도 그 문구가 남았다)', async () => {
+    seed({ calendars: ['me@example.com'] });
+    // 토큰을 심지 않는다 — 재로그인한 탭의 상태.
+    stubGis();
+    stubFetch();
+    clientId = 'test-client.apps.googleusercontent.com';
+    const user = userEvent.setup();
+    renderHome();
+    await user.click(await screen.findByRole('button', { name: '계정 메뉴' }));
+    await user.click(await screen.findByText('설정'));
+    await user.click(await screen.findByText('계정 설정'));
+    const section = await waitFor(() => {
+      const el = document.querySelector('[data-google-section]');
+      expect(el).toBeTruthy();
+      return el as HTMLElement;
+    });
+    await waitFor(() => expect(document.querySelector('[data-google-reconnect]')).toBeTruthy());
+    expect(section.textContent).not.toContain('불러오는 중');
+  });
+
+  it('구글 연동 두 행은 계정 설정의 **연동** 구획에 함께 있고, 첫 화면·프로필 설정에는 없다(요청)', async () => {
+    seed();
+    seedToken();
+    stubGis();
+    stubFetch();
+    clientId = 'test-client.apps.googleusercontent.com';
+    const user = userEvent.setup();
+    renderHome();
+    await user.click(await screen.findByRole('button', { name: '계정 메뉴' }));
+    await user.click(await screen.findByText('설정'));
+    await screen.findByRole('dialog', { name: '설정' });
+    expect(document.querySelector('[data-google-section]')).toBeNull();
+    await user.click(await screen.findByText('프로필 설정'));
+    await new Promise((r) => setTimeout(r, 30));
+    expect(document.querySelector('[data-google-section]')).toBeNull();
+    // 뒤로 → 계정 설정
+    await user.click(screen.getByRole('button', { name: /뒤로/ }));
+    await user.click(await screen.findByText('계정 설정'));
+    const group = await waitFor(() => {
+      const el = document.querySelector('[data-settings-link-group]');
+      expect(el).toBeTruthy();
+      return el as HTMLElement;
+    });
+    expect(group.textContent).toBe('연동');
+    // 구획 라벨 뒤에 Google 연동(로그인 수단) → Google 캘린더 연동 순서로 이어진다.
+    const link = document.querySelector('[data-google-link-row]')!;
+    const cal = document.querySelector('[data-google-section]')!;
+    expect(group.compareDocumentPosition(link) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(link.compareDocumentPosition(cal) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(cal.textContent).toContain('Google 캘린더 연동');
+  });
+
+  it('회의실 목록은 사용 가능 → 사용 중으로 갈려 뜨고, 가능한 방이 먼저다(요청)', async () => {
+    seed({ calendars: ['me@example.com'] });
+    seedToken();
+    stubGis();
+    const busyRoom = 'room-a@resource.calendar.google.com';
+    const freeRoom = 'room-b@resource.calendar.google.com';
+    const hiddenRoom = 'room-c@resource.calendar.google.com';
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (url: string) => {
+        const ok = (body: unknown) => ({ ok: true, status: 200, json: async () => body }) as unknown as Response;
+        if (url.includes('people.googleapis.com')) return ok({ people: [] });
+        if (url.includes('admin.googleapis.com')) {
+          // 목록 순서는 사용 중 → 사용 가능 → 알 수 없음 — 화면은 이 순서를 뒤집어 가능한 방을 먼저 둔다.
+          return ok({
+            items: [
+              { resourceEmail: busyRoom, generatedResourceName: '회의실 A', resourceCategory: 'CONFERENCE_ROOM', capacity: 8 },
+              { resourceEmail: freeRoom, generatedResourceName: '회의실 B', resourceCategory: 'CONFERENCE_ROOM', capacity: 4 },
+              { resourceEmail: hiddenRoom, generatedResourceName: '회의실 C', resourceCategory: 'CONFERENCE_ROOM' },
+            ],
+          });
+        }
+        if (url.includes('/colors')) return ok({ event: {} });
+        if (url.includes('/users/me/calendarList')) return ok({ items: [{ id: 'me@example.com', summary: '내 캘린더', primary: true, accessRole: 'owner' }] });
+        if (url.includes(encodeURIComponent(busyRoom))) return ok({ items: [{ id: 'other', summary: '선점' }] });
+        if (url.includes(encodeURIComponent(freeRoom))) return ok({ items: [] });
+        if (url.includes(encodeURIComponent(hiddenRoom))) return { ok: false, status: 403, json: async () => ({}) } as unknown as Response;
+        return ok({ items: [] });
+      }),
+    );
+    clientId = 'test-client.apps.googleusercontent.com';
+    const user = userEvent.setup();
+    const { container } = renderHome();
+    await openCalendar(container, user);
+    await user.click(screen.getByText('새 일정'));
+    await waitFor(() => expect(document.querySelector('[data-new-cal="me@example.com"]')).toBeTruthy());
+    await user.click(document.querySelector<HTMLElement>('[data-new-cal="me@example.com"]')!);
+    await waitFor(() => expect(document.querySelector('[data-gf-room-hit]')).toBeTruthy());
+    await waitFor(() => expect(document.querySelector(`[data-gf-room-hit="${busyRoom}"] [data-gf-room-state="busy"]`)).toBeTruthy(), { timeout: 3000 });
+    const groups = [...document.querySelectorAll<HTMLElement>('[data-gf-room-group]')].map((g) => [g.dataset.gfRoomGroup, [...g.querySelectorAll('[data-gf-room-hit]')].map((r) => r.getAttribute('data-gf-room-hit'))]);
+    expect(groups).toEqual([
+      ['free', [freeRoom]],
+      ['busy', [busyRoom]],
+      ['unknown', [hiddenRoom]],
+    ]);
+    const list = document.querySelector('[data-gf-room-list]')!.textContent!;
+    expect(list.indexOf('사용 가능')).toBeLessThan(list.indexOf('사용 중'));
+  });
+
+  it('같은 사람은 어느 자리에서나 같은 이름이다 — 한 일정의 주최자 이름이 다른 일정의 참석자 행을 메운다(제보 ⑤)', async () => {
+    seed({ calendars: ['me@example.com'] });
+    seedToken();
+    stubGis();
+    const d1 = inMonth(1);
+    const d2 = inMonth(2);
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (url: string) => {
+        const ok = (body: unknown) => ({ ok: true, status: 200, json: async () => body }) as unknown as Response;
+        // 디렉터리는 그 사람을 모른다 — 구글이 다른 자리에 실어 준 이름만이 단서다.
+        if (url.includes('people.googleapis.com') || url.includes('admin.googleapis.com')) return ok({ items: [], people: [] });
+        if (url.includes('/colors')) return ok({ event: {} });
+        if (url.includes('/users/me/calendarList')) return ok({ items: [{ id: 'me@example.com', summary: '내 캘린더', primary: true, accessRole: 'owner' }] });
+        return ok({
+          items: [
+            // 여은진이 만든 일정 — 주최자에는 이름이 온다
+            { id: 'a', summary: '기획 리뷰', start: { date: d1 }, end: { date: d1 }, organizer: { email: 'eunjin.yeo@example.com', displayName: '여은진' }, attendees: [{ email: 'eunjin.yeo@example.com', organizer: true, responseStatus: 'accepted' }, { email: 'me@example.com', self: true, responseStatus: 'accepted' }] },
+            // 내가 만든 일정 — 같은 사람이 참석자로만, 이름 없이 온다
+            { id: 'b', summary: '내 회의', start: { date: d2 }, end: { date: d2 }, organizer: { email: 'me@example.com', self: true }, attendees: [{ email: 'me@example.com', self: true, organizer: true, responseStatus: 'accepted' }, { email: 'eunjin.yeo@example.com', responseStatus: 'needsAction' }] },
+          ],
+        });
+      }),
+    );
+    clientId = 'test-client.apps.googleusercontent.com';
+    const user = userEvent.setup();
+    const { container } = renderHome();
+    const pop = await openGoogleChip(container, user, /내 회의/);
+    // 내가 만든 일정 — "일정을 만든 사람" 행은 없고 나는 참석자에서 빠지며, 그 사람만 남는다.
+    expect(pop.querySelector('[data-gf-organizer]')).toBeNull();
+    expect(pop.querySelector('[data-gf-guest="me@example.com"]')).toBeNull();
+    const guest = pop.querySelector('[data-gf-guest="eunjin.yeo@example.com"]')!;
+    // 예전에는 `eunjin.yeo`(로컬파트)였다 — 이제 다른 일정의 주최자 이름을 가져다 쓴다.
+    expect(guest.textContent).toContain('여은진');
+    expect(guest.textContent).not.toMatch(/eunjin\.yeo(?!@)/);
+    expect(pop.textContent).toContain('1명 초대');
   });
 });

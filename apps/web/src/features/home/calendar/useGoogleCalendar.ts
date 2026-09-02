@@ -8,6 +8,7 @@
 // 구간을 보면 같은 화면에 있으면서 어떤 날은 한쪽만 차 있게 된다.
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { clearNameBook } from './nameBook';
 import { gridRange } from './model';
 import {
   createGoogleEvent,
@@ -129,6 +130,8 @@ export function clearGoogleSessionCache(): void {
   listCache = null;
   eventCache.clear();
   colorsCache = null;
+  // 이름 장부도 계정의 것이다 — 다음 연결이 다른 계정일 수 있다.
+  clearNameBook();
 }
 
 /**
@@ -366,6 +369,9 @@ export function useGoogleCalendar(
   const connect = useCallback(async () => {
     setError(null);
     const res = await requestGoogleToken(true);
+    // 창을 닫았거나 거절했으면 **아무 일도 없다**(제보) — 오류 문구도, 상태 변화도 없이
+    // 누르기 전 그대로다.
+    if ('cancelled' in res) return;
     if ('error' in res) {
       setError(res.error);
       return;

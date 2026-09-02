@@ -29,6 +29,7 @@
  */
 
 import { loadGisScript, readGoogleClientId } from '../../auth/googleIdentity';
+import { rememberName, rememberNames } from './nameBook';
 
 /**
  * 이 앱이 구글에 요구하는 것 — **필수 둘 + 선택 셋.**
@@ -262,7 +263,12 @@ export async function loadGoogleTokenApi(): Promise<GsiTokenApi | null> {
   return currentTokenApi();
 }
 
-export type TokenRequestResult = { token: GoogleToken } | { error: string };
+/**
+ * 토큰 요청의 결과 셋 — `cancelled`는 **사용자가 창을 닫았거나 거절한 것**이다(제보:
+ * 그때 "Popup window closed"가 오류처럼 떴다). 취소는 실패가 아니라 결정이므로
+ * 화면은 문구 없이 제자리로 돌아간다.
+ */
+export type TokenRequestResult = { token: GoogleToken } | { error: string } | { cancelled: true };
 
 /**
  * 액세스 토큰을 받는다.
@@ -306,9 +312,16 @@ export async function requestGoogleToken(interactive: boolean, hint?: string): P
             done({ token });
             return;
           }
+          // 동의 화면에서 **거절**을 누른 것은 취소다 — 오류로 말하지 않는다.
+          if (res.error === 'access_denied') {
+            done({ cancelled: true });
+            return;
+          }
           done({ error: res.error_description || res.error || '구글 권한을 받지 못했어요.' });
         },
-        error_callback: (err) => done({ error: err.message || err.type || '구글 권한을 받지 못했어요.' }),
+        // GIS의 `popup_closed`는 사용자가 창을 닫은 것 — "Popup window closed"라는
+        // 원문을 화면에 내보내지 않는다(제보). 창이 **열리지 못한** 것(팝업 차단)만 오류다.
+        error_callback: (err) => (err.type === 'popup_closed' ? done({ cancelled: true }) : done({ error: err.type === 'popup_failed_to_open' ? '팝업이 막혔어요. 브라우저의 팝업 차단을 풀고 다시 눌러 주세요.' : err.message || err.type || '구글 권한을 받지 못했어요.' })),
       });
       client.requestAccessToken();
     } catch {
@@ -329,7 +342,7 @@ export const GOOGLE_RECONNECT_MSG = '구글 연결이 만료됐어요. 달력의
  * 것만으로 구글 팝업이 떴다(제보). 토큰이 없다는 사실은 화면이 "다시 연결"
  * 버튼으로 말하고, 새 요청은 **사용자가 직접 누른 곳**에서만 나간다.
  */
-export function ensureGoogleToken(): TokenRequestResult {
+export function ensureGoogleToken(): { token: GoogleToken } | { error: string } {
   const stored = readStoredToken();
   if (stored) return { token: stored };
   return { error: GOOGLE_RECONNECT_MSG };
@@ -553,6 +566,22 @@ function parseAttendees(raw: unknown): { attendees?: string[]; rooms?: string[];
   };
 }
 
+/**
+ * 참석자·주최자 파싱 결과를 합치면서 **이름을 장부에 적는다**(`nameBook`) — 주최자에만
+ * 온 `displayName`이 같은 사람의 참석자 행에도 쓰이게(제보: 한 사람이 두 이름).
+ * 주최자 이름은 이 일정의 `names`에도 바로 넣는다.
+ */
+function remembered(
+  a: ReturnType<typeof parseAttendees>,
+  o: ReturnType<typeof parseOrganizer>,
+): ReturnType<typeof parseAttendees> & ReturnType<typeof parseOrganizer> {
+  rememberNames(a.names);
+  const org = o.organizer;
+  if (org?.name) rememberName(org.email, org.name);
+  const names = { ...(a.names ?? {}), ...(org?.name && !a.names?.[org.email] ? { [org.email]: org.name } : {}) };
+  return { ...a, ...o, ...(Object.keys(names).length ? { names } : {}) };
+}
+
 /** 주최자 — 이름이 없으면 이메일만(구글이 이름을 모르는 계정도 있다). */
 function parseOrganizer(raw: unknown): { organizer?: { email: string; name?: string; self?: true } } {
   const o = raw as Record<string, unknown> | undefined;
@@ -614,8 +643,7 @@ export function parseEvents(json: unknown, cal: GoogleCalendarMeta): GoogleEvent
       ...(cal.writable ? { writable: true } : {}),
       ...(typeof it.etag === 'string' ? { etag: it.etag } : {}),
       ...(typeof it.recurringEventId === 'string' ? { recurringEventId: it.recurringEventId } : {}),
-      ...parseAttendees(it.attendees),
-      ...parseOrganizer(it.organizer),
+      ...remembered(parseAttendees(it.attendees), parseOrganizer(it.organizer)),
       ...(it.visibility === 'public' || it.visibility === 'private' ? { visibility: it.visibility } : {}),
       ...(it.transparency === 'transparent' ? { transparency: 'transparent' as const } : {}),
       ...parseReminders(it.reminders),
