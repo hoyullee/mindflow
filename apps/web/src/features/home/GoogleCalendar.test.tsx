@@ -16,6 +16,7 @@ import { LocalImageStore } from '../../adapters/local/localImageStore';
 import type { Backend, DocMeta, DocStore } from '../../adapters/ports';
 import { isoOf } from './calendar/model';
 import { GOOGLE_CALENDAR_SCOPE, GOOGLE_SCOPE_REQUIRED } from './calendar/googleCalendar';
+import { clearGoogleSessionCache } from './calendar/useGoogleCalendar';
 
 /**
  * 클라이언트 ID는 `import.meta.env`에서 오는데 Vite가 그 값을 **변환 시점에 굳혀**
@@ -43,6 +44,8 @@ beforeEach(() => {
   sessionStorage.clear();
   vi.unstubAllGlobals();
   clientId = null;
+  // 한 탭이 곧 한 세션이다 — 테스트마다 새 탭이므로 앞 테스트가 남긴 기억을 지운다.
+  clearGoogleSessionCache();
 });
 
 class MockDocStore implements DocStore {
@@ -986,6 +989,39 @@ describe('구글 캘린더 겹치기(PR5)', () => {
     });
     expect(badge.textContent).toBe('Google');
     expect(document.querySelector('[data-event-cal="me@example.com"]')!.textContent).toContain('내 캘린더');
+  });
+
+  it('화면을 떠났다 돌아오면 구글 일정이 곧바로 보인다 — 받아 오는 동안 빈 달력이 되지 않는다(제보 #21)', async () => {
+    seed({ calendars: ['me@example.com'] });
+    seedToken();
+    stubGis();
+    stubFetch();
+    clientId = 'test-client.apps.googleusercontent.com';
+    const user = userEvent.setup();
+    const { container } = renderHome();
+    await openCalendar(container, user);
+    await waitFor(() => expect(screen.getAllByText(/구글 회의/).length).toBeGreaterThan(0));
+
+    // 두 번째 방문의 일정 조회를 **붙잡아 둔다** — 그동안 화면이 어떤지 보려는 것이다.
+    let release = (): void => undefined;
+    const gate = new Promise<void>((r) => {
+      release = r;
+    });
+    const inner = global.fetch as unknown as (u: string, i?: RequestInit) => Promise<Response>;
+    vi.stubGlobal('fetch', async (url: string, init?: RequestInit) => {
+      if (String(url).includes('googleapis.com/calendar') && !String(url).includes('calendarList')) await gate;
+      return inner(url, init);
+    });
+
+    const aside = container.querySelector('aside') as HTMLElement;
+    await user.click(within(aside).getByText('업무'));
+    await waitFor(() => expect(container.querySelector('[data-month-grid]')).toBeNull());
+    await user.click(within(aside).getByText('일정'));
+    await waitFor(() => expect(container.querySelector('[data-month-grid]')).toBeTruthy());
+
+    // 응답이 아직 오지 않았는데도 지난번에 받아 둔 일정이 그려져 있다.
+    expect(screen.getAllByText(/구글 회의/).length).toBeGreaterThan(0);
+    release();
   });
 
   it('구글 일정 상세도 구글 필드를 오른쪽 열에 놓는다 — 아래로 길어지지 않는다(제보 #16)', async () => {

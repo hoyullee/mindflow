@@ -1431,4 +1431,12 @@ describe('팝업·팝오버 안의 버튼 hover(제보)', () => {
     expect(css).toContain('[data-modal-overlay] .mf-ctl-primary:hover');
   });
 
+  // 제보(#7) — 종일·반복을 바꾸면 "가로 길이가 줄어들었다가 늘어난다": 내용이 커지는
+  // 순간 스크롤바가 생겨 그만큼 글줄이 좁아졌다 다시 넓어진다. 자리를 늘 비워 두면
+  // 그 흔들림이 없다(팝업 밖 목록은 내용이 그렇게 변하지 않아 그대로 둔다).
+  it('팝업 안 스크롤러는 스크롤바 자리를 늘 비워 둔다', () => {
+    const css = readFileSync(resolve('src/features/home/home.css'), 'utf8');
+    const rule = css.slice(css.indexOf('[data-modal-overlay] .lnb-scroll'));
+    expect(rule.slice(0, rule.indexOf('}'))).toContain('scrollbar-gutter: stable');
+  });
 });

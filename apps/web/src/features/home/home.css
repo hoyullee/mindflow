@@ -104,6 +104,14 @@ a:hover {
 .notif-scroll::-webkit-scrollbar-track {
   margin: 12px 0;
 }
+/* 모달 안의 스크롤러는 **자리를 늘 비워 둔다**(제보 #7). 팝업 안에서는 내용이
+   커졌다 작아졌다 하는데(종일·반복·목적지), 그때마다 스크롤바가 생겼다 없어지면
+   그만큼 내용 폭이 줄었다 늘어 글이 다시 흐른다 — 사용자에게는 "가로 길이가
+   줄어들었다가 늘어나는" 것으로 보인다. 6px을 늘 비워 두면 그 흔들림이 없다.
+   (팝업 밖 목록(LNB·알림·최근)은 내용이 그렇게 변하지 않아 그대로 둔다.) */
+[data-modal-overlay] .lnb-scroll {
+  scrollbar-gutter: stable;
+}
 @supports not selector(::-webkit-scrollbar) {
   .lnb-scroll,
   .notif-scroll,

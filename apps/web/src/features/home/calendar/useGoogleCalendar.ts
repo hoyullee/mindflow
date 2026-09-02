@@ -94,6 +94,28 @@ export interface GoogleCalendarPrefs {
 }
 
 /**
+ * **이 탭이 이미 받아 본 것**(제보 #21 — 화면에 들어올 때마다 일정이 잠깐 비었다가
+ * 나중에 떴다). 원인은 두 걸음짜리 사슬이다: 마운트마다 캘린더 목록부터 새로 받고,
+ * 그것이 도착해야 비로소 일정을 받는다 — 그동안 화면은 빈 달력이다.
+ *
+ * 그래서 **한 번 받은 것을 탭이 기억한다**: 다시 들어오면 그것을 곧바로 그리고,
+ * 새 값이 도착하면 조용히 갈아 끼운다(stale-while-revalidate). 대가는 "그 사이
+ * 구글에서 지운 일정이 한 번 더 보일 수 있다"이고, 새로고침·계정 전환이면 비워진다
+ * (메모리에만 산다 — 저장소에 두면 구글이 정본이라는 규칙이 흐려진다).
+ */
+let listCache: GoogleCalendarMeta[] | null = null;
+const eventCache = new Map<string, GoogleEvent[]>();
+
+/**
+ * 계정이 바뀌거나 연동을 끄면 기억도 버린다 — 남의 계정 일정이 비칠 자리를 없앤다.
+ * (탭 하나가 한 세션이므로, 새 탭을 흉내 내는 테스트도 이걸로 앞의 기억을 지운다.)
+ */
+export function clearGoogleSessionCache(): void {
+  listCache = null;
+  eventCache.clear();
+}
+
+/**
  * 이 소비처가 무엇을 필요로 하는가 — 조회는 공짜가 아니다.
  * - `events` 달력·위젯: 캘린더 목록 + 보이는 달의 일정
  * - `list` 설정 화면(열려 있을 때만): 목록만 — 그릴 달이 없다
@@ -115,9 +137,16 @@ export function useGoogleCalendar(
   mode: GoogleCalendarMode = 'events',
 ): GoogleCalendarApi {
   const available = useMemo(() => !!readGoogleClientId(), []);
+  // 이 달을 그리는 데 필요한 값들 — 상태보다 먼저 구해 둔다(첫 렌더가 기억을 찾는다).
+  const { from, to } = gridRange(y, m);
+  const enabled = prefs.enabled;
+  // 고른 캘린더 id를 문자열로 굳혀 둔다 — 배열은 렌더마다 새 참조라 effect가 매번 돈다.
+  const picked = prefs.calendars.join(',');
+  const cacheKey = `${picked}|${from}|${to}`;
   const [connected, setConnected] = useState(() => !!readStoredToken());
-  const [calendars, setCalendars] = useState<GoogleCalendarMeta[]>([]);
-  const [events, setEvents] = useState<GoogleEvent[]>([]);
+  // 기억이 있으면 **첫 렌더부터** 그것을 그린다 — 빈 달력이 한 프레임도 나가지 않는다.
+  const [calendars, setCalendars] = useState<GoogleCalendarMeta[]>(() => listCache ?? []);
+  const [events, setEvents] = useState<GoogleEvent[]>(() => eventCache.get(cacheKey) ?? []);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [needsReauth, setNeedsReauth] = useState(false);
@@ -151,6 +180,7 @@ export function useGoogleCalendar(
    * 부속이므로 토큰과 수명이 같아야 한다.
    */
   const resetAccountCache = useCallback(() => {
+    clearGoogleSessionCache();
     roomsLoadedRef.current = false;
     setRooms([]);
     setRoomsDenied(false);
@@ -164,11 +194,6 @@ export function useGoogleCalendar(
       aliveRef.current = false;
     };
   }, []);
-
-  const { from, to } = gridRange(y, m);
-  const enabled = prefs.enabled;
-  // 고른 캘린더 id를 문자열로 굳혀 둔다 — 배열은 렌더마다 새 참조라 effect가 매번 돈다.
-  const picked = prefs.calendars.join(',');
 
   /**
    * 토큰을 꺼내 한 번 호출한다. 토큰이 없거나 401로 죽었으면 **새로 받지 않는다** —
@@ -218,6 +243,7 @@ export function useGoogleCalendar(
       const list = await withToken((t) => fetchCalendarList(t)).catch(() => null);
       if (cancelled || !aliveRef.current) return;
       if (list) {
+        listCache = list;
         setCalendars(list);
         setConnected(true);
         setNeedsReauth(false);
@@ -243,6 +269,8 @@ export function useGoogleCalendar(
     }
     let cancelled = false;
     setLoading(true);
+    // 받는 동안에는 **이 탭이 기억하는 것**을 그대로 둔다(#21) — 기억이 없을 때만 비운다.
+    setEvents(eventCache.get(cacheKey) ?? []);
     void (async () => {
       const got = await withToken(async (t) => {
         // 캘린더 하나가 실패해도(권한 없음·삭제됨) 나머지는 그린다.
@@ -250,13 +278,15 @@ export function useGoogleCalendar(
         return per.flat();
       }).catch(() => null);
       if (cancelled || !aliveRef.current) return;
-      setEvents(got ?? []);
+      // 조회가 실패하면(토큰 죽음 등) 기억한 것을 지우지 않는다 — 화면이 갑자기 비지 않게.
+      if (got) eventCache.set(cacheKey, got);
+      if (got) setEvents(got);
       setLoading(false);
     })();
     return () => {
       cancelled = true;
     };
-  }, [available, enabled, mode, picked, calendars, from, to, reloadTick, withToken]);
+  }, [available, enabled, mode, picked, calendars, from, to, cacheKey, reloadTick, withToken]);
 
   const connect = useCallback(async () => {
     setError(null);
