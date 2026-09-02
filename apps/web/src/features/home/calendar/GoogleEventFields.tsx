@@ -328,15 +328,25 @@ function AnchoredList({ anchor, attrs, children }: { anchor: HTMLElement | null;
   );
 }
 
-/** 초대된 사람을 몇 줄까지 펼쳐 보일까 — 그 뒤는 `외 N명`으로 접힌다(제보 #6). */
-const SHOWN_MAX = 2;
+/**
+ * 초대 목록이 차지하는 **칸 수**(요청) — 셋까지는 사람이 그대로 서고, 넷부터는
+ * 마지막 칸이 `외 N명`이 된다(둘 + 접힌 줄 = 세 칸).
+ */
+const ROWS_MAX = 3;
 
-/** 초대된 한 사람 — 아바타 + 이름(없으면 주소) + 제외. */
+/**
+ * 초대된 한 사람 — 아바타 + **이름·이메일** + 제외(요청). 이름을 모르는 주소(직접
+ * 적은 것)는 주소 한 줄이다 — 같은 값을 두 줄로 되풀이하지 않는다. 후보 목록과 같은
+ * 꼴이라 "고른 그 사람"이 그대로 남은 것으로 읽힌다.
+ */
 function GuestRow({ email, name, i, onRemove }: { email: string; name?: string; i: number; onRemove: () => void }) {
   return (
     <span data-gf-guest={email} style={{ display: 'flex', alignItems: 'center', gap: 9, padding: '7px 9px', borderRadius: 11, background: 'var(--mf-card)', border: '1px solid var(--mf-border-soft)', minWidth: 0 }}>
       <Avatar label={name ?? email} i={i} />
-      <span style={{ flex: 1, minWidth: 0, fontSize: 12, fontWeight: 700, color: 'var(--mf-text)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{name ?? email}</span>
+      <span style={{ display: 'flex', flexDirection: 'column', gap: 1, flex: 1, minWidth: 0 }}>
+        <span style={{ fontSize: 12, fontWeight: 700, color: 'var(--mf-text)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{name ?? email}</span>
+        {name && <span style={{ fontSize: 10.5, color: 'var(--mf-faint)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{email}</span>}
+      </span>
       <button type="button" aria-label={`${email} 초대 취소`} title="제외" className="mf-ctl" onClick={onRemove} style={{ flex: '0 0 auto', width: 22, height: 22, border: 0, borderRadius: 999, background: 'transparent', color: 'var(--mf-faint)', cursor: 'pointer', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', padding: 0 }}>
         <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" aria-hidden="true">
           <path d="M6 6l12 12M18 6 6 18" />
@@ -364,8 +374,9 @@ function Attendees({ list, onChange, search }: { list: string[]; onChange: (next
   // 접힌 사람들(`외 N명`) 툴팁 — 여기서 지울 수 있어야 한다(요청).
   const [moreOpen, setMoreOpen] = useState(false);
   const [moreAnchor, setMoreAnchor] = useState<HTMLElement | null>(null);
-  // 셋 이상이면 둘만 보이고 나머지는 접힌다(제보 #6 — "2명까지 노출, 3번째 칸은 외 N명").
-  const shown = list.length > SHOWN_MAX ? list.slice(0, SHOWN_MAX) : list;
+  // **셋까지는 그대로 보이고 넷부터 접힌다**(요청): 넷이면 둘 + `외 2명`으로 세 칸이다.
+  // 접는 이유는 자리다 — 초대가 늘수록 팝업이 그만큼 길어져 아래 필드가 밀린다.
+  const shown = list.length > ROWS_MAX ? list.slice(0, ROWS_MAX - 1) : list;
   const rest = list.slice(shown.length);
   // 이름 검색은 **입력마다 왕복**이므로 220ms 디바운스 — 사람이 치는 속도로는
   // 한 낱말에 한 번이면 충분하다(홈 검색과 같은 판단).
@@ -425,66 +436,6 @@ function Attendees({ list, onChange, search }: { list: string[]; onChange: (next
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 8, minWidth: 0 }}>
-      {/* 초대된 사람 — 원본의 카드 행(아바타 + 이름 + 제외). **두 줄까지만** 보이고
-          그 뒤는 `외 N명` 한 줄로 접힌다(제보 #6): 초대가 늘수록 팝업이 그만큼 길어져
-          아래 필드가 밀린다. 접힌 사람은 그 줄을 눌러 뜨는 툴팁에서 보고 지운다. */}
-      {shown.map((email, i) => (
-        <GuestRow key={email} email={email} name={names[email]} i={i} onRemove={() => onChange(list.filter((e) => e !== email))} />
-      ))}
-      {rest.length > 0 && (
-        <>
-          <button
-            type="button"
-            ref={setMoreAnchor}
-            data-gf-guest-more
-            aria-expanded={moreOpen}
-            className="mf-ctl"
-            onClick={() => setMoreOpen((v) => !v)}
-            style={{ display: 'flex', alignItems: 'center', gap: 9, padding: '7px 9px', borderRadius: 11, background: 'var(--mf-card)', border: '1px solid var(--mf-border-soft)', minWidth: 0, font: 'inherit', cursor: 'pointer', textAlign: 'left' }}
-          >
-            {/* 접힌 사람들의 얼굴을 겹쳐 보여 준다 — 몇 명인지 숫자로도 함께. */}
-            <span aria-hidden style={{ display: 'inline-flex', flex: '0 0 auto', paddingRight: Math.min(rest.length, 3) > 1 ? 7 : 0 }}>
-              {rest.slice(0, 3).map((email, i) => (
-                <span key={email} style={{ marginLeft: i === 0 ? 0 : -7, borderRadius: 999, boxShadow: '0 0 0 2px var(--mf-card)', display: 'inline-flex' }}>
-                  <Avatar label={names[email] ?? email} i={shown.length + i} />
-                </span>
-              ))}
-            </span>
-            <span style={{ flex: 1, minWidth: 0, fontSize: 12, fontWeight: 700, color: 'var(--mf-subtext)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>외 {rest.length}명</span>
-            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="var(--mf-faint)" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true" style={{ flex: '0 0 auto', transform: moreOpen ? 'rotate(180deg)' : 'none', transition: 'transform .14s ease' }}>
-              <path d="m6 9 6 6 6-6" />
-            </svg>
-          </button>
-          {moreOpen && (
-            <AnchoredList anchor={moreAnchor} attrs={{ 'data-gf-guest-list': '1' }}>
-              {list.map((email, i) => (
-                <span key={email} data-gf-guest-item={email} style={{ display: 'flex', alignItems: 'center', gap: 9, padding: '8px 10px', minWidth: 0, ...rowDivider(i) }}>
-                  <Avatar label={names[email] ?? email} i={i} />
-                  <span style={{ flex: 1, minWidth: 0, fontSize: 12, fontWeight: 700, color: 'var(--mf-text)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{names[email] ?? email}</span>
-                  <button
-                    type="button"
-                    aria-label={`${email} 초대 취소`}
-                    title="제외"
-                    className="mf-ctl"
-                    onClick={() => {
-                      const next = list.filter((e) => e !== email);
-                      onChange(next);
-                      // 마지막 한 명까지 지우면 접을 것이 없다 — 툴팁도 함께 닫는다.
-                      if (next.length <= SHOWN_MAX) setMoreOpen(false);
-                    }}
-                    style={{ flex: '0 0 auto', width: 22, height: 22, border: 0, borderRadius: 999, background: 'transparent', color: 'var(--mf-faint)', cursor: 'pointer', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', padding: 0 }}
-                  >
-                    <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" aria-hidden="true">
-                      <path d="M6 6l12 12M18 6 6 18" />
-                    </svg>
-                  </button>
-                </span>
-              ))}
-            </AnchoredList>
-          )}
-        </>
-      )}
-
       <span ref={setAnchor} style={{ display: 'block', minWidth: 0 }}>
       <SearchBox
         label={search ? '참석자 이름 또는 이메일' : '참석자 이메일'}
@@ -555,6 +506,70 @@ function Attendees({ list, onChange, search }: { list: string[]; onChange: (next
           })}
           {noHit && <span style={{ padding: 10, fontSize: 11.5, color: 'var(--mf-faint)', ...rowDivider(hits.length) }}>일치하는 사람이 없어요 · Enter로 이메일 직접 초대</span>}
         </AnchoredList>
+      )}
+
+      {/* 초대된 사람 — **검색 상자 아래**에 쌓인다(요청: 회의실과 같은 순서로).
+          원본의 카드 행(아바타 + 이름·이메일 + 제외)이고, 셋까지는 그대로 보이다
+          넷부터 마지막 칸이 `외 N명`으로 접힌다. 접힌 사람은 그 줄을 눌러 뜨는
+          툴팁에서 보고 지운다. */}
+      {shown.map((email, i) => (
+        <GuestRow key={email} email={email} name={names[email]} i={i} onRemove={() => onChange(list.filter((e) => e !== email))} />
+      ))}
+      {rest.length > 0 && (
+        <>
+          <button
+            type="button"
+            ref={setMoreAnchor}
+            data-gf-guest-more
+            aria-expanded={moreOpen}
+            className="mf-ctl"
+            onClick={() => setMoreOpen((v) => !v)}
+            style={{ display: 'flex', alignItems: 'center', gap: 9, padding: '7px 9px', borderRadius: 11, background: 'var(--mf-card)', border: '1px solid var(--mf-border-soft)', minWidth: 0, font: 'inherit', cursor: 'pointer', textAlign: 'left' }}
+          >
+            {/* 접힌 사람들의 얼굴을 겹쳐 보여 준다 — 몇 명인지 숫자로도 함께. */}
+            <span aria-hidden style={{ display: 'inline-flex', flex: '0 0 auto', paddingRight: Math.min(rest.length, 3) > 1 ? 7 : 0 }}>
+              {rest.slice(0, 3).map((email, i) => (
+                <span key={email} style={{ marginLeft: i === 0 ? 0 : -7, borderRadius: 999, boxShadow: '0 0 0 2px var(--mf-card)', display: 'inline-flex' }}>
+                  <Avatar label={names[email] ?? email} i={shown.length + i} />
+                </span>
+              ))}
+            </span>
+            <span style={{ flex: 1, minWidth: 0, fontSize: 12, fontWeight: 700, color: 'var(--mf-subtext)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>외 {rest.length}명</span>
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="var(--mf-faint)" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true" style={{ flex: '0 0 auto', transform: moreOpen ? 'rotate(180deg)' : 'none', transition: 'transform .14s ease' }}>
+              <path d="m6 9 6 6 6-6" />
+            </svg>
+          </button>
+          {moreOpen && (
+            <AnchoredList anchor={moreAnchor} attrs={{ 'data-gf-guest-list': '1' }}>
+              {list.map((email, i) => (
+                <span key={email} data-gf-guest-item={email} style={{ display: 'flex', alignItems: 'center', gap: 9, padding: '8px 10px', minWidth: 0, ...rowDivider(i) }}>
+                  <Avatar label={names[email] ?? email} i={i} />
+                  <span style={{ display: 'flex', flexDirection: 'column', gap: 1, flex: 1, minWidth: 0 }}>
+                    <span style={{ fontSize: 12, fontWeight: 700, color: 'var(--mf-text)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{names[email] ?? email}</span>
+                    {names[email] && <span style={{ fontSize: 10.5, color: 'var(--mf-faint)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{email}</span>}
+                  </span>
+                  <button
+                    type="button"
+                    aria-label={`${email} 초대 취소`}
+                    title="제외"
+                    className="mf-ctl"
+                    onClick={() => {
+                      const next = list.filter((e) => e !== email);
+                      onChange(next);
+                      // 접을 것이 없어지면(셋 이하) 툴팁도 함께 닫는다.
+                      if (next.length <= ROWS_MAX) setMoreOpen(false);
+                    }}
+                    style={{ flex: '0 0 auto', width: 22, height: 22, border: 0, borderRadius: 999, background: 'transparent', color: 'var(--mf-faint)', cursor: 'pointer', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', padding: 0 }}
+                  >
+                    <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" aria-hidden="true">
+                      <path d="M6 6l12 12M18 6 6 18" />
+                    </svg>
+                  </button>
+                </span>
+              ))}
+            </AnchoredList>
+          )}
+        </>
       )}
     </div>
   );

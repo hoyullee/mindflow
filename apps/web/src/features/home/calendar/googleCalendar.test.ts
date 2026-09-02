@@ -1,5 +1,5 @@
 import { describe, expect, it, beforeEach, vi } from 'vitest';
-import { GOOGLE_CALENDAR_SCOPE, RECURRENCE_OFF, buildRecurrence, draftToBody, googleWriteError, recurrenceSummary, isDayOffHoliday, isHolidayCalendarId, onTokenChange, scopeCovers, parseCalendarList, parseEvents, readStoredToken, splitGoogleDateTime, storeToken, type GoogleCalendarMeta } from './googleCalendar';
+import { GOOGLE_CALENDAR_SCOPE, RECURRENCE_OFF, buildRecurrence, draftToBody, googleWriteError, managedFieldsDiffer, updateGoogleEvent, recurrenceSummary, isDayOffHoliday, isHolidayCalendarId, onTokenChange, scopeCovers, parseCalendarList, parseEvents, readStoredToken, splitGoogleDateTime, storeToken, type GoogleCalendarMeta } from './googleCalendar';
 import { googleEntries, holidayMap } from './entries';
 import { draftFrom } from './GoogleEventDetail';
 import { submitNewEvent } from './newEventSubmit';
@@ -346,5 +346,44 @@ describe('구글 전용 필드(PR6 후속 — 디자인 원본 nIsGoogle)', () =
     // 필드 묶음이 바꾼 값은 이긴다
     expect(draftFrom(g, {}, { attendees: [], reminderMinutes: undefined })).toMatchObject({ attendees: [] });
     expect('reminderMinutes' in draftFrom(g, {}, { reminderMinutes: undefined })).toBe(false);
+  });
+
+  // 제보 — 구글 일정을 고치면 412("그 사이 구글에서 바뀌었어요")로 막혔다. 대개는 사람이
+  // 고친 게 아니라 **회의실이 스스로 초대를 수락**하는 것 같은 곁가지 변화다: 우리가 다루는
+  // 값이 그대로면 새 판을 기준으로 한 번 더 쓴다.
+  describe('412 — 그 사이 바뀐 것이 무엇인가', () => {
+    const base = parseEvents({ items: [{ id: 'e1', etag: '"v1"', summary: '회의', start: { date: '2026-08-10' }, end: { date: '2026-08-11' }, attendees: [{ email: 'a@b.com' }] }] }, { ...CAL, writable: true })[0]!;
+
+    it('응답 상태만 바뀐 판은 같은 것으로 본다 — 사람이 고친 값은 다르다', () => {
+      const same = parseEvents({ items: [{ id: 'e1', etag: '"v2"', summary: '회의', start: { date: '2026-08-10' }, end: { date: '2026-08-11' }, attendees: [{ email: 'a@b.com', responseStatus: 'accepted' }] }] }, CAL)[0]!;
+      const changed = parseEvents({ items: [{ id: 'e1', etag: '"v2"', summary: '남이 고친 제목', start: { date: '2026-08-10' }, end: { date: '2026-08-11' }, attendees: [{ email: 'a@b.com' }] }] }, CAL)[0]!;
+      expect(managedFieldsDiffer(base, same)).toBe(false);
+      expect(managedFieldsDiffer(base, changed)).toBe(true);
+    });
+
+    it('곁가지 변화면 새 판(etag)으로 한 번 더 쓴다', async () => {
+      const calls: { method: string; etag: string | null }[] = [];
+      vi.stubGlobal('fetch', async (_url: string, init?: RequestInit) => {
+        const method = (init?.method ?? 'GET') as string;
+        const etag = ((init?.headers ?? {}) as Record<string, string>)['If-Match'] ?? null;
+        calls.push({ method, etag });
+        if (method === 'PATCH' && etag === '"v1"') return { ok: false, status: 412, json: async () => ({}) } as unknown as Response;
+        if (method === 'GET') return { ok: true, status: 200, json: async () => ({ id: 'e1', etag: '"v2"', summary: '회의', start: { date: '2026-08-10' }, end: { date: '2026-08-11' }, attendees: [{ email: 'a@b.com', responseStatus: 'accepted' }] }) } as unknown as Response;
+        return { ok: true, status: 200, json: async () => ({}) } as unknown as Response;
+      });
+      await updateGoogleEvent('tok', base, { title: '회의', allDay: true, startDate: '2026-08-10', endDate: '2026-08-10' });
+      expect(calls.map((c) => `${c.method}:${c.etag ?? '-'}`)).toEqual(['PATCH:"v1"', 'GET:-', 'PATCH:"v2"']);
+      vi.unstubAllGlobals();
+    });
+
+    it('사람이 고친 판이면 덮지 않고 그대로 막는다(If-Match를 쓰는 이유)', async () => {
+      vi.stubGlobal('fetch', async (_url: string, init?: RequestInit) => {
+        const method = (init?.method ?? 'GET') as string;
+        if (method === 'PATCH') return { ok: false, status: 412, json: async () => ({}) } as unknown as Response;
+        return { ok: true, status: 200, json: async () => ({ id: 'e1', etag: '"v2"', summary: '남이 고친 제목', start: { date: '2026-08-10' }, end: { date: '2026-08-11' } }) } as unknown as Response;
+      });
+      await expect(updateGoogleEvent('tok', base, { title: '회의', allDay: true, startDate: '2026-08-10', endDate: '2026-08-10' })).rejects.toMatchObject({ status: 412 });
+      vi.unstubAllGlobals();
+    });
   });
 });
