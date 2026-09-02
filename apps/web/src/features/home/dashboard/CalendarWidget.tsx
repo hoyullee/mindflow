@@ -18,7 +18,7 @@ import type { MouseEvent as ReactMouseEvent } from 'react';
 import type { CalendarEntry, HolidayInfo } from '../calendar/entries';
 import { MiniCalendar } from '../calendar/MiniCalendar';
 import type { CalWidgetMode } from './model';
-import { entryChip, type ChipSurface } from '../calendar/chips';
+import { entryChip, markStyle, type ChipSurface } from '../calendar/chips';
 import {
   DOW,
   addDays,
@@ -516,7 +516,7 @@ function Row({ entry, todayIso, surface, showTime, onPick }: { entry: CalendarEn
     >
       <span style={{ flex: '0 0 auto', minWidth: 38, height: 19, padding: '0 6px', borderRadius: 6, background: today ? 'var(--mf-accent-soft)' : over ? 'var(--mf-danger-bg)' : 'var(--mf-panel2)', color: today ? 'var(--mf-accent-strong)' : over ? 'var(--mf-danger)' : 'var(--mf-muted)', fontSize: 10.5, fontWeight: 800, display: 'inline-flex', alignItems: 'center', justifyContent: 'center', whiteSpace: 'nowrap' }}>{badge}</span>
       <span style={{ flex: 1, minWidth: 0, fontSize: 13, fontWeight: 600, color: 'var(--mf-text)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{entry.title || '제목 없음'}</span>
-      <span style={{ width: 5, height: 5, borderRadius: 999, background: chip.dot, flex: '0 0 auto', display: 'block' }} />
+      <span style={markStyle(chip)} />
     </button>
   );
 }
@@ -542,7 +542,10 @@ function Chip({ entry, todayIso, surface, compact, small, onPick }: { entry: Cal
         display: 'flex',
         alignItems: 'center',
         gap: small ? 4 : 5,
-        width: '100%',
+        // 칩은 **글자 폭만큼만** 눌린다(제보 #18) — 칸 폭을 다 차지하면 글자 없는
+        // 오른쪽 빈 자리를 눌러도 상세가 열린다(일정 화면 칩과 같은 수리).
+        maxWidth: '100%',
+        alignSelf: 'flex-start',
         boxSizing: 'border-box',
         padding: small ? '1px 5px' : '3px 6px',
         borderRadius: 6,
@@ -557,8 +560,8 @@ function Chip({ entry, todayIso, surface, compact, small, onPick }: { entry: Cal
         opacity: entry.due < todayIso ? 0.6 : 1,
       }}
     >
-      <span style={{ width: 4, height: 4, borderRadius: 999, background: chip.dot, flex: '0 0 auto', display: 'block' }} />
-      <span style={{ flex: 1, minWidth: 0, fontSize: small ? 11.5 : 12, fontWeight: 700, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+      <span style={markStyle(chip)} />
+      <span style={{ flex: '0 1 auto', minWidth: 0, fontSize: small ? 11.5 : 12, fontWeight: 700, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
         {time}
         {entry.title || '제목 없음'}
       </span>

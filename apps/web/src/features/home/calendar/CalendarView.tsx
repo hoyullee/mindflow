@@ -39,6 +39,9 @@ import { useGoogleCalendar } from './useGoogleCalendar';
  * 이번 단계에 **없는 것**(다음 PR): 구글 겹치기·공휴일 · 대시보드 캘린더 위젯.
  * 눌러도 아무 일이 없는 버튼은 두지 않는다 — 그래서 `구글 연결` 버튼은 아직 없다.
  */
+/** 모델은 접지 않는다 — 몇 줄이 들어가는지는 격자가 실측해서 정한다(제보 #1). */
+const MONTH_CELL_ALL = 99;
+
 export function CalendarView({
   state,
   controller,
@@ -79,9 +82,9 @@ export function CalendarView({
     () => ({ canSearchPeople: google.canSearchPeople, searchPeople: google.searchPeople, canPickRooms: google.canPickRooms, rooms: google.rooms, roomsReady: google.roomsReady, loadRooms: google.loadRooms }),
     [google.canSearchPeople, google.searchPeople, google.canPickRooms, google.rooms, google.roomsReady, google.loadRooms],
   );
-  // 모바일은 칸이 좁아 칩 하나 + 접힌 개수만 — 사이드는 아예 접는다(공간이 없다).
-  const perCell = isMobile ? 1 : 2;
-  const cells = useMemo(() => monthCells(state.calY, state.calM, entries, today, perCell, 6, holidays), [state.calY, state.calM, entries, today, perCell, holidays]);
+  // 칸에 몇 개를 보여 줄지는 **격자가 자기 칸 높이를 재서** 정한다(제보: 여유가
+  // 남는데도 `+N개 더`가 떴다). 모델은 접지 않고 그 날의 항목을 전부 싣는다.
+  const cells = useMemo(() => monthCells(state.calY, state.calM, entries, today, MONTH_CELL_ALL, 6, holidays), [state.calY, state.calM, entries, today, holidays]);
   const selectedDay = state.calDay ?? today;
   // 칩이 얹히는 면 — hue는 칸반 팔레트, 밝기는 지금 홈 테마의 면에서(다크 대응).
   const surface = useMemo(() => homeChipSurface(state.theme), [state.theme]);
@@ -119,6 +122,16 @@ export function CalendarView({
 
   // 항목 클릭 = **상세 팝업**. 그 칸반으로 가는 길은 팝업 발치의 `이 칸반 열기`다 —
   // 클릭이 곧바로 화면을 떠나면 "날짜만 하루 미루기"에도 맵을 열어야 한다.
+  /**
+   * 날짜 칸을 골랐다 — **마감 목록은 닫는다**(제보 #12). 그 판은 달력 위에 겹쳐
+   * 뜨는 훑어보기용 목록이라, 사용자가 달력으로 돌아온 순간 자리를 비켜 주는 것이
+   * 맞다(날짜별 보기는 고른 날을 보여 주는 짝이라 그대로 둔다).
+   */
+  const pickDay = (iso: string): void => {
+    if (state.calDeadline) controller.toggleCalDeadline();
+    controller.selectCalDay(iso);
+  };
+
   const openEntry = (e: CalendarEntry): void => {
     // Geurio 일정과 칸반 카드는 고칠 것이 달라 팝업이 갈린다.
     // 구글 일정은 **읽기 전용 팝업**으로 — 우리 상세는 고칠 수 있는 척한다.
@@ -247,7 +260,7 @@ export function CalendarView({
             selected={state.calDay}
             surface={surface}
             compact={isMobile}
-            onPickDay={controller.selectCalDay}
+            onPickDay={pickDay}
             onOpenDayList={(iso, at) => setDayList({ iso, at })}
             onPickEntry={openEntry}
             // `+N개 더`도 같은 팝업이다 — 접힌 것을 보려는 클릭이니 전부를 보여 준다
@@ -280,7 +293,8 @@ export function CalendarView({
             onPickDay={controller.selectCalDay}
             onPickEntry={openEntry}
             onSetMonth={controller.setCalMonth}
-            onNewEvent={(iso) => controller.openNewEvent(iso, true)}
+            // 시간표의 빈 시간대에서 열면 **시각이 있는** 일정으로 시작한다.
+            onNewEvent={(iso, at) => controller.openNewEvent(iso, !at, at)}
             onClose={() => controller.setCalSide(null)}
           />
         )}

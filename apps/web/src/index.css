@@ -136,3 +136,19 @@ label {
     transform: none;
   }
 }
+
+/* 포커스 가능한 컨테이너를 눌렀을 때 글자에 캐럿이 깜빡이던 것(제보 — 날짜 칸·팝업
+   여백). 크롬은 `tabindex`가 있는 요소(달력 칸, Radix Dialog Content)를 클릭하면
+   그 안 텍스트에 **접힌 선택**을 만들고, 포커스가 있으니 캐럿을 그린다(실측:
+   activeElement=칸, selection이 그 칸의 숫자 텍스트에 collapsed). 글을 쓰는 곳이
+   아니므로 캐럿만 지운다 — 선택·복사는 그대로 두고 입력만 자기 캐럿을 되찾는다. */
+[data-day-cell],
+[data-modal-overlay] {
+  caret-color: transparent;
+}
+[data-day-cell] input,
+[data-modal-overlay] input,
+[data-modal-overlay] textarea,
+[data-modal-overlay] [contenteditable='true'] {
+  caret-color: auto;
+}

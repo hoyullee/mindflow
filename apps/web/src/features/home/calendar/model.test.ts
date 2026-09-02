@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import type { CalendarEntry } from './entries';
 import { calendarEntries, datedCards, eventEntries } from './entries';
 import type { CalendarEvent } from '../../../adapters/ports';
-import { addDays, daysBetween, addMonth, calendarStats, statBadge, dayProgress, coversDay, dateLabel, dayTimeline, dueBadge, entriesOn, gridRange, hourLabel, isSpan, minutesOf, monthCells, monthLabel, overdueEntries, timeLabel, todayISO, upcomingEntries, weekEndISO, weekLabel, weekStartISO, HOUR_ROW } from './model';
+import { addDays, daysBetween, addMonth, calendarStats, statBadge, dayProgress, coversDay, dateLabel, dayTimeline, dueBadge, dueTone, entriesOn, gridRange, hourLabel, isSpan, minutesOf, monthCells, monthLabel, overdueEntries, timeLabel, todayISO, upcomingEntries, weekEndISO, weekLabel, weekStartISO, HOUR_ROW } from './model';
 
 // 일정 화면의 데이터 계층 — 순수 함수라 날짜를 고정해 검증한다.
 
@@ -348,5 +348,16 @@ describe('시각·격자 구간', () => {
     const cells = monthCells(2026, 8, [], '2026-08-26');
     expect(cells[0]!.iso).toBe(from);
     expect(cells[41]!.iso).toBe(to);
+  });
+});
+
+describe('마감 배지의 중요도(dueTone)', () => {
+  const TODAY = '2026-08-26';
+  it('지남 / 오늘 / 사흘 안 / 그 뒤 네 등급으로 갈린다', () => {
+    expect(dueTone('2026-08-25', TODAY)).toBe('over');
+    expect(dueTone(TODAY, TODAY)).toBe('today');
+    expect(dueTone('2026-08-27', TODAY)).toBe('soon');
+    expect(dueTone('2026-08-29', TODAY)).toBe('soon');
+    expect(dueTone('2026-08-30', TODAY)).toBe('later');
   });
 });

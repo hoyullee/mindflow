@@ -1120,8 +1120,10 @@ export function useHomeController() {
   /** 항목 클릭 → 상세 팝업. 대상은 그 칸반 카드다(정본은 그 문서). */
   const openCalendarCard = (docId: string, cardId: string) => patch({ calDetail: { docId, cardId } });
   const closeCalendarCard = () => patch({ calDetail: null });
-  /** `새 일정`·시간표의 `＋` — 처음 놓일 날짜는 고른 날(없으면 오늘). */
-  const openNewEvent = (date?: string, allDay = true) => patch({ calNewEvent: { date: date || state.calDay || todayISO(), allDay } });
+  /** `새 일정`·시간표의 `＋` — 처음 놓일 날짜는 고른 날(없으면 오늘).
+   *  `at`(`HH:MM`)은 시간표의 빈 시간대를 눌러 열었을 때 그 시각이다. */
+  const openNewEvent = (date?: string, allDay = true, at?: string) =>
+    patch({ calNewEvent: { date: date || state.calDay || todayISO(), allDay, ...(at ? { at } : {}) } });
   const closeNewEvent = () => patch({ calNewEvent: null });
   /** Geurio 일정을 눌렀다 — 칸반 카드 상세와 다른 팝업이다(고칠 것이 다르다).
    *  반복 일정은 **어느 회차를 눌렀는가**(occ = 그 회차의 시작일)까지 담는다 —

@@ -152,4 +152,47 @@ describe('Modal (Radix Dialog)', () => {
     vi.unstubAllGlobals();
     vi.useRealTimers();
   });
+
+  // 제보(#8) — 목적지를 구글로 바꾸면 "요소들의 정렬이 깨진다": 폭이 애니메이션하는
+  // 동안 내용이 프레임마다 중간 폭으로 다시 흘렀다(실측 본문 열 558 → 318 → 429 …).
+  // 전이 내내 자식은 **넓은 쪽 폭**에 고정되고 카드가 잘라 낸다.
+  it('useCardMorph — 전이 중 자식은 넓은 쪽 폭에 고정되고, 끝나면 원래대로 돌아온다', () => {
+    vi.useFakeTimers();
+    let notify: (() => void) | null = null;
+    vi.stubGlobal(
+      'ResizeObserver',
+      class {
+        constructor(cb: () => void) {
+          notify = cb;
+        }
+        observe() {}
+        disconnect() {}
+      },
+    );
+    function Probe() {
+      const ref = useCardMorph();
+      return (
+        <div ref={ref} data-morph style={{ width: 900 }}>
+          <div data-kid />
+        </div>
+      );
+    }
+    const { container } = render(<Probe />);
+    const el = container.querySelector('[data-morph]') as HTMLElement;
+    const kid = container.querySelector('[data-kid]') as HTMLElement;
+    const size = { w: 560, h: 400 };
+    Object.defineProperty(el, 'offsetWidth', { get: () => size.w });
+    Object.defineProperty(el, 'offsetHeight', { get: () => size.h });
+    // 테두리 2px — 자식이 눕는 자리는 그 안쪽이다.
+    Object.defineProperty(el, 'clientWidth', { get: () => size.w - 2 });
+    notify!();
+    size.w = 900;
+    size.h = 500;
+    notify!();
+    expect(kid.style.width).toBe('898px'); // 넓은 쪽(900) − 테두리
+    vi.advanceTimersByTime(300);
+    expect(kid.style.width).toBe(''); // 원래대로(자식은 카드 폭을 따른다)
+    vi.unstubAllGlobals();
+    vi.useRealTimers();
+  });
 });

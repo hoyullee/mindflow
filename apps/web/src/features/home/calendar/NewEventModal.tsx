@@ -22,7 +22,7 @@ import { DateButton, PillButton } from './DatePop';
 import { TimeButton } from './TimePop';
 import { addDays, daysBetween, minutesOf, timeLabel, todayISO } from './model';
 import { RadioCards } from '../../../components/Segmented';
-import { GoogleEventFields, type GoogleDirectoryApi, type GoogleFieldsValue } from './GoogleEventFields';
+import { GoogleEventFields, ReminderField, type GoogleDirectoryApi, type GoogleFieldsValue } from './GoogleEventFields';
 import { RecurrenceField } from './RecurrenceField';
 import { buildRecurrence, RECURRENCE_OFF, type RecurrenceSpec } from './googleCalendar';
 import type { CalendarEventInput } from '../../../adapters/ports';
@@ -49,6 +49,8 @@ export interface NewEventDraft {
   /** 처음 놓일 날짜(달력에서 고른 날, 없으면 오늘). */
   date: string;
   allDay: boolean;
+  /** 처음 놓일 시각(`HH:MM`) — 시간표의 빈 시간대를 눌러 열었을 때 그 시각. */
+  at?: string;
 }
 
 export function NewEventModal({
@@ -76,8 +78,12 @@ export function NewEventModal({
   const [allDay, setAllDay] = useState(draft.allDay);
   const [startDate, setStartDate] = useState(draft.date || todayISO());
   const [endDate, setEndDate] = useState(draft.date || todayISO());
-  const [startTime, setStartTime] = useState('09:00');
-  const [endTime, setEndTime] = useState('10:00');
+  // 시간표의 빈 시간대를 눌러 열었으면 그 시각부터 한 시간(기본은 09:00–10:00).
+  const [startTime, setStartTime] = useState(draft.at ?? '09:00');
+  const [endTime, setEndTime] = useState(() => {
+    const from = minutesOf(draft.at ?? '09:00');
+    return from === null ? '10:00' : hhmm(Math.min(23 * 60 + 59, from + 60));
+  });
   const [location, setLocation] = useState('');
   const [note, setNote] = useState('');
   // 기본값은 **우리 표**다 — 남의 서비스에 쓰는 일은 사용자가 골라야 한다.
@@ -213,10 +219,13 @@ export function NewEventModal({
             <span style={{ fontSize: 13.5, fontWeight: 800, letterSpacing: '-.02em', color: 'var(--mf-text)', whiteSpace: 'nowrap' }}>새 일정</span>
           </span>
           {/* 어디에 저장되는지 머리에서 한 번 더(원본 `nCalPill`). **고를 것이 하나면
-              그리지 않는다** — 아래 배지와 같은 말을 두 번 하는 셈이다. */}
+              그리지 않는다** — 아래 배지와 같은 말을 두 번 하는 셈이다.
+              구글이면 **`Google`**이라고만 적는다(제보 #11) — 기본 캘린더의 이름은
+              계정 이메일이라 머리에 주소가 박히고, 어느 캘린더인지는 아래
+              "저장할 캘린더" 줄이 이미 말한다. */}
           {googleTargets.length > 0 && (
             <span data-new-cal-pill style={{ height: 24, padding: '0 10px', borderRadius: 999, background: 'var(--mf-accent-soft)', color: 'var(--mf-accent-strong)', fontSize: 11, fontWeight: 700, display: 'inline-flex', alignItems: 'center', whiteSpace: 'nowrap', flex: '0 0 auto', maxWidth: 200, overflow: 'hidden', textOverflow: 'ellipsis' }}>
-              {target.kind === 'google' ? (googleTargets.find((t) => t.id === dest)?.name ?? '구글 캘린더') : 'Geurio 캘린더'}
+              {target.kind === 'google' ? 'Google' : 'Geurio 캘린더'}
             </span>
           )}
           <span style={{ flex: 1, minWidth: 0 }} />
@@ -361,6 +370,10 @@ export function NewEventModal({
           {/* 반복 — 목적지와 무관하게 여기서 고른다(둘 다 규칙을 저장한다). */}
           <RecurrenceField value={rep} onChange={setRep} baseDate={startDate} />
 
+          {/* 알림 — **늘 보인다**(요청 #5). 보내는 것은 구글이므로 목적지가 Geurio면
+              비활성 표식으로 남는다(자리가 통째로 사라지지 않게). */}
+          <ReminderField value={gf.reminderMinutes} onChange={(m) => setGf((v) => ({ ...v, reminderMinutes: m }))} disabled={target.kind !== 'google'} />
+
           <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
             <Label>메모</Label>
             <textarea aria-label="메모" data-new-note value={note} onChange={(e) => setNote(e.target.value)} placeholder="자유롭게 적어 두세요" maxLength={2000} style={{ ...fieldStyle, height: 110, padding: '11px 12px', resize: 'vertical', lineHeight: 1.6 }} />
@@ -385,7 +398,7 @@ export function NewEventModal({
             때(저장 실패·시각이 거꾸로) 눈에 띌 자리가 없다. */}
         <div style={{ flex: '0 0 auto', display: 'flex', alignItems: 'center', gap: 10, padding: '14px 20px', borderTop: '1px solid var(--mf-border-soft)' }}>
           <span data-new-foot style={{ flex: 1, minWidth: 0, fontSize: 12, color: footTone, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{footMsg}</span>
-          <button type="button" onClick={onClose} className="mf-ctl" style={{ flex: '0 0 auto', whiteSpace: 'nowrap', height: isMobile ? 44 : 36, padding: '0 16px', borderRadius: 999, border: '1px solid var(--mf-border)', background: 'var(--mf-card)', color: 'var(--mf-muted)', font: 'inherit', fontSize: 12.5, fontWeight: 700, cursor: 'pointer' }}>
+          <button type="button" data-new-cancel onClick={onClose} className="mf-ctl" style={{ flex: '0 0 auto', whiteSpace: 'nowrap', height: isMobile ? 44 : 36, padding: '0 16px', borderRadius: 999, border: '1px solid var(--mf-border)', background: 'var(--mf-card)', color: 'var(--mf-muted)', font: 'inherit', fontSize: 12.5, fontWeight: 700, cursor: 'pointer' }}>
             취소
           </button>
           <button

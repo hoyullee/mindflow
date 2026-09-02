@@ -180,6 +180,17 @@ export function useCardMorph(): RefCallback<HTMLDivElement> {
       // 이 순간의 값(= React가 방금 커밋한 목표)을 들고 있다가 그대로 되살린다.
       const baseW = el.style.width;
       const baseH = el.style.height;
+      // **내용은 전이 내내 한 폭으로 머문다**(제보 #8: 목적지를 구글로 바꾸면 "요소들의
+      // 정렬이 깨진다"). 카드 폭만 애니메이션하면 그 사이 프레임마다 내용이 중간 폭으로
+      // 다시 흐른다 — 두 열 배치가 318px에 눌렸다가 펴지는 것이 실측으로 확인됐다.
+      // 그래서 자식들을 **넓은 쪽 폭**에 고정하고 카드가 그것을 잘라 낸다: 넓어질 때는
+      // 최종 배치가 드러나고, 좁아질 때는 옛 배치가 밀려 나간다(서랍처럼).
+      // 자식이 눕는 자리는 **테두리 안쪽**이다 — offsetWidth를 그대로 주면 테두리
+      // 두께(보통 2px)만큼 넓어져 전이 내내 내용이 그만큼 밀린다(실측 558→560).
+      const wide = Math.max(from.w, w) - (el.offsetWidth - el.clientWidth);
+      const kids = [...el.children].filter((c): c is HTMLElement => c instanceof HTMLElement);
+      const kidW = kids.map((c) => c.style.width);
+      for (const c of kids) c.style.width = `${wide}px`;
       el.style.width = `${from.w}px`;
       el.style.height = `${from.h}px`;
       el.style.overflow = 'hidden';
@@ -193,6 +204,9 @@ export function useCardMorph(): RefCallback<HTMLDivElement> {
         // 우리가 심은 목표 그대로일 때만 원래 값으로 되돌린다.
         if (el.style.width === `${w}px`) el.style.width = baseW;
         if (el.style.height === `${h}px`) el.style.height = baseH;
+        kids.forEach((c, i) => {
+          if (c.style.width === `${wide}px`) c.style.width = kidW[i] ?? '';
+        });
         el.style.overflow = base.overflow;
         el.style.transition = base.transition;
         animating = false;
