@@ -649,7 +649,61 @@ export async function createGoogleEvent(token: string, calendarId: string, draft
  * (그 UI를 우리가 다시 만들 이유가 없고, 잘못 만들면 남의 달력을 망가뜨린다).
  */
 export async function updateGoogleEvent(token: string, ev: GoogleEvent, draft: GoogleEventDraft): Promise<void> {
-  await send(`/calendars/${encodeURIComponent(ev.calendarId)}/events/${encodeURIComponent(ev.eventId)}`, token, 'PATCH', draftToBody(draft), ev.etag);
+  const path = `/calendars/${encodeURIComponent(ev.calendarId)}/events/${encodeURIComponent(ev.eventId)}`;
+  try {
+    await send(path, token, 'PATCH', draftToBody(draft), ev.etag);
+    return;
+  } catch (e) {
+    if ((e as { status?: number }).status !== 412) throw e;
+  }
+  // 412 = "내가 본 판이 최신이 아니다". **그런데 대개는 사람이 고친 게 아니다**(제보):
+  // 회의실을 예약하면 그 리소스가 스스로 초대를 수락하고, 알림·참석자 응답 같은
+  // 곁가지도 구글이 서버에서 바꾼다 — 그때마다 판(etag)이 올라간다. 그래서 저장 직후
+  // 다시 받아 둔 판조차 곧 낡고, 다음 수정이 통째로 막혔다.
+  //
+  // 그러니 **무엇이 달라졌는지 보고** 정한다: 우리가 다루는 값이 그대로면(응답 상태만
+  // 바뀐 것) 새 판을 기준으로 한 번 더 쓰고, 사람이 제목·시각 같은 것을 고쳤으면
+  // 덮지 않고 그대로 막는다(그게 If-Match를 쓰는 이유다).
+  const fresh = await fetchGoogleEvent(token, ev);
+  if (!fresh || managedFieldsDiffer(ev, fresh)) {
+    const err = new Error('google 412') as Error & { status?: number };
+    err.status = 412;
+    throw err;
+  }
+  await send(path, token, 'PATCH', draftToBody(draft), fresh.etag);
+}
+
+/** 그 일정 하나를 다시 받는다 — 412를 만났을 때 무엇이 달라졌는지 보려고. */
+export async function fetchGoogleEvent(token: string, ev: GoogleEvent): Promise<GoogleEvent | null> {
+  const cal: GoogleCalendarMeta = { id: ev.calendarId, summary: ev.calendarName, ...(ev.color ? { color: ev.color } : {}), ...(ev.writable ? { writable: true } : {}) };
+  try {
+    const json = await get(`/calendars/${encodeURIComponent(ev.calendarId)}/events/${encodeURIComponent(ev.eventId)}`, token, {});
+    // 한 건은 목록이 아니다 — 같은 파서를 쓰려고 목록 모양으로 감싼다.
+    return parseEvents({ items: [json] }, cal)[0] ?? null;
+  } catch {
+    return null;
+  }
+}
+
+/** 우리가 화면에서 다루는 값이 두 판 사이에 달라졌는가(곁가지 변화는 무시한다). */
+export function managedFieldsDiffer(a: GoogleEvent, b: GoogleEvent): boolean {
+  const key = (e: GoogleEvent): string =>
+    JSON.stringify([
+      e.title,
+      e.startDate,
+      e.endDate,
+      e.startTime ?? null,
+      e.endTime ?? null,
+      e.allDay,
+      e.location ?? '',
+      e.description ?? '',
+      [...(e.attendees ?? [])].sort(),
+      [...(e.rooms ?? [])].sort(),
+      e.visibility ?? 'default',
+      e.transparency ?? 'opaque',
+      e.reminderMinutes ?? 'default',
+    ]);
+  return key(a) !== key(b);
 }
 
 export async function deleteGoogleEvent(token: string, ev: GoogleEvent): Promise<void> {

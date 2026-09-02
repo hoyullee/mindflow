@@ -445,7 +445,6 @@ export function EventDetail({
           {/* 좁은 화면 — 열을 나눌 폭이 없어 같은 열에 이어 붙인다. */}
           {side && isMobile && side}
           {extra}
-          {error && <span data-event-error style={{ fontSize: 12, color: 'var(--mf-danger)' }}>{error}</span>}
         </div>
 
         {twoCol && (
@@ -456,7 +455,8 @@ export function EventDetail({
         )}
         </div>
 
-        {/* 발치 — 새 일정 팝업과 같은 [상황 문구][취소][완료] 배치. */}
+        {/* 발치 — 새 일정 팝업과 같은 [상황 문구][취소][완료] 배치. 오류도 **여기 한
+            곳**에서만 말한다(제보: 본문 끝과 발치에 같은 문장이 두 번 떴다). */}
         <div style={{ flex: '0 0 auto', display: 'flex', alignItems: 'center', gap: 10, padding: '14px 20px', borderTop: '1px solid var(--mf-border-soft)' }}>
           <span data-event-foot style={{ flex: 1, minWidth: 0, fontSize: 12, color: footTone, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{footMsg}</span>
           {!readOnly && (

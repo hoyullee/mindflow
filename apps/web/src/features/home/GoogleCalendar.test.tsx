@@ -373,6 +373,44 @@ describe('구글 캘린더 겹치기(PR5)', () => {
     expect(pop.querySelector('[data-event-cal="geurio"]')?.getAttribute('aria-disabled')).toBe('true');
   });
 
+  it('저장 실패는 발치 한 곳에서만 말한다 — 본문 끝에 같은 문장을 두 번 두지 않는다(제보)', async () => {
+    seed({ calendars: ['me@example.com'] });
+    seedToken();
+    stubGis();
+    const inner = stubFetch();
+    // 사람이 고친 판이 와서 진짜 충돌 — 덮지 않고 그대로 막는다(그 문장을 화면이 말한다).
+    vi.stubGlobal('fetch', async (url: string, init?: RequestInit) => {
+      const method = (init?.method ?? 'GET') as string;
+      if (method === 'PATCH') return { ok: false, status: 412, json: async () => ({}) } as unknown as Response;
+      if (String(url).includes('/events/') && method === 'GET') {
+        return { ok: true, status: 200, json: async () => ({ id: 'g1', etag: '"v9"', summary: '남이 고친 제목', start: { dateTime: `${inMonth(1)}T09:00:00+09:00` }, end: { dateTime: `${inMonth(1)}T10:00:00+09:00` } }) } as unknown as Response;
+      }
+      return (inner as unknown as (u: string, i?: RequestInit) => Promise<Response>)(url, init);
+    });
+    clientId = 'test-client.apps.googleusercontent.com';
+    const user = userEvent.setup();
+    const { container } = renderHome();
+    await openCalendar(container, user);
+    await waitFor(() => expect(screen.getAllByText(/구글 회의/).length).toBeGreaterThan(0));
+    await user.click(screen.getAllByText(/구글 회의/)[0]!);
+    await waitFor(() => expect(document.querySelector('[data-event-detail]')).toBeTruthy());
+
+    await user.clear(screen.getByLabelText('일정 제목'));
+    await user.type(screen.getByLabelText('일정 제목'), '내가 고친 제목');
+    await user.click(screen.getByText('완료'));
+
+    const foot = await waitFor(() => {
+      const el = document.querySelector('[data-event-foot]') as HTMLElement;
+      expect(el.textContent).toContain('그 사이 구글에서 바뀌었어요');
+      return el;
+    });
+    // 팝업 전체를 통틀어 **한 번만** 나온다.
+    const card = document.querySelector('[data-event-detail]') as HTMLElement;
+    const hits = [...card.querySelectorAll('*')].filter((el) => el.children.length === 0 && el.textContent?.includes('그 사이 구글에서 바뀌었어요'));
+    expect(hits).toEqual([foot]);
+    vi.unstubAllGlobals();
+  });
+
   it('설정에서 다시 연결하면 열려 있는 일정 화면에 곧바로 구글 일정이 뜬다(제보 — 새로고침 불필요)', async () => {
     seed({ calendars: ['me@example.com'] });
     // 토큰 없음(재로그인 뒤의 탭) — 화면은 스스로 GIS 팝업을 열지 않는다(#66의 규칙).
@@ -914,7 +952,7 @@ describe('구글 캘린더 겹치기(PR5)', () => {
     await waitFor(() => expect(document.querySelector('[data-google-fields]')).toBeTruthy());
   }
 
-  it('초대가 셋이면 두 줄만 보이고 나머지는 `외 N명` 툴팁에서 지운다(제보 #6)', async () => {
+  it('초대는 셋까지 그대로 보이고 넷부터 마지막 칸이 `외 N명`이다 · 목록은 검색 상자 아래(요청)', async () => {
     seed({ calendars: ['me@example.com'] });
     seedToken();
     stubGis();
@@ -928,21 +966,54 @@ describe('구글 캘린더 겹치기(PR5)', () => {
     for (const email of ['a@example.com', 'b@example.com', 'c@example.com']) {
       await user.type(input, `${email}{Enter}`);
     }
-    // 두 줄 + `외 1명` — 초대가 늘어도 팝업이 그만큼 길어지지 않는다.
+    // 셋까지는 접지 않는다 — 그리고 목록은 **검색 상자 아래**다(회의실과 같은 순서).
+    await waitFor(() => expect(document.querySelectorAll('[data-gf-guest]').length).toBe(3));
+    expect(document.querySelector('[data-gf-guest-more]')).toBeNull();
+    const box = document.querySelector('[data-gf-guest-input]')!.closest('span')!;
+    const first = document.querySelector('[data-gf-guest]')!;
+    expect(box.compareDocumentPosition(first) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+
+    // 넷째부터 마지막 칸이 접힌다: 둘 + `외 2명` = 세 칸.
+    await user.type(input, 'd@example.com{Enter}');
     await waitFor(() => expect(document.querySelectorAll('[data-gf-guest]').length).toBe(2));
     const more = document.querySelector('[data-gf-guest-more]') as HTMLElement;
-    expect(more).toBeTruthy();
-    expect(more.textContent).toContain('외 1명');
+    expect(more.textContent).toContain('외 2명');
 
     // 접힌 목록은 툴팁으로 뜨고 **거기서 지울 수 있다**.
     await user.click(more);
     await waitFor(() => expect(document.querySelector('[data-gf-guest-list]')).toBeTruthy());
-    expect(document.querySelectorAll('[data-gf-guest-item]').length).toBe(3);
-    await user.click(screen.getByLabelText('c@example.com 초대 취소'));
-    // 둘만 남으면 접을 것이 없다 — 접힌 줄도 툴팁도 사라진다.
+    expect(document.querySelectorAll('[data-gf-guest-item]').length).toBe(4);
+    await user.click(screen.getByLabelText('d@example.com 초대 취소'));
+    // 셋이 되면 접을 것이 없다 — 접힌 줄도 툴팁도 사라진다.
     await waitFor(() => expect(document.querySelector('[data-gf-guest-more]')).toBeNull());
-    expect(document.querySelectorAll('[data-gf-guest]').length).toBe(2);
+    expect(document.querySelectorAll('[data-gf-guest]').length).toBe(3);
     expect(document.querySelector('[data-gf-guest-list]')).toBeNull();
+  });
+
+  it('고른 사람은 이름과 이메일이 함께 남는다 — 직접 적은 주소는 한 줄이다(요청)', async () => {
+    seed({ calendars: ['me@example.com'] });
+    seedToken();
+    stubGis();
+    stubFetch();
+    clientId = 'test-client.apps.googleusercontent.com';
+    const user = userEvent.setup();
+    const { container } = renderHome();
+    await openGoogleDraft(user, container);
+
+    await user.type(screen.getByLabelText('참석자 이름 또는 이메일'), '여은');
+    const hit = await waitFor(() => {
+      const el = document.querySelector('[data-gf-guest-hit]');
+      expect(el).toBeTruthy();
+      return el as HTMLElement;
+    });
+    fireEvent.mouseDown(hit);
+    const row = await waitFor(() => {
+      const el = document.querySelector('[data-gf-guest]');
+      expect(el).toBeTruthy();
+      return el as HTMLElement;
+    });
+    expect(row.textContent).toContain('여은진');
+    expect(row.textContent).toContain('eunjin@example.com');
   });
 
   it('회의실은 세 줄까지 보이고 안내 문구를 두지 않는다 · 예약한 것이 맨 위로 온다(제보 #4·#17)', async () => {

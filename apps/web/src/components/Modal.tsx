@@ -180,20 +180,29 @@ export function useCardMorph(): RefCallback<HTMLDivElement> {
       // 이 순간의 값(= React가 방금 커밋한 목표)을 들고 있다가 그대로 되살린다.
       const baseW = el.style.width;
       const baseH = el.style.height;
-      // **내용은 전이 내내 한 폭으로 머문다**(제보 #8: 목적지를 구글로 바꾸면 "요소들의
-      // 정렬이 깨진다"). 카드 폭만 애니메이션하면 그 사이 프레임마다 내용이 중간 폭으로
-      // 다시 흐른다 — 두 열 배치가 318px에 눌렸다가 펴지는 것이 실측으로 확인됐다.
-      // 그래서 자식들을 **넓은 쪽 폭**에 고정하고 카드가 그것을 잘라 낸다: 넓어질 때는
-      // 최종 배치가 드러나고, 좁아질 때는 옛 배치가 밀려 나간다(서랍처럼).
+      // **내용은 전이 내내 도착 폭으로 머문다**(제보: 목적지를 바꾸면 "요소들의 정렬이
+      // 깨진다"). 카드 폭만 애니메이션하면 그 사이 프레임마다 내용이 중간 폭으로 다시
+      // 흐른다 — 두 열이 318px에 눌렸다 펴지는 것이 실측으로 확인됐다.
+      //
+      // 기준은 **도착 폭**이다(넓은 쪽이 아니라). 넓어질 때는 최종 배치가 카드에 가려
+      // 있다 드러나고, 좁아질 때는 내용이 이미 최종 배치라 카드만 그 위로 닫힌다.
+      // 넓은 쪽에 맞추면 좁아지는 동안 남은 한 열이 900px로 늘어나 종일·종료 날짜·
+      // 취소·등록이 화면 밖으로 밀렸다(제보 — 그래서 "줄어듦 완료 후 재정렬"로 보였다).
       // 자식이 눕는 자리는 **테두리 안쪽**이다 — offsetWidth를 그대로 주면 테두리
       // 두께(보통 2px)만큼 넓어져 전이 내내 내용이 그만큼 밀린다(실측 558→560).
-      const wide = Math.max(from.w, w) - (el.offsetWidth - el.clientWidth);
+      const wide = w - (el.offsetWidth - el.clientWidth);
       const kids = [...el.children].filter((c): c is HTMLElement => c instanceof HTMLElement);
       const kidW = kids.map((c) => c.style.width);
       for (const c of kids) c.style.width = `${wide}px`;
       el.style.width = `${from.w}px`;
       el.style.height = `${from.h}px`;
       el.style.overflow = 'hidden';
+      // 전이 동안에는 **안쪽 스크롤러도 잠근다**(제보: 종일을 바꾸면 제목 박스가 잠깐
+      // 좁아졌다 돌아온다). 카드 높이가 시작 값에 묶여 있는 동안 내용이 넘치면
+      // 스크롤바가 잠깐 생겼다 사라지고, 그만큼 글줄이 좁아졌다 넓어진다.
+      // `scrollbar-gutter`로도 막지만 그 속성을 모르는 브라우저가 있으니 전이 중에는
+      // 아예 넘치지 않게 한다(240ms 동안 스크롤을 잃을 뿐이다).
+      el.dataset.morphing = '1';
       void el.offsetHeight; // 강제 리플로우 — 시작 값을 확정한 뒤 목표로 보낸다
       el.style.transition = 'width .24s cubic-bezier(.4,0,.2,1), height .24s cubic-bezier(.4,0,.2,1)';
       el.style.width = `${w}px`;
@@ -209,6 +218,7 @@ export function useCardMorph(): RefCallback<HTMLDivElement> {
         });
         el.style.overflow = base.overflow;
         el.style.transition = base.transition;
+        delete el.dataset.morphing;
         animating = false;
         // 전이 중 또 바뀌었을 수 있다(async 목록 도착 등) — 지금 값으로 재동기화.
         last = { w: el.offsetWidth, h: el.offsetHeight };

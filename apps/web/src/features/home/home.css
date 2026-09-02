@@ -112,6 +112,12 @@ a:hover {
 [data-modal-overlay] .lnb-scroll {
   scrollbar-gutter: stable;
 }
+/* 카드 크기 전이 중에는 안쪽 스크롤러를 잠근다(`useCardMorph`가 `data-morphing`을
+   세운다) — 시작 크기에 묶인 240ms 동안 스크롤바가 생겼다 사라지며 글줄 폭이
+   흔들리는 것을 아예 없앤다. */
+[data-morphing] .lnb-scroll {
+  overflow: hidden !important;
+}
 @supports not selector(::-webkit-scrollbar) {
   .lnb-scroll,
   .notif-scroll,
