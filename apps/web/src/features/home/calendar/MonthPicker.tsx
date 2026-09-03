@@ -8,6 +8,7 @@
 
 import { useState } from 'react';
 import { Popover } from '../../../components/Popover';
+import { monthLabel } from './model';
 
 /** 연도 격자가 한 번에 보여 주는 해의 수 — 원본과 같은 15칸(3열 × 5행). */
 const YEARS = 15;
@@ -91,7 +92,16 @@ export function MonthPicker({
             cursor: 'pointer',
           }}
         >
-          {label}
+          {/* 1자리 달과 2자리 달에서 **버튼 폭이 달라지지 않게** — 가장 넓은 표기
+              (`…년 12월`)를 같은 칸에 숨겨 두고 그 폭을 쓴다(제보). 숫자는 등폭으로
+              맞춰(`tabular-nums`) 2026 ↔ 2027처럼 해가 바뀌어도 흔들리지 않는다.
+              고정 px을 적지 않으므로 폰트가 바뀌어도 따라간다. */}
+          <span style={{ display: 'inline-grid', fontVariantNumeric: 'tabular-nums' }}>
+            <span aria-hidden="true" style={{ gridArea: '1 / 1', visibility: 'hidden', pointerEvents: 'none' }}>
+              {monthLabel(y, 12)}
+            </span>
+            <span data-cal-month-label style={{ gridArea: '1 / 1', textAlign: 'center' }}>{label}</span>
+          </span>
           <Caret rotate={false} />
         </button>
       }

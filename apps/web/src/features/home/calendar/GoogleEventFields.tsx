@@ -28,7 +28,7 @@ import { createPortal } from 'react-dom';
 import type { CSSProperties, KeyboardEvent, ReactNode } from 'react';
 import { Field, Segments, SubText } from './fieldBits';
 import type { GoogleRsvp, GoogleTransparency, GoogleVisibility, RecurrenceSpec } from './googleCalendar';
-import { filterRooms, type DirectoryPerson, type MeetingRoom } from './googleDirectory';
+import { filterRooms, type DirectoryPerson, type MeetingRoom, type RoomBusy } from './googleDirectory';
 
 /** 이 묶음이 다루는 값 — 새 일정은 지역 상태, 상세는 구글에서 읽은 값이다. */
 export interface GoogleFieldsValue {
@@ -66,10 +66,11 @@ export interface GoogleDirectoryApi {
   roomsReady: boolean;
   loadRooms: () => void;
   /**
-   * 그 시간대에 그 회의실이 차 있는가(요청) — `true` 사용 중 / `false` 사용 가능 /
+   * 그 시간대에 그 회의실이 차 있는가(요청) — `busy` 사용 중 여부이고, 조직이 회의실
+   * 캘린더를 공개해 두면 **누가 언제까지** 쓰는지도 함께 온다(요청 ③). `null`은
    * `null` 알 수 없음(조직이 그 캘린더를 공개하지 않음). 모르는 것은 칠하지 않는다.
    */
-  checkRoomBusy?: (roomEmail: string, fromIso: string, toIso: string, skipEventId?: string) => Promise<boolean | null>;
+  checkRoomBusy?: (roomEmail: string, fromIso: string, toIso: string, skipEventId?: string) => Promise<RoomBusy | null>;
 }
 
 export interface GoogleFieldsChange {
@@ -479,6 +480,8 @@ const ROWS_MAX = 3;
 
 /** 이름 조회를 이만큼까지 기다린다 — 넘으면 아는 만큼 드러낸다(영원한 로딩 금지). */
 const NAME_WAIT_MS = 4000;
+/** 접힌 사람들을 배경에서 채울 때의 묶음 크기 — 한꺼번에 날리면 속도 제한에 걸린다. */
+const NAME_BATCH = 4;
 
 /** 이름을 채우는 중의 한 자리 — 실제 행과 같은 높이·모양(자리가 튀지 않게). */
 function GuestSkeleton() {
@@ -549,9 +552,11 @@ function Attendees({ list, onChange, search, seedNames }: { list: string[]; onCh
   // 접는 이유는 자리다 — 초대가 늘수록 팝업이 그만큼 길어져 아래 필드가 밀린다.
   const shown = list.length > ROWS_MAX ? list.slice(0, ROWS_MAX - 1) : list;
   const rest = list.slice(shown.length);
-  // 목록에 있는 사람 중 아직 물어보는 중인 사람이 있으면 **전부** 자리표시자다 —
-  // 반은 이름, 반은 주소인 목록이 차례로 갈리는 것이 제보의 그 모습이었다.
-  const namesLoading = list.length > 0 && resolving.some((e) => list.includes(e));
+  // **보이는 줄만** 기다린다(제보: 초대가 많으면 스켈레톤이 너무 길다) — 접힌
+  // 사람(`외 N명`)의 이름은 나중에 도착해도 그 줄에는 개수만 보이므로 첫 화면을
+  // 붙잡아 둘 이유가 없다. 예전에는 목록 전체를 기다려, 열 명을 초대한 일정이면
+  // 마지막 사람이 올 때까지(또는 4초 대기가 끝날 때까지) 두 줄이 자리표시자였다.
+  const namesLoading = shown.length > 0 && resolving.some((e) => shown.includes(e));
   // 이름 검색은 **입력마다 왕복**이므로 220ms 디바운스 — 사람이 치는 속도로는
   // 한 낱말에 한 번이면 충분하다(홈 검색과 같은 판단).
   const seqRef = useRef(0);
@@ -598,35 +603,55 @@ function Attendees({ list, onChange, search, seedNames }: { list: string[]; onCh
       mountedRef.current = false;
     };
   }, []);
+  // 보이는 줄(첫 두 명)은 **먼저, 나란히** 묻는다 — 그 답 하나만 오면 목록이 드러난다.
+  const shownKey = shown.join(',');
   useEffect(() => {
     if (!search) return;
     // `list`가 아니라 문자열 키에서 되짚는다 — 배열은 렌더마다 새 참조라 이 효과의
     // 계기가 될 수 없고, 키가 바뀌는 순간이 곧 "초대가 늘거나 줄었다"다.
     // 구글이 이미 이름을 알려 준 사람은 묻지 않는다(왕복을 아끼고, 그 이름이 더 정확하다).
-    const missing = (listKey ? listKey.split(',') : []).filter((e) => !seedKey.includes(e) && !knownName(e) && !askedRef.current.has(e));
-    if (missing.length === 0) return;
-    for (const e of missing) askedRef.current.add(e);
-    setResolving((r) => [...new Set([...r, ...missing])]);
+    const need = (e: string): boolean => !seedKey.includes(e) && !knownName(e) && !askedRef.current.has(e);
+    const all = (listKey ? listKey.split(',') : []).filter(need);
+    if (all.length === 0) return;
+    // **보이는 사람이 먼저**(제보: 스켈레톤이 너무 길다). 접힌 사람들은 그 뒤에
+    // 배경으로 채우고, 도착하면 `외 N명` 툴팁·얼굴이 그때 이름으로 바뀐다.
+    const visible = shownKey ? shownKey.split(',') : [];
+    const head = all.filter((e) => visible.includes(e));
+    const tail = all.filter((e) => !visible.includes(e));
+    for (const e of all) askedRef.current.add(e);
+    // 자리표시자는 **보이는 줄**에만 세운다 — 접힌 사람을 여기 넣으면 그들 때문에
+    // 첫 화면이 다시 붙잡힌다(`namesLoading`이 `shown`만 보므로 실제로는 무해하지만,
+    // 뜻을 코드로 못박아 둔다).
+    if (head.length > 0) setResolving((r) => [...new Set([...r, ...head])]);
     // 조회가 늦거나 응답이 오지 않아도 **영원히 로딩이지 않게** — 이 시간이 지나면
     // 아는 만큼 드러낸다(모르는 사람은 예전처럼 주소로 남는다).
     const bail = setTimeout(() => mountedRef.current && setResolving([]), NAME_WAIT_MS);
+    /** 한 사람 — 답이 오면 이름을 적고 그 사람의 기다림을 끝낸다. */
+    const one = async (email: string): Promise<void> => {
+      const found = await search(email).catch(() => null);
+      if (!mountedRef.current) return;
+      // 디렉터리는 별칭으로 물어도 **기본 주소**로 답한다 — 그 사람의 모든 주소와 맞춰 본다.
+      const want = email.toLowerCase();
+      const hit = found?.find((p) => p.email.toLowerCase() === want || (p.emails ?? []).includes(want));
+      if (hit?.name) {
+        setNames((m) => ({ ...m, [email]: hit.name }));
+        rememberName(email, hit.name);
+      }
+      setResolving((r) => r.filter((e) => e !== email));
+    };
     void (async () => {
-      for (const email of missing) {
-        const found = await search(email).catch(() => null);
+      // 보이는 둘은 한꺼번에 — 예전에는 목록 전체를 **한 명씩 차례로** 물어서
+      // 열 명이면 왕복 열 번이 직렬로 쌓였다(그게 체감 지연의 정체다).
+      await Promise.all(head.map(one));
+      // 나머지는 네 명씩 — 한꺼번에 날리면 구글이 속도 제한으로 되돌려 보낸다
+      // (회의실 조회와 같은 묶음 크기).
+      for (let i = 0; i < tail.length; i += NAME_BATCH) {
         if (!mountedRef.current) return;
-        // 디렉터리는 별칭으로 물어도 **기본 주소**로 답한다 — 그 사람의 모든 주소와 맞춰 본다.
-        const want = email.toLowerCase();
-        const hit = found?.find((p) => p.email.toLowerCase() === want || (p.emails ?? []).includes(want));
-        if (hit?.name) {
-          setNames((m) => ({ ...m, [email]: hit.name }));
-          rememberName(email, hit.name);
-        }
-        // 답이 왔으면(이름을 얻었든 못 얻었든) 그 사람은 더 기다릴 것이 없다.
-        setResolving((r) => r.filter((e) => e !== email));
+        await Promise.all(tail.slice(i, i + NAME_BATCH).map(one));
       }
     })();
     return () => clearTimeout(bail);
-  }, [listKey, search, seedKey]);
+  }, [listKey, shownKey, search, seedKey]);
 
   // 접힌 목록은 바깥을 누르거나 Escape로 닫는다(팝오버의 관례 — 모달 위의 층이라
   // Radix가 대신 닫아 주지 않는다).
@@ -828,7 +853,7 @@ function Rooms({
   picked: string[];
   onChange: (next: string[]) => void;
   when?: { fromIso: string; toIso: string; skipEventId?: string };
-  check?: (roomEmail: string, fromIso: string, toIso: string, skipEventId?: string) => Promise<boolean | null>;
+  check?: (roomEmail: string, fromIso: string, toIso: string, skipEventId?: string) => Promise<RoomBusy | null>;
 }) {
   const [q, setQ] = useState('');
   /**
@@ -841,7 +866,7 @@ function Rooms({
    * 왕복을 아끼려고 **보이는 행 + 예약한 회의실**만 묻고, `이메일|구간`으로 기억한다
    * (시간을 고치면 구간이 바뀌므로 그때는 다시 묻는다).
    */
-  const [busy, setBusy] = useState<Record<string, boolean | null>>({});
+  const [busy, setBusy] = useState<Record<string, RoomBusy | null>>({});
   // 예약한 회의실이 **맨 위**로 온다(제보 #17) — 목록이 길면 고른 것이 스크롤 아래로
   // 숨어 무엇을 잡아 뒀는지 보이지 않는다. 안에서는 원래 순서를 지킨다(안정 정렬).
   const rows = (q.trim() ? filterRooms(all, q) : [...all]).slice().sort((a, b) => Number(picked.includes(b.email)) - Number(picked.includes(a.email)));
@@ -907,12 +932,17 @@ function Rooms({
       clearTimeout(t);
     };
   }, [askKey, check, from, to, skip]);
-  const busyOf = (email: string): boolean | null | undefined => (when ? busy[`${email}|${from}|${to}`] : undefined);
+  const busyOf = (email: string): RoomBusy | null | undefined => (when ? busy[`${email}|${from}|${to}`] : undefined);
+  /** 묶음·배지가 보는 것은 "차 있는가"뿐이다 — 세부(누가·언제)는 고른 행만 쓴다. */
+  const busyFlag = (email: string): boolean | null | undefined => {
+    const r = busyOf(email);
+    return r === undefined ? undefined : r === null ? null : r.busy;
+  };
   // **사용 가능 / 사용 중을 갈라 보여 준다**(요청) — 가능한 방이 먼저다. 아직 답이 안 온
   // 방과 물어볼 수 없는 방(403)은 그 사이 어디에도 끼우지 않고 **뒤의 제 묶음**에 둔다:
   // "모르는 것은 칠하지 않는다"의 목록 판이다(가능하다고 올려 두면 거짓말이 된다).
   // 묶음 안에서는 예약한 방이 위(제보 #17 — 잡아 둔 것이 스크롤 아래로 숨지 않게).
-  const groups = when ? groupRooms(rows, busyOf) : [{ key: 'all' as const, label: '', rooms: rows }];
+  const groups = when ? groupRooms(rows, busyFlag) : [{ key: 'all' as const, label: '', rooms: rows }];
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 8, minWidth: 0 }}>
       <SearchBox label="회의실 검색" attrs={{ 'data-gf-room-input': '1' }} value={q} placeholder="회의실 이름 또는 층 검색" onChange={setQ} />
@@ -930,11 +960,17 @@ function Rooms({
           // 사용 중인 방은 **이름에 취소선**(요청) — 묶음 머리·배지와 함께 세 겹으로
           // "이 시간엔 못 쓴다"를 말한다. 그래도 고를 수는 있다(회의실 정책상
           // 겹쳐 잡는 일이 있고, 우리가 대신 막을 근거는 없다).
-          const busyRow = busyOf(r.email) === true;
+          const info = busyOf(r.email);
+          const busyRow = info?.busy === true;
+          // **누가 쓰고 있는지**(요청 ③) — 고른 행에는 한 줄로 보여 주고, 나머지
+          // 사용 중인 행에는 툴팁으로 둔다(세 줄 상자에 줄을 더 늘리지 않는다).
+          // 조직이 "한가함/바쁨만" 공개하면 제목·주최자가 없어 시각만 남는다.
+          const busyWho = busyRow ? roomBusyLabel(info) : '';
           return (
             <button
               key={r.email}
               type="button"
+              {...(busyWho ? { title: busyWho } : {})}
               data-gf-room-hit={r.email}
               {...(on ? { 'data-gf-room': r.email } : {})}
               aria-pressed={on}
@@ -951,8 +987,11 @@ function Rooms({
               <span style={{ display: 'flex', flexDirection: 'column', gap: 1, minWidth: 0, flex: 1 }}>
                 <span data-gf-room-name style={{ fontSize: 12, fontWeight: on ? 800 : 600, color: on ? 'var(--mf-accent-strong)' : 'var(--mf-text)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', ...(busyRow ? { textDecoration: 'line-through', textDecorationColor: 'var(--mf-danger)' } : {}) }}>{r.name}</span>
                 {sub && <span style={{ fontSize: 10.5, color: 'var(--mf-faint)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{sub}</span>}
+                {on && busyWho && (
+                  <span data-gf-room-busy style={{ fontSize: 10.5, fontWeight: 700, color: 'var(--mf-danger)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{busyWho}</span>
+                )}
               </span>
-              <RoomState on={on} busy={busyOf(r.email)} />
+              <RoomState on={on} busy={busyFlag(r.email)} />
             </button>
           );
         })}
@@ -962,6 +1001,18 @@ function Rooms({
       </div>
     </div>
   );
+}
+
+/**
+ * 사용 중인 회의실의 한 줄 — `사용 중 · 홍길동 · 팀 회의 · 14:00–15:00`.
+ *
+ * 아는 것만 잇는다: 조직이 회의실 캘린더를 "한가함/바쁨만" 공개하면 제목·주최자가
+ * 없이 시각만 오고, 아무것도 없으면 `사용 중`만 남는다(없는 것을 지어내지 않는다).
+ */
+export function roomBusyLabel(info: RoomBusy | null | undefined): string {
+  if (!info?.busy) return '';
+  const when = info.from && info.to ? `${info.from}–${info.to}` : (info.from ?? '');
+  return ['사용 중', info.by, info.title, when].filter(Boolean).join(' · ');
 }
 
 export type RoomGroupKey = 'free' | 'busy' | 'pending' | 'unknown' | 'all';

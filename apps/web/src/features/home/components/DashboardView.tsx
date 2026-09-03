@@ -349,7 +349,8 @@ export function DashboardView({ state, view, controller, isMobile = false, onOpe
       </div>
 
       {/* 격자 바닥 — 캔버스 같은 점 격자(디자인). */}
-      <div style={{ padding: isMobile ? '14px 14px 32px' : '18px 32px 44px', display: 'flex', flexDirection: 'column', gap: 14, backgroundImage: 'radial-gradient(var(--mf-dot-grid) 1px, transparent 1px)', backgroundSize: '17px 17px', minHeight: 420, flex: 1 }}>
+      {/* 위젯 뒤의 면은 흰 면(요청) — 점 격자는 그 위에 그대로. 히어로는 그대로 어둡다. */}
+      <div data-dash-body style={{ padding: isMobile ? '14px 14px 32px' : '18px 32px 44px', display: 'flex', flexDirection: 'column', gap: 14, backgroundColor: 'var(--mf-card)', backgroundImage: 'radial-gradient(var(--mf-dot-grid) 1px, transparent 1px)', backgroundSize: '17px 17px', minHeight: 420, flex: 1 }}>
         {/* 편집 안내 띠(디자인) — 무엇을 할 수 있는지와 종류별 최소 크기를 말한다.
             모바일은 드래그·모서리 리사이즈가 없으므로(터치에서 발화하지 않는 마우스
             제스처) 실제로 되는 조작만 말한다 — 안내가 안 되는 것을 약속하면 안 된다. */}
@@ -362,7 +363,7 @@ export function DashboardView({ state, view, controller, isMobile = false, onOpe
             <span style={{ fontSize: 12, color: 'var(--mf-subtext)' }}>
               {isMobile
                 ? '크기 버튼(2×2)으로 카드 크기를 바꾸고 ✕로 내려요. 카드를 길게 누르면 맨 앞으로 옮길 수 있어요.'
-                : '카드를 끌어 순서를 바꾸고, 오른쪽 아래 모서리를 끌어 크기를 조절해요. 칸반 보드는 3×2부터, 마인드맵과 화이트보드는 1×1부터 — 최대 4×4까지 놓을 수 있어요.'}
+                : '카드를 끌어 순서를 바꾸고, 오른쪽 아래 모서리를 끌어 크기를 조절해요. 칸반 보드는 3×2부터, 마인드맵과 화이트보드는 1×1부터 — 최대 4×5까지 놓을 수 있어요.'}
             </span>
           </div>
         )}

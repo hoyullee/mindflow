@@ -13,6 +13,11 @@ import { gridRange } from './model';
 import {
   createGoogleEvent,
   createWorkLocationEvent,
+  findWorkLocation,
+  workLocationDays,
+  workLocationForDay,
+  workLocationPatch,
+  workLocationWhenChanged,
   deleteGoogleEvent,
   ensureGoogleToken,
   eventColorOf,
@@ -37,7 +42,7 @@ import {
   type GoogleEventPatch,
   type WorkLocationDraft,
 } from './googleCalendar';
-import { fetchRooms, isRoomBusy, searchPeople as searchPeopleApi, type DirectoryPerson, type MeetingRoom } from './googleDirectory';
+import { checkRoom, fetchRooms, searchPeople as searchPeopleApi, type DirectoryPerson, type MeetingRoom, type RoomBusy } from './googleDirectory';
 import { readGoogleClientId } from '../../auth/googleIdentity';
 import { useLiveRefresh } from './useLiveRefresh';
 
@@ -78,7 +83,11 @@ export interface GoogleCalendarApi {
    * 그 날의 **근무 위치**를 쓴다(요청) — 구글은 `eventType: 'workingLocation'`
    * 일정으로 들고 **기본 캘린더에만** 받는다. 성공하면 `null`.
    */
-  setWorkLocation: (calendarId: string, draft: WorkLocationDraft) => Promise<string | null>;
+  /**
+   * 그 초안을 고른 구간의 **하루하루**에 건다 — 있으면 고치고 없으면 만든다.
+   * 구글이 종일 근무 위치를 하루로 제한하므로(라이브 400) 구간은 일정 하나가 아니다.
+   */
+  saveWorkLocation: (calendarId: string, draft: WorkLocationDraft) => Promise<string | null>;
   /** 구글에 새 일정. 성공하면 `null`, 실패하면 사람이 읽을 문장. */
   createEvent: (calendarId: string, draft: GoogleEventDraft) => Promise<string | null>;
   updateEvent: (ev: GoogleEvent, patch: GoogleEventPatch) => Promise<string | null>;
@@ -105,9 +114,9 @@ export interface GoogleCalendarApi {
   /**
    * 그 시간대에 회의실이 차 있는가(요청) — `true` 사용 중 / `false` 사용 가능 /
    * `null` 알 수 없음. 새 스코프 없이 그 회의실 캘린더의 일정을 구간만 물어본다
-   * (`isRoomBusy`) — freebusy는 스코프가 따로라 검수를 다시 받아야 한다.
+   * (`checkRoom`) — freebusy는 스코프가 따로라 검수를 다시 받아야 한다.
    */
-  checkRoomBusy: (roomEmail: string, fromIso: string, toIso: string, skipEventId?: string) => Promise<boolean | null>;
+  checkRoomBusy: (roomEmail: string, fromIso: string, toIso: string, skipEventId?: string) => Promise<RoomBusy | null>;
 }
 
 export interface GoogleCalendarPrefs {
@@ -440,7 +449,21 @@ export function useGoogleCalendar(
   const createEvent = useCallback((calendarId: string, draft: GoogleEventDraft) => write((t) => createGoogleEvent(t, calendarId, draft)), [write]);
   const updateEvent = useCallback((ev: GoogleEvent, patch: GoogleEventPatch) => write((t) => updateGoogleEvent(t, ev, patch)), [write]);
   const deleteEvent = useCallback((ev: GoogleEvent) => write((t) => deleteGoogleEvent(t, ev)), [write]);
-  const setWorkLocation = useCallback((calendarId: string, draft: WorkLocationDraft) => write((t) => createWorkLocationEvent(t, calendarId, draft)), [write]);
+  const saveWorkLocation = useCallback(
+    (calendarId: string, draft: WorkLocationDraft) =>
+      write(async (t) => {
+        // 하루씩 차례로 — 한꺼번에 날리면 구글이 속도 제한으로 되돌려 보낸다.
+        for (const day of workLocationDays(draft)) {
+          const one = workLocationForDay(draft, day);
+          const cur = findWorkLocation(events, day);
+          // 걸려 있으면 고친다. 그 날짜는 그대로이므로 대개 갈래·이름만 실린다
+          // (구간을 싣지 않는 저장은 그 사이 구글이 판을 올려도 412로 막히지 않는다).
+          if (cur) await updateGoogleEvent(t, cur, workLocationPatch(one, workLocationWhenChanged(cur, one)));
+          else await createWorkLocationEvent(t, calendarId, one);
+        }
+      }),
+    [write, events],
+  );
 
   const writableCalendars = useMemo(() => calendars.filter((c) => c.writable), [calendars]);
 
@@ -484,12 +507,12 @@ export function useGoogleCalendar(
    * 칠하지 않는다**는 규칙 때문에 셋을 갈라 돌려준다.
    *
    * 새 스코프는 받지 않는다 — 회의실도 캘린더라 이미 승인된 `calendar.events`로
-   * 그 구간만 물어본다(`isRoomBusy` 머리 주석).
+   * 그 구간만 물어본다(`checkRoom` 머리 주석).
    */
   const checkRoomBusy = useCallback(
-    async (roomEmail: string, fromIso: string, toIso: string, skipEventId?: string): Promise<boolean | null> => {
+    async (roomEmail: string, fromIso: string, toIso: string, skipEventId?: string): Promise<RoomBusy | null> => {
       if (!granted.has(GOOGLE_SCOPE_ROOMS)) return null;
-      return withToken((t) => isRoomBusy(t, roomEmail, fromIso, toIso, skipEventId)).catch(() => null);
+      return withToken((t) => checkRoom(t, roomEmail, fromIso, toIso, skipEventId)).catch(() => null);
     },
     [granted, withToken],
   );
@@ -521,7 +544,7 @@ export function useGoogleCalendar(
     createEvent,
     updateEvent,
     deleteEvent,
-    setWorkLocation,
+    saveWorkLocation,
     canSearchPeople,
     searchPeople,
     canPickRooms: granted.has(GOOGLE_SCOPE_ROOMS) && !roomsDenied,

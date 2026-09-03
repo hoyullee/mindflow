@@ -30,7 +30,11 @@ export function GoogleCalendarSection({ api }: { api: GoogleCalendarApi }) {
           <div style={{ fontWeight: 700, fontSize: 14.5 }}>Google 캘린더 연동</div>
           <div style={{ fontSize: 12.5, color: 'var(--mf-muted)', marginTop: 2 }}>
             {api.needsReauth
-              ? '권한을 다시 허용해야 일정을 읽고 쓸 수 있어요'
+              ? // **끊긴 것이 아니라 만료된 것**이다(제보: 배포되면 연동이 해제되는 것 같다).
+                // 구글의 브라우저 흐름은 갱신 토큰을 주지 않아 접근 권한이 한 시간마다
+                // 만료되고, 우리는 그때 조용히 다시 받지 않는다(그러면 화면을 여는
+                // 것만으로 구글 창이 뜬다 — #546). 고른 캘린더는 그대로 남아 있다.
+                '구글 권한은 한 시간마다 만료돼요 — 다시 연결하면 고른 캘린더가 그대로 이어져요'
               : api.enabled
                 ? '일정 화면에 겹쳐 보고, 여기서 만들고 고칠 수 있어요'
                 : '내 구글 일정을 겹쳐 보고 그리오에서 만들고 고칠 수 있어요'}

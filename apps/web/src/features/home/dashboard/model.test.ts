@@ -77,7 +77,7 @@ describe('dashboard model', () => {
   });
 
   it('sizesFor: 칸반은 3×2 아래를 내주지 않고, 맵·보드는 전부', () => {
-    expect(sizesFor('kanban')).toEqual(['3x2', '4x2', '3x3', '4x3', '3x4', '4x4']);
+    expect(sizesFor('kanban')).toEqual(['3x2', '4x2', '3x3', '4x3', '3x4', '4x4', '3x5', '4x5']);
     expect(sizesFor('map')).toEqual([...DASH_SIZES]);
     expect(sizesFor('board')).toEqual([...DASH_SIZES]);
   });
@@ -88,12 +88,15 @@ describe('dashboard model', () => {
     expect(parseSize('garbage')).toEqual([2, 2]);
   });
 
-  it('4행까지 놓을 수 있다(요청) — 격자를 넘는 값은 잘린다', () => {
+  it('5행까지 놓을 수 있다(요청) — 격자를 넘는 값은 잘린다', () => {
     expect(DASH_SIZES).toContain('4x4');
-    expect(parseSize('4x4')).toEqual([4, 4]);
+    // 달력 위젯의 월간 + 옆 패널이 그만한 높이를 실제로 쓴다(요청 — 3×5·4×5).
+    expect(DASH_SIZES).toContain('3x5');
+    expect(DASH_SIZES).toContain('4x5');
+    expect(parseSize('4x5')).toEqual([4, 5]);
     expect(parseSize('9x9')).toEqual([DASH_COLS, DASH_ROWS_MAX]);
-    expect(isValidSize('4x4')).toBe(true);
-    expect(isValidSize('4x5')).toBe(false);
+    expect(isValidSize('4x5')).toBe(true);
+    expect(isValidSize('4x6')).toBe(false);
     expect(isValidSize('5x4')).toBe(false);
     expect(isValidSize('2x2 ')).toBe(false);
     expect(isValidSize(22)).toBe(false);

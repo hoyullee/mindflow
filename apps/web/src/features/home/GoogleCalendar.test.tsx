@@ -650,6 +650,9 @@ describe('구글 캘린더 겹치기(PR5)', () => {
       const btn = container.querySelector('[data-google-connect-cal]');
       expect(btn?.getAttribute('aria-label')).toBe('Google 캘린더 다시 연결');
     });
+    // **왜**인지 툴팁이 말한다(제보: 배포되면 연동이 해제되는 것 같다) — 해제된 것이
+    // 아니라 구글 권한이 한 시간마다 만료되는 것이고, 고른 캘린더는 그대로 남아 있다.
+    expect(container.querySelector('[data-google-connect-cal]')?.getAttribute('title')).toContain('한 시간마다 만료');
   });
 
   it('목적지가 구글이면 참석자·회의실·알림 필드가 오른쪽 열로 뜬다 — 반복은 두 목적지 공통', async () => {
@@ -1913,6 +1916,114 @@ describe('구글 캘린더 겹치기(PR5)', () => {
     expect(within(pop).getByLabelText('참석자 이름 또는 이메일')).toBeTruthy();
   });
 
+  it('보이는 두 줄의 이름이 **먼저** 온다 — 접힌 사람의 조회가 끝나기 전에 목록이 드러난다(제보)', async () => {
+    seed({ calendars: ['me@example.com'] });
+    seedToken();
+    stubGis();
+    const day = inMonth(1);
+    // 다섯 명 초대 — 셋을 넘으니 두 줄 + `외 3명`이다. 접힌 셋은 **아주 늦게** 답한다:
+    // 예전에는 목록 전체를 기다려 그동안 두 줄이 자리표시자였다(제보의 그 지연).
+    const slow = new Set(['c@example.com', 'd@example.com', 'e@example.com']);
+    const names: Record<string, string> = {
+      'a@example.com': '가나다',
+      'b@example.com': '라마바',
+      'c@example.com': '사아자',
+      'd@example.com': '차카타',
+      'e@example.com': '파하가',
+    };
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (url: string) => {
+        const ok = (body: unknown) => ({ ok: true, status: 200, json: async () => body }) as unknown as Response;
+        if (url.includes('searchDirectoryPeople')) {
+          const q = decodeURIComponent(/query=([^&]+)/.exec(url)?.[1] ?? '');
+          if (slow.has(q)) await new Promise((r) => setTimeout(r, 3000));
+          const n = names[q];
+          return ok(n ? { people: [{ names: [{ displayName: n }], emailAddresses: [{ metadata: { primary: true }, value: q }] }] } : { people: [] });
+        }
+        if (url.includes('people.googleapis.com') || url.includes('admin.googleapis.com')) return ok({ items: [], results: [] });
+        if (url.includes('/colors')) return ok({ event: {} });
+        if (url.includes('/users/me/calendarList')) return ok({ items: [{ id: 'me@example.com', summary: '내 캘린더', primary: true, accessRole: 'owner' }] });
+        return ok({
+          items: [
+            {
+              id: 'x',
+              summary: '다섯 명 회의',
+              start: { dateTime: `${day}T09:00:00+09:00` },
+              end: { dateTime: `${day}T10:00:00+09:00` },
+              organizer: { email: 'me@example.com', self: true },
+              attendees: [{ email: 'me@example.com', self: true, organizer: true }, ...Object.keys(names).map((email) => ({ email }))],
+            },
+          ],
+        });
+      }),
+    );
+    clientId = 'test-client.apps.googleusercontent.com';
+    const user = userEvent.setup();
+    const { container } = renderHome();
+    const pop = await openGoogleChip(container, user, /다섯 명 회의/);
+    // 보이는 둘의 이름이 오면 그걸로 목록이 드러난다 — 접힌 셋(3초)은 아직 오지 않았다.
+    await waitFor(() => expect(pop.querySelector('[data-gf-guest="a@example.com"]')?.textContent).toContain('가나다'), { timeout: 2000 });
+    expect(pop.querySelector('[data-gf-guest="b@example.com"]')?.textContent).toContain('라마바');
+    expect(pop.querySelectorAll('[data-gf-guest-loading]')).toHaveLength(0);
+    // 접힌 줄은 개수만 말하므로 그 이름이 늦어도 첫 화면을 붙잡지 않는다.
+    expect(pop.querySelector('[data-gf-guest-more]')?.textContent).toContain('외 3명');
+  });
+
+  it('사용 중인 회의실을 고르면 **누가 언제까지** 쓰는지 한 줄로 말한다(요청 ③)', async () => {
+    seed({ calendars: ['me@example.com'] });
+    seedToken();
+    stubGis();
+    const day = inMonth(1);
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (url: string) => {
+        const ok = (body: unknown) => ({ ok: true, status: 200, json: async () => body }) as unknown as Response;
+        if (url.includes('admin.googleapis.com')) return ok({ items: [{ resourceEmail: 'room1@example.com', resourceName: '회의실 A', capacity: 8, floorName: '3층' }] });
+        if (url.includes('people.googleapis.com')) return ok({ people: [] });
+        if (url.includes('/colors')) return ok({ event: {} });
+        if (url.includes('/users/me/calendarList')) return ok({ items: [{ id: 'me@example.com', summary: '내 캘린더', primary: true, accessRole: 'owner' }] });
+        // 회의실 캘린더 조회 — 그 구간을 잡고 있는 일정(주최자·제목·시각까지 공개)
+        if (url.includes('room1%40example.com')) {
+          return ok({
+            items: [
+              {
+                id: 'busy1',
+                summary: '팀 회의',
+                organizer: { displayName: '홍길동', email: 'gil@example.com' },
+                // 오프셋 없이 — 어느 시간대에서 돌려도 로컬 09:00으로 읽힌다(테스트 안정).
+                start: { dateTime: `${day}T09:00:00` },
+                end: { dateTime: `${day}T10:00:00` },
+              },
+            ],
+          });
+        }
+        return ok({ items: [] });
+      }),
+    );
+    clientId = 'test-client.apps.googleusercontent.com';
+    const user = userEvent.setup();
+    const { container } = renderHome();
+    await openCalendar(container, user);
+    await user.click(screen.getByText('새 일정'));
+    await waitFor(() => expect(document.querySelector('[data-new-cal="me@example.com"]')).toBeTruthy());
+    await user.click(document.querySelector<HTMLElement>('[data-new-cal="me@example.com"]')!);
+    await waitFor(() => expect(document.querySelector('[data-gf-room-hit="room1@example.com"]')).toBeTruthy(), { timeout: 3000 });
+    // 배지가 `사용 중`이 될 때까지 — 그 답에 세부가 함께 실려 온다.
+    await waitFor(() => expect(document.querySelector('[data-gf-room-group="busy"]')).toBeTruthy(), { timeout: 3000 });
+    // 고르기 전에는 툴팁으로만(세 줄 상자에 줄을 더 늘리지 않는다).
+    expect(document.querySelector('[data-gf-room-hit="room1@example.com"]')!.getAttribute('title')).toContain('홍길동');
+    expect(document.querySelector('[data-gf-room-busy]')).toBeNull();
+    // 답이 오면 묶음이 갈리며 행이 다시 마운트된다 — 그 자리에서 다시 집어야 한다.
+    fireEvent.mouseDown(document.querySelector('[data-gf-room-hit="room1@example.com"]')!);
+    const line = await waitFor(() => {
+      const el = document.querySelector('[data-gf-room-busy]');
+      expect(el).toBeTruthy();
+      return el as HTMLElement;
+    });
+    expect(line.textContent).toBe('사용 중 · 홍길동 · 팀 회의 · 09:00–10:00');
+  });
+
   it('근무 위치는 일정이 아니다 — 칩이 아니라 칸 우측 상단의 한 마디(제보 ⑥)', async () => {
     seed({ calendars: ['me@example.com'] });
     seedToken();
@@ -2061,15 +2172,14 @@ describe('구글 캘린더 겹치기(PR5)', () => {
       await waitFor(() => expect(f.mock.calls.some((c) => (c[1] as { method?: string } | undefined)?.method === 'DELETE')).toBe(true));
     });
 
-    // 예전에는 여러 날에 걸친 근무 위치를 잠갔다. 구글의 그 화면 자체가 시작–종료
-    // 구간을 다루므로(사용자 스크린샷) 잠글 근거가 없다 — 구간을 그대로 보여 준다.
-    it('여러 날에 걸친 근무 위치는 그 구간을 보여 주고, 구간이 그대로면 날짜를 싣지 않는다', async () => {
+    // 라이브 제보의 400(`malformedWorkingLocationEvent`): 종일 근무 위치는 **반드시
+    // 하루**다. 그래서 구간은 일정 하나가 아니라 **하루하루에 하나씩**이다.
+    it('구간을 고르면 하루하루에 하나씩 쓴다 — 걸려 있는 날은 고치고 나머지는 만든다', async () => {
       seed({ calendars: ['me@example.com'] });
       seedToken();
       stubGis();
       const day = inMonth(2);
-      const to = inMonth(4);
-      const f = stubWork(day, { id: 'w2', from: day, to, props: { type: 'officeLocation', officeLocation: { label: '판교' } } });
+      const f = stubWork(day, { id: 'w1', from: day, to: day, props: { type: 'homeOffice', homeOffice: {} } });
       clientId = 'test-client.apps.googleusercontent.com';
       const user = userEvent.setup();
       const { container } = renderHome();
@@ -2077,22 +2187,47 @@ describe('구글 캘린더 겹치기(PR5)', () => {
       await waitFor(() => expect(container.querySelector(`[data-day-cell="${day}"] [data-work-loc]`)).toBeTruthy());
       const { open } = await openWorkModal(container, user, day);
       const modal = await open();
-      // 걸려 있던 구간이 그대로 되살아난다(누른 날이 아니라 그 일정의 시작·종료).
-      expect(modal.querySelector('[data-work-from]')?.textContent).toContain(`${Number(day.slice(5, 7))}월 ${Number(day.slice(8, 10))}일`);
-      expect(modal.querySelector('[data-work-to]')?.textContent).toContain(`${Number(to.slice(5, 7))}월 ${Number(to.slice(8, 10))}일`);
-      // 고칠 수 있다 — 저장·지우기가 있고 사유 문구가 없다.
-      expect(modal.querySelector('[data-work-save]')).toBeTruthy();
-      expect(modal.querySelector('[data-work-clear]')).toBeTruthy();
-      expect(modal.querySelector('[data-work-foot]')?.textContent).toBe('');
-      fireEvent.click(modal.querySelector('[data-work-kind="homeOffice"]')!);
+      // 종료 날짜를 이틀 뒤로 → 사흘에 걸린다.
+      fireEvent.click(modal.querySelector('[data-work-to]')!);
+      fireEvent.click(document.querySelector(`[data-datepop-day="${inMonth(4)}"]`)!);
+      await waitFor(() => expect(modal.querySelector('[data-work-foot]')?.textContent).toContain('3일에 걸어요'));
       fireEvent.click(modal.querySelector('[data-work-save]')!);
       await waitFor(() => {
-        const patch = f.mock.calls.find((c) => (c[1] as { method?: string } | undefined)?.method === 'PATCH');
-        expect(patch).toBeTruthy();
-        const body = JSON.parse((patch![1] as { body: string }).body) as Record<string, unknown>;
-        // 구간을 건드리지 않았으므로 `start`/`end`를 싣지 않는다(#552의 그 규칙).
-        expect(Object.keys(body)).toEqual(['workingLocationProperties']);
+        const writes = f.mock.calls.filter((c) => ['POST', 'PATCH'].includes((c[1] as { method?: string } | undefined)?.method ?? ''));
+        expect(writes).toHaveLength(3);
       });
+      const writes = f.mock.calls.filter((c) => ['POST', 'PATCH'].includes((c[1] as { method?: string } | undefined)?.method ?? ''));
+      // 걸려 있던 첫 날은 PATCH, 나머지 두 날은 POST.
+      expect(writes.map((c) => (c[1] as { method: string }).method)).toEqual(['PATCH', 'POST', 'POST']);
+      const bodies = writes.map((c) => JSON.parse((c[1] as { body: string }).body) as Record<string, unknown>);
+      // 첫 날은 그 날짜가 그대로라 갈래·이름만 간다(#552의 그 규칙).
+      expect(Object.keys(bodies[0]!)).toEqual(['workingLocationProperties']);
+      // 만드는 두 날은 **각각 정확히 하루**다(끝은 배타적 다음 날).
+      expect(bodies[1]).toMatchObject({ start: { date: inMonth(3) }, end: { date: inMonth(4) } });
+      expect(bodies[2]).toMatchObject({ start: { date: inMonth(4) }, end: { date: inMonth(5) } });
+    });
+
+    it('여러 날을 실은 본문은 어디에도 없다 — 구글이 하루만 받는다', async () => {
+      seed({ calendars: ['me@example.com'] });
+      seedToken();
+      stubGis();
+      const day = inMonth(2);
+      const f = stubWork(day);
+      clientId = 'test-client.apps.googleusercontent.com';
+      const user = userEvent.setup();
+      const { container } = renderHome();
+      await openCalendar(container, user);
+      await waitFor(() => expect(screen.getAllByText(/진짜 회의/).length).toBeGreaterThan(0));
+      const { open } = await openWorkModal(container, user, day);
+      const modal = await open();
+      fireEvent.click(modal.querySelector('[data-work-to]')!);
+      fireEvent.click(document.querySelector(`[data-datepop-day="${inMonth(4)}"]`)!);
+      fireEvent.click(modal.querySelector('[data-work-save]')!);
+      await waitFor(() => expect(f.mock.calls.filter((c) => (c[1] as { method?: string } | undefined)?.method === 'POST')).toHaveLength(3));
+      for (const c of f.mock.calls.filter((x) => (x[1] as { method?: string } | undefined)?.method === 'POST')) {
+        const b = JSON.parse((c[1] as { body: string }).body) as { start: { date: string }; end: { date: string } };
+        expect(Date.parse(b.end.date) - Date.parse(b.start.date)).toBe(86400000);
+      }
     });
 
     it('`시간 추가`를 켜면 하루 안의 시각 구간이 된다 — 종료 날짜는 사라진다', async () => {
@@ -2122,6 +2257,30 @@ describe('구글 캘린더 겹치기(PR5)', () => {
         expect(body.start).toMatchObject({ dateTime: `${day}T09:00:00` });
         expect(body.end).toMatchObject({ dateTime: `${day}T18:00:00` });
       });
+    });
+
+    it('구간이 상한을 넘으면 저장 자체를 막고 이유를 말한다 — 조용히 잘라 저장하지 않는다', async () => {
+      seed({ calendars: ['me@example.com'] });
+      seedToken();
+      stubGis();
+      const day = inMonth(2);
+      const f = stubWork(day);
+      clientId = 'test-client.apps.googleusercontent.com';
+      const user = userEvent.setup();
+      const { container } = renderHome();
+      await openCalendar(container, user);
+      await waitFor(() => expect(screen.getAllByText(/진짜 회의/).length).toBeGreaterThan(0));
+      const { open } = await openWorkModal(container, user, day);
+      const modal = await open();
+      // 다음 달 20일까지 → 31일을 넘는다.
+      fireEvent.click(modal.querySelector('[data-work-to]')!);
+      fireEvent.click(document.querySelector('[data-radix-popper-content-wrapper] [aria-label="다음 달"]')!);
+      const nextMonth = `${new Date(Number(day.slice(0, 4)), Number(day.slice(5, 7)), 20).getFullYear()}-${String(new Date(Number(day.slice(0, 4)), Number(day.slice(5, 7)), 20).getMonth() + 1).padStart(2, '0')}-20`;
+      fireEvent.click(document.querySelector(`[data-datepop-day="${nextMonth}"]`)!);
+      await waitFor(() => expect(modal.querySelector('[data-work-foot]')?.textContent).toContain('31일까지'));
+      expect(modal.querySelector<HTMLButtonElement>('[data-work-save]')?.disabled).toBe(true);
+      fireEvent.click(modal.querySelector('[data-work-save]')!);
+      expect(f.mock.calls.filter((c) => (c[1] as { method?: string } | undefined)?.method === 'POST')).toHaveLength(0);
     });
 
     it('일별 팝업 발치에도 같은 길이 있다 — 우클릭은 알아야 쓰는 조작이다', async () => {

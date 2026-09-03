@@ -165,7 +165,10 @@ export function Home() {
         // 24~44px 안쪽으로 밀리고 격자가 뷰포트 높이까지 자라지 못한다. 대시보드는
         // 같은 문제를 음수 마진으로 상쇄하지만(그 화면은 세로로 흐른다), 일정은 안쪽
         // 두 영역이 각자 스크롤하므로 **패딩을 아예 걷는 편**이 정확하다.
-        style={{ flex: '1 1 auto', display: 'flex', flexDirection: 'column', overflowY: state.activeCal ? 'hidden' : 'auto', scrollbarGutter: 'stable', padding: state.activeCal ? 0 : isMobile ? '16px 14px 32px' : '24px 32px 44px', minWidth: 0 }}
+        // 본문 면은 **흰 면**이다(요청 — 대시보드·스페이스·일정 셋 다). 예외는
+        // 최근 항목 띠 하나로, `home.css`가 그 띠만 따뜻한 면으로 되돌린다(그러지
+        // 않으면 흰 카드가 흰 배경에 묻힌다).
+        style={{ flex: '1 1 auto', display: 'flex', flexDirection: 'column', overflowY: state.activeCal ? 'hidden' : 'auto', scrollbarGutter: 'stable', padding: state.activeCal ? 0 : isMobile ? '16px 14px 32px' : '24px 32px 44px', minWidth: 0, background: 'var(--mf-card)' }}
       >
         {/* Cross-space "최근 항목" strip sits ABOVE the space toolbar so it reads as a
             global "recently opened" bar, not part of the current space's maps.
