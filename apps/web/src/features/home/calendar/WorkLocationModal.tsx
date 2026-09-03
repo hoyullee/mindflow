@@ -11,8 +11,13 @@
 // **모양은 구글의 그 화면과 같다**(사용자 스크린샷): 장소는 집·사무실·기타 위치
 // 셋이고, 종일이면 **시작–종료 구간**을 고르며, `시간 추가`를 켜면 **하루 안의 시각
 // 구간**이 된다(구글도 시각 근무 위치를 하루로 제한한다 — 그래서 둘은 함께 쓰이지
-// 않는다). 예전에는 여러 날에 걸친 일정을 잠갔는데, 구간이 정식 모양이므로 지금은
-// 그 구간을 **그대로 보여 주고 고치면 구간 전체가 바뀐다**.
+// 않는다).
+//
+// **구간은 일정 하나가 아니다.** 구글은 종일 근무 위치를 **하루씩** 들으므로
+// (라이브 제보의 400 `malformedWorkingLocationEvent`) 고른 구간의 **하루하루에**
+// 하나씩 건다 — 날짜 칸이 근무 위치를 하루 단위로 보여 주는 것과도 결이 같다.
+// 그래서 걸려 있는 날을 열면 보이는 것은 **그 하루**이고, 종료 날짜를 뒤로 밀면
+// 그만큼 날이 더 걸린다(구간 밖의 날은 건드리지 않는다).
 //
 // **반복되는 근무 위치는 우리가 다루지 않는다** — 구글은 그것을 캘린더 설정에 두고
 // 우리 스코프(`calendar.events`)로는 닿지 않는다. 그래서 한 줄로 알린다(없는 기능을
@@ -24,7 +29,7 @@ import { RadioCards } from '../../../components/Segmented';
 import { DateButton, PillButton } from './DatePop';
 import { TimeButton } from './TimePop';
 import { addDays, daysBetween, minutesOf } from './model';
-import type { WorkLocationDraft, WorkLocationKind } from './googleCalendar';
+import { WORK_LOCATION_MAX_DAYS, workLocationDays, type WorkLocationDraft, type WorkLocationKind } from './googleCalendar';
 
 /** 지금 그 날에 걸린 근무 위치 — 없으면 `null`(그 구간·시각을 그대로 되살린다). */
 export interface WorkLocationCurrent {
@@ -82,8 +87,12 @@ export function WorkLocationModal({
     // 시각과 구간은 함께 쓰이지 않는다 — 구글이 시각 근무 위치를 하루로 제한한다.
     ...(timed ? { startTime: t1, endTime: t2 } : to > from ? { endDate: to } : {}),
   });
+  // 하루에 요청 하나씩 나가므로 너무 긴 구간은 **막고 이유를 말한다**(조용히 잘라
+  // 저장하면 고른 것과 저장된 것이 달라진다).
+  const days = workLocationDays(draft()).length;
+  const tooLong = !timed && to > from && dayCount(from, to) > WORK_LOCATION_MAX_DAYS;
   const save = (): void => {
-    if (!saving) onSave(draft());
+    if (!saving && !tooLong) onSave(draft());
   };
 
   /** 시작 날짜를 옮기면 길이를 지킨 채 종료도 따라온다(새 일정 팝업과 같은 규칙). */
@@ -104,8 +113,16 @@ export function WorkLocationModal({
     setT2(`${`${Math.floor(end / 60)}`.padStart(2, '0')}:${`${end % 60}`.padStart(2, '0')}`);
   };
 
-  const footMsg = error ?? (saving ? '저장 중…' : '');
-  const footTone = error ? 'var(--mf-danger)' : 'var(--mf-faint2)';
+  const footMsg =
+    error ??
+    (saving
+      ? `저장 중…${days > 1 ? ` (${days}일)` : ''}`
+      : tooLong
+        ? `한 번에 ${WORK_LOCATION_MAX_DAYS}일까지 걸 수 있어요`
+        : days > 1
+          ? `${days}일에 걸어요`
+          : '');
+  const footTone = error || tooLong ? 'var(--mf-danger)' : 'var(--mf-faint2)';
 
   return (
     <Modal
@@ -245,7 +262,7 @@ export function WorkLocationModal({
           </div>
 
           <span data-work-note style={{ fontSize: 11.5, color: 'var(--mf-faint2)', lineHeight: 1.6 }}>
-            Google 캘린더의 기본 캘린더에 저장돼요. 반복되는 근무 위치는 Google 캘린더 설정에서 정해요.
+            Google 캘린더의 기본 캘린더에 하루씩 저장돼요. 반복되는 근무 위치는 Google 캘린더 설정에서 정해요.
           </span>
         </div>
 
@@ -253,7 +270,7 @@ export function WorkLocationModal({
           <span data-work-foot style={{ flex: 1, minWidth: 0, fontSize: 12, color: footTone, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{footMsg}</span>
           {/* 지우기는 **걸려 있을 때만** — 없는 것을 지울 수는 없다. */}
           {current && (
-            <button type="button" data-work-clear disabled={saving} onClick={onClear} className="mf-ctl" style={{ flex: '0 0 auto', whiteSpace: 'nowrap', height: isMobile ? 44 : 36, padding: '0 14px', borderRadius: 999, border: '1px solid var(--mf-border)', background: 'var(--mf-card)', color: 'var(--mf-danger)', font: 'inherit', fontSize: 12.5, fontWeight: 700, cursor: saving ? 'default' : 'pointer' }}>
+            <button type="button" data-work-clear title="이 날의 근무 위치 지우기" aria-label="이 날의 근무 위치 지우기" disabled={saving} onClick={onClear} className="mf-ctl" style={{ flex: '0 0 auto', whiteSpace: 'nowrap', height: isMobile ? 44 : 36, padding: '0 14px', borderRadius: 999, border: '1px solid var(--mf-border)', background: 'var(--mf-card)', color: 'var(--mf-danger)', font: 'inherit', fontSize: 12.5, fontWeight: 700, cursor: saving ? 'default' : 'pointer' }}>
               지우기
             </button>
           )}
@@ -263,10 +280,10 @@ export function WorkLocationModal({
           <button
             type="button"
             data-work-save
-            disabled={saving}
+            disabled={saving || tooLong}
             onClick={save}
             className="mf-ctl-primary"
-            style={{ flex: '0 0 auto', whiteSpace: 'nowrap', height: isMobile ? 44 : 40, padding: isMobile ? '0 20px' : '0 24px', borderRadius: 999, border: 0, background: 'linear-gradient(180deg, var(--mf-accent), var(--mf-accent-strong))', color: 'var(--mf-accent-ink)', font: 'inherit', fontSize: 13.5, fontWeight: 800, cursor: saving ? 'default' : 'pointer', boxShadow: '0 8px 18px -10px rgba(var(--mf-accent-rgb), .9)' }}
+            style={{ flex: '0 0 auto', whiteSpace: 'nowrap', height: isMobile ? 44 : 40, padding: isMobile ? '0 20px' : '0 24px', borderRadius: 999, border: 0, background: 'linear-gradient(180deg, var(--mf-accent), var(--mf-accent-strong))', color: 'var(--mf-accent-ink)', font: 'inherit', fontSize: 13.5, fontWeight: 800, cursor: saving || tooLong ? 'default' : 'pointer', opacity: tooLong ? 0.5 : 1, boxShadow: '0 8px 18px -10px rgba(var(--mf-accent-rgb), .9)' }}
           >
             {saving ? '저장 중…' : '저장'}
           </button>
@@ -274,6 +291,14 @@ export function WorkLocationModal({
       </>
     </Modal>
   );
+}
+
+/** 두 날 사이의 날 수(양끝 포함) — 상한 판정에만 쓴다. */
+function dayCount(from: string, to: string): number {
+  const a = Date.parse(`${from}T00:00:00`);
+  const b = Date.parse(`${to}T00:00:00`);
+  if (Number.isNaN(a) || Number.isNaN(b)) return 1;
+  return Math.floor((b - a) / 86400000) + 1;
 }
 
 /** 집 + 노트북 — 달력 칸의 근무 위치 배지와 같은 글리프 계열. */

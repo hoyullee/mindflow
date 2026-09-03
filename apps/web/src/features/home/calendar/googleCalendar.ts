@@ -656,17 +656,45 @@ export interface WorkLocationDraft {
   endTime?: string;
 }
 
+/** 한 번에 걸 수 있는 날 수 — 그만큼 요청이 나가므로 상한을 둔다. */
+export const WORK_LOCATION_MAX_DAYS = 31;
+
 /**
- * 그 초안이 차지하는 구간 — 본문·PATCH가 같은 값을 쓰도록 한 곳에서 만든다.
+ * 근무 위치 일정 **하나**가 차지하는 구간 — 언제나 **그 하루**다.
  *
- * 시각이 켜져 있으면 **하루**로 접는다(구글이 시각 근무 위치를 하루로 제한한다).
- * 종료가 시작보다 앞서면 하루치로 본다(고르는 쪽에서 막지만 값으로도 지킨다).
+ * 구글이 그렇게 못박아 뒀다(라이브 제보의 400): `malformedWorkingLocationEvent`
+ * — *"An all-day working location event must be exactly one day long."* 그래서
+ * `endDate`는 **한 일정의 길이가 아니라 며칠에 걸 것인가**를 뜻하고, 그 해석은
+ * `workLocationDays` **한 곳**에서만 한다(이 함수는 그 값을 아예 보지 않는다 —
+ * 그래야 여러 날짜가 한 일정에 실리는 상태를 만들 수 없다).
+ *
+ * 시각이 켜져 있으면 그 하루 안의 구간이다(구글도 시각 근무 위치를 하루로 제한한다).
  */
 export function workLocationWhen(w: WorkLocationDraft): Pick<GoogleEventDraft, 'allDay' | 'startDate' | 'endDate' | 'startTime' | 'endTime'> {
   const from = w.startDate;
   if (w.startTime && w.endTime) return { allDay: false, startDate: from, endDate: from, startTime: w.startTime, endTime: w.endTime };
-  const end = w.endDate && w.endDate > from ? w.endDate : from;
-  return { allDay: true, startDate: from, endDate: end };
+  return { allDay: true, startDate: from, endDate: from };
+}
+
+/**
+ * 그 초안을 **어느 날들에** 걸 것인가 — 종일은 시작~종료의 하루하루, 시각은 그 하루.
+ *
+ * 구글의 근무 위치 화면이 구간을 다루는 것은 맞지만(사용자 스크린샷) 저장은 **하루씩
+ * 따로**다(위 제약). 그래서 우리도 그 구간의 날마다 하나씩 쓴다 — 날짜 칸이 근무
+ * 위치를 하루 단위로 보여 주는 것과도 결이 같다.
+ */
+export function workLocationDays(w: WorkLocationDraft): string[] {
+  const from = w.startDate;
+  if (w.startTime && w.endTime) return [from];
+  const to = w.endDate && w.endDate > from ? w.endDate : from;
+  const days: string[] = [];
+  for (let d = from; d <= to && days.length < WORK_LOCATION_MAX_DAYS; d = nextDay(d)) days.push(d);
+  return days;
+}
+
+/** 그 날 하루짜리 초안 — 구간을 하루하루로 나눌 때 쓴다. */
+export function workLocationForDay(w: WorkLocationDraft, iso: string): WorkLocationDraft {
+  return { ...w, startDate: iso, endDate: iso };
 }
 
 /** 그 일정의 구간이 초안과 다른가 — PATCH에 `start`/`end`를 실을지 정한다. */
@@ -698,9 +726,11 @@ export function workLocationProps(w: WorkLocationDraft): Record<string, unknown>
 /**
  * 근무 위치 **일정 하나**의 본문(만들 때).
  *
- * 구글은 근무 위치를 `eventType: 'workingLocation'` 일정으로 든다 — 종일이면 끝이
- * 배타적인 다음 날이고(`whenBody`의 그 규칙), `시간 추가`를 켜면 하루 안의 시각
- * 구간이다. 제목은 구글의 클라이언트가 갈래로 지어 보여 주므로 우리가 지어 넣지 않는다.
+ * 구글은 근무 위치를 `eventType: 'workingLocation'` 일정으로 든다 — 종일이면 **그
+ * 하루**이고 끝이 배타적인 다음 날이며(`whenBody`의 그 규칙), `시간 추가`를 켜면
+ * 하루 안의 시각 구간이다. 여러 날은 **일정 하나가 아니라 하루씩 여러 개**다
+ * (`workLocationDays`). 제목은 구글의 클라이언트가 갈래로 지어 보여 주므로 우리가
+ * 지어 넣지 않는다.
  *
  * `visibility: 'public'` · `transparency: 'transparent'`를 함께 보내는 이유:
  * 근무 위치는 "그 날의 상태"라 바쁨으로 잡히면 안 되고(회의실·한가함 조회에

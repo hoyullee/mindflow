@@ -2061,15 +2061,14 @@ describe('구글 캘린더 겹치기(PR5)', () => {
       await waitFor(() => expect(f.mock.calls.some((c) => (c[1] as { method?: string } | undefined)?.method === 'DELETE')).toBe(true));
     });
 
-    // 예전에는 여러 날에 걸친 근무 위치를 잠갔다. 구글의 그 화면 자체가 시작–종료
-    // 구간을 다루므로(사용자 스크린샷) 잠글 근거가 없다 — 구간을 그대로 보여 준다.
-    it('여러 날에 걸친 근무 위치는 그 구간을 보여 주고, 구간이 그대로면 날짜를 싣지 않는다', async () => {
+    // 라이브 제보의 400(`malformedWorkingLocationEvent`): 종일 근무 위치는 **반드시
+    // 하루**다. 그래서 구간은 일정 하나가 아니라 **하루하루에 하나씩**이다.
+    it('구간을 고르면 하루하루에 하나씩 쓴다 — 걸려 있는 날은 고치고 나머지는 만든다', async () => {
       seed({ calendars: ['me@example.com'] });
       seedToken();
       stubGis();
       const day = inMonth(2);
-      const to = inMonth(4);
-      const f = stubWork(day, { id: 'w2', from: day, to, props: { type: 'officeLocation', officeLocation: { label: '판교' } } });
+      const f = stubWork(day, { id: 'w1', from: day, to: day, props: { type: 'homeOffice', homeOffice: {} } });
       clientId = 'test-client.apps.googleusercontent.com';
       const user = userEvent.setup();
       const { container } = renderHome();
@@ -2077,22 +2076,47 @@ describe('구글 캘린더 겹치기(PR5)', () => {
       await waitFor(() => expect(container.querySelector(`[data-day-cell="${day}"] [data-work-loc]`)).toBeTruthy());
       const { open } = await openWorkModal(container, user, day);
       const modal = await open();
-      // 걸려 있던 구간이 그대로 되살아난다(누른 날이 아니라 그 일정의 시작·종료).
-      expect(modal.querySelector('[data-work-from]')?.textContent).toContain(`${Number(day.slice(5, 7))}월 ${Number(day.slice(8, 10))}일`);
-      expect(modal.querySelector('[data-work-to]')?.textContent).toContain(`${Number(to.slice(5, 7))}월 ${Number(to.slice(8, 10))}일`);
-      // 고칠 수 있다 — 저장·지우기가 있고 사유 문구가 없다.
-      expect(modal.querySelector('[data-work-save]')).toBeTruthy();
-      expect(modal.querySelector('[data-work-clear]')).toBeTruthy();
-      expect(modal.querySelector('[data-work-foot]')?.textContent).toBe('');
-      fireEvent.click(modal.querySelector('[data-work-kind="homeOffice"]')!);
+      // 종료 날짜를 이틀 뒤로 → 사흘에 걸린다.
+      fireEvent.click(modal.querySelector('[data-work-to]')!);
+      fireEvent.click(document.querySelector(`[data-datepop-day="${inMonth(4)}"]`)!);
+      await waitFor(() => expect(modal.querySelector('[data-work-foot]')?.textContent).toContain('3일에 걸어요'));
       fireEvent.click(modal.querySelector('[data-work-save]')!);
       await waitFor(() => {
-        const patch = f.mock.calls.find((c) => (c[1] as { method?: string } | undefined)?.method === 'PATCH');
-        expect(patch).toBeTruthy();
-        const body = JSON.parse((patch![1] as { body: string }).body) as Record<string, unknown>;
-        // 구간을 건드리지 않았으므로 `start`/`end`를 싣지 않는다(#552의 그 규칙).
-        expect(Object.keys(body)).toEqual(['workingLocationProperties']);
+        const writes = f.mock.calls.filter((c) => ['POST', 'PATCH'].includes((c[1] as { method?: string } | undefined)?.method ?? ''));
+        expect(writes).toHaveLength(3);
       });
+      const writes = f.mock.calls.filter((c) => ['POST', 'PATCH'].includes((c[1] as { method?: string } | undefined)?.method ?? ''));
+      // 걸려 있던 첫 날은 PATCH, 나머지 두 날은 POST.
+      expect(writes.map((c) => (c[1] as { method: string }).method)).toEqual(['PATCH', 'POST', 'POST']);
+      const bodies = writes.map((c) => JSON.parse((c[1] as { body: string }).body) as Record<string, unknown>);
+      // 첫 날은 그 날짜가 그대로라 갈래·이름만 간다(#552의 그 규칙).
+      expect(Object.keys(bodies[0]!)).toEqual(['workingLocationProperties']);
+      // 만드는 두 날은 **각각 정확히 하루**다(끝은 배타적 다음 날).
+      expect(bodies[1]).toMatchObject({ start: { date: inMonth(3) }, end: { date: inMonth(4) } });
+      expect(bodies[2]).toMatchObject({ start: { date: inMonth(4) }, end: { date: inMonth(5) } });
+    });
+
+    it('여러 날을 실은 본문은 어디에도 없다 — 구글이 하루만 받는다', async () => {
+      seed({ calendars: ['me@example.com'] });
+      seedToken();
+      stubGis();
+      const day = inMonth(2);
+      const f = stubWork(day);
+      clientId = 'test-client.apps.googleusercontent.com';
+      const user = userEvent.setup();
+      const { container } = renderHome();
+      await openCalendar(container, user);
+      await waitFor(() => expect(screen.getAllByText(/진짜 회의/).length).toBeGreaterThan(0));
+      const { open } = await openWorkModal(container, user, day);
+      const modal = await open();
+      fireEvent.click(modal.querySelector('[data-work-to]')!);
+      fireEvent.click(document.querySelector(`[data-datepop-day="${inMonth(4)}"]`)!);
+      fireEvent.click(modal.querySelector('[data-work-save]')!);
+      await waitFor(() => expect(f.mock.calls.filter((c) => (c[1] as { method?: string } | undefined)?.method === 'POST')).toHaveLength(3));
+      for (const c of f.mock.calls.filter((x) => (x[1] as { method?: string } | undefined)?.method === 'POST')) {
+        const b = JSON.parse((c[1] as { body: string }).body) as { start: { date: string }; end: { date: string } };
+        expect(Date.parse(b.end.date) - Date.parse(b.start.date)).toBe(86400000);
+      }
     });
 
     it('`시간 추가`를 켜면 하루 안의 시각 구간이 된다 — 종료 날짜는 사라진다', async () => {
@@ -2122,6 +2146,30 @@ describe('구글 캘린더 겹치기(PR5)', () => {
         expect(body.start).toMatchObject({ dateTime: `${day}T09:00:00` });
         expect(body.end).toMatchObject({ dateTime: `${day}T18:00:00` });
       });
+    });
+
+    it('구간이 상한을 넘으면 저장 자체를 막고 이유를 말한다 — 조용히 잘라 저장하지 않는다', async () => {
+      seed({ calendars: ['me@example.com'] });
+      seedToken();
+      stubGis();
+      const day = inMonth(2);
+      const f = stubWork(day);
+      clientId = 'test-client.apps.googleusercontent.com';
+      const user = userEvent.setup();
+      const { container } = renderHome();
+      await openCalendar(container, user);
+      await waitFor(() => expect(screen.getAllByText(/진짜 회의/).length).toBeGreaterThan(0));
+      const { open } = await openWorkModal(container, user, day);
+      const modal = await open();
+      // 다음 달 20일까지 → 31일을 넘는다.
+      fireEvent.click(modal.querySelector('[data-work-to]')!);
+      fireEvent.click(document.querySelector('[data-radix-popper-content-wrapper] [aria-label="다음 달"]')!);
+      const nextMonth = `${new Date(Number(day.slice(0, 4)), Number(day.slice(5, 7)), 20).getFullYear()}-${String(new Date(Number(day.slice(0, 4)), Number(day.slice(5, 7)), 20).getMonth() + 1).padStart(2, '0')}-20`;
+      fireEvent.click(document.querySelector(`[data-datepop-day="${nextMonth}"]`)!);
+      await waitFor(() => expect(modal.querySelector('[data-work-foot]')?.textContent).toContain('31일까지'));
+      expect(modal.querySelector<HTMLButtonElement>('[data-work-save]')?.disabled).toBe(true);
+      fireEvent.click(modal.querySelector('[data-work-save]')!);
+      expect(f.mock.calls.filter((c) => (c[1] as { method?: string } | undefined)?.method === 'POST')).toHaveLength(0);
     });
 
     it('일별 팝업 발치에도 같은 길이 있다 — 우클릭은 알아야 쓰는 조작이다', async () => {

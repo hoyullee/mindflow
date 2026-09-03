@@ -1,6 +1,6 @@
 import { describe, expect, it, beforeEach, vi } from 'vitest';
 import {
-  workLocationLabel, workLocationKindOf, workLocationProps, workLocationEventBody, workLocationPatch, findWorkLocation, workLocationWhen, workLocationWhenChanged, GOOGLE_CALENDAR_SCOPE, GOOGLE_EVENT_COLORS, myRsvpOf, attendeesBody, eventWindowIso, RECURRENCE_OFF, buildRecurrence, draftToBody, eventColorOf, fetchEventColors, googleWriteError, managedFieldsDiffer, updateGoogleEvent, recurrenceSummary, isDayOffHoliday, isHolidayCalendarId, onTokenChange, scopeCovers, parseCalendarList, parseEvents, readStoredToken, splitGoogleDateTime, storeToken, type GoogleCalendarMeta } from './googleCalendar';
+  workLocationLabel, workLocationKindOf, workLocationProps, workLocationEventBody, workLocationPatch, findWorkLocation, workLocationWhen, workLocationWhenChanged, workLocationDays, workLocationForDay, WORK_LOCATION_MAX_DAYS, GOOGLE_CALENDAR_SCOPE, GOOGLE_EVENT_COLORS, myRsvpOf, attendeesBody, eventWindowIso, RECURRENCE_OFF, buildRecurrence, draftToBody, eventColorOf, fetchEventColors, googleWriteError, managedFieldsDiffer, updateGoogleEvent, recurrenceSummary, isDayOffHoliday, isHolidayCalendarId, onTokenChange, scopeCovers, parseCalendarList, parseEvents, readStoredToken, splitGoogleDateTime, storeToken, type GoogleCalendarMeta } from './googleCalendar';
 import { googleEntries, holidayMap } from './entries';
 import { draftFrom, patchFrom } from './GoogleEventDetail';
 import { submitNewEvent } from './newEventSubmit';
@@ -666,18 +666,39 @@ describe('근무 위치(제보 ⑥)', () => {
     expect(workLocationProps({ kind: 'customLocation', startDate: '2026-09-10' })).toEqual({ type: 'customLocation', customLocation: {} });
   });
 
-  it('구간과 시각 — 종일은 여러 날에 걸치고, 시각은 하루로 접힌다(구글의 제한)', () => {
-    // 종일 구간 — 끝은 포함이고 본문에서 배타적 다음 날이 된다.
+  // 라이브 제보의 400: `malformedWorkingLocationEvent` — *"An all-day working
+  // location event must be exactly one day long."* 구간을 한 일정에 담을 수 없다.
+  it('일정 하나는 **언제나 하루**다 — 구간을 실으려 해도 실리지 않는다', () => {
     const span = workLocationEventBody({ kind: 'officeLocation', label: '판교', startDate: '2026-09-09', endDate: '2026-09-11' });
-    expect(span).toMatchObject({ start: { date: '2026-09-09' }, end: { date: '2026-09-12' } });
-    // `시간 추가` — 시각이 있으면 구간을 무시하고 그 하루 안의 구간이 된다.
+    // 끝은 배타적 다음 날 = 정확히 하루.
+    expect(span).toMatchObject({ start: { date: '2026-09-09' }, end: { date: '2026-09-10' } });
+    expect(workLocationWhen({ kind: 'homeOffice', startDate: '2026-09-09', endDate: '2026-09-30' })).toMatchObject({ startDate: '2026-09-09', endDate: '2026-09-09' });
+    // `시간 추가` — 그 하루 안의 시각 구간.
     const timed = workLocationEventBody({ kind: 'homeOffice', startDate: '2026-09-09', endDate: '2026-09-11', startTime: '09:00', endTime: '13:00' });
     expect(timed).toMatchObject({
       start: { dateTime: '2026-09-09T09:00:00' },
       end: { dateTime: '2026-09-09T13:00:00' },
     });
-    // 종료가 시작보다 앞서면 하루치로 본다(고르는 쪽에서 막지만 값으로도 지킨다).
-    expect(workLocationWhen({ kind: 'homeOffice', startDate: '2026-09-09', endDate: '2026-09-01' })).toMatchObject({ startDate: '2026-09-09', endDate: '2026-09-09' });
+  });
+
+  it('구간은 **하루하루의 목록**이다 — 시각이면 하루, 상한이 있다', () => {
+    expect(workLocationDays({ kind: 'homeOffice', startDate: '2026-09-09', endDate: '2026-09-11' })).toEqual(['2026-09-09', '2026-09-10', '2026-09-11']);
+    // 달을 넘어도 이어진다.
+    expect(workLocationDays({ kind: 'homeOffice', startDate: '2026-09-29', endDate: '2026-10-01' })).toEqual(['2026-09-29', '2026-09-30', '2026-10-01']);
+    // 종료가 없거나 앞서면 하루치.
+    expect(workLocationDays({ kind: 'homeOffice', startDate: '2026-09-09' })).toEqual(['2026-09-09']);
+    expect(workLocationDays({ kind: 'homeOffice', startDate: '2026-09-09', endDate: '2026-09-01' })).toEqual(['2026-09-09']);
+    // 시각이 켜져 있으면 구간을 보지 않는다.
+    expect(workLocationDays({ kind: 'homeOffice', startDate: '2026-09-09', endDate: '2026-09-11', startTime: '09:00', endTime: '13:00' })).toEqual(['2026-09-09']);
+    // 하루에 요청 하나가 나가므로 상한을 둔다(팝업은 그전에 막고 이유를 말한다).
+    expect(workLocationDays({ kind: 'homeOffice', startDate: '2026-09-01', endDate: '2027-09-01' })).toHaveLength(WORK_LOCATION_MAX_DAYS);
+    // 하루짜리 초안으로 나눈다.
+    expect(workLocationForDay({ kind: 'officeLocation', label: '판교', startDate: '2026-09-09', endDate: '2026-09-11' }, '2026-09-10')).toEqual({
+      kind: 'officeLocation',
+      label: '판교',
+      startDate: '2026-09-10',
+      endDate: '2026-09-10',
+    });
   });
 
   it('고치는 PATCH는 **바뀐 것만** 보낸다 — 구간이 그대로면 날짜를 싣지 않는다', () => {
@@ -685,20 +706,23 @@ describe('근무 위치(제보 ⑥)', () => {
     const one = workLocationPatch(w, false);
     expect(Object.keys(one.body)).toEqual(['workingLocationProperties']);
     expect(one.touched).toEqual(['workLocation']);
-    // 구간이 바뀌면 `start`/`end` 짝이 함께 간다.
-    const both = workLocationPatch({ ...w, endDate: '2026-09-12' }, true);
+    // 날짜가 바뀌면 `start`/`end` 짝이 함께 가고, 그 짝도 **하루뿐**이다.
+    const both = workLocationPatch({ kind: 'homeOffice', startDate: '2026-09-12' }, true);
     expect(both.touched).toEqual(['workLocation', 'when']);
-    expect(both.body).toMatchObject({ start: { date: '2026-09-10', dateTime: null }, end: { date: '2026-09-13', dateTime: null } });
+    expect(both.body).toMatchObject({ start: { date: '2026-09-12', dateTime: null }, end: { date: '2026-09-13', dateTime: null } });
   });
 
   it('구간이 바뀌었는지 스스로 본다 — 종일 ↔ 시각 전환도 잡는다', () => {
     const ev = { allDay: true, startDate: '2026-09-10', endDate: '2026-09-10' } as const;
     const w = { kind: 'homeOffice' as const, startDate: '2026-09-10' };
     expect(workLocationWhenChanged(ev, w)).toBe(false);
-    expect(workLocationWhenChanged(ev, { ...w, endDate: '2026-09-12' })).toBe(true);
+    expect(workLocationWhenChanged(ev, { ...w, startDate: '2026-09-12' })).toBe(true);
     expect(workLocationWhenChanged(ev, { ...w, startTime: '09:00', endTime: '13:00' })).toBe(true);
     // 이름만 바뀐 것은 구간 변경이 아니다(그러면 날짜를 싣지 않는다).
     expect(workLocationWhenChanged(ev, { ...w, kind: 'officeLocation', label: '판교' })).toBe(false);
+    // 종료 날짜는 **한 일정의 길이가 아니다** — 그 날의 일정은 그대로다(구간은 날마다
+    // 따로 쓰이므로, 이 값이 바뀌었다고 그 하루의 날짜를 다시 보낼 이유가 없다).
+    expect(workLocationWhenChanged(ev, { ...w, endDate: '2026-09-12' })).toBe(false);
   });
 
   it('그 날의 근무 위치를 찾는다 — 여러 날에 걸친 일정도 그 구간으로 찾는다', () => {

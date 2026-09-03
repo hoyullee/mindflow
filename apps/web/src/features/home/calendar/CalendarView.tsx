@@ -19,7 +19,7 @@ import { EventDetail, geurioCalendarChips } from './EventDetail';
 import { GoogleDetailHost, patchFrom } from './GoogleEventDetail';
 import { GoogleConnectButton } from './GoogleConnectButton';
 import { WorkLocationModal } from './WorkLocationModal';
-import { findWorkLocation, workLocationPatch, workLocationWhenChanged, type WorkLocationDraft } from './googleCalendar';
+import { findWorkLocation, type WorkLocationDraft } from './googleCalendar';
 import { CalendarContextMenu, type CalMenuState } from './CalendarContextMenu';
 import { DeleteConfirm } from './DeleteConfirm';
 import { useCalendarEvents } from './useCalendarEvents';
@@ -131,20 +131,16 @@ export function CalendarView({
   };
 
   /**
-   * 그 날의 근무 위치를 쓴다 — **걸려 있으면 고치고, 없으면 만든다.**
+   * 근무 위치를 쓴다 — 고른 구간의 **하루하루**에 건다(있으면 고치고 없으면 만든다).
    *
-   * 여러 날에 걸친 일정도 고친다(구간은 구글의 정식 모양이다 — 팝업이 그 구간을
-   * 그대로 보여 준다). 고칠 때는 **바뀐 것만** 보낸다: 구간이 그대로면 `start`/`end`를
-   * 싣지 않아, 그 사이 구글이 스스로 판을 올려도(#548) 저장이 막히지 않는다.
+   * 구간을 일정 하나에 담지 않는 이유는 구글이 그렇게 못박아 뒀기 때문이다(라이브
+   * 제보의 400 `malformedWorkingLocationEvent`: 종일 근무 위치는 반드시 하루).
+   * 하루하루를 도는 일은 훅이 맡는다 — 저장·새로 읽기·오류 문장이 한 곳에 있다.
    */
-  const saveWork = (iso: string, draft: WorkLocationDraft): void => {
+  const saveWork = (draft: WorkLocationDraft): void => {
     if (!workCalendar) return;
-    const cur = findWorkLocation(google.events, iso);
     setWorkSaving(true);
-    const run = cur
-      ? google.updateEvent(cur, workLocationPatch(draft, workLocationWhenChanged(cur, draft)))
-      : google.setWorkLocation(workCalendar.id, draft);
-    void run.then((err) => {
+    void google.saveWorkLocation(workCalendar.id, draft).then((err) => {
       setWorkSaving(false);
       setWorkError(err);
       if (!err) setWorkDay(null);
@@ -454,7 +450,7 @@ export function CalendarView({
           }}
         />
       )}
-      {/* 근무 위치(요청) — 구글의 기본 캘린더에 쓴다(구간·시각 모두). */}
+      {/* 근무 위치(요청) — 구글의 기본 캘린더에 쓴다(구간은 하루씩 여러 개). */}
       {workDay && (
         <WorkLocationModal
           iso={workDay}
@@ -474,7 +470,7 @@ export function CalendarView({
           saving={workSaving}
           error={workError}
           onClose={() => setWorkDay(null)}
-          onSave={(draft) => saveWork(workDay, draft)}
+          onSave={(draft) => saveWork(draft)}
           onClear={() => clearWork(workDay)}
         />
       )}
