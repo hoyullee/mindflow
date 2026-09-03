@@ -318,7 +318,7 @@ export function CalendarView({
       {/* 달력 뒤의 면은 **흰 면**이다(요청) — 점 격자는 그대로 위에 깔린다.
           `--mf-card`를 쓰는 이유: 밝은 여섯 테마에서는 그것이 곧 흰색이고, 다크에서는
           토큰이 뒤집혀 어두운 면이 된다(하드코딩 `#fff`은 다크를 깨뜨린다). */}
-      <div data-cal-body style={{ position: 'relative', flex: 1, minHeight: 0, display: 'flex', alignItems: 'stretch', minWidth: 0, background: 'var(--mf-card)' }}>
+      <div data-cal-body style={{ position: 'relative', flex: 1, minHeight: 0, display: 'flex', alignItems: 'stretch', minWidth: 0, background: 'var(--mf-page)' }}>
         {/* 달력 영역 — 디자인 원본처럼 캔버스의 점 격자를 축소해 깐다(일정도 우리 화면). */}
         <div
           data-cal-canvas

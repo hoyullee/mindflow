@@ -5245,14 +5245,15 @@ describe('홈 리디자인 계약', () => {
     expect(reduce).toContain('transform: none');
   });
 
-  it('본문 면은 **흰 면**이고 최근 항목 띠만 따뜻한 면으로 남는다(요청 ①)', async () => {
+  it('본문 면은 카드와 바닥 사이의 **바닥 면**이고 최근 항목 띠만 한 톤 더 물러난다(요청)', async () => {
     localStorage.setItem('mf_recent', JSON.stringify(['맵 하나']));
     const { container } = renderHomeWithDocStore([
       { id: 'd1', title: '맵 하나', version: 1, updatedAt: '2026-08-16T00:00:00.000Z', isFavorite: false, deletedAt: null },
     ]);
     await waitFor(() => expect(container.querySelector('.mf-recent-tray')).toBeTruthy());
     const main = container.querySelector('main') as HTMLElement;
-    expect(main.style.backgroundColor).toContain('--mf-card');
+    // 흰 면만 있으니 이상하다는 제보 — 카드(흰 면)보다 반 톤 물러난 `--mf-page`다.
+    expect(main.style.backgroundColor).toContain('--mf-page');
     // 스페이스 화면에도 점 격자를 얹는다(요청 ①) — 대시보드·일정과 같은 값이다.
     expect(main.style.backgroundImage).toContain('--mf-dot-grid');
     expect(main.style.backgroundSize).toBe('17px 17px');

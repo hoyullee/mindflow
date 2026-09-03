@@ -174,7 +174,7 @@ describe('대시보드 ① — LNB·보기·피커', () => {
     expect(screen.getByPlaceholderText('모든 스페이스에서 검색')).toBeTruthy();
   });
 
-  it('위젯 뒤의 면은 **흰 면**이고 점 격자는 그대로다 — 히어로는 그대로 어둡다(요청 ①)', async () => {
+  it('위젯 뒤의 면은 **바닥 면**(`--mf-page`)이고 점 격자는 그대로다 — 히어로는 그대로 어둡다(요청)', async () => {
     seedSpaces(true);
     localStorage.setItem(
       'mf_spaces',
@@ -190,7 +190,7 @@ describe('대시보드 ① — LNB·보기·피커', () => {
       expect(el).toBeTruthy();
       return el as HTMLElement;
     });
-    expect(body.style.backgroundColor).toContain('--mf-card');
+    expect(body.style.backgroundColor).toContain('--mf-page');
     // 점 격자는 그 위에 그대로(요청: dot 표시는 유지).
     expect(body.style.backgroundImage).toContain('--mf-dot-grid');
     // 히어로는 그대로 어둡다(요청: 타이틀 제외).

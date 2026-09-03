@@ -19,11 +19,20 @@
 // 그래서 걸려 있는 날을 열면 보이는 것은 **그 하루**이고, 종료 날짜를 뒤로 밀면
 // 그만큼 날이 더 걸린다(구간 밖의 날은 건드리지 않는다).
 //
-// **매주 되풀이**는 하루짜리에만 뜬다(요청 ④ — 구글의 `근무 위치 수정` 화면과 같은
-// 두 선택: `선택한 날짜만` / `…부터 매주`). 구간은 이미 하루씩 여러 일정으로 나가므로
-// 거기에 되풀이를 얹으면 사용자가 고른 적 없는 모양이 된다. 이미 반복인 근무 위치를
-// 열면 라디오 대신 **한 줄로 알린다** — 구글은 회차(instance)에 규칙을 받지 않고,
-// 반복을 끊는 일은 범위를 되묻는 또 하나의 팝업이 필요하다(요청: 추가 팝업 금지).
+// **되풀이**는 하루짜리면 언제나 뜬다(요청 — 구글의 `근무 위치 수정` 화면과 같은 두
+// 선택: `선택한 날짜만` / `…부터 매주`). 구간(하루 초과)에서만 사라진다: 구간은 이미
+// 하루씩 여러 일정으로 나가므로 거기에 되풀이를 얹으면 사용자가 고른 적 없는 모양이
+// 된다.
+//
+// **이미 매주 반복인 근무 위치**를 열면 `매주`가 켜진 채로 뜨고, 두 선택은 그때
+// **바꾸는 범위**가 된다(구글의 그 화면과 같은 뜻):
+//  - `매주` 유지 → 그 **반복 자체**를 고친다(회차가 아니라 원본 일정).
+//  - `선택한 날짜만` → 그 회차를 지우고 그 날짜에 홀로 선 근무 위치를 새로 만든다.
+//
+// 회차를 그대로 PATCH하지 않는 이유는 구글이 막기 때문이다 — 라이브에서 400
+// `malformedWorkingLocationEvent`("modify a working location event in a way that is not
+// valid for this event type")로 거절됐다. 그래서 어느 쪽을 고르든 **회차 PATCH는 하지
+// 않는다**(저장 규칙은 `useGoogleCalendar.saveWorkLocation`).
 
 import { useState } from 'react';
 import { Modal, MODAL_DIM, useCardMorph } from '../../../components/Modal';
@@ -81,14 +90,18 @@ export function WorkLocationModal({
   const [timed, setTimed] = useState(!!(current?.startTime && current?.endTime));
   const [t1, setT1] = useState(current?.startTime ?? '09:00');
   const [t2, setT2] = useState(current?.endTime ?? '18:00');
-  // 되풀이 — 이미 반복인 일정은 고르는 값이 아니라 상태다(아래 안내 한 줄).
-  const [weekly, setWeekly] = useState(false);
+  // 되풀이 — 이미 매주 반복인 근무 위치를 열면 그 상태가 기본값이다(요청).
+  const [weekly, setWeekly] = useState(!!current?.recurring);
   const morphRef = useCardMorph();
   const needsLabel = kind !== 'homeOffice';
   /** 하루짜리인가 — 되풀이는 여기에만 뜻이 있다(구간은 하루씩 여러 일정이다). */
   const oneDay = timed || to <= from;
-  const showRepeat = oneDay && !current?.recurring;
+  const showRepeat = oneDay;
   const on = showRepeat && weekly;
+  /** 이미 반복인 것을 그 날만 떼어 내는 저장인가 — 발치가 그 사실을 말한다. */
+  const detaching = !!current?.recurring && showRepeat && !weekly;
+  /** 반복 자체를 고치는 저장인가 — 회차 하나가 아니라 그 반복 전체가 바뀐다. */
+  const wholeSeries = !!current?.recurring && on;
 
   const draft = (): WorkLocationDraft => ({
     kind,
@@ -132,7 +145,11 @@ export function WorkLocationModal({
         ? `한 번에 ${WORK_LOCATION_MAX_DAYS}일까지 걸 수 있어요`
         : days > 1
           ? `${days}일에 걸어요`
-          : '');
+          : wholeSeries
+            ? '매주 반복되는 근무 위치 전체가 바뀌어요'
+            : detaching
+              ? '이 날만 반복에서 떼어 내요'
+              : '');
   const footTone = error || tooLong ? 'var(--mf-danger)' : 'var(--mf-faint2)';
 
   return (
@@ -320,14 +337,6 @@ export function WorkLocationModal({
             </div>
           )}
 
-          {/* 이미 매주 반복되는 근무 위치 — 고르는 값이 아니라 상태다. 반복을 끊는
-              일은 범위를 되묻는 또 하나의 팝업이 필요하므로(요청: 추가 팝업 금지)
-              여기서는 **이 회차만** 바뀐다고 밝힌다. */}
-          {current?.recurring && (
-            <span data-work-repeat-note style={{ fontSize: 11.5, color: 'var(--mf-faint2)', lineHeight: 1.6 }}>
-              매주 되풀이되는 근무 위치예요 — 여기서 고치면 이 회차만 바뀝니다.
-            </span>
-          )}
         </div>
 
         <div style={{ flex: '0 0 auto', display: 'flex', alignItems: 'center', gap: 10, padding: '14px 20px', borderTop: '1px solid var(--mf-border-soft)' }}>
