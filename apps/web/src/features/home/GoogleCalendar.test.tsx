@@ -2061,12 +2061,15 @@ describe('구글 캘린더 겹치기(PR5)', () => {
       await waitFor(() => expect(f.mock.calls.some((c) => (c[1] as { method?: string } | undefined)?.method === 'DELETE')).toBe(true));
     });
 
-    it('여러 날에 걸친 근무 위치는 손대지 않는다 — 사유를 적고 저장 버튼이 없다', async () => {
+    // 예전에는 여러 날에 걸친 근무 위치를 잠갔다. 구글의 그 화면 자체가 시작–종료
+    // 구간을 다루므로(사용자 스크린샷) 잠글 근거가 없다 — 구간을 그대로 보여 준다.
+    it('여러 날에 걸친 근무 위치는 그 구간을 보여 주고, 구간이 그대로면 날짜를 싣지 않는다', async () => {
       seed({ calendars: ['me@example.com'] });
       seedToken();
       stubGis();
       const day = inMonth(2);
-      stubWork(day, { id: 'w2', from: day, to: inMonth(4), props: { type: 'officeLocation', officeLocation: { label: '판교' } } });
+      const to = inMonth(4);
+      const f = stubWork(day, { id: 'w2', from: day, to, props: { type: 'officeLocation', officeLocation: { label: '판교' } } });
       clientId = 'test-client.apps.googleusercontent.com';
       const user = userEvent.setup();
       const { container } = renderHome();
@@ -2074,10 +2077,51 @@ describe('구글 캘린더 겹치기(PR5)', () => {
       await waitFor(() => expect(container.querySelector(`[data-day-cell="${day}"] [data-work-loc]`)).toBeTruthy());
       const { open } = await openWorkModal(container, user, day);
       const modal = await open();
-      expect(modal.querySelector('[data-work-foot]')?.textContent).toContain('여러 날에 걸친');
-      expect(modal.querySelector('[data-work-save]')).toBeNull();
-      // 지우기도 내주지 않는다 — 그 일정은 다른 날의 것이기도 하다.
-      expect(modal.querySelector('[data-work-clear]')).toBeNull();
+      // 걸려 있던 구간이 그대로 되살아난다(누른 날이 아니라 그 일정의 시작·종료).
+      expect(modal.querySelector('[data-work-from]')?.textContent).toContain(`${Number(day.slice(5, 7))}월 ${Number(day.slice(8, 10))}일`);
+      expect(modal.querySelector('[data-work-to]')?.textContent).toContain(`${Number(to.slice(5, 7))}월 ${Number(to.slice(8, 10))}일`);
+      // 고칠 수 있다 — 저장·지우기가 있고 사유 문구가 없다.
+      expect(modal.querySelector('[data-work-save]')).toBeTruthy();
+      expect(modal.querySelector('[data-work-clear]')).toBeTruthy();
+      expect(modal.querySelector('[data-work-foot]')?.textContent).toBe('');
+      fireEvent.click(modal.querySelector('[data-work-kind="homeOffice"]')!);
+      fireEvent.click(modal.querySelector('[data-work-save]')!);
+      await waitFor(() => {
+        const patch = f.mock.calls.find((c) => (c[1] as { method?: string } | undefined)?.method === 'PATCH');
+        expect(patch).toBeTruthy();
+        const body = JSON.parse((patch![1] as { body: string }).body) as Record<string, unknown>;
+        // 구간을 건드리지 않았으므로 `start`/`end`를 싣지 않는다(#552의 그 규칙).
+        expect(Object.keys(body)).toEqual(['workingLocationProperties']);
+      });
+    });
+
+    it('`시간 추가`를 켜면 하루 안의 시각 구간이 된다 — 종료 날짜는 사라진다', async () => {
+      seed({ calendars: ['me@example.com'] });
+      seedToken();
+      stubGis();
+      const day = inMonth(2);
+      const f = stubWork(day);
+      clientId = 'test-client.apps.googleusercontent.com';
+      const user = userEvent.setup();
+      const { container } = renderHome();
+      await openCalendar(container, user);
+      await waitFor(() => expect(screen.getAllByText(/진짜 회의/).length).toBeGreaterThan(0));
+      const { open } = await openWorkModal(container, user, day);
+      const modal = await open();
+      // 종일이면 시작–종료 두 칸이다.
+      expect(modal.querySelector('[data-work-to]')).toBeTruthy();
+      fireEvent.click(modal.querySelector('[data-work-time]')!);
+      // 시각을 켜면 구간이 접힌다(구글이 시각 근무 위치를 하루로 제한한다).
+      await waitFor(() => expect(modal.querySelector('[data-work-to]')).toBeNull());
+      expect(modal.querySelector('[data-work-t1]')).toBeTruthy();
+      fireEvent.click(modal.querySelector('[data-work-save]')!);
+      await waitFor(() => {
+        const post = f.mock.calls.find((c) => (c[1] as { method?: string } | undefined)?.method === 'POST');
+        expect(post).toBeTruthy();
+        const body = JSON.parse((post![1] as { body: string }).body) as Record<string, unknown>;
+        expect(body.start).toMatchObject({ dateTime: `${day}T09:00:00` });
+        expect(body.end).toMatchObject({ dateTime: `${day}T18:00:00` });
+      });
     });
 
     it('일별 팝업 발치에도 같은 길이 있다 — 우클릭은 알아야 쓰는 조작이다', async () => {

@@ -19,7 +19,7 @@ import { EventDetail, geurioCalendarChips } from './EventDetail';
 import { GoogleDetailHost, patchFrom } from './GoogleEventDetail';
 import { GoogleConnectButton } from './GoogleConnectButton';
 import { WorkLocationModal } from './WorkLocationModal';
-import { findWorkLocation, isWorkLocationSpan, workLocationPatch, type WorkLocationDraft } from './googleCalendar';
+import { findWorkLocation, workLocationPatch, workLocationWhenChanged, type WorkLocationDraft } from './googleCalendar';
 import { CalendarContextMenu, type CalMenuState } from './CalendarContextMenu';
 import { DeleteConfirm } from './DeleteConfirm';
 import { useCalendarEvents } from './useCalendarEvents';
@@ -131,14 +131,19 @@ export function CalendarView({
   };
 
   /**
-   * 그 날의 근무 위치를 쓴다 — **걸려 있으면 고치고, 없으면 만든다.** 여러 날에
-   * 걸친 일정은 손대지 않는다(팝업이 그 사유를 적고 저장 버튼을 내주지 않는다).
+   * 그 날의 근무 위치를 쓴다 — **걸려 있으면 고치고, 없으면 만든다.**
+   *
+   * 여러 날에 걸친 일정도 고친다(구간은 구글의 정식 모양이다 — 팝업이 그 구간을
+   * 그대로 보여 준다). 고칠 때는 **바뀐 것만** 보낸다: 구간이 그대로면 `start`/`end`를
+   * 싣지 않아, 그 사이 구글이 스스로 판을 올려도(#548) 저장이 막히지 않는다.
    */
   const saveWork = (iso: string, draft: WorkLocationDraft): void => {
     if (!workCalendar) return;
     const cur = findWorkLocation(google.events, iso);
     setWorkSaving(true);
-    const run = cur && !isWorkLocationSpan(cur) ? google.updateEvent(cur, workLocationPatch(draft)) : google.setWorkLocation(workCalendar.id, iso, draft);
+    const run = cur
+      ? google.updateEvent(cur, workLocationPatch(draft, workLocationWhenChanged(cur, draft)))
+      : google.setWorkLocation(workCalendar.id, draft);
     void run.then((err) => {
       setWorkSaving(false);
       setWorkError(err);
@@ -449,13 +454,21 @@ export function CalendarView({
           }}
         />
       )}
-      {/* 근무 위치(요청) — 구글의 기본 캘린더에 하루치로 쓴다. */}
+      {/* 근무 위치(요청) — 구글의 기본 캘린더에 쓴다(구간·시각 모두). */}
       {workDay && (
         <WorkLocationModal
           iso={workDay}
           current={(() => {
             const cur = findWorkLocation(google.events, workDay);
-            return cur ? { kind: cur.workLocationKind ?? null, label: cur.workLocation ?? '', spanned: isWorkLocationSpan(cur) } : null;
+            if (!cur) return null;
+            return {
+              kind: cur.workLocationKind ?? null,
+              label: cur.workLocation ?? '',
+              startDate: cur.startDate,
+              endDate: cur.endDate,
+              ...(cur.startTime ? { startTime: cur.startTime } : {}),
+              ...(cur.endTime ? { endTime: cur.endTime } : {}),
+            };
           })()}
           isMobile={isMobile}
           saving={workSaving}
