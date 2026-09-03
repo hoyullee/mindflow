@@ -26,6 +26,7 @@ import { GoogleEventFields, ReminderField, type GoogleDirectoryApi, type GoogleF
 import { RecurrenceField } from './RecurrenceField';
 import { buildRecurrence, eventWindowIso, RECURRENCE_OFF, type RecurrenceSpec } from './googleCalendar';
 import { MapLink } from './fieldBits';
+import { EventColorField, geurioColorOptions, googleColorOptions } from './eventColor';
 import type { CalendarEventInput } from '../../../adapters/ports';
 
 /** 어디에 저장할까 — `google`이면 그 캘린더 id가 함께 온다. */
@@ -63,6 +64,7 @@ export function NewEventModal({
   onSubmit,
   googleTargets = [],
   directory,
+  googleColors,
 }: {
   draft: NewEventDraft;
   isMobile: boolean;
@@ -74,6 +76,8 @@ export function NewEventModal({
   googleTargets?: GoogleTarget[];
   /** 선택 스코프로 열리는 것들(이름 검색·회의실) — 없으면 그만큼만 줄어든다. */
   directory?: GoogleDirectoryApi;
+  /** 구글의 이벤트 색 팔레트(번호 → hex) — 못 받았으면 폴백 표로 그린다. */
+  googleColors?: Record<string, string>;
 }) {
   const [title, setTitle] = useState('');
   const [allDay, setAllDay] = useState(draft.allDay);
@@ -87,6 +91,9 @@ export function NewEventModal({
   });
   const [location, setLocation] = useState('');
   const [note, setNote] = useState('');
+  // 일정 색 — 팔레트가 목적지마다 다르므로 **값을 갈라 둔다**(우리 표는 hex, 구글은
+  // 색 번호). 목적지를 되돌려도 각자 고른 값이 그대로 남는다(구글 필드와 같은 규칙).
+  const [color, setColor] = useState<string | null>(null);
   // 기본값은 **우리 표**다 — 남의 서비스에 쓰는 일은 사용자가 골라야 한다.
   const [dest, setDest] = useState<string>('geurio');
   // 구글 전용 필드 — 목적지를 Geurio로 되돌려도 값은 남는다(다시 고르면 그대로).
@@ -177,6 +184,7 @@ export function NewEventModal({
         ...(allDay ? {} : { startTime, endTime }),
         ...(location.trim() ? { location: location.trim() } : {}),
         ...(note.trim() ? { note: note.trim() } : {}),
+        ...(color ? { color } : {}),
         // 반복 규칙은 **RRULE 한 줄**로 담는다(구글에 보내는 것과 같은 형식).
         ...(rule ? { recurrence: rule } : {}),
       },
@@ -376,6 +384,14 @@ export function NewEventModal({
 
           {/* 반복 — 목적지와 무관하게 여기서 고른다(둘 다 규칙을 저장한다). */}
           <RecurrenceField value={rep} onChange={setRep} baseDate={startDate} />
+
+          {/* 일정 색 — 목적지의 팔레트로 고른다(우리 표는 앱 팔레트, 구글은 구글의
+              열한 색). 값도 갈라 두므로 목적지를 바꾸면 그 쪽에서 고른 색이 보인다. */}
+          {target.kind === 'google' ? (
+            <EventColorField value={gf.colorId ?? null} options={googleColorOptions(googleColors)} onPick={(v) => setGf((x) => ({ ...x, ...(v ? { colorId: v } : { colorId: undefined }) }))} />
+          ) : (
+            <EventColorField value={color} options={geurioColorOptions()} onPick={setColor} />
+          )}
 
           {/* 알림 — **늘 보인다**(요청 #5). 보내는 것은 구글이므로 목적지가 Geurio면
               비활성 표식으로 남는다(자리가 통째로 사라지지 않게). */}

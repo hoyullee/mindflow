@@ -1,9 +1,10 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import type { CSSProperties, PointerEvent as ReactPointerEvent } from "react";
 import type { CalendarEntry } from "./entries";
 import type { MonthCell } from "./model";
-import { DOW, cellRows, dayProgress, daysBetween } from "./model";
+import type { CellRow } from "./model";
+import { DOW, dayProgress, daysBetween, weekRows } from "./model";
 import { beginPointerDrag } from "../../editor/components/KanbanBoard";
 import {
   chipTimeLabel,
@@ -124,6 +125,15 @@ export function MonthGrid({
     cellH > 0
       ? cellCapacity(cellH, compact)
       : { rows: Number.MAX_SAFE_INTEGER, withMore: Number.MAX_SAFE_INTEGER };
+  // 줄 계획은 **주 단위**로 세운다(제보 ②) — 기간 바가 어느 칸에서 밀려나면 그 주의
+  // 모든 칸에서 접혀야 띠가 중간에서 끊겨 보이지 않는다.
+  const plan = useMemo(() => {
+    const out: CellRow[][] = [];
+    for (let w = 0; w * 7 < cells.length; w += 1) {
+      out.push(...weekRows(cells.slice(w * 7, w * 7 + 7), capacity.rows, capacity.withMore));
+    }
+    return out;
+  }, [cells, capacity.rows, capacity.withMore]);
   /** 끌었는가 — 드래그 끝의 `click`이 상세 팝업을 열지 않게 삼킨다(다음 누름에서 리셋). */
   const draggedRef = useRef(false);
 
@@ -241,11 +251,11 @@ export function MonthGrid({
           gridAutoRows: "1fr",
         }}
       >
-        {cells.map((c) => (
+        {cells.map((c, i) => (
           <DayCell
             key={c.iso}
             cell={c}
-            capacity={capacity}
+            rows={plan[i]!}
             selected={selected === c.iso}
             compact={compact}
             surface={surface}
@@ -337,7 +347,7 @@ function DragGhost({
 
 function DayCell({
   cell,
-  capacity,
+  rows,
   selected,
   compact,
   surface,
@@ -352,7 +362,7 @@ function DayCell({
 }: {
   cell: MonthCell;
   /** 이 칸이 담을 수 있는 줄 수(실측) — 넘칠 때만 마지막 줄이 `+N개 더`가 된다. */
-  capacity: { rows: number; withMore: number };
+  rows: CellRow[];
   selected: boolean;
   compact: boolean;
   surface: ChipSurface;
@@ -372,7 +382,6 @@ function DayCell({
 }) {
   const { inMonth, isToday, dim, dow } = cell;
   // 칸에 실제로 들어가는 만큼 그린다(제보 #1) — 줄 배치는 `cellRows`가 정한다.
-  const rows = cellRows(cell, capacity.rows, capacity.withMore);
   // 칸 색은 **요일·이번 달 여부만** 말한다(제보 — 고른 칸을 배경으로 표시하니
   // 계속 문제가 났다: 이 자리는 이미 세 가지를 겸하고 있다(이웃 달의 가라앉은 면 /
   // 주말·공휴일 톤 / 드롭 대기). 넷째 뜻을 얹으면 어느 하나가 반드시 가려진다).
@@ -724,7 +733,7 @@ function DayCell({
                   style={{
                     flex: "0 0 auto",
                     fontFamily: "'JetBrains Mono', monospace",
-                    fontSize: compact ? 8.5 : 10,
+                    fontSize: compact ? 8.5 : 9,
                     fontWeight: 700,
                     opacity: 0.72,
                     letterSpacing: "-.02em",

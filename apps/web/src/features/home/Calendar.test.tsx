@@ -1321,6 +1321,32 @@ describe('일정 화면', () => {
       await waitFor(() => expect(document.querySelector('[data-event-detail]')).toBeNull());
     });
 
+    it('일정 색을 골라 저장한다 — Geurio는 앱 팔레트의 hex다(요청 ⑤)', async () => {
+      renderHome([META('d1', '스프린트 보드')], BODIES());
+      localStorage.setItem('mf_events', JSON.stringify([{ id: 'e1', title: '주간 회의', startDate: todayISO(), endDate: todayISO(), allDay: true, source: 'geurio' }]));
+      await openCalendar();
+      await waitFor(() => expect(chipTexts()).toContain('주간 회의'));
+      fireEvent.click(chipFor('주간 회의'));
+      await waitFor(() => expect(evDetail()).toBeTruthy());
+
+      // 기본 칸(지정 없음) + 앱 팔레트 아홉 색.
+      const swatches = evDetail().querySelectorAll('[data-event-color]');
+      expect(swatches).toHaveLength(10);
+      expect(evDetail().querySelector('[data-event-color="기본"]')).toBeTruthy();
+      // 저장은 완료에서 한 번 — 고르기만으로는 아무것도 쓰지 않는다.
+      fireEvent.click(evDetail().querySelector('[data-event-color="#3f8fd0"]')!);
+      expect(events()[0]!.color).toBeUndefined();
+      fireEvent.click(document.querySelector('[data-event-done]')!);
+      await waitFor(() => expect(events()[0]!.color).toBe('#3f8fd0'));
+
+      // 다시 열어 '기본'을 고르면 **지정이 지워진다**(키를 실어 보낸다).
+      fireEvent.click(chipFor('주간 회의'));
+      await waitFor(() => expect(evDetail()).toBeTruthy());
+      fireEvent.click(evDetail().querySelector('[data-event-color="기본"]')!);
+      fireEvent.click(document.querySelector('[data-event-done]')!);
+      await waitFor(() => expect(events()[0]!.color).toBeUndefined());
+    });
+
     it('상세 팝업은 새 일정 팝업과 같은 얼굴이다 — 저장할 캘린더는 소속만 켜진다(제보 #10·#11)', async () => {
       renderHome([META('d1', '스프린트 보드')], BODIES());
       localStorage.setItem('mf_events', JSON.stringify([{ id: 'e1', title: '주간 회의', startDate: todayISO(), endDate: todayISO(), allDay: true, source: 'geurio' }]));

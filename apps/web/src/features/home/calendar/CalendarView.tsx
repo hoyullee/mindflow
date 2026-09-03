@@ -13,6 +13,7 @@ import { StatChips } from './StatChips';
 import { MonthPicker } from './MonthPicker';
 import { CalendarDetailHost } from './CalendarDetail';
 import { NewEventModal } from './NewEventModal';
+import { geurioColorOptions } from './eventColor';
 import { submitNewEvent } from './newEventSubmit';
 import { EventDetail, geurioCalendarChips } from './EventDetail';
 import { GoogleDetailHost, patchFrom } from './GoogleEventDetail';
@@ -368,6 +369,7 @@ export function CalendarView({
         onPatch={google.updateEvent}
         onDelete={google.deleteEvent}
         directory={googleDirectory}
+        colors={google.eventColors}
       />
 
       {/* Geurio 일정: 새로 만들기 · 상세 */}
@@ -383,6 +385,7 @@ export function CalendarView({
           }}
           googleTargets={googleTargets}
           directory={googleDirectory}
+          googleColors={google.eventColors}
           onSubmit={(input, target) => {
             setSaving(true);
             void submitNewEvent(input, target, { createGeurio: eventsApi.create, createGoogle: google.createEvent }).then((err) => {
@@ -458,6 +461,7 @@ export function CalendarView({
             isMobile={isMobile}
             {...(evOcc ? { occurrence: evOcc } : {})}
             calendarChips={geurioCalendarChips(googleTargets)}
+            color={{ value: ev.color ?? null, options: geurioColorOptions() }}
             onClose={controller.closeCalendarEvent}
             onPatch={(patch) => eventsApi.update(ev.id, patch)}
             onDelete={() => eventsApi.remove(ev.id)}

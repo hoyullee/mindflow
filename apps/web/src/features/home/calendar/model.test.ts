@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import type { CalendarEntry } from './entries';
 import { calendarEntries, datedCards, eventEntries } from './entries';
 import type { CalendarEvent } from '../../../adapters/ports';
-import { addDays, daysBetween, addMonth, calendarStats, statBadge, dayProgress, coversDay, dateLabel, dayTimeline, dueBadge, dueTone, entriesOn, gridRange, hourLabel, isSpan, minutesOf, monthCells, monthLabel, weekLanes, overdueEntries, timeLabel, todayISO, upcomingEntries, weekEndISO, weekLabel, weekStartISO, cellRows, HOUR_ROW } from './model';
+import { addDays, daysBetween, addMonth, calendarStats, statBadge, dayProgress, coversDay, dateLabel, dayTimeline, dueBadge, dueTone, entriesOn, gridRange, hourLabel, isSpan, minutesOf, monthCells, monthLabel, weekLanes, overdueEntries, timeLabel, todayISO, upcomingEntries, weekEndISO, weekLabel, weekStartISO, cellRows, weekRows, HOUR_ROW } from './model';
 
 // 일정 화면의 데이터 계층 — 순수 함수라 날짜를 고정해 검증한다.
 
@@ -458,6 +458,13 @@ describe('칸의 줄 계획(cellRows)', () => {
     docId: 'd', cardId: id, title: id, due, colId: 'c', colName: '할 일', colIndex: 0, tag: '', boardName: 'B', spaceName: 'S',
   });
   const cellOf = (entries: CalendarEntry[], iso: string) => monthCells(2026, 8, entries, '2026-08-01', 99).find((c) => c.iso === iso)!;
+  /** 그 날이 든 한 주(7칸) — 격자의 첫 칸은 달의 1일이 아니라 그 주의 일요일이다. */
+  const weekOf = (entries: CalendarEntry[], iso: string) => {
+    const cells = monthCells(2026, 8, entries, '2026-08-01', 99);
+    const i = cells.findIndex((c) => c.iso === iso);
+    const from = Math.floor(i / 7) * 7;
+    return cells.slice(from, from + 7);
+  };
   const shape = (rows: ReturnType<typeof cellRows>) => rows.map((r) => (r.kind === 'bar' ? `bar:${r.bar.entry.cardId}` : r.kind === 'chip' ? `chip:${r.entry.cardId}` : r.kind === 'more' ? `more:${r.n}` : 'gap'));
 
   // A(9~14) · B(10~11) · C(11~14) — 한 주에서 A=0 · B=1 · C=2 줄이고,
@@ -483,6 +490,32 @@ describe('칸의 줄 계획(cellRows)', () => {
   it('빈 줄은 접힌 개수에 들지 않는다 — 감출 일정이 없다', () => {
     // 12일 칸: [A · 빈 줄 · C]. 두 줄만 들어가도 감춰진 것은 C 하나뿐이다.
     expect(shape(cellRows(cellOf([A, B, C], '2026-08-12'), 2))).toEqual(['bar:A', 'more:1']);
+  });
+
+  it('한 칸에서 접힌 다일 바는 그 주 전체에서 접힌다(제보 ②)', () => {
+    // 제보: 혼잡한 가운데 칸에서만 바가 `+N개`로 들어가 띠가 중간에서 끊겨 보였다.
+    // 12일만 붐비게 해 놓고 한 주를 계획하면, A는 그 주 어느 칸에서도 바로 서지
+    // 않는다(구글 캘린더 정책 — 다일 일정은 한 주 안에서 함께 접힌다).
+    const busy = ['d1', 'd2', 'd3'].map((id) => DAY(id, '2026-08-12'));
+    const week = weekOf([A, B, C, ...busy], '2026-08-09');
+    expect(week.map((c) => c.iso)).toContain('2026-08-12');
+    const plan = weekRows(week, 3, 2);
+    const byIso = new Map(week.map((c, i) => [c.iso, shape(plan[i]!)]));
+    // 12일이 붐벼 C가 그 칸에서 밀렸다 → **그 주 어느 칸에서도** 바로 서지 않는다.
+    for (const [, rows] of byIso) expect(rows).not.toContain('bar:C');
+    // 접힌 바는 그 칸의 `+N개`에 들어간다 — 개수가 사라지지 않는다.
+    expect(byIso.get('2026-08-13')).toEqual(['bar:A', 'more:1']);
+    expect(byIso.get('2026-08-12')).toEqual(['bar:A', 'chip:d1', 'more:3']);
+    // 12일 밖의 다른 바(B)는 그대로 — 접히는 것은 밀린 그 바뿐이다.
+    expect(byIso.get('2026-08-10')).toEqual(['bar:A', 'bar:B']);
+  });
+
+  it('여유가 있으면 주 전체가 그대로 그려진다(무회귀)', () => {
+    const week = weekOf([A, B, C], '2026-08-09');
+    const plan = weekRows(week, 9, 8);
+    const at = (iso: string) => shape(plan[week.findIndex((c) => c.iso === iso)]!);
+    expect(at('2026-08-12')).toEqual(['bar:A', 'gap', 'bar:C']);
+    expect(at('2026-08-11')).toEqual(['bar:A', 'bar:B', 'bar:C']);
   });
 
   it('모델이 이미 접은 개수(moreN)도 함께 센다', () => {

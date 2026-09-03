@@ -278,8 +278,73 @@ export function monthCells(y: number, m: number, entries: readonly CalendarEntry
 export type CellRow = { kind: 'bar'; bar: MonthBar } | { kind: 'chip'; entry: CalendarEntry } | { kind: 'gap' } | { kind: 'more'; n: number };
 
 export function cellRows(cell: MonthCell, capacity: number, shownWithMore?: number): CellRow[] {
-  const rows: CellRow[] = Array.from({ length: cell.barRows }, (_, lane) => {
-    const bar = cell.bars.find((b) => b.lane === lane);
+  return planCell(cell, capacity, shownWithMore, new Set(), null);
+}
+
+/**
+ * 한 주(7칸)의 줄 목록 — **기간 바의 접힘은 주 단위로 판단한다**(제보 ②).
+ *
+ * 칸마다 따로 접으면 혼잡한 가운데 칸에서만 바가 `+N개`로 들어가, 이어지던 띠가
+ * **중간에서 끊겨 보인다**(1·3일에는 A가 있는데 2일에만 없다). 구글 캘린더도 한 주
+ * 안에서는 같은 줄까지만 보여 준다 — 어느 칸에서든 밀려난 기간 일정은 그 주의
+ * **모든 칸에서** 접히고 대신 `+N개`에 함께 센다.
+ *
+ * 접힌 줄은 자리도 비우지 않는다: 그 주 전체에서 같은 줄이 사라지므로 lane을 다시
+ * 촘촘하게 매겨도 칸끼리 어긋나지 않는다(오히려 남은 바가 한 줄 위로 붙어 여유가 는다).
+ */
+export function weekRows(week: readonly MonthCell[], capacity: number, shownWithMore?: number): CellRow[][] {
+  const folded = new Set<CalendarEntry>();
+  // 접을 기간 일정이 더 없을 때까지 되풀이한다 — 한 번 접으면 lane이 촘촘해져
+  // 다른 칸의 사정도 달라지므로 다시 본다(접는 대상은 매번 늘어나므로 끝난다).
+  for (let guard = 0; guard <= week.length * 8; guard += 1) {
+    const laneMap = compactLanes(week, folded);
+    const plans = week.map((c) => planWithDrops(c, capacity, shownWithMore, folded, laneMap));
+    const fresh = plans.flatMap((p) => p.dropped).filter((e) => !folded.has(e));
+    if (!fresh.length) return plans.map((p) => p.rows);
+    for (const e of fresh) folded.add(e);
+  }
+  // 여기 오는 일은 없다(위 루프가 반드시 끝난다) — 안전망으로 마지막 계획을 쓴다.
+  const laneMap = compactLanes(week, folded);
+  return week.map((c) => planWithDrops(c, capacity, shownWithMore, folded, laneMap).rows);
+}
+
+/**
+ * 접힌 기간 일정을 뺀 뒤 남은 lane을 **0부터 촘촘하게** 다시 매긴다. 주 전체를 보고
+ * 한 번에 정하므로 칸마다 같은 값을 쓴다(그래야 띠가 같은 높이에 이어진다).
+ */
+function compactLanes(week: readonly MonthCell[], folded: ReadonlySet<CalendarEntry>): Map<number, number> {
+  const lanes = new Set<number>();
+  for (const c of week) for (const b of c.bars) if (!folded.has(b.entry)) lanes.add(b.lane);
+  const out = new Map<number, number>();
+  [...lanes].sort((a, b) => a - b).forEach((lane, i) => out.set(lane, i));
+  return out;
+}
+
+function planWithDrops(
+  cell: MonthCell,
+  capacity: number,
+  shownWithMore: number | undefined,
+  folded: ReadonlySet<CalendarEntry>,
+  laneMap: Map<number, number>,
+): { rows: CellRow[]; dropped: CalendarEntry[] } {
+  const dropped: CalendarEntry[] = [];
+  const rows = planCell(cell, capacity, shownWithMore, folded, laneMap, dropped);
+  return { rows, dropped };
+}
+
+function planCell(
+  cell: MonthCell,
+  capacity: number,
+  shownWithMore: number | undefined,
+  folded: ReadonlySet<CalendarEntry>,
+  laneMap: Map<number, number> | null,
+  dropped?: CalendarEntry[],
+): CellRow[] {
+  const bars = cell.bars.filter((b) => !folded.has(b.entry));
+  const laneOf = (lane: number): number => laneMap?.get(lane) ?? lane;
+  const barRows = bars.length ? Math.max(...bars.map((b) => laneOf(b.lane))) + 1 : 0;
+  const rows: CellRow[] = Array.from({ length: barRows }, (_, lane) => {
+    const bar = bars.find((b) => laneOf(b.lane) === lane);
     return bar ? ({ kind: 'bar', bar } as CellRow) : ({ kind: 'gap' } as CellRow);
   });
   const queue = [...cell.entries];
@@ -288,14 +353,19 @@ export function cellRows(cell: MonthCell, capacity: number, shownWithMore?: numb
   }
   for (const entry of queue) rows.push({ kind: 'chip', entry });
 
+  // 그 주에서 접힌 기간 일정이 이 날을 덮으면 `+N개`에 함께 센다.
+  let foldedHere = 0;
+  for (const e of folded) if (coversDay(e, cell.iso)) foldedHere += 1;
   const limit = Math.max(1, capacity);
-  if (rows.length <= limit && cell.moreN === 0) return rows;
+  if (rows.length <= limit && cell.moreN === 0 && foldedHere === 0) return rows;
   // 접힘 표시를 붙일 때 남길 줄 수는 **따로 받는다**(제보: 여유가 있는데도 접혔다) —
   // `+N개 더` 줄은 칩보다 낮아서 같은 칸 높이에 한 줄이 더 들어간다. 주지 않으면
   // 예전처럼 마지막 줄을 그 표시에 내준다(대시보드 위젯이 그 규칙을 쓴다).
   const keep = Math.max(1, Math.min(shownWithMore ?? limit - 1, rows.length));
   const shown = rows.slice(0, keep);
-  const hidden = rows.slice(keep).filter((r) => r.kind !== 'gap').length + cell.moreN;
+  const cut = rows.slice(keep);
+  if (dropped) for (const r of cut) if (r.kind === 'bar') dropped.push(r.bar.entry);
+  const hidden = cut.filter((r) => r.kind !== 'gap').length + cell.moreN + foldedHere;
   // 잘라 낸 것이 빈 줄뿐이면 접힘 표시를 둘 이유가 없다.
   if (hidden === 0) return rows.slice(0, limit);
   return [...shown, { kind: 'more', n: hidden }];

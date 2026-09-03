@@ -30,6 +30,7 @@ export function inputToGoogleDraft(input: CalendarEventInput, fields?: GoogleFie
           visibility: fields.visibility,
           transparency: fields.transparency,
           reminderMinutes: fields.reminderMinutes,
+          ...(fields.colorId ? { colorId: fields.colorId } : {}),
           ...(rrule ? { recurrence: rrule } : {}),
           ...(fields.addMeet ? { addMeet: true } : {}),
         }

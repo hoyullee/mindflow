@@ -369,6 +369,33 @@ describe('구글 캘린더 겹치기(PR5)', () => {
     await waitFor(() => expect(document.querySelector('[data-google-detail]')).toBeNull());
   });
 
+  it('상세 팝업에서 일정 색을 고치면 PATCH에 colorId 하나만 실린다(요청 ⑤)', async () => {
+    seed({ calendars: ['me@example.com'] });
+    seedToken();
+    stubGis();
+    const f = stubFetch();
+    clientId = 'test-client.apps.googleusercontent.com';
+    const user = userEvent.setup();
+    const { container } = renderHome();
+    const pop = await openGoogleChip(container, user, /구글 회의/);
+    // 팔레트는 **구글의 열한 색**이고 앞에 '기본 색'(지정 없음) 칸이 하나 더 붙는다.
+    const swatches = pop.querySelectorAll('[data-event-color]');
+    expect(swatches).toHaveLength(12);
+    expect(pop.querySelector('[data-event-color="기본"]')).toBeTruthy();
+    // 이름은 구글이 부르는 그 이름이다(hex에서 유도한 '빨강'이 아니다).
+    expect(pop.querySelector('[data-event-color="#d50000"]')?.getAttribute('aria-label')).toBe('토마토');
+    await user.click(pop.querySelector<HTMLElement>('[data-event-color="#d50000"]')!);
+    await user.click(pop.querySelector('[data-event-done]')!);
+    await waitFor(() => {
+      const patch = f.mock.calls.find((c) => (c[1] as { method?: string } | undefined)?.method === 'PATCH');
+      expect(patch).toBeTruthy();
+      const body = JSON.parse((patch![1] as { body: string }).body) as Record<string, unknown>;
+      // 실은 것이 곧 바꿀 것이다 — 색만 고쳤으니 `colorId` 하나뿐이다.
+      expect(Object.keys(body)).toEqual(['colorId']);
+      expect(body.colorId).toBe('11');
+    });
+  });
+
   it('상세 팝업이 저장할 캘린더를 보여 준다 — 소속(구글)만 켜지고 Geurio는 비활성(제보 #11)', async () => {
     seed({ calendars: ['me@example.com'] });
     seedToken();
@@ -1316,6 +1343,36 @@ describe('구글 캘린더 겹치기(PR5)', () => {
       expect(body.visibility).toBe('private');
       expect(body.reminders).toMatchObject({ useDefault: false, overrides: [{ minutes: 10 }] });
       expect(body.recurrence).toEqual(['RRULE:FREQ=WEEKLY']);
+    });
+  });
+
+  it('새 일정 팝업의 색이 목적지에 따라 갈린다 — 구글은 색 번호로 POST에 실린다(요청 ⑤)', async () => {
+    seed({ calendars: ['me@example.com'] });
+    seedToken();
+    stubGis();
+    const f = stubFetch();
+    clientId = 'test-client.apps.googleusercontent.com';
+    const user = userEvent.setup();
+    const { container } = renderHome();
+    await openCalendar(container, user);
+    await user.click(screen.getByText('새 일정'));
+    const modal = await waitFor(() => {
+      const el = document.querySelector('[data-new-event]');
+      expect(el).toBeTruthy();
+      return el as HTMLElement;
+    });
+    // Geurio 목적지 — 앱 팔레트 아홉 색 + 기본 칸.
+    expect(modal.querySelectorAll('[data-event-color]')).toHaveLength(10);
+    await user.type(screen.getByLabelText('일정 제목'), '색 회의');
+    await user.click(document.querySelector<HTMLElement>('[data-new-cal="me@example.com"]')!);
+    // 구글 목적지로 바꾸면 팔레트도 구글 것으로 바뀐다(값은 번호).
+    await waitFor(() => expect(modal.querySelectorAll('[data-event-color]')).toHaveLength(12));
+    await user.click(modal.querySelector<HTMLElement>('[data-event-color="#f6bf26"]')!);
+    await user.click(screen.getByText('등록', { exact: true }));
+    await waitFor(() => {
+      const post = f.mock.calls.find((c) => (c[1] as { method?: string } | undefined)?.method === 'POST');
+      expect(post).toBeTruthy();
+      expect((JSON.parse((post![1] as { body: string }).body) as { colorId?: string }).colorId).toBe('5');
     });
   });
 

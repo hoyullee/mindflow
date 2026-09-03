@@ -10,6 +10,7 @@
 
 import { useCallback, useState } from 'react';
 import { EventDetail, type CalendarChip } from './EventDetail';
+import { googleColorOptions } from './eventColor';
 import { GoogleEventFields, type GoogleDirectoryApi, type GoogleFieldsChange, type GoogleFieldsValue } from './GoogleEventFields';
 import { attendeesBody, conferenceBody, eventWindowIso, myRsvpOf, remindersBody, whenBody, RECURRENCE_OFF } from './googleCalendar';
 import type { CalendarEvent, CalendarEventInput } from '../../../adapters/ports';
@@ -53,6 +54,7 @@ export function draftFrom(g: GoogleEvent, patch: Partial<CalendarEventInput>, fi
     visibility: g.visibility ?? 'default',
     transparency: g.transparency ?? 'opaque',
     ...(g.reminderMinutes !== undefined ? { reminderMinutes: g.reminderMinutes } : {}),
+    ...(g.colorId ? { colorId: g.colorId } : {}),
   };
   const next: GoogleEventDraft = {
     ...base,
@@ -63,6 +65,9 @@ export function draftFrom(g: GoogleEvent, patch: Partial<CalendarEventInput>, fi
     ...(patch.location !== undefined ? { location: patch.location } : {}),
     ...(patch.note !== undefined ? { description: patch.note } : {}),
   };
+  // 색 — 팝업이 돌려주는 `color`는 **구글의 색 번호**다(`EventColorOption.value`).
+  // 지웠으면 `null`로 실어 지정을 뗀다(그때는 캘린더 색으로 보인다).
+  if ('color' in patch) next.colorId = patch.color ?? null;
   // 시각은 `undefined`로 **지우는 것도 뜻이 있다**(종일로 바꾸기) — 키가 왔으면 그대로 쓴다.
   if ('startTime' in patch) {
     if (patch.startTime) next.startTime = patch.startTime;
@@ -133,6 +138,11 @@ export function patchFrom(g: GoogleEvent, patch: Partial<CalendarEventInput>, fi
     body.description = merged.description ?? '';
     mark('description');
   }
+  // 색 — 지정을 뗀 것도 보내야 한다(`null` = 캘린더 색으로 되돌리기).
+  if ('color' in patch) {
+    body.colorId = merged.colorId ?? null;
+    mark('color');
+  }
   // 참석자·회의실·내 응답은 **한 배열**이라 무엇이 바뀌었든 함께 간다.
   if (fields?.attendees || fields?.rooms || fields?.rsvp) {
     body.attendees = attendeesBody(merged);
@@ -184,6 +194,7 @@ export function GoogleEventDetail({
   onPatch,
   onDelete,
   directory,
+  colors,
 }: {
   event: GoogleEvent;
   isMobile: boolean;
@@ -192,6 +203,8 @@ export function GoogleEventDetail({
   onPatch?: (patch: GoogleEventPatch) => Promise<string | null>;
   onDelete?: () => Promise<string | null>;
   directory?: GoogleDirectoryApi;
+  /** 구글의 이벤트 색 팔레트(번호 → hex) — 못 받았으면 폴백 표로 그린다. */
+  colors?: Record<string, string>;
 }) {
   // 구글 전용 필드의 초안 — 본문 초안(제목·날짜·시각…)은 `EventDetail`이 든다.
   // **저장은 완료 버튼에서 한 번**(요청): 팝업이 모아 준 본문 diff와 이 필드 초안을
@@ -234,6 +247,8 @@ export function GoogleEventDetail({
             },
           }
         : {})}
+      // 일정 색 — 구글은 팔레트가 정해져 있고 값은 **번호**다(`colorId`).
+      {...(writable ? { color: { value: event.colorId ?? null, options: googleColorOptions(colors) } } : {})}
       {...(writable ? {} : { footerHint: 'Google 캘린더에서 가져온 일정이에요' })}
       notice={
         event.holiday
@@ -299,6 +314,7 @@ export function GoogleDetailHost({
   onPatch,
   onDelete,
   directory,
+  colors,
 }: {
   openId: string | null;
   events: readonly GoogleEvent[];
@@ -307,6 +323,7 @@ export function GoogleDetailHost({
   onPatch: (ev: GoogleEvent, patch: GoogleEventPatch) => Promise<string | null>;
   onDelete: (ev: GoogleEvent) => Promise<string | null>;
   directory?: GoogleDirectoryApi;
+  colors?: Record<string, string>;
 }) {
   const g = openId ? events.find((e) => e.id === openId) : null;
   if (!g) return null;
@@ -316,6 +333,7 @@ export function GoogleDetailHost({
       isMobile={isMobile}
       onClose={onClose}
       {...(directory ? { directory } : {})}
+      {...(colors ? { colors } : {})}
       {...(g.writable
         ? {
             onPatch: (patch: GoogleEventPatch) => onPatch(g, patch),

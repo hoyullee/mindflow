@@ -748,6 +748,11 @@ export interface GoogleEventDraft {
   transparency?: GoogleTransparency;
   /** `null`=없음, 숫자=N분 전, 없으면 캘린더 기본 알림. */
   reminderMinutes?: number | null;
+  /**
+   * 그 일정에 지정한 **색 번호**(요청 — `colorId` 1~11). `null`이면 지정을 지운다
+   * (그때는 캘린더 색으로 보인다). 값이 없으면 색을 건드리지 않는다.
+   */
+  colorId?: string | null;
   /** 반복 규칙(RRULE) — **만들 때만** 싣는다(회차 수정은 구글에서). */
   recurrence?: string[];
   /** Google Meet 링크를 함께 만들까 — 만들 때만. */
@@ -809,7 +814,7 @@ function localTimeZone(): string {
  * 우리가 구글에 쓰는 값의 갈래 — PATCH에 실은 것이 무엇인지(그래서 412 때 무엇을
  * 견줄지) 이 이름으로 말한다. `when`은 `start`/`end` 짝을 뜻한다.
  */
-export type GoogleWriteField = 'when' | 'title' | 'location' | 'description' | 'attendees' | 'visibility' | 'transparency' | 'reminders' | 'meet';
+export type GoogleWriteField = 'when' | 'title' | 'location' | 'description' | 'attendees' | 'visibility' | 'transparency' | 'reminders' | 'meet' | 'color';
 
 /**
  * 부분 수정 — **바뀐 것만** 담는다(PATCH의 결).
@@ -915,6 +920,7 @@ export function draftToBody(d: GoogleEventDraft): Record<string, unknown> {
     visibility: d.visibility ?? 'default',
     transparency: d.transparency ?? 'opaque',
     reminders: remindersBody(d.reminderMinutes),
+    ...(d.colorId ? { colorId: d.colorId } : {}),
     ...(d.recurrence ? { recurrence: d.recurrence } : {}),
     ...(d.addMeet ? { conferenceData: conferenceBody(true) } : {}),
   };
@@ -1020,6 +1026,7 @@ export function managedFieldsDiffer(a: GoogleEvent, b: GoogleEvent, only?: reado
     visibility: e.visibility ?? 'default',
     transparency: e.transparency ?? 'opaque',
     reminders: e.reminderMinutes ?? 'default',
+    color: e.colorId ?? 'default',
   });
   const x = of(a);
   const y = of(b);
