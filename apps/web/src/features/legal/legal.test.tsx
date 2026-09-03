@@ -30,7 +30,18 @@ describe('legal pages', () => {
     expect(screen.getByText(/공유·전송·공개하지 않습니다/)).toBeTruthy();
     expect(screen.getByText('서비스 운영을 위한 처리 위탁')).toBeTruthy();
     expect(screen.getByText('법령상 의무')).toBeTruthy();
-    expect(screen.getByText('6. 보유 기간 및 파기')).toBeTruthy();
+    // 2026-09-03 검수 반려가 요구한 것 — 민감 데이터의 **보호 수단**(§5의 "누구에게"와
+    // 다른 항목이다: 여기는 "어떻게 지키는가"). 검수가 찾는 낱말을 계약으로 고정한다.
+    expect(screen.getByText('6. 데이터 보호 조치')).toBeTruthy();
+    for (const t of ['전송 중 암호화', '저장 중 암호화', '계정 단위 접근 통제', '비밀 키 관리', '안전한 삭제', '사고 대응']) {
+      expect(screen.getByText(t)).toBeTruthy();
+    }
+    expect(screen.getByText(/HTTPS\(TLS\)/)).toBeTruthy();
+    // 방침이 실제 구현과 어긋나면 그 자체가 반려 사유다 — 토큰은 이 기기에 남는다
+    // (예전 문장은 `sessionStorage`·"탭을 닫으면 사라집니다"였고 코드만 바뀌었다).
+    expect(screen.getByText(/이용자 브라우저의 로컬 저장소에만/)).toBeTruthy();
+    expect(screen.queryByText(/sessionStorage/)).toBeNull();
+    expect(screen.getByText('7. 보유 기간 및 파기')).toBeTruthy();
     expect(screen.getAllByText('info@geurio.com').length).toBeGreaterThan(0);
   });
 
