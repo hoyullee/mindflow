@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import type { CalendarEntry } from './entries';
 import { calendarEntries, datedCards, eventEntries } from './entries';
 import type { CalendarEvent } from '../../../adapters/ports';
-import { addDays, daysBetween, addMonth, calendarStats, statBadge, dayProgress, coversDay, dateLabel, dayTimeline, dueBadge, dueTone, entriesOn, gridRange, hourLabel, isSpan, minutesOf, monthCells, monthLabel, weekLanes, overdueEntries, timeLabel, todayISO, upcomingEntries, weekEndISO, weekLabel, weekStartISO, HOUR_ROW } from './model';
+import { addDays, daysBetween, addMonth, calendarStats, statBadge, dayProgress, coversDay, dateLabel, dayTimeline, dueBadge, dueTone, entriesOn, gridRange, hourLabel, isSpan, minutesOf, monthCells, monthLabel, weekLanes, overdueEntries, timeLabel, todayISO, upcomingEntries, weekEndISO, weekLabel, weekStartISO, cellRows, HOUR_ROW } from './model';
 
 // 일정 화면의 데이터 계층 — 순수 함수라 날짜를 고정해 검증한다.
 
@@ -447,5 +447,49 @@ describe('근무 위치 칸 표시(제보 ⑥)', () => {
     expect(on.work).toBe('재택');
     expect(on.entries).toEqual([]);
     expect(cells.find((c) => c.iso === '2026-08-12')!.work).toBeUndefined();
+  });
+});
+
+describe('칸의 줄 계획(cellRows)', () => {
+  const SPAN = (id: string, start: string, due: string): CalendarEntry => ({
+    docId: 'd', cardId: id, title: id, due, start, colId: 'c', colName: '할 일', colIndex: 0, tag: '', boardName: 'B', spaceName: 'S',
+  });
+  const DAY = (id: string, due: string): CalendarEntry => ({
+    docId: 'd', cardId: id, title: id, due, colId: 'c', colName: '할 일', colIndex: 0, tag: '', boardName: 'B', spaceName: 'S',
+  });
+  const cellOf = (entries: CalendarEntry[], iso: string) => monthCells(2026, 8, entries, '2026-08-01', 99).find((c) => c.iso === iso)!;
+  const shape = (rows: ReturnType<typeof cellRows>) => rows.map((r) => (r.kind === 'bar' ? `bar:${r.bar.entry.cardId}` : r.kind === 'chip' ? `chip:${r.entry.cardId}` : r.kind === 'more' ? `more:${r.n}` : 'gap'));
+
+  // A(9~14) · B(10~11) · C(11~14) — 한 주에서 A=0 · B=1 · C=2 줄이고,
+  // 12일 칸에서는 B가 이미 끝나 **가운데 줄이 빈다**(제보 ①의 그 모양).
+  const A = SPAN('A', '2026-08-09', '2026-08-14');
+  const B = SPAN('B', '2026-08-10', '2026-08-11');
+  const C = SPAN('C', '2026-08-11', '2026-08-14');
+
+  it('빈 줄이 있으면 하루짜리 칩이 그 자리를 먼저 채운다(제보 ①)', () => {
+    expect(shape(cellRows(cellOf([A, B, C, DAY('new', '2026-08-12')], '2026-08-12'), 9))).toEqual(['bar:A', 'chip:new', 'bar:C']);
+    // 11일에는 B가 살아 있으므로 새 일정은 그 아래로 간다.
+    expect(shape(cellRows(cellOf([A, B, C, DAY('x', '2026-08-11')], '2026-08-11'), 9))).toEqual(['bar:A', 'bar:B', 'bar:C', 'chip:x']);
+  });
+
+  it('넘치면 마지막 줄이 +N개가 되고 바·칩을 함께 센다(제보 ②)', () => {
+    // 기간 3 + 하루짜리 3 = 6줄인데 5칸만 들어간다 → 4줄 + `+2개`.
+    const entries = [A, B, C, DAY('d1', '2026-08-11'), DAY('d2', '2026-08-11'), DAY('d3', '2026-08-11')];
+    const rows = cellRows(cellOf(entries, '2026-08-11'), 5);
+    expect(rows).toHaveLength(5);
+    expect(shape(rows)).toEqual(['bar:A', 'bar:B', 'bar:C', 'chip:d1', 'more:2']);
+  });
+
+  it('빈 줄은 접힌 개수에 들지 않는다 — 감출 일정이 없다', () => {
+    // 12일 칸: [A · 빈 줄 · C]. 두 줄만 들어가도 감춰진 것은 C 하나뿐이다.
+    expect(shape(cellRows(cellOf([A, B, C], '2026-08-12'), 2))).toEqual(['bar:A', 'more:1']);
+  });
+
+  it('모델이 이미 접은 개수(moreN)도 함께 센다', () => {
+    const entries = [DAY('a', '2026-08-10'), DAY('b', '2026-08-10'), DAY('c', '2026-08-10')];
+    const cell = monthCells(2026, 8, entries, '2026-08-01', 2).find((c) => c.iso === '2026-08-10')!;
+    expect(cell.moreN).toBe(1);
+    // 두 줄만 그릴 수 있으면 첫 줄 + `+2개`(그린 것 하나 + 모델이 접은 하나).
+    expect(shape(cellRows(cell, 2))).toEqual(['chip:a', 'more:2']);
   });
 });

@@ -1584,6 +1584,43 @@ describe('구글 캘린더 겹치기(PR5)', () => {
     expect((document.querySelector('[data-event-detail]') as HTMLElement).style.width).toBe('900px');
   });
 
+  it('이미 등록된 구글 일정에서도 Meet를 켜고 끈다(요청 ④)', async () => {
+    seed({ calendars: ['me@example.com'] });
+    seedToken();
+    stubGis();
+    stubFetch();
+    clientId = 'test-client.apps.googleusercontent.com';
+    const user = userEvent.setup();
+    const { container } = renderHome();
+    await openCalendar(container, user);
+    await waitFor(() => expect(screen.getAllByText(/구글 회의/).length).toBeGreaterThan(0));
+    await user.click(screen.getAllByText(/구글 회의/)[0]!);
+
+    // 예전에는 만들 때만 토글이고 수정할 때는 링크 행뿐이라, 뒤늦게 붙일 길이 없었다.
+    const meet = await waitFor(() => {
+      const el = document.querySelector('[data-gf-meet]');
+      expect(el).toBeTruthy();
+      return el as HTMLElement;
+    });
+    expect(meet.getAttribute('aria-pressed')).toBe('false');
+    fireEvent.click(meet);
+    await waitFor(() => expect(document.querySelector('[data-gf-meet]')!.getAttribute('aria-pressed')).toBe('true'));
+
+    // 완료에서 한 번에 저장 — 바뀐 것만 실린다(회의 링크 요청 + 그 전용 쿼리).
+    fireEvent.click(screen.getByText('완료'));
+    const patch = await waitFor(() => {
+      const call = (global.fetch as unknown as { mock: { calls: [string, RequestInit?][] } }).mock.calls
+        .filter(([, init]) => init?.method === 'PATCH')
+        .at(-1);
+      expect(call).toBeTruthy();
+      return call!;
+    });
+    expect(patch[0]).toContain('conferenceDataVersion=1');
+    const body = JSON.parse(String(patch[1]!.body)) as Record<string, unknown>;
+    expect(Object.keys(body)).toEqual(['conferenceData']);
+    expect(body.conferenceData).toMatchObject({ createRequest: { requestId: expect.any(String) } });
+  });
+
   it('구글 창을 닫거나 거절하면 **아무 일도 없다** — 오류 문구도, 불러오는 중도 남지 않는다(제보)', async () => {
     seed();
     stubFetch();
@@ -1718,6 +1755,11 @@ describe('구글 캘린더 겹치기(PR5)', () => {
     ]);
     const list = document.querySelector('[data-gf-room-list]')!.textContent!;
     expect(list.indexOf('사용 가능')).toBeLessThan(list.indexOf('사용 중'));
+    // 사용 중인 방은 **이름에 취소선**(요청 ⑤) — 묶음 머리·배지와 함께 세 겹으로 말한다.
+    const nameOf = (email: string) => document.querySelector<HTMLElement>(`[data-gf-room-hit="${email}"] [data-gf-room-name]`)!;
+    expect(nameOf(busyRoom).style.textDecoration).toBe('line-through');
+    expect(nameOf(freeRoom).style.textDecoration).toBe('');
+    expect(nameOf(hiddenRoom).style.textDecoration).toBe('');
   });
 
   it('같은 사람은 어느 자리에서나 같은 이름이다 — 한 일정의 주최자 이름이 다른 일정의 참석자 행을 메운다(제보 ⑤)', async () => {

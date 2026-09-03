@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { groupRooms, guestSub, withOrganizer } from './GoogleEventFields';
+import { groupRooms, guestSub, meetNote, withOrganizer } from './GoogleEventFields';
 
 describe('참석자 머리 문구(guestSub)', () => {
   it('주최자가 따로 있으면 "일정을 만든 사람 외 N명"', () => {
@@ -36,5 +36,18 @@ describe('회의실 묶기(groupRooms)', () => {
       ['unknown', '확인할 수 없음', ['unknown']],
     ]);
     expect(groupRooms([{ email: 'x' }], () => false).map((g) => g.key)).toEqual(['free']);
+  });
+});
+
+describe('Meet 토글 안내(meetNote)', () => {
+  it('지금 누르면 무슨 일이 일어나는지 말한다 — 이미 등록된 일정은 링크 유무로 갈린다', () => {
+    expect(meetNote('create', false, false)).toContain('켜면');
+    expect(meetNote('create', true, false)).toContain('등록하면');
+    // 이미 링크가 있는 일정(요청 ④) — 켜져 있으면 사실을, 끄면 그 결과를 말한다.
+    expect(meetNote('edit', true, true)).toBe('회의 링크가 초대장에 들어가 있어요');
+    expect(meetNote('edit', false, true)).toBe('저장하면 회의 링크가 사라져요');
+    // 링크가 없는 구글 일정에서 켜면 저장할 때 만들어진다.
+    expect(meetNote('edit', true, false)).toBe('저장하면 회의 링크가 만들어져요');
+    expect(meetNote('edit', false, false)).toContain('켜면');
   });
 });

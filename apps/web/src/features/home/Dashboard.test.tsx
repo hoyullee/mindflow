@@ -1119,6 +1119,32 @@ describe('대시보드 캘린더 위젯(PR4) — 크기가 보기를 정한다',
 
   const META = (id: string, title: string): DocMeta => ({ id, title, version: 1, updatedAt: '2026-01-01T00:00:00.000Z', isFavorite: false, deletedAt: null });
 
+  it('칸에 넘치면 `+N`으로 접힌다(제보 ③) — 다일 일정이 좁아지지 않는다', async () => {
+    // 예전에는 위젯이 접힘 표시 없이 칸 안에 다 밀어 넣어, 기간 바가 눌려 얇아졌다.
+    seedWithCalWidget('4x3');
+    const { container } = renderHome([META('doc-k', '스프린트')], {
+      'doc-k': KANBAN([
+        { id: 'k1', col: 'c2', pos: 1, text: '하나', due: shiftInMonth(0) },
+        { id: 'k2', col: 'c2', pos: 2, text: '둘', due: shiftInMonth(0) },
+        { id: 'k3', col: 'c2', pos: 3, text: '셋', due: shiftInMonth(0) },
+      ]),
+    });
+    const aside = await sidebarOf(container);
+    await userEvent.setup().click(within(aside).getByText('이번 주'));
+    const widget = await waitFor(() => container.querySelector('[data-dash-widget]') as HTMLElement);
+    const cell = await waitFor(() => {
+      const el = widget.querySelector(`[data-cal-widget-cell="${shiftInMonth(0)}"]`);
+      expect(el).toBeTruthy();
+      return el as HTMLElement;
+    });
+    const more = await waitFor(() => {
+      const el = cell.querySelector('[data-cal-widget-more]');
+      expect(el).toBeTruthy();
+      return el as HTMLElement;
+    });
+    expect(more.textContent).toBe('+2');
+  });
+
   it('작은 위젯은 이번 주 마감 목록 — 다른 스페이스의 마감도 함께 모은다', async () => {
     seedWithCalWidget('2x1');
     const { container } = renderHome([META('doc-k', '스프린트')], {

@@ -745,6 +745,49 @@ describe('일정 화면', () => {
       expect(rowsOf(iso(2))).toEqual(['_', '·']);
     });
 
+    it('빈 줄에 새 일정이 들어간다 — 아래로 밀리지 않는다(제보 ①)', async () => {
+      // A(0~5) · B(1~2) · C(2~5) → 한 주에서 A=0 · B=1 · C=2 줄. 3일째 칸은 B가
+      // 끝나 **가운데 줄이 비는데**, 그 칸의 하루짜리 일정이 예전에는 맨 아래로 갔다.
+      const iso = (n: number) => addDays(SPAN.start, n);
+      renderHome([META('d1', '스프린트 보드')], {
+        d1: kanbanBody([
+          { id: 'a', col: 'c2', pos: 1, text: 'A', due: iso(5), start: SPAN.start },
+          { id: 'b', col: 'c2', pos: 2, text: 'B', due: iso(2), start: iso(1) },
+          { id: 'c', col: 'c2', pos: 3, text: 'C', due: iso(5), start: iso(2) },
+          { id: 'n', col: 'c2', pos: 4, text: '새 일정', due: iso(3) },
+        ]),
+      });
+      await openCalendar();
+      await waitFor(() => expect(barFor('C')).toBeTruthy());
+      const rows = [...(document.querySelector(`[data-day-cell="${iso(3)}"]`) as HTMLElement).children]
+        .filter((el) => el.hasAttribute('data-cal-bar') || el.hasAttribute('data-cal-bar-gap') || el.hasAttribute('data-cal-chip'))
+        .map((el) => (el.hasAttribute('data-cal-bar-gap') ? '_' : el.textContent!.trim() || '·'));
+      // 빈 자리(_)가 남지 않고 그 줄을 새 일정이 채운다 — C는 제 줄 그대로.
+      expect(rows).toEqual(['·', '새 일정', '·']);
+    });
+
+    it('기간 일정과 하루짜리가 섞여도 `+N개 더`가 뜬다(제보 ②)', async () => {
+      // 예전에는 접힘 표시가 칩만 세고 바는 세지 않아, 이 조합에서 아예 안 나왔다.
+      const iso = (n: number) => addDays(SPAN.start, n);
+      renderHome([META('d1', '스프린트 보드')], {
+        d1: kanbanBody([
+          { id: 's1', col: 'c2', pos: 1, text: '기간 하나', due: iso(4), start: SPAN.start },
+          { id: 's2', col: 'c2', pos: 2, text: '기간 둘', due: iso(4), start: SPAN.start },
+          { id: 'd1', col: 'c2', pos: 3, text: '하루 하나', due: iso(1) },
+          { id: 'd2', col: 'c2', pos: 4, text: '하루 둘', due: iso(1) },
+        ]),
+      });
+      await openCalendar();
+      await waitFor(() => expect(barFor('기간 하나')).toBeTruthy());
+      // 칸이 세 줄만 담으면 마지막 줄이 `+2개`(하루짜리 둘)로 바뀐다.
+      const grid = document.querySelector('[data-month-grid]')!.querySelector('[data-day-cell]')!.parentElement as HTMLElement;
+      Object.defineProperty(grid, 'clientHeight', { configurable: true, value: 6 * 115 });
+      act(() => { for (const cb of roCallbacks) cb(); });
+      const cell = document.querySelector(`[data-day-cell="${iso(1)}"]`) as HTMLElement;
+      await waitFor(() => expect(cell.querySelector('[data-cal-more]')).toBeTruthy());
+      expect(cell.querySelector('[data-cal-more]')!.textContent).toContain('+2개');
+    });
+
     it('구글 다일 일정 상세에도 진행 바가 뜬다(제보 ⑦)', async () => {
       // Geurio 일정과 구글 일정은 **같은 상세 팝업**을 쓴다 — 우리 표의 다일 일정으로
       // 그 팝업의 바를 확인한다(구글 경로는 라이브 계정이 필요하다).

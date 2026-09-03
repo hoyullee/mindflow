@@ -11,7 +11,7 @@
 import { useCallback, useState } from 'react';
 import { EventDetail, type CalendarChip } from './EventDetail';
 import { GoogleEventFields, type GoogleDirectoryApi, type GoogleFieldsChange, type GoogleFieldsValue } from './GoogleEventFields';
-import { attendeesBody, eventWindowIso, myRsvpOf, remindersBody, whenBody, RECURRENCE_OFF } from './googleCalendar';
+import { attendeesBody, conferenceBody, eventWindowIso, myRsvpOf, remindersBody, whenBody, RECURRENCE_OFF } from './googleCalendar';
 import type { CalendarEvent, CalendarEventInput } from '../../../adapters/ports';
 import type { GoogleEvent, GoogleEventDraft, GoogleEventPatch, GoogleWriteField } from './googleCalendar';
 
@@ -82,6 +82,7 @@ export function draftFrom(g: GoogleEvent, patch: Partial<CalendarEventInput>, fi
     if (fields.rooms) next.rooms = fields.rooms;
     // 내 참석 여부 — **내 항목만** 바꿔 다시 싣는다(남의 응답은 위에서 실어 둔 그대로).
     if (fields.rsvp && g.selfEmail) next.rsvps = { ...(g.rsvps ?? {}), [g.selfEmail]: fields.rsvp };
+    if (fields.addMeet !== undefined) next.addMeet = fields.addMeet;
     if (fields.visibility) next.visibility = fields.visibility;
     if (fields.transparency) next.transparency = fields.transparency;
     // 알림은 `undefined`(캘린더 기본)도 뜻이 있으므로 **키가 왔는지**로 판단한다.
@@ -137,6 +138,12 @@ export function patchFrom(g: GoogleEvent, patch: Partial<CalendarEventInput>, fi
     body.attendees = attendeesBody(merged);
     mark('attendees');
   }
+  // Meet — 켜면 만들어 달라고, 끄면 `null`로 뗀다(제보 ④). 켜져 있던 것을 다시 켜는
+  // 요청은 보내지 않는다: 구글이 같은 일정에 회의를 새로 만들어 링크가 바뀐다.
+  if (fields && 'addMeet' in fields && fields.addMeet !== !!g.meetLink) {
+    body.conferenceData = conferenceBody(!!fields.addMeet);
+    mark('meet');
+  }
   if (fields?.visibility) {
     body.visibility = merged.visibility ?? 'default';
     mark('visibility');
@@ -161,7 +168,8 @@ export function fieldsOf(g: GoogleEvent): GoogleFieldsValue {
     transparency: g.transparency ?? 'opaque',
     reminderMinutes: g.reminderMinutes,
     recurrence: RECURRENCE_OFF,
-    addMeet: false,
+    // 이미 회의 링크가 있으면 **켜진 상태**로 보여 준다(제보 ④) — 끄면 회의를 뗀다.
+    addMeet: !!g.meetLink,
     // 초대받은 일정에만 값이 있다 — 없으면 참석 여부 구획을 그리지 않는다.
     ...(myRsvpOf(g) !== undefined ? { rsvp: myRsvpOf(g) } : {}),
     // 구글이 알려 준 표시 이름 — 참석자·주최자 행이 이메일 앞부분으로 떨어지지 않게(제보).
