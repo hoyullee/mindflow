@@ -3,7 +3,7 @@ import { createPortal } from "react-dom";
 import type { CSSProperties, PointerEvent as ReactPointerEvent } from "react";
 import type { CalendarEntry } from "./entries";
 import type { MonthCell } from "./model";
-import { DOW, cellRows, daysBetween } from "./model";
+import { DOW, cellRows, dayProgress, daysBetween } from "./model";
 import { beginPointerDrag } from "../../editor/components/KanbanBoard";
 import {
   chipTimeLabel,
@@ -14,19 +14,33 @@ import {
   type ChipSurface,
 } from "./chips";
 
-/** 칩·바 한 줄이 차지하는 높이(칩 높이 + 줄 간격) — 칸 용량 계산의 단위. */
-const ROW_H = (compact: boolean): number => (compact ? 16 : 21) + 2;
-/** 날짜 숫자 줄 + 칸 안쪽 여백 — 칩이 쓸 수 없는 높이. */
+/** 칩·바 한 줄의 높이와 줄 사이 간격 — 칸 용량 계산의 단위. */
+const CHIP_H = (compact: boolean): number => (compact ? 16 : 21);
+const GAP = 2;
+const ROW_H = (compact: boolean): number => CHIP_H(compact) + GAP;
+/** `+N개 더` 줄은 글 한 줄이라 **칩보다 낮다** — 용량 계산에서 이 차이가 한 줄을 만든다. */
+const MORE_H = (compact: boolean): number => (compact ? 12 : 13);
+/** 날짜 숫자 줄 + 그 아래 간격 + 칸 안쪽 여백 + 칸 아래 격자선 — 칩이 쓸 수 없는 높이. */
 const CHROME_H = (compact: boolean): number =>
-  (compact ? 18 : 20) + 2 + (compact ? 7 : 11);
+  (compact ? 18 : 20) + GAP + (compact ? 7 : 11) + 1;
 
 /**
- * 이 칸에 칩을 몇 줄 그릴 수 있는가(제보 — 여유가 많은데도 `+N개 더`가 떴다).
- * 예전에는 고정 개수(데스크톱 2줄)라 칸이 커도 접혔다. 이제 **실측한 칸 높이**로
- * 정하고, 넘칠 때만 마지막 줄을 `+N개 더`에 내준다.
+ * 이 칸에 칩을 몇 줄 그릴 수 있는가 — **실측한 칸 높이**로 정한다.
+ *
+ * 계산이 두 갈래인 이유(제보: 여유가 있는데도 `+N개 더`가 떴다): n줄을 쭉 그리면
+ * `ROW_H·n − GAP`이지만(마지막 줄 뒤에는 간격이 없다), 마지막 줄이 `+N개 더`면
+ * 그 줄만 **낮으므로**(13px) 같은 높이에 한 줄이 더 들어간다. 예전 식은 모든 줄을
+ * 칩 높이로 셌고 마지막 간격도 뺐다가 다시 넣지 않아 실제보다 한 줄 적게 나왔다.
  */
-export function cellCapacity(cellH: number, compact: boolean): number {
-  return Math.max(1, Math.floor((cellH - CHROME_H(compact)) / ROW_H(compact)));
+export function cellCapacity(
+  cellH: number,
+  compact: boolean,
+): { rows: number; withMore: number } {
+  const avail = cellH - CHROME_H(compact);
+  const rows = Math.floor((avail + GAP) / ROW_H(compact));
+  // 접힘 표시를 붙이면: n줄 + 간격 + `+N개 더` = ROW_H·n + MORE_H.
+  const withMore = Math.floor((avail - MORE_H(compact)) / ROW_H(compact));
+  return { rows: Math.max(1, rows), withMore: Math.max(1, withMore) };
 }
 
 /** 끄는 동안의 상태 — 손끝의 고스트와 놓일 칸. */
@@ -107,7 +121,9 @@ export function MonthGrid({
   // 감추는 것보다 넘치는 편이 낫다(칸은 `overflow: hidden`이고, ResizeObserver는
   // 페인트 전에 돌아 사용자가 넘친 프레임을 보지 못한다).
   const capacity =
-    cellH > 0 ? cellCapacity(cellH, compact) : Number.MAX_SAFE_INTEGER;
+    cellH > 0
+      ? cellCapacity(cellH, compact)
+      : { rows: Number.MAX_SAFE_INTEGER, withMore: Number.MAX_SAFE_INTEGER };
   /** 끌었는가 — 드래그 끝의 `click`이 상세 팝업을 열지 않게 삼킨다(다음 누름에서 리셋). */
   const draggedRef = useRef(false);
 
@@ -336,7 +352,7 @@ function DayCell({
 }: {
   cell: MonthCell;
   /** 이 칸이 담을 수 있는 줄 수(실측) — 넘칠 때만 마지막 줄이 `+N개 더`가 된다. */
-  capacity: number;
+  capacity: { rows: number; withMore: number };
   selected: boolean;
   compact: boolean;
   surface: ChipSurface;
@@ -356,7 +372,7 @@ function DayCell({
 }) {
   const { inMonth, isToday, dim, dow } = cell;
   // 칸에 실제로 들어가는 만큼 그린다(제보 #1) — 줄 배치는 `cellRows`가 정한다.
-  const rows = cellRows(cell, capacity);
+  const rows = cellRows(cell, capacity.rows, capacity.withMore);
   // 칸 색은 **요일·이번 달 여부만** 말한다(제보 — 고른 칸을 배경으로 표시하니
   // 계속 문제가 났다: 이 자리는 이미 세 가지를 겸하고 있다(이웃 달의 가라앉은 면 /
   // 주말·공휴일 톤 / 드롭 대기). 넷째 뜻을 얹으면 어느 하나가 반드시 가려진다).
@@ -389,7 +405,14 @@ function DayCell({
           : "var(--mf-subtext)";
   // 고른 칸·오늘의 표시는 **한 곳**(`dayNumTone`)이 정한다 — 대시보드 위젯의 미니
   // 달력이 같은 함수를 쓰므로 두 화면에서 표시가 갈릴 수 없다.
-  const numTone = dayNumTone(selected, isToday);
+  // 토·일·공휴일은 고른 뒤에도 그 색을 지킨다(요청 ④) — 채운 원이 그 색이 된다.
+  const dayInk =
+    dow === 0 || cell.dayOff
+      ? "var(--mf-danger)"
+      : dow === 6
+        ? "var(--mf-info)"
+        : undefined;
+  const numTone = dayNumTone(selected, isToday, dayInk);
   const cellStyle: CSSProperties = {
     minWidth: 0,
     // 칩이 커진 만큼 칸도(번호 18 + 칩 21 × 2 + 여백) — 격자가 화면을 채우면
@@ -618,6 +641,9 @@ function DayCell({
         if (row.kind === "bar") {
           const b = row.bar;
           const chip = entryChip(b.entry, surface);
+          // 폰은 칸이 55px 남짓이라 `일째`까지 적으면 제목이 통째로 사라진다.
+          const prog = dayProgress(b.entry, cell.iso);
+          const progress = prog && compact ? prog.replace("일째", "") : prog;
           return (
             <button
               key={`bar-${b.entry.docId}-${b.entry.cardId}`}
@@ -649,7 +675,11 @@ function DayCell({
                 height: compact ? 15 : 20,
                 minWidth: 0,
                 border: 0,
-                padding: b.label ? "0 6px" : 0,
+                // 진행 표기가 붙으므로 제목이 없는 이어지는 칸에도 안쪽 여백을 준다.
+                padding: "0 6px",
+                display: "flex",
+                alignItems: "center",
+                gap: 6,
                 borderRadius: 2,
                 borderTopLeftRadius: b.head ? 5 : 2,
                 borderBottomLeftRadius: b.head ? 5 : 2,
@@ -663,7 +693,6 @@ function DayCell({
                 textAlign: "left",
                 whiteSpace: "nowrap",
                 overflow: "hidden",
-                textOverflow: "ellipsis",
                 cursor: b.entry.readOnly ? "pointer" : "grab",
                 flexShrink: 0,
                 opacity: isDragged(dragging, b.entry)
@@ -674,7 +703,36 @@ function DayCell({
                 touchAction: "none",
               }}
             >
-              {b.label ? b.entry.title : ""}
+              <span
+                data-cal-bar-title
+                style={{
+                  minWidth: 0,
+                  flex: 1,
+                  overflow: "hidden",
+                  textOverflow: "ellipsis",
+                }}
+              >
+                {b.label ? b.entry.title : ""}
+              </span>
+              {/* 요청 ⑤ — **그 칸이 며칠째인가**를 바 오른쪽 끝에 적는다(`3/7일째`).
+                  이어지는 칸에는 제목을 쓰지 않으므로(시작 칸·주 첫 칸만) 그 칸에서는
+                  이 표기가 바가 말하는 유일한 정보가 된다. 좁은 칸에서 제목과 다투지
+                  않게 표기는 줄어들지 않고(`flexShrink: 0`) 제목이 먼저 접힌다. */}
+              {progress ? (
+                <span
+                  data-cal-bar-progress
+                  style={{
+                    flex: "0 0 auto",
+                    fontFamily: "'JetBrains Mono', monospace",
+                    fontSize: compact ? 8.5 : 10,
+                    fontWeight: 700,
+                    opacity: 0.72,
+                    letterSpacing: "-.02em",
+                  }}
+                >
+                  {progress}
+                </span>
+              ) : null}
             </button>
           );
         }

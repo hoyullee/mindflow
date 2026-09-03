@@ -6,26 +6,20 @@
 // 일정(그 날을 지나는 바)까지 전부 한 목록으로 늘어놓는다. 항목을 고르면 그 상세
 // 팝업으로 이어지고, 발치의 `이 날에 새 일정`이 그 날짜로 새 일정을 연다.
 //
-// 행의 색 둘(시안): 왼쪽 **색 바 = 출처**(구글 파랑 · Geurio 코랄 · 기간 초록 ·
-// 칸반 초록 — 옛 태그 알약의 hue가 바로 옮겨 왔다), 오른쪽 **점 = 상태**(열 색,
-// 달력 칩의 그 점과 같은 뜻). hue는 원본, 밝기는 놓이는 면에서(`mixHex`/`tagInk`).
+// 왼쪽 색 바는 **그 항목의 색**이다 — 달력 칸의 칩과 같은 값(`entryChip().base`).
+// 처음 이식은 시안대로 출처 hue 넷(구글 파랑 · Geurio 코랄 · 칸반 초록) 중 하나를
+// 썼는데, 그러면 칸에서 분류색으로 보던 일정이 팝업에서 초록 바로 바뀌어 **같은
+// 일정으로 읽히지 않았다**(제보). 출처는 둘째 줄이 글로 말한다.
+//
+// 오른쪽 점은 **뜻이 있을 때만** 그린다(제보: 무엇을 뜻하는지 알 수 없다) — 칸반
+// 카드의 **열(상태) 색**이다. 구글 일정에서는 그 점이 왼쪽 바와 같은 색이고 Geurio
+// 일정에는 열이 없어(고정 팔레트 색이 우연히 붙는다) 아무 뜻이 없었다.
 
 import { useLayoutEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import type { CalendarEntry, HolidayInfo } from './entries';
 import { entryChip, type ChipSurface } from './chips';
 import { dayProgress, entriesOn, isSpan, minutesOf, partsOf, timeLabel } from './model';
-
-/** 출처 hue(원본 태그 알약의 그 색) — 구글 `#7C9BD8` · Geurio `#E8845C` · 칸반/기간 `#69B08A`. */
-const TAG_HUE = { google: '#7C9BD8', geurio: '#E8845C', kanban: '#69B08A', span: '#69B08A' } as const;
-
-/** 왼쪽 색 바 — 이 항목의 출처. */
-function barOf(e: CalendarEntry): string {
-  if (e.google) return TAG_HUE.google;
-  if (isSpan(e)) return TAG_HUE.span;
-  if (e.event) return TAG_HUE.geurio;
-  return TAG_HUE.kanban;
-}
 
 /** 행의 둘째 줄 — 원본의 `v.sub`: 기간은 `8.24–8.30 · 3/7일째`, 나머지는 출처. */
 function subOf(e: CalendarEntry, iso: string): string {
@@ -157,12 +151,16 @@ export function DayListPopup({
               onClick={() => onPickEntry(e)}
               style={{ display: 'flex', alignItems: 'center', gap: 11, padding: '9px 10px', border: 0, borderRadius: 12, background: 'transparent', cursor: 'pointer', font: 'inherit', textAlign: 'left', minWidth: 0 }}
             >
-              <span aria-hidden style={{ width: 4, height: 30, flex: '0 0 auto', borderRadius: 999, background: barOf(e), display: 'block' }} />
+              <span aria-hidden style={{ width: 4, height: 30, flex: '0 0 auto', borderRadius: 999, background: chip.base, display: 'block' }} />
               <span style={{ display: 'flex', flexDirection: 'column', gap: 2, minWidth: 0, flex: 1 }}>
                 <span style={{ fontSize: 13, fontWeight: 700, letterSpacing: '-.015em', color: 'var(--mf-text)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{e.title || '제목 없음'}</span>
                 <span style={{ fontSize: 11, color: 'var(--mf-faint)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{subOf(e, iso)}</span>
               </span>
-              <span aria-hidden style={{ width: 8, height: 8, flex: '0 0 auto', borderRadius: 999, background: chip.dot, display: 'block' }} />
+              {/* 칸반 카드만 — 그 카드가 있는 **열(상태)** 색이다(달력 칸의 시간 일정
+                  표식과 같은 뜻). 다른 원천에는 열이 없어 점을 두지 않는다. */}
+              {!e.google && !e.event ? (
+                <span data-day-list-state title={`상태 · ${e.colName}`} style={{ width: 8, height: 8, flex: '0 0 auto', borderRadius: 999, background: chip.dot, display: 'block' }} />
+              ) : null}
             </button>
           );
         })}
