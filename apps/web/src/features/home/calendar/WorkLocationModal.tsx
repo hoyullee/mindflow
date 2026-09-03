@@ -19,9 +19,11 @@
 // 그래서 걸려 있는 날을 열면 보이는 것은 **그 하루**이고, 종료 날짜를 뒤로 밀면
 // 그만큼 날이 더 걸린다(구간 밖의 날은 건드리지 않는다).
 //
-// **반복되는 근무 위치는 우리가 다루지 않는다** — 구글은 그것을 캘린더 설정에 두고
-// 우리 스코프(`calendar.events`)로는 닿지 않는다. 그래서 한 줄로 알린다(없는 기능을
-// 흉내 낸 버튼을 두지 않는다).
+// **매주 되풀이**는 하루짜리에만 뜬다(요청 ④ — 구글의 `근무 위치 수정` 화면과 같은
+// 두 선택: `선택한 날짜만` / `…부터 매주`). 구간은 이미 하루씩 여러 일정으로 나가므로
+// 거기에 되풀이를 얹으면 사용자가 고른 적 없는 모양이 된다. 이미 반복인 근무 위치를
+// 열면 라디오 대신 **한 줄로 알린다** — 구글은 회차(instance)에 규칙을 받지 않고,
+// 반복을 끊는 일은 범위를 되묻는 또 하나의 팝업이 필요하다(요청: 추가 팝업 금지).
 
 import { useState } from 'react';
 import { Modal, MODAL_DIM, useCardMorph } from '../../../components/Modal';
@@ -39,6 +41,8 @@ export interface WorkLocationCurrent {
   endDate: string;
   startTime?: string;
   endTime?: string;
+  /** 이미 매주 되풀이되는 일정의 회차인가 — 그러면 되풀이는 고르는 값이 아니다. */
+  recurring?: boolean;
 }
 
 const PRESETS: { kind: WorkLocationKind; name: string; note: string }[] = [
@@ -77,8 +81,14 @@ export function WorkLocationModal({
   const [timed, setTimed] = useState(!!(current?.startTime && current?.endTime));
   const [t1, setT1] = useState(current?.startTime ?? '09:00');
   const [t2, setT2] = useState(current?.endTime ?? '18:00');
+  // 되풀이 — 이미 반복인 일정은 고르는 값이 아니라 상태다(아래 안내 한 줄).
+  const [weekly, setWeekly] = useState(false);
   const morphRef = useCardMorph();
   const needsLabel = kind !== 'homeOffice';
+  /** 하루짜리인가 — 되풀이는 여기에만 뜻이 있다(구간은 하루씩 여러 일정이다). */
+  const oneDay = timed || to <= from;
+  const showRepeat = oneDay && !current?.recurring;
+  const on = showRepeat && weekly;
 
   const draft = (): WorkLocationDraft => ({
     kind,
@@ -86,6 +96,7 @@ export function WorkLocationModal({
     startDate: from,
     // 시각과 구간은 함께 쓰이지 않는다 — 구글이 시각 근무 위치를 하루로 제한한다.
     ...(timed ? { startTime: t1, endTime: t2 } : to > from ? { endDate: to } : {}),
+    ...(on ? { repeat: 'weekly' as const } : {}),
   });
   // 하루에 요청 하나씩 나가므로 너무 긴 구간은 **막고 이유를 말한다**(조용히 잘라
   // 저장하면 고른 것과 저장된 것이 달라진다).
@@ -261,9 +272,62 @@ export function WorkLocationModal({
             </span>
           </div>
 
-          <span data-work-note style={{ fontSize: 11.5, color: 'var(--mf-faint2)', lineHeight: 1.6 }}>
-            Google 캘린더의 기본 캘린더에 하루씩 저장돼요. 반복되는 근무 위치는 Google 캘린더 설정에서 정해요.
-          </span>
+          {/* 되풀이(요청 ④) — 구글의 `근무 위치 수정` 화면과 같은 두 선택.
+              하루짜리에만 뜬다(구간은 이미 하루씩 여러 일정이다). */}
+          {showRepeat && (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+              <span style={{ fontSize: 11.5, fontWeight: 800, color: 'var(--mf-subtext)' }}>되풀이</span>
+              <RadioCards
+                label="근무 위치 되풀이"
+                value={weekly ? 'weekly' : 'once'}
+                onChange={(v) => setWeekly(v === 'weekly')}
+                grid={{ display: 'flex', flexDirection: 'column', gap: 6 }}
+                items={[
+                  { value: 'once', title: '선택한 날짜만', note: dayLabel(from) },
+                  { value: 'weekly', title: `${dayLabel(from)}부터 매주`, note: `${weekdayName(from)}요일` },
+                ].map((o) => ({
+                  value: o.value,
+                  label: `${o.title} · ${o.note}`,
+                  className: 'mf-ctl',
+                  attrs: { 'data-work-repeat': o.value },
+                  style: (sel: boolean) => ({
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: 10,
+                    padding: '9px 12px',
+                    borderRadius: 12,
+                    border: sel ? '1.5px solid var(--mf-accent-mute)' : '1px solid var(--mf-border)',
+                    background: sel ? 'var(--mf-accent-soft)' : 'var(--mf-card)',
+                    color: sel ? 'var(--mf-accent-strong)' : 'var(--mf-subtext)',
+                    font: 'inherit',
+                    textAlign: 'left' as const,
+                    cursor: 'pointer',
+                  }),
+                  children: (
+                    <>
+                      {/* 라디오 점 — 구글의 그 화면과 같은 어포던스(고른 칸만 채워진다). */}
+                      <span aria-hidden="true" style={{ flex: '0 0 auto', width: 15, height: 15, borderRadius: 999, border: `1.5px solid ${weekly === (o.value === 'weekly') ? 'var(--mf-accent)' : 'var(--mf-border)'}`, display: 'inline-flex', alignItems: 'center', justifyContent: 'center' }}>
+                        {weekly === (o.value === 'weekly') && <span style={{ width: 7, height: 7, borderRadius: 999, background: 'var(--mf-accent)' }} />}
+                      </span>
+                      <span style={{ display: 'flex', flexDirection: 'column', gap: 1, minWidth: 0 }}>
+                        <span style={{ fontSize: 12.5, fontWeight: 700, letterSpacing: '-.01em', whiteSpace: 'nowrap' }}>{o.title}</span>
+                        <span style={{ fontSize: 10.5, fontWeight: 600, color: 'var(--mf-faint2)' }}>{o.note}</span>
+                      </span>
+                    </>
+                  ),
+                }))}
+              />
+            </div>
+          )}
+
+          {/* 이미 매주 반복되는 근무 위치 — 고르는 값이 아니라 상태다. 반복을 끊는
+              일은 범위를 되묻는 또 하나의 팝업이 필요하므로(요청: 추가 팝업 금지)
+              여기서는 **이 회차만** 바뀐다고 밝힌다. */}
+          {current?.recurring && (
+            <span data-work-repeat-note style={{ fontSize: 11.5, color: 'var(--mf-faint2)', lineHeight: 1.6 }}>
+              매주 되풀이되는 근무 위치예요 — 여기서 고치면 이 회차만 바뀝니다.
+            </span>
+          )}
         </div>
 
         <div style={{ flex: '0 0 auto', display: 'flex', alignItems: 'center', gap: 10, padding: '14px 20px', borderTop: '1px solid var(--mf-border-soft)' }}>
@@ -291,6 +355,21 @@ export function WorkLocationModal({
       </>
     </Modal>
   );
+}
+
+const DOW = ['일', '월', '화', '수', '목', '금', '토'];
+
+/** `9월 16일 (수요일)` — 되풀이 선택지가 무엇을 가리키는지 그대로 적는다. */
+function dayLabel(iso: string): string {
+  const d = new Date(`${iso}T00:00:00`);
+  if (Number.isNaN(d.getTime())) return iso;
+  return `${d.getMonth() + 1}월 ${d.getDate()}일 (${DOW[d.getDay()]}요일)`;
+}
+
+/** `수` — 매주 어느 요일인가. */
+function weekdayName(iso: string): string {
+  const d = new Date(`${iso}T00:00:00`);
+  return Number.isNaN(d.getTime()) ? '' : (DOW[d.getDay()] ?? '');
 }
 
 /** 두 날 사이의 날 수(양끝 포함) — 상한 판정에만 쓴다. */

@@ -14,6 +14,7 @@
 
 import type { ReactNode } from 'react';
 import { SwatchGroup } from '../../../components/Swatch';
+import { swatchNames } from '../../../components/colorNames';
 import { UI_THEME } from '../../editor/theme';
 import { GOOGLE_EVENT_COLORS } from './googleCalendar';
 
@@ -41,14 +42,30 @@ export const GOOGLE_COLOR_NAMES: Record<string, string> = {
 };
 
 /**
- * 구글의 색 열한 개 — 순서는 **우리가 정한다**(번호순). `/colors`의 응답 순서에는
- * 보장이 없고, 팔레트를 못 받았으면 폴백 표(`GOOGLE_EVENT_COLORS`)로 그린다.
+ * 구글의 색 — **팔레트가 정하는 만큼 전부** 보여 준다(요청 ⑥: 구글에서는 색을 더
+ * 많이 고를 수 있는데 우리는 열한 개뿐이었다).
+ *
+ * 목록을 우리가 적어 두지 않는 이유: 고를 수 있는 색은 **구글이 정한다**(값이
+ * `colorId`이므로 표에 없는 번호를 우리가 지어내면 그 저장은 거절된다). 그래서
+ * `/colors`가 돌려준 번호를 전부 싣고 — 그 응답에 24개가 있으면 24개가 뜬다 —
+ * 순서만 우리가 번호순으로 못박는다(응답 순서에는 보장이 없다).
+ *
+ * 이름은 아는 것만 구글의 낱말로 쓰고, 모르는 번호는 hex에서 계산한다(#51의 규칙 —
+ * 글자 없는 동그라미에 접근 이름·툴팁이 없으면 무슨 색인지 알 길이 없다).
+ * 팔레트를 못 받았으면 폴백 표(`GOOGLE_EVENT_COLORS`)로 그린다.
  */
 export function googleColorOptions(palette?: Record<string, string>): EventColorOption[] {
-  return Object.keys(GOOGLE_COLOR_NAMES).map((id) => ({
+  const src = palette && Object.keys(palette).length > 0 ? palette : GOOGLE_EVENT_COLORS;
+  const ids = Object.keys(src).sort((a, b) => (Number(a) || 0) - (Number(b) || 0));
+  const hexes = ids.map((id) => src[id] ?? GOOGLE_EVENT_COLORS[id] ?? '#9aa0a6');
+  // 겹치는 이름에 번호를 붙이는 일은 `swatchNames`가 한다 — 아는 이름을 섞어 넣고
+  // 나머지를 그 계산으로 메우면 같은 낱말이 둘 생길 수 있으므로 **모르는 것만** 받아
+  // 계산하고, 그 결과를 아는 이름이 없는 자리에만 끼운다.
+  const computed = swatchNames(hexes);
+  return ids.map((id, i) => ({
     value: id,
-    hex: palette?.[id] ?? GOOGLE_EVENT_COLORS[id] ?? '#9aa0a6',
-    name: GOOGLE_COLOR_NAMES[id]!,
+    hex: hexes[i]!,
+    name: GOOGLE_COLOR_NAMES[id] ?? computed[i] ?? '',
   }));
 }
 

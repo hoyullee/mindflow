@@ -5252,7 +5252,10 @@ describe('홈 리디자인 계약', () => {
     ]);
     await waitFor(() => expect(container.querySelector('.mf-recent-tray')).toBeTruthy());
     const main = container.querySelector('main') as HTMLElement;
-    expect(main.style.background).toContain('--mf-card');
+    expect(main.style.backgroundColor).toContain('--mf-card');
+    // 스페이스 화면에도 점 격자를 얹는다(요청 ①) — 대시보드·일정과 같은 값이다.
+    expect(main.style.backgroundImage).toContain('--mf-dot-grid');
+    expect(main.style.backgroundSize).toBe('17px 17px');
     // 예외는 최근 항목 띠 하나 — 흰 카드가 흰 배경에 묻히지 않게 그 자리만 지킨다.
     // 본문 패딩만큼 음수 마진으로 빼고 같은 값을 패딩으로 되돌려 카드 자리는 불변이다.
     const css = readFileSync(resolve('src/features/home/home.css'), 'utf8');

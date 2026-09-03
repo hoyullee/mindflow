@@ -22,7 +22,7 @@
 // 우리는 아직 받지 않으므로, 모르는 것을 아는 척 칠하지 않는다. 참석자의 필수/선택
 // 전환도 아직 모델에 없어 두지 않았다.
 
-import { useEffect, useLayoutEffect, useRef, useState } from 'react';
+import { Fragment, useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { knownName, knownNamesFor, rememberName } from './nameBook';
 import { createPortal } from 'react-dom';
 import type { CSSProperties, KeyboardEvent, ReactNode } from 'react';
@@ -943,6 +943,22 @@ function Rooms({
   // "모르는 것은 칠하지 않는다"의 목록 판이다(가능하다고 올려 두면 거짓말이 된다).
   // 묶음 안에서는 예약한 방이 위(제보 #17 — 잡아 둔 것이 스크롤 아래로 숨지 않게).
   const groups = when ? groupRooms(rows, busyFlag) : [{ key: 'all' as const, label: '', rooms: rows }];
+  // 사용 중인 방을 눌렀다 — **바로 고르지 않고** 한 번 묻는다(요청 ②). 그 방을 쓰는
+  // 일정이 무엇인지 그 자리에서 보여 주므로, 겹쳐 잡는 것이 의도인지 사용자가 안다.
+  // 이미 고른 방을 **빼는** 클릭은 묻지 않는다(잃을 것이 없다).
+  const [confirm, setConfirm] = useState<string | null>(null);
+  // 목록은 세 줄 상자라 물음이 접힌 자리에서 열릴 수 있다 — 그 자리로 민다(이미 다
+  // 보이면 아무것도 움직이지 않는다: `block: 'nearest'`).
+  const askRef = useRef<HTMLDivElement | null>(null);
+  useEffect(() => {
+    if (confirm) askRef.current?.scrollIntoView({ block: 'nearest' });
+  }, [confirm]);
+  // 구간이 바뀌면 답이 달라지므로 물어보던 것을 접는다(옛 답으로 묻고 있게 두지 않는다).
+  useEffect(() => setConfirm(null), [from, to]);
+  const pick = (email: string): void => {
+    setConfirm(null);
+    onChange(picked.includes(email) ? picked.filter((p) => p !== email) : [...picked, email]);
+  };
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 8, minWidth: 0 }}>
       <SearchBox label="회의실 검색" attrs={{ 'data-gf-room-input': '1' }} value={q} placeholder="회의실 이름 또는 층 검색" onChange={setQ} />
@@ -967,8 +983,8 @@ function Rooms({
           // 조직이 "한가함/바쁨만" 공개하면 제목·주최자가 없어 시각만 남는다.
           const busyWho = busyRow ? roomBusyLabel(info) : '';
           return (
+            <Fragment key={r.email}>
             <button
-              key={r.email}
               type="button"
               {...(busyWho ? { title: busyWho } : {})}
               data-gf-room-hit={r.email}
@@ -976,7 +992,12 @@ function Rooms({
               aria-pressed={on}
               onMouseDown={(e) => {
                 e.preventDefault();
-                onChange(on ? picked.filter((p) => p !== r.email) : [...picked, r.email]);
+                // 사용 중인 방을 새로 고르려는 클릭만 되묻는다(요청 ②).
+                if (busyRow && !on) {
+                  setConfirm(confirm === r.email ? null : r.email);
+                  return;
+                }
+                pick(r.email);
               }}
               className="mf-ctl"
               style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '9px 11px', border: 0, ...rowDivider(g.label ? i + 1 : i), background: on ? 'var(--mf-accent-soft)' : 'transparent', cursor: 'pointer', font: 'inherit', textAlign: 'left', minWidth: 0, width: '100%', transition: 'background .12s ease' }}
@@ -993,6 +1014,41 @@ function Rooms({
               </span>
               <RoomState on={on} busy={busyFlag(r.email)} />
             </button>
+            {/* 확인 단계(요청 ②) — 팝업을 하나 더 띄우지 않고 **그 행 아래**에서 묻는다:
+                모달 위에 모달을 얹으면 무엇을 고르던 중인지 흐려진다. */}
+            {confirm === r.email && (
+              <div ref={askRef} data-gf-room-confirm={r.email} style={{ display: 'flex', flexDirection: 'column', gap: 7, padding: '9px 11px 11px 43px', background: 'var(--mf-danger-bg)', borderTop: '1px solid var(--mf-border-soft)' }}>
+                <span style={{ fontSize: 11.5, fontWeight: 700, color: 'var(--mf-danger)', lineHeight: 1.5 }}>{busyWho || '사용 중'}</span>
+                <span style={{ fontSize: 11.5, color: 'var(--mf-subtext)', lineHeight: 1.5 }}>이미 사용 중인 회의실이에요. 그래도 예약할까요?</span>
+                <span style={{ display: 'flex', alignItems: 'center', gap: 7 }}>
+                  <button
+                    type="button"
+                    data-gf-room-confirm-yes
+                    className="mf-ctl"
+                    onMouseDown={(e) => {
+                      e.preventDefault();
+                      pick(r.email);
+                    }}
+                    style={{ height: 28, padding: '0 12px', borderRadius: 999, border: '1px solid var(--mf-danger-line)', background: 'var(--mf-card)', color: 'var(--mf-danger)', font: 'inherit', fontSize: 11.5, fontWeight: 800, cursor: 'pointer' }}
+                  >
+                    그래도 예약
+                  </button>
+                  <button
+                    type="button"
+                    data-gf-room-confirm-no
+                    className="mf-ctl"
+                    onMouseDown={(e) => {
+                      e.preventDefault();
+                      setConfirm(null);
+                    }}
+                    style={{ height: 28, padding: '0 12px', borderRadius: 999, border: '1px solid var(--mf-border)', background: 'var(--mf-card)', color: 'var(--mf-muted)', font: 'inherit', fontSize: 11.5, fontWeight: 700, cursor: 'pointer' }}
+                  >
+                    취소
+                  </button>
+                </span>
+              </div>
+            )}
+            </Fragment>
           );
         })}
           </div>
@@ -1050,6 +1106,9 @@ function RoomState({ on, busy }: { on: boolean; busy: boolean | null | undefined
       {text}
     </span>
   );
+  // 겹쳐 잡은 방은 **두 사실을 함께** 말한다(요청 ② — 확인을 거쳐 고른 뒤에도 그냥
+  // `사용 중`이면 내가 잡았다는 사실이 사라지고, `예약됨`이면 겹친 사실이 사라진다).
+  if (on && busy === true) return pill('var(--mf-danger-bg)', 'var(--mf-danger)', '겹쳐 예약', 'booked-busy');
   if (busy === true) return pill('var(--mf-danger-bg)', 'var(--mf-danger)', '사용 중', 'busy');
   if (on) return pill('var(--mf-success-soft)', 'var(--mf-success-ink)', '예약됨', 'booked');
   if (busy === false) return pill('var(--mf-success-soft)', 'var(--mf-success-ink)', '사용 가능', 'free');

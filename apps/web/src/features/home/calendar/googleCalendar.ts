@@ -654,6 +654,14 @@ export interface WorkLocationDraft {
   /** `시간 추가` — 둘 다 있을 때만 시각 근무 위치다. */
   startTime?: string;
   endTime?: string;
+  /**
+   * 매주 그 요일에 되풀이한다(요청 ④ — 구글의 `근무 위치 수정` 화면과 같은 선택).
+   *
+   * **하루짜리에만** 뜻이 있다: 구간은 이미 하루씩 여러 일정으로 나가므로 되풀이를
+   * 얹으면 그 여러 개가 각각 매주 반복되는, 사용자가 고른 적 없는 모양이 된다.
+   * 그래서 되풀이는 **일정 하나 + RRULE**이고 회차는 구글이 펼친다.
+   */
+  repeat?: 'weekly';
 }
 
 /** 한 번에 걸 수 있는 날 수 — 그만큼 요청이 나가므로 상한을 둔다. */
@@ -685,6 +693,8 @@ export function workLocationWhen(w: WorkLocationDraft): Pick<GoogleEventDraft, '
  */
 export function workLocationDays(w: WorkLocationDraft): string[] {
   const from = w.startDate;
+  // 매주 되풀이는 **일정 하나**다 — 회차를 우리가 만들지 않고 구글이 펼친다.
+  if (w.repeat === 'weekly') return [from];
   if (w.startTime && w.endTime) return [from];
   const to = w.endDate && w.endDate > from ? w.endDate : from;
   const days: string[] = [];
@@ -743,7 +753,20 @@ export function workLocationEventBody(w: WorkLocationDraft): Record<string, unkn
     visibility: 'public',
     transparency: 'transparent',
     workingLocationProperties: workLocationProps(w),
+    ...(w.repeat === 'weekly' ? { recurrence: [weeklyRule(w.startDate)] } : {}),
   };
+}
+
+/**
+ * `RRULE:FREQ=WEEKLY;BYDAY=WE` — 그 날짜의 요일로 매주(끝 조건 없음).
+ *
+ * 요일을 규칙에 **명시하는** 이유: `DTSTART`가 정하는 요일에 맡기면 나중에 시작일만
+ * 옮기는 PATCH에서 규칙과 실제 요일이 어긋날 수 있다.
+ */
+export function weeklyRule(iso: string): string {
+  const d = new Date(`${iso}T00:00:00`);
+  const day = Number.isNaN(d.getTime()) ? 0 : d.getDay();
+  return `RRULE:FREQ=WEEKLY;BYDAY=${['SU', 'MO', 'TU', 'WE', 'TH', 'FR', 'SA'][day]}`;
 }
 
 /** 그 날의 근무 위치 일정 — 없으면 `null`(있으면 고치거나 지운다). */
@@ -762,13 +785,16 @@ export async function createWorkLocationEvent(token: string, calendarId: string,
  * 바뀌었으면 `start`/`end` 짝이 함께 간다. `forPatch`가 쓰지 않는 쪽(`date`/
  * `dateTime`)을 `null`로 지우므로 종일 ↔ 시각 전환도 거절되지 않는다.
  */
-export function workLocationPatch(w: WorkLocationDraft, whenChanged: boolean): GoogleEventPatch {
+export function workLocationPatch(w: WorkLocationDraft, whenChanged: boolean, addRepeat = false): GoogleEventPatch {
   const body: Record<string, unknown> = { workingLocationProperties: workLocationProps(w) };
   const touched: GoogleWriteField[] = ['workLocation'];
   if (whenChanged) {
     Object.assign(body, whenBody(workLocationWhen(w), true));
     touched.push('when');
   }
+  // 하루짜리를 **매주로 바꿀 때만** 규칙을 싣는다(구글은 회차(instance)에 규칙을
+  // 받지 않으므로, 이미 반복인 일정에는 부르는 쪽이 이 플래그를 세우지 않는다).
+  if (addRepeat && w.repeat === 'weekly') body.recurrence = [weeklyRule(w.startDate)];
   return { body, touched };
 }
 

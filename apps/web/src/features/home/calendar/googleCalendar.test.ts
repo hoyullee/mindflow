@@ -1,6 +1,6 @@
 import { describe, expect, it, beforeEach, vi } from 'vitest';
 import {
-  workLocationLabel, workLocationKindOf, workLocationProps, workLocationEventBody, workLocationPatch, findWorkLocation, workLocationWhen, workLocationWhenChanged, workLocationDays, workLocationForDay, WORK_LOCATION_MAX_DAYS, GOOGLE_CALENDAR_SCOPE, GOOGLE_EVENT_COLORS, myRsvpOf, attendeesBody, eventWindowIso, RECURRENCE_OFF, buildRecurrence, draftToBody, eventColorOf, fetchEventColors, googleWriteError, managedFieldsDiffer, updateGoogleEvent, recurrenceSummary, isDayOffHoliday, isHolidayCalendarId, onTokenChange, scopeCovers, parseCalendarList, parseEvents, readStoredToken, splitGoogleDateTime, storeToken, type GoogleCalendarMeta } from './googleCalendar';
+  workLocationLabel, workLocationKindOf, workLocationProps, workLocationEventBody, workLocationPatch, findWorkLocation, workLocationWhen, workLocationWhenChanged, workLocationDays, workLocationForDay, weeklyRule, WORK_LOCATION_MAX_DAYS, GOOGLE_CALENDAR_SCOPE, GOOGLE_EVENT_COLORS, myRsvpOf, attendeesBody, eventWindowIso, RECURRENCE_OFF, buildRecurrence, draftToBody, eventColorOf, fetchEventColors, googleWriteError, managedFieldsDiffer, updateGoogleEvent, recurrenceSummary, isDayOffHoliday, isHolidayCalendarId, onTokenChange, scopeCovers, parseCalendarList, parseEvents, readStoredToken, splitGoogleDateTime, storeToken, type GoogleCalendarMeta } from './googleCalendar';
 import { googleEntries, holidayMap } from './entries';
 import { draftFrom, patchFrom } from './GoogleEventDetail';
 import { submitNewEvent } from './newEventSubmit';
@@ -681,6 +681,22 @@ describe('근무 위치(제보 ⑥)', () => {
     });
   });
 
+  it('매주 되풀이는 규칙 한 줄로 저장된다 — 요일을 규칙에 명시한다(요청 ④)', () => {
+    // 2026-09-16은 수요일.
+    expect(weeklyRule('2026-09-16')).toBe('RRULE:FREQ=WEEKLY;BYDAY=WE');
+    expect(weeklyRule('2026-09-20')).toBe('RRULE:FREQ=WEEKLY;BYDAY=SU');
+    const body = workLocationEventBody({ kind: 'homeOffice', startDate: '2026-09-16', repeat: 'weekly' });
+    expect(body.recurrence).toEqual(['RRULE:FREQ=WEEKLY;BYDAY=WE']);
+    expect(body.start).toEqual({ date: '2026-09-16' });
+    // 되풀이가 아니면 규칙 키 자체가 없다(옛 저장본·기존 흐름 무회귀).
+    expect(workLocationEventBody({ kind: 'homeOffice', startDate: '2026-09-16' }).recurrence).toBeUndefined();
+    // PATCH는 **하루짜리를 매주로 바꿀 때만** 규칙을 싣는다(회차에는 싣지 않는다).
+    expect(workLocationPatch({ kind: 'homeOffice', startDate: '2026-09-16', repeat: 'weekly' }, false, true).body.recurrence).toEqual([
+      'RRULE:FREQ=WEEKLY;BYDAY=WE',
+    ]);
+    expect(workLocationPatch({ kind: 'homeOffice', startDate: '2026-09-16', repeat: 'weekly' }, false).body.recurrence).toBeUndefined();
+  });
+
   it('구간은 **하루하루의 목록**이다 — 시각이면 하루, 상한이 있다', () => {
     expect(workLocationDays({ kind: 'homeOffice', startDate: '2026-09-09', endDate: '2026-09-11' })).toEqual(['2026-09-09', '2026-09-10', '2026-09-11']);
     // 달을 넘어도 이어진다.
@@ -692,6 +708,9 @@ describe('근무 위치(제보 ⑥)', () => {
     expect(workLocationDays({ kind: 'homeOffice', startDate: '2026-09-09', endDate: '2026-09-11', startTime: '09:00', endTime: '13:00' })).toEqual(['2026-09-09']);
     // 하루에 요청 하나가 나가므로 상한을 둔다(팝업은 그전에 막고 이유를 말한다).
     expect(workLocationDays({ kind: 'homeOffice', startDate: '2026-09-01', endDate: '2027-09-01' })).toHaveLength(WORK_LOCATION_MAX_DAYS);
+    // 매주 되풀이는 **일정 하나**다 — 회차를 우리가 만들지 않고 구글이 펼친다(요청 ④).
+    expect(workLocationDays({ kind: 'homeOffice', startDate: '2026-09-16', repeat: 'weekly' })).toEqual(['2026-09-16']);
+    expect(workLocationDays({ kind: 'homeOffice', startDate: '2026-09-16', endDate: '2026-09-30', repeat: 'weekly' })).toEqual(['2026-09-16']);
     // 하루짜리 초안으로 나눈다.
     expect(workLocationForDay({ kind: 'officeLocation', label: '판교', startDate: '2026-09-09', endDate: '2026-09-11' }, '2026-09-10')).toEqual({
       kind: 'officeLocation',
