@@ -650,7 +650,7 @@ function DashWidget({ itemId, docId, itemKind, size, committedSize, maxCols, edi
       )}
       {/* 구글 캘린더 연동(요청) — 아직 켜지 않았을 때만. 1열 머리는 좁아 ‹ ›만
           남기므로 여기서도 생략한다(설정에서 켤 수 있다). */}
-      {c >= 2 && <GoogleConnectButton api={googleApi} size={NAV_H} />}
+      {c >= 2 && <GoogleConnectButton api={googleApi} onOpen={controller.openGoogleCalendarSetup} compact />}
       {/* `오늘`은 **크기와 무관하게** 뜬다(제보: 1×1에서 날짜를 바꾸면 돌아올 길이
           없다). 1열은 머리가 좁아 좌우 여백만 줄인다. */}
       {calNotNow && (

@@ -196,7 +196,7 @@ function seed(google?: { calendars: string[] }): void {
  * "이미 연동돼 있다"로 시작하는 테스트는 진짜 탭처럼 토큰을 직접 심는다.
  */
 function seedToken(scope: string = GOOGLE_CALENDAR_SCOPE): void {
-  sessionStorage.setItem('mf_gcal_token', JSON.stringify({ accessToken: 'tok', expiresAt: Date.now() + 3_600_000, scope }));
+  localStorage.setItem('mf_gcal_token', JSON.stringify({ accessToken: 'tok', expiresAt: Date.now() + 3_600_000, scope }));
 }
 
 function renderHome() {
@@ -281,7 +281,8 @@ describe('구글 캘린더 겹치기(PR5)', () => {
       expect(ws.google?.calendars).toContain('me@example.com');
     });
     expect(localStorage.getItem('mf_spaces')).not.toContain('tok');
-    expect(sessionStorage.getItem('mf_gcal_token')).toContain('tok');
+    // 토큰은 워크스페이스 블롭이 아니라 **기기 저장소의 제 키**에 산다(제보 ⑩ — 탭 저장소는 새 탭에서 풀렸다).
+    expect(localStorage.getItem('mf_gcal_token')).toContain('tok');
   });
 
   it('연동을 켜 두면 일정 화면에 구글 일정이 겹치고, 공휴일은 칩이 아니라 날짜 색·이름이 된다', async () => {
@@ -498,7 +499,7 @@ describe('구글 캘린더 겹치기(PR5)', () => {
     });
   });
 
-  it('연동 전에는 일정 화면 머리에 연동 아이콘이 뜨고, 누르면 곧바로 동의 창이다(요청)', async () => {
+  it('연동 전 일정 화면 머리의 버튼은 **무엇인지 말하고**, 누르면 구글 창이 아니라 설정을 연다(제보 ⑤)', async () => {
     seed();
     const gis = stubGis();
     stubFetch();
@@ -511,9 +512,18 @@ describe('구글 캘린더 겹치기(PR5)', () => {
       expect(el).toBeTruthy();
       return el as HTMLElement;
     });
+    // 아이콘만으로는 "달력 보기"로도 읽혔다 — 이제 구글 G 마크 + 글자다.
+    expect(btn.getAttribute('aria-label')).toBe('Google 캘린더 연동');
+    expect(btn.textContent).toContain('Google 캘린더');
     await user.click(btn);
+    // 예고 없는 동의 창 대신 **설정 › 계정 설정 › 연동**이 열린다.
+    expect(gis.requested).toEqual([]);
+    await screen.findByRole('dialog', { name: '설정' });
+    await waitFor(() => expect(document.querySelector('[data-google-section]')).toBeTruthy());
+    expect(document.querySelector('[data-settings-link-group]')?.textContent).toBe('연동');
+    // 거기서 연결하면 켜지고, 할 일이 끝났으므로 머리의 버튼은 사라진다.
+    await user.click(within(document.querySelector('[data-google-section]') as HTMLElement).getByText('연결'));
     expect(gis.requested).toEqual(['consent']);
-    // 켜고 나면 할 일이 끝났으므로 아이콘은 사라진다(세부 조정은 설정이 맡는다)
     await waitFor(() => expect(document.querySelector('[data-google-connect-cal]')).toBeNull());
   });
 
@@ -1310,7 +1320,7 @@ describe('구글 캘린더 겹치기(PR5)', () => {
   });
 
   it('연동이 켜져 있는데 토큰이 없으면(재로그인 뒤) 구글 팝업을 열지 않고 "다시 연결"을 권한다(제보)', async () => {
-    // 재로그인한 탭의 상태 그대로 — 블롭에는 연동이 켜져 있지만 sessionStorage 토큰이 없다.
+    // 재로그인한 기기의 상태 그대로 — 블롭에는 연동이 켜져 있지만 저장된 토큰이 없다.
     seed({ calendars: ['me@example.com'] });
     const gis = stubGis();
     stubFetch();
@@ -1325,8 +1335,10 @@ describe('구글 캘린더 겹치기(PR5)', () => {
       expect(btn?.getAttribute('aria-label')).toBe('Google 캘린더 다시 연결');
     });
     expect(gis.requested).toEqual([]);
-    // 누르는 것은 사용자 제스처다 — 그때만 동의 창이 뜨고 달력이 채워진다.
+    // 누르면 설정이 열리고(제보 ⑤), 거기서 다시 연결하면 그때 동의 창이 뜬다.
     await user.click(container.querySelector('[data-google-connect-cal]') as HTMLElement);
+    expect(gis.requested).toEqual([]);
+    await user.click(await waitFor(() => document.querySelector('[data-google-reconnect]') as HTMLElement));
     expect(gis.requested).toEqual(['consent']);
     await waitFor(() => expect(screen.getAllByText(/구글 회의/).length).toBeGreaterThan(0));
   });
@@ -1800,5 +1812,98 @@ describe('구글 캘린더 겹치기(PR5)', () => {
     await waitFor(() => expect(nameOf('johan.kim@mail.example.com')).toContain('김요한'), { timeout: 4000 });
     // 이름 검색 상자 라벨이 열려 있음을 말한다(디렉터리 스코프가 있다)
     expect(within(pop).getByLabelText('참석자 이름 또는 이메일')).toBeTruthy();
+  });
+
+  it('근무 위치는 일정이 아니다 — 칩이 아니라 칸 우측 상단의 한 마디(제보 ⑥)', async () => {
+    seed({ calendars: ['me@example.com'] });
+    seedToken();
+    stubGis();
+    const day = inMonth(1);
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (url: string) => {
+        const ok = (body: unknown) => ({ ok: true, status: 200, json: async () => body }) as unknown as Response;
+        if (url.includes('people.googleapis.com') || url.includes('admin.googleapis.com')) return ok({ items: [], people: [] });
+        if (url.includes('/colors')) return ok({ event: {} });
+        if (url.includes('/users/me/calendarList')) return ok({ items: [{ id: 'me@example.com', summary: '내 캘린더', primary: true, accessRole: 'owner' }] });
+        return ok({
+          items: [
+            { id: 'w', summary: '재택근무', eventType: 'workingLocation', workingLocationProperties: { type: 'homeOffice', homeOffice: {} }, start: { date: day }, end: { date: nextDay(day) } },
+            { id: 'e', summary: '진짜 회의', start: { dateTime: `${day}T09:00:00+09:00` }, end: { dateTime: `${day}T10:00:00+09:00` } },
+          ],
+        });
+      }),
+    );
+    clientId = 'test-client.apps.googleusercontent.com';
+    const user = userEvent.setup();
+    const { container } = renderHome();
+    await openCalendar(container, user);
+    const cell = await waitFor(() => {
+      const el = container.querySelector(`[data-day-cell="${day}"] [data-work-loc]`);
+      expect(el).toBeTruthy();
+      return el as HTMLElement;
+    });
+    expect(cell.textContent).toContain('재택');
+    // 일정 칩으로는 서지 않는다 — 진짜 회의만 칩이다.
+    const chips = [...container.querySelectorAll(`[data-day-cell="${day}"] [data-cal-chip]`)].map((c) => c.textContent);
+    expect(chips.some((t) => t?.includes('진짜 회의'))).toBe(true);
+    expect(chips.some((t) => t?.includes('재택'))).toBe(false);
+  });
+
+  it('참석자 이름은 **다 채워진 뒤** 한 번에 뜬다 — 하나씩 갈리는 것을 보이지 않는다(제보 ①)', async () => {
+    seed({ calendars: ['me@example.com'] });
+    seedToken();
+    stubGis();
+    const day = inMonth(1);
+    // 붙잡아 둔 답을 풀 손잡이 — 초기값을 두어야 TS가 `never`로 좁히지 않는다.
+    let release: () => void = () => undefined;
+    const gate = new Promise<void>((r) => {
+      release = r;
+    });
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (url: string) => {
+        const ok = (body: unknown) => ({ ok: true, status: 200, json: async () => body }) as unknown as Response;
+        if (url.includes('searchDirectoryPeople')) {
+          const q = decodeURIComponent(/query=([^&]+)/.exec(url)?.[1] ?? '');
+          // 둘째 사람의 답을 붙잡아 둔다 — 그 사이 화면이 어떻게 보이는지가 이 테스트다.
+          if (q.startsWith('bbb')) await gate;
+          return ok({ people: [{ names: [{ displayName: q.startsWith('aaa') ? '가나다' : '라마바' }], emailAddresses: [{ value: q }] }] });
+        }
+        if (url.includes('people.googleapis.com') || url.includes('admin.googleapis.com')) return ok({ items: [], results: [] });
+        if (url.includes('/colors')) return ok({ event: {} });
+        if (url.includes('/users/me/calendarList')) return ok({ items: [{ id: 'me@example.com', summary: '내 캘린더', primary: true, accessRole: 'owner' }] });
+        return ok({
+          items: [
+            {
+              id: 'x',
+              summary: '이름 회의',
+              start: { dateTime: `${day}T09:00:00+09:00` },
+              end: { dateTime: `${day}T10:00:00+09:00` },
+              organizer: { email: 'me@example.com', self: true },
+              attendees: [
+                { email: 'me@example.com', self: true, organizer: true, responseStatus: 'accepted' },
+                { email: 'aaa@example.com', responseStatus: 'accepted' },
+                { email: 'bbb@example.com', responseStatus: 'accepted' },
+              ],
+            },
+          ],
+        });
+      }),
+    );
+    clientId = 'test-client.apps.googleusercontent.com';
+    const user = userEvent.setup();
+    const { container } = renderHome();
+    const pop = await openGoogleChip(container, user, /이름 회의/);
+    // 채우는 중에는 **자리표시자**만 — 이메일 앞부분이 먼저 보이지 않는다.
+    await waitFor(() => expect(pop.querySelectorAll('[data-gf-guest-loading]').length).toBe(2));
+    expect(pop.querySelector('[data-gf-guest]')).toBeNull();
+    expect(pop.textContent).not.toContain('aaa');
+    release();
+    // 다 오면 둘이 함께 이름으로 뜬다.
+    await waitFor(() => expect(pop.querySelectorAll('[data-gf-guest]').length).toBe(2), { timeout: 4000 });
+    expect(pop.querySelector('[data-gf-guest-loading]')).toBeNull();
+    expect(pop.querySelector('[data-gf-guest="aaa@example.com"]')!.textContent).toContain('가나다');
+    expect(pop.querySelector('[data-gf-guest="bbb@example.com"]')!.textContent).toContain('라마바');
   });
 });

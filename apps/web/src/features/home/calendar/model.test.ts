@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import type { CalendarEntry } from './entries';
 import { calendarEntries, datedCards, eventEntries } from './entries';
 import type { CalendarEvent } from '../../../adapters/ports';
-import { addDays, daysBetween, addMonth, calendarStats, statBadge, dayProgress, coversDay, dateLabel, dayTimeline, dueBadge, dueTone, entriesOn, gridRange, hourLabel, isSpan, minutesOf, monthCells, monthLabel, overdueEntries, timeLabel, todayISO, upcomingEntries, weekEndISO, weekLabel, weekStartISO, HOUR_ROW } from './model';
+import { addDays, daysBetween, addMonth, calendarStats, statBadge, dayProgress, coversDay, dateLabel, dayTimeline, dueBadge, dueTone, entriesOn, gridRange, hourLabel, isSpan, minutesOf, monthCells, monthLabel, weekLanes, overdueEntries, timeLabel, todayISO, upcomingEntries, weekEndISO, weekLabel, weekStartISO, HOUR_ROW } from './model';
 
 // 일정 화면의 데이터 계층 — 순수 함수라 날짜를 고정해 검증한다.
 
@@ -121,6 +121,57 @@ describe('일정 모델(model)', () => {
     // 격자 앞에서 시작한 기간도 첫 칸(일요일)에서 제목을 얻는다
     expect(at('2026-07-26').bars[0]).toMatchObject({ label: true, head: false });
     expect(at('2026-07-28').bars[0]).toMatchObject({ tail: true });
+  });
+
+  // ── 제보 ⑧: 기간 바의 줄(lane)은 그 주에서 고정 ────────────────────────────
+  it('종료일이 다른 기간 일정들이 주 내내 같은 줄에 머문다(제보 ⑧ — 계단처럼 올라갔다)', () => {
+    // 2026-08-16(일)~08-22(토) 주에 겹치는 셋: A는 화요일에 끝나고 B·C는 더 간다.
+    const a = E('2026-08-18', { start: '2026-08-16', title: 'A' });
+    const b = E('2026-08-20', { start: '2026-08-16', title: 'B' });
+    const c = E('2026-08-22', { start: '2026-08-17', title: 'C' });
+    const cells = monthCells(2026, 8, [a, b, c], TODAY);
+    const at = (iso: string) => cells.find((x) => x.iso === iso)!;
+    const laneOf = (iso: string, title: string) => at(iso).bars.find((x) => x.entry.title === title)?.lane;
+    // 같이 시작한 A·B는 **긴 B가 위**(구글 규칙), C는 하루 늦게 시작해 그 아래.
+    expect(laneOf('2026-08-16', 'B')).toBe(0);
+    expect(laneOf('2026-08-16', 'A')).toBe(1);
+    expect(laneOf('2026-08-17', 'C')).toBe(2);
+    // A가 끝난 뒤에도 B·C는 **그 줄 그대로** — 예전에는 한 칸씩 올라왔다.
+    expect(laneOf('2026-08-19', 'B')).toBe(0);
+    expect(laneOf('2026-08-19', 'C')).toBe(2);
+    expect(laneOf('2026-08-21', 'C')).toBe(2);
+    // 칸은 **자기 바 위의 줄만** 비운다 — 정렬에 필요한 것이 그것뿐이고, 아래쪽까지
+    // 비우면 바가 없는 칸이 이유 없이 자리를 잃는다.
+    expect(at('2026-08-16').barRows).toBe(2); // B(0)·A(1)
+    expect(at('2026-08-19').barRows).toBe(3); // B(0) + 빈 줄 + C(2)
+    expect(at('2026-08-21').barRows).toBe(3); // C(2) 위의 두 줄은 비워 둔다
+    // 그 셋이 없는 주는 자리도 비우지 않는다.
+    expect(at('2026-08-25').barRows).toBe(0);
+  });
+
+  it('lane은 주마다 다시 배정된다 — 빈 줄이 있으면 그 자리를 쓴다', () => {
+    // 첫 주만 걸치는 짧은 것과, 두 주에 걸친 긴 것.
+    const long = E('2026-08-26', { start: '2026-08-16', title: '긴 것' });
+    const short = E('2026-08-18', { start: '2026-08-17', title: '짧은 것' });
+    const later = E('2026-08-27', { start: '2026-08-24', title: '다음 주' });
+    const cells = monthCells(2026, 8, [long, short, later], TODAY);
+    const at = (iso: string) => cells.find((x) => x.iso === iso)!;
+    const laneOf = (iso: string, title: string) => at(iso).bars.find((x) => x.entry.title === title)?.lane;
+    expect(laneOf('2026-08-17', '긴 것')).toBe(0);
+    expect(laneOf('2026-08-17', '짧은 것')).toBe(1);
+    // 다음 주(23~29)에는 긴 것이 계속 0번을 쓰고, 24일에 시작한 것이 1번.
+    expect(laneOf('2026-08-24', '긴 것')).toBe(0);
+    expect(laneOf('2026-08-24', '다음 주')).toBe(1);
+    expect(at('2026-08-24').barRows).toBe(2);
+  });
+
+  it('weekLanes는 그 주에 걸치지 않는 기간을 담지 않는다', () => {
+    const week = ['2026-08-16', '2026-08-17', '2026-08-18', '2026-08-19', '2026-08-20', '2026-08-21', '2026-08-22'];
+    const inWeek = E('2026-08-18', { start: '2026-08-17', title: '이 주' });
+    const other = E('2026-08-31', { start: '2026-08-30', title: '다른 주' });
+    const lanes = weekLanes([inWeek, other], week);
+    expect(lanes.get(inWeek)).toBe(0);
+    expect(lanes.has(other)).toBe(false);
   });
 
   it('칸에 못 담은 칩은 개수로 접는다', () => {
@@ -385,5 +436,16 @@ describe('한 칸 안의 순서 — 종일이 언제나 위(요청)', () => {
     const cell = monthCells(2026, 8, entries, '2026-08-01', 1).find((c) => c.iso === '2026-08-20')!;
     expect(cell.entries.map((e) => e.title)).toEqual(['종일']);
     expect(cell.moreN).toBe(1);
+  });
+});
+
+
+describe('근무 위치 칸 표시(제보 ⑥)', () => {
+  it('그 날 칸에 한 마디로 실린다 — 일정 칩이 아니다', () => {
+    const cells = monthCells(2026, 8, [], '2026-08-10', 2, 6, {}, { '2026-08-11': '재택' });
+    const on = cells.find((c) => c.iso === '2026-08-11')!;
+    expect(on.work).toBe('재택');
+    expect(on.entries).toEqual([]);
+    expect(cells.find((c) => c.iso === '2026-08-12')!.work).toBeUndefined();
   });
 });

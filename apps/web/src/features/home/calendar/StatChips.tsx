@@ -11,8 +11,10 @@ import type { CalendarEntry } from './entries';
 import type { CalendarStat } from './model';
 import { statBadge } from './model';
 
-/** 팝오버가 한 번에 보여 주는 줄 수 — 나머지는 `+N개 더`로 접는다(원본과 같다). */
+/** 팝오버가 한 번에 보여 주는 줄 수 — 나머지는 `+N개 더 보기`로 접는다(원본과 같다). */
 const MAX_ROWS = 5;
+/** 펼쳤을 때의 상한 — 아주 많으면 목록만 스크롤한다(팝오버가 화면을 넘지 않게). */
+const OPEN_MAX_H = 320;
 
 /** 중요도 순서(디자인 원본의 TONE): 지난 마감 > 오늘 > 이번 주 > 기간. */
 // 값은 `theme.ts`가 한 색에서 파생한다 — **점은 밝고 숫자는 짙다**(원본의 관계).
@@ -31,13 +33,21 @@ export function StatChips({ stats, todayIso, onPickEntry }: { stats: readonly Ca
 
 function StatChip({ stat, todayIso, onPickEntry }: { stat: CalendarStat; todayIso: string; onPickEntry: (e: CalendarEntry) => void }) {
   const [open, setOpen] = useState(false);
+  // `+N개 더 보기`를 누르면 **팝오버가 길어지며 전부** 보인다(제보 ⑨) — 예전에는
+  // 그냥 글자라 남은 것을 볼 길이 없었다(마감 목록이 이미 쓰는 그 방식).
+  const [showAll, setShowAll] = useState(false);
   const zero = stat.count === 0;
-  const rows = stat.items.slice(0, MAX_ROWS);
+  const rows = showAll ? stat.items : stat.items.slice(0, MAX_ROWS);
+  const rest = stat.items.length - rows.length;
 
   return (
     <Popover
       open={open}
-      onOpenChange={setOpen}
+      onOpenChange={(next) => {
+        setOpen(next);
+        // 닫으면 접힌 상태로 돌아간다 — 다음에 열 때 팝오버가 화면을 덮고 있지 않게.
+        if (!next) setShowAll(false);
+      }}
       label={`${stat.label} 목록`}
       side="bottom"
       align="start"
@@ -71,7 +81,7 @@ function StatChip({ stat, todayIso, onPickEntry }: { stat: CalendarStat; todayIs
         </button>
       }
     >
-      <div style={{ display: 'flex', flexDirection: 'column', gap: 1 }}>
+      <div className="lnb-scroll" style={{ display: 'flex', flexDirection: 'column', gap: 1, ...(showAll ? { maxHeight: OPEN_MAX_H, overflowY: 'auto' } : {}) }}>
         <span style={{ display: 'flex', alignItems: 'baseline', gap: 7, padding: '2px 5px 7px' }}>
           <span style={{ fontSize: 11, fontWeight: 800, letterSpacing: '-.01em', color: 'var(--mf-text)', whiteSpace: 'nowrap' }}>{stat.label}</span>
           <span style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 10, color: zero ? 'var(--mf-faint)' : FG[stat.key], whiteSpace: 'nowrap' }}>
@@ -120,7 +130,17 @@ function StatChip({ stat, todayIso, onPickEntry }: { stat: CalendarStat; todayIs
           );
         })}
 
-        {stat.count > MAX_ROWS && <span style={{ padding: '4px 6px 2px', fontSize: 10.5, color: 'var(--mf-faint)' }}>+{stat.count - MAX_ROWS}개 더</span>}
+        {rest > 0 && (
+          <button
+            type="button"
+            data-cal-stat-more
+            onClick={() => setShowAll(true)}
+            className="mf-ctl"
+            style={{ flexShrink: 0, width: '100%', padding: '7px 6px', marginTop: 2, borderRadius: 9, border: '1px dashed var(--mf-border)', background: 'transparent', font: 'inherit', fontSize: 11, fontWeight: 700, color: 'var(--mf-muted)', cursor: 'pointer', textAlign: 'center' }}
+          >
+            +{rest}개 더 보기
+          </button>
+        )}
         {zero && <span style={{ padding: '4px 6px 6px', fontSize: 11.5, color: 'var(--mf-faint)' }}>해당하는 일정이 없어요</span>}
       </div>
     </Popover>

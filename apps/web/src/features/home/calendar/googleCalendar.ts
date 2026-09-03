@@ -14,11 +14,17 @@
  * 스코프를 묶지 않은 이유는 구글이 권하는 **점진적 승인**이기도 하다 — 캘린더를
  * 안 쓰는 사람에게 캘린더 권한을 묻지 않는다.
  *
- * **토큰은 이 탭에만 산다.** 브라우저 흐름에는 refresh token이 없고 액세스 토큰은
- * 한 시간짜리다. `sessionStorage`에 두는 이유는 localStorage와 달리 **탭을 닫으면
- * 사라지기** 때문이다(유출 표면이 작다). 만료되면 새로 받아야 하는데, GIS 토큰
- * 요청은 조용한 갱신(`prompt: ''`)이라도 **팝업 창을 연다** — 그래서 자동으로
- * 다시 받지 않고 화면의 "다시 연결" 버튼(사용자 제스처)에서만 받는다.
+ * **토큰은 이 기기에 남는다.** 브라우저 흐름에는 refresh token이 없고 액세스 토큰은
+ * 한 시간짜리다. 예전에는 `sessionStorage`에 뒀는데(유출 표면이 작다) 그건 **탭마다
+ * 따로**여서, 새 탭을 열거나 브라우저를 다시 켜면 연동이 풀린 것처럼 보였다(제보:
+ * "자꾸 해제된다"). 사용자가 끄기 전까지 유지되는 편이 맞으므로 `localStorage`로
+ * 옮겼다 — 트레이드오프는 유출 표면이고, 대가는 한 시간짜리 캘린더 토큰 하나다
+ * (XSS는 sessionStorage도 같이 읽는다). 옛 탭에 남은 sessionStorage 토큰은 처음
+ * 읽을 때 옮겨 담아 연동이 끊기지 않게 한다.
+ *
+ * 만료되면 새로 받아야 하는데, GIS 토큰 요청은 조용한 갱신(`prompt: ''`)이라도
+ * **팝업 창을 연다** — 그래서 자동으로 다시 받지 않고 화면의 "다시 연결"
+ * 버튼(사용자 제스처)에서만 받는다.
  *
  * ## 배포 전 필요한 것(코드 밖)
  *
@@ -159,6 +165,12 @@ export interface GoogleEvent {
   etag?: string;
   /** 반복 일정의 **회차**면 원본 일정 id — 있으면 "이 회차만" 고친다. */
   recurringEventId?: string;
+  /**
+   * **근무 위치**(구글의 `eventType: 'workingLocation'`) — 재택·사무실 표시다.
+   * 일정이 아니라 그 날의 상태이므로 달력의 칩으로 늘어놓지 않고(제보: 근무 위치까지
+   * 일정으로 잡혔다) 날짜 칸 우측 상단에 따로 그린다. 값은 사람이 읽을 한 마디다.
+   */
+  workLocation?: string;
   /** 초대한 사람들의 이메일 — 구글이 초대 메일을 보낸다(우리는 못 보낸다). */
   attendees?: string[];
   /** 예약한 회의실의 리소스 주소 — 구글에서는 이것도 참석자다(`resource: true`). */
@@ -214,7 +226,16 @@ const SKEW_MS = 60_000;
 
 export function readStoredToken(now = Date.now()): GoogleToken | null {
   try {
-    const raw = sessionStorage.getItem(TOKEN_KEY);
+    let raw = localStorage.getItem(TOKEN_KEY);
+    if (!raw) {
+      // 이 기기로 옮기기 전(sessionStorage) 탭에 남은 토큰은 그대로 이어 쓴다 —
+      // 배포 순간 연동이 끊긴 것처럼 보이지 않게.
+      raw = sessionStorage.getItem(TOKEN_KEY);
+      if (raw) {
+        localStorage.setItem(TOKEN_KEY, raw);
+        sessionStorage.removeItem(TOKEN_KEY);
+      }
+    }
     if (!raw) return null;
     const t = JSON.parse(raw) as Partial<GoogleToken>;
     if (typeof t.accessToken !== 'string' || typeof t.expiresAt !== 'number') return null;
@@ -235,15 +256,23 @@ export function readStoredToken(now = Date.now()): GoogleToken | null {
 const tokenListeners = new Set<() => void>();
 export function onTokenChange(cb: () => void): () => void {
   tokenListeners.add(cb);
+  // 다른 탭이 연결·해제하면 그 탭의 `storage` 이벤트로 알 수 있다 — 토큰이 이제
+  // 기기 저장소에 있으므로 탭 사이에도 상태가 갈리지 않는다.
+  const onStorage = (e: StorageEvent): void => {
+    if (e.key === TOKEN_KEY || e.key === null) cb();
+  };
+  window.addEventListener('storage', onStorage);
   return () => {
     tokenListeners.delete(cb);
+    window.removeEventListener('storage', onStorage);
   };
 }
 
 export function storeToken(t: GoogleToken | null): void {
   try {
-    if (t) sessionStorage.setItem(TOKEN_KEY, JSON.stringify(t));
-    else sessionStorage.removeItem(TOKEN_KEY);
+    if (t) localStorage.setItem(TOKEN_KEY, JSON.stringify(t));
+    else localStorage.removeItem(TOKEN_KEY);
+    sessionStorage.removeItem(TOKEN_KEY);
   } catch {
     /* 사생활 보호 모드 등 — 저장 못 해도 이번 탭은 메모리로 굴러간다 */
   }
@@ -582,6 +611,21 @@ function remembered(
   return { ...a, ...o, ...(Object.keys(names).length ? { names } : {}) };
 }
 
+/**
+ * 근무 위치를 한 마디로 — 재택 / 사무실(층·이름) / 직접 적은 곳.
+ *
+ * 구글은 `workingLocationProperties.type`으로 갈래를 주고 각 갈래에 라벨을 담는다.
+ * 라벨이 없으면 갈래 이름만 쓴다 — 없는 것을 지어내지 않는다.
+ */
+export function workLocationLabel(raw: unknown): string {
+  const w = raw as { type?: unknown; officeLocation?: { label?: unknown; buildingId?: unknown }; customLocation?: { label?: unknown } } | undefined;
+  const text = (v: unknown): string => (typeof v === 'string' && v.trim() ? v.trim() : '');
+  if (w?.type === 'homeOffice') return '재택';
+  if (w?.type === 'officeLocation') return text(w.officeLocation?.label) || text(w.officeLocation?.buildingId) || '사무실';
+  if (w?.type === 'customLocation') return text(w.customLocation?.label) || '근무 위치';
+  return '근무 위치';
+}
+
 /** 주최자 — 이름이 없으면 이메일만(구글이 이름을 모르는 계정도 있다). */
 function parseOrganizer(raw: unknown): { organizer?: { email: string; name?: string; self?: true } } {
   const o = raw as Record<string, unknown> | undefined;
@@ -643,6 +687,7 @@ export function parseEvents(json: unknown, cal: GoogleCalendarMeta): GoogleEvent
       ...(cal.writable ? { writable: true } : {}),
       ...(typeof it.etag === 'string' ? { etag: it.etag } : {}),
       ...(typeof it.recurringEventId === 'string' ? { recurringEventId: it.recurringEventId } : {}),
+      ...(it.eventType === 'workingLocation' ? { workLocation: workLocationLabel(it.workingLocationProperties) } : {}),
       ...remembered(parseAttendees(it.attendees), parseOrganizer(it.organizer)),
       ...(it.visibility === 'public' || it.visibility === 'private' ? { visibility: it.visibility } : {}),
       ...(it.transparency === 'transparent' ? { transparency: 'transparent' as const } : {}),

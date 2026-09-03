@@ -26,6 +26,7 @@ import { useEffect, useState } from 'react';
 import type { ReactNode } from 'react';
 import { Modal, MODAL_DIM, useCardMorph } from '../../../components/Modal';
 import { DateButton, PillButton } from './DatePop';
+import { SpanBar } from './SpanBar';
 import { TimeButton } from './TimePop';
 import { addDays, daysBetween, minutesOf, timeLabel, todayISO } from './model';
 import { destChipStyle, destDotStyle, hhmm, QUICK_MINUTES } from './NewEventModal';
@@ -404,7 +405,13 @@ export function EventDetail({
             <span data-event-notice style={{ fontSize: 12.5, color: 'var(--mf-muted)', background: 'var(--mf-panel2)', border: '1px solid var(--mf-border)', borderRadius: 12, padding: '11px 13px', lineHeight: 1.65 }}>
               {notice ?? '이 일정은 여기서 고칠 수 없어요.'}
             </span>
-          ) : (
+          ) : null}
+          {/* 읽기 전용(구글의 보기 전용 캘린더)에도 진행 바는 보여 준다 — **고칠 수
+              없는 것**과 **알 수 없는 것**은 다르다. */}
+          {readOnly && draft.allDay && spanDays > 1 && <SpanBar start={draft.startDate} due={draft.endDate} today={today} />}
+
+
+          {readOnly ? null : (
             <>
               <div style={{ display: 'flex', flexDirection: 'column', gap: 9 }}>
                 <span style={{ display: 'flex', alignItems: 'center', gap: 9 }}>
@@ -462,11 +469,10 @@ export function EventDetail({
                   </span>
                 )}
 
-                {draft.allDay && spanDays > 1 && (
-                  <span data-event-span style={{ fontSize: 11.5, color: 'var(--mf-faint2)' }}>
-                    {spanDays}일간 · {today < draft.startDate ? `${daysBetween(today, draft.startDate)}일 뒤 시작` : today > draft.endDate ? '종료' : `${daysBetween(today, draft.endDate)}일 남음`}
-                  </span>
-                )}
+                {/* 기간 진행 바(제보 ⑦) — **날짜 아래**에, 칸반 카드 상세와 같은 바로
+                    그린다(`N일 중 M일째` + 남은 날 + 하루 한 칸). 예전의 `3일간 · 1일
+                    남음` 한 줄을 이 바가 대신한다(같은 말을 두 번 하지 않는다). */}
+                {draft.allDay && spanDays > 1 && <SpanBar start={draft.startDate} due={draft.endDate} today={today} />}
               </div>
 
               <Field label="위치" trailing={<MapLink query={draft.location} />}>

@@ -102,6 +102,13 @@ export interface MonthBar {
   tail: boolean;
   /** 제목을 이 칸에 쓸지(시작 칸과 주의 첫 칸에만 — 디자인 원본). */
   label: boolean;
+  /**
+   * 그 **주 안에서** 이 일정이 쓰는 줄(0부터). 주 단위로 고정이라 하루짜리 일정이
+   * 끝나도 남은 바가 위로 올라오지 않는다 — 예전에는 칸마다 "그 날을 덮는 것들"을
+   * 순서대로 쌓아서, 종료일이 다른 기간 일정 여럿이 겹치면 칸을 지날수록 한 칸씩
+   * 올라가 **계단처럼** 보였다(제보 ⑧). 구글 캘린더가 쓰는 방식이다.
+   */
+  lane: number;
 }
 
 export interface MonthCell {
@@ -127,18 +134,64 @@ export interface MonthCell {
    * 통째로 분홍이 된다(제보).
    */
   dayOff?: boolean;
+  /**
+   * 근무 위치(구글) — 재택·사무실 한 마디. 일정이 아니라 그 날의 상태라 칩이 아니고
+   * 칸 **우측 상단**에 작게 그린다(제보: 근무 위치까지 일정으로 잡혔다).
+   */
+  work?: string;
   /** 그 날 하루짜리 항목(기간은 제외 — 바로 그린다). */
   entries: CalendarEntry[];
   bars: MonthBar[];
+  /**
+   * 이 칸이 기간 바에 **비워 두는 줄 수** — 이 칸의 바 중 가장 아래 lane까지다.
+   * 그 위의 빈 줄은 자리를 비우므로 한 주 안에서 같은 일정이 같은 높이에 이어지고,
+   * **아래쪽 빈 줄은 비우지 않는다**(바가 없는 칸이 이유 없이 88px을 잃지 않게 —
+   * 정렬에 필요한 것은 그 바 **위**의 줄뿐이다).
+   */
+  barRows: number;
   /** 칸에 못 담아 접은 개수. */
   moreN: number;
+}
+
+/**
+ * 한 주(7칸)의 기간 일정에 **줄(lane)을 배정한다** — 같은 일정은 그 주 내내 같은 줄에
+ * 머문다(제보 ⑧: 종료일이 다른 기간 일정들이 칸마다 계단처럼 올라갔다).
+ *
+ * 규칙은 구글 캘린더와 같다: **일찍 시작한 것이 위**, 같이 시작하면 **긴 것이 위**,
+ * 그래도 같으면 이름·id로 못박는다(순서가 렌더마다 흔들리면 그것도 계단이다).
+ * 각 일정은 그 주에서 자기 구간이 비어 있는 **가장 위 줄**을 차지한다.
+ */
+export function weekLanes(spans: readonly CalendarEntry[], weekIsos: readonly string[]): Map<CalendarEntry, number> {
+  const inWeek = spans.filter((e) => weekIsos.some((iso) => coversDay(e, iso)));
+  const len = (e: CalendarEntry): number => daysBetween(e.start ?? e.due, e.due);
+  const sorted = [...inWeek].sort((a, b) => {
+    const as = a.start ?? a.due;
+    const bs = b.start ?? b.due;
+    if (as !== bs) return as < bs ? -1 : 1;
+    if (len(a) !== len(b)) return len(b) - len(a);
+    if (a.title !== b.title) return a.title < b.title ? -1 : 1;
+    return `${a.docId}:${a.cardId}` < `${b.docId}:${b.cardId}` ? -1 : 1;
+  });
+  /** lane마다 그 주에서 이미 찬 칸(인덱스) 집합. */
+  const taken: Set<number>[] = [];
+  const out = new Map<CalendarEntry, number>();
+  for (const e of sorted) {
+    const cols = weekIsos.map((iso, i) => (coversDay(e, iso) ? i : -1)).filter((i) => i >= 0);
+    let lane = 0;
+    while (taken[lane] && cols.some((c) => taken[lane]!.has(c))) lane += 1;
+    const set = taken[lane] ?? new Set<number>();
+    for (const c of cols) set.add(c);
+    taken[lane] = set;
+    out.set(e, lane);
+  }
+  return out;
 }
 
 /**
  * 달력 격자. 월마다 표 높이가 달라지지 않게 **항상 6주(42칸)**로 채운다(디자인 원본).
  * `perCell`은 한 칸에 보이는 칩 수 — 넘치면 `moreN`으로 접는다.
  */
-export function monthCells(y: number, m: number, entries: readonly CalendarEntry[], todayIso: string, perCell = 2, weeks = 6, holidays: Record<string, HolidayInfo> = {}): MonthCell[] {
+export function monthCells(y: number, m: number, entries: readonly CalendarEntry[], todayIso: string, perCell = 2, weeks = 6, holidays: Record<string, HolidayInfo> = {}, works: Record<string, string> = {}): MonthCell[] {
   const first = new Date(y, m - 1, 1);
   const firstDow = first.getDay();
   const days = new Date(y, m, 0).getDate();
@@ -153,8 +206,25 @@ export function monthCells(y: number, m: number, entries: readonly CalendarEntry
       else byDay.set(e.due, [e]);
     }
   }
-  const cells: MonthCell[] = [];
+  // 칸을 먼저 **날짜만** 나열하고(주 단위로 lane을 배정해야 하므로) 그 뒤에 만든다.
+  const slots: { iso: string; n: number; inMonth: boolean; dow: number }[] = [];
   const push = (iso: string, n: number, inMonth: boolean, dow: number): void => {
+    slots.push({ iso, n, inMonth, dow });
+  };
+  for (let i = 0; i < firstDow; i++) {
+    const p = addMonth(y, m, -1);
+    push(isoOf(p.y, p.m, prevDays - firstDow + 1 + i), prevDays - firstDow + 1 + i, false, i);
+  }
+  for (let d = 1; d <= days; d++) push(isoOf(y, m, d), d, true, (firstDow + d - 1) % 7);
+  let next = 1;
+  const nx = addMonth(y, m, 1);
+  while (slots.length < weeks * 7) {
+    push(isoOf(nx.y, nx.m, next), next, false, slots.length % 7);
+    next += 1;
+  }
+
+  const cells: MonthCell[] = [];
+  const build = (iso: string, n: number, inMonth: boolean, dow: number, lanes: Map<CalendarEntry, number>): void => {
     // 이웃 달 칸에도 항목을 그린다(제보: 이전 달에서 시작해 이번 달로 이어지거나
     // 다음 달까지 이어지는 일정이 그 칸에서 뚝 끊겨 보였다). 격자는 날짜가 이어지는
     // 6주라 기간 바가 자연스럽게 이어지고, 하루짜리도 구글 캘린더처럼 흐리게 보인다.
@@ -163,7 +233,8 @@ export function monthCells(y: number, m: number, entries: readonly CalendarEntry
     const list = [...(byDay.get(iso) ?? [])].sort(compareInDay);
     const bars: MonthBar[] = spans
       .filter((e) => coversDay(e, iso))
-      .map((e) => ({ entry: e, head: e.start === iso, tail: e.due === iso, label: e.start === iso || dow === 0 }));
+      .map((e) => ({ entry: e, head: e.start === iso, tail: e.due === iso, label: e.start === iso || dow === 0, lane: lanes.get(e) ?? 0 }))
+      .sort((a, b) => a.lane - b.lane);
     cells.push({
       iso,
       n,
@@ -175,21 +246,18 @@ export function monthCells(y: number, m: number, entries: readonly CalendarEntry
       // 규칙으로 색이 정해져야 하고(쉬는 날은 붉게), 이름을 함께 두면 왜 붉은지도
       // 읽힌다. 이웃 달임은 흐린 숫자·가라앉은 면이 이미 말한다.
       ...(holidays[iso] ? { holiday: holidays[iso].name, ...(holidays[iso].dayOff ? { dayOff: true } : {}) } : {}),
+      ...(works[iso] ? { work: works[iso] } : {}),
       entries: list.slice(0, perCell),
       bars,
+      barRows: bars.length ? Math.max(...bars.map((b) => b.lane)) + 1 : 0,
       moreN: Math.max(0, list.length - perCell),
     });
   };
-  for (let i = 0; i < firstDow; i++) {
-    const p = addMonth(y, m, -1);
-    push(isoOf(p.y, p.m, prevDays - firstDow + 1 + i), prevDays - firstDow + 1 + i, false, i);
-  }
-  for (let d = 1; d <= days; d++) push(isoOf(y, m, d), d, true, (firstDow + d - 1) % 7);
-  let next = 1;
-  const nx = addMonth(y, m, 1);
-  while (cells.length < weeks * 7) {
-    push(isoOf(nx.y, nx.m, next), next, false, cells.length % 7);
-    next += 1;
+  // 주마다 lane을 배정하고 그 주의 일곱 칸이 **같은 줄 수**를 비운다.
+  for (let w = 0; w * 7 < slots.length; w += 1) {
+    const week = slots.slice(w * 7, w * 7 + 7);
+    const lanes = weekLanes(spans, week.map((c) => c.iso));
+    for (const c of week) build(c.iso, c.n, c.inMonth, c.dow, lanes);
   }
   return cells;
 }

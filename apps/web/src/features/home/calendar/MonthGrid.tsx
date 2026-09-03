@@ -5,7 +5,7 @@ import type { CalendarEntry } from './entries';
 import type { MonthCell } from './model';
 import { DOW, daysBetween } from './model';
 import { beginPointerDrag } from '../../editor/components/KanbanBoard';
-import { chipTimeLabel, entryChip, isAllDayEntry, markStyle, type ChipSurface } from './chips';
+import { chipTimeLabel, dayNumTone, entryChip, isAllDayEntry, markStyle, type ChipSurface } from './chips';
 
 /** 칩·바 한 줄이 차지하는 높이(칩 높이 + 줄 간격) — 칸 용량 계산의 단위. */
 const ROW_H = (compact: boolean): number => (compact ? 16 : 21) + 2;
@@ -54,6 +54,7 @@ export function MonthGrid({
   onPickEntry,
   onMore,
   onShift,
+  onCtxMenu,
   selected,
   surface,
   compact = false,
@@ -67,6 +68,8 @@ export function MonthGrid({
   onMore: (iso: string, at: { x: number; y: number }) => void;
   /** 항목을 다른 칸에 놓았다 — 며칠 옮길지(기간이면 시작일·기한이 함께 움직인다). */
   onShift: (e: CalendarEntry, days: number) => void;
+  /** 우클릭 — 날짜 칸이면 그 날, 칩·바 위면 그 항목이 대상이다(요청 ④). */
+  onCtxMenu?: (target: { day: string } | { entry: CalendarEntry }, at: { x: number; y: number }) => void;
   selected: string | null;
   surface: ChipSurface;
   compact?: boolean;
@@ -179,6 +182,7 @@ export function MonthGrid({
             onOpenDayList={onOpenDayList}
             onPickEntry={clickEntry}
             onMore={onMore}
+            onCtxMenu={onCtxMenu}
             onGrab={grab}
             dragging={drag?.entry}
             dropHot={!!drag && drag.overIso === c.iso && drag.overIso !== drag.fromIso}
@@ -249,6 +253,7 @@ function DayCell({
   onOpenDayList,
   onPickEntry,
   onMore,
+  onCtxMenu,
   onGrab,
   dragging,
   dropHot,
@@ -263,6 +268,7 @@ function DayCell({
   onOpenDayList?: (iso: string, at: { x: number; y: number }) => void;
   onPickEntry: (e: CalendarEntry) => void;
   onMore: (iso: string, at: { x: number; y: number }) => void;
+  onCtxMenu?: (target: { day: string } | { entry: CalendarEntry }, at: { x: number; y: number }) => void;
   onGrab: (ev: ReactPointerEvent, e: CalendarEntry, fromIso: string) => void;
   /** 지금 끌고 있는 항목(그 칩은 자리에서 흐려진다). */
   dragging: CalendarEntry | undefined;
@@ -272,7 +278,7 @@ function DayCell({
   const { inMonth, isToday, dim, dow } = cell;
   // 칸에 실제로 들어가는 만큼 그린다(제보 #1) — 넘칠 때만 마지막 줄을 `+N개 더`에
   // 내준다. 모델이 이미 접어 준 몫(`moreN`)이 있으면 거기에 더한다.
-  const room = Math.max(1, capacity - cell.bars.length);
+  const room = Math.max(1, capacity - cell.barRows);
   const fits = cell.moreN === 0 && cell.entries.length <= room;
   const shownEntries = fits ? cell.entries : cell.entries.slice(0, Math.max(0, room - 1));
   const moreN = cell.entries.length - shownEntries.length + cell.moreN;
@@ -306,9 +312,9 @@ function DayCell({
         : dim || !inMonth
           ? 'var(--mf-faint)'
           : 'var(--mf-subtext)';
-  // 고른 칸의 표시 — 숫자를 강조색 링으로 감싼다. 오늘은 이미 채운 원이라 안쪽 링이
-  // 보이지 않으므로 **바깥 후광**으로 두른다(그래서 오늘+선택도 구별된다).
-  const selRing = selected ? (isToday ? '0 0 0 3px var(--mf-cal-ring)' : 'inset 0 0 0 2px var(--mf-accent)') : undefined;
+  // 고른 칸·오늘의 표시는 **한 곳**(`dayNumTone`)이 정한다 — 대시보드 위젯의 미니
+  // 달력이 같은 함수를 쓰므로 두 화면에서 표시가 갈릴 수 없다.
+  const numTone = dayNumTone(selected, isToday);
   const cellStyle: CSSProperties = {
     minWidth: 0,
     // 칩이 커진 만큼 칸도(번호 18 + 칩 21 × 2 + 여백) — 격자가 화면을 채우면
@@ -359,6 +365,18 @@ function DayCell({
             }
           : undefined
       }
+      // 우클릭 = **이 날의 메뉴**(요청 ④). 칩·바는 자기 메뉴를 열고 전파를 끊으므로
+      // 여기까지 오지 않는다. 메뉴를 쓰지 않는 화면(위젯 등)에서는 프롭이 없어
+      // 브라우저 기본 메뉴가 그대로 뜬다.
+      onContextMenu={
+        onCtxMenu
+          ? (e) => {
+              e.preventDefault();
+              e.stopPropagation();
+              onCtxMenu({ day: cell.iso }, { x: e.clientX, y: e.clientY });
+            }
+          : undefined
+      }
       onKeyDown={(e) => {
         if (e.key === 'Enter' || e.key === ' ') {
           e.preventDefault();
@@ -377,13 +395,14 @@ function DayCell({
             height: compact ? 18 : 20,
             padding: '0 5px',
             borderRadius: 999,
-            background: isToday ? 'var(--mf-accent)' : 'transparent',
+            background: 'transparent',
             color: numFg,
-            ...(selRing ? { boxShadow: selRing } : {}),
             fontFamily: "'JetBrains Mono', monospace",
             // 데스크톱 12px(폰은 칸이 좁아 11) — 13은 너무 컸다(요청).
             fontSize: compact ? 11 : 12,
-            fontWeight: isToday || selected ? 800 : 600,
+            fontWeight: 600,
+            // 오늘·고른 날의 옷은 마지막에 얹는다(면·잉크·굵기를 함께 갈아 끼운다).
+            ...numTone,
             display: 'inline-flex',
             alignItems: 'center',
             justifyContent: 'center',
@@ -393,6 +412,37 @@ function DayCell({
         </span>
         {/* 공휴일 이름 — 디자인 원본은 숫자 옆에 적는다. 쉬는 날이면 붉게, 절기·
             기념일이면 옅게: 색은 "쉬는가"를, 이름은 "무슨 날인가"를 말한다. */}
+        {/* 근무 위치(구글) — 칸 **우측 상단**에 작게(제보 ⑥). 일정이 아니므로 누를
+            것도 없고, 칩 줄을 차지하지도 않는다. */}
+        {cell.work ? (
+          <span
+            data-work-loc
+            title={`근무 위치 · ${cell.work}`}
+            style={{
+              marginLeft: 'auto',
+              flexShrink: 0,
+              display: 'inline-flex',
+              alignItems: 'center',
+              gap: 3,
+              maxWidth: '58%',
+              height: compact ? 14 : 16,
+              padding: compact ? '0 4px' : '0 6px',
+              borderRadius: 999,
+              background: 'var(--mf-panel2)',
+              color: 'var(--mf-faint)',
+              fontSize: compact ? 8.5 : 9.5,
+              fontWeight: 700,
+              whiteSpace: 'nowrap',
+              overflow: 'hidden',
+            }}
+          >
+            <svg width={compact ? 8 : 9} height={compact ? 8 : 9} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true" style={{ flexShrink: 0 }}>
+              <path d="M4 11 12 4l8 7" />
+              <path d="M6.5 10.5V20h11v-9.5" />
+            </svg>
+            <span style={{ minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis' }}>{cell.work}</span>
+          </span>
+        ) : null}
         {cell.holiday ? (
           <span
             data-holiday-name
@@ -412,8 +462,14 @@ function DayCell({
         ) : null}
       </span>
 
-      {/* 기간 바 → 하루짜리 칩 → 접힌 개수 */}
-      {cell.bars.map((b) => {
+      {/* 기간 바 → 하루짜리 칩 → 접힌 개수.
+          **줄(lane)은 그 주에서 고정**이라(제보 ⑧) 바가 없는 줄도 자리를 비운다 —
+          그래서 한 주 안에서 같은 일정이 언제나 같은 높이에 이어진다. */}
+      {Array.from({ length: cell.barRows }, (_, lane) => cell.bars.find((b) => b.lane === lane) ?? lane).map((b) => {
+        if (typeof b === 'number') {
+          // 그 줄을 쓰는 일정이 이 칸에는 없다 — 같은 높이의 빈 자리로 남긴다.
+          return <span key={`gap-${b}`} data-cal-bar-gap style={{ height: compact ? 15 : 20, flexShrink: 0, display: 'block' }} />;
+        }
         const chip = entryChip(b.entry, surface);
         return (
           <button
@@ -429,6 +485,15 @@ function DayCell({
               e.stopPropagation();
               onPickEntry(b.entry);
             }}
+            onContextMenu={
+              onCtxMenu
+                ? (e) => {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    onCtxMenu({ entry: b.entry }, { x: e.clientX, y: e.clientY });
+                  }
+                : undefined
+            }
             style={{
               // 글자가 너무 작아 읽기 힘들다는 제보 — 칩·바를 함께 키웠다(폰도).
               height: compact ? 15 : 20,
@@ -479,6 +544,15 @@ function DayCell({
               ev.stopPropagation();
               onPickEntry(e);
             }}
+            onContextMenu={
+              onCtxMenu
+                ? (ev) => {
+                    ev.preventDefault();
+                    ev.stopPropagation();
+                    onCtxMenu({ entry: e }, { x: ev.clientX, y: ev.clientY });
+                  }
+                : undefined
+            }
             style={{
               display: 'flex',
               alignItems: 'center',

@@ -152,3 +152,13 @@ label {
 [data-modal-overlay] [contenteditable='true'] {
   caret-color: auto;
 }
+
+/* 날짜 칸은 **누르는 대상이지 읽을 글이 아니다** — 더블클릭(그 날의 일정 전부)이
+   칸의 날짜·제목 글자를 통째로 선택해 파랗게 남기지 않게 한다(제보). 글자 선택은
+   포인터 이벤트의 preventDefault로 막히지 않는 네이티브 동작이라 CSS로 끈다
+   (홈 카드에서 같은 이유로 이미 쓰는 처방). 대시보드 위젯의 달력 칸도 같다. */
+[data-day-cell],
+[data-cal-widget-cell] {
+  user-select: none;
+  -webkit-user-select: none;
+}

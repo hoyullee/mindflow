@@ -214,7 +214,9 @@ export function eventEntries(events: readonly CalendarEvent[], range?: { from: s
  */
 export function googleEntries(events: readonly GoogleEvent[]): CalendarEntry[] {
   return events
-    .filter((e) => !e.holiday)
+    // 근무 위치(재택·사무실)는 **일정이 아니다**(제보) — 그 날의 상태라 칩으로
+    // 늘어놓으면 진짜 일정을 밀어낸다. 날짜 칸 우측 상단에 따로 그린다(`workMap`).
+    .filter((e) => !e.holiday && !e.workLocation)
     .map((e) => ({
       docId: '',
       cardId: e.id,
@@ -235,6 +237,27 @@ export function googleEntries(events: readonly GoogleEvent[]): CalendarEntry[] {
       google: e,
       ...(e.allDay ? {} : { ...(e.startTime ? { startTime: e.startTime } : {}), ...(e.endTime ? { endTime: e.endTime } : {}) }),
     }));
+}
+
+/**
+ * 근무 위치를 `날짜 → 한 마디`로. 여러 날에 걸치면(주 단위로 설정하면) 하루씩 채우고,
+ * 같은 날에 여럿이면 **먼저 온 것**을 쓴다(구글도 하루에 하나만 보여 준다).
+ */
+export function workMap(events: readonly GoogleEvent[]): Record<string, string> {
+  const out: Record<string, string> = {};
+  for (const e of events) {
+    if (!e.workLocation) continue;
+    let d = e.startDate;
+    for (let i = 0; i < 32 && d <= e.endDate; i += 1) {
+      if (!out[d]) out[d] = e.workLocation;
+      const [y, m, day] = d.split('-').map(Number);
+      if (!y || !m || !day) break;
+      const nx = new Date(y, m - 1, day + 1);
+      const p = (n: number) => String(n).padStart(2, '0');
+      d = `${nx.getFullYear()}-${p(nx.getMonth() + 1)}-${p(nx.getDate())}`;
+    }
+  }
+  return out;
 }
 
 /** 그 날의 공휴일 — 이름은 늘 보여 주고, **칠하는 것은 쉬는 날뿐**이다. */

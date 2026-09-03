@@ -476,7 +476,8 @@ describe('일정 화면', () => {
     // 면·주말 톤·드롭 대기와 뜻이 겹쳐 계속 문제가 났다). 칸 배경은 그대로다.
     await waitFor(() => expect(out.querySelector('[data-day-num][data-selected]')).toBeTruthy());
     expect(out.style.background).toBe('var(--mf-cal-out)');
-    expect((out.querySelector('[data-day-num]') as HTMLElement).style.boxShadow).toContain('inset 0 0 0 2px var(--mf-accent)');
+    // 고른 날의 숫자는 **채운 원**(잉크 면 + 카드 잉크)이다 — 속 빈 링은 튀어 보였다(제보).
+    expect((out.querySelector('[data-day-num]') as HTMLElement).style.background).toBe('var(--mf-text)');
     // 사이드가 그 날을 보여 준다 — 이번 달이 아니어도 고를 수 있다.
     const iso = out.getAttribute('data-day-cell')!;
     const [, m, d] = /(\d{2})-(\d{2})$/.exec(iso)!.map(Number) as unknown as number[];
@@ -586,7 +587,188 @@ describe('일정 화면', () => {
     await waitFor(() => expect(num().dataset.selected).toBe('1'));
     expect(cell().style.background).toBe(before);
     expect(cell().style.boxShadow).not.toContain('inset');
-    expect(num().style.boxShadow).toBe('0 0 0 3px var(--mf-cal-ring)');
+    // 오늘+선택은 강조색 원에 **옅은 후광**(딱딱한 링이 아니라 물 탄 강조색).
+    // 예전 값(`--mf-cal-ring`)은 테마에서 지워진 토큰이라 아무 표시도 나오지 않았다.
+    expect(num().style.boxShadow).toBe('0 0 0 3px var(--mf-accent-mute)');
+    expect(num().style.background).toBe('var(--mf-accent)');
+  });
+
+
+  // ── 제보 라운드: 텍스트 선택·선택 표시·우클릭 메뉴·통계 팝오버 ────────────────
+  describe('일정 화면 UI(제보 ②③④⑨)', () => {
+    beforeEach(() => {
+      mockMatchMedia(false);
+      seedSpaces();
+    });
+
+    it('날짜 칸은 글자를 선택할 수 없다(제보 ② — 더블클릭에 칸 글자가 파랗게 남았다)', () => {
+      // jsdom은 실제 선택을 흉내 내지 않으므로 **규칙**을 고정한다(홈 카드와 같은 처방).
+      const css = readFileSync(resolve(__dirname, '../../index.css'), 'utf8');
+      const rule = /\[data-day-cell\],\s*\[data-cal-widget-cell\]\s*\{[^}]*\}/.exec(css)?.[0] ?? '';
+      expect(rule).toContain('user-select: none');
+      expect(rule).toContain('-webkit-user-select: none');
+    });
+
+    it('고른 날은 **채운 원**이다 — 오늘이 아니면 잉크 면, 오늘이면 강조색 원 + 후광(제보 ③)', async () => {
+      renderHome([META('d1', '스프린트 보드')], BODIES());
+      await openCalendar();
+      const other = shiftInMonth(2);
+      fireEvent.click(document.querySelector(`[data-day-cell="${other}"]`)!);
+      const num = () => document.querySelector(`[data-day-cell="${other}"] [data-day-num]`) as HTMLElement;
+      await waitFor(() => expect(num().dataset.selected).toBe('1'));
+      // 속 빈 링(`inset ... 2px accent`)이 아니라 채운 원 — 그 링이 튀어 보였다(제보).
+      expect(num().style.background).toBe('var(--mf-text)');
+      expect(num().style.color).toBe('var(--mf-card)');
+      expect(num().style.boxShadow).toBe('');
+    });
+
+    it('날짜 칸 우클릭 = 그 날의 메뉴 — `이 날에 새 일정`이 그 날짜로 열린다(제보 ④)', async () => {
+      renderHome([META('d1', '스프린트 보드')], BODIES());
+      await openCalendar();
+      const iso = shiftInMonth(3);
+      fireEvent.contextMenu(document.querySelector(`[data-day-cell="${iso}"]`)!);
+      await waitFor(() => expect(document.querySelector('[data-home-ctx="cal-day"]')).toBeTruthy());
+      const menu = document.querySelector('[data-home-ctx="cal-day"]') as HTMLElement;
+      expect(menu.textContent).toContain('이 날에 새 일정');
+      expect(menu.textContent).toContain('날짜별 보기로 열기');
+      fireEvent.click(within(menu).getByText('이 날에 새 일정'));
+      await waitFor(() => expect(document.querySelector('[role="dialog"][aria-label="새 일정"]')).toBeTruthy());
+      // 누른 그 날이 기본값이다(헤더 ＋와 같은 규칙).
+      const [, m, d] = /(\d{2})-(\d{2})$/.exec(iso)!.map(Number) as unknown as number[];
+      expect(document.querySelector('[data-new-date]')!.textContent).toContain(`${+m!}월 ${+d!}일`);
+    });
+
+    it('칩 우클릭 = 그 항목의 메뉴 — 하루 뒤로 옮기고, 삭제는 한 번 묻는다(제보 ④)', async () => {
+      const { docStore } = renderHome([META('d1', '스프린트 보드')], { d1: kanbanBody([{ id: 'k1', col: 'c2', pos: 1, text: '오늘 마감 카드', due: shiftInMonth(0) }]) });
+      await openCalendar();
+      await waitFor(() => expect(chipFor('오늘 마감 카드')).toBeTruthy());
+      fireEvent.contextMenu(chipFor('오늘 마감 카드'));
+      await waitFor(() => expect(document.querySelector('[data-home-ctx="cal-entry"]')).toBeTruthy());
+      const menu = () => document.querySelector('[data-home-ctx="cal-entry"]') as HTMLElement;
+      expect(menu().textContent).toContain('열기');
+      expect(menu().textContent).toContain('이 칸반 열기');
+      fireEvent.click(within(menu()).getByText('하루 뒤로'));
+      // 그 문서에 새 기한이 저장된다(상세·드래그와 같은 write-back 경로).
+      await waitFor(() => expect(docStore.save).toHaveBeenCalled());
+      const [, next] = docStore.save.mock.calls.at(-1)!;
+      expect((next.cards ?? []).find((c) => c.id === 'k1')!.due).toBe(addDays(shiftInMonth(0), 1));
+
+      // 삭제는 확인창을 지난다 — 메뉴 클릭 하나로 사라지지 않는다.
+      await waitFor(() => expect(chipFor('오늘 마감 카드')).toBeTruthy());
+      fireEvent.contextMenu(chipFor('오늘 마감 카드'));
+      await waitFor(() => expect(document.querySelector('[data-home-ctx="cal-entry"]')).toBeTruthy());
+      fireEvent.click(within(menu()).getByText('삭제'));
+      await waitFor(() => expect(document.querySelector('[data-delete-confirm]')).toBeTruthy());
+      expect(document.querySelector('[data-delete-confirm]')!.textContent).toContain('카드를 삭제할까요?');
+      fireEvent.click(document.querySelector('[data-confirm-cancel]')!);
+      await waitFor(() => expect(document.querySelector('[data-delete-confirm]')).toBeNull());
+      expect(chipFor('오늘 마감 카드')).toBeTruthy();
+    });
+
+    it('칸·칩이 아닌 자리의 우클릭 = 화면 메뉴(새 일정 · 사이드 토글)', async () => {
+      renderHome([META('d1', '스프린트 보드')], BODIES());
+      await openCalendar();
+      const area = document.querySelector('[data-cal-stats]')!.parentElement as HTMLElement;
+      fireEvent.contextMenu(area);
+      await waitFor(() => expect(document.querySelector('[data-home-ctx="cal-view"]')).toBeTruthy());
+      const menu = document.querySelector('[data-home-ctx="cal-view"]') as HTMLElement;
+      expect(menu.textContent).toContain('새 일정');
+      expect(menu.textContent).toContain('마감 목록 보기');
+      fireEvent.click(within(menu).getByText('마감 목록 보기'));
+      await waitFor(() => expect(document.querySelector('[data-cal-deadline]')).toBeTruthy());
+    });
+
+    it('통계 팝오버의 `+N개 더 보기`를 누르면 목록이 전부 보인다(제보 ⑨)', async () => {
+      const many = Array.from({ length: 8 }, (_, i) => ({ id: `o${i}`, col: 'c1', pos: i + 1, text: `지난 카드 ${i + 1}`, due: shiftDays(-(i + 1)) }));
+      // LNB의 `일정 N`은 **다가오는** 마감을 센다 — 지난 것만 있으면 개수가 서지 않아
+      // `openCalendar`가 기다리다 만다(앞으로 올 카드 하나를 함께 심는다).
+      renderHome([META('d1', '스프린트 보드')], { d1: kanbanBody([...many, { id: 'up', col: 'c1', pos: 9, text: '앞날 카드', due: shiftDays(2) }]) });
+      await openCalendar();
+      const over = document.querySelector('[data-cal-stat="over"]')!;
+      fireEvent.click(over);
+      await waitFor(() => expect(document.querySelectorAll('[data-cal-stat-item]').length).toBe(5));
+      const more = document.querySelector('[data-cal-stat-more]') as HTMLElement;
+      expect(more.textContent).toBe('+3개 더 보기');
+      fireEvent.click(more);
+      await waitFor(() => expect(document.querySelectorAll('[data-cal-stat-item]').length).toBe(8));
+      expect(document.querySelector('[data-cal-stat-more]')).toBeNull();
+    });
+  });
+
+  // ── 제보 ⑦⑧: 기간 일정의 진행 바 · 주 단위 줄 고정 ─────────────────────────
+  describe('다일 일정(제보 ⑦⑧)', () => {
+    beforeEach(() => {
+      mockMatchMedia(false);
+      seedSpaces();
+    });
+
+    it('기간 일정의 줄은 주 내내 고정이다 — 짧은 것이 끝나도 빈 자리가 남는다(제보 ⑧)', async () => {
+      // 같은 주에 시작해 종료일이 다른 둘. 예전에는 짧은 것이 끝난 칸부터 남은
+      // 바가 한 줄 위로 올라와 **계단처럼** 보였다.
+      const iso = (n: number) => addDays(SPAN.start, n);
+      renderHome([META('d1', '스프린트 보드')], {
+        d1: kanbanBody([
+          { id: 'a', col: 'c2', pos: 1, text: '짧은 기간', due: iso(1), start: SPAN.start },
+          { id: 'b', col: 'c2', pos: 2, text: '긴 기간', due: iso(3), start: SPAN.start },
+        ]),
+      });
+      await openCalendar();
+      await waitFor(() => expect(barFor('긴 기간')).toBeTruthy());
+      const rowsOf = (day: string) =>
+        [...(document.querySelector(`[data-day-cell="${day}"]`) as HTMLElement).children]
+          .filter((el) => el.hasAttribute('data-cal-bar') || el.hasAttribute('data-cal-bar-gap'))
+          .map((el) => (el.hasAttribute('data-cal-bar-gap') ? '_' : el.textContent!.trim() || '·'));
+      // 첫 칸: 긴 것이 위(같이 시작하면 긴 것 먼저), 짧은 것이 아래.
+      expect(rowsOf(SPAN.start)).toEqual(['긴 기간', '짧은 기간']);
+      // 짧은 것이 끝난 뒤에도 긴 것은 **첫 줄 그대로**다(예전에는 아래 것이 올라왔다).
+      expect(rowsOf(iso(2))).toEqual(['·']);
+    });
+
+    it('위쪽 줄이 빈 칸에는 **빈 자리**가 들어간다 — 그래야 아래 바가 제 높이에 남는다', async () => {
+      // 먼저 시작한 짧은 것(lane 0)과 늦게 시작해 더 가는 것(lane 1).
+      const iso = (n: number) => addDays(SPAN.start, n);
+      renderHome([META('d1', '스프린트 보드')], {
+        d1: kanbanBody([
+          { id: 'x', col: 'c2', pos: 1, text: '먼저 끝', due: iso(1), start: SPAN.start },
+          { id: 'y', col: 'c2', pos: 2, text: '늦게 시작', due: iso(4), start: iso(1) },
+        ]),
+      });
+      await openCalendar();
+      await waitFor(() => expect(barFor('늦게 시작')).toBeTruthy());
+      const rowsOf = (day: string) =>
+        [...(document.querySelector(`[data-day-cell="${day}"]`) as HTMLElement).children]
+          .filter((el) => el.hasAttribute('data-cal-bar') || el.hasAttribute('data-cal-bar-gap'))
+          .map((el) => (el.hasAttribute('data-cal-bar-gap') ? '_' : el.textContent!.trim() || '·'));
+      // 이어지는 칸에는 제목을 쓰지 않으므로(시작 칸·주 첫 칸만) 첫 줄은 글자 없는 바다.
+      expect(rowsOf(iso(1))).toEqual(['·', '늦게 시작']);
+      // lane 0이 비었으니 빈 자리를 두고 둘째 줄에 그린다.
+      expect(rowsOf(iso(2))).toEqual(['_', '·']);
+    });
+
+    it('구글 다일 일정 상세에도 진행 바가 뜬다(제보 ⑦)', async () => {
+      // Geurio 일정과 구글 일정은 **같은 상세 팝업**을 쓴다 — 우리 표의 다일 일정으로
+      // 그 팝업의 바를 확인한다(구글 경로는 라이브 계정이 필요하다).
+      renderHome([META('d1', '스프린트 보드')], BODIES());
+      localStorage.setItem('mf_events', JSON.stringify([{ id: 'e1', title: '3일 휴가', startDate: shiftInMonth(0), endDate: addDays(shiftInMonth(0), 2), allDay: true, source: 'geurio' }]));
+      await openCalendar();
+      await waitFor(() => expect(barFor('3일 휴가')).toBeTruthy());
+      fireEvent.click(barFor('3일 휴가'));
+      await waitFor(() => expect(document.querySelector('[data-event-detail]')).toBeTruthy());
+      const span = document.querySelector('[data-event-detail] [data-cal-span]') as HTMLElement;
+      expect(span).toBeTruthy();
+      expect(span.textContent).toContain('3일 중 1일째');
+      expect(span.textContent).toContain('2일 남음');
+    });
+
+    it('하루짜리 일정에는 진행 바가 없다(그릴 기간이 없다)', async () => {
+      renderHome([META('d1', '스프린트 보드')], BODIES());
+      localStorage.setItem('mf_events', JSON.stringify([{ id: 'e1', title: '하루 일정', startDate: shiftInMonth(0), endDate: shiftInMonth(0), allDay: true, source: 'geurio' }]));
+      await openCalendar();
+      await waitFor(() => expect(chipFor('하루 일정')).toBeTruthy());
+      fireEvent.click(chipFor('하루 일정'));
+      await waitFor(() => expect(document.querySelector('[data-event-detail]')).toBeTruthy());
+      expect(document.querySelector('[data-event-detail] [data-cal-span]')).toBeNull();
+    });
   });
 
   // ── PR2: 상세 팝업(칸반 write-back) + 드래그로 날짜 변경 ────────────────────
@@ -1267,7 +1449,9 @@ describe('일정 화면', () => {
       fireEvent.click(barFor('휴가'));
       await waitFor(() => expect(evDetail()).toBeTruthy());
       expect(document.querySelector('[data-event-when]')!.textContent).toBe('3일간');
-      expect(document.querySelector('[data-event-span]')!.textContent).toContain('3일간');
+      // 예전의 `3일간 · 1일 남음` 한 줄은 **진행 바**가 대신한다(제보 ⑦ — 날짜 아래).
+      expect(document.querySelector('[data-cal-span]')!.textContent).toContain('3일 중 1일째');
+      expect(document.querySelector('[data-cal-span]')!.textContent).toContain('2일 남음');
     });
   });
 
