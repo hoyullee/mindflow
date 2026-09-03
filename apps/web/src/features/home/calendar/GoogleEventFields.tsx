@@ -951,7 +951,8 @@ function Rooms({
   // 보이면 아무것도 움직이지 않는다: `block: 'nearest'`).
   const askRef = useRef<HTMLDivElement | null>(null);
   useEffect(() => {
-    if (confirm) askRef.current?.scrollIntoView({ block: 'nearest' });
+    // `?.` — jsdom에는 `scrollIntoView`가 없다(테스트에서 던진다, CommentPanel과 같은 처방).
+    if (confirm) askRef.current?.scrollIntoView?.({ block: 'nearest' });
   }, [confirm]);
   // 구간이 바뀌면 답이 달라지므로 물어보던 것을 접는다(옛 답으로 묻고 있게 두지 않는다).
   useEffect(() => setConfirm(null), [from, to]);
