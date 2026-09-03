@@ -536,10 +536,29 @@ function DayCell({
         </span>
         {/* 공휴일 이름 — 디자인 원본은 숫자 옆에 적는다. 쉬는 날이면 붉게, 절기·
             기념일이면 옅게: 색은 "쉬는가"를, 이름은 "무슨 날인가"를 말한다. */}
+        {cell.holiday ? (
+          <span
+            data-holiday-name
+            title={cell.holiday}
+            style={{
+              minWidth: 0,
+              overflow: "hidden",
+              textOverflow: "ellipsis",
+              whiteSpace: "nowrap",
+              fontSize: compact ? 8.5 : 9.5,
+              fontWeight: 700,
+              color: cell.dayOff ? "var(--mf-danger)" : "var(--mf-faint)",
+            }}
+          >
+            {cell.holiday}
+          </span>
+        ) : null}
         {/* 근무 위치(구글) — 칸 **우측 상단**에 작게(제보 ⑥). 칩 줄을 차지하지 않고,
             **누르면 그 날의 근무 위치 팝업**이 열린다(요청 ③ — 예전에는 우클릭
             메뉴가 유일한 길이었다). 쓸 수 없는 상황(연동 없음·기본 캘린더를 보고
-            있지 않음)에서는 `onWorkLoc`이 없어 누를 것도 없는 표식으로 남는다. */}
+            있지 않음)에서는 `onWorkLoc`이 없어 누를 것도 없는 표식으로 남는다.
+            **이 줄의 마지막**이어야 한다(`marginLeft: auto`가 오른쪽 끝으로 밀므로,
+            뒤에 공휴일 이름이 오면 그 이름이 배지 오른쪽에 매달린다 — 제보). */}
         {cell.work ? (
           <span
             data-work-loc
@@ -572,7 +591,11 @@ function DayCell({
             style={{
               cursor: onWorkLoc ? 'pointer' : 'default',
               marginLeft: "auto",
-              flexShrink: 0,
+              // 공휴일 이름과 나란히 서면 자리를 다툰다 — **이름이 먼저**다(그 날이
+              // 무슨 날인가가 근무 위치보다 먼저 읽힌다). 그래서 배지가 줄어들고,
+              // 안쪽 글자는 말줄임으로 접힌다(집 글리프는 끝까지 남는다).
+              flexShrink: 1,
+              minWidth: 0,
               display: "inline-flex",
               alignItems: "center",
               gap: 3,
@@ -612,23 +635,6 @@ function DayCell({
             >
               {cell.work}
             </span>
-          </span>
-        ) : null}
-        {cell.holiday ? (
-          <span
-            data-holiday-name
-            title={cell.holiday}
-            style={{
-              minWidth: 0,
-              overflow: "hidden",
-              textOverflow: "ellipsis",
-              whiteSpace: "nowrap",
-              fontSize: compact ? 8.5 : 9.5,
-              fontWeight: 700,
-              color: cell.dayOff ? "var(--mf-danger)" : "var(--mf-faint)",
-            }}
-          >
-            {cell.holiday}
           </span>
         ) : null}
       </span>

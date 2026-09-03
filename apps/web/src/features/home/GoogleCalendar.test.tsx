@@ -2159,6 +2159,55 @@ describe('구글 캘린더 겹치기(PR5)', () => {
     expect(chips.some((t) => t?.includes('재택'))).toBe(false);
   });
 
+  // 제보: 근무 위치가 걸린 날에는 공휴일 이름이 **배지 오른쪽**에 매달렸다. 배지는
+  // `marginLeft: auto`로 오른쪽 끝에 서므로 그 줄의 **마지막**이어야 한다.
+  it('근무 위치가 걸린 날에도 공휴일 이름은 날짜 숫자 옆에 남는다(제보)', async () => {
+    const holiday = weekdayInMonth();
+    seed({ calendars: ['me@example.com', HOLIDAY_ID] });
+    seedToken();
+    stubGis();
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (url: string) => {
+        const ok = (body: unknown) => ({ ok: true, status: 200, json: async () => body }) as unknown as Response;
+        if (url.includes('people.googleapis.com') || url.includes('admin.googleapis.com')) return ok({ items: [], people: [] });
+        if (url.includes('/colors')) return ok({ event: {} });
+        if (url.includes('/users/me/calendarList')) {
+          return ok({
+            items: [
+              { id: 'me@example.com', summary: '내 캘린더', primary: true, accessRole: 'owner' },
+              { id: HOLIDAY_ID, summary: '대한민국의 휴일' },
+            ],
+          });
+        }
+        if (url.includes(encodeURIComponent(HOLIDAY_ID))) {
+          return ok({ items: [{ id: 'h1', summary: '테스트 공휴일', description: 'Public holiday', start: { date: holiday }, end: { date: nextDay(holiday) } }] });
+        }
+        return ok({
+          items: [{ id: 'w', eventType: 'workingLocation', workingLocationProperties: { type: 'homeOffice', homeOffice: {} }, start: { date: holiday }, end: { date: nextDay(holiday) } }],
+        });
+      }),
+    );
+    clientId = 'test-client.apps.googleusercontent.com';
+    const user = userEvent.setup();
+    const { container } = renderHome();
+    await openCalendar(container, user);
+    const cell = await waitFor(() => {
+      const el = container.querySelector<HTMLElement>(`[data-day-cell="${holiday}"]`);
+      expect(el?.querySelector('[data-work-loc]')).toBeTruthy();
+      expect(el?.querySelector('[data-holiday-name]')).toBeTruthy();
+      return el as HTMLElement;
+    });
+    const name = cell.querySelector('[data-holiday-name]')!;
+    const badge = cell.querySelector('[data-work-loc]')!;
+    expect(name.textContent).toBe('테스트 공휴일');
+    // 이름이 배지보다 **앞**이고, 배지는 그 줄의 마지막이다.
+    expect(name.compareDocumentPosition(badge) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(badge.parentElement!.lastElementChild).toBe(badge);
+    // 좁은 칸에서 자리를 다투면 **배지가** 줄어든다 — 그 날이 무슨 날인가가 먼저다.
+    expect((badge as HTMLElement).style.flexShrink).toBe('1');
+  });
+
   // ── 근무 위치 쓰기(요청) — 읽는 쪽은 위 테스트가 지키고, 여기는 **쓰는 쪽**이다.
   describe('근무 위치 설정(요청)', () => {
     /** 그 날에 걸린 근무 위치 일정(있으면) — 목록 응답을 갈아 끼운다. */
@@ -2273,6 +2322,74 @@ describe('구글 캘린더 겹치기(PR5)', () => {
 
     // 라이브 제보의 400(`malformedWorkingLocationEvent`): 종일 근무 위치는 **반드시
     // 하루**다. 그래서 구간은 일정 하나가 아니라 **하루하루에 하나씩**이다.
+    // 요청: 저장·지우기에 로딩 표시. 자리는 **그 버튼 안**이다 — 둘이 같은 발치에
+    // 나란히 있어서 한 곳에 두면 어느 쪽이 도는지 알 수 없다.
+    it('저장·지우기는 도는 동안 그 버튼 안에서 알린다(요청)', async () => {
+      seed({ calendars: ['me@example.com'] });
+      seedToken();
+      stubGis();
+      const day = inMonth(2);
+      let release: (() => void) | null = null;
+      const f = vi.fn(async (url: string, init?: RequestInit) => {
+        const ok = (body: unknown) => ({ ok: true, status: 200, json: async () => body }) as unknown as Response;
+        if (url.includes('people.googleapis.com') || url.includes('admin.googleapis.com')) return ok({ items: [], people: [] });
+        if (url.includes('/colors')) return ok({ event: {} });
+        if (url.includes('/users/me/calendarList')) return ok({ items: [{ id: 'me@example.com', summary: '내 캘린더', primary: true, accessRole: 'owner' }] });
+        if ((init?.method ?? 'GET') === 'GET') {
+          return ok({ items: [{ id: 'w1', eventType: 'workingLocation', workingLocationProperties: { type: 'homeOffice', homeOffice: {} }, start: { date: day }, end: { date: nextDay(day) } }] });
+        }
+        // 쓰기는 우리가 풀어 줄 때까지 돈다 — 그 사이의 화면을 본다.
+        await new Promise<void>((res) => {
+          release = res;
+        });
+        return ok({});
+      });
+      vi.stubGlobal('fetch', f);
+      clientId = 'test-client.apps.googleusercontent.com';
+      const user = userEvent.setup();
+      const { container } = renderHome();
+      await openCalendar(container, user);
+      await waitFor(() => expect(container.querySelector(`[data-day-cell="${day}"] [data-work-loc]`)).toBeTruthy());
+
+      const { open } = await openWorkModal(container, user, day);
+      const modal = await open();
+      // 갈래를 바꿔 실제로 쓸 것을 만든다(바뀐 게 없으면 보낼 것도 없다).
+      fireEvent.click(modal.querySelector('[data-work-kind="customLocation"]')!);
+      const label = await waitFor(() => modal.querySelector<HTMLInputElement>('[data-work-label]')!);
+      await user.type(label, '카페');
+      fireEvent.click(modal.querySelector('[data-work-save]')!);
+
+      const saveBtn = modal.querySelector<HTMLButtonElement>('[data-work-save]')!;
+      await waitFor(() => expect(saveBtn.getAttribute('aria-busy')).toBe('true'));
+      expect(saveBtn.textContent).toContain('저장 중…');
+      expect(saveBtn.querySelector<HTMLElement>('[data-work-spin]')!.style.animation).toContain('mf-spin');
+      // 그 사이 지우기·취소는 잠긴다(같은 요청이 두 번 나가지 않게) — 스피너는 하나뿐이다.
+      const clearBtn = modal.querySelector<HTMLButtonElement>('[data-work-clear]')!;
+      expect(clearBtn.disabled).toBe(true);
+      expect(clearBtn.querySelector('[data-work-spin]')).toBeNull();
+      expect(modal.querySelector<HTMLButtonElement>('[data-work-cancel]')!.disabled).toBe(true);
+      await waitFor(() => expect(release).toBeTruthy());
+      release!();
+      await waitFor(() => expect(document.querySelector('[data-work-modal]')).toBeNull());
+
+      // 지우기는 **자기 버튼**이 말한다 — 저장 버튼은 "저장 중"이라 하지 않는다.
+      release = null;
+      const again = await openWorkModal(container, user, day);
+      const m2 = await again.open();
+      fireEvent.click(m2.querySelector('[data-work-clear]')!);
+      const clear2 = m2.querySelector<HTMLButtonElement>('[data-work-clear]')!;
+      await waitFor(() => expect(clear2.getAttribute('aria-busy')).toBe('true'));
+      expect(clear2.textContent).toContain('지우는 중…');
+      expect(clear2.querySelector('[data-work-spin]')).toBeTruthy();
+      const save2 = m2.querySelector<HTMLButtonElement>('[data-work-save]')!;
+      expect(save2.textContent).toBe('저장');
+      expect(save2.disabled).toBe(true);
+      expect(save2.querySelector('[data-work-spin]')).toBeNull();
+      await waitFor(() => expect(release).toBeTruthy());
+      release!();
+      await waitFor(() => expect(document.querySelector('[data-work-modal]')).toBeNull());
+    });
+
     it('구간을 고르면 하루하루에 하나씩 쓴다 — 걸려 있는 날은 고치고 나머지는 만든다', async () => {
       seed({ calendars: ['me@example.com'] });
       seedToken();
