@@ -43,6 +43,11 @@ export interface GoogleFieldsValue {
   recurrence: RecurrenceSpec;
   addMeet: boolean;
   /**
+   * 그 일정에 지정할 **색 번호**(요청 — `colorId`). 색 고르기는 이 묶음이 아니라
+   * 왼쪽 열에 있지만(알림과 같은 자리) 값은 **구글 전용**이라 여기 담긴다.
+   */
+  colorId?: string;
+  /**
    * **내 참석 여부**(요청) — 내가 참석자로 초대돼 있을 때만 값이 있다. 없으면
    * (내가 만든 일정·초대받지 않은 일정) 그 구획을 그리지 않는다.
    */

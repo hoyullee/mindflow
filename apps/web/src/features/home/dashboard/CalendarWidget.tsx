@@ -18,6 +18,7 @@ import type { MouseEvent as ReactMouseEvent } from 'react';
 import type { CalendarEntry, HolidayInfo } from '../calendar/entries';
 import { MiniCalendar } from '../calendar/MiniCalendar';
 import type { CalWidgetMode } from './model';
+import type { CellRow } from '../calendar/model';
 import { chipTimeLabel, dayNumTone, entryChip, isAllDayEntry, markStyle, type ChipSurface } from '../calendar/chips';
 import {
   DOW,
@@ -27,7 +28,7 @@ import {
   entriesOn,
   hourLabel,
   isSpan,
-  cellRows,
+  weekRows,
   monthCells,
   monthLabel,
   partsOf,
@@ -238,6 +239,12 @@ function MonthBody({ entries, todayIso, mode, cols, rows, surface, ym, side, sel
   const cells = useMemo(() => monthCells(ym.y, ym.m, entries, todayIso, 99, 6, holidays), [ym.y, ym.m, entries, todayIso, holidays]);
   const gridRef = useRef<HTMLDivElement | null>(null);
   const [capacity, setCapacity] = useState(rows >= 4 ? 3 : 2);
+  // 큰 달력과 같은 **주 단위** 계획 — 접히는 기간 바는 그 주 전체에서 접힌다.
+  const plan = useMemo(() => {
+    const out: CellRow[][] = [];
+    for (let w = 0; w * 7 < cells.length; w += 1) out.push(...weekRows(cells.slice(w * 7, w * 7 + 7), capacity));
+    return out;
+  }, [cells, capacity]);
   useEffect(() => {
     const el = gridRef.current;
     if (!el || typeof ResizeObserver === 'undefined') return undefined;
@@ -262,7 +269,7 @@ function MonthBody({ entries, todayIso, mode, cols, rows, surface, ym, side, sel
           ))}
         </div>
         <div ref={gridRef} style={{ flex: 1, minHeight: 0, display: 'grid', gridTemplateColumns: 'repeat(7, 1fr)', gridAutoRows: '1fr', gap: WIDGET_GAP }}>
-          {cells.map((c) => {
+          {cells.map((c, ci) => {
             const on = withSide && c.inMonth && c.iso === selDay;
             // 칸 배경 — 큰 달력과 같은 규칙: **요일·이번 달 여부만** 말한다.
             // 고른 날은 배경이 아니라 **숫자**가 진다(제보 — 배경으로 표시하면 이웃 달
@@ -305,9 +312,10 @@ function MonthBody({ entries, todayIso, mode, cols, rows, surface, ym, side, sel
                   </span>
                   {c.holiday && <span style={{ fontSize: 9.5, fontWeight: 700, color: c.dayOff ? 'var(--mf-danger)' : 'var(--mf-faint)', minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{c.holiday}</span>}
                 </span>
-                {/* 줄 배치는 큰 달력과 **같은 함수**(`cellRows`)가 정한다: 기간 바는 그 주에서
-                    받은 줄에, 빈 줄은 하루짜리 칩이 먼저 채우고, 넘치면 마지막 줄이 `+N`이다. */}
-                {cellRows(c, capacity).map((row, i) => {
+                {/* 줄 배치는 큰 달력과 **같은 함수**(`weekRows`)가 정한다: 기간 바는 그 주에서
+                    받은 줄에, 빈 줄은 하루짜리 칩이 먼저 채우고, 넘치면 마지막 줄이 `+N`이며,
+                    **접히는 기간 바는 그 주 전체에서** 접힌다(띠가 중간에서 끊기지 않게). */}
+                {plan[ci]!.map((row, i) => {
                   if (row.kind === 'gap') return <span key={`gap-${i}`} style={{ height: 15, flexShrink: 0, display: 'block' }} />;
                   if (row.kind === 'more')
                     return (

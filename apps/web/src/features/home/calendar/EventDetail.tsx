@@ -31,6 +31,7 @@ import { TimeButton } from './TimePop';
 import { addDays, daysBetween, minutesOf, timeLabel, todayISO } from './model';
 import { destChipStyle, destDotStyle, hhmm, QUICK_MINUTES } from './NewEventModal';
 import { ReminderField } from './GoogleEventFields';
+import { EventColorField, type EventColorOption } from './eventColor';
 import { MapLink } from './fieldBits';
 import { DeleteConfirm, DeletingNote } from './DeleteConfirm';
 import type { CalendarEvent, CalendarEventInput } from '../../../adapters/ports';
@@ -46,9 +47,15 @@ interface Draft {
   endTime: string;
   location: string;
   note: string;
+  /**
+   * 지정한 색 — Geurio는 hex, 구글은 색 번호다(`EventColorOption.value`). 초기값은
+   * **호스트가 준다**(`color.value`): 구글 일정의 `event.color`는 지정색이 없으면
+   * 캘린더 색으로 채워져 오므로, 그걸 "고른 값"으로 읽으면 안 된다.
+   */
+  color: string | null;
 }
 
-function draftOf(e: CalendarEvent): Draft {
+function draftOf(e: CalendarEvent, color: string | null): Draft {
   return {
     title: e.title,
     allDay: e.allDay,
@@ -58,6 +65,7 @@ function draftOf(e: CalendarEvent): Draft {
     endTime: e.endTime ?? '10:00',
     location: e.location ?? '',
     note: e.note ?? '',
+    color,
   };
 }
 
@@ -98,6 +106,7 @@ export function EventDetail({
   occurrence,
   calendarChips,
   reminder,
+  color,
   cardAttrs,
   onWhen,
 }: {
@@ -139,10 +148,17 @@ export function EventDetail({
    * 뜬다(우리 표에는 알림을 띄울 장치가 없다 — `ReminderField` 주석).
    */
   reminder?: { value: number | null | undefined; onChange: (minutes: number | null | undefined) => void };
+  /**
+   * 일정 색(요청) — 원천이 자기 팔레트와 지금 값을 준다. 없으면 줄을 그리지 않는다
+   * (고를 색이 없으면 죽은 칸이 된다). 고른 값은 팝업 초안에 담겨 `완료`가 함께
+   * 저장한다 — 저장할 값의 뜻은 원천이 안다(구글은 `colorId`).
+   */
+  color?: { value: string | null; options: readonly EventColorOption[] };
   /** 원천을 가리키는 표식 — 두 팝업이 한 코드라도 화면에서는 구별돼야 한다. */
   cardAttrs?: Record<string, string>;
 }) {
-  const [draft, setDraft] = useState(() => draftOf(event));
+  const colorInit = color?.value ?? null;
+  const [draft, setDraft] = useState(() => draftOf(event, colorInit));
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
   // 반복 일정 삭제 — 범위를 묻는 확인 팝업(요청). 회차를 모르는 반복은 물을 수 없다.
@@ -225,6 +241,8 @@ export function EventDetail({
     }
     if (draft.location.trim() !== (event.location ?? '').trim()) p.location = draft.location.trim();
     if (draft.note.trim() !== (event.note ?? '').trim()) p.note = draft.note.trim();
+    // 색은 **지운 것도 뜻이 있다** — 키를 실어 보낸다(빼면 "안 바꾼다"로 읽힌다).
+    if (color && draft.color !== colorInit) p.color = draft.color ?? undefined;
     return p;
   };
 
@@ -482,6 +500,9 @@ export function EventDetail({
               <Field label="메모">
                 <textarea aria-label="메모" data-event-note value={draft.note} placeholder="자유롭게 적어 두세요" maxLength={2000} onChange={(e) => set({ note: e.target.value })} style={fieldStyle(true)} />
               </Field>
+
+              {/* 일정 색(요청) — 원천이 팔레트를 준 경우만. 저장은 `완료`에서 한 번이다. */}
+              {color && <EventColorField value={draft.color} options={color.options} onPick={(v) => set({ color: v })} />}
 
               {/* 알림 — 늘 보이는 자리(요청 #5). 원천이 값을 주지 않으면 비활성 표식. */}
               <ReminderField value={reminder?.value} onChange={(m) => reminder?.onChange(m)} disabled={!reminder} />

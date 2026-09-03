@@ -26,6 +26,7 @@ import { NewEventModal } from '../calendar/NewEventModal';
 import { submitNewEvent } from '../calendar/newEventSubmit';
 import { GoogleDetailHost } from '../calendar/GoogleEventDetail';
 import { EventDetail, geurioCalendarChips } from '../calendar/EventDetail';
+import { geurioColorOptions } from '../calendar/eventColor';
 import { widgetDataOf, type WidgetData, type WidgetKanban } from '../dashboard/widgetData';
 import { previewSurface, realPreview } from '../mapPreview';
 import { useVisibleOnce } from '../useVisibleOnce';
@@ -941,6 +942,7 @@ function CalWidgetDialogs({
         onPatch={google.updateEvent}
         onDelete={google.deleteEvent}
         directory={{ canSearchPeople: google.canSearchPeople, searchPeople: google.searchPeople, canPickRooms: google.canPickRooms, rooms: google.rooms, roomsReady: google.roomsReady, loadRooms: google.loadRooms, checkRoomBusy: google.checkRoomBusy }}
+        colors={google.eventColors}
       />
       {state.calNewEvent && (
         <NewEventModal
@@ -953,6 +955,7 @@ function CalWidgetDialogs({
             controller.closeNewEvent();
           }}
           googleTargets={googleTargets}
+          googleColors={google.eventColors}
           directory={{ canSearchPeople: google.canSearchPeople, searchPeople: google.searchPeople, canPickRooms: google.canPickRooms, rooms: google.rooms, roomsReady: google.roomsReady, loadRooms: google.loadRooms, checkRoomBusy: google.checkRoomBusy }}
           onSubmit={(input, target) => {
             setSaving(true);
@@ -964,7 +967,7 @@ function CalWidgetDialogs({
           }}
         />
       )}
-      {ev && <EventDetail key={ev.id} event={ev} isMobile={isMobile} {...(evOcc ? { occurrence: evOcc } : {})} calendarChips={geurioCalendarChips(googleTargets)} onClose={controller.closeCalendarEvent} onPatch={(patch) => events.update(ev.id, patch)} onDelete={() => events.remove(ev.id)} />}
+      {ev && <EventDetail key={ev.id} event={ev} isMobile={isMobile} {...(evOcc ? { occurrence: evOcc } : {})} calendarChips={geurioCalendarChips(googleTargets)} color={{ value: ev.color ?? null, options: geurioColorOptions() }} onClose={controller.closeCalendarEvent} onPatch={(patch) => events.update(ev.id, patch)} onDelete={() => events.remove(ev.id)} />}
     </>
   );
 }

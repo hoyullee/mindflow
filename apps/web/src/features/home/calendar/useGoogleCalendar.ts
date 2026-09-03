@@ -50,6 +50,11 @@ export interface GoogleCalendarApi {
   /** 사용자가 고른 캘린더 id — 설정 화면의 체크 상태가 이 값이다. */
   pickedIds: string[];
   events: GoogleEvent[];
+  /**
+   * 구글의 **이벤트 색 팔레트**(번호 → hex) — 색 고르기 칸이 이 색으로 그린다.
+   * 못 받았으면 비어 있고, 그때는 폴백 표(`GOOGLE_EVENT_COLORS`)로 그린다.
+   */
+  eventColors: Record<string, string>;
   loading: boolean;
   /** 마지막 오류 문구(설정 화면이 보여 준다). */
   error: string | null;
@@ -496,6 +501,8 @@ export function useGoogleCalendar(
     calendars,
     pickedIds: prefs.calendars,
     events: colored,
+    /** 이벤트 색 팔레트(번호 → hex) — 색 고르기 칸이 이 색으로 그린다. */
+    eventColors: colors,
     loading,
     error,
     connect,

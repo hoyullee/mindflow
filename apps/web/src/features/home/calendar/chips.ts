@@ -53,11 +53,20 @@ export function entryChip(e: CalendarEntry, surface: ChipSurface): EntryChip {
   // 실어 준다). "구글에서 왔다"는 신호는 **색이 아니라 막대 모양**이 맡는다 — 그래야
   // 사용자가 고른 색을 지키면서 출처도 눈에 들어온다.
   // 우리 일정·카드는 분류색(분류가 없어도 이름 없는 값으로 결정적으로 뽑는다).
-  const base = e.google ? (e.colColor ?? GOOGLE_MARK) : (e.tagColor ?? tagColor(e.tag, UI_THEME.palette));
+  // **Geurio 일정에 지정한 색**(요청 ⑤)이 있으면 그것이 정체성이다 — 고른 색이 달력에
+  // 보이지 않으면 고르는 뜻이 없다(`eventEntries`가 `color`를 `colColor`에 실어 준다).
+  // 칸반 카드는 그대로 분류색이다: 그쪽 `colColor`는 **열 색**이라 뜻이 다르다.
+  const own = e.google ? (e.colColor ?? GOOGLE_MARK) : e.event ? e.colColor : undefined;
+  const base = own ?? e.tagColor ?? tagColor(e.tag, UI_THEME.palette);
   const dot = e.google ? base : columnColor({ id: e.colId, title: e.colName, ...(e.colColor ? { color: e.colColor } : {}) }, e.colIndex, UI_THEME.palette);
   return {
     base,
-    bg: mixHex(surface.card, base, 0.16),
+    // **채운 칩·기간 바의 면**. 예전 0.16은 너무 옅어 "구글에서 지정한 색"이
+    // 알아보기 힘들었다(제보 ④ — 파스텔 톤으로만 보인다). 0.34로 올려 색이
+    // 제 정체를 말하게 하되, 잉크(`fg`)는 같은 색에서 눌러 뽑은 값이라 그 면
+    // 위에서도 읽힌다(실측으로 확인). 솔리드로 가지 않은 이유: 흰 글자를 쓰는
+    // 순간 우리 칩 언어(옅은 면 + 색 잉크)가 화면 안에서 둘로 갈린다.
+    bg: mixHex(surface.card, base, 0.34),
     // **구글 일정의 글자는 언제나 본문 색**(요청) — 색으로 말하는 것은 표식(막대)
     // 하나면 충분하고, 제목까지 그 색을 따르면 옅은 색에서 읽기 힘들다.
     // 우리 일정·카드는 예전처럼 분류색에서 눌러 뽑은 잉크를 쓴다.
