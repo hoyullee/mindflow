@@ -458,8 +458,12 @@ export function useGoogleCalendar(
           const cur = findWorkLocation(events, day);
           // 걸려 있으면 고친다. 그 날짜는 그대로이므로 대개 갈래·이름만 실린다
           // (구간을 싣지 않는 저장은 그 사이 구글이 판을 올려도 412로 막히지 않는다).
-          if (cur) await updateGoogleEvent(t, cur, workLocationPatch(one, workLocationWhenChanged(cur, one)));
-          else await createWorkLocationEvent(t, calendarId, one);
+          if (cur) {
+            // 하루짜리를 **매주로 바꾸는** 저장이면 규칙을 함께 싣는다 — 이미 반복인
+            // 일정(회차)에는 싣지 않는다: 구글은 회차에 규칙을 받지 않는다.
+            const addRepeat = draft.repeat === 'weekly' && !cur.recurringEventId;
+            await updateGoogleEvent(t, cur, workLocationPatch(one, workLocationWhenChanged(cur, one), addRepeat));
+          } else await createWorkLocationEvent(t, calendarId, one);
         }
       }),
     [write, events],

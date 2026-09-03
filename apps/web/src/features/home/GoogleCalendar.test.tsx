@@ -396,6 +396,36 @@ describe('구글 캘린더 겹치기(PR5)', () => {
     });
   });
 
+  it('색 칸은 **구글 팔레트가 정하는 만큼** 뜬다 — 스물넷을 주면 스물넷이다(요청 ⑥)', async () => {
+    seed({ calendars: ['me@example.com'] });
+    seedToken();
+    stubGis();
+    const inner = stubFetch();
+    // 구글이 넓힌 팔레트 — 번호 1~24. 앞의 열한 개는 우리가 이름을 알고, 나머지는
+    // 이름을 hex에서 계산한다(글자 없는 동그라미에 접근 이름이 없으면 안 된다).
+    const wide: Record<string, { background: string }> = {};
+    const HEX = ['#7986cb', '#33b679', '#8e24aa', '#e67c73', '#f6bf26', '#f4511e', '#039be5', '#616161', '#3f51b5', '#0b8043', '#d50000', '#a79b8e', '#b26b3f', '#7a4fa3', '#c2185b', '#00897b', '#5d4037', '#455a64', '#9e9d24', '#ef6c00', '#6d4c41', '#00acc1', '#8d6e63', '#546e7a'];
+    HEX.forEach((hex, i) => {
+      wide[String(i + 1)] = { background: hex };
+    });
+    vi.stubGlobal('fetch', async (url: string, init?: RequestInit) => {
+      if (String(url).includes('/colors')) return { ok: true, status: 200, json: async () => ({ event: wide }) } as unknown as Response;
+      return (inner as unknown as (u: string, i?: RequestInit) => Promise<Response>)(url, init);
+    });
+    clientId = 'test-client.apps.googleusercontent.com';
+    const user = userEvent.setup();
+    const { container } = renderHome();
+    const pop = await openGoogleChip(container, user, /구글 회의/);
+    // 24색 + '기본 색' 칸 하나.
+    await waitFor(() => expect(pop.querySelectorAll('[data-event-color]')).toHaveLength(25));
+    // 아는 번호는 구글의 낱말, 모르는 번호도 **이름이 있다**(hex에서 계산).
+    expect(pop.querySelector('[data-event-color="#d50000"]')?.getAttribute('aria-label')).toBe('토마토');
+    const extra = pop.querySelector('[data-event-color="#00acc1"]');
+    expect(extra).toBeTruthy();
+    expect(extra!.getAttribute('aria-label')).toBeTruthy();
+    expect(extra!.getAttribute('aria-label')).not.toBe('');
+  });
+
   it('상세 팝업이 저장할 캘린더를 보여 준다 — 소속(구글)만 켜지고 Geurio는 비활성(제보 #11)', async () => {
     seed({ calendars: ['me@example.com'] });
     seedToken();
@@ -1112,6 +1142,72 @@ describe('구글 캘린더 겹치기(PR5)', () => {
     // 잡아 두면 그 행은 `예약됨`이 된다(비어 있던 방)
     fireEvent.mouseDown(document.querySelector(`[data-gf-room-hit="${freeRoom}"]`)!);
     await waitFor(() => expect(stateOf(freeRoom)).toBe('booked'));
+  });
+
+  it('사용 중인 회의실은 **한 번 묻고** 고른다 — 취소하면 예약되지 않는다(요청 ②)', async () => {
+    seed({ calendars: ['me@example.com'] });
+    seedToken();
+    stubGis();
+    const busyRoom = 'room-35-01@resource.calendar.google.com';
+    const freeRoom = 'room-42-07@resource.calendar.google.com';
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (url: string) => {
+        const ok = (body: unknown) => ({ ok: true, status: 200, json: async () => body }) as unknown as Response;
+        if (url.includes('people.googleapis.com')) return ok({ people: [] });
+        if (url.includes('admin.googleapis.com')) {
+          return ok({
+            items: [
+              { resourceEmail: busyRoom, generatedResourceName: '회의실-35-01', resourceCategory: 'CONFERENCE_ROOM', capacity: 23 },
+              { resourceEmail: freeRoom, generatedResourceName: '회의실-42-07', resourceCategory: 'CONFERENCE_ROOM', capacity: 8 },
+            ],
+          });
+        }
+        if (url.includes('/colors')) return ok({ event: {} });
+        if (url.includes('/users/me/calendarList')) return ok({ items: [{ id: 'me@example.com', summary: '내 캘린더', primary: true, accessRole: 'owner' }] });
+        if (url.includes(encodeURIComponent(busyRoom)))
+          return ok({ items: [{ id: 'other', summary: '디자인 리뷰', organizer: { email: 'lee@example.com', displayName: '이호율' } }] });
+        return ok({ items: [] });
+      }),
+    );
+    clientId = 'test-client.apps.googleusercontent.com';
+    const user = userEvent.setup();
+    const { container } = renderHome();
+    await openCalendar(container, user);
+    await user.click(screen.getByText('새 일정'));
+    await waitFor(() => expect(document.querySelector('[data-new-cal="me@example.com"]')).toBeTruthy());
+    await user.click(document.querySelector<HTMLElement>('[data-new-cal="me@example.com"]')!);
+    await waitFor(() => expect(document.querySelector('[data-gf-room-hit]')).toBeTruthy());
+    const stateOf = (email: string) => document.querySelector(`[data-gf-room-hit="${email}"] [data-gf-room-state]`)?.getAttribute('data-gf-room-state') ?? null;
+    await waitFor(() => expect(stateOf(busyRoom)).toBe('busy'), { timeout: 3000 });
+
+    // 사용 중인 방을 누르면 **아직 예약되지 않고** 확인 블록이 뜬다(누가 쓰는지 포함).
+    fireEvent.mouseDown(document.querySelector(`[data-gf-room-hit="${busyRoom}"]`)!);
+    const ask = await waitFor(() => {
+      const el = document.querySelector(`[data-gf-room-confirm="${busyRoom}"]`);
+      expect(el).toBeTruthy();
+      return el as HTMLElement;
+    });
+    expect(stateOf(busyRoom)).toBe('busy');
+    expect(ask.textContent).toContain('이호율');
+    expect(ask.textContent).toContain('그래도 예약할까요?');
+
+    // 취소하면 아무것도 바뀌지 않는다.
+    fireEvent.mouseDown(ask.querySelector('[data-gf-room-confirm-no]')!);
+    await waitFor(() => expect(document.querySelector(`[data-gf-room-confirm="${busyRoom}"]`)).toBeNull());
+    expect(stateOf(busyRoom)).toBe('busy');
+
+    // 다시 눌러 `그래도 예약`을 고르면 그때 예약된다.
+    fireEvent.mouseDown(document.querySelector(`[data-gf-room-hit="${busyRoom}"]`)!);
+    await waitFor(() => expect(document.querySelector(`[data-gf-room-confirm="${busyRoom}"]`)).toBeTruthy());
+    fireEvent.mouseDown(document.querySelector('[data-gf-room-confirm-yes]')!);
+    // 겹쳐 잡았으면 배지가 두 사실을 함께 말한다 — 내가 잡았고, 그래도 사용 중이다.
+    await waitFor(() => expect(stateOf(busyRoom)).toBe('booked-busy'));
+
+    // 비어 있는 방은 그대로 한 번에 골라진다(묻지 않는다).
+    fireEvent.mouseDown(document.querySelector(`[data-gf-room-hit="${freeRoom}"]`)!);
+    await waitFor(() => expect(stateOf(freeRoom)).toBe('booked'));
+    expect(document.querySelector(`[data-gf-room-confirm="${freeRoom}"]`)).toBeNull();
   });
 
   it('회의실 **전부**의 사용 여부를 확인한다 — 스크롤해야 보이는 방도 배지가 붙어 있다(제보)', async () => {
@@ -2015,7 +2111,10 @@ describe('구글 캘린더 겹치기(PR5)', () => {
     expect(document.querySelector('[data-gf-room-hit="room1@example.com"]')!.getAttribute('title')).toContain('홍길동');
     expect(document.querySelector('[data-gf-room-busy]')).toBeNull();
     // 답이 오면 묶음이 갈리며 행이 다시 마운트된다 — 그 자리에서 다시 집어야 한다.
+    // 사용 중인 방은 **한 번 묻고** 고른다(요청 ②) — 확인을 거쳐야 예약된다.
     fireEvent.mouseDown(document.querySelector('[data-gf-room-hit="room1@example.com"]')!);
+    await waitFor(() => expect(document.querySelector('[data-gf-room-confirm-yes]')).toBeTruthy());
+    fireEvent.mouseDown(document.querySelector('[data-gf-room-confirm-yes]')!);
     const line = await waitFor(() => {
       const el = document.querySelector('[data-gf-room-busy]');
       expect(el).toBeTruthy();
@@ -2307,6 +2406,94 @@ describe('구글 캘린더 겹치기(PR5)', () => {
       await waitFor(() => expect(document.querySelector('[data-work-modal]')).toBeTruthy());
       // 같은 팝업이다 — 지금 값이 켜져 있다.
       expect(document.querySelector('[data-work-kind="homeOffice"]')?.getAttribute('aria-checked')).toBe('true');
+    });
+
+    it('칸의 근무 위치 태그를 누르면 그 날의 팝업이 열린다(요청 ③)', async () => {
+      seed({ calendars: ['me@example.com'] });
+      seedToken();
+      stubGis();
+      const day = inMonth(2);
+      stubWork(day, { id: 'w1', from: day, to: day, props: { type: 'officeLocation', officeLocation: { label: '판교 5층' } } });
+      clientId = 'test-client.apps.googleusercontent.com';
+      const user = userEvent.setup();
+      const { container } = renderHome();
+      await openCalendar(container, user);
+      const tag = await waitFor(() => {
+        const el = container.querySelector<HTMLElement>(`[data-day-cell="${day}"] [data-work-loc]`);
+        expect(el).toBeTruthy();
+        return el!;
+      });
+      // 누를 수 있는 표식이다 — 쓸 수 있을 때만 버튼이 된다(정직한 어포던스).
+      expect(tag.getAttribute('role')).toBe('button');
+      fireEvent.click(tag);
+      const modal = await waitFor(() => {
+        const el = document.querySelector('[data-work-modal]');
+        expect(el).toBeTruthy();
+        return el as HTMLElement;
+      });
+      // 그 날에 걸린 값이 그대로 켜져 있다.
+      expect(modal.querySelector('[data-work-kind="officeLocation"]')?.getAttribute('aria-checked')).toBe('true');
+      expect(modal.querySelector<HTMLInputElement>('[data-work-label]')?.value).toBe('판교 5층');
+    });
+
+    it('하루짜리에는 `선택한 날짜만 / …부터 매주` 되풀이가 뜨고, 매주는 규칙으로 저장된다(요청 ④)', async () => {
+      seed({ calendars: ['me@example.com'] });
+      seedToken();
+      stubGis();
+      const day = inMonth(3);
+      const f = stubWork(day);
+      clientId = 'test-client.apps.googleusercontent.com';
+      const user = userEvent.setup();
+      const { container } = renderHome();
+      await openCalendar(container, user);
+      await waitFor(() => expect(screen.getAllByText(/진짜 회의/).length).toBeGreaterThan(0));
+      const { open } = await openWorkModal(container, user, day);
+      const modal = await open();
+      // 두 선택이 있고 기본은 `선택한 날짜만`이다(요청한 이미지와 같은 구성).
+      expect(modal.querySelector('[data-work-repeat="once"]')?.getAttribute('aria-checked')).toBe('true');
+      const weekly = modal.querySelector<HTMLElement>('[data-work-repeat="weekly"]')!;
+      const dow = ['일', '월', '화', '수', '목', '금', '토'][new Date(`${day}T00:00:00`).getDay()]!;
+      expect(weekly.textContent).toContain(`${dow}요일`);
+      fireEvent.click(weekly);
+      fireEvent.click(modal.querySelector('[data-work-save]')!);
+      await waitFor(() => {
+        const post = f.mock.calls.find((c) => (c[1] as { method?: string } | undefined)?.method === 'POST');
+        expect(post).toBeTruthy();
+        const body = JSON.parse((post![1] as { body: string }).body) as Record<string, unknown>;
+        // 회차를 우리가 만들지 않는다 — 규칙 한 줄이고 펼치는 일은 구글이 한다.
+        expect(body.recurrence).toEqual([`RRULE:FREQ=WEEKLY;BYDAY=${['SU', 'MO', 'TU', 'WE', 'TH', 'FR', 'SA'][new Date(`${day}T00:00:00`).getDay()]}`]);
+        expect(body.start).toEqual({ date: day });
+      });
+      // POST는 딱 하나다(구간처럼 여러 날에 나누지 않는다).
+      expect(f.mock.calls.filter((c) => (c[1] as { method?: string } | undefined)?.method === 'POST')).toHaveLength(1);
+    });
+
+    it('구간을 고르면 되풀이 선택이 사라지고, 안내 문구도 없다(요청 ④⑤)', async () => {
+      seed({ calendars: ['me@example.com'] });
+      seedToken();
+      stubGis();
+      const day = inMonth(2);
+      stubWork(day);
+      clientId = 'test-client.apps.googleusercontent.com';
+      const user = userEvent.setup();
+      const { container } = renderHome();
+      await openCalendar(container, user);
+      await waitFor(() => expect(screen.getAllByText(/진짜 회의/).length).toBeGreaterThan(0));
+      const { open } = await openWorkModal(container, user, day);
+      const modal = await open();
+      // 지워진 안내 문구(요청 ⑤).
+      expect(modal.querySelector('[data-work-note]')).toBeNull();
+      expect(modal.textContent).not.toContain('Google 캘린더 설정에서');
+      expect(modal.querySelector('[data-work-repeat="weekly"]')).toBeTruthy();
+      // 종료 날짜를 뒤로 밀면 하루짜리가 아니므로 되풀이는 뜻이 없다.
+      fireEvent.click(modal.querySelector('[data-work-to]')!);
+      const cell = await waitFor(() => {
+        const el = document.querySelector(`[data-datepop-day="${inMonth(4)}"]`);
+        expect(el).toBeTruthy();
+        return el as HTMLElement;
+      });
+      fireEvent.click(cell);
+      await waitFor(() => expect(document.querySelector('[data-work-repeat="weekly"]')).toBeNull());
     });
 
     it('연동하지 않았으면 항목 자체가 없다 — 눌러도 아무 일 없는 항목을 두지 않는다', async () => {

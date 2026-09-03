@@ -362,6 +362,9 @@ export function CalendarView({
             onMore={(iso, at) => setDayList({ iso, at })}
             onShift={(e, days) => void shiftEntry(e, days)}
             onCtxMenu={(target, at) => setMenu({ target, x: at.x, y: at.y })}
+            // 칸의 근무 위치 태그를 누르면 그 날의 팝업(요청 ③) — 쓸 수 없으면 넘기지
+            // 않아 태그가 누를 것 없는 표식으로 남는다(정직한 어포던스).
+            {...(workCalendar ? { onWorkLoc: openWork } : {})}
           />
         </div>
 
@@ -468,6 +471,8 @@ export function CalendarView({
               endDate: cur.endDate,
               ...(cur.startTime ? { startTime: cur.startTime } : {}),
               ...(cur.endTime ? { endTime: cur.endTime } : {}),
+              // 반복 회차인가 — 그러면 되풀이는 고르는 값이 아니라 상태다(요청 ④).
+              ...(cur.recurringEventId ? { recurring: true } : {}),
             };
           })()}
           isMobile={isMobile}

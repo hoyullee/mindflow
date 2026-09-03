@@ -78,6 +78,7 @@ export function MonthGrid({
   onMore,
   onShift,
   onCtxMenu,
+  onWorkLoc,
   selected,
   surface,
   compact = false,
@@ -96,6 +97,8 @@ export function MonthGrid({
     target: { day: string } | { entry: CalendarEntry },
     at: { x: number; y: number },
   ) => void;
+  /** 칸의 근무 위치 태그를 눌렀다 — 그 날의 근무 위치 팝업을 연다(요청 ③). */
+  onWorkLoc?: (iso: string) => void;
   selected: string | null;
   surface: ChipSurface;
   compact?: boolean;
@@ -265,6 +268,7 @@ export function MonthGrid({
             onMore={onMore}
             onCtxMenu={onCtxMenu}
             onGrab={grab}
+            onWorkLoc={onWorkLoc}
             dragging={drag?.entry}
             dropHot={
               !!drag && drag.overIso === c.iso && drag.overIso !== drag.fromIso
@@ -357,6 +361,7 @@ function DayCell({
   onMore,
   onCtxMenu,
   onGrab,
+  onWorkLoc,
   dragging,
   dropHot,
 }: {
@@ -375,6 +380,7 @@ function DayCell({
     at: { x: number; y: number },
   ) => void;
   onGrab: (ev: ReactPointerEvent, e: CalendarEntry, fromIso: string) => void;
+  onWorkLoc?: (iso: string) => void;
   /** 지금 끌고 있는 항목(그 칩은 자리에서 흐려진다). */
   dragging: CalendarEntry | undefined;
   /** 이 칸에 놓이려는 중인가 — 놓일 자리를 강조색 링으로 알린다. */
@@ -530,13 +536,41 @@ function DayCell({
         </span>
         {/* 공휴일 이름 — 디자인 원본은 숫자 옆에 적는다. 쉬는 날이면 붉게, 절기·
             기념일이면 옅게: 색은 "쉬는가"를, 이름은 "무슨 날인가"를 말한다. */}
-        {/* 근무 위치(구글) — 칸 **우측 상단**에 작게(제보 ⑥). 일정이 아니므로 누를
-            것도 없고, 칩 줄을 차지하지도 않는다. */}
+        {/* 근무 위치(구글) — 칸 **우측 상단**에 작게(제보 ⑥). 칩 줄을 차지하지 않고,
+            **누르면 그 날의 근무 위치 팝업**이 열린다(요청 ③ — 예전에는 우클릭
+            메뉴가 유일한 길이었다). 쓸 수 없는 상황(연동 없음·기본 캘린더를 보고
+            있지 않음)에서는 `onWorkLoc`이 없어 누를 것도 없는 표식으로 남는다. */}
         {cell.work ? (
           <span
             data-work-loc
+            role={onWorkLoc ? 'button' : undefined}
+            tabIndex={onWorkLoc ? 0 : undefined}
+            aria-label={onWorkLoc ? `근무 위치 · ${cell.work} — 고치기` : undefined}
             title={`근무 위치 · ${cell.work}`}
+            onClick={
+              onWorkLoc
+                ? (e) => {
+                    // 칸의 클릭(그 날 고르기)·더블클릭(일별 팝업)까지 함께 돌지 않게.
+                    e.stopPropagation();
+                    onWorkLoc(cell.iso);
+                  }
+                : undefined
+            }
+            onDoubleClick={onWorkLoc ? (e) => e.stopPropagation() : undefined}
+            onPointerDown={onWorkLoc ? (e) => e.stopPropagation() : undefined}
+            onKeyDown={
+              onWorkLoc
+                ? (e) => {
+                    if (e.key !== 'Enter' && e.key !== ' ') return;
+                    e.preventDefault();
+                    e.stopPropagation();
+                    onWorkLoc(cell.iso);
+                  }
+                : undefined
+            }
+            className={onWorkLoc ? 'mf-ctl' : undefined}
             style={{
+              cursor: onWorkLoc ? 'pointer' : 'default',
               marginLeft: "auto",
               flexShrink: 0,
               display: "inline-flex",

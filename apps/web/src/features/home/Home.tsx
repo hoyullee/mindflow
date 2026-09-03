@@ -168,7 +168,20 @@ export function Home() {
         // 본문 면은 **흰 면**이다(요청 — 대시보드·스페이스·일정 셋 다). 예외는
         // 최근 항목 띠 하나로, `home.css`가 그 띠만 따뜻한 면으로 되돌린다(그러지
         // 않으면 흰 카드가 흰 배경에 묻힌다).
-        style={{ flex: '1 1 auto', display: 'flex', flexDirection: 'column', overflowY: state.activeCal ? 'hidden' : 'auto', scrollbarGutter: 'stable', padding: state.activeCal ? 0 : isMobile ? '16px 14px 32px' : '24px 32px 44px', minWidth: 0, background: 'var(--mf-card)' }}
+        // 스페이스 화면에도 **점 격자**를 얹는다(요청) — 대시보드·일정은 자기 본문에
+        // 같은 격자를 이미 그리므로(그 위를 덮는 불투명 면이다) 여기서는 스페이스일
+        // 때만 그린다. 두 겹으로 그리면 스크롤 위치에 따라 점이 어긋나 보인다.
+        style={{
+          flex: '1 1 auto',
+          display: 'flex',
+          flexDirection: 'column',
+          overflowY: state.activeCal ? 'hidden' : 'auto',
+          scrollbarGutter: 'stable',
+          padding: state.activeCal ? 0 : isMobile ? '16px 14px 32px' : '24px 32px 44px',
+          minWidth: 0,
+          backgroundColor: 'var(--mf-card)',
+          ...(isSpaceView(state) ? { backgroundImage: 'radial-gradient(var(--mf-dot-grid) 1px, transparent 1px)', backgroundSize: '17px 17px' } : {}),
+        }}
       >
         {/* Cross-space "최근 항목" strip sits ABOVE the space toolbar so it reads as a
             global "recently opened" bar, not part of the current space's maps.
