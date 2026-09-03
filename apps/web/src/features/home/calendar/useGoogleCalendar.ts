@@ -238,13 +238,16 @@ export function useGoogleCalendar(
   }, []);
 
   /**
-   * 토큰을 꺼내 한 번 호출한다. 토큰이 없거나 401로 죽었으면 **새로 받지 않는다** —
-   * GIS 토큰 요청은 조용한 갱신이라도 팝업을 열어서(googleCalendar.ts 머리 주석),
-   * 화면을 여는 것만으로 구글 창이 뜨는 사고가 된다(제보: 재로그인 뒤 로그인 팝업).
-   * 대신 `needsReauth`를 세워 화면이 "다시 연결" 버튼으로 말하게 한다.
+   * 토큰을 꺼내 한 번 호출한다. 토큰이 없거나 죽었으면 `ensureGoogleToken`이
+   * **서버에 보관된 refresh token으로 조용히** 새로 받아 온다(팝업 없음).
+   *
+   * 그 서버 흐름이 없는 환경(로컬·데모·함수 미배포)에서는 새로 받지 않는다 —
+   * GIS 토큰 요청은 조용한 갱신이라도 팝업을 열어서, 화면을 여는 것만으로 구글
+   * 창이 뜨는 사고가 된다(제보: 재로그인 뒤 로그인 팝업). 그때는 `needsReauth`를
+   * 세워 화면이 "다시 연결" 버튼으로 말한다.
    */
   const withToken = useCallback(async <T,>(run: (token: string) => Promise<T>): Promise<T | null> => {
-    const first = ensureGoogleToken();
+    const first = await ensureGoogleToken();
     if ('error' in first) {
       if (aliveRef.current) {
         setConnected(false);

@@ -1703,6 +1703,69 @@ UI에는 24색인데 우리 팝업은 11칸"의 답이 그 한 줄에 있다: �
 `colorId`로 지정할 수 없고(보내면 거절된다), 24개를 주면 화면도 24칸이 된다 — 코드는
 그대로다.
 
+### 연결 유지 — refresh token (0035 + `google-oauth`)
+
+검수를 통과한 뒤 **auth-code 흐름**으로 바꿨다. 브라우저는 인가 코드만 받고, Edge Function
+`google-oauth`가 client secret으로 교환해 **refresh token을 서버에 보관**한다(0035
+`google_credentials`). 액세스 토큰이 만료되면 그 함수가 **팝업 없이** 새로 발급한다.
+
+예전에는 브라우저 전용 토큰 흐름뿐이라 refresh token이 없었고, 갱신하려면 GIS를 다시
+불러야 하는데 그건 조용한 갱신(`prompt: ''`)이라도 **팝업 창을 연다**. 그래서 한 시간마다
+사용자가 "다시 연결"을 눌러야 했다(제보).
+
+**스코프는 늘지 않았다.** 유지는 스코프가 아니라 흐름의 문제다 — 필수 둘·선택 셋 그대로다.
+
+#### 표 (0035)
+
+| 칼럼 | 뜻 |
+| --- | --- |
+| `user_id` | `auth.users` PK, `on delete cascade`(탈퇴 시 함께 삭제) |
+| `refresh_token` | 구글이 준 갱신 토큰 — **밖으로 나가지 않는다** |
+| `scope` | 그때 실제로 승인된 범위 |
+| `google_email` | 어느 구글 계정인가(표시·계정 전환 감지) |
+
+RLS를 켜고 **정책을 하나도 두지 않는다** + `revoke all ... from anon, authenticated`.
+refresh token은 만료가 없어서, 브라우저에 한 번이라도 닿으면 유출 표면이 한 시간에서
+무기한으로 늘어난다. 그래서 service role(= Edge Function)만 만진다.
+
+#### 함수 (`supabase/functions/google-oauth`)
+
+세 동작 모두 호출자의 **JWT로 누구인지 먼저 확인하고** 그 사람의 행만 만진다(요청 본문에
+사용자 id를 받지 않는다).
+
+| action | 하는 일 |
+| --- | --- |
+| `exchange` | 코드 → 토큰(`redirect_uri: 'postmessage'` — GIS 팝업 코드 흐름의 약속된 값). refresh token이 오면 upsert, 안 오면 기존 행 유지 |
+| `refresh` | 저장된 refresh token으로 액세스 토큰 발급. `invalid_grant`이면 행을 지우고 `revoked` |
+| `disconnect` | 구글에 revoke → 행 삭제 |
+
+**시크릿이 없으면 아무 일도 하지 않는다** — `{ ok: false, reason: 'not-configured' }`를 200으로
+돌려주고, 클라이언트는 예전 흐름(브라우저 토큰 + 한 시간 뒤 "다시 연결")으로 굴러간다.
+배포 순서와 무관하게 앱이 깨지지 않는다.
+
+#### 소유자가 직접 해야 하는 것
+
+1. Google Cloud Console → 사용자 인증 정보 → 그 **웹 클라이언트**의 클라이언트 보안 비밀번호를 복사
+   (스코프·게시 상태·브랜딩은 **건드리지 않는다** — 검수를 통과한 값이다)
+2. `supabase secrets set GOOGLE_CLIENT_ID=<...> GOOGLE_CLIENT_SECRET=<...>`
+3. `supabase functions deploy google-oauth`
+4. 마이그레이션 0035 적용(GitHub 연동은 main 머지 시 자동)
+
+넷을 다 하기 전까지는 지금과 똑같이 동작한다(폴백).
+
+#### 확인
+
+- 연결 → 한 시간 뒤(또는 `mf_gcal_token`을 지운 뒤) 새로고침 → **팝업 없이** 일정이 그대로 뜬다
+- `select user_id, scope, google_email, updated_at from google_credentials;` → 그 사용자의 행 하나
+  (`refresh_token`은 조회하지 말 것 — 값 자체가 자격 증명이다)
+- 연결 해제 → 행이 사라지고, 구글 계정의 타사 앱 권한에서도 빠진다
+
+#### 개인정보처리방침
+
+이 변경으로 **서버에 보관하는 것이 하나 늘었다** — 방침 §4(갱신 토큰 항목)·§5(수탁 예외)·
+§6(자격 증명 격리)을 함께 고쳤다. 저장 위치·수명·보호 수단을 바꾸면 **방침도 같이** 고쳐야
+한다(방침이 실제 구현과 어긋나면 그 자체가 반려 사유다).
+
 ### 두 원천의 경계
 
 구글에 만든 일정은 **구글에만** 남는다(우리 표에 사본을 두지 않는다) — 연동을 끄면 화면에서

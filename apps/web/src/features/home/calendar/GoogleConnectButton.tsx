@@ -17,11 +17,11 @@ import { GoogleIcon } from '../../auth/GoogleIcon';
  */
 export function GoogleConnectButton({ api, onOpen, compact = false }: { api: GoogleCalendarApi; onOpen: () => void; compact?: boolean }) {
   if (!api.available || (api.enabled && !api.needsReauth)) return null;
-  // 다시 연결일 때는 **왜**인지 툴팁이 말한다 — 연동이 해제된 것이 아니라 구글의
-  // 접근 권한이 한 시간마다 만료되는 것이고(브라우저 흐름에는 갱신 토큰이 없다),
-  // 고른 캘린더는 그대로 남아 있다(제보: 배포되면 해제되는 것 같다).
+  // 다시 연결일 때는 **왜**인지 툴팁이 말한다 — 연동이 해제된 것이 아니라 구글
+  // 권한을 다시 허용해야 하는 것이고, 고른 캘린더는 그대로 남아 있다(평소에는
+  // 서버가 갱신 토큰으로 조용히 이어 주므로 이 버튼이 뜨지 않는다).
   const label = api.needsReauth ? 'Google 캘린더 다시 연결' : 'Google 캘린더 연동';
-  const tip = api.needsReauth ? '구글 권한이 한 시간마다 만료돼요 — 다시 연결하면 고른 캘린더가 그대로 이어져요' : label;
+  const tip = api.needsReauth ? '구글 권한을 다시 허용해야 이어져요 — 고른 캘린더는 그대로예요' : label;
   return (
     <button
       type="button"
