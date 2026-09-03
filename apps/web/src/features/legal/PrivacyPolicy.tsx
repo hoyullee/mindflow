@@ -16,10 +16,20 @@ import { LegalPage, LegalSection, legalListStyle } from './LegalPage';
  * "제3자 제공하지 않음" 한 줄로는 부족했다: 검수는 세 낱말(공유·전송·공개)을
  * 제목으로 단 **눈에 띄는 구획**과, 예외(위탁·법령·동의·사업 이전)의 명시적 열거,
  * 그리고 **로그인 프로필 정보까지 포함한** Google 사용자 데이터 전체를 본다.
+ *
+ * §6(보호 조치)은 2026-09-03 검수 반려가 만든 구획이다 — "민감 데이터에 대한
+ * **데이터 보호 수단**이 명시되어 있지 않다"는 지적. §5와는 **다른 항목**이다:
+ * §5는 "누구에게 주는가", §6은 "어떻게 지키는가"(전송·저장 암호화, 접근 통제,
+ * 비밀 키 관리, 안전한 삭제)다. 검수는 항목별 체크리스트라 한 번에 하나씩 온다.
+ *
+ * **여기 적는 보호 수단은 실제 구현과 일치해야 한다** — 방침이 사실과 어긋나면
+ * 그 자체가 반려 사유다. 이번 라운드에서 §4의 토큰 문장이 그런 상태였다
+ * (`sessionStorage` → 연동 유지 요청으로 `localStorage`로 옮겼는데 방침만 남았다).
+ * 저장 위치·수명·암호화·권한 정책을 바꾸면 §4·§6을 함께 고칠 것.
  */
 export function PrivacyPolicy() {
   return (
-    <LegalPage title="개인정보처리방침" updated="2026년 9월 1일">
+    <LegalPage title="개인정보처리방침" updated="2026년 9월 3일">
       <p>
         Geurio(이하 &ldquo;서비스&rdquo;)는 이용자의 개인정보를 소중하게 생각하며, 아래와 같이 최소한의 정보만을
         수집·이용합니다. 본 방침은 서비스가 어떤 정보를 왜 수집하고, 어디에 보관하며, 언제 삭제하는지를 설명합니다.
@@ -101,8 +111,10 @@ export function PrivacyPolicy() {
             (캘린더 식별자 목록)뿐이고, 이는 기기 간에 같은 설정을 유지하기 위한 값입니다.
           </li>
           <li>
-            <strong>접근 토큰</strong> — 브라우저의 탭 저장소(sessionStorage)에만 보관되며 <strong>탭을 닫으면
-            사라집니다</strong>. 서버로 전송하거나 저장하지 않습니다.
+            <strong>접근 토큰</strong> — <strong>이용자 브라우저의 로컬 저장소에만</strong> 보관되며 서비스 서버로
+            전송하거나 저장하지 않습니다. 유효 기간은 약 1시간이고, 만료되면 이용자가 직접 다시 연결할 때까지
+            사용되지 않습니다. &ldquo;연결 해제&rdquo;를 누르면 즉시 폐기됩니다. Google이 발급하는 갱신 토큰
+            (refresh token)은 요청하지도, 보관하지도 않습니다.
           </li>
           <li>
             <strong>광고·학습에 사용하지 않습니다</strong> — Google에서 받은 정보를 광고 목적이나 인공지능 모델 학습에
@@ -153,14 +165,66 @@ export function PrivacyPolicy() {
         </p>
       </LegalSection>
 
-      <LegalSection heading="6. 보유 기간 및 파기">
+      <LegalSection heading="6. 데이터 보호 조치">
+        <p>
+          서비스는 Google 사용자 데이터(로그인 프로필 정보와 캘린더 연동으로 조회·기록하는 일정)를 포함한 모든 개인정보를
+          아래와 같은 기술적·관리적 수단으로 보호합니다.
+        </p>
+        <ul style={legalListStyle}>
+          <li>
+            <strong>전송 중 암호화</strong> — 서비스 화면, 데이터베이스·인증 서버(Supabase), Google API와의 모든 통신은
+            <strong> HTTPS(TLS)</strong>로만 이루어집니다. 암호화되지 않은 경로로 개인정보를 주고받지 않습니다.
+          </li>
+          <li>
+            <strong>저장 중 암호화</strong> — 데이터베이스와 파일 저장소에 보관되는 데이터는 수탁사(Supabase)의 인프라에서
+            <strong> 저장 시 암호화(encryption at rest)</strong>된 상태로 보관됩니다. 비밀번호는 평문으로 보관하지 않으며
+            인증 공급자가 단방향 해시로만 저장합니다.
+          </li>
+          <li>
+            <strong>계정 단위 접근 통제</strong> — 모든 데이터 테이블에 <strong>행 수준 보안(Row Level Security)</strong>이
+            적용되어, 서버가 이용자별로 &ldquo;본인 또는 본인이 초대받은 문서&rdquo;만 읽고 쓸 수 있도록 강제합니다. 클라이언트가
+            어떤 요청을 보내도 다른 이용자의 데이터에 접근할 수 없습니다.
+          </li>
+          <li>
+            <strong>첨부 파일 보호</strong> — 문서에 첨부한 이미지는 <strong>비공개 저장소</strong>에 보관되고, 그 문서를 볼
+            권한이 있는 이용자에게만 <strong>만료 시간이 있는 서명 URL</strong>로 제공됩니다. 주소를 안다고 열람할 수 있는
+            상태로 두지 않습니다.
+          </li>
+          <li>
+            <strong>비밀 키 관리</strong> — 외부 서비스 API 키 등 비밀값은 <strong>서버 측 환경 변수·시크릿</strong>으로만
+            보관하며 브라우저로 내려가는 코드에 포함하지 않습니다. 메일 발송처럼 키가 필요한 작업은 서버 함수가 수행하고,
+            그 함수는 요청자가 실제로 그 문서의 소유자인지 서버에서 다시 확인합니다.
+          </li>
+          <li>
+            <strong>세션 보호</strong> — 인증 세션은 만료·갱신되는 토큰으로 관리되며, 이용자는 설정에서 <strong>모든 기기에서
+            로그아웃</strong>할 수 있습니다. 비밀번호를 변경할 때는 현재 비밀번호를 확인하고, 변경 후 <strong>다른 기기의
+            세션을 모두 해지</strong>합니다. 공용 기기에서는 &ldquo;로그인 유지&rdquo;를 끄면 창을 닫는 즉시 세션이 사라집니다.
+          </li>
+          <li>
+            <strong>최소 수집·최소 보관</strong> — 캘린더 일정과 참석자·회의실 검색 결과는 <strong>브라우저에서 화면을 그리는
+            데만</strong> 쓰이고 서비스 서버나 데이터베이스에 저장하지 않습니다(4항). 화면에 보이는 기간(6주)의 일정만 그때그때
+            조회하며, 접근 토큰은 이용자 기기에만 보관합니다. 보관하지 않는 데이터는 유출될 표면 자체가 없습니다.
+          </li>
+          <li>
+            <strong>안전한 삭제</strong> — 회원 탈퇴 시 계정과 모든 문서·워크스페이스·첨부 파일이 데이터베이스에서
+            <strong> 즉시, 복구 불가능하게</strong> 삭제되며 별도 백업을 남기지 않습니다(7항). 연결 해제 시에는 기기의 Google
+            접근 토큰이 폐기되고 Google 쪽 승인도 함께 취소됩니다.
+          </li>
+          <li>
+            <strong>사고 대응</strong> — 개인정보가 유출되었거나 그럴 우려가 있음을 알게 된 경우, 지체 없이 원인을 차단하고
+            영향을 받는 이용자에게 8항의 연락 경로로 알리며 관련 법령에 따른 신고 절차를 따릅니다.
+          </li>
+        </ul>
+      </LegalSection>
+
+      <LegalSection heading="7. 보유 기간 및 파기">
         <p>
           개인정보는 회원 자격이 유지되는 동안 보관됩니다. <strong>회원 탈퇴 시 계정 정보와 작성한 모든 문서·워크스페이스
           데이터가 즉시, 복구 불가능하게 삭제됩니다.</strong> 별도의 백업 보존 기간을 두지 않습니다.
         </p>
       </LegalSection>
 
-      <LegalSection heading="7. 이용자의 권리">
+      <LegalSection heading="8. 이용자의 권리">
         <ul style={legalListStyle}>
           <li>계정 설정에서 언제든지 프로필 정보를 확인·수정할 수 있습니다.</li>
           <li>작성한 문서는 언제든지 직접 삭제(휴지통 → 영구 삭제)할 수 있습니다.</li>
@@ -169,13 +233,13 @@ export function PrivacyPolicy() {
         </ul>
       </LegalSection>
 
-      <LegalSection heading="8. 문의처">
+      <LegalSection heading="9. 문의처">
         <p>
           개인정보 관련 문의: <a href="mailto:info@geurio.com" style={{ color: '#f0663f', fontWeight: 600 }}>info@geurio.com</a>
         </p>
       </LegalSection>
 
-      <LegalSection heading="9. 방침의 변경">
+      <LegalSection heading="10. 방침의 변경">
         <p>
           본 방침이 변경되는 경우 이 페이지를 통해 변경 사항과 시행일을 공지합니다. 중요한 변경(수집 항목 추가 등)이 있는
           경우 서비스 내에서 별도로 안내합니다.
