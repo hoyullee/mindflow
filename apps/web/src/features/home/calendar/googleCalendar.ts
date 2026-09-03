@@ -637,10 +637,51 @@ export function workLocationKindOf(raw: unknown): WorkLocationKind | null {
   return t === 'homeOffice' || t === 'officeLocation' || t === 'customLocation' ? t : null;
 }
 
-/** 팝업이 고른 값 — 사무실·직접 입력은 이름을 함께 든다(재택은 이름이 없다). */
+/**
+ * 팝업이 고른 값 — 사무실·기타 위치는 이름을 함께 든다(집은 이름이 없다).
+ *
+ * **구간과 시각**은 구글의 근무 위치 화면과 같은 모양이다(사용자 스크린샷): 종일은
+ * 여러 날에 걸칠 수 있고, `시간 추가`를 켜면 **하루 안의 구간**이 된다(구글도 시각
+ * 근무 위치를 하루로 제한한다) — 그래서 둘은 함께 쓰이지 않는다.
+ */
 export interface WorkLocationDraft {
   kind: WorkLocationKind;
   label?: string;
+  /** 시작 날짜(포함). */
+  startDate: string;
+  /** 종료 날짜(포함) — 없으면 하루치. 시각이 있으면 무시한다. */
+  endDate?: string;
+  /** `시간 추가` — 둘 다 있을 때만 시각 근무 위치다. */
+  startTime?: string;
+  endTime?: string;
+}
+
+/**
+ * 그 초안이 차지하는 구간 — 본문·PATCH가 같은 값을 쓰도록 한 곳에서 만든다.
+ *
+ * 시각이 켜져 있으면 **하루**로 접는다(구글이 시각 근무 위치를 하루로 제한한다).
+ * 종료가 시작보다 앞서면 하루치로 본다(고르는 쪽에서 막지만 값으로도 지킨다).
+ */
+export function workLocationWhen(w: WorkLocationDraft): Pick<GoogleEventDraft, 'allDay' | 'startDate' | 'endDate' | 'startTime' | 'endTime'> {
+  const from = w.startDate;
+  if (w.startTime && w.endTime) return { allDay: false, startDate: from, endDate: from, startTime: w.startTime, endTime: w.endTime };
+  const end = w.endDate && w.endDate > from ? w.endDate : from;
+  return { allDay: true, startDate: from, endDate: end };
+}
+
+/** 그 일정의 구간이 초안과 다른가 — PATCH에 `start`/`end`를 실을지 정한다. */
+export function workLocationWhenChanged(
+  ev: Pick<GoogleEvent, 'allDay' | 'startDate' | 'endDate' | 'startTime' | 'endTime'>,
+  w: WorkLocationDraft,
+): boolean {
+  const n = workLocationWhen(w);
+  return (
+    n.allDay !== ev.allDay ||
+    n.startDate !== ev.startDate ||
+    n.endDate !== ev.endDate ||
+    (n.startTime ?? '') !== (ev.startTime ?? '') ||
+    (n.endTime ?? '') !== (ev.endTime ?? '')
+  );
 }
 
 /**
@@ -657,19 +698,18 @@ export function workLocationProps(w: WorkLocationDraft): Record<string, unknown>
 /**
  * 근무 위치 **일정 하나**의 본문(만들 때).
  *
- * 구글은 근무 위치를 `eventType: 'workingLocation'`인 **종일 일정**으로 든다 —
- * 하루치이므로 끝은 배타적인 다음 날이다(`whenBody`의 그 규칙). 제목은 구글의
- * 클라이언트가 갈래로 지어 보여 주므로 우리가 지어 넣지 않는다.
+ * 구글은 근무 위치를 `eventType: 'workingLocation'` 일정으로 든다 — 종일이면 끝이
+ * 배타적인 다음 날이고(`whenBody`의 그 규칙), `시간 추가`를 켜면 하루 안의 시각
+ * 구간이다. 제목은 구글의 클라이언트가 갈래로 지어 보여 주므로 우리가 지어 넣지 않는다.
  *
  * `visibility: 'public'` · `transparency: 'transparent'`를 함께 보내는 이유:
  * 근무 위치는 "그 날의 상태"라 바쁨으로 잡히면 안 되고(회의실·한가함 조회에
  * 걸린다), 구글의 클라이언트도 그렇게 만든다. **기본 캘린더에만** 쓸 수 있다.
  */
-export function workLocationEventBody(iso: string, w: WorkLocationDraft): Record<string, unknown> {
+export function workLocationEventBody(w: WorkLocationDraft): Record<string, unknown> {
   return {
     eventType: 'workingLocation',
-    start: { date: iso },
-    end: { date: nextDay(iso) },
+    ...whenBody(workLocationWhen(w)),
     visibility: 'public',
     transparency: 'transparent',
     workingLocationProperties: workLocationProps(w),
@@ -681,22 +721,25 @@ export function findWorkLocation(events: readonly GoogleEvent[], iso: string): G
   return events.find((e) => !!e.workLocation && e.startDate <= iso && iso <= e.endDate) ?? null;
 }
 
+export async function createWorkLocationEvent(token: string, calendarId: string, w: WorkLocationDraft): Promise<void> {
+  await send(`/calendars/${encodeURIComponent(calendarId)}/events`, token, 'POST', workLocationEventBody(w));
+}
+
 /**
- * 그 일정이 **여러 날에 걸쳐** 있는가 — 그러면 우리는 손대지 않는다. 하루만 고치려면
- * 일정을 쪼개야 하는데(구글의 클라이언트가 하는 일) 그 규칙을 우리가 흉내 내면 남의
- * 달력이 조용히 어그러진다. 팝업이 사유를 적고 물러선다(반복 일정 삭제와 같은 결).
+ * 고치는 PATCH — **바뀐 것만** 보낸다(#552의 그 규칙).
+ *
+ * 갈래·이름만 바꿨으면 `workingLocationProperties` 하나뿐이고, 구간(날짜·시각)도
+ * 바뀌었으면 `start`/`end` 짝이 함께 간다. `forPatch`가 쓰지 않는 쪽(`date`/
+ * `dateTime`)을 `null`로 지우므로 종일 ↔ 시각 전환도 거절되지 않는다.
  */
-export function isWorkLocationSpan(ev: GoogleEvent): boolean {
-  return ev.endDate > ev.startDate;
-}
-
-export async function createWorkLocationEvent(token: string, calendarId: string, iso: string, w: WorkLocationDraft): Promise<void> {
-  await send(`/calendars/${encodeURIComponent(calendarId)}/events`, token, 'POST', workLocationEventBody(iso, w));
-}
-
-/** 갈래·이름만 갈아 끼우는 PATCH — 날짜는 그대로 둔다(그 날의 상태만 바뀐다). */
-export function workLocationPatch(w: WorkLocationDraft): GoogleEventPatch {
-  return { body: { workingLocationProperties: workLocationProps(w) }, touched: ['workLocation'] };
+export function workLocationPatch(w: WorkLocationDraft, whenChanged: boolean): GoogleEventPatch {
+  const body: Record<string, unknown> = { workingLocationProperties: workLocationProps(w) };
+  const touched: GoogleWriteField[] = ['workLocation'];
+  if (whenChanged) {
+    Object.assign(body, whenBody(workLocationWhen(w), true));
+    touched.push('when');
+  }
+  return { body, touched };
 }
 
 /** 주최자 — 이름이 없으면 이메일만(구글이 이름을 모르는 계정도 있다). */

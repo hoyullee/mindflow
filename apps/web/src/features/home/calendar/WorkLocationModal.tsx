@@ -8,29 +8,40 @@
 // **기본 캘린더에만** 받는다. 그래서 이 팝업은 기본 캘린더를 쓸 수 있고 그 캘린더를
 // 지금 보고 있을 때만 열린다(고른 값이 화면에 나타나지 않으면 고장으로 읽힌다).
 //
-// **하루만 다룬다.** 여러 날에 걸친 근무 위치는 손대지 않고 사유를 적는다 — 하루만
-// 고치려면 일정을 쪼개야 하는데(구글의 클라이언트가 하는 일) 그 규칙을 흉내 내면
-// 남의 달력이 조용히 어그러진다(반복 일정 삭제를 상세로 미루는 것과 같은 결).
+// **모양은 구글의 그 화면과 같다**(사용자 스크린샷): 장소는 집·사무실·기타 위치
+// 셋이고, 종일이면 **시작–종료 구간**을 고르며, `시간 추가`를 켜면 **하루 안의 시각
+// 구간**이 된다(구글도 시각 근무 위치를 하루로 제한한다 — 그래서 둘은 함께 쓰이지
+// 않는다). 예전에는 여러 날에 걸친 일정을 잠갔는데, 구간이 정식 모양이므로 지금은
+// 그 구간을 **그대로 보여 주고 고치면 구간 전체가 바뀐다**.
+//
+// **반복되는 근무 위치는 우리가 다루지 않는다** — 구글은 그것을 캘린더 설정에 두고
+// 우리 스코프(`calendar.events`)로는 닿지 않는다. 그래서 한 줄로 알린다(없는 기능을
+// 흉내 낸 버튼을 두지 않는다).
 
 import { useState } from 'react';
 import { Modal, MODAL_DIM, useCardMorph } from '../../../components/Modal';
 import { RadioCards } from '../../../components/Segmented';
-import { dateLabel } from './model';
+import { DateButton, PillButton } from './DatePop';
+import { TimeButton } from './TimePop';
+import { addDays, daysBetween, minutesOf } from './model';
 import type { WorkLocationDraft, WorkLocationKind } from './googleCalendar';
 
-/** 지금 그 날에 걸린 근무 위치 — 없으면 `null`. */
+/** 지금 그 날에 걸린 근무 위치 — 없으면 `null`(그 구간·시각을 그대로 되살린다). */
 export interface WorkLocationCurrent {
   kind: WorkLocationKind | null;
   label: string;
-  /** 여러 날에 걸친 일정인가 — 그러면 고치지 않고 사유를 적는다. */
-  spanned: boolean;
+  startDate: string;
+  endDate: string;
+  startTime?: string;
+  endTime?: string;
 }
 
 const PRESETS: { kind: WorkLocationKind; name: string; note: string }[] = [
-  // 부제는 **한 줄에 들어갈 만큼**만 — 420px 카드를 셋으로 나누면 칸이 좁다(실측).
-  { kind: 'homeOffice', name: '재택', note: '집에서 일해요' },
+  // 이름은 구글의 그 화면과 같은 낱말이다(집·사무실·기타 위치). 부제는 **한 줄에
+  // 들어갈 만큼**만 — 420px 카드를 셋으로 나누면 칸이 좁다(실측).
+  { kind: 'homeOffice', name: '집', note: '집에서 일해요' },
   { kind: 'officeLocation', name: '사무실', note: '이름을 적어요' },
-  { kind: 'customLocation', name: '직접 입력', note: '카페·출장지 등' },
+  { kind: 'customLocation', name: '기타 위치', note: '카페·출장지 등' },
 ];
 
 export function WorkLocationModal({
@@ -53,14 +64,48 @@ export function WorkLocationModal({
   onClear: () => void;
 }) {
   const [kind, setKind] = useState<WorkLocationKind>(current?.kind ?? 'homeOffice');
-  // 이름은 **이름이 들어가는 갈래**의 값만 되살린다(재택은 이름이 없다).
+  // 이름은 **이름이 들어가는 갈래**의 값만 되살린다(집은 이름이 없다).
   const [label, setLabel] = useState(current && current.kind !== 'homeOffice' ? current.label : '');
+  // 구간·시각은 걸려 있던 일정의 값을 그대로 되살린다(없으면 누른 하루).
+  const [from, setFrom] = useState(current?.startDate ?? iso);
+  const [to, setTo] = useState(current?.endDate ?? iso);
+  const [timed, setTimed] = useState(!!(current?.startTime && current?.endTime));
+  const [t1, setT1] = useState(current?.startTime ?? '09:00');
+  const [t2, setT2] = useState(current?.endTime ?? '18:00');
   const morphRef = useCardMorph();
-  const locked = !!current?.spanned;
   const needsLabel = kind !== 'homeOffice';
 
-  const footMsg = error ?? (saving ? '저장 중…' : locked ? '여러 날에 걸친 근무 위치예요 — 구글에서 고쳐 주세요' : '');
-  const footTone = error || locked ? 'var(--mf-danger)' : 'var(--mf-faint2)';
+  const draft = (): WorkLocationDraft => ({
+    kind,
+    ...(needsLabel && label.trim() ? { label: label.trim() } : {}),
+    startDate: from,
+    // 시각과 구간은 함께 쓰이지 않는다 — 구글이 시각 근무 위치를 하루로 제한한다.
+    ...(timed ? { startTime: t1, endTime: t2 } : to > from ? { endDate: to } : {}),
+  });
+  const save = (): void => {
+    if (!saving) onSave(draft());
+  };
+
+  /** 시작 날짜를 옮기면 길이를 지킨 채 종료도 따라온다(새 일정 팝업과 같은 규칙). */
+  const pickFrom = (v: string): void => {
+    const keep = Math.max(0, daysBetween(from, to));
+    setFrom(v);
+    setTo(addDays(v, keep));
+  };
+  /** 시작 시각도 마찬가지 — 그러지 않으면 종료가 앞선 상태가 되어 저장이 막힌다. */
+  const pickT1 = (v: string): void => {
+    const a = minutesOf(t1);
+    const b = minutesOf(t2);
+    const n = minutesOf(v);
+    setT1(v);
+    if (a === null || b === null || n === null) return;
+    const keep = Math.max(15, b - a);
+    const end = Math.min(23 * 60 + 45, n + keep);
+    setT2(`${`${Math.floor(end / 60)}`.padStart(2, '0')}:${`${end % 60}`.padStart(2, '0')}`);
+  };
+
+  const footMsg = error ?? (saving ? '저장 중…' : '');
+  const footTone = error ? 'var(--mf-danger)' : 'var(--mf-faint2)';
 
   return (
     <Modal
@@ -93,9 +138,6 @@ export function WorkLocationModal({
             <span style={{ fontSize: 13.5, fontWeight: 800, letterSpacing: '-.02em', color: 'var(--mf-text)', whiteSpace: 'nowrap' }}>근무 위치</span>
           </span>
           <span style={{ flex: 1, minWidth: 0 }} />
-          <span data-work-day style={{ height: 24, padding: '0 10px', borderRadius: 999, background: 'var(--mf-panel2)', color: 'var(--mf-muted)', fontSize: 11, fontWeight: 700, display: 'inline-flex', alignItems: 'center', whiteSpace: 'nowrap' }}>
-            {dateLabel(iso)}
-          </span>
           <button type="button" aria-label="닫기" title="닫기" onClick={onClose} className="mf-ctl" style={{ width: 30, height: 30, flex: '0 0 auto', border: '1px solid var(--mf-border)', borderRadius: 999, background: 'var(--mf-card)', color: 'var(--mf-muted)', cursor: 'pointer', display: 'inline-flex', alignItems: 'center', justifyContent: 'center' }}>
             <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" aria-hidden="true">
               <path d="M6 6l12 12M18 6 6 18" />
@@ -105,12 +147,11 @@ export function WorkLocationModal({
 
         <div style={{ flex: 1, minHeight: 0, overflowY: 'auto', padding: '18px 20px 20px', display: 'flex', flexDirection: 'column', gap: 16 }}>
           <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-            <span style={{ fontSize: 11.5, fontWeight: 800, color: 'var(--mf-subtext)' }}>어디에서 일하나요</span>
+            <span style={{ fontSize: 11.5, fontWeight: 800, color: 'var(--mf-subtext)' }}>장소 선택</span>
             <RadioCards
               label="근무 위치 갈래"
               value={kind}
               onChange={(v) => setKind(v as WorkLocationKind)}
-              disabled={locked}
               grid={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 8 }}
               items={PRESETS.map((p) => ({
                 value: p.kind,
@@ -129,8 +170,7 @@ export function WorkLocationModal({
                   color: on ? 'var(--mf-accent-strong)' : 'var(--mf-subtext)',
                   font: 'inherit',
                   textAlign: 'left' as const,
-                  cursor: locked ? 'default' : 'pointer',
-                  opacity: locked ? 0.55 : 1,
+                  cursor: 'pointer',
                 }),
                 children: (
                   <>
@@ -151,10 +191,9 @@ export function WorkLocationModal({
                 aria-label={kind === 'officeLocation' ? '사무실 이름' : '장소 이름'}
                 data-work-label
                 value={label}
-                readOnly={locked}
                 onChange={(e) => setLabel(e.target.value)}
                 onKeyDown={(e) => {
-                  if (e.key === 'Enter' && !locked && !saving) onSave({ kind, ...(label.trim() ? { label: label.trim() } : {}) });
+                  if (e.key === 'Enter') save();
                 }}
                 placeholder={kind === 'officeLocation' ? '예: 판교 오피스 5층' : '예: 고객사 · 워크숍'}
                 maxLength={100}
@@ -163,15 +202,57 @@ export function WorkLocationModal({
             </div>
           )}
 
+          {/* 언제 — 구글의 그 화면과 같은 한 줄: 종일은 시작–종료 구간이고, `시간 추가`를
+              켜면 하루 안의 시각 구간이 된다(구글이 시각을 하루로 제한한다). */}
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+            <span style={{ fontSize: 11.5, fontWeight: 800, color: 'var(--mf-subtext)' }}>{timed ? '날짜와 시간' : '기간'}</span>
+            {/* ⚠️ `DateButton`은 `width: 100%`다(부모가 세로 flex라는 전제 — 그 파일의
+                주석). 한 줄에 둘을 세우려면 **각자 flex 칸에 담아야** 한다: 버튼에
+                직접 flex를 주면 폭이 100%인 채로 줄이 접힌다(실측). */}
+            <div style={{ display: 'flex', alignItems: 'center', gap: 7 }}>
+              <span style={{ flex: 1, minWidth: 0 }}>
+                <DateButton label={timed ? '날짜' : '시작 날짜'} value={from} clearable={false} attrs={{ 'data-work-from': '1' }} onPick={(v) => v && pickFrom(v)} />
+              </span>
+              {!timed && (
+                <>
+                  <span style={{ flex: '0 0 auto', fontSize: 12, color: 'var(--mf-faint2)' }}>–</span>
+                  <span style={{ flex: 1, minWidth: 0 }}>
+                    <DateButton label="종료 날짜" value={to} min={from} clearable={false} attrs={{ 'data-work-to': '1' }} onPick={(v) => setTo(v ?? from)} />
+                  </span>
+                </>
+              )}
+            </div>
+            {timed && (
+              <div style={{ display: 'flex', alignItems: 'center', gap: 7 }}>
+                <TimeButton label="시작 시각" value={t1} attrs={{ 'data-work-t1': '1' }} onPick={pickT1} />
+                <span style={{ flex: '0 0 auto', fontSize: 12, color: 'var(--mf-faint2)' }}>–</span>
+                <TimeButton label="종료 시각" value={t2} min={t1} attrs={{ 'data-work-t2': '1' }} onPick={(v) => setT2(v)} />
+              </div>
+            )}
+            <span style={{ display: 'inline-flex' }}>
+              <PillButton
+                on={timed}
+                attrs={{ 'data-work-time': '1' }}
+                onClick={() => {
+                  // 시각을 켜면 하루로 접는다(구간과 함께 쓸 수 없다).
+                  if (!timed) setTo(from);
+                  setTimed(!timed);
+                }}
+              >
+                {timed ? '시간 지우기' : '＋ 시간 추가'}
+              </PillButton>
+            </span>
+          </div>
+
           <span data-work-note style={{ fontSize: 11.5, color: 'var(--mf-faint2)', lineHeight: 1.6 }}>
-            Google 캘린더의 기본 캘린더에 하루치로 저장돼요.
+            Google 캘린더의 기본 캘린더에 저장돼요. 반복되는 근무 위치는 Google 캘린더 설정에서 정해요.
           </span>
         </div>
 
         <div style={{ flex: '0 0 auto', display: 'flex', alignItems: 'center', gap: 10, padding: '14px 20px', borderTop: '1px solid var(--mf-border-soft)' }}>
           <span data-work-foot style={{ flex: 1, minWidth: 0, fontSize: 12, color: footTone, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{footMsg}</span>
           {/* 지우기는 **걸려 있을 때만** — 없는 것을 지울 수는 없다. */}
-          {current && !current.spanned && (
+          {current && (
             <button type="button" data-work-clear disabled={saving} onClick={onClear} className="mf-ctl" style={{ flex: '0 0 auto', whiteSpace: 'nowrap', height: isMobile ? 44 : 36, padding: '0 14px', borderRadius: 999, border: '1px solid var(--mf-border)', background: 'var(--mf-card)', color: 'var(--mf-danger)', font: 'inherit', fontSize: 12.5, fontWeight: 700, cursor: saving ? 'default' : 'pointer' }}>
               지우기
             </button>
@@ -179,18 +260,16 @@ export function WorkLocationModal({
           <button type="button" data-work-cancel onClick={onClose} className="mf-ctl" style={{ flex: '0 0 auto', whiteSpace: 'nowrap', height: isMobile ? 44 : 36, padding: '0 16px', borderRadius: 999, border: '1px solid var(--mf-border)', background: 'var(--mf-card)', color: 'var(--mf-muted)', font: 'inherit', fontSize: 12.5, fontWeight: 700, cursor: 'pointer' }}>
             취소
           </button>
-          {!locked && (
-            <button
-              type="button"
-              data-work-save
-              disabled={saving}
-              onClick={() => onSave({ kind, ...(label.trim() ? { label: label.trim() } : {}) })}
-              className="mf-ctl-primary"
-              style={{ flex: '0 0 auto', whiteSpace: 'nowrap', height: isMobile ? 44 : 40, padding: isMobile ? '0 20px' : '0 24px', borderRadius: 999, border: 0, background: 'linear-gradient(180deg, var(--mf-accent), var(--mf-accent-strong))', color: 'var(--mf-accent-ink)', font: 'inherit', fontSize: 13.5, fontWeight: 800, cursor: saving ? 'default' : 'pointer', boxShadow: '0 8px 18px -10px rgba(var(--mf-accent-rgb), .9)' }}
-            >
-              {saving ? '저장 중…' : '저장'}
-            </button>
-          )}
+          <button
+            type="button"
+            data-work-save
+            disabled={saving}
+            onClick={save}
+            className="mf-ctl-primary"
+            style={{ flex: '0 0 auto', whiteSpace: 'nowrap', height: isMobile ? 44 : 40, padding: isMobile ? '0 20px' : '0 24px', borderRadius: 999, border: 0, background: 'linear-gradient(180deg, var(--mf-accent), var(--mf-accent-strong))', color: 'var(--mf-accent-ink)', font: 'inherit', fontSize: 13.5, fontWeight: 800, cursor: saving ? 'default' : 'pointer', boxShadow: '0 8px 18px -10px rgba(var(--mf-accent-rgb), .9)' }}
+          >
+            {saving ? '저장 중…' : '저장'}
+          </button>
         </div>
       </>
     </Modal>
