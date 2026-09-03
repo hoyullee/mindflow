@@ -28,6 +28,8 @@ describe('home theme', () => {
       '--mf-panel': '#ffffff',
       // 카드의 면 — 디자인 원본의 살짝 따뜻한 흰색(#FFFDFB). 코랄만 값이 다르다.
       '--mf-card': '#fffdfb',
+      // 바닥 면 — 카드와 배경의 중간이고, 디자인 원본의 페이지 배경(#FDFAF7)과 같다.
+      '--mf-page': '#fdfaf7',
       '--mf-panel2': '#faf3ee',
       '--mf-panel-veil': 'rgba(255,255,255,0.92)',
       '--mf-panel-grey': '#fbf8f5',

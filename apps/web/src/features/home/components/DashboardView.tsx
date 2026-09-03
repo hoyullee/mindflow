@@ -350,7 +350,7 @@ export function DashboardView({ state, view, controller, isMobile = false, onOpe
 
       {/* 격자 바닥 — 캔버스 같은 점 격자(디자인). */}
       {/* 위젯 뒤의 면은 흰 면(요청) — 점 격자는 그 위에 그대로. 히어로는 그대로 어둡다. */}
-      <div data-dash-body style={{ padding: isMobile ? '14px 14px 32px' : '18px 32px 44px', display: 'flex', flexDirection: 'column', gap: 14, backgroundColor: 'var(--mf-card)', backgroundImage: 'radial-gradient(var(--mf-dot-grid) 1px, transparent 1px)', backgroundSize: '17px 17px', minHeight: 420, flex: 1 }}>
+      <div data-dash-body style={{ padding: isMobile ? '14px 14px 32px' : '18px 32px 44px', display: 'flex', flexDirection: 'column', gap: 14, backgroundColor: 'var(--mf-page)', backgroundImage: 'radial-gradient(var(--mf-dot-grid) 1px, transparent 1px)', backgroundSize: '17px 17px', minHeight: 420, flex: 1 }}>
         {/* 편집 안내 띠(디자인) — 무엇을 할 수 있는지와 종류별 최소 크기를 말한다.
             모바일은 드래그·모서리 리사이즈가 없으므로(터치에서 발화하지 않는 마우스
             제스처) 실제로 되는 조작만 말한다 — 안내가 안 되는 것을 약속하면 안 된다. */}

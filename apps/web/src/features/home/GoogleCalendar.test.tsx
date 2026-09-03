@@ -2468,6 +2468,118 @@ describe('구글 캘린더 겹치기(PR5)', () => {
       expect(f.mock.calls.filter((c) => (c[1] as { method?: string } | undefined)?.method === 'POST')).toHaveLength(1);
     });
 
+    it('반복 회차를 열어도 되풀이 메뉴가 뜨고(`매주` 켜짐), 회차를 PATCH하지 않는다(라이브 400 수리)', async () => {
+      seed({ calendars: ['me@example.com'] });
+      seedToken();
+      stubGis();
+      const day = inMonth(2);
+      // 구글은 반복 근무 위치를 **회차**로 펼쳐 준다 — id에 `_날짜`가 붙고
+      // `recurringEventId`가 원본을 가리킨다. 그 회차를 고치려 하면 400이다
+      // (`malformedWorkingLocationEvent`) — 그래서 우리는 회차를 고치지 않는다.
+      const f = vi.fn(async (url: string, init?: RequestInit) => {
+        const ok = (body: unknown) => ({ ok: true, status: 200, json: async () => body }) as unknown as Response;
+        if (url.includes('people.googleapis.com') || url.includes('admin.googleapis.com')) return ok({ items: [], people: [] });
+        if (url.includes('/colors')) return ok({ event: {} });
+        if (url.includes('/users/me/calendarList')) return ok({ items: [{ id: 'me@example.com', summary: '내 캘린더', primary: true, accessRole: 'owner' }] });
+        if ((init?.method ?? 'GET') !== 'GET') {
+          // 회차를 건드리는 요청은 구글처럼 거절한다 — 테스트가 그 길을 막는다.
+          if (String(url).includes('base_20260101') || String(url).includes(`base_${day.replace(/-/g, '')}`)) {
+            return { ok: false, status: 400, json: async () => ({ error: { errors: [{ reason: 'malformedWorkingLocationEvent' }] } }) } as unknown as Response;
+          }
+          return ok({});
+        }
+        return ok({
+          items: [
+            {
+              id: `base_${day.replace(/-/g, '')}`,
+              recurringEventId: 'base',
+              eventType: 'workingLocation',
+              workingLocationProperties: { type: 'homeOffice', homeOffice: {} },
+              start: { date: day },
+              end: { date: nextDay(day) },
+            },
+          ],
+        });
+      });
+      vi.stubGlobal('fetch', f);
+      clientId = 'test-client.apps.googleusercontent.com';
+      const user = userEvent.setup();
+      const { container } = renderHome();
+      await openCalendar(container, user);
+      await waitFor(() => expect(container.querySelector(`[data-day-cell="${day}"] [data-work-loc]`)).toBeTruthy());
+      fireEvent.click(container.querySelector(`[data-day-cell="${day}"] [data-work-loc]`)!);
+      const modal = await waitFor(() => {
+        const el = document.querySelector('[data-work-modal]');
+        expect(el).toBeTruthy();
+        return el as HTMLElement;
+      });
+      // 메뉴가 **뜬다**(제보: 안 떴다) — 이미 매주이므로 그 칸이 켜진 채다.
+      expect(modal.querySelector('[data-work-repeat="weekly"]')?.getAttribute('aria-checked')).toBe('true');
+      expect(modal.querySelector('[data-work-repeat="once"]')?.getAttribute('aria-checked')).toBe('false');
+      // 매주를 유지한 채 저장하면 **반복 자체**(원본 일정)를 고친다 — 회차가 아니다.
+      fireEvent.click(modal.querySelector('[data-work-kind="officeLocation"]')!);
+      fireEvent.click(modal.querySelector('[data-work-save]')!);
+      await waitFor(() => {
+        const write = f.mock.calls.find((c) => (c[1] as { method?: string } | undefined)?.method === 'PATCH');
+        expect(write).toBeTruthy();
+        const target = String(write![0]);
+        expect(target).toContain('/events/base');
+        expect(target).not.toContain(`base_${day.replace(/-/g, '')}`);
+        // 규칙은 이미 그 일정에 있으므로 다시 싣지 않는다.
+        const body = JSON.parse((write![1] as { body: string }).body) as Record<string, unknown>;
+        expect(Object.keys(body)).toEqual(['workingLocationProperties']);
+      });
+    });
+
+    it('반복 회차에서 `선택한 날짜만`을 고르면 그 회차를 지우고 하루짜리를 새로 만든다', async () => {
+      seed({ calendars: ['me@example.com'] });
+      seedToken();
+      stubGis();
+      const day = inMonth(3);
+      const instance = `base_${day.replace(/-/g, '')}`;
+      const f = vi.fn(async (url: string, init?: RequestInit) => {
+        const ok = (body: unknown) => ({ ok: true, status: 200, json: async () => body }) as unknown as Response;
+        if (url.includes('people.googleapis.com') || url.includes('admin.googleapis.com')) return ok({ items: [], people: [] });
+        if (url.includes('/colors')) return ok({ event: {} });
+        if (url.includes('/users/me/calendarList')) return ok({ items: [{ id: 'me@example.com', summary: '내 캘린더', primary: true, accessRole: 'owner' }] });
+        if ((init?.method ?? 'GET') !== 'GET') return ok({});
+        return ok({
+          items: [
+            { id: instance, recurringEventId: 'base', eventType: 'workingLocation', workingLocationProperties: { type: 'homeOffice', homeOffice: {} }, start: { date: day }, end: { date: nextDay(day) } },
+          ],
+        });
+      });
+      vi.stubGlobal('fetch', f);
+      clientId = 'test-client.apps.googleusercontent.com';
+      const user = userEvent.setup();
+      const { container } = renderHome();
+      await openCalendar(container, user);
+      await waitFor(() => expect(container.querySelector(`[data-day-cell="${day}"] [data-work-loc]`)).toBeTruthy());
+      fireEvent.click(container.querySelector(`[data-day-cell="${day}"] [data-work-loc]`)!);
+      const modal = await waitFor(() => {
+        const el = document.querySelector('[data-work-modal]');
+        expect(el).toBeTruthy();
+        return el as HTMLElement;
+      });
+      fireEvent.click(modal.querySelector('[data-work-repeat="once"]')!);
+      // 발치가 무슨 일이 일어나는지 말한다.
+      expect(modal.querySelector('[data-work-foot]')?.textContent).toContain('떼어 내요');
+      fireEvent.click(modal.querySelector('[data-work-save]')!);
+      await waitFor(() => {
+        const del = f.mock.calls.find((c) => (c[1] as { method?: string } | undefined)?.method === 'DELETE');
+        const post = f.mock.calls.find((c) => (c[1] as { method?: string } | undefined)?.method === 'POST');
+        expect(del).toBeTruthy();
+        expect(String(del![0])).toContain(instance);
+        expect(post).toBeTruthy();
+        const body = JSON.parse((post![1] as { body: string }).body) as Record<string, unknown>;
+        expect(body.start).toEqual({ date: day });
+        // 그 날만 떼어 내는 것이므로 규칙은 없다.
+        expect(body.recurrence).toBeUndefined();
+      });
+      // 회차를 PATCH하지 않는다(구글이 400으로 막는 그 요청).
+      expect(f.mock.calls.some((c) => (c[1] as { method?: string } | undefined)?.method === 'PATCH')).toBe(false);
+    });
+
     it('구간을 고르면 되풀이 선택이 사라지고, 안내 문구도 없다(요청 ④⑤)', async () => {
       seed({ calendars: ['me@example.com'] });
       seedToken();

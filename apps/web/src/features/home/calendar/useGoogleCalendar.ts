@@ -456,14 +456,27 @@ export function useGoogleCalendar(
         for (const day of workLocationDays(draft)) {
           const one = workLocationForDay(draft, day);
           const cur = findWorkLocation(events, day);
-          // 걸려 있으면 고친다. 그 날짜는 그대로이므로 대개 갈래·이름만 실린다
-          // (구간을 싣지 않는 저장은 그 사이 구글이 판을 올려도 412로 막히지 않는다).
-          if (cur) {
-            // 하루짜리를 **매주로 바꾸는** 저장이면 규칙을 함께 싣는다 — 이미 반복인
-            // 일정(회차)에는 싣지 않는다: 구글은 회차에 규칙을 받지 않는다.
-            const addRepeat = draft.repeat === 'weekly' && !cur.recurringEventId;
-            await updateGoogleEvent(t, cur, workLocationPatch(one, workLocationWhenChanged(cur, one), addRepeat));
-          } else await createWorkLocationEvent(t, calendarId, one);
+          if (!cur) {
+            await createWorkLocationEvent(t, calendarId, one);
+          } else if (!cur.recurringEventId) {
+            // 홀로 선 일정 — 그 자리에서 고친다. 날짜는 그대로이므로 대개 갈래·이름만
+            // 실리고(구간을 싣지 않는 저장은 그 사이 구글이 판을 올려도 412로 막히지
+            // 않는다), 매주로 바꾸는 저장이면 규칙을 함께 싣는다.
+            await updateGoogleEvent(t, cur, workLocationPatch(one, workLocationWhenChanged(cur, one), draft.repeat === 'weekly'));
+          } else if (draft.repeat === 'weekly') {
+            // **반복 회차인데 매주를 유지한다** — 구글은 회차의 근무 위치를 고치지
+            // 못하게 막으므로(라이브 400 `malformedWorkingLocationEvent`) 회차가 아니라
+            // **그 반복 자체**를 고친다. 규칙은 이미 그 일정에 있으므로 싣지 않는다.
+            const series: GoogleEvent = { ...cur, eventId: cur.recurringEventId, id: `${cur.calendarId}:${cur.recurringEventId}` };
+            delete series.etag;
+            delete series.recurringEventId;
+            await updateGoogleEvent(t, series, workLocationPatch(one, false));
+          } else {
+            // **반복 회차를 그 날만 다르게** — 회차를 고칠 수 없으니 그 회차를 지우고
+            // 그 날짜에 홀로 선 근무 위치를 새로 만든다(데이터로도 그게 "그 날만"이다).
+            await deleteGoogleEvent(t, cur);
+            await createWorkLocationEvent(t, calendarId, one);
+          }
         }
       }),
     [write, events],

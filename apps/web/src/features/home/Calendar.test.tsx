@@ -620,11 +620,11 @@ describe('일정 화면', () => {
       expect(rule).toContain('-webkit-user-select: none');
     });
 
-    it('달력 뒤의 면은 **흰 면**이고 점 격자는 그대로다(요청 ①)', async () => {
+    it('달력 뒤의 면은 **바닥 면**(`--mf-page`)이고 점 격자는 그대로다(요청)', async () => {
       renderHome([META('d1', '스프린트 보드')], BODIES());
       await openCalendar();
       const body = document.querySelector('[data-cal-body]') as HTMLElement;
-      expect(body.style.background).toContain('--mf-card');
+      expect(body.style.background).toContain('--mf-page');
       // 점 격자는 그 위에 그대로(요청: dot 표시는 유지).
       const canvas = document.querySelector('[data-cal-canvas]') as HTMLElement;
       expect(canvas.style.backgroundImage).toContain('--mf-dot-grid');

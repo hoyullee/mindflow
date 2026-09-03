@@ -179,7 +179,7 @@ export function Home() {
           scrollbarGutter: 'stable',
           padding: state.activeCal ? 0 : isMobile ? '16px 14px 32px' : '24px 32px 44px',
           minWidth: 0,
-          backgroundColor: 'var(--mf-card)',
+          backgroundColor: 'var(--mf-page)',
           ...(isSpaceView(state) ? { backgroundImage: 'radial-gradient(var(--mf-dot-grid) 1px, transparent 1px)', backgroundSize: '17px 17px' } : {}),
         }}
       >

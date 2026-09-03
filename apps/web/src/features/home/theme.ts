@@ -454,6 +454,11 @@ export function homeThemeVars(key: HomeThemeKey): Record<string, string> {
     '--mf-sunken': t.sunken,
     '--mf-panel': t.panel,
     '--mf-card': t.card,
+    // 화면의 **바닥 면**(대시보드·일정·스페이스 본문) — 카드보다 반 톤 물러난다
+    // (제보: 흰 면만 있으니 이상하다). 값을 테마마다 적지 않고 **관계로** 만든다:
+    // 코랄에서 `mix(#fffdfb, #fbf7f3, .5) ≈ #fdfaf7`은 디자인 원본의 페이지 배경
+    // 그 값이고, 다크에서도 카드보다 한 톤 어두워 순서가 그대로 성립한다.
+    '--mf-page': mixHex(t.card, t.bg, 0.5),
     '--mf-panel2': t.panel2,
     '--mf-panel-veil': t.panelVeil,
     '--mf-panel-grey': t.panelGrey,
