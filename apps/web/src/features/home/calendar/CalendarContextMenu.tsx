@@ -41,6 +41,12 @@ export interface CalMenuActions {
   openDaySide: (iso: string) => void;
   goToday: () => void;
   toggleDeadline: () => void;
+  /**
+   * 그 날의 **근무 위치**(요청) — 구글은 이 일정을 **기본 캘린더에만** 받으므로,
+   * 쓸 수 있고 지금 보고 있을 때만 호출부가 이 함수를 넘긴다(없으면 항목이 없다:
+   * 눌러도 아무 일 없는 항목은 두지 않는다).
+   */
+  openWorkLocation?: (iso: string) => void;
 }
 
 /** 그 항목을 이 메뉴에서 지울 수 있는가 — 없으면 항목을 내주지 않거나 사유를 적는다. */
@@ -62,7 +68,7 @@ function deletable(e: CalendarEntry): { ok: true } | { ok: false; hint?: string 
 
 export function buildCalendarMenu(
   target: CalMenuTarget,
-  ctx: { todayIso: string; selectedDay: string; y: number; m: number; dayCount: (iso: string) => number; sideOpen: boolean; deadlineOpen: boolean; isMobile: boolean; at: { x: number; y: number } },
+  ctx: { todayIso: string; selectedDay: string; y: number; m: number; dayCount: (iso: string) => number; sideOpen: boolean; deadlineOpen: boolean; isMobile: boolean; at: { x: number; y: number }; workLocation?: (iso: string) => string | undefined },
   a: CalMenuActions,
 ): HomeMenuItem[] {
   if ('entry' in target) {
@@ -96,6 +102,12 @@ export function buildCalendarMenu(
     const iso = target.day;
     const n = ctx.dayCount(iso);
     const items: HomeMenuItem[] = [{ key: 'new', icon: PlusIcon, label: '이 날에 새 일정', onSelect: () => a.newEvent(iso) }];
+    // 근무 위치 — 걸려 있으면 그 값을 이름에 담는다(무엇을 고치는지 눌러 보기 전에 안다).
+    if (a.openWorkLocation) {
+      const cur = ctx.workLocation?.(iso);
+      const open = a.openWorkLocation;
+      items.push({ key: 'work', icon: HomeIcon, label: cur ? `근무 위치 · ${cur}` : '근무 위치 설정', onSelect: () => open(iso) });
+    }
     if (n > 0) items.push({ key: 'list', icon: ListIcon, label: `이 날의 일정 모두 보기 (${n})`, onSelect: () => a.openDayList(iso, ctx.at) });
     // 날짜별 보기는 데스크톱 사이드다 — 폰에는 그 판이 없어 항목을 내주지 않는다.
     if (!ctx.isMobile) items.push({ key: 'side', icon: CalendarIcon, label: '날짜별 보기로 열기', onSelect: () => a.openDaySide(iso) });
@@ -179,6 +191,12 @@ const TodayIcon = icon(
     <rect x="3" y="4.5" width="18" height="16" rx="2.5" />
     <path d="M3 9.5h18M8 3v3M16 3v3" />
     <circle cx="12" cy="14.5" r="2" fill="currentColor" stroke="none" />
+  </>,
+);
+const HomeIcon = icon(
+  <>
+    <path d="M3 10.5 12 4l9 6.5" />
+    <path d="M5 10v9a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1v-9" />
   </>,
 );
 const TrashIcon = icon(

@@ -49,6 +49,8 @@ export function DayListPopup({
   onClose,
   onPickEntry,
   onNew,
+  onWorkLocation,
+  workLocation,
 }: {
   iso: string;
   /** 더블클릭한 지점(화면 좌표) — 툴팁이 이 곁에 선다. */
@@ -61,6 +63,13 @@ export function DayListPopup({
   onPickEntry: (e: CalendarEntry) => void;
   /** 발치의 `이 날에 새 일정` — 이 날짜가 기본값으로 들어간다. */
   onNew: (iso: string) => void;
+  /**
+   * 근무 위치(요청) — 구글에 쓸 수 있을 때만 호출부가 넘긴다. 우클릭 메뉴와 **같은
+   * 팝업**을 열지만 이쪽이 눈에 보이는 길이다(우클릭은 알아야 쓰는 조작이다).
+   */
+  onWorkLocation?: (iso: string) => void;
+  /** 그 날에 걸린 근무 위치 — 있으면 버튼이 그 값을 말한다. */
+  workLocation?: string;
 }) {
   const ref = useRef<HTMLDivElement | null>(null);
   const [pos, setPos] = useState<{ left: number; top: number } | null>(null);
@@ -181,6 +190,21 @@ export function DayListPopup({
           </svg>
           이 날에 새 일정
         </button>
+        {onWorkLocation && (
+          <button
+            type="button"
+            data-day-list-work
+            className="mf-ctl"
+            onClick={() => onWorkLocation(iso)}
+            style={{ display: 'flex', alignItems: 'center', gap: 8, width: '100%', boxSizing: 'border-box', padding: '11px 17px 14px', border: 0, borderTop: '1px solid var(--mf-border-soft)', background: 'transparent', color: 'var(--mf-subtext)', font: 'inherit', fontSize: 12.5, fontWeight: 700, letterSpacing: '-.01em', cursor: 'pointer', textAlign: 'left' }}
+          >
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+              <path d="M3 10.5 12 4l9 6.5" />
+              <path d="M5 10v9a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1v-9" />
+            </svg>
+            {workLocation ? `근무 위치 · ${workLocation}` : '근무 위치 설정'}
+          </button>
+        )}
       </div>
     </div>,
     document.body,

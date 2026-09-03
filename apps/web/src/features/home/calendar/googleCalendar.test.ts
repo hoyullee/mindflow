@@ -1,6 +1,6 @@
 import { describe, expect, it, beforeEach, vi } from 'vitest';
 import {
-  workLocationLabel, GOOGLE_CALENDAR_SCOPE, GOOGLE_EVENT_COLORS, myRsvpOf, attendeesBody, eventWindowIso, RECURRENCE_OFF, buildRecurrence, draftToBody, eventColorOf, fetchEventColors, googleWriteError, managedFieldsDiffer, updateGoogleEvent, recurrenceSummary, isDayOffHoliday, isHolidayCalendarId, onTokenChange, scopeCovers, parseCalendarList, parseEvents, readStoredToken, splitGoogleDateTime, storeToken, type GoogleCalendarMeta } from './googleCalendar';
+  workLocationLabel, workLocationKindOf, workLocationProps, workLocationEventBody, workLocationPatch, findWorkLocation, isWorkLocationSpan, GOOGLE_CALENDAR_SCOPE, GOOGLE_EVENT_COLORS, myRsvpOf, attendeesBody, eventWindowIso, RECURRENCE_OFF, buildRecurrence, draftToBody, eventColorOf, fetchEventColors, googleWriteError, managedFieldsDiffer, updateGoogleEvent, recurrenceSummary, isDayOffHoliday, isHolidayCalendarId, onTokenChange, scopeCovers, parseCalendarList, parseEvents, readStoredToken, splitGoogleDateTime, storeToken, type GoogleCalendarMeta } from './googleCalendar';
 import { googleEntries, holidayMap } from './entries';
 import { draftFrom, patchFrom } from './GoogleEventDetail';
 import { submitNewEvent } from './newEventSubmit';
@@ -636,5 +636,60 @@ describe('근무 위치(제보 ⑥)', () => {
     expect(workLocationLabel({ type: 'officeLocation', officeLocation: {} })).toBe('사무실');
     expect(workLocationLabel({ type: 'customLocation', customLocation: { label: '카페' } })).toBe('카페');
     expect(workLocationLabel(undefined)).toBe('근무 위치');
+  });
+
+  it('갈래를 되읽는다 — 모르는 값은 `null`(팝업이 지어내지 않는다)', () => {
+    expect(workLocationKindOf({ type: 'homeOffice' })).toBe('homeOffice');
+    expect(workLocationKindOf({ type: 'officeLocation' })).toBe('officeLocation');
+    expect(workLocationKindOf({ type: 'customLocation' })).toBe('customLocation');
+    expect(workLocationKindOf({ type: 'somethingNew' })).toBeNull();
+    expect(workLocationKindOf(undefined)).toBeNull();
+  });
+
+  it('쓰기 본문 — 종일 하루치 + 갈래별 이름 자리(요청)', () => {
+    const body = workLocationEventBody('2026-09-10', { kind: 'homeOffice' });
+    expect(body).toMatchObject({
+      eventType: 'workingLocation',
+      start: { date: '2026-09-10' },
+      // 끝은 배타적이라 다음 날이다(구글의 종일 규칙).
+      end: { date: '2026-09-11' },
+      // 그 날의 상태라 바쁨으로 잡히면 안 된다(회의실·한가함 조회에 걸린다).
+      transparency: 'transparent',
+      visibility: 'public',
+      workingLocationProperties: { type: 'homeOffice' },
+    });
+    // 제목은 지어 넣지 않는다 — 구글의 클라이언트가 갈래로 보여 준다.
+    expect('summary' in body).toBe(false);
+    expect(workLocationProps({ kind: 'officeLocation', label: ' 판교 5층 ' })).toEqual({ type: 'officeLocation', officeLocation: { label: '판교 5층' } });
+    expect(workLocationProps({ kind: 'customLocation', label: '고객사' })).toEqual({ type: 'customLocation', customLocation: { label: '고객사' } });
+    // 이름이 비면 그 하위 객체를 비워 보낸다(구글의 기본 표기를 쓴다).
+    expect(workLocationProps({ kind: 'customLocation' })).toEqual({ type: 'customLocation', customLocation: {} });
+  });
+
+  it('고치는 PATCH는 **갈래·이름만** 보낸다 — 날짜는 그대로(그 날의 상태만 바뀐다)', () => {
+    const p = workLocationPatch({ kind: 'homeOffice' });
+    expect(Object.keys(p.body)).toEqual(['workingLocationProperties']);
+    expect(p.touched).toEqual(['workLocation']);
+  });
+
+  it('그 날의 근무 위치를 찾는다 — 여러 날에 걸친 일정은 손대지 않는다고 말한다', () => {
+    const list = parseEvents(
+      {
+        items: [
+          { id: 'g1', summary: '회의', start: { date: '2026-09-10' }, end: { date: '2026-09-11' } },
+          { id: 'w1', eventType: 'workingLocation', workingLocationProperties: { type: 'homeOffice' }, start: { date: '2026-09-10' }, end: { date: '2026-09-11' } },
+          { id: 'w2', eventType: 'workingLocation', workingLocationProperties: { type: 'officeLocation', officeLocation: { label: '판교' } }, start: { date: '2026-09-14' }, end: { date: '2026-09-19' } },
+        ],
+      },
+      CAL,
+    );
+    const [, one, span] = list;
+    // 갈래도 함께 되읽는다 — 팝업이 지금 값을 켜 두려고 든다.
+    expect(one!.workLocationKind).toBe('homeOffice');
+    expect(findWorkLocation(list, '2026-09-10')?.eventId).toBe('w1');
+    expect(findWorkLocation(list, '2026-09-16')?.eventId).toBe('w2');
+    expect(findWorkLocation(list, '2026-09-20')).toBeNull();
+    expect(isWorkLocationSpan(one!)).toBe(false);
+    expect(isWorkLocationSpan(span!)).toBe(true);
   });
 });

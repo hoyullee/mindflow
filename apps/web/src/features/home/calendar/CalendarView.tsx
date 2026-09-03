@@ -18,6 +18,8 @@ import { submitNewEvent } from './newEventSubmit';
 import { EventDetail, geurioCalendarChips } from './EventDetail';
 import { GoogleDetailHost, patchFrom } from './GoogleEventDetail';
 import { GoogleConnectButton } from './GoogleConnectButton';
+import { WorkLocationModal } from './WorkLocationModal';
+import { findWorkLocation, isWorkLocationSpan, workLocationPatch, type WorkLocationDraft } from './googleCalendar';
 import { CalendarContextMenu, type CalMenuState } from './CalendarContextMenu';
 import { DeleteConfirm } from './DeleteConfirm';
 import { useCalendarEvents } from './useCalendarEvents';
@@ -75,6 +77,10 @@ export function CalendarView({
   // 않게(상세 팝업의 삭제와 같은 확인창을 쓴다).
   const [confirmDel, setConfirmDel] = useState<CalendarEntry | null>(null);
   const [deleting, setDeleting] = useState(false);
+  // 근무 위치를 고치는 날(요청) — 열려 있으면 그 날짜다.
+  const [workDay, setWorkDay] = useState<string | null>(null);
+  const [workSaving, setWorkSaving] = useState(false);
+  const [workError, setWorkError] = useState<string | null>(null);
   const entries = useMemo(() => {
     // 반복 일정은 보이는 구간에서 회차로 펼쳐진다 — 격자가 그리는 그 6주다.
     const evs = eventEntries(eventsApi.events, gridRange(state.calY, state.calM));
@@ -85,6 +91,15 @@ export function CalendarView({
   const holidays = useMemo(() => holidayMap(google.events), [google.events]);
   // 근무 위치(재택·사무실)는 일정 목록이 아니라 칸 우측 상단에 그린다(제보 ⑥).
   const works = useMemo(() => workMap(google.events), [google.events]);
+  /**
+   * 근무 위치를 **쓸 수 있는가**(요청) — 구글은 이 일정을 기본 캘린더에만 받는다.
+   * 게다가 그 캘린더를 지금 보고 있지 않으면 고른 값이 화면에 나타나지 않으므로
+   * (고장으로 읽힌다) 켜져 있을 때만 진입점을 낸다.
+   */
+  const workCalendar = useMemo(() => {
+    const primary = google.writableCalendars.find((c) => c.primary);
+    return primary && google.pickedIds.includes(primary.id) ? primary : null;
+  }, [google.writableCalendars, google.pickedIds]);
   const stats = useMemo(() => calendarStats(entries, today), [entries, today]);
   // 새 일정의 목적지 — **쓸 수 있는** 구글 캘린더만(공휴일·보기 전용은 뺀다).
   const googleTargets = useMemo(() => google.writableCalendars.map((c) => ({ id: c.id, name: c.summary, ...(c.color ? { color: c.color } : {}) })), [google.writableCalendars]);
@@ -108,6 +123,42 @@ export function CalendarView({
     const now = new Date();
     return state.calY !== now.getFullYear() || state.calM !== now.getMonth() + 1;
   })();
+
+  /** 근무 위치 팝업 열기 — 열 때 이전 오류를 비운다(지난 실패가 새 시도를 덮지 않게). */
+  const openWork = (iso: string): void => {
+    setWorkError(null);
+    setWorkDay(iso);
+  };
+
+  /**
+   * 그 날의 근무 위치를 쓴다 — **걸려 있으면 고치고, 없으면 만든다.** 여러 날에
+   * 걸친 일정은 손대지 않는다(팝업이 그 사유를 적고 저장 버튼을 내주지 않는다).
+   */
+  const saveWork = (iso: string, draft: WorkLocationDraft): void => {
+    if (!workCalendar) return;
+    const cur = findWorkLocation(google.events, iso);
+    setWorkSaving(true);
+    const run = cur && !isWorkLocationSpan(cur) ? google.updateEvent(cur, workLocationPatch(draft)) : google.setWorkLocation(workCalendar.id, iso, draft);
+    void run.then((err) => {
+      setWorkSaving(false);
+      setWorkError(err);
+      if (!err) setWorkDay(null);
+    });
+  };
+
+  const clearWork = (iso: string): void => {
+    const cur = findWorkLocation(google.events, iso);
+    if (!cur) {
+      setWorkDay(null);
+      return;
+    }
+    setWorkSaving(true);
+    void google.deleteEvent(cur).then((err) => {
+      setWorkSaving(false);
+      setWorkError(err);
+      if (!err) setWorkDay(null);
+    });
+  };
 
   /**
    * 끌어서 날짜를 옮긴다 — **원천마다 쓰는 곳이 다르다.** 예전에는 칸반 카드만
@@ -347,6 +398,8 @@ export function CalendarView({
           entries={entries}
           {...(holidays[dayList.iso] ? { holiday: holidays[dayList.iso] } : {})}
           surface={surface}
+          {...(workCalendar ? { onWorkLocation: (iso: string) => { setDayList(null); openWork(iso); } } : {})}
+          {...(works[dayList.iso] ? { workLocation: works[dayList.iso] } : {})}
           onClose={() => setDayList(null)}
           onPickEntry={(e) => {
             setDayList(null);
@@ -396,6 +449,22 @@ export function CalendarView({
           }}
         />
       )}
+      {/* 근무 위치(요청) — 구글의 기본 캘린더에 하루치로 쓴다. */}
+      {workDay && (
+        <WorkLocationModal
+          iso={workDay}
+          current={(() => {
+            const cur = findWorkLocation(google.events, workDay);
+            return cur ? { kind: cur.workLocationKind ?? null, label: cur.workLocation ?? '', spanned: isWorkLocationSpan(cur) } : null;
+          })()}
+          isMobile={isMobile}
+          saving={workSaving}
+          error={workError}
+          onClose={() => setWorkDay(null)}
+          onSave={(draft) => saveWork(workDay, draft)}
+          onClear={() => clearWork(workDay)}
+        />
+      )}
       {/* 우클릭 메뉴 — 껍데기는 홈의 그 메뉴이고 항목만 이 화면의 것이다. */}
       <CalendarContextMenu
         menu={menu}
@@ -408,6 +477,7 @@ export function CalendarView({
           sideOpen: state.calSide === 'day',
           deadlineOpen: state.calDeadline,
           isMobile,
+          workLocation: (iso) => works[iso],
         }}
         actions={{
           onClose: () => setMenu(null),
@@ -417,6 +487,7 @@ export function CalendarView({
           askDelete: (e) => setConfirmDel(e),
           newEvent: (iso) => controller.openNewEvent(iso, true),
           openDayList: (iso, at) => setDayList({ iso, at }),
+          ...(workCalendar ? { openWorkLocation: (iso: string) => openWork(iso) } : {}),
           openDaySide: (iso) => {
             controller.selectCalDay(iso);
             controller.setCalSide('day');
