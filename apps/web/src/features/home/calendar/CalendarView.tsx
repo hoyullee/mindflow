@@ -79,7 +79,9 @@ export function CalendarView({
   const [deleting, setDeleting] = useState(false);
   // 근무 위치를 고치는 날(요청) — 열려 있으면 그 날짜다.
   const [workDay, setWorkDay] = useState<string | null>(null);
-  const [workSaving, setWorkSaving] = useState(false);
+  // 저장·지우기 중에는 **어느 쪽이 도는지**까지 들고 있다 — 지우는 중에 저장
+  // 버튼이 "저장 중…"이라 말하면 거짓말이 된다(팝업이 버튼마다 갈라 쓴다).
+  const [workSaving, setWorkSaving] = useState<'save' | 'clear' | null>(null);
   const [workError, setWorkError] = useState<string | null>(null);
   const entries = useMemo(() => {
     // 반복 일정은 보이는 구간에서 회차로 펼쳐진다 — 격자가 그리는 그 6주다.
@@ -139,9 +141,9 @@ export function CalendarView({
    */
   const saveWork = (draft: WorkLocationDraft): void => {
     if (!workCalendar) return;
-    setWorkSaving(true);
+    setWorkSaving('save');
     void google.saveWorkLocation(workCalendar.id, draft).then((err) => {
-      setWorkSaving(false);
+      setWorkSaving(null);
       setWorkError(err);
       if (!err) setWorkDay(null);
     });
@@ -153,9 +155,9 @@ export function CalendarView({
       setWorkDay(null);
       return;
     }
-    setWorkSaving(true);
+    setWorkSaving('clear');
     void google.deleteEvent(cur).then((err) => {
-      setWorkSaving(false);
+      setWorkSaving(null);
       setWorkError(err);
       if (!err) setWorkDay(null);
     });

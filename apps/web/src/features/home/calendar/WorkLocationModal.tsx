@@ -75,7 +75,8 @@ export function WorkLocationModal({
   iso: string;
   current: WorkLocationCurrent | null;
   isMobile: boolean;
-  saving: boolean;
+  /** 지금 도는 일 — 어느 버튼이 스피너를 달지 정한다(`null`이면 쉬는 중). */
+  saving: 'save' | 'clear' | null;
   error: string | null;
   onClose: () => void;
   onSave: (draft: WorkLocationDraft) => void;
@@ -137,14 +138,17 @@ export function WorkLocationModal({
     setT2(`${`${Math.floor(end / 60)}`.padStart(2, '0')}:${`${end % 60}`.padStart(2, '0')}`);
   };
 
+  // 발치는 **오류·상황**만 말한다. "저장 중"·"지우는 중"은 그 버튼이 스피너와 함께
+  // 말하므로 여기서 한 번 더 적지 않고(같은 말을 두 곳에서 하지 않는다), 도는 동안
+  // 앞으로 일어날 일을 설명하던 두 문구는 접는다(이미 일어나고 있다).
   const footMsg =
     error ??
-    (saving
-      ? `저장 중…${days > 1 ? ` (${days}일)` : ''}`
-      : tooLong
-        ? `한 번에 ${WORK_LOCATION_MAX_DAYS}일까지 걸 수 있어요`
-        : days > 1
-          ? `${days}일에 걸어요`
+    (tooLong
+      ? `한 번에 ${WORK_LOCATION_MAX_DAYS}일까지 걸 수 있어요`
+      : days > 1
+        ? `${days}일에 걸어요`
+        : saving
+          ? ''
           : wholeSeries
             ? '매주 반복되는 근무 위치 전체가 바뀌어요'
             : detaching
@@ -343,22 +347,25 @@ export function WorkLocationModal({
           <span data-work-foot style={{ flex: 1, minWidth: 0, fontSize: 12, color: footTone, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{footMsg}</span>
           {/* 지우기는 **걸려 있을 때만** — 없는 것을 지울 수는 없다. */}
           {current && (
-            <button type="button" data-work-clear title="이 날의 근무 위치 지우기" aria-label="이 날의 근무 위치 지우기" disabled={saving} onClick={onClear} className="mf-ctl" style={{ flex: '0 0 auto', whiteSpace: 'nowrap', height: isMobile ? 44 : 36, padding: '0 14px', borderRadius: 999, border: '1px solid var(--mf-border)', background: 'var(--mf-card)', color: 'var(--mf-danger)', font: 'inherit', fontSize: 12.5, fontWeight: 700, cursor: saving ? 'default' : 'pointer' }}>
-              지우기
+            <button type="button" data-work-clear title="이 날의 근무 위치 지우기" aria-label="이 날의 근무 위치 지우기" aria-busy={saving === 'clear' ? true : undefined} disabled={!!saving} onClick={onClear} className="mf-ctl" style={{ flex: '0 0 auto', display: 'inline-flex', alignItems: 'center', gap: 6, whiteSpace: 'nowrap', height: isMobile ? 44 : 36, padding: '0 14px', borderRadius: 999, border: '1px solid var(--mf-border)', background: 'var(--mf-card)', color: 'var(--mf-danger)', font: 'inherit', fontSize: 12.5, fontWeight: 700, cursor: saving ? 'default' : 'pointer', opacity: saving && saving !== 'clear' ? 0.6 : 1 }}>
+              {saving === 'clear' && <Spinner tone="var(--mf-danger)" track="var(--mf-hairline)" />}
+              {saving === 'clear' ? '지우는 중…' : '지우기'}
             </button>
           )}
-          <button type="button" data-work-cancel onClick={onClose} className="mf-ctl" style={{ flex: '0 0 auto', whiteSpace: 'nowrap', height: isMobile ? 44 : 36, padding: '0 16px', borderRadius: 999, border: '1px solid var(--mf-border)', background: 'var(--mf-card)', color: 'var(--mf-muted)', font: 'inherit', fontSize: 12.5, fontWeight: 700, cursor: 'pointer' }}>
+          <button type="button" data-work-cancel disabled={!!saving} onClick={onClose} className="mf-ctl" style={{ flex: '0 0 auto', whiteSpace: 'nowrap', height: isMobile ? 44 : 36, padding: '0 16px', borderRadius: 999, border: '1px solid var(--mf-border)', background: 'var(--mf-card)', color: 'var(--mf-muted)', font: 'inherit', fontSize: 12.5, fontWeight: 700, cursor: saving ? 'default' : 'pointer', opacity: saving ? 0.6 : 1 }}>
             취소
           </button>
           <button
             type="button"
             data-work-save
-            disabled={saving || tooLong}
+            aria-busy={saving === 'save' ? true : undefined}
+            disabled={!!saving || tooLong}
             onClick={save}
             className="mf-ctl-primary"
-            style={{ flex: '0 0 auto', whiteSpace: 'nowrap', height: isMobile ? 44 : 40, padding: isMobile ? '0 20px' : '0 24px', borderRadius: 999, border: 0, background: 'linear-gradient(180deg, var(--mf-accent), var(--mf-accent-strong))', color: 'var(--mf-accent-ink)', font: 'inherit', fontSize: 13.5, fontWeight: 800, cursor: saving || tooLong ? 'default' : 'pointer', opacity: tooLong ? 0.5 : 1, boxShadow: '0 8px 18px -10px rgba(var(--mf-accent-rgb), .9)' }}
+            style={{ flex: '0 0 auto', display: 'inline-flex', alignItems: 'center', gap: 7, whiteSpace: 'nowrap', height: isMobile ? 44 : 40, padding: isMobile ? '0 20px' : '0 24px', borderRadius: 999, border: 0, background: 'linear-gradient(180deg, var(--mf-accent), var(--mf-accent-strong))', color: 'var(--mf-accent-ink)', font: 'inherit', fontSize: 13.5, fontWeight: 800, cursor: saving || tooLong ? 'default' : 'pointer', opacity: tooLong || (saving && saving !== 'save') ? 0.5 : 1, boxShadow: '0 8px 18px -10px rgba(var(--mf-accent-rgb), .9)' }}
           >
-            {saving ? '저장 중…' : '저장'}
+            {saving === 'save' && <Spinner tone="var(--mf-accent-ink)" track="var(--mf-accent-strong)" />}
+            {saving === 'save' ? '저장 중…' : '저장'}
           </button>
         </div>
       </>
@@ -397,5 +404,33 @@ function HomeGlyph() {
       <path d="M5 10v9a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1v-9" />
       <path d="M9.5 20v-5h5v5" />
     </svg>
+  );
+}
+
+/**
+ * 도는 중 표시 — 그 버튼 안에서 돈다(요청).
+ *
+ * 자리를 버튼 안에 둔 이유는 **누른 것이 무엇인지**가 곧 답이기 때문이다: 저장과
+ * 지우기가 같은 발치에 나란히 있어서, 표시를 한 곳에 두면 어느 쪽이 도는지 알 수
+ * 없다. `mf-spin` 키프레임은 앱이 이미 쓰는 그것이다(삭제 확인창·로더와 같은 값).
+ */
+function Spinner({ tone, track }: { tone: string; track: string }) {
+  return (
+    <span
+      data-work-spin
+      aria-hidden="true"
+      style={{
+        display: 'block',
+        flexShrink: 0,
+        width: 13,
+        height: 13,
+        borderRadius: 999,
+        // 트랙은 그 버튼의 면에서 온다 — 강조색 버튼에는 한 톤 진한 강조색, 흰
+        // 면에는 옅은 경계선. 한 값으로 박으면 어느 한쪽에서 보이지 않는다.
+        border: `2px solid ${track}`,
+        borderTopColor: tone,
+        animation: 'mf-spin .7s linear infinite',
+      }}
+    />
   );
 }
