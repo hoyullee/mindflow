@@ -171,6 +171,8 @@ export interface GoogleEvent {
    * 일정으로 잡혔다) 날짜 칸 우측 상단에 따로 그린다. 값은 사람이 읽을 한 마디다.
    */
   workLocation?: string;
+  /** 그 근무 위치의 갈래 — 고치는 팝업이 지금 값을 켜 두려고 든다. */
+  workLocationKind?: WorkLocationKind;
   /** 초대한 사람들의 이메일 — 구글이 초대 메일을 보낸다(우리는 못 보낸다). */
   attendees?: string[];
   /** 예약한 회의실의 리소스 주소 — 구글에서는 이것도 참석자다(`resource: true`). */
@@ -626,6 +628,77 @@ export function workLocationLabel(raw: unknown): string {
   return '근무 위치';
 }
 
+/** 근무 위치의 세 갈래 — 구글의 `workingLocationProperties.type`이 그대로 이 값이다. */
+export type WorkLocationKind = 'homeOffice' | 'officeLocation' | 'customLocation';
+
+/** 받은 값의 갈래 — 모르는 값이면 `null`(지어내지 않는다). */
+export function workLocationKindOf(raw: unknown): WorkLocationKind | null {
+  const t = (raw as { type?: unknown } | undefined)?.type;
+  return t === 'homeOffice' || t === 'officeLocation' || t === 'customLocation' ? t : null;
+}
+
+/** 팝업이 고른 값 — 사무실·직접 입력은 이름을 함께 든다(재택은 이름이 없다). */
+export interface WorkLocationDraft {
+  kind: WorkLocationKind;
+  label?: string;
+}
+
+/**
+ * `workingLocationProperties` — 갈래마다 이름이 들어가는 자리가 다르다.
+ * 이름이 비면 그 하위 객체를 비워 보낸다(구글이 기본 표기를 쓴다).
+ */
+export function workLocationProps(w: WorkLocationDraft): Record<string, unknown> {
+  const label = (w.label ?? '').trim().slice(0, 100);
+  if (w.kind === 'homeOffice') return { type: 'homeOffice', homeOffice: {} };
+  if (w.kind === 'officeLocation') return { type: 'officeLocation', officeLocation: label ? { label } : {} };
+  return { type: 'customLocation', customLocation: label ? { label } : {} };
+}
+
+/**
+ * 근무 위치 **일정 하나**의 본문(만들 때).
+ *
+ * 구글은 근무 위치를 `eventType: 'workingLocation'`인 **종일 일정**으로 든다 —
+ * 하루치이므로 끝은 배타적인 다음 날이다(`whenBody`의 그 규칙). 제목은 구글의
+ * 클라이언트가 갈래로 지어 보여 주므로 우리가 지어 넣지 않는다.
+ *
+ * `visibility: 'public'` · `transparency: 'transparent'`를 함께 보내는 이유:
+ * 근무 위치는 "그 날의 상태"라 바쁨으로 잡히면 안 되고(회의실·한가함 조회에
+ * 걸린다), 구글의 클라이언트도 그렇게 만든다. **기본 캘린더에만** 쓸 수 있다.
+ */
+export function workLocationEventBody(iso: string, w: WorkLocationDraft): Record<string, unknown> {
+  return {
+    eventType: 'workingLocation',
+    start: { date: iso },
+    end: { date: nextDay(iso) },
+    visibility: 'public',
+    transparency: 'transparent',
+    workingLocationProperties: workLocationProps(w),
+  };
+}
+
+/** 그 날의 근무 위치 일정 — 없으면 `null`(있으면 고치거나 지운다). */
+export function findWorkLocation(events: readonly GoogleEvent[], iso: string): GoogleEvent | null {
+  return events.find((e) => !!e.workLocation && e.startDate <= iso && iso <= e.endDate) ?? null;
+}
+
+/**
+ * 그 일정이 **여러 날에 걸쳐** 있는가 — 그러면 우리는 손대지 않는다. 하루만 고치려면
+ * 일정을 쪼개야 하는데(구글의 클라이언트가 하는 일) 그 규칙을 우리가 흉내 내면 남의
+ * 달력이 조용히 어그러진다. 팝업이 사유를 적고 물러선다(반복 일정 삭제와 같은 결).
+ */
+export function isWorkLocationSpan(ev: GoogleEvent): boolean {
+  return ev.endDate > ev.startDate;
+}
+
+export async function createWorkLocationEvent(token: string, calendarId: string, iso: string, w: WorkLocationDraft): Promise<void> {
+  await send(`/calendars/${encodeURIComponent(calendarId)}/events`, token, 'POST', workLocationEventBody(iso, w));
+}
+
+/** 갈래·이름만 갈아 끼우는 PATCH — 날짜는 그대로 둔다(그 날의 상태만 바뀐다). */
+export function workLocationPatch(w: WorkLocationDraft): GoogleEventPatch {
+  return { body: { workingLocationProperties: workLocationProps(w) }, touched: ['workLocation'] };
+}
+
 /** 주최자 — 이름이 없으면 이메일만(구글이 이름을 모르는 계정도 있다). */
 function parseOrganizer(raw: unknown): { organizer?: { email: string; name?: string; self?: true } } {
   const o = raw as Record<string, unknown> | undefined;
@@ -687,7 +760,9 @@ export function parseEvents(json: unknown, cal: GoogleCalendarMeta): GoogleEvent
       ...(cal.writable ? { writable: true } : {}),
       ...(typeof it.etag === 'string' ? { etag: it.etag } : {}),
       ...(typeof it.recurringEventId === 'string' ? { recurringEventId: it.recurringEventId } : {}),
-      ...(it.eventType === 'workingLocation' ? { workLocation: workLocationLabel(it.workingLocationProperties) } : {}),
+      ...(it.eventType === 'workingLocation'
+        ? { workLocation: workLocationLabel(it.workingLocationProperties), ...(workLocationKindOf(it.workingLocationProperties) ? { workLocationKind: workLocationKindOf(it.workingLocationProperties)! } : {}) }
+        : {}),
       ...remembered(parseAttendees(it.attendees), parseOrganizer(it.organizer)),
       ...(it.visibility === 'public' || it.visibility === 'private' ? { visibility: it.visibility } : {}),
       ...(it.transparency === 'transparent' ? { transparency: 'transparent' as const } : {}),
@@ -814,7 +889,7 @@ function localTimeZone(): string {
  * 우리가 구글에 쓰는 값의 갈래 — PATCH에 실은 것이 무엇인지(그래서 412 때 무엇을
  * 견줄지) 이 이름으로 말한다. `when`은 `start`/`end` 짝을 뜻한다.
  */
-export type GoogleWriteField = 'when' | 'title' | 'location' | 'description' | 'attendees' | 'visibility' | 'transparency' | 'reminders' | 'meet' | 'color';
+export type GoogleWriteField = 'when' | 'title' | 'location' | 'description' | 'attendees' | 'visibility' | 'transparency' | 'reminders' | 'meet' | 'color' | 'workLocation';
 
 /**
  * 부분 수정 — **바뀐 것만** 담는다(PATCH의 결).
@@ -1027,6 +1102,7 @@ export function managedFieldsDiffer(a: GoogleEvent, b: GoogleEvent, only?: reado
     transparency: e.transparency ?? 'opaque',
     reminders: e.reminderMinutes ?? 'default',
     color: e.colorId ?? 'default',
+    workLocation: [e.workLocationKind ?? '', e.workLocation ?? ''],
   });
   const x = of(a);
   const y = of(b);

@@ -1949,6 +1949,180 @@ describe('구글 캘린더 겹치기(PR5)', () => {
     expect(chips.some((t) => t?.includes('재택'))).toBe(false);
   });
 
+  // ── 근무 위치 쓰기(요청) — 읽는 쪽은 위 테스트가 지키고, 여기는 **쓰는 쪽**이다.
+  describe('근무 위치 설정(요청)', () => {
+    /** 그 날에 걸린 근무 위치 일정(있으면) — 목록 응답을 갈아 끼운다. */
+    const stubWork = (day: string, work?: { id: string; from: string; to: string; props: unknown }) => {
+      const f = vi.fn(async (url: string, init?: RequestInit) => {
+        const ok = (body: unknown) => ({ ok: true, status: 200, json: async () => body }) as unknown as Response;
+        if (url.includes('people.googleapis.com') || url.includes('admin.googleapis.com')) return ok({ items: [], people: [] });
+        if (url.includes('/colors')) return ok({ event: {} });
+        if (url.includes('/users/me/calendarList')) return ok({ items: [{ id: 'me@example.com', summary: '내 캘린더', primary: true, accessRole: 'owner' }] });
+        if ((init?.method ?? 'GET') !== 'GET') return ok({});
+        return ok({
+          items: [
+            { id: 'e', summary: '진짜 회의', start: { dateTime: `${day}T09:00:00+09:00` }, end: { dateTime: `${day}T10:00:00+09:00` } },
+            ...(work ? [{ id: work.id, eventType: 'workingLocation', workingLocationProperties: work.props, start: { date: work.from }, end: { date: nextDay(work.to) } }] : []),
+          ],
+        });
+      });
+      vi.stubGlobal('fetch', f);
+      return f as unknown as ReturnType<typeof vi.fn>;
+    };
+
+    const openWorkModal = async (container: HTMLElement, user: ReturnType<typeof userEvent.setup>, iso: string) => {
+      fireEvent.contextMenu(container.querySelector(`[data-day-cell="${iso}"]`)!, { clientX: 400, clientY: 300 });
+      const menu = await waitFor(() => {
+        const el = document.querySelector('[data-home-ctx="cal-day"]');
+        expect(el).toBeTruthy();
+        return el as HTMLElement;
+      });
+      return { menu, open: async () => {
+        fireEvent.click(within(menu).getByText(/근무 위치/));
+        return waitFor(() => {
+          const el = document.querySelector('[data-work-modal]');
+          expect(el).toBeTruthy();
+          return el as HTMLElement;
+        });
+      } };
+    };
+
+    it('없는 날에 재택을 걸면 기본 캘린더에 종일 하루치로 POST된다', async () => {
+      seed({ calendars: ['me@example.com'] });
+      seedToken();
+      stubGis();
+      const day = inMonth(2);
+      const f = stubWork(day);
+      clientId = 'test-client.apps.googleusercontent.com';
+      const user = userEvent.setup();
+      const { container } = renderHome();
+      await openCalendar(container, user);
+      await waitFor(() => expect(screen.getAllByText(/진짜 회의/).length).toBeGreaterThan(0));
+
+      const { menu, open } = await openWorkModal(container, user, day);
+      // 걸린 것이 없으면 `설정`이다(무엇을 고치는지 눌러 보기 전에 안다).
+      expect(menu.textContent).toContain('근무 위치 설정');
+      const modal = await open();
+      // 재택은 이름이 없다 — 갈래 셋 중 하나만 켜져 있다.
+      expect(modal.querySelector('[data-work-label]')).toBeNull();
+      expect(modal.querySelector('[data-work-kind="homeOffice"]')?.getAttribute('aria-checked')).toBe('true');
+      // 걸린 것이 없으니 지울 것도 없다.
+      expect(modal.querySelector('[data-work-clear]')).toBeNull();
+      fireEvent.click(modal.querySelector('[data-work-save]')!);
+      await waitFor(() => {
+        const post = f.mock.calls.find((c) => (c[1] as { method?: string } | undefined)?.method === 'POST');
+        expect(post).toBeTruthy();
+        expect(String(post![0])).toContain('/calendars/me%40example.com/events');
+        const body = JSON.parse((post![1] as { body: string }).body) as Record<string, unknown>;
+        expect(body.eventType).toBe('workingLocation');
+        expect(body.start).toEqual({ date: day });
+        expect(body.workingLocationProperties).toMatchObject({ type: 'homeOffice' });
+      });
+      await waitFor(() => expect(document.querySelector('[data-work-modal]')).toBeNull());
+    });
+
+    it('사무실은 이름을 함께 보내고, 걸려 있는 날은 지울 수 있다', async () => {
+      seed({ calendars: ['me@example.com'] });
+      seedToken();
+      stubGis();
+      const day = inMonth(2);
+      const f = stubWork(day, { id: 'w1', from: day, to: day, props: { type: 'homeOffice', homeOffice: {} } });
+      clientId = 'test-client.apps.googleusercontent.com';
+      const user = userEvent.setup();
+      const { container } = renderHome();
+      await openCalendar(container, user);
+      await waitFor(() => expect(container.querySelector(`[data-day-cell="${day}"] [data-work-loc]`)).toBeTruthy());
+
+      const { menu, open } = await openWorkModal(container, user, day);
+      // 걸려 있으면 그 값을 이름에 담는다.
+      expect(menu.textContent).toContain('근무 위치 · 재택');
+      const modal = await open();
+      fireEvent.click(modal.querySelector('[data-work-kind="officeLocation"]')!);
+      const label = await waitFor(() => {
+        const el = modal.querySelector<HTMLInputElement>('[data-work-label]');
+        expect(el).toBeTruthy();
+        return el!;
+      });
+      await user.type(label, '판교 5층');
+      fireEvent.click(modal.querySelector('[data-work-save]')!);
+      await waitFor(() => {
+        const patch = f.mock.calls.find((c) => (c[1] as { method?: string } | undefined)?.method === 'PATCH');
+        expect(patch).toBeTruthy();
+        const body = JSON.parse((patch![1] as { body: string }).body) as Record<string, unknown>;
+        // 갈래·이름만 — 날짜는 그대로다(그 날의 상태만 바뀐다).
+        expect(Object.keys(body)).toEqual(['workingLocationProperties']);
+        expect(body.workingLocationProperties).toEqual({ type: 'officeLocation', officeLocation: { label: '판교 5층' } });
+      });
+
+      // 다시 열어 지우면 그 일정을 삭제한다.
+      const again = await openWorkModal(container, user, day);
+      const m2 = await again.open();
+      fireEvent.click(m2.querySelector('[data-work-clear]')!);
+      await waitFor(() => expect(f.mock.calls.some((c) => (c[1] as { method?: string } | undefined)?.method === 'DELETE')).toBe(true));
+    });
+
+    it('여러 날에 걸친 근무 위치는 손대지 않는다 — 사유를 적고 저장 버튼이 없다', async () => {
+      seed({ calendars: ['me@example.com'] });
+      seedToken();
+      stubGis();
+      const day = inMonth(2);
+      stubWork(day, { id: 'w2', from: day, to: inMonth(4), props: { type: 'officeLocation', officeLocation: { label: '판교' } } });
+      clientId = 'test-client.apps.googleusercontent.com';
+      const user = userEvent.setup();
+      const { container } = renderHome();
+      await openCalendar(container, user);
+      await waitFor(() => expect(container.querySelector(`[data-day-cell="${day}"] [data-work-loc]`)).toBeTruthy());
+      const { open } = await openWorkModal(container, user, day);
+      const modal = await open();
+      expect(modal.querySelector('[data-work-foot]')?.textContent).toContain('여러 날에 걸친');
+      expect(modal.querySelector('[data-work-save]')).toBeNull();
+      // 지우기도 내주지 않는다 — 그 일정은 다른 날의 것이기도 하다.
+      expect(modal.querySelector('[data-work-clear]')).toBeNull();
+    });
+
+    it('일별 팝업 발치에도 같은 길이 있다 — 우클릭은 알아야 쓰는 조작이다', async () => {
+      seed({ calendars: ['me@example.com'] });
+      seedToken();
+      stubGis();
+      const day = inMonth(2);
+      stubWork(day, { id: 'w1', from: day, to: day, props: { type: 'homeOffice', homeOffice: {} } });
+      clientId = 'test-client.apps.googleusercontent.com';
+      const user = userEvent.setup();
+      const { container } = renderHome();
+      await openCalendar(container, user);
+      await waitFor(() => expect(container.querySelector(`[data-day-cell="${day}"] [data-work-loc]`)).toBeTruthy());
+      fireEvent.doubleClick(container.querySelector(`[data-day-cell="${day}"]`)!, { clientX: 400, clientY: 300 });
+      const list = await waitFor(() => {
+        const el = document.querySelector('[data-day-list]');
+        expect(el).toBeTruthy();
+        return el as HTMLElement;
+      });
+      const row = list.querySelector<HTMLElement>('[data-day-list-work]');
+      // 걸려 있으면 그 값을 말한다(우클릭 메뉴와 같은 규칙).
+      expect(row?.textContent).toContain('근무 위치 · 재택');
+      fireEvent.click(row!);
+      await waitFor(() => expect(document.querySelector('[data-work-modal]')).toBeTruthy());
+      // 같은 팝업이다 — 지금 값이 켜져 있다.
+      expect(document.querySelector('[data-work-kind="homeOffice"]')?.getAttribute('aria-checked')).toBe('true');
+    });
+
+    it('연동하지 않았으면 항목 자체가 없다 — 눌러도 아무 일 없는 항목을 두지 않는다', async () => {
+      seed();
+      clientId = '';
+      const user = userEvent.setup();
+      const { container } = renderHome();
+      await openCalendar(container, user);
+      fireEvent.contextMenu(container.querySelector(`[data-day-cell="${inMonth(2)}"]`)!, { clientX: 400, clientY: 300 });
+      const menu = await waitFor(() => {
+        const el = document.querySelector('[data-home-ctx="cal-day"]');
+        expect(el).toBeTruthy();
+        return el as HTMLElement;
+      });
+      expect(menu.textContent).toContain('이 날에 새 일정');
+      expect(menu.textContent).not.toContain('근무 위치');
+    });
+  });
+
   it('참석자 이름은 **다 채워진 뒤** 한 번에 뜬다 — 하나씩 갈리는 것을 보이지 않는다(제보 ①)', async () => {
     seed({ calendars: ['me@example.com'] });
     seedToken();

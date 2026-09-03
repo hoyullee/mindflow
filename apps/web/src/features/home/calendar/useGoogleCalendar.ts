@@ -12,6 +12,7 @@ import { clearNameBook } from './nameBook';
 import { gridRange } from './model';
 import {
   createGoogleEvent,
+  createWorkLocationEvent,
   deleteGoogleEvent,
   ensureGoogleToken,
   eventColorOf,
@@ -34,6 +35,7 @@ import {
   type GoogleEvent,
   type GoogleEventDraft,
   type GoogleEventPatch,
+  type WorkLocationDraft,
 } from './googleCalendar';
 import { fetchRooms, isRoomBusy, searchPeople as searchPeopleApi, type DirectoryPerson, type MeetingRoom } from './googleDirectory';
 import { readGoogleClientId } from '../../auth/googleIdentity';
@@ -72,6 +74,11 @@ export interface GoogleCalendarApi {
   needsReauth: boolean;
   /** 쓸 수 있는 캘린더만 — 새 일정의 목적지로 내놓는 목록. */
   writableCalendars: GoogleCalendarMeta[];
+  /**
+   * 그 날의 **근무 위치**를 쓴다(요청) — 구글은 `eventType: 'workingLocation'`
+   * 일정으로 들고 **기본 캘린더에만** 받는다. 성공하면 `null`.
+   */
+  setWorkLocation: (calendarId: string, iso: string, draft: WorkLocationDraft) => Promise<string | null>;
   /** 구글에 새 일정. 성공하면 `null`, 실패하면 사람이 읽을 문장. */
   createEvent: (calendarId: string, draft: GoogleEventDraft) => Promise<string | null>;
   updateEvent: (ev: GoogleEvent, patch: GoogleEventPatch) => Promise<string | null>;
@@ -433,6 +440,7 @@ export function useGoogleCalendar(
   const createEvent = useCallback((calendarId: string, draft: GoogleEventDraft) => write((t) => createGoogleEvent(t, calendarId, draft)), [write]);
   const updateEvent = useCallback((ev: GoogleEvent, patch: GoogleEventPatch) => write((t) => updateGoogleEvent(t, ev, patch)), [write]);
   const deleteEvent = useCallback((ev: GoogleEvent) => write((t) => deleteGoogleEvent(t, ev)), [write]);
+  const setWorkLocation = useCallback((calendarId: string, iso: string, draft: WorkLocationDraft) => write((t) => createWorkLocationEvent(t, calendarId, iso, draft)), [write]);
 
   const writableCalendars = useMemo(() => calendars.filter((c) => c.writable), [calendars]);
 
@@ -513,6 +521,7 @@ export function useGoogleCalendar(
     createEvent,
     updateEvent,
     deleteEvent,
+    setWorkLocation,
     canSearchPeople,
     searchPeople,
     canPickRooms: granted.has(GOOGLE_SCOPE_ROOMS) && !roomsDenied,
