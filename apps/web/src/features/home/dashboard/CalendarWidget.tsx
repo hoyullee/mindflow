@@ -13,7 +13,7 @@
  * 같은 것이 화면마다 달라 보인다.
  */
 
-import { useEffect, useMemo, useRef } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import type { MouseEvent as ReactMouseEvent } from 'react';
 import type { CalendarEntry, HolidayInfo } from '../calendar/entries';
 import { MiniCalendar } from '../calendar/MiniCalendar';
@@ -27,6 +27,7 @@ import {
   entriesOn,
   hourLabel,
   isSpan,
+  cellRows,
   monthCells,
   monthLabel,
   partsOf,
@@ -222,11 +223,33 @@ function WeekBody({ entries, todayIso, cols, rows, surface, ym, weekOffset, selD
   );
 }
 
+/** 위젯 격자의 칸 간격 — 용량 계산과 그리드가 같은 값을 써야 한다. */
+const WIDGET_GAP = 3;
+/** 위젯 칸 하나에 들어가는 줄 수 — 날짜 숫자 줄(19+2)을 뺀 높이를 줄 높이(15+2)로 나눈다. */
+function widgetCapacity(cellH: number): number {
+  return Math.max(1, Math.floor((cellH - 21) / 17));
+}
+
 /** 월간 — 달력(+ 옆 패널). 3열은 달력만 그린다(요청 — 옆 패널까지 넣으면 칸이 좁다). */
 function MonthBody({ entries, todayIso, mode, cols, rows, surface, ym, side, selDay, onPickDay, onPickEntry, holidays, onNewOnDay }: CalWidgetProps) {
   const withSide = mode === 'month';
-  const perCell = rows >= 4 ? 2 : 1;
-  const cells = useMemo(() => monthCells(ym.y, ym.m, entries, todayIso, perCell, 6, holidays), [ym.y, ym.m, entries, todayIso, perCell, holidays]);
+  // 모델은 접지 않는다 — 칸에 몇 줄이 들어가는지는 **격자를 실측해서** 정한다
+  // (제보 ③: 다일 일정이 많으면 칸이 통째로 좁아지고 접힘 표시도 안 떴다).
+  const cells = useMemo(() => monthCells(ym.y, ym.m, entries, todayIso, 99, 6, holidays), [ym.y, ym.m, entries, todayIso, holidays]);
+  const gridRef = useRef<HTMLDivElement | null>(null);
+  const [capacity, setCapacity] = useState(rows >= 4 ? 3 : 2);
+  useEffect(() => {
+    const el = gridRef.current;
+    if (!el || typeof ResizeObserver === 'undefined') return undefined;
+    const measure = (): void => {
+      const cellH = el.getBoundingClientRect().height / 6 - WIDGET_GAP;
+      if (cellH > 0) setCapacity(widgetCapacity(cellH));
+    };
+    measure();
+    const ro = new ResizeObserver(measure);
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, []);
   return (
     <div data-cal-widget-month style={{ flex: 1, minHeight: 0, display: 'flex', minWidth: 0, overflow: 'hidden' }}>
       <div style={{ flex: withSide ? '1 1 75%' : '1 1 auto', minWidth: 0, display: 'flex', flexDirection: 'column', gap: 5, padding: '9px 11px 10px', borderRight: withSide ? '1px solid var(--mf-hairline)' : 0 }}>
@@ -238,7 +261,7 @@ function MonthBody({ entries, todayIso, mode, cols, rows, surface, ym, side, sel
             </span>
           ))}
         </div>
-        <div style={{ flex: 1, minHeight: 0, display: 'grid', gridTemplateColumns: 'repeat(7, 1fr)', gridAutoRows: '1fr', gap: 3 }}>
+        <div ref={gridRef} style={{ flex: 1, minHeight: 0, display: 'grid', gridTemplateColumns: 'repeat(7, 1fr)', gridAutoRows: '1fr', gap: WIDGET_GAP }}>
           {cells.map((c) => {
             const on = withSide && c.inMonth && c.iso === selDay;
             // 칸 배경 — 큰 달력과 같은 규칙: **요일·이번 달 여부만** 말한다.
@@ -281,18 +304,20 @@ function MonthBody({ entries, todayIso, mode, cols, rows, surface, ym, side, sel
                   </span>
                   {c.holiday && <span style={{ fontSize: 9.5, fontWeight: 700, color: c.dayOff ? 'var(--mf-danger)' : 'var(--mf-faint)', minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{c.holiday}</span>}
                 </span>
-                {/* 기간 바의 줄은 그 주에서 고정이라(제보 ⑧) 빈 줄도 자리를 비운다 — 큰 달력과 같은 규칙. */}
-                {Array.from({ length: c.barRows }, (_, lane) => c.bars.find((b) => b.lane === lane) ?? lane).map((b) =>
-                  typeof b === 'number' ? (
-                    <span key={`gap-${b}`} style={{ height: 15, flexShrink: 0, display: 'block' }} />
-                  ) : (
-                    <Bar key={`bar-${rowKey(b.entry)}`} entry={b.entry} label={b.label} head={b.head} tail={b.tail} surface={surface} h={15} onPick={onPickEntry} />
-                  ),
-                )}
-                {c.entries.map((e) => (
-                  <Chip key={rowKey(e)} entry={e} todayIso={todayIso} surface={surface} compact={cols < 4} small onPick={onPickEntry} />
-                ))}
-                {c.moreN > 0 && <span style={{ fontSize: 10, color: 'var(--mf-faint2)', padding: '0 3px' }}>+{c.moreN}</span>}
+                {/* 줄 배치는 큰 달력과 **같은 함수**(`cellRows`)가 정한다: 기간 바는 그 주에서
+                    받은 줄에, 빈 줄은 하루짜리 칩이 먼저 채우고, 넘치면 마지막 줄이 `+N`이다. */}
+                {cellRows(c, capacity).map((row, i) => {
+                  if (row.kind === 'gap') return <span key={`gap-${i}`} style={{ height: 15, flexShrink: 0, display: 'block' }} />;
+                  if (row.kind === 'more')
+                    return (
+                      <span key="more" data-cal-widget-more style={{ fontSize: 10, color: 'var(--mf-faint2)', padding: '0 3px' }}>
+                        +{row.n}
+                      </span>
+                    );
+                  if (row.kind === 'bar')
+                    return <Bar key={`bar-${rowKey(row.bar.entry)}`} entry={row.bar.entry} label={row.bar.label} head={row.bar.head} tail={row.bar.tail} surface={surface} h={15} onPick={onPickEntry} />;
+                  return <Chip key={rowKey(row.entry)} entry={row.entry} todayIso={todayIso} surface={surface} compact={cols < 4} small onPick={onPickEntry} />;
+                })}
               </>
             );
             const cellStyle = {

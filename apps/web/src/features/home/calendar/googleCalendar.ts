@@ -809,7 +809,7 @@ function localTimeZone(): string {
  * 우리가 구글에 쓰는 값의 갈래 — PATCH에 실은 것이 무엇인지(그래서 412 때 무엇을
  * 견줄지) 이 이름으로 말한다. `when`은 `start`/`end` 짝을 뜻한다.
  */
-export type GoogleWriteField = 'when' | 'title' | 'location' | 'description' | 'attendees' | 'visibility' | 'transparency' | 'reminders';
+export type GoogleWriteField = 'when' | 'title' | 'location' | 'description' | 'attendees' | 'visibility' | 'transparency' | 'reminders' | 'meet';
 
 /**
  * 부분 수정 — **바뀐 것만** 담는다(PATCH의 결).
@@ -893,6 +893,15 @@ export function remindersBody(minutes: number | null | undefined): Record<string
   return minutes === undefined ? { useDefault: true } : { useDefault: false, overrides: minutes === null ? [] : [{ method: 'popup', minutes }] };
 }
 
+/**
+ * Google Meet — 켜면 **만들어 달라고 요청**하고(구글이 링크를 만든다), 끄면 `null`로
+ * **회의를 뗀다**(제보 ④: 이미 있는 일정에서도 Meet를 켜고 끌 수 있어야 한다).
+ * 이 필드를 실은 요청에는 `conferenceDataVersion=1`이 있어야 구글이 받아 준다.
+ */
+export function conferenceBody(on: boolean): Record<string, unknown> | null {
+  return on ? { createRequest: { requestId: `mf-${Date.now()}-${Math.random().toString(36).slice(2, 8)}` } } : null;
+}
+
 export function draftToBody(d: GoogleEventDraft): Record<string, unknown> {
   return {
     summary: d.title,
@@ -907,7 +916,7 @@ export function draftToBody(d: GoogleEventDraft): Record<string, unknown> {
     transparency: d.transparency ?? 'opaque',
     reminders: remindersBody(d.reminderMinutes),
     ...(d.recurrence ? { recurrence: d.recurrence } : {}),
-    ...(d.addMeet ? { conferenceData: { createRequest: { requestId: `mf-${Date.now()}-${Math.random().toString(36).slice(2, 8)}` } } } : {}),
+    ...(d.addMeet ? { conferenceData: conferenceBody(true) } : {}),
   };
 }
 
@@ -952,7 +961,9 @@ export async function createGoogleEvent(token: string, calendarId: string, draft
  * (그 UI를 우리가 다시 만들 이유가 없고, 잘못 만들면 남의 달력을 망가뜨린다).
  */
 export async function updateGoogleEvent(token: string, ev: GoogleEvent, patch: GoogleEventPatch): Promise<void> {
-  const path = `/calendars/${encodeURIComponent(ev.calendarId)}/events/${encodeURIComponent(ev.eventId)}`;
+  // Meet를 켜거나 끄는 요청에는 `conferenceDataVersion=1`이 있어야 한다(만들 때와 같다).
+  const qs = 'conferenceData' in patch.body ? '?conferenceDataVersion=1' : '';
+  const path = `/calendars/${encodeURIComponent(ev.calendarId)}/events/${encodeURIComponent(ev.eventId)}${qs}`;
   if (Object.keys(patch.body).length === 0) return;
   try {
     await send(path, token, 'PATCH', patch.body, ev.etag);
@@ -1000,6 +1011,7 @@ export function managedFieldsDiffer(a: GoogleEvent, b: GoogleEvent, only?: reado
   const of = (e: GoogleEvent): Record<GoogleWriteField, unknown> => ({
     title: e.title,
     when: [e.startDate, e.endDate, e.startTime ?? null, e.endTime ?? null, e.allDay],
+    meet: !!e.meetLink,
     location: e.location ?? '',
     description: e.description ?? '',
     // 응답까지 본다 — 팝업이 열려 있는 동안 누군가 "참석"을 눌렀다면, 우리가 든

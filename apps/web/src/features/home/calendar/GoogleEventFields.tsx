@@ -209,8 +209,10 @@ export function GoogleEventFields({
       ) : null}
 
       {/* Google Meet — 디자인 원본의 **토글 카드**(아이콘 칩 + 상태 문구 + 스위치).
-          만들 때 켜면 구글이 링크를 만들어 주고, 이미 있으면 링크를 보여 준다. */}
-      {mode === 'create' ? (
+          **이미 등록된 일정에서도 켜고 끈다**(요청) — 예전에는 만들 때만 토글이고
+          수정할 때는 링크만 보여 줘서, 회의 링크를 뒤늦게 붙이거나 뗄 길이 없었다.
+          링크는 구글이 만들어 주므로 토글 아래에 **있을 때만** 따라 붙는다. */}
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
         <button
           type="button"
           data-gf-meet
@@ -239,7 +241,7 @@ export function GoogleEventFields({
           <span style={{ display: 'flex', flexDirection: 'column', gap: 2, minWidth: 0, flex: 1 }}>
             <span style={{ fontSize: 12.5, fontWeight: 800, letterSpacing: '-.015em', color: 'var(--mf-text)' }}>Google Meet {value.addMeet ? '켜짐' : '꺼짐'}</span>
             <span data-gf-meet-note style={{ fontSize: 11, color: 'var(--mf-faint)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-              {value.addMeet ? '등록하면 회의 링크가 자동으로 만들어져요' : '켜면 초대장에 회의 링크가 함께 들어가요'}
+              {meetNote(mode, !!value.addMeet, !!meetLink)}
             </span>
           </span>
           {/* 스위치는 장식이다 — 켜짐/꺼짐은 카드 전체(aria-pressed)가 말한다. */}
@@ -247,17 +249,16 @@ export function GoogleEventFields({
             <span style={{ width: 18, height: 18, borderRadius: 999, background: '#FFFFFF', boxShadow: '0 1px 3px rgba(46,42,38,.3)', display: 'block' }} />
           </span>
         </button>
-      ) : meetLink ? (
-        <Field label="온라인 회의">
-          {/* 원본 `nHasMeetLink` 행 — 링크는 등폭으로, 복사 버튼과 함께. */}
+        {meetLink && value.addMeet ? (
+          /* 원본 `nHasMeetLink` 행 — 링크는 등폭으로, 복사 버튼과 함께. */
           <span style={{ display: 'flex', alignItems: 'center', gap: 9, padding: '10px 12px', borderRadius: 12, background: 'var(--mf-card)', border: '1px solid var(--mf-border-soft)', minWidth: 0 }}>
             <span data-gf-meet-link style={{ flex: 1, minWidth: 0, fontFamily: "'JetBrains Mono', monospace", fontSize: 11.5, color: 'var(--mf-accent-strong)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{meetLink}</span>
             <button type="button" className="mf-ctl" data-gf-meet-copy onClick={() => void navigator.clipboard?.writeText(meetLink).catch(() => undefined)} style={{ flex: '0 0 auto', whiteSpace: 'nowrap', height: 28, padding: '0 12px', borderRadius: 999, border: '1px solid var(--mf-border)', background: 'var(--mf-panel2)', color: 'var(--mf-accent-strong)', font: 'inherit', fontSize: 11.5, fontWeight: 700, cursor: 'pointer' }}>
               링크 복사
             </button>
           </span>
-        </Field>
-      ) : null}
+        ) : null}
+      </div>
 
       {/* **일정을 만든 사람은 참석자 목록에서 뺀다**(요청) — 구글은 주최자도 참석자 배열에
           싣지만, 초대한 사람과 초대받은 사람은 다른 자리다. 배열 자체에서는 지우지
@@ -353,6 +354,16 @@ export function guestLabel(email: string, names: Record<string, string>): string
   if (known) return known;
   const at = email.indexOf('@');
   return at > 0 ? email.slice(0, at) : email;
+}
+
+/**
+ * Meet 토글 카드의 한 줄 안내 — **지금 누르면 무슨 일이 일어나는지**를 말한다.
+ * 이미 등록된 일정에서도 토글이 뜨므로(요청) 링크가 있는지에 따라 문장이 갈린다.
+ */
+export function meetNote(mode: 'create' | 'edit', on: boolean, hasLink: boolean): string {
+  if (mode === 'create') return on ? '등록하면 회의 링크가 자동으로 만들어져요' : '켜면 초대장에 회의 링크가 함께 들어가요';
+  if (on) return hasLink ? '회의 링크가 초대장에 들어가 있어요' : '저장하면 회의 링크가 만들어져요';
+  return hasLink ? '저장하면 회의 링크가 사라져요' : '켜면 저장할 때 회의 링크가 만들어져요';
 }
 
 /** 참석자 구획 머리의 한 줄 — 주최자가 따로 있으면 "일정을 만든 사람 외 N명 초대"(요청). */
@@ -911,6 +922,10 @@ function Rooms({
         {g.rooms.map((r, i) => {
           const on = picked.includes(r.email);
           const sub = [r.where, r.capacity ? `${r.capacity}인` : null].filter(Boolean).join(' · ');
+          // 사용 중인 방은 **이름에 취소선**(요청) — 묶음 머리·배지와 함께 세 겹으로
+          // "이 시간엔 못 쓴다"를 말한다. 그래도 고를 수는 있다(회의실 정책상
+          // 겹쳐 잡는 일이 있고, 우리가 대신 막을 근거는 없다).
+          const busyRow = busyOf(r.email) === true;
           return (
             <button
               key={r.email}
@@ -929,7 +944,7 @@ function Rooms({
                 <RoomGlyph on={on} />
               </span>
               <span style={{ display: 'flex', flexDirection: 'column', gap: 1, minWidth: 0, flex: 1 }}>
-                <span style={{ fontSize: 12, fontWeight: on ? 800 : 600, color: on ? 'var(--mf-accent-strong)' : 'var(--mf-text)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{r.name}</span>
+                <span data-gf-room-name style={{ fontSize: 12, fontWeight: on ? 800 : 600, color: on ? 'var(--mf-accent-strong)' : 'var(--mf-text)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', ...(busyRow ? { textDecoration: 'line-through', textDecorationColor: 'var(--mf-danger)' } : {}) }}>{r.name}</span>
                 {sub && <span style={{ fontSize: 10.5, color: 'var(--mf-faint)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{sub}</span>}
               </span>
               <RoomState on={on} busy={busyOf(r.email)} />

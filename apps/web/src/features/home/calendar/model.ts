@@ -262,6 +262,41 @@ export function monthCells(y: number, m: number, entries: readonly CalendarEntry
   return cells;
 }
 
+/**
+ * 칸 하나에 실제로 그릴 **줄 목록**. 달력 격자와 대시보드 위젯이 같은 함수를 쓴다
+ * (칸을 채우는 규칙이 화면마다 다르면 그게 곧 버그다).
+ *
+ * 규칙 셋:
+ * ① 기간 바는 그 주에서 배정받은 줄(lane)에 그대로 앉는다 — 위쪽의 빈 줄은 자리를
+ *    비워야 같은 일정이 칸을 지나도 같은 높이에 남는다.
+ * ② **빈 줄이 있으면 하루짜리 칩이 그 자리를 먼저 채운다**(제보 ①: A·C만 남은 칸의
+ *    B 자리가 비어 있는데 새 일정이 그 아래로 밀렸다). 구글 캘린더도 같다.
+ * ③ 넘치면 **마지막 줄을 `+N개`에 내준다**(제보 ②: 다일 일정과 하루짜리가 섞이면
+ *    접힘 표시가 아예 안 나왔다 — 예전에는 칩만 세고 바는 세지 않았다). N은 그 칸에서
+ *    보이지 않게 된 항목 수이고, 빈 줄은 세지 않는다.
+ */
+export type CellRow = { kind: 'bar'; bar: MonthBar } | { kind: 'chip'; entry: CalendarEntry } | { kind: 'gap' } | { kind: 'more'; n: number };
+
+export function cellRows(cell: MonthCell, capacity: number): CellRow[] {
+  const rows: CellRow[] = Array.from({ length: cell.barRows }, (_, lane) => {
+    const bar = cell.bars.find((b) => b.lane === lane);
+    return bar ? ({ kind: 'bar', bar } as CellRow) : ({ kind: 'gap' } as CellRow);
+  });
+  const queue = [...cell.entries];
+  for (let i = 0; i < rows.length && queue.length; i += 1) {
+    if (rows[i]!.kind === 'gap') rows[i] = { kind: 'chip', entry: queue.shift()! };
+  }
+  for (const entry of queue) rows.push({ kind: 'chip', entry });
+
+  const limit = Math.max(1, capacity);
+  if (rows.length <= limit && cell.moreN === 0) return rows;
+  const shown = rows.slice(0, limit - 1);
+  const hidden = rows.slice(limit - 1).filter((r) => r.kind !== 'gap').length + cell.moreN;
+  // 잘라 낸 것이 빈 줄뿐이면 접힘 표시를 둘 이유가 없다.
+  if (hidden === 0) return rows.slice(0, limit);
+  return [...shown, { kind: 'more', n: hidden }];
+}
+
 /** 통계 줄의 한 칩. 개수가 0이면 무채색으로 그린다(그리는 쪽 판단). */
 export interface CalendarStat {
   key: 'over' | 'today' | 'week' | 'span';
