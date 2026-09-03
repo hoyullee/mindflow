@@ -174,6 +174,30 @@ describe('대시보드 ① — LNB·보기·피커', () => {
     expect(screen.getByPlaceholderText('모든 스페이스에서 검색')).toBeTruthy();
   });
 
+  it('위젯 뒤의 면은 **흰 면**이고 점 격자는 그대로다 — 히어로는 그대로 어둡다(요청 ①)', async () => {
+    seedSpaces(true);
+    localStorage.setItem(
+      'mf_spaces',
+      JSON.stringify({
+        spaces: [{ id: 's1', name: '일반 공간', home: true, color: '#f0663f', maps: [{ title: '기획맵', when: '방금', hue: '#f0663f', docId: 'doc-a' }], folders: [] }],
+        mapFolders: {},
+        dashboards: [{ id: 'd1', name: '기본 보드', items: [{ id: 'w1', docId: 'doc-a', size: '2x2' }] }],
+      }),
+    );
+    const { container } = renderHome([META('doc-a', '기획맵')], { 'doc-a': MAP_BODY });
+    const body = await waitFor(() => {
+      const el = container.querySelector('[data-dash-body]');
+      expect(el).toBeTruthy();
+      return el as HTMLElement;
+    });
+    expect(body.style.backgroundColor).toContain('--mf-card');
+    // 점 격자는 그 위에 그대로(요청: dot 표시는 유지).
+    expect(body.style.backgroundImage).toContain('--mf-dot-grid');
+    // 히어로는 그대로 어둡다(요청: 타이틀 제외).
+    const hero = container.querySelector('[data-dashboard-view]')!.firstElementChild as HTMLElement;
+    expect(hero.style.background).toContain('rgb(51, 46, 41)');
+  });
+
   it('피커: 보드를 골라 크기를 정해 올리면 위젯이 서고, 피커는 열린 채 "올림" 배지가 붙는다', async () => {
     seedSpaces(true);
     const user = userEvent.setup();

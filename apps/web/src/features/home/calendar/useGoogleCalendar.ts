@@ -42,7 +42,7 @@ import {
   type GoogleEventPatch,
   type WorkLocationDraft,
 } from './googleCalendar';
-import { fetchRooms, isRoomBusy, searchPeople as searchPeopleApi, type DirectoryPerson, type MeetingRoom } from './googleDirectory';
+import { checkRoom, fetchRooms, searchPeople as searchPeopleApi, type DirectoryPerson, type MeetingRoom, type RoomBusy } from './googleDirectory';
 import { readGoogleClientId } from '../../auth/googleIdentity';
 import { useLiveRefresh } from './useLiveRefresh';
 
@@ -114,9 +114,9 @@ export interface GoogleCalendarApi {
   /**
    * 그 시간대에 회의실이 차 있는가(요청) — `true` 사용 중 / `false` 사용 가능 /
    * `null` 알 수 없음. 새 스코프 없이 그 회의실 캘린더의 일정을 구간만 물어본다
-   * (`isRoomBusy`) — freebusy는 스코프가 따로라 검수를 다시 받아야 한다.
+   * (`checkRoom`) — freebusy는 스코프가 따로라 검수를 다시 받아야 한다.
    */
-  checkRoomBusy: (roomEmail: string, fromIso: string, toIso: string, skipEventId?: string) => Promise<boolean | null>;
+  checkRoomBusy: (roomEmail: string, fromIso: string, toIso: string, skipEventId?: string) => Promise<RoomBusy | null>;
 }
 
 export interface GoogleCalendarPrefs {
@@ -507,12 +507,12 @@ export function useGoogleCalendar(
    * 칠하지 않는다**는 규칙 때문에 셋을 갈라 돌려준다.
    *
    * 새 스코프는 받지 않는다 — 회의실도 캘린더라 이미 승인된 `calendar.events`로
-   * 그 구간만 물어본다(`isRoomBusy` 머리 주석).
+   * 그 구간만 물어본다(`checkRoom` 머리 주석).
    */
   const checkRoomBusy = useCallback(
-    async (roomEmail: string, fromIso: string, toIso: string, skipEventId?: string): Promise<boolean | null> => {
+    async (roomEmail: string, fromIso: string, toIso: string, skipEventId?: string): Promise<RoomBusy | null> => {
       if (!granted.has(GOOGLE_SCOPE_ROOMS)) return null;
-      return withToken((t) => isRoomBusy(t, roomEmail, fromIso, toIso, skipEventId)).catch(() => null);
+      return withToken((t) => checkRoom(t, roomEmail, fromIso, toIso, skipEventId)).catch(() => null);
     },
     [granted, withToken],
   );

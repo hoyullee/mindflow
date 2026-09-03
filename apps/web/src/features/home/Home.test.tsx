@@ -5245,6 +5245,23 @@ describe('홈 리디자인 계약', () => {
     expect(reduce).toContain('transform: none');
   });
 
+  it('본문 면은 **흰 면**이고 최근 항목 띠만 따뜻한 면으로 남는다(요청 ①)', async () => {
+    localStorage.setItem('mf_recent', JSON.stringify(['맵 하나']));
+    const { container } = renderHomeWithDocStore([
+      { id: 'd1', title: '맵 하나', version: 1, updatedAt: '2026-08-16T00:00:00.000Z', isFavorite: false, deletedAt: null },
+    ]);
+    await waitFor(() => expect(container.querySelector('.mf-recent-tray')).toBeTruthy());
+    const main = container.querySelector('main') as HTMLElement;
+    expect(main.style.background).toContain('--mf-card');
+    // 예외는 최근 항목 띠 하나 — 흰 카드가 흰 배경에 묻히지 않게 그 자리만 지킨다.
+    // 본문 패딩만큼 음수 마진으로 빼고 같은 값을 패딩으로 되돌려 카드 자리는 불변이다.
+    const css = readFileSync(resolve('src/features/home/home.css'), 'utf8');
+    const tray = css.slice(css.indexOf('.mf-recent-tray {'), css.indexOf('}', css.indexOf('.mf-recent-tray {')));
+    expect(tray).toContain('background: var(--mf-bg)');
+    expect(tray).toContain('margin: -24px -32px 26px');
+    expect(tray).toContain('padding: 24px 32px 26px');
+  });
+
   it('카드 미리보기 틀 — 옅은 wash + 도트 격자 + 종류 배지(최근 항목도 같은 틀)', async () => {
     localStorage.setItem('mf_recent', JSON.stringify(['맵 하나']));
     const { container } = renderHomeWithDocStore([

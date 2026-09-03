@@ -149,7 +149,25 @@ export function filterRooms(rooms: readonly MeetingRoom[], query: string): Meeti
 }
 
 /**
- * 이 시간대에 그 회의실이 **비어 있는가**(요청) — 구글 캘린더는 달력에 겹쳐 보여
+ * 그 구간에 회의실을 잡고 있는 일정 — 조직이 회의실 캘린더를 **공개한 만큼만** 온다.
+ *
+ * 회의실 캘린더를 "한가함/바쁨만"으로 공개해 두면 제목·주최자가 없이 시각만 오고,
+ * 그때는 화면도 시각만 말한다(없는 것을 지어내지 않는다).
+ */
+export interface RoomBusy {
+  busy: boolean;
+  /** 잡은 사람 — 주최자 이름(없으면 주소). */
+  by?: string;
+  /** 그 일정의 제목. */
+  title?: string;
+  /** 로컬 `HH:MM` — 종일 일정이면 없다. */
+  from?: string;
+  to?: string;
+}
+
+/**
+ * 이 시간대에 그 회의실이 **비어 있는가, 아니면 누가 쓰고 있는가**(요청) — 구글
+ * 캘린더는 달력에 겹쳐 보여
  * 주지만 우리는 팝업이라 그럴 자리가 없다. 그래서 **회의실 행 자체가** 말한다.
  *
  * ## 왜 `events.list`인가(freebusy가 아니라)
@@ -166,13 +184,13 @@ export function filterRooms(rooms: readonly MeetingRoom[], query: string): Meeti
  * @param skipEventId 지금 고치고 있는 일정 — 그 일정이 이미 잡아 둔 회의실을
  *   "사용 중"이라 말하면 자기 자신과 부딪힌다고 하는 셈이다.
  */
-export async function isRoomBusy(token: string, roomEmail: string, fromIso: string, toIso: string, skipEventId?: string): Promise<boolean | null> {
+export async function checkRoom(token: string, roomEmail: string, fromIso: string, toIso: string, skipEventId?: string): Promise<RoomBusy | null> {
   const q = new URLSearchParams({ timeMin: fromIso, timeMax: toIso, singleEvents: 'true', maxResults: '5', showDeleted: 'false' });
   const json = await get(`https://www.googleapis.com/calendar/v3/calendars/${encodeURIComponent(roomEmail)}/events?${q.toString()}`, token);
   if (json === null) return null;
   const items = (json as { items?: unknown }).items;
   if (!Array.isArray(items)) return null;
-  return items.some((raw) => {
+  const hit = items.find((raw) => {
     const it = raw as Record<string, unknown>;
     if (it.status === 'cancelled') return false;
     // 회의실이 스스로 거절한 초대는 그 방을 쓰지 않는다는 뜻이다.
@@ -180,5 +198,25 @@ export async function isRoomBusy(token: string, roomEmail: string, fromIso: stri
     if (me?.responseStatus === 'declined') return false;
     if (skipEventId && (it.id === skipEventId || it.recurringEventId === skipEventId)) return false;
     return true;
-  });
+  }) as Record<string, unknown> | undefined;
+  if (!hit) return { busy: false };
+  const org = hit.organizer as { displayName?: string; email?: string } | undefined;
+  const by = org?.displayName || org?.email;
+  const title = typeof hit.summary === 'string' ? hit.summary : undefined;
+  return {
+    busy: true,
+    ...(by ? { by } : {}),
+    ...(title ? { title } : {}),
+    ...(hhmm(hit.start) ? { from: hhmm(hit.start)! } : {}),
+    ...(hhmm(hit.end) ? { to: hhmm(hit.end)! } : {}),
+  };
+}
+
+/** 구글의 `start`/`end`에서 로컬 `HH:MM` — 종일이면 시각이 없다(`undefined`). */
+function hhmm(raw: unknown): string | undefined {
+  const dt = (raw as { dateTime?: unknown } | undefined)?.dateTime;
+  if (typeof dt !== 'string') return undefined;
+  const d = new Date(dt);
+  if (Number.isNaN(d.getTime())) return undefined;
+  return `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
 }

@@ -650,6 +650,9 @@ describe('구글 캘린더 겹치기(PR5)', () => {
       const btn = container.querySelector('[data-google-connect-cal]');
       expect(btn?.getAttribute('aria-label')).toBe('Google 캘린더 다시 연결');
     });
+    // **왜**인지 툴팁이 말한다(제보: 배포되면 연동이 해제되는 것 같다) — 해제된 것이
+    // 아니라 구글 권한이 한 시간마다 만료되는 것이고, 고른 캘린더는 그대로 남아 있다.
+    expect(container.querySelector('[data-google-connect-cal]')?.getAttribute('title')).toContain('한 시간마다 만료');
   });
 
   it('목적지가 구글이면 참석자·회의실·알림 필드가 오른쪽 열로 뜬다 — 반복은 두 목적지 공통', async () => {
@@ -1911,6 +1914,114 @@ describe('구글 캘린더 겹치기(PR5)', () => {
     await waitFor(() => expect(nameOf('johan.kim@mail.example.com')).toContain('김요한'), { timeout: 4000 });
     // 이름 검색 상자 라벨이 열려 있음을 말한다(디렉터리 스코프가 있다)
     expect(within(pop).getByLabelText('참석자 이름 또는 이메일')).toBeTruthy();
+  });
+
+  it('보이는 두 줄의 이름이 **먼저** 온다 — 접힌 사람의 조회가 끝나기 전에 목록이 드러난다(제보)', async () => {
+    seed({ calendars: ['me@example.com'] });
+    seedToken();
+    stubGis();
+    const day = inMonth(1);
+    // 다섯 명 초대 — 셋을 넘으니 두 줄 + `외 3명`이다. 접힌 셋은 **아주 늦게** 답한다:
+    // 예전에는 목록 전체를 기다려 그동안 두 줄이 자리표시자였다(제보의 그 지연).
+    const slow = new Set(['c@example.com', 'd@example.com', 'e@example.com']);
+    const names: Record<string, string> = {
+      'a@example.com': '가나다',
+      'b@example.com': '라마바',
+      'c@example.com': '사아자',
+      'd@example.com': '차카타',
+      'e@example.com': '파하가',
+    };
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (url: string) => {
+        const ok = (body: unknown) => ({ ok: true, status: 200, json: async () => body }) as unknown as Response;
+        if (url.includes('searchDirectoryPeople')) {
+          const q = decodeURIComponent(/query=([^&]+)/.exec(url)?.[1] ?? '');
+          if (slow.has(q)) await new Promise((r) => setTimeout(r, 3000));
+          const n = names[q];
+          return ok(n ? { people: [{ names: [{ displayName: n }], emailAddresses: [{ metadata: { primary: true }, value: q }] }] } : { people: [] });
+        }
+        if (url.includes('people.googleapis.com') || url.includes('admin.googleapis.com')) return ok({ items: [], results: [] });
+        if (url.includes('/colors')) return ok({ event: {} });
+        if (url.includes('/users/me/calendarList')) return ok({ items: [{ id: 'me@example.com', summary: '내 캘린더', primary: true, accessRole: 'owner' }] });
+        return ok({
+          items: [
+            {
+              id: 'x',
+              summary: '다섯 명 회의',
+              start: { dateTime: `${day}T09:00:00+09:00` },
+              end: { dateTime: `${day}T10:00:00+09:00` },
+              organizer: { email: 'me@example.com', self: true },
+              attendees: [{ email: 'me@example.com', self: true, organizer: true }, ...Object.keys(names).map((email) => ({ email }))],
+            },
+          ],
+        });
+      }),
+    );
+    clientId = 'test-client.apps.googleusercontent.com';
+    const user = userEvent.setup();
+    const { container } = renderHome();
+    const pop = await openGoogleChip(container, user, /다섯 명 회의/);
+    // 보이는 둘의 이름이 오면 그걸로 목록이 드러난다 — 접힌 셋(3초)은 아직 오지 않았다.
+    await waitFor(() => expect(pop.querySelector('[data-gf-guest="a@example.com"]')?.textContent).toContain('가나다'), { timeout: 2000 });
+    expect(pop.querySelector('[data-gf-guest="b@example.com"]')?.textContent).toContain('라마바');
+    expect(pop.querySelectorAll('[data-gf-guest-loading]')).toHaveLength(0);
+    // 접힌 줄은 개수만 말하므로 그 이름이 늦어도 첫 화면을 붙잡지 않는다.
+    expect(pop.querySelector('[data-gf-guest-more]')?.textContent).toContain('외 3명');
+  });
+
+  it('사용 중인 회의실을 고르면 **누가 언제까지** 쓰는지 한 줄로 말한다(요청 ③)', async () => {
+    seed({ calendars: ['me@example.com'] });
+    seedToken();
+    stubGis();
+    const day = inMonth(1);
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (url: string) => {
+        const ok = (body: unknown) => ({ ok: true, status: 200, json: async () => body }) as unknown as Response;
+        if (url.includes('admin.googleapis.com')) return ok({ items: [{ resourceEmail: 'room1@example.com', resourceName: '회의실 A', capacity: 8, floorName: '3층' }] });
+        if (url.includes('people.googleapis.com')) return ok({ people: [] });
+        if (url.includes('/colors')) return ok({ event: {} });
+        if (url.includes('/users/me/calendarList')) return ok({ items: [{ id: 'me@example.com', summary: '내 캘린더', primary: true, accessRole: 'owner' }] });
+        // 회의실 캘린더 조회 — 그 구간을 잡고 있는 일정(주최자·제목·시각까지 공개)
+        if (url.includes('room1%40example.com')) {
+          return ok({
+            items: [
+              {
+                id: 'busy1',
+                summary: '팀 회의',
+                organizer: { displayName: '홍길동', email: 'gil@example.com' },
+                // 오프셋 없이 — 어느 시간대에서 돌려도 로컬 09:00으로 읽힌다(테스트 안정).
+                start: { dateTime: `${day}T09:00:00` },
+                end: { dateTime: `${day}T10:00:00` },
+              },
+            ],
+          });
+        }
+        return ok({ items: [] });
+      }),
+    );
+    clientId = 'test-client.apps.googleusercontent.com';
+    const user = userEvent.setup();
+    const { container } = renderHome();
+    await openCalendar(container, user);
+    await user.click(screen.getByText('새 일정'));
+    await waitFor(() => expect(document.querySelector('[data-new-cal="me@example.com"]')).toBeTruthy());
+    await user.click(document.querySelector<HTMLElement>('[data-new-cal="me@example.com"]')!);
+    await waitFor(() => expect(document.querySelector('[data-gf-room-hit="room1@example.com"]')).toBeTruthy(), { timeout: 3000 });
+    // 배지가 `사용 중`이 될 때까지 — 그 답에 세부가 함께 실려 온다.
+    await waitFor(() => expect(document.querySelector('[data-gf-room-group="busy"]')).toBeTruthy(), { timeout: 3000 });
+    // 고르기 전에는 툴팁으로만(세 줄 상자에 줄을 더 늘리지 않는다).
+    expect(document.querySelector('[data-gf-room-hit="room1@example.com"]')!.getAttribute('title')).toContain('홍길동');
+    expect(document.querySelector('[data-gf-room-busy]')).toBeNull();
+    // 답이 오면 묶음이 갈리며 행이 다시 마운트된다 — 그 자리에서 다시 집어야 한다.
+    fireEvent.mouseDown(document.querySelector('[data-gf-room-hit="room1@example.com"]')!);
+    const line = await waitFor(() => {
+      const el = document.querySelector('[data-gf-room-busy]');
+      expect(el).toBeTruthy();
+      return el as HTMLElement;
+    });
+    expect(line.textContent).toBe('사용 중 · 홍길동 · 팀 회의 · 09:00–10:00');
   });
 
   it('근무 위치는 일정이 아니다 — 칩이 아니라 칸 우측 상단의 한 마디(제보 ⑥)', async () => {

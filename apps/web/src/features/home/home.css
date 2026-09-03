@@ -502,15 +502,20 @@ a:hover {
 /* 홈 리디자인 — "최근 항목"은 더 이상 가라앉은 상자가 아니다.
    디자인 원본은 이 구획을 **아래 선으로만** 가른다: 카드 자체가 그늘로 떠 있으므로
    그 아래 또 하나의 면을 깔면 층이 둘이 되어 카드가 묻힌다. */
+/* 흰 본문 위의 "선반" — 이 띠만 따뜻한 면을 지킨다(요청: 배경은 흰색, 최근 항목
+   제외). 흰 카드가 흰 배경에 묻히지 않게 하는 것이 그 예외의 이유다.
+   본문 패딩(24/32)만큼 음수 마진으로 빼서 좌우 끝까지 닿게 하고 같은 값을 패딩으로
+   되돌리므로 **카드 자리는 한 픽셀도 바뀌지 않는다**. */
 .mf-recent-tray {
-  padding-bottom: 26px;
+  background: var(--mf-bg);
+  margin: -24px -32px 26px;
+  padding: 24px 32px 26px;
   border-bottom: 1px solid var(--mf-border-soft);
-  margin-bottom: 26px;
 }
 @media (max-width: 767px) {
   .mf-recent-tray {
-    padding-bottom: 18px;
-    margin-bottom: 18px;
+    margin: -16px -14px 18px;
+    padding: 16px 14px 18px;
   }
 }
 

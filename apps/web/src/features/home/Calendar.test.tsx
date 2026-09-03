@@ -365,7 +365,7 @@ describe('일정 화면', () => {
     await waitFor(() => expect(document.querySelectorAll('[data-ym-month]')).toHaveLength(12));
     // 달을 고르면 달력이 그 달로 간다
     fireEvent.click(document.querySelector('[data-ym-month="3"]')!);
-    await waitFor(() => expect(document.querySelector('[data-cal-month]')!.textContent).toBe(`${now.getFullYear() + 1}년 3월`));
+    await waitFor(() => expect(document.querySelector('[data-cal-month-label]')!.textContent).toBe(`${now.getFullYear() + 1}년 3월`));
     expect(document.querySelector('[data-ym-month="1"]')).toBeNull(); // 고르면 닫힌다
   });
 
@@ -618,6 +618,32 @@ describe('일정 화면', () => {
       const rule = /\[data-day-cell\],\s*\[data-cal-widget-cell\]\s*\{[^}]*\}/.exec(css)?.[0] ?? '';
       expect(rule).toContain('user-select: none');
       expect(rule).toContain('-webkit-user-select: none');
+    });
+
+    it('달력 뒤의 면은 **흰 면**이고 점 격자는 그대로다(요청 ①)', async () => {
+      renderHome([META('d1', '스프린트 보드')], BODIES());
+      await openCalendar();
+      const body = document.querySelector('[data-cal-body]') as HTMLElement;
+      expect(body.style.background).toContain('--mf-card');
+      // 점 격자는 그 위에 그대로(요청: dot 표시는 유지).
+      const canvas = document.querySelector('[data-cal-canvas]') as HTMLElement;
+      expect(canvas.style.backgroundImage).toContain('--mf-dot-grid');
+    });
+
+    it('연/달 버튼은 1자리 달과 2자리 달에서 **폭이 같다**(제보 ⑥)', async () => {
+      renderHome([META('d1', '스프린트 보드')], BODIES());
+      await openCalendar();
+      const btn = document.querySelector('[data-cal-month]') as HTMLElement;
+      // jsdom에는 레이아웃이 없으므로 **규칙**을 고정한다: 가장 넓은 표기(`…년 12월`)를
+      // 같은 칸에 숨겨 두고 그 폭을 쓰고, 숫자는 등폭이다.
+      const sizer = btn.querySelector('[aria-hidden="true"]') as HTMLElement;
+      expect(sizer.textContent).toMatch(/^\d{4}년 12월$/);
+      expect(sizer.style.visibility).toBe('hidden');
+      const box = sizer.parentElement as HTMLElement;
+      expect(box.style.display).toBe('inline-grid');
+      expect(box.style.fontVariantNumeric).toBe('tabular-nums');
+      // 보이는 라벨은 자와 같은 칸에 겹친다.
+      expect(btn.querySelector('[data-cal-month-label]')!.getAttribute('style')).toContain('grid-area: 1 / 1');
     });
 
     it('고른 날은 **채운 원**이고, 토·일·공휴일은 그 색을 지킨다(제보 ③④)', async () => {

@@ -36,7 +36,7 @@ export function DashboardSkeleton({ isMobile = false }: { isMobile?: boolean }) 
       </div>
 
       {/* 위젯 격자 — 실제 화면과 같은 행 높이·간격·점 격자 바닥 */}
-      <div style={{ padding: isMobile ? '14px 14px 32px' : '18px 32px 44px', backgroundImage: 'radial-gradient(var(--mf-dot-grid) 1px, transparent 1px)', backgroundSize: '17px 17px', minHeight: 420, flex: 1 }}>
+      <div data-dash-body style={{ padding: isMobile ? '14px 14px 32px' : '18px 32px 44px', backgroundColor: 'var(--mf-card)', backgroundImage: 'radial-gradient(var(--mf-dot-grid) 1px, transparent 1px)', backgroundSize: '17px 17px', minHeight: 420, flex: 1 }}>
         <div style={{ display: 'grid', gridTemplateColumns: `repeat(${cols}, minmax(0, 1fr))`, gridAutoRows: DASH_ROW_PX, gap: 14 }}>
           {cells.map((c, i) => (
             <div key={i} data-skel-cell style={{ gridColumn: `span ${Math.min(c, cols)}`, gridRow: 'span 2', display: 'flex', flexDirection: 'column', borderRadius: 16, border: '1px solid var(--mf-border)', background: 'var(--mf-card)', overflow: 'hidden', boxShadow: '0 2px 5px -3px rgba(46,42,38,.14), 0 20px 36px -30px rgba(46,42,38,.5)' }}>
