@@ -23,6 +23,12 @@ export interface EntryChip {
   fg: string;
   dot: string;
   /**
+   * 이 항목의 **정체성 색** — 칩의 면·잉크가 여기서 파생된다(우리 일정·카드는 분류색,
+   * 구글은 그 일정의 색). 일별 팝업의 왼쪽 색 바가 이 값을 쓴다(제보: 팝업의 바가
+   * 출처 hue 네 개 중 하나라 **칸의 칩과 색이 달라** 같은 일정으로 읽히지 않았다).
+   */
+  base: string;
+  /**
    * 제목 앞 표식의 모양 — 우리 일정은 점, **구글 일정은 둥근 막대**(요청).
    * 색만 다르면 점 두 개가 나란히 있을 때 출처가 눈에 안 들어온다.
    */
@@ -50,6 +56,7 @@ export function entryChip(e: CalendarEntry, surface: ChipSurface): EntryChip {
   const base = e.google ? (e.colColor ?? GOOGLE_MARK) : (e.tagColor ?? tagColor(e.tag, UI_THEME.palette));
   const dot = e.google ? base : columnColor({ id: e.colId, title: e.colName, ...(e.colColor ? { color: e.colColor } : {}) }, e.colIndex, UI_THEME.palette);
   return {
+    base,
     bg: mixHex(surface.card, base, 0.16),
     // **구글 일정의 글자는 언제나 본문 색**(요청) — 색으로 말하는 것은 표식(막대)
     // 하나면 충분하고, 제목까지 그 색을 따르면 옅은 색에서 읽기 힘들다.
@@ -117,8 +124,11 @@ export function markStyle(chip: EntryChip): CSSProperties {
  * 칸 배경은 여전히 손대지 않는다 — 그 자리는 이미 세 가지(이웃 달·주말·드롭 대기)를
  * 겸하고 있어 넷째 뜻을 얹으면 어느 하나가 가려진다.
  */
-export function dayNumTone(selected: boolean, isToday: boolean): CSSProperties {
+export function dayNumTone(selected: boolean, isToday: boolean, dayInk?: string): CSSProperties {
   if (isToday) return { background: 'var(--mf-accent)', color: 'var(--mf-accent-ink)', fontWeight: 800, ...(selected ? { boxShadow: '0 0 0 3px var(--mf-accent-mute)' } : {}) };
-  if (selected) return { background: 'var(--mf-text)', color: 'var(--mf-card)', fontWeight: 800 };
+  // 고른 날은 **채운 원**이다(오늘과 같은 선택 언어). 다만 토·일·공휴일이면 그 원을
+  // **그 날의 색**으로 채운다(요청 ④) — 예전에는 무조건 잉크색으로 덮어 "이 날은
+  // 일요일이다"라는 신호가 고르는 순간 사라졌다. 지금은 파랑·빨강이 더 또렷하다.
+  if (selected) return { background: dayInk ?? 'var(--mf-text)', color: 'var(--mf-card)', fontWeight: 800 };
   return {};
 }

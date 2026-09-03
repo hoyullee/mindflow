@@ -292,8 +292,9 @@ function MonthBody({ entries, todayIso, mode, cols, rows, surface, ym, side, sel
                       color: c.dayOff || c.dow === 0 ? 'var(--mf-danger)' : c.dow === 6 ? 'var(--mf-info)' : !c.inMonth ? 'var(--mf-faint2)' : 'var(--mf-subtext)',
                       fontSize: 12,
                       fontWeight: 600,
-                      // 오늘·고른 날의 옷은 큰 달력과 **같은 함수**가 정한다.
-                      ...dayNumTone(on, c.isToday),
+                      // 오늘·고른 날의 옷은 큰 달력과 **같은 함수**가 정한다 —
+                      // 고른 날이 토·일·공휴일이면 그 색을 지킨다(요청 ④).
+                      ...dayNumTone(on, c.isToday, c.dayOff || c.dow === 0 ? 'var(--mf-danger)' : c.dow === 6 ? 'var(--mf-info)' : undefined),
                       ...MONO,
                       display: 'inline-flex',
                       alignItems: 'center',

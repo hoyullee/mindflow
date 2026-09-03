@@ -1,6 +1,7 @@
 import type { CSSProperties, ReactNode } from 'react';
 import { useEffect, useState } from 'react';
 import * as DropdownMenu from '@radix-ui/react-dropdown-menu';
+import { createPortal } from 'react-dom';
 import type { HomeState, SpaceData } from '../types';
 import type { HomeController } from '../useHomeController';
 import type { CardViewData, FolderCardViewData, HomeViewModel } from '../viewModel';
@@ -167,12 +168,23 @@ export function HomeMenuPanel({
     >
       {/* 트리거는 **클릭 지점에 놓인 0×0 자리표시자**다 — 메뉴가 그 자리를 기준으로
           자기 실제 크기를 재서 서므로, 예전처럼 높이를 행 수로 어림할 필요가 없다.
-          포인터를 받지 않으므로 이 자리표시자가 클릭을 가로채지도 않는다. */}
-      <DropdownMenu.Trigger
-        aria-hidden="true"
-        tabIndex={-1}
-        style={{ position: 'fixed', left: x, top: y, width: 0, height: 0, padding: 0, border: 'none', background: 'none', pointerEvents: 'none' }}
-      />
+          포인터를 받지 않으므로 이 자리표시자가 클릭을 가로채지도 않는다.
+ 
+          **body로 포털한다**(제보: 일정 화면에서 메뉴가 포인터와 다른 곳에 떴다).
+          `position: fixed`는 조상에 transform·filter·contain 중 하나만 있어도 그
+          조상을 기준으로 자리를 잡는데, 홈 본문(`.mf-home-main`)은 첫 등장
+          애니메이션이 `fill: both`라 끝난 뒤에도 **항등 transform이 남는다** — 그래서
+          이 자리표시자를 본문 안에서 그리면 좌표가 LNB 폭(274px)만큼 밀렸다(실측).
+          홈의 우클릭 메뉴는 본문 밖에 그려져 있어 우연히 멀쩡했을 뿐이다. 뷰포트
+          좌표를 받는 자리표시자는 뷰포트에 붙어 있어야 어디서 불려도 같게 선다. */}
+      {createPortal(
+        <DropdownMenu.Trigger
+          aria-hidden="true"
+          tabIndex={-1}
+          style={{ position: 'fixed', left: x, top: y, width: 0, height: 0, padding: 0, border: 'none', background: 'none', pointerEvents: 'none' }}
+        />,
+        document.body,
+      )}
       <DropdownMenu.Portal>
         <DropdownMenu.Content
           // `.mf-home-ctx`는 계속 붙인다 — 마퀴 시작 가드와 "카드 밖 클릭이면 선택

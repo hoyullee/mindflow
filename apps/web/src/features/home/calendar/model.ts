@@ -277,7 +277,7 @@ export function monthCells(y: number, m: number, entries: readonly CalendarEntry
  */
 export type CellRow = { kind: 'bar'; bar: MonthBar } | { kind: 'chip'; entry: CalendarEntry } | { kind: 'gap' } | { kind: 'more'; n: number };
 
-export function cellRows(cell: MonthCell, capacity: number): CellRow[] {
+export function cellRows(cell: MonthCell, capacity: number, shownWithMore?: number): CellRow[] {
   const rows: CellRow[] = Array.from({ length: cell.barRows }, (_, lane) => {
     const bar = cell.bars.find((b) => b.lane === lane);
     return bar ? ({ kind: 'bar', bar } as CellRow) : ({ kind: 'gap' } as CellRow);
@@ -290,8 +290,12 @@ export function cellRows(cell: MonthCell, capacity: number): CellRow[] {
 
   const limit = Math.max(1, capacity);
   if (rows.length <= limit && cell.moreN === 0) return rows;
-  const shown = rows.slice(0, limit - 1);
-  const hidden = rows.slice(limit - 1).filter((r) => r.kind !== 'gap').length + cell.moreN;
+  // 접힘 표시를 붙일 때 남길 줄 수는 **따로 받는다**(제보: 여유가 있는데도 접혔다) —
+  // `+N개 더` 줄은 칩보다 낮아서 같은 칸 높이에 한 줄이 더 들어간다. 주지 않으면
+  // 예전처럼 마지막 줄을 그 표시에 내준다(대시보드 위젯이 그 규칙을 쓴다).
+  const keep = Math.max(1, Math.min(shownWithMore ?? limit - 1, rows.length));
+  const shown = rows.slice(0, keep);
+  const hidden = rows.slice(keep).filter((r) => r.kind !== 'gap').length + cell.moreN;
   // 잘라 낸 것이 빈 줄뿐이면 접힘 표시를 둘 이유가 없다.
   if (hidden === 0) return rows.slice(0, limit);
   return [...shown, { kind: 'more', n: hidden }];
