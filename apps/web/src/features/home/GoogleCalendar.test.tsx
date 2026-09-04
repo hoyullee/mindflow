@@ -1194,9 +1194,18 @@ describe('구글 캘린더 겹치기(PR5)', () => {
     expect(stateOf(busyRoom)).toBe('busy');
     expect(ask.textContent).toContain('이호율');
     expect(ask.textContent).toContain('그래도 예약할까요?');
-    // 물음도 **목록 밖 구획 전폭**이다(제보: 선택한 회의실 하단에 툴팁처럼 열리고
-    // 문구가 한 줄이었다) — 방 이름 · `사용 중 · 누가` · `시각 회의명` 세 줄로 갈린다.
-    expect(document.querySelector('[data-gf-room-list]')!.contains(ask)).toBe(false);
+    // 물음은 **회의실 선택 박스를 채운다**(요청, 첨부 이미지) — 목록 상자와 같은
+    // 자리·같은 크기로 덮는다(제보: 선택한 회의실 하단에 툴팁처럼 열렸다).
+    const list = document.querySelector('[data-gf-room-list]')!;
+    expect(list.contains(ask)).toBe(false);
+    const overlay = document.querySelector<HTMLElement>('[data-gf-room-ask]')!;
+    expect(overlay.contains(ask) || overlay === ask).toBe(true);
+    expect(overlay.style.position).toBe('absolute');
+    expect(overlay.style.inset).toBe('0');
+    // 같은 relative 상자 안의 형제라 상자를 정확히 덮는다.
+    expect(overlay.parentElement).toBe(list.parentElement);
+    expect((list.parentElement as HTMLElement).style.position).toBe('relative');
+    // 문구는 세 줄로 갈린다: 방 이름 · `사용 중 · 누가` · `시각 회의명`.
     expect([...ask.children].slice(0, 3).map((c) => c.textContent)).toEqual(['회의실-35-01', '사용 중 · 이호율', '디자인 리뷰']);
 
     // 취소하면 아무것도 바뀌지 않는다.
@@ -2215,7 +2224,47 @@ describe('구글 캘린더 겹치기(PR5)', () => {
     expect(document.querySelector('[data-gf-room-hit="room1@example.com"]')!.getAttribute('title')).toBeNull();
   });
 
-  it('주최자를 주소로만 주면 **로컬파트**로 말한다 — 초대 행과 같은 규칙(제보)', async () => {
+  it('주최자를 주소로만 줘도 **디렉터리에 물어 이름**으로 말한다 — 참석자와 같은 처방(제보)', async () => {
+    seed({ calendars: ['me@example.com'] });
+    seedToken();
+    stubGis();
+    const asked: string[] = [];
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (url: string) => {
+        const ok = (body: unknown) => ({ ok: true, status: 200, json: async () => body }) as unknown as Response;
+        if (url.includes('admin.googleapis.com')) return ok({ items: [{ resourceEmail: 'room8@example.com', resourceName: '회의실-35-05 Empower', capacity: 10 }] });
+        if (url.includes('people.googleapis.com')) {
+          asked.push(url);
+          // 디렉터리는 그 주소로 물으면 이름을 준다(선택 스코프).
+          return ok({ people: [{ names: [{ displayName: '정준훈' }], emailAddresses: [{ value: 'junghun@wantedlab.com', metadata: { primary: true } }] }] });
+        }
+        if (url.includes('/colors')) return ok({ event: {} });
+        if (url.includes('/users/me/calendarList')) return ok({ items: [{ id: 'me@example.com', summary: '내 캘린더', primary: true, accessRole: 'owner' }] });
+        // 회의실 캘린더는 주최자 이름을 주지 않는다 — 주소만(라이브 제보).
+        if (url.includes('room8%40example.com')) return ok({ items: [{ id: 'b', summary: '후보자경험1팀 주간 미팅', organizer: { email: 'junghun@wantedlab.com' } }] });
+        return ok({ items: [] });
+      }),
+    );
+    clientId = 'test-client.apps.googleusercontent.com';
+    const user = userEvent.setup();
+    const { container } = renderHome();
+    await openCalendar(container, user);
+    await user.click(screen.getByText('새 일정'));
+    await waitFor(() => expect(document.querySelector('[data-new-cal="me@example.com"]')).toBeTruthy());
+    await user.click(document.querySelector<HTMLElement>('[data-new-cal="me@example.com"]')!);
+    await waitFor(() => expect(document.querySelector('[data-gf-room-hit]')).toBeTruthy(), { timeout: 3000 });
+    fireEvent.mouseDown(document.querySelector('[data-gf-room-hit="room8@example.com"]')!);
+    await waitFor(() => expect(document.querySelector('[data-gf-room-confirm="room8@example.com"]')).toBeTruthy());
+    // 이름이 도착하면 그 이름으로 바뀐다 — 주소 앞부분(`junghun`)이 아니다.
+    await waitFor(() => {
+      const ask = document.querySelector('[data-gf-room-confirm="room8@example.com"]')!;
+      expect([...ask.children][1]!.textContent).toBe('사용 중 · 정준훈');
+    });
+    expect(asked.some((u) => u.includes(encodeURIComponent('junghun@wantedlab.com')))).toBe(true);
+  });
+
+  it('주최자를 주소로만 주고 디렉터리에도 없으면 **로컬파트**로 말한다 — 초대 행과 같은 규칙(제보)', async () => {
     seed({ calendars: ['me@example.com'] });
     seedToken();
     stubGis();
