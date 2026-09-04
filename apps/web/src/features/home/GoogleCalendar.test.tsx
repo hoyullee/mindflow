@@ -2146,7 +2146,7 @@ describe('구글 캘린더 겹치기(PR5)', () => {
     expect(pop.querySelector('[data-gf-guest-more]')?.textContent).toContain('외 3명');
   });
 
-  it('사용 중인 회의실을 고르면 **누가 언제까지** 쓰는지 행 아래 두 줄로 말한다(요청 ③·제보)', async () => {
+  it('사용 중인 회의실을 고르면 **누가 언제까지** 쓰는지 구획 전폭 두 줄로 말한다(요청 ③·제보)', async () => {
     seed({ calendars: ['me@example.com'] });
     seedToken();
     stubGis();
@@ -2195,15 +2195,19 @@ describe('구글 캘린더 겹치기(PR5)', () => {
     fireEvent.mouseDown(document.querySelector('[data-gf-room-hit="room1@example.com"]')!);
     await waitFor(() => expect(document.querySelector('[data-gf-room-confirm-yes]')).toBeTruthy());
     fireEvent.mouseDown(document.querySelector('[data-gf-room-confirm-yes]')!);
-    const line = await waitFor(() => {
+    const box = await waitFor(() => {
       const el = document.querySelector('[data-gf-room-busy]');
       expect(el).toBeTruthy();
       return el as HTMLElement;
     });
-    // 한 줄로 두면 좁은 행에서 말줄임으로 잘린다(제보) — **행 아래 전폭 두 줄**이다:
-    // 첫 줄은 누가, 둘째 줄은 언제·무엇.
+    // **구획 전폭**이다(요청) — 목록 상자 안에 들여쓴 채 끼워 넣으면 "그 행에 딸린
+    // 툴팁"으로 읽히고 좁은 열에서 두 줄이 잘린다.
+    expect(document.querySelector('[data-gf-room-list]')!.contains(box)).toBe(false);
+    // 한 줄로 두면 말줄임으로 잘린다(제보) — **두 줄**이다: 첫 줄은 누가, 둘째 줄은
+    // 언제·무엇. 한 방만 잡았으면 방 이름 줄을 더하지 않는다(목록의 강조된 행이 말한다).
+    const line = box.querySelector('[data-gf-room-busy-for="room1@example.com"]')!;
     expect([...line.children].map((c) => c.textContent)).toEqual(['사용 중 · 홍길동', '09:00–10:00 팀 회의']);
-    // 아래에 펴 놓았으므로 같은 말을 툴팁으로 한 번 더 하지 않는다.
+    // 펴 놓았으므로 같은 말을 툴팁으로 한 번 더 하지 않는다.
     expect(document.querySelector('[data-gf-room-hit="room1@example.com"]')!.getAttribute('title')).toBeNull();
   });
 
