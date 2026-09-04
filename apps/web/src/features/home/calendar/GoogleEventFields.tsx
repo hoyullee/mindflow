@@ -288,13 +288,8 @@ export function GoogleEventFields({
         />
         ) : roomsLoading ? (
           // 도착하기 전에는 **실제 목록과 같은 크기의 상자**에 스켈레톤 세 줄(요청 ①) —
-          // 글자 한 줄로 두면 목록이 오는 순간 상자가 튄다. 검색 상자는 두지 않는다:
-          // 아직 걸러 볼 것이 없다(결과가 영영 비는 입력을 만들지 않는다).
-          <div data-gf-room-list className="lnb-scroll" style={{ ...listCard, height: 3 * 42 + 2 }}>
-            {[0, 1, 2].map((i) => (
-              <RoomSkeleton key={i} />
-            ))}
-          </div>
+          // 글자 한 줄로 두면 목록이 오는 순간 상자가 튄다.
+          <RoomsLoading />
         ) : (
           <span data-gf-room-note style={{ padding: '10px 12px', borderRadius: 12, background: 'var(--mf-card)', border: '1px solid var(--mf-border-soft)', fontSize: 11.5, color: 'var(--mf-faint)', lineHeight: 1.6 }}>
             회의실 목록은 조직 캘린더에서 불러와요 — 이 계정에서는 불러올 회의실이 없어요.
@@ -521,6 +516,24 @@ function RoomSkeleton() {
         <span className="mf-skel" style={{ width: '28%', height: 8, borderRadius: 5 }} />
       </span>
     </span>
+  );
+}
+
+/**
+ * 회의실 자리의 로딩 화면 — **목록을 기다릴 때와 상태를 기다릴 때가 같은 모습**이다.
+ *
+ * 둘을 갈라 두면 목록이 먼저 도착해 행이 그려지고 그다음 상태가 붙으면서 행이
+ * `확인 중` → `사용 가능`/`사용 중`으로 재배치돼 **깜빡인다**(제보). 그래서 상태까지
+ * 정해질 때까지 이 화면을 유지한다 — 검색 상자도 그동안 두지 않는다(걸러 볼 것이
+ * 아직 없다).
+ */
+function RoomsLoading() {
+  return (
+    <div data-gf-room-list className="lnb-scroll" style={{ ...listCard, height: 3 * 42 + 2 }}>
+      {[0, 1, 2].map((i) => (
+        <RoomSkeleton key={i} />
+      ))}
+    </div>
   );
 }
 
@@ -864,6 +877,12 @@ function Attendees({ list, onChange, search, seedNames }: { list: string[]; onCh
 const ROOM_ASK_LIMIT = 4;
 /** 확인할 회의실 상한 — 아주 많은 조직에서는 보이는·검색된 앞쪽부터 채운다. */
 const ROOM_ASK_MAX = 60;
+/**
+ * 상태를 이만큼까지 기다린다 — 넘으면 아는 만큼 드러낸다(영원한 로딩 금지, 이름
+ * 조회의 `NAME_WAIT_MS`와 같은 처방). 회의실이 많은 조직에서는 네 개씩 이어 달리는
+ * 왕복이 길어질 수 있어서 목록을 영영 감춰 두지 않는다.
+ */
+const ROOM_WAIT_MS = 4000;
 
 /**
  * 회의실 — 원본의 검색 상자 + **늘 보이는 목록**(검색은 좁히기만 한다). 고른 회의실은
@@ -988,11 +1007,32 @@ function Rooms({
     setConfirm(null);
     onChange(picked.includes(email) ? picked.filter((p) => p !== email) : [...picked, email]);
   };
+  /**
+   * **상태까지 정해질 때까지 스켈레톤**(제보: 목록이 먼저 뜨고 상태가 붙으면서 행이
+   * 재배치돼 깜빡인다). 아직 답이 없는 행이 하나라도 있으면 기다린다.
+   *
+   * 한 번 드러낸 뒤에는 **다시 감추지 않는다**(`revealed`) — 시간을 고치면 구간이
+   * 바뀌어 상태를 다시 묻는데, 그때마다 목록이 사라지면 방금 보던 자리를 잃는다.
+   * 그 뒤의 갱신은 각 행의 배지가 제자리에서 바꿔 말한다.
+   */
+  // 판정 대상은 **우리가 실제로 묻는 것**(`askOrder`)이다 — 회의실이 아주 많은
+  // 조직에서 상한(60) 밖의 행은 영영 답이 없으므로, 그걸 기다리면 스켈레톤이
+  // 시간 제한까지 남는다.
+  const pendingStatus = !!when && !!check && askOrder.some((e) => busy[`${e}|${from}|${to}`] === undefined);
+  const [revealed, setRevealed] = useState(!pendingStatus);
+  useEffect(() => {
+    if (!pendingStatus) setRevealed(true);
+  }, [pendingStatus]);
+  useEffect(() => {
+    const t = setTimeout(() => setRevealed(true), ROOM_WAIT_MS);
+    return () => clearTimeout(t);
+  }, []);
   // 상자 높이는 **세 줄 고정**이다(검색으로 행이 줄어도 팝업이 오르내리지 않게 —
   // #68). 다만 우리가 여는 블록(사용 중 두 줄·겹쳐 예약 확인)은 그 안에서 잘리면
   // 정작 읽어야 할 내용이 가려지므로, 열려 있는 동안만 그 몫을 더한다. 둘 다 검색과
   // 무관하게 열리므로 "검색해도 안 흔들린다"는 성질은 그대로다.
   const openExtra = (confirm ? 92 : 0) + (rows.some((r) => picked.includes(r.email) && busyOf(r.email)?.busy) ? 54 : 0);
+  if (!revealed) return <RoomsLoading />;
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 8, minWidth: 0 }}>
       <SearchBox label="회의실 검색" attrs={{ 'data-gf-room-input': '1' }} value={q} placeholder="회의실 이름 또는 층 검색" onChange={setQ} />
