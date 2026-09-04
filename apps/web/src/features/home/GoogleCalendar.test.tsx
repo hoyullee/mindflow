@@ -149,6 +149,9 @@ function stubFetch(): ReturnType<typeof vi.fn> {
         ],
       });
     }
+    // 회의실 캘린더 — 기본은 **비어 있다**(사용 중인 방을 보는 테스트는 자기 스텁을 세운다).
+    // 이 자리가 없으면 아래 폴백의 '구글 회의'가 실려 모든 방이 사용 중으로 읽힌다.
+    if (url.includes('resource.calendar.google.com')) return ok({ items: [] });
     if (url.includes('/users/me/calendarList')) {
       return ok({
         items: [
@@ -1326,7 +1329,8 @@ describe('구글 캘린더 겹치기(PR5)', () => {
     await user.click(screen.getByText('새 일정'));
     await waitFor(() => expect(document.querySelector('[data-new-cal="me@example.com"]')).toBeTruthy());
     await user.click(document.querySelector<HTMLElement>('[data-new-cal="me@example.com"]')!);
-    await waitFor(() => expect(document.querySelector('[data-gf-room-list]')).toBeTruthy());
+    // 상태까지 정해져 실제 목록이 드러난 뒤에 잰다(그전에는 스켈레톤 상자다).
+    await waitFor(() => expect(document.querySelector('[data-gf-room-input]')).toBeTruthy());
     const h = (document.querySelector('[data-gf-room-list]') as HTMLElement).style.height;
     expect(h).not.toBe(''); // maxHeight가 아니라 **height** — 결과 수와 무관하게 같은 상자
     await user.type(screen.getByLabelText('회의실 검색'), '없는회의실');
@@ -1386,6 +1390,44 @@ describe('구글 캘린더 겹치기(PR5)', () => {
     release!();
     // 도착하면 스켈레톤이 실제 행으로 바뀐다.
     await waitFor(() => expect(document.querySelector('[data-gf-room-hit]')).toBeTruthy());
+    expect(document.querySelector('[data-gf-room-loading]')).toBeNull();
+  });
+
+  it('목록이 와도 **사용 여부가 정해질 때까지** 스켈레톤이다 — 행이 먼저 뜨고 다시 묶이는 깜빡임을 없앤다(제보)', async () => {
+    seed({ calendars: ['me@example.com'] });
+    seedToken();
+    stubGis();
+    const f = stubFetch();
+    // 회의실 목록은 곧 오지만 **사용 여부 조회만** 붙잡아 둔다 — 그 사이의 화면을 본다.
+    const inner = global.fetch;
+    let release: (() => void) | null = null;
+    const hold = new Promise<void>((res) => {
+      release = res;
+    });
+    vi.stubGlobal('fetch', async (url: string, init?: RequestInit) => {
+      if (String(url).includes('resource.calendar.google.com')) await hold;
+      return (inner as (u: string, i?: RequestInit) => Promise<Response>)(url, init);
+    });
+    clientId = 'test-client.apps.googleusercontent.com';
+    const user = userEvent.setup();
+    const { container } = renderHome();
+    await openCalendar(container, user);
+    await waitFor(() => expect(screen.getAllByText(/구글 회의/).length).toBeGreaterThan(0));
+    await user.click(screen.getByText('새 일정'));
+    await waitFor(() => expect(document.querySelector('[data-new-cal="me@example.com"]')).toBeTruthy());
+    await user.click(document.querySelector<HTMLElement>('[data-new-cal="me@example.com"]')!);
+
+    // 목록은 이미 도착했다(Admin SDK 왕복이 끝났다)…
+    await waitFor(() => expect(f.mock.calls.some((c) => String(c[0]).includes('admin.googleapis.com'))).toBe(true));
+    // …그런데도 아직 스켈레톤이다 — 사용 여부를 모르는 행을 먼저 보여 주지 않는다.
+    await waitFor(() => expect(document.querySelectorAll('[data-gf-room-loading]').length).toBe(3));
+    expect(document.querySelector('[data-gf-room-hit]')).toBeNull();
+    expect(document.querySelector('[data-gf-room-input]')).toBeNull();
+
+    await waitFor(() => expect(release).toBeTruthy());
+    release!();
+    // 정해지면 한 번에 드러난다 — 배지가 이미 붙어 있다.
+    await waitFor(() => expect(document.querySelector('[data-gf-room-hit] [data-gf-room-state]')).toBeTruthy());
     expect(document.querySelector('[data-gf-room-loading]')).toBeNull();
   });
 
