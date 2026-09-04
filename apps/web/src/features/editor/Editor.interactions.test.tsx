@@ -50,6 +50,19 @@ function renderEditor(initialEntry: string) {
   );
 }
 
+/** 앞선 화면을 거쳐 들어온 경우 — 뒤로 가기가 그 화면으로 돌아가야 한다. */
+function renderEditorFrom(prev: string, entry: string) {
+  return render(
+    <MemoryRouter initialEntries={[prev, entry]} initialIndex={1}>
+      <Routes>
+        <Route path="/editor" element={<Editor />} />
+        <Route path="/home" element={<div>HOME_PAGE</div>} />
+        <Route path="/prev" element={<div>PREV_PAGE</div>} />
+      </Routes>
+    </MemoryRouter>,
+  );
+}
+
 /** Reads a `Blob`'s text via `FileReader` — jsdom's `Blob`/`Response` don't
  * interoperate cleanly across realms, but `FileReader` (part of jsdom's own
  * File API) reads a jsdom `Blob` correctly. */
@@ -1049,7 +1062,40 @@ describe('Editor interactions (M3-Editor-b)', () => {
     expect(pan().style.willChange).toBe('');
   });
 
-  // 요청: GNB 로고를 눌러도 홈으로(독칩 홈 버튼과 같은 기능).
+  // 요청: 독칩의 집 버튼을 **뒤로 가기**로 — 이제 대시보드·일정·스페이스 어디서든
+  // 에디터로 들어오므로 "홈으로"가 곧 "돌아가기"가 아니다.
+  describe('독칩 = 뒤로 가기', () => {
+    it('앞선 화면을 거쳐 들어왔으면 그 화면으로 돌아간다', async () => {
+      const user = userEvent.setup();
+      localStorage.setItem('mindflow_doc_bk1', JSON.stringify(DOC));
+      renderEditorFrom('/prev', '/editor?map=bk1&title=x');
+
+      expect(screen.queryByRole('button', { name: '홈으로' })).toBeNull();
+      await user.click(screen.getByRole('button', { name: '뒤로 가기' }));
+      await waitFor(() => expect(screen.getByText('PREV_PAGE')).toBeTruthy());
+    });
+
+    it('주소를 직접 열었으면(되짚을 자리가 사이트 밖) 홈으로 간다 — 미저장 편집은 먼저 저장된다', async () => {
+      const user = userEvent.setup();
+      localStorage.setItem('mindflow_doc_bk2', JSON.stringify(DOC));
+      const { container } = renderEditor('/editor?map=bk2&title=x');
+
+      selectNodeBox(nodeBoxFor(container, '리서치'));
+      fireEvent.keyDown(window, { key: 'Tab' }); // 하위 도형 추가 → 문서 변경
+      await user.click(screen.getByRole('button', { name: '뒤로 가기' }));
+
+      await waitFor(() => expect(screen.getByText('HOME_PAGE')).toBeTruthy());
+      await waitFor(
+        () => {
+          const parsed = parseDoc(JSON.parse(localStorage.getItem('mindflow_doc_bk2') as string));
+          expect(Object.keys(parsed!.nodes).length).toBe(4);
+        },
+        { timeout: 2000 },
+      );
+    });
+  });
+
+  // 요청: GNB 로고를 눌러도 홈으로 — 독칩이 뒤로 가기가 된 뒤로는 홈으로 가는 유일한 문이다.
   describe('GNB 브랜드 로고 = 홈으로', () => {
     it('로고를 누르면 홈으로 나간다', async () => {
       const user = userEvent.setup();
@@ -1060,12 +1106,12 @@ describe('Editor interactions (M3-Editor-b)', () => {
       await waitFor(() => expect(screen.getByText('HOME_PAGE')).toBeTruthy());
     });
 
-    it('독칩 홈 버튼과 같은 핸들러를 쓴다 (저장 후 이동)', async () => {
+    it('나가기 전에 저장이 남는다 (goHome은 persist 후 navigate)', async () => {
       const user = userEvent.setup();
       localStorage.setItem('mindflow_doc_lg2', JSON.stringify(DOC));
       const { container } = renderEditor('/editor?map=lg2&title=x');
 
-      // 편집해서 미저장 상태로 만든 뒤 로고로 나가면, 독칩 홈 버튼과 마찬가지로
+      // 편집해서 미저장 상태로 만든 뒤 로고로 나가면, 독칩의 뒤로 가기와 마찬가지로
       // 나가기 직전에 저장이 남아 있어야 한다(`goHome`이 persist 후 navigate).
       selectNodeBox(nodeBoxFor(container, '리서치'));
       fireEvent.keyDown(window, { key: 'Tab' }); // 하위 도형 추가 → 문서 변경

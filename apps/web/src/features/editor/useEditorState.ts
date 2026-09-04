@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import type { MouseEvent as ReactMouseEvent, PointerEvent as ReactPointerEvent } from 'react';
-import { useNavigate, useSearchParams } from 'react-router-dom';
+import { useLocation, useNavigate, useSearchParams } from 'react-router-dom';
 import type { Box, CardMetaPatch, Doc, Float, KanbanCard, KanbanColumn, KanbanTag, Line, LineAnchor, LayoutMode, ListOp, Node, NodeMap, Reaction, ReactionGroup, RichRun, SizeOf, SnapCandidate, Stroke, TextEdit, Zone, CommentPin } from '@mindflow/mindmap-core';
 import { HistoryStack, ROOT_ID, collectImageRefs, collectInlineImages, isImageRef, replaceImageValues, applyListOp as applyListOpToText, applyAutoLinks, applyMarkdownShortcuts, applyPartialStyle, insertMention, charsToRuns, cubicAt, isStyledRuns, findLineSnap, layout, resolveLineEndpoints, resolveLineGeometry, runsToChars, serializeDoc, shiftOffset, strokeBounds, strokeHit, translateStrokePts, reactionGroups, toggleReaction as toggleReactionList, pruneReactions, toMarkdown, cardsInColumn, posForIndex, removeColumn, moveCard, moveColumn, patchCardMeta, cardTextValue as cardTextValueOf, sortColumnsByDue } from '@mindflow/mindmap-core';
 import { domToRuns, linearize, liveEditValue } from './richtextDom';
@@ -326,6 +326,8 @@ export interface EditorController {
   zoomReset: () => void;
   fitView: () => void;
   goHome: () => void;
+  /** 뒤로 가기(직전 화면 — 없으면 홈). 독칩 버튼이 쓴다. */
+  goBack: () => void;
 
   // ---- presence (M5.5: multi-user awareness — cursor/selection/identity) ----
   /** This tab's own identity + every OTHER connected peer's live cursor/
@@ -912,6 +914,7 @@ function safeDocTitle(doc: Doc, fallbackTitle: string): string {
 export function useEditorState(): EditorController {
   const [params] = useSearchParams();
   const navigate = useNavigate();
+  const location = useLocation();
   const docStore = useDocStore();
   const shareStore = useShareStore();
   const commentStore = useCommentStore();
@@ -2929,6 +2932,23 @@ export function useEditorState(): EditorController {
     navigate('/home');
   }, [navigate, persistDoc]);
 
+  /**
+   * 뒤로 가기 — 이제 에디터로 들어오는 문이 여럿이라(대시보드·일정·스페이스)
+   * "홈으로"가 곧 "돌아가기"가 아니다. 저장은 `goHome`과 같은 규칙(초기 로드를
+   * 기다린 뒤 한 번).
+   *
+   * 이 탭에서 우리 앱을 거쳐 들어왔을 때만 히스토리를 되짚는다 — 주소를 직접
+   * 열었거나 새 탭이면(`location.key === 'default'`) 되짚을 자리가 사이트 밖이라
+   * 홈으로 보낸다.
+   */
+  const goBack = useCallback(() => {
+    window.clearTimeout(autosaveTimerRef.current);
+    window.clearTimeout(savingTimerRef.current);
+    void initialLoadRef.current.then(() => persistDoc());
+    if (location.key === 'default') navigate('/home');
+    else navigate(-1);
+  }, [location.key, navigate, persistDoc]);
+
   // ---- selection ----
   const selectNode = useCallback((id: string) => {
     setSelectionState({ kind: 'node', id });
@@ -3655,6 +3675,17 @@ export function useEditorState(): EditorController {
       setEditingFloatId(null);
     } else if (selection.kind === 'line') {
       commitDoc((d) => ({ ...d, lines: mutations.removeLineItem(d.lines, selection.id) }));
+      setSelectionState(null);
+    } else if (selection.kind === 'stroke') {
+      // 획도 이 문을 지난다 — 이 분기가 없으면 **잘라내기가 원본을 남긴다**
+      // (`cutSelection` = 복사 + `deleteSelection`. Delete 키는 `deleteStrokes`를
+      // 직접 불러 멀쩡했으므로 잘라내기에서만 드러났다). 빈 배열은 키째 뗀다 —
+      // "비어 있지 않을 때만 직렬화" 규칙.
+      const id = selection.id;
+      commitDoc((d) => {
+        const rest = (d.strokes ?? []).filter((s) => s.id !== id);
+        return { ...d, strokes: rest.length ? rest : undefined };
+      });
       setSelectionState(null);
     } else if (selection.kind === 'zone') {
       commitDoc((d) => ({ ...d, zones: mutations.removeZoneItem(d.zones, selection.id) }));
@@ -6500,6 +6531,7 @@ export function useEditorState(): EditorController {
     zoomReset,
     fitView,
     goHome,
+    goBack,
 
     presence,
     reportPointerPosition,

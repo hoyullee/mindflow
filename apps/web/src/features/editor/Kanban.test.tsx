@@ -72,6 +72,35 @@ function stubRects(container: HTMLElement): void {
 }
 
 /** jsdom엔 PointerEvent가 없다 — MouseEvent를 pointer 이름으로 던진다(다른 테스트와 같은 처방). */
+/**
+ * 날짜 고르기 — 상세의 시작일·기한은 일정 화면과 **같은 부품**(`DateButton`)이라
+ * native input이 아니다: 트리거를 눌러 팝오버를 열고 그 날 칸을 누른다
+ * (`Calendar.test.tsx`의 같은 헬퍼와 한 규칙 — 달 경계는 화살표로 넘긴다).
+ */
+async function pickDate(triggerSel: string, iso: string): Promise<void> {
+  fireEvent.click(document.querySelector(triggerSel)!);
+  await waitFor(() => expect(document.querySelector('[data-datepop-month]')).toBeTruthy());
+  const today = new Date();
+  const todayIso = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}-${String(today.getDate()).padStart(2, '0')}`;
+  for (let i = 0; i < 14 && !document.querySelector(`[data-datepop-day="${iso}"]`); i += 1) {
+    const pop = document.querySelector('[data-datepop-month]')!.parentElement as HTMLElement;
+    fireEvent.click(pop.querySelector(`[aria-label="${iso < todayIso ? '이전 달' : '다음 달'}"]`)!);
+  }
+  await waitFor(() => expect(document.querySelector(`[data-datepop-day="${iso}"]`)).toBeTruthy());
+  fireEvent.click(document.querySelector(`[data-datepop-day="${iso}"]`)!);
+  await waitFor(() => expect(document.querySelector('[data-datepop-month]')).toBeFalsy());
+}
+
+/** 날짜 지우기 — 그 팝오버 발치의 `지우기`(예전엔 필드 곁의 버튼이었다). */
+async function clearDate(triggerSel: string): Promise<void> {
+  fireEvent.click(document.querySelector(triggerSel)!);
+  await waitFor(() => expect(document.querySelector('[data-datepop-month]')).toBeTruthy());
+  // `[data-datepop-month]`의 부모는 머리 줄이다 — 발치 버튼은 팝오버 **판**에 있다.
+  const panel = document.querySelector('[data-datepop-month]')!.closest('[data-radix-popper-content-wrapper]') as HTMLElement;
+  fireEvent.click(within(panel).getByRole('button', { name: '지우기' }));
+  await waitFor(() => expect(document.querySelector('[data-datepop-month]')).toBeFalsy());
+}
+
 function firePointer(target: Element | Window, type: 'pointerdown' | 'pointermove' | 'pointerup' | 'pointercancel', init: { clientX?: number; clientY?: number; pointerType?: string } = {}): void {
   const ev = new MouseEvent(type, { bubbles: true, cancelable: true, clientX: init.clientX ?? 0, clientY: init.clientY ?? 0 });
   Object.defineProperty(ev, 'pointerType', { value: init.pointerType ?? 'mouse', configurable: true });
@@ -759,7 +788,7 @@ describe('칸반 — 카드 상세(분류·기한·담당·긴급)', () => {
     const dueValue = `${due.getFullYear()}-${String(due.getMonth() + 1).padStart(2, '0')}-${String(due.getDate()).padStart(2, '0')}`;
     fireEvent.change(detail.querySelector('[data-detail-tag-input]')!, { target: { value: '개발' } });
     fireEvent.keyDown(detail.querySelector('[data-detail-tag-input]')!, { key: 'Enter' });
-    fireEvent.change(detail.querySelector('[data-detail-due]')!, { target: { value: dueValue } });
+    await pickDate('[data-detail-due]', dueValue);
     fireEvent.click(detail.querySelector('[data-detail-flag]')!);
     fireEvent.click(detail.querySelector('[data-detail-close]')!);
 
@@ -779,7 +808,7 @@ describe('칸반 — 카드 상세(분류·기한·담당·긴급)', () => {
     fireEvent.doubleClick(container.querySelector('[data-kanban-card="k1"]')!);
     const again = await waitFor(() => document.querySelector('[data-card-detail="k1"]') as HTMLElement);
     fireEvent.click(again.querySelector('[data-detail-tag="none"]')!);
-    fireEvent.click(again.querySelector('[data-detail-due-clear]')!);
+    await clearDate('[data-detail-due]');
     fireEvent.click(again.querySelector('[data-detail-flag]')!);
     fireEvent.keyDown(window, { key: 's', ctrlKey: true });
     await waitFor(() => {
@@ -1097,21 +1126,27 @@ describe('칸반 — 후속 7건', () => {
     await waitFor(() => expect(container.querySelector('[data-card-comment-count="k1"]')?.textContent).toContain('1'));
   });
 
-  it('기한 지우기는 항상 보이되 기한이 없으면 비활성이다', async () => {
+  // 요청: 시작일·기한은 일정 화면과 **같은 날짜 고르기**를 쓴다 — native
+  // `<input type="date">`가 아니라 트리거 + 팝오버(달력 + `오늘`·`지우기`)다.
+  // 그래서 곁에 있던 `지우기` 버튼도 없다(그 일은 팝오버 발치가 맡는다).
+  it('기한은 일정 화면과 같은 날짜 팝오버로 고르고, 발치 지우기로 비운다', async () => {
     localStorage.setItem('mindflow_doc_kn2', JSON.stringify(KANBAN));
     const { container } = renderEditor('/editor?map=kn2&title=x');
     await waitFor(() => expect(container.querySelectorAll('[data-kanban-card]')).toHaveLength(2));
 
     fireEvent.doubleClick(container.querySelector('[data-kanban-card="k1"]')!);
     const detail = await waitFor(() => document.querySelector('[data-card-detail="k1"]') as HTMLElement);
-    const clear = detail.querySelector('[data-detail-due-clear]') as HTMLButtonElement;
-    expect(clear).toBeTruthy();
-    expect(clear.disabled).toBe(true);
+    const trigger = detail.querySelector('[data-detail-due]') as HTMLButtonElement;
+    // native 날짜 입력이 아니다(팝오버 트리거 버튼) + 곁의 지우기 버튼은 사라졌다.
+    expect(trigger.tagName).toBe('BUTTON');
+    expect(detail.querySelector('[data-detail-due-clear]')).toBeFalsy();
+    expect(trigger.textContent).toContain('날짜 선택');
 
-    fireEvent.change(detail.querySelector('[data-detail-due]')!, { target: { value: '2026-09-01' } });
-    await waitFor(() => expect((detail.querySelector('[data-detail-due-clear]') as HTMLButtonElement).disabled).toBe(false));
-    fireEvent.click(detail.querySelector('[data-detail-due-clear]')!);
-    await waitFor(() => expect((detail.querySelector('[data-detail-due-clear]') as HTMLButtonElement).disabled).toBe(true));
+    await pickDate('[data-detail-due]', '2026-09-01');
+    await waitFor(() => expect((detail.querySelector('[data-detail-due]') as HTMLElement).textContent).toContain('9월 1일'));
+
+    await clearDate('[data-detail-due]');
+    await waitFor(() => expect((detail.querySelector('[data-detail-due]') as HTMLElement).textContent).toContain('날짜 선택'));
   });
 
   it('빈 열로 끌면 머리 아래(카드 목록 안)에 자리가 생긴다', async () => {
@@ -1359,12 +1394,9 @@ describe('칸반 — 후속(열 색·열 추가 길이·호버·시작일)', () 
     await waitFor(() => expect(container.querySelectorAll('[data-kanban-card]')).toHaveLength(2));
 
     fireEvent.doubleClick(container.querySelector('[data-kanban-card="k1"]')!);
-    const detail = await waitFor(() => document.querySelector('[data-card-detail="k1"]') as HTMLElement);
-    const start = detail.querySelector('[data-detail-start]') as HTMLInputElement;
-    expect((detail.querySelector('[data-detail-start-clear]') as HTMLButtonElement).disabled).toBe(true);
-
-    fireEvent.change(start, { target: { value: '2026-08-10' } });
-    fireEvent.change(detail.querySelector('[data-detail-due]')!, { target: { value: '2026-08-20' } });
+    await waitFor(() => expect(document.querySelector('[data-card-detail="k1"]')).toBeTruthy());
+    await pickDate('[data-detail-start]', '2026-08-10');
+    await pickDate('[data-detail-due]', '2026-08-20');
     fireEvent.keyDown(window, { key: 's', ctrlKey: true });
     await waitFor(() => {
       const c = saved('kh4').cards.find((x: { id: string }) => x.id === 'k1');
@@ -1372,7 +1404,7 @@ describe('칸반 — 후속(열 색·열 추가 길이·호버·시작일)', () 
       expect(c.due).toBe('2026-08-20');
     });
 
-    fireEvent.click(detail.querySelector('[data-detail-start-clear]')!);
+    await clearDate('[data-detail-start]');
     fireEvent.keyDown(window, { key: 's', ctrlKey: true });
     await waitFor(() => {
       const c = saved('kh4').cards.find((x: { id: string }) => x.id === 'k1');
@@ -1389,6 +1421,25 @@ describe('칸반 — 열 메뉴 구분(제보)', () => {
     localStorage.setItem('mf_demo_session', JSON.stringify({ user: { id: 'u', email: 'me@example.com' } }));
   });
   afterEach(cleanup);
+
+  // 제보: 열에서 우클릭하면 브라우저 기본 메뉴가 떴다 — 우클릭은 이 앱에서
+  // "그 대상의 메뉴를 여는 조작"이므로 열도 자기 ⋯ 메뉴를 연다.
+  it('열에서 우클릭하면 그 열의 ⋯ 메뉴가 열린다(기본 메뉴는 막는다)', async () => {
+    localStorage.setItem('mindflow_doc_kcm', JSON.stringify(KANBAN));
+    const { container } = renderEditor('/editor?map=kcm&title=x');
+    await waitFor(() => expect(container.querySelectorAll('[data-kanban-column]')).toHaveLength(2));
+
+    const col = container.querySelector('[data-kanban-column="c2"]') as HTMLElement;
+    const ev = new MouseEvent('contextmenu', { bubbles: true, cancelable: true, clientX: 400, clientY: 200 });
+    col.dispatchEvent(ev);
+    expect(ev.defaultPrevented).toBe(true);
+
+    // 그 열의 메뉴다(다른 열이 아니라).
+    await waitFor(() => expect(document.querySelector('[data-column-menu-pop="c2"]')).toBeTruthy());
+    expect(document.querySelector('[data-column-menu-pop="c1"]')).toBeFalsy();
+    // 배경 메뉴는 뜨지 않는다(열은 배경이 아니다).
+    expect(document.querySelector('[data-board-menu]')).toBeFalsy();
+  });
 
   it('이름 변경 · 열 색 · 삭제가 구분선과 구획 이름으로 갈린다', async () => {
     localStorage.setItem('mindflow_doc_km1', JSON.stringify(KANBAN));

@@ -1192,6 +1192,36 @@ describe('화이트보드 에디터', () => {
     });
   });
 
+  it('획을 잘라내면 원본이 사라진다(제보) — 붙여넣으면 다시 하나', async () => {
+    localStorage.setItem(
+      'mindflow_doc_b30x',
+      JSON.stringify({ ...BOARD, floats: [], strokes: [{ id: 's1', pts: [0, 0, 40, 0], color: '#2b2b2b', w: 4 }] }),
+    );
+    const { container } = renderEditor('/editor?map=b30x&title=x');
+    await waitFor(() => expect(container.querySelector('[data-stroke-id="s1"]')).toBeTruthy());
+
+    // 선택 도구로 획을 집는다(배경이 받은 포인터를 좌표로 히트테스트한다).
+    const vp = getViewport(container);
+    const at = strokePoint(container, 20, 0);
+    firePointer(vp, 'pointerdown', { pointerId: 1, clientX: at.x, clientY: at.y });
+    firePointer(document.body, 'pointerup', { pointerId: 1, clientX: at.x, clientY: at.y });
+    expect(await screen.findByText('선택한 그림')).toBeTruthy();
+
+    // 잘라내기 = 복사 + 삭제. 예전엔 `deleteSelection`에 획 분기가 없어 **원본이
+    // 그대로 남았다**(Delete 키는 다른 경로라 멀쩡했다).
+    fireEvent.keyDown(window, { key: 'x', ctrlKey: true });
+    await waitFor(() => expect(container.querySelectorAll('[data-stroke-id]')).toHaveLength(0));
+    fireEvent.keyDown(window, { key: 's', ctrlKey: true });
+    await waitFor(() => {
+      const saved = JSON.parse(localStorage.getItem('mindflow_doc_b30x') || 'null');
+      expect(saved?.strokes ?? []).toHaveLength(0);
+    });
+
+    // 복사는 됐다 — 붙여넣으면 하나가 돌아온다(잘라내기지 삭제가 아니다).
+    fireEvent.keyDown(window, { key: 'v', ctrlKey: true });
+    await waitFor(() => expect(container.querySelectorAll('[data-stroke-id]')).toHaveLength(1));
+  });
+
   it('마퀴가 획을 하나만 물면 단일 선택으로 정규화된다(유령 상태 방지)', async () => {
     localStorage.setItem(
       'mindflow_doc_b30',

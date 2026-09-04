@@ -62,15 +62,15 @@ export function Toolbar({ controller }: ToolbarProps) {
         overflowY: 'hidden',
       }}
     >
-      {/* 브랜드 로고 = 홈으로(사용자 요청). 독칩의 홈 버튼과 **같은 `goHome`**을
-          쓴다 — 저장을 먼저 태우고 이동하는 동작이 갈라지지 않게. */}
+      {/* 브랜드 로고 = 홈으로(사용자 요청) — 독칩 버튼이 **뒤로 가기**로 바뀐 뒤로는
+          이 로고가 홈으로 가는 유일한 문이다. 저장을 먼저 태우고 이동하는 규칙은
+          `goHome`/`goBack`이 함께 지킨다. */}
       <button
         type="button"
         className="mf-ed-btn"
         onClick={controller.goHome}
         title="홈으로"
-        // 독칩에도 "홈으로" 버튼이 있어 이름이 겹친다 — 스크린리더에서 구분되게
-        // 브랜드를 붙인다(툴팁은 짧게 유지).
+        // 브랜드를 붙여 다른 이동 버튼(독칩의 "뒤로 가기")과 구분한다(툴팁은 짧게 유지).
         aria-label="Geurio 홈으로"
         style={{
           display: 'flex',

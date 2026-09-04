@@ -12,6 +12,7 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
 import type { DocumentShare, ShareParticipant, ShareRole, ShareStore, SharedWithMe } from '../ports';
 import { currentUser } from './supabaseUser';
+import { homeBootstrap } from './supabaseHomeBootstrap';
 
 const TABLE = 'document_shares';
 
@@ -52,6 +53,15 @@ export class SupabaseShareStore implements ShareStore {
 
   async listSharedByMe(): Promise<Record<string, { invitees: number; link: boolean }>> {
     const out: Record<string, { invitees: number; link: boolean }> = {};
+    // 홈 부트스트랩 RPC(0036)와 **한 요청을 나눠 쓴다** — 문서 목록·공유받은 맵과
+    // 같은 틱에 조회되므로(홈 하이드레이션) 왕복이 하나로 줄어든다. 세는 대상은
+    // 예전 질의와 같다: 보이는 초대 행 전부 + `link_role`이 켜진 문서.
+    const boot = await homeBootstrap(this.client);
+    if (boot) {
+      for (const r of boot.shares) (out[r.document_id] ??= { invitees: 0, link: false }).invitees++;
+      for (const d of boot.documents) if (d.link_role) (out[d.id] ??= { invitees: 0, link: false }).link = true;
+      return out;
+    }
     // 초대: RLS는 "내가 소유한 문서의 초대 전부 + 나에게 온 초대"를 보여 준다.
     // 나에게 온 초대의 문서는 홈 그리드 카드가 아니어서 조회돼도 해가 없다 —
     // 최근 트레이에 있다면 그 맵도 실제로 공유된 맵이니 표식이 맞다.
@@ -128,6 +138,14 @@ export class SupabaseShareStore implements ShareStore {
     // 없으니 조인 대신 내 이메일과의 일치로 판단한다.
     const myEmail = ((await currentUser(this.client))?.email ?? '').trim().toLowerCase();
     if (!myEmail) return [];
+    // 홈 부트스트랩 RPC(0036)와 한 요청을 나눠 쓴다(위 `listSharedByMe`와 같은 이유).
+    // 내 행만 고르는 일은 여기서 한다 — 그 판단의 근거(내 이메일)는 세션에 있다.
+    const boot = await homeBootstrap(this.client);
+    if (boot) {
+      return boot.shares
+        .filter((r) => (r.invitee_email ?? '').trim().toLowerCase() === myEmail)
+        .map((r) => ({ documentId: r.document_id, role: toRole(r.role), seenAt: r.seen_at }));
+    }
     // `seen_at`(0019)은 "아직 못 본 초대" 배지의 근거다. 마이그레이션이 아직 안 간
     // 서버에서는 이 컬럼이 없어 select 자체가 실패하므로, 그때는 컬럼 없이 한 번 더
     // 읽는다 — 배지만 사라지고 공유 목록은 그대로 뜬다(배포 순서 안전).
