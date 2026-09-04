@@ -1351,6 +1351,44 @@ describe('구글 캘린더 겹치기(PR5)', () => {
     expect(card.style.transition).toBe('');
   });
 
+  it('회의실 목록을 기다리는 동안에는 **실제 목록과 같은 크기의 스켈레톤**이다(요청)', async () => {
+    seed({ calendars: ['me@example.com'] });
+    seedToken();
+    stubGis();
+    stubFetch();
+    // 회의실 목록만 **늦게** 준다 — 그 사이의 화면을 본다.
+    const inner = global.fetch;
+    let release: (() => void) | null = null;
+    vi.stubGlobal('fetch', async (url: string, init?: RequestInit) => {
+      if (String(url).includes('admin.googleapis.com')) {
+        await new Promise<void>((res) => {
+          release = res;
+        });
+      }
+      return (inner as (u: string, i?: RequestInit) => Promise<Response>)(url, init);
+    });
+    clientId = 'test-client.apps.googleusercontent.com';
+    const user = userEvent.setup();
+    const { container } = renderHome();
+    await openCalendar(container, user);
+    await waitFor(() => expect(screen.getAllByText(/구글 회의/).length).toBeGreaterThan(0));
+    await user.click(screen.getByText('새 일정'));
+    await waitFor(() => expect(document.querySelector('[data-new-cal="me@example.com"]')).toBeTruthy());
+    await user.click(document.querySelector<HTMLElement>('[data-new-cal="me@example.com"]')!);
+
+    // 글자 한 줄이 아니라 **상자 + 스켈레톤 행**이다 — 목록이 오는 순간 자리가 튀지 않게.
+    await waitFor(() => expect(document.querySelectorAll('[data-gf-room-loading]').length).toBe(3));
+    expect(document.querySelector('[data-gf-room-note]')).toBeNull();
+    // 아직 걸러 볼 것이 없으므로 검색 상자는 두지 않는다.
+    expect(document.querySelector('[data-gf-room-input]')).toBeNull();
+
+    await waitFor(() => expect(release).toBeTruthy());
+    release!();
+    // 도착하면 스켈레톤이 실제 행으로 바뀐다.
+    await waitFor(() => expect(document.querySelector('[data-gf-room-hit]')).toBeTruthy());
+    expect(document.querySelector('[data-gf-room-loading]')).toBeNull();
+  });
+
   it('회의실 목록을 못 받으면(403) 구획은 남고 안내 한 줄이 된다 — 검색 상자만 없다(요청: 상시 노출)', async () => {
     seed({ calendars: ['me@example.com'] });
     seedToken();
@@ -2066,7 +2104,7 @@ describe('구글 캘린더 겹치기(PR5)', () => {
     expect(pop.querySelector('[data-gf-guest-more]')?.textContent).toContain('외 3명');
   });
 
-  it('사용 중인 회의실을 고르면 **누가 언제까지** 쓰는지 한 줄로 말한다(요청 ③)', async () => {
+  it('사용 중인 회의실을 고르면 **누가 언제까지** 쓰는지 행 아래 두 줄로 말한다(요청 ③·제보)', async () => {
     seed({ calendars: ['me@example.com'] });
     seedToken();
     stubGis();
@@ -2120,7 +2158,11 @@ describe('구글 캘린더 겹치기(PR5)', () => {
       expect(el).toBeTruthy();
       return el as HTMLElement;
     });
-    expect(line.textContent).toBe('사용 중 · 홍길동 · 팀 회의 · 09:00–10:00');
+    // 한 줄로 두면 좁은 행에서 말줄임으로 잘린다(제보) — **행 아래 전폭 두 줄**이다:
+    // 첫 줄은 누가, 둘째 줄은 언제·무엇.
+    expect([...line.children].map((c) => c.textContent)).toEqual(['사용 중 · 홍길동', '09:00–10:00 팀 회의']);
+    // 아래에 펴 놓았으므로 같은 말을 툴팁으로 한 번 더 하지 않는다.
+    expect(document.querySelector('[data-gf-room-hit="room1@example.com"]')!.getAttribute('title')).toBeNull();
   });
 
   it('근무 위치는 일정이 아니다 — 칩이 아니라 칸 우측 상단의 한 마디(제보 ⑥)', async () => {

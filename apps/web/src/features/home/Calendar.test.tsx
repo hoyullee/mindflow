@@ -143,6 +143,24 @@ const SPAN = (() => {
   return { start, due: addDays(start, 4) };
 })();
 
+/**
+ * **한 주 안에** 온전히 드는 엿새(일~금)의 첫날.
+ *
+ * lane 배정은 **주 단위**라(#485) 기간이 주를 넘으면 다음 주에서 다시 배정되고 제목도
+ * 그 주의 첫 칸에 다시 쓰인다 — 옳은 동작이다. 그 규칙 자체를 보는 테스트가 아니라
+ * "한 주 안에서 lane이 어떻게 놓이는가"를 보는 테스트는 **주 경계를 넘으면 안 된다**.
+ * `SPAN`은 오늘을 기준으로 잡히므로 요일에 따라 중간에 일요일이 끼어들 수 있어서
+ * (2026-09-04에 실제로 깨졌다) 그런 테스트는 이 값을 쓴다.
+ */
+const WEEK_START = (() => {
+  const now = new Date();
+  const last = new Date(now.getFullYear(), now.getMonth() + 1, 0).getDate();
+  for (let d = 1; d + 5 <= last; d += 1) {
+    if (new Date(now.getFullYear(), now.getMonth(), d).getDay() === 0) return isoOf(now.getFullYear(), now.getMonth() + 1, d);
+  }
+  return isoOf(now.getFullYear(), now.getMonth() + 1, 1);
+})();
+
 function kanbanBody(cards: Record<string, unknown>[]): LoadedDoc {
   return {
     doc: {
@@ -756,11 +774,11 @@ describe('일정 화면', () => {
     it('기간 일정의 줄은 주 내내 고정이다 — 짧은 것이 끝나도 빈 자리가 남는다(제보 ⑧)', async () => {
       // 같은 주에 시작해 종료일이 다른 둘. 예전에는 짧은 것이 끝난 칸부터 남은
       // 바가 한 줄 위로 올라와 **계단처럼** 보였다.
-      const iso = (n: number) => addDays(SPAN.start, n);
+      const iso = (n: number) => addDays(WEEK_START, n);
       renderHome([META('d1', '스프린트 보드')], {
         d1: kanbanBody([
-          { id: 'a', col: 'c2', pos: 1, text: '짧은 기간', due: iso(1), start: SPAN.start },
-          { id: 'b', col: 'c2', pos: 2, text: '긴 기간', due: iso(3), start: SPAN.start },
+          { id: 'a', col: 'c2', pos: 1, text: '짧은 기간', due: iso(1), start: WEEK_START },
+          { id: 'b', col: 'c2', pos: 2, text: '긴 기간', due: iso(3), start: WEEK_START },
         ]),
       });
       await openCalendar();
@@ -770,17 +788,17 @@ describe('일정 화면', () => {
           .filter((el) => el.hasAttribute('data-cal-bar') || el.hasAttribute('data-cal-bar-gap'))
           .map((el) => (el.hasAttribute('data-cal-bar-gap') ? '_' : (el.querySelector('[data-cal-bar-title]')?.textContent ?? el.textContent ?? '').trim() || '·'));
       // 첫 칸: 긴 것이 위(같이 시작하면 긴 것 먼저), 짧은 것이 아래.
-      expect(rowsOf(SPAN.start)).toEqual(['긴 기간', '짧은 기간']);
+      expect(rowsOf(WEEK_START)).toEqual(['긴 기간', '짧은 기간']);
       // 짧은 것이 끝난 뒤에도 긴 것은 **첫 줄 그대로**다(예전에는 아래 것이 올라왔다).
       expect(rowsOf(iso(2))).toEqual(['·']);
     });
 
     it('위쪽 줄이 빈 칸에는 **빈 자리**가 들어간다 — 그래야 아래 바가 제 높이에 남는다', async () => {
       // 먼저 시작한 짧은 것(lane 0)과 늦게 시작해 더 가는 것(lane 1).
-      const iso = (n: number) => addDays(SPAN.start, n);
+      const iso = (n: number) => addDays(WEEK_START, n);
       renderHome([META('d1', '스프린트 보드')], {
         d1: kanbanBody([
-          { id: 'x', col: 'c2', pos: 1, text: '먼저 끝', due: iso(1), start: SPAN.start },
+          { id: 'x', col: 'c2', pos: 1, text: '먼저 끝', due: iso(1), start: WEEK_START },
           { id: 'y', col: 'c2', pos: 2, text: '늦게 시작', due: iso(4), start: iso(1) },
         ]),
       });
@@ -799,10 +817,10 @@ describe('일정 화면', () => {
     it('빈 줄에 새 일정이 들어간다 — 아래로 밀리지 않는다(제보 ①)', async () => {
       // A(0~5) · B(1~2) · C(2~5) → 한 주에서 A=0 · B=1 · C=2 줄. 3일째 칸은 B가
       // 끝나 **가운데 줄이 비는데**, 그 칸의 하루짜리 일정이 예전에는 맨 아래로 갔다.
-      const iso = (n: number) => addDays(SPAN.start, n);
+      const iso = (n: number) => addDays(WEEK_START, n);
       renderHome([META('d1', '스프린트 보드')], {
         d1: kanbanBody([
-          { id: 'a', col: 'c2', pos: 1, text: 'A', due: iso(5), start: SPAN.start },
+          { id: 'a', col: 'c2', pos: 1, text: 'A', due: iso(5), start: WEEK_START },
           { id: 'b', col: 'c2', pos: 2, text: 'B', due: iso(2), start: iso(1) },
           { id: 'c', col: 'c2', pos: 3, text: 'C', due: iso(5), start: iso(2) },
           { id: 'n', col: 'c2', pos: 4, text: '새 일정', due: iso(3) },
@@ -819,11 +837,11 @@ describe('일정 화면', () => {
 
     it('기간 일정과 하루짜리가 섞여도 `+N개 더`가 뜬다(제보 ②)', async () => {
       // 예전에는 접힘 표시가 칩만 세고 바는 세지 않아, 이 조합에서 아예 안 나왔다.
-      const iso = (n: number) => addDays(SPAN.start, n);
+      const iso = (n: number) => addDays(WEEK_START, n);
       renderHome([META('d1', '스프린트 보드')], {
         d1: kanbanBody([
-          { id: 's1', col: 'c2', pos: 1, text: '기간 하나', due: iso(4), start: SPAN.start },
-          { id: 's2', col: 'c2', pos: 2, text: '기간 둘', due: iso(4), start: SPAN.start },
+          { id: 's1', col: 'c2', pos: 1, text: '기간 하나', due: iso(4), start: WEEK_START },
+          { id: 's2', col: 'c2', pos: 2, text: '기간 둘', due: iso(4), start: WEEK_START },
           { id: 'd1', col: 'c2', pos: 3, text: '하루 하나', due: iso(1) },
           { id: 'd2', col: 'c2', pos: 4, text: '하루 둘', due: iso(1) },
         ]),
