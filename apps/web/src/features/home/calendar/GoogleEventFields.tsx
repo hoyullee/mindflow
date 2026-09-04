@@ -285,6 +285,7 @@ export function GoogleEventFields({
           picked={value.rooms}
           onChange={(next) => onChange({ rooms: next })}
           {...(when && directory?.checkRoomBusy ? { when, check: directory.checkRoomBusy } : {})}
+          {...(directory?.canSearchPeople ? { search: directory.searchPeople } : {})}
         />
         ) : roomsLoading ? (
           // 도착하기 전에는 **실제 목록과 같은 크기의 상자**에 스켈레톤 세 줄(요청 ①) —
@@ -895,12 +896,15 @@ function Rooms({
   onChange,
   when,
   check,
+  search,
 }: {
   all: readonly MeetingRoom[];
   picked: string[];
   onChange: (next: string[]) => void;
   when?: { fromIso: string; toIso: string; skipEventId?: string };
   check?: (roomEmail: string, fromIso: string, toIso: string, skipEventId?: string) => Promise<RoomBusy | null>;
+  /** 이름 검색(선택 스코프) — 주최자를 주소로만 준 경우 이름을 물어본다. */
+  search?: (q: string) => Promise<DirectoryPerson[] | null>;
 }) {
   const [q, setQ] = useState('');
   /**
@@ -1038,14 +1042,95 @@ function Rooms({
    * 그 행이 목록에서 빠져도 잡아 둔 사실은 사라지지 않아야 한다.
    */
   const asking = confirm ? all.find((r) => r.email === confirm) : undefined;
-  const notices = [
-    ...(asking ? [{ room: asking, ask: true }] : []),
-    ...all.filter((r) => r.email !== confirm && picked.includes(r.email) && busyOf(r.email)?.busy).map((room) => ({ room, ask: false })),
-  ];
+  const held = all.filter((r) => r.email !== confirm && picked.includes(r.email) && busyOf(r.email)?.busy);
+  /**
+   * **잡은 사람의 이름을 디렉터리에 묻는다**(제보: 이름 대신 이메일 앞부분이 보인다).
+   *
+   * 참석자 이름과 **같은 원인·같은 처방**이다 — 구글은 회의실 캘린더의 공개 수준에
+   * 따라 주최자를 `displayName` 없이 주소만 주므로, 그 주소로 한 번 물어 이름을 얻고
+   * 장부(`nameBook`)에 적는다(그러면 참석자 행에서도 같은 이름이다). 이메일 하나에
+   * **한 번만** 묻고, 답은 **마운트되어 있는 동안** 받는다(효과별 취소 플래그는 첫
+   * 답이 상태를 바꾸는 순간 남은 조회를 잃는다 — 참석자·회의실 배지에서 겪은 함정).
+   */
+  const [, bumpNames] = useState(0);
+  const orgAskedRef = useRef<Set<string>>(new Set());
+  const orgKey = [asking, ...held]
+    .map((r) => (r ? busyOf(r.email)?.by ?? '' : ''))
+    .filter((by) => by.includes('@'))
+    .join(',');
+  useEffect(() => {
+    if (!search) return;
+    const need = (orgKey ? orgKey.split(',') : []).filter((e) => e && !knownName(e) && !orgAskedRef.current.has(e));
+    for (const email of need) {
+      orgAskedRef.current.add(email);
+      void search(email).then((list) => {
+        const k = email.trim().toLowerCase();
+        const hit = list?.find((p) => p.emails.includes(k) || p.email.toLowerCase() === k);
+        if (!hit?.name) return;
+        rememberName(email, hit.name);
+        // 장부는 모듈 상태라 스스로 다시 그리지 않는다 — 한 번 밀어 준다.
+        if (mountedRef.current) bumpNames((n) => n + 1);
+      });
+    }
+  }, [orgKey, search]);
+  /**
+   * 사용 중인 방 한 칸 — 요청대로 **두 줄**이다: ① `사용 중 · 일정을 만든 사람`
+   * ② `회의 시간 회의명`. 되묻는 칸에는 물음과 두 버튼이 붙고, 방 이름 줄은
+   * 되묻는 중이거나 여러 방이 걸릴 때만 붙인다(한 방을 잡아 둔 것뿐이면 목록의
+   * 강조된 행이 이미 어느 방인지 말한다).
+   */
+  const noticeEntry = (room: MeetingRoom, ask: boolean, withName = false): JSX.Element => {
+    const l = roomBusyLines(busyOf(room.email));
+    return (
+      <div
+        key={room.email}
+        data-gf-room-busy-for={room.email}
+        {...(ask ? { 'data-gf-room-confirm': room.email } : {})}
+        style={{ display: 'flex', flexDirection: 'column', gap: 2, minWidth: 0 }}
+      >
+        {(ask || withName) && <span style={{ fontSize: 10.5, fontWeight: 700, color: 'var(--mf-faint)' }}>{room.name}</span>}
+        <span style={{ fontWeight: 800, color: 'var(--mf-danger)' }}>{l.head}</span>
+        {l.detail && <span style={{ color: 'var(--mf-subtext)' }}>{l.detail}</span>}
+        {ask && <span style={{ marginTop: 5, color: 'var(--mf-subtext)' }}>이미 사용 중인 회의실이에요. 그래도 예약할까요?</span>}
+        {ask && (
+          <span style={{ display: 'flex', alignItems: 'center', gap: 7, marginTop: 5 }}>
+            <button
+              type="button"
+              data-gf-room-confirm-yes
+              className="mf-ctl"
+              onMouseDown={(e) => {
+                e.preventDefault();
+                pick(room.email);
+              }}
+              style={{ height: 28, padding: '0 12px', borderRadius: 999, border: '1px solid var(--mf-danger-line)', background: 'var(--mf-card)', color: 'var(--mf-danger)', font: 'inherit', fontSize: 11.5, fontWeight: 800, cursor: 'pointer' }}
+            >
+              그래도 예약
+            </button>
+            <button
+              type="button"
+              data-gf-room-confirm-no
+              className="mf-ctl"
+              onMouseDown={(e) => {
+                e.preventDefault();
+                setConfirm(null);
+              }}
+              style={{ height: 28, padding: '0 12px', borderRadius: 999, border: '1px solid var(--mf-border)', background: 'var(--mf-card)', color: 'var(--mf-muted)', font: 'inherit', fontSize: 11.5, fontWeight: 700, cursor: 'pointer' }}
+            >
+              취소
+            </button>
+          </span>
+        )}
+      </div>
+    );
+  };
   if (!revealed) return <RoomsLoading />;
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 8, minWidth: 0 }}>
       <SearchBox label="회의실 검색" attrs={{ 'data-gf-room-input': '1' }} value={q} placeholder="회의실 이름 또는 층 검색" onChange={setQ} />
+      {/* 상자와 그 위를 덮는 물음 카드 — 물음은 **회의실 선택 박스를 채운다**(요청,
+          첨부 이미지). 상자와 같은 자리·같은 크기라 팝업이 오르내리지 않고, 그
+          시간대에는 목록을 고를 일이 없다(예약할지 말지를 먼저 답한다). */}
+      <div style={{ position: 'relative', minWidth: 0 }}>
       <div data-gf-room-list className="lnb-scroll" style={{ ...listCard, height: boxH }}>
         {groups.map((g, gi) => (
           <div key={g.key} data-gf-room-group={g.key}>
@@ -1103,56 +1188,25 @@ function Rooms({
         ))}
         {rows.length === 0 && <span style={{ padding: 10, fontSize: 11.5, color: 'var(--mf-faint)' }}>검색 결과가 없어요</span>}
       </div>
-      {/* 사용 중인 방 알림 — 요청대로 **두 줄**이다:
+      {asking && (
+        <div
+          ref={askRef}
+          data-gf-room-busy
+          data-gf-room-ask
+          className="lnb-scroll"
+          style={{ position: 'absolute', inset: 0, display: 'flex', flexDirection: 'column', gap: 2, padding: '9px 11px', borderRadius: 10, border: '1px solid var(--mf-danger-line)', background: 'var(--mf-danger-bg)', overflowY: 'auto', fontSize: 11.5, lineHeight: 1.5, minWidth: 0 }}
+        >
+          {noticeEntry(asking, true)}
+        </div>
+      )}
+      </div>
+      {/* 잡아 둔 사용 중인 방 — 요청대로 **두 줄**이다:
           ① `사용 중 · 일정을 만든 사람` ② `회의 시간 회의명`.
-          되묻는 방은 그 아래에 물음과 두 버튼이 붙는다. 방 이름 줄은 되묻는 중이거나
-          여러 방이 걸릴 때만 — 한 방을 잡아 둔 것뿐이면 목록의 강조된 행이 말한다. */}
-      {notices.length > 0 && (
-        <div ref={askRef} data-gf-room-busy style={{ display: 'flex', flexDirection: 'column', gap: 10, padding: '9px 11px', borderRadius: 10, border: '1px solid var(--mf-danger-line)', background: 'var(--mf-danger-bg)', minWidth: 0 }}>
-          {notices.map(({ room, ask }) => {
-            const l = roomBusyLines(busyOf(room.email));
-            return (
-              <div
-                key={room.email}
-                data-gf-room-busy-for={room.email}
-                {...(ask ? { 'data-gf-room-confirm': room.email } : {})}
-                style={{ display: 'flex', flexDirection: 'column', gap: 2, fontSize: 11.5, lineHeight: 1.5, minWidth: 0 }}
-              >
-                {(ask || notices.length > 1) && <span style={{ fontSize: 10.5, fontWeight: 700, color: 'var(--mf-faint)' }}>{room.name}</span>}
-                <span style={{ fontWeight: 800, color: 'var(--mf-danger)' }}>{l.head}</span>
-                {l.detail && <span style={{ color: 'var(--mf-subtext)' }}>{l.detail}</span>}
-                {ask && <span style={{ marginTop: 5, color: 'var(--mf-subtext)' }}>이미 사용 중인 회의실이에요. 그래도 예약할까요?</span>}
-                {ask && (
-                  <span style={{ display: 'flex', alignItems: 'center', gap: 7, marginTop: 5 }}>
-                    <button
-                      type="button"
-                      data-gf-room-confirm-yes
-                      className="mf-ctl"
-                      onMouseDown={(e) => {
-                        e.preventDefault();
-                        pick(room.email);
-                      }}
-                      style={{ height: 28, padding: '0 12px', borderRadius: 999, border: '1px solid var(--mf-danger-line)', background: 'var(--mf-card)', color: 'var(--mf-danger)', font: 'inherit', fontSize: 11.5, fontWeight: 800, cursor: 'pointer' }}
-                    >
-                      그래도 예약
-                    </button>
-                    <button
-                      type="button"
-                      data-gf-room-confirm-no
-                      className="mf-ctl"
-                      onMouseDown={(e) => {
-                        e.preventDefault();
-                        setConfirm(null);
-                      }}
-                      style={{ height: 28, padding: '0 12px', borderRadius: 999, border: '1px solid var(--mf-border)', background: 'var(--mf-card)', color: 'var(--mf-muted)', font: 'inherit', fontSize: 11.5, fontWeight: 700, cursor: 'pointer' }}
-                    >
-                      취소
-                    </button>
-                  </span>
-                )}
-              </div>
-            );
-          })}
+          이건 상자를 덮지 않는다(예약을 확정한 뒤에도 목록을 고를 수 있어야 한다) —
+          덮는 것은 답을 기다리는 물음뿐이다. */}
+      {held.length > 0 && (
+        <div data-gf-room-busy style={{ display: 'flex', flexDirection: 'column', gap: 10, padding: '9px 11px', borderRadius: 10, border: '1px solid var(--mf-danger-line)', background: 'var(--mf-danger-bg)', fontSize: 11.5, lineHeight: 1.5, minWidth: 0 }}>
+          {held.map((room) => noticeEntry(room, false, held.length > 1))}
         </div>
       )}
     </div>
