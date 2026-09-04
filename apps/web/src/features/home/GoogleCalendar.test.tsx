@@ -2264,6 +2264,55 @@ describe('구글 캘린더 겹치기(PR5)', () => {
     expect(asked.some((u) => u.includes(encodeURIComponent('junghun@wantedlab.com')))).toBe(true);
   });
 
+  it('이름을 물어보는 동안은 **스켈레톤**이다 — 로컬파트가 먼저 보이고 이름으로 갈리지 않게(제보)', async () => {
+    seed({ calendars: ['me@example.com'] });
+    seedToken();
+    stubGis();
+    let release: ((v: unknown) => void) | null = null;
+    const held = new Promise((res) => {
+      release = res;
+    });
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (url: string) => {
+        const ok = (body: unknown) => ({ ok: true, status: 200, json: async () => body }) as unknown as Response;
+        if (url.includes('admin.googleapis.com')) return ok({ items: [{ resourceEmail: 'room7@example.com', resourceName: '회의실-35-06 Develop', capacity: 6 }] });
+        if (url.includes('people.googleapis.com')) {
+          // 이름 조회만 붙잡아 둔다 — 그 사이의 화면을 본다.
+          await held;
+          return ok({ people: [{ names: [{ displayName: '정준훈' }], emailAddresses: [{ value: 'junghun@wantedlab.com', metadata: { primary: true } }] }] });
+        }
+        if (url.includes('/colors')) return ok({ event: {} });
+        if (url.includes('/users/me/calendarList')) return ok({ items: [{ id: 'me@example.com', summary: '내 캘린더', primary: true, accessRole: 'owner' }] });
+        if (url.includes('room7%40example.com')) return ok({ items: [{ id: 'b', summary: '주간 미팅', organizer: { email: 'junghun@wantedlab.com' } }] });
+        return ok({ items: [] });
+      }),
+    );
+    clientId = 'test-client.apps.googleusercontent.com';
+    const user = userEvent.setup();
+    const { container } = renderHome();
+    await openCalendar(container, user);
+    await user.click(screen.getByText('새 일정'));
+    await waitFor(() => expect(document.querySelector('[data-new-cal="me@example.com"]')).toBeTruthy());
+    await user.click(document.querySelector<HTMLElement>('[data-new-cal="me@example.com"]')!);
+    await waitFor(() => expect(document.querySelector('[data-gf-room-hit]')).toBeTruthy(), { timeout: 3000 });
+    fireEvent.mouseDown(document.querySelector('[data-gf-room-hit="room7@example.com"]')!);
+    const ask = await waitFor(() => {
+      const el = document.querySelector('[data-gf-room-confirm="room7@example.com"]');
+      expect(el).toBeTruthy();
+      return el as HTMLElement;
+    });
+    // 아직 이름을 모른다 — 자리만 보여 주고 **로컬파트를 먼저 그리지 않는다**.
+    await waitFor(() => expect(ask.querySelector('[data-gf-room-by-loading]')).toBeTruthy());
+    expect(ask.textContent).not.toContain('junghun');
+
+    await waitFor(() => expect(release).toBeTruthy());
+    release!(null);
+    // 도착하면 한 번에 이름으로.
+    await waitFor(() => expect([...ask.children][1]!.textContent).toBe('사용 중 · 정준훈'));
+    expect(ask.querySelector('[data-gf-room-by-loading]')).toBeNull();
+  });
+
   it('주최자를 주소로만 주고 디렉터리에도 없으면 **로컬파트**로 말한다 — 초대 행과 같은 규칙(제보)', async () => {
     seed({ calendars: ['me@example.com'] });
     seedToken();
