@@ -1194,6 +1194,10 @@ describe('구글 캘린더 겹치기(PR5)', () => {
     expect(stateOf(busyRoom)).toBe('busy');
     expect(ask.textContent).toContain('이호율');
     expect(ask.textContent).toContain('그래도 예약할까요?');
+    // 물음도 **목록 밖 구획 전폭**이다(제보: 선택한 회의실 하단에 툴팁처럼 열리고
+    // 문구가 한 줄이었다) — 방 이름 · `사용 중 · 누가` · `시각 회의명` 세 줄로 갈린다.
+    expect(document.querySelector('[data-gf-room-list]')!.contains(ask)).toBe(false);
+    expect([...ask.children].slice(0, 3).map((c) => c.textContent)).toEqual(['회의실-35-01', '사용 중 · 이호율', '디자인 리뷰']);
 
     // 취소하면 아무것도 바뀌지 않는다.
     fireEvent.mouseDown(ask.querySelector('[data-gf-room-confirm-no]')!);
@@ -2209,6 +2213,41 @@ describe('구글 캘린더 겹치기(PR5)', () => {
     expect([...line.children].map((c) => c.textContent)).toEqual(['사용 중 · 홍길동', '09:00–10:00 팀 회의']);
     // 펴 놓았으므로 같은 말을 툴팁으로 한 번 더 하지 않는다.
     expect(document.querySelector('[data-gf-room-hit="room1@example.com"]')!.getAttribute('title')).toBeNull();
+  });
+
+  it('주최자를 주소로만 주면 **로컬파트**로 말한다 — 초대 행과 같은 규칙(제보)', async () => {
+    seed({ calendars: ['me@example.com'] });
+    seedToken();
+    stubGis();
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (url: string) => {
+        const ok = (body: unknown) => ({ ok: true, status: 200, json: async () => body }) as unknown as Response;
+        if (url.includes('admin.googleapis.com')) return ok({ items: [{ resourceEmail: 'room9@example.com', resourceName: '회의실-35-03 Network', capacity: 7 }] });
+        if (url.includes('people.googleapis.com')) return ok({ people: [] });
+        if (url.includes('/colors')) return ok({ event: {} });
+        if (url.includes('/users/me/calendarList')) return ok({ items: [{ id: 'me@example.com', summary: '내 캘린더', primary: true, accessRole: 'owner' }] });
+        // 회의실 캘린더가 주최자 이름을 주지 않는다 — 주소만 온다(라이브 제보).
+        if (url.includes('room9%40example.com')) return ok({ items: [{ id: 'b', summary: '[교육] 포지션', organizer: { email: 'taekyung@wantedlab.com' } }] });
+        return ok({ items: [] });
+      }),
+    );
+    clientId = 'test-client.apps.googleusercontent.com';
+    const user = userEvent.setup();
+    const { container } = renderHome();
+    await openCalendar(container, user);
+    await user.click(screen.getByText('새 일정'));
+    await waitFor(() => expect(document.querySelector('[data-new-cal="me@example.com"]')).toBeTruthy());
+    await user.click(document.querySelector<HTMLElement>('[data-new-cal="me@example.com"]')!);
+    await waitFor(() => expect(document.querySelector('[data-gf-room-hit]')).toBeTruthy(), { timeout: 3000 });
+    fireEvent.mouseDown(document.querySelector('[data-gf-room-hit="room9@example.com"]')!);
+    const ask = await waitFor(() => {
+      const el = document.querySelector('[data-gf-room-confirm="room9@example.com"]');
+      expect(el).toBeTruthy();
+      return el as HTMLElement;
+    });
+    // 주소 전체(`taekyung@wantedlab.com`)가 아니라 이름 자리에 로컬파트가 온다.
+    expect([...ask.children][1]!.textContent).toBe('사용 중 · taekyung');
   });
 
   it('근무 위치는 일정이 아니다 — 칩이 아니라 칸 우측 상단의 한 마디(제보 ⑥)', async () => {

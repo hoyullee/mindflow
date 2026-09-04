@@ -201,6 +201,8 @@ export async function checkRoom(token: string, roomEmail: string, fromIso: strin
   }) as Record<string, unknown> | undefined;
   if (!hit) return { busy: false };
   const org = hit.organizer as { displayName?: string; email?: string } | undefined;
+  // 이름을 함께 줬으면 장부에 적는다 — 같은 사람이 참석자 행에서도 그 이름으로 보인다.
+  if (org?.email) rememberName(org.email, org.displayName);
   const by = org?.displayName || org?.email;
   const title = typeof hit.summary === 'string' ? hit.summary : undefined;
   return {
