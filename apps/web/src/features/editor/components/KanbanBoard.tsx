@@ -1040,9 +1040,22 @@ function Column({
     setComposing(true);
   };
 
+  /** 열 우클릭 = 그 열의 ⋯ 메뉴(제보: 브라우저 기본 메뉴가 떴다). 메뉴는 ⋯ 버튼을
+   *  앵커로 서므로 어디서 눌러도 같은 자리에 뜬다 — 그 메뉴가 곧 "이 열"의 메뉴다.
+   *  카드는 자기 메뉴가 있고(전파를 끊는다) 편집 중인 입력 위에서는 기기의 기본
+   *  메뉴가 맞다(붙여넣기·맞춤법). readOnly는 열 메뉴 자체가 없으므로 막기만 한다. */
+  const onColumnContextMenu = (e: ReactMouseEvent): void => {
+    const el = e.target as HTMLElement | null;
+    if (el?.closest('input, textarea, [contenteditable="true"]')) return;
+    e.preventDefault();
+    e.stopPropagation();
+    if (!readOnly) setMenuOpen(true);
+  };
+
   return (
     <section
       data-kanban-column={col.id}
+      onContextMenu={onColumnContextMenu}
       style={{
         flex: '0 0 auto',
         width: isMobile ? 264 : COL_W,

@@ -5,6 +5,7 @@ import type { Doc } from '@mindflow/mindmap-core';
 import { layout, parseDoc } from '@mindflow/mindmap-core';
 import { Editor } from './Editor';
 import { CanvasTextMeasurer, computeMetrics } from './metrics';
+import { mockMatchMedia } from '../../test/matchMedia';
 
 // Right-click context menu tests (`ContextMenu.tsx` + `useEditorState`'s `ctxMenu`/`ctxSub`/
 // `onContextMenu`/`hitTestAll`/`openCtxAt`, port of MindFlow.dc.html:2775-2837, 3087-3170).
@@ -522,5 +523,40 @@ describe('Context menu — 디자인 이식(요청)', () => {
     expect(fly.style.borderRadius).toBe('14px');
     const flyRow = fly.querySelector('button') as HTMLElement;
     expect(flyRow.style.height).toBe('32px');
+  });
+});
+
+// 요청: 에디터 어디서도 브라우저 기본 우클릭 메뉴가 뜨지 않는다. 예외는 글자를
+// 다루는 표면 하나 — 거기서는 기기의 붙여넣기·선택 메뉴가 맞다(제보로 정한 규칙).
+describe('브라우저 기본 우클릭 메뉴 차단(요청)', () => {
+  beforeEach(() => {
+    localStorage.clear();
+    mockMatchMedia(false);
+    localStorage.setItem('mf_demo_session', JSON.stringify({ user: { id: 'u', email: 'me@example.com' } }));
+  });
+  afterEach(cleanup);
+
+  it('우리 메뉴가 없는 자리(툴바)에서도 기본 메뉴는 막는다', async () => {
+    localStorage.setItem('mindflow_doc_ncm1', JSON.stringify(DOC));
+    renderEditor('/editor?map=ncm1&title=x');
+    const bar = await screen.findByRole('button', { name: '보기' });
+
+    const ev = new MouseEvent('contextmenu', { bubbles: true, cancelable: true });
+    bar.dispatchEvent(ev);
+    expect(ev.defaultPrevented).toBe(true);
+    // 우리 메뉴를 지어내지도 않는다 — 그 자리에는 열 것이 없다.
+    expect(document.querySelector('.mf-ctx')).toBeFalsy();
+  });
+
+  it('글자를 다루는 표면에서는 막지 않는다(기기의 붙여넣기·선택 메뉴)', async () => {
+    localStorage.setItem('mindflow_doc_ncm2', JSON.stringify(DOC));
+    const { container } = renderEditor('/editor?map=ncm2&title=x');
+    // 검색 바를 열어 입력 위에서 우클릭한다.
+    fireEvent.keyDown(window, { key: 'f', ctrlKey: true });
+    const input = await waitFor(() => container.querySelector('input') as HTMLInputElement);
+
+    const ev = new MouseEvent('contextmenu', { bubbles: true, cancelable: true });
+    input.dispatchEvent(ev);
+    expect(ev.defaultPrevented).toBe(false);
   });
 });

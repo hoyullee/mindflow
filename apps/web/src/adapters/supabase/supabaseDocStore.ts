@@ -19,6 +19,7 @@ import { parseDoc, serializeDoc } from '@mindflow/mindmap-core';
 import type { DocMeta, DocStore, LoadedDoc, SaveOptions, SaveResult } from '../ports';
 import { readPreviewBody, writePreviewBody } from '../previewBodyCache';
 import { currentUser } from './supabaseUser';
+import { homeBootstrap } from './supabaseHomeBootstrap';
 
 const TABLE = 'documents';
 /** `list()`가 읽는 칼럼(0015의 `updated_by` 제외 — 그건 아래에서 따로 붙인다). */
@@ -36,16 +37,34 @@ interface DocumentRow {
   updated_by?: string | null;
 }
 
+/** 행 → `DocMeta` — 부트스트랩 RPC와 예전 질의가 **같은 매핑**을 쓴다. */
+function toMeta(row: DocumentRow, myId: string | null): DocMeta {
+  return {
+    id: row.id,
+    title: row.title ?? '(제목 없음)',
+    version: row.version,
+    updatedAt: row.updated_at,
+    isFavorite: Boolean(row.is_favorite),
+    deletedAt: row.deleted_at,
+    ownedByMe: !myId || !row.owner ? true : row.owner === myId,
+    // 내 uid를 모르거나(세션 미확인) 아직 한 번도 저장된 적 없는 행(0015 이전
+    // 데이터)은 판단하지 않는다 — undefined면 카드가 이름을 붙이지 않는다.
+    editedByMe: !myId || !row.updated_by ? undefined : row.updated_by === myId,
+  };
+}
+
 export class SupabaseDocStore implements DocStore {
   constructor(private readonly client: SupabaseClient) {}
 
   async list(): Promise<DocMeta[]> {
     // 내 uid는 **세션에서** 온다(`currentUser` — 네트워크 왕복 없음). 못 알아내면
     // 모두 내 것으로 본다 — 공유 이전과 같은 동작이라 최악이라도 예전 상태로 퇴화한다.
-    const [listed, me] = await Promise.all([
-      this.client.from(TABLE).select(`${LIST_COLS},updated_by`).order('updated_at', { ascending: false }),
-      currentUser(this.client),
-    ]);
+    // 목록은 홈 부트스트랩 RPC(0036)와 **한 요청을 나눠 쓴다** — 같은 틱에 공유
+    // 목록도 함께 조회되므로(홈 하이드레이션) 왕복이 하나로 줄어든다. RPC가 없는
+    // 서버에서는 `null`이 와서 아래 예전 질의로 물러난다.
+    const [boot, me] = await Promise.all([homeBootstrap(this.client), currentUser(this.client)]);
+    if (boot) return boot.documents.map((row) => toMeta(row as DocumentRow, me?.id ?? null));
+    const listed = await this.client.from(TABLE).select(`${LIST_COLS},updated_by`).order('updated_at', { ascending: false });
     let data: DocumentRow[] | null = (listed.data as DocumentRow[] | null) ?? null;
     let error = listed.error;
     // `updated_by`(0015)가 아직 없는 서버 — 마이그레이션이 앱 배포보다 늦으면 이
@@ -58,19 +77,7 @@ export class SupabaseDocStore implements DocStore {
       if (!error) console.warn('[geurio] documents.updated_by 없음 — 마지막 수정자 표시 생략(마이그레이션 0015 대기)');
     }
     if (error) throw new Error(error.message);
-    const myId = me?.id ?? null;
-    return (data ?? []).map((row) => ({
-      id: row.id,
-      title: row.title ?? '(제목 없음)',
-      version: row.version,
-      updatedAt: row.updated_at,
-      isFavorite: Boolean(row.is_favorite),
-      deletedAt: row.deleted_at,
-      ownedByMe: !myId || !row.owner ? true : row.owner === myId,
-      // 내 uid를 모르거나(세션 미확인) 아직 한 번도 저장된 적 없는 행(0015 이전
-      // 데이터)은 판단하지 않는다 — undefined면 카드가 이름을 붙이지 않는다.
-      editedByMe: !myId || !row.updated_by ? undefined : row.updated_by === myId,
-    }));
+    return (data ?? []).map((row) => toMeta(row, me?.id ?? null));
   }
 
   /** 마지막 저장자 이름 — `document_editors` RPC(0015). 자세한 계약은 포트 주석에. */

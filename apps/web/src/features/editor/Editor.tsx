@@ -149,6 +149,17 @@ export function Editor() {
       // 이미지화되어 이동"). 파일 드롭(이미지 첨부)은 drop/dragover 쪽이라 무관하고,
       // 객체 이동은 전부 pointer 이벤트로 우리가 직접 그린다.
       onDragStartCapture={(e) => e.preventDefault()}
+      // 브라우저 기본 우클릭 메뉴는 에디터 어디서도 뜨지 않는다(요청). 우클릭은
+      // 이 앱에서 **객체 메뉴를 여는 조작**이라, 우리 메뉴가 없는 자리(툴바·패널·
+      // 빈 여백)에서만 브라우저 메뉴가 뜨면 같은 화면에서 우클릭의 뜻이 갈린다.
+      // 캡처 단계라 아래에서 우리 메뉴를 여는 핸들러(캔버스·카드·열)는 그대로 돌고,
+      // 예외는 **글자를 다루는 표면** 하나 — 거기서는 기기의 붙여넣기·맞춤법·선택
+      // 메뉴가 맞다(제보로 이미 정한 규칙: 편집 중 롱프레스가 선택 메뉴를 띄운다).
+      onContextMenuCapture={(e) => {
+        const el = e.target as HTMLElement | null;
+        if (el?.closest('input, textarea, [contenteditable="true"], .mf-richedit')) return;
+        e.preventDefault();
+      }}
     >
       <Toolbar controller={controller} />
       {/* 공유 맵에서 실시간이 오래 끊기면 편집을 멈추고 새로고침을 안내한다 —

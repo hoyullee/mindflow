@@ -10,7 +10,7 @@
 
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { Modal } from '../../../components/Modal';
-import type { CSSProperties, KeyboardEvent as ReactKeyboardEvent } from 'react';
+import type { CSSProperties, KeyboardEvent as ReactKeyboardEvent, ReactNode } from 'react';
 import { richToMarkdown } from '@mindflow/mindmap-core';
 import type { KanbanCard } from '@mindflow/mindmap-core';
 import type { EditorController } from '../useEditorState';
@@ -24,10 +24,41 @@ import { SwatchGroup } from '../../../components/Swatch';
 import { Avatar } from './KanbanBoard';
 import { CommentIcon } from './ToolbarMenus';
 import { CommentThreads } from './CommentPanel';
+import { DateButton } from '../../home/calendar/DatePop';
+import type { DateTone } from '../../home/calendar/DatePop';
 
 /** 저장 상태 칩의 색 — 저장됨(초록)·저장 중(호박)·그 밖(중립). 테마와 무관하게
  *  "됐다/하는 중"으로 읽혀야 하는 신호다(문서 칩과 같은 값). */
 const SAVE_TONE: Record<string, string> = { saved: '#3fae6a', saving: '#e0b23c' };
+
+/**
+ * 날짜 고르기(`DateButton`)에 넘길 색 — 일정 화면과 **같은 부품**을 쓰되(요청)
+ * 색은 이 화면의 테마에서 만든다. 그 컴포넌트의 기본값은 홈 CSS 변수이고 그건
+ * 사용자가 홈에서 고른 테마라, 그대로 두면 다크 홈을 쓰는 사람의 밝은 상세
+ * 팝업에 어두운 버튼이 섞인다(`ShareTheme`·`FeedbackTheme`와 같은 처방).
+ *
+ * 에디터 `Theme`에 없는 단계(옅은 글자·강조 잉크·경고색)는 **관계로** 만든다 —
+ * 테마를 늘려도 값을 새로 적을 일이 없다.
+ */
+function dateToneOf(th: Theme): DateTone {
+  return {
+    card: th.panel,
+    border: th.border,
+    borderSoft: mixHex(th.border, th.panel, 0.5),
+    shadow: '0 12px 32px rgba(46,42,38,.14)',
+    text: th.text,
+    muted: th.subtext,
+    faint: mixHex(th.subtext, th.panel, 0.45),
+    faint2: mixHex(th.subtext, th.panel, 0.25),
+    accent: th.accent,
+    accentSoft: mixHex(th.panel, th.accent, 0.14),
+    accentStrong: mixHex(th.accent, th.text, 0.2),
+    accentInk: th.accentInk,
+    panel2: th.panel2,
+    danger: '#d64545',
+    info: '#3f8fd0',
+  };
+}
 
 export function CardDetail({ card, controller, theme: th, isMobile }: { card: KanbanCard; controller: EditorController; theme: Theme; isMobile: boolean }) {
   const readOnly = controller.readOnly;
@@ -73,6 +104,7 @@ export function CardDetail({ card, controller, theme: th, isMobile }: { card: Ka
   // 새지 않게 capture 리스너를 직접 달았다.
 
   const label: CSSProperties = { fontSize: 11.5, fontWeight: 700, color: th.subtext };
+  const dateTone = dateToneOf(th);
   const chip = (on: boolean): CSSProperties => ({
     height: isMobile ? 34 : 30,
     padding: '0 12px',
@@ -231,32 +263,37 @@ export function CardDetail({ card, controller, theme: th, isMobile }: { card: Ka
 
             {/* 시작일 · 기한 — 상태 바로 아래다(요청): "언제 하는 일인가"가
                 상태 다음으로 먼저 읽히고, 담당은 그 아래로 내려간다. 타임라인
-                막대가 이 둘 사이를 그린다(시작일이 없으면 오늘부터). 지우기는
-                **항상 자리를 지킨다** — 값이 없으면 비활성: 버튼이 떴다 사라지면
-                그 줄의 폭이 들썩인다. */}
+                막대가 이 둘 사이를 그린다(시작일이 없으면 오늘부터).
+
+                고르는 방식은 **일정 화면과 같은 부품**(`DateButton`)이다(요청) —
+                native `<input type="date">`는 브라우저·OS마다 모양이 다르고
+                `오늘`·`지우기`를 둘 자리가 없다. 그래서 곁의 `지우기` 버튼도
+                사라졌다: 팝오버 발치가 그 일을 맡는다. */}
             <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : '1fr 1fr', gap: 14, minWidth: 0 }}>
-              <DateField
-                label="시작일"
-                value={card.start ?? ''}
-                attr="start"
-                theme={th}
-                isMobile={isMobile}
-                readOnly={readOnly}
-                labelStyle={label}
-                chipStyle={chip(false)}
-                onChange={(v) => controller.setCardMeta(card.id, { start: v })}
-              />
-              <DateField
-                label="기한"
-                value={card.due ?? ''}
-                attr="due"
-                theme={th}
-                isMobile={isMobile}
-                readOnly={readOnly}
-                labelStyle={label}
-                chipStyle={chip(false)}
-                onChange={(v) => controller.setCardMeta(card.id, { due: v })}
-              />
+              <DateField label="시작일" labelStyle={label}>
+                <DateButton
+                  label="시작일"
+                  value={card.start ?? undefined}
+                  disabled={readOnly}
+                  tone={dateTone}
+                  hoverClass="mf-ed-btn"
+                  height={isMobile ? 40 : 34}
+                  attrs={{ 'data-detail-start': '' }}
+                  onPick={(v) => controller.setCardMeta(card.id, { start: v })}
+                />
+              </DateField>
+              <DateField label="기한" labelStyle={label}>
+                <DateButton
+                  label="기한"
+                  value={card.due ?? undefined}
+                  disabled={readOnly}
+                  tone={dateTone}
+                  hoverClass="mf-ed-btn"
+                  height={isMobile ? 40 : 34}
+                  attrs={{ 'data-detail-due': '' }}
+                  onPick={(v) => controller.setCardMeta(card.id, { due: v })}
+                />
+              </DateField>
             </div>
 
             {/* 담당 — 아바타가 여러 개라 한 줄을 통째로 쓴다(요청: 하단으로). */}
@@ -523,55 +560,12 @@ function Section({ label, style, children }: { label: string; style: CSSProperti
   );
 }
 
-/** 날짜 한 칸 — 입력 + `지우기`(값이 없으면 비활성, 자리는 지킨다). */
-function DateField({
-  label,
-  value,
-  attr,
-  theme: th,
-  isMobile,
-  readOnly,
-  labelStyle,
-  chipStyle,
-  onChange,
-}: {
-  label: string;
-  value: string;
-  attr: 'start' | 'due';
-  theme: Theme;
-  isMobile: boolean;
-  readOnly: boolean;
-  labelStyle: CSSProperties;
-  chipStyle: CSSProperties;
-  onChange: (v: string | null) => void;
-}) {
+/** 날짜 한 칸 — 라벨 + 고르기 버튼(값 지우기는 그 팝오버 발치에 있다). */
+function DateField({ label, labelStyle, children }: { label: string; labelStyle: CSSProperties; children: ReactNode }) {
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 8, minWidth: 0 }}>
       <span style={labelStyle}>{label}</span>
-      <div style={{ display: 'flex', alignItems: 'center', gap: 6, minWidth: 0 }}>
-        <input
-          className="mf-edit"
-          type="date"
-          {...{ [`data-detail-${attr}`]: true }}
-          value={value}
-          readOnly={readOnly}
-          onKeyDown={(e) => e.stopPropagation()}
-          onChange={(e) => onChange(e.target.value || null)}
-          style={{ flex: '1 1 auto', minWidth: 0, height: isMobile ? 40 : 34, padding: '0 11px', borderRadius: 10, border: `1px solid ${th.border}`, background: th.panel, outline: 'none', fontSize: 13, color: th.text, fontFamily: 'inherit', boxSizing: 'border-box' }}
-        />
-        {!readOnly && (
-          <button
-            type="button"
-            className="mf-ed-btn"
-            {...{ [`data-detail-${attr}-clear`]: true }}
-            disabled={!value}
-            onClick={() => onChange(null)}
-            style={{ ...chipStyle, flex: '0 0 auto', height: isMobile ? 40 : 34, cursor: value ? 'pointer' : 'default', opacity: value ? 1 : 0.45 }}
-          >
-            지우기
-          </button>
-        )}
-      </div>
+      {children}
     </div>
   );
 }
