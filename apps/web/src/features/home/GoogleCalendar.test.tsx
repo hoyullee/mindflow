@@ -681,8 +681,8 @@ describe('구글 캘린더 겹치기(PR5)', () => {
       expect(btn?.getAttribute('aria-label')).toBe('Google 캘린더 다시 연결');
     });
     // **왜**인지 툴팁이 말한다(제보: 배포되면 연동이 해제되는 것 같다) — 해제된 것이
-    // 아니라 구글 권한이 한 시간마다 만료되는 것이고, 고른 캘린더는 그대로 남아 있다.
-    expect(container.querySelector('[data-google-connect-cal]')?.getAttribute('title')).toContain('한 시간마다 만료');
+    // 아니라 구글 권한을 다시 허용해야 하는 것이고, 고른 캘린더는 그대로 남아 있다.
+    expect(container.querySelector('[data-google-connect-cal]')?.getAttribute('title')).toContain('다시 허용');
   });
 
   it('목적지가 구글이면 참석자·회의실·알림 필드가 오른쪽 열로 뜬다 — 반복은 두 목적지 공통', async () => {

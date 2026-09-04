@@ -37,10 +37,15 @@ describe('legal pages', () => {
       expect(screen.getByText(t)).toBeTruthy();
     }
     expect(screen.getByText(/HTTPS\(TLS\)/)).toBeTruthy();
-    // 방침이 실제 구현과 어긋나면 그 자체가 반려 사유다 — 토큰은 이 기기에 남는다
-    // (예전 문장은 `sessionStorage`·"탭을 닫으면 사라집니다"였고 코드만 바뀌었다).
-    expect(screen.getByText(/이용자 브라우저의 로컬 저장소에만/)).toBeTruthy();
+    // 방침이 실제 구현과 어긋나면 그 자체가 반려 사유다 — 접근 토큰은 이 기기에,
+    // **갱신 토큰은 서버에** 남는다(연결 유지, 0035 + `google-oauth` 함수). 예전
+    // 문장은 "갱신 토큰은 요청하지도 보관하지도 않습니다"였고 코드만 바뀌었다.
+    expect(screen.getByText(/이용자 브라우저의 로컬 저장소에/)).toBeTruthy();
     expect(screen.queryByText(/sessionStorage/)).toBeNull();
+    expect(screen.getByText(/서비스 서버에 이용자별로 보관/)).toBeTruthy();
+    expect(screen.getByText(/이용자 브라우저로 전달되지 않으며/)).toBeTruthy();
+    expect(screen.queryByText(/요청하지도, 보관하지도 않습니다/)).toBeNull();
+    expect(screen.getByText('자격 증명 격리')).toBeTruthy();
     expect(screen.getByText('7. 보유 기간 및 파기')).toBeTruthy();
     expect(screen.getAllByText('info@geurio.com').length).toBeGreaterThan(0);
   });

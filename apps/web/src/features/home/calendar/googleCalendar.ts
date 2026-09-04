@@ -14,27 +14,33 @@
  * 스코프를 묶지 않은 이유는 구글이 권하는 **점진적 승인**이기도 하다 — 캘린더를
  * 안 쓰는 사람에게 캘린더 권한을 묻지 않는다.
  *
- * **토큰은 이 기기에 남는다.** 브라우저 흐름에는 refresh token이 없고 액세스 토큰은
- * 한 시간짜리다. 예전에는 `sessionStorage`에 뒀는데(유출 표면이 작다) 그건 **탭마다
- * 따로**여서, 새 탭을 열거나 브라우저를 다시 켜면 연동이 풀린 것처럼 보였다(제보:
- * "자꾸 해제된다"). 사용자가 끄기 전까지 유지되는 편이 맞으므로 `localStorage`로
- * 옮겼다 — 트레이드오프는 유출 표면이고, 대가는 한 시간짜리 캘린더 토큰 하나다
- * (XSS는 sessionStorage도 같이 읽는다). 옛 탭에 남은 sessionStorage 토큰은 처음
- * 읽을 때 옮겨 담아 연동이 끊기지 않게 한다.
+ * **연결은 서버가 유지한다.** 브라우저는 인가 코드를 받아 Edge Function
+ * `google-oauth`에 넘기고, 함수가 client secret으로 교환해 **refresh token을 서버에**
+ * 보관한다(0035 `google_credentials` — 클라이언트 정책 없음). 액세스 토큰이 만료되면
+ * `ensureGoogleToken`이 그 함수로 **팝업 없이** 새로 받아 온다.
  *
- * 만료되면 새로 받아야 하는데, GIS 토큰 요청은 조용한 갱신(`prompt: ''`)이라도
- * **팝업 창을 연다** — 그래서 자동으로 다시 받지 않고 화면의 "다시 연결"
- * 버튼(사용자 제스처)에서만 받는다.
+ * 예전에는 브라우저 전용 토큰 흐름뿐이라 refresh token이 없었고, 갱신하려면 GIS를
+ * 다시 불러야 하는데 그건 조용한 갱신(`prompt: ''`)이라도 **팝업 창을 연다**(이
+ * API에는 창 없는 갱신이 없다). 그래서 한 시간마다 "다시 연결"을 눌러야 했다.
+ * 그 흐름은 **폴백으로 남아 있다** — 로컬·데모 모드나 함수·시크릿 미배포 서버에서는
+ * 지금도 그대로 굴러간다(배포 순서와 무관하게 앱이 깨지지 않는다).
+ *
+ * **액세스 토큰은 이 기기에 남는다**(`localStorage`). 예전에는 `sessionStorage`에
+ * 뒀는데 그건 **탭마다 따로**여서, 새 탭을 열면 연동이 풀린 것처럼 보였다(제보:
+ * "자꾸 해제된다"). 대가는 한 시간짜리 토큰 하나다(XSS는 sessionStorage도 같이
+ * 읽는다). refresh token은 **절대 브라우저에 오지 않는다** — 만료가 없어서 유출
+ * 표면이 한 시간에서 무기한으로 늘어난다. 옛 탭에 남은 sessionStorage 토큰은 처음
+ * 읽을 때 옮겨 담아 연동이 끊기지 않게 한다.
  *
  * ## 배포 전 필요한 것(코드 밖)
  *
- * `calendar.readonly`는 구글이 **민감(sensitive) 스코프**로 분류한다 — 콘솔의 동의
- * 화면에 스코프를 추가하고 **앱 검수**를 받아야 일반 사용자에게 열린다(검수 전에는
- * 테스트 사용자 100명까지+ "확인되지 않은 앱" 경고). 절차는 `backend.md` §19.
- * 그 전까지 이 기능은 **꺼진 채**이고, 앱은 아무것도 달라지지 않는다.
+ * 연결 유지에는 **서버 시크릿 둘**(`GOOGLE_CLIENT_ID`·`GOOGLE_CLIENT_SECRET`)과
+ * `google-oauth` 함수 배포가 필요하다 — 없으면 위의 폴백으로 굴러간다. 절차는
+ * `backend.md` §19.
  */
 
 import { loadGisScript, readGoogleClientId } from '../../auth/googleIdentity';
+import { disconnectGoogleServer, exchangeGoogleCode, refreshGoogleAccess, serverKnownUnavailable, type ServerToken } from './googleOAuthServer';
 import { rememberName, rememberNames } from './nameBook';
 
 /**
@@ -95,6 +101,19 @@ const API = 'https://www.googleapis.com/calendar/v3';
 
 /** GIS `accounts.oauth2` 중 이 앱이 건드리는 것만. */
 export interface GsiTokenApi {
+  /**
+   * 인가 코드 흐름 — 브라우저는 **코드**만 받고 교환은 서버가 한다. 이 흐름이라야
+   * refresh token이 나오고, 그래야 연결이 한 시간 뒤에 끊기지 않는다.
+   */
+  initCodeClient?(config: {
+    client_id: string;
+    scope: string;
+    ux_mode?: 'popup' | 'redirect';
+    select_account?: boolean;
+    hint?: string;
+    callback: (res: { code?: string; scope?: string; error?: string; error_description?: string }) => void;
+    error_callback?: (err: { type?: string; message?: string }) => void;
+  }): { requestCode(): void };
   initTokenClient(config: {
     client_id: string;
     scope: string;
@@ -307,11 +326,101 @@ export type TokenRequestResult = { token: GoogleToken } | { error: string } | { 
  * @param interactive 동의 창을 띄워도 되는가. 사용자가 **직접 누른** 연결에서만
  *   true다 — 화면을 여는 것만으로 팝업이 뜨면 안 된다(그리고 브라우저가 막는다).
  */
+/** 서버가 준 액세스 토큰을 저장하고 결과로 바꾼다(코드 교환·조용한 갱신 공용). */
+function acceptServerToken(t: ServerToken): TokenRequestResult {
+  const token: GoogleToken = {
+    accessToken: t.accessToken,
+    expiresAt: Date.now() + t.expiresIn * 1000,
+    scope: t.scope || GOOGLE_CALENDAR_SCOPE,
+  };
+  // 승인 범위가 모자라면 저장하지 않는다 — 그 토큰으로는 어차피 쓸 수 없다.
+  if (!scopeCovers(token.scope)) return { error: '캘린더 읽기·쓰기 권한을 모두 허용해야 일정을 만들 수 있어요.' };
+  storeToken(token);
+  return { token };
+}
+
+/**
+ * 인가 코드를 받아 서버에 넘긴다. 서버 흐름을 쓸 수 없으면 `null`을 돌려주고
+ * 호출부가 예전(브라우저 토큰) 흐름으로 물러난다.
+ *
+ * 코드 흐름에는 `prompt` 손잡이가 없다(GIS `initCodeClient`의 설정에 그런 값이
+ * 없다). 대신 **결과로 판단한다**: 서버가 refresh token을 갖게 됐는지를
+ * `persistent`로 알려 주고, 그렇지 못하면 예전처럼 한 시간짜리로 굴러간다.
+ */
+async function requestViaCode(api: GsiTokenApi, clientId: string, hint?: string): Promise<TokenRequestResult | null> {
+  if (!api.initCodeClient) return null;
+  const code = await new Promise<{ code: string } | { cancelled: true } | { error: string } | null>((resolve) => {
+    let settled = false;
+    const done = (r: { code: string } | { cancelled: true } | { error: string } | null) => {
+      if (settled) return;
+      settled = true;
+      resolve(r);
+    };
+    try {
+      const client = api.initCodeClient!({
+        client_id: clientId,
+        scope: GOOGLE_CALENDAR_SCOPE,
+        ux_mode: 'popup',
+        ...(hint ? { hint } : {}),
+        callback: (res) => {
+          if (res.code) {
+            done({ code: res.code });
+            return;
+          }
+          if (res.error === 'access_denied') {
+            done({ cancelled: true });
+            return;
+          }
+          done({ error: res.error_description || res.error || '구글 권한을 받지 못했어요.' });
+        },
+        error_callback: (err) =>
+          err.type === 'popup_closed'
+            ? done({ cancelled: true })
+            : done({
+                error:
+                  err.type === 'popup_failed_to_open'
+                    ? '팝업이 막혔어요. 브라우저의 팝업 차단을 풀고 다시 눌러 주세요.'
+                    : err.message || err.type || '구글 권한을 받지 못했어요.',
+              }),
+      });
+      client.requestCode();
+    } catch {
+      // 이 브라우저의 GIS가 코드 흐름을 모르면 예전 흐름으로 물러난다.
+      done(null);
+    }
+  });
+  if (!code) return null;
+  if ('cancelled' in code || 'error' in code) return code;
+
+  const res = await exchangeGoogleCode(code.code);
+  // 서버가 없다는 사실은 **코드를 받은 뒤에야** 알 수도 있다 — 그때는 사용자가 이미
+  // 동의 창을 지났으므로, 호출부의 예전 흐름이 이어서 토큰을 받는다(창이 한 번 더
+  // 뜨지만 이미 승인한 계정이라 곧 닫힌다).
+  if ('unavailable' in res) return null;
+  if ('needsConsent' in res) return { error: GOOGLE_RECONNECT_MSG };
+  if ('error' in res) return { error: res.error };
+  return acceptServerToken(res.token);
+}
+
 export async function requestGoogleToken(interactive: boolean, hint?: string): Promise<TokenRequestResult> {
   const clientId = readGoogleClientId();
   if (!clientId) return { error: '구글 연동이 설정되지 않았어요.' };
   const api = await loadGoogleTokenApi();
   if (!api) return { error: '구글에 연결하지 못했어요. 네트워크나 차단 확장을 확인해 주세요.' };
+
+  // 창을 열기 **전에** 서버에 먼저 물어본다. 이유 둘:
+  //  ① 서버가 이미 자격 증명을 갖고 있으면 창을 열 것도 없다(그냥 이어진다).
+  //  ② 서버 흐름이 없는 환경인지도 여기서 알 수 있다 — 코드부터 받아 놓고 교환에서
+  //     알게 되면 사용자가 동의 창을 두 번 지나야 한다.
+  if (!serverKnownUnavailable()) {
+    const silent = await refreshGoogleAccess();
+    if ('token' in silent) return acceptServerToken(silent.token);
+    // 서버는 살아 있는데 자격 증명이 없다 → 코드 흐름으로 받아 둔다(창 한 번).
+    if ('needsConsent' in silent || 'error' in silent) {
+      const viaCode = await requestViaCode(api, clientId, hint);
+      if (viaCode) return viaCode;
+    }
+  }
 
   return new Promise<TokenRequestResult>((resolve) => {
     let settled = false;
@@ -373,16 +482,42 @@ export const GOOGLE_RECONNECT_MSG = '구글 연결이 만료됐어요. 달력의
  * 것만으로 구글 팝업이 떴다(제보). 토큰이 없다는 사실은 화면이 "다시 연결"
  * 버튼으로 말하고, 새 요청은 **사용자가 직접 누른 곳**에서만 나간다.
  */
-export function ensureGoogleToken(): { token: GoogleToken } | { error: string } {
+export async function ensureGoogleToken(): Promise<{ token: GoogleToken } | { error: string }> {
   const stored = readStoredToken();
   if (stored) return { token: stored };
-  return { error: GOOGLE_RECONNECT_MSG };
+  // 서버 흐름이 있으면 **팝업 없이** 새 액세스 토큰을 받아 온다(refresh token은
+  // 서버에만 있다). 없는 환경에서는 예전대로 "다시 연결"을 요청한다.
+  if (serverKnownUnavailable()) return { error: GOOGLE_RECONNECT_MSG };
+  if (!refreshing) {
+    refreshing = silentRefresh();
+    void refreshing.finally(() => {
+      refreshing = null;
+    });
+  }
+  return refreshing;
+}
+
+/**
+ * 조용한 갱신 — 화면 여러 곳이 동시에 토큰을 찾을 수 있으므로 **한 번만** 부른다
+ * (첫 요청이 도는 동안 나머지는 같은 약속을 기다린다).
+ */
+let refreshing: Promise<{ token: GoogleToken } | { error: string }> | null = null;
+
+async function silentRefresh(): Promise<{ token: GoogleToken } | { error: string }> {
+  const res = await refreshGoogleAccess();
+  if (!('token' in res)) return { error: GOOGLE_RECONNECT_MSG };
+  const got = acceptServerToken(res.token);
+  // 권한이 모자란 토큰이면 화면은 "다시 연결"로 권한을 다시 묻는 편이 맞다.
+  return 'token' in got ? got : { error: GOOGLE_RECONNECT_MSG };
 }
 
 /** 연결 해제 — 이 기기의 토큰을 버리고 구글 쪽 승인도 취소한다. */
 export async function revokeGoogleToken(): Promise<void> {
   const stored = readStoredToken();
   storeToken(null);
+  // 서버에 보관된 refresh token도 함께 버린다 — 그게 남아 있으면 "연결을 끊었다"가
+  // 거짓말이 된다(우리 서버가 계속 액세스 토큰을 발급할 수 있는 상태).
+  await disconnectGoogleServer().catch(() => undefined);
   if (!stored) return;
   const api = await loadGoogleTokenApi();
   try {
