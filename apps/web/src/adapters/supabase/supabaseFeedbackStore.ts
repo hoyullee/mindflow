@@ -7,6 +7,7 @@
 
 import type { SupabaseClient } from '@supabase/supabase-js';
 import type { FeedbackEntry, FeedbackStore } from '../ports';
+import { currentUser } from './supabaseUser';
 
 export class SupabaseFeedbackStore implements FeedbackStore {
   constructor(private readonly client: SupabaseClient) {}
@@ -14,8 +15,7 @@ export class SupabaseFeedbackStore implements FeedbackStore {
   async submit(entry: FeedbackEntry): Promise<{ error?: string }> {
     const message = entry.message.trim();
     if (!message) return { error: '내용을 입력해 주세요.' };
-    const { data } = await this.client.auth.getUser();
-    const user = data?.user;
+    const user = await currentUser(this.client);
     if (!user) return { error: '로그인이 필요해요.' };
     const { error } = await this.client.from('feedback').insert({
       user_id: user.id,

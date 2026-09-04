@@ -11,6 +11,7 @@
 
 import type { SupabaseClient } from '@supabase/supabase-js';
 import type { DocumentShare, ShareParticipant, ShareRole, ShareStore, SharedWithMe } from '../ports';
+import { currentUser } from './supabaseUser';
 
 const TABLE = 'document_shares';
 
@@ -125,8 +126,7 @@ export class SupabaseShareStore implements ShareStore {
     // 내가 만든 초대도 보이므로(정책이 OR), 내 문서에 걸린 초대는 걸러낸다 —
     // 이건 "남이 나에게 공유한 것" 목록이다. `documents.owner`를 클라이언트에서 알 수
     // 없으니 조인 대신 내 이메일과의 일치로 판단한다.
-    const { data: userData } = await this.client.auth.getUser();
-    const myEmail = (userData?.user?.email ?? '').trim().toLowerCase();
+    const myEmail = ((await currentUser(this.client))?.email ?? '').trim().toLowerCase();
     if (!myEmail) return [];
     // `seen_at`(0019)은 "아직 못 본 초대" 배지의 근거다. 마이그레이션이 아직 안 간
     // 서버에서는 이 컬럼이 없어 select 자체가 실패하므로, 그때는 컬럼 없이 한 번 더

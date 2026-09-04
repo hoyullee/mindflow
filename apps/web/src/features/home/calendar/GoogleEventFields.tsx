@@ -1052,7 +1052,7 @@ function Rooms({
    * **한 번만** 묻고, 답은 **마운트되어 있는 동안** 받는다(효과별 취소 플래그는 첫
    * 답이 상태를 바꾸는 순간 남은 조회를 잃는다 — 참석자·회의실 배지에서 겪은 함정).
    */
-  const [, bumpNames] = useState(0);
+  const [orgResolving, setOrgResolving] = useState<string[]>([]);
   const orgAskedRef = useRef<Set<string>>(new Set());
   const orgKey = [asking, ...held]
     .map((r) => (r ? busyOf(r.email)?.by ?? '' : ''))
@@ -1061,18 +1061,38 @@ function Rooms({
   useEffect(() => {
     if (!search) return;
     const need = (orgKey ? orgKey.split(',') : []).filter((e) => e && !knownName(e) && !orgAskedRef.current.has(e));
+    if (need.length === 0) return;
+    // 조회 중임을 화면에 알린다 — 그동안 이름 자리는 스켈레톤이다(아래 `pendingBy`).
+    setOrgResolving((v) => [...new Set([...v, ...need])]);
     for (const email of need) {
       orgAskedRef.current.add(email);
-      void search(email).then((list) => {
-        const k = email.trim().toLowerCase();
-        const hit = list?.find((p) => p.emails.includes(k) || p.email.toLowerCase() === k);
-        if (!hit?.name) return;
-        rememberName(email, hit.name);
-        // 장부는 모듈 상태라 스스로 다시 그리지 않는다 — 한 번 밀어 준다.
-        if (mountedRef.current) bumpNames((n) => n + 1);
-      });
+      void search(email)
+        .then((list) => {
+          const k = email.trim().toLowerCase();
+          const hit = list?.find((p) => p.emails.includes(k) || p.email.toLowerCase() === k);
+          if (hit?.name) rememberName(email, hit.name);
+        })
+        .finally(() => {
+          // 답이 왔으면(찾았든 못 찾았든) 자리를 드러낸다 — 이 상태 변화가 곧
+          // 다시 그리는 계기다(장부는 모듈 상태라 스스로 렌더를 밀지 않는다).
+          if (mountedRef.current) setOrgResolving((v) => v.filter((e) => e !== email));
+        });
     }
   }, [orgKey, search]);
+  // 조회가 멎어도 스켈레톤에 갇히지 않는다 — 참석자 이름(`NAME_WAIT_MS`)과 같은 규칙:
+  // 그때는 아는 것(로컬파트)으로 말한다.
+  useEffect(() => {
+    if (orgResolving.length === 0) return;
+    const t = setTimeout(() => mountedRef.current && setOrgResolving([]), NAME_WAIT_MS);
+    return () => clearTimeout(t);
+  }, [orgResolving.length]);
+  /**
+   * 이름을 **아직 모르는데 알아낼 수 있는** 상태 — 그동안 이름 자리는 스켈레톤이다
+   * (제보: 이메일 앞부분이 먼저 보이고 이름으로 바뀌어, 글자가 갈리는 것이 보였다).
+   * 이름 검색을 못 쓰거나(스코프 없음) 물어봤는데 없으면 로컬파트로 말한다.
+   */
+  const pendingBy = (by: string | undefined): boolean =>
+    !!search && !!by && by.includes('@') && !knownName(by) && (orgResolving.includes(by) || !orgAskedRef.current.has(by));
   /**
    * 사용 중인 방 한 칸 — 요청대로 **두 줄**이다: ① `사용 중 · 일정을 만든 사람`
    * ② `회의 시간 회의명`. 되묻는 칸에는 물음과 두 버튼이 붙고, 방 이름 줄은
@@ -1080,7 +1100,10 @@ function Rooms({
    * 강조된 행이 이미 어느 방인지 말한다).
    */
   const noticeEntry = (room: MeetingRoom, ask: boolean, withName = false): JSX.Element => {
-    const l = roomBusyLines(busyOf(room.email));
+    const info = busyOf(room.email);
+    const l = roomBusyLines(info);
+    const by = info?.by;
+    const waiting = pendingBy(by);
     return (
       <div
         key={room.email}
@@ -1089,7 +1112,18 @@ function Rooms({
         style={{ display: 'flex', flexDirection: 'column', gap: 2, minWidth: 0 }}
       >
         {(ask || withName) && <span style={{ fontSize: 10.5, fontWeight: 700, color: 'var(--mf-faint)' }}>{room.name}</span>}
-        <span style={{ fontWeight: 800, color: 'var(--mf-danger)' }}>{l.head}</span>
+        <span style={{ display: 'flex', alignItems: 'center', gap: 0, fontWeight: 800, color: 'var(--mf-danger)' }}>
+          {waiting ? (
+            <>
+              사용 중 ·{' '}
+              {/* 이 카드는 danger 틴트 면이라 공용 스켈레톤 색(`--mf-skel`)이 묻힌다 —
+                  같은 면에서 보이도록 카드 테두리 색을 쓴다(윤곽선이 보이니 이것도 보인다). */}
+              <span data-gf-room-by-loading className="mf-skel" style={{ display: 'inline-block', width: 52, height: 9, borderRadius: 5, marginLeft: 4, backgroundColor: 'var(--mf-danger-line)' }} />
+            </>
+          ) : (
+            l.head
+          )}
+        </span>
         {l.detail && <span style={{ color: 'var(--mf-subtext)' }}>{l.detail}</span>}
         {ask && <span style={{ marginTop: 5, color: 'var(--mf-subtext)' }}>이미 사용 중인 회의실이에요. 그래도 예약할까요?</span>}
         {ask && (

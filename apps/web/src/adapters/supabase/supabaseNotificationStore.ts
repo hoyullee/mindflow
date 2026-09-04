@@ -5,6 +5,7 @@
 
 import type { RealtimeChannel, SupabaseClient } from '@supabase/supabase-js';
 import type { AppNotification, NotificationStore } from '../ports';
+import { currentUser } from './supabaseUser';
 
 interface Row {
   id: string;
@@ -62,8 +63,8 @@ export class SupabaseNotificationStore implements NotificationStore {
     // 해제되면 붙지 않는다.
     let disposed = false;
     let channel: RealtimeChannel | null = null;
-    void this.client.auth.getUser().then(({ data }) => {
-      const uid = data.user?.id;
+    void currentUser(this.client).then((me) => {
+      const uid = me?.id;
       if (!uid || disposed) return;
       channel = this.client.channel(`mindflow-notify:${uid}`, { config: { private: false } });
       channel.on('broadcast', { event: 'notify' }, () => onChange());

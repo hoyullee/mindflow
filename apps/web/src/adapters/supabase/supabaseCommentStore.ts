@@ -16,6 +16,7 @@
 
 import type { RealtimeChannel, SupabaseClient } from '@supabase/supabase-js';
 import type { CommentMention, CommentStore, DocComment } from '../ports';
+import { currentUser } from './supabaseUser';
 
 interface Row {
   id: string;
@@ -47,8 +48,7 @@ export class SupabaseCommentStore implements CommentStore {
 
   async list(documentId: string): Promise<DocComment[]> {
     if (!documentId) return [];
-    const { data: me } = await this.client.auth.getUser();
-    const uid = me?.user?.id ?? null;
+    const uid = (await currentUser(this.client))?.id ?? null;
     let { data, error } = await this.client
       .from('document_comments')
       .select(COLS)
@@ -108,8 +108,7 @@ export class SupabaseCommentStore implements CommentStore {
   async add(documentId: string, nodeId: string, body: string, opts?: { parentId?: string; mentions?: CommentMention[] }): Promise<{ error?: string }> {
     const text = body.trim();
     if (!text) return { error: '내용을 입력해 주세요.' };
-    const { data } = await this.client.auth.getUser();
-    const user = data?.user;
+    const user = await currentUser(this.client);
     if (!user) return { error: '로그인이 필요해요.' };
     const name = this.displayNameOf(user.user_metadata, user.email);
     const row: Record<string, unknown> = {
@@ -131,8 +130,7 @@ export class SupabaseCommentStore implements CommentStore {
   }
 
   async setLiked(documentId: string, commentId: string, liked: boolean): Promise<{ error?: string }> {
-    const { data } = await this.client.auth.getUser();
-    const uid = data?.user?.id;
+    const uid = (await currentUser(this.client))?.id;
     if (!uid) return { error: '로그인이 필요해요.' };
     const { error } = liked
       ? await this.client.from('comment_likes').upsert({ comment_id: commentId, user_id: uid }, { onConflict: 'comment_id,user_id' })
@@ -156,8 +154,7 @@ export class SupabaseCommentStore implements CommentStore {
   }
 
   async setResolved(documentId: string, commentId: string, resolved: boolean): Promise<{ error?: string }> {
-    const { data } = await this.client.auth.getUser();
-    const user = data?.user;
+    const user = await currentUser(this.client);
     const { error } = await this.client.rpc('set_comment_resolved', {
       comment_id: commentId,
       resolved,

@@ -6,6 +6,7 @@
 
 import type { Session, SupabaseClient, User } from '@supabase/supabase-js';
 import type { AuthChangeListener, AuthProvider, AuthResult, AuthSession, SigninMethods, SignOutScope } from '../ports';
+import { currentUser } from './supabaseUser';
 
 function mapUser(user: User | null | undefined): AuthSession['user'] | null {
   if (!user) return null;
@@ -181,8 +182,7 @@ export class SupabaseAuth implements AuthProvider {
   // 지금 세션은 그대로 남는다). Supabase에 "비밀번호만 검증" API가 없어서다.
   // 성공 뒤는 `updatePassword`에 위임 — 다른 기기 세션 해지 규칙(§15)이 한 곳에 있다.
   async changePassword(currentPassword: string, newPassword: string): Promise<{ error?: string; wrongCurrent?: boolean }> {
-    const { data } = await this.client.auth.getUser();
-    const email = data?.user?.email;
+    const email = (await currentUser(this.client))?.email;
     if (!email) return { error: 'Auth session missing' };
     const { error: signInError } = await this.client.auth.signInWithPassword({ email, password: currentPassword });
     if (signInError) return { wrongCurrent: true, error: signInError.message };
@@ -204,8 +204,7 @@ export class SupabaseAuth implements AuthProvider {
   // Display name lives in `profiles.display_name` (auto-created per user by the
   // handle_new_user trigger, RLS-scoped to the owner — supabase/migrations/0001).
   async getProfileName(): Promise<string | null> {
-    const { data: u } = await this.client.auth.getUser();
-    const uid = u?.user?.id;
+    const uid = (await currentUser(this.client))?.id;
     if (!uid) return null;
     const { data, error } = await this.client.from('profiles').select('display_name').eq('id', uid).maybeSingle();
     if (error) return null;
@@ -214,8 +213,7 @@ export class SupabaseAuth implements AuthProvider {
   }
 
   async setProfileName(name: string): Promise<{ error?: string }> {
-    const { data: u } = await this.client.auth.getUser();
-    const uid = u?.user?.id;
+    const uid = (await currentUser(this.client))?.id;
     if (!uid) return { error: 'not authenticated' };
     // upsert so it works even if the profile row is somehow missing
     const { error } = await this.client.from('profiles').upsert({ id: uid, display_name: name });
@@ -231,8 +229,7 @@ export class SupabaseAuth implements AuthProvider {
    * 저장량이 쌓인다(무료 티어에서 이유 없는 비용).
    */
   async updateAvatar(blob: Blob | null): Promise<{ url?: string | null; error?: string }> {
-    const { data: u } = await this.client.auth.getUser();
-    const uid = u?.user?.id;
+    const uid = (await currentUser(this.client))?.id;
     if (!uid) return { error: 'not authenticated' };
 
     let url: string | null = null;
@@ -299,15 +296,13 @@ export class SupabaseAuth implements AuthProvider {
   // 이 프로젝트에서 이미 쓰이는 경로다(로그인 화면의 '비밀번호 찾기' — 그래서
   // 템플릿에 코드가 들어 있는 것도 검증됐다). 대시보드 토글에 의존하지 않는다.
   async sendPasswordSetupCode(): Promise<{ error?: string }> {
-    const { data } = await this.client.auth.getUser();
-    const email = data?.user?.email;
+    const email = (await currentUser(this.client))?.email;
     if (!email) return { error: 'Auth session missing' };
     return this.sendPasswordReset(email);
   }
 
   async setPasswordWithCode(code: string, newPassword: string): Promise<{ error?: string; wrongCode?: boolean }> {
-    const { data } = await this.client.auth.getUser();
-    const email = data?.user?.email;
+    const email = (await currentUser(this.client))?.email;
     if (!email) return { error: 'Auth session missing' };
     // 검증 실패는 곧 "번호가 틀렸다" — 여기서 막히면 비밀번호는 건드리지 않는다.
     const verified = await this.verifyOtp(email, code.trim(), 'recovery');

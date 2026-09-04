@@ -68,14 +68,18 @@ class FakeQuery implements PromiseLike<{ data: unknown; error: unknown }> {
 function fakeClient(result: { data: unknown; error: unknown }, myUserId = 'me') {
   const query = new FakeQuery(result);
   const from = vi.fn(() => query);
-  const auth = { getUser: vi.fn(async () => ({ data: { user: { id: myUserId } }, error: null })) };
-  return { client: { from, auth } as unknown as import('@supabase/supabase-js').SupabaseClient, query, from };
+  // 세션이 있으면 `/auth/v1/user` 왕복이 나지 않는다(제보: 새로고침 한 번에 user 6건).
+  const auth = {
+    getSession: vi.fn(async () => ({ data: { session: { user: { id: myUserId } } } })),
+    getUser: vi.fn(async () => ({ data: { user: { id: myUserId } }, error: null })),
+  };
+  return { client: { from, auth } as unknown as import('@supabase/supabase-js').SupabaseClient, query, from, auth };
 }
 
 describe('SupabaseDocStore', () => {
   it('list() selects from `documents` ordered by updated_at desc and maps rows to DocMeta', async () => {
     const rows = [{ id: 'd1', title: 'A', version: 3, updated_at: '2026-01-01T00:00:00Z', is_favorite: true, deleted_at: null, owner: 'me' }];
-    const { client, query, from } = fakeClient({ data: rows, error: null });
+    const { client, query, from, auth } = fakeClient({ data: rows, error: null });
     const store = new SupabaseDocStore(client);
 
     const metas = await store.list();
@@ -84,6 +88,8 @@ describe('SupabaseDocStore', () => {
     expect(query.calls[0]).toEqual({ method: 'select', args: ['id,title,version,updated_at,is_favorite,deleted_at,owner,updated_by'] });
     expect(query.calls[1]).toEqual({ method: 'order', args: ['updated_at', { ascending: false }] });
     expect(metas).toEqual([{ id: 'd1', title: 'A', version: 3, updatedAt: '2026-01-01T00:00:00Z', isFavorite: true, deletedAt: null, ownedByMe: true, editedByMe: undefined }]);
+    // 내가 누구인지는 **세션에서** 안다 — `/auth/v1/user`를 다시 부르지 않는다(제보).
+    expect(auth.getUser).not.toHaveBeenCalled();
   });
 
   // 공유(0009) 이후 `list()`는 남이 나에게 공유한 문서까지 돌려준다 — 홈이 그것을
