@@ -1028,10 +1028,14 @@ function Rooms({
     return () => clearTimeout(t);
   }, []);
   // 상자 높이는 **세 줄 고정**이다(검색으로 행이 줄어도 팝업이 오르내리지 않게 —
-  // #68). 다만 우리가 여는 블록(사용 중 두 줄·겹쳐 예약 확인)은 그 안에서 잘리면
-  // 정작 읽어야 할 내용이 가려지므로, 열려 있는 동안만 그 몫을 더한다. 둘 다 검색과
-  // 무관하게 열리므로 "검색해도 안 흔들린다"는 성질은 그대로다.
-  const openExtra = (confirm ? 92 : 0) + (rows.some((r) => picked.includes(r.email) && busyOf(r.email)?.busy) ? 54 : 0);
+  // #68). 다만 겹쳐 예약 확인 블록은 그 안에서 잘리면 정작 읽어야 할 물음이 가려지
+  // 므로, 열려 있는 동안만 그 몫을 더한다(검색과 무관하게 열리므로 "검색해도 안
+  // 흔들린다"는 성질은 그대로다).
+  const openExtra = confirm ? 92 : 0;
+  // 고른 방이 사용 중이면 **구획 전폭**으로 알린다(요청) — 예전에는 그 행 아래에
+  // 들여쓴 채 끼워 넣어 "행에 딸린 툴팁"으로 읽혔고, 좁은 열에서 두 줄이 잘렸다.
+  // 대상은 `all`이다(검색으로 그 행이 목록에서 빠져도 잡아 둔 사실은 남는다).
+  const busyPicked = all.filter((r) => picked.includes(r.email) && busyOf(r.email)?.busy);
   if (!revealed) return <RoomsLoading />;
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 8, minWidth: 0 }}>
@@ -1052,11 +1056,10 @@ function Rooms({
           // 겹쳐 잡는 일이 있고, 우리가 대신 막을 근거는 없다).
           const info = busyOf(r.email);
           const busyRow = info?.busy === true;
-          // **누가 쓰고 있는지**(요청 ③) — 고른 행에는 **아래 전폭 두 줄**로 펴고,
-          // 아직 고르지 않은 사용 중인 행에는 툴팁 한 줄로 둔다(목록에 줄을 늘리지
-          // 않는다). 조직이 "한가함/바쁨만" 공개하면 이름·제목이 없어 시각만 남는다.
+          // **누가 쓰고 있는지** — 고른 방은 목록 **아래 구획 전폭**(`data-gf-room-busy`)이
+          // 두 줄로 펴서 말하고, 아직 고르지 않은 사용 중인 행에는 툴팁 한 줄로 둔다
+          // (목록에 줄을 늘리지 않는다).
           const busyWho = busyRow ? roomBusyLabel(info) : '';
-          const busyLines = roomBusyLines(info);
           return (
             <Fragment key={r.email}>
             <button
@@ -1087,14 +1090,6 @@ function Rooms({
               </span>
               <RoomState on={on} busy={busyFlag(r.email)} />
             </button>
-            {/* 고른 방이 사용 중이면 **행 아래 전폭**으로 두 줄(요청 ②) — 행 안에
-                한 줄로 두면 아이콘·배지에 눌려 말줄임으로 잘린다. */}
-            {on && busyWho && (
-              <span data-gf-room-busy style={{ display: 'flex', flexDirection: 'column', gap: 2, padding: '0 11px 9px 43px', background: 'var(--mf-accent-soft)', fontSize: 11, lineHeight: 1.5, minWidth: 0 }}>
-                <span style={{ fontWeight: 800, color: 'var(--mf-danger)' }}>{busyLines.head}</span>
-                {busyLines.detail && <span style={{ color: 'var(--mf-subtext)' }}>{busyLines.detail}</span>}
-              </span>
-            )}
             {/* 확인 단계(요청 ②) — 팝업을 하나 더 띄우지 않고 **그 행 아래**에서 묻는다:
                 모달 위에 모달을 얹으면 무엇을 고르던 중인지 흐려진다. */}
             {confirm === r.email && (
@@ -1136,6 +1131,24 @@ function Rooms({
         ))}
         {rows.length === 0 && <span style={{ padding: 10, fontSize: 11.5, color: 'var(--mf-faint)' }}>검색 결과가 없어요</span>}
       </div>
+      {/* 잡아 둔 방이 사용 중이다 — 요청대로 **두 줄**이다:
+          ① `사용 중 · 일정을 만든 사람` ② `회의 시간 회의명`.
+          구획 전폭이라 잘리지 않고, 여러 방을 겹쳐 잡았을 때만 어느 방인지 한 줄을
+          더 붙인다(한 방일 때는 목록의 강조된 행이 이미 말한다). */}
+      {busyPicked.length > 0 && (
+        <div data-gf-room-busy style={{ display: 'flex', flexDirection: 'column', gap: 8, padding: '9px 11px', borderRadius: 10, border: '1px solid var(--mf-danger-line)', background: 'var(--mf-danger-bg)', minWidth: 0 }}>
+          {busyPicked.map((r) => {
+            const l = roomBusyLines(busyOf(r.email));
+            return (
+              <span key={r.email} data-gf-room-busy-for={r.email} style={{ display: 'flex', flexDirection: 'column', gap: 2, fontSize: 11.5, lineHeight: 1.5, minWidth: 0 }}>
+                {busyPicked.length > 1 && <span style={{ fontSize: 10.5, fontWeight: 700, color: 'var(--mf-faint)' }}>{r.name}</span>}
+                <span style={{ fontWeight: 800, color: 'var(--mf-danger)' }}>{l.head}</span>
+                {l.detail && <span style={{ color: 'var(--mf-subtext)' }}>{l.detail}</span>}
+              </span>
+            );
+          })}
+        </div>
+      )}
     </div>
   );
 }
@@ -1153,7 +1166,7 @@ export function roomBusyLabel(info: RoomBusy | null | undefined): string {
 }
 
 /**
- * 같은 정보를 **두 줄**로 — 고른 회의실 아래에 펴서 보여 줄 때 쓴다(요청 ②).
+ * 같은 정보를 **두 줄**로 — 잡아 둔 회의실을 구획 전폭으로 알릴 때 쓴다(요청).
  *
  * 한 줄로 두면 좁은 행에서 말줄임으로 잘려 정작 "누가 쓰는지"가 사라진다. 그래서
  * 첫 줄은 **누가**, 둘째 줄은 **언제·무엇**이다. 조직이 회의실 캘린더를 "한가함/
