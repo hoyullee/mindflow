@@ -286,9 +286,18 @@ export function GoogleEventFields({
           onChange={(next) => onChange({ rooms: next })}
           {...(when && directory?.checkRoomBusy ? { when, check: directory.checkRoomBusy } : {})}
         />
+        ) : roomsLoading ? (
+          // 도착하기 전에는 **실제 목록과 같은 크기의 상자**에 스켈레톤 세 줄(요청 ①) —
+          // 글자 한 줄로 두면 목록이 오는 순간 상자가 튄다. 검색 상자는 두지 않는다:
+          // 아직 걸러 볼 것이 없다(결과가 영영 비는 입력을 만들지 않는다).
+          <div data-gf-room-list className="lnb-scroll" style={{ ...listCard, height: 3 * 42 + 2 }}>
+            {[0, 1, 2].map((i) => (
+              <RoomSkeleton key={i} />
+            ))}
+          </div>
         ) : (
           <span data-gf-room-note style={{ padding: '10px 12px', borderRadius: 12, background: 'var(--mf-card)', border: '1px solid var(--mf-border-soft)', fontSize: 11.5, color: 'var(--mf-faint)', lineHeight: 1.6 }}>
-            {roomsLoading ? '회의실 목록을 불러오는 중…' : '회의실 목록은 조직 캘린더에서 불러와요 — 이 계정에서는 불러올 회의실이 없어요.'}
+            회의실 목록은 조직 캘린더에서 불러와요 — 이 계정에서는 불러올 회의실이 없어요.
           </span>
         )}
       </Field>
@@ -491,6 +500,25 @@ function GuestSkeleton() {
       <span style={{ display: 'flex', flexDirection: 'column', gap: 4, minWidth: 0, flex: 1 }}>
         <span className="mf-skel" style={{ width: '42%', height: 9, borderRadius: 5 }} />
         <span className="mf-skel" style={{ width: '64%', height: 8, borderRadius: 5 }} />
+      </span>
+    </span>
+  );
+}
+
+/**
+ * 회의실 목록을 기다리는 동안의 한 자리 — **실제 행과 같은 높이·모양**이다(요청).
+ *
+ * 예전에는 "회의실 목록을 불러오는 중…" 한 줄이었는데, 그러면 목록이 도착하는 순간
+ * 상자가 한 줄에서 세 줄로 튄다. 참석자 쪽(`GuestSkeleton`)과 같은 처방으로 자리를
+ * 미리 잡아 두면 도착해도 화면이 움직이지 않는다.
+ */
+function RoomSkeleton() {
+  return (
+    <span data-gf-room-loading style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '9px 11px', minWidth: 0 }}>
+      <span className="mf-skel" style={{ width: 22, height: 22, flex: '0 0 auto', borderRadius: 7 }} />
+      <span style={{ display: 'flex', flexDirection: 'column', gap: 4, minWidth: 0, flex: 1 }}>
+        <span className="mf-skel" style={{ width: '46%', height: 9, borderRadius: 5 }} />
+        <span className="mf-skel" style={{ width: '28%', height: 8, borderRadius: 5 }} />
       </span>
     </span>
   );
@@ -960,10 +988,15 @@ function Rooms({
     setConfirm(null);
     onChange(picked.includes(email) ? picked.filter((p) => p !== email) : [...picked, email]);
   };
+  // 상자 높이는 **세 줄 고정**이다(검색으로 행이 줄어도 팝업이 오르내리지 않게 —
+  // #68). 다만 우리가 여는 블록(사용 중 두 줄·겹쳐 예약 확인)은 그 안에서 잘리면
+  // 정작 읽어야 할 내용이 가려지므로, 열려 있는 동안만 그 몫을 더한다. 둘 다 검색과
+  // 무관하게 열리므로 "검색해도 안 흔들린다"는 성질은 그대로다.
+  const openExtra = (confirm ? 92 : 0) + (rows.some((r) => picked.includes(r.email) && busyOf(r.email)?.busy) ? 54 : 0);
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 8, minWidth: 0 }}>
       <SearchBox label="회의실 검색" attrs={{ 'data-gf-room-input': '1' }} value={q} placeholder="회의실 이름 또는 층 검색" onChange={setQ} />
-      <div data-gf-room-list className="lnb-scroll" style={{ ...listCard, height: boxH }}>
+      <div data-gf-room-list className="lnb-scroll" style={{ ...listCard, height: boxH + openExtra }}>
         {groups.map((g, gi) => (
           <div key={g.key} data-gf-room-group={g.key}>
             {g.label && (
@@ -979,15 +1012,16 @@ function Rooms({
           // 겹쳐 잡는 일이 있고, 우리가 대신 막을 근거는 없다).
           const info = busyOf(r.email);
           const busyRow = info?.busy === true;
-          // **누가 쓰고 있는지**(요청 ③) — 고른 행에는 한 줄로 보여 주고, 나머지
-          // 사용 중인 행에는 툴팁으로 둔다(세 줄 상자에 줄을 더 늘리지 않는다).
-          // 조직이 "한가함/바쁨만" 공개하면 제목·주최자가 없어 시각만 남는다.
+          // **누가 쓰고 있는지**(요청 ③) — 고른 행에는 **아래 전폭 두 줄**로 펴고,
+          // 아직 고르지 않은 사용 중인 행에는 툴팁 한 줄로 둔다(목록에 줄을 늘리지
+          // 않는다). 조직이 "한가함/바쁨만" 공개하면 이름·제목이 없어 시각만 남는다.
           const busyWho = busyRow ? roomBusyLabel(info) : '';
+          const busyLines = roomBusyLines(info);
           return (
             <Fragment key={r.email}>
             <button
               type="button"
-              {...(busyWho ? { title: busyWho } : {})}
+              {...(busyWho && !on ? { title: busyWho } : {})}
               data-gf-room-hit={r.email}
               {...(on ? { 'data-gf-room': r.email } : {})}
               aria-pressed={on}
@@ -1009,12 +1043,18 @@ function Rooms({
               <span style={{ display: 'flex', flexDirection: 'column', gap: 1, minWidth: 0, flex: 1 }}>
                 <span data-gf-room-name style={{ fontSize: 12, fontWeight: on ? 800 : 600, color: on ? 'var(--mf-accent-strong)' : 'var(--mf-text)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', ...(busyRow ? { textDecoration: 'line-through', textDecorationColor: 'var(--mf-danger)' } : {}) }}>{r.name}</span>
                 {sub && <span style={{ fontSize: 10.5, color: 'var(--mf-faint)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{sub}</span>}
-                {on && busyWho && (
-                  <span data-gf-room-busy style={{ fontSize: 10.5, fontWeight: 700, color: 'var(--mf-danger)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{busyWho}</span>
-                )}
+
               </span>
               <RoomState on={on} busy={busyFlag(r.email)} />
             </button>
+            {/* 고른 방이 사용 중이면 **행 아래 전폭**으로 두 줄(요청 ②) — 행 안에
+                한 줄로 두면 아이콘·배지에 눌려 말줄임으로 잘린다. */}
+            {on && busyWho && (
+              <span data-gf-room-busy style={{ display: 'flex', flexDirection: 'column', gap: 2, padding: '0 11px 9px 43px', background: 'var(--mf-accent-soft)', fontSize: 11, lineHeight: 1.5, minWidth: 0 }}>
+                <span style={{ fontWeight: 800, color: 'var(--mf-danger)' }}>{busyLines.head}</span>
+                {busyLines.detail && <span style={{ color: 'var(--mf-subtext)' }}>{busyLines.detail}</span>}
+              </span>
+            )}
             {/* 확인 단계(요청 ②) — 팝업을 하나 더 띄우지 않고 **그 행 아래**에서 묻는다:
                 모달 위에 모달을 얹으면 무엇을 고르던 중인지 흐려진다. */}
             {confirm === r.email && (
@@ -1070,6 +1110,23 @@ export function roomBusyLabel(info: RoomBusy | null | undefined): string {
   if (!info?.busy) return '';
   const when = info.from && info.to ? `${info.from}–${info.to}` : (info.from ?? '');
   return ['사용 중', info.by, info.title, when].filter(Boolean).join(' · ');
+}
+
+/**
+ * 같은 정보를 **두 줄**로 — 고른 회의실 아래에 펴서 보여 줄 때 쓴다(요청 ②).
+ *
+ * 한 줄로 두면 좁은 행에서 말줄임으로 잘려 정작 "누가 쓰는지"가 사라진다. 그래서
+ * 첫 줄은 **누가**, 둘째 줄은 **언제·무엇**이다. 조직이 회의실 캘린더를 "한가함/
+ * 바쁨만"으로 공개하면 이름·제목이 없어 시각만 남는다 — 없는 것은 지어내지 않고
+ * 그 줄을 통째로 비운다(호출부가 빈 문자열이면 그리지 않는다).
+ */
+export function roomBusyLines(info: RoomBusy | null | undefined): { head: string; detail: string } {
+  if (!info?.busy) return { head: '', detail: '' };
+  const when = info.from && info.to ? `${info.from}–${info.to}` : (info.from ?? '');
+  return {
+    head: ['사용 중', info.by].filter(Boolean).join(' · '),
+    detail: [when, info.title].filter(Boolean).join(' '),
+  };
 }
 
 export type RoomGroupKey = 'free' | 'busy' | 'pending' | 'unknown' | 'all';
