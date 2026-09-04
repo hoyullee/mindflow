@@ -3422,6 +3422,45 @@ describe('Home', () => {
       expect(spaceStore.calls).toBeGreaterThanOrEqual(2);
     });
 
+    it('마운트 조회가 성공하면 인증 확인은 **다시 읽지 않는다** — 하이드레이션은 한 번(제보: 새로고침마다 두 번)', async () => {
+      // 인증 확인(INITIAL_SESSION)은 마운트 조회보다 **먼저** 오는 경우가 많다.
+      // 예전에는 그때 "마운트 조회가 성공했는가"를 아직 알 수 없어 곧바로 두 번째
+      // 조회를 시작했고, 세션이 이미 적용된 평범한 새로고침에서도 같은 질의가 두 벌
+      // 났다(실측: workspaces 2 · documents 4 · document_shares 4).
+      /** 느린(그러나 성공하는) 조회 — 인증 확인이 이 조회 **중에** 도착한다. */
+      class SlowSpaceStore implements SpaceStore {
+        calls = 0;
+        constructor(private full: WorkspaceData) {}
+        async load(): Promise<WorkspaceData | null> {
+          this.calls += 1;
+          await new Promise((r) => setTimeout(r, 20));
+          return this.full;
+        }
+        async save(): Promise<void> {
+          /* no-op */
+        }
+      }
+      const full: WorkspaceData = { spaces: [{ id: 'general', name: '일반 공간', home: true, color: '#f0663f', maps: [] }], mapFolders: {} };
+      const spaceStore = new SlowSpaceStore(full);
+      const docStore = new MockDocStore([]);
+      const listSpy = vi.spyOn(docStore, 'list');
+      const backend: Backend = { auth: new RacyAuth(), docStore, spaceStore, shareStore: new LocalShareStore(), feedbackStore: new LocalFeedbackStore(), imageStore: new LocalImageStore(), commentStore: new LocalCommentStore(), notificationStore: new LocalNotificationStore(), eventStore: new LocalEventStore(), mode: 'supabase' };
+      const { container } = render(
+        <MemoryRouter initialEntries={['/home']}>
+          <BackendProvider backend={backend}>
+            <Routes>
+              <Route path="/home" element={<Home />} />
+            </Routes>
+          </BackendProvider>
+        </MemoryRouter>,
+      );
+      await waitFor(() => expect(within(container.querySelector('aside') as HTMLElement).getByText('일반 공간')).toBeTruthy());
+      // 재동기화가 뒤늦게 시작될 여지를 준 뒤에도 **한 번**이다.
+      await new Promise((r) => setTimeout(r, 60));
+      expect(spaceStore.calls).toBe(1);
+      expect(listSpy).toHaveBeenCalledTimes(1);
+    });
+
     it('card preview resolves even when spaces re-hydrate mid-prefetch (no stuck loading skeleton)', async () => {
       // Repro of the reported "미리보기가 계속 로딩" on a new PC: the preview
       // prefetch's `docStore.load` batch was in flight when a SECOND spaces
@@ -3444,13 +3483,17 @@ describe('Home', () => {
         title: '내 맵',
       };
 
-      // Mount workspace load is gated so it lands AFTER the resync; both return `full`.
-      const mountGate = defer<WorkspaceData>();
+      // 마운트 조회는 인증 전에 돌아 **비어 있다**(로그인 직후 레이스) → 재동기화가
+      // 실제 워크스페이스를 가져온다. 예전에는 마운트 조회를 gate로 잡아 **재동기화
+      // 뒤에** 착지시켰는데(그 두 번째 setState가 프리페치를 취소했다), 지금은 재동기화가
+      // 마운트 조회가 끝난 뒤에만 시작하므로 그 순서가 아예 생기지 않는다(위 '하이드
+      // 레이션은 한 번' 테스트). 남은 계약은 이것 — **재하이드레이션 뒤에도 미리보기가
+      // 스켈레톤에 갇히지 않는다**.
       const spaceStore: SpaceStore = {
         calls: 0,
         async load() {
           this.calls += 1;
-          return this.calls === 1 ? mountGate.promise : full;
+          return this.calls === 1 ? null : full;
         },
         async save() {},
       } as SpaceStore & { calls: number };
@@ -3492,13 +3535,9 @@ describe('Home', () => {
       const thumb = () => (screen.getByText('내 맵').closest('.map-card') as HTMLElement).querySelector('.map-thumb') as HTMLElement;
       expect(thumb().querySelector('.mf-skel')).toBeTruthy(); // loading skeleton
 
-      // The late mount workspace load lands → a second spaces setState re-runs the
-      // prefetch effect (this is what used to cancel the in-flight batch).
-      await act(async () => {
-        mountGate.resolve(full);
-        await Promise.resolve();
-      });
-      // Release the doc body → the (previously cancelled) prefetch must still apply.
+      // 워크스페이스는 두 번 하이드레이션됐다(빈 조회 → 재동기화).
+      expect((spaceStore as SpaceStore & { calls: number }).calls).toBeGreaterThanOrEqual(2);
+      // Release the doc body → the prefetch must still apply.
       await act(async () => {
         loadGate.resolve();
         await Promise.resolve();

@@ -149,6 +149,12 @@ export function useHomeController() {
   // 스페이스가 대시보드로 되돌아가 버린다.
   const landedRef = useRef(false);
   const workspaceLoadedRef = useRef(false);
+  // 마운트 하이드레이션이 **아직 돌고 있는가** — 인증 확인(`onAuthChange`)은 그보다
+  // 먼저 오는 경우가 많아, 예전에는 그때마다 두 번째 조회를 곧바로 시작했다(제보:
+  // 새로고침 한 번에 documents·document_shares가 두 배). 돌고 있으면 **그 결과를
+  // 보고 정한다** — 성공했으면 다시 읽을 이유가 없다.
+  const hydrateInFlightRef = useRef(false);
+  const resyncPendingRef = useRef(false);
   const workspaceResyncedRef = useRef(false);
   const workspaceMutatedRef = useRef(false);
 
@@ -157,7 +163,7 @@ export function useHomeController() {
   // Fetch the per-user workspace (spaces + folders) and the doc list, then apply
   // both in ONE setState. Extracted so both the mount and the auth-confirmed
   // resync (see below) share identical hydration logic.
-  const hydrateFromBackend = useCallback(async () => {
+  const runHydrate = useCallback(async () => {
     hydrateSeqRef.current += 1;
     const seq = hydrateSeqRef.current;
     // Restore the screen the user was last viewing in THIS tab (set before they
@@ -392,6 +398,33 @@ export function useHomeController() {
     }
   }, [docStore, spaceStore, backendMode]);
 
+  /**
+   * 하이드레이션을 **한 번만** 돌린다(제보: 새로고침마다 두 번).
+   *
+   * 두 번 돌던 이유: 마운트 조회는 비동기인데 인증 확인(`onAuthChange`의
+   * INITIAL_SESSION)이 대개 그보다 먼저 도착해, "마운트 조회가 성공했는가"
+   * (`workspaceLoadedRef`)를 아직 알 수 없는 시점에 재동기화가 시작됐다. 그래서
+   * 세션이 이미 적용된 평범한 새로고침에서도 같은 조회가 두 벌 났다.
+   *
+   * 이제 조회 중이면 **표시만 남기고**(`resyncPendingRef`) 기다린다 — 끝난 뒤
+   * 그 결과를 보고 정한다: 워크스페이스를 실제로 읽었으면 다시 읽지 않고, 인증 전에
+   * 돌아 비어 있었으면(로그인 직후 레이스 — 이 재동기화의 존재 이유) 그때만 한 번 더.
+   */
+  const hydrateFromBackend = useCallback(async () => {
+    for (;;) {
+      hydrateInFlightRef.current = true;
+      try {
+        await runHydrate();
+      } finally {
+        hydrateInFlightRef.current = false;
+      }
+      if (!resyncPendingRef.current) return;
+      resyncPendingRef.current = false;
+      // 마운트 조회가 성공했거나 사용자가 이미 손댔으면 재동기화는 필요 없다.
+      if (workspaceLoadedRef.current || workspaceMutatedRef.current || !mountedRef.current) return;
+    }
+  }, [runHydrate]);
+
   // ---- mount: restore recent list, pick up docs saved from the editor ----
   useEffect(() => {
     const onDocMouseDown = (e: globalThis.MouseEvent) => {
@@ -488,6 +521,12 @@ export function useHomeController() {
     const unsubscribe = auth.onAuthChange((session) => {
       if (!session || workspaceResyncedRef.current || workspaceMutatedRef.current || workspaceLoadedRef.current) return;
       workspaceResyncedRef.current = true;
+      // 마운트 조회가 아직 돌고 있으면 **기다린다** — 끝난 뒤 위 래퍼가 결과를 보고
+      // 정한다(성공했으면 다시 읽지 않는다).
+      if (hydrateInFlightRef.current) {
+        resyncPendingRef.current = true;
+        return;
+      }
       void hydrateFromBackend();
     });
     return unsubscribe;
