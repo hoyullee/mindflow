@@ -820,6 +820,66 @@ describe('구글 캘린더 겹치기(PR5)', () => {
     expect(row.querySelector('span[aria-hidden]')?.textContent).toBe('N');
   });
 
+  // 요청 — 구글 캘린더는 참석자가 아주 많으면 "참석자 수가 너무 많아서 전체 참석자
+  // 명단이 숨겨졌습니다"라고 알린다. 우리에게는 **저장의 문제**이기도 하다: 구글의
+  // PATCH는 참석자 배열을 통째로 바꾸므로, 잘려 온 목록을 그대로 다시 쓰면 못 받은
+  // 사람이 조용히 초대 취소된다.
+  it('참석자가 잘려 온 일정은 안내를 띄우고 명단·응답 편집을 잠근다', async () => {
+    seed({ calendars: ['me@example.com'] });
+    seedToken();
+    stubGis();
+    const meeting = inMonth(1);
+    const patches: unknown[] = [];
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (url: string, init?: RequestInit) => {
+        const ok = (body: unknown) => ({ ok: true, status: 200, json: async () => body }) as unknown as Response;
+        if (init?.method === 'PATCH') {
+          patches.push(JSON.parse(String(init.body)));
+          return ok({});
+        }
+        if (url.includes('/users/me/calendarList')) return ok({ items: [{ id: 'me@example.com', summary: '내 캘린더', primary: true, accessRole: 'owner' }] });
+        return ok({
+          items: [
+            {
+              id: 'g1',
+              summary: '전사 미팅',
+              etag: '"1"',
+              start: { dateTime: `${meeting}T09:00:00+09:00` },
+              end: { dateTime: `${meeting}T10:00:00+09:00` },
+              attendeesOmitted: true,
+              organizer: { email: 'boss@example.com', displayName: '대표' },
+              attendees: [{ email: 'me@example.com', self: true, responseStatus: 'needsAction' }],
+            },
+          ],
+        });
+      }),
+    );
+    clientId = 'test-client.apps.googleusercontent.com';
+    const user = userEvent.setup();
+    const { container } = renderHome();
+    const pop = await openGoogleChip(container, user, /전사 미팅/);
+
+    // 안내가 뜨고, 초대 입력·응답 세그먼트는 그리지 않는다.
+    const note = await waitFor(() => {
+      const el = pop.querySelector('[data-gf-guest-locked]');
+      expect(el).toBeTruthy();
+      return el as HTMLElement;
+    });
+    expect(note.textContent).toContain('참석자 수가 너무 많아서');
+    expect(pop.querySelector('[data-gf-guest-input]')).toBeNull();
+    expect(pop.querySelector('[data-gf-rsvp]')).toBeNull();
+    expect(pop.querySelector('[data-gf-rsvp-locked]')).toBeTruthy();
+
+    // 제목만 고쳐 저장해도 참석자는 **싣지 않는다**(실으면 명단이 잘린다).
+    const title = pop.querySelector('[data-event-title]') as HTMLInputElement;
+    fireEvent.change(title, { target: { value: '전사 미팅 v2' } });
+    fireEvent.blur(title);
+    await user.click(pop.querySelector('[data-event-done]') as HTMLElement);
+    await waitFor(() => expect(patches.length).toBe(1));
+    expect(Object.keys(patches[0] as Record<string, unknown>)).toEqual(['summary']);
+  });
+
   // 제보 — 일정 화면을 열어 둔 채 구글 캘린더에서 일정을 더해도 우리 달력은 그대로였다.
   // 구글이 정본이므로 다시 물어야 한다: 탭으로 **돌아오는 순간**이 그 계기다.
   it('열어 둔 채 구글에서 일정이 늘면, 탭으로 돌아올 때 잡아 온다', async () => {

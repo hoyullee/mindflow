@@ -767,3 +767,21 @@ input[type='search']::-webkit-search-results-decoration {
     transition: none;
   }
 }
+
+/* 일정 메모의 서식 편집기(`RichMemo`) — 저장은 HTML이라 목록·링크가 실제 요소다.
+   기본 브라우저 스타일은 여백이 커서 좁은 팝업 안에서 줄이 뚝뚝 떨어져 보인다. */
+.mf-memo-rich ul,
+.mf-memo-rich ol {
+  margin: 4px 0;
+  padding-left: 22px;
+}
+.mf-memo-rich li {
+  margin: 2px 0;
+}
+.mf-memo-rich a {
+  color: var(--mf-info);
+  text-decoration: underline;
+}
+.mf-memo-rich p {
+  margin: 0 0 6px;
+}

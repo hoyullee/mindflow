@@ -1392,6 +1392,35 @@ describe('일정 화면', () => {
       await waitFor(() => expect(events()[0]!.color).toBeUndefined());
     });
 
+    // 요청 — 구글 캘린더와 같은 편집(굵게·기울임·밑줄·번호·글머리·링크·서식 제거).
+    // 저장은 HTML이라 두 원천이 같은 문자열을 담는다(`richMemo.ts` 머리말).
+    it('메모는 서식 편집기다 — 도구 모음이 명령을 걸고 값은 HTML로 저장된다', async () => {
+      const exec = vi.fn(() => true);
+      (document as Document & { execCommand?: unknown }).execCommand = exec;
+      renderHome([META('d1', '스프린트 보드')], BODIES());
+      localStorage.setItem('mf_events', JSON.stringify([{ id: 'e1', title: '주간 회의', startDate: todayISO(), endDate: todayISO(), allDay: true, source: 'geurio', note: '<b>준비물</b><br>노트북' }]));
+      await openCalendar();
+      await waitFor(() => expect(chipTexts()).toContain('주간 회의'));
+      fireEvent.click(chipFor('주간 회의'));
+      await waitFor(() => expect(evDetail()).toBeTruthy());
+
+      // 저장된 HTML이 그대로 편집기에 들어온다(평문이었다면 줄바꿈만 옮긴다).
+      const note = document.querySelector('[data-event-note]') as HTMLElement;
+      expect(note.innerHTML).toBe('<b>준비물</b><br>노트북');
+
+      // 도구 모음의 일곱 — 구글 캘린더의 그 목록.
+      const cmds = [...document.querySelectorAll('[data-memo-cmd]')].map((b) => b.getAttribute('data-memo-cmd'));
+      expect(cmds).toEqual(['bold', 'italic', 'underline', 'ol', 'ul', 'link', 'clear']);
+      fireEvent.click(document.querySelector('[data-memo-cmd="ol"]')!);
+      expect(exec).toHaveBeenCalledWith('insertOrderedList', false, undefined);
+
+      // 편집한 값은 **위생 처리를 지나** 저장된다.
+      note.innerHTML = '<b>준비물</b><script>alert(1)</script>';
+      fireEvent.input(note);
+      fireEvent.click(document.querySelector('[data-event-done]')!);
+      await waitFor(() => expect(events()[0]!.note).toBe('<b>준비물</b>alert(1)'));
+    });
+
     it('상세 팝업은 새 일정 팝업과 같은 얼굴이다 — 저장할 캘린더는 소속만 켜진다(제보 #10·#11)', async () => {
       renderHome([META('d1', '스프린트 보드')], BODIES());
       localStorage.setItem('mf_events', JSON.stringify([{ id: 'e1', title: '주간 회의', startDate: todayISO(), endDate: todayISO(), allDay: true, source: 'geurio' }]));
@@ -1410,8 +1439,10 @@ describe('일정 화면', () => {
       expect(title.tagName).toBe('INPUT');
       expect(title.value).toBe('주간 회의');
       expect(document.querySelector('[data-event-cancel]')).toBeTruthy();
-      // 메모는 새 일정 팝업과 같은 높이(#9).
-      expect((document.querySelector('[data-event-note]') as HTMLElement).style.height).toBe('110px');
+      // 메모는 새 일정 팝업과 같은 **서식 편집기**다(요청) — 같은 최소 높이.
+      const note = document.querySelector('[data-event-note]') as HTMLElement;
+      expect(note.getAttribute('contenteditable')).toBe('true');
+      expect(note.style.minHeight).toBe('110px');
       // 저장할 캘린더(#11) — Geurio 일정이니 Geurio 칩이 켜진다(구글 미연결이라 칩 하나뿐).
       expect(evDetail().textContent).toContain('저장할 캘린더');
       expect(document.querySelector('[data-event-cal="geurio"]')?.getAttribute('aria-disabled')).toBe('false');
