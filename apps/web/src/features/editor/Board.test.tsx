@@ -2172,7 +2172,7 @@ describe('화이트보드 디자인 이식', () => {
     const at = strokePoint(container, 80, 90);
     fireEvent.contextMenu(container.querySelector('[data-float-id="bf1"]') as HTMLElement, { clientX: at.x, clientY: at.y });
     const menu = await waitFor(() => document.querySelector('.mf-ctx') as HTMLElement);
-    expect(menu.style.width).toBe('226px');
+    expect(menu.style.width).toBe('244px'); // 앱 공통 우클릭 메뉴 폭(`menuDesign`)
     expect((menu.querySelector('[data-ctx-head]') as HTMLElement).textContent).toBeTruthy();
     const kids = Array.from(menu.children).filter((el) => !el.hasAttribute('data-ctx-head'));
     const lastRow = kids[kids.length - 1] as HTMLElement;

@@ -320,17 +320,10 @@ a:hover {
 .mf-home .menu-row:hover {
   background: var(--mf-panel2) !important;
 }
-/* 우클릭 메뉴는 **포털로 body 밑에** 그려진다(Radix) — `.mf-home` 안이 아니므로
-   위 규칙이 닿지 않는다. `[data-highlighted]`는 Radix가 키보드·마우스로 겨눈 행에
-   붙이는 표시라, 마우스든 방향키든 같은 표시를 얻는다(예전에는 키보드 이동 자체가
-   없어 hover만 있었다). */
-.mf-home-ctx .menu-row:hover,
-.mf-home-ctx .menu-row[data-highlighted] {
-  background: var(--mf-panel2) !important;
-}
-.mf-home-ctx .menu-row[data-disabled] {
-  background: transparent !important;
-}
+/* 우클릭 메뉴 행의 hover는 이제 앱 공통 규칙(`components/menu.css`의
+   `.mf-menu-row`)이 맡는다 — 칸반 카드 메뉴를 기준으로 세 화면이 같은 모양을
+   쓴다(제보: 화면마다 달랐다). 여기 있던 `.mf-home-ctx .menu-row` 규칙은 그
+   클래스를 쓰는 곳이 없어져 지웠다. */
 .mf-home .btn:hover {
   filter: brightness(var(--mf-hover-bright));
 }

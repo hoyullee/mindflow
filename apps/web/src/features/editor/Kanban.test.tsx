@@ -1697,7 +1697,7 @@ describe('칸반 — 카드 우클릭 메뉴와 빠른 댓글', () => {
     const menu = await openMenu(container);
 
     // 브라우저 기본 메뉴가 아니라 우리 메뉴다.
-    expect(menu.className).toContain('mf-kb-pop'); // 등장 애니메이션(요청)
+    expect(menu.className).toContain('mf-menu-pop'); // 등장 애니메이션(요청)
     expect(menu.querySelector('[data-card-menu-title]')?.textContent).toBe('첫 카드');
     for (const q of ['open', 'comment', 'move', 'flag', 'duplicate', 'delete']) {
       expect(menu.querySelector(`[data-card-menu-${q}]`)).toBeTruthy();
@@ -1715,7 +1715,7 @@ describe('칸반 — 카드 우클릭 메뉴와 빠른 댓글', () => {
 
     fireEvent.mouseEnter(menu.querySelector('[data-card-menu-move]')!.parentElement!);
     const sub = await waitFor(() => menu.querySelector('[data-card-menu-move-sub]') as HTMLElement);
-    expect(sub.className).toContain('mf-kb-fly');
+    expect(sub.className).toContain('mf-menu-fly');
     expect(sub.querySelector('[data-card-menu-col="c1"]')?.getAttribute('data-current')).toBe('1');
 
     fireEvent.click(sub.querySelector('[data-card-menu-col="c2"]')!);
@@ -1801,7 +1801,7 @@ describe('칸반 — 카드 우클릭 메뉴와 빠른 댓글', () => {
 
     fireEvent.click(menu.querySelector('[data-card-menu-comment]')!);
     const pop = await waitFor(() => container.querySelector('[data-quick-comment="k1"]') as HTMLElement);
-    expect(pop.className).toContain('mf-kb-pop');
+    expect(pop.className).toContain('mf-kb-pop'); // 빠른 댓글은 메뉴가 아니라 팝업
     expect(pop.querySelector('[data-quick-comment-title]')?.textContent).toBe('첫 카드');
     // 빈 입력으로는 등록되지 않는다
     expect((pop.querySelector('[data-quick-comment-submit]') as HTMLButtonElement).disabled).toBe(true);
@@ -1825,10 +1825,12 @@ describe('칸반 — 카드 우클릭 메뉴와 빠른 댓글', () => {
   it('메뉴 행의 hover 규칙은 인라인 스타일을 이긴다 — 안 그러면 반응이 보이지 않는다', () => {
     // 행의 색은 테마에서 오므로 인라인으로 칠한다. 인라인은 클래스를 이기므로
     // hover 규칙에 `!important`가 없으면 **한 번도 보이지 않는다**(실브라우저 실측).
-    const css = readFileSync(resolve('src/features/editor/editor.css'), 'utf8');
-    const rule = css.slice(css.indexOf('.mf-kb-menu-row:hover'));
-    expect(rule).toContain('background: var(--mf-kb-hover) !important');
-    expect(rule).toContain('color: var(--mf-kb-hover-ink) !important');
+    // 규칙은 이제 **앱 공통**(`components/menu.css`)이다 — 세 화면의 우클릭 메뉴가
+    // 같은 반응을 얻는다(제보: 화면마다 달랐다).
+    const css = readFileSync(resolve('src/components/menu.css'), 'utf8');
+    const rule = css.slice(css.indexOf('.mf-menu-row:hover'));
+    expect(rule).toContain('background: var(--mf-menu-hover) !important');
+    expect(rule).toContain('color: var(--mf-menu-hover-ink) !important');
   });
 
   it('Esc로 메뉴가 닫히고, 카드 메뉴는 상세를 열지 않는다(선택만)', async () => {

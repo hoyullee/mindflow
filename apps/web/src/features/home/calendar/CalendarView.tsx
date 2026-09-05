@@ -3,7 +3,8 @@ import type { HomeState } from '../types';
 import type { HomeController } from '../useHomeController';
 import type { CalendarEntry } from './entries';
 import { useCalendarEntries } from './useCalendarEntries';
-import { homeChipSurface } from '../theme';
+import { homeChipSurface, UNREAD_BADGE_BG } from '../theme';
+import { useNavDot } from '../components/navDot';
 import { addDays, calendarStats, gridRange, monthCells, monthLabel, todayISO } from './model';
 import { MonthGrid } from './MonthGrid';
 import { DayListPopup } from './DayListPopup';
@@ -59,6 +60,8 @@ export function CalendarView({
   onOpenNav: () => void;
 }) {
   const today = todayISO();
+  // 폰 ☰의 점 — 알림이 LNB로 옮겨 갔으므로 이 화면의 문에도 표시가 있어야 한다.
+  const navDot = useNavDot();
   const cardEntries = useCalendarEntries(state);
   // Geurio 일정(0033) — 칸반 마감과 나란한 두 번째 원천. 같은 `CalendarEntry` 모양으로
   // 만들어 격자·통계·목록·시간표가 종류를 가리지 않고 그린다.
@@ -249,10 +252,12 @@ export function CalendarView({
         <div style={{ position: 'relative', flex: '1 1 auto', minWidth: 0 }}>
           <span style={{ display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap', minWidth: 0 }}>
             {isMobile && (
-              <button type="button" aria-label="메뉴 열기" onClick={onOpenNav} className="mf-ctl" style={{ width: 30, height: 30, marginRight: -4, border: 0, background: 'transparent', color: 'var(--mf-muted)', cursor: 'pointer', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+              <button type="button" title={navDot.title} aria-label={navDot.label} onClick={onOpenNav} className="mf-ctl" style={{ position: 'relative', width: 30, height: 30, marginRight: -4, border: 0, background: 'transparent', color: 'var(--mf-muted)', cursor: 'pointer', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
                 <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" aria-hidden="true">
                   <path d="M4 7h16M4 12h16M4 17h16" />
                 </svg>
+                {/* 알림은 이제 LNB에 있다 — 서랍이 닫혀 있어도 그 사실이 보이게. */}
+                {navDot.on && <span data-unread-dot aria-hidden="true" style={{ position: 'absolute', top: 2, right: 2, width: 8, height: 8, borderRadius: '50%', background: UNREAD_BADGE_BG, border: '2px solid var(--mf-page)' }} />}
               </button>
             )}
             <h2 style={{ margin: 0, display: 'flex', alignItems: 'center', gap: 9, fontSize: isMobile ? 21 : 25, fontWeight: 800, letterSpacing: '-.035em', color: 'var(--mf-text)', whiteSpace: 'nowrap' }}>

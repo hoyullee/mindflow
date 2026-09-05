@@ -1,13 +1,11 @@
 import type { CSSProperties, MouseEvent as ReactMouseEvent, ReactNode } from 'react';
 import { useEffect, useRef } from 'react';
 import { ROOT_ID } from '@mindflow/mindmap-core';
-import { hexA } from '../theme';
 import type { Theme } from '../theme';
 import type { EditorController } from '../useEditorState';
 import type { ContextMenuState } from '../types';
 import type { ArrangeOp } from '../arrange';
 import { useIsMobile } from '../../../hooks/useMediaQuery';
-import { MONO_FONT } from '../chrome';
 import { colorOf } from '../tree';
 import { panelTitleLine } from './panel/panelPrimitives';
 import { comboLabel, deleteKeyLabel, enterKeyLabel, renameKeyLabel } from '../shortcutLabels';
@@ -15,16 +13,30 @@ import { comboLabel, deleteKeyLabel, enterKeyLabel, renameKeyLabel } from '../sh
 // 같은 동작이므로 같은 그림이어야 한다.
 import { CommentIcon, ImageIcon, ZoneIcon } from './ToolbarMenus';
 import { BOARD_BAR_LIFT } from './BoardToolbar';
+import { editorMenuTone } from './menuTone';
+import {
+  MENU_GLYPH_STYLE,
+  MENU_HEAD_DOT_STYLE,
+  MENU_HEAD_STYLE,
+  MENU_LABEL_STYLE,
+  MENU_ROW_H,
+  MENU_TOUCH_ROW_H,
+  menuDividerStyle,
+  menuHeadTitleStyle,
+  menuKeyStyle,
+  menuPanelStyle,
+  menuRowStyle,
+} from '../../../components/menuDesign';
 
-/** 디자인 원본(`Geurio 마인드맵 리디자인.dc.html`)의 우클릭 메뉴 값 — 폭·행 높이·
- * 그림자·플라이아웃. 값을 행마다 적어 두면 한 곳을 손볼 때 나머지가 어긋난다. */
-const MENU_W = 226;
-const ROW_HEIGHT = 34;
-const SUB_W = 172;
+/** 폭만 이 메뉴가 정한다 — 나머지(행 높이·글자·간격·그림자·hover)는 앱의 우클릭
+ * 메뉴 디자인 한곳(`components/menuDesign.ts`)에서 온다. 기준은 칸반 카드 메뉴다
+ * (제보: 같은 우클릭인데 화면마다 글자 크기·간격·굵기가 달랐다).
+ * 폭은 244다 — 행 글자가 13.5px로 커지고 단축키가 함께 서므로 226에서는 라벨이
+ * 말줄임으로 접힌다. */
+const MENU_W = 244;
+const ROW_HEIGHT = MENU_ROW_H;
+const SUB_W = 176;
 const GAP = 12;
-/** 두 겹 그림자 — 얇게 닿는 윗면 + 아래로 길게 깔리는 그늘(원본 값 그대로). */
-const MENU_SHADOW = '0 2px 5px -3px rgba(46,42,38,.2), 0 28px 56px -28px rgba(46,42,38,.6)';
-const SUB_SHADOW = '0 2px 5px -3px rgba(46,42,38,.2), 0 24px 48px -24px rgba(46,42,38,.55)';
 
 interface ContextMenuProps {
   controller: EditorController;
@@ -101,7 +113,7 @@ export function ContextMenu({ controller }: ContextMenuProps) {
   // 디자인 원본(`Geurio 마인드맵 리디자인`)의 메뉴 폭·행 높이. 모바일은 손가락에
   // 맞춰 행을 키우고(44) 폭은 좁은 화면에 들어가게 조금 줄인다.
   const MW = isMobile ? 208 : MENU_W;
-  const ROW_H = isMobile ? 44 : ROW_HEIGHT;
+  const ROW_H = isMobile ? MENU_TOUCH_ROW_H : ROW_HEIGHT;
   let left: number;
   let top: number;
   let flipped = false;
@@ -129,20 +141,13 @@ export function ContextMenu({ controller }: ContextMenuProps) {
     top = Math.max(GAP, Math.min(ctxMenu.sy, vh - estH - bottomInset));
   }
 
+  const tone = editorMenuTone(th);
   const menuStyle: CSSProperties = {
+    ...menuPanelStyle(tone, MW),
     position: 'absolute',
     left,
     top,
-    width: MW,
-    boxSizing: 'border-box',
-    background: th.panel,
-    border: `1px solid ${th.border}`,
-    borderRadius: 15,
-    boxShadow: MENU_SHADOW,
-    padding: 7,
     zIndex: 60,
-    // 열릴 때 살짝 떠오른다(요청: 메뉴가 뜨는 것도 애니메이션) — 디자인 원본의 `mmPop`.
-    animation: 'mf-ctx-pop .14s cubic-bezier(.2,.9,.3,1) both',
   };
 
   const subKind = ctxSub?.kind ?? 'text';
@@ -151,7 +156,7 @@ export function ContextMenu({ controller }: ContextMenuProps) {
   return (
     <div
       ref={rootRef}
-      className="mf-ctx"
+      className="mf-ctx mf-menu-pop"
       style={menuStyle}
       // The menu is a child of `.mf-ed-vp` (which owns `onPointerDown={onBackgroundPointerDown}`).
       // Buttons stop `mousedown`, but a real click fires `pointerdown` FIRST — and that would
@@ -185,19 +190,21 @@ export function ContextMenu({ controller }: ContextMenuProps) {
       {/* 머리 — 색 점 + 대상 이름(디자인 원본). 어느 것을 겨눠서 열린 메뉴인지
           한 줄로 알려 준다. 이름이 길면 말줄임. */}
       {head && (
-        <div data-ctx-head style={{ display: 'flex', alignItems: 'center', gap: 7, padding: '5px 10px 8px', minWidth: 0 }}>
-          <span aria-hidden="true" style={{ width: 6, height: 6, flex: '0 0 auto', borderRadius: 999, background: head.dot, display: 'block' }} />
-          <span style={{ fontSize: 11, fontWeight: 700, color: th.subtext, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{head.label}</span>
+        <div data-ctx-head style={MENU_HEAD_STYLE}>
+          <span aria-hidden="true" style={{ ...MENU_HEAD_DOT_STYLE, background: head.dot }} />
+          <span style={menuHeadTitleStyle(tone)}>{head.label}</span>
         </div>
       )}
       {items.map((it, i) =>
         it === 'divider' ? (
-          <div key={i} style={{ height: 1, background: hexA(th.border, 0.85), margin: '6px 5px' }} />
+          <div key={i} role="separator" style={menuDividerStyle(tone)} />
         ) : (
           <button
             key={i}
             type="button"
-            className={`mf-ed-btn${it.danger ? ' mf-ed-danger' : ''}`}
+            className="mf-menu-row"
+            data-danger={it.danger ? '1' : undefined}
+            data-active={it.active ? '1' : undefined}
             onMouseDown={(e) => {
               e.preventDefault();
               e.stopPropagation();
@@ -205,12 +212,12 @@ export function ContextMenu({ controller }: ContextMenuProps) {
             }}
             style={itemStyle(th, it.danger, it.active, isMobile)}
           >
-            <span style={iconStyle(th, it.danger, it.active)}>{it.icon}</span>
-            <span style={{ flex: '1 1 auto', textAlign: 'left', minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{it.label}</span>
+            <span style={iconStyle()}>{it.icon}</span>
+            <span style={MENU_LABEL_STYLE}>{it.label}</span>
             {/* 단축키 — 등폭으로 오른쪽 끝에(원본). 터치 기기에는 물리 키보드가 없어
                 아예 적지 않는다(`shortcutLabels` 머리말). */}
             {it.keys && !isMobile && (
-              <span data-ctx-keys style={{ fontFamily: MONO_FONT, fontSize: 10, color: hexA(th.subtext, 0.75), flex: '0 0 auto' }}>{it.keys}</span>
+              <span data-ctx-keys style={menuKeyStyle(tone)}>{it.keys}</span>
             )}
             {it.sub && <ChevronRight />}
           </button>
@@ -222,32 +229,11 @@ export function ContextMenu({ controller }: ContextMenuProps) {
   );
 }
 
-/** `touch`: 모바일 선택 바에서 열린 팝오버 — 행을 44px 터치 타겟으로 키운다. */
-function itemStyle(th: Theme, danger?: boolean, active?: boolean, touch?: boolean): CSSProperties {
-  return {
-    display: 'flex',
-    alignItems: 'center',
-    gap: 10,
-    width: '100%',
-    padding: '0 10px',
-    height: touch ? 44 : ROW_HEIGHT,
-    border: 'none',
-    borderRadius: 10,
-    fontSize: touch ? 14 : 12.5,
-    fontWeight: 600,
-    cursor: 'pointer',
-    color: danger ? DANGER : active ? th.accent : th.text,
-    // 플라이아웃이 열린 부모 행은 옅은 강조 면 위에 강조색 글자(원본).
-    background: active ? hexA(th.accent, 0.12) : 'transparent',
-    fontFamily: 'inherit',
-    textAlign: 'left',
-    boxSizing: 'border-box',
-  };
+/** `touch`: 모바일 선택 바에서 열린 팝오버 — 행을 44px 터치 타겟으로 키운다.
+ * 활성(플라이아웃이 열린 부모) 행은 `data-active`가 CSS로 칠한다(hover와 같은 모양). */
+function itemStyle(th: Theme, danger?: boolean, _active?: boolean, touch?: boolean): CSSProperties {
+  return menuRowStyle(editorMenuTone(th), { touch, danger });
 }
-
-/** 위험(삭제) 행의 글자·아이콘 색 — 원본 `#C9512A`는 코랄 계열이라 강조색과
- * 헷갈린다. 이 앱이 쓰는 경고색을 그대로 쓴다. */
-const DANGER = '#d64545';
 
 /** 플라이아웃이 있는 행의 셰브론 — 원본은 12px 화살표에 opacity .6. */
 function ChevronRight() {
@@ -258,16 +244,13 @@ function ChevronRight() {
   );
 }
 
-function iconStyle(th: Theme, danger?: boolean, active?: boolean): CSSProperties {
+function iconStyle(): CSSProperties {
+  // 아이콘 색은 **글자를 따른다**(`color: inherit`) — hover에서 라벨과 함께 강조색이
+  // 된다(칸반 카드 메뉴의 규칙).
   return {
-    width: 15,
+    ...MENU_GLYPH_STYLE,
     textAlign: 'center',
     fontSize: 13,
-    flexShrink: 0,
-    color: danger ? DANGER : active ? th.accent : th.subtext,
-    display: 'inline-flex',
-    alignItems: 'center',
-    justifyContent: 'center',
   };
 }
 
@@ -852,19 +835,13 @@ function ArrangeFlyout({ controller, ctxMenu, top }: AlignFlyoutProps) {
   const menuLeft = Math.max(GAP, Math.min(ctxMenu.sx, vw - MENU_W - GAP));
   // 오른쪽에 자리가 없으면 메뉴 왼쪽으로 뒤집는다(원본 `ctxSubLeft`와 같은 계산).
   const flip = menuLeft + MENU_W - 8 + SUB_W + GAP > vw;
+  const tone = editorMenuTone(th);
   const style: CSSProperties = {
+    ...menuPanelStyle(tone, SUB_W),
     position: 'absolute',
     left: flip ? -SUB_W - 4 : MENU_W - 8,
     top: top - 7,
-    width: SUB_W,
-    boxSizing: 'border-box',
-    background: th.panel,
-    border: `1px solid ${th.border}`,
-    borderRadius: 14,
-    boxShadow: SUB_SHADOW,
-    padding: 7,
     zIndex: 41,
-    animation: 'mf-ctx-pop .13s cubic-bezier(.2,.9,.3,1) both',
   };
   const rows: ({ op: ArrangeOp; label: string; icon: JSX.Element } | 'divider')[] = [
     { op: 'left', label: '왼쪽 맞춤', icon: <ArrangeGlyph kind="left" /> },
@@ -879,15 +856,15 @@ function ArrangeFlyout({ controller, ctxMenu, top }: AlignFlyoutProps) {
       : []),
   ];
   return (
-    <div className="mf-ctx" data-arrange-flyout style={style}>
+    <div className="mf-ctx mf-menu-fly" data-arrange-flyout style={style}>
       {rows.map((r, i) =>
         r === 'divider' ? (
-          <div key={`d${i}`} style={{ height: 1, background: hexA(th.border, 0.85), margin: '5px 5px' }} />
+          <div key={`d${i}`} role="separator" style={menuDividerStyle(tone)} />
         ) : (
           <button
             key={r.op}
             type="button"
-            className="mf-ed-btn"
+            className="mf-menu-row"
             data-arrange={r.op}
             onMouseDown={(e) => {
               e.preventDefault();
@@ -895,10 +872,10 @@ function ArrangeFlyout({ controller, ctxMenu, top }: AlignFlyoutProps) {
               controller.arrangeSelection(r.op);
               controller.closeCtxMenu();
             }}
-            style={{ ...itemStyle(th), height: 32, borderRadius: 9, gap: 9 }}
+            style={{ ...itemStyle(th), minHeight: 34, gap: 9 }}
           >
-            <span style={iconStyle(th)}>{r.icon}</span>
-            <span style={{ textAlign: 'left' }}>{r.label}</span>
+            <span style={iconStyle()}>{r.icon}</span>
+            <span style={MENU_LABEL_STYLE}>{r.label}</span>
           </button>
         ),
       )}
@@ -952,19 +929,13 @@ function AlignFlyout({ controller, ctxMenu, top }: AlignFlyoutProps) {
   const menuLeft = Math.max(GAP, Math.min(ctxMenu.sx, vw - MENU_W - GAP));
   // 오른쪽에 자리가 없으면 메뉴 왼쪽으로 뒤집는다(원본 `ctxSubLeft`와 같은 계산).
   const flip = menuLeft + MENU_W - 8 + SUB_W + GAP > vw;
+  const tone = editorMenuTone(th);
   const style: CSSProperties = {
+    ...menuPanelStyle(tone, SUB_W),
     position: 'absolute',
     left: flip ? -SUB_W - 4 : MENU_W - 8,
     top: top - 7,
-    width: SUB_W,
-    boxSizing: 'border-box',
-    background: th.panel,
-    border: `1px solid ${th.border}`,
-    borderRadius: 14,
-    boxShadow: SUB_SHADOW,
-    padding: 7,
     zIndex: 41,
-    animation: 'mf-ctx-pop .13s cubic-bezier(.2,.9,.3,1) both',
   };
   const nodeId = controller.selection?.kind === 'node' ? controller.selection.id : null;
   const align = (nodeId && controller.doc.nodes[nodeId]?.align) || 'center';
@@ -975,22 +946,23 @@ function AlignFlyout({ controller, ctxMenu, top }: AlignFlyoutProps) {
     { icon: <Ico d="M20 5v14 M7 9h9M11 15h5" />, label: '우측 정렬', v: 'right' },
   ];
   return (
-    <div className="mf-ctx" style={style}>
+    <div className="mf-ctx mf-menu-fly" style={style}>
       {opts.map((o) => (
         <button
           key={o.v}
           type="button"
-          className="mf-ed-btn"
+          className="mf-menu-row"
+          data-active={align === o.v ? '1' : undefined}
           onMouseDown={(e) => {
             e.preventDefault();
             e.stopPropagation();
             controller.setTextAlign(o.v);
             controller.closeCtxMenu();
           }}
-          style={{ ...itemStyle(th, false, align === o.v), height: 32, borderRadius: 9, gap: 9 }}
+          style={{ ...itemStyle(th, false, align === o.v), minHeight: 34, gap: 9 }}
         >
-          <span style={iconStyle(th, false, align === o.v)}>{o.icon}</span>
-          <span style={{ textAlign: 'left' }}>{o.label}</span>
+          <span style={iconStyle()}>{o.icon}</span>
+          <span style={MENU_LABEL_STYLE}>{o.label}</span>
         </button>
       ))}
     </div>
