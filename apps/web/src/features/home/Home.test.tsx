@@ -2742,7 +2742,9 @@ describe('Home', () => {
           seedUnseenInvite('theirs');
           const { container } = renderHomeWithDocStore([mine, theirs]);
 
-          const menu = await waitFor(() => screen.getByLabelText('메뉴 열기, 확인하지 않은 공유 1개'));
+          // 문구는 알림·공유를 **하나로** 합쳐 말한다(알림이 LNB로 옮겨 가며 ☰의
+          // 점이 둘을 함께 대변한다 — `navDotOf`).
+          const menu = await waitFor(() => screen.getByLabelText('메뉴 열기, 새 공유 1개'));
           expect(menu.querySelector('[data-unread-dot]')).toBeTruthy();
           expect(container).toBeTruthy();
         } finally {
@@ -5180,23 +5182,27 @@ describe('모바일 홈 다중 선택', () => {
 // 요청한 세 가지를 계약으로 고정한다: 툴바 버튼의 **순서**, 마우스 오버 **애니메이션**,
 // 카드 미리보기의 **틀**(옅은 wash + 도트 격자 + 종류 배지).
 describe('홈 리디자인 계약', () => {
-  it('툴바 순서 — 알림 · 검색 · 구분선 · 가져오기 · 새 폴더 · 새로 만들기', async () => {
+  // 알림은 툴바를 떠나 LNB로 갔다(요청: 어느 영역에서든 볼 수 있게) — 툴바는
+  // 검색 · 구분선 · 가져오기 · 새 폴더 · 새로 만들기 다섯이다.
+  it('툴바 순서 — 검색 · 구분선 · 가져오기 · 새 폴더 · 새로 만들기', async () => {
     renderHome();
     const search = await screen.findByPlaceholderText('모든 스페이스에서 검색');
-    const bell = screen.getByRole('button', { name: '알림' });
     const divider = document.querySelector('[data-toolbar-divider]') as HTMLElement;
     const importBtn = screen.getByRole('button', { name: '가져오기' });
     const folderBtn = screen.getByRole('button', { name: '새 폴더' });
     const createBtn = screen.getAllByRole('button', { name: '새로 만들기' })[0]!;
     expect(divider).toBeTruthy();
+    // 알림 행은 툴바가 아니라 사이드바에 있다.
+    const bell = screen.getByRole('button', { name: '알림' });
+    expect(bell.closest('aside')).toBeTruthy();
+    expect(bell.hasAttribute('data-notification-nav')).toBe(true);
     // DOM 순서가 곧 화면 순서다(모두 같은 행의 flex 항목).
-    const order = [bell, search, divider, importBtn, folderBtn, createBtn];
+    const order = [search, divider, importBtn, folderBtn, createBtn];
     for (let i = 0; i < order.length - 1; i += 1) {
       // Node.DOCUMENT_POSITION_FOLLOWING === 4
       expect(order[i]!.compareDocumentPosition(order[i + 1]!) & 4).toBe(4);
     }
     // 컨트롤은 모두 알약(원형 반지름) — 디자인 원본의 32px 한 줄.
-    expect(getComputedStyle(bell).borderRadius).toBe('999px');
     expect((importBtn as HTMLElement).style.borderRadius).toBe('999px');
     expect((folderBtn as HTMLElement).style.borderRadius).toBe('999px');
     expect((createBtn as HTMLElement).style.background).toContain('linear-gradient');

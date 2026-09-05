@@ -13,7 +13,18 @@ import type { KanbanCard, KanbanColumn } from '@mindflow/mindmap-core';
 import { hexA } from '../theme';
 import type { Theme } from '../theme';
 import { columnColor } from '../kanbanMeta';
-import { MenuDivider } from './ToolbarMenus';
+import { editorMenuTone } from './menuTone';
+import {
+  MENU_GLYPH_STYLE,
+  MENU_HEAD_DOT_STYLE,
+  MENU_HEAD_STYLE,
+  MENU_LABEL_STYLE,
+  menuHeadTitleStyle,
+  menuKeyStyle,
+  menuDividerStyle,
+  menuPanelStyle,
+  menuRowStyle,
+} from '../../../components/menuDesign';
 
 /** 긴급·삭제의 경고색 — 보드 카드와 같은 값(테마와 무관하게 "위험"으로 읽힌다). */
 const URGENT = '#d9534f';
@@ -97,27 +108,12 @@ export function CardMenu({
   const col = columns[colIndex];
   const mac = typeof navigator !== 'undefined' && /Mac|iPhone|iPad/.test(navigator.platform || navigator.userAgent);
 
-  const row: CSSProperties = {
-    display: 'flex',
-    alignItems: 'center',
-    gap: 11,
-    width: '100%',
-    minHeight: isMobile ? 44 : 38,
-    padding: '0 11px',
-    border: 0,
-    borderRadius: 9,
-    background: 'transparent',
-    color: th.text,
-    fontSize: 13.5,
-    fontWeight: 500,
-    fontFamily: 'inherit',
-    cursor: 'pointer',
-    textAlign: 'left',
-    boxSizing: 'border-box',
-  };
-  const glyph: CSSProperties = { display: 'flex', width: 17, justifyContent: 'center', flex: '0 0 auto', color: 'inherit' };
-  /** 단축키 — 오른쪽에 등폭으로. 메뉴에 적은 것은 **실제로 듣는 키**뿐이다. */
-  const key: CSSProperties = { flex: '0 0 auto', fontSize: 11.5, color: hexA(th.subtext, 0.85), fontFamily: 'ui-monospace, SFMono-Regular, Menlo, monospace' };
+  // 디자인은 `components/menuDesign.ts` 한곳에서 온다 — 이 메뉴가 그 **기준**이고
+  // 캔버스·홈의 우클릭 메뉴가 같은 값을 쓴다(제보: 화면마다 달랐다).
+  const tone = editorMenuTone(th, URGENT);
+  const row = menuRowStyle(tone, { touch: isMobile });
+  const glyph = MENU_GLYPH_STYLE;
+  const key = menuKeyStyle(tone);
 
   return (
     <div
@@ -125,56 +121,43 @@ export function CardMenu({
       data-card-menu={card.id}
       role="menu"
       aria-label="카드 메뉴"
-      className="mf-kb-pop"
+      className="mf-menu-pop"
       style={{
+        ...menuPanelStyle(tone, MENU_W),
         position: 'fixed',
         left: pos.left,
         top: pos.top,
-        width: MENU_W,
-        boxSizing: 'border-box',
-        padding: 6,
-        background: th.panel,
-        border: `1px solid ${th.border}`,
-        borderRadius: 14,
-        boxShadow: '0 24px 54px -22px rgba(46,42,38,.5), 0 2px 6px rgba(46,42,38,.06)',
         zIndex: 330,
-        transformOrigin: 'top left',
-        // 행 hover 색 — 인라인 스타일은 클래스 규칙을 이기므로 값만 변수로 내려
-        // 주고 칠하기는 CSS(`.mf-kb-menu-row:hover`)에 맡긴다.
-        ['--mf-kb-hover' as string]: hexA(th.accent, 0.1),
-        ['--mf-kb-hover-ink' as string]: th.accent,
-        ['--mf-kb-danger-soft' as string]: hexA(URGENT, 0.1),
-        ['--mf-kb-danger' as string]: URGENT,
-      } as CSSProperties}
+      }}
     >
       {/* 머리 — 어느 카드의 메뉴인지(열 색 점 + 제목 첫 줄). */}
-      <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '7px 10px 9px', minWidth: 0 }}>
-        <span aria-hidden="true" style={{ flex: '0 0 auto', width: 7, height: 7, borderRadius: 999, background: col ? columnColor(col, colIndex, th.palette) : th.border }} />
-        <span data-card-menu-title style={{ fontSize: 12.5, fontWeight: 700, color: th.text, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+      <div style={MENU_HEAD_STYLE}>
+        <span aria-hidden="true" style={{ ...MENU_HEAD_DOT_STYLE, background: col ? columnColor(col, colIndex, th.palette) : th.border }} />
+        <span data-card-menu-title style={menuHeadTitleStyle(tone)}>
           {(card.text || '빈 카드').split('\n')[0]}
         </span>
       </div>
 
-      <button type="button" role="menuitem" className="mf-kb-menu-row" data-card-menu-open onClick={onOpen} style={row}>
+      <button type="button" role="menuitem" className="mf-menu-row" data-card-menu-open onClick={onOpen} style={row}>
         <span style={glyph}>
           <OpenGlyph />
         </span>
-        <span style={{ flex: '1 1 auto' }}>카드 열기</span>
+        <span style={MENU_LABEL_STYLE}>카드 열기</span>
         <span style={key}>Enter</span>
       </button>
 
       {canComment && (
-        <button type="button" role="menuitem" className="mf-kb-menu-row" data-card-menu-comment onClick={onComment} style={row}>
+        <button type="button" role="menuitem" className="mf-menu-row" data-card-menu-comment onClick={onComment} style={row}>
           <span style={glyph}>
             <BubbleGlyph />
           </span>
-          <span style={{ flex: '1 1 auto' }}>댓글 달기</span>
+          <span style={MENU_LABEL_STYLE}>댓글 달기</span>
         </button>
       )}
 
       {!readOnly && (
         <>
-          <MenuDivider theme={th} />
+          <div role="separator" style={menuDividerStyle(tone)} />
           {/* 상태 이동 — 옆으로 뻗는 플라이아웃. hover로 열리고, 터치를 위해
               클릭으로도 **열기만** 한다(토글로 두면 이미 열린 뒤의 클릭이 닫아
               아무 일도 안 하는 것처럼 보인다 — 홈 메뉴에서 겪은 함정). */}
@@ -182,7 +165,7 @@ export function CardMenu({
             <button
               type="button"
               role="menuitem"
-              className="mf-kb-menu-row"
+              className="mf-menu-row"
               data-card-menu-move
               data-active={sub ? '1' : undefined}
               aria-expanded={sub}
@@ -192,7 +175,7 @@ export function CardMenu({
               <span style={glyph}>
                 <MoveGlyph />
               </span>
-              <span style={{ flex: '1 1 auto' }}>상태 이동</span>
+              <span style={MENU_LABEL_STYLE}>상태 이동</span>
               <span style={{ ...glyph, width: 14 }}>
                 <ChevronGlyph />
               </span>
@@ -202,7 +185,7 @@ export function CardMenu({
                 data-card-menu-move-sub
                 role="menu"
                 aria-label="상태 이동"
-                className="mf-kb-fly"
+                className="mf-menu-fly"
                 style={{
                   position: 'absolute',
                   // 오른쪽이 좁으면 왼쪽으로 뻗는다.
@@ -211,13 +194,7 @@ export function CardMenu({
                   top: -6,
                   marginLeft: 6,
                   marginRight: 6,
-                  width: SUB_W,
-                  padding: 6,
-                  boxSizing: 'border-box',
-                  background: th.panel,
-                  border: `1px solid ${th.border}`,
-                  borderRadius: 14,
-                  boxShadow: '0 24px 54px -22px rgba(46,42,38,.5), 0 2px 6px rgba(46,42,38,.06)',
+                  ...menuPanelStyle(tone, SUB_W),
                   zIndex: 1,
                   transformOrigin: 'left top',
                 }}
@@ -229,14 +206,14 @@ export function CardMenu({
                       key={c.id}
                       type="button"
                       role="menuitem"
-                      className="mf-kb-menu-row"
+                      className="mf-menu-row"
                       data-card-menu-col={c.id}
                       data-current={on ? '1' : undefined}
                       onClick={() => onMove(c.id)}
                       style={{ ...row, gap: 9, background: on ? th.panel2 : 'transparent', fontWeight: on ? 700 : 500 }}
                     >
                       <span aria-hidden="true" style={{ flex: '0 0 auto', width: 7, height: 7, borderRadius: 999, background: columnColor(c, i, th.palette) }} />
-                      <span style={{ flex: '1 1 auto', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{c.title}</span>
+                      <span style={MENU_LABEL_STYLE}>{c.title}</span>
                     </button>
                   );
                 })}
@@ -244,45 +221,45 @@ export function CardMenu({
             )}
           </div>
 
-          <button type="button" role="menuitem" className="mf-kb-menu-row" data-card-menu-flag onClick={onToggleFlag} style={row}>
+          <button type="button" role="menuitem" className="mf-menu-row" data-card-menu-flag onClick={onToggleFlag} style={row}>
             <span style={glyph}>
               <FlagGlyph />
             </span>
-            <span style={{ flex: '1 1 auto' }}>{card.flagged ? '긴급 해제' : '긴급으로 표시'}</span>
+            <span style={MENU_LABEL_STYLE}>{card.flagged ? '긴급 해제' : '긴급으로 표시'}</span>
           </button>
 
-          <MenuDivider theme={th} />
+          <div role="separator" style={menuDividerStyle(tone)} />
           {/* 복사·잘라내기 — 배경 메뉴의 '붙여넣기'가 쓸 **원천**이다(요청 시안의
               배경 메뉴에 붙여넣기가 있는데, 담을 방법이 없으면 그 행은 죽은 항목이
               된다). 클립보드는 캔버스와 따로인 **카드 전용**이다. */}
-          <button type="button" role="menuitem" className="mf-kb-menu-row" data-card-menu-copy onClick={onCopy} style={row}>
+          <button type="button" role="menuitem" className="mf-menu-row" data-card-menu-copy onClick={onCopy} style={row}>
             <span style={glyph}>
               <CopyGlyph />
             </span>
-            <span style={{ flex: '1 1 auto' }}>복사</span>
+            <span style={MENU_LABEL_STYLE}>복사</span>
             <span style={key}>{mac ? '⌘C' : 'Ctrl+C'}</span>
           </button>
-          <button type="button" role="menuitem" className="mf-kb-menu-row" data-card-menu-cut onClick={onCut} style={row}>
+          <button type="button" role="menuitem" className="mf-menu-row" data-card-menu-cut onClick={onCut} style={row}>
             <span style={glyph}>
               <CutGlyph />
             </span>
-            <span style={{ flex: '1 1 auto' }}>잘라내기</span>
+            <span style={MENU_LABEL_STYLE}>잘라내기</span>
             <span style={key}>{mac ? '⌘X' : 'Ctrl+X'}</span>
           </button>
-          <button type="button" role="menuitem" className="mf-kb-menu-row" data-card-menu-duplicate onClick={onDuplicate} style={row}>
+          <button type="button" role="menuitem" className="mf-menu-row" data-card-menu-duplicate onClick={onDuplicate} style={row}>
             <span style={glyph}>
               <DupeGlyph />
             </span>
-            <span style={{ flex: '1 1 auto' }}>복제</span>
+            <span style={MENU_LABEL_STYLE}>복제</span>
             <span style={key}>{mac ? '⌘D' : 'Ctrl+D'}</span>
           </button>
 
-          <MenuDivider theme={th} />
-          <button type="button" role="menuitem" className="mf-kb-menu-row is-danger" data-card-menu-delete onClick={onDelete} style={{ ...row, color: URGENT }}>
+          <div role="separator" style={menuDividerStyle(tone)} />
+          <button type="button" role="menuitem" className="mf-menu-row" data-danger="1" data-card-menu-delete onClick={onDelete} style={{ ...row, color: URGENT }}>
             <span style={glyph}>
               <TrashGlyph />
             </span>
-            <span style={{ flex: '1 1 auto' }}>카드 삭제</span>
+            <span style={MENU_LABEL_STYLE}>카드 삭제</span>
           </button>
         </>
       )}
@@ -618,26 +595,10 @@ export function BoardMenu({
   }, [onClose]);
 
   const mac = typeof navigator !== 'undefined' && /Mac|iPhone|iPad/.test(navigator.platform || navigator.userAgent);
-  const row: CSSProperties = {
-    display: 'flex',
-    alignItems: 'center',
-    gap: 11,
-    width: '100%',
-    minHeight: isMobile ? 44 : 38,
-    padding: '0 11px',
-    border: 0,
-    borderRadius: 9,
-    background: 'transparent',
-    color: th.text,
-    fontSize: 13.5,
-    fontWeight: 500,
-    fontFamily: 'inherit',
-    cursor: 'pointer',
-    textAlign: 'left',
-    boxSizing: 'border-box',
-  };
-  const glyph: CSSProperties = { display: 'flex', width: 17, justifyContent: 'center', flex: '0 0 auto', color: 'inherit' };
-  const key: CSSProperties = { flex: '0 0 auto', fontSize: 11.5, color: hexA(th.subtext, 0.85), fontFamily: 'ui-monospace, SFMono-Regular, Menlo, monospace' };
+  const tone = editorMenuTone(th, URGENT);
+  const row = menuRowStyle(tone, { touch: isMobile });
+  const glyph = MENU_GLYPH_STYLE;
+  const key = menuKeyStyle(tone);
 
   return (
     <div
@@ -645,73 +606,62 @@ export function BoardMenu({
       data-board-menu
       role="menu"
       aria-label="보드 메뉴"
-      className="mf-kb-pop"
+      className="mf-menu-pop"
       style={{
+        ...menuPanelStyle(tone, MENU_W),
         position: 'fixed',
         left: pos.left,
         top: pos.top,
-        width: MENU_W,
-        boxSizing: 'border-box',
-        padding: 6,
-        background: th.panel,
-        border: `1px solid ${th.border}`,
-        borderRadius: 14,
-        boxShadow: '0 24px 54px -22px rgba(46,42,38,.5), 0 2px 6px rgba(46,42,38,.06)',
         zIndex: 330,
-        transformOrigin: 'top left',
-        ['--mf-kb-hover' as string]: hexA(th.accent, 0.1),
-        ['--mf-kb-hover-ink' as string]: th.accent,
-        ['--mf-kb-danger-soft' as string]: hexA(URGENT, 0.1),
-        ['--mf-kb-danger' as string]: URGENT,
-      } as CSSProperties}
+      }}
     >
       {/* 머리 — 무엇에 대한 메뉴인지(시안: `보드 · 4개 열`). */}
-      <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '7px 10px 9px', minWidth: 0 }}>
-        <span aria-hidden="true" style={{ flex: '0 0 auto', width: 7, height: 7, borderRadius: 999, background: th.border }} />
-        <span data-board-menu-title style={{ fontSize: 12.5, fontWeight: 700, color: th.text, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+      <div style={MENU_HEAD_STYLE}>
+        <span aria-hidden="true" style={{ ...MENU_HEAD_DOT_STYLE, background: th.border }} />
+        <span data-board-menu-title style={menuHeadTitleStyle(tone)}>
           보드 · {columnCount}개 열
         </span>
       </div>
 
       {!readOnly && (
         <>
-          <button type="button" role="menuitem" className="mf-kb-menu-row" data-board-add-column onClick={onAddColumn} style={row}>
+          <button type="button" role="menuitem" className="mf-menu-row" data-board-add-column onClick={onAddColumn} style={row}>
             <span style={glyph}>
               <PlusGlyph />
             </span>
-            <span style={{ flex: '1 1 auto' }}>열 추가</span>
+            <span style={MENU_LABEL_STYLE}>열 추가</span>
             {!isMobile && <span style={key}>N</span>}
           </button>
 
           {/* 붙여넣기 — 담아 둔 카드가 없으면 아예 내지 않는다(눌러도 아무 일 없는
               항목을 두지 않는다는 기존 규칙). */}
           {clipboardCount > 0 && (
-            <button type="button" role="menuitem" className="mf-kb-menu-row" data-board-paste onClick={onPaste} style={row}>
+            <button type="button" role="menuitem" className="mf-menu-row" data-board-paste onClick={onPaste} style={row}>
               <span style={glyph}>
                 <PasteGlyph />
               </span>
-              <span style={{ flex: '1 1 auto' }}>{clipboardCount > 1 ? `붙여넣기 (${clipboardCount}장)` : '붙여넣기'}</span>
+              <span style={MENU_LABEL_STYLE}>{clipboardCount > 1 ? `붙여넣기 (${clipboardCount}장)` : '붙여넣기'}</span>
               {!isMobile && <span style={key}>{mac ? '⌘V' : 'Ctrl+V'}</span>}
             </button>
           )}
 
-          <MenuDivider theme={th} />
-          <button type="button" role="menuitem" className="mf-kb-menu-row" data-board-sort-due onClick={onSortByDue} style={row}>
+          <div role="separator" style={menuDividerStyle(tone)} />
+          <button type="button" role="menuitem" className="mf-menu-row" data-board-sort-due onClick={onSortByDue} style={row}>
             <span style={glyph}>
               <SortGlyph />
             </span>
-            <span style={{ flex: '1 1 auto' }}>전체 기한순 정렬</span>
+            <span style={MENU_LABEL_STYLE}>전체 기한순 정렬</span>
           </button>
         </>
       )}
 
       {/* 긴급만 보기 — 필터는 **보는 사람의 상태**라 보기 전용에서도 쓸 수 있다
           (문서를 바꾸지 않는다). 켜져 있으면 체크로 알린다. */}
-      <button type="button" role="menuitem" className="mf-kb-menu-row" data-board-urgent-only data-on={urgentOnly ? '1' : undefined} aria-pressed={urgentOnly} onClick={onToggleUrgent} style={{ ...row, color: urgentOnly ? th.accent : th.text }}>
+      <button type="button" role="menuitem" className="mf-menu-row" data-board-urgent-only data-on={urgentOnly ? '1' : undefined} aria-pressed={urgentOnly} onClick={onToggleUrgent} style={{ ...row, color: urgentOnly ? th.accent : th.text }}>
         <span style={glyph}>
           <FlagGlyph />
         </span>
-        <span style={{ flex: '1 1 auto' }}>긴급만 보기</span>
+        <span style={MENU_LABEL_STYLE}>긴급만 보기</span>
         {urgentOnly && (
           <span style={{ ...glyph, width: 14, color: th.accent }}>
             <CheckGlyph />
@@ -721,13 +671,13 @@ export function BoardMenu({
 
       {!readOnly && (
         <>
-          <MenuDivider theme={th} />
+          <div role="separator" style={menuDividerStyle(tone)} />
           {/* 완료 카드 비우기 — 마지막 열이 '완료'다(진행률·기한 톤도 그 규칙을 쓴다).
               비어 있으면 비활성으로 남긴다: 항목이 사라지면 메뉴 높이가 들썩인다. */}
           <button
             type="button"
             role="menuitem"
-            className="mf-kb-menu-row is-danger"
+            className="mf-menu-row" data-danger="1"
             data-board-clear-done
             disabled={doneCount === 0}
             title={doneCount === 0 ? '완료 열에 카드가 없어요' : `카드 ${doneCount}장을 지웁니다`}
@@ -737,7 +687,7 @@ export function BoardMenu({
             <span style={glyph}>
               <ClearGlyph />
             </span>
-            <span style={{ flex: '1 1 auto' }}>완료 카드 모두 비우기</span>
+            <span style={MENU_LABEL_STYLE}>완료 카드 모두 비우기</span>
             {doneCount > 0 && <span style={{ ...key, color: hexA(URGENT, 0.75) }}>{doneCount}장</span>}
           </button>
         </>

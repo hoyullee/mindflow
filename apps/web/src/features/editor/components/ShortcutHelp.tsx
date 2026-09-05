@@ -146,7 +146,8 @@ export function ShortcutHelp({ controller }: { controller: EditorController }) {
             '선택·이동',
             <>
               {row(['클릭'], '선택')}
-              {row(['드래그'], '이동 (빈 곳은 여러 개 선택)')}
+              {row(['Shift+클릭'], '여러 개 골라 담기 (다시 누르면 뺀다)')}
+              {row(['드래그'], '이동 (빈 곳은 여러 개 선택 · Shift는 더하기)')}
               {row(['방향키'], '이웃 주제로 · 메모를 골랐으면 이웃 메모로 선택 이동')}
               {row([`${mod}+C`, `${mod}+V`], '복사·붙여넣기 (주제·메모·선·영역·그리기)')}
               {row([`${mod}+X`], '잘라내기')}

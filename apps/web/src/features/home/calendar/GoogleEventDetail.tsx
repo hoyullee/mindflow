@@ -14,6 +14,7 @@ import { googleColorOptions } from './eventColor';
 import { GoogleEventFields, type GoogleDirectoryApi, type GoogleFieldsChange, type GoogleFieldsValue } from './GoogleEventFields';
 import { attendeesBody, conferenceBody, eventWindowIso, myRsvpOf, remindersBody, whenBody, RECURRENCE_OFF } from './googleCalendar';
 import type { CalendarEvent, CalendarEventInput } from '../../../adapters/ports';
+import { attendeesLocked } from './googleCalendar';
 import type { GoogleEvent, GoogleEventDraft, GoogleEventPatch, GoogleWriteField } from './googleCalendar';
 
 /** 구글 일정 → 팝업이 읽는 모양. 이름만 다르고 뜻은 같다(`description` ↔ `note`). */
@@ -144,7 +145,12 @@ export function patchFrom(g: GoogleEvent, patch: Partial<CalendarEventInput>, fi
     mark('color');
   }
   // 참석자·회의실·내 응답은 **한 배열**이라 무엇이 바뀌었든 함께 간다.
-  if (fields?.attendees || fields?.rooms || fields?.rsvp) {
+  //
+  // 다만 명단이 잘려 온 일정에는 **아예 싣지 않는다**(`attendeesLocked`) — 우리가
+  // 든 목록이 전부가 아니라, 그대로 다시 쓰면 못 받은 사람이 조용히 초대 취소된다.
+  // 화면도 그때는 편집을 잠그므로 여기 오는 일이 없지만, 저장 경로에서 한 번 더
+  // 막는다(진짜 게이트는 이쪽이다).
+  if ((fields?.attendees || fields?.rooms || fields?.rsvp) && !attendeesLocked(g)) {
     body.attendees = attendeesBody(merged);
     mark('attendees');
   }
@@ -272,6 +278,7 @@ export function GoogleEventDetail({
                 {...(event.organizer ? { organizer: event.organizer } : {})}
                 {...(directory ? { directory } : {})}
                 when={roomWindow}
+                attendeesLock={attendeesLocked(event)}
                 {...(event.meetLink ? { meetLink: event.meetLink } : {})}
                 onChange={(patch) => setPendingFields((p) => ({ ...p, ...patch }))}
               />

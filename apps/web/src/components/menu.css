@@ -1,0 +1,71 @@
+/* 앱의 **모든 우클릭 메뉴**가 함께 쓰는 규칙 — 값은 `menuDesign.ts`가 인라인
+   변수로 내려 주고 칠하기만 여기서 한다.
+
+   ⚠ `!important`가 필요하다: 행의 색은 테마에서 오므로 인라인 스타일로 칠하는데
+   인라인은 클래스 규칙을 **이긴다**. 이걸 빼면 hover가 한 번도 보이지 않는다
+   (칸반 메뉴·홈 `.mf-ctl:hover`에서 이미 겪은 함정).
+
+   CSS가 컴포넌트 곁(`components/`)에 있는 이유는 그 규칙을 **쓰는 화면이면 어디서든**
+   함께 와야 하기 때문이다 — 예전에 칸반 카드 hover 규칙이 `editor.css`에만 있어
+   홈(대시보드 위젯)에서는 죽어 있었다. `menuDesign.ts`가 이 파일을 import한다. */
+
+.mf-menu-row {
+  transition:
+    background 0.12s ease,
+    color 0.12s ease;
+}
+/* `data-active`는 플라이아웃이 열린 부모 행, `data-highlighted`는 Radix가 마우스든
+   방향키든 겨눈 행에 붙이는 표시다 — 셋이 같은 모양을 얻는다. */
+.mf-menu-row:hover,
+.mf-menu-row[data-active='1'],
+.mf-menu-row[data-highlighted] {
+  background: var(--mf-menu-hover) !important;
+  color: var(--mf-menu-hover-ink) !important;
+}
+.mf-menu-row[data-danger='1']:hover,
+.mf-menu-row[data-danger='1'][data-active='1'],
+.mf-menu-row[data-danger='1'][data-highlighted] {
+  background: var(--mf-menu-danger-bg) !important;
+  color: var(--mf-menu-danger-ink) !important;
+}
+/* 비활성 행은 반응하지 않는다 — 눌러도 아무 일이 없는데 손이 얹혔다고 밝아지면
+   누를 수 있는 것처럼 읽힌다. */
+.mf-menu-row[data-disabled],
+.mf-menu-row[aria-disabled='true'] {
+  background: transparent !important;
+  cursor: not-allowed;
+}
+
+/* 메뉴는 뜨는 자리에서 살짝 솟아오르고, 플라이아웃은 옆에서 밀려 들어온다. */
+@keyframes mf-menu-pop {
+  from {
+    opacity: 0;
+    transform: translateY(-5px) scale(0.97);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+.mf-menu-pop {
+  animation: mf-menu-pop 0.14s cubic-bezier(0.2, 0.9, 0.3, 1) both;
+}
+@keyframes mf-menu-fly {
+  from {
+    opacity: 0;
+    transform: translateX(-7px) scale(0.98);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+.mf-menu-fly {
+  animation: mf-menu-fly 0.13s ease-out both;
+}
+@media (prefers-reduced-motion: reduce) {
+  .mf-menu-pop,
+  .mf-menu-fly {
+    animation-duration: 0.01ms;
+  }
+}
