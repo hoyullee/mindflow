@@ -1129,6 +1129,16 @@ describe('칸반 — 후속 7건', () => {
   // 요청: 시작일·기한은 일정 화면과 **같은 날짜 고르기**를 쓴다 — native
   // `<input type="date">`가 아니라 트리거 + 팝오버(달력 + `오늘`·`지우기`)다.
   // 그래서 곁에 있던 `지우기` 버튼도 없다(그 일은 팝오버 발치가 맡는다).
+  // 제보: 상세 팝업이 너무 넓다 → 두 단짜리 팝업의 폭을 **새 일정 팝업과 같은 900**으로.
+  it('상세 팝업은 900px 두 단이다', async () => {
+    localStorage.setItem('mindflow_doc_kw1', JSON.stringify(KANBAN));
+    const { container } = renderEditor('/editor?map=kw1&title=x');
+    await waitFor(() => expect(container.querySelectorAll('[data-kanban-card]')).toHaveLength(2));
+    fireEvent.doubleClick(container.querySelector('[data-kanban-card="k1"]')!);
+    const detail = await waitFor(() => document.querySelector('[data-card-detail="k1"]') as HTMLElement);
+    expect(detail.style.width).toBe('min(900px, 100%)');
+  });
+
   it('기한은 일정 화면과 같은 날짜 팝오버로 고르고, 발치 지우기로 비운다', async () => {
     localStorage.setItem('mindflow_doc_kn2', JSON.stringify(KANBAN));
     const { container } = renderEditor('/editor?map=kn2&title=x');

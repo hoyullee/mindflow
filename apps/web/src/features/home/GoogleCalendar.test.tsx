@@ -2631,7 +2631,9 @@ describe('구글 캘린더 겹치기(PR5)', () => {
       // 종료 날짜를 이틀 뒤로 → 사흘에 걸린다.
       fireEvent.click(modal.querySelector('[data-work-to]')!);
       fireEvent.click(document.querySelector(`[data-datepop-day="${inMonth(4)}"]`)!);
-      await waitFor(() => expect(modal.querySelector('[data-work-foot]')?.textContent).toContain('3일에 걸어요'));
+      // 발치는 이제 **막는 것**만 말한다(요청) — 며칠에 걸리는지는 두 날짜 버튼이 말한다.
+      await waitFor(() => expect(modal.querySelector('[data-work-to]')?.textContent).toContain('일'));
+      expect(modal.querySelector('[data-work-foot]')?.textContent ?? '').toBe('');
       fireEvent.click(modal.querySelector('[data-work-save]')!);
       await waitFor(() => {
         const writes = f.mock.calls.filter((c) => ['POST', 'PATCH'].includes((c[1] as { method?: string } | undefined)?.method ?? ''));
@@ -2778,7 +2780,7 @@ describe('구글 캘린더 겹치기(PR5)', () => {
       expect(modal.querySelector<HTMLInputElement>('[data-work-label]')?.value).toBe('판교 5층');
     });
 
-    it('하루짜리에는 `선택한 날짜만 / …부터 매주` 되풀이가 뜨고, 매주는 규칙으로 저장된다(요청 ④)', async () => {
+    it('하루짜리에는 `선택한 날짜만 / …부터 매주` 반복가 뜨고, 매주는 규칙으로 저장된다(요청 ④)', async () => {
       seed({ calendars: ['me@example.com'] });
       seedToken();
       stubGis();
@@ -2810,7 +2812,7 @@ describe('구글 캘린더 겹치기(PR5)', () => {
       expect(f.mock.calls.filter((c) => (c[1] as { method?: string } | undefined)?.method === 'POST')).toHaveLength(1);
     });
 
-    it('반복 회차를 열어도 되풀이 메뉴가 뜨고(`매주` 켜짐), 회차를 PATCH하지 않는다(라이브 400 수리)', async () => {
+    it('반복 회차를 열어도 반복 메뉴가 뜨고(`매주` 켜짐), 회차를 PATCH하지 않는다(라이브 400 수리)', async () => {
       seed({ calendars: ['me@example.com'] });
       seedToken();
       stubGis();
@@ -2904,8 +2906,10 @@ describe('구글 캘린더 겹치기(PR5)', () => {
         return el as HTMLElement;
       });
       fireEvent.click(modal.querySelector('[data-work-repeat="once"]')!);
-      // 발치가 무슨 일이 일어나는지 말한다.
-      expect(modal.querySelector('[data-work-foot]')?.textContent).toContain('떼어 내요');
+      // 무슨 일이 일어나는지는 그 선택지 곁의 `?`가 말한다(요청: 발치 문구 제거).
+      expect(modal.querySelector('[data-work-repeat-tip="once"]')?.textContent).toContain('떼어 내요');
+      expect(modal.querySelector('[data-work-repeat="once"]')?.getAttribute('aria-label')).toContain('떼어 내요');
+      expect(modal.querySelector('[data-work-foot]')?.textContent ?? '').toBe('');
       fireEvent.click(modal.querySelector('[data-work-save]')!);
       await waitFor(() => {
         const del = f.mock.calls.find((c) => (c[1] as { method?: string } | undefined)?.method === 'DELETE');
@@ -2922,7 +2926,7 @@ describe('구글 캘린더 겹치기(PR5)', () => {
       expect(f.mock.calls.some((c) => (c[1] as { method?: string } | undefined)?.method === 'PATCH')).toBe(false);
     });
 
-    it('구간을 고르면 되풀이 선택이 사라지고, 안내 문구도 없다(요청 ④⑤)', async () => {
+    it('구간을 고르면 반복 선택이 사라지고, 안내 문구도 없다(요청 ④⑤)', async () => {
       seed({ calendars: ['me@example.com'] });
       seedToken();
       stubGis();
@@ -2939,7 +2943,7 @@ describe('구글 캘린더 겹치기(PR5)', () => {
       expect(modal.querySelector('[data-work-note]')).toBeNull();
       expect(modal.textContent).not.toContain('Google 캘린더 설정에서');
       expect(modal.querySelector('[data-work-repeat="weekly"]')).toBeTruthy();
-      // 종료 날짜를 뒤로 밀면 하루짜리가 아니므로 되풀이는 뜻이 없다.
+      // 종료 날짜를 뒤로 밀면 하루짜리가 아니므로 반복는 뜻이 없다.
       fireEvent.click(modal.querySelector('[data-work-to]')!);
       const cell = await waitFor(() => {
         const el = document.querySelector(`[data-datepop-day="${inMonth(4)}"]`);

@@ -679,10 +679,11 @@ describe('일정 화면', () => {
       const sat = cells.find((c) => dowOf(c) === 6)!.dataset.dayCell!;
       const sun = cells.find((c) => dowOf(c) === 0)!.dataset.dayCell!;
 
-      // 속 빈 링(`inset ... 2px accent`)이 아니라 채운 원 — 그 링이 튀어 보였다(제보 ③).
+      // 평일은 **오늘+선택의 후광과 같은 옅은 강조색**으로 채운다(요청: 검은 원이
+      // 안 어울린다 — 그 후광 색으로). 속 빈 링도, 잉크색 원도 아니다.
       await pick(weekday);
-      expect(num(weekday).style.background).toBe('var(--mf-text)');
-      expect(num(weekday).style.color).toBe('var(--mf-card)');
+      expect(num(weekday).style.background).toBe('var(--mf-accent-mute)');
+      expect(num(weekday).style.color).toBe('var(--mf-text)');
       expect(num(weekday).style.boxShadow).toBe('');
       // 요청 ④ — 고른 뒤에도 파랑·빨강이 남는다(예전에는 잉크색이 덮어 요일 신호가 사라졌다).
       await pick(sat);

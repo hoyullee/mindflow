@@ -44,8 +44,8 @@ function getViewport(container: HTMLElement): HTMLElement {
 // jsdom엔 PointerEvent가 없어 fireEvent.pointer*가 좌표를 통째로 떨어뜨린다 —
 // MouseEvent를 pointer 이벤트 이름으로 던지고 pointerId만 심는다
 // (EditorC.interactions.test.tsx의 `firePointer`와 같은 처방).
-function firePointer(target: Element, type: 'pointerdown' | 'pointermove' | 'pointerup', init: { pointerId?: number; clientX?: number; clientY?: number; button?: number } = {}): void {
-  const event = new MouseEvent(type, { bubbles: true, cancelable: true, clientX: init.clientX ?? 0, clientY: init.clientY ?? 0, button: init.button ?? 0 });
+function firePointer(target: Element, type: 'pointerdown' | 'pointermove' | 'pointerup', init: { pointerId?: number; clientX?: number; clientY?: number; button?: number; shiftKey?: boolean } = {}): void {
+  const event = new MouseEvent(type, { bubbles: true, cancelable: true, clientX: init.clientX ?? 0, clientY: init.clientY ?? 0, button: init.button ?? 0, shiftKey: init.shiftKey ?? false });
   Object.defineProperty(event, 'pointerId', { value: init.pointerId ?? 1, configurable: true });
   fireEvent(target, event);
 }
@@ -1190,6 +1190,78 @@ describe('화이트보드 에디터', () => {
       const saved = JSON.parse(localStorage.getItem('mindflow_doc_b29') || 'null');
       expect(saved?.strokes.map((s: { id: string }) => s.id)).toEqual(['s3']);
     });
+  });
+
+  // 요청: 드래그로만 여러 개를 고를 수 있어 개별로 더할 수 없었다.
+  it('Shift+클릭으로 객체를 하나씩 골라 담고, 다시 누르면 뺀다', async () => {
+    localStorage.setItem(
+      'mindflow_doc_b30s',
+      JSON.stringify({
+        ...BOARD,
+        floats: [
+          { id: 'f1', x: -300, y: -160, w: 160, h: 80, text: '하나' },
+          { id: 'f2', x: -60, y: -60, w: 160, h: 80, text: '둘' },
+          { id: 'f3', x: 200, y: 40, w: 160, h: 80, text: '셋' },
+        ],
+        strokes: [],
+      }),
+    );
+    const { container } = renderEditor('/editor?map=b30s&title=x');
+    await waitFor(() => expect(container.querySelectorAll('[data-float-id]')).toHaveLength(3));
+    const press = (sel: string, id: number, shift = false): void => {
+      firePointer(container.querySelector(sel)!, 'pointerdown', { pointerId: id, clientX: 10 * id, clientY: 10 * id, shiftKey: shift });
+      if (!shift) firePointer(document.body, 'pointerup', { pointerId: id, clientX: 10 * id, clientY: 10 * id });
+    };
+
+    // 평범한 클릭 = 하나만.
+    press('[data-float-id="f1"]', 1);
+    expect(await screen.findByText('선택한 메모')).toBeTruthy();
+
+    // Shift+클릭으로 더한다.
+    press('[data-float-id="f2"]', 2, true);
+    expect(await screen.findByText(/2개 선택됨/)).toBeTruthy();
+    press('[data-float-id="f3"]', 3, true);
+    expect(await screen.findByText(/3개 선택됨/)).toBeTruthy();
+
+    // 같은 것을 다시 누르면 뺀다.
+    press('[data-float-id="f3"]', 4, true);
+    expect(await screen.findByText(/2개 선택됨/)).toBeTruthy();
+
+    // 하나만 남으면 **단일 선택으로 정규화**한다(다중 1개짜리 유령 상태를 만들지 않는다).
+    press('[data-float-id="f2"]', 5, true);
+    expect(await screen.findByText('선택한 메모')).toBeTruthy();
+
+    // Shift를 쥔 채 빈 곳을 눌러도 고르던 것이 풀리지 않는다(더하려던 손이 빗나갔을 뿐).
+    firePointer(getViewport(container), 'pointerdown', { pointerId: 6, clientX: 600, clientY: 500, shiftKey: true });
+    firePointer(document.body, 'pointerup', { pointerId: 6, clientX: 600, clientY: 500 });
+    expect(screen.getByText('선택한 메모')).toBeTruthy();
+  });
+
+  it('Shift+클릭은 그리기 획도 담는다 — 배경이 좌표로 잡아 준다', async () => {
+    localStorage.setItem(
+      'mindflow_doc_b30t',
+      JSON.stringify({
+        ...BOARD,
+        floats: [{ id: 'f1', x: -300, y: -160, w: 160, h: 80, text: '하나' }],
+        strokes: [{ id: 's1', pts: [200, 120, 260, 160], color: '#d92626', w: 6 }],
+      }),
+    );
+    const { container } = renderEditor('/editor?map=b30t&title=x');
+    await waitFor(() => expect(container.querySelector('[data-stroke-id="s1"]')).toBeTruthy());
+
+    firePointer(container.querySelector('[data-float-id="f1"]')!, 'pointerdown', { pointerId: 1, clientX: 10, clientY: 10 });
+    firePointer(document.body, 'pointerup', { pointerId: 1, clientX: 10, clientY: 10 });
+    expect(await screen.findByText('선택한 메모')).toBeTruthy();
+
+    // 획을 Shift로 더한다(메모 + 획이라 속성 패널은 뜨지 않는다 — 종류가 섞이면
+    // 공통 속성이 없다). 담겼다는 것은 **선택 표시와 일괄 삭제**가 말한다.
+    const ink = strokePoint(container, 230, 140);
+    firePointer(getViewport(container), 'pointerdown', { pointerId: 2, clientX: ink.x, clientY: ink.y, shiftKey: true });
+    await waitFor(() => expect(container.querySelector('[data-stroke-selection]')).toBeTruthy());
+
+    fireEvent.keyDown(window, { key: 'Delete' });
+    await waitFor(() => expect(container.querySelectorAll('[data-stroke-id]')).toHaveLength(0));
+    expect(container.querySelectorAll('[data-float-id]')).toHaveLength(0);
   });
 
   it('획을 잘라내면 원본이 사라진다(제보) — 붙여넣으면 다시 하나', async () => {
