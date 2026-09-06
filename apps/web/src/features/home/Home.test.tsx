@@ -5193,7 +5193,7 @@ describe('홈 리디자인 계약', () => {
     const createBtn = screen.getAllByRole('button', { name: '새로 만들기' })[0]!;
     expect(divider).toBeTruthy();
     // 알림 행은 툴바가 아니라 사이드바에 있다.
-    const bell = screen.getByRole('button', { name: '알림' });
+    const bell = screen.getByRole('button', { name: /^알림 ·/ });
     expect(bell.closest('aside')).toBeTruthy();
     expect(bell.hasAttribute('data-notification-nav')).toBe(true);
     // DOM 순서가 곧 화면 순서다(모두 같은 행의 flex 항목).
