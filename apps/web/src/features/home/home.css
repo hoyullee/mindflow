@@ -381,6 +381,17 @@ a:hover {
   background: var(--mf-panel2) !important;
   color: var(--mf-text) !important;
 }
+/* 알림 행 — 안 읽은 줄은 **자기 틴트를 지킨다**. 공용 `.mf-ctl` hover는 면을
+   `--mf-panel2`로 갈아 끼우는데, 그러면 손을 얹는 순간 읽은 줄처럼 보인다(달력
+   칩·켜진 알약에서 이미 겪은 것). 읽은 줄만 옅은 면이 깔리고, 안 읽은 줄은
+   밝기만 움직인다(다크에서는 반대 방향 — `--mf-hover-bright`). */
+[data-radix-popper-content-wrapper] .mf-notif-row:hover:not(:disabled) {
+  background: var(--mf-panel2) !important;
+}
+[data-radix-popper-content-wrapper] .mf-notif-row[data-unread='1']:hover:not(:disabled) {
+  background: var(--mf-accent-soft) !important;
+  filter: brightness(var(--mf-hover-bright));
+}
 /* 팝업·팝오버 안의 켜짐(종일·저장할 캘린더·빠른 길이·고른 날짜)도 같은 규칙. */
 [data-modal-overlay] .mf-ctl[aria-pressed='true']:hover,
 [data-modal-overlay] .mf-ctl[aria-checked='true']:hover,

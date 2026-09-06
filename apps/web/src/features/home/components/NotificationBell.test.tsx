@@ -193,6 +193,51 @@ describe('알림 센터', () => {
     expect(when!.style.flexShrink).toBe('0'); // 줄지 않는다
   });
 
+  it('벨 글리프는 읽었든 안 읽었든 늘 강조색이다(요청)', async () => {
+    // 읽음 여부는 배지·요약 색이 말한다 — 종까지 함께 흐려지면 "알림 자리"라는
+    // 표식이 사라진다.
+    seed([{ readAt: new Date().toISOString() }]);
+    const { unmount } = renderBell();
+    let glyph = (await screen.findByRole('button', { name: /^알림 ·/ })).querySelector('[data-bell-glyph]') as HTMLElement;
+    expect(glyph.style.color).toBe('var(--mf-accent)');
+    unmount();
+    cleanup();
+
+    seed([{}]);
+    renderBell();
+    glyph = (await screen.findByRole('button', { name: /^알림 1개 ·/ })).querySelector('[data-bell-glyph]') as HTMLElement;
+    expect(glyph.style.color).toBe('var(--mf-accent)');
+  });
+
+  it('패널 목록은 첨부 디자인대로 — 안 읽은 줄만 강조색 카드, 둘째 줄은 [문서 칩][시간], 묶음은 오늘/이번 주/이전', async () => {
+    const day = 24 * 3600_000;
+    seed([
+      { id: 'a', preview: '제가 바꿀게요', docTitle: '분기 계획', createdAt: new Date(Date.now() - 2 * 3600_000).toISOString() },
+      { id: 'b', kind: 'reply', docTitle: '회고 (KPT)', preview: '확인했어요', createdAt: new Date(Date.now() - 2 * day).toISOString(), readAt: new Date().toISOString() },
+      { id: 'c', kind: 'share', preview: '', docTitle: '옛 맵', createdAt: new Date(Date.now() - 20 * day).toISOString(), readAt: new Date().toISOString() },
+    ]);
+    renderBell();
+    fireEvent.click(await screen.findByRole('button', { name: /^알림 1개 ·/ }));
+    const panel = await screen.findByRole('region', { name: '알림 센터' });
+    const rows = [...panel.querySelectorAll('[data-notification-item]')] as HTMLElement[];
+    expect(rows).toHaveLength(3);
+
+    // 안 읽었던 줄만 강조색 틴트 카드 — 읽은 줄은 면이 없다.
+    expect(rows[0]!.style.background).toBe('var(--mf-accent-soft)');
+    expect(rows[0]!.getAttribute('data-unread')).toBe('1');
+    expect(rows[1]!.style.background).toBe('transparent');
+    expect(rows[1]!.hasAttribute('data-unread')).toBe(false);
+
+    // 둘째 줄은 문서 칩 + 시간뿐이다 — 따옴표 친 본문 줄은 없다(툴팁에 남는다).
+    expect(rows[0]!.querySelector('[data-notification-doc]')!.textContent).toBe('분기 계획');
+    expect(rows[0]!.textContent).not.toContain('“제가 바꿀게요”');
+    expect(rows[0]!.title).toBe('제가 바꿀게요');
+
+    // 묶음 머리 셋.
+    const heads = [...panel.querySelectorAll('span')].map((e) => e.textContent).filter((t) => t === '오늘' || t === '이번 주' || t === '이전');
+    expect(heads).toEqual(['오늘', '이번 주', '이전']);
+  });
+
   it('알림이 없으면 배지 없이 빈 안내가 뜬다', async () => {
     renderBell();
     const bell = await screen.findByRole('button', { name: /^알림 ·/ });
