@@ -319,9 +319,9 @@ export function NotificationBell({ isMobile = false }: { isMobile?: boolean }) {
                       data-unread={isFresh ? '1' : undefined}
                       onClick={() => go(n)}
                       disabled={!href}
-                      // 댓글 본문은 한 줄 요약에 담지 않는다(디자인은 두 줄) —
-                      // 대신 툴팁에 남겨 잃지 않는다.
-                      title={n.preview || undefined}
+                      // 툴팁은 **화면에 없거나 잘린 것**을 메운다 — 칩이 본문을
+                      // 보여 줄 때 감춰지는 것은 맵 이름이고, 둘 다 말줄임될 수 있다.
+                      title={[n.docTitle || '이름 없는 맵', n.preview].filter(Boolean).join(' · ')}
                       style={{
                         display: 'flex',
                         alignItems: 'flex-start',
@@ -354,13 +354,17 @@ export function NotificationBell({ isMobile = false }: { isMobile?: boolean }) {
                       </span>
                       <span style={{ display: 'flex', flexDirection: 'column', gap: 5, minWidth: 0, flex: 1 }}>
                         <span style={{ fontSize: 12.5, fontWeight: isFresh ? 700 : 500, lineHeight: 1.45, color: 'var(--mf-text)' }}>{lineOf(n)}</span>
-                        {/* 둘째 줄은 **어디의 일인가 + 언제**다(첨부 디자인). 시간은 줄지
-                            않는 자리에 둔다 — 칩이 길어도 사라지면 안 된다. */}
+                        {/* 둘째 줄은 **무슨 말을 했는가 + 언제**다(첨부 디자인, 사용자 선정).
+                            첫 줄이 이미 "누가 무엇을 했는지"를 말하므로 여기서 더 궁금한 건
+                            본문이고, 어느 맵인지는 눌러서 가는 곳이 곧 답이다(툴팁에도 남는다).
+                            공유 초대처럼 본문이 없는 알림은 맵 이름이 그 자리를 쓴다.
+                            시간은 줄지 않는 자리에 둔다 — 칩이 길어도 사라지면 안 된다. */}
                         <span style={{ display: 'flex', alignItems: 'center', gap: 7, minWidth: 0 }}>
-                          {/* 문서 칩. 점 색은 제목 시드라 같은 문서는 늘 같다. */}
-                          <span data-notification-doc style={{ display: 'inline-flex', alignItems: 'center', gap: 5, minWidth: 0, fontSize: 11, fontWeight: 600, color: 'var(--mf-subtext)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                          {/* 점 색은 **맵 제목** 시드다 — 칩 글자가 본문이어도 같은 맵의
+                              알림은 늘 같은 색으로 묶여 보인다. */}
+                          <span data-notification-chip style={{ display: 'inline-flex', alignItems: 'center', gap: 5, minWidth: 0, fontSize: 11, fontWeight: 600, color: 'var(--mf-subtext)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                             <span aria-hidden="true" style={{ width: 6, height: 6, borderRadius: 999, background: seedColor(n.docTitle || ''), display: 'block', flexShrink: 0 }} />
-                            <span style={{ minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis' }}>{n.docTitle || '이름 없는 맵'}</span>
+                            <span style={{ minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis' }}>{n.preview || n.docTitle || '이름 없는 맵'}</span>
                           </span>
                           <span style={{ fontSize: 11, color: 'var(--mf-faint)', whiteSpace: 'nowrap', flexShrink: 0 }}>{formatLastEdited(n.createdAt) || '방금 전'}</span>
                         </span>

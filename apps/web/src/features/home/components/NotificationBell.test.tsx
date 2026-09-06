@@ -228,10 +228,13 @@ describe('알림 센터', () => {
     expect(rows[1]!.style.background).toBe('transparent');
     expect(rows[1]!.hasAttribute('data-unread')).toBe(false);
 
-    // 둘째 줄은 문서 칩 + 시간뿐이다 — 따옴표 친 본문 줄은 없다(툴팁에 남는다).
-    expect(rows[0]!.querySelector('[data-notification-doc]')!.textContent).toBe('분기 계획');
+    // 둘째 줄은 칩 + 시간뿐이다 — 따옴표 친 별도 본문 줄은 없다.
+    // 칩은 **본문이 있으면 본문**, 없으면(공유 초대) 맵 이름이다(사용자 선정).
+    expect(rows[0]!.querySelector('[data-notification-chip]')!.textContent).toBe('제가 바꿀게요');
     expect(rows[0]!.textContent).not.toContain('“제가 바꿀게요”');
-    expect(rows[0]!.title).toBe('제가 바꿀게요');
+    // 화면에서 감춰지는 맵 이름은 툴팁이 메운다.
+    expect(rows[0]!.title).toBe('분기 계획 · 제가 바꿀게요');
+    expect(rows[2]!.querySelector('[data-notification-chip]')!.textContent).toBe('옛 맵'); // 공유 = 본문 없음
 
     // 묶음 머리 셋.
     const heads = [...panel.querySelectorAll('span')].map((e) => e.textContent).filter((t) => t === '오늘' || t === '이번 주' || t === '이전');
