@@ -32,6 +32,26 @@ function lineOf(n: AppNotification): string {
   return `${who}님이 맵을 공유했어요`;
 }
 
+/** LNB 행의 한 줄 요약 — `종류 · 내용 · 시간`(요청).
+ * 목록의 `lineOf`("…님이 …했어요")를 그대로 쓰지 않는 이유는 자리가 한 줄뿐이라
+ * 사람 이름·동사까지 담으면 정작 **무슨 내용인지**가 잘리기 때문이다. */
+const KIND_LABEL: Record<AppNotification['kind'], string> = {
+  mention: '멘션',
+  doc_mention: '멘션',
+  reply: '답글',
+  comment: '댓글',
+  share: '공유',
+};
+
+/** `종류 · 내용`과 `시간`을 **따로** 돌려준다 — 한 문자열로 이으면 내용이 길 때
+ * 말줄임이 꼬리를 먹어 시간이 통째로 사라진다(실브라우저에서 확인). 시간은 짧고
+ * 언제나 읽혀야 하므로 줄지 않는 자리에 둔다. */
+function summaryOf(n: AppNotification): { head: string; time: string } {
+  // 공유 초대는 preview가 비어 있다 — 그때는 맵 제목이 곧 내용이다.
+  const what = (n.preview || n.docTitle || '').replace(/\s+/g, ' ').trim();
+  return { head: [KIND_LABEL[n.kind], what].filter(Boolean).join(' · '), time: formatLastEdited(n.createdAt) };
+}
+
 /** 이름을 정해진 팔레트의 한 색으로 — 같은 사람은 늘 같은 색(접속자 아바타와 같은 생각).
  * 디자인 원본은 목업이라 색을 손으로 골랐지만, 우리는 이름에서 결정적으로 뽑는다. */
 const SEED_PALETTE = ['#E45DA0', '#5B8DEF', '#63A8E8', '#E8833A', '#7CA84A', '#8a63d2'];
@@ -111,9 +131,21 @@ export function NotificationBell({ isMobile = false }: { isMobile?: boolean }) {
     overflow: 'hidden',
   };
 
-  // LNB의 다른 행(`일정`·대시보드)과 **같은 문법**이다 — 34px(폰 44px)·radius 10·
-  // 글리프 + 이름 + 오른쪽 끝 표시. 다른 점은 표시가 개수 글자가 아니라 **알림 배지**
-  // 라는 것뿐이다(색은 테마를 따르지 않는 고정 알림색 — #376).
+  // LNB의 **두 줄 카드**(요청, 첨부 디자인) — 위: 벨 + `알림` + 개수 배지 + 셰브론,
+  // 아래: 가장 최근 알림 한 줄(`종류 · 내용 · 시간`). 상태가 셋이다:
+  //   ① 안 읽음 → 강조색 틴트 면 + 코랄 배지 + 요약이 **본문 톤**(따뜻한 갈색)
+  //   ② 다 읽음 → 배지가 사라지고 면도 없이 요약만 **흐린 회색**으로 남는다
+  //   ③ 아무것도 없음 → `아직 받은 알림이 없어요`
+  // 요약을 늘 보여 주는 이유: 이 줄이 있으면 패널을 열지 않고도 "무엇이 왔는지"를
+  // 알 수 있다(배지 숫자만으로는 열어 봐야 안다).
+  //
+  // 최근 것은 **안 읽은 것 중 최신**을 먼저 고른다 — 배지가 가리키는 것과 문구가
+  // 어긋나면 안 된다(새 알림이 있는데 이미 읽은 옛 알림을 요약하는 꼴).
+  const latest = items.find((i) => !i.read) ?? items[0] ?? null;
+  const { head, time } = latest ? summaryOf(latest) : { head: '아직 받은 알림이 없어요', time: '' };
+  const summary = time ? `${head} · ${time}` : head;
+  const hot = unread > 0;
+
   const bell = (
     // 진짜 `<button>`이다 — Enter·Space 활성화가 공짜다(`div role="button"`은
     // 클릭만 받는다). Radix `asChild`가 이 요소를 그대로 트리거로 쓴다.
@@ -121,8 +153,9 @@ export function NotificationBell({ isMobile = false }: { isMobile?: boolean }) {
       type="button"
       className="nav-item"
       data-notification-nav
-      aria-label={unread > 0 ? `알림 ${unread}개` : '알림'}
-      title="알림"
+      // 요약까지 접근 이름에 담는다 — 보이는 글자와 읽히는 글자가 같아야 한다.
+      aria-label={`${hot ? `알림 ${unread}개` : '알림'} · ${summary}`}
+      title={summary}
       style={{
         width: '100%',
         border: 'none',
@@ -130,49 +163,79 @@ export function NotificationBell({ isMobile = false }: { isMobile?: boolean }) {
         textAlign: 'left',
         display: 'flex',
         alignItems: 'center',
-        gap: 9,
-        padding: '8px 9px',
-        minHeight: isMobile ? 44 : 34,
-        borderRadius: 10,
+        gap: 10,
+        padding: '9px 11px',
+        minHeight: isMobile ? 56 : 50,
+        borderRadius: 12,
         cursor: 'pointer',
-        fontSize: 13,
-        fontWeight: open || unread > 0 ? 700 : 500,
         letterSpacing: '-.01em',
-        background: open ? 'var(--mf-accent-soft)' : 'transparent',
-        color: open || unread > 0 ? 'var(--mf-text)' : 'var(--mf-subtext)',
+        background: hot || open ? 'var(--mf-accent-soft)' : 'transparent',
+        color: 'var(--mf-text)',
         transition: 'background .14s ease',
       }}
     >
-      <span style={{ display: 'inline-flex', color: open ? 'var(--mf-accent)' : 'currentColor', flexShrink: 0 }}>
-        <svg width={15} height={15} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+      <span
+        style={{
+          display: 'inline-flex',
+          // 벨은 안 읽음일 때만 강조색 — 다 읽은 줄은 목록의 다른 행과 같은 톤이다.
+          color: hot || open ? 'var(--mf-accent)' : 'var(--mf-subtext)',
+          flexShrink: 0,
+        }}
+      >
+        <svg width={16} height={16} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
           <path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9" />
           <path d="M13.73 21a2 2 0 0 1-3.46 0" />
         </svg>
       </span>
-      <span style={{ flex: 1, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>알림</span>
-      <span style={{ flexShrink: 0, minWidth: 38, display: 'inline-flex', alignItems: 'center', justifyContent: 'flex-end' }}>
-        {unread > 0 && (
-          <span
-            data-notification-count
-            aria-hidden="true"
-            style={{
-              minWidth: 18,
-              height: 18,
-              padding: '0 5px',
-              borderRadius: 999,
-              background: UNREAD_BADGE_BG,
-              color: UNREAD_BADGE_INK,
-              fontSize: 10.5,
-              fontWeight: 800,
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              boxSizing: 'border-box',
-            }}
-          >
-            {unread > 9 ? '9+' : unread}
-          </span>
-        )}
+      <span style={{ flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column', gap: 2 }}>
+        <span style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+          <span style={{ fontSize: 13, fontWeight: hot || open ? 700 : 600, color: 'var(--mf-text)' }}>알림</span>
+          {hot && (
+            <span
+              data-notification-count
+              aria-hidden="true"
+              style={{
+                minWidth: 18,
+                height: 18,
+                padding: '0 5px',
+                borderRadius: 999,
+                background: UNREAD_BADGE_BG,
+                color: UNREAD_BADGE_INK,
+                fontSize: 10.5,
+                fontWeight: 800,
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                boxSizing: 'border-box',
+                flexShrink: 0,
+              }}
+            >
+              {unread > 9 ? '9+' : unread}
+            </span>
+          )}
+        </span>
+        <span
+          data-notification-summary
+          style={{
+            display: 'flex',
+            alignItems: 'baseline',
+            minWidth: 0,
+            fontSize: 11.5,
+            fontWeight: 500,
+            // 안 읽음은 따뜻한 갈색(본문 아래 단계), 읽었거나 빈 줄은 흐린 회색 —
+            // 색만으로 "볼 것이 남았는가"가 읽힌다.
+            color: hot ? 'var(--mf-subtext)' : 'var(--mf-muted)',
+            whiteSpace: 'nowrap',
+          }}
+        >
+          <span style={{ minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis' }}>{head}</span>
+          {time && <span style={{ flexShrink: 0 }}>{` · ${time}`}</span>}
+        </span>
+      </span>
+      <span style={{ display: 'inline-flex', color: hot ? 'var(--mf-accent)' : 'var(--mf-faint)', flexShrink: 0 }} aria-hidden="true">
+        <svg width={14} height={14} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round">
+          <path d="M9 6l6 6-6 6" />
+        </svg>
       </span>
     </button>
   );
