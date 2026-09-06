@@ -19,9 +19,9 @@
 // 그래서 걸려 있는 날을 열면 보이는 것은 **그 하루**이고, 종료 날짜를 뒤로 밀면
 // 그만큼 날이 더 걸린다(구간 밖의 날은 건드리지 않는다).
 //
-// **되풀이**는 하루짜리면 언제나 뜬다(요청 — 구글의 `근무 위치 수정` 화면과 같은 두
+// **반복**은 하루짜리면 언제나 뜬다(요청 — 구글의 `근무 위치 수정` 화면과 같은 두
 // 선택: `선택한 날짜만` / `…부터 매주`). 구간(하루 초과)에서만 사라진다: 구간은 이미
-// 하루씩 여러 일정으로 나가므로 거기에 되풀이를 얹으면 사용자가 고른 적 없는 모양이
+// 하루씩 여러 일정으로 나가므로 거기에 반복을 얹으면 사용자가 고른 적 없는 모양이
 // 된다.
 //
 // **이미 매주 반복인 근무 위치**를 열면 `매주`가 켜진 채로 뜨고, 두 선택은 그때
@@ -40,7 +40,7 @@ import { RadioCards } from '../../../components/Segmented';
 import { DateButton, PillButton } from './DatePop';
 import { TimeButton } from './TimePop';
 import { addDays, daysBetween, minutesOf } from './model';
-import { WORK_LOCATION_MAX_DAYS, workLocationDays, type WorkLocationDraft, type WorkLocationKind } from './googleCalendar';
+import { WORK_LOCATION_MAX_DAYS, type WorkLocationDraft, type WorkLocationKind } from './googleCalendar';
 
 /** 지금 그 날에 걸린 근무 위치 — 없으면 `null`(그 구간·시각을 그대로 되살린다). */
 export interface WorkLocationCurrent {
@@ -50,7 +50,7 @@ export interface WorkLocationCurrent {
   endDate: string;
   startTime?: string;
   endTime?: string;
-  /** 이미 매주 되풀이되는 일정의 회차인가 — 그러면 되풀이는 고르는 값이 아니다. */
+  /** 이미 매주 반복되는 일정의 회차인가 — 그러면 반복은 고르는 값이 아니다. */
   recurring?: boolean;
 }
 
@@ -91,18 +91,14 @@ export function WorkLocationModal({
   const [timed, setTimed] = useState(!!(current?.startTime && current?.endTime));
   const [t1, setT1] = useState(current?.startTime ?? '09:00');
   const [t2, setT2] = useState(current?.endTime ?? '18:00');
-  // 되풀이 — 이미 매주 반복인 근무 위치를 열면 그 상태가 기본값이다(요청).
+  // 반복 — 이미 매주 반복인 근무 위치를 열면 그 상태가 기본값이다(요청).
   const [weekly, setWeekly] = useState(!!current?.recurring);
   const morphRef = useCardMorph();
   const needsLabel = kind !== 'homeOffice';
-  /** 하루짜리인가 — 되풀이는 여기에만 뜻이 있다(구간은 하루씩 여러 일정이다). */
+  /** 하루짜리인가 — 반복은 여기에만 뜻이 있다(구간은 하루씩 여러 일정이다). */
   const oneDay = timed || to <= from;
   const showRepeat = oneDay;
   const on = showRepeat && weekly;
-  /** 이미 반복인 것을 그 날만 떼어 내는 저장인가 — 발치가 그 사실을 말한다. */
-  const detaching = !!current?.recurring && showRepeat && !weekly;
-  /** 반복 자체를 고치는 저장인가 — 회차 하나가 아니라 그 반복 전체가 바뀐다. */
-  const wholeSeries = !!current?.recurring && on;
 
   const draft = (): WorkLocationDraft => ({
     kind,
@@ -114,7 +110,6 @@ export function WorkLocationModal({
   });
   // 하루에 요청 하나씩 나가므로 너무 긴 구간은 **막고 이유를 말한다**(조용히 잘라
   // 저장하면 고른 것과 저장된 것이 달라진다).
-  const days = workLocationDays(draft()).length;
   const tooLong = !timed && to > from && dayCount(from, to) > WORK_LOCATION_MAX_DAYS;
   const save = (): void => {
     if (!saving && !tooLong) onSave(draft());
@@ -138,23 +133,12 @@ export function WorkLocationModal({
     setT2(`${`${Math.floor(end / 60)}`.padStart(2, '0')}:${`${end % 60}`.padStart(2, '0')}`);
   };
 
-  // 발치는 **오류·상황**만 말한다. "저장 중"·"지우는 중"은 그 버튼이 스피너와 함께
-  // 말하므로 여기서 한 번 더 적지 않고(같은 말을 두 곳에서 하지 않는다), 도는 동안
-  // 앞으로 일어날 일을 설명하던 두 문구는 접는다(이미 일어나고 있다).
-  const footMsg =
-    error ??
-    (tooLong
-      ? `한 번에 ${WORK_LOCATION_MAX_DAYS}일까지 걸 수 있어요`
-      : days > 1
-        ? `${days}일에 걸어요`
-        : saving
-          ? ''
-          : wholeSeries
-            ? '매주 반복되는 근무 위치 전체가 바뀌어요'
-            : detaching
-              ? '이 날만 반복에서 떼어 내요'
-              : '');
-  const footTone = error || tooLong ? 'var(--mf-danger)' : 'var(--mf-faint2)';
+  // 발치는 **막는 것**만 말한다(요청: 지우기 왼쪽 문구 제거) — 오류와 상한이다.
+  // 앞으로 무슨 일이 일어나는지(반복 전체가 바뀐다 / 이 날만 떼어 낸다)는 그
+  // 선택지 곁의 `?`가 말한다: 늘 같은 설명을 발치에 걸어 두면 정작 막혔을 때
+  // 눈에 띌 자리가 없다. "저장 중"·"지우는 중"도 그 버튼이 스피너와 함께 말한다.
+  const footMsg = error ?? (tooLong ? `한 번에 ${WORK_LOCATION_MAX_DAYS}일까지 걸 수 있어요` : '');
+  const footTone = 'var(--mf-danger)';
 
   return (
     <Modal
@@ -293,22 +277,33 @@ export function WorkLocationModal({
             </span>
           </div>
 
-          {/* 되풀이(요청 ④) — 구글의 `근무 위치 수정` 화면과 같은 두 선택.
+          {/* 반복(요청 ④) — 구글의 `근무 위치 수정` 화면과 같은 두 선택.
               하루짜리에만 뜬다(구간은 이미 하루씩 여러 일정이다). */}
           {showRepeat && (
             <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-              <span style={{ fontSize: 11.5, fontWeight: 800, color: 'var(--mf-subtext)' }}>되풀이</span>
+              <span style={{ fontSize: 11.5, fontWeight: 800, color: 'var(--mf-subtext)' }}>반복</span>
               <RadioCards
-                label="근무 위치 되풀이"
+                label="근무 위치 반복"
                 value={weekly ? 'weekly' : 'once'}
                 onChange={(v) => setWeekly(v === 'weekly')}
                 grid={{ display: 'flex', flexDirection: 'column', gap: 6 }}
                 items={[
-                  { value: 'once', title: '선택한 날짜만', note: dayLabel(from) },
-                  { value: 'weekly', title: `${dayLabel(from)}부터 매주`, note: `${weekdayName(from)}요일` },
+                  {
+                    value: 'once',
+                    title: '선택한 날짜만',
+                    note: dayLabel(from),
+                    tip: current?.recurring ? '이 날만 반복에서 떼어 내요 — 나머지 회차는 그대로예요.' : '고른 날 하루에만 근무 위치를 걸어요.',
+                  },
+                  {
+                    value: 'weekly',
+                    title: `${dayLabel(from)}부터 매주`,
+                    note: `${weekdayName(from)}요일`,
+                    tip: current?.recurring ? '매주 반복되는 근무 위치 전체가 바뀌어요.' : `이 날부터 매주 ${weekdayName(from)}요일에 같은 근무 위치를 걸어요.`,
+                  },
                 ].map((o) => ({
                   value: o.value,
-                  label: `${o.title} · ${o.note}`,
+                  // 설명은 접근 이름에도 담는다 — `?`는 눈으로 보는 사람의 것이다.
+                  label: `${o.title} · ${o.note} · ${o.tip}`,
                   className: 'mf-ctl',
                   attrs: { 'data-work-repeat': o.value },
                   style: (sel: boolean) => ({
@@ -333,6 +328,14 @@ export function WorkLocationModal({
                       <span style={{ display: 'flex', flexDirection: 'column', gap: 1, minWidth: 0 }}>
                         <span style={{ fontSize: 12.5, fontWeight: 700, letterSpacing: '-.01em', whiteSpace: 'nowrap' }}>{o.title}</span>
                         <span style={{ fontSize: 10.5, fontWeight: 600, color: 'var(--mf-faint2)' }}>{o.note}</span>
+                      </span>
+                      <span style={{ flex: 1, minWidth: 0 }} />
+                      {/* 이 선택이 무엇을 하는지 — 손을 얹으면 말한다(요청). 라디오 칸
+                          **안**이라 버튼을 넣을 수 없어(중첩 금지) 순수 CSS 툴팁이다;
+                          같은 문장이 위 `label`(접근 이름)에도 들어가 있다. */}
+                      <span className="mf-tip" data-work-repeat-tip={o.value} aria-hidden="true">
+                        ?
+                        <span className="mf-tip-b">{o.tip}</span>
                       </span>
                     </>
                   ),
@@ -375,7 +378,7 @@ export function WorkLocationModal({
 
 const DOW = ['일', '월', '화', '수', '목', '금', '토'];
 
-/** `9월 16일 (수요일)` — 되풀이 선택지가 무엇을 가리키는지 그대로 적는다. */
+/** `9월 16일 (수요일)` — 반복 선택지가 무엇을 가리키는지 그대로 적는다. */
 function dayLabel(iso: string): string {
   const d = new Date(`${iso}T00:00:00`);
   if (Number.isNaN(d.getTime())) return iso;

@@ -17,6 +17,7 @@ import { NewSpaceModal } from './components/modals/NewSpaceModal';
 import { FolderModal } from './components/modals/FolderModal';
 import { MapRenameModal } from './components/modals/MapRenameModal';
 import { HomeContextMenu } from './components/HomeContextMenu';
+import { NotificationsProvider } from './components/NotificationsContext';
 import { Modals } from './components/modals/Modals';
 import { AccountSettingsModal } from './components/modals/AccountSettingsModal';
 import { DeleteAccountModal } from './components/modals/DeleteAccountModal';
@@ -114,6 +115,9 @@ export function Home() {
   // 더** 생겨 안쪽 목록(main) 스크롤과 이중이 됐다(제보: 최상단↔최하단 이동 시
   // 두 스크롤이 따로 움직임). 데스크톱에서는 100vh와 같다.
   return (
+    // 알림 우편함은 화면 셋(스페이스·대시보드·일정)이 함께 쓴다 — LNB의 벨과 폰
+    // ☰의 점이 **같은 수**를 봐야 하므로 상태를 여기서 한 벌만 든다.
+    <NotificationsProvider>
     <div className="mf-home" style={{ display: 'flex', height: '100dvh', width: '100%', background: 'var(--mf-bg)', fontFamily: "Pretendard, 'Pretendard-fallback', system-ui, sans-serif", color: 'var(--mf-text)', overflow: 'hidden' }}>
       {/* `instant`: Home의 로더는 뒤 배경을 함께 바꾸는 동작(새로 만들기=카드 추가,
           로그아웃/탈퇴=목록 정리)에 쓰이므로, 페이드인 중 반투명 구간으로 그 변화가
@@ -255,5 +259,6 @@ export function Home() {
       {/* 홈의 단 하나뿐인 메뉴 — 카드 ☰·카드 우클릭·빈 자리 우클릭이 모두 이걸 연다. */}
       <HomeContextMenu state={state} view={view} controller={controller} />
     </div>
+    </NotificationsProvider>
   );
 }

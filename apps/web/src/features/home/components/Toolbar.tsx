@@ -3,7 +3,7 @@ import type { HomeState } from '../types';
 import type { HomeViewModel } from '../viewModel';
 import { UNREAD_BADGE_BG } from '../theme';
 import { pillStyle, primaryPillStyle, roundIconStyle } from '../chrome';
-import { NotificationBell } from './NotificationBell';
+import { useNavDot } from './navDot';
 
 interface Props {
   state: HomeState;
@@ -151,6 +151,8 @@ function SelectionBar({ state, controller }: { state: HomeState; controller: Hom
  * 모두 32px 높이의 알약이라 한 줄에서 눈금이 맞는다(모바일은 44px 터치 타깃 유지).
  */
 export function Toolbar({ state, view, controller, isMobile = false, onOpenNav }: Props) {
+  // ☰의 점 — 훅이라 **이른 return 앞에서** 부른다(훅 순서 규칙).
+  const navDot = useNavDot(view.sharedUnread);
   // 선택 모드(모바일 전용)에서는 툴바 자리를 선택 바가 쓴다.
   if (isMobile && state.selectMode) return <SelectionBar state={state} controller={controller} />;
   const activeSpace = state.spaces.find((sp) => sp.id === state.activeSpace);
@@ -171,8 +173,8 @@ export function Toolbar({ state, view, controller, isMobile = false, onOpenNav }
             type="button"
             className="btn"
             onClick={onOpenNav}
-            title={view.sharedUnread > 0 ? `메뉴 열기 (새 공유 ${view.sharedUnread}개)` : '메뉴 열기'}
-            aria-label={view.sharedUnread > 0 ? `메뉴 열기, 확인하지 않은 공유 ${view.sharedUnread}개` : '메뉴 열기'}
+            title={navDot.title}
+            aria-label={navDot.label}
             style={{ position: 'relative', display: 'flex', alignItems: 'center', justifyContent: 'center', width: 44, height: 44, marginLeft: -12, marginRight: -6, border: 'none', borderRadius: 10, background: 'transparent', color: 'var(--mf-text)', cursor: 'pointer', padding: 0, flexShrink: 0 }}
           >
             <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
@@ -182,7 +184,7 @@ export function Toolbar({ state, view, controller, isMobile = false, onOpenNav }
             </svg>
             {/* 폰에서는 LNB가 서랍이라 그 안의 배지가 보이지 않는다 — 알림이 닫힌
                 문 뒤에 있으면 알림이 아니다. 문에도 점을 찍는다. */}
-            {view.sharedUnread > 0 && (
+            {navDot.on && (
               <span
                 data-unread-dot
                 aria-hidden="true"
@@ -208,17 +210,8 @@ export function Toolbar({ state, view, controller, isMobile = false, onOpenNav }
         ) : (
           <div className="mf-skel" aria-label="스페이스를 불러오는 중" style={{ height: 24, width: 150, borderRadius: 7, margin: '3px 0' }} />
         )}
-        {/* 모바일 알림 센터 — 액션 줄은 이미 꽉 차 있어(검색+아이콘 3개) 제목 줄의
-            오른쪽 끝에 둔다(앱 바 관례). 데스크톱 벨은 아래 묶음의 맨 앞에 있다. */}
-        {isMobile && (
-          <div style={{ marginLeft: 'auto' }}>
-            <NotificationBell isMobile />
-          </div>
-        )}
       </div>
       <div style={{ marginLeft: isMobile ? 0 : 'auto', width: isMobile ? '100%' : undefined, order: isMobile ? 3 : undefined, display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
-        {/* 알림 센터(종) — 읽는 동작이라 검색과 나란히 묶음의 맨 앞에 선다. */}
-        {!isMobile && <NotificationBell />}
         {view.isDriveSpace && view.connected && (
           <div
             onClick={controller.disconnectDrive}

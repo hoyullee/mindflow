@@ -467,7 +467,9 @@ describe('Context menu — closing', () => {
 });
 
 describe('Context menu — 디자인 이식(요청)', () => {
-  it('머리 줄·폭·행 높이·단축키·셰브론이 디자인 원본 값이다', async () => {
+  // 값의 출처는 앱 공통 `components/menuDesign.ts`다 — 기준은 칸반 카드 메뉴이고
+  // 캔버스·홈이 같은 값을 쓴다(제보: 같은 우클릭인데 화면마다 달랐다).
+  it('머리 줄·폭·행 높이·단축키·셰브론이 앱 공통 메뉴 값이다', async () => {
     localStorage.setItem('mindflow_doc_cmd1', JSON.stringify(DOC));
     const { container } = renderEditor('/editor?map=cmd1&title=x');
     const vp = getViewport(container);
@@ -477,9 +479,9 @@ describe('Context menu — 디자인 이식(요청)', () => {
     rightClickAt(vp, clientX, clientY);
 
     const menu = await waitFor(() => document.querySelector('.mf-ctx') as HTMLElement);
-    expect(menu.style.width).toBe('226px');
-    expect(menu.style.borderRadius).toBe('15px');
-    expect(menu.style.animation).toContain('mf-ctx-pop'); // 열림 애니메이션(요청)
+    expect(menu.style.width).toBe('244px');
+    expect(menu.style.borderRadius).toBe('14px');
+    expect(menu.className).toContain('mf-menu-pop'); // 열림 애니메이션(요청)
 
     // 머리 = [색 점 · 대상 이름]
     const head = menu.querySelector('[data-ctx-head]') as HTMLElement;
@@ -489,7 +491,9 @@ describe('Context menu — 디자인 이식(요청)', () => {
     // 행 높이 34 + 단축키 표기 — 같은 메뉴 안에서 겹치지 않는다(요청)
     const rows = Array.from(menu.querySelectorAll('button'));
     const addChild = rows.find((b) => b.textContent?.startsWith('하위 주제 추가')) as HTMLElement;
-    expect(addChild.style.height).toBe('34px');
+    expect(addChild.style.minHeight).toBe('38px');
+    expect(addChild.style.fontSize).toBe('13.5px');
+    expect(addChild.className).toContain('mf-menu-row');
     const keys = Array.from(menu.querySelectorAll('[data-ctx-keys]')).map((k) => k.textContent ?? '');
     expect(keys).toContain('Tab');
     expect(keys.some((k) => k === 'Ctrl+C' || k === '\u2318C')).toBe(true);
@@ -502,7 +506,7 @@ describe('Context menu — 디자인 이식(요청)', () => {
     expect(alignRow.querySelector('svg path[d="m10 6 6 6-6 6"]')).toBeTruthy();
   });
 
-  it('배경 메뉴 머리는 캔버스, 플라이아웃은 172px 카드다', async () => {
+  it('배경 메뉴 머리는 캔버스, 플라이아웃은 176px 카드다', async () => {
     localStorage.setItem('mindflow_doc_cmd2', JSON.stringify(DOC));
     const { container } = renderEditor('/editor?map=cmd2&title=x');
     const vp = getViewport(container);
@@ -519,10 +523,10 @@ describe('Context menu — 디자인 이식(요청)', () => {
     menu = await waitFor(() => document.querySelector('.mf-ctx') as HTMLElement);
     clickMenuItem(Array.from(menu.querySelectorAll('button')).find((b) => b.textContent?.startsWith('텍스트 정렬')) as Element);
     const fly = await waitFor(() => Array.from(document.querySelectorAll('.mf-ctx')).find((el) => el !== menu) as HTMLElement);
-    expect(fly.style.width).toBe('172px');
+    expect(fly.style.width).toBe('176px');
     expect(fly.style.borderRadius).toBe('14px');
     const flyRow = fly.querySelector('button') as HTMLElement;
-    expect(flyRow.style.height).toBe('32px');
+    expect(flyRow.style.minHeight).toBe('34px');
   });
 });
 

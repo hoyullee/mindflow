@@ -123,6 +123,7 @@ export function GoogleEventFields({
   organizer,
   directory,
   when,
+  attendeesLock,
 }: {
   value: GoogleFieldsValue;
   onChange: (patch: GoogleFieldsChange) => void;
@@ -139,6 +140,13 @@ export function GoogleEventFields({
   organizer?: { email: string; name?: string; self?: true };
   /** 선택 스코프로 열리는 것들 — 없으면 이름 검색·회의실이 빠진다. */
   directory?: GoogleDirectoryApi;
+  /**
+   * **명단을 여기서 고칠 수 없는 일정**(요청 — 구글 캘린더의 그 안내). 구글이 참석자를
+   * 잘라 보냈거나(`omitted`, 사람이 아주 많은 일정) 참석자끼리 명단을 못 보는
+   * 설정(`hidden`)이면, 우리가 든 목록은 **전부가 아니다** — 그대로 다시 쓰면 못 받은
+   * 사람이 조용히 초대 취소되므로 편집을 잠그고 이유를 말한다.
+   */
+  attendeesLock?: 'omitted' | 'hidden' | null;
   /**
    * 이 일정이 차지하는 구간(요청 ③) — 회의실 행이 "그 시간에 비어 있는가"를 말하는
    * 근거다. 초안이 바뀌면 함께 바뀌어야 한다(저장된 값만 보면 시간을 고치는 동안
@@ -200,7 +208,15 @@ export function GoogleEventFields({
             </Field>
           ) : null}
           {value.rsvp !== undefined ? (
-            <Field label="참석 여부" {...(value.rsvp === 'needsAction' ? { sub: '아직 응답하지 않았어요' } : {})}>
+            <Field label="참석 여부" {...(value.rsvp === 'needsAction' && !attendeesLock ? { sub: '아직 응답하지 않았어요' } : {})}>
+              {/* 명단이 잘려 온 일정에서는 응답도 여기서 바꾸지 않는다 — 응답을 쓰려면
+                  참석자 **배열 전체**를 다시 보내야 하는데(구글의 PATCH 규칙) 그 목록이
+                  전부가 아니다. 지금 답만 보여 주고 바꾸는 일은 구글에 맡긴다. */}
+              {attendeesLock ? (
+                <span data-gf-rsvp-locked style={{ padding: '10px 12px', borderRadius: 12, background: 'var(--mf-card)', border: '1px solid var(--mf-border-soft)', fontSize: 11.5, color: 'var(--mf-faint)', lineHeight: 1.6 }}>
+                  {RSVP_OPTS.find((o) => o.v === value.rsvp)?.label ?? '아직 응답하지 않았어요'} · 참석자 명단이 숨겨진 일정이라 응답도 Google 캘린더에서 바꿔 주세요.
+                </span>
+              ) : (
               <Segments
                 aria="참석 여부"
                 items={RSVP_OPTS.map((o) => ({ value: o.v, label: o.label }))}
@@ -209,6 +225,7 @@ export function GoogleEventFields({
                 attr="data-gf-rsvp"
                 wide
               />
+              )}
             </Field>
           ) : null}
         </div>
@@ -270,8 +287,16 @@ export function GoogleEventFields({
           싣지만, 초대한 사람과 초대받은 사람은 다른 자리다. 배열 자체에서는 지우지
           않는다(PATCH가 배열을 통째로 바꾸므로 빼고 보내면 주최자가 참석자에서
           떨어진다) — 화면에서만 가르고, 고칠 때 제자리에 되돌려 넣는다. */}
-      <Field label="참석자" sub={guestSub(guests.length, !!organizer && !organizer.self)}>
-        <Attendees list={guests} onChange={(next) => onChange({ attendees: withOrganizer(value.attendees, orgEmail, next) })} seedNames={{ ...knownNamesFor(value.attendees), ...(value.names ?? {}) }} {...(directory?.canSearchPeople ? { search: directory.searchPeople } : {})} />
+      <Field label="참석자" sub={attendeesLock ? undefined : guestSub(guests.length, !!organizer && !organizer.self)}>
+        {attendeesLock ? (
+          <span data-gf-guest-locked style={{ padding: '10px 12px', borderRadius: 12, background: 'var(--mf-card)', border: '1px solid var(--mf-border-soft)', fontSize: 11.5, color: 'var(--mf-faint)', lineHeight: 1.6 }}>
+            {attendeesLock === 'omitted'
+              ? '참석자 수가 너무 많아서 전체 참석자 명단이 숨겨졌습니다. 여기서 고치면 명단이 잘리므로 Google 캘린더에서 바꿔 주세요.'
+              : '이 일정은 참석자끼리 명단을 볼 수 없어요. 여기서 고치면 명단이 잘리므로 Google 캘린더에서 바꿔 주세요.'}
+          </span>
+        ) : (
+          <Attendees list={guests} onChange={(next) => onChange({ attendees: withOrganizer(value.attendees, orgEmail, next) })} seedNames={{ ...knownNamesFor(value.attendees), ...(value.names ?? {}) }} {...(directory?.canSearchPeople ? { search: directory.searchPeople } : {})} />
+        )}
       </Field>
 
       {/* 회의실 — 구획은 **항상 보인다**(요청). 목록이 있으면 검색 + 목록, 아직이면

@@ -135,9 +135,17 @@ export function markStyle(chip: EntryChip): CSSProperties {
  */
 export function dayNumTone(selected: boolean, isToday: boolean, dayInk?: string): CSSProperties {
   if (isToday) return { background: 'var(--mf-accent)', color: 'var(--mf-accent-ink)', fontWeight: 800, ...(selected ? { boxShadow: '0 0 0 3px var(--mf-accent-mute)' } : {}) };
-  // 고른 날은 **채운 원**이다(오늘과 같은 선택 언어). 다만 토·일·공휴일이면 그 원을
-  // **그 날의 색**으로 채운다(요청 ④) — 예전에는 무조건 잉크색으로 덮어 "이 날은
-  // 일요일이다"라는 신호가 고르는 순간 사라졌다. 지금은 파랑·빨강이 더 또렷하다.
-  if (selected) return { background: dayInk ?? 'var(--mf-text)', color: 'var(--mf-card)', fontWeight: 800 };
+  // 고른 날은 **채운 원**이다(오늘과 같은 선택 언어).
+  //
+  // 평일은 **오늘+선택의 후광과 같은 옅은 강조색**으로 채운다(요청: 검은 원이 안
+  // 어울린다 — 그 후광 색으로 채워 보자). 잉크색 원은 화면에서 가장 어두운 덩어리라
+  // 달력의 다른 어떤 것보다 무거웠고, 오늘(진한 강조색 원)과도 뜻이 갈리지 않았다.
+  // 글자는 본문 잉크 — 옅은 면 위라 또렷하다.
+  //
+  // 토·일·공휴일은 **그 날의 색**으로 채운다(그대로) — 고르는 순간 "이 날은
+  // 일요일이다"라는 신호가 사라지지 않게.
+  if (selected) return dayInk
+    ? { background: dayInk, color: 'var(--mf-card)', fontWeight: 800 }
+    : { background: 'var(--mf-accent-mute)', color: 'var(--mf-text)', fontWeight: 800 };
   return {};
 }

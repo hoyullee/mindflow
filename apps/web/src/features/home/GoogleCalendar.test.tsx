@@ -820,6 +820,66 @@ describe('구글 캘린더 겹치기(PR5)', () => {
     expect(row.querySelector('span[aria-hidden]')?.textContent).toBe('N');
   });
 
+  // 요청 — 구글 캘린더는 참석자가 아주 많으면 "참석자 수가 너무 많아서 전체 참석자
+  // 명단이 숨겨졌습니다"라고 알린다. 우리에게는 **저장의 문제**이기도 하다: 구글의
+  // PATCH는 참석자 배열을 통째로 바꾸므로, 잘려 온 목록을 그대로 다시 쓰면 못 받은
+  // 사람이 조용히 초대 취소된다.
+  it('참석자가 잘려 온 일정은 안내를 띄우고 명단·응답 편집을 잠근다', async () => {
+    seed({ calendars: ['me@example.com'] });
+    seedToken();
+    stubGis();
+    const meeting = inMonth(1);
+    const patches: unknown[] = [];
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (url: string, init?: RequestInit) => {
+        const ok = (body: unknown) => ({ ok: true, status: 200, json: async () => body }) as unknown as Response;
+        if (init?.method === 'PATCH') {
+          patches.push(JSON.parse(String(init.body)));
+          return ok({});
+        }
+        if (url.includes('/users/me/calendarList')) return ok({ items: [{ id: 'me@example.com', summary: '내 캘린더', primary: true, accessRole: 'owner' }] });
+        return ok({
+          items: [
+            {
+              id: 'g1',
+              summary: '전사 미팅',
+              etag: '"1"',
+              start: { dateTime: `${meeting}T09:00:00+09:00` },
+              end: { dateTime: `${meeting}T10:00:00+09:00` },
+              attendeesOmitted: true,
+              organizer: { email: 'boss@example.com', displayName: '대표' },
+              attendees: [{ email: 'me@example.com', self: true, responseStatus: 'needsAction' }],
+            },
+          ],
+        });
+      }),
+    );
+    clientId = 'test-client.apps.googleusercontent.com';
+    const user = userEvent.setup();
+    const { container } = renderHome();
+    const pop = await openGoogleChip(container, user, /전사 미팅/);
+
+    // 안내가 뜨고, 초대 입력·응답 세그먼트는 그리지 않는다.
+    const note = await waitFor(() => {
+      const el = pop.querySelector('[data-gf-guest-locked]');
+      expect(el).toBeTruthy();
+      return el as HTMLElement;
+    });
+    expect(note.textContent).toContain('참석자 수가 너무 많아서');
+    expect(pop.querySelector('[data-gf-guest-input]')).toBeNull();
+    expect(pop.querySelector('[data-gf-rsvp]')).toBeNull();
+    expect(pop.querySelector('[data-gf-rsvp-locked]')).toBeTruthy();
+
+    // 제목만 고쳐 저장해도 참석자는 **싣지 않는다**(실으면 명단이 잘린다).
+    const title = pop.querySelector('[data-event-title]') as HTMLInputElement;
+    fireEvent.change(title, { target: { value: '전사 미팅 v2' } });
+    fireEvent.blur(title);
+    await user.click(pop.querySelector('[data-event-done]') as HTMLElement);
+    await waitFor(() => expect(patches.length).toBe(1));
+    expect(Object.keys(patches[0] as Record<string, unknown>)).toEqual(['summary']);
+  });
+
   // 제보 — 일정 화면을 열어 둔 채 구글 캘린더에서 일정을 더해도 우리 달력은 그대로였다.
   // 구글이 정본이므로 다시 물어야 한다: 탭으로 **돌아오는 순간**이 그 계기다.
   it('열어 둔 채 구글에서 일정이 늘면, 탭으로 돌아올 때 잡아 온다', async () => {
@@ -2631,7 +2691,9 @@ describe('구글 캘린더 겹치기(PR5)', () => {
       // 종료 날짜를 이틀 뒤로 → 사흘에 걸린다.
       fireEvent.click(modal.querySelector('[data-work-to]')!);
       fireEvent.click(document.querySelector(`[data-datepop-day="${inMonth(4)}"]`)!);
-      await waitFor(() => expect(modal.querySelector('[data-work-foot]')?.textContent).toContain('3일에 걸어요'));
+      // 발치는 이제 **막는 것**만 말한다(요청) — 며칠에 걸리는지는 두 날짜 버튼이 말한다.
+      await waitFor(() => expect(modal.querySelector('[data-work-to]')?.textContent).toContain('일'));
+      expect(modal.querySelector('[data-work-foot]')?.textContent ?? '').toBe('');
       fireEvent.click(modal.querySelector('[data-work-save]')!);
       await waitFor(() => {
         const writes = f.mock.calls.filter((c) => ['POST', 'PATCH'].includes((c[1] as { method?: string } | undefined)?.method ?? ''));
@@ -2778,7 +2840,7 @@ describe('구글 캘린더 겹치기(PR5)', () => {
       expect(modal.querySelector<HTMLInputElement>('[data-work-label]')?.value).toBe('판교 5층');
     });
 
-    it('하루짜리에는 `선택한 날짜만 / …부터 매주` 되풀이가 뜨고, 매주는 규칙으로 저장된다(요청 ④)', async () => {
+    it('하루짜리에는 `선택한 날짜만 / …부터 매주` 반복가 뜨고, 매주는 규칙으로 저장된다(요청 ④)', async () => {
       seed({ calendars: ['me@example.com'] });
       seedToken();
       stubGis();
@@ -2810,7 +2872,7 @@ describe('구글 캘린더 겹치기(PR5)', () => {
       expect(f.mock.calls.filter((c) => (c[1] as { method?: string } | undefined)?.method === 'POST')).toHaveLength(1);
     });
 
-    it('반복 회차를 열어도 되풀이 메뉴가 뜨고(`매주` 켜짐), 회차를 PATCH하지 않는다(라이브 400 수리)', async () => {
+    it('반복 회차를 열어도 반복 메뉴가 뜨고(`매주` 켜짐), 회차를 PATCH하지 않는다(라이브 400 수리)', async () => {
       seed({ calendars: ['me@example.com'] });
       seedToken();
       stubGis();
@@ -2904,8 +2966,10 @@ describe('구글 캘린더 겹치기(PR5)', () => {
         return el as HTMLElement;
       });
       fireEvent.click(modal.querySelector('[data-work-repeat="once"]')!);
-      // 발치가 무슨 일이 일어나는지 말한다.
-      expect(modal.querySelector('[data-work-foot]')?.textContent).toContain('떼어 내요');
+      // 무슨 일이 일어나는지는 그 선택지 곁의 `?`가 말한다(요청: 발치 문구 제거).
+      expect(modal.querySelector('[data-work-repeat-tip="once"]')?.textContent).toContain('떼어 내요');
+      expect(modal.querySelector('[data-work-repeat="once"]')?.getAttribute('aria-label')).toContain('떼어 내요');
+      expect(modal.querySelector('[data-work-foot]')?.textContent ?? '').toBe('');
       fireEvent.click(modal.querySelector('[data-work-save]')!);
       await waitFor(() => {
         const del = f.mock.calls.find((c) => (c[1] as { method?: string } | undefined)?.method === 'DELETE');
@@ -2922,7 +2986,7 @@ describe('구글 캘린더 겹치기(PR5)', () => {
       expect(f.mock.calls.some((c) => (c[1] as { method?: string } | undefined)?.method === 'PATCH')).toBe(false);
     });
 
-    it('구간을 고르면 되풀이 선택이 사라지고, 안내 문구도 없다(요청 ④⑤)', async () => {
+    it('구간을 고르면 반복 선택이 사라지고, 안내 문구도 없다(요청 ④⑤)', async () => {
       seed({ calendars: ['me@example.com'] });
       seedToken();
       stubGis();
@@ -2939,7 +3003,7 @@ describe('구글 캘린더 겹치기(PR5)', () => {
       expect(modal.querySelector('[data-work-note]')).toBeNull();
       expect(modal.textContent).not.toContain('Google 캘린더 설정에서');
       expect(modal.querySelector('[data-work-repeat="weekly"]')).toBeTruthy();
-      // 종료 날짜를 뒤로 밀면 하루짜리가 아니므로 되풀이는 뜻이 없다.
+      // 종료 날짜를 뒤로 밀면 하루짜리가 아니므로 반복는 뜻이 없다.
       fireEvent.click(modal.querySelector('[data-work-to]')!);
       const cell = await waitFor(() => {
         const el = document.querySelector(`[data-datepop-day="${inMonth(4)}"]`);

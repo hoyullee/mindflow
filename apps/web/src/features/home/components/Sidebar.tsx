@@ -4,6 +4,7 @@ import type { HomeState } from '../types';
 import type { DocKindName, HomeViewModel } from '../viewModel';
 import { UNREAD_BADGE_BG, UNREAD_BADGE_INK } from '../theme';
 import { SettingsPopover } from './SettingsPopover';
+import { NotificationBell } from './NotificationBell';
 import { DashboardSection, ReorderToggle } from './DashboardSection';
 import { SpaceRow } from './SpaceRow';
 import { META_MONO, SECTION_LABEL } from '../chrome';
@@ -142,6 +143,14 @@ export function Sidebar({ state, view, controller, isMobile = false, isOpen = fa
         }}
       >
         <SettingsPopover state={state} controller={controller} userInitial={view.userInitial} />
+
+      {/* 알림 — 프로필 바로 아래(요청: 어느 영역에서든 확인할 수 있게 LNB로).
+          "나에게 무슨 일이 있었나"는 스페이스·대시보드 같은 **그릇**이 아니라 내
+          정체성에 딸린 것이라 그 블록과 붙여 둔다(Notion·Linear·Slack의 자리).
+          예전에는 스페이스 툴바에만 있어 대시보드·일정 화면에는 아예 없었다. */}
+      <div style={{ flexShrink: 0, paddingTop: 6 }}>
+        <NotificationBell isMobile={isMobile} />
+      </div>
 
       {/* 대시보드 구획 — 스페이스 위(디자인 원본의 순서). 요청 범위: 기존 홈 디자인에
           더하는 것은 이 구획과 스페이스 정렬 토글뿐이다. */}

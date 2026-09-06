@@ -34,6 +34,7 @@ import { mapHref, readDocRaw } from '../storage';
 import { formatLastEdited } from '../timeFormat';
 import { META_MONO } from '../chrome';
 import { UNREAD_BADGE_BG } from '../theme';
+import { useNavDot } from './navDot';
 
 /**
  * 대시보드 보기 — 디자인 원본 `Geurio 홈 대시보드.dc.html`의 isDash 화면.
@@ -171,6 +172,7 @@ export function DashboardView({ state, view, controller, isMobile = false, onOpe
   // 발화하지 않는 마우스 제스처라 데스크톱 전용이고, 순서는 길게 눌러 여는
   // 메뉴의 "맨 앞으로 옮기기"가 맡는다(안내 띠가 기기별로 그렇게 말한다).
   const edit = state.dashEdit;
+  const navDot = useNavDot(view.sharedUnread);
   const gridRef = useRef<HTMLDivElement | null>(null);
   const [dragIdx, setDragIdx] = useState<number | null>(null);
   // 리사이즈 중의 라이브 크기 — 커밋은 손을 뗄 때 한 번(undo·저장이 한 단계).
@@ -247,8 +249,8 @@ export function DashboardView({ state, view, controller, isMobile = false, onOpe
                 type="button"
                 className="btn"
                 onClick={onOpenNav}
-                title={view.sharedUnread > 0 ? `메뉴 열기 (새 공유 ${view.sharedUnread}개)` : '메뉴 열기'}
-                aria-label={view.sharedUnread > 0 ? `메뉴 열기, 확인하지 않은 공유 ${view.sharedUnread}개` : '메뉴 열기'}
+                title={navDot.title}
+                aria-label={navDot.label}
                 style={{ position: 'relative', display: 'flex', alignItems: 'center', justifyContent: 'center', width: 44, height: 44, marginLeft: -12, marginRight: -6, marginTop: -6, marginBottom: -6, border: 'none', borderRadius: 10, background: 'transparent', color: '#F7EFE8', cursor: 'pointer', padding: 0, flexShrink: 0 }}
               >
                 <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
@@ -256,7 +258,7 @@ export function DashboardView({ state, view, controller, isMobile = false, onOpe
                   <line x1="4" y1="12" x2="20" y2="12" />
                   <line x1="4" y1="17" x2="20" y2="17" />
                 </svg>
-                {view.sharedUnread > 0 && <span data-unread-dot aria-hidden="true" style={{ position: 'absolute', top: 9, right: 9, width: 8, height: 8, borderRadius: '50%', background: UNREAD_BADGE_BG, border: '2px solid #332E29' }} />}
+                {navDot.on && <span data-unread-dot aria-hidden="true" style={{ position: 'absolute', top: 9, right: 9, width: 8, height: 8, borderRadius: '50%', background: UNREAD_BADGE_BG, border: '2px solid #332E29' }} />}
               </button>
             )}
             <h2 style={{ margin: 0, display: 'flex', alignItems: 'center', gap: 9, fontSize: 25, fontWeight: 800, letterSpacing: '-.035em', color: '#F7EFE8', whiteSpace: 'nowrap' }}>

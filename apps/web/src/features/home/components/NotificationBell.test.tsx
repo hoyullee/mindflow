@@ -2,6 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { MemoryRouter, Route, Routes, useLocation } from 'react-router-dom';
 import { NotificationBell } from './NotificationBell';
+import { NotificationsProvider } from './NotificationsContext';
 import { pushLocalNotification, readLocalNotifications, writeLocalNotifications, type StoredNotification } from '../../../adapters/local/localNotifications';
 
 // 홈 알림 센터(0022의 로컬 짝) — 벨 배지·열기=읽음 처리·항목 클릭=딥링크.
@@ -11,22 +12,26 @@ function LocationProbe() {
   return <div data-testid="loc">{loc.pathname + loc.search}</div>;
 }
 
-function renderBell() {
+function renderBell(isMobile = false) {
+  // 상태(목록·안 읽음 수)는 공급자가 든다 — 실제 앱에서는 `Home`이 감싼다(LNB의
+  // 벨과 폰 ☰의 점이 같은 수를 봐야 한다).
   return render(
+    <NotificationsProvider>
     <MemoryRouter initialEntries={['/']}>
       <Routes>
         <Route
           path="/"
           element={
             <>
-              <NotificationBell />
+              <NotificationBell isMobile={isMobile} />
               <LocationProbe />
             </>
           }
         />
         <Route path="/editor" element={<LocationProbe />} />
       </Routes>
-    </MemoryRouter>,
+    </MemoryRouter>
+    </NotificationsProvider>,
   );
 }
 
@@ -106,20 +111,17 @@ describe('알림 센터', () => {
     await waitFor(() => expect(screen.getByTestId('loc').textContent).toBe('/editor?map=d3'));
   });
 
-  it('패널은 다듬은 스크롤바 클래스(.notif-scroll)를 쓰고, 모바일 벨은 고스트 아이콘이다(제보 2건)', async () => {
+  it('패널은 다듬은 스크롤바 클래스(.notif-scroll)를 쓰고, 벨은 LNB 행이다(요청)', async () => {
     seed([{}]);
-    render(
-      <MemoryRouter initialEntries={['/']}>
-        <Routes>
-          <Route path="/" element={<NotificationBell isMobile />} />
-        </Routes>
-      </MemoryRouter>,
-    );
+    renderBell(true);
     const bell = await screen.findByRole('button', { name: '알림 1개' });
-    // 모바일: 좁은 앱 바에서 박스형 버튼은 깨져 보인다 — ☰과 같은 고스트(테두리·면 없음).
-    expect(bell.getAttribute('style') || '').not.toContain('border: 1px solid'); // 박스형 테두리가 없다(jsdom은 border:none을 직렬화하지 않는다)
+    // LNB의 다른 행(`일정`·대시보드)과 같은 문법 — 34px(폰 44px)·radius 10·
+    // 글리프 + 이름 + 오른쪽 끝 배지. 툴바의 박스형 아이콘 버튼이 아니다.
+    expect(bell.hasAttribute('data-notification-nav')).toBe(true);
+    expect(bell.className).toContain('nav-item');
+    expect(bell.style.minHeight).toBe('44px'); // 폰 터치 타깃
     expect(bell.style.background).toBe('transparent');
-    expect(bell.querySelector('svg')?.getAttribute('width')).toBe('20');
+    expect(bell.textContent).toContain('알림');
     fireEvent.click(bell);
     const panel = await screen.findByRole('region', { name: '알림 센터' });
     // 목록이 길어질 때 기본 스크롤바가 패널을 가리지 않게 — .lnb-scroll과 같은 처리.
@@ -205,5 +207,29 @@ describe('알림 센터', () => {
     } finally {
       vi.useRealTimers();
     }
+  });
+});
+
+describe('알림 자리 — LNB(요청)', () => {
+  it('☰의 점은 알림·공유를 **하나로** 합쳐 말한다', async () => {
+    const { navDotOf } = await import('./navDot');
+    expect(navDotOf(0, 0)).toEqual({ on: false, title: '메뉴 열기', label: '메뉴 열기' });
+    expect(navDotOf(0, 2).on).toBe(true);
+    expect(navDotOf(0, 2).title).toContain('새 알림 2개');
+    expect(navDotOf(3, 0).title).toContain('새 공유 3개');
+    // 둘 다 있으면 점은 하나, 문구가 둘 다 말한다.
+    const both = navDotOf(3, 2);
+    expect(both.label).toContain('새 알림 2개');
+    expect(both.label).toContain('새 공유 3개');
+  });
+
+  it('패널은 LNB 옆으로 뻗는다 — 사이드바 목록을 덮지 않게(데스크톱)', async () => {
+    seed([{}]);
+    renderBell();
+    fireEvent.click(await screen.findByRole('button', { name: '알림 1개' }));
+    const panel = await screen.findByRole('region', { name: '알림 센터' });
+    // jsdom에는 레이아웃이 없어 Radix의 실제 side 판정을 믿을 수 없다 —
+    // 우리가 정하는 값(패널이 자라나는 기준점)으로 계약을 고정한다.
+    expect(panel.style.transformOrigin).toBe('left top');
   });
 });

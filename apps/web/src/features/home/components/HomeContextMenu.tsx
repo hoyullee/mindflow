@@ -9,6 +9,14 @@ import { useIsMobile } from '../../../hooks/useMediaQuery';
 import { docKindOf } from '../viewModel';
 import { isCalItem, sizesFor } from '../dashboard/model';
 import { mapHref } from '../storage';
+import {
+  CSS_MENU_TONE,
+  MENU_GLYPH_STYLE,
+  MENU_LABEL_STYLE,
+  menuDividerStyle,
+  menuPanelStyle,
+  menuRowStyle,
+} from '../../../components/menuDesign';
 
 /**
  * 홈의 **단 하나뿐인** 메뉴 — 맵 카드·폴더·빈 배경이 모두 이걸 쓴다.
@@ -42,53 +50,34 @@ export interface HomeMenuItem {
   onSelect?: () => void;
 }
 
-const MENU_W = 184;
-const SUB_W = 196;
-/** 손가락용 행 높이 — 앱 전체가 지켜 온 44px 터치 타깃 규칙. */
-const TOUCH_ROW_H = 44;
+/** 폭만 이 메뉴가 정한다 — 나머지(행 높이·글자·간격·그림자·hover)는 앱의 우클릭
+ * 메뉴 디자인 한곳(`components/menuDesign.ts`)에서 온다. 기준은 칸반 카드 메뉴다. */
+const MENU_W = 216;
+const SUB_W = 208;
 const MARGIN = 8;
 
-const rowStyle = (item: HomeMenuItem, isMobile: boolean): CSSProperties => ({
-  display: 'flex',
-  alignItems: 'center',
-  gap: 9,
-  width: '100%',
-  minHeight: isMobile ? TOUCH_ROW_H : undefined,
-  padding: isMobile ? '10px 14px' : '8px 12px',
-  border: 'none',
-  background: 'transparent',
-  fontFamily: 'inherit',
-  fontSize: 13,
-  textAlign: 'left',
-  lineHeight: 1.3,
-  cursor: item.disabled ? 'not-allowed' : 'pointer',
-  color: item.disabled ? 'var(--mf-faint2)' : item.danger ? 'var(--mf-danger)' : 'var(--mf-text)',
-});
+const rowStyle = (item: HomeMenuItem, isMobile: boolean): CSSProperties =>
+  menuRowStyle(CSS_MENU_TONE, { touch: isMobile, danger: item.danger, disabled: item.disabled });
 
 /** 행 내용 — 항목과 플라이아웃 부모가 같은 모양을 쓴다. */
 function RowBody({ item }: { item: HomeMenuItem }) {
   return (
     <>
-      {item.icon && <span style={{ display: 'flex', flexShrink: 0, color: item.danger ? 'inherit' : 'var(--mf-subtext)' }}>{item.icon}</span>}
-      <span style={{ flex: 1, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{item.label}</span>
-      {item.submenu && <span style={{ color: 'var(--mf-faint)', flexShrink: 0 }}>›</span>}
+      {/* 아이콘 색은 **글자를 따른다** — hover에서 라벨과 함께 강조색이 된다. */}
+      {item.icon && <span style={MENU_GLYPH_STYLE}>{item.icon}</span>}
+      <span style={MENU_LABEL_STYLE}>{item.label}</span>
+      {item.submenu && <span style={{ ...MENU_GLYPH_STYLE, width: 14, opacity: 0.6 }}>›</span>}
     </>
   );
 }
 
-const SEP_STYLE: CSSProperties = { height: 1, background: 'var(--mf-border-soft)', margin: '4px 0' };
+const SEP_STYLE: CSSProperties = menuDividerStyle(CSS_MENU_TONE);
 
 /** 플라이아웃(하위 메뉴) 패널 — 본 메뉴와 같은 면·라운드·그늘. */
 const SUB_PANEL: CSSProperties = {
-  width: SUB_W,
+  ...menuPanelStyle(CSS_MENU_TONE, SUB_W),
   maxHeight: 'calc(100dvh - 24px)',
   overflowY: 'auto',
-  boxSizing: 'border-box',
-  background: 'var(--mf-panel)',
-  border: '1px solid var(--mf-border)',
-  borderRadius: 11,
-  boxShadow: '0 12px 32px rgba(0,0,0,.18)',
-  padding: '5px 0',
   zIndex: 141,
 };
 
@@ -149,7 +138,7 @@ export function HomeMenuPanel({
   const leaf = (item: HomeMenuItem) => (
     <DropdownMenu.Item
       key={item.key}
-      className="menu-row"
+      className="mf-menu-row"
       disabled={item.disabled}
       onSelect={() => run(item)}
       style={rowStyle(item, isMobile)}
@@ -199,15 +188,9 @@ export function HomeMenuPanel({
           onContextMenu={(e) => e.preventDefault()}
           onCloseAutoFocus={(e) => e.preventDefault()}
           style={{
-            width: MENU_W,
-            boxSizing: 'border-box',
+            ...menuPanelStyle(CSS_MENU_TONE, MENU_W),
             maxHeight: 'calc(100dvh - 16px)',
             overflowY: 'auto',
-            background: 'var(--mf-panel)',
-            border: '1px solid var(--mf-border)',
-            borderRadius: 11,
-            boxShadow: '0 12px 32px rgba(0,0,0,.18)',
-            padding: '5px 0',
             zIndex: 140,
           }}
         >
@@ -218,7 +201,7 @@ export function HomeMenuPanel({
                 <div key={item.key}>
                   {leaf(item)}
                   {/* 비활성 사유 — 행 아래 작은 글씨. 항목이 아니므로 화살표 이동에서 건너뛴다. */}
-                  {item.hint && <div style={{ padding: '0 12px 7px', fontSize: 11, color: 'var(--mf-faint2)', lineHeight: 1.4 }}>{item.hint}</div>}
+                  {item.hint && <div style={{ padding: '0 11px 7px 39px', fontSize: 11, color: 'var(--mf-faint2)', lineHeight: 1.4 }}>{item.hint}</div>}
                 </div>
               );
             }
@@ -227,7 +210,7 @@ export function HomeMenuPanel({
               return (
                 <div key={item.key}>
                   <DropdownMenu.Item
-                    className="menu-row"
+                    className="mf-menu-row"
                     aria-haspopup="menu"
                     aria-expanded={open}
                     // 부모 행은 **열기만** 한다 — 고르면 메뉴가 닫히는 기본 동작을 막는다.
@@ -235,12 +218,13 @@ export function HomeMenuPanel({
                       e.preventDefault();
                       setOpenSub(open ? null : item.key);
                     }}
-                    style={{ ...rowStyle(item, isMobile), background: open ? 'var(--mf-accent-soft)' : 'transparent' }}
+                    data-active={open ? '1' : undefined}
+                    style={rowStyle(item, isMobile)}
                   >
                     <RowBody item={item} />
                   </DropdownMenu.Item>
                   {open && (
-                    <div role="group" data-home-ctx-sub={item.key} data-inline="true" style={{ background: 'var(--mf-sunken)', borderTop: '1px solid var(--mf-border-soft)', borderBottom: '1px solid var(--mf-border-soft)', padding: '4px 0 4px 14px', maxHeight: 220, overflowY: 'auto' }}>
+                    <div role="group" data-home-ctx-sub={item.key} data-inline="true" style={{ background: 'var(--mf-sunken)', borderRadius: 9, padding: '4px 0 4px 12px', margin: '2px 0', maxHeight: 220, overflowY: 'auto' }}>
                       {item.submenu.map((sub) => (sub.key.startsWith('sep') ? <DropdownMenu.Separator key={sub.key} style={SEP_STYLE} /> : leaf(sub)))}
                     </div>
                   )}
@@ -249,7 +233,7 @@ export function HomeMenuPanel({
             }
             return (
               <DropdownMenu.Sub key={item.key} open={openSub === item.key} onOpenChange={(next) => setOpenSub(next ? item.key : null)}>
-                <DropdownMenu.SubTrigger className="menu-row" style={{ ...rowStyle(item, isMobile), background: openSub === item.key ? 'var(--mf-accent-soft)' : 'transparent' }}>
+                <DropdownMenu.SubTrigger className="mf-menu-row" data-active={openSub === item.key ? '1' : undefined} style={rowStyle(item, isMobile)}>
                   <RowBody item={item} />
                 </DropdownMenu.SubTrigger>
                 {/* 포털을 쓰지 않는다 — 하위 메뉴가 본 메뉴 안(`.mf-home-ctx`)에 남아야

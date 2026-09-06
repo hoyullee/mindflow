@@ -33,6 +33,7 @@ import { destChipStyle, destDotStyle, hhmm, QUICK_MINUTES } from './NewEventModa
 import { ReminderField } from './GoogleEventFields';
 import { EventColorField, type EventColorOption } from './eventColor';
 import { MapLink } from './fieldBits';
+import { RichMemo } from './RichMemo';
 import { DeleteConfirm, DeletingNote } from './DeleteConfirm';
 import type { CalendarEvent, CalendarEventInput } from '../../../adapters/ports';
 import { endRuleBefore, excludeOccurrence, parseRecurrence, recurrenceLabel } from './recurrence';
@@ -497,8 +498,11 @@ export function EventDetail({
                 <input aria-label="위치" data-event-loc value={draft.location} placeholder="주소 또는 장소 이름" maxLength={200} onChange={(e) => set({ location: e.target.value })} style={fieldStyle(false)} />
               </Field>
 
+              {/* 메모 — 서식이 있는 편집기(요청: 구글 캘린더와 같은 굵게·기울임·밑줄·
+                  번호·글머리·링크·서식 제거). 값은 HTML이고 두 원천이 같은 문자열을
+                  담는다(`richMemo.ts` 머리말). */}
               <Field label="메모">
-                <textarea aria-label="메모" data-event-note value={draft.note} placeholder="자유롭게 적어 두세요" maxLength={2000} onChange={(e) => set({ note: e.target.value })} style={fieldStyle(true)} />
+                <RichMemo value={draft.note} onChange={(html) => set({ note: html })} attr="data-event-note" />
               </Field>
 
               {/* 일정 색(요청) — 원천이 팔레트를 준 경우만. 저장은 `완료`에서 한 번이다. */}

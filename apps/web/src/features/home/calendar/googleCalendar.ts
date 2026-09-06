@@ -227,10 +227,37 @@ export interface GoogleEvent {
    * 떨어진다(제보). 없는 사람은 디렉터리 검색이 채우고, 그것도 없으면 로컬파트다.
    */
   names?: Record<string, string>;
+  /**
+   * **참석자가 잘려 왔다**(구글의 `attendeesOmitted`) — 사람이 아주 많은 일정에서
+   * 구글이 배열 일부만 돌려준 것이다. 그러면 우리가 든 명단은 **전부가 아니므로**,
+   * 그대로 다시 쓰면(PATCH는 배열을 통째로 바꾼다) 못 받은 사람들이 조용히
+   * 초대 취소된다. 화면이 그 사실을 말하고 참석자 편집을 잠근다.
+   */
+  attendeesOmitted?: true;
+  /**
+   * **참석자끼리 명단을 볼 수 없는 일정**(구글의 `guestsCanSeeOtherGuests: false`).
+   * 초대받은 사람에게는 구글이 자기 자신만 돌려주므로 위와 같은 위험이 있다
+   * (주최자에게는 전부 온다 — 그래서 잠그는 것은 주최자가 아닐 때다).
+   */
+  guestsHidden?: true;
 }
 
 /** 참석 여부 — 구글의 `responseStatus` 그대로. */
 export type GoogleRsvp = 'accepted' | 'declined' | 'tentative' | 'needsAction';
+
+/**
+ * **참석자 명단을 여기서 고칠 수 있는가** — 못 고치면 화면이 잠그고 이유를 말한다.
+ *
+ * 구글의 PATCH는 참석자 배열을 **통째로** 바꾼다. 그래서 우리가 든 명단이 전부가
+ * 아닐 때 그대로 다시 쓰면 못 받은 사람들이 조용히 초대 취소된다 — 사용자가 손대지
+ * 않은 것을 지우는 저장이라 막는 편이 맞다(진짜 명단은 구글 캘린더에서 고친다).
+ */
+export function attendeesLocked(g: Pick<GoogleEvent, 'attendeesOmitted' | 'guestsHidden' | 'organizer'>): 'omitted' | 'hidden' | null {
+  if (g.attendeesOmitted) return 'omitted';
+  // 주최자에게는 명단이 전부 온다 — 잠글 이유가 없다.
+  if (g.guestsHidden && !g.organizer?.self) return 'hidden';
+  return null;
+}
 
 /** 내 응답 — 초대받지 않은 일정(내가 만든 것 포함)에는 없다. */
 export function myRsvpOf(g: Pick<GoogleEvent, 'rsvps' | 'selfEmail'>): GoogleRsvp | undefined {
@@ -1002,6 +1029,9 @@ export function parseEvents(json: unknown, cal: GoogleCalendarMeta): GoogleEvent
         ? { workLocation: workLocationLabel(it.workingLocationProperties), ...(workLocationKindOf(it.workingLocationProperties) ? { workLocationKind: workLocationKindOf(it.workingLocationProperties)! } : {}) }
         : {}),
       ...remembered(parseAttendees(it.attendees), parseOrganizer(it.organizer)),
+      // 명단이 온전한가 — 아래 두 경우에는 **우리가 든 목록이 전부가 아니다**.
+      ...(it.attendeesOmitted === true ? { attendeesOmitted: true as const } : {}),
+      ...(it.guestsCanSeeOtherGuests === false ? { guestsHidden: true as const } : {}),
       ...(it.visibility === 'public' || it.visibility === 'private' ? { visibility: it.visibility } : {}),
       ...(it.transparency === 'transparent' ? { transparency: 'transparent' as const } : {}),
       ...parseReminders(it.reminders),

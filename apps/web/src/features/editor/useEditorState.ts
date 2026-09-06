@@ -260,7 +260,7 @@ type ObjDrag =
 
 type BgDrag =
   | { kind: 'pan'; pointerId: number; sx: number; sy: number; startPan: PanState; moved: boolean; touch?: boolean }
-  | { kind: 'marquee'; pointerId: number; startClientX: number; startClientY: number; x0: number; y0: number; moved: boolean };
+  | { kind: 'marquee'; pointerId: number; startClientX: number; startClientY: number; x0: number; y0: number; moved: boolean; additive: boolean };
 
 /** 격자 스냅 on/off — 이 기기의 입력 보조라 문서가 아니라 localStorage에 남는다. */
 const SNAP_PREF_KEY = 'mf_snap_grid';
@@ -2268,6 +2268,12 @@ export function useEditorState(): EditorController {
     const bgPoint = toCanvasPoint(e.clientX, e.clientY, viewportRef.current);
     const strokeId = e.button === 1 || e.button === 2 ? null : strokeAt(bgPoint);
     if (strokeId) {
+      // Shift+클릭 = 다중 선택에 넣고 빼기(다른 객체와 같은 규칙).
+      if (isAdditive(e)) {
+        cancelLongPress();
+        toggleMultiSelect('stroke', strokeId);
+        return;
+      }
       // 다중 선택 안의 획을 잡았다면 그룹 이동(다른 객체와 같은 규칙) — 여기서
       // 선택을 갈아치우면 방금 마퀴로 고른 것이 통째로 풀린다.
       const msNow = multiSelectionRef.current;
@@ -2338,7 +2344,8 @@ export function useEditorState(): EditorController {
       return;
     }
     const p = bgPoint;
-    dragRef.current = { kind: 'marquee', pointerId: e.pointerId, startClientX: e.clientX, startClientY: e.clientY, x0: p.x, y0: p.y, moved: false };
+    // Shift+드래그 = 기존 선택에 **더한다**(Shift+클릭과 같은 뜻 — 지우지 않는다).
+    dragRef.current = { kind: 'marquee', pointerId: e.pointerId, startClientX: e.clientX, startClientY: e.clientY, x0: p.x, y0: p.y, moved: false, additive: e.shiftKey };
     marqueeRectRef.current = { x0: p.x, y0: p.y, x1: p.x, y1: p.y };
     setMarquee(marqueeRectRef.current);
   }, [twoFingerStart]);
@@ -2425,8 +2432,12 @@ export function useEditorState(): EditorController {
       marqueeRectRef.current = null;
       setMarquee(null);
       if (!d.moved || !mq) {
-        setSelectionState(null);
-        setMultiSelectionState(null);
+        // Shift를 쥔 채 빈 곳을 눌렀다면 고르던 것을 지우지 않는다 — 더하려던 손이
+        // 빗나갔을 뿐이다.
+        if (!d.additive) {
+          setSelectionState(null);
+          setMultiSelectionState(null);
+        }
         return;
       }
       const rx0 = Math.min(mq.x0, mq.x1);
@@ -2475,6 +2486,20 @@ export function useEditorState(): EditorController {
           }
         }
       });
+      if (d.additive) {
+        // 기존 선택과 합친다(중복 없이) — 단일 선택도 집합의 일원이다.
+        const cur = multiSelectionRef.current;
+        const sel = selectionRef.current;
+        const base: MultiSelection = cur
+          ? { nodes: [...cur.nodes], floats: [...cur.floats], lines: [...cur.lines], strokes: [...cur.strokes] }
+          : { nodes: [], floats: [], lines: [], strokes: [] };
+        if (!cur && sel && sel.kind !== 'zone') base[`${sel.kind}s` as keyof MultiSelection] = [sel.id];
+        const uniq = (a: string[], b: string[]): string[] => Array.from(new Set([...a, ...b]));
+        nodes.splice(0, nodes.length, ...uniq(base.nodes, nodes));
+        floats.splice(0, floats.length, ...uniq(base.floats, floats));
+        lines.splice(0, lines.length, ...uniq(base.lines, lines));
+        strokes.splice(0, strokes.length, ...uniq(base.strokes, strokes));
+      }
       if (!nodes.length && !floats.length && !lines.length && !strokes.length) {
         setSelectionState(null);
         setMultiSelectionState(null);
@@ -5295,6 +5320,52 @@ export function useEditorState(): EditorController {
     return !!s && s.kind === kind && s.id === id;
   };
 
+  /**
+   * Shift+클릭 = 그 객체를 다중 선택에 **넣고 뺀다**(요청: 드래그로만 여러 개를
+   * 고를 수 있어 개별로 더할 수 없었다 — Figma·Keynote와 같은 관례).
+   *
+   * 지금 선택(단일이든 다중이든)을 한 집합으로 보고 클릭한 것 하나만 뒤집은 뒤
+   * **정규화**한다: 0개면 선택 해제, 1개면 단일 선택(다중 1개짜리 유령 상태를
+   * 만들지 않는다 — #4의 그 규칙), 그 밖은 다중.
+   *
+   * 영역(zone)은 `MultiSelection`에 자리가 없어(마퀴도 담지 않는다) 대상이 아니다.
+   */
+  const toggleMultiSelect = useCallback((kind: 'node' | 'float' | 'line' | 'stroke', id: string) => {
+    const cur = multiSelectionRef.current;
+    const sel = selectionRef.current;
+    const next: MultiSelection = cur
+      ? { nodes: [...cur.nodes], floats: [...cur.floats], lines: [...cur.lines], strokes: [...cur.strokes] }
+      : { nodes: [], floats: [], lines: [], strokes: [] };
+    // 단일 선택이 걸려 있으면 그것도 집합의 일원이다(영역만 담을 자리가 없다).
+    if (!cur && sel && sel.kind !== 'zone') {
+      const k = `${sel.kind}s` as keyof MultiSelection;
+      next[k] = [sel.id];
+    }
+    const bucket = `${kind}s` as keyof MultiSelection;
+    next[bucket] = next[bucket].includes(id) ? next[bucket].filter((x) => x !== id) : [...next[bucket], id];
+    const total = totalSelected(next);
+    setEditingNodeId(null);
+    setEditingFloatId(null);
+    if (total === 0) {
+      setSelectionState(null);
+      setMultiSelectionState(null);
+      return;
+    }
+    if (total === 1) {
+      const only = (['node', 'float', 'line', 'stroke'] as const)
+        .map((k) => ({ kind: k, id: next[`${k}s` as keyof MultiSelection][0] }))
+        .find((x) => !!x.id) as { kind: 'node' | 'float' | 'line' | 'stroke'; id: string };
+      setSelectionState({ kind: only.kind, id: only.id });
+      setMultiSelectionState(null);
+      return;
+    }
+    setSelectionState(null);
+    setMultiSelectionState(next);
+  }, []);
+
+  /** 이 포인터가 "하나 더 고르기"인가 — Shift(맥·윈도 공통). */
+  const isAdditive = (e: { shiftKey: boolean }): boolean => e.shiftKey;
+
   const beginNodeDrag = useCallback(
     (e: ReactPointerEvent, id: string) => {
       if (isPanButton(e)) return; // 우클릭·휠클릭 = 화면 이동 (배경으로 흘려보낸다)
@@ -5302,6 +5373,12 @@ export function useEditorState(): EditorController {
       // and let the press bubble to the background so a drag pans and a no-move
       // release selects (see `pendingTapRef`). Mouse keeps press-to-select+drag.
       // Exception: an already-selected node → start a move drag (option A).
+      // Shift+클릭 = 다중 선택에 넣고 빼기(드래그하지 않는다 — 고르는 조작이다).
+      if (isAdditive(e)) {
+        e.stopPropagation();
+        toggleMultiSelect('node', id);
+        return;
+      }
       if (e.pointerType === 'touch' && !isSelectedSingle('node', id)) {
         pendingTapRef.current = { kind: 'node', id };
         return;
@@ -5339,7 +5416,7 @@ export function useEditorState(): EditorController {
         });
       }
     },
-    [rootAnchor],
+    [rootAnchor, toggleMultiSelect],
   );
 
   const beginNodeResize = useCallback((e: ReactPointerEvent, id: string) => {
@@ -5361,6 +5438,11 @@ export function useEditorState(): EditorController {
 
   const beginFloatDrag = useCallback((e: ReactPointerEvent, id: string) => {
     if (isPanButton(e)) return; // 우클릭·휠클릭 = 화면 이동 (배경으로 흘려보낸다)
+    if (isAdditive(e)) {
+      e.stopPropagation();
+      toggleMultiSelect('float', id);
+      return;
+    }
     if (e.pointerType === 'touch' && !isSelectedSingle('float', id)) {
       pendingTapRef.current = { kind: 'float', id };
       return;
@@ -5377,7 +5459,7 @@ export function useEditorState(): EditorController {
     setSelectionState({ kind: 'float', id });
     setMultiSelectionState(null);
     startObjDrag({ kind: 'float', id, pointerId: e.pointerId, startClientX: e.clientX, startClientY: e.clientY, ox: f.x, oy: f.y });
-  }, []);
+  }, [toggleMultiSelect]);
 
   const beginFloatResize = useCallback((e: ReactPointerEvent, id: string) => {
     if (isPanButton(e)) return; // 우클릭·휠클릭 = 화면 이동 (배경으로 흘려보낸다)
@@ -5966,6 +6048,11 @@ export function useEditorState(): EditorController {
 
   const beginLineDrag = useCallback((e: ReactPointerEvent, id: string) => {
     if (isPanButton(e)) return; // 우클릭·휠클릭 = 화면 이동 (배경으로 흘려보낸다)
+    if (isAdditive(e)) {
+      e.stopPropagation();
+      toggleMultiSelect('line', id);
+      return;
+    }
     if (e.pointerType === 'touch' && !isSelectedSingle('line', id)) {
       pendingTapRef.current = { kind: 'line', id };
       return;
@@ -5982,7 +6069,7 @@ export function useEditorState(): EditorController {
     setSelectionState({ kind: 'line', id });
     setMultiSelectionState(null);
     startObjDrag({ kind: 'line-move', id, pointerId: e.pointerId, startClientX: e.clientX, startClientY: e.clientY, o: { x1: l.x1, y1: l.y1, x2: l.x2, y2: l.y2 } });
-  }, []);
+  }, [toggleMultiSelect]);
 
   // Move-handle drag (option B): a deliberate grip on the current selection that
   // starts its move drag on pointerdown. Dispatches to the same `begin*Drag` as a

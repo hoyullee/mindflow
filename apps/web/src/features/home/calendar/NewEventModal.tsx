@@ -23,6 +23,7 @@ import { TimeButton } from './TimePop';
 import { addDays, daysBetween, minutesOf, timeLabel, todayISO } from './model';
 import { RadioCards } from '../../../components/Segmented';
 import { GoogleEventFields, ReminderField, type GoogleDirectoryApi, type GoogleFieldsValue } from './GoogleEventFields';
+import { RichMemo } from './RichMemo';
 import { RecurrenceField } from './RecurrenceField';
 import { buildRecurrence, eventWindowIso, RECURRENCE_OFF, type RecurrenceSpec } from './googleCalendar';
 import { MapLink } from './fieldBits';
@@ -399,7 +400,8 @@ export function NewEventModal({
 
           <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
             <Label>메모</Label>
-            <textarea aria-label="메모" data-new-note value={note} onChange={(e) => setNote(e.target.value)} placeholder="자유롭게 적어 두세요" maxLength={2000} style={{ ...fieldStyle, height: 110, padding: '11px 12px', resize: 'vertical', lineHeight: 1.6 }} />
+            {/* 상세 팝업과 **같은 편집기**(요청) — 서식은 두 자리가 갈리면 한쪽에만 붙는다. */}
+            <RichMemo value={note} onChange={setNote} attr="data-new-note" />
           </div>
 
           {/* 좁은 화면 — 열을 나눌 폭이 없어 같은 열에 이어 붙인다. */}

@@ -153,8 +153,10 @@ export function CardDetail({ card, controller, theme: th, isMobile }: { card: Ka
       cardAttrs={{ 'data-card-detail': card.id }}
       cardClass={isMobile ? 'mf-kb-sheet' : 'mf-kb-modal'}
       card={{
-          // 두 단이므로 넓다 — 좁은 화면에서는 한 단으로 접힌다.
-          width: isMobile ? '100%' : 'min(1080px, 100%)',
+          // 두 단이므로 넓다 — 좁은 화면에서는 한 단으로 접힌다. 폭은 **새 일정
+          // 팝업과 같은 900**이다(제보: 너무 넓다): 두 단짜리 팝업이 화면마다 다른
+          // 폭이면 같은 종류의 창으로 읽히지 않는다.
+          width: isMobile ? '100%' : 'min(900px, 100%)',
           maxHeight: isMobile ? '88vh' : '86vh',
           display: 'flex',
           flexDirection: 'column',
