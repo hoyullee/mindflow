@@ -22,6 +22,7 @@ import { UNREAD_BADGE_BG, UNREAD_BADGE_INK } from '../theme';
 import { formatLastEdited } from '../timeFormat';
 import { MONO_FONT } from '../chrome';
 import { useNotifications } from './NotificationsContext';
+import { avatarLabel } from './ProfileAvatar';
 
 function lineOf(n: AppNotification): string {
   const who = n.actorName || '누군가';
@@ -78,11 +79,13 @@ function kindBadge(kind: AppNotification['kind']): [string, string, ReactNode] {
   return ['#EAF3EC', '#4E8C67', <path key="i" d="M20 12a7 7 0 0 1-7 7H9l-5 3 1.3-4.4A7 7 0 1 1 20 12z" />];
 }
 
-/** 오늘/이전 — 목록을 두 묶음으로 가른다(디자인 원본의 group header). */
-function groupOf(iso: string): '오늘' | '이전' {
+/** 오늘 / 이번 주 / 이전 — 목록의 묶음 머리(첨부 디자인). 일주일이 넘으면
+ * 상대 시간이 무의미해지므로 `이전` 하나로 접는다(카드 시각 표기와 같은 생각). */
+function groupOf(iso: string, now: Date = new Date()): '오늘' | '이번 주' | '이전' {
   const d = new Date(iso);
-  const now = new Date();
-  return d.getFullYear() === now.getFullYear() && d.getMonth() === now.getMonth() && d.getDate() === now.getDate() ? '오늘' : '이전';
+  const sameDay = d.getFullYear() === now.getFullYear() && d.getMonth() === now.getMonth() && d.getDate() === now.getDate();
+  if (sameDay) return '오늘';
+  return now.getTime() - d.getTime() < 7 * 24 * 3600_000 ? '이번 주' : '이전';
 }
 
 function hrefOf(n: AppNotification): string | null {
@@ -175,10 +178,12 @@ export function NotificationBell({ isMobile = false }: { isMobile?: boolean }) {
       }}
     >
       <span
+        data-bell-glyph
         style={{
+          // 벨은 **언제나 강조색**이다(요청) — 읽었는지 여부는 배지·요약 색이 말한다.
+          // 종이 톤을 함께 바꾸면 "알림 자리"라는 표식까지 흐려진다.
           display: 'inline-flex',
-          // 벨은 안 읽음일 때만 강조색 — 다 읽은 줄은 목록의 다른 행과 같은 톤이다.
-          color: hot || open ? 'var(--mf-accent)' : 'var(--mf-subtext)',
+          color: 'var(--mf-accent)',
           flexShrink: 0,
         }}
       >
@@ -293,7 +298,7 @@ export function NotificationBell({ isMobile = false }: { isMobile?: boolean }) {
               </button>
             )}
           </div>
-          <div className="notif-scroll" style={{ maxHeight: 'min(420px, 62vh)', overflowY: 'auto', padding: '0 8px 8px', display: 'flex', flexDirection: 'column', gap: 1 }}>
+          <div className="notif-scroll" style={{ maxHeight: 'min(420px, 62vh)', overflowY: 'auto', padding: '0 8px 8px', display: 'flex', flexDirection: 'column', gap: 4 }}>
             {items.length ? (
               items.map((n, i) => {
                 const href = hrefOf(n);
@@ -309,19 +314,25 @@ export function NotificationBell({ isMobile = false }: { isMobile?: boolean }) {
                     )}
                     <button
                       type="button"
-                      className="btn mf-ctl"
+                      className="btn mf-notif-row"
                       data-notification-item={n.kind}
+                      data-unread={isFresh ? '1' : undefined}
                       onClick={() => go(n)}
                       disabled={!href}
+                      // 댓글 본문은 한 줄 요약에 담지 않는다(디자인은 두 줄) —
+                      // 대신 툴팁에 남겨 잃지 않는다.
+                      title={n.preview || undefined}
                       style={{
                         display: 'flex',
                         alignItems: 'flex-start',
-                        gap: 10,
+                        gap: 11,
                         width: '100%',
-                        padding: 10,
+                        padding: '11px 12px',
                         border: 'none',
-                        borderRadius: 12,
-                        background: isFresh ? 'var(--mf-panel2)' : 'transparent',
+                        borderRadius: 14,
+                        // 안 읽은 줄만 **강조색 틴트 카드**(첨부 디자인) — 읽은 줄은
+                        // 면 없이 남는다. LNB 행과 같은 언어다.
+                        background: isFresh ? 'var(--mf-accent-soft)' : 'transparent',
                         cursor: href ? 'pointer' : 'default',
                         textAlign: 'left',
                         fontFamily: 'inherit',
@@ -329,9 +340,11 @@ export function NotificationBell({ isMobile = false }: { isMobile?: boolean }) {
                     >
                       {/* 얼굴 + 종류 미니 배지 — 누가, 무슨 일로. 색은 이름 시드라
                           같은 사람은 늘 같은 색이다. */}
-                      <span style={{ position: 'relative', width: 30, height: 30, flexShrink: 0 }}>
-                        <span style={{ width: 30, height: 30, borderRadius: 999, background: seedColor(who), color: '#fff', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', fontSize: 11, fontWeight: 800, letterSpacing: '-.02em' }}>
-                          {who.slice(0, 2)}
+                      <span style={{ position: 'relative', width: 34, height: 34, flexShrink: 0 }}>
+                        <span style={{ width: 34, height: 34, borderRadius: 999, background: seedColor(who), color: '#fff', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', fontSize: 12, fontWeight: 800, letterSpacing: '-.02em' }}>
+                          {/* 글자 규칙은 프로필 아바타와 **같은 함수**를 쓴다 —
+                              같은 사람이 화면마다 다른 글자로 보이면 안 된다. */}
+                          {avatarLabel(who)}
                         </span>
                         <span style={{ position: 'absolute', right: -3, bottom: -3, width: 16, height: 16, borderRadius: 999, background: kindBg, border: '1.5px solid var(--mf-card)', display: 'inline-flex', alignItems: 'center', justifyContent: 'center' }}>
                           <svg width="9" height="9" viewBox="0 0 24 24" fill="none" stroke={kindFg} strokeWidth="2.6" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
@@ -339,21 +352,20 @@ export function NotificationBell({ isMobile = false }: { isMobile?: boolean }) {
                           </svg>
                         </span>
                       </span>
-                      <span style={{ display: 'flex', flexDirection: 'column', gap: 3, minWidth: 0, flex: 1 }}>
+                      <span style={{ display: 'flex', flexDirection: 'column', gap: 5, minWidth: 0, flex: 1 }}>
                         <span style={{ fontSize: 12.5, fontWeight: isFresh ? 700 : 500, lineHeight: 1.45, color: 'var(--mf-text)' }}>{lineOf(n)}</span>
-                        {n.preview && (
-                          <span style={{ fontSize: 11.5, color: 'var(--mf-subtext)', lineHeight: 1.45, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>“{n.preview}”</span>
-                        )}
-                        <span style={{ display: 'flex', alignItems: 'center', gap: 6, minWidth: 0 }}>
-                          {/* 어느 문서의 일인가 — 칩. 점 색은 제목 시드라 같은 문서는 늘 같다. */}
-                          <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4, height: 18, padding: '0 6px', borderRadius: 6, background: 'var(--mf-panel2)', border: '1px solid var(--mf-border-soft)', fontSize: 10.5, fontWeight: 600, color: 'var(--mf-subtext)', maxWidth: 170, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                            <span aria-hidden="true" style={{ width: 5, height: 5, borderRadius: 2, background: seedColor(n.docTitle || ''), display: 'block', flexShrink: 0 }} />
-                            {n.docTitle || '이름 없는 맵'}
+                        {/* 둘째 줄은 **어디의 일인가 + 언제**다(첨부 디자인). 시간은 줄지
+                            않는 자리에 둔다 — 칩이 길어도 사라지면 안 된다. */}
+                        <span style={{ display: 'flex', alignItems: 'center', gap: 7, minWidth: 0 }}>
+                          {/* 문서 칩. 점 색은 제목 시드라 같은 문서는 늘 같다. */}
+                          <span data-notification-doc style={{ display: 'inline-flex', alignItems: 'center', gap: 5, minWidth: 0, fontSize: 11, fontWeight: 600, color: 'var(--mf-subtext)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                            <span aria-hidden="true" style={{ width: 6, height: 6, borderRadius: 999, background: seedColor(n.docTitle || ''), display: 'block', flexShrink: 0 }} />
+                            <span style={{ minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis' }}>{n.docTitle || '이름 없는 맵'}</span>
                           </span>
-                          <span style={{ fontSize: 10.5, color: 'var(--mf-faint)', whiteSpace: 'nowrap' }}>{formatLastEdited(n.createdAt) || '방금 전'}</span>
+                          <span style={{ fontSize: 11, color: 'var(--mf-faint)', whiteSpace: 'nowrap', flexShrink: 0 }}>{formatLastEdited(n.createdAt) || '방금 전'}</span>
                         </span>
                       </span>
-                      {isFresh && <span data-notification-fresh aria-hidden="true" style={{ width: 6, height: 6, borderRadius: 999, background: UNREAD_BADGE_BG, marginTop: 11, flexShrink: 0 }} />}
+                      {isFresh && <span data-notification-fresh aria-hidden="true" style={{ width: 7, height: 7, borderRadius: 999, background: UNREAD_BADGE_BG, marginTop: 5, flexShrink: 0 }} />}
                     </button>
                   </span>
                 );
