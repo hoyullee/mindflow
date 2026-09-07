@@ -23,6 +23,7 @@ import { formatLastEdited } from '../timeFormat';
 import { MONO_FONT } from '../chrome';
 import { useNotifications } from './NotificationsContext';
 import { avatarLabel } from './ProfileAvatar';
+import { NavCard } from './NavCard';
 
 function lineOf(n: AppNotification): string {
   const who = n.actorName || '누군가';
@@ -150,99 +151,55 @@ export function NotificationBell({ isMobile = false }: { isMobile?: boolean }) {
   const hot = unread > 0;
 
   const bell = (
-    // 진짜 `<button>`이다 — Enter·Space 활성화가 공짜다(`div role="button"`은
-    // 클릭만 받는다). Radix `asChild`가 이 요소를 그대로 트리거로 쓴다.
-    <button
-      type="button"
-      className="nav-item"
+    // 껍데기는 **일정 카드와 같은 것**(`NavCard`)이다 — 나란히 선 두 카드가
+    // 서로 달라 보이지 않게 값을 한 곳에 둔다. 진짜 `<button>`이라 Enter·Space
+    // 활성화가 공짜이고, Radix `asChild`가 이 요소를 그대로 트리거로 쓴다.
+    <NavCard
       data-notification-nav
+      isMobile={isMobile}
+      tone={hot ? 'hot' : 'quiet'}
       // 요약까지 접근 이름에 담는다 — 보이는 글자와 읽히는 글자가 같아야 한다.
       aria-label={`${hot ? `알림 ${unread}개` : '알림'} · ${summary}`}
       title={summary}
-      style={{
-        width: '100%',
-        border: 'none',
-        fontFamily: 'inherit',
-        textAlign: 'left',
-        display: 'flex',
-        alignItems: 'center',
-        gap: 10,
-        padding: '9px 11px',
-        minHeight: isMobile ? 56 : 50,
-        borderRadius: 12,
-        cursor: 'pointer',
-        letterSpacing: '-.01em',
-        background: hot || open ? 'var(--mf-accent-soft)' : 'transparent',
-        color: 'var(--mf-text)',
-        transition: 'background .14s ease',
-      }}
-    >
-      <span
-        data-bell-glyph
-        style={{
-          // 벨은 **언제나 강조색**이다(요청) — 읽었는지 여부는 배지·요약 색이 말한다.
-          // 종이 톤을 함께 바꾸면 "알림 자리"라는 표식까지 흐려진다.
-          display: 'inline-flex',
-          color: 'var(--mf-accent)',
-          flexShrink: 0,
-        }}
-      >
+      label="알림"
+      glyph={
         <svg width={16} height={16} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
           <path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9" />
           <path d="M13.73 21a2 2 0 0 1-3.46 0" />
         </svg>
-      </span>
-      <span style={{ flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column', gap: 2 }}>
-        <span style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-          <span style={{ fontSize: 13, fontWeight: hot || open ? 700 : 600, color: 'var(--mf-text)' }}>알림</span>
-          {hot && (
-            <span
-              data-notification-count
-              aria-hidden="true"
-              style={{
-                minWidth: 18,
-                height: 18,
-                padding: '0 5px',
-                borderRadius: 999,
-                background: UNREAD_BADGE_BG,
-                color: UNREAD_BADGE_INK,
-                fontSize: 10.5,
-                fontWeight: 800,
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'center',
-                boxSizing: 'border-box',
-                flexShrink: 0,
-              }}
-            >
-              {unread > 9 ? '9+' : unread}
-            </span>
-          )}
-        </span>
-        <span
-          data-notification-summary
-          style={{
-            display: 'flex',
-            alignItems: 'baseline',
-            minWidth: 0,
-            fontSize: 11.5,
-            fontWeight: 500,
-            // 안 읽음은 따뜻한 갈색(본문 아래 단계), 읽었거나 빈 줄은 흐린 회색 —
-            // 색만으로 "볼 것이 남았는가"가 읽힌다.
-            color: hot ? 'var(--mf-subtext)' : 'var(--mf-muted)',
-            whiteSpace: 'nowrap',
-          }}
-        >
+      }
+      badge={
+        hot ? (
+          <span
+            data-notification-count
+            aria-hidden="true"
+            style={{
+              minWidth: 18,
+              height: 18,
+              padding: '0 5px',
+              borderRadius: 999,
+              background: UNREAD_BADGE_BG,
+              color: UNREAD_BADGE_INK,
+              fontSize: 10.5,
+              fontWeight: 800,
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              boxSizing: 'border-box',
+              flexShrink: 0,
+            }}
+          >
+            {unread > 9 ? '9+' : unread}
+          </span>
+        ) : undefined
+      }
+      summary={
+        <span data-notification-summary style={{ display: 'contents' }}>
           <span style={{ minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis' }}>{head}</span>
           {time && <span style={{ flexShrink: 0 }}>{` · ${time}`}</span>}
         </span>
-      </span>
-      <span style={{ display: 'inline-flex', color: hot ? 'var(--mf-accent)' : 'var(--mf-faint)', flexShrink: 0 }} aria-hidden="true">
-        <svg width={14} height={14} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round">
-          <path d="M9 6l6 6-6 6" />
-        </svg>
-      </span>
-    </button>
+      }
+    />
   );
 
   return (

@@ -406,6 +406,47 @@ export function calendarStats(entries: readonly CalendarEntry[], todayIso: strin
 }
 
 
+/**
+ * LNB `일정` 카드의 한 줄 요약에 쓰는 수치.
+ *
+ * 개수 하나(다가오는 마감)만 적어 두면 "많다/적다"밖에 말하지 못한다 — 지난 마감이
+ * 있는지, 오늘 할 일이 있는지가 실제로 궁금한 것이다.
+ */
+export interface CalendarBrief {
+  overdue: number;
+  today: number;
+  week: number;
+  upcoming: number;
+}
+
+export function calendarBrief(entries: readonly CalendarEntry[], todayIso: string): CalendarBrief {
+  const ws = weekStartISO(todayIso);
+  const we = weekEndISO(todayIso);
+  let overdue = 0;
+  let today = 0;
+  let week = 0;
+  let upcoming = 0;
+  for (const e of entries) {
+    if (e.due < todayIso) overdue += 1;
+    else upcoming += 1;
+    if (e.due === todayIso) today += 1;
+    if (e.due >= ws && e.due <= we) week += 1;
+  }
+  return { overdue, today, week, upcoming };
+}
+
+/**
+ * 그 수치를 한 줄로 — **가장 급한 것을 먼저** 말한다(지난 마감 → 오늘 → 이번 주).
+ * 좁은 기둥에 들어가야 하므로 한 번에 두 조각까지만 싣는다.
+ */
+export function calendarBriefLine(b: CalendarBrief): string {
+  if (b.overdue > 0) return b.today > 0 ? `지난 마감 ${b.overdue}건 · 오늘 ${b.today}건` : `지난 마감 ${b.overdue}건`;
+  if (b.today > 0) return b.week > b.today ? `오늘 ${b.today}건 · 이번 주 ${b.week}건` : `오늘 ${b.today}건`;
+  if (b.week > 0) return `이번 주 ${b.week}건`;
+  if (b.upcoming > 0) return `다가오는 일정 ${b.upcoming}건`;
+  return '예정된 일정이 없어요';
+}
+
 /** 다가오는 마감(오늘 포함, 이른 것 먼저). */
 export function upcomingEntries(entries: readonly CalendarEntry[], todayIso: string): CalendarEntry[] {
   return entries.filter((e) => e.due >= todayIso);

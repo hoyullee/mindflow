@@ -8,7 +8,7 @@ import { NotificationBell } from './NotificationBell';
 import { DashboardSection, ReorderToggle } from './DashboardSection';
 import { SpaceRow } from './SpaceRow';
 import { META_MONO, SECTION_LABEL } from '../chrome';
-import { CalendarGlyph } from '../calendar/CalendarView';
+import { CalendarNavSection } from './CalendarNavSection';
 
 /** How long the drawer's exit slide runs before the aside unmounts. Slightly
  * longer than the CSS transition (260ms, home.css `.mf-drawer`) so the last
@@ -148,17 +148,25 @@ export function Sidebar({ state, view, controller, isMobile = false, isOpen = fa
           "나에게 무슨 일이 있었나"는 스페이스·대시보드 같은 **그릇**이 아니라 내
           정체성에 딸린 것이라 그 블록과 붙여 둔다(Notion·Linear·Slack의 자리).
           예전에는 스페이스 툴바에만 있어 대시보드·일정 화면에는 아예 없었다. */}
-      <div style={{ flexShrink: 0, paddingTop: 6 }}>
+      {/* 상단 바로가기 블록 — 알림 · 일정.
+          둘 다 **하나뿐인 목적지**이고 "나"에 딸린 것이라, 여럿을 담는 구획
+          (대시보드·스페이스)과 격이 다르다. 그래서 같은 두 줄 카드로 그리고
+          프로필 밑에 모아 둔 뒤 아래를 구분선으로 끊는다.
+          예전에는 `일정`이 두 라벨 구획 **사이**에 한 줄로 홀로 서서 라벨을
+          빠뜨린 항목처럼 읽혔다(제보). 이 블록에 라벨을 달지 않은 이유는
+          한 줄짜리 구획의 라벨이 그 줄의 이름과 같으면(일정 위에 "일정")
+          같은 말을 두 번 하는 셈이기 때문이다 — 자리와 모양이 대신 말한다. */}
+      <div style={{ flexShrink: 0, paddingTop: 6, display: 'flex', flexDirection: 'column', gap: 2 }}>
         <NotificationBell isMobile={isMobile} />
+        <CalendarNavSection state={state} controller={controller} isMobile={isMobile} brief={view.calendarBrief} />
       </div>
+      {/* 구분선은 LNB의 다른 구분선과 **같은 것**(`LNB_DIVIDER`)이다 — 값을 따로
+          적으면(hairline 등) 같은 사이드바 안에서 선이 두 종류로 보인다. */}
+      <div data-lnb-divider style={{ ...LNB_DIVIDER, margin: '12px 4px 0' }} />
 
       {/* 대시보드 구획 — 스페이스 위(디자인 원본의 순서). 요청 범위: 기존 홈 디자인에
           더하는 것은 이 구획과 스페이스 정렬 토글뿐이다. */}
       <DashboardSection state={state} controller={controller} isMobile={isMobile} />
-
-      {/* 일정 — 대시보드 구획과 스페이스 구획 **사이**의 홀로 선 행(디자인 원본).
-          개수는 "다가오는 마감" 수. 대시보드·스페이스와 나란한 세 번째 화면이다. */}
-      <CalendarNavRow state={state} controller={controller} isMobile={isMobile} count={view.calendarCount} />
 
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '14px 9px 7px' }}>
         <span style={SECTION_LABEL}>스페이스</span>
@@ -656,53 +664,3 @@ function TrashGlyph({ size = 15 }: { size?: number }) {
   );
 }
 
-/**
- * LNB `일정` 행 — 대시보드 구획과 스페이스 구획 사이에 홀로 선다(디자인 원본).
- *
- * 대시보드 행과 같은 문법(34px·radius 10·활성 강조색 면)이되 순서 바꾸기·우클릭
- * 메뉴는 없다 — 일정은 여럿이 아니라 하나뿐인 화면이다.
- */
-function CalendarNavRow({ state, controller, isMobile, count }: { state: HomeState; controller: HomeController; isMobile: boolean; count: number }) {
-  const active = state.activeCal;
-  return (
-    <div style={{ flexShrink: 0, paddingTop: 8 }}>
-      <div
-        className="nav-item"
-        role="button"
-        tabIndex={0}
-        data-cal-nav
-        aria-current={active ? 'page' : undefined}
-        onClick={controller.openCalendar}
-        onKeyDown={(e) => {
-          if (e.key === 'Enter' || e.key === ' ') {
-            e.preventDefault();
-            controller.openCalendar();
-          }
-        }}
-        style={{
-          display: 'flex',
-          alignItems: 'center',
-          gap: 9,
-          padding: '8px 9px',
-          minHeight: isMobile ? 44 : 34,
-          borderRadius: 10,
-          cursor: 'pointer',
-          fontSize: 13,
-          fontWeight: active ? 700 : 500,
-          letterSpacing: '-.01em',
-          background: active ? 'var(--mf-accent-soft)' : 'transparent',
-          color: active ? 'var(--mf-text)' : 'var(--mf-subtext)',
-          transition: 'background .14s ease',
-        }}
-      >
-        <span style={{ display: 'inline-flex', color: active ? 'var(--mf-accent)' : 'currentColor', flexShrink: 0 }}>
-          <CalendarGlyph />
-        </span>
-        <span style={{ flex: 1, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>일정</span>
-        <span style={{ flexShrink: 0, minWidth: 38, display: 'inline-flex', alignItems: 'center', justifyContent: 'flex-end' }}>
-          <span style={META_MONO}>{count || ''}</span>
-        </span>
-      </div>
-    </div>
-  );
-}

@@ -474,7 +474,18 @@ export interface WorkspaceData {
    * 액세스 토큰은 이 블롭에 오지 않는다: 기기·탭마다 다르고 한 시간짜리라
    * `sessionStorage`에 산다. 예전 블롭에는 없으므로 선택("연동 안 함").
    */
-  google?: { calendars: string[] };
+  google?: {
+    calendars: string[];
+    /**
+     * 구독하지 않았지만 **그리오 목록에만 더한** 캘린더(id + 이름 스냅샷). 구독
+     * API는 쓰기 스코프가 따로라 검수를 다시 받아야 하므로, 목록에 더하는 일은
+     * 우리 쪽 기억으로 한다(`calendar/googleCalendar.ts`의 `external` 주석).
+     */
+    extra?: { id: string; name: string }[];
+    /** 공휴일 국가(요청) — `'kr' | 'jp' | 'us'`. 그 나라의 공개 공휴일 캘린더를
+     * 보여 줄 목록에 올린다(`calendar/googleCalendar.ts`의 `HOLIDAY_COUNTRIES`). */
+    holiday?: string;
+  };
 }
 
 /**

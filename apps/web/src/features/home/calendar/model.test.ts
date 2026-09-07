@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import type { CalendarEntry } from './entries';
 import { calendarEntries, datedCards, eventEntries } from './entries';
 import type { CalendarEvent } from '../../../adapters/ports';
-import { addDays, daysBetween, addMonth, calendarStats, statBadge, dayProgress, coversDay, dateLabel, dayTimeline, dueBadge, dueTone, entriesOn, gridRange, hourLabel, isSpan, minutesOf, monthCells, monthLabel, weekLanes, overdueEntries, timeLabel, todayISO, upcomingEntries, weekEndISO, weekLabel, weekStartISO, cellRows, weekRows, HOUR_ROW } from './model';
+import { addDays, daysBetween, addMonth, calendarStats, statBadge, dayProgress, coversDay, dateLabel, dayTimeline, dueBadge, dueTone, entriesOn, gridRange, hourLabel, isSpan, minutesOf, monthCells, monthLabel, weekLanes, overdueEntries, timeLabel, todayISO, upcomingEntries, weekEndISO, weekLabel, weekStartISO, cellRows, weekRows, HOUR_ROW, calendarBrief, calendarBriefLine } from './model';
 
 // 일정 화면의 데이터 계층 — 순수 함수라 날짜를 고정해 검증한다.
 
@@ -524,5 +524,33 @@ describe('칸의 줄 계획(cellRows)', () => {
     expect(cell.moreN).toBe(1);
     // 두 줄만 그릴 수 있으면 첫 줄 + `+2개`(그린 것 하나 + 모델이 접은 하나).
     expect(shape(cellRows(cell, 2))).toEqual(['chip:a', 'more:2']);
+  });
+});
+
+describe('LNB 일정 카드 요약(calendarBrief)', () => {
+  // 한 줄뿐이라 **가장 급한 것을 먼저** 말한다 — 개수 하나만으로는 많다/적다밖에
+  // 알 수 없다는 것이 이 요약을 만든 이유다.
+  const e = (due: string): CalendarEntry =>
+    calendarEntries(SRC, { d1: kanban([card({ id: `k-${due}`, due })]) })[0]!;
+  const TODAY = '2026-08-20'; // 목요일
+
+  it('지난 마감이 있으면 그것부터, 오늘이 함께 있으면 둘까지', () => {
+    const b = calendarBrief([e('2026-08-18'), e('2026-08-19'), e(TODAY)], TODAY);
+    expect(b).toMatchObject({ overdue: 2, today: 1 });
+    expect(calendarBriefLine(b)).toBe('지난 마감 2건 · 오늘 1건');
+    expect(calendarBriefLine(calendarBrief([e('2026-08-18')], TODAY))).toBe('지난 마감 1건');
+  });
+
+  it('지난 마감이 없으면 오늘 → 이번 주 → 다가오는 것 순', () => {
+    // 오늘 1 + 같은 주 1 = 이번 주 2
+    expect(calendarBriefLine(calendarBrief([e(TODAY), e('2026-08-21')], TODAY))).toBe('오늘 1건 · 이번 주 2건');
+    // 오늘은 없고 이번 주만
+    expect(calendarBriefLine(calendarBrief([e('2026-08-21')], TODAY))).toBe('이번 주 1건');
+    // 이번 주 밖의 앞날
+    expect(calendarBriefLine(calendarBrief([e('2026-09-10')], TODAY))).toBe('다가오는 일정 1건');
+  });
+
+  it('아무것도 없으면 그 사실을 말한다 — 빈 줄로 두지 않는다', () => {
+    expect(calendarBriefLine(calendarBrief([], TODAY))).toBe('예정된 일정이 없어요');
   });
 });

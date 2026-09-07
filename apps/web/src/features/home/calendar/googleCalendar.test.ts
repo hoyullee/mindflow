@@ -1,6 +1,6 @@
 import { describe, expect, it, beforeEach, vi } from 'vitest';
 import {
-  workLocationLabel, workLocationKindOf, workLocationProps, workLocationEventBody, workLocationPatch, findWorkLocation, workLocationWhen, workLocationWhenChanged, workLocationDays, workLocationForDay, weeklyRule, WORK_LOCATION_MAX_DAYS, GOOGLE_CALENDAR_SCOPE, GOOGLE_EVENT_COLORS, myRsvpOf, attendeesBody, eventWindowIso, RECURRENCE_OFF, buildRecurrence, draftToBody, eventColorOf, fetchEventColors, googleWriteError, managedFieldsDiffer, updateGoogleEvent, recurrenceSummary, isDayOffHoliday, isHolidayCalendarId, onTokenChange, scopeCovers, parseCalendarList, parseEvents, readStoredToken, splitGoogleDateTime, storeToken, type GoogleCalendarMeta } from './googleCalendar';
+  workLocationLabel, workLocationKindOf, workLocationProps, workLocationEventBody, workLocationPatch, findWorkLocation, workLocationWhen, workLocationWhenChanged, workLocationDays, workLocationForDay, weeklyRule, WORK_LOCATION_MAX_DAYS, GOOGLE_CALENDAR_SCOPE, GOOGLE_EVENT_COLORS, myRsvpOf, attendeesBody, eventWindowIso, RECURRENCE_OFF, buildRecurrence, draftToBody, eventColorOf, fetchEventColors, googleWriteError, managedFieldsDiffer, updateGoogleEvent, recurrenceSummary, isDayOffHoliday, isHolidayCalendarId, onTokenChange, scopeCovers, HOLIDAY_COUNTRIES, holidayCountryOf, holidayCountryOfId, parseCalendarList, parseEvents, probeCalendar, calendarAddError, mergeExtraCalendars, coerceExtraCalendars, readStoredToken, splitGoogleDateTime, storeToken, type GoogleCalendarMeta } from './googleCalendar';
 import { googleEntries, holidayMap } from './entries';
 import { draftFrom, patchFrom } from './GoogleEventDetail';
 import { submitNewEvent } from './newEventSubmit';
@@ -764,5 +764,88 @@ describe('근무 위치(제보 ⑥)', () => {
     expect(findWorkLocation(list, '2026-09-20')).toBeNull();
     expect(one!.startDate).toBe(one!.endDate);
     expect(span!.endDate).toBe('2026-09-18');
+  });
+});
+
+// ── 구독하지 않은 캘린더를 목록에 더하기(요청) ────────────────────────────────
+//
+// 구독 API(`calendarList.insert`)는 쓰기 스코프가 따로라 검수를 다시 받아야 한다.
+// 그래서 **그리오 목록에만** 더하고, 그 확인·이름 얻기는 `events.list` 한 번으로 한다.
+describe('캘린더 더하기 — 그리오 목록', () => {
+  it('그 캘린더를 읽어 보고 이름을 얻는다 — 응답 머리의 summary', async () => {
+    const calls: string[] = [];
+    const fetchMock = vi.fn(async (url: string) => {
+      calls.push(url);
+      return { ok: true, status: 200, json: async () => ({ summary: '이호율', items: [] }) } as unknown as Response;
+    });
+    vi.stubGlobal('fetch', fetchMock);
+    const got = await probeCalendar('tok', 'hoyul@example.com');
+    expect(got).toEqual({ id: 'hoyul@example.com', name: '이호율' });
+    // 구독 API가 아니라 그 캘린더의 일정 목록을 물었다(지금 스코프로 되는 길).
+    expect(calls[0]).toContain('/calendars/hoyul%40example.com/events');
+    expect(calls[0]).not.toContain('calendarList');
+  });
+
+  it('이름이 안 오면 주소를 이름으로 쓴다(빈 자리로 두지 않는다)', async () => {
+    vi.stubGlobal('fetch', vi.fn(async () => ({ ok: true, status: 200, json: async () => ({ items: [] }) }) as unknown as Response));
+    expect((await probeCalendar('tok', 'x@y.com')).name).toBe('x@y.com');
+  });
+
+  it('못 읽은 이유를 갈라 말한다 — 404·403·400', () => {
+    const e = (status: number) => Object.assign(new Error('x'), { status });
+    expect(calendarAddError(e(404))).toContain('찾을 수 없어요');
+    expect(calendarAddError(e(403))).toContain('권한이 없어요');
+    expect(calendarAddError(e(400))).toContain('올바르지 않아요');
+    expect(calendarAddError(new Error('네트워크'))).toContain('다시 시도');
+  });
+
+  it('구독 목록과 합친다 — 중복은 구독 쪽이 이기고, 더한 것은 보기 전용이다', () => {
+    const list: GoogleCalendarMeta[] = [{ ...CAL }, { id: 'dup@x', summary: '구독으로도 있음', color: '#123456', writable: true }];
+    const merged = mergeExtraCalendars(list, [
+      { id: 'hoyul@example.com', name: '이호율' },
+      // 이미 구독한 것을 더해 뒀다면 조용히 승격된다 — 목록에 두 번 뜨지 않는다.
+      { id: 'DUP@x', name: '옛 이름' },
+    ]);
+    expect(merged.map((c) => c.id)).toEqual(['me@example.com', 'dup@x', 'hoyul@example.com']);
+    const added = merged.find((c) => c.id === 'hoyul@example.com')!;
+    expect(added.external).toBe(true);
+    // 색은 우리가 씨앗으로 정하고(구독 목록에만 있는 값), 쓰기 권한은 **모르므로 세우지 않는다**.
+    expect(added.color).toMatch(/^#[0-9a-f]{6}$/i);
+    expect(added.writable).toBeUndefined();
+    // 구독 쪽 값은 그대로다(색·쓰기 권한).
+    expect(merged.find((c) => c.id === 'dup@x')).toMatchObject({ summary: '구독으로도 있음', color: '#123456', writable: true });
+  });
+
+  it('더한 공휴일 캘린더도 공휴일로 표식한다 — 없으면 그 항목이 날짜 색이 아니라 칩으로 늘어선다', () => {
+    // 이 표식이 곧 "칩이 아니라 날짜를 칠한다"는 규칙의 스위치다(#87) — 구독한
+    // 공휴일 캘린더는 `parseCalendarList`가 같은 규칙으로 세운다.
+    const jp = HOLIDAY_COUNTRIES.find((c) => c.key === 'jp')!;
+    const merged = mergeExtraCalendars([], [{ id: jp.id, name: jp.name }]);
+    expect(merged[0]).toMatchObject({ id: jp.id, holiday: true, external: true });
+    // 평범한 캘린더에는 세우지 않는다.
+    expect(mergeExtraCalendars([], [{ id: 'a@x', name: '가' }])[0]!.holiday).toBeUndefined();
+  });
+
+  it('공휴일 국가 — 값·id를 서로 읽고, 모르는 값은 버린다', () => {
+    expect(holidayCountryOf('jp')).toBe('jp');
+    expect(holidayCountryOf('fr')).toBeNull();
+    expect(holidayCountryOf(7)).toBeNull();
+    const jp = HOLIDAY_COUNTRIES.find((c) => c.key === 'jp')!;
+    expect(holidayCountryOfId(jp.id)).toBe('jp');
+    expect(holidayCountryOfId('me@example.com')).toBeNull();
+    // 세 국가의 id는 전부 공휴일 캘린더로 읽힌다(표와 판별이 어긋나면 칩이 된다).
+    for (const c of HOLIDAY_COUNTRIES) expect(isHolidayCalendarId(c.id)).toBe(true);
+  });
+
+  it('저장 블롭의 extra를 검증한다 — 어긋난 항목은 버리고, 비면 키를 만들지 않는다', () => {
+    expect(coerceExtraCalendars(undefined)).toEqual({});
+    expect(coerceExtraCalendars([{ name: '이름만' }, 'x', null, { id: '' }])).toEqual({});
+    expect(coerceExtraCalendars([{ id: 'a@x', name: '가' }, { id: 'A@x', name: '중복' }, { id: 'b@x' }])).toEqual({
+      extra: [
+        { id: 'a@x', name: '가' },
+        // 이름이 없으면 주소를 쓴다.
+        { id: 'b@x', name: 'b@x' },
+      ],
+    });
   });
 });

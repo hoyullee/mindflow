@@ -67,6 +67,8 @@ class MockDocStore implements DocStore {
 const HOLIDAY_ID = 'ko.south_korea#holiday@group.v.calendar.google.com';
 /** 남이 **보기 전용**으로 공유한 캘린더 — 그 일정은 고칠 수 없다(PR6). */
 const SHARED_ID = 'shared@example.com';
+/** 구독하지 않은 동료 캘린더 — 그리오 목록에만 더한다(요청). */
+const EXTRA_ID = 'hoyul@example.com';
 
 /** 종일 일정의 end.date는 배타적 — 하루짜리 공휴일이면 다음 날을 적는다. */
 function nextDay(iso: string): string {
@@ -161,6 +163,10 @@ function stubFetch(): ReturnType<typeof vi.fn> {
         ],
       });
     }
+    // 구독하지 않은 동료 캘린더 — 목록에 더할 때 이름은 응답 머리의 `summary`에서 온다.
+    if (url.includes(encodeURIComponent(EXTRA_ID))) {
+      return ok({ summary: '이호율', items: [{ id: 'x1', summary: '동료 회의', start: { dateTime: `${meeting}T16:00:00+09:00` }, end: { dateTime: `${meeting}T17:00:00+09:00` } }] });
+    }
     if (url.includes(encodeURIComponent(SHARED_ID))) {
       return ok({ items: [{ id: 's1', summary: '남의 회의', start: { dateTime: `${meeting}T14:00:00+09:00` }, end: { dateTime: `${meeting}T15:00:00+09:00` }, htmlLink: 'https://calendar.google.com/s' }] });
     }
@@ -180,7 +186,7 @@ function stubFetch(): ReturnType<typeof vi.fn> {
   return f as unknown as ReturnType<typeof vi.fn>;
 }
 
-function seed(google?: { calendars: string[] }): void {
+function seed(google?: { calendars: string[]; extra?: { id: string; name: string }[] }): void {
   localStorage.setItem(
     'mf_spaces',
     JSON.stringify({
@@ -269,7 +275,7 @@ describe('구글 캘린더 겹치기(PR5)', () => {
       expect(el).toBeTruthy();
       return el as HTMLElement;
     });
-    await user.click(within(section).getByText('연결'));
+    await user.click(within(section).getByText('연결하기'));
     // 목록이 뜨고 **기본 + 공휴일만** 켜져 있다 — 캘린더가 스무 개인 사람에게 전부
     // 켜 주면 첫 화면이 남의 일정으로 뒤덮인다(남이 공유한 것은 꺼진 채).
     await waitFor(() => expect(document.querySelector('[data-google-cal="me@example.com"]')).toBeTruthy());
@@ -286,6 +292,54 @@ describe('구글 캘린더 겹치기(PR5)', () => {
     expect(localStorage.getItem('mf_spaces')).not.toContain('tok');
     // 토큰은 워크스페이스 블롭이 아니라 **기기 저장소의 제 키**에 산다(제보 ⑩ — 탭 저장소는 새 탭에서 풀렸다).
     expect(localStorage.getItem('mf_gcal_token')).toContain('tok');
+  });
+
+  it('LNB `일정`을 누르면 하위 메뉴가 펼쳐진다 — 연동 전에는 연동 항목, 연동 뒤에는 보여 줄 캘린더(요청)', async () => {
+    // ① 클라이언트 ID가 없는 배포 — 하위 메뉴 자체를 그리지 않는다(눌러도 아무 일
+    //    없는 항목을 두지 않는다는 규칙, 설정의 연동 구획과 같다).
+    seed();
+    const user = userEvent.setup();
+    const first = renderHome();
+    await openCalendar(first.container, user);
+    expect(document.querySelector('[data-cal-sub]')).toBeNull();
+    cleanup();
+
+    // ② 연동 전 — `Google 캘린더 연동` 한 행. 누르면 동의 창이 아니라 **설정의
+    //    연동 구획**이 열린다(무엇을 켜는지 읽고 켠다).
+    clientId = 'test-client.apps.googleusercontent.com';
+    seed();
+    stubGis();
+    stubFetch();
+    const second = renderHome();
+    await openCalendar(second.container, user);
+    const connectRow = await waitFor(() => {
+      const el = document.querySelector('[data-cal-sub-connect]');
+      expect(el).toBeTruthy();
+      return el as HTMLElement;
+    });
+    expect(connectRow.textContent).toContain('Google 캘린더 연동');
+    await user.click(connectRow);
+    await screen.findByRole('dialog', { name: '설정' });
+    expect(document.querySelector('[data-google-section]')).toBeTruthy();
+    cleanup();
+
+    // ③ 연동 뒤 — 고를 수 있는 캘린더가 목록으로. 체크를 끄면 블롭에서 빠진다.
+    clearGoogleSessionCache();
+    seed({ calendars: ['me@example.com', HOLIDAY_ID] });
+    seedToken();
+    stubGis();
+    stubFetch();
+    const third = renderHome();
+    await openCalendar(third.container, user);
+    await waitFor(() => expect(document.querySelector('[data-cal-sub-item="me@example.com"]')).toBeTruthy());
+    const row = document.querySelector('[data-cal-sub-item="me@example.com"]') as HTMLElement;
+    expect((row.querySelector('input') as HTMLInputElement).checked).toBe(true);
+    expect(document.querySelector('[data-cal-sub-connect]')).toBeNull();
+    await user.click(row.querySelector('input') as HTMLInputElement);
+    await waitFor(() => {
+      const ws = JSON.parse(localStorage.getItem('mf_spaces') ?? '{}') as { google?: { calendars: string[] } };
+      expect(ws.google?.calendars).not.toContain('me@example.com');
+    });
   });
 
   it('연동을 켜 두면 일정 화면에 구글 일정이 겹치고, 공휴일은 칩이 아니라 날짜 색·이름이 된다', async () => {
@@ -580,9 +634,9 @@ describe('구글 캘린더 겹치기(PR5)', () => {
     expect(gis.requested).toEqual([]);
     await screen.findByRole('dialog', { name: '설정' });
     await waitFor(() => expect(document.querySelector('[data-google-section]')).toBeTruthy());
-    expect(document.querySelector('[data-settings-link-group]')?.textContent).toBe('연동');
+    expect(document.body.textContent).toContain('캘린더 연동');
     // 거기서 연결하면 켜지고, 할 일이 끝났으므로 머리의 버튼은 사라진다.
-    await user.click(within(document.querySelector('[data-google-section]') as HTMLElement).getByText('연결'));
+    await user.click(within(document.querySelector('[data-google-section]') as HTMLElement).getByText('연결하기'));
     expect(gis.requested).toEqual(['consent']);
     await waitFor(() => expect(document.querySelector('[data-google-connect-cal]')).toBeNull());
   });
@@ -1955,7 +2009,7 @@ describe('구글 캘린더 겹치기(PR5)', () => {
       expect(el).toBeTruthy();
       return el as HTMLElement;
     });
-    await user.click(within(section).getByText('연결'));
+    await user.click(within(section).getByText('연결하기'));
     // 취소는 결정이다 — 누르기 전 그대로: 오류 없음, 연결 버튼 그대로, 목록 없음.
     await new Promise((r) => setTimeout(r, 50));
     expect(document.querySelector('[data-google-error]')).toBeNull();
@@ -2003,18 +2057,19 @@ describe('구글 캘린더 겹치기(PR5)', () => {
     // 뒤로 → 계정 설정
     await user.click(screen.getByRole('button', { name: /뒤로/ }));
     await user.click(await screen.findByText('계정 설정'));
-    const group = await waitFor(() => {
-      const el = document.querySelector('[data-settings-link-group]');
+    // 두 구획으로 갈렸다(첨부 이미지): `로그인`에 Google 로그인 행, `캘린더 연동`에
+    // 캘린더 카드 — 하는 일이 다르다(들어오는 문 / 무엇을 함께 보여 줄까).
+    const link = await waitFor(() => {
+      const el = document.querySelector('[data-google-link-row]');
       expect(el).toBeTruthy();
       return el as HTMLElement;
     });
-    expect(group.textContent).toBe('연동');
-    // 구획 라벨 뒤에 Google 연동(로그인 수단) → Google 캘린더 연동 순서로 이어진다.
-    const link = document.querySelector('[data-google-link-row]')!;
     const cal = document.querySelector('[data-google-section]')!;
-    expect(group.compareDocumentPosition(link) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(document.body.textContent).toContain('로그인');
+    expect(document.body.textContent).toContain('캘린더 연동');
     expect(link.compareDocumentPosition(cal) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
-    expect(cal.textContent).toContain('Google 캘린더 연동');
+    expect(link.textContent).toContain('Google 로그인');
+    expect(cal.textContent).toContain('Google 캘린더');
   });
 
   it('회의실 목록은 사용 가능 → 사용 중으로 갈려 뜨고, 가능한 방이 먼저다(요청)', async () => {
@@ -3086,5 +3141,215 @@ describe('구글 캘린더 겹치기(PR5)', () => {
     expect(pop.querySelector('[data-gf-guest-loading]')).toBeNull();
     expect(pop.querySelector('[data-gf-guest="aaa@example.com"]')!.textContent).toContain('가나다');
     expect(pop.querySelector('[data-gf-guest="bbb@example.com"]')!.textContent).toContain('라마바');
+  });
+});
+
+// ── 구독하지 않은 캘린더 더하기(요청) ──────────────────────────────────────────
+//
+// 구글의 구독 목록에는 손대지 않는다(그 API는 쓰기 스코프가 따로다) — **그리오
+// 목록에만** 더한다. 그래서 확인·이름 얻기는 `events.list` 한 번으로 끝나고,
+// 그 캘린더는 색을 우리가 정하고 쓰기 권한을 모르므로 보기 전용이다.
+describe('캘린더 더하기 — 그리오 목록(요청)', () => {
+  beforeEach(() => mockMatchMedia(false));
+
+  async function openIntegration(user: ReturnType<typeof userEvent.setup>): Promise<HTMLElement> {
+    await user.click(await screen.findByRole('button', { name: '계정 메뉴' }));
+    await user.click(await screen.findByText('설정'));
+    await user.click(await screen.findByText('계정 설정'));
+    return waitFor(() => {
+      const el = document.querySelector('[data-google-section]');
+      expect(el).toBeTruthy();
+      return el as HTMLElement;
+    });
+  }
+
+  it('주소로 더하면 목록에 뜨고(보기 전용) 블롭에 남는다 — 일정도 겹친다', async () => {
+    seed({ calendars: ['me@example.com'] });
+    seedToken();
+    const fetchMock = stubFetch();
+    clientId = 'test-client.apps.googleusercontent.com';
+    const user = userEvent.setup();
+    renderHome();
+    const section = await openIntegration(user);
+    await waitFor(() => expect(document.querySelector('[data-google-cal="me@example.com"]')).toBeTruthy());
+
+    await user.click(within(section).getByText('캘린더 추가'));
+    await user.type(document.querySelector('[data-google-cal-add-input]') as HTMLInputElement, EXTRA_ID);
+    await user.click(document.querySelector('[data-google-cal-add-submit]') as HTMLElement);
+
+    // 구독 API를 부르지 않았다 — 그 캘린더의 일정을 한 번 물어 이름을 얻는다.
+    await waitFor(() => expect(fetchMock.mock.calls.some(([u]) => String(u).includes(`/calendars/${encodeURIComponent(EXTRA_ID)}/events`))).toBe(true));
+    expect(fetchMock.mock.calls.some(([u]) => String(u).includes('calendarList') && String(u).includes('POST'))).toBe(false);
+
+    // 목록에 이름으로 뜨고, 켜진 채이며, **보기 전용**이라 말한다(쓰기 권한을 모른다).
+    const row = await waitFor(() => {
+      const el = document.querySelector(`[data-google-cal="${EXTRA_ID}"]`);
+      expect(el).toBeTruthy();
+      return el as HTMLElement;
+    });
+    expect(row.textContent).toContain('이호율');
+    expect(row.querySelector('input')).toHaveProperty('checked', true);
+    expect(row.querySelector('[data-google-readonly]')).toBeTruthy();
+    // 우리가 더한 것이므로 뺄 수 있다(구독 목록의 캘린더에는 없는 버튼).
+    expect(row.querySelector(`[data-google-cal-remove="${EXTRA_ID}"]`)).toBeTruthy();
+    expect(document.querySelector(`[data-google-cal="me@example.com"] [data-google-cal-remove]`)).toBeNull();
+
+    await waitFor(() => {
+      const ws = JSON.parse(localStorage.getItem('mf_spaces') ?? '{}') as { google?: { calendars: string[]; extra?: { id: string; name: string }[] } };
+      expect(ws.google?.extra).toEqual([{ id: EXTRA_ID, name: '이호율' }]);
+      expect(ws.google?.calendars).toContain(EXTRA_ID);
+    });
+  });
+
+  it('체크를 옮겨도 더한 캘린더는 남는다 — `extra`를 함께 실어 보낸다', async () => {
+    seed({ calendars: ['me@example.com', EXTRA_ID], extra: [{ id: EXTRA_ID, name: '이호율' }] });
+    seedToken();
+    stubFetch();
+    clientId = 'test-client.apps.googleusercontent.com';
+    const user = userEvent.setup();
+    renderHome();
+    await openIntegration(user);
+    const row = await waitFor(() => {
+      const el = document.querySelector(`[data-google-cal="${EXTRA_ID}"] input`);
+      expect(el).toBeTruthy();
+      return el as HTMLInputElement;
+    });
+    // 그 캘린더를 잠깐 감췄다가
+    await user.click(row);
+    await waitFor(() => {
+      const ws = JSON.parse(localStorage.getItem('mf_spaces') ?? '{}') as { google?: { calendars: string[]; extra?: unknown[] } };
+      expect(ws.google?.calendars).not.toContain(EXTRA_ID);
+      // 목록에서 사라지지는 않는다 — 감춘 것과 뺀 것은 다르다.
+      expect(ws.google?.extra).toEqual([{ id: EXTRA_ID, name: '이호율' }]);
+    });
+    expect(document.querySelector(`[data-google-cal="${EXTRA_ID}"]`)).toBeTruthy();
+  });
+
+  it('이름으로 찾아 고른다 — 후보를 누르면 그 주소로 더한다', async () => {
+    seed({ calendars: ['me@example.com'] });
+    seedToken(`${GOOGLE_SCOPE_REQUIRED.join(' ')} ${GOOGLE_SCOPE_DIRECTORY}`);
+    stubFetch();
+    clientId = 'test-client.apps.googleusercontent.com';
+    const user = userEvent.setup();
+    renderHome();
+    const section = await openIntegration(user);
+    await waitFor(() => expect(document.querySelector('[data-google-cal="me@example.com"]')).toBeTruthy());
+    await user.click(within(section).getByText('캘린더 추가'));
+    await user.type(document.querySelector('[data-google-cal-add-input]') as HTMLInputElement, '여은');
+    const candidate = await waitFor(
+      () => {
+        const el = document.querySelector('[data-google-cal-candidate="eunjin@example.com"]');
+        expect(el).toBeTruthy();
+        return el as HTMLElement;
+      },
+      { timeout: 2000 },
+    );
+    expect(candidate.textContent).toContain('여은진');
+    await user.click(candidate);
+    await waitFor(() => {
+      const ws = JSON.parse(localStorage.getItem('mf_spaces') ?? '{}') as { google?: { extra?: { id: string }[] } };
+      expect(ws.google?.extra?.[0]?.id).toBe('eunjin@example.com');
+    });
+  });
+
+  it('뺄 수 있다 — 목록과 블롭에서 함께 사라진다', async () => {
+    seed({ calendars: ['me@example.com', EXTRA_ID], extra: [{ id: EXTRA_ID, name: '이호율' }] });
+    seedToken();
+    stubFetch();
+    clientId = 'test-client.apps.googleusercontent.com';
+    const user = userEvent.setup();
+    renderHome();
+    await openIntegration(user);
+    const remove = await waitFor(() => {
+      const el = document.querySelector(`[data-google-cal-remove="${EXTRA_ID}"]`);
+      expect(el).toBeTruthy();
+      return el as HTMLElement;
+    });
+    await user.click(remove);
+    await waitFor(() => expect(document.querySelector(`[data-google-cal="${EXTRA_ID}"]`)).toBeNull());
+    const ws = JSON.parse(localStorage.getItem('mf_spaces') ?? '{}') as { google?: { calendars: string[]; extra?: unknown } };
+    expect(ws.google?.extra).toBeUndefined();
+    expect(ws.google?.calendars).not.toContain(EXTRA_ID);
+  });
+
+  it('추가 줄은 [입력][버튼 묶음]으로 접힌다 — 좁은 화면에서 묶음 중간이 갈리지 않게', async () => {
+    seed({ calendars: ['me@example.com'] });
+    seedToken();
+    stubFetch();
+    clientId = 'test-client.apps.googleusercontent.com';
+    const user = userEvent.setup();
+    renderHome();
+    const section = await openIntegration(user);
+    await waitFor(() => expect(document.querySelector('[data-google-cal="me@example.com"]')).toBeTruthy());
+    await user.click(within(section).getByText('캘린더 추가'));
+    const row = (document.querySelector('[data-google-cal-add-input]') as HTMLElement).parentElement!;
+    expect(row.style.flexWrap).toBe('wrap');
+    // 추가·취소는 **한 묶음**이라 함께 내려간다(입력 옆에 낱개로 매달리지 않는다).
+    const group = document.querySelector('[data-google-cal-add-submit]')!.parentElement!;
+    expect(group.tagName).toBe('SPAN');
+    expect(group.textContent).toBe('추가취소');
+    expect(group.parentElement).toBe(row);
+  });
+
+  it('공휴일 국가를 바꾸면 그 나라의 공휴일 캘린더로 갈아 끼운다 — 왕복 없이 블롭만 바뀐다', async () => {
+    // 공휴일은 구글의 **공개 캘린더**에서 온다 — 국가를 고르는 것은 그 캘린더를
+    // 목록에서 갈아 끼우는 일이라 새 스코프도 조회도 필요하지 않다.
+    seed({ calendars: ['me@example.com', HOLIDAY_ID] });
+    seedToken();
+    const fetchMock = stubFetch();
+    clientId = 'test-client.apps.googleusercontent.com';
+    const user = userEvent.setup();
+    renderHome();
+    await openIntegration(user);
+    const seg = await waitFor(() => {
+      const el = document.querySelector('[data-holiday-seg]');
+      expect(el).toBeTruthy();
+      return el as HTMLElement;
+    });
+    // 저장된 값이 없어도 목록에 든 공휴일 캘린더가 지금 국가를 말한다.
+    expect(within(seg).getByRole('radio', { name: '한국' }).getAttribute('aria-checked')).toBe('true');
+    const before = fetchMock.mock.calls.length;
+    await user.click(within(seg).getByRole('radio', { name: '일본' }));
+    await waitFor(() => {
+      const ws = JSON.parse(localStorage.getItem('mf_spaces') ?? '{}') as { google?: { calendars: string[]; extra?: { id: string }[]; holiday?: string } };
+      expect(ws.google?.holiday).toBe('jp');
+      // 한국 공휴일은 빠지고 일본이 들어온다(구독하지 않은 것이라 `extra`로).
+      expect(ws.google?.calendars).not.toContain(HOLIDAY_ID);
+      expect(ws.google?.calendars).toContain('ja.japanese#holiday@group.v.calendar.google.com');
+      expect(ws.google?.extra?.map((e) => e.id)).toContain('ja.japanese#holiday@group.v.calendar.google.com');
+    });
+    // 그 자체로는 구글에 아무것도 묻지 않는다(고른 뒤 일정 조회만 이어진다).
+    expect(fetchMock.mock.calls.slice(before).some((c) => String(c[0]).includes('calendarList'))).toBe(false);
+    // 그 캘린더는 **목록에서 뺄 수 없다** — 이 자리는 공휴일 국가가 맡는다.
+    await waitFor(() => expect(document.querySelector('[data-google-cal="ja.japanese#holiday@group.v.calendar.google.com"]')).toBeTruthy());
+    expect(document.querySelector('[data-google-cal-remove="ja.japanese#holiday@group.v.calendar.google.com"]')).toBeNull();
+  });
+
+  it('연동 전에는 공휴일 국가를 그리지 않는다 — 고를 수 있는 척만 하게 된다', async () => {
+    seed();
+    stubGis();
+    stubFetch();
+    clientId = 'test-client.apps.googleusercontent.com';
+    const user = userEvent.setup();
+    renderHome();
+    await openIntegration(user);
+    expect(document.querySelector('[data-holiday-seg]')).toBeNull();
+  });
+
+  it('LNB 하위 메뉴의 `캘린더 추가`는 설정의 연동 구획을 연다 — 흐름은 한 곳이 맡는다', async () => {
+    seed({ calendars: ['me@example.com'] });
+    seedToken();
+    stubFetch();
+    clientId = 'test-client.apps.googleusercontent.com';
+    const user = userEvent.setup();
+    const { container } = renderHome();
+    await openCalendar(container, user);
+    const add = await waitFor(() => {
+      const el = document.querySelector('[data-cal-sub-add]');
+      expect(el).toBeTruthy();
+      return el as HTMLElement;
+    });
+    await user.click(add);
+    await waitFor(() => expect(document.querySelector('[data-google-section]')).toBeTruthy());
   });
 });

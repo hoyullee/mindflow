@@ -50,6 +50,7 @@ describe('home theme', () => {
       '--mf-danger-line': '#f3d9d4',
       '--mf-danger-mute': '#e7b9b3',
       '--mf-info': '#3f8fd0',
+      '--mf-info-soft': '#e6eff5',
       // 종류 색(요청): 빨강(마인드맵)·초록(화이트보드)·보라(칸반).
       '--mf-doc-map': '#d9482b',
       '--mf-doc-board': '#3f9e6a',

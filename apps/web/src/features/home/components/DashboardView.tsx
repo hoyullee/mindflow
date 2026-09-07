@@ -16,7 +16,7 @@ import { CalWidgetBody, type CalWidgetSide } from '../dashboard/CalendarWidget';
 import { useCalendarEntries } from '../calendar/useCalendarEntries';
 import { useCalendarEvents, type CalendarEventsApi } from '../calendar/useCalendarEvents';
 import { eventEntries, googleEntries, holidayMap, type CalendarEntry } from '../calendar/entries';
-import { useGoogleCalendar, type GoogleCalendarApi } from '../calendar/useGoogleCalendar';
+import { googlePrefsOf, useGoogleCalendar, type GoogleCalendarApi } from '../calendar/useGoogleCalendar';
 import { GoogleConnectButton } from '../calendar/GoogleConnectButton';
 import { addDays, addMonth, daysBetween, gridRange, isoOf, partsOf, todayISO, weekStartISO } from '../calendar/model';
 import { homeChipSurface } from '../theme';
@@ -568,7 +568,7 @@ function DashWidget({ itemId, docId, itemKind, size, committedSize, maxCols, edi
   const cardEntries = useCalendarEntries(state, cal);
   const eventsApi = useCalendarEvents(evYm.y, evYm.m, cal);
   // 구글 겹치기 — 일정 화면과 **같은 훅**이다(두 벌로 두면 한쪽만 고쳐진다).
-  const googleApi = useGoogleCalendar(evYm.y, evYm.m, { enabled: !!state.google, calendars: state.google?.calendars ?? [] }, controller.setGoogleCalendars, cal ? 'events' : 'off');
+  const googleApi = useGoogleCalendar(evYm.y, evYm.m, googlePrefsOf(state.google), controller.setGoogleCalendars, cal ? 'events' : 'off');
   // 반복 일정은 **보이는 달의 6주**에서 회차로 펼쳐진다(일정 화면과 같은 구간).
   const calEntries = useMemo(
     () => [...cardEntries, ...eventEntries(eventsApi.events, gridRange(evYm.y, evYm.m)), ...googleEntries(googleApi.events)],

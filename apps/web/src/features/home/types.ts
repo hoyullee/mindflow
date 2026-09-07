@@ -214,7 +214,7 @@ export interface HomeState {
   theme: HomeThemeKey;
   /** 구글 캘린더 겹치기 설정(PR5) — 켜지 않았으면 `null`. 워크스페이스 블롭에
    * 실려 기기 간에 따라온다(토큰은 따라오지 않는다 — 탭마다 새로 받는다). */
-  google: { calendars: string[] } | null;
+  google: { calendars: string[]; extra?: { id: string; name: string }[]; holiday?: string } | null;
   /** 열려 있는 **구글 일정** 상세의 id(`<calId>::<eventId>`) — 읽기 전용 팝업.
    * 칸반 카드(`calDetail`)·Geurio 일정(`calEventDetail`)과 칸을 나눈 이유는
    * 셋이 고칠 수 있는 것이 서로 다르기 때문이다(구글은 아무것도 못 고친다). */

@@ -19,8 +19,13 @@ export class LocalSpaceStore implements SpaceStore {
       const theme = typeof parsed.theme === 'string' ? parsed.theme : undefined;
       const dashboards = Array.isArray(parsed.dashboards) ? parsed.dashboards : undefined;
       // 구글 캘린더 겹치기 설정(PR5) — 모양이 어긋나면 없는 것으로 본다.
-      const g = parsed.google as { calendars?: unknown } | undefined;
-      const google = g && Array.isArray(g.calendars) ? { calendars: g.calendars.filter((c): c is string => typeof c === 'string') } : undefined;
+      const g = parsed.google as { calendars?: unknown; extra?: unknown } | undefined;
+      // 그리오 목록에만 더한 캘린더(요청) — 모양이 어긋난 항목은 버린다(정본 검증은
+      // `calendar/googleCalendar.ts`의 `coerceExtraCalendars`가 한다).
+      const extra = g && Array.isArray(g.extra)
+        ? (g.extra as unknown[]).filter((e): e is { id: string; name: string } => !!e && typeof e === 'object' && typeof (e as { id?: unknown }).id === 'string' && typeof (e as { name?: unknown }).name === 'string')
+        : undefined;
+      const google = g && Array.isArray(g.calendars) ? { calendars: g.calendars.filter((c): c is string => typeof c === 'string'), ...(extra?.length ? { extra } : {}) } : undefined;
       return { spaces: parsed.spaces, mapFolders, recent, theme, dashboards, google };
     } catch {
       return null;

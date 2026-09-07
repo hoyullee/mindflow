@@ -22,6 +22,12 @@ import {
   ensureGoogleToken,
   eventColorOf,
   fetchCalendarList,
+  mergeExtraCalendars,
+  HOLIDAY_COUNTRIES,
+  holidayCountryOf,
+  holidayCountryOfId,
+  probeCalendar,
+  calendarAddError,
   fetchEventColors,
   GOOGLE_RECONNECT_MSG,
   GOOGLE_SCOPE_DIRECTORY,
@@ -37,6 +43,8 @@ import {
   storeToken,
   updateGoogleEvent,
   type GoogleCalendarMeta,
+  type GoogleExtraCalendar,
+  type HolidayCountry,
   type GoogleEvent,
   type GoogleEventDraft,
   type GoogleEventPatch,
@@ -71,6 +79,24 @@ export interface GoogleCalendarApi {
   disconnect: () => Promise<void>;
   /** 그 캘린더를 보이기/감추기. */
   toggleCalendar: (id: string) => void;
+  /**
+   * 구독하지 않은 캘린더를 **그리오 목록에** 더한다(요청). 주소(대개 상대의 회사
+   * 이메일)를 받아 볼 수 있는지 확인하고 이름을 얻어 목록에 올리고 곧바로 켠다.
+   * 성공하면 `null`, 실패하면 사람이 읽을 문장.
+   */
+  addCalendar: (id: string) => Promise<string | null>;
+  /** 우리가 더한 캘린더를 목록에서 뺀다(구독 목록의 캘린더에는 해당 없음). */
+  removeCalendar: (id: string) => void;
+  /**
+   * **공휴일 국가**(요청) — 저장된 값이 없으면 목록에 있는 공휴일 캘린더에서 읽고,
+   * 그것도 없으면 한국이다.
+   */
+  holidayCountry: HolidayCountry;
+  /**
+   * 그 나라의 공휴일 캘린더로 갈아 끼운다 — 다른 나라 것은 목록에서 빼고, 고른
+   * 나라 것을 (구독 목록에 없으면 우리 목록에 더해) 켠다.
+   */
+  setHolidayCountry: (c: HolidayCountry) => void;
   /**
    * 권한을 다시 받아야 하는가 — 스코프를 넓힌 뒤 옛 토큰이 남은 경우다. 켜져
    * 있는데 쓸 수 없는 상태를 **화면이 말해야** 한다(조용히 죽으면 "저장이 안 되는데
@@ -122,7 +148,31 @@ export interface GoogleCalendarApi {
 export interface GoogleCalendarPrefs {
   /** 연동을 켰는가(블롭에 `google` 키가 있는가). */
   enabled: boolean;
+  /** 지금 **보여 주는** 캘린더 id — 구독 목록의 것과 아래 `extra`의 것이 섞인다. */
   calendars: string[];
+  /**
+   * 구글에서 구독하지 않았지만 **그리오 목록에만 더한** 캘린더(요청). 구독 API는
+   * 쓰기 스코프가 따로라(검수 재제출) 우리 쪽 기억으로 대신한다 —
+   * `GoogleCalendarMeta.external` 주석에 그 경계를 적어 뒀다.
+   */
+  extra?: GoogleExtraCalendar[];
+  /** 공휴일 국가(요청) — 그 나라의 공개 공휴일 캘린더를 보여 준다. */
+  holiday?: HolidayCountry;
+}
+
+/**
+ * 워크스페이스 블롭의 `google` 값 → 훅 설정. 네 소비처(일정 화면·대시보드 위젯·
+ * LNB 하위 메뉴·계정 설정)가 **같은 한 곳**을 쓴다 — 각자 적으면 `extra` 같은 필드를
+ * 더할 때 한 곳이 조용히 빠진다.
+ */
+export function googlePrefsOf(g: { calendars: string[]; extra?: GoogleExtraCalendar[]; holiday?: string } | null | undefined): GoogleCalendarPrefs {
+  const holiday = holidayCountryOf(g?.holiday);
+  return {
+    enabled: !!g,
+    calendars: g?.calendars ?? [],
+    ...(g?.extra?.length ? { extra: g.extra } : {}),
+    ...(holiday ? { holiday } : {}),
+  };
 }
 
 /**
@@ -182,6 +232,13 @@ export function useGoogleCalendar(
   const enabled = prefs.enabled;
   // 고른 캘린더 id를 문자열로 굳혀 둔다 — 배열은 렌더마다 새 참조라 effect가 매번 돈다.
   const picked = prefs.calendars.join(',');
+  // 우리가 더한 캘린더도 같은 이유로 문자열 키를 만든다.
+  const extras = prefs.extra ?? [];
+  const extraKey = extras.map((e) => `${e.id}\u0000${e.name}`).join('|');
+  // 콜백이 최신 값을 보게 해 두는 자리 — `connect`는 deps가 좁아야 한다(누를 때마다
+  // 새 함수가 되면 버튼이 하는 일과 무관하게 리렌더가 번진다).
+  const extrasRef = useRef<GoogleExtraCalendar[]>(extras);
+  extrasRef.current = extras;
   const cacheKey = `${picked}|${from}|${to}`;
   const [connected, setConnected] = useState(() => !!readStoredToken());
   // 기억이 있으면 **첫 렌더부터** 그것을 그린다 — 빈 달력이 한 프레임도 나가지 않는다.
@@ -311,14 +368,21 @@ export function useGoogleCalendar(
     };
   }, [available, enabled, mode, withToken, resetAccountCache, tokenTick]);
 
+  /**
+   * 화면이 보는 목록 = **구독 목록 ∪ 우리가 더한 것**(요청). 같은 id가 양쪽에 있으면
+   * 구독 쪽이 이긴다 — 그쪽에는 구글이 정한 색과 실제 쓰기 권한이 실려 있다(나중에
+   * 구글에서 구독하면 우리 항목이 조용히 그것으로 승격된다).
+   */
+  const allCalendars = useMemo(() => mergeExtraCalendars(calendars, extras), [calendars, extraKey]);
+
   // ── 보이는 달의 일정 ────────────────────────────────────────────────────
   useEffect(() => {
     const ids = picked ? picked.split(',') : [];
-    if (!available || !enabled || mode !== 'events' || ids.length === 0 || calendars.length === 0) {
+    if (!available || !enabled || mode !== 'events' || ids.length === 0 || allCalendars.length === 0) {
       setEvents([]);
       return;
     }
-    const metas = ids.map((id) => calendars.find((c) => c.id === id)).filter((c): c is GoogleCalendarMeta => !!c);
+    const metas = ids.map((id) => allCalendars.find((c) => c.id === id)).filter((c): c is GoogleCalendarMeta => !!c);
     if (metas.length === 0) {
       setEvents([]);
       return;
@@ -342,7 +406,7 @@ export function useGoogleCalendar(
     return () => {
       cancelled = true;
     };
-  }, [available, enabled, mode, picked, calendars, from, to, cacheKey, reloadTick, withToken]);
+  }, [available, enabled, mode, picked, allCalendars, from, to, cacheKey, reloadTick, withToken]);
 
   /**
    * **구글이 정본이므로 다시 물어야 한다**(제보: 일정 화면을 열어 둔 채 구글
@@ -413,9 +477,12 @@ export function useGoogleCalendar(
       if (!aliveRef.current) return;
       setCalendars(list);
       const seed = list.filter((c) => c.primary || c.holiday).map((c) => c.id);
-      onPrefs({ enabled: true, calendars: seed });
+      // 우리가 더해 둔 캘린더는 지키고 켠 채로 둔다 — 이 버튼은 **다시 연결**도 겸한다
+      // (권한 만료). 여기서 버리면 재승인 한 번에 목록이 통째로 사라진다.
+      const keep = extrasRef.current;
+      onPrefs({ enabled: true, calendars: [...seed, ...keep.map((e) => e.id)], ...(keep.length ? { extra: keep } : {}) });
     } catch {
-      if (aliveRef.current) onPrefs({ enabled: true, calendars: [] });
+      if (aliveRef.current) onPrefs({ enabled: true, calendars: [], ...(extrasRef.current.length ? { extra: extrasRef.current } : {}) });
     }
   }, [onPrefs, resetAccountCache]);
 
@@ -485,7 +552,7 @@ export function useGoogleCalendar(
     [write, events],
   );
 
-  const writableCalendars = useMemo(() => calendars.filter((c) => c.writable), [calendars]);
+  const writableCalendars = useMemo(() => allCalendars.filter((c) => c.writable), [allCalendars]);
 
   // ── 선택 스코프로 열리는 두 기능 ─────────────────────────────────────────
   const canDirectory = granted.has(GOOGLE_SCOPE_DIRECTORY);
@@ -540,16 +607,80 @@ export function useGoogleCalendar(
   const toggleCalendar = useCallback(
     (id: string) => {
       const has = prefs.calendars.includes(id);
-      onPrefs({ enabled: true, calendars: has ? prefs.calendars.filter((c) => c !== id) : [...prefs.calendars, id] });
+      // `extra`를 함께 실어 보낸다 — 빠뜨리면 체크 한 번에 우리가 더한 캘린더가 사라진다.
+      onPrefs({ enabled: true, calendars: has ? prefs.calendars.filter((c) => c !== id) : [...prefs.calendars, id], ...(extras.length ? { extra: extras } : {}) });
     },
-    [prefs.calendars, onPrefs],
+    [prefs.calendars, extraKey, onPrefs],
+  );
+
+  /**
+   * 구독하지 않은 캘린더를 목록에 더한다 — 볼 수 있는지 확인하고(그때 이름도 얻는다)
+   * 목록에 올린 뒤 **곧바로 켠다**(더해 놓고 안 보이면 아무 일도 안 한 것처럼 보인다).
+   */
+  const addCalendar = useCallback(
+    async (raw: string): Promise<string | null> => {
+      const id = raw.trim();
+      if (!id) return '캘린더 주소를 입력해 주세요.';
+      // 이미 목록에 있으면 더하지 않고 **켜기만** 한다(중복을 만들지 않는다).
+      const known = allCalendars.find((c) => c.id.toLowerCase() === id.toLowerCase());
+      if (known) {
+        if (!prefs.calendars.includes(known.id)) toggleCalendar(known.id);
+        return null;
+      }
+      let probed: GoogleExtraCalendar | null = null;
+      try {
+        probed = await withToken((t) => probeCalendar(t, id));
+      } catch (e) {
+        return calendarAddError(e);
+      }
+      // `withToken`이 `null`이면 토큰을 못 얻은 것 — 그 상태는 이미 화면이 말한다.
+      if (!probed) return null;
+      if (!aliveRef.current) return null;
+      const next = [...extras.filter((e) => e.id !== probed.id), probed];
+      onPrefs({ enabled: true, calendars: [...prefs.calendars.filter((c) => c !== probed.id), probed.id], extra: next });
+      return null;
+    },
+    [allCalendars, prefs.calendars, extraKey, onPrefs, toggleCalendar, withToken],
+  );
+
+  /** 우리가 더한 것만 뺄 수 있다 — 구독 목록의 캘린더는 구글이 들고 있다. */
+  const removeCalendar = useCallback(
+    (id: string) => {
+      const next = extras.filter((e) => e.id !== id);
+      onPrefs({ enabled: true, calendars: prefs.calendars.filter((c) => c !== id), ...(next.length ? { extra: next } : {}) });
+    },
+    [prefs.calendars, extraKey, onPrefs],
+  );
+
+  /**
+   * 지금 어느 나라의 공휴일을 보고 있는가 — 저장된 값이 정본이고, 없으면 **목록에
+   * 있는 공휴일 캘린더**에서 읽는다(구글에서 이미 구독해 둔 사람이 처음 이 화면을
+   * 열었을 때 그 나라가 켜져 보이도록). 그것도 없으면 한국이다.
+   */
+  const holidayCountry: HolidayCountry =
+    prefs.holiday ?? allCalendars.map((c) => holidayCountryOfId(c.id)).find((k): k is HolidayCountry => !!k) ?? 'kr';
+
+  const setHolidayCountry = useCallback(
+    (c: HolidayCountry) => {
+      const pick = HOLIDAY_COUNTRIES.find((x) => x.key === c);
+      if (!pick) return;
+      const others = HOLIDAY_COUNTRIES.filter((x) => x.key !== c).map((x) => x.id.toLowerCase());
+      const drop = (id: string) => others.includes(id.toLowerCase());
+      // 구독 목록에 이미 있으면(구글에서 구독해 둔 공휴일 캘린더) 우리 목록에
+      // 더하지 않는다 — 같은 캘린더가 두 곳에 있을 이유가 없다(`mergeExtraCalendars`).
+      const subscribed = calendars.some((x) => x.id.toLowerCase() === pick.id.toLowerCase());
+      const nextExtra = [...extras.filter((e) => !drop(e.id) && e.id.toLowerCase() !== pick.id.toLowerCase()), ...(subscribed ? [] : [{ id: pick.id, name: pick.name }])];
+      const nextShown = [...prefs.calendars.filter((id) => !drop(id) && id.toLowerCase() !== pick.id.toLowerCase()), pick.id];
+      onPrefs({ enabled: true, calendars: nextShown, ...(nextExtra.length ? { extra: nextExtra } : {}), holiday: c });
+    },
+    [calendars, prefs.calendars, extraKey, onPrefs],
   );
 
   return {
     available,
     enabled,
     connected,
-    calendars,
+    calendars: allCalendars,
     pickedIds: prefs.calendars,
     events: colored,
     /** 이벤트 색 팔레트(번호 → hex) — 색 고르기 칸이 이 색으로 그린다. */
@@ -559,6 +690,10 @@ export function useGoogleCalendar(
     connect,
     disconnect,
     toggleCalendar,
+    addCalendar,
+    removeCalendar,
+    holidayCountry,
+    setHolidayCountry,
     needsReauth,
     writableCalendars,
     createEvent,

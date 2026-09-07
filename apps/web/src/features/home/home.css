@@ -197,6 +197,15 @@ a:hover {
 .mf-home .nav-item:hover {
   background: var(--mf-panel2) !important;
 }
+/* 지금 보고 있는 화면(`aria-current`)과 눈에 띄어야 하는 카드(`data-tinted`)는
+   **자기 틴트를 지킨다** — 위 규칙이 면을 갈아 끼우면 손을 얹은 순간 그 항목이
+   꺼진 것처럼 보인다(달력 칩·켜진 알약·알림 행에서 이미 겪은 계열). 대신 밝기만
+   움직인다(다크는 반대 방향 — `--mf-hover-bright`). */
+.mf-home .nav-item[aria-current='page']:hover,
+.mf-home .nav-item[data-tinted='1']:hover {
+  background: var(--mf-accent-soft) !important;
+  filter: brightness(var(--mf-hover-bright));
+}
 /* 템플릿 카드 — 디자인 원본의 `.gh-tpl` hover/active. transition을 여기에만 둔다
    (인라인로 얹으면 transform 전이가 덮여 hover가 툭 바뀐다 — 카드와 같은 함정). */
 .mf-home .tpl-card {
@@ -795,4 +804,40 @@ input[type='search']::-webkit-search-results-decoration {
 }
 .mf-memo-rich p {
   margin: 0 0 6px;
+}
+
+/*
+  설정의 체크박스(첨부 이미지) — 코랄 사각 + 흰 체크. `accentColor`만 주면 브라우저
+  기본 모양(작은 정사각)이라 디자인의 둥근 상자가 되지 않으므로 직접 그린다. 네이티브
+  input 그대로라 키보드·스크린리더는 손대지 않는다.
+*/
+.mf-home .mf-cb,
+[data-modal-overlay] .mf-cb {
+  appearance: none;
+  -webkit-appearance: none;
+  flex: 0 0 auto;
+  width: 22px;
+  height: 22px;
+  margin: 0;
+  border: 1.5px solid var(--mf-border);
+  border-radius: 7px;
+  background: var(--mf-card);
+  cursor: pointer;
+  display: grid;
+  place-items: center;
+  transition: background .12s ease, border-color .12s ease;
+}
+.mf-home .mf-cb:checked,
+[data-modal-overlay] .mf-cb:checked {
+  background: var(--mf-accent);
+  border-color: var(--mf-accent);
+}
+.mf-home .mf-cb:checked::after,
+[data-modal-overlay] .mf-cb:checked::after {
+  content: '';
+  width: 10px;
+  height: 5.5px;
+  border-left: 2.2px solid var(--mf-accent-ink);
+  border-bottom: 2.2px solid var(--mf-accent-ink);
+  transform: rotate(-45deg) translate(1px, -1px);
 }
