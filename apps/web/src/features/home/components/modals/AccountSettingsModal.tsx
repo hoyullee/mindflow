@@ -6,7 +6,7 @@ import { HOME_THEMES, HOME_THEME_KEYS } from '../../theme';
 import { RadioCards } from '../../../../components/Segmented';
 import { GoogleIcon } from '../../../auth/GoogleIcon';
 import { Modal, MODAL_DIM } from '../../../../components/Modal';
-import { useGoogleCalendar } from '../../calendar/useGoogleCalendar';
+import { googlePrefsOf, useGoogleCalendar } from '../../calendar/useGoogleCalendar';
 import { GoogleCalendarSection } from './GoogleCalendarSection';
 
 interface Props {
@@ -23,7 +23,7 @@ export function AccountSettingsModal({ state, controller }: Props) {
   // — 홈을 켤 때마다 캘린더 목록을 받아 오지 않는다(`accountSettingsOpen`).
   // 이 행은 **계정 설정 화면**에 있다(요청 — 프로필 설정에서 옮겨 `Google 연동`과 한
   // 구획으로). 그래서 목록 조회도 그 화면이 열려 있을 때만이다.
-  const googleApi = useGoogleCalendar(1970, 1, { enabled: !!state.google, calendars: state.google?.calendars ?? [] }, controller.setGoogleCalendars, state.accountSettingsOpen && state.settingsView === 'account' ? 'list' : 'off');
+  const googleApi = useGoogleCalendar(1970, 1, googlePrefsOf(state.google), controller.setGoogleCalendars, state.accountSettingsOpen && state.settingsView === 'account' ? 'list' : 'off');
   const visible = state.accountSettingsOpen;
   const initial = avatarLabel(state.userName);
   // 로그인 수단 — `null`은 확인 불가(RPC 미배포·네트워크·데모 초기). 그때는

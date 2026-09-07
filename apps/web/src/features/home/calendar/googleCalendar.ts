@@ -40,6 +40,7 @@
  */
 
 import { loadGisScript, readGoogleClientId } from '../../auth/googleIdentity';
+import { colorForSeed } from '../../../collab/identity';
 import { disconnectGoogleServer, exchangeGoogleCode, refreshGoogleAccess, serverKnownUnavailable, type ServerToken } from './googleOAuthServer';
 import { rememberName, rememberNames } from './nameBook';
 
@@ -148,6 +149,25 @@ export interface GoogleCalendarMeta {
    * 그 일정도 고칠 수 없다고 화면이 말한다.
    */
   writable?: boolean;
+  /**
+   * **그리오 목록에만 더한 캘린더**(요청: 구글에서 구독하지 않은 동료 캘린더도 보고
+   * 싶다). 구독(`calendarList.insert`)은 쓰기 스코프가 따로라 검수를 다시 받아야
+   * 하는데, `events.list`는 **접근할 수 있는 어느 캘린더 id로도** 되므로 목록에
+   * 더하는 일은 우리 쪽 기억만으로 된다.
+   *
+   * 대가는 `calendarList`에만 있는 두 값이다: **색**은 우리가 씨앗으로 정하고,
+   * **쓰기 권한**(`accessRole`)은 알 수 없으므로 `writable`을 세우지 않는다 —
+   * 그래서 새 일정 목적지에 오르지 않고 그 일정도 고칠 수 없다(모르는 것을
+   * 할 수 있다고 말하지 않는다).
+   */
+  external?: true;
+}
+
+/** 그리오 목록에만 더한 캘린더 — 워크스페이스 블롭에 id와 이름 스냅샷으로 남는다. */
+export interface GoogleExtraCalendar {
+  id: string;
+  /** 더할 때 구글이 알려 준 이름 — 목록이 첫 렌더부터 이름으로 뜬다. */
+  name: string;
 }
 
 /** 받아 온 일정 하나(그리는 데 필요한 것만 — 원문은 들고 있지 않는다). */
@@ -693,6 +713,74 @@ export function parseCalendarList(json: unknown): GoogleCalendarMeta[] {
 
 export async function fetchCalendarList(token: string): Promise<GoogleCalendarMeta[]> {
   return parseCalendarList(await get('/users/me/calendarList', token, { minAccessRole: 'reader', maxResults: '250' }));
+}
+
+/**
+ * 그 캘린더를 **읽을 수 있는가**, 그리고 이름은 무엇인가(목록에 더하기 전 확인).
+ *
+ * `events.list`는 캘린더 id를 그대로 받고 응답 머리에 그 캘린더의 `summary`가
+ * 실려 온다 — 그래서 지금 스코프(`calendar.events`)로 "볼 수 있는지 확인"과
+ * "이름 얻기"가 **한 번에** 끝난다(구독 API는 쓰기 스코프가 따로다).
+ *
+ * 일정은 필요하지 않으므로 한 건만 받아 응답을 작게 유지한다. 못 읽으면 던진다 —
+ * 401은 호출부(`withToken`)가 토큰을 다시 받아 재시도하고, 그 밖은
+ * `calendarAddError`가 사람이 읽을 문장으로 옮긴다.
+ */
+export async function probeCalendar(token: string, id: string): Promise<GoogleExtraCalendar> {
+  const json = (await get(`/calendars/${encodeURIComponent(id)}/events`, token, {
+    maxResults: '1',
+    timeMin: new Date().toISOString(),
+    singleEvents: 'true',
+  })) as { summary?: unknown };
+  const name = typeof json.summary === 'string' && json.summary ? json.summary : id;
+  return { id, name };
+}
+
+/**
+ * 구독 목록과 **우리가 더한 것**을 합친다(id로 중복 제거 — 구독 쪽이 이긴다).
+ *
+ * 더한 캘린더에는 `calendarList`에만 있는 두 값이 없다: 색은 id를 씨앗으로 정하고
+ * (같은 캘린더는 늘 같은 색 — 접속자 커서·아바타와 같은 규칙), 쓰기 권한은 알 수
+ * 없으므로 세우지 않는다(그래서 목적지에 오르지 않고 그 일정도 고칠 수 없다).
+ */
+export function mergeExtraCalendars(list: readonly GoogleCalendarMeta[], extra: readonly GoogleExtraCalendar[]): GoogleCalendarMeta[] {
+  const have = new Set(list.map((c) => c.id.toLowerCase()));
+  const added = extra
+    .filter((e) => !have.has(e.id.toLowerCase()))
+    .map<GoogleCalendarMeta>((e) => ({ id: e.id, summary: e.name || e.id, color: colorForSeed(e.id), external: true }));
+  added.sort((a, b) => a.summary.localeCompare(b.summary, 'ko'));
+  // 구독 목록이 먼저, 더한 것이 뒤 — 목록 순서가 매번 흔들리지 않게(구독 쪽은 이미 정렬돼 있다).
+  return [...list, ...added];
+}
+
+/**
+ * 저장 블롭에서 읽은 `extra` 검증 — 모양이 어긋난 항목은 조용히 버린다(대시보드의
+ * `coerceDashboards`와 같은 태도: 깨진 블롭 하나가 홈 전체를 무너뜨리면 안 된다).
+ * 값이 없거나 비면 키 자체를 만들지 않는다(옛 블롭과 바이트가 같게).
+ */
+export function coerceExtraCalendars(raw: unknown): { extra?: GoogleExtraCalendar[] } {
+  if (!Array.isArray(raw)) return {};
+  const out: GoogleExtraCalendar[] = [];
+  const seen = new Set<string>();
+  for (const it of raw) {
+    if (!it || typeof it !== 'object') continue;
+    const o = it as { id?: unknown; name?: unknown };
+    if (typeof o.id !== 'string' || !o.id) continue;
+    const key = o.id.toLowerCase();
+    if (seen.has(key)) continue;
+    seen.add(key);
+    out.push({ id: o.id, name: typeof o.name === 'string' && o.name ? o.name : o.id });
+  }
+  return out.length ? { extra: out } : {};
+}
+
+/** 목록에 더하지 못한 이유 — 상태 코드마다 답이 다르므로 갈라 말한다. */
+export function calendarAddError(e: unknown): string {
+  const status = (e as { status?: number }).status;
+  if (status === 404) return '그 주소의 캘린더를 찾을 수 없어요. 주소를 다시 확인해 주세요.';
+  if (status === 403) return '그 캘린더를 볼 권한이 없어요 — 상대가 캘린더를 공유해 주면 보여요.';
+  if (status === 400) return '캘린더 주소가 올바르지 않아요.';
+  return '캘린더를 확인하지 못했어요. 잠시 후 다시 시도해 주세요.';
 }
 
 /** `2026-08-30T10:00:00+09:00` / `2026-08-30` → 로컬 `YYYY-MM-DD` + `HH:MM`. */

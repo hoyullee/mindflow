@@ -17,7 +17,7 @@ import type { HomeController } from '../useHomeController';
 import type { HomeState } from '../types';
 import { calendarBriefLine, type CalendarBrief } from '../calendar/model';
 import { CalendarGlyph } from '../calendar/CalendarView';
-import { useGoogleCalendar } from '../calendar/useGoogleCalendar';
+import { googlePrefsOf, useGoogleCalendar } from '../calendar/useGoogleCalendar';
 import { NavCard } from './NavCard';
 
 export function CalendarNavSection({ state, controller, isMobile, brief }: { state: HomeState; controller: HomeController; isMobile: boolean; brief: CalendarBrief }) {
@@ -28,7 +28,7 @@ export function CalendarNavSection({ state, controller, isMobile, brief }: { sta
   const google = useGoogleCalendar(
     1970,
     1,
-    { enabled: !!state.google, calendars: state.google?.calendars ?? [] },
+    googlePrefsOf(state.google),
     controller.setGoogleCalendars,
     active ? 'list' : 'off',
   );
@@ -103,6 +103,18 @@ export function CalendarNavSection({ state, controller, isMobile, brief }: { sta
                   ))}
                 </div>
               )}
+              {/*
+                목록에 없는 캘린더를 더하는 길(요청) — 실제 흐름(주소 확인·이름 검색·
+                빼기)은 **설정의 연동 구획 한 곳**이 맡는다. LNB는 250px이라 검색
+                상자를 두면 좁고, 같은 동작의 진입점을 둘로 두면 어느 쪽이 진짜인지
+                흐려진다(바로 위 `연동` 행과 같은 판단).
+              */}
+              <button type="button" className="nav-item" data-cal-sub-add onClick={controller.openGoogleCalendarSetup} style={{ ...SUB_ROW, minHeight: isMobile ? 40 : 28, color: 'var(--mf-accent)', fontWeight: 700 }}>
+                <span aria-hidden="true" style={{ flexShrink: 0, width: 13, textAlign: 'center', fontSize: 13, lineHeight: 1 }}>
+                  ＋
+                </span>
+                <span style={{ minWidth: 0, flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>캘린더 추가</span>
+              </button>
             </>
           ) : (
             // 연동 전(또는 권한 만료) — 무엇을 하면 되는지 한 행이 말한다.
@@ -111,23 +123,7 @@ export function CalendarNavSection({ state, controller, isMobile, brief }: { sta
               className="nav-item"
               data-cal-sub-connect
               onClick={google.enabled && google.needsReauth ? () => void google.connect() : controller.openGoogleCalendarSetup}
-              style={{
-                display: 'flex',
-                alignItems: 'center',
-                gap: 8,
-                width: '100%',
-                border: 'none',
-                background: 'transparent',
-                fontFamily: 'inherit',
-                textAlign: 'left',
-                padding: '6px 7px',
-                minHeight: isMobile ? 40 : 30,
-                borderRadius: 8,
-                cursor: 'pointer',
-                fontSize: 12,
-                fontWeight: 600,
-                color: 'var(--mf-subtext)',
-              }}
+              style={{ ...SUB_ROW, minHeight: isMobile ? 40 : 30, fontWeight: 600, color: 'var(--mf-subtext)' }}
             >
               <span style={{ display: 'inline-flex', flexShrink: 0, color: 'var(--mf-accent)' }}>
                 <CalendarGlyph />
@@ -142,6 +138,22 @@ export function CalendarNavSection({ state, controller, isMobile, brief }: { sta
     </>
   );
 }
+
+/** 하위 메뉴의 행 — 연동·추가 두 버튼이 같은 꼴을 쓴다(값을 각자 적으면 갈린다). */
+const SUB_ROW = {
+  display: 'flex',
+  alignItems: 'center',
+  gap: 8,
+  width: '100%',
+  border: 'none',
+  background: 'transparent',
+  fontFamily: 'inherit',
+  textAlign: 'left',
+  padding: '6px 7px',
+  borderRadius: 8,
+  cursor: 'pointer',
+  fontSize: 12,
+} as const;
 
 const SUB_LABEL = {
   padding: '2px 8px 5px',

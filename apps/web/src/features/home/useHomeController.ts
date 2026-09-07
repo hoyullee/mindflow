@@ -11,6 +11,7 @@ import { exportDocPdf } from '../editor/pdf';
 import { themeOf } from '../editor/theme';
 import { applyHomeTheme, homeThemeKeyOf, saveHomeThemeCache, type HomeThemeKey } from './theme';
 import { addMonth, todayISO } from './calendar/model';
+import { coerceExtraCalendars } from './calendar/googleCalendar';
 import { DASH_CAP, DASH_DEFAULT_SIZE, coerceDashboards, isCalItem, moveInList, type DashboardData, type DashboardItemData } from './dashboard/model';
 import { forgetSignedIn } from '../auth/sessionNotice';
 import { localizeAuthError } from '../auth/useLoginController';
@@ -212,7 +213,7 @@ export function useHomeController() {
     // 입히고 이 기기 캐시도 맞춰 둔다 — 다음 부팅의 첫 페인트가 바로 이 색이 되도록.
     const wsTheme = ws && ws.theme !== undefined ? homeThemeKeyOf(ws.theme) : null;
     // 구글 겹치기 설정 — 모양이 어긋난 값은 조용히 버린다(옛/손상 블롭 방어).
-    const wsGoogle = ws && ws.google && Array.isArray(ws.google.calendars) ? { calendars: ws.google.calendars.filter((c): c is string => typeof c === 'string') } : null;
+    const wsGoogle = ws && ws.google && Array.isArray(ws.google.calendars) ? { calendars: ws.google.calendars.filter((c): c is string => typeof c === 'string'), ...coerceExtraCalendars(ws.google.extra) } : null;
     // 대시보드 — 스페이스와 같은 블롭에 실려 온다. 저장을 못 읽었으면 빈 목록으로
     // 두되(canPersistWorkspaceRef가 저장을 막으므로 덮어쓸 위험은 없다) 읽었으면
     // 모양을 검증해 들인다.
@@ -1041,7 +1042,8 @@ export function useHomeController() {
    * 블롭에는 **고른 캘린더만** 남긴다: "켰는가"는 이 키가 있는가로 이미 말해진다
    * (플래그를 따로 두면 둘이 어긋날 수 있다).
    */
-  const setGoogleCalendars = (next: { calendars: string[] } | null) => patch({ google: next ? { calendars: next.calendars } : null });
+  const setGoogleCalendars = (next: { calendars: string[]; extra?: { id: string; name: string }[] } | null) =>
+    patch({ google: next ? { calendars: next.calendars, ...(next.extra?.length ? { extra: next.extra } : {}) } : null });
 
   const openFeedback = () => patch({ settingsOpen: false, feedbackOpen: true });
   const closeFeedback = () => patch({ feedbackOpen: false });

@@ -25,7 +25,7 @@ import { CalendarContextMenu, type CalMenuState } from './CalendarContextMenu';
 import { DeleteConfirm } from './DeleteConfirm';
 import { useCalendarEvents } from './useCalendarEvents';
 import { eventEntries, googleEntries, holidayMap, workMap } from './entries';
-import { useGoogleCalendar } from './useGoogleCalendar';
+import { googlePrefsOf, useGoogleCalendar } from './useGoogleCalendar';
 
 /**
  * 일정 화면 — 디자인 원본 `Geurio 일정 캘린더.dc.html`의 `isCal` 화면.
@@ -68,7 +68,7 @@ export function CalendarView({
   const eventsApi = useCalendarEvents(state.calY, state.calM);
   // 구글 캘린더(PR5 겹치기 + PR6 쓰기). 연동하지 않았으면 빈 배열이라 아래 계산이
   // 예전과 한 글자도 다르지 않다.
-  const google = useGoogleCalendar(state.calY, state.calM, { enabled: !!state.google, calendars: state.google?.calendars ?? [] }, controller.setGoogleCalendars);
+  const google = useGoogleCalendar(state.calY, state.calM, googlePrefsOf(state.google), controller.setGoogleCalendars);
   const [saving, setSaving] = useState(false);
   const [saveError, setSaveError] = useState<string | null>(null);
   // 날짜 칸 더블클릭·`+N개 더`가 여는 "그 날의 일정 전부"(디자인 원본 `dayList`).
