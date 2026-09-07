@@ -8,9 +8,7 @@ import { NotificationBell } from './NotificationBell';
 import { DashboardSection, ReorderToggle } from './DashboardSection';
 import { SpaceRow } from './SpaceRow';
 import { META_MONO, SECTION_LABEL } from '../chrome';
-import { CalendarGlyph } from '../calendar/CalendarView';
-import { calendarBriefLine, type CalendarBrief } from '../calendar/model';
-import { NavCard } from './NavCard';
+import { CalendarNavSection } from './CalendarNavSection';
 
 /** How long the drawer's exit slide runs before the aside unmounts. Slightly
  * longer than the CSS transition (260ms, home.css `.mf-drawer`) so the last
@@ -160,7 +158,7 @@ export function Sidebar({ state, view, controller, isMobile = false, isOpen = fa
           같은 말을 두 번 하는 셈이기 때문이다 — 자리와 모양이 대신 말한다. */}
       <div style={{ flexShrink: 0, paddingTop: 6, display: 'flex', flexDirection: 'column', gap: 2 }}>
         <NotificationBell isMobile={isMobile} />
-        <CalendarNavRow state={state} controller={controller} isMobile={isMobile} brief={view.calendarBrief} />
+        <CalendarNavSection state={state} controller={controller} isMobile={isMobile} brief={view.calendarBrief} />
       </div>
       {/* 구분선은 LNB의 다른 구분선과 **같은 것**(`LNB_DIVIDER`)이다 — 값을 따로
           적으면(hairline 등) 같은 사이드바 안에서 선이 두 종류로 보인다. */}
@@ -666,57 +664,3 @@ function TrashGlyph({ size = 15 }: { size?: number }) {
   );
 }
 
-/**
- * LNB `일정` 카드 — 프로필·알림과 함께 **상단 바로가기 블록**에 선다.
- *
- * 알림과 **같은 껍데기**(`NavCard`)를 쓴다: 둘 다 여럿 중 하나가 아니라 하나뿐인
- * 목적지라, 아래의 목록 행(대시보드·스페이스)과 모양으로 격을 가른다.
- *
- * 둘째 줄은 "지금 급한 것"을 말한다 — 개수 하나만 적어 두면 많다/적다밖에
- * 알 수 없다. 지난 마감이 있으면 그 수를 **경고색 알약**으로도 세운다(달력
- * 화면에서 지난 마감이 danger 톤인 것과 같은 언어).
- */
-function CalendarNavRow({ state, controller, isMobile, brief }: { state: HomeState; controller: HomeController; isMobile: boolean; brief: CalendarBrief }) {
-  const active = state.activeCal;
-  const line = calendarBriefLine(brief);
-  return (
-    <NavCard
-      data-cal-nav
-      isMobile={isMobile}
-      // 틴트는 LNB의 다른 행과 같은 뜻이다 — **지금 보고 있는 화면**.
-      tone={active ? 'hot' : 'quiet'}
-      aria-current={active ? 'page' : undefined}
-      aria-label={`일정 · ${line}`}
-      title={line}
-      onClick={controller.openCalendar}
-      label="일정"
-      glyph={<CalendarGlyph />}
-      badge={
-        brief.overdue > 0 ? (
-          <span
-            data-cal-overdue
-            aria-hidden="true"
-            style={{
-              minWidth: 18,
-              height: 18,
-              padding: '0 5px',
-              borderRadius: 999,
-              background: 'var(--mf-danger-soft)',
-              color: 'var(--mf-danger)',
-              fontSize: 10.5,
-              fontWeight: 800,
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              boxSizing: 'border-box',
-              flexShrink: 0,
-            }}
-          >
-            {brief.overdue > 9 ? '9+' : brief.overdue}
-          </span>
-        ) : undefined
-      }
-      summary={<span data-cal-summary style={{ minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis' }}>{line}</span>}
-    />
-  );
-}

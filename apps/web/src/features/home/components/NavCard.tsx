@@ -21,6 +21,8 @@ export interface NavCardProps extends ButtonHTMLAttributes<HTMLButtonElement> {
   summary: ReactNode;
   /** hot = 눈에 띄어야 하는 상태(안 읽음 · 지금 보는 화면) → 강조색 틴트 면. */
   tone?: 'hot' | 'quiet';
+  /** 하위 메뉴가 펼쳐졌는가 — 오른쪽 셰브론이 아래를 가리킨다(디스클로저 관례). */
+  expanded?: boolean;
   isMobile?: boolean;
 }
 
@@ -30,7 +32,7 @@ export function navCardSummaryColor(tone: 'hot' | 'quiet'): string {
 }
 
 export const NavCard = forwardRef<HTMLButtonElement, NavCardProps>(function NavCard(
-  { glyph, label, badge, summary, tone = 'quiet', isMobile = false, style, ...rest },
+  { glyph, label, badge, summary, tone = 'quiet', expanded = false, isMobile = false, style, ...rest },
   ref,
 ) {
   const hot = tone === 'hot';
@@ -88,7 +90,18 @@ export const NavCard = forwardRef<HTMLButtonElement, NavCardProps>(function NavC
           {summary}
         </span>
       </span>
-      <span style={{ display: 'inline-flex', color: hot ? 'var(--mf-accent)' : 'var(--mf-faint)', flexShrink: 0 }} aria-hidden="true">
+      <span
+        data-nav-card-chevron
+        style={{
+          display: 'inline-flex',
+          color: hot ? 'var(--mf-accent)' : 'var(--mf-faint)',
+          flexShrink: 0,
+          // 펼치면 아래를 가리킨다 — 같은 글리프가 "연다"와 "펼쳤다"를 겸한다.
+          transform: expanded ? 'rotate(90deg)' : undefined,
+          transition: 'transform .16s ease',
+        }}
+        aria-hidden="true"
+      >
         <svg width={14} height={14} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round">
           <path d="M9 6l6 6-6 6" />
         </svg>

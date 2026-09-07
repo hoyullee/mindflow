@@ -288,6 +288,54 @@ describe('구글 캘린더 겹치기(PR5)', () => {
     expect(localStorage.getItem('mf_gcal_token')).toContain('tok');
   });
 
+  it('LNB `일정`을 누르면 하위 메뉴가 펼쳐진다 — 연동 전에는 연동 항목, 연동 뒤에는 보여 줄 캘린더(요청)', async () => {
+    // ① 클라이언트 ID가 없는 배포 — 하위 메뉴 자체를 그리지 않는다(눌러도 아무 일
+    //    없는 항목을 두지 않는다는 규칙, 설정의 연동 구획과 같다).
+    seed();
+    const user = userEvent.setup();
+    const first = renderHome();
+    await openCalendar(first.container, user);
+    expect(document.querySelector('[data-cal-sub]')).toBeNull();
+    cleanup();
+
+    // ② 연동 전 — `Google 캘린더 연동` 한 행. 누르면 동의 창이 아니라 **설정의
+    //    연동 구획**이 열린다(무엇을 켜는지 읽고 켠다).
+    clientId = 'test-client.apps.googleusercontent.com';
+    seed();
+    stubGis();
+    stubFetch();
+    const second = renderHome();
+    await openCalendar(second.container, user);
+    const connectRow = await waitFor(() => {
+      const el = document.querySelector('[data-cal-sub-connect]');
+      expect(el).toBeTruthy();
+      return el as HTMLElement;
+    });
+    expect(connectRow.textContent).toContain('Google 캘린더 연동');
+    await user.click(connectRow);
+    await screen.findByRole('dialog', { name: '설정' });
+    expect(document.querySelector('[data-google-section]')).toBeTruthy();
+    cleanup();
+
+    // ③ 연동 뒤 — 고를 수 있는 캘린더가 목록으로. 체크를 끄면 블롭에서 빠진다.
+    clearGoogleSessionCache();
+    seed({ calendars: ['me@example.com', HOLIDAY_ID] });
+    seedToken();
+    stubGis();
+    stubFetch();
+    const third = renderHome();
+    await openCalendar(third.container, user);
+    await waitFor(() => expect(document.querySelector('[data-cal-sub-item="me@example.com"]')).toBeTruthy());
+    const row = document.querySelector('[data-cal-sub-item="me@example.com"]') as HTMLElement;
+    expect((row.querySelector('input') as HTMLInputElement).checked).toBe(true);
+    expect(document.querySelector('[data-cal-sub-connect]')).toBeNull();
+    await user.click(row.querySelector('input') as HTMLInputElement);
+    await waitFor(() => {
+      const ws = JSON.parse(localStorage.getItem('mf_spaces') ?? '{}') as { google?: { calendars: string[] } };
+      expect(ws.google?.calendars).not.toContain('me@example.com');
+    });
+  });
+
   it('연동을 켜 두면 일정 화면에 구글 일정이 겹치고, 공휴일은 칩이 아니라 날짜 색·이름이 된다', async () => {
     seed({ calendars: ['me@example.com', HOLIDAY_ID] });
     seedToken();
