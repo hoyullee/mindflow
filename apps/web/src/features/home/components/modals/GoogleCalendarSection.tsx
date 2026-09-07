@@ -1,127 +1,254 @@
-// 설정 → 계정 설정 → **연동** 구획의 구글 캘린더 행(PR5). 구글 캘린더를 일정 화면에
-// 겹쳐 볼지 정한다. 구획 제목("연동")은 호출부(계정 설정 화면)가 달고 이 컴포넌트는
-// 행 하나만 그린다 — 같은 구획의 `Google 연동`(로그인 수단) 행과 **같은 꼴**이다(요청:
-// 두 연동을 한 묶음으로).
+// 설정 → 계정 설정 → **캘린더 연동** 구획(PR5). 구글 캘린더를 일정 화면에 겹쳐
+// 볼지 정하고, 무엇을 보여 줄지 고르고, 공휴일 국가를 정한다. 구획 제목("캘린더
+// 연동")은 호출부가 달고 이 컴포넌트는 카드들만 그린다(첨부 이미지).
 //
-// 이 구획의 규칙 셋:
+// 이 구획의 규칙 넷:
 //  ① 배포에 구글 클라이언트 ID가 없으면 **그리지 않는다** — 눌러도 아무 일 없는
 //     버튼을 두지 않는다(이 프로젝트의 정직한 어포던스 규칙).
 //  ② 켜는 것은 사용자가 **직접 누를 때만**이다(동의 창이 그때 뜬다). 화면을 여는
 //     것만으로 팝업이 뜨면 브라우저가 막고, 사용자도 놀란다.
-//  ③ 무엇을 할 수 있는지 문구가 말한다 — 겹쳐 보고(읽기) 그리오에서 만들고 고칠
-//     수 있다(쓰기, PR6). 쓸 수 없는 캘린더(공휴일·보기 전용 공유)는 그렇게 표시한다.
+//  ③ 카드의 색이 상태를 말한다 — 연결 전은 강조색 틴트 + 코랄 `연결하기`, 연결
+//     뒤는 초록 틴트 + 중립 `해제`(그리고 그 아래에 보여 줄 캘린더 목록이 열린다).
 //  ④ 스코프를 넓힌 뒤 옛 토큰이 남으면 **다시 연결**을 권한다 — 켜져 있는데 저장이
 //     안 되는 상태를 조용히 두지 않는다.
 
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useRef, useState, type ReactNode } from 'react';
 import type { GoogleCalendarApi } from '../../calendar/useGoogleCalendar';
 import type { DirectoryPerson } from '../../calendar/googleDirectory';
+import { HOLIDAY_COUNTRIES } from '../../calendar/googleCalendar';
+import { Segmented } from '../../../../components/Segmented';
+import { SectionLabel, SettingsGroup } from './AccountSettingsModal';
 
 export function GoogleCalendarSection({ api }: { api: GoogleCalendarApi }) {
   if (!api.available) return null;
   // 연결은 돼 있는데 토큰이 없으면(재로그인 뒤) "불러오는 중"이 아니다 — 다시 연결해야
   // 목록이 온다(제보: 창을 닫아도 "캘린더를 불러오는 중…"이 그대로 남았다).
-  const showList = api.enabled && api.connected && !api.needsReauth;
+  const live = api.enabled && api.connected && !api.needsReauth;
+  // 구글 계정 이메일은 **기본 캘린더의 id**다(구글이 그렇게 만든다) — 우리 앱의
+  // 로그인 이메일과 다를 수 있으므로 그걸 쓰지 않는다.
+  const account = api.calendars.find((c) => c.primary)?.id ?? '';
+  const shown = api.calendars.filter((c) => api.pickedIds.includes(c.id)).length;
+  const ym = monthKey();
+  const monthly = api.events.filter((e) => e.startDate.startsWith(ym)).length;
   return (
-    <div data-google-section style={{ padding: '15px 16px', borderRadius: 14 }}>
-      <div style={{ display: 'flex', alignItems: 'center', gap: 13 }}>
-        <span style={{ display: 'flex', flexShrink: 0, width: 18, justifyContent: 'center' }}>
-          <GoogleCalendarGlyph />
-        </span>
-        <div style={{ minWidth: 0 }}>
-          <div style={{ fontWeight: 700, fontSize: 14.5 }}>Google 캘린더 연동</div>
-          <div style={{ fontSize: 12.5, color: 'var(--mf-muted)', marginTop: 2 }}>
-            {api.needsReauth
-              ? // **연동이 해제된 것이 아니다** — 고른 캘린더는 그대로 남아 있다.
-                // 평소에는 서버가 갱신 토큰으로 조용히 이어 주므로 이 문구가 뜨지
-                // 않는다. 뜬다면 구글에서 권한을 회수했거나(계정 › 타사 앱) 서버
-                // 흐름이 없는 환경이다 — 어느 쪽이든 답은 "다시 허용"이다.
-                '구글 권한을 다시 허용해야 이어져요 — 고른 캘린더는 그대로예요'
-              : api.enabled
-                ? '일정 화면에 겹쳐 보고, 여기서 만들고 고칠 수 있어요'
-                : '내 구글 일정을 겹쳐 보고 그리오에서 만들고 고칠 수 있어요'}
+    <>
+      <div
+        data-google-section
+        data-google-live={live ? '1' : undefined}
+        style={{ borderRadius: 16, border: '1px solid var(--mf-border-soft)', background: live ? 'var(--mf-success-soft)' : 'var(--mf-accent-soft)', overflow: 'hidden' }}
+      >
+        <div style={{ display: 'flex', alignItems: 'center', gap: 13, padding: '14px 15px' }}>
+          <span aria-hidden="true" style={{ flexShrink: 0, width: 38, height: 38, borderRadius: 12, background: 'var(--mf-card)', border: '1px solid var(--mf-border-soft)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+            <GoogleCalendarGlyph />
+          </span>
+          <div style={{ minWidth: 0, flex: 1 }}>
+            <div style={{ fontWeight: 700, fontSize: 14.5 }}>Google 캘린더</div>
+            <div data-google-sub style={{ fontSize: 12.5, color: 'var(--mf-muted)', marginTop: 2, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+              {api.enabled && api.needsReauth
+                ? // **연동이 해제된 것이 아니다** — 고른 캘린더는 그대로 남아 있다.
+                  // 평소에는 서버가 갱신 토큰으로 조용히 이어 주므로 이 문구가 뜨지
+                  // 않는다. 뜬다면 구글에서 권한을 회수했거나(계정 › 타사 앱) 서버
+                  // 흐름이 없는 환경이다 — 어느 쪽이든 답은 "다시 허용"이다.
+                  '구글 권한을 다시 허용해야 이어져요 — 고른 캘린더는 그대로예요'
+                : live
+                  ? // 연결된 뒤에는 **무엇이 걸려 있는지**를 말한다(첨부 이미지).
+                    [account, `이번 달 일정 ${monthly}개`].filter(Boolean).join(' · ')
+                  : '연결하면 구글 일정도 함께 보여요'}
+            </div>
           </div>
+          {api.enabled && api.needsReauth ? (
+            <button type="button" className="btn mf-ctl" data-google-reconnect onClick={() => void api.connect()} style={neutralPill}>
+              다시 연결
+            </button>
+          ) : api.enabled ? (
+            <button type="button" className="btn mf-ctl" data-google-disconnect onClick={() => void api.disconnect()} style={neutralPill}>
+              해제
+            </button>
+          ) : (
+            // 켜는 버튼만 강조색이다 — 이 구획에서 사용자가 할 일이 그것 하나다.
+            <button type="button" className="btn mf-ctl-primary" data-google-connect onClick={() => void api.connect()} style={primaryPill}>
+              연결하기
+            </button>
+          )}
         </div>
-        {api.enabled && api.needsReauth ? (
-          <button type="button" className="btn mf-ctl" data-google-reconnect onClick={() => void api.connect()} style={btn()}>
-            다시 연결
-          </button>
-        ) : api.enabled ? (
-          <button type="button" className="btn mf-ctl" data-google-disconnect onClick={() => void api.disconnect()} style={btn()}>
-            연결 해제
-          </button>
-        ) : (
-          <button type="button" className="btn mf-ctl" data-google-connect onClick={() => void api.connect()} style={btn()}>
-            연결
-          </button>
+
+        {api.error && (
+          <div data-google-error style={{ padding: '0 15px 12px 66px', fontSize: 12.5, color: 'var(--mf-danger)' }}>
+            {api.error}
+          </div>
+        )}
+
+        {live && (
+          <div style={{ borderTop: '1px solid var(--mf-hairline)', padding: '12px 15px 14px' }}>
+            <div style={{ display: 'flex', alignItems: 'baseline', gap: 8, margin: '0 0 8px 3px' }}>
+              <SectionLabel>보여 줄 캘린더</SectionLabel>
+              <span data-google-shown style={{ fontSize: 11.5, color: 'var(--mf-muted)' }}>{shown}개 표시 중</span>
+            </div>
+            {api.calendars.length === 0 ? (
+              <div style={{ fontSize: 12.5, color: 'var(--mf-muted)', padding: '2px 3px' }}>캘린더를 불러오는 중…</div>
+            ) : (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 1, maxHeight: 208, overflowY: 'auto' }} className="lnb-scroll">
+                {api.calendars.map((c) => {
+                  const on = api.pickedIds.includes(c.id);
+                  return (
+                    <label
+                      key={c.id}
+                      data-google-cal={c.id}
+                      style={{ display: 'flex', alignItems: 'center', gap: 11, padding: '7px 8px', borderRadius: 10, cursor: 'pointer', minHeight: 38 }}
+                      className="menu-row"
+                    >
+                      <input type="checkbox" className="mf-cb" checked={on} onChange={() => api.toggleCalendar(c.id)} />
+                      <span aria-hidden="true" style={{ width: 9, height: 9, borderRadius: 999, background: c.color ?? 'var(--mf-accent)', flexShrink: 0 }} />
+                      <span style={{ minWidth: 0, flex: 1, fontSize: 13.5, fontWeight: on ? 700 : 500, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{c.summary}</span>
+                      {c.primary ? (
+                        <Badge>내 캘린더</Badge>
+                      ) : c.holiday ? (
+                        <Badge tone="accent">공휴일</Badge>
+                      ) : (
+                        // 쓸 수 없는 캘린더는 그렇게 말한다 — 새 일정 목적지에도 오르지 않는다.
+                        !c.writable && <Badge attrs={{ 'data-google-readonly': '' }}>보기 전용</Badge>
+                      )}
+                      {/* 우리가 더한 캘린더만 뺄 수 있다 — 구독 목록의 캘린더는 구글이 들고 있다.
+                          공휴일 캘린더는 예외다: 그 자리는 아래 **공휴일 국가**가 맡으므로
+                          여기서 빼면 국가 설정만 남아 둘이 어긋난다. */}
+                      {c.external && !c.holiday && (
+                        <button
+                          type="button"
+                          className="btn mf-ctl"
+                          data-google-cal-remove={c.id}
+                          aria-label={`${c.summary} 목록에서 빼기`}
+                          title="목록에서 빼기"
+                          onClick={(e) => {
+                            e.preventDefault();
+                            api.removeCalendar(c.id);
+                          }}
+                          style={{ flexShrink: 0, width: 22, height: 22, display: 'grid', placeItems: 'center', border: 'none', borderRadius: 999, background: 'transparent', color: 'var(--mf-faint)', cursor: 'pointer', fontSize: 13, lineHeight: 1 }}
+                        >
+                          ✕
+                        </button>
+                      )}
+                    </label>
+                  );
+                })}
+              </div>
+            )}
+            <AddCalendar api={api} />
+            {/* 공휴일 캘린더는 칩이 아니라 **날짜 색**으로 그린다 — 고를 때 그걸 알려 준다. */}
+            <div style={{ display: 'flex', gap: 8, marginTop: 10, padding: '10px 11px', borderRadius: 12, border: '1px solid var(--mf-border-soft)', background: 'var(--mf-card)', fontSize: 11.5, color: 'var(--mf-faint)', lineHeight: 1.55 }}>
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="var(--mf-faint)" strokeWidth="2" strokeLinecap="round" aria-hidden="true" style={{ flexShrink: 0, marginTop: 2 }}>
+                <circle cx="12" cy="12" r="9" />
+                <path d="M12 11v5.5M12 7.6v.6" />
+              </svg>
+              <span>공휴일 캘린더는 일정 칩 대신 날짜를 붉게 표시해요. 연동을 끄면 화면에서만 사라지고 구글에는 그대로 남아요.</span>
+            </div>
+          </div>
         )}
       </div>
 
-      {api.error && (
-        <div data-google-error style={{ marginTop: 10, marginLeft: 31, fontSize: 12.5, color: 'var(--mf-danger)' }}>
-          {api.error}
-        </div>
-      )}
-
-      {showList && (
-        <div style={{ marginTop: 12, marginLeft: 31, borderTop: '1px solid var(--mf-hairline)', paddingTop: 12 }}>
-          <div style={{ fontSize: 12, fontWeight: 700, color: 'var(--mf-faint)', marginBottom: 8 }}>보여 줄 캘린더</div>
-          {api.calendars.length === 0 ? (
-            <div style={{ fontSize: 12.5, color: 'var(--mf-muted)' }}>캘린더를 불러오는 중…</div>
-          ) : (
-            <div style={{ display: 'flex', flexDirection: 'column', gap: 2, maxHeight: 190, overflowY: 'auto' }} className="lnb-scroll">
-              {api.calendars.map((c) => {
-                const on = api.pickedIds.includes(c.id);
-                return (
-                  <label
-                    key={c.id}
-                    data-google-cal={c.id}
-                    style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '8px 6px', borderRadius: 10, cursor: 'pointer', minHeight: 36 }}
-                    className="menu-row"
-                  >
-                    <input type="checkbox" checked={on} onChange={() => api.toggleCalendar(c.id)} style={{ width: 15, height: 15, accentColor: 'var(--mf-accent)', cursor: 'pointer', flexShrink: 0 }} />
-                    <span style={{ width: 9, height: 9, borderRadius: 999, background: c.color ?? 'var(--mf-accent)', flexShrink: 0 }} />
-                    <span style={{ minWidth: 0, flex: 1, fontSize: 13.5, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{c.summary}</span>
-                    {c.holiday ? (
-                      <span style={{ flexShrink: 0, fontSize: 11, color: 'var(--mf-muted)' }}>공휴일</span>
-                    ) : (
-                      // 쓸 수 없는 캘린더는 그렇게 말한다 — 새 일정 목적지에도 오르지 않는다.
-                      !c.writable && (
-                        <span data-google-readonly style={{ flexShrink: 0, fontSize: 11, color: 'var(--mf-muted)' }}>보기 전용</span>
-                      )
-                    )}
-                    {/* 우리가 더한 캘린더만 뺄 수 있다 — 구독 목록의 캘린더는 구글이 들고 있다. */}
-                    {c.external && (
-                      <button
-                        type="button"
-                        className="btn mf-ctl"
-                        data-google-cal-remove={c.id}
-                        aria-label={`${c.summary} 목록에서 빼기`}
-                        title="목록에서 빼기"
-                        onClick={(e) => {
-                          e.preventDefault();
-                          api.removeCalendar(c.id);
-                        }}
-                        style={{ flexShrink: 0, width: 22, height: 22, display: 'grid', placeItems: 'center', border: 'none', borderRadius: 999, background: 'transparent', color: 'var(--mf-faint)', cursor: 'pointer', fontSize: 13, lineHeight: 1 }}
-                      >
-                        ✕
-                      </button>
-                    )}
-                  </label>
-                );
-              })}
+      {/*
+        공휴일 국가(요청) — **연결된 뒤에만** 보여 준다. 공휴일은 구글의 공개 캘린더에서
+        오므로 연결 전에는 고를 수 있는 척만 하게 된다(첨부 이미지는 연결 전에도 이 줄을
+        두지만, 이 앱은 "할 수 없는 것은 보이지 않는다"를 지킨다).
+      */}
+      {live && (
+        <SettingsGroup style={{ marginTop: 10 }} attrs={{ 'data-holiday-row': '' }}>
+          {/* 좁은 화면에서는 **두 묶음 사이에서만** 접힌다(세그먼트는 `flexShrink: 0`이라
+              쪼개지지 않는다) — 폰에서 설명이 세 줄로 접히며 트랙 옆에 매달리던 것. */}
+          <div style={{ display: 'flex', alignItems: 'center', flexWrap: 'wrap', gap: 13, padding: '14px 15px' }}>
+            <div style={{ minWidth: 0, flex: '1 1 200px' }}>
+              <div style={{ fontWeight: 700, fontSize: 14.5 }}>공휴일 국가</div>
+              <div style={{ fontSize: 12.5, color: 'var(--mf-muted)', marginTop: 2 }}>일정 화면과 위젯에 이 국가의 공휴일이 표시돼요</div>
             </div>
-          )}
-          <AddCalendar api={api} />
-          {/* 공휴일 캘린더는 칩이 아니라 **날짜 색**으로 그린다 — 고를 때 그걸 알려 준다. */}
-          <div style={{ fontSize: 11.5, color: 'var(--mf-faint)', marginTop: 8, lineHeight: 1.5 }}>
-            공휴일 캘린더는 일정 칩 대신 날짜를 빨갛게 표시해요. 여기서 만든 일정은 <b style={{ fontWeight: 700 }}>구글에만</b> 남아요 — 연동을 끄면 화면에서 사라집니다(구글에는 그대로 있어요).
+            {/* 세그먼트 트랙 — 속성 패널의 크기 세그먼트와 같은 문법(가라앉은 트랙
+                위에서 고른 칸만 카드 면 + 진한 강조 잉크). */}
+            <Segmented
+              value={api.holidayCountry}
+              onChange={api.setHolidayCountry}
+              label="공휴일 국가"
+              trackAttrs={{ 'data-holiday-seg': '' }}
+              track={{ display: 'flex', gap: 3, padding: 3, borderRadius: 11, background: 'var(--mf-panel2)', border: '1px solid var(--mf-border-soft)', boxSizing: 'border-box', flexShrink: 0 }}
+              items={HOLIDAY_COUNTRIES.map((c) => ({
+                value: c.key,
+                label: c.label,
+                style: (on: boolean) => ({
+                  minWidth: 54,
+                  height: 30,
+                  border: 0,
+                  borderRadius: 8,
+                  padding: '0 10px',
+                  background: on ? 'var(--mf-card)' : 'transparent',
+                  fontFamily: 'inherit',
+                  fontSize: 12.5,
+                  fontWeight: 700,
+                  color: on ? 'var(--mf-accent-strong)' : 'var(--mf-subtext)',
+                  boxShadow: on ? '0 2px 5px -3px rgba(46,42,38,.35)' : 'none',
+                  cursor: 'pointer',
+                }),
+              }))}
+            />
           </div>
-        </div>
+        </SettingsGroup>
       )}
-    </div>
+    </>
   );
 }
+
+/** 이 달의 `YYYY-MM` — 카드 부제의 "이번 달 일정 N개"가 이 달로 거른다. */
+function monthKey(): string {
+  const d = new Date();
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
+}
+
+/** 목록 행의 오른쪽 표식(첨부 이미지) — 내 캘린더 / 공휴일 / 보기 전용. */
+function Badge({ children, tone, attrs }: { children: ReactNode; tone?: 'accent'; attrs?: Record<string, string> }) {
+  return (
+    <span
+      {...attrs}
+      style={{
+        flexShrink: 0,
+        height: 22,
+        padding: '0 9px',
+        display: 'inline-flex',
+        alignItems: 'center',
+        borderRadius: 999,
+        background: tone === 'accent' ? 'var(--mf-accent-soft)' : 'var(--mf-panel2)',
+        color: tone === 'accent' ? 'var(--mf-accent-strong)' : 'var(--mf-muted)',
+        fontSize: 11,
+        fontWeight: 700,
+      }}
+    >
+      {children}
+    </span>
+  );
+}
+
+const neutralPill = {
+  flexShrink: 0,
+  height: 34,
+  padding: '0 15px',
+  border: '1px solid var(--mf-border)',
+  borderRadius: 999,
+  background: 'var(--mf-card)',
+  color: 'var(--mf-text)',
+  fontFamily: 'inherit',
+  fontSize: 13,
+  fontWeight: 700,
+  cursor: 'pointer',
+} as const;
+
+const primaryPill = {
+  flexShrink: 0,
+  height: 34,
+  padding: '0 16px',
+  border: 0,
+  borderRadius: 999,
+  background: 'var(--mf-accent)',
+  color: 'var(--mf-accent-ink)',
+  fontFamily: 'inherit',
+  fontSize: 13,
+  fontWeight: 700,
+  cursor: 'pointer',
+} as const;
 
 /**
  * **캘린더 더하기**(요청: 구독한 캘린더만 목록에 떠서 불편하다).
@@ -264,24 +391,6 @@ function AddCalendar({ api }: { api: GoogleCalendarApi }) {
       </div>
     </div>
   );
-}
-
-/** 같은 구획의 `Google 연동` 행 버튼과 **같은 꼴**(중립 알약) — 한 묶음으로 읽혀야 한다. */
-function btn() {
-  return {
-    marginLeft: 'auto',
-    flexShrink: 0,
-    height: 34,
-    padding: '0 14px',
-    border: '1px solid var(--mf-border)',
-    borderRadius: 999,
-    background: 'var(--mf-panel2)',
-    color: 'var(--mf-text)',
-    fontFamily: 'inherit',
-    fontSize: 13,
-    fontWeight: 700,
-    cursor: 'pointer',
-  } as const;
 }
 
 /** 구글 캘린더 마크 — 브랜드 로고를 흉내내지 않고 우리 선 아이콘 언어로 그린다. */

@@ -104,9 +104,13 @@ describe('표식 — 우리 일정은 점, 구글은 둥근 막대(요청)', () 
 });
 
 describe('구글 일정의 글자색(요청 ⑥)', () => {
-  it('구글 일정은 제목이 언제나 본문 색이다 — 색으로 말하는 것은 표식 하나면 된다', () => {
+  it('구글 일정은 제목이 색이 아니라 **본문 잉크에서 한 톤 죽인 값**이다(제보: 검은색이 튄다)', () => {
     const g = entryChip(E({ google: GOOGLE, colColor: '#f6bf26' }), SURFACE);
-    expect(g.fg).toBe(SURFACE.text);
+    // 일정 색을 따르지 않고(옅은 색에서 못 읽는다), 본문 잉크 그대로도 아니다
+    // (달력 칸에서 혼자 새까맣게 도드라진다) — 면 쪽으로 한 톤 물러난 값이다.
+    expect(g.fg).not.toBe('#f6bf26');
+    expect(g.fg).not.toBe(SURFACE.text);
+    expect(g.fg).toBe('#524841');
     // 표식(아이콘)은 그대로 그 일정의 색이다
     expect(g.dot).toBe('#f6bf26');
   });

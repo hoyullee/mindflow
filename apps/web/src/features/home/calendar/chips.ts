@@ -18,6 +18,12 @@ import type { CalendarEntry } from './entries';
  */
 export const GOOGLE_MARK = '#4a78d0';
 
+/**
+ * 구글 일정 제목의 잉크 — 본문 잉크에서 면 쪽으로 물러난 정도(0=면, 1=본문 잉크).
+ * 코랄 실측: 본문 `#33281f` → `#544a41`(subtext `#7c6d60`보다 진하고 잉크보다 옅다).
+ */
+const GOOGLE_TITLE_INK = 0.85;
+
 export interface EntryChip {
   bg: string;
   fg: string;
@@ -67,10 +73,12 @@ export function entryChip(e: CalendarEntry, surface: ChipSurface): EntryChip {
     // 위에서도 읽힌다(실측으로 확인). 솔리드로 가지 않은 이유: 흰 글자를 쓰는
     // 순간 우리 칩 언어(옅은 면 + 색 잉크)가 화면 안에서 둘로 갈린다.
     bg: mixHex(surface.card, base, 0.34),
-    // **구글 일정의 글자는 언제나 본문 색**(요청) — 색으로 말하는 것은 표식(막대)
-    // 하나면 충분하고, 제목까지 그 색을 따르면 옅은 색에서 읽기 힘들다.
-    // 우리 일정·카드는 예전처럼 분류색에서 눌러 뽑은 잉크를 쓴다.
-    fg: e.google ? surface.text : tagInk(base, surface.text),
+    // **구글 일정의 글자는 색이 아니라 본문 잉크 계열**(요청) — 색으로 말하는 것은
+    // 표식(막대) 하나면 충분하고, 제목까지 그 색을 따르면 옅은 색에서 읽기 힘들다.
+    // 다만 본문 잉크를 그대로 쓰면 달력 칸에서 **혼자 새까맣게** 도드라진다(제보:
+    // 색을 조금 죽여 달라) → 면 쪽으로 한 톤 물러난 값을 쓴다. 다크에서도 같은
+    // 방향(면이 어두우니 살짝 어두워진다)이라 테마마다 값을 적을 필요가 없다.
+    fg: e.google ? mixHex(surface.card, surface.text, GOOGLE_TITLE_INK) : tagInk(base, surface.text),
     dot,
     mark: e.google ? 'bar' : 'dot',
     // 라이트 카드(#FFFDFB) 실측: 그 밖 rgb(247,243,238)은 시안 값 그대로, 구글은

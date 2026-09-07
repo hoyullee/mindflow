@@ -482,6 +482,9 @@ export interface WorkspaceData {
      * 우리 쪽 기억으로 한다(`calendar/googleCalendar.ts`의 `external` 주석).
      */
     extra?: { id: string; name: string }[];
+    /** 공휴일 국가(요청) — `'kr' | 'jp' | 'us'`. 그 나라의 공개 공휴일 캘린더를
+     * 보여 줄 목록에 올린다(`calendar/googleCalendar.ts`의 `HOLIDAY_COUNTRIES`). */
+    holiday?: string;
   };
 }
 

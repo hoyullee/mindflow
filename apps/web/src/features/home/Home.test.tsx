@@ -1627,7 +1627,7 @@ describe('Home', () => {
     expect(within(settingsDialog).getByText('계정 설정')).toBeTruthy();
     expect(within(settingsDialog).queryByText('회원 탈퇴')).toBeNull();
     await user.click(settingsDialog.querySelector('[data-account-detail-row]') as HTMLElement);
-    for (const label of ['비밀번호 변경', 'Google 연동', '모든 기기에서 로그아웃', '회원 탈퇴']) {
+    for (const label of ['비밀번호 변경', 'Google 로그인', '모든 기기에서 로그아웃', '회원 탈퇴']) {
       expect(within(settingsDialog).getByText(label)).toBeTruthy();
     }
     // 화면 전환 애니메이션 — **좌우 이동 없이 제자리 페이드**(제보: 글자가 가로로
@@ -1648,9 +1648,10 @@ describe('Home', () => {
     expect(settingsDialog.getAttribute('aria-label')).toBe('설정');
     expect((settingsDialog.querySelector('div') as HTMLElement).textContent).toContain('설정');
     expect(within(settingsDialog).getByText('계정 설정')).toBeTruthy();
-    // 묶음 제목은 지웠다(요청)
-    expect(within(settingsDialog).queryByText('로그인 수단')).toBeNull();
-    expect(within(settingsDialog).queryByText('계정 관리')).toBeNull();
+    // 묶음 제목은 첨부 이미지대로 되살렸다 — 성격이 다른 세 묶음(로그인 수단 / 구글
+    // 캘린더 / 위험한 일)을 라벨로 갈라 준다.
+    expect(within(settingsDialog).getByText('로그인')).toBeTruthy();
+    expect(within(settingsDialog).getByText('계정 관리')).toBeTruthy();
     // 카드 높이도 이어 준다(요청) — 실제 전이는 실브라우저에서 재고, 여기서는
     // 본문 래퍼가 있고 전환 뒤 인라인 높이가 **남지 않는지**를 지킨다(남으면 안쪽
     // 오류 문구가 늘어나도 상자가 안 늘어난다).
@@ -5367,12 +5368,20 @@ describe('홈 디자인 후속 6건', () => {
     expect(dialog.style.width).toBe('560px');
     const accountRow = [...dialog.querySelectorAll('div')].find((d) => (d as HTMLElement).style.background.includes('--mf-accent-soft') && d.textContent?.includes('이호율')) as HTMLElement;
     expect(accountRow).toBeTruthy();
+    // 테마 칸의 미리보기(첨부 이미지) — 그 테마의 면 위에 강조색 점·막대를 얹은
+    // **알약**이다(예전의 동그라미 하나로는 "모노"·"다크"의 면이 보이지 않았다).
     const chip = within(dialog).getByRole('radio', { name: '코랄 테마' });
-    expect((chip.querySelector('span') as HTMLElement).style.borderRadius).toBe('50%');
+    const preview = chip.querySelector('[data-theme-preview]') as HTMLElement;
+    expect(preview.style.borderRadius).toBe('10px');
+    expect(preview.style.background).toBe('rgb(251, 246, 242)'); // = HOME_THEMES.coral.bg
+    expect((preview.firstElementChild as HTMLElement).style.borderRadius).toBe('50%'); // 강조색 점
+    expect(chip.querySelector('[data-theme-check]')).toBeTruthy(); // 고른 칸에만 체크
     expect(within(dialog).getByText('개인정보처리방침').getAttribute('href')).toBe('/privacy');
-    // 탈퇴 행은 '계정 설정' 안(두 번째 화면)에 있다
+    // 탈퇴는 '계정 설정'(두 번째 화면) **발치 링크**다(첨부 이미지) — 행 목록에
+    // 두면 routine 항목과 나란히 서서 실수로 눌린다.
     await user.click(dialog.querySelector('[data-account-detail-row]') as HTMLElement);
-    expect(within(dialog).getByText('계정과 모든 보드·스페이스가 영구 삭제돼요')).toBeTruthy();
+    const footer = dialog.querySelector('[data-settings-footer]') as HTMLElement;
+    expect(footer.querySelector('[data-delete-account-link]')?.textContent).toBe('회원 탈퇴');
   });
 
   it('그리드 카드 hover 그림자도 같은 기하로 진해지기만 한다 + ⋯ 버튼에 클릭 효과가 있다(요청)', () => {

@@ -1,6 +1,6 @@
 import { describe, expect, it, beforeEach, vi } from 'vitest';
 import {
-  workLocationLabel, workLocationKindOf, workLocationProps, workLocationEventBody, workLocationPatch, findWorkLocation, workLocationWhen, workLocationWhenChanged, workLocationDays, workLocationForDay, weeklyRule, WORK_LOCATION_MAX_DAYS, GOOGLE_CALENDAR_SCOPE, GOOGLE_EVENT_COLORS, myRsvpOf, attendeesBody, eventWindowIso, RECURRENCE_OFF, buildRecurrence, draftToBody, eventColorOf, fetchEventColors, googleWriteError, managedFieldsDiffer, updateGoogleEvent, recurrenceSummary, isDayOffHoliday, isHolidayCalendarId, onTokenChange, scopeCovers, parseCalendarList, parseEvents, probeCalendar, calendarAddError, mergeExtraCalendars, coerceExtraCalendars, readStoredToken, splitGoogleDateTime, storeToken, type GoogleCalendarMeta } from './googleCalendar';
+  workLocationLabel, workLocationKindOf, workLocationProps, workLocationEventBody, workLocationPatch, findWorkLocation, workLocationWhen, workLocationWhenChanged, workLocationDays, workLocationForDay, weeklyRule, WORK_LOCATION_MAX_DAYS, GOOGLE_CALENDAR_SCOPE, GOOGLE_EVENT_COLORS, myRsvpOf, attendeesBody, eventWindowIso, RECURRENCE_OFF, buildRecurrence, draftToBody, eventColorOf, fetchEventColors, googleWriteError, managedFieldsDiffer, updateGoogleEvent, recurrenceSummary, isDayOffHoliday, isHolidayCalendarId, onTokenChange, scopeCovers, HOLIDAY_COUNTRIES, holidayCountryOf, holidayCountryOfId, parseCalendarList, parseEvents, probeCalendar, calendarAddError, mergeExtraCalendars, coerceExtraCalendars, readStoredToken, splitGoogleDateTime, storeToken, type GoogleCalendarMeta } from './googleCalendar';
 import { googleEntries, holidayMap } from './entries';
 import { draftFrom, patchFrom } from './GoogleEventDetail';
 import { submitNewEvent } from './newEventSubmit';
@@ -814,6 +814,27 @@ describe('캘린더 더하기 — 그리오 목록', () => {
     expect(added.writable).toBeUndefined();
     // 구독 쪽 값은 그대로다(색·쓰기 권한).
     expect(merged.find((c) => c.id === 'dup@x')).toMatchObject({ summary: '구독으로도 있음', color: '#123456', writable: true });
+  });
+
+  it('더한 공휴일 캘린더도 공휴일로 표식한다 — 없으면 그 항목이 날짜 색이 아니라 칩으로 늘어선다', () => {
+    // 이 표식이 곧 "칩이 아니라 날짜를 칠한다"는 규칙의 스위치다(#87) — 구독한
+    // 공휴일 캘린더는 `parseCalendarList`가 같은 규칙으로 세운다.
+    const jp = HOLIDAY_COUNTRIES.find((c) => c.key === 'jp')!;
+    const merged = mergeExtraCalendars([], [{ id: jp.id, name: jp.name }]);
+    expect(merged[0]).toMatchObject({ id: jp.id, holiday: true, external: true });
+    // 평범한 캘린더에는 세우지 않는다.
+    expect(mergeExtraCalendars([], [{ id: 'a@x', name: '가' }])[0]!.holiday).toBeUndefined();
+  });
+
+  it('공휴일 국가 — 값·id를 서로 읽고, 모르는 값은 버린다', () => {
+    expect(holidayCountryOf('jp')).toBe('jp');
+    expect(holidayCountryOf('fr')).toBeNull();
+    expect(holidayCountryOf(7)).toBeNull();
+    const jp = HOLIDAY_COUNTRIES.find((c) => c.key === 'jp')!;
+    expect(holidayCountryOfId(jp.id)).toBe('jp');
+    expect(holidayCountryOfId('me@example.com')).toBeNull();
+    // 세 국가의 id는 전부 공휴일 캘린더로 읽힌다(표와 판별이 어긋나면 칩이 된다).
+    for (const c of HOLIDAY_COUNTRIES) expect(isHolidayCalendarId(c.id)).toBe(true);
   });
 
   it('저장 블롭의 extra를 검증한다 — 어긋난 항목은 버리고, 비면 키를 만들지 않는다', () => {

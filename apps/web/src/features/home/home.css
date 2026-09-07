@@ -805,3 +805,39 @@ input[type='search']::-webkit-search-results-decoration {
 .mf-memo-rich p {
   margin: 0 0 6px;
 }
+
+/*
+  설정의 체크박스(첨부 이미지) — 코랄 사각 + 흰 체크. `accentColor`만 주면 브라우저
+  기본 모양(작은 정사각)이라 디자인의 둥근 상자가 되지 않으므로 직접 그린다. 네이티브
+  input 그대로라 키보드·스크린리더는 손대지 않는다.
+*/
+.mf-home .mf-cb,
+[data-modal-overlay] .mf-cb {
+  appearance: none;
+  -webkit-appearance: none;
+  flex: 0 0 auto;
+  width: 22px;
+  height: 22px;
+  margin: 0;
+  border: 1.5px solid var(--mf-border);
+  border-radius: 7px;
+  background: var(--mf-card);
+  cursor: pointer;
+  display: grid;
+  place-items: center;
+  transition: background .12s ease, border-color .12s ease;
+}
+.mf-home .mf-cb:checked,
+[data-modal-overlay] .mf-cb:checked {
+  background: var(--mf-accent);
+  border-color: var(--mf-accent);
+}
+.mf-home .mf-cb:checked::after,
+[data-modal-overlay] .mf-cb:checked::after {
+  content: '';
+  width: 10px;
+  height: 5.5px;
+  border-left: 2.2px solid var(--mf-accent-ink);
+  border-bottom: 2.2px solid var(--mf-accent-ink);
+  transform: rotate(-45deg) translate(1px, -1px);
+}

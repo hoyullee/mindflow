@@ -23,6 +23,9 @@ import {
   eventColorOf,
   fetchCalendarList,
   mergeExtraCalendars,
+  HOLIDAY_COUNTRIES,
+  holidayCountryOf,
+  holidayCountryOfId,
   probeCalendar,
   calendarAddError,
   fetchEventColors,
@@ -41,6 +44,7 @@ import {
   updateGoogleEvent,
   type GoogleCalendarMeta,
   type GoogleExtraCalendar,
+  type HolidayCountry,
   type GoogleEvent,
   type GoogleEventDraft,
   type GoogleEventPatch,
@@ -83,6 +87,16 @@ export interface GoogleCalendarApi {
   addCalendar: (id: string) => Promise<string | null>;
   /** 우리가 더한 캘린더를 목록에서 뺀다(구독 목록의 캘린더에는 해당 없음). */
   removeCalendar: (id: string) => void;
+  /**
+   * **공휴일 국가**(요청) — 저장된 값이 없으면 목록에 있는 공휴일 캘린더에서 읽고,
+   * 그것도 없으면 한국이다.
+   */
+  holidayCountry: HolidayCountry;
+  /**
+   * 그 나라의 공휴일 캘린더로 갈아 끼운다 — 다른 나라 것은 목록에서 빼고, 고른
+   * 나라 것을 (구독 목록에 없으면 우리 목록에 더해) 켠다.
+   */
+  setHolidayCountry: (c: HolidayCountry) => void;
   /**
    * 권한을 다시 받아야 하는가 — 스코프를 넓힌 뒤 옛 토큰이 남은 경우다. 켜져
    * 있는데 쓸 수 없는 상태를 **화면이 말해야** 한다(조용히 죽으면 "저장이 안 되는데
@@ -142,6 +156,8 @@ export interface GoogleCalendarPrefs {
    * `GoogleCalendarMeta.external` 주석에 그 경계를 적어 뒀다.
    */
   extra?: GoogleExtraCalendar[];
+  /** 공휴일 국가(요청) — 그 나라의 공개 공휴일 캘린더를 보여 준다. */
+  holiday?: HolidayCountry;
 }
 
 /**
@@ -149,11 +165,13 @@ export interface GoogleCalendarPrefs {
  * LNB 하위 메뉴·계정 설정)가 **같은 한 곳**을 쓴다 — 각자 적으면 `extra` 같은 필드를
  * 더할 때 한 곳이 조용히 빠진다.
  */
-export function googlePrefsOf(g: { calendars: string[]; extra?: GoogleExtraCalendar[] } | null | undefined): GoogleCalendarPrefs {
+export function googlePrefsOf(g: { calendars: string[]; extra?: GoogleExtraCalendar[]; holiday?: string } | null | undefined): GoogleCalendarPrefs {
+  const holiday = holidayCountryOf(g?.holiday);
   return {
     enabled: !!g,
     calendars: g?.calendars ?? [],
     ...(g?.extra?.length ? { extra: g.extra } : {}),
+    ...(holiday ? { holiday } : {}),
   };
 }
 
@@ -634,6 +652,30 @@ export function useGoogleCalendar(
     [prefs.calendars, extraKey, onPrefs],
   );
 
+  /**
+   * 지금 어느 나라의 공휴일을 보고 있는가 — 저장된 값이 정본이고, 없으면 **목록에
+   * 있는 공휴일 캘린더**에서 읽는다(구글에서 이미 구독해 둔 사람이 처음 이 화면을
+   * 열었을 때 그 나라가 켜져 보이도록). 그것도 없으면 한국이다.
+   */
+  const holidayCountry: HolidayCountry =
+    prefs.holiday ?? allCalendars.map((c) => holidayCountryOfId(c.id)).find((k): k is HolidayCountry => !!k) ?? 'kr';
+
+  const setHolidayCountry = useCallback(
+    (c: HolidayCountry) => {
+      const pick = HOLIDAY_COUNTRIES.find((x) => x.key === c);
+      if (!pick) return;
+      const others = HOLIDAY_COUNTRIES.filter((x) => x.key !== c).map((x) => x.id.toLowerCase());
+      const drop = (id: string) => others.includes(id.toLowerCase());
+      // 구독 목록에 이미 있으면(구글에서 구독해 둔 공휴일 캘린더) 우리 목록에
+      // 더하지 않는다 — 같은 캘린더가 두 곳에 있을 이유가 없다(`mergeExtraCalendars`).
+      const subscribed = calendars.some((x) => x.id.toLowerCase() === pick.id.toLowerCase());
+      const nextExtra = [...extras.filter((e) => !drop(e.id) && e.id.toLowerCase() !== pick.id.toLowerCase()), ...(subscribed ? [] : [{ id: pick.id, name: pick.name }])];
+      const nextShown = [...prefs.calendars.filter((id) => !drop(id) && id.toLowerCase() !== pick.id.toLowerCase()), pick.id];
+      onPrefs({ enabled: true, calendars: nextShown, ...(nextExtra.length ? { extra: nextExtra } : {}), holiday: c });
+    },
+    [calendars, prefs.calendars, extraKey, onPrefs],
+  );
+
   return {
     available,
     enabled,
@@ -650,6 +692,8 @@ export function useGoogleCalendar(
     toggleCalendar,
     addCalendar,
     removeCalendar,
+    holidayCountry,
+    setHolidayCountry,
     needsReauth,
     writableCalendars,
     createEvent,

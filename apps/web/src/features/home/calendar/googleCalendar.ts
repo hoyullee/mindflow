@@ -662,6 +662,33 @@ export function eventColorOf(ev: GoogleEvent, palette: Record<string, string>): 
 }
 
 /** 공휴일 캘린더 판별 — 구글의 공용 공휴일 캘린더 id가 이 꼴이다. */
+/**
+ * **공휴일 국가**(요청 — 설정의 `한국 / 일본 / 미국` 세그먼트).
+ *
+ * 구글은 나라별 공휴일을 **공개 캘린더**로 내놓는다. 그래서 나라를 고르는 일은
+ * "그 나라의 공휴일 캘린더를 보여 줄 목록에 올린다"가 전부다 — 새 스코프도, 우리
+ * 서버의 공휴일 표도 필요하지 않다. 이름은 우리가 적는다(공개 캘린더의 제목을
+ * 물어볼 수도 있지만, 그러면 고를 때마다 왕복이 하나 늘고 오프라인에서는 빈다).
+ */
+export const HOLIDAY_COUNTRIES = [
+  { key: 'kr', label: '한국', id: 'ko.south_korea#holiday@group.v.calendar.google.com', name: '대한민국의 휴일' },
+  { key: 'jp', label: '일본', id: 'ja.japanese#holiday@group.v.calendar.google.com', name: '일본의 휴일' },
+  { key: 'us', label: '미국', id: 'en.usa#holiday@group.v.calendar.google.com', name: '미국의 휴일' },
+] as const;
+
+export type HolidayCountry = (typeof HOLIDAY_COUNTRIES)[number]['key'];
+
+/** 저장 블롭에서 읽은 값 검증 — 모르는 값이면 `null`(기본값으로 떨어진다). */
+export function holidayCountryOf(v: unknown): HolidayCountry | null {
+  return HOLIDAY_COUNTRIES.some((c) => c.key === v) ? (v as HolidayCountry) : null;
+}
+
+/** 그 캘린더 id가 우리가 아는 공휴일 캘린더면 그 나라 — 저장된 값이 없을 때 쓴다. */
+export function holidayCountryOfId(id: string): HolidayCountry | null {
+  const low = id.toLowerCase();
+  return HOLIDAY_COUNTRIES.find((c) => c.id.toLowerCase() === low)?.key ?? null;
+}
+
 export function isHolidayCalendarId(id: string): boolean {
   return id.includes('#holiday@group.v.calendar.google.com');
 }
@@ -747,7 +774,15 @@ export function mergeExtraCalendars(list: readonly GoogleCalendarMeta[], extra: 
   const have = new Set(list.map((c) => c.id.toLowerCase()));
   const added = extra
     .filter((e) => !have.has(e.id.toLowerCase()))
-    .map<GoogleCalendarMeta>((e) => ({ id: e.id, summary: e.name || e.id, color: colorForSeed(e.id), external: true }));
+    // 공휴일 원천은 **id로** 알아본다(구독한 것과 같은 규칙) — 이 표식이 없으면
+    // 그 캘린더의 항목이 날짜 색이 아니라 **칩**으로 늘어선다(#87의 그 규칙).
+    .map<GoogleCalendarMeta>((e) => ({
+      id: e.id,
+      summary: e.name || e.id,
+      color: colorForSeed(e.id),
+      external: true,
+      ...(isHolidayCalendarId(e.id) ? { holiday: true } : {}),
+    }));
   added.sort((a, b) => a.summary.localeCompare(b.summary, 'ko'));
   // 구독 목록이 먼저, 더한 것이 뒤 — 목록 순서가 매번 흔들리지 않게(구독 쪽은 이미 정렬돼 있다).
   return [...list, ...added];

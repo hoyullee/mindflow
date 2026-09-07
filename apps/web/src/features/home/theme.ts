@@ -479,6 +479,9 @@ export function homeThemeVars(key: HomeThemeKey): Record<string, string> {
     '--mf-danger-line': t.dangerLine,
     '--mf-danger-mute': t.dangerMute,
     '--mf-info': t.info,
+    // 구글과 잇는 버튼처럼 **정보 톤의 옅은 면**(설정의 `연결` 알약, 첨부 이미지).
+    // 값을 테마마다 적지 않고 그 테마의 카드 면에서 파생한다.
+    '--mf-info-soft': mixHex(t.card, t.info, 0.13),
     '--mf-doc-map': t.docMap,
     '--mf-doc-board': t.docBoard,
     '--mf-doc-kanban': t.docKanban,

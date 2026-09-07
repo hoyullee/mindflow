@@ -1,8 +1,9 @@
-import { useLayoutEffect, useRef, useState } from 'react';
+import { useLayoutEffect, useRef, useState, type CSSProperties, type ReactNode } from 'react';
 import type { HomeController } from '../../useHomeController';
 import { ProfileAvatar, avatarLabel } from '../ProfileAvatar';
 import type { HomeState } from '../../types';
 import { HOME_THEMES, HOME_THEME_KEYS } from '../../theme';
+import { mixHex } from '../../../editor/theme';
 import { RadioCards } from '../../../../components/Segmented';
 import { GoogleIcon } from '../../../auth/GoogleIcon';
 import { Modal, MODAL_DIM } from '../../../../components/Modal';
@@ -23,7 +24,15 @@ export function AccountSettingsModal({ state, controller }: Props) {
   // — 홈을 켤 때마다 캘린더 목록을 받아 오지 않는다(`accountSettingsOpen`).
   // 이 행은 **계정 설정 화면**에 있다(요청 — 프로필 설정에서 옮겨 `Google 연동`과 한
   // 구획으로). 그래서 목록 조회도 그 화면이 열려 있을 때만이다.
-  const googleApi = useGoogleCalendar(1970, 1, googlePrefsOf(state.google), controller.setGoogleCalendars, state.accountSettingsOpen && state.settingsView === 'account' ? 'list' : 'off');
+  // **이번 달**을 본다(첨부 이미지: 카드 부제가 `이번 달 일정 3개`라 말한다) — 그
+  // 값을 얻으려면 목록만으로는 안 되고 그 달의 일정이 필요하다. 달은 마운트에 한 번
+  // 고정한다(렌더마다 `new Date()`면 effect가 매번 돈다). 조회는 **이 화면이 열려
+  // 있을 때만**이고, 일정 화면이 이미 받아 둔 달이면 탭 캐시가 그대로 쓰인다.
+  const [{ y, m }] = useState(() => {
+    const d = new Date();
+    return { y: d.getFullYear(), m: d.getMonth() + 1 };
+  });
+  const googleApi = useGoogleCalendar(y, m, googlePrefsOf(state.google), controller.setGoogleCalendars, state.accountSettingsOpen && state.settingsView === 'account' ? 'events' : 'off');
   const visible = state.accountSettingsOpen;
   const initial = avatarLabel(state.userName);
   // 로그인 수단 — `null`은 확인 불가(RPC 미배포·네트워크·데모 초기). 그때는
@@ -120,7 +129,19 @@ export function AccountSettingsModal({ state, controller }: Props) {
               </svg>
             </button>
           )}
-          <div style={{ fontSize: 19, fontWeight: 800, letterSpacing: '-.02em' }}>설정</div>
+          {/* 제목은 **지금 보고 있는 화면**을 말한다(첨부 이미지: `계정 설정  로그인과
+              연동, 계정 관리`) — 예전에는 헤더가 늘 '설정'이고 본문 첫 줄이 화면
+              이름을 말했는데, 그러면 같은 말이 두 번 나온다. */}
+          <div style={{ display: 'flex', alignItems: 'baseline', gap: 10, minWidth: 0 }}>
+            <div data-settings-title style={{ fontSize: 19, fontWeight: 800, letterSpacing: '-.02em', flexShrink: 0 }}>
+              {view === 'account' ? '계정 설정' : view === 'profile' ? '프로필 설정' : '설정'}
+            </div>
+            {detail && (
+              <div data-settings-subtitle style={{ fontSize: 12.5, color: 'var(--mf-muted)', minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                {view === 'account' ? '로그인과 연동, 계정 관리' : '사진과 표시 이름'}
+              </div>
+            )}
+          </div>
           <button
             className="btn mf-ctl"
             aria-label="닫기"
@@ -142,61 +163,43 @@ export function AccountSettingsModal({ state, controller }: Props) {
         <div ref={bodyRef} data-settings-body style={{ padding: 24 }}>
           {view === 'account' ? (
             <div key="detail" className={viewClass}>
-          {/* 이 화면의 부 제목(요청) — 헤더는 '설정'을 지키고 여기서 어느 화면인지 말한다.
-              아래 앞쪽 두 줄은 이 계정에 들어오는 **문 목록**이다(한 계정에 수단이 여럿
+          {/* 화면 이름은 헤더가 말한다(첨부 이미지) — 여기서는 구획 라벨만 쓴다.
+              앞 구획은 이 계정에 들어오는 **문 목록**이다(한 계정에 수단이 여럿
               붙을 수 있고, 같은 이메일의 Google 신원은 Supabase가 자동 연결한다 — §16.
               비밀번호 유무는 신원 목록으로 알 수 없어 서버가 따로 알려 준다 — 0029). */}
-          <div style={{ fontSize: 12, fontWeight: 700, color: 'var(--mf-faint)', letterSpacing: '.02em', marginBottom: 10 }}>계정 설정</div>
-          {/* 이메일·비밀번호 — 비밀번호가 걸려 있으면 '변경'(현재 비밀번호로 본인
-              확인), 없으면 '설정'(계정 이메일로 코드를 받아 확인). 확인 불가면
-              **변경 쪽**으로 둔다: 진짜 게이트는 확인 단계이므로 모르는 채로 항목을
-              잠그는 쪽이 더 나쁘다. */}
-          <div
-            className="menu-row"
-            data-change-pw-row
-            role="button"
-            tabIndex={0}
-            onClick={hasPassword ? controller.openChangePassword : controller.openSetPassword}
-            onKeyDown={(e) => {
-              if (e.key === 'Enter' || e.key === ' ') {
-                e.preventDefault();
-                (hasPassword ? controller.openChangePassword : controller.openSetPassword)();
-              }
-            }}
-            style={{ display: 'flex', alignItems: 'center', gap: 13, padding: '15px 16px', borderRadius: 14, cursor: 'pointer' }}
-          >
-            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="var(--mf-subtext)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true" style={{ flexShrink: 0 }}>
-              <rect x="3.5" y="10.5" width="17" height="10.5" rx="2.5" />
-              <path d="M7.5 10.5V7a4.5 4.5 0 0 1 9 0v3.5" />
-            </svg>
-            <div style={{ minWidth: 0 }}>
-              <div style={{ fontWeight: 700, fontSize: 14.5 }}>{hasPassword ? '비밀번호 변경' : '비밀번호 설정'}</div>
-              <div style={{ fontSize: 12.5, color: 'var(--mf-muted)', marginTop: 2 }}>
-                {unknown ? '로그인 수단을 확인할 수 없어요 — 현재 비밀번호로 바꿀 수 있어요' : hasPassword ? '현재 비밀번호를 확인한 뒤 새 비밀번호로 바꿔요' : '계정 이메일로 인증번호를 받아 비밀번호를 설정해요'}
-              </div>
-            </div>
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="var(--mf-faint)" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true" style={{ marginLeft: 'auto', flexShrink: 0 }}>
-              <path d="m9 6 6 6-6 6" />
-            </svg>
+          <div style={{ marginBottom: 9 }}>
+            <SectionLabel>로그인</SectionLabel>
           </div>
-          {/* **연동**(요청) — 구글 계정(로그인 수단)과 구글 캘린더를 한 묶음으로. 둘 다
-              "구글과 잇는 일"이라 사용자에게는 한 갈래다(프로필 설정에 있던 캘린더 행을
-              여기로 옮겼다). */}
-          <div style={{ height: 10 }} />
-          <div data-settings-link-group style={{ fontSize: 12, fontWeight: 700, color: 'var(--mf-faint)', letterSpacing: '.02em', margin: '8px 16px 6px' }}>연동</div>
-          {/* Google — 연결/해제. 해제가 막히는 두 이유(`unlinkBlock`)를 부제가
-              **각각** 말한다 — 무엇을 해야 풀리는지가 이유마다 다르다. */}
-          <div
-            data-google-link-row
-            style={{ display: 'flex', alignItems: 'center', gap: 13, padding: '15px 16px', borderRadius: 14 }}
-          >
-            <span style={{ display: 'flex', flexShrink: 0, width: 18, justifyContent: 'center' }}>
-              <GoogleIcon />
-            </span>
-            <div style={{ minWidth: 0 }}>
-              <div style={{ fontWeight: 700, fontSize: 14.5 }}>Google 연동</div>
-              <div style={{ fontSize: 12.5, color: 'var(--mf-muted)', marginTop: 2 }}>
-                {unknown
+          <SettingsGroup>
+            {/* 이메일·비밀번호 — 비밀번호가 걸려 있으면 '변경'(현재 비밀번호로 본인
+                확인), 없으면 '설정'(계정 이메일로 코드를 받아 확인). 확인 불가면
+                **변경 쪽**으로 둔다: 진짜 게이트는 확인 단계이므로 모르는 채로 항목을
+                잠그는 쪽이 더 나쁘다. */}
+            <SettingsRow
+              first
+              attrs={{ 'data-change-pw-row': '' }}
+              onActivate={hasPassword ? controller.openChangePassword : controller.openSetPassword}
+              icon={
+                <>
+                  <rect x="3.5" y="10.5" width="17" height="10.5" rx="2.5" />
+                  <path d="M7.5 10.5V7a4.5 4.5 0 0 1 9 0v3.5" />
+                </>
+              }
+              title={hasPassword ? '비밀번호 변경' : '비밀번호 설정'}
+              sub={unknown ? '로그인 수단을 확인할 수 없어요 — 현재 비밀번호로 바꿀 수 있어요' : hasPassword ? '현재 비밀번호를 확인한 뒤 새 비밀번호로 바꿔요' : '계정 이메일로 인증번호를 받아 비밀번호를 설정해요'}
+            />
+            {/* Google 로그인 — 연결/해제. 해제가 막히는 두 이유(`unlinkBlock`)를 부제가
+                **각각** 말한다 — 무엇을 해야 풀리는지가 이유마다 다르다. */}
+            <SettingsRow
+              attrs={{ 'data-google-link-row': '' }}
+              icon={<></>}
+              iconNode={<GoogleIcon />}
+              // 브랜드 마크는 흰 면 위에 선다(첨부 이미지) — 강조색 틴트 위에 얹으면
+              // 구글 로고 색이 그 틴트를 입은 것처럼 보인다.
+              chipStyle={{ background: 'var(--mf-card)', border: '1px solid var(--mf-border-soft)' }}
+              title="Google 로그인"
+              sub={
+                unknown
                   ? '연결 상태를 확인할 수 없어요'
                   : !googleLinked
                     ? '연결하면 Google 계정으로도 로그인할 수 있어요'
@@ -204,104 +207,79 @@ export function AccountSettingsModal({ state, controller }: Props) {
                       ? 'Google이 이 계정의 유일한 로그인 수단이라 해제할 수 없어요'
                       : unlinkBlock === 'noPassword'
                         ? '비밀번호를 먼저 설정해 주세요'
-                        : 'Google 계정으로도 로그인할 수 있어요'}
-              </div>
-            </div>
-            <button
-              type="button"
-              className="btn mf-ctl"
-              data-google-link-action
-              disabled={unknown || state.signinBusy || unlinkBlock !== null}
-              onClick={googleLinked ? controller.askUnlinkGoogle : controller.linkGoogleAccount}
-              style={{
-                marginLeft: 'auto',
-                flexShrink: 0,
-                height: 34,
-                padding: '0 14px',
-                border: '1px solid var(--mf-border)',
-                borderRadius: 999,
-                background: 'var(--mf-panel2)',
-                color: 'var(--mf-text)',
-                fontFamily: 'inherit',
-                fontSize: 13,
-                fontWeight: 700,
-                cursor: unknown || state.signinBusy || unlinkBlock !== null ? 'default' : 'pointer',
-                opacity: unknown || state.signinBusy || unlinkBlock !== null ? 0.5 : 1,
-              }}
-            >
-              {googleLinked ? '연결 해제' : '연결'}
-            </button>
-          </div>
+                        : 'Google 계정으로도 로그인할 수 있어요'
+              }
+              right={
+                <button
+                  type="button"
+                  className="btn mf-ctl"
+                  data-google-link-action
+                  disabled={unknown || state.signinBusy || unlinkBlock !== null}
+                  onClick={googleLinked ? controller.askUnlinkGoogle : controller.linkGoogleAccount}
+                  style={{
+                    flexShrink: 0,
+                    height: 34,
+                    padding: '0 15px',
+                    border: 0,
+                    borderRadius: 999,
+                    // 구글과 잇는 버튼이라 **구글 파랑 계열**(첨부 이미지) — 해제는
+                    // 되돌리는 일이라 중립 알약이다(색으로 두 동작을 갈라 둔다).
+                    background: googleLinked ? 'var(--mf-panel2)' : 'var(--mf-info-soft)',
+                    color: googleLinked ? 'var(--mf-text)' : 'var(--mf-info)',
+                    fontFamily: 'inherit',
+                    fontSize: 13,
+                    fontWeight: 700,
+                    cursor: unknown || state.signinBusy || unlinkBlock !== null ? 'default' : 'pointer',
+                    opacity: unknown || state.signinBusy || unlinkBlock !== null ? 0.5 : 1,
+                  }}
+                >
+                  {googleLinked ? '연결 해제' : '연결'}
+                </button>
+              }
+            />
+          </SettingsGroup>
           {!!state.signinError && (
-            <div data-signin-error style={{ fontSize: 12.5, color: 'var(--mf-danger)', padding: '0 16px 8px' }}>
+            <div data-signin-error style={{ fontSize: 12.5, color: 'var(--mf-danger)', padding: '8px 4px 0' }}>
               {state.signinError}
             </div>
           )}
-          {/* 구글 캘린더(PR5) — 배포에 클라이언트 ID가 없으면 행이 통째로 없다(눌러도
-              아무 일 없는 버튼을 두지 않는다). */}
+
+          {/* 캘린더 연동(첨부 이미지) — 로그인 수단과 갈라 둔 이유는 하는 일이 다르기
+              때문이다: 위는 "이 계정에 들어오는 문", 여기는 "무엇을 함께 보여 줄까". */}
+          <div style={{ margin: '18px 0 9px' }}>
+            <SectionLabel>캘린더 연동</SectionLabel>
+          </div>
+          {/* 구글 캘린더(PR5) — 배포에 클라이언트 ID가 없으면 구획이 통째로 없다(눌러도
+              아무 일 없는 버튼을 두지 않는다). 공휴일 국가도 그 안에 있다. */}
           <GoogleCalendarSection api={googleApi} />
 
-          {/* 세션·탈퇴 — 제목 없이 이어진다(요청). 성격이 다른 묶음이라 사이만 띄운다. */}
-          <div style={{ height: 10 }} />
-          {/* 모든 기기에서 로그아웃(세션 정책 ①) — 이 앱의 세션은 기기 수 제한 없이
-              오래 유지되므로(backend.md §15), 기기를 잃거나 공용 PC에 남겨 뒀을 때
-              **회수할 수단**이 필요하다. 되돌릴 수 있는 동작이라 제목은 잉크색이고
-              위험 신호(빨강)는 아래 회원 탈퇴만 쓴다. */}
-          <div
-            className="menu-row"
-            role="button"
-            tabIndex={0}
-            onClick={controller.logoutAllDevices}
-            onKeyDown={(e) => {
-              if (e.key === 'Enter' || e.key === ' ') {
-                e.preventDefault();
-                controller.logoutAllDevices();
-              }
-            }}
-            style={{ display: 'flex', alignItems: 'center', gap: 13, padding: '15px 16px', borderRadius: 14, cursor: 'pointer' }}
-          >
-            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="var(--mf-subtext)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true" style={{ flexShrink: 0 }}>
-              <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4" />
-              <polyline points="16 17 21 12 16 7" />
-              <line x1="21" y1="12" x2="9" y2="12" />
-            </svg>
-            <div style={{ minWidth: 0 }}>
-              <div style={{ fontWeight: 700, fontSize: 14.5 }}>모든 기기에서 로그아웃</div>
-              <div style={{ fontSize: 12.5, color: 'var(--mf-muted)', marginTop: 2 }}>다른 기기·브라우저의 로그인도 모두 해제돼요</div>
-            </div>
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="var(--mf-faint)" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true" style={{ marginLeft: 'auto', flexShrink: 0 }}>
-              <path d="m9 6 6 6-6 6" />
-            </svg>
+          <div style={{ margin: '18px 0 9px' }}>
+            <SectionLabel>계정 관리</SectionLabel>
           </div>
-          <div
-            className="menu-row"
-            role="button"
-            tabIndex={0}
-            onClick={controller.askDeleteAccount}
-            onKeyDown={(e) => {
-              if (e.key === 'Enter' || e.key === ' ') {
-                e.preventDefault();
-                controller.askDeleteAccount();
+          <SettingsGroup>
+            {/* 모든 기기에서 로그아웃(세션 정책 ①) — 이 앱의 세션은 기기 수 제한 없이
+                오래 유지되므로(backend.md §15), 기기를 잃거나 공용 PC에 남겨 뒀을 때
+                **회수할 수단**이 필요하다. 되돌릴 수 있는 동작이라 제목은 잉크색이고
+                위험 신호(빨강)는 발치의 회원 탈퇴만 쓴다. */}
+            <SettingsRow
+              first
+              attrs={{ 'data-logout-all-row': '' }}
+              onActivate={controller.logoutAllDevices}
+              icon={
+                <>
+                  <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4" />
+                  <polyline points="16 17 21 12 16 7" />
+                  <line x1="21" y1="12" x2="9" y2="12" />
+                </>
               }
-            }}
-            style={{ display: 'flex', alignItems: 'center', gap: 13, padding: '15px 16px', borderRadius: 14, cursor: 'pointer' }}
-          >
-            {/* 첨부 이미지: 배경 없는 맨 행(요청 — hover의 옅은 면만, `.menu-row`) —
-                아이콘 상자 없이 휴지통 아이콘이 바로 서고, 제목은 빨강이 아니라
-                잉크. 위험 신호는 아이콘과 부제가 말한다. */}
-            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="var(--mf-danger)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true" style={{ flexShrink: 0 }}>
-              <polyline points="3 6 5 6 21 6" />
-              <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2" />
-            </svg>
-            <div style={{ minWidth: 0 }}>
-              <div style={{ fontWeight: 700, fontSize: 14.5 }}>회원 탈퇴</div>
-              <div style={{ fontSize: 12.5, color: 'var(--mf-muted)', marginTop: 2 }}>계정과 모든 보드·스페이스가 영구 삭제돼요</div>
-            </div>
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="var(--mf-faint)" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true" style={{ marginLeft: 'auto', flexShrink: 0 }}>
-              <path d="m9 6 6 6-6 6" />
-            </svg>
-          </div>
-
+              title="모든 기기에서 로그아웃"
+              sub="다른 기기·브라우저의 로그인도 모두 해제돼요"
+            />
+          </SettingsGroup>
+          {/* 회원 탈퇴는 **발치 링크**로 내려갔다(첨부 이미지) — 행 목록에 두면 routine
+              동작들과 나란히 서고, 파괴적인 일은 눈에 덜 띄는 자리가 맞다. 실제 경고와
+              타이핑 게이트는 확인 팝업이 맡는다. */}
+          <SettingsFooter onDelete={controller.askDeleteAccount} />
             </div>
           ) : view === 'profile' ? (
             <div key="profile" className={viewClass}>
@@ -420,76 +398,64 @@ export function AccountSettingsModal({ state, controller }: Props) {
             <div key="main" className={viewClass}>
           {/* 계정 요약 — 여기서는 **보여 주기만** 한다. 사진·이름을 손보는 일은
               한 겹 안의 '프로필 설정'으로 모았다(요청) — 같은 동작의 진입점이
-              한 화면에 둘 있으면 어느 쪽이 진짜인지 흐려진다. */}
-          <div style={{ fontSize: 12, fontWeight: 700, color: 'var(--mf-faint)', letterSpacing: '.02em', marginBottom: 10 }}>계정</div>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 16, padding: 16, borderRadius: 16, background: 'var(--mf-accent-soft)', marginBottom: 14 }}>
+              한 화면에 둘 있으면 어느 쪽이 진짜인지 흐려진다. 구획 라벨은 두지
+              않는다(첨부 이미지: 카드가 곧 첫 줄이다). */}
+          <div style={{ display: 'flex', alignItems: 'center', gap: 16, padding: 16, borderRadius: 16, background: 'var(--mf-accent-soft)' }}>
             <ProfileAvatar initial={initial} avatarUrl={state.userAvatar} size={56} radius={16} fontSize={17} />
             <div style={{ minWidth: 0, flex: 1 }}>
               <div style={{ fontWeight: 800, fontSize: 16.5, letterSpacing: '-.01em', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{state.userName}</div>
               {state.userEmail && <div style={{ fontSize: 13, color: 'var(--mf-muted)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', marginTop: 3 }}>{state.userEmail}</div>}
             </div>
+            {/* 플랜 배지(첨부 이미지) — 유료 플랜이 없으니 **모든 계정이 무료 플랜**이다.
+                사실을 적은 정적 배지이고, 유료가 생기면 이 자리가 그것을 말한다. */}
+            <span
+              data-plan-badge
+              style={{ flexShrink: 0, height: 30, padding: '0 14px', display: 'inline-flex', alignItems: 'center', borderRadius: 999, border: '1px solid var(--mf-accent-mute)', background: 'var(--mf-card)', color: 'var(--mf-accent-strong)', fontSize: 12.5, fontWeight: 700 }}
+            >
+              무료 플랜
+            </span>
           </div>
 
           {/* 손보는 일은 두 줄 뒤에 — 첫 화면은 "무엇이 있는지"만 말한다. 이 묶음에는
               구획 라벨을 두지 않는다: 모달 제목이 이미 '설정'이라 한 번 더 쓰면
               '설정 > 설정'으로 읽힌다. 행 이름이 스스로를 말한다. */}
-          <div
-            className="menu-row"
-            data-profile-detail-row
-            role="button"
-            tabIndex={0}
-            onClick={controller.openProfileDetail}
-            onKeyDown={(e) => {
-              if (e.key === 'Enter' || e.key === ' ') {
-                e.preventDefault();
-                controller.openProfileDetail();
+          <SettingsGroup style={{ marginTop: 14 }}>
+            <SettingsRow
+              attrs={{ 'data-profile-detail-row': '' }}
+              onActivate={controller.openProfileDetail}
+              icon={
+                <>
+                  <rect x="3" y="5" width="18" height="14" rx="2.5" />
+                  <circle cx="8.5" cy="10" r="1.4" />
+                  <path d="m5 17 5-4.5 4 3.5 3-2.5 3 3" />
+                </>
               }
-            }}
-            style={{ display: 'flex', alignItems: 'center', gap: 13, padding: '15px 16px', borderRadius: 14, cursor: 'pointer' }}
-          >
-            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="var(--mf-subtext)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true" style={{ flexShrink: 0 }}>
-              <rect x="3" y="5" width="18" height="14" rx="2.5" />
-              <circle cx="8.5" cy="10" r="1.4" />
-              <path d="m5 17 5-4.5 4 3.5 3-2.5 3 3" />
-            </svg>
-            <div style={{ minWidth: 0, fontWeight: 700, fontSize: 14.5 }}>프로필 설정</div>
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="var(--mf-faint)" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true" style={{ marginLeft: 'auto', flexShrink: 0 }}>
-              <path d="m9 6 6 6-6 6" />
-            </svg>
-          </div>
-
-          {/* '계정 설정' 한 줄 — 누르면 같은 모달이 상세 화면으로 바뀐다(요청).
-              로그인 수단·세션·탈퇴는 자주 쓰는 것이 아니라 한 겹 안에 두는 편이
-              첫 화면을 가볍게 한다(iOS 설정과 같은 문법: 행 → 뒤로 가기 있는 화면). */}
-          <div
-            className="menu-row"
-            data-account-detail-row
-            role="button"
-            tabIndex={0}
-            onClick={controller.openAccountDetail}
-            onKeyDown={(e) => {
-              if (e.key === 'Enter' || e.key === ' ') {
-                e.preventDefault();
-                controller.openAccountDetail();
+              title="프로필 설정"
+              /* 커서 색은 아직 고를 수 없다 — 여기 적으면 지키지 못할 약속이 된다(사용자 결정). */
+              sub="사진과 표시 이름을 바꿔요"
+            />
+            <SettingsRow
+              attrs={{ 'data-account-detail-row': '' }}
+              onActivate={controller.openAccountDetail}
+              icon={
+                <>
+                  <circle cx="12" cy="8" r="3.4" />
+                  <path d="M5.5 20.5a6.5 6.5 0 0 1 13 0" />
+                </>
               }
-            }}
-            style={{ display: 'flex', alignItems: 'center', gap: 13, padding: '15px 16px', borderRadius: 14, cursor: 'pointer' }}
-          >
-            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="var(--mf-subtext)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true" style={{ flexShrink: 0 }}>
-              <circle cx="12" cy="8" r="3.4" />
-              <path d="M5.5 20.5a6.5 6.5 0 0 1 13 0" />
-            </svg>
-            {/* 부제 없이 이름만 — 무엇이 들어 있는지는 들어가면 바로 보인다(요청). */}
-            <div style={{ minWidth: 0, fontWeight: 700, fontSize: 14.5 }}>계정 설정</div>
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="var(--mf-faint)" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true" style={{ marginLeft: 'auto', flexShrink: 0 }}>
-              <path d="m9 6 6 6-6 6" />
-            </svg>
-          </div>
+              title="계정 설정"
+              sub="비밀번호와 연동, 탈퇴"
+            />
+          </SettingsGroup>
 
           {/* 색상 테마 — LNB 최하단에 있다가 사용자 요청으로 이리 왔다(설정에 모으는 게
               자연스럽다). 적용 버튼 없이 **누르는 즉시** 뒤 화면까지 색이 바뀐다 —
-              모달이 열린 채로 고르므로 고르는 것이 곧 미리보기다. */}
-          <div style={{ fontSize: 12, fontWeight: 700, color: 'var(--mf-faint)', letterSpacing: '.02em', marginTop: 18, marginBottom: 10 }}>색상 테마</div>
+              모달이 열린 채로 고르므로 고르는 것이 곧 미리보기다. 라벨 옆에 **지금
+              고른 이름**을 적는다(첨부 이미지: `색상 테마  코랄`). */}
+          <div style={{ display: 'flex', alignItems: 'baseline', gap: 8, marginTop: 18, marginBottom: 10 }}>
+            <SectionLabel>색상 테마</SectionLabel>
+            <span data-theme-current style={{ fontSize: 12, color: 'var(--mf-muted)' }}>{HOME_THEMES[state.theme].label}</span>
+          </div>
           {/* 카드 격자로 고르는 라디오 — 손으로 짠 `role="radio"`까지는 있었지만
               **화살표 이동이 없었다**(Tab이 칸 여섯 개마다 멈췄다). `RadioCards`
               (Radix RadioGroup)가 로빙 tabindex와 ←/→/↑/↓를 준다. */}
@@ -497,56 +463,200 @@ export function AccountSettingsModal({ state, controller }: Props) {
             value={state.theme}
             onChange={controller.setTheme}
             label="색상 테마 선택"
-            grid={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 10, marginBottom: 24 }}
+            grid={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 10 }}
             items={HOME_THEME_KEYS.map((key) => {
               const t = HOME_THEMES[key];
+              const on = state.theme === key;
               return {
                 value: key,
                 label: t.label,
                 ariaLabel: `${t.label} 테마`,
                 style: (on: boolean) => ({
                   display: 'flex',
-                  alignItems: 'center',
-                  gap: 10,
-                  minHeight: 52,
-                  padding: '0 14px',
-                  borderRadius: 13,
+                  flexDirection: 'column',
+                  alignItems: 'stretch',
+                  gap: 9,
+                  padding: 11,
+                  borderRadius: 14,
                   // 선택된 칸만 강조색 테두리 + 옅은 강조 면(첨부 이미지의 코랄 칸).
                   border: `1.5px solid ${on ? t.accent : 'var(--mf-border)'}`,
                   background: on ? 'var(--mf-accent-soft)' : 'var(--mf-card)',
-                  color: on ? 'var(--mf-text)' : 'var(--mf-subtext)',
+                  color: 'var(--mf-text)',
                   fontFamily: 'inherit',
                   fontSize: 13.5,
-                  fontWeight: on ? 700 : 600,
+                  fontWeight: 700,
                   cursor: 'pointer',
+                  textAlign: 'left',
                 }),
                 children: (
                   <>
-                    {/* 미리보기 스와치 — 그 테마의 **면 원** 안에 강조색 점(첨부 이미지).
-                        이름만으로는 "모노"·"다크"가 얼마나 다른지 알 수 없다. */}
-                    <span style={{ width: 24, height: 24, borderRadius: '50%', flexShrink: 0, background: t.bg, border: `1px solid ${t.border}`, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                      <span style={{ width: 11, height: 11, borderRadius: '50%', background: t.accent, display: 'block' }} />
+                    {/*
+                      미리보기(첨부 이미지) — 그 테마의 **면 위에 강조색 막대**를 그린
+                      알약이다. 이름만으로는 "모노"·"다크"가 얼마나 다른지 알 수 없고,
+                      면·강조색·경계선 셋이 한 그림에 함께 보여야 테마의 인상이 전달된다.
+                    */}
+                    <span
+                      data-theme-preview
+                      aria-hidden="true"
+                      style={{ display: 'flex', alignItems: 'center', gap: 7, height: 34, padding: '0 10px', borderRadius: 10, background: t.bg, border: `1px solid ${t.border}`, boxSizing: 'border-box' }}
+                    >
+                      <span style={{ width: 10, height: 10, borderRadius: '50%', background: t.accent, flexShrink: 0 }} />
+                      <span style={{ flex: 1, height: 5, borderRadius: 999, background: mixHex(t.card, t.accent, 0.55) }} />
+                      <span style={{ width: 20, height: 5, borderRadius: 999, background: t.border, flexShrink: 0 }} />
                     </span>
-                    {t.label}
+                    <span style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                      <span style={{ minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{t.label}</span>
+                      {/* 고른 칸에만 체크 — 테두리·면과 함께 세 겹으로 말한다. */}
+                      {on && (
+                        <svg data-theme-check width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="var(--mf-accent)" strokeWidth="2.6" strokeLinecap="round" strokeLinejoin="round" style={{ marginLeft: 'auto', flexShrink: 0 }}>
+                          <path d="m5 13 4 4L19 7" />
+                        </svg>
+                      )}
+                    </span>
                   </>
                 ),
               };
             })}
           />
-          {/* legal docs — the only logged-in entry point (the other lives on the
-              login page footer). New tab so the modal/home state isn't lost. */}
-          <div style={{ marginTop: 18, paddingTop: 14, borderTop: '1px solid var(--mf-hairline)', display: 'flex', justifyContent: 'center', gap: 18, fontSize: 12.5 }}>
-            <a href="/privacy" target="_blank" rel="noreferrer" style={{ color: 'var(--mf-faint)' }}>
-              개인정보처리방침
-            </a>
-            <a href="/terms" target="_blank" rel="noreferrer" style={{ color: 'var(--mf-faint)' }}>
-              이용약관
-            </a>
-          </div>
+          <SettingsFooter />
             </div>
           )}
         </div>
       </>
     </Modal>
   );
+}
+
+// ── 설정 화면의 작은 부품 ────────────────────────────────────────────────────
+//
+// 값을 행마다 다시 적으면 같은 화면 안에서 행 높이·아이콘 칩·부제 색이 갈린다
+// (이 프로젝트에서 여러 번 겪은 드리프트) — 그래서 한곳에 둔다.
+
+/** 구획 라벨(`로그인`·`캘린더 연동`·`계정 관리`·`색상 테마`). */
+export function SectionLabel({ children }: { children: ReactNode }) {
+  return <span data-section-label style={{ fontSize: 12, fontWeight: 700, color: 'var(--mf-faint)', letterSpacing: '.02em' }}>{children}</span>;
+}
+
+/** 행 묶음 — 테두리 있는 한 카드 안에 행들이 옅은 선으로 갈린다(첨부 이미지). */
+export function SettingsGroup({ children, style, attrs }: { children: ReactNode; style?: CSSProperties; attrs?: Record<string, string> }) {
+  return (
+    <div
+      data-settings-group
+      {...attrs}
+      style={{ border: '1px solid var(--mf-border-soft)', borderRadius: 16, overflow: 'hidden', background: 'var(--mf-card)', ...style }}
+    >
+      {children}
+    </div>
+  );
+}
+
+/** 묶음 안의 행 사이 선 — 첫 행 위에는 두지 않는다. */
+const rowDivider: CSSProperties = { borderTop: '1px solid var(--mf-hairline)' };
+
+/**
+ * 설정 행 — [아이콘 칩][제목/부제][오른쪽]. 오른쪽은 기본이 셰브론이고(한 겹 안으로
+ * 들어간다는 뜻), `right`를 주면 그 자리를 버튼·세그먼트가 쓴다.
+ *
+ * `onActivate`가 있으면 행 전체가 눌리는 대상이다(키보드 Enter/Space 포함).
+ */
+export function SettingsRow({
+  icon,
+  iconNode,
+  chipStyle,
+  title,
+  sub,
+  right,
+  onActivate,
+  disabled,
+  first,
+  attrs,
+  iconColor,
+}: {
+  /** 칩 안에 그릴 선(stroke) 아이콘의 path들. `iconNode`를 주면 무시된다. */
+  icon: ReactNode;
+  /** 칩 안을 통째로 대신한다 — 브랜드 마크(구글 G)처럼 우리 선 언어가 아닌 것. */
+  iconNode?: ReactNode;
+  chipStyle?: CSSProperties;
+  title: ReactNode;
+  sub?: ReactNode;
+  right?: ReactNode;
+  onActivate?: () => void;
+  disabled?: boolean;
+  first?: boolean;
+  attrs?: Record<string, string>;
+  iconColor?: string;
+}) {
+  const press = onActivate && !disabled ? onActivate : undefined;
+  return (
+    <div
+      data-settings-row
+      {...attrs}
+      className={press ? 'menu-row' : undefined}
+      {...(press ? { role: 'button', tabIndex: 0 } : {})}
+      onClick={press}
+      onKeyDown={
+        press
+          ? (e) => {
+              if (e.key === 'Enter' || e.key === ' ') {
+                e.preventDefault();
+                press();
+              }
+            }
+          : undefined
+      }
+      style={{ display: 'flex', alignItems: 'center', gap: 13, padding: '14px 15px', cursor: press ? 'pointer' : 'default', ...(first ? {} : rowDivider) }}
+    >
+      <span
+        aria-hidden="true"
+        style={{ flexShrink: 0, width: 38, height: 38, borderRadius: 12, background: 'var(--mf-accent-soft)', display: 'flex', alignItems: 'center', justifyContent: 'center', ...chipStyle }}
+      >
+        {iconNode ?? (
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke={iconColor ?? 'var(--mf-subtext)'} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+            {icon}
+          </svg>
+        )}
+      </span>
+      <div style={{ minWidth: 0, flex: 1 }}>
+        <div style={{ fontWeight: 700, fontSize: 14.5 }}>{title}</div>
+        {sub && <div style={{ fontSize: 12.5, color: 'var(--mf-muted)', marginTop: 2 }}>{sub}</div>}
+      </div>
+      {right ?? (
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="var(--mf-faint)" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true" style={{ flexShrink: 0 }}>
+          <path d="m9 6 6 6-6 6" />
+        </svg>
+      )}
+    </div>
+  );
+}
+
+/**
+ * 발치의 법적 링크 — 로그인한 사용자에게 유일한 진입점이다(다른 하나는 로그인
+ * 페이지 발치). 새 탭이라 모달·홈 상태를 잃지 않는다. 계정 설정 화면에서는
+ * **회원 탈퇴**가 여기 함께 선다(첨부 이미지) — 파괴적인 일이라 행 목록이 아니라
+ * 발치에 두고, 실제 경고는 확인 팝업이 맡는다.
+ */
+export function SettingsFooter({ onDelete }: { onDelete?: () => void }) {
+  return (
+    <div data-settings-footer style={{ marginTop: 18, paddingTop: 14, borderTop: '1px solid var(--mf-hairline)', display: 'flex', justifyContent: 'center', alignItems: 'center', gap: 10, fontSize: 12.5 }}>
+      <a href="/privacy" target="_blank" rel="noreferrer" style={{ color: 'var(--mf-faint)' }}>
+        개인정보처리방침
+      </a>
+      <FooterDot />
+      <a href="/terms" target="_blank" rel="noreferrer" style={{ color: 'var(--mf-faint)' }}>
+        이용약관
+      </a>
+      {onDelete && (
+        <>
+          <FooterDot />
+          <button type="button" data-delete-account-link onClick={onDelete} style={{ border: 0, background: 'transparent', padding: 0, font: 'inherit', fontSize: 12.5, color: 'var(--mf-faint)', cursor: 'pointer' }}>
+            회원 탈퇴
+          </button>
+        </>
+      )}
+    </div>
+  );
+}
+
+function FooterDot() {
+  return <span aria-hidden="true" style={{ width: 3, height: 3, borderRadius: 999, background: 'var(--mf-border)' }} />;
 }
