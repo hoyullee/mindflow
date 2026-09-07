@@ -71,6 +71,7 @@ export function SpaceRow({ space, state, controller, index, total }: Props) {
             controller.setActiveSpace(space.id);
           }
         }}
+        aria-current={active ? 'page' : undefined}
         style={{
           // 디자인 원본: 8/9 패딩 · r10 · 13px. 활성 행만 옅은 강조색 면과 굵은 글씨.
           display: 'flex',

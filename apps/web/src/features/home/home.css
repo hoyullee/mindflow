@@ -197,6 +197,15 @@ a:hover {
 .mf-home .nav-item:hover {
   background: var(--mf-panel2) !important;
 }
+/* 지금 보고 있는 화면(`aria-current`)과 눈에 띄어야 하는 카드(`data-tinted`)는
+   **자기 틴트를 지킨다** — 위 규칙이 면을 갈아 끼우면 손을 얹은 순간 그 항목이
+   꺼진 것처럼 보인다(달력 칩·켜진 알약·알림 행에서 이미 겪은 계열). 대신 밝기만
+   움직인다(다크는 반대 방향 — `--mf-hover-bright`). */
+.mf-home .nav-item[aria-current='page']:hover,
+.mf-home .nav-item[data-tinted='1']:hover {
+  background: var(--mf-accent-soft) !important;
+  filter: brightness(var(--mf-hover-bright));
+}
 /* 템플릿 카드 — 디자인 원본의 `.gh-tpl` hover/active. transition을 여기에만 둔다
    (인라인로 얹으면 transform 전이가 덮여 hover가 툭 바뀐다 — 카드와 같은 함정). */
 .mf-home .tpl-card {

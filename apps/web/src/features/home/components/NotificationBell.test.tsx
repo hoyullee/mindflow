@@ -127,6 +127,21 @@ describe('알림 센터', () => {
     expect(panel.querySelector('.notif-scroll')).toBeTruthy();
   });
 
+  it('LNB 행 hover가 틴트를 회색으로 갈아 끼우지 않는다 — 지금 보는 화면·안 읽음은 자기 색을 지킨다', async () => {
+    // 공용 `.nav-item:hover`가 면을 panel2로 덮으면 손을 얹는 순간 그 항목이 꺼진
+    // 것처럼 보인다(달력 칩·켜진 알약에서 이미 겪은 계열). jsdom은 :hover를
+    // 계산하지 않으므로 CSS 계약을 파일에서 직접 가드한다.
+    const { readFileSync, existsSync } = await import('node:fs');
+    const cssPath = ['src/features/home/home.css', 'apps/web/src/features/home/home.css'].find((f) => existsSync(f))!;
+    const css = readFileSync(cssPath, 'utf8');
+    expect(css).toMatch(/\.nav-item\[aria-current='page'\]:hover/);
+    expect(css).toMatch(/\.nav-item\[data-tinted='1'\]:hover/);
+    // 틴트는 유지하고 밝기만 움직인다.
+    const block = css.slice(css.indexOf(".nav-item[aria-current='page']:hover"));
+    expect(block.slice(0, 260)).toContain('var(--mf-accent-soft)');
+    expect(block.slice(0, 260)).toContain('--mf-hover-bright');
+  });
+
   it('알림 패널 스크롤바: 위/아래 화살표 버튼이 없고 트랙이 둥근 모서리 안쪽으로 들여진다(제보)', async () => {
     // jsdom은 ::-webkit-scrollbar 의사 요소를 렌더하지 않으므로 CSS 계약을
     // 파일에서 직접 가드한다(Windows 크롬에서만 보이는 버튼 조각이 대상).
@@ -153,7 +168,7 @@ describe('알림 센터', () => {
   it('LNB 행은 세 상태를 말한다 — 안 읽음(배지+갈색 요약) · 다 읽음(배지 없이 흐린 회색) · 없음(요청)', async () => {
     // ③ 아무것도 없을 때 — 요약 자리가 비어 있지 않고 그 사실을 말한다.
     const { unmount } = renderBell();
-    let sum = (await screen.findByRole('button', { name: /^알림 ·/ })).querySelector('[data-notification-summary]') as HTMLElement;
+    let sum = (await screen.findByRole('button', { name: /^알림 ·/ })).querySelector('[data-nav-card-summary]') as HTMLElement;
     expect(sum.textContent).toBe('아직 받은 알림이 없어요');
     expect(sum.style.color).toBe('var(--mf-muted)');
     unmount();
@@ -165,7 +180,7 @@ describe('알림 센터', () => {
     let bell = await screen.findByRole('button', { name: /^알림 1개 ·/ });
     expect(bell.style.background).toBe('var(--mf-accent-soft)');
     expect(within(bell).getByText('1')).toBeTruthy();
-    sum = bell.querySelector('[data-notification-summary]') as HTMLElement;
+    sum = bell.querySelector('[data-nav-card-summary]') as HTMLElement;
     expect(sum.textContent).toBe('멘션 · 제가 바꿀게요 · 2시간 전');
     expect(sum.style.color).toBe('var(--mf-subtext)');
     cleanup();
@@ -176,7 +191,7 @@ describe('알림 센터', () => {
     bell = await screen.findByRole('button', { name: /^알림 ·/ });
     expect(bell.style.background).toBe('transparent');
     expect(bell.querySelector('[data-notification-count]')).toBeNull();
-    sum = bell.querySelector('[data-notification-summary]') as HTMLElement;
+    sum = bell.querySelector('[data-nav-card-summary]') as HTMLElement;
     expect(sum.textContent).toBe('멘션 · 제가 바꿀게요 · 2시간 전');
     expect(sum.style.color).toBe('var(--mf-muted)');
   });
@@ -198,14 +213,14 @@ describe('알림 센터', () => {
     // 표식이 사라진다.
     seed([{ readAt: new Date().toISOString() }]);
     const { unmount } = renderBell();
-    let glyph = (await screen.findByRole('button', { name: /^알림 ·/ })).querySelector('[data-bell-glyph]') as HTMLElement;
+    let glyph = (await screen.findByRole('button', { name: /^알림 ·/ })).querySelector('[data-nav-card-glyph]') as HTMLElement;
     expect(glyph.style.color).toBe('var(--mf-accent)');
     unmount();
     cleanup();
 
     seed([{}]);
     renderBell();
-    glyph = (await screen.findByRole('button', { name: /^알림 1개 ·/ })).querySelector('[data-bell-glyph]') as HTMLElement;
+    glyph = (await screen.findByRole('button', { name: /^알림 1개 ·/ })).querySelector('[data-nav-card-glyph]') as HTMLElement;
     expect(glyph.style.color).toBe('var(--mf-accent)');
   });
 

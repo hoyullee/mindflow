@@ -63,6 +63,7 @@ export function DashboardSection({ state, controller, isMobile = false }: { stat
               e.stopPropagation();
               controller.openCtxMenuAt(e.clientX, e.clientY, { kind: 'dash', id: d.id });
             }}
+            aria-current={active ? 'page' : undefined}
             style={{
               display: 'flex',
               alignItems: 'center',

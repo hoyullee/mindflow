@@ -4,7 +4,7 @@ import { miniBoardPreview, miniKanbanPreview, miniPreview, previewSkeleton, prev
 import type { PreviewSurface } from './mapPreview';
 import { docSearchText, matchesQuery } from './searchIndex';
 import { calendarEntries, type CalendarSource } from './calendar/entries';
-import { todayISO, upcomingEntries } from './calendar/model';
+import { calendarBrief, todayISO, type CalendarBrief } from './calendar/model';
 import type { DriveFolderData, FolderData, HomeState, MapCardData, SpaceData } from './types';
 import { DRIVE_FILES } from './types';
 
@@ -191,7 +191,7 @@ export interface HomeViewModel {
   importVisible: boolean;
   recentSectionVisible: boolean;
   /** LNB `일정` 행의 개수 — 다가오는 마감(오늘 포함) 수. */
-  calendarCount: number;
+  calendarBrief: CalendarBrief;
   /** 폴더 안일 때만 — 그리드 첫 칸의 "상위 폴더" 타일. */
   parentTile: ParentTileViewData | null;
   foldersSectionVisible: boolean;
@@ -869,7 +869,7 @@ export function deriveHomeView(state: HomeState): HomeViewModel {
     recentSectionVisible: !loading && !state.search && !showDriveConnect && recentCards.length > 0,
     // 일정 개수 — 화면을 열지 않아도 LNB에 뜨므로 여기서 센다. 본문이 아직 없는
     // 문서는 세지 못한다(0으로 보인다) — 프리페치가 도착하면 함께 오른다.
-    calendarCount: calendarCountOf(state),
+    calendarBrief: calendarBriefOf(state),
     parentTile,
     // 상위 폴더 타일도 이 구획에 서므로 폴더 카드가 없어도 구획이 열린다.
     foldersSectionVisible: !loading && !searching && (folderCards.length > 0 || !!parentTile),
@@ -882,8 +882,8 @@ export function deriveHomeView(state: HomeState): HomeViewModel {
 
 export { hexA, mapId };
 
-/** LNB `일정` 행의 개수 — 다가오는 마감(오늘 포함). */
-function calendarCountOf(state: HomeState): number {
+/** LNB `일정` 카드의 요약 수치 — 지난 마감·오늘·이번 주·다가오는 것. */
+function calendarBriefOf(state: HomeState): CalendarBrief {
   const sources: CalendarSource[] = [];
   for (const sp of state.spaces) {
     if (sp.id === 'drive') continue;
@@ -893,5 +893,5 @@ function calendarCountOf(state: HomeState): number {
   }
   for (const sm of state.sharedMaps) sources.push({ docId: sm.docId, boardName: sm.title, spaceName: '공유받음' });
   const today = todayISO();
-  return upcomingEntries(calendarEntries(sources, state.previewDocs), today).length;
+  return calendarBrief(calendarEntries(sources, state.previewDocs), today);
 }

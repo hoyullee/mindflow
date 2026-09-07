@@ -210,8 +210,8 @@ const BODIES = () => ({
 
 async function openCalendar() {
   await waitFor(() => expect(document.querySelector('[data-cal-nav]')).toBeTruthy());
-  // 본문 프리페치가 도착해 개수가 서기까지 기다린다.
-  await waitFor(() => expect(document.querySelector('[data-cal-nav]')!.textContent).toMatch(/일정\d/));
+  // 본문 프리페치가 도착해 요약이 서기까지 기다린다(카드의 둘째 줄).
+  await waitFor(() => expect(document.querySelector('[data-cal-summary]')!.textContent).not.toBe('예정된 일정이 없어요'));
   fireEvent.click(document.querySelector('[data-cal-nav]')!);
   await waitFor(() => expect(document.querySelector('[data-calendar-view]')).toBeTruthy());
 }
@@ -289,17 +289,23 @@ describe('일정 화면', () => {
     seedSpaces();
   });
 
-  it('LNB `일정` 행은 대시보드 구획과 스페이스 구획 사이에 있고 다가오는 마감 수를 센다', async () => {
+  it('LNB `일정`은 프로필·알림과 함께 상단 바로가기 카드다 — 요약이 지금 급한 것을 말한다(제보)', async () => {
     renderHome([META('d1', '스프린트 보드'), META('d2', '이슈 트리아지')], BODIES());
     await openCalendar();
-    // 다가오는 마감 = 오늘(1) + D+1(1) + 기간 카드 기한(1) = 3. 완료 열은 빠진다.
-    expect(document.querySelector('[data-cal-nav]')!.textContent).toBe('일정3');
-    // 순서: 대시보드 구획 → 일정 → 스페이스 구획
-    const nav = document.querySelector('[data-cal-nav]')!;
-    const dash = screen.getByText('주간 현황');
-    const spaceLabel = screen.getByText('스페이스');
-    expect(dash.compareDocumentPosition(nav) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
-    expect(nav.compareDocumentPosition(spaceLabel) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    const nav = document.querySelector('[data-cal-nav]') as HTMLElement;
+    // 둘째 줄은 급한 것부터 — 지난 마감(1) · 오늘(1). 완료 열은 빠진다.
+    expect(nav.querySelector('[data-cal-summary]')!.textContent).toBe('지난 마감 1건 · 오늘 1건');
+    // 지난 마감은 경고색 알약으로도 선다.
+    expect(nav.querySelector('[data-cal-overdue]')!.textContent).toBe('1');
+    // 알림과 **같은 껍데기**(두 줄 카드)라 나란히 서도 서로 달라 보이지 않는다.
+    expect(nav.querySelector('[data-nav-card-summary]')).toBeTruthy();
+    expect(nav.style.minHeight).toBe('50px');
+    // 자리: 알림 **바로 아래**, 대시보드 구획보다 **앞**.
+    //       예전에는 두 라벨 구획 사이에 홀로 서서 라벨을 빠뜨린 항목처럼 읽혔다.
+    const bell = document.querySelector('[data-notification-nav]')!;
+    const dashLabel = screen.getByText('대시보드');
+    expect(bell.compareDocumentPosition(nav) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(nav.compareDocumentPosition(dashLabel) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
   });
 
   it('전 스페이스의 칸반 마감을 그리고, 완료 열은 빼고, 기간 일정은 칩이 아니라 바로 그린다', async () => {
