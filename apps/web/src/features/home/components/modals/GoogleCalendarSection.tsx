@@ -17,6 +17,7 @@ import type { GoogleCalendarApi } from '../../calendar/useGoogleCalendar';
 import type { DirectoryPerson } from '../../calendar/googleDirectory';
 import { HOLIDAY_COUNTRIES, HOLIDAY_OFF, isManagedHolidayId, type HolidayCountry } from '../../calendar/googleCalendar';
 import { Segmented } from '../../../../components/Segmented';
+import { AnchoredList, rowDivider } from '../../calendar/AnchoredList';
 import { SectionLabel, SettingsGroup } from './AccountSettingsModal';
 
 export function GoogleCalendarSection({ api }: { api: GoogleCalendarApi }) {
@@ -141,14 +142,6 @@ export function GoogleCalendarSection({ api }: { api: GoogleCalendarApi }) {
               </div>
             )}
             <AddCalendar api={api} />
-            {/* 체크는 이 화면에서 보여 줄지만 정하는 것 — 구글 쪽 구독 목록은 그대로다. */}
-            <div style={{ display: 'flex', gap: 8, marginTop: 10, padding: '10px 11px', borderRadius: 12, border: '1px solid var(--mf-border-soft)', background: 'var(--mf-card)', fontSize: 11.5, color: 'var(--mf-faint)', lineHeight: 1.55 }}>
-              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="var(--mf-faint)" strokeWidth="2" strokeLinecap="round" aria-hidden="true" style={{ flexShrink: 0, marginTop: 2 }}>
-                <circle cx="12" cy="12" r="9" />
-                <path d="M12 11v5.5M12 7.6v.6" />
-              </svg>
-              <span>체크를 풀거나 연동을 끄면 이 화면에서만 사라지고 구글에는 그대로 남아요.</span>
-            </div>
           </div>
         )}
       </div>
@@ -165,7 +158,6 @@ export function GoogleCalendarSection({ api }: { api: GoogleCalendarApi }) {
           <div style={{ display: 'flex', alignItems: 'center', flexWrap: 'wrap', gap: 13, padding: '14px 15px' }}>
             <div style={{ minWidth: 0, flex: '1 1 200px' }}>
               <div style={{ fontWeight: 700, fontSize: 14.5 }}>공휴일 국가</div>
-              <div style={{ fontSize: 12.5, color: 'var(--mf-muted)', marginTop: 2 }}>고른 국가의 공휴일을 일정 칩 대신 날짜 색으로 표시해요 — 일정 화면과 위젯 모두</div>
             </div>
             {/* 세그먼트 트랙 — 속성 패널의 크기 세그먼트와 같은 문법(가라앉은 트랙
                 위에서 고른 칸만 카드 면 + 진한 강조 잉크). */}
@@ -284,11 +276,13 @@ function AddCalendar({ api }: { api: GoogleCalendarApi }) {
   const [err, setErr] = useState<string | null>(null);
   const [people, setPeople] = useState<DirectoryPerson[]>([]);
   const seqRef = useRef(0);
-  const inputRef = useRef<HTMLInputElement | null>(null);
+  /** 툴팁 리스트가 걸리는 자리 — **상태**여야 한다(ref는 바뀌어도 렌더를 밀지
+   * 않아 첫 자리 계산이 빗나간다. 참석자 후보와 같은 처방). */
+  const [anchor, setAnchor] = useState<HTMLInputElement | null>(null);
 
   useEffect(() => {
-    if (open) inputRef.current?.focus();
-  }, [open]);
+    if (open) anchor?.focus();
+  }, [open, anchor]);
 
   // 검색 함수는 렌더마다 새 참조다(`api`가 새 객체) — deps에 넣으면 타이머가 매
   // 렌더 취소돼 **디바운스가 영영 안 터진다**. 최신 함수는 ref로 읽는다.
@@ -347,7 +341,7 @@ function AddCalendar({ api }: { api: GoogleCalendarApi }) {
       */}
       <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
         <input
-          ref={inputRef}
+          ref={setAnchor}
           data-google-cal-add-input
           aria-label={api.canSearchPeople ? '이름 또는 캘린더 주소' : '캘린더 주소'}
           placeholder={api.canSearchPeople ? '이름 또는 캘린더 주소' : '캘린더 주소(이메일)'}
@@ -379,8 +373,13 @@ function AddCalendar({ api }: { api: GoogleCalendarApi }) {
         </span>
       </div>
 
+      {/*
+        후보는 **입력 상자 곁에 뜨는 툴팁**이다(요청 — 팝업 안에 두면 검색할 때마다 설정
+        팝업이 길어지고 스크롤이 생긴다). 참석자·회의실 후보가 쓰는 그 `AnchoredList`와
+        같은 것이다: body 포털 + fixed라 **이 팝업의 높이를 한 픽셀도 바꾸지 않는다**.
+      */}
       {people.length > 0 && (
-        <div data-google-cal-add-list style={{ marginTop: 6, display: 'flex', flexDirection: 'column', borderRadius: 11, border: '1px solid var(--mf-border)', background: 'var(--mf-card)', maxHeight: 132, overflowY: 'auto' }} className="lnb-scroll">
+        <AnchoredList anchor={anchor} attrs={{ 'data-google-cal-add-list': '1' }}>
           {people.map((p, i) => (
             <button
               key={p.email}
@@ -388,14 +387,19 @@ function AddCalendar({ api }: { api: GoogleCalendarApi }) {
               className="btn mf-ctl"
               data-google-cal-candidate={p.email}
               disabled={busy}
-              onClick={() => void add(p.email)}
-              style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-start', gap: 1, padding: '7px 10px', border: 'none', borderTop: i === 0 ? 'none' : '1px solid var(--mf-border-soft)', background: 'transparent', fontFamily: 'inherit', textAlign: 'left', cursor: 'pointer' }}
+              // 입력 상자가 blur되면 후보가 사라져 클릭이 도착하지 못한다 — 누르는
+              // 순간(`mousedown`)에 고른다(멘션 자동완성에서 배운 그 함정).
+              onMouseDown={(e) => {
+                e.preventDefault();
+                void add(p.email);
+              }}
+              style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-start', gap: 1, padding: '7px 10px', border: 'none', background: 'transparent', fontFamily: 'inherit', textAlign: 'left', cursor: 'pointer', ...rowDivider(i) }}
             >
               <span style={{ fontSize: 12.5, fontWeight: 700, color: 'var(--mf-text)' }}>{p.name}</span>
               <span style={{ fontSize: 11, color: 'var(--mf-muted)' }}>{p.email}</span>
             </button>
           ))}
-        </div>
+        </AnchoredList>
       )}
 
       {err && (

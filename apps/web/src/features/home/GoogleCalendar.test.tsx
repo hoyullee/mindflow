@@ -1,4 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { readFileSync } from 'node:fs';
+import { resolve } from 'node:path';
 import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { MemoryRouter, Route, Routes } from 'react-router-dom';
@@ -253,9 +255,11 @@ describe('구글 캘린더 겹치기(PR5)', () => {
     renderHome();
     await user.click(await screen.findByRole('button', { name: '계정 메뉴' }));
     await user.click(await screen.findByText('설정'));
-    // 연동 행은 **계정 설정** 화면에 있다(요청 — 프로필 설정에서 옮겨 Google 연동과 한 구획으로).
     await user.click(await screen.findByText('계정 설정'));
     await screen.findByRole('dialog', { name: '설정' });
+    // 들어가는 **행 자체가 없다** — 눌러도 빈 화면이 열릴 진입점을 두지 않는다.
+    expect(screen.queryByText('Google 캘린더 연동')).toBeNull();
+    expect(document.querySelector('[data-calendar-detail-row]')).toBeNull();
     expect(document.querySelector('[data-google-section]')).toBeNull();
   });
 
@@ -268,8 +272,9 @@ describe('구글 캘린더 겹치기(PR5)', () => {
     renderHome();
     await user.click(await screen.findByRole('button', { name: '계정 메뉴' }));
     await user.click(await screen.findByText('설정'));
-    // 연동 행은 **계정 설정** 화면에 있다(요청 — 프로필 설정에서 옮겨 Google 연동과 한 구획으로).
+    // 연동 행은 **계정 설정** 화면에 있고, 캘린더 연동은 거기서 **한 겹 더**다(요청).
     await user.click(await screen.findByText('계정 설정'));
+    await user.click(await screen.findByText('Google 캘린더 연동'));
     const section = await waitFor(() => {
       const el = document.querySelector('[data-google-section]');
       expect(el).toBeTruthy();
@@ -556,8 +561,9 @@ describe('구글 캘린더 겹치기(PR5)', () => {
     // 새로고침해야 알았다(제보의 뿌리).
     await user.click(await screen.findByRole('button', { name: '계정 메뉴' }));
     await user.click(await screen.findByText('설정'));
-    // 연동 행은 **계정 설정** 화면에 있다(요청 — 프로필 설정에서 옮겨 Google 연동과 한 구획으로).
+    // 연동 행은 **계정 설정** 화면에 있고, 캘린더 연동은 거기서 **한 겹 더**다(요청).
     await user.click(await screen.findByText('계정 설정'));
+    await user.click(await screen.findByText('Google 캘린더 연동'));
     const btn = await waitFor(() => {
       const el = document.querySelector('[data-google-reconnect]');
       expect(el).toBeTruthy();
@@ -606,8 +612,9 @@ describe('구글 캘린더 겹치기(PR5)', () => {
     renderHome();
     await user.click(await screen.findByRole('button', { name: '계정 메뉴' }));
     await user.click(await screen.findByText('설정'));
-    // 연동 행은 **계정 설정** 화면에 있다(요청 — 프로필 설정에서 옮겨 Google 연동과 한 구획으로).
+    // 연동 행은 **계정 설정** 화면에 있고, 캘린더 연동은 거기서 **한 겹 더**다(요청).
     await user.click(await screen.findByText('계정 설정'));
+    await user.click(await screen.findByText('Google 캘린더 연동'));
     await user.click(await waitFor(() => document.querySelector('[data-google-connect]') as HTMLElement));
     await waitFor(() => {
       const ws = JSON.parse(localStorage.getItem('mf_spaces') ?? '{}') as { google?: Record<string, unknown> };
@@ -662,8 +669,9 @@ describe('구글 캘린더 겹치기(PR5)', () => {
     renderHome();
     await user.click(await screen.findByRole('button', { name: '계정 메뉴' }));
     await user.click(await screen.findByText('설정'));
-    // 연동 행은 **계정 설정** 화면에 있다(요청 — 프로필 설정에서 옮겨 Google 연동과 한 구획으로).
+    // 연동 행은 **계정 설정** 화면에 있고, 캘린더 연동은 거기서 **한 겹 더**다(요청).
     await user.click(await screen.findByText('계정 설정'));
+    await user.click(await screen.findByText('Google 캘린더 연동'));
     const btn = await waitFor(() => {
       const el = document.querySelector('[data-google-disconnect]');
       expect(el).toBeTruthy();
@@ -1730,8 +1738,9 @@ describe('구글 캘린더 겹치기(PR5)', () => {
     // 연동 해제 — 계정에 딸린 캐시(회의실·스코프)도 함께 버려진다.
     await user.click(await screen.findByRole('button', { name: '계정 메뉴' }));
     await user.click(await screen.findByText('설정'));
-    // 연동 행은 **계정 설정** 화면에 있다(요청 — 프로필 설정에서 옮겨 Google 연동과 한 구획으로).
+    // 연동 행은 **계정 설정** 화면에 있고, 캘린더 연동은 거기서 **한 겹 더**다(요청).
     await user.click(await screen.findByText('계정 설정'));
+    await user.click(await screen.findByText('Google 캘린더 연동'));
     const off = await waitFor(() => {
       const el = document.querySelector('[data-google-disconnect]');
       expect(el).toBeTruthy();
@@ -2007,6 +2016,7 @@ describe('구글 캘린더 겹치기(PR5)', () => {
     await user.click(await screen.findByRole('button', { name: '계정 메뉴' }));
     await user.click(await screen.findByText('설정'));
     await user.click(await screen.findByText('계정 설정'));
+    await user.click(await screen.findByText('Google 캘린더 연동'));
     const section = await waitFor(() => {
       const el = document.querySelector('[data-google-section]');
       expect(el).toBeTruthy();
@@ -2033,6 +2043,7 @@ describe('구글 캘린더 겹치기(PR5)', () => {
     await user.click(await screen.findByRole('button', { name: '계정 메뉴' }));
     await user.click(await screen.findByText('설정'));
     await user.click(await screen.findByText('계정 설정'));
+    await user.click(await screen.findByText('Google 캘린더 연동'));
     const section = await waitFor(() => {
       const el = document.querySelector('[data-google-section]');
       expect(el).toBeTruthy();
@@ -2061,18 +2072,32 @@ describe('구글 캘린더 겹치기(PR5)', () => {
     await user.click(screen.getByRole('button', { name: /뒤로/ }));
     await user.click(await screen.findByText('계정 설정'));
     // 두 구획으로 갈렸다(첨부 이미지): `로그인`에 Google 로그인 행, `캘린더 연동`에
-    // 캘린더 카드 — 하는 일이 다르다(들어오는 문 / 무엇을 함께 보여 줄까).
+    // **진입 행** — 하는 일이 다르다(들어오는 문 / 무엇을 함께 보여 줄까).
     const link = await waitFor(() => {
       const el = document.querySelector('[data-google-link-row]');
       expect(el).toBeTruthy();
       return el as HTMLElement;
     });
-    const cal = document.querySelector('[data-google-section]')!;
+    const row = document.querySelector('[data-calendar-detail-row]')!;
     expect(document.body.textContent).toContain('로그인');
     expect(document.body.textContent).toContain('캘린더 연동');
-    expect(link.compareDocumentPosition(cal) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(link.compareDocumentPosition(row) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
     expect(link.textContent).toContain('Google 로그인');
-    expect(cal.textContent).toContain('Google 캘린더');
+    // 목록·공휴일은 이 화면에 없다 — 한 겹 더 들어간다(요청).
+    expect(document.querySelector('[data-google-section]')).toBeNull();
+    expect(document.querySelector('[data-holiday-row]')).toBeNull();
+
+    // 그 행을 누르면 **전용 화면**이 열린다: 제목이 바뀌고 목록·공휴일이 함께 온다.
+    await user.click(row as HTMLElement);
+    await waitFor(() => expect(document.querySelector('[data-google-section]')).toBeTruthy());
+    expect(document.querySelector('[data-settings-title]')?.textContent).toBe('Google 캘린더 연동');
+    // (공휴일 국가는 **연결된 뒤에만** 그린다 — 이 테스트는 아직 켜지 않은 계정이다.)
+    // 지운 안내 문구 둘(요청) — 늘 같은 말을 걸어 두면 정작 알려야 할 때 눈에 띌 자리가 없다.
+    expect(document.body.textContent).not.toContain('체크를 풀거나');
+    expect(document.body.textContent).not.toContain('날짜 색으로 표시해요');
+    // 뒤로는 **한 겹씩** — 계정 설정으로 돌아온다(첫 화면으로 건너뛰지 않는다).
+    await user.click(screen.getByRole('button', { name: /뒤로/ }));
+    await waitFor(() => expect(document.querySelector('[data-settings-title]')?.textContent).toBe('계정 설정'));
   });
 
   it('회의실 목록은 사용 가능 → 사용 중으로 갈려 뜨고, 가능한 방이 먼저다(요청)', async () => {
@@ -3159,6 +3184,8 @@ describe('캘린더 더하기 — 그리오 목록(요청)', () => {
     await user.click(await screen.findByRole('button', { name: '계정 메뉴' }));
     await user.click(await screen.findByText('설정'));
     await user.click(await screen.findByText('계정 설정'));
+    // 연동은 **한 겹 더** 들어간다(요청) — 계정 설정에는 진입 행만 있다.
+    await user.click(await screen.findByText('Google 캘린더 연동'));
     return waitFor(() => {
       const el = document.querySelector('[data-google-section]');
       expect(el).toBeTruthy();
@@ -3383,6 +3410,70 @@ describe('캘린더 더하기 — 그리오 목록(요청)', () => {
     renderHome();
     await openIntegration(user);
     expect(document.querySelector('[data-holiday-seg]')).toBeNull();
+  });
+
+  it('검색 후보는 팝업 **밖**(body 포털)에 떠서 설정 팝업의 길이를 바꾸지 않는다(제보)', async () => {
+    // 제보: 검색하면 설정 팝업 자체에 스크롤이 생겼다. 후보를 팝업 안에 두면 그때마다
+    // 팝업이 길어진다 — 참석자 후보와 같은 처방(툴팁 리스트)으로 옮겼다.
+    seed({ calendars: ['me@example.com'] });
+    seedToken();
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (url: string) => {
+        const ok = (body: unknown) => ({ ok: true, status: 200, json: async () => body }) as unknown as Response;
+        if (url.includes('people.googleapis.com')) {
+          return ok({ people: [{ names: [{ displayName: '김요한' }], emailAddresses: [{ value: 'johan@example.com', metadata: { primary: true } }] }] });
+        }
+        if (url.includes('/users/me/calendarList')) return ok({ items: [{ id: 'me@example.com', summary: '내 캘린더', primary: true, accessRole: 'owner' }] });
+        return ok({ items: [] });
+      }),
+    );
+    clientId = 'test-client.apps.googleusercontent.com';
+    const user = userEvent.setup();
+    renderHome();
+    await openIntegration(user);
+    await waitFor(() => expect(document.querySelector('[data-google-cal="me@example.com"]')).toBeTruthy());
+    await user.click(document.querySelector('[data-google-cal-add]') as HTMLElement);
+    const input = await waitFor(() => {
+      const el = document.querySelector('[data-google-cal-add-input]');
+      expect(el).toBeTruthy();
+      return el as HTMLInputElement;
+    });
+    await user.type(input, '요한');
+    const list = await waitFor(() => {
+      const el = document.querySelector('[data-google-cal-add-list]');
+      expect(el).toBeTruthy();
+      return el as HTMLElement;
+    });
+    // 카드 **안**이 아니라 body 직속이고 fixed다 — 그래서 팝업 높이에 영향이 없다.
+    const card = document.querySelector('[role=dialog]')!;
+    expect(card.contains(list)).toBe(false);
+    expect(list.parentElement).toBe(document.body);
+    expect(list.style.position).toBe('fixed');
+    // 후보는 **mousedown**으로 고른다 — blur되면 목록이 사라져 click이 도착하지 못한다.
+    const hit = document.querySelector('[data-google-cal-candidate="johan@example.com"]') as HTMLElement;
+    fireEvent.mouseDown(hit);
+    await waitFor(() => {
+      const ws = JSON.parse(localStorage.getItem('mf_spaces') ?? '{}') as { google?: { extra?: { id: string }[] } };
+      expect(ws.google?.extra?.map((e) => e.id)).toContain('johan@example.com');
+    });
+  });
+
+  it('설정 카드가 스크롤할 때 스크롤바는 카드 안에 머문다 — 라운드를 넘지 않는다(제보)', async () => {
+    // 제보: 스크롤이 팝업을 벗어나 그려졌다. 기본 스크롤바는 track이 각져 있어 카드의
+    // 22px 라운드가 물러나는 자리에 그대로 남는다(xvfb 헤디드 실측). 공용 얇은
+    // 스크롤바를 카드에 입히고, CSS가 썸의 이동 구간을 라운드 안쪽으로 들여놓는다.
+    seed();
+    const user = userEvent.setup();
+    renderHome();
+    await user.click(await screen.findByRole('button', { name: '계정 메뉴' }));
+    await user.click(await screen.findByText('설정'));
+    const card = await screen.findByRole('dialog', { name: '설정' });
+    expect(card.className).toContain('lnb-scroll');
+    expect(card.style.overflowY).toBe('auto');
+    // 규칙은 CSS에 있다(jsdom은 스크롤바 의사 요소를 렌더하지 않는다) — 계약을 고정한다.
+    const css = readFileSync(resolve('src/features/home/home.css'), 'utf8');
+    expect(css).toContain('[data-modal-overlay] > .lnb-scroll::-webkit-scrollbar-track');
   });
 
   it('LNB 하위 메뉴의 `캘린더 추가`는 설정의 연동 구획을 연다 — 흐름은 한 곳이 맡는다', async () => {
