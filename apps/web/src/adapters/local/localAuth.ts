@@ -124,20 +124,15 @@ export class LocalAuth implements AuthProvider {
     return { error: '데모 모드에서는 Google 로그인을 쓸 수 없어요.' };
   }
 
-  // 데모 세션은 갱신 토큰이라는 개념이 없다 — 넘겨받은 값이 우리가 만든 것이면
-  // 그 세션을 되살린다(실제 검증은 Supabase 모드의 서버가 한다).
-  async resumeSession(refreshToken: string): Promise<AuthResult> {
-    if (!refreshToken) return { session: null, error: '세션을 이어받지 못했어요.' };
+  // 데모 모드에는 PKCE 교환이 없다 — 넘겨받은 코드가 비어 있지 않으면 데모
+  // 세션을 세운다(실제 검증은 Supabase 모드의 서버가 한다). 핸드오프 흐름을
+  // 데모에서도 눌러 볼 수 있게 두는 것이고, UI에서 닿는 길은 없다.
+  async exchangeAuthCode(code: string): Promise<AuthResult> {
+    if (!code) return { session: null, error: '로그인 정보를 이어받지 못했어요.' };
     const session = makeSession('demo-google@mindflow.local');
     writeSession(session);
     this.emit(session);
     return { session };
-  }
-
-  // 데모 세션에는 갱신 토큰이 없다 — 핸드오프 흐름을 데모에서도 눌러 볼 수 있게
-  // 세션이 있을 때만 표시자를 돌려준다(`resumeSession`이 그 값을 받아 세션을 세운다).
-  async sessionRefreshToken(): Promise<string | null> {
-    return readSession() ? 'demo-refresh-token' : null;
   }
 
   // Demo twin of the GIS token exchange — same fake Google session as

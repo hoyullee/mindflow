@@ -94,6 +94,12 @@ export function localizeAuthError(raw: string | undefined | null): string {
     return parts.length ? `비밀번호는 ${parts.join(', ')}이어야 해요.` : '비밀번호가 보안 조건을 충족하지 않아요.';
   }
 
+  // 설치형 앱의 핸드오프(PKCE) 실패 — 코드가 이미 쓰였거나, verifier가 사라졌거나
+  // (앱 저장소가 비워졌다), 만료됐다. 아래 OTP 문구는 이메일 인증번호를 가리켜
+  // 이 자리에서는 엉뚱하므로 **먼저** 걸러 낸다.
+  if (low.includes('code verifier') || low.includes('code challenge') || low.includes('flow_state') || low.includes('pkce')) {
+    return '로그인 정보를 확인하지 못했어요. 앱에서 다시 시도해 주세요.';
+  }
   // OTP/토큰 검증 실패·만료
   if (low.includes('otp') || low.includes('expired') || (low.includes('invalid') && (low.includes('code') || low.includes('token')))) {
     return '인증 코드가 올바르지 않거나 만료되었어요. 다시 시도해 주세요.';
@@ -461,15 +467,16 @@ export function useLoginController() {
   };
 
   /* ───────────── 설치형 데스크톱 앱의 Google 로그인 ─────────────
-   * 시스템 브라우저에서 동의를 받고 `geurio://auth?refresh_token=…` 딥링크로
-   * 돌아온다. 왜 앱 창에서 하지 않는지는 `desktopGoogle.ts` 머리 주석 참고.
+   * 시스템 브라우저에서 동의를 받고 `geurio://auth?code=…` 딥링크로 돌아온다.
+   * 넘어오는 것은 **인가 코드**이고 PKCE verifier는 이 앱에 있다 — 왜 앱 창에서
+   * 하지 않는지, 왜 세션이 아니라 코드인지는 `desktopGoogle.ts` 머리 주석 참고.
    */
   const resumeFromDeepLink = (url: string) => {
     const parsed = readAuthDeepLink(url);
     if (!parsed) return; // 우리가 아는 모양이 아니면 조용히 버린다.
     setState((prev) => ({ ...prev, desktopWaiting: false }));
     void (async () => {
-      const res = await auth.resumeSession(parsed.refreshToken);
+      const res = await auth.exchangeAuthCode(parsed.code);
       if (res.error) {
         patch({ error: localizeAuthError(res.error) });
         return;

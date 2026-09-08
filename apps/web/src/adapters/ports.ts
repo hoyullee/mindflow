@@ -85,20 +85,15 @@ export interface AuthProvider {
    */
   googleAuthUrl(redirectTo: string): Promise<{ url?: string; error?: string }>;
   /**
-   * 갱신 토큰으로 이 기기의 세션을 세운다 — 데스크톱 앱이 브라우저에서 넘겨받은
-   * 로그인을 이어받는 유일한 지점. Supabase의 갱신 토큰은 **한 번 쓰면 회전**하므로
-   * 딥링크 주소에 실려 지나간 값은 이 호출 직후 무효가 된다.
-   */
-  resumeSession(refreshToken: string): Promise<AuthResult>;
-  /**
-   * 지금 세션의 갱신 토큰. **데스크톱 핸드오프 한 곳에서만** 쓴다 —
-   * 브라우저에서 끝낸 로그인을 설치형 앱으로 넘길 때(`/auth/desktop`) 넘길 값이
-   * 이것뿐이기 때문이다. 그 밖의 화면은 이 값을 알 필요가 없다.
+   * 브라우저에서 받아 온 **인가 코드**로 이 기기의 세션을 세운다 — 데스크톱 앱이
+   * 넘겨받은 로그인을 이어받는 유일한 지점.
    *
-   * 이 저장소에 이미 있는 값을 우리 코드가 읽는 것이라 새로 노출되는 정보는
-   * 없지만, 자격 증명이므로 로그·화면·오류 문구에 절대 싣지 않는다.
+   * 코드가 아니라 세션(갱신 토큰)을 넘기던 첫 판은 성립하지 않았다: 우리 클라이언트는
+   * PKCE라 그 코드는 **`googleAuthUrl`을 부른 이 클라이언트의 verifier**로만
+   * 교환되고, 브라우저는 그 verifier가 없어 세션을 세울 수 없다. 자세한 사정은
+   * `features/auth/desktopGoogle.ts` 머리 주석.
    */
-  sessionRefreshToken(): Promise<string | null>;
+  exchangeAuthCode(code: string): Promise<AuthResult>;
   /**
    * Sign in with an OAuth ID token obtained CLIENT-SIDE (Google Identity
    * Services button) instead of the redirect flow above. The whole exchange
@@ -111,6 +106,8 @@ export interface AuthProvider {
   /**
    * 로그아웃 범위(세션 정책 — `server/supabase/docs/backend.md` §15):
    * - `'local'`(기본) = 이 기기의 세션만. 다른 기기는 그대로 로그인 상태다.
+   *   (저장소만 비우는 것이 **아니다** — 그 세션을 서버에서 끊는다. 그래서 남에게
+   *   넘길 토큰을 손에 든 채로 부르면 그 토큰까지 죽는다: backend.md §21의 함정.)
    * - `'global'` = **모든 기기**의 세션 해지(기기 분실·공용 PC 회수 수단).
    * - `'others'` = 지금 이 세션만 남기고 나머지 해지(비밀번호 변경 뒤에 쓴다).
    * 로컬/데모 어댑터는 세션이 하나뿐이라 범위와 무관하게 그 하나를 지운다.
