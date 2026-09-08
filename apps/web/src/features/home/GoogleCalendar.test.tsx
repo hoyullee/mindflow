@@ -3200,10 +3200,9 @@ describe('캘린더 더하기 — 그리오 목록(요청)', () => {
     clientId = 'test-client.apps.googleusercontent.com';
     const user = userEvent.setup();
     renderHome();
-    const section = await openIntegration(user);
+    await openIntegration(user);
     await waitFor(() => expect(document.querySelector('[data-google-cal="me@example.com"]')).toBeTruthy());
 
-    await user.click(within(section).getByText('캘린더 추가'));
     await user.type(document.querySelector('[data-google-cal-add-input]') as HTMLInputElement, EXTRA_ID);
     await user.click(document.querySelector('[data-google-cal-add-submit]') as HTMLElement);
 
@@ -3262,9 +3261,8 @@ describe('캘린더 더하기 — 그리오 목록(요청)', () => {
     clientId = 'test-client.apps.googleusercontent.com';
     const user = userEvent.setup();
     renderHome();
-    const section = await openIntegration(user);
+    await openIntegration(user);
     await waitFor(() => expect(document.querySelector('[data-google-cal="me@example.com"]')).toBeTruthy());
-    await user.click(within(section).getByText('캘린더 추가'));
     await user.type(document.querySelector('[data-google-cal-add-input]') as HTMLInputElement, '여은');
     const candidate = await waitFor(
       () => {
@@ -3302,7 +3300,7 @@ describe('캘린더 더하기 — 그리오 목록(요청)', () => {
     expect(ws.google?.calendars).not.toContain(EXTRA_ID);
   });
 
-  it('추가 줄은 [입력][버튼 묶음]으로 접힌다 — 좁은 화면에서 묶음 중간이 갈리지 않게', async () => {
+  it('주소 입력은 늘 보인다 — `캘린더 추가` 버튼도, 접는 `취소`도 없다(요청)', async () => {
     seed({ calendars: ['me@example.com'] });
     seedToken();
     stubFetch();
@@ -3311,14 +3309,90 @@ describe('캘린더 더하기 — 그리오 목록(요청)', () => {
     renderHome();
     const section = await openIntegration(user);
     await waitFor(() => expect(document.querySelector('[data-google-cal="me@example.com"]')).toBeTruthy());
-    await user.click(within(section).getByText('캘린더 추가'));
-    const row = (document.querySelector('[data-google-cal-add-input]') as HTMLElement).parentElement!;
+
+    // 펼치는 버튼이 없다 — 이 화면이 하는 일이 애초에 "무엇을 함께 보여 줄까"다.
+    expect(document.querySelector('[data-google-cal-add]')).toBeNull();
+    expect(within(section).queryByText('취소')).toBeNull();
+    const input = document.querySelector('[data-google-cal-add-input]') as HTMLInputElement;
+    expect(input).toBeTruthy();
+    // 이름으로 찾을 수 있으면 그렇게 말한다(선택 스코프) — 어느 쪽이든 **주소**를 받는다.
+    expect(input.placeholder).toBe('이름 또는 이메일 주소');
+    expect(input.getAttribute('aria-label')).toBe(input.placeholder);
+    // 좁은 화면에서는 [입력]과 [추가]가 그 사이에서만 갈린다 — 버튼은 행의 직속 자식이다.
+    const row = input.parentElement!;
     expect(row.style.flexWrap).toBe('wrap');
-    // 추가·취소는 **한 묶음**이라 함께 내려간다(입력 옆에 낱개로 매달리지 않는다).
-    const group = document.querySelector('[data-google-cal-add-submit]')!.parentElement!;
-    expect(group.tagName).toBe('SPAN');
-    expect(group.textContent).toBe('추가취소');
-    expect(group.parentElement).toBe(row);
+    expect((document.querySelector('[data-google-cal-add-submit]') as HTMLElement).parentElement).toBe(row);
+  });
+
+  it('목록이 오기 전에는 **최대 크기 스켈레톤**이다 — 도착해도 자리가 위로 튀지 않는다(요청)', async () => {
+    // 새로 연 탭: 토큰은 이 기기에 있어 연결은 곧바로 참인데 목록 조회는 아직 돈다.
+    // 예전에는 `캘린더를 불러오는 중…` 한 줄이라 목록이 오는 순간 상자가 튀었다.
+    seed({ calendars: ['me@example.com'] });
+    seedToken();
+    let release = (): void => {};
+    const held = new Promise<void>((r) => {
+      release = () => r();
+    });
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (url: string) => {
+        const ok = (body: unknown) => ({ ok: true, status: 200, json: async () => body }) as unknown as Response;
+        if (url.includes('/users/me/calendarList')) {
+          await held;
+          return ok({ items: [{ id: 'me@example.com', summary: '내 캘린더', primary: true, accessRole: 'owner' }] });
+        }
+        return ok({ items: [] });
+      }),
+    );
+    clientId = 'test-client.apps.googleusercontent.com';
+    const user = userEvent.setup();
+    renderHome();
+    const section = await openIntegration(user);
+
+    const skel = await waitFor(() => {
+      const el = document.querySelector('[data-google-cal-skeleton]');
+      expect(el).toBeTruthy();
+      return el as HTMLElement;
+    });
+    // 목록이 쓸 수 있는 최대 줄 수 — 행 높이·간격이 실제 행과 같다.
+    expect(skel.children.length).toBe(5);
+    expect((skel.firstElementChild as HTMLElement).style.minHeight).toBe('38px');
+    // 상자는 목록의 **최대 높이 그대로**다 — 도착해도 자라지 않는다.
+    expect(skel.style.height).toBe('208px');
+    // 개수는 아직 말하지 않는다 — 오는 동안 `0개 표시 중`은 거짓말이다.
+    expect(section.querySelector('[data-google-shown]')).toBeNull();
+
+    release();
+    await waitFor(() => {
+      expect(document.querySelector('[data-google-cal="me@example.com"]')).toBeTruthy();
+      expect(document.querySelector('[data-google-cal-skeleton]')).toBeNull();
+    });
+  });
+
+  it('연동 카드의 면은 팝업과 같다 — 상태마다 틴트를 갈아 끼우지 않는다(제보)', async () => {
+    seed({ calendars: ['me@example.com'] });
+    seedToken();
+    stubFetch();
+    clientId = 'test-client.apps.googleusercontent.com';
+    const user = userEvent.setup();
+    renderHome();
+    const section = await openIntegration(user);
+    await waitFor(() => expect(section.getAttribute('data-google-live')).toBe('1'));
+    // 연결 뒤에도 초록 틴트가 아니다 — 상태는 부제와 버튼이 말한다.
+    expect(section.style.background).toBe('var(--mf-card)');
+  });
+
+  it('`구독하지 않은 캘린더도 주소로…` 안내를 두지 않는다(요청)', async () => {
+    seed({ calendars: ['me@example.com'] });
+    seedToken();
+    stubFetch();
+    clientId = 'test-client.apps.googleusercontent.com';
+    const user = userEvent.setup();
+    renderHome();
+    const section = await openIntegration(user);
+    await waitFor(() => expect(document.querySelector('[data-google-cal="me@example.com"]')).toBeTruthy());
+    expect(section.textContent).not.toContain('구독하지 않은 캘린더도 주소로');
+    expect(section.textContent).not.toContain('보기 전용이라 일정을 만들 수는 없어요');
   });
 
   it('공휴일 국가를 바꾸면 그 나라의 공휴일 캘린더로 갈아 끼운다 — 왕복 없이 블롭만 바뀐다', async () => {
@@ -3433,7 +3507,6 @@ describe('캘린더 더하기 — 그리오 목록(요청)', () => {
     renderHome();
     await openIntegration(user);
     await waitFor(() => expect(document.querySelector('[data-google-cal="me@example.com"]')).toBeTruthy());
-    await user.click(document.querySelector('[data-google-cal-add]') as HTMLElement);
     const input = await waitFor(() => {
       const el = document.querySelector('[data-google-cal-add-input]');
       expect(el).toBeTruthy();
@@ -3476,7 +3549,7 @@ describe('캘린더 더하기 — 그리오 목록(요청)', () => {
     expect(css).toContain('[data-modal-overlay] > .lnb-scroll::-webkit-scrollbar-track');
   });
 
-  it('LNB 하위 메뉴의 `캘린더 추가`는 설정의 연동 구획을 연다 — 흐름은 한 곳이 맡는다', async () => {
+  it('LNB 하위 메뉴의 `캘린더 추가`는 연동 화면을 열고 **주소 입력에 커서**를 둔다(요청)', async () => {
     seed({ calendars: ['me@example.com'] });
     seedToken();
     stubFetch();
@@ -3491,5 +3564,27 @@ describe('캘린더 더하기 — 그리오 목록(요청)', () => {
     });
     await user.click(add);
     await waitFor(() => expect(document.querySelector('[data-google-section]')).toBeTruthy());
+    // 그 버튼을 누른 사람은 주소를 적으러 온 것이다 — 그 칸을 다시 찾아 누를 이유가 없다.
+    await waitFor(() => {
+      const input = document.querySelector('[data-google-cal-add-input]');
+      expect(input).toBeTruthy();
+      expect(document.activeElement).toBe(input);
+    });
+  });
+
+  it('평소에 연동 화면을 열면 초점을 가져가지 않는다 — 커서는 LNB `캘린더 추가`로 들어올 때만', async () => {
+    seed({ calendars: ['me@example.com'] });
+    seedToken();
+    stubFetch();
+    clientId = 'test-client.apps.googleusercontent.com';
+    const user = userEvent.setup();
+    renderHome();
+    await openIntegration(user);
+    const input = await waitFor(() => {
+      const el = document.querySelector('[data-google-cal-add-input]');
+      expect(el).toBeTruthy();
+      return el as HTMLElement;
+    });
+    expect(document.activeElement).not.toBe(input);
   });
 });

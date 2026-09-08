@@ -7,8 +7,9 @@
 //     버튼을 두지 않는다(이 프로젝트의 정직한 어포던스 규칙).
 //  ② 켜는 것은 사용자가 **직접 누를 때만**이다(동의 창이 그때 뜬다). 화면을 여는
 //     것만으로 팝업이 뜨면 브라우저가 막고, 사용자도 놀란다.
-//  ③ 카드의 색이 상태를 말한다 — 연결 전은 강조색 틴트 + 코랄 `연결하기`, 연결
-//     뒤는 초록 틴트 + 중립 `해제`(그리고 그 아래에 보여 줄 캘린더 목록이 열린다).
+//  ③ 면은 **팝업과 같다**(제보) — 상태는 카드 안의 부제와 버튼(연결하기/해제/
+//     다시 연결)이 말한다. 상태마다 면 색을 갈아 끼우면 그 틴트가 설정 팝업의
+//     어느 카드와도 달라 홀로 튀어 보인다.
 //  ④ 스코프를 넓힌 뒤 옛 토큰이 남으면 **다시 연결**을 권한다 — 켜져 있는데 저장이
 //     안 되는 상태를 조용히 두지 않는다.
 
@@ -20,7 +21,7 @@ import { Segmented } from '../../../../components/Segmented';
 import { AnchoredList, rowDivider } from '../../calendar/AnchoredList';
 import { SectionLabel, SettingsGroup } from './AccountSettingsModal';
 
-export function GoogleCalendarSection({ api }: { api: GoogleCalendarApi }) {
+export function GoogleCalendarSection({ api, focusAdd }: { api: GoogleCalendarApi; focusAdd?: number }) {
   if (!api.available) return null;
   // 연결은 돼 있는데 토큰이 없으면(재로그인 뒤) "불러오는 중"이 아니다 — 다시 연결해야
   // 목록이 온다(제보: 창을 닫아도 "캘린더를 불러오는 중…"이 그대로 남았다).
@@ -39,15 +40,22 @@ export function GoogleCalendarSection({ api }: { api: GoogleCalendarApi }) {
   // 개수는 **보이는 행** 기준이다 — 목록에 없는 공휴일 캘린더까지 세면 숫자와
   // 눈에 보이는 것이 어긋난다.
   const shown = rows.filter((c) => api.pickedIds.includes(c.id)).length;
+  // 목록이 아직 오지 않았다 — 켜져 있는데 아무것도 못 받은 상태(대개 새로 연 탭:
+  // 토큰은 이 기기에 있어 `connected`가 곧바로 참인데 목록 조회는 아직 돌고 있다).
+  const listLoading = api.calendars.length === 0;
   return (
     <>
       <div
         data-google-section
         data-google-live={live ? '1' : undefined}
-        style={{ borderRadius: 16, border: '1px solid var(--mf-border-soft)', background: live ? 'var(--mf-success-soft)' : 'var(--mf-accent-soft)', overflow: 'hidden' }}
+        // 면은 **팝업과 같다**(요청) — 예전에는 연결되면 녹색 틴트, 아니면 강조색
+        // 틴트로 상태를 말했는데 그 두 색이 설정 팝업 안에서 홀로 튀었다. 상태는
+        // 카드 안의 부제와 버튼(연결하기/해제/다시 연결)이 이미 말한다.
+        style={{ borderRadius: 16, border: '1px solid var(--mf-border-soft)', background: 'var(--mf-card)', overflow: 'hidden' }}
       >
         <div style={{ display: 'flex', alignItems: 'center', gap: 13, padding: '14px 15px' }}>
-          <span aria-hidden="true" style={{ flexShrink: 0, width: 38, height: 38, borderRadius: 12, background: 'var(--mf-card)', border: '1px solid var(--mf-border-soft)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+          {/* 칩은 카드와 같은 면이 되면 사라진다 — 한 톤 가라앉힌 면을 쓴다. */}
+          <span aria-hidden="true" style={{ flexShrink: 0, width: 38, height: 38, borderRadius: 12, background: 'var(--mf-panel2)', border: '1px solid var(--mf-border-soft)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
             <GoogleCalendarGlyph />
           </span>
           <div style={{ minWidth: 0, flex: 1 }}>
@@ -60,8 +68,12 @@ export function GoogleCalendarSection({ api }: { api: GoogleCalendarApi }) {
                   // 흐름이 없는 환경이다 — 어느 쪽이든 답은 "다시 허용"이다.
                   '구글 권한을 다시 허용해야 이어져요 — 고른 캘린더는 그대로예요'
                 : live
-                  ? // 연결된 뒤에는 **무엇이 걸려 있는지**를 말한다(첨부 이미지).
-                    [account, `이번 달 일정 ${monthly}개`].filter(Boolean).join(' · ')
+                  ? // 연결된 뒤에는 **무엇이 걸려 있는지**를 말한다(첨부 이미지). 목록이
+                    // 오기 전에는 셀 것이 없다 — 아래 스켈레톤이 그 사실을 말하므로
+                    // 여기서 `이번 달 일정 0개`라 하지 않는다.
+                    listLoading
+                    ? ''
+                    : [account, `이번 달 일정 ${monthly}개`].filter(Boolean).join(' · ')
                   : '연결하면 구글 일정도 함께 보여요'}
             </div>
           </div>
@@ -91,12 +103,13 @@ export function GoogleCalendarSection({ api }: { api: GoogleCalendarApi }) {
           <div style={{ borderTop: '1px solid var(--mf-hairline)', padding: '12px 15px 14px' }}>
             <div style={{ display: 'flex', alignItems: 'baseline', gap: 8, margin: '0 0 8px 3px' }}>
               <SectionLabel>보여 줄 캘린더</SectionLabel>
-              <span data-google-shown style={{ fontSize: 11.5, color: 'var(--mf-muted)' }}>{shown}개 표시 중</span>
+              {/* 개수는 목록이 온 뒤에만 말한다 — 오는 동안 `0개 표시 중`은 거짓말이다. */}
+              {!listLoading && <span data-google-shown style={{ fontSize: 11.5, color: 'var(--mf-muted)' }}>{shown}개 표시 중</span>}
             </div>
-            {rows.length === 0 && api.calendars.length === 0 ? (
-              <div style={{ fontSize: 12.5, color: 'var(--mf-muted)', padding: '2px 3px' }}>캘린더를 불러오는 중…</div>
+            {listLoading ? (
+              <CalendarListSkeleton />
             ) : (
-              <div style={{ display: 'flex', flexDirection: 'column', gap: 1, maxHeight: 208, overflowY: 'auto' }} className="lnb-scroll">
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 1, maxHeight: LIST_MAX_H, overflowY: 'auto' }} className="lnb-scroll">
                 {rows.map((c) => {
                   const on = api.pickedIds.includes(c.id);
                   return (
@@ -141,7 +154,7 @@ export function GoogleCalendarSection({ api }: { api: GoogleCalendarApi }) {
                 })}
               </div>
             )}
-            <AddCalendar api={api} />
+            <AddCalendar api={api} focusAdd={focusAdd} />
           </div>
         )}
       </div>
@@ -190,6 +203,35 @@ export function GoogleCalendarSection({ api }: { api: GoogleCalendarApi }) {
         </SettingsGroup>
       )}
     </>
+  );
+}
+
+/**
+ * 목록이 오기 전의 자리(요청) — **목록이 쓸 수 있는 최대 크기**로 그린다.
+ *
+ * 예전에는 `캘린더를 불러오는 중…` 한 줄이라 목록이 도착하는 순간 상자가 한 줄에서
+ * 다섯 줄로 튀었다. 최대 크기로 두면 도착해도 팝업이 커지지 않고 줄어들 뿐이라
+ * 자리가 위로 튀지 않는다(참석자·회의실 스켈레톤과 같은 처방).
+ *
+ * 상자는 목록이 커질 수 있는 **최대 높이 그대로**(`LIST_MAX_H`)다 — 그래서 목록이
+ * 도착해도 상자가 자라지 않는다(그보다 짧으면 자리가 아래로 밀린다). 행 수는 그
+ * 높이에서 나온다: 행 38 + gap 1이므로 38n + (n-1) ≤ 208 → n = 5.
+ */
+const LIST_MAX_H = 208;
+const SKELETON_ROWS = 5;
+
+function CalendarListSkeleton() {
+  return (
+    <div data-google-cal-skeleton style={{ display: 'flex', flexDirection: 'column', gap: 1, height: LIST_MAX_H, boxSizing: 'border-box', overflow: 'hidden' }}>
+      {Array.from({ length: SKELETON_ROWS }, (_, i) => (
+        <div key={i} style={{ display: 'flex', alignItems: 'center', gap: 11, padding: '7px 8px', minHeight: 38 }}>
+          <span className="mf-skel" style={{ width: 22, height: 22, borderRadius: 7, flexShrink: 0 }} />
+          <span className="mf-skel" style={{ width: 9, height: 9, borderRadius: 999, flexShrink: 0 }} />
+          {/* 이름은 길이가 저마다 다르다 — 한 폭으로 고르면 표처럼 보인다. */}
+          <span className="mf-skel" style={{ width: `${[52, 38, 61, 44, 33][i % 5]}%`, height: 10, borderRadius: 5 }} />
+        </div>
+      ))}
+    </div>
   );
 }
 
@@ -268,9 +310,12 @@ const primaryPill = {
  * 올린다(`probeCalendar`). 구글 쪽 구독 목록은 그대로다.
  *
  * 이름으로 찾을 수 있으면(선택 스코프) 후보를 보여 주고, 아니면 주소를 직접 받는다.
+ *
+ * 입력 상자는 **늘 보인다**(요청) — 예전에는 `＋ 캘린더 추가`를 눌러야 펼쳐졌는데,
+ * 이 화면이 하는 일이 애초에 "무엇을 함께 보여 줄까"라 한 번 더 누를 이유가 없었다.
+ * 그래서 접는 상태도, 접는 `취소` 버튼도 없다.
  */
-function AddCalendar({ api }: { api: GoogleCalendarApi }) {
-  const [open, setOpen] = useState(false);
+function AddCalendar({ api, focusAdd }: { api: GoogleCalendarApi; focusAdd?: number }) {
   const [q, setQ] = useState('');
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
@@ -280,9 +325,12 @@ function AddCalendar({ api }: { api: GoogleCalendarApi }) {
    * 않아 첫 자리 계산이 빗나간다. 참석자 후보와 같은 처방). */
   const [anchor, setAnchor] = useState<HTMLInputElement | null>(null);
 
+  // LNB 하위 메뉴의 `캘린더 추가`로 들어오면 **커서를 여기에** 둔다(요청) — 그 버튼을
+  // 누른 사람이 하려던 일이 이 입력이다. 값(nonce)이 바뀔 때만 포커스하므로, 평소에
+  // 화면을 열 때는 초점을 가져가지 않는다(모달의 초점 규칙을 흔들지 않게).
   useEffect(() => {
-    if (open) anchor?.focus();
-  }, [open, anchor]);
+    if (focusAdd) anchor?.focus();
+  }, [focusAdd, anchor]);
 
   // 검색 함수는 렌더마다 새 참조다(`api`가 새 객체) — deps에 넣으면 타이머가 매
   // 렌더 취소돼 **디바운스가 영영 안 터진다**. 최신 함수는 ref로 읽는다.
@@ -294,7 +342,7 @@ function AddCalendar({ api }: { api: GoogleCalendarApi }) {
   useEffect(() => {
     const query = q.trim();
     // 주소를 적는 중이면 검색하지 않는다 — 그때는 그 주소가 곧 답이다.
-    if (!open || !canSearch || query.length < 2 || query.includes('@')) {
+    if (!canSearch || query.length < 2 || query.includes('@')) {
       setPeople([]);
       return;
     }
@@ -306,7 +354,7 @@ function AddCalendar({ api }: { api: GoogleCalendarApi }) {
       });
     }, 220);
     return () => window.clearTimeout(t);
-  }, [open, q, canSearch]);
+  }, [q, canSearch]);
 
   const add = async (id: string): Promise<void> => {
     setBusy(true);
@@ -317,34 +365,22 @@ function AddCalendar({ api }: { api: GoogleCalendarApi }) {
       setErr(message);
       return;
     }
-    // 성공하면 접는다 — 더한 캘린더는 위 목록에 켜진 채로 나타난다.
+    // 성공하면 입력만 비운다 — 더한 캘린더는 위 목록에 켜진 채로 나타나고, 이어서
+    // 하나 더 더할 수 있다.
     setQ('');
     setPeople([]);
-    setOpen(false);
   };
-
-  if (!open) {
-    return (
-      <button type="button" className="btn mf-ctl" data-google-cal-add onClick={() => setOpen(true)} style={{ marginTop: 6, display: 'flex', alignItems: 'center', gap: 7, width: '100%', padding: '8px 6px', border: 'none', borderRadius: 10, background: 'transparent', color: 'var(--mf-accent)', fontFamily: 'inherit', fontSize: 12.5, fontWeight: 700, cursor: 'pointer', minHeight: 36 }}>
-        <span aria-hidden="true" style={{ fontSize: 14, lineHeight: 1 }}>＋</span>
-        캘린더 추가
-      </button>
-    );
-  }
 
   return (
     <div data-google-cal-add-form style={{ marginTop: 8 }}>
-      {/*
-        좁은 화면(폰 바텀 시트)에서는 [입력]과 [추가·취소]가 줄로 나뉜다. 버튼 둘을
-        **한 묶음으로 감싸** 두었으므로 접히는 지점이 묶음 사이뿐이다 — 서식 툴바에서
-        배운 규칙(#279): 한 줄에 wrap만 걸면 묶음 중간에서 접혀 어긋난다.
-      */}
+      {/* 좁은 화면(폰 바텀 시트)에서는 [입력]과 [추가]가 줄로 나뉜다 — 접히는 지점이
+          그 사이뿐이다(입력의 `minWidth`가 그것을 정한다). */}
       <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
         <input
           ref={setAnchor}
           data-google-cal-add-input
-          aria-label={api.canSearchPeople ? '이름 또는 캘린더 주소' : '캘린더 주소'}
-          placeholder={api.canSearchPeople ? '이름 또는 캘린더 주소' : '캘린더 주소(이메일)'}
+          aria-label={api.canSearchPeople ? '이름 또는 이메일 주소' : '이메일 또는 캘린더 주소'}
+          placeholder={api.canSearchPeople ? '이름 또는 이메일 주소' : '이메일 또는 캘린더 주소'}
           value={q}
           autoComplete="off"
           onChange={(e) => {
@@ -355,22 +391,19 @@ function AddCalendar({ api }: { api: GoogleCalendarApi }) {
             if (e.key === 'Enter') {
               e.preventDefault();
               if (!busy && q.trim()) void add(q.trim());
-            } else if (e.key === 'Escape') {
+            } else if (e.key === 'Escape' && q) {
+              // 적던 것을 비운다 — 빈 상자에서의 Escape는 모달 닫기로 흘려보낸다.
               e.preventDefault();
-              setOpen(false);
+              setQ('');
+              setPeople([]);
             }
           }}
           // 150px 아래로는 줄지 않는다 — 그보다 좁아지면 버튼 묶음이 다음 줄로 내려간다.
           style={{ flex: 1, minWidth: 150, height: 34, padding: '0 11px', boxSizing: 'border-box', border: '1px solid var(--mf-border)', borderRadius: 11, background: 'var(--mf-card)', font: 'inherit', fontSize: 12.5, color: 'var(--mf-text)', outline: 'none' }}
         />
-        <span style={{ display: 'flex', alignItems: 'center', gap: 6, flexShrink: 0, marginLeft: 'auto' }}>
-        <button type="button" className="btn mf-ctl-primary" data-google-cal-add-submit disabled={busy || !q.trim()} onClick={() => void add(q.trim())} style={{ flexShrink: 0, height: 34, padding: '0 13px', border: 'none', borderRadius: 999, background: q.trim() && !busy ? 'var(--mf-accent)' : 'var(--mf-accent-mute)', color: 'var(--mf-accent-ink)', fontFamily: 'inherit', fontSize: 12.5, fontWeight: 700, cursor: busy || !q.trim() ? 'default' : 'pointer' }}>
+        <button type="button" className="btn mf-ctl-primary" data-google-cal-add-submit disabled={busy || !q.trim()} onClick={() => void add(q.trim())} style={{ flexShrink: 0, marginLeft: 'auto', height: 34, padding: '0 13px', border: 'none', borderRadius: 999, background: q.trim() && !busy ? 'var(--mf-accent)' : 'var(--mf-accent-mute)', color: 'var(--mf-accent-ink)', fontFamily: 'inherit', fontSize: 12.5, fontWeight: 700, cursor: busy || !q.trim() ? 'default' : 'pointer' }}>
           {busy ? '확인 중…' : '추가'}
         </button>
-        <button type="button" className="btn mf-ctl" onClick={() => setOpen(false)} style={{ flexShrink: 0, height: 34, padding: '0 10px', border: '1px solid var(--mf-border)', borderRadius: 999, background: 'var(--mf-panel2)', color: 'var(--mf-text)', fontFamily: 'inherit', fontSize: 12.5, fontWeight: 700, cursor: 'pointer' }}>
-          취소
-        </button>
-        </span>
       </div>
 
       {/*
@@ -407,9 +440,6 @@ function AddCalendar({ api }: { api: GoogleCalendarApi }) {
           {err}
         </div>
       )}
-      <div style={{ marginTop: 6, fontSize: 11.5, color: 'var(--mf-faint)', lineHeight: 1.5 }}>
-        구독하지 않은 캘린더도 주소로 더할 수 있어요 — 상대가 공유해 둔 캘린더만 보이고, <b style={{ fontWeight: 700 }}>보기 전용</b>이라 일정을 만들 수는 없어요.
-      </div>
     </div>
   );
 }

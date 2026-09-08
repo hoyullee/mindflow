@@ -108,8 +108,12 @@ export function CalendarNavSection({ state, controller, isMobile, brief }: { sta
                 빼기)은 **설정의 연동 구획 한 곳**이 맡는다. LNB는 250px이라 검색
                 상자를 두면 좁고, 같은 동작의 진입점을 둘로 두면 어느 쪽이 진짜인지
                 흐려진다(바로 위 `연동` 행과 같은 판단).
+
+                여기서 들어가면 그 화면의 **주소 입력에 커서가 놓인다**(요청) — 이 버튼을
+                누른 사람은 주소를 적으러 온 것이므로 그 칸을 한 번 더 찾아 누를 이유가
+                없다.
               */}
-              <button type="button" className="nav-item" data-cal-sub-add onClick={controller.openGoogleCalendarSetup} style={{ ...SUB_ROW, minHeight: isMobile ? 40 : 28, color: 'var(--mf-accent)', fontWeight: 700 }}>
+              <button type="button" className="nav-item" data-cal-sub-add onClick={controller.openGoogleCalendarAdd} style={{ ...SUB_ROW, minHeight: isMobile ? 40 : 28, color: 'var(--mf-accent)', fontWeight: 700 }}>
                 <span aria-hidden="true" style={{ flexShrink: 0, width: 13, textAlign: 'center', fontSize: 13, lineHeight: 1 }}>
                   ＋
                 </span>
