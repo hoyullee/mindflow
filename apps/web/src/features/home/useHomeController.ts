@@ -11,6 +11,7 @@ import { exportDocPdf } from '../editor/pdf';
 import { themeOf } from '../editor/theme';
 import { applyHomeTheme, homeThemeKeyOf, saveHomeThemeCache, type HomeThemeKey } from './theme';
 import { addMonth, todayISO } from './calendar/model';
+import { useLiveRefresh } from './calendar/useLiveRefresh';
 import { coerceExtraCalendars, holidayCountryOf } from './calendar/googleCalendar';
 import { DASH_CAP, DASH_DEFAULT_SIZE, coerceDashboards, isCalItem, moveInList, type DashboardData, type DashboardItemData } from './dashboard/model';
 import { forgetSignedIn } from '../auth/sessionNotice';
@@ -758,6 +759,70 @@ export function useHomeController() {
       }));
     });
   }, [state.loaded, state.search, state.activeCal, state.activeDash, state.dashboards, state.spaces, state.sharedMaps, docStore]);
+
+  /**
+   * 화면을 **열어 둔 채** 다른 기기·다른 사람이 고친 것을 잡는다.
+   *
+   * 왜 칸반만 낡았나: 구글 일정·Geurio 일정은 자기 훅이 `useLiveRefresh`로 다시
+   * 묻는데(#74), 칸반 마감의 출처는 **홈이 하이드레이션 때 받아 둔 썸네일 본문**
+   * (`previewDocs`)이라 다시 묻는 사람이 아무도 없었다 — 홈을 다시 열어야 반영됐다.
+   * 대시보드 위젯도 같은 본문을 그리므로 함께 낡는다.
+   *
+   * 무엇을 다시 받나(값싸게): `docStore.list()` **한 번**으로 판(version·updatedAt)을
+   * 새로 알고, 이미 본문을 들고 있는 문서 중 **판이 달라진 것만** 본문을 다시 받는다.
+   * 대개 0건이라 왕복은 목록 하나뿐이고, 그 목록은 supabase 모드에서 홈 부트스트랩
+   * RPC(0036)라 문서·공유가 한 요청이다.
+   *
+   * 못 잡는 것(의도): 다른 기기에서 **새로 만든** 보드는 카드가 워크스페이스 블롭에
+   * 있어야 목록에 뜨는데 그 블롭은 여기서 받지 않는다 — 그건 하이드레이션의 일이다.
+   * 즉 이 장치는 "이미 아는 보드의 내용이 바뀐 것"을 잡는다.
+   *
+   * 내가 방금 저장한 문서는 판이 한 번 어긋난다(`SaveResult`에 `updatedAt`이 없어
+   * `docMetaRef`를 서버 값으로 맞출 수 없다) → 다음 갱신에서 같은 본문을 한 번 더
+   * 받는다. 썸네일 본문 하나라 값이 작고, 그 뒤로는 정렬된다.
+   */
+  const refreshingBodiesRef = useRef(false);
+  const refreshDocBodies = useCallback(async () => {
+    // 목록이 느릴 때 주기·깨어남이 겹쳐 두 번 돌지 않게.
+    if (refreshingBodiesRef.current) return;
+    refreshingBodiesRef.current = true;
+    try {
+      let metas: Awaited<ReturnType<typeof docStore.list>>;
+      try {
+        metas = await docStore.list();
+      } catch {
+        return; // 조용히 물러난다 — 보고 있는 화면을 비우거나 오류를 띄우지 않는다
+      }
+      if (!mountedRef.current) return;
+      const stale: string[] = [];
+      for (const m of metas) {
+        const prev = docMetaRef.current.get(m.id);
+        docMetaRef.current.set(m.id, { version: m.version, updatedAt: m.updatedAt });
+        // 본문을 받아 둔 문서만 대상이다 — 아직 안 받은 것은 프리페치 효과가 맡는다.
+        if (!prev || !previewFetchedRef.current.has(m.id)) continue;
+        if (prev.version !== m.version || prev.updatedAt !== m.updatedAt) stale.push(m.id);
+      }
+      if (!stale.length) return;
+      const results = await Promise.allSettled(stale.map((id) => docStore.loadPreview(id, docMetaRef.current.get(id))));
+      if (!mountedRef.current) return;
+      const add: Record<string, string> = {};
+      results.forEach((r, i) => {
+        if (r.status === 'fulfilled' && r.value) add[stale[i]!] = r.value;
+      });
+      if (!Object.keys(add).length) return;
+      setState((prev) => ({ ...prev, previewDocs: { ...prev.previewDocs, ...add } }));
+    } finally {
+      refreshingBodiesRef.current = false;
+    }
+  }, [docStore]);
+
+  // 어느 화면에서 걸까: **문서 내용을 지켜보는 화면**이다 — 일정 화면(전 스페이스의
+  // 칸반 마감)과 위젯이 올라간 대시보드(칸반 열·카드·미리보기). 스페이스 그리드는
+  // 썸네일이라 낡아도 뜻이 흐려지지 않으므로 걸지 않는다(조회를 늘리지 않는다).
+  const activeDashHasItems = state.dashboards.some((d) => d.id === state.activeDash && d.items.length > 0);
+  useLiveRefresh(state.loaded && (state.activeCal || activeDashHasItems), () => {
+    void refreshDocBodies();
+  });
 
   // Persist spaces (+ map→folder) via the `SpaceStore` port whenever they
   // actually change, so user-created spaces/folders survive a refresh AND (in
