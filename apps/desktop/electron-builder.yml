@@ -11,6 +11,22 @@ appId: com.geurio.app
 # 읽으므로 그쪽이 정본이어야 한다(앱 이름·userData 폴더 이름이 거기서 나온다).
 copyright: © Geurio
 
+# ── 서명 툴체인 ──────────────────────────────────────────────────────────────
+# **이 줄이 없으면 .appx에 서명할 수 없다.** electron-builder의 기본 툴셋
+# (winCodeSign `0.0.0`)이 내려받는 signtool.exe는 오래된 것이라 AppX SIP가 없어서,
+# `.exe`는 멀쩡히 서명되는데 `.appx`만
+# `SignTool Error: A required function is not present.`로 실패한다. 그러면 서명이
+# 없는 패키지가 남아 `Add-AppxPackage`가 `0x800B0100 서명을 찾을 수 없습니다`로
+# 거절한다(제보로 확인한 실패 경로다).
+#
+# 이 값을 주면 Windows Kits 10.0.26100 번들을 받아 그 안의 signtool·makeappx를
+# 쓴다(로컬에 Windows SDK를 설치할 필요가 없다). electron-builder가 아직 beta로
+# 표시하는 툴셋이지만 다운로드 체크섬이 고정돼 있어 재현성은 같다.
+# 이미 SDK가 깔린 기기라면 `SIGNTOOL_PATH`로 그쪽 signtool을 직접 가리켜도 된다
+# (그 환경 변수가 툴셋보다 우선한다).
+toolsets:
+  winCodeSign: '1.1.0'
+
 directories:
   output: release
   buildResources: build
