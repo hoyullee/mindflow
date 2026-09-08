@@ -87,6 +87,13 @@ Partner Center에서 앱 이름을 예약해 정체성을 받은 뒤에야 가�
 
 ### 로컬 설치 (Windows에서, 관리자 PowerShell)
 
+> `dev-cert.ps1`은 **UTF-8 BOM**으로 저장돼 있어야 한다. Windows PowerShell 5.1은
+> BOM이 없으면 스크립트를 ANSI(한국어 Windows는 CP949)로 읽고, CP949는 2바이트
+> 인코딩이라 한글의 선행 바이트가 **뒤따르는 ASCII 한 글자를 삼킨다** — 실제로
+> 그렇게 닫는 따옴표가 사라져 `문자열에 ' 종결자가 없습니다`로 실패한 제보가
+> 있었다. 출력이 `洹?蹂?섍?`처럼 깨져 보이면 BOM이 떨어진 것이다
+> (`src/packaging.test.ts`가 그 존재를 고정한다).
+
 ```powershell
 # 1) 개발 인증서 만들기 + 신뢰 저장소에 넣기
 #    electron-builder.yml의 appx.publisher를 읽어 그 값과 똑같은 Subject로 만든다.
