@@ -85,15 +85,15 @@ export interface AuthProvider {
    */
   googleAuthUrl(redirectTo: string): Promise<{ url?: string; error?: string }>;
   /**
-   * 브라우저에서 받아 온 **인가 코드**로 이 기기의 세션을 세운다 — 데스크톱 앱이
+   * 브라우저에서 받아 온 **갱신 토큰**으로 이 기기의 세션을 세운다 — 데스크톱 앱이
    * 넘겨받은 로그인을 이어받는 유일한 지점.
    *
-   * 코드가 아니라 세션(갱신 토큰)을 넘기던 첫 판은 성립하지 않았다: 우리 클라이언트는
-   * PKCE라 그 코드는 **`googleAuthUrl`을 부른 이 클라이언트의 verifier**로만
-   * 교환되고, 브라우저는 그 verifier가 없어 세션을 세울 수 없다. 자세한 사정은
-   * `features/auth/desktopGoogle.ts` 머리 주석.
+   * 그 토큰은 브라우저가 **세션을 세우지 않은 채** 넘긴 것이라(핸드오프가 해시를
+   * 먼저 낚아챈다) 이 호출이 그 토큰의 첫 사용이고, 쓰는 순간 회전하므로 주소에
+   * 실려 지나간 값은 그 자리에서 무효가 된다. 왜 이 모양인지는
+   * `features/auth/desktopGoogle.ts` 머리 주석("두 번 틀린 것").
    */
-  exchangeAuthCode(code: string): Promise<AuthResult>;
+  resumeSession(refreshToken: string): Promise<AuthResult>;
   /**
    * Sign in with an OAuth ID token obtained CLIENT-SIDE (Google Identity
    * Services button) instead of the redirect flow above. The whole exchange
