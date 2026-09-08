@@ -226,8 +226,14 @@ describe('알림 센터', () => {
 
   it('패널 목록은 첨부 디자인대로 — 안 읽은 줄만 강조색 카드, 둘째 줄은 [문서 칩][시간], 묶음은 오늘/이번 주/이전', async () => {
     const day = 24 * 3600_000;
+    // `오늘` 묶음의 항목은 **시각 오프셋이 아니라 날짜로** 못박는다 — `Date.now() - 2h`는
+    // 자정~새벽 2시에 돌리면 어제가 되어 `오늘` 머리가 사라진다(CI가 01:05 UTC에 돌아
+    // 실제로 깨졌다). 오늘 09:00을 쓰되 아직 오지 않았으면 `지금`으로 물러선다.
+    const midnight = new Date();
+    midnight.setHours(0, 0, 0, 0);
+    const todayish = new Date(Math.min(midnight.getTime() + 9 * 3600_000, Date.now())).toISOString();
     seed([
-      { id: 'a', preview: '제가 바꿀게요', docTitle: '분기 계획', createdAt: new Date(Date.now() - 2 * 3600_000).toISOString() },
+      { id: 'a', preview: '제가 바꿀게요', docTitle: '분기 계획', createdAt: todayish },
       { id: 'b', kind: 'reply', docTitle: '회고 (KPT)', preview: '확인했어요', createdAt: new Date(Date.now() - 2 * day).toISOString(), readAt: new Date().toISOString() },
       { id: 'c', kind: 'share', preview: '', docTitle: '옛 맵', createdAt: new Date(Date.now() - 20 * day).toISOString(), readAt: new Date().toISOString() },
     ]);
