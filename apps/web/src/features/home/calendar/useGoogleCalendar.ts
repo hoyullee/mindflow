@@ -71,6 +71,15 @@ export interface GoogleCalendarApi {
    */
   connected: boolean;
   calendars: GoogleCalendarMeta[];
+  /**
+   * **구독 목록이 도착했는가** — 설정 화면의 스켈레톤이 이 값으로 자리를 지킨다.
+   *
+   * `calendars.length > 0`으로 대신할 수 없다: 그 목록은 구독 목록 ∪ **주소로 더한
+   * 캘린더**(블롭에 있어 조회 없이 즉시 나온다)라, 더해 둔 것이 하나라도 있으면
+   * "이미 왔다"로 오판해 스켈레톤을 건너뛴다(제보: 한 줄만 뜬 채 팝업이 작았다가
+   * 목록이 오며 커졌다).
+   */
+  listLoaded: boolean;
   /** 사용자가 고른 캘린더 id — 설정 화면의 체크 상태가 이 값이다. */
   pickedIds: string[];
   events: GoogleEvent[];
@@ -251,6 +260,7 @@ export function useGoogleCalendar(
   const cacheKey = `${picked}|${from}|${to}`;
   // 기억이 있으면 **첫 렌더부터** 그것을 그린다 — 빈 달력이 한 프레임도 나가지 않는다.
   const [calendars, setCalendars] = useState<GoogleCalendarMeta[]>(() => listCache ?? []);
+  const [listLoaded, setListLoaded] = useState(() => listCache !== null);
   const [events, setEvents] = useState<GoogleEvent[]>(() => eventCache.get(cacheKey) ?? []);
   // 이벤트 색 팔레트 — 첫 렌더부터 기억한 것을 쓴다(없으면 폴백 표).
   const [colors, setColors] = useState<Record<string, string>>(() => colorsCache ?? {});
@@ -347,6 +357,7 @@ export function useGoogleCalendar(
   useEffect(() => {
     if (!available || !enabled) {
       setCalendars([]);
+      setListLoaded(false);
       // 켜져 있다가 꺼진 순간(다른 인스턴스의 disconnect 포함 — prefs는 블롭으로
       // 공유된다)에만 "끊겼다"로 본다. 그 밖은 **아직 모른다**다 — 홈이 하이드레이션
       // 되기 전에는 `enabled`가 거짓이므로, 여기서 `connected`를 끄면 이미 연결해 둔
@@ -373,6 +384,7 @@ export function useGoogleCalendar(
       if (list) {
         listCache = list;
         setCalendars(list);
+        setListLoaded(true);
         setNeedsReauth(false);
         setError(null);
       }
@@ -489,6 +501,7 @@ export function useGoogleCalendar(
       const list = await fetchCalendarList(res.token.accessToken);
       if (!aliveRef.current) return;
       setCalendars(list);
+      setListLoaded(true);
       const seed = list.filter((c) => c.primary || c.holiday).map((c) => c.id);
       // 우리가 더해 둔 캘린더는 지키고 켠 채로 둔다 — 이 버튼은 **다시 연결**도 겸한다
       // (권한 만료). 여기서 버리면 재승인 한 번에 목록이 통째로 사라진다.
@@ -701,6 +714,7 @@ export function useGoogleCalendar(
     // 토큰의 유무로 화면을 고르면 하루 뒤 사용자에게는 연결이 없는 것처럼 보인다.
     connected: enabled && !needsReauth,
     calendars: allCalendars,
+    listLoaded,
     pickedIds: prefs.calendars,
     events: colored,
     /** 이벤트 색 팔레트(번호 → hex) — 색 고르기 칸이 이 색으로 그린다. */
