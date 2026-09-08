@@ -76,7 +76,7 @@ export function CalendarNavSection({ state, controller, isMobile, brief }: { sta
       />
       {active && google.available && (
         <div data-cal-sub style={{ margin: '4px 2px 0', padding: '7px 7px 6px', borderRadius: 12, background: 'var(--mf-bg)', border: '1px solid var(--mf-hairline)' }}>
-          {google.enabled && google.connected && !google.needsReauth ? (
+          {google.connected ? (
             <>
               <div style={SUB_LABEL}>보여 줄 캘린더</div>
               {google.calendars.length === 0 ? (

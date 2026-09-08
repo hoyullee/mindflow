@@ -61,7 +61,14 @@ export interface GoogleCalendarApi {
   available: boolean;
   /** 사용자가 연동을 켰는가(워크스페이스 블롭). */
   enabled: boolean;
-  /** 이 탭이 지금 토큰을 들고 있는가. */
+  /**
+   * 연결이 걸려 있는가 — **블록의 `enabled`이고, 끊겼다고 알려진 바 없다**.
+   *
+   * "이 탭이 지금 액세스 토큰을 들고 있는가"가 아니다: 그 토큰은 한 시간마다
+   * 만료되고 refresh token은 서버에만 있으므로(§19), 그것으로 화면을 고르면
+   * **하루 뒤에 돌아온 사용자는 연결해 둔 것이 없는 것처럼** 보인다(제보: 연동
+   * 화면이 짧게 떴다가 목록이 오며 커졌다 — 실측 95px → 367px).
+   */
   connected: boolean;
   calendars: GoogleCalendarMeta[];
   /** 사용자가 고른 캘린더 id — 설정 화면의 체크 상태가 이 값이다. */
@@ -242,7 +249,6 @@ export function useGoogleCalendar(
   const extrasRef = useRef<GoogleExtraCalendar[]>(extras);
   extrasRef.current = extras;
   const cacheKey = `${picked}|${from}|${to}`;
-  const [connected, setConnected] = useState(() => !!readStoredToken());
   // 기억이 있으면 **첫 렌더부터** 그것을 그린다 — 빈 달력이 한 프레임도 나가지 않는다.
   const [calendars, setCalendars] = useState<GoogleCalendarMeta[]>(() => listCache ?? []);
   const [events, setEvents] = useState<GoogleEvent[]>(() => eventCache.get(cacheKey) ?? []);
@@ -309,7 +315,6 @@ export function useGoogleCalendar(
     const first = await ensureGoogleToken();
     if ('error' in first) {
       if (aliveRef.current) {
-        setConnected(false);
         setNeedsReauth(true);
         setError(first.error);
       }
@@ -324,7 +329,6 @@ export function useGoogleCalendar(
       if ((e as { status?: number }).status !== 401) throw e;
       storeToken(null);
       if (aliveRef.current) {
-        setConnected(false);
         setNeedsReauth(true);
         setError(GOOGLE_RECONNECT_MSG);
       }
@@ -349,11 +353,9 @@ export function useGoogleCalendar(
       // 사람도 매번 "연결 안 됨"에서 시작한다(제보: 연동 화면이 한순간 "연결하면 …").
       if (wasEnabledRef.current && !enabled) {
         wasEnabledRef.current = false;
-        setConnected(false);
         resetAccountCache();
       } else if (!available) {
         // 클라이언트 ID가 없는 배포 — 연결이라는 개념 자체가 없다.
-        setConnected(false);
       }
       return;
     }
@@ -371,7 +373,6 @@ export function useGoogleCalendar(
       if (list) {
         listCache = list;
         setCalendars(list);
-        setConnected(true);
         setNeedsReauth(false);
         setError(null);
       }
@@ -480,7 +481,6 @@ export function useGoogleCalendar(
     // 새 연결은 **다른 계정일 수 있다** — 이전 계정의 회의실·스코프 캐시를 버리고
     // 이 토큰의 것으로 다시 시작한다(회의실은 다음에 필드가 열릴 때 다시 받는다).
     resetAccountCache();
-    setConnected(true);
     setNeedsReauth(false);
     setGranted(scopeSet(res.token.scope));
     // 켜는 순간에는 **기본 캘린더 + 공휴일**만 고른다 — 캘린더가 스무 개인 사람에게
@@ -502,7 +502,6 @@ export function useGoogleCalendar(
   const disconnect = useCallback(async () => {
     await revokeGoogleToken();
     if (!aliveRef.current) return;
-    setConnected(false);
     setCalendars([]);
     setEvents([]);
     setError(null);
@@ -697,7 +696,10 @@ export function useGoogleCalendar(
   return {
     available,
     enabled,
-    connected,
+    // **파생값**이다 — "이 탭이 토큰을 들고 있는가"가 아니라 "연결이 걸려 있고 끊겼다고
+    // 알려진 바 없는가". 액세스 토큰은 한 시간마다 만료되고 서버가 조용히 갱신하므로,
+    // 토큰의 유무로 화면을 고르면 하루 뒤 사용자에게는 연결이 없는 것처럼 보인다.
+    connected: enabled && !needsReauth,
     calendars: allCalendars,
     pickedIds: prefs.calendars,
     events: colored,
