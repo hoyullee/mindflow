@@ -45,8 +45,8 @@ function getViewport(container: HTMLElement): HTMLElement {
 
 /** jsdom에는 PointerEvent가 없어 fireEvent.pointerDown이 좌표/버튼을 떨어뜨린다 —
  * 기존 상호작용 테스트들과 동일한 헬퍼. */
-function firePointer(target: Element | Window, type: 'pointerdown' | 'pointermove' | 'pointerup', init: { pointerId?: number; clientX?: number; clientY?: number; button?: number } = {}): void {
-  const event = new MouseEvent(type, { bubbles: true, cancelable: true, clientX: init.clientX ?? 0, clientY: init.clientY ?? 0, button: init.button ?? 0 });
+function firePointer(target: Element | Window, type: 'pointerdown' | 'pointermove' | 'pointerup', init: { pointerId?: number; clientX?: number; clientY?: number; button?: number; altKey?: boolean } = {}): void {
+  const event = new MouseEvent(type, { bubbles: true, cancelable: true, clientX: init.clientX ?? 0, clientY: init.clientY ?? 0, button: init.button ?? 0, altKey: init.altKey ?? false });
   Object.defineProperty(event, 'pointerId', { value: init.pointerId ?? 1, configurable: true });
   fireEvent(target, event);
 }
@@ -502,10 +502,12 @@ describe('자식을 가진 자유 도형 이동', () => {
     // 아래로 300 캔버스 px — 이동 경로/유령 박스 안에 fz(620,450)가 들지만 최종
     // 자리는 어떤 도형과도 겹치지 않는 빈 곳이다 → 마그넷이 발동하면 안 된다.
     const dy = 300 * zoom;
+    // Alt로 맞춤을 끈다 — 여기서 보는 것은 "정확히 +300"이라는 이동량이다
+    // (맞춤은 몇 px을 당기므로 그 계약과 섞이면 안 된다).
     firePointer(fpEl(), 'pointerdown', { pointerId: 31, clientX: 500, clientY: 300, button: 0 });
-    firePointer(window, 'pointermove', { pointerId: 31, clientX: 500, clientY: 300 + dy / 2 });
-    firePointer(window, 'pointermove', { pointerId: 31, clientX: 500, clientY: 300 + dy });
-    firePointer(window, 'pointerup', { pointerId: 31, clientX: 500, clientY: 300 + dy });
+    firePointer(window, 'pointermove', { pointerId: 31, clientX: 500, clientY: 300 + dy / 2, altKey: true });
+    firePointer(window, 'pointermove', { pointerId: 31, clientX: 500, clientY: 300 + dy, altKey: true });
+    firePointer(window, 'pointerup', { pointerId: 31, clientX: 500, clientY: 300 + dy, altKey: true });
 
     await waitFor(() => {
       const after = rectOf(fpEl());

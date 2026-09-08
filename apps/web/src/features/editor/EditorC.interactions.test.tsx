@@ -19,8 +19,8 @@ import { CanvasTextMeasurer, computeMetrics } from './metrics';
 // (natively supported by jsdom, carries clientX/clientY/button) under the
 // `pointerdown`/`pointermove`/`pointerup` event NAME React listens for, with a
 // `pointerId` property attached manually.
-function firePointer(target: Element | Window, type: 'pointerdown' | 'pointermove' | 'pointerup', init: { pointerId?: number; clientX?: number; clientY?: number; button?: number } = {}): void {
-  const event = new MouseEvent(type, { bubbles: true, cancelable: true, clientX: init.clientX ?? 0, clientY: init.clientY ?? 0, button: init.button ?? 0 });
+function firePointer(target: Element | Window, type: 'pointerdown' | 'pointermove' | 'pointerup', init: { pointerId?: number; clientX?: number; clientY?: number; button?: number; altKey?: boolean } = {}): void {
+  const event = new MouseEvent(type, { bubbles: true, cancelable: true, clientX: init.clientX ?? 0, clientY: init.clientY ?? 0, button: init.button ?? 0, altKey: init.altKey ?? false });
   Object.defineProperty(event, 'pointerId', { value: init.pointerId ?? 1, configurable: true });
   fireEvent(target, event);
 }
@@ -383,9 +383,11 @@ describe('free-shape drag keeps the grab offset (regression: 중심이 커서로
 
     const el = container.querySelector('[data-node-id="f1"]') as HTMLElement;
     expect(el).toBeTruthy();
+    // Alt로 맞춤(격자·안내선)을 끈다 — 이 테스트가 보는 것은 **이동량 그대로**이고,
+    // 맞춤은 몇 px을 당기는 값이라 그 계약을 흐린다(맞춤 자체는 Snap.interactions.test.tsx).
     firePointer(el, 'pointerdown', { pointerId: 9, clientX: grabX, clientY: grabY, button: 0 });
-    firePointer(window, 'pointermove', { pointerId: 9, clientX: grabX + CANVAS_DX * zoom, clientY: grabY + CANVAS_DY * zoom });
-    firePointer(window, 'pointerup', { pointerId: 9, clientX: grabX + CANVAS_DX * zoom, clientY: grabY + CANVAS_DY * zoom });
+    firePointer(window, 'pointermove', { pointerId: 9, clientX: grabX + CANVAS_DX * zoom, clientY: grabY + CANVAS_DY * zoom, altKey: true });
+    firePointer(window, 'pointerup', { pointerId: 9, clientX: grabX + CANVAS_DX * zoom, clientY: grabY + CANVAS_DY * zoom, altKey: true });
 
     fireEvent.keyDown(window, { key: 's', ctrlKey: true });
     await waitFor(
