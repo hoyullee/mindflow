@@ -23,9 +23,10 @@ import { SectionLabel, SettingsGroup } from './AccountSettingsModal';
 
 export function GoogleCalendarSection({ api, focusAdd }: { api: GoogleCalendarApi; focusAdd?: number }) {
   if (!api.available) return null;
-  // 연결은 돼 있는데 토큰이 없으면(재로그인 뒤) "불러오는 중"이 아니다 — 다시 연결해야
-  // 목록이 온다(제보: 창을 닫아도 "캘린더를 불러오는 중…"이 그대로 남았다).
-  const live = api.enabled && api.connected && !api.needsReauth;
+  // `connected`가 이미 "켜져 있고 끊겼다고 알려진 바 없다"다(§19) — 토큰의 유무가
+  // 아니므로, 서버가 조용히 갱신하는 동안에도 이 블록이 서 있고 스켈레톤이 그 자리를
+  // 지킨다(제보: 하루 뒤에 들어오면 카드가 짧게 떴다 목록이 오며 커졌다).
+  const live = api.connected;
   // 구글 계정 이메일은 **기본 캘린더의 id**다(구글이 그렇게 만든다) — 우리 앱의
   // 로그인 이메일과 다를 수 있으므로 그걸 쓰지 않는다.
   const account = api.calendars.find((c) => c.primary)?.id ?? '';

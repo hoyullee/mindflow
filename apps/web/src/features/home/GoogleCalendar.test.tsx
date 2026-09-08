@@ -48,6 +48,7 @@ beforeEach(() => {
   clientId = null;
   // 한 탭이 곧 한 세션이다 — 테스트마다 새 탭이므로 앞 테스트가 남긴 기억을 지운다.
   clearGoogleSessionCache();
+  oauthServer.result = { unavailable: true };
 });
 
 class MockDocStore implements DocStore {
@@ -209,6 +210,29 @@ function seed(google?: { calendars: string[]; extra?: { id: string; name: string
 function seedToken(scope: string = GOOGLE_CALENDAR_SCOPE): void {
   localStorage.setItem('mf_gcal_token', JSON.stringify({ accessToken: 'tok', expiresAt: Date.now() + 3_600_000, scope }));
 }
+
+/**
+ * **만료된** 액세스 토큰 — 실사용의 흔한 상태다(한 시간마다 만료되고 refresh token은
+ * 서버에만 있다). 그래서 "이 탭이 토큰을 들고 있는가"로 화면을 고르면 하루 뒤에
+ * 돌아온 사용자는 연결해 둔 것이 없는 것처럼 보인다(제보).
+ */
+function seedExpiredToken(scope: string = GOOGLE_CALENDAR_SCOPE): void {
+  localStorage.setItem('mf_gcal_token', JSON.stringify({ accessToken: 'tok', expiresAt: Date.now() - 60_000, scope }));
+}
+
+/**
+ * 구글 **서버 흐름**(0035 + Edge Function) 가짜 — 라이브에서는 만료된 액세스 토큰을
+ * 서버가 refresh token으로 조용히 갈아 준다. 기본값은 `unavailable`(로컬·데모와 같다)이라
+ * 다른 테스트의 동작은 그대로고, 필요한 테스트만 `oauthServer.result`를 바꾼다.
+ */
+const oauthServer = vi.hoisted(() => ({ result: { unavailable: true } as unknown }));
+vi.mock('./calendar/googleOAuthServer', () => ({
+  refreshGoogleAccess: async () => oauthServer.result,
+  exchangeGoogleCode: async () => oauthServer.result,
+  disconnectGoogleServer: async () => oauthServer.result,
+  serverKnownUnavailable: () => (oauthServer.result as { unavailable?: boolean }).unavailable === true,
+  resetGoogleOAuthServer: () => undefined,
+}));
 
 function renderHome() {
   const backend: Backend = {
@@ -3362,6 +3386,54 @@ describe('캘린더 더하기 — 그리오 목록(요청)', () => {
     // 개수는 아직 말하지 않는다 — 오는 동안 `0개 표시 중`은 거짓말이다.
     expect(section.querySelector('[data-google-shown]')).toBeNull();
 
+    release();
+    await waitFor(() => {
+      expect(document.querySelector('[data-google-cal="me@example.com"]')).toBeTruthy();
+      expect(document.querySelector('[data-google-cal-skeleton]')).toBeNull();
+    });
+  });
+
+  it('토큰이 만료돼 있어도 목록 자리는 서 있다 — 스켈레톤이 뜨고 카드가 커지지 않는다(제보)', async () => {
+    // 제보: 프로필 설정 → 계정 설정 → 연동으로 들어가면 스켈레톤 없이 카드가 짧게
+    // 떴다가 목록이 오며 커졌다(실측 95px → 367px). 원인은 `connected`가 "이 탭이
+    // 지금 액세스 토큰을 들고 있는가"였던 것 — 만료된 토큰에서는 거짓이라 목록 블록이
+    // 통째로 그려지지 않았다. 지금은 블롭이 켜져 있고 끊겼다고 알려진 바 없으면 선다.
+    seed({ calendars: ['me@example.com'] });
+    seedExpiredToken();
+    // 라이브와 같은 구성: 서버가 refresh token으로 새 액세스 토큰을 조용히 준다.
+    oauthServer.result = { token: { accessToken: 'srv', expiresIn: 3600, scope: GOOGLE_CALENDAR_SCOPE, email: 'me@example.com', persistent: true } };
+    // 목록 조회를 붙잡아 "오는 중" 프레임을 관찰한다.
+    let release = (): void => {};
+    const held = new Promise<void>((r) => {
+      release = () => r();
+    });
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (url: string) => {
+        const ok = (body: unknown) => ({ ok: true, status: 200, json: async () => body }) as unknown as Response;
+        if (url.includes('/users/me/calendarList')) {
+          await held;
+          return ok({ items: [{ id: 'me@example.com', summary: '내 캘린더', primary: true, accessRole: 'owner' }] });
+        }
+        return ok({ items: [] });
+      }),
+    );
+    clientId = 'test-client.apps.googleusercontent.com';
+    const user = userEvent.setup();
+    renderHome();
+    const section = await openIntegration(user);
+
+    // 목록이 오기 **전에** 이미 그 자리가 있다(스켈레톤 + 주소 입력).
+    expect(section.getAttribute('data-google-live')).toBe('1');
+    const skel = await waitFor(() => {
+      const el = document.querySelector('[data-google-cal-skeleton]');
+      expect(el).toBeTruthy();
+      return el as HTMLElement;
+    });
+    expect(skel.style.height).toBe('208px');
+    expect(document.querySelector('[data-google-cal-add-input]')).toBeTruthy();
+
+    // 목록이 도착해도 자리는 그대로 — 스켈레톤만 실제 행으로 바뀐다.
     release();
     await waitFor(() => {
       expect(document.querySelector('[data-google-cal="me@example.com"]')).toBeTruthy();
