@@ -41,9 +41,10 @@ export function GoogleCalendarSection({ api, focusAdd }: { api: GoogleCalendarAp
   // 개수는 **보이는 행** 기준이다 — 목록에 없는 공휴일 캘린더까지 세면 숫자와
   // 눈에 보이는 것이 어긋난다.
   const shown = rows.filter((c) => api.pickedIds.includes(c.id)).length;
-  // 목록이 아직 오지 않았다 — 켜져 있는데 아무것도 못 받은 상태(대개 새로 연 탭:
-  // 토큰은 이 기기에 있어 `connected`가 곧바로 참인데 목록 조회는 아직 돌고 있다).
-  const listLoading = api.calendars.length === 0;
+  // 목록이 아직 오지 않았다. **목록이 비었는가로 판단하지 않는다**(제보): `calendars`는
+  // 구독 목록 ∪ 주소로 더한 캘린더이고 후자는 블롭에 있어 조회 없이 즉시 나오므로,
+  // 더해 둔 것이 하나라도 있으면 스켈레톤을 건너뛰고 그 한 줄만 뜬 채 팝업이 작아진다.
+  const listLoading = !api.listLoaded;
   return (
     <>
       <div

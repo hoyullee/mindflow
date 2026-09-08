@@ -3441,6 +3441,53 @@ describe('캘린더 더하기 — 그리오 목록(요청)', () => {
     });
   });
 
+  it('주소로 더한 캘린더가 있어도 스켈레톤이 뜬다 — 그 한 줄로 팝업이 작아지지 않는다(제보)', async () => {
+    // 제보(스크린샷 2장): 진입 순간 `eunjin.yeo@…` **한 줄만** 뜬 채 팝업이 작았다가
+    // 목록이 오며 커졌다. 원인은 로딩 판정이 `calendars.length === 0`이었던 것 —
+    // 그 목록은 구독 목록 ∪ **주소로 더한 캘린더**이고 후자는 블롭에 있어 조회 없이
+    // 즉시 나오므로, 더해 둔 것이 하나라도 있으면 "이미 왔다"로 오판했다.
+    // 실측(배포본): 구획 197px·행 1개 → 목록 도착 시 367px(카드 400 → 570).
+    seed({ calendars: ['me@example.com'], extra: [{ id: 'mate@example.com', name: 'mate@example.com' }] });
+    seedToken();
+    let release = (): void => {};
+    const held = new Promise<void>((r) => {
+      release = () => r();
+    });
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (url: string) => {
+        const ok = (body: unknown) => ({ ok: true, status: 200, json: async () => body }) as unknown as Response;
+        if (url.includes('/users/me/calendarList')) {
+          await held;
+          return ok({ items: [{ id: 'me@example.com', summary: '내 캘린더', primary: true, accessRole: 'owner' }] });
+        }
+        return ok({ items: [] });
+      }),
+    );
+    clientId = 'test-client.apps.googleusercontent.com';
+    const user = userEvent.setup();
+    renderHome();
+    const section = await openIntegration(user);
+
+    // 더해 둔 그 한 줄을 그리지 않는다 — 스켈레톤이 최대 크기로 자리를 지킨다.
+    const skel = await waitFor(() => {
+      const el = document.querySelector('[data-google-cal-skeleton]');
+      expect(el).toBeTruthy();
+      return el as HTMLElement;
+    });
+    expect(skel.style.height).toBe('208px');
+    expect(document.querySelectorAll('[data-google-cal]').length).toBe(0);
+    // 개수도 아직 말하지 않는다(`0개 표시 중`은 거짓말이다).
+    expect(section.querySelector('[data-google-shown]')).toBeNull();
+
+    // 목록이 도착하면 구독 목록 ∪ 더한 것이 함께 뜬다.
+    release();
+    await waitFor(() => {
+      expect(document.querySelector('[data-google-cal-skeleton]')).toBeNull();
+      expect(document.querySelectorAll('[data-google-cal]').length).toBe(2);
+    });
+  });
+
   it('연동 카드의 면은 팝업과 같다 — 상태마다 틴트를 갈아 끼우지 않는다(제보)', async () => {
     seed({ calendars: ['me@example.com'] });
     seedToken();
