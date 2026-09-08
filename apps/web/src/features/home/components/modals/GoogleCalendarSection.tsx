@@ -15,7 +15,7 @@
 import { useEffect, useRef, useState, type ReactNode } from 'react';
 import type { GoogleCalendarApi } from '../../calendar/useGoogleCalendar';
 import type { DirectoryPerson } from '../../calendar/googleDirectory';
-import { HOLIDAY_COUNTRIES } from '../../calendar/googleCalendar';
+import { HOLIDAY_COUNTRIES, HOLIDAY_OFF, isManagedHolidayId, type HolidayCountry } from '../../calendar/googleCalendar';
 import { Segmented } from '../../../../components/Segmented';
 import { SectionLabel, SettingsGroup } from './AccountSettingsModal';
 
@@ -27,9 +27,17 @@ export function GoogleCalendarSection({ api }: { api: GoogleCalendarApi }) {
   // 구글 계정 이메일은 **기본 캘린더의 id**다(구글이 그렇게 만든다) — 우리 앱의
   // 로그인 이메일과 다를 수 있으므로 그걸 쓰지 않는다.
   const account = api.calendars.find((c) => c.primary)?.id ?? '';
-  const shown = api.calendars.filter((c) => api.pickedIds.includes(c.id)).length;
   const ym = monthKey();
   const monthly = api.events.filter((e) => e.startDate.startsWith(ym)).length;
+  // 공휴일 캘린더(우리 표의 세 나라)는 이 목록에 두지 않는다 — 그 자리는 아래
+  // **공휴일 국가** 세그먼트가 맡는다(제보: 같은 결정을 두 곳에서 하게 되어 있어
+  // 공휴일이 두 번 표시되는 것처럼 보였다). 우리 표에 없는 공휴일 캘린더(예: 사용자가
+  // 주소로 더한 `en.south_korea#holiday`)는 평범한 행으로 남는다 — 세그먼트가 관리하지
+  // 않으므로 그것을 켜고 끄는 곳이 여기뿐이다.
+  const rows = api.calendars.filter((c) => !isManagedHolidayId(c.id));
+  // 개수는 **보이는 행** 기준이다 — 목록에 없는 공휴일 캘린더까지 세면 숫자와
+  // 눈에 보이는 것이 어긋난다.
+  const shown = rows.filter((c) => api.pickedIds.includes(c.id)).length;
   return (
     <>
       <div
@@ -84,11 +92,11 @@ export function GoogleCalendarSection({ api }: { api: GoogleCalendarApi }) {
               <SectionLabel>보여 줄 캘린더</SectionLabel>
               <span data-google-shown style={{ fontSize: 11.5, color: 'var(--mf-muted)' }}>{shown}개 표시 중</span>
             </div>
-            {api.calendars.length === 0 ? (
+            {rows.length === 0 && api.calendars.length === 0 ? (
               <div style={{ fontSize: 12.5, color: 'var(--mf-muted)', padding: '2px 3px' }}>캘린더를 불러오는 중…</div>
             ) : (
               <div style={{ display: 'flex', flexDirection: 'column', gap: 1, maxHeight: 208, overflowY: 'auto' }} className="lnb-scroll">
-                {api.calendars.map((c) => {
+                {rows.map((c) => {
                   const on = api.pickedIds.includes(c.id);
                   return (
                     <label
@@ -133,13 +141,13 @@ export function GoogleCalendarSection({ api }: { api: GoogleCalendarApi }) {
               </div>
             )}
             <AddCalendar api={api} />
-            {/* 공휴일 캘린더는 칩이 아니라 **날짜 색**으로 그린다 — 고를 때 그걸 알려 준다. */}
+            {/* 체크는 이 화면에서 보여 줄지만 정하는 것 — 구글 쪽 구독 목록은 그대로다. */}
             <div style={{ display: 'flex', gap: 8, marginTop: 10, padding: '10px 11px', borderRadius: 12, border: '1px solid var(--mf-border-soft)', background: 'var(--mf-card)', fontSize: 11.5, color: 'var(--mf-faint)', lineHeight: 1.55 }}>
               <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="var(--mf-faint)" strokeWidth="2" strokeLinecap="round" aria-hidden="true" style={{ flexShrink: 0, marginTop: 2 }}>
                 <circle cx="12" cy="12" r="9" />
                 <path d="M12 11v5.5M12 7.6v.6" />
               </svg>
-              <span>공휴일 캘린더는 일정 칩 대신 날짜를 붉게 표시해요. 연동을 끄면 화면에서만 사라지고 구글에는 그대로 남아요.</span>
+              <span>체크를 풀거나 연동을 끄면 이 화면에서만 사라지고 구글에는 그대로 남아요.</span>
             </div>
           </div>
         )}
@@ -157,7 +165,7 @@ export function GoogleCalendarSection({ api }: { api: GoogleCalendarApi }) {
           <div style={{ display: 'flex', alignItems: 'center', flexWrap: 'wrap', gap: 13, padding: '14px 15px' }}>
             <div style={{ minWidth: 0, flex: '1 1 200px' }}>
               <div style={{ fontWeight: 700, fontSize: 14.5 }}>공휴일 국가</div>
-              <div style={{ fontSize: 12.5, color: 'var(--mf-muted)', marginTop: 2 }}>일정 화면과 위젯에 이 국가의 공휴일이 표시돼요</div>
+              <div style={{ fontSize: 12.5, color: 'var(--mf-muted)', marginTop: 2 }}>고른 국가의 공휴일을 일정 칩 대신 날짜 색으로 표시해요 — 일정 화면과 위젯 모두</div>
             </div>
             {/* 세그먼트 트랙 — 속성 패널의 크기 세그먼트와 같은 문법(가라앉은 트랙
                 위에서 고른 칸만 카드 면 + 진한 강조 잉크). */}
@@ -167,8 +175,8 @@ export function GoogleCalendarSection({ api }: { api: GoogleCalendarApi }) {
               label="공휴일 국가"
               trackAttrs={{ 'data-holiday-seg': '' }}
               track={{ display: 'flex', gap: 3, padding: 3, borderRadius: 11, background: 'var(--mf-panel2)', border: '1px solid var(--mf-border-soft)', boxSizing: 'border-box', flexShrink: 0 }}
-              items={HOLIDAY_COUNTRIES.map((c) => ({
-                value: c.key,
+              items={HOLIDAY_ITEMS.map((c) => ({
+                value: c.value,
                 label: c.label,
                 style: (on: boolean) => ({
                   minWidth: 54,
@@ -192,6 +200,15 @@ export function GoogleCalendarSection({ api }: { api: GoogleCalendarApi }) {
     </>
   );
 }
+
+/**
+ * 세그먼트의 칸 — 세 나라 + **없음**. `없음`이 있어야 공휴일을 끄는 길이 남는다
+ * (공휴일 캘린더가 목록에서 빠졌으므로 여기가 유일한 스위치다).
+ */
+const HOLIDAY_ITEMS: { value: HolidayCountry; label: string }[] = [
+  ...HOLIDAY_COUNTRIES.map((c) => ({ value: c.key as HolidayCountry, label: c.label })),
+  { value: HOLIDAY_OFF, label: '없음' },
+];
 
 /** 이 달의 `YYYY-MM` — 카드 부제의 "이번 달 일정 N개"가 이 달로 거른다. */
 function monthKey(): string {

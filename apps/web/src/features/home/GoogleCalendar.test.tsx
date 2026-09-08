@@ -276,12 +276,15 @@ describe('구글 캘린더 겹치기(PR5)', () => {
       return el as HTMLElement;
     });
     await user.click(within(section).getByText('연결하기'));
-    // 목록이 뜨고 **기본 + 공휴일만** 켜져 있다 — 캘린더가 스무 개인 사람에게 전부
-    // 켜 주면 첫 화면이 남의 일정으로 뒤덮인다(남이 공유한 것은 꺼진 채).
+    // 목록이 뜨고 **기본만** 켜져 있다 — 캘린더가 스무 개인 사람에게 전부 켜 주면
+    // 첫 화면이 남의 일정으로 뒤덮인다(남이 공유한 것은 꺼진 채).
     await waitFor(() => expect(document.querySelector('[data-google-cal="me@example.com"]')).toBeTruthy());
     const boxes = document.querySelectorAll<HTMLInputElement>('[data-google-cal] input');
-    expect(boxes.length).toBe(3);
-    expect([...boxes].filter((b) => b.checked).length).toBe(2);
+    // 공휴일 캘린더는 이 목록에 없다 — 그 스위치는 아래 **공휴일 국가**다(제보).
+    expect(boxes.length).toBe(2);
+    expect([...boxes].filter((b) => b.checked).length).toBe(1);
+    // 그래도 켜진 채 저장된다(세그먼트가 `한국`으로 그 사실을 말한다).
+    expect(within(document.querySelector('[data-holiday-seg]') as HTMLElement).getByRole('radio', { name: '한국' }).getAttribute('aria-checked')).toBe('true');
     // 쓸 수 없는 캘린더는 그렇게 표시된다(새 일정 목적지에도 오르지 않는다)
     expect(document.querySelector(`[data-google-cal="${SHARED_ID}"] [data-google-readonly]`)).toBeTruthy();
     // 워크스페이스 블롭에 남는다(기기 간 동기화 — 토큰은 남지 않는다)
@@ -3320,9 +3323,55 @@ describe('캘린더 더하기 — 그리오 목록(요청)', () => {
     });
     // 그 자체로는 구글에 아무것도 묻지 않는다(고른 뒤 일정 조회만 이어진다).
     expect(fetchMock.mock.calls.slice(before).some((c) => String(c[0]).includes('calendarList'))).toBe(false);
-    // 그 캘린더는 **목록에서 뺄 수 없다** — 이 자리는 공휴일 국가가 맡는다.
-    await waitFor(() => expect(document.querySelector('[data-google-cal="ja.japanese#holiday@group.v.calendar.google.com"]')).toBeTruthy());
-    expect(document.querySelector('[data-google-cal-remove="ja.japanese#holiday@group.v.calendar.google.com"]')).toBeNull();
+    // 공휴일 캘린더는 **`보여 줄 캘린더` 목록에 없다** — 이 자리(세그먼트)가 유일한
+    // 스위치다(제보: 같은 결정을 두 곳에서 하게 되어 있어 두 번 표시되는 것처럼 보였다).
+    expect(document.querySelector('[data-google-cal="ja.japanese#holiday@group.v.calendar.google.com"]')).toBeNull();
+    expect(document.querySelector(`[data-google-cal="${HOLIDAY_ID}"]`)).toBeNull();
+  });
+
+  it('공휴일 캘린더는 `보여 줄 캘린더` 목록에 없고, `없음`을 고르면 통째로 빠진다', async () => {
+    // 제보: 국가를 설정에서 고르게 해 두고 목록에서도 체크하게 되어 있었다. 스위치가
+    // 하나여야 하므로 목록에서 빼고, 그러면 **끄는 길**이 세그먼트의 `없음`뿐이다.
+    seed({ calendars: ['me@example.com', HOLIDAY_ID] });
+    seedToken();
+    stubFetch();
+    clientId = 'test-client.apps.googleusercontent.com';
+    const user = userEvent.setup();
+    renderHome();
+    await openIntegration(user);
+    await waitFor(() => expect(document.querySelector('[data-google-cal="me@example.com"]')).toBeTruthy());
+    expect(document.querySelector(`[data-google-cal="${HOLIDAY_ID}"]`)).toBeNull();
+    // 개수는 보이는 행 기준이다 — 목록에 없는 공휴일까지 세면 숫자와 눈이 어긋난다.
+    expect(document.querySelector('[data-google-shown]')?.textContent).toBe('1개 표시 중');
+
+    const seg = document.querySelector('[data-holiday-seg]') as HTMLElement;
+    await user.click(within(seg).getByRole('radio', { name: '없음' }));
+    await waitFor(() => {
+      const ws = JSON.parse(localStorage.getItem('mf_spaces') ?? '{}') as { google?: { calendars: string[]; holiday?: string } };
+      expect(ws.google?.holiday).toBe('off');
+      expect(ws.google?.calendars).toEqual(['me@example.com']);
+    });
+    // 세그먼트도 그 사실을 말한다 — 공휴일을 칠할 원천이 이제 없다.
+    expect(within(seg).getByRole('radio', { name: '한국' }).getAttribute('aria-checked')).toBe('false');
+  });
+
+  it('공휴일 캘린더가 켜져 있지 않으면 `없음`이 켜진 채다 — 한국이라 말하지 않는다', async () => {
+    // 예전 폴백은 저장된 값이 없으면 `kr`이었다 — 공휴일을 안 보고 있는 사람에게
+    // "한국"이 켜진 채로 보이는 거짓말이다.
+    seed({ calendars: ['me@example.com'] });
+    seedToken();
+    stubFetch();
+    clientId = 'test-client.apps.googleusercontent.com';
+    const user = userEvent.setup();
+    renderHome();
+    await openIntegration(user);
+    const seg = await waitFor(() => {
+      const el = document.querySelector('[data-holiday-seg]');
+      expect(el).toBeTruthy();
+      return el as HTMLElement;
+    });
+    expect(within(seg).getByRole('radio', { name: '없음' }).getAttribute('aria-checked')).toBe('true');
+    expect(within(seg).getByRole('radio', { name: '한국' }).getAttribute('aria-checked')).toBe('false');
   });
 
   it('연동 전에는 공휴일 국가를 그리지 않는다 — 고를 수 있는 척만 하게 된다', async () => {

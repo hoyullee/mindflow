@@ -16,9 +16,17 @@ import { normalizeUrl } from '@mindflow/mindmap-core';
 /** 남길 태그 — 구글 캘린더가 실제로 쓰는 것들(+ 문단·줄바꿈). */
 const ALLOWED = new Set(['B', 'STRONG', 'I', 'EM', 'U', 'A', 'UL', 'OL', 'LI', 'BR', 'P', 'DIV', 'SPAN']);
 
-/** 태그가 하나라도 있으면 HTML로 본다 — 옛 값(평문)은 그대로 평문이다. */
+/**
+ * 태그가 하나라도 있으면 HTML로 본다 — 옛 값(평문)은 그대로 평문이다.
+ *
+ * **엔티티도 HTML로 본다**(제보 수리). 편집기가 만든 값은 태그가 없어도 HTML일 수
+ * 있다: 띄어쓰기를 치면 브라우저가 `\u00A0`을 넣고 `innerHTML`이 그것을 `&nbsp;`로
+ * 직렬화한다. 그 값을 평문으로 읽으면 `escapeHtml`이 `&`를 다시 escape해서
+ * `&amp;nbsp;`가 되고, 화면에 **`&nbsp;`가 글자로 보인다**(그리고 DOM이 매 입력마다
+ * 다시 심겨 한글 조합이 깨진다 — `RichMemo`의 재심기 가드가 나머지 절반).
+ */
 export function looksLikeHtml(s: string): boolean {
-  return /<\/?[a-z][\s\S]*>/i.test(s);
+  return /<\/?[a-z][\s\S]*>/i.test(s) || /&(?:[a-z]+|#\d+);/i.test(s);
 }
 
 /** 평문 메모 → 편집기에 넣을 HTML(줄바꿈만 옮긴다). */

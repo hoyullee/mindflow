@@ -26,6 +26,8 @@ import {
   HOLIDAY_COUNTRIES,
   holidayCountryOf,
   holidayCountryOfId,
+  isManagedHolidayId,
+  HOLIDAY_OFF,
   probeCalendar,
   calendarAddError,
   fetchEventColors,
@@ -653,24 +655,29 @@ export function useGoogleCalendar(
   );
 
   /**
-   * 지금 어느 나라의 공휴일을 보고 있는가 — 저장된 값이 정본이고, 없으면 **목록에
-   * 있는 공휴일 캘린더**에서 읽는다(구글에서 이미 구독해 둔 사람이 처음 이 화면을
-   * 열었을 때 그 나라가 켜져 보이도록). 그것도 없으면 한국이다.
+   * 지금 어느 나라의 공휴일을 보고 있는가 — 저장된 값이 정본이고(`'off'` 포함),
+   * 없으면 **지금 보고 있는 공휴일 캘린더**에서 읽는다(구글에서 이미 구독해 둔 사람이
+   * 처음 이 화면을 열었을 때 그 나라가 켜져 보이도록).
+   *
+   * 그것도 없으면 **`off`**다 — 예전엔 한국으로 떨어졌는데, 공휴일 캘린더를 하나도
+   * 보고 있지 않은 사람에게 "한국 공휴일이 표시돼요"라고 말하는 거짓말이었다.
    */
   const holidayCountry: HolidayCountry =
-    prefs.holiday ?? allCalendars.map((c) => holidayCountryOfId(c.id)).find((k): k is HolidayCountry => !!k) ?? 'kr';
+    prefs.holiday ??
+    prefs.calendars.map((id) => holidayCountryOfId(id)).find((k): k is Exclude<HolidayCountry, typeof HOLIDAY_OFF> => !!k) ??
+    HOLIDAY_OFF;
 
   const setHolidayCountry = useCallback(
     (c: HolidayCountry) => {
-      const pick = HOLIDAY_COUNTRIES.find((x) => x.key === c);
-      if (!pick) return;
-      const others = HOLIDAY_COUNTRIES.filter((x) => x.key !== c).map((x) => x.id.toLowerCase());
-      const drop = (id: string) => others.includes(id.toLowerCase());
+      // 이 세그먼트는 **표의 세 나라를 통째로** 관리한다 — 하나를 고르면 나머지는
+      // 목록에서 빠진다(둘이 함께 켜지면 같은 날을 두 캘린더가 칠한다).
+      const managed = (id: string) => isManagedHolidayId(id);
+      const pick = HOLIDAY_COUNTRIES.find((x) => x.key === c) ?? null;
       // 구독 목록에 이미 있으면(구글에서 구독해 둔 공휴일 캘린더) 우리 목록에
       // 더하지 않는다 — 같은 캘린더가 두 곳에 있을 이유가 없다(`mergeExtraCalendars`).
-      const subscribed = calendars.some((x) => x.id.toLowerCase() === pick.id.toLowerCase());
-      const nextExtra = [...extras.filter((e) => !drop(e.id) && e.id.toLowerCase() !== pick.id.toLowerCase()), ...(subscribed ? [] : [{ id: pick.id, name: pick.name }])];
-      const nextShown = [...prefs.calendars.filter((id) => !drop(id) && id.toLowerCase() !== pick.id.toLowerCase()), pick.id];
+      const subscribed = !!pick && calendars.some((x) => x.id.toLowerCase() === pick.id.toLowerCase());
+      const nextExtra = [...extras.filter((e) => !managed(e.id)), ...(pick && !subscribed ? [{ id: pick.id, name: pick.name }] : [])];
+      const nextShown = [...prefs.calendars.filter((id) => !managed(id)), ...(pick ? [pick.id] : [])];
       onPrefs({ enabled: true, calendars: nextShown, ...(nextExtra.length ? { extra: nextExtra } : {}), holiday: c });
     },
     [calendars, prefs.calendars, extraKey, onPrefs],
