@@ -1,4 +1,4 @@
-<#
+﻿<#
 .SYNOPSIS
   MSIX 로컬 설치용 **개발 인증서**를 만들고 신뢰 저장소에 넣는다.
 
@@ -17,6 +17,13 @@
   끝나면 패키징·설치 명령을 그대로 붙여 쓸 수 있게 출력한다.
 
 .NOTES
+  - **이 파일은 UTF-8 BOM으로 저장해야 한다.** Windows PowerShell 5.1은 BOM이
+    없으면 스크립트를 ANSI(한국어 Windows에서는 CP949)로 읽는데, CP949는
+    2바이트 인코딩이라 한글의 선행 바이트가 **뒤따르는 ASCII 한 글자를 함께
+    삼킨다** — 실제로 그렇게 닫는 따옴표가 사라져
+    "문자열에 ' 종결자가 없습니다"로 파싱이 실패한 제보가 있었다(바이트를
+    걸어서 원인 줄까지 확인했다). 편집기가 BOM을 떼면 같은 일이 되풀이되므로
+    `src/packaging.test.ts`가 BOM 존재를 고정한다.
   - **관리자 PowerShell**에서 실행한다(LocalMachine 저장소에 넣어야 한다).
   - 여기서 만든 인증서는 **이 PC에서만** 뜻이 있다. 배포용이 아니다.
   - 만든 .pfx는 `build/dev-cert/`에 남고 git에 올라가지 않는다(.gitignore).
@@ -47,7 +54,7 @@ foreach ($line in Get-Content -LiteralPath $configPath) {
 }
 if (-not $publisher) { throw "electron-builder.yml의 appx.publisher를 읽지 못했어요." }
 # YAML의 따옴표는 값이 아니다.
-$publisher = $publisher.Trim("'", '"')
+$publisher = $publisher.Trim([char[]]@("'", '"'))
 Write-Host "publisher (인증서 Subject) : $publisher" -ForegroundColor Cyan
 
 # ── 2. 인증서 — 같은 Subject가 이미 있으면 다시 만들지 않는다 ─────────────────
@@ -61,12 +68,17 @@ if ($cert) {
 } else {
   # -Type Custom + 두 확장: 코드 서명 EKU(1.3.6.1.5.5.7.3.3)와
   # Basic Constraints(말단 엔티티). MSIX 서명이 요구하는 최소 조합이다.
+  # `-KeySpec Signature`는 signtool이 이 키로 **서명**할 수 있게 하고
+  # `-KeyExportPolicy Exportable`은 아래 .pfx 내보내기를 가능하게 한다 —
+  # 둘 다 기본값에 기대지 않고 못박는다(실패하면 서명 단계에서야 드러난다).
   $cert = New-SelfSignedCertificate `
     -Type Custom `
     -Subject $publisher `
     -KeyUsage DigitalSignature `
     -KeyAlgorithm RSA `
     -KeyLength 2048 `
+    -KeySpec Signature `
+    -KeyExportPolicy Exportable `
     -FriendlyName 'Geurio MSIX dev signing' `
     -CertStoreLocation 'Cert:\CurrentUser\My' `
     -NotAfter (Get-Date).AddYears(2) `
@@ -78,7 +90,11 @@ if ($cert) {
 New-Item -ItemType Directory -Force -Path $outDir | Out-Null
 if (-not $Password) {
   # 개발용이라 기억할 필요가 없다 — 아래에 그대로 출력한다.
-  $Password = [System.Convert]::ToBase64String([System.Security.Cryptography.RandomNumberGenerator]::GetBytes(18))
+  # `RandomNumberGenerator::GetBytes(int)`(정적)는 .NET 5+ API라 Windows
+  # PowerShell 5.1(.NET Framework)에서는 없다 — 양쪽에 다 있는 `Create()`를 쓴다.
+  $bytes = New-Object 'byte[]' 18
+  [System.Security.Cryptography.RandomNumberGenerator]::Create().GetBytes($bytes)
+  $Password = [System.Convert]::ToBase64String($bytes)
 }
 $securePwd = ConvertTo-SecureString -String $Password -Force -AsPlainText
 $pfxPath = Join-Path $outDir 'geurio-dev.pfx'
@@ -88,8 +104,8 @@ Export-PfxCertificate -Cert "Cert:\CurrentUser\My\$($cert.Thumbprint)" -FilePath
 Export-Certificate  -Cert "Cert:\CurrentUser\My\$($cert.Thumbprint)" -FilePath $cerPath -Type CERT | Out-Null
 
 # ── 4. 신뢰 — MSIX 사이드로드는 TrustedPeople을 본다 ──────────────────────────
-$admin = ([Security.Principal.WindowsPrincipal] [Security.Principal.WindowsIdentity]::GetCurrent()).IsInRole(
-  [Security.Principal.WindowsBuiltInRole]::Administrator)
+$currentUser = New-Object Security.Principal.WindowsPrincipal([Security.Principal.WindowsIdentity]::GetCurrent())
+$admin = $currentUser.IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)
 if ($admin) {
   Import-Certificate -FilePath $cerPath -CertStoreLocation 'Cert:\LocalMachine\TrustedPeople' | Out-Null
   Write-Host '인증서를 LocalMachine\TrustedPeople에 넣었어요.' -ForegroundColor Green
