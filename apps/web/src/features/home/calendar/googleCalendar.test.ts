@@ -1,6 +1,6 @@
 import { describe, expect, it, beforeEach, vi } from 'vitest';
 import {
-  workLocationLabel, workLocationKindOf, workLocationProps, workLocationEventBody, workLocationPatch, findWorkLocation, workLocationWhen, workLocationWhenChanged, workLocationDays, workLocationForDay, weeklyRule, WORK_LOCATION_MAX_DAYS, GOOGLE_CALENDAR_SCOPE, GOOGLE_EVENT_COLORS, myRsvpOf, attendeesBody, eventWindowIso, RECURRENCE_OFF, buildRecurrence, draftToBody, eventColorOf, fetchEventColors, googleWriteError, managedFieldsDiffer, updateGoogleEvent, recurrenceSummary, isDayOffHoliday, isHolidayCalendarId, onTokenChange, scopeCovers, HOLIDAY_COUNTRIES, holidayCountryOf, holidayCountryOfId, parseCalendarList, parseEvents, probeCalendar, calendarAddError, mergeExtraCalendars, coerceExtraCalendars, readStoredToken, splitGoogleDateTime, storeToken, type GoogleCalendarMeta } from './googleCalendar';
+  workLocationLabel, workLocationKindOf, workLocationProps, workLocationEventBody, workLocationPatch, findWorkLocation, workLocationWhen, workLocationWhenChanged, workLocationDays, workLocationForDay, weeklyRule, WORK_LOCATION_MAX_DAYS, GOOGLE_CALENDAR_SCOPE, GOOGLE_EVENT_COLORS, myRsvpOf, attendeesBody, eventWindowIso, RECURRENCE_OFF, buildRecurrence, draftToBody, eventColorOf, fetchEventColors, googleWriteError, managedFieldsDiffer, updateGoogleEvent, recurrenceSummary, isDayOffHoliday, isHolidayCalendarId, onTokenChange, scopeCovers, HOLIDAY_COUNTRIES, HOLIDAY_OFF, holidayCountryOf, holidayCountryOfId, isManagedHolidayId, parseCalendarList, parseEvents, probeCalendar, calendarAddError, mergeExtraCalendars, coerceExtraCalendars, readStoredToken, splitGoogleDateTime, storeToken, type GoogleCalendarMeta } from './googleCalendar';
 import { googleEntries, holidayMap } from './entries';
 import { draftFrom, patchFrom } from './GoogleEventDetail';
 import { submitNewEvent } from './newEventSubmit';
@@ -835,6 +835,14 @@ describe('캘린더 더하기 — 그리오 목록', () => {
     expect(holidayCountryOfId('me@example.com')).toBeNull();
     // 세 국가의 id는 전부 공휴일 캘린더로 읽힌다(표와 판별이 어긋나면 칩이 된다).
     for (const c of HOLIDAY_COUNTRIES) expect(isHolidayCalendarId(c.id)).toBe(true);
+    // `없음`도 유효한 값이다 — 공휴일 캘린더가 목록에서 빠진 뒤(제보) 끄는 길이 이것뿐이다.
+    expect(holidayCountryOf(HOLIDAY_OFF)).toBe(HOLIDAY_OFF);
+    // 세그먼트가 **관리하는** 것은 우리 표의 세 나라뿐이다 — 그 밖의 공휴일 캘린더는
+    // 평범한 행으로 남아 목록에서 켜고 끈다(스위치가 캘린더마다 하나여야 한다).
+    for (const c of HOLIDAY_COUNTRIES) expect(isManagedHolidayId(c.id)).toBe(true);
+    expect(isManagedHolidayId(HOLIDAY_COUNTRIES[0]!.id.toUpperCase())).toBe(true);
+    expect(isManagedHolidayId('en.south_korea#holiday@group.v.calendar.google.com')).toBe(false);
+    expect(isManagedHolidayId('me@example.com')).toBe(false);
   });
 
   it('저장 블롭의 extra를 검증한다 — 어긋난 항목은 버리고, 비면 키를 만들지 않는다', () => {

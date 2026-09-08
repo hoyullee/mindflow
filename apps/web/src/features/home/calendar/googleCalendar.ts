@@ -676,15 +676,27 @@ export const HOLIDAY_COUNTRIES = [
   { key: 'us', label: '미국', id: 'en.usa#holiday@group.v.calendar.google.com', name: '미국의 휴일' },
 ] as const;
 
-export type HolidayCountry = (typeof HOLIDAY_COUNTRIES)[number]['key'];
+/**
+ * 공휴일을 **표시하지 않는다**. 공휴일 캘린더가 `보여 줄 캘린더` 목록에서 빠지면서
+ * (제보 — 같은 결정을 두 곳에서 하게 되어 있었다) 끄는 길이 이 값 하나로 모였다.
+ */
+export const HOLIDAY_OFF = 'off';
 
-/** 저장 블롭에서 읽은 값 검증 — 모르는 값이면 `null`(기본값으로 떨어진다). */
+export type HolidayCountry = (typeof HOLIDAY_COUNTRIES)[number]['key'] | typeof HOLIDAY_OFF;
+
+/** 저장 블롭에서 읽은 값 검증 — 모르는 값이면 `null`(목록에서 유추한다). */
 export function holidayCountryOf(v: unknown): HolidayCountry | null {
+  if (v === HOLIDAY_OFF) return HOLIDAY_OFF;
   return HOLIDAY_COUNTRIES.some((c) => c.key === v) ? (v as HolidayCountry) : null;
 }
 
+/** 이 캘린더가 **공휴일 국가 세그먼트가 관리하는** 것인가(우리 표의 세 나라). */
+export function isManagedHolidayId(id: string): boolean {
+  return holidayCountryOfId(id) !== null;
+}
+
 /** 그 캘린더 id가 우리가 아는 공휴일 캘린더면 그 나라 — 저장된 값이 없을 때 쓴다. */
-export function holidayCountryOfId(id: string): HolidayCountry | null {
+export function holidayCountryOfId(id: string): (typeof HOLIDAY_COUNTRIES)[number]['key'] | null {
   const low = id.toLowerCase();
   return HOLIDAY_COUNTRIES.find((c) => c.id.toLowerCase() === low)?.key ?? null;
 }

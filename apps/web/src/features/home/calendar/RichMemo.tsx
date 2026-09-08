@@ -62,22 +62,45 @@ export function RichMemo({
   const ref = useRef<HTMLDivElement | null>(null);
   const [empty, setEmpty] = useState(true);
   const formatting = canFormat();
+  /**
+   * 우리가 마지막으로 올려 보낸 값 — 그것이 `value`로 되돌아온 것이면 **DOM을 손대지
+   * 않는다**(제보 수리). 타이핑 중에 `innerHTML`을 다시 심으면 캐럿이 튀고, 무엇보다
+   * **IME 조합이 깨져 한글이 자모로 쪼개진다**. `sanitizeMemoHtml`의 왕복은 완전한
+   * 항등이 아니므로(`<div>`↔`<p>`·속성 순서·엔티티) "값이 같으면 안 심는다"는 비교만
+   * 으로는 부족하다 — 어느 비대칭이든 여기서 막힌다.
+   */
+  const lastOut = useRef<string | null>(null);
+  /** IME 조합 중에는 밖에서 온 값이라도 미룬다 — 조합을 끊으면 글자가 깨진다. */
+  const composing = useRef(false);
+  const deferred = useRef(false);
 
-  // 밖에서 값이 바뀔 때만 다시 심는다 — 타이핑마다 심으면 캐럿이 맨 뒤로 튄다
-  // (캔버스 편집 박스에서 겪은 그 함정).
-  useEffect(() => {
+  const seed = (next: string): void => {
     const el = ref.current;
     if (!el) return;
-    const next = memoHtml(value);
-    if (el.innerHTML !== next) el.innerHTML = next;
+    const html = memoHtml(next);
+    if (el.innerHTML !== html) el.innerHTML = html;
     setEmpty(!(el.textContent ?? '').trim() && !el.querySelector('li, img'));
+  };
+
+  // **밖에서** 값이 바뀔 때만 다시 심는다(다른 일정을 열었을 때 등).
+  useEffect(() => {
+    if (!ref.current) return;
+    if (value === lastOut.current) return; // 우리 입력의 메아리
+    if (composing.current) {
+      deferred.current = true;
+      return;
+    }
+    seed(value);
+    // `seed`는 렌더마다 새 함수지만 ref·인자만 읽는다 — deps는 `value` 하나다.
   }, [value]);
 
   const push = (): void => {
     const el = ref.current;
     if (!el) return;
     setEmpty(!(el.textContent ?? '').trim() && !el.querySelector('li, img'));
-    onChange(sanitizeMemoHtml(el.innerHTML));
+    const out = sanitizeMemoHtml(el.innerHTML);
+    lastOut.current = out;
+    onChange(out);
   };
 
   const run = (cmd: Cmd): void => {
@@ -147,6 +170,18 @@ export function RichMemo({
           {...(attr ? { [attr]: '' } : {})}
           onInput={push}
           onBlur={push}
+          onCompositionStart={() => {
+            composing.current = true;
+          }}
+          onCompositionEnd={() => {
+            composing.current = false;
+            // 조합 중에 밖에서 값이 바뀌었으면 이제 반영한다.
+            if (deferred.current) {
+              deferred.current = false;
+              seed(value);
+            }
+            push();
+          }}
           className="lnb-scroll mf-memo-rich"
           style={{
             minHeight: height,
