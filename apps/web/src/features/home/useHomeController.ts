@@ -1066,6 +1066,21 @@ export function useHomeController() {
   const openProfileDetail = () => patch({ settingsView: 'profile', avatarError: null });
   /** Google 캘린더 연동 화면(요청) — 계정 설정에서 한 겹 더 들어간다. */
   const openCalendarDetail = () => patch({ settingsView: 'calendar' });
+  /**
+   * LNB 일정 하위 메뉴의 `캘린더 추가`(요청) — 같은 화면을 열되 **주소 입력에 커서를**
+   * 둔다. 그 버튼을 누른 사람은 주소를 적으러 온 것이므로, 열린 뒤 한 번 더 그 칸을
+   * 찾아 누를 이유가 없다. 표식은 세는 값이라 다시 눌러도 초점이 옮겨 간다.
+   */
+  const openGoogleCalendarAdd = () => {
+    patch({
+      settingsOpen: false,
+      accountSettingsOpen: true,
+      settingsView: 'calendar',
+      calendarAddFocus: state.calendarAddFocus + 1,
+      signinError: '',
+    });
+    refreshSigninMethods();
+  };
   /** 뒤로 — 캘린더 화면은 계정 설정에서 들어왔으므로 거기로 돌아간다(한 겹씩). */
   const closeSettingsDetail = () => patch({ settingsView: state.settingsView === 'calendar' ? 'account' : 'main' });
   const askDeleteAccount = () => patch({ accountSettingsOpen: false, confirmDeleteAccount: true, confirmDeleteAccountFinal: false, deleteAccountText: '', deleteAccountError: '' });
@@ -2856,6 +2871,7 @@ export function useHomeController() {
     openGoogleCalendarSetup,
     openProfileDetail,
     openCalendarDetail,
+    openGoogleCalendarAdd,
     closeSettingsDetail,
     askDeleteAccount,
     cancelDeleteAccount,

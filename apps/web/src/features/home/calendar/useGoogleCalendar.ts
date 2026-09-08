@@ -341,17 +341,28 @@ export function useGoogleCalendar(
   // 그래서 캐시는 **켜져 있던 것이 꺼질 때만** 버린다(진짜 연동 해제).
   const wasEnabledRef = useRef(false);
   useEffect(() => {
-    if (!available || !enabled || mode === 'off') {
+    if (!available || !enabled) {
       setCalendars([]);
-      setConnected(false);
       // 켜져 있다가 꺼진 순간(다른 인스턴스의 disconnect 포함 — prefs는 블롭으로
-      // 공유된다)에만 계정 캐시를 버린다. 그 밖은 "아직 모른다"이지 "끊겼다"가 아니다.
+      // 공유된다)에만 "끊겼다"로 본다. 그 밖은 **아직 모른다**다 — 홈이 하이드레이션
+      // 되기 전에는 `enabled`가 거짓이므로, 여기서 `connected`를 끄면 이미 연결해 둔
+      // 사람도 매번 "연결 안 됨"에서 시작한다(제보: 연동 화면이 한순간 "연결하면 …").
       if (wasEnabledRef.current && !enabled) {
         wasEnabledRef.current = false;
+        setConnected(false);
         resetAccountCache();
+      } else if (!available) {
+        // 클라이언트 ID가 없는 배포 — 연결이라는 개념 자체가 없다.
+        setConnected(false);
       }
       return;
     }
+    // **조회하지 않는 것과 끊긴 것은 다르다**(제보: 설정을 거쳐 연동 화면에 들어가면
+    // 이미 연결된 사람에게 한순간 "연결하면 구글 일정도 함께 보여요"가 떴다). 이
+    // 분기는 문서 위젯·닫힌 설정처럼 **지금 물어볼 이유가 없을 때** 지나가므로,
+    // 목록도 `connected`도 손대지 않고 물러난다 — 그러지 않으면 화면을 열 때마다
+    // "연결 안 됨"을 한 프레임 지나 오는 것처럼 보인다.
+    if (mode === 'off') return;
     wasEnabledRef.current = true;
     let cancelled = false;
     void (async () => {

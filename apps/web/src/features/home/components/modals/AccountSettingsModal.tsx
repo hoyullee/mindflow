@@ -306,7 +306,7 @@ export function AccountSettingsModal({ state, controller }: Props) {
             <div key="calendar" className={viewClass}>
               {/* 화면 이름은 헤더가 말한다 — 여기서는 카드들만 그린다.
                   보여 줄 캘린더·캘린더 추가·공휴일 국가가 전부 이 안에 있다. */}
-              <GoogleCalendarSection api={googleApi} />
+              <GoogleCalendarSection api={googleApi} focusAdd={state.calendarAddFocus} />
             </div>
           ) : view === 'profile' ? (
             <div key="profile" className={viewClass}>

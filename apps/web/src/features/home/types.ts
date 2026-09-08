@@ -208,6 +208,10 @@ export interface HomeState {
    * `'calendar'`는 **계정 설정에서 한 겹 더** 들어간다(요청) — 그래서 뒤로 가기가
    * 그 화면에서는 계정 설정으로 돌아간다(`closeSettingsDetail`). */
   settingsView: 'main' | 'profile' | 'account' | 'calendar';
+  /** LNB 일정 하위 메뉴의 `캘린더 추가`로 들어왔음을 알리는 표식(요청) — 그때는 주소
+   * 입력에 커서를 둔다. 불리언이 아니라 **세는 값**인 이유: 다시 눌렀을 때도 초점이
+   * 가야 하고, 값이 바뀔 때만 포커스하므로 평소에 화면을 열면 초점을 가져가지 않는다. */
+  calendarAddFocus: number;
   /** 피드백 보내기 모달(LNB 최하단에서 연다). */
   feedbackOpen: boolean;
   /** 템플릿 갤러리 — "새로 만들기"의 세 진입점(툴바·빈 자리 우클릭·빈 상태 CTA)이
@@ -482,6 +486,7 @@ export function initialHomeState(): HomeState {
     confirmUnlinkGoogle: false,
     accountSettingsOpen: false,
     settingsView: 'main',
+    calendarAddFocus: 0,
     feedbackOpen: false,
     templateOpen: false,
     // 이 기기의 마지막 선택으로 시작한다 — 워크스페이스(정본)가 도착하면 그 값으로
