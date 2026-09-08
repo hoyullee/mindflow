@@ -1058,11 +1058,16 @@ export function useHomeController() {
    * 거기서 켜고, 어떤 캘린더를 보여 줄지도 함께 고른다.
    */
   const openGoogleCalendarSetup = () => {
-    patch({ settingsOpen: false, accountSettingsOpen: true, settingsView: 'account', signinError: '' });
+    // **캘린더 화면으로 곧바로** — 그 버튼을 누른 사람이 가려던 자리다(요청으로 연동이
+    // 한 겹 더 들어간 뒤에도 목적지는 그대로). 뒤로 가면 계정 설정이다.
+    patch({ settingsOpen: false, accountSettingsOpen: true, settingsView: 'calendar', signinError: '' });
     refreshSigninMethods();
   };
   const openProfileDetail = () => patch({ settingsView: 'profile', avatarError: null });
-  const closeSettingsDetail = () => patch({ settingsView: 'main' });
+  /** Google 캘린더 연동 화면(요청) — 계정 설정에서 한 겹 더 들어간다. */
+  const openCalendarDetail = () => patch({ settingsView: 'calendar' });
+  /** 뒤로 — 캘린더 화면은 계정 설정에서 들어왔으므로 거기로 돌아간다(한 겹씩). */
+  const closeSettingsDetail = () => patch({ settingsView: state.settingsView === 'calendar' ? 'account' : 'main' });
   const askDeleteAccount = () => patch({ accountSettingsOpen: false, confirmDeleteAccount: true, confirmDeleteAccountFinal: false, deleteAccountText: '', deleteAccountError: '' });
   const cancelDeleteAccount = () => patch({ confirmDeleteAccount: false, confirmDeleteAccountFinal: false, deleteAccountText: '', deleteAccountError: '' });
   const onDeleteAccountInput = (v: string) => patch({ deleteAccountText: v });
@@ -2850,6 +2855,7 @@ export function useHomeController() {
     openAccountDetail,
     openGoogleCalendarSetup,
     openProfileDetail,
+    openCalendarDetail,
     closeSettingsDetail,
     askDeleteAccount,
     cancelDeleteAccount,

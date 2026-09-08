@@ -32,7 +32,7 @@ export function AccountSettingsModal({ state, controller }: Props) {
     const d = new Date();
     return { y: d.getFullYear(), m: d.getMonth() + 1 };
   });
-  const googleApi = useGoogleCalendar(y, m, googlePrefsOf(state.google), controller.setGoogleCalendars, state.accountSettingsOpen && state.settingsView === 'account' ? 'events' : 'off');
+  const googleApi = useGoogleCalendar(y, m, googlePrefsOf(state.google), controller.setGoogleCalendars, state.accountSettingsOpen && state.settingsView === 'calendar' ? 'events' : 'off');
   const visible = state.accountSettingsOpen;
   const initial = avatarLabel(state.userName);
   // 로그인 수단 — `null`은 확인 불가(RPC 미배포·네트워크·데모 초기). 그때는
@@ -111,6 +111,9 @@ export function AccountSettingsModal({ state, controller }: Props) {
       // 닫힌다 — 돌아갈 자리가 사라지므로 팝오버의 트리거(계정 메뉴)로 되돌린다.
       restoreFocusSelector="[data-account-trigger]"
       dim={{ ...MODAL_DIM, zIndex: 150 }}
+      // 카드가 곧 스크롤러다(내용이 화면보다 길 때) — 공용 얇은 스크롤바를 입혀
+      // 썸이 22px 라운드 안쪽에 머문다(제보: 스크롤이 팝업을 벗어나 보였다).
+      cardClass="lnb-scroll"
       card={{ width: 560, maxWidth: 'calc(100vw - 32px)', maxHeight: 'calc(100dvh - 32px)', overflowY: 'auto', background: 'var(--mf-card)', borderRadius: 22, boxShadow: '0 32px 70px -28px rgba(46,42,38,.5)', animation: 'mf-fade .2s ease' }}
     >
       <>
@@ -134,11 +137,11 @@ export function AccountSettingsModal({ state, controller }: Props) {
               이름을 말했는데, 그러면 같은 말이 두 번 나온다. */}
           <div style={{ display: 'flex', alignItems: 'baseline', gap: 10, minWidth: 0 }}>
             <div data-settings-title style={{ fontSize: 19, fontWeight: 800, letterSpacing: '-.02em', flexShrink: 0 }}>
-              {view === 'account' ? '계정 설정' : view === 'profile' ? '프로필 설정' : '설정'}
+              {view === 'account' ? '계정 설정' : view === 'profile' ? '프로필 설정' : view === 'calendar' ? 'Google 캘린더 연동' : '설정'}
             </div>
             {detail && (
               <div data-settings-subtitle style={{ fontSize: 12.5, color: 'var(--mf-muted)', minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                {view === 'account' ? '로그인과 연동, 계정 관리' : '사진과 표시 이름'}
+                {view === 'account' ? '로그인 수단과 계정 관리' : view === 'calendar' ? '보여 줄 캘린더와 공휴일' : '사진과 표시 이름'}
               </div>
             )}
           </div>
@@ -244,14 +247,32 @@ export function AccountSettingsModal({ state, controller }: Props) {
             </div>
           )}
 
-          {/* 캘린더 연동(첨부 이미지) — 로그인 수단과 갈라 둔 이유는 하는 일이 다르기
-              때문이다: 위는 "이 계정에 들어오는 문", 여기는 "무엇을 함께 보여 줄까". */}
-          <div style={{ margin: '18px 0 9px' }}>
-            <SectionLabel>캘린더 연동</SectionLabel>
-          </div>
-          {/* 구글 캘린더(PR5) — 배포에 클라이언트 ID가 없으면 구획이 통째로 없다(눌러도
-              아무 일 없는 버튼을 두지 않는다). 공휴일 국가도 그 안에 있다. */}
-          <GoogleCalendarSection api={googleApi} />
+          {/* 캘린더 연동은 **한 겹 더** 들어간다(요청) — 로그인 수단과 하는 일이 다르고
+              (위는 "이 계정에 들어오는 문", 저기는 "무엇을 함께 보여 줄까"), 목록·공휴일·
+              캘린더 추가가 한 화면에 다 들어가면 계정 설정이 그것으로 뒤덮인다.
+              배포에 클라이언트 ID가 없으면 **행 자체가 없다**(눌러도 빈 화면이 열린다). */}
+          {googleApi.available && (
+            <>
+              <div style={{ margin: '18px 0 9px' }}>
+                <SectionLabel>캘린더 연동</SectionLabel>
+              </div>
+              <SettingsGroup>
+                <SettingsRow
+                  first
+                  attrs={{ 'data-calendar-detail-row': '' }}
+                  onActivate={controller.openCalendarDetail}
+                  icon={
+                    <>
+                      <rect x="3.5" y="5" width="17" height="16" rx="2.5" />
+                      <path d="M8 3v4M16 3v4M3.5 10h17" />
+                    </>
+                  }
+                  title="Google 캘린더 연동"
+                  sub={calendarSub(googleApi)}
+                />
+              </SettingsGroup>
+            </>
+          )}
 
           <div style={{ margin: '18px 0 9px' }}>
             <SectionLabel>계정 관리</SectionLabel>
@@ -280,6 +301,12 @@ export function AccountSettingsModal({ state, controller }: Props) {
               동작들과 나란히 서고, 파괴적인 일은 눈에 덜 띄는 자리가 맞다. 실제 경고와
               타이핑 게이트는 확인 팝업이 맡는다. */}
           <SettingsFooter onDelete={controller.askDeleteAccount} />
+            </div>
+          ) : view === 'calendar' ? (
+            <div key="calendar" className={viewClass}>
+              {/* 화면 이름은 헤더가 말한다 — 여기서는 카드들만 그린다.
+                  보여 줄 캘린더·캘린더 추가·공휴일 국가가 전부 이 안에 있다. */}
+              <GoogleCalendarSection api={googleApi} />
             </div>
           ) : view === 'profile' ? (
             <div key="profile" className={viewClass}>
@@ -533,6 +560,20 @@ export function AccountSettingsModal({ state, controller }: Props) {
 // (이 프로젝트에서 여러 번 겪은 드리프트) — 그래서 한곳에 둔다.
 
 /** 구획 라벨(`로그인`·`캘린더 연동`·`계정 관리`·`색상 테마`). */
+/**
+ * 계정 설정의 진입 행 부제 — **지금 상태**를 말한다(무엇을 하는 곳인지는 제목이 말한다).
+ *
+ * 판단은 **왕복 없이 되는 것으로만** 한다: 켜 뒀는가(`enabled`)와 몇 개를 고랐는가
+ * (`pickedIds`)는 둘 다 워크스페이스 블롭에서 온다. `connected`를 보면 안 된다 —
+ * 그 값은 캘린더 목록이 도착해야 참이 되고 목록 조회는 **캘린더 화면에서만** 도는데,
+ * 그러면 연동해 둔 사람에게 "연결하면 …"이라 말하는 거짓말이 된다.
+ */
+function calendarSub(api: { enabled: boolean; needsReauth: boolean; pickedIds: string[] }): string {
+  if (api.enabled && api.needsReauth) return '구글 권한을 다시 허용해야 이어져요';
+  if (!api.enabled) return '연결하면 구글 일정도 함께 보여요';
+  return `${api.pickedIds.length}개 캘린더를 함께 보고 있어요`;
+}
+
 export function SectionLabel({ children }: { children: ReactNode }) {
   return <span data-section-label style={{ fontSize: 12, fontWeight: 700, color: 'var(--mf-faint)', letterSpacing: '.02em' }}>{children}</span>;
 }
