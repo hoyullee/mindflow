@@ -1,0 +1,78 @@
+name: Desktop installers
+
+# 설치형 PC 앱(apps/desktop)의 설치 파일을 만든다. **손으로 돌린다** — 릴리스는
+# 웹 배포와 주기가 다르고(셸은 자주 바뀌지 않는다), macOS 러너는 분당 과금이
+# ubuntu의 10배다. 그래서 매 커밋이 아니라 필요할 때만 돌린다:
+#
+#   Actions → Desktop installers → Run workflow
+#
+# 지금은 **서명하지 않는다**(사용자 결정 — 내부·테스트 배포부터). 인증서가
+# 준비되면 아래 주석의 시크릿을 채우면 되고, 그 밖의 구조는 그대로다.
+#
+# 이 워크플로는 apps/web을 빌드하지 않는다 — 셸이 원격 출처(geurio.com)를 그대로
+# 띄우므로 설치 파일에 웹 산출물이 들어가지 않는다(apps/desktop/src/main.ts).
+on:
+  workflow_dispatch:
+  # 태그를 밀면 함께 돈다(예: desktop-v0.1.0) — 릴리스에 붙일 산출물을 만드는 자리.
+  push:
+    tags: ['desktop-v*']
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: windows-latest
+            target: pack:win
+            artifact: windows
+            glob: |
+              apps/desktop/release/*.exe
+          - os: macos-latest
+            target: pack:mac
+            artifact: macos
+            glob: |
+              apps/desktop/release/*.dmg
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install pnpm
+        uses: pnpm/action-setup@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - name: Install dependencies
+        # electron-builder는 패키징용 Electron을 **스스로** 받으므로(버전은
+        # apps/desktop/package.json에서 읽는다) `electron` 패키지의 postinstall
+        # 바이너리는 필요하지 않다.
+        env:
+          ELECTRON_SKIP_BINARY_DOWNLOAD: 1
+        run: pnpm install --frozen-lockfile
+
+      - name: Build installer
+        # 서명 인증서가 준비되면 여기에 시크릿을 넣는다(구조는 그대로):
+        #   Windows: CSC_LINK(.pfx base64) + CSC_KEY_PASSWORD
+        #   macOS:   CSC_LINK(.p12 base64) + CSC_KEY_PASSWORD
+        #            + 공증용 APPLE_ID / APPLE_APP_SPECIFIC_PASSWORD / APPLE_TEAM_ID
+        #            (그때 electron-builder.yml의 `mac.identity: null`도 지운다)
+        env:
+          # 무서명 빌드에서 electron-builder가 인증서를 찾다 실패하지 않게.
+          CSC_IDENTITY_AUTO_DISCOVERY: false
+        run: pnpm --filter @mindflow/desktop run ${{ matrix.target }}
+
+      - name: Upload installer
+        uses: actions/upload-artifact@v4
+        with:
+          name: geurio-desktop-${{ matrix.artifact }}
+          path: ${{ matrix.glob }}
+          if-no-files-found: error
+          retention-days: 14

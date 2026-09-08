@@ -1957,3 +1957,48 @@ select jsonb_array_length(public.home_bootstrap() -> 'documents') as docs,
 select polname, polroles::regrole[] from pg_policy
  where polrelid = 'public.documents'::regclass and polcmd = 'r';
 ```
+
+## 21. 설치형 데스크톱 앱의 Google 로그인 (Supabase 리다이렉트 한 줄)
+
+설치형 PC 앱(`apps/desktop/`, Electron)은 웹과 **같은 출처**를 띄운다
+(`https://geurio.com`) — 그래서 인증 설정은 거의 그대로다. **Google 콘솔은 손대지
+않는다**: 스코프·브랜딩·게시 상태 전부 불변이고(검수 통과분), 리다이렉트 대상도
+여전히 Supabase의 콜백이다.
+
+새로 필요한 것은 **Supabase 리다이렉트 허용 목록 한 줄**이다.
+
+> Supabase 대시보드 → Authentication → URL Configuration → **Redirect URLs**
+> `https://geurio.com/auth/desktop` 추가
+>
+> (프리뷰에서도 시험하려면 그 배포 주소의 같은 경로를 함께 넣는다.)
+
+### 왜 그 주소가 필요한가
+
+Google은 **임베드된 웹뷰의 OAuth를 막는다**(`disallowed_useragent`) — Electron도 그
+대상이라, 앱 창 안에서 동의를 받으면 사용자는 경고 화면을 본다. 그래서 RFC 8252
+(네이티브 앱의 OAuth) 관례대로 시스템 브라우저에서 받고 앱에 돌려준다:
+
+1. 앱: `signInWithOAuth({ skipBrowserRedirect: true, redirectTo: <위 주소> })`로
+   **시작 주소만** 받아 시스템 브라우저에서 연다.
+2. 브라우저: 동의 → Supabase 콜백 → `/auth/desktop`에 세션이 선다.
+3. 브라우저: 그 세션의 **갱신 토큰**을 `geurio://auth?refresh_token=…`로 앱에 넘기고
+   **자기 사본을 지운다**(`signOut('local')` — 같은 세션이 두 곳에 남지 않게).
+4. 앱: `refreshSession({ refresh_token })`으로 세션을 세운다.
+
+**갱신 토큰이 주소에 실려 지나가는 것**이 이 방식의 유일한 약한 고리인데, Supabase의
+갱신 토큰은 **쓰는 순간 회전**하므로 4번이 끝나면 그 값은 그 자리에서 무효가 된다.
+브라우저 사본도 이미 지워졌으므로 유효한 세션은 앱 하나뿐이다.
+
+허용 목록에 넣지 않으면 Supabase가 콜백에서 **사이트 URL로** 되돌려 보낸다 —
+브라우저는 로그인이 되지만 앱은 아무것도 받지 못하고 로그인 화면에 남는다(그
+경우 앱은 6초 뒤 "로그인 정보를 받지 못했어요"로 바뀐다).
+
+### 확인
+- 앱에서 `Google 계정으로 계속하기` → 시스템 브라우저가 열린다(앱 창이 아니다).
+- 브라우저가 `/auth/desktop`에서 "Geurio 앱으로 돌아가세요"를 보여 준다.
+- 앱이 홈으로 들어간다. 브라우저 탭을 새로고침하면 **로그아웃 상태**여야 한다
+  (사본을 지웠다는 뜻).
+
+구현: `apps/web/src/features/auth/desktopGoogle.ts`(형식·왕복),
+`DesktopHandoff.tsx`(브라우저 쪽), `useLoginController.ts`(앱 쪽),
+`apps/desktop/src/main.ts`(딥링크 수신). 셸 전반은 `apps/desktop/README.md`.

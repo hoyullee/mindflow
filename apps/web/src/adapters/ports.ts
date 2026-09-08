@@ -75,6 +75,31 @@ export interface AuthProvider {
   resendSignup(email: string): Promise<{ error?: string }>;
   signInWithOAuth(provider: 'google'): Promise<{ error?: string }>;
   /**
+   * 설치형 데스크톱 앱(Electron 셸)용 — OAuth **시작 주소만** 만든다(이동하지
+   * 않는다). 셸은 이 주소를 **시스템 브라우저**에서 열고, 브라우저가 로그인을
+   * 끝내면 `redirectTo`(핸드오프 페이지)가 커스텀 프로토콜로 앱에 세션을
+   * 넘긴다 — Google이 임베드된 웹뷰의 OAuth를 막기 때문이다(RFC 8252).
+   * 자세한 흐름은 `features/auth/desktopGoogle.ts`.
+   *
+   * 로컬/데모 어댑터는 이 길을 쓰지 않는다(Google 앱 자체가 없다) — 오류를 돌려준다.
+   */
+  googleAuthUrl(redirectTo: string): Promise<{ url?: string; error?: string }>;
+  /**
+   * 갱신 토큰으로 이 기기의 세션을 세운다 — 데스크톱 앱이 브라우저에서 넘겨받은
+   * 로그인을 이어받는 유일한 지점. Supabase의 갱신 토큰은 **한 번 쓰면 회전**하므로
+   * 딥링크 주소에 실려 지나간 값은 이 호출 직후 무효가 된다.
+   */
+  resumeSession(refreshToken: string): Promise<AuthResult>;
+  /**
+   * 지금 세션의 갱신 토큰. **데스크톱 핸드오프 한 곳에서만** 쓴다 —
+   * 브라우저에서 끝낸 로그인을 설치형 앱으로 넘길 때(`/auth/desktop`) 넘길 값이
+   * 이것뿐이기 때문이다. 그 밖의 화면은 이 값을 알 필요가 없다.
+   *
+   * 이 저장소에 이미 있는 값을 우리 코드가 읽는 것이라 새로 노출되는 정보는
+   * 없지만, 자격 증명이므로 로그·화면·오류 문구에 절대 싣지 않는다.
+   */
+  sessionRefreshToken(): Promise<string | null>;
+  /**
    * Sign in with an OAuth ID token obtained CLIENT-SIDE (Google Identity
    * Services button) instead of the redirect flow above. The whole exchange
    * happens on our own origin, so Google's consent screen shows geurio.com —

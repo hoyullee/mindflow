@@ -5,6 +5,8 @@ import { safeNextPath, takeLoginNotice } from './sessionNotice';
 // 홈의 탭 세션 화면 기억(스페이스·대시보드)을 로그인 시 비운다 — 아래 finishWithLoader.
 import { clearActiveView } from '../home/storage';
 import { useBackend } from '../../adapters/BackendContext';
+import { desktopBridge, isDesktopShell, openExternalUrl } from '../../platform/desktopBridge';
+import { handoffRedirectTo, readAuthDeepLink } from './desktopGoogle';
 import { initialLoginState, type LoginState } from './types';
 
 /** Login.dc.html `genCode()` — demo 6-digit verification code. Still used verbatim
@@ -458,10 +460,66 @@ export function useLoginController() {
     });
   };
 
+  /* ───────────── 설치형 데스크톱 앱의 Google 로그인 ─────────────
+   * 시스템 브라우저에서 동의를 받고 `geurio://auth?refresh_token=…` 딥링크로
+   * 돌아온다. 왜 앱 창에서 하지 않는지는 `desktopGoogle.ts` 머리 주석 참고.
+   */
+  const resumeFromDeepLink = (url: string) => {
+    const parsed = readAuthDeepLink(url);
+    if (!parsed) return; // 우리가 아는 모양이 아니면 조용히 버린다.
+    setState((prev) => ({ ...prev, desktopWaiting: false }));
+    void (async () => {
+      const res = await auth.resumeSession(parsed.refreshToken);
+      if (res.error) {
+        patch({ error: localizeAuthError(res.error) });
+        return;
+      }
+      finishWithLoader(false);
+    })();
+  };
+  // 딥링크 핸들러는 최신 상태를 봐야 한다(구독은 마운트에 한 번만 건다).
+  const resumeRef = useRef(resumeFromDeepLink);
+  resumeRef.current = resumeFromDeepLink;
+
+  useEffect(() => {
+    const bridge = desktopBridge();
+    if (!bridge) return;
+    const off = bridge.onDeepLink((url) => resumeRef.current(url));
+    // 앱이 **꺼져 있는 동안** 온 링크(딥링크로 앱이 깨어난 경우)는 셸이 들고
+    // 있다가 여기서 넘겨준다 — 그 한 번을 놓치면 사용자는 로그인 화면에 그대로 남는다.
+    void bridge.takePendingDeepLink().then((url) => {
+      if (url) resumeRef.current(url);
+    });
+    return off;
+  }, []);
+
+  const startDesktopGoogleLogin = () => {
+    patch({ error: '', desktopWaiting: true });
+    void (async () => {
+      const res = await auth.googleAuthUrl(handoffRedirectTo(window.location.origin));
+      if (!res.url) {
+        patch({ desktopWaiting: false, error: localizeAuthError(res.error ?? 'Google 로그인을 시작할 수 없어요.') });
+        return;
+      }
+      await openExternalUrl(res.url);
+    })();
+  };
+
+  /** 브라우저 로그인을 기다리다 그만둔다 — 창을 닫았거나 다른 방법으로 들어갈 때. */
+  const cancelDesktopGoogleLogin = () => {
+    patch({ desktopWaiting: false });
+  };
+
   const googleLogin = () => {
-    if (state.busy) return;
+    if (state.busy || state.desktopWaiting) return;
     if (mode === 'local') {
       finishWithLoader(state.mode === 'signup');
+      return;
+    }
+    // 설치형 데스크톱 앱: 앱 창 안에서는 Google이 OAuth를 막으므로(임베드 웹뷰)
+    // **시스템 브라우저**로 넘기고 딥링크로 돌려받는다(desktopGoogle.ts).
+    if (isDesktopShell()) {
+      startDesktopGoogleLogin();
       return;
     }
     patch({ busy: true, error: '' });
@@ -538,6 +596,7 @@ export function useLoginController() {
     resetPw,
     googleLogin,
     googleTokenLogin,
+    cancelDesktopGoogleLogin,
   };
 }
 

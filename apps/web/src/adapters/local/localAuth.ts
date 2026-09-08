@@ -118,6 +118,28 @@ export class LocalAuth implements AuthProvider {
     return {};
   }
 
+  // 데모 모드에는 진짜 Google 앱이 없다 — 데스크톱 셸에서도 이 길을 타지 않고
+  // 기존 `signInWithOAuth`(가짜 세션)로 곧장 로그인한다. 포트 계약을 맞추려고만 둔다.
+  async googleAuthUrl(): Promise<{ url?: string; error?: string }> {
+    return { error: '데모 모드에서는 Google 로그인을 쓸 수 없어요.' };
+  }
+
+  // 데모 세션은 갱신 토큰이라는 개념이 없다 — 넘겨받은 값이 우리가 만든 것이면
+  // 그 세션을 되살린다(실제 검증은 Supabase 모드의 서버가 한다).
+  async resumeSession(refreshToken: string): Promise<AuthResult> {
+    if (!refreshToken) return { session: null, error: '세션을 이어받지 못했어요.' };
+    const session = makeSession('demo-google@mindflow.local');
+    writeSession(session);
+    this.emit(session);
+    return { session };
+  }
+
+  // 데모 세션에는 갱신 토큰이 없다 — 핸드오프 흐름을 데모에서도 눌러 볼 수 있게
+  // 세션이 있을 때만 표시자를 돌려준다(`resumeSession`이 그 값을 받아 세션을 세운다).
+  async sessionRefreshToken(): Promise<string | null> {
+    return readSession() ? 'demo-refresh-token' : null;
+  }
+
   // Demo twin of the GIS token exchange — same fake Google session as
   // `signInWithOAuth`. Unreachable from the UI (the GIS button only renders in
   // Supabase mode) but required for port completeness.

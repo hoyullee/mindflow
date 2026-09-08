@@ -1,0 +1,26 @@
+{
+  "name": "@mindflow/desktop",
+  "productName": "Geurio",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Electron shell that packages @mindflow/web as an installable desktop app (Windows .exe / macOS .dmg).",
+  "main": "dist/main.js",
+  "scripts": {
+    "compile": "tsc -p tsconfig.build.json",
+    "start": "pnpm run compile && electron .",
+    "pack": "pnpm run compile && electron-builder --publish never",
+    "pack:win": "pnpm run compile && electron-builder --win --publish never",
+    "pack:mac": "pnpm run compile && electron-builder --mac --publish never",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "test": "vitest run",
+    "generate:icon": "node scripts/generate-desktop-icon.mjs"
+  },
+  "devDependencies": {
+    "@types/node": "^22.10.5",
+    "electron": "^44.2.0",
+    "electron-builder": "^26.15.3",
+    "sharp": "^0.35.3",
+    "vitest": "^2.1.8"
+  },
+  "author": "Geurio"
+}
