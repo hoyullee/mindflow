@@ -95,6 +95,11 @@ Partner Center에서 앱 이름을 예약해 정체성을 받은 뒤에야 가�
 > (`src/packaging.test.ts`가 그 존재를 고정한다).
 
 ```powershell
+# 0) 의존성 — 처음이거나 pull 뒤라면 먼저(저장소 루트에서)
+#    빠뜨리면 `pack:appx`가 `TS2688: Cannot find type definition file for 'node'`로
+#    멈춘다(@types/node가 없다는 뜻이다 — pnpm도 "node_modules missing"이라 경고한다).
+pnpm install
+
 # 1) 개발 인증서 만들기 + 신뢰 저장소에 넣기
 #    electron-builder.yml의 appx.publisher를 읽어 그 값과 똑같은 Subject로 만든다.
 powershell -ExecutionPolicy Bypass -File apps\desktop\scripts\dev-cert.ps1
