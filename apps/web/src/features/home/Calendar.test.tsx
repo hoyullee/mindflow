@@ -74,8 +74,26 @@ class MockDocStore implements DocStore {
     private bodies: Record<string, LoadedDoc> = {},
   ) {}
 
+  /** 목록 왕복 횟수 — "보지 않는 화면에서는 묻지 않는다"를 세는 데 쓴다. */
+  listCalls = 0;
+
   async list(): Promise<DocMeta[]> {
+    this.listCalls += 1;
     return this.metas;
+  }
+
+  /**
+   * **다른 기기·다른 사람이 그 보드를 고친 상황.** 판(version·updatedAt)과 본문을
+   * 함께 바꾼다 — 판만 바꾸면 캐시가 옛 본문을 돌려주고, 본문만 바꾸면 우리 쪽이
+   * 바뀐 줄 알 길이 없다(그 판별이 곧 이 갱신의 규칙이다).
+   */
+  remoteEdit(id: string, cards: Record<string, unknown>[]): void {
+    const m = this.metas.find((x) => x.id === id);
+    if (m) {
+      m.version += 1;
+      m.updatedAt = new Date(Date.parse(m.updatedAt) + 60_000).toISOString();
+    }
+    this.bodies[id] = kanbanBody(cards);
   }
 }
 
@@ -1982,5 +2000,59 @@ describe('팝업·팝오버 안의 버튼 hover(제보)', () => {
     const css = readFileSync(resolve('src/features/home/home.css'), 'utf8');
     const rule = css.slice(css.indexOf('[data-modal-overlay] .lnb-scroll > *'));
     expect(rule.slice(0, rule.indexOf('}'))).toContain('flex-shrink: 0');
+  });
+});
+
+describe('열어 둔 화면이 다른 기기의 변경을 잡는다', () => {
+  /**
+   * 구글 일정·Geurio 일정은 자기 훅이 다시 물었는데(#74) 칸반 마감만 낡아 있었다 —
+   * 그 출처는 홈이 하이드레이션 때 받아 둔 썸네일 본문이라 다시 묻는 사람이 없었다.
+   */
+  it('일정 화면을 열어 둔 채 칸반이 바뀌면 탭으로 돌아올 때 반영된다', async () => {
+    seedSpaces();
+    const { docStore } = renderHome([META('d1', '스프린트 보드'), META('d2', '이슈 트리아지')], BODIES());
+    await openCalendar();
+    await waitFor(() => expect(chipTexts()).toContain('오늘 마감 카드'));
+
+    // 다른 기기가 그 보드를 고쳤다 — 우리 탭은 아직 모른다.
+    docStore.remoteEdit('d1', [{ id: 'k1', col: 'c2', pos: 1, text: '다른 기기에서 고친 카드', due: todayISO() }]);
+    expect(chipTexts()).toContain('오늘 마감 카드');
+
+    // 확인하러 탭으로 돌아온다(창 포커스 = 깨어남).
+    fireEvent(window, new Event('focus'));
+    await waitFor(() => expect(chipTexts()).toContain('다른 기기에서 고친 카드'));
+    // 낡은 값이 남아 있으면 안 된다 — 갱신은 덮어쓰기다.
+    expect(chipTexts()).not.toContain('오늘 마감 카드');
+  });
+
+  it('보지 않는 화면에서는 묻지 않는다 — 위젯 없는 대시보드', async () => {
+    seedSpaces(); // dash1은 위젯이 없다(첫 진입은 기본 대시보드)
+    const { docStore } = renderHome([META('d1', '스프린트 보드'), META('d2', '이슈 트리아지')], BODIES());
+    await waitFor(() => expect(document.querySelector('[data-dashboard-view]')).toBeTruthy());
+    await waitFor(() => expect(docStore.listCalls).toBeGreaterThan(0)); // 하이드레이션
+    const before = docStore.listCalls;
+    fireEvent(window, new Event('focus'));
+    await act(async () => {
+      await Promise.resolve();
+    });
+    expect(docStore.listCalls).toBe(before);
+  });
+
+  it('캘린더 위젯이 올라간 대시보드도 잡는다', async () => {
+    localStorage.setItem(
+      'mf_spaces',
+      JSON.stringify({
+        spaces: [{ id: 's1', name: '업무', home: true, color: '#f0663f', maps: [{ title: '스프린트 보드', when: '방금', hue: '#f0663f', docId: 'd1' }], folders: [] }],
+        activeSpace: 's1',
+        dashboards: [{ id: 'dash1', name: '주간 현황', items: [{ id: 'w-cal', kind: 'cal', size: '4x3' }] }],
+      }),
+    );
+    const { docStore } = renderHome([META('d1', '스프린트 보드')], BODIES());
+    await waitFor(() => expect(document.querySelector('[data-dashboard-view]')).toBeTruthy());
+    await waitFor(() => expect(document.body.textContent).toContain('오늘 마감 카드'));
+
+    docStore.remoteEdit('d1', [{ id: 'k1', col: 'c2', pos: 1, text: '위젯에도 도착한 카드', due: todayISO() }]);
+    fireEvent(window, new Event('focus'));
+    await waitFor(() => expect(document.body.textContent).toContain('위젯에도 도착한 카드'));
   });
 });
