@@ -1,11 +1,40 @@
 name: CI
 
+# CI가 도는 지점은 **두 곳뿐**이다 — 이 목록이 곧 과금 분이다(비공개 저장소는 월
+# 2,000분이 무료 한도, 공개는 무제한). 실측(30일): 998회 × 5분 ≈ 4,990분이었고 그중
+# 절반이 **같은 커밋을 두 번** 돈 것과 **이미 통과한 커밋을 다시** 돈 것이었다.
+#
+#   ① pull_request — 머지 후보를 검증한다. 우리 흐름은 언제나 PR을 지나므로 이것이
+#      실질 게이트다.
+#   ② push(기본 브랜치) — squash 머지가 만든 **새 커밋**을 검증한다. PR이 각각
+#      초록인데 합쳐 놓으면 깨지는 경우를 잡는 자리다.
+#
+# 일부러 뺀 것 둘:
+#   - **작업 브랜치 push** — PR이 열려 있으면 ①이 같은 커밋을 이미 검증한다
+#     (실측 중복 265건 = 1,325분). PR 없이 돌려 보고 싶으면 workflow_dispatch.
+#   - **main** — 라이브 배포는 이미 CI를 통과한 커밋으로의 fast-forward이므로
+#     (CLAUDE.md 「라이브 배포 절차」) 같은 SHA를 다시 도는 것이다(실측 197건 =
+#     985분). 그래서 main이 가리키는 커밋은 언제나 ①·②가 검증한 것이다.
+#
+# `paths-ignore`로 문서 전용 커밋을 빼지는 않았다 — `verify`가 필수 체크로 걸려
+# 있으면 문서만 고친 PR이 **영영 초록이 되지 않아** 머지가 막힌다.
 on:
   push:
-    branches: ['**']
+    branches: [claude/mindflow-design-impl-iyxiol]
   pull_request:
+  workflow_dispatch:
+
+# 연속 푸시로 밀려난 실행은 취소한다 — 앞선 커밋의 결과는 이미 쓸 데가 없는데
+# 끝까지 돌면서 분을 태운다. PR은 번호로, push는 ref로 묶는다(둘을 한 그룹에 넣으면
+# 서로를 취소해 어느 쪽이 남을지 알 수 없어진다).
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
 
 jobs:
+  # 잡은 **하나로 둔다**. 과금이 잡별로 분 단위 올림이라, 4.1분짜리 하나(=5분)를
+  # lint/test/build 셋으로 쪼개면 벽시계는 빨라져도 과금은 3×올림 = 최소 3~6분으로
+  # 늘어난다. 게다가 잡마다 install이 되풀이된다.
   verify:
     runs-on: ubuntu-latest
     steps:
