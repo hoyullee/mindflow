@@ -22,6 +22,13 @@ export function getSupabaseClient(url: string, anonKey: string): SupabaseClient 
       storage: authSessionStorage,
       autoRefreshToken: true,
       detectSessionInUrl: true,
+      // **명시해 둔다.** 이 값이 `implicit`이라는 사실에 기대는 경로가 있다 —
+      // 설치형 앱의 Google 로그인 핸드오프는 콜백이 해시로 실어 주는 토큰을 낚아채
+      // 앱에 넘긴다(features/auth/desktopGoogle.ts). auth-js의 **기본값**이 지금은
+      // `implicit`이지만 언젠가 `pkce`로 뒤집히면 그 경로가 조용히 깨지므로(이미 한 번
+      // 잘못 짚었다) 기본값에 기대지 않고 여기서 못박는다. 바꾸려면 그 파일과
+      // 비밀번호 재설정 링크 흐름을 함께 손봐야 한다.
+      flowType: 'implicit',
     },
   });
   cached = { url, key: anonKey, client };

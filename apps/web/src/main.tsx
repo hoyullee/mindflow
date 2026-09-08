@@ -4,7 +4,7 @@ import './index.css';
 import { App } from './App';
 import { initNativeShell } from './platform/nativeShell';
 import { applyHomeTheme, loadHomeThemeCache } from './features/home/theme';
-import { captureDesktopAuthCode } from './features/auth/desktopGoogle';
+import { captureDesktopAuthToken } from './features/auth/desktopGoogle';
 
 // 어느 빌드가 떠 있는지 — PWA가 업데이트를 미루는 동안 이전 번들로 테스트하는 일이
 // 실제로 있었다(협업 버그 제보 중 절반이 그랬다). vite.config.ts의 `define` 참고.
@@ -19,12 +19,12 @@ console.info(`[geurio] build ${buildAt} (${buildSha})`);
 // 그려졌다 바뀌는 깜빡임이 없다(도착하면 그 값으로 맞춘다 — features/home/theme.ts).
 applyHomeTheme(loadHomeThemeCache());
 
-// 설치형 앱의 Google 로그인 핸드오프(`/auth/desktop?code=…`) — 그 인가 코드는
-// **앱의** PKCE verifier로만 교환되므로 브라우저 클라이언트가 손대면(그것도
-// 실패하면서 주소에서 지운다) 앱에 넘길 것이 없어진다. Supabase 클라이언트가
-// 만들어지기 전인 **여기서** 낚아채 주소에서 치운다 — 그 경로가 아니면 아무 일도
-// 하지 않으므로 평범한 웹 로그인은 그대로다(features/auth/desktopGoogle.ts).
-captureDesktopAuthCode();
+// 설치형 앱의 Google 로그인 핸드오프(`/auth/desktop#…refresh_token=…`) — 그냥 두면
+// Supabase 클라이언트가 그 해시를 읽어 **브라우저에** 세션을 세우고 주소를 지운다
+// (앱에 넘길 것이 없어지고, 같은 세션이 두 곳에 남는다). 클라이언트가 만들어지기
+// 전인 **여기서** 낚아채 주소를 치운다 — 그 경로가 아니면 아무 일도 하지 않으므로
+// 평범한 웹 로그인은 그대로다(features/auth/desktopGoogle.ts).
+captureDesktopAuthToken();
 
 const el = document.getElementById('root');
 if (!el) throw new Error('#root not found');

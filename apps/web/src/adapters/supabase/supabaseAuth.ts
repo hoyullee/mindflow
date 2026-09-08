@@ -118,13 +118,13 @@ export class SupabaseAuth implements AuthProvider {
     return data?.url ? { url: data.url } : { error: 'OAuth 주소를 받지 못했어요.' };
   }
 
-  // 브라우저가 끝낸 로그인을 이어받는다 — 넘겨받은 것은 **인가 코드**이고, PKCE
-  // verifier는 `googleAuthUrl`을 부를 때 이 클라이언트의 저장소에 남아 있다.
-  // (첫 판은 브라우저 세션의 갱신 토큰을 넘겼는데 그 길은 성립하지 않는다 —
-  // desktopGoogle.ts 머리 주석.) 코드는 한 번만 쓸 수 있어 주소에 실려 지나간
-  // 값은 교환 직후 죽는다.
-  async exchangeAuthCode(code: string): Promise<AuthResult> {
-    const { data, error } = await this.client.auth.exchangeCodeForSession(code);
+  // 브라우저가 끝낸 로그인을 이어받는다. `refreshSession`을 쓰는 이유는 둘이다:
+  // (1) 지금 세션이 없어도 갱신 토큰만으로 세션을 세울 수 있고, (2) 갱신 토큰은
+  // **쓰는 순간 회전**하므로 딥링크 주소에 실려 지나간 값이 그 자리에서 무효가 된다.
+  // 브라우저 쪽은 세션을 세우지도 않으므로(핸드오프가 해시를 먼저 낚아챈다) 이 토큰을
+  // 두고 두 클라이언트가 다투는 일도 없다 — desktopGoogle.ts 머리 주석.
+  async resumeSession(refreshToken: string): Promise<AuthResult> {
+    const { data, error } = await this.client.auth.refreshSession({ refresh_token: refreshToken });
     if (error) return { session: null, error: error.message };
     return { session: mapSession(data.session) };
   }

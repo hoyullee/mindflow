@@ -2,29 +2,30 @@ import { useEffect, useMemo } from 'react';
 import { Link } from 'react-router-dom';
 import { AUTH } from './tokens';
 import { BrandMark } from '../../components/BrandMark';
-import { buildAuthDeepLink, desktopAuthCode } from './desktopGoogle';
+import { buildAuthDeepLink, desktopAuthToken } from './desktopGoogle';
 import './login.css';
 
 /**
  * `/auth/desktop` — 설치형 데스크톱 앱의 Google 로그인이 **브라우저에서** 끝나는
  * 자리(공개 라우트).
  *
- * 하는 일은 하나뿐이다: Supabase 콜백이 주소에 실어 준 **인가 코드**를
- * `geurio://auth?code=…`로 앱에 넘긴다.
+ * 하는 일은 하나뿐이다: Supabase 콜백이 **해시**에 실어 준 갱신 토큰을
+ * `geurio://auth?refresh_token=…`로 앱에 넘긴다(엔트리가 클라이언트보다 먼저
+ * 낚아채 둔다 — main.tsx).
  *
- * **세션을 세우지 않는다.** 그 코드는 PKCE라 `signInWithOAuth`를 부른 클라이언트
- * (= 앱)의 verifier로만 교환된다 — 브라우저에는 그 verifier가 없다. 그래서 이
- * 페이지는 Supabase를 쓰지 않고, 넘길 사본도 지울 사본도 없다. 이 사람이 웹에서
- * 따로 로그인해 둔 세션도 **건드리지 않는다**(첫 판은 그것을 넘기고 `signOut`으로
- * 끊었는데, 그게 앱이 이어받을 토큰까지 무효로 만들었다 — desktopGoogle.ts).
+ * **세션을 세우지 않는다.** 해시를 먼저 치웠으므로 `detectSessionInUrl`이 읽을 것이
+ * 없다 — 그래서 이 페이지는 Supabase를 쓰지 않고, 넘길 사본도 지울 사본도 없다.
+ * 이 사람이 웹에서 따로 로그인해 둔 세션도 **건드리지 않는다**(첫 판은 그것을
+ * `signOut('local')`으로 끊었는데, 그게 앱이 이어받을 토큰까지 무효로 만들었다 —
+ * desktopGoogle.ts의 "두 번 틀린 것").
  *
- * 코드가 없으면(앱 없이 이 주소를 직접 열었다) 딥링크를 쏘지 않고 로그인 화면으로
+ * 넘길 것이 없으면(앱 없이 이 주소를 직접 열었다) 딥링크를 쏘지 않고 로그인 화면으로
  * 안내한다.
  */
 export function DesktopHandoff() {
   // 값은 엔트리(main.tsx)가 클라이언트보다 먼저 낚아채 둔다 — 여기서는 읽기만.
-  const code = useMemo(() => desktopAuthCode(), []);
-  const link = code ? buildAuthDeepLink(code) : null;
+  const token = useMemo(() => desktopAuthToken(), []);
+  const link = token ? buildAuthDeepLink(token) : null;
 
   useEffect(() => {
     if (!link) return;

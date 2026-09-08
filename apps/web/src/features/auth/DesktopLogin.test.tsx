@@ -4,7 +4,7 @@ import userEvent from '@testing-library/user-event';
 import { MemoryRouter, Route, Routes } from 'react-router-dom';
 import { Login } from './Login';
 import { DesktopHandoff } from './DesktopHandoff';
-import { buildAuthDeepLink, DESKTOP_HANDOFF_PATH, resetDesktopAuthCode } from './desktopGoogle';
+import { buildAuthDeepLink, DESKTOP_HANDOFF_PATH, resetDesktopAuthToken } from './desktopGoogle';
 import { mockMatchMedia } from '../../test/matchMedia';
 import { BackendProvider } from '../../adapters/BackendContext';
 import { LocalAuth } from '../../adapters/local/localAuth';
@@ -58,7 +58,7 @@ function installShell() {
 
 afterEach(() => {
   cleanup();
-  resetDesktopAuthCode();
+  resetDesktopAuthToken();
   window.history.replaceState({}, '', '/');
   delete (window as { geurio?: unknown }).geurio;
   vi.restoreAllMocks();
@@ -73,8 +73,8 @@ describe('설치형 데스크톱 앱의 Google 로그인', () => {
     // 앱 창 안에서 도는 리다이렉트 흐름은 **쓰이지 않아야** 한다 — Google이 임베드
     // 웹뷰의 OAuth를 막으므로 그 길로 가면 사용자는 경고 화면을 본다.
     const redirectSpy = vi.spyOn(auth, 'signInWithOAuth');
-    const exchangeSpy = vi
-      .spyOn(auth, 'exchangeAuthCode')
+    const resumeSpy = vi
+      .spyOn(auth, 'resumeSession')
       .mockResolvedValue({ session: { user: { id: 'u1', email: 'me@example.com' } } } as AuthResult);
     const user = userEvent.setup();
 
@@ -102,21 +102,21 @@ describe('설치형 데스크톱 앱의 Google 로그인', () => {
     // "Not implemented: navigation"으로 로그에 남긴다 — 실제 OS에서 앱을 깨우는
     // 그 한 줄이고, 여기서는 그 로그가 정상이다.)
     await act(async () => {
-      shell.fire(buildAuthDeepLink('code-from-browser'));
+      shell.fire(buildAuthDeepLink('rt-from-browser'));
     });
-    // 앱이 넘겨받는 것은 **인가 코드**다 — 세션(갱신 토큰)이 아니다. 그 코드는
-    // 위 `googleAuthUrl`이 남긴 이 앱의 PKCE verifier로만 교환된다.
-    expect(exchangeSpy).toHaveBeenCalledWith('code-from-browser');
+    // 앱이 그 토큰으로 자기 세션을 세운다 — 브라우저에는 세션이 서지 않았으므로
+    // 이 호출이 그 토큰의 첫 사용이다(쓰는 순간 회전한다).
+    expect(resumeSpy).toHaveBeenCalledWith('rt-from-browser');
     await waitFor(() => expect(screen.getByText('홈 도착')).toBeTruthy(), { timeout: 3000 });
   });
 
   it('앱이 꺼져 있는 동안 온 딥링크도 놓치지 않는다(셸이 들고 있다가 넘긴다)', async () => {
     mockMatchMedia(false);
     const shell = installShell();
-    shell.takePendingDeepLink.mockResolvedValue(buildAuthDeepLink('code-cold-start'));
+    shell.takePendingDeepLink.mockResolvedValue(buildAuthDeepLink('rt-cold-start'));
     const auth = new LocalAuth();
-    const exchangeSpy = vi
-      .spyOn(auth, 'exchangeAuthCode')
+    const resumeSpy = vi
+      .spyOn(auth, 'resumeSession')
       .mockResolvedValue({ session: { user: { id: 'u1', email: 'me@example.com' } } } as AuthResult);
 
     render(
@@ -130,7 +130,7 @@ describe('설치형 데스크톱 앱의 Google 로그인', () => {
       </MemoryRouter>,
     );
 
-    await waitFor(() => expect(exchangeSpy).toHaveBeenCalledWith('code-cold-start'));
+    await waitFor(() => expect(resumeSpy).toHaveBeenCalledWith('rt-cold-start'));
   });
 
   it('브라우저(셸 없음)에서는 지금까지처럼 리다이렉트 흐름을 쓴다', async () => {
@@ -155,12 +155,12 @@ describe('설치형 데스크톱 앱의 Google 로그인', () => {
   });
 });
 
-describe('/auth/desktop — 브라우저가 앱에 인가 코드를 넘기는 자리', () => {
-  it('주소의 코드를 딥링크로 넘긴다 — **세션은 손대지 않는다**', async () => {
+describe('/auth/desktop — 브라우저가 앱에 로그인을 넘기는 자리', () => {
+  it('해시의 갱신 토큰을 딥링크로 넘긴다 — **세션은 손대지 않는다**', async () => {
     mockMatchMedia(false);
-    window.history.replaceState({}, '', `${DESKTOP_HANDOFF_PATH}?code=code-abc`);
+    window.history.replaceState({}, '', `${DESKTOP_HANDOFF_PATH}#access_token=at&refresh_token=rt-handoff`);
     const auth = new LocalAuth();
-    // 이 페이지는 Supabase를 쓰지 않는다. 첫 판은 브라우저 세션의 갱신 토큰을
+    // 이 페이지는 Supabase를 쓰지 않는다. 첫 판은 브라우저에 선 세션의 토큰을
     // 넘기고 `signOut('local')`로 사본을 지웠는데, GoTrue의 `local`은 저장소만
     // 비우는 것이 아니라 **그 세션을 서버에서 끊는다** — 앱이 이어받을 토큰이 그
     // 자리에서 무효가 됐다(제보: "인증 코드가 올바르지 않거나 만료되었어요").
@@ -178,12 +178,12 @@ describe('/auth/desktop — 브라우저가 앱에 인가 코드를 넘기는 �
     await waitFor(() => expect(screen.getByText('Geurio 앱으로 돌아가세요')).toBeTruthy());
     // 자동 이동이 막혔을 때의 손잡이 — 같은 딥링크를 손으로 누를 수 있다.
     const back = screen.getByRole('link', { name: '앱으로 돌아가기' });
-    expect(back.getAttribute('href')).toBe(buildAuthDeepLink('code-abc'));
+    expect(back.getAttribute('href')).toBe(buildAuthDeepLink('rt-handoff'));
     expect(signOutSpy).not.toHaveBeenCalled();
     expect(sessionSpy).not.toHaveBeenCalled();
   });
 
-  it('코드가 없으면(앱 없이 이 주소를 직접 열었다) 딥링크를 쏘지 않고 안내한다', async () => {
+  it('넘길 것이 없으면(앱 없이 이 주소를 직접 열었다) 딥링크를 쏘지 않고 안내한다', async () => {
     mockMatchMedia(false);
     window.history.replaceState({}, '', DESKTOP_HANDOFF_PATH);
     const auth = new LocalAuth();

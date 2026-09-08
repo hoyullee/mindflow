@@ -33,26 +33,41 @@ apps/desktop/
 Google은 **임베드된 웹뷰의 OAuth를 막는다**(`disallowed_useragent`) — Electron도
 그 대상이다. 그래서 RFC 8252(네이티브 앱의 OAuth) 관례대로:
 
-1. 앱에서 `Google 계정으로 계속하기` → 셸이 **시스템 브라우저**를 연다. 이때
-   PKCE verifier가 **앱의** 저장소에 남는다.
-2. 브라우저에서 동의 → Supabase 콜백 → `https://geurio.com/auth/desktop?code=…`.
-3. 그 페이지가 **인가 코드**를 `geurio://auth?code=…`로 앱에 넘긴다. 세션을
-   세우지도, 그 사람이 웹에서 따로 로그인해 둔 세션을 건드리지도 않는다.
-4. 앱이 `exchangeCodeForSession(code)`으로 자기 verifier와 맞춰 세션을 세운다.
-   코드는 한 번만 쓸 수 있어 주소에 실려 지나간 값은 그 자리에서 죽는다.
+1. 앱에서 `Google 계정으로 계속하기` → 셸이 **시스템 브라우저**를 연다.
+2. 브라우저에서 동의 → Supabase 콜백 →
+   `https://geurio.com/auth/desktop#access_token=…&refresh_token=…`
+   (implicit 흐름이라 토큰이 **해시**로 온다).
+3. 그 페이지가 해시를 **Supabase 클라이언트가 읽기 전에** 낚아채 주소에서 지우고,
+   갱신 토큰만 `geurio://auth?refresh_token=…`로 앱에 넘긴다. 브라우저에는 세션이
+   서지 않으므로 지울 사본도, 그 사람이 웹에 로그인해 둔 세션을 건드릴 일도 없다.
+4. 앱이 `refreshSession`으로 자기 세션을 세운다. 갱신 토큰은 쓰는 순간 회전하므로
+   주소에 실려 지나간 값은 그 자리에서 죽는다.
 
-> **왜 세션이 아니라 코드인가**(제보로 확인): 우리 클라이언트는 PKCE라 그 코드는
-> `signInWithOAuth`를 부른 클라이언트(=앱)의 verifier로만 교환된다 — 브라우저는
-> 세션을 세울 수조차 없다. 첫 판은 브라우저에 있던 **예전** 세션의 갱신 토큰을
-> 넘기고 `signOut('local')`로 사본을 지웠는데, GoTrue의 `local`은 저장소만 비우는
-> 것이 아니라 **그 세션을 서버에서 끊는다**(auth-js가 `POST /logout?scope=local`을
-> 보낸다) — 앱이 이어받을 토큰이 그 자리에서 무효가 되어 매번
-> `인증 코드가 올바르지 않거나 만료되었어요`로 끝났다.
+> **이 자리에서 두 번 틀렸다**(둘 다 제보로 드러났다): ① `signOut('local')`은 저장소만
+> 비우는 것이 아니라 그 세션을 **서버에서 끊는다**(auth-js가 `POST /logout?scope=local`을
+> 보낸다) — 앱이 이어받을 토큰이 그 자리에서 죽었다. ② 그 원인을 PKCE로 잘못 짚어
+> `?code=`를 넘기게 바꿨는데, auth-js의 **기본 `flowType`은 `implicit`**이라 콜백에
+> `code`는 애초에 오지 않는다(그 값은 이제 `supabaseClient.ts`에 명시해 뒀다).
+> 자세한 사정은 `apps/web/src/features/auth/desktopGoogle.ts` 머리 주석.
 
 구현은 `apps/web/src/features/auth/desktopGoogle.ts`(웹) + `src/main.ts`의
 `open-url`/`second-instance`(셸). **스코프·브랜딩·게시 상태는 하나도 바뀌지
 않는다** — 새로 필요한 것은 Supabase 리다이렉트 허용 목록 한 줄뿐이다
 (`server/supabase/docs/backend.md` §20).
+
+## 앱 안에서 들여다보기
+
+셸은 Electron **기본 메뉴를 그대로 두고 메뉴 바만 숨긴다**(`autoHideMenuBar`) — 그래서
+가속기가 살아 있다(실제 Electron으로 확인):
+
+| 키 | 하는 일 |
+| --- | --- |
+| `Ctrl+Shift+I` | 개발자 도구 — 콘솔 첫 줄의 `[geurio] build <시각> (<sha7>)`로 **어느 번들이 떠 있는지** 확인 |
+| `Ctrl+R` / `Ctrl+Shift+R` | 새로 고침 / 강력 새로 고침 |
+
+앱은 원격 출처를 띄우므로 **웹 배포가 곧 앱의 판**이다 — 셸을 다시 설치하지 않아도
+껐다 켜면 새 코드가 돈다(서비스 워커가 옛 셸을 들고 있으면 한 번 더). 화면이 옛 판인지
+의심될 때 위 sha가 결정적이다.
 
 ## 개발
 
