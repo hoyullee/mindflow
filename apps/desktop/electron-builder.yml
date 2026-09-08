@@ -18,6 +18,19 @@ directories:
 # 셸에는 **런타임 의존성이 없다**(main·preload는 순수 컴파일 결과) — 그래서
 # node_modules를 통째로 담지 않아도 되고, pnpm 워크스페이스의 심링크 구조가
 # 패키징을 어렵게 만드는 문제도 애초에 생기지 않는다.
+# 커스텀 프로토콜 — **한 곳에 적는다**. electron-builder가 이 블록에서
+# Windows(MSIX 매니페스트의 `windows.protocol` 확장)와 macOS(`CFBundleURLTypes`)를
+# 함께 만들어 준다. 예전에는 mac 쪽만 `extendInfo`에 손으로 적어 뒀는데, MSIX를
+# 붙이면서 같은 사실을 두 곳에 적을 이유가 없어졌다.
+#
+# 이 프로토콜이 곧 로그인 경로다 — 시스템 브라우저에서 끝낸 Google 로그인이
+# `geurio://auth?refresh_token=…`로 앱에 돌아온다(apps/desktop/src/main.ts).
+# **MSIX에서는 `app.setAsDefaultProtocolClient`가 무효다**(매니페스트가 이긴다) —
+# 그래서 이 선언이 없으면 패키지 앱에서 로그인이 완주하지 못한다.
+protocols:
+  - name: Geurio
+    schemes: [geurio]
+
 files:
   - dist/**/*
   - resources/**/*
@@ -49,16 +62,36 @@ mac:
   # Silicon은 서명이 아예 없으면 앱을 실행조차 못 하게 막는다.
   identity: null
   hardenedRuntime: false
-  # 커스텀 프로토콜(geurio://) 등록 — 시스템 브라우저에서 끝낸 로그인을
-  # 앱으로 되돌리는 통로다(main.ts의 open-url).
   extendInfo:
-    CFBundleURLTypes:
-      - CFBundleURLName: Geurio
-        CFBundleURLSchemes: [geurio]
     NSHighResolutionCapable: true
 
 dmg:
   title: Geurio
+
+# ── Microsoft Store 채널(MSIX) ──────────────────────────────────────────────
+# Store에 올리면 **Microsoft가 패키지에 서명한다** → 코드 서명 인증서를 사지
+# 않아도 SmartScreen 경고가 없다(Windows 한정 — macOS는 Apple Developer Program
+# 연회비가 직접 배포·App Store 양쪽의 근거라 아끼는 것이 없다).
+#
+# 지금 값은 **자가서명 로컬 설치용**이다. Partner Center에 앱을 예약하면 거기서
+# 배정한 값으로 `identityName`·`publisher`·`publisherDisplayName` 세 줄을 바꾼다
+# (그 전에는 Store에 올릴 수 없다 — 정체성은 우리가 지어낼 수 없다).
+#
+# `publisher`는 **서명 인증서의 Subject와 글자 하나까지 같아야** 한다. 다르면
+# `Add-AppxPackage`가 서명/발행자 불일치로 거절한다. 그래서 개발용 인증서를
+# 만드는 `scripts/dev-cert.ps1`은 이 파일에서 그 값을 **직접 읽는다** — 두 곳에
+# 적어 두면 반드시 갈린다.
+appx:
+  identityName: Geurio.Desktop
+  publisher: CN=Geurio Dev
+  publisherDisplayName: Geurio
+  applicationId: Geurio
+  displayName: Geurio
+  languages: [ko-KR, en-US]
+  # 타일 배경(브랜드 코럴). 타일 이미지 4종은 build/appx/에 있다 —
+  # 없으면 electron-builder가 **자기 샘플 아트**를 대신 넣는다(남의 로고가
+  # 설치본에 실리는 셈이라 반드시 둔다). scripts/generate-desktop-icon.mjs가 만든다.
+  backgroundColor: '#f0663f'
 
 afterPack: scripts/adhoc-sign.cjs
 

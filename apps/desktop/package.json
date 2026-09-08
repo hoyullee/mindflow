@@ -3,7 +3,7 @@
   "productName": "Geurio",
   "version": "0.1.0",
   "private": true,
-  "description": "Electron shell that packages @mindflow/web as an installable desktop app (Windows .exe / macOS .dmg).",
+  "description": "마인드맵, 화이트보드, 칸반 보드. 지금 하는 일에 맞는 방식으로 생각을 정리하고 함께 완성하세요.",
   "main": "dist/main.js",
   "scripts": {
     "compile": "tsc -p tsconfig.build.json",
@@ -11,6 +11,7 @@
     "pack": "pnpm run compile && electron-builder --publish never",
     "pack:win": "pnpm run compile && electron-builder --win --publish never",
     "pack:mac": "pnpm run compile && electron-builder --mac --publish never",
+    "pack:appx": "pnpm run compile && electron-builder --win appx --publish never",
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "test": "vitest run",
     "generate:icon": "node scripts/generate-desktop-icon.mjs"

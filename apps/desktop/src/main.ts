@@ -175,6 +175,13 @@ if (!app.requestSingleInstanceLock()) {
   app.whenReady().then(() => {
     // 커스텀 프로토콜 등록. 개발 중(`electron .`)에는 실행 파일이 electron
     // 자신이라 인자를 함께 등록해야 OS가 우리 앱을 되찾을 수 있다.
+    //
+    // **MSIX(Microsoft Store) 패키지에서는 이 호출이 무효다** — 프로토콜은
+    // 패키지 매니페스트가 선언하고(electron-builder.yml의 최상위 `protocols`)
+    // 런타임 등록은 컨테이너가 받아들이지 않는다. 그래도 부르는 이유는 직접
+    // 배포한 .exe·개발 실행에는 이 길뿐이기 때문이고, MSIX에서는 조용히
+    // 실패하는 것이 정상이다(그래서 실패를 오류로 다루지 않는다).
+    // ⚠️ 프로토콜을 늘릴 때 이 줄만 고치면 MSIX에서는 아무 일도 일어나지 않는다.
     if (process.defaultApp && process.argv.length >= 2) {
       app.setAsDefaultProtocolClient(DEEP_LINK_SCHEME, process.execPath, [path.resolve(process.argv[1]!)]);
     } else {

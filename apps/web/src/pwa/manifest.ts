@@ -19,7 +19,10 @@ import type { ManifestOptions } from 'vite-plugin-pwa';
 export const pwaManifest: Partial<ManifestOptions> = {
   name: 'Geurio',
   short_name: 'Geurio',
-  description: '중심 주제에서 가지를 뻗어 생각을 정리하는 마인드맵 앱',
+  // 제품이 마인드맵 하나에서 셋(마인드맵·화이트보드·칸반)으로 늘어난 뒤의 문장 —
+  // 랜딩·앱 셸 meta·공유 카드와 같은 말을 한다. 이 값은 **설치된 앱의 설명**으로
+  // 보이므로(PWA 설치 목록, 그리고 MSIX 패키지의 Description) 한 곳에서만 바뀌게 둔다.
+  description: '마인드맵, 화이트보드, 칸반 보드. 지금 하는 일에 맞는 방식으로 생각을 정리하고 함께 완성하세요.',
   lang: 'ko',
   theme_color: '#f0663f',
   background_color: '#fbf6f2',
