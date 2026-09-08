@@ -95,6 +95,11 @@ Partner Center에서 앱 이름을 예약해 정체성을 받은 뒤에야 가�
 > (`src/packaging.test.ts`가 그 존재를 고정한다).
 
 ```powershell
+# 0) 의존성 — 처음이거나 pull 뒤라면 먼저(저장소 루트에서)
+#    빠뜨리면 `pack:appx`가 `TS2688: Cannot find type definition file for 'node'`로
+#    멈춘다(@types/node가 없다는 뜻이다 — pnpm도 "node_modules missing"이라 경고한다).
+pnpm install
+
 # 1) 개발 인증서 만들기 + 신뢰 저장소에 넣기
 #    electron-builder.yml의 appx.publisher를 읽어 그 값과 똑같은 Subject로 만든다.
 powershell -ExecutionPolicy Bypass -File apps\desktop\scripts\dev-cert.ps1
@@ -111,6 +116,50 @@ Add-AppxPackage -Path (Get-ChildItem apps\desktop\release\*.appx).FullName
 ```
 
 지우려면 `Get-AppxPackage *Geurio* | Remove-AppxPackage`.
+
+### appx 서명이 `A required function is not present.`로 실패할 때
+
+electron-builder의 **기본 서명 툴셋**(winCodeSign `0.0.0`)이 내려받는
+`signtool.exe`는 오래된 것이라 **AppX SIP가 없다** — `.exe`는 멀쩡히 서명되는데
+`.appx`만 그 문구로 실패하고, 그러면 서명이 없는 패키지가 남아 `Add-AppxPackage`가
+`0x800B0100 서명을 찾을 수 없습니다`로 거절한다.
+
+그래서 `electron-builder.yml`에 **툴셋을 못박아 뒀다** — Windows Kits 10.0.26100
+번들(signtool·makeappx)을 받아 쓰므로 로컬에 Windows SDK를 설치할 필요가 없다.
+
+```yaml
+toolsets:
+  winCodeSign: '1.1.0'
+```
+
+그래도 막히면 두 갈래가 있다.
+
+**① 이미 있는 SDK의 signtool을 쓴다** — 이 환경 변수가 툴셋보다 우선한다.
+
+```powershell
+$env:SIGNTOOL_PATH = 'C:\Program Files (x86)\Windows Kits\10\bin\10.0.26100.0\x64\signtool.exe'
+```
+
+**② 서명 없이 등록한다**(개발자 모드) — 표준 개발 루프다. `설정 → 시스템 →
+개발자용 → 개발자 모드`를 켜면 **서명되지 않은 패키지를 폴더째 등록**할 수 있어,
+서명 문제를 통째로 비켜 간다(그 자리에서 앱·프로토콜이 실제로 등록되므로
+`geurio://` 로그인까지 확인된다).
+
+```powershell
+$appx = (Get-ChildItem apps\desktop\release\*.appx).FullName
+$dir  = Join-Path (Get-Location) 'apps\desktop\release\loose'
+if (Test-Path $dir) { Remove-Item -Recurse -Force $dir }
+Add-Type -AssemblyName System.IO.Compression.FileSystem
+[System.IO.Compression.ZipFile]::ExtractToDirectory($appx, $dir)   # .appx는 zip이다
+Add-AppxPackage -Register (Join-Path $dir 'AppxManifest.xml')
+```
+
+지우려면 같은 `Get-AppxPackage *Geurio* | Remove-AppxPackage`.
+
+> 이 두 갈래는 **Windows에서 확인하지 못했다**(이 저장소의 개발 환경은 리눅스이고
+> `AppxTarget`은 win32/darwin이 아니면 아예 던진다). ①은 electron-builder 소스에서
+> 우선순위를, ②는 Windows의 개발자 모드 관례를 근거로 적었다.
+
 
 `CSC_LINK`이 설정된 창에서 `pack:win`을 돌리면 **`.exe`도 이 개발 인증서로
 서명된다**(신뢰되지 않는 서명이라 배포용이 아니다). 배포용 `.exe`는 그 변수가

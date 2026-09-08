@@ -60,6 +60,18 @@ describe('설치 파일 계약', () => {
     expect(ps1).toContain('RandomNumberGenerator]::Create()');
   });
 
+  it('appx에 서명할 수 있는 툴셋을 고정한다 — 기본 툴셋의 signtool은 못 한다', () => {
+    // electron-builder의 기본 툴셋(winCodeSign `0.0.0`)이 내려받는 signtool.exe는
+    // AppX SIP가 없어서 **.exe는 서명되는데 .appx만** 실패한다
+    // (`SignTool Error: A required function is not present.`) → 서명 없는 패키지가
+    // 남고 `Add-AppxPackage`가 `0x800B0100`으로 거절한다. 제보로 확인한 경로다.
+    // 이 값을 지우면 그 실패가 그대로 되돌아오는데 **빌드 로그 끝까지 가서야**
+    // 드러나므로(그것도 Windows에서만) 여기서 고정한다.
+    const m = /^toolsets:\n\s{2}winCodeSign:\s*'([^']+)'/m.exec(config);
+    expect(m, 'toolsets.winCodeSign이 없다').not.toBeNull();
+    expect(m?.[1]).not.toBe('0.0.0');
+  });
+
   it('발행자와 정체성이 설정에 있다 — 개발 인증서 스크립트가 여기서 읽는다', () => {
     // scripts/dev-cert.ps1이 `publisher`를 이 파일에서 읽어 그 값으로 인증서를
     // 만든다. 둘이 어긋나면 `Add-AppxPackage`가 서명/발행자 불일치로 거절한다.
