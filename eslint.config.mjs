@@ -89,4 +89,23 @@ export default tseslint.config(
       },
     },
   },
+  {
+    // electron-builder의 훅 스크립트(afterPack 등)는 **CommonJS**여야 한다 —
+    // electron-builder가 `require()`로 불러오기 때문이다. 그래서 이 파일들만
+    // Node/CJS 전역을 허용한다(소스 본체는 여전히 ESM+TS).
+    files: ['apps/desktop/scripts/**/*.cjs'],
+    languageOptions: {
+      globals: {
+        require: 'readonly',
+        exports: 'writable',
+        module: 'writable',
+        console: 'readonly',
+        process: 'readonly',
+        __dirname: 'readonly',
+      },
+    },
+    rules: {
+      '@typescript-eslint/no-require-imports': 'off',
+    },
+  },
 );

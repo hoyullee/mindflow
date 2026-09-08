@@ -50,6 +50,11 @@ jobs:
           cache: pnpm
 
       - name: Install dependencies
+        # Electron 바이너리(~100MB)는 이 잡에서 쓰지 않는다 — 데스크톱 셸의
+        # 타입체크·테스트는 `electron` 패키지의 **타입**만 필요하고, 설치 파일을
+        # 만드는 일은 별도 워크플로(desktop.yml)가 맡는다.
+        env:
+          ELECTRON_SKIP_BINARY_DOWNLOAD: 1
         run: pnpm install --frozen-lockfile
 
       - name: Lint (incl. mindmap-core purity guard)

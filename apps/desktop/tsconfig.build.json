@@ -1,0 +1,10 @@
+{
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "noEmit": false,
+    "outDir": "dist",
+    "rootDir": "src"
+  },
+  // 테스트는 산출물에 넣지 않는다 — 설치 파일에 들어갈 이유가 없다.
+  "exclude": ["src/**/*.test.ts"]
+}

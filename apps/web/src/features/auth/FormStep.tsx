@@ -26,32 +26,87 @@ export function FormStep({ controller, view }: FormStepProps) {
           계정명을 개인화("OO으로 계속")하고 로딩 시 깜빡여서, 사용자 선택에 따라
           고정 문구 버튼으로 둔다. 브랜드 인증 완료로 동의화면은 'Geurio'로 표시된다.
           (GIS 인프라 GoogleSignInButton/googleIdentity/googleTokenLogin는 되돌리기
-          쉽도록 그대로 남겨둠.) */}
-      <button
-        type="button"
-        className="lg-oauth"
-        onClick={controller.googleLogin}
-        style={{
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'center',
-          gap: 10,
-          height: 50,
-          borderRadius: 14,
-          border: `1px solid ${AUTH.border}`,
-          background: AUTH.field,
-          fontFamily: 'inherit',
-          fontSize: 14.5,
-          fontWeight: 700,
-          letterSpacing: '-.015em',
-          color: AUTH.ink2,
-          cursor: 'pointer',
-          transition: 'background .16s ease, border-color .16s ease, transform .12s ease',
-        }}
-      >
-        <GoogleIcon />
-        Google 계정으로 계속하기
-      </button>
+          쉽도록 그대로 남겨둠.)
+
+          설치형 데스크톱 앱에서는 이 버튼이 **시스템 브라우저**를 연다 — 그동안
+          아래 대기 카드로 바뀐다(desktopGoogle.ts). 아무 반응 없이 멈춘 것처럼
+          보이지 않게, 그리고 브라우저에서 이어서 해야 한다는 것을 말해 준다. */}
+      {state.desktopWaiting ? (
+        <div
+          data-desktop-waiting
+          style={{
+            display: 'flex',
+            alignItems: 'center',
+            gap: 12,
+            minHeight: 50,
+            padding: '0 14px',
+            borderRadius: 14,
+            border: `1px solid ${AUTH.border}`,
+            background: AUTH.field,
+          }}
+        >
+          <span
+            aria-hidden="true"
+            style={{
+              width: 15,
+              height: 15,
+              flexShrink: 0,
+              border: `2px solid ${AUTH.borderSoft}`,
+              borderTopColor: AUTH.accent,
+              borderRadius: 99,
+              animation: 'mf-spin .7s linear infinite',
+            }}
+          />
+          <span style={{ flex: 1, minWidth: 0, fontSize: 12.5, lineHeight: 1.5, color: AUTH.ink2, letterSpacing: '-.01em' }}>
+            브라우저에서 Google 로그인을 계속해 주세요.
+            <br />
+            <span style={{ color: AUTH.faint2 }}>끝나면 이 앱으로 돌아옵니다.</span>
+          </span>
+          <button
+            type="button"
+            onClick={controller.cancelDesktopGoogleLogin}
+            style={{
+              flexShrink: 0,
+              font: 'inherit',
+              fontSize: 12.5,
+              fontWeight: 700,
+              color: AUTH.faint2,
+              background: 'none',
+              border: 0,
+              padding: '6px 2px',
+              cursor: 'pointer',
+            }}
+          >
+            취소
+          </button>
+        </div>
+      ) : (
+        <button
+          type="button"
+          className="lg-oauth"
+          onClick={controller.googleLogin}
+          style={{
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            gap: 10,
+            height: 50,
+            borderRadius: 14,
+            border: `1px solid ${AUTH.border}`,
+            background: AUTH.field,
+            fontFamily: 'inherit',
+            fontSize: 14.5,
+            fontWeight: 700,
+            letterSpacing: '-.015em',
+            color: AUTH.ink2,
+            cursor: 'pointer',
+            transition: 'background .16s ease, border-color .16s ease, transform .12s ease',
+          }}
+        >
+          <GoogleIcon />
+          Google 계정으로 계속하기
+        </button>
+      )}
 
       <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
         <span style={{ flex: 1, height: 1, background: AUTH.borderSoft, display: 'block' }} />

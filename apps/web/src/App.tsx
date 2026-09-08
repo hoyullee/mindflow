@@ -1,6 +1,7 @@
 import { useEffect, useState, type ReactNode } from 'react';
 import { BrowserRouter, Navigate, Route, Routes, useLocation } from 'react-router-dom';
 import { Login } from './features/auth/Login';
+import { DesktopHandoff } from './features/auth/DesktopHandoff';
 import { hadSession, loginUrlWithNext, noteSessionExpired, rememberSignedIn } from './features/auth/sessionNotice';
 import type { AuthSession } from './adapters/ports';
 import { Home } from './features/home/Home';
@@ -71,6 +72,10 @@ export function App() {
           <Route path="/login" element={<Login />} />
           {/* Public legal docs — must stay OUTSIDE RequireAuth (Google's brand
               verification reviewers and pre-signup users open them logged out). */}
+          {/* 설치형 데스크톱 앱의 Google 로그인이 **브라우저에서** 끝나는 자리 —
+              문지기 밖이어야 한다(앱이 아직 로그인 전이고, 이 창은 세션을 앱에
+              넘기고 스스로 지운다). features/auth/desktopGoogle.ts 참고. */}
+          <Route path="/auth/desktop" element={<DesktopHandoff />} />
           <Route path="/privacy" element={<PrivacyPolicy />} />
           <Route path="/terms" element={<Terms />} />
           <Route

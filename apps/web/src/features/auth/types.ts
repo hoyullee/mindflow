@@ -29,6 +29,10 @@ export interface LoginState {
    * Supabase `signUp`이 이미 가입된 주소에도 성공을 돌려주는 탓에 인증 코드
    * 화면까지 갔다가 코드를 영영 못 받던 문제를 가입 전에 차단한다(제보). */
   signupBlocked: 'google' | 'email' | null;
+  /** 설치형 데스크톱 앱에서 Google 로그인을 **시스템 브라우저로 넘긴 뒤** 돌아올
+   * 딥링크를 기다리는 상태(`features/auth/desktopGoogle.ts`). 브라우저에서 끝내야
+   * 이어지므로 그 사실을 화면이 말한다 — 아무 반응 없이 멈춘 것처럼 보이지 않게. */
+  desktopWaiting: boolean;
 }
 
 export const initialLoginState: LoginState = {
@@ -48,4 +52,5 @@ export const initialLoginState: LoginState = {
   cooldown: 0,
   emailUnregistered: false,
   signupBlocked: null,
+  desktopWaiting: false,
 };

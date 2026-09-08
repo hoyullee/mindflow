@@ -1,0 +1,17 @@
+{
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": {
+    // Electron 메인·preload는 **CommonJS**로 낸다. Electron 44는 메인에서 ESM도
+    // 받지만 preload의 ESM은 `sandbox: false`를 요구한다 — 우리는 샌드박스를 켜
+    // 두므로(원격 출처를 띄우는 셸이라 그게 기본이다) CJS가 맞다.
+    "module": "CommonJS",
+    "moduleResolution": "Node",
+    "verbatimModuleSyntax": false,
+    "lib": ["ES2022"],
+    "types": ["node"],
+    "declaration": false,
+    "declarationMap": false,
+    "noEmit": true
+  },
+  "include": ["src/**/*.ts"]
+}

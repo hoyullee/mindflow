@@ -1,0 +1,70 @@
+<!doctype html>
+<html lang="ko">
+  <head>
+    <meta charset="utf-8" />
+    <title>Geurio</title>
+    <style>
+      /* 셸이 들고 있는 유일한 화면 — 앱(원격 출처)에 닿지 못했을 때만 뜬다.
+         그래서 웹 앱의 CSS·폰트에 의존할 수 없고, 여기서 자족해야 한다. */
+      :root { color-scheme: light; }
+      html, body { margin: 0; height: 100%; }
+      body {
+        display: flex; align-items: center; justify-content: center;
+        background: #fbf6f2; color: #33281f;
+        font-family: Pretendard, -apple-system, 'Segoe UI', system-ui, sans-serif;
+        -webkit-font-smoothing: antialiased;
+      }
+      .card {
+        width: 380px; max-width: calc(100vw - 48px);
+        background: #fffdfb; border: 1px solid #ece0d6; border-radius: 18px;
+        box-shadow: 0 16px 32px -26px rgba(46, 42, 38, 0.56);
+        padding: 28px 26px; text-align: center;
+      }
+      .mark { width: 46px; height: 46px; border-radius: 12px; background: #f0663f; margin: 0 auto 16px; display: block; }
+      h1 { font-size: 16.5px; font-weight: 800; letter-spacing: -0.02em; margin: 0 0 8px; }
+      p { font-size: 13px; line-height: 1.6; color: #6b5f54; margin: 0 0 18px; }
+      code { font-size: 11.5px; color: #9c8b7e; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }
+      button {
+        font: inherit; font-size: 13.5px; font-weight: 700; color: #fff; cursor: pointer;
+        background: linear-gradient(180deg, #f2764f, #ea5a30); border: 0; border-radius: 12px;
+        padding: 0 20px; height: 40px;
+      }
+      button:hover { filter: brightness(1.05); }
+    </style>
+  </head>
+  <body>
+    <div class="card">
+      <svg class="mark" viewBox="0 0 100 100" aria-hidden="true">
+        <rect width="100" height="100" rx="22" fill="#f0663f" />
+        <path
+          d="M 50 22 A 28 28 0 1 0 78 50 A 20 20 0 0 0 58 32 A 13 13 0 0 0 45 45"
+          fill="none" stroke="#fff" stroke-width="7" stroke-linecap="round" stroke-linejoin="round"
+        />
+        <circle cx="47" cy="52" r="6" fill="#fff" />
+      </svg>
+      <h1>Geurio에 연결할 수 없어요</h1>
+      <p>
+        네트워크가 끊겼거나 서버에 닿지 못했어요.<br />
+        연결을 확인한 뒤 다시 시도해 주세요.
+      </p>
+      <button type="button" id="retry">다시 시도</button>
+      <p style="margin: 16px 0 0"><code id="reason"></code></p>
+    </div>
+    <script>
+      // 사유를 감추지 않는다 — 제보에 그대로 실어 보낼 수 있어야 진단이 된다.
+      var q = new URLSearchParams(location.search);
+      var code = q.get('code');
+      var desc = q.get('desc');
+      // 이 페이지는 file:// 이라 reload()로는 앱으로 돌아가지 못한다 — 셸이
+      // 넘겨준 앱 주소로 이동한다.
+      var appUrl = q.get('app');
+      document.getElementById('retry').addEventListener('click', function () {
+        if (appUrl) location.href = appUrl;
+        else location.reload();
+      });
+      if (code || desc) {
+        document.getElementById('reason').textContent = [desc, code && '(' + code + ')'].filter(Boolean).join(' ');
+      }
+    </script>
+  </body>
+</html>

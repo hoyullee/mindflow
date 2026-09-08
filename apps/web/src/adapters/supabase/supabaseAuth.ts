@@ -105,6 +105,34 @@ export class SupabaseAuth implements AuthProvider {
     return error ? { error: error.message } : {};
   }
 
+  // 설치형 데스크톱 앱: 시작 주소만 만들고 이동은 셸이 시스템 브라우저에서
+  // 한다(`skipBrowserRedirect`). `redirectTo`는 핸드오프 페이지이고 **Supabase의
+  // 리다이렉트 허용 목록에 있어야** 한다(backend.md §20) — 없으면 Supabase가
+  // 콜백에서 사이트 URL로 되돌려 보내 앱은 세션을 못 받는다.
+  async googleAuthUrl(redirectTo: string): Promise<{ url?: string; error?: string }> {
+    const { data, error } = await this.client.auth.signInWithOAuth({
+      provider: 'google',
+      options: { redirectTo, skipBrowserRedirect: true, queryParams: { prompt: 'select_account' } },
+    });
+    if (error) return { error: error.message };
+    return data?.url ? { url: data.url } : { error: 'OAuth 주소를 받지 못했어요.' };
+  }
+
+  // 브라우저가 끝낸 로그인을 이어받는다. `refreshSession`을 쓰는 이유는 두
+  // 가지다: (1) 지금 세션이 없어도 갱신 토큰만으로 세션을 세울 수 있고,
+  // (2) Supabase의 갱신 토큰은 **쓰는 순간 회전**하므로 딥링크 주소에 실려
+  // 지나간 값이 그 자리에서 무효가 된다.
+  async resumeSession(refreshToken: string): Promise<AuthResult> {
+    const { data, error } = await this.client.auth.refreshSession({ refresh_token: refreshToken });
+    if (error) return { session: null, error: error.message };
+    return { session: mapSession(data.session) };
+  }
+
+  async sessionRefreshToken(): Promise<string | null> {
+    const { data } = await this.client.auth.getSession();
+    return data.session?.refresh_token ?? null;
+  }
+
   // GIS (Google Identity Services) path: the browser already holds a Google
   // ID token (JWT) from the official Sign-in-with-Google button, so this is a
   // direct token exchange — no redirect through the supabase.co callback (the
