@@ -17,7 +17,7 @@ export function LegalPage({ title, updated, children }: { title: string; updated
   return (
     <div
       style={{
-        minHeight: '100vh',
+        minHeight: 'var(--mf-app-h)',
         background: '#fbf6f2',
         color: '#33281f',
         fontFamily: "Pretendard, 'Pretendard-fallback', system-ui, sans-serif",
@@ -40,7 +40,7 @@ export function LegalPage({ title, updated, children }: { title: string; updated
               fontSize: 18,
             }}
           >
-            <BrandMark size={20} />
+            <BrandMark size={34} />
           </span>
           <span style={{ fontWeight: 800, fontSize: 18, letterSpacing: '-.01em' }}>Geurio</span>
         </Link>

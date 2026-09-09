@@ -13,7 +13,7 @@
 }
 
 .lp-root {
-  min-height: 100vh;
+  min-height: var(--mf-app-h);
   background: #fdfaf7;
   color: #2e2a26;
   font-family: Pretendard, 'Pretendard-fallback', system-ui, sans-serif;

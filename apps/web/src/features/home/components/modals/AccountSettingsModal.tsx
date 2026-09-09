@@ -114,7 +114,7 @@ export function AccountSettingsModal({ state, controller }: Props) {
       // 카드가 곧 스크롤러다(내용이 화면보다 길 때) — 공용 얇은 스크롤바를 입혀
       // 썸이 22px 라운드 안쪽에 머문다(제보: 스크롤이 팝업을 벗어나 보였다).
       cardClass="lnb-scroll"
-      card={{ width: 560, maxWidth: 'calc(100vw - 32px)', maxHeight: 'calc(100dvh - 32px)', overflowY: 'auto', background: 'var(--mf-card)', borderRadius: 22, boxShadow: '0 32px 70px -28px rgba(46,42,38,.5)', animation: 'mf-fade .2s ease' }}
+      card={{ width: 560, maxWidth: 'calc(100vw - 32px)', maxHeight: 'calc(var(--mf-app-h) - 32px)', overflowY: 'auto', background: 'var(--mf-card)', borderRadius: 22, boxShadow: '0 32px 70px -28px rgba(46,42,38,.5)', animation: 'mf-fade .2s ease' }}
     >
       <>
         {/* header — 제목은 언제나 '설정'이고(요청), 상세 화면에서는 뒤로 가기가 붙는다.

@@ -30,7 +30,7 @@ export function menuPanelStyle(theme: { panel: string; border: string }, minWidt
     padding: 5,
     // 가로로 돌린 폰(높이 350~430px)에서는 항목이 많은 메뉴가 화면을 넘는다 —
     // 넘치는 만큼만 스크롤한다(세로 화면에서는 걸리지 않는다).
-    maxHeight: 'calc(100dvh - 64px)',
+    maxHeight: 'calc(var(--mf-app-h) - 64px)',
     overflowY: 'auto',
   };
 }

@@ -16,6 +16,10 @@ import { app, BrowserWindow, ipcMain, screen, shell, type Rectangle } from 'elec
 import {
   clampBounds,
   DEEP_LINK_SCHEME,
+  isHexColor,
+  TITLEBAR_HEIGHT,
+  titleBarHeightFor,
+  usesCustomTitleBar,
   DEFAULT_APP_URL,
   deepLinkFromArgv,
   isDeepLink,
@@ -31,6 +35,14 @@ const APP_URL = process.env.GEURIO_APP_URL || DEFAULT_APP_URL;
 const APP_ORIGIN = originOf(APP_URL);
 /** 로그인 화면의 배경색 — 첫 페인트 전 흰 섬광을 막는다(웹의 `--mf-bg`와 같은 값). */
 const BACKGROUND = '#fbf6f2';
+/**
+ * 타이틀 바의 첫 색 — 네이티브 창 컨트롤(최소화·최대화·닫기)이 그려질 면이다.
+ * 웹 앱의 `--mf-card`·`--mf-subtext`(코랄 테마 기본값)와 같은 값으로 두고,
+ * 사용자가 테마를 바꾸면 렌더러가 `geurio:titlebar-theme`로 새 색을 알려 준다
+ * (그러지 않으면 다크 테마의 어두운 바에 흰 컨트롤이 홀로 남는다).
+ */
+const TITLEBAR_BG = '#fffdfb';
+const TITLEBAR_INK = '#7c6d60';
 
 let mainWindow: BrowserWindow | null = null;
 /** 앱이 뜨기 전에 도착한 딥링크 — 렌더러가 붙으면 넘겨준다. */
@@ -84,6 +96,20 @@ function createWindow(): BrowserWindow {
     // 창을 다 그린 뒤에 보여 준다 — 빈 창이 먼저 뜨는 것을 막는다.
     show: false,
     autoHideMenuBar: process.platform !== 'darwin',
+    // 프레임을 숨기고 **우리 타이틀 바**를 웹 앱이 그린다(브랜드 마크 + 워드마크).
+    // 창 컨트롤은 우리가 그리지 않는다 — 네이티브 오버레이(Windows)·신호등
+    // (macOS)이 그대로 남아야 Windows 11의 최대화 호버 스냅 레이아웃, 접근성,
+    // 더블클릭 최대화 같은 OS 관례가 공짜로 성립한다.
+    ...(usesCustomTitleBar(process.platform)
+      ? {
+          titleBarStyle: 'hidden' as const,
+          ...(process.platform === 'win32'
+            ? { titleBarOverlay: { color: TITLEBAR_BG, symbolColor: TITLEBAR_INK, height: TITLEBAR_HEIGHT } }
+            : // macOS 신호등을 바 높이 가운데로. 기본 자리는 20px대 타이틀 바 기준이라
+              // 40px 바에서는 위쪽에 붙는다.
+              { trafficLightPosition: { x: 15, y: Math.round((TITLEBAR_HEIGHT - 16) / 2) } }),
+        }
+      : {}),
     webPreferences: {
       preload: path.join(__dirname, 'preload.js'),
       // 원격 출처를 띄우는 셸의 기본값 — 이 셋은 함께여야 뜻이 있다.
@@ -91,7 +117,10 @@ function createWindow(): BrowserWindow {
       nodeIntegration: false,
       sandbox: true,
       webviewTag: false,
-      additionalArguments: [`--geurio-version=${app.getVersion()}`],
+      additionalArguments: [
+        `--geurio-version=${app.getVersion()}`,
+        `--geurio-titlebar=${titleBarHeightFor(process.platform)}`,
+      ],
     },
   });
 
@@ -192,6 +221,23 @@ if (!app.requestSingleInstanceLock()) {
       if (typeof url !== 'string' || !isSafeExternalUrl(url)) return false;
       await shell.openExternal(url);
       return true;
+    });
+
+    // 창 컨트롤 색 — 렌더러가 지금 테마의 면·글자색을 알려 준다. Windows에서만
+    // 뜻이 있고(오버레이가 있는 플랫폼) 그 밖에서는 조용히 아무 일도 하지 않는다.
+    ipcMain.handle('geurio:titlebar-theme', (e, color: unknown, symbolColor: unknown) => {
+      if (process.platform !== 'win32') return false;
+      if (!isHexColor(color) || !isHexColor(symbolColor)) return false;
+      const win = BrowserWindow.fromWebContents(e.sender);
+      if (!win || win.isDestroyed()) return false;
+      try {
+        win.setTitleBarOverlay({ color, symbolColor, height: TITLEBAR_HEIGHT });
+        return true;
+      } catch {
+        // 오버레이 없이 만들어진 창(프레임을 그대로 쓰는 경우)에서는 던진다 —
+        // 색 하나 때문에 앱이 죽을 이유가 없다.
+        return false;
+      }
     });
 
     ipcMain.handle('geurio:pending-deep-link', () => {

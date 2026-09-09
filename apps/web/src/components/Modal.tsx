@@ -73,8 +73,13 @@ export function Modal({ open, onClose, label, dim, card, cardAttrs, cardClass, d
     >
       <Dialog.Portal>
         {/* 막이 곧 가운데 정렬 상자다 — 예전 마크업(fixed inset:0 flex center)을
-            그대로 유지해 카드 위치가 한 픽셀도 움직이지 않는다. */}
-        <Dialog.Overlay data-modal-overlay {...dimAttrs} style={{ position: 'fixed', inset: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', ...dim }}>
+            그대로 유지해 카드 위치가 한 픽셀도 움직이지 않는다. 하나만 다르다:
+            위쪽은 **앱 영역**에서 시작한다(`--mf-titlebar`, 브라우저·PWA에서는 0px라
+            예전과 정확히 같다) — 설치형 앱의 타이틀 바 아래에서 가운데를 잡아야
+            화면을 꽉 채운 팝업의 머리가 바에 가리지 않는다. 여기서 `padding`으로
+            밀 수 없는 이유: 팝업마다 자기 `padding`을 dim에 인라인으로 주므로
+            (갤러리 16, 카드 상세 24 …) 그 값이 우리 규칙을 덮는다. */}
+        <Dialog.Overlay data-modal-overlay {...dimAttrs} style={{ position: 'fixed', top: 'var(--mf-titlebar)', left: 0, right: 0, bottom: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', ...dim }}>
           <Dialog.Content
             ref={cardRef}
             aria-label={label}

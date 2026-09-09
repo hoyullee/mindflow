@@ -114,7 +114,7 @@ export function Editor() {
   const linkMod = useLinkModifier();
 
   const rootStyle: CSSProperties = {
-    height: '100dvh',
+    height: 'var(--mf-app-h)',
     width: '100%',
     display: 'flex',
     flexDirection: 'column',

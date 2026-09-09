@@ -76,7 +76,7 @@ const SEP_STYLE: CSSProperties = menuDividerStyle(CSS_MENU_TONE);
 /** 플라이아웃(하위 메뉴) 패널 — 본 메뉴와 같은 면·라운드·그늘. */
 const SUB_PANEL: CSSProperties = {
   ...menuPanelStyle(CSS_MENU_TONE, SUB_W),
-  maxHeight: 'calc(100dvh - 24px)',
+  maxHeight: 'calc(var(--mf-app-h) - 24px)',
   overflowY: 'auto',
   zIndex: 141,
 };
@@ -189,7 +189,7 @@ export function HomeMenuPanel({
           onCloseAutoFocus={(e) => e.preventDefault()}
           style={{
             ...menuPanelStyle(CSS_MENU_TONE, MENU_W),
-            maxHeight: 'calc(100dvh - 16px)',
+            maxHeight: 'calc(var(--mf-app-h) - 16px)',
             overflowY: 'auto',
             zIndex: 140,
           }}

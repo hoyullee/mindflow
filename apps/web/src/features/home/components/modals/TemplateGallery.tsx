@@ -52,7 +52,7 @@ type TabName = '전체' | '마인드맵' | '화이트보드' | '칸반 보드';
 const GALLERY_CARD: CSSProperties = {
   width: 1000,
   maxWidth: '100%',
-  maxHeight: 'calc(100dvh - 32px)',
+  maxHeight: 'calc(var(--mf-app-h) - 32px)',
   display: 'flex',
   flexDirection: 'column',
   background: 'var(--mf-card)',

@@ -118,7 +118,7 @@ export function Home() {
     // 알림 우편함은 화면 셋(스페이스·대시보드·일정)이 함께 쓴다 — LNB의 벨과 폰
     // ☰의 점이 **같은 수**를 봐야 하므로 상태를 여기서 한 벌만 든다.
     <NotificationsProvider>
-    <div className="mf-home" style={{ display: 'flex', height: '100dvh', width: '100%', background: 'var(--mf-bg)', fontFamily: "Pretendard, 'Pretendard-fallback', system-ui, sans-serif", color: 'var(--mf-text)', overflow: 'hidden' }}>
+    <div className="mf-home" style={{ display: 'flex', height: 'var(--mf-app-h)', width: '100%', background: 'var(--mf-bg)', fontFamily: "Pretendard, 'Pretendard-fallback', system-ui, sans-serif", color: 'var(--mf-text)', overflow: 'hidden' }}>
       {/* `instant`: Home의 로더는 뒤 배경을 함께 바꾸는 동작(새로 만들기=카드 추가,
           로그아웃/탈퇴=목록 정리)에 쓰이므로, 페이드인 중 반투명 구간으로 그 변화가
           비쳐 깜빡이지 않도록 첫 프레임부터 화면을 덮는다. */}

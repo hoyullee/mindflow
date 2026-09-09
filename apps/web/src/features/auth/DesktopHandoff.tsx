@@ -40,7 +40,7 @@ export function DesktopHandoff() {
       <div
         style={{
           position: 'relative',
-          minHeight: '100dvh',
+          minHeight: 'var(--mf-app-h)',
           display: 'flex',
           alignItems: 'center',
           justifyContent: 'center',
@@ -71,7 +71,7 @@ export function DesktopHandoff() {
               justifyContent: 'center',
             }}
           >
-            <BrandMark size={30} />
+            <BrandMark size={46} />
           </div>
           {!link ? (
             <>

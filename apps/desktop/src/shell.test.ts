@@ -7,7 +7,11 @@ import {
   MIN_HEIGHT,
   MIN_WIDTH,
   isDeepLink,
+  isHexColor,
   originOf,
+  TITLEBAR_HEIGHT,
+  titleBarHeightFor,
+  usesCustomTitleBar,
 } from './shell';
 
 const APP = 'https://geurio.com';
@@ -102,5 +106,30 @@ describe('clampBounds — 저장된 자리가 화면 밖이면 창이 안 보인
     const left = { x: -1920, y: 0, width: 1920, height: 1080 };
     const b = clampBounds({ x: -1900, y: 40, width: 1200, height: 800 }, left);
     expect(b).toEqual({ x: -1900, y: 40, width: 1200, height: 800 });
+  });
+});
+
+describe('타이틀 바', () => {
+  it('Windows·macOS만 프레임을 숨긴다', () => {
+    expect(usesCustomTitleBar('win32')).toBe(true);
+    expect(usesCustomTitleBar('darwin')).toBe(true);
+    // Linux는 OS 프레임 그대로 — 숨겼다가 창을 옮기거나 닫을 길이 사라지는 쪽이 나쁘다.
+    expect(usesCustomTitleBar('linux')).toBe(false);
+  });
+
+  it('높이 0이 "그리지 않는다"를 뜻한다', () => {
+    expect(titleBarHeightFor('win32')).toBe(TITLEBAR_HEIGHT);
+    expect(titleBarHeightFor('linux')).toBe(0);
+  });
+
+  it('창 컨트롤 색은 hex만 받는다', () => {
+    expect(isHexColor('#fffdfb')).toBe(true);
+    expect(isHexColor('#FFF')).toBe(true);
+    // 원격 페이지가 넘길 수 있는 값이므로 모양을 본다.
+    expect(isHexColor('white')).toBe(false);
+    expect(isHexColor('var(--mf-card)')).toBe(false);
+    expect(isHexColor('rgb(255,253,251)')).toBe(false);
+    expect(isHexColor('#fffdfb; drop table')).toBe(false);
+    expect(isHexColor(undefined)).toBe(false);
   });
 });

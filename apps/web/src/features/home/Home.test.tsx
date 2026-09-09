@@ -3879,10 +3879,12 @@ describe('전역 검색 (모든 스페이스)', () => {
 describe('홈 루트 높이', () => {
   const meta = (id: string, title: string): DocMeta => ({ id, title, version: 1, updatedAt: '2026-01-01T00:00:00.000Z', isFavorite: false, deletedAt: null });
 
-  it('루트는 100dvh — 모바일에서 100vh는 주소창만큼 길어져 페이지 스크롤이 하나 더 생긴다(제보: 이중 스크롤)', async () => {
+  it('루트는 앱 영역 높이 — 모바일에서 100vh는 주소창만큼 길어져 페이지 스크롤이 하나 더 생긴다(제보: 이중 스크롤)', async () => {
     const { container } = renderHomeWithDocStore([meta('d1', '맵')]);
     const root = container.querySelector('.mf-home') as HTMLElement;
-    expect(root.getAttribute('style') || '').toContain('height: 100dvh');
+    // `--mf-app-h`는 `100dvh - 타이틀 바`다(브라우저·PWA에서는 0이라 정확히 100dvh,
+    // 설치형 앱에서는 그 바만큼 줄어든다 — index.css).
+    expect(root.getAttribute('style') || '').toContain('height: var(--mf-app-h)');
   });
 });
 
