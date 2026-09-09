@@ -38,12 +38,6 @@ export interface NavCardProps extends ButtonHTMLAttributes<HTMLButtonElement> {
   /** hot = 눈에 띄어야 하는 상태(안 읽음 · 지금 보는 화면) → 이름이 굵어지고
    *  요약이 본문 톤으로 올라온다. */
   tone?: 'hot' | 'quiet';
-  /** 면을 칠할까 — 기본은 tone을 따르되, 호출부가 **언제나 칠할 수도** 있다
-   *  (일정 카드: 요청). `data-tinted`가 함께 서므로 hover가 틴트를 지운다. */
-  surface?: 'tint' | 'none';
-  /** 지금 보고 있는 화면인가 — 안쪽 링으로 알린다. 면을 언제나 칠하는 카드는
-   *  틴트만으로는 "여기 있다"를 말할 수 없다(레이아웃이 밀리지 않게 inset 그늘). */
-  current?: boolean;
   /** 하위 메뉴가 펼쳐졌는가 — 오른쪽 셰브론이 아래를 가리킨다(디스클로저 관례). */
   expanded?: boolean;
   isMobile?: boolean;
@@ -67,8 +61,6 @@ export const NavCard = forwardRef<HTMLButtonElement, NavCardProps>(function NavC
     trailing,
     chevron = true,
     tone = 'quiet',
-    surface,
-    current = false,
     expanded = false,
     isMobile = false,
     style,
@@ -77,7 +69,9 @@ export const NavCard = forwardRef<HTMLButtonElement, NavCardProps>(function NavC
   ref,
 ) {
   const hot = tone === 'hot';
-  const tinted = (surface ?? (hot ? 'tint' : 'none')) === 'tint';
+  // 칠하는 뜻은 하나다: **지금 눈여겨봐야 하는 상태**(알림=안 읽음 / 일정=이 화면).
+  // 늘 칠하면 "언제나 활성"으로 읽힌다는 제보로 `surface` 프롭을 걷어냈다.
+  const tinted = hot;
   const accentTile = tile === 'accent';
   return (
     <button
@@ -103,9 +97,6 @@ export const NavCard = forwardRef<HTMLButtonElement, NavCardProps>(function NavC
         cursor: 'pointer',
         letterSpacing: '-.01em',
         background: tinted ? 'var(--mf-accent-soft)' : 'transparent',
-        // 링은 테두리가 아니라 **안쪽 그늘**이다 — 테두리를 켜면 1px만큼 내용이
-        // 밀려 활성/비활성 사이에서 글자가 흔들린다.
-        boxShadow: current ? 'inset 0 0 0 1px rgba(var(--mf-accent-rgb), .38)' : undefined,
         color: 'var(--mf-text)',
         transition: 'background .14s ease',
         ...style,

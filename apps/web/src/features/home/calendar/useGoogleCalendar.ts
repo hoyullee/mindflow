@@ -97,6 +97,9 @@ export interface GoogleCalendarApi {
   disconnect: () => Promise<void>;
   /** 그 캘린더를 보이기/감추기. */
   toggleCalendar: (id: string) => void;
+  /** 목록의 캘린더를 **전부 켠다**(LNB의 `모두 보기`) — 하나씩 토글하면 저장이
+   * 그만큼 나가므로 한 번에 쓴다. 이미 전부 켜져 있으면 호출부가 버튼을 감춘다. */
+  showAllCalendars: () => void;
   /**
    * 구독하지 않은 캘린더를 **그리오 목록에** 더한다(요청). 주소(대개 상대의 회사
    * 이메일)를 받아 볼 수 있는지 확인하고 이름을 얻어 목록에 올리고 곧바로 켠다.
@@ -253,6 +256,14 @@ export function useGoogleCalendar(
   // 우리가 더한 캘린더도 같은 이유로 문자열 키를 만든다.
   const extras = prefs.extra ?? [];
   const extraKey = extras.map((e) => `${e.id}\u0000${e.name}`).join('|');
+  /**
+   * 저장할 때 **공휴일 국가를 함께 실어 보낸다**.
+   *
+   * `setGoogleCalendars`는 블롭의 `google`을 통째로 갈아 끼우므로, 캘린더 체크처럼
+   * 다른 필드만 바꾸는 저장이 이 값을 빠뜨리면 사용자가 고른 나라가 조용히 지워진다
+   * (그러면 목록에서 되유추한 값 — 대개 `없음` — 으로 떨어진다). 실측으로 잡았다.
+   */
+  const keepHoliday = () => (prefs.holiday ? { holiday: prefs.holiday } : {});
   // 콜백이 최신 값을 보게 해 두는 자리 — `connect`는 deps가 좁아야 한다(누를 때마다
   // 새 함수가 되면 버튼이 하는 일과 무관하게 리렌더가 번진다).
   const extrasRef = useRef<GoogleExtraCalendar[]>(extras);
@@ -506,9 +517,9 @@ export function useGoogleCalendar(
       // 우리가 더해 둔 캘린더는 지키고 켠 채로 둔다 — 이 버튼은 **다시 연결**도 겸한다
       // (권한 만료). 여기서 버리면 재승인 한 번에 목록이 통째로 사라진다.
       const keep = extrasRef.current;
-      onPrefs({ enabled: true, calendars: [...seed, ...keep.map((e) => e.id)], ...(keep.length ? { extra: keep } : {}) });
+      onPrefs({ enabled: true, calendars: [...seed, ...keep.map((e) => e.id)], ...(keep.length ? { extra: keep } : {}), ...keepHoliday() });
     } catch {
-      if (aliveRef.current) onPrefs({ enabled: true, calendars: [], ...(extrasRef.current.length ? { extra: extrasRef.current } : {}) });
+      if (aliveRef.current) onPrefs({ enabled: true, calendars: [], ...(extrasRef.current.length ? { extra: extrasRef.current } : {}), ...keepHoliday() });
     }
   }, [onPrefs, resetAccountCache]);
 
@@ -633,10 +644,18 @@ export function useGoogleCalendar(
     (id: string) => {
       const has = prefs.calendars.includes(id);
       // `extra`를 함께 실어 보낸다 — 빠뜨리면 체크 한 번에 우리가 더한 캘린더가 사라진다.
-      onPrefs({ enabled: true, calendars: has ? prefs.calendars.filter((c) => c !== id) : [...prefs.calendars, id], ...(extras.length ? { extra: extras } : {}) });
+      onPrefs({ enabled: true, calendars: has ? prefs.calendars.filter((c) => c !== id) : [...prefs.calendars, id], ...(extras.length ? { extra: extras } : {}), ...keepHoliday() });
     },
     [prefs.calendars, extraKey, onPrefs],
   );
+
+  const showAllCalendars = useCallback(() => {
+    // `extras`를 함께 실어 보낸다 — 빠뜨리면 우리가 더한 캘린더가 사라진다(토글과 같은 규칙).
+    // 설정이 소유한 공휴일 캘린더는 지금 상태를 그대로 둔다 — 그 스위치는 `공휴일 국가`다.
+    const managed = prefs.calendars.filter((id) => isManagedHolidayId(id));
+    const next = [...managed, ...allCalendars.filter((c) => !isManagedHolidayId(c.id)).map((c) => c.id)];
+    onPrefs({ enabled: true, calendars: next, ...(extras.length ? { extra: extras } : {}), ...keepHoliday() });
+  }, [allCalendars, prefs.calendars, extraKey, onPrefs]);
 
   /**
    * 구독하지 않은 캘린더를 목록에 더한다 — 볼 수 있는지 확인하고(그때 이름도 얻는다)
@@ -662,7 +681,7 @@ export function useGoogleCalendar(
       if (!probed) return null;
       if (!aliveRef.current) return null;
       const next = [...extras.filter((e) => e.id !== probed.id), probed];
-      onPrefs({ enabled: true, calendars: [...prefs.calendars.filter((c) => c !== probed.id), probed.id], extra: next });
+      onPrefs({ enabled: true, calendars: [...prefs.calendars.filter((c) => c !== probed.id), probed.id], extra: next, ...keepHoliday() });
       return null;
     },
     [allCalendars, prefs.calendars, extraKey, onPrefs, toggleCalendar, withToken],
@@ -672,7 +691,7 @@ export function useGoogleCalendar(
   const removeCalendar = useCallback(
     (id: string) => {
       const next = extras.filter((e) => e.id !== id);
-      onPrefs({ enabled: true, calendars: prefs.calendars.filter((c) => c !== id), ...(next.length ? { extra: next } : {}) });
+      onPrefs({ enabled: true, calendars: prefs.calendars.filter((c) => c !== id), ...(next.length ? { extra: next } : {}), ...keepHoliday() });
     },
     [prefs.calendars, extraKey, onPrefs],
   );
@@ -724,6 +743,7 @@ export function useGoogleCalendar(
     connect,
     disconnect,
     toggleCalendar,
+    showAllCalendars,
     addCalendar,
     removeCalendar,
     holidayCountry,

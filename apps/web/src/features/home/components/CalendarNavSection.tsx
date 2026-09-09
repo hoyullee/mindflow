@@ -13,12 +13,15 @@
 //   ③ 권한이 만료됨 → `다시 연결`. 고른 캘린더는 그대로다.
 //   ④ 연동됨 → `보여 줄 캘린더` 체크 목록(설정 화면의 그 목록과 같은 값·같은 동작).
 
+import type { CSSProperties } from 'react';
 import type { HomeController } from '../useHomeController';
 import type { HomeState } from '../types';
 import { calendarBriefLine, type CalendarBrief } from '../calendar/model';
 import { CalendarGlyph } from '../calendar/CalendarView';
+import { isManagedHolidayId } from '../calendar/googleCalendar';
 import { googlePrefsOf, useGoogleCalendar } from '../calendar/useGoogleCalendar';
 import { NavCard } from './NavCard';
+import { LnbRail } from './LnbSection';
 
 /** 연동 상태 표식(첨부 디자인) — **스위치가 아니다**: 켜고 끄는 일은 설정의 연동
  * 구획이 맡는다(같은 동작의 진입점을 둘로 두면 어느 쪽이 진짜인지 흐려진다).
@@ -69,6 +72,14 @@ export function CalendarNavSection({ state, controller, isMobile, brief }: { sta
         ? 'warn'
         : null;
 
+  // **설정이 소유한 공휴일 캘린더는 목록에 두지 않는다** — 어느 나라를 볼지는 설정의
+  // `공휴일 국가` 세그먼트가 정하고(끄는 것까지), 여기에 체크를 또 두면 한 캘린더에
+  // 스위치가 둘이 된다(제보로 이미 고친 것 — 설정 목록과 같은 필터). 주소로 직접 더한
+  // 공휴일 캘린더는 세그먼트가 모르므로 평범한 행으로 남고 `공휴일` 배지가 붙는다.
+  const rows = google.calendars.filter((c) => !isManagedHolidayId(c.id));
+  // 감춘 캘린더 수 — `모두 보기`가 이 값으로 뜨고 사라진다.
+  const hidden = rows.filter((c) => !google.pickedIds.includes(c.id)).length;
+
   return (
     <>
       <NavCard
@@ -76,10 +87,8 @@ export function CalendarNavSection({ state, controller, isMobile, brief }: { sta
         isMobile={isMobile}
         // **테두리 타일 + 오늘 날짜**(첨부 디자인) — 알림의 채운 코랄 타일과 갈린다.
         tile="plain"
-        // 면은 **언제나 칠한다**(요청) — 그러면 틴트가 "지금 이 화면"을 말할 수
-        // 없으므로 활성 신호를 `current`(안쪽 링)로 옮긴다.
-        surface="tint"
-        current={active}
+        // 면은 **일정 화면을 보고 있을 때만** 칠한다(제보: 늘 칠하면 "언제나 활성"
+        // 으로 읽힌다) — 그 틴트가 곧 "지금 이 화면"이라, 링을 따로 두지 않는다.
         tone={active ? 'hot' : 'quiet'}
         expanded={active && google.available}
         aria-current={active ? 'page' : undefined}
@@ -88,10 +97,12 @@ export function CalendarNavSection({ state, controller, isMobile, brief }: { sta
         onClick={controller.openCalendar}
         label="일정"
         // 오늘 며칠인가 — 달력 아이콘 하나보다 이 자리에서 더 말이 된다(자리를
-        // 늘리지 않고 정보를 하나 더 얹는다).
+        // 늘리지 않고 정보를 하나 더 얹는다). 숫자 위의 **가로 바**가 달력의 머리
+        // 띠 노릇을 해서 이 타일이 "달력 한 장"으로 읽힌다(첨부 디자인).
         glyph={
-          <span data-cal-date style={{ fontSize: 13, fontWeight: 800, letterSpacing: '-.02em', lineHeight: 1 }}>
-            {new Date().getDate()}
+          <span data-cal-date style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 2.5, lineHeight: 1 }}>
+            <span data-cal-date-bar aria-hidden="true" style={{ width: 13, height: 1.8, borderRadius: 1, background: 'currentColor', flexShrink: 0 }} />
+            <span style={{ fontSize: 12.5, fontWeight: 800, letterSpacing: '-.02em' }}>{new Date().getDate()}</span>
           </span>
         }
         trailing={linkTone ? <LinkPill tone={linkTone} /> : undefined}
@@ -123,47 +134,84 @@ export function CalendarNavSection({ state, controller, isMobile, brief }: { sta
         summary={<span data-cal-summary style={{ minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis' }}>{line}</span>}
       />
       {active && google.available && (
-        <div data-cal-sub style={{ margin: '4px 2px 0', padding: '7px 7px 6px', borderRadius: 12, background: 'var(--mf-bg)', border: '1px solid var(--mf-hairline)' }}>
+        // 가라앉은 판이 아니라 **왼쪽 rail**이다(첨부 디자인) — 즐겨찾기·공유받음·
+        // 휴지통과 같은 결이라 같은 부품을 쓴다.
+        <LnbRail cap={false} attrs={{ 'data-cal-sub': '' }}>
           {google.connected ? (
             <>
-              <div style={SUB_LABEL}>보여 줄 캘린더</div>
-              {google.calendars.length === 0 ? (
+              <div style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '3px 7px 5px' }}>
+                <span style={SUB_LABEL}>보여 줄 캘린더</span>
+                {/*
+                  `모두 보기`(첨부 디자인) — 목록의 캘린더를 전부 켠다. **감춘 것이
+                  있을 때만** 뜬다: 이미 전부 켜져 있으면 눌러도 아무 일이 없으므로
+                  그때는 자리에 두지 않는다(이 앱의 "죽은 버튼을 두지 않는다").
+                */}
+                {hidden > 0 && (
+                  <button
+                    type="button"
+                    className="mf-ctl"
+                    data-cal-sub-all
+                    onClick={google.showAllCalendars}
+                    title={`감춘 캘린더 ${hidden}개를 모두 보여 줍니다`}
+                    style={{ marginLeft: 'auto', border: 'none', background: 'transparent', fontFamily: 'inherit', fontSize: 11, color: 'var(--mf-muted)', cursor: 'pointer', padding: '1px 4px', borderRadius: 6, flexShrink: 0 }}
+                  >
+                    모두 보기
+                  </button>
+                )}
+              </div>
+              {!google.listLoaded ? (
                 <div style={{ padding: '5px 8px 6px', fontSize: 12, color: 'var(--mf-muted)' }}>불러오는 중…</div>
               ) : (
                 <div className="lnb-scroll" style={{ display: 'flex', flexDirection: 'column', gap: 1, maxHeight: 168, overflowY: 'auto' }}>
-                  {google.calendars.map((c) => (
-                    <label
-                      key={c.id}
-                      className="menu-row"
-                      data-cal-sub-item={c.id}
-                      title={c.summary}
-                      style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '5px 7px', minHeight: isMobile ? 40 : 28, borderRadius: 8, cursor: 'pointer' }}
-                    >
-                      <input
-                        type="checkbox"
-                        checked={google.pickedIds.includes(c.id)}
-                        onChange={() => google.toggleCalendar(c.id)}
-                        style={{ width: 13, height: 13, accentColor: 'var(--mf-accent)', cursor: 'pointer', flexShrink: 0 }}
-                      />
-                      <span aria-hidden="true" style={{ width: 8, height: 8, borderRadius: 999, background: c.color ?? 'var(--mf-accent)', flexShrink: 0 }} />
-                      <span style={{ minWidth: 0, flex: 1, fontSize: 12, color: 'var(--mf-subtext)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{c.summary}</span>
-                    </label>
-                  ))}
+                  {rows.map((c) => {
+                    const on = google.pickedIds.includes(c.id);
+                    return (
+                      <label
+                        key={c.id}
+                        className="menu-row"
+                        data-cal-sub-item={c.id}
+                        title={c.summary}
+                        style={{ display: 'flex', alignItems: 'center', gap: 9, padding: '4px 7px', minHeight: isMobile ? 40 : 30, borderRadius: 8, cursor: 'pointer' }}
+                      >
+                        {/*
+                          색 점을 따로 두지 않는다 — **체크 칩 자체가 그 캘린더의 색**이다
+                          (첨부 디자인). 신호가 하나면 어느 색이 어느 캘린더인지 헷갈리지
+                          않고, 250px 열에서 이름 자리도 그만큼 넓어진다.
+                        */}
+                        <input
+                          type="checkbox"
+                          className="mf-cb mf-cb-sm"
+                          checked={on}
+                          onChange={() => google.toggleCalendar(c.id)}
+                          style={{ ['--mf-cb-fill' as string]: c.color ?? 'var(--mf-accent)' } as CSSProperties}
+                        />
+                        <span style={{ minWidth: 0, flex: 1, fontSize: 12.5, fontWeight: on ? 600 : 500, color: on ? 'var(--mf-text)' : 'var(--mf-muted)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{c.summary}</span>
+                        {/* 공휴일 캘린더는 그렇게 말한다 — 어느 나라를 볼지는 설정의
+                            **공휴일 국가**가 정하고, 여기 체크는 보여 줄지만 정한다. */}
+                        {c.holiday && (
+                          <span data-cal-sub-holiday style={{ flexShrink: 0, padding: '1px 6px', borderRadius: 999, fontSize: 9.5, fontWeight: 700, background: 'var(--mf-accent-soft)', color: 'var(--mf-accent-strong)' }}>
+                            공휴일
+                          </span>
+                        )}
+                      </label>
+                    );
+                  })}
                 </div>
               )}
               {/*
                 목록에 없는 캘린더를 더하는 길(요청) — 실제 흐름(주소 확인·이름 검색·
                 빼기)은 **설정의 연동 구획 한 곳**이 맡는다. LNB는 250px이라 검색
                 상자를 두면 좁고, 같은 동작의 진입점을 둘로 두면 어느 쪽이 진짜인지
-                흐려진다(바로 위 `연동` 행과 같은 판단).
+                흐려진다.
 
                 여기서 들어가면 그 화면의 **주소 입력에 커서가 놓인다**(요청) — 이 버튼을
                 누른 사람은 주소를 적으러 온 것이므로 그 칸을 한 번 더 찾아 누를 이유가
                 없다.
               */}
-              <button type="button" className="nav-item" data-cal-sub-add onClick={controller.openGoogleCalendarAdd} style={{ ...SUB_ROW, minHeight: isMobile ? 40 : 28, color: 'var(--mf-accent)', fontWeight: 700 }}>
-                <span aria-hidden="true" style={{ flexShrink: 0, width: 13, textAlign: 'center', fontSize: 13, lineHeight: 1 }}>
-                  ＋
+              <button type="button" className="nav-item" data-cal-sub-add onClick={controller.openGoogleCalendarAdd} style={{ ...SUB_ROW, minHeight: isMobile ? 40 : 30, color: 'var(--mf-accent)', fontWeight: 700 }}>
+                {/* 점선 원 안의 ＋ — "여기에 하나 더"를 말하는 첨부 디자인의 글리프. */}
+                <span aria-hidden="true" style={{ flexShrink: 0, width: 18, height: 18, borderRadius: 999, border: '1px dashed var(--mf-accent)', display: 'grid', placeItems: 'center', fontSize: 11, lineHeight: 1 }}>
+                  +
                 </span>
                 <span style={{ minWidth: 0, flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>캘린더 추가</span>
               </button>
@@ -185,7 +233,7 @@ export function CalendarNavSection({ state, controller, isMobile, brief }: { sta
               </span>
             </button>
           )}
-        </div>
+        </LnbRail>
       )}
     </>
   );
