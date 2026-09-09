@@ -117,6 +117,28 @@ export function snapValue(v: number, on: boolean, grid = SNAP_GRID): number {
   return on ? Math.round(v / grid) * grid : v;
 }
 
+/**
+ * 여러 상자를 감싸는 상자 — **그룹 드래그의 묶음 상자**다(비면 null).
+ *
+ * 그룹은 상자 하나가 아니라 여럿을 함께 옮기므로, 맞출 기준을 하나로 정해야
+ * 한다. 디자인 툴의 관례대로 **선택 전체를 감싸는 상자**를 맞추고 그 차이를
+ * 이동량으로 되돌린다(멤버끼리의 상대 위치는 그대로 유지된다).
+ */
+export function unionBox(boxes: ArrangeBox[]): ArrangeBox | null {
+  if (!boxes.length) return null;
+  let x0 = Infinity;
+  let y0 = Infinity;
+  let x1 = -Infinity;
+  let y1 = -Infinity;
+  boxes.forEach((b) => {
+    x0 = Math.min(x0, b.x);
+    y0 = Math.min(y0, b.y);
+    x1 = Math.max(x1, b.x + b.w);
+    y1 = Math.max(y1, b.y + b.h);
+  });
+  return { x: x0, y: y0, w: x1 - x0, h: y1 - y0 };
+}
+
 // ── 스마트 가이드(맞춤 안내선) ─────────────────────────────────────────────
 //
 // 끌고 있는 상자의 여섯 기준선(왼쪽·가로중심·오른쪽 / 위·세로중심·아래)을 **다른

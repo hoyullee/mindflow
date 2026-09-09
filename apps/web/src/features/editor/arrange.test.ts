@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { alignGuides, arrangeDeltas, minTargets } from './arrange';
+import { alignGuides, arrangeDeltas, minTargets, unionBox } from './arrange';
 
 const B = (x: number, y: number, w: number, h: number) => ({ x, y, w, h });
 
@@ -119,5 +119,17 @@ describe('스마트 가이드(맞춤 안내선)', () => {
     // 상자 오른쪽(x+80)이 300(이웃 오른쪽)에서 2px, 왼쪽은 100에서 218px
     const r = alignGuides(B(218, 400, 80, 40), [other], tol);
     expect(r.x + 80).toBe(300);
+  });
+});
+
+describe('unionBox — 그룹 드래그의 묶음 상자', () => {
+  it('여러 상자를 감싸는 가장 작은 상자', () => {
+    expect(unionBox([{ x: 10, y: 20, w: 100, h: 50 }, { x: 200, y: 0, w: 40, h: 30 }])).toEqual({ x: 10, y: 0, w: 230, h: 70 });
+  });
+  it('하나면 그 상자 그대로', () => {
+    expect(unionBox([{ x: -5, y: 7, w: 3, h: 9 }])).toEqual({ x: -5, y: 7, w: 3, h: 9 });
+  });
+  it('맞출 상자가 없으면 null — 획·연결선만 고른 그룹이 그렇다', () => {
+    expect(unionBox([])).toBeNull();
   });
 });

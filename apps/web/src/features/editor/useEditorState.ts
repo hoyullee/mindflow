@@ -28,8 +28,8 @@ import { isPanButton } from './pointerButtons';
 import { buildVisible, descendants, outlineRows } from './tree';
 import type { EdgeStyle } from './tree';
 import { nearestInDirection } from './navigation';
-import { alignGuides, arrangeDeltas, snapValue } from './arrange';
-import type { ArrangeBox, ArrangeOp, SnapGuide } from './arrange';
+import { alignGuides, arrangeDeltas, snapValue, unionBox } from './arrange';
+import type { ArrangeBox, ArrangeOp, GuideResult, SnapGuide } from './arrange';
 import { fullyInside, idsInFrame, innermostFrameAt, innermostFrameFor } from './frames';
 import type { IdBox } from './frames';
 import type { NavDir, NavPoint } from './navigation';
@@ -4702,11 +4702,17 @@ export function useEditorState(): EditorController {
    * (트리 노드는 옮길 수 없지만 맞출 기준으로는 훌륭하다 — 오히려 그래서 좋다).
    * 연결선·획은 상자 경계가 모호해 뺐다.
    */
-  const snapDragBox = useCallback((box: ArrangeBox, exclude: string | Set<string>, on: boolean): { x: number; y: number } => {
-    if (!on) {
-      setSnapGuides((prev) => (prev.length ? [] : prev));
-      return { x: box.x, y: box.y };
-    }
+  const publishGuides = useCallback((guides: SnapGuide[]) => {
+    setSnapGuides((prev) => (prev.length === 0 && guides.length === 0 ? prev : guides));
+  }, []);
+  /**
+   * 맞춤 계산만 — 안내선을 **그리지는 않는다**(refs만 읽으므로 손을 뗀 뒤에도
+   * 부를 수 있다). 고스트로 끌고 드롭에서 커밋하는 경로(주제·그룹)는 놓는
+   * 순간에도 같은 값을 다시 계산해야 하는데, 그때 안내선을 다시 켜면 손을 뗀
+   * 화면에 선이 남는다 — 그래서 "계산"과 "그리기"를 갈라 둔다.
+   */
+  const snapBoxAt = useCallback((box: ArrangeBox, exclude: string | Set<string>, on: boolean): GuideResult => {
+    if (!on) return { x: box.x, y: box.y, guides: [] };
     const skip = typeof exclude === 'string' ? new Set([exclude]) : exclude;
     const d = docRef.current;
     const others: ArrangeBox[] = [];
@@ -4726,12 +4732,17 @@ export function useEditorState(): EditorController {
     }
     const tol = GUIDE_TOL_PX / (viewportRef.current.zoom || 1);
     const res = alignGuides(box, others, tol);
-    setSnapGuides((prev) => (prev.length === 0 && res.guides.length === 0 ? prev : res.guides));
     // 안내선이 잡지 못한 축만 격자로 — 둘 다 켜져 있어도 서로 싸우지 않는다.
     const hitX = res.guides.some((gd) => gd.axis === 'x');
     const hitY = res.guides.some((gd) => gd.axis === 'y');
-    return { x: hitX ? res.x : snapValue(res.x, true), y: hitY ? res.y : snapValue(res.y, true) };
+    return { x: hitX ? res.x : snapValue(res.x, true), y: hitY ? res.y : snapValue(res.y, true), guides: res.guides };
   }, []);
+  /** 끄는 동안의 맞춤 — 계산 + 안내선 그리기(실물을 매 이동마다 커밋하는 경로용). */
+  const snapDragBox = useCallback((box: ArrangeBox, exclude: string | Set<string>, on: boolean): { x: number; y: number } => {
+    const r = snapBoxAt(box, exclude, on);
+    publishGuides(r.guides);
+    return { x: r.x, y: r.y };
+  }, [snapBoxAt, publishGuides]);
   const setSnapGrid = useCallback((on: boolean) => {
     setSnapGridState(on);
     try {
@@ -4851,6 +4862,66 @@ export function useEditorState(): EditorController {
   // handles a marquee multi-selection's shared drag (Editor-c). ----
   const objDragRef = useRef<ObjDrag | null>(null);
 
+  /**
+   * **주제(자유 도형) 드래그의 맞춤.** 고스트와 커밋이 이 함수 하나를 지난다 —
+   * 둘이 갈리면 놓는 순간 자리가 튄다.
+   *
+   * 주제의 x/y는 **중심**이라(메모·영역은 좌상단) 상자로 바꿔 맞춘 뒤 다시
+   * 중심으로 돌린다. 크기는 시작 시점의 geom을 쓴다(끄는 동안 커밋하지 않으므로
+   * 그대로다). geom이 없으면 맞출 상자가 없어 그냥 따라온다.
+   *
+   * 안내선을 그리는 것은 호출부의 몫이다(놓는 순간에는 그리지 않는다 — `snapBoxAt`).
+   */
+  const snapNodeDrag = useCallback(
+    (d: { id: string; startGeomX: number; startGeomY: number; excludeIds: Set<string> }, dx: number, dy: number, on: boolean): GuideResult => {
+      const cx = d.startGeomX + dx;
+      const cy = d.startGeomY + dy;
+      const g = geomRef.current[d.id];
+      if (!g) return { x: cx, y: cy, guides: [] };
+      const r = snapBoxAt({ x: cx - g.w / 2, y: cy - g.h / 2, w: g.w, h: g.h }, d.excludeIds, on);
+      return { x: r.x + g.w / 2, y: r.y + g.h / 2, guides: r.guides };
+    },
+    [snapBoxAt],
+  );
+
+  /**
+   * **그룹 드래그의 맞춤.** 묶음 상자(`unionBox`)를 맞추고 그 차이를 **이동량**으로
+   * 되돌린다 — 멤버끼리의 상대 위치는 그대로다.
+   *
+   * 묶음 상자에 넣는 것은 **면 있는 멤버**(주제·메모)뿐이다: 연결선·획은 상자
+   * 경계가 모호해 안내선 후보에서도 빼 뒀고(그 둘로 묶음 상자를 부풀리면 정작
+   * 눈에 보이는 도형이 아무것과도 맞지 않는다), 선택된 주제의 **자식**도 넣지
+   * 않는다(사용자가 고른 것은 그 주제이고, 자식까지 감싸면 맞출 상자가 뜻을
+   * 잃는다 — 다만 자식은 후보에서 **빼야** 한다: 자기 자식에 맞추면 안 된다).
+   * 면 있는 멤버가 없으면(획·연결선만) 맞추지 않고 그대로 따라온다.
+   */
+  const snapGroupDrag = useCallback(
+    (
+      d: { nodesOrig: Record<string, { x: number; y: number }>; floatsOrig: Record<string, { x: number; y: number }>; linesOrig: Record<string, unknown>; strokesOrig: Record<string, unknown> },
+      dx: number,
+      dy: number,
+      on: boolean,
+    ): { dx: number; dy: number; guides: SnapGuide[] } => {
+      const doc = docRef.current;
+      const skip = new Set<string>([...Object.keys(d.nodesOrig), ...Object.keys(d.floatsOrig), ...Object.keys(d.linesOrig), ...Object.keys(d.strokesOrig)]);
+      const boxes: ArrangeBox[] = [];
+      Object.keys(d.nodesOrig).forEach((id) => {
+        descendants(doc.nodes, id).forEach((c) => skip.add(c));
+        const g = geomRef.current[id];
+        if (g) boxes.push({ x: g.x - g.w / 2, y: g.y - g.h / 2, w: g.w, h: g.h });
+      });
+      Object.keys(d.floatsOrig).forEach((id) => {
+        const f = doc.floats.find((x) => x.id === id);
+        if (f) boxes.push({ x: f.x, y: f.y, w: f.w, h: floatBoxH(f) });
+      });
+      const b = unionBox(boxes);
+      if (!b) return { dx, dy, guides: [] };
+      const r = snapBoxAt({ x: b.x + dx, y: b.y + dy, w: b.w, h: b.h }, skip, on);
+      return { dx: r.x - b.x, dy: r.y - b.y, guides: r.guides };
+    },
+    [snapBoxAt],
+  );
+
   /** Starts a new object drag — resets `objDragMovedRef` (this port's per-drag `d.moved`
    * stand-in, since `ObjDrag`'s variants don't carry their own field) alongside setting
    * `objDragRef.current`, so the context-menu machinery above always sees "not yet moved"
@@ -4895,12 +4966,17 @@ export function useEditorState(): EditorController {
           break;
         case 'node-move': {
           const p = toCanvasPoint(e.clientX, e.clientY, vp);
+          const target = findAttachTarget(p, d.excludeIds);
+          // 부착 대상이 있으면 **맞추지 않는다** — 그때 자리는 레이아웃이 정하므로
+          // 좌표를 맞춰 봐야 뜻이 없고, 안내선이 뜨면 오히려 거짓말이 된다.
           // 그랩 오프셋 보존: 고스트는 '시작 중심 + 포인터 이동량'을 따른다.
           // 커서에 중심을 스냅하면 가장자리를 잡은 도형이 잡는 순간 확 튀고,
           // 1px만 움직여도 의도보다 크게 이동해 버린다. 부착 대상 탐지는
           // 원본처럼 커서 지점 기준을 유지한다(가리키는 곳에 붙는 게 자연스러움).
-          setDragGhost({ id: d.id, x: d.startGeomX + dx, y: d.startGeomY + dy });
-          setAttachTarget(findAttachTarget(p, d.excludeIds));
+          const s = snapNodeDrag(d, dx, dy, !target && snapGridRef.current && !e.altKey);
+          publishGuides(s.guides);
+          setDragGhost({ id: d.id, x: s.x, y: s.y });
+          setAttachTarget(target);
           break;
         }
         case 'group': {
@@ -4908,7 +4984,9 @@ export function useEditorState(): EditorController {
           // 커서를 따라온다. 실제 이동은 놓는 순간 한 번에 커밋된다(onUp) — undo도
           // 한 단계가 된다. 예전엔 매 이동마다 문서를 커밋해 멤버 전부가 실시간으로
           // 끌려다녔다.
-          setGroupGhost({ dx, dy, nodes: Object.keys(d.nodesOrig), floats: Object.keys(d.floatsOrig), lines: Object.keys(d.linesOrig), strokes: Object.keys(d.strokesOrig) });
+          const gs = snapGroupDrag(d, dx, dy, snapGridRef.current && !e.altKey);
+          publishGuides(gs.guides);
+          setGroupGhost({ dx: gs.dx, dy: gs.dy, nodes: Object.keys(d.nodesOrig), floats: Object.keys(d.floatsOrig), lines: Object.keys(d.linesOrig), strokes: Object.keys(d.strokesOrig) });
           break;
         }
         case 'node-resize': {
@@ -5102,10 +5180,14 @@ export function useEditorState(): EditorController {
         // measured from the node's CENTRE to the cursor), yanking it out of the tree.
         const moveDist = Math.hypot(e.clientX - d.startClientX, e.clientY - d.startClientY) / (vp.zoom || 1);
         const target = moveDist >= 4 ? findAttachTarget(p, d.excludeIds) : null;
-        // 드롭 좌표도 고스트와 동일하게 그랩 오프셋 보존 — 놓는 순간 중심이
-        // 커서로 점프하지 않고, 드래그 중 보이던 자리에 그대로 내려앉는다.
-        const dropX = d.startGeomX + (e.clientX - d.startClientX) / (vp.zoom || 1);
-        const dropY = d.startGeomY + (e.clientY - d.startClientY) / (vp.zoom || 1);
+        // 드롭 좌표도 고스트와 동일하게 그랩 오프셋 보존 + **같은 맞춤**을 지난다 —
+        // 놓는 순간 중심이 커서로 점프하지 않고, 드래그 중 보이던 그 자리에
+        // 내려앉는다(안내선은 이미 지웠으니 여기서는 계산만 한다).
+        const rawDx = (e.clientX - d.startClientX) / (vp.zoom || 1);
+        const rawDy = (e.clientY - d.startClientY) / (vp.zoom || 1);
+        const drop = snapNodeDrag(d, rawDx, rawDy, !target && snapGridRef.current && !e.altKey);
+        const dropX = drop.x;
+        const dropY = drop.y;
         if (moveDist < 4) {
           // pure click — nothing to commit
         } else if (target) {
@@ -5120,7 +5202,9 @@ export function useEditorState(): EditorController {
           pendingReflowNudgeRef.current = {};
           setNudgeTick((t) => t + 1);
         } else {
-          const dist = Math.hypot(dropX - d.startGeomX, dropY - d.startGeomY); // = 포인터 이동량 (그랩 오프셋 무관)
+          // 판정은 **맞춤 전** 포인터 이동량으로 한다 — 맞춤이 몇 px을 당기고 미는
+          // 값이라, 그것으로 재면 디태치 문턱(40)을 우연히 넘나든다.
+          const dist = Math.hypot(rawDx, rawDy);
           if (d.wasFree) {
             // 이동 커밋만 하고 마그넷은 **layout effect**(pendingNudge)에 맡긴다.
             // 예전엔 여기서 인라인으로 nudge까지 했는데(한 커밋 = 깜빡임 방지),
@@ -5160,9 +5244,15 @@ export function useEditorState(): EditorController {
         setGroupGhost(null);
         // 고스트 모델(onMove 참고): 실제 이동은 여기서 **한 번에** 커밋된다.
         const vp = viewportRef.current;
-        const gdx = (e.clientX - d.startClientX) / (vp.zoom || 1);
-        const gdy = (e.clientY - d.startClientY) / (vp.zoom || 1);
-        if (objDragMovedRef.current && (Math.abs(gdx) > 0.5 || Math.abs(gdy) > 0.5)) {
+        const rawGdx = (e.clientX - d.startClientX) / (vp.zoom || 1);
+        const rawGdy = (e.clientY - d.startClientY) / (vp.zoom || 1);
+        // 고스트가 보여 준 그 자리에 내려앉도록 커밋 델타도 같은 맞춤을 지난다.
+        const gsnap = snapGroupDrag(d, rawGdx, rawGdy, snapGridRef.current && !e.altKey);
+        const gdx = gsnap.dx;
+        const gdy = gsnap.dy;
+        // 움직였는가는 **맞춤 전** 이동량으로 판정한다(맞춤이 0으로 당겨도 사용자는
+        // 끌었고, 반대로 맞춤이 만든 몇 px을 "움직였다"로 읽지 않게).
+        if (objDragMovedRef.current && (Math.abs(rawGdx) > 0.5 || Math.abs(rawGdy) > 0.5)) {
           commitDoc((doc0) => ({
             ...doc0,
             nodes: mutations.translateNodesBy(doc0.nodes, d.nodesOrig, gdx, gdy),
