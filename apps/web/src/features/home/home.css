@@ -835,10 +835,24 @@ input[type='search']::-webkit-search-results-decoration {
   place-items: center;
   transition: background .12s ease, border-color .12s ease;
 }
+/* 켜진 칩의 색은 **호출부가 정할 수 있다**(`--mf-cb-fill`) — LNB의 캘린더 목록은
+   그 캘린더의 색으로 칠해 색 점을 따로 두지 않는다(첨부 디자인). 값이 없으면 강조색. */
 .mf-home .mf-cb:checked,
 [data-modal-overlay] .mf-cb:checked {
-  background: var(--mf-accent);
-  border-color: var(--mf-accent);
+  background: var(--mf-cb-fill, var(--mf-accent));
+  border-color: var(--mf-cb-fill, var(--mf-accent));
+}
+/* LNB용 작은 칩 — 250px 열에서 22px은 이름 자리를 먹는다. */
+.mf-home .mf-cb-sm {
+  width: 18px;
+  height: 18px;
+  border-radius: 6px;
+}
+.mf-home .mf-cb-sm:checked::after {
+  width: 8px;
+  height: 4.5px;
+  border-left-width: 2px;
+  border-bottom-width: 2px;
 }
 .mf-home .mf-cb:checked::after,
 [data-modal-overlay] .mf-cb:checked::after {

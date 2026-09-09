@@ -9,6 +9,7 @@ import { DashboardSection, ReorderToggle } from './DashboardSection';
 import { SpaceRow } from './SpaceRow';
 import { META_MONO, SECTION_LABEL } from '../chrome';
 import { CalendarNavSection } from './CalendarNavSection';
+import { LnbListSection } from './LnbSection';
 
 /** How long the drawer's exit slide runs before the aside unmounts. Slightly
  * longer than the CSS transition (260ms, home.css `.mf-drawer`) so the last
@@ -244,75 +245,63 @@ export function Sidebar({ state, view, controller, isMobile = false, isOpen = fa
 
       <div data-lnb-divider style={{ ...LNB_DIVIDER, margin: '12px 4px' }} />
 
-      <div
-        className="nav-item"
-        role="button"
-        tabIndex={0}
-        onClick={controller.toggleFavList}
-        onKeyDown={(e) => {
-          if (e.key === 'Enter' || e.key === ' ') controller.toggleFavList();
-        }}
-        style={{ display: 'flex', alignItems: 'center', gap: 9, padding: '8px 9px', minHeight: isMobile ? 44 : undefined, borderRadius: 10, cursor: 'pointer', fontSize: 13, fontWeight: 500, color: 'var(--mf-subtext)' }}
-      >
-        <StarGlyph size={15} /> 즐겨찾기
-        <span style={{ ...META_MONO, marginLeft: 'auto' }}>{view.favCount}</span>
-        <ChevronGlyph open={state.favOpen} />
+      {/* 셋(즐겨찾기·공유받음·휴지통)은 그릇이 아니라 **모아 보는 목록**이라 한
+          구획으로 묶고 이름을 붙인다(첨부 디자인) — 대시보드·스페이스 라벨과 같은 문법. */}
+      <div style={{ display: 'flex', alignItems: 'center', padding: '0 10px 6px', flexShrink: 0 }}>
+        <span style={SECTION_LABEL}>모아보기</span>
       </div>
-      <div
-        style={{
-          overflow: 'hidden',
-          flexShrink: 0,
-          maxHeight: state.favOpen ? `${Math.max(1, view.favItems.length) * (isMobile ? 46 : 38) + 30}px` : '0px',
-          opacity: state.favOpen ? 1 : 0,
-          transition: 'max-height .32s cubic-bezier(.4,0,.2,1), opacity .24s ease',
-        }}
+
+      <LnbListSection
+        open={state.favOpen}
+        onToggle={controller.toggleFavList}
+        glyph={<StarGlyph size={15} />}
+        label="즐겨찾기"
+        meta={<span style={{ ...META_MONO, marginLeft: 'auto' }}>{view.favCount}</span>}
+        rows={view.favItems.length}
+        isMobile={isMobile}
       >
-        {/* 펼친 목록은 **가라앉은 판** 안에 든다(디자인 원본의 리스트 패널 —
-            #FBF6F1 ≈ --mf-bg, 테두리 #F2E8DE ≈ --mf-hairline). */}
-        <div style={{ overflow: 'hidden', minHeight: 0, margin: '2px 2px 4px', padding: '6px 6px 5px', borderRadius: 12, background: 'var(--mf-bg)', border: '1px solid var(--mf-hairline)' }}>
-          {view.favItems.map((f) => (
-            <div
-              key={f.title}
-              className="drive-file mf-trash-row"
-              role="button"
-              tabIndex={0}
-              onClick={() => controller.openWithLoader(f.href, f.title, f.docId)}
-              onKeyDown={(e) => {
-                if (e.key === 'Enter' || e.key === ' ') {
-                  e.preventDefault();
-                  controller.openWithLoader(f.href, f.title, f.docId);
-                }
+        {view.favItems.map((f) => (
+          <div
+            key={f.title}
+            className="drive-file mf-trash-row"
+            role="button"
+            tabIndex={0}
+            onClick={() => controller.openWithLoader(f.href, f.title, f.docId)}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter' || e.key === ' ') {
+                e.preventDefault();
+                controller.openWithLoader(f.href, f.title, f.docId);
+              }
+            }}
+            title={`'${f.title}' 열기`}
+            style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '5px 7px', minHeight: isMobile ? 44 : undefined, borderRadius: 9, cursor: 'pointer', fontSize: 12.5, color: 'var(--mf-subtext)' }}
+          >
+            {/* 종류 아이콘(맵·보드·칸반) — 홈 카드 배지의 점 색과 같은 토큰이라
+                배지·아이콘이 같은 색으로 같은 종류를 가리킨다(요청 ⑥). 해제(★)는
+                트래시 행의 동작처럼 hover에서 오른쪽에 드러난다. */}
+            <KindMiniGlyph kind={f.kind} />
+            <span style={{ flex: '1 1 auto', minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{f.title}</span>
+            {f.isDrive && (
+              <span style={{ flexShrink: 0, display: 'flex', alignItems: 'center', padding: '1px 6px', borderRadius: 999, fontSize: 9.5, fontWeight: 700, background: 'rgba(52,168,83,.12)', color: 'var(--mf-success-ink)' }}>Drive</span>
+            )}
+            <button
+              type="button"
+              className="btn mf-fav-unstar mf-trash-act"
+              aria-label={`'${f.title}' 즐겨찾기 해제`}
+              title="즐겨찾기 해제"
+              onClick={(e) => {
+                e.stopPropagation();
+                controller.toggleFav(f.title, f.docId);
               }}
-              title={`'${f.title}' 열기`}
-              style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '5px 7px', minHeight: isMobile ? 44 : undefined, borderRadius: 9, cursor: 'pointer', fontSize: 12.5, color: 'var(--mf-subtext)' }}
+              onKeyDown={(e) => e.stopPropagation()}
+              style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', width: 26, height: 26, padding: 0, border: 'none', borderRadius: 7, background: 'transparent', cursor: 'pointer', flexShrink: 0 }}
             >
-              {/* 종류 아이콘(맵·보드·칸반) — 홈 카드 배지의 점 색과 같은 토큰이라
-                  배지·아이콘이 같은 색으로 같은 종류를 가리킨다(요청 ⑥). 해제(★)는
-                  트래시 행의 동작처럼 hover에서 오른쪽에 드러난다. */}
-              <KindMiniGlyph kind={f.kind} />
-              <span style={{ flex: '1 1 auto', minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{f.title}</span>
-              {f.isDrive && (
-                <span style={{ flexShrink: 0, display: 'flex', alignItems: 'center', padding: '1px 6px', borderRadius: 999, fontSize: 9.5, fontWeight: 700, background: 'rgba(52,168,83,.12)', color: 'var(--mf-success-ink)' }}>Drive</span>
-              )}
-              <button
-                type="button"
-                className="btn mf-fav-unstar mf-trash-act"
-                aria-label={`'${f.title}' 즐겨찾기 해제`}
-                title="즐겨찾기 해제"
-                onClick={(e) => {
-                  e.stopPropagation();
-                  controller.toggleFav(f.title, f.docId);
-                }}
-                onKeyDown={(e) => e.stopPropagation()}
-                style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', width: 26, height: 26, padding: 0, border: 'none', borderRadius: 7, background: 'transparent', cursor: 'pointer', flexShrink: 0 }}
-              >
-                <StarGlyph size={12} />
-              </button>
-            </div>
-          ))}
-          {!view.loading && view.favItems.length === 0 && <div style={{ padding: '6px 7px', fontSize: 11.5, color: 'var(--mf-faint2)' }}>즐겨찾기한 항목이 없습니다</div>}
-        </div>
-      </div>
+              <StarGlyph size={12} />
+            </button>
+          </div>
+        ))}
+        {!view.loading && view.favItems.length === 0 && <div style={{ padding: '6px 7px', fontSize: 11.5, color: 'var(--mf-faint2)' }}>즐겨찾기한 항목이 없습니다</div>}
+      </LnbListSection>
 
       {/* 공유받음 — **즐겨찾기 아래**에 둔다(요청). 셋(즐겨찾기·공유받음·휴지통)이
           같은 꼴의 접이식 목록이라 한자리에 모이는 편이 읽기 쉽다. 이름을 "공유받은
@@ -320,225 +309,163 @@ export function Sidebar({ state, view, controller, isMobile = false, isOpen = fa
           어색하지 않게(범용 명칭, 사용자 결정). */}
       {view.sharedVisible && (
         <>
-          <div
-            className="nav-item"
-            role="button"
-            tabIndex={0}
-            aria-expanded={state.sharedOpen}
-            onClick={controller.toggleSharedList}
-            onKeyDown={(e) => {
-              if (e.key === 'Enter' || e.key === ' ') {
-                e.preventDefault();
-                controller.toggleSharedList();
-              }
-            }}
-            style={{
-              // 디자인 원본의 사이드바 행 — 8/9 패딩 · r10 · 13px.
-              display: 'flex',
-              alignItems: 'center',
-              gap: 9,
-              padding: '8px 9px',
-              minHeight: isMobile ? 44 : undefined,
-              borderRadius: 10,
-              cursor: 'pointer',
-              fontSize: 13,
-              fontWeight: 500,
-              color: 'var(--mf-subtext)',
-              flexShrink: 0,
-            }}
+          <LnbListSection
+            open={state.sharedOpen}
+            onToggle={controller.toggleSharedList}
+            glyph={<SharedGlyph size={15} />}
+            label="공유받음"
+            // 아직 확인하지 않은 초대가 있으면 **알림 배지**(고정 알림색), 없으면 지금까지처럼
+            // 총 개수 — 숫자를 두 개 보여 주면 무엇이 새것인지 흐려진다.
+            meta={
+              view.sharedUnread > 0 ? (
+                <span
+                  aria-label={`확인하지 않은 공유 ${view.sharedUnread}개`}
+                  style={{ marginLeft: 'auto', minWidth: 18, padding: '1px 6px', borderRadius: 999, background: UNREAD_BADGE_BG, color: UNREAD_BADGE_INK, fontSize: 10.5, fontWeight: 800, textAlign: 'center' }}
+                >
+                  {view.sharedUnread}
+                </span>
+              ) : (
+                <span style={{ ...META_MONO, marginLeft: 'auto' }}>{view.sharedItems.length ? String(view.sharedItems.length) : ''}</span>
+              )
+            }
+            rows={view.sharedItems.length}
+            isMobile={isMobile}
           >
-            <SharedGlyph size={15} /> 공유받음
-            {/* 아직 확인하지 않은 초대가 있으면 **알림 배지**(강조색 알약), 없으면
-                지금까지처럼 총 개수. 숫자를 두 개 보여 주면 무엇이 새것인지 흐려진다. */}
-            {view.sharedUnread > 0 ? (
-              <span
-                aria-label={`확인하지 않은 공유 ${view.sharedUnread}개`}
+            {view.sharedItems.map((m) => (
+              <div
+                key={m.docId}
+                className="drive-file mf-trash-row"
+                role="button"
+                tabIndex={0}
+                onClick={() => controller.openSharedMap(m.href, m.title, m.docId)}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter' || e.key === ' ') {
+                    e.preventDefault();
+                    controller.openSharedMap(m.href, m.title, m.docId);
+                  }
+                }}
+                title={m.role === 'view' ? `'${m.title}' 열기 (보기 전용)` : `'${m.title}' 열기 (함께 편집)`}
                 style={{
-                  marginLeft: 'auto',
-                  minWidth: 18,
-                  padding: '1px 6px',
-                  borderRadius: 999,
-                  background: UNREAD_BADGE_BG,
-                  color: UNREAD_BADGE_INK,
-                  fontSize: 10.5,
-                  fontWeight: 800,
-                  textAlign: 'center',
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: 8,
+                  padding: '5px 7px',
+                  minHeight: isMobile ? 44 : undefined,
+                  borderRadius: 9,
+                  cursor: 'pointer',
+                  fontSize: 12.5,
+                  color: 'var(--mf-subtext)',
                 }}
               >
-                {view.sharedUnread}
-              </span>
-            ) : (
-              <span style={{ ...META_MONO, marginLeft: 'auto' }}>{view.sharedItems.length ? String(view.sharedItems.length) : ''}</span>
+                <KindMiniGlyph kind={m.kind} />
+                <span style={{ flex: '1 1 auto', minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', fontWeight: m.isNew ? 700 : undefined, color: m.isNew ? 'var(--mf-text)' : undefined }}>{m.title}</span>
+                {/* 아직 안 열어 본 초대 — 어느 것이 새것인지 점으로 짚어 준다
+                    (헤더 배지는 개수만 말한다). 열면 사라진다. */}
+                {m.isNew && <span aria-label="새로 공유됨" title="아직 열어 보지 않은 공유" style={{ flexShrink: 0, width: 6, height: 6, borderRadius: '50%', background: UNREAD_BADGE_BG }} />}
+                {/* 편집 권한은 기본값이라 표시하지 않는다 — 예외인 '보기'만 알린다. */}
+                {m.role === 'view' && (
+                  <span style={{ flexShrink: 0, padding: '1px 6px', borderRadius: 999, fontSize: 9.5, fontWeight: 700, background: 'rgba(63,143,208,.12)', color: 'var(--mf-info)' }}>보기</span>
+                )}
+              </div>
+            ))}
+            {!view.loading && view.sharedItems.length === 0 && (
+              <div style={{ padding: '6px 7px', fontSize: 11.5, color: 'var(--mf-faint2)' }}>공유받은 항목이 없습니다</div>
             )}
-            <ChevronGlyph open={state.sharedOpen} />
-          </div>
-          <div
-            style={{
-              overflow: 'hidden',
-              flexShrink: 0,
-              // 행 높이 × 개수 + 판 여백. 모바일은 터치 타겟 44px(M6)이라 행이 더 높다 —
-              // 같은 수를 쓰면 마지막 행이 잘린다.
-              maxHeight: state.sharedOpen ? `${Math.max(1, view.sharedItems.length) * (isMobile ? 46 : 38) + 30}px` : '0px',
-              opacity: state.sharedOpen ? 1 : 0,
-              transition: 'max-height .32s cubic-bezier(.4,0,.2,1), opacity .24s ease',
-            }}
-          >
-            {/* 즐겨찾기·휴지통과 같은 가라앉은 판(요청) — 같은 종류의 목록이므로
-                같은 옷을 입힌다. */}
-            <div style={{ overflow: 'hidden', minHeight: 0, margin: '2px 2px 4px', padding: '6px 6px 5px', borderRadius: 12, background: 'var(--mf-bg)', border: '1px solid var(--mf-hairline)' }}>
-              {view.sharedItems.map((m) => (
-                <div
-                  key={m.docId}
-                  className="drive-file mf-trash-row"
-                  role="button"
-                  tabIndex={0}
-                  onClick={() => controller.openSharedMap(m.href, m.title, m.docId)}
-                  onKeyDown={(e) => {
-                    if (e.key === 'Enter' || e.key === ' ') {
-                      e.preventDefault();
-                      controller.openSharedMap(m.href, m.title, m.docId);
-                    }
-                  }}
-                  title={m.role === 'view' ? `'${m.title}' 열기 (보기 전용)` : `'${m.title}' 열기 (함께 편집)`}
-                  style={{
-                    display: 'flex',
-                    alignItems: 'center',
-                    gap: 8,
-                    padding: '5px 7px',
-                    minHeight: isMobile ? 44 : undefined,
-                    borderRadius: 9,
-                    cursor: 'pointer',
-                    fontSize: 12.5,
-                    color: 'var(--mf-subtext)',
-                  }}
-                >
-                  <KindMiniGlyph kind={m.kind} />
-                  <span style={{ flex: '1 1 auto', minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', fontWeight: m.isNew ? 700 : undefined, color: m.isNew ? 'var(--mf-text)' : undefined }}>{m.title}</span>
-                  {/* 아직 안 열어 본 초대 — 어느 것이 새것인지 점으로 짚어 준다
-                      (헤더 배지는 개수만 말한다). 열면 사라진다. */}
-                  {m.isNew && <span aria-label="새로 공유됨" title="아직 열어 보지 않은 공유" style={{ flexShrink: 0, width: 6, height: 6, borderRadius: '50%', background: UNREAD_BADGE_BG }} />}
-                  {/* 편집 권한은 기본값이라 표시하지 않는다 — 예외인 '보기'만 알린다. */}
-                  {m.role === 'view' && (
-                    <span style={{ flexShrink: 0, padding: '1px 6px', borderRadius: 999, fontSize: 9.5, fontWeight: 700, background: 'rgba(63,143,208,.12)', color: 'var(--mf-info)' }}>보기</span>
-                  )}
-                </div>
-              ))}
-              {!view.loading && view.sharedItems.length === 0 && (
-                <div style={{ padding: '6px 7px', fontSize: 11.5, color: 'var(--mf-faint2)' }}>공유받은 항목이 없습니다</div>
-              )}
-            </div>
-          </div>
+          </LnbListSection>
         </>
       )}
-
 
       {/* 공유받음(남의 문서)과 휴지통(지운 내 문서)은 성격이 다른 묶음이라 선으로 가른다(요청). */}
       <div data-lnb-divider style={{ ...LNB_DIVIDER, margin: '12px 4px' }} />
 
-      <div
-        className="nav-item mf-trash-head"
-        role="button"
-        tabIndex={0}
-        onClick={controller.toggleTrashList}
-        onKeyDown={(e) => {
-          if (e.key === 'Enter' || e.key === ' ') controller.toggleTrashList();
-        }}
-        style={{ display: 'flex', alignItems: 'center', gap: 9, padding: '8px 9px', minHeight: isMobile ? 44 : undefined, borderRadius: 10, cursor: 'pointer', fontSize: 13, fontWeight: 500, color: 'var(--mf-subtext)' }}
-      >
-        <TrashGlyph size={15} /> 휴지통
-        {/* 비우기 sits BEFORE the count so the count stays at the far right —
-            exactly where the favorites count sits — keeping the two numbers
-            vertically aligned. It reveals on header hover/focus (always visible
-            on touch), so at rest the header shows just the aligned count. */}
-        {view.trashItems.length > 0 && (
-          <span
-            role="button"
-            tabIndex={0}
-            className="mf-trash-empty"
-            onClick={(e) => {
-              // The header row toggles the list — the 비우기 action must not.
-              e.stopPropagation();
-              controller.askEmptyTrash();
-            }}
-            onKeyDown={(e) => {
-              e.stopPropagation();
-              if (e.key === 'Enter' || e.key === ' ') {
-                e.preventDefault();
+      <LnbListSection
+        open={state.trashOpen}
+        onToggle={controller.toggleTrashList}
+        glyph={<TrashGlyph size={15} />}
+        label="휴지통"
+        headClassName="mf-trash-head"
+        // 비우기는 개수 **앞**에 둔다 — 그래야 개수가 즐겨찾기·공유받음의 개수와 같은
+        // 열(맨 오른쪽)에 서서 세 숫자가 세로로 정렬된다. 머리에 손을 얹으면 드러난다
+        // (터치에서는 늘 보인다 — `home.css`의 `.mf-trash-empty`).
+        action={
+          view.trashItems.length > 0 ? (
+            <span
+              role="button"
+              tabIndex={0}
+              className="mf-trash-empty"
+              onClick={(e) => {
+                // 머리 행은 목록을 여닫는다 — 비우기가 그 동작까지 태우면 안 된다.
+                e.stopPropagation();
                 controller.askEmptyTrash();
-              }
-            }}
-            style={{ marginLeft: 'auto', fontSize: 11, cursor: 'pointer', flexShrink: 0 }}
-          >
-            비우기
-          </span>
-        )}
-        <span style={{ ...META_MONO, marginLeft: view.trashItems.length > 0 ? 0 : 'auto' }}>{view.trashCount}</span>
-        <ChevronGlyph open={state.trashOpen} />
-      </div>
-      <div
-        style={{
-          overflow: 'hidden',
-          flexShrink: 0,
-          maxHeight: state.trashOpen ? `${Math.max(1, view.trashItems.length) * (isMobile ? 46 : 38) + 30}px` : '0px',
-          opacity: state.trashOpen ? 1 : 0,
-          transition: 'max-height .32s cubic-bezier(.4,0,.2,1), opacity .24s ease',
-        }}
+              }}
+              onKeyDown={(e) => {
+                e.stopPropagation();
+                if (e.key === 'Enter' || e.key === ' ') {
+                  e.preventDefault();
+                  controller.askEmptyTrash();
+                }
+              }}
+              style={{ marginLeft: 'auto', fontSize: 11, cursor: 'pointer', flexShrink: 0 }}
+            >
+              비우기
+            </span>
+          ) : undefined
+        }
+        meta={<span style={{ ...META_MONO, marginLeft: view.trashItems.length > 0 ? 0 : 'auto' }}>{view.trashCount}</span>}
+        rows={view.trashItems.length}
+        isMobile={isMobile}
       >
-        {/* 즐겨찾기와 같은 가라앉은 판. 디자인 원본의 "30일 후 영구 삭제" 헤더는
-            넣지 않는다 — 실제 30일 자동 삭제가 없어서 그 문구는 거짓 약속이 된다. */}
-        <div style={{ overflow: 'hidden', minHeight: 0, margin: '2px 2px 4px', padding: '6px 6px 5px', borderRadius: 12, background: 'var(--mf-bg)', border: '1px solid var(--mf-hairline)' }}>
-          {view.trashItems.map((t) => (
-            // Keyed by docId when present — the trash may hold two entries with
-            // the same TITLE (different docs), which a title key would collapse.
-            // Row anatomy: [kind glyph] [title — takes ALL free width, ellipsis]
-            // [restore ↺] [purge ✕]. The actions are icon-only 26px buttons
-            // (labels live on aria-label/title, same treatment as the favorites
-            // unstar star) — the old "복원"/"영구 삭제" text links ate most of the
-            // 248px column and left titles nearly invisible. They reveal on row
-            // hover/focus (always visible on touch — see home.css .mf-trash-act).
-            <div key={t.docId || t.title} className="drive-file mf-trash-row" style={{ display: 'flex', alignItems: 'center', gap: 4, padding: '4px 7px', minHeight: isMobile ? 44 : undefined, borderRadius: 9, fontSize: 12.5, color: 'var(--mf-subtext)' }}>
-              {t.isDrive ? <FolderMiniGlyph /> : <KindMiniGlyph kind={t.kind} />}
-              <span style={{ flex: '1 1 auto', minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', margin: '0 2px 0 4px' }}>{t.title}</span>
-              {t.isDrive && (
-                <span style={{ flexShrink: 0, padding: '1px 7px', borderRadius: 999, fontSize: 10, fontWeight: 700, background: 'rgba(52,168,83,.12)', color: 'var(--mf-success-ink)' }}>{t.badge}</span>
-              )}
-              <button
-                type="button"
-                aria-label={`'${t.title}' 복원`}
-                title="복원"
-                onClick={(e) => {
-                  e.stopPropagation();
-                  controller.askRestore(t.title, t.docId);
-                }}
-                className="btn restore-link mf-trash-act"
-                style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', width: 26, height: 26, padding: 0, border: 'none', borderRadius: 7, background: 'transparent', color: 'var(--mf-success)', cursor: 'pointer', flexShrink: 0 }}
-              >
-                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-                  <polyline points="3 4 3 10 9 10" />
-                  <path d="M5.4 15a8 8 0 1 0 1.9-8.3L3 10" />
-                </svg>
-              </button>
-              <button
-                type="button"
-                aria-label={`'${t.title}' 영구 삭제`}
-                title="영구 삭제"
-                onClick={(e) => {
-                  e.stopPropagation();
-                  controller.askPurge(t.title, t.docId);
-                }}
-                className="btn purge-link mf-trash-act"
-                style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', width: 26, height: 26, padding: 0, border: 'none', borderRadius: 7, background: 'transparent', color: 'var(--mf-danger)', cursor: 'pointer', flexShrink: 0 }}
-              >
-                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" aria-hidden="true">
-                  <line x1="6" y1="6" x2="18" y2="18" />
-                  <line x1="18" y1="6" x2="6" y2="18" />
-                </svg>
-              </button>
-            </div>
-          ))}
-          {!view.loading && view.trashItems.length === 0 && <div style={{ padding: '6px 7px', fontSize: 11.5, color: 'var(--mf-faint2)' }}>휴지통이 비어 있습니다</div>}
-        </div>
-      </div>
+        {view.trashItems.map((t) => (
+          // Keyed by docId when present — the trash may hold two entries with
+          // the same TITLE (different docs), which a title key would collapse.
+          // Row anatomy: [kind glyph] [title — takes ALL free width, ellipsis]
+          // [restore ↺] [purge ✕]. The actions are icon-only 26px buttons
+          // (labels live on aria-label/title, same treatment as the favorites
+          // unstar star) — the old "복원"/"영구 삭제" text links ate most of the
+          // 248px column and left titles nearly invisible. They reveal on row
+          // hover/focus (always visible on touch — see home.css .mf-trash-act).
+          <div key={t.docId || t.title} className="drive-file mf-trash-row" style={{ display: 'flex', alignItems: 'center', gap: 4, padding: '4px 7px', minHeight: isMobile ? 44 : undefined, borderRadius: 9, fontSize: 12.5, color: 'var(--mf-subtext)' }}>
+            {t.isDrive ? <FolderMiniGlyph /> : <KindMiniGlyph kind={t.kind} />}
+            <span style={{ flex: '1 1 auto', minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', margin: '0 2px 0 4px' }}>{t.title}</span>
+            {t.isDrive && (
+              <span style={{ flexShrink: 0, padding: '1px 7px', borderRadius: 999, fontSize: 10, fontWeight: 700, background: 'rgba(52,168,83,.12)', color: 'var(--mf-success-ink)' }}>{t.badge}</span>
+            )}
+            <button
+              type="button"
+              aria-label={`'${t.title}' 복원`}
+              title="복원"
+              onClick={(e) => {
+                e.stopPropagation();
+                controller.askRestore(t.title, t.docId);
+              }}
+              className="btn restore-link mf-trash-act"
+              style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', width: 26, height: 26, padding: 0, border: 'none', borderRadius: 7, background: 'transparent', color: 'var(--mf-success)', cursor: 'pointer', flexShrink: 0 }}
+            >
+              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                <polyline points="3 4 3 10 9 10" />
+                <path d="M5.4 15a8 8 0 1 0 1.9-8.3L3 10" />
+              </svg>
+            </button>
+            <button
+              type="button"
+              aria-label={`'${t.title}' 영구 삭제`}
+              title="영구 삭제"
+              onClick={(e) => {
+                e.stopPropagation();
+                controller.askPurge(t.title, t.docId);
+              }}
+              className="btn purge-link mf-trash-act"
+              style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', width: 26, height: 26, padding: 0, border: 'none', borderRadius: 7, background: 'transparent', color: 'var(--mf-danger)', cursor: 'pointer', flexShrink: 0 }}
+            >
+              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" aria-hidden="true">
+                <line x1="6" y1="6" x2="18" y2="18" />
+                <line x1="18" y1="6" x2="6" y2="18" />
+              </svg>
+            </button>
+          </div>
+        ))}
+        {!view.loading && view.trashItems.length === 0 && <div style={{ padding: '6px 7px', fontSize: 11.5, color: 'var(--mf-faint2)' }}>휴지통이 비어 있습니다</div>}
+      </LnbListSection>
 
       {/* 피드백 보내기 — LNB 최하단 고정(사용자 요청: 프로필 메뉴에서 이동).
           `marginTop: auto`가 남는 공간을 밀어 올려 항상 바닥에 붙는다(공간이
@@ -632,15 +559,6 @@ function KindMiniGlyph({ kind }: { kind: DocKindName }) {
   );
 }
 
-/** 접이식 구획 머리의 회전 셰브론 — 닫힘=오른쪽(›), 열림=아래(⌄). 디자인 원본의
- * 휴지통 머리와 같은 문법(첨부 이미지의 즐겨찾기·휴지통 ⌄). */
-function ChevronGlyph({ open }: { open: boolean }) {
-  return (
-    <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="var(--mf-faint2)" strokeWidth={2.4} strokeLinecap="round" strokeLinejoin="round" aria-hidden="true" style={{ flexShrink: 0, transform: open ? 'rotate(90deg)' : 'none', transition: 'transform .16s ease' }}>
-      <path d="m9 6 6 6-6 6" />
-    </svg>
-  );
-}
 
 /** Tiny folder glyph for Drive trash rows (replaces the 📁 emoji). */
 function FolderMiniGlyph() {

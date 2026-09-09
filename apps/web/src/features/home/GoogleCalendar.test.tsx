@@ -326,6 +326,91 @@ describe('구글 캘린더 겹치기(PR5)', () => {
     expect(localStorage.getItem('mf_gcal_token')).toContain('tok');
   });
 
+  // 첨부 디자인(요청 ③) — 가라앉은 판이 아니라 왼쪽 rail, 색 점 없이 **체크 칩이
+  // 그 캘린더의 색**, 그리고 감춘 것이 있을 때만 뜨는 `모두 보기`.
+  it('LNB 하위 메뉴는 rail 안 색 체크박스다 — `모두 보기`는 감춘 것이 있을 때만, 공휴일은 목록에 없다(첨부 디자인)', async () => {
+    clientId = 'test-client.apps.googleusercontent.com';
+    clearGoogleSessionCache();
+    // 내 캘린더만 켜 둔다 — 남의 캘린더는 감춰 둔 상태여야 `모두 보기`가 뜬다.
+    seed({ calendars: ['me@example.com'] });
+    seedToken();
+    stubGis();
+    stubFetch();
+    const user = userEvent.setup();
+    const { container } = renderHome();
+    await openCalendar(container, user);
+    const row = await waitFor(() => {
+      const el = document.querySelector('[data-cal-sub-item="me@example.com"]');
+      expect(el).toBeTruthy();
+      return el as HTMLElement;
+    });
+
+    // ① 껍데기는 즐겨찾기·휴지통과 같은 rail이다(가라앉은 판이 아니다).
+    const rail = row.closest('[data-lnb-rail]') as HTMLElement;
+    expect(rail).toBeTruthy();
+    expect(rail.style.borderLeft).toContain('var(--mf-border-soft)');
+    expect(rail.style.background).toBe('');
+
+    // ② 체크 칩 자체가 그 캘린더의 색 — 색 점을 따로 두지 않는다.
+    const box = row.querySelector('input[type="checkbox"]') as HTMLInputElement;
+    expect(box.className).toContain('mf-cb');
+    expect(box.style.getPropertyValue('--mf-cb-fill')).toBe('#4285f4');
+
+    // ③ 설정이 소유한 공휴일 캘린더는 목록에 없다 — 한 캘린더에 스위치가 둘이 되지
+    //    않게(어느 나라를 볼지는 설정의 `공휴일 국가`가 정한다).
+    expect(document.querySelector(`[data-cal-sub-item="${HOLIDAY_ID}"]`)).toBeNull();
+
+    // ④ 감춘 것이 있으므로 `모두 보기`가 뜨고, 누르면 전부 켜진다.
+    const all = document.querySelector('[data-cal-sub-all]') as HTMLElement;
+    expect(all).toBeTruthy();
+    await user.click(all);
+    await waitFor(() => {
+      const ws = JSON.parse(localStorage.getItem('mf_spaces') ?? '{}') as { google?: { calendars: string[] } };
+      expect(ws.google?.calendars).toContain(SHARED_ID);
+    });
+    // 공휴일은 그 버튼이 건드리지 않는다(그 스위치는 세그먼트다).
+    const ws = JSON.parse(localStorage.getItem('mf_spaces') ?? '{}') as { google?: { calendars: string[] } };
+    expect(ws.google?.calendars).not.toContain(HOLIDAY_ID);
+    // 전부 켜졌으면 그 버튼은 자리에 없다 — 눌러도 아무 일 없는 버튼을 두지 않는다.
+    await waitFor(() => expect(document.querySelector('[data-cal-sub-all]')).toBeNull());
+  });
+
+  // 실브라우저에서 잡은 것 — `setGoogleCalendars`는 블롭의 `google`을 통째로 갈아
+  // 끼우므로, 캘린더 체크처럼 **다른 필드만 바꾸는 저장**이 공휴일 국가를 빠뜨리면
+  // 사용자가 고른 나라가 조용히 지워진다(목록에서 되유추한 값으로 떨어진다).
+  it('캘린더 체크·모두 보기는 공휴일 국가를 지우지 않는다 — 블롭을 갈아 끼우는 저장이라(실측)', async () => {
+    clientId = 'test-client.apps.googleusercontent.com';
+    clearGoogleSessionCache();
+    seed({ calendars: ['me@example.com'] });
+    localStorage.setItem('mf_spaces', JSON.stringify({ ...JSON.parse(localStorage.getItem('mf_spaces')!), google: { calendars: ['me@example.com'], holiday: 'jp' } }));
+    seedToken();
+    stubGis();
+    stubFetch();
+    const user = userEvent.setup();
+    const { container } = renderHome();
+    await openCalendar(container, user);
+    const row = await waitFor(() => {
+      const el = document.querySelector('[data-cal-sub-item="me@example.com"]');
+      expect(el).toBeTruthy();
+      return el as HTMLElement;
+    });
+
+    const holidayOf = () => (JSON.parse(localStorage.getItem('mf_spaces') ?? '{}') as { google?: { holiday?: string } }).google?.holiday;
+    await user.click(row.querySelector('input') as HTMLInputElement);
+    await waitFor(() => {
+      const ws = JSON.parse(localStorage.getItem('mf_spaces') ?? '{}') as { google?: { calendars: string[] } };
+      expect(ws.google?.calendars).not.toContain('me@example.com');
+    });
+    expect(holidayOf()).toBe('jp');
+
+    await user.click(document.querySelector('[data-cal-sub-all]') as HTMLElement);
+    await waitFor(() => {
+      const ws = JSON.parse(localStorage.getItem('mf_spaces') ?? '{}') as { google?: { calendars: string[] } };
+      expect(ws.google?.calendars).toContain(SHARED_ID);
+    });
+    expect(holidayOf()).toBe('jp');
+  });
+
   it('LNB `일정`을 누르면 하위 메뉴가 펼쳐진다 — 연동 전에는 연동 항목, 연동 뒤에는 보여 줄 캘린더(요청)', async () => {
     // ① 클라이언트 ID가 없는 배포 — 하위 메뉴 자체를 그리지 않는다(눌러도 아무 일
     //    없는 항목을 두지 않는다는 규칙, 설정의 연동 구획과 같다).

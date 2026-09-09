@@ -326,7 +326,7 @@ describe('일정 화면', () => {
     expect(nav.compareDocumentPosition(dashLabel) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
   });
 
-  it('LNB `일정` 카드는 알림과 갈린다 — 테두리 타일에 오늘 날짜, 면은 언제나 칠하고 활성은 링으로(제보)', async () => {
+  it('LNB `일정` 카드는 알림과 갈린다 — 테두리 타일에 [가로 바 + 오늘 날짜], 면은 활성일 때만 칠한다(제보)', async () => {
     // 제보: 두 카드가 너무 똑같이 보인다. 껍데기(크기·간격)는 나눠 쓰되 **뜻이
     // 다른 부분**을 갈랐다 — 알림은 채운 코랄 타일 + 개수 배지, 일정은 테두리
     // 타일 + 오늘 날짜 + 연동 표식.
@@ -337,25 +337,28 @@ describe('일정 화면', () => {
     expect(tile.dataset.navCardTile).toBe('plain');
     expect(tile.style.background).toBe('var(--mf-card)');
     expect(tile.style.border).toContain('var(--mf-border)');
-    // 달력 아이콘 하나보다 이 자리에서 더 말이 되는 값 — 오늘 며칠인가.
-    expect(nav.querySelector('[data-cal-date]')!.textContent).toBe(String(new Date().getDate()));
+    // 달력 아이콘 하나보다 이 자리에서 더 말이 되는 값 — 오늘 며칠인가. 그 위의
+    // **가로 바**가 달력의 머리 띠 노릇을 한다(제보 ②: 디자인에 그 선이 있다).
+    const date = nav.querySelector('[data-cal-date]') as HTMLElement;
+    expect(date.textContent).toBe(String(new Date().getDate()));
+    expect(date.querySelector('[data-cal-date-bar]')).toBeTruthy();
     // 알림 카드와 타일이 갈린다(같은 껍데기여도 한눈에 구별된다).
     const bellTile = document.querySelector('[data-notification-nav] [data-nav-card-glyph]') as HTMLElement;
     expect(bellTile.dataset.navCardTile).toBe('accent');
-    // 면은 **언제나** 칠한다(요청) — 그러면 틴트가 "지금 이 화면"을 말할 수 없으므로
-    // 활성 신호는 안쪽 링이다(테두리를 켜면 1px만큼 글자가 흔들린다).
+    // 면은 **일정 화면을 보고 있을 때만** 칠한다(제보 ①: 늘 칠하면 "언제나 활성"으로
+    // 읽힌다) — 그 틴트가 곧 활성 신호라 링을 겹쳐 두지 않는다.
     expect(nav.style.background).toBe('var(--mf-accent-soft)');
     expect(nav.dataset.tinted).toBe('1');
-    expect(nav.style.boxShadow).toContain('inset');
+    expect(nav.style.boxShadow).toBe('');
     // 연동 표식은 **연동됐을 때만** — 이 환경에는 클라이언트 ID가 없어 아무것도 없다
     // (모르는 것을 칠하지 않는다).
     expect(nav.querySelector('[data-cal-link]')).toBeNull();
 
-    // 다른 화면으로 가면 링만 걷히고 틴트는 남는다.
+    // 다른 화면으로 가면 틴트가 걷힌다 — 그것이 "지금 이 화면"의 유일한 표시다.
     const spaceRow = [...document.querySelectorAll('aside [role="button"], aside button')].find((e) => e.textContent?.trim().startsWith('업무')) as HTMLElement;
     fireEvent.click(spaceRow);
-    await waitFor(() => expect((document.querySelector('[data-cal-nav]') as HTMLElement).style.boxShadow).toBe(''));
-    expect((document.querySelector('[data-cal-nav]') as HTMLElement).style.background).toBe('var(--mf-accent-soft)');
+    await waitFor(() => expect((document.querySelector('[data-cal-nav]') as HTMLElement).style.background).toBe('transparent'));
+    expect((document.querySelector('[data-cal-nav]') as HTMLElement).dataset.tinted).toBeUndefined();
   });
 
   it('전 스페이스의 칸반 마감을 그리고, 완료 열은 빼고, 기간 일정은 칩이 아니라 바로 그린다', async () => {

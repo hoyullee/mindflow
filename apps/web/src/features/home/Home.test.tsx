@@ -2386,6 +2386,40 @@ describe('Home', () => {
     expect(JSON.parse(localStorage.getItem('mf_recent')!)).toEqual([]);
   });
 
+  // 첨부 디자인(요청 ④) — 세 구획(즐겨찾기·공유받음·휴지통)이 한 껍데기를 쓰고,
+  // 펼친 목록은 **가라앉은 판이 아니라 왼쪽 rail**에 든다. 값이 갈릴 자리를 하나로
+  // 모은 것이라(예전엔 세 곳에 인라인) 이 계약이 깨지면 곧 서로 달라 보인다.
+  it('세 구획은 같은 껍데기를 쓴다 — 펼치면 머리가 칠해지고 목록은 왼쪽 rail에 든다(첨부 디자인)', async () => {
+    const user = userEvent.setup();
+    const { container } = renderHomeWithDocStore([
+      { id: 'doc-f1', title: '즐겨찾는 맵', version: 1, updatedAt: '2026-01-01T00:00:00.000Z', isFavorite: true, deletedAt: null },
+    ]);
+    const aside = container.querySelector('aside') as HTMLElement;
+    // 셋을 묶는 구획 이름(첨부 디자인) — 대시보드·스페이스 라벨과 같은 문법.
+    await waitFor(() => expect(within(aside).getByText('모아보기')).toBeTruthy());
+
+    const head = (label: string) => aside.querySelector(`[data-lnb-section="${label}"]`) as HTMLElement;
+    for (const label of ['즐겨찾기', '공유받음', '휴지통']) {
+      expect(head(label)).toBeTruthy();
+      // 접힌 머리는 칠하지 않는다 — 틴트의 뜻은 "펼쳐져 있다"다(일정 카드와 같은 규칙).
+      expect(head(label).style.background).toBe('transparent');
+      expect(head(label).getAttribute('aria-expanded')).toBe('false');
+    }
+
+    await user.click(head('즐겨찾기'));
+    await waitFor(() => expect(head('즐겨찾기').style.background).toBe('var(--mf-accent-soft)'));
+    // hover가 틴트를 회색으로 갈아 끼우지 않게 하는 표식.
+    expect(head('즐겨찾기').dataset.tinted).toBe('1');
+    expect(head('즐겨찾기').getAttribute('aria-expanded')).toBe('true');
+
+    // 목록은 rail(왼쪽 세로선) 안이고, 예전의 가라앉은 판은 없다.
+    const row = within(aside).getByText('즐겨찾는 맵').closest('.mf-trash-row') as HTMLElement;
+    const rail = row.closest('[data-lnb-rail]') as HTMLElement;
+    expect(rail).toBeTruthy();
+    expect(rail.style.borderLeft).toContain('var(--mf-border-soft)');
+    expect(rail.style.background).toBe('');
+  });
+
   it('empties the whole trash via the header 비우기 action', async () => {
     const user = userEvent.setup();
     const { container, docStore } = renderHomeWithDocStore([
@@ -5266,14 +5300,16 @@ describe('홈 리디자인 계약', () => {
     expect(parseFloat((aside.querySelector('.lnb-scroll') as HTMLElement).style.minHeight)).toBe(0);
 
     await user.click(shared);
-    const panel = await waitFor(() => {
-      const el = within(aside).getByText('공유받은 항목이 없습니다').parentElement as HTMLElement;
-      expect(el.style.background).toContain('--mf-bg');
+    // 셋이 같은 껍데기를 쓴다 — 이제 **가라앉은 판이 아니라 왼쪽 rail**이다(첨부 디자인).
+    const rail = await waitFor(() => {
+      const el = within(aside).getByText('공유받은 항목이 없습니다').closest('[data-lnb-rail]') as HTMLElement;
+      expect(el).toBeTruthy();
       return el;
     });
-    // 즐겨찾기 판과 같은 값(가라앉은 면 + hairline + r12)
-    expect(panel.style.borderRadius).toBe('12px');
-    expect(panel.style.border).toContain('--mf-hairline');
+    expect(rail.style.borderLeft).toContain('--mf-border-soft');
+    expect(rail.style.background).toBe('');
+    // 펼친 머리는 칠해진다 — 틴트의 뜻이 "펼쳐져 있다"임을 못박는다.
+    expect((shared.closest('.nav-item') as HTMLElement).style.background).toBe('var(--mf-accent-soft)');
   });
 
   it('마우스 오버 애니메이션 — 카드가 3px 떠오르고 그늘·경계가 바뀐다(CSS 계약)', () => {
