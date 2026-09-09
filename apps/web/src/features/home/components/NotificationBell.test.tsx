@@ -208,20 +208,34 @@ describe('알림 센터', () => {
     expect(when!.style.flexShrink).toBe('0'); // 줄지 않는다
   });
 
-  it('벨 글리프는 읽었든 안 읽었든 늘 강조색이다(요청)', async () => {
-    // 읽음 여부는 배지·요약 색이 말한다 — 종까지 함께 흐려지면 "알림 자리"라는
-    // 표식이 사라진다.
+  it('벨 타일은 읽었든 안 읽었든 늘 채운 강조색이다(요청) — 개수는 오른쪽 끝, 셰브론은 없다', async () => {
+    // 읽음 여부는 **타일 모서리의 점**과 개수 배지·요약 색이 말한다 — 타일까지
+    // 함께 흐려지면 "알림 자리"라는 표식이 사라진다.
     seed([{ readAt: new Date().toISOString() }]);
     const { unmount } = renderBell();
-    let glyph = (await screen.findByRole('button', { name: /^알림 ·/ })).querySelector('[data-nav-card-glyph]') as HTMLElement;
-    expect(glyph.style.color).toBe('var(--mf-accent)');
+    let card = await screen.findByRole('button', { name: /^알림 ·/ });
+    let tile = card.querySelector('[data-nav-card-glyph]') as HTMLElement;
+    expect(tile.dataset.navCardTile).toBe('accent');
+    expect(tile.style.background).toBe('var(--mf-accent)');
+    expect(tile.style.color).toBe('var(--mf-accent-ink)'); // 흰 벨
+    expect(card.querySelector('[data-nav-card-tile-dot]')).toBeNull(); // 다 읽음
+    // 이 카드는 하위 메뉴를 펼치는 것이 아니라 패널을 띄운다 — 셰브론을 두면
+    // "누르면 펼쳐진다"는 거짓 약속이 된다.
+    expect(card.querySelector('[data-nav-card-chevron]')).toBeNull();
     unmount();
     cleanup();
 
     seed([{}]);
     renderBell();
-    glyph = (await screen.findByRole('button', { name: /^알림 1개 ·/ })).querySelector('[data-nav-card-glyph]') as HTMLElement;
-    expect(glyph.style.color).toBe('var(--mf-accent)');
+    card = await screen.findByRole('button', { name: /^알림 1개 ·/ });
+    tile = card.querySelector('[data-nav-card-glyph]') as HTMLElement;
+    expect(tile.style.background).toBe('var(--mf-accent)');
+    expect(card.querySelector('[data-nav-card-tile-dot]')).not.toBeNull();
+    // 개수 배지는 이름 옆이 아니라 **오른쪽 끝**이다(첨부 디자인) — 이름이 길어도
+    // 자리를 다투지 않고 두 카드의 오른쪽 끝이 한 열에 선다.
+    const badge = card.querySelector('[data-notification-count]') as HTMLElement;
+    const summary = card.querySelector('[data-nav-card-summary]') as HTMLElement;
+    expect(badge.compareDocumentPosition(summary) & Node.DOCUMENT_POSITION_PRECEDING).toBeTruthy();
   });
 
   it('패널 목록은 첨부 디자인대로 — 안 읽은 줄만 강조색 카드, 둘째 줄은 [문서 칩][시간], 묶음은 오늘/이번 주/이전', async () => {

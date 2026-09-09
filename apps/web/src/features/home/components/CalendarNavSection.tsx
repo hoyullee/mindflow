@@ -20,6 +20,33 @@ import { CalendarGlyph } from '../calendar/CalendarView';
 import { googlePrefsOf, useGoogleCalendar } from '../calendar/useGoogleCalendar';
 import { NavCard } from './NavCard';
 
+/** 연동 상태 표식(첨부 디자인) — **스위치가 아니다**: 켜고 끄는 일은 설정의 연동
+ * 구획이 맡는다(같은 동작의 진입점을 둘로 두면 어느 쪽이 진짜인지 흐려진다).
+ * 그래서 점을 알약 **가운데**에 두고 눌리지 않는 `span`으로 그린다.
+ * 연동됨 = 초록, 권한 만료 = 경고, 연동 전 = 아무것도 그리지 않는다(모르는 것을
+ * 칠하지 않는다 — 이 앱의 "정직한 표식" 규칙). */
+function LinkPill({ tone }: { tone: 'ok' | 'warn' }) {
+  const ok = tone === 'ok';
+  return (
+    <span
+      data-cal-link={tone}
+      aria-hidden="true"
+      style={{
+        width: 22,
+        height: 14,
+        borderRadius: 999,
+        background: ok ? 'var(--mf-success-soft)' : 'var(--mf-danger-soft)',
+        display: 'inline-flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+        flexShrink: 0,
+      }}
+    >
+      <span style={{ width: 6, height: 6, borderRadius: 999, background: ok ? 'var(--mf-success)' : 'var(--mf-danger)', display: 'block' }} />
+    </span>
+  );
+}
+
 export function CalendarNavSection({ state, controller, isMobile, brief }: { state: HomeState; controller: HomeController; isMobile: boolean; brief: CalendarBrief }) {
   const active = state.activeCal;
   const line = calendarBriefLine(brief);
@@ -33,20 +60,41 @@ export function CalendarNavSection({ state, controller, isMobile, brief }: { sta
     active ? 'list' : 'off',
   );
 
+  // 연동 상태 — 켜져 있고 끊긴 바 없으면 초록, 권한이 만료되면 경고.
+  const linkTone: 'ok' | 'warn' | null = !google.available
+    ? null
+    : google.connected
+      ? 'ok'
+      : google.enabled && google.needsReauth
+        ? 'warn'
+        : null;
+
   return (
     <>
       <NavCard
         data-cal-nav
         isMobile={isMobile}
-        // 틴트는 LNB의 다른 행과 같은 뜻이다 — **지금 보고 있는 화면**.
+        // **테두리 타일 + 오늘 날짜**(첨부 디자인) — 알림의 채운 코랄 타일과 갈린다.
+        tile="plain"
+        // 면은 **언제나 칠한다**(요청) — 그러면 틴트가 "지금 이 화면"을 말할 수
+        // 없으므로 활성 신호를 `current`(안쪽 링)로 옮긴다.
+        surface="tint"
+        current={active}
         tone={active ? 'hot' : 'quiet'}
         expanded={active && google.available}
         aria-current={active ? 'page' : undefined}
-        aria-label={`일정 · ${line}`}
+        aria-label={`일정 · ${line}${linkTone === 'ok' ? ' · Google 캘린더 연동됨' : linkTone === 'warn' ? ' · Google 캘린더 권한 만료' : ''}`}
         title={line}
         onClick={controller.openCalendar}
         label="일정"
-        glyph={<CalendarGlyph />}
+        // 오늘 며칠인가 — 달력 아이콘 하나보다 이 자리에서 더 말이 된다(자리를
+        // 늘리지 않고 정보를 하나 더 얹는다).
+        glyph={
+          <span data-cal-date style={{ fontSize: 13, fontWeight: 800, letterSpacing: '-.02em', lineHeight: 1 }}>
+            {new Date().getDate()}
+          </span>
+        }
+        trailing={linkTone ? <LinkPill tone={linkTone} /> : undefined}
         badge={
           brief.overdue > 0 ? (
             <span

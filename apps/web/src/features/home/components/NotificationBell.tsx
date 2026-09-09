@@ -135,8 +135,10 @@ export function NotificationBell({ isMobile = false }: { isMobile?: boolean }) {
     overflow: 'hidden',
   };
 
-  // LNB의 **두 줄 카드**(요청, 첨부 디자인) — 위: 벨 + `알림` + 개수 배지 + 셰브론,
-  // 아래: 가장 최근 알림 한 줄(`종류 · 내용 · 시간`). 상태가 셋이다:
+  // LNB의 **두 줄 카드**(요청, 첨부 디자인) — 위: 코랄 타일에 담긴 흰 벨 + `알림`,
+  // 오른쪽 끝에 개수 배지, 아래: 가장 최근 알림 한 줄(`종류 · 내용 · 시간`).
+  // 셰브론은 두지 않는다 — 이 카드는 하위 메뉴를 펼치는 것이 아니라 **패널을
+  // 띄운다**(그 자리를 개수 배지가 쓴다). 상태가 셋이다:
   //   ① 안 읽음 → 강조색 틴트 면 + 코랄 배지 + 요약이 **본문 톤**(따뜻한 갈색)
   //   ② 다 읽음 → 배지가 사라지고 면도 없이 요약만 **흐린 회색**으로 남는다
   //   ③ 아무것도 없음 → `아직 받은 알림이 없어요`
@@ -158,6 +160,11 @@ export function NotificationBell({ isMobile = false }: { isMobile?: boolean }) {
       data-notification-nav
       isMobile={isMobile}
       tone={hot ? 'hot' : 'quiet'}
+      // 채운 코랄 타일 + 흰 벨(첨부 디자인) — 일정 카드의 **테두리 타일**과 갈린다.
+      tile="accent"
+      // 안 읽음이 있으면 타일 모서리에 점 — 개수를 읽기 전에 먼저 눈에 든다.
+      tileDot={hot}
+      chevron={false}
       // 요약까지 접근 이름에 담는다 — 보이는 글자와 읽히는 글자가 같아야 한다.
       aria-label={`${hot ? `알림 ${unread}개` : '알림'} · ${summary}`}
       title={summary}
@@ -168,15 +175,15 @@ export function NotificationBell({ isMobile = false }: { isMobile?: boolean }) {
           <path d="M13.73 21a2 2 0 0 1-3.46 0" />
         </svg>
       }
-      badge={
+      trailing={
         hot ? (
           <span
             data-notification-count
             aria-hidden="true"
             style={{
-              minWidth: 18,
-              height: 18,
-              padding: '0 5px',
+              minWidth: 20,
+              height: 20,
+              padding: '0 6px',
               borderRadius: 999,
               background: UNREAD_BADGE_BG,
               color: UNREAD_BADGE_INK,
