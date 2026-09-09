@@ -211,13 +211,19 @@ Add-AppxPackage -Register (Join-Path $dir 'AppxManifest.xml')
 
 ### Store 제출까지 남은 것
 
-1. **Partner Center에서 앱 이름 예약** → 배정된 값으로 `electron-builder.yml`의
-   `appx.identityName` · `publisher` · `publisherDisplayName` 세 줄을 바꾼다.
-   (그 뒤에는 Microsoft가 서명하므로 `CSC_LINK` 없이 만든 패키지를 올린다.)
-2. 스토어 등록 정보(스크린샷·연령 등급·개인정보처리방침 URL — `/privacy` 사용).
-3. CI 잡 추가. 지금 워크플로에 넣지 않은 이유는 정체성 없이는 **로컬 테스트용
-   자가서명 패키지밖에** 만들 수 없어서다(그 패키지는 각자 만든 인증서에 묶여
-   다른 PC에서 설치되지 않는다).
+절차는 **[STORE.md](./STORE.md)**에 있다(계정 등록 → 이름 예약 → 정체성 세 값 →
+패키지 → 등록 정보·연령 등급·인증 메모 → 제출). 코드 쪽에서 남은 것은 한 가지뿐이다:
+
+- **Partner Center가 배정한 세 값**으로 `electron-builder.yml`의
+  `appx.identityName` · `publisher` · `publisherDisplayName`을 바꾼다. 그 전에
+  만든 패키지는 **로컬 테스트용**이다(각자 만든 인증서에 묶여 다른 PC에서
+  설치되지 않고, Store에 올리면 정체성 불일치로 거절된다).
+
+CI 잡은 이미 있다 — `Desktop installers` 워크플로의 `store` 항목이 Windows
+러너에서 `pack:appx`를 돌려 **무서명** 패키지를 만든다(Store는 Microsoft가
+서명한다). 그 잡은 첫 단계에서 지금 설정된 정체성 세 값을 로그에 찍고,
+자가서명 값인 채면 경고를 남긴다 — 빌드는 성공하므로 그러지 않으면 올려 보고서야
+안다. Windows 기기가 없어도 이 잡으로 패키지를 얻을 수 있다.
 
 ## 서명 — 직접 배포(.exe/.dmg)는 아직 하지 않는다
 

@@ -72,6 +72,19 @@ describe('설치 파일 계약', () => {
     expect(m?.[1]).not.toBe('0.0.0');
   });
 
+  it('CI가 Store 패키지(appx)를 만든다 — 이 채널의 유일한 빌드 경로다', () => {
+    // MSIX는 Windows에서만 만들어진다(Linux에서는 electron-builder의 AppxTarget이
+    // 실행 즉시 실패한다). 그래서 Windows 기기가 없는 사람에게는 이 CI 잡이
+    // Store 패키지를 얻는 유일한 길이고, 사라지면 **아무것도 깨지지 않은 채**
+    // 그 길만 없어진다(다른 잡은 그대로 초록이다). 제출 절차는 STORE.md.
+    const wf = readFileSync(path.join(root, '..', '..', '.github', 'workflows', 'desktop.yml'), 'utf8');
+    expect(wf).toContain('pack:appx');
+    expect(wf).toMatch(/apps\/desktop\/release\/\*\.appx/);
+    // 인증서를 넣으면 우리 서명이 남아 Store 정체성과 어긋난다 — 그 잡에는
+    // CSC_LINK가 없어야 한다(자동 탐색도 끈 채다).
+    expect(wf).not.toContain('CSC_LINK:');
+  });
+
   it('발행자와 정체성이 설정에 있다 — 개발 인증서 스크립트가 여기서 읽는다', () => {
     // scripts/dev-cert.ps1이 `publisher`를 이 파일에서 읽어 그 값으로 인증서를
     // 만든다. 둘이 어긋나면 `Add-AppxPackage`가 서명/발행자 불일치로 거절한다.
