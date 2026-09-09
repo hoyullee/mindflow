@@ -326,6 +326,38 @@ describe('일정 화면', () => {
     expect(nav.compareDocumentPosition(dashLabel) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
   });
 
+  it('LNB `일정` 카드는 알림과 갈린다 — 테두리 타일에 오늘 날짜, 면은 언제나 칠하고 활성은 링으로(제보)', async () => {
+    // 제보: 두 카드가 너무 똑같이 보인다. 껍데기(크기·간격)는 나눠 쓰되 **뜻이
+    // 다른 부분**을 갈랐다 — 알림은 채운 코랄 타일 + 개수 배지, 일정은 테두리
+    // 타일 + 오늘 날짜 + 연동 표식.
+    renderHome([META('d1', '스프린트 보드')], BODIES());
+    await openCalendar();
+    const nav = document.querySelector('[data-cal-nav]') as HTMLElement;
+    const tile = nav.querySelector('[data-nav-card-glyph]') as HTMLElement;
+    expect(tile.dataset.navCardTile).toBe('plain');
+    expect(tile.style.background).toBe('var(--mf-card)');
+    expect(tile.style.border).toContain('var(--mf-border)');
+    // 달력 아이콘 하나보다 이 자리에서 더 말이 되는 값 — 오늘 며칠인가.
+    expect(nav.querySelector('[data-cal-date]')!.textContent).toBe(String(new Date().getDate()));
+    // 알림 카드와 타일이 갈린다(같은 껍데기여도 한눈에 구별된다).
+    const bellTile = document.querySelector('[data-notification-nav] [data-nav-card-glyph]') as HTMLElement;
+    expect(bellTile.dataset.navCardTile).toBe('accent');
+    // 면은 **언제나** 칠한다(요청) — 그러면 틴트가 "지금 이 화면"을 말할 수 없으므로
+    // 활성 신호는 안쪽 링이다(테두리를 켜면 1px만큼 글자가 흔들린다).
+    expect(nav.style.background).toBe('var(--mf-accent-soft)');
+    expect(nav.dataset.tinted).toBe('1');
+    expect(nav.style.boxShadow).toContain('inset');
+    // 연동 표식은 **연동됐을 때만** — 이 환경에는 클라이언트 ID가 없어 아무것도 없다
+    // (모르는 것을 칠하지 않는다).
+    expect(nav.querySelector('[data-cal-link]')).toBeNull();
+
+    // 다른 화면으로 가면 링만 걷히고 틴트는 남는다.
+    const spaceRow = [...document.querySelectorAll('aside [role="button"], aside button')].find((e) => e.textContent?.trim().startsWith('업무')) as HTMLElement;
+    fireEvent.click(spaceRow);
+    await waitFor(() => expect((document.querySelector('[data-cal-nav]') as HTMLElement).style.boxShadow).toBe(''));
+    expect((document.querySelector('[data-cal-nav]') as HTMLElement).style.background).toBe('var(--mf-accent-soft)');
+  });
+
   it('전 스페이스의 칸반 마감을 그리고, 완료 열은 빼고, 기간 일정은 칩이 아니라 바로 그린다', async () => {
     renderHome([META('d1', '스프린트 보드'), META('d2', '이슈 트리아지')], BODIES());
     await openCalendar();
