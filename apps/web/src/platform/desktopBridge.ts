@@ -10,6 +10,16 @@ export interface DesktopBridge {
   desktop: true;
   version: string;
   platform: string;
+  /**
+   * 셸이 프레임을 숨기고 **우리가 그려야 하는** 타이틀 바 높이(px).
+   * `0`이거나 없으면 그리지 않는다 — OS 프레임을 그대로 쓰는 플랫폼이거나,
+   * 이 값을 내주지 않는 **옛 셸**이다(이미 설치돼 있는 판). 그래서 폴백이
+   * 0이어야 한다: 40으로 두면 옛 설치본에서 네이티브 프레임 아래에 우리 바가
+   * 한 겹 더 그려진다.
+   */
+  titleBarHeight?: number;
+  /** 네이티브 창 컨트롤 색을 지금 테마에 맞춘다(Windows 전용, 셸이 hex만 받는다). */
+  setTitleBarTheme?(color: string, symbolColor: string): Promise<boolean>;
   openExternal(url: string): Promise<boolean>;
   onDeepLink(handler: (url: string) => void): () => void;
   takePendingDeepLink(): Promise<string | null>;
@@ -31,6 +41,12 @@ export function desktopBridge(): DesktopBridge | null {
 /** 설치형 데스크톱 앱에서 돌고 있는가. */
 export function isDesktopShell(): boolean {
   return desktopBridge() !== null;
+}
+
+/** 우리가 그릴 타이틀 바 높이 — 브라우저·PWA·옛 셸에서는 0(=그리지 않는다). */
+export function desktopTitleBarHeight(): number {
+  const h = desktopBridge()?.titleBarHeight;
+  return typeof h === 'number' && h > 0 ? h : 0;
 }
 
 /**

@@ -18,7 +18,7 @@ export function MapUnavailable({ onRetry }: { onRetry: () => void }) {
   return (
     <div
       style={{
-        minHeight: '100dvh',
+        minHeight: 'var(--mf-app-h)',
         display: 'flex',
         flexDirection: 'column',
         alignItems: 'center',
@@ -33,7 +33,7 @@ export function MapUnavailable({ onRetry }: { onRetry: () => void }) {
     >
       <div style={{ display: 'flex', alignItems: 'center', gap: 9, marginBottom: 30 }}>
         <span style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', width: 30, height: 30, borderRadius: 9, background: '#e2603c' }}>
-          <BrandMark size={19} />
+          <BrandMark size={30} />
         </span>
         <span style={{ fontSize: 16.5, fontWeight: 800, letterSpacing: '-.01em' }}>Geurio</span>
       </div>

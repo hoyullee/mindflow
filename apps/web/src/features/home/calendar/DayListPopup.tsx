@@ -124,7 +124,7 @@ export function DayListPopup({
         zIndex: 240,
         width: W,
         maxWidth: `calc(100vw - ${PAD * 2}px)`,
-        maxHeight: `calc(100vh - ${PAD * 2}px)`,
+        maxHeight: `calc(var(--mf-app-h) - ${PAD * 2}px)`,
         boxSizing: 'border-box',
         display: 'flex',
         flexDirection: 'column',

@@ -71,7 +71,7 @@ export function DashboardPicker({ state, view, controller, isMobile = false }: P
       card={{
         width: 760,
         maxWidth: '100%',
-        height: isMobile ? 'min(560px, calc(100dvh - 24px))' : 520,
+        height: isMobile ? 'min(560px, calc(var(--mf-app-h) - 24px))' : 520,
         maxHeight: '100%',
         display: 'flex',
         borderRadius: 18,

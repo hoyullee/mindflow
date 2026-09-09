@@ -11,6 +11,7 @@ import { Terms } from './features/legal/Terms';
 import { Landing } from './features/landing/Landing';
 import { BackendProvider, useBackend } from './adapters/BackendContext';
 import { UpdatePrompt } from './pwa/UpdatePrompt';
+import { DesktopTitleBar } from './platform/DesktopTitleBar';
 
 // M3: Login.dc.html, Home.dc.html, and MindFlow.dc.html are ported to React.
 // M4: `/home` and `/editor` are gated behind `RequireAuth` — but ONLY when a
@@ -63,6 +64,10 @@ export function App() {
           (같은 화면도 상태에 따라 다르다 — 빈 로그인 폼 vs 인증 코드 입력 중).
           안전한 화면은 조용히 갈아끼우고, 위험할 때만 토스트가 뜬다. */}
       <UpdatePrompt />
+      {/* 설치형 앱의 타이틀 바 — 셸이 프레임을 숨긴 플랫폼에서만 그려진다(그 밖에서는
+          `null`). 라우터 밖에 두는 이유는 어느 화면에서도 같은 바여야 하기 때문이고,
+          자리는 CSS 변수(`--mf-titlebar`)가 화면 루트들에게 알린다. */}
+      <DesktopTitleBar />
       <BrowserRouter>
         <Routes>
           {/* Public landing — Google brand verification requires the homepage

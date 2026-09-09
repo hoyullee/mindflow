@@ -100,7 +100,7 @@
 }
 
 .mf-login {
-  min-height: 100dvh;
+  min-height: var(--mf-app-h);
   display: flex;
   flex-direction: column;
   background: #fdfaf7;

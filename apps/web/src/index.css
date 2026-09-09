@@ -32,6 +32,21 @@
   line-gap-override: 0%;
 }
 
+/* 설치형 데스크톱 앱의 **타이틀 바 자리**. 셸이 OS 프레임을 숨기고 우리가 그 바를
+   그리는데(platform/DesktopTitleBar.tsx) 그 바는 `position: fixed`이므로, 그 높이만큼
+   **앱 영역을 줄여** 둬야 한다: 화면 루트들이 `100dvh`를 쓰므로 그대로 두면 바 높이만큼
+   넘쳐 문서 스크롤이 하나 더 생긴다(모바일에서 이미 겪은 이중 스크롤과 같은 계열).
+   브라우저·PWA·옛 설치본에서는 0이라 `--mf-app-h`가 정확히 `100dvh`다 — 즉 이 두 줄이
+   데스크톱만의 분기를 화면마다 심지 않게 해 준다. 값은 타이틀 바 컴포넌트가 셸에서
+   받은 높이로 `documentElement`에 심는다(셸이 그 값의 주인 — apps/desktop/src/shell.ts). */
+:root {
+  --mf-titlebar: 0px;
+  --mf-app-h: calc(100dvh - var(--mf-titlebar));
+}
+#root {
+  padding-top: var(--mf-titlebar);
+}
+
 /* Global reset, ported from the `<style>` block shared by the *.dc.html pages. */
 * {
   box-sizing: border-box;

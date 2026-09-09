@@ -101,3 +101,46 @@ export function clampBounds(saved: Partial<Bounds> | null | undefined, workArea:
   const y = Math.round(Math.min(Math.max(saved!.y!, workArea.y), workArea.y + workArea.height - height));
   return { x, y, width, height };
 }
+
+/* ───────────────────────────── 타이틀 바 ───────────────────────────── */
+
+/**
+ * 타이틀 바 높이. 이 값의 **주인은 셸**이다 — 창을 만드는 시점에 네이티브
+ * 컨트롤 오버레이 높이로 쓰이므로 렌더러가 정할 수 없고, 렌더러(웹 앱)는
+ * preload가 넘겨 준 이 값을 그대로 그린다. 둘이 갈리면 바와 컨트롤의 높이가
+ * 어긋난다.
+ */
+export const TITLEBAR_HEIGHT = 40;
+
+/**
+ * 이 플랫폼에서 **프레임을 숨기고 우리 타이틀 바를 그리는가**.
+ *
+ * Windows·macOS만이다. Electron의 `titleBarStyle: 'hidden'`과 창 컨트롤
+ * 오버레이(`titleBarOverlay`)가 그 둘에서 확실히 동작하고, 우리가 만드는 설치
+ * 파일도 그 둘뿐이다(`electron-builder.yml`). Linux에서는 평범한 OS 프레임을
+ * 그대로 쓴다 — 데스크톱 환경마다 장식 방식이 갈려, 숨겼다가 창을 옮기거나
+ * 닫을 길이 사라지는 쪽이 훨씬 나쁘다.
+ */
+export function usesCustomTitleBar(platform: string): boolean {
+  return platform === 'win32' || platform === 'darwin';
+}
+
+/**
+ * 렌더러에 알려 줄 타이틀 바 높이 — **0이면 그리지 않는다**는 뜻이다(숫자 하나가
+ * "우리 바인가"와 "얼마나 높은가"를 함께 나른다). 이미 설치된 옛 셸은 이 값을
+ * 아예 넘기지 않으므로 웹 쪽 폴백도 0이어야 한다: 그러지 않으면 네이티브 프레임
+ * **아래에** 우리 바가 한 겹 더 그려진다.
+ */
+export function titleBarHeightFor(platform: string): number {
+  return usesCustomTitleBar(platform) ? TITLEBAR_HEIGHT : 0;
+}
+
+/**
+ * 창 컨트롤(최소화·최대화·닫기)의 색은 런타임에 바꿀 수 있다 — 사용자가 다크
+ * 테마를 고르면 밝은 심볼이어야 하기 때문이다. 렌더러가 보내는 값이므로
+ * **모양을 확인한다**: `#rgb`·`#rrggbb`만 통과시킨다(원격 페이지가 셸 API에
+ * 아무 문자열이나 넘기지 못하게).
+ */
+export function isHexColor(value: unknown): value is string {
+  return typeof value === 'string' && /^#(?:[0-9a-fA-F]{3}|[0-9a-fA-F]{6})$/.test(value);
+}
