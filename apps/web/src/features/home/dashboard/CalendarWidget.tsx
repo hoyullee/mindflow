@@ -270,7 +270,11 @@ function MonthBody({ entries, todayIso, mode, cols, rows, surface, ym, side, sel
         </div>
         <div ref={gridRef} style={{ flex: 1, minHeight: 0, display: 'grid', gridTemplateColumns: 'repeat(7, 1fr)', gridAutoRows: '1fr', gap: WIDGET_GAP }}>
           {cells.map((c, ci) => {
-            const on = withSide && c.inMonth && c.iso === selDay;
+            // **이웃 달 날짜도 평범한 칸이다**(제보: 선택이 안 된다) — 큰 달력
+            // (`MonthGrid`)이 이미 그 규칙이고, 조회 구간도 `gridRange`(6주 격자)라
+            // 그 날의 항목이 이미 손에 있다. 흐린 면은 "이번 달이 아니다"라는
+            // 표시일 뿐 못 쓰는 자리라는 뜻이 아니다.
+            const on = withSide && c.iso === selDay;
             // 칸 배경 — 큰 달력과 같은 규칙: **요일·이번 달 여부만** 말한다.
             // 고른 날은 배경이 아니라 **숫자**가 진다(제보 — 배경으로 표시하면 이웃 달
             // 면·주말 톤·드롭 대기와 뜻이 겹친다). 쉬는 날 판정도 큰 달력과 같이
@@ -332,8 +336,9 @@ function MonthBody({ entries, todayIso, mode, cols, rows, surface, ym, side, sel
             const cellStyle = {
               borderRadius: 8,
               // 칸 테두리 — 디자인 원본의 `bd`(오늘만 강조색). 예전에는 투명이라
-              // 격자가 통째로 사라져 보였다(제보).
-              border: `1px solid ${c.isToday ? 'var(--mf-accent-mute)' : c.inMonth ? 'var(--mf-cal-grid)' : 'transparent'}`,
+              // 격자가 통째로 사라져 보였다(제보). 이웃 달 칸도 같은 격자선이다 —
+              // 누를 수 있는 칸인데 테두리가 없으면 못 쓰는 자리로 읽힌다.
+              border: `1px solid ${c.isToday ? 'var(--mf-accent-mute)' : 'var(--mf-cal-grid)'}`,
               background: bg,
               padding: '3px 3px 2px',
               display: 'flex',
@@ -349,7 +354,7 @@ function MonthBody({ entries, todayIso, mode, cols, rows, surface, ym, side, sel
             // 빈 자리 더블클릭 = 그 날짜로 새 일정(요청). 칩 위에서 온 것은 그
             // 항목의 일이라 손대지 않는다(일정 화면의 `MonthGrid`와 같은 규칙).
             const dbl =
-              c.inMonth && onNewOnDay
+              onNewOnDay
                 ? (e: ReactMouseEvent) => {
                     if ((e.target as HTMLElement).closest('[data-cal-widget-chip],[data-cal-widget-bar]')) return;
                     e.stopPropagation();
@@ -370,14 +375,13 @@ function MonthBody({ entries, todayIso, mode, cols, rows, surface, ym, side, sel
                 type="button"
                 data-cal-widget-cell={c.iso}
                 data-on={on ? '1' : undefined}
-                disabled={!c.inMonth}
-                title={c.inMonth ? `${partsOf(c.iso)!.m}월 ${c.n}일 일정 보기` : ''}
+                title={`${partsOf(c.iso)!.m}월 ${c.n}일 일정 보기`}
                 onClick={(e) => {
                   e.stopPropagation();
                   onPickDay(c.iso);
                 }}
                 onDoubleClick={dbl}
-                style={{ ...cellStyle, cursor: c.inMonth ? 'pointer' : 'default' }}
+                style={{ ...cellStyle, cursor: 'pointer' }}
               >
                 {cellInner}
               </button>

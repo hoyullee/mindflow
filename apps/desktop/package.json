@@ -1,7 +1,7 @@
 {
   "name": "@mindflow/desktop",
   "productName": "Geurio",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "private": true,
   "description": "마인드맵, 화이트보드, 칸반 보드. 지금 하는 일에 맞는 방식으로 생각을 정리하고 함께 완성하세요.",
   "main": "dist/main.js",
