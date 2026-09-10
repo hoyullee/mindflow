@@ -772,11 +772,11 @@ export async function fetchEventColors(token: string): Promise<Record<string, st
     for (const [id, v] of Object.entries(src)) {
       if (typeof v?.background === 'string') out[id] = v.background;
     }
-    const ids = Object.keys(out);
-    if (ids.length === 0) return null;
-    // **몇 색을 받았는지 남긴다** — 색 칸의 개수는 이 응답이 정하므로(우리가 목록을
-    // 적어 두지 않는다) "구글 UI에는 24색인데 여기는 11칸"의 답이 이 한 줄에 있다.
-    console.info(`[geurio] 구글 이벤트 색 ${ids.length}개(번호 ${ids.sort((a, b) => Number(a) - Number(b)).join(',')})`);
+    // 몇 색을 받았는지는 **화면이 이미 말한다** — 색 칸의 개수가 곧 이 응답의 개수다
+    // (우리가 목록을 적어 두지 않는다). 그래서 그것을 콘솔에 한 줄 더 찍지 않는다
+    // (요청: 정보성 로그 제거). 정말 알 수 없는 두 경우만 아래위의 `console.warn`이
+    // 말한다 — 팔레트를 못 받았거나 모르는 번호가 왔을 때.
+    if (Object.keys(out).length === 0) return null;
     return out;
   } catch (e) {
     console.warn('[geurio] 구글 색 팔레트를 못 받았어요 — 폴백 표로 그립니다', (e as { status?: number }).status ?? e);

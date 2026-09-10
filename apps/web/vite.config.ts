@@ -56,9 +56,10 @@ function landingRootSwap(): Plugin {
 // offline without any external network request (CDN-blocked environments
 // included).
 export default defineConfig({
-  // 지금 떠 있는 페이지가 어느 빌드인지 콘솔에서 바로 알 수 있게(main.tsx의
-  // console.info). PWA는 에디터가 열려 있는 동안 업데이트를 미루므로, "고쳤다는데
-  // 그대로예요" 제보의 절반은 이전 번들이었다 — 확인 수단을 박아 둔다.
+  // 지금 떠 있는 페이지가 어느 빌드인지 알 수 있게. PWA는 에디터가 열려 있는 동안
+  // 업데이트를 미루므로, "고쳤다는데 그대로예요" 제보의 절반은 이전 번들이었다 —
+  // 확인 수단을 박아 둔다. **콘솔에는 찍지 않는다**(요청) — 읽는 곳은 두 군데다:
+  // 설정 › 버전 확인 화면과 피드백의 `meta.build`/`meta.sha`.
   // 시각만으로는 "어느 커밋이 떠 있는가"를 알 수 없다 — 프리뷰는 커밋마다 주소가
   // 따로 있어서, 옛 주소를 열어 둔 탭은 영영 옛 빌드를 보여 준다. 배포 환경이 주는
   // 커밋 sha를 함께 박아 콘솔 한 줄로 대조할 수 있게 한다(로컬은 'dev').
