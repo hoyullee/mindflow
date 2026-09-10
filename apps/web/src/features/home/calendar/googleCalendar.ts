@@ -344,6 +344,27 @@ export function onTokenChange(cb: () => void): () => void {
  * 연결된 것처럼** 보였다(제보). 연결 상태는 계정 하나의 사실이므로 화면마다
  * 다를 수 없다 — 토큰과 같은 자리에 두고 바뀌면 모두에게 알린다.
  */
+/**
+ * **연동을 해제하는 중**인가. 해제는 토큰을 지우는 일이라 그 순간 다른 화면의 조회가
+ * "토큰이 없다"를 만나 `다시 연결` 문구를 세웠다(제보: 해제했는데 "구글 연결이
+ * 만료됐어요"가 떴다). 사용자가 스스로 끊은 것이라 알릴 것이 없다 — 이 창이 열려
+ * 있는 동안은 그 문구를 만들지 않고, `enabled`가 실제로 꺼지면 닫는다(타이머 없이
+ * 상태로 닫히므로 창이 영영 열려 있을 수 없다).
+ */
+let disconnecting = false;
+
+export function beginGoogleDisconnect(): void {
+  disconnecting = true;
+}
+
+export function endGoogleDisconnect(): void {
+  disconnecting = false;
+}
+
+export function isGoogleDisconnecting(): boolean {
+  return disconnecting;
+}
+
 let reauthNeeded = false;
 const reauthListeners = new Set<() => void>();
 

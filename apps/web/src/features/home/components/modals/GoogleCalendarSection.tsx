@@ -22,7 +22,16 @@ import { AnchoredList, rowDivider } from '../../calendar/AnchoredList';
 import { SectionLabel, SettingsGroup } from './AccountSettingsModal';
 import { isDesktopShell } from '../../../../platform/desktopBridge';
 
-export function GoogleCalendarSection({ api, focusAdd }: { api: GoogleCalendarApi; focusAdd?: number }) {
+export function GoogleCalendarSection({
+  api,
+  focusAdd,
+  onNotify,
+}: {
+  api: GoogleCalendarApi;
+  focusAdd?: number;
+  /** 해제처럼 **끝났다는 사실만** 알릴 일 — 홈의 완료 팝업(`ToastModal`)을 쓴다. */
+  onNotify?: (title: string, body: string) => void;
+}) {
   if (!api.available) return null;
   // `connected`가 이미 "켜져 있고 끊겼다고 알려진 바 없다"다(§19) — 토큰의 유무가
   // 아니므로, 서버가 조용히 갱신하는 동안에도 이 블록이 서 있고 스켈레톤이 그 자리를
@@ -81,7 +90,9 @@ export function GoogleCalendarSection({ api, focusAdd }: { api: GoogleCalendarAp
                     listLoading
                     ? ''
                     : [account, `이번 달 일정 ${monthly}개`].filter(Boolean).join(' · ')
-                  : '연결하면 구글 일정도 함께 보여요'}
+                  : // 연결 전에는 아무 말도 하지 않는다(요청) — 늘 같은 안내를 걸어 두면
+                    // 정작 알려야 할 때(상황 문구·오류) 눈에 띌 자리가 없다.
+                    ''}
             </div>
           </div>
           {waiting ? (
@@ -93,7 +104,17 @@ export function GoogleCalendarSection({ api, focusAdd }: { api: GoogleCalendarAp
               다시 연결
             </button>
           ) : api.enabled ? (
-            <button type="button" className="btn mf-ctl" data-google-disconnect onClick={() => void api.disconnect()} style={neutralPill}>
+            <button
+              type="button"
+              className="btn mf-ctl"
+              data-google-disconnect
+              onClick={() => {
+                // 해제는 되돌릴 수 있는 일이라 미리 묻지 않고, **끝났다는 사실**을 알린다
+                // (제보: 해제했는데 "구글 연결이 만료됐어요"가 떠서 실패한 것처럼 보였다).
+                void api.disconnect().then(() => onNotify?.('연동을 해제했어요', 'Google 캘린더 일정이 더 이상 보이지 않아요. 언제든 다시 연결할 수 있어요.'));
+              }}
+              style={neutralPill}
+            >
               해제
             </button>
           ) : (

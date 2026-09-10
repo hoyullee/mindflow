@@ -33,6 +33,9 @@ import {
   fetchEventColors,
   GOOGLE_RECONNECT_MSG,
   cancelDesktopGoogleConnect,
+  beginGoogleDisconnect,
+  endGoogleDisconnect,
+  isGoogleDisconnecting,
   isReauthNeeded,
   onReauthChange,
   setReauthNeeded,
@@ -353,7 +356,9 @@ export function useGoogleCalendar(
   const withToken = useCallback(async <T,>(run: (token: string) => Promise<T>): Promise<T | null> => {
     const first = await ensureGoogleToken();
     if ('error' in first) {
-      if (aliveRef.current) {
+      // 사용자가 방금 해제를 눌렀다면 토큰이 없는 것이 **정상**이다 — 그걸 "다시
+      // 연결하세요"로 말하면 해제가 실패한 것처럼 읽힌다(제보).
+      if (aliveRef.current && !isGoogleDisconnecting()) {
         setNeedsReauth(true);
         setError(first.error);
       }
@@ -367,7 +372,7 @@ export function useGoogleCalendar(
       // 못 쓴다 등)라 연결을 끊을 이유가 없다 — 호출부가 문장으로 알린다.
       if ((e as { status?: number }).status !== 401) throw e;
       storeToken(null);
-      if (aliveRef.current) {
+      if (aliveRef.current && !isGoogleDisconnecting()) {
         setNeedsReauth(true);
         setError(GOOGLE_RECONNECT_MSG);
       }
@@ -385,6 +390,8 @@ export function useGoogleCalendar(
   const wasEnabledRef = useRef(false);
   useEffect(() => {
     if (!available || !enabled) {
+      // 해제가 실제로 반영됐다 — 이제 조회가 없으니 "다시 연결" 문구를 다시 만들 수 있다.
+      endGoogleDisconnect();
       setCalendars([]);
       setListLoaded(false);
       // 켜져 있다가 꺼진 순간(다른 인스턴스의 disconnect 포함 — prefs는 블롭으로
@@ -552,6 +559,7 @@ export function useGoogleCalendar(
   }, [onPrefs, resetAccountCache]);
 
   const disconnect = useCallback(async () => {
+    beginGoogleDisconnect();
     await revokeGoogleToken();
     setNeedsReauth(false);
     if (!aliveRef.current) return;

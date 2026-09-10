@@ -9,6 +9,7 @@ import { GoogleIcon } from '../../../auth/GoogleIcon';
 import { Modal, MODAL_DIM } from '../../../../components/Modal';
 import { googlePrefsOf, useGoogleCalendar } from '../../calendar/useGoogleCalendar';
 import { GoogleCalendarSection } from './GoogleCalendarSection';
+import { VersionSection } from './VersionSection';
 
 interface Props {
   state: HomeState;
@@ -137,11 +138,11 @@ export function AccountSettingsModal({ state, controller }: Props) {
               이름을 말했는데, 그러면 같은 말이 두 번 나온다. */}
           <div style={{ display: 'flex', alignItems: 'baseline', gap: 10, minWidth: 0 }}>
             <div data-settings-title style={{ fontSize: 19, fontWeight: 800, letterSpacing: '-.02em', flexShrink: 0 }}>
-              {view === 'account' ? '계정 설정' : view === 'profile' ? '프로필 설정' : view === 'calendar' ? 'Google 캘린더 연동' : '설정'}
+              {view === 'account' ? '계정 설정' : view === 'profile' ? '프로필 설정' : view === 'calendar' ? 'Google 캘린더 연동' : view === 'version' ? '버전 확인' : '설정'}
             </div>
             {detail && (
               <div data-settings-subtitle style={{ fontSize: 12.5, color: 'var(--mf-muted)', minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                {view === 'account' ? '로그인 수단과 계정 관리' : view === 'calendar' ? '보여 줄 캘린더와 공휴일' : '사진과 표시 이름'}
+                {view === 'account' ? '로그인 수단과 계정 관리' : view === 'calendar' ? '보여 줄 캘린더와 공휴일' : view === 'version' ? '현재 버전과 업데이트' : '사진과 표시 이름'}
               </div>
             )}
           </div>
@@ -306,7 +307,12 @@ export function AccountSettingsModal({ state, controller }: Props) {
             <div key="calendar" className={viewClass}>
               {/* 화면 이름은 헤더가 말한다 — 여기서는 카드들만 그린다.
                   보여 줄 캘린더·캘린더 추가·공휴일 국가가 전부 이 안에 있다. */}
-              <GoogleCalendarSection api={googleApi} focusAdd={state.calendarAddFocus} />
+              <GoogleCalendarSection api={googleApi} focusAdd={state.calendarAddFocus} onNotify={controller.showCalendarToast} />
+            </div>
+          ) : view === 'version' ? (
+            <div key="version" className={viewClass}>
+              {/* 화면 이름은 헤더가 말한다 — 여기서는 현재 버전과 업데이트 행만. */}
+              <VersionSection />
             </div>
           ) : view === 'profile' ? (
             <div key="profile" className={viewClass}>
@@ -473,6 +479,22 @@ export function AccountSettingsModal({ state, controller }: Props) {
               title="계정 설정"
               sub="비밀번호와 연동, 탈퇴"
             />
+            {/* 버전 확인(요청) — '계정 설정' **아래**다. 여기 두는 이유: 자동으로
+                갈아끼워지는 판을 사용자가 직접 확인하고 앞당길 수 있어야 한다.
+                계정에 딸린 일은 아니지만 앱 자신에 관한 일이라 같은 묶음이 맞다. */}
+            <SettingsRow
+              attrs={{ 'data-version-detail-row': '' }}
+              onActivate={controller.openVersionDetail}
+              icon={
+                <>
+                  <path d="M12 3.5v9" />
+                  <path d="m8.5 9 3.5 3.5L15.5 9" />
+                  <path d="M4.5 15.5v3a2 2 0 0 0 2 2h11a2 2 0 0 0 2-2v-3" />
+                </>
+              }
+              title="버전 확인"
+              sub="현재 버전을 보고 새 버전으로 업데이트해요"
+            />
           </SettingsGroup>
 
           {/* 색상 테마 — LNB 최하단에 있다가 사용자 요청으로 이리 왔다(설정에 모으는 게
@@ -569,8 +591,10 @@ export function AccountSettingsModal({ state, controller }: Props) {
  * 그러면 연동해 둔 사람에게 "연결하면 …"이라 말하는 거짓말이 된다.
  */
 function calendarSub(api: { enabled: boolean; needsReauth: boolean; pickedIds: string[] }): string {
+  // 연결 전에는 **아무 말도 하지 않는다**(요청) — 늘 같은 안내를 걸어 두면 정작
+  // 알려야 할 때(권한 만료 같은 상황) 눈에 띌 자리가 없다.
   if (api.enabled && api.needsReauth) return '구글 권한을 다시 허용해야 이어져요';
-  if (!api.enabled) return '연결하면 구글 일정도 함께 보여요';
+  if (!api.enabled) return '';
   return `${api.pickedIds.length}개 캘린더를 함께 보고 있어요`;
 }
 

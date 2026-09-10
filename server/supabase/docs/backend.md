@@ -1801,7 +1801,7 @@ refresh token은 만료가 없어서, 브라우저에 한 번이라도 닿으면
 
 | action | 하는 일 |
 | --- | --- |
-| `exchange` | 코드 → 토큰(`redirect_uri: 'postmessage'` — GIS 팝업 코드 흐름의 약속된 값). refresh token이 오면 upsert, 안 오면 기존 행 유지 |
+| `exchange` | 코드 → 토큰. **리디렉션 URI를 요청 본문으로 받는다**(웹 GIS 팝업은 약속값 `postmessage`, 설치형 앱은 `https://…/auth/gcal`) — 코드를 받을 때 쓴 값과 같아야 구글이 교환해 준다. refresh token이 오면 upsert, 안 오면 기존 행 유지 |
 | `refresh` | 저장된 refresh token으로 액세스 토큰 발급. `invalid_grant`이면 행을 지우고 `revoked` |
 | `disconnect` | 구글에 revoke → 행 삭제 |
 
@@ -1825,6 +1825,28 @@ refresh token은 만료가 없어서, 브라우저에 한 번이라도 닿으면
 - `select user_id, scope, google_email, updated_at from google_credentials;` → 그 사용자의 행 하나
   (`refresh_token`은 조회하지 말 것 — 값 자체가 자격 증명이다)
 - 연결 해제 → 행이 사라지고, 구글 계정의 타사 앱 권한에서도 빠진다
+
+#### 함수는 **손으로** 배포한다 — 그것이 `redirect_uri_mismatch`의 정체 (제보)
+
+앱에서 연동하면 `구글 연결을 확인하지 못했어요.`만 뜨고 이어지지 않았다. 그 문장은 우리
+**폴백**이고, 서버가 돌려준 `reason`·`detail`은 버려지고 있었다 — 원인이 무엇이든 사용자와
+우리가 보는 것이 같았다.
+
+배포 순서가 원인이다: **마이그레이션은 GitHub 연동이 main 머지 때 자동으로** 올리지만
+`supabase/functions/*`는 **`supabase functions deploy`를 손으로** 해야 한다. 그래서 앱은 새
+판(코드를 `/auth/gcal`로 받는다)인데 서버는 옛 판(`postmessage`로 교환한다)인 창이 생기고,
+구글은 두 값이 다르면 `redirect_uri_mismatch`로 거절한다.
+
+두 겹으로 고쳤다:
+
+- **사유를 드러낸다** — `serverFailureMessage(reason, detail)`가 자주 나는 둘(`redirect_uri_mismatch`
+  = 함수 재배포, `invalid_grant` = 코드 만료)은 **무엇을 해야 하는지까지** 말하고, 나머지는
+  구글의 원문을 그대로 싣는다. 콘솔에도 `[geurio] google-oauth 실패 <reason> <detail>`이 남는다.
+- **함수를 배포한다** — 클라이언트 쪽 수리로는 이 사고가 끝나지 않는다. 앱 판을 올릴 때
+  `google-oauth`도 함께 올려야 한다.
+
+⚠️ **`supabase/functions/` 안을 고치면 `supabase functions deploy <name>`을 반드시 함께** —
+그러지 않으면 앱만 새 판이 되어 조용히 거절당한다.
 
 #### 개인정보처리방침
 

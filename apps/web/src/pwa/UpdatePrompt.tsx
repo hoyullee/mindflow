@@ -6,6 +6,7 @@ import { consumeUpdateApplied, markUpdateApplied } from './updateApplied';
 import { UpdateAppliedNotice } from './UpdateAppliedNotice';
 import { UpdateOverlay } from './UpdateOverlay';
 import { applyUpdate } from './applyUpdate';
+import { publishUpdateStatus, setUpdateControls } from './updateControl';
 
 /**
  * 서비스워커 업데이트를 감시해 **적용 시점을 고르는** 연결층.
@@ -63,6 +64,9 @@ export function UpdatePrompt() {
       // 화면 진입(`useUpdateGuard`)마다 확인할 수 있게 등록 — 클라이언트 사이드 이동은
       // 페이지 로드가 아니라서 브라우저가 스스로 확인해 주지 않는다(`updateGate` 참고).
       setUpdateChecker(() => void registration.update());
+      // 설정의 「버전 확인」 화면이 **직접** 물어볼 수 있게 같은 손잡이를 올려 둔다
+      // (`updateGate`의 것은 화면 진입마다 도는 자동 확인이라 30초 스로틀이 걸려 있다).
+      setUpdateControls({ check: () => void registration.update() });
       // **등록 직후 한 번 확인한다.** 등록 자체도 소프트 업데이트를 트리거하지만,
       // 이미 같은 SW가 등록돼 있으면 브라우저가 확인을 건너뛸 수 있다(제보: 배포
       // 됐는데 크롬에서 아무 반응이 없음 — 그 탭은 `waiting`도 `installing`도
@@ -149,6 +153,16 @@ export function UpdatePrompt() {
     },
     [prepare, updateServiceWorker],
   );
+
+  // 설정의 「버전 확인」 화면은 이 컴포넌트만 볼 수 있는 것(대기 중인 새 버전·적용
+  // 진행·저장 실패)을 읽어야 한다 — 그 값을 모듈에 올려 둔다(`updateControl`).
+  useEffect(() => {
+    publishUpdateStatus({ ready: needRefresh, applying, saveBlocked });
+  }, [needRefresh, applying, saveBlocked]);
+  // 적용 손잡이 — 수동 적용은 피어를 묻지 않는다(본인 선택이므로 `auto: false`).
+  useEffect(() => {
+    setUpdateControls({ apply: () => apply(false) });
+  }, [apply]);
 
   const canAutoLocally = !saveBlocked && canAutoApply(risk, hidden);
 

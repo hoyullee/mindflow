@@ -1,10 +1,11 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
-import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { MemoryRouter, Route, Routes } from 'react-router-dom';
 import { Home } from './Home';
+import { GOOGLE_RECONNECT_MSG } from './calendar/googleCalendar';
 import { BackendProvider } from '../../adapters/BackendContext';
 import { mockMatchMedia } from '../../test/matchMedia';
 import { LocalAuth } from '../../adapters/local/localAuth';
@@ -50,6 +51,7 @@ beforeEach(() => {
   clearGoogleSessionCache();
   oauthServer.result = { unavailable: true };
   oauthServer.exchanged.length = 0;
+  oauthServer.hold = null;
 });
 
 class MockDocStore implements DocStore {
@@ -226,14 +228,19 @@ function seedExpiredToken(scope: string = GOOGLE_CALENDAR_SCOPE): void {
  * 서버가 refresh token으로 조용히 갈아 준다. 기본값은 `unavailable`(로컬·데모와 같다)이라
  * 다른 테스트의 동작은 그대로고, 필요한 테스트만 `oauthServer.result`를 바꾼다.
  */
-const oauthServer = vi.hoisted(() => ({ result: { unavailable: true } as unknown, exchanged: [] as { code: string; redirectUri?: string }[] }));
+const oauthServer = vi.hoisted(() => ({ result: { unavailable: true } as unknown, exchanged: [] as { code: string; redirectUri?: string }[], hold: null as Promise<void> | null }));
 vi.mock('./calendar/googleOAuthServer', () => ({
   refreshGoogleAccess: async () => oauthServer.result,
   exchangeGoogleCode: async (code: string, redirectUri?: string) => {
     oauthServer.exchanged.push({ code, redirectUri });
     return oauthServer.result;
   },
-  disconnectGoogleServer: async () => oauthServer.result,
+  disconnectGoogleServer: async () => {
+    // 실제 해제는 **서버 왕복**이다 — 그 사이에 화면이 한 번 그려진다는 사실이
+    // 제보 ①의 뿌리라, 그 창을 테스트가 붙잡을 수 있게 둔다.
+    if (oauthServer.hold) await oauthServer.hold;
+    return oauthServer.result;
+  },
   serverKnownUnavailable: () => (oauthServer.result as { unavailable?: boolean }).unavailable === true,
   resetGoogleOAuthServer: () => undefined,
 }));
@@ -772,7 +779,7 @@ describe('구글 캘린더 겹치기(PR5)', () => {
     expect(document.querySelector('[data-google-connect-cal]')).toBeNull();
   });
 
-  it('연결을 해제하면 설정이 지워지고 토큰도 버린다', async () => {
+  it('연결을 해제하면 설정이 지워지고 토큰도 버린다 — 해제했다고 알리고 "만료" 문구는 뜨지 않는다(제보)', async () => {
     seed({ calendars: ['me@example.com'] });
     seedToken();
     stubGis();
@@ -797,6 +804,60 @@ describe('구글 캘린더 겹치기(PR5)', () => {
       expect(ws.google).toBeUndefined();
     });
     expect(sessionStorage.getItem('mf_gcal_token')).toBeNull();
+
+    // **끝났다는 사실을 알린다**(요청) — 되돌릴 수 있는 일이라 미리 묻지는 않는다.
+    await waitFor(() => expect(screen.getByText('연동을 해제했어요')).toBeTruthy());
+    // 그리고 **실패처럼 보이지 않는다**: 해제는 토큰을 버리는 일이라 그 순간 다른
+    // 훅 인스턴스의 조회가 실패해 "다시 연결" 문구를 세웠다(제보 ①). 해제하는
+    // 동안에는 그 판정을 하지 않는다.
+    expect(screen.queryByText(GOOGLE_RECONNECT_MSG)).toBeNull();
+    expect(document.querySelector('[data-google-reconnect]')).toBeNull();
+  });
+
+  it('해제가 서버 왕복을 기다리는 동안에도 "만료" 문구가 뜨지 않는다(제보 ①의 그 창)', async () => {
+    // 뿌리: 해제는 토큰을 **먼저** 버리고 서버에 알린다. 그 왕복 동안 `enabled`는
+    // 아직 참이라 조회 효과가 한 번 더 돌고, 토큰이 없으니 실패하면서 "다시 연결"을
+    // 세웠다 — 사용자에게는 해제가 실패한 것처럼 보였다. 그 창을 붙잡아 검증한다.
+    seed({ calendars: ['me@example.com'] });
+    seedToken();
+    stubGis();
+    stubFetch();
+    clientId = 'test-client.apps.googleusercontent.com';
+    // 서버 흐름은 **있지만** 다시 받지 못하는 상태(권한이 회수된 계정 등) —
+    // 토큰이 없으면 `ensureGoogleToken`이 실패해 문구를 세우는 그 조건이다.
+    oauthServer.result = { needsConsent: true };
+    let release = () => {};
+    oauthServer.hold = new Promise<void>((r) => {
+      release = r;
+    });
+
+    const user = userEvent.setup();
+    renderHome();
+    await user.click(await screen.findByRole('button', { name: '계정 메뉴' }));
+    await user.click(await screen.findByText('설정'));
+    await user.click(await screen.findByText('계정 설정'));
+    await user.click(await screen.findByText('Google 캘린더 연동'));
+    const btn = await waitFor(() => {
+      const el = document.querySelector('[data-google-disconnect]');
+      expect(el).toBeTruthy();
+      return el as HTMLElement;
+    });
+    await user.click(btn);
+
+    // 여기서 해제는 서버 응답을 기다리는 중이다 — 그 사이의 렌더를 흘려 준다.
+    await act(async () => {
+      await Promise.resolve();
+    });
+    expect(screen.queryByText(GOOGLE_RECONNECT_MSG)).toBeNull();
+    expect(document.querySelector('[data-google-reconnect]')).toBeNull();
+
+    // 응답이 오면 해제가 마무리된다 — 설정이 지워지고 알림이 뜬다.
+    await act(async () => {
+      release();
+      await Promise.resolve();
+    });
+    await waitFor(() => expect(document.querySelector('[data-google-connect]')).toBeTruthy());
+    await waitFor(() => expect(screen.getByText('연동을 해제했어요')).toBeTruthy());
   });
 
   it('새 일정을 구글에 저장한다 — 목적지를 고르면 그 캘린더에 POST', async () => {
@@ -1861,6 +1922,8 @@ describe('구글 캘린더 겹치기(PR5)', () => {
     });
     await user.click(off);
     await waitFor(() => expect(document.querySelector('[data-google-connect]')).toBeTruthy());
+    // 해제가 끝나면 그 사실을 알리는 팝업이 뜬다(요청) — 닫고 이어 간다.
+    await user.click(await screen.findByRole('button', { name: '확인' }));
 
     // B 계정(회의실이 없는 조직)으로 다시 연결 — Admin SDK가 빈 목록을 준다.
     const inner = global.fetch;
@@ -2196,6 +2259,9 @@ describe('구글 캘린더 겹치기(PR5)', () => {
     expect(document.body.textContent).toContain('캘린더 연동');
     expect(link.compareDocumentPosition(row) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
     expect(link.textContent).toContain('Google 로그인');
+    // 연결 전에는 **부제가 없다**(요청) — 늘 같은 안내("연결하면 …")를 걸어 두면
+    // 정작 알려야 할 때(권한 만료 같은 상황) 눈에 띌 자리가 없다.
+    expect(row.textContent).toBe('Google 캘린더 연동');
     // 목록·공휴일은 이 화면에 없다 — 한 겹 더 들어간다(요청).
     expect(document.querySelector('[data-google-section]')).toBeNull();
     expect(document.querySelector('[data-holiday-row]')).toBeNull();

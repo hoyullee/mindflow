@@ -91,7 +91,30 @@ async function call(body: Record<string, unknown>): Promise<ServerResult> {
   // 서버는 살아 있는데 자격 증명이 없거나 폐기됐다 — 사용자의 동의가 다시 필요하다.
   known = 'available';
   if (data.reason === 'no-credentials' || data.reason === 'revoked') return { needsConsent: true };
-  return { error: '구글 연결을 확인하지 못했어요.' };
+  // **사유를 삼키지 않는다**(제보: "구글 연결을 확인하지 못했어요"만 뜨고 연동이 안 됐다).
+  // 이 자리는 구글이 교환을 거절한 것이라 원인이 응답에 적혀 오는데, 예전에는 그것을
+  // 버리고 한 문장으로 덮어 무엇을 고쳐야 하는지 알 길이 없었다(#552와 같은 교훈:
+  // 400은 사유를 드러내야 진단된다).
+  console.warn('[geurio] google-oauth 실패', data.reason, data.detail ?? '');
+  return { error: serverFailureMessage(data.reason, data.detail) };
+}
+
+/**
+ * 서버가 알려 준 실패 사유를 **사람이 읽고 무엇을 고칠지 아는** 문장으로. 순수 함수라
+ * 테스트가 붙는다.
+ */
+export function serverFailureMessage(reason?: string, detail?: string): string {
+  const d = detail ?? '';
+  // 구글이 "그 코드는 이 리디렉션 주소로 발급된 게 아니다"라 한 것 — 원인은 둘뿐이다:
+  // 콘솔의 승인된 리디렉션 URI가 없거나, **서버 함수가 옛 판**이라 우리가 보낸 주소를
+  // 무시하고 `postmessage`로 교환하려 한 것. Edge Function은 GitHub 연동으로
+  // 자동 배포되지 않으므로(마이그레이션과 다르다) 후자가 흔하다.
+  if (/redirect_uri_mismatch/i.test(d)) {
+    return '구글이 이 주소로의 연동을 거절했어요(redirect_uri_mismatch). 서버의 google-oauth 함수를 다시 배포해야 해요.';
+  }
+  if (/invalid_grant/i.test(d)) return '구글 인증 코드가 만료됐어요. 다시 연결해 주세요.';
+  if (reason === 'exchange-failed') return d ? `구글이 연동을 거절했어요: ${d}` : '구글이 연동을 거절했어요.';
+  return '구글 연결을 확인하지 못했어요.';
 }
 
 /** 서버 흐름을 쓸 수 있다고 이미 확인했는가(팝업 방식을 고르는 데 쓴다). */
