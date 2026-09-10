@@ -24,11 +24,18 @@
     <!-- M6: Pretendard is now self-hosted (see src/index.css's @font-face) so it's
          precached by the service worker and works offline / behind a CDN block —
          no external stylesheet link here anymore. -->
-    <!-- 폰트를 최우선으로 미리 받아 첫 페인트 시 시스템폰트→Pretendard 교체로
-         텍스트 정렬이 틀어졌다 돌아오는 깜빡임(레이아웃 시프트)을 없앤다.
-         (@font-face는 optional이라, 이 프리로드로 제때 도착하면 처음부터 Pretendard.)
-         폰트는 CORS(anonymous)로 받으므로 same-origin이라도 crossorigin 필수. -->
-    <link rel="preload" href="/fonts/pretendard/PretendardVariable.woff2" as="font" type="font/woff2" crossorigin />
+    <!-- 폰트는 **프리로드하지 않는다**(제보: 콘솔에 "preloaded ... but not used
+         within a few seconds" 경고). 예전 주석은 `@font-face`가 `optional`이라
+         프리로드가 제때 도착해야 Pretendard가 쓰인다고 적어 뒀는데 실제 값은
+         `swap`이다(src/index.css) — swap은 언제 도착하든 그때 갈아 끼우므로
+         프리로드가 없어도 결국 Pretendard로 그려진다. 그리고 정렬이 틀어지는 것은
+         `Pretendard-fallback`(ascent/descent 오버라이드)이 막는다 — 그 face의
+         존재 이유가 바로 "교체 순간 줄상자가 움직이지 않게"다.
+         남는 것은 비용뿐이었다. 이 파일은 2MB이고 프리로드는 **load 이벤트를 막는다**
+         — 실측(스로틀 A/B, /login): 10Mbps 3295→1741ms · 3Mbps 10376→4988ms ·
+         1.5Mbps 20418→9707ms로 load가 대략 절반이 된다. 첫 방문에 글리프 모양이
+         한 번 바뀌는 대가로 앱이 두 배 빨리 뜬다. 되돌리려면 `optional`과 함께
+         써야 한다(그때는 프리로드가 실제로 판단을 가른다). -->
     <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
     <link rel="icon" type="image/png" sizes="32x32" href="/favicon-32x32.png" />
     <link rel="icon" type="image/png" sizes="16x16" href="/favicon-16x16.png" />

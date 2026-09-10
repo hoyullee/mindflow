@@ -71,3 +71,31 @@ describe('정적 랜딩(루트)도 설치 가능해야 한다', () => {
     expect(html).toContain('rel="apple-touch-icon"');
   });
 });
+
+/**
+ * 폰트는 **프리로드하지 않는다.** 콘솔 경고("preloaded ... but not used within a
+ * few seconds")가 제보로 왔고, 지우기로 결정한 근거는 측정이었다: 이 파일은 2MB이고
+ * 프리로드는 `load` 이벤트를 막아 스로틀 A/B에서 load가 대략 **두 배**가 됐다
+ * (10Mbps 3295→1741ms · 3Mbps 10376→4988ms · 1.5Mbps 20418→9707ms).
+ *
+ * 정렬이 틀어지는 것은 프리로드가 아니라 `Pretendard-fallback`(ascent/descent
+ * 오버라이드)이 막는다 — 그 face의 존재 이유가 그것이다. 그래서 이 테스트는 두
+ * 가지를 함께 못박는다: 프리로드가 없다는 것과, **그 폴백이 여전히 있다는 것**
+ * (폴백을 지우면 프리로드 없이는 진짜로 글자가 튄다).
+ */
+describe('폰트 로딩 계약', () => {
+  const shell = readFileSync(path.resolve(__dirname, '../../index.html'), 'utf8');
+  const css = readFileSync(path.resolve(__dirname, '../index.css'), 'utf8');
+
+  it('앱 셸에 폰트 프리로드가 없다', () => {
+    expect(shell).not.toMatch(/rel="preload"/);
+    expect(shell).not.toContain('PretendardVariable.woff2');
+  });
+
+  it('대신 metric-matched 폴백과 swap이 교체 순간을 지킨다', () => {
+    expect(css).toContain("font-family: 'Pretendard-fallback'");
+    expect(css).toMatch(/ascent-override:\s*95\.21%/);
+    expect(css).toMatch(/descent-override:\s*24\.12%/);
+    expect(css).toMatch(/font-display:\s*swap/);
+  });
+});
