@@ -1305,6 +1305,59 @@ describe('일정 화면', () => {
       expect(events()[0]).toMatchObject({ title: '설계 회의', allDay: false, startTime: '09:00', endTime: '11:00' });
     });
 
+    it('알림을 걸면 저장되고, 종일 일정에서는 그 자리가 비활성 + 이유를 말한다(0038)', async () => {
+      renderHome([META('d1', '스프린트 보드')], BODIES());
+      await openCalendar();
+      fireEvent.click(document.querySelector('[data-cal-new]')!);
+      await waitFor(() => expect(newEv()).toBeTruthy());
+
+      // 기본은 종일 — 그때는 알림을 걸 수 없다(자정 10분 전은 뜻이 어긋난다).
+      expect(document.querySelector('[data-gf-remind-off]')).toBeTruthy();
+      expect(newEv().textContent).toContain('종일 일정에는 알림을 걸 수 없어요');
+      expect(document.querySelector('[data-gf-remind]')).toBeNull();
+
+      fireEvent.click(document.querySelector('[data-new-allday]')!);
+      await waitFor(() => expect(document.querySelector('[data-gf-remind]')).toBeTruthy());
+      // Geurio 목적지에는 `기본` 칸이 없다 — 우리에게 "캘린더 기본 알림"이 없으므로
+      // 두면 눌러도 아무 일이 없는 칸이 된다.
+      const chips = [...document.querySelectorAll('[data-gf-remind]')].map((c) => c.textContent);
+      expect(chips).toEqual(['없음', '10분 전', '1시간 전', '1일 전']);
+
+      fireEvent.click(screen.getByRole('radio', { name: '10분 전' }));
+      fireEvent.change(document.querySelector('[data-new-title]')!, { target: { value: '팀 회의' } });
+      fireEvent.click(document.querySelector('[data-new-submit]')!);
+      await waitFor(() => expect(events()).toHaveLength(1));
+      expect(events()[0]).toMatchObject({ title: '팀 회의', allDay: false, reminderMinutes: 10 });
+    });
+
+    it('상세에서 알림을 바꾸면 완료가 함께 저장하고, `없음`은 끈 것으로 저장된다', async () => {
+      renderHome([META('d1', '스프린트 보드')], BODIES());
+      const day = todayISO();
+      localStorage.setItem(
+        'mf_events',
+        JSON.stringify([{ id: 'e1', title: '팀 회의', startDate: day, endDate: day, allDay: false, startTime: '10:30', endTime: '11:30', reminderMinutes: 10, source: 'geurio' }]),
+      );
+      await openCalendar();
+      await waitFor(() => expect(chipFor('팀 회의')).toBeTruthy());
+      fireEvent.click(chipFor('팀 회의'));
+      await waitFor(() => expect(evDetail()).toBeTruthy());
+      // 지금 값이 켜져 있다.
+      expect(screen.getByRole('radio', { name: '10분 전' }).getAttribute('aria-checked')).toBe('true');
+
+      fireEvent.click(screen.getByRole('radio', { name: '1시간 전' }));
+      // 저장은 `완료`에서 한 번 — 고르기만 한 시점에는 표가 그대로다.
+      expect(events()[0]).toMatchObject({ reminderMinutes: 10 });
+      fireEvent.click(document.querySelector('[data-event-done]')!);
+      await waitFor(() => expect(events()[0]).toMatchObject({ reminderMinutes: 60 }));
+
+      // `없음`은 "안 바꾼다"가 아니라 끈 것이다.
+      fireEvent.click(chipFor('팀 회의'));
+      await waitFor(() => expect(evDetail()).toBeTruthy());
+      fireEvent.click(screen.getByRole('radio', { name: '없음' }));
+      fireEvent.click(document.querySelector('[data-event-done]')!);
+      await waitFor(() => expect(events()[0]!.reminderMinutes).toBeUndefined());
+    });
+
     it('시작 날짜를 앞으로 당기면 종료 날짜도 따라온다(하루짜리가 기간 일정이 되지 않는다)', async () => {
       // 클램프만 있던 판에서는 시작을 당기는 순간 그 사이만큼 긴 기간 일정이 됐다
       // (실브라우저 프로브가 잡은 자리 — 하루가 24일짜리 바로 그려졌다).

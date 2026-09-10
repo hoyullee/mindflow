@@ -99,6 +99,33 @@ describe('SupabaseEventStore', () => {
     expect('recurrence' in old.insert.mock.calls[1]![0]).toBe(false);
   });
 
+  it('알림(0038)은 시각 있는 일정에서만 왕복하고, 칼럼이 없으면 그것만 빼고 저장한다', async () => {
+    const timed = clientWith({ rows: [ROW({ reminder_minutes: 10 })] });
+    const [e] = await new SupabaseEventStore(timed.client).list('2026-08-01', '2026-08-31');
+    expect(e!.reminderMinutes).toBe(10);
+
+    // 종일 행에 값이 남아 있어도 읽지 않는다 — 자정 10분 전은 뜻이 어긋난다.
+    const allDay = clientWith({ rows: [ROW({ all_day: true, start_time: null, end_time: null, reminder_minutes: 10 })] });
+    const [a] = await new SupabaseEventStore(allDay.client).list('2026-08-01', '2026-08-31');
+    expect(a!.reminderMinutes).toBeUndefined();
+
+    // 끈 것도 **키를 실어** 보낸다(빼면 update가 "안 바꾼다"로 읽어 되살아난다).
+    const ok = clientWith({});
+    await new SupabaseEventStore(ok.client).create({ title: '회의', startDate: '2026-08-26', endDate: '2026-08-26', allDay: false, startTime: '10:30', endTime: '11:30' });
+    expect(ok.insert.mock.calls[0]![0]).toMatchObject({ reminder_minutes: null });
+
+    const withRemind = clientWith({});
+    await new SupabaseEventStore(withRemind.client).create({ title: '회의', startDate: '2026-08-26', endDate: '2026-08-26', allDay: false, startTime: '10:30', endTime: '11:30', reminderMinutes: 60 });
+    expect(withRemind.insert.mock.calls[0]![0]).toMatchObject({ reminder_minutes: 60 });
+
+    // 0038 미적용 서버 — 알림만 빼고 다시 저장한다(일정 자체는 남아야 한다).
+    const old = clientWith({ insertRecurrenceError: { message: 'column "reminder_minutes" of relation "calendar_events" does not exist' } });
+    const res = await new SupabaseEventStore(old.client).create({ title: '회의', startDate: '2026-08-26', endDate: '2026-08-26', allDay: false, startTime: '10:30', endTime: '11:30', reminderMinutes: 10 });
+    expect(res.error).toBeUndefined();
+    expect(old.insert).toHaveBeenCalledTimes(2);
+    expect('reminder_minutes' in old.insert.mock.calls[1]![0]).toBe(false);
+  });
+
   it('행을 일정으로 옮길 때 시각의 초를 잘라내고, 시각 쌍이 온전할 때만 시간 일정으로 본다', async () => {
     const { client } = clientWith({});
     const [e] = await new SupabaseEventStore(client).list('2026-08-01', '2026-08-31');

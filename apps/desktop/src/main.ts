@@ -129,6 +129,11 @@ function createWindow(): BrowserWindow {
       nodeIntegration: false,
       sandbox: true,
       webviewTag: false,
+      // 창을 최소화·가려도 렌더러 타이머를 조이지 않는다. 일정 알림이 이 창의
+      // 주기 확인으로 뜨므로(`features/reminders/`), 기본값(true)이면 창을 내려 둔
+      // 순간 그 확인이 1분에 한 번으로 조여 10:20 알림이 늦게 온다. 브라우저 탭에서는
+      // 우리가 정할 수 없어 유예(5분)로 늦은 알림을 받지만, 설치형 앱은 막을 수 있다.
+      backgroundThrottling: false,
       additionalArguments: [
         `--geurio-version=${app.getVersion()}`,
         `--geurio-titlebar=${titleBarHeightFor(process.platform)}`,

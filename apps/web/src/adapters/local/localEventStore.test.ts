@@ -105,6 +105,41 @@ describe('LocalEventStore', () => {
     expect(await store.list('2026-01-01', '2026-12-31')).toEqual([]);
   });
 
+  it('알림은 **시각 있는 일정만** 갖는다 — 종일이면 값을 지운다(0038)', async () => {
+    const store = new LocalEventStore();
+    const { event } = await store.create(IN({ allDay: false, startTime: '10:30', endTime: '11:30', reminderMinutes: 10 }));
+    expect(event).toMatchObject({ reminderMinutes: 10 });
+
+    // 종일로 바꾸면 "10분 전"은 자정 10분 전이라 뜻이 어긋난다 — 저장본에서 사라진다.
+    await store.update(event!.id, { allDay: true });
+    const [afterAllDay] = await store.list('2026-08-01', '2026-08-31');
+    expect(afterAllDay!.reminderMinutes).toBeUndefined();
+  });
+
+  it('`없음`을 고른 것은 "안 바꾼다"가 아니라 **끈 것**이다', async () => {
+    const store = new LocalEventStore();
+    const { event } = await store.create(IN({ allDay: false, startTime: '10:30', endTime: '11:30', reminderMinutes: 60 }));
+    await store.update(event!.id, { reminderMinutes: undefined });
+    const [after] = await store.list('2026-08-01', '2026-08-31');
+    expect(after!.reminderMinutes).toBeUndefined();
+    // 다른 값은 그대로다(알림만 껐다).
+    expect(after).toMatchObject({ startTime: '10:30', endTime: '11:30' });
+  });
+
+  it('표의 제약(0038: 0~4주) 밖 값은 버린다', async () => {
+    const store = new LocalEventStore();
+    const mk = async (v: unknown) => {
+      localStorage.clear();
+      const { event } = await store.create(IN({ allDay: false, startTime: '10:30', endTime: '11:30', reminderMinutes: v as number }));
+      return event!.reminderMinutes;
+    };
+    expect(await mk(0)).toBe(0);
+    expect(await mk(40_320)).toBe(40_320);
+    expect(await mk(40_321)).toBeUndefined();
+    expect(await mk(-1)).toBeUndefined();
+    expect(await mk('10')).toBeUndefined();
+  });
+
   it('손상된 저장소여도 던지지 않는다(빈 목록으로 물러난다)', async () => {
     localStorage.setItem('mf_events', '{broken');
     expect(await new LocalEventStore().list('2026-01-01', '2026-12-31')).toEqual([]);

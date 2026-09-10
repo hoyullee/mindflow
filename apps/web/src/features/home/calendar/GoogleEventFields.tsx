@@ -26,6 +26,7 @@ import { Fragment, useEffect, useRef, useState } from 'react';
 import { knownName, knownNamesFor, rememberName } from './nameBook';
 import type { KeyboardEvent } from 'react';
 import { Field, Segments, SubText } from './fieldBits';
+import { notifyPermission, requestNotifyPermission } from '../../reminders/reminderPrefs';
 import type { GoogleRsvp, GoogleTransparency, GoogleVisibility, RecurrenceSpec } from './googleCalendar';
 import { filterRooms, type DirectoryPerson, type MeetingRoom, type RoomBusy } from './googleDirectory';
 import { AnchoredList, listCard, rowDivider } from './AnchoredList';
@@ -109,6 +110,12 @@ const REMIND_OPTS: { key: string; label: string; minutes: number | null | undefi
   { key: '60', label: '1시간 전', minutes: 60 },
   { key: '1440', label: '1일 전', minutes: 1440 },
 ];
+
+/**
+ * Geurio 일정의 선택지 — `기본`이 없다. 그 칸의 뜻은 "구글 캘린더에 설정해 둔 기본
+ * 알림"인데 우리에게는 그런 값이 없어서, 두면 눌러도 아무 일이 없는 칸이 된다.
+ */
+const REMIND_OPTS_GEURIO = REMIND_OPTS.filter((o) => o.key !== 'default');
 
 export function GoogleEventFields({
   value,
@@ -350,27 +357,53 @@ export function GoogleEventFields({
  * 묶음 안에 있어 Geurio를 고르면 통째로 사라졌다: 알림은 일정의 기본 속성으로
  * 읽히므로 "고를 수 있는 자리"가 사라지는 편이 더 혼란스럽다.
  *
- * 다만 **보내는 것은 구글이다** — 우리 표(0033)에는 알림을 띄울 장치가 없다. 그래서
- * 목적지가 Geurio면 같은 칩을 그리되 **비활성 표식**으로 두고 왜 그런지 한 줄로
- * 말한다(저장할 캘린더 줄의 비활성 칩과 같은 문법 — 눌리는 척하지 않는다).
+ * **두 목적지가 다른 것을 한다**: 구글 일정은 구글이 알림을 보내고, Geurio 일정은
+ * **우리 앱·OS 알림**이 띄운다(0038 + `features/reminders/`). 그래서 칩 모양은 같고
+ * 선택지와 안내 문구만 갈린다 — 한 팝업에서 같은 종류의 컨트롤이 달라 보이지 않게.
+ *
+ * `disabled`는 이제 "우리가 못 하는 일"을 말한다(종일 일정) — 예전에는 목적지가
+ * Geurio라는 것 자체가 비활성 사유였다.
  */
-export function ReminderField({ value, onChange, disabled }: { value: number | null | undefined; onChange: (minutes: number | null | undefined) => void; disabled?: boolean }) {
-  const key = REMIND_OPTS.find((o) => o.minutes === value)?.key ?? 'default';
+export function ReminderField({
+  value,
+  onChange,
+  disabled,
+  disabledNote = 'Google 캘린더에 저장하면 알림을 함께 등록할 수 있어요',
+  kind = 'google',
+}: {
+  value: number | null | undefined;
+  onChange: (minutes: number | null | undefined) => void;
+  disabled?: boolean;
+  /** 비활성인 이유 — 왜 못 고르는지 말하지 않으면 고장으로 읽힌다. */
+  disabledNote?: string;
+  kind?: 'google' | 'geurio';
+}) {
+  const opts = kind === 'geurio' ? REMIND_OPTS_GEURIO : REMIND_OPTS;
+  const fallback = kind === 'geurio' ? 'none' : 'default';
+  const key = opts.find((o) => o.minutes === value)?.key ?? fallback;
+  const pick = (k: string): void => {
+    const minutes = opts.find((o) => o.key === k)?.minutes;
+    // Geurio 알림은 **우리가** 띄우므로 OS 알림 권한이 필요하다. 여기서 묻는 이유:
+    // 이 클릭이 사용자 제스처이고(브라우저가 요구한다) "알림을 받겠다"고 방금 말한
+    // 순간이 물어볼 가장 자연스러운 자리다. 저절로 묻지는 않는다.
+    if (kind === 'geurio' && typeof minutes === 'number' && notifyPermission() === 'default') void requestNotifyPermission();
+    onChange(minutes);
+  };
   return (
     <Field label="알림">
       {disabled ? (
         <>
           <span data-gf-remind-off style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap', opacity: 0.5 }}>
-            {REMIND_OPTS.map((o) => (
-              <span key={o.key} aria-disabled style={{ height: 30, padding: '0 12px', borderRadius: 999, border: '1px solid var(--mf-border)', background: 'var(--mf-card)', color: 'var(--mf-subtext)', fontSize: 12, fontWeight: o.key === 'default' ? 800 : 600, display: 'inline-flex', alignItems: 'center', whiteSpace: 'nowrap' }}>
+            {opts.map((o) => (
+              <span key={o.key} aria-disabled style={{ height: 30, padding: '0 12px', borderRadius: 999, border: '1px solid var(--mf-border)', background: 'var(--mf-card)', color: 'var(--mf-subtext)', fontSize: 12, fontWeight: o.key === fallback ? 800 : 600, display: 'inline-flex', alignItems: 'center', whiteSpace: 'nowrap' }}>
                 {o.label}
               </span>
             ))}
           </span>
-          <SubText>Google 캘린더에 저장하면 알림을 함께 등록할 수 있어요</SubText>
+          <SubText>{disabledNote}</SubText>
         </>
       ) : (
-        <Segments aria="알림" items={REMIND_OPTS.map((o) => ({ value: o.key, label: o.label }))} value={key} onChange={(k) => onChange(REMIND_OPTS.find((o) => o.key === k)?.minutes)} attr="data-gf-remind" wide />
+        <Segments aria="알림" items={opts.map((o) => ({ value: o.key, label: o.label }))} value={key} onChange={pick} attr="data-gf-remind" wide />
       )}
     </Field>
   );

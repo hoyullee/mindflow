@@ -1460,6 +1460,81 @@ describe('Home', () => {
     expect(calls).toEqual([]); // 아직 아무것도 올리지 않았다
   });
 
+  // ── 「일정 알림」(요청: 앱에서 일정 알림을 OS 알림으로) ──────────────────
+  //
+  // 이 스위치는 **이 기기**의 설정이다(OS 알림 권한이 기기마다 따로) — 그래서
+  // 워크스페이스 블롭이 아니라 localStorage이고, 켜는 그 클릭이 권한을 묻는
+  // 제스처가 된다(저절로 권한 창을 띄우지 않는다).
+  describe('일정 알림', () => {
+    afterEach(() => vi.unstubAllGlobals());
+
+    function stubNotification(permission: 'granted' | 'denied' | 'default') {
+      const request = vi.fn(async () => permission);
+      class FakeNotification {
+        static permission = permission;
+        static requestPermission = request;
+      }
+      vi.stubGlobal('Notification', FakeNotification);
+      return request;
+    }
+
+    async function openSettings(user: ReturnType<typeof userEvent.setup>) {
+      await user.click(await screen.findByRole('button', { name: '계정 메뉴' }));
+      await user.click(screen.getByRole('button', { name: '설정' }));
+      return screen.getByRole('dialog', { name: '설정' });
+    }
+
+    it('기본은 켜짐이고, 끄면 이 기기에 남는다 — 문구도 함께 갈린다', async () => {
+      stubNotification('granted');
+      const user = userEvent.setup();
+      renderHome();
+      const dialog = await openSettings(user);
+
+      const group = dialog.querySelector('[data-remind-group]') as HTMLElement;
+      expect(group).toBeTruthy();
+      const sw = within(group).getByRole('switch', { name: '일정 알림' });
+      expect(sw.getAttribute('aria-checked')).toBe('true');
+      expect(group.querySelector('[data-remind-note]')!.textContent).toContain('앱 알림과 OS 알림이 함께');
+
+      await user.click(sw);
+      expect(localStorage.getItem('mf_reminders')).toBe('0');
+      expect(within(group).getByRole('switch', { name: '일정 알림' }).getAttribute('aria-checked')).toBe('false');
+      expect(group.querySelector('[data-remind-note]')!.textContent).toContain('켜면');
+      // 꺼진 동안에는 권한을 물을 자리도 없다.
+      expect(group.querySelector('[data-remind-allow]')).toBeNull();
+    });
+
+    it('허용 버튼은 **물어볼 수 있을 때만** 있고, 누르면 권한을 요청한다', async () => {
+      const request = stubNotification('default');
+      const user = userEvent.setup();
+      renderHome();
+      const dialog = await openSettings(user);
+      const group = dialog.querySelector('[data-remind-group]') as HTMLElement;
+      expect(group.querySelector('[data-remind-note]')!.textContent).toContain('OS 알림을 허용하면');
+
+      await user.click(group.querySelector('[data-remind-allow]') as HTMLElement);
+      expect(request).toHaveBeenCalled();
+    });
+
+    it('차단해 뒀으면 그렇게 말하고 허용 버튼을 두지 않는다(브라우저가 다시 묻지 않는다)', async () => {
+      stubNotification('denied');
+      const user = userEvent.setup();
+      renderHome();
+      const dialog = await openSettings(user);
+      const group = dialog.querySelector('[data-remind-group]') as HTMLElement;
+      expect(group.querySelector('[data-remind-note]')!.textContent).toContain('브라우저가 알림을 막아');
+      expect(group.querySelector('[data-remind-allow]')).toBeNull();
+    });
+
+    it('`Notification`이 없는 환경에서는 행 자체를 그리지 않는다(눌러도 아무 일이 없는 자리를 두지 않는다)', async () => {
+      // jsdom 기본값 — 스텁하지 않는다.
+      const user = userEvent.setup();
+      renderHome();
+      const dialog = await openSettings(user);
+      expect(dialog.querySelector('[data-remind-group]')).toBeNull();
+    });
+  });
+
   // ── 「버전 확인」(요청) ──────────────────────────────────────────────────
   //
   // 새 버전은 원래 조용히 적용되지만 편집·입력 중인 탭에서는 계속 미뤄진다 —

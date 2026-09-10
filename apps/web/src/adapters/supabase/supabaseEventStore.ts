@@ -21,6 +21,7 @@ interface Row {
   note: string | null;
   color: string | null;
   recurrence?: string | null;
+  reminder_minutes?: number | null;
   source: string | null;
 }
 
@@ -37,6 +38,8 @@ function toEvent(r: Row): CalendarEvent {
     ...(r.note ? { note: r.note } : {}),
     ...(r.color ? { color: r.color } : {}),
     ...(r.recurrence ? { recurrence: r.recurrence } : {}),
+    // 알림(0038) — 종일 일정에는 뜻이 없으므로 시각 있는 일정에서만 읽는다.
+    ...(timed && typeof r.reminder_minutes === 'number' ? { reminderMinutes: r.reminder_minutes } : {}),
     source: r.source === 'google' ? 'google' : 'geurio',
   };
 }
@@ -53,13 +56,20 @@ function toRow(v: CalendarEventInput): Record<string, unknown> {
     note: v.note ?? '',
     color: v.color ?? null,
     recurrence: v.recurrence ?? null,
+    // 지운 것도 뜻이 있다(`null` = 알림 없음) — 키를 빼면 upsert가 아니라 update에서
+    // "안 바꾼다"로 읽혀 껐던 알림이 되살아난다.
+    reminder_minutes: v.reminderMinutes ?? null,
   };
 }
 
-/** 반복 칼럼이 없는 서버(0034 미적용)에 다시 보낼 행. */
-function withoutRecurrence(row: Record<string, unknown>): Record<string, unknown> {
+/**
+ * 새 칼럼이 없는 서버에 다시 보낼 행 — 반복(0034)·알림(0038)이 아직 없을 수 있다.
+ * **배포 순서 안전**: 마이그레이션이 늦어도 일정 자체는 저장돼야 한다(그 필드만 빠진다).
+ */
+function withoutNewColumns(row: Record<string, unknown>): Record<string, unknown> {
   const copy = { ...row };
   delete copy.recurrence;
+  delete copy.reminder_minutes;
   return copy;
 }
 
@@ -88,13 +98,13 @@ export class SupabaseEventStore implements EventStore {
     const row = toRow(v);
     const { data, error } = await this.client.from('calendar_events').insert(row).select('*').single();
     if (!error) return { event: toEvent(data as Row) };
-    // 0034 미적용 서버 — 반복만 빼고 다시 저장한다(일정 자체는 남아야 한다).
-    const retry = await this.client.from('calendar_events').insert(withoutRecurrence(row)).select('*').single();
+    // 0034·0038 미적용 서버 — 새 칼럼만 빼고 다시 저장한다(일정 자체는 남아야 한다).
+    const retry = await this.client.from('calendar_events').insert(withoutNewColumns(row)).select('*').single();
     if (retry.error) {
       console.warn('[geurio] 일정 저장 실패', error.message);
       return { error: '일정을 저장하지 못했어요. 잠시 후 다시 시도해 주세요.' };
     }
-    console.warn('[geurio] 반복 규칙 없이 저장했어요(마이그레이션 0034 확인)', error.message);
+    console.warn('[geurio] 반복·알림 없이 저장했어요(마이그레이션 0034·0038 확인)', error.message);
     return { event: toEvent(retry.data as Row) };
   }
 
@@ -106,12 +116,12 @@ export class SupabaseEventStore implements EventStore {
     const row = toRow(merged);
     const { error } = await this.client.from('calendar_events').update(row).eq('id', id);
     if (!error) return {};
-    const retry = await this.client.from('calendar_events').update(withoutRecurrence(row)).eq('id', id);
+    const retry = await this.client.from('calendar_events').update(withoutNewColumns(row)).eq('id', id);
     if (retry.error) {
       console.warn('[geurio] 일정 수정 실패', error.message);
       return { error: '일정을 고치지 못했어요.' };
     }
-    console.warn('[geurio] 반복 규칙 없이 수정했어요(마이그레이션 0034 확인)', error.message);
+    console.warn('[geurio] 반복·알림 없이 수정했어요(마이그레이션 0034·0038 확인)', error.message);
     return {};
   }
 
