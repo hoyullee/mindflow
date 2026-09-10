@@ -1131,6 +1131,8 @@ export function useHomeController() {
   const openProfileDetail = () => patch({ settingsView: 'profile', avatarError: null });
   /** Google 캘린더 연동 화면(요청) — 계정 설정에서 한 겹 더 들어간다. */
   const openCalendarDetail = () => patch({ settingsView: 'calendar' });
+  /** 「버전 확인」 화면(요청) — 첫 화면의 '계정 설정' 아래 행에서 들어온다. */
+  const openVersionDetail = () => patch({ settingsView: 'version' });
   /**
    * LNB 일정 하위 메뉴의 `캘린더 추가`(요청) — 같은 화면을 열되 **주소 입력에 커서를**
    * 둔다. 그 버튼을 누른 사람은 주소를 적으러 온 것이므로, 열린 뒤 한 번 더 그 칸을
@@ -2936,6 +2938,7 @@ export function useHomeController() {
     openGoogleCalendarSetup,
     openProfileDetail,
     openCalendarDetail,
+    openVersionDetail,
     openGoogleCalendarAdd,
     closeSettingsDetail,
     askDeleteAccount,

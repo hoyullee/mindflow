@@ -20,6 +20,7 @@ import { LocalImageStore } from '../../adapters/local/localImageStore';
 import { mapId } from './storage';
 import { RECENT_CARD_W, recentFit } from './components/RecentStrip';
 import { HOME_THEMES, UNREAD_BADGE_BG } from './theme';
+import { __resetUpdateControl, publishUpdateStatus, setUpdateControls } from '../../pwa/updateControl';
 import type { Doc } from '@mindflow/mindmap-core';
 import type { Backend, DocMeta, DocStore, LoadedDoc, SaveResult, SpaceStore, WorkspaceData } from '../../adapters/ports';
 
@@ -1457,6 +1458,76 @@ describe('Home', () => {
     // 아바타 자체도 버튼이다(카메라 배지) — 같은 파일 고르기를 연다.
     expect(dialog.querySelector('[data-avatar-pick]')).toBeTruthy();
     expect(calls).toEqual([]); // 아직 아무것도 올리지 않았다
+  });
+
+  // ── 「버전 확인」(요청) ──────────────────────────────────────────────────
+  //
+  // 새 버전은 원래 조용히 적용되지만 편집·입력 중인 탭에서는 계속 미뤄진다 —
+  // 사용자가 직접 확인하고 앞당길 자리가 필요했다. 값은 `UpdatePrompt`만 볼 수
+  // 있으므로(가상 모듈) 그 컴포넌트가 모듈에 올려 두고 이 화면이 읽는다.
+  describe('버전 확인', () => {
+    afterEach(() => __resetUpdateControl());
+
+    async function openVersion(user: ReturnType<typeof userEvent.setup>) {
+      await user.click(await screen.findByRole('button', { name: '계정 메뉴' }));
+      await user.click(screen.getByRole('button', { name: '설정' }));
+      const dialog = screen.getByRole('dialog', { name: '설정' });
+      const row = dialog.querySelector('[data-version-detail-row]') as HTMLElement;
+      // 자리 계약: '계정 설정' **아래**다(요청).
+      const account = dialog.querySelector('[data-account-detail-row]') as HTMLElement;
+      expect(account.compareDocumentPosition(row) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+      await user.click(row);
+      return dialog;
+    }
+
+    it('현재 버전을 보여 주고, 새 버전이 대기 중이면 그 자리에서 적용한다', async () => {
+      const user = userEvent.setup();
+      const check = vi.fn();
+      const apply = vi.fn();
+      setUpdateControls({ check, apply });
+      renderHome();
+      const dialog = await openVersion(user);
+
+      // 헤더가 지금 화면을 말한다.
+      expect(within(dialog).getByText('버전 확인')).toBeTruthy();
+      // 화면(웹 번들)의 판 — 버전 번호가 아니라 **빌드 시각**이다(연속 배포라
+      // 사용자에게 뜻이 있는 눈금이 "언제 나간 판인가"다). 값 자체는 빌드마다
+      // 달라지므로 **모양**을 고정한다.
+      expect((dialog.querySelector('[data-version-build] [data-version-value]') as HTMLElement).textContent).toMatch(/^\d{4}\.\d{2}\.\d{2} \d{2}:\d{2}$|^dev$/);
+      // 설치형 앱이 아니면 셸 버전 행은 없다(가리킬 것이 없다).
+      expect(dialog.querySelector('[data-version-shell]')).toBeNull();
+
+      // 아직 대기 중인 새 버전이 없다 → 확인 버튼.
+      expect(dialog.querySelector('[data-update-row]')!.getAttribute('data-update-state')).toBe('latest');
+      await user.click(dialog.querySelector('[data-update-action]') as HTMLElement);
+      expect(check).toHaveBeenCalledTimes(1);
+      // 확인하는 동안에는 스피너만(누른 것이 먹었는지 보여야 한다).
+      await waitFor(() => expect(dialog.querySelector('[data-update-row]')!.getAttribute('data-update-state')).toBe('checking'));
+      expect(dialog.querySelector('[data-update-spin]')).toBeTruthy();
+
+      // 새 버전이 잡혔다 → 같은 자리가 '업데이트'가 된다.
+      act(() => publishUpdateStatus({ checking: false, ready: true }));
+      await waitFor(() => expect(dialog.querySelector('[data-update-row]')!.getAttribute('data-update-state')).toBe('ready'));
+      const applyBtn = dialog.querySelector('[data-update-action]') as HTMLElement;
+      expect(applyBtn.textContent).toBe('업데이트');
+      await user.click(applyBtn);
+      expect(apply).toHaveBeenCalledTimes(1);
+    });
+
+    it('저장에 실패해 멈춘 상태는 이유를 말하고, 확인할 수 없는 환경에서는 버튼을 두지 않는다', async () => {
+      const user = userEvent.setup();
+      renderHome();
+      // 손잡이가 없다(서비스워커가 없는 환경) → 눌러도 아무 일 없는 버튼을 두지 않는다.
+      let dialog = await openVersion(user);
+      expect(dialog.querySelector('[data-update-row]')!.getAttribute('data-update-state')).toBe('unavailable');
+      expect(dialog.querySelector('[data-update-action]')).toBeNull();
+
+      setUpdateControls({ check: vi.fn(), apply: vi.fn() });
+      act(() => publishUpdateStatus({ ready: true, saveBlocked: true }));
+      dialog = screen.getByRole('dialog', { name: '설정' });
+      await waitFor(() => expect(dialog.querySelector('[data-update-row]')!.getAttribute('data-update-state')).toBe('save-blocked'));
+      expect(within(dialog).getByText(/저장되지 않은 편집이 있어요/)).toBeTruthy();
+    });
   });
 
   it('프로필 메뉴도 펼침·접힘 애니메이션을 그린다 (요청)', async () => {

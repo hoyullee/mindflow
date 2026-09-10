@@ -8,6 +8,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { UpdatePrompt } from './UpdatePrompt';
 import { __resetUpdateGate, useUpdateGuard, type UpdateRisk } from './updateGate';
+import { __resetUpdateControl, applyUpdateNow, checkForUpdateNow, currentUpdateStatus, updateControlsReady } from './updateControl';
 
 const updateServiceWorker = vi.fn();
 const setNeedRefresh = vi.fn();
@@ -33,6 +34,7 @@ beforeEach(() => {
   updateServiceWorker.mockClear();
   setNeedRefresh.mockClear();
   swUpdate.mockClear();
+  __resetUpdateControl();
 });
 afterEach(() => cleanup());
 
@@ -93,5 +95,37 @@ describe('UpdatePrompt — 닫기(X)와 자동 적용', () => {
     } finally {
       channel.close();
     }
+  });
+});
+
+// 설정의 「버전 확인」 화면은 이 컴포넌트만 볼 수 있는 것을 읽는다(가상 모듈에
+// 닿을 수 있는 곳이 여기뿐이다) — 그 연결이 끊기면 그 화면은 영영 "확인할 수
+// 없어요"만 말하고, 그것은 **빌드도 테스트도 통과하는** 종류의 고장이다.
+describe('UpdatePrompt — 설정의 「버전 확인」에 상태·손잡이를 올린다', () => {
+  it('확인·적용 손잡이가 서고, 대기 중인 새 버전을 상태로 알린다', async () => {
+    render(
+      <>
+        <Guard risk="block" />
+        <UpdatePrompt />
+      </>,
+    );
+    await screen.findByRole('button', { name: '나중에' });
+
+    // 손잡이가 있다 → 버전 화면이 버튼을 내줄 수 있다.
+    expect(updateControlsReady()).toBe(true);
+    // 대기 중인 새 버전(`needRefresh: true`)이 그대로 올라간다.
+    await waitFor(() => expect(currentUpdateStatus().ready).toBe(true));
+
+    // '지금 확인' — `updateGate`의 자동 확인(30초 스로틀)과 달리 즉시 물어본다.
+    swUpdate.mockClear();
+    checkForUpdateNow();
+    expect(swUpdate).toHaveBeenCalledTimes(1);
+    expect(currentUpdateStatus().checking).toBe(true);
+
+    // '업데이트' — 수동 적용은 피어를 묻지 않고 곧바로 적용한다.
+    // (약속을 기다리지 않는다: 정상 경로는 리로드로 페이지째 사라지므로 `applyUpdate`가
+    //  리로드 감시 타이머까지 버틴 뒤에야 풀린다 — 우리가 볼 것은 skipWaiting이다.)
+    void applyUpdateNow();
+    await waitFor(() => expect(updateServiceWorker).toHaveBeenCalledWith(true), { timeout: 3000 });
   });
 });
