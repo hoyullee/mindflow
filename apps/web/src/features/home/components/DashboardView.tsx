@@ -233,11 +233,15 @@ export function DashboardView({ state, view, controller, isMobile = false, onOpe
 
   return (
     <div data-dashboard-view style={{ display: 'flex', flexDirection: 'column', margin: isMobile ? '-16px -14px -32px' : '-24px -32px -44px' }}>
-      {/* 다크 히어로 — 대시보드 화면임을 한눈에 가르는 띠(디자인 원본 #332E29 고정:
-          어두운 면이라 다크 테마에서도 그대로 성립한다). */}
+      {/* 타이틀 띠 — **일정 화면의 헤더와 같은 면·패딩·점 격자**다(제보: 다크 히어로가
+          바닥 색과 어울리지 않고 높이도 달랐다). 예전엔 고정 다크(#332E29)라 어느
+          테마에서도 성립하기는 했지만, 나란한 최상위 화면 둘이 머리부터 다른 물건처럼
+          보였다 — 지금은 값이 토큰이라 여섯 테마·다크가 함께 따라온다.
+          높이도 같다: 같은 패딩 + 오른쪽 묶음의 버튼을 34px로 맞췄다(일정의 `새 일정`과
+          같은 값). 그래서 두 화면을 오갈 때 머리 띠가 오르내리지 않는다. */}
       {/* 인사말·날짜 줄은 없앴다(요청) — 타이틀 한 줄만 남기고 양쪽 묶음을 가운데 정렬한다. */}
-      <div style={{ position: 'relative', background: '#332E29', padding: isMobile ? '18px 16px' : '22px 32px', display: 'flex', alignItems: 'center', flexWrap: 'wrap', gap: 14, overflow: 'hidden' }}>
-        <div aria-hidden style={{ position: 'absolute', inset: 0, backgroundImage: 'radial-gradient(rgba(247,239,232,.07) 1px, transparent 1px)', backgroundSize: '18px 18px' }} />
+      <div data-dash-hero style={{ position: 'relative', background: 'var(--mf-panel2)', borderBottom: '1px solid var(--mf-border)', padding: isMobile ? '14px 16px' : '18px 28px', display: 'flex', alignItems: 'center', flexWrap: 'wrap', gap: 12, overflow: 'hidden' }}>
+        <div aria-hidden style={{ position: 'absolute', inset: 0, backgroundImage: 'radial-gradient(var(--mf-dot-grid) 1px, transparent 1px)', backgroundSize: '18px 18px', pointerEvents: 'none' }} />
         <div style={{ position: 'relative', minWidth: 0, flex: '1 1 auto' }}>
           <span style={{ display: 'flex', alignItems: 'center', gap: 12, minWidth: 0, flexWrap: 'wrap' }}>
             {/* 폰의 앱 바 ≡ — 홈의 첫 화면이 대시보드라(요청) 여기에도 서랍 손잡이가
@@ -247,27 +251,28 @@ export function DashboardView({ state, view, controller, isMobile = false, onOpe
             {isMobile && onOpenNav && (
               <button
                 type="button"
-                className="btn"
+                className="mf-ctl"
                 onClick={onOpenNav}
                 title={navDot.title}
                 aria-label={navDot.label}
-                style={{ position: 'relative', display: 'flex', alignItems: 'center', justifyContent: 'center', width: 44, height: 44, marginLeft: -12, marginRight: -6, marginTop: -6, marginBottom: -6, border: 'none', borderRadius: 10, background: 'transparent', color: '#F7EFE8', cursor: 'pointer', padding: 0, flexShrink: 0 }}
+                style={{ position: 'relative', display: 'flex', alignItems: 'center', justifyContent: 'center', width: 44, height: 44, marginLeft: -12, marginRight: -6, marginTop: -6, marginBottom: -6, border: 'none', borderRadius: 10, background: 'transparent', color: 'var(--mf-muted)', cursor: 'pointer', padding: 0, flexShrink: 0 }}
               >
                 <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
                   <line x1="4" y1="7" x2="20" y2="7" />
                   <line x1="4" y1="12" x2="20" y2="12" />
                   <line x1="4" y1="17" x2="20" y2="17" />
                 </svg>
-                {navDot.on && <span data-unread-dot aria-hidden="true" style={{ position: 'absolute', top: 9, right: 9, width: 8, height: 8, borderRadius: '50%', background: UNREAD_BADGE_BG, border: '2px solid #332E29' }} />}
+                {navDot.on && <span data-unread-dot aria-hidden="true" style={{ position: 'absolute', top: 9, right: 9, width: 8, height: 8, borderRadius: '50%', background: UNREAD_BADGE_BG, border: '2px solid var(--mf-panel2)' }} />}
               </button>
             )}
-            <h2 style={{ margin: 0, display: 'flex', alignItems: 'center', gap: 9, fontSize: 25, fontWeight: 800, letterSpacing: '-.035em', color: '#F7EFE8', whiteSpace: 'nowrap' }}>
-              {/* 색은 만들기 팝업에서 고른 그 색(없으면 강조색). 히어로는 고정 다크 면이라
-                  어두운 색은 묻히므로 옅은 빛 테두리를 둘러 어느 색에서도 점이 산다. */}
-              <span data-dash-hero-dot style={{ width: 10, height: 10, borderRadius: 3.5, background: dash.color ?? 'var(--mf-accent)', boxShadow: '0 0 0 1px rgba(247,239,232,.3)', display: 'block', flexShrink: 0 }} />
+            <h2 style={{ margin: 0, display: 'flex', alignItems: 'center', gap: 9, fontSize: isMobile ? 21 : 25, fontWeight: 800, letterSpacing: '-.035em', color: 'var(--mf-text)', whiteSpace: 'nowrap' }}>
+              {/* 색은 만들기 팝업에서 고른 그 색(없으면 강조색). 밝은 면으로 바뀌면서
+                  빛 테두리는 뺐다 — 그 링은 어두운 면에서 어두운 색이 묻히는 것을
+                  막으려던 것이고, 지금은 어느 강조색이든 그대로 보인다. */}
+              <span data-dash-hero-dot style={{ width: 10, height: 10, borderRadius: 3.5, background: dash.color ?? 'var(--mf-accent)', display: 'block', flexShrink: 0 }} />
               {dash.name}
             </h2>
-            <span style={{ ...META_MONO, color: dash.items.length >= DASH_CAP ? '#E8A08A' : '#8C7E6B', whiteSpace: 'nowrap', paddingTop: 6 }}>
+            <span style={{ ...META_MONO, color: dash.items.length >= DASH_CAP ? 'var(--mf-danger)' : 'var(--mf-muted)', whiteSpace: 'nowrap', paddingTop: 6 }}>
               {dash.items.length}/{DASH_CAP}
             </span>
             {others.length > 0 && (
@@ -276,9 +281,9 @@ export function DashboardView({ state, view, controller, isMobile = false, onOpe
                   <button
                     key={d.id}
                     type="button"
-                    className="btn"
+                    className="mf-ctl"
                     onClick={() => controller.selectDash(d.id)}
-                    style={{ display: 'inline-flex', alignItems: 'center', gap: 6, height: 24, padding: '0 11px', borderRadius: 999, border: '1px solid rgba(247,239,232,.16)', background: 'transparent', color: '#8C7E6B', font: 'inherit', fontSize: 11, fontWeight: 700, cursor: 'pointer', whiteSpace: 'nowrap' }}
+                    style={{ display: 'inline-flex', alignItems: 'center', gap: 6, height: 26, padding: '0 11px', borderRadius: 999, border: '1px solid var(--mf-border)', background: 'var(--mf-card)', color: 'var(--mf-muted)', font: 'inherit', fontSize: 11, fontWeight: 700, cursor: 'pointer', whiteSpace: 'nowrap' }}
                   >
                     {/* 그 대시보드의 색 — 이름을 읽지 않고도 어느 것인지 알아본다(LNB와 같은 색). */}
                     <span aria-hidden style={{ width: 6, height: 6, borderRadius: 2, background: d.color ?? 'var(--mf-accent)', display: 'block', flexShrink: 0 }} />
@@ -291,10 +296,12 @@ export function DashboardView({ state, view, controller, isMobile = false, onOpe
         </div>
         <div style={{ position: 'relative', display: 'flex', alignItems: 'center', gap: 8, flexShrink: 0 }}>
           {/* 편집 토글(디자인) — 켜면 위젯 드래그 재배치·모서리 리사이즈·인라인
-              크기/제거가 열린다. 히어로가 고정 다크 면이라 색도 디자인 값 그대로. */}
+              크기/제거가 열린다. 켜짐·꺼짐 색은 **일정 헤더의 보기 토글과 같은 언어**다
+              (켜짐=옅은 강조 면 + 진한 강조 잉크 / 꺼짐=카드 면). `mf-ctl`이라
+              켜져 있을 때는 hover가 틴트를 갈아 끼우지 않고 밝기만 움직인다. */}
           <button
             type="button"
-            className="btn"
+            className="mf-ctl"
             data-dash-edit-toggle
             aria-pressed={edit}
             onClick={controller.toggleDashEdit}
@@ -302,12 +309,12 @@ export function DashboardView({ state, view, controller, isMobile = false, onOpe
               display: 'inline-flex',
               alignItems: 'center',
               gap: 7,
-              height: 32,
+              height: 34,
               padding: '0 13px',
               borderRadius: 999,
-              border: `1px solid ${edit ? '#F2A184' : 'rgba(247,239,232,.28)'}`,
-              background: edit ? '#F2A184' : 'rgba(247,239,232,.07)',
-              color: edit ? '#332E29' : '#F7EFE8',
+              border: `1px solid ${edit ? 'var(--mf-accent-mute)' : 'var(--mf-border)'}`,
+              background: edit ? 'var(--mf-accent-soft)' : 'var(--mf-card)',
+              color: edit ? 'var(--mf-accent-strong)' : 'var(--mf-muted)',
               fontSize: 12.5,
               fontWeight: 700,
               cursor: 'pointer',
@@ -323,13 +330,15 @@ export function DashboardView({ state, view, controller, isMobile = false, onOpe
           </button>
           <button
             type="button"
-            className="btn"
+            // 그라디언트 버튼은 `mf-ctl`을 쓰지 않는다 — 그 hover가 면을 갈아 끼워
+            // 그라디언트를 지운다(제보). `mf-ctl-primary`는 밝기만 올린다.
+            className="mf-ctl-primary"
             onClick={controller.openDashPicker}
             style={{
               display: 'inline-flex',
               alignItems: 'center',
               gap: 7,
-              height: 32,
+              height: 34,
               padding: '0 15px',
               borderRadius: 999,
               border: '1px solid var(--mf-accent)',
@@ -351,7 +360,8 @@ export function DashboardView({ state, view, controller, isMobile = false, onOpe
       </div>
 
       {/* 격자 바닥 — 캔버스 같은 점 격자(디자인). */}
-      {/* 위젯 뒤의 면은 흰 면(요청) — 점 격자는 그 위에 그대로. 히어로는 그대로 어둡다. */}
+      {/* 위젯 뒤의 면은 흰 면(요청) — 점 격자는 그 위에 그대로. 타이틀 띠는 그보다
+          한 톤 가라앉은 면(`--mf-panel2`)이라 머리와 본문이 갈린다(일정 화면과 같다). */}
       <div data-dash-body style={{ padding: isMobile ? '14px 14px 32px' : '18px 32px 44px', display: 'flex', flexDirection: 'column', gap: 14, backgroundColor: 'var(--mf-page)', backgroundImage: 'radial-gradient(var(--mf-dot-grid) 1px, transparent 1px)', backgroundSize: '17px 17px', minHeight: 420, flex: 1 }}>
         {/* 편집 안내 띠(디자인) — 무엇을 할 수 있는지와 종류별 최소 크기를 말한다.
             모바일은 드래그·모서리 리사이즈가 없으므로(터치에서 발화하지 않는 마우스

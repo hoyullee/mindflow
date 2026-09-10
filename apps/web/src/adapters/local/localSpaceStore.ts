@@ -12,11 +12,15 @@ export class LocalSpaceStore implements SpaceStore {
     try {
       const raw = localStorage.getItem(SPACES_KEY);
       if (!raw) return null;
-      const parsed = JSON.parse(raw) as { spaces?: unknown; mapFolders?: unknown; recent?: unknown; theme?: unknown; dashboards?: unknown; google?: unknown };
+      const parsed = JSON.parse(raw) as { spaces?: unknown; mapFolders?: unknown; recent?: unknown; theme?: unknown; homeLanding?: unknown; dashboards?: unknown; google?: unknown };
       if (!Array.isArray(parsed.spaces)) return null;
       const mapFolders = parsed.mapFolders && typeof parsed.mapFolders === 'object' ? (parsed.mapFolders as Record<string, string>) : {};
       const recent = Array.isArray(parsed.recent) ? parsed.recent.filter((t): t is string => typeof t === 'string') : undefined;
       const theme = typeof parsed.theme === 'string' ? parsed.theme : undefined;
+      // 첫 화면(요청) — 값 검증은 홈의 `homeLandingOf`가 한다. ⚠️ 이 `load()`는 블롭을
+      // **필드별로 다시 짓는다**: 새 필드를 여기 빠뜨리면 그 설정이 로드마다 조용히
+      // 지워진다(`google.extra`·`google.holiday`에서 두 번 겪었다).
+      const homeLanding = typeof parsed.homeLanding === 'string' ? parsed.homeLanding : undefined;
       const dashboards = Array.isArray(parsed.dashboards) ? parsed.dashboards : undefined;
       // 구글 캘린더 겹치기 설정(PR5) — 모양이 어긋나면 없는 것으로 본다.
       const g = parsed.google as { calendars?: unknown; extra?: unknown; holiday?: unknown } | undefined;
@@ -31,7 +35,7 @@ export class LocalSpaceStore implements SpaceStore {
     const google = g && Array.isArray(g.calendars)
       ? { calendars: g.calendars.filter((c): c is string => typeof c === 'string'), ...(extra?.length ? { extra } : {}), ...(typeof g.holiday === 'string' ? { holiday: g.holiday } : {}) }
       : undefined;
-      return { spaces: parsed.spaces, mapFolders, recent, theme, dashboards, google };
+      return { spaces: parsed.spaces, mapFolders, recent, theme, homeLanding, dashboards, google };
     } catch {
       return null;
     }
@@ -39,7 +43,7 @@ export class LocalSpaceStore implements SpaceStore {
 
   async save(data: WorkspaceData): Promise<void> {
     try {
-      localStorage.setItem(SPACES_KEY, JSON.stringify({ v: 1, spaces: data.spaces, mapFolders: data.mapFolders, recent: data.recent ?? [], theme: data.theme, dashboards: data.dashboards ?? [], ...(data.google ? { google: data.google } : {}) }));
+      localStorage.setItem(SPACES_KEY, JSON.stringify({ v: 1, spaces: data.spaces, mapFolders: data.mapFolders, recent: data.recent ?? [], theme: data.theme, ...(data.homeLanding ? { homeLanding: data.homeLanding } : {}), dashboards: data.dashboards ?? [], ...(data.google ? { google: data.google } : {}) }));
     } catch {
       /* storage unavailable (private mode, quota, ...) — non-fatal */
     }

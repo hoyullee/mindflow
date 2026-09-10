@@ -1095,6 +1095,49 @@ describe('Editor interactions (M3-Editor-b)', () => {
     });
   });
 
+  // 요청: 설치형 앱에서는 타이틀 바가 브랜드를 이미 들고 있어 GNB의 로고와 겹쳐
+  // 보인다(제보) — 그 자리를 내 프로필로 바꾸고 홈은 아이콘 버튼으로 남긴다.
+  describe('설치형 앱: GNB 첫 칸 = [홈 아이콘][내 프로필]', () => {
+    function shell(): void {
+      (window as unknown as { geurio?: Record<string, unknown> }).geurio = {
+        desktop: true,
+        version: '0.2.0',
+        platform: 'win32',
+        titleBarHeight: 40,
+        openExternal: vi.fn(),
+        onDeepLink: () => () => {},
+        takePendingDeepLink: vi.fn(),
+      };
+    }
+    afterEach(() => {
+      delete (window as unknown as { geurio?: unknown }).geurio;
+    });
+
+    it('브랜드(로고+이름) 대신 프로필 칩이 서고, 홈 버튼은 아이콘만 남는다', async () => {
+      shell();
+      localStorage.setItem('mindflow_doc_dk1', JSON.stringify(DOC));
+      const { container } = renderEditor('/editor?map=dk1&title=x');
+
+      // 타이틀 바가 브랜드를 들고 있으므로 바에는 같은 것을 그리지 않는다.
+      expect(screen.queryByRole('button', { name: 'Geurio 홈으로' })).toBeNull();
+      const chip = container.querySelector('[data-editor-identity]') as HTMLElement;
+      expect(chip).toBeTruthy();
+      // 이 칩은 누르는 것이 아니다 — 에디터에는 프로필로 갈 화면이 없다.
+      expect(chip.querySelector('button')).toBeNull();
+      // 홈으로 가는 문은 남는다(아웃라인 보기에는 독칩이 없어 이게 유일한 문이다).
+      const home = screen.getByRole('button', { name: '홈으로' });
+      await userEvent.setup().click(home);
+      await waitFor(() => expect(screen.getByText('HOME_PAGE')).toBeTruthy());
+    });
+
+    it('브라우저에서는 그대로 브랜드 로고다(무회귀)', () => {
+      localStorage.setItem('mindflow_doc_dk2', JSON.stringify(DOC));
+      const { container } = renderEditor('/editor?map=dk2&title=x');
+      expect(screen.getByRole('button', { name: 'Geurio 홈으로' })).toBeTruthy();
+      expect(container.querySelector('[data-editor-identity]')).toBeNull();
+    });
+  });
+
   // 요청: GNB 로고를 눌러도 홈으로 — 독칩이 뒤로 가기가 된 뒤로는 홈으로 가는 유일한 문이다.
   describe('GNB 브랜드 로고 = 홈으로', () => {
     it('로고를 누르면 홈으로 나간다', async () => {

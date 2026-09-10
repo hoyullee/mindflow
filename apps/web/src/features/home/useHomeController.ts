@@ -50,6 +50,8 @@ import {
   loadRecent,
   saveActiveView,
   saveLandingHint,
+  homeLandingOf,
+  type HomeLanding,
   mapId,
   mapHref as buildMapHref,
   mergeDocMetasIntoSpaces,
@@ -220,6 +222,9 @@ export function useHomeController() {
     // 두되(canPersistWorkspaceRef가 저장을 막으므로 덮어쓸 위험은 없다) 읽었으면
     // 모양을 검증해 들인다.
     const wsDashboards = ws ? coerceDashboards(ws.dashboards) : null;
+    // 첫 화면(요청: 설정 › 시작 화면) — 정본도 이 블롭이라 기기 간에 따라온다.
+    // 고른 적 없으면 `homeLandingOf`가 `'dash'`로 답한다(지금 동작 그대로).
+    const wsLanding = ws ? homeLandingOf(ws.homeLanding) : null;
     if (wsTheme) {
       applyHomeTheme(wsTheme);
       saveHomeThemeCache(wsTheme);
@@ -330,6 +335,10 @@ export function useHomeController() {
       // 스페이스 그리드가 첫 화면이다(빈 대시보드를 지어내지 않는다).
       const defaultDash = dashboards[0]?.id ?? null;
       const rememberedDash = restore?.activeDash ?? null;
+      // 고른 시작 화면 — 이 탭이 기억한 화면(`restore`)이 **이것보다 우선한다**:
+      // 에디터에서 돌아오면 보던 자리로 돌아가는 게 맞고, 시작 화면은 말 그대로
+      // "새로 시작할 때" 어디로 갈지다.
+      const homeLanding = wsLanding ?? prev.homeLanding;
       let activeDash = prev.activeDash;
       // **판단할 근거가 있을 때만** 정한다(제보: 로그인 직후 첫 진입에서 대시보드가
       // 아니라 스페이스 그리드가 떴다). 갓 로그인한 탭에서는 마운트 하이드레이션이
@@ -342,8 +351,22 @@ export function useHomeController() {
       let activeCal = prev.activeCal;
       if (!landedRef.current && canDecideLanding) {
         landedRef.current = true;
-        activeCal = !!restore?.activeCal;
-        activeDash = activeCal ? null : rememberedDash ? (dashboards.some((d) => d.id === rememberedDash) ? rememberedDash : defaultDash) : restore ? null : defaultDash;
+        activeCal = restore ? !!restore.activeCal : homeLanding === 'cal';
+        activeDash = activeCal
+          ? null
+          : restore
+            ? // 이 탭이 기억한 대시보드로. 그 대시보드가 사라졌으면(다른 기기에서 삭제)
+              // 기본 대시보드로 물러선다 — 없는 화면을 열지 않는다.
+              rememberedDash
+              ? dashboards.some((d) => d.id === rememberedDash)
+                ? rememberedDash
+                : defaultDash
+              : null
+            : // 첫 진입 — 고른 시작 화면. `'dash'`인데 대시보드가 하나도 없으면
+              // `defaultDash`가 null이라 스페이스 그리드로 물러선다(기존 규칙).
+              homeLanding === 'dash'
+              ? defaultDash
+              : null;
         // 다음 진입의 **첫 프레임**이 맞는 모양으로 시작하도록 이 기기에 적어 둔다
         // (스켈레톤은 하이드레이션 전에 그려진다 — `predictLanding`).
         saveLandingHint(activeCal ? 'cal' : activeDash ? 'dash' : 'space');
@@ -353,6 +376,10 @@ export function useHomeController() {
         mapFolders: mfMigration.changed ? mfBeforeMigration : mapFolders,
         recent: recentMigration.changed ? recentBeforeMigration : recent,
         theme,
+        // ⚠️ 저장 효과의 서명과 **같은 필드 묶음**이어야 한다 — 하나라도 빠지면 방금
+        // 하이드레이션한 것을 "바뀌었다"고 보고 곧바로 다시 저장한다(빈 조회 뒤의
+        // 그 저장이 저장된 워크스페이스를 덮는다: "재로그인하니 스페이스가 사라짐").
+        homeLanding,
         dashboards,
         google,
       });
@@ -364,7 +391,7 @@ export function useHomeController() {
       // 카드의 "공유 중" 표식 원천 — 내가 걸어 둔 초대/링크의 일괄 요약. 조회
       // 실패는 빈 객체(표식만 빠지고 홈은 그대로).
       const sharedByMe = res[3].status === 'fulfilled' ? res[3].value : prev.sharedByMe;
-      return { ...prev, theme, google, dashboards, activeDash, activeCal, spaces, activeSpace, curFolder, mapFolders, favs, deleted, trash, recent, docTimes, sharedByMe, sharedMaps: sharedMetas.map((m) => ({ docId: m.id, title: m.title, updatedAt: m.updatedAt, role: m.sharedRole ?? 'edit', isNew: unseen.has(m.id) })), loaded: true };
+      return { ...prev, theme, homeLanding, google, dashboards, activeDash, activeCal, spaces, activeSpace, curFolder, mapFolders, favs, deleted, trash, recent, docTimes, sharedByMe, sharedMaps: sharedMetas.map((m) => ({ docId: m.id, title: m.title, updatedAt: m.updatedAt, role: m.sharedRole ?? 'edit', isNew: unseen.has(m.id) })), loaded: true };
     });
     // 마지막 저장자가 **내가 아닌** 문서들만 이름을 물어본다(0015). 혼자 쓰는
     // 사람은 대상이 하나도 없어 요청 자체가 나가지 않는다. 실패해도 조용히 넘어간다 —
@@ -837,7 +864,7 @@ export function useHomeController() {
   // can't race a pending timer — space/folder edits are deliberate and infrequent.
   useEffect(() => {
     if (!state.loaded || !canPersistWorkspaceRef.current) return;
-    const sig = JSON.stringify({ spaces: state.spaces, mapFolders: state.mapFolders, recent: state.recent, theme: state.theme, dashboards: state.dashboards, google: state.google });
+    const sig = JSON.stringify({ spaces: state.spaces, mapFolders: state.mapFolders, recent: state.recent, theme: state.theme, homeLanding: state.homeLanding, dashboards: state.dashboards, google: state.google });
     if (sig === savedWorkspaceSigRef.current) return;
     savedWorkspaceSigRef.current = sig;
     // A genuine user change is being persisted — from here on the auth-confirmed
@@ -845,10 +872,10 @@ export function useHomeController() {
     workspaceMutatedRef.current = true;
     // `recent` rides along in the same per-user blob (opening a map bumps it), so
     // the recent-items list syncs across devices just like spaces/folders do.
-    void spaceStore.save({ spaces: state.spaces, mapFolders: state.mapFolders, recent: state.recent, theme: state.theme, dashboards: state.dashboards, ...(state.google ? { google: state.google } : {}) }).catch(() => {
+    void spaceStore.save({ spaces: state.spaces, mapFolders: state.mapFolders, recent: state.recent, theme: state.theme, homeLanding: state.homeLanding, dashboards: state.dashboards, ...(state.google ? { google: state.google } : {}) }).catch(() => {
       /* save failed (offline, RLS, ...) — non-fatal; the next change retries */
     });
-  }, [state.loaded, state.spaces, state.mapFolders, state.recent, state.theme, state.dashboards, state.google, spaceStore]);
+  }, [state.loaded, state.spaces, state.mapFolders, state.recent, state.theme, state.homeLanding, state.dashboards, state.google, spaceStore]);
 
   // ---- drive (fake OAuth demo) ----
   const onDriveClick = () => patch({ activeSpace: 'drive', curFolder: null, driveFolder: null });
@@ -1101,6 +1128,17 @@ export function useHomeController() {
     applyHomeTheme(key);
     saveHomeThemeCache(key);
     patch({ theme: key });
+  };
+
+  /**
+   * 홈의 시작 화면 선택(요청) — 저장은 워크스페이스 자동저장이 한다(테마와 같은 길).
+   * 여기서 **이 기기의 첫 페인트 힌트도 함께** 적는다: 그러지 않으면 다음 진입의
+   * 스켈레톤이 예전 화면 모양으로 한 번 더 뜬다(힌트는 "마지막에 착지한 화면"이라
+   * 고른 직후에는 아직 낡았다).
+   */
+  const setHomeLanding = (kind: HomeLanding) => {
+    saveLandingHint(kind);
+    patch({ homeLanding: kind });
   };
 
   /**
@@ -2932,6 +2970,7 @@ export function useHomeController() {
     openFeedback,
     closeFeedback,
     setTheme,
+    setHomeLanding,
     setGoogleCalendars,
     closeAccountSettings,
     openAccountDetail,

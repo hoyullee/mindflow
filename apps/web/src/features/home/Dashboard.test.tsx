@@ -193,9 +193,11 @@ describe('대시보드 ① — LNB·보기·피커', () => {
     expect(body.style.backgroundColor).toContain('--mf-page');
     // 점 격자는 그 위에 그대로(요청: dot 표시는 유지).
     expect(body.style.backgroundImage).toContain('--mf-dot-grid');
-    // 히어로는 그대로 어둡다(요청: 타이틀 제외).
-    const hero = container.querySelector('[data-dashboard-view]')!.firstElementChild as HTMLElement;
-    expect(hero.style.background).toContain('rgb(51, 46, 41)');
+    // 타이틀 띠는 **일정 헤더와 같은 면**이다(요청: 바닥 색과 어울리게) — 예전의
+    // 고정 다크(#332E29)가 아니다.
+    const hero = container.querySelector('[data-dash-hero]') as HTMLElement;
+    expect(hero.style.background).toContain('--mf-panel2');
+    expect(hero.style.background).not.toContain('rgb(51, 46, 41)');
   });
 
   it('피커: 보드를 골라 크기를 정해 올리면 위젯이 서고, 피커는 열린 채 "올림" 배지가 붙는다', async () => {
@@ -488,6 +490,11 @@ describe('대시보드 ② — 배치 편집 모드·런치 전환', () => {
     const { container } = renderHome();
     const skel = container.querySelector('[data-dashboard-skeleton]') as HTMLElement;
     expect(skel.style.animation).toBe('');
+    // 껍데기의 타이틀 띠는 **실제 화면과 같은 면·패딩**이어야 한다 — 갈리면 로딩이
+    // 끝나며 띠가 색도 높이도 바꾼다(그것이 이 껍데기가 막으려는 그 깜빡임이다).
+    const skelHero = skel.firstElementChild as HTMLElement;
+    expect(skelHero.style.background).toBe('var(--mf-panel2)');
+    expect(skelHero.style.padding).toBe('18px 28px');
     await waitFor(() => expect(container.querySelector('[data-dashboard-view]')).toBeTruthy());
     expect((container.querySelector('[data-dashboard-view]') as HTMLElement).style.animation).toBe('');
   });
@@ -854,6 +861,110 @@ describe('홈의 첫 화면', () => {
     } finally {
       restore();
     }
+  });
+});
+
+// ── 시작 화면 선택(요청) ───────────────────────────────────────────────────
+
+/** 설정 팝업의 첫 화면을 연다(프로필 → 설정). */
+async function openSettings(user: ReturnType<typeof userEvent.setup>) {
+  await user.click(await screen.findByRole('button', { name: '계정 메뉴' }));
+  await user.click(screen.getByRole('button', { name: '설정' }));
+  return screen.getByRole('dialog', { name: '설정' });
+}
+
+describe('시작 화면', () => {
+  it('설정에서 고르면 워크스페이스 블롭과 이 기기 힌트에 남는다', async () => {
+    seedTwoDashboards();
+    const user = userEvent.setup();
+    const { container } = renderHome();
+    await waitFor(() => expect(container.querySelector('[data-dashboard-view]')).toBeTruthy());
+
+    const dialog = await openSettings(user);
+    const seg = dialog.querySelector('[data-landing-seg]') as HTMLElement;
+    expect(seg).toBeTruthy();
+    // 고른 적 없으면 대시보드(지금 동작 그대로)
+    expect((within(seg).getByRole('radio', { name: '대시보드' }) as HTMLElement).getAttribute('data-state')).toBe('on');
+
+    await user.click(within(seg).getByRole('radio', { name: '일정' }));
+    await waitFor(() => {
+      const blob = JSON.parse(localStorage.getItem('mf_spaces') as string) as { homeLanding?: string };
+      expect(blob.homeLanding).toBe('cal');
+    });
+    // 다음 진입의 첫 프레임(스켈레톤)이 맞는 모양으로 시작하도록 힌트도 함께.
+    expect(localStorage.getItem('mf_home_landing')).toBe('cal');
+  });
+
+  it("'일정'을 골라 두면 첫 진입이 일정 화면이다(대시보드가 있어도)", async () => {
+    seedTwoDashboards();
+    const blob = JSON.parse(localStorage.getItem('mf_spaces') as string) as Record<string, unknown>;
+    localStorage.setItem('mf_spaces', JSON.stringify({ ...blob, homeLanding: 'cal' }));
+    const { container } = renderHome();
+    await waitFor(() => expect(container.querySelector('[data-calendar-view]')).toBeTruthy());
+    expect(container.querySelector('[data-dashboard-view]')).toBeNull();
+  });
+
+  it("'스페이스'를 골라 두면 첫 진입이 스페이스 그리드다", async () => {
+    seedTwoDashboards();
+    const blob = JSON.parse(localStorage.getItem('mf_spaces') as string) as Record<string, unknown>;
+    localStorage.setItem('mf_spaces', JSON.stringify({ ...blob, homeLanding: 'space' }));
+    const { container } = renderHome();
+    await waitFor(() => expect(screen.getByPlaceholderText('모든 스페이스에서 검색')).toBeTruthy());
+    expect(container.querySelector('[data-dashboard-view]')).toBeNull();
+    expect(container.querySelector('[data-calendar-view]')).toBeNull();
+  });
+
+  it('탭이 기억한 화면이 시작 화면보다 우선한다 — 에디터에서 돌아오면 보던 자리로', async () => {
+    seedTwoDashboards();
+    const blob = JSON.parse(localStorage.getItem('mf_spaces') as string) as Record<string, unknown>;
+    localStorage.setItem('mf_spaces', JSON.stringify({ ...blob, homeLanding: 'cal' }));
+    sessionStorage.setItem('mf_active_view', JSON.stringify({ activeSpace: 's1', curFolder: null, activeDash: 'd2' }));
+    const { container } = renderHome();
+    await waitFor(() => expect(container.querySelector('[data-dashboard-view]')).toBeTruthy());
+    expect(within(container.querySelector('[data-dashboard-view]') as HTMLElement).getByText('둘째 보드')).toBeTruthy();
+    expect(container.querySelector('[data-calendar-view]')).toBeNull();
+  });
+
+  it("'대시보드'인데 대시보드가 하나도 없으면 스페이스 그리드로 물러선다(없는 화면을 열지 않는다)", async () => {
+    seedSpaces();
+    const blob = JSON.parse(localStorage.getItem('mf_spaces') as string) as Record<string, unknown>;
+    localStorage.setItem('mf_spaces', JSON.stringify({ ...blob, homeLanding: 'dash' }));
+    const { container } = renderHome();
+    await waitFor(() => expect(screen.getByPlaceholderText('모든 스페이스에서 검색')).toBeTruthy());
+    expect(container.querySelector('[data-dashboard-view]')).toBeNull();
+  });
+
+  it('일정으로 착지할 예정이면 로딩 껍데기도 일정 모양이다(스페이스 격자가 떴다 갈아 끼워지지 않게)', async () => {
+    seedTwoDashboards();
+    localStorage.setItem('mf_home_landing', 'cal');
+    const { container } = renderHome();
+    // 첫 프레임 — 아직 하이드레이션 전
+    const skel = container.querySelector('[data-calendar-skeleton]') as HTMLElement;
+    expect(skel).toBeTruthy();
+    expect(container.querySelector('[data-map-grid-skeleton]')).toBeNull();
+    // 실제 일정 화면과 같은 띠(면·패딩) + 6주 격자 — 로딩이 끝나며 자리가 옮겨지지 않게.
+    const band = skel.firstElementChild as HTMLElement;
+    expect(band.style.background).toBe('var(--mf-panel2)');
+    expect(band.style.padding).toBe('18px 28px');
+    expect(skel.querySelectorAll('[data-skel-day]').length).toBe(42);
+  });
+});
+
+// ── 대시보드 타이틀 띠 = 일정 헤더와 같은 면·높이(제보) ───────────────────
+
+describe('대시보드 타이틀 띠', () => {
+  it('면·경계선·패딩이 일정 헤더와 같고, 오른쪽 버튼도 같은 34px이다', async () => {
+    seedTwoDashboards();
+    const { container } = renderHome();
+    await waitFor(() => expect(container.querySelector('[data-dash-hero]')).toBeTruthy());
+    const hero = container.querySelector('[data-dash-hero]') as HTMLElement;
+    // 일정 헤더(`CalendarView`)의 값과 **같은 문자열**이어야 한다 — 둘이 갈리면
+    // 화면을 오갈 때 머리 띠가 색도 높이도 바꾼다.
+    expect(hero.style.background).toBe('var(--mf-panel2)');
+    expect(hero.style.borderBottom).toBe('1px solid var(--mf-border)');
+    expect(hero.style.padding).toBe('18px 28px');
+    const edit = container.querySelector('[data-dash-edit-toggle]') as HTMLElement;
+    expect(edit.style.height).toBe('34px');
   });
 });
 
