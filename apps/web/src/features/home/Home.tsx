@@ -9,6 +9,7 @@ import { RecentStrip, RecentStripSkeleton } from './components/RecentStrip';
 import { DashboardView } from './components/DashboardView';
 import { CalendarView } from './calendar/CalendarView';
 import { DashboardSkeleton } from './components/DashboardSkeleton';
+import { CalendarSkeleton } from './components/CalendarSkeleton';
 import { DashboardPicker } from './components/modals/DashboardPicker';
 import { DashboardModal } from './components/modals/DashboardModal';
 import { AuthModal } from './components/modals/AuthModal';
@@ -83,6 +84,9 @@ export function Home() {
   // 이 탭이 기억한 화면 → 이 기기의 힌트). 대시보드로 갈 예정이면 대시보드 껍데기를
   // 그린다(제보: 스페이스 스켈레톤이 떴다가 통째로 갈아 끼워졌다).
   const dashSkeleton = view.loading && landingGuess.current === 'dash';
+  // 일정으로 착지할 예정이면 일정 껍데기를 그린다 — 시작 화면을 고를 수 있게 된
+  // 뒤로는(설정 › 시작 화면) 이 진입이 흔하다.
+  const calSkeleton = view.loading && landingGuess.current === 'cal';
   // 새 배포 자동 적용 게이트: 목록은 리로드해도 그대로 다시 그려지니 기본은 조용히
   // 적용하고, 입력 중인 팝업·확인 다이얼로그·검색어가 있을 때만 물어본다.
   useUpdateGuard(homeUpdateRisk(state));
@@ -204,6 +208,9 @@ export function Home() {
           /* 로딩 중이고 이번 진입이 대시보드로 착지할 예정 — 스페이스 스켈레톤(최근
              항목 띠 + 카드 격자)을 띄우면 곧 통째로 갈아 끼워진다(제보). */
           <DashboardSkeleton isMobile={isMobile} />
+        ) : calSkeleton ? (
+          /* 같은 이유로 일정도 자기 껍데기를 쓴다. */
+          <CalendarSkeleton isMobile={isMobile} />
         ) : (
           <>
             {view.loading && state.recent.length > 0 && !view.searchQuery && <RecentStripSkeleton count={state.recent.length} />}

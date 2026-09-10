@@ -486,6 +486,14 @@ export interface WorkspaceData {
    * 블롭에 실어 기기 간에 따라오게 한다. 예전에 저장된 워크스페이스에는 없으므로
    * 선택("아직 고른 적 없음" = 기본 테마). 값의 유효성은 홈 쪽에서 판별한다. */
   theme?: string;
+  /**
+   * 홈에 들어왔을 때의 **첫 화면**(요청) — `'cal' | 'dash' | 'space'`. 테마와 같은
+   * per-user 블롭이라 기기 간에 따라온다(이 기기의 첫 페인트용 힌트는 별도로
+   * localStorage에 둔다 — `features/home/storage.ts`의 `LANDING_HINT_KEY`).
+   * 예전 블롭에는 없으므로 선택("아직 고른 적 없음" = 대시보드, 지금 동작 그대로).
+   * 값의 유효성은 홈 쪽에서 판별한다(`homeLandingOf`).
+   */
+  homeLanding?: string;
   /** 대시보드(위젯 배치) 목록 — `spaces`와 같은 규칙으로 모양은 홈 쪽 소유
    * (`features/home/dashboard/model.ts`)라 여기서는 불투명 JSON이다. 예전 블롭에는
    * 없으므로 선택("대시보드 없음"). */

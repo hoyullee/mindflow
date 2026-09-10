@@ -1,6 +1,7 @@
 /** Mirrors the data shapes threaded through Home.dc.html's `class Component extends DCLogic`. */
 
 import { loadHomeThemeCache, type HomeThemeKey } from './theme';
+import type { HomeLanding } from './storage';
 import type { SigninMethods } from '../../adapters/ports';
 import type { DashboardData, DashWidgetKind } from './dashboard/model';
 
@@ -220,6 +221,11 @@ export interface HomeState {
   /** 홈 색상 테마(LNB 최하단에서 고른다). 정본은 워크스페이스 블롭이라 기기 간에
    * 따라오고, 첫 페인트용 캐시는 `theme.ts`의 localStorage에 둔다. */
   theme: HomeThemeKey;
+  /** 홈에 들어왔을 때의 첫 화면(설정 › 시작 화면). 정본은 워크스페이스 블롭이라
+   * 기기 간에 따라오고, 이 기기의 첫 페인트용 힌트는 `storage.ts`의 localStorage다.
+   * 고른 적 없으면 `'dash'`(지금 동작 그대로). **탭이 기억한 화면이 이것보다
+   * 우선한다** — 에디터에서 돌아오면 보던 자리로 돌아가는 게 맞다. */
+  homeLanding: HomeLanding;
   /** 구글 캘린더 겹치기 설정(PR5) — 켜지 않았으면 `null`. 워크스페이스 블롭에
    * 실려 기기 간에 따라온다(토큰은 따라오지 않는다 — 탭마다 새로 받는다). */
   google: { calendars: string[]; extra?: { id: string; name: string }[]; holiday?: string } | null;
@@ -492,6 +498,8 @@ export function initialHomeState(): HomeState {
     // 이 기기의 마지막 선택으로 시작한다 — 워크스페이스(정본)가 도착하면 그 값으로
     // 맞춘다. 부팅 때 이미 같은 캐시로 CSS 변수를 입혀 뒀으므로 첫 페인트와 일치한다.
     theme: loadHomeThemeCache(),
+    // 정본은 워크스페이스다 — 도착하면 그 값으로 맞춘다(테마와 같은 길).
+    homeLanding: 'dash',
     google: null,
     calGoogleDetail: null,
     confirmDeleteAccount: false,

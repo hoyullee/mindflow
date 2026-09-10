@@ -4,7 +4,8 @@ import { ProfileAvatar, avatarLabel } from '../ProfileAvatar';
 import type { HomeState } from '../../types';
 import { HOME_THEMES, HOME_THEME_KEYS } from '../../theme';
 import { mixHex } from '../../../editor/theme';
-import { RadioCards } from '../../../../components/Segmented';
+import { RadioCards, Segmented } from '../../../../components/Segmented';
+import { HOME_LANDING_KEYS, HOME_LANDING_LABEL } from '../../storage';
 import { GoogleIcon } from '../../../auth/GoogleIcon';
 import { Modal, MODAL_DIM } from '../../../../components/Modal';
 import { googlePrefsOf, useGoogleCalendar } from '../../calendar/useGoogleCalendar';
@@ -495,6 +496,50 @@ export function AccountSettingsModal({ state, controller }: Props) {
               title="버전 확인"
               sub="현재 버전을 보고 새 버전으로 업데이트해요"
             />
+          </SettingsGroup>
+
+          {/* 시작 화면(요청) — 홈에 들어왔을 때 **어느 화면부터 볼까**. 여기 두는 이유:
+              색상 테마와 같은 per-user 취향이고(둘 다 워크스페이스 블롭이라 기기 간에
+              따라온다) 색보다 **동작**이라 그 위에 선다. LNB에 "시작 화면으로 지정"을
+              따로 두지 않는다 — 같은 설정의 진입점을 둘로 두지 않는다(이 프로젝트 규칙).
+              **탭이 기억한 화면은 이것보다 우선한다**: 에디터에서 돌아오면 보던 자리로
+              돌아간다. 그래서 이 값은 "새로 시작할 때"만 쓰인다.
+              `대시보드`를 골랐는데 대시보드가 하나도 없으면 스페이스 그리드로 물러선다
+              (없는 화면을 열지 않는다 — 착지 규칙이 그대로 지킨다). */}
+          <SettingsGroup style={{ marginTop: 14 }} attrs={{ 'data-landing-group': '' }}>
+            <div style={{ display: 'flex', alignItems: 'center', flexWrap: 'wrap', gap: 13, padding: '14px 15px' }}>
+              <div style={{ minWidth: 0, flex: '1 1 160px' }}>
+                <div style={{ fontWeight: 700, fontSize: 14.5 }}>시작 화면</div>
+              </div>
+              {/* 공휴일 국가 세그먼트와 **같은 문법**이다(가라앉은 트랙 위에서 고른 칸만
+                  카드 면 + 진한 강조 잉크) — 한 팝업 안에서 같은 종류의 컨트롤이
+                  달라 보이지 않게. */}
+              <Segmented
+                value={state.homeLanding}
+                onChange={controller.setHomeLanding}
+                label="시작 화면"
+                trackAttrs={{ 'data-landing-seg': '' }}
+                track={{ display: 'flex', gap: 3, padding: 3, borderRadius: 11, background: 'var(--mf-panel2)', border: '1px solid var(--mf-border-soft)', boxSizing: 'border-box', flexShrink: 0 }}
+                items={HOME_LANDING_KEYS.map((k) => ({
+                  value: k,
+                  label: HOME_LANDING_LABEL[k],
+                  style: (on: boolean) => ({
+                    minWidth: 54,
+                    height: 30,
+                    border: 0,
+                    borderRadius: 8,
+                    padding: '0 10px',
+                    background: on ? 'var(--mf-card)' : 'transparent',
+                    fontFamily: 'inherit',
+                    fontSize: 12.5,
+                    fontWeight: 700,
+                    color: on ? 'var(--mf-accent-strong)' : 'var(--mf-subtext)',
+                    boxShadow: on ? '0 2px 5px -3px rgba(46,42,38,.35)' : 'none',
+                    cursor: 'pointer',
+                  }),
+                }))}
+              />
+            </div>
           </SettingsGroup>
 
           {/* 색상 테마 — LNB 최하단에 있다가 사용자 요청으로 이리 왔다(설정에 모으는 게

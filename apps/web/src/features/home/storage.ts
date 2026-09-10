@@ -488,7 +488,26 @@ export function clearActiveView(): void {
  */
 export const LANDING_HINT_KEY = 'mf_home_landing';
 
-export function saveLandingHint(kind: 'dash' | 'space' | 'cal'): void {
+/**
+ * 홈의 첫 화면 — 세 최상위 화면 중 하나. 사용자가 **고를 수 있고**(요청: 설정 ›
+ * 시작 화면) 그 선택은 워크스페이스 블롭에 실려 기기 간에 따라온다. 위의
+ * `LANDING_HINT_KEY`는 그것과 별개로 **이 기기가 마지막에 실제로 착지한 화면**을
+ * 적어 두는 첫 페인트용 캐시다(스켈레톤 모양을 정한다).
+ */
+export type HomeLanding = 'cal' | 'dash' | 'space';
+
+/** 고르는 순서 = 화면이 서는 순서(LNB의 일정 → 대시보드 → 스페이스). */
+export const HOME_LANDING_KEYS: HomeLanding[] = ['cal', 'dash', 'space'];
+
+export const HOME_LANDING_LABEL: Record<HomeLanding, string> = { cal: '일정', dash: '대시보드', space: '스페이스' };
+
+/** 저장된 값 해석 — 모르는 값·없는 값은 **대시보드**다(지금 동작 그대로: 고른 적
+ *  없는 사용자의 첫 화면이 바뀌지 않는다). */
+export function homeLandingOf(v: unknown): HomeLanding {
+  return v === 'cal' || v === 'space' ? v : 'dash';
+}
+
+export function saveLandingHint(kind: HomeLanding): void {
   try {
     localStorage.setItem(LANDING_HINT_KEY, kind);
   } catch {
@@ -497,7 +516,7 @@ export function saveLandingHint(kind: 'dash' | 'space' | 'cal'): void {
 }
 
 /** 이번 진입의 첫 화면 예상. 탭이 기억한 화면 → 이 기기의 힌트 → 스페이스. */
-export function predictLanding(): 'dash' | 'space' | 'cal' {
+export function predictLanding(): HomeLanding {
   const view = loadActiveView();
   if (view) return view.activeCal ? 'cal' : view.activeDash ? 'dash' : 'space';
   try {
