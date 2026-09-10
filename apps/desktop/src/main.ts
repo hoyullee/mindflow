@@ -12,8 +12,9 @@
 //      `resources/offline.html`이 사유와 다시 시도를 안내한다.
 import { readFileSync, writeFileSync, mkdirSync } from 'node:fs';
 import path from 'node:path';
-import { app, BrowserWindow, ipcMain, screen, shell, type Rectangle } from 'electron';
+import { app, BrowserWindow, ipcMain, Menu, screen, shell, type MenuItemConstructorOptions, type Rectangle } from 'electron';
 import {
+  appMenuSpec,
   clampBounds,
   DEEP_LINK_SCHEME,
   isHexColor,
@@ -22,13 +23,16 @@ import {
   usesCustomTitleBar,
   DEFAULT_APP_URL,
   deepLinkFromArgv,
+  isBrowserShortcut,
   isDeepLink,
+  isDevToolsShortcut,
   isInternalUrl,
   isSafeExternalUrl,
   MIN_HEIGHT,
   MIN_WIDTH,
   originOf,
   type Bounds,
+  type KeyInput,
 } from './shell';
 
 const APP_URL = process.env.GEURIO_APP_URL || DEFAULT_APP_URL;
@@ -43,6 +47,13 @@ const BACKGROUND = '#fbf6f2';
  */
 const TITLEBAR_BG = '#fffdfb';
 const TITLEBAR_INK = '#7c6d60';
+
+/**
+ * 개발자 도구를 열어 줄까 — 배포본에서는 기능이 아니지만(사용자에게는 앱이 고장
+ * 난 것처럼 보인다) 실기기 진단은 이 창이 유일한 길이라 완전히 없애지 않는다.
+ * 개발 실행이거나 `GEURIO_DEVTOOLS=1`로 켰을 때만 연다.
+ */
+const DEVTOOLS_ENABLED = !app.isPackaged || process.env.GEURIO_DEVTOOLS === '1';
 
 let mainWindow: BrowserWindow | null = null;
 /** 앱이 뜨기 전에 도착한 딥링크 — 렌더러가 붙으면 넘겨준다. */
@@ -122,6 +133,21 @@ function createWindow(): BrowserWindow {
         `--geurio-titlebar=${titleBarHeightFor(process.platform)}`,
       ],
     },
+  });
+
+  // 앱 창의 키보드 — **브라우저 키를 막는다**(요청: 웹이 아니라 앱으로써).
+  // 여기서 preventDefault하면 **렌더러도 그 키를 보지 못한다**(실제 Electron으로
+  // 확인). 그래서 무엇을 막는지는 순수 규칙 한 곳(`shell.ts`)이 정하고 그 목록은
+  // 테스트가 지킨다 — 앱이 쓰는 키를 잘못 담으면 그 기능이 통째로 죽는다.
+  win.webContents.on('before-input-event', (event, input) => {
+    const key = input as unknown as KeyInput;
+    if (isDevToolsShortcut(key)) {
+      // 관례 조합은 언제나 가로챈다 — 열어 주는 것은 켜 뒀을 때만이다.
+      event.preventDefault();
+      if (DEVTOOLS_ENABLED) win.webContents.toggleDevTools();
+      return;
+    }
+    if (isBrowserShortcut(key)) event.preventDefault();
   });
 
   win.once('ready-to-show', () => win.show());
@@ -245,6 +271,12 @@ if (!app.requestSingleInstanceLock()) {
       pendingDeepLink = null;
       return link;
     });
+
+    // 앱 메뉴 — Electron 기본 메뉴의 `보기`(새로 고침·개발자 도구·확대/축소)는
+    // 브라우저의 메뉴이지 이 앱의 메뉴가 아니다. Windows·Linux는 메뉴 자체를
+    // 두지 않고, macOS는 ⌘C·⌘V가 메뉴에서 나오므로 앱·편집·창 셋만 둔다.
+    const menu = appMenuSpec(process.platform);
+    Menu.setApplicationMenu(menu ? Menu.buildFromTemplate(menu as MenuItemConstructorOptions[]) : null);
 
     // 첫 실행이 딥링크로 시작된 경우(Windows·Linux).
     pendingDeepLink = deepLinkFromArgv(process.argv);

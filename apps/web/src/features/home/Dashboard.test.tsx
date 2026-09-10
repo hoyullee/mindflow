@@ -1096,7 +1096,10 @@ describe('대시보드 캘린더 위젯(PR4) — 크기가 보기를 정한다',
     const p = /^(\d{4})-(\d{2})-(\d{2})$/.exec(iso)!;
     return `${+p[2]!}월 ${+p[3]!}일`;
   };
-  /** 이 달 안에 머무는 날 — 미니 달력·격자는 이웃 달 칸을 누를 수 없다(월말 대비). */
+  /**
+   * 이 달 안에 머무는 날 — 이웃 달 칸도 누를 수는 있지만(아래 회귀 테스트), 그 경우
+   * 옆 패널·미니 달력의 단정이 달 표기까지 걸리므로 대부분의 테스트는 이 달에 머문다.
+   */
   const shiftInMonth = (n: number): string => {
     const now = new Date();
     const fwd = new Date(now);
@@ -1236,6 +1239,46 @@ describe('대시보드 캘린더 위젯(PR4) — 크기가 보기를 정한다',
     expect(container.querySelector('[data-calendar-view]')).toBeNull();
     const p = /^(\d{4})-(\d{2})-(\d{2})$/.exec(iso)!;
     expect(within(container.querySelector('[data-cal-widget-side="day"]') as HTMLElement).getByText(`${+p[2]!}월 ${+p[3]!}일`)).toBeTruthy();
+  });
+
+  it('이웃 달 날짜 칸도 고를 수 있다 — 격자가 담고 있는 날이면 평범한 칸이다(제보)', async () => {
+    seedWithCalWidget('4x3');
+    const { container } = renderHome([META('doc-k', '스프린트')], { 'doc-k': KANBAN([]) });
+    const user = userEvent.setup();
+    const aside = await sidebarOf(container);
+    await user.click(within(aside).getByText('이번 주'));
+    const widget = await waitFor(() => container.querySelector('[data-cal-widget-month]') as HTMLElement);
+
+    // 6주 격자(42칸)에는 이번 달이 아닌 칸이 반드시 있다.
+    const thisMonth = shift(0).slice(0, 7);
+    const out = [...widget.querySelectorAll('[data-cal-widget-cell]')].find((el) => !(el.getAttribute('data-cal-widget-cell') ?? '').startsWith(thisMonth)) as HTMLButtonElement | undefined;
+    expect(out).toBeTruthy();
+    // 수리 전에는 이 칸이 `disabled`라 클릭이 아무 일도 하지 않았다.
+    expect(out!.disabled).toBe(false);
+
+    const iso = out!.getAttribute('data-cal-widget-cell')!;
+    await user.click(out!);
+    // 옆 패널이 그 날로 — 조회 구간이 격자 6주라 그 날의 항목이 이미 손에 있다.
+    const side = await waitFor(() => container.querySelector('[data-cal-widget-side="day"]') as HTMLElement);
+    expect(within(side).getByText(dayLabel(iso))).toBeTruthy();
+  });
+
+  it('미니 달력의 이웃 달 날짜도 고를 수 있다(제보)', async () => {
+    seedWithCalWidget('1x4');
+    const { container } = renderHome([META('doc-k', '스프린트')], { 'doc-k': KANBAN([]) });
+    const user = userEvent.setup();
+    const aside = await sidebarOf(container);
+    await user.click(within(aside).getByText('이번 주'));
+    const widget = await waitFor(() => container.querySelector('[data-cal-widget-listmini]') as HTMLElement);
+
+    const thisMonth = shift(0).slice(0, 7);
+    const out = [...widget.querySelectorAll('[data-mini-day]')].find((el) => !(el.getAttribute('data-mini-day') ?? '').startsWith(thisMonth)) as HTMLButtonElement | undefined;
+    expect(out).toBeTruthy();
+    expect(out!.disabled).toBe(false);
+
+    const iso = out!.getAttribute('data-mini-day')!;
+    await user.click(out!);
+    await waitFor(() => expect(within(widget).getByText(dayLabel(iso))).toBeTruthy());
   });
 
   it('머리의 조작 묶음 — 새 일정·달 이동·옆 패널 토글(원본 calNav)', async () => {

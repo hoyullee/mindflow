@@ -144,3 +144,111 @@ export function titleBarHeightFor(platform: string): number {
 export function isHexColor(value: unknown): value is string {
   return typeof value === 'string' && /^#(?:[0-9a-fA-F]{3}|[0-9a-fA-F]{6})$/.test(value);
 }
+
+/* ─────────────────────── 앱 창의 키보드 — 브라우저 키를 막는다 ───────────────────────
+ *
+ * 두 층이다. **1층은 메뉴**다(`appMenuSpec`) — 새로 고침·개발자 도구·확대/축소는
+ * Electron 기본 메뉴가 주는 것이고 메뉴를 없애면 그대로 사라진다(실제 Electron으로
+ * 확인: 메뉴가 없으면 Ctrl+R을 눌러도 리로드되지 않는다). **2층이 이 규칙들**이고,
+ * 두는 이유는 플랫폼마다 Chromium이 스스로 처리하는 키가 다를 수 있는데 이 개발
+ * 환경에서는 Windows·macOS를 확인할 수 없기 때문이다 — 그리고 켜 뒀을 때 개발자
+ * 도구를 열어 주는 자리가 여기다.
+ *
+ * ⚠️ 프로브 함정: **CDP로 넣은 키는 이 층을 지나지 않는다**(Playwright의
+ * `keyboard.press`). 실제 키보드와 같은 경로로 재려면 메인 프로세스의
+ * `webContents.sendInputEvent`를 써야 한다.
+ */
+
+/**
+ * `before-input-event`가 넘겨주는 키 입력의 우리에게 필요한 부분만. Electron 타입을
+ * 그대로 쓰지 않는 이유는 이 파일이 순수해야 하기 때문이다(vitest로 검증한다).
+ */
+export interface KeyInput {
+  type: string;
+  key: string;
+  control: boolean;
+  meta: boolean;
+  shift: boolean;
+  alt: boolean;
+}
+
+/** 한 글자 키는 소문자로, 기능 키(F5·F12)는 그대로 — 비교를 한 꼴로 맞춘다. */
+function normKey(key: string): string {
+  return key.length === 1 ? key.toLowerCase() : key;
+}
+
+/**
+ * 개발자 도구를 여는 관례적인 조합인가 — F12 · Ctrl+Shift+I/J/C · ⌘⌥I/J/C.
+ *
+ * 셸은 이것을 **언제나 가로챈다**: 배포본에서 개발자 도구는 기능이 아니고, 그 창이
+ * 열리면 사용자에게는 앱이 고장 난 것처럼 보인다. 다만 실기기 진단은 이 창이
+ * 유일한 길이라(타이틀 바·로그인 사고를 이걸로 잡았다) 완전히 없애지는 않는다 —
+ * 열어 주는 것은 `GEURIO_DEVTOOLS=1`이나 개발 실행(`electron .`)일 때만이다.
+ */
+export function isDevToolsShortcut(input: KeyInput): boolean {
+  if (input.type !== 'keyDown') return false;
+  const key = normKey(input.key);
+  if (key === 'F12') return true;
+  const letter = key === 'i' || key === 'j' || key === 'c';
+  if (!letter) return false;
+  // Windows·Linux는 Ctrl+Shift+_, macOS는 ⌘⌥_ 다.
+  return (input.control && input.shift) || (input.meta && input.alt);
+}
+
+/**
+ * **앱이 쓰지 않는 브라우저 단축키**인가 — 눌리면 "웹 페이지"처럼 동작하는 키들이다
+ * (요청: 웹이 아니라 앱으로써 느껴지게).
+ *
+ * 담은 근거를 하나씩 적어 둔다. 여기에 키를 더할 때는 **앱이 그 키를 쓰지 않는지**
+ * 먼저 확인해야 한다(막으면 렌더러가 그 키를 아예 못 본다):
+ *   - **새로 고침**(F5 · Ctrl/⌘+R) — 앱에서 리로드는 사용자가 다룰 개념이 아니고,
+ *     실행취소 기록·클립보드·선택·팬/줌, 그리고 **아직 저장되지 않은 편집**까지
+ *     잃는다. 우리가 새로 고침이 필요한 자리(협업 끊김 안내·새 버전 적용)는 앱이
+ *     스스로 `location.reload()`를 부르므로 이 키가 없어도 길이 막히지 않는다.
+ *   - **인쇄**(Ctrl/⌘+P) — 우리 인쇄·저장 경로는 내보내기(PDF·PNG·SVG)다. 브라우저
+ *     인쇄 대화상자는 크롬 UI를 그대로 드러낸다.
+ *   - **페이지 확대/축소**(Ctrl/⌘+0 · ± ) — 캔버스에 자기 줌이 있어 두 줌이 겹치면
+ *     무엇이 커진 것인지 알 수 없다. UI 전체 크기는 OS 배율이 맡는다.
+ *
+ * **`Ctrl/⌘+W`는 담지 않는다** — macOS에서 ⌘W로 창을 닫는 것은 그 플랫폼의 관례이고
+ * 우리 macOS 메뉴(`windowMenu`)가 그 항목을 갖고 있다. Windows·Linux는 메뉴가 없어
+ * 이미 아무 일도 일어나지 않으므로, 막아서 얻는 것 없이 관례만 깨진다.
+ *
+ * 앱이 쓰는 수정 키 조합(C·V·X·D·F·N·S·Y·Z·A·Shift+Z)은 **건드리지 않는다** —
+ * 실제 Electron으로 확인했다(Ctrl+C·Ctrl+Z·Ctrl+A는 렌더러에 그대로 도착한다).
+ */
+export function isBrowserShortcut(input: KeyInput): boolean {
+  if (input.type !== 'keyDown') return false;
+  const key = normKey(input.key);
+  const mod = input.control || input.meta;
+  if (key === 'F5') return true;
+  if (!mod) return false;
+  return key === 'r' || key === 'p' || key === '0' || key === '-' || key === '+' || key === '=';
+}
+
+/* ───────────────────────────── 앱 메뉴 ───────────────────────────── */
+
+/** 메뉴 한 항목 — Electron의 `MenuItemConstructorOptions`에 그대로 맞는 모양이다. */
+export interface MenuSpec {
+  role?: string;
+  label?: string;
+  submenu?: MenuSpec[];
+}
+
+/**
+ * 앱 메뉴 — **앱이 실제로 하는 일만** 담는다. `null`이면 메뉴를 두지 않는다.
+ *
+ * Electron이 기본으로 만들어 주는 메뉴에는 `보기`(새로 고침·강제 새로 고침·개발자
+ * 도구·확대/축소)가 들어 있다. 그건 브라우저의 메뉴이지 이 앱의 메뉴가 아니다
+ * (요청) — 그래서 **Windows·Linux는 메뉴를 없앤다**. 그 두 곳에서는 입력창의
+ * 잘라내기·복사·붙여넣기·전체 선택을 Chromium이 스스로 처리하므로 편집 메뉴가
+ * 없어도 글자를 다루는 데 지장이 없다.
+ *
+ * **macOS는 메뉴가 필수다** — 그 플랫폼에서는 ⌘C·⌘V가 메뉴 항목에서 나오므로
+ * 메뉴를 비우면 입력창에서 복사·붙여넣기가 통째로 죽는다(Electron의 오래된 함정).
+ * 그래서 앱·편집·창 셋만 두고 **`보기` 메뉴는 두지 않는다**.
+ */
+export function appMenuSpec(platform: string): MenuSpec[] | null {
+  if (platform !== 'darwin') return null;
+  return [{ role: 'appMenu' }, { role: 'editMenu' }, { role: 'windowMenu' }];
+}

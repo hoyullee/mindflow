@@ -4,10 +4,14 @@
  *
  * 숫자 색 규칙은 큰 달력과 같다(일=danger / 토=info / 오늘=강조색), 항목이 있는 날은
  * 아래 점 하나. 고른 날은 강조색 원.
+ *
+ * **이웃 달 날짜도 평범한 칸이다**(제보) — 격자가 담고 있는 날이면 고를 수 있다.
+ * 흐린 것은 "이번 달이 아니다"라는 표시일 뿐 못 쓰는 자리라는 뜻이 아니다(큰 달력의
+ * `MonthGrid`와 같은 규칙이고, 조회 구간도 `gridRange`라 그 날의 항목이 이미 있다).
  */
 
 import type { CalendarEntry, HolidayInfo } from './entries';
-import { DOW, entriesOn, monthCells } from './model';
+import { DOW, entriesOn, monthCells, partsOf } from './model';
 
 export function MiniCalendar({
   entries,
@@ -58,19 +62,18 @@ export function MiniCalendar({
           </span>
         ))}
         {cells.map((c) => {
-          const has = c.inMonth && entriesOn(entries, c.iso).length > 0;
+          const has = entriesOn(entries, c.iso).length > 0;
           const on = c.iso === selectedDay;
           return (
             <button
               key={c.iso}
               type="button"
               data-mini-day={c.iso}
-              disabled={!c.inMonth}
               onClick={(e) => {
                 e.stopPropagation();
                 onPickDay(c.iso);
               }}
-              aria-label={c.inMonth ? `${c.n}일` : undefined}
+              aria-label={`${partsOf(c.iso)!.m}월 ${c.n}일`}
               style={{
                 position: 'relative',
                 height: fill ? undefined : cellH,
@@ -96,7 +99,7 @@ export function MiniCalendar({
                 fontFamily: "'JetBrains Mono', monospace",
                 fontSize: fill ? 12.5 : 11,
                 fontWeight: c.isToday || on ? 800 : 600,
-                cursor: c.inMonth ? 'pointer' : 'default',
+                cursor: 'pointer',
                 display: fill ? 'flex' : undefined,
                 alignItems: fill ? 'center' : undefined,
                 justifyContent: fill ? 'center' : undefined,

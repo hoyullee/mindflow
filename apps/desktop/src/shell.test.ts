@@ -6,12 +6,16 @@ import {
   isSafeExternalUrl,
   MIN_HEIGHT,
   MIN_WIDTH,
+  isBrowserShortcut,
   isDeepLink,
+  isDevToolsShortcut,
   isHexColor,
+  appMenuSpec,
   originOf,
   TITLEBAR_HEIGHT,
   titleBarHeightFor,
   usesCustomTitleBar,
+  type KeyInput,
 } from './shell';
 
 const APP = 'https://geurio.com';
@@ -131,5 +135,78 @@ describe('타이틀 바', () => {
     expect(isHexColor('rgb(255,253,251)')).toBe(false);
     expect(isHexColor('#fffdfb; drop table')).toBe(false);
     expect(isHexColor(undefined)).toBe(false);
+  });
+});
+
+/* ───────── 앱 창의 키보드 — 브라우저 키는 막고, 앱 단축키는 건드리지 않는다 ───────── */
+
+const KEY = (key: string, mods: Partial<Pick<KeyInput, 'control' | 'meta' | 'shift' | 'alt'>> = {}): KeyInput => ({
+  type: 'keyDown',
+  key,
+  control: false,
+  meta: false,
+  shift: false,
+  alt: false,
+  ...mods,
+});
+
+describe('브라우저 단축키 차단 — 앱으로써 느껴지게', () => {
+  it('새로 고침·인쇄·페이지 확대를 막는다', () => {
+    expect(isBrowserShortcut(KEY('F5'))).toBe(true);
+    expect(isBrowserShortcut(KEY('r', { control: true }))).toBe(true);
+    expect(isBrowserShortcut(KEY('R', { control: true, shift: true }))).toBe(true);
+    expect(isBrowserShortcut(KEY('p', { control: true }))).toBe(true);
+    for (const k of ['0', '-', '+', '=']) expect(isBrowserShortcut(KEY(k, { control: true }))).toBe(true);
+    // macOS도 같다(⌘).
+    expect(isBrowserShortcut(KEY('r', { meta: true }))).toBe(true);
+    expect(isBrowserShortcut(KEY('0', { meta: true }))).toBe(true);
+  });
+
+  it('앱이 쓰는 단축키는 건드리지 않는다 — 막으면 렌더러가 그 키를 못 본다', () => {
+    // 복사·붙여넣기·잘라내기·복제·검색·저장·새 항목·실행취소·다시 실행·전체 선택
+    for (const k of ['c', 'v', 'x', 'd', 'f', 's', 'n', 'z', 'y', 'a']) {
+      expect(isBrowserShortcut(KEY(k, { control: true }))).toBe(false);
+      expect(isBrowserShortcut(KEY(k, { meta: true }))).toBe(false);
+    }
+    expect(isBrowserShortcut(KEY('z', { control: true, shift: true }))).toBe(false);
+    // ⌘W는 macOS 관례이고 그 플랫폼 메뉴가 갖고 있다 — 담지 않는다.
+    expect(isBrowserShortcut(KEY('w', { control: true }))).toBe(false);
+    expect(isBrowserShortcut(KEY('w', { meta: true }))).toBe(false);
+    // 수정 키 없는 도구 전환(V·P·H·E·C)과 물음표 도움말도 그대로다.
+    for (const k of ['v', 'p', 'h', 'e', 'c', '?']) expect(isBrowserShortcut(KEY(k))).toBe(false);
+    // 키를 뗄 때(keyUp)는 판단하지 않는다.
+    expect(isBrowserShortcut({ ...KEY('r', { control: true }), type: 'keyUp' })).toBe(false);
+  });
+
+  it('개발자 도구 조합은 따로 가른다 — 셸이 언제나 가로챈다', () => {
+    expect(isDevToolsShortcut(KEY('F12'))).toBe(true);
+    expect(isDevToolsShortcut(KEY('i', { control: true, shift: true }))).toBe(true);
+    expect(isDevToolsShortcut(KEY('j', { control: true, shift: true }))).toBe(true);
+    expect(isDevToolsShortcut(KEY('c', { control: true, shift: true }))).toBe(true);
+    // macOS는 ⌘⌥.
+    expect(isDevToolsShortcut(KEY('i', { meta: true, alt: true }))).toBe(true);
+    // 앱의 복사(Ctrl+C)·붙여넣기는 이 조합이 아니다.
+    expect(isDevToolsShortcut(KEY('c', { control: true }))).toBe(false);
+    expect(isDevToolsShortcut(KEY('i', { control: true }))).toBe(false);
+  });
+});
+
+describe('앱 메뉴 — 앱이 하는 일만 담는다', () => {
+  it('Windows·Linux는 메뉴를 두지 않는다', () => {
+    // Electron 기본 메뉴의 `보기`(새로 고침·개발자 도구·확대/축소)가 통째로 사라진다.
+    expect(appMenuSpec('win32')).toBeNull();
+    expect(appMenuSpec('linux')).toBeNull();
+  });
+
+  it('macOS는 앱·편집·창 셋만 — `보기`는 없다', () => {
+    const spec = appMenuSpec('darwin');
+    expect(spec?.map((m) => m.role)).toEqual(['appMenu', 'editMenu', 'windowMenu']);
+    // ⌘C·⌘V가 메뉴에서 나오는 플랫폼이라 편집 메뉴는 빼지 않는다.
+    expect(spec?.some((m) => m.role === 'editMenu')).toBe(true);
+    // 브라우저 역할이 하나도 없어야 한다.
+    const flat = JSON.stringify(spec);
+    for (const role of ['viewMenu', 'reload', 'forceReload', 'toggleDevTools', 'zoomIn', 'zoomOut', 'resetZoom']) {
+      expect(flat).not.toContain(role);
+    }
   });
 });
