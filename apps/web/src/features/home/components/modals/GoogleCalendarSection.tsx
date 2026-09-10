@@ -36,6 +36,14 @@ export function GoogleCalendarSection({
   // `connected`가 이미 "켜져 있고 끊겼다고 알려진 바 없다"다(§19) — 토큰의 유무가
   // 아니므로, 서버가 조용히 갱신하는 동안에도 이 블록이 서 있고 스켈레톤이 그 자리를
   // 지킨다(제보: 하루 뒤에 들어오면 카드가 짧게 떴다 목록이 오며 커졌다).
+  /**
+   * 해제가 도는 중인가 — 그 버튼 안에서 돈다(요청).
+   *
+   * 해제는 왕복이 셋이다(이 기기의 토큰 버리기 → 서버의 갱신 토큰 삭제 → 구글에
+   * 취소). 표시가 없으면 그동안 눌린 줄 모르고 한 번 더 누르게 되는데, 두 번째
+   * 요청은 이미 없는 것을 지우려 한다. 그래서 도는 동안 버튼을 잠근다.
+   */
+  const [revoking, setRevoking] = useState(false);
   const live = api.connected;
   // 구글 계정 이메일은 **기본 캘린더의 id**다(구글이 그렇게 만든다) — 우리 앱의
   // 로그인 이메일과 다를 수 있으므로 그걸 쓰지 않는다.
@@ -108,14 +116,24 @@ export function GoogleCalendarSection({
               type="button"
               className="btn mf-ctl"
               data-google-disconnect
+              disabled={revoking}
+              aria-busy={revoking || undefined}
               onClick={() => {
                 // 해제는 되돌릴 수 있는 일이라 미리 묻지 않고, **끝났다는 사실**을 알린다
                 // (제보: 해제했는데 "구글 연결이 만료됐어요"가 떠서 실패한 것처럼 보였다).
-                void api.disconnect().then(() => onNotify?.('연동을 해제했어요', 'Google 캘린더 일정이 더 이상 보이지 않아요. 언제든 다시 연결할 수 있어요.'));
+                setRevoking(true);
+                void api.disconnect().then(() => {
+                  // 이 카드는 해제가 끝나면 "연결하기"로 갈아 끼워지므로 `revoking`을
+                  // 되돌릴 필요는 없지만, 실패로 끝나 버튼이 남는 경우까지 잠긴 채로
+                  // 두면 다시 시도할 길이 사라진다.
+                  setRevoking(false);
+                  onNotify?.('연동을 해제했어요', 'Google 캘린더 일정이 더 이상 보이지 않아요. 언제든 다시 연결할 수 있어요.');
+                });
               }}
-              style={neutralPill}
+              style={{ ...neutralPill, display: 'flex', alignItems: 'center', gap: 7, opacity: revoking ? 0.72 : 1, cursor: revoking ? 'default' : 'pointer' }}
             >
-              해제
+              {revoking && <RevokeSpinner />}
+              {revoking ? '해제 중…' : '해제'}
             </button>
           ) : (
             // 켜는 버튼만 강조색이다 — 이 구획에서 사용자가 할 일이 그것 하나다.
@@ -483,6 +501,30 @@ function AddCalendar({ api, focusAdd }: { api: GoogleCalendarApi; focusAdd?: num
 }
 
 /** 구글 캘린더 마크 — 브랜드 로고를 흉내내지 않고 우리 선 아이콘 언어로 그린다. */
+/**
+ * 해제가 도는 중 표시 — 그 버튼 안에서 돈다. `mf-spin` 키프레임은 앱이 이미 쓰는
+ * 그것이다(근무 위치 저장·삭제 확인창·로더와 같은 값). 트랙은 이 버튼의 면(흰
+ * 카드)에 맞춘 옅은 경계선이다.
+ */
+function RevokeSpinner() {
+  return (
+    <span
+      data-google-revoke-spin
+      aria-hidden="true"
+      style={{
+        display: 'block',
+        flexShrink: 0,
+        width: 13,
+        height: 13,
+        borderRadius: 999,
+        border: '2px solid var(--mf-border)',
+        borderTopColor: 'var(--mf-subtext)',
+        animation: 'mf-spin .7s linear infinite',
+      }}
+    />
+  );
+}
+
 function GoogleCalendarGlyph() {
   return (
     <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="var(--mf-subtext)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">

@@ -343,6 +343,22 @@ export function useGoogleCalendar(
       aliveRef.current = false;
     };
   }, []);
+  /**
+   * **연동이 아직 켜져 있는가.** "다시 연결하세요"를 말할 자격이 여기서 나온다:
+   * 연동이 꺼져 있으면 토큰이 없는 것이 정상이고, 이어 붙일 연결도 없다.
+   *
+   * 왜 `isGoogleDisconnecting()`만으로는 부족한가(제보: 해제해도 그 문구가 떴다):
+   * 그 플래그는 **시간 창**이라 창보다 오래 걸리는 요청을 못 막는다. 해제는
+   * ⓐ 토큰을 지우고 → 그 알림에 다른 인스턴스의 조회 effect가 깨어나 서버에
+   * 갱신을 물으러 가고(왕복) → ⓑ 서버의 refresh token 행을 지우고 → ⓒ prefs를
+   * 비운다. ⓒ가 반영되면 플래그가 내려가는데, ⓐ에서 떠난 갱신 요청은 그 뒤에
+   * **실패로 돌아온다**(행이 이미 없으므로 반드시 실패한다) — 그때 플래그는 꺼져
+   * 있어 문구가 그대로 화면에 올랐다. 그래서 판단을 시간이 아니라 **상태**로 옮긴다.
+   */
+  const enabledRef = useRef(enabled);
+  enabledRef.current = enabled;
+  /** 지금 "다시 연결" 문구를 말해도 되는가 — 두 겹(상태 + 해제 중 창)을 함께 본다. */
+  const mayAskReauth = useCallback(() => aliveRef.current && enabledRef.current && !isGoogleDisconnecting(), []);
 
   /**
    * 토큰을 꺼내 한 번 호출한다. 토큰이 없거나 죽었으면 `ensureGoogleToken`이
@@ -356,9 +372,9 @@ export function useGoogleCalendar(
   const withToken = useCallback(async <T,>(run: (token: string) => Promise<T>): Promise<T | null> => {
     const first = await ensureGoogleToken();
     if ('error' in first) {
-      // 사용자가 방금 해제를 눌렀다면 토큰이 없는 것이 **정상**이다 — 그걸 "다시
-      // 연결하세요"로 말하면 해제가 실패한 것처럼 읽힌다(제보).
-      if (aliveRef.current && !isGoogleDisconnecting()) {
+      // 사용자가 방금 해제를 눌렀거나 연동이 꺼져 있으면 토큰이 없는 것이 **정상**이다
+      // — 그걸 "다시 연결하세요"로 말하면 해제가 실패한 것처럼 읽힌다(제보).
+      if (mayAskReauth()) {
         setNeedsReauth(true);
         setError(first.error);
       }
@@ -372,13 +388,13 @@ export function useGoogleCalendar(
       // 못 쓴다 등)라 연결을 끊을 이유가 없다 — 호출부가 문장으로 알린다.
       if ((e as { status?: number }).status !== 401) throw e;
       storeToken(null);
-      if (aliveRef.current && !isGoogleDisconnecting()) {
+      if (mayAskReauth()) {
         setNeedsReauth(true);
         setError(GOOGLE_RECONNECT_MSG);
       }
       return null;
     }
-  }, []);
+  }, [mayAskReauth]);
 
   // ── 캘린더 목록 — 연동이 켜져 있으면 조용히 채운다(설정 화면이 바로 쓴다) ──
   // **연동이 꺼진 것과 아직 안 켜진 것은 다르다**(제보: 대시보드 재진입마다 구글

@@ -12,7 +12,8 @@
   font-style: normal;
   /* swap: 폰트 로드 전엔 폴백('Pretendard-fallback' 아래)으로 그리고 로드되면
      Pretendard로 교체. 폴백의 line-box를 Pretendard와 똑같이 맞춰뒀으므로 교체
-     순간 세로 정렬·줄높이가 움직이지 않는다(깜빡임 제거). preload로 최우선 로드. */
+     순간 세로 정렬·줄높이가 움직이지 않는다(깜빡임 제거) — 그래서 프리로드가
+     필요하지 않다(index.html의 그 주석 참고: 2MB 프리로드는 load를 두 배로 늘렸다). */
   font-display: swap;
 }
 
