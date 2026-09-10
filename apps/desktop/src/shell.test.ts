@@ -3,6 +3,7 @@ import {
   clampBounds,
   deepLinkFromArgv,
   isInternalUrl,
+  isLandingPath,
   isSafeExternalUrl,
   MIN_HEIGHT,
   MIN_WIDTH,
@@ -41,6 +42,27 @@ describe('isInternalUrl — 앱 창은 우리 출처만 띄운다', () => {
   it('출처를 모르면 아무것도 내부로 보지 않는다', () => {
     expect(isInternalUrl('https://geurio.com/home', null)).toBe(false);
     expect(originOf('not a url')).toBe(null);
+  });
+});
+
+describe('isLandingPath — 랜딩은 앱 창에서 열지 않는다', () => {
+  it('루트와 정적 쌍둥이의 주소를 잡는다', () => {
+    // 프로덕션의 `/`는 SPA가 아니라 `public/landing.html`이라, 앱 창이 그리로 가면
+    // React 앱과 함께 데스크톱 타이틀 바 배치까지 사라진다(제보).
+    expect(isLandingPath('https://geurio.com/')).toBe(true);
+    expect(isLandingPath('https://geurio.com/?utm=x#top')).toBe(true);
+    expect(isLandingPath('https://geurio.com/index.html')).toBe(true);
+    expect(isLandingPath('https://geurio.com/landing.html')).toBe(true);
+  });
+
+  it('앱 화면은 막지 않는다', () => {
+    for (const p of ['/home', '/login', '/editor?map=m1', '/privacy', '/terms', '/auth/desktop']) {
+      expect(isLandingPath(`https://geurio.com${p}`), p).toBe(false);
+    }
+  });
+
+  it('주소를 읽을 수 없으면 막지 않는다 — 그 판단은 isInternalUrl이 먼저 한다', () => {
+    expect(isLandingPath('not a url')).toBe(false);
   });
 });
 

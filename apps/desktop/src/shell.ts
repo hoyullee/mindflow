@@ -39,6 +39,29 @@ export function isInternalUrl(url: string, appOrigin: string | null): boolean {
   return originOf(url) === appOrigin;
 }
 
+/**
+ * **랜딩(소개) 페이지**인가 — 우리 출처 안이지만 앱 창에서는 열지 않는다.
+ *
+ * 그 화면은 "이 앱이 무엇인가"를 설명해 설치를 권하는 마케팅 페이지라, 앱을
+ * 이미 설치한 사람에게는 갈 곳이 아니다. 게다가 프로덕션의 `/`는 SPA가 아니라
+ * **정적 쌍둥이**(`apps/web/public/landing.html`)라, 앱 창이 그리로 가면 React 앱과
+ * 함께 데스크톱 타이틀 바 배치(`--mf-titlebar`)까지 통째로 사라진다(제보: 로그인
+ * 화면의 Geurio 표식을 누르면 "화면이 틀어진다").
+ *
+ * 웹 쪽도 같은 판단을 한다(`App.tsx`의 `/` 라우트) — 그쪽은 앱 안에서의 이동을
+ * 막고, 여기는 **주소로 하는 이동**을 막는다(그쪽 링크가 늘어나도 셸이 마지막
+ * 문지기다). 막힌 이동은 시스템 브라우저로 보낸다: 마케팅 페이지는 주소창이 있는
+ * 곳에서 열리는 편이 맞고, 눌렀는데 아무 일도 없는 것보다 낫다.
+ */
+export function isLandingPath(url: string): boolean {
+  try {
+    const p = new URL(url).pathname;
+    return p === '/' || p === '/index.html' || p === '/landing.html';
+  } catch {
+    return false;
+  }
+}
+
 /** 시스템 브라우저로 넘겨도 되는 주소인가 — http(s)만(그 밖은 OS 핸들러를 깨울 수 있다). */
 export function isSafeExternalUrl(url: string): boolean {
   return originOf(url) !== null;
