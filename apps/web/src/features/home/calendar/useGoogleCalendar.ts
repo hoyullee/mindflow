@@ -32,6 +32,10 @@ import {
   calendarAddError,
   fetchEventColors,
   GOOGLE_RECONNECT_MSG,
+  cancelDesktopGoogleConnect,
+  isReauthNeeded,
+  onReauthChange,
+  setReauthNeeded,
   GOOGLE_SCOPE_DIRECTORY,
   GOOGLE_SCOPE_OTHER_CONTACTS,
   GOOGLE_SCOPE_ROOMS,
@@ -124,6 +128,13 @@ export interface GoogleCalendarApi {
    * 이유를 모르는" 상태가 된다).
    */
   needsReauth: boolean;
+  /**
+   * 설치형 앱에서 **브라우저의 동의를 기다리는 중**인가. 그 흐름은 창을 넘어가므로
+   * 몇 초에서 몇 분까지 걸린다 — 화면이 그 사실을 말하고 그만둘 길을 준다.
+   */
+  connecting: boolean;
+  /** 기다리기를 그만둔다. */
+  cancelConnect: () => void;
   /** 쓸 수 있는 캘린더만 — 새 일정의 목적지로 내놓는 목록. */
   writableCalendars: GoogleCalendarMeta[];
   /**
@@ -277,7 +288,14 @@ export function useGoogleCalendar(
   const [colors, setColors] = useState<Record<string, string>>(() => colorsCache ?? {});
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [needsReauth, setNeedsReauth] = useState(false);
+  /**
+   * **탭 전체가 함께 아는 값**(`googleCalendar.ts`) — 인스턴스마다 따로 들면 설정은
+   * "다시 연결"인데 일정 화면·위젯은 연결된 것처럼 보인다(제보).
+   */
+  const [needsReauth, setNeedsReauthLocal] = useState(isReauthNeeded);
+  useEffect(() => onReauthChange(() => setNeedsReauthLocal(isReauthNeeded())), []);
+  const setNeedsReauth = setReauthNeeded;
+  const [connecting, setConnecting] = useState(false);
   // 쓰기가 끝나면 이 값을 올려 보이는 달을 다시 받는다 — 화면에 남는 것은 언제나
   // **구글이 돌려준 것**이지 우리가 보낸 것이 아니다(구글이 정본).
   const [reloadTick, setReloadTick] = useState(0);
@@ -484,16 +502,26 @@ export function useGoogleCalendar(
    */
   const colored = useMemo(
     () =>
-      events.map((e) => {
-        const hex = eventColorOf(e, colors);
-        return hex && hex !== e.color ? { ...e, color: hex } : e;
-      }),
-    [events, colors],
+      // **다시 연결이 필요하면 구글 일정을 그리지 않는다**(제보: 설정은 "다시 연결"인데
+      // 일정 화면·대시보드에는 구글 일정이 그대로 있어 연결된 것처럼 보였다). 이 탭이
+      // 기억하는 것(`eventCache`)은 그 자리에 남지만 화면에는 내보내지 않는다 —
+      // 다시 연결하면 곧바로 되돌아온다. 공휴일 칠·근무 위치도 같은 목록에서 오므로
+      // 함께 사라진다(그게 맞다 — 지금 우리는 구글에 물어볼 수 없다).
+      needsReauth
+        ? []
+        : events.map((e) => {
+            const hex = eventColorOf(e, colors);
+            return hex && hex !== e.color ? { ...e, color: hex } : e;
+          }),
+    [events, colors, needsReauth],
   );
 
   const connect = useCallback(async () => {
     setError(null);
-    const res = await requestGoogleToken(true);
+    setConnecting(true);
+    const res = await requestGoogleToken(true).finally(() => {
+      if (aliveRef.current) setConnecting(false);
+    });
     // 창을 닫았거나 거절했으면 **아무 일도 없다**(제보) — 오류 문구도, 상태 변화도 없이
     // 누르기 전 그대로다.
     if ('cancelled' in res) return;
@@ -525,6 +553,7 @@ export function useGoogleCalendar(
 
   const disconnect = useCallback(async () => {
     await revokeGoogleToken();
+    setNeedsReauth(false);
     if (!aliveRef.current) return;
     setCalendars([]);
     setEvents([]);
@@ -588,7 +617,15 @@ export function useGoogleCalendar(
     [write, events],
   );
 
-  const writableCalendars = useMemo(() => allCalendars.filter((c) => c.writable), [allCalendars]);
+  /**
+   * 새 일정을 **저장할 수 있는** 캘린더. 다시 연결이 필요하면 비운다 — 그러지 않으면
+   * 새 일정 팝업의 "저장할 캘린더"에 Google 칸이 그대로 떠서 연결된 것처럼 보이고,
+   * 골라 봐야 저장이 실패한다(제보).
+   */
+  const writableCalendars = useMemo(
+    () => (needsReauth ? [] : allCalendars.filter((c) => c.writable)),
+    [allCalendars, needsReauth],
+  );
 
   // ── 선택 스코프로 열리는 두 기능 ─────────────────────────────────────────
   const canDirectory = granted.has(GOOGLE_SCOPE_DIRECTORY);
@@ -749,6 +786,8 @@ export function useGoogleCalendar(
     holidayCountry,
     setHolidayCountry,
     needsReauth,
+    connecting,
+    cancelConnect: cancelDesktopGoogleConnect,
     writableCalendars,
     createEvent,
     updateEvent,

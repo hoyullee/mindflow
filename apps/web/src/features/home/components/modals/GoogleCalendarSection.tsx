@@ -20,6 +20,7 @@ import { HOLIDAY_COUNTRIES, HOLIDAY_OFF, isManagedHolidayId, type HolidayCountry
 import { Segmented } from '../../../../components/Segmented';
 import { AnchoredList, rowDivider } from '../../calendar/AnchoredList';
 import { SectionLabel, SettingsGroup } from './AccountSettingsModal';
+import { isDesktopShell } from '../../../../platform/desktopBridge';
 
 export function GoogleCalendarSection({ api, focusAdd }: { api: GoogleCalendarApi; focusAdd?: number }) {
   if (!api.available) return null;
@@ -45,6 +46,10 @@ export function GoogleCalendarSection({ api, focusAdd }: { api: GoogleCalendarAp
   // 구독 목록 ∪ 주소로 더한 캘린더이고 후자는 블롭에 있어 조회 없이 즉시 나오므로,
   // 더해 둔 것이 하나라도 있으면 스켈레톤을 건너뛰고 그 한 줄만 뜬 채 팝업이 작아진다.
   const listLoading = !api.listLoaded;
+  // 설치형 앱은 동의를 **시스템 브라우저**에서 받는다(창을 넘어간다) — 몇 초에서 몇
+  // 분까지 걸리므로 그동안 무엇을 기다리는지 말하고 그만둘 길을 준다. 웹은 팝업이라
+  // 곧바로 끝나므로 이 안내를 두지 않는다(한 프레임 스치는 문구는 소음이다).
+  const waiting = api.connecting && isDesktopShell();
   return (
     <>
       <div
@@ -79,7 +84,11 @@ export function GoogleCalendarSection({ api, focusAdd }: { api: GoogleCalendarAp
                   : '연결하면 구글 일정도 함께 보여요'}
             </div>
           </div>
-          {api.enabled && api.needsReauth ? (
+          {waiting ? (
+            <button type="button" className="btn mf-ctl" data-google-cancel onClick={api.cancelConnect} style={neutralPill}>
+              취소
+            </button>
+          ) : api.enabled && api.needsReauth ? (
             <button type="button" className="btn mf-ctl" data-google-reconnect onClick={() => void api.connect()} style={neutralPill}>
               다시 연결
             </button>
@@ -95,7 +104,13 @@ export function GoogleCalendarSection({ api, focusAdd }: { api: GoogleCalendarAp
           )}
         </div>
 
-        {api.error && (
+        {waiting && (
+          <div data-google-waiting style={{ padding: '0 15px 12px 66px', fontSize: 12.5, color: 'var(--mf-subtext)' }}>
+            브라우저에서 Google 로그인을 마치면 앱으로 이어져요.
+          </div>
+        )}
+
+        {!waiting && api.error && (
           <div data-google-error style={{ padding: '0 15px 12px 66px', fontSize: 12.5, color: 'var(--mf-danger)' }}>
             {api.error}
           </div>

@@ -99,6 +99,12 @@ export function serverKnownUnavailable(): boolean {
   return known === 'unavailable';
 }
 
-export const exchangeGoogleCode = (code: string): Promise<ServerResult> => call({ action: 'exchange', code });
+/**
+ * 인가 코드를 서버가 교환한다. `redirectUri`는 **그 코드를 받을 때 쓴 값 그대로**여야
+ * 한다(구글의 규칙) — GIS 팝업 흐름은 약속된 `postmessage`이고, 설치형 앱의 브라우저
+ * 흐름은 우리 핸드오프 주소다. 생략하면 서버가 `postmessage`로 본다.
+ */
+export const exchangeGoogleCode = (code: string, redirectUri?: string): Promise<ServerResult> =>
+  call({ action: 'exchange', code, ...(redirectUri ? { redirectUri } : {}) });
 export const refreshGoogleAccess = (): Promise<ServerResult> => call({ action: 'refresh' });
 export const disconnectGoogleServer = (): Promise<ServerResult> => call({ action: 'disconnect' });

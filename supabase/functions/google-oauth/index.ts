@@ -76,9 +76,9 @@ Deno.serve(async (req: Request) => {
   if (!supabaseUrl || !serviceKey || !anonKey) return json({ error: 'server not configured' }, 500);
   if (!authHeader) return json({ error: 'unauthorized' }, 401);
 
-  let payload: { action?: unknown; code?: unknown };
+  let payload: { action?: unknown; code?: unknown; redirectUri?: unknown };
   try {
-    payload = (await req.json()) as { action?: unknown; code?: unknown };
+    payload = (await req.json()) as { action?: unknown; code?: unknown; redirectUri?: unknown };
   } catch {
     return json({ error: 'bad request' }, 400);
   }
@@ -101,13 +101,19 @@ Deno.serve(async (req: Request) => {
   if (action === 'exchange') {
     const code = typeof payload.code === 'string' ? payload.code : '';
     if (!code) return json({ error: 'bad request' }, 400);
-    // `redirect_uri: 'postmessage'`는 GIS 팝업 코드 흐름의 약속된 값이다(진짜
-    // 리다이렉트가 없으므로 이 자리에 넣는다).
+    // 코드를 받을 때 쓴 리디렉션 URI를 **그대로** 다시 보내야 구글이 교환해 준다.
+    //  - 웹(GIS 팝업 코드 흐름): 진짜 리다이렉트가 없어 약속된 값 `postmessage`
+    //  - 설치형 앱(시스템 브라우저): 우리 핸드오프 주소 `https://…/auth/gcal`
+    //
+    // 클라이언트가 아무 주소나 넣지 못하게 **모양을 확인한다** — 구글도 등록되지 않은
+    // 주소를 거절하지만, 우리 시크릿을 쓰는 자리라 여기서도 좁혀 둔다.
+    const redirectUri = validRedirect(payload.redirectUri);
+    if (!redirectUri) return json({ error: 'bad request' }, 400);
     const t = await googleToken({
       code,
       client_id: clientId,
       client_secret: clientSecret,
-      redirect_uri: 'postmessage',
+      redirect_uri: redirectUri,
       grant_type: 'authorization_code',
     });
     if (!t.access_token || !t.expires_in) {
@@ -191,3 +197,21 @@ Deno.serve(async (req: Request) => {
     persistent: true,
   });
 });
+
+/**
+ * 받아 줄 리디렉션 URI. GIS 팝업의 약속값이거나, **우리 핸드오프 경로**(https)여야
+ * 한다. 값이 없으면 예전 흐름(웹)으로 보고 `postmessage`.
+ */
+function validRedirect(raw: unknown): string | null {
+  if (raw === undefined || raw === null || raw === '') return 'postmessage';
+  if (typeof raw !== 'string') return null;
+  if (raw === 'postmessage') return raw;
+  try {
+    const u = new URL(raw);
+    if (u.protocol !== 'https:') return null;
+    if (u.pathname !== '/auth/gcal') return null;
+    return raw;
+  } catch {
+    return null;
+  }
+}

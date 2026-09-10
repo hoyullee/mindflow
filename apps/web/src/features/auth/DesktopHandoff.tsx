@@ -1,8 +1,9 @@
-import { useEffect, useMemo } from 'react';
+import { useEffect, useMemo, type ReactNode } from 'react';
 import { Link } from 'react-router-dom';
 import { AUTH } from './tokens';
 import { BrandMark } from '../../components/BrandMark';
 import { buildAuthDeepLink, desktopAuthToken } from './desktopGoogle';
+import { buildGcalDeepLink } from '../home/calendar/desktopGoogleCalendar';
 import './login.css';
 
 /**
@@ -22,10 +23,62 @@ import './login.css';
  * 넘길 것이 없으면(앱 없이 이 주소를 직접 열었다) 딥링크를 쏘지 않고 로그인 화면으로
  * 안내한다.
  */
-export function DesktopHandoff() {
-  // 값은 엔트리(main.tsx)가 클라이언트보다 먼저 낚아채 둔다 — 여기서는 읽기만.
-  const token = useMemo(() => desktopAuthToken(), []);
-  const link = token ? buildAuthDeepLink(token) : null;
+/**
+ * 같은 페이지가 **두 흐름**을 받는다 — 하는 일이 똑같기 때문이다(브라우저가 받은 값을
+ * 딥링크로 앱에 넘기고 "돌아가세요"라 말한다). 다른 것은 어디서 무엇을 읽느냐뿐이다.
+ *
+ *  - `login`(`/auth/desktop`): Supabase 콜백의 **해시**에서 갱신 토큰
+ *  - `gcal`(`/auth/gcal`): 구글이 되돌려 준 **쿼리**의 인가 코드(캘린더 연동)
+ */
+export type HandoffKind = 'login' | 'gcal';
+
+const TEXT: Record<HandoffKind, { title: string; body: ReactNode; missTitle: string; missBody: ReactNode }> = {
+  login: {
+    title: 'Geurio 앱으로 돌아가세요',
+    body: (
+      <>
+        앱에서 로그인이 이어졌어요.
+        <br />이 창은 닫아도 됩니다.
+      </>
+    ),
+    missTitle: '로그인 정보를 받지 못했어요',
+    missBody: (
+      <>
+        데스크톱 앱에서 <strong style={{ fontWeight: 700 }}>Google 계정으로 계속하기</strong>를 다시 눌러 주세요.
+      </>
+    ),
+  },
+  gcal: {
+    title: 'Geurio 앱으로 돌아가세요',
+    body: (
+      <>
+        앱에서 Google 캘린더 연동이 이어졌어요.
+        <br />이 창은 닫아도 됩니다.
+      </>
+    ),
+    missTitle: '연동 정보를 받지 못했어요',
+    missBody: (
+      <>
+        데스크톱 앱의 설정에서 <strong style={{ fontWeight: 700 }}>Google 캘린더 연동</strong>을 다시 눌러 주세요.
+      </>
+    ),
+  },
+};
+
+export function DesktopHandoff({ kind = 'login' }: { kind?: HandoffKind } = {}) {
+  // 로그인 값은 엔트리(main.tsx)가 클라이언트보다 먼저 낚아채 둔다 — 여기서는 읽기만.
+  // 캘린더 코드는 낚아챌 필요가 없다: 우리 클라이언트는 implicit 흐름이라
+  // `detectSessionInUrl`이 `?code=`를 보지 않는다(supabaseClient.ts에 명시돼 있다).
+  const link = useMemo(() => {
+    if (kind === 'gcal') {
+      const q = new URLSearchParams(window.location.search);
+      const code = q.get('code');
+      return code ? buildGcalDeepLink(code, q.get('state') ?? '') : null;
+    }
+    const token = desktopAuthToken();
+    return token ? buildAuthDeepLink(token) : null;
+  }, [kind]);
+  const text = TEXT[kind];
 
   useEffect(() => {
     if (!link) return;
@@ -35,7 +88,7 @@ export function DesktopHandoff() {
   }, [link]);
 
   return (
-    <div className="lg-root" data-desktop-handoff>
+    <div className="lg-root" data-desktop-handoff={kind}>
       <div className="lg-dots" aria-hidden="true" />
       <div
         style={{
@@ -76,11 +129,9 @@ export function DesktopHandoff() {
           {!link ? (
             <>
               <h1 style={{ fontSize: 16.5, fontWeight: 800, letterSpacing: '-.02em', margin: '0 0 8px', color: AUTH.ink }}>
-                로그인 정보를 받지 못했어요
+                {text.missTitle}
               </h1>
-              <p style={{ fontSize: 13, lineHeight: 1.6, color: AUTH.ink2, margin: '0 0 18px' }}>
-                데스크톱 앱에서 <strong style={{ fontWeight: 700 }}>Google 계정으로 계속하기</strong>를 다시 눌러 주세요.
-              </p>
+              <p style={{ fontSize: 13, lineHeight: 1.6, color: AUTH.ink2, margin: '0 0 18px' }}>{text.missBody}</p>
               <Link
                 to="/login"
                 style={{ fontSize: 13, fontWeight: 700, color: AUTH.accentDeep, textDecoration: 'none' }}
@@ -91,13 +142,9 @@ export function DesktopHandoff() {
           ) : (
             <>
               <h1 style={{ fontSize: 16.5, fontWeight: 800, letterSpacing: '-.02em', margin: '0 0 8px', color: AUTH.ink }}>
-                Geurio 앱으로 돌아가세요
+                {text.title}
               </h1>
-              <p style={{ fontSize: 13, lineHeight: 1.6, color: AUTH.ink2, margin: '0 0 18px' }}>
-                앱에서 로그인이 이어졌어요.
-                <br />
-                이 창은 닫아도 됩니다.
-              </p>
+              <p style={{ fontSize: 13, lineHeight: 1.6, color: AUTH.ink2, margin: '0 0 18px' }}>{text.body}</p>
               {/* 자동 이동이 막혔을 때의 손잡이 — 사용자가 직접 앱을 깨울 수 있다. */}
               <a
                 href={link}
