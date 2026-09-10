@@ -49,6 +49,7 @@ beforeEach(() => {
   // 한 탭이 곧 한 세션이다 — 테스트마다 새 탭이므로 앞 테스트가 남긴 기억을 지운다.
   clearGoogleSessionCache();
   oauthServer.result = { unavailable: true };
+  oauthServer.exchanged.length = 0;
 });
 
 class MockDocStore implements DocStore {
@@ -225,10 +226,13 @@ function seedExpiredToken(scope: string = GOOGLE_CALENDAR_SCOPE): void {
  * 서버가 refresh token으로 조용히 갈아 준다. 기본값은 `unavailable`(로컬·데모와 같다)이라
  * 다른 테스트의 동작은 그대로고, 필요한 테스트만 `oauthServer.result`를 바꾼다.
  */
-const oauthServer = vi.hoisted(() => ({ result: { unavailable: true } as unknown }));
+const oauthServer = vi.hoisted(() => ({ result: { unavailable: true } as unknown, exchanged: [] as { code: string; redirectUri?: string }[] }));
 vi.mock('./calendar/googleOAuthServer', () => ({
   refreshGoogleAccess: async () => oauthServer.result,
-  exchangeGoogleCode: async () => oauthServer.result,
+  exchangeGoogleCode: async (code: string, redirectUri?: string) => {
+    oauthServer.exchanged.push({ code, redirectUri });
+    return oauthServer.result;
+  },
   disconnectGoogleServer: async () => oauthServer.result,
   serverKnownUnavailable: () => (oauthServer.result as { unavailable?: boolean }).unavailable === true,
   resetGoogleOAuthServer: () => undefined,
@@ -3790,5 +3794,155 @@ describe('캘린더 더하기 — 그리오 목록(요청)', () => {
       return el as HTMLElement;
     });
     expect(document.activeElement).not.toBe(input);
+  });
+});
+
+/* ─────────────────────────────────────────────────────────────────────────────
+ * 설치형 데스크톱 앱의 연동(제보 ①②) — 시스템 브라우저 + 딥링크
+ *
+ * 앱 창은 우리 출처만 띄우므로 GIS의 `window.open`이 막히고, GIS는 그것을
+ * **팝업 차단**으로 읽어 "팝업이 막혔어요"를 화면에 냈다(제보 ②). 브라우저로 넘어간
+ * 동의 창은 돌려줄 `opener`가 없어 연동도 끝나지 않았다(제보 ①).
+ * ────────────────────────────────────────────────────────────────────────── */
+
+/** 셸 창구를 심는다 — `openExternal`로 나간 주소와 딥링크 발사기를 돌려준다. */
+function installShell(): { external: string[]; fire: (url: string) => void } {
+  const handlers = new Set<(u: string) => void>();
+  const external: string[] = [];
+  (window as unknown as { geurio: unknown }).geurio = {
+    desktop: true,
+    version: '0.2.0',
+    platform: 'win32',
+    openExternal: async (u: string) => {
+      external.push(u);
+      return true;
+    },
+    onDeepLink: (h: (u: string) => void) => {
+      handlers.add(h);
+      return () => handlers.delete(h);
+    },
+    takePendingDeepLink: async () => null,
+  };
+  return { external, fire: (u) => [...handlers].forEach((h) => h(u)) };
+}
+
+async function openCalendarSetup(user: ReturnType<typeof userEvent.setup>) {
+  await user.click(await screen.findByRole('button', { name: '계정 메뉴' }));
+  await user.click(await screen.findByText('설정'));
+  await user.click(await screen.findByText('계정 설정'));
+  await user.click(await screen.findByText('Google 캘린더 연동'));
+  await waitFor(() => expect(document.querySelector('[data-google-section]')).toBeTruthy());
+}
+
+describe('설치형 앱의 Google 캘린더 연동', () => {
+  beforeEach(() => mockMatchMedia(false));
+  afterEach(() => {
+    delete (window as unknown as { geurio?: unknown }).geurio;
+  });
+
+  it('GIS 팝업을 쓰지 않는다 — 시스템 브라우저를 열고 "팝업이 막혔어요"를 내지 않는다(제보 ①②)', async () => {
+    seed();
+    // GIS가 있어도 **부르지 않는다**는 것을 보려고 세워 둔다.
+    const gis = stubGis();
+    stubFetch();
+    clientId = 'test-client.apps.googleusercontent.com';
+    // 서버는 살아 있지만 아직 이 사람의 자격 증명이 없다 → 동의가 필요하다.
+    oauthServer.result = { needsConsent: true };
+    const shell = installShell();
+    const user = userEvent.setup();
+    renderHome();
+    await openCalendarSetup(user);
+    await user.click(await screen.findByText('연결하기'));
+
+    await waitFor(() => expect(shell.external.length).toBe(1));
+    const u = new URL(shell.external[0]!);
+    expect(u.origin + u.pathname).toBe('https://accounts.google.com/o/oauth2/v2/auth');
+    expect(u.searchParams.get('redirect_uri')).toBe(`${window.location.origin}/auth/gcal`);
+    expect(u.searchParams.get('response_type')).toBe('code');
+    // GIS는 한 번도 불리지 않았다 — 그래서 팝업 차단 문구가 생길 자리가 없다.
+    expect(gis.requested).toEqual([]);
+    expect(screen.queryByText(/팝업이 막혔어요/)).toBeNull();
+    // 그동안 무엇을 기다리는지 말하고 그만둘 길을 준다.
+    expect(document.querySelector('[data-google-waiting]')).toBeTruthy();
+    expect(document.querySelector('[data-google-cancel]')).toBeTruthy();
+  });
+
+  it('브라우저가 돌려준 코드로 연동이 이어진다 — 교환에 그 리디렉션 주소를 함께 보낸다', async () => {
+    seed();
+    stubGis();
+    stubFetch();
+    clientId = 'test-client.apps.googleusercontent.com';
+    oauthServer.result = { needsConsent: true };
+    const shell = installShell();
+    const user = userEvent.setup();
+    renderHome();
+    await openCalendarSetup(user);
+    await user.click(await screen.findByText('연결하기'));
+    await waitFor(() => expect(shell.external.length).toBe(1));
+    const state = new URL(shell.external[0]!).searchParams.get('state')!;
+
+    // 브라우저가 동의를 마치고 앱을 깨운다.
+    oauthServer.result = { token: { accessToken: 'srv', expiresIn: 3600, scope: GOOGLE_CALENDAR_SCOPE, email: 'me@example.com', persistent: true } };
+    shell.fire(`geurio://gcal?code=4%2Fabc&state=${state}`);
+
+    await waitFor(() => expect(oauthServer.exchanged.length).toBe(1));
+    expect(oauthServer.exchanged[0]).toEqual({ code: '4/abc', redirectUri: `${window.location.origin}/auth/gcal` });
+    // 목록이 뜨면 연결이 끝난 것이다(설정 목록과 LNB 하위 메뉴 양쪽에 뜬다).
+    await waitFor(() => expect(screen.getAllByText('내 캘린더').length).toBeGreaterThan(0));
+    expect(document.querySelector('[data-google-waiting]')).toBeNull();
+  });
+
+  it('남이 쏜 딥링크는 받지 않는다 — 우리가 만든 대조값이 아니면 교환하지 않는다', async () => {
+    seed();
+    stubGis();
+    stubFetch();
+    clientId = 'test-client.apps.googleusercontent.com';
+    oauthServer.result = { needsConsent: true };
+    const shell = installShell();
+    const user = userEvent.setup();
+    renderHome();
+    await openCalendarSetup(user);
+    await user.click(await screen.findByText('연결하기'));
+    await waitFor(() => expect(shell.external.length).toBe(1));
+
+    shell.fire('geurio://gcal?code=stolen&state=someone-else');
+    // 로그인 딥링크도 같은 창구로 온다 — 그것도 우리 것이 아니다.
+    shell.fire('geurio://auth?refresh_token=rt');
+    await Promise.resolve();
+    expect(oauthServer.exchanged).toEqual([]);
+  });
+});
+
+describe('다시 연결이 필요하면 어느 화면에서도 연결된 척하지 않는다(제보 ③)', () => {
+  beforeEach(() => mockMatchMedia(false));
+
+  it('일정 화면에서 구글 일정이 사라지고, 새 일정 팝업에 Google 목적지가 없다', async () => {
+    // 제보의 실제 모양: 잘 쓰다가 **한 시간 뒤 토큰이 죽는다**. 목록·일정은 이 탭이
+    // 기억하고 있어서, 설정은 "다시 연결"인데 일정 화면·새 일정 팝업은 그대로였다.
+    seed({ calendars: ['me@example.com'] });
+    clientId = 'test-client.apps.googleusercontent.com';
+    seedToken();
+    stubFetch();
+    const user = userEvent.setup();
+    const { container } = renderHome();
+    await openCalendar(container, user);
+    await screen.findByText('구글 회의');
+
+    // 토큰이 죽고 서버도 갱신해 줄 수 없다 → 다음 조회에서 "다시 연결"이 선다.
+    localStorage.removeItem('mf_gcal_token');
+    oauthServer.result = { unavailable: true };
+    // 미니 달력에도 같은 이름의 버튼이 있다 — 머리의 것을 쓴다.
+    await user.click(screen.getAllByRole('button', { name: '다음 달' })[0]!);
+    await user.click(screen.getAllByRole('button', { name: '이전 달' })[0]!);
+
+    // LNB 하위 메뉴와 달력 머리가 **함께** 그렇게 말한다(이 값은 이제 탭이 공유한다).
+    await waitFor(() => expect(screen.getAllByRole('button', { name: /다시 연결/ }).length).toBeGreaterThan(0));
+    // 기억한 구글 일정이 화면에 남지 않는다.
+    await waitFor(() => expect(screen.queryByText('구글 회의')).toBeNull());
+
+    // 새 일정 팝업의 "저장할 캘린더"에도 구글이 없다 — 골라 봐야 저장이 실패한다.
+    await user.click(await screen.findByRole('button', { name: '새 일정' }));
+    const pop = await screen.findByRole('dialog');
+    expect(within(pop).queryByText('내 캘린더')).toBeNull();
   });
 });

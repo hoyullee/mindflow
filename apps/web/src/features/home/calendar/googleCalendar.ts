@@ -42,6 +42,8 @@
 import { loadGisScript, readGoogleClientId } from '../../auth/googleIdentity';
 import { colorForSeed } from '../../../collab/identity';
 import { disconnectGoogleServer, exchangeGoogleCode, refreshGoogleAccess, serverKnownUnavailable, type ServerToken } from './googleOAuthServer';
+import { desktopBridge, openExternalUrl } from '../../../platform/desktopBridge';
+import { buildGcalAuthUrl, gcalRedirectUri, newGcalState, readGcalDeepLink } from './desktopGoogleCalendar';
 import { rememberName, rememberNames } from './nameBook';
 
 /**
@@ -336,6 +338,32 @@ export function onTokenChange(cb: () => void): () => void {
   };
 }
 
+/* ── "다시 연결이 필요하다"는 사실은 **탭 전체가 함께 안다** ─────────────────────
+ * 예전에는 각 `useGoogleCalendar` 인스턴스가 자기 `needsReauth`를 들고 있어서,
+ * 설정 화면은 "다시 연결"이라 말하는데 **일정 화면·대시보드 위젯·새 일정 팝업은
+ * 연결된 것처럼** 보였다(제보). 연결 상태는 계정 하나의 사실이므로 화면마다
+ * 다를 수 없다 — 토큰과 같은 자리에 두고 바뀌면 모두에게 알린다.
+ */
+let reauthNeeded = false;
+const reauthListeners = new Set<() => void>();
+
+export function isReauthNeeded(): boolean {
+  return reauthNeeded;
+}
+
+export function setReauthNeeded(v: boolean): void {
+  if (reauthNeeded === v) return;
+  reauthNeeded = v;
+  for (const cb of [...reauthListeners]) cb();
+}
+
+export function onReauthChange(cb: () => void): () => void {
+  reauthListeners.add(cb);
+  return () => {
+    reauthListeners.delete(cb);
+  };
+}
+
 export function storeToken(t: GoogleToken | null): void {
   try {
     if (t) localStorage.setItem(TOKEN_KEY, JSON.stringify(t));
@@ -449,9 +477,102 @@ async function requestViaCode(api: GsiTokenApi, clientId: string, hint?: string)
   return acceptServerToken(res.token);
 }
 
+
+/* ── 설치형 데스크톱 앱의 연동 — 시스템 브라우저 + 딥링크 ────────────────────
+ * 왜 GIS 팝업을 쓰지 않는지는 `desktopGoogleCalendar.ts` 머리 주석. 여기서는
+ * 흐름만 몬다: 동의 주소를 브라우저에서 열고, `geurio://gcal?code=…`가 돌아오면
+ * 서버에 넘겨 교환한다.
+ *
+ * 딥링크 구독은 **모듈에 한 번만** 건다: 사용자가 브라우저에서 동의를 마치는 동안
+ * 설정 팝업을 닫아도 그 승인은 살아 있어야 한다(인스턴스에 매달면 그때 사라진다).
+ * 기다리는 사람이 없어도 토큰은 저장되고, `storeToken`이 모든 화면에 알린다.
+ */
+interface DesktopPending {
+  resolve: (r: TokenRequestResult) => void;
+  redirectUri: string;
+  state: string;
+}
+let desktopPending: DesktopPending | null = null;
+let desktopLinkOff: (() => void) | null = null;
+/** 어느 셸에 걸어 둔 구독인가 — 창구가 갈리면(새 창·테스트) 다시 건다. */
+let desktopLinkBridge: unknown = null;
+
+async function onGcalDeepLink(url: string): Promise<void> {
+  const parsed = readGcalDeepLink(url);
+  // 로그인 딥링크(`geurio://auth`)도 같은 창구로 온다 — 우리 것이 아니면 조용히 버린다.
+  if (!parsed) return;
+  const pending = desktopPending;
+  // 우리가 시작한 흐름이 아니면(남이 쏜 링크·앱을 다시 켠 뒤) 받지 않는다.
+  if (!pending || !pending.state || parsed.state !== pending.state) return;
+  desktopPending = null;
+  const res = await exchangeGoogleCode(parsed.code, pending.redirectUri);
+  if ('unavailable' in res) {
+    pending.resolve({ error: DESKTOP_NEEDS_SERVER_MSG });
+    return;
+  }
+  if ('needsConsent' in res) {
+    pending.resolve({ error: GOOGLE_RECONNECT_MSG });
+    return;
+  }
+  if ('error' in res) {
+    pending.resolve({ error: res.error });
+    return;
+  }
+  pending.resolve(acceptServerToken(res.token));
+}
+
+/** 앱에서 연동하려면 서버(Edge Function)가 있어야 한다 — 코드 교환이 거기서 일어난다. */
+const DESKTOP_NEEDS_SERVER_MSG = '이 서버에서는 앱에서 Google 캘린더를 연동할 수 없어요. 관리자에게 문의해 주세요.';
+
+/** 브라우저에서 동의를 기다리는 중인가 — 화면이 "브라우저에서 …"를 보여 준다. */
+export function isDesktopConnectPending(): boolean {
+  return desktopPending !== null;
+}
+
+/** 기다리기를 그만둔다(사용자가 취소). 이미 끝났으면 아무 일도 없다. */
+export function cancelDesktopGoogleConnect(): void {
+  const pending = desktopPending;
+  desktopPending = null;
+  pending?.resolve({ cancelled: true });
+}
+
+async function requestViaDesktopBrowser(clientId: string, hint?: string): Promise<TokenRequestResult> {
+  const bridge = desktopBridge();
+  if (!bridge) return { error: '구글에 연결하지 못했어요.' };
+  // 서버 흐름이 없으면 코드를 받아 와도 교환할 곳이 없다 — 창을 열지 않는다.
+  if (serverKnownUnavailable()) return { error: DESKTOP_NEEDS_SERVER_MSG };
+  // 앞선 시도가 남아 있으면 그것부터 정리한다(같은 코드가 두 번 오지 않게).
+  cancelDesktopGoogleConnect();
+  if (desktopLinkBridge !== bridge) {
+    desktopLinkOff?.();
+    desktopLinkOff = bridge.onDeepLink((url) => void onGcalDeepLink(url));
+    desktopLinkBridge = bridge;
+  }
+  const redirectUri = gcalRedirectUri(window.location.origin);
+  const state = newGcalState();
+  const wait = new Promise<TokenRequestResult>((resolve) => {
+    desktopPending = { resolve, redirectUri, state };
+  });
+  await openExternalUrl(buildGcalAuthUrl({ clientId, redirectUri, scope: GOOGLE_CALENDAR_SCOPE, state, ...(hint ? { hint } : {}) }));
+  return wait;
+}
+
 export async function requestGoogleToken(interactive: boolean, hint?: string): Promise<TokenRequestResult> {
   const clientId = readGoogleClientId();
   if (!clientId) return { error: '구글 연동이 설정되지 않았어요.' };
+  // ── 설치형 앱은 GIS를 아예 지나지 않는다 ──────────────────────────────────
+  // 앱 창에서 `window.open`은 셸이 막으므로(우리 출처만 띄운다) GIS는 그것을
+  // "팝업 차단"으로 읽고, 브라우저로 넘어간 동의 창은 돌려줄 `opener`가 없다.
+  // 그래서 시스템 브라우저 + 딥링크로 간다(제보 ①②).
+  if (desktopBridge()) {
+    if (!serverKnownUnavailable()) {
+      const silent = await refreshGoogleAccess();
+      // 서버가 이미 자격 증명을 갖고 있으면 창을 열 것도 없다.
+      if ('token' in silent) return acceptServerToken(silent.token);
+    }
+    return requestViaDesktopBrowser(clientId, hint);
+  }
+
   const api = await loadGoogleTokenApi();
   if (!api) return { error: '구글에 연결하지 못했어요. 네트워크나 차단 확장을 확인해 주세요.' };
 

@@ -5,6 +5,7 @@ import { MemoryRouter, Route, Routes } from 'react-router-dom';
 import { Login } from './Login';
 import { DesktopHandoff } from './DesktopHandoff';
 import { buildAuthDeepLink, DESKTOP_HANDOFF_PATH, resetDesktopAuthToken } from './desktopGoogle';
+import { buildGcalDeepLink, GCAL_HANDOFF_PATH } from '../home/calendar/desktopGoogleCalendar';
 import { mockMatchMedia } from '../../test/matchMedia';
 import { BackendProvider } from '../../adapters/BackendContext';
 import { LocalAuth } from '../../adapters/local/localAuth';
@@ -233,5 +234,37 @@ describe('설치형 앱에서는 랜딩(소개 페이지)으로 갈 수 없다',
 
     const brand = document.querySelector('a.mf-login-brand');
     expect(brand?.getAttribute('href')).toBe('https://geurio.com/');
+  });
+});
+
+describe('/auth/gcal — 브라우저가 앱에 캘린더 연동을 넘기는 자리', () => {
+  it('쿼리의 인가 코드를 딥링크로 넘긴다', async () => {
+    mockMatchMedia(false);
+    window.history.replaceState({}, '', `${GCAL_HANDOFF_PATH}?code=4%2Fabc&state=st1`);
+    render(
+      <MemoryRouter>
+        <BackendProvider backend={makeBackend(new LocalAuth())}>
+          <DesktopHandoff kind="gcal" />
+        </BackendProvider>
+      </MemoryRouter>,
+    );
+    await waitFor(() => expect(screen.getByText('Geurio 앱으로 돌아가세요')).toBeTruthy());
+    expect(screen.getByText(/Google 캘린더 연동이 이어졌어요/)).toBeTruthy();
+    const back = screen.getByRole('link', { name: '앱으로 돌아가기' });
+    expect(back.getAttribute('href')).toBe(buildGcalDeepLink('4/abc', 'st1'));
+  });
+
+  it('넘길 것이 없으면 딥링크를 쏘지 않고 안내한다', () => {
+    mockMatchMedia(false);
+    window.history.replaceState({}, '', GCAL_HANDOFF_PATH);
+    render(
+      <MemoryRouter>
+        <BackendProvider backend={makeBackend(new LocalAuth())}>
+          <DesktopHandoff kind="gcal" />
+        </BackendProvider>
+      </MemoryRouter>,
+    );
+    expect(screen.getByText('연동 정보를 받지 못했어요')).toBeTruthy();
+    expect(screen.queryByRole('link', { name: '앱으로 돌아가기' })).toBe(null);
   });
 });

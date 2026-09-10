@@ -90,6 +90,9 @@ export function App() {
               문지기 밖이어야 한다(앱이 아직 로그인 전이고, 이 창은 세션을 앱에
               넘기고 스스로 지운다). features/auth/desktopGoogle.ts 참고. */}
           <Route path="/auth/desktop" element={<DesktopHandoff />} />
+          {/* 설치형 앱의 Google 캘린더 연동이 브라우저에서 끝나는 자리 —
+              구글 콘솔의 **승인된 리디렉션 URI**가 이 주소다(backend.md §19). */}
+          <Route path="/auth/gcal" element={<DesktopHandoff kind="gcal" />} />
           <Route path="/privacy" element={<PrivacyPolicy />} />
           <Route path="/terms" element={<Terms />} />
           <Route
