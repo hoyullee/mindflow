@@ -1848,6 +1848,20 @@ refresh token은 만료가 없어서, 브라우저에 한 번이라도 닿으면
 ⚠️ **`supabase/functions/` 안을 고치면 `supabase functions deploy <name>`을 반드시 함께** —
 그러지 않으면 앱만 새 판이 되어 조용히 거절당한다.
 
+실측(2026-09-10): 콘솔 승인된 리디렉션 URI에 `https://geurio.com/auth/gcal`을 넣고
+`supabase functions deploy google-oauth --project-ref <ref>`를 올린 뒤 **Windows 설치본에서
+연동이 끝까지 이어졌다**. 배포 로그의 `WARNING: Docker is not running`은 무해하다 — Docker는
+로컬에서 함수를 돌려 볼 때만 필요하고, 배포는 `Uploading asset (…)` 줄이 말하듯 API로 올린다.
+
+배포가 성공했는데도 연동이 안 되면 **시크릿을 먼저 본다** — 값이 없으면 함수가 `not-configured`를
+200으로 돌려주고 앱은 예전 흐름으로 조용히 물러나므로, 배포만 보고는 알 수 없다:
+
+```bash
+supabase secrets list --project-ref <ref>   # GOOGLE_CLIENT_ID / GOOGLE_CLIENT_SECRET
+```
+
+시크릿을 새로 넣었으면 **함수를 한 번 더 배포**한다(새 값을 실은 인스턴스로 갈아 끼운다).
+
 #### 개인정보처리방침
 
 이 변경으로 **서버에 보관하는 것이 하나 늘었다** — 방침 §4(갱신 토큰 항목)·§5(수탁 예외)·
