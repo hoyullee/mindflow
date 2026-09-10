@@ -12,6 +12,7 @@ import { Landing } from './features/landing/Landing';
 import { BackendProvider, useBackend } from './adapters/BackendContext';
 import { UpdatePrompt } from './pwa/UpdatePrompt';
 import { DesktopTitleBar } from './platform/DesktopTitleBar';
+import { isDesktopShell } from './platform/desktopBridge';
 
 // M3: Login.dc.html, Home.dc.html, and MindFlow.dc.html are ported to React.
 // M4: `/home` and `/editor` are gated behind `RequireAuth` — but ONLY when a
@@ -72,8 +73,16 @@ export function App() {
         <Routes>
           {/* Public landing — Google brand verification requires the homepage
               to describe the app and show its name (a bare redirect to /login
-              was rejected for exactly that). */}
-          <Route path="/" element={<Landing />} />
+              was rejected for exactly that).
+
+              설치형 데스크톱 앱에서는 **랜딩을 열지 않는다**: 그 화면은 "이 앱이
+              무엇인가"를 설명해 설치를 권하는 마케팅 페이지이고, 앱을 이미 설치한
+              사람에게는 갈 곳이 아니다. 게다가 프로덕션의 `/`는 SPA가 아니라 정적
+              쌍둥이(`public/landing.html`)라, 앱 창이 그리로 가면 React 앱과 함께
+              데스크톱 타이틀 바 배치(`--mf-titlebar`)까지 통째로 사라진다(제보:
+              "화면이 틀어진다"). 셸도 같은 판단을 한 겹 더 한다(`shell.ts`의
+              `isLandingPath`) — 이쪽은 앱 안에서의 이동(react-router)을 막는다. */}
+          <Route path="/" element={isDesktopShell() ? <Navigate to="/home" replace /> : <Landing />} />
           <Route path="/login" element={<Login />} />
           {/* Public legal docs — must stay OUTSIDE RequireAuth (Google's brand
               verification reviewers and pre-signup users open them logged out). */}

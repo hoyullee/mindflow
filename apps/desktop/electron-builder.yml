@@ -77,6 +77,10 @@ mac:
   # `scripts/adhoc-sign.cjs`(afterPack)가 **애드혹 서명**을 붙인다 — Apple
   # Silicon은 서명이 아예 없으면 앱을 실행조차 못 하게 막는다.
   identity: null
+  # 공증(notarization)은 hardened runtime을 **요구한다** — 무서명 빌드에서는 켤
+  # 이유가 없어 꺼 두었다. 인증서를 넣어 서명하기 시작하면 `identity: null`을
+  # 지우는 것과 **함께** 이 값을 `true`로 바꿔야 한다(안 그러면 서명은 되는데
+  # 공증만 거절되고, 그 실패는 Apple 서버 왕복 뒤에야 드러난다). 절차는 README.
   hardenedRuntime: false
   extendInfo:
     NSHighResolutionCapable: true

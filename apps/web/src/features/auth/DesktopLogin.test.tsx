@@ -200,3 +200,38 @@ describe('/auth/desktop — 브라우저가 앱에 로그인을 넘기는 자리
     expect(screen.queryByRole('link', { name: '앱으로 돌아가기' })).toBe(null);
   });
 });
+
+describe('설치형 앱에서는 랜딩(소개 페이지)으로 갈 수 없다', () => {
+  function renderLogin() {
+    render(
+      <MemoryRouter initialEntries={['/login']}>
+        <BackendProvider backend={makeBackend(new LocalAuth())}>
+          <Routes>
+            <Route path="/login" element={<Login />} />
+          </Routes>
+        </BackendProvider>
+      </MemoryRouter>,
+    );
+  }
+
+  it('로그인 화면의 Geurio 표식이 링크가 아니다(누르면 화면이 틀어지던 제보)', () => {
+    mockMatchMedia(false);
+    installShell();
+    renderLogin();
+
+    // 표식 자체는 그대로 보인다 — 사라지는 것은 "이동"뿐이다.
+    expect(screen.getByText('Geurio')).toBeTruthy();
+    const links = Array.from(document.querySelectorAll('a')).map((a) => a.getAttribute('href'));
+    expect(links).not.toContain('https://geurio.com/');
+    expect(document.querySelector('a.mf-login-brand')).toBe(null);
+    expect(document.querySelector('span.mf-login-brand')).toBeTruthy();
+  });
+
+  it('브라우저에서는 예전처럼 랜딩으로 가는 링크다(무회귀)', () => {
+    mockMatchMedia(false);
+    renderLogin();
+
+    const brand = document.querySelector('a.mf-login-brand');
+    expect(brand?.getAttribute('href')).toBe('https://geurio.com/');
+  });
+});

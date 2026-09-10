@@ -27,6 +27,7 @@ import {
   isDeepLink,
   isDevToolsShortcut,
   isInternalUrl,
+  isLandingPath,
   isSafeExternalUrl,
   MIN_HEIGHT,
   MIN_WIDTH,
@@ -171,7 +172,15 @@ function createWindow(): BrowserWindow {
   });
 
   win.webContents.on('will-navigate', (event, url) => {
-    if (isInternalUrl(url, APP_ORIGIN)) return;
+    if (isInternalUrl(url, APP_ORIGIN)) {
+      // 우리 출처라도 **랜딩은 앱 창에서 열지 않는다**(shell.ts의 `isLandingPath`).
+      // `url !== APP_URL`인 이유: 개발·프리뷰에서 `GEURIO_APP_URL`이 루트를 가리킬
+      // 수 있고, 그때 그 주소는 곧 앱 자신이다.
+      if (url === APP_URL || !isLandingPath(url)) return;
+      event.preventDefault();
+      void shell.openExternal(url);
+      return;
+    }
     event.preventDefault();
     if (isSafeExternalUrl(url)) void shell.openExternal(url);
   });

@@ -11,6 +11,7 @@ import { deriveLoginView } from './viewModel';
 import { loginUpdateRisk } from './updateRisk';
 import { useMediaQuery } from '../../hooks/useMediaQuery';
 import { useUpdateGuard } from '../../pwa/updateGate';
+import { isDesktopShell } from '../../platform/desktopBridge';
 
 /**
  * 로그인 화면 — 디자인 원본(`Geurio 로그인 리디자인.dc.html`) 이식.
@@ -32,6 +33,13 @@ export function Login() {
   // 인증 코드 단계면 리로드가 그 상태를 통째로 날린다 — updateRisk.ts 참고.
   useUpdateGuard(loginUpdateRisk(controller.state));
 
+  const brand = (
+    <>
+      <img src="/brand/geurio-logo-120.png" alt="" width={26} height={26} style={{ borderRadius: 8, display: 'block' }} />
+      <span style={{ fontSize: 16.5, fontWeight: 800, letterSpacing: '-.025em' }}>Geurio</span>
+    </>
+  );
+
   return (
     <div className="mf-login">
       {/* 전체화면 로더는 "완료 후 홈으로 이동"(finishWithLoader)일 때만 — 즉
@@ -39,10 +47,11 @@ export function Login() {
           확인·인증 등)의 `busy`는 버튼 인라인 스피너로만 표시. */}
       {controller.state.busy && controller.state.loaderMsg && <LoadingOverlay message={controller.state.loaderMsg} />}
 
-      <a className="mf-login-brand" href="https://geurio.com/">
-        <img src="/brand/geurio-logo-120.png" alt="" width={26} height={26} style={{ borderRadius: 8, display: 'block' }} />
-        <span style={{ fontSize: 16.5, fontWeight: 800, letterSpacing: '-.025em' }}>Geurio</span>
-      </a>
+      {/* 브랜드 표식. 웹에서는 랜딩(소개 페이지)으로 가는 링크지만 **설치형
+          데스크톱 앱에서는 링크가 아니다** — 앱을 이미 설치한 사람에게 설치를
+          권하는 페이지는 갈 곳이 아니고, 프로덕션의 `/`는 SPA가 아니라 정적
+          쌍둥이라 앱 창이 그리로 가면 화면이 통째로 틀어진다(제보). */}
+      {isDesktopShell() ? <span className="mf-login-brand">{brand}</span> : <a className="mf-login-brand" href="https://geurio.com/">{brand}</a>}
 
       <div className="mf-login-row">
         <div className="mf-login-col">
