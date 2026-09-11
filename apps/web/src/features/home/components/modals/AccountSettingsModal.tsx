@@ -1,4 +1,4 @@
-import { useLayoutEffect, useRef, useState, type CSSProperties, type ReactNode } from 'react';
+import { useEffect, useLayoutEffect, useRef, useState, type CSSProperties, type ReactNode } from 'react';
 import type { HomeController } from '../../useHomeController';
 import { ProfileAvatar, avatarLabel } from '../ProfileAvatar';
 import type { HomeState } from '../../types';
@@ -13,13 +13,15 @@ import { GoogleCalendarSection } from './GoogleCalendarSection';
 import { VersionSection } from './VersionSection';
 import { Switch } from '../../../../components/Switch';
 import {
+  askNotifyPermission,
   googleRemindersEnabled,
   notifyPermission,
   remindersEnabled,
-  requestNotifyPermission,
+  resolveNotifyPermission,
   setGoogleRemindersEnabled,
   setRemindersEnabled,
 } from '../../../reminders/reminderPrefs';
+import { nativeNotificationsAvailable } from '../../../../platform/nativeNotifications';
 
 interface Props {
   state: HomeState;
@@ -48,7 +50,23 @@ export function AccountSettingsModal({ state, controller }: Props) {
   // 사본이다(정본은 `reminderPrefs`).
   const [remindOn, setRemindOn] = useState(() => remindersEnabled());
   const [googleRemindOn, setGoogleRemindOn] = useState(() => googleRemindersEnabled());
+  // 알림 권한. 웹은 동기로 알 수 있지만 **모바일 앱은 OS에 물어야** 안다(3단계) —
+  // 그래서 첫 값은 웹 기준이고 마운트 직후 실제 값으로 맞춘다. 그 사이 한 프레임은
+  // 아래 note의 마지막 갈래("허용하면 …")로 떨어지는데, 켤 수 있다는 말이라 어느
+  // 상태에서든 거짓말이 아니다.
   const [perm, setPerm] = useState(() => notifyPermission());
+  // 행을 그릴까: 네이티브 셸은 언제나 그린다(WebView에 웹 `Notification`이 없어
+  // `perm`만 보면 통째로 사라진다 — 정작 OS 알림이 가장 값진 곳에서).
+  const nativeNotify = nativeNotificationsAvailable();
+  useEffect(() => {
+    let alive = true;
+    void resolveNotifyPermission().then((p) => {
+      if (alive) setPerm(p);
+    });
+    return () => {
+      alive = false;
+    };
+  }, []);
   const googleApi = useGoogleCalendar(y, m, googlePrefsOf(state.google), controller.setGoogleCalendars, state.accountSettingsOpen && state.settingsView === 'calendar' ? 'events' : 'off');
   const visible = state.accountSettingsOpen;
   // 구글 일정 알림 하위 행의 조건 — 이 훅은 `mode: 'off'`에서도 연결 상태를 안다
@@ -571,7 +589,7 @@ export function AccountSettingsModal({ state, controller }: Props) {
 
               `Notification`이 아예 없는 환경에서는 **행 자체를 그리지 않는다**(눌러도
               아무 일이 없는 자리를 두지 않는다). */}
-          {perm !== 'unsupported' && (
+          {(nativeNotify || perm !== 'unsupported') && (
             <SettingsGroup style={{ marginTop: 14 }} attrs={{ 'data-remind-group': '' }}>
               <div style={{ display: 'flex', alignItems: 'center', flexWrap: 'wrap', gap: 13, padding: '14px 15px' }}>
                 <div style={{ minWidth: 0, flex: '1 1 180px' }}>
@@ -594,7 +612,7 @@ export function AccountSettingsModal({ state, controller }: Props) {
                     type="button"
                     data-remind-allow
                     className="mf-ctl"
-                    onClick={() => void requestNotifyPermission().then(setPerm)}
+                    onClick={() => void askNotifyPermission().then(setPerm)}
                     style={{ flexShrink: 0, height: 30, padding: '0 12px', borderRadius: 999, border: '1px solid var(--mf-border)', background: 'var(--mf-card)', color: 'var(--mf-text)', fontFamily: 'inherit', fontSize: 12.5, fontWeight: 700, cursor: 'pointer' }}
                   >
                     OS 알림 허용
@@ -608,7 +626,7 @@ export function AccountSettingsModal({ state, controller }: Props) {
                     setRemindOn(next);
                     // 켜는 그 클릭이 곧 제스처다 — 여기서 물으면 사용자는 자기가 누른
                     // 결과로 창을 본다(저절로 뜨는 권한 창을 만들지 않는다).
-                    if (next && notifyPermission() === 'default') void requestNotifyPermission().then(setPerm);
+                    if (next && perm !== 'granted') void askNotifyPermission().then(setPerm);
                   }}
                   label="일정 알림"
                   accent="var(--mf-accent)"
@@ -641,7 +659,7 @@ export function AccountSettingsModal({ state, controller }: Props) {
                       const next = !googleRemindOn;
                       setGoogleRemindersEnabled(next);
                       setGoogleRemindOn(next);
-                      if (next && notifyPermission() === 'default') void requestNotifyPermission().then(setPerm);
+                      if (next && perm !== 'granted') void askNotifyPermission().then(setPerm);
                     }}
                     label="구글 일정도 알림"
                     accent="var(--mf-accent)"

@@ -18,7 +18,7 @@
 // 안이면 늦게라도 띄우고 그보다 오래됐으면 조용히 넘긴다(어제 알림이 오늘 뜨지 않게).
 
 import type { CalendarEvent } from '../../adapters/ports';
-import { daysBetween, isoOf } from '../home/calendar/model';
+import { daysBetween, isoOf, minutesOf, timeLabel } from '../home/calendar/model';
 import { expandRecurrence } from '../home/calendar/recurrence';
 
 /** 지나간 알림을 늦게라도 띄우는 유예 — 절전·탭 스로틀에서 깨어난 직후를 위한 창. */
@@ -167,6 +167,43 @@ export function googleReminderItems(
  */
 export function dueReminders(items: readonly ReminderItem[], now: number, grace = REMINDER_GRACE_MS): ReminderItem[] {
   return items.filter((i) => i.fireAt <= now && now - i.fireAt <= grace);
+}
+
+/**
+ * 알림 본문 — `오전 10:30 · 10분 후 시작`.
+ *
+ * 인앱 토스트·웹 OS 알림·**모바일 OS 예약**이 한 문장을 쓴다: 같은 알림이 어디서
+ * 뜨느냐에 따라 다르게 읽히면 안 된다.
+ */
+export function reminderBody(item: ReminderItem): string {
+  const mins = minutesOf(item.startTime);
+  const when = mins === null ? item.startTime : timeLabel(mins);
+  return `${when} · ${reminderLead(item.minutes)}`;
+}
+
+/**
+ * OS 알림에 실어 보낸 꾸러미를 되읽는다(모바일 3단계).
+ *
+ * 앱이 **닫혀 있다 열리는** 경로라 우리가 만든 값이라는 보장이 없다(OS·플러그인을
+ * 거쳐 온다) — 그래서 모양을 하나씩 확인하고 아니면 `null`이다.
+ */
+export function parseReminderExtra(extra: unknown): ReminderItem | null {
+  if (!extra || typeof extra !== 'object') return null;
+  const e = extra as Record<string, unknown>;
+  const str = (k: string): string | null => (typeof e[k] === 'string' ? (e[k] as string) : null);
+  const num = (k: string): number | null =>
+    typeof e[k] === 'number' && Number.isFinite(e[k]) ? (e[k] as number) : null;
+  const key = str('key');
+  const eventId = str('eventId');
+  const title = str('title');
+  const date = str('date');
+  const startTime = str('startTime');
+  const startAt = num('startAt');
+  const fireAt = num('fireAt');
+  const minutes = num('minutes');
+  if (key === null || eventId === null || title === null || date === null) return null;
+  if (startTime === null || startAt === null || fireAt === null || minutes === null) return null;
+  return { key, eventId, title, date, startTime, startAt, fireAt, minutes };
 }
 
 /** "10분 후 시작" — 사용자가 고른 값을 그대로 말한다(지금 시각으로 다시 재지 않는다). */
