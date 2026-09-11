@@ -188,6 +188,10 @@ export function NewEventModal({
         ...(color ? { color } : {}),
         // 반복 규칙은 **RRULE 한 줄**로 담는다(구글에 보내는 것과 같은 형식).
         ...(rule ? { recurrence: rule } : {}),
+        // 알림(0038) — 목적지가 Geurio면 이 값이 곧 우리 표에 저장된다. 구글로 가면
+        // `inputToGoogleDraft`가 `fields.reminderMinutes`를 따로 실으므로 쓰이지 않는다.
+        // 종일 일정에서는 정규화가 지운다(자정 10분 전은 뜻이 어긋난다).
+        ...(typeof gf.reminderMinutes === 'number' ? { reminderMinutes: gf.reminderMinutes } : {}),
       },
       target,
     );
@@ -394,9 +398,16 @@ export function NewEventModal({
             <EventColorField value={color} options={geurioColorOptions()} onPick={setColor} />
           )}
 
-          {/* 알림 — **늘 보인다**(요청 #5). 보내는 것은 구글이므로 목적지가 Geurio면
-              비활성 표식으로 남는다(자리가 통째로 사라지지 않게). */}
-          <ReminderField value={gf.reminderMinutes} onChange={(m) => setGf((v) => ({ ...v, reminderMinutes: m }))} disabled={target.kind !== 'google'} />
+          {/* 알림 — **늘 보인다**(요청 #5). 두 목적지가 다른 것을 한다: 구글은 구글이
+              보내고, Geurio는 우리 앱·OS 알림이 띄운다(0038). 비활성은 이제 "우리가
+              못 하는 일"인 **종일 일정**뿐이다. */}
+          <ReminderField
+            value={gf.reminderMinutes}
+            onChange={(m) => setGf((v) => ({ ...v, reminderMinutes: m }))}
+            kind={target.kind === 'geurio' ? 'geurio' : 'google'}
+            disabled={target.kind === 'geurio' && allDay}
+            disabledNote="종일 일정에는 알림을 걸 수 없어요"
+          />
 
           <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
             <Label>메모</Label>

@@ -39,6 +39,7 @@ export function normalizeEventInput(input: CalendarEventInput): CalendarEventInp
   const allDay = input.allDay !== false;
   // 시각은 **둘 다 있거나 둘 다 없다**(하나만 있으면 그릴 수 없다).
   const timed = !allDay && !!input.startTime && !!input.endTime;
+  const reminder = normalizeReminder(input.reminderMinutes);
   return {
     title: (input.title ?? '').slice(0, 200),
     startDate,
@@ -50,7 +51,17 @@ export function normalizeEventInput(input: CalendarEventInput): CalendarEventInp
     ...(input.color ? { color: input.color } : {}),
     // 우리가 만든 RRULE만 담는다 — 모르는 문자열은 버린다(읽을 때 반복 없음이 된다).
     ...(input.recurrence && /^RRULE:/i.test(input.recurrence) ? { recurrence: input.recurrence } : {}),
+    // 알림(0038)은 **시각 있는 일정만** 갖는다 — 종일로 바뀌면 지운다(자정 10분 전은
+    // 뜻이 어긋난다). 저장본만 봐도 무엇이 뜰지 알아야 한다.
+    ...(timed && reminder !== null ? { reminderMinutes: reminder } : {}),
   };
+}
+
+/** 알림 분 정규화 — 표의 제약(0038: 0~4주)과 같은 규칙. 값이 아니면 `null`(알림 없음). */
+export function normalizeReminder(v: unknown): number | null {
+  if (typeof v !== 'number' || !Number.isFinite(v)) return null;
+  const n = Math.round(v);
+  return n >= 0 && n <= 40_320 ? n : null;
 }
 
 export class LocalEventStore implements EventStore {

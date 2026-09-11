@@ -12,6 +12,8 @@ import { BOARD_TEMPLATES } from '../../templates/mapTemplates';
 import { HL_COLORS, HL_OPACITY, HL_WIDTHS, PEN_COLORS } from './boardTools';
 import { STROKE_Z } from './components/StrokeLayer';
 import { VOTE_EMOJI } from '@mindflow/mindmap-core';
+import { BOARD_BAR_LIFT } from './components/BoardToolbar';
+import { BOTTOM_BAR_VAR, toastShellStyle } from '../../pwa/toastShell';
 
 const BOARD = {
   v: 1,
@@ -96,6 +98,21 @@ describe('화이트보드 에디터', () => {
       expect(saved?.floats).toHaveLength(2);
       expect(Object.keys(saved?.nodes ?? { x: 1 })).toHaveLength(0);
     });
+  });
+
+  it('하단 도구 막대는 자기 높이를 알려 준다 — 떠 있는 알림이 그 위에 앉게(실브라우저에서 잡은 겹침)', async () => {
+    // 일정 알림·새 버전 토스트는 화면 하단 중앙에 뜨고 body에 붙는 fixed 요소라
+    // 에디터 루트의 상속을 받을 수 없다. 그래서 막대가 `documentElement`에 높이를
+    // 내려 주고 토스트 껍데기가 그만큼 더한다(`toastShell.ts`).
+    const { container, unmount } = renderEditor('/editor?map=b21&title=%EB%B3%B4%EB%93%9C&tpl=board&new=1');
+    await waitFor(() => expect(container.querySelector('[data-board-toolbar]')).toBeTruthy());
+    expect(document.documentElement.style.getPropertyValue(BOTTOM_BAR_VAR)).toBe(`${BOARD_BAR_LIFT}px`);
+    // 토스트가 실제로 그 값을 더한다(둘이 갈리면 겹침이 되돌아온다).
+    expect(String(toastShellStyle.bottom)).toContain(`var(${BOTTOM_BAR_VAR}`);
+
+    // 에디터를 떠나면 값을 거둔다 — 홈에서는 예전 자리(16px)여야 한다.
+    unmount();
+    expect(document.documentElement.style.getPropertyValue(BOTTOM_BAR_VAR)).toBe('');
   });
 
   it('보드 템플릿(tpl=board-retro)은 메모 배치가 그대로 시드된다 — 저장본도 board', async () => {

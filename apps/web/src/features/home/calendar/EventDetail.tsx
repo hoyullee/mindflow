@@ -54,6 +54,12 @@ interface Draft {
    * 캘린더 색으로 채워져 오므로, 그걸 "고른 값"으로 읽으면 안 된다.
    */
   color: string | null;
+  /**
+   * 알림(0038) — **Geurio 일정만** 초안에 담는다(우리 앱·OS 알림이 띄운다). 구글
+   * 일정의 알림은 구글이 보내므로 값이 구글 전용 초안에 있고 `reminder` 프롭으로
+   * 온다. `null` = 알림 없음.
+   */
+  reminderMinutes: number | null;
 }
 
 function draftOf(e: CalendarEvent, color: string | null): Draft {
@@ -67,6 +73,7 @@ function draftOf(e: CalendarEvent, color: string | null): Draft {
     location: e.location ?? '',
     note: e.note ?? '',
     color,
+    reminderMinutes: e.reminderMinutes ?? null,
   };
 }
 
@@ -244,6 +251,9 @@ export function EventDetail({
     if (draft.note.trim() !== (event.note ?? '').trim()) p.note = draft.note.trim();
     // 색은 **지운 것도 뜻이 있다** — 키를 실어 보낸다(빼면 "안 바꾼다"로 읽힌다).
     if (color && draft.color !== colorInit) p.color = draft.color ?? undefined;
+    // 알림도 같다 — `없음`을 고른 것은 "안 바꾼다"가 아니라 **끈 것**이다.
+    // 종일로 바꾼 경우는 정규화가 값을 지우므로(0038) 여기서 따로 챙기지 않는다.
+    if ((draft.reminderMinutes ?? null) !== (event.reminderMinutes ?? null)) p.reminderMinutes = draft.reminderMinutes ?? undefined;
     return p;
   };
 
@@ -508,8 +518,21 @@ export function EventDetail({
               {/* 일정 색(요청) — 원천이 팔레트를 준 경우만. 저장은 `완료`에서 한 번이다. */}
               {color && <EventColorField value={draft.color} options={color.options} onPick={(v) => set({ color: v })} />}
 
-              {/* 알림 — 늘 보이는 자리(요청 #5). 원천이 값을 주지 않으면 비활성 표식. */}
-              <ReminderField value={reminder?.value} onChange={(m) => reminder?.onChange(m)} disabled={!reminder} />
+              {/* 알림 — 늘 보이는 자리(요청 #5). **원천에 따라 값이 사는 곳이 다르다**:
+                  구글 일정은 구글이 알림을 보내므로 구글 전용 초안(`reminder` 프롭)에
+                  담기고, Geurio 일정은 우리가 띄우므로 이 팝업 초안에 담겨 `완료`가
+                  본문과 함께 저장한다(0038). 못 고르는 경우는 **종일 일정**뿐이다. */}
+              {reminder ? (
+                <ReminderField value={reminder.value} onChange={(m) => reminder.onChange(m)} kind="google" />
+              ) : (
+                <ReminderField
+                  value={draft.reminderMinutes}
+                  onChange={(m) => set({ reminderMinutes: typeof m === 'number' ? m : null })}
+                  kind="geurio"
+                  disabled={draft.allDay}
+                  disabledNote="종일 일정에는 알림을 걸 수 없어요"
+                />
+              )}
             </>
           )}
 

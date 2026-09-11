@@ -73,6 +73,7 @@ import {
   writeSavedAvatar,
   writeSavedProfileName,
 } from './storage';
+import { onCalendarFocus } from './calendarFocus';
 import { FOLDER_CARD_PREFIX, recentTrayDocIds } from './viewModel';
 
 /**
@@ -1277,6 +1278,13 @@ export function useHomeController() {
   // 자연스럽다(달을 되돌리는 것은 '오늘' 버튼의 일이다).
   /** LNB `일정` — 대시보드를 닫고 일정 화면을 연다. 검색 중이었다면 함께 비운다. */
   const openCalendar = () => patch({ activeCal: true, activeDash: null, dashReorder: false, dashEdit: false, search: '', searchInput: '' });
+  // 홈 **밖**에서 온 요청(일정 알림 토스트·OS 알림)도 같은 함수를 지난다 — 홈이 이미
+  // 떠 있으면 라우터로 `/home`에 가도 다시 마운트되지 않으므로 이 구독이 그 자리에서
+  // 화면을 바꾼다(`features/home/calendarFocus.ts`). 최신 함수를 ref로 읽는다 —
+  // 렌더마다 새 함수라 의존성에 넣으면 구독이 매번 다시 붙는다.
+  const openCalendarRef = useRef(openCalendar);
+  openCalendarRef.current = openCalendar;
+  useEffect(() => onCalendarFocus(() => openCalendarRef.current()), []);
   const calShiftMonth = (delta: number) => {
     const { y, m } = addMonth(state.calY, state.calM, delta);
     patch({ calY: y, calM: m });

@@ -720,6 +720,15 @@ export interface CalendarEvent {
    * (고치면 전체 반복에 적용된다 — 화면이 그렇게 말한다).
    */
   recurrence?: string;
+  /**
+   * 시작 **몇 분 전**에 알릴까(0038). 없으면 알림 없음 — 그게 기본이라 아무것도
+   * 저절로 뜨지 않는다. 띄우는 일은 브라우저·앱이 한다(`features/reminders/`) —
+   * 서버 푸시가 아니다(방침이 캘린더 데이터를 서버에 두지 않는다고 말한다).
+   *
+   * **시각 있는 일정만** 갖는다: 종일 일정에 "10분 전"은 자정 10분 전이라 뜻이
+   * 어긋나므로 종일로 바뀌면 값을 지운다(`normalizeEventInput`).
+   */
+  reminderMinutes?: number;
   /** 'geurio' = 우리 표가 정본, 'google' = 미러(다음 단계). */
   source: 'geurio' | 'google';
 }

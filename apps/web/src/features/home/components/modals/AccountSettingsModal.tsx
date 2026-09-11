@@ -11,6 +11,8 @@ import { Modal, MODAL_DIM } from '../../../../components/Modal';
 import { googlePrefsOf, useGoogleCalendar } from '../../calendar/useGoogleCalendar';
 import { GoogleCalendarSection } from './GoogleCalendarSection';
 import { VersionSection } from './VersionSection';
+import { Switch } from '../../../../components/Switch';
+import { notifyPermission, remindersEnabled, requestNotifyPermission, setRemindersEnabled } from '../../../reminders/reminderPrefs';
 
 interface Props {
   state: HomeState;
@@ -34,6 +36,11 @@ export function AccountSettingsModal({ state, controller }: Props) {
     const d = new Date();
     return { y: d.getFullYear(), m: d.getMonth() + 1 };
   });
+  // 일정 알림(0038) — **이 기기**의 상태다(OS 알림 권한 자체가 기기·브라우저마다 따로).
+  // 그래서 워크스페이스 블롭이 아니라 localStorage이고, 여기서 든 두 값은 화면 표시용
+  // 사본이다(정본은 `reminderPrefs`).
+  const [remindOn, setRemindOn] = useState(() => remindersEnabled());
+  const [perm, setPerm] = useState(() => notifyPermission());
   const googleApi = useGoogleCalendar(y, m, googlePrefsOf(state.google), controller.setGoogleCalendars, state.accountSettingsOpen && state.settingsView === 'calendar' ? 'events' : 'off');
   const visible = state.accountSettingsOpen;
   const initial = avatarLabel(state.userName);
@@ -541,6 +548,65 @@ export function AccountSettingsModal({ state, controller }: Props) {
               />
             </div>
           </SettingsGroup>
+
+          {/* 일정 알림(요청: 앱에서 일정 알림을 OS 알림으로) — **이 기기**의 설정이라
+              워크스페이스 블롭이 아니라 localStorage에 산다(OS 알림 권한 자체가 기기·
+              브라우저마다 따로다 — "노트북에서는 받고 회사 PC에서는 안 받는다"가
+              자연스럽다). 시작 화면 아래, 색상 테마 위: 둘 다 동작이고 색보다 먼저다.
+
+              **기본이 켜짐**인 이유: 이 스위치는 알림을 만들어 내지 않는다. 일정마다의
+              알림은 기본이 `없음`이라, 사용자가 직접 고르지 않으면 아무것도 뜨지 않는다.
+              여기서 꺼짐으로 시작하면 방금 고른 알림이 이유 없이 안 온다.
+
+              `Notification`이 아예 없는 환경에서는 **행 자체를 그리지 않는다**(눌러도
+              아무 일이 없는 자리를 두지 않는다). */}
+          {perm !== 'unsupported' && (
+            <SettingsGroup style={{ marginTop: 14 }} attrs={{ 'data-remind-group': '' }}>
+              <div style={{ display: 'flex', alignItems: 'center', flexWrap: 'wrap', gap: 13, padding: '14px 15px' }}>
+                <div style={{ minWidth: 0, flex: '1 1 180px' }}>
+                  <div style={{ fontWeight: 700, fontSize: 14.5 }}>일정 알림</div>
+                  <div data-remind-note style={{ marginTop: 3, fontSize: 12.5, color: 'var(--mf-muted)' }}>
+                    {!remindOn
+                      ? '켜면 일정에 걸어 둔 알림이 이 기기에 떠요'
+                      : perm === 'granted'
+                        ? '알림 시각에 앱 알림과 OS 알림이 함께 떠요'
+                        : perm === 'denied'
+                          ? '브라우저가 알림을 막아 뒀어요 — 앱 안에서만 떠요'
+                          : 'OS 알림을 허용하면 다른 창을 보고 있어도 떠요'}
+                  </div>
+                </div>
+                {/* 허용 버튼은 **물어볼 수 있을 때만** 있다(`default`) — 이미 허용했거나
+                    차단한 뒤에는 브라우저가 다시 묻지 않으므로 죽은 버튼이 된다.
+                    권한 요청은 사용자 제스처에서만 되는데, 이 클릭이 그 제스처다. */}
+                {remindOn && perm === 'default' && (
+                  <button
+                    type="button"
+                    data-remind-allow
+                    className="mf-ctl"
+                    onClick={() => void requestNotifyPermission().then(setPerm)}
+                    style={{ flexShrink: 0, height: 30, padding: '0 12px', borderRadius: 999, border: '1px solid var(--mf-border)', background: 'var(--mf-card)', color: 'var(--mf-text)', fontFamily: 'inherit', fontSize: 12.5, fontWeight: 700, cursor: 'pointer' }}
+                  >
+                    OS 알림 허용
+                  </button>
+                )}
+                <Switch
+                  checked={remindOn}
+                  onCheckedChange={() => {
+                    const next = !remindOn;
+                    setRemindersEnabled(next);
+                    setRemindOn(next);
+                    // 켜는 그 클릭이 곧 제스처다 — 여기서 물으면 사용자는 자기가 누른
+                    // 결과로 창을 본다(저절로 뜨는 권한 창을 만들지 않는다).
+                    if (next && notifyPermission() === 'default') void requestNotifyPermission().then(setPerm);
+                  }}
+                  label="일정 알림"
+                  accent="var(--mf-accent)"
+                  track="var(--mf-scroll)"
+                  knob="var(--mf-card)"
+                />
+              </div>
+            </SettingsGroup>
+          )}
 
           {/* 색상 테마 — LNB 최하단에 있다가 사용자 요청으로 이리 왔다(설정에 모으는 게
               자연스럽다). 적용 버튼 없이 **누르는 즉시** 뒤 화면까지 색이 바뀐다 —

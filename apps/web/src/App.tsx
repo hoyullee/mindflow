@@ -13,6 +13,7 @@ import { BackendProvider, useBackend } from './adapters/BackendContext';
 import { UpdatePrompt } from './pwa/UpdatePrompt';
 import { DesktopTitleBar } from './platform/DesktopTitleBar';
 import { isDesktopShell } from './platform/desktopBridge';
+import { ReminderHost } from './features/reminders/ReminderHost';
 
 // M3: Login.dc.html, Home.dc.html, and MindFlow.dc.html are ported to React.
 // M4: `/home` and `/editor` are gated behind `RequireAuth` — but ONLY when a
@@ -54,7 +55,15 @@ export function RequireAuth({ children }: { children: ReactNode }) {
   if (status === 'checking') return null; // brief flash-free wait for the session check
   // 돌아갈 자리를 `next`로 들고 간다 — 편집 중이던 맵 주소를 사용자가 다시 찾지 않게.
   if (status === 'anon') return <Navigate to={loginUrlWithNext(location.pathname, location.search)} replace />;
-  return <>{children}</>;
+  // 일정 알림은 **로그인한 화면이면 어디서든** 와야 한다(마인드맵을 편집하는 중에도
+  // 10:20이 되면 뜬다) — 그래서 화면마다 붙이지 않고 문지기 안에 한 번 둔다. 랜딩·
+  // 로그인·약관은 문지기 밖이라 일정을 조회하지도 않는다.
+  return (
+    <>
+      <ReminderHost />
+      {children}
+    </>
+  );
 }
 
 export function App() {

@@ -28,6 +28,7 @@ import type { EditorController } from '../useEditorState';
 import { hexA } from '../theme';
 import { FLOAT_SHADOW, accentGradient, glassCard } from '../chrome';
 import { useIsMobile } from '../../../hooks/useMediaQuery';
+import { BOTTOM_BAR_VAR } from '../../../pwa/toastShell';
 import { HL_COLORS, HL_WIDTHS, PEN_COLORS, PEN_WIDTHS } from '../boardTools';
 import type { BoardTool } from '../boardTools';
 import { CommentPinGlyph } from './commentPinShape';
@@ -99,6 +100,19 @@ export function BoardToolbar({ controller }: { controller: EditorController }) {
 
   // 마인드맵에도 같은 막대가 선다(디자인 원본 `Geurio 마인드맵 리디자인`) —
   // 그리기 도구 대신 [선택·하위·형제]와 삽입·스레드·되돌리기를 담는다.
+  // 하단 중앙에 떠 있는 알림(일정 알림·새 버전 토스트)이 이 막대를 덮지 않게, 막대가
+  // 떠 있는 동안 그 높이를 `documentElement`에 알린다 — 그 알림들은 body에 붙는 fixed
+  // 요소라 에디터 루트의 상속을 받을 수 없다(`toastShell.ts`의 `BOTTOM_BAR_VAR`).
+  // 실브라우저에서 잡은 자리: 맵 에디터에도 막대가 생긴 뒤(#460) 토스트가 그 위에 겹쳤다.
+  useEffect(() => {
+    if (controller.readOnly) return;
+    const root = document.documentElement;
+    root.style.setProperty(BOTTOM_BAR_VAR, `${BOARD_BAR_LIFT}px`);
+    return () => {
+      root.style.removeProperty(BOTTOM_BAR_VAR);
+    };
+  }, [controller.readOnly]);
+
   if (controller.readOnly) return null;
   const isBoard = controller.isBoard;
   const nodeSel = controller.selection?.kind === 'node';
