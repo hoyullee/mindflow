@@ -49,6 +49,7 @@ import {
   readStoredToken,
   requestGoogleToken,
   revokeGoogleToken,
+  storeReminderCalendars,
   storeToken,
   updateGoogleEvent,
   type GoogleCalendarMeta,
@@ -452,6 +453,33 @@ export function useGoogleCalendar(
    * 구글에서 구독하면 우리 항목이 조용히 그것으로 승격된다).
    */
   const allCalendars = useMemo(() => mergeExtraCalendars(calendars, extras), [calendars, extraKey]);
+
+  /**
+   * 알림 스케줄러가 볼 **캘린더 거울**을 이 기기에 적어 둔다(2단계).
+   *
+   * 여기서 적는 이유: 이 훅이 "지금 보여 주는 캘린더"와 "그 기본 알림"을 **둘 다**
+   * 아는 유일한 자리다. 스케줄러는 에디터에서도 도는데 그쪽은 워크스페이스 블롭을
+   * 읽지 않으므로, 홈이 알고 있을 때 남겨 두지 않으면 알 길이 없다.
+   *
+   * 목록이 **도착하기 전에는 적지 않는다** — 그때 `allCalendars`는 주소로 더한 것뿐이라
+   * 구독 캘린더를 통째로 지운 거울이 된다. 연동이 꺼지면 비운다(꺼 두었는데 알림만
+   * 오는 일이 없게).
+   */
+  useEffect(() => {
+    if (!available || !enabled) {
+      storeReminderCalendars([]);
+      return;
+    }
+    if (!listLoaded) return;
+    const ids = picked ? picked.split(',') : [];
+    storeReminderCalendars(
+      ids
+        .map((id) => allCalendars.find((c) => c.id === id))
+        // 공휴일 캘린더는 종일이라 알림이 없다 — 조회할 이유가 없으므로 담지 않는다.
+        .filter((c): c is GoogleCalendarMeta => !!c && !c.holiday)
+        .map((c) => ({ id: c.id, ...(typeof c.defaultMinutes === 'number' ? { defaultMinutes: c.defaultMinutes } : {}) })),
+    );
+  }, [available, enabled, listLoaded, picked, allCalendars]);
 
   // ── 보이는 달의 일정 ────────────────────────────────────────────────────
   useEffect(() => {

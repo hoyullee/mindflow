@@ -95,6 +95,71 @@ export function reminderItems(events: readonly CalendarEvent[], from: string, to
 }
 
 /**
+ * 구글 일정 한 건 중 **알림에 필요한 것만**(2단계).
+ *
+ * `GoogleEvent`를 그대로 받지 않는 이유는 이 파일을 순수하게 두기 위해서다 —
+ * 구조만 맞으면 되므로 호출부가 그대로 넘긴다.
+ */
+export interface GoogleReminderSource {
+  /** `캘린더::일정` — 우리 쪽 유일 id. 회차는 구글이 이미 펼쳐 준다(`singleEvents`). */
+  id: string;
+  calendarId: string;
+  title: string;
+  startDate: string;
+  startTime?: string;
+  allDay: boolean;
+  /** `null`은 "알림 없음", 숫자는 "N분 전", **`undefined`는 캘린더 기본 알림**이다. */
+  reminderMinutes?: number | null;
+  /** 공휴일 캘린더의 항목 — 일정이 아니다. */
+  holiday?: boolean;
+  /** 근무 위치(재택·사무실) — 그 날의 상태이지 회의가 아니다. */
+  workLocation?: string;
+  /** 내 응답 — 거절한 회의는 구글도 알리지 않는다. */
+  rsvp?: 'accepted' | 'declined' | 'tentative' | 'needsAction';
+}
+
+/**
+ * 구글 일정 → 알림 목록.
+ *
+ * **무엇을 몇 분 전에 띄울지**는 두 곳에서 온다: 그 일정에 직접 건 알림(override)이
+ * 있으면 그 값, 없으면(`useDefault`) **그 캘린더의 기본 알림**이다(대부분이 이쪽이라
+ * 기본을 모르면 이 기능이 사실상 비어 버린다 — 그래서 목록을 받을 때 챙겨 둔다).
+ * 둘 다 없으면 띄우지 않는다 — 모르는 값을 지어내지 않는다.
+ *
+ * 빼는 것 넷: 종일(자정 기준이라 뜻이 어긋난다)·공휴일·근무 위치(회의가 아니다)·
+ * **내가 거절한 회의**(구글도 알리지 않는다).
+ */
+export function googleReminderItems(
+  events: readonly GoogleReminderSource[],
+  defaults: ReadonlyMap<string, number>,
+  from: string,
+  to: string,
+): ReminderItem[] {
+  const out: ReminderItem[] = [];
+  for (const e of events) {
+    if (e.allDay || !e.startTime || e.holiday || e.workLocation || e.rsvp === 'declined') continue;
+    if (e.startDate < from || e.startDate > to) continue;
+    const minutes = e.reminderMinutes === undefined ? defaults.get(e.calendarId) : (e.reminderMinutes ?? undefined);
+    if (typeof minutes !== 'number' || !Number.isFinite(minutes) || minutes < 0) continue;
+    const startAt = localMs(e.startDate, e.startTime);
+    if (startAt === null) continue;
+    out.push({
+      // 구글 id에는 이미 캘린더가 붙어 있어 우리 일정과 겹칠 일이 없지만, 저장소에
+      // 남는 키라 어디서 온 것인지 읽히게 접두를 둔다.
+      key: `g:${e.id}#${e.startDate}`,
+      eventId: e.id,
+      title: e.title || '(제목 없음)',
+      date: e.startDate,
+      startTime: e.startTime,
+      startAt,
+      fireAt: startAt - minutes * 60_000,
+      minutes,
+    });
+  }
+  return out.sort((a, b) => a.fireAt - b.fireAt);
+}
+
+/**
  * 지금 띄울 것 — 알림 시각이 지났고 유예 안쪽인 것만.
  *
  * 유예를 두는 이유는 위 주석의 ②(절전)이고, **넘긴 것은 기억하지 않는다** — 시간은

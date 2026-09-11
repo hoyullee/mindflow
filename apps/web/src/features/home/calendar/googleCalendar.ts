@@ -163,6 +163,14 @@ export interface GoogleCalendarMeta {
    * 할 수 있다고 말하지 않는다).
    */
   external?: true;
+  /**
+   * 그 캘린더의 **기본 알림**(분) — 구글의 `defaultReminders` 중 첫 팝업.
+   *
+   * 대부분의 구글 일정은 자기 알림을 갖지 않고 이 값을 따른다(`useDefault`). 2단계
+   * 알림(`features/reminders/`)이 구글 일정을 띄울 때 그 값을 알아야 하는데,
+   * `calendarList`에만 있고 일정 응답에는 없다 — 그래서 목록을 받을 때 함께 챙긴다.
+   */
+  defaultMinutes?: number;
 }
 
 /** 그리오 목록에만 더한 캘린더 — 워크스페이스 블롭에 id와 이름 스냅샷으로 남는다. */
@@ -394,6 +402,52 @@ export function storeToken(t: GoogleToken | null): void {
     /* 사생활 보호 모드 등 — 저장 못 해도 이번 탭은 메모리로 굴러간다 */
   }
   for (const cb of [...tokenListeners]) cb();
+}
+
+/**
+ * 알림 스케줄러가 보는 **캘린더 거울**(2단계).
+ *
+ * 정본은 워크스페이스 블롭이고 그것을 읽는 것은 홈이다. 그런데 알림 스케줄러는
+ * 문지기(`RequireAuth`) 안에 있어 **에디터에서도** 돌아야 하는데, 에디터는 그 블롭을
+ * 한 번도 읽지 않는다. 그래서 홈이 알고 있을 때 이 기기에 적어 두고 스케줄러는
+ * 그것만 본다 — 첫 페인트 힌트(`mf_home_landing`)·테마 캐시와 같은 꼴의 거울이다.
+ *
+ * 담는 것은 **지금 보여 주는 캘린더**와 그 **기본 알림**뿐이다: 숨긴 캘린더의 일정이
+ * 알림으로 뜨면 화면과 어긋나고, 기본 알림은 일정 응답에 없어 여기서 챙기지 않으면
+ * `useDefault` 일정(대부분이다)에 무엇을 띄울지 알 수 없다.
+ */
+export interface ReminderCalendar {
+  id: string;
+  defaultMinutes?: number;
+}
+
+const REMIND_CALS_KEY = 'mf_gcal_remind_cals';
+
+export function storeReminderCalendars(list: readonly ReminderCalendar[]): void {
+  try {
+    if (list.length) localStorage.setItem(REMIND_CALS_KEY, JSON.stringify(list));
+    else localStorage.removeItem(REMIND_CALS_KEY);
+  } catch {
+    /* 저장소가 막힌 기기 — 알림이 조용히 안 뜰 뿐 다른 것은 그대로다 */
+  }
+}
+
+export function readReminderCalendars(): ReminderCalendar[] {
+  try {
+    const raw = localStorage.getItem(REMIND_CALS_KEY);
+    if (!raw) return [];
+    const parsed = JSON.parse(raw) as unknown;
+    if (!Array.isArray(parsed)) return [];
+    const out: ReminderCalendar[] = [];
+    for (const r of parsed) {
+      const o = r as { id?: unknown; defaultMinutes?: unknown };
+      if (typeof o?.id !== 'string' || !o.id) continue;
+      out.push({ id: o.id, ...(typeof o.defaultMinutes === 'number' ? { defaultMinutes: o.defaultMinutes } : {}) });
+    }
+    return out;
+  } catch {
+    return [];
+  }
 }
 
 function currentTokenApi(): GsiTokenApi | null {
@@ -866,6 +920,21 @@ export function isDayOffHoliday(description?: string): boolean {
   return DAY_OFF_TOKENS.some((t) => d.includes(t));
 }
 
+/**
+ * 캘린더의 기본 알림 중 **첫 팝업**(분). 메일 알림은 우리가 보낼 수 없으므로 세지
+ * 않는다 — 화면에 띄울 수 있는 것만 안다고 말한다.
+ */
+function defaultMinutesOf(raw: unknown): { defaultMinutes?: number } {
+  if (!Array.isArray(raw)) return {};
+  for (const r of raw) {
+    const o = r as { method?: unknown; minutes?: unknown };
+    if (o?.method === 'popup' && typeof o.minutes === 'number' && Number.isFinite(o.minutes) && o.minutes >= 0) {
+      return { defaultMinutes: o.minutes };
+    }
+  }
+  return {};
+}
+
 export function parseCalendarList(json: unknown): GoogleCalendarMeta[] {
   const items = (json as { items?: unknown })?.items;
   if (!Array.isArray(items)) return [];
@@ -885,6 +954,7 @@ export function parseCalendarList(json: unknown): GoogleCalendarMeta[] {
       ...(it.primary === true ? { primary: true } : {}),
       ...(isHolidayCalendarId(id) ? { holiday: true } : {}),
       ...(it.accessRole === 'owner' || it.accessRole === 'writer' ? { writable: true } : {}),
+      ...defaultMinutesOf(it.defaultReminders),
     });
   }
   // 기본 캘린더 먼저, 그 다음 이름순 — 목록 순서가 매번 흔들리지 않게.

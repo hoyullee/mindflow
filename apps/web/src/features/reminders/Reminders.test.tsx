@@ -14,7 +14,8 @@ import type { Backend, CalendarEvent, DocMeta, DocStore, LoadedDoc, SaveResult }
 import { ACTIVE_VIEW_KEY } from '../home/storage';
 import { ReminderHost } from './ReminderHost';
 import { REMINDER_TICK_MS } from './reminders';
-import { setRemindersEnabled } from './reminderPrefs';
+import { setGoogleRemindersEnabled, setRemindersEnabled } from './reminderPrefs';
+import { GOOGLE_CALENDAR_SCOPE, storeReminderCalendars } from '../home/calendar/googleCalendar';
 
 /**
  * 일정 알림 통합 — **앱이 켜져 있는 동안** 알림 시각이 되면 인앱 토스트와 OS 알림이
@@ -53,6 +54,35 @@ class StubDocStore implements DocStore {
 }
 
 let osNotifications: { title: string; body: string }[] = [];
+/** 구글에 나간 요청 — "켜지 않으면 왕복이 한 번도 없다"를 이 목록으로 본다. */
+let googleCalls: string[] = [];
+
+/**
+ * 연동된 기기 흉내 — 토큰(이 기기)과 **캘린더 거울**(홈이 적어 두는 것)을 심고,
+ * 구글 응답을 세워 둔다. 스케줄러는 이 둘만 보므로 에디터에서도 그대로 돈다.
+ */
+function seedGoogle(items: unknown[], defaultMinutes?: number): void {
+  localStorage.setItem('mf_gcal_token', JSON.stringify({ accessToken: 'tok', expiresAt: Date.now() + 3_600_000, scope: GOOGLE_CALENDAR_SCOPE }));
+  storeReminderCalendars([{ id: 'cal-a', ...(defaultMinutes === undefined ? {} : { defaultMinutes }) }]);
+  vi.stubGlobal(
+    'fetch',
+    vi.fn(async (url: string) => {
+      googleCalls.push(url);
+      return { ok: true, status: 200, json: async () => ({ items }) } as unknown as Response;
+    }),
+  );
+}
+
+/**
+ * 구글은 시각을 **오프셋이 붙은 ISO**로 준다. 고정 문자열을 쓰면 테스트를 돌리는
+ * 기기의 시간대에 따라 다른 시각이 되므로, 로컬 10:30을 그대로 가리키는 ISO를 만든다.
+ */
+const GOOGLE_EVENT = {
+  id: 'g1',
+  summary: '구글 회의',
+  start: { dateTime: new Date(2026, 8, 15, 10, 30).toISOString() },
+  end: { dateTime: new Date(2026, 8, 15, 11, 30).toISOString() },
+};
 
 function fakeNotification(permission: 'granted' | 'denied' | 'default'): void {
   class FakeNotification {
@@ -106,6 +136,7 @@ beforeEach(() => {
   localStorage.clear();
   sessionStorage.clear();
   osNotifications = [];
+  googleCalls = [];
   vi.useFakeTimers();
   vi.setSystemTime(NOW);
 });
@@ -187,6 +218,36 @@ describe('일정 알림', () => {
     // 홈이 새로 마운트될 때 읽는 "이 탭이 보던 화면"도 일정으로 고쳐 둔다.
     expect(JSON.parse(sessionStorage.getItem(ACTIVE_VIEW_KEY)!)).toMatchObject({ activeCal: true, activeDash: null });
     // 누른 알림은 사라진다(같은 알림을 다시 보여 줄 이유가 없다).
+    expect(document.querySelector('[data-reminder-toast]')).toBeNull();
+  });
+});
+
+describe('구글 일정 알림(2단계)', () => {
+  it('켜 두면 구글 일정도 같은 토스트·OS 알림으로 뜬다(캘린더 기본 알림)', async () => {
+    fakeNotification('granted');
+    setGoogleRemindersEnabled(true);
+    // 일정에 건 알림이 없는 평범한 구글 일정 — 그 캘린더의 기본(10분 전)을 따른다.
+    seedGoogle([{ ...GOOGLE_EVENT, reminders: { useDefault: true } }], 10);
+    renderHost([]);
+    // 구글 조회는 토큰 → 캘린더별 요청 → json까지 여러 번 접히므로 넉넉히 흘린다.
+    for (let i = 0; i < 8; i += 1) await settle();
+
+    const toast = document.querySelector('[data-reminder-toast]') as HTMLElement;
+    expect(toast).toBeTruthy();
+    expect(toast.querySelector('[data-reminder-title]')!.textContent).toBe('구글 회의');
+    expect(osNotifications).toEqual([{ title: '구글 회의', body: '오전 10:30 · 10분 후 시작' }]);
+  });
+
+  it('꺼져 있으면 구글에 **왕복이 한 번도 나가지 않는다**(기본값)', async () => {
+    fakeNotification('granted');
+    seedGoogle([{ ...GOOGLE_EVENT, reminders: { useDefault: true } }], 10);
+    renderHost([]);
+    await settle();
+    await act(async () => {
+      vi.advanceTimersByTime(REMINDER_TICK_MS * 2);
+      await Promise.resolve();
+    });
+    expect(googleCalls).toEqual([]);
     expect(document.querySelector('[data-reminder-toast]')).toBeNull();
   });
 });

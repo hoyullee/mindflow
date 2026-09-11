@@ -12,7 +12,14 @@ import { googlePrefsOf, useGoogleCalendar } from '../../calendar/useGoogleCalend
 import { GoogleCalendarSection } from './GoogleCalendarSection';
 import { VersionSection } from './VersionSection';
 import { Switch } from '../../../../components/Switch';
-import { notifyPermission, remindersEnabled, requestNotifyPermission, setRemindersEnabled } from '../../../reminders/reminderPrefs';
+import {
+  googleRemindersEnabled,
+  notifyPermission,
+  remindersEnabled,
+  requestNotifyPermission,
+  setGoogleRemindersEnabled,
+  setRemindersEnabled,
+} from '../../../reminders/reminderPrefs';
 
 interface Props {
   state: HomeState;
@@ -40,9 +47,13 @@ export function AccountSettingsModal({ state, controller }: Props) {
   // 그래서 워크스페이스 블롭이 아니라 localStorage이고, 여기서 든 두 값은 화면 표시용
   // 사본이다(정본은 `reminderPrefs`).
   const [remindOn, setRemindOn] = useState(() => remindersEnabled());
+  const [googleRemindOn, setGoogleRemindOn] = useState(() => googleRemindersEnabled());
   const [perm, setPerm] = useState(() => notifyPermission());
   const googleApi = useGoogleCalendar(y, m, googlePrefsOf(state.google), controller.setGoogleCalendars, state.accountSettingsOpen && state.settingsView === 'calendar' ? 'events' : 'off');
   const visible = state.accountSettingsOpen;
+  // 구글 일정 알림 하위 행의 조건 — 이 훅은 `mode: 'off'`에서도 연결 상태를 안다
+  // (블롭의 `enabled`이고 끊겼다고 알려진 바 없는가 — `connected` 주석 참고).
+  const googleConnected = googleApi.available && googleApi.connected;
   const initial = avatarLabel(state.userName);
   // 로그인 수단 — `null`은 확인 불가(RPC 미배포·네트워크·데모 초기). 그때는
   // 비밀번호가 **있다고 보고** 변경 흐름을 내준다(잠그지 않는다).
@@ -605,6 +616,40 @@ export function AccountSettingsModal({ state, controller }: Props) {
                   knob="var(--mf-card)"
                 />
               </div>
+              {/* 구글 일정 알림(2단계) — **기본이 꺼짐**이다: 그 알림은 구글이 이미
+                  보내므로(구글 캘린더 앱·브라우저) 켜져 있으면 같은 회의에 알림이 둘
+                  뜨는 것이 기본 동작이 된다. "구글 알림을 안 받는 기기에서 그리오만
+                  켜 둔다"는 사람이 직접 켜는 값이라 하위 행으로 둔다.
+
+                  **연동했을 때만** 그린다(켤 것이 없으면 자리도 없다). 위 스위치가
+                  꺼져 있으면 감춘다 — 꺼진 부모 아래의 하위 설정은 눌러도 아무 일이
+                  없으므로 그 자리를 두지 않는다. */}
+              {remindOn && googleConnected && (
+                <div
+                  data-remind-google-row
+                  style={{ display: 'flex', alignItems: 'center', flexWrap: 'wrap', gap: 13, padding: '13px 15px', borderTop: '1px solid var(--mf-border-soft)' }}
+                >
+                  <div style={{ minWidth: 0, flex: '1 1 180px' }}>
+                    <div style={{ fontWeight: 700, fontSize: 13.5 }}>구글 일정도 알림</div>
+                    <div data-remind-google-note style={{ marginTop: 3, fontSize: 12.5, color: 'var(--mf-muted)' }}>
+                      {googleRemindOn ? '구글이 보내는 알림과 함께 떠요' : '구글 캘린더가 이미 보내는 알림 말고 여기서도 받을 때 켜요'}
+                    </div>
+                  </div>
+                  <Switch
+                    checked={googleRemindOn}
+                    onCheckedChange={() => {
+                      const next = !googleRemindOn;
+                      setGoogleRemindersEnabled(next);
+                      setGoogleRemindOn(next);
+                      if (next && notifyPermission() === 'default') void requestNotifyPermission().then(setPerm);
+                    }}
+                    label="구글 일정도 알림"
+                    accent="var(--mf-accent)"
+                    track="var(--mf-scroll)"
+                    knob="var(--mf-card)"
+                  />
+                </div>
+              )}
             </SettingsGroup>
           )}
 
