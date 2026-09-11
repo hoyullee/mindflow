@@ -113,3 +113,71 @@ export async function checkShellUpdate(
     ? { kind: 'available', version: rel.version, url: rel.url }
     : { kind: 'current' };
 }
+
+// ── 화면과 껍데기를 **한 행으로** 접는다(요청) ────────────────────────────────
+//
+// 업데이트 행이 둘이면 사용자는 "무엇을 먼저 눌러야 하는가"를 스스로 정해야 한다.
+// 실은 정할 것이 없다 — **껍데기를 새로 설치하면 앱이 다시 실행되면서 대기 중인
+// 서비스 워커가 활성화되므로 화면까지 함께 최신이 된다**(그 출처의 페이지가 전부
+// 닫히는 것이 활성화 조건이다). 그래서 둘이 함께 있으면 껍데기 쪽이 이긴다.
+
+/** `UpdatePrompt`가 모듈에 올려 두는 웹 번들의 상태(그 모양만 받는다). */
+export interface WebUpdateStatus {
+  ready: boolean;
+  checking: boolean;
+  applying: boolean;
+  saveBlocked: boolean;
+}
+
+export type MergedUpdateKind =
+  /** 확인할 수단이 아예 없다(서비스워커도 셸도 없는 환경). */
+  | 'unavailable'
+  /** 웹 적용이 저장 실패로 멈췄다 — 사용자가 손을 써야 한다. */
+  | 'save-blocked'
+  /** 웹 적용이 진행 중 — 곧 리로드된다. */
+  | 'applying'
+  /** 껍데기 새 판을 받아야 한다(웹 새 판이 함께 있으면 그것까지 해결된다). */
+  | 'shell'
+  /** 웹 새 판만 대기 중 — 그 자리에서 적용한다. */
+  | 'ready'
+  | 'checking'
+  | 'latest';
+
+export interface MergedUpdate {
+  kind: MergedUpdateKind;
+  /** `shell`일 때만 — 받을 판과 주소. */
+  release?: ShellRelease;
+  /** `shell`일 때 웹 새 판도 대기 중인가(설치하면 함께 최신이 된다). */
+  alsoWeb?: boolean;
+  /** `latest`일 때 껍데기는 **확인하지 못했는가** — 최신이라고 뭉개지 않는다. */
+  shellUnknown?: boolean;
+}
+
+/**
+ * 한 행이 무엇을 말하고 무엇을 누르게 할지 정한다.
+ *
+ * 순서에 뜻이 있다:
+ * 1. **진행 중인 웹 작업이 먼저다**(`save-blocked`·`applying`) — 리로드가 임박한
+ *    자리를 다운로드 버튼으로 갈아 끼우면 사용자가 그 사이에 앱을 떠난다.
+ * 2. 다음이 **껍데기**다 — 웹 새 판이 함께 있어도 설치가 그것까지 해결한다.
+ * 3. 그다음이 웹 새 판, 확인 중, 최신.
+ *
+ * `shell`이 `null`이면 설치형 앱이 아니다(브라우저·PWA).
+ */
+export function mergedUpdateState(
+  web: WebUpdateStatus,
+  webControls: boolean,
+  shell: ShellUpdateState | null,
+): MergedUpdate {
+  if (!webControls && !shell) return { kind: 'unavailable' };
+  if (web.saveBlocked) return { kind: 'save-blocked' };
+  if (web.applying) return { kind: 'applying' };
+  if (shell?.kind === 'available') {
+    return { kind: 'shell', release: { version: shell.version, url: shell.url }, alsoWeb: web.ready };
+  }
+  if (webControls && web.ready) return { kind: 'ready' };
+  // 셸의 `idle`은 "아직 물어보지 않았다"다 — 화면을 여는 순간 확인이 시작되므로
+  // 확인 중과 같은 자리에 둔다(빈 상태를 한 프레임 보여 주지 않게).
+  if (web.checking || shell?.kind === 'checking' || shell?.kind === 'idle') return { kind: 'checking' };
+  return { kind: 'latest', shellUnknown: shell?.kind === 'unknown' };
+}

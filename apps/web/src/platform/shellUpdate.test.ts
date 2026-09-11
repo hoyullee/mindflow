@@ -1,7 +1,8 @@
 import { describe, expect, it, vi } from 'vitest';
 import { readFileSync } from 'node:fs';
 import path from 'node:path';
-import { checkShellUpdate, isNewerVersion, parseShellRelease } from './shellUpdate';
+import { checkShellUpdate, isNewerVersion, mergedUpdateState, parseShellRelease } from './shellUpdate';
+import type { ShellUpdateState, WebUpdateStatus } from './shellUpdate';
 
 describe('isNewerVersion', () => {
   it('자리별로 견준다 — 문자열 비교가 아니다', () => {
@@ -82,6 +83,66 @@ describe('checkShellUpdate', () => {
 
     const thrown = vi.fn(async () => { throw new Error('offline'); });
     await expect(checkShellUpdate('0.2.0', thrown as unknown as typeof fetch)).resolves.toEqual({ kind: 'unknown' });
+  });
+});
+
+/**
+ * 업데이트 행은 **하나**다(요청) — 화면과 껍데기를 합쳐 세 경우로 접는다.
+ *
+ * 순서에 뜻이 있다: 진행 중인 웹 작업 > 껍데기 > 웹 새 판 > 확인 중 > 최신.
+ */
+describe('mergedUpdateState', () => {
+  const web = (p: Partial<WebUpdateStatus> = {}): WebUpdateStatus => ({
+    ready: false,
+    checking: false,
+    applying: false,
+    saveBlocked: false,
+    ...p,
+  });
+  const avail: ShellUpdateState = { kind: 'available', version: '0.4.0', url: 'https://example.com/r' };
+
+  it('① 웹만 새 판이면 그 자리에서 적용한다', () => {
+    expect(mergedUpdateState(web({ ready: true }), true, { kind: 'current' })).toEqual({ kind: 'ready' });
+    // 설치형 앱이 아닐 때도 같다.
+    expect(mergedUpdateState(web({ ready: true }), true, null)).toEqual({ kind: 'ready' });
+  });
+
+  it('② 껍데기만 새 판이면 받을 판과 주소를 돌려준다', () => {
+    expect(mergedUpdateState(web(), true, avail)).toEqual({
+      kind: 'shell',
+      release: { version: '0.4.0', url: 'https://example.com/r' },
+      alsoWeb: false,
+    });
+  });
+
+  it('③ 둘이 함께 있으면 껍데기가 이긴다 — 설치가 화면까지 해결한다', () => {
+    expect(mergedUpdateState(web({ ready: true }), true, avail)).toEqual({
+      kind: 'shell',
+      release: { version: '0.4.0', url: 'https://example.com/r' },
+      alsoWeb: true,
+    });
+  });
+
+  it('진행 중인 웹 작업은 껍데기보다 먼저다 — 리로드가 임박한 자리를 갈아 끼우지 않는다', () => {
+    expect(mergedUpdateState(web({ applying: true, ready: true }), true, avail).kind).toBe('applying');
+    expect(mergedUpdateState(web({ saveBlocked: true, ready: true }), true, avail).kind).toBe('save-blocked');
+  });
+
+  it('확인 중은 둘 중 하나만 돌아도 확인 중이다(셸의 idle도 같은 자리)', () => {
+    expect(mergedUpdateState(web({ checking: true }), true, { kind: 'current' }).kind).toBe('checking');
+    expect(mergedUpdateState(web(), true, { kind: 'checking' }).kind).toBe('checking');
+    expect(mergedUpdateState(web(), true, { kind: 'idle' }).kind).toBe('checking');
+  });
+
+  it('껍데기를 확인하지 못한 것은 최신인 것과 다르다', () => {
+    expect(mergedUpdateState(web(), true, { kind: 'unknown' })).toEqual({ kind: 'latest', shellUnknown: true });
+    expect(mergedUpdateState(web(), true, { kind: 'current' })).toEqual({ kind: 'latest', shellUnknown: false });
+  });
+
+  it('확인할 수단이 아예 없으면 버튼을 두지 않는다', () => {
+    expect(mergedUpdateState(web(), false, null)).toEqual({ kind: 'unavailable' });
+    // 셸이 있으면 그쪽은 확인할 수 있다 — 통째로 포기하지 않는다.
+    expect(mergedUpdateState(web(), false, avail).kind).toBe('shell');
   });
 });
 
