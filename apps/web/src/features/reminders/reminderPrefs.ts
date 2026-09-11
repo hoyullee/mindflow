@@ -4,6 +4,7 @@
 // "이 노트북에서는 받고 회사 PC에서는 안 받는다"가 자연스러운 설정이라, 스페이스·
 // 테마처럼 기기 간에 따라오면 오히려 어긋난다.
 
+import { focusDesktopWindow } from '../../platform/desktopBridge';
 import {
   checkNativeNotifyPermission,
   nativeNotificationsAvailable,
@@ -174,7 +175,9 @@ export function showOsNotification(opts: { title: string; body: string; tag: str
     const n = new Notification(opts.title, { body: opts.body, tag: opts.tag, icon: '/icons/pwa-192x192.png' });
     if (opts.onClick) {
       n.onclick = () => {
-        // 창을 앞으로 — 설치형 앱에서도 이 호출이 창을 띄운다.
+        // 설치형 앱은 **창이 숨어 있을 수 있다**(4단계 상주) — 그때는 렌더러의
+        // `window.focus()`로 나타나지 않으므로 셸에게 띄워 달라고 한다.
+        focusDesktopWindow();
         try {
           window.focus();
         } catch {

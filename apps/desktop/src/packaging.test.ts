@@ -1,7 +1,7 @@
 import { readdirSync, readFileSync } from 'node:fs';
 import path from 'node:path';
 import { describe, expect, it } from 'vitest';
-import { DEEP_LINK_SCHEME } from './shell';
+import { APP_USER_MODEL_ID, DEEP_LINK_SCHEME } from './shell';
 
 const root = path.join(__dirname, '..');
 const config = readFileSync(path.join(root, 'electron-builder.yml'), 'utf8');
@@ -83,6 +83,29 @@ describe('설치 파일 계약', () => {
     // 인증서를 넣으면 우리 서명이 남아 Store 정체성과 어긋난다 — 그 잡에는
     // CSC_LINK가 없어야 한다(자동 탐색도 끈 채다).
     expect(wf).not.toContain('CSC_LINK:');
+  });
+
+  it('AUMID가 appId와 같다 — 다르면 Windows 알림이 뜨지 않는다', () => {
+    // `app.setAppUserModelId`에 넘기는 값이 설치본의 `appId`와 다르면 Windows가
+    // 토스트를 우리 앱의 것으로 묶지 못한다(아예 안 뜨거나 `electron.app.Geurio`로
+    // 뜬다). **창을 닫아도 알림을 받는 것**이 4단계의 전부라 이 한 줄이 기능의
+    // 전제이고, 틀려도 빌드는 초록이라 여기서 고정한다.
+    const m = /^appId:\s*(\S+)/m.exec(config);
+    expect(m?.[1]).toBe(APP_USER_MODEL_ID);
+  });
+
+  it('트레이 아이콘이 앱에 담기는 자리에 있다', () => {
+    // `build/`는 electron-builder가 쓰는 **재료**일 뿐 앱 안에 담기지 않는다 —
+    // 트레이 아이콘을 거기 두면 개발 실행에서는 보이고 **설치본에서만** 사라진다
+    // (그러면 `canStayInBackground`가 거짓이 되어 상주 기능이 통째로 없어진다).
+    expect(config).toMatch(/^\s*-\s*resources\/\*\*\/\*/m);
+    const dir = path.join(root, 'resources');
+    for (const [name, size] of [
+      ['tray.png', 16],
+      ['tray@2x.png', 32],
+    ] as Array<[string, number]>) {
+      expect(pngSize(path.join(dir, name)), name).toEqual({ width: size, height: size });
+    }
   });
 
   it('발행자와 정체성이 설정에 있다 — 개발 인증서 스크립트가 여기서 읽는다', () => {

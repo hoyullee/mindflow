@@ -12,10 +12,30 @@
 //      `resources/offline.html`이 사유와 다시 시도를 안내한다.
 import { readFileSync, writeFileSync, mkdirSync } from 'node:fs';
 import path from 'node:path';
-import { app, BrowserWindow, ipcMain, Menu, screen, shell, type MenuItemConstructorOptions, type Rectangle } from 'electron';
 import {
+  app,
+  BrowserWindow,
+  ipcMain,
+  Menu,
+  nativeImage,
+  Notification,
+  screen,
+  shell,
+  Tray,
+  type MenuItemConstructorOptions,
+  type Rectangle,
+} from 'electron';
+import {
+  APP_USER_MODEL_ID,
   appMenuSpec,
+  canStayInBackground,
   clampBounds,
+  closeNoticeBody,
+  coerceShellPrefs,
+  HIDDEN_FLAG,
+  shouldStartHidden,
+  supportsOpenAtLogin,
+  usesTray,
   DEEP_LINK_SCHEME,
   isHexColor,
   TITLEBAR_HEIGHT,
@@ -32,8 +52,10 @@ import {
   MIN_HEIGHT,
   MIN_WIDTH,
   originOf,
+  type BackgroundState,
   type Bounds,
   type KeyInput,
+  type ShellPrefs,
 } from './shell';
 
 const APP_URL = process.env.GEURIO_APP_URL || DEFAULT_APP_URL;
@@ -59,6 +81,14 @@ const DEVTOOLS_ENABLED = !app.isPackaged || process.env.GEURIO_DEVTOOLS === '1';
 let mainWindow: BrowserWindow | null = null;
 /** 앱이 뜨기 전에 도착한 딥링크 — 렌더러가 붙으면 넘겨준다. */
 let pendingDeepLink: string | null = null;
+/** 트레이 아이콘. `null`이면 만들지 못했거나 두지 않는 플랫폼(macOS)이다. */
+let tray: Tray | null = null;
+/** 진짜 종료 중인가 — 닫기를 숨기기로 바꾸는 규칙이 종료까지 막으면 안 된다. */
+let quitting = false;
+let prefs: ShellPrefs = coerceShellPrefs(null);
+
+/** 로그인 자동 실행에 함께 등록하는 인자 — 넣을 때와 읽을 때가 같아야 한다. */
+const LOGIN_ARGS = [HIDDEN_FLAG];
 
 /* ────────────────────────────── 창 크기 기억 ────────────────────────────── */
 
@@ -90,9 +120,119 @@ function saveBounds(win: BrowserWindow): void {
   }
 }
 
+/* ───────────────────── 셸이 기억하는 설정(상주) ───────────────────── */
+
+function prefsFile(): string {
+  return path.join(app.getPath('userData'), 'settings.json');
+}
+
+function readPrefs(): ShellPrefs {
+  try {
+    return coerceShellPrefs(JSON.parse(readFileSync(prefsFile(), 'utf8')));
+  } catch {
+    return coerceShellPrefs(null);
+  }
+}
+
+function writePrefs(next: ShellPrefs): void {
+  prefs = next;
+  try {
+    mkdirSync(app.getPath('userData'), { recursive: true });
+    writeFileSync(prefsFile(), JSON.stringify(next), 'utf8');
+  } catch {
+    // 저장이 막혀도 이번 실행에서는 위 대입으로 그대로 동작한다.
+  }
+}
+
+/* ───────────────────────── 트레이 상주(4단계) ───────────────────────── */
+
+/**
+ * 숨어 있던 창을 되찾는다 — 트레이 클릭·트레이 메뉴·독 아이콘(`activate`)·딥링크·
+ * 알림 클릭이 **모두 이 함수 하나**를 지난다(되찾는 길이 갈리면 한쪽만 고쳐진다).
+ */
+function showWindow(): void {
+  if (!mainWindow || mainWindow.isDestroyed()) {
+    mainWindow = createWindow(false);
+    return;
+  }
+  if (mainWindow.isMinimized()) mainWindow.restore();
+  if (!mainWindow.isVisible()) mainWindow.show();
+  mainWindow.focus();
+}
+
+/**
+ * 트레이 아이콘. **상주 설정과 무관하게 앱이 떠 있는 동안 늘 둔다** — 설정을 끈
+ * 상태에서 아이콘까지 없애면 `canStayInBackground`가 거짓이 되어 설정 화면의 그
+ * 자리가 통째로 사라지고, 다시 켤 길이 없어진다. 아이콘이 하는 말("실행 중이고
+ * 누르면 창이 온다")은 설정과 상관없이 언제나 참이다.
+ *
+ * 만들지 못할 수 있다(트레이가 없는 리눅스 데스크톱) — 그때는 `null`로 남고
+ * 상주 자체를 포기한다(숨겼는데 되돌아올 길이 없는 쪽이 훨씬 나쁘다).
+ */
+function createTray(): void {
+  if (tray || !usesTray(process.platform)) return;
+  try {
+    const icon = nativeImage.createFromPath(path.join(__dirname, '..', 'resources', 'tray.png'));
+    // 파일이 없으면 빈 이미지가 온다 — 보이지 않는 아이콘을 두지 않는다.
+    if (icon.isEmpty()) return;
+    const t = new Tray(icon);
+    t.setToolTip('Geurio');
+    t.setContextMenu(
+      Menu.buildFromTemplate([
+        { label: 'Geurio 열기', click: () => showWindow() },
+        { type: 'separator' },
+        { label: '종료', click: () => app.quit() },
+      ]),
+    );
+    // 왼쪽 클릭은 **열기**다(토글이 아니라) — 트레이를 누르는 손은 창을 찾는 손이다.
+    t.on('click', () => showWindow());
+    tray = t;
+  } catch {
+    // 트레이가 없는 환경 — 앱은 그대로 돈다(상주만 못 한다).
+  }
+}
+
+/** 지금 창을 닫으면 숨길까(=상주할까). 설정이 켜져 있고 되돌아올 길이 있을 때만. */
+function backgroundActive(): boolean {
+  return prefs.background && canStayInBackground(process.platform, tray !== null);
+}
+
+/**
+ * 처음 숨길 때 **한 번** 알린다 — 닫았는데 앱이 살아 있는 것은 말해 주지 않으면
+ * 고장으로 읽힌다(사용자는 종료한 줄 안다). 끄는 길까지 함께 말한다.
+ */
+function noticeCloseOnce(): void {
+  if (prefs.closeNoticeShown || !Notification.isSupported()) return;
+  try {
+    const n = new Notification({ title: 'Geurio는 계속 실행돼요', body: closeNoticeBody(process.platform) });
+    n.on('click', () => showWindow());
+    n.show();
+    // **실제로 알린 뒤에만** 표시를 남긴다 — 띄우지 못했는데 "알렸다"고 적으면
+    // 사용자는 앱이 어디로 갔는지 영영 듣지 못한다.
+    writePrefs({ ...prefs, closeNoticeShown: true });
+  } catch {
+    // 알림 하나 때문에 앱이 죽을 이유가 없다.
+  }
+}
+
+/** 렌더러(설정 화면)가 보는 상태 — **OS에서 읽어** 돌려준다(사본을 들지 않는다). */
+function backgroundState(): BackgroundState {
+  const supported = canStayInBackground(process.platform, tray !== null);
+  const loginSupported = supportsOpenAtLogin(process.platform);
+  let openAtLogin = false;
+  if (loginSupported) {
+    try {
+      openAtLogin = app.getLoginItemSettings({ args: LOGIN_ARGS }).openAtLogin;
+    } catch {
+      openAtLogin = false;
+    }
+  }
+  return { supported, enabled: supported && prefs.background, loginSupported, openAtLogin };
+}
+
 /* ─────────────────────────────── 창 만들기 ─────────────────────────────── */
 
-function createWindow(): BrowserWindow {
+function createWindow(startHidden: boolean): BrowserWindow {
   const saved = readSavedBounds();
   const display = saved && typeof saved.x === 'number' && typeof saved.y === 'number'
     ? screen.getDisplayNearestPoint({ x: saved.x, y: saved.y })
@@ -156,7 +296,12 @@ function createWindow(): BrowserWindow {
     if (isBrowserShortcut(key)) event.preventDefault();
   });
 
-  win.once('ready-to-show', () => win.show());
+  // 로그인 자동 실행으로 깨어난 경우에는 **띄우지 않는다** — 창은 만들어져
+  // 렌더러(=알림 스케줄러)가 돌지만 화면에는 나타나지 않는다. 컴퓨터를 켤 때마다
+  // 창이 튀어나오면 상주가 아니라 방해다.
+  win.once('ready-to-show', () => {
+    if (!startHidden) win.show();
+  });
 
   // 창 크기 기억: resize/move는 드래그 중 수십 번 오므로 끝난 뒤에만 쓴다.
   let saveTimer: NodeJS.Timeout | null = null;
@@ -166,7 +311,17 @@ function createWindow(): BrowserWindow {
   };
   win.on('resize', scheduleSave);
   win.on('move', scheduleSave);
-  win.on('close', () => saveBounds(win));
+
+  // 닫기를 **숨기기**로 바꾼다(4단계) — 창을 파괴하면 렌더러가 사라져 그 순간
+  // 일정 알림도 멎는다. `quitting`이 아닌 이유로 닫히는 것만 가로챈다: 트레이의
+  // `종료`·⌘Q는 `before-quit`에서 그 깃발을 세우므로 여기를 그대로 지난다.
+  win.on('close', (event) => {
+    saveBounds(win);
+    if (quitting || !backgroundActive()) return;
+    event.preventDefault();
+    win.hide();
+    noticeCloseOnce();
+  });
 
   /* 외부 링크는 **시스템 브라우저**로 — 앱 창은 우리 출처만 띄운다(shell.ts). */
   win.webContents.setWindowOpenHandler(({ url }) => {
@@ -209,8 +364,9 @@ function handleDeepLink(url: string): void {
   // 우리 스킴이 아니면 버린다 — 렌더러에 아무 문자열이나 넘기지 않는다.
   if (!isDeepLink(url)) return;
   if (mainWindow && !mainWindow.isDestroyed()) {
-    if (mainWindow.isMinimized()) mainWindow.restore();
-    mainWindow.focus();
+    // 상주 중이면 창이 **숨어 있을 수 있다** — 로그인 핸드오프가 돌아오는 길이라
+    // 보이게 하는 것이 먼저다.
+    showWindow();
     mainWindow.webContents.send('geurio:deep-link', url);
     return;
   }
@@ -229,10 +385,8 @@ if (!app.requestSingleInstanceLock()) {
   app.on('second-instance', (_e, argv) => {
     const link = deepLinkFromArgv(argv);
     if (link) handleDeepLink(link);
-    else if (mainWindow && !mainWindow.isDestroyed()) {
-      if (mainWindow.isMinimized()) mainWindow.restore();
-      mainWindow.focus();
-    }
+    // 두 번째 실행은 곧 "앱을 한 번 더 눌렀다"다 — 숨어 있던 창을 되찾아 준다.
+    else showWindow();
   });
 
   // macOS는 실행 중인 앱에 이벤트로 넘긴다.
@@ -241,7 +395,17 @@ if (!app.requestSingleInstanceLock()) {
     handleDeepLink(url);
   });
 
+  // 종료가 시작되면 닫기-숨기기 규칙을 푼다 — 그러지 않으면 앱을 끌 수 없다.
+  app.on('before-quit', () => {
+    quitting = true;
+  });
+
   app.whenReady().then(() => {
+    // Windows가 우리 알림·작업 표시줄 묶음을 알아보는 이름. **알림이 이 단계의
+    // 전부**라 여기서 세운다(없으면 토스트가 아예 뜨지 않거나 남의 이름으로 뜬다).
+    app.setAppUserModelId(APP_USER_MODEL_ID);
+    prefs = readPrefs();
+
     // 커스텀 프로토콜 등록. 개발 중(`electron .`)에는 실행 파일이 electron
     // 자신이라 인자를 함께 등록해야 OS가 우리 앱을 되찾을 수 있다.
     //
@@ -280,6 +444,36 @@ if (!app.requestSingleInstanceLock()) {
       }
     });
 
+    // ── 상주 설정(4단계) — 읽기·쓰기 모두 **지금 상태를 돌려준다** ─────────
+    ipcMain.handle('geurio:background-state', () => backgroundState());
+
+    ipcMain.handle('geurio:set-background', (_e, on: unknown) => {
+      if (typeof on !== 'boolean') return backgroundState();
+      writePrefs({ ...prefs, background: on });
+      return backgroundState();
+    });
+
+    ipcMain.handle('geurio:set-open-at-login', (_e, on: unknown) => {
+      if (typeof on !== 'boolean' || !supportsOpenAtLogin(process.platform)) return backgroundState();
+      try {
+        // 자동 실행은 **창 없이** 시작한다(`--hidden`) — 컴퓨터를 켤 때마다 창이
+        // 튀어나오면 상주가 아니라 방해다. 상주할 수 없는 환경이면 그 인자가
+        // 있어도 창을 띄운다(`shouldStartHidden`).
+        app.setLoginItemSettings({ openAtLogin: on, args: LOGIN_ARGS });
+      } catch {
+        // MSIX 컨테이너처럼 받아들이지 않는 환경이 있다 — 아래에서 **다시 읽어**
+        // 돌려주므로 화면은 언제나 실제 상태를 보여 준다(거짓말을 하지 않는다).
+      }
+      return backgroundState();
+    });
+
+    // 알림을 눌러 앱으로 돌아오는 길 — 숨어 있던 창은 렌더러의 `window.focus()`로는
+    // 나타나지 않는다(창이 아예 감춰져 있다).
+    ipcMain.handle('geurio:focus-window', () => {
+      showWindow();
+      return true;
+    });
+
     ipcMain.handle('geurio:pending-deep-link', () => {
       const link = pendingDeepLink;
       pendingDeepLink = null;
@@ -295,11 +489,28 @@ if (!app.requestSingleInstanceLock()) {
     // 첫 실행이 딥링크로 시작된 경우(Windows·Linux).
     pendingDeepLink = deepLinkFromArgv(process.argv);
 
-    mainWindow = createWindow();
+    createTray();
+
+    // 로그인 자동 실행으로 깨어났으면 창 없이 시작한다 — macOS는 `wasOpenedAtLogin`,
+    // Windows는 우리가 등록해 둔 `--hidden` 인자가 그 신호다.
+    let openedAtLogin = false;
+    try {
+      openedAtLogin = app.getLoginItemSettings({ args: LOGIN_ARGS }).wasOpenedAtLogin === true;
+    } catch {
+      openedAtLogin = false;
+    }
+    const hidden = shouldStartHidden(
+      process.argv,
+      openedAtLogin,
+      canStayInBackground(process.platform, tray !== null),
+    );
+
+    mainWindow = createWindow(hidden);
 
     app.on('activate', () => {
-      // macOS: 독 아이콘을 눌렀을 때 창이 하나도 없으면 다시 만든다.
-      if (BrowserWindow.getAllWindows().length === 0) mainWindow = createWindow();
+      // macOS: 독 아이콘을 눌렀을 때. 창이 숨어 있으면 되살리고, 아예 없으면 만든다
+      // (상주 중에는 **숨어 있는** 쪽이라 개수만 보면 아무 일도 하지 않는다).
+      showWindow();
     });
   });
 
