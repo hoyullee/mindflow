@@ -1035,7 +1035,7 @@ describe('구글 캘린더 겹치기(PR5)', () => {
     expect(document.querySelector('[data-google-fields]')).toBeNull();
     expect(document.querySelector('[data-new-google-col]')).toBeNull();
     expect(document.querySelector('[data-recurrence]')).toBeTruthy();
-    // 알림도 늘 보인다(요청 #5) — 다만 Geurio에는 알림을 띄울 장치가 없어 비활성 표식이다.
+    // 알림도 늘 보인다(요청 #5) — 다만 지금은 **종일**이라 비활성 표식이다(아래 참고).
     expect(document.querySelector('[data-gf-remind-off]')).toBeTruthy();
     expect(document.querySelector('[data-gf-remind]')).toBeNull();
 
@@ -1056,7 +1056,15 @@ describe('구글 캘린더 겹치기(PR5)', () => {
     for (const sel of ['[data-gf-meet]', '[data-gf-guest-input]', '[data-gf-vis]', '[data-gf-busy]']) {
       expect(fields.querySelector(sel)).toBeTruthy();
     }
-    // 알림은 **왼쪽 열**에 남아 고칠 수 있게 된다(요청 #5) — 오른쪽 열이 아니다.
+    // 구글 목적지라도 **종일이면 여전히 비활성**이다(제보) — 그리오와 같은 규칙이고
+    // 사유만 갈린다(그 설정은 구글 캘린더가 맡는다).
+    expect(document.querySelector('[data-gf-remind-off]')).toBeTruthy();
+    expect(document.querySelector('[data-gf-remind]')).toBeNull();
+    expect(document.querySelector('[data-new-main]')!.textContent).toContain('종일 일정의 알림은 Google 캘린더에서 설정할 수 있어요');
+
+    // 시각 일정으로 바꾸면 고를 수 있게 되고, 그 자리는 **왼쪽 열**이다(요청 #5).
+    await user.click(document.querySelector<HTMLElement>('[data-new-allday]')!);
+    await waitFor(() => expect(document.querySelector('[data-gf-remind]')).toBeTruthy());
     expect(col!.querySelector('[data-gf-remind]')).toBeNull();
     expect(document.querySelector('[data-new-main]')!.querySelector('[data-gf-remind]')).toBeTruthy();
     expect(document.querySelector('[data-gf-remind-off]')).toBeNull();
@@ -1910,6 +1918,10 @@ describe('구글 캘린더 겹치기(PR5)', () => {
     await waitFor(() => expect(document.querySelector('[data-gf-guest-input]')).toBeTruthy());
 
     await user.type(screen.getByLabelText('참석자 이름 또는 이메일'), 'a@b.com{Enter}');
+    // 알림은 **시각 일정에서만** 고를 수 있다(제보) — 종일이면 목적지를 가리지 않고
+    // 비활성이다(`ReminderField` 주석: 우리 칩은 전부 "N분 전"이고 종일의 기준은 자정).
+    await user.click(document.querySelector<HTMLElement>('[data-new-allday]')!);
+    await waitFor(() => expect(document.querySelector('[data-gf-remind="10"]')).toBeTruthy());
     await user.click(document.querySelector<HTMLElement>('[data-gf-remind="10"]')!);
     await user.click(document.querySelector<HTMLElement>('[data-gf-vis="private"]')!);
     // 반복은 왼쪽 열의 프리셋 다섯 칸에서 고른다(`매주` = FREQ=WEEKLY).
@@ -2224,6 +2236,58 @@ describe('구글 캘린더 겹치기(PR5)', () => {
     expect(side.querySelector('[data-gf-remind]')).toBeNull();
     // 열이 붙으면 카드가 넓어진다(새 일정 팝업과 같은 900px).
     expect((document.querySelector('[data-event-detail]') as HTMLElement).style.width).toBe('900px');
+  });
+
+  it('구글 종일 일정도 알림을 못 고친다 — 이미 걸린 값은 그대로 보여 준다(제보)', async () => {
+    seed({ calendars: ['me@example.com'] });
+    seedToken();
+    stubGis();
+    stubFetch();
+    clientId = 'test-client.apps.googleusercontent.com';
+    // 종일 + 이미 10분 전 알림이 걸려 있다(구글 UI에서 걸어 둔 값).
+    const day = inMonth(2);
+    const base = globalThis.fetch as unknown as (u: string, i?: RequestInit) => Promise<Response>;
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (url: string, init?: RequestInit) => {
+        if (String(url).includes('/events?') && String(url).includes(encodeURIComponent('me@example.com'))) {
+          return {
+            ok: true,
+            status: 200,
+            json: async () => ({
+              items: [
+                {
+                  id: 'ga',
+                  summary: '종일 워크숍',
+                  start: { date: day },
+                  end: { date: nextDay(day) },
+                  reminders: { useDefault: false, overrides: [{ method: 'popup', minutes: 10 }] },
+                },
+              ],
+            }),
+          } as unknown as Response;
+        }
+        return base(url, init);
+      }),
+    );
+
+    const user = userEvent.setup();
+    const { container } = renderHome();
+    await openCalendar(container, user);
+    await waitFor(() => expect(screen.getAllByText(/종일 워크숍/).length).toBeGreaterThan(0));
+    await user.click(screen.getAllByText(/종일 워크숍/)[0]!);
+    await waitFor(() => expect(document.querySelector('[data-event-main]')).toBeTruthy());
+
+    // 그리오와 **같은 규칙**: 종일이면 못 고른다(우리 칩은 전부 "N분 전"인데 종일의
+    // 기준은 자정이라, 고를 수 있게 두면 고른 것과 뜨는 것이 다르다).
+    expect(document.querySelector('[data-gf-remind]')).toBeNull();
+    const off = document.querySelector('[data-gf-remind-off]') as HTMLElement;
+    expect(off).toBeTruthy();
+    expect(document.querySelector('[data-event-main]')!.textContent).toContain('종일 일정의 알림은 Google 캘린더에서 설정할 수 있어요');
+    // **이미 걸린 값을 그대로 보여 준다** — `기본`을 굵게 하면 구글에 걸어 둔 알림이
+    // 없는 것처럼 읽힌다(지우지도 않는다: 구글 캘린더에서 계속 고칠 수 있다).
+    const bold = [...off.querySelectorAll<HTMLElement>('span')].filter((c) => c.style.fontWeight === '800').map((c) => c.textContent);
+    expect(bold).toEqual(['10분 전']);
   });
 
   it('이미 등록된 구글 일정에서도 Meet를 켜고 끈다(요청 ④)', async () => {

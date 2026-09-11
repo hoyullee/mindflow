@@ -7,18 +7,27 @@ import { useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { focusCalendar } from '../home/calendarFocus';
 import { showOsNotification } from './reminderPrefs';
-import { reminderBody, type ReminderItem } from './reminders';
+import { isGoogleReminder, reminderBody, type ReminderItem } from './reminders';
 import { ReminderToast } from './ReminderToast';
 import { useReminderScheduler } from './useReminderScheduler';
 
 export function ReminderHost() {
   const navigate = useNavigate();
 
-  /** 일정 화면으로 — 홈이 떠 있으면 그 자리에서 바뀌고, 에디터에서면 홈으로 간다. */
-  const openCalendar = useCallback(() => {
-    focusCalendar();
-    navigate('/home');
-  }, [navigate]);
+  /**
+   * **그 일정을 보여 준다** — 홈이 떠 있으면 그 자리에서, 에디터에서면 홈으로 가서.
+   *
+   * 알림이 가리키는 것은 화면이 아니라 **한 일정**이다. 그래서 회차가 놓인 날까지
+   * 함께 넘긴다 — 화면만 바꾸면 이미 일정 화면이던 사람에게는 아무 일도 일어나지
+   * 않고(제보), 다른 달을 보던 사람에게는 그 일정이 보이지 않는다.
+   */
+  const openCalendar = useCallback(
+    (item?: ReminderItem) => {
+      focusCalendar(item ? { date: item.date, eventId: item.eventId, source: isGoogleReminder(item) ? 'google' : 'geurio' } : undefined);
+      navigate('/home');
+    },
+    [navigate],
+  );
 
   const onFire = useCallback(
     (item: ReminderItem) => {
@@ -31,7 +40,7 @@ export function ReminderHost() {
         title: item.title,
         body: reminderBody(item),
         tag: item.key,
-        onClick: openCalendar,
+        onClick: () => openCalendar(item),
       });
     },
     [openCalendar],
@@ -46,7 +55,7 @@ export function ReminderHost() {
       rest={rest}
       onOpen={() => {
         dismiss();
-        openCalendar();
+        openCalendar(current);
       }}
       onDismiss={dismiss}
     />

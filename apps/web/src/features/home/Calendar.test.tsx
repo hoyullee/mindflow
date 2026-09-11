@@ -16,6 +16,7 @@ import { LocalEventStore } from '../../adapters/local/localEventStore';
 import { LocalImageStore } from '../../adapters/local/localImageStore';
 import type { Backend, DocMeta, DocStore, LoadedDoc } from '../../adapters/ports';
 import { ACTIVE_VIEW_KEY } from './storage';
+import { focusCalendar } from './calendarFocus';
 import { addDays, daysBetween, isoOf, todayISO } from './calendar/model';
 import { tagColor } from '../editor/kanbanMeta';
 import { UI_THEME } from '../editor/theme';
@@ -1328,6 +1329,35 @@ describe('일정 화면', () => {
       fireEvent.click(document.querySelector('[data-new-submit]')!);
       await waitFor(() => expect(events()).toHaveLength(1));
       expect(events()[0]).toMatchObject({ title: '팀 회의', allDay: false, reminderMinutes: 10 });
+    });
+
+    it('알림의 `일정 보기`는 **그 일정**을 보여 준다 — 이미 일정 화면이어도(제보)', async () => {
+      renderHome([META('d1', '스프린트 보드')], BODIES());
+      const day = todayISO();
+      localStorage.setItem(
+        'mf_events',
+        JSON.stringify([{ id: 'e1', title: '팀 회의', startDate: day, endDate: day, allDay: false, startTime: '10:30', endTime: '11:30', reminderMinutes: 10 }]),
+      );
+      await openCalendar();
+      // 이미 일정 화면이고 아무 날도 고르지 않았다 — 예전에는 이 상태에서 알림의
+      // `일정 보기`를 눌러도 화면만 "일정"으로 바뀌어(이미 그 화면이다) 아무 일도
+      // 일어나지 않았다.
+      expect(document.querySelector('[data-calendar-view]')).toBeTruthy();
+      expect(document.querySelector('[data-day-num][data-selected]')).toBeNull();
+      expect(evDetail()).toBeNull();
+
+      // 토스트·OS 알림이 지나는 그 길(`ReminderHost` → `focusCalendar`).
+      await act(async () => {
+        focusCalendar({ date: day, eventId: 'e1', source: 'geurio' });
+      });
+
+      // 그 회차가 놓인 달로 돌아오고, 그 날이 골라지고, 그 일정의 상세가 뜬다.
+      await waitFor(() => expect(evDetail()).toBeTruthy());
+      expect(document.querySelector(`[data-day-cell="${day}"]`)).toBeTruthy();
+      expect(document.querySelector(`[data-day-cell="${day}"] [data-day-num][data-selected]`)).toBeTruthy();
+      // 고른 날은 하나뿐이다.
+      expect(document.querySelectorAll('[data-day-num][data-selected]').length).toBe(1);
+      expect((document.querySelector('[data-event-title]') as HTMLInputElement).value).toBe('팀 회의');
     });
 
     it('상세에서 알림을 바꾸면 완료가 함께 저장하고, `없음`은 끈 것으로 저장된다', async () => {

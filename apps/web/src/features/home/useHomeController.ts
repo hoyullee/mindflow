@@ -10,7 +10,7 @@ import { exportDocSvg } from '../editor/svg';
 import { exportDocPdf } from '../editor/pdf';
 import { themeOf } from '../editor/theme';
 import { applyHomeTheme, homeThemeKeyOf, saveHomeThemeCache, type HomeThemeKey } from './theme';
-import { addMonth, todayISO } from './calendar/model';
+import { addMonth, partsOf, todayISO } from './calendar/model';
 import { useLiveRefresh } from './calendar/useLiveRefresh';
 import { coerceExtraCalendars, holidayCountryOf } from './calendar/googleCalendar';
 import { DASH_CAP, DASH_DEFAULT_SIZE, coerceDashboards, isCalItem, moveInList, type DashboardData, type DashboardItemData } from './dashboard/model';
@@ -73,7 +73,7 @@ import {
   writeSavedAvatar,
   writeSavedProfileName,
 } from './storage';
-import { onCalendarFocus } from './calendarFocus';
+import { onCalendarFocus, takeCalendarFocus, type CalendarFocus } from './calendarFocus';
 import { FOLDER_CARD_PREFIX, recentTrayDocIds } from './viewModel';
 
 /**
@@ -1284,13 +1284,47 @@ export function useHomeController() {
   // 자연스럽다(달을 되돌리는 것은 '오늘' 버튼의 일이다).
   /** LNB `일정` — 대시보드를 닫고 일정 화면을 연다. 검색 중이었다면 함께 비운다. */
   const openCalendar = () => patch({ activeCal: true, activeDash: null, dashReorder: false, dashEdit: false, search: '', searchInput: '' });
-  // 홈 **밖**에서 온 요청(일정 알림 토스트·OS 알림)도 같은 함수를 지난다 — 홈이 이미
-  // 떠 있으면 라우터로 `/home`에 가도 다시 마운트되지 않으므로 이 구독이 그 자리에서
-  // 화면을 바꾼다(`features/home/calendarFocus.ts`). 최신 함수를 ref로 읽는다 —
-  // 렌더마다 새 함수라 의존성에 넣으면 구독이 매번 다시 붙는다.
-  const openCalendarRef = useRef(openCalendar);
-  openCalendarRef.current = openCalendar;
-  useEffect(() => onCalendarFocus(() => openCalendarRef.current()), []);
+  /**
+   * 홈 **밖**에서 온 요청(일정 알림 토스트·OS 알림). 화면만 바꾸면 부족하다 —
+   * 이미 일정 화면이었으면 아무 일도 일어나지 않고(제보: "반응이 없어"), 다른 달을
+   * 보던 중이었으면 정작 그 일정이 화면에 없다. 그래서 **그 회차가 놓인 날**로 달을
+   * 옮기고 그 날을 골라 사이드를 펴고, 그 일정의 상세까지 연다.
+   *
+   * 상세는 원천마다 다른 상태에 담긴다 — 지금 목록에 없으면 두 호스트 모두 조용히
+   * 아무것도 그리지 않다가 도착하면 뜬다(팝업을 여는 순간 조회를 기다릴 이유가 없다).
+   */
+  const showCalendarFocus = (focus: CalendarFocus | null) => {
+    const base = { activeCal: true, activeDash: null, dashReorder: false, dashEdit: false, search: '', searchInput: '' };
+    if (!focus) {
+      patch(base);
+      return;
+    }
+    const at = partsOf(focus.date);
+    const google = focus.source === 'google';
+    patch({
+      ...base,
+      ...(at ? { calY: at.y, calM: at.m } : {}),
+      calDay: focus.date,
+      calSide: 'day',
+      // 회차는 늘 실어 준다 — 반복 일정의 삭제 범위 기준이고, 반복이 아닌 일정에서는
+      // `EventDetail`이 `event.recurrence`로 게이트하므로 무해하다.
+      calEventDetail: !google && focus.eventId ? `${focus.eventId}#${focus.date}` : null,
+      calGoogleDetail: google ? (focus.eventId ?? null) : null,
+    });
+  };
+  // 홈이 이미 떠 있으면 라우터로 `/home`에 가도 다시 마운트되지 않으므로 이 구독이
+  // 그 자리에서 화면을 바꾼다(`features/home/calendarFocus.ts`). 최신 함수를 ref로
+  // 읽는다 — 렌더마다 새 함수라 의존성에 넣으면 구독이 매번 다시 붙는다.
+  const showCalendarFocusRef = useRef(showCalendarFocus);
+  showCalendarFocusRef.current = showCalendarFocus;
+  useEffect(() => onCalendarFocus(() => showCalendarFocusRef.current(takeCalendarFocus())), []);
+  // 에디터에서 온 경우엔 홈이 **새로 마운트**되므로 구독이 늦다 — 아직 아무도 받아
+  // 가지 않은 요청을 여기서 가져간다(없으면 아무 일도 하지 않는다). 화면 자체는
+  // 이 탭이 기억한 `activeCal`이 이미 세워 준다.
+  useEffect(() => {
+    const focus = takeCalendarFocus();
+    if (focus) showCalendarFocusRef.current(focus);
+  }, []);
   const calShiftMonth = (delta: number) => {
     const { y, m } = addMonth(state.calY, state.calM, delta);
     patch({ calY: y, calM: m });

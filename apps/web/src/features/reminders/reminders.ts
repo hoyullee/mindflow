@@ -129,6 +129,17 @@ export interface GoogleReminderSource {
  * 빼는 것 넷: 종일(자정 기준이라 뜻이 어긋난다)·공휴일·근무 위치(회의가 아니다)·
  * **내가 거절한 회의**(구글도 알리지 않는다).
  */
+/** 구글에서 온 알림의 키 접두 — 저장소의 기록만 봐도 출처가 읽힌다. */
+const GOOGLE_KEY_PREFIX = 'g:';
+
+/**
+ * 이 알림이 **구글 일정**에서 왔는가 — 상세 팝업이 두 원천으로 갈리므로
+ * (`calEventDetail` vs `calGoogleDetail`) 호출부가 이것으로 고른다.
+ */
+export function isGoogleReminder(item: Pick<ReminderItem, 'key'>): boolean {
+  return item.key.startsWith(GOOGLE_KEY_PREFIX);
+}
+
 export function googleReminderItems(
   events: readonly GoogleReminderSource[],
   defaults: ReadonlyMap<string, number>,
@@ -145,8 +156,10 @@ export function googleReminderItems(
     if (startAt === null) continue;
     out.push({
       // 구글 id에는 이미 캘린더가 붙어 있어 우리 일정과 겹칠 일이 없지만, 저장소에
-      // 남는 키라 어디서 온 것인지 읽히게 접두를 둔다.
-      key: `g:${e.id}#${e.startDate}`,
+      // 남는 키라 어디서 온 것인지 읽히게 접두를 둔다 — 그 접두가 곧 출처이므로
+      // `isGoogleReminder`가 그것으로 되읽는다(값을 따로 싣지 않는다: 이미 예약된
+      // 네이티브 알림의 payload가 필드 하나 때문에 못 읽히면 그 알림이 사라진다).
+      key: `${GOOGLE_KEY_PREFIX}${e.id}#${e.startDate}`,
       eventId: e.id,
       title: e.title || '(제목 없음)',
       date: e.startDate,

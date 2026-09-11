@@ -190,8 +190,10 @@ export function NewEventModal({
         ...(rule ? { recurrence: rule } : {}),
         // 알림(0038) — 목적지가 Geurio면 이 값이 곧 우리 표에 저장된다. 구글로 가면
         // `inputToGoogleDraft`가 `fields.reminderMinutes`를 따로 실으므로 쓰이지 않는다.
-        // 종일 일정에서는 정규화가 지운다(자정 10분 전은 뜻이 어긋난다).
-        ...(typeof gf.reminderMinutes === 'number' ? { reminderMinutes: gf.reminderMinutes } : {}),
+        // 종일이면 **여기서 지운다**: 화면이 못 고르게 막아 둔 값을 그대로 실어 보내면
+        // 고른 적 없는 알림이 저장된다(시각으로 고른 뒤 종일로 바꾼 경우). 구글 쪽은
+        // `inputToGoogleDraft`가 같은 규칙으로 막고, Geurio는 정규화가 한 번 더 막는다.
+        ...(!allDay && typeof gf.reminderMinutes === 'number' ? { reminderMinutes: gf.reminderMinutes } : {}),
       },
       target,
     );
@@ -399,14 +401,14 @@ export function NewEventModal({
           )}
 
           {/* 알림 — **늘 보인다**(요청 #5). 두 목적지가 다른 것을 한다: 구글은 구글이
-              보내고, Geurio는 우리 앱·OS 알림이 띄운다(0038). 비활성은 이제 "우리가
-              못 하는 일"인 **종일 일정**뿐이다. */}
+              보내고, Geurio는 우리 앱·OS 알림이 띄운다(0038). 비활성은 "우리가 못 하는
+              일"인 **종일 일정**뿐이고, 그건 목적지를 가리지 않는다(제보) — 이유는
+              `ReminderField` 주석. */}
           <ReminderField
             value={gf.reminderMinutes}
             onChange={(m) => setGf((v) => ({ ...v, reminderMinutes: m }))}
             kind={target.kind === 'geurio' ? 'geurio' : 'google'}
-            disabled={target.kind === 'geurio' && allDay}
-            disabledNote="종일 일정에는 알림을 걸 수 없어요"
+            disabled={allDay}
           />
 
           <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
