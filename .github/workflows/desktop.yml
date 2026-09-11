@@ -13,6 +13,12 @@ name: Desktop installers
 # 띄우므로 설치 파일에 웹 산출물이 들어가지 않는다(apps/desktop/src/main.ts).
 on:
   workflow_dispatch:
+    inputs:
+      targets:
+        description: '만들 설치 파일'
+        type: choice
+        default: all
+        options: [all, windows, macos, store]
   # 태그를 밀면 함께 돈다(예: desktop-v0.1.0) — 릴리스에 붙일 산출물을 만드는 자리.
   push:
     tags: ['desktop-v*']
@@ -22,31 +28,44 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  build:
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          - os: windows-latest
-            target: pack:win
-            artifact: windows
-            glob: |
-              apps/desktop/release/*.exe
-          - os: macos-latest
-            target: pack:mac
-            artifact: macos
-            glob: |
-              apps/desktop/release/*.dmg
+  # 어느 설치 파일을 만들지 먼저 고른다. **matrix를 잡 밖에서 정하는 이유**는
+  # 고르지 않은 플랫폼의 잡이 아예 생기지 않아야 하기 때문이다 — 잡 수준 `if`는
+  # `matrix`를 볼 수 없고(GitHub 컨텍스트 제약), 스텝마다 건너뛰면 러너는 그대로
+  # 뜬다. macOS 러너는 분당 과금이 ubuntu의 10배라 "Windows 하나만" 같은 흔한
+  # 경우에 mac 러너를 태울 이유가 없다.
+  plan:
+    runs-on: ubuntu-latest
+    outputs:
+      matrix: ${{ steps.pick.outputs.matrix }}
+    steps:
+      - id: pick
+        shell: bash
+        run: |
+          win='{"artifact":"windows","os":"windows-latest","target":"pack:win","glob":"apps/desktop/release/*.exe"}'
+          mac='{"artifact":"macos","os":"macos-latest","target":"pack:mac","glob":"apps/desktop/release/*.dmg"}'
           # Microsoft Store 채널(MSIX). **서명하지 않는다** — Store는 Microsoft가
           # 패키지에 서명하므로 우리 인증서를 넣으면 정체성이 어긋난다
           # (electron-builder는 인증서가 없으면 "AppX is not signed
           # (Windows Store only build)"로 넘어가고 설정된 `publisher`를 그대로 쓴다).
           # 제출 절차는 apps/desktop/STORE.md.
-          - os: windows-latest
-            target: pack:appx
-            artifact: store
-            glob: |
-              apps/desktop/release/*.appx
+          store='{"artifact":"store","os":"windows-latest","target":"pack:appx","glob":"apps/desktop/release/*.appx"}'
+          # 태그 푸시에는 입력이 없다 → 전부 만든다.
+          want='${{ inputs.targets }}'
+          [ -z "$want" ] && want=all
+          case "$want" in
+            windows) inc="[$win]" ;;
+            macos)   inc="[$mac]" ;;
+            store)   inc="[$store]" ;;
+            *)       inc="[$win,$mac,$store]" ;;
+          esac
+          echo "고른 대상: $want"
+          echo "matrix={\"include\":$inc}" >> "$GITHUB_OUTPUT"
+
+  build:
+    needs: plan
+    strategy:
+      fail-fast: false
+      matrix: ${{ fromJSON(needs.plan.outputs.matrix) }}
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v4
