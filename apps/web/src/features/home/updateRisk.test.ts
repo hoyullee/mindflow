@@ -3,14 +3,17 @@ import { initialHomeState } from './types';
 import { homeUpdateRisk } from './updateRisk';
 
 describe('homeUpdateRisk (홈에서 새 버전 자동 적용 판단)', () => {
-  it('가만히 목록만 보고 있으면 안전 — 리로드해도 같은 목록이 다시 그려진다', () => {
-    expect(homeUpdateRisk(initialHomeState())).toBe('safe');
+  it('가만히 목록만 보고 있으면 `defer` — 보고 있는 동안은 LNB 알림이 말하고, 탭을 떠나면 조용히 적용된다', () => {
+    // 리로드해도 같은 목록이 다시 그려지므로 `safe`로 둘 수도 있지만, 그러면 보고
+    // 있는 화면이 눈앞에서 갈아끼워져 **LNB의 새 버전 알림이 뜰 자리가 없다**(요청:
+    // 업데이트도 알림 창구 하나에서). 유휴 에디터와 같은 규칙이다.
+    expect(homeUpdateRisk(initialHomeState())).toBe('defer');
   });
 
   it('검색어로 목록을 좁혀 뒀으면 막는다', () => {
     expect(homeUpdateRisk({ ...initialHomeState(), search: '회의' })).toBe('block');
     // 공백만 친 건 좁힌 게 아니다
-    expect(homeUpdateRisk({ ...initialHomeState(), search: '   ' })).toBe('safe');
+    expect(homeUpdateRisk({ ...initialHomeState(), search: '   ' })).toBe('defer');
   });
 
   it('텍스트를 입력하는 팝업이 열려 있으면 막는다', () => {
@@ -43,8 +46,8 @@ describe('homeUpdateRisk (홈에서 새 버전 자동 적용 판단)', () => {
     expect(homeUpdateRisk({ ...initialHomeState(), draggingMap: '주간 회의' })).toBe('block');
   });
 
-  it('사라져도 잃을 게 없는 알림은 막지 않는다', () => {
-    expect(homeUpdateRisk({ ...initialHomeState(), toast: '이동했어요', toastTitle: '이동 완료' })).toBe('safe');
-    expect(homeUpdateRisk({ ...initialHomeState(), importDone: '가져온 맵' })).toBe('safe');
+  it('사라져도 잃을 게 없는 알림은 막지 않는다 — 유휴와 같은 판단이다', () => {
+    expect(homeUpdateRisk({ ...initialHomeState(), toast: '이동했어요', toastTitle: '이동 완료' })).toBe('defer');
+    expect(homeUpdateRisk({ ...initialHomeState(), importDone: '가져온 맵' })).toBe('defer');
   });
 });

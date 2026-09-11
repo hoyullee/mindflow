@@ -1,14 +1,15 @@
-// 토스트의 X(닫기)와 자동 적용의 관계 — X는 "지금 묻지 마"일 뿐이다.
+// 자동 적용의 규칙과, 이 컴포넌트가 **모듈에 올려 두는 상태**.
 //
-// 예전엔 X가 `dismissed`로 자동 적용까지 세션 내내 걸어 잠갔다: 편집 중 토스트를
-// 한 번 닫은 장수 탭은 화면이 안전해져도(홈 유휴 등) 이후의 어떤 배포도 스스로
-// 적용하지 못했고, 토스트도 다시 뜨지 않아 사용자는 탭을 닫았다 열어야 했다
-// (제보: "업데이트 기능이 있는데 왜 수동으로?").
+// 말을 거는 자리는 홈 LNB 알림 하나다(요청) — 예전에는 화면 하단 토스트가 물었고,
+// 그 X가 자동 적용까지 세션 내내 걸어 잠가서 편집 중 한 번 닫은 장수 탭은 이후의
+// 어떤 배포도 스스로 적용하지 못했다(제보). 지금은 닫을 것이 없다: 위험도만 보고
+// 적용하고, 대기 중인 새 버전은 여기서 상태로 올려 LNB가 알린다.
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { cleanup, render, waitFor } from '@testing-library/react';
 import { UpdatePrompt } from './UpdatePrompt';
 import { __resetUpdateGate, useUpdateGuard, type UpdateRisk } from './updateGate';
 import { __resetUpdateControl, applyUpdateNow, checkForUpdateNow, currentUpdateStatus, updateControlsReady } from './updateControl';
+import type { DesktopBridge } from '../platform/desktopBridge';
 
 const updateServiceWorker = vi.fn();
 const setNeedRefresh = vi.fn();
@@ -29,6 +30,15 @@ function Guard({ risk }: { risk: UpdateRisk }) {
   return null;
 }
 
+/** 설치형 셸 흉내 — preload가 심어 주는 창구 하나뿐이다. */
+function installShell(version = '0.2.0'): void {
+  (window as { geurio?: Partial<DesktopBridge> }).geurio = {
+    desktop: true,
+    version,
+    platform: 'win32',
+  };
+}
+
 beforeEach(() => {
   __resetUpdateGate();
   updateServiceWorker.mockClear();
@@ -36,25 +46,29 @@ beforeEach(() => {
   swUpdate.mockClear();
   __resetUpdateControl();
 });
-afterEach(() => cleanup());
+afterEach(() => {
+  cleanup();
+  delete (window as { geurio?: unknown }).geurio;
+  vi.unstubAllGlobals();
+});
 
-describe('UpdatePrompt — 닫기(X)와 자동 적용', () => {
-  it('토스트를 닫아도(block에서 X) 화면이 safe로 바뀌면 자동 적용된다(제보)', async () => {
+describe('UpdatePrompt — 위험도만 보는 자동 적용', () => {
+  it('block에서는 적용하지 않고, 화면이 safe로 바뀌면 조용히 적용된다', async () => {
     const { rerender } = render(
       <>
         <Guard risk="block" />
         <UpdatePrompt />
       </>,
     );
-    // block: 자동 적용 없이 토스트가 뜬다 → 사용자가 X(나중에)로 닫는다.
-    const dismiss = await screen.findByRole('button', { name: '나중에' });
-    fireEvent.click(dismiss);
+    // block(입력·편집 중): 아무것도 묻지 않고 아무것도 적용하지 않는다 — 화면에
+    // 뜨는 것도 없다(말은 홈 LNB가 한다).
+    await waitFor(() => expect(currentUpdateStatus().ready).toBe(true));
     expect(updateServiceWorker).not.toHaveBeenCalled();
-    // X가 감지 플래그(needRefresh)까지 꺼 버리면 같은 버전은 다시 볼 근거가
-    // 없다(같은 대기 SW로는 onNeedRefresh가 재발화하지 않는다) — 끄지 않는다.
+    // 감지 플래그(needRefresh)를 끄는 것은 아무것도 없다 — 끄면 같은 대기 SW로는
+    // onNeedRefresh가 재발화하지 않아 그 버전을 다시 볼 근거가 사라진다.
     expect(setNeedRefresh).not.toHaveBeenCalled();
 
-    // 화면이 안전해졌다(예: 편집을 마치고 홈으로) — X를 눌렀어도 조용히 적용된다.
+    // 화면이 안전해졌다(예: 편집을 마치고 홈으로) — 그 순간 조용히 적용된다.
     rerender(
       <>
         <Guard risk="safe" />
@@ -74,9 +88,11 @@ describe('UpdatePrompt — 닫기(X)와 자동 적용', () => {
     expect(swUpdate).toHaveBeenCalled();
   });
 
-  it('다른 탭 때문에 자동 적용이 미뤄지면 토스트로 알린다(조용히 멈춰 있지 않게)', async () => {
+  it('다른 탭이 편집 중이면 미루되, 대기 중이라는 사실은 상태에 남는다', async () => {
     // safe 화면은 원래 묻지 않고 조용히 적용한다 — 그런데 다른 탭이 편집 중이면
-    // 적용이 계속 미뤄지면서 화면에는 아무 표시가 없었다(재시도만 20초마다).
+    // 적용이 계속 미뤄진다(재시도 20초 주기). 그 시간대에도 `ready`가 서 있어야
+    // 홈 LNB 알림이 "새 버전이 준비됐어요"를 들고 있을 수 있다 — 사용자가 직접
+    // 적용할 길이 열려 있다(수동 적용은 피어를 묻지 않는다).
     const channel = new BroadcastChannel('mf-update-gate');
     channel.onmessage = (event: MessageEvent) => {
       const data = event.data as { t?: string; id?: string } | null;
@@ -89,8 +105,9 @@ describe('UpdatePrompt — 닫기(X)와 자동 적용', () => {
           <UpdatePrompt />
         </>,
       );
-      // 피어가 바쁘다고 답했으므로 적용은 미뤄지고, 대신 토스트가 뜬다.
-      expect(await screen.findByRole('button', { name: '새로고침' }, { timeout: 3000 })).toBeTruthy();
+      await waitFor(() => expect(currentUpdateStatus().ready).toBe(true));
+      // 피어가 바쁘다고 답했으므로 적용은 미뤄진다 — 250ms 왕복을 넉넉히 지나서.
+      await new Promise((r) => setTimeout(r, 600));
       expect(updateServiceWorker).not.toHaveBeenCalled();
     } finally {
       channel.close();
@@ -109,8 +126,6 @@ describe('UpdatePrompt — 설정의 「버전 확인」에 상태·손잡이를
         <UpdatePrompt />
       </>,
     );
-    await screen.findByRole('button', { name: '나중에' });
-
     // 손잡이가 있다 → 버전 화면이 버튼을 내줄 수 있다.
     expect(updateControlsReady()).toBe(true);
     // 대기 중인 새 버전(`needRefresh: true`)이 그대로 올라간다.
@@ -127,5 +142,36 @@ describe('UpdatePrompt — 설정의 「버전 확인」에 상태·손잡이를
     //  리로드 감시 타이머까지 버틴 뒤에야 풀린다 — 우리가 볼 것은 skipWaiting이다.)
     void applyUpdateNow();
     await waitFor(() => expect(updateServiceWorker).toHaveBeenCalledWith(true), { timeout: 3000 });
+  });
+});
+
+// 껍데기(설치 파일)의 판도 이 컴포넌트가 **한 번** 물어 모듈에 올린다 — 설정의
+// 「버전 확인」과 홈 LNB 알림이 그 값을 함께 읽는다. 각자 물으면 왕복이 그만큼 늘고,
+// 두 화면이 서로 다른 답을 들 수 있다.
+describe('UpdatePrompt — 껍데기(설치 파일)의 판', () => {
+  it('설치형 앱에서는 버전 파일을 물어 상태로 올린다', async () => {
+    installShell('0.2.0');
+    const fetchMock = vi.fn<typeof fetch>(
+      async () => new Response(JSON.stringify({ version: '0.3.0', url: 'https://example.test/r' }), { status: 200 }),
+    );
+    vi.stubGlobal('fetch', fetchMock);
+
+    render(<UpdatePrompt />);
+
+    await waitFor(() =>
+      expect(currentUpdateStatus().shell).toEqual({ kind: 'available', version: '0.3.0', url: 'https://example.test/r' }),
+    );
+    expect(String(fetchMock.mock.calls[0]![0])).toContain('/desktop-version.json');
+  });
+
+  it('브라우저·PWA에서는 부르지 않는다 — 받을 설치 파일이 없다', async () => {
+    const fetchMock = vi.fn<typeof fetch>(async () => new Response('{}', { status: 200 }));
+    vi.stubGlobal('fetch', fetchMock);
+
+    render(<UpdatePrompt />);
+    await new Promise((r) => setTimeout(r, 50));
+
+    expect(fetchMock.mock.calls.filter((c) => String(c[0]).includes('desktop-version'))).toHaveLength(0);
+    expect(currentUpdateStatus().shell).toBeNull();
   });
 });

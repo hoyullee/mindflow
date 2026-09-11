@@ -4,6 +4,7 @@ import { MemoryRouter, Route, Routes, useLocation } from 'react-router-dom';
 import { NotificationBell } from './NotificationBell';
 import { NotificationsProvider } from './NotificationsContext';
 import { pushLocalNotification, readLocalNotifications, writeLocalNotifications, type StoredNotification } from '../../../adapters/local/localNotifications';
+import { __resetUpdateControl, publishUpdateStatus, setUpdateControls } from '../../../pwa/updateControl';
 
 // 홈 알림 센터(0022의 로컬 짝) — 벨 배지·열기=읽음 처리·항목 클릭=딥링크.
 
@@ -12,7 +13,7 @@ function LocationProbe() {
   return <div data-testid="loc">{loc.pathname + loc.search}</div>;
 }
 
-function renderBell(isMobile = false) {
+function renderBell(isMobile = false, onOpenVersion: () => void = vi.fn()) {
   // 상태(목록·안 읽음 수)는 공급자가 든다 — 실제 앱에서는 `Home`이 감싼다(LNB의
   // 벨과 폰 ☰의 점이 같은 수를 봐야 한다).
   return render(
@@ -23,7 +24,7 @@ function renderBell(isMobile = false) {
           path="/"
           element={
             <>
-              <NotificationBell isMobile={isMobile} />
+              <NotificationBell isMobile={isMobile} onOpenVersion={onOpenVersion} />
               <LocationProbe />
             </>
           }
@@ -56,8 +57,12 @@ function seed(rows: Partial<StoredNotification>[]): void {
 beforeEach(() => {
   localStorage.clear();
   localStorage.setItem('mf_demo_session', JSON.stringify({ user: { id: 'u', email: 'me@example.com' } }));
+  __resetUpdateControl();
 });
-afterEach(() => cleanup());
+afterEach(() => {
+  cleanup();
+  __resetUpdateControl();
+});
 
 describe('알림 센터', () => {
   it('패널은 펼침·접힘 애니메이션을 그린다 — 닫아도 잠깐 마운트가 남는다(요청)', async () => {
@@ -355,5 +360,98 @@ describe('알림 자리 — LNB(요청)', () => {
     // jsdom에는 레이아웃이 없어 Radix의 실제 side 판정을 믿을 수 없다 —
     // 우리가 정하는 값(패널이 자라나는 기준점)으로 계약을 고정한다.
     expect(panel.style.transformOrigin).toBe('left top');
+  });
+});
+
+// 새 버전을 **여기서** 알린다(요청) — 예전에는 화면 하단 토스트가 물었고, 편집 중에
+// 끼어드는 자리였다. 지금은 목록 맨 위 고정 한 줄이고 누르면 설정 › 「버전 확인」이
+// 열린다. 알림 창구를 하나로 모은 것의 마지막 조각이다.
+describe('알림 센터 — 새 버전', () => {
+  /** 웹 새 판이 대기 중인 상태 — `UpdatePrompt`가 올려 두는 것과 같은 모양. */
+  function webReady(): void {
+    setUpdateControls({ check: vi.fn(), apply: vi.fn() });
+    act(() => publishUpdateStatus({ ready: true }));
+  }
+
+  it('대기 중인 새 버전이 맨 위 고정 한 줄로 서고, 누르면 「버전 확인」이 열린다', async () => {
+    const onOpenVersion = vi.fn();
+    renderBell(false, onOpenVersion);
+    webReady();
+
+    // 우편함이 비어 있어도 카드가 그 소식을 요약한다 — 열어 보지 않아도 안다.
+    const bell = await screen.findByRole('button', { name: /새 버전이 준비됐어요/ });
+    expect(bell.querySelector('[data-notification-count]')!.textContent).toBe('1');
+
+    fireEvent.click(bell);
+    const row = await waitFor(() => {
+      const el = document.querySelector('[data-notification-update]');
+      if (!el) throw new Error('아직');
+      return el as HTMLElement;
+    });
+    expect(row.getAttribute('data-notification-update')).toBe('ready');
+    expect(row.textContent).toContain('새 버전이 준비됐어요');
+    // 우편함이 비었다고 말하지 않는다 — 바로 위에 볼 것이 있다.
+    expect(document.querySelector('[data-notification-empty]')).toBeNull();
+
+    fireEvent.click(row);
+    expect(onOpenVersion).toHaveBeenCalledTimes(1);
+  });
+
+  it('안 읽은 우편함 항목이 있으면 요약은 그쪽이 먼저다 — 개수는 둘을 함께 센다', async () => {
+    seed([{ id: 'n1' }]);
+    renderBell();
+    webReady();
+
+    // 멘션·답글은 지나가는 사건이고 새 버전은 적용할 때까지 남는 상태다 — 상태가
+    // 이 자리를 차지하면 그동안 도착한 소식이 요약에서 통째로 가려진다.
+    const bell = await screen.findByRole('button', { name: /^알림 2개 · 멘션 · 확인 부탁/ });
+    expect(bell.querySelector('[data-notification-count]')!.textContent).toBe('2');
+
+    // 목록을 열면 **둘 다** 보인다(하나의 창구).
+    fireEvent.click(bell);
+    await waitFor(() => expect(document.querySelector('[data-notification-update]')).toBeTruthy());
+    expect(document.querySelectorAll('[data-notification-item]').length).toBe(1);
+    // 열어도 새 버전 줄은 남는다 — 적용할 때까지 끝나지 않는 일이다.
+    await waitFor(() => expect(readLocalNotifications().every((n) => n.readAt)).toBe(true));
+    expect(document.querySelector('[data-notification-update]')).toBeTruthy();
+  });
+
+  it('저장하지 못해 멈췄으면 경고 톤으로 말한다', async () => {
+    renderBell();
+    setUpdateControls({ check: vi.fn(), apply: vi.fn() });
+    act(() => publishUpdateStatus({ ready: true, saveBlocked: true }));
+
+    fireEvent.click(await screen.findByRole('button', { name: /업데이트를 멈췄어요/ }));
+    const row = await waitFor(() => {
+      const el = document.querySelector('[data-notification-update]');
+      if (!el) throw new Error('아직');
+      return el as HTMLElement;
+    });
+    expect(row.getAttribute('data-notification-update')).toBe('blocked');
+  });
+
+  it('새 버전이 없으면 아무것도 더하지 않는다 — 창구에 늘 무언가 있으면 신호를 잃는다', async () => {
+    renderBell();
+    setUpdateControls({ check: vi.fn(), apply: vi.fn() });
+    // 확인 중·최신은 **사용자가 할 일이 없다**.
+    act(() => publishUpdateStatus({ checking: true }));
+
+    const bell = await screen.findByRole('button', { name: /아직 받은 알림이 없어요/ });
+    expect(bell.querySelector('[data-notification-count]')).toBeNull();
+    fireEvent.click(bell);
+    await waitFor(() => expect(document.querySelector('[data-notification-empty]')).toBeTruthy());
+    expect(document.querySelector('[data-notification-update]')).toBeNull();
+  });
+
+  it('폰의 ☰ 점도 새 버전을 말한다 — 서랍이 닫혀 있으면 그 안의 카드가 안 보인다', async () => {
+    const { navDotOf } = await import('./navDot');
+    expect(navDotOf(0, 0, true)).toEqual({
+      on: true,
+      title: '메뉴 열기 (새 버전)',
+      label: '메뉴 열기, 새 버전',
+    });
+    // 개수가 아니라 있음/없음이라 따로 적는다 — `새 알림 N개`에 섞으면 그 숫자가
+    // 우편함 항목 수와 어긋난다.
+    expect(navDotOf(0, 2, true).label).toBe('메뉴 열기, 새 알림 2개 · 새 버전');
   });
 });

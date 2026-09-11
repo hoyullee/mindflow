@@ -1,12 +1,13 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { useRegisterSW } from 'virtual:pwa-register/react';
-import { UpdateToast } from './UpdateToast';
 import { anyPeerBusy, canAutoApply, notifyPeersApplied, setUpdateChecker, startPeerResponder, startWakeChecks, useUpdateGate } from './updateGate';
 import { consumeUpdateApplied, markUpdateApplied } from './updateApplied';
 import { UpdateAppliedNotice } from './UpdateAppliedNotice';
 import { UpdateOverlay } from './UpdateOverlay';
 import { applyUpdate } from './applyUpdate';
-import { publishUpdateStatus, setUpdateControls } from './updateControl';
+import { publishUpdateStatus, setUpdateControls, setUpdateShellChecker } from './updateControl';
+import { desktopBridge } from '../platform/desktopBridge';
+import { checkShellUpdate } from '../platform/shellUpdate';
 
 /**
  * 서비스워커 업데이트를 감시해 **적용 시점을 고르는** 연결층.
@@ -20,16 +21,22 @@ import { publishUpdateStatus, setUpdateControls } from './updateControl';
  * | 위험도 | 언제 | 동작 |
  * | --- | --- | --- |
  * | `safe` | 랜딩·약관·빈 로그인 폼 | 즉시 조용히 적용 |
- * | `defer` | 홈·유휴 에디터 | 탭이 백그라운드일 때 적용, 보고 있으면 토스트 |
- * | `block` | 입력·편집 중 | 토스트만 |
+ * | `defer` | 홈·유휴 에디터 | 탭이 백그라운드일 때 적용 |
+ * | `block` | 입력·편집 중 | 적용하지 않는다 |
  *
- * 그래서 대부분의 사용자는 토스트를 보지 않고 최신 버전이 되고, 실제로 끊기면
- * 곤란한 순간에만 물어본다. 어떤 경로에서든 적용 전에 `prepare()`가 돌아
- * 미저장 변경을 먼저 저장한다 — 저장에 실패하면 리로드하지 않는다.
+ * 그래서 대부분의 사용자는 아무것도 보지 않고 최신 버전이 되고, 실제로 끊기면
+ * 곤란한 순간에는 **묻지 않고 기다린다**. 어떤 경로에서든 적용 전에 `prepare()`가
+ * 돌아 미저장 변경을 먼저 저장한다 — 저장에 실패하면 리로드하지 않는다.
+ *
+ * **말을 거는 자리는 홈 LNB의 알림 하나다**(요청). 예전에는 화면 하단 토스트가
+ * "새로고침할까요?"를 물었는데, 편집 중에 끼어드는 자리였고 알림 창구가 따로 생긴
+ * 뒤로는 같은 소식이 두 곳에서 말해졌다. 이제 여기서는 **적용만** 하고, 대기 중인
+ * 새 버전은 `updateControl`에 올려 두어 홈 LNB가 알리고 설정의 「버전 확인」이
+ * 다룬다(에디터에는 표시가 없다 — 문서를 열려면 홈을 지나므로 적어도 한 번은 본다).
  *
  * 이 파일만 `virtual:pwa-register/react`(vite-plugin-pwa가 만들어 주는 가상 모듈)에
- * 의존한다. 그래서 화면 로직은 `UpdateToast`에, 정책 판단은 `updateGate`에 두어
- * 테스트에서 가상 모듈 없이 그대로 다룰 수 있게 분리했다.
+ * 의존한다. 그래서 정책 판단은 `updateGate`에, 화면이 읽는 상태는 `updateControl`에
+ * 두어 테스트에서 가상 모듈 없이 그대로 다룰 수 있게 분리했다.
  */
 
 /**
@@ -81,15 +88,8 @@ export function UpdatePrompt() {
 
   const { risk, prepare } = useUpdateGate();
   const hidden = usePageHidden();
-  const [dismissed, setDismissed] = useState(false);
   /** `prepare()`가 저장 실패를 보고한 상태 — 리로드하면 편집분이 사라지므로 멈춘다. */
   const [saveBlocked, setSaveBlocked] = useState(false);
-  /** 자동 적용이 **다른 탭 때문에** 미뤄진 상태 — 그 탭이 한가해질 때까지 재시도만
-   * 돌고 화면에는 아무 표시가 없었다(safe 화면은 토스트를 숨기므로). 사용자가
-   * "배포됐는데 아무 반응이 없다"고 느끼는 자리라, 이때는 토스트를 내보내 직접
-   * 적용할 길을 준다(수동 적용은 피어를 묻지 않는다). */
-  const [peerBusy, setPeerBusy] = useState(false);
-
   // 다른 탭의 "지금 적용해도 되나?" 질문에 답한다(모든 탭에 이 컴포넌트가 하나씩 있다).
   useEffect(() => startPeerResponder(), []);
   // 탭 복귀·포커스·네트워크 복귀 순간 새 버전을 확인 — 배포 후 앱으로 돌아오는
@@ -122,11 +122,10 @@ export function UpdatePrompt() {
         // 적용은 이 탭만의 일이 아니다 — skipWaiting이 다른 탭까지 리로드시킨다.
         // 그래서 **자동** 적용은 편집 중인 탭이 없는지 먼저 확인한다(사용자가 직접
         // 누른 경우는 본인 선택이므로 묻지 않는다).
-        if (auto && (await anyPeerBusy())) {
-          setPeerBusy(true); // 토스트로 알린다 — 아래 재시도 타이머도 계속 노린다
-          return;
-        }
-        setPeerBusy(false);
+        // 편집 중인 탭이 있으면 미룬다 — 아래 재시도 타이머가 그 탭이 한가해질 때까지
+        // 계속 노린다. 그동안 대기 중인 새 버전은 홈 LNB 알림이 들고 있으므로,
+        // 기다리다 잊히는 대신 사용자가 직접 적용할 길이 열려 있다.
+        if (auto && (await anyPeerBusy())) return;
 
         setSaveBlocked(false);
         setBlocking(true); // 여기서부터 진짜 적용 — 화면을 덮어 클릭을 막는다
@@ -142,7 +141,7 @@ export function UpdatePrompt() {
           },
           reload: () => window.location.reload(),
         });
-        if (outcome === 'save-failed') setSaveBlocked(true); // 토스트로 내려가 알린다
+        if (outcome === 'save-failed') setSaveBlocked(true); // 버전 화면·LNB가 사유를 알린다
       } finally {
         applyingRef.current = false;
         setApplying(false);
@@ -154,24 +153,43 @@ export function UpdatePrompt() {
     [prepare, updateServiceWorker],
   );
 
-  // 설정의 「버전 확인」 화면은 이 컴포넌트만 볼 수 있는 것(대기 중인 새 버전·적용
-  // 진행·저장 실패)을 읽어야 한다 — 그 값을 모듈에 올려 둔다(`updateControl`).
+  // 설정의 「버전 확인」 화면과 홈 LNB의 알림은 이 컴포넌트만 볼 수 있는 것(대기
+  // 중인 새 버전·적용 진행·저장 실패)을 읽어야 한다 — 그 값을 모듈에 올려 둔다
+  // (`updateControl`).
   useEffect(() => {
     publishUpdateStatus({ ready: needRefresh, applying, saveBlocked });
   }, [needRefresh, applying, saveBlocked]);
+
+  // **껍데기(설치 파일)의 판도 여기서 확인한다.** 화면마다 확인하면 왕복이 그만큼
+  // 늘고 두 화면이 서로 다른 답을 들 수 있다 — 한 번 물어 모듈에 올린다.
+  // 브라우저·PWA에서는 셸이 없으므로 **버전 파일을 부르지도 않는다**.
+  const checkShell = useCallback(() => {
+    const b = desktopBridge();
+    if (!b) return;
+    publishUpdateStatus({ shell: { kind: 'checking' } });
+    void checkShellUpdate(b.version).then((next) => publishUpdateStatus({ shell: next }));
+  }, []);
+  useEffect(() => {
+    checkShell();
+  }, [checkShell]);
   // 적용 손잡이 — 수동 적용은 피어를 묻지 않는다(본인 선택이므로 `auto: false`).
   useEffect(() => {
     setUpdateControls({ apply: () => apply(false) });
   }, [apply]);
+  // 새 버전 확인에는 껍데기도 함께 태운다 — `지금 확인`은 사용자에게 **하나의
+  // 동작**이다(버전 화면이 둘을 따로 부르지 않는다).
+  useEffect(() => {
+    setUpdateShellChecker(checkShell);
+    return () => setUpdateShellChecker(null);
+  }, [checkShell]);
 
   const canAutoLocally = !saveBlocked && canAutoApply(risk, hidden);
 
   useEffect(() => {
-    // `dismissed`는 여기서 보지 않는다 — 토스트의 X는 **"지금 묻지 마"**(토스트
-    // 숨김)일 뿐, 화면이 안전해지는 순간의 조용한 적용까지 막는 뜻이 아니다.
-    // 예전엔 X가 자동 적용까지 걸어 잠갔고 세션 내내 풀리지 않아서, 편집 중
-    // 토스트를 한 번 닫은 장수 탭은 이후의 **어떤 배포도** 스스로 적용하지
-    // 못했다(제보: "업데이트 기능이 있는데 왜 수동으로 닫았다 열어야 하나").
+    // 자동 적용은 사용자가 무엇을 눌렀는지와 무관하게 **화면 위험도만** 본다.
+    // 예전에 토스트의 X가 이 판단까지 걸어 잠갔을 때, 편집 중 한 번 닫은 장수 탭은
+    // 이후의 **어떤 배포도** 스스로 적용하지 못했다(제보). 지금은 닫을 것이 없다 —
+    // LNB 알림은 대기 중인 새 버전이 있으면 그냥 그 자리에 있다.
     if (!needRefresh || !canAutoLocally) return;
     void apply(true);
     // 다른 탭이 바빠 미뤄졌을 수 있다 — 그 탭이 한가해지는 대로 조용히 넘어가도록 재시도.
@@ -183,19 +201,6 @@ export function UpdatePrompt() {
     <>
       <UpdateOverlay visible={blocking} />
       <UpdateAppliedNotice visible={justUpdated} onDone={() => setJustUpdated(false)} />
-      <UpdateToast
-      // 자동으로 적용될 상황이면 굳이 묻지 않는다 — 곧 조용히 갈아끼워진다.
-      visible={needRefresh && !dismissed && (!canAutoLocally || peerBusy)}
-      saveBlocked={saveBlocked}
-      applying={applying}
-      onRefresh={() => void apply(false)}
-        onDismiss={() => {
-          // X = "지금 묻지 마"(토스트 숨김)만. `setNeedRefresh(false)`로 감지
-          // 플래그까지 끄면 — 같은 대기 SW로는 onNeedRefresh가 다시 발화하지
-          // 않아 — 화면이 안전해져도 자동 적용이 다시 볼 근거가 사라진다.
-          setDismissed(true);
-        }}
-      />
     </>
   );
 }

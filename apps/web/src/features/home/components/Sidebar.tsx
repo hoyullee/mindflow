@@ -158,7 +158,7 @@ export function Sidebar({ state, view, controller, isMobile = false, isOpen = fa
           한 줄짜리 구획의 라벨이 그 줄의 이름과 같으면(일정 위에 "일정")
           같은 말을 두 번 하는 셈이기 때문이다 — 자리와 모양이 대신 말한다. */}
       <div style={{ flexShrink: 0, paddingTop: 6, display: 'flex', flexDirection: 'column', gap: 2 }}>
-        <NotificationBell isMobile={isMobile} />
+        <NotificationBell isMobile={isMobile} onOpenVersion={controller.openVersionSetup} />
         <CalendarNavSection state={state} controller={controller} isMobile={isMobile} brief={view.calendarBrief} />
       </div>
       {/* 구분선은 LNB의 다른 구분선과 **같은 것**(`LNB_DIVIDER`)이다 — 값을 따로

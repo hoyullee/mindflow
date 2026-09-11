@@ -2,8 +2,8 @@ import type { CSSProperties } from 'react';
 
 /**
  * 화면 **하단 중앙에 떠 있는 알림**들이 같은 자리·같은 모양으로 뜨도록 공유하는 껍데기.
- * 소비처 셋: `UpdateToast`(새 버전을 적용할까) · `UpdateAppliedNotice`(적용됐다) ·
- * `ReminderToast`(일정 알림).
+ * 소비처: `UpdateAppliedNotice`(새 버전이 적용됐다) · `ReminderToast`(일정 알림) ·
+ * `InstallHint`(홈 화면에 추가) · `OfflineBar`(오프라인).
  *
  * 위치 근거: 화면 하단 중앙 — 에디터의 우하단 미니맵/줌 묶음을 피한다. `dvh`가 아니라
  * bottom 고정으로 모바일 주소창 변화에도 안전하게 붙는다. zIndex는 LoadingOverlay(200)·
