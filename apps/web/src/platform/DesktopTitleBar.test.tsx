@@ -54,11 +54,26 @@ describe('데스크톱 타이틀 바', () => {
     expect(document.documentElement.style.getPropertyValue('--mf-titlebar')).toBe('40px');
   });
 
-  it('macOS는 신호등 자리를 비운다', () => {
+  it('macOS는 신호등 자리를 비우고 브랜드를 창 가운데 둔다', () => {
+    // 제보: 신호등 바로 오른쪽에 붙어 있다. macOS는 창 제목을 가운데 두는 관례이고,
+    // 그 가운데는 **남은 폭이 아니라 창**의 가운데라 흐름에서 빼내 배치한다.
     shell({ titleBarHeight: 40, platform: 'darwin' });
     render(<DesktopTitleBar />);
     const bar = document.querySelector('[data-titlebar]') as HTMLElement;
     expect(parseFloat(bar.style.paddingLeft)).toBeGreaterThan(60);
+    const brand = bar.querySelector('[data-titlebar-brand]') as HTMLElement;
+    expect(brand.style.position).toBe('absolute');
+    expect(brand.style.left).toBe('50%');
+    expect(brand.style.transform).toBe('translateX(-50%)');
+  });
+
+  it('Windows는 왼쪽 정렬 그대로다 — 그 OS의 관례다', () => {
+    // 오른쪽은 네이티브 오버레이(최소화·최대화·닫기)가 쓴다.
+    shell({ titleBarHeight: 40, platform: 'win32' });
+    render(<DesktopTitleBar />);
+    const brand = document.querySelector('[data-titlebar-brand]') as HTMLElement;
+    expect(brand.style.position).toBe('');
+    expect(brand.style.left).toBe('');
   });
 
   it('테마 색을 셸에 알려 준다(같은 값은 한 번만)', () => {
