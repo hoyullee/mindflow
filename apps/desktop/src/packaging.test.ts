@@ -93,7 +93,7 @@ describe('설치 파일 계약', () => {
     const wf = readFileSync(path.join(root, '..', '..', '.github', 'workflows', 'desktop.yml'), 'utf8');
     const plan = wf.slice(wf.indexOf('\n  plan:'), wf.indexOf('\n  build:'));
     // `build`가 아니라 `plan`에 있어야 러너를 하나도 태우지 않는다(태그 푸시는
-    // 셋을 만들고 macOS는 분당 과금이 10배다).
+    // 둘을 만들고 macOS는 분당 과금이 10배다).
     expect(plan, '가드가 plan 잡에 없다').toContain('Check tag matches shell version');
     // 태그로 돌 때만 — dispatch는 릴리스를 만들지 않으므로 어긋날 것도 없다.
     expect(plan).toMatch(/Check tag matches shell version\n\s*if: startsWith\(github\.ref, 'refs\/tags\/'\)/);
@@ -101,6 +101,24 @@ describe('설치 파일 계약', () => {
     expect(plan).toContain('actions/checkout');
     expect(plan).toContain('apps/desktop/package.json');
     expect(plan, '어긋나도 통과하면 가드가 아니다').toContain('exit 1');
+  });
+
+  it('태그 푸시는 store(appx)를 만들지 않는다 — 릴리스에 설치할 수 없는 파일이 붙지 않게', () => {
+    // 태그로 만든 산출물은 **그대로 릴리스에 붙는다**(`Attach to release`). 지금
+    // MSIX는 개발용 자가서명이라 받는 사람이 설치할 수 없으므로, 릴리스에는
+    // .exe/.dmg만 올라가야 한다 — 나란히 놓이면 어느 것을 받아야 하는지 흐려진다.
+    // 빌드는 어느 쪽이든 초록이라, 릴리스 페이지를 눈으로 봐야 드러나는 종류다.
+    const wf = readFileSync(path.join(root, '..', '..', '.github', 'workflows', 'desktop.yml'), 'utf8');
+    const plan = wf.slice(wf.indexOf('\n  plan:'), wf.indexOf('\n  build:'));
+    expect(plan, '태그인지 판단할 값이 없다').toMatch(
+      /IS_TAG:\s*\$\{\{\s*startsWith\(github\.ref, 'refs\/tags\/'\)\s*\}\}/,
+    );
+    // all 분기(태그 푸시가 읽는 기본값)가 태그일 때 store를 빼야 한다.
+    expect(plan, '태그 푸시에서 store가 빠지지 않는다').toMatch(
+      /"\$IS_TAG"\s*=\s*true\s*\];?\s*then\s+inc="\[\$win,\$mac\]"/,
+    );
+    // 제출 절차를 밟는 사람이 직접 고르는 길은 남아 있어야 한다.
+    expect(plan, 'store를 직접 고르는 길이 사라졌다').toMatch(/store\)\s+inc="\[\$store\]"/);
   });
 
   it('AUMID가 appId와 같다 — 다르면 Windows 알림이 뜨지 않는다', () => {
