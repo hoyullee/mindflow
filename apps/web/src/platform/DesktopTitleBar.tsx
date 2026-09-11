@@ -18,6 +18,22 @@ const BAR_INK_VAR = '--mf-subtext';
 /** macOS 신호등 자리를 비운다(셸의 `trafficLightPosition` x=15 + 버튼 셋 ≈ 67). */
 const MAC_INSET = 80;
 
+/**
+ * 브랜드를 **창 가운데**에 두는가 — macOS만 그렇다(제보: 신호등 바로 오른쪽에 붙어
+ * 있다). 두 OS의 관례가 반대이기 때문이다: macOS는 창 제목을 가운데 두고
+ * (왼쪽은 신호등이 쓴다), Windows 11은 왼쪽에 둔다(오른쪽은 네이티브 오버레이가
+ * 쓴다). 그래서 자리를 한 값으로 통일하지 않고 플랫폼을 따른다.
+ *
+ * 가운데는 **남은 폭의 가운데가 아니라 창의 가운데**다(macOS 제목 표시 방식) —
+ * 그래서 흐름에서 빼내 절대 배치한다. 신호등과 부딪힐 일은 없다: 창 최소 폭이
+ * 940(`MIN_WIDTH`)이라 가운데(470)에 선 브랜드의 왼쪽 끝도 신호등 자리(80)에서
+ * 300px 넘게 떨어져 있다.
+ */
+function brandPlacement(mac: boolean): CSSProperties {
+  if (!mac) return {};
+  return { position: 'absolute', left: '50%', transform: 'translateX(-50%)' };
+}
+
 /** `-webkit-app-region`은 CSSProperties에 없다(Electron 전용). */
 const dragRegion = { WebkitAppRegion: 'drag' } as CSSProperties;
 
@@ -75,6 +91,9 @@ export function DesktopTitleBar() {
         display: 'flex',
         alignItems: 'center',
         gap: 8,
+        // macOS는 브랜드를 흐름에서 빼 가운데 두므로 이 여백이 자리를 잡지는 않지만,
+        // "이 왼쪽 띠는 신호등이 쓴다"는 선언으로 남긴다(나중에 왼쪽에 무언가를
+        // 흐름으로 더해도 신호등 아래로 들어가지 않게).
         paddingLeft: mac ? MAC_INSET : 12,
         background: `var(${BAR_BG_VAR})`,
         borderBottom: '1px solid var(--mf-border-soft)',
@@ -83,23 +102,31 @@ export function DesktopTitleBar() {
         ...dragRegion,
       }}
     >
+      {/* 드래그를 명시한다 — 절대 배치한 자식까지 바와 같은 드래그 영역이어야
+          브랜드를 잡고도 창을 옮길 수 있다(`-webkit-app-region`은 Electron 전용이라
+          브라우저 프로브로는 확인되지 않는 값이다). */}
       <span
-        aria-hidden="true"
-        style={{
-          width: 22,
-          height: 22,
-          borderRadius: 7,
-          background: 'var(--mf-accent)',
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'center',
-          flexShrink: 0,
-        }}
+        data-titlebar-brand
+        style={{ display: 'flex', alignItems: 'center', gap: 8, ...brandPlacement(mac), ...dragRegion }}
       >
-        {/* `size`는 박스 크기다 — 앱 아이콘·파비콘과 같은 비율로 그려진다. */}
-        <BrandMark size={22} />
+        <span
+          aria-hidden="true"
+          style={{
+            width: 22,
+            height: 22,
+            borderRadius: 7,
+            background: 'var(--mf-accent)',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            flexShrink: 0,
+          }}
+        >
+          {/* `size`는 박스 크기다 — 앱 아이콘·파비콘과 같은 비율로 그려진다. */}
+          <BrandMark size={22} />
+        </span>
+        <span style={{ fontSize: 12.5, fontWeight: 700, letterSpacing: '-.01em', color: 'var(--mf-text)' }}>Geurio</span>
       </span>
-      <span style={{ fontSize: 12.5, fontWeight: 700, letterSpacing: '-.01em', color: 'var(--mf-text)' }}>Geurio</span>
     </div>
   );
 }
