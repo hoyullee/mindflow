@@ -164,7 +164,8 @@ function stubFetch(): ReturnType<typeof vi.fn> {
     if (url.includes('/users/me/calendarList')) {
       return ok({
         items: [
-          { id: 'me@example.com', summary: '내 캘린더', primary: true, backgroundColor: '#4285f4', accessRole: 'owner' },
+          // `defaultReminders`는 2단계 알림이 쓰는 값 — 일정 응답에는 없고 여기에만 있다.
+          { id: 'me@example.com', summary: '내 캘린더', primary: true, backgroundColor: '#4285f4', accessRole: 'owner', defaultReminders: [{ method: 'popup', minutes: 10 }] },
           { id: SHARED_ID, summary: '남의 캘린더', accessRole: 'reader' },
           { id: HOLIDAY_ID, summary: '대한민국의 휴일' },
         ],
@@ -430,6 +431,31 @@ describe('구글 캘린더 겹치기(PR5)', () => {
       expect(ws.google?.calendars).toContain(SHARED_ID);
     });
     expect(holidayOf()).toBe('jp');
+  });
+
+  it('알림 스케줄러가 볼 **캘린더 거울**을 이 기기에 적어 둔다(2단계)', async () => {
+    clientId = 'test-client.apps.googleusercontent.com';
+    clearGoogleSessionCache();
+    seed({ calendars: ['me@example.com', HOLIDAY_ID] });
+    seedToken();
+    stubGis();
+    stubFetch();
+    const user = userEvent.setup();
+    const { container } = renderHome();
+    await openCalendar(container, user);
+
+    // 스케줄러는 에디터에서도 도는데 그쪽은 워크스페이스 블롭을 읽지 않는다 — 그래서
+    // 홈이 알고 있을 때 "지금 보여 주는 캘린더 + 기본 알림"을 남긴다.
+    await waitFor(() => {
+      expect(JSON.parse(localStorage.getItem('mf_gcal_remind_cals') ?? '[]')).toEqual([{ id: 'me@example.com', defaultMinutes: 10 }]);
+    });
+
+    // 체크를 풀면 거울에서도 빠진다 — 숨긴 캘린더의 일정이 알림으로 뜨면 화면과 어긋난다.
+    const row = document.querySelector('[data-cal-sub-item="me@example.com"]') as HTMLElement;
+    await user.click(row.querySelector('input') as HTMLInputElement);
+    await waitFor(() => {
+      expect(JSON.parse(localStorage.getItem('mf_gcal_remind_cals') ?? '[]')).toEqual([]);
+    });
   });
 
   it('LNB `일정`을 누르면 하위 메뉴가 펼쳐진다 — 연동 전에는 연동 항목, 연동 뒤에는 보여 줄 캘린더(요청)', async () => {
@@ -3964,6 +3990,54 @@ async function openCalendarSetup(user: ReturnType<typeof userEvent.setup>) {
   await user.click(await screen.findByText('Google 캘린더 연동'));
   await waitFor(() => expect(document.querySelector('[data-google-section]')).toBeTruthy());
 }
+
+describe('구글 일정 알림 설정(2단계)', () => {
+  beforeEach(() => mockMatchMedia(false));
+  afterEach(() => vi.unstubAllGlobals());
+
+  /** 설정 첫 화면의 `일정 알림` 구획까지 — 구글 하위 행이 거기 있다. */
+  async function openSettings(user: ReturnType<typeof userEvent.setup>) {
+    await user.click(await screen.findByRole('button', { name: '계정 메뉴' }));
+    await user.click(await screen.findByText('설정'));
+    return screen.getByRole('dialog', { name: '설정' });
+  }
+
+  it('연동돼 있으면 하위 토글이 뜨고 **기본은 꺼짐**이다 — 켜면 이 기기에 남는다', async () => {
+    class FakeNotification {
+      static permission = 'granted';
+      static requestPermission = vi.fn(async () => 'granted');
+    }
+    vi.stubGlobal('Notification', FakeNotification);
+    clientId = 'test-client.apps.googleusercontent.com';
+    clearGoogleSessionCache();
+    seed({ calendars: ['me@example.com'] });
+    seedToken();
+    stubGis();
+    stubFetch();
+    const user = userEvent.setup();
+    renderHome();
+    const dialog = await openSettings(user);
+
+    const row = await waitFor(() => {
+      const el = dialog.querySelector('[data-remind-google-row]');
+      expect(el).toBeTruthy();
+      return el as HTMLElement;
+    });
+    const sw = within(row).getByRole('switch', { name: '구글 일정도 알림' });
+    // 그 알림은 구글이 이미 보낸다 — 켜져 있으면 같은 회의에 알림이 둘 뜬다.
+    expect(sw.getAttribute('aria-checked')).toBe('false');
+    expect(row.querySelector('[data-remind-google-note]')!.textContent).toContain('구글 캘린더가 이미 보내는');
+
+    await user.click(sw);
+    expect(localStorage.getItem('mf_reminders_google')).toBe('1');
+    expect(within(row).getByRole('switch', { name: '구글 일정도 알림' }).getAttribute('aria-checked')).toBe('true');
+    expect(row.querySelector('[data-remind-google-note]')!.textContent).toContain('구글이 보내는 알림과 함께');
+
+    // 위 스위치를 끄면 하위 행도 사라진다 — 꺼진 부모 아래의 설정은 눌러도 소용없다.
+    await user.click(within(dialog.querySelector('[data-remind-group]') as HTMLElement).getByRole('switch', { name: '일정 알림' }));
+    expect(dialog.querySelector('[data-remind-google-row]')).toBeNull();
+  });
+});
 
 describe('설치형 앱의 Google 캘린더 연동', () => {
   beforeEach(() => mockMatchMedia(false));

@@ -1,6 +1,15 @@
 import { describe, expect, it } from 'vitest';
 import type { CalendarEvent } from '../../adapters/ports';
-import { REMINDER_GRACE_MS, dueReminders, localMs, reminderItems, reminderLead, reminderWindow } from './reminders';
+import {
+  REMINDER_GRACE_MS,
+  dueReminders,
+  googleReminderItems,
+  localMs,
+  reminderItems,
+  reminderLead,
+  reminderWindow,
+  type GoogleReminderSource,
+} from './reminders';
 
 const EV = (over: Partial<CalendarEvent> = {}): CalendarEvent => ({
   id: 'e1',
@@ -79,5 +88,58 @@ describe('일정 알림 — 무엇을 언제 띄울까', () => {
     expect(to).toBe('2026-09-17');
     // 달 경계도 넘는다(달력 격자와 같은 규칙).
     expect(reminderWindow(new Date(2026, 8, 30, 1, 0), 2).to).toBe('2026-10-02');
+  });
+});
+
+const G = (over: Partial<GoogleReminderSource> = {}): GoogleReminderSource => ({
+  id: 'cal-a::g1',
+  calendarId: 'cal-a',
+  title: '주간 회의',
+  startDate: '2026-09-15',
+  startTime: '10:30',
+  allDay: false,
+  ...over,
+});
+
+/** 그 캘린더의 기본 알림 — 대부분의 구글 일정이 이 값을 따른다(`useDefault`). */
+const DEFAULTS = new Map([['cal-a', 30]]);
+
+describe('구글 일정 알림(2단계)', () => {
+  it('일정에 직접 건 알림이 캘린더 기본보다 먼저다', () => {
+    const [item] = googleReminderItems([G({ reminderMinutes: 10 })], DEFAULTS, '2026-09-14', '2026-09-17');
+    expect(item!.minutes).toBe(10);
+    expect(new Date(item!.fireAt).getHours()).toBe(10);
+    expect(new Date(item!.fireAt).getMinutes()).toBe(20);
+    // 저장소에 남는 키라 어디서 온 것인지 읽히게 접두를 둔다.
+    expect(item!.key).toBe('g:cal-a::g1#2026-09-15');
+  });
+
+  it('일정에 건 알림이 없으면(useDefault) **그 캘린더의 기본 알림**을 쓴다', () => {
+    const [item] = googleReminderItems([G()], DEFAULTS, '2026-09-14', '2026-09-17');
+    expect(item!.minutes).toBe(30);
+    // 기본을 모르는 캘린더면 띄우지 않는다 — 모르는 값을 지어내지 않는다.
+    expect(googleReminderItems([G({ calendarId: 'cal-b' })], DEFAULTS, '2026-09-14', '2026-09-17')).toEqual([]);
+  });
+
+  it('"알림 없음"으로 꺼 둔 일정은 캘린더 기본으로 되살아나지 않는다', () => {
+    expect(googleReminderItems([G({ reminderMinutes: null })], DEFAULTS, '2026-09-14', '2026-09-17')).toEqual([]);
+  });
+
+  it('회의가 아닌 것과 거절한 회의는 빠진다', () => {
+    const skipped: Partial<GoogleReminderSource>[] = [
+      { allDay: true, startTime: undefined },
+      { holiday: true },
+      { workLocation: '재택' },
+      { rsvp: 'declined' },
+    ];
+    for (const over of skipped) {
+      expect(googleReminderItems([G({ reminderMinutes: 10, ...over })], DEFAULTS, '2026-09-14', '2026-09-17')).toEqual([]);
+    }
+    // 수락·미응답은 그대로 대상이다(구글도 알린다).
+    expect(googleReminderItems([G({ reminderMinutes: 10, rsvp: 'needsAction' })], DEFAULTS, '2026-09-14', '2026-09-17')).toHaveLength(1);
+  });
+
+  it('창 밖의 일정은 담지 않는다', () => {
+    expect(googleReminderItems([G({ reminderMinutes: 10 })], DEFAULTS, '2026-09-16', '2026-09-17')).toEqual([]);
   });
 });

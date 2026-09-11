@@ -1,5 +1,15 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { markReminderFired, notifyPermission, onRemindersEnabledChange, remindersEnabled, setRemindersEnabled, showOsNotification, wasReminderFired } from './reminderPrefs';
+import {
+  googleRemindersEnabled,
+  markReminderFired,
+  notifyPermission,
+  onRemindersEnabledChange,
+  remindersEnabled,
+  setGoogleRemindersEnabled,
+  setRemindersEnabled,
+  showOsNotification,
+  wasReminderFired,
+} from './reminderPrefs';
 
 beforeEach(() => localStorage.clear());
 
@@ -64,5 +74,24 @@ describe('알림의 기기 쪽 상태', () => {
     expect(showOsNotification({ title: '팀 회의', body: '오전 10:30 · 10분 후 시작', tag: 'k' })).toBe(true);
     expect(ctor).toHaveBeenCalledWith('팀 회의', expect.objectContaining({ body: '오전 10:30 · 10분 후 시작', tag: 'k' }));
     vi.unstubAllGlobals();
+  });
+});
+
+describe('구글 일정 알림 설정(2단계)', () => {
+  it('기본은 **꺼짐**이다 — 그 알림은 구글이 이미 보낸다', () => {
+    expect(googleRemindersEnabled()).toBe(false);
+    // 그리오 알림은 반대로 기본이 켜짐이다(스위치의 뜻이 다르다).
+    expect(remindersEnabled()).toBe(true);
+  });
+
+  it('켜고 끈 값이 이 기기에 남고, 열려 있는 화면들이 따라온다', () => {
+    const seen: boolean[] = [];
+    const off = onRemindersEnabledChange(() => seen.push(googleRemindersEnabled()));
+    setGoogleRemindersEnabled(true);
+    expect(googleRemindersEnabled()).toBe(true);
+    setGoogleRemindersEnabled(false);
+    expect(googleRemindersEnabled()).toBe(false);
+    expect(seen).toEqual([true, false]);
+    off();
   });
 });

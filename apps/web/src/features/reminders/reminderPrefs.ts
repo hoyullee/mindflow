@@ -6,6 +6,8 @@
 
 /** 알림을 받을까 — 없으면 **켜짐**이다(아래 근거). */
 const PREF_KEY = 'mf_reminders';
+/** 구글 일정 알림도 우리가 띄울까 — 없으면 **꺼짐**이다(아래 근거). */
+const GOOGLE_PREF_KEY = 'mf_reminders_google';
 /** 이미 띄운 알림 — `키@알림시각` → 띄운 시각(ms). */
 const FIRED_KEY = 'mf_reminded';
 /** 기억을 비우는 나이 — 하루면 충분하다(유예는 5분이고 시간은 앞으로만 간다). */
@@ -32,6 +34,33 @@ export function remindersEnabled(): boolean {
 export function setRemindersEnabled(on: boolean): void {
   try {
     localStorage.setItem(PREF_KEY, on ? '1' : '0');
+  } catch {
+    /* 저장소가 막혀도 이번 세션에서는 아래 알림으로 동작한다 */
+  }
+  listeners.forEach((fn) => fn());
+}
+
+/**
+ * 구글 일정에 걸린 알림도 **우리가** 띄울까(2단계).
+ *
+ * 기본이 **꺼짐**인 이유는 Geurio 알림과 정반대다: 구글 일정의 알림은 **구글이 이미
+ * 보낸다**(구글 캘린더 앱·브라우저 알림). 켜진 채로 시작하면 같은 회의에 알림이 둘
+ * 뜨는 것이 기본 동작이 된다 — 그건 고장으로 읽힌다. 그래서 "구글 알림을 안 받는
+ * 기기에서 그리오만 켜 두고 쓴다"는 사람이 직접 켜는 값이다.
+ *
+ * 기기별인 것도 같은 이유다 — 구글 알림을 받는지 여부가 기기마다 다르다.
+ */
+export function googleRemindersEnabled(): boolean {
+  try {
+    return localStorage.getItem(GOOGLE_PREF_KEY) === '1';
+  } catch {
+    return false;
+  }
+}
+
+export function setGoogleRemindersEnabled(on: boolean): void {
+  try {
+    localStorage.setItem(GOOGLE_PREF_KEY, on ? '1' : '0');
   } catch {
     /* 저장소가 막혀도 이번 세션에서는 아래 알림으로 동작한다 */
   }

@@ -7,16 +7,65 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import type { CalendarEvent } from '../../adapters/ports';
 import { useEventStore } from '../../adapters/BackendContext';
+import { ensureGoogleToken, fetchEvents, myRsvpOf, readReminderCalendars } from '../home/calendar/googleCalendar';
 import { useLiveRefresh } from '../home/calendar/useLiveRefresh';
 import {
   REMINDER_REFETCH_MS,
   REMINDER_TICK_MS,
   dueReminders,
+  googleReminderItems,
   reminderItems,
   reminderWindow,
+  type GoogleReminderSource,
   type ReminderItem,
 } from './reminders';
-import { markReminderFired, onRemindersEnabledChange, remindersEnabled, wasReminderFired } from './reminderPrefs';
+import {
+  googleRemindersEnabled,
+  markReminderFired,
+  onRemindersEnabledChange,
+  remindersEnabled,
+  wasReminderFired,
+} from './reminderPrefs';
+
+/**
+ * 구글 일정 중 알림에 쓸 것만 받아 온다(2단계) — 캘린더는 **이 기기의 거울**이
+ * 알려 준다(`readReminderCalendars`: 홈이 적어 두는 "지금 보여 주는 캘린더 + 기본
+ * 알림"). 그래야 에디터에서도, 워크스페이스 블롭을 읽지 않고 돌 수 있다.
+ *
+ * 토큰은 **팝업 없이** 받는다(`ensureGoogleToken` — 서버가 refresh token을 들고
+ * 있다). 못 받으면 조용히 빈 손으로 물러난다: 알림 때문에 동의 창이 저절로 뜨면
+ * 안 되고(#546), 여기서 "다시 연결"을 세울 자리도 아니다(화면이 그 일을 한다).
+ */
+async function fetchGoogleReminders(from: string, to: string): Promise<{ events: GoogleReminderSource[]; defaults: Map<string, number> }> {
+  const cals = readReminderCalendars();
+  if (!cals.length) return { events: [], defaults: new Map() };
+  const got = await ensureGoogleToken();
+  if (!('token' in got)) return { events: [], defaults: new Map() };
+  const defaults = new Map<string, number>();
+  for (const c of cals) if (typeof c.defaultMinutes === 'number') defaults.set(c.id, c.defaultMinutes);
+  // 캘린더 하나가 실패해도(권한 없음·삭제됨) 나머지는 그대로 받는다.
+  const per = await Promise.all(
+    cals.map((c) => fetchEvents(got.token.accessToken, { id: c.id, summary: '' }, from, to).catch(() => [])),
+  );
+  return {
+    events: per.flat().map((e) => ({
+      id: e.id,
+      calendarId: e.calendarId,
+      title: e.title,
+      startDate: e.startDate,
+      ...(e.startTime ? { startTime: e.startTime } : {}),
+      allDay: e.allDay,
+      ...('reminderMinutes' in e ? { reminderMinutes: e.reminderMinutes } : {}),
+      ...(e.holiday ? { holiday: true } : {}),
+      ...(e.workLocation ? { workLocation: e.workLocation } : {}),
+      ...((): { rsvp?: GoogleReminderSource['rsvp'] } => {
+        const r = myRsvpOf(e);
+        return r ? { rsvp: r } : {};
+      })(),
+    })),
+    defaults,
+  };
+}
 
 export interface ReminderQueue {
   /** 지금 보여 줄 알림(없으면 null). 여럿이 한꺼번에 뜨면 하나씩 넘긴다. */
@@ -33,7 +82,9 @@ export interface ReminderQueue {
 export function useReminderScheduler(onFire?: (item: ReminderItem) => void): ReminderQueue {
   const eventStore = useEventStore();
   const [enabled, setEnabled] = useState(() => remindersEnabled());
+  const [googleOn, setGoogleOn] = useState(() => googleRemindersEnabled());
   const [events, setEvents] = useState<CalendarEvent[]>([]);
+  const [google, setGoogle] = useState<{ events: GoogleReminderSource[]; defaults: Map<string, number> }>(() => ({ events: [], defaults: new Map() }));
   const [queue, setQueue] = useState<ReminderItem[]>([]);
   const aliveRef = useRef(true);
   const fireRef = useRef(onFire);
@@ -47,11 +98,19 @@ export function useReminderScheduler(onFire?: (item: ReminderItem) => void): Rem
   }, []);
 
   // 설정에서 켜고 끄면 **열려 있는 모든 화면**이 따라온다(스케줄러가 화면마다 있다).
-  useEffect(() => onRemindersEnabledChange(() => setEnabled(remindersEnabled())), []);
+  useEffect(
+    () =>
+      onRemindersEnabledChange(() => {
+        setEnabled(remindersEnabled());
+        setGoogleOn(googleRemindersEnabled());
+      }),
+    [],
+  );
 
   const fetchWindow = useCallback(() => {
     if (!enabled) {
       setEvents([]);
+      setGoogle({ events: [], defaults: new Map() });
       return;
     }
     const { from, to } = reminderWindow();
@@ -62,7 +121,17 @@ export function useReminderScheduler(onFire?: (item: ReminderItem) => void): Rem
       })
       // 조회 실패는 조용히 넘긴다 — 들고 있던 것으로 계속 돌고 다음 주기가 다시 묻는다.
       .catch(() => undefined);
-  }, [eventStore, enabled]);
+    // 구글은 **켜 두었을 때만** 묻는다 — 끈 사람에게는 왕복이 한 번도 나가지 않는다.
+    if (!googleOn) {
+      setGoogle({ events: [], defaults: new Map() });
+      return;
+    }
+    void fetchGoogleReminders(from, to)
+      .then((got) => {
+        if (aliveRef.current) setGoogle(got);
+      })
+      .catch(() => undefined);
+  }, [eventStore, enabled, googleOn]);
 
   useEffect(() => {
     fetchWindow();
@@ -78,7 +147,10 @@ export function useReminderScheduler(onFire?: (item: ReminderItem) => void): Rem
   const tick = useCallback(() => {
     if (!enabled) return;
     const { from, to } = reminderWindow();
-    const due = dueReminders(reminderItems(events, from, to), Date.now());
+    const mine = reminderItems(events, from, to);
+    // 두 원천을 **한 목록**으로 합쳐 같은 규칙(유예·중복 방지·큐)을 지나게 한다.
+    const all = googleOn ? [...mine, ...googleReminderItems(google.events, google.defaults, from, to)] : mine;
+    const due = dueReminders(all, Date.now());
     const fresh: ReminderItem[] = [];
     for (const item of due) {
       // 저장소를 **바로 앞에서** 읽는다 — 탭이 여럿이면 각자 주기를 돌린다.
@@ -88,7 +160,7 @@ export function useReminderScheduler(onFire?: (item: ReminderItem) => void): Rem
       fireRef.current?.(item);
     }
     if (fresh.length) setQueue((q) => [...q, ...fresh]);
-  }, [events, enabled]);
+  }, [events, google, googleOn, enabled]);
 
   useEffect(() => {
     if (!enabled) return;

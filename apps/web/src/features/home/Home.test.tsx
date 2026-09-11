@@ -1526,6 +1526,15 @@ describe('Home', () => {
       expect(group.querySelector('[data-remind-allow]')).toBeNull();
     });
 
+    it('구글을 연동하지 않았으면 구글 하위 행이 없다 — 켤 것이 없으면 자리도 없다', async () => {
+      stubNotification('granted');
+      const user = userEvent.setup();
+      renderHome();
+      const dialog = await openSettings(user);
+      expect(dialog.querySelector('[data-remind-group]')).toBeTruthy();
+      expect(dialog.querySelector('[data-remind-google-row]')).toBeNull();
+    });
+
     it('`Notification`이 없는 환경에서는 행 자체를 그리지 않는다(눌러도 아무 일이 없는 자리를 두지 않는다)', async () => {
       // jsdom 기본값 — 스텁하지 않는다.
       const user = userEvent.setup();

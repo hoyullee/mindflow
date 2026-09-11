@@ -24,6 +24,16 @@ describe('구글 캘린더 — 응답 해석', () => {
     expect(list[0]!.color).toBe('#4285f4');
   });
 
+  it('캘린더의 **기본 알림**은 첫 팝업 값이다 — 2단계 알림이 그 값으로 띄운다', () => {
+    const [cal] = parseCalendarList({
+      items: [{ id: 'me@example.com', summary: '내 캘린더', defaultReminders: [{ method: 'email', minutes: 60 }, { method: 'popup', minutes: 10 }] }],
+    });
+    // 메일 알림은 우리가 보낼 수 없으므로 세지 않는다 — 띄울 수 있는 것만 안다고 말한다.
+    expect(cal!.defaultMinutes).toBe(10);
+    expect(parseCalendarList({ items: [{ id: 'a@x', summary: 'x' }] })[0]!.defaultMinutes).toBeUndefined();
+    expect(parseCalendarList({ items: [{ id: 'a@x', summary: 'x', defaultReminders: [] }] })[0]!.defaultMinutes).toBeUndefined();
+  });
+
   it('공휴일 캘린더는 id로 알아본다', () => {
     expect(isHolidayCalendarId(HOL.id)).toBe(true);
     expect(isHolidayCalendarId('me@example.com')).toBe(false);
