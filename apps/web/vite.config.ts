@@ -50,6 +50,47 @@ function landingRootSwap(): Plugin {
   };
 }
 
+/**
+ * 설치형 앱이 읽는 **껍데기 버전 파일**을 산출물에 심는다 — `dist/desktop-version.json`.
+ *
+ * 버전의 정본은 `apps/desktop/package.json` **하나**다(`app.getName()`·설치 파일
+ * 이름이 거기서 나온다). 그래서 값을 여기에 적지 않고 그 파일에서 읽어 만든다 —
+ * 두 곳에 적으면 반드시 갈리고, 갈린 값은 "새 버전이 있다"는 거짓말이 된다.
+ *
+ * 읽을 수 없으면(그 패키지가 없는 빌드) **아무것도 심지 않는다** — 앱은 파일을
+ * 못 찾아 "확인하지 못했어요"로 물러나고, 지금과 같은 상태가 된다.
+ *
+ * PWA 프리캐시 글롭(`**\/*.{js,css,html,svg,png,woff2,ico}`)에 `json`이 없어 이
+ * 파일은 캐시되지 않는다 — 그래야 배포 직후의 값을 읽는다. 글롭에 json을 더하면
+ * 이 파일이 굳으므로 그때는 `globIgnores`에 넣어야 한다.
+ */
+function desktopVersionManifest(): Plugin {
+  let outDir = 'dist';
+  return {
+    name: 'geurio:desktop-version-manifest',
+    configResolved(config) {
+      outDir = path.resolve(config.root, config.build.outDir);
+    },
+    writeBundle() {
+      let version = '';
+      try {
+        const pkg = readFileSync(path.resolve(__dirname, '../desktop/package.json'), 'utf8');
+        version = String((JSON.parse(pkg) as { version?: unknown }).version ?? '').trim();
+      } catch {
+        return;
+      }
+      if (!/^\d+\.\d+\.\d+$/.test(version)) return;
+      writeFileSync(
+        path.join(outDir, 'desktop-version.json'),
+        // `url`은 **데이터**다 — 받을 곳이 바뀌어도 앱 코드를 고치지 않는다.
+        // `releases/latest`는 언제나 가장 새 릴리스로 간다(태그를 밀면 워크플로가
+        // 만든다 — .github/workflows/desktop.yml).
+        `${JSON.stringify({ version, url: 'https://github.com/hoyullee/mindflow/releases/latest' }, null, 2)}\n`,
+      );
+    },
+  };
+}
+
 // M6: PWA (installable + offline app shell). Manifest fields per CLAUDE.md's
 // M6 spec; icons/font are self-hosted under public/ (see
 // scripts/generate-icons.mjs and src/index.css) so the app installs and works
@@ -70,6 +111,7 @@ export default defineConfig({
   plugins: [
     react(),
     landingRootSwap(),
+    desktopVersionManifest(),
     VitePWA({
       // 'prompt': 새 SW를 **대기 상태**로 둔다 — 에디터가 열린 채 페이지가 저절로
       // 리로드되면 편집이 끊기므로, 적용 시점은 `UpdatePrompt`의 토스트로 사용자가

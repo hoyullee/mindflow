@@ -4,7 +4,7 @@
 // 4단계 이전 설치본에는 그 창구 자체가 없다. 그래서 "언제 그리는가"가 곧 계약이다.
 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { cleanup, render, screen, waitFor } from '@testing-library/react';
+import { cleanup, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { MemoryRouter, Route, Routes } from 'react-router-dom';
 import { Home } from './Home';
@@ -193,5 +193,94 @@ describe('설치형 앱 — 창을 닫아도 알림 받기(4단계)', () => {
     const dialog = await openSettings(user);
     await waitFor(() => expect(dialog.querySelector('[data-remind-bg-row]')).toBeTruthy());
     expect(dialog.querySelector('[data-remind-login-row]')).toBeNull();
+  });
+});
+
+// ── 새 설치 버전 확인(요청) ───────────────────────────────────────────────────
+//
+// 껍데기는 스스로 갱신되지 않는다 — 자동 업데이트는 서명을 요구하고(macOS의
+// Squirrel.Mac은 Developer ID 없이 거절, Windows는 검증되지 않은 바이너리를 자동
+// 실행하게 된다) 우리는 무서명이다. 그래서 **알리고 릴리스 페이지를 연다**.
+describe('설치형 앱 — 새 설치 버전 확인', () => {
+  /** `/desktop-version.json`만 골라 답한다 — 다른 fetch(연결 확인 등)는 통과시킨다. */
+  function stubManifest(body: unknown, ok = true) {
+    const f = vi.fn(async (input: RequestInfo | URL) => {
+      const url = String(input);
+      if (url.startsWith('/desktop-version.json')) return { ok, json: async () => body } as unknown as Response;
+      return { ok: true, json: async () => ({}) } as unknown as Response;
+    });
+    vi.stubGlobal('fetch', f);
+    return f;
+  }
+
+  async function openVersion(user: ReturnType<typeof userEvent.setup>): Promise<HTMLElement> {
+    const dialog = await openSettings(user);
+    await user.click(dialog.querySelector('[data-version-detail-row]') as HTMLElement);
+    return dialog;
+  }
+
+  beforeEach(() => {
+    localStorage.clear();
+    mockMatchMedia(false);
+    localStorage.setItem('mf_demo_session', JSON.stringify({ user: { id: 'u1', email: 'me@example.com' } }));
+    vi.stubGlobal('Notification', FakeNotification);
+  });
+  afterEach(() => {
+    cleanup();
+    delete (window as unknown as { geurio?: unknown }).geurio;
+    vi.unstubAllGlobals();
+  });
+
+  it('새 판이 있으면 알리고, 다운로드가 릴리스 페이지를 시스템 브라우저로 연다', async () => {
+    const user = userEvent.setup();
+    installShell();
+    const open = vi.fn(() => Promise.resolve(true));
+    (window as unknown as { geurio: { openExternal: unknown } }).geurio.openExternal = open;
+    stubManifest({ version: '0.4.0', url: 'https://github.com/hoyullee/mindflow/releases/latest' });
+    renderHome();
+
+    const dialog = await openVersion(user);
+    const row = () => dialog.querySelector('[data-shell-update]') as HTMLElement;
+    await waitFor(() => expect(row().getAttribute('data-shell-update-state')).toBe('available'));
+    // 버전을 말한다 — "새 버전이 있어요"만으로는 무엇을 받는지 알 수 없다.
+    expect(row().textContent).toContain('0.4.0');
+
+    // 버튼 이름이 `업데이트`가 아니라 `다운로드`다 — 누르면 일어나는 일을 말한다.
+    const btn = row().querySelector('[data-update-action]') as HTMLElement;
+    expect(btn.textContent).toBe('다운로드');
+    await user.click(btn);
+    expect(open).toHaveBeenCalledWith('https://github.com/hoyullee/mindflow/releases/latest');
+  });
+
+  it('같은 판이면 최신이라 말하고, 읽지 못하면 그렇게 말한다 — 둘은 다르다', async () => {
+    const user = userEvent.setup();
+    installShell();
+    stubManifest({ version: '0.3.0', url: 'https://example.com/r' });
+    renderHome();
+    let dialog = await openVersion(user);
+    await waitFor(() =>
+      expect(dialog.querySelector('[data-shell-update]')!.getAttribute('data-shell-update-state')).toBe('current'),
+    );
+    expect(within(dialog).getByText('설치 앱도 최신이에요')).toBeTruthy();
+    cleanup();
+
+    // 파일이 없다(배포 전) → `unknown`. **최신이라고 말하지 않는다.**
+    installShell();
+    stubManifest(null, false);
+    renderHome();
+    dialog = await openVersion(user);
+    await waitFor(() =>
+      expect(dialog.querySelector('[data-shell-update]')!.getAttribute('data-shell-update-state')).toBe('unknown'),
+    );
+    expect(within(dialog).queryByText('설치 앱도 최신이에요')).toBeNull();
+  });
+
+  it('브라우저에는 그 행이 없고, 버전 파일을 부르지도 않는다', async () => {
+    const user = userEvent.setup();
+    const f = stubManifest({ version: '9.9.9', url: 'https://example.com/r' });
+    renderHome();
+    const dialog = await openVersion(user);
+    expect(dialog.querySelector('[data-shell-update]')).toBeNull();
+    expect(f.mock.calls.some(([u]) => String(u).startsWith('/desktop-version.json'))).toBe(false);
   });
 });

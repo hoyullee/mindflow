@@ -1,7 +1,8 @@
-import { useEffect, useRef, useState, useSyncExternalStore } from 'react';
+import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from 'react';
 import { SectionLabel, SettingsGroup, SettingsRow } from './AccountSettingsModal';
 import { applyUpdateNow, checkForUpdateNow, currentUpdateStatus, onUpdateStatus, updateControlsReady } from '../../../../pwa/updateControl';
-import { desktopBridge } from '../../../../platform/desktopBridge';
+import { desktopBridge, openExternalUrl } from '../../../../platform/desktopBridge';
+import { checkShellUpdate, type ShellUpdateState } from '../../../../platform/shellUpdate';
 
 /**
  * 설정 › 「버전 확인」 — **지금 무엇을 돌고 있는지**와 새 버전을 직접 적용하는 손잡이.
@@ -27,6 +28,23 @@ export function VersionSection() {
 
   const bridge = desktopBridge();
   const build = buildLabel();
+
+  // 껍데기(설치 파일)의 새 판 — 화면(웹 번들)과 **따로** 확인한다. 자동 업데이트가
+  // 없으므로 이 확인이 사용자가 새 설치본을 알 수 있는 유일한 길이다.
+  const [shell, setShell] = useState<ShellUpdateState>({ kind: 'idle' });
+  const alive = useRef(true);
+  useEffect(() => () => { alive.current = false; }, []);
+  const checkShell = useCallback(() => {
+    const b = desktopBridge();
+    if (!b) return;
+    setShell({ kind: 'checking' });
+    // 마운트 플래그로 지킨다(효과별 취소 플래그가 아니라) — 답이 하나뿐이지만
+    // 이 프로젝트에서 그 함정을 두 번 밟았다: 첫 답이 상태를 바꾸면 효과가 다시
+    // 돌고, 그 사이 남은 조회가 버려진다.
+    void checkShellUpdate(b.version).then((next) => { if (alive.current) setShell(next); });
+  }, []);
+  // 이 화면을 여는 것이 곧 "확인해 달라"는 뜻이다 — 따로 누르게 하지 않는다.
+  useEffect(() => { checkShell(); }, [checkShell]);
 
   return (
     <>
@@ -72,7 +90,18 @@ export function VersionSection() {
         <SectionLabel>업데이트</SectionLabel>
       </div>
       <SettingsGroup>
-        <UpdateRow status={status} controls={controls} checked={checked} onCheck={() => { setChecked(false); checkForUpdateNow(); }} />
+        <UpdateRow
+          status={status}
+          controls={controls}
+          checked={checked}
+          onCheck={() => {
+            setChecked(false);
+            checkForUpdateNow();
+            // `지금 확인`은 사용자에게 **하나의 동작**이다 — 화면과 껍데기를 함께 본다.
+            checkShell();
+          }}
+        />
+        {bridge && <ShellUpdateRow state={shell} />}
       </SettingsGroup>
     </>
   );
@@ -185,6 +214,72 @@ function UpdateRow({
       // 확인을 누른 뒤에는 **그 사실**을 말한다 — 같은 문장만 남으면 눌린 줄 모른다.
       sub={checked ? '방금 확인했어요' : '새 버전이 나오면 자동으로 적용해요'}
       right={<UpdateButton onClick={onCheck}>지금 확인</UpdateButton>}
+    />
+  );
+}
+
+/**
+ * 껍데기의 새 판 한 행 — 설치형 앱에서만 그린다.
+ *
+ * **`다운로드`가 설치까지 하지 않는다**: 진짜 자동 업데이트는 서명을 요구한다
+ * (macOS의 Squirrel.Mac은 Developer ID 서명 없이는 갱신을 거절하고, Windows는
+ * 검증되지 않은 바이너리를 자동 실행하게 된다 — `shellUpdate.ts` 머리글). 그래서
+ * 릴리스 페이지를 **시스템 브라우저로** 열고 설치는 사용자가 한다. 버튼 이름이
+ * `업데이트`가 아니라 `다운로드`인 이유도 그것이다 — 누르면 일어나는 일을 말한다.
+ *
+ * `unknown`은 "확인하지 못했다"이고 **최신이라고 말하지 않는다** — 못 읽은 것과
+ * 없는 것은 다르다.
+ */
+function ShellUpdateRow({ state }: { state: ShellUpdateState }) {
+  const icon = (
+    <>
+      <rect x="3" y="4.5" width="18" height="13" rx="2.5" />
+      <path d="M8 20.5h8" />
+    </>
+  );
+  if (state.kind === 'checking' || state.kind === 'idle') {
+    return (
+      <SettingsRow
+        attrs={{ 'data-shell-update': '', 'data-shell-update-state': 'checking' }}
+        icon={icon}
+        title="설치 버전을 확인하고 있어요"
+        right={<Spinner />}
+      />
+    );
+  }
+  if (state.kind === 'available') {
+    return (
+      <SettingsRow
+        attrs={{ 'data-shell-update': '', 'data-shell-update-state': 'available' }}
+        icon={icon}
+        iconColor="var(--mf-accent-strong)"
+        title={`새 설치 버전 ${state.version}이 있어요`}
+        sub="받아서 설치하면 적용돼요 — 지금 쓰던 것은 그대로예요"
+        right={
+          <UpdateButton primary onClick={() => void openExternalUrl(state.url)}>
+            다운로드
+          </UpdateButton>
+        }
+      />
+    );
+  }
+  if (state.kind === 'unknown') {
+    return (
+      <SettingsRow
+        attrs={{ 'data-shell-update': '', 'data-shell-update-state': 'unknown' }}
+        icon={icon}
+        title="설치 버전을 확인하지 못했어요"
+        sub="연결을 확인한 뒤 다시 눌러 주세요"
+        right={<span />}
+      />
+    );
+  }
+  return (
+    <SettingsRow
+      attrs={{ 'data-shell-update': '', 'data-shell-update-state': 'current' }}
+      icon={icon}
+      title="설치 앱도 최신이에요"
+      right={<span />}
     />
   );
 }

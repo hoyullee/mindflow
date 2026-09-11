@@ -63,6 +63,10 @@ jobs:
 
   build:
     needs: plan
+    # 릴리스를 만들려면 쓰기가 필요하다(기본값은 읽기). `plan`에는 주지 않는다 —
+    # 권한은 그것을 쓰는 잡에만 준다.
+    permissions:
+      contents: write
     strategy:
       fail-fast: false
       matrix: ${{ fromJSON(needs.plan.outputs.matrix) }}
@@ -121,3 +125,23 @@ jobs:
           path: ${{ matrix.glob }}
           if-no-files-found: error
           retention-days: 14
+
+      # ── 태그를 밀었을 때만: GitHub Release에 붙인다 ──────────────────────────
+      # 아티팩트는 **14일 만료 + GitHub 로그인 필요**라 앱이 안내할 다운로드
+      # 주소가 될 수 없다(설정 › 버전 확인의 `다운로드`가 여는 곳이다). 릴리스는
+      # 만료가 없고 공개 저장소에서는 로그인 없이 받힌다.
+      #
+      # `gh`를 쓴다(서드파티 액션이 아니라) — 러너에 이미 깔려 있고 공급망이
+      # 하나 줄어든다. matrix 잡이 **동시에** 돌므로 먼저 도착한 잡이 릴리스를
+      # 만들고 나머지는 그 릴리스에 올린다: `create`는 이미 있으면 실패하므로
+      # 삼키고(`|| true`), `upload --clobber`가 같은 이름 파일을 덮어쓴다.
+      - name: Attach to release
+        if: startsWith(github.ref, 'refs/tags/')
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          tag="${GITHUB_REF_NAME}"
+          gh release create "$tag" --title "$tag" --generate-notes || true
+          # 글롭을 셸이 풀게 둔다 — macOS는 x64·arm64 두 개다.
+          gh release upload "$tag" ${{ matrix.glob }} --clobber
