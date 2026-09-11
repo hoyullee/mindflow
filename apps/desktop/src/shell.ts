@@ -402,3 +402,23 @@ export interface BackgroundState {
   loginSupported: boolean;
   openAtLogin: boolean;
 }
+
+/** 렌더러가 셸에게 띄워 달라고 넘기는 알림 한 건. */
+export interface NotifyPayload {
+  title: string;
+  body: string;
+  tag: string;
+}
+
+/**
+ * 렌더러가 넘긴 것을 **믿지 않는다** — 이 셸은 원격 출처(geurio.com)를 띄우므로
+ * 창구로 들어오는 값은 전부 모르는 값이다. 세 문자열이 아니면 `null`이고, 그때는
+ * 아무 알림도 띄우지 않는다(터지지도 않는다).
+ */
+export function notifyPayload(raw: unknown): NotifyPayload | null {
+  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return null;
+  const o = raw as Record<string, unknown>;
+  if (typeof o.title !== 'string' || typeof o.body !== 'string' || typeof o.tag !== 'string') return null;
+  if (!o.title.trim()) return null;
+  return { title: o.title, body: o.body, tag: o.tag };
+}

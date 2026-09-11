@@ -18,11 +18,14 @@ import {
   notifyPermission,
   remindersEnabled,
   resolveNotifyPermission,
+  sendTestNotification,
   setGoogleRemindersEnabled,
   setRemindersEnabled,
+  type NotifyPermission,
 } from '../../../reminders/reminderPrefs';
 import {
   desktopBackgroundState,
+  desktopNotifySupported,
   setDesktopBackground,
   setDesktopOpenAtLogin,
   type DesktopBackground,
@@ -87,6 +90,22 @@ export function AccountSettingsModal({ state, controller }: Props) {
       alive = false;
     };
   }, []);
+  // 이 기기가 OS 알림을 띄울 수 있는가 — **셸에게 묻는다**(`Notification.isSupported()`).
+  // 브라우저·PWA·옛 셸에서는 `null`(= 모른다)이고, 그때는 아무 말도 하지 않는다.
+  const [shellNotify, setShellNotify] = useState<boolean | null>(null);
+  useEffect(() => {
+    let alive = true;
+    void desktopNotifySupported().then((ok) => {
+      if (alive) setShellNotify(ok);
+    });
+    return () => {
+      alive = false;
+    };
+  }, []);
+  // 테스트 알림(제보: Windows 앱에서 알림이 오지 않는다) — "왜 안 왔나"를 눌러서
+  // 읽는 답으로 바꾼다. 결과 문장은 이 자리에만 남는다(발치·토스트로 흩지 않는다).
+  const [testing, setTesting] = useState(false);
+  const [testMsg, setTestMsg] = useState<string | null>(null);
 
   // 구글 일정 알림 하위 행의 조건 — 이 훅은 `mode: 'off'`에서도 연결 상태를 안다
   // (블롭의 `enabled`이고 끊겼다고 알려진 바 없는가 — `connected` 주석 참고).
@@ -194,11 +213,11 @@ export function AccountSettingsModal({ state, controller }: Props) {
               이름을 말했는데, 그러면 같은 말이 두 번 나온다. */}
           <div style={{ display: 'flex', alignItems: 'baseline', gap: 10, minWidth: 0 }}>
             <div data-settings-title style={{ fontSize: 19, fontWeight: 800, letterSpacing: '-.02em', flexShrink: 0 }}>
-              {view === 'account' ? '계정 설정' : view === 'profile' ? '프로필 설정' : view === 'calendar' ? 'Google 캘린더 연동' : view === 'version' ? '버전 확인' : '설정'}
+              {view === 'account' ? '계정 설정' : view === 'profile' ? '프로필 설정' : view === 'notify' ? '알림' : view === 'calendar' ? 'Google 캘린더 연동' : view === 'version' ? '버전 확인' : '설정'}
             </div>
             {detail && (
               <div data-settings-subtitle style={{ fontSize: 12.5, color: 'var(--mf-muted)', minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                {view === 'account' ? '로그인 수단과 계정 관리' : view === 'calendar' ? '보여 줄 캘린더와 공휴일' : view === 'version' ? '현재 버전과 업데이트' : '사진과 표시 이름'}
+                {view === 'account' ? '로그인 수단과 계정 관리' : view === 'notify' ? '일정 알림을 어디서 받을까' : view === 'calendar' ? '보여 줄 캘린더와 공휴일' : view === 'version' ? '현재 버전과 업데이트' : '사진과 표시 이름'}
               </div>
             )}
           </div>
@@ -358,6 +377,223 @@ export function AccountSettingsModal({ state, controller }: Props) {
               동작들과 나란히 서고, 파괴적인 일은 눈에 덜 띄는 자리가 맞다. 실제 경고와
               타이핑 게이트는 확인 팝업이 맡는다. */}
           <SettingsFooter onDelete={controller.askDeleteAccount} />
+            </div>
+          ) : view === 'notify' ? (
+            <div key="notify" className={viewClass}>
+              {/* 화면 이름은 헤더가 말한다 — 여기서는 스위치들만 그린다. */}
+            {/* 일정 알림(요청: 앱에서 일정 알림을 OS 알림으로) — **이 기기**의 설정이라
+                워크스페이스 블롭이 아니라 localStorage에 산다(OS 알림 권한 자체가 기기·
+                브라우저마다 따로다 — "노트북에서는 받고 회사 PC에서는 안 받는다"가
+                자연스럽다). 시작 화면 아래, 색상 테마 위: 둘 다 동작이고 색보다 먼저다.
+
+                **기본이 켜짐**인 이유: 이 스위치는 알림을 만들어 내지 않는다. 일정마다의
+                알림은 기본이 `없음`이라, 사용자가 직접 고르지 않으면 아무것도 뜨지 않는다.
+                여기서 꺼짐으로 시작하면 방금 고른 알림이 이유 없이 안 온다.
+
+                `Notification`이 아예 없는 환경에서는 **행 자체를 그리지 않는다**(눌러도
+                아무 일이 없는 자리를 두지 않는다). */}
+            {(nativeNotify || perm !== 'unsupported') && (
+              <SettingsGroup style={{ marginTop: 14 }} attrs={{ 'data-remind-group': '' }}>
+                <div style={{ display: 'flex', alignItems: 'center', flexWrap: 'wrap', gap: 13, padding: '14px 15px' }}>
+                  <div style={{ minWidth: 0, flex: '1 1 180px' }}>
+                    <div style={{ fontWeight: 700, fontSize: 14.5 }}>일정 알림</div>
+                    <div data-remind-note style={{ marginTop: 3, fontSize: 12.5, color: 'var(--mf-muted)' }}>
+                      {!remindOn
+                        ? '켜면 일정에 걸어 둔 알림이 이 기기에 떠요'
+                        : perm === 'granted'
+                          ? '알림 시각에 앱 알림과 OS 알림이 함께 떠요'
+                          : perm === 'denied'
+                            ? '브라우저가 알림을 막아 뒀어요 — 앱 안에서만 떠요'
+                            : 'OS 알림을 허용하면 다른 창을 보고 있어도 떠요'}
+                    </div>
+                  </div>
+                  {/* 허용 버튼은 **물어볼 수 있을 때만** 있다(`default`) — 이미 허용했거나
+                      차단한 뒤에는 브라우저가 다시 묻지 않으므로 죽은 버튼이 된다.
+                      권한 요청은 사용자 제스처에서만 되는데, 이 클릭이 그 제스처다. */}
+                  {remindOn && perm === 'default' && (
+                    <button
+                      type="button"
+                      data-remind-allow
+                      className="mf-ctl"
+                      onClick={() => void askNotifyPermission().then(setPerm)}
+                      style={{ flexShrink: 0, height: 30, padding: '0 12px', borderRadius: 999, border: '1px solid var(--mf-border)', background: 'var(--mf-card)', color: 'var(--mf-text)', fontFamily: 'inherit', fontSize: 12.5, fontWeight: 700, cursor: 'pointer' }}
+                    >
+                      OS 알림 허용
+                    </button>
+                  )}
+                  <Switch
+                    checked={remindOn}
+                    onCheckedChange={() => {
+                      const next = !remindOn;
+                      setRemindersEnabled(next);
+                      setRemindOn(next);
+                      // 켜는 그 클릭이 곧 제스처다 — 여기서 물으면 사용자는 자기가 누른
+                      // 결과로 창을 본다(저절로 뜨는 권한 창을 만들지 않는다).
+                      if (next && perm !== 'granted') void askNotifyPermission().then(setPerm);
+                    }}
+                    label="일정 알림"
+                    accent="var(--mf-accent)"
+                    track="var(--mf-scroll)"
+                    knob="var(--mf-card)"
+                  />
+                </div>
+                {/* 구글 일정 알림(2단계) — **기본이 꺼짐**이다: 그 알림은 구글이 이미
+                    보내므로(구글 캘린더 앱·브라우저) 켜져 있으면 같은 회의에 알림이 둘
+                    뜨는 것이 기본 동작이 된다. "구글 알림을 안 받는 기기에서 그리오만
+                    켜 둔다"는 사람이 직접 켜는 값이라 하위 행으로 둔다.
+
+                    **연동했을 때만** 그린다(켤 것이 없으면 자리도 없다). 위 스위치가
+                    꺼져 있으면 감춘다 — 꺼진 부모 아래의 하위 설정은 눌러도 아무 일이
+                    없으므로 그 자리를 두지 않는다. */}
+                {remindOn && googleConnected && (
+                  <div
+                    data-remind-google-row
+                    style={{ display: 'flex', alignItems: 'center', flexWrap: 'wrap', gap: 13, padding: '13px 15px', borderTop: '1px solid var(--mf-border-soft)' }}
+                  >
+                    <div style={{ minWidth: 0, flex: '1 1 180px' }}>
+                      <div style={{ fontWeight: 700, fontSize: 13.5 }}>구글 일정도 알림</div>
+                      <div data-remind-google-note style={{ marginTop: 3, fontSize: 12.5, color: 'var(--mf-muted)' }}>
+                        {googleRemindOn ? '구글이 보내는 알림과 함께 떠요' : '구글 캘린더가 이미 보내는 알림 말고 여기서도 받을 때 켜요'}
+                      </div>
+                    </div>
+                    <Switch
+                      checked={googleRemindOn}
+                      onCheckedChange={() => {
+                        const next = !googleRemindOn;
+                        setGoogleRemindersEnabled(next);
+                        setGoogleRemindOn(next);
+                        if (next && perm !== 'granted') void askNotifyPermission().then(setPerm);
+                      }}
+                      label="구글 일정도 알림"
+                      accent="var(--mf-accent)"
+                      track="var(--mf-scroll)"
+                      knob="var(--mf-card)"
+                    />
+                  </div>
+                )}
+                {/* 설치형 앱: 창을 닫아도 알림(4단계) — 알림을 띄우는 것은 창 안의
+                    스케줄러라, 창이 파괴되면 그 순간 알림도 멎는다. 그래서 이 스위치는
+                    "앱을 트레이에 남긴다"가 아니라 **"닫아도 알림을 받는다"**로 말한다
+                    (사용자가 얻는 것이 그것이다).
+
+                    `bg`가 없으면 그리지 않는다: 브라우저·PWA·옛 설치본·되돌아올 길이
+                    없는 환경. 위 스위치가 꺼져 있으면 감춘다(꺼진 부모 아래의 하위
+                    설정은 눌러도 아무 일이 없다 — 구글 행과 같은 규칙). */}
+                {remindOn && bg?.supported && (
+                  <div
+                    data-remind-bg-row
+                    style={{ display: 'flex', alignItems: 'center', flexWrap: 'wrap', gap: 13, padding: '13px 15px', borderTop: '1px solid var(--mf-border-soft)' }}
+                  >
+                    <div style={{ minWidth: 0, flex: '1 1 180px' }}>
+                      <div style={{ fontWeight: 700, fontSize: 13.5 }}>앱을 닫아도 알림 받기</div>
+                      <div data-remind-bg-note style={{ marginTop: 3, fontSize: 12.5, color: 'var(--mf-muted)' }}>
+                        {bg.enabled
+                          ? '창을 닫아도 앱이 남아 알림을 보내요 — 완전히 끄면 그때는 멎어요'
+                          : '창을 닫으면 앱이 종료돼 알림도 함께 멎어요'}
+                      </div>
+                    </div>
+                    <Switch
+                      checked={bg.enabled}
+                      onCheckedChange={() => {
+                        void setDesktopBackground(!bg.enabled).then((next) => {
+                          // 셸이 **바뀐 뒤의 상태**를 돌려준다 — 사본을 우리가 만들지
+                          // 않으므로 화면과 실제가 갈릴 수 없다.
+                          if (next) setBg(next);
+                        });
+                      }}
+                      label="앱을 닫아도 알림 받기"
+                      accent="var(--mf-accent)"
+                      track="var(--mf-scroll)"
+                      knob="var(--mf-card)"
+                    />
+                  </div>
+                )}
+                {/* 로그인할 때 자동 실행 — 상주와 **나란한** 설정이다(하위가 아니다):
+                    상주가 꺼져 있어도 "컴퓨터를 켜면 앱이 열린다"는 그 자체로 뜻이
+                    있으므로, 끄는 길을 감추지 않고 문구만 상황에 맞춘다. */}
+                {remindOn && bg?.supported && bg.loginSupported && (
+                  <div
+                    data-remind-login-row
+                    style={{ display: 'flex', alignItems: 'center', flexWrap: 'wrap', gap: 13, padding: '13px 15px', borderTop: '1px solid var(--mf-border-soft)' }}
+                  >
+                    <div style={{ minWidth: 0, flex: '1 1 180px' }}>
+                      <div style={{ fontWeight: 700, fontSize: 13.5 }}>로그인할 때 자동 실행</div>
+                      <div data-remind-login-note style={{ marginTop: 3, fontSize: 12.5, color: 'var(--mf-muted)' }}>
+                        {bg.enabled
+                          ? '컴퓨터를 켜면 창 없이 시작해 알림을 받아요'
+                          : '컴퓨터를 켜면 앱이 열려요'}
+                      </div>
+                    </div>
+                    <Switch
+                      checked={bg.openAtLogin}
+                      onCheckedChange={() => {
+                        void setDesktopOpenAtLogin(!bg.openAtLogin).then((next) => {
+                          // OS에서 **다시 읽은** 값이다 — 받아들이지 않는 환경(MSIX 등)
+                          // 에서는 스위치가 제자리로 돌아가 사실을 말한다.
+                          if (next) setBg(next);
+                        });
+                      }}
+                      label="로그인할 때 자동 실행"
+                      accent="var(--mf-accent)"
+                      track="var(--mf-scroll)"
+                      knob="var(--mf-card)"
+                    />
+                  </div>
+                )}
+                {/* 테스트 알림(제보: Windows 앱에서 OS 알림이 오지 않는다) — 일정
+                    시각을 기다리지 않고 **지금** 한 건 띄워 본다. 안 뜨는 이유가
+                    우리 스케줄러인지 권한인지 OS인지 갈리지 않던 것이, 눌러서 읽는
+                    답이 된다. 설치형 앱에서는 **셸이** 띄우므로(렌더러의 생성자와
+                    다른 길) 그 결과가 그대로 돌아온다.
+
+                    위 스위치가 꺼져 있으면 감춘다 — 알림을 안 받기로 한 사람에게
+                    "잘 오는지 확인해 보라"는 자리는 소음이다. */}
+                {remindOn && (
+                  <div
+                    data-remind-test-row
+                    style={{ display: 'flex', alignItems: 'center', flexWrap: 'wrap', gap: 13, padding: '13px 15px', borderTop: '1px solid var(--mf-border-soft)' }}
+                  >
+                    <div style={{ minWidth: 0, flex: '1 1 180px' }}>
+                      <div style={{ fontWeight: 700, fontSize: 13.5 }}>테스트 알림</div>
+                      <div data-remind-test-note style={{ marginTop: 3, fontSize: 12.5, color: 'var(--mf-muted)' }}>
+                        {/* 못 띄운다고 미리 말하는 것은 **두 길이 모두 막혔을 때만**이다
+                            — 셸이 못 띄워도 렌더러 생성자가 되는 환경이 있고, 실제
+                            알림도 그 순서로 물러선다(`showOsNotification`). 한 줄 안에서
+                            안내와 결과가 어긋나지 않게 같은 질문을 본다. */}
+                        {testMsg ??
+                          (shellNotify === false && perm !== 'granted'
+                            ? '이 기기에서는 OS 알림을 띄울 수 없어요 — 앱 안에서만 떠요'
+                            : '지금 한 건 보내 봐요 — 오지 않으면 OS 알림 설정을 확인해요')}
+                      </div>
+                    </div>
+                    <button
+                      type="button"
+                      data-remind-test
+                      className="mf-ctl"
+                      disabled={testing}
+                      onClick={() => {
+                        setTesting(true);
+                        setTestMsg(null);
+                        void sendTestNotification()
+                          .then((r) => {
+                            setTestMsg(
+                              r === 'sent'
+                                ? '보냈어요 — 화면 구석에 떴는지 확인해 주세요'
+                                : r === 'blocked'
+                                  ? 'OS가 알림을 막아 뒀어요 — 시스템 알림 설정에서 Geurio를 허용해 주세요'
+                                  : '이 기기에서는 OS 알림을 띄울 수 없어요 — 앱 안에서만 떠요',
+                            );
+                          })
+                          .finally(() => setTesting(false));
+                      }}
+                      style={{ flexShrink: 0, height: 30, padding: '0 12px', borderRadius: 999, border: '1px solid var(--mf-border)', background: 'var(--mf-card)', color: 'var(--mf-text)', fontFamily: 'inherit', fontSize: 12.5, fontWeight: 700, cursor: testing ? 'default' : 'pointer', opacity: testing ? 0.6 : 1 }}
+                    >
+                      {testing ? '보내는 중…' : '보내기'}
+                    </button>
+                  </div>
+                )}
+              </SettingsGroup>
+            )}
             </div>
           ) : view === 'calendar' ? (
             <div key="calendar" className={viewClass}>
@@ -535,6 +771,25 @@ export function AccountSettingsModal({ state, controller }: Props) {
               title="계정 설정"
               sub="비밀번호와 연동, 탈퇴"
             />
+            {/* 알림(요청) — '계정 설정' **아래**다. 세 스위치(일정 알림·구글 일정도
+                알림·앱을 닫아도 알림)를 첫 화면에 늘어놓으면 그것만으로 화면이
+                뒤덮인다 — 계정 설정·캘린더 연동과 같은 규칙으로 한 겹 안에 둔다.
+                `Notification`이 아예 없는 환경에서는 **행 자체가 없다**(그 안에
+                그릴 것이 하나도 없다 — 눌러도 빈 화면이 열릴 진입점을 두지 않는다). */}
+            {(nativeNotify || perm !== 'unsupported') && (
+              <SettingsRow
+                attrs={{ 'data-notify-detail-row': '' }}
+                onActivate={controller.openNotifyDetail}
+                icon={
+                  <>
+                    <path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9" />
+                    <path d="M13.73 21a2 2 0 0 1-3.46 0" />
+                  </>
+                }
+                title="알림"
+                sub={notifySub(remindOn, perm)}
+              />
+            )}
             {/* 버전 확인(요청) — '계정 설정' **아래**다. 여기 두는 이유: 자동으로
                 갈아끼워지는 판을 사용자가 직접 확인하고 앞당길 수 있어야 한다.
                 계정에 딸린 일은 아니지만 앱 자신에 관한 일이라 같은 묶음이 맞다. */}
@@ -596,168 +851,6 @@ export function AccountSettingsModal({ state, controller }: Props) {
               />
             </div>
           </SettingsGroup>
-
-          {/* 일정 알림(요청: 앱에서 일정 알림을 OS 알림으로) — **이 기기**의 설정이라
-              워크스페이스 블롭이 아니라 localStorage에 산다(OS 알림 권한 자체가 기기·
-              브라우저마다 따로다 — "노트북에서는 받고 회사 PC에서는 안 받는다"가
-              자연스럽다). 시작 화면 아래, 색상 테마 위: 둘 다 동작이고 색보다 먼저다.
-
-              **기본이 켜짐**인 이유: 이 스위치는 알림을 만들어 내지 않는다. 일정마다의
-              알림은 기본이 `없음`이라, 사용자가 직접 고르지 않으면 아무것도 뜨지 않는다.
-              여기서 꺼짐으로 시작하면 방금 고른 알림이 이유 없이 안 온다.
-
-              `Notification`이 아예 없는 환경에서는 **행 자체를 그리지 않는다**(눌러도
-              아무 일이 없는 자리를 두지 않는다). */}
-          {(nativeNotify || perm !== 'unsupported') && (
-            <SettingsGroup style={{ marginTop: 14 }} attrs={{ 'data-remind-group': '' }}>
-              <div style={{ display: 'flex', alignItems: 'center', flexWrap: 'wrap', gap: 13, padding: '14px 15px' }}>
-                <div style={{ minWidth: 0, flex: '1 1 180px' }}>
-                  <div style={{ fontWeight: 700, fontSize: 14.5 }}>일정 알림</div>
-                  <div data-remind-note style={{ marginTop: 3, fontSize: 12.5, color: 'var(--mf-muted)' }}>
-                    {!remindOn
-                      ? '켜면 일정에 걸어 둔 알림이 이 기기에 떠요'
-                      : perm === 'granted'
-                        ? '알림 시각에 앱 알림과 OS 알림이 함께 떠요'
-                        : perm === 'denied'
-                          ? '브라우저가 알림을 막아 뒀어요 — 앱 안에서만 떠요'
-                          : 'OS 알림을 허용하면 다른 창을 보고 있어도 떠요'}
-                  </div>
-                </div>
-                {/* 허용 버튼은 **물어볼 수 있을 때만** 있다(`default`) — 이미 허용했거나
-                    차단한 뒤에는 브라우저가 다시 묻지 않으므로 죽은 버튼이 된다.
-                    권한 요청은 사용자 제스처에서만 되는데, 이 클릭이 그 제스처다. */}
-                {remindOn && perm === 'default' && (
-                  <button
-                    type="button"
-                    data-remind-allow
-                    className="mf-ctl"
-                    onClick={() => void askNotifyPermission().then(setPerm)}
-                    style={{ flexShrink: 0, height: 30, padding: '0 12px', borderRadius: 999, border: '1px solid var(--mf-border)', background: 'var(--mf-card)', color: 'var(--mf-text)', fontFamily: 'inherit', fontSize: 12.5, fontWeight: 700, cursor: 'pointer' }}
-                  >
-                    OS 알림 허용
-                  </button>
-                )}
-                <Switch
-                  checked={remindOn}
-                  onCheckedChange={() => {
-                    const next = !remindOn;
-                    setRemindersEnabled(next);
-                    setRemindOn(next);
-                    // 켜는 그 클릭이 곧 제스처다 — 여기서 물으면 사용자는 자기가 누른
-                    // 결과로 창을 본다(저절로 뜨는 권한 창을 만들지 않는다).
-                    if (next && perm !== 'granted') void askNotifyPermission().then(setPerm);
-                  }}
-                  label="일정 알림"
-                  accent="var(--mf-accent)"
-                  track="var(--mf-scroll)"
-                  knob="var(--mf-card)"
-                />
-              </div>
-              {/* 구글 일정 알림(2단계) — **기본이 꺼짐**이다: 그 알림은 구글이 이미
-                  보내므로(구글 캘린더 앱·브라우저) 켜져 있으면 같은 회의에 알림이 둘
-                  뜨는 것이 기본 동작이 된다. "구글 알림을 안 받는 기기에서 그리오만
-                  켜 둔다"는 사람이 직접 켜는 값이라 하위 행으로 둔다.
-
-                  **연동했을 때만** 그린다(켤 것이 없으면 자리도 없다). 위 스위치가
-                  꺼져 있으면 감춘다 — 꺼진 부모 아래의 하위 설정은 눌러도 아무 일이
-                  없으므로 그 자리를 두지 않는다. */}
-              {remindOn && googleConnected && (
-                <div
-                  data-remind-google-row
-                  style={{ display: 'flex', alignItems: 'center', flexWrap: 'wrap', gap: 13, padding: '13px 15px', borderTop: '1px solid var(--mf-border-soft)' }}
-                >
-                  <div style={{ minWidth: 0, flex: '1 1 180px' }}>
-                    <div style={{ fontWeight: 700, fontSize: 13.5 }}>구글 일정도 알림</div>
-                    <div data-remind-google-note style={{ marginTop: 3, fontSize: 12.5, color: 'var(--mf-muted)' }}>
-                      {googleRemindOn ? '구글이 보내는 알림과 함께 떠요' : '구글 캘린더가 이미 보내는 알림 말고 여기서도 받을 때 켜요'}
-                    </div>
-                  </div>
-                  <Switch
-                    checked={googleRemindOn}
-                    onCheckedChange={() => {
-                      const next = !googleRemindOn;
-                      setGoogleRemindersEnabled(next);
-                      setGoogleRemindOn(next);
-                      if (next && perm !== 'granted') void askNotifyPermission().then(setPerm);
-                    }}
-                    label="구글 일정도 알림"
-                    accent="var(--mf-accent)"
-                    track="var(--mf-scroll)"
-                    knob="var(--mf-card)"
-                  />
-                </div>
-              )}
-              {/* 설치형 앱: 창을 닫아도 알림(4단계) — 알림을 띄우는 것은 창 안의
-                  스케줄러라, 창이 파괴되면 그 순간 알림도 멎는다. 그래서 이 스위치는
-                  "앱을 트레이에 남긴다"가 아니라 **"닫아도 알림을 받는다"**로 말한다
-                  (사용자가 얻는 것이 그것이다).
-
-                  `bg`가 없으면 그리지 않는다: 브라우저·PWA·옛 설치본·되돌아올 길이
-                  없는 환경. 위 스위치가 꺼져 있으면 감춘다(꺼진 부모 아래의 하위
-                  설정은 눌러도 아무 일이 없다 — 구글 행과 같은 규칙). */}
-              {remindOn && bg?.supported && (
-                <div
-                  data-remind-bg-row
-                  style={{ display: 'flex', alignItems: 'center', flexWrap: 'wrap', gap: 13, padding: '13px 15px', borderTop: '1px solid var(--mf-border-soft)' }}
-                >
-                  <div style={{ minWidth: 0, flex: '1 1 180px' }}>
-                    <div style={{ fontWeight: 700, fontSize: 13.5 }}>앱을 닫아도 알림 받기</div>
-                    <div data-remind-bg-note style={{ marginTop: 3, fontSize: 12.5, color: 'var(--mf-muted)' }}>
-                      {bg.enabled
-                        ? '창을 닫아도 앱이 남아 알림을 보내요 — 완전히 끄면 그때는 멎어요'
-                        : '창을 닫으면 앱이 종료돼 알림도 함께 멎어요'}
-                    </div>
-                  </div>
-                  <Switch
-                    checked={bg.enabled}
-                    onCheckedChange={() => {
-                      void setDesktopBackground(!bg.enabled).then((next) => {
-                        // 셸이 **바뀐 뒤의 상태**를 돌려준다 — 사본을 우리가 만들지
-                        // 않으므로 화면과 실제가 갈릴 수 없다.
-                        if (next) setBg(next);
-                      });
-                    }}
-                    label="앱을 닫아도 알림 받기"
-                    accent="var(--mf-accent)"
-                    track="var(--mf-scroll)"
-                    knob="var(--mf-card)"
-                  />
-                </div>
-              )}
-              {/* 로그인할 때 자동 실행 — 상주와 **나란한** 설정이다(하위가 아니다):
-                  상주가 꺼져 있어도 "컴퓨터를 켜면 앱이 열린다"는 그 자체로 뜻이
-                  있으므로, 끄는 길을 감추지 않고 문구만 상황에 맞춘다. */}
-              {remindOn && bg?.supported && bg.loginSupported && (
-                <div
-                  data-remind-login-row
-                  style={{ display: 'flex', alignItems: 'center', flexWrap: 'wrap', gap: 13, padding: '13px 15px', borderTop: '1px solid var(--mf-border-soft)' }}
-                >
-                  <div style={{ minWidth: 0, flex: '1 1 180px' }}>
-                    <div style={{ fontWeight: 700, fontSize: 13.5 }}>로그인할 때 자동 실행</div>
-                    <div data-remind-login-note style={{ marginTop: 3, fontSize: 12.5, color: 'var(--mf-muted)' }}>
-                      {bg.enabled
-                        ? '컴퓨터를 켜면 창 없이 시작해 알림을 받아요'
-                        : '컴퓨터를 켜면 앱이 열려요'}
-                    </div>
-                  </div>
-                  <Switch
-                    checked={bg.openAtLogin}
-                    onCheckedChange={() => {
-                      void setDesktopOpenAtLogin(!bg.openAtLogin).then((next) => {
-                        // OS에서 **다시 읽은** 값이다 — 받아들이지 않는 환경(MSIX 등)
-                        // 에서는 스위치가 제자리로 돌아가 사실을 말한다.
-                        if (next) setBg(next);
-                      });
-                    }}
-                    label="로그인할 때 자동 실행"
-                    accent="var(--mf-accent)"
-                    track="var(--mf-scroll)"
-                    knob="var(--mf-card)"
-                  />
-                </div>
-              )}
-            </SettingsGroup>
-          )}
 
           {/* 색상 테마 — LNB 최하단에 있다가 사용자 요청으로 이리 왔다(설정에 모으는 게
               자연스럽다). 적용 버튼 없이 **누르는 즉시** 뒤 화면까지 색이 바뀐다 —
@@ -858,6 +951,18 @@ function calendarSub(api: { enabled: boolean; needsReauth: boolean; pickedIds: s
   if (api.enabled && api.needsReauth) return '구글 권한을 다시 허용해야 이어져요';
   if (!api.enabled) return '';
   return `${api.pickedIds.length}개 캘린더를 함께 보고 있어요`;
+}
+
+/**
+ * 알림 진입 행의 부제 — **지금 상태**를 말한다(무엇을 하는 곳인지는 제목이 말한다).
+ * 꺼져 있으면 그렇게, 켜져 있는데 OS가 막고 있으면 그 사실을(그 상태를 모르고
+ * "안 온다"고 여기는 것이 가장 나쁘다).
+ */
+function notifySub(on: boolean, perm: NotifyPermission): string {
+  if (!on) return '꺼져 있어요';
+  if (perm === 'denied') return '앱 안에서만 떠요 — OS 알림이 막혀 있어요';
+  if (perm === 'granted') return '앱 알림과 OS 알림을 함께 받아요';
+  return 'OS 알림을 허용하면 다른 창을 보고 있어도 떠요';
 }
 
 export function SectionLabel({ children }: { children: ReactNode }) {

@@ -9,6 +9,7 @@
 import { createContext, useCallback, useContext, useEffect, useRef, useState, type ReactNode } from 'react';
 import type { AppNotification } from '../../../adapters/ports';
 import { useNotificationStore } from '../../../adapters/BackendContext';
+import { listReminderNotices, markReminderNoticesRead, onReminderInboxChange } from '../../reminders/reminderInbox';
 
 /** 탭 복귀 시 다시 읽는 최소 간격 — 포커스가 들락거려도 요청이 몰리지 않게. */
 const REFRESH_THROTTLE_MS = 30_000;
@@ -44,15 +45,26 @@ export function NotificationsProvider({ children }: { children: ReactNode }) {
   const [paused, setPaused] = useState(false);
   const lastLoadRef = useRef(0);
 
+  /**
+   * 서버 우편함 + **이 기기의 일정 알림 기록**을 한 목록으로(제보: 일정 알림이 오면
+   * `알림` 항목에도 남게). 일정 알림은 서버가 만들지 않으므로(스케줄러가 이 기기
+   * 안에서 띄운다 — 캘린더 데이터는 서버에 쌓지 않는다) 기록도 여기에 있다.
+   *
+   * 서버 조회가 실패해도 **기기 기록은 그대로 보여 준다** — 알림이 통째로 사라지는
+   * 편이 더 나쁘다.
+   */
   const refresh = useCallback(async (): Promise<AppNotification[]> => {
     lastLoadRef.current = Date.now();
+    const local = listReminderNotices();
     try {
-      const list = byNewest(await store.list());
+      const list = byNewest([...(await store.list()), ...local]);
       setItems(list);
       return list;
     } catch {
       /* 알림은 부가 기능 — 홈을 방해하지 않는다 */
-      return [];
+      const only = byNewest(local);
+      setItems(only);
+      return only;
     }
   }, [store]);
 
@@ -77,6 +89,9 @@ export function NotificationsProvider({ children }: { children: ReactNode }) {
   // 세운다. 신호는 유실될 수 있으므로 아래 주기 확인이 안전망으로 남는다.
   useEffect(() => store.subscribe(() => void refresh()), [store, refresh]);
 
+  // 일정 알림이 뜨는 그 순간 목록도 따라온다 — 같은 탭 안의 신호라 왕복이 없다.
+  useEffect(() => onReminderInboxChange(() => void refresh()), [refresh]);
+
   useEffect(() => {
     if (paused) return;
     const t = window.setInterval(() => {
@@ -89,6 +104,7 @@ export function NotificationsProvider({ children }: { children: ReactNode }) {
   const markAllRead = useCallback(() => {
     // 실패해도 다음 열기에 다시 시도된다 — 화면은 먼저 읽음으로 둔다.
     void store.markAllRead();
+    markReminderNoticesRead();
     setItems((cur) => cur.map((i) => ({ ...i, read: true })));
   }, [store]);
 

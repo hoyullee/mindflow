@@ -4111,11 +4111,18 @@ describe('구글 일정 알림 설정(2단계)', () => {
   beforeEach(() => mockMatchMedia(false));
   afterEach(() => vi.unstubAllGlobals());
 
-  /** 설정 첫 화면의 `일정 알림` 구획까지 — 구글 하위 행이 거기 있다. */
+  /** 설정 → **알림** 화면까지(요청으로 한 겹 안으로 들어갔다) — 구글 하위 행이 거기 있다. */
   async function openSettings(user: ReturnType<typeof userEvent.setup>) {
     await user.click(await screen.findByRole('button', { name: '계정 메뉴' }));
     await user.click(await screen.findByText('설정'));
-    return screen.getByRole('dialog', { name: '설정' });
+    const dialog = screen.getByRole('dialog', { name: '설정' });
+    const row = await waitFor(() => {
+      const el = dialog.querySelector('[data-notify-detail-row]');
+      expect(el).toBeTruthy();
+      return el as HTMLElement;
+    });
+    await user.click(row);
+    return dialog;
   }
 
   it('연동돼 있으면 하위 토글이 뜨고 **기본은 꺼짐**이다 — 켜면 이 기기에 남는다', async () => {

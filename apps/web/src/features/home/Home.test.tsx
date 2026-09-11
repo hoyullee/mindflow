@@ -1481,7 +1481,15 @@ describe('Home', () => {
     async function openSettings(user: ReturnType<typeof userEvent.setup>) {
       await user.click(await screen.findByRole('button', { name: '계정 메뉴' }));
       await user.click(screen.getByRole('button', { name: '설정' }));
-      return screen.getByRole('dialog', { name: '설정' });
+      const dialog = screen.getByRole('dialog', { name: '설정' });
+    // 설정 → **알림** 화면(요청으로 한 겹 안으로 들어갔다).
+    const row = await waitFor(() => {
+      const el = dialog.querySelector('[data-notify-detail-row]');
+      expect(el).toBeTruthy();
+      return el as HTMLElement;
+    });
+    await user.click(row);
+      return dialog;
     }
 
     it('기본은 켜짐이고, 끄면 이 기기에 남는다 — 문구도 함께 갈린다', async () => {
@@ -1535,11 +1543,14 @@ describe('Home', () => {
       expect(dialog.querySelector('[data-remind-google-row]')).toBeNull();
     });
 
-    it('`Notification`이 없는 환경에서는 행 자체를 그리지 않는다(눌러도 아무 일이 없는 자리를 두지 않는다)', async () => {
+    it('`Notification`이 없는 환경에서는 **진입 행 자체를** 그리지 않는다(눌러도 빈 화면이 열릴 자리를 두지 않는다)', async () => {
       // jsdom 기본값 — 스텁하지 않는다.
       const user = userEvent.setup();
       renderHome();
-      const dialog = await openSettings(user);
+      await user.click(await screen.findByRole('button', { name: '계정 메뉴' }));
+      await user.click(screen.getByRole('button', { name: '설정' }));
+      const dialog = screen.getByRole('dialog', { name: '설정' });
+      expect(dialog.querySelector('[data-notify-detail-row]')).toBeNull();
       expect(dialog.querySelector('[data-remind-group]')).toBeNull();
     });
   });
