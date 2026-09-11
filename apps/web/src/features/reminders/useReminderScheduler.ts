@@ -103,7 +103,7 @@ export interface ReminderQueue {
  */
 export function useReminderScheduler(
   onFire?: (item: ReminderItem) => void,
-  onOpen?: () => void,
+  onOpen?: (item?: ReminderItem) => void,
 ): ReminderQueue {
   const eventStore = useEventStore();
   const [enabled, setEnabled] = useState(() => remindersEnabled());
@@ -280,7 +280,9 @@ export function useReminderScheduler(
     void onNativeNotification((extra, tapped) => {
       const item = parseReminderExtra(extra);
       if (tapped) {
-        openRef.current?.();
+        // 탭한 알림이 가리키는 **그 일정**으로 — payload를 못 읽으면(옛 예약)
+        // 예전처럼 화면만 연다.
+        openRef.current?.(item ?? undefined);
         return;
       }
       if (item) setQueue((q) => [...q, item]);

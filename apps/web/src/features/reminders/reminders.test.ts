@@ -4,6 +4,7 @@ import {
   REMINDER_GRACE_MS,
   dueReminders,
   googleReminderItems,
+  isGoogleReminder,
   localMs,
   reminderItems,
   reminderLead,
@@ -110,8 +111,11 @@ describe('구글 일정 알림(2단계)', () => {
     expect(item!.minutes).toBe(10);
     expect(new Date(item!.fireAt).getHours()).toBe(10);
     expect(new Date(item!.fireAt).getMinutes()).toBe(20);
-    // 저장소에 남는 키라 어디서 온 것인지 읽히게 접두를 둔다.
+    // 저장소에 남는 키라 어디서 온 것인지 읽히게 접두를 둔다 — 그 접두가 곧 출처다
+    // (알림을 눌렀을 때 어느 상세 팝업을 열지가 여기서 갈린다).
     expect(item!.key).toBe('g:cal-a::g1#2026-09-15');
+    expect(isGoogleReminder(item!)).toBe(true);
+    expect(item!.eventId).toBe('cal-a::g1');
   });
 
   it('일정에 건 알림이 없으면(useDefault) **그 캘린더의 기본 알림**을 쓴다', () => {

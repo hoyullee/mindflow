@@ -1,5 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { groupRooms, guestSub, meetNote, withOrganizer } from './GoogleEventFields';
+import { inputToGoogleDraft } from './newEventSubmit';
+import { RECURRENCE_OFF } from './googleCalendar';
 
 describe('참석자 머리 문구(guestSub)', () => {
   it('주최자가 따로 있으면 "일정을 만든 사람 외 N명"', () => {
@@ -49,5 +51,21 @@ describe('Meet 토글 안내(meetNote)', () => {
     // 링크가 없는 구글 일정에서 켜면 저장할 때 만들어진다.
     expect(meetNote('edit', true, false)).toBe('저장하면 회의 링크가 만들어져요');
     expect(meetNote('edit', false, false)).toContain('켜면');
+  });
+});
+
+describe('종일 일정의 알림(inputToGoogleDraft)', () => {
+  const base = { title: '회의', startDate: '2026-09-15', endDate: '2026-09-15', allDay: false, startTime: '10:30', endTime: '11:30' };
+  const fields = { attendees: [], rooms: [], visibility: 'default' as const, transparency: 'opaque' as const, reminderMinutes: 10, recurrence: RECURRENCE_OFF, addMeet: false };
+
+  it('시각 일정은 고른 값을 그대로 싣는다', () => {
+    expect(inputToGoogleDraft(base, fields).reminderMinutes).toBe(10);
+  });
+
+  it('종일이면 싣지 않는다 — 화면이 못 고르게 막아 둔 값이 저장되면 안 된다(제보)', () => {
+    // 시각으로 고른 뒤 종일로 바꾼 초안 — `undefined`는 "안 건드린다"라 그 캘린더의
+    // 기본이 그대로 적용된다(우리가 알림을 지어내지도, 지우지도 않는다).
+    const draft = inputToGoogleDraft({ ...base, allDay: true }, fields);
+    expect(draft.reminderMinutes).toBeUndefined();
   });
 });

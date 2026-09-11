@@ -363,20 +363,28 @@ export function GoogleEventFields({
  *
  * `disabled`는 이제 "우리가 못 하는 일"을 말한다(종일 일정) — 예전에는 목적지가
  * Geurio라는 것 자체가 비활성 사유였다.
+ *
+ * **종일 일정은 목적지를 가리지 않고 비활성이다**(제보: 구글만 켜져 있었다). 우리
+ * 칩은 전부 "N분 전"인데 종일 일정의 기준은 자정이라 `10분 전`이 전날 23:50이 된다 —
+ * 고를 수 있게 두면 고른 것과 뜨는 것이 다르다. 구글은 그 자리에 "N일 전 오전 9시"
+ * 꼴을 따로 두지만 우리에게는 그 UI가 없으므로, 그 설정은 구글 캘린더에 맡긴다
+ * (**이미 걸려 있는 값은 지우지 않고** 아래 비활성 칩이 그대로 보여 준다).
  */
 export function ReminderField({
   value,
   onChange,
   disabled,
-  disabledNote = 'Google 캘린더에 저장하면 알림을 함께 등록할 수 있어요',
   kind = 'google',
+  disabledNote = kind === 'google'
+    ? '종일 일정의 알림은 Google 캘린더에서 설정할 수 있어요'
+    : '종일 일정에는 알림을 걸 수 없어요',
 }: {
   value: number | null | undefined;
   onChange: (minutes: number | null | undefined) => void;
   disabled?: boolean;
+  kind?: 'google' | 'geurio';
   /** 비활성인 이유 — 왜 못 고르는지 말하지 않으면 고장으로 읽힌다. */
   disabledNote?: string;
-  kind?: 'google' | 'geurio';
 }) {
   const opts = kind === 'geurio' ? REMIND_OPTS_GEURIO : REMIND_OPTS;
   const fallback = kind === 'geurio' ? 'none' : 'default';
@@ -395,7 +403,7 @@ export function ReminderField({
         <>
           <span data-gf-remind-off style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap', opacity: 0.5 }}>
             {opts.map((o) => (
-              <span key={o.key} aria-disabled style={{ height: 30, padding: '0 12px', borderRadius: 999, border: '1px solid var(--mf-border)', background: 'var(--mf-card)', color: 'var(--mf-subtext)', fontSize: 12, fontWeight: o.key === fallback ? 800 : 600, display: 'inline-flex', alignItems: 'center', whiteSpace: 'nowrap' }}>
+              <span key={o.key} aria-disabled style={{ height: 30, padding: '0 12px', borderRadius: 999, border: '1px solid var(--mf-border)', background: 'var(--mf-card)', color: 'var(--mf-subtext)', fontSize: 12, fontWeight: o.key === key ? 800 : 600, display: 'inline-flex', alignItems: 'center', whiteSpace: 'nowrap' }}>
                 {o.label}
               </span>
             ))}

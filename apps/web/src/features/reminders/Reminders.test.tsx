@@ -12,6 +12,7 @@ import { LocalEventStore } from '../../adapters/local/localEventStore';
 import { LocalImageStore } from '../../adapters/local/localImageStore';
 import type { Backend, CalendarEvent, DocMeta, DocStore, LoadedDoc, SaveResult } from '../../adapters/ports';
 import { ACTIVE_VIEW_KEY } from '../home/storage';
+import { takeCalendarFocus } from '../home/calendarFocus';
 import { ReminderHost } from './ReminderHost';
 import { REMINDER_TICK_MS } from './reminders';
 import { setGoogleRemindersEnabled, setRemindersEnabled } from './reminderPrefs';
@@ -54,6 +55,8 @@ class StubDocStore implements DocStore {
 }
 
 let osNotifications: { title: string; body: string }[] = [];
+/** 마지막 OS 알림에 걸린 클릭 핸들러 — 브라우저가 하는 일을 테스트가 대신 한다. */
+let lastNotificationClick: (() => void) | null = null;
 /** 구글에 나간 요청 — "켜지 않으면 왕복이 한 번도 없다"를 이 목록으로 본다. */
 let googleCalls: string[] = [];
 
@@ -88,8 +91,14 @@ function fakeNotification(permission: 'granted' | 'denied' | 'default'): void {
   class FakeNotification {
     static permission = permission;
     static requestPermission = vi.fn(async () => permission);
-    onclick: (() => void) | null = null;
     close = vi.fn();
+    // 앱이 `n.onclick = …`으로 심는 그 함수를 그대로 받아 둔다.
+    set onclick(fn: (() => void) | null) {
+      lastNotificationClick = fn;
+    }
+    get onclick(): (() => void) | null {
+      return lastNotificationClick;
+    }
     constructor(title: string, opts: { body?: string }) {
       osNotifications.push({ title, body: opts.body ?? '' });
     }
@@ -136,6 +145,7 @@ beforeEach(() => {
   localStorage.clear();
   sessionStorage.clear();
   osNotifications = [];
+  lastNotificationClick = null;
   googleCalls = [];
   vi.useFakeTimers();
   vi.setSystemTime(NOW);
@@ -219,6 +229,29 @@ describe('일정 알림', () => {
     expect(JSON.parse(sessionStorage.getItem(ACTIVE_VIEW_KEY)!)).toMatchObject({ activeCal: true, activeDash: null });
     // 누른 알림은 사라진다(같은 알림을 다시 보여 줄 이유가 없다).
     expect(document.querySelector('[data-reminder-toast]')).toBeNull();
+  });
+
+  it('`일정 보기`는 화면만 바꾸지 않는다 — **그 일정**을 함께 넘긴다(제보)', async () => {
+    fakeNotification('granted');
+    renderHost([EVENT]);
+    await settle();
+    await act(async () => {
+      fireEvent.click(screen.getByText('일정 보기'));
+    });
+    // 컨트롤러가 이것으로 달을 옮기고 그 날을 골라 상세까지 연다 — 화면만 바꾸면
+    // 이미 일정 화면이던 사람에게는 아무 일도 일어나지 않는다.
+    expect(takeCalendarFocus()).toEqual({ date: '2026-09-15', eventId: 'ev1', source: 'geurio' });
+  });
+
+  it('OS 알림을 눌러도 같은 일정을 넘긴다', async () => {
+    fakeNotification('granted');
+    renderHost([EVENT]);
+    await settle();
+    await act(async () => {
+      // 브라우저가 알림 클릭에 부르는 그 핸들러.
+      lastNotificationClick!();
+    });
+    expect(takeCalendarFocus()).toEqual({ date: '2026-09-15', eventId: 'ev1', source: 'geurio' });
   });
 });
 

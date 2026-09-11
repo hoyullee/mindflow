@@ -29,7 +29,11 @@ export function inputToGoogleDraft(input: CalendarEventInput, fields?: GoogleFie
           rooms: fields.rooms,
           visibility: fields.visibility,
           transparency: fields.transparency,
-          reminderMinutes: fields.reminderMinutes,
+          // 종일 일정에는 알림을 싣지 않는다 — 화면이 못 고르게 막아 둔 값이고
+          // (`ReminderField` 주석: 우리 칩은 전부 "N분 전"인데 종일의 기준은 자정이다),
+          // 시각으로 고른 뒤 종일로 바꾼 초안이 그대로 저장되면 고른 적 없는 알림이
+          // 생긴다. `undefined`는 "안 건드린다"라 그 캘린더의 기본이 그대로 적용된다.
+          reminderMinutes: input.allDay ? undefined : fields.reminderMinutes,
           ...(fields.colorId ? { colorId: fields.colorId } : {}),
           ...(rrule ? { recurrence: rrule } : {}),
           ...(fields.addMeet ? { addMeet: true } : {}),

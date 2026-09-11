@@ -521,16 +521,16 @@ export function EventDetail({
               {/* 알림 — 늘 보이는 자리(요청 #5). **원천에 따라 값이 사는 곳이 다르다**:
                   구글 일정은 구글이 알림을 보내므로 구글 전용 초안(`reminder` 프롭)에
                   담기고, Geurio 일정은 우리가 띄우므로 이 팝업 초안에 담겨 `완료`가
-                  본문과 함께 저장한다(0038). 못 고르는 경우는 **종일 일정**뿐이다. */}
+                  본문과 함께 저장한다(0038). 못 고르는 경우는 **종일 일정**뿐이고,
+                  그건 원천을 가리지 않는다(제보) — 이유는 `ReminderField` 주석. */}
               {reminder ? (
-                <ReminderField value={reminder.value} onChange={(m) => reminder.onChange(m)} kind="google" />
+                <ReminderField value={reminder.value} onChange={(m) => reminder.onChange(m)} kind="google" disabled={draft.allDay} />
               ) : (
                 <ReminderField
                   value={draft.reminderMinutes}
                   onChange={(m) => set({ reminderMinutes: typeof m === 'number' ? m : null })}
                   kind="geurio"
                   disabled={draft.allDay}
-                  disabledNote="종일 일정에는 알림을 걸 수 없어요"
                 />
               )}
             </>
