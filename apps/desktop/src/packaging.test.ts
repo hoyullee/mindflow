@@ -85,6 +85,24 @@ describe('설치 파일 계약', () => {
     expect(wf).not.toContain('CSC_LINK:');
   });
 
+  it('태그와 셸 버전이 다르면 빌드 전에 멈춘다', () => {
+    // 버전의 정본은 package.json 하나이고 태그는 **이름표**다. 둘이 어긋난 채
+    // 태그를 밀면 릴리스 제목은 0.3.0인데 그 안의 파일은 0.2.0이고 매니페스트도
+    // 0.2.0이라 **아무에게도 "새 설치 버전이 있어요"가 뜨지 않는다** — 빌드도
+    // 테스트도 초록이라 받아서 눌러 봐야 안다.
+    const wf = readFileSync(path.join(root, '..', '..', '.github', 'workflows', 'desktop.yml'), 'utf8');
+    const plan = wf.slice(wf.indexOf('\n  plan:'), wf.indexOf('\n  build:'));
+    // `build`가 아니라 `plan`에 있어야 러너를 하나도 태우지 않는다(태그 푸시는
+    // 셋을 만들고 macOS는 분당 과금이 10배다).
+    expect(plan, '가드가 plan 잡에 없다').toContain('Check tag matches shell version');
+    // 태그로 돌 때만 — dispatch는 릴리스를 만들지 않으므로 어긋날 것도 없다.
+    expect(plan).toMatch(/Check tag matches shell version\n\s*if: startsWith\(github\.ref, 'refs\/tags\/'\)/);
+    // package.json을 읽으려면 체크아웃이 있어야 한다.
+    expect(plan).toContain('actions/checkout');
+    expect(plan).toContain('apps/desktop/package.json');
+    expect(plan, '어긋나도 통과하면 가드가 아니다').toContain('exit 1');
+  });
+
   it('AUMID가 appId와 같다 — 다르면 Windows 알림이 뜨지 않는다', () => {
     // `app.setAppUserModelId`에 넘기는 값이 설치본의 `appId`와 다르면 Windows가
     // 토스트를 우리 앱의 것으로 묶지 못한다(아예 안 뜨거나 `electron.app.Geurio`로

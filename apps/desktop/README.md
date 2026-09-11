@@ -461,6 +461,15 @@ apps/web/src/features/home/components/NotificationBell.tsx  고정 한 줄
 git tag desktop-v0.3.0 && git push origin desktop-v0.3.0
 ```
 
+**태그 이름은 버전을 정하지 않는다** — 정본은 1)의 `package.json`이고 태그는
+릴리스에 붙는 **이름표**다. 그래서 둘이 어긋날 수 있는데, 어긋나면 릴리스 제목은
+`desktop-v0.3.0`인데 그 안의 파일은 `Geurio Setup 0.2.0.exe`이고 매니페스트도
+0.2.0이라 **아무에게도 "새 설치 버전이 있어요"가 뜨지 않는다**(빌드도 테스트도
+초록이라 받아서 눌러 봐야 안다). `plan` 잡의 `Check tag matches shell version`이
+태그로 돌 때 그 둘을 대조해 **빌드 전에** 멈춘다 — `build`가 아니라 거기서 막는
+이유는 러너를 하나도 태우지 않기 때문이다(태그 푸시는 셋을 만들고 macOS는 분당
+과금이 ubuntu의 10배다). 1)을 잊고 태그하면 30초 만에 이유를 말하고 끝난다.
+
 태그 푸시는 세 플랫폼을 **전부** 만들고(입력이 없으므로) `Attach to release`
 스텝이 `gh`로 릴리스를 만들어 산출물을 올린다. matrix 잡이 동시에 돌기 때문에
 먼저 도착한 잡이 릴리스를 만들고 나머지는 그 릴리스에 올린다(`create`는 이미
