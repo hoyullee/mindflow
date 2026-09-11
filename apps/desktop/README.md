@@ -173,9 +173,23 @@ pnpm --filter @mindflow/desktop pack:mac   # release/Geurio-<ver>.dmg (x64 + arm
 (서명·공증 도구가 그 OS에만 있다). CI에 Windows·macOS 러너를 둔 이유가 이것이다:
 
 > GitHub → Actions → **Desktop installers** → Run workflow
+> → **만들 설치 파일**: `all` / `windows` / `macos` / `store`
 
-산출물은 그 실행의 아티팩트(`geurio-desktop-windows` / `-macos`)로 올라온다.
-손으로 돌리는 이유는 셸이 자주 바뀌지 않고 macOS 러너가 분당 과금이 비싸서다.
+산출물은 그 실행의 아티팩트(`geurio-desktop-windows` / `-macos` / `-store`)로
+올라온다. 손으로 돌리는 이유는 셸이 자주 바뀌지 않고 macOS 러너가 분당 과금이
+비싸서다 — 그래서 **하나만 고를 수 있다**: "Windows 설치본만" 같은 흔한 경우에
+mac 러너를 태울 이유가 없다(고르지 않은 플랫폼은 잡이 아예 생기지 않는다).
+
+**리눅스에서 Windows 설치본을 만들려 하지 말 것.** electron-builder는 NSIS
+언인스톨러를 만들려고 **방금 만든 설치 파일을 wine에서 한 번 실행**한다(서명
+여부와 무관한 단계다 — `app-builder-lib/.../NsisTarget.js`의
+`computeScriptAndSignUninstaller`). 그래서 wine이 없으면 `spawn wine ENOENT`로
+멈추고, 그때 남는 `release/*.exe`는 앱이 들어 있지 않은 **200KB대 껍데기**다
+(앱 본체는 `*.nsis.7z`에 있고 아직 합쳐지지 않았다 — 크기만 보고 성공으로
+읽지 말 것). 시스템 wine을 깔아도 NSIS 설치본은 32비트라 i386 멀티아치가
+필요하고, `toolsets.wine`으로 electron-builder의 자체 wine 번들을 받는 길도
+있지만(`wine-11.0-linux-x86_64`) 환경에 따라 그 번들이 자기 `ntdll`을 못 읽는다.
+결론: **Windows 산출물은 Windows 러너에서** 만든다.
 
 ## Microsoft Store 채널(MSIX) — 지금은 자가서명 로컬 설치까지
 
