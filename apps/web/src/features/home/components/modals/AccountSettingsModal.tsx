@@ -21,6 +21,12 @@ import {
   setGoogleRemindersEnabled,
   setRemindersEnabled,
 } from '../../../reminders/reminderPrefs';
+import {
+  desktopBackgroundState,
+  setDesktopBackground,
+  setDesktopOpenAtLogin,
+  type DesktopBackground,
+} from '../../../../platform/desktopBridge';
 import { nativeNotificationsAvailable } from '../../../../platform/nativeNotifications';
 
 interface Props {
@@ -69,6 +75,19 @@ export function AccountSettingsModal({ state, controller }: Props) {
   }, []);
   const googleApi = useGoogleCalendar(y, m, googlePrefsOf(state.google), controller.setGoogleCalendars, state.accountSettingsOpen && state.settingsView === 'calendar' ? 'events' : 'off');
   const visible = state.accountSettingsOpen;
+  // 설치형 앱의 상주 상태(4단계). `null`이면 **그 자리를 그리지 않는다** — 브라우저·
+  // PWA이거나, 상주 창구가 없는 옛 셸이거나, 되돌아올 길이 없는 환경이다.
+  const [bg, setBg] = useState<DesktopBackground | null>(null);
+  useEffect(() => {
+    let alive = true;
+    void desktopBackgroundState().then((s) => {
+      if (alive) setBg(s);
+    });
+    return () => {
+      alive = false;
+    };
+  }, []);
+
   // 구글 일정 알림 하위 행의 조건 — 이 훅은 `mode: 'off'`에서도 연결 상태를 안다
   // (블롭의 `enabled`이고 끊겼다고 알려진 바 없는가 — `connected` 주석 참고).
   const googleConnected = googleApi.available && googleApi.connected;
@@ -662,6 +681,75 @@ export function AccountSettingsModal({ state, controller }: Props) {
                       if (next && perm !== 'granted') void askNotifyPermission().then(setPerm);
                     }}
                     label="구글 일정도 알림"
+                    accent="var(--mf-accent)"
+                    track="var(--mf-scroll)"
+                    knob="var(--mf-card)"
+                  />
+                </div>
+              )}
+              {/* 설치형 앱: 창을 닫아도 알림(4단계) — 알림을 띄우는 것은 창 안의
+                  스케줄러라, 창이 파괴되면 그 순간 알림도 멎는다. 그래서 이 스위치는
+                  "앱을 트레이에 남긴다"가 아니라 **"닫아도 알림을 받는다"**로 말한다
+                  (사용자가 얻는 것이 그것이다).
+
+                  `bg`가 없으면 그리지 않는다: 브라우저·PWA·옛 설치본·되돌아올 길이
+                  없는 환경. 위 스위치가 꺼져 있으면 감춘다(꺼진 부모 아래의 하위
+                  설정은 눌러도 아무 일이 없다 — 구글 행과 같은 규칙). */}
+              {remindOn && bg?.supported && (
+                <div
+                  data-remind-bg-row
+                  style={{ display: 'flex', alignItems: 'center', flexWrap: 'wrap', gap: 13, padding: '13px 15px', borderTop: '1px solid var(--mf-border-soft)' }}
+                >
+                  <div style={{ minWidth: 0, flex: '1 1 180px' }}>
+                    <div style={{ fontWeight: 700, fontSize: 13.5 }}>앱을 닫아도 알림 받기</div>
+                    <div data-remind-bg-note style={{ marginTop: 3, fontSize: 12.5, color: 'var(--mf-muted)' }}>
+                      {bg.enabled
+                        ? '창을 닫아도 앱이 남아 알림을 보내요 — 완전히 끄면 그때는 멎어요'
+                        : '창을 닫으면 앱이 종료돼 알림도 함께 멎어요'}
+                    </div>
+                  </div>
+                  <Switch
+                    checked={bg.enabled}
+                    onCheckedChange={() => {
+                      void setDesktopBackground(!bg.enabled).then((next) => {
+                        // 셸이 **바뀐 뒤의 상태**를 돌려준다 — 사본을 우리가 만들지
+                        // 않으므로 화면과 실제가 갈릴 수 없다.
+                        if (next) setBg(next);
+                      });
+                    }}
+                    label="앱을 닫아도 알림 받기"
+                    accent="var(--mf-accent)"
+                    track="var(--mf-scroll)"
+                    knob="var(--mf-card)"
+                  />
+                </div>
+              )}
+              {/* 로그인할 때 자동 실행 — 상주와 **나란한** 설정이다(하위가 아니다):
+                  상주가 꺼져 있어도 "컴퓨터를 켜면 앱이 열린다"는 그 자체로 뜻이
+                  있으므로, 끄는 길을 감추지 않고 문구만 상황에 맞춘다. */}
+              {remindOn && bg?.supported && bg.loginSupported && (
+                <div
+                  data-remind-login-row
+                  style={{ display: 'flex', alignItems: 'center', flexWrap: 'wrap', gap: 13, padding: '13px 15px', borderTop: '1px solid var(--mf-border-soft)' }}
+                >
+                  <div style={{ minWidth: 0, flex: '1 1 180px' }}>
+                    <div style={{ fontWeight: 700, fontSize: 13.5 }}>로그인할 때 자동 실행</div>
+                    <div data-remind-login-note style={{ marginTop: 3, fontSize: 12.5, color: 'var(--mf-muted)' }}>
+                      {bg.enabled
+                        ? '컴퓨터를 켜면 창 없이 시작해 알림을 받아요'
+                        : '컴퓨터를 켜면 앱이 열려요'}
+                    </div>
+                  </div>
+                  <Switch
+                    checked={bg.openAtLogin}
+                    onCheckedChange={() => {
+                      void setDesktopOpenAtLogin(!bg.openAtLogin).then((next) => {
+                        // OS에서 **다시 읽은** 값이다 — 받아들이지 않는 환경(MSIX 등)
+                        // 에서는 스위치가 제자리로 돌아가 사실을 말한다.
+                        if (next) setBg(next);
+                      });
+                    }}
+                    label="로그인할 때 자동 실행"
                     accent="var(--mf-accent)"
                     track="var(--mf-scroll)"
                     knob="var(--mf-card)"

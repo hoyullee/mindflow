@@ -75,6 +75,46 @@ describe('알림의 기기 쪽 상태', () => {
     expect(ctor).toHaveBeenCalledWith('팀 회의', expect.objectContaining({ body: '오전 10:30 · 10분 후 시작', tag: 'k' }));
     vi.unstubAllGlobals();
   });
+
+  it('알림을 누르면 **숨어 있던 데스크톱 창**을 되찾는다(4단계)', () => {
+    // 상주 중에는 창이 감춰져 있어 렌더러의 `window.focus()`로는 나타나지 않는다 —
+    // 셸에게 띄워 달라고 해야 한다. 그 길이 빠지면 알림을 눌러도 아무 일이 없다.
+    const focusWindow = vi.fn(() => Promise.resolve(true));
+    (window as unknown as { geurio: unknown }).geurio = {
+      desktop: true,
+      version: '0.3.0',
+      platform: 'win32',
+      openExternal: () => Promise.resolve(true),
+      onDeepLink: () => () => undefined,
+      takePendingDeepLink: () => Promise.resolve(null),
+      focusWindow,
+    };
+    class FakeNotification {
+      static permission = 'granted';
+      static requestPermission = vi.fn();
+      onclick: (() => void) | null = null;
+      close = vi.fn();
+    }
+    vi.stubGlobal('Notification', FakeNotification);
+    const onClick = vi.fn();
+    const made: FakeNotification[] = [];
+    vi.stubGlobal(
+      'Notification',
+      class extends FakeNotification {
+        constructor() {
+          super();
+          made.push(this);
+        }
+      },
+    );
+    expect(showOsNotification({ title: 'x', body: 'y', tag: 't', onClick })).toBe(true);
+    made[0]!.onclick!();
+    expect(focusWindow).toHaveBeenCalledTimes(1);
+    expect(onClick).toHaveBeenCalledTimes(1);
+
+    delete (window as unknown as { geurio?: unknown }).geurio;
+    vi.unstubAllGlobals();
+  });
 });
 
 describe('구글 일정 알림 설정(2단계)', () => {

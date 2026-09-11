@@ -5,11 +5,16 @@
 // 페이지가 무엇을 할 수 있는지가 곧 이 목록이다. 파일시스템·셸 실행·임의
 // IPC는 내주지 않는다.
 import { contextBridge, ipcRenderer } from 'electron';
+import type { BackgroundState } from './shell';
 
 const CHANNEL_DEEP_LINK = 'geurio:deep-link';
 const CHANNEL_OPEN_EXTERNAL = 'geurio:open-external';
 const CHANNEL_PENDING_DEEP_LINK = 'geurio:pending-deep-link';
 const CHANNEL_TITLEBAR_THEME = 'geurio:titlebar-theme';
+const CHANNEL_BACKGROUND_STATE = 'geurio:background-state';
+const CHANNEL_SET_BACKGROUND = 'geurio:set-background';
+const CHANNEL_SET_OPEN_AT_LOGIN = 'geurio:set-open-at-login';
+const CHANNEL_FOCUS_WINDOW = 'geurio:focus-window';
 
 export interface GeurioDesktopBridge {
   /** 이 값의 존재가 곧 "데스크톱 앱에서 돌고 있다"다 — 웹 쪽 판정이 이걸 본다. */
@@ -37,6 +42,18 @@ export interface GeurioDesktopBridge {
   onDeepLink(handler: (url: string) => void): () => void;
   /** 앱이 뜨기 전에 도착해 셸이 들고 있던 딥링크를 가져간다(한 번만). */
   takePendingDeepLink(): Promise<string | null>;
+  /**
+   * 창을 닫아도 앱이 남을까(4단계) — 설정 화면이 이 상태를 그린다.
+   * `supported`가 거짓이면 **그 자리를 그리지 않는다**(되돌아올 길이 없어 상주
+   * 자체가 불가능한 환경이다).
+   */
+  backgroundState(): Promise<BackgroundState>;
+  /** 상주를 켜고 끈다. 돌려주는 것은 **바뀐 뒤의 상태**다(사본이 갈리지 않게). */
+  setBackground(on: boolean): Promise<BackgroundState>;
+  /** 로그인할 때 자동 실행(창 없이). OS에서 **다시 읽은** 상태를 돌려준다. */
+  setOpenAtLogin(on: boolean): Promise<BackgroundState>;
+  /** 숨어 있는 창을 되찾는다 — OS 알림을 눌렀을 때 이 길로 온다. */
+  focusWindow(): Promise<boolean>;
 }
 
 /**
@@ -62,6 +79,10 @@ const bridge: GeurioDesktopBridge = {
     return () => ipcRenderer.removeListener(CHANNEL_DEEP_LINK, listener);
   },
   takePendingDeepLink: () => ipcRenderer.invoke(CHANNEL_PENDING_DEEP_LINK) as Promise<string | null>,
+  backgroundState: () => ipcRenderer.invoke(CHANNEL_BACKGROUND_STATE) as Promise<BackgroundState>,
+  setBackground: (on) => ipcRenderer.invoke(CHANNEL_SET_BACKGROUND, on) as Promise<BackgroundState>,
+  setOpenAtLogin: (on) => ipcRenderer.invoke(CHANNEL_SET_OPEN_AT_LOGIN, on) as Promise<BackgroundState>,
+  focusWindow: () => ipcRenderer.invoke(CHANNEL_FOCUS_WINDOW) as Promise<boolean>,
 };
 
 contextBridge.exposeInMainWorld('geurio', bridge);

@@ -10,6 +10,9 @@
 //   build/appx/*.png      MSIX(Microsoft Store) 타일 4종. **없으면 electron-builder가
 //                         자기 샘플 아트를 대신 넣는다** — 남의 로고가 설치본에
 //                         실리는 셈이라 반드시 만든다.
+//   resources/tray*.png   트레이 아이콘(4단계). `build/`가 아니라 **`resources/`**인
+//                         이유: `build/`는 electron-builder가 쓰는 재료일 뿐 앱에
+//                         담기지 않는다(`files:`가 담는 것은 dist·resources뿐).
 import { mkdir } from 'node:fs/promises';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -26,9 +29,9 @@ const GLYPH_DOT = { cx: 47, cy: 52, r: 6 };
 const GLYPH_STROKE = 7;
 
 /** 소용돌이 글리프만 — 배경 없이, 100×100 좌표계 안에서. */
-function glyph() {
-  return `<path d="${GLYPH_PATH}" fill="none" stroke="#ffffff" stroke-width="${GLYPH_STROKE}" stroke-linecap="round" stroke-linejoin="round"/>
-  <circle cx="${GLYPH_DOT.cx}" cy="${GLYPH_DOT.cy}" r="${GLYPH_DOT.r}" fill="#ffffff"/>`;
+function glyph(stroke = GLYPH_STROKE, dotR = GLYPH_DOT.r) {
+  return `<path d="${GLYPH_PATH}" fill="none" stroke="#ffffff" stroke-width="${stroke}" stroke-linecap="round" stroke-linejoin="round"/>
+  <circle cx="${GLYPH_DOT.cx}" cy="${GLYPH_DOT.cy}" r="${dotR}" fill="#ffffff"/>`;
 }
 
 function markSvg(size) {
@@ -56,6 +59,19 @@ function tileSvg(w, h) {
 </svg>`;
 }
 
+/**
+ * 트레이 아이콘 — 16px 언저리에서 그려진다. 같은 지오메트리를 그대로 쓰면 획이
+ * 1.1px이라 뭉개지므로 **획만 굵힌다**(그 크기에서 아이콘을 알아보게 하는 것은
+ * 코랄 사각형의 실루엣이고, 소용돌이는 그 위의 힌트다). 모서리 라운드도 작은
+ * 그림에서 원처럼 보이지 않게 낮춘다.
+ */
+function traySvg(size) {
+  return `<svg xmlns="http://www.w3.org/2000/svg" width="${size}" height="${size}" viewBox="0 0 100 100">
+  <rect x="2" y="2" width="96" height="96" rx="20" ry="20" fill="${CORAL}"/>
+  ${glyph(10, 7)}
+</svg>`;
+}
+
 async function writePng(svg, w, h, file) {
   await sharp(Buffer.from(svg)).resize(w, h).png().toFile(file);
   console.log('wrote', path.relative(process.cwd(), file));
@@ -75,4 +91,15 @@ for (const [name, w, h] of [
   ['Wide310x150Logo.png', 310, 150],
 ]) {
   await writePng(tileSvg(w, h), w, h, path.join(appxDir, name));
+}
+
+// 트레이 아이콘. Electron은 `tray.png` 옆의 `tray@2x.png`를 배율에 따라 스스로
+// 고른다(문서화된 규칙) — 16을 32에서 줄이지 않고 **각 크기로 벡터에서 그린다**.
+const resDir = path.join(__dirname, '..', 'resources');
+await mkdir(resDir, { recursive: true });
+for (const [name, size] of [
+  ['tray.png', 16],
+  ['tray@2x.png', 32],
+]) {
+  await writePng(traySvg(size), size, size, path.join(resDir, name));
 }

@@ -275,3 +275,130 @@ export function appMenuSpec(platform: string): MenuSpec[] | null {
   if (platform !== 'darwin') return null;
   return [{ role: 'appMenu' }, { role: 'editMenu' }, { role: 'windowMenu' }];
 }
+
+/* ─────────────────────── 트레이 상주 — 창을 닫아도 알림(4단계) ───────────────────────
+ *
+ * 알림을 띄우는 것은 **렌더러**의 주기 확인이다(`apps/web/src/features/reminders/`).
+ * 그래서 창을 파괴하면 그 순간 스케줄러도 함께 사라진다 — 앱을 닫아도 알림을
+ * 받으려면 닫기를 **숨기기**로 바꿔 창(=렌더러)을 살려 둬야 한다. 창이 살아 있으면
+ * 타이머도 조여지지 않는다(`backgroundThrottling: false`).
+ *
+ * **되돌아올 길이 없으면 숨기지 않는다** — 숨겼는데 트레이도 독도 없으면 사용자는
+ * 창을 되찾을 방법이 사라진다("앱이 사라졌다"). 그래서 판단이 `canStayInBackground`
+ * 하나를 지난다: macOS는 독 아이콘이 그 길이고(`activate`), 그 밖은 트레이가
+ * 실제로 만들어졌을 때만이다.
+ *
+ * 앱을 완전히 종료하면(트레이 메뉴의 `종료`·⌘Q) 그때는 알림도 멈춘다 — 그건
+ * 이 단계의 한계이고 사용자가 고른 것이다.
+ */
+
+/**
+ * 이 플랫폼에서 **트레이 아이콘**을 두는가.
+ *
+ * macOS는 두지 않는다 — 창을 닫아도 **독 아이콘이 남아** 그것이 곧 "아직 실행 중"
+ * 신호이자 되돌아오는 길이다(그 플랫폼의 관례이기도 하다: Slack·Notion·Discord 모두
+ * 메뉴 막대 아이콘을 두지 않는다). 우리가 메뉴 막대에 하나 더 두면 같은 뜻의
+ * 진입점이 둘이 된다.
+ */
+export function usesTray(platform: string): boolean {
+  return platform !== 'darwin';
+}
+
+/**
+ * **로그인할 때 자동 실행**을 이 플랫폼에서 쓸 수 있는가 — Electron의
+ * `setLoginItemSettings`가 Windows·macOS에서만 동작한다(Linux는 무시된다).
+ * 쓸 수 없으면 설정에 그 자리를 두지 않는다(눌러도 아무 일이 없다).
+ */
+export function supportsOpenAtLogin(platform: string): boolean {
+  return platform === 'win32' || platform === 'darwin';
+}
+
+/**
+ * 창을 닫아도 앱이 남을 수 있는가 — **되돌아올 길이 있을 때만** 참이다.
+ * @param trayReady 트레이 아이콘이 실제로 만들어졌는가(리눅스는 트레이가 없는
+ *   데스크톱 환경이 있어 `new Tray()`가 실패할 수 있다 — 그때는 숨기지 않는다).
+ */
+export function canStayInBackground(platform: string, trayReady: boolean): boolean {
+  return usesTray(platform) ? trayReady : true;
+}
+
+/** 로그인 시 자동 실행이 넘기는 인자 — "창 없이 시작하라". */
+export const HIDDEN_FLAG = '--hidden';
+
+/**
+ * 이번 실행을 **창 없이** 시작할까. 로그인 자동 실행으로 깨어난 경우다
+ * (Windows·Linux는 우리가 넘긴 `--hidden` 인자로, macOS는 `wasOpenedAtLogin`으로).
+ *
+ * `canStayHidden`이 거짓이면 **반드시 창을 띄운다** — 트레이도 독도 없는데 창까지
+ * 없으면 앱이 떠 있는데 닿을 길이 하나도 없다(보이지 않는 프로세스).
+ */
+export function shouldStartHidden(
+  argv: readonly string[],
+  openedAtLogin: boolean,
+  canStayHidden: boolean,
+): boolean {
+  if (!canStayHidden) return false;
+  return openedAtLogin || argv.includes(HIDDEN_FLAG);
+}
+
+/**
+ * 창을 처음 숨길 때 한 번 알린다 — 닫았는데 앱이 살아 있는 것은 **말해 주지 않으면
+ * 고장으로 읽힌다**(사용자는 종료한 줄 안다). 어디로 갔는지가 플랫폼마다 다르므로
+ * 문장도 갈린다.
+ */
+export function closeNoticeBody(platform: string): string {
+  return usesTray(platform)
+    ? '창을 닫아도 트레이에 남아 일정 알림을 보내요. 설정 › 일정 알림에서 끌 수 있어요.'
+    : '창을 닫아도 앱이 남아 일정 알림을 보내요. 독 아이콘을 누르면 다시 열려요.';
+}
+
+/**
+ * Windows가 우리 앱을 알아보는 이름(AUMID). **`electron-builder.yml`의 `appId`와
+ * 같아야 한다** — 다르면 Windows가 토스트를 우리 앱의 것으로 묶지 못해 알림이
+ * 아예 뜨지 않거나 `electron.app.Geurio` 같은 이름으로 뜬다. 창을 닫아도 알림을
+ * 받는 것이 이 단계의 전부라, 이 한 줄이 기능의 전제다(두 값이 갈리지 않게
+ * `packaging.test.ts`가 지킨다).
+ */
+export const APP_USER_MODEL_ID = 'com.geurio.app';
+
+/* ─────────────────────────── 셸이 기억하는 설정 ─────────────────────────── */
+
+export interface ShellPrefs {
+  /** 창을 닫아도 남아 있을까. */
+  background: boolean;
+  /** 처음 숨길 때의 안내를 이미 보여 줬는가(한 번만 띄운다). */
+  closeNoticeShown: boolean;
+}
+
+/**
+ * 기본이 **켜짐**인 이유: 이 앱의 설치본을 쓰는 이유 중 하나가 "닫아 둬도 알림이
+ * 온다"이고, 꺼진 채로 시작하면 4단계가 설정을 찾아낸 사람에게만 있는 기능이 된다
+ * (Slack·Teams·Discord도 같은 기본값이다). 대신 **처음 숨길 때 한 번 알리고**
+ * 설정에서 끌 수 있게 한다 — 말해 주지 않는 상주가 나쁜 것이다.
+ *
+ * **로그인 시 자동 실행은 여기에 없다** — 그 값의 정본은 OS이고
+ * (`app.getLoginItemSettings()`), 우리가 사본을 들면 두 곳이 갈린다.
+ */
+export const DEFAULT_SHELL_PREFS: ShellPrefs = { background: true, closeNoticeShown: false };
+
+/** 저장 파일은 사람이 고칠 수도, 옛 판이 남아 있을 수도 있다 — 모르는 값은 기본값으로. */
+export function coerceShellPrefs(raw: unknown): ShellPrefs {
+  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return { ...DEFAULT_SHELL_PREFS };
+  const o = raw as Record<string, unknown>;
+  return {
+    background: typeof o.background === 'boolean' ? o.background : DEFAULT_SHELL_PREFS.background,
+    closeNoticeShown:
+      typeof o.closeNoticeShown === 'boolean' ? o.closeNoticeShown : DEFAULT_SHELL_PREFS.closeNoticeShown,
+  };
+}
+
+/**
+ * 렌더러(설정 화면)가 보는 상태. **`supported`가 거짓이면 그 자리를 그리지 않는다** —
+ * 되돌아올 길이 없어 상주 자체가 불가능한 환경이다.
+ */
+export interface BackgroundState {
+  supported: boolean;
+  enabled: boolean;
+  loginSupported: boolean;
+  openAtLogin: boolean;
+}

@@ -6,6 +6,19 @@
 // 창구는 preload가 `contextBridge`로 심어 준 `window.geurio` 하나뿐이다
 // (apps/desktop/src/preload.ts) — 렌더러는 Node에 닿을 수 없다.
 
+/**
+ * 창을 닫아도 앱이 남을까(4단계) — 셸이 돌려주는 상태 그대로다
+ * (`apps/desktop/src/shell.ts`의 같은 이름). **`supported`가 거짓이면 설정에서
+ * 그 자리를 그리지 않는다**: 되돌아올 길(트레이·독)이 없어 상주 자체가 불가능한
+ * 환경이라, 켜 봐야 아무 일도 일어나지 않는다.
+ */
+export interface DesktopBackground {
+  supported: boolean;
+  enabled: boolean;
+  loginSupported: boolean;
+  openAtLogin: boolean;
+}
+
 export interface DesktopBridge {
   desktop: true;
   version: string;
@@ -23,6 +36,11 @@ export interface DesktopBridge {
   openExternal(url: string): Promise<boolean>;
   onDeepLink(handler: (url: string) => void): () => void;
   takePendingDeepLink(): Promise<string | null>;
+  /** 아래 넷은 **4단계 셸부터** 있다 — 옛 설치본에는 없으므로 전부 선택이다. */
+  backgroundState?(): Promise<DesktopBackground>;
+  setBackground?(on: boolean): Promise<DesktopBackground>;
+  setOpenAtLogin?(on: boolean): Promise<DesktopBackground>;
+  focusWindow?(): Promise<boolean>;
 }
 
 declare global {
@@ -61,4 +79,50 @@ export async function openExternalUrl(url: string): Promise<void> {
     return;
   }
   window.open(url, '_blank', 'noopener,noreferrer');
+}
+
+/**
+ * 상주 상태를 읽는다. 셸이 아니거나 **옛 셸**이면 `null` — 그때는 설정에 그 자리를
+ * 두지 않는다(4단계 이전 설치본은 창을 닫으면 그냥 종료된다).
+ */
+export async function desktopBackgroundState(): Promise<DesktopBackground | null> {
+  const b = desktopBridge();
+  if (!b?.backgroundState) return null;
+  try {
+    return await b.backgroundState();
+  } catch {
+    // 셸과의 왕복이 실패하면 모르는 것으로 둔다 — 없는 상태를 지어내지 않는다.
+    return null;
+  }
+}
+
+export async function setDesktopBackground(on: boolean): Promise<DesktopBackground | null> {
+  const b = desktopBridge();
+  if (!b?.setBackground) return null;
+  try {
+    return await b.setBackground(on);
+  } catch {
+    return null;
+  }
+}
+
+export async function setDesktopOpenAtLogin(on: boolean): Promise<DesktopBackground | null> {
+  const b = desktopBridge();
+  if (!b?.setOpenAtLogin) return null;
+  try {
+    return await b.setOpenAtLogin(on);
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * 숨어 있는 창을 되찾는다 — **OS 알림을 눌렀을 때** 이 길로 온다. 상주 중에는
+ * 창이 감춰져 있어 렌더러의 `window.focus()`만으로는 나타나지 않는다.
+ * 브라우저·PWA에서는 아무 일도 하지 않는다(그쪽은 창이 이미 있다).
+ */
+export function focusDesktopWindow(): void {
+  const b = desktopBridge();
+  if (!b?.focusWindow) return;
+  void b.focusWindow().catch(() => undefined);
 }

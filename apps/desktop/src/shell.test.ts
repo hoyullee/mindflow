@@ -12,7 +12,15 @@ import {
   isDevToolsShortcut,
   isHexColor,
   appMenuSpec,
+  canStayInBackground,
+  closeNoticeBody,
+  coerceShellPrefs,
+  DEFAULT_SHELL_PREFS,
+  HIDDEN_FLAG,
   originOf,
+  shouldStartHidden,
+  supportsOpenAtLogin,
+  usesTray,
   TITLEBAR_HEIGHT,
   titleBarHeightFor,
   usesCustomTitleBar,
@@ -230,5 +238,63 @@ describe('앱 메뉴 — 앱이 하는 일만 담는다', () => {
     for (const role of ['viewMenu', 'reload', 'forceReload', 'toggleDevTools', 'zoomIn', 'zoomOut', 'resetZoom']) {
       expect(flat).not.toContain(role);
     }
+  });
+});
+
+describe('트레이 상주 — 창을 닫아도 알림(4단계)', () => {
+  it('macOS는 트레이를 두지 않는다 — 독 아이콘이 그 역할을 한다', () => {
+    expect(usesTray('darwin')).toBe(false);
+    expect(usesTray('win32')).toBe(true);
+    expect(usesTray('linux')).toBe(true);
+  });
+
+  it('로그인 시 자동 실행은 Windows·macOS만 — Linux는 자리를 두지 않는다', () => {
+    expect(supportsOpenAtLogin('win32')).toBe(true);
+    expect(supportsOpenAtLogin('darwin')).toBe(true);
+    expect(supportsOpenAtLogin('linux')).toBe(false);
+  });
+
+  it('되돌아올 길이 없으면 상주하지 않는다', () => {
+    // 트레이가 만들어지지 않은 환경(트레이 없는 리눅스 데스크톱)에서 숨기면
+    // 창을 되찾을 길이 사라진다 — 그래서 거짓이다.
+    expect(canStayInBackground('win32', false)).toBe(false);
+    expect(canStayInBackground('win32', true)).toBe(true);
+    // macOS는 독이 그 길이라 트레이와 무관하게 참이다.
+    expect(canStayInBackground('darwin', false)).toBe(true);
+  });
+
+  it('로그인 자동 실행으로 깨어나면 창 없이 시작한다', () => {
+    expect(shouldStartHidden([HIDDEN_FLAG], false, true)).toBe(true);
+    // macOS는 인자가 아니라 `wasOpenedAtLogin`으로 온다.
+    expect(shouldStartHidden([], true, true)).toBe(true);
+    expect(shouldStartHidden([], false, true)).toBe(false);
+  });
+
+  it('상주할 수 없으면 반드시 창을 띄운다 — 닿을 길 없는 프로세스를 만들지 않는다', () => {
+    expect(shouldStartHidden([HIDDEN_FLAG], true, false)).toBe(false);
+  });
+
+  it('처음 숨길 때의 안내는 어디로 갔는지를 말한다', () => {
+    expect(closeNoticeBody('win32')).toContain('트레이');
+    expect(closeNoticeBody('darwin')).toContain('독');
+    // 끄는 길을 함께 알린다 — 상주를 말없이 하지 않는다.
+    expect(closeNoticeBody('win32')).toContain('설정');
+  });
+
+  it('셸 설정 기본값 — 상주는 켜짐, 안내는 아직', () => {
+    expect(DEFAULT_SHELL_PREFS).toEqual({ background: true, closeNoticeShown: false });
+  });
+
+  it('저장 파일이 깨졌거나 옛 판이어도 기본값으로 읽는다', () => {
+    expect(coerceShellPrefs(null)).toEqual(DEFAULT_SHELL_PREFS);
+    expect(coerceShellPrefs('x')).toEqual(DEFAULT_SHELL_PREFS);
+    expect(coerceShellPrefs([])).toEqual(DEFAULT_SHELL_PREFS);
+    expect(coerceShellPrefs({})).toEqual(DEFAULT_SHELL_PREFS);
+    // 모르는 값은 버리고, 아는 값만 가져온다.
+    expect(coerceShellPrefs({ background: 'yes', closeNoticeShown: true })).toEqual({
+      background: true,
+      closeNoticeShown: true,
+    });
+    expect(coerceShellPrefs({ background: false })).toEqual({ background: false, closeNoticeShown: false });
   });
 });
