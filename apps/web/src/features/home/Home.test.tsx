@@ -140,7 +140,7 @@ describe('Home', () => {
     // "＋ 새로 만들기" appears both in the toolbar and the empty-state CTA.
     expect(screen.getByPlaceholderText('모든 스페이스에서 검색')).toBeTruthy();
     expect(screen.getAllByRole('button', { name: '새로 만들기' }).length).toBeGreaterThan(0);
-    await waitFor(() => expect(screen.getByText('아직 만든 맵이 없어요')).toBeTruthy());
+    await waitFor(() => expect(screen.getByText('이 스페이스는 비어 있어요')).toBeTruthy());
   });
 
   it('shows the signed-in email in the LNB profile and derives the name from it', async () => {
@@ -516,7 +516,7 @@ describe('Home', () => {
     expect(row.querySelector('span[aria-hidden="true"]')).toBeTruthy();
   });
 
-  it('hides the "아직 만든 맵이 없어요" prompt when the space has folders but no loose maps', async () => {
+  it('hides the "이 스페이스는 비어 있어요" prompt when the space has folders but no loose maps', async () => {
     localStorage.setItem(
       'mf_spaces',
       JSON.stringify({
@@ -531,14 +531,14 @@ describe('Home', () => {
     expect(screen.getByText('폴더')).toBeTruthy();
     // … but NOT the empty-space prompt, and the empty-state "＋ 새로 만들기" CTA is
     // gone (only the always-present toolbar button remains).
-    expect(screen.queryByText('아직 만든 맵이 없어요')).toBeNull();
+    expect(screen.queryByText('이 스페이스는 비어 있어요')).toBeNull();
     expect(screen.getAllByRole('button', { name: '새로 만들기' }).length).toBe(1);
   });
 
-  it('still shows the "아직 만든 맵이 없어요" prompt for a space with neither maps nor folders', async () => {
+  it('still shows the "이 스페이스는 비어 있어요" prompt for a space with neither maps nor folders', async () => {
     localStorage.setItem('mf_spaces', JSON.stringify({ spaces: [{ id: 'se', name: '빈공간', color: '#3f8fd0', maps: [], folders: [] }], mapFolders: {} }));
     renderHomeWithDocStore([]);
-    await waitFor(() => expect(screen.getByText('아직 만든 맵이 없어요')).toBeTruthy());
+    await waitFor(() => expect(screen.getByText('이 스페이스는 비어 있어요')).toBeTruthy());
     // both the toolbar button and the empty-state CTA are present
     expect(screen.getAllByRole('button', { name: '새로 만들기' }).length).toBe(2);
   });
@@ -1198,7 +1198,7 @@ describe('Home', () => {
       </MemoryRouter>,
     );
     // the home settles on the default seed after the failed load…
-    await waitFor(() => expect(screen.getByText('아직 만든 맵이 없어요')).toBeTruthy());
+    await waitFor(() => expect(screen.getByText('이 스페이스는 비어 있어요')).toBeTruthy());
     // …but the workspace is NEVER written back — the failed load must not clobber it.
     expect(save).not.toHaveBeenCalled();
   });
@@ -1315,12 +1315,12 @@ describe('Home', () => {
     const aside = within(container.querySelector('aside') as HTMLElement);
     await waitFor(() => expect(aside.getByText('옛이름')).toBeTruthy());
 
-    // ⋮ menu → 이름 변경 opens the SAME popup as "새 공간", but in edit mode.
+    // ⋮ menu → 수정하기 opens the SAME popup as "새 공간", but in edit mode.
     // 메뉴는 이제 카드·폴더와 같은 공용 메뉴(`HomeContextMenu`)라 화면 위에 뜬다.
     await user.click(aside.getByLabelText('스페이스 메뉴'));
-    await user.click(await screen.findByRole('menuitem', { name: '이름 변경' }));
+    await user.click(await screen.findByRole('menuitem', { name: '수정하기' }));
 
-    expect(screen.getByText('스페이스 이름 변경')).toBeTruthy();
+    expect(screen.getByText('스페이스 수정')).toBeTruthy();
     const input = screen.getByLabelText('스페이스 이름') as HTMLInputElement;
     expect(input.value).toBe('옛이름'); // pre-filled
 
@@ -2527,6 +2527,9 @@ describe('Home', () => {
     ]);
     const aside = within(container.querySelector('aside') as HTMLElement);
     await waitFor(() => expect(aside.getByText('영구삭제 맵')).toBeTruthy());
+    // 접힌 구획의 행은 **초점도 가지 않는다**(`LnbCollapse`의 `visibility: hidden`) —
+    // 실제로 그러듯 먼저 펼친다.
+    await user.click(aside.getByRole('button', { name: /휴지통/ }));
 
     await user.click(aside.getByRole('button', { name: "'영구삭제 맵' 영구 삭제" }));
     // destructive action is confirm-gated; the dialog's real <button> confirms
@@ -2601,6 +2604,8 @@ describe('Home', () => {
     ]);
     const aside = within(container.querySelector('aside') as HTMLElement);
     await waitFor(() => expect(aside.getByText('즐겨찾는 맵')).toBeTruthy());
+    // 접힌 구획의 행은 초점을 받지 않는다 — 먼저 펼친다(`LnbCollapse`).
+    await user.click(aside.getByRole('button', { name: /즐겨찾기/ }));
 
     // The star strips the favorite (row disappears, backend persisted)…
     await user.click(aside.getByRole('button', { name: "'즐겨찾는 맵' 즐겨찾기 해제" }));
@@ -3532,7 +3537,7 @@ describe('Home', () => {
 
     it('shows a loading skeleton (not the empty state) while DocStore.list() is pending', async () => {
       // A docStore whose list() never resolves within the test — the grid must
-      // show its skeleton, not flash the "아직 만든 맵이 없어요" empty state.
+      // show its skeleton, not flash the "이 스페이스는 비어 있어요" empty state.
       class PendingDocStore extends MockDocStore {
         override list(): Promise<DocMeta[]> {
           return new Promise<DocMeta[]>(() => {}); // never resolves
@@ -3550,7 +3555,7 @@ describe('Home', () => {
       );
       expect(container.querySelector('[aria-busy="true"]')).toBeTruthy();
       expect(container.querySelectorAll('.mf-skel').length).toBeGreaterThan(0);
-      expect(screen.queryByText('아직 만든 맵이 없어요')).toBeNull();
+      expect(screen.queryByText('이 스페이스는 비어 있어요')).toBeNull();
     });
   });
 
@@ -4163,8 +4168,8 @@ describe('본문 검색', () => {
 
     await waitFor(() => expect(container.querySelector('[data-search-empty]')).toBeTruthy());
     expect(screen.getByText("'없는낱말'에 맞는 맵이 없어요")).toBeTruthy();
-    // 맵이 있는데도 "아직 만든 맵이 없어요"라고 말하면 안 된다
-    expect(screen.queryByText('아직 만든 맵이 없어요')).toBeNull();
+    // 맵이 있는데도 "이 스페이스는 비어 있어요"라고 말하면 안 된다
+    expect(screen.queryByText('이 스페이스는 비어 있어요')).toBeNull();
   });
 
   it('평소(검색 안 함) 카드에는 위치 줄도 안내 줄도 없다 — 레이아웃 무변화', async () => {
@@ -4275,7 +4280,7 @@ describe('홈 우클릭 메뉴', () => {
   it('빈 자리 우클릭은 "새로 만들기 · 새 폴더 · 가져오기 · 설정"을 연다', async () => {
     const user = userEvent.setup();
     const { container } = renderHomeWithDocStore([]);
-    await waitFor(() => expect(screen.getByText('아직 만든 맵이 없어요')).toBeTruthy());
+    await waitFor(() => expect(screen.getByText('이 스페이스는 비어 있어요')).toBeTruthy());
 
     fireEvent.contextMenu(container.querySelector('main') as HTMLElement, { clientX: 500, clientY: 300 });
 
@@ -4594,7 +4599,7 @@ describe('홈 우클릭 메뉴', () => {
     it('빈 자리 우클릭의 "새로 만들기"도 같은 갤러리를 연다 (진입점이 갈리지 않는다)', async () => {
       const user = userEvent.setup();
       const { container } = renderHomeWithDocStore([]);
-      await waitFor(() => expect(screen.getByText('아직 만든 맵이 없어요')).toBeTruthy());
+      await waitFor(() => expect(screen.getByText('이 스페이스는 비어 있어요')).toBeTruthy());
 
       fireEvent.contextMenu(container.querySelector('main') as HTMLElement, { clientX: 500, clientY: 300 });
       const menu = await screen.findByRole('menu');
@@ -4700,7 +4705,7 @@ describe('홈 우클릭 메뉴', () => {
 
     const menu = await screen.findByRole('menu');
     expect(menu.getAttribute('data-home-ctx')).toBe('space');
-    expect(within(menu).getByRole('menuitem', { name: '이름 변경' })).toBeTruthy();
+    expect(within(menu).getByRole('menuitem', { name: '수정하기' })).toBeTruthy();
     expect(within(menu).getByRole('menuitem', { name: '스페이스 삭제' })).toBeTruthy();
   });
 
@@ -4731,7 +4736,7 @@ describe('홈 우클릭 메뉴', () => {
 
   it('Escape로 닫힌다', async () => {
     const { container } = renderHomeWithDocStore([]);
-    await waitFor(() => expect(screen.getByText('아직 만든 맵이 없어요')).toBeTruthy());
+    await waitFor(() => expect(screen.getByText('이 스페이스는 비어 있어요')).toBeTruthy());
     fireEvent.contextMenu(container.querySelector('main') as HTMLElement, { clientX: 20, clientY: 20 });
     expect(await screen.findByRole('menu')).toBeTruthy();
     // Radix는 Escape를 `document`에서 듣는다(window 이벤트는 document로 내려가지 않는다).

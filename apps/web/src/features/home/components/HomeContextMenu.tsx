@@ -596,7 +596,10 @@ function spaceItems(space: SpaceData, state: HomeState, controller: HomeControll
   const hasMaps = Array.isArray(space.maps) && space.maps.some((m) => !state.deleted[m.title]);
   const isLastSpace = state.spaces.length <= 1;
   return [
-    { key: 'rename', icon: PencilIcon, label: '이름 변경', onSelect: () => controller.startRenameSpace(space.id) },
+    // `이름 변경`이 아니라 **수정하기**다(요청) — 이 팝업은 이름만이 아니라 **색도**
+    // 바꾼다. 대시보드 행도 같은 이유로 같은 이름을 쓴다(맵·폴더는 이름만 고치므로
+    // 거기서는 `이름 변경`이 여전히 사실이다).
+    { key: 'rename', icon: PencilIcon, label: '수정하기', onSelect: () => controller.startRenameSpace(space.id) },
     { key: 'sep-1', label: '' },
     {
       key: 'delete',
@@ -610,11 +613,12 @@ function spaceItems(space: SpaceData, state: HomeState, controller: HomeControll
   ];
 }
 
-/** LNB 대시보드 행 — 스페이스 행과 같은 문법(이름 변경·삭제). 삭제는 **배치만**
+/** LNB 대시보드 행 — 스페이스 행과 같은 문법(수정하기·삭제). 삭제는 **배치만**
  * 지우므로(문서는 스페이스에 그대로) 스페이스처럼 "비어야만" 잠그지 않는다. */
 function dashItems(id: string, controller: HomeController): HomeMenuItem[] {
   return [
-    { key: 'rename', icon: PencilIcon, label: '이름 변경', onSelect: () => controller.openDashRename(id) },
+    // 스페이스 행과 같은 이름 — 이 팝업도 이름과 색을 함께 고친다(요청).
+    { key: 'rename', icon: PencilIcon, label: '수정하기', onSelect: () => controller.openDashRename(id) },
     { key: 'sep-1', label: '' },
     { key: 'delete', icon: TrashIcon, label: '대시보드 삭제', danger: true, onSelect: () => controller.askDeleteDash(id) },
   ];
