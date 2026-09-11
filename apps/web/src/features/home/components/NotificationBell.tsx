@@ -13,6 +13,12 @@
 // 알림이 아예 없었다. LNB는 세 화면이 함께 쓰는 유일한 크롬이라, 어디에 있든 같은
 // 자리에서 확인한다. 목록·안 읽음 수는 `NotificationsContext`가 들고 있고(폰의 ☰
 // 점이 같은 수를 본다) 여기서는 **보여 주는 일**만 한다.
+//
+// **새 버전도 여기서 알린다**(요청). 예전에는 화면 하단 토스트가 "새로고침할까요?"를
+// 물었는데, 편집 중에 끼어드는 자리였고 알림 창구가 생긴 뒤로는 같은 소식이 두 곳에서
+// 말해졌다. 지금은 목록 맨 위에 **고정 한 줄**로 서고 누르면 설정 › 「버전 확인」이
+// 열린다. 우편함 항목과 다른 점 둘: ① 시간순이 아니라 **맨 위 고정**이다(사건이 아니라
+// 상태다) ② 열어도 사라지지 않는다 — 적용하거나 설치할 때까지 남는다.
 
 import { useState, type CSSProperties, type ReactNode } from 'react';
 import { Popover } from '../../../components/Popover';
@@ -24,6 +30,8 @@ import { MONO_FONT } from '../chrome';
 import { useNotifications } from './NotificationsContext';
 import { avatarLabel } from './ProfileAvatar';
 import { NavCard } from './NavCard';
+import { useMergedUpdate } from '../../../pwa/updateControl';
+import { updateNoticeOf } from '../../../platform/shellUpdate';
 
 function lineOf(n: AppNotification): string {
   const who = n.actorName || '누군가';
@@ -97,9 +105,13 @@ function hrefOf(n: AppNotification): string | null {
   return n.kind === 'share' || !n.nodeId ? base : `${base}&comments=${encodeURIComponent(n.nodeId)}`;
 }
 
-export function NotificationBell({ isMobile = false }: { isMobile?: boolean }) {
+// `onOpenVersion`은 **필수**다 — 새 버전 줄을 그려 놓고 누를 곳이 없으면 이 프로젝트가
+// 금하는 "눌러도 아무 일 없는 항목"이 된다. 타입이 호출부를 강제한다.
+export function NotificationBell({ isMobile = false, onOpenVersion }: { isMobile?: boolean; onOpenVersion: () => void }) {
   const navigate = useNavigate();
   const { items, unread, setPaused, refresh, markAllRead } = useNotifications();
+  /** 새 버전 — 사용자가 손을 쓸 수 있는 상태만 한 줄로 온다(`updateNoticeOf`). */
+  const notice = updateNoticeOf(useMergedUpdate());
   const [open, setOpen] = useState(false);
   /** 이번에 열었을 때 "안 읽음"이었던 항목 — 읽음 처리 후에도 점 표시용. */
   const [fresh, setFresh] = useState<Set<string>>(new Set());
@@ -147,10 +159,23 @@ export function NotificationBell({ isMobile = false }: { isMobile?: boolean }) {
   //
   // 최근 것은 **안 읽은 것 중 최신**을 먼저 고른다 — 배지가 가리키는 것과 문구가
   // 어긋나면 안 된다(새 알림이 있는데 이미 읽은 옛 알림을 요약하는 꼴).
-  const latest = items.find((i) => !i.read) ?? items[0] ?? null;
-  const { head, time } = latest ? summaryOf(latest) : { head: '아직 받은 알림이 없어요', time: '' };
+  //
+  // 새 버전은 그다음이다. 안 읽은 우편함 항목이 있으면 **그쪽이 먼저**인 이유:
+  // 멘션·답글은 지나가는 사건이고 새 버전은 적용할 때까지 남는 상태라, 상태가 이
+  // 자리를 차지하면 그동안 도착한 소식이 요약에서 통째로 가려진다.
+  const firstUnread = items.find((i) => !i.read) ?? null;
+  const { head, time } = firstUnread
+    ? summaryOf(firstUnread)
+    : notice
+      ? { head: `업데이트 · ${notice.title}`, time: '' }
+      : items[0]
+        ? summaryOf(items[0])
+        : { head: '아직 받은 알림이 없어요', time: '' };
   const summary = time ? `${head} · ${time}` : head;
-  const hot = unread > 0;
+  // 새 버전도 **하나로 센다**(요청: 하나의 창구) — 열어도 사라지지 않으므로 적용·설치
+  // 전까지 배지가 남는다. 그게 맞다: 눌러야 끝나는 일이다.
+  const count = unread + (notice ? 1 : 0);
+  const hot = count > 0;
 
   const bell = (
     // 껍데기는 **일정 카드와 같은 것**(`NavCard`)이다 — 나란히 선 두 카드가
@@ -166,7 +191,7 @@ export function NotificationBell({ isMobile = false }: { isMobile?: boolean }) {
       tileDot={hot}
       chevron={false}
       // 요약까지 접근 이름에 담는다 — 보이는 글자와 읽히는 글자가 같아야 한다.
-      aria-label={`${hot ? `알림 ${unread}개` : '알림'} · ${summary}`}
+      aria-label={`${hot ? `알림 ${count}개` : '알림'} · ${summary}`}
       title={summary}
       label="알림"
       glyph={
@@ -196,7 +221,7 @@ export function NotificationBell({ isMobile = false }: { isMobile?: boolean }) {
               flexShrink: 0,
             }}
           >
-            {unread > 9 ? '9+' : unread}
+            {count > 9 ? '9+' : count}
           </span>
         ) : undefined
       }
@@ -263,6 +288,73 @@ export function NotificationBell({ isMobile = false }: { isMobile?: boolean }) {
             )}
           </div>
           <div className="notif-scroll" style={{ maxHeight: 'min(420px, 62vh)', overflowY: 'auto', padding: '0 8px 8px', display: 'flex', flexDirection: 'column', gap: 4 }}>
+            {/* 새 버전 — **맨 위 고정**. 시간순 묶음(오늘·이번 주·이전) 밖에 두는 이유는
+                사건이 아니라 상태이기 때문이다. 우편함 항목과 같은 행 모양이되 얼굴
+                자리에 **둥근 사각 타일**이 온다(사람이 아니라 앱이 하는 말 — LNB 카드가
+                쓰는 것과 같은 신호). 누르면 설정 › 「버전 확인」에서 적용·설치한다. */}
+            {notice && (
+              <button
+                type="button"
+                className="btn mf-notif-row"
+                data-notification-update={notice.blocked ? 'blocked' : 'ready'}
+                onClick={() => {
+                  setOpen(false);
+                  onOpenVersion();
+                }}
+                title={`${notice.title} · ${notice.sub}`}
+                style={{
+                  display: 'flex',
+                  alignItems: 'flex-start',
+                  gap: 11,
+                  width: '100%',
+                  padding: '11px 12px',
+                  marginTop: 4,
+                  border: 'none',
+                  borderRadius: 14,
+                  background: notice.blocked ? 'var(--mf-danger-bg)' : 'var(--mf-accent-soft)',
+                  cursor: 'pointer',
+                  textAlign: 'left',
+                  fontFamily: 'inherit',
+                }}
+              >
+                <span
+                  aria-hidden="true"
+                  style={{
+                    width: 34,
+                    height: 34,
+                    flexShrink: 0,
+                    borderRadius: 11,
+                    background: notice.blocked ? 'var(--mf-danger)' : 'var(--mf-accent)',
+                    color: '#fff',
+                    display: 'inline-flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                  }}
+                >
+                  <svg width={17} height={17} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round">
+                    {notice.blocked ? (
+                      <>
+                        <path d="M12 8.5v4.5" />
+                        <path d="M12 16.5h.01" />
+                        <circle cx="12" cy="12" r="8.5" />
+                      </>
+                    ) : (
+                      <>
+                        <path d="M12 3.5v9" />
+                        <path d="m8.5 9 3.5 3.5L15.5 9" />
+                        <path d="M4.5 15.5v3a2 2 0 0 0 2 2h11a2 2 0 0 0 2-2v-3" />
+                      </>
+                    )}
+                  </svg>
+                </span>
+                <span style={{ display: 'flex', flexDirection: 'column', gap: 5, minWidth: 0, flex: 1 }}>
+                  <span style={{ fontSize: 12.5, fontWeight: 700, lineHeight: 1.45, color: 'var(--mf-text)' }}>{notice.title}</span>
+                  <span style={{ fontSize: 11, fontWeight: 600, color: 'var(--mf-subtext)', minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                    {notice.sub}
+                  </span>
+                </span>
+              </button>
+            )}
             {items.length ? (
               items.map((n, i) => {
                 const href = hrefOf(n);
@@ -339,11 +431,15 @@ export function NotificationBell({ isMobile = false }: { isMobile?: boolean }) {
                 );
               })
             ) : (
-              <div data-notification-empty style={{ padding: '14px 10px 16px', fontSize: 12.5, color: 'var(--mf-subtext)', lineHeight: 1.6 }}>
-                새 알림이 없어요.
-                <br />
-                멘션·답글·댓글·공유 초대가 여기에 모여요.
-              </div>
+              // 새 버전 줄이 이미 있으면 "없어요"를 덧붙이지 않는다 — 우편함이 빈 것은
+              // 맞지만, 바로 위에 볼 것이 있는데 빈 화면이라 말하면 어긋난다.
+              !notice && (
+                <div data-notification-empty style={{ padding: '14px 10px 16px', fontSize: 12.5, color: 'var(--mf-subtext)', lineHeight: 1.6 }}>
+                  새 알림이 없어요.
+                  <br />
+                  멘션·답글·댓글·공유 초대가 여기에 모여요.
+                </div>
+              )
             )}
           </div>
           {/* 디자인 원본의 "모든 알림 보기" 푸터는 두지 않는다 — 그 목록으로 가는

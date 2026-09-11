@@ -20,8 +20,9 @@ import { LocalNotificationStore } from '../../adapters/local/localNotificationSt
 import { LocalEventStore } from '../../adapters/local/localEventStore';
 import { LocalDocStore } from '../../adapters/local/localDocStore';
 import { mockMatchMedia } from '../../test/matchMedia';
-import { __resetUpdateControl, publishUpdateStatus, setUpdateControls } from '../../pwa/updateControl';
+import { __resetUpdateControl, publishUpdateStatus, setUpdateControls, setUpdateShellChecker } from '../../pwa/updateControl';
 import type { DesktopBackground } from '../../platform/desktopBridge';
+import type { ShellUpdateState } from '../../platform/shellUpdate';
 
 interface Shell {
   state: DesktopBackground;
@@ -207,15 +208,14 @@ describe('설치형 앱 — 창을 닫아도 알림 받기(4단계)', () => {
 // 것이 없다: **껍데기를 설치하면 앱이 다시 실행되면서 대기 중인 서비스 워커가
 // 활성화되므로 화면까지 함께 최신이 된다.**
 describe('설치형 앱 — 새 설치 버전 확인', () => {
-  /** `/desktop-version.json`만 골라 답한다 — 다른 fetch(연결 확인 등)는 통과시킨다. */
-  function stubManifest(body: unknown, ok = true) {
-    const f = vi.fn(async (input: RequestInfo | URL) => {
-      const url = String(input);
-      if (url.startsWith('/desktop-version.json')) return { ok, json: async () => body } as unknown as Response;
-      return { ok: true, json: async () => ({}) } as unknown as Response;
-    });
-    vi.stubGlobal('fetch', f);
-    return f;
+  /**
+   * 껍데기의 판은 **`UpdatePrompt`가 물어 모듈에 올린다**(그 컴포넌트만 가상 모듈에
+   * 닿는다) — 이 파일은 홈만 띄우므로 그 값을 직접 심는다. 버전 파일을 실제로 묻는
+   * 경로는 `pwa/UpdatePrompt.test.tsx`가, 판 비교·파싱은 `platform/shellUpdate.test.ts`가
+   * 본다. 여기서 보는 것은 **그 상태가 화면에 어떻게 드러나는가**다.
+   */
+  function publishShell(shell: ShellUpdateState) {
+    act(() => publishUpdateStatus({ shell }));
   }
 
   async function openVersion(user: ReturnType<typeof userEvent.setup>): Promise<HTMLElement> {
@@ -244,8 +244,8 @@ describe('설치형 앱 — 새 설치 버전 확인', () => {
     installShell();
     const open = vi.fn(() => Promise.resolve(true));
     (window as unknown as { geurio: { openExternal: unknown } }).geurio.openExternal = open;
-    stubManifest({ version: '0.4.0', url: 'https://github.com/hoyullee/mindflow/releases/latest' });
     setUpdateControls({ check: vi.fn(), apply: vi.fn() });
+    publishShell({ kind: 'available', version: '0.4.0', url: 'https://github.com/hoyullee/mindflow/releases/latest' });
     renderHome();
 
     const dialog = await openVersion(user);
@@ -269,9 +269,9 @@ describe('설치형 앱 — 새 설치 버전 확인', () => {
     installShell();
     const open = vi.fn(() => Promise.resolve(true));
     (window as unknown as { geurio: { openExternal: unknown } }).geurio.openExternal = open;
-    stubManifest({ version: '0.4.0', url: 'https://example.com/r' });
     const apply = vi.fn();
     setUpdateControls({ check: vi.fn(), apply });
+    publishShell({ kind: 'available', version: '0.4.0', url: 'https://example.com/r' });
     renderHome();
 
     const dialog = await openVersion(user);
@@ -290,8 +290,8 @@ describe('설치형 앱 — 새 설치 버전 확인', () => {
   it('같은 판이면 최신이라 말하고, 읽지 못하면 그렇게 말한다 — 둘은 다르다', async () => {
     const user = userEvent.setup();
     installShell();
-    stubManifest({ version: '0.3.0', url: 'https://example.com/r' });
     setUpdateControls({ check: vi.fn(), apply: vi.fn() });
+    publishShell({ kind: 'current' });
     renderHome();
     let dialog = await openVersion(user);
     await waitFor(() => expect(state(dialog)).toBe('latest'));
@@ -299,10 +299,10 @@ describe('설치형 앱 — 새 설치 버전 확인', () => {
     expect(dialog.querySelector('[data-update-row]')!.textContent).not.toContain('확인하지 못했어요');
     cleanup();
 
-    // 파일이 없다(배포 전) → 최신이라고 **뭉개지 않는다**.
+    // 읽지 못했다(배포 전·연결 실패) → 최신이라고 **뭉개지 않는다**.
     installShell();
-    stubManifest(null, false);
     setUpdateControls({ check: vi.fn(), apply: vi.fn() });
+    publishShell({ kind: 'unknown' });
     renderHome();
     dialog = await openVersion(user);
     await waitFor(() =>
@@ -311,14 +311,30 @@ describe('설치형 앱 — 새 설치 버전 확인', () => {
     expect(state(dialog)).toBe('latest');
   });
 
-  it('브라우저에서는 버전 파일을 부르지도 않는다', async () => {
+  it('이 화면을 열면 껍데기를 다시 묻는다 — 그 값에는 자동 확인 고리가 없다', async () => {
     const user = userEvent.setup();
-    const f = stubManifest({ version: '9.9.9', url: 'https://example.com/r' });
+    installShell();
+    const shellCheck = vi.fn();
+    setUpdateControls({ check: vi.fn(), apply: vi.fn() });
+    setUpdateShellChecker(shellCheck);
+    publishShell({ kind: 'current' });
+    renderHome();
+
+    expect(shellCheck).not.toHaveBeenCalled();
+    await openVersion(user);
+    // 웹 번들은 스스로 신선하다(등록·5분 주기·탭 복귀) — 껍데기만 다시 묻는다.
+    expect(shellCheck).toHaveBeenCalledTimes(1);
+  });
+
+  it('브라우저에서는 설치 앱 행도 없고 웹만 본다 — 받을 설치 파일이 없다', async () => {
+    const user = userEvent.setup();
     setUpdateControls({ check: vi.fn(), apply: vi.fn() });
     renderHome();
     const dialog = await openVersion(user);
     await waitFor(() => expect(state(dialog)).toBe('latest'));
     expect(dialog.querySelector('[data-version-shell]')).toBeNull();
-    expect(f.mock.calls.some(([u]) => String(u).startsWith('/desktop-version.json'))).toBe(false);
+    // 셸이 없으면 `UpdatePrompt`가 버전 파일을 묻지 않아 이 값은 언제나 비어 있다
+    // (그 계약은 `pwa/UpdatePrompt.test.tsx`가 본다).
+    expect(dialog.querySelector('[data-update-row]')!.textContent).not.toContain('설치 버전');
   });
 });

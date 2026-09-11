@@ -1,8 +1,8 @@
-import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { SectionLabel, SettingsGroup, SettingsRow } from './AccountSettingsModal';
-import { applyUpdateNow, checkForUpdateNow, currentUpdateStatus, onUpdateStatus, updateControlsReady } from '../../../../pwa/updateControl';
+import { applyUpdateNow, checkForUpdateNow, checkShellUpdateNow, useMergedUpdate, useUpdateStatus } from '../../../../pwa/updateControl';
 import { desktopBridge, openExternalUrl } from '../../../../platform/desktopBridge';
-import { checkShellUpdate, mergedUpdateState, type MergedUpdate, type ShellUpdateState } from '../../../../platform/shellUpdate';
+import { type MergedUpdate } from '../../../../platform/shellUpdate';
 
 /**
  * 설정 › 「버전 확인」 — **지금 무엇을 돌고 있는지**와 새 버전을 직접 적용하는 손잡이.
@@ -16,8 +16,9 @@ import { checkShellUpdate, mergedUpdateState, type MergedUpdate, type ShellUpdat
  * 닿을 수 있는 곳은 그 컴포넌트 하나뿐이다.
  */
 export function VersionSection() {
-  const status = useSyncExternalStore(onUpdateStatus, currentUpdateStatus, currentUpdateStatus);
-  const controls = updateControlsReady();
+  const status = useUpdateStatus();
+  // 화면·껍데기를 합친 판단은 **모듈이 한 번** 한다 — LNB 알림도 같은 값을 읽는다.
+  const merged = useMergedUpdate();
   /** 방금 확인을 마쳤는가 — 눌렀는데 같은 문장만 남으면 아무 일도 안 한 것처럼 보인다. */
   const [checked, setChecked] = useState(false);
   const wasChecking = useRef(false);
@@ -29,22 +30,13 @@ export function VersionSection() {
   const bridge = desktopBridge();
   const build = buildLabel();
 
-  // 껍데기(설치 파일)의 새 판 — 화면(웹 번들)과 **따로** 확인한다. 자동 업데이트가
-  // 없으므로 이 확인이 사용자가 새 설치본을 알 수 있는 유일한 길이다.
-  const [shell, setShell] = useState<ShellUpdateState>({ kind: 'idle' });
-  const alive = useRef(true);
-  useEffect(() => () => { alive.current = false; }, []);
-  const checkShell = useCallback(() => {
-    const b = desktopBridge();
-    if (!b) return;
-    setShell({ kind: 'checking' });
-    // 마운트 플래그로 지킨다(효과별 취소 플래그가 아니라) — 답이 하나뿐이지만
-    // 이 프로젝트에서 그 함정을 두 번 밟았다: 첫 답이 상태를 바꾸면 효과가 다시
-    // 돌고, 그 사이 남은 조회가 버려진다.
-    void checkShellUpdate(b.version).then((next) => { if (alive.current) setShell(next); });
-  }, []);
-  // 이 화면을 여는 것이 곧 "확인해 달라"는 뜻이다 — 따로 누르게 하지 않는다.
-  useEffect(() => { checkShell(); }, [checkShell]);
+  // 껍데기(설치 파일)의 판은 **`UpdatePrompt`가 한 번 물어** 모듈에 올려 둔 것을
+  // 읽는다(`status.shell`). 이 화면이 직접 확인하면 같은 값을 두 곳이 따로 들게
+  // 되고, 홈 LNB 알림과 여기가 서로 다른 답을 말할 수 있다.
+  // 이 화면을 여는 것이 곧 "확인해 달라"는 뜻이라 열릴 때 한 번 다시 묻는데,
+  // **껍데기만** 묻는다 — 웹 번들은 스스로 신선하고(등록·5분 주기·탭 복귀),
+  // 여기서 같이 물으면 열 때마다 1.5초 스피너가 돈다.
+  useEffect(() => { checkShellUpdateNow(); }, []);
 
   return (
     <>
@@ -93,13 +85,13 @@ export function VersionSection() {
         {/* 행은 **하나**다(요청) — 화면과 껍데기를 함께 보고, 둘이 같이 있으면
             껍데기 쪽을 누르게 한다(설치가 화면까지 해결한다). */}
         <UpdateRow
-          merged={mergedUpdateState(status, controls, bridge ? shell : null)}
+          merged={merged}
           checked={checked}
           onCheck={() => {
             setChecked(false);
+            // `지금 확인`은 사용자에게 **하나의 동작**이다 — 화면과 껍데기를 함께 본다
+            // (`checkForUpdateNow`가 둘을 같이 태운다).
             checkForUpdateNow();
-            // `지금 확인`은 사용자에게 **하나의 동작**이다 — 화면과 껍데기를 함께 본다.
-            checkShell();
           }}
         />
       </SettingsGroup>

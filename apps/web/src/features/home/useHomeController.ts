@@ -1173,6 +1173,12 @@ export function useHomeController() {
   /** 「버전 확인」 화면(요청) — 첫 화면의 '계정 설정' 아래 행에서 들어온다. */
   const openVersionDetail = () => patch({ settingsView: 'version' });
   /**
+   * **새 버전 알림을 누르면** 곧바로 그 화면으로(요청) — LNB 알림 센터가 부른다.
+   * 설정 팝업을 첫 화면부터 열게 하면 사용자가 "버전 확인"을 한 번 더 찾아야 한다.
+   * 뒤로 가면 첫 화면이다(`closeSettingsDetail`의 기본 규칙).
+   */
+  const openVersionSetup = () => patch({ settingsOpen: false, accountSettingsOpen: true, settingsView: 'version' });
+  /**
    * LNB 일정 하위 메뉴의 `캘린더 추가`(요청) — 같은 화면을 열되 **주소 입력에 커서를**
    * 둔다. 그 버튼을 누른 사람은 주소를 적으러 온 것이므로, 열린 뒤 한 번 더 그 칸을
    * 찾아 누를 이유가 없다. 표식은 세는 값이라 다시 눌러도 초점이 옮겨 간다.
@@ -2986,6 +2992,7 @@ export function useHomeController() {
     openProfileDetail,
     openCalendarDetail,
     openVersionDetail,
+    openVersionSetup,
     openGoogleCalendarAdd,
     closeSettingsDetail,
     askDeleteAccount,

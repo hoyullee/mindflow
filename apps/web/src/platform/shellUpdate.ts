@@ -181,3 +181,47 @@ export function mergedUpdateState(
   if (web.checking || shell?.kind === 'checking' || shell?.kind === 'idle') return { kind: 'checking' };
   return { kind: 'latest', shellUnknown: shell?.kind === 'unknown' };
 }
+
+/**
+ * **홈 LNB의 알림 한 줄** — 사용자에게 말을 걸 만한 상태인가, 그러면 무엇이라 하나.
+ *
+ * 왜 여기 있나: 판단이 같으면 말도 같아야 한다. 설정의 「버전 확인」과 LNB 알림은
+ * 같은 {@link mergedUpdateState}를 읽으므로, 둘이 어긋날 수 없게 문구도 한 곳에서
+ * 정한다(자리·모양만 화면이 고른다).
+ *
+ * **알리는 것은 사용자가 손을 쓸 수 있는 상태뿐이다**:
+ * - `shell`·`ready` → 누르면 되는 일이 있다
+ * - `save-blocked` → 저장하지 않으면 멈춘 채로 남는다(경고 톤)
+ *
+ * 나머지는 `null`이다. `applying`은 이미 전체 화면 dim이 덮고 있고(같은 말을 두 번
+ * 하지 않는다), `checking`·`latest`·`unavailable`은 **사용자가 할 일이 없다** —
+ * 알림 창구에 늘 무언가 있게 만들면 그 창구가 신호를 잃는다.
+ */
+export interface UpdateNotice {
+  /** 무슨 일인가(한 줄). */
+  title: string;
+  /** 누르면 무엇이 일어나는가. */
+  sub: string;
+  /** 막힌 상태인가 — 경고 톤으로 그린다. */
+  blocked?: boolean;
+}
+
+export function updateNoticeOf(m: MergedUpdate): UpdateNotice | null {
+  switch (m.kind) {
+    case 'shell': {
+      const v = m.release?.version;
+      return {
+        title: v ? `새 설치 버전 ${v}이 있어요` : '새 설치 버전이 있어요',
+        // 설치가 웹 새 판까지 해결한다는 사실은 버전 화면이 자세히 말한다 — 여기서는
+        // "어디로 가는가"만(알림 줄은 한 줄이다).
+        sub: '받는 페이지에서 설치하면 최신이 돼요',
+      };
+    }
+    case 'ready':
+      return { title: '새 버전이 준비됐어요', sub: '지금 적용하면 화면이 새로 열려요' };
+    case 'save-blocked':
+      return { title: '업데이트를 멈췄어요', sub: '저장되지 않은 편집이 있어요', blocked: true };
+    default:
+      return null;
+  }
+}
