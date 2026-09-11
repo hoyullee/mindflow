@@ -5,10 +5,9 @@
 
 import { useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { minutesOf, timeLabel } from '../home/calendar/model';
 import { focusCalendar } from '../home/calendarFocus';
 import { showOsNotification } from './reminderPrefs';
-import { reminderLead, type ReminderItem } from './reminders';
+import { reminderBody, type ReminderItem } from './reminders';
 import { ReminderToast } from './ReminderToast';
 import { useReminderScheduler } from './useReminderScheduler';
 
@@ -23,13 +22,14 @@ export function ReminderHost() {
 
   const onFire = useCallback(
     (item: ReminderItem) => {
-      const mins = minutesOf(item.startTime);
-      const when = mins === null ? item.startTime : timeLabel(mins);
       // OS 알림이 막혀 있어도(권한 없음·생성 실패) **인앱 토스트는 그대로 뜬다** —
       // 알림이 통째로 사라지지 않게. 권한을 얻는 자리는 설정의 `일정 알림`이다.
+      //
+      // 모바일에서 OS가 예약을 들고 있는 모드라면 이 콜백은 애초에 불리지 않는다
+      // (그때는 OS가 띄우고 우리는 그 수신 이벤트로 토스트만 잇는다).
       showOsNotification({
         title: item.title,
-        body: `${when} · ${reminderLead(item.minutes)}`,
+        body: reminderBody(item),
         tag: item.key,
         onClick: openCalendar,
       });
@@ -37,7 +37,7 @@ export function ReminderHost() {
     [openCalendar],
   );
 
-  const { current, rest, dismiss } = useReminderScheduler(onFire);
+  const { current, rest, dismiss } = useReminderScheduler(onFire, openCalendar);
   if (!current) return null;
 
   return (

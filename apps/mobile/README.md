@@ -96,9 +96,19 @@ build the way there might be for a server-rendered app. Rebuild
 
 ## Native bridge plugins
 
-The web app (`apps/web`) itself carries these Capacitor packages as regular
-npm dependencies (not just `apps/mobile`) — its JS bundle is what actually
-executes inside the WebView, so plugin *client* code has to ship with it.
+Each plugin is a dependency of **both** packages, and both are required:
+
+- `apps/web` — its JS bundle is what actually executes inside the WebView,
+  so plugin *client* code has to ship with it.
+- `apps/mobile` — `cap sync`/`cap update` builds the **native** plugin list
+  (`android/.../capacitor.build.gradle`, `ios/App/CapApp-SPM/Package.swift`)
+  from *this* package's dependencies. With pnpm's strict `node_modules`,
+  a plugin declared only in `apps/web` is invisible here: `cap` reports
+  "Found 0 Capacitor plugins" and the generated gradle/Swift files list
+  none — the JS calls then hit a bridge with nothing behind it. (That was
+  the state until the local-notifications work in phase 3; re-running
+  `cap update android|ios` after adding a plugin is what regenerates those
+  two committed files.)
 Every call is gated behind `Capacitor.isNativePlatform()`
 (`apps/web/src/platform/nativeBridge.ts`), which is `false` in every
 ordinary browser/PWA/test run — so none of this changes web behavior, and
@@ -110,6 +120,7 @@ the web app has zero regression if a plugin is ever removed.
 | `@capacitor/splash-screen` | Hides the native launch splash (generated MindFlow mark on white, see [App icon / splash screen](#app-icon--splash-screen)) once the web app has mounted (`apps/web/src/platform/nativeShell.ts`); config'd `launchAutoHide: false` in `capacitor.config.ts` so it doesn't race a fixed timer. | No-op (the PWA has no native splash surface to hide — the browser/OS handles its own launch chrome). |
 | `@capacitor/keyboard` | Resizes the WebView body (not the whole window) when the on-screen keyboard opens, so fixed topbars/toolbars don't get pushed off-screen while editing a node's text. | No-op (browsers already handle on-screen keyboards this way). |
 | `@capacitor/filesystem` + `@capacitor/share` | Export (PNG / `.json` / `.md`, from the editor's export menu and the home doc-card menu) writes the file to the app's cache dir and opens the native Share sheet, since there's no Downloads folder / anchor-tag download inside a native WebView. | The pre-existing `URL.createObjectURL` + `<a download>` browser download (unchanged — this *is* what still runs in every browser and in all 71 existing web unit tests, since `isNativePlatform()` is false there). |
+| `@capacitor/local-notifications` | Calendar reminders (phase 3). The **OS holds the schedule**, so a reminder fires even with the app closed (and survives reboot — the plugin re-registers on `BOOT_COMPLETED`). The web app keeps the next `NATIVE_WINDOW_DAYS` (7) of reminders in sync via a set-difference (`apps/web/src/features/reminders/nativeSchedule.ts`), capped at 48 pending (iOS drops silently past 64). Permission also comes from here — a Capacitor WebView has no web `Notification` at all. | The in-app polling scheduler (phases 1–2): a toast + web `Notification` while a tab is open. |
 | `@capacitor/app` | Installed for future use (back-button handling, deep links, app-state resume) — not yet wired into any UI flow. | N/A. |
 | `@capacitor/core` | `Capacitor.isNativePlatform()` platform detection itself. | N/A — this one small package (no native dependency) is the only one imported statically; it's what safely returns `false` everywhere above. |
 
@@ -122,6 +133,54 @@ Fallback design: every native call above is wrapped in `try`/`catch` (see
 `nativeShell.ts`, `nativeBridge.ts`) and logs to `console.error` rather than
 throwing — a plugin failing to install/link never crashes the app or blocks
 the (already-working) web code path.
+
+## Calendar reminders (phase 3)
+
+What the native shell adds over the web app: **the OS holds the schedule**,
+so a reminder fires with the app closed. Everything else (which events get a
+reminder, how many minutes before, the Google opt-in) is shared web logic.
+
+How it works, and why:
+
+- **Sync, not re-schedule.** While the app is open, the scheduler diffs the
+  reminders it knows about against `getPending()` and only adds/cancels the
+  difference (`planNativeSchedule`). Cancel-all-then-reschedule would make a
+  reminder that is about to fire vanish for that instant.
+- **Notification ids are a hash** of `key@fireAt|title`, so moving an event
+  or renaming it produces a *different* id — the stale one is cancelled and
+  the new one scheduled, instead of the OS firing the old time/title.
+- **Only the OS fires.** When permission is granted, the in-app polling path
+  is switched off; the toast you see while the app is open comes from the
+  plugin's `localNotificationReceived` event. Without that switch the same
+  reminder would show twice. If permission is *not* granted we fall straight
+  back to the phase 1–2 behaviour (in-app toast only).
+- **Inexact alarms, on purpose.** `isExactNotification: false`. On Android
+  12+ exact alarms need a separate user grant, and the plugin opens the
+  system "Alarms & reminders" settings screen mid-`schedule()` if it isn't
+  granted — unacceptable for a sync that runs automatically on app open.
+  The cost is a few minutes of drift; `allowWhileIdle: true` still gets it
+  past Doze. Asking for exact alarms should be a deliberate, user-initiated
+  flow if we ever want it.
+- **`smallIcon: ic_stat_geurio`.** Android throws away the icon's colour and
+  keeps only its alpha, so a status-bar icon must be a white glyph on
+  transparent. Without a dedicated asset the launcher icon is used and shows
+  up as a white square. Generated by `scripts/generate-native-assets.mjs`.
+
+Permissions come from the plugin's own manifest via manifest merging
+(`POST_NOTIFICATIONS`, `SCHEDULE_EXACT_ALARM`, `RECEIVE_BOOT_COMPLETED`,
+`WAKE_LOCK`) — nothing to add to `AndroidManifest.xml`.
+
+**Not verified on a device** (this repo has no Android/iOS toolchain): the
+plugin wrapper and the scheduler are covered by unit/integration tests with
+a mocked plugin, and the web path was re-checked in a real browser. On a
+real device, check in this order:
+
+1. Settings → 일정 알림 renders at all (it needs the plugin's permission
+   API; a WebView has no web `Notification`, which used to hide the row).
+2. Turning it on prompts for the OS notification permission.
+3. Set a reminder a couple of minutes out, **force-quit the app**, wait.
+4. Tap the notification → the app opens on the calendar screen.
+5. The status-bar icon is the Geurio spiral, not a white square.
 
 ## App icon / splash screen
 

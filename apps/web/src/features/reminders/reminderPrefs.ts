@@ -4,6 +4,12 @@
 // "이 노트북에서는 받고 회사 PC에서는 안 받는다"가 자연스러운 설정이라, 스페이스·
 // 테마처럼 기기 간에 따라오면 오히려 어긋난다.
 
+import {
+  checkNativeNotifyPermission,
+  nativeNotificationsAvailable,
+  requestNativeNotifyPermission,
+} from '../../platform/nativeNotifications';
+
 /** 알림을 받을까 — 없으면 **켜짐**이다(아래 근거). */
 const PREF_KEY = 'mf_reminders';
 /** 구글 일정 알림도 우리가 띄울까 — 없으면 **꺼짐**이다(아래 근거). */
@@ -137,6 +143,25 @@ export async function requestNotifyPermission(): Promise<NotifyPermission> {
   } catch {
     return notifyPermission();
   }
+}
+
+/**
+ * 이 기기의 알림 권한 — **모바일 앱이면 OS에 묻는다**(3단계).
+ *
+ * 두 길이 필요한 이유: Capacitor WebView에는 웹 `Notification`이 아예 없다. 그래서
+ * `notifyPermission()`만 보면 모바일 앱에서 늘 `unsupported`가 되어 **설정의 알림
+ * 행 자체가 그려지지 않았다** — 정작 OS 알림이 가장 값진 곳에서. 네이티브에서는
+ * 로컬 알림 플러그인의 권한이 그 답이다.
+ */
+export async function resolveNotifyPermission(): Promise<NotifyPermission> {
+  if (nativeNotificationsAvailable()) return checkNativeNotifyPermission();
+  return notifyPermission();
+}
+
+/** 권한 요청(웹·네이티브 공용) — 위와 같은 이유로 갈린다. 제스처에서만 부른다. */
+export async function askNotifyPermission(): Promise<NotifyPermission> {
+  if (nativeNotificationsAvailable()) return requestNativeNotifyPermission();
+  return requestNotifyPermission();
 }
 
 /**

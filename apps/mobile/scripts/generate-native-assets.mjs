@@ -19,7 +19,7 @@
 // `pnpm --filter @mindflow/mobile run generate:native-assets`) whenever the
 // mark changes; outputs are committed (android/ and ios/ are already
 // committed native projects, see apps/mobile/README.md).
-import { readFile, writeFile } from 'node:fs/promises';
+import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import sharp from 'sharp';
@@ -137,6 +137,30 @@ async function generateAndroidIcons() {
   }
 }
 
+// 알림 작은 아이콘(3단계, 로컬 알림) — 상태 표시줄에 뜨는 24dp 아이콘.
+//
+// **흰 글리프 + 투명 배경**이어야 한다: 안드로이드는 이 아이콘의 색을 무시하고
+// 알파만 남겨 자기 색으로 칠하므로, 코랄 사각형까지 넣으면 상태 표시줄에 **흰
+// 네모**만 뜬다(런처 아이콘을 그대로 쓰면 나는 흔한 증상 — 그래서 전용 자산을
+// 둔다). 어댑티브 전경 레이어와 같은 그림이고 여백만 다르다.
+const ANDROID_NOTIFICATION_DENSITIES = [
+  { dir: 'drawable-mdpi', size: 24 },
+  { dir: 'drawable-hdpi', size: 36 },
+  { dir: 'drawable-xhdpi', size: 48 },
+  { dir: 'drawable-xxhdpi', size: 72 },
+  { dir: 'drawable-xxxhdpi', size: 96 },
+];
+
+async function generateAndroidNotificationIcon() {
+  for (const { dir, size } of ANDROID_NOTIFICATION_DENSITIES) {
+    const densityDir = path.join(androidRes, dir);
+    await mkdir(densityDir, { recursive: true });
+    // 24dp 캔버스에 2dp 남짓 여백(≈0.8) — 상태 표시줄에서 잘리지 않으면서 작지 않게.
+    const icon = await markPngBuffer(size, { contentRatio: 0.8, transparentBg: true });
+    await writePng(icon, path.join(densityDir, 'ic_stat_geurio.png'));
+  }
+}
+
 async function generateAndroidSplash() {
   const splashDirs = [
     'drawable',
@@ -184,6 +208,7 @@ async function generateIosSplash() {
 
 async function main() {
   await generateAndroidIcons();
+  await generateAndroidNotificationIcon();
   await generateAndroidSplash();
   await generateIosIcon();
   await generateIosSplash();
