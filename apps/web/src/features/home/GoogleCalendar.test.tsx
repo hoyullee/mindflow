@@ -292,6 +292,19 @@ async function openCalendar(container: HTMLElement, user: ReturnType<typeof user
   await waitFor(() => expect(container.querySelector('[data-month-grid]')).toBeTruthy());
 }
 
+/**
+ * 계정 설정 → `Google 캘린더 연동` 행. **글자가 아니라 마커로 찾는다** — 같은 글자가
+ * LNB 일정 하위 메뉴에도 있다(접혀 있어도 DOM에는 남는다 — `LnbCollapse`).
+ */
+async function openCalendarDetail(user: ReturnType<typeof userEvent.setup>) {
+  const row = await waitFor(() => {
+    const el = document.querySelector('[data-calendar-detail-row]');
+    expect(el).toBeTruthy();
+    return el as HTMLElement;
+  });
+  await user.click(row);
+}
+
 describe('구글 캘린더 겹치기(PR5)', () => {
   beforeEach(() => mockMatchMedia(false));
 
@@ -320,7 +333,7 @@ describe('구글 캘린더 겹치기(PR5)', () => {
     await user.click(await screen.findByText('설정'));
     // 연동 행은 **계정 설정** 화면에 있고, 캘린더 연동은 거기서 **한 겹 더**다(요청).
     await user.click(await screen.findByText('계정 설정'));
-    await user.click(await screen.findByText('Google 캘린더 연동'));
+    await openCalendarDetail(user);
     const section = await waitFor(() => {
       const el = document.querySelector('[data-google-section]');
       expect(el).toBeTruthy();
@@ -456,6 +469,45 @@ describe('구글 캘린더 겹치기(PR5)', () => {
     await waitFor(() => {
       expect(JSON.parse(localStorage.getItem('mf_gcal_remind_cals') ?? '[]')).toEqual([]);
     });
+  });
+
+  // 제보: 일정 하위 항목에도 즐겨찾기·공유받음·휴지통과 **같은** 열기/닫힘 효과를.
+  // 예전에는 조건부로 넣었다 뺐기 때문에 애니메이션이 걸릴 자리가 없었다 — 지금은
+  // 같은 상자(`LnbCollapse`)가 높이로 접으므로 닫는 동작에도 전이가 생긴다.
+  it('일정 하위 메뉴가 세 구획과 같은 상자로 접힌다 — 닫힘에도 애니메이션이 걸린다(제보)', async () => {
+    clientId = 'test-client.apps.googleusercontent.com';
+    seed();
+    stubGis();
+    stubFetch();
+    const user = userEvent.setup();
+    const { container } = renderHome();
+    const aside = await waitFor(() => {
+      const el = container.querySelector('aside');
+      expect(el).toBeTruthy();
+      return el as HTMLElement;
+    });
+
+    // 일정 화면이 아닐 때 — 내용은 남아 있고(그래야 닫는 전이가 보인다) 높이만 0이다.
+    const box = await waitFor(() => {
+      const el = document.querySelector('[data-cal-sub]')?.parentElement?.parentElement;
+      expect(el).toBeTruthy();
+      return el as HTMLElement;
+    });
+    expect(box.style.maxHeight).toBe('0px');
+    expect(box.style.opacity).toBe('0');
+    // 접힌 동안에는 초점도 가지 않는다 — 보이지 않는 행에 Tab이 내려앉지 않게.
+    expect(box.style.visibility).toBe('hidden');
+    const closing = box.style.transition;
+    expect(closing).toContain('max-height');
+
+    // 펼치면 같은 상자가 열린다 — 전이 선언은 그대로다(즐겨찾기 구획과 같은 값).
+    await user.click(within(aside).getByText('일정'));
+    await waitFor(() => expect(box.style.maxHeight).not.toBe('0px'));
+    expect(box.style.visibility).toBe('visible');
+    // 즐겨찾기 구획과 **같은 선언**이다(visibility 지연만 열림/닫힘에 따라 갈린다).
+    const fav = aside.querySelector('[data-lnb-section="즐겨찾기"]')?.nextElementSibling as HTMLElement;
+    const shape = (el: HTMLElement) => el.style.transition.split(', visibility')[0];
+    expect(shape(fav)).toBe(shape(box));
   });
 
   it('LNB `일정`을 누르면 하위 메뉴가 펼쳐진다 — 연동 전에는 연동 항목, 연동 뒤에는 보여 줄 캘린더(요청)', async () => {
@@ -719,7 +771,7 @@ describe('구글 캘린더 겹치기(PR5)', () => {
     await user.click(await screen.findByText('설정'));
     // 연동 행은 **계정 설정** 화면에 있고, 캘린더 연동은 거기서 **한 겹 더**다(요청).
     await user.click(await screen.findByText('계정 설정'));
-    await user.click(await screen.findByText('Google 캘린더 연동'));
+    await openCalendarDetail(user);
     const btn = await waitFor(() => {
       const el = document.querySelector('[data-google-reconnect]');
       expect(el).toBeTruthy();
@@ -770,7 +822,7 @@ describe('구글 캘린더 겹치기(PR5)', () => {
     await user.click(await screen.findByText('설정'));
     // 연동 행은 **계정 설정** 화면에 있고, 캘린더 연동은 거기서 **한 겹 더**다(요청).
     await user.click(await screen.findByText('계정 설정'));
-    await user.click(await screen.findByText('Google 캘린더 연동'));
+    await openCalendarDetail(user);
     await user.click(await waitFor(() => document.querySelector('[data-google-connect]') as HTMLElement));
     await waitFor(() => {
       const ws = JSON.parse(localStorage.getItem('mf_spaces') ?? '{}') as { google?: Record<string, unknown> };
@@ -827,7 +879,7 @@ describe('구글 캘린더 겹치기(PR5)', () => {
     await user.click(await screen.findByText('설정'));
     // 연동 행은 **계정 설정** 화면에 있고, 캘린더 연동은 거기서 **한 겹 더**다(요청).
     await user.click(await screen.findByText('계정 설정'));
-    await user.click(await screen.findByText('Google 캘린더 연동'));
+    await openCalendarDetail(user);
     const btn = await waitFor(() => {
       const el = document.querySelector('[data-google-disconnect]');
       expect(el).toBeTruthy();
@@ -872,7 +924,7 @@ describe('구글 캘린더 겹치기(PR5)', () => {
     await user.click(await screen.findByRole('button', { name: '계정 메뉴' }));
     await user.click(await screen.findByText('설정'));
     await user.click(await screen.findByText('계정 설정'));
-    await user.click(await screen.findByText('Google 캘린더 연동'));
+    await openCalendarDetail(user);
     const btn = await waitFor(() => {
       const el = document.querySelector('[data-google-disconnect]');
       expect(el).toBeTruthy();
@@ -920,7 +972,7 @@ describe('구글 캘린더 겹치기(PR5)', () => {
     await user.click(await screen.findByRole('button', { name: '계정 메뉴' }));
     await user.click(await screen.findByText('설정'));
     await user.click(await screen.findByText('계정 설정'));
-    await user.click(await screen.findByText('Google 캘린더 연동'));
+    await openCalendarDetail(user);
     const btn = await waitFor(() => {
       const el = document.querySelector('[data-google-disconnect]');
       expect(el).toBeTruthy();
@@ -2017,7 +2069,7 @@ describe('구글 캘린더 겹치기(PR5)', () => {
     await user.click(await screen.findByText('설정'));
     // 연동 행은 **계정 설정** 화면에 있고, 캘린더 연동은 거기서 **한 겹 더**다(요청).
     await user.click(await screen.findByText('계정 설정'));
-    await user.click(await screen.findByText('Google 캘린더 연동'));
+    await openCalendarDetail(user);
     const off = await waitFor(() => {
       const el = document.querySelector('[data-google-disconnect]');
       expect(el).toBeTruthy();
@@ -2347,7 +2399,7 @@ describe('구글 캘린더 겹치기(PR5)', () => {
     await user.click(await screen.findByRole('button', { name: '계정 메뉴' }));
     await user.click(await screen.findByText('설정'));
     await user.click(await screen.findByText('계정 설정'));
-    await user.click(await screen.findByText('Google 캘린더 연동'));
+    await openCalendarDetail(user);
     const section = await waitFor(() => {
       const el = document.querySelector('[data-google-section]');
       expect(el).toBeTruthy();
@@ -2374,7 +2426,7 @@ describe('구글 캘린더 겹치기(PR5)', () => {
     await user.click(await screen.findByRole('button', { name: '계정 메뉴' }));
     await user.click(await screen.findByText('설정'));
     await user.click(await screen.findByText('계정 설정'));
-    await user.click(await screen.findByText('Google 캘린더 연동'));
+    await openCalendarDetail(user);
     const section = await waitFor(() => {
       const el = document.querySelector('[data-google-section]');
       expect(el).toBeTruthy();
@@ -3519,7 +3571,7 @@ describe('캘린더 더하기 — 그리오 목록(요청)', () => {
     await user.click(await screen.findByText('설정'));
     await user.click(await screen.findByText('계정 설정'));
     // 연동은 **한 겹 더** 들어간다(요청) — 계정 설정에는 진입 행만 있다.
-    await user.click(await screen.findByText('Google 캘린더 연동'));
+    await openCalendarDetail(user);
     return waitFor(() => {
       const el = document.querySelector('[data-google-section]');
       expect(el).toBeTruthy();
@@ -4051,7 +4103,7 @@ async function openCalendarSetup(user: ReturnType<typeof userEvent.setup>) {
   await user.click(await screen.findByRole('button', { name: '계정 메뉴' }));
   await user.click(await screen.findByText('설정'));
   await user.click(await screen.findByText('계정 설정'));
-  await user.click(await screen.findByText('Google 캘린더 연동'));
+  await openCalendarDetail(user);
   await waitFor(() => expect(document.querySelector('[data-google-section]')).toBeTruthy());
 }
 
@@ -4059,11 +4111,18 @@ describe('구글 일정 알림 설정(2단계)', () => {
   beforeEach(() => mockMatchMedia(false));
   afterEach(() => vi.unstubAllGlobals());
 
-  /** 설정 첫 화면의 `일정 알림` 구획까지 — 구글 하위 행이 거기 있다. */
+  /** 설정 → **알림** 화면까지(요청으로 한 겹 안으로 들어갔다) — 구글 하위 행이 거기 있다. */
   async function openSettings(user: ReturnType<typeof userEvent.setup>) {
     await user.click(await screen.findByRole('button', { name: '계정 메뉴' }));
     await user.click(await screen.findByText('설정'));
-    return screen.getByRole('dialog', { name: '설정' });
+    const dialog = screen.getByRole('dialog', { name: '설정' });
+    const row = await waitFor(() => {
+      const el = dialog.querySelector('[data-notify-detail-row]');
+      expect(el).toBeTruthy();
+      return el as HTMLElement;
+    });
+    await user.click(row);
+    return dialog;
   }
 
   it('연동돼 있으면 하위 토글이 뜨고 **기본은 꺼짐**이다 — 켜면 이 기기에 남는다', async () => {

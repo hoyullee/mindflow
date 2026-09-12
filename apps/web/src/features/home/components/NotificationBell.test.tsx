@@ -5,6 +5,8 @@ import { NotificationBell } from './NotificationBell';
 import { NotificationsProvider } from './NotificationsContext';
 import { pushLocalNotification, readLocalNotifications, writeLocalNotifications, type StoredNotification } from '../../../adapters/local/localNotifications';
 import { __resetUpdateControl, publishUpdateStatus, setUpdateControls } from '../../../pwa/updateControl';
+import { pushReminderNotice } from '../../reminders/reminderInbox';
+import { takeCalendarFocus } from '../calendarFocus';
 
 // 홈 알림 센터(0022의 로컬 짝) — 벨 배지·열기=읽음 처리·항목 클릭=딥링크.
 
@@ -30,6 +32,7 @@ function renderBell(isMobile = false, onOpenVersion: () => void = vi.fn()) {
           }
         />
         <Route path="/editor" element={<LocationProbe />} />
+        <Route path="/home" element={<LocationProbe />} />
       </Routes>
     </MemoryRouter>
     </NotificationsProvider>,
@@ -453,5 +456,60 @@ describe('알림 센터 — 새 버전', () => {
     // 개수가 아니라 있음/없음이라 따로 적는다 — `새 알림 N개`에 섞으면 그 숫자가
     // 우편함 항목 수와 어긋난다.
     expect(navDotOf(0, 2, true).label).toBe('메뉴 열기, 새 알림 2개 · 새 버전');
+  });
+});
+
+// ── 일정 알림도 우편함에 남는다(제보) ───────────────────────────────────────
+//
+// 그 알림은 **서버가 만들지 않는다** — 스케줄러가 이 기기에서 띄우고 기록도 여기
+// 남는다(캘린더 데이터를 서버에 쌓지 않는다는 방침 그대로). 우편함은 서버 것과
+// 이 기록을 **합쳐** 보여 준다.
+describe('일정 알림이 우편함에 남는다', () => {
+  const fired = {
+    key: 'e1#2026-09-15',
+    eventId: 'e1',
+    date: '2026-09-15',
+    title: '팀 회의',
+    startTime: '10:30',
+    fireAt: Date.parse('2026-09-15T10:20:00'),
+    startAt: Date.parse('2026-09-15T10:30:00'),
+    minutes: 10,
+  };
+
+  it('배지·목록에 섞이고, 누르면 **그 일정**으로 간다(맵이 아니라)', async () => {
+    // 서버 알림 하나 + 이 기기의 일정 알림 하나 — 한 목록이다.
+    seed([{ id: 'n1', createdAt: new Date(Date.now() - 5 * 60_000).toISOString() }]);
+    pushReminderNotice(fired);
+    renderBell();
+
+    const bell = await screen.findByRole('button', { name: /알림/ });
+    // 안 읽은 둘을 함께 센다.
+    await waitFor(() => expect(bell.textContent).toContain('2'));
+
+    fireEvent.click(bell);
+    const panel = await waitFor(() => {
+      const el = document.querySelector('[data-notification-panel]') as HTMLElement | null;
+      expect(el).toBeTruthy();
+      return el!;
+    });
+    // 사람이 없는 알림이라 얼굴 자리에 달력이 오고, 문장은 "언제 시작하는가"다.
+    expect(panel.querySelector('[data-notification-cal]')).toBeTruthy();
+    const row = within(panel).getByText('팀 회의').closest('button') as HTMLElement;
+    expect(row.textContent).toContain('10분');
+
+    fireEvent.click(row);
+    await waitFor(() => expect(screen.getByTestId('loc').textContent).toBe('/home'));
+    // 화면만 바꾸는 것으로는 부족하다 — 그 회차가 놓인 날까지 들고 간다.
+    expect(takeCalendarFocus()).toEqual({ date: '2026-09-15', eventId: 'e1', source: 'geurio' });
+  });
+
+  it('열면 함께 읽음 처리된다 — 서버 것과 같은 규칙', async () => {
+    pushReminderNotice(fired);
+    renderBell();
+    const bell = await screen.findByRole('button', { name: /알림/ });
+    await waitFor(() => expect(bell.textContent).toContain('1'));
+    fireEvent.click(bell);
+    await waitFor(() => expect(bell.textContent).not.toContain('1'));
+    expect(localStorage.getItem('mf_reminder_inbox')).toContain('"read":true');
   });
 });

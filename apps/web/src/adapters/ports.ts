@@ -625,7 +625,22 @@ export interface CommentStore {
 
 // ── Notifications ──────────────────────────────────────────────────────────
 
-export type NotificationKind = 'mention' | 'reply' | 'comment' | 'share' | 'doc_mention';
+/**
+ * `reminder`만 **서버에서 오지 않는다** — 일정 알림은 이 기기의 스케줄러가 띄우고
+ * (개인정보처리방침대로 캘린더 데이터는 서버에 쌓지 않는다) 그 기록도 이 기기에
+ * 남는다(`features/reminders/reminderInbox.ts`). 우편함 목록은 둘을 합쳐 보여 준다.
+ */
+export type NotificationKind = 'mention' | 'reply' | 'comment' | 'share' | 'doc_mention' | 'reminder';
+
+/** 일정 알림이 가리키는 것 — 목록에서 누르면 그 일정의 상세까지 연다. */
+export interface NotificationCalendarTarget {
+  /** 그 회차가 놓인 날(`YYYY-MM-DD`). */
+  date: string;
+  eventId: string;
+  source: 'geurio' | 'google';
+  /** `오후 3:30 · 10분 후 시작` — 토스트와 같은 문장. */
+  body: string;
+}
 
 export interface AppNotification {
   id: string;
@@ -641,6 +656,8 @@ export interface AppNotification {
   docTitle: string;
   createdAt: string;
   read: boolean;
+  /** `kind: 'reminder'`에만 있다 — 맵이 아니라 **일정**으로 보내야 한다. */
+  calendar?: NotificationCalendarTarget;
 }
 
 /**

@@ -120,6 +120,28 @@ export async function scheduleNative(list: readonly NativeScheduled[]): Promise<
   });
 }
 
+/**
+ * 알림 한 건을 **지금** 띄운다(예약이 아니라 즉시) — 설정의 `테스트 알림`이 쓴다.
+ *
+ * `schedule`을 주지 않으면 플러그인이 곧바로 띄운다 — 그래서 OS 대기 목록에 남지
+ * 않고, 동기화가 "있어야 할 예약"과 견줘 거둬 가는 목록(`cancel`)에 걸려 2초 뒤에
+ * 사라지는 일도 없다.
+ */
+export async function showNativeNotification(n: {
+  id: number;
+  title: string;
+  body: string;
+}): Promise<boolean> {
+  const got = await api();
+  if (!got) return false;
+  try {
+    await got.p.schedule({ notifications: [{ id: n.id, title: n.title, body: n.body }] });
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 export async function cancelNative(ids: readonly number[]): Promise<void> {
   if (!ids.length) return;
   const got = await api();

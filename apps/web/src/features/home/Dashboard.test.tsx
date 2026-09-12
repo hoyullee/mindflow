@@ -276,7 +276,7 @@ describe('대시보드 ① — LNB·보기·피커', () => {
     });
   });
 
-  it('행 우클릭 → 이름 변경·삭제(삭제는 배치만 사라진다는 확인창을 거친다)', async () => {
+  it('행 우클릭 → 수정하기·삭제(삭제는 배치만 사라진다는 확인창을 거친다)', async () => {
     seedSpaces();
     localStorage.setItem(
       'mf_spaces',
@@ -287,12 +287,12 @@ describe('대시보드 ① — LNB·보기·피커', () => {
     const aside = await sidebarOf(container);
     await waitFor(() => expect(within(aside).getByText('옛 이름')).toBeTruthy());
 
-    // 이름 변경
+    // 수정하기(이름 + 색)
     fireEvent.contextMenu(within(aside).getByText('옛 이름'), { clientX: 80, clientY: 200 });
     const menu = await screen.findByRole('menu');
     expect(menu.getAttribute('data-home-ctx')).toBe('dash');
-    fireEvent.click(within(menu).getByRole('menuitem', { name: '이름 변경' }));
-    const rename = await screen.findByRole('dialog', { name: '대시보드 이름 변경' });
+    fireEvent.click(within(menu).getByRole('menuitem', { name: '수정하기' }));
+    const rename = await screen.findByRole('dialog', { name: '대시보드 수정' });
     const input = within(rename).getByLabelText('대시보드 이름') as HTMLInputElement;
     await user.clear(input);
     await user.type(input, '이번 주');

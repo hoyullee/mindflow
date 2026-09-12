@@ -15,6 +15,9 @@ const CHANNEL_BACKGROUND_STATE = 'geurio:background-state';
 const CHANNEL_SET_BACKGROUND = 'geurio:set-background';
 const CHANNEL_SET_OPEN_AT_LOGIN = 'geurio:set-open-at-login';
 const CHANNEL_FOCUS_WINDOW = 'geurio:focus-window';
+const CHANNEL_NOTIFY = 'geurio:notify';
+const CHANNEL_NOTIFY_SUPPORTED = 'geurio:notify-supported';
+const CHANNEL_NOTIFICATION_CLICK = 'geurio:notification-click';
 
 export interface GeurioDesktopBridge {
   /** 이 값의 존재가 곧 "데스크톱 앱에서 돌고 있다"다 — 웹 쪽 판정이 이걸 본다. */
@@ -54,6 +57,19 @@ export interface GeurioDesktopBridge {
   setOpenAtLogin(on: boolean): Promise<BackgroundState>;
   /** 숨어 있는 창을 되찾는다 — OS 알림을 눌렀을 때 이 길로 온다. */
   focusWindow(): Promise<boolean>;
+  /**
+   * 이 기기가 OS 알림을 띄울 수 있는가(`Notification.isSupported()`). 설정 화면이
+   * **묻고 나서** 말한다 — 못 띄우는 기기에 "OS 알림도 함께 떠요"라고 하지 않게.
+   */
+  notifySupported(): Promise<boolean>;
+  /**
+   * OS 알림 한 건을 **셸이** 띄운다(제보: Windows 앱에서 알림이 오지 않는다).
+   * 렌더러의 `new Notification()`은 Chromium 정책을 여러 겹 지나고 무엇이 막혔는지
+   * 알려 주지 않는다 — 여기서는 띄웠는지 여부가 그대로 돌아온다.
+   */
+  notify(payload: { title: string; body: string; tag: string }): Promise<boolean>;
+  /** 그 알림을 눌렀을 때 — 넘겨 준 `tag`가 그대로 돌아온다. */
+  onNotificationClick(handler: (tag: string) => void): () => void;
 }
 
 /**
@@ -83,6 +99,13 @@ const bridge: GeurioDesktopBridge = {
   setBackground: (on) => ipcRenderer.invoke(CHANNEL_SET_BACKGROUND, on) as Promise<BackgroundState>,
   setOpenAtLogin: (on) => ipcRenderer.invoke(CHANNEL_SET_OPEN_AT_LOGIN, on) as Promise<BackgroundState>,
   focusWindow: () => ipcRenderer.invoke(CHANNEL_FOCUS_WINDOW) as Promise<boolean>,
+  notifySupported: () => ipcRenderer.invoke(CHANNEL_NOTIFY_SUPPORTED) as Promise<boolean>,
+  notify: (payload) => ipcRenderer.invoke(CHANNEL_NOTIFY, payload) as Promise<boolean>,
+  onNotificationClick: (handler) => {
+    const listener = (_e: unknown, tag: string) => handler(tag);
+    ipcRenderer.on(CHANNEL_NOTIFICATION_CLICK, listener);
+    return () => ipcRenderer.removeListener(CHANNEL_NOTIFICATION_CLICK, listener);
+  },
 };
 
 contextBridge.exposeInMainWorld('geurio', bridge);

@@ -41,6 +41,15 @@ export interface DesktopBridge {
   setBackground?(on: boolean): Promise<DesktopBackground>;
   setOpenAtLogin?(on: boolean): Promise<DesktopBackground>;
   focusWindow?(): Promise<boolean>;
+  /**
+   * 아래 셋은 **OS 알림을 셸이 띄우는 길**(제보: Windows 앱에서 알림이 오지 않는다).
+   * 렌더러의 `new Notification()`은 Chromium 정책을 여러 겹 지나고 **무엇이 막혔는지
+   * 알려 주지 않는다** — 메인 프로세스는 `Notification.isSupported()`를 물을 수 있고
+   * 띄웠는지 여부가 그대로 돌아온다. 옛 설치본에는 없으므로 선택이다.
+   */
+  notifySupported?(): Promise<boolean>;
+  notify?(payload: { title: string; body: string; tag: string }): Promise<boolean>;
+  onNotificationClick?(handler: (tag: string) => void): () => void;
 }
 
 declare global {
@@ -125,4 +134,72 @@ export function focusDesktopWindow(): void {
   const b = desktopBridge();
   if (!b?.focusWindow) return;
   void b.focusWindow().catch(() => undefined);
+}
+
+/** 셸이 OS 알림을 띄워 줄 수 있는 판인가(4단계 이전 설치본에는 이 창구가 없다). */
+export function desktopNotifyAvailable(): boolean {
+  return typeof desktopBridge()?.notify === 'function';
+}
+
+/**
+ * 이 기기가 OS 알림을 띄울 수 있는가 — **셸에게 묻는다**(`Notification.isSupported()`).
+ * 셸이 아니거나 옛 셸이면 `null`(= 모른다): 설정 화면이 그때는 아무 말도 하지 않는다.
+ */
+export async function desktopNotifySupported(): Promise<boolean | null> {
+  const b = desktopBridge();
+  if (!b?.notifySupported) return null;
+  try {
+    return await b.notifySupported();
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * 알림 클릭 창구는 **여러 알림이 나눠 쓴다** — 셸은 `tag`만 돌려주므로 그 태그로
+ * 무엇을 할지는 여기서 기억한다. 구독은 **처음 쓸 때 한 번만** 걸고(옛 셸이면 걸리지
+ * 않는다) 기억은 상한을 둔다(누른 적 없는 알림이 쌓여도 무한히 자라지 않게).
+ */
+const clickHandlers = new Map<string, () => void>();
+const CLICK_MAX = 30;
+/** 구독을 건 창구 자신을 기억한다 — 불리언이면 창구가 바뀌어도 다시 걸지 않는다. */
+let clickBound: DesktopBridge | null = null;
+
+function bindClicks(): void {
+  const b = desktopBridge();
+  if (!b?.onNotificationClick || clickBound === b) return;
+  clickBound = b;
+  b.onNotificationClick((tag) => {
+    const fn = clickHandlers.get(tag);
+    clickHandlers.delete(tag);
+    fn?.();
+  });
+}
+
+/**
+ * OS 알림을 **셸이** 띄운다. 띄웠으면 `true` — 못 띄웠으면(지원 없음·실패) `false`라
+ * 호출부가 웹 생성자로 물러설 수 있다. 창을 되찾는 일은 셸이 클릭에서 이미 한다.
+ */
+export async function notifyViaDesktop(opts: {
+  title: string;
+  body: string;
+  tag: string;
+  onClick?: () => void;
+}): Promise<boolean> {
+  const b = desktopBridge();
+  if (!b?.notify) return false;
+  if (opts.onClick) {
+    bindClicks();
+    if (clickHandlers.size >= CLICK_MAX) {
+      const oldest = clickHandlers.keys().next().value;
+      if (oldest !== undefined) clickHandlers.delete(oldest);
+    }
+    clickHandlers.set(opts.tag, opts.onClick);
+  }
+  try {
+    return await b.notify({ title: opts.title, body: opts.body, tag: opts.tag });
+  } catch {
+    clickHandlers.delete(opts.tag);
+    return false;
+  }
 }
