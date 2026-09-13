@@ -19,8 +19,7 @@ import {
   remindersEnabled,
   resolveNotifyPermission,
   sendTestNotification,
-  setGoogleRemindersEnabled,
-  setRemindersEnabled,
+  onRemindersEnabledChange,
   type NotifyPermission,
 } from '../../../reminders/reminderPrefs';
 import {
@@ -54,11 +53,19 @@ export function AccountSettingsModal({ state, controller }: Props) {
     const d = new Date();
     return { y: d.getFullYear(), m: d.getMonth() + 1 };
   });
-  // 일정 알림(0038) — **이 기기**의 상태다(OS 알림 권한 자체가 기기·브라우저마다 따로).
-  // 그래서 워크스페이스 블롭이 아니라 localStorage이고, 여기서 든 두 값은 화면 표시용
-  // 사본이다(정본은 `reminderPrefs`).
+  // 일정 알림(0038) — 정본은 **계정**(워크스페이스 블롭)이고 localStorage는 그 캐시다
+  // (제보: 크롬과 설치형 앱에 따로 켜져 있어 한쪽에만 알림이 왔다). 여기서 든 두 값은
+  // 화면 표시용 사본이라, 계정 값이 뒤늦게 도착하면 아래 구독이 따라잡는다.
   const [remindOn, setRemindOn] = useState(() => remindersEnabled());
   const [googleRemindOn, setGoogleRemindOn] = useState(() => googleRemindersEnabled());
+  useEffect(
+    () =>
+      onRemindersEnabledChange(() => {
+        setRemindOn(remindersEnabled());
+        setGoogleRemindOn(googleRemindersEnabled());
+      }),
+    [],
+  );
   // 알림 권한. 웹은 동기로 알 수 있지만 **모바일 앱은 OS에 물어야** 안다(3단계) —
   // 그래서 첫 값은 웹 기준이고 마운트 직후 실제 값으로 맞춘다. 그 사이 한 프레임은
   // 아래 note의 마지막 갈래("허용하면 …")로 떨어지는데, 켤 수 있다는 말이라 어느
@@ -425,7 +432,8 @@ export function AccountSettingsModal({ state, controller }: Props) {
                     checked={remindOn}
                     onCheckedChange={() => {
                       const next = !remindOn;
-                      setRemindersEnabled(next);
+                      // 계정에 저장한다 — 이 기기의 캐시 갱신·통지는 컨트롤러가 함께 한다.
+                      controller.setReminderPrefs({ on: next });
                       setRemindOn(next);
                       // 켜는 그 클릭이 곧 제스처다 — 여기서 물으면 사용자는 자기가 누른
                       // 결과로 창을 본다(저절로 뜨는 권한 창을 만들지 않는다).
@@ -460,7 +468,7 @@ export function AccountSettingsModal({ state, controller }: Props) {
                       checked={googleRemindOn}
                       onCheckedChange={() => {
                         const next = !googleRemindOn;
-                        setGoogleRemindersEnabled(next);
+                        controller.setReminderPrefs({ google: next });
                         setGoogleRemindOn(next);
                         if (next && perm !== 'granted') void askNotifyPermission().then(setPerm);
                       }}

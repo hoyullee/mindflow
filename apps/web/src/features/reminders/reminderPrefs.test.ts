@@ -1,5 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import {
+  applySyncedReminderPrefs,
+  explicitReminderPrefs,
   googleRemindersEnabled,
   markReminderFired,
   notifyPermission,
@@ -13,6 +15,36 @@ import {
 } from './reminderPrefs';
 
 beforeEach(() => localStorage.clear());
+
+describe('계정과 이 기기 사이', () => {
+  it('고른 적 있는 값만 계정으로 올린다 — 기본값까지 올리면 먼저 접속한 기기가 계정을 정한다', () => {
+    expect(explicitReminderPrefs()).toEqual({});
+    setGoogleRemindersEnabled(true);
+    expect(explicitReminderPrefs()).toEqual({ google: true });
+    setRemindersEnabled(false);
+    expect(explicitReminderPrefs()).toEqual({ on: false, google: true });
+  });
+
+  it('계정 값을 받으면 이 기기에 반영하고 열려 있는 화면에 알린다', () => {
+    const fn = vi.fn();
+    const off = onRemindersEnabledChange(fn);
+    applySyncedReminderPrefs({ google: true });
+    expect(googleRemindersEnabled()).toBe(true);
+    expect(fn).toHaveBeenCalledTimes(1);
+    // 같은 값이면 통지하지 않는다(스케줄러가 이유 없이 다시 돌지 않게).
+    applySyncedReminderPrefs({ google: true });
+    expect(fn).toHaveBeenCalledTimes(1);
+    off();
+  });
+
+  it('없는 필드는 손대지 않는다 — 계정에 값이 없는 것은 "꺼짐"이 아니다', () => {
+    setRemindersEnabled(false);
+    applySyncedReminderPrefs({ google: true });
+    expect(remindersEnabled()).toBe(false);
+    applySyncedReminderPrefs(undefined);
+    expect(remindersEnabled()).toBe(false);
+  });
+});
 
 describe('알림의 기기 쪽 상태', () => {
   it('기본은 켜짐 — 이 스위치는 알림을 만들어 내지 않으므로(일정마다의 기본은 `없음`)', () => {

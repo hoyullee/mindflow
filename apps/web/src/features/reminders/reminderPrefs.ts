@@ -1,8 +1,21 @@
-// 알림의 **기기 쪽 상태** — 켜 뒀는가, 이미 띄운 것은 무엇인가, OS 알림 권한.
+// 알림 설정 — 켜 뒀는가, 이미 띄운 것은 무엇인가, OS 알림 권한.
 //
-// 왜 이 기기(localStorage)인가: OS 알림 권한 자체가 기기·브라우저마다 따로다.
-// "이 노트북에서는 받고 회사 PC에서는 안 받는다"가 자연스러운 설정이라, 스페이스·
-// 테마처럼 기기 간에 따라오면 오히려 어긋난다.
+// ## 무엇이 계정이고 무엇이 기기인가(제보로 바뀐 것)
+//
+// 처음에는 "켤까/끌까"까지 이 기기에 두었다. 근거는 "OS 알림 권한이 기기마다
+// 따로다"였는데, **그 근거가 닿는 것은 권한 하나뿐**이었다. 그래서 같은 계정으로
+// 크롬과 설치형 앱에 함께 로그인한 사람에게 **한쪽에만 알림이 왔다**(제보) —
+// 특히 구글 일정 알림은 기본이 꺼짐이라, 크롬에서 켠 사람도 앱에서는 꺼진 채다.
+//
+// 지금은 이렇게 갈린다:
+// - **계정**(워크스페이스 블롭 `reminders`): 알림을 받을까 · 구글 일정도 받을까.
+//   "내가 건 알림을 받는다"는 계정의 뜻이다.
+// - **이 기기**(localStorage): OS 알림 **권한**(우리가 옮길 수 없다)과, 위 두 값의
+//   **캐시**(첫 페인트·블롭이 도착하기 전의 에디터가 읽는다), 그리고 이미 띄운 기록.
+//
+// 이미 띄운 기록(`mf_reminded`)은 기기에 남는 것이 맞다 — 알림도 기기마다 뜬다.
+// 대가는 **두 클라이언트를 함께 켜 두면 같은 알림이 양쪽에 뜬다**는 것이고, 그게
+// "앱/웹 구별 없이 온다"의 뒷면이다(제보자의 요청이 정확히 그것이었다).
 
 import {
   desktopNotifyAvailable,
@@ -78,6 +91,57 @@ export function setGoogleRemindersEnabled(on: boolean): void {
     /* 저장소가 막혀도 이번 세션에서는 아래 알림으로 동작한다 */
   }
   listeners.forEach((fn) => fn());
+}
+
+/** 계정에 실어 보낼 값 — 블롭에 담기는 모양 그대로. */
+export interface SyncedReminderPrefs {
+  on?: boolean;
+  google?: boolean;
+}
+
+/**
+ * 이 기기가 **실제로 고른** 값만(키가 있는 것만) 돌려준다.
+ *
+ * 계정에 아직 값이 없는 사용자의 첫 이사에 쓴다: 기본값까지 올려 보내면 **먼저 켠
+ * 기기가 아니라 먼저 접속한 기기**가 계정 값을 정해 버린다(앱이 먼저 뜨면 크롬에서
+ * 켜 둔 "구글 일정도 알림"이 꺼짐으로 덮인다). 고른 적 있는 기기만 올린다.
+ */
+export function explicitReminderPrefs(): SyncedReminderPrefs {
+  try {
+    const on = localStorage.getItem(PREF_KEY);
+    const google = localStorage.getItem(GOOGLE_PREF_KEY);
+    return {
+      ...(on === null ? {} : { on: on !== '0' }),
+      ...(google === null ? {} : { google: google === '1' }),
+    };
+  } catch {
+    return {};
+  }
+}
+
+/**
+ * 계정에서 온 값을 이 기기에 반영한다(캐시 갱신 + 열려 있는 화면에 통지).
+ *
+ * **없는 필드는 손대지 않는다** — 블롭에 `reminders`가 없는 것은 "아직 고른 적
+ * 없음"이지 "꺼짐"이 아니다. 그때 기기 값을 지우면 기존 사용자의 설정이 이사
+ * 도중에 사라진다.
+ */
+export function applySyncedReminderPrefs(p: SyncedReminderPrefs | null | undefined): void {
+  if (!p) return;
+  let changed = false;
+  try {
+    if (typeof p.on === 'boolean' && p.on !== remindersEnabled()) {
+      localStorage.setItem(PREF_KEY, p.on ? '1' : '0');
+      changed = true;
+    }
+    if (typeof p.google === 'boolean' && p.google !== googleRemindersEnabled()) {
+      localStorage.setItem(GOOGLE_PREF_KEY, p.google ? '1' : '0');
+      changed = true;
+    }
+  } catch {
+    /* 저장소가 막힌 기기 — 이번 세션에서는 기본값으로 돈다 */
+  }
+  if (changed) listeners.forEach((fn) => fn());
 }
 
 /** 설정에서 토글하면 **열려 있는 모든 화면**의 스케줄러가 따라와야 한다. */

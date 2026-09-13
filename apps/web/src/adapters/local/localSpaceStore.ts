@@ -12,7 +12,7 @@ export class LocalSpaceStore implements SpaceStore {
     try {
       const raw = localStorage.getItem(SPACES_KEY);
       if (!raw) return null;
-      const parsed = JSON.parse(raw) as { spaces?: unknown; mapFolders?: unknown; recent?: unknown; theme?: unknown; homeLanding?: unknown; dashboards?: unknown; google?: unknown };
+      const parsed = JSON.parse(raw) as { spaces?: unknown; mapFolders?: unknown; recent?: unknown; theme?: unknown; homeLanding?: unknown; dashboards?: unknown; google?: unknown; reminders?: unknown };
       if (!Array.isArray(parsed.spaces)) return null;
       const mapFolders = parsed.mapFolders && typeof parsed.mapFolders === 'object' ? (parsed.mapFolders as Record<string, string>) : {};
       const recent = Array.isArray(parsed.recent) ? parsed.recent.filter((t): t is string => typeof t === 'string') : undefined;
@@ -35,7 +35,13 @@ export class LocalSpaceStore implements SpaceStore {
     const google = g && Array.isArray(g.calendars)
       ? { calendars: g.calendars.filter((c): c is string => typeof c === 'string'), ...(extra?.length ? { extra } : {}), ...(typeof g.holiday === 'string' ? { holiday: g.holiday } : {}) }
       : undefined;
-      return { spaces: parsed.spaces, mapFolders, recent, theme, homeLanding, dashboards, google };
+      // 일정 알림(제보: 앱과 웹에 따로 켜져 있었다) — 위 ⚠️와 같은 이유로 여기에도
+      // 실어야 한다. 불리언 둘뿐이라 모양이 어긋난 값은 버린다.
+      const r = parsed.reminders as { on?: unknown; google?: unknown } | undefined;
+      const reminders = r && typeof r === 'object'
+        ? { ...(typeof r.on === 'boolean' ? { on: r.on } : {}), ...(typeof r.google === 'boolean' ? { google: r.google } : {}) }
+        : undefined;
+      return { spaces: parsed.spaces, mapFolders, recent, theme, homeLanding, dashboards, google, ...(reminders && Object.keys(reminders).length ? { reminders } : {}) };
     } catch {
       return null;
     }
@@ -43,7 +49,7 @@ export class LocalSpaceStore implements SpaceStore {
 
   async save(data: WorkspaceData): Promise<void> {
     try {
-      localStorage.setItem(SPACES_KEY, JSON.stringify({ v: 1, spaces: data.spaces, mapFolders: data.mapFolders, recent: data.recent ?? [], theme: data.theme, ...(data.homeLanding ? { homeLanding: data.homeLanding } : {}), dashboards: data.dashboards ?? [], ...(data.google ? { google: data.google } : {}) }));
+      localStorage.setItem(SPACES_KEY, JSON.stringify({ v: 1, spaces: data.spaces, mapFolders: data.mapFolders, recent: data.recent ?? [], theme: data.theme, ...(data.homeLanding ? { homeLanding: data.homeLanding } : {}), dashboards: data.dashboards ?? [], ...(data.google ? { google: data.google } : {}), ...(data.reminders ? { reminders: data.reminders } : {}) }));
     } catch {
       /* storage unavailable (private mode, quota, ...) — non-fatal */
     }

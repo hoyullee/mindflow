@@ -12,7 +12,7 @@ import type { SpaceStore, WorkspaceData } from '../ports';
 const TABLE = 'workspaces';
 
 interface WorkspaceRow {
-  data: { spaces?: unknown; mapFolders?: unknown; recent?: unknown; theme?: unknown; homeLanding?: unknown; dashboards?: unknown; google?: unknown } | null;
+  data: { spaces?: unknown; mapFolders?: unknown; recent?: unknown; theme?: unknown; homeLanding?: unknown; dashboards?: unknown; google?: unknown; reminders?: unknown } | null;
 }
 
 export class SupabaseSpaceStore implements SpaceStore {
@@ -46,7 +46,12 @@ export class SupabaseSpaceStore implements SpaceStore {
     const google = g && Array.isArray(g.calendars)
       ? { calendars: g.calendars.filter((c): c is string => typeof c === 'string'), ...(extra?.length ? { extra } : {}), ...(typeof g.holiday === 'string' ? { holiday: g.holiday } : {}) }
       : undefined;
-    return { spaces: body.spaces, mapFolders, recent, theme, homeLanding, dashboards, google };
+    // 일정 알림(제보: 앱과 웹에 따로 켜져 있었다) — 위 ⚠️와 같은 이유로 여기에도.
+    const r = body.reminders as { on?: unknown; google?: unknown } | undefined;
+    const reminders = r && typeof r === 'object'
+      ? { ...(typeof r.on === 'boolean' ? { on: r.on } : {}), ...(typeof r.google === 'boolean' ? { google: r.google } : {}) }
+      : undefined;
+    return { spaces: body.spaces, mapFolders, recent, theme, homeLanding, dashboards, google, ...(reminders && Object.keys(reminders).length ? { reminders } : {}) };
   }
 
   async save(data: WorkspaceData): Promise<void> {
@@ -55,7 +60,7 @@ export class SupabaseSpaceStore implements SpaceStore {
     // saves (mirrors `documents.owner`'s default — migration 0004/RLS enforce it).
     const { error } = await this.client
       .from(TABLE)
-      .upsert({ data: { spaces: data.spaces, mapFolders: data.mapFolders, recent: data.recent ?? [], theme: data.theme, ...(data.homeLanding ? { homeLanding: data.homeLanding } : {}), dashboards: data.dashboards ?? [], ...(data.google ? { google: data.google } : {}) }, updated_at: new Date().toISOString() }, { onConflict: 'owner' });
+      .upsert({ data: { spaces: data.spaces, mapFolders: data.mapFolders, recent: data.recent ?? [], theme: data.theme, ...(data.homeLanding ? { homeLanding: data.homeLanding } : {}), dashboards: data.dashboards ?? [], ...(data.google ? { google: data.google } : {}), ...(data.reminders ? { reminders: data.reminders } : {}) }, updated_at: new Date().toISOString() }, { onConflict: 'owner' });
     if (error) throw new Error(error.message);
   }
 }
