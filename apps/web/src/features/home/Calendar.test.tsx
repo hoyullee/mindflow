@@ -523,7 +523,11 @@ describe('일정 화면', () => {
 
   it('마감 배지는 급한 정도로 색이 갈리고, 목록이 길면 접힌다(제보 #14·#15)', async () => {
     // 오늘 / 이틀 뒤 / 먼 뒤 — 세 등급이 한 목록에 서게 만든다.
-    const many = Array.from({ length: 9 }, (_, i) => ({ id: `n${i}`, col: 'c1', pos: i + 1, text: `일감 ${i}`, due: shiftInMonth(i === 0 ? 0 : i === 1 ? 2 : 10 + i) }));
+    // 여기서는 `shiftInMonth`를 쓰지 않는다: 그 헬퍼는 달을 넘으면 **뒤로** 물러서는데,
+    // 그러면 미래로 두려던 날이 과거가 되어 "다가오는 마감"에서 통째로 빠진다(달 후반에만
+    // 깨지는 시계 의존 — 실제로 그렇게 깨졌다). 마감 목록은 달에 매이지 않으므로
+    // (`upcomingEntries`는 `due >= 오늘`만 본다) 클램프할 이유도 없다.
+    const many = Array.from({ length: 9 }, (_, i) => ({ id: `n${i}`, col: 'c1', pos: i + 1, text: `일감 ${i}`, due: shiftDays(i === 0 ? 0 : i === 1 ? 2 : 10 + i) }));
     renderHome([META('d1', '스프린트 보드')], { d1: kanbanBody(many) });
     await openCalendar();
     fireEvent.click(document.querySelector('[aria-label="마감 목록"]')!);
