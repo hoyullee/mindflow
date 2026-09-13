@@ -41,6 +41,7 @@ import {
   type GoogleReminderSource,
   type ReminderItem,
 } from './reminders';
+import { onCalendarChanged } from './calendarChanged';
 import { pushReminderNotice } from './reminderInbox';
 import {
   googleRemindersEnabled,
@@ -196,6 +197,14 @@ export function useReminderScheduler(
   // 깨어나는 순간(탭 복귀·포커스·네트워크 복귀)에도 다시 묻는다 — 절전에서 돌아온
   // 직후가 "그동안 뭐가 생겼나"를 알아야 하는 바로 그 시점이다.
   useLiveRefresh(enabled, fetchWindow);
+
+  // 이 앱에서 **방금 고친** 일정은 주기를 기다리지 않는다(제보: 10분 전 알림을
+  // 걸었는데 오지 않는다) — 그 자연스러운 시험은 알림 시각이 곧 지금이라, 5분 뒤
+  // 재조회 때는 이미 유예를 넘긴다. 자세한 이유는 `calendarChanged.ts` 머리말.
+  useEffect(() => {
+    if (!enabled) return;
+    return onCalendarChanged(fetchWindow);
+  }, [fetchWindow, enabled]);
 
   // 두 원천을 **한 목록**으로 합쳐 같은 규칙(유예·중복 방지·큐·OS 예약)을 지나게
   // 한다 — 갈라 두면 한쪽에만 규칙이 붙는다.

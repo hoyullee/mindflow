@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import type { CalendarEvent } from '../../adapters/ports';
 import {
   REMINDER_GRACE_MS,
+  REMINDER_REFETCH_MS,
   dueReminders,
   googleReminderItems,
   isGoogleReminder,
@@ -145,5 +146,21 @@ describe('구글 일정 알림(2단계)', () => {
 
   it('창 밖의 일정은 담지 않는다', () => {
     expect(googleReminderItems([G({ reminderMinutes: 10 })], DEFAULTS, '2026-09-16', '2026-09-17')).toEqual([]);
+  });
+});
+
+describe('유예와 재조회 주기', () => {
+  it('유예가 재조회 주기보다 길다 — 두 조회 사이에 지나간 알림을 잃지 않게', () => {
+    // 알림 시각이 조회와 조회 **사이**에 지나가면 그 일정은 다음 조회에 와서야 손에
+    // 들어온다. 둘이 같으면 바로 그 경계에서 떨어져 영영 뜨지 않는다(제보의 뿌리).
+    expect(REMINDER_GRACE_MS).toBeGreaterThan(REMINDER_REFETCH_MS);
+  });
+
+  it('한 주기가 통째로 늦어도 그 알림은 살아 있다', () => {
+    const now = Date.now();
+    const item = reminderItems([EV({ reminderMinutes: 10 })], '2026-09-15', '2026-09-17')[0]!;
+    // 알림 시각이 "정확히 한 주기 전"인 상태 — 다음 조회가 막 도착한 순간이다.
+    const late = { ...item, fireAt: now - REMINDER_REFETCH_MS };
+    expect(dueReminders([late], now)).toHaveLength(1);
   });
 });
