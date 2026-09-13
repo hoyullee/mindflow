@@ -47,6 +47,7 @@
 | 달 후반에만 깨지는 테스트 | "이 달 안"으로 클램프한 날이 **과거**가 됐다 | [F5](#f5) |
 | 미커밋 구현이 사라졌다 | `git checkout <file>`로 "복구"했다 | [G1](#g1) |
 | 셸이 죽었다(exit 144) | `pkill -f`가 자기 자신을 물었다 | [G2](#g2) |
+| Electron이 창도 없이 바로 죽었다 | root라 `--no-sandbox`가 필요하다 | [G4](#g4) |
 | 로컬은 통과인데 CI가 깨진다 | 하위 패키지에서만 lint를 돌렸다 | [G3](#g3) |
 
 ---
@@ -285,7 +286,22 @@ Object.assign(new LocalShareStore(), { list: vi.fn() })  // 좋음
 ### G2. `pkill -f <문자열>`은 자기 셸을 문다
 
 `pkill -f "http.server 8942"`는 그 문자열을 명령줄에 든 **내 셸까지** 죽입니다(exit 144).
-서버는 PID를 들고 있다가 그것으로 끄세요.
+서버는 PID를 들고 있다가 그것으로 끄세요(`pgrep -f … | head -1` → `kill $pid`).
+
+> 세 번째 재발입니다. 패턴이 **지금 치고 있는 명령줄에도 들어 있다**는 것이 함정이라,
+> "이번엔 짧은 패턴이니 괜찮겠지"가 통하지 않습니다.
+
+<a id="g4"></a>
+### G4. 이 컨테이너의 Electron은 `--no-sandbox`가 필요하다
+
+root로 도는 환경이라 그냥 띄우면 **창이 뜨기 전에 죽습니다**:
+`FATAL: Running as root without --no-sandbox is not supported` → SIGTRAP.
+로그를 보지 않으면 "앱이 안 뜬다"로 오진합니다. 프로브는
+`xvfb-run -a npx electron . --no-sandbox --user-data-dir=<빈 폴더>`로.
+
+또 하나: 이 컨테이너에는 **알림 데몬이 없어** 메인 프로세스의
+`Notification.isSupported()`가 `false`입니다 — 셸이 알림을 띄우는 경로는 여기서
+"거절되는 것까지"만 확인할 수 있고, 실제로 뜨는지는 실기기의 몫입니다.
 
 <a id="g3"></a>
 ### G3. lint는 **루트에서** 돌린다

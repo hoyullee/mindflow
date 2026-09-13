@@ -18,6 +18,7 @@ const CHANNEL_FOCUS_WINDOW = 'geurio:focus-window';
 const CHANNEL_NOTIFY = 'geurio:notify';
 const CHANNEL_NOTIFY_SUPPORTED = 'geurio:notify-supported';
 const CHANNEL_NOTIFICATION_CLICK = 'geurio:notification-click';
+const CHANNEL_SET_BADGE = 'geurio:set-badge';
 
 export interface GeurioDesktopBridge {
   /** 이 값의 존재가 곧 "데스크톱 앱에서 돌고 있다"다 — 웹 쪽 판정이 이걸 본다. */
@@ -70,6 +71,12 @@ export interface GeurioDesktopBridge {
   notify(payload: { title: string; body: string; tag: string }): Promise<boolean>;
   /** 그 알림을 눌렀을 때 — 넘겨 준 `tag`가 그대로 돌아온다. */
   onNotificationClick(handler: (tag: string) => void): () => void;
+  /**
+   * 작업 표시줄 배지 — **안 읽은 알림 수**(앱 안 LNB 알림 카드의 그 숫자).
+   * macOS·Linux는 개수만으로 그려지고, 그 API가 없는 Windows에는 오버레이 아이콘을
+   * 얹으므로 렌더러가 그린 PNG를 함께 넘긴다.
+   */
+  setBadge(payload: { count: number; png: string | null }): Promise<boolean>;
 }
 
 /**
@@ -101,6 +108,7 @@ const bridge: GeurioDesktopBridge = {
   focusWindow: () => ipcRenderer.invoke(CHANNEL_FOCUS_WINDOW) as Promise<boolean>,
   notifySupported: () => ipcRenderer.invoke(CHANNEL_NOTIFY_SUPPORTED) as Promise<boolean>,
   notify: (payload) => ipcRenderer.invoke(CHANNEL_NOTIFY, payload) as Promise<boolean>,
+  setBadge: (payload) => ipcRenderer.invoke(CHANNEL_SET_BADGE, payload) as Promise<boolean>,
   onNotificationClick: (handler) => {
     const listener = (_e: unknown, tag: string) => handler(tag);
     ipcRenderer.on(CHANNEL_NOTIFICATION_CLICK, listener);

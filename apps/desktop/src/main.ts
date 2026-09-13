@@ -37,6 +37,9 @@ import {
   supportsOpenAtLogin,
   usesTray,
   DEEP_LINK_SCHEME,
+  attentionMode,
+  badgeDescription,
+  badgePayload,
   isHexColor,
   TITLEBAR_HEIGHT,
   titleBarHeightFor,
@@ -159,6 +162,8 @@ function showWindow(): void {
   if (mainWindow.isMinimized()) mainWindow.restore();
   if (!mainWindow.isVisible()) mainWindow.show();
   mainWindow.focus();
+  // 창을 되찾았으니 깜빡임·독 튀기기를 거둔다(포커스 이벤트가 오지 않는 경로도 있다).
+  stopAttention(mainWindow);
 }
 
 /**
@@ -230,15 +235,99 @@ function noticeCloseOnce(): void {
  * 누르면 숨어 있던 창을 되찾고(상주 중일 수 있다) 렌더러에 `tag`를 돌려준다 —
  * 그러면 웹 쪽이 "그 일정"으로 보낸다(토스트의 `일정 보기`와 같은 길).
  */
+/* ──────────────── 창 밖의 표시 — 작업 표시줄 깜빡임·배지 ──────────────── */
+
+/** macOS 독 튀기기의 요청 id — 창이 활성화되면 이걸로 취소한다. */
+let bounceId: number | null = null;
+
+/**
+ * 알림이 왔다고 **창 밖에서** 알린다(요청): Windows·Linux는 작업 표시줄 단추가
+ * 깜빡이고, macOS는 독 아이콘이 튄다.
+ *
+ * 이미 포커스를 쥐고 있으면 아무 일도 하지 않는다 — 보고 있는 창을 깜빡이는 것은
+ * 알림이 아니라 소음이다(독 튀기기도 활성 앱에서는 OS가 거절한다).
+ */
+function callAttention(win: BrowserWindow | null): void {
+  try {
+    if (attentionMode(process.platform) === 'bounce') {
+      // `flashFrame`은 macOS에서 한 번 튀고 마므로, 활성화될 때까지 남는 이 길을 쓴다.
+      const id = app.dock?.bounce('critical');
+      if (typeof id === 'number' && id >= 0) bounceId = id;
+      return;
+    }
+    // 숨어 있는 창(상주 중)에는 작업 표시줄 단추가 없어 아무 일도 일어나지 않는다 —
+    // 막을 일이 아니다. 최소화된 창은 `isVisible()`이 거짓이지만 **깜빡여야 하는**
+    // 바로 그 경우라 가시성으로는 거르지 않는다.
+    if (!win || win.isDestroyed() || win.isFocused()) return;
+    win.flashFrame(true);
+  } catch {
+    // 표시 하나 때문에 앱이 죽을 이유가 없다.
+  }
+}
+
+/** 창을 되찾았으면 그 표시를 거둔다 — 창 포커스·`showWindow()`가 모두 여기를 지난다. */
+function stopAttention(win: BrowserWindow | null): void {
+  try {
+    if (bounceId !== null) {
+      app.dock?.cancelBounce(bounceId);
+      bounceId = null;
+    }
+    if (win && !win.isDestroyed()) win.flashFrame(false);
+  } catch {
+    /* 위와 같다 */
+  }
+}
+
+/**
+ * 작업 표시줄 배지 — **안 읽은 알림 수**(앱 안 LNB 알림 카드의 그 숫자와 같다).
+ *
+ * 플랫폼마다 그리는 길이 다르다: macOS·Linux는 `app.setBadgeCount(n)`로 개수만
+ * 넘기면 되고, **Windows에는 그 API가 없어** 16×16 오버레이 아이콘을 얹는다 —
+ * 그래서 렌더러가 그림을 그려 보낸다(`platform/desktopBadge.ts`).
+ */
+function applyBadge(win: BrowserWindow | null, count: number, png: string | null): boolean {
+  try {
+    if (process.platform !== 'win32') return app.setBadgeCount(count);
+    if (!win || win.isDestroyed()) return false;
+    if (count <= 0) {
+      win.setOverlayIcon(null, '');
+      return true;
+    }
+    const img = png ? nativeImage.createFromDataURL(png) : null;
+    if (!img || img.isEmpty()) {
+      // 그릴 수 없으면 **지운다** — 옛 숫자를 그대로 두면 거짓말이 된다.
+      win.setOverlayIcon(null, '');
+      return false;
+    }
+    win.setOverlayIcon(img, badgeDescription(count));
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 function showShellNotification(win: BrowserWindow | null, title: string, body: string, tag: string): boolean {
   if (!Notification.isSupported()) return false;
   try {
-    const n = new Notification({ title, body, silent: false });
+    const n = new Notification({
+      title,
+      body,
+      silent: false,
+      // **누를 때까지 사라지지 않는다**(요청). 기본값은 배너가 몇 초 뒤 알림 센터로
+      // 접히는 것이라, 자리를 비운 사이에 지나간 일정 알림을 놓친다. Windows·Linux
+      // 전용 옵션이고 macOS는 그 선택이 시스템 설정(배너/알림)에 있어 무시된다.
+      //
+      // **일정 알림에만** 건다 — `noticeCloseOnce`("계속 실행돼요")는 지나가는
+      // 안내라 계속 남으면 성가시다. 그래서 그쪽은 이 함수를 지나지 않는다.
+      timeoutType: 'never',
+    });
     n.on('click', () => {
       showWindow();
       if (win && !win.isDestroyed()) win.webContents.send('geurio:notification-click', tag);
     });
     n.show();
+    // 창 밖에서도 알린다 — 배너를 놓쳐도 작업 표시줄이 깜빡이고 있다.
+    callAttention(win);
     return true;
   } catch {
     // 알림 하나 때문에 앱이 죽을 이유가 없다 — 렌더러가 인앱 토스트로 대신한다.
@@ -342,6 +431,9 @@ function createWindow(startHidden: boolean): BrowserWindow {
   };
   win.on('resize', scheduleSave);
   win.on('move', scheduleSave);
+
+  // 사용자가 창을 눌러 돌아왔다 — 더 끌 눈길이 없다.
+  win.on('focus', () => stopAttention(win));
 
   // 닫기를 **숨기기**로 바꾼다(4단계) — 창을 파괴하면 렌더러가 사라져 그 순간
   // 일정 알림도 멎는다. `quitting`이 아닌 이유로 닫히는 것만 가로챈다: 트레이의
@@ -512,6 +604,13 @@ if (!app.requestSingleInstanceLock()) {
       const p = notifyPayload(payload);
       if (!p) return false;
       return showShellNotification(BrowserWindow.fromWebContents(e.sender), p.title, p.body, p.tag);
+    });
+
+    // 작업 표시줄 배지 — 렌더러가 안 읽은 알림 수를 알려 준다(LNB 알림 카드의 그 숫자).
+    ipcMain.handle('geurio:set-badge', (e, payload: unknown) => {
+      const p = badgePayload(payload);
+      if (!p) return false;
+      return applyBadge(BrowserWindow.fromWebContents(e.sender), p.count, p.png);
     });
 
     ipcMain.handle('geurio:pending-deep-link', () => {

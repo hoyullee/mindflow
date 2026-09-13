@@ -95,6 +95,41 @@ Google은 **임베드된 웹뷰의 OAuth를 막는다**(`disallowed_useragent`) 
 `--hidden`으로 시작하면 창이 보이지 않는 채 렌더러가 돈다, 설정을 끄면 닫기가 곧
 종료다, 그 설정이 다시 실행해도 남는다.
 
+## 알림이 왔다는 것을 **창 밖에서도** 알린다
+
+배너 하나로는 자리를 비운 사이의 알림을 놓친다. 셋을 함께 쓴다.
+
+- **일정 알림은 누를 때까지 남는다**(`timeoutType: 'never'`). 기본값은 배너가 몇
+  초 뒤 알림 센터로 접히는 것이다. **Windows·Linux 전용** 옵션이고 macOS는 배너냐
+  알림이냐가 **사용자의 시스템 설정**이라 앱이 강제할 수 없다.
+  - **일정 알림에만** 건다. "Geurio는 계속 실행돼요"는 지나가는 안내라 계속 남으면
+    성가시다 — 그쪽은 `showShellNotification`을 지나지 않는다(`packaging.test.ts`가
+    그 경계를 지킨다).
+- **작업 표시줄이 깜빡인다**(`win.flashFrame(true)`). 창이 포커스를 받거나
+  `showWindow()`를 지나면 멈춘다. macOS는 `flashFrame`이 한 번 튀고 말아
+  **독 튀기기**(`app.dock.bounce('critical')`)를 쓴다 — 어느 쪽을 쓸지는 순수
+  함수 `attentionMode(platform)`가 정한다.
+  - 이미 포커스를 쥔 창은 건드리지 않는다. **숨어 있는 창**(상주 중)에는 작업
+    표시줄 단추 자체가 없어 아무 일도 일어나지 않는다 — 막을 일이 아니다.
+- **배지에 안 읽은 알림 수**가 뜬다. 앱 안 LNB 알림 카드의 그 숫자와 같은 값이고
+  (`features/home/components/unreadCount.ts` 한 곳에서 센다) 알림 센터를 열면
+  사라진다.
+  - macOS·Linux는 `app.setBadgeCount(n)`로 개수만 넘기면 되는데 **Windows에는 그
+    API가 없다**. 그쪽은 16×16 오버레이 아이콘뿐이라 **렌더러가 그려 보낸다**
+    (`apps/web/src/platform/desktopBadge.ts`) — 거기에는 캔버스도 앱의 글꼴도 있다.
+  - 넘어온 그림은 믿지 않는다: `data:image/png;base64,` 접두 + 64KB 상한을 지나야
+    쓰이고, 이상하면 **그림만 버리고 개수는 살린다**. 보조기술이 읽는 문구는
+    **셸이 짓는다**(`badgeDescription`) — 원격 페이지가 낭독기에 아무 말이나 쓰지
+    않게.
+  - 배지 상태(알림 공급자)는 **문지기 안**에 있다. 홈에만 두면 에디터에서 일정
+    알림이 떠도 배지가 움직이지 않는데, 그 경우가 정확히 배지가 필요한 경우다.
+
+실제 Electron(xvfb)으로 확인한 것: 창구가 서고 배지 요청이 왕복하며(개수가 수가
+아니면 거절), 렌더러가 그린 PNG가 `nativeImage.createFromDataURL`에서 **32×32로
+비지 않게** 열리고, `flashFrame`·`setOverlayIcon`이 던지지 않는다. **이 컨테이너에는
+알림 데몬이 없어**(`Notification.isSupported()`가 거짓) 배너가 실제로 뜨는지와
+Windows 오버레이가 그려지는지는 **실기기 확인이 필요하다.**
+
 ## 키보드 — 앱의 키만 남긴다
 
 Electron이 기본으로 만들어 주는 메뉴에는 `보기`(새로 고침·강제 새로 고침·개발자

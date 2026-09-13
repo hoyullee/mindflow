@@ -25,6 +25,9 @@ import {
   titleBarHeightFor,
   usesCustomTitleBar,
   type KeyInput,
+  attentionMode,
+  badgeDescription,
+  badgePayload,
   notifyPayload,
 } from './shell';
 
@@ -318,5 +321,48 @@ describe('알림 payload — 렌더러가 넘긴 것을 믿지 않는다', () =>
     expect(notifyPayload({ title: 1, body: 'x', tag: 'y' })).toBe(null);
     // 제목이 빈 알림은 OS에서 정체 없는 상자가 된다.
     expect(notifyPayload({ title: '  ', body: 'x', tag: 'y' })).toBe(null);
+  });
+});
+
+// ── 창 밖의 표시(요청: 알림이 오면 작업 표시줄이 깜빡이게) ───────────────────
+describe('창 밖의 표시 — 플랫폼 관례가 다르다', () => {
+  it('macOS는 독 튀기기, 그 밖은 작업 표시줄 깜빡임', () => {
+    // macOS에서 `flashFrame`은 한 번 튀고 말아 "활성화될 때까지"가 성립하지 않는다.
+    expect(attentionMode('darwin')).toBe('bounce');
+    expect(attentionMode('win32')).toBe('flash');
+    expect(attentionMode('linux')).toBe('flash');
+  });
+});
+
+describe('작업 표시줄 배지 — 렌더러가 넘긴 것을 믿지 않는다', () => {
+  const png = 'data:image/png;base64,AAAA';
+
+  it('개수와 그림을 그대로 싣는다', () => {
+    expect(badgePayload({ count: 3, png })).toEqual({ count: 3, png });
+  });
+
+  it('개수는 0 이상의 정수로 —  음수·소수·엄청난 수는 다듬는다', () => {
+    expect(badgePayload({ count: -2, png: null })!.count).toBe(0);
+    expect(badgePayload({ count: 2.7, png: null })!.count).toBe(2);
+    expect(badgePayload({ count: 10_000, png: null })!.count).toBe(999);
+  });
+
+  it('그림이 이상하면 **그림만** 버린다 — 개수만으로 그리는 플랫폼이 있다', () => {
+    // data:image/png 가 아닌 것(svg·javascript:)과 상한을 넘는 것.
+    expect(badgePayload({ count: 1, png: 'data:image/svg+xml,<svg/>' })).toEqual({ count: 1, png: null });
+    expect(badgePayload({ count: 1, png: `data:image/png;base64,${'A'.repeat(70_000)}` })).toEqual({ count: 1, png: null });
+    expect(badgePayload({ count: 1, png: 42 })).toEqual({ count: 1, png: null });
+  });
+
+  it('개수가 수가 아니면 `null` — 배지를 건드리지 않는다', () => {
+    expect(badgePayload(null)).toBe(null);
+    expect(badgePayload({ png })).toBe(null);
+    expect(badgePayload({ count: '3' })).toBe(null);
+    expect(badgePayload({ count: Number.NaN })).toBe(null);
+  });
+
+  it('접근 이름은 **셸이 짓는다** — 원격 페이지가 낭독기에 아무 말이나 쓰지 않게', () => {
+    expect(badgeDescription(3)).toBe('안 읽은 알림 3개');
+    expect(badgeDescription(0)).toBe('');
   });
 });
