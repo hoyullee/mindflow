@@ -229,6 +229,11 @@ export interface HomeState {
   /** 구글 캘린더 겹치기 설정(PR5) — 켜지 않았으면 `null`. 워크스페이스 블롭에
    * 실려 기기 간에 따라온다(토큰은 따라오지 않는다 — 탭마다 새로 받는다). */
   google: { calendars: string[]; extra?: { id: string; name: string }[]; holiday?: string } | null;
+  /** 일정 알림 설정(제보: 앱에서는 알림이 오지 않았다) — 정본은 워크스페이스 블롭이라
+   * **기기 간에 따라온다**. 고른 적 없으면 `null`(그때는 각 기기가 실제로 고른 값을
+   * 올려 준다 — `reminderPrefs.ts`의 `explicitReminderPrefs`). 이 기기에 남는 것은
+   * OS 알림 권한과 이 값의 캐시뿐이다. */
+  reminders: { on?: boolean; google?: boolean } | null;
   /** 열려 있는 **구글 일정** 상세의 id(`<calId>::<eventId>`) — 읽기 전용 팝업.
    * 칸반 카드(`calDetail`)·Geurio 일정(`calEventDetail`)과 칸을 나눈 이유는
    * 셋이 고칠 수 있는 것이 서로 다르기 때문이다(구글은 아무것도 못 고친다). */
@@ -501,6 +506,7 @@ export function initialHomeState(): HomeState {
     // 정본은 워크스페이스다 — 도착하면 그 값으로 맞춘다(테마와 같은 길).
     homeLanding: 'dash',
     google: null,
+    reminders: null,
     calGoogleDetail: null,
     confirmDeleteAccount: false,
     confirmDeleteAccountFinal: false,

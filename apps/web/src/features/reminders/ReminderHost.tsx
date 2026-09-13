@@ -3,9 +3,11 @@
 // **문지기(`RequireAuth`) 안**에 마운트한다: 로그인한 화면이면 어디서든(홈·에디터)
 // 알림이 와야 하고, 반대로 랜딩·로그인·약관에서는 일정을 조회할 이유가 없다.
 
-import { useCallback } from 'react';
+import { useCallback, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
+import { useSpaceStore } from '../../adapters/BackendContext';
 import { focusCalendar } from '../home/calendarFocus';
+import { syncRemindersFromAccount } from './reminderSync';
 import { showOsNotification } from './reminderPrefs';
 import { isGoogleReminder, reminderBody, type ReminderItem } from './reminders';
 import { ReminderToast } from './ReminderToast';
@@ -13,6 +15,14 @@ import { useReminderScheduler } from './useReminderScheduler';
 
 export function ReminderHost() {
   const navigate = useNavigate();
+  const spaceStore = useSpaceStore();
+
+  // 알림 설정의 정본은 **계정**이다(제보: 앱과 웹에 따로 켜져 있었다). 홈은 이미
+  // 블롭을 읽어 값을 넘겨 주므로 여기서는 **에디터로 곧장 들어온 탭**만 한 번
+  // 읽는다 — 실패해도 이 기기의 캐시로 그대로 돈다.
+  useEffect(() => {
+    void syncRemindersFromAccount(spaceStore);
+  }, [spaceStore]);
 
   /**
    * **그 일정을 보여 준다** — 홈이 떠 있으면 그 자리에서, 에디터에서면 홈으로 가서.

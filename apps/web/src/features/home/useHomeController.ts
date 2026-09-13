@@ -10,6 +10,8 @@ import { exportDocSvg } from '../editor/svg';
 import { exportDocPdf } from '../editor/pdf';
 import { themeOf } from '../editor/theme';
 import { applyHomeTheme, homeThemeKeyOf, saveHomeThemeCache, type HomeThemeKey } from './theme';
+import { explicitReminderPrefs, setGoogleRemindersEnabled, setRemindersEnabled } from '../reminders/reminderPrefs';
+import { noteSyncedReminderPrefs } from '../reminders/reminderSync';
 import { addMonth, partsOf, todayISO } from './calendar/model';
 import { useLiveRefresh } from './calendar/useLiveRefresh';
 import { coerceExtraCalendars, holidayCountryOf } from './calendar/googleCalendar';
@@ -226,10 +228,23 @@ export function useHomeController() {
     // 첫 화면(요청: 설정 › 시작 화면) — 정본도 이 블롭이라 기기 간에 따라온다.
     // 고른 적 없으면 `homeLandingOf`가 `'dash'`로 답한다(지금 동작 그대로).
     const wsLanding = ws ? homeLandingOf(ws.homeLanding) : null;
+    // 일정 알림(제보: 앱과 웹에 따로 켜져 있었다) — 정본은 이 블롭이다. 계정에 아직
+    // 값이 없으면(예전 블롭) **이 기기가 실제로 고른 값만** 올려 준다: 기본값까지
+    // 올리면 먼저 켠 기기가 아니라 **먼저 접속한 기기**가 계정 값을 정해 버린다.
+    // **조회가 됐는가**로 가른다(`ws`가 있는가가 아니라): 아직 워크스페이스를 만든
+    // 적 없는 사용자는 `ws === null`인데, 그 사람의 계정도 "값이 없는" 것이라 이
+    // 기기가 고른 값을 올려 주어야 한다.
+    const wsLoaded = res[0].status === 'fulfilled';
+    const wsReminders = wsLoaded ? (ws?.reminders ?? explicitReminderPrefs()) : null;
     if (wsTheme) {
       applyHomeTheme(wsTheme);
       saveHomeThemeCache(wsTheme);
     }
+    // 알림 스케줄러는 **에디터에서도** 돈다 — 그쪽은 이 블롭을 읽지 않으므로, 홈이
+    // 읽었을 때 계정 값을 기기에 내려 준다(그리고 "이미 받았다"고 알려 에디터가
+    // 같은 조회를 한 번 더 내지 않게 한다). 조회가 **실패했으면** 알리지 않는다 —
+    // 그때는 아무것도 모르는 것이지 "꺼짐"이 아니다.
+    if (wsLoaded) noteSyncedReminderPrefs(ws?.reminders, wsGoogle ?? undefined);
     setState((prev) => {
       let base = wsBase ?? prev.spaces;
       let mapFolders = prev.mapFolders;
@@ -326,6 +341,7 @@ export function useHomeController() {
       // 카드는 영원히 docId 없는 상태로 남는다.)
       const theme = wsTheme ?? prev.theme;
       const google = ws ? wsGoogle : prev.google;
+      const reminders = wsLoaded ? (wsReminders && Object.keys(wsReminders).length ? wsReminders : null) : prev.reminders;
       const dashboards = wsDashboards ?? prev.dashboards;
       // ---- 홈의 첫 화면(요청: 진입하면 기본 대시보드) ----
       // 이 탭에 남은 화면이 없으면 = **첫 진입**이므로 기본 대시보드(목록 맨 위 =
@@ -383,6 +399,11 @@ export function useHomeController() {
         homeLanding,
         dashboards,
         google,
+        // 베이스라인은 **계정이 실제로 가진 값**이다(상태의 씨앗이 아니라). 계정에
+        // 아직 값이 없는데 이 기기가 고른 값을 씨앗으로 들였다면, 그 둘이 달라야
+        // 다음 저장이 그것을 계정에 올린다 — 여기에 씨앗을 적으면 영영 올라가지
+        // 않아 다른 기기는 끝내 알지 못한다(그게 이 제보의 뿌리였다).
+        reminders: ws?.reminders ?? null,
       });
       // Always flip `loaded` so the grid drops its loading skeleton and
       // renders the real (possibly empty) state.
@@ -392,7 +413,7 @@ export function useHomeController() {
       // 카드의 "공유 중" 표식 원천 — 내가 걸어 둔 초대/링크의 일괄 요약. 조회
       // 실패는 빈 객체(표식만 빠지고 홈은 그대로).
       const sharedByMe = res[3].status === 'fulfilled' ? res[3].value : prev.sharedByMe;
-      return { ...prev, theme, homeLanding, google, dashboards, activeDash, activeCal, spaces, activeSpace, curFolder, mapFolders, favs, deleted, trash, recent, docTimes, sharedByMe, sharedMaps: sharedMetas.map((m) => ({ docId: m.id, title: m.title, updatedAt: m.updatedAt, role: m.sharedRole ?? 'edit', isNew: unseen.has(m.id) })), loaded: true };
+      return { ...prev, theme, homeLanding, google, reminders, dashboards, activeDash, activeCal, spaces, activeSpace, curFolder, mapFolders, favs, deleted, trash, recent, docTimes, sharedByMe, sharedMaps: sharedMetas.map((m) => ({ docId: m.id, title: m.title, updatedAt: m.updatedAt, role: m.sharedRole ?? 'edit', isNew: unseen.has(m.id) })), loaded: true };
     });
     // 마지막 저장자가 **내가 아닌** 문서들만 이름을 물어본다(0015). 혼자 쓰는
     // 사람은 대상이 하나도 없어 요청 자체가 나가지 않는다. 실패해도 조용히 넘어간다 —
@@ -865,7 +886,7 @@ export function useHomeController() {
   // can't race a pending timer — space/folder edits are deliberate and infrequent.
   useEffect(() => {
     if (!state.loaded || !canPersistWorkspaceRef.current) return;
-    const sig = JSON.stringify({ spaces: state.spaces, mapFolders: state.mapFolders, recent: state.recent, theme: state.theme, homeLanding: state.homeLanding, dashboards: state.dashboards, google: state.google });
+    const sig = JSON.stringify({ spaces: state.spaces, mapFolders: state.mapFolders, recent: state.recent, theme: state.theme, homeLanding: state.homeLanding, dashboards: state.dashboards, google: state.google, reminders: state.reminders });
     if (sig === savedWorkspaceSigRef.current) return;
     savedWorkspaceSigRef.current = sig;
     // A genuine user change is being persisted — from here on the auth-confirmed
@@ -873,10 +894,10 @@ export function useHomeController() {
     workspaceMutatedRef.current = true;
     // `recent` rides along in the same per-user blob (opening a map bumps it), so
     // the recent-items list syncs across devices just like spaces/folders do.
-    void spaceStore.save({ spaces: state.spaces, mapFolders: state.mapFolders, recent: state.recent, theme: state.theme, homeLanding: state.homeLanding, dashboards: state.dashboards, ...(state.google ? { google: state.google } : {}) }).catch(() => {
+    void spaceStore.save({ spaces: state.spaces, mapFolders: state.mapFolders, recent: state.recent, theme: state.theme, homeLanding: state.homeLanding, dashboards: state.dashboards, ...(state.google ? { google: state.google } : {}), ...(state.reminders ? { reminders: state.reminders } : {}) }).catch(() => {
       /* save failed (offline, RLS, ...) — non-fatal; the next change retries */
     });
-  }, [state.loaded, state.spaces, state.mapFolders, state.recent, state.theme, state.homeLanding, state.dashboards, state.google, spaceStore]);
+  }, [state.loaded, state.spaces, state.mapFolders, state.recent, state.theme, state.homeLanding, state.dashboards, state.google, state.reminders, spaceStore]);
 
   // ---- drive (fake OAuth demo) ----
   const onDriveClick = () => patch({ activeSpace: 'drive', curFolder: null, driveFolder: null });
@@ -1137,6 +1158,19 @@ export function useHomeController() {
    * 스켈레톤이 예전 화면 모양으로 한 번 더 뜬다(힌트는 "마지막에 착지한 화면"이라
    * 고른 직후에는 아직 낡았다).
    */
+  /**
+   * 일정 알림 설정(제보: 앱과 웹에 따로 켜져 있었다) — **계정**에 저장한다.
+   *
+   * 이 기기의 캐시도 함께 갱신한다(`setRemindersEnabled` 계열): 그 세터가 열려 있는
+   * 화면의 스케줄러에 통지하므로 토글이 곧바로 먹고, 다음 진입의 첫 프레임도 맞는
+   * 값으로 시작한다(블롭이 도착하기 전에 스케줄러가 이미 돈다).
+   */
+  const setReminderPrefs = (next: { on?: boolean; google?: boolean }) => {
+    if (typeof next.on === 'boolean') setRemindersEnabled(next.on);
+    if (typeof next.google === 'boolean') setGoogleRemindersEnabled(next.google);
+    patch({ reminders: { ...(state.reminders ?? {}), ...next } });
+  };
+
   const setHomeLanding = (kind: HomeLanding) => {
     saveLandingHint(kind);
     patch({ homeLanding: kind });
@@ -3026,6 +3060,7 @@ export function useHomeController() {
     openFeedback,
     closeFeedback,
     setTheme,
+    setReminderPrefs,
     setHomeLanding,
     setGoogleCalendars,
     closeAccountSettings,
