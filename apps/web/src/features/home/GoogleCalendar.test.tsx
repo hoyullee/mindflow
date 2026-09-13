@@ -20,6 +20,7 @@ import type { Backend, DocMeta, DocStore } from '../../adapters/ports';
 import { isoOf } from './calendar/model';
 import { GOOGLE_CALENDAR_SCOPE, GOOGLE_SCOPE_DIRECTORY, GOOGLE_SCOPE_REQUIRED } from './calendar/googleCalendar';
 import { clearGoogleSessionCache } from './calendar/useGoogleCalendar';
+import { onCalendarChanged } from '../reminders/calendarChanged';
 
 /**
  * 클라이언트 ID는 `import.meta.env`에서 오는데 Vite가 그 값을 **변환 시점에 굳혀**
@@ -41,7 +42,12 @@ vi.mock('../auth/googleIdentity', async (orig) => ({
  * 구글 항목을 누르면 **읽기 전용** 팝업이 뜬다.
  */
 
-afterEach(() => cleanup());
+/** 테스트가 건 구독을 걷는다 — 모듈 상태라 다음 테스트로 새어 나가지 않게. */
+const onTeardown: (() => void)[] = [];
+afterEach(() => {
+  cleanup();
+  while (onTeardown.length) onTeardown.pop()!();
+});
 beforeEach(() => {
   localStorage.clear();
   sessionStorage.clear();
@@ -607,6 +613,8 @@ describe('구글 캘린더 겹치기(PR5)', () => {
     stubGis();
     const f = stubFetch();
     clientId = 'test-client.apps.googleusercontent.com';
+    const changed: number[] = [];
+    onTeardown.push(onCalendarChanged(() => changed.push(1)));
     const user = userEvent.setup();
     const { container } = renderHome();
     const pop = await openGoogleChip(container, user, /구글 회의/);
@@ -640,6 +648,9 @@ describe('구글 캘린더 겹치기(PR5)', () => {
     });
     // 저장이 끝나면 팝업이 닫힌다 — 구글이 돌려준 값은 달을 다시 받아 그린다.
     await waitFor(() => expect(document.querySelector('[data-google-detail]')).toBeNull());
+    // 알림 스케줄러에도 **곧바로** 알린다(제보) — 그쪽은 화면과 따로 5분 주기로
+    // 받으므로, 방금 건 알림이 그동안 없는 것이 된다.
+    expect(changed.length).toBeGreaterThan(0);
   });
 
   it('상세 팝업에서 일정 색을 고치면 PATCH에 colorId 하나만 실린다(요청 ⑤)', async () => {

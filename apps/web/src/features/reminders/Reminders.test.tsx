@@ -15,6 +15,7 @@ import { ACTIVE_VIEW_KEY } from '../home/storage';
 import { takeCalendarFocus } from '../home/calendarFocus';
 import { ReminderHost } from './ReminderHost';
 import { REMINDER_TICK_MS } from './reminders';
+import { notifyCalendarChanged } from './calendarChanged';
 import { setGoogleRemindersEnabled, setRemindersEnabled } from './reminderPrefs';
 import { GOOGLE_CALENDAR_SCOPE, storeReminderCalendars } from '../home/calendar/googleCalendar';
 
@@ -206,6 +207,26 @@ describe('일정 알림', () => {
     });
     expect(document.querySelector('[data-reminder-toast]')).toBeNull();
     expect(osNotifications).toEqual([]);
+  });
+
+  it('방금 건 알림은 **주기를 기다리지 않는다**(제보) — 그 자리에서 뜬다', async () => {
+    fakeNotification('granted');
+    // 알림 없는 일정으로 시작한다 — 사용자가 팝업에서 `10분 전`을 고르기 전 상태.
+    renderHost([{ ...EVENT, reminderMinutes: undefined }]);
+    await settle();
+    expect(document.querySelector('[data-reminder-toast]')).toBeNull();
+
+    // 팝업이 저장한 것과 같은 일을 한다: 표에 적고 **바뀌었다고 알린다**.
+    localStorage.setItem('mf_events', JSON.stringify([EVENT]));
+    await act(async () => {
+      notifyCalendarChanged();
+      await Promise.resolve();
+    });
+
+    // 5분(재조회 주기)을 흘려 보내지 않았는데도 떠 있어야 한다 — 그 주기를 기다리면
+    // 알림 시각이 이미 유예를 넘겨 영영 뜨지 않는다(제보의 그 경우).
+    expect(document.querySelector('[data-reminder-toast]')).toBeTruthy();
+    expect(osNotifications).toEqual([{ title: '팀 회의', body: '오전 10:30 · 10분 후 시작' }]);
   });
 
   it('알림을 걸지 않은 일정은 대상이 아니다', async () => {

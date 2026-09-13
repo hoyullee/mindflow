@@ -21,14 +21,21 @@ import type { CalendarEvent } from '../../adapters/ports';
 import { daysBetween, isoOf, minutesOf, timeLabel } from '../home/calendar/model';
 import { expandRecurrence } from '../home/calendar/recurrence';
 
-/** 지나간 알림을 늦게라도 띄우는 유예 — 절전·탭 스로틀에서 깨어난 직후를 위한 창. */
-export const REMINDER_GRACE_MS = 5 * 60_000;
-
 /** 띄울 것이 있는지 훑는 주기. 알림 시각을 이 정도 안쪽으로 맞춘다. */
 export const REMINDER_TICK_MS = 30_000;
 
 /** 일정 목록을 다시 받는 주기(다른 기기에서 만든 일정도 잡히게). */
 export const REMINDER_REFETCH_MS = 5 * 60_000;
+
+/**
+ * 지나간 알림을 늦게라도 띄우는 유예 — 절전·탭 스로틀에서 깨어난 직후를 위한 창.
+ *
+ * **계약: 재조회 주기보다 길어야 한다.** 알림 시각이 두 조회 **사이**에 지나가면
+ * 그 일정은 다음 조회에 와서야 손에 들어오는데, 그때 이미 유예를 넘겼으면 영영
+ * 뜨지 않는다. 둘이 같으면 경계에서 잃으므로 주기에 1분을 더해 둔다(그 1분은
+ * 조회 왕복과 렌더 몫이다).
+ */
+export const REMINDER_GRACE_MS = REMINDER_REFETCH_MS + 60_000;
 
 /** 앞으로 며칠치를 들고 있을까 — 알림은 최대 4주 전이지만 대개 하루 안쪽이다. */
 export const REMINDER_WINDOW_DAYS = 2;

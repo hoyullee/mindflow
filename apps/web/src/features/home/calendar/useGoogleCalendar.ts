@@ -63,6 +63,7 @@ import {
 import { checkRoom, fetchRooms, searchPeople as searchPeopleApi, type DirectoryPerson, type MeetingRoom, type RoomBusy } from './googleDirectory';
 import { readGoogleClientId } from '../../auth/googleIdentity';
 import { useLiveRefresh } from './useLiveRefresh';
+import { notifyCalendarChanged } from '../../reminders/calendarChanged';
 
 export interface GoogleCalendarApi {
   /** 이 배포에 구글 클라이언트 ID가 있는가 — 없으면 설정에 구획 자체를 그리지 않는다. */
@@ -625,6 +626,9 @@ export function useGoogleCalendar(
         });
         if (!done) return '구글 권한이 없어요. 설정에서 다시 연결해 주세요.';
         if (aliveRef.current) setReloadTick((n) => n + 1);
+        // 알림 스케줄러도 다시 받는다(제보) — 화면과 따로 도는 그쪽은 5분 주기라
+        // 방금 건 알림이 그동안 없는 것이 된다(`reminders/calendarChanged.ts`).
+        notifyCalendarChanged();
         return null;
       } catch (e) {
         return googleWriteError(e);

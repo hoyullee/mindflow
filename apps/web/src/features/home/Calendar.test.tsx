@@ -15,6 +15,7 @@ import { LocalNotificationStore } from '../../adapters/local/localNotificationSt
 import { LocalEventStore } from '../../adapters/local/localEventStore';
 import { LocalImageStore } from '../../adapters/local/localImageStore';
 import type { Backend, DocMeta, DocStore, LoadedDoc } from '../../adapters/ports';
+import { onCalendarChanged } from '../reminders/calendarChanged';
 import { ACTIVE_VIEW_KEY } from './storage';
 import { focusCalendar } from './calendarFocus';
 import { addDays, daysBetween, isoOf, todayISO } from './calendar/model';
@@ -1390,6 +1391,33 @@ describe('일정 화면', () => {
       fireEvent.click(screen.getByRole('radio', { name: '없음' }));
       fireEvent.click(document.querySelector('[data-event-done]')!);
       await waitFor(() => expect(events()[0]!.reminderMinutes).toBeUndefined());
+    });
+
+    it('알림을 저장하면 **스케줄러에 곧바로 알린다**(제보: 걸어 둔 알림이 오지 않았다)', async () => {
+      // 스케줄러는 화면과 따로 돌며 5분 주기로 일정을 받는다. 그 주기를 기다리면
+      // "10분 뒤 일정 + 10분 전 알림"처럼 알림 시각이 곧 지금인 경우가 유예를 넘겨
+      // 영영 뜨지 않는다 — 그래서 우리가 고친 변경은 그 자리에서 알린다.
+      const seen: number[] = [];
+      const off = onCalendarChanged(() => seen.push(1));
+      try {
+        renderHome([META('d1', '스프린트 보드')], BODIES());
+        const day = todayISO();
+        localStorage.setItem(
+          'mf_events',
+          JSON.stringify([{ id: 'e1', title: '팀 회의', startDate: day, endDate: day, allDay: false, startTime: '10:30', endTime: '11:30', source: 'geurio' }]),
+        );
+        await openCalendar();
+        await waitFor(() => expect(chipFor('팀 회의')).toBeTruthy());
+        fireEvent.click(chipFor('팀 회의'));
+        await waitFor(() => expect(evDetail()).toBeTruthy());
+        fireEvent.click(screen.getByRole('radio', { name: '10분 전' }));
+        expect(seen).toHaveLength(0); // 고르기만 한 시점에는 저장도 신호도 없다
+        fireEvent.click(document.querySelector('[data-event-done]')!);
+        await waitFor(() => expect(events()[0]).toMatchObject({ reminderMinutes: 10 }));
+        expect(seen.length).toBeGreaterThan(0);
+      } finally {
+        off();
+      }
     });
 
     it('시작 날짜를 앞으로 당기면 종료 날짜도 따라온다(하루짜리가 기간 일정이 되지 않는다)', async () => {

@@ -6,6 +6,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { useEventStore } from '../../../adapters/BackendContext';
 import type { CalendarEvent, CalendarEventInput } from '../../../adapters/ports';
+import { notifyCalendarChanged } from '../../reminders/calendarChanged';
 import { gridRange } from './model';
 import { useLiveRefresh } from './useLiveRefresh';
 
@@ -71,22 +72,28 @@ export function useCalendarEvents(y: number, m: number, enabled = true): Calenda
     events,
     loading,
     reload,
+    // 쓰기 셋 모두 **알림 스케줄러에도 알린다**(제보) — 그 스케줄러는 화면과 따로
+    // 돌며 5분 주기로 받으므로, 방금 건 알림이 그동안 없는 것이 된다. 자세한 이유는
+    // `reminders/calendarChanged.ts` 머리말.
     create: async (input) => {
       const res = await eventStore.create(input);
       if (res.error) return res.error;
       reload();
+      notifyCalendarChanged();
       return null;
     },
     update: async (id, patch) => {
       const res = await eventStore.update(id, patch);
       if (res.error) return res.error;
       reload();
+      notifyCalendarChanged();
       return null;
     },
     remove: async (id) => {
       const res = await eventStore.remove(id);
       if (res.error) return res.error;
       reload();
+      notifyCalendarChanged();
       return null;
     },
   };
