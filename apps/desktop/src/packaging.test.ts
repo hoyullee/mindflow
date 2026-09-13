@@ -157,3 +157,43 @@ function pngSize(file: string): { width: number; height: number } {
   const b = readFileSync(file);
   return { width: b.readUInt32BE(16), height: b.readUInt32BE(20) };
 }
+
+/**
+ * 알림 계약 — 어느 알림이 **누를 때까지 남는가**. 요청은 "일정 알림에만"이었고,
+ * 이건 소스에서만 갈리는 차이라(런타임 검증이 실기기 없이는 불가능하다) 그 경계를
+ * 여기서 지킨다.
+ */
+describe('알림 계약', () => {
+  const main = readFileSync(path.join(root, 'src', 'main.ts'), 'utf8');
+
+  /** `function 이름(...)` 하나의 본문만 잘라 낸다(중괄호 균형). */
+  function bodyOf(name: string): string {
+    const at = main.indexOf(`function ${name}(`);
+    expect(at).toBeGreaterThan(-1);
+    let depth = 0;
+    for (let i = main.indexOf('{', at); i < main.length; i += 1) {
+      if (main[i] === '{') depth += 1;
+      else if (main[i] === '}') {
+        depth -= 1;
+        if (depth === 0) return main.slice(at, i + 1);
+      }
+    }
+    throw new Error(`본문을 찾지 못했다: ${name}`);
+  }
+
+  it('일정 알림은 누를 때까지 남는다(`timeoutType: never`)', () => {
+    // 기본값은 배너가 몇 초 뒤 알림 센터로 접히는 것 — 자리를 비운 사이의 알림을
+    // 놓친다. Windows·Linux 전용 옵션이고 macOS는 시스템 설정이 이긴다.
+    expect(bodyOf('showShellNotification')).toContain("timeoutType: 'never'");
+  });
+
+  it('"계속 실행돼요" 안내는 그대로 지나간다 — 지나가는 안내가 남으면 성가시다', () => {
+    expect(bodyOf('noticeCloseOnce')).not.toContain('timeoutType');
+  });
+
+  it('알림을 띄우면 창 밖에서도 알린다(작업 표시줄 깜빡임·독 튀기기)', () => {
+    expect(bodyOf('showShellNotification')).toContain('callAttention(');
+    // 되찾으면 거둔다 — 켠 채로 두면 창을 봐도 계속 깜빡인다.
+    expect(bodyOf('showWindow')).toContain('stopAttention(');
+  });
+});

@@ -30,6 +30,7 @@ import { MONO_FONT } from '../chrome';
 import { useNotifications } from './NotificationsContext';
 import { avatarLabel } from './ProfileAvatar';
 import { NavCard } from './NavCard';
+import { useUnreadCount } from './unreadCount';
 import { useMergedUpdate } from '../../../pwa/updateControl';
 import { updateNoticeOf } from '../../../platform/shellUpdate';
 import { focusCalendar } from '../calendarFocus';
@@ -124,7 +125,7 @@ function hrefOf(n: AppNotification): string | null {
 // 금하는 "눌러도 아무 일 없는 항목"이 된다. 타입이 호출부를 강제한다.
 export function NotificationBell({ isMobile = false, onOpenVersion }: { isMobile?: boolean; onOpenVersion: () => void }) {
   const navigate = useNavigate();
-  const { items, unread, setPaused, refresh, markAllRead } = useNotifications();
+  const { items, setPaused, refresh, markAllRead } = useNotifications();
   /** 새 버전 — 사용자가 손을 쓸 수 있는 상태만 한 줄로 온다(`updateNoticeOf`). */
   const notice = updateNoticeOf(useMergedUpdate());
   const [open, setOpen] = useState(false);
@@ -197,7 +198,8 @@ export function NotificationBell({ isMobile = false, onOpenVersion }: { isMobile
   const summary = time ? `${head} · ${time}` : head;
   // 새 버전도 **하나로 센다**(요청: 하나의 창구) — 열어도 사라지지 않으므로 적용·설치
   // 전까지 배지가 남는다. 그게 맞다: 눌러야 끝나는 일이다.
-  const count = unread + (notice ? 1 : 0);
+  // 세는 규칙은 `unreadCount.ts` 한 곳 — 작업 표시줄 배지가 같은 수를 써야 한다.
+  const count = useUnreadCount();
   const hot = count > 0;
 
   const bell = (

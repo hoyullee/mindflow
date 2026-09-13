@@ -422,3 +422,62 @@ export function notifyPayload(raw: unknown): NotifyPayload | null {
   if (!o.title.trim()) return null;
   return { title: o.title, body: o.body, tag: o.tag };
 }
+
+/* ─────────────────── 알림이 왔다는 **창 밖의 표시**(작업 표시줄) ─────────────────── */
+
+/**
+ * 알림이 왔을 때 창 밖에서 눈길을 끄는 방법 — 플랫폼 관례가 서로 다르다.
+ *
+ * - `flash`: Windows·Linux의 **작업 표시줄 단추 깜빡임**(`win.flashFrame(true)`).
+ *   켜면 계속 깜빡이고 창이 포커스를 받거나 `flashFrame(false)`에서 멈춘다.
+ * - `bounce`: macOS의 **독 아이콘 튀기기**(`app.dock.bounce('critical')`). 그쪽에서
+ *   `flashFrame`은 한 번 튀고 마므로, 앱이 활성화될 때까지 남는 이 길을 쓴다.
+ *
+ * 숨어 있는 창(트레이 상주 중)에는 작업 표시줄 단추 자체가 없어 깜빡일 것이 없다 —
+ * 그건 막을 일이 아니라 그냥 아무 일도 일어나지 않는 경우다.
+ */
+export function attentionMode(platform: NodeJS.Platform): 'flash' | 'bounce' {
+  return platform === 'darwin' ? 'bounce' : 'flash';
+}
+
+/** 작업 표시줄 배지 한 번 — 렌더러가 넘기는 값. */
+export interface BadgePayload {
+  /** 안 읽은 알림 수(0이면 배지를 지운다). */
+  count: number;
+  /**
+   * Windows 오버레이 아이콘으로 쓸 PNG 데이터 URL. 그 플랫폼에는 숫자를 그려 주는
+   * API가 없어(`setBadgeCount`는 macOS·Linux 전용) **렌더러가 그려 보낸다** —
+   * 그쪽에는 캔버스도 앱의 글꼴도 있고, 배지 색은 앱 안의 그 코랄과 같아야 한다.
+   */
+  png: string | null;
+}
+
+/** 데이터 URL 상한 — 16×16 배지 하나에 이보다 큰 그림이 올 이유가 없다. */
+const BADGE_PNG_MAX = 64 * 1024;
+const BADGE_PNG_PREFIX = 'data:image/png;base64,';
+
+/**
+ * 렌더러가 넘긴 배지 값을 **믿지 않는다**(원격 출처를 띄우는 셸이다).
+ *
+ * 그림이 이상하면 **그림만 버리고 개수는 살린다** — macOS·Linux는 개수만으로
+ * 배지를 그리므로, 그림 하나 때문에 배지 전체를 포기할 이유가 없다.
+ */
+export function badgePayload(raw: unknown): BadgePayload | null {
+  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return null;
+  const o = raw as Record<string, unknown>;
+  if (typeof o.count !== 'number' || !Number.isFinite(o.count)) return null;
+  const count = Math.max(0, Math.min(999, Math.floor(o.count)));
+  const png =
+    typeof o.png === 'string' && o.png.startsWith(BADGE_PNG_PREFIX) && o.png.length <= BADGE_PNG_MAX
+      ? o.png
+      : null;
+  return { count, png };
+}
+
+/**
+ * 오버레이 아이콘의 접근 이름 — **셸이 짓는다**. 렌더러가 넘긴 문자열을 그대로
+ * 보조기술에 읽히면 원격 페이지가 화면 낭독기에 아무 말이나 쓸 수 있다.
+ */
+export function badgeDescription(count: number): string {
+  return count > 0 ? `안 읽은 알림 ${count}개` : '';
+}

@@ -50,6 +50,11 @@ export interface DesktopBridge {
   notifySupported?(): Promise<boolean>;
   notify?(payload: { title: string; body: string; tag: string }): Promise<boolean>;
   onNotificationClick?(handler: (tag: string) => void): () => void;
+  /**
+   * 작업 표시줄 배지(안 읽은 알림 수). Windows에는 숫자를 그려 주는 API가 없어
+   * 렌더러가 그린 PNG를 함께 넘긴다(`desktopBadge.ts`). 옛 설치본에는 없으므로 선택이다.
+   */
+  setBadge?(payload: { count: number; png: string | null }): Promise<boolean>;
 }
 
 declare global {

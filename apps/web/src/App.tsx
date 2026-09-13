@@ -14,6 +14,8 @@ import { UpdatePrompt } from './pwa/UpdatePrompt';
 import { DesktopTitleBar } from './platform/DesktopTitleBar';
 import { isDesktopShell } from './platform/desktopBridge';
 import { ReminderHost } from './features/reminders/ReminderHost';
+import { NotificationsProvider } from './features/home/components/NotificationsContext';
+import { DesktopBadgeHost } from './platform/DesktopBadgeHost';
 
 // M3: Login.dc.html, Home.dc.html, and MindFlow.dc.html are ported to React.
 // M4: `/home` and `/editor` are gated behind `RequireAuth` — but ONLY when a
@@ -58,11 +60,16 @@ export function RequireAuth({ children }: { children: ReactNode }) {
   // 일정 알림은 **로그인한 화면이면 어디서든** 와야 한다(마인드맵을 편집하는 중에도
   // 10:20이 되면 뜬다) — 그래서 화면마다 붙이지 않고 문지기 안에 한 번 둔다. 랜딩·
   // 로그인·약관은 문지기 밖이라 일정을 조회하지도 않는다.
+  // 알림 우편함도 **문지기 안**에 있다(홈이 아니라). LNB의 벨과 폰 ☰의 점이 같은
+  // 수를 보려면 상태가 한 벌이어야 하는데, 그 수는 **작업 표시줄 배지**도 쓴다 —
+  // 배지는 앱이 화면 밖에 있을 때 보이는 표시이고 그때 열려 있는 화면은 에디터일
+  // 수도 있다. 홈에만 두면 에디터에서 일정 알림이 떠도 배지가 움직이지 않는다.
   return (
-    <>
+    <NotificationsProvider>
       <ReminderHost />
+      <DesktopBadgeHost />
       {children}
-    </>
+    </NotificationsProvider>
   );
 }
 
