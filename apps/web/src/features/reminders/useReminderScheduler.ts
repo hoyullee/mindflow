@@ -41,6 +41,7 @@ import {
   type GoogleReminderSource,
   type ReminderItem,
 } from './reminders';
+import { pushReminderNotice } from './reminderInbox';
 import {
   googleRemindersEnabled,
   markReminderFired,
@@ -214,6 +215,8 @@ export function useReminderScheduler(
       // 저장소를 **바로 앞에서** 읽는다 — 탭이 여럿이면 각자 주기를 돌린다.
       if (wasReminderFired(item.key, item.fireAt)) continue;
       markReminderFired(item.key, item.fireAt);
+      // 홈 우편함에도 남긴다(제보) — 토스트를 놓쳤어도 나중에 확인할 자리가 있다.
+      pushReminderNotice(item);
       fresh.push(item);
       fireRef.current?.(item);
     }
@@ -279,6 +282,8 @@ export function useReminderScheduler(
     let alive = true;
     void onNativeNotification((extra, tapped) => {
       const item = parseReminderExtra(extra);
+      // OS가 띄운 알림도 우편함에 남는다 — 누가 띄웠든 "그 알림이 왔다"는 사실은 같다.
+      if (item) pushReminderNotice(item);
       if (tapped) {
         // 탭한 알림이 가리키는 **그 일정**으로 — payload를 못 읽으면(옛 예약)
         // 예전처럼 화면만 연다.

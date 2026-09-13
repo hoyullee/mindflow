@@ -98,6 +98,18 @@ async function openSettings(user: ReturnType<typeof userEvent.setup>): Promise<H
   return screen.getByRole('dialog', { name: '설정' });
 }
 
+/** 설정 → **알림** 화면(요청으로 한 겹 안으로 들어갔다) — 상주 스위치가 거기 있다. */
+async function openNotify(user: ReturnType<typeof userEvent.setup>): Promise<HTMLElement> {
+  const dialog = await openSettings(user);
+  const row = await waitFor(() => {
+    const el = dialog.querySelector('[data-notify-detail-row]');
+    expect(el).toBeTruthy();
+    return el as HTMLElement;
+  });
+  await user.click(row);
+  return dialog;
+}
+
 /** jsdom에는 `Notification`이 없다 — 알림 구획 자체가 뜨려면 스텁이 필요하다. */
 class FakeNotification {
   static permission = 'granted';
@@ -120,7 +132,7 @@ describe('설치형 앱 — 창을 닫아도 알림 받기(4단계)', () => {
   it('브라우저에는 그 자리가 없다 — 닫아도 남을 창이 없다', async () => {
     const user = userEvent.setup();
     renderHome();
-    const dialog = await openSettings(user);
+    const dialog = await openNotify(user);
     await waitFor(() => expect(dialog.querySelector('[data-remind-group]')).toBeTruthy());
     expect(dialog.querySelector('[data-remind-bg-row]')).toBeNull();
     expect(dialog.querySelector('[data-remind-login-row]')).toBeNull();
@@ -130,7 +142,7 @@ describe('설치형 앱 — 창을 닫아도 알림 받기(4단계)', () => {
     installShell();
     const user = userEvent.setup();
     renderHome();
-    const dialog = await openSettings(user);
+    const dialog = await openNotify(user);
     await waitFor(() => expect(dialog.querySelector('[data-remind-group]')).toBeTruthy());
     expect(dialog.querySelector('[data-remind-bg-row]')).toBeNull();
   });
@@ -139,7 +151,7 @@ describe('설치형 앱 — 창을 닫아도 알림 받기(4단계)', () => {
     installShell({ supported: false, enabled: false, loginSupported: true, openAtLogin: false });
     const user = userEvent.setup();
     renderHome();
-    const dialog = await openSettings(user);
+    const dialog = await openNotify(user);
     await waitFor(() => expect(dialog.querySelector('[data-remind-group]')).toBeTruthy());
     expect(dialog.querySelector('[data-remind-bg-row]')).toBeNull();
   });
@@ -148,7 +160,7 @@ describe('설치형 앱 — 창을 닫아도 알림 받기(4단계)', () => {
     const shell = installShell({ supported: true, enabled: true, loginSupported: true, openAtLogin: false })!;
     const user = userEvent.setup();
     renderHome();
-    const dialog = await openSettings(user);
+    const dialog = await openNotify(user);
 
     const row = await waitFor(() => {
       const el = dialog.querySelector('[data-remind-bg-row]');
@@ -176,7 +188,7 @@ describe('설치형 앱 — 창을 닫아도 알림 받기(4단계)', () => {
     shell.setOpenAtLogin.mockImplementation(() => Promise.resolve(shell.state));
     const user = userEvent.setup();
     renderHome();
-    const dialog = await openSettings(user);
+    const dialog = await openNotify(user);
     const row = await waitFor(() => {
       const el = dialog.querySelector('[data-remind-login-row]');
       expect(el).toBeTruthy();
@@ -192,9 +204,93 @@ describe('설치형 앱 — 창을 닫아도 알림 받기(4단계)', () => {
     installShell({ supported: true, enabled: true, loginSupported: false, openAtLogin: false });
     const user = userEvent.setup();
     renderHome();
-    const dialog = await openSettings(user);
+    const dialog = await openNotify(user);
     await waitFor(() => expect(dialog.querySelector('[data-remind-bg-row]')).toBeTruthy());
     expect(dialog.querySelector('[data-remind-login-row]')).toBeNull();
+  });
+});
+
+// ── 테스트 알림 — "왜 안 왔나"를 눌러서 읽는 답으로 ──────────────────────────
+//
+// 제보: Windows 앱에서 OS 알림이 오지 않았다. 일정 시각을 기다려야 하고, 안 뜨면
+// 우리 스케줄러인지 권한인지 OS인지 갈리지 않는다 — 그래서 **지금 한 건 띄워 보는**
+// 자리를 뒀다. 설치형 앱에서는 렌더러의 생성자가 아니라 **셸이** 띄운다.
+describe('설치형 앱 — 테스트 알림', () => {
+  beforeEach(() => {
+    localStorage.clear();
+    mockMatchMedia(false);
+    localStorage.setItem('mf_demo_session', JSON.stringify({ user: { id: 'u1', email: 'me@example.com' } }));
+    // 렌더러 생성자는 **막혀 있는** 환경으로 둔다 — 그래야 셸이 유일한 길이고
+    // 그 결과가 화면에 그대로 나타난다(실제 알림도 같은 순서로 물러선다).
+    vi.stubGlobal(
+      'Notification',
+      class {
+        static permission = 'denied';
+        static requestPermission = vi.fn();
+      },
+    );
+  });
+  afterEach(() => {
+    cleanup();
+    delete (window as unknown as { geurio?: unknown }).geurio;
+    vi.unstubAllGlobals();
+  });
+
+  function withNotify(notify: unknown, supported: boolean) {
+    installShell({ supported: true, enabled: true, loginSupported: true, openAtLogin: false });
+    Object.assign((window as unknown as { geurio: Record<string, unknown> }).geurio, {
+      notify,
+      notifySupported: () => Promise.resolve(supported),
+      onNotificationClick: () => () => undefined,
+    });
+  }
+
+  it('보내기를 누르면 **셸이** 띄우고 결과를 그 자리에 말한다', async () => {
+    const notify = vi.fn((payload: { title: string; body: string; tag: string }) => {
+      expect(payload.tag).toMatch(/^mf-test-/);
+      return Promise.resolve(true);
+    });
+    withNotify(notify, true);
+    const user = userEvent.setup();
+    renderHome();
+    const dialog = await openNotify(user);
+    const row = await waitFor(() => {
+      const el = dialog.querySelector('[data-remind-test-row]');
+      expect(el).toBeTruthy();
+      return el as HTMLElement;
+    });
+    await user.click(row.querySelector('[data-remind-test]') as HTMLElement);
+    await waitFor(() => expect(notify).toHaveBeenCalledTimes(1));
+    expect(notify.mock.calls[0]![0].title).toContain('테스트');
+    await waitFor(() =>
+      expect(dialog.querySelector('[data-remind-test-note]')!.textContent).toContain('보냈어요'),
+    );
+  });
+
+  it('막혀 있으면 무엇을 해야 하는지까지 말한다', async () => {
+    withNotify(() => Promise.resolve(false), true);
+    const user = userEvent.setup();
+    renderHome();
+    const dialog = await openNotify(user);
+    const row = await waitFor(() => {
+      const el = dialog.querySelector('[data-remind-test-row]');
+      expect(el).toBeTruthy();
+      return el as HTMLElement;
+    });
+    await user.click(row.querySelector('[data-remind-test]') as HTMLElement);
+    await waitFor(() =>
+      expect(dialog.querySelector('[data-remind-test-note]')!.textContent).toContain('허용해 주세요'),
+    );
+  });
+
+  it('못 띄우는 기기면 **누르기 전에** 알려 준다(셸에게 물어본 답)', async () => {
+    withNotify(() => Promise.resolve(false), false);
+    const user = userEvent.setup();
+    renderHome();
+    const dialog = await openNotify(user);
+    await waitFor(() =>
+      expect(dialog.querySelector('[data-remind-test-note]')!.textContent).toContain('띄울 수 없어요'),
+    );
   });
 });
 

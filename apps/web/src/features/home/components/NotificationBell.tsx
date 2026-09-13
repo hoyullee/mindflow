@@ -32,8 +32,12 @@ import { avatarLabel } from './ProfileAvatar';
 import { NavCard } from './NavCard';
 import { useMergedUpdate } from '../../../pwa/updateControl';
 import { updateNoticeOf } from '../../../platform/shellUpdate';
+import { focusCalendar } from '../calendarFocus';
 
 function lineOf(n: AppNotification): string {
+  // 일정 알림에는 "누가"가 없다 — 그 자리에서 궁금한 것은 **언제 시작하는가**다
+  // (토스트·OS 알림과 같은 문장). 어느 일정인지는 아래 칩이 말한다.
+  if (n.kind === 'reminder') return n.calendar?.body || '곧 시작하는 일정이에요';
   const who = n.actorName || '누군가';
   if (n.kind === 'mention') return `${who}님이 회원님을 멘션했어요`;
   if (n.kind === 'reply') return `${who}님이 답글을 남겼어요`;
@@ -51,6 +55,7 @@ const KIND_LABEL: Record<AppNotification['kind'], string> = {
   reply: '답글',
   comment: '댓글',
   share: '공유',
+  reminder: '일정',
 };
 
 /** `종류 · 내용`과 `시간`을 **따로** 돌려준다 — 한 문자열로 이으면 내용이 길 때
@@ -73,6 +78,16 @@ function seedColor(text: string): string {
 
 /** 종류 미니 배지(아바타 오른쪽 아래) — [면, 잉크, 아이콘 패스]. 디자인 원본의 KIND. */
 function kindBadge(kind: AppNotification['kind']): [string, string, ReactNode] {
+  // 일정 알림 — 시계(강조색). 사람이 아니라 시각이 부른 알림이다.
+  if (kind === 'reminder')
+    return [
+      'var(--mf-accent-soft)',
+      'var(--mf-accent-strong)',
+      <g key="i">
+        <circle cx="12" cy="12" r="8.5" />
+        <path d="M12 7.5V12l3 1.8" />
+      </g>,
+    ];
   if (kind === 'mention' || kind === 'doc_mention')
     return ['#FBEDE6', '#E0602F', <path key="i" d="M4 8h16M4 16h11" />];
   if (kind === 'share')
@@ -129,8 +144,16 @@ export function NotificationBell({ isMobile = false, onOpenVersion }: { isMobile
   };
 
   const go = (n: AppNotification) => {
-    const href = hrefOf(n);
     setOpen(false);
+    // 일정 알림은 맵이 아니라 **그 일정**으로 간다 — 토스트의 `일정 보기`와 같은 길
+    // (달을 옮기고 그 날을 골라 상세까지 연다).
+    if (n.kind === 'reminder') {
+      const c = n.calendar;
+      focusCalendar(c ? { date: c.date, eventId: c.eventId, source: c.source } : undefined);
+      navigate('/home');
+      return;
+    }
+    const href = hrefOf(n);
     if (href) navigate(href);
   };
 
@@ -358,6 +381,8 @@ export function NotificationBell({ isMobile = false, onOpenVersion }: { isMobile
             {items.length ? (
               items.map((n, i) => {
                 const href = hrefOf(n);
+                // 일정 알림에는 주소가 없다(맵이 아니라 화면 안의 일정으로 간다).
+                const canGo = !!href || n.kind === 'reminder';
                 const isFresh = fresh.has(n.id);
                 const group = groupOf(n.createdAt);
                 const head = i === 0 || groupOf(items[i - 1]!.createdAt) !== group;
@@ -374,7 +399,7 @@ export function NotificationBell({ isMobile = false, onOpenVersion }: { isMobile
                       data-notification-item={n.kind}
                       data-unread={isFresh ? '1' : undefined}
                       onClick={() => go(n)}
-                      disabled={!href}
+                      disabled={!canGo}
                       // 툴팁은 **화면에 없거나 잘린 것**을 메운다 — 칩이 본문을
                       // 보여 줄 때 감춰지는 것은 맵 이름이고, 둘 다 말줄임될 수 있다.
                       title={[n.docTitle || '이름 없는 맵', n.preview].filter(Boolean).join(' · ')}
@@ -389,7 +414,7 @@ export function NotificationBell({ isMobile = false, onOpenVersion }: { isMobile
                         // 안 읽은 줄만 **강조색 틴트 카드**(첨부 디자인) — 읽은 줄은
                         // 면 없이 남는다. LNB 행과 같은 언어다.
                         background: isFresh ? 'var(--mf-accent-soft)' : 'transparent',
-                        cursor: href ? 'pointer' : 'default',
+                        cursor: canGo ? 'pointer' : 'default',
                         textAlign: 'left',
                         fontFamily: 'inherit',
                       }}
@@ -397,11 +422,22 @@ export function NotificationBell({ isMobile = false, onOpenVersion }: { isMobile
                       {/* 얼굴 + 종류 미니 배지 — 누가, 무슨 일로. 색은 이름 시드라
                           같은 사람은 늘 같은 색이다. */}
                       <span style={{ position: 'relative', width: 34, height: 34, flexShrink: 0 }}>
+                        {n.kind === 'reminder' ? (
+                          // 일정 알림에는 사람이 없다 — 얼굴 자리에 달력 한 장(LNB 일정
+                          // 카드의 그 타일과 같은 신호).
+                          <span data-notification-cal style={{ width: 34, height: 34, borderRadius: 999, background: 'var(--mf-accent-soft)', color: 'var(--mf-accent)', display: 'inline-flex', alignItems: 'center', justifyContent: 'center' }}>
+                            <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                              <rect x="3.5" y="5" width="17" height="16" rx="2.5" />
+                              <path d="M8 3v4M16 3v4M3.5 10h17" />
+                            </svg>
+                          </span>
+                        ) : (
                         <span style={{ width: 34, height: 34, borderRadius: 999, background: seedColor(who), color: '#fff', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', fontSize: 12, fontWeight: 800, letterSpacing: '-.02em' }}>
                           {/* 글자 규칙은 프로필 아바타와 **같은 함수**를 쓴다 —
                               같은 사람이 화면마다 다른 글자로 보이면 안 된다. */}
                           {avatarLabel(who)}
                         </span>
+                        )}
                         <span style={{ position: 'absolute', right: -3, bottom: -3, width: 16, height: 16, borderRadius: 999, background: kindBg, border: '1.5px solid var(--mf-card)', display: 'inline-flex', alignItems: 'center', justifyContent: 'center' }}>
                           <svg width="9" height="9" viewBox="0 0 24 24" fill="none" stroke={kindFg} strokeWidth="2.6" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
                             {kindIcon}

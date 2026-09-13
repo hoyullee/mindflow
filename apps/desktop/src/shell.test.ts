@@ -25,6 +25,7 @@ import {
   titleBarHeightFor,
   usesCustomTitleBar,
   type KeyInput,
+  notifyPayload,
 } from './shell';
 
 const APP = 'https://geurio.com';
@@ -296,5 +297,26 @@ describe('트레이 상주 — 창을 닫아도 알림(4단계)', () => {
       closeNoticeShown: true,
     });
     expect(coerceShellPrefs({ background: false })).toEqual({ background: false, closeNoticeShown: false });
+  });
+});
+
+// ── OS 알림을 셸이 띄운다(제보: Windows 앱에서 알림이 오지 않는다) ───────────
+describe('알림 payload — 렌더러가 넘긴 것을 믿지 않는다', () => {
+  it('세 문자열이면 그대로 싣는다', () => {
+    expect(notifyPayload({ title: '팀 회의', body: '10분 후 시작', tag: 'k1' })).toEqual({
+      title: '팀 회의',
+      body: '10분 후 시작',
+      tag: 'k1',
+    });
+  });
+
+  it('모양이 아니면 `null` — 아무 알림도 띄우지 않는다(터지지도 않는다)', () => {
+    expect(notifyPayload(null)).toBe(null);
+    expect(notifyPayload('팀 회의')).toBe(null);
+    expect(notifyPayload([])).toBe(null);
+    expect(notifyPayload({ title: '팀 회의' })).toBe(null);
+    expect(notifyPayload({ title: 1, body: 'x', tag: 'y' })).toBe(null);
+    // 제목이 빈 알림은 OS에서 정체 없는 상자가 된다.
+    expect(notifyPayload({ title: '  ', body: 'x', tag: 'y' })).toBe(null);
   });
 });

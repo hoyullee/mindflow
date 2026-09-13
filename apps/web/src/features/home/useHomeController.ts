@@ -1170,6 +1170,14 @@ export function useHomeController() {
   const openProfileDetail = () => patch({ settingsView: 'profile', avatarError: null });
   /** Google 캘린더 연동 화면(요청) — 계정 설정에서 한 겹 더 들어간다. */
   const openCalendarDetail = () => patch({ settingsView: 'calendar' });
+  /**
+   * 「알림」 화면(요청) — 첫 화면의 '계정 설정' **아래** 행에서 들어온다.
+   *
+   * 세 스위치(일정 알림·구글 일정도 알림·앱을 닫아도 알림)를 첫 화면에 늘어놓으면
+   * 그것만으로 화면이 뒤덮인다 — 계정 설정·캘린더 연동과 같은 규칙으로 한 겹 안에
+   * 둔다.
+   */
+  const openNotifyDetail = () => patch({ settingsView: 'notify' });
   /** 「버전 확인」 화면(요청) — 첫 화면의 '계정 설정' 아래 행에서 들어온다. */
   const openVersionDetail = () => patch({ settingsView: 'version' });
   /**
@@ -3025,6 +3033,7 @@ export function useHomeController() {
     openGoogleCalendarSetup,
     openProfileDetail,
     openCalendarDetail,
+    openNotifyDetail,
     openVersionDetail,
     openVersionSetup,
     openGoogleCalendarAdd,

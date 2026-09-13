@@ -71,10 +71,20 @@ function renderHome() {
   );
 }
 
+/**
+ * 설정 → **알림** 화면(요청으로 한 겹 안으로 들어갔다) — 세 스위치가 거기 있다.
+ */
 async function openSettings(user: ReturnType<typeof userEvent.setup>): Promise<HTMLElement> {
   await user.click(await screen.findByRole('button', { name: '계정 메뉴' }));
   await user.click(screen.getByRole('button', { name: '설정' }));
-  return screen.getByRole('dialog', { name: '설정' });
+  const dialog = screen.getByRole('dialog', { name: '설정' });
+  const row = await waitFor(() => {
+    const el = dialog.querySelector('[data-notify-detail-row]');
+    expect(el).toBeTruthy();
+    return el as HTMLElement;
+  });
+  await user.click(row);
+  return dialog;
 }
 
 describe('모바일 앱의 일정 알림 설정', () => {

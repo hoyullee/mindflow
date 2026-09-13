@@ -8,7 +8,7 @@
 // **머리는 펼쳤을 때만 칠한다** — 틴트의 뜻을 "열려 있다"로 못박는다(일정 카드가
 // 활성일 때만 칠하는 것과 같은 규칙: 늘 칠하면 "언제나 활성"으로 읽힌다는 제보).
 
-import type { ReactNode } from 'react';
+import { useLayoutEffect, useRef, useState, type ReactNode } from 'react';
 
 /** 펼친 목록이 자기 안에서 스크롤하기 시작하는 높이 — 휴지통이 17개쯤 되면
  * 그 하나가 LNB를 통째로 밀어내므로, 세 구획을 함께 쓸 수 있게 여기서 끊는다
@@ -44,6 +44,50 @@ export function LnbRail({ children, cap = true, attrs }: { children: ReactNode; 
   );
 }
 
+/**
+ * 접히고 펼쳐지는 상자 — **즐겨찾기·공유받음·휴지통**과 **일정 하위 메뉴**가 같은
+ * 것을 쓴다(요청: 일정도 같은 효과로).
+ *
+ * 높이는 **재서** 쓴다: 목록 길이가 구획마다 다르고 도중에 늘어나기도 하므로(캘린더
+ * 목록이 도착한다) 어림값을 적어 두면 곧 갈린다. 못 재는 환경(jsdom)에서는
+ * `fallback`으로 물러서고, 그마저 없으면 제한을 두지 않는다 — 테스트에서 내용이
+ * 보이지 않는 편이 더 나쁘다.
+ *
+ * 닫혀 있어도 **내용은 그려 둔다** — 그래야 닫는 동작에도 애니메이션이 걸린다.
+ */
+export function LnbCollapse({ open, fallback, children }: { open: boolean; fallback?: number; children: ReactNode }): React.JSX.Element {
+  const ref = useRef<HTMLDivElement | null>(null);
+  const [h, setH] = useState(0);
+  useLayoutEffect(() => {
+    const el = ref.current;
+    if (!el) return;
+    const measure = () => setH(el.scrollHeight);
+    measure();
+    if (typeof ResizeObserver === 'undefined') return;
+    const ro = new ResizeObserver(measure);
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, []);
+  const target = h > 0 ? h : fallback;
+  return (
+    <div
+      style={{
+        overflow: 'hidden',
+        flexShrink: 0,
+        maxHeight: open ? (target === undefined ? 'none' : `${target}px`) : '0px',
+        opacity: open ? 1 : 0,
+        // 접힌 동안에는 **초점도 가지 않는다** — `visibility: hidden`은 그 안의 버튼·
+        // 체크박스를 Tab 순서에서 빼 준다(높이만 0으로 두면 보이지 않는 행에 초점이
+        // 내려앉는다). 닫히는 전이가 끝난 **뒤에** 걸리도록 지연을 준다.
+        visibility: open ? 'visible' : 'hidden',
+        transition: `max-height .32s cubic-bezier(.4,0,.2,1), opacity .24s ease, visibility 0s linear ${open ? '0s' : '.32s'}`,
+      }}
+    >
+      <div ref={ref}>{children}</div>
+    </div>
+  );
+}
+
 export interface LnbListSectionProps {
   open: boolean;
   onToggle: () => void;
@@ -54,7 +98,8 @@ export interface LnbListSectionProps {
   action?: ReactNode;
   /** 오른쪽 끝 — 개수(등폭)나 알림 배지. */
   meta?: ReactNode;
-  /** 행 수 — 열림 애니메이션의 목표 높이를 정한다(넘치면 rail 안에서 스크롤). */
+  /** 행 수 — 실제 높이를 못 재는 환경(jsdom)의 폴백값을 짓는다. 실브라우저에서는
+   * `LnbCollapse`가 잰 값이 이긴다(목록이 도중에 늘어나도 따라간다). */
   rows: number;
   isMobile?: boolean;
   headClassName?: string;
@@ -102,17 +147,9 @@ export function LnbListSection({ open, onToggle, glyph, label, action, meta, row
         {meta}
         <ChevronGlyph open={open} />
       </div>
-      <div
-        style={{
-          overflow: 'hidden',
-          flexShrink: 0,
-          maxHeight: open ? `${Math.min(wanted, LNB_LIST_CAP)}px` : '0px',
-          opacity: open ? 1 : 0,
-          transition: 'max-height .32s cubic-bezier(.4,0,.2,1), opacity .24s ease',
-        }}
-      >
+      <LnbCollapse open={open} fallback={Math.min(wanted, LNB_LIST_CAP)}>
         <LnbRail>{children}</LnbRail>
-      </div>
+      </LnbCollapse>
     </>
   );
 }

@@ -95,8 +95,8 @@ export function MapGrid({ view, controller }: Props) {
           </div>
           <div style={{ fontSize: 18, fontWeight: 700, marginBottom: 8 }}>이 폴더는 비어 있어요</div>
           <div style={{ fontSize: 13.5, color: 'var(--mf-muted)', lineHeight: 1.6, textAlign: 'center' }}>
-            맵 카드의 ☰ 메뉴에서 &apos;폴더로 이동&apos;을 선택해
-            <br /> 이 폴더로 맵을 옮길 수 있어요.
+            카드의 ☰ 메뉴에서 &apos;폴더로 이동&apos;을 선택해
+            <br /> 이 폴더로 옮길 수 있어요.
           </div>
         </div>
       )}
@@ -115,10 +115,14 @@ export function MapGrid({ view, controller }: Props) {
               <circle cx="17.6" cy="17.6" r="2.4" />
             </svg>
           </div>
-          <div style={{ fontSize: 18, fontWeight: 700, marginBottom: 8 }}>아직 만든 맵이 없어요</div>
+          {/* 문서 종류가 셋이 된 뒤로 "맵이 없어요"는 사실이 아니다(제보) — 이 자리에서
+              만들 수 있는 것은 마인드맵·화이트보드·칸반이고, 갤러리가 그 셋을 보여 준다.
+              그래서 **비어 있다는 사실**만 말하고(형제 빈 상태인 `이 폴더는 비어 있어요`와
+              같은 문법) 무엇을 만들 수 있는지는 아래 줄이 말한다. */}
+          <div style={{ fontSize: 18, fontWeight: 700, marginBottom: 8 }}>이 스페이스는 비어 있어요</div>
           <div style={{ fontSize: 13.5, color: 'var(--mf-muted)', lineHeight: 1.6, marginBottom: 24, textAlign: 'center' }}>
-            첫 마인드맵을 만들어 생각을 정리해 보세요.
-            <br /> 중심 주제에서 아이디어를 자유롭게 펼칠 수 있어요.
+            마인드맵 · 화이트보드 · 칸반 보드 중에서 골라
+            <br /> 첫 문서를 만들어 보세요.
           </div>
           <button
             type="button"

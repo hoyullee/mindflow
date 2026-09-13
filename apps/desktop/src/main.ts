@@ -51,6 +51,7 @@ import {
   isSafeExternalUrl,
   MIN_HEIGHT,
   MIN_WIDTH,
+  notifyPayload,
   originOf,
   type BackgroundState,
   type Bounds,
@@ -212,6 +213,36 @@ function noticeCloseOnce(): void {
     writePrefs({ ...prefs, closeNoticeShown: true });
   } catch {
     // 알림 하나 때문에 앱이 죽을 이유가 없다.
+  }
+}
+
+/**
+ * 렌더러가 부탁한 OS 알림을 **메인 프로세스가** 띄운다(제보: Windows 앱에서 OS
+ * 알림이 오지 않는다 — 크롬 웹에서는 온다).
+ *
+ * 왜 렌더러의 `new Notification()`을 그대로 쓰지 않는가: 그 길은 Chromium의
+ * 권한·이미지 내려받기·백그라운드 정책을 모두 지나고, 무엇이 막혔는지 **아무것도
+ * 알려 주지 않는다**(생성자는 조용히 성공한다). 메인 프로세스의 `Notification`은
+ * Electron이 Windows 토스트로 직접 만들고 `isSupported()`로 **가능한지 미리 물어볼
+ * 수 있다** — 그래서 설정 화면이 "이 기기는 OS 알림을 지원하지 않아요"라고 말할 수
+ * 있고, 실패를 삼키지 않는다.
+ *
+ * 누르면 숨어 있던 창을 되찾고(상주 중일 수 있다) 렌더러에 `tag`를 돌려준다 —
+ * 그러면 웹 쪽이 "그 일정"으로 보낸다(토스트의 `일정 보기`와 같은 길).
+ */
+function showShellNotification(win: BrowserWindow | null, title: string, body: string, tag: string): boolean {
+  if (!Notification.isSupported()) return false;
+  try {
+    const n = new Notification({ title, body, silent: false });
+    n.on('click', () => {
+      showWindow();
+      if (win && !win.isDestroyed()) win.webContents.send('geurio:notification-click', tag);
+    });
+    n.show();
+    return true;
+  } catch {
+    // 알림 하나 때문에 앱이 죽을 이유가 없다 — 렌더러가 인앱 토스트로 대신한다.
+    return false;
   }
 }
 
@@ -472,6 +503,15 @@ if (!app.requestSingleInstanceLock()) {
     ipcMain.handle('geurio:focus-window', () => {
       showWindow();
       return true;
+    });
+
+    // 이 기기가 OS 알림을 띄울 수 있는가 — 설정 화면이 **묻고 나서** 말한다.
+    ipcMain.handle('geurio:notify-supported', () => Notification.isSupported());
+
+    ipcMain.handle('geurio:notify', (e, payload: unknown) => {
+      const p = notifyPayload(payload);
+      if (!p) return false;
+      return showShellNotification(BrowserWindow.fromWebContents(e.sender), p.title, p.body, p.tag);
     });
 
     ipcMain.handle('geurio:pending-deep-link', () => {

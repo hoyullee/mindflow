@@ -4,11 +4,17 @@
 // "이 노트북에서는 받고 회사 PC에서는 안 받는다"가 자연스러운 설정이라, 스페이스·
 // 테마처럼 기기 간에 따라오면 오히려 어긋난다.
 
-import { focusDesktopWindow } from '../../platform/desktopBridge';
+import {
+  desktopNotifyAvailable,
+  desktopNotifySupported,
+  focusDesktopWindow,
+  notifyViaDesktop,
+} from '../../platform/desktopBridge';
 import {
   checkNativeNotifyPermission,
   nativeNotificationsAvailable,
   requestNativeNotifyPermission,
+  showNativeNotification,
 } from '../../platform/nativeNotifications';
 
 /** 알림을 받을까 — 없으면 **켜짐**이다(아래 근거). */
@@ -168,8 +174,30 @@ export async function askNotifyPermission(): Promise<NotifyPermission> {
 /**
  * OS 알림 한 건. 못 띄우면 `false`(호출부는 인앱 토스트로 대신한다 — 알림이 통째로
  * 사라지지 않게). `tag`는 같은 알림이 겹쳐 쌓이지 않게 한다.
+ *
+ * **설치형 앱에서는 셸이 띄운다**(제보: Windows 앱에서 알림이 오지 않는다). 렌더러의
+ * `new Notification()`은 Chromium의 알림 정책을 여러 겹 지나고 무엇이 막혔는지
+ * 알려 주지 않는데, 메인 프로세스는 `Notification.isSupported()`를 물을 수 있고
+ * 띄웠는지 여부가 그대로 돌아온다. 셸이 못 띄우면 **웹 생성자로 물러선다** — 두 길
+ * 중 하나라도 되면 알림은 뜬다.
  */
-export function showOsNotification(opts: { title: string; body: string; tag: string; onClick?: () => void }): boolean {
+export async function showOsNotification(opts: {
+  title: string;
+  body: string;
+  tag: string;
+  onClick?: () => void;
+}): Promise<boolean> {
+  if (desktopNotifyAvailable() && (await notifyViaDesktop(opts))) return true;
+  return showWebNotification(opts);
+}
+
+/** 브라우저·PWA의 길 — 권한이 `granted`일 때만 뜬다. */
+function showWebNotification(opts: {
+  title: string;
+  body: string;
+  tag: string;
+  onClick?: () => void;
+}): boolean {
   if (notifyPermission() !== 'granted') return false;
   try {
     const n = new Notification(opts.title, { body: opts.body, tag: opts.tag, icon: '/icons/pwa-192x192.png' });
@@ -192,4 +220,53 @@ export function showOsNotification(opts: { title: string; body: string; tag: str
     // 일부 환경은 서비스워커 없이 생성자를 막는다(그때는 인앱 토스트만).
     return false;
   }
+}
+
+/**
+ * 테스트 알림의 결과 — 설정 화면이 **읽을 수 있는 문장으로** 바꿔 보여 준다.
+ * `blocked`는 "이 기기는 띄울 수 있는데 지금 막혀 있다"(권한·OS 설정)이고
+ * `unsupported`는 "이 기기에서는 OS 알림 자체가 안 된다"다.
+ */
+export type TestNotifyResult = 'sent' | 'blocked' | 'unsupported';
+
+/** 네이티브 테스트 알림의 id — 예약이 아니라 즉시 띄우므로 대기 목록에 남지 않는다. */
+const TEST_NATIVE_ID = 2_100_000_001;
+
+/**
+ * 지금 바로 알림 한 건을 띄워 본다(설정의 `테스트 알림`).
+ *
+ * 이 버튼이 있는 이유: "알림이 오지 않는다"는 제보를 받았을 때 **어디서 막혔는지**
+ * 알 방법이 없었다 — 일정 시각을 기다려야 하고, 안 뜨면 우리 스케줄러인지 OS인지
+ * 권한인지 갈리지 않는다. 여기서는 그 질문이 눌러서 읽는 답이 된다.
+ */
+export async function sendTestNotification(): Promise<TestNotifyResult> {
+  const title = 'Geurio 테스트 알림';
+  const body = '이 알림이 보이면 일정 알림도 이렇게 떠요.';
+  // 태그를 매번 새로 만든다 — 같은 태그면 OS가 앞의 것을 대체해, 연달아 누른
+  // 사용자에게는 "한 번만 떴다"로 보인다.
+  const tag = `mf-test-${Date.now()}`;
+
+  // 설치형 앱: 셸이 띄운다. **실제 알림과 같은 순서**로 확인한다(셸 → 웹 생성자) —
+  // 시험하는 것이 곧 실제로 도는 길이어야 한다. 둘 다 실패하면 **사유를 물어본다**
+  // (못 띄우는 기기인가, 막혀 있는가).
+  if (desktopNotifyAvailable()) {
+    if (await notifyViaDesktop({ title, body, tag })) return 'sent';
+    if (showWebNotification({ title, body, tag })) return 'sent';
+    return (await desktopNotifySupported()) === false ? 'unsupported' : 'blocked';
+  }
+
+  // 모바일 앱: 웹 `Notification`이 아예 없으므로 플러그인이 띄운다.
+  if (nativeNotificationsAvailable()) {
+    let perm = await checkNativeNotifyPermission();
+    if (perm === 'default') perm = await requestNativeNotifyPermission();
+    if (perm !== 'granted') return 'blocked';
+    return (await showNativeNotification({ id: TEST_NATIVE_ID, title, body })) ? 'sent' : 'unsupported';
+  }
+
+  // 브라우저·PWA: 권한이 아직 `default`면 **이 클릭을 제스처로** 물어본다.
+  if (typeof Notification === 'undefined') return 'unsupported';
+  let perm = notifyPermission();
+  if (perm === 'default') perm = await requestNotifyPermission();
+  if (perm !== 'granted') return 'blocked';
+  return showWebNotification({ title, body, tag }) ? 'sent' : 'blocked';
 }

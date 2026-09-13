@@ -36,7 +36,7 @@ export function ReminderHost() {
       //
       // 모바일에서 OS가 예약을 들고 있는 모드라면 이 콜백은 애초에 불리지 않는다
       // (그때는 OS가 띄우고 우리는 그 수신 이벤트로 토스트만 잇는다).
-      showOsNotification({
+      void showOsNotification({
         title: item.title,
         body: reminderBody(item),
         tag: item.key,
