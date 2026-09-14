@@ -35,6 +35,7 @@
 | 클릭이 엉뚱한 것을 잡는다 | 그 자리에 칩·시트가 먼저 있다 | [D4](#d4) |
 | 스크롤바가 안 보인다 | 헤드리스는 커스텀 스크롤바를 안 그린다 | [E1](#e1) |
 | OS 알림이 안 뜬다 | 헤드리스는 `Notification.permission`이 늘 denied | [E2](#e2) |
+| 웹 푸시 구독이 `AbortError` | 같은 이유 — 배달은 실기기에서만 확인된다 | [E2](#e2) |
 | "오늘 칸인데 오늘이 아니다" | 컨테이너 TZ ≠ 페이지 TZ(Asia/Seoul) | [E3](#e3) |
 | 타이틀 바·트레이가 없다 | 이 컨테이너는 리눅스다 | [E4](#e4) |
 | 우클릭 메뉴가 영영 안 뜬다 | 그 카드는 **일부러** 메뉴가 없다 | [E5](#e5) |
@@ -193,6 +194,15 @@ jsdom에서는 그 값이 0이라 이 어긋남이 드러나지 않습니다.
 ### E2. 헤드리스는 `Notification.permission`이 늘 `denied`
 
 OS 알림 경로(생성자 호출 여부)를 확인하려면 **xvfb headed**가 필요합니다.
+
+**웹 푸시는 그래서 통째로 막힌다**(0040에서 실측): `pushManager.subscribe()`가
+권한을 요구하므로 `AbortError: Registration failed - permission denied`로 끝납니다 —
+Playwright의 `permissions: ['notifications']`를 줘도, `--headless=new`로 바꿔도
+같았습니다. 그래서 **푸시의 실제 배달(푸시 서비스 → SW → 배너)은 이 환경에서
+검증할 수 없습니다.** 대신 갈라서 확인합니다: 후보 고르기 SQL은 로컬 Postgres
+하네스로, 구독 로직은 가짜 `pushManager`로, SW 조각은 **그 파일을 그대로 실행해**
+(`new Function('self','clients', src)`) 핸들러를 부르는 식으로. 배달 자체는
+"확인할 수 없다"로 보고하고 실기기 확인을 남깁니다(§H의 규칙).
 
 <a id="e3"></a>
 ### E3. 컨테이너 TZ와 페이지 TZ가 다르다

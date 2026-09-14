@@ -2574,6 +2574,15 @@ select recipient, kind, created_at, read_at, pushed_at, emailed_at
 ③ `push_subscriptions`에 내 기기 행이 있나 ④ cron이 도는가
 (`select * from cron.job_run_details order by start_time desc limit 10;`).
 
+**함수가 아예 뜨지 않는 경우도 하나 있다**(배포 직후 로그에 import 오류): 이 함수는
+`npm:web-push`를 쓰는데, 그 패키지는 Node용이라 Deno의 node 호환 계층에 기댄다.
+Supabase Edge Runtime에서 그것이 깨지면 **함수 자체가 로드되지 않아** cron이 조용히
+헛돈다(알림이 0건인 것과 구분이 안 된다 — 그래서 로그를 먼저 본다). 직접 암호화를
+구현하지 않고 이 패키지를 고른 이유는 RFC 8291(aes128gcm)을 손으로 짜면 **이 환경에서
+검증할 방법이 없기 때문**이다(위의 E2). 깨지면 갈아탈 곳은 Deno 네이티브 대안
+(`jsr:@negrel/webpush`)이고, 바꿀 자리는 `notify-push/index.ts`의 import와
+`sendNotification` 호출 두 줄뿐이다.
+
 ### 푸시와 메일이 겹칠 때
 
 푸시를 받고 **열어 보지 않으면** 30분 뒤 메일도 간다(`read_at`이 그대로이므로).
