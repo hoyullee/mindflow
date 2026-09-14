@@ -164,11 +164,70 @@ describe('UpdatePrompt — 껍데기(설치 파일)의 판', () => {
     expect(String(fetchMock.mock.calls[0]![0])).toContain('/desktop-version.json');
   });
 
+  it('창으로 돌아오면 다시 묻는다 — 앱 시작 한 번으로는 릴리스를 영영 모른다(제보)', async () => {
+    installShell('0.2.0');
+    // 앱을 켤 때는 0.2.0이 최신이었다. 그 뒤에 0.3.0이 올라온다.
+    let latest = '0.2.0';
+    const fetchMock = vi.fn<typeof fetch>(
+      async () => new Response(JSON.stringify({ version: latest, url: 'https://example.test/r' }), { status: 200 }),
+    );
+    vi.stubGlobal('fetch', fetchMock);
+    let now = 1_700_000_000_000;
+    vi.spyOn(Date, 'now').mockImplementation(() => now);
+
+    render(<UpdatePrompt />);
+    await waitFor(() => expect(currentUpdateStatus().shell).toEqual({ kind: 'current' }));
+
+    latest = '0.3.0';
+    // 스로틀 창(30초) 안의 연타는 걸러진다 — 깨어나는 신호는 둘씩 온다.
+    window.dispatchEvent(new Event('focus'));
+    await new Promise((r) => setTimeout(r, 20));
+    expect(currentUpdateStatus().shell).toEqual({ kind: 'current' });
+
+    now += 60_000;
+    window.dispatchEvent(new Event('focus'));
+    await waitFor(() =>
+      expect(currentUpdateStatus().shell).toEqual({ kind: 'available', version: '0.3.0', url: 'https://example.test/r' }),
+    );
+  });
+
+  it('배경 재확인은 아는 답을 checking으로 덮지 않는다 — LNB 알림이 주기마다 사라지지 않게', async () => {
+    installShell('0.2.0');
+    // 콜백 안에서 채우므로 객체에 담는다 — 지역 변수는 TS가 `null`로 좁힌다.
+    const gate: { release: (() => void) | null } = { release: null };
+    const body = JSON.stringify({ version: '0.3.0', url: 'https://example.test/r' });
+    const fetchMock = vi.fn<typeof fetch>(async () => {
+      // 첫 확인(마운트)은 곧바로, 두 번째(배경)는 붙잡아 둔다.
+      if (fetchMock.mock.calls.length === 1) return new Response(body, { status: 200 });
+      return new Promise<Response>((r) => {
+        gate.release = () => r(new Response(body, { status: 200 }));
+      });
+    });
+    vi.stubGlobal('fetch', fetchMock);
+    let now = 1_700_000_000_000;
+    vi.spyOn(Date, 'now').mockImplementation(() => now);
+
+    render(<UpdatePrompt />);
+    await waitFor(() => expect(currentUpdateStatus().shell).toMatchObject({ kind: 'available' }));
+
+    now += 60_000;
+    window.dispatchEvent(new Event('focus'));
+    await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(2));
+    // 답을 기다리는 동안에도 아는 값 그대로 — 이 사이에 `checking`이 되면 알림 줄이 사라진다.
+    expect(currentUpdateStatus().shell).toMatchObject({ kind: 'available', version: '0.3.0' });
+
+    gate.release?.();
+    await new Promise((r) => setTimeout(r, 20));
+    expect(currentUpdateStatus().shell).toMatchObject({ kind: 'available', version: '0.3.0' });
+  });
+
   it('브라우저·PWA에서는 부르지 않는다 — 받을 설치 파일이 없다', async () => {
     const fetchMock = vi.fn<typeof fetch>(async () => new Response('{}', { status: 200 }));
     vi.stubGlobal('fetch', fetchMock);
 
     render(<UpdatePrompt />);
+    window.dispatchEvent(new Event('focus'));
+    window.dispatchEvent(new Event('online'));
     await new Promise((r) => setTimeout(r, 50));
 
     expect(fetchMock.mock.calls.filter((c) => String(c[0]).includes('desktop-version'))).toHaveLength(0);

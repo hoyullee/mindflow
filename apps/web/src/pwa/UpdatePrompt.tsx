@@ -47,6 +47,12 @@ import { checkShellUpdate } from '../platform/shellUpdate';
  */
 const UPDATE_CHECK_MS = 5 * 60 * 1000;
 
+/**
+ * 껍데기 배경 확인의 스로틀 — 깨어나는 신호가 겹쳐 와도 한 번만 묻는다.
+ * 웹 쪽 자동 확인(`updateGate`의 `CHECK_THROTTLE_MS`)과 같은 값이다.
+ */
+const SHELL_THROTTLE_MS = 30 * 1000;
+
 /** 다른 탭이 바빠 자동 적용을 미뤘을 때 다시 물어보는 주기. */
 const PEER_RETRY_MS = 20 * 1000;
 
@@ -163,14 +169,46 @@ export function UpdatePrompt() {
   // **껍데기(설치 파일)의 판도 여기서 확인한다.** 화면마다 확인하면 왕복이 그만큼
   // 늘고 두 화면이 서로 다른 답을 들 수 있다 — 한 번 물어 모듈에 올린다.
   // 브라우저·PWA에서는 셸이 없으므로 **버전 파일을 부르지도 않는다**.
-  const checkShell = useCallback(() => {
+  //
+  // `quiet`는 **배경 재확인**이다: 이미 아는 답을 `checking`으로 덮지 않는다.
+  // 덮으면 `mergedUpdateState`가 잠시 `checking`이 되어 LNB 알림 줄·배지가 주기마다
+  // 사라졌다 돌아온다(캘린더 캐시와 같은 규칙 — 받는 동안 화면이 비지 않는다).
+  const lastShellAt = useRef(0);
+  const checkShell = useCallback((quiet = false) => {
     const b = desktopBridge();
     if (!b) return;
-    publishUpdateStatus({ shell: { kind: 'checking' } });
+    const now = Date.now();
+    // 깨어나는 신호는 둘씩 온다(포커스 + visibilitychange) — 사용자가 직접 누른
+    // 확인은 미룰 이유가 없으므로 스로틀은 배경 확인에만 건다.
+    if (quiet && now - lastShellAt.current < SHELL_THROTTLE_MS) return;
+    lastShellAt.current = now;
+    if (!quiet) publishUpdateStatus({ shell: { kind: 'checking' } });
     void checkShellUpdate(b.version).then((next) => publishUpdateStatus({ shell: next }));
   }, []);
   useEffect(() => {
     checkShell();
+  }, [checkShell]);
+  // **앱 시작 한 번으로는 모자란다.** 껍데기 확인의 계기가 그것뿐이라, 켜 둔 앱은
+  // 새 설치 파일이 올라와도 영영 몰랐다(제보: 릴리스를 냈는데 앱에 표시가 없다).
+  // 트레이 상주로 며칠씩 켜 두게 만들어 놓았으므로 더욱 그렇다 — 웹 번들과 **같은
+  // 계기**로 다시 묻는다(창으로 돌아오는 순간과 주기). 비용은 90바이트짜리 JSON
+  // 하나이고, 브라우저·PWA에서는 리스너조차 걸지 않는다.
+  useEffect(() => {
+    if (!desktopBridge()) return;
+    const tick = (): void => checkShell(true);
+    const onVisible = (): void => {
+      if (document.visibilityState === 'visible') tick();
+    };
+    document.addEventListener('visibilitychange', onVisible);
+    window.addEventListener('focus', tick);
+    window.addEventListener('online', tick);
+    const timer = window.setInterval(tick, UPDATE_CHECK_MS);
+    return () => {
+      document.removeEventListener('visibilitychange', onVisible);
+      window.removeEventListener('focus', tick);
+      window.removeEventListener('online', tick);
+      window.clearInterval(timer);
+    };
   }, [checkShell]);
   // 적용 손잡이 — 수동 적용은 피어를 묻지 않는다(본인 선택이므로 `auto: false`).
   useEffect(() => {
