@@ -18,7 +18,7 @@ import type { Backend, DocMeta, DocStore, LoadedDoc } from '../../adapters/ports
 import { onCalendarChanged } from '../reminders/calendarChanged';
 import { ACTIVE_VIEW_KEY } from './storage';
 import { focusCalendar } from './calendarFocus';
-import { addDays, daysBetween, isoOf, todayISO } from './calendar/model';
+import { addDays, daysBetween, hhmm, isoOf, minutesOf, nextTimeSlot, timeLabel, todayISO } from './calendar/model';
 import { tagColor } from '../editor/kanbanMeta';
 import { UI_THEME } from '../editor/theme';
 
@@ -1301,14 +1301,21 @@ describe('일정 화면', () => {
       await waitFor(() => expect(newEv()).toBeTruthy());
       fireEvent.click(document.querySelector('[data-new-allday]')!);
       await waitFor(() => expect(document.querySelector('[data-new-start]')).toBeTruthy());
-      // 기본 09:00–10:00 = 1시간
+      // 기본은 **지금 기준 다음 눈금**부터 한 시간(요청) — 고정 09:00이 아니다.
+      const slot = nextTimeSlot();
       expect(document.querySelector('[data-new-dur]')!.textContent).toBe('1시간');
+      expect(document.querySelector('[data-new-start]')!.textContent).toBe(timeLabel(minutesOf(slot.start)!));
       fireEvent.click(document.querySelector('[data-new-quick="120"]')!);
       await waitFor(() => expect(document.querySelector('[data-new-dur]')!.textContent).toBe('2시간'));
       fireEvent.change(document.querySelector('[data-new-title]')!, { target: { value: '설계 회의' } });
       fireEvent.click(document.querySelector('[data-new-submit]')!);
       await waitFor(() => expect(events()).toHaveLength(1));
-      expect(events()[0]).toMatchObject({ title: '설계 회의', allDay: false, startTime: '09:00', endTime: '11:00' });
+      expect(events()[0]).toMatchObject({
+        title: '설계 회의',
+        allDay: false,
+        startTime: slot.start,
+        endTime: hhmm(Math.min(23 * 60 + 59, minutesOf(slot.start)! + 120)),
+      });
     });
 
     it('알림을 걸면 저장되고, 종일 일정에서는 그 자리가 비활성 + 이유를 말한다(0038)', async () => {
@@ -1536,7 +1543,13 @@ describe('일정 화면', () => {
 
       // 완료 한 번이 바뀐 것을 모아 저장하고 팝업을 닫는다.
       fireEvent.click(document.querySelector('[data-event-done]')!);
-      await waitFor(() => expect(events()[0]).toMatchObject({ allDay: false, startTime: '09:00', endTime: '10:00', location: '2층 라운지' }));
+      // 시각이 없던 일정을 시간 일정으로 바꾸면 **지금 기준 다음 눈금**부터 한 시간이다
+      // (요청). 정확한 값은 `nextTimeSlot` 유닛이 보고, 여기서는 그 모양만 본다 —
+      // 실제 시계로 도는 통합 테스트라 15분 경계를 넘길 수 있다.
+      await waitFor(() => expect(events()[0]).toMatchObject({ allDay: false, location: '2층 라운지' }));
+      const saved = events()[0] as { startTime: string; endTime: string };
+      expect(minutesOf(saved.startTime)! % 15).toBe(0);
+      expect(minutesOf(saved.endTime)! - minutesOf(saved.startTime)!).toBe(60);
       await waitFor(() => expect(document.querySelector('[data-event-detail]')).toBeNull());
     });
 

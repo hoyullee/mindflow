@@ -6,14 +6,10 @@
 
 import { useEffect, useRef, useState } from 'react';
 import { Popover } from '../../../components/Popover';
-import { minutesOf, timeLabel } from './model';
+import { hhmm, minutesOf, TIME_STEP, timeLabel } from './model';
 
-/** 15분 간격 — 하루 96칸. 원본의 목록 간격. */
-const STEP = 15;
-
-function hhmm(mins: number): string {
-  return `${`${Math.floor(mins / 60)}`.padStart(2, '0')}:${`${mins % 60}`.padStart(2, '0')}`;
-}
+/** 15분 간격 — 하루 96칸. 눈금은 `model`이 정한다(기본 시각도 그 위에 놓인다). */
+const STEP = TIME_STEP;
 
 export function TimeButton({
   value,

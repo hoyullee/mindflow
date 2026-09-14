@@ -10,6 +10,7 @@ import { focusCalendar } from '../home/calendarFocus';
 import { syncRemindersFromAccount } from './reminderSync';
 import { desktopNotifyAvailable } from '../../platform/desktopBridge';
 import { askNotifyPermission, resolveNotifyPermission, showOsNotification } from './reminderPrefs';
+import { markReminderNoticeRead, reminderNoticeId } from './reminderInbox';
 import { isGoogleReminder, reminderBody, type ReminderItem } from './reminders';
 import { ReminderToast } from './ReminderToast';
 import { useReminderScheduler } from './useReminderScheduler';
@@ -34,6 +35,9 @@ export function ReminderHost() {
    */
   const openCalendar = useCallback(
     (item?: ReminderItem) => {
+      // 그 알림에 대한 **액션**이다 — OS 알림 클릭·네이티브 탭·토스트의 `일정 보기`가
+      // 전부 이 길을 지나므로, 우편함 기록도 여기서 함께 읽음이 된다(요청).
+      if (item) markReminderNoticeRead(reminderNoticeId(item));
       focusCalendar(item ? { date: item.date, eventId: item.eventId, source: isGoogleReminder(item) ? 'google' : 'geurio' } : undefined);
       navigate('/home');
     },
