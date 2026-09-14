@@ -16,6 +16,7 @@ import { takeCalendarFocus } from '../home/calendarFocus';
 import { ReminderHost } from './ReminderHost';
 import { REMINDER_TICK_MS } from './reminders';
 import { notifyCalendarChanged } from './calendarChanged';
+import { listReminderNotices, markReminderNoticesRead } from './reminderInbox';
 import { setGoogleRemindersEnabled, setRemindersEnabled } from './reminderPrefs';
 import { GOOGLE_CALENDAR_SCOPE, storeReminderCalendars } from '../home/calendar/googleCalendar';
 
@@ -240,6 +241,53 @@ describe('일정 알림', () => {
     });
     expect(document.querySelector('[data-reminder-toast]')).toBeNull();
     expect(osNotifications.length).toBe(1);
+  });
+
+  // ── 토스트 ↔ 우편함(요청) ──────────────────────────────────────────────
+  //
+  // 같은 알림이 두 자리에 있다. 한쪽에서 확인했는데 다른 쪽에 그대로 남으면
+  // 사용자는 같은 알림을 두 번 처리해야 한다.
+
+  it('토스트를 닫으면 **우편함 기록도 읽음**이 된다', async () => {
+    fakeNotification('granted');
+    renderHost([EVENT]);
+    await settle();
+    expect(listReminderNotices().map((n) => n.read)).toEqual([false]);
+
+    fireEvent.click(screen.getByLabelText('알림 닫기'));
+    expect(listReminderNotices().map((n) => n.read)).toEqual([true]);
+  });
+
+  it('`일정 보기`를 눌러도 읽음이 된다 — 그것도 액션이다', async () => {
+    fakeNotification('granted');
+    renderHost([EVENT]);
+    await settle();
+
+    fireEvent.click(screen.getByText('일정 보기'));
+    expect(listReminderNotices().map((n) => n.read)).toEqual([true]);
+  });
+
+  it('OS 알림을 눌러도 읽음이 된다', async () => {
+    fakeNotification('granted');
+    renderHost([EVENT]);
+    await settle();
+
+    act(() => lastNotificationClick?.());
+    expect(listReminderNotices().map((n) => n.read)).toEqual([true]);
+  });
+
+  it('**반대 방향** — 우편함을 열어 전부 읽음이 되면 떠 있던 토스트가 내려간다', async () => {
+    fakeNotification('granted');
+    renderHost([EVENT]);
+    await settle();
+    expect(document.querySelector('[data-reminder-toast]')).toBeTruthy();
+
+    // 홈 LNB의 알림 패널을 여는 것이 하는 일(`NotificationsContext.markAllRead`).
+    await act(async () => {
+      markReminderNoticesRead();
+      await Promise.resolve();
+    });
+    expect(document.querySelector('[data-reminder-toast]')).toBeNull();
   });
 
   it('설정에서 끄면 아무것도 뜨지 않는다', async () => {

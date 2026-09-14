@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import type { CalendarEntry } from './entries';
 import { calendarEntries, datedCards, eventEntries } from './entries';
 import type { CalendarEvent } from '../../../adapters/ports';
-import { addDays, daysBetween, addMonth, calendarStats, statBadge, dayProgress, coversDay, dateLabel, dayTimeline, dueBadge, dueTone, entriesOn, gridRange, hourLabel, isSpan, minutesOf, monthCells, monthLabel, weekLanes, overdueEntries, timeLabel, todayISO, upcomingEntries, weekEndISO, weekLabel, weekStartISO, cellRows, weekRows, HOUR_ROW, calendarBrief, calendarBriefLine } from './model';
+import { addDays, daysBetween, addMonth, calendarStats, statBadge, dayProgress, coversDay, dateLabel, dayTimeline, dueBadge, dueTone, entriesOn, gridRange, hourLabel, isSpan, minutesOf, monthCells, monthLabel, weekLanes, overdueEntries, timeLabel, todayISO, upcomingEntries, weekEndISO, weekLabel, weekStartISO, cellRows, weekRows, HOUR_ROW, calendarBrief, calendarBriefLine, nextTimeSlot, TIME_STEP } from './model';
 
 // 일정 화면의 데이터 계층 — 순수 함수라 날짜를 고정해 검증한다.
 
@@ -552,5 +552,31 @@ describe('LNB 일정 카드 요약(calendarBrief)', () => {
 
   it('아무것도 없으면 그 사실을 말한다 — 빈 줄로 두지 않는다', () => {
     expect(calendarBriefLine(calendarBrief([], TODAY))).toBe('예정된 일정이 없어요');
+  });
+});
+
+describe('nextTimeSlot — 시간 일정의 기본 시각(요청)', () => {
+  const at = (h: number, m: number, sec = 0): Date => new Date(2026, 8, 15, h, m, sec);
+
+  it('지금을 눈금 위로 올려 그 자리에서 한 시간', () => {
+    expect(nextTimeSlot(at(14, 3))).toEqual({ start: '14:15', end: '15:15' });
+    expect(nextTimeSlot(at(9, 46))).toEqual({ start: '10:00', end: '11:00' });
+  });
+
+  it('눈금 위에 정확히 서 있어도 **다음 칸**으로 간다 — 미래여야 한다', () => {
+    // 10:00에 10:00으로 잡히면 일정을 만드는 사이에 이미 지난 시각이 된다.
+    expect(nextTimeSlot(at(10, 0)).start).toBe('10:15');
+  });
+
+  it('고른 값은 언제나 목록의 한 줄이다 — 눈금 밖이면 그 줄이 골라지지 않는다', () => {
+    for (let m = 0; m < 24 * 60; m += 7) {
+      const { start } = nextTimeSlot(at(Math.floor(m / 60), m % 60));
+      expect(minutesOf(start)! % TIME_STEP).toBe(0);
+    }
+  });
+
+  it('늦은 밤에는 마지막 칸으로 물러선다 — 날짜를 몰래 넘기지 않는다', () => {
+    expect(nextTimeSlot(at(23, 40))).toEqual({ start: '23:45', end: '23:59' });
+    expect(nextTimeSlot(at(23, 58))).toEqual({ start: '23:45', end: '23:59' });
   });
 });

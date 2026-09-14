@@ -567,6 +567,42 @@ export function minutesOf(hhmm: string | undefined): number | null {
   return m ? +m[1]! * 60 + +m[2]! : null;
 }
 
+/** 자정부터의 분 → `HH:MM`(저장·비교에 쓰는 꼴). */
+export function hhmm(mins: number): string {
+  return `${`${Math.floor(mins / 60)}`.padStart(2, '0')}:${`${mins % 60}`.padStart(2, '0')}`;
+}
+
+/**
+ * 시각 고르기 목록의 간격(분) — 하루 96칸.
+ *
+ * 기본 시각도 **이 눈금 위에** 놓여야 목록에서 그 줄이 골라진 채 열린다. 그래서
+ * 값을 두 벌로 두지 않는다(`TimePop`이 목록을 만들고 팝업들이 기본값을 정한다 —
+ * 갈리면 기본값이 목록에 없는 시각이 된다).
+ */
+export const TIME_STEP = 15;
+
+/** 목록의 마지막 칸(23:45) — 그보다 뒤는 고를 수 없다. */
+const LAST_SLOT = 24 * 60 - TIME_STEP;
+
+/**
+ * **지금 기준 다음으로 고를 수 있는 시각**과 한 시간짜리 구간(요청).
+ *
+ * 예전 기본값은 `09:00`이라 오후에 일정을 만들 때마다 손으로 옮겨야 했다. 지금은
+ * 지금 시각을 눈금 위로 올림해 그 자리에서 한 시간을 잡는다 — 고른 값이 곧 목록의
+ * 한 줄이므로 시각 팝오버도 그 줄로 스크롤된 채 열린다.
+ *
+ * **지금이 눈금 위여도 다음 칸으로 간다** — "미래 시간"이어야 하고, 10:00 정각에
+ * 10:00으로 잡히면 만드는 사이에 이미 지난 시각이 된다.
+ *
+ * 늦은 밤이라 다음 칸이 하루를 넘으면 마지막 칸(23:45)으로 물러선다. 날짜를 몰래
+ * 다음 날로 넘기지 않는다 — 사용자가 고른 날짜가 있다.
+ */
+export function nextTimeSlot(now = new Date()): { start: string; end: string } {
+  const mins = now.getHours() * 60 + now.getMinutes();
+  const start = Math.min(LAST_SLOT, (Math.floor(mins / TIME_STEP) + 1) * TIME_STEP);
+  return { start: hhmm(start), end: hhmm(Math.min(24 * 60 - 1, start + 60)) };
+}
+
 /** 분 → `오전 9:30` 꼴(사이드 목록·블록 안 표기). */
 export function timeLabel(mins: number): string {
   const h = Math.floor(mins / 60);

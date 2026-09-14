@@ -15,12 +15,12 @@
 // 여부·알림)이 **오른쪽 열**로 뜬다(원본 `newEvW` — 900px 두 열). 좁은 화면은 열을
 // 나눌 폭이 없어 한 열에 이어 붙인다.
 
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import type { CSSProperties, ReactNode } from 'react';
 import { Modal, MODAL_DIM, useCardMorph } from '../../../components/Modal';
 import { DateButton, PillButton } from './DatePop';
 import { TimeButton } from './TimePop';
-import { addDays, daysBetween, minutesOf, timeLabel, todayISO } from './model';
+import { addDays, daysBetween, hhmm, minutesOf, nextTimeSlot, timeLabel, todayISO } from './model';
 import { RadioCards } from '../../../components/Segmented';
 import { GoogleEventFields, ReminderField, type GoogleDirectoryApi, type GoogleFieldsValue } from './GoogleEventFields';
 import { RichMemo } from './RichMemo';
@@ -42,11 +42,6 @@ export interface GoogleTarget {
 
 /** 회의 길이 빠른 선택(분) — 30분·1시간·2시간·3시간. 상세 팝업도 같은 줄을 쓴다. */
 export const QUICK_MINUTES = [30, 60, 120, 180];
-
-/** 자정부터의 분 → `HH:MM`. */
-export function hhmm(mins: number): string {
-  return `${`${Math.floor(mins / 60)}`.padStart(2, '0')}:${`${mins % 60}`.padStart(2, '0')}`;
-}
 
 export interface NewEventDraft {
   /** 처음 놓일 날짜(달력에서 고른 날, 없으면 오늘). */
@@ -84,12 +79,21 @@ export function NewEventModal({
   const [allDay, setAllDay] = useState(draft.allDay);
   const [startDate, setStartDate] = useState(draft.date || todayISO());
   const [endDate, setEndDate] = useState(draft.date || todayISO());
-  // 시간표의 빈 시간대를 눌러 열었으면 그 시각부터 한 시간(기본은 09:00–10:00).
-  const [startTime, setStartTime] = useState(draft.at ?? '09:00');
+  // 시간표의 빈 시간대를 눌러 열었으면 **그 시각**부터, 아니면 **지금 기준 다음
+  // 눈금**부터 한 시간(요청). 고정 09:00은 오후에 만들 때마다 손으로 옮겨야 했다.
+  const [startTime, setStartTime] = useState(() => draft.at ?? nextTimeSlot().start);
   const [endTime, setEndTime] = useState(() => {
-    const from = minutesOf(draft.at ?? '09:00');
-    return from === null ? '10:00' : hhmm(Math.min(23 * 60 + 59, from + 60));
+    const from = minutesOf(draft.at ?? '');
+    return from === null ? nextTimeSlot().end : hhmm(Math.min(23 * 60 + 59, from + 60));
   });
+  /**
+   * 사용자가 시각을 손댔는가 — **기본값은 기본값인 동안에만** 다시 계산한다.
+   *
+   * `새 일정`은 종일로 열리므로(컨트롤러 기본값) 시간 일정은 늘 토글을 거쳐 온다.
+   * 그때마다 지금 기준으로 다시 잡아 주되, 이미 고른 시각이 있으면 건드리지 않는다
+   * (종일을 켰다 끄는 사이에 입력이 사라지면 안 된다).
+   */
+  const timePicked = useRef(false);
   const [location, setLocation] = useState('');
   const [note, setNote] = useState('');
   // 일정 색 — 팔레트가 목적지마다 다르므로 **값을 갈라 둔다**(우리 표는 hex, 구글은
@@ -134,6 +138,7 @@ export function NewEventModal({
    * 종료를 손으로 고칠 때까지 저장이 막힌다(실브라우저 프로브가 잡은 자리).
    */
   const pickStart = (v: string): void => {
+    timePicked.current = true;
     const from = minutesOf(startTime);
     const to = minutesOf(endTime);
     const next = minutesOf(v);
@@ -327,7 +332,21 @@ export function NewEventModal({
             <span style={{ display: 'flex', alignItems: 'center', gap: 9 }}>
               <Label>날짜와 시간</Label>
               <span style={{ flex: 1, minWidth: 0 }} />
-              <PillButton on={allDay} attrs={{ 'data-new-allday': '1' }} onClick={() => setAllDay((v) => !v)}>
+              <PillButton
+                on={allDay}
+                attrs={{ 'data-new-allday': '1' }}
+                onClick={() => {
+                  // 종일을 **끄는** 순간이 곧 "시간 일정으로 만들겠다"이므로 그때
+                  // 지금 기준으로 다시 잡는다 — 팝업을 오래 열어 두었거나 종일로
+                  // 열린 뒤 한참 지났을 수 있다. 이미 고른 시각은 건드리지 않는다.
+                  if (allDay && !timePicked.current) {
+                    const slot = nextTimeSlot();
+                    setStartTime(slot.start);
+                    setEndTime(slot.end);
+                  }
+                  setAllDay((v) => !v);
+                }}
+              >
                 종일
               </PillButton>
             </span>
@@ -347,7 +366,10 @@ export function NewEventModal({
                 <span style={{ display: 'flex', alignItems: 'center', gap: 7, flex: '1 1 100%', minWidth: 0 }}>
                   <TimeButton label="시작 시각" value={startTime} attrs={{ 'data-new-start': '1' }} onPick={pickStart} />
                   <span style={{ flex: '0 0 auto', fontSize: 12, color: 'var(--mf-faint2)' }}>–</span>
-                  <TimeButton label="종료 시각" value={endTime} min={startTime} attrs={{ 'data-new-end': '1' }} onPick={(v) => setEndTime(v)} />
+                  <TimeButton label="종료 시각" value={endTime} min={startTime} attrs={{ 'data-new-end': '1' }} onPick={(v) => {
+                    timePicked.current = true;
+                    setEndTime(v);
+                  }} />
                 </span>
               )}
             </div>
@@ -362,6 +384,7 @@ export function NewEventModal({
                     onClick={() => {
                       const from = minutesOf(startTime);
                       if (from === null) return;
+                      timePicked.current = true;
                       setEndTime(hhmm(Math.min(23 * 60 + 59, from + m)));
                     }}
                     className="mf-ctl"

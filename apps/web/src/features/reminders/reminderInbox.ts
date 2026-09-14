@@ -67,11 +67,19 @@ function write(list: Stored[]): void {
 }
 
 /**
+ * 우편함 기록의 id — **토스트와 우편함이 같은 알림을 가리키는 열쇠**다.
+ * 한쪽에서 확인한 것을 다른 쪽에서 알아보려면 두 자리가 같은 값을 써야 한다.
+ */
+export function reminderNoticeId(item: ReminderItem): string {
+  return `${item.key}@${item.fireAt}`;
+}
+
+/**
  * 방금 띄운 알림을 기록한다. **띄운 그 자리에서** 부른다(스케줄러) — 화면이 떠
  * 있든 아니든 남아야 하고, 토스트를 놓친 사용자가 나중에 확인하는 자리가 이것이다.
  */
 export function pushReminderNotice(item: ReminderItem, now = Date.now()): void {
-  const id = `${item.key}@${item.fireAt}`;
+  const id = reminderNoticeId(item);
   const list = read();
   if (list.some((n) => n.id === id)) return; // 탭이 여럿이면 각자 훑는다
   write([
@@ -111,6 +119,27 @@ export function markReminderNoticesRead(): void {
   const list = read();
   if (!list.some((n) => !n.read)) return;
   write(list.map((n) => ({ ...n, read: true })));
+}
+
+/**
+ * **한 건만** 읽음으로 — 토스트에서 액션을 취하면(닫기·일정 보기·OS 알림 클릭)
+ * 우편함에도 확인한 것으로 남는다(요청: 두 영역을 같게).
+ */
+export function markReminderNoticeRead(id: string): void {
+  const list = read();
+  if (!list.some((n) => n.id === id && !n.read)) return;
+  write(list.map((n) => (n.id === id ? { ...n, read: true } : n)));
+}
+
+/**
+ * 이미 읽은 기록의 id — 반대 방향이다: 우편함을 열어 전부 읽음이 되면 **떠 있던
+ * 토스트도 내린다**. 기록이 없는 알림(TTL로 정리됨·저장소 비움)은 여기 담기지
+ * 않으므로 확인하지 못한 것을 내리지 않는다.
+ */
+export function readReminderNoticeIds(): Set<string> {
+  const out = new Set<string>();
+  for (const n of read()) if (n.read) out.add(n.id);
+  return out;
 }
 
 /** 새 기록이 생기면 우편함이 곧바로 다시 읽는다(같은 탭 안의 신호). */

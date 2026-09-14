@@ -28,8 +28,8 @@ import { Modal, MODAL_DIM, useCardMorph } from '../../../components/Modal';
 import { DateButton, PillButton } from './DatePop';
 import { SpanBar } from './SpanBar';
 import { TimeButton } from './TimePop';
-import { addDays, daysBetween, minutesOf, timeLabel, todayISO } from './model';
-import { destChipStyle, destDotStyle, hhmm, QUICK_MINUTES } from './NewEventModal';
+import { addDays, daysBetween, hhmm, minutesOf, nextTimeSlot, timeLabel, todayISO } from './model';
+import { destChipStyle, destDotStyle, QUICK_MINUTES } from './NewEventModal';
 import { ReminderField } from './GoogleEventFields';
 import { EventColorField, type EventColorOption } from './eventColor';
 import { MapLink } from './fieldBits';
@@ -63,13 +63,16 @@ interface Draft {
 }
 
 function draftOf(e: CalendarEvent, color: string | null): Draft {
+  const slot = nextTimeSlot();
   return {
     title: e.title,
     allDay: e.allDay,
     startDate: e.startDate,
     endDate: e.endDate,
-    startTime: e.startTime ?? '09:00',
-    endTime: e.endTime ?? '10:00',
+    // 시각이 없는 일정(종일)을 시간 일정으로 바꿀 때 쓸 기본값 — 고정 09:00이
+    // 아니라 **지금 기준 다음 눈금**부터 한 시간이다(새 일정 팝업과 같은 규칙).
+    startTime: e.startTime ?? slot.start,
+    endTime: e.endTime ?? slot.end,
     location: e.location ?? '',
     note: e.note ?? '',
     color,

@@ -42,7 +42,13 @@ import {
   type ReminderItem,
 } from './reminders';
 import { onCalendarChanged } from './calendarChanged';
-import { pushReminderNotice } from './reminderInbox';
+import {
+  markReminderNoticeRead,
+  onReminderInboxChange,
+  pushReminderNotice,
+  readReminderNoticeIds,
+  reminderNoticeId,
+} from './reminderInbox';
 import {
   googleRemindersEnabled,
   markReminderFired,
@@ -310,6 +316,33 @@ export function useReminderScheduler(
     };
   }, [nativeOwned]);
 
-  const dismiss = useCallback(() => setQueue((q) => q.slice(1)), []);
+  // ── 토스트 ↔ 우편함을 한 몸으로(요청) ────────────────────────────────────
+  //
+  // 같은 알림이 두 자리에 있다: 화면 아래 토스트와 홈 LNB의 우편함. 한쪽에서
+  // 확인했는데 다른 쪽에 그대로 남으면 사용자는 같은 알림을 두 번 처리해야 한다.
+  //
+  // 그래서 **양방향**이다: 토스트에서 액션을 취하면(아래 `dismiss`) 우편함 기록도
+  // 읽음이 되고, 우편함을 열어 전부 읽음이 되면 떠 있던 토스트도 내려간다.
+  useEffect(
+    () =>
+      onReminderInboxChange(() => {
+        const done = readReminderNoticeIds();
+        if (!done.size) return;
+        setQueue((q) => {
+          const next = q.filter((i) => !done.has(reminderNoticeId(i)));
+          // 길이가 같으면 같은 배열을 돌려준다 — 새 기록이 생길 때마다(읽지 않은
+          // 알림이 하나 늘 때) 쓸데없이 다시 그리지 않게.
+          return next.length === q.length ? q : next;
+        });
+      }),
+    [],
+  );
+
+  /** 토스트를 넘긴다 — **그 액션이 곧 확인**이므로 우편함 기록도 읽음이 된다. */
+  const dismiss = useCallback(() => {
+    const head = queue[0];
+    if (head) markReminderNoticeRead(reminderNoticeId(head));
+    setQueue((q) => q.slice(1));
+  }, [queue]);
   return { current: queue[0] ?? null, rest: Math.max(0, queue.length - 1), dismiss };
 }
