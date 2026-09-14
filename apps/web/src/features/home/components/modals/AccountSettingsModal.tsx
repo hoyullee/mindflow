@@ -32,6 +32,7 @@ import {
 import { nativeNotificationsAvailable } from '../../../../platform/nativeNotifications';
 import { useBackend } from '../../../../adapters/BackendContext';
 import { DEFAULT_NOTIFICATION_PREFS, type NotificationPrefs } from '../../../../adapters/ports';
+import { currentPushSubscription, pushAvailable, subscribePush, unsubscribePush } from '../../../../pwa/webPush';
 
 interface Props {
   state: HomeState;
@@ -94,6 +95,54 @@ export function AccountSettingsModal({ state, controller }: Props) {
     void backend.notificationStore.savePrefs(next).then((r) => {
       if (r.error) setOutPrefs(prev);
     });
+  };
+
+  // 웹 푸시(0040). 스위치 하나가 **계정 값 + 이 기기의 구독**을 함께 움직인다 —
+  // 그 둘이 갈리면 "켜 뒀는데 안 온다"(구독 없음)나 "껐는데 온다"(다른 기기 구독이
+  // 살아 있음)가 되는데, 사용자에게는 둘 다 고장으로 읽힌다.
+  const canPush = pushAvailable();
+  /** 이 기기가 지금 구독돼 있는가 — 켜진 것으로 보이려면 계정 값과 **둘 다**여야 한다. */
+  const [pushHere, setPushHere] = useState(false);
+  const [pushBusy, setPushBusy] = useState(false);
+  useEffect(() => {
+    if (!notifyViewOpen || !canPush) return;
+    let alive = true;
+    void currentPushSubscription().then((sub) => {
+      if (alive) setPushHere(!!sub);
+    });
+    return () => {
+      alive = false;
+    };
+  }, [notifyViewOpen, canPush]);
+  const pushOn = outPrefs.pushMentions && pushHere;
+  /**
+   * 켜기: 이 클릭이 곧 권한을 물을 제스처다(저절로 뜨는 창을 만들지 않는다 —
+   * 일정 알림 스위치와 같은 규칙). 거절당하면 **계정 값을 켜지 않는다**: 켜 두면
+   * 이 기기에서는 영영 안 오는데 스위치만 켜져 있어 거짓말이 된다.
+   * 끄기: 이 기기의 구독을 거두고 계정 값도 끈다(다른 기기도 함께 조용해진다).
+   */
+  const togglePush = (): void => {
+    if (pushBusy) return;
+    setPushBusy(true);
+    if (pushOn) {
+      void unsubscribePush()
+        .then(async (endpoint) => {
+          if (endpoint) await backend.notificationStore.removePushSubscription(endpoint);
+          setPushHere(false);
+          saveOutPrefs({ ...outPrefs, pushMentions: false });
+        })
+        .finally(() => setPushBusy(false));
+      return;
+    }
+    void subscribePush()
+      .then(async (sub) => {
+        if (!sub) return; // 권한 거절·구독 실패 — 아무것도 바꾸지 않는다
+        const r = await backend.notificationStore.savePushSubscription({ ...sub, ua: navigator.userAgent.slice(0, 200) });
+        if (r.error) return;
+        setPushHere(true);
+        saveOutPrefs({ ...outPrefs, pushMentions: true });
+      })
+      .finally(() => setPushBusy(false));
   };
 
   // 알림 권한. 웹은 동기로 알 수 있지만 **모바일 앱은 OS에 물어야** 안다(3단계) —
@@ -450,6 +499,38 @@ export function AccountSettingsModal({ state, controller }: Props) {
                   knob="var(--mf-card)"
                 />
               </div>
+              {/* 웹 푸시(0040) — 메일과 **같은 묶음**에 둔다: 둘 다 "앱을 안 보고
+                  있을 때 밖으로 나갈까"이고, 고를 때 서로를 견주게 된다(둘 다 켜면
+                  푸시가 먼저 오고 30분 뒤 메일이 따라온다 — 읽으면 메일은 안 온다).
+
+                  **쓸 수 없는 환경에서는 행이 없다**: 설치형 셸(Electron에는 푸시
+                  서비스가 없다)·Capacitor WebView·VAPID 키를 넣지 않은 배포.
+                  눌러도 아무 일이 없는 스위치를 두지 않는다. */}
+              {canPush && (
+                <div
+                  data-mention-push-row
+                  style={{ display: 'flex', alignItems: 'center', flexWrap: 'wrap', gap: 13, padding: '13px 15px', borderTop: '1px solid var(--mf-border-soft)' }}
+                >
+                  <div style={{ minWidth: 0, flex: '1 1 180px' }}>
+                    <div style={{ fontWeight: 700, fontSize: 13.5 }}>멘션 푸시</div>
+                    <div data-mention-push-note style={{ marginTop: 3, fontSize: 12.5, color: 'var(--mf-muted)' }}>
+                      {pushOn
+                        ? '앱을 닫아 뒀어도 이 기기에 바로 떠요'
+                        : typeof Notification !== 'undefined' && Notification.permission === 'denied'
+                          ? '브라우저가 알림을 막아 뒀어요 — 사이트 알림을 허용해야 켤 수 있어요'
+                          : '켜면 이 기기를 등록하고, 멘션을 바로 알려 줘요'}
+                    </div>
+                  </div>
+                  <Switch
+                    checked={pushOn}
+                    onCheckedChange={togglePush}
+                    label="멘션 푸시"
+                    accent="var(--mf-accent)"
+                    track="var(--mf-scroll)"
+                    knob="var(--mf-card)"
+                  />
+                </div>
+              )}
             </SettingsGroup>
             {/* 일정 알림(요청: 앱에서 일정 알림을 OS 알림으로) — **이 기기**의 설정이라
                 워크스페이스 블롭이 아니라 localStorage에 산다(OS 알림 권한 자체가 기기·

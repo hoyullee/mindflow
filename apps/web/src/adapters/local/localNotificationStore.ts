@@ -76,6 +76,19 @@ export class LocalNotificationStore implements NotificationStore {
     return {};
   }
 
+  /**
+   * 데모 모드에는 **쏠 서버가 없다** — 받아 두기만 하고 아무 일도 하지 않는다.
+   * 오류를 돌려주지 않는 이유: 호출부(설정 스위치)는 실패를 "제자리로 되돌리기"로
+   * 읽는데, 여기서는 기기 구독 자체는 진짜로 만들어졌기 때문이다.
+   */
+  async savePushSubscription(): Promise<{ error?: string }> {
+    return {};
+  }
+
+  async removePushSubscription(): Promise<{ error?: string }> {
+    return {};
+  }
+
   subscribe(onChange: () => void): () => void {
     // pushLocalNotification의 ping을 받는다 — 내 앞으로 온 신호만.
     if (typeof BroadcastChannel === 'undefined') return () => {};
