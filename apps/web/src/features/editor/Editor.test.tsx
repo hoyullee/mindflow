@@ -121,4 +121,26 @@ describe('Editor', () => {
     expect(within(outline).getByText('제품 로드맵')).toBeTruthy();
     expect(within(outline).getByText('사용자 인터뷰')).toBeTruthy();
   });
+
+  // 요청: 아웃라인 보기에도 문서 칩을 띄운다 — 제목·저장 상태·`뒤로 가기`가
+  // 보기를 바꿨다는 이유로 사라지지 않게. (설치형 앱에는 GNB 홈 버튼이 없어
+  // 이 칩의 `뒤로 가기`가 홈으로 가는 유일한 문이다.)
+  it('아웃라인 보기에도 문서 칩이 선다(요청)', async () => {
+    localStorage.setItem('mindflow_doc_golden', JSON.stringify(GOLDEN_DOC));
+    const user = userEvent.setup();
+    const { container } = renderEditor('/editor?map=golden&title=x');
+
+    expect(screen.getByRole('button', { name: '뒤로 가기' })).toBeTruthy();
+
+    await user.click(screen.getByRole('button', { name: /보기/ }));
+    await user.click(screen.getByRole('menuitem', { name: /아웃라인/ }));
+
+    expect(container.querySelector('.mf-ed-outline')).toBeTruthy();
+    // 칩은 스크롤 컨테이너 **밖**에 있다 — 안에 있으면 목록과 함께 밀려 올라간다.
+    const back = screen.getByRole('button', { name: '뒤로 가기' });
+    expect(back).toBeTruthy();
+    expect(back.closest('.mf-ed-outline')).toBeNull();
+    // 제목·저장 버튼도 함께 온다(칩 전체가 선다는 뜻).
+    expect(screen.getByRole('button', { name: /저장/ })).toBeTruthy();
+  });
 });
