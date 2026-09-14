@@ -31,9 +31,9 @@ export function Toolbar({ controller }: ToolbarProps) {
   const isMobile = useIsMobile();
   // 설치형 앱에서는 **타이틀 바가 브랜드를 이미 들고 있다**(`DesktopTitleBar` —
   // 코랄 칩 + 워드마크). 그래서 이 바의 첫 칸에 같은 것을 또 그리면 위아래로 겹쳐
-  // 보인다(제보). 그 자리를 **내가 누구인가**에 내주고(요청), 홈으로 가는 문은
-  // 아이콘 버튼으로 남긴다 — 아웃라인 보기에는 독칩이 없어 이 버튼이 유일한 문이다.
-  // 브라우저·PWA·옛 셸에서는 0이라 아무것도 달라지지 않는다.
+  // 보인다(제보). 그 자리는 **내가 누구인가**만 말한다(요청) — 홈 버튼은 두지 않는다.
+  // 브라우저·PWA·옛 셸에서는 0이라 아무것도 달라지지 않는다(그쪽은 브랜드 로고가
+  // 그대로 홈으로 가는 문이다).
   const desktopApp = desktopTitleBarHeight() > 0;
   const [openMenu, setOpenMenu] = useState<MenuKey | null>(null);
 
@@ -75,41 +75,19 @@ export function Toolbar({ controller }: ToolbarProps) {
           `goHome`/`goBack`이 함께 지킨다. */}
       {desktopApp ? (
         <>
-          {/* 설치형 앱: 브랜드 자리를 [홈 아이콘][내 프로필]로 나눈다. 홈 버튼은
-              같은 `goHome`이라 저장 규칙이 갈리지 않고, 프로필 칩은 **이 창이 어느
-              계정으로 들어와 있는지**를 말한다(브라우저와 달리 창에 계정 표시가 없다). */}
-          <button
-            type="button"
-            className="mf-ed-btn"
-            onClick={controller.goHome}
-            title="홈으로"
-            aria-label="홈으로"
-            style={{
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              width: isMobile ? 44 : 34,
-              height: isMobile ? 44 : 34,
-              marginLeft: -2,
-              flexShrink: 0,
-              border: 'none',
-              borderRadius: 9,
-              background: 'none',
-              color: 'inherit',
-              cursor: 'pointer',
-            }}
-          >
-            <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-              <path d="M3.5 11 12 4l8.5 7" />
-              <path d="M5.5 9.7V19a1 1 0 0 0 1 1h11a1 1 0 0 0 1-1V9.7" />
-            </svg>
-          </button>
-          {/* 이 칩은 **누르는 것이 아니다** — 에디터에는 프로필로 갈 화면이 없고
+          {/* 설치형 앱: 브랜드 자리는 **내 프로필**뿐이다(요청) — 타이틀 바가 이미
+              브랜드를 들고 있고, 이 칩은 **이 창이 어느 계정으로 들어와 있는지**를
+              말한다(브라우저와 달리 창에 계정 표시가 없다).
+
+              홈 버튼은 걷어냈다. 홈으로 가는 문은 독칩의 `뒤로 가기`이고, 그것이 없는
+              아웃라인 보기에서는 `보기` 메뉴로 캔버스로 돌아간 뒤 그 버튼을 쓴다.
+
+              이 칩은 **누르는 것이 아니다** — 에디터에는 프로필로 갈 화면이 없고
               (설정은 홈의 일이다) 누르면 아무 일도 없는 버튼을 두지 않는다. */}
           <span
             data-editor-identity
             title={controller.myName}
-            style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '0 6px 0 2px', minWidth: 0, flexShrink: 0 }}
+            style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '0 6px 0 4px', minWidth: 0, flexShrink: 0 }}
           >
             <span
               style={{
