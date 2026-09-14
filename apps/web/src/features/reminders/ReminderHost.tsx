@@ -3,12 +3,13 @@
 // **문지기(`RequireAuth`) 안**에 마운트한다: 로그인한 화면이면 어디서든(홈·에디터)
 // 알림이 와야 하고, 반대로 랜딩·로그인·약관에서는 일정을 조회할 이유가 없다.
 
-import { useCallback, useEffect } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useSpaceStore } from '../../adapters/BackendContext';
 import { focusCalendar } from '../home/calendarFocus';
 import { syncRemindersFromAccount } from './reminderSync';
-import { showOsNotification } from './reminderPrefs';
+import { desktopNotifyAvailable } from '../../platform/desktopBridge';
+import { askNotifyPermission, resolveNotifyPermission, showOsNotification } from './reminderPrefs';
 import { isGoogleReminder, reminderBody, type ReminderItem } from './reminders';
 import { ReminderToast } from './ReminderToast';
 import { useReminderScheduler } from './useReminderScheduler';
@@ -39,21 +40,50 @@ export function ReminderHost() {
     [navigate],
   );
 
-  const onFire = useCallback(
-    (item: ReminderItem) => {
-      // OS 알림이 막혀 있어도(권한 없음·생성 실패) **인앱 토스트는 그대로 뜬다** —
-      // 알림이 통째로 사라지지 않게. 권한을 얻는 자리는 설정의 `일정 알림`이다.
-      //
-      // 모바일에서 OS가 예약을 들고 있는 모드라면 이 콜백은 애초에 불리지 않는다
-      // (그때는 OS가 띄우고 우리는 그 수신 이벤트로 토스트만 잇는다).
-      void showOsNotification({
+  /**
+   * OS 알림이 못 떴고 **아직 물어볼 수 있는** 상태인가(권한 `default`).
+   *
+   * 제보: 인앱 토스트는 떴는데 OS 알림이 오지 않았고, 설정의 `테스트 알림`을 누르면
+   * 정상으로 떴다. 두 길의 차이는 하나뿐이다 — **테스트 버튼은 물어본다**(그 클릭이
+   * 제스처다). 스케줄러의 주기 확인은 제스처가 아니라 물어볼 수 없어, 권한이
+   * `default`인 기기에서는 조용히 인앱 토스트만 뜬다(그 기기에서는 영영 그렇다).
+   *
+   * 그래서 **알림이 앱 안에서만 뜬 그 순간**에 물어볼 길을 낸다 — 토스트의 버튼이
+   * 곧 제스처다. `denied`·`unsupported`에는 내지 않는다(브라우저가 다시 묻지 않아
+   * 죽은 버튼이 된다 — 그때 할 말은 설정 화면의 `일정 알림` 행이 이미 하고 있다).
+   */
+  const [askAllow, setAskAllow] = useState(false);
+
+  const showFor = useCallback(
+    (item: ReminderItem) =>
+      showOsNotification({
         title: item.title,
         body: reminderBody(item),
         tag: item.key,
         onClick: () => openCalendar(item),
+      }),
+    [openCalendar],
+  );
+
+  const onFire = useCallback(
+    (item: ReminderItem) => {
+      // OS 알림이 막혀 있어도(권한 없음·생성 실패) **인앱 토스트는 그대로 뜬다** —
+      // 알림이 통째로 사라지지 않게.
+      //
+      // 모바일에서 OS가 예약을 들고 있는 모드라면 이 콜백은 애초에 불리지 않는다
+      // (그때는 OS가 띄우고 우리는 그 수신 이벤트로 토스트만 잇는다).
+      void showFor(item).then((shown) => {
+        if (shown) return;
+        // **왜** 못 떴는지 물어본다 — 물어볼 수 있을 때만 버튼을 낸다.
+        void resolveNotifyPermission().then((perm) => {
+          setAskAllow(perm === 'default');
+          // 못 뜬 것은 문제다 — 한 줄로 사유를 남긴다(설정의 `테스트 알림`이 눌러서
+          // 읽는 답이라면, 이건 지나간 알림에 대한 답이다). 성공은 적지 않는다.
+          console.warn('[geurio] OS 알림을 띄우지 못했어요', { shell: desktopNotifyAvailable(), perm });
+        });
       });
     },
-    [openCalendar],
+    [showFor],
   );
 
   const { current, rest, dismiss } = useReminderScheduler(onFire, openCalendar);
@@ -68,6 +98,18 @@ export function ReminderHost() {
         openCalendar(current);
       }}
       onDismiss={dismiss}
+      onAllow={
+        askAllow
+          ? () => {
+              void askNotifyPermission().then((perm) => {
+                setAskAllow(false);
+                // 허용한 그 자리에서 **그 알림을 실제로 띄운다** — 누른 결과가 눈에
+                // 보여야 하고, 방금 온 알림이 OS 알림으로는 끝내 안 뜨는 것도 아니다.
+                if (perm === 'granted') void showFor(current);
+              });
+            }
+          : undefined
+      }
     />
   );
 }

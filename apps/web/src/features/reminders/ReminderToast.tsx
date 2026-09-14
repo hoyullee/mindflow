@@ -7,7 +7,13 @@ import { minutesOf, timeLabel } from '../home/calendar/model';
 import { toastShellStyle } from '../../pwa/toastShell';
 import { reminderLead, type ReminderItem } from './reminders';
 
-export function ReminderToast({ item, rest, onOpen, onDismiss }: { item: ReminderItem; rest: number; onOpen: () => void; onDismiss: () => void }) {
+/**
+ * @param onAllow OS 알림이 **뜨지 못했고 아직 물어볼 수 있을 때만** 넘어온다
+ *   (`ReminderHost`). 알림이 앱 안에서만 뜬 그 순간이 허용을 물을 수 있는 유일하게
+ *   자연스러운 자리다 — 권한 요청은 사용자 제스처에서만 되는데, 스케줄러의 주기
+ *   확인은 제스처가 아니라 그때는 물어볼 수 없다(그래서 조용히 인앱 토스트만 떴다).
+ */
+export function ReminderToast({ item, rest, onOpen, onDismiss, onAllow }: { item: ReminderItem; rest: number; onOpen: () => void; onDismiss: () => void; onAllow?: () => void }) {
   const mins = minutesOf(item.startTime);
   const when = mins === null ? item.startTime : timeLabel(mins);
 
@@ -33,6 +39,19 @@ export function ReminderToast({ item, rest, onOpen, onDismiss }: { item: Reminde
           {when} · {reminderLead(item.minutes)}
           {rest > 0 && ` · ${rest}건 더`}
         </span>
+        {onAllow && (
+          <span style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 12, color: 'rgba(255,255,255,.72)', whiteSpace: 'nowrap' }}>
+            앱 안에서만 떴어요 ·
+            <button
+              type="button"
+              data-reminder-allow
+              onClick={onAllow}
+              style={{ padding: 0, border: 'none', background: 'transparent', color: '#fff', fontFamily: 'inherit', fontSize: 12, fontWeight: 700, textDecoration: 'underline', cursor: 'pointer' }}
+            >
+              OS 알림 허용
+            </button>
+          </span>
+        )}
       </span>
       <button
         type="button"
