@@ -262,9 +262,20 @@ export function Editor() {
             )}
           </>
         ) : (
-          <div className="mf-ed-outline" style={{ position: 'absolute', inset: 0, zIndex: 15, background: controller.theme.appBg, overflowY: 'auto' }}>
-            <OutlineView controller={controller} />
-          </div>
+          <>
+            <div className="mf-ed-outline" style={{ position: 'absolute', inset: 0, zIndex: 15, background: controller.theme.appBg, overflowY: 'auto' }}>
+              <OutlineView controller={controller} />
+            </div>
+            {/* 문서 칩은 아웃라인에도 선다(요청). 여기에만 없으면 **제목·저장 상태·
+                뒤로 가기**가 보기를 바꿨다는 이유로 통째로 사라진다 — 특히 설치형
+                앱에서는 GNB에 홈 버튼이 없어(요청) 홈으로 가는 문이 이 칩의
+                `뒤로 가기` 하나뿐이라, 아웃라인에 들어가면 나갈 길이 `보기` 메뉴를
+                거치는 두 걸음이 됐다.
+                스크롤 컨테이너 **밖**에 둔다 — 안에 넣으면 절대 배치라도 목록과
+                함께 밀려 올라간다. 목록은 칩 아래로 지나가지만 유리질 카드(반투명
+                + 블러)라 캔버스·칸반에서와 같은 결로 읽힌다. */}
+            <DocChip controller={controller} />
+          </>
         )}
       </div>
     </div>
