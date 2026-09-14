@@ -30,6 +30,8 @@ import {
   type DesktopBackground,
 } from '../../../../platform/desktopBridge';
 import { nativeNotificationsAvailable } from '../../../../platform/nativeNotifications';
+import { useBackend } from '../../../../adapters/BackendContext';
+import { DEFAULT_NOTIFICATION_PREFS, type NotificationPrefs } from '../../../../adapters/ports';
 
 interface Props {
   state: HomeState;
@@ -66,6 +68,34 @@ export function AccountSettingsModal({ state, controller }: Props) {
       }),
     [],
   );
+  // 앱 **밖으로** 오는 알림(0039) — 멘션 메일. 계정 설정이라 서버에서 읽는다.
+  // **`알림` 화면을 열었을 때만** 읽는다(홈을 켤 때마다 왕복하지 않는다 — 구글
+  // 캘린더 목록과 같은 규칙). 도착 전에는 기본값을 그리는데, 그게 서버의 동작과
+  // 같아서(행이 없으면 켜짐) 잠깐 보이는 값도 거짓말이 아니다.
+  const backend = useBackend();
+  const [outPrefs, setOutPrefs] = useState<NotificationPrefs>(DEFAULT_NOTIFICATION_PREFS);
+  const notifyViewOpen = state.accountSettingsOpen && state.settingsView === 'notify';
+  useEffect(() => {
+    if (!notifyViewOpen) return;
+    let alive = true;
+    void backend.notificationStore.loadPrefs().then((p) => {
+      if (alive) setOutPrefs(p);
+    });
+    return () => {
+      alive = false;
+    };
+  }, [notifyViewOpen, backend]);
+  /** 스위치는 **즉시** 움직이고 저장은 뒤따른다 — 실패하면 제자리로 돌린다
+      (토스트를 띄우지 않는 이유: 이 화면에는 결과를 말할 자리가 없고, 되돌아온
+      스위치가 그 자체로 "안 됐다"는 뜻이다). */
+  const saveOutPrefs = (next: NotificationPrefs): void => {
+    const prev = outPrefs;
+    setOutPrefs(next);
+    void backend.notificationStore.savePrefs(next).then((r) => {
+      if (r.error) setOutPrefs(prev);
+    });
+  };
+
   // 알림 권한. 웹은 동기로 알 수 있지만 **모바일 앱은 OS에 물어야** 안다(3단계) —
   // 그래서 첫 값은 웹 기준이고 마운트 직후 실제 값으로 맞춘다. 그 사이 한 프레임은
   // 아래 note의 마지막 갈래("허용하면 …")로 떨어지는데, 켤 수 있다는 말이라 어느
@@ -224,7 +254,7 @@ export function AccountSettingsModal({ state, controller }: Props) {
             </div>
             {detail && (
               <div data-settings-subtitle style={{ fontSize: 12.5, color: 'var(--mf-muted)', minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                {view === 'account' ? '로그인 수단과 계정 관리' : view === 'notify' ? '일정 알림을 어디서 받을까' : view === 'calendar' ? '보여 줄 캘린더와 공휴일' : view === 'version' ? '현재 버전과 업데이트' : '사진과 표시 이름'}
+                {view === 'account' ? '로그인 수단과 계정 관리' : view === 'notify' ? '알림을 어디서 어떻게 받을까' : view === 'calendar' ? '보여 줄 캘린더와 공휴일' : view === 'version' ? '현재 버전과 업데이트' : '사진과 표시 이름'}
               </div>
             )}
           </div>
@@ -388,6 +418,39 @@ export function AccountSettingsModal({ state, controller }: Props) {
           ) : view === 'notify' ? (
             <div key="notify" className={viewClass}>
               {/* 화면 이름은 헤더가 말한다 — 여기서는 스위치들만 그린다. */}
+            {/* ── 앱 밖으로 오는 알림(0039) ──────────────────────────────────
+                멘션 메일은 **일정 알림과 성격이 다르다**: 저 아래 구획은 "이 기기가
+                무엇을 띄울까"이고(OS 알림 권한이 있어야 뜻이 있다), 이 구획은 "앱을
+                안 보고 있을 때 밖으로 나갈까"다. 그래서 알림 권한과 무관하게 **언제나**
+                그린다 — 권한이 없는 브라우저에서도 메일은 간다.
+
+                맨 위인 이유: 아래 구획은 `Notification`이 없는 환경에서 통째로 사라져
+                화면이 빌 수 있다. 늘 서는 것이 먼저 오는 편이 낫다.
+
+                **기본이 켜짐**인 이유는 이 메일이 이미 조용하기 때문이다 — 읽으면
+                안 오고, 30분에 한 통으로 묶이고, 하루 상한이 있다(0039). 꺼짐으로
+                시작하면 "멘션했는데 상대가 몰랐다"가 기본 동작이 되는데, 그게 이
+                기능을 만든 이유다. */}
+            <SettingsGroup style={{ marginTop: 14 }} attrs={{ 'data-mention-mail-group': '' }}>
+              <div style={{ display: 'flex', alignItems: 'center', flexWrap: 'wrap', gap: 13, padding: '14px 15px' }}>
+                <div style={{ minWidth: 0, flex: '1 1 180px' }}>
+                  <div style={{ fontWeight: 700, fontSize: 14.5 }}>멘션 메일</div>
+                  <div data-mention-mail-note style={{ marginTop: 3, fontSize: 12.5, color: 'var(--mf-muted)' }}>
+                    {outPrefs.emailMentions
+                      ? '읽지 않은 멘션만 30분에 한 번 묶어서 보내요 — 앱에서 확인했으면 오지 않아요'
+                      : '누가 나를 불러도 메일로 알리지 않아요'}
+                  </div>
+                </div>
+                <Switch
+                  checked={outPrefs.emailMentions}
+                  onCheckedChange={() => saveOutPrefs({ ...outPrefs, emailMentions: !outPrefs.emailMentions })}
+                  label="멘션 메일"
+                  accent="var(--mf-accent)"
+                  track="var(--mf-scroll)"
+                  knob="var(--mf-card)"
+                />
+              </div>
+            </SettingsGroup>
             {/* 일정 알림(요청: 앱에서 일정 알림을 OS 알림으로) — **이 기기**의 설정이라
                 워크스페이스 블롭이 아니라 localStorage에 산다(OS 알림 권한 자체가 기기·
                 브라우저마다 따로다 — "노트북에서는 받고 회사 PC에서는 안 받는다"가
@@ -779,25 +842,27 @@ export function AccountSettingsModal({ state, controller }: Props) {
               title="계정 설정"
               sub="비밀번호와 연동, 탈퇴"
             />
-            {/* 알림(요청) — '계정 설정' **아래**다. 세 스위치(일정 알림·구글 일정도
-                알림·앱을 닫아도 알림)를 첫 화면에 늘어놓으면 그것만으로 화면이
-                뒤덮인다 — 계정 설정·캘린더 연동과 같은 규칙으로 한 겹 안에 둔다.
-                `Notification`이 아예 없는 환경에서는 **행 자체가 없다**(그 안에
-                그릴 것이 하나도 없다 — 눌러도 빈 화면이 열릴 진입점을 두지 않는다). */}
-            {(nativeNotify || perm !== 'unsupported') && (
-              <SettingsRow
-                attrs={{ 'data-notify-detail-row': '' }}
-                onActivate={controller.openNotifyDetail}
-                icon={
-                  <>
-                    <path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9" />
-                    <path d="M13.73 21a2 2 0 0 1-3.46 0" />
-                  </>
-                }
-                title="알림"
-                sub={notifySub(remindOn, perm)}
-              />
-            )}
+            {/* 알림(요청) — '계정 설정' **아래**다. 스위치들을 첫 화면에 늘어놓으면
+                그것만으로 화면이 뒤덮인다 — 계정 설정·캘린더 연동과 같은 규칙으로
+                한 겹 안에 둔다.
+
+                예전에는 `Notification`이 없는 환경에서 **이 행 자체를 감췄다**("그
+                안에 그릴 것이 하나도 없다"). 0039의 **멘션 메일**이 들어오면서 그
+                전제가 깨졌다 — 그 설정은 OS 알림 권한과 무관하고(메일은 브라우저가
+                아니라 서버가 보낸다), 감춘 채로 두면 알림을 막아 둔 사람은 **자기에게
+                가는 메일을 끌 길이 영영 없다**. 이제 언제나 그린다. */}
+            <SettingsRow
+              attrs={{ 'data-notify-detail-row': '' }}
+              onActivate={controller.openNotifyDetail}
+              icon={
+                <>
+                  <path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9" />
+                  <path d="M13.73 21a2 2 0 0 1-3.46 0" />
+                </>
+              }
+              title="알림"
+              sub={notifySub(remindOn, perm, nativeNotify)}
+            />
             {/* 버전 확인(요청) — '계정 설정' **아래**다. 여기 두는 이유: 자동으로
                 갈아끼워지는 판을 사용자가 직접 확인하고 앞당길 수 있어야 한다.
                 계정에 딸린 일은 아니지만 앱 자신에 관한 일이라 같은 묶음이 맞다. */}
@@ -966,7 +1031,11 @@ function calendarSub(api: { enabled: boolean; needsReauth: boolean; pickedIds: s
  * 꺼져 있으면 그렇게, 켜져 있는데 OS가 막고 있으면 그 사실을(그 상태를 모르고
  * "안 온다"고 여기는 것이 가장 나쁘다).
  */
-function notifySub(on: boolean, perm: NotifyPermission): string {
+function notifySub(on: boolean, perm: NotifyPermission, nativeNotify: boolean): string {
+  // 이 기기가 알림을 아예 못 띄우면 일정 알림 얘기는 뜻이 없다 — 그 화면에 남는
+  // 것은 멘션 메일 하나이므로 부제도 그것을 말한다(0039에서 이 행이 상시로 바뀐
+  // 뒤로 생긴 갈래다).
+  if (!nativeNotify && perm === 'unsupported') return '멘션 메일을 받을지 고를 수 있어요';
   if (!on) return '꺼져 있어요';
   if (perm === 'denied') return '앱 안에서만 떠요 — OS 알림이 막혀 있어요';
   if (perm === 'granted') return '앱 알림과 OS 알림을 함께 받아요';

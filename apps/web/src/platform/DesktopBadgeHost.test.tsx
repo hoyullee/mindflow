@@ -9,7 +9,7 @@ import { cleanup, render, waitFor } from '@testing-library/react';
 import { MemoryRouter, Route, Routes } from 'react-router-dom';
 import { RequireAuth } from '../App';
 import { BackendProvider } from '../adapters/BackendContext';
-import type { AppNotification, Backend } from '../adapters/ports';
+import { DEFAULT_NOTIFICATION_PREFS, type AppNotification, type Backend } from '../adapters/ports';
 import { LocalAuth } from '../adapters/local/localAuth';
 import { LocalDocStore } from '../adapters/local/localDocStore';
 import { LocalSpaceStore } from '../adapters/local/localSpaceStore';
@@ -60,6 +60,8 @@ function renderGuarded(items: AppNotification[], path = '/editor') {
       list: async () => items,
       markAllRead: async () => ({}),
       subscribe: () => () => undefined,
+      loadPrefs: async () => DEFAULT_NOTIFICATION_PREFS,
+      savePrefs: async () => ({}),
     },
     eventStore: new LocalEventStore(),
     mode: 'local',
