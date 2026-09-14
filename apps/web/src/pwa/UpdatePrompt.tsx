@@ -238,7 +238,12 @@ export function UpdatePrompt() {
   return (
     <>
       <UpdateOverlay visible={blocking} />
-      <UpdateAppliedNotice visible={justUpdated} onDone={() => setJustUpdated(false)} />
+      {/* 화면이 **보이는 동안에만** 뜬다(제보: "새 버전 알림 안 떴어").
+          자동 적용은 화면이 가려졌을 때 일어나므로(`defer`), 그 알림도 아무도 보지
+          않는 사이에 떴다가 4초 뒤 스스로 사라졌다 — 트레이에 상주하는 설치형
+          앱에서는 그게 보통이라 사용자는 업데이트된 사실을 **한 번도 듣지 못한다**.
+          보이지 않는 동안에는 뜨지 않은 것으로 두고, 돌아오면 그때 알린다. */}
+      <UpdateAppliedNotice visible={justUpdated && !hidden} onDone={() => setJustUpdated(false)} />
     </>
   );
 }

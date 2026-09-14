@@ -9,6 +9,7 @@ import { cleanup, render, waitFor } from '@testing-library/react';
 import { UpdatePrompt } from './UpdatePrompt';
 import { __resetUpdateGate, useUpdateGuard, type UpdateRisk } from './updateGate';
 import { __resetUpdateControl, applyUpdateNow, checkForUpdateNow, currentUpdateStatus, updateControlsReady } from './updateControl';
+import { markUpdateApplied } from './updateApplied';
 import type { DesktopBridge } from '../platform/desktopBridge';
 
 const updateServiceWorker = vi.fn();
@@ -232,5 +233,40 @@ describe('UpdatePrompt — 껍데기(설치 파일)의 판', () => {
 
     expect(fetchMock.mock.calls.filter((c) => String(c[0]).includes('desktop-version'))).toHaveLength(0);
     expect(currentUpdateStatus().shell).toBeNull();
+  });
+});
+
+describe('적용 완료 알림 — 보이는 동안에만', () => {
+  /** 화면이 가려졌는가를 흉내 낸다(컴포넌트가 읽는 두 가지: getter + 이벤트). */
+  function setVisibility(state: 'visible' | 'hidden'): void {
+    Object.defineProperty(document, 'visibilityState', { configurable: true, get: () => state });
+    document.dispatchEvent(new Event('visibilitychange'));
+  }
+
+  afterEach(() => {
+    Object.defineProperty(document, 'visibilityState', { configurable: true, get: () => 'visible' });
+    window.sessionStorage.clear();
+  });
+
+  it('가려진 채 적용됐으면 그때는 뜨지 않고, 돌아왔을 때 알린다(제보)', async () => {
+    // 제보의 그 상황: 트레이에 상주하는 앱은 창이 가려진 동안 조용히 적용되는데,
+    // 예전에는 그 알림도 아무도 안 보는 사이에 떴다가 4초 뒤 사라졌다 — 사용자는
+    // 업데이트된 사실을 한 번도 듣지 못한다.
+    setVisibility('hidden');
+    markUpdateApplied();
+
+    render(
+      <>
+        {/* 적용은 이 테스트의 관심이 아니다 — 알림만 본다. */}
+        <Guard risk="block" />
+        <UpdatePrompt />
+      </>,
+    );
+
+    await new Promise((r) => setTimeout(r, 20));
+    expect(document.body.textContent).not.toContain('최신 버전으로 업데이트됐어요');
+
+    setVisibility('visible');
+    await waitFor(() => expect(document.body.textContent).toContain('최신 버전으로 업데이트됐어요'));
   });
 });
