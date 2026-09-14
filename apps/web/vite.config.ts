@@ -136,6 +136,14 @@ export default defineConfig({
         // never touched by the service worker (not cached, not stale — just
         // not intercepted at all). Nothing extra to configure for that case.
         globPatterns: ['**/*.{js,css,html,svg,png,woff2,ico}'],
+        // 웹 푸시(0040)를 받는 조각을 생성된 SW **안으로** 끌어들인다 — 그래야
+        // 프리캐시·업데이트 전략(generateSW)을 그대로 두고 push 처리만 얹는다
+        // (`injectManifest`로 갈아타면 SW 전체를 우리가 떠안게 된다).
+        importScripts: ['/push-sw.js'],
+        // 그 파일은 **프리캐시하지 않는다**: SW가 importScripts로 직접 가져가므로
+        // 매니페스트에 또 넣으면 같은 파일을 두 길로 관리하게 되고, Workbox가
+        // 경고를 남긴다.
+        globIgnores: ['push-sw.js'],
         // SPA 셸이 app.html로 옮겨졌다(landingRootSwap 참고) — 기본값
         // index.html은 이제 정적 랜딩이라 오프라인 내비게이션 폴백으로
         // 쓰면 앱 대신 마케팅 페이지가 떠버린다.

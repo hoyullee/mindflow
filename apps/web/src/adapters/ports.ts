@@ -715,6 +715,25 @@ export interface NotificationStore {
    */
   loadPrefs(): Promise<NotificationPrefs>;
   savePrefs(prefs: NotificationPrefs): Promise<{ error?: string }>;
+  /**
+   * 이 브라우저를 **푸시를 받을 곳**으로 등록한다(0040 `push_subscriptions`).
+   *
+   * 한 행 = 한 브라우저이고 `endpoint`가 그 정체라, 같은 브라우저가 다시 구독하면
+   * 같은 값이 와서 갱신된다(행이 불어나지 않는다). 켤지 말지는 계정 설정
+   * (`pushMentions`)이 정하고, 여기에는 "어느 기기에서 받는가"만 쌓인다.
+   */
+  savePushSubscription(sub: PushSubscriptionRecord): Promise<{ error?: string }>;
+  /** 이 브라우저의 구독을 거둔다(기기에서 `unsubscribe()` 한 뒤 서버 행도 지운다). */
+  removePushSubscription(endpoint: string): Promise<{ error?: string }>;
+}
+
+/** 브라우저가 내준 푸시 주소와 암호화 키(RFC 8291) — 그대로 서버에 둔다. */
+export interface PushSubscriptionRecord {
+  endpoint: string;
+  p256dh: string;
+  auth: string;
+  /** 사람이 "어느 기기인가"를 알아볼 실마리(기기 목록을 보여 줄 때). */
+  ua?: string;
 }
 
 /**

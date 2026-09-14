@@ -4,7 +4,7 @@
 // 여기서는 내 우편함을 읽고 읽음 처리만 한다(RLS: recipient = auth.uid()).
 
 import type { RealtimeChannel, SupabaseClient } from '@supabase/supabase-js';
-import { DEFAULT_NOTIFICATION_PREFS, type AppNotification, type NotificationPrefs, type NotificationStore } from '../ports';
+import { DEFAULT_NOTIFICATION_PREFS, type AppNotification, type NotificationPrefs, type NotificationStore, type PushSubscriptionRecord } from '../ports';
 import { currentUser } from './supabaseUser';
 
 interface Row {
@@ -81,6 +81,30 @@ export class SupabaseNotificationStore implements NotificationStore {
     if (error) {
       console.warn('[geurio] 알림 설정 저장 실패:', error.message);
       return { error: '설정을 저장하지 못했어요.' };
+    }
+    return {};
+  }
+
+  async savePushSubscription(sub: PushSubscriptionRecord): Promise<{ error?: string }> {
+    const me = await currentUser(this.client);
+    if (!me?.id) return { error: '로그인이 필요해요.' };
+    // `endpoint`가 유일 키다 — 같은 브라우저가 다시 구독하면 행이 늘지 않고 갱신된다.
+    const { error } = await this.client
+      .from('push_subscriptions')
+      .upsert({ user_id: me.id, endpoint: sub.endpoint, p256dh: sub.p256dh, auth: sub.auth, ua: sub.ua ?? '', fail_count: 0 }, { onConflict: 'endpoint' });
+    if (error) {
+      console.warn('[geurio] 푸시 구독 저장 실패:', error.message);
+      return { error: '이 기기를 등록하지 못했어요.' };
+    }
+    return {};
+  }
+
+  async removePushSubscription(endpoint: string): Promise<{ error?: string }> {
+    // RLS가 `user_id = auth.uid()`라 남의 구독은 애초에 지워지지 않는다.
+    const { error } = await this.client.from('push_subscriptions').delete().eq('endpoint', endpoint);
+    if (error) {
+      console.warn('[geurio] 푸시 구독 해제 실패:', error.message);
+      return { error: '이 기기를 해제하지 못했어요.' };
     }
     return {};
   }

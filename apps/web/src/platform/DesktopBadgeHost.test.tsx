@@ -62,6 +62,8 @@ function renderGuarded(items: AppNotification[], path = '/editor') {
       subscribe: () => () => undefined,
       loadPrefs: async () => DEFAULT_NOTIFICATION_PREFS,
       savePrefs: async () => ({}),
+      savePushSubscription: async () => ({}),
+      removePushSubscription: async () => ({}),
     },
     eventStore: new LocalEventStore(),
     mode: 'local',
