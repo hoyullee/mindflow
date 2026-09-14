@@ -91,7 +91,8 @@ const GOOGLE_EVENT = {
 function fakeNotification(permission: 'granted' | 'denied' | 'default'): void {
   class FakeNotification {
     static permission = permission;
-    static requestPermission = vi.fn(async () => permission);
+    // 물어보면 **지금 값**을 돌려준다 — 브라우저처럼(테스트가 값을 바꿔 허용을 흉내낸다).
+    static requestPermission = vi.fn(async () => FakeNotification.permission);
     close = vi.fn();
     // 앱이 `n.onclick = …`으로 심는 그 함수를 그대로 받아 둔다.
     set onclick(fn: (() => void) | null) {
@@ -179,6 +180,51 @@ describe('일정 알림', () => {
     await settle();
     expect(document.querySelector('[data-reminder-toast]')).toBeTruthy();
     expect(osNotifications).toEqual([]);
+  });
+
+  /**
+   * 제보: 인앱 토스트는 떴는데 **OS 알림이 오지 않았고**, 설정의 `테스트 알림`을
+   * 누르면 정상으로 떴다(Windows·macOS 동일). 두 길의 차이는 하나뿐이다 — 테스트
+   * 버튼은 **물어본다**(그 클릭이 제스처다). 스케줄러의 주기 확인은 제스처가 아니라
+   * 물어볼 수 없어, 권한이 `default`인 기기에서는 영영 인앱 토스트만 떴다.
+   */
+  it('권한을 아직 안 물은 기기: 토스트가 **그 자리에서 허용을 묻는다**(제보)', async () => {
+    fakeNotification('default');
+    renderHost([EVENT]);
+    await settle();
+
+    // 아직 OS 알림은 없다 — 대신 허용을 묻는 길이 토스트에 있다.
+    expect(osNotifications).toEqual([]);
+    const allow = document.querySelector('[data-reminder-allow]') as HTMLButtonElement;
+    expect(allow).toBeTruthy();
+
+    // 누르면(=제스처) 물어보고, 허용되면 **그 알림을 그 자리에서 띄운다**.
+    (Notification as unknown as { permission: string }).permission = 'granted';
+    await act(async () => {
+      fireEvent.click(allow);
+      await Promise.resolve();
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+    expect(Notification.requestPermission).toHaveBeenCalled();
+    expect(osNotifications).toEqual([{ title: '팀 회의', body: '오전 10:30 · 10분 후 시작' }]);
+    expect(document.querySelector('[data-reminder-allow]')).toBeNull();
+  });
+
+  it('막아 둔 기기에는 그 버튼을 내지 않는다 — 브라우저가 다시 묻지 않아 죽은 버튼이 된다', async () => {
+    fakeNotification('denied');
+    renderHost([EVENT]);
+    await settle();
+    expect(document.querySelector('[data-reminder-toast]')).toBeTruthy();
+    expect(document.querySelector('[data-reminder-allow]')).toBeNull();
+  });
+
+  it('OS 알림이 떴으면 허용을 묻지 않는다(무회귀)', async () => {
+    fakeNotification('granted');
+    renderHost([EVENT]);
+    await settle();
+    expect(osNotifications).toHaveLength(1);
+    expect(document.querySelector('[data-reminder-allow]')).toBeNull();
   });
 
   it('같은 알림은 두 번 뜨지 않는다 — 닫은 뒤 다음 확인에도 되돌아오지 않는다', async () => {

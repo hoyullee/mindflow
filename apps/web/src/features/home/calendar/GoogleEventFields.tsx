@@ -26,7 +26,7 @@ import { Fragment, useEffect, useRef, useState } from 'react';
 import { knownName, knownNamesFor, rememberName } from './nameBook';
 import type { KeyboardEvent } from 'react';
 import { Field, Segments, SubText } from './fieldBits';
-import { notifyPermission, requestNotifyPermission } from '../../reminders/reminderPrefs';
+import { googleRemindersEnabled, notifyPermission, requestNotifyPermission } from '../../reminders/reminderPrefs';
 import type { GoogleRsvp, GoogleTransparency, GoogleVisibility, RecurrenceSpec } from './googleCalendar';
 import { filterRooms, type DirectoryPerson, type MeetingRoom, type RoomBusy } from './googleDirectory';
 import { AnchoredList, listCard, rowDivider } from './AnchoredList';
@@ -391,10 +391,14 @@ export function ReminderField({
   const key = opts.find((o) => o.minutes === value)?.key ?? fallback;
   const pick = (k: string): void => {
     const minutes = opts.find((o) => o.key === k)?.minutes;
-    // Geurio 알림은 **우리가** 띄우므로 OS 알림 권한이 필요하다. 여기서 묻는 이유:
-    // 이 클릭이 사용자 제스처이고(브라우저가 요구한다) "알림을 받겠다"고 방금 말한
-    // 순간이 물어볼 가장 자연스러운 자리다. 저절로 묻지는 않는다.
-    if (kind === 'geurio' && typeof minutes === 'number' && notifyPermission() === 'default') void requestNotifyPermission();
+    // **우리가 띄울 알림**이면 OS 알림 권한이 필요하다. 여기서 묻는 이유: 이 클릭이
+    // 사용자 제스처이고(브라우저가 요구한다) "알림을 받겠다"고 방금 말한 순간이
+    // 물어볼 가장 자연스러운 자리다. 저절로 묻지는 않는다.
+    //
+    // 구글 일정도 `구글 일정도 알림`을 켜 뒀으면 우리가 띄운다(2단계) — 그때는 같은
+    // 이유로 물어야 한다. 꺼져 있으면 구글이 보내므로 우리 권한은 상관이 없다.
+    const ours = kind === 'geurio' || googleRemindersEnabled();
+    if (ours && typeof minutes === 'number' && notifyPermission() === 'default') void requestNotifyPermission();
     onChange(minutes);
   };
   return (
