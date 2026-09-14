@@ -6,3 +6,10 @@
 # production branch auto-applies any new migration files, and PRs get an
 # ephemeral preview database (Branching). See server/supabase/docs/backend.md.
 project_id = "qdzfonyqysbbchxotnrm"
+
+# 멘션 메일 다이제스트(0039) — **cron이 부르는 함수라 사용자 JWT가 없다.**
+# 그래서 JWT 검증을 끄고, 대신 `DIGEST_SECRET` 헤더로 문을 잠근다(함수 주석 참고).
+# 그 비밀의 힘은 "회차를 한 번 돌린다"가 전부라, service_role 키를 cron 잡에 적어
+# 두는 것보다 폭발 반경이 훨씬 작다.
+[functions.notify-digest]
+verify_jwt = false

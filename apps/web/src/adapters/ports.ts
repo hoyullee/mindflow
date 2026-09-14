@@ -702,7 +702,36 @@ export interface NotificationStore {
    * @returns 구독 해제 함수.
    */
   subscribe(onChange: () => void): () => void;
+  /**
+   * 알림을 **앱 밖에서도** 받을까 — 계정 설정(0039 `notification_prefs`).
+   *
+   * 이 값이 워크스페이스 블롭(`WorkspaceData`)이 아니라 별도 표에 사는 이유:
+   * **서버가 읽어야 한다.** 30분마다 도는 메일 다이제스트는 `where email_mentions`
+   * 한 줄로 수신자를 걸러야지, 사용자 수만큼 불투명 JSON을 파싱할 수 없다.
+   *
+   * 읽을 수 없으면(미적용 서버·데모) **기본값**을 돌려준다 — 설정 화면이 사라지는
+   * 것보다 "기본대로 켜져 있다"가 정직하다(그게 실제 서버 동작이기도 하다:
+   * 행이 없으면 켜짐).
+   */
+  loadPrefs(): Promise<NotificationPrefs>;
+  savePrefs(prefs: NotificationPrefs): Promise<{ error?: string }>;
 }
+
+/**
+ * 앱 **밖으로** 나가는 알림을 받을까. 둘 다 기본은 켜짐이다.
+ *
+ * - `emailMentions`: 읽지 않은 멘션을 30분마다 묶어 메일로. 읽으면 안 온다.
+ * - `pushMentions`: 웹 푸시. 켜져 있어도 **브라우저 구독이 없으면** 아무 일도
+ *   없다 — 권한 허용 자체가 진짜 opt-in이고, 이 값은 "허용해 둔 뒤 끄고 싶을 때"의
+ *   스위치다.
+ */
+export interface NotificationPrefs {
+  emailMentions: boolean;
+  pushMentions: boolean;
+}
+
+/** 설정을 읽지 못했을 때의 값 — 서버의 "행이 없으면 켜짐"과 같아야 한다. */
+export const DEFAULT_NOTIFICATION_PREFS: NotificationPrefs = { emailMentions: true, pushMentions: true };
 
 // ── Images ─────────────────────────────────────────────────────────────────
 

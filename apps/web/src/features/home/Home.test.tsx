@@ -1543,14 +1543,22 @@ describe('Home', () => {
       expect(dialog.querySelector('[data-remind-google-row]')).toBeNull();
     });
 
-    it('`Notification`이 없는 환경에서는 **진입 행 자체를** 그리지 않는다(눌러도 빈 화면이 열릴 자리를 두지 않는다)', async () => {
+    // 예전에는 이 환경에서 **진입 행까지** 감췄다("그 안에 그릴 것이 하나도 없다").
+    // 0039의 멘션 메일이 들어오면서 그 전제가 깨졌다 — 그 설정은 OS 알림 권한과
+    // 무관하고, 감춘 채로 두면 알림을 막아 둔 사람이 **자기에게 가는 메일을 끌 길이
+    // 없다**. 이제 진입 행은 서고, 그 안에서 일정 알림 구획만 사라진다.
+    it('`Notification`이 없어도 진입 행은 서고, 안에는 멘션 메일만 남는다', async () => {
       // jsdom 기본값 — 스텁하지 않는다.
       const user = userEvent.setup();
       renderHome();
       await user.click(await screen.findByRole('button', { name: '계정 메뉴' }));
       await user.click(screen.getByRole('button', { name: '설정' }));
       const dialog = screen.getByRole('dialog', { name: '설정' });
-      expect(dialog.querySelector('[data-notify-detail-row]')).toBeNull();
+      const row = dialog.querySelector('[data-notify-detail-row]') as HTMLElement;
+      expect(row).toBeTruthy();
+      expect(row.textContent).toContain('멘션 메일');
+      await user.click(row);
+      await waitFor(() => expect(dialog.querySelector('[data-mention-mail-group]')).toBeTruthy());
       expect(dialog.querySelector('[data-remind-group]')).toBeNull();
     });
   });

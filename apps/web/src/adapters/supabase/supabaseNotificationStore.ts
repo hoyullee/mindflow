@@ -4,7 +4,7 @@
 // 여기서는 내 우편함을 읽고 읽음 처리만 한다(RLS: recipient = auth.uid()).
 
 import type { RealtimeChannel, SupabaseClient } from '@supabase/supabase-js';
-import type { AppNotification, NotificationStore } from '../ports';
+import { DEFAULT_NOTIFICATION_PREFS, type AppNotification, type NotificationPrefs, type NotificationStore } from '../ports';
 import { currentUser } from './supabaseUser';
 
 interface Row {
@@ -45,6 +45,44 @@ export class SupabaseNotificationStore implements NotificationStore {
       createdAt: r.created_at,
       read: !!r.read_at,
     }));
+  }
+
+  /**
+   * 알림 설정(0039) — 행이 없으면 **기본값**이다. 서버(다이제스트)도 같은 규칙으로
+   * 읽으므로(`coalesce(p.email_mentions, true)`) 한 번도 설정을 연 적 없는 사용자는
+   * 양쪽에서 똑같이 "켜짐"으로 보인다.
+   *
+   * 표가 아직 없는 서버(배포 순서)에서도 기본값으로 떨어진다 — 설정 행이 사라지는
+   * 것보다 "기본대로"가 정직하다(실제 서버 동작이 그렇다).
+   */
+  async loadPrefs(): Promise<NotificationPrefs> {
+    const { data, error } = await this.client.from('notification_prefs').select('email_mentions,push_mentions').maybeSingle();
+    if (error) {
+      console.warn('[geurio] 알림 설정을 불러오지 못했어요:', error.message);
+      return DEFAULT_NOTIFICATION_PREFS;
+    }
+    const row = data as { email_mentions?: boolean; push_mentions?: boolean } | null;
+    if (!row) return DEFAULT_NOTIFICATION_PREFS;
+    return {
+      emailMentions: row.email_mentions ?? DEFAULT_NOTIFICATION_PREFS.emailMentions,
+      pushMentions: row.push_mentions ?? DEFAULT_NOTIFICATION_PREFS.pushMentions,
+    };
+  }
+
+  async savePrefs(prefs: NotificationPrefs): Promise<{ error?: string }> {
+    // `user_id`를 **직접 실어야** 한다 — 이 표에는 `default auth.uid()`가 없다
+    // (0004 workspaces와 달리 PK가 곧 사용자라 기본값을 걸어도 upsert의 on conflict
+    // 대상이 모호해지지 않지만, 명시하는 편이 RLS의 with check와 눈으로 맞춘다).
+    const me = await currentUser(this.client);
+    if (!me?.id) return { error: '로그인이 필요해요.' };
+    const { error } = await this.client
+      .from('notification_prefs')
+      .upsert({ user_id: me.id, email_mentions: prefs.emailMentions, push_mentions: prefs.pushMentions }, { onConflict: 'user_id' });
+    if (error) {
+      console.warn('[geurio] 알림 설정 저장 실패:', error.message);
+      return { error: '설정을 저장하지 못했어요.' };
+    }
+    return {};
   }
 
   async markAllRead(): Promise<{ error?: string }> {
