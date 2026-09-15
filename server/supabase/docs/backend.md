@@ -2413,7 +2413,12 @@ OS에 옮겨 둘 뿐이다. 개인정보처리방침의 "캘린더 데이터는 
        url     := 'https://<project-ref>.supabase.co/functions/v1/notify-digest',
        headers := jsonb_build_object('Content-Type', 'application/json',
                                      'x-digest-secret', '<DIGEST_SECRET과 같은 값>'),
-       body    := '{}'::jsonb
+       body    := '{}'::jsonb,
+       -- **꼭 넣는다.** pg_net 기본 타임아웃은 5초인데, 한 회차가 메일을 여러 통
+       -- 보내면(각각 Resend 왕복) 그걸 넘긴다. 넘기면 pg_net이 요청을 끊어
+       -- **일부만 보내고 끝난 회차**가 된다 — `emailed_at`을 못 찍은 몫은 다음
+       -- 회차에 다시 오지만, 이미 나간 메일의 예산은 사라진 뒤다.
+       timeout_milliseconds := 60000
      );
      $$
    );
@@ -2448,7 +2453,16 @@ select net.http_post(url := 'https://<ref>.supabase.co/functions/v1/notify-diges
    내일 간다.
 3. Edge Function 로그(Studio → Functions → notify-digest) — `resend 실패`면 도메인
    인증·키를, `pending 조회 실패`면 마이그레이션 적용을 본다.
-4. cron이 도는가 — `select * from cron.job_run_details order by start_time desc limit 10;`
+4. cron이 도는가 — 아래 쿼리. **`jobname`은 `cron.job_run_details`에 없다**(거기엔 `jobid`만
+   있다 — 실측으로 `column "jobname" does not exist`에 걸렸다). 이름을 보려면 조인한다:
+   ```sql
+   select j.jobname, d.status, d.return_message, d.start_time, d.end_time
+     from cron.job_run_details d join cron.job j on j.jobid = d.jobid
+    order by d.start_time desc limit 10;
+   ```
+   ⚠️ **`status = succeeded`는 "알림이 갔다"는 뜻이 아니다.** pg_net 입장에서 성공은
+   "HTTP 요청을 보냈다"까지라, 함수가 401(비밀 불일치)이나 500을 돌려줘도 초록으로
+   찍힌다. 그래서 `return_message`를 함께 보고, 그래도 모르면 Edge Function 로그로 간다.
 
 ### 못 막는 것(밝혀 둔다)
 
@@ -2528,7 +2542,8 @@ select net.http_post(url := 'https://<ref>.supabase.co/functions/v1/notify-diges
      select net.http_post(
        url     := 'https://<project-ref>.supabase.co/functions/v1/notify-push',
        headers := jsonb_build_object('Content-Type','application/json','x-digest-secret','<DIGEST_SECRET>'),
-       body    := '{}'::jsonb
+       body    := '{}'::jsonb,
+       timeout_milliseconds := 30000   -- 기본 5초로는 구독 여럿에 쏘다 끊긴다(§23의 같은 이유)
      );
      $$
    );
@@ -2572,7 +2587,8 @@ select recipient, kind, created_at, read_at, pushed_at, emailed_at
 1분 안에 배너가 뜨는지. 안 뜨면 보는 순서: ① `pending_mention_pushes()`가 비었나
 ② Functions 로그에 `발송 실패`가 있나(VAPID 키·`VAPID_SUBJECT` 형식)
 ③ `push_subscriptions`에 내 기기 행이 있나 ④ cron이 도는가
-(`select * from cron.job_run_details order by start_time desc limit 10;`).
+(§23의 조인 쿼리 — `jobname`은 `cron.job`에만 있다. `status = succeeded`가 배달을
+뜻하지 않는다는 주의도 그쪽에 있다).
 
 **함수가 아예 뜨지 않는 경우도 하나 있다**(배포 직후 로그에 import 오류): 이 함수는
 `npm:web-push`를 쓰는데, 그 패키지는 Node용이라 Deno의 node 호환 계층에 기댄다.
