@@ -44,6 +44,14 @@ interface ShareModalProps {
   /** 공유에서 나간 뒤 — 에디터는 홈으로 보내고, 홈은 그냥 닫는다. */
   onLeft?: () => void;
   theme?: ShareTheme;
+  /**
+   * 무엇을 공유하는지 — 제목이 `마인드맵 공유`·`공책 공유`가 된다(요청).
+   * "공유" 한 낱말은 **무엇이 나가는지**를 말해 주지 않는다. 특히 공책은 한 장이
+   * 아니라 한 권이 통째로 나가므로 그 사실이 제목 아래 한 줄로 이어진다.
+   */
+  kindName?: string;
+  /** 그 문서의 이름 — 부제에 인용된다(`'제품 회의록' 공책의 …`). */
+  docName?: string;
 }
 
 /** 아주 느슨한 형식 검사 — 진짜 판정은 서버(초대받은 사람이 그 이메일로 로그인하는지)가
@@ -186,7 +194,7 @@ function roleSelectStyle(th: ShareTheme): CSSProperties {
   };
 }
 
-export function ShareModal({ open: shareOpen, docId, onClose: closeShare, readOnly = false, onLeft, theme }: ShareModalProps) {
+export function ShareModal({ open: shareOpen, docId, onClose: closeShare, readOnly = false, onLeft, theme, kindName = '문서', docName }: ShareModalProps) {
   const th = theme ?? LIGHT;
   const shareStore = useShareStore();
   const backendMode = useBackend().mode;
@@ -267,6 +275,16 @@ export function ShareModal({ open: shareOpen, docId, onClose: closeShare, readOn
   /** 행 목록. 참가자 정보가 있으면 그것이 정본이다 — 초대받은 사람은 테이블
    * select(RLS)로는 자기 행만 보이지만, 참가자 명단(0011)은 전원에게 전체를 준다
    * ("소유자가 초대한 다른 사람이 안 보인다" 제보). */
+  /**
+   * 부제 — 무엇이 함께 나가는지. 공책은 **한 권이 통째로** 나가므로 그 사실을 적고,
+   * 나머지는 이름만 짚어 준다(엉뚱한 문서를 공유하는 실수를 여기서 잡는다).
+   */
+  const subtitle = docName
+    ? kindName === '공책'
+      ? `'${docName}' 공책의 모든 페이지가 함께 공유돼요`
+      : `'${docName}'을 함께 볼 사람을 정해요`
+    : '함께 볼 사람을 정해요';
+
   const rows: { email: string; role: 'edit' | 'view' }[] = participants
     ? participants.filter((p) => p.kind === 'invitee').map((p) => ({ email: p.email, role: p.role }))
     : shares.map((s) => ({ email: s.email, role: s.role }));
@@ -378,72 +396,44 @@ export function ShareModal({ open: shareOpen, docId, onClose: closeShare, readOn
       card={{ width: 452, maxWidth: 'calc(100vw - 32px)', background: th.panel, borderRadius: 22, border: `1px solid ${th.border}`, boxShadow: '0 40px 90px -40px rgba(46,42,38,.7)', padding: '22px 22px 18px', boxSizing: 'border-box', color: th.text }}
     >
       <>
-        {/* 권한 설명은 상시 문단이 아니라 "?"에 넣는다(요청) — 팝업을 여는 사람 대부분은
-            이미 알고 있고, 두 줄이 매번 자리를 차지했다. */}
-        <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 14, position: 'relative' }}>
-          <div style={{ fontSize: 16, fontWeight: 800 }}>공유</div>
-          <HelpTip theme={th} open={helpOpen} onToggle={() => setHelpOpen((v) => !v)} onClose={() => setHelpOpen(false)} />
+        {/* 머리 — **무엇이 공유되는지**를 제목과 부제 두 줄이 말한다(요청·디자인).
+            예전에는 "공유" 한 낱말뿐이라, 공책처럼 여러 장이 통째로 나가는 경우에
+            그 사실을 알 길이 없었다. 권한 설명은 여전히 "?"에 접어 둔다. */}
+        <div style={{ display: 'flex', alignItems: 'flex-start', gap: 12, marginBottom: 18 }}>
+          <span aria-hidden="true" style={{ width: 38, height: 38, flexShrink: 0, borderRadius: 12, background: th.canvasBg, border: `1px solid ${th.border}`, color: th.accent, display: 'inline-flex', alignItems: 'center', justifyContent: 'center' }}>
+            <svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round">
+              <circle cx="9" cy="8" r="3" />
+              <path d="M3 19a6 6 0 0 1 12 0M17 11a3 3 0 1 0 0-6M21 19a5 5 0 0 0-4-4.9" />
+            </svg>
+          </span>
+          <div style={{ flex: '1 1 auto', minWidth: 0, display: 'flex', flexDirection: 'column', gap: 3 }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 6, minWidth: 0 }}>
+              <span style={{ fontSize: 16, fontWeight: 800, letterSpacing: '-.02em' }}>{kindName} 공유</span>
+              <HelpTip theme={th} open={helpOpen} onToggle={() => setHelpOpen((v) => !v)} onClose={() => setHelpOpen(false)} />
+            </div>
+            <span style={{ fontSize: 11.5, color: th.subtext, lineHeight: 1.55, wordBreak: 'keep-all' }}>{subtitle}</span>
+          </div>
+          <button
+            type="button"
+            onClick={closeShare}
+            aria-label="닫기"
+            title="닫기"
+            style={{ width: 28, height: 28, flexShrink: 0, borderRadius: '50%', border: `1px solid ${th.border}`, background: 'transparent', color: th.subtext, display: 'inline-flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', padding: 0 }}
+          >
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" aria-hidden="true">
+              <path d="M6 6l12 12M18 6 6 18" />
+            </svg>
+          </button>
         </div>
-
-        {/* 소유자 — 공유받은 사람 입장에서 "누가 초대했는지"가 보여야 한다(제보).
-            참가자 정보를 못 얻는 환경(0010 RPC 미적용)에서는 구획째 생략. */}
-        {owner && (
-          <div aria-label="소유자" style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '9px 11px', border: `1px solid ${th.border}`, borderRadius: 11, background: th.canvasBg, marginBottom: 12 }}>
-            <PersonDot email={owner.email} name={owner.displayName} />
-            <div style={{ flex: '1 1 auto', minWidth: 0 }}>
-              <div style={{ display: 'flex', alignItems: 'center', gap: 6, minWidth: 0 }}>
-                <span style={{ fontSize: 13, fontWeight: 700, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{owner.displayName || owner.email.split('@')[0]}</span>
-                {owner.email === myEmail && (
-                  <span style={{ flexShrink: 0, padding: '1px 7px', borderRadius: 999, fontSize: 10, fontWeight: 700, background: 'rgba(226,96,60,.12)', color: th.accent }}>나</span>
-                )}
-              </div>
-              <div style={{ fontSize: 11.5, color: th.subtext, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{owner.email}</div>
-            </div>
-            <span style={{ flexShrink: 0, fontSize: 11.5, color: th.subtext }}>소유자</span>
-          </div>
-        )}
-
-        {/* 링크 공유(0017) — 이메일을 모르는 상대에게 "이거 봐 줘" 하는 가장 짧은 길.
-            보기 전용만 연다: 링크는 유출되면 회수할 수 없고(끄기 전까지), 열람은
-            유출돼도 피해가 "봤다"에서 멈추지만 편집은 내용을 되돌릴 수 없게 만든다. */}
-        {(canManage || (viewerOnly && !!linkRole)) && (
-          <div aria-label="링크 공유" style={{ border: `1px solid ${th.border}`, borderRadius: 11, background: th.canvasBg, padding: '10px 11px', marginBottom: 12, opacity: canManage ? 1 : 0.6 }}>
-            {/* 체크박스가 아니라 **스위치**다 — 목록에서 항목을 고르는 게 아니라
-                기능을 켜고 끈다(`role="switch"`로 "켜짐/꺼짐"으로 읽힌다). */}
-            <div style={{ display: 'flex', alignItems: 'center', gap: 9 }}>
-              <Switch checked={!!linkRole} onCheckedChange={() => void toggleLink()} disabled={busy || !canManage} label="링크가 있는 사람은 열람" accent={th.accent} track={th.border} knob={th.panel} />
-              <span style={{ flex: '1 1 auto', minWidth: 0, fontSize: 13, fontWeight: 700 }}>링크가 있는 사람은 열람</span>
-              <span style={{ flexShrink: 0, fontSize: 11.5, color: th.subtext }}>보기 전용</span>
-            </div>
-            {linkRole && (
-              <div style={{ display: 'flex', gap: 8, marginTop: 9 }}>
-                <input
-                  readOnly
-                  value={shareUrl}
-                  aria-label="공유 링크"
-                  onFocus={(e) => e.currentTarget.select()}
-                  style={{ flex: '1 1 auto', minWidth: 0, height: 34, padding: '0 10px', border: `1px solid ${th.border}`, borderRadius: 9, background: th.panel, color: th.subtext, fontFamily: 'inherit', fontSize: 12, outline: 'none' }}
-                />
-                <button
-                  type="button"
-                  onClick={() => void copyLink()}
-                  disabled={!canManage}
-                  style={{ flexShrink: 0, height: 34, padding: '0 12px', border: 'none', borderRadius: 9, background: canManage ? th.accent : th.border, color: canManage ? th.accentInk : th.subtext, fontFamily: 'inherit', fontSize: 12.5, fontWeight: 700, cursor: canManage ? 'pointer' : 'not-allowed' }}
-                >
-                  {copied ? '복사됨' : '링크 복사'}
-                </button>
-              </div>
-            )}
-          </div>
-        )}
 
         {!canManage && (
           <div style={{ fontSize: 12, color: th.subtext, background: th.canvasBg, border: `1px solid ${th.border}`, borderRadius: 9, padding: '8px 10px', marginBottom: 10, lineHeight: 1.5 }}>
             {viewerOnly ? '보기 전용으로 공유받은 맵이에요. 공유 설정은 소유자만 바꿀 수 있어요.' : '초대와 초대 취소는 맵의 소유자만 할 수 있어요.'}
           </div>
         )}
+        {canManage && <div style={{ fontSize: 11.5, fontWeight: 700, color: th.subtext, margin: '0 0 7px' }}>이메일로 초대</div>}
         {canManage && (
-        <div style={{ display: 'flex', gap: 8, marginBottom: 10 }}>
+        <div style={{ display: 'flex', gap: 8, marginBottom: 14 }}>
           <input
             ref={inputRef}
             value={email}
@@ -454,7 +444,7 @@ export function ShareModal({ open: shareOpen, docId, onClose: closeShare, readOn
             onKeyDown={(e) => {
               if (e.key === 'Enter') void invite();
             }}
-            placeholder="초대할 이메일"
+            placeholder="이메일 입력 후 Enter"
             aria-label="초대할 이메일"
             style={{ flex: '1 1 auto', minWidth: 0, height: 40, padding: '0 12px', border: `1px solid ${th.border}`, borderRadius: 10, background: th.panel, color: th.text, fontFamily: 'inherit', fontSize: 13.5, outline: 'none' }}
           />
@@ -492,7 +482,26 @@ export function ShareModal({ open: shareOpen, docId, onClose: closeShare, readOn
           </div>
         )}
 
-        <div style={{ fontSize: 11.5, fontWeight: 700, color: th.subtext, margin: '4px 0 6px' }}>초대된 사람</div>
+        <div aria-hidden="true" style={{ height: 1, background: th.border, margin: '2px 0 14px' }} />
+        <div style={{ fontSize: 11.5, fontWeight: 700, color: th.subtext, margin: '0 0 6px' }}>
+          함께 보는 사람 {rows.length + (owner ? 1 : 0)}
+        </div>
+        {/* 소유자 — 공유받은 사람 입장에서 "누가 초대했는지"가 보여야 한다(제보).
+            디자인은 이걸 **목록의 첫 줄**로 둔다(따로 뜬 카드가 아니라). 참가자 정보를
+            못 얻는 환경(0010 RPC 미적용)에서는 줄째 생략. */}
+        {owner && (
+          <div aria-label="소유자" style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '9px 0' }}>
+            <PersonDot email={owner.email} name={owner.displayName} />
+            <div style={{ flex: '1 1 auto', minWidth: 0 }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 6, minWidth: 0 }}>
+                <span style={{ fontSize: 13, fontWeight: 700, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{owner.displayName || owner.email.split('@')[0]}</span>
+                {owner.email === myEmail && <span style={{ flexShrink: 0, fontSize: 12, color: th.subtext }}>(나)</span>}
+              </div>
+              <div style={{ fontSize: 11.5, color: th.subtext, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{owner.email}</div>
+            </div>
+            <span style={{ flexShrink: 0, fontSize: 11.5, color: th.subtext }}>소유자</span>
+          </div>
+        )}
         {loading ? (
           <div style={{ fontSize: 12.5, color: th.subtext, padding: '10px 0' }}>불러오는 중…</div>
         ) : rows.length === 0 ? (
@@ -507,7 +516,7 @@ export function ShareModal({ open: shareOpen, docId, onClose: closeShare, readOn
               const pending = !!info && !info.joined;
               const isMe = s.email === myEmail;
               return (
-              <li key={s.email} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '8px 0', borderTop: `1px solid ${th.border}` }}>
+              <li key={s.email} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '9px 0' }}>
                 <PersonDot email={s.email} name={name} dimmed={pending} />
                 <span style={{ flex: '1 1 auto', minWidth: 0, display: 'flex', flexDirection: 'column', gap: 1 }}>
                   <span style={{ fontSize: 13, fontWeight: name ? 700 : 400, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{name || s.email}</span>
@@ -543,9 +552,12 @@ export function ShareModal({ open: shareOpen, docId, onClose: closeShare, readOn
                     onClick={() => void revoke(s.email)}
                     disabled={busy}
                     aria-label={`${s.email} 초대 취소`}
-                    style={{ flexShrink: 0, height: 28, padding: '0 10px', border: `1px solid ${th.border}`, borderRadius: 8, background: 'transparent', color: th.subtext, fontFamily: 'inherit', fontSize: 12, cursor: busy ? 'default' : 'pointer' }}
+                    title="초대 취소"
+                    style={{ flexShrink: 0, width: 26, height: 26, border: 0, borderRadius: 8, background: 'transparent', color: th.subtext, display: 'inline-flex', alignItems: 'center', justifyContent: 'center', cursor: busy ? 'default' : 'pointer', padding: 0 }}
                   >
-                    취소
+                    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" aria-hidden="true">
+                      <path d="M6 6l12 12M18 6 6 18" />
+                    </svg>
                   </button>
                 ) : isMe ? (
                   <button
@@ -565,13 +577,53 @@ export function ShareModal({ open: shareOpen, docId, onClose: closeShare, readOn
           </ul>
         )}
 
-        <button
-          type="button"
-          onClick={closeShare}
-          style={{ width: '100%', height: 42, marginTop: 16, border: `1px solid ${th.border}`, borderRadius: 11, background: 'transparent', color: th.text, fontFamily: 'inherit', fontSize: 14, fontWeight: 700, cursor: 'pointer' }}
-        >
-          닫기
-        </button>
+        <div style={{ marginTop: 16 }}>
+        {/* 링크 공유(0017) — 이메일을 모르는 상대에게 "이거 봐 줘" 하는 가장 짧은 길.
+            보기 전용만 연다: 링크는 유출되면 회수할 수 없고(끄기 전까지), 열람은
+            유출돼도 피해가 "봤다"에서 멈추지만 편집은 내용을 되돌릴 수 없게 만든다. */}
+        {(canManage || (viewerOnly && !!linkRole)) && (
+          <div aria-label="링크 공유" style={{ border: `1px solid ${th.border}`, borderRadius: 11, background: th.canvasBg, padding: '10px 11px', marginBottom: 12, opacity: canManage ? 1 : 0.6 }}>
+            {/* 체크박스가 아니라 **스위치**다 — 목록에서 항목을 고르는 게 아니라
+                기능을 켜고 끈다(`role="switch"`로 "켜짐/꺼짐"으로 읽힌다). */}
+            {/* 디자인: [사슬 타일] [제목 + 설명] … [스위치]. 예전에는 스위치가 맨 앞에
+                있고 제목이 그 옆이라, 켜면 무슨 일이 생기는지는 어디에도 없었다. */}
+            <div style={{ display: 'flex', alignItems: 'center', gap: 11 }}>
+              <span aria-hidden="true" style={{ width: 32, height: 32, flexShrink: 0, borderRadius: 10, background: th.panel, border: `1px solid ${th.border}`, color: th.subtext, display: 'inline-flex', alignItems: 'center', justifyContent: 'center' }}>
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round">
+                  <path d="M10 13a5 5 0 0 0 7.5.5l3-3a5 5 0 0 0-7-7l-1.7 1.7" />
+                  <path d="M14 11a5 5 0 0 0-7.5-.5l-3 3a5 5 0 0 0 7 7l1.7-1.7" />
+                </svg>
+              </span>
+              <span style={{ flex: '1 1 auto', minWidth: 0, display: 'flex', flexDirection: 'column', gap: 2 }}>
+                <span style={{ fontSize: 13, fontWeight: 700 }}>링크로 공유</span>
+                <span style={{ fontSize: 11.5, color: th.subtext, lineHeight: 1.5, wordBreak: 'keep-all' }}>
+                  {linkRole ? '링크가 있는 사람은 열람할 수 있어요' : '켜면 링크로 보기 전용 공유가 열려요'}
+                </span>
+              </span>
+              <Switch checked={!!linkRole} onCheckedChange={() => void toggleLink()} disabled={busy || !canManage} label="링크로 공유" accent={th.accent} track={th.border} knob={th.panel} />
+            </div>
+            {linkRole && (
+              <div style={{ display: 'flex', gap: 8, marginTop: 9 }}>
+                <input
+                  readOnly
+                  value={shareUrl}
+                  aria-label="공유 링크"
+                  onFocus={(e) => e.currentTarget.select()}
+                  style={{ flex: '1 1 auto', minWidth: 0, height: 34, padding: '0 10px', border: `1px solid ${th.border}`, borderRadius: 9, background: th.panel, color: th.subtext, fontFamily: 'inherit', fontSize: 12, outline: 'none' }}
+                />
+                <button
+                  type="button"
+                  onClick={() => void copyLink()}
+                  disabled={!canManage}
+                  style={{ flexShrink: 0, height: 34, padding: '0 12px', border: 'none', borderRadius: 9, background: canManage ? th.accent : th.border, color: canManage ? th.accentInk : th.subtext, fontFamily: 'inherit', fontSize: 12.5, fontWeight: 700, cursor: canManage ? 'pointer' : 'not-allowed' }}
+                >
+                  {copied ? '복사됨' : '링크 복사'}
+                </button>
+              </div>
+            )}
+          </div>
+        )}
+        </div>
       </>
     </Modal>
   );

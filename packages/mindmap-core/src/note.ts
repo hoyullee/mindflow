@@ -283,9 +283,27 @@ const TAG_INK: Record<string, string> = {
   회고: '#E8845C',
 };
 
-/** 공책·페이지 태그 칩의 색. */
+/**
+ * 새로 만든 태그의 색 — **이름 해시로 팔레트에서 고른다**(디자인의 `tagColorFor`).
+ * 같은 이름이면 언제나 같은 색이라, 기기·세션이 달라도 그 태그의 색이 흔들리지 않는다.
+ */
+const TAG_PALETTE: readonly string[] = ['#D8794F', '#7C9BD8', '#69B08A', '#C98BB4', '#D8A24F', '#5EC8C0', '#A9724F', '#E45DA0'];
+
+/**
+ * 공책·페이지 태그 칩의 색.
+ *
+ * 기본 여섯은 표에 박혀 있고(디자인이 고른 색), **사용자가 만든 태그**는 이름 해시로
+ * 팔레트에서 고정 선택한다 — 예전에는 모르는 이름을 전부 회색으로 칠해, 직접 만든
+ * 태그끼리 구분이 되지 않았다.
+ */
 export function noteTagColor(tag: string | null | undefined): string {
-  return (tag && TAG_INK[tag]) || '#B0A69B';
+  const name = tag?.trim();
+  if (!name) return '#B0A69B';
+  const known = TAG_INK[name];
+  if (known) return known;
+  let h = 0;
+  for (let i = 0; i < name.length; i += 1) h = (h * 31 + name.charCodeAt(i)) >>> 0;
+  return TAG_PALETTE[h % TAG_PALETTE.length]!;
 }
 
 /** 고를 수 있는 태그 목록 — 디자인의 태그 메뉴 순서 그대로. */
