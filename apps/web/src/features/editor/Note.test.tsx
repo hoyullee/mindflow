@@ -373,3 +373,105 @@ describe('공책 2판 — 공책 안에서 찾기 · 고급 블록 · 협업', (
     expect(screen.getByRole('button', { name: '공유' })).toBeTruthy();
   });
 });
+
+// ── 3판(제보: "공책 에디터 페이지의 UI가 모두 틀어져 있어") ─────────────────────
+//
+// 겉모습을 픽셀로 고정하지는 않는다 — 이 파일이 지키는 것은 **디자인이 요구한 자리**가
+// 실제로 있고 동작한다는 것이다: 상단 바(문서 칩이 페이지 목록을 덮지 않는다) ·
+// 목록의 정렬·태그 거르개 · 툴바의 넣기/정렬 · 본문 끝의 글 부피.
+describe('공책 3판 — 디자인 이식', () => {
+  beforeEach(() => {
+    localStorage.clear();
+    mockMatchMedia(false);
+    localStorage.setItem('mf_demo_session', JSON.stringify({ user: { id: 'u', email: 'me@example.com' } }));
+  });
+  afterEach(cleanup);
+
+  it('문서 칩이 **상단 바 안에** 선다 — 페이지 목록을 덮지 않는다', async () => {
+    localStorage.setItem('mindflow_doc_ns20', JSON.stringify(NOTE));
+    const { container } = renderEditor('/editor?map=ns20&title=x');
+    await waitFor(() => expect(container.querySelector('[data-note-topbar]')).toBeTruthy());
+
+    const chip = container.querySelector('[data-doc-chip]') as HTMLElement;
+    // 겹침의 원인이던 `position: absolute`가 아니라 줄 안에 선다.
+    expect(chip.style.position).toBe('relative');
+    expect(container.querySelector('[data-note-topbar]')!.contains(chip)).toBe(true);
+    // 그래서 목록의 검색칸이 가려지지 않고 실제로 있다.
+    expect(container.querySelector('[data-note-search]')).toBeTruthy();
+  });
+
+  it('목록의 정렬을 **제목순**으로 바꾸면 순서가 바뀐다', async () => {
+    localStorage.setItem('mindflow_doc_ns21', JSON.stringify(NOTE));
+    const { container } = renderEditor('/editor?map=ns21&title=x');
+    await waitFor(() => expect(container.querySelectorAll('[data-note-page-row]').length).toBe(2));
+
+    const titles = () => [...container.querySelectorAll('[data-note-page-row]')].map((el) => el.getAttribute('data-note-page-row'));
+    // 수정순: 시각이 있는 p1이 먼저다.
+    expect(titles()[0]).toBe('p1');
+    fireEvent.click(container.querySelector('[data-note-sort="title"]')!);
+    // 제목순: `9월 3주 회의록` < `주간 회고`(ko) — 숫자가 한글보다 앞선다.
+    expect(titles()).toEqual(['p1', 'p2']);
+    // 고른 쪽이 눌린 상태로 표시된다.
+    expect(container.querySelector('[data-note-sort="title"]')!.getAttribute('aria-pressed')).toBe('true');
+  });
+
+  it('태그 거르개는 **그 태그의 페이지만** 남긴다', async () => {
+    const tagged = { ...NOTE, pages: [{ ...NOTE.pages[0], tag: '회의록' }, { ...NOTE.pages[1], tag: '회고' }] };
+    localStorage.setItem('mindflow_doc_ns22', JSON.stringify(tagged));
+    const { container } = renderEditor('/editor?map=ns22&title=x');
+    await waitFor(() => expect(container.querySelectorAll('[data-note-page-row]').length).toBe(2));
+
+    fireEvent.click(container.querySelector('[data-note-tag-filter="회고"]')!);
+    const rows = [...container.querySelectorAll('[data-note-page-row]')];
+    expect(rows.length).toBe(1);
+    expect(rows[0]!.getAttribute('data-note-page-row')).toBe('p2');
+    // `전체`로 돌아오면 다시 둘.
+    fireEvent.click(container.querySelector('[data-note-tag-filter="전체"]')!);
+    expect(container.querySelectorAll('[data-note-page-row]').length).toBe(2);
+  });
+
+  it('툴바의 **넣기**가 블록을 만든다 — 빈 문단이면 그 줄의 종류를 바꾼다', async () => {
+    localStorage.setItem('mindflow_doc_ns23', JSON.stringify(NOTE));
+    const { container } = renderEditor('/editor?map=ns23&title=x');
+    await waitFor(() => expect(container.querySelector('[data-note-insert="table"]')).toBeTruthy());
+
+    const before = container.querySelectorAll('[data-note-block]').length;
+    fireEvent.click(container.querySelector('[data-note-insert="table"]')!);
+    await waitFor(() => expect(container.querySelectorAll('[data-note-block]').length).toBe(before + 1));
+    saveNow();
+    await waitFor(() => expect(saved('ns23').pages[0].blocks.filter((b: { kind: string }) => b.kind === 'table').length).toBe(2));
+  });
+
+  it('툴바의 **정렬**이 그 블록에 걸리고, 기본값(왼쪽)은 문서에 적지 않는다', async () => {
+    localStorage.setItem('mindflow_doc_ns24', JSON.stringify(NOTE));
+    const { container } = renderEditor('/editor?map=ns24&title=x');
+    await waitFor(() => expect(container.querySelector('[data-note-align="center"]')).toBeTruthy());
+
+    fireEvent.click(container.querySelector('[data-note-align="center"]')!);
+    saveNow();
+    // 캐럿을 두지 않았으면 **마지막 블록**에 걸린다(툴바를 먼저 누르는 사람도 쓸 수 있게).
+    await waitFor(() => {
+      const blocks = saved('ns24').pages[0].blocks as { align?: string }[];
+      expect(blocks[blocks.length - 1]!.align).toBe('center');
+    });
+    fireEvent.click(container.querySelector('[data-note-align="left"]')!);
+    saveNow();
+    await waitFor(() => {
+      const blocks = saved('ns24').pages[0].blocks as { align?: string }[];
+      expect('align' in blocks[blocks.length - 1]!).toBe(false);
+    });
+  });
+
+  it('본문 끝에 **글의 부피**가 적힌다', async () => {
+    localStorage.setItem('mindflow_doc_ns25', JSON.stringify(NOTE));
+    const { container } = renderEditor('/editor?map=ns25&title=x');
+    const stats = await waitFor(() => {
+      const el = container.querySelector('[data-note-stats]');
+      expect(el).toBeTruthy();
+      return el as HTMLElement;
+    });
+    expect(stats.textContent).toMatch(/\d+자/);
+    expect(stats.textContent).toMatch(/\d+단어/);
+    expect(stats.textContent).toMatch(/읽기 \d+분/);
+  });
+});

@@ -15,7 +15,7 @@ import { PresenceBar } from './components/PresenceBar';
 import { SearchBar } from './components/SearchBar';
 import { ShortcutHelp } from './components/ShortcutHelp';
 import { KanbanBoard } from './components/KanbanBoard';
-import { NoteEditor } from './components/NoteEditor';
+import { NoteEditor, NoteTopBar } from './components/NoteEditor';
 import { VersionHistory } from './components/VersionHistory';
 import { MapUnavailable } from './components/MapUnavailable';
 import { CollabPaused } from './components/CollabPaused';
@@ -186,9 +186,12 @@ export function Editor() {
           /* 공책 — 캔버스도 열도 아니라 **페이지의 글**이다. 팬/줌·미니맵·그리기·
              레이아웃이 통째로 뜻이 없어 Viewport 계열 UI가 하나도 뜨지 않는다
              (칸반과 같은 자리에서 갈린다). */
-          <>
+          <div style={{ flex: '1 1 auto', minWidth: 0, display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
+            {/* 상단 바 — 디자인 원본은 공책을 [바 · 목록 · 본문]으로 짠다. 문서 칩이
+                여기 **줄 안에** 서므로(inline) 왼쪽 페이지 목록을 덮지 않는다. */}
+            <NoteTopBar controller={controller} theme={th} />
+            <div style={{ position: 'relative', flex: '1 1 auto', minHeight: 0, display: 'flex', overflow: 'hidden' }}>
             <NoteEditor controller={controller} theme={th} />
-            <DocChip controller={controller} />
             <PresenceBar controller={controller} />
             {/* 댓글 — **공책 한 권에 대한 논의**다(디자인: "이 공책에 댓글 남기기").
                 캔버스가 없어 핀을 꽂을 자리가 없으므로 대상은 문서 자신 하나뿐이고,
@@ -196,7 +199,8 @@ export function Editor() {
                 댓글은 본문을 바꾸지 않고, 리뷰를 받으려고 보기 권한으로 부르는 일이
                 흔하다(맵과 같은 판단). */}
             <CommentPanel controller={controller} />
-          </>
+            </div>
+          </div>
         ) : controller.isKanban ? (
           /* 칸반 — 캔버스가 아니라 전용 고정 레이아웃(열·카드). 팬/줌·미니맵·
              그리기가 없으므로 Viewport 계열 UI는 통째로 뜨지 않는다. */

@@ -42,7 +42,7 @@ const EVENT: CalendarEvent = {
 };
 
 class StubDocStore implements DocStore {
-  listEditorNames = vi.fn(async (): Promise<Record<string, string>> => ({}));
+  listEditorNames = vi.fn(async (): Promise<Record<string, never>> => ({}));
   setFavorite = vi.fn(async (): Promise<void> => undefined);
   remove = vi.fn(async (): Promise<void> => undefined);
   restore = vi.fn(async (): Promise<void> => undefined);

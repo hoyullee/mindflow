@@ -126,6 +126,22 @@ describe('스페이스의 공책 구획', () => {
     expect(cover.parentElement!.querySelector('[data-note-bookmark]')).toBeTruthy();
   });
 
+  it('카드 오른쪽 아래에 **마지막으로 고친 사람의 얼굴**이 있고, ☰은 첫 줄로 옮겼다', async () => {
+    const { container } = renderHome();
+    await waitFor(() => expect(container.querySelector('[data-note-cover]')).toBeTruthy());
+
+    const cover = container.querySelector('[data-note-cover]') as HTMLElement;
+    // 얼굴은 맨 아랫줄(페이지 수 · 공유 · 사람)에 있다.
+    const rows = [...cover.children] as HTMLElement[];
+    const foot = rows[rows.length - 1]!;
+    expect(foot.querySelector('[data-avatar]')).toBeTruthy();
+    // 마지막 저장자가 나이므로(이름이 없다) 툴팁도 그렇게 말한다.
+    expect(foot.querySelector('[role="img"]')!.getAttribute('title')).toBe('내가 마지막으로 수정');
+    // ☰은 그 줄이 아니라 **첫 줄**에 있다 — 아랫줄은 읽는 줄이라 조작을 얹지 않는다.
+    expect(foot.querySelector('.menu-btn')).toBeNull();
+    expect(rows[0]!.querySelector('.menu-btn')).toBeTruthy();
+  });
+
   it('공책 구획 끝에 **공책 만들기** 타일이 있고, 누르면 갤러리가 공책 탭으로 열린다', async () => {
     const user = userEvent.setup();
     const { container } = renderHome();

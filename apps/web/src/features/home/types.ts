@@ -2,7 +2,7 @@
 
 import { loadHomeThemeCache, type HomeThemeKey } from './theme';
 import type { HomeLanding } from './storage';
-import type { SigninMethods } from '../../adapters/ports';
+import type { DocEditor, SigninMethods } from '../../adapters/ports';
 import type { DashboardData, DashWidgetKind } from './dashboard/model';
 
 export interface MapCardData {
@@ -362,9 +362,10 @@ export interface HomeState {
   selectMode: boolean;
   /** 여러 장을 한 번에 지울 때의 확인 대상 — 한 장이면 기존 `confirmDelete` 경로. */
   confirmDeleteMulti: { key: string; title: string; docId?: string }[] | null;
-  /** 문서별 **마지막으로 저장한 사람**의 표시 이름(docId → 이름). 마지막 저장자가
-   * 나이거나 알 수 없으면 키가 없다 — 그때 카드는 이름을 붙이지 않는다(0015). */
-  editorNames: Record<string, string>;
+  /** 문서별 **마지막으로 저장한 사람**(docId → 이름 + 얼굴 주소). 마지막 저장자가
+   * 나이거나 알 수 없으면 키가 없다 — 그때 카드는 이름을 붙이지 않고, 공책 카드의
+   * 얼굴 자리에는 **내** 프로필 이미지가 온다(0015 → 0041). */
+  editorNames: Record<string, DocEditor>;
   draggingMap: string | null;
   dragOverFolder: string | null;
 

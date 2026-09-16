@@ -153,12 +153,27 @@ describe('SupabaseDocStore', () => {
     warn.mockRestore();
   });
 
-  it('listEditorNames() calls the document_editors RPC and maps rows', async () => {
-    const rpc = vi.fn(async () => ({ data: [{ document_id: 'd1', display_name: '홍길동' }, { document_id: 'd2', display_name: '  ' }], error: null }));
+  it('listEditorNames() calls the document_editors RPC and maps rows (이름 + 얼굴)', async () => {
+    const rpc = vi.fn(async () => ({
+      data: [
+        { document_id: 'd1', display_name: '홍길동', avatar_url: 'https://cdn/a.png' },
+        { document_id: 'd2', display_name: '  ', avatar_url: 'https://cdn/b.png' },
+      ],
+      error: null,
+    }));
     const client = { from: vi.fn(), auth: { getUser: vi.fn() }, rpc } as unknown as import('@supabase/supabase-js').SupabaseClient;
     const names = await new SupabaseDocStore(client).listEditorNames(['d1', 'd2']);
     expect(rpc).toHaveBeenCalledWith('document_editors', { doc_ids: ['d1', 'd2'] });
-    expect(names).toEqual({ d1: '홍길동' }); // 빈 이름은 키를 만들지 않는다
+    // 빈 이름은 키를 만들지 않는다 — 얼굴만 있고 이름이 없는 행은 쓸 데가 없다.
+    expect(names).toEqual({ d1: { name: '홍길동', avatarUrl: 'https://cdn/a.png' } });
+  });
+
+  // 0041이 아직 닿지 않은 서버는 `avatar_url` 칸 자체가 없다 — 그때도 이름은 온다
+  // (배포 순서 안전: 마이그레이션과 앱 중 어느 쪽이 먼저 나가도 깨지지 않는다).
+  it('listEditorNames() survives a server without avatar_url (0041 이전)', async () => {
+    const rpc = vi.fn(async () => ({ data: [{ document_id: 'd1', display_name: '홍길동' }], error: null }));
+    const client = { from: vi.fn(), auth: { getUser: vi.fn() }, rpc } as unknown as import('@supabase/supabase-js').SupabaseClient;
+    await expect(new SupabaseDocStore(client).listEditorNames(['d1'])).resolves.toEqual({ d1: { name: '홍길동', avatarUrl: null } });
   });
 
   it('listEditorNames() stays silent when the RPC is missing or errors (배포 순서 안전)', async () => {

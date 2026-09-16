@@ -7,7 +7,7 @@
 // 팬·줌·미니맵·그리기·레이아웃이 없다(에디터가 `isNote`로 그 UI를 통째로 걷어낸다).
 // 대신 다루는 것이 순서와 글이고, 규칙은 전부 코어 `note.ts`에 있다.
 
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import type { CSSProperties, MouseEvent as ReactMouseEvent } from 'react';
 import type { NoteBlock, NoteBlockKind, NoteCalloutTone, NotePage, RichRun } from '@mindflow/mindmap-core';
 import {
@@ -19,6 +19,7 @@ import {
   noteHighlightColor,
   noteTagColor,
   pageExcerpt,
+  pageText,
   runsText,
   blockText,
 } from '@mindflow/mindmap-core';
@@ -26,6 +27,8 @@ import type { EditorController } from '../useEditorState';
 import type { Theme } from '../theme';
 import { applyNoteFormat, noteEditBoxInSelection } from '../noteRichDom';
 import { NoteLine } from './NoteLine';
+import { DocChip } from './DocChip';
+import { Avatar } from './commentPinShape';
 import { formatLastEdited } from '../../home/timeFormat';
 
 interface Props {
@@ -66,6 +69,30 @@ const MARKS: { kind: 'b' | 'i' | 's' | 'u' | 'k'; label: string; name: string; c
   { kind: 's', label: 'S', name: '취소선', css: { textDecoration: 'line-through' } },
   { kind: 'u', label: 'U', name: '밑줄', css: { textDecoration: 'underline' } },
   { kind: 'k', label: '<>', name: '인라인 코드', css: { fontFamily: 'ui-monospace, monospace', fontSize: 11 } },
+];
+
+/** 넣기 — 디자인 원본의 `TOOL_ICONS`. 아이콘은 그 파일의 path를 그대로 옮겼다. */
+const INSERTS: { kind: NoteBlockKind; name: string; icon: JSX.Element }[] = [
+  { kind: 'ul', name: '글머리 목록', icon: (<><path d="M9 6h11M9 12h11M9 18h11" /><circle cx="4.5" cy="6" r="1.4" fill="currentColor" stroke="none" /><circle cx="4.5" cy="12" r="1.4" fill="currentColor" stroke="none" /><circle cx="4.5" cy="18" r="1.4" fill="currentColor" stroke="none" /></>) },
+  { kind: 'ol', name: '번호 목록', icon: (<><path d="M10 6h10M10 12h10M10 18h10" /><path d="M4 5.5h1.5V9M4 9h3M4 13.5c0-1 2-1.2 2-.2 0 .6-.6.9-2 2.2h2.4M4.2 17.5h1.6c1.2 0 1.2 1.5 0 1.5h-1.6" /></>) },
+  { kind: 'ck', name: '체크리스트', icon: (<><rect x="3" y="4" width="7" height="7" rx="1.6" /><path d="m4.6 7.4 1.6 1.6L9 6.2" /><rect x="3" y="14" width="7" height="7" rx="1.6" /><path d="M13 7.5h8M13 17.5h8" /></>) },
+  { kind: 'table', name: '표', icon: (<><rect x="3.5" y="5" width="17" height="14" rx="2" /><path d="M3.5 10h17M9.5 10v9M15 10v9" /></>) },
+  { kind: 'img', name: '이미지', icon: (<><rect x="3.5" y="5" width="17" height="14" rx="2" /><circle cx="9" cy="10" r="1.6" /><path d="m5 17 4.5-4.5L14 17l3-3 3 3" /></>) },
+  { kind: 'hr', name: '구분선', icon: (<><path d="M4 12h16" /><path d="M8 6h8M8 18h8" opacity=".35" /></>) },
+  { kind: 'link', name: '문서 링크', icon: (<><rect x="3.5" y="4" width="4.6" height="16" rx="1.3" /><rect x="9.7" y="4" width="4.6" height="10" rx="1.3" /><rect x="15.9" y="4" width="4.6" height="13" rx="1.3" /></>) },
+];
+
+/** 가로 정렬 셋 — 디자인의 `alignTools` 앞 세 개. */
+const ALIGNS: { align: 'left' | 'center' | 'right'; name: string; icon: JSX.Element }[] = [
+  { align: 'left', name: '왼쪽 정렬', icon: <path d="M4 6h16M4 12h10M4 18h14" /> },
+  { align: 'center', name: '가운데 정렬', icon: <path d="M4 6h16M7 12h10M5 18h14" /> },
+  { align: 'right', name: '오른쪽 정렬', icon: <path d="M4 6h16M10 12h10M6 18h14" /> },
+];
+
+/** 들여쓰기 둘 — 같은 목록의 뒤 두 개. */
+const INDENTS: { delta: number; name: string; icon: JSX.Element }[] = [
+  { delta: -1, name: '내어쓰기', icon: (<><path d="M11 6h9M11 12h9M11 18h9" /><path d="m7 9-3 3 3 3" /></>) },
+  { delta: 1, name: '들여쓰기', icon: (<><path d="M11 6h9M11 12h9M11 18h9" /><path d="m4 9 3 3-3 3" /></>) },
 ];
 
 /** 글자색 — 스와치. 맵의 색 팔레트와 같은 값을 쓴다(한 앱에서 색이 두 벌이 되지 않게). */
@@ -124,9 +151,22 @@ export function NoteEditor({ controller, theme }: Props) {
     >
       <PageList controller={controller} />
       <div style={{ flex: '1 1 auto', minWidth: 0, display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
-        {!readOnly && <FormatToolbar controller={controller} boxRef={boxRef} rememberBox={rememberBox} />}
-        <div className="lnb-scroll" data-note-page style={{ flex: '1 1 auto', minHeight: 0, overflowY: 'auto', padding: '30px 0 120px' }}>
-          <div style={{ width: 720, maxWidth: 'calc(100% - 48px)', margin: '0 auto', display: 'flex', flexDirection: 'column', gap: 4 }}>
+        {!readOnly && (
+          <FormatToolbar
+            controller={controller}
+            boxRef={boxRef}
+            rememberBox={rememberBox}
+            onInserted={setFreshId}
+            openSlash={(id) => {
+              setSlashFor(id);
+              setSlashQ('');
+            }}
+          />
+        )}
+        <div className="lnb-scroll" data-note-page style={{ flex: '1 1 auto', minHeight: 0, overflowY: 'auto', padding: '26px 0 56px' }}>
+          {/* 본문 단 — 디자인 원본의 700px. 블록 사이는 19px로 벌어진다(글이 숨 쉬는
+              간격이고, 이 리듬이 없으면 제목과 본문이 한 덩어리로 뭉쳐 보인다). */}
+          <div style={{ maxWidth: 700, margin: '0 auto', padding: '0 30px', display: 'flex', flexDirection: 'column', gap: 19, minWidth: 0 }}>
             <PageHead controller={controller} page={page} />
             {page.blocks.map((block, i) => (
               <BlockView
@@ -157,18 +197,27 @@ export function NoteEditor({ controller, theme }: Props) {
               />
             )}
 
-            {/* 본문 아래의 빈 자리 — 누르면 마지막에 문단을 더한다. 글 끝에서 아래를
-                눌러 이어 쓰는 것이 문서 편집기의 몸에 익은 동작이다. */}
+            {/* 본문 끝의 빈 줄 — 디자인은 여기에 **무엇을 할 수 있는지**를 적는다.
+                예전에는 아무것도 없는 120px 빈 버튼이라, 이어 쓸 수 있다는 것을
+                알아채려면 우연히 눌러 보는 수밖에 없었다. */}
             {!readOnly && (
               <button
                 type="button"
                 data-note-append
                 onClick={() => setFreshId(controller.addNoteBlock('p'))}
                 className="btn"
-                style={{ height: 120, border: 'none', background: 'transparent', cursor: 'text', display: 'block', width: '100%' }}
-                aria-label="문단 추가"
-              />
+                style={{ display: 'flex', alignItems: 'center', gap: 8, width: '100%', padding: 0, border: 'none', background: 'transparent', cursor: 'text', textAlign: 'left' }}
+              >
+                <span aria-hidden="true" style={{ width: 26, height: 26, flex: '0 0 auto', borderRadius: 8, border: '1px dashed var(--mf-border)', color: 'var(--mf-faint)', display: 'inline-flex', alignItems: 'center', justifyContent: 'center' }}>
+                  <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round">
+                    <path d="M12 5v14M5 12h14" />
+                  </svg>
+                </span>
+                <span style={{ fontSize: 12.5, color: 'var(--mf-faint)' }}>여기에 입력하거나 / 를 눌러 블록을 넣으세요</span>
+              </button>
             )}
+
+            <PageStats page={page} />
           </div>
         </div>
       </div>
@@ -176,7 +225,110 @@ export function NoteEditor({ controller, theme }: Props) {
   );
 }
 
+/**
+ * 상단 바 — 디자인 원본의 공책 머리. 왼쪽부터 [문서 칩(뒤로·이름·저장)] · [경로] ·
+ * [공유·댓글·기록].
+ *
+ * 문서 칩이 여기 **줄 안에** 선다(`inline`). 캔버스 위에 떠 있던 예전 자리는 공책에서는
+ * 왼쪽 페이지 목록의 머리와 검색칸을 덮었다 — 제보의 "UI가 틀어져 있다" 중 첫 번째다.
+ */
+export function NoteTopBar({ controller, theme }: Props) {
+  const page = controller.notePage;
+  const space = controller.noteSpaceName;
+  const tabs: { name: string; on: boolean; onPick: () => void }[] = [
+    { name: '댓글', on: controller.commentsOpen, onPick: () => (controller.commentsOpen ? controller.closeComments() : controller.openComments()) },
+    { name: '기록', on: controller.historyOpen, onPick: () => controller.setHistoryOpen(!controller.historyOpen) },
+  ];
+  return (
+    <div
+      data-note-topbar
+      style={{
+        flex: '0 0 auto',
+        display: 'flex',
+        alignItems: 'center',
+        gap: 10,
+        padding: '10px 14px',
+        background: theme.appBg,
+        borderBottom: `1px solid ${theme.border}`,
+        minWidth: 0,
+      }}
+    >
+      <DocChip controller={controller} inline />
+      {/* 경로 — `스페이스 › 공책 › 페이지`. 스페이스 이름은 워크스페이스 블롭에서 오고
+          (공책일 때만 읽는다), 아직 못 읽었으면 그 조각만 빠진다. */}
+      <nav aria-label="위치" style={{ flex: 1, minWidth: 0, display: 'flex', alignItems: 'center', gap: 6, overflow: 'hidden' }}>
+        {space && (
+          <>
+            <button
+              type="button"
+              className="mf-ed-btn"
+              onClick={controller.goBack}
+              style={{ flex: '0 0 auto', height: 26, padding: '0 9px', border: 0, borderRadius: 8, background: 'transparent', color: theme.subtext, fontFamily: 'inherit', fontSize: 12, fontWeight: 600, cursor: 'pointer', whiteSpace: 'nowrap' }}
+            >
+              {space}
+            </button>
+            <Caret theme={theme} />
+          </>
+        )}
+        <span style={{ flex: '0 1 auto', minWidth: 0, display: 'inline-flex', alignItems: 'center', gap: 6, height: 26, padding: '0 9px', fontSize: 12, fontWeight: 600, color: theme.subtext, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+          <span aria-hidden="true" style={{ width: 7, height: 7, flex: '0 0 auto', borderRadius: 2.5, background: noteCoverColor(controller.doc.cover), display: 'block' }} />
+          {controller.docTitle || '제목 없는 공책'}
+        </span>
+        <Caret theme={theme} />
+        <span style={{ flex: '0 1 auto', minWidth: 0, height: 26, padding: '0 9px', display: 'inline-flex', alignItems: 'center', fontSize: 12, fontWeight: 800, letterSpacing: '-.015em', color: theme.text, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+          {page?.title?.trim() || '제목 없는 페이지'}
+        </span>
+      </nav>
+      {/* 오른쪽 — 디자인은 [공유 · 댓글 · 기록]을 한 알약에 묶는다. 우리는 **공유를 빼고**
+          둘만 둔다: 디자인의 공책 화면에는 GNB가 없지만 우리에겐 있고 거기 이미 공유가
+          있다. 같은 일을 하는 단추가 한 화면에 둘이면 어느 쪽이 무엇인지 되레 흐려진다
+          (댓글·기록은 GNB 메뉴 안에 있어 이 자리에서 값을 한다). */}
+      <div style={{ flex: '0 0 auto', display: 'flex', alignItems: 'center', gap: 6, height: 40, padding: '0 8px', borderRadius: 14, background: theme.panel, border: `1px solid ${theme.border}` }}>
+        <span style={{ display: 'inline-flex', gap: 2, padding: 3, borderRadius: 11, background: theme.panel2, border: `1px solid ${theme.border}` }}>
+          {tabs.map((t) => (
+            <button
+              key={t.name}
+              type="button"
+              className="mf-ed-btn"
+              data-note-tab={t.name}
+              aria-pressed={t.on}
+              onClick={t.onPick}
+              style={{
+                height: 24,
+                padding: '0 11px',
+                borderRadius: 8,
+                border: 0,
+                background: t.on ? theme.panel : 'transparent',
+                color: t.on ? theme.text : theme.subtext,
+                fontFamily: 'inherit',
+                fontSize: 12,
+                fontWeight: t.on ? 800 : 600,
+                cursor: 'pointer',
+                boxShadow: t.on ? '0 1px 2px rgba(46,42,38,.16)' : 'none',
+              }}
+            >
+              {t.name}
+            </button>
+          ))}
+        </span>
+      </div>
+    </div>
+  );
+}
+
+/** 경로의 `›` — 한 벌로 써서 간격이 어긋나지 않게. */
+function Caret({ theme }: { theme: Theme }) {
+  return (
+    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke={theme.subtext} strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true" style={{ flex: '0 0 auto' }}>
+      <path d="m9 6 6 6-6 6" />
+    </svg>
+  );
+}
+
 /* ── 페이지 목록 ───────────────────────────────────────────────────────────── */
+
+/** 목록 정렬 둘 — 디자인 원본의 `noteSorts`. */
+type PageSort = 'edited' | 'title';
 
 function PageList({ controller }: { controller: EditorController }) {
   const pages = controller.notePages;
@@ -190,120 +342,214 @@ function PageList({ controller }: { controller: EditorController }) {
    * 그 자리에 보여 줘 "이 장이 맞나"를 목록에서 판단할 수 있게 한다.
    */
   const [q, setQ] = useState('');
+  const [sort, setSort] = useState<PageSort>('edited');
+  const [tag, setTag] = useState<string>('전체');
   const query = q.trim().toLowerCase();
-  const shown = query
-    ? pages
-        .map((pg) => ({ pg, hit: pageHit(pg, query) }))
-        .filter((x) => x.hit !== null)
-    : pages.map((pg) => ({ pg, hit: null }));
+  const searching = query.length > 0;
+
+  /** 이 공책에 실제로 쓰인 태그들 — 쓰지 않은 태그로 거르는 칩은 뜻이 없다. */
+  const tags = useMemo(() => {
+    const seen: string[] = [];
+    for (const pg of pages) {
+      const t = pg.tag?.trim();
+      if (t && !seen.includes(t)) seen.push(t);
+    }
+    return seen;
+  }, [pages]);
+
+  const shown = useMemo(() => {
+    // 검색 중에는 **태그·정렬을 적용하지 않는다** — 찾는 사람은 "어디 있나"를 묻는
+    // 것이지 "어떤 순서로 보고 싶다"를 말하는 게 아니다(디자인도 그때 두 줄을 감춘다).
+    if (searching) {
+      return pages.map((pg) => ({ pg, hit: pageHit(pg, query) })).filter((x) => x.hit !== null);
+    }
+    const rows = pages.filter((pg) => tag === '전체' || (pg.tag ?? '') === tag).map((pg) => ({ pg, hit: null as string | null }));
+    if (sort === 'title') {
+      // 제목순은 **화면에 보이는 이름**을 기준으로 — 빈 제목은 뒤로 민다.
+      return [...rows].sort((a, b) => (a.pg.title.trim() || '￿').localeCompare(b.pg.title.trim() || '￿', 'ko'));
+    }
+    // 수정순 — 시각을 모르는 페이지(옛 문서)는 문서 안 순서를 그대로 지킨다.
+    return [...rows].sort((a, b) => (b.pg.updatedAt ?? '').localeCompare(a.pg.updatedAt ?? ''));
+  }, [pages, query, searching, sort, tag]);
+
   return (
     <aside
       data-note-pages
-      className="lnb-scroll"
       style={{
-        width: 268,
-        flex: '0 0 auto',
+        width: 292,
+        minWidth: 196,
+        flex: '0 1 292px',
         borderRight: '1px solid var(--mf-border-soft)',
         background: 'var(--mf-panel)',
-        overflowY: 'auto',
         display: 'flex',
         flexDirection: 'column',
-        gap: 2,
-        padding: '14px 10px 24px',
+        minHeight: 0,
       }}
     >
-      <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '0 6px 10px' }}>
-        <span aria-hidden="true" style={{ width: 4, height: 16, borderRadius: 2, background: cover, flex: '0 0 auto' }} />
-        <span style={{ fontSize: 12, fontWeight: 700, color: 'var(--mf-subtext)', flex: 1 }}>페이지</span>
-        <span style={{ fontFamily: 'ui-monospace, monospace', fontSize: 10.5, color: 'var(--mf-faint)' }}>{pages.length}</span>
+      {/* 머리 — 검색 + 새 페이지가 **한 줄**이다(디자인). 예전에는 검색이 가운데,
+          새 페이지가 목록 맨 아래에 따로 있어 둘이 한 벌로 읽히지 않았다. */}
+      <div style={{ flex: '0 0 auto', display: 'flex', flexDirection: 'column', gap: 10, padding: '12px 14px' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8, minWidth: 0 }}>
+          <span style={{ flex: 1, minWidth: 0, display: 'flex', alignItems: 'center', gap: 7, height: 30, padding: '0 9px', borderRadius: 10, border: '1px solid var(--mf-border)', background: 'var(--mf-card)' }}>
+            <svg aria-hidden="true" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="var(--mf-faint)" strokeWidth="2.2" strokeLinecap="round" style={{ flex: '0 0 auto' }}>
+              <circle cx="11" cy="11" r="7" />
+              <path d="m21 21-4.5-4.5" />
+            </svg>
+            <input
+              data-note-search
+              value={q}
+              onChange={(e) => setQ(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === 'Escape') setQ('');
+              }}
+              placeholder="제목과 본문에서 찾기"
+              aria-label="제목과 본문에서 찾기"
+              style={{ flex: 1, minWidth: 0, border: 0, background: 'transparent', color: 'var(--mf-text)', fontFamily: 'inherit', fontSize: 12, outline: 'none' }}
+            />
+            {searching && (
+              <button
+                type="button"
+                data-note-search-clear
+                onClick={() => setQ('')}
+                title="지우기"
+                aria-label="검색어 지우기"
+                style={{ width: 18, height: 18, flex: '0 0 auto', border: 0, borderRadius: 999, background: 'var(--mf-panel2)', color: 'var(--mf-subtext)', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', padding: 0 }}
+              >
+                <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.6" strokeLinecap="round" aria-hidden="true">
+                  <path d="M6 6l12 12M18 6 6 18" />
+                </svg>
+              </button>
+            )}
+          </span>
+          {!controller.readOnly && (
+            <button
+              type="button"
+              data-note-new-page
+              onClick={() => controller.addNotePage()}
+              title="새 페이지"
+              aria-label="새 페이지"
+              style={{ width: 30, height: 30, flex: '0 0 auto', border: 0, borderRadius: 10, background: 'var(--mf-accent)', color: 'var(--mf-accent-ink)', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', padding: 0 }}
+            >
+              <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" aria-hidden="true">
+                <path d="M12 5v14M5 12h14" />
+              </svg>
+            </button>
+          )}
+        </div>
+
+        {searching ? (
+          <div data-note-search-count style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '2px 4px 0', fontSize: 11, color: 'var(--mf-subtext)', minWidth: 0 }}>
+            <span style={{ fontWeight: 700, color: 'var(--mf-accent)' }}>{shown.length}</span>
+            <span>장에서 찾음</span>
+            <span style={{ flex: 1, minWidth: 0 }} />
+            <span style={{ fontSize: 9.5, color: 'var(--mf-faint)' }}>Esc 목록으로</span>
+          </div>
+        ) : (
+          <>
+            {/* 정렬 — 회의록처럼 쌓이는 공책은 **최근 것**이 먼저이고, 템플릿 모음처럼
+                이름으로 찾는 공책은 제목순이 맞다. 둘 다 흔해서 고르게 둔다. */}
+            <div style={{ display: 'flex', gap: 3, padding: 3, borderRadius: 10, background: 'var(--mf-panel2)', border: '1px solid var(--mf-border)' }}>
+              {([['edited', '수정순'], ['title', '제목순']] as const).map(([key, name]) => (
+                <button
+                  key={key}
+                  type="button"
+                  data-note-sort={key}
+                  aria-pressed={sort === key}
+                  onClick={() => setSort(key)}
+                  style={{
+                    flex: '1 1 0',
+                    minWidth: 0,
+                    height: 25,
+                    border: 0,
+                    borderRadius: 8,
+                    background: sort === key ? 'var(--mf-card)' : 'transparent',
+                    color: sort === key ? 'var(--mf-text)' : 'var(--mf-subtext)',
+                    fontFamily: 'inherit',
+                    fontSize: 11.5,
+                    fontWeight: sort === key ? 800 : 600,
+                    cursor: 'pointer',
+                    boxShadow: sort === key ? '0 1px 2px rgba(46,42,38,.16)' : 'none',
+                  }}
+                >
+                  {name}
+                </button>
+              ))}
+            </div>
+            {/* 태그 거르개 — 이 공책에 쓰인 태그가 둘 이상일 때만 뜻이 있다. */}
+            {tags.length > 0 && (
+              <div style={{ display: 'flex', alignItems: 'center', gap: 5, flexWrap: 'wrap' }}>
+                {['전체', ...tags].map((name) => {
+                  const on = tag === name;
+                  const dot = name === '전체' ? null : noteTagColor(name);
+                  return (
+                    <button
+                      key={name}
+                      type="button"
+                      data-note-tag-filter={name}
+                      aria-pressed={on}
+                      onClick={() => setTag(name)}
+                      style={{
+                        display: 'inline-flex',
+                        alignItems: 'center',
+                        gap: 5,
+                        height: 24,
+                        padding: '0 9px',
+                        borderRadius: 999,
+                        border: `1px solid ${on ? 'var(--mf-border-hover)' : 'var(--mf-border)'}`,
+                        background: on ? 'var(--mf-accent-soft)' : 'transparent',
+                        color: on ? 'var(--mf-text)' : 'var(--mf-subtext)',
+                        fontFamily: 'inherit',
+                        fontSize: 11,
+                        fontWeight: on ? 800 : 600,
+                        cursor: 'pointer',
+                        whiteSpace: 'nowrap',
+                      }}
+                    >
+                      {dot && <span aria-hidden="true" style={{ width: 6, height: 6, flex: '0 0 auto', borderRadius: 999, background: dot, display: 'block' }} />}
+                      {name}
+                    </button>
+                  );
+                })}
+              </div>
+            )}
+          </>
+        )}
       </div>
 
-      {/* 검색칸 — 페이지가 한 장뿐이면 찾을 것이 없으므로 그리지 않는다. */}
-      {pages.length > 1 && (
-        <div style={{ position: 'relative', margin: '0 4px 8px' }}>
-          <svg
-            aria-hidden="true"
-            width="13"
-            height="13"
-            viewBox="0 0 24 24"
-            fill="none"
-            stroke="var(--mf-faint)"
-            strokeWidth="2.2"
-            strokeLinecap="round"
-            style={{ position: 'absolute', left: 9, top: 9, pointerEvents: 'none' }}
-          >
-            <circle cx="11" cy="11" r="7" />
-            <path d="m21 21-4.5-4.5" />
-          </svg>
-          <input
-            data-note-search
-            value={q}
-            onChange={(e) => setQ(e.target.value)}
-            placeholder="이 공책에서 찾기"
-            aria-label="이 공책에서 찾기"
-            style={{
-              width: '100%',
-              height: 31,
-              padding: '0 9px 0 27px',
-              borderRadius: 9,
-              border: '1px solid var(--mf-border)',
-              background: 'var(--mf-panel2)',
-              color: 'var(--mf-text)',
-              fontFamily: 'inherit',
-              fontSize: 12,
-              outline: 'none',
-            }}
-          />
-        </div>
-      )}
+      <div className="lnb-scroll" style={{ flex: 1, minHeight: 0, overflowY: 'auto', padding: '0 8px 14px', display: 'flex', flexDirection: 'column', gap: 3 }}>
+        {shown.map(({ pg, hit }) => (
+          <PageRow key={pg.id} controller={controller} page={pg} index={pages.indexOf(pg)} active={pg.id === curId} hit={hit} cover={cover} />
+        ))}
 
-      {query && shown.length === 0 && (
-        <div data-note-search-empty style={{ padding: '16px 10px', fontSize: 11.5, color: 'var(--mf-faint)', lineHeight: 1.7, wordBreak: 'keep-all' }}>
-          이 공책의 제목과 본문을 모두 찾아봤어요. 다른 낱말로 찾아보세요.
-        </div>
-      )}
-
-      {shown.map(({ pg, hit }) => (
-        <PageRow key={pg.id} controller={controller} page={pg} index={pages.indexOf(pg)} active={pg.id === curId} hit={hit} />
-      ))}
-
-      {!controller.readOnly && (
-        <button
-          type="button"
-          data-note-new-page
-          onClick={() => controller.addNotePage()}
-          className="btn"
-          style={{
-            marginTop: 8,
-            display: 'flex',
-            alignItems: 'center',
-            gap: 7,
-            height: 34,
-            padding: '0 10px',
-            borderRadius: 10,
-            border: '1px dashed var(--mf-border)',
-            background: 'transparent',
-            color: 'var(--mf-subtext)',
-            fontFamily: 'inherit',
-            fontSize: 12.5,
-            fontWeight: 700,
-            cursor: 'pointer',
-          }}
-        >
-          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" aria-hidden="true">
-            <path d="M12 5v14M5 12h14" />
-          </svg>
-          새 페이지
-        </button>
-      )}
+        {shown.length === 0 && (
+          <div data-note-search-empty style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 10, padding: '26px 12px', textAlign: 'center' }}>
+            <span style={{ fontSize: 12.5, color: 'var(--mf-faint)', lineHeight: 1.7, wordBreak: 'keep-all' }}>
+              {searching ? '이 공책의 제목과 본문을 모두 찾아봤어요' : '검색과 태그에 맞는 페이지가 없어요'}
+            </span>
+            {!searching && !controller.readOnly && (
+              <button
+                type="button"
+                onClick={() => controller.addNotePage()}
+                style={{ display: 'inline-flex', alignItems: 'center', gap: 6, height: 30, padding: '0 13px', border: '1.5px dashed var(--mf-border)', borderRadius: 999, background: 'var(--mf-card)', color: 'var(--mf-subtext)', fontFamily: 'inherit', fontSize: 12, fontWeight: 700, cursor: 'pointer' }}
+              >
+                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" aria-hidden="true">
+                  <path d="M12 5v14M5 12h14" />
+                </svg>
+                새 페이지 만들기
+              </button>
+            )}
+          </div>
+        )}
+      </div>
     </aside>
   );
 }
 
-function PageRow({ controller, page, index, active, hit }: { controller: EditorController; page: NotePage; index: number; active: boolean; hit?: string | null }) {
+function PageRow({ controller, page, index, active, hit, cover }: { controller: EditorController; page: NotePage; index: number; active: boolean; hit?: string | null; cover: string }) {
   // 검색 중이면 **걸린 줄**을 보여 준다 — 첫 줄은 왜 걸렸는지를 말해 주지 못한다.
-  const excerpt = hit ?? pageExcerpt(page, 60);
+  const excerpt = hit ?? pageExcerpt(page, 90);
   const tag = page.tag ?? null;
+  const who = page.updatedBy?.trim();
   return (
     <div
       data-note-page-row={page.id}
@@ -319,63 +565,64 @@ function PageRow({ controller, page, index, active, hit }: { controller: EditorC
       }}
       style={{
         display: 'flex',
-        flexDirection: 'column',
-        gap: 3,
-        padding: '9px 10px',
-        borderRadius: 10,
-        background: active ? 'var(--mf-accent-soft)' : 'transparent',
+        alignItems: 'stretch',
+        gap: 9,
+        padding: '10px 11px',
+        border: `1px solid ${active ? 'var(--mf-border-hover)' : 'transparent'}`,
+        borderRadius: 12,
+        background: active ? 'var(--mf-card)' : 'transparent',
         cursor: 'pointer',
         minWidth: 0,
       }}
     >
-      <div style={{ display: 'flex', alignItems: 'center', gap: 6, minWidth: 0 }}>
-        <span style={{ fontFamily: 'ui-monospace, monospace', fontSize: 10, color: 'var(--mf-faint)', flex: '0 0 auto' }}>{index + 1}</span>
-        <span
-          style={{
-            fontSize: 12.5,
-            fontWeight: active ? 800 : 600,
-            letterSpacing: '-.01em',
-            color: 'var(--mf-text)',
-            overflow: 'hidden',
-            textOverflow: 'ellipsis',
-            whiteSpace: 'nowrap',
-            minWidth: 0,
-            flex: 1,
-          }}
-        >
-          {page.title.trim() || '제목 없는 페이지'}
-        </span>
-        {tag && (
+      {/* 고른 줄의 왼쪽 띠 — 표지 색. 배경 톤만으로 가르면 테마에 따라 거의 안 보인다. */}
+      <span aria-hidden="true" style={{ width: 3, flex: '0 0 auto', borderRadius: 999, background: active ? cover : 'transparent', display: 'block' }} />
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 4, minWidth: 0, flex: 1 }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 7, minWidth: 0 }}>
+          <span style={{ flex: '0 0 auto', fontFamily: 'ui-monospace, monospace', fontSize: 10, fontWeight: 700, color: 'var(--mf-faint)', whiteSpace: 'nowrap' }}>
+            {String(index + 1).padStart(2, '0')}
+          </span>
           <span
-            data-note-page-tag
             style={{
-              flex: '0 0 auto',
-              height: 16,
-              padding: '0 6px',
-              borderRadius: 999,
-              background: `color-mix(in srgb, ${noteTagColor(tag)} 20%, transparent)`,
-              color: `color-mix(in srgb, ${noteTagColor(tag)} 78%, var(--mf-text))`,
-              fontSize: 10,
-              fontWeight: 700,
-              display: 'inline-flex',
-              alignItems: 'center',
+              flex: 1,
+              minWidth: 0,
+              fontSize: 13,
+              fontWeight: active ? 800 : 700,
+              letterSpacing: '-.015em',
+              color: 'var(--mf-text)',
+              overflow: 'hidden',
+              textOverflow: 'ellipsis',
+              whiteSpace: 'nowrap',
             }}
           >
-            {tag}
+            {page.title.trim() || '제목 없는 페이지'}
           </span>
+          {page.updatedAt && (
+            <span style={{ flex: '0 0 auto', fontSize: 10, color: 'var(--mf-faint)', whiteSpace: 'nowrap' }}>{formatLastEdited(page.updatedAt)}</span>
+          )}
+        </div>
+        {excerpt && (
+          <div
+            data-note-page-hit={hit ? '1' : undefined}
+            style={{ fontSize: 11.5, color: 'var(--mf-subtext)', lineHeight: 1.55, display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical', overflow: 'hidden', wordBreak: 'keep-all' }}
+          >
+            {excerpt}
+          </div>
+        )}
+        {(tag || who) && (
+          <div style={{ display: 'flex', alignItems: 'center', gap: 7, minWidth: 0 }}>
+            {tag && (
+              <span data-note-page-tag style={{ display: 'inline-flex', alignItems: 'center', gap: 5, flex: '0 0 auto' }}>
+                <span aria-hidden="true" style={{ width: 6, height: 6, borderRadius: 999, background: noteTagColor(tag), display: 'block' }} />
+                <span style={{ fontSize: 10.5, fontWeight: 700, color: noteTagColor(tag) }}>{tag}</span>
+              </span>
+            )}
+            {who && (
+              <span style={{ minWidth: 0, fontSize: 10.5, color: 'var(--mf-faint)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{who} 님이 씀</span>
+            )}
+          </div>
         )}
       </div>
-      {excerpt && (
-        <div
-          data-note-page-hit={hit ? '1' : undefined}
-          style={{ fontSize: 11, color: hit ? 'var(--mf-subtext)' : 'var(--mf-faint)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', paddingLeft: 18 }}
-        >
-          {excerpt}
-        </div>
-      )}
-      {page.updatedAt && (
-        <div style={{ fontSize: 10, color: 'var(--mf-faint2)', paddingLeft: 18 }}>{formatLastEdited(page.updatedAt)}</div>
-      )}
     </div>
   );
 }
@@ -399,31 +646,63 @@ function pageHit(page: NotePage, query: string): string | null {
 
 /* ── 페이지 머리(제목·태그·페이지 조작) ───────────────────────────────────── */
 
+/**
+ * 글의 부피 — `176자 · 56단어 · 읽기 1분`(디자인 원본의 본문 맨 아래 줄).
+ *
+ * 회의록·정책처럼 **읽을 사람이 있는 글**에서 "이거 길어요?"에 답해 주는 줄이다.
+ * 읽기 시간은 한국어 분당 500자(일반적인 추정치)로, 1분 미만도 `1분`으로 적는다.
+ */
+function PageStats({ page }: { page: NotePage }) {
+  const text = pageText(page);
+  const chars = [...text.replace(/\s+/g, '')].length;
+  const words = text.split(/\s+/).filter(Boolean).length;
+  const minutes = Math.max(1, Math.round(chars / 500));
+  return (
+    <div data-note-stats style={{ display: 'flex', alignItems: 'center', gap: 10, fontSize: 10.5, color: 'var(--mf-faint)' }}>
+      <span>{chars}자</span>
+      <span aria-hidden="true">·</span>
+      <span>{words}단어</span>
+      <span aria-hidden="true">·</span>
+      <span>읽기 {minutes}분</span>
+      <span style={{ flex: 1, minWidth: 0 }} />
+      {page.updatedAt && <span>{formatLastEdited(page.updatedAt)} 수정</span>}
+    </div>
+  );
+}
+
 function PageHead({ controller, page }: { controller: EditorController; page: NotePage }) {
   const [tagOpen, setTagOpen] = useState(false);
   const readOnly = controller.readOnly;
+  const who = page.updatedBy?.trim() || controller.myName || '나';
+  const mine = !page.updatedBy?.trim();
+  const linked = page.linkedDocId ? controller.linkTargets.find((t) => t.docId === page.linkedDocId) : undefined;
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: 10, marginBottom: 10 }}>
+    <div className="mf-note-head" style={{ display: 'flex', flexDirection: 'column', gap: 9 }}>
       <input
         data-note-title
         value={page.title}
         readOnly={readOnly}
         placeholder="제목 없는 페이지"
         onChange={(e) => controller.setNotePageTitle(page.id, e.target.value)}
+        title="눌러서 제목 수정"
         style={{
           border: 'none',
+          // 눌러서 고칠 수 있다는 것을 **밑줄이 나타났다 사라지며** 알린다(디자인 원본).
+          borderBottom: '1.5px dashed transparent',
           background: 'transparent',
           fontFamily: 'inherit',
-          fontSize: 30,
+          fontSize: 27,
           fontWeight: 800,
-          letterSpacing: '-.035em',
+          letterSpacing: '-.04em',
+          lineHeight: 1.3,
           color: 'var(--mf-text)',
           outline: 'none',
-          padding: 0,
+          padding: '2px 0 5px',
           width: '100%',
+          boxSizing: 'border-box',
         }}
       />
-      <div style={{ display: 'flex', alignItems: 'center', gap: 8, position: 'relative' }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 9, position: 'relative', minWidth: 0 }}>
         {/* 페이지 태그 — 공책 표지의 태그와 **별개**다(페이지마다 다를 수 있다). */}
         <button
           type="button"
@@ -488,9 +767,34 @@ function PageHead({ controller, page }: { controller: EditorController; page: No
             </button>
           </div>
         )}
-        <span style={{ flex: 1 }} />
+        {/* 누가 · 언제 — 디자인 원본은 태그 바로 옆에 이 둘을 둔다. 얼굴이 있으면
+            "남이 고쳤다"가 이름을 읽기 전에 보인다. */}
+        <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6, flex: '0 0 auto', minWidth: 0 }}>
+          <Avatar name={who} size={20} src={mine ? controller.myAvatar : null} />
+          <span style={{ fontSize: 11.5, color: 'var(--mf-subtext)', whiteSpace: 'nowrap' }}>{mine ? '나' : who}</span>
+        </span>
+        {page.updatedAt && <span style={{ fontSize: 11, color: 'var(--mf-faint)', flex: '0 0 auto', whiteSpace: 'nowrap' }}>{formatLastEdited(page.updatedAt)} 수정</span>}
+        {/* 연결 문서 — 이 페이지가 어느 보드의 회의록인지. 눌러서 그리로 간다. */}
+        {linked && (
+          <a
+            data-note-linked-doc
+            href={linked.href}
+            style={{ display: 'inline-flex', alignItems: 'center', gap: 6, height: 24, padding: '0 10px', borderRadius: 999, border: '1px solid var(--mf-border)', background: 'var(--mf-panel2)', color: 'var(--mf-subtext)', fontSize: 11, fontWeight: 700, textDecoration: 'none', whiteSpace: 'nowrap', flex: '0 0 auto', maxWidth: 200, overflow: 'hidden', textOverflow: 'ellipsis' }}
+          >
+            <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" aria-hidden="true">
+              <rect x="3.5" y="4" width="4.6" height="16" rx="1.3" />
+              <rect x="9.7" y="4" width="4.6" height="10" rx="1.3" />
+              <rect x="15.9" y="4" width="4.6" height="13" rx="1.3" />
+            </svg>
+            {linked.title}
+          </a>
+        )}
+        <span style={{ flex: 1, minWidth: 0 }} />
+        {/* 페이지 조작 — 디자인은 이 줄을 **읽는 줄**로 두고 조작은 목록의 우클릭에
+            맡긴다. 우리에겐 그 메뉴가 없으므로 자리는 지키되 **마우스를 얹었을 때만**
+            나타나게 해 평소의 읽기를 방해하지 않는다(`editor.css`). */}
         {!readOnly && (
-          <>
+          <span className="mf-note-pageact" style={{ display: 'inline-flex', gap: 6, flex: '0 0 auto' }}>
             <button type="button" data-note-dup-page className="btn" onClick={() => controller.duplicateNotePage(page.id)} style={GHOST_BTN}>
               페이지 복제
             </button>
@@ -512,7 +816,7 @@ function PageHead({ controller, page }: { controller: EditorController; page: No
             >
               페이지 삭제
             </button>
-          </>
+          </span>
         )}
       </div>
     </div>
@@ -525,12 +829,50 @@ function FormatToolbar({
   controller,
   boxRef,
   rememberBox,
+  onInserted,
+  openSlash,
 }: {
   controller: EditorController;
   boxRef: { current: HTMLElement | null };
   rememberBox: () => void;
+  /** 새로 만든 블록·항목으로 캐럿을 보낸다(루트의 `freshId`). */
+  onInserted: (id: string | null) => void;
+  /** `/` 단추 — 지금 줄에서 블록 목록을 연다(빈 줄에서 `/`를 치는 것과 같은 자리). */
+  openSlash: (blockId: string) => void;
 }) {
   const [open, setOpen] = useState<'hl' | 'ink' | null>(null);
+
+  /**
+   * 지금 **다루는 블록** — 캐럿이 들어 있던 줄. 아직 아무 데도 두지 않았으면
+   * 마지막 블록으로 본다(툴바를 먼저 누르는 사람이 아무 일도 못 하게 두지 않는다).
+   */
+  const curBlockId = (): string | null => {
+    const key = boxRef.current?.getAttribute('data-note-line') || '';
+    const id = blockIdOf(key);
+    if (id) return id;
+    const blocks = controller.notePage?.blocks ?? [];
+    return blocks.length ? blocks[blocks.length - 1]!.id : null;
+  };
+
+  /**
+   * 넣기 — **줄 종류를 바꿀 수 있으면 바꾸고, 아니면 아래에 새로 만든다.**
+   *
+   * 빈 문단에서 「글머리 목록」을 누르면 그 줄이 목록이 되는 것이 기대이고(새 줄이
+   * 하나 더 생기면 빈 문단이 남는다), 글이 들어 있는 줄에서는 새로 만드는 것이 맞다.
+   * 표·이미지·구분선·문서 링크는 글을 담지 않으므로 언제나 새로 만든다.
+   */
+  const insert = (kind: NoteBlockKind) => {
+    const id = curBlockId();
+    const blocks = controller.notePage?.blocks ?? [];
+    const cur = blocks.find((b) => b.id === id);
+    const textLike = noteBlockShape(kind) === 'items';
+    if (cur && textLike && noteBlockShape(cur.kind) === 'runs' && runsText(cur.runs) === '') {
+      controller.retypeNoteBlock(cur.id, kind);
+      onInserted(cur.id);
+      return;
+    }
+    onInserted(controller.addNoteBlock(kind, id ?? undefined));
+  };
 
   /**
    * 서식을 걸고 **그 결과를 문서에 커밋한다**.
@@ -625,11 +967,84 @@ function FormatToolbar({
           </div>
         )}
       </div>
-      <span aria-hidden="true" style={{ width: 1, height: 18, background: 'var(--mf-hairline)', margin: '0 4px' }} />
       <button type="button" data-note-clear className="btn" title="서식 지우기" onMouseDown={stop} onClick={() => apply('clear')} style={{ ...TOOL_BTN, width: 'auto', padding: '0 9px', fontSize: 11.5 }}>
         서식 지우기
       </button>
+      <span aria-hidden="true" style={{ width: 1, height: 18, background: 'var(--mf-hairline)', margin: '0 4px' }} />
+      {/* 넣기 — 디자인 원본의 `TOOL_ICONS`. 모델에는 처음부터 있던 블록들인데 넣는
+          길이 `/` 커맨드 하나뿐이었다(그래서 있는 줄도 몰랐다). */}
+      {INSERTS.map((t) => (
+        <button key={t.kind} type="button" data-note-insert={t.kind} title={t.name} aria-label={t.name} className="btn" onMouseDown={stop} onClick={() => insert(t.kind)} style={TOOL_BTN}>
+          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+            {t.icon}
+          </svg>
+        </button>
+      ))}
+      <span aria-hidden="true" style={{ width: 1, height: 18, background: 'var(--mf-hairline)', margin: '0 4px' }} />
+      {/* 정렬·들여쓰기 — `NoteBlock.align`·`indent`는 모델에 있었는데 버튼이 없어
+          화면에 나타난 적이 없다. 지금 줄에 걸린다(선택 범위가 아니라 블록 단위다). */}
+      {ALIGNS.map((t) => {
+        const on = (controller.notePage?.blocks.find((b) => b.id === curBlockId())?.align ?? 'left') === t.align;
+        return (
+          <button
+            key={t.align}
+            type="button"
+            data-note-align={t.align}
+            aria-pressed={on}
+            title={t.name}
+            aria-label={t.name}
+            className="btn"
+            onMouseDown={stop}
+            onClick={() => {
+              const id = curBlockId();
+              if (id) controller.setNoteBlockAlign(id, t.align);
+            }}
+            style={{ ...TOOL_BTN, background: on ? 'var(--mf-accent-soft)' : 'transparent', color: on ? 'var(--mf-accent)' : 'var(--mf-subtext)' }}
+          >
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.9" strokeLinecap="round" aria-hidden="true">
+              {t.icon}
+            </svg>
+          </button>
+        );
+      })}
+      {INDENTS.map((t) => (
+        <button
+          key={t.name}
+          type="button"
+          data-note-indent={t.delta > 0 ? 'in' : 'out'}
+          title={t.name}
+          aria-label={t.name}
+          className="btn"
+          onMouseDown={stop}
+          onClick={() => {
+            const id = curBlockId();
+            if (id) controller.setNoteBlockIndent(id, t.delta);
+          }}
+          style={TOOL_BTN}
+        >
+          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+            {t.icon}
+          </svg>
+        </button>
+      ))}
       <span style={{ flex: 1 }} />
+      {/* `/` — 빈 줄에서 `/`를 치는 것과 같은 자리를 **버튼으로도** 연다. 그 규칙을
+          아는 사람만 쓸 수 있는 기능이 되지 않게(디자인 원본도 이 단추를 둔다). */}
+      <button
+        type="button"
+        data-note-slash-btn
+        title="블록 넣기 (/)"
+        aria-label="블록 넣기"
+        className="btn"
+        onMouseDown={stop}
+        onClick={() => {
+          const id = curBlockId();
+          if (id) openSlash(id);
+        }}
+        style={{ ...TOOL_BTN, fontSize: 12, fontWeight: 700 }}
+      >
+        /
+      </button>
       <CoverMenu controller={controller} />
     </div>
   );
@@ -782,7 +1197,7 @@ function BlockView({ controller, block, index, freshId, setFreshId, rememberBox,
 
   if (shape === 'empty') {
     return (
-      <div data-note-block={block.id} data-note-kind={block.kind} style={{ padding: '14px 0' }}>
+      <div data-note-block={block.id} data-note-kind={block.kind} style={blockFlow(block)}>
         <hr style={{ border: 'none', borderTop: '1px solid var(--mf-border)', margin: 0 }} />
       </div>
     );
@@ -803,7 +1218,7 @@ function BlockView({ controller, block, index, freshId, setFreshId, rememberBox,
         data-note-block={block.id}
         data-note-kind="callout"
         onMouseUp={rememberBox}
-        style={{ display: 'flex', gap: 10, alignItems: 'flex-start', margin: '8px 0', padding: '11px 13px', borderRadius: 10, background: tone.bg }}
+        style={{ ...blockFlow(block), display: 'flex', gap: 10, alignItems: 'flex-start', padding: '13px 15px', borderRadius: 13, background: tone.bg, borderLeft: `3px solid ${tone.ink}` }}
       >
         {/* 어조는 **왼쪽 칩을 눌러** 돈다 — 세 가지뿐이라 메뉴보다 한 번 누르는 쪽이 빠르다. */}
         <button
@@ -852,7 +1267,7 @@ function BlockView({ controller, block, index, freshId, setFreshId, rememberBox,
   if (block.kind === 'toggle') {
     const open = block.open ?? true;
     return (
-      <div data-note-block={block.id} data-note-kind="toggle" onMouseUp={rememberBox} style={{ padding: '2px 0' }}>
+      <div data-note-block={block.id} data-note-kind="toggle" onMouseUp={rememberBox} style={blockFlow(block)}>
         <div style={{ display: 'flex', alignItems: 'flex-start', gap: 6 }}>
           <button
             type="button"
@@ -906,7 +1321,7 @@ function BlockView({ controller, block, index, freshId, setFreshId, rememberBox,
 
   if (shape === 'items') {
     return (
-      <div data-note-block={block.id} data-note-kind={block.kind} style={{ display: 'flex', flexDirection: 'column', gap: 2, padding: '2px 0' }}>
+      <div data-note-block={block.id} data-note-kind={block.kind} style={{ ...blockFlow(block), display: 'flex', flexDirection: 'column', gap: 8 }}>
         {(block.items ?? []).map((item, j) => (
           <div key={item.id} style={{ display: 'flex', alignItems: 'flex-start', gap: 8 }}>
             {block.kind === 'ck' ? (
@@ -995,8 +1410,8 @@ function BlockView({ controller, block, index, freshId, setFreshId, rememberBox,
   if (shape === 'table') {
     const rows = block.rows ?? [];
     return (
-      <div data-note-block={block.id} data-note-kind="table" style={{ padding: '10px 0' }}>
-        <div style={{ overflowX: 'auto', border: '1px solid var(--mf-border-soft)', borderRadius: 10 }}>
+      <div className="mf-note-table" data-note-block={block.id} data-note-kind="table" style={blockFlow(block)}>
+        <div style={{ overflowX: 'auto', border: '1px solid var(--mf-border-soft)', borderRadius: 13 }}>
           <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13.5 }}>
             <tbody>
               {rows.map((row, ri) => (
@@ -1032,8 +1447,10 @@ function BlockView({ controller, block, index, freshId, setFreshId, rememberBox,
             </tbody>
           </table>
         </div>
+        {/* 행·열 추가는 **표에 마우스를 얹었을 때만** 뜬다(`editor.css`) — 디자인의
+            표는 종이에 그린 표처럼 보여야 하고, 늘 붙어 있는 버튼 둘이 그 인상을 깬다. */}
         {!readOnly && (
-          <div style={{ display: 'flex', gap: 6, marginTop: 6 }}>
+          <div className="mf-note-tableact" style={{ display: 'flex', gap: 6, marginTop: 6 }}>
             <button type="button" data-note-table-row className="btn" onClick={() => controller.addNoteTableRow(block.id)} style={GHOST_BTN}>
               행 추가
             </button>
@@ -1048,36 +1465,56 @@ function BlockView({ controller, block, index, freshId, setFreshId, rememberBox,
 
   // 글 한 덩이(문단·제목·인용·코드) — 종류가 겉모습만 정한다.
   const style = runStyleOf(block.kind);
+  const heading = block.kind === 'h1' || block.kind === 'h2' || block.kind === 'h3';
+  const line = (
+    <NoteLine
+      onFocusLine={focusBox}
+      lineKey={block.id}
+      runs={block.runs}
+      readOnly={readOnly}
+      placeholder={index === 0 ? '여기에 글을 쓰세요 — / 로 블록 넣기' : ''}
+      autoFocus={freshId === block.id}
+      onChange={(runs) => controller.setNoteBlockRuns(block.id, runs)}
+      onEnter={enterBlock}
+      onBackspaceAtStart={backBlock}
+      onSlash={() => {
+        if (readOnly) return false;
+        openSlash(block.id);
+        return true;
+      }}
+      style={heading ? { ...style, flex: 1, minWidth: 0 } : style}
+    />
+  );
   return (
     <div
       data-note-block={block.id}
       data-note-kind={block.kind}
       onMouseUp={rememberBox}
       style={{
-        padding: block.kind === 'q' || block.kind === 'code' ? '4px 0' : '1px 0',
-        ...(block.kind === 'q' ? { borderLeft: '3px solid var(--mf-accent-mute)', paddingLeft: 14 } : {}),
-        ...(block.kind === 'code' ? { background: 'var(--mf-panel2)', border: '1px solid var(--mf-border-soft)', borderRadius: 8, padding: '10px 12px' } : {}),
+        ...blockFlow(block),
+        ...(heading ? { display: 'flex', alignItems: 'center', gap: 9 } : {}),
+        ...(block.kind === 'q' ? { padding: '14px 16px', borderRadius: 13, background: 'var(--mf-panel2)', borderLeft: '3px solid var(--mf-accent-mute)' } : {}),
+        ...(block.kind === 'code' ? { background: 'var(--mf-panel2)', border: '1px solid var(--mf-border-soft)', borderRadius: 13, padding: '13px 15px' } : {}),
       }}
     >
-      <NoteLine
-        onFocusLine={focusBox}
-        lineKey={block.id}
-        runs={block.runs}
-        readOnly={readOnly}
-        placeholder={index === 0 ? '여기에 글을 쓰세요 — / 로 블록 넣기' : ''}
-        autoFocus={freshId === block.id}
-        onChange={(runs) => controller.setNoteBlockRuns(block.id, runs)}
-        onEnter={enterBlock}
-        onBackspaceAtStart={backBlock}
-        onSlash={() => {
-          if (readOnly) return false;
-          openSlash(block.id);
-          return true;
-        }}
-        style={style}
-      />
+      {/* 제목의 왼쪽 강조 바 — 디자인 원본. 굵기만으로 가른 제목은 긴 글에서 본문과
+          섞여 보인다(스크롤하며 훑을 때 눈이 걸릴 자리가 없다). */}
+      {heading && <span aria-hidden="true" style={{ width: 3, height: block.kind === 'h1' ? 21 : 17, flex: '0 0 auto', borderRadius: 999, background: noteCoverColor(controller.doc.cover), display: 'block' }} />}
+      {line}
     </div>
   );
+}
+
+/**
+ * 블록의 **흐름 속성** — 가로 정렬과 들여쓰기. 모델에는 처음부터 있던 칸인데
+ * (`NoteBlock.align`·`indent`) 그릴 곳이 없어 화면에 나타나지 않았다. 툴바에 버튼이
+ * 생기면서 이제 둘 다 보인다. 들여쓰기 한 단은 24px(체크·목록의 글머리 너비와 같다).
+ */
+function blockFlow(block: NoteBlock): CSSProperties {
+  return {
+    ...(block.align && block.align !== 'left' ? { textAlign: block.align } : {}),
+    ...(block.indent ? { paddingLeft: block.indent * 24 } : {}),
+  };
 }
 
 /**
@@ -1157,31 +1594,47 @@ function LinkBlock({ controller, block }: { controller: EditorController; block:
   const targets = controller.linkTargets;
   const target = targets.find((t) => t.docId === block.docId) ?? null;
   return (
-    <div data-note-block={block.id} data-note-kind="link" style={{ padding: '8px 0', position: 'relative' }}>
+    <div className="mf-note-link" data-note-block={block.id} data-note-kind="link" style={{ ...blockFlow(block), position: 'relative' }}>
       {target ? (
+        /* 디자인의 링크 카드 — 종류 타일 · 이름 · `종류 · 스페이스` · 열기 표시.
+           예전에는 점 하나 + `문서` 한 낱말이라 무엇으로 가는 링크인지 알 수 없었다. */
         <a
           href={target.href}
           data-note-link={target.docId}
           style={{
             display: 'flex',
             alignItems: 'center',
-            gap: 10,
+            gap: 12,
             padding: '11px 13px',
-            borderRadius: 10,
+            borderRadius: 13,
             border: '1px solid var(--mf-border-soft)',
-            background: 'var(--mf-panel)',
+            background: 'var(--mf-card)',
             color: 'inherit',
             textDecoration: 'none',
+            minWidth: 0,
           }}
         >
-          <span aria-hidden="true" style={{ width: 8, height: 8, borderRadius: 2.5, background: target.color, flex: '0 0 auto' }} />
-          <span style={{ flex: 1, minWidth: 0, fontSize: 13.5, fontWeight: 700, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{target.title}</span>
-          <span style={{ fontSize: 11, color: 'var(--mf-faint)', flex: '0 0 auto' }}>{target.kindName}</span>
+          <span aria-hidden="true" style={{ width: 34, height: 34, flex: '0 0 auto', borderRadius: 10, background: `color-mix(in srgb, ${target.color} 16%, var(--mf-card))`, color: target.color, display: 'inline-flex', alignItems: 'center', justifyContent: 'center' }}>
+            <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+              <path d="M8 4h9a2 2 0 0 1 2 2v13a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V7" />
+              <path d="M9 9h7M9 13h7M9 17h4" />
+            </svg>
+          </span>
+          <span style={{ display: 'flex', flexDirection: 'column', gap: 2, minWidth: 0, flex: 1 }}>
+            <span style={{ fontSize: 13, fontWeight: 800, letterSpacing: '-.015em', color: 'var(--mf-text)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{target.title}</span>
+            <span style={{ fontSize: 11, color: 'var(--mf-faint)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+              {target.kindName}
+              {target.spaceName ? ` · ${target.spaceName}` : ''}
+            </span>
+          </span>
           {!readOnly && (
-            <button type="button" className="btn" onClick={(e) => { e.preventDefault(); setOpen((v) => !v); }} style={{ ...GHOST_BTN, height: 22, flex: '0 0 auto' }}>
+            <button type="button" className="btn mf-note-linkact" onClick={(e) => { e.preventDefault(); setOpen((v) => !v); }} style={{ ...GHOST_BTN, height: 22, flex: '0 0 auto' }}>
               바꾸기
             </button>
           )}
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="var(--mf-faint)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true" style={{ flex: '0 0 auto' }}>
+            <path d="M14 4h6v6M20 4l-8 8M18 14v5a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1V7a1 1 0 0 1 1-1h5" />
+          </svg>
         </a>
       ) : (
         <button

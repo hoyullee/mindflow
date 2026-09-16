@@ -459,9 +459,19 @@ export interface DocStore {
    *   노출 범위는 0009 공유 정책(소유 또는 공유받음)으로 제한된다. RPC가 아직
    *   배포되지 않은 서버에서는 `{}`로 떨어진다(배포 순서 안전 — 이름만 안 보인다).
    * - Local(데모): 계정이 하나뿐이라 언제나 `{}`.
+   *
+   * 값에는 **얼굴 주소**(`avatarUrl`)도 함께 온다(0041) — 공책 카드가 마지막으로 고친
+   * 사람의 프로필 이미지를 그린다. 사진이 없거나 옛 서버(0041 이전)면 `null`이고,
+   * 그때 카드는 이름 첫 글자로 그린다.
    */
-  listEditorNames(docIds: string[]): Promise<Record<string, string>>;
+  listEditorNames(docIds: string[]): Promise<Record<string, DocEditor>>;
   setFavorite(id: string, favorite: boolean): Promise<void>;
+}
+
+/** 문서를 마지막으로 저장한 사람 — 표시 이름 + 얼굴 주소(`document_editors`, 0015→0041). */
+export interface DocEditor {
+  name: string;
+  avatarUrl: string | null;
 }
 
 // ── Spaces (per-user workspace structure) ────────────────────────────────

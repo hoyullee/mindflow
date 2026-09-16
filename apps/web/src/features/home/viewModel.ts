@@ -25,6 +25,8 @@ export interface CardViewData {
   /** 마지막으로 **저장한 사람**의 이름 — 그게 내가 아닐 때만 채워진다(0015).
    * 카드 하단이 "수정일 · 3시간 전 · 홍길동"이 된다. */
   editorName?: string;
+  /** 그 사람의 프로필 이미지 주소 — 없으면 이름 첫 글자로 그린다(0041). */
+  editorAvatar?: string | null;
   /** 이 맵이 공유돼 있으면 그 요약("2명과 공유 중" 등) — 있으면 카드 제목 옆에
    * 사람 아이콘 표식이 뜨고 이 문구가 툴팁이 된다(`sharedLabelOf`). */
   sharedLabel?: string;
@@ -571,7 +573,8 @@ export function deriveHomeView(state: HomeState): HomeViewModel {
       title: c.title,
       when: c.when,
       updatedAt: c.docId ? state.docTimes[c.docId] : undefined,
-      editorName: c.docId ? state.editorNames[c.docId] : undefined,
+      editorName: c.docId ? state.editorNames[c.docId]?.name : undefined,
+      editorAvatar: c.docId ? (state.editorNames[c.docId]?.avatarUrl ?? null) : null,
       sharedLabel: sharedLabelOf(c.docId, state.sharedByMe),
       hue: c.hue,
       docId: c.docId,
@@ -699,7 +702,8 @@ export function deriveHomeView(state: HomeState): HomeViewModel {
             title: m.title,
             when: m.when,
             updatedAt: m.docId ? state.docTimes[m.docId] : undefined,
-            editorName: m.docId ? state.editorNames[m.docId] : undefined,
+            editorName: m.docId ? state.editorNames[m.docId]?.name : undefined,
+            editorAvatar: m.docId ? (state.editorNames[m.docId]?.avatarUrl ?? null) : null,
             sharedLabel: sharedLabelOf(m.docId, state.sharedByMe),
             hue: m.hue,
             docId: m.docId,
@@ -872,7 +876,8 @@ export function deriveHomeView(state: HomeState): HomeViewModel {
         title: base.title,
         when: base.when,
         updatedAt: base.docId ? state.docTimes[base.docId] : undefined,
-        editorName: base.docId ? state.editorNames[base.docId] : undefined,
+        editorName: base.docId ? state.editorNames[base.docId]?.name : undefined,
+        editorAvatar: base.docId ? (state.editorNames[base.docId]?.avatarUrl ?? null) : null,
         sharedLabel: sharedLabelOf(base.docId, state.sharedByMe),
         hue: base.hue,
         docId: base.docId,
