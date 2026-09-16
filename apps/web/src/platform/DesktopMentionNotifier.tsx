@@ -21,9 +21,12 @@
 //
 // ## 언제 띄우나
 //
-// **화면이 보이지 않을 때만.** 보고 있을 때는 벨 배지가 이미 말하고 있고, 그 위에
-// OS 배너까지 겹치면 소음이다. 보이는 동안 도착한 것은 "본 것"으로 적어 둔다 —
+// **사용자가 보고 있지 않을 때만.** 보고 있을 때는 벨 배지가 이미 말하고 있고, 그
+// 위에 OS 배너까지 겹치면 소음이다. 보는 동안 도착한 것은 "본 것"으로 적어 둔다 —
 // 안 그러면 나중에 창을 숨기는 순간 묵은 멘션이 뒤늦게 튀어나온다.
+//
+// 그 "보고 있는가"를 **무엇으로 재는지가 이 파일의 함정**이었다(제보: 앱을 닫아 둬도
+// 오지 않는다) — `isUserWatching()`의 주석 참고.
 //
 // ## 무엇을 띄우나
 //
@@ -47,6 +50,32 @@ const KINDS = new Set<AppNotification['kind']>(['mention', 'doc_mention']);
  *  소음이다(푸시의 나이 컷과 같은 값·같은 이유). 앱을 오래 꺼 뒀다 켰을 때
  *  묵은 것이 쏟아지지 않게 하는 그물이기도 하다. */
 const MAX_AGE_MS = 60 * 60_000;
+
+/**
+ * 지금 사용자가 이 앱을 **보고 있는가**.
+ *
+ * `document.visibilityState`만 보면 **설치형 앱에서는 답이 오지 않는다**. 셸이 창을
+ * `backgroundThrottling: false`로 만들기 때문이다(`apps/desktop/src/main.ts`) — 창을
+ * 내려 둬도 일정 알림 타이머가 돌아야 해서 일부러 끈 값이다. Electron 문서가 그
+ * 대가를 그대로 적어 두었다: *"If `backgroundThrottling` is disabled, the visibility
+ * state will remain `visible` even if the window is minimized, occluded, or hidden."*
+ * 즉 **창을 닫아 둔 바로 그 상태에서 `visible`이 돌아온다**. 처음 판을 그 값 하나로
+ * 재는 바람에 배너가 한 번도 뜨지 못했다(제보). jsdom은 우리가 `hidden`이라고 하면
+ * `hidden`이라고 답해 주므로 테스트는 전부 통과했다 — 그래서 아래 테스트의 기본
+ * 상태를 **셸이 실제로 답하는 값**(`visible`인데 포커스는 없다)으로 바꿔 두었다.
+ *
+ * 창이 숨거나 최소화되면 **포커스는 잃는다** — 이 신호는 셸의 그 설정과 무관하다.
+ * 그래서 둘을 함께 본다: **보이면서 포커스까지 있을 때만** 보고 있는 것으로 친다.
+ * 다른 앱에 가려 뒤에 있는 창은 알리는 쪽으로 기운다 — 이 규칙의 목적이 "보고 있는
+ * 사람에게 겹쳐 띄우지 않는다"이지 "떠 있기만 하면 알리지 않는다"가 아니다(창을
+ * 두 번째 모니터에 띄워 둔 채 다른 일을 하는 경우가 정확히 알림이 필요한 경우다).
+ */
+export function isUserWatching(): boolean {
+  if (typeof document === 'undefined') return false;
+  if (document.visibilityState === 'hidden') return false;
+  // 아주 옛 환경에는 없을 수 있다 — 그때는 보이는 것을 곧 보는 것으로 본다.
+  return typeof document.hasFocus === 'function' ? document.hasFocus() : true;
+}
 
 function isFresh(n: AppNotification, now: number): boolean {
   const t = Date.parse(n.createdAt);
@@ -108,7 +137,7 @@ export function DesktopMentionNotifier(): null {
 
     if (!enabledRef.current) return;
     // 보고 있으면 배지가 이미 말한다 — 배너까지 겹치지 않는다.
-    if (typeof document !== 'undefined' && document.visibilityState === 'visible') return;
+    if (isUserWatching()) return;
     const show = fresh.filter((n) => isFresh(n, now));
     if (!show.length) return;
 

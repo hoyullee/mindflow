@@ -110,20 +110,37 @@ function setVisibility(state: 'visible' | 'hidden'): void {
   Object.defineProperty(document, 'visibilityState', { configurable: true, get: () => state });
 }
 
+function setFocus(on: boolean): void {
+  Object.defineProperty(document, 'hasFocus', { configurable: true, value: () => on });
+}
+
+/**
+ * **창을 닫아 둔 설치형 앱이 실제로 답하는 값**으로 맞춘다 — `visible`인데 포커스는
+ * 없다. 셸이 `backgroundThrottling: false`로 창을 만들어 Page Visibility API가 꺼져
+ * 있기 때문이다(`isUserWatching()` 주석). 처음 판의 테스트는 여기서 `hidden`을
+ * 심었고 jsdom이 그대로 답해 줘 **전부 통과했지만 실기기에서는 한 번도 뜨지
+ * 않았다**(제보). 기본 상태를 실기기 쪽에 맞춰 두면 그 거짓 통과가 되풀이되지 않는다.
+ */
+function setClosedToTray(): void {
+  setVisibility('visible');
+  setFocus(false);
+}
+
 describe('설치형 앱의 멘션 배너', () => {
   beforeEach(() => {
     localStorage.clear();
     resetMentionAnnounced();
     H.shown = [];
     H.desktop = true;
-    setVisibility('hidden');
+    setClosedToTray();
   });
   afterEach(() => {
     cleanup();
     setVisibility('visible');
+    setFocus(true);
   });
 
-  it('창이 숨은 채로 새 멘션이 오면 배너가 뜬다', async () => {
+  it('창을 닫아 둔 채로 새 멘션이 오면 배너가 뜬다(셸은 `visible`이라고 답한다)', async () => {
     const { store, push } = makeStore([]);
     renderWith(store);
     // 첫 목록이 기준선으로 자리잡을 때까지 기다린다.
@@ -159,6 +176,7 @@ describe('설치형 앱의 멘션 배너', () => {
 
   it('**보고 있을 때는 뜨지 않고**, 그 멘션이 나중에 뒤늦게 튀어나오지도 않는다', async () => {
     setVisibility('visible');
+    setFocus(true); // 보이는 것만으로는 부족하다 — 포커스까지 있어야 "보고 있다"
     const { store, push } = makeStore([]);
     renderWith(store);
     await waitFor(() => expect(H.shown).toHaveLength(0));
@@ -167,11 +185,35 @@ describe('설치형 앱의 멘션 배너', () => {
     await new Promise((r) => setTimeout(r, 50));
     expect(H.shown).toHaveLength(0); // 배지가 이미 말한다
 
-    // 이제 창을 숨겨도 그 멘션은 "본 것"이라 다시 뜨지 않는다.
-    setVisibility('hidden');
+    // 이제 창을 닫아 둬도 그 멘션은 "본 것"이라 다시 뜨지 않는다.
+    setClosedToTray();
     push([note({ id: 'a' }), note({ id: 'b' })]);
     await waitFor(() => expect(H.shown).toHaveLength(1));
     expect(H.shown[0]!.title).toContain('앨리스'); // b 하나만 알린다
+  });
+
+  it('**셸이 `visible`이라고 답해도 포커스가 없으면 뜬다**(제보: 앱을 닫아 둬도 오지 않는다)', async () => {
+    // 이 한 줄이 제보의 전부다 — 창은 트레이에 숨어 있는데 Page Visibility API가
+    // 꺼져 있어 `visible`이 돌아온다. 그 값 하나로 판단하면 배너는 영영 안 뜬다.
+    setVisibility('visible');
+    setFocus(false);
+    const { store, push } = makeStore([]);
+    renderWith(store);
+    await waitFor(() => expect(H.shown).toHaveLength(0));
+
+    push([note({ id: 'a' })]);
+    await waitFor(() => expect(H.shown).toHaveLength(1));
+  });
+
+  it('`hidden`으로 제대로 답하는 판에서도 뜬다(macOS 가림·throttling을 켠 셸)', async () => {
+    setVisibility('hidden');
+    setFocus(true);
+    const { store, push } = makeStore([]);
+    renderWith(store);
+    await waitFor(() => expect(H.shown).toHaveLength(0));
+
+    push([note({ id: 'a' })]);
+    await waitFor(() => expect(H.shown).toHaveLength(1));
   });
 
   it('멘션이 아닌 종류는 알리지 않는다(메일·푸시와 같은 범위)', async () => {
