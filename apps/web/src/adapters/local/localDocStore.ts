@@ -14,7 +14,7 @@
 
 import type { Doc } from '@mindflow/mindmap-core';
 import { parseDoc, serializeDoc } from '@mindflow/mindmap-core';
-import type { DocMeta, DocStore, LoadedDoc, SaveOptions, SaveResult } from '../ports';
+import type { DocEditor, DocMeta, DocStore, LoadedDoc, SaveOptions, SaveResult } from '../ports';
 import { pushLocalNotification } from './localNotifications';
 
 /** 직렬화 본문에서 인라인 멘션의 (이메일, 객체 id) 쌍들 — 0026 트리거의
@@ -127,7 +127,7 @@ function listDocIds(): string[] {
  */
 export class LocalDocStore implements DocStore {
   /** 데모(로컬) 모드에는 계정이 하나뿐이라 "남이 마지막으로 저장했다"가 성립하지 않는다. */
-  async listEditorNames(): Promise<Record<string, string>> {
+  async listEditorNames(): Promise<Record<string, DocEditor>> {
     return {};
   }
 

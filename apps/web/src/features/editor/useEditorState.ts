@@ -157,6 +157,8 @@ export interface LinkTarget {
   /** 화면에 적는 종류 이름(본문이 아직 없으면 그냥 `문서`). */
   kindName: string;
   color: string;
+  /** 그 문서가 있는 스페이스 이름 — 링크 카드가 `문서 · 일반 공간`으로 적는다. */
+  spaceName: string;
 }
 
 interface Snapshot {
@@ -828,6 +830,12 @@ export interface EditorController {
   /** 문서 링크 블록이 고를 수 있는 문서들(공책일 때만 채워진다). */
   linkTargets: LinkTarget[];
   setNoteCalloutTone: (blockId: string, tone: NoteCalloutTone) => void;
+  /** 가로 정렬 — 왼쪽이면 칸을 지운다(기본값은 적지 않는다). */
+  setNoteBlockAlign: (blockId: string, align: 'left' | 'center' | 'right') => void;
+  /** 들여쓰기 단계를 `delta`만큼(0..4로 자른다). */
+  setNoteBlockIndent: (blockId: string, delta: number) => void;
+  /** 이 공책이 있는 스페이스 이름(상단 경로). 아직 못 읽었으면 빈 문자열. */
+  noteSpaceName: string;
   toggleNoteOpen: (blockId: string) => void;
   /** 칸반 열(왼→오 순서) / 카드(열 안 순서는 `pos`). */
   columns: KanbanColumn[];
@@ -6671,6 +6679,35 @@ export function useEditorState(): EditorController {
     [commitBlock, notePage],
   );
 
+  /** 가로 정렬 — 모델에 있던 칸(`NoteBlock.align`)에 이제 버튼이 붙는다. */
+  const setNoteBlockAlign = useCallback(
+    (blockId: string, align: 'left' | 'center' | 'right') => {
+      if (!notePage) return;
+      // 기본값(왼쪽)은 **적지 않는다** — 옛 문서와 골든이 바이트 단위로 같게 남는다
+      // (`RichRun.href`와 같은 규칙).
+      commitBlock(notePage.id, blockId, (b) => (align === 'left' ? { ...b, align: undefined } : { ...b, align }), false);
+    },
+    [commitBlock, notePage],
+  );
+
+  /** 들여쓰기 단계 — 0..4. 내어쓰기로 0이 되면 칸 자체를 지운다(기본값 규칙). */
+  const setNoteBlockIndent = useCallback(
+    (blockId: string, delta: number) => {
+      if (!notePage) return;
+      commitBlock(
+        notePage.id,
+        blockId,
+        (b) => {
+          const next = Math.max(0, Math.min(4, (b.indent ?? 0) + delta));
+          if (next === (b.indent ?? 0)) return b;
+          return next === 0 ? { ...b, indent: undefined } : { ...b, indent: next };
+        },
+        false,
+      );
+    },
+    [commitBlock, notePage],
+  );
+
   /** 토글 펼침 — **문서에 저장되는 값**이다(다음에 열 때도 같은 모양). */
   const toggleNoteOpen = useCallback(
     (blockId: string) => {
@@ -6691,6 +6728,8 @@ export function useEditorState(): EditorController {
    * 워크스페이스를 한 번 더 부를 이유가 없다.
    */
   const [linkTargets, setLinkTargets] = useState<LinkTarget[]>([]);
+  /** 이 공책이 있는 스페이스 이름 — 상단 바의 경로(`일반 공간 › 공책 › 페이지`). */
+  const [noteSpaceName, setNoteSpaceName] = useState('');
   useEffect(() => {
     if (!isNote) return;
     let alive = true;
@@ -6699,15 +6738,24 @@ export function useEditorState(): EditorController {
         const ws = await spaceStore.load();
         if (!alive || !ws) return;
         const out: LinkTarget[] = [];
-        for (const raw of (ws.spaces ?? []) as { maps?: { title?: unknown; docId?: unknown }[] }[]) {
+        let mine = '';
+        for (const raw of (ws.spaces ?? []) as { name?: unknown; maps?: { title?: unknown; docId?: unknown }[] }[]) {
+          const spaceName = typeof raw?.name === 'string' ? raw.name : '';
           for (const m of raw?.maps ?? []) {
             const id = typeof m?.docId === 'string' ? m.docId : '';
             const title = typeof m?.title === 'string' ? m.title : '';
-            if (!id || id === docStoreId) continue;
-            out.push({ docId: id, title: title || '제목 없음', href: `/editor?map=${encodeURIComponent(id)}`, kindName: '문서', color: 'var(--mf-doc-map)' });
+            if (!id) continue;
+            // 이 문서 자신은 링크 후보에서 빼되(자기를 가리키는 링크는 뜻이 없다),
+            // **어느 스페이스에 있는지**는 그때 받아 둔다 — 경로가 그 값을 쓴다.
+            if (id === docStoreId) {
+              mine = spaceName;
+              continue;
+            }
+            out.push({ docId: id, title: title || '제목 없음', href: `/editor?map=${encodeURIComponent(id)}`, kindName: '문서', color: 'var(--mf-doc-map)', spaceName });
           }
         }
         setLinkTargets(out);
+        setNoteSpaceName(mine);
       } catch {
         /* 목록을 못 받아도 본문은 그대로 쓴다 — 고를 수 없을 뿐이다 */
       }
@@ -7185,6 +7233,9 @@ export function useEditorState(): EditorController {
     setNoteImage,
     setNoteLinkDoc,
     linkTargets,
+    noteSpaceName,
+    setNoteBlockAlign,
+    setNoteBlockIndent,
     setNoteCalloutTone,
     toggleNoteOpen,
     cardClipboardSize: cardClipboard.length,

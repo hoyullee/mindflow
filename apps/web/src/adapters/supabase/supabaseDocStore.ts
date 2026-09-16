@@ -16,7 +16,7 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
 import type { Doc } from '@mindflow/mindmap-core';
 import { parseDoc, serializeDoc } from '@mindflow/mindmap-core';
-import type { DocMeta, DocStore, LoadedDoc, SaveOptions, SaveResult } from '../ports';
+import type { DocEditor, DocMeta, DocStore, LoadedDoc, SaveOptions, SaveResult } from '../ports';
 import { readPreviewBody, writePreviewBody } from '../previewBodyCache';
 import { currentUser } from './supabaseUser';
 import { homeBootstrap } from './supabaseHomeBootstrap';
@@ -80,8 +80,8 @@ export class SupabaseDocStore implements DocStore {
     return (data ?? []).map((row) => toMeta(row, me?.id ?? null));
   }
 
-  /** 마지막 저장자 이름 — `document_editors` RPC(0015). 자세한 계약은 포트 주석에. */
-  async listEditorNames(docIds: string[]): Promise<Record<string, string>> {
+  /** 마지막 저장자 이름·얼굴 — `document_editors` RPC(0015→0041). 계약은 포트 주석에. */
+  async listEditorNames(docIds: string[]): Promise<Record<string, DocEditor>> {
     if (docIds.length === 0) return {};
     const { data, error } = await this.client.rpc('document_editors', { doc_ids: docIds });
     // RPC 미배포(함수 없음)·일시 오류는 조용히 비운다 — 이름은 부가 정보라
@@ -92,10 +92,12 @@ export class SupabaseDocStore implements DocStore {
       console.warn('[geurio] document_editors RPC 실패 — 마지막 수정자 표시 생략:', error.message);
       return {};
     }
-    const out: Record<string, string> = {};
-    for (const row of (data ?? []) as { document_id: string; display_name: string | null }[]) {
+    const out: Record<string, DocEditor> = {};
+    // `avatar_url`은 0041에서 붙은 칸이다 — 아직 그 마이그레이션이 닿지 않은 서버에서는
+    // 없는 필드라 `undefined`가 되고, 그때는 얼굴 없이 이름만 그린다(배포 순서 안전).
+    for (const row of (data ?? []) as { document_id: string; display_name: string | null; avatar_url?: string | null }[]) {
       const name = (row.display_name ?? '').trim();
-      if (row.document_id && name) out[row.document_id] = name;
+      if (row.document_id && name) out[row.document_id] = { name, avatarUrl: (row.avatar_url ?? '').trim() || null };
     }
     return out;
   }

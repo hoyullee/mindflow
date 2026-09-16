@@ -8,6 +8,7 @@ import { useCardActivation } from './useCardActivation';
 import { dotGridStyle } from '../chrome';
 import { useVisibleOnce } from '../useVisibleOnce';
 import type { NoteSketch } from '@mindflow/mindmap-core';
+import { Avatar } from '../../editor/components/commentPinShape';
 
 interface Props {
   card: CardViewData;
@@ -163,8 +164,11 @@ function NoteCardBody({ card, controller, selectMode }: { card: CardViewData; co
             </span>
           )}
           <span style={{ flex: 1, minWidth: 0 }} />
-          {/* ★ — 디자인은 이 별을 카드 위에 떠 있는 칩이 아니라 **첫 줄의 끝**에 둔다.
-              그래서 공책 카드는 겉에 얹히는 ☆ 버튼(`fav-btn`)을 쓰지 않는다. */}
+          {/* ★과 ☰ — 디자인은 별을 카드 위에 떠 있는 칩이 아니라 **첫 줄의 끝**에 둔다.
+              그래서 공책 카드는 겉에 얹히는 ☆ 버튼(`fav-btn`)을 쓰지 않는다.
+              ☰도 여기로 왔다(질문: "아바타를 넣으면 3점 메뉴는 어디로?") — 맨 아랫줄은
+              디자인에서 **읽는 줄**(페이지 수 · 공유 · 사람)이라 조작을 끼우면 그 읽기가
+              끊긴다. 둘 다 hover에서 함께 나타나므로 한 벌의 조작 묶음으로 읽힌다. */}
           {!selectMode && (
             <button
               type="button"
@@ -197,6 +201,43 @@ function NoteCardBody({ card, controller, selectMode }: { card: CardViewData; co
                 <path d="m12 3.6 2.5 5.2 5.6.8-4 4 .9 5.6-5-2.7-5 2.7.9-5.6-4-4 5.6-.8z" />
               </svg>
             </button>
+          )}
+          {!selectMode && (
+            <div
+              className="menu-btn"
+              role="button"
+              tabIndex={-1}
+              onClick={(e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                const r = e.currentTarget.getBoundingClientRect();
+                controller.openCtxMenu(r.right - 184, r.bottom + 6, { kind: 'map', key: card.key });
+              }}
+              title="메뉴"
+              aria-label="메뉴"
+              style={{
+                width: 24,
+                height: 24,
+                flex: '0 0 auto',
+                borderRadius: 8,
+                background: 'transparent',
+                border: 'none',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                color: 'var(--mf-subtext)',
+                cursor: 'pointer',
+                opacity: card.menuOpen || card.selected ? 1 : 0,
+                transform: card.menuOpen || card.selected ? 'translateY(0)' : 'translateY(2px)',
+                transition: 'opacity .18s ease, transform .18s ease, background .15s ease',
+              }}
+            >
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+                <circle cx="5" cy="12" r="1.6" />
+                <circle cx="12" cy="12" r="1.6" />
+                <circle cx="19" cy="12" r="1.6" />
+              </svg>
+            </div>
           )}
         </div>
 
@@ -255,43 +296,22 @@ function NoteCardBody({ card, controller, selectMode }: { card: CardViewData; co
               </svg>
             </span>
           )}
-          {!selectMode && (
-            <div
-              className="menu-btn"
-              role="button"
-              tabIndex={-1}
-              onClick={(e) => {
-                e.preventDefault();
-                e.stopPropagation();
-                const r = e.currentTarget.getBoundingClientRect();
-                controller.openCtxMenu(r.right - 184, r.bottom + 6, { kind: 'map', key: card.key });
-              }}
-              title="메뉴"
-              aria-label="메뉴"
-              style={{
-                flexShrink: 0,
-                width: 22,
-                height: 22,
-                borderRadius: 8,
-                background: 'transparent',
-                border: 'none',
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'center',
-                color: 'var(--mf-subtext)',
-                cursor: 'pointer',
-                opacity: card.menuOpen || card.selected ? 1 : 0,
-                transform: card.menuOpen || card.selected ? 'translateY(0)' : 'translateY(2px)',
-                transition: 'opacity .18s ease, transform .18s ease, background .15s ease',
-              }}
-            >
-              <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
-                <circle cx="5" cy="12" r="1.6" />
-                <circle cx="12" cy="12" r="1.6" />
-                <circle cx="19" cy="12" r="1.6" />
-              </svg>
-            </div>
-          )}
+          {/* 마지막으로 고친 사람의 얼굴(요청·디자인 원본) — 이름이 없으면 **내가**
+              마지막으로 저장했다는 뜻이다(`document_editors`는 호출자 본인을 돌려주지
+              않는다). 그래서 이름/사진이 없을 때 내 프로필로 떨어지는 것이 옳다.
+              사진 주소가 죽으면 Avatar가 이름 첫 글자로 되돌아간다. */}
+          <span
+            role="img"
+            title={card.editorName ? `${card.editorName}님이 마지막으로 수정` : '내가 마지막으로 수정'}
+            aria-label={card.editorName ? `${card.editorName}님이 마지막으로 수정` : '내가 마지막으로 수정'}
+            style={{ flexShrink: 0, display: 'inline-flex', borderRadius: 999, boxShadow: '0 0 0 1.5px var(--mf-card), 0 1px 3px rgba(46,42,38,.18)' }}
+          >
+            <Avatar
+              name={card.editorName || controller.state.userName || '나'}
+              size={22}
+              src={card.editorName ? (card.editorAvatar ?? null) : controller.state.userAvatar}
+            />
+          </span>
         </div>
       </div>
     </>

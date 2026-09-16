@@ -5,6 +5,13 @@ import { CHIP_SHADOW, accentButton, glassCard } from '../chrome';
 
 interface DocChipProps {
   controller: EditorController;
+  /**
+   * 캔버스 위에 **떠 있지 않고** 줄 안에 선다 — 공책의 상단 바가 쓰는 모양(디자인 원본).
+   *
+   * 공책에는 캔버스가 없다. 떠 있는 칩을 그대로 두면 왼쪽 **페이지 목록 위에 얹혀**
+   * 그 머리와 검색칸을 덮는다(제보: "UI가 모두 틀어져 있어" — 이것이 그 첫 번째였다).
+   */
+  inline?: boolean;
 }
 
 /**
@@ -13,7 +20,7 @@ interface DocChipProps {
  * (`onTitleInput`/`commitTitle`), the save button (`saveNow`), and the
  * dirty/saving/saved indicator (`state.saveState`) are all wired (Editor-b).
  */
-export function DocChip({ controller }: DocChipProps) {
+export function DocChip({ controller, inline = false }: DocChipProps) {
   const th = controller.uiTheme;
   // 열 수 없는 맵(`bodyMissing`)은 여기서 다루지 않는다 — 에디터 자체가 렌더되지 않고
   // 전용 화면(`MapUnavailable`)이 대신 나온다.
@@ -29,12 +36,11 @@ export function DocChip({ controller }: DocChipProps) {
 
   return (
     <div
+      data-doc-chip
       style={{
-        position: 'absolute',
-        left: 16,
-        top: 16,
-        zIndex: 16,
-        width: 236,
+        ...(inline
+          ? { position: 'relative', flex: '0 0 auto', width: 268, maxWidth: '46vw' }
+          : { position: 'absolute', left: 16, top: 16, zIndex: 16, width: 236 }),
         boxSizing: 'border-box',
         display: 'flex',
         alignItems: 'center',

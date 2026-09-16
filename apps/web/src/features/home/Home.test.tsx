@@ -49,7 +49,7 @@ function renderHome() {
  * test seeds it with; the mutating methods are spies so tests can assert
  * they were (or weren't) called, without touching real storage. */
 class MockDocStore implements DocStore {
-  listEditorNames = vi.fn(async (): Promise<Record<string, string>> => ({}));
+  listEditorNames = vi.fn(async (): Promise<Record<string, never>> => ({}));
   setFavorite = vi.fn(async (): Promise<void> => undefined);
   remove = vi.fn(async (): Promise<void> => undefined);
   restore = vi.fn(async (): Promise<void> => undefined);
@@ -3772,7 +3772,10 @@ describe('Home', () => {
 describe('맵 카드의 마지막 수정자', () => {
   function renderWith(metas: DocMeta[], names: Record<string, string>) {
     const docStore = new MockDocStore(metas);
-    docStore.listEditorNames = vi.fn(async () => names);
+    // 0041: 값이 이름 문자열에서 `{ name, avatarUrl }`로 바뀌었다(카드가 얼굴도 그린다).
+    docStore.listEditorNames = vi.fn(async () =>
+      Object.fromEntries(Object.entries(names).map(([id, name]) => [id, { name, avatarUrl: null }])),
+    );
     const backend: Backend = { auth: new LocalAuth(), docStore, spaceStore: new LocalSpaceStore(), shareStore: new LocalShareStore(), feedbackStore: new LocalFeedbackStore(), imageStore: new LocalImageStore(), commentStore: new LocalCommentStore(), notificationStore: new LocalNotificationStore(), eventStore: new LocalEventStore(), mode: 'supabase' };
     const utils = render(
       <MemoryRouter initialEntries={['/home']}>

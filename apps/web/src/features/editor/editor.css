@@ -468,3 +468,35 @@ input[type='search']::-webkit-search-results-decoration {
   padding: 0.02em 0.12em;
   color: #2e2a26;
 }
+
+/* 공책 — **읽는 줄에 조작을 얹지 않는다**(디자인 원본). 페이지 머리의 복제·삭제,
+   표의 행·열 추가, 링크 카드의 바꾸기는 평소 보이지 않다가 그 자리에 마우스를
+   얹으면 나타난다. 터치 기기에는 hover가 없으므로 언제나 보인다(아래 미디어 질의). */
+.mf-note-pageact,
+.mf-note-tableact,
+.mf-note-linkact {
+  opacity: 0;
+  transition: opacity 0.14s ease;
+}
+.mf-note-head:hover .mf-note-pageact,
+.mf-note-head:focus-within .mf-note-pageact,
+.mf-note-table:hover .mf-note-tableact,
+.mf-note-table:focus-within .mf-note-tableact,
+.mf-note-link:hover .mf-note-linkact,
+.mf-note-link:focus-within .mf-note-linkact {
+  opacity: 1;
+}
+@media (hover: none) {
+  .mf-note-pageact,
+  .mf-note-tableact,
+  .mf-note-linkact {
+    opacity: 1;
+  }
+}
+/* 페이지 제목 — 눌러서 고칠 수 있다는 것을 밑줄이 나타나며 알린다(디자인 원본). */
+[data-note-title]:hover {
+  border-bottom-color: var(--mf-border) !important;
+}
+[data-note-title]:focus {
+  border-bottom-color: var(--mf-accent) !important;
+}
