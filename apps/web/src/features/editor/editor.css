@@ -440,11 +440,21 @@ input[type='search']::-webkit-search-results-decoration {
  * `:empty`만으로는 부족하다: 빈 contentEditable에는 브라우저가 `<br>`를 하나 넣어
  * 두는 경우가 있어 비어 있어도 `:empty`가 아니다. 그래서 자식이 `<br>` 하나뿐인
  * 경우까지 함께 본다. */
+/* 빈 줄의 안내 — **절대 배치**다(제보: 캐럿이 안내 글 끝에 가 있는 것처럼 보인다).
+   흐름 안에 두면 `::before`의 글자 폭만큼 캐럿이 오른쪽으로 밀려, 실제로는 줄 맨
+   앞인데도 안내문 끝을 가리키는 것처럼 보인다. */
+.mf-note-line {
+  position: relative;
+}
 .mf-note-line:empty::before,
 .mf-note-line:has(> br:only-child)::before {
   content: attr(data-placeholder);
+  position: absolute;
+  left: 0;
+  top: 0;
   color: var(--mf-faint2);
   pointer-events: none;
+  white-space: nowrap;
 }
 /* 인라인 코드·형광펜 — 본문에서 그려지는 모양(런의 `k`/`hl`). 편집 박스 안이라
  * 실제 요소로 들어 있다(`runsToHtml`). */
