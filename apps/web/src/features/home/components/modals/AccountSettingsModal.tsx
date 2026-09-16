@@ -25,6 +25,7 @@ import {
 import {
   desktopBackgroundState,
   desktopNotifySupported,
+  isDesktopShell,
   setDesktopBackground,
   setDesktopOpenAtLogin,
   type DesktopBackground,
@@ -506,6 +507,37 @@ export function AccountSettingsModal({ state, controller }: Props) {
                   **쓸 수 없는 환경에서는 행이 없다**: 설치형 셸(Electron에는 푸시
                   서비스가 없다)·Capacitor WebView·VAPID 키를 넣지 않은 배포.
                   눌러도 아무 일이 없는 스위치를 두지 않는다. */}
+              {/* 설치형 앱의 같은 자리 — 푸시는 못 쓰지만(셸에 푸시 서비스 채널이
+                  없다) **창을 닫아 둬도 배너로 알릴 수는 있다**(트레이 상주라 렌더러가
+                  살아 있고, `geurio:notify` 창구가 이미 있다). 그래서 계정 값도 푸시와
+                  **같은 것**을 쓴다 — 사용자에게 둘은 "앱을 안 보고 있을 때 알려 줄까"
+                  하나이고, 기기마다 길이 다를 뿐이다.
+
+                  이 행이 없으면 설치형 앱 사용자는 **자기에게 뜨는 배너를 끌 길이
+                  없다**(푸시 행은 그 셸에서 그려지지 않는다 — `pushAvailable()`). */}
+              {!canPush && isDesktopShell() && (
+                <div
+                  data-mention-shell-row
+                  style={{ display: 'flex', alignItems: 'center', flexWrap: 'wrap', gap: 13, padding: '13px 15px', borderTop: '1px solid var(--mf-border-soft)' }}
+                >
+                  <div style={{ minWidth: 0, flex: '1 1 180px' }}>
+                    <div style={{ fontWeight: 700, fontSize: 13.5 }}>멘션 알림</div>
+                    <div data-mention-shell-note style={{ marginTop: 3, fontSize: 12.5, color: 'var(--mf-muted)' }}>
+                      {outPrefs.pushMentions
+                        ? '창을 닫아 둬도 누가 부르면 이 기기에 바로 떠요'
+                        : '누가 나를 불러도 배너로 알리지 않아요'}
+                    </div>
+                  </div>
+                  <Switch
+                    checked={outPrefs.pushMentions}
+                    onCheckedChange={() => saveOutPrefs({ ...outPrefs, pushMentions: !outPrefs.pushMentions })}
+                    label="멘션 알림"
+                    accent="var(--mf-accent)"
+                    track="var(--mf-scroll)"
+                    knob="var(--mf-card)"
+                  />
+                </div>
+              )}
               {canPush && (
                 <div
                   data-mention-push-row
