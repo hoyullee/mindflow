@@ -20,11 +20,15 @@ import { captureDesktopAuthToken } from './features/auth/desktopGoogle';
 // 그려졌다 바뀌는 깜빡임이 없다(도착하면 그 값으로 맞춘다 — features/home/theme.ts).
 applyHomeTheme(loadHomeThemeCache());
 
-// 설치형 앱의 Google 로그인 핸드오프(`/auth/desktop#…refresh_token=…`) — 그냥 두면
-// Supabase 클라이언트가 그 해시를 읽어 **브라우저에** 세션을 세우고 주소를 지운다
-// (앱에 넘길 것이 없어지고, 같은 세션이 두 곳에 남는다). 클라이언트가 만들어지기
-// 전인 **여기서** 낚아채 주소를 치운다 — 그 경로가 아니면 아무 일도 하지 않으므로
-// 평범한 웹 로그인은 그대로다(features/auth/desktopGoogle.ts).
+// 설치형 앱의 Google 로그인 핸드오프(`/auth/desktop#…refresh_token=…`) — 앱에 넘길
+// 갱신 토큰을 읽고 **주소창·방문 기록에서 토큰을 치운다**.
+//
+// ⚠️ 한때 이 호출이 "클라이언트보다 먼저 돌아서" 브라우저에 세션이 서지 않는다고
+// 적혀 있었는데 **그 순서는 성립하지 않는다**: ESM은 위의 `import`들을 이 본문보다
+// 먼저 평가하고, 그 안에서 `BackendContext`가 이미 클라이언트를 만든다. 계정이
+// 뒤섞인 제보의 원인이 그것이었다. 세션을 막는 것은 이제 순서가 아니라 성질이다 —
+// 심부름꾼 경로에서는 클라이언트가 URL을 아예 보지 않는다(`isAuthCourierPath`).
+// 그래서 이 호출은 언제 돌아도 되고, 늦어도 계정을 뒤섞지 않는다.
 captureDesktopAuthToken();
 
 const el = document.getElementById('root');

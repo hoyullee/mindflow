@@ -5,9 +5,11 @@ import {
   desktopAuthToken,
   DESKTOP_HANDOFF_PATH,
   handoffRedirectTo,
+  isAuthCourierPath,
   readAuthDeepLink,
   resetDesktopAuthToken,
 } from './desktopGoogle';
+import { GCAL_HANDOFF_PATH } from '../home/calendar/desktopGoogleCalendar';
 
 afterEach(() => {
   resetDesktopAuthToken();
@@ -61,5 +63,26 @@ describe('핸드오프 토큰 낚아채기 — Supabase 클라이언트가 읽�
   it('넘길 것이 없으면 null — 앱 없이 이 주소를 직접 열었을 때', () => {
     window.history.replaceState({}, '', DESKTOP_HANDOFF_PATH);
     expect(captureDesktopAuthToken()).toBe(null);
+  });
+});
+
+describe('심부름꾼 경로', () => {
+  // 이 목록이 곧 "여기서는 브라우저에 세션을 세우지 않는다"의 범위다
+  // (supabaseClient.ts가 이 값으로 `detectSessionInUrl`을 끈다).
+  it('로그인·캘린더 핸드오프 둘 다 심부름꾼이다', () => {
+    expect(isAuthCourierPath(DESKTOP_HANDOFF_PATH)).toBe(true);
+    expect(isAuthCourierPath(GCAL_HANDOFF_PATH)).toBe(true);
+  });
+
+  it('평범한 화면은 아니다 — 웹 로그인이 URL로 세션을 세우는 길을 막지 않는다', () => {
+    for (const p of ['/', '/login', '/home', '/editor', '/privacy']) {
+      expect(isAuthCourierPath(p)).toBe(false);
+    }
+  });
+
+  it('비슷한 주소에 번지지 않는다(접두사가 아니라 정확히 그 경로다)', () => {
+    expect(isAuthCourierPath('/auth')).toBe(false);
+    expect(isAuthCourierPath('/auth/desktop/extra')).toBe(false);
+    expect(isAuthCourierPath('/auth/desktop2')).toBe(false);
   });
 });
