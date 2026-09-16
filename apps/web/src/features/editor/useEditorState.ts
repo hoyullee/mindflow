@@ -8,7 +8,7 @@ import { HL_COLORS, HL_WIDTHS } from './boardTools';
 import type { BoardTool } from './boardTools';
 import { recordVersion, versionDoc } from './versionHistory';
 import { nodeTextAlign, renderListEdit } from './listLines';
-import type { CommentMention, DocComment, ShareParticipant, ShareRole, ShareStore } from '../../adapters/ports';
+import type { CommentMention, DocComment, LoadedDoc, SaveResult, ShareParticipant, ShareRole, ShareStore } from '../../adapters/ports';
 import type { CollabStatus } from '../../collab/ports';
 import { useBackend, useCommentStore, useDocStore, useShareStore, useSpaceStore } from '../../adapters/BackendContext';
 import { useAuthUser } from '../../adapters/useAuthUser';
@@ -810,6 +810,14 @@ export interface EditorController {
   removeNotePage: (pageId: string) => boolean;
   moveNotePage: (pageId: string, index: number) => void;
   duplicateNotePage: (pageId: string) => void;
+  /**
+   * 이 페이지를 **다른 공책으로** 옮긴다(페이지 우클릭 메뉴).
+   *
+   * 두 문서를 건드리므로 순서가 중요하다: 받는 쪽에 **먼저 쓰고**(낙관적 잠금으로
+   * 실패할 수 있다) 성공했을 때만 여기서 뺀다 — 반대로 하면 쓰기가 실패한 순간
+   * 페이지가 어디에도 없게 된다. 돌려주는 값은 옮겼는지 여부다.
+   */
+  moveNotePageTo: (pageId: string, targetDocId: string) => Promise<boolean>;
   addNoteBlock: (kind?: NoteBlockKind, after?: string) => string | null;
   removeNoteBlock: (blockId: string) => void;
   retypeNoteBlock: (blockId: string, kind: NoteBlockKind) => void;
@@ -820,8 +828,18 @@ export interface EditorController {
   addNoteItem: (blockId: string, after?: string) => string | null;
   removeNoteItem: (blockId: string, itemId: string) => void;
   setNoteCell: (blockId: string, row: number, col: number, runs: RichRun[]) => void;
-  addNoteTableRow: (blockId: string) => void;
-  addNoteTableCol: (blockId: string) => void;
+  /** 표에 행을 넣는다 — `at`을 주면 **그 자리에**, 없으면 맨 아래. */
+  addNoteTableRow: (blockId: string, at?: number) => void;
+  /** 표에 열을 넣는다 — `at`을 주면 **그 자리에**, 없으면 맨 오른쪽. */
+  addNoteTableCol: (blockId: string, at?: number) => void;
+  /** 행 지우기 — 마지막 한 줄은 지우지 않는다(표가 사라져 버린다). */
+  removeNoteTableRow: (blockId: string, at: number) => void;
+  /** 열 지우기 — 마지막 한 칸은 지우지 않는다. */
+  removeNoteTableCol: (blockId: string, at: number) => void;
+  /** 행을 위(`-1`)·아래(`+1`)로 한 칸. */
+  moveNoteTableRow: (blockId: string, at: number, delta: number) => void;
+  /** 열을 왼쪽(`-1`)·오른쪽(`+1`)으로 한 칸. */
+  moveNoteTableCol: (blockId: string, at: number, delta: number) => void;
   setNoteCover: (patch: Partial<NoteCover>) => void;
   setNotePageTag: (pageId: string, tag: string | null) => void;
   /** 이미지 블록에 파일을 붙인다(플로트 이미지와 같은 저장 경로). */
@@ -6454,6 +6472,59 @@ export function useEditorState(): EditorController {
     [commitDoc],
   );
 
+  /**
+   * 페이지를 **다른 공책으로 옮긴다**(페이지 우클릭 메뉴 — 요청·디자인 1번 이미지).
+   *
+   * 두 문서를 건드리는 유일한 편집이라 순서가 전부다: 받는 쪽에 **먼저 쓰고**, 그
+   * 쓰기가 성공했을 때만 이쪽에서 뺀다. 반대로 하면 잠금 충돌·네트워크 실패 한 번에
+   * 페이지가 **어느 공책에도 없는** 상태가 된다(되돌릴 undo도 남의 문서엔 없다).
+   *
+   * 받는 쪽은 지금 화면이 아니므로 낙관적 잠금이 유일한 안전장치다 — 그 공책을 다른
+   * 탭에서 고치는 중이면 `conflict`로 떨어지고, 우리는 **아무것도 하지 않은 채**
+   * `false`를 돌려준다(호출부가 "지금은 옮길 수 없어요"를 띄운다).
+   *
+   * 블록·항목 id는 복제와 같은 이유로 새로 찍는다: 받는 공책에 같은 id가 이미 있으면
+   * 한쪽을 고칠 때 다른 쪽이 함께 바뀐다. 이미지는 참조(`mfimg:`)만 옮겨 가고 실제
+   * 파일은 같은 저장소에 그대로 있어 손대지 않는다.
+   */
+  const moveNotePageTo = useCallback(
+    async (pageId: string, targetDocId: string): Promise<boolean> => {
+      if (readOnlyRef.current || targetDocId === docStoreId) return false;
+      const pages = docRef.current.pages ?? [];
+      const src = pages.find((pg) => pg.id === pageId);
+      // 마지막 한 장은 옮기지 않는다 — 받는 쪽에 쓴 뒤 이쪽에서 뺄 수 없어(공책은
+      // 빈 채로 둘 수 없다) 같은 페이지가 두 공책에 남는다. 호출부도 항목을 끈다.
+      if (!src || pages.length <= 1) return false;
+      let loaded: LoadedDoc | null = null;
+      try {
+        loaded = await docStore.load(targetDocId);
+      } catch {
+        return false;
+      }
+      if (!loaded || loaded.doc.kind !== 'note') return false;
+      const copy: NotePage = {
+        ...src,
+        id: noteId('pg'),
+        blocks: src.blocks.map((b) => ({
+          ...b,
+          id: noteId('bk'),
+          ...(b.items ? { items: b.items.map((it) => ({ ...it, id: noteId('it') })) } : {}),
+        })),
+        updatedAt: new Date().toISOString(),
+      };
+      const next: Doc = { ...loaded.doc, pages: [...(loaded.doc.pages ?? []), copy] };
+      let res: SaveResult;
+      try {
+        res = await docStore.save(targetDocId, next, { prevVersion: loaded.version, title: loaded.title });
+      } catch {
+        return false;
+      }
+      if (!res.ok) return false;
+      return removeNotePage(pageId);
+    },
+    [docStore, docStoreId, removeNotePage],
+  );
+
   /** 블록 추가 — `after` 뒤(없으면 맨 끝). 새 블록 id를 돌려준다(캐럿을 옮긴다). */
   const addNoteBlock = useCallback(
     (kind: NoteBlockKind = 'p', after?: string): string | null => {
@@ -6612,8 +6683,15 @@ export function useEditorState(): EditorController {
   );
 
   /** 표에 행·열 더하기(빈 칸으로). */
+  /**
+   * 표 편집 — 넣기·지우기·옮기기가 전부 `rows`(행 배열의 배열) 하나를 다시 쓴다.
+   *
+   * 자리(`at`)는 **고른 칸**에서 온다: 표 손잡이를 누르면 그 행·열이 선택되고 메뉴가
+   * 그 자리를 기준으로 "위에/아래에", "왼쪽에/오른쪽에"를 말한다. 자리를 주지 않으면
+   * 끝에 붙인다(옛 `행 추가`·`열 추가` 단추와 같은 뜻이라 호출부를 고치지 않아도 된다).
+   */
   const addNoteTableRow = useCallback(
-    (blockId: string) => {
+    (blockId: string, at?: number) => {
       if (!notePage) return;
       commitBlock(
         notePage.id,
@@ -6621,7 +6699,9 @@ export function useEditorState(): EditorController {
         (b) => {
           const rows = b.rows ?? [];
           const width = rows[0]?.length ?? 2;
-          return { ...b, rows: [...rows, Array.from({ length: width }, () => textRuns(''))] };
+          const row = Array.from({ length: width }, () => textRuns(''));
+          const to = at == null ? rows.length : Math.max(0, Math.min(rows.length, at));
+          return { ...b, rows: [...rows.slice(0, to), row, ...rows.slice(to)] };
         },
         false,
       );
@@ -6630,9 +6710,106 @@ export function useEditorState(): EditorController {
   );
 
   const addNoteTableCol = useCallback(
-    (blockId: string) => {
+    (blockId: string, at?: number) => {
       if (!notePage) return;
-      commitBlock(notePage.id, blockId, (b) => ({ ...b, rows: (b.rows ?? []).map((r) => [...r, textRuns('')]) }), false);
+      commitBlock(
+        notePage.id,
+        blockId,
+        (b) => {
+          const rows = b.rows ?? [];
+          const width = rows[0]?.length ?? 0;
+          const to = at == null ? width : Math.max(0, Math.min(width, at));
+          return { ...b, rows: rows.map((r) => [...r.slice(0, to), textRuns(''), ...r.slice(to)]) };
+        },
+        false,
+      );
+    },
+    [commitBlock, notePage],
+  );
+
+  /**
+   * 행·열 지우기 — **마지막 한 줄은 남긴다**. 0행 0열짜리 표는 화면에서 사라져
+   * 되돌릴 손잡이조차 없어지기 때문이다(지우려면 블록을 지운다).
+   */
+  const removeNoteTableRow = useCallback(
+    (blockId: string, at: number) => {
+      if (!notePage) return;
+      commitBlock(
+        notePage.id,
+        blockId,
+        (b) => {
+          const rows = b.rows ?? [];
+          if (rows.length <= 1 || at < 0 || at >= rows.length) return b;
+          return { ...b, rows: rows.filter((_, i) => i !== at) };
+        },
+        false,
+      );
+    },
+    [commitBlock, notePage],
+  );
+
+  const removeNoteTableCol = useCallback(
+    (blockId: string, at: number) => {
+      if (!notePage) return;
+      commitBlock(
+        notePage.id,
+        blockId,
+        (b) => {
+          const rows = b.rows ?? [];
+          const width = rows[0]?.length ?? 0;
+          if (width <= 1 || at < 0 || at >= width) return b;
+          return { ...b, rows: rows.map((r) => r.filter((_, i) => i !== at)) };
+        },
+        false,
+      );
+    },
+    [commitBlock, notePage],
+  );
+
+  const moveNoteTableRow = useCallback(
+    (blockId: string, at: number, delta: number) => {
+      if (!notePage) return;
+      commitBlock(
+        notePage.id,
+        blockId,
+        (b) => {
+          const rows = b.rows ?? [];
+          const to = at + delta;
+          if (at < 0 || at >= rows.length || to < 0 || to >= rows.length) return b;
+          const next = rows.slice();
+          const [row] = next.splice(at, 1);
+          next.splice(to, 0, row!);
+          return { ...b, rows: next };
+        },
+        false,
+      );
+    },
+    [commitBlock, notePage],
+  );
+
+  const moveNoteTableCol = useCallback(
+    (blockId: string, at: number, delta: number) => {
+      if (!notePage) return;
+      commitBlock(
+        notePage.id,
+        blockId,
+        (b) => {
+          const rows = b.rows ?? [];
+          const width = rows[0]?.length ?? 0;
+          const to = at + delta;
+          if (at < 0 || at >= width || to < 0 || to >= width) return b;
+          return {
+            ...b,
+            rows: rows.map((r) => {
+              const next = r.slice();
+              const [cell] = next.splice(at, 1);
+              next.splice(to, 0, cell!);
+              return next;
+            }),
+          };
+        },
+        false,
+      );
     },
     [commitBlock, notePage],
   );
@@ -7221,6 +7398,7 @@ export function useEditorState(): EditorController {
     removeNotePage,
     moveNotePage,
     duplicateNotePage,
+    moveNotePageTo,
     addNoteBlock,
     removeNoteBlock,
     retypeNoteBlock,
@@ -7233,6 +7411,10 @@ export function useEditorState(): EditorController {
     setNoteCell,
     addNoteTableRow,
     addNoteTableCol,
+    removeNoteTableRow,
+    removeNoteTableCol,
+    moveNoteTableRow,
+    moveNoteTableCol,
     setNoteCover,
     setNotePageTag,
     setNoteImage,

@@ -102,8 +102,8 @@ describe('공책 에디터', () => {
     expect(checks).toHaveLength(2);
     expect(checks[0]!.getAttribute('aria-checked')).toBe('false');
     expect(checks[1]!.getAttribute('aria-checked')).toBe('true');
-    // 표 — 머리 행 + 본문 행.
-    const rows = container.querySelectorAll('[data-note-block="b4"] tr');
+    // 표 — 머리 행 + 본문 행(맨 위의 열 손잡이 줄은 글이 아니라 조작이라 뺀다).
+    const rows = container.querySelectorAll('[data-note-block="b4"] tr:not(.mf-note-thandle-row)');
     expect(rows).toHaveLength(2);
     expect(within(rows[0] as HTMLElement).getByText('할 일')).toBeTruthy();
   });
@@ -647,5 +647,180 @@ describe('공책 5판 — 편집 동작', () => {
 
     await waitFor(() => expect(container.querySelector('[data-note-mark="b"]')!.getAttribute('aria-pressed')).toBe('true'));
     expect(container.querySelector('[data-note-mark="i"]')!.getAttribute('aria-pressed')).toBe('false');
+  });
+});
+
+describe('공책 6판 — 페이지 메뉴와 표', () => {
+  beforeEach(() => {
+    localStorage.clear();
+    mockMatchMedia(false);
+    localStorage.setItem('mf_demo_session', JSON.stringify({ user: { id: 'u', email: 'me@example.com' } }));
+  });
+  afterEach(cleanup);
+
+  /** 페이지 줄을 우클릭해 메뉴를 연다. */
+  async function openPageMenu(container: HTMLElement, pageId: string): Promise<HTMLElement> {
+    const row = (await waitFor(() => container.querySelector(`[data-note-page-row="${pageId}"]`))) as HTMLElement;
+    fireEvent.contextMenu(row);
+    return (await waitFor(() => row.querySelector('[data-note-page-menu]'))) as HTMLElement;
+  }
+
+  it('페이지 우클릭 메뉴가 **그 페이지의 것**임을 이름으로 말하고, 항목 여섯을 준다', async () => {
+    localStorage.setItem('mindflow_doc_ns50', JSON.stringify(NOTE));
+    const { container } = renderEditor('/editor?map=ns50&title=x');
+    const menu = await openPageMenu(container, 'p1');
+
+    expect(within(menu).getByText('9월 3주 회의록')).toBeTruthy();
+    for (const mark of ['rename-open', 'dup', 'up', 'down', 'move', 'del']) {
+      expect(menu.querySelector(`[data-note-page-${mark}]`)).toBeTruthy();
+    }
+    // 첫 장이라 `위로`는 꺼져 있고, 두 장뿐이라 `아래로`는 살아 있다.
+    expect((menu.querySelector('[data-note-page-up]') as HTMLButtonElement).disabled).toBe(true);
+    expect((menu.querySelector('[data-note-page-down]') as HTMLButtonElement).disabled).toBe(false);
+  });
+
+  it('`이름 바꾸기`는 **그 자리에서** 고치고 Enter로 확정한다', async () => {
+    localStorage.setItem('mindflow_doc_ns51', JSON.stringify(NOTE));
+    const { container } = renderEditor('/editor?map=ns51&title=x');
+    const menu = await openPageMenu(container, 'p1');
+
+    fireEvent.click(menu.querySelector('[data-note-page-rename-open]')!);
+    const input = (await waitFor(() => container.querySelector('[data-note-page-rename="p1"]'))) as HTMLInputElement;
+    fireEvent.change(input, { target: { value: '9월 4주 회의록' } });
+    fireEvent.keyDown(input, { key: 'Enter' });
+    saveNow();
+
+    await waitFor(() => expect(saved('ns51').pages[0].title).toBe('9월 4주 회의록'));
+  });
+
+  it('`아래로`가 페이지 순서를 바꾼다', async () => {
+    localStorage.setItem('mindflow_doc_ns52', JSON.stringify(NOTE));
+    const { container } = renderEditor('/editor?map=ns52&title=x');
+    const menu = await openPageMenu(container, 'p1');
+
+    fireEvent.click(menu.querySelector('[data-note-page-down]')!);
+    saveNow();
+
+    await waitFor(() => expect(saved('ns52').pages.map((p: { id: string }) => p.id)).toEqual(['p2', 'p1']));
+  });
+
+  it('`다른 공책으로 이동`은 **받는 쪽에 쓴 뒤에만** 이쪽에서 뺀다', async () => {
+    localStorage.setItem('mindflow_doc_ns53', JSON.stringify(NOTE));
+    // 받는 공책 — 페이지 한 장짜리.
+    localStorage.setItem(
+      'mindflow_doc_ns54',
+      JSON.stringify({ ...NOTE, pages: [{ id: 'q1', title: '설계 노트', blocks: [{ id: 'c1', kind: 'p', runs: [{ t: '초안', b: false, c: null }] }] }] }),
+    );
+    localStorage.setItem('mindflow_doc_meta_ns54', JSON.stringify({ title: '설계 공책', kind: 'note' }));
+    // 옮겨 갈 후보는 **워크스페이스 목록**에서 온다(`linkTargets`) — 홈이 카드를
+    // 그리는 그 목록이라, 여기 없는 문서는 고를 수도 없다.
+    localStorage.setItem(
+      'mf_spaces',
+      JSON.stringify({
+        v: 1,
+        spaces: [{ name: '일반 공간', maps: [{ title: '회의 공책', docId: 'ns53' }, { title: '설계 공책', docId: 'ns54' }] }],
+        mapFolders: {},
+        recent: [],
+      }),
+    );
+    const { container } = renderEditor('/editor?map=ns53&title=x');
+    const menu = await openPageMenu(container, 'p1');
+
+    fireEvent.click(menu.querySelector('[data-note-page-move]')!);
+    const wing = (await waitFor(() => container.querySelector('[data-note-page-move-menu]'))) as HTMLElement;
+    const target = (await waitFor(() => wing.querySelector('[data-note-page-move-to="ns54"]'))) as HTMLElement;
+    fireEvent.click(target);
+
+    // 받는 쪽에 붙었다.
+    await waitFor(() => expect(saved('ns54').pages).toHaveLength(2));
+    expect(saved('ns54').pages[1].title).toBe('9월 3주 회의록');
+    // id는 새로 찍는다 — 같은 id가 두 공책에 있으면 한쪽을 고칠 때 다른 쪽이 따라 바뀐다.
+    expect(saved('ns54').pages[1].id).not.toBe('p1');
+    // 그리고 이쪽에서 빠졌다.
+    saveNow();
+    await waitFor(() => expect(saved('ns53').pages.map((p: { id: string }) => p.id)).toEqual(['p2']));
+  });
+
+  it('마지막 한 장은 옮기지도 지우지도 못한다', async () => {
+    localStorage.setItem('mindflow_doc_ns55', JSON.stringify({ ...NOTE, pages: [NOTE.pages[0]] }));
+    const { container } = renderEditor('/editor?map=ns55&title=x');
+    const menu = await openPageMenu(container, 'p1');
+
+    expect((menu.querySelector('[data-note-page-move]') as HTMLButtonElement).disabled).toBe(true);
+    expect((menu.querySelector('[data-note-page-del]') as HTMLButtonElement).disabled).toBe(true);
+  });
+
+  it('표 — 칸을 고르면 표시되고, 우클릭 메뉴가 행과 열을 함께 준다', async () => {
+    localStorage.setItem('mindflow_doc_ns56', JSON.stringify(NOTE));
+    const { container } = renderEditor('/editor?map=ns56&title=x');
+    const cell = (await waitFor(() => container.querySelector('[data-note-table-cell="1:0"]'))) as HTMLElement;
+
+    fireEvent.click(cell);
+    await waitFor(() => expect(cell.getAttribute('data-picked')).toBe('1'));
+
+    fireEvent.contextMenu(cell);
+    const menu = (await waitFor(() => container.querySelector('[data-note-table-menu]'))) as HTMLElement;
+    for (const act of ['row-above', 'row-below', 'row-del', 'col-left', 'col-right', 'col-del', 'cell-clear']) {
+      expect(menu.querySelector(`[data-note-table-act="${act}"]`)).toBeTruthy();
+    }
+  });
+
+  it('표 — 행 지우기·열 지우기가 그 줄만 뺀다', async () => {
+    localStorage.setItem('mindflow_doc_ns57', JSON.stringify(NOTE));
+    const { container } = renderEditor('/editor?map=ns57&title=x');
+    const cell = (await waitFor(() => container.querySelector('[data-note-table-cell="1:1"]'))) as HTMLElement;
+
+    fireEvent.contextMenu(cell);
+    let menu = (await waitFor(() => container.querySelector('[data-note-table-menu]'))) as HTMLElement;
+    fireEvent.click(menu.querySelector('[data-note-table-act="col-del"]')!);
+    saveNow();
+    await waitFor(() => {
+      const rows = saved('ns57').pages[0].blocks[3].rows as unknown[][];
+      expect(rows.every((r) => r.length === 1)).toBe(true);
+    });
+    // 남은 열은 첫 번째다 — 지운 것은 고른 칸의 열(둘째).
+    expect(saved('ns57').pages[0].blocks[3].rows[0][0][0].t).toBe('할 일');
+
+    const left = (await waitFor(() => container.querySelector('[data-note-table-cell="1:0"]'))) as HTMLElement;
+    fireEvent.contextMenu(left);
+    menu = (await waitFor(() => container.querySelector('[data-note-table-menu]'))) as HTMLElement;
+    fireEvent.click(menu.querySelector('[data-note-table-act="row-del"]')!);
+    saveNow();
+    await waitFor(() => expect(saved('ns57').pages[0].blocks[3].rows).toHaveLength(1));
+    expect(saved('ns57').pages[0].blocks[3].rows[0][0][0].t).toBe('할 일');
+  });
+
+  it('표 — 손잡이로 연 메뉴는 그쪽 묶음만 보여 주고, 열을 그 자리에 넣는다', async () => {
+    localStorage.setItem('mindflow_doc_ns58', JSON.stringify(NOTE));
+    const { container } = renderEditor('/editor?map=ns58&title=x');
+    const handle = (await waitFor(() => container.querySelector('[data-note-table-colhandle="0"]'))) as HTMLElement;
+
+    fireEvent.click(handle);
+    const menu = (await waitFor(() => container.querySelector('[data-note-table-menu]'))) as HTMLElement;
+    expect(menu.querySelector('[data-note-table-act="row-above"]')).toBeNull();
+    fireEvent.click(menu.querySelector('[data-note-table-act="col-left"]')!);
+    saveNow();
+
+    await waitFor(() => {
+      const rows = saved('ns58').pages[0].blocks[3].rows as { t: string }[][][];
+      expect(rows[0]).toHaveLength(3);
+      // 새 칸이 맨 앞에 들어갔다 — `할 일`은 한 칸 밀린다.
+      expect(rows[0]![1]![0]!.t).toBe('할 일');
+    });
+  });
+
+  it('마지막 한 행·한 열은 지우지 못한다', async () => {
+    const one = {
+      ...NOTE,
+      pages: [{ ...NOTE.pages[0], blocks: [{ id: 'b4', kind: 'table', rows: [[[{ t: '하나', b: false, c: null }]]] }] }, NOTE.pages[1]],
+    };
+    localStorage.setItem('mindflow_doc_ns59', JSON.stringify(one));
+    const { container } = renderEditor('/editor?map=ns59&title=x');
+    const cell = (await waitFor(() => container.querySelector('[data-note-table-cell="0:0"]'))) as HTMLElement;
+
+    fireEvent.contextMenu(cell);
+    const menu = (await waitFor(() => container.querySelector('[data-note-table-menu]'))) as HTMLElement;
+    expect((menu.querySelector('[data-note-table-act="row-del"]') as HTMLButtonElement).disabled).toBe(true);
+    expect((menu.querySelector('[data-note-table-act="col-del"]') as HTMLButtonElement).disabled).toBe(true);
   });
 });
